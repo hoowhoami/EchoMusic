@@ -8,7 +8,7 @@ import type {
   AudioSpectrumUnsubscribePayload,
 } from '../shared/audio-spectrum';
 import log from './logger';
-import { loadSpectrumCapture, type NativeSpectrumCapture } from './spectrumCapture';
+import type { PlayerController } from './player/controller';
 
 type AudioSpectrumSubscription = {
   id: string;
@@ -20,13 +20,15 @@ type AudioSpectrumSubscription = {
 const subscriptions = new Map<string, AudioSpectrumSubscription>();
 const destroyedWebContents = new WeakSet<WebContents>();
 let registered = false;
-let capture: NativeSpectrumCapture | null | undefined;
+let getPlayerController: (() => PlayerController | null) | null = null;
 let currentOptionsKey = '';
+let activeProvider: AudioSpectrumStatus['provider'] | '' = '';
 let pollingTimer: ReturnType<typeof setInterval> | null = null;
 let pollingIntervalMs = 0;
 let lastFrameTimestamp = 0;
 
 const UNAVAILABLE_REASON = '系统音频频谱捕获不可用';
+const PLAYER_CORE_UNAVAILABLE_REASON = '播放器内置频谱不可用';
 
 const getSubscriptionKey = (webContents: WebContents, subscriptionId: string) =>
   `${webContents.id}:${String(subscriptionId || '').trim()}`;
@@ -50,10 +52,10 @@ const clampNumber = (value: unknown, min: number, max: number) => {
   return Math.min(max, Math.max(min, number));
 };
 
-const getCapture = () => {
-  if (capture !== undefined) return capture;
-  capture = loadSpectrumCapture();
-  return capture;
+const getPlayerCore = () => {
+  const controller = getPlayerController?.() ?? null;
+  if (!controller?.hasPlayerCoreSpectrum) return null;
+  return controller;
 };
 
 const getMergedOptions = (): AudioSpectrumOptions => {
@@ -147,14 +149,20 @@ const pollFrame = () => {
     return;
   }
 
-  const nativeCapture = getCapture();
-  if (!nativeCapture) {
+  if (!activeProvider) {
+    syncCaptureForSubscriptions();
+    return;
+  }
+
+  const provider = activeProvider === 'player-core' ? getPlayerCore() : null;
+  if (!provider) {
     stopPolling();
+    syncCaptureForSubscriptions();
     return;
   }
 
   try {
-    const frame = nativeCapture.getSnapshot();
+    const frame = provider.getSpectrumSnapshot();
     if (!frame || frame.timestamp === lastFrameTimestamp) return;
     lastFrameTimestamp = frame.timestamp;
     broadcastFrame(frame);
@@ -177,69 +185,80 @@ const startPolling = (fps = 30) => {
 const stopCapture = (): AudioSpectrumStatus => {
   stopPolling();
   currentOptionsKey = '';
-  const nativeCapture = capture === undefined ? null : capture;
-  if (!nativeCapture) return getUnavailableStatus();
+  const provider = activeProvider;
+  activeProvider = '';
 
-  try {
-    return withSubscriberCount(nativeCapture.stop());
-  } catch (err) {
-    log.warn('[AudioSpectrum] stop failed:', err);
-    return getUnavailableStatus(err instanceof Error ? err.message : String(err));
+  if (provider === 'player-core') {
+    const playerCore = getPlayerCore();
+    if (!playerCore) return getUnavailableStatus(PLAYER_CORE_UNAVAILABLE_REASON);
+    try {
+      return withSubscriberCount(
+        playerCore.stopSpectrum() ?? getUnavailableStatus(PLAYER_CORE_UNAVAILABLE_REASON),
+      );
+    } catch (err) {
+      log.warn('[AudioSpectrum] player-core stop failed:', err);
+      return getUnavailableStatus(err instanceof Error ? err.message : String(err));
+    }
   }
+
+  return getUnavailableStatus(PLAYER_CORE_UNAVAILABLE_REASON);
 };
 
 const syncCaptureForSubscriptions = (): AudioSpectrumStatus => {
   if (subscriptions.size === 0) return stopCapture();
 
-  const nativeCapture = getCapture();
-  if (!nativeCapture) return getUnavailableStatus('echo-spectrum-capture native addon 未加载');
-
+  const playerCore = getPlayerCore();
   const options = getMergedOptions();
   const nextOptionsKey = JSON.stringify(options);
-  if (pollingTimer && currentOptionsKey === nextOptionsKey) {
+
+  if (playerCore) {
+    if (activeProvider === 'player-core' && pollingTimer && currentOptionsKey === nextOptionsKey) {
+      const status =
+        playerCore.getSpectrumStatus() ?? getUnavailableStatus(PLAYER_CORE_UNAVAILABLE_REASON);
+      return withSubscriberCount(status);
+    }
+
     try {
-      return withSubscriberCount(nativeCapture.getStatus());
+      const status = withSubscriberCount(
+        playerCore.startSpectrum(options) ?? getUnavailableStatus(PLAYER_CORE_UNAVAILABLE_REASON),
+      );
+      if (status.running) {
+        activeProvider = 'player-core';
+        currentOptionsKey = nextOptionsKey;
+        startPolling(options.fps);
+        return status;
+      }
+      log.warn('[AudioSpectrum] player-core spectrum unavailable, falling back:', status.reason);
     } catch (err) {
-      log.warn('[AudioSpectrum] getStatus failed:', err);
-      return getUnavailableStatus(err instanceof Error ? err.message : String(err));
+      log.warn('[AudioSpectrum] player-core start failed, falling back:', err);
     }
   }
 
-  try {
-    const status = withSubscriberCount(nativeCapture.start(options));
-    currentOptionsKey = nextOptionsKey;
-    if (status.running) startPolling(options.fps);
-    else stopPolling();
-    return status;
-  } catch (err) {
-    log.warn('[AudioSpectrum] start failed:', err);
-    stopPolling();
-    return getUnavailableStatus(err instanceof Error ? err.message : String(err));
-  }
+  activeProvider = '';
+  stopPolling();
+  return getUnavailableStatus(PLAYER_CORE_UNAVAILABLE_REASON);
 };
 
 const getStatus = (): AudioSpectrumStatus => {
-  const nativeCapture = getCapture();
-  if (!nativeCapture) return getUnavailableStatus('echo-spectrum-capture native addon 未加载');
-
-  try {
-    return withSubscriberCount(nativeCapture.getStatus());
-  } catch (err) {
-    log.warn('[AudioSpectrum] getStatus failed:', err);
-    return getUnavailableStatus(err instanceof Error ? err.message : String(err));
+  if (activeProvider === 'player-core') {
+    const playerCore = getPlayerCore();
+    const status = playerCore?.getSpectrumStatus();
+    return status
+      ? withSubscriberCount(status)
+      : getUnavailableStatus(PLAYER_CORE_UNAVAILABLE_REASON);
   }
+
+  const playerCore = getPlayerCore();
+  const playerStatus = playerCore?.getSpectrumStatus();
+  if (playerStatus) return withSubscriberCount(playerStatus);
+
+  return getUnavailableStatus(PLAYER_CORE_UNAVAILABLE_REASON);
 };
 
 const getSnapshot = (): AudioSpectrumFrame | null => {
-  const nativeCapture = getCapture();
-  if (!nativeCapture) return null;
+  if (activeProvider === 'player-core') return getPlayerCore()?.getSpectrumSnapshot() ?? null;
 
-  try {
-    return nativeCapture.getSnapshot();
-  } catch (err) {
-    log.warn('[AudioSpectrum] getSnapshot failed:', err);
-    return null;
-  }
+  return getPlayerCore()?.getSpectrumSnapshot() ?? null;
 };
 
 const removeWebContentsSubscriptions = (webContents: WebContents) => {
@@ -252,7 +271,8 @@ const removeWebContentsSubscriptions = (webContents: WebContents) => {
   return changed;
 };
 
-export const registerAudioSpectrumIpc = () => {
+export const registerAudioSpectrumIpc = (getController?: () => PlayerController | null) => {
+  getPlayerController = getController ?? null;
   if (registered) return;
   registered = true;
 
@@ -304,6 +324,7 @@ export const unregisterAudioSpectrumIpc = () => {
   if (!registered) return;
   registered = false;
   subscriptions.clear();
+  getPlayerController = null;
   stopCapture();
   ipcMain.removeHandler('audio-spectrum:get-status');
   ipcMain.removeHandler('audio-spectrum:get-snapshot');

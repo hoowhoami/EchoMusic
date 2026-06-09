@@ -162,7 +162,7 @@ export const createPlaybackManager = (
     if (requestSeq !== state.playbackRequestSeq) return;
 
     // 不调用 engine.reset()，避免释放音频设备导致多设备同步抢占
-    // mpv 的 loadFile 会直接替换当前文件，无需先 stop
+    // player 的 loadFile 会直接替换当前文件，无需先 stop
     engine.setPlaybackRate(state.playbackRate);
 
     state.currentTrackId = resolvedId;

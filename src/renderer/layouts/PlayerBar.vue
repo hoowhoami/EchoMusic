@@ -520,11 +520,11 @@ onUnmounted(() => {
         <QualityPopover />
         <EffectPopover />
 
-        <div class="relative">
+        <div class="relative transition-transform duration-200 hover:scale-110 active:scale-90">
           <Button
             variant="unstyled"
             size="none"
-            class="p-2 transition-all hover:scale-110 active:scale-90"
+            class="p-2 transition-colors"
             :class="
               desktopLyricStore.settings.enabled
                 ? 'text-primary'
@@ -543,11 +543,11 @@ onUnmounted(() => {
           />
         </div>
 
-        <div class="relative">
+        <div class="relative transition-transform duration-200 hover:scale-110 active:scale-90">
           <Button
             variant="unstyled"
             size="none"
-            class="p-2 text-text-main/50 hover:text-primary transition-all hover:scale-110 active:scale-90"
+            class="p-2 text-text-main/50 hover:text-primary transition-colors"
             title="播放队列"
             @click="openQueue"
           >

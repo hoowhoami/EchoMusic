@@ -39,9 +39,10 @@ const clamp = (value: number, min: number, max: number): number =>
   Math.min(max, Math.max(min, value));
 
 const DEFAULT_REFERENCE_LUFS = -14.0;
+const LOAD_READY_TIMEOUT_MS = 15000;
 
-// mpv preload API（类型来自 electron.d.ts）
-const mpv = window.electron?.mpv;
+// player preload API（类型来自 electron.d.ts）
+const player = window.electron?.player;
 
 // 原生媒体控制 preload API
 const mediaControls = window.electron?.mediaControls;
@@ -64,19 +65,24 @@ export class PlayerEngine {
   // 时间更新节流
   private lastTimeUpdateMs = 0;
   private readonly TIME_UPDATE_THROTTLE_MS = 250;
+  private loadPromise: Promise<void> = Promise.resolve();
+  private loadSeq = 0;
+  private loadReadyResolve: (() => void) | null = null;
+  private loadReadyReject: ((error: unknown) => void) | null = null;
+  private loadReadyTimer: number | null = null;
 
   constructor() {
-    if (mpv) {
-      this.bindMpvEvents();
+    if (player) {
+      this.bindPlayerEvents();
     } else {
-      logger.error('PlayerEngine', 'mpv API not available');
+      logger.error('PlayerEngine', 'player engine API not available');
     }
   }
 
-  // ── mpv 事件监听 ──
+  // ── player 事件监听 ──
 
-  private bindMpvEvents(): void {
-    const offTime = mpv.onTimeUpdate((time: number) => {
+  private bindPlayerEvents(): void {
+    const offTime = player.onTimeUpdate((time: number) => {
       if (time === this.lastTimeValue) return;
       this.lastTimeValue = time;
       // 节流：限制时间更新频率
@@ -87,14 +93,14 @@ export class PlayerEngine {
     });
     this.cleanupFns.push(offTime);
 
-    const offDuration = mpv.onDurationChange((duration: number) => {
+    const offDuration = player.onDurationChange((duration: number) => {
       if (duration === this.durationValue) return;
       this.durationValue = duration;
       this.events.durationChange?.(duration);
     });
     this.cleanupFns.push(offDuration);
 
-    const offState = mpv.onStateChange((state: { playing?: boolean; paused?: boolean }) => {
+    const offState = player.onStateChange((state: { playing?: boolean; paused?: boolean }) => {
       if (state.playing) {
         this.events.play?.();
       } else if (state.paused) {
@@ -103,17 +109,32 @@ export class PlayerEngine {
     });
     this.cleanupFns.push(offState);
 
-    const offEnd = mpv.onPlaybackEnd((reason: string) => {
+    const offEnd = player.onPlaybackEnd((reason: string) => {
       if (reason === 'eof') {
         this.events.ended?.();
       } else if (reason === 'error') {
-        this.events.error?.(new Event('error'));
+        this.events.error?.(
+          new CustomEvent('error', {
+            detail: { reason: 'playback-end' },
+          }),
+        );
       }
     });
     this.cleanupFns.push(offEnd);
 
-    const offError = mpv.onError((message: string) => {
-      logger.error('PlayerEngine', 'mpv error', { message });
+    const offFileLoaded = player.onFileLoaded(() => {
+      this.resolveCurrentLoad();
+    });
+    this.cleanupFns.push(offFileLoaded);
+
+    const offError = player.onError((message: string) => {
+      logger.error('PlayerEngine', 'player error', { message });
+      this.rejectCurrentLoad(new Error(message || 'player load failed'));
+      this.events.error?.(
+        new CustomEvent('error', {
+          detail: { message: message || 'player playback failed' },
+        }),
+      );
     });
     this.cleanupFns.push(offError);
   }
@@ -135,21 +156,71 @@ export class PlayerEngine {
     });
   }
 
+  private beginLoadWait(): number {
+    this.rejectCurrentLoad(new Error('player load superseded'));
+    const seq = ++this.loadSeq;
+    if (!player) {
+      this.loadPromise = Promise.resolve();
+      return seq;
+    }
+    this.loadPromise = new Promise<void>((resolve, reject) => {
+      this.loadReadyResolve = () => {
+        this.clearLoadWait();
+        resolve();
+      };
+      this.loadReadyReject = (error: unknown) => {
+        this.clearLoadWait();
+        reject(error);
+      };
+      this.loadReadyTimer = window.setTimeout(() => {
+        this.rejectLoad(seq, new Error('player load timed out'));
+      }, LOAD_READY_TIMEOUT_MS);
+    });
+    return seq;
+  }
+
+  private clearLoadWait(): void {
+    if (this.loadReadyTimer !== null) {
+      window.clearTimeout(this.loadReadyTimer);
+      this.loadReadyTimer = null;
+    }
+    this.loadReadyResolve = null;
+    this.loadReadyReject = null;
+  }
+
+  private resolveCurrentLoad(): void {
+    this.loadReadyResolve?.();
+  }
+
+  private rejectCurrentLoad(error: unknown): void {
+    this.loadReadyReject?.(error);
+  }
+
+  private rejectLoad(seq: number, error: unknown): void {
+    if (seq !== this.loadSeq) return;
+    this.rejectCurrentLoad(error);
+  }
+
   setSource(url: string, options?: { force?: boolean }): void {
     if (!url || (this.sourceUrl === url && !options?.force)) return;
     this.sourceUrl = url;
     this.durationValue = 0;
     this.lastTimeValue = -1;
     this.events.durationChange?.(0);
+    const loadSeq = this.beginLoadWait();
 
-    // 解析 MKV 音轨标记：mpv-mkv://track=N&url=...
-    if (url.startsWith('mpv-mkv://')) {
-      const params = new URLSearchParams(url.slice('mpv-mkv://'.length));
+    // 解析 MKV 音轨标记：player-mkv://track=N&url=...
+    if (url.startsWith('player-mkv://')) {
+      const params = new URLSearchParams(url.slice('player-mkv://'.length));
       const trackId = parseInt(params.get('track') || '1', 10);
       const mkvUrl = params.get('url') || '';
-      mpv?.loadMkvTrack(mkvUrl, trackId);
+      void Promise.resolve(player?.loadMkvTrack(mkvUrl, trackId)).catch((error: unknown) => {
+        this.rejectLoad(loadSeq, error);
+      });
     } else {
-      mpv?.load(url);
+      void Promise.resolve(player?.load(url)).catch((error: unknown) => {
+        this.rejectLoad(loadSeq, error);
+      });
     }
   }
 
@@ -159,7 +230,10 @@ export class PlayerEngine {
     this.durationValue = 0;
     this.lastTimeValue = -1;
     this.events.durationChange?.(0);
-    mpv?.loadMkvTrack(url, audioTrackId);
+    const loadSeq = this.beginLoadWait();
+    void Promise.resolve(player?.loadMkvTrack(url, audioTrackId)).catch((error: unknown) => {
+      this.rejectLoad(loadSeq, error);
+    });
   }
 
   async play(options?: {
@@ -167,6 +241,7 @@ export class PlayerEngine {
     fadeDurationMs?: number;
     timeoutMs?: number;
   }): Promise<void> {
+    await this.loadPromise;
     const durationMs = options?.fadeIn ? (options.fadeDurationMs ?? 500) : 0;
     if (durationMs > 0) {
       logger.info('PlayerEngine', 'Fade in started', {
@@ -175,12 +250,16 @@ export class PlayerEngine {
       });
       // 复合命令：主进程内完成 setVolume(0) → play → fade，fade 不阻塞
       await this.withTimeout(
-        mpv?.playWithFade(this.volumeValue, durationMs) ?? Promise.resolve(),
+        player?.playWithFade(this.volumeValue, durationMs) ?? Promise.resolve(),
         options?.timeoutMs,
-        'mpv play',
+        'player play',
       );
     } else {
-      await this.withTimeout(mpv?.play() ?? Promise.resolve(), options?.timeoutMs, 'mpv play');
+      await this.withTimeout(
+        player?.play() ?? Promise.resolve(),
+        options?.timeoutMs,
+        'player play',
+      );
     }
   }
 
@@ -188,22 +267,24 @@ export class PlayerEngine {
     const durationMs = options?.fadeOut ? (options.fadeDurationMs ?? 500) : 0;
     if (durationMs > 0) {
       // 非阻塞调用：淡出在 Rust 后台线程执行，不阻塞 UI
-      await mpv?.pauseWithFade(this.volumeValue, durationMs);
+      await player?.pauseWithFade(this.volumeValue, durationMs);
     } else {
-      await mpv?.pause();
+      await player?.pause();
     }
   }
 
   seek(time: number): void {
-    mpv?.seek(time).catch((err: unknown) => {
-      logger.warn('PlayerEngine', 'seek failed', { time, error: String(err) });
-    });
+    this.loadPromise
+      .then(() => player?.seek(time))
+      .catch((err: unknown) => {
+        logger.warn('PlayerEngine', 'seek failed', { time, error: String(err) });
+      });
     this.lastTimeValue = time;
     this.events.timeUpdate?.(time);
   }
 
   setEqualizer(gains: number[]): void {
-    mpv?.setEqualizer(gains.map((gain) => Number(gain) || 0));
+    player?.setEqualizer(gains.map((gain) => Number(gain) || 0));
   }
 
   setImpulseResponse(filePath: string | null, mix = 0.4): void {
@@ -211,17 +292,17 @@ export class PlayerEngine {
       filePath: filePath || '',
       mix: clamp(Number(mix) || 0.4, 0.1, 1),
     };
-    mpv?.setImpulseResponse(payload);
+    player?.setImpulseResponse(payload);
   }
 
   async getAudioFilter(): Promise<string> {
-    return (await mpv?.getAudioFilter()) || '';
+    return (await player?.getAudioFilter()) || '';
   }
 
   setVolume(value: number): number {
     const next = clamp(value, 0, 1);
     this.volumeValue = next;
-    mpv?.setVolume(next);
+    player?.setVolume(next);
     return next;
   }
 
@@ -230,27 +311,27 @@ export class PlayerEngine {
     const from = this.volumeValue;
     this.volumeValue = to;
     if (durationMs <= 0) {
-      mpv?.setVolume(to);
+      player?.setVolume(to);
       return Promise.resolve();
     }
-    // fade 完成或被取消后，同步最终音量到 mpv，防止音量卡在中间值
-    return (mpv?.fade(from, to, durationMs) ?? Promise.resolve()).then(() => {
-      mpv?.setVolume(this.volumeValue);
+    // fade 完成或被取消后，同步最终音量到 player，防止音量卡在中间值
+    return (player?.fade(from, to, durationMs) ?? Promise.resolve()).then(() => {
+      player?.setVolume(this.volumeValue);
     });
   }
 
   setPlaybackRate(rate: number): number {
     const next = clamp(rate, 0.1, 5);
     this.playbackRateValue = next;
-    mpv?.setSpeed(next);
+    player?.setSpeed(next);
     return next;
   }
 
   async setOutputDevice(deviceId: string): Promise<boolean> {
     try {
-      // default 映射为 mpv 的 auto
-      const mpvDevice = !deviceId || deviceId === 'default' ? 'auto' : deviceId;
-      await mpv?.setAudioDevice(mpvDevice);
+      // default 映射为 player 的 auto
+      const playerDevice = !deviceId || deviceId === 'default' ? 'auto' : deviceId;
+      await player?.setAudioDevice(playerDevice);
       return true;
     } catch {
       return false;
@@ -258,7 +339,10 @@ export class PlayerEngine {
   }
 
   reset(): void {
-    mpv?.stop();
+    this.loadSeq += 1;
+    this.clearLoadWait();
+    this.loadPromise = Promise.resolve();
+    player?.stop();
     this.sourceUrl = '';
     this.durationValue = 0;
     this.lastTimeValue = -1;
@@ -266,9 +350,9 @@ export class PlayerEngine {
     this.events.timeUpdate?.(0);
   }
 
-  /** 设置 mpv 文件循环模式（单曲循环用） */
+  /** 设置 player 文件循环模式（单曲循环用） */
   setLoopFile(loop: boolean): void {
-    mpv?.setLoopFile(loop);
+    player?.setLoopFile(loop);
   }
 
   // ── 音量均衡 ──
@@ -276,7 +360,7 @@ export class PlayerEngine {
   setVolumeNormalization(enabled: boolean): void {
     this.normalizationEnabled = enabled;
     if (!enabled) {
-      mpv?.setNormalizationGain(0);
+      player?.setNormalizationGain(0);
       this.normalizationGain = 1.0;
     } else if (this.lastTrackLoudness) {
       // 开启时用已有的响度数据重新应用增益
@@ -289,19 +373,19 @@ export class PlayerEngine {
     this.lastTrackLoudness = loudness;
     if (!loudness || !this.normalizationEnabled) {
       this.normalizationGain = 1.0;
-      mpv?.setNormalizationGain(0);
+      player?.setNormalizationGain(0);
       return;
     }
     const { lufs } = loudness;
     if (!Number.isFinite(lufs)) {
       this.normalizationGain = 1.0;
-      mpv?.setNormalizationGain(0);
+      player?.setNormalizationGain(0);
       return;
     }
     const gainLinear = this.computeNormalizationGain(loudness);
     const gainDb = 20 * Math.log10(gainLinear);
     this.normalizationGain = gainLinear;
-    mpv?.setNormalizationGain(gainDb);
+    player?.setNormalizationGain(gainDb);
     logger.info('PlayerEngine', 'Track loudness applied', {
       lufs,
       gainDb: gainDb.toFixed(2) + ' dB',

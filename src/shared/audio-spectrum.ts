@@ -1,7 +1,7 @@
-export type AudioSpectrumSource = 'system-loopback' | 'silence' | 'unavailable';
+export type AudioSpectrumSource = 'player-core' | 'system-loopback' | 'silence' | 'unavailable';
 export type AudioSpectrumPlaybackState = 'playing' | 'paused' | 'idle';
 export type AudioSpectrumScale = 'linear' | 'log' | 'mel';
-export type AudioSpectrumProvider = 'system-loopback' | 'unavailable';
+export type AudioSpectrumProvider = 'player-core' | 'system-loopback' | 'unavailable';
 
 export interface AudioSpectrumOptions {
   fps?: number;

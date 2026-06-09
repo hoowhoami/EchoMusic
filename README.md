@@ -60,12 +60,11 @@
 - **Routing**: [Vue Router](https://router.vuejs.org/)
 - **Package Manager**: [pnpm](https://pnpm.io/)
 - **Backend Service**: [Node.js](https://nodejs.org/)（内置本地服务，进程内直接调用）
-- **Audio Engine**: [libmpv](https://mpv.io/)（通过 Rust NAPI addon 进程内嵌入，零延迟直接函数调用）
+- **Audio Engine**: FFmpeg/libav + CPAL（通过 Rust NAPI addon 进程内播放与采样）
 - **Native Addons**: [napi-rs](https://napi.rs/)（Rust 编写的原生扩展）
-  - `echo-mpv-player`：libmpv 播放引擎封装，支持淡入淡出、EQ、音量均衡、空间音效
+  - `echo-ffmpeg-player`：FFmpeg 播放引擎，支持淡入淡出、EQ、音量均衡、空间音效与播放器内置频谱
   - `echo-media-controls`：系统媒体控制集成（macOS/Windows/Linux 原生 API）
   - `echo-storage`：SQLite 本地持久化存储，负责设置、播放队列与状态快照
-  - `echo-spectrum-capture`：系统音频捕获与频谱分析，为插件 `ctx.audio.spectrum` 提供处理后的频谱帧
 
 ## 🖼️ 界面截图
 
@@ -103,8 +102,8 @@
 - [Node.js](https://nodejs.org/) 18+
 - [pnpm](https://pnpm.io/) 9+
 - [Rust](https://www.rust-lang.org/)（编译原生模块需要）
-- [mpv / libmpv](https://mpv.io/)（播放引擎，macOS: `brew install mpv`，Linux: `apt install libmpv-dev`，Windows: 自行下载 `libmpv-2.dll` 到 `build\mpv` 目录）
-- Linux 构建系统音频捕获模块需要 ALSA 开发库（Debian/Ubuntu: `sudo apt install libasound2-dev`）
+- FFmpeg/libav 开发库（本地默认使用系统库；CI 使用静态链接构建）
+- Linux 构建音频输出模块需要 ALSA 开发库（Debian/Ubuntu: `sudo apt install libasound2-dev`）
 
 ### 本地开发
 
@@ -144,14 +143,14 @@
    倘若出现如下报错:
 
    ```bash
-   Error: Cannot find module '/home/myname/EchoMusic/native/echo-mpv-player/echo-mpv-player.node'
-   [error] [MpvController] Failed to load echo-mpv-player addon
+   Error: Cannot find module '/home/myname/EchoMusic/native/echo-ffmpeg-player/echo-ffmpeg-player.node'
+   [error] [PlayerController] Failed to load echo-ffmpeg-player addon
    ```
 
    需要手动编译 Rust 原生模块，因为 `*.node` 文件在 `.gitignore` 中被排除。推荐使用各 addon 自带的 napi-rs 构建脚本生成平台对应的 `.node`：
 
    ```bash
-   cd native/echo-mpv-player
+   cd native/echo-ffmpeg-player
    npm install
    npm run build
 
@@ -163,14 +162,8 @@
    npm install
    npm run build
 
-   cd ../echo-spectrum-capture
-   npm install
-   npm run build
-
    cd ../..
    ```
-
-   `echo-spectrum-capture` 负责系统音频频谱捕获：Windows 使用 WASAPI loopback，Linux 使用系统 monitor/loopback 输入，macOS 使用 ScreenCaptureKit。macOS 首次使用频谱可视化或 `ctx.audio.spectrum` 时，需要在“系统设置 -> 隐私与安全性 -> 屏幕与系统音频录制”中授权 EchoMusic；开发模式下也可能需要授权 Terminal、Electron 或当前启动进程。
 
 4. **启动本地开发服务器**
 
@@ -237,4 +230,4 @@ xattr -cr /Applications/EchoMusic.app && codesign --force --deep --sign - /Appli
 
 基于 [MIT License](LICENSE) 协议发布。
 
-本项目使用 [mpv](https://mpv.io/) 作为音频播放引擎（LGPL-2.1+ / GPL-2.0+），通过动态链接方式加载。
+本项目使用 FFmpeg/libav 作为音频播放引擎。发布构建采用静态链接方案，需遵守 FFmpeg 及其启用组件的许可证与再分发要求。

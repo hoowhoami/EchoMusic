@@ -28,34 +28,36 @@ export const createDeviceManager = (
 
   const applyOutputDevice = async (deviceId: string, options?: { persistSelection?: boolean }) => {
     const persistSelection = options?.persistSelection ?? true;
-    const mpvDevice = !deviceId || deviceId === 'default' ? 'auto' : deviceId;
+    const playerDevice = !deviceId || deviceId === 'default' ? 'auto' : deviceId;
     const exclusive = settingStore.exclusiveAudioDevice;
 
-    const mpv = window.electron?.mpv;
+    const player = window.electron?.player;
     const exclusiveChanged = exclusive !== (state._lastAppliedExclusive ?? false);
+    const deviceChanged = state.appliedOutputDeviceId !== deviceId;
     let applied = false;
 
     if (exclusiveChanged) {
-      const wasPlaying = state.isPlaying;
       try {
-        await mpv?.setExclusive(exclusive);
-      } catch {
-        // ignore
+        const exclusiveApplied = await player?.setExclusive(exclusive);
+        if (!exclusiveApplied) {
+          throw new Error('exclusive mode was rejected by the audio backend');
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        logger.warn('PlayerDevice', 'Failed to apply exclusive audio mode', message);
+        settingStore.exclusiveAudioDevice = !exclusive;
+        state._lastAppliedExclusive = !exclusive;
+        settingStore.setOutputDeviceStatus(
+          'fallback',
+          '当前平台或设备暂不支持独占输出，已保持共享模式。',
+        );
+        return;
       }
       state._lastAppliedExclusive = exclusive;
-      applied = await engine.setOutputDevice(mpvDevice);
+      applied = deviceChanged ? await engine.setOutputDevice(playerDevice) : true;
       if (applied) state.appliedOutputDeviceId = deviceId;
-
-      if (wasPlaying && state.currentTrackId && state.currentAudioUrl) {
-        const savedUrl = state.currentAudioUrl;
-        const savedTime = state.currentTime;
-        engine.reset();
-        engine.setSource(savedUrl);
-        await engine.play();
-        if (savedTime > 0) engine.seek(savedTime);
-      }
     } else {
-      applied = await engine.setOutputDevice(mpvDevice);
+      applied = await engine.setOutputDevice(playerDevice);
       if (applied) state.appliedOutputDeviceId = deviceId;
     }
 
@@ -73,28 +75,28 @@ export const createDeviceManager = (
   };
 
   const refreshOutputDevices = async (
-    mpvDevicesArg?: Array<{ name: string; description: string }>,
+    playerDevicesArg?: Array<{ name: string; description: string }>,
   ) => {
     const fallbackOptions = [{ label: '系统默认', value: 'default' }];
     try {
-      let mpvDevices: Array<{ name: string; description: string }>;
-      if (mpvDevicesArg) {
-        mpvDevices = mpvDevicesArg;
+      let playerDevices: Array<{ name: string; description: string }>;
+      if (playerDevicesArg) {
+        playerDevices = playerDevicesArg;
       } else {
         try {
-          mpvDevices = (await window.electron?.mpv?.getAudioDevices()) ?? [];
+          playerDevices = (await window.electron?.player?.getAudioDevices()) ?? [];
         } catch {
-          mpvDevices = [];
+          playerDevices = [];
         }
       }
 
-      if (!Array.isArray(mpvDevices) || mpvDevices.length === 0) {
+      if (!Array.isArray(playerDevices) || playerDevices.length === 0) {
         settingStore.outputDevices = fallbackOptions;
         settingStore.setOutputDeviceStatus('ready', '当前仅检测到系统默认输出设备。');
         return;
       }
 
-      const outputOptions = mpvDevices
+      const outputOptions = playerDevices
         .filter((d) => d.name && d.name !== 'auto' && d.name !== 'null')
         .map((d) => ({ label: d.description || d.name, value: d.name }))
         .filter(
@@ -131,7 +133,7 @@ export const createDeviceManager = (
     if (state.outputDeviceWatcherRegistered) return;
     state.outputDeviceWatcherRegistered = true;
 
-    if (!window.electron?.mpv?.onAudioDeviceListChanged) return;
+    if (!window.electron?.player?.onAudioDeviceListChanged) return;
 
     outputDeviceChangeHandler = () => {
       clearOutputDeviceRefreshTimer();
@@ -140,7 +142,7 @@ export const createDeviceManager = (
         void refreshOutputDevices();
       }, 800);
     };
-    window.electron.mpv.onAudioDeviceListChanged(outputDeviceChangeHandler);
+    window.electron.player.onAudioDeviceListChanged(outputDeviceChangeHandler);
   };
 
   return {

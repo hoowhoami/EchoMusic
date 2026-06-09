@@ -8,7 +8,7 @@ import { restoreActiveWindowMode } from './windowModeController';
 import { setActiveWindowMode } from './windowMode';
 import { createDockMenu, destroyTray, initTray, refreshTray } from './tray';
 import { getDesktopLyricWindow } from './desktopLyric';
-import { initMpvPlayer, destroyMpvPlayer } from './mpv';
+import { initPlayer, destroyPlayer } from './player';
 import { registerPlayerIpc } from './ipc/player';
 import { registerAudioSpectrumIpc, unregisterAudioSpectrumIpc } from './audioSpectrum';
 import { initMediaControls, destroyMediaControls } from './mediaControls';
@@ -72,24 +72,27 @@ if (!gotTheLock) {
     // --- Loading 阶段：在窗口创建前完成核心服务初始化 ---
 
     // 注册播放器 IPC（渲染进程启动后立即可用）
-    const mpvRef: { current: import('./mpv/controller').MpvController | null } = { current: null };
-    registerPlayerIpc(mpvRef);
-    registerAudioSpectrumIpc();
+    const playerRef: { current: import('./player/controller').PlayerController | null } = {
+      current: null,
+    };
+    registerPlayerIpc(playerRef);
+    registerAudioSpectrumIpc(() => playerRef.current);
 
-    // 并行初始化 API 服务器和 mpv 播放引擎
-    const [, mpvInstance] = await Promise.all([
+    // 并行初始化 API 服务器和播放引擎
+    const [, playerInstance] = await Promise.all([
       initApiServer().catch((err) => {
         log.error('[Main] Failed to init API server:', err);
       }),
-      initMpvPlayer(getMainWindow).catch((err) => {
-        log.error('[Main] Failed to init mpv player:', err);
+      initPlayer(getMainWindow).catch((err) => {
+        log.error('[Main] Failed to init player:', err);
         return null;
       }),
     ]);
 
-    mpvRef.current = mpvInstance ?? null;
+    playerRef.current = playerInstance ?? null;
     log.info('[Main] Pre-window initialization complete', {
-      mpvAvailable: !!mpvRef.current,
+      playerAvailable: !!playerRef.current,
+      playerEngine: playerRef.current?.engineName ?? null,
       platform: process.platform,
       arch: process.arch,
     });
@@ -98,7 +101,7 @@ if (!gotTheLock) {
     initMediaControls(getMainWindow);
 
     // 注册系统挂起/唤醒处理：盒盖睡眠后暂停并释放 blocker，唤醒后重建音频并恢复播放
-    initPowerMonitor({ getMainWindow, getController: () => mpvRef.current });
+    initPowerMonitor({ getMainWindow, getController: () => playerRef.current });
 
     // --- 创建主窗口 ---
     await createWindow();
@@ -154,7 +157,7 @@ if (!gotTheLock) {
       clearPluginRuntimeSession();
       unregisterAudioSpectrumIpc();
       destroyMediaControls();
-      destroyMpvPlayer();
+      destroyPlayer();
       // 销毁桌面歌词窗口
       try {
         const lyricWin = getDesktopLyricWindow();

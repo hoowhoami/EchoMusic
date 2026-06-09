@@ -267,7 +267,7 @@ export const usePlayerStore = defineStore(
       registerSettingWatchers();
       if (!impulseResponseFailureListenerRegistered) {
         impulseResponseFailureListenerRegistered = true;
-        window.electron?.mpv?.onImpulseResponseDisabled?.((payload) => {
+        window.electron?.player?.onImpulseResponseDisabled?.((payload) => {
           disableActiveImpulseResponse(payload?.path);
         });
       }
@@ -353,15 +353,15 @@ export const usePlayerStore = defineStore(
         seekforward: (offset) =>
           playbackManager.seek(Math.min(state.duration, state.currentTime + offset)),
       });
-      window.electron?.mpv?.getState?.().then((mpvState) => {
-        if (!mpvState) return;
-        if (mpvState.playing && !state.isPlaying) {
+      window.electron?.player?.getState?.().then((playerState) => {
+        if (!playerState) return;
+        if (playerState.playing && !state.isPlaying) {
           state.isPlaying = true;
           state.isLoading = false;
           settingStore.syncPreventSleep(true);
         }
-        if (mpvState.duration > 0) state.duration = mpvState.duration;
-        if (mpvState.timePos > 0) state.currentTime = mpvState.timePos;
+        if (playerState.duration > 0) state.duration = playerState.duration;
+        if (playerState.timePos > 0) state.currentTime = playerState.timePos;
       });
     };
 

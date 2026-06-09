@@ -329,7 +329,7 @@ const handleCopySongInfo = async () => {
         <QualityPopover />
         <EffectPopover />
 
-        <div class="relative">
+        <div class="bar-func-action">
           <Button
             variant="unstyled"
             size="none"
@@ -348,7 +348,7 @@ const handleCopySongInfo = async () => {
           />
         </div>
 
-        <div class="relative">
+        <div class="bar-func-action">
           <Button
             variant="unstyled"
             size="none"
@@ -663,14 +663,19 @@ const handleCopySongInfo = async () => {
 
 .bar-func-btn {
   padding: 8px;
-  transition: all 0.2s ease;
+  transition: color 0.2s ease;
 }
 
-.bar-func-btn:hover {
+.bar-func-action {
+  position: relative;
+  transition: transform 0.2s ease;
+}
+
+.bar-func-action:hover {
   transform: scale(1.1);
 }
 
-.bar-func-btn:active {
+.bar-func-action:active {
   transform: scale(0.9);
 }
 

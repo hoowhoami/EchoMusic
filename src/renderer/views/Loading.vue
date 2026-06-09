@@ -68,20 +68,20 @@ const completeStartup = async () => {
   if (hasCompletedStartup.value) return;
   hasCompletedStartup.value = true;
 
-  // 检查 mpv 播放引擎是否可用
+  // 检查播放引擎是否可用
   statusMessage.value = '正在检查播放引擎...';
   try {
-    const mpvReady = await window.electron?.mpv?.available();
-    if (!mpvReady) {
-      logger.error('Loading', 'mpv player engine is not available');
+    const playerReady = await window.electron?.player?.available();
+    if (!playerReady) {
+      logger.error('Loading', 'player engine is not available');
       statusMessage.value = '播放引擎初始化失败';
       hasError.value = true;
       hasCompletedStartup.value = false;
       return;
     }
-    logger.info('Loading', 'mpv player engine is available');
+    logger.info('Loading', 'player engine is available');
   } catch (error) {
-    logger.error('Loading', 'mpv availability check failed:', error);
+    logger.error('Loading', 'player engine availability check failed:', error);
     statusMessage.value = '播放引擎检查失败';
     hasError.value = true;
     hasCompletedStartup.value = false;
@@ -146,11 +146,11 @@ const retryStart = async () => {
   hasError.value = false;
   statusMessage.value = '正在重新启动...';
 
-  // 尝试重启 mpv 播放引擎
+  // 尝试重启播放引擎
   try {
-    await window.electron?.mpv?.restart();
+    await window.electron?.player?.restart();
   } catch (error) {
-    logger.warn('Loading', 'mpv restart attempt failed:', error);
+    logger.warn('Loading', 'player engine restart attempt failed:', error);
   }
 
   try {

@@ -114,7 +114,7 @@ export const createResolver = (
     if (!url.toLowerCase().includes('.mkv')) return url;
 
     const trackNum = effect === 'vocal' ? 2 : 1;
-    const proxyUrl = `mpv-mkv://track=${trackNum}&url=${encodeURIComponent(url)}`;
+    const proxyUrl = `player-mkv://track=${trackNum}&url=${encodeURIComponent(url)}`;
     logger.debug('PlayerResolver', 'Resolved MKV extract url', { effect, trackNum, hash });
     return proxyUrl;
   };

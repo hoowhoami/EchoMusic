@@ -1,6 +1,6 @@
 {
   "name": "echo-music",
-  "version": "2.2.6-beta.13",
+  "version": "2.2.6-beta.14",
   "description": "EchoMusic desktop client.",
   "author": {
     "name": "hoowhoami",
@@ -14,6 +14,8 @@
     "build:mac": "cd server && npm install --omit=dev && cd .. && vue-tsc --noEmit && vite build && electron-builder --mac",
     "build:linux": "cd server && npm install --omit=dev && cd .. && vue-tsc --noEmit && vite build && electron-builder --linux",
     "preview": "vite preview",
+    "build:native": "pnpm --dir native/echo-media-controls exec napi build --release --no-const-enum && pnpm --dir native/echo-ffmpeg-player exec napi build --release --no-const-enum && pnpm --dir native/echo-storage exec napi build --release --no-const-enum",
+    "build:native:bundled": "pnpm --dir native/echo-media-controls exec napi build --release --no-const-enum && pnpm --dir native/echo-ffmpeg-player exec napi build --release --no-const-enum --features bundled-ffmpeg && pnpm --dir native/echo-storage exec napi build --release --no-const-enum",
     "lint": "eslint . --ext .vue,.js,.ts,.jsx,.tsx --fix",
     "analyze": "ANALYZE_BUNDLE=1 vite build",
     "format": "prettier --write \"src/**/*.{vue,ts,js,json}\" \"vite.config.mts\" \"tsconfig*.json\""
@@ -80,7 +82,6 @@
       "output": "release",
       "buildResources": "build"
     },
-    "afterPack": "./build/afterPack.js",
     "files": [
       "dist",
       "dist-electron"
@@ -94,8 +95,8 @@
         ]
       },
       {
-        "from": "native/echo-mpv-player/echo-mpv-player.node",
-        "to": "native/echo-mpv-player.node",
+        "from": "native/echo-ffmpeg-player/echo-ffmpeg-player.node",
+        "to": "native/echo-ffmpeg-player.node",
         "filter": [
           "**/*"
         ]
@@ -103,20 +104,6 @@
       {
         "from": "native/echo-storage/echo-storage.node",
         "to": "native/echo-storage.node",
-        "filter": [
-          "**/*"
-        ]
-      },
-      {
-        "from": "native/echo-spectrum-capture/echo-spectrum-capture.node",
-        "to": "native/echo-spectrum-capture.node",
-        "filter": [
-          "**/*"
-        ]
-      },
-      {
-        "from": "build/mpv",
-        "to": "mpv",
         "filter": [
           "**/*"
         ]
@@ -183,13 +170,7 @@
     },
     "deb": {
       "depends": [
-        "libasound2",
-        "libmpv2 | libmpv1"
-      ]
-    },
-    "rpm": {
-      "depends": [
-        "mpv-libs"
+        "libasound2"
       ]
     },
     "nsis": {

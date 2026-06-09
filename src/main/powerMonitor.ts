@@ -1,12 +1,12 @@
 import { powerMonitor } from 'electron';
 import type { BrowserWindow } from 'electron';
-import type { MpvController } from './mpv/controller';
+import type { PlayerController } from './player/controller';
 import { setSystemSuspended } from './window';
 import log from './logger';
 
 interface PowerMonitorContext {
   getMainWindow: () => BrowserWindow | null;
-  getController: () => MpvController | null;
+  getController: () => PlayerController | null;
 }
 
 // 防抖：系统可能发出未配对的 suspend/resume（或重复事件），用此标志确保
@@ -18,8 +18,8 @@ let wasPlayingBeforeSuspend = false;
 /**
  * 注册系统挂起/唤醒处理。
  *
- * macOS 盒盖/睡眠会拆除音频设备与 GPU surface，唤醒后 libmpv 的 CoreAudio
- * 输出会停在坏状态，表现为「假死」。这里在主进程（libmpv 所在处）做恢复，
+ * macOS 盒盖/睡眠会拆除音频设备与 GPU surface，唤醒后播放器的音频
+ * 输出会停在坏状态，表现为「假死」。这里在主进程（播放器后端所在处）做恢复，
  * 不依赖渲染进程是否已解冻：
  * - suspend：若在播放则暂停（让音频输出干净 idle）+ 释放 power-save-blocker
  * - resume：重建音频输出设备 + 按需恢复播放 + 通知渲染进程重新枚举设备
@@ -87,18 +87,18 @@ export function initPowerMonitor(ctx: PowerMonitorContext): void {
 }
 
 /**
- * 唤醒后重建 libmpv 音频输出并按需恢复播放。
+ * 唤醒后重建播放器音频输出并按需恢复播放。
  *
- * 重设 audio-device 属性会强制 libmpv 重新打开音频输出（AO），这是切换独占
- * 模式时验证过的惯用法（见 ipc/player.ts）。重建后若挂起前在播放则从原进度恢复。
+ * 重设 audio-device 属性会让播放后端重新打开音频输出。重建后若挂起前在播放，
+ * 则从原进度恢复。
  */
 async function recoverAudio(
-  controller: MpvController | null,
+  controller: PlayerController | null,
   shouldResume: boolean,
 ): Promise<void> {
   if (!controller) return;
 
-  // 重建音频输出设备：读当前设备名并重设，强制 libmpv 重开 AO
+  // 重建音频输出设备：读当前设备名并重设，让播放后端重开输出
   try {
     const currentDevice = String((await controller.command('get_property', 'audio-device')) ?? '');
     if (currentDevice) {
@@ -111,7 +111,7 @@ async function recoverAudio(
 
   if (!shouldResume) return;
 
-  // 恢复播放：play → mpv state-change → 渲染进程自动置 isPlaying 并重新获取 blocker
+  // 恢复播放：play -> state-change -> 渲染进程自动置 isPlaying 并重新获取 blocker
   try {
     await controller.play();
     log.info('[PowerMonitor] Playback resumed after wake');

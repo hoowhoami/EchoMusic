@@ -325,7 +325,7 @@ export interface IElectronAPI {
     available: () => Promise<boolean>;
     onEvent: (func: (event: { type: string; positionMs?: number }) => void) => () => void;
   };
-  mpv: {
+  player: {
     load: (url: string) => Promise<void>;
     loadMkvTrack: (url: string, trackId: number) => Promise<void>;
     getTrackList: () => Promise<
@@ -367,6 +367,7 @@ export interface IElectronAPI {
     onDurationChange: (func: (duration: number) => void) => () => void;
     onStateChange: (func: (state: { playing?: boolean; paused?: boolean }) => void) => () => void;
     onPlaybackEnd: (func: (reason: string) => void) => () => void;
+    onFileLoaded: (func: () => void) => () => void;
     onError: (func: (message: string) => void) => () => void;
     onImpulseResponseDisabled: (
       func: (payload: { path?: string; reason?: string }) => void,

@@ -1,0 +1,39 @@
+[package]
+name = "echo-ffmpeg-player"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+cpal = "0.15.3"
+ffmpeg-next = { version = "8.1.0", default-features = false, features = ["codec", "format", "software-resampling"] }
+fft-convolver = "0.3.0"
+napi = { version = "3", features = ["napi9"] }
+napi-derive = "3"
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls"] }
+rt-fft-convolver = "0.1.1"
+rustfft = "6.4.1"
+signalsmith-stretch = "0.1.3"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+core-foundation-sys = "0.8.7"
+coreaudio-rs = "0.11.3"
+
+[build-dependencies]
+napi-build = "2"
+
+[features]
+default = []
+static-ffmpeg = ["ffmpeg-next/static"]
+bundled-ffmpeg = [
+  "ffmpeg-next/build",
+  "ffmpeg-next/build-pic",
+  "ffmpeg-next/build-zlib",
+  "ffmpeg-next/build-lib-openssl",
+  "ffmpeg-next/build-license-version3",
+]
+
+[patch.crates-io]
+ffmpeg-sys-next = { path = "vendor/ffmpeg-sys-next" }
