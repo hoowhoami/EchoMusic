@@ -34,6 +34,7 @@ import {
   type PluginAudioSourceResolverContribution,
 } from './audioSource';
 import { registerPluginLyricResolver, type PluginLyricResolverContribution } from './lyrics';
+import { createKugouApi, type PluginKugouApi } from './kugou';
 import type { Component } from 'vue';
 
 type PluginModule =
@@ -92,6 +93,7 @@ export interface EchoPluginContext {
   lyrics: {
     registerResolver: (contribution: PluginLyricResolverContribution) => () => void;
   };
+  kugou: PluginKugouApi;
   settings: ReturnType<typeof useSettingStore>;
   theme: PluginThemeApi;
   nowPlaying: Window['electron']['nowPlaying'];
@@ -929,6 +931,7 @@ const createPluginContext = (
     playlist: createPlaylistApi(),
     lyric: lyricStore,
     lyrics: createLyricsApi(descriptor, addDisposable),
+    kugou: createKugouApi(descriptor),
     settings: settingStore,
     theme: createThemeApi(descriptor.id, addDisposable),
     nowPlaying: window.electron.nowPlaying,
