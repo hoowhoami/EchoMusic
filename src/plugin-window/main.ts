@@ -1,6 +1,12 @@
 import * as Vue from 'vue';
 import './style.css';
-import type { EchoPluginDescriptor, PluginWindowDescriptor } from '../shared/plugins';
+import type {
+  EchoPluginDescriptor,
+  PluginProcessLaunchOptions,
+  PluginProcessLaunchResult,
+  PluginProcessTerminateResult,
+  PluginWindowDescriptor,
+} from '../shared/plugins';
 import type { NowPlayingCommand } from '../shared/now-playing';
 import type { AudioSpectrumFrame, AudioSpectrumOptions } from '../shared/audio-spectrum';
 
@@ -44,6 +50,10 @@ interface EchoPluginWindowContext {
     get: <T = unknown>(key: string) => Promise<T | null>;
     set: (key: string, value: unknown) => Promise<unknown>;
     delete: (key: string) => Promise<unknown>;
+  };
+  process: {
+    launch: (options: PluginProcessLaunchOptions) => Promise<PluginProcessLaunchResult>;
+    terminate: (pid: number) => Promise<PluginProcessTerminateResult>;
   };
   css: {
     inject: (cssText: string, options?: { id?: string }) => () => void;
@@ -199,6 +209,14 @@ const buildContext = (
       window.electron.plugins?.storage.set(descriptor.id, key, value) ?? Promise.resolve(null),
     delete: (key: string) =>
       window.electron.plugins?.storage.delete(descriptor.id, key) ?? Promise.resolve(null),
+  },
+  process: {
+    launch: (options) =>
+      window.electron.plugins?.process.launch(descriptor.id, options) ??
+      Promise.resolve({ ok: false, error: '插件进程 API 不可用' }),
+    terminate: (pid) =>
+      window.electron.plugins?.process.terminate(descriptor.id, pid) ??
+      Promise.resolve({ ok: false, error: '插件进程 API 不可用' }),
   },
   css: {
     inject: (cssText, options) =>

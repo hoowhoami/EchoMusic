@@ -426,17 +426,31 @@ const getMarketplacePluginKey = (plugin: PluginMarketplacePlugin) =>
   `${plugin.sourceId}:${plugin.id}`;
 
 const getMarketplaceInstallLabel = (plugin: PluginMarketplacePlugin) => {
-  if (!plugin.compatibility.compatible) return '不兼容';
   if (plugin.updateAvailable) return '更新';
   if (plugin.installed) return '已安装';
   return '安装';
 };
 
+const getMarketplaceCompatibilityMessage = (plugin: PluginMarketplacePlugin) =>
+  plugin.compatibility.compatible
+    ? ''
+    : plugin.compatibility.message || '插件与当前 EchoMusic 主程序版本不兼容';
+
 const getMarketplaceStatusLabel = (plugin: PluginMarketplacePlugin) => {
-  if (!plugin.compatibility.compatible) return '不兼容';
+  if (!plugin.compatibility.compatible) return '版本要求';
   if (plugin.updateAvailable) return `可更新至 v${plugin.version}`;
   if (plugin.installed) return `已安装 v${plugin.installedVersion}`;
   return '未安装';
+};
+
+const getMarketplaceStatusTitle = (plugin: PluginMarketplacePlugin) =>
+  getMarketplaceCompatibilityMessage(plugin) || getMarketplaceStatusLabel(plugin);
+
+const getMarketplaceInstallTitle = (plugin: PluginMarketplacePlugin) => {
+  const compatibilityMessage = getMarketplaceCompatibilityMessage(plugin);
+  if (compatibilityMessage) return compatibilityMessage;
+  if (plugin.installed && !plugin.updateAvailable) return '当前版本已安装';
+  return getMarketplaceInstallLabel(plugin);
 };
 
 const canInstallMarketplacePlugin = (plugin: PluginMarketplacePlugin) =>
@@ -474,7 +488,7 @@ const installMarketplacePlugin = async (plugin: PluginMarketplacePlugin) => {
 
 const getStatusLabel = (record: (typeof records.value)[number]) => {
   if (record.descriptor.invalid) return '无效';
-  if (!record.descriptor.compatibility.compatible) return '不兼容';
+  if (!record.descriptor.compatibility.compatible) return '版本要求';
   if (getCurrentPluginCardFailure(record)) return record.status === 'error' ? '出错' : '异常';
   if (!record.descriptor.enabled) return '已停用';
   if (pluginRuntimeState.safeMode && record.descriptor.enabled) return '安全模式';
@@ -482,6 +496,16 @@ const getStatusLabel = (record: (typeof records.value)[number]) => {
   if (record.status === 'loading') return '加载中';
   if (record.status === 'error') return '出错';
   return '未运行';
+};
+
+const getPluginCompatibilityMessage = (record: (typeof records.value)[number]) =>
+  record.descriptor.compatibility.compatible
+    ? ''
+    : record.descriptor.compatibility.message || '插件与当前 EchoMusic 主程序版本不兼容';
+
+const getStatusTitle = (record: (typeof records.value)[number]) => {
+  if (record.descriptor.invalid) return record.descriptor.error || '插件清单无效';
+  return getPluginCompatibilityMessage(record) || getStatusLabel(record);
 };
 
 const pluginAccentPalette = ['#1a73e8', '#0f9d58', '#f29900', '#d93025', '#7b1fa2', '#00897b'];
@@ -856,6 +880,7 @@ const requestOpenPluginSettings = (record: (typeof records.value)[number]) => {
                       </h3>
                       <span
                         class="plugin-status-badge"
+                        :title="getStatusTitle(record)"
                         :class="{
                           'is-active':
                             record.status === 'active' && !hasCurrentPluginCardFailure(record),
@@ -885,6 +910,14 @@ const requestOpenPluginSettings = (record: (typeof records.value)[number]) => {
                 <p class="plugin-card-description">
                   {{ record.descriptor.description || '暂无描述' }}
                 </p>
+
+                <div
+                  v-if="getPluginCompatibilityMessage(record)"
+                  class="plugin-card-error is-warning"
+                >
+                  <Icon :icon="iconTriangleAlert" width="14" height="14" />
+                  <span>{{ getPluginCompatibilityMessage(record) }}</span>
+                </div>
 
                 <div class="plugin-card-id" :title="record.descriptor.id">
                   ID: {{ record.descriptor.id }}
@@ -1038,6 +1071,7 @@ const requestOpenPluginSettings = (record: (typeof records.value)[number]) => {
                     <h3 class="plugin-card-name" :title="plugin.name">{{ plugin.name }}</h3>
                     <span
                       class="plugin-status-badge"
+                      :title="getMarketplaceStatusTitle(plugin)"
                       :class="{
                         'is-active': plugin.installed && !plugin.updateAvailable,
                         'is-warning': plugin.updateAvailable || !plugin.compatibility.compatible,
@@ -1055,6 +1089,14 @@ const requestOpenPluginSettings = (record: (typeof records.value)[number]) => {
               </div>
 
               <p class="plugin-card-description">{{ plugin.description || '暂无描述' }}</p>
+
+              <div
+                v-if="getMarketplaceCompatibilityMessage(plugin)"
+                class="plugin-card-error is-warning"
+              >
+                <Icon :icon="iconTriangleAlert" width="14" height="14" />
+                <span>{{ getMarketplaceCompatibilityMessage(plugin) }}</span>
+              </div>
 
               <div class="marketplace-tags">
                 <span>{{ plugin.sourceName }}</span>
@@ -1081,6 +1123,7 @@ const requestOpenPluginSettings = (record: (typeof records.value)[number]) => {
                   variant="primary"
                   size="xs"
                   class="marketplace-install-btn"
+                  :title="getMarketplaceInstallTitle(plugin)"
                   :loading="busyMarketplacePluginKeys.has(getMarketplacePluginKey(plugin))"
                   :disabled="
                     !canInstallMarketplacePlugin(plugin) ||
@@ -1702,6 +1745,21 @@ const requestOpenPluginSettings = (record: (typeof records.value)[number]) => {
   padding: 0.5rem;
   background: var(--state-danger-bg-soft);
   border-radius: 8px;
+}
+
+.plugin-card-error.is-warning {
+  color: rgb(180, 83, 9);
+  background: rgba(245, 158, 11, 0.08);
+  border: 1px solid rgba(245, 158, 11, 0.18);
+}
+
+:global(.dark) .plugin-card-error.is-warning {
+  color: rgb(251, 191, 36);
+}
+
+.plugin-card-error svg {
+  flex-shrink: 0;
+  margin-top: 0.1rem;
 }
 
 .plugin-card-error span {

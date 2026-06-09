@@ -8,6 +8,9 @@ import type {
   EchoPluginManifest,
   PluginFailureRecord,
   PluginListResult,
+  PluginProcessLaunchOptions,
+  PluginProcessLaunchResult,
+  PluginProcessTerminateResult,
   PluginWindowBounds,
   PluginWindowShowOptions,
 } from '../../shared/plugins';
@@ -26,6 +29,12 @@ import {
   registerPluginCommand,
   removePluginContributions,
 } from './registry';
+import {
+  registerPluginAudioSourceResolver,
+  type PluginAudioSourceResolverContribution,
+} from './audioSource';
+import { registerPluginLyricResolver, type PluginLyricResolverContribution } from './lyrics';
+import { createKugouApi, type PluginKugouApi } from './kugou';
 import type { Component } from 'vue';
 
 type PluginModule =
@@ -81,6 +90,10 @@ export interface EchoPluginContext {
   audio: ReturnType<typeof createAudioApi>;
   playlist: ReturnType<typeof createPlaylistApi>;
   lyric: ReturnType<typeof useLyricStore>;
+  lyrics: {
+    registerResolver: (contribution: PluginLyricResolverContribution) => () => void;
+  };
+  kugou: PluginKugouApi;
   settings: ReturnType<typeof useSettingStore>;
   theme: PluginThemeApi;
   nowPlaying: Window['electron']['nowPlaying'];
@@ -100,6 +113,10 @@ export interface EchoPluginContext {
   };
   dialog: NonNullable<Window['electron']['plugins']>['dialog'];
   fs: NonNullable<Window['electron']['plugins']>['fs'];
+  process: {
+    launch: (options: PluginProcessLaunchOptions) => Promise<PluginProcessLaunchResult>;
+    terminate: (pid: number) => Promise<PluginProcessTerminateResult>;
+  };
   ui: ReturnType<typeof createRuntimeUiApi>;
   commands: {
     register: (
@@ -314,7 +331,10 @@ const createThemeApi = (pluginId: string, addDisposable: (dispose: () => void) =
   };
 };
 
-const createPlayerApi = () => {
+const createPlayerApi = (
+  descriptor: EchoPluginDescriptor,
+  addDisposable: (dispose: () => void) => () => void,
+) => {
   const player = usePlayerStore();
   return {
     store: player,
@@ -332,6 +352,18 @@ const createPlayerApi = () => {
     seek: (time: number) => player.seek(time),
     setVolume: (volume: number) => player.setVolume(volume),
     setPlayMode: player.setPlayMode,
+    audioSource: {
+      register: (contribution: PluginAudioSourceResolverContribution) => {
+        if (descriptor.manifest.capabilities?.audioSource !== true) {
+          throw new Error('插件未声明音源解析能力');
+        }
+        return addDisposable(
+          registerPluginAudioSourceResolver(descriptor.id, contribution, (source, error) => {
+            void reportPluginRuntimeError(descriptor.id, error, source);
+          }),
+        );
+      },
+    },
   };
 };
 
@@ -355,6 +387,22 @@ const createAudioApi = (pluginId: string, addDisposable: (dispose: () => void) =
         ) ?? (() => undefined);
       return addDisposable(dispose);
     },
+  },
+});
+
+const createLyricsApi = (
+  descriptor: EchoPluginDescriptor,
+  addDisposable: (dispose: () => void) => () => void,
+) => ({
+  registerResolver: (contribution: PluginLyricResolverContribution) => {
+    if (descriptor.manifest.capabilities?.lyrics !== true) {
+      throw new Error('插件未声明歌词解析能力');
+    }
+    return addDisposable(
+      registerPluginLyricResolver(descriptor.id, contribution, (source, error) => {
+        void reportPluginRuntimeError(descriptor.id, error, source);
+      }),
+    );
   },
 });
 
@@ -395,6 +443,18 @@ const createPluginWindowsApi = (pluginId: string) => {
       getWindowsApi()?.getBounds(pluginId, windowId) ?? unavailable(),
     setIgnoreMouseEvents: (windowId: string, ignore: boolean) =>
       getWindowsApi()?.setIgnoreMouseEvents(pluginId, windowId, ignore) ?? unavailable(),
+  };
+};
+
+const createPluginProcessApi = (pluginId: string) => {
+  const getProcessApi = () => window.electron.plugins?.process;
+  return {
+    launch: (options: PluginProcessLaunchOptions) =>
+      getProcessApi()?.launch(pluginId, serializeForIpc(options) as PluginProcessLaunchOptions) ??
+      Promise.resolve({ ok: false as const, error: '插件进程 API 不可用' }),
+    terminate: (pid: number) =>
+      getProcessApi()?.terminate(pluginId, pid) ??
+      Promise.resolve({ ok: false as const, error: '插件进程 API 不可用' }),
   };
 };
 
@@ -866,10 +926,12 @@ const createPluginContext = (
       settings: settingStore,
       theme: themeStore,
     },
-    player: createPlayerApi(),
+    player: createPlayerApi(descriptor, addDisposable),
     audio: createAudioApi(descriptor.id, addDisposable),
     playlist: createPlaylistApi(),
     lyric: lyricStore,
+    lyrics: createLyricsApi(descriptor, addDisposable),
+    kugou: createKugouApi(descriptor),
     settings: settingStore,
     theme: createThemeApi(descriptor.id, addDisposable),
     nowPlaying: window.electron.nowPlaying,
@@ -901,6 +963,7 @@ const createPluginContext = (
         window.electron.plugins?.fs.getFileUrl(filePath) ??
         Promise.resolve({ ok: false, error: '插件文件 API 不可用' }),
     },
+    process: createPluginProcessApi(descriptor.id),
     ui: createRuntimeUiApi(descriptor.id, host, addDisposable),
     commands: {
       register: (id, handler, options) => {

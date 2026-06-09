@@ -6,6 +6,7 @@ import {
   getSongQualityCandidates,
   resolveEffectiveSongQuality,
 } from '@/utils/song';
+import { resolvePluginAudioSource } from '@/plugins/audioSource';
 import type { AudioQualityValue } from '../../types';
 import type { PlayerState } from './state';
 import {
@@ -122,14 +123,6 @@ export const createResolver = (
     track: Song,
     options?: { forceReload?: boolean },
   ): Promise<ResolvedAudioSource> => {
-    if (!track.hash) {
-      logger.warn(
-        'PlayerResolver',
-        'Resolve audio url skipped because track hash is missing',
-        summarizeSong(track),
-      );
-      return { url: '', quality: null, effect: 'none', loudness: null, timeLength: 0 };
-    }
     const canReuseCurrentSource =
       !!track.audioUrl &&
       !options?.forceReload &&
@@ -161,6 +154,23 @@ export const createResolver = (
     const audioQuality = getEffectiveAudioQuality();
     const audioEffect = normalizeEffect(state.audioEffect);
     const compatibilityMode = settingStore.compatibilityMode ?? true;
+
+    const pluginResolved = await resolvePluginAudioSource({
+      track,
+      quality: audioQuality,
+      effect: audioEffect,
+      forceReload: Boolean(options?.forceReload),
+    });
+    if (pluginResolved) return pluginResolved;
+
+    if (!track.hash) {
+      logger.warn(
+        'PlayerResolver',
+        'Resolve audio url skipped because track hash is missing',
+        summarizeSong(track),
+      );
+      return { url: '', quality: null, effect: 'none', loudness: null, timeLength: 0 };
+    }
 
     if (track.source === 'cloud') {
       let cloudUrl: string | null = null;

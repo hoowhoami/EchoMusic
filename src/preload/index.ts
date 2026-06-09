@@ -52,6 +52,9 @@ import type {
   PluginMarketplaceSourceMutationResult,
   PluginMarketplaceSourcePatch,
   PluginOpenDialogOptions,
+  PluginProcessLaunchOptions,
+  PluginProcessLaunchResult,
+  PluginProcessTerminateResult,
   PluginReportFailureResult,
   PluginSetEnabledResult,
   PluginSetSafeModeResult,
@@ -562,6 +565,20 @@ contextBridge.exposeInMainWorld('electron', {
         ),
       getFileUrl: (filePath: string) =>
         ipcRenderer.invoke('plugins:fs:get-file-url', filePath) as Promise<PluginFileUrlResult>,
+    },
+    process: {
+      launch: (pluginId: string, options: PluginProcessLaunchOptions) =>
+        invokeWithPlainPayload<PluginProcessLaunchResult>(
+          'plugins:process:launch',
+          pluginId,
+          options,
+        ),
+      terminate: (pluginId: string, pid: number) =>
+        ipcRenderer.invoke(
+          'plugins:process:terminate',
+          pluginId,
+          pid,
+        ) as Promise<PluginProcessTerminateResult>,
     },
     storage: {
       get: <T = unknown>(pluginId: string, key: string) =>

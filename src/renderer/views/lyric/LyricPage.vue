@@ -181,6 +181,8 @@ const ensureLyricsForCurrentTrack = () => {
 
   void lyricStore.fetchLyrics(lyricHash, {
     preserveCurrent: Boolean(track.lyric),
+    duration: track.duration ? track.duration * 1000 : undefined,
+    track,
   });
 };
 

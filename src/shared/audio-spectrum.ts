@@ -1,7 +1,7 @@
-export type AudioSpectrumSource = 'mpv' | 'silence' | 'unavailable';
+export type AudioSpectrumSource = 'system-loopback' | 'silence' | 'unavailable';
 export type AudioSpectrumPlaybackState = 'playing' | 'paused' | 'idle';
 export type AudioSpectrumScale = 'linear' | 'log' | 'mel';
-export type AudioSpectrumProvider = 'native-mpv' | 'unavailable';
+export type AudioSpectrumProvider = 'system-loopback' | 'unavailable';
 
 export interface AudioSpectrumOptions {
   fps?: number;

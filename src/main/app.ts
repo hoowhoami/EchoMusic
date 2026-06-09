@@ -74,7 +74,7 @@ if (!gotTheLock) {
     // 注册播放器 IPC（渲染进程启动后立即可用）
     const mpvRef: { current: import('./mpv/controller').MpvController | null } = { current: null };
     registerPlayerIpc(mpvRef);
-    registerAudioSpectrumIpc(mpvRef);
+    registerAudioSpectrumIpc();
 
     // 并行初始化 API 服务器和 mpv 播放引擎
     const [, mpvInstance] = await Promise.all([

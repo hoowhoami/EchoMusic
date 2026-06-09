@@ -1,6 +1,6 @@
 {
   "name": "echo-music",
-  "version": "2.2.6-beta.12",
+  "version": "2.2.6-beta.13",
   "description": "EchoMusic desktop client.",
   "author": {
     "name": "hoowhoami",
@@ -103,6 +103,13 @@
       {
         "from": "native/echo-storage/echo-storage.node",
         "to": "native/echo-storage.node",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "native/echo-spectrum-capture/echo-spectrum-capture.node",
+        "to": "native/echo-spectrum-capture.node",
         "filter": [
           "**/*"
         ]

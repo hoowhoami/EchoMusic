@@ -17,6 +17,9 @@ import type {
   PluginMarketplaceSourceMutationResult,
   PluginMarketplaceSourcePatch,
   PluginOpenDialogOptions,
+  PluginProcessLaunchOptions,
+  PluginProcessLaunchResult,
+  PluginProcessTerminateResult,
   PluginSetEnabledResult,
   PluginReportFailureResult,
   PluginSetSafeModeResult,
@@ -35,6 +38,7 @@ import {
   listPluginMarketplace,
   listPluginMarketplaceSources,
   listPlugins,
+  launchPluginProcess,
   markPluginStartup,
   openPluginDirectory,
   patchPluginMarketplaceSource,
@@ -46,6 +50,7 @@ import {
   setPluginActiveSession,
   setPluginEnabled,
   setPluginSafeMode,
+  terminatePluginProcess,
   uninstallPlugin,
 } from '../plugins';
 import { closePluginWindows } from '../pluginWindows';
@@ -177,6 +182,24 @@ export const registerPluginHandlers = (context: IpcContext) => {
     (_event, filePath: string): PluginFileUrlResult => getPluginFileUrl(filePath),
   );
   ipcMain.handle(
+    'plugins:process:launch',
+    (
+      event,
+      pluginId: string,
+      options: PluginProcessLaunchOptions,
+    ): Promise<PluginProcessLaunchResult> =>
+      launchPluginProcess(
+        pluginId,
+        options,
+        BrowserWindow.fromWebContents(event.sender) ?? context.getMainWindow(),
+      ),
+  );
+  ipcMain.handle(
+    'plugins:process:terminate',
+    (_event, pluginId: string, pid: number): PluginProcessTerminateResult =>
+      terminatePluginProcess(pluginId, pid),
+  );
+  ipcMain.handle(
     'plugins:set-enabled',
     (_event, pluginId: string, enabled: boolean): PluginSetEnabledResult => {
       const result = setPluginEnabled(pluginId, enabled);
@@ -256,6 +279,8 @@ export const unregisterPluginHandlers = () => {
   ipcMain.removeHandler('plugins:dialog:select-files');
   ipcMain.removeHandler('plugins:fs:list-image-files');
   ipcMain.removeHandler('plugins:fs:get-file-url');
+  ipcMain.removeHandler('plugins:process:launch');
+  ipcMain.removeHandler('plugins:process:terminate');
   ipcMain.removeHandler('plugins:set-enabled');
   ipcMain.removeHandler('plugins:set-safe-mode');
   ipcMain.removeHandler('plugins:uninstall');

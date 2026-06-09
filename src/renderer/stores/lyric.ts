@@ -2,6 +2,8 @@ import { defineStore } from 'pinia';
 import { getLyric, searchLyric } from '@/api/music';
 import logger from '@/utils/logger';
 import { DEFAULT_ACCENT, getNormalizedAccent } from '@/utils/color';
+import type { Song } from '@/models/song';
+import { resolvePluginLyric } from '@/plugins/lyrics';
 import { useThemeStore } from './theme';
 
 export interface LyricCharacter {
@@ -840,7 +842,7 @@ export const useLyricStore = defineStore('lyric', {
     },
     async fetchLyrics(
       hash: string,
-      options?: { preserveCurrent?: boolean; duration?: number; force?: boolean },
+      options?: { preserveCurrent?: boolean; duration?: number; force?: boolean; track?: Song },
     ) {
       const normalizedHash = String(hash ?? '').trim();
       if (!normalizedHash) {
@@ -873,13 +875,31 @@ export const useLyricStore = defineStore('lyric', {
       }
 
       try {
+        const manualCandidate = this.manualLyricMap[normalizedHash];
+        if (!isUsableCandidate(manualCandidate)) {
+          const pluginLyric = await resolvePluginLyric({
+            hash: normalizedHash,
+            track: options?.track,
+            duration: Math.max(0, Number(options?.duration) || 0),
+            force: Boolean(options?.force),
+            preserveCurrent: Boolean(options?.preserveCurrent),
+          });
+          if (requestSerial !== this.requestSerial) return;
+          if (pluginLyric) {
+            this.parseLyricContent({ decodeContent: pluginLyric.decodeContent }, normalizedHash, {
+              detailResolved: true,
+            });
+            this.currentCandidateKey = `plugin:${pluginLyric.pluginId}:${pluginLyric.resolverId}`;
+            return;
+          }
+        }
+
         const candidates = await this.fetchLyricCandidates(normalizedHash, {
           duration: options?.duration,
           force: true,
         });
         if (requestSerial !== this.requestSerial) return;
 
-        const manualCandidate = this.manualLyricMap[normalizedHash];
         const target =
           (isUsableCandidate(manualCandidate)
             ? manualCandidate

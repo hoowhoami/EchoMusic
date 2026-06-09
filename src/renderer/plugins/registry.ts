@@ -9,6 +9,8 @@ import {
   type CoverFallbackContext,
   type CoverFallbackResolver,
 } from './coverFallback';
+import { removeAudioSourceResolversByPlugin } from './audioSource';
+import { removeLyricResolversByPlugin } from './lyrics';
 
 export type PluginIcon = string | IconifyIcon | Record<string, unknown>;
 
@@ -164,6 +166,8 @@ export const removePluginContributions = (pluginId: string) => {
     pluginSongContextMenuDisposers.delete(key);
   }
   removeCoverFallbackResolversByPlugin(pluginId);
+  removeAudioSourceResolversByPlugin(pluginId);
+  removeLyricResolversByPlugin(pluginId);
 };
 
 export const createPluginUiApi = (

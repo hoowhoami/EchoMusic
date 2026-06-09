@@ -49,6 +49,9 @@ import type {
   PluginMarketplaceSourceMutationResult,
   PluginMarketplaceSourcePatch,
   PluginOpenDialogOptions,
+  PluginProcessLaunchOptions,
+  PluginProcessLaunchResult,
+  PluginProcessTerminateResult,
   PluginReportFailureResult,
   PluginSetEnabledResult,
   PluginSetSafeModeResult,
@@ -268,6 +271,13 @@ export interface IElectronAPI {
         options?: PluginListImageFilesOptions,
       ) => Promise<PluginListImageFilesResult>;
       getFileUrl: (filePath: string) => Promise<PluginFileUrlResult>;
+    };
+    process: {
+      launch: (
+        pluginId: string,
+        options: PluginProcessLaunchOptions,
+      ) => Promise<PluginProcessLaunchResult>;
+      terminate: (pluginId: string, pid: number) => Promise<PluginProcessTerminateResult>;
     };
     storage: {
       get: <T = unknown>(pluginId: string, key: string) => Promise<T | null>;

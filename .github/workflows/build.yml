@@ -137,6 +137,17 @@ jobs:
             npm run build
           fi
 
+      - name: Build native spectrum capture addon
+        working-directory: native/echo-spectrum-capture
+        shell: bash
+        run: |
+          npm install
+          if [ -n "${{ matrix.rust_target }}" ]; then
+            npx napi build --release --no-const-enum --target ${{ matrix.rust_target }}
+          else
+            npm run build
+          fi
+
       - name: Install server runtime dependencies
         working-directory: server
         shell: bash
@@ -201,6 +212,42 @@ jobs:
             echo "rpath fixup complete"
           }
 
+          # Homebrew 依赖里可能包含无后缀 Mach-O（例如 Python.framework 的 Python）。
+          # 不能只按 *.dylib 签名，否则 macOS 会在 dlopen 依赖链时杀掉进程。
+          sign_macos_macho_dir() {
+            local lib_dir="$1"
+            local signed_count=0
+
+            [ -d "$lib_dir" ] || return 0
+            xattr -cr "$lib_dir" 2>/dev/null || true
+
+            while IFS= read -r -d '' file_path; do
+              if file "$file_path" | grep -q 'Mach-O'; then
+                chmod u+w "$file_path" 2>/dev/null || true
+                codesign --force --sign - --timestamp=none "$file_path"
+                signed_count=$((signed_count + 1))
+              fi
+            done < <(find "$lib_dir" -type f -print0)
+
+            echo "signed $signed_count macOS Mach-O files in $lib_dir"
+          }
+
+          verify_macos_macho_dir() {
+            local lib_dir="$1"
+            local verified_count=0
+
+            [ -d "$lib_dir" ] || return 0
+
+            while IFS= read -r -d '' file_path; do
+              if file "$file_path" | grep -q 'Mach-O'; then
+                codesign --verify --strict --verbose=2 "$file_path"
+                verified_count=$((verified_count + 1))
+              fi
+            done < <(find "$lib_dir" -type f -print0)
+
+            echo "verified $verified_count macOS Mach-O signatures in $lib_dir"
+          }
+
           case "${{ matrix.rust_target }}:${{ matrix.os }}" in
             aarch64-apple-darwin:*)
               # macOS arm64: 使用原生 homebrew 安装 mpv
@@ -212,6 +259,8 @@ jobs:
                 copy_dylibs_recursive "$lib" "build/mpv"
               done
               fix_macos_rpaths "build/mpv"
+              sign_macos_macho_dir "build/mpv"
+              verify_macos_macho_dir "build/mpv"
               echo "libmpv macOS arm64 prepared"
               echo "=== build/mpv directory ==="
               ls -la build/mpv/ | head -30
@@ -238,6 +287,8 @@ jobs:
                 copy_dylibs_recursive "$lib" "build/mpv"
               done
               fix_macos_rpaths "build/mpv"
+              sign_macos_macho_dir "build/mpv"
+              verify_macos_macho_dir "build/mpv"
               echo "libmpv macOS x64 prepared"
               echo "=== build/mpv directory ==="
               ls -la build/mpv/ | head -30
@@ -305,6 +356,35 @@ jobs:
         run: |
           pnpm exec vue-tsc --noEmit && pnpm exec vite build
           pnpm exec electron-builder ${{ matrix.electron_builder_args }} --publish never
+
+      - name: Verify bundled macOS mpv signatures
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -e
+
+          app_path=$(find release -maxdepth 3 -type d -name 'EchoMusic.app' | head -n 1)
+          if [ -z "$app_path" ]; then
+            echo "ERROR: EchoMusic.app not found in release output"
+            find release -maxdepth 3 -print
+            exit 1
+          fi
+
+          mpv_dir="$app_path/Contents/Resources/mpv"
+          if [ ! -d "$mpv_dir" ]; then
+            echo "ERROR: bundled mpv directory not found: $mpv_dir"
+            exit 1
+          fi
+
+          verified_count=0
+          while IFS= read -r -d '' file_path; do
+            if file "$file_path" | grep -q 'Mach-O'; then
+              codesign --verify --strict --verbose=2 "$file_path"
+              verified_count=$((verified_count + 1))
+            fi
+          done < <(find "$mpv_dir" -type f -print0)
+
+          echo "verified $verified_count bundled mpv Mach-O signatures in $mpv_dir"
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4

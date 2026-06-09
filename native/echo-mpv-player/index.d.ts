@@ -9,43 +9,6 @@ export interface AudioDevice {
   description: string
 }
 
-/** 频谱帧 */
-export interface AudioSpectrumFrame {
-  source: string
-  state: string
-  timestamp: number
-  timePos?: number
-  sampleRate: number
-  fftSize: number
-  minFrequency: number
-  maxFrequency: number
-  bins: Array<number>
-  waveform?: Array<number>
-  rms: number
-  peak: number
-}
-
-/** 频谱分析配置 */
-export interface AudioSpectrumOptions {
-  fps?: number
-  binCount?: number
-  fftSize?: number
-  smoothing?: number
-  minFrequency?: number
-  maxFrequency?: number
-  scale?: string
-  includeWaveform?: boolean
-}
-
-/** 频谱分析器状态 */
-export interface AudioSpectrumStatus {
-  available: boolean
-  running: boolean
-  provider: string
-  reason?: string
-  subscriberCount?: number
-}
-
 /** 取消当前淡入淡出 */
 export declare function cancelFade(): void
 
@@ -63,12 +26,6 @@ export declare function getAudioDevices(): Array<AudioDevice>
 
 /** 获取属性值（字符串形式） */
 export declare function getProperty(name: string): string
-
-/** 获取最近一帧频谱快照 */
-export declare function getSpectrumSnapshot(): AudioSpectrumFrame | null
-
-/** 获取频谱分析器状态 */
-export declare function getSpectrumStatus(): AudioSpectrumStatus
 
 /** 获取当前状态快照 */
 export declare function getState(): PlayerState
@@ -168,14 +125,8 @@ export declare function setSpeed(speed: number): void
 /** 设置音量（0-100） */
 export declare function setVolume(volume: number): void
 
-/** 启动频谱分析器 */
-export declare function startSpectrum(options: AudioSpectrumOptions): AudioSpectrumStatus
-
 /** 停止 */
 export declare function stop(): void
-
-/** 停止频谱分析器 */
-export declare function stopSpectrum(): AudioSpectrumStatus
 
 /** 音轨信息 */
 export interface TrackInfo {
