@@ -1,4 +1,5 @@
-import { app, shell } from 'electron';
+import { app, dialog, shell, type BrowserWindow } from 'electron';
+import { spawn, type ChildProcess } from 'child_process';
 import {
   cpSync,
   existsSync,
@@ -6,6 +7,7 @@ import {
   mkdtempSync,
   readdirSync,
   readFileSync,
+  realpathSync,
   rmSync,
   statSync,
   writeFileSync,
@@ -43,6 +45,9 @@ import type {
   PluginMarketplaceSourceInput,
   PluginMarketplaceSourceMutationResult,
   PluginMarketplaceSourcePatch,
+  PluginProcessLaunchOptions,
+  PluginProcessLaunchResult,
+  PluginProcessTerminateResult,
   PluginWindowDescriptor,
   PluginWindowManifest,
   PluginReportFailureResult,
@@ -61,6 +66,7 @@ const PLUGIN_ACTIVE_SESSION_KEY = 'plugins:active-session';
 const PLUGIN_INSTALL_TIMES_KEY = 'plugins:install-times';
 const PLUGIN_MARKETPLACE_SOURCES_KEY = 'plugins:marketplace:sources';
 const PLUGIN_MARKETPLACE_CACHE_KEY = 'plugins:marketplace:cache';
+const PLUGIN_PROCESS_CONSENTS_KEY = 'plugins:process-consents';
 const PLUGIN_MANIFEST_FILE = 'manifest.json';
 const PLUGIN_MARKETPLACE_INDEX_FILE = 'echo-plugins.json';
 const DEFAULT_PLUGIN_MARKETPLACE_SOURCE_URL = 'https://github.com/hoowhoami/EchoMusicPlugins';
@@ -81,6 +87,19 @@ const PLUGIN_WINDOW_MIN_HEIGHT = 48;
 const PLUGIN_WINDOW_MAX_WIDTH = 1400;
 const PLUGIN_WINDOW_MAX_HEIGHT = 900;
 const BARE_SEMVER_PATTERN = /^v?\d+(?:\.\d+){0,2}(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
+const MAX_PLUGIN_PROCESS_ARGS = 64;
+const MAX_PLUGIN_PROCESS_ARG_LENGTH = 8192;
+const MAX_PLUGIN_PROCESS_ENV_ENTRIES = 64;
+const MAX_PLUGIN_PROCESS_ENV_VALUE_LENGTH = 8192;
+const WINDOWS_EXECUTABLE_EXTENSIONS = new Set(['.exe', '.com']);
+const BLOCKED_PLUGIN_PROCESS_ENV_KEYS = new Set([
+  'ECHOMUSIC_PLUGIN_DIR',
+  'ECHOMUSIC_PLUGIN_ID',
+  'ELECTRON_RUN_AS_NODE',
+  'NODE_OPTIONS',
+  'DYLD_INSERT_LIBRARIES',
+  'LD_PRELOAD',
+]);
 
 type PluginEnabledState = Record<string, boolean>;
 type PluginRuntimeSession = {
@@ -113,6 +132,7 @@ type PluginMarketplaceIndexEntry = {
   packagePath?: string;
   checksum?: string;
   sha256?: string;
+  capabilities?: EchoPluginManifest['capabilities'];
   requires?: EchoPluginManifest['requires'];
 };
 type PluginMarketplaceCatalogPlugin = Omit<
@@ -122,6 +142,20 @@ type PluginMarketplaceCatalogPlugin = Omit<
 type PluginMarketplaceCache = {
   plugins: PluginMarketplaceCatalogPlugin[];
   fetchedAt: number;
+};
+type PluginProcessConsent = {
+  pluginId: string;
+  pluginVersion: string;
+  executable: string;
+  executableHash: string;
+  grantedAt: number;
+};
+type PluginProcessConsents = Record<string, PluginProcessConsent>;
+type PluginProcessRecord = {
+  pluginId: string;
+  executable: string;
+  child: ChildProcess;
+  startedAt: number;
 };
 
 export const normalizePluginId = (value: unknown) =>
@@ -149,6 +183,7 @@ const compareInstalledPlugins = (
 };
 
 const pluginProcessSessionId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+const pluginProcesses = new Map<number, PluginProcessRecord>();
 
 const getPluginRoot = () => join(app.getPath('userData'), 'plugins');
 
@@ -353,6 +388,7 @@ export const setPluginSafeMode = (enabled: boolean): PluginSetSafeModeResult => 
     if (enabled) {
       getKvStorage().delete(PLUGIN_STARTUP_SESSION_KEY);
       getKvStorage().delete(PLUGIN_ACTIVE_SESSION_KEY);
+      terminatePluginProcesses();
     }
     return { ok: true, safeMode: Boolean(enabled) };
   } catch (error) {
@@ -606,6 +642,21 @@ const validateEchoMusicVersionRequirement = (manifest: EchoPluginManifest) => {
   return normalizeEchoMusicVersionRequirement(requirement).error;
 };
 
+const validateManifestCapabilities = (manifest: EchoPluginManifest) => {
+  const capabilities = manifest.capabilities;
+  if (capabilities === undefined) return '';
+  if (!capabilities || typeof capabilities !== 'object' || Array.isArray(capabilities)) {
+    return 'manifest.capabilities 必须是对象';
+  }
+  if (capabilities.audioSpectrum !== undefined && typeof capabilities.audioSpectrum !== 'boolean') {
+    return 'manifest.capabilities.audioSpectrum 必须是布尔值';
+  }
+  if (capabilities.process !== undefined && typeof capabilities.process !== 'boolean') {
+    return 'manifest.capabilities.process 必须是布尔值';
+  }
+  return '';
+};
+
 const getEchoMusicCompatibility = (manifest: EchoPluginManifest): EchoPluginCompatibility => {
   const requirement = String(manifest.requires?.echoMusicVersion ?? '').trim();
   const hostVersion = getHostVersion();
@@ -645,6 +696,8 @@ const validateManifest = (manifest: EchoPluginManifest, manifestError: string) =
   if (!normalizePluginId(manifest.id)) return 'manifest.id 不能为空';
   if (!String(manifest.name ?? '').trim()) return 'manifest.name 不能为空';
   if (!String(manifest.version ?? '').trim()) return 'manifest.version 不能为空';
+  const capabilitiesError = validateManifestCapabilities(manifest);
+  if (capabilitiesError) return capabilitiesError;
   const versionRequirementError = validateEchoMusicVersionRequirement(manifest);
   if (versionRequirementError) return versionRequirementError;
   return '';
@@ -1015,6 +1068,10 @@ const normalizeMarketplaceIndexPlugins = (
       description: String(rawEntry.description || ''),
       author: String(rawEntry.author || ''),
       icon: String(rawEntry.icon || ''),
+      capabilities:
+        rawEntry.capabilities && typeof rawEntry.capabilities === 'object'
+          ? rawEntry.capabilities
+          : undefined,
       requires: rawEntry.requires,
     };
     const repo = String(rawEntry.repo || '').trim() || source.url;
@@ -1400,6 +1457,7 @@ const installExtractedPluginDirectory = (
     const nextState = getEnabledState();
     const wasEnabled = Boolean(nextState[pluginId]);
     if (enableAfterInstall) nextState[pluginId] = true;
+    terminatePluginProcesses(pluginId);
     rmSync(targetDirectory, { recursive: true, force: true });
     cpSync(stagingDirectory, targetDirectory, { recursive: true });
     if (!existingPlugin) setPluginInstalledAt(pluginId, Date.now());
@@ -1470,6 +1528,401 @@ export const installPluginFromMarketplace = async (
   }
 };
 
+const toPortableRelativePath = (parent: string, target: string) =>
+  relative(parent, target).replace(/\\/g, '/');
+
+const hashFileSha256 = (filePath: string) =>
+  createHash('sha256').update(readFileSync(filePath)).digest('hex');
+
+const normalizePluginProcessArgs = (args: unknown) => {
+  if (args === undefined || args === null) return [];
+  if (!Array.isArray(args)) throw new Error('进程参数必须是字符串数组');
+  if (args.length > MAX_PLUGIN_PROCESS_ARGS) {
+    throw new Error(`进程参数不能超过 ${MAX_PLUGIN_PROCESS_ARGS} 个`);
+  }
+
+  return args.map((arg) => {
+    if (typeof arg !== 'string') throw new Error('进程参数必须是字符串数组');
+    if (arg.includes('\0')) throw new Error('进程参数不能包含空字符');
+    if (arg.length > MAX_PLUGIN_PROCESS_ARG_LENGTH) {
+      throw new Error(`单个进程参数不能超过 ${MAX_PLUGIN_PROCESS_ARG_LENGTH} 个字符`);
+    }
+    return arg;
+  });
+};
+
+const isBlockedPluginProcessEnvKey = (key: string) =>
+  BLOCKED_PLUGIN_PROCESS_ENV_KEYS.has(key.toUpperCase());
+
+const buildPluginProcessEnv = (
+  plugin: EchoPluginDescriptor,
+  pluginRoot: string,
+  customEnv: unknown,
+) => {
+  const env = Object.entries(process.env).reduce<Record<string, string>>(
+    (nextEnv, [key, value]) => {
+      if (value !== undefined && !isBlockedPluginProcessEnvKey(key)) nextEnv[key] = value;
+      return nextEnv;
+    },
+    {},
+  );
+  env.ECHOMUSIC_PLUGIN_ID = plugin.id;
+  env.ECHOMUSIC_PLUGIN_DIR = pluginRoot;
+
+  if (customEnv === undefined || customEnv === null) return env;
+  if (typeof customEnv !== 'object' || Array.isArray(customEnv)) {
+    throw new Error('进程环境变量必须是对象');
+  }
+
+  const entries = Object.entries(customEnv as Record<string, unknown>);
+  if (entries.length > MAX_PLUGIN_PROCESS_ENV_ENTRIES) {
+    throw new Error(`进程环境变量不能超过 ${MAX_PLUGIN_PROCESS_ENV_ENTRIES} 项`);
+  }
+
+  for (const [rawKey, rawValue] of entries) {
+    const key = String(rawKey || '').trim();
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) throw new Error(`环境变量名非法: ${rawKey}`);
+    if (isBlockedPluginProcessEnvKey(key)) continue;
+    if (rawValue === undefined || rawValue === null) {
+      delete env[key];
+      continue;
+    }
+
+    const value = String(rawValue);
+    if (value.includes('\0')) throw new Error(`环境变量 ${key} 不能包含空字符`);
+    if (value.length > MAX_PLUGIN_PROCESS_ENV_VALUE_LENGTH) {
+      throw new Error(`环境变量 ${key} 不能超过 ${MAX_PLUGIN_PROCESS_ENV_VALUE_LENGTH} 个字符`);
+    }
+    env[key] = value;
+  }
+
+  return env;
+};
+
+const resolvePluginProcessPath = (
+  plugin: EchoPluginDescriptor,
+  value: unknown,
+  options: { kind: 'file' | 'directory'; label: string },
+) => {
+  const input = String(value ?? '').trim();
+  if (!input) throw new Error(`${options.label}不能为空`);
+  if (input.includes('\0')) throw new Error(`${options.label}不能包含空字符`);
+
+  const resolvedPath = resolvePluginFile(plugin.directory, input);
+  if (!resolvedPath) throw new Error(`${options.label}必须位于插件目录内`);
+  if (!existsSync(resolvedPath)) throw new Error(`${options.label}不存在`);
+
+  const pluginRoot = realpathSync(plugin.directory);
+  const realPath = realpathSync(resolvedPath);
+  if (!isPathInside(pluginRoot, realPath)) throw new Error(`${options.label}必须位于插件目录内`);
+
+  const stats = statSync(realPath);
+  if (options.kind === 'file' && !stats.isFile()) throw new Error(`${options.label}必须是文件`);
+  if (options.kind === 'directory' && !stats.isDirectory()) {
+    throw new Error(`${options.label}必须是文件夹`);
+  }
+
+  return { pluginRoot, realPath, stats };
+};
+
+const resolvePluginProcessLaunch = (plugin: EchoPluginDescriptor, options: unknown) => {
+  if (!options || typeof options !== 'object' || Array.isArray(options)) {
+    throw new Error('进程启动参数必须是对象');
+  }
+
+  const launchOptions = options as PluginProcessLaunchOptions;
+  const executable = resolvePluginProcessPath(plugin, launchOptions.executable, {
+    kind: 'file',
+    label: '可执行程序路径',
+  });
+  const executableExt = extname(executable.realPath).toLowerCase();
+
+  if (process.platform === 'win32' && !WINDOWS_EXECUTABLE_EXTENSIONS.has(executableExt)) {
+    throw new Error('Windows 插件进程只支持 .exe 或 .com 可执行文件');
+  }
+  if (process.platform !== 'win32' && (executable.stats.mode & 0o111) === 0) {
+    throw new Error('可执行程序缺少执行权限');
+  }
+
+  const cwd =
+    launchOptions.cwd === undefined || launchOptions.cwd === null || launchOptions.cwd === ''
+      ? { pluginRoot: executable.pluginRoot, realPath: executable.pluginRoot }
+      : resolvePluginProcessPath(plugin, launchOptions.cwd, {
+          kind: 'directory',
+          label: '工作目录',
+        });
+
+  if (!isPathInside(executable.pluginRoot, cwd.realPath)) {
+    throw new Error('工作目录必须位于插件目录内');
+  }
+
+  const args = normalizePluginProcessArgs(launchOptions.args);
+  const env = buildPluginProcessEnv(plugin, executable.pluginRoot, launchOptions.env);
+  const executableRelativePath = toPortableRelativePath(executable.pluginRoot, executable.realPath);
+
+  return {
+    executablePath: executable.realPath,
+    executableRelativePath,
+    executableHash: hashFileSha256(executable.realPath),
+    cwd: cwd.realPath,
+    args,
+    env,
+  };
+};
+
+const getPluginProcessConsents = (): PluginProcessConsents => {
+  const saved = getKvStorage().get<PluginProcessConsents>(PLUGIN_PROCESS_CONSENTS_KEY);
+  if (!saved || typeof saved !== 'object' || Array.isArray(saved)) return {};
+
+  return Object.entries(saved).reduce<PluginProcessConsents>((consents, [key, consent]) => {
+    if (!consent || typeof consent !== 'object') return consents;
+    const normalizedPluginId = normalizePluginId(consent.pluginId);
+    const executable = String(consent.executable || '').trim();
+    const executableHash = String(consent.executableHash || '').trim();
+    if (!normalizedPluginId || !executable || !/^[a-f0-9]{64}$/i.test(executableHash)) {
+      return consents;
+    }
+    consents[key] = {
+      pluginId: normalizedPluginId,
+      pluginVersion: String(consent.pluginVersion || ''),
+      executable,
+      executableHash: executableHash.toLowerCase(),
+      grantedAt: Number(consent.grantedAt) || Date.now(),
+    };
+    return consents;
+  }, {});
+};
+
+const setPluginProcessConsents = (consents: PluginProcessConsents) => {
+  getKvStorage().set(PLUGIN_PROCESS_CONSENTS_KEY, consents);
+};
+
+const getPluginProcessConsentKey = (pluginId: string, executable: string) =>
+  `${normalizePluginId(pluginId)}:${executable}`;
+
+const hasPluginProcessConsent = (
+  plugin: EchoPluginDescriptor,
+  executable: string,
+  executableHash: string,
+) => {
+  const consent = getPluginProcessConsents()[getPluginProcessConsentKey(plugin.id, executable)];
+  return (
+    consent?.pluginId === plugin.id &&
+    consent.pluginVersion === plugin.version &&
+    consent.executable === executable &&
+    consent.executableHash === executableHash
+  );
+};
+
+const rememberPluginProcessConsent = (
+  plugin: EchoPluginDescriptor,
+  executable: string,
+  executableHash: string,
+) => {
+  const consents = getPluginProcessConsents();
+  consents[getPluginProcessConsentKey(plugin.id, executable)] = {
+    pluginId: plugin.id,
+    pluginVersion: plugin.version,
+    executable,
+    executableHash,
+    grantedAt: Date.now(),
+  };
+  setPluginProcessConsents(consents);
+};
+
+const clearPluginProcessConsents = (pluginId: string) => {
+  const normalizedPluginId = normalizePluginId(pluginId);
+  if (!normalizedPluginId) return;
+  const consents = getPluginProcessConsents();
+  let changed = false;
+  for (const [key, consent] of Object.entries(consents)) {
+    if (consent.pluginId !== normalizedPluginId) continue;
+    delete consents[key];
+    changed = true;
+  }
+  if (changed) setPluginProcessConsents(consents);
+};
+
+const confirmPluginProcessLaunch = async (
+  owner: BrowserWindow | null | undefined,
+  plugin: EchoPluginDescriptor,
+  executable: string,
+  executableHash: string,
+) => {
+  if (hasPluginProcessConsent(plugin, executable, executableHash)) return true;
+
+  const options = {
+    type: 'warning' as const,
+    title: '允许插件启动本地程序？',
+    message: `${plugin.name} 想启动插件目录内的可执行程序`,
+    detail: [
+      `插件: ${plugin.name} (${plugin.id})`,
+      `程序: ${executable}`,
+      '',
+      '该文件位于插件目录内，但启动后的程序将拥有与你当前账户相同的系统权限，可能访问本机文件、网络和系统资源。仅在你信任该插件来源时允许。',
+      '插件更新、版本变化或程序文件变化后会重新请求确认。',
+    ].join('\n'),
+    buttons: ['允许并记住', '取消'],
+    defaultId: 1,
+    cancelId: 1,
+    noLink: true,
+    normalizeAccessKeys: true,
+  };
+  const result =
+    owner && !owner.isDestroyed()
+      ? await dialog.showMessageBox(owner, options)
+      : await dialog.showMessageBox(options);
+
+  if (result.response !== 0) return false;
+  rememberPluginProcessConsent(plugin, executable, executableHash);
+  return true;
+};
+
+export const terminatePluginProcess = (
+  pluginId: string,
+  pid: number,
+): PluginProcessTerminateResult => {
+  const normalizedPluginId = normalizePluginId(pluginId);
+  const normalizedPid = Math.trunc(Number(pid));
+  if (!normalizedPluginId || !Number.isFinite(normalizedPid) || normalizedPid <= 0) {
+    return { ok: false, error: '进程 ID 非法' };
+  }
+
+  const record = pluginProcesses.get(normalizedPid);
+  if (!record || record.pluginId !== normalizedPluginId) {
+    return { ok: false, error: '插件进程不存在' };
+  }
+
+  try {
+    const terminated = record.child.kill();
+    if (terminated) pluginProcesses.delete(normalizedPid);
+    return { ok: true, pid: normalizedPid, terminated };
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : '插件进程终止失败',
+    };
+  }
+};
+
+export const terminatePluginProcesses = (pluginId?: string) => {
+  const normalizedPluginId = pluginId ? normalizePluginId(pluginId) : '';
+  for (const [pid, record] of Array.from(pluginProcesses.entries())) {
+    if (normalizedPluginId && record.pluginId !== normalizedPluginId) continue;
+    try {
+      record.child.kill();
+    } catch (error) {
+      log.warn('[Plugin] Failed to terminate plugin process', {
+        pluginId: record.pluginId,
+        pid,
+        error,
+      });
+    } finally {
+      pluginProcesses.delete(pid);
+    }
+  }
+};
+
+app.once('before-quit', () => terminatePluginProcesses());
+
+export const launchPluginProcess = async (
+  pluginId: string,
+  options: PluginProcessLaunchOptions,
+  owner?: BrowserWindow | null,
+): Promise<PluginProcessLaunchResult> => {
+  if (getPluginSafeMode()) return { ok: false, error: '插件安全模式已开启' };
+
+  const plugin = findPlugin(pluginId);
+  if (!plugin) return { ok: false, error: '插件不存在' };
+  if (plugin.invalid) return { ok: false, error: plugin.error || '插件无效' };
+
+  const compatibilityError = getPluginCompatibilityError(plugin);
+  if (compatibilityError) return { ok: false, error: compatibilityError };
+  if (!plugin.enabled) return { ok: false, error: '插件未启用' };
+  if (plugin.manifest.capabilities?.process !== true) {
+    return { ok: false, error: '插件未声明本地进程能力' };
+  }
+
+  try {
+    const launch = resolvePluginProcessLaunch(plugin, options);
+    const allowed = await confirmPluginProcessLaunch(
+      owner,
+      plugin,
+      launch.executableRelativePath,
+      launch.executableHash,
+    );
+    if (!allowed) return { ok: false, error: '用户已取消启动本地程序', canceled: true };
+
+    const child = spawn(launch.executablePath, launch.args, {
+      cwd: launch.cwd,
+      env: launch.env,
+      shell: false,
+      stdio: 'ignore',
+      windowsHide: true,
+    });
+    const startedAt = Date.now();
+    let trackedPid = 0;
+    let processFinished = false;
+    const forgetProcess = () => {
+      processFinished = true;
+      if (trackedPid > 0) pluginProcesses.delete(trackedPid);
+    };
+    child.once('exit', forgetProcess);
+    child.once('error', (error) => {
+      if (trackedPid > 0) {
+        log.warn('[Plugin] Plugin process failed', {
+          pluginId: plugin.id,
+          executable: launch.executableRelativePath,
+          pid: trackedPid,
+          error,
+        });
+      }
+      forgetProcess();
+    });
+
+    await new Promise<void>((resolveSpawn, rejectSpawn) => {
+      const onSpawn = () => {
+        child.removeListener('error', onError);
+        resolveSpawn();
+      };
+      const onError = (error: Error) => {
+        child.removeListener('spawn', onSpawn);
+        rejectSpawn(error);
+      };
+      child.once('spawn', onSpawn);
+      child.once('error', onError);
+    });
+
+    const pid = Number(child.pid);
+    if (!Number.isFinite(pid) || pid <= 0) {
+      child.kill();
+      return { ok: false, error: '插件进程启动失败' };
+    }
+
+    trackedPid = pid;
+    pluginProcesses.set(pid, {
+      pluginId: plugin.id,
+      executable: launch.executableRelativePath,
+      child,
+      startedAt,
+    });
+    if (processFinished) pluginProcesses.delete(pid);
+
+    return {
+      ok: true,
+      pid,
+      executable: launch.executableRelativePath,
+      cwd: launch.cwd,
+      startedAt,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : '插件进程启动失败',
+    };
+  }
+};
+
 export const getPluginWindowDescriptor = (pluginId: string, windowId: string) => {
   const plugin = findPlugin(pluginId);
   if (!plugin || plugin.invalid || !plugin.compatibility.compatible || !plugin.enabled) return null;
@@ -1489,6 +1942,7 @@ export const setPluginEnabled = (pluginId: string, enabled: boolean): PluginSetE
   const nextState = getEnabledState();
   nextState[plugin.id] = Boolean(enabled);
   setEnabledState(nextState);
+  if (!enabled) terminatePluginProcesses(plugin.id);
   const refreshed = findPlugin(plugin.id);
   return refreshed ? { ok: true, plugin: refreshed } : { ok: false, error: '插件刷新失败' };
 };
@@ -1663,6 +2117,8 @@ export const uninstallPlugin = (pluginId: string): PluginUninstallResult => {
     }
     clearPluginStorage(plugin.id);
     removePluginInstalledAt(plugin.id);
+    clearPluginProcessConsents(plugin.id);
+    terminatePluginProcesses(plugin.id);
     rmSync(directory, { recursive: true, force: true });
     return { ok: true, pluginId: plugin.id };
   } catch (error) {

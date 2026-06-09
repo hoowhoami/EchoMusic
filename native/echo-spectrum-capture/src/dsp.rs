@@ -137,6 +137,7 @@ pub struct SpectrumAnalyzer {
     sample_rate: u32,
     fft: Arc<dyn Fft<f32>>,
     window: Vec<f32>,
+    window_sum: f32,
     fft_buffer: Vec<Complex<f32>>,
     scratch: Vec<f32>,
     previous_bins: Vec<f32>,
@@ -147,6 +148,7 @@ impl SpectrumAnalyzer {
         let mut planner = FftPlanner::<f32>::new();
         let fft = planner.plan_fft_forward(options.fft_size);
         let window = hann_window(options.fft_size);
+        let window_sum = window.iter().sum::<f32>().max(1.0);
         let fft_buffer = vec![Complex::new(0.0, 0.0); options.fft_size];
         let scratch = vec![0.0; options.fft_size];
         let previous_bins = vec![0.0; options.bin_count];
@@ -156,6 +158,7 @@ impl SpectrumAnalyzer {
             sample_rate,
             fft,
             window,
+            window_sum,
             fft_buffer,
             scratch,
             previous_bins,
@@ -229,14 +232,14 @@ impl SpectrumAnalyzer {
             let mut energy = 0.0f32;
             let mut count = 0usize;
             for index in start_index..end_index {
-                let mag = self.fft_buffer[index].norm() * (2.0 / self.options.fft_size as f32);
+                let mag = self.fft_buffer[index].norm() * (2.0 / self.window_sum);
                 energy += mag * mag;
                 count += 1;
             }
 
             let magnitude = (energy / count.max(1) as f32).sqrt();
             let db = 20.0 * magnitude.max(1.0e-9).log10();
-            let normalized = ((db + 80.0) / 80.0).clamp(0.0, 1.0).powf(1.35);
+            let normalized = ((db + 80.0) / 80.0).clamp(0.0, 1.0);
             let smoothed = self.previous_bins[band] * self.options.smoothing
                 + normalized * (1.0 - self.options.smoothing);
             self.previous_bins[band] = smoothed;

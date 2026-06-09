@@ -57,40 +57,52 @@ const getCapture = () => {
 };
 
 const getMergedOptions = (): AudioSpectrumOptions => {
-  let fps = 30;
-  let binCount = 128;
-  let fftSize = 2048;
-  let smoothing = 0.65;
-  let minFrequency = 20;
-  let maxFrequency = 20000;
+  let fps: number | undefined;
+  let binCount: number | undefined;
+  let fftSize: number | undefined;
+  let smoothing: number | undefined;
+  let minFrequency: number | undefined;
+  let maxFrequency: number | undefined;
   let scale: AudioSpectrumOptions['scale'] = 'log';
   let includeWaveform = false;
 
   for (const subscription of subscriptions.values()) {
     const options = subscription.options || {};
-    fps = Math.max(fps, clampNumber(options.fps, 1, 60) ?? fps);
-    binCount = Math.max(binCount, clampNumber(options.binCount, 8, 512) ?? binCount);
-    fftSize = Math.max(fftSize, clampNumber(options.fftSize, 512, 8192) ?? fftSize);
-    smoothing = Math.min(smoothing, clampNumber(options.smoothing, 0, 0.95) ?? smoothing);
-    minFrequency = Math.min(
-      minFrequency,
-      clampNumber(options.minFrequency, 1, 20000) ?? minFrequency,
-    );
-    maxFrequency = Math.max(
-      maxFrequency,
-      clampNumber(options.maxFrequency, minFrequency + 1, 24000) ?? maxFrequency,
-    );
+    const nextFps = clampNumber(options.fps, 1, 60);
+    const nextBinCount = clampNumber(options.binCount, 8, 512);
+    const nextFftSize = clampNumber(options.fftSize, 512, 8192);
+    const nextSmoothing = clampNumber(options.smoothing, 0, 0.95);
+    const nextMinFrequency = clampNumber(options.minFrequency, 1, 20000);
+    const nextMaxFrequency = clampNumber(options.maxFrequency, 2, 24000);
+
+    if (nextFps !== undefined) fps = Math.max(fps ?? nextFps, nextFps);
+    if (nextBinCount !== undefined) {
+      binCount = Math.max(binCount ?? nextBinCount, nextBinCount);
+    }
+    if (nextFftSize !== undefined) fftSize = Math.max(fftSize ?? nextFftSize, nextFftSize);
+    if (nextSmoothing !== undefined) {
+      smoothing = Math.min(smoothing ?? nextSmoothing, nextSmoothing);
+    }
+    if (nextMinFrequency !== undefined) {
+      minFrequency = Math.min(minFrequency ?? nextMinFrequency, nextMinFrequency);
+    }
+    if (nextMaxFrequency !== undefined) {
+      maxFrequency = Math.max(maxFrequency ?? nextMaxFrequency, nextMaxFrequency);
+    }
     if (options.scale) scale = options.scale;
     includeWaveform = includeWaveform || Boolean(options.includeWaveform);
   }
 
+  const resolvedMinFrequency = minFrequency ?? 20;
+  const resolvedMaxFrequency = Math.max(maxFrequency ?? 20000, resolvedMinFrequency + 1);
+
   return {
-    fps,
-    binCount,
-    fftSize,
-    smoothing,
-    minFrequency,
-    maxFrequency,
+    fps: fps ?? 30,
+    binCount: binCount ?? 128,
+    fftSize: fftSize ?? 2048,
+    smoothing: smoothing ?? 0.65,
+    minFrequency: resolvedMinFrequency,
+    maxFrequency: resolvedMaxFrequency,
     scale,
     includeWaveform,
   };

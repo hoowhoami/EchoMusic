@@ -44,7 +44,7 @@ pub fn start_loopback(ring: Arc<Mutex<SampleRing>>) -> Result<CaptureBackend, St
     let stream_config = config.into();
     let last_error = Arc::new(Mutex::new(None));
     let error_slot = last_error.clone();
-    let err_fn = move |err| {
+    let err_fn = move |err: cpal::StreamError| {
         if let Ok(mut guard) = error_slot.try_lock() {
             *guard = Some(err.to_string());
         }
@@ -126,16 +126,15 @@ fn select_loopback_device(host: &cpal::Host) -> Result<(Device, SupportedStreamC
 }
 
 #[cfg(any(target_os = "windows", target_os = "linux"))]
-fn build_stream<T, E>(
+fn build_stream<T>(
     device: &Device,
     config: &cpal::StreamConfig,
     channels: u16,
     ring: Arc<Mutex<SampleRing>>,
-    err_fn: E,
+    err_fn: impl FnMut(cpal::StreamError) + Send + 'static,
 ) -> Result<cpal::Stream, cpal::BuildStreamError>
 where
     T: cpal::SizedSample + ToF32Sample,
-    E: FnMut(cpal::StreamError) + Send + 'static,
 {
     let channel_count = channels as usize;
     device.build_input_stream(

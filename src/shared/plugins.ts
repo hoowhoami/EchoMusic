@@ -140,6 +140,38 @@ export type PluginFileUrlResult =
       error: string;
     };
 
+export interface PluginProcessLaunchOptions {
+  executable: string;
+  args?: string[];
+  cwd?: string;
+  env?: Record<string, string | number | boolean | null | undefined>;
+}
+
+export type PluginProcessLaunchResult =
+  | {
+      ok: true;
+      pid: number;
+      executable: string;
+      cwd: string;
+      startedAt: number;
+    }
+  | {
+      ok: false;
+      error: string;
+      canceled?: boolean;
+    };
+
+export type PluginProcessTerminateResult =
+  | {
+      ok: true;
+      pid: number;
+      terminated: boolean;
+    }
+  | {
+      ok: false;
+      error: string;
+    };
+
 export interface EchoPluginManifest {
   id: string;
   name: string;
@@ -155,6 +187,7 @@ export interface EchoPluginManifest {
   };
   capabilities?: {
     audioSpectrum?: boolean;
+    process?: boolean;
   };
   contributes?: {
     windows?: PluginWindowManifest[];

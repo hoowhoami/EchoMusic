@@ -8,6 +8,9 @@ import type {
   EchoPluginManifest,
   PluginFailureRecord,
   PluginListResult,
+  PluginProcessLaunchOptions,
+  PluginProcessLaunchResult,
+  PluginProcessTerminateResult,
   PluginWindowBounds,
   PluginWindowShowOptions,
 } from '../../shared/plugins';
@@ -100,6 +103,10 @@ export interface EchoPluginContext {
   };
   dialog: NonNullable<Window['electron']['plugins']>['dialog'];
   fs: NonNullable<Window['electron']['plugins']>['fs'];
+  process: {
+    launch: (options: PluginProcessLaunchOptions) => Promise<PluginProcessLaunchResult>;
+    terminate: (pid: number) => Promise<PluginProcessTerminateResult>;
+  };
   ui: ReturnType<typeof createRuntimeUiApi>;
   commands: {
     register: (
@@ -395,6 +402,18 @@ const createPluginWindowsApi = (pluginId: string) => {
       getWindowsApi()?.getBounds(pluginId, windowId) ?? unavailable(),
     setIgnoreMouseEvents: (windowId: string, ignore: boolean) =>
       getWindowsApi()?.setIgnoreMouseEvents(pluginId, windowId, ignore) ?? unavailable(),
+  };
+};
+
+const createPluginProcessApi = (pluginId: string) => {
+  const getProcessApi = () => window.electron.plugins?.process;
+  return {
+    launch: (options: PluginProcessLaunchOptions) =>
+      getProcessApi()?.launch(pluginId, serializeForIpc(options) as PluginProcessLaunchOptions) ??
+      Promise.resolve({ ok: false as const, error: '插件进程 API 不可用' }),
+    terminate: (pid: number) =>
+      getProcessApi()?.terminate(pluginId, pid) ??
+      Promise.resolve({ ok: false as const, error: '插件进程 API 不可用' }),
   };
 };
 
@@ -901,6 +920,7 @@ const createPluginContext = (
         window.electron.plugins?.fs.getFileUrl(filePath) ??
         Promise.resolve({ ok: false, error: '插件文件 API 不可用' }),
     },
+    process: createPluginProcessApi(descriptor.id),
     ui: createRuntimeUiApi(descriptor.id, host, addDisposable),
     commands: {
       register: (id, handler, options) => {
