@@ -141,15 +141,7 @@ jobs:
           Copy-Item "$ffmpegRoot\bin\*.dll" "build\ffmpeg-dlls\"
 
       - name: Install root dependencies
-        run: |
-          pnpm install --frozen-lockfile
-          echo "=== Installed packages check ==="
-          which pnpm
-          pnpm --version
-          ls -la node_modules/.bin/ | head -20
-          test -f node_modules/.bin/vue-tsc && echo "✓ vue-tsc found" || echo "✗ vue-tsc NOT found"
-          test -f node_modules/.bin/vite && echo "✓ vite found" || echo "✗ vite NOT found"
-          test -f node_modules/.bin/electron-builder && echo "✓ electron-builder found" || echo "✗ electron-builder NOT found"
+        run: pnpm install --frozen-lockfile
 
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable
