@@ -359,12 +359,15 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
-          MESSAGE="<b>EchoMusic ${GITHUB_REF_NAME} 已发布</b>
+          MESSAGE=$(cat <<EOF
+          <b>EchoMusic ${GITHUB_REF_NAME} 已发布</b>
 
-${CHANGELOG}
+          ${CHANGELOG}
 
-<b>下载</b>
-${ARTIFACT_LINKS}"
+          <b>下载</b>
+          ${ARTIFACT_LINKS}
+          EOF
+          )
 
           curl -sS -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
             -d "chat_id=${TELEGRAM_CHAT_ID}" \
