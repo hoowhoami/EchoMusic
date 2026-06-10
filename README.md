@@ -102,8 +102,10 @@
 - [Node.js](https://nodejs.org/) 18+
 - [pnpm](https://pnpm.io/) 9+
 - [Rust](https://www.rust-lang.org/)（编译原生模块需要）
-- FFmpeg/libav 开发库（本地默认使用系统库；CI 使用静态链接构建）
-- Linux 构建音频输出模块需要 ALSA 开发库（Debian/Ubuntu: `sudo apt install libasound2-dev`）
+- **系统依赖**：
+  - **Linux**: FFmpeg 开发库（`sudo apt install libavcodec-dev libavformat-dev libavutil-dev libswresample-dev libasound2-dev`）
+  - **macOS**: FFmpeg（`brew install ffmpeg`）
+  - **Windows**: 无需额外依赖（CI 自动打包 FFmpeg DLLs）
 
 ### 本地开发
 
@@ -230,4 +232,8 @@ xattr -cr /Applications/EchoMusic.app && codesign --force --deep --sign - /Appli
 
 基于 [MIT License](LICENSE) 协议发布。
 
-本项目使用 FFmpeg/libav 作为音频播放引擎。发布构建采用静态链接方案，需遵守 FFmpeg 及其启用组件的许可证与再分发要求。
+本项目使用 FFmpeg/libav 作为音频播放引擎，采用动态链接方式：
+- **Linux/macOS**: 链接系统 FFmpeg 库（LGPL）
+- **Windows**: 打包预编译 FFmpeg 共享库（LGPL）
+
+使用的 FFmpeg 组件遵循 LGPL v2.1+ 许可证。详见 [FFmpeg License](https://ffmpeg.org/legal.html)。

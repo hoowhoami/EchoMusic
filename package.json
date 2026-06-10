@@ -137,6 +137,13 @@
       {
         "from": "server/node_modules",
         "to": "server/node_modules"
+      },
+      {
+        "from": "build/ffmpeg-dlls",
+        "to": "ffmpeg-dlls",
+        "filter": [
+          "**/*.dll"
+        ]
       }
     ],
     "mac": {

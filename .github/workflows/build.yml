@@ -23,7 +23,6 @@ jobs:
         include:
           - os: macos-14
             rust_target: aarch64-apple-darwin
-            ffmpeg_features: bundled-ffmpeg
             electron_builder_args: '--mac --arm64'
             artifact_name: EchoMusic-macOS-arm64
             artifact_glob: |
@@ -32,7 +31,6 @@ jobs:
               release/latest-mac.yml
           - os: macos-13
             rust_target: x86_64-apple-darwin
-            ffmpeg_features: bundled-ffmpeg
             electron_builder_args: '--mac --x64'
             artifact_name: EchoMusic-macOS-x64
             artifact_glob: |
@@ -40,7 +38,6 @@ jobs:
               release/EchoMusic-*.dmg
           - os: ubuntu-22.04
             rust_target: ''
-            ffmpeg_features: bundled-ffmpeg
             electron_builder_args: '--linux --x64'
             artifact_name: EchoMusic-Linux-x64
             artifact_glob: |
@@ -51,7 +48,6 @@ jobs:
               release/latest-linux.yml
           - os: ubuntu-22.04-arm
             rust_target: ''
-            ffmpeg_features: bundled-ffmpeg
             electron_builder_args: '--linux --arm64'
             artifact_name: EchoMusic-Linux-arm64
             artifact_glob: |
@@ -62,8 +58,6 @@ jobs:
               release/latest-linux-arm64.yml
           - os: windows-latest
             rust_target: ''
-            vcpkg_triplet: x64-windows-static
-            ffmpeg_features: static-ffmpeg
             electron_builder_args: '--win --x64'
             artifact_name: EchoMusic-Windows-x64
             artifact_glob: |
@@ -71,8 +65,6 @@ jobs:
               release/latest.yml
           - os: windows-latest
             rust_target: aarch64-pc-windows-msvc
-            vcpkg_triplet: arm64-windows-static
-            ffmpeg_features: static-ffmpeg
             electron_builder_args: '--win --arm64'
             artifact_name: EchoMusic-Windows-arm64
             artifact_glob: |
@@ -101,7 +93,7 @@ jobs:
         if: matrix.rust_target != ''
         run: rustup target add ${{ matrix.rust_target }}
 
-      - name: Install Linux build dependencies
+      - name: Install Linux FFmpeg dependencies
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
@@ -109,25 +101,24 @@ jobs:
             build-essential \
             clang \
             libasound2-dev \
+            libavcodec-dev \
+            libavformat-dev \
+            libavutil-dev \
             libgtk-3-dev \
             libnotify-dev \
             libnss3 \
             libssl-dev \
+            libswresample-dev \
             libxss1 \
             libxtst6 \
-            nasm \
             pkg-config \
-            xdg-utils \
-            yasm \
-            zlib1g-dev
+            xdg-utils
 
-      - name: Install macOS build dependencies
+      - name: Install macOS FFmpeg dependencies
         if: runner.os == 'macOS'
         run: |
           brew update
-          brew install nasm openssl@3 pkg-config yasm zlib
-          echo "OPENSSL_DIR=$(brew --prefix openssl@3)" >> "$GITHUB_ENV"
-          echo "PKG_CONFIG_PATH=$(brew --prefix openssl@3)/lib/pkgconfig:$(brew --prefix zlib)/lib/pkgconfig:${PKG_CONFIG_PATH:-}" >> "$GITHUB_ENV"
+          brew install ffmpeg pkg-config
 
       - name: Install Windows shared FFmpeg
         if: runner.os == 'Windows'
@@ -153,6 +144,10 @@ jobs:
           "FFMPEG_LIB_DIR=$ffmpegRoot\lib" | Out-File -FilePath $env:GITHUB_ENV -Append
           "$ffmpegRoot\bin" | Out-File -FilePath $env:GITHUB_PATH -Append
 
+          Write-Host "Copying FFmpeg DLLs to build directory..."
+          New-Item -ItemType Directory -Force -Path "build\ffmpeg-dlls"
+          Copy-Item "$ffmpegRoot\bin\*.dll" "build\ffmpeg-dlls\"
+
       - name: Install root dependencies
         run: pnpm install --frozen-lockfile
 
@@ -170,15 +165,12 @@ jobs:
       - name: Build native ffmpeg player addon
         working-directory: native/echo-ffmpeg-player
         shell: bash
-        env:
-          FFMPEG_PLAYER_FEATURES: ${{ matrix.ffmpeg_features }}
-          PKG_CONFIG_PATH: /usr/lib/x86_64-linux-gnu/pkgconfig:/usr/lib/pkgconfig:/usr/share/pkgconfig
         run: |
           npm install --no-audit --no-fund
           if [ -n "${{ matrix.rust_target }}" ]; then
-            npx napi build --release --no-const-enum --target ${{ matrix.rust_target }} --features "$FFMPEG_PLAYER_FEATURES"
+            npx napi build --release --no-const-enum --target ${{ matrix.rust_target }}
           else
-            npx napi build --release --no-const-enum --features "$FFMPEG_PLAYER_FEATURES"
+            npx napi build --release --no-const-enum
           fi
 
       - name: Build native storage addon
