@@ -124,9 +124,8 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $ffmpegVersion = "7.1"
-          $arch = if ("${{ matrix.rust_target }}" -eq "aarch64-pc-windows-msvc") { "arm64" } else { "win64" }
-          $ffmpegUrl = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n$ffmpegVersion-latest-$arch-lgpl-shared-$ffmpegVersion.zip"
+          $arch = if ("${{ matrix.rust_target }}" -eq "aarch64-pc-windows-msvc") { "winarm64" } else { "win64" }
+          $ffmpegUrl = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-$arch-lgpl-shared.zip"
           $ffmpegZip = "$env:TEMP\ffmpeg.zip"
           $ffmpegDir = "C:\ffmpeg"
 
