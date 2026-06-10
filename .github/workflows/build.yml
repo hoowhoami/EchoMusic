@@ -120,9 +120,6 @@ jobs:
             xdg-utils \
             yasm \
             zlib1g-dev
-          echo "OPENSSL_DIR=/usr" >> "$GITHUB_ENV"
-          echo "OPENSSL_LIB_DIR=/usr/lib/x86_64-linux-gnu" >> "$GITHUB_ENV"
-          echo "OPENSSL_INCLUDE_DIR=/usr/include" >> "$GITHUB_ENV"
 
       - name: Install macOS build dependencies
         if: runner.os == 'macOS'
@@ -140,7 +137,7 @@ jobs:
           if (-not $vcpkgRoot) {
             $vcpkgRoot = 'C:\vcpkg'
           }
-          & "$vcpkgRoot\vcpkg.exe" install "ffmpeg:${{ matrix.vcpkg_triplet }}"
+          & "$vcpkgRoot\vcpkg.exe" install "ffmpeg[core,avcodec,avformat,swresample]:${{ matrix.vcpkg_triplet }}" --recurse
           "VCPKG_ROOT=$vcpkgRoot" | Out-File -FilePath $env:GITHUB_ENV -Append
           "VCPKGRS_TRIPLET=${{ matrix.vcpkg_triplet }}" | Out-File -FilePath $env:GITHUB_ENV -Append
           "VCPKG_DEFAULT_TRIPLET=${{ matrix.vcpkg_triplet }}" | Out-File -FilePath $env:GITHUB_ENV -Append
@@ -164,7 +161,7 @@ jobs:
         shell: bash
         env:
           FFMPEG_PLAYER_FEATURES: ${{ matrix.ffmpeg_features }}
-          OPENSSL_STATIC: 1
+          PKG_CONFIG_PATH: /usr/lib/x86_64-linux-gnu/pkgconfig:/usr/lib/pkgconfig:/usr/share/pkgconfig
         run: |
           npm install --no-audit --no-fund
           if [ -n "${{ matrix.rust_target }}" ]; then
@@ -189,9 +186,9 @@ jobs:
         shell: bash
         run: |
           if [ -f package-lock.json ]; then
-            npm ci --omit=dev --no-audit --no-fund
+            npm ci --omit=dev --no-audit --no-fund --legacy-peer-deps
           else
-            npm install --omit=dev --no-audit --no-fund
+            npm install --omit=dev --no-audit --no-fund --legacy-peer-deps
           fi
 
       - name: Remove server test files
