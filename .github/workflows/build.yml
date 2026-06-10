@@ -125,7 +125,7 @@ jobs:
         shell: pwsh
         run: |
           $arch = if ("${{ matrix.rust_target }}" -eq "aarch64-pc-windows-msvc") { "winarm64" } else { "win64" }
-          $ffmpegUrl = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-$arch-lgpl-shared.zip"
+          $ffmpegUrl = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n7.1-latest-$arch-lgpl-shared-7.1.zip"
           $ffmpegZip = "$env:TEMP\ffmpeg.zip"
           $ffmpegDir = "C:\ffmpeg"
 
