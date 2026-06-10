@@ -86,13 +86,6 @@ jobs:
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
 
-      - name: Setup Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Add Rust target
-        if: matrix.rust_target != ''
-        run: rustup target add ${{ matrix.rust_target }}
-
       - name: Install Linux FFmpeg dependencies
         if: runner.os == 'Linux'
         run: |
@@ -149,6 +142,13 @@ jobs:
 
       - name: Install root dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Add Rust target
+        if: matrix.rust_target != ''
+        run: rustup target add ${{ matrix.rust_target }}
 
       - name: Build native media controls addon
         working-directory: native/echo-media-controls
