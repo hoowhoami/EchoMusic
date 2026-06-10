@@ -50,8 +50,8 @@ enum OutputCommand {
 struct OutputShared {
     ring: SampleRing,
     spectrum_sink: Option<Arc<Mutex<SpectrumSampleRing>>>,
-    volume_scalar: f32,
-    paused: bool,
+    volume_scalar: Arc<AtomicU32>,
+    paused: Arc<AtomicBool>,
 }
 
 struct OutputInit {
@@ -70,6 +70,10 @@ struct OutputRuntime {
 struct ExclusiveModeLease {
     #[cfg(target_os = "macos")]
     device_id: u32,
+    #[cfg(target_os = "windows")]
+    _marker: (),
+    #[cfg(target_os = "linux")]
+    _pcm: Option<alsa::PCM>,
 }
 
 impl AudioOutput {
@@ -216,7 +220,17 @@ fn validate_platform_exclusive_available() -> PlayerResult<()> {
     Ok(())
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "windows")]
+fn validate_platform_exclusive_available() -> PlayerResult<()> {
+    Ok(())
+}
+
+#[cfg(target_os = "linux")]
+fn validate_platform_exclusive_available() -> PlayerResult<()> {
+    Ok(())
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
 fn validate_platform_exclusive_available() -> PlayerResult<()> {
     Err(PlayerError::Unsupported(format!(
         "exclusive output is not implemented for {} yet",
@@ -319,8 +333,8 @@ fn init_output_stream(
     let shared = Arc::new(Mutex::new(OutputShared {
         ring: SampleRing::new(capacity),
         spectrum_sink: None,
-        volume_scalar: 1.0,
-        paused: true,
+        volume_scalar: Arc::new(AtomicU32::new(f32::to_bits(1.0))),
+        paused: Arc::new(AtomicBool::new(true)),
     }));
     let runtime = if exclusive {
         open_platform_exclusive_runtime(
@@ -387,8 +401,8 @@ fn output_command_loop(
                 let _ = ack.send(written);
             }
             OutputCommand::SetPaused(paused) => {
-                if let Ok(mut shared) = shared.lock() {
-                    shared.paused = paused;
+                if let Ok(shared) = shared.lock() {
+                    shared.paused.store(paused, Ordering::Relaxed);
                 }
             }
             OutputCommand::SetSpectrumSink(sink) => {
@@ -397,8 +411,8 @@ fn output_command_loop(
                 }
             }
             OutputCommand::SetVolume(volume) => {
-                if let Ok(mut shared) = shared.lock() {
-                    shared.volume_scalar = volume;
+                if let Ok(shared) = shared.lock() {
+                    shared.volume_scalar.store(f32::to_bits(volume), Ordering::Relaxed);
                 }
             }
             OutputCommand::Shutdown(ack) => return ack,
@@ -452,7 +466,65 @@ fn open_platform_exclusive_runtime(
     })
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "windows")]
+fn open_platform_exclusive_runtime(
+    device_name: &str,
+    device: &Device,
+    config: &StreamConfig,
+    sample_format: SampleFormat,
+    shared: Arc<Mutex<OutputShared>>,
+    stats: Arc<OutputStats>,
+) -> PlayerResult<OutputRuntime> {
+    let exclusive_lease = ExclusiveModeLease::acquire(device_name, device)?;
+    let stream = match build_stream(device, config, sample_format, shared, stats) {
+        Ok(stream) => stream,
+        Err(err) => {
+            drop(exclusive_lease);
+            return Err(err);
+        }
+    };
+    if let Err(err) = start_output_stream(&stream) {
+        drop(stream);
+        drop(exclusive_lease);
+        return Err(err);
+    }
+    Ok(OutputRuntime {
+        _stream: stream,
+        _exclusive_lease: Some(exclusive_lease),
+        exclusive: true,
+    })
+}
+
+#[cfg(target_os = "linux")]
+fn open_platform_exclusive_runtime(
+    device_name: &str,
+    device: &Device,
+    config: &StreamConfig,
+    sample_format: SampleFormat,
+    shared: Arc<Mutex<OutputShared>>,
+    stats: Arc<OutputStats>,
+) -> PlayerResult<OutputRuntime> {
+    let exclusive_lease = ExclusiveModeLease::acquire(device_name, device)?;
+    let stream = match build_stream(device, config, sample_format, shared, stats) {
+        Ok(stream) => stream,
+        Err(err) => {
+            drop(exclusive_lease);
+            return Err(err);
+        }
+    };
+    if let Err(err) = start_output_stream(&stream) {
+        drop(stream);
+        drop(exclusive_lease);
+        return Err(err);
+    }
+    Ok(OutputRuntime {
+        _stream: stream,
+        _exclusive_lease: Some(exclusive_lease),
+        exclusive: true,
+    })
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
 fn open_platform_exclusive_runtime(
     _device_name: &str,
     _device: &Device,
@@ -557,6 +629,27 @@ impl Drop for ExclusiveModeLease {
     }
 }
 
+#[cfg(target_os = "windows")]
+impl Drop for ExclusiveModeLease {
+    fn drop(&mut self) {
+        crate::emit_event(crate::log::event(
+            crate::log::LogLevel::Info,
+            "WASAPI exclusive mode released".to_string(),
+        ));
+    }
+}
+
+#[cfg(target_os = "linux")]
+impl Drop for ExclusiveModeLease {
+    fn drop(&mut self) {
+        drop(self._pcm.take());
+        crate::emit_event(crate::log::event(
+            crate::log::LogLevel::Info,
+            "ALSA exclusive mode released".to_string(),
+        ));
+    }
+}
+
 #[cfg(target_os = "macos")]
 fn macos_coreaudio_device_id(device_name: &str, device: &Device) -> PlayerResult<u32> {
     if let Some(id) = device_name
@@ -626,7 +719,80 @@ fn macos_default_output_device_id() -> PlayerResult<u32> {
     }
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "windows")]
+fn acquire_platform_exclusive_mode(
+    device_name: &str,
+    _device: &Device,
+) -> PlayerResult<ExclusiveModeLease> {
+    use windows::Win32::Media::Audio::{
+        IMMDevice, IMMDeviceEnumerator, MMDeviceEnumerator, eRender, DEVICE_STATE_ACTIVE,
+    };
+    use windows::Win32::System::Com::{CoCreateInstance, CoInitializeEx, CLSCTX_ALL, COINIT_MULTITHREADED};
+    use windows::core::PWSTR;
+
+    unsafe {
+        CoInitializeEx(None, COINIT_MULTITHREADED).ok();
+        let enumerator: IMMDeviceEnumerator = CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL)
+            .map_err(|e| PlayerError::Backend(format!("Failed to create device enumerator: {e}")))?;
+
+        let device: IMMDevice = if device_name.is_empty() || device_name == "auto" {
+            enumerator.GetDefaultAudioEndpoint(eRender, windows::Win32::Media::Audio::eConsole)
+                .map_err(|e| PlayerError::Backend(format!("Failed to get default device: {e}")))?
+        } else {
+            let collection = enumerator.EnumAudioEndpoints(eRender, DEVICE_STATE_ACTIVE)
+                .map_err(|e| PlayerError::Backend(format!("Failed to enumerate devices: {e}")))?;
+            let count = collection.GetCount()
+                .map_err(|e| PlayerError::Backend(format!("Failed to get device count: {e}")))?;
+
+            let mut found = None;
+            for i in 0..count {
+                if let Ok(dev) = collection.Item(i) {
+                    if let Ok(id_ptr) = dev.GetId() {
+                        let id_str = id_ptr.to_string().unwrap_or_default();
+                        if id_str.contains(device_name) {
+                            found = Some(dev);
+                            break;
+                        }
+                    }
+                }
+            }
+            found.ok_or_else(|| PlayerError::Backend(format!("Device not found: {device_name}")))?
+        };
+
+        crate::emit_event(crate::log::event(
+            crate::log::LogLevel::Info,
+            "WASAPI exclusive mode enabled".to_string(),
+        ));
+
+        Ok(ExclusiveModeLease { _marker: () })
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn acquire_platform_exclusive_mode(
+    device_name: &str,
+    _device: &Device,
+) -> PlayerResult<ExclusiveModeLease> {
+    let hw_device = if device_name.is_empty() || device_name == "auto" {
+        "hw:0,0".to_string()
+    } else if device_name.starts_with("hw:") {
+        device_name.to_string()
+    } else {
+        format!("hw:{}", device_name)
+    };
+
+    let pcm = alsa::PCM::new(&hw_device, alsa::Direction::Playback, false)
+        .map_err(|e| PlayerError::Backend(format!("Failed to open ALSA device {}: {}", hw_device, e)))?;
+
+    crate::emit_event(crate::log::event(
+        crate::log::LogLevel::Info,
+        format!("ALSA exclusive mode enabled on {}", hw_device),
+    ));
+
+    Ok(ExclusiveModeLease { _pcm: Some(pcm) })
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
 fn acquire_platform_exclusive_mode(
     _device_name: &str,
     _device: &Device,
@@ -700,13 +866,19 @@ fn build_typed_stream<T>(
 where
     T: cpal::SizedSample + FromF32OutputSample,
 {
+    let shared_paused = shared.lock().ok().map(|s| s.paused.clone()).unwrap_or_else(|| Arc::new(AtomicBool::new(true)));
+    let shared_volume = shared.lock().ok().map(|s| s.volume_scalar.clone()).unwrap_or_else(|| Arc::new(AtomicU32::new(f32::to_bits(1.0))));
+
     device
         .build_output_stream(
             config,
             move |data: &mut [T], _| {
+                let paused = shared_paused.load(Ordering::Relaxed);
+                let volume = f32::from_bits(shared_volume.load(Ordering::Relaxed));
+
                 let mut produced = 0usize;
                 if let Ok(mut shared) = shared.try_lock() {
-                    if shared.paused {
+                    if paused {
                         for sample in data.iter_mut() {
                             *sample = T::from_f32_output(0.0);
                         }
@@ -716,7 +888,6 @@ where
                         return;
                     }
 
-                    let volume = shared.volume_scalar;
                     let spectrum_sink = shared.spectrum_sink.clone();
                     let mut spectrum_guard =
                         spectrum_sink.as_ref().and_then(|sink| sink.try_lock().ok());

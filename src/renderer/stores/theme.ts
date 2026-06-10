@@ -7,9 +7,17 @@ import {
 } from '@/utils/color';
 
 export type AccentMode = 'cover' | 'preset' | 'custom';
+type CoverColorSource = string | readonly string[];
 
 // 判断当前是否为深色模式
 const isDarkMode = (): boolean => document.documentElement.classList.contains('dark');
+
+const resolveCoverColorSources = (coverUrl: CoverColorSource): string[] => {
+  const urls = Array.isArray(coverUrl) ? coverUrl : [coverUrl];
+  return Array.from(new Set(urls.map((url) => String(url ?? '').trim()).filter(Boolean)));
+};
+
+let coverColorRequestSeq = 0;
 
 export const useThemeStore = defineStore('theme', {
   state: () => ({
@@ -77,20 +85,29 @@ export const useThemeStore = defineStore('theme', {
       this.syncGlobalScope();
     },
     // 从封面提取主色（仅在 cover 模式下有效）
-    async refreshFromCover(coverUrl: string) {
+    async refreshFromCover(coverUrl: CoverColorSource) {
       if (this.accentMode !== 'cover') return;
-      if (!coverUrl) return;
       const next = await this.refreshCoverColor(coverUrl);
+      if (!next || this.accentMode !== 'cover') return;
       this.sourceColor = next;
       applyAccentToRoot(next, isDarkMode());
     },
     // 提取当前封面颜色，供歌词页单独使用
-    async refreshCoverColor(coverUrl: string): Promise<string> {
-      if (!coverUrl) {
+    async refreshCoverColor(coverUrl: CoverColorSource): Promise<string | null> {
+      const seq = ++coverColorRequestSeq;
+      const urls = resolveCoverColorSources(coverUrl);
+      if (urls.length === 0) {
         this.coverColor = DEFAULT_ACCENT;
         return this.coverColor;
       }
-      const extracted = await extractDominantColor(coverUrl);
+
+      let extracted: string | null = null;
+      for (const url of urls) {
+        extracted = await extractDominantColor(url);
+        if (seq !== coverColorRequestSeq) return null;
+        if (extracted) break;
+      }
+
       this.coverColor = extracted || DEFAULT_ACCENT;
       return this.coverColor;
     },

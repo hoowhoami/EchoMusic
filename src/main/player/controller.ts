@@ -682,7 +682,7 @@ export class PlayerController extends EventEmitter {
     }
 
     if (hasEq) {
-      const freqs = [60, 170, 310, 600, 1000, 3000, 6000, 12000, 14000, 16000];
+      const freqs = [32, 64, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
       const eqParts = this.equalizerGains
         .map((gain, i) => {
           if (gain === 0) return '';

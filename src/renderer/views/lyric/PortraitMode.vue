@@ -5,6 +5,8 @@ import { usePlayerControls } from '@/composables/usePlayerControls';
 import { useSettingStore } from '@/stores/setting';
 import { useLyricPortrait } from '@/composables/useLyricPortrait';
 import { useLyricBackground } from './composables/useLyricBackground';
+import { coverFallbackRevision } from '@/plugins/coverFallback';
+import { resolveCoverDisplayUrl } from '@/utils/cover';
 import LyricScroller from './LyricScroller.vue';
 
 const { currentTrack } = usePlayerControls();
@@ -17,11 +19,15 @@ const currentTrackLyricHash = computed(() =>
 // 背景主题色（无写真时使用）
 const coverUrl = computed(() => currentTrack.value?.coverUrl);
 const { backgroundColor } = useLyricBackground(coverUrl);
+const displayCoverUrl = computed(() => {
+  void coverFallbackRevision.value;
+  return resolveCoverDisplayUrl(coverUrl.value, 400, { scope: 'lyric-background' });
+});
 
 // 模糊封面背景（无写真时的备选背景）
 const blurCoverUrl = computed(() => {
-  if (!settingStore.lyricPageBackgroundBlur || !coverUrl.value) return '';
-  const url = coverUrl.value;
+  if (!settingStore.lyricPageBackgroundBlur || !displayCoverUrl.value) return '';
+  const url = displayCoverUrl.value;
   return url.replace(/\{size\}/g, '400').replace(/\/\d+(?=\/\d{8}\/)/, '/400');
 });
 

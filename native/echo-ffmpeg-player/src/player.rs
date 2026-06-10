@@ -85,6 +85,15 @@ struct DecoderWorker {
     interrupt: Arc<AtomicBool>,
 }
 
+struct DecoderWorkerConfig {
+    state: Arc<Mutex<PlayerState>>,
+    config: Arc<Mutex<PlayerConfig>>,
+    shutdown: Arc<AtomicBool>,
+    interrupt: Arc<AtomicBool>,
+    seek_seq: Arc<AtomicU64>,
+    loop_file: bool,
+}
+
 enum PlaybackCommand {
     Play,
     Pause,
@@ -268,12 +277,14 @@ impl FfmpegPlayer {
         let worker = DecoderWorker::start(
             decoder,
             output,
-            self.state.clone(),
-            self.config.clone(),
-            self.shutdown.clone(),
-            request.interrupt,
-            self.seek_seq.clone(),
-            self.loop_enabled(),
+            DecoderWorkerConfig {
+                state: self.state.clone(),
+                config: self.config.clone(),
+                shutdown: self.shutdown.clone(),
+                interrupt: request.interrupt,
+                seek_seq: self.seek_seq.clone(),
+                loop_file: self.loop_enabled(),
+            },
         )?;
         let mut guard = self
             .worker
@@ -1013,28 +1024,23 @@ impl DecoderWorker {
     fn start(
         decoder: FfmpegDecoder,
         output: AudioOutput,
-        state: Arc<Mutex<PlayerState>>,
-        config: Arc<Mutex<PlayerConfig>>,
-        shutdown: Arc<AtomicBool>,
-        interrupt: Arc<AtomicBool>,
-        seek_seq: Arc<AtomicU64>,
-        loop_file: bool,
+        config: DecoderWorkerConfig,
     ) -> PlayerResult<Self> {
         let (command_tx, command_rx) = mpsc::channel();
-        let interrupt_for_thread = interrupt.clone();
+        let interrupt_for_thread = config.interrupt.clone();
         let handle = thread::Builder::new()
             .name("echo-ffmpeg-decoder".to_string())
             .spawn(move || {
                 run_decoder_worker(
                     decoder,
                     output,
-                    state,
-                    config,
-                    shutdown,
+                    config.state,
+                    config.config,
+                    config.shutdown,
                     interrupt_for_thread,
                     command_rx,
-                    seek_seq,
-                    loop_file,
+                    config.seek_seq,
+                    config.loop_file,
                 )
             })
             .map_err(|err| {
@@ -1044,7 +1050,7 @@ impl DecoderWorker {
         Ok(Self {
             commands: command_tx,
             handle: Some(handle),
-            interrupt,
+            interrupt: config.interrupt,
         })
     }
 
@@ -1169,13 +1175,23 @@ fn run_decoder_worker(
                 thread::sleep(BUFFERING_RETRY_DELAY);
             }
             Ok(DecodeReadResult::Eof) => {
-                if loop_file && decoder.seek(0.0).is_ok() {
-                    output.clear_blocking();
-                    dsp.reset();
-                    buffering = true;
-                    buffering_resume_ms = START_PREBUFFER_MS;
-                    output.set_paused(true);
-                    continue;
+                if loop_file {
+                    match decoder.seek(0.0) {
+                        Ok(()) => {
+                            output.clear_blocking();
+                            dsp.reset();
+                            buffering = true;
+                            buffering_resume_ms = START_PREBUFFER_MS;
+                            output.set_paused(true);
+                            continue;
+                        }
+                        Err(err) => {
+                            crate::emit_event(crate::log::event(
+                                crate::log::LogLevel::Error,
+                                format!("loop seek to start failed: {err}"),
+                            ));
+                        }
+                    }
                 }
                 if let Ok(mut state) = state.lock() {
                     state.playing = false;

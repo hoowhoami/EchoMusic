@@ -9,6 +9,8 @@ import { useLyricStore } from '@/stores/lyric';
 import { useToastStore } from '@/stores/toast';
 import { usePlayerControls } from '@/composables/usePlayerControls';
 import { useLyricBackground } from './composables/useLyricBackground';
+import { coverFallbackRevision } from '@/plugins/coverFallback';
+import { resolveCoverDisplayUrl } from '@/utils/cover';
 import OverlayHeader from '@/layouts/OverlayHeader.vue';
 import Button from '@/components/ui/Button.vue';
 import Dialog from '@/components/ui/Dialog.vue';
@@ -56,14 +58,18 @@ const {
 // 背景主题色
 const coverUrl = computed(() => currentTrack.value?.coverUrl);
 const { backgroundColor } = useLyricBackground(coverUrl);
+const displayCoverUrl = computed(() => {
+  void coverFallbackRevision.value;
+  return resolveCoverDisplayUrl(coverUrl.value, 400, { scope: 'lyric-background' });
+});
 
 // 当前模式
 const viewMode = computed(() => settingStore.lyricViewMode);
 
 // 模糊背景封面 URL（用较小尺寸节省内存）
 const blurCoverUrl = computed(() => {
-  if (!settingStore.lyricPageBackgroundBlur || !coverUrl.value) return '';
-  const url = coverUrl.value;
+  if (!settingStore.lyricPageBackgroundBlur || !displayCoverUrl.value) return '';
+  const url = displayCoverUrl.value;
   // 替换尺寸参数为 400（模糊后不需要高分辨率）
   return url.replace(/\{size\}/g, '400').replace(/\/\d+(?=\/\d{8}\/)/, '/400');
 });

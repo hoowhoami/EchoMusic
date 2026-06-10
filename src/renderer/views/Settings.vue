@@ -548,6 +548,7 @@ const findSectionElement = (id: string) => {
   @apply rounded-2xl p-5 space-y-5 transition-all duration-300 border overflow-visible;
   background: var(--color-bg-elevated);
   border-color: var(--border-subtle);
+  --settings-divider-color: color-mix(in srgb, var(--color-text-main) 12%, transparent);
   font-size: 13px;
   box-shadow: 0 2px 12px color-mix(in srgb, var(--color-text-main) 3%, transparent);
 }
@@ -565,8 +566,9 @@ const findSectionElement = (id: string) => {
 }
 
 .settings-divider {
-  @apply h-px shrink-0;
-  background: color-mix(in srgb, var(--color-text-main) 12%, transparent);
+  @apply h-0 shrink-0;
+  border-top: 1px solid var(--settings-divider-color);
+  background: transparent;
 }
 
 .settings-button {

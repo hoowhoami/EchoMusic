@@ -8,14 +8,13 @@ use std::path::Path;
 
 pub const EQ_BAND_COUNT: usize = 10;
 pub const EQ_FREQUENCIES: [f32; EQ_BAND_COUNT] = [
-    60.0, 170.0, 310.0, 600.0, 1_000.0, 3_000.0, 6_000.0, 12_000.0, 14_000.0, 16_000.0,
+    32.0, 64.0, 125.0, 250.0, 500.0, 1_000.0, 2_000.0, 4_000.0, 8_000.0, 16_000.0,
 ];
 
-const EQ_Q: f32 = 1.0;
+const EQ_Q: f32 = 1.41;
 const MIN_FILTER_FREQ_RATIO: f32 = 0.45;
 const CONVOLUTION_BLOCK_SIZE: usize = 1024;
 const MAX_IR_SECONDS: usize = 12;
-const IMPULSE_RESPONSE_WET_MAKEUP: f32 = 3.0;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct ImpulseResponseSettings {
@@ -465,29 +464,43 @@ impl ConvolutionProcessor {
             return Ok(());
         }
 
-        self.dry.resize(samples.len(), 0.0);
-        self.dry.copy_from_slice(samples);
-        self.wet.resize(samples.len(), 0.0);
-        self.wet.fill(0.0);
-        self.input.resize(frames, 0.0);
-        self.output.resize(frames, 0.0);
+        if self.dry.len() < samples.len() {
+            self.dry.resize(samples.len(), 0.0);
+        }
+        self.dry[..samples.len()].copy_from_slice(samples);
+
+        if self.wet.len() < samples.len() {
+            self.wet.resize(samples.len(), 0.0);
+        }
+        self.wet[..samples.len()].fill(0.0);
+
+        if self.input.len() < frames {
+            self.input.resize(frames, 0.0);
+        }
+        if self.output.len() < frames {
+            self.output.resize(frames, 0.0);
+        }
 
         for channel in 0..channels {
             for frame in 0..frames {
                 self.input[frame] = samples[frame * channels + channel];
             }
-            self.output.fill(0.0);
+            self.output[..frames].fill(0.0);
             self.convolvers[channel]
-                .process(&self.input, &mut self.output)
+                .process(&self.input[..frames], &mut self.output[..frames])
                 .map_err(|err| PlayerError::Backend(format!("IR convolution failed: {err}")))?;
             for frame in 0..frames {
                 self.wet[frame * channels + channel] = self.output[frame];
             }
         }
 
-        let wet_mix = settings.mix * IMPULSE_RESPONSE_WET_MAKEUP;
-        for (sample, (dry, wet)) in samples.iter_mut().zip(self.dry.iter().zip(self.wet.iter())) {
-            *sample = *dry + *wet * wet_mix;
+        let wet_ratio = settings.mix.clamp(0.0, 1.0);
+        let dry_ratio = (1.0 - wet_ratio * wet_ratio).sqrt();
+        let wet_gain = wet_ratio * (1.0 - wet_ratio * 0.3);
+
+        for (i, sample) in samples.iter_mut().enumerate() {
+            let mixed = self.dry[i] * dry_ratio + self.wet[i] * wet_gain;
+            *sample = mixed.clamp(-1.0, 1.0);
         }
         Ok(())
     }
@@ -554,16 +567,39 @@ fn trim_ir_channels(channels: &mut [Vec<f32>], sample_rate: u32) {
 }
 
 fn normalize_ir_channels(channels: &mut [Vec<f32>]) {
-    let peak = channels
-        .iter()
-        .flat_map(|channel| channel.iter())
-        .fold(0.0_f32, |peak, sample| peak.max(sample.abs()));
-    if peak <= 1.0 || peak <= f32::EPSILON {
+    if channels.is_empty() {
         return;
     }
+
+    let total_samples: usize = channels.iter().map(|ch| ch.len()).sum();
+    if total_samples == 0 {
+        return;
+    }
+
+    let rms: f32 = channels
+        .iter()
+        .flat_map(|channel| channel.iter())
+        .map(|&sample| sample * sample)
+        .sum::<f32>()
+        .sqrt() / (total_samples as f32).sqrt();
+
+    let peak: f32 = channels
+        .iter()
+        .flat_map(|channel| channel.iter())
+        .fold(0.0_f32, |acc, &sample| acc.max(sample.abs()));
+
+    if rms <= f32::EPSILON || peak <= f32::EPSILON {
+        return;
+    }
+
+    let target_rms = 0.15_f32;
+    let rms_gain = target_rms / rms;
+    let max_gain = 0.95 / peak;
+    let gain = rms_gain.min(max_gain);
+
     for channel in channels {
         for sample in channel {
-            *sample /= peak;
+            *sample *= gain;
         }
     }
 }

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, ref, watch, shallowRef } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch, shallowRef } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import type { Song } from '@/models/song';
 import type { SetPlaybackQueueOptions } from '@/stores/playlist';
@@ -14,13 +14,6 @@ import { isPlayableSong } from '@/utils/song';
 import { playSongInContext, queueAndPlaySong, addSongToPlayNext } from '@/utils/playback';
 import Button from '@/components/ui/Button.vue';
 import Dialog from '@/components/ui/Dialog.vue';
-import {
-  ContextMenuRoot,
-  ContextMenuTrigger,
-  ContextMenuPortal,
-  ContextMenuContent,
-  ContextMenuItem,
-} from 'reka-ui';
 import { useUserStore } from '@/stores/user';
 import { useScrollContainer } from '@/composables/usePageScroll';
 import { useVirtualList } from '@/composables/useVirtualList';
@@ -415,8 +408,16 @@ const userStore = useUserStore();
 const contextMenuOpen = ref(false);
 const contextMenuTarget = ref<Song | null>(null);
 const contextMenuTargetId = ref<string | null>(null);
+const contextMenuRef = ref<HTMLElement | null>(null);
+const contextMenuPosition = ref({ x: 0, y: 0 });
 const showPlaylistDialog = ref(false);
 const isPlaylistLoading = ref(false);
+let contextMenuPoint: { x: number; y: number } | null = null;
+
+const contextMenuStyle = computed(() => ({
+  left: `${contextMenuPosition.value.x}px`,
+  top: `${contextMenuPosition.value.y}px`,
+}));
 
 const selectablePlaylists = computed(() =>
   playlistStore.getCreatedPlaylists(userStore.info?.userid),
@@ -449,15 +450,52 @@ const isExtensionContextItemEnabled = (item: (typeof extensionContextMenuItems.v
   }
 };
 
+const closeContextMenu = () => {
+  contextMenuOpen.value = false;
+};
+
+const clearContextMenuTarget = () => {
+  contextMenuTarget.value = null;
+  contextMenuTargetId.value = null;
+  contextMenuPoint = null;
+};
+
+const estimateContextMenuHeight = () => {
+  const itemCount =
+    3 + extensionContextMenuItems.value.length + (contextMenuCanRemove.value ? 1 : 0);
+  const separatorCount =
+    (extensionContextMenuItems.value.length > 0 ? 1 : 0) + (contextMenuCanRemove.value ? 1 : 0);
+  return 12 + itemCount * 30 + separatorCount * 9 + Math.max(0, itemCount + separatorCount - 1) * 4;
+};
+
+const updateContextMenuPosition = () => {
+  if (!contextMenuPoint) return;
+  const menu = contextMenuRef.value;
+  const width = menu?.offsetWidth || 172;
+  const height = menu?.offsetHeight || estimateContextMenuHeight();
+  const padding = 8;
+  const bottomPadding = 96;
+  const maxX = Math.max(padding, window.innerWidth - width - padding);
+  const maxY = Math.max(padding, window.innerHeight - height - bottomPadding);
+  contextMenuPosition.value = {
+    x: Math.round(Math.min(Math.max(contextMenuPoint.x, padding), maxX)),
+    y: Math.round(Math.min(Math.max(contextMenuPoint.y, padding), maxY)),
+  };
+};
+
 const handleContextMenu = (event: MouseEvent) => {
   const target = (event.target as HTMLElement)?.closest<HTMLElement>('[data-song-row]');
   if (!target) {
-    contextMenuOpen.value = false;
+    event.preventDefault();
+    closeContextMenu();
+    clearContextMenuTarget();
     return;
   }
   const songId = target.dataset.songId;
   if (!songId) {
-    contextMenuOpen.value = false;
+    event.preventDefault();
+    closeContextMenu();
+    clearContextMenuTarget();
     return;
   }
   const song =
@@ -465,12 +503,56 @@ const handleContextMenu = (event: MouseEvent) => {
     sourceSongsById.value.get(songId) ??
     contextSongsById.value.get(songId);
   if (!song) {
-    contextMenuOpen.value = false;
+    event.preventDefault();
+    closeContextMenu();
+    clearContextMenuTarget();
     return;
   }
+  event.preventDefault();
+  contextMenuPoint = { x: event.clientX, y: event.clientY };
+  contextMenuPosition.value = contextMenuPoint;
   contextMenuTarget.value = song;
   contextMenuTargetId.value = songId;
+  contextMenuOpen.value = true;
+  void nextTick(updateContextMenuPosition);
 };
+
+const handleContextMenuAction = (action: () => void | Promise<void>) => {
+  closeContextMenu();
+  void action();
+};
+
+const handleDocumentPointerDown = (event: PointerEvent) => {
+  if (!contextMenuOpen.value) return;
+  const target = event.target as Node | null;
+  if (target && contextMenuRef.value?.contains(target)) return;
+  closeContextMenu();
+};
+
+const handleDocumentKeydown = (event: KeyboardEvent) => {
+  if (event.key === 'Escape' && contextMenuOpen.value) {
+    event.preventDefault();
+    closeContextMenu();
+  }
+};
+
+const handleWindowViewportChange = () => {
+  if (contextMenuOpen.value) closeContextMenu();
+};
+
+onMounted(() => {
+  document.addEventListener('pointerdown', handleDocumentPointerDown, true);
+  document.addEventListener('keydown', handleDocumentKeydown, true);
+  window.addEventListener('resize', handleWindowViewportChange);
+  window.addEventListener('scroll', handleWindowViewportChange, true);
+});
+
+onBeforeUnmount(() => {
+  document.removeEventListener('pointerdown', handleDocumentPointerDown, true);
+  document.removeEventListener('keydown', handleDocumentKeydown, true);
+  window.removeEventListener('resize', handleWindowViewportChange);
+  window.removeEventListener('scroll', handleWindowViewportChange, true);
+});
 
 const ctxPlayNow = async () => {
   const song = contextMenuTarget.value;
@@ -549,14 +631,9 @@ const ctxExtensionAction = async (item: (typeof extensionContextMenuItems.value)
   }
 };
 
-// 右键菜单打开时锁定滚动，关闭时恢复
+// 右键菜单关闭后移除行高亮；保留 target，添加到歌单弹窗还需要它。
 watch(contextMenuOpen, (isOpen) => {
-  const scrollContainer = getScrollContainer();
-  if (!scrollContainer) return;
-  if (isOpen) {
-    scrollContainer.style.overflow = 'hidden';
-  } else {
-    scrollContainer.style.overflow = '';
+  if (!isOpen) {
     contextMenuTargetId.value = null;
   }
 });
@@ -578,213 +655,228 @@ defineExpose({ scrollToActive, filteredCount: computed(() => filteredSongsRef.va
 </script>
 
 <template>
-  <ContextMenuRoot v-model:open="contextMenuOpen">
-    <ContextMenuTrigger as-child>
-      <div
-        ref="containerRef"
-        class="song-list-container scroll-smooth"
-        @contextmenu="handleContextMenu"
-      >
+  <div
+    ref="containerRef"
+    class="song-list-container scroll-smooth"
+    @contextmenu="handleContextMenu"
+  >
+    <div
+      v-if="!props.loading && filteredSongsRef.length > 0"
+      :style="wrapperStyle"
+      class="song-list-inner"
+    >
+      <div :style="visibleBlockStyle" class="will-change-transform">
         <div
-          v-if="!props.loading && filteredSongsRef.length > 0"
-          :style="wrapperStyle"
-          class="song-list-inner"
+          v-for="entry in list"
+          :key="
+            props.itemKeyField === 'historyKey'
+              ? (entry.data.historyKey ?? entry.data.id)
+              : entry.data.id
+          "
+          class="song-list-row group rounded-lg cursor-default content-visibility-auto"
+          :style="{ height: `${itemHeight}px`, opacity: entry.opacity }"
+          :class="{
+            'is-active': entry.isActive,
+            'is-context-target': contextMenuOpen && contextMenuTargetId === entry.idText,
+          }"
+          :data-song-row="true"
+          :data-song-id="entry.idText"
         >
-          <div :style="visibleBlockStyle" class="will-change-transform">
-            <div
-              v-for="entry in list"
-              :key="
-                props.itemKeyField === 'historyKey'
-                  ? (entry.data.historyKey ?? entry.data.id)
-                  : entry.data.id
-              "
-              class="song-list-row group rounded-lg cursor-default content-visibility-auto"
-              :style="{ height: `${itemHeight}px`, opacity: entry.opacity }"
-              :class="{
-                'is-active': entry.isActive,
-                'is-context-target': contextMenuOpen && contextMenuTargetId === entry.idText,
-              }"
-              :data-song-row="true"
-              :data-song-id="entry.idText"
-            >
-              <div
-                class="song-list-row-inner grid items-center w-full h-full"
-                :class="props.rowPaddingClass"
-                :style="{ gridTemplateColumns: rowGridTemplate }"
-              >
-                <div v-if="showIndex" class="flex items-center justify-start pl-2">
-                  <div class="relative w-4 h-4">
-                    <template v-if="entry.isActive">
-                      <div
-                        v-show="isPlaying"
-                        class="absolute inset-0 flex items-center justify-center text-primary cursor-pointer"
-                        @click.stop="handleTogglePlay(entry.data)"
-                      >
-                        <Icon :icon="iconPause" width="14" height="14" />
-                      </div>
-                      <div
-                        v-show="!isPlaying"
-                        class="absolute inset-0 flex items-center justify-center text-primary cursor-pointer"
-                        @click.stop="handleTogglePlay(entry.data)"
-                      >
-                        <Icon :icon="iconPlay" width="14" height="14" />
-                      </div>
-                    </template>
-                    <template v-else>
-                      <span
-                        class="absolute inset-0 flex items-center justify-center text-[12px] opacity-60 transition-opacity group-hover:opacity-0"
-                      >
-                        {{ entry.index + 1 }}
-                      </span>
-                      <Icon
-                        class="absolute inset-0 m-auto opacity-0 transition-opacity group-hover:opacity-100 text-text-main cursor-pointer"
-                        :icon="iconPlay"
-                        width="14"
-                        height="14"
-                        @click.stop="handleTogglePlay(entry.data)"
-                      />
-                    </template>
+          <div
+            class="song-list-row-inner grid items-center w-full h-full"
+            :class="props.rowPaddingClass"
+            :style="{ gridTemplateColumns: rowGridTemplate }"
+          >
+            <div v-if="showIndex" class="flex items-center justify-start pl-2">
+              <div class="relative w-4 h-4">
+                <template v-if="entry.isActive">
+                  <div
+                    v-show="isPlaying"
+                    class="absolute inset-0 flex items-center justify-center text-primary cursor-pointer"
+                    @click.stop="handleTogglePlay(entry.data)"
+                  >
+                    <Icon :icon="iconPause" width="14" height="14" />
                   </div>
-                </div>
-
-                <div class="min-w-0">
-                  <SongCard
-                    :song="entry.data"
-                    :showCover="showCover"
-                    :showAlbum="false"
-                    :showDuration="false"
-                    :showMore="true"
-                    :active="entry.isActive"
-                    :queueContext="queueContextSongs"
-                    :queueOptions="props.queueOptions"
-                    :queueFilteredInvalidCount="props.queueFilteredInvalidCount"
-                    :onDoubleTapPlay="props.onSongDoubleTapPlay"
-                    :enableDefaultDoubleTapPlay="props.enableDefaultDoubleTapPlay"
-                    variant="list"
+                  <div
+                    v-show="!isPlaying"
+                    class="absolute inset-0 flex items-center justify-center text-primary cursor-pointer"
+                    @click.stop="handleTogglePlay(entry.data)"
+                  >
+                    <Icon :icon="iconPlay" width="14" height="14" />
+                  </div>
+                </template>
+                <template v-else>
+                  <span
+                    class="absolute inset-0 flex items-center justify-center text-[12px] opacity-60 transition-opacity group-hover:opacity-0"
+                  >
+                    {{ entry.index + 1 }}
+                  </span>
+                  <Icon
+                    class="absolute inset-0 m-auto opacity-0 transition-opacity group-hover:opacity-100 text-text-main cursor-pointer"
+                    :icon="iconPlay"
+                    width="14"
+                    height="14"
+                    @click.stop="handleTogglePlay(entry.data)"
                   />
-                </div>
-
-                <Button
-                  v-if="showAlbum && !showLyricColumn"
-                  variant="unstyled"
-                  size="none"
-                  type="button"
-                  class="min-w-0 hidden md:block pr-3 text-[13px] text-left text-text-main/70 truncate"
-                  :class="isAlbumClickable(entry.data) ? 'song-list-meta-link' : ''"
-                  :disabled="!isAlbumClickable(entry.data)"
-                  @click.stop="openAlbumDetail(entry.data)"
-                >
-                  {{ entry.data.album || '未知专辑' }}
-                </Button>
-
-                <div
-                  v-if="showLyricColumn && showAlbum"
-                  class="min-w-0 hidden md:block pr-3 text-[12px] text-left text-text-main/45 truncate"
-                >
-                  {{ entry.data.lyricSnippet || '' }}
-                </div>
-
-                <div
-                  v-if="showDuration"
-                  class="pl-2 text-[12px] opacity-60 text-left whitespace-nowrap"
-                >
-                  {{ formatDuration(entry.data.duration) }}
-                </div>
+                </template>
               </div>
             </div>
-          </div>
-        </div>
 
-        <!-- 加载动画 -->
-        <div v-if="props.loading" class="flex items-center justify-center py-20">
-          <div
-            class="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin"
-          ></div>
-        </div>
-
-        <!-- 暂无数据 -->
-        <div
-          v-else-if="filteredSongsRef.length === 0"
-          class="py-20 text-center opacity-50 text-[14px] italic"
-        >
-          {{ hasSearchQuery ? '未找到相关歌曲' : '暂无歌曲' }}
-        </div>
-
-        <!-- 单例右键菜单（整个列表共享一个实例） -->
-        <ContextMenuPortal>
-          <ContextMenuContent
-            class="song-context-menu"
-            :side-offset="4"
-            :collision-padding="{ top: 8, right: 8, bottom: 96, left: 8 }"
-            align="start"
-          >
-            <ContextMenuItem class="song-context-item" @select="ctxPlayNow">
-              立即播放
-            </ContextMenuItem>
-            <ContextMenuItem class="song-context-item" @select="ctxPlayNext">
-              下一首播放
-            </ContextMenuItem>
-            <ContextMenuItem class="song-context-item" @select="ctxAddToPlaylist">
-              添加到歌单
-            </ContextMenuItem>
-            <div v-if="extensionContextMenuItems.length > 0" class="song-context-separator"></div>
-            <ContextMenuItem
-              v-for="item in extensionContextMenuItems"
-              :key="item.id"
-              class="song-context-item"
-              :class="{ 'text-red-500': item.danger }"
-              :disabled="!isExtensionContextItemEnabled(item)"
-              @select="ctxExtensionAction(item)"
-            >
-              {{ item.label }}
-            </ContextMenuItem>
-            <div v-if="contextMenuCanRemove" class="song-context-separator"></div>
-            <ContextMenuItem
-              v-if="contextMenuCanRemove"
-              class="song-context-item text-red-500"
-              @select="ctxRemoveFromPlaylist"
-            >
-              从歌单删除
-            </ContextMenuItem>
-          </ContextMenuContent>
-        </ContextMenuPortal>
-
-        <!-- 单例添加到歌单对话框 -->
-        <Dialog
-          v-model:open="showPlaylistDialog"
-          title="添加到歌单"
-          contentClass="max-w-[420px]"
-          showClose
-        >
-          <div class="flex flex-col gap-3">
-            <div v-if="isPlaylistLoading" class="py-6 text-center text-text-secondary text-[12px]">
-              加载歌单中...
+            <div class="min-w-0">
+              <SongCard
+                :song="entry.data"
+                :showCover="showCover"
+                :showAlbum="false"
+                :showDuration="false"
+                :showMore="true"
+                :active="entry.isActive"
+                :queueContext="queueContextSongs"
+                :queueOptions="props.queueOptions"
+                :queueFilteredInvalidCount="props.queueFilteredInvalidCount"
+                :onDoubleTapPlay="props.onSongDoubleTapPlay"
+                :enableDefaultDoubleTapPlay="props.enableDefaultDoubleTapPlay"
+                variant="list"
+              />
             </div>
-            <div
-              v-else-if="selectablePlaylists.length === 0"
-              class="py-6 text-center text-text-secondary text-[12px]"
-            >
-              暂无可用歌单
-            </div>
+
             <Button
-              v-for="entry in selectablePlaylists"
-              :key="entry.listid ?? entry.id"
+              v-if="showAlbum && !showLyricColumn"
+              variant="unstyled"
+              size="none"
               type="button"
-              class="playlist-picker-item"
-              variant="ghost"
-              size="sm"
-              @click="ctxSelectPlaylist(entry.listid ?? entry.id)"
+              class="min-w-0 hidden md:block pr-3 text-[13px] text-left text-text-main/70 truncate"
+              :class="isAlbumClickable(entry.data) ? 'song-list-meta-link' : ''"
+              :disabled="!isAlbumClickable(entry.data)"
+              @click.stop="openAlbumDetail(entry.data)"
             >
-              <span class="text-[13px] font-semibold text-text-main truncate">{{
-                entry.name
-              }}</span>
-              <span class="text-[11px] text-text-secondary/60">{{ entry.count ?? 0 }} 首</span>
+              {{ entry.data.album || '未知专辑' }}
             </Button>
+
+            <div
+              v-if="showLyricColumn && showAlbum"
+              class="min-w-0 hidden md:block pr-3 text-[12px] text-left text-text-main/45 truncate"
+            >
+              {{ entry.data.lyricSnippet || '' }}
+            </div>
+
+            <div
+              v-if="showDuration"
+              class="pl-2 text-[12px] opacity-60 text-left whitespace-nowrap"
+            >
+              {{ formatDuration(entry.data.duration) }}
+            </div>
           </div>
-        </Dialog>
+        </div>
       </div>
-    </ContextMenuTrigger>
-  </ContextMenuRoot>
+    </div>
+
+    <!-- 加载动画 -->
+    <div v-if="props.loading" class="flex items-center justify-center py-20">
+      <div
+        class="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin"
+      ></div>
+    </div>
+
+    <!-- 暂无数据 -->
+    <div
+      v-else-if="filteredSongsRef.length === 0"
+      class="py-20 text-center opacity-50 text-[14px] italic"
+    >
+      {{ hasSearchQuery ? '未找到相关歌曲' : '暂无歌曲' }}
+    </div>
+
+    <!-- 单例添加到歌单对话框 -->
+    <Dialog
+      v-model:open="showPlaylistDialog"
+      title="添加到歌单"
+      contentClass="max-w-[420px]"
+      showClose
+    >
+      <div class="flex flex-col gap-3">
+        <div v-if="isPlaylistLoading" class="py-6 text-center text-text-secondary text-[12px]">
+          加载歌单中...
+        </div>
+        <div
+          v-else-if="selectablePlaylists.length === 0"
+          class="py-6 text-center text-text-secondary text-[12px]"
+        >
+          暂无可用歌单
+        </div>
+        <Button
+          v-for="entry in selectablePlaylists"
+          :key="entry.listid ?? entry.id"
+          type="button"
+          class="playlist-picker-item"
+          variant="ghost"
+          size="sm"
+          @click="ctxSelectPlaylist(entry.listid ?? entry.id)"
+        >
+          <span class="text-[13px] font-semibold text-text-main truncate">{{ entry.name }}</span>
+          <span class="text-[11px] text-text-secondary/60">{{ entry.count ?? 0 }} 首</span>
+        </Button>
+      </div>
+    </Dialog>
+  </div>
+
+  <!-- 单例右键菜单（整个列表共享一个实例） -->
+  <Teleport to="body">
+    <div
+      v-if="contextMenuOpen && contextMenuTarget"
+      ref="contextMenuRef"
+      class="song-context-menu"
+      :style="contextMenuStyle"
+      role="menu"
+      @contextmenu.prevent
+    >
+      <button
+        type="button"
+        class="song-context-item"
+        role="menuitem"
+        @click="handleContextMenuAction(ctxPlayNow)"
+      >
+        立即播放
+      </button>
+      <button
+        type="button"
+        class="song-context-item"
+        role="menuitem"
+        @click="handleContextMenuAction(ctxPlayNext)"
+      >
+        下一首播放
+      </button>
+      <button
+        type="button"
+        class="song-context-item"
+        role="menuitem"
+        @click="handleContextMenuAction(ctxAddToPlaylist)"
+      >
+        添加到歌单
+      </button>
+      <div v-if="extensionContextMenuItems.length > 0" class="song-context-separator"></div>
+      <button
+        v-for="item in extensionContextMenuItems"
+        :key="item.id"
+        type="button"
+        class="song-context-item"
+        :class="{ 'text-red-500': item.danger }"
+        :disabled="!isExtensionContextItemEnabled(item)"
+        role="menuitem"
+        @click="handleContextMenuAction(() => ctxExtensionAction(item))"
+      >
+        {{ item.label }}
+      </button>
+      <div v-if="contextMenuCanRemove" class="song-context-separator"></div>
+      <button
+        v-if="contextMenuCanRemove"
+        type="button"
+        class="song-context-item text-red-500"
+        role="menuitem"
+        @click="handleContextMenuAction(ctxRemoveFromPlaylist)"
+      >
+        从歌单删除
+      </button>
+    </div>
+  </Teleport>
 </template>
 
 <style scoped>
@@ -852,7 +944,8 @@ defineExpose({ scrollToActive, filteredCount: computed(() => filteredSongsRef.va
   content-visibility: auto;
 }
 
-:deep(.song-context-menu) {
+:global(.song-context-menu) {
+  position: fixed;
   min-width: 172px;
   padding: 6px;
   border-radius: 12px;
@@ -863,27 +956,53 @@ defineExpose({ scrollToActive, filteredCount: computed(() => filteredSongsRef.va
   flex-direction: column;
   gap: 4px;
   z-index: 1200;
+  outline: none;
+  contain: paint;
+  isolation: isolate;
+  transform: translateZ(0);
+  backface-visibility: hidden;
 }
 
-:deep(.song-context-item) {
+:global(body.echo-surface-translucent .song-context-menu.song-context-menu) {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  background: var(--surface-elevated-base);
+}
+
+:global(.song-context-item) {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  display: block;
   width: 100%;
   text-align: left;
   padding: 6px 10px;
   border-radius: 8px;
+  font: inherit;
   font-size: 12px;
   font-weight: 600;
+  line-height: 18px;
   cursor: pointer;
   user-select: none;
   color: var(--color-text-main);
-  transition: all 0.2s ease;
+  outline: none;
+  transition:
+    background-color 0.12s ease,
+    color 0.12s ease;
 }
 
-:deep(.song-context-item:hover) {
+:global(.song-context-item:not(:disabled):hover),
+:global(.song-context-item:not(:disabled):focus-visible) {
   background-color: var(--row-hover-bg);
   color: var(--color-primary);
 }
 
-:deep(.song-context-separator) {
+:global(.song-context-item:disabled) {
+  cursor: default;
+  opacity: 0.45;
+}
+
+:global(.song-context-separator) {
   height: 1px;
   margin: 4px 6px;
   background-color: var(--border-subtle);

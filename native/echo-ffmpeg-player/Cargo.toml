@@ -21,6 +21,12 @@ signalsmith-stretch = "0.1.3"
 core-foundation-sys = "0.8.7"
 coreaudio-rs = "0.11.3"
 
+[target.'cfg(target_os = "windows")'.dependencies]
+windows = { version = "0.58", features = ["Win32_Media_Audio", "Win32_System_Com"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+alsa = "0.9"
+
 [build-dependencies]
 napi-build = "2"
 

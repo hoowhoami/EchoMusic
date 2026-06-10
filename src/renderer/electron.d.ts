@@ -39,6 +39,8 @@ import type {
   PluginListImageFilesOptions,
   PluginListImageFilesResult,
   PluginListResult,
+  PluginLocalInstallOptions,
+  PluginLocalInstallResult,
   PluginMarketplaceInstallOptions,
   PluginMarketplaceInstallResult,
   PluginMarketplaceListResult,
@@ -201,6 +203,7 @@ export interface IElectronAPI {
     list: () => Promise<PluginListResult>;
     getDirectory: () => Promise<string>;
     openDirectory: () => Promise<string>;
+    getDroppedFilePaths: (files: File[]) => string[];
     marketplace: {
       listSources: () => Promise<PluginMarketplaceSourceListResult>;
       addSource: (
@@ -223,6 +226,10 @@ export interface IElectronAPI {
     onRuntimeReloadRequested: (func: () => void) => () => void;
     setEnabled: (pluginId: string, enabled: boolean) => Promise<PluginSetEnabledResult>;
     setSafeMode: (enabled: boolean) => Promise<PluginSetSafeModeResult>;
+    installLocal: (
+      paths: string[],
+      options?: PluginLocalInstallOptions,
+    ) => Promise<PluginLocalInstallResult>;
     uninstall: (pluginId: string) => Promise<PluginUninstallResult>;
     markStartup: (pluginIds: string[]) => Promise<PluginReportFailureResult>;
     clearStartup: () => Promise<PluginReportFailureResult>;
