@@ -31,8 +31,8 @@ export function registerPlayerIpc(ref: PlayerRef): void {
     await ref.current?.stop();
   });
 
-  ipcMain.handle('player:seek', async (_e, time: number) => {
-    await ref.current?.seek(time);
+  ipcMain.handle('player:seek', async (_e, time: number, source?: string) => {
+    await ref.current?.seek(time, source);
   });
 
   // 播放引擎内部沿用 player 立方音量曲线，cbrt 补偿让体感和浏览器线性 audio.volume 一致

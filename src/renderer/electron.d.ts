@@ -341,7 +341,7 @@ export interface IElectronAPI {
     play: () => Promise<void>;
     pause: () => Promise<void>;
     stop: () => Promise<void>;
-    seek: (time: number) => Promise<void>;
+    seek: (time: number, source?: string) => Promise<void>;
     setVolume: (volume: number) => Promise<void>;
     setSpeed: (speed: number) => Promise<void>;
     setEqualizer: (gains: number[]) => Promise<void>;

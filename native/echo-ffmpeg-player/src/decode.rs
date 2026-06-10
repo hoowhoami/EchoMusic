@@ -37,6 +37,8 @@ const DEMUX_PACKET_DROP_TOLERANCE_SECONDS: f64 = 0.025;
 const NETWORK_RECONNECT_ATTEMPTS: usize = 5;
 const NETWORK_RECONNECT_OVERLAP_SECONDS: f64 = 0.75;
 const NETWORK_EOF_TOLERANCE_SECONDS: f64 = 2.0;
+const DURATION_DISAGREEMENT_LOG_SECONDS: f64 = 1.0;
+const DURATION_DISAGREEMENT_LOG_RATIO: f64 = 0.01;
 const MAX_CONSECUTIVE_DECODE_ERRORS: usize = 16;
 const NETWORK_RECONNECT_BACKOFFS: [Duration; NETWORK_RECONNECT_ATTEMPTS] = [
     Duration::from_millis(150),
@@ -47,6 +49,13 @@ const NETWORK_RECONNECT_BACKOFFS: [Duration; NETWORK_RECONNECT_ATTEMPTS] = [
 ];
 
 static FFMPEG_INIT: OnceLock<PlayerResult<()>> = OnceLock::new();
+
+#[derive(Clone, Copy)]
+struct DurationCandidate {
+    source: &'static str,
+    seconds: f64,
+    bitrate_estimate: bool,
+}
 
 #[allow(dead_code)]
 #[derive(Clone, Debug)]
@@ -527,7 +536,6 @@ impl DecoderBackend for FfmpegDecoder {
         };
         let io_interrupt = Arc::new(AtomicBool::new(false));
         let opened = open_input(&source.url, self.interrupt.clone(), io_interrupt.clone())?;
-        let duration = input_duration(&opened.input);
         let tracks = collect_track_info(&opened.input);
         let (stream_index, time_base, parameters, codec_name) = {
             let stream = select_audio_stream(&opened.input, audio_track_id)?;
@@ -535,6 +543,7 @@ impl DecoderBackend for FfmpegDecoder {
             let codec_name = parameters.id().name().to_string();
             (stream.index(), stream.time_base(), parameters, codec_name)
         };
+        let duration = input_duration(&opened.input, stream_index);
         let context = codec::context::Context::from_parameters(parameters)
             .map_err(|err| PlayerError::Backend(format!("ffmpeg codec context failed: {err}")))?;
         let decoder = context
@@ -815,26 +824,28 @@ fn run_demux_thread(
                         DemuxReconnectResult::Recovered => continue,
                         DemuxReconnectResult::Shutdown => break,
                         DemuxReconnectResult::Failed(message) => {
-                            let _ = events.try_send(DemuxEvent::Error {
-                                generation: state.generation,
-                                message,
-                            });
+                            crate::emit_event(crate::log::event(
+                                crate::log::LogLevel::Warn,
+                                format!(
+                                    "{message}; treating network EOF as media end after reconnect failed"
+                                ),
+                            ));
                         }
                     }
-                } else {
-                    let eof_generation = state.generation;
-                    match send_demux_event(
-                        &events,
-                        &commands,
-                        &interrupt,
-                        &mut state,
-                        DemuxEvent::Eof {
-                            generation: eof_generation,
-                        },
-                    ) {
-                        DemuxSendResult::Sent | DemuxSendResult::Superseded => {}
-                        DemuxSendResult::Shutdown => break,
-                    }
+                }
+
+                let eof_generation = state.generation;
+                match send_demux_event(
+                    &events,
+                    &commands,
+                    &interrupt,
+                    &mut state,
+                    DemuxEvent::Eof {
+                        generation: eof_generation,
+                    },
+                ) {
+                    DemuxSendResult::Sent | DemuxSendResult::Superseded => {}
+                    DemuxSendResult::Shutdown => break,
                 }
                 if !wait_for_demux_seek_or_shutdown(&commands, &interrupt, &mut state) {
                     break;
@@ -842,6 +853,10 @@ fn run_demux_thread(
             }
             Err(_) if interrupt.load(Ordering::SeqCst) => break,
             Err(_) if state.io_interrupt.load(Ordering::SeqCst) => {
+                state.io_interrupt.store(false, Ordering::SeqCst);
+                continue;
+            }
+            Err(err) if is_controlled_demux_interrupt(&err) => {
                 state.io_interrupt.store(false, Ordering::SeqCst);
                 continue;
             }
@@ -1114,10 +1129,14 @@ fn should_reconnect_after_eof_values(
         return false;
     }
     match (last_packet_time, duration) {
-        (_, None) => true,
         (Some(last), Some(duration)) => last + NETWORK_EOF_TOLERANCE_SECONDS < duration,
         (None, Some(duration)) => duration > NETWORK_EOF_TOLERANCE_SECONDS,
+        (_, None) => false,
     }
+}
+
+fn is_controlled_demux_interrupt(err: &ffmpeg::Error) -> bool {
+    matches!(err, ffmpeg::Error::Exit)
 }
 
 fn reconnect_demux(
@@ -1183,7 +1202,7 @@ fn reopen_demux_input(state: &mut DemuxState, interrupt: Arc<AtomicBool>) -> Pla
         (stream.index(), stream.time_base())
     };
 
-    state.duration = input_duration(&opened.input).or(state.duration);
+    state.duration = input_duration(&opened.input, stream_index).or(state.duration);
     state.opened = opened;
     state.stream_index = stream_index;
     state.time_base = time_base;
@@ -1494,6 +1513,7 @@ fn open_http_range_input(
     io_interrupt: Arc<AtomicBool>,
 ) -> PlayerResult<OpenedInput> {
     let range_input = HttpRangeInput::open(url, interrupt.clone(), io_interrupt.clone())?;
+    let content_length = range_input.len();
     let interrupt_callback = FfmpegInterrupt::new(interrupt, io_interrupt);
     let custom_io = HttpAvioContext::new(range_input)?;
     let mut options = unsafe { custom_input_options().disown() };
@@ -1540,7 +1560,7 @@ fn open_http_range_input(
 
         crate::emit_event(crate::log::event(
             crate::log::LogLevel::Info,
-            "http range input enabled",
+            format!("http range input enabled: length={content_length} bytes"),
         ));
         Ok(OpenedInput {
             input: format::context::Input::wrap(input),
@@ -1592,13 +1612,177 @@ fn is_http_url(url: &str) -> bool {
     matches!(scheme.to_ascii_lowercase().as_str(), "http" | "https")
 }
 
-fn input_duration(input: &format::context::Input) -> Option<f64> {
-    let duration = input.duration();
-    if duration > 0 {
-        Some(duration as f64 / FFMPEG_TIME_BASE)
-    } else {
-        None
+fn input_duration(input: &format::context::Input, stream_index: usize) -> Option<f64> {
+    let mut candidates = Vec::new();
+
+    push_duration_candidate(
+        &mut candidates,
+        "format",
+        format_duration_seconds(input),
+        false,
+    );
+
+    if let Some(stream) = input.stream(stream_index) {
+        push_duration_candidate(
+            &mut candidates,
+            "stream",
+            stream_duration_seconds(&stream),
+            false,
+        );
+        push_duration_candidate(
+            &mut candidates,
+            "stream-frames",
+            stream_frame_duration_seconds(&stream),
+            false,
+        );
+        push_duration_candidate(
+            &mut candidates,
+            "stream-bitrate",
+            stream_bitrate_duration_seconds(input, &stream),
+            true,
+        );
     }
+
+    push_duration_candidate(
+        &mut candidates,
+        "bitrate",
+        bitrate_duration_seconds(input),
+        true,
+    );
+
+    choose_duration_candidate(&candidates)
+}
+
+fn format_duration_seconds(input: &format::context::Input) -> Option<f64> {
+    let duration = input.duration();
+    (duration > 0).then_some(duration as f64 / FFMPEG_TIME_BASE)
+}
+
+fn stream_duration_seconds(stream: &format::stream::Stream<'_>) -> Option<f64> {
+    let duration = stream.duration();
+    (duration > 0).then_some(rational_seconds(duration, stream.time_base()))
+}
+
+fn stream_frame_duration_seconds(stream: &format::stream::Stream<'_>) -> Option<f64> {
+    let frames = stream.frames();
+    if frames <= 0 {
+        return None;
+    }
+    let parameters = stream.parameters();
+    let (sample_rate, frame_size) = unsafe {
+        let params = parameters.as_ptr();
+        ((*params).sample_rate, (*params).frame_size)
+    };
+    if sample_rate <= 0 || frame_size <= 0 {
+        return None;
+    }
+    Some(frames as f64 * frame_size as f64 / sample_rate as f64)
+}
+
+fn bitrate_duration_seconds(input: &format::context::Input) -> Option<f64> {
+    let bit_rate = input.bit_rate();
+    duration_from_size_and_bitrate(input, bit_rate)
+}
+
+fn stream_bitrate_duration_seconds(
+    input: &format::context::Input,
+    stream: &format::stream::Stream<'_>,
+) -> Option<f64> {
+    let parameters = stream.parameters();
+    let bit_rate = unsafe { (*parameters.as_ptr()).bit_rate };
+    duration_from_size_and_bitrate(input, bit_rate)
+}
+
+fn duration_from_size_and_bitrate(input: &format::context::Input, bit_rate: i64) -> Option<f64> {
+    if bit_rate <= 0 {
+        return None;
+    }
+    let size = input_size_bytes(input)?;
+    if size <= 0 {
+        return None;
+    }
+    Some(size as f64 * 8.0 / bit_rate as f64)
+}
+
+fn input_size_bytes(input: &format::context::Input) -> Option<i64> {
+    unsafe {
+        let context = input.as_ptr();
+        if context.is_null() || (*context).pb.is_null() {
+            return None;
+        }
+        let size = ffmpeg::ffi::avio_size((*context).pb);
+        (size > 0).then_some(size)
+    }
+}
+
+fn push_duration_candidate(
+    candidates: &mut Vec<DurationCandidate>,
+    source: &'static str,
+    seconds: Option<f64>,
+    bitrate_estimate: bool,
+) {
+    let Some(seconds) = seconds else {
+        return;
+    };
+    if !seconds.is_finite() || seconds <= 0.0 {
+        return;
+    }
+    candidates.push(DurationCandidate {
+        source,
+        seconds,
+        bitrate_estimate,
+    });
+}
+
+fn choose_duration_candidate(candidates: &[DurationCandidate]) -> Option<f64> {
+    let best = candidates
+        .iter()
+        .filter(|candidate| !candidate.bitrate_estimate)
+        .max_by(|a, b| a.seconds.total_cmp(&b.seconds))
+        .copied()
+        .or_else(|| {
+            candidates
+                .iter()
+                .filter(|candidate| candidate.bitrate_estimate)
+                .max_by(|a, b| a.seconds.total_cmp(&b.seconds))
+                .copied()
+        });
+
+    let best = best?;
+    log_duration_candidates(candidates, best);
+    Some(best.seconds)
+}
+
+fn log_duration_candidates(candidates: &[DurationCandidate], selected: DurationCandidate) {
+    if candidates.len() <= 1 {
+        return;
+    }
+    let shortest = candidates
+        .iter()
+        .map(|candidate| candidate.seconds)
+        .fold(f64::INFINITY, f64::min);
+    let longest = candidates
+        .iter()
+        .map(|candidate| candidate.seconds)
+        .fold(0.0, f64::max);
+    let diff = longest - shortest;
+    if diff < DURATION_DISAGREEMENT_LOG_SECONDS
+        || diff / longest.max(1.0) < DURATION_DISAGREEMENT_LOG_RATIO
+    {
+        return;
+    }
+    let candidates = candidates
+        .iter()
+        .map(|candidate| format!("{}={:.3}", candidate.source, candidate.seconds))
+        .collect::<Vec<_>>()
+        .join(" ");
+    crate::emit_event(crate::log::event(
+        crate::log::LogLevel::Info,
+        format!(
+            "duration candidates: selected={}({:.3}s) {candidates}",
+            selected.source, selected.seconds
+        ),
+    ));
 }
 
 fn is_recoverable_decode_error(err: &ffmpeg::Error) -> bool {
@@ -1720,7 +1904,74 @@ mod tests {
             Some(10.0),
             Some(60.0)
         ));
-        assert!(super::should_reconnect_after_eof_values(true, None, None));
+        assert!(!super::should_reconnect_after_eof_values(true, None, None));
+    }
+
+    #[test]
+    fn controlled_demux_interrupt_is_not_a_network_failure() {
+        assert!(super::is_controlled_demux_interrupt(&ffmpeg::Error::Exit));
+        assert!(!super::is_controlled_demux_interrupt(
+            &ffmpeg::Error::External
+        ));
+    }
+
+    #[test]
+    fn duration_selection_prefers_longer_stream_candidate() {
+        let candidates = [
+            super::DurationCandidate {
+                source: "format",
+                seconds: 120.0,
+                bitrate_estimate: false,
+            },
+            super::DurationCandidate {
+                source: "stream",
+                seconds: 124.0,
+                bitrate_estimate: false,
+            },
+        ];
+
+        assert_eq!(super::choose_duration_candidate(&candidates), Some(124.0));
+    }
+
+    #[test]
+    fn duration_selection_uses_bitrate_only_as_fallback() {
+        let small_diff = [
+            super::DurationCandidate {
+                source: "format",
+                seconds: 120.0,
+                bitrate_estimate: false,
+            },
+            super::DurationCandidate {
+                source: "bitrate",
+                seconds: 121.0,
+                bitrate_estimate: true,
+            },
+        ];
+        assert_eq!(super::choose_duration_candidate(&small_diff), Some(120.0));
+
+        let clear_diff_still_prefers_container = [
+            super::DurationCandidate {
+                source: "format",
+                seconds: 120.0,
+                bitrate_estimate: false,
+            },
+            super::DurationCandidate {
+                source: "bitrate",
+                seconds: 128.0,
+                bitrate_estimate: true,
+            },
+        ];
+        assert_eq!(
+            super::choose_duration_candidate(&clear_diff_still_prefers_container),
+            Some(120.0)
+        );
+
+        let bitrate_only = [super::DurationCandidate {
+            source: "bitrate",
+            seconds: 128.0,
+            bitrate_estimate: true,
+        }];
+        assert_eq!(super::choose_duration_candidate(&bitrate_only), Some(128.0));
     }
 
     #[test]

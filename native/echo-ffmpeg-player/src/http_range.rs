@@ -454,10 +454,13 @@ fn fetch_range(
                 });
             }
             if let Some(location) = response.headers().get("location") {
-                current_url = location.to_str().map_err(|_| FetchStreamError::Failed {
-                    message: "invalid redirect location".to_string(),
-                    next_start: start,
-                })?.to_string();
+                current_url = location
+                    .to_str()
+                    .map_err(|_| FetchStreamError::Failed {
+                        message: "invalid redirect location".to_string(),
+                        next_start: start,
+                    })?
+                    .to_string();
                 continue;
             }
             return Err(FetchStreamError::Failed {

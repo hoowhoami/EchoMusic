@@ -197,6 +197,14 @@ jobs:
             npx napi build --release --no-const-enum
           fi
 
+      - name: Verify Linux ffmpeg player addon exports
+        if: runner.os == 'Linux'
+        working-directory: native/echo-ffmpeg-player
+        shell: bash
+        run: |
+          file echo-ffmpeg-player.node
+          readelf --dyn-syms -W echo-ffmpeg-player.node | grep 'napi_register_module_v1'
+
       - name: Build native storage addon
         working-directory: native/echo-storage
         shell: bash

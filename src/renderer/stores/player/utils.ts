@@ -252,6 +252,16 @@ export const resolvePlaybackNotice = (params: {
     };
   }
 
+  if (params.code === 'premature-eof') {
+    return {
+      code: params.code,
+      title: '播放已停止',
+      reason: '音频流提前结束，已阻止自动切歌',
+      detail: '可以稍后重试或手动切换歌曲',
+      trackId,
+    };
+  }
+
   return {
     code: params.code,
     title: '播放失败',

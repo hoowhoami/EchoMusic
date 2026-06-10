@@ -312,7 +312,7 @@ contextBridge.exposeInMainWorld('electron', {
     play: () => ipcRenderer.invoke('player:play'),
     pause: () => ipcRenderer.invoke('player:pause'),
     stop: () => ipcRenderer.invoke('player:stop'),
-    seek: (time: number) => ipcRenderer.invoke('player:seek', time),
+    seek: (time: number, source?: string) => ipcRenderer.invoke('player:seek', time, source),
     setVolume: (volume: number) => ipcRenderer.invoke('player:set-volume', volume),
     setSpeed: (speed: number) => ipcRenderer.invoke('player:set-speed', speed),
     setEqualizer: (gains: number[]) => invokeWithPlainPayload('player:set-equalizer', gains),

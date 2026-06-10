@@ -412,7 +412,9 @@ fn output_command_loop(
             }
             OutputCommand::SetVolume(volume) => {
                 if let Ok(shared) = shared.lock() {
-                    shared.volume_scalar.store(f32::to_bits(volume), Ordering::Relaxed);
+                    shared
+                        .volume_scalar
+                        .store(f32::to_bits(volume), Ordering::Relaxed);
                 }
             }
             OutputCommand::Shutdown(ack) => return ack,
@@ -724,24 +726,31 @@ fn acquire_platform_exclusive_mode(
     device_name: &str,
     _device: &Device,
 ) -> PlayerResult<ExclusiveModeLease> {
-    use windows::Win32::Media::Audio::{
-        IMMDevice, IMMDeviceEnumerator, MMDeviceEnumerator, eRender, DEVICE_STATE_ACTIVE,
-    };
-    use windows::Win32::System::Com::{CoCreateInstance, CoInitializeEx, CLSCTX_ALL, COINIT_MULTITHREADED};
     use windows::core::PWSTR;
+    use windows::Win32::Media::Audio::{
+        eRender, IMMDevice, IMMDeviceEnumerator, MMDeviceEnumerator, DEVICE_STATE_ACTIVE,
+    };
+    use windows::Win32::System::Com::{
+        CoCreateInstance, CoInitializeEx, CLSCTX_ALL, COINIT_MULTITHREADED,
+    };
 
     unsafe {
         CoInitializeEx(None, COINIT_MULTITHREADED).ok();
-        let enumerator: IMMDeviceEnumerator = CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL)
-            .map_err(|e| PlayerError::Backend(format!("Failed to create device enumerator: {e}")))?;
+        let enumerator: IMMDeviceEnumerator =
+            CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL).map_err(|e| {
+                PlayerError::Backend(format!("Failed to create device enumerator: {e}"))
+            })?;
 
         let device: IMMDevice = if device_name.is_empty() || device_name == "auto" {
-            enumerator.GetDefaultAudioEndpoint(eRender, windows::Win32::Media::Audio::eConsole)
+            enumerator
+                .GetDefaultAudioEndpoint(eRender, windows::Win32::Media::Audio::eConsole)
                 .map_err(|e| PlayerError::Backend(format!("Failed to get default device: {e}")))?
         } else {
-            let collection = enumerator.EnumAudioEndpoints(eRender, DEVICE_STATE_ACTIVE)
+            let collection = enumerator
+                .EnumAudioEndpoints(eRender, DEVICE_STATE_ACTIVE)
                 .map_err(|e| PlayerError::Backend(format!("Failed to enumerate devices: {e}")))?;
-            let count = collection.GetCount()
+            let count = collection
+                .GetCount()
                 .map_err(|e| PlayerError::Backend(format!("Failed to get device count: {e}")))?;
 
             let mut found = None;
@@ -781,8 +790,9 @@ fn acquire_platform_exclusive_mode(
         format!("hw:{}", device_name)
     };
 
-    let pcm = alsa::PCM::new(&hw_device, alsa::Direction::Playback, false)
-        .map_err(|e| PlayerError::Backend(format!("Failed to open ALSA device {}: {}", hw_device, e)))?;
+    let pcm = alsa::PCM::new(&hw_device, alsa::Direction::Playback, false).map_err(|e| {
+        PlayerError::Backend(format!("Failed to open ALSA device {}: {}", hw_device, e))
+    })?;
 
     crate::emit_event(crate::log::event(
         crate::log::LogLevel::Info,
@@ -866,8 +876,16 @@ fn build_typed_stream<T>(
 where
     T: cpal::SizedSample + FromF32OutputSample,
 {
-    let shared_paused = shared.lock().ok().map(|s| s.paused.clone()).unwrap_or_else(|| Arc::new(AtomicBool::new(true)));
-    let shared_volume = shared.lock().ok().map(|s| s.volume_scalar.clone()).unwrap_or_else(|| Arc::new(AtomicU32::new(f32::to_bits(1.0))));
+    let shared_paused = shared
+        .lock()
+        .ok()
+        .map(|s| s.paused.clone())
+        .unwrap_or_else(|| Arc::new(AtomicBool::new(true)));
+    let shared_volume = shared
+        .lock()
+        .ok()
+        .map(|s| s.volume_scalar.clone())
+        .unwrap_or_else(|| Arc::new(AtomicU32::new(f32::to_bits(1.0))));
 
     device
         .build_output_stream(

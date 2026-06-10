@@ -349,7 +349,7 @@ const createPlayerApi = (
     toggle: () => player.togglePlay(),
     next: () => player.next(),
     prev: () => player.prev(),
-    seek: (time: number) => player.seek(time),
+    seek: (time: number) => player.seek(time, { source: `plugin:${descriptor.id}` }),
     setVolume: (volume: number) => player.setVolume(volume),
     setPlayMode: player.setPlayMode,
     audioSource: {

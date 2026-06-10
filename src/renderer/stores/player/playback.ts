@@ -330,24 +330,21 @@ export const createPlaybackManager = (
     }
   };
 
-  const seek = (time: number) => {
+  const seek = (time: number, options?: { source?: string }) => {
     const effectiveDuration = engine.duration > 0 ? engine.duration : state.duration;
     const targetTime = Math.max(0, Math.min(effectiveDuration, time));
+    logger.info('PlayerPlayback', 'Seek requested', {
+      source: options?.source ?? 'unknown',
+      requestedTime: time,
+      targetTime,
+      duration: effectiveDuration,
+      trackId: state.currentTrackId,
+    });
     if (state.isDraggingProgress) state.isDraggingProgress = false;
     state.seekTargetTime = targetTime;
     state.seekTimestamp = Date.now();
-    engine.seek(targetTime);
+    engine.seek(targetTime, { source: options?.source });
     state.currentTime = targetTime;
-
-    // 当 seek 目标接近结尾时（距结尾 < 2 秒），不忽略 EOF 事件，
-    // 否则播放完毕后不会自动切下一首
-    const nearEnd = effectiveDuration > 0 && effectiveDuration - targetTime < 2;
-    if (!nearEnd) {
-      state.recentSeekIgnoreEnd = true;
-      window.setTimeout(() => {
-        state.recentSeekIgnoreEnd = false;
-      }, 800);
-    }
 
     engine.updateMediaPlaybackState(buildMediaState(state));
   };

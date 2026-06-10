@@ -85,7 +85,7 @@ export const usePlayerStore = defineStore(
         }
         let safeTime = previousTime;
         if (actualDuration > 0 && previousTime >= actualDuration - 0.5) safeTime = 0;
-        engine.seek(safeTime);
+        engine.seek(safeTime, { source: 'track-refresh' });
         state.currentTime = safeTime;
       }
 
@@ -329,6 +329,17 @@ export const usePlayerStore = defineStore(
         },
         error: (event) => {
           if (event && !event.isTrusted && !(event as any)?.detail) return;
+          const detail = (event as CustomEvent<{ reason?: string }> | null)?.detail;
+          if (detail?.reason === 'premature-eof') {
+            state.lastError = 'premature-eof';
+            state.isLoading = false;
+            state.isPlaying = false;
+            showPlaybackNotice('premature-eof', state.currentTrackSnapshot);
+            settingStore.syncPreventSleep(false);
+            playbackManager.clearAutoNextTimer();
+            engine.updateMediaPlaybackState(buildMediaState(state));
+            return;
+          }
           state.lastError = (event as any)?.type ?? 'playback-error';
           showPlaybackNotice('playback-failed', state.currentTrackSnapshot);
           playbackManager.applyFailedPlaybackState({ keepResolvedSource: true });
@@ -348,10 +359,15 @@ export const usePlayerStore = defineStore(
         },
         previoustrack: () => playbackManager.prev(),
         nexttrack: () => playbackManager.next(),
-        seekto: (time) => playbackManager.seek(time),
-        seekbackward: (offset) => playbackManager.seek(Math.max(0, state.currentTime - offset)),
+        seekto: (time) => playbackManager.seek(time, { source: 'media-control' }),
+        seekbackward: (offset) =>
+          playbackManager.seek(Math.max(0, state.currentTime - offset), {
+            source: 'media-control',
+          }),
         seekforward: (offset) =>
-          playbackManager.seek(Math.min(state.duration, state.currentTime + offset)),
+          playbackManager.seek(Math.min(state.duration, state.currentTime + offset), {
+            source: 'media-control',
+          }),
       });
       window.electron?.player?.getState?.().then((playerState) => {
         if (!playerState) return;

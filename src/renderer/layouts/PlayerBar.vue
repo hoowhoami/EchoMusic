@@ -118,12 +118,12 @@ const progressValue = computed(() => {
 
 const handleSeek = (value: number[] | undefined) => {
   if (!value || value.length === 0) return;
+  const next = Number(value[0]);
+  if (!Number.isFinite(next)) return;
   if (isDraggingSeek.value) {
-    // 拖动中只更新视觉，不 seek
-    pendingSeekTime.value = value[0];
+    pendingSeekTime.value = next;
   } else {
-    // 点击直接 seek
-    player.seek(value[0]);
+    player.seek(next, { source: 'player-bar' });
   }
 };
 
@@ -135,7 +135,7 @@ const handleSeekStart = () => {
 
 const handleSeekEnd = () => {
   if (pendingSeekTime.value !== null) {
-    player.seek(pendingSeekTime.value);
+    player.seek(pendingSeekTime.value, { source: 'player-bar' });
     pendingSeekTime.value = null;
   }
   isDraggingSeek.value = false;

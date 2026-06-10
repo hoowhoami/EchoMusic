@@ -19,6 +19,10 @@ const REBUFFER_RESUME_MS: usize = 450;
 const SEEK_RESUME_MS: usize = 60;
 const MAX_OUTPUT_PUSH_FRAMES: usize = 2048;
 const BUFFERING_RETRY_DELAY: Duration = Duration::from_millis(8);
+const EOF_DRAIN_RETRY_DELAY: Duration = Duration::from_millis(10);
+const EOF_DRAIN_TIMEOUT: Duration = Duration::from_secs(5);
+const TIME_UPDATE_INTERVAL: Duration = Duration::from_millis(200);
+const DYNAMIC_DURATION_UPDATE_EPSILON: f64 = 0.25;
 
 #[derive(Debug, Default)]
 struct PlayerConfig {
@@ -350,6 +354,14 @@ impl FfmpegPlayer {
 
     pub fn seek(&self, time: f64) -> PlayerResult<PlayerEvent> {
         let time = clamp_f64(time, 0.0, f64::MAX)?;
+        let snapshot = self.state();
+        crate::emit_event(crate::log::event(
+            crate::log::LogLevel::Info,
+            format!(
+                "seek requested: target={time:.3}s current={:.3}s duration={:.3}s path={}",
+                snapshot.time_pos, snapshot.duration, snapshot.path
+            ),
+        ));
         self.with_output(|output| output.clear_blocking());
         let seq = self.seek_seq.fetch_add(1, Ordering::SeqCst) + 1;
         self.send_worker_command(PlaybackCommand::Seek { time, seq })?;
@@ -1084,6 +1096,8 @@ fn run_decoder_worker(
     let mut buffering_resume_ms = REBUFFER_RESUME_MS;
     let mut dsp = DspProcessor::new();
     let mut last_time_event = Instant::now();
+    let mut queued_media_time = state.lock().map(|state| state.time_pos).unwrap_or_default();
+    let mut queued_playback_speed = state.lock().map(|state| state.speed as f32).unwrap_or(1.0);
 
     loop {
         if shutdown.load(Ordering::SeqCst) || interrupt.load(Ordering::SeqCst) {
@@ -1103,6 +1117,7 @@ fn run_decoder_worker(
                         &mut buffering,
                         &mut buffering_resume_ms,
                         &seek_seq,
+                        &mut queued_media_time,
                     ) {
                         break;
                     }
@@ -1123,6 +1138,7 @@ fn run_decoder_worker(
                 &mut buffering,
                 &mut buffering_resume_ms,
                 &seek_seq,
+                &mut queued_media_time,
             ) {
                 return;
             }
@@ -1147,6 +1163,8 @@ fn run_decoder_worker(
                     &mut buffering,
                     &mut buffering_resume_ms,
                     &seek_seq,
+                    &mut queued_media_time,
+                    &mut queued_playback_speed,
                     chunk,
                 ) {
                     output.set_paused(true);
@@ -1158,7 +1176,7 @@ fn run_decoder_worker(
                     break;
                 }
                 let now = Instant::now();
-                if now.duration_since(last_time_event) >= Duration::from_millis(200) {
+                if now.duration_since(last_time_event) >= TIME_UPDATE_INTERVAL {
                     let time_pos = state.lock().map(|state| state.time_pos).unwrap_or_default();
                     crate::emit_event(PlayerEvent::time_update(time_pos));
                     last_time_event = now;
@@ -1175,9 +1193,33 @@ fn run_decoder_worker(
                 thread::sleep(BUFFERING_RETRY_DELAY);
             }
             Ok(DecodeReadResult::Eof) => {
+                if playing {
+                    buffering = false;
+                    output.set_paused(false);
+                }
+                match wait_for_output_drain(
+                    &output,
+                    &commands,
+                    &mut decoder,
+                    &state,
+                    &mut dsp,
+                    &mut playing,
+                    &mut buffering,
+                    &mut buffering_resume_ms,
+                    &seek_seq,
+                    &mut queued_media_time,
+                    &mut queued_playback_speed,
+                    &mut last_time_event,
+                ) {
+                    OutputDrainResult::Drained => {}
+                    OutputDrainResult::Continue => continue,
+                    OutputDrainResult::Shutdown => return,
+                }
+
                 if loop_file {
                     match decoder.seek(0.0) {
                         Ok(()) => {
+                            queued_media_time = 0.0;
                             output.clear_blocking();
                             dsp.reset();
                             buffering = true;
@@ -1231,6 +1273,7 @@ fn handle_decoder_command(
     buffering: &mut bool,
     buffering_resume_ms: &mut usize,
     seek_seq: &Arc<AtomicU64>,
+    queued_media_time: &mut f64,
 ) -> bool {
     match command {
         PlaybackCommand::Play => {
@@ -1287,6 +1330,7 @@ fn handle_decoder_command(
                 *playing = false;
                 output.set_paused(true);
             }
+            *queued_media_time = time.max(0.0);
             if let Ok(mut state) = state.lock() {
                 state.time_pos = time.max(0.0);
             }
@@ -1304,6 +1348,75 @@ fn handle_decoder_command(
     true
 }
 
+enum OutputDrainResult {
+    Drained,
+    Continue,
+    Shutdown,
+}
+
+#[allow(clippy::too_many_arguments)]
+fn wait_for_output_drain(
+    output: &AudioOutput,
+    commands: &mpsc::Receiver<PlaybackCommand>,
+    decoder: &mut FfmpegDecoder,
+    state: &Arc<Mutex<PlayerState>>,
+    dsp: &mut DspProcessor,
+    playing: &mut bool,
+    buffering: &mut bool,
+    buffering_resume_ms: &mut usize,
+    seek_seq: &Arc<AtomicU64>,
+    queued_media_time: &mut f64,
+    queued_playback_speed: &mut f32,
+    last_time_event: &mut Instant,
+) -> OutputDrainResult {
+    let started = Instant::now();
+    loop {
+        while let Ok(command) = commands.try_recv() {
+            let discard_eof = matches!(command, PlaybackCommand::Seek { .. });
+            if !handle_decoder_command(
+                command,
+                decoder,
+                output,
+                state,
+                dsp,
+                playing,
+                buffering,
+                buffering_resume_ms,
+                seek_seq,
+                queued_media_time,
+            ) {
+                return OutputDrainResult::Shutdown;
+            }
+            if discard_eof || !*playing {
+                return OutputDrainResult::Continue;
+            }
+        }
+
+        update_audible_time_pos(state, output, *queued_media_time, *queued_playback_speed);
+        let now = Instant::now();
+        if now.duration_since(*last_time_event) >= TIME_UPDATE_INTERVAL {
+            let time_pos = state.lock().map(|state| state.time_pos).unwrap_or_default();
+            crate::emit_event(PlayerEvent::time_update(time_pos));
+            *last_time_event = now;
+        }
+
+        if output.buffered_frames() == 0 {
+            return OutputDrainResult::Drained;
+        }
+        if started.elapsed() >= EOF_DRAIN_TIMEOUT {
+            crate::emit_event(crate::log::event(
+                crate::log::LogLevel::Warn,
+                format!(
+                    "timed out waiting for audio output to drain at EOF: bufferedFrames={}",
+                    output.buffered_frames()
+                ),
+            ));
+            return OutputDrainResult::Drained;
+        }
+        thread::sleep(EOF_DRAIN_RETRY_DELAY);
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn push_chunk_with_backpressure(
     output: &AudioOutput,
@@ -1316,18 +1429,20 @@ fn push_chunk_with_backpressure(
     buffering: &mut bool,
     buffering_resume_ms: &mut usize,
     seek_seq: &Arc<AtomicU64>,
+    queued_media_time: &mut f64,
+    queued_playback_speed: &mut f32,
     mut chunk: decode::DecodedAudioChunk,
 ) -> PlayerResult<()> {
-    if let Ok(mut state) = state.lock() {
-        state.time_pos = chunk.time_pos;
-    }
-
     let settings = config
         .lock()
         .ok()
         .and_then(|config| config.dsp_settings().ok())
         .unwrap_or_default();
     dsp.process(&mut chunk.samples, &chunk.format, &settings)?;
+    let chunk_start_time = chunk.time_pos.max(*queued_media_time).max(0.0);
+    *queued_playback_speed = settings.speed;
+    *queued_media_time = chunk_start_time;
+    update_audible_time_pos(state, output, *queued_media_time, *queued_playback_speed);
 
     let mut offset = 0usize;
     while offset < chunk.samples.len() && *playing {
@@ -1343,6 +1458,7 @@ fn push_chunk_with_backpressure(
                 buffering,
                 buffering_resume_ms,
                 seek_seq,
+                queued_media_time,
             ) {
                 return Ok(());
             }
@@ -1358,14 +1474,73 @@ fn push_chunk_with_backpressure(
         let push_len = output_push_sample_count(remaining.len(), chunk.format.channels);
         let written = output.push_interleaved(&remaining[..push_len]);
         if written == 0 {
+            update_audible_time_pos(state, output, *queued_media_time, *queued_playback_speed);
             maybe_resume_after_prebuffer(output, buffering, *buffering_resume_ms);
             thread::sleep(Duration::from_millis(4));
         } else {
             offset += written;
+            *queued_media_time = chunk_start_time
+                + media_duration_for_samples(
+                    offset,
+                    chunk.format.channels,
+                    chunk.format.sample_rate,
+                    *queued_playback_speed,
+                );
+            update_audible_time_pos(state, output, *queued_media_time, *queued_playback_speed);
             maybe_resume_after_prebuffer(output, buffering, *buffering_resume_ms);
         }
     }
     Ok(())
+}
+
+fn update_audible_time_pos(
+    state: &Arc<Mutex<PlayerState>>,
+    output: &AudioOutput,
+    queued_media_time: f64,
+    playback_speed: f32,
+) {
+    let audible_time = audible_time_pos(output, queued_media_time, playback_speed);
+    let mut duration_change = None;
+    if let Ok(mut state) = state.lock() {
+        if should_extend_duration(state.duration, queued_media_time) {
+            state.duration = queued_media_time;
+            duration_change = Some(state.duration);
+        }
+        state.time_pos = if state.duration > 0.0 {
+            audible_time.min(state.duration)
+        } else {
+            audible_time
+        };
+    }
+    if let Some(duration) = duration_change {
+        crate::emit_event(PlayerEvent::duration_change(duration));
+    }
+}
+
+fn should_extend_duration(current_duration: f64, observed_time: f64) -> bool {
+    observed_time.is_finite()
+        && observed_time > 0.0
+        && (current_duration <= 0.0
+            || observed_time > current_duration + DYNAMIC_DURATION_UPDATE_EPSILON)
+}
+
+fn audible_time_pos(output: &AudioOutput, queued_media_time: f64, playback_speed: f32) -> f64 {
+    let sample_rate = output.sample_rate().max(1) as f64;
+    let speed = f64::from(playback_speed.clamp(0.1, 5.0));
+    let buffered_media_seconds = output.buffered_frames() as f64 * speed / sample_rate;
+    (queued_media_time.max(0.0) - buffered_media_seconds).max(0.0)
+}
+
+fn media_duration_for_samples(
+    samples: usize,
+    channels: usize,
+    sample_rate: u32,
+    playback_speed: f32,
+) -> f64 {
+    let channels = channels.max(1);
+    let sample_rate = sample_rate.max(1) as f64;
+    let speed = f64::from(playback_speed.clamp(0.1, 5.0));
+    samples as f64 / channels as f64 / sample_rate * speed
 }
 
 fn output_push_sample_count(remaining_samples: usize, channels: usize) -> usize {
@@ -1405,7 +1580,10 @@ fn prebuffer_frames(output: &AudioOutput, millis: usize) -> usize {
 
 #[cfg(test)]
 mod tests {
-    use super::{output_push_sample_count, MAX_OUTPUT_PUSH_FRAMES};
+    use super::{
+        output_push_sample_count, should_extend_duration, DYNAMIC_DURATION_UPDATE_EPSILON,
+        MAX_OUTPUT_PUSH_FRAMES,
+    };
 
     #[test]
     fn output_push_chunks_are_bounded_and_frame_aligned() {
@@ -1420,5 +1598,18 @@ mod tests {
             output_push_sample_count(MAX_OUTPUT_PUSH_FRAMES * 6 + 5, 6),
             MAX_OUTPUT_PUSH_FRAMES * 6
         );
+    }
+
+    #[test]
+    fn duration_extends_only_after_meaningful_observed_overrun() {
+        assert!(!should_extend_duration(
+            120.0,
+            120.0 + DYNAMIC_DURATION_UPDATE_EPSILON / 2.0
+        ));
+        assert!(should_extend_duration(
+            120.0,
+            120.0 + DYNAMIC_DURATION_UPDATE_EPSILON + 0.01
+        ));
+        assert!(should_extend_duration(0.0, 1.0));
     }
 }

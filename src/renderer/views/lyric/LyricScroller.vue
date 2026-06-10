@@ -106,7 +106,7 @@ const subYrcBgStyle = computed(
 const isYrcLine = (line: { characters: unknown[] }) => (line.characters?.length ?? 0) > 1;
 
 const handleLineClick = (time: number) => {
-  playerStore.seek(time);
+  playerStore.seek(time, { source: 'lyric-line' });
   if (!playerStore.isPlaying) {
     playerStore.togglePlay();
   }

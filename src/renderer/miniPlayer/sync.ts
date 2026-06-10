@@ -255,7 +255,7 @@ const executeMiniPlayerCommand = (command: MiniPlayerCommand) => {
     return;
   }
   if (command.type === 'seek') {
-    playerStore.seek(command.value);
+    playerStore.seek(command.value, { source: 'mini-player' });
     return;
   }
   if (command.type === 'playQueueTrack') {

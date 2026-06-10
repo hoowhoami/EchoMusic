@@ -79,10 +79,12 @@ const progressTooltipPercent = computed(() => {
 
 const handleSeek = (value: number[] | undefined) => {
   if (!value || value.length === 0) return;
+  const next = Number(value[0]);
+  if (!Number.isFinite(next)) return;
   if (isDraggingSeek.value) {
-    pendingSeekTime.value = value[0];
+    pendingSeekTime.value = next;
   } else {
-    playerStore.seek(value[0]);
+    playerStore.seek(next, { source: 'lyric-controls' });
   }
 };
 
@@ -94,7 +96,7 @@ const handleSeekStart = () => {
 
 const handleSeekEnd = () => {
   if (pendingSeekTime.value !== null) {
-    playerStore.seek(pendingSeekTime.value);
+    playerStore.seek(pendingSeekTime.value, { source: 'lyric-controls' });
     pendingSeekTime.value = null;
   }
   isDraggingSeek.value = false;

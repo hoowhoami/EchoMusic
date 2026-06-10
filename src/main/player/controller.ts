@@ -428,6 +428,13 @@ export class PlayerController extends EventEmitter {
       return undefined;
     }
     if (cmd === 'seek') {
+      log.info('[PlayerController] Seek requested', {
+        time: Number(args[1]),
+        source: 'command',
+        path: this.state.path,
+        duration: this.state.duration,
+        timePos: this.state.timePos,
+      });
       this.addon.seek(Number(args[1]));
       return undefined;
     }
@@ -509,10 +516,17 @@ export class PlayerController extends EventEmitter {
     this.state.path = '';
   }
 
-  async seek(time: number): Promise<void> {
+  async seek(time: number, source = 'unknown'): Promise<void> {
     if (!this.addon) return;
     try {
       await this.whenReady();
+      log.info('[PlayerController] Seek requested', {
+        time,
+        source,
+        path: this.state.path,
+        duration: this.state.duration,
+        timePos: this.state.timePos,
+      });
       this.addon.seek(time);
     } catch {
       // seek 失败时忽略

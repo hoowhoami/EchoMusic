@@ -40,6 +40,9 @@ const clamp = (value: number, min: number, max: number): number =>
 
 const DEFAULT_REFERENCE_LUFS = -14.0;
 const LOAD_READY_TIMEOUT_MS = 15000;
+const PREMATURE_EOF_MIN_DURATION = 30;
+const PREMATURE_EOF_MIN_REMAINING = 8;
+const PREMATURE_EOF_REMAINING_RATIO = 0.05;
 
 // player preload API（类型来自 electron.d.ts）
 const player = window.electron?.player;
@@ -111,6 +114,20 @@ export class PlayerEngine {
 
     const offEnd = player.onPlaybackEnd((reason: string) => {
       if (reason === 'eof') {
+        const duration = Math.max(0, Number(this.durationValue) || 0);
+        const currentTime = Math.max(0, Number(this.lastTimeValue) || 0);
+        const remaining = duration - currentTime;
+        const suspiciousRemaining = Math.max(
+          PREMATURE_EOF_MIN_REMAINING,
+          duration * PREMATURE_EOF_REMAINING_RATIO,
+        );
+        if (duration >= PREMATURE_EOF_MIN_DURATION && remaining > suspiciousRemaining) {
+          logger.warn('PlayerEngine', 'premature playback end reported', {
+            currentTime,
+            duration,
+            remaining,
+          });
+        }
         this.events.ended?.();
       } else if (reason === 'error') {
         this.events.error?.(
@@ -273,11 +290,19 @@ export class PlayerEngine {
     }
   }
 
-  seek(time: number): void {
+  seek(time: number, options?: { source?: string }): void {
+    logger.info('PlayerEngine', 'seek requested', {
+      time,
+      source: options?.source ?? 'unknown',
+    });
     this.loadPromise
-      .then(() => player?.seek(time))
+      .then(() => player?.seek(time, options?.source))
       .catch((err: unknown) => {
-        logger.warn('PlayerEngine', 'seek failed', { time, error: String(err) });
+        logger.warn('PlayerEngine', 'seek failed', {
+          time,
+          source: options?.source ?? 'unknown',
+          error: String(err),
+        });
       });
     this.lastTimeValue = time;
     this.events.timeUpdate?.(time);

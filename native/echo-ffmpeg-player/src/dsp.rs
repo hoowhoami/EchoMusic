@@ -581,7 +581,8 @@ fn normalize_ir_channels(channels: &mut [Vec<f32>]) {
         .flat_map(|channel| channel.iter())
         .map(|&sample| sample * sample)
         .sum::<f32>()
-        .sqrt() / (total_samples as f32).sqrt();
+        .sqrt()
+        / (total_samples as f32).sqrt();
 
     let peak: f32 = channels
         .iter()
