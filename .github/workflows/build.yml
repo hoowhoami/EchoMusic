@@ -195,15 +195,21 @@ jobs:
             find server/module -name '*.test.js' -delete
           fi
 
-      - name: Build desktop app
+      - name: Type-check desktop app
+        shell: bash
+        run: pnpm exec vue-tsc --noEmit
+
+      - name: Build renderer and main bundles
+        shell: bash
+        run: pnpm exec vite build
+
+      - name: Package desktop app
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
           ELECTRON_BUILDER_BINARIES_MIRROR: https://github.com/electron-userland/electron-builder-binaries/releases/download/
-        run: |
-          pnpm vue-tsc --noEmit && pnpm vite build
-          pnpm electron-builder ${{ matrix.electron_builder_args }} --publish never
+        run: pnpm exec electron-builder ${{ matrix.electron_builder_args }} --publish never
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
