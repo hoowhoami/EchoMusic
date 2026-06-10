@@ -164,6 +164,7 @@ jobs:
         shell: bash
         env:
           FFMPEG_PLAYER_FEATURES: ${{ matrix.ffmpeg_features }}
+          OPENSSL_STATIC: 1
         run: |
           npm install --no-audit --no-fund
           if [ -n "${{ matrix.rust_target }}" ]; then
