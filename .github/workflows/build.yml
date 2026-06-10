@@ -120,6 +120,9 @@ jobs:
             xdg-utils \
             yasm \
             zlib1g-dev
+          echo "OPENSSL_DIR=/usr" >> "$GITHUB_ENV"
+          echo "OPENSSL_LIB_DIR=/usr/lib/x86_64-linux-gnu" >> "$GITHUB_ENV"
+          echo "OPENSSL_INCLUDE_DIR=/usr/include" >> "$GITHUB_ENV"
 
       - name: Install macOS build dependencies
         if: runner.os == 'macOS'
