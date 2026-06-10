@@ -202,8 +202,8 @@ jobs:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
           ELECTRON_BUILDER_BINARIES_MIRROR: https://github.com/electron-userland/electron-builder-binaries/releases/download/
         run: |
-          ./node_modules/.bin/vue-tsc --noEmit && ./node_modules/.bin/vite build
-          ./node_modules/.bin/electron-builder ${{ matrix.electron_builder_args }} --publish never
+          pnpm vue-tsc --noEmit && pnpm vite build
+          pnpm electron-builder ${{ matrix.electron_builder_args }} --publish never
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
