@@ -29,7 +29,7 @@ jobs:
               release/EchoMusic-*.zip
               release/EchoMusic-*.dmg
               release/latest-mac.yml
-          - os: macos-13
+          - os: macos-14
             rust_target: x86_64-apple-darwin
             electron_builder_args: '--mac --x64'
             artifact_name: EchoMusic-macOS-x64
@@ -111,9 +111,32 @@ jobs:
 
       - name: Install macOS FFmpeg dependencies
         if: runner.os == 'macOS'
+        shell: bash
         run: |
-          brew update
-          brew install ffmpeg pkg-config
+          set -e
+          if [ "${{ matrix.rust_target }}" = "x86_64-apple-darwin" ]; then
+            arch -x86_64 /bin/bash -c '
+              set -e
+              if [ ! -f /usr/local/bin/brew ]; then
+                NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+              fi
+              /usr/local/bin/brew update
+              /usr/local/bin/brew install ffmpeg pkg-config || true
+              /usr/local/bin/brew list ffmpeg >/dev/null
+              /usr/local/bin/brew list pkg-config >/dev/null
+            '
+            FFMPEG_PREFIX=$(/usr/local/bin/brew --prefix ffmpeg)
+            echo "/usr/local/bin" >> "$GITHUB_PATH"
+          else
+            brew update
+            brew install ffmpeg pkg-config
+            FFMPEG_PREFIX=$(brew --prefix ffmpeg)
+          fi
+
+          echo "FFMPEG_DIR=$FFMPEG_PREFIX" >> "$GITHUB_ENV"
+          echo "FFMPEG_INCLUDE_DIR=$FFMPEG_PREFIX/include" >> "$GITHUB_ENV"
+          echo "FFMPEG_LIB_DIR=$FFMPEG_PREFIX/lib" >> "$GITHUB_ENV"
+          echo "PKG_CONFIG_PATH=$FFMPEG_PREFIX/lib/pkgconfig" >> "$GITHUB_ENV"
 
       - name: Install Windows shared FFmpeg
         if: runner.os == 'Windows'
