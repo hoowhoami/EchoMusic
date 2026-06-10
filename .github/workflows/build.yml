@@ -305,6 +305,8 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
+          token: ${{ github.token }}
+          tag_name: ${{ github.ref_name }}
           files: release-artifacts/**
           body: ${{ steps.changelog.outputs.BODY }}
           draft: false
@@ -312,7 +314,7 @@ jobs:
           fail_on_unmatched_files: true
           overwrite_files: true
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ github.token }}
 
   notify:
     name: Send Telegram Notification
