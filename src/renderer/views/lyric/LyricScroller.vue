@@ -22,11 +22,14 @@ const playerStore = usePlayerStore();
 const settingStore = useSettingStore();
 
 const lyricListRef = ref<HTMLElement | null>(null);
+const scrollTargetIndex = ref(-1);
 
 const collapsedRef = computed(() => props.collapsed);
 
-const currentIndex = computed(() => {
-  const idx = lyricStore.currentIndex;
+// 主歌词页只提前滚动，不提前切换当前行，避免逐字进度听起来抢拍。
+const LYRIC_SCROLL_LOOKAHEAD_MS = 140;
+
+const resolveVisibleIndex = (idx: number) => {
   if (idx < 0) return idx;
   // 如果当前行被过滤，回退到上一个未被过滤的行
   const lines = lyricStore.lines;
@@ -53,14 +56,23 @@ const currentIndex = computed(() => {
     return -1;
   }
   return idx;
+};
+
+const currentIndex = computed(() => resolveVisibleIndex(lyricStore.currentIndex));
+const scrollIndex = computed(() => {
+  const index = resolveVisibleIndex(scrollTargetIndex.value);
+  return index >= 0 ? index : currentIndex.value;
 });
 const { scrollHighlightIndex, scrollToLine, handleWheel, dispose } = useLyricScroll(
   () => lyricListRef.value,
   collapsedRef,
-  currentIndex,
+  scrollIndex,
 );
 
-const { getNowMs, updateYrcDom, syncSeekAnchor } = useYrcAnimation(lyricListRef);
+const { getNowMs, getLyricTimelineMs, updateYrcDom, syncSeekAnchor } = useYrcAnimation(
+  lyricListRef,
+  currentIndex,
+);
 
 const effectivePlayedColor = computed(() => lyricStore.effectivePlayedColor);
 const effectiveUnplayedColor = computed(() => lyricStore.effectiveUnplayedColor);
@@ -101,7 +113,10 @@ const handleLineClick = (time: number) => {
   // seek 后立即更新当前行索引并滚动到对应位置
   nextTick(() => {
     lyricStore.updateCurrentIndex(time);
-    scrollToLine(currentIndex.value, true);
+    scrollTargetIndex.value = lyricStore.findIndexAtTimeMs(
+      Math.round(time * 1000) + lyricStore.currentTimeOffset + LYRIC_SCROLL_LOOKAHEAD_MS,
+    );
+    scrollToLine(scrollIndex.value, true);
   });
 };
 
@@ -125,6 +140,13 @@ const lyricEntries = computed(() =>
   })),
 );
 
+const refreshLyricIndexes = () => {
+  lyricStore.updateCurrentIndex(getNowMs() / 1000);
+  scrollTargetIndex.value = lyricStore.findIndexAtTimeMs(
+    getLyricTimelineMs(LYRIC_SCROLL_LOOKAHEAD_MS),
+  );
+};
+
 // 逐字歌词 RAF 更新
 let rafId: number | null = null;
 let lastRafTime = 0;
@@ -133,7 +155,7 @@ const rafLoop = () => {
   rafId = requestAnimationFrame((timestamp) => {
     if (timestamp - lastRafTime >= 33) {
       lastRafTime = timestamp;
-      lyricStore.updateCurrentIndex(getNowMs() / 1000);
+      refreshLyricIndexes();
       updateYrcDom();
     }
     rafLoop();
@@ -157,6 +179,7 @@ watch(
   () => playerStore.isPlaying,
   (playing) => {
     syncSeekAnchor();
+    refreshLyricIndexes();
     if (playing) startRaf();
     else stopRaf();
   },
@@ -164,13 +187,18 @@ watch(
 
 watch(
   () => playerStore.currentTime,
-  () => syncSeekAnchor(),
+  () => {
+    syncSeekAnchor();
+    refreshLyricIndexes();
+    updateYrcDom();
+  },
 );
 
 onMounted(() => {
   syncSeekAnchor();
+  refreshLyricIndexes();
   if (playerStore.isPlaying) startRaf();
-  nextTick(() => scrollToLine(currentIndex.value, false));
+  nextTick(() => scrollToLine(scrollIndex.value, false));
 });
 
 onUnmounted(() => {
@@ -183,7 +211,7 @@ watch(
   () => props.collapsed,
   (collapsed) => {
     nextTick(() => {
-      scrollToLine(currentIndex.value, false, collapsed);
+      scrollToLine(scrollIndex.value, false, collapsed);
     });
   },
 );
@@ -192,7 +220,27 @@ watch(
   () => lyricStore.lyricsMode,
   async () => {
     await nextTick();
-    scrollToLine(currentIndex.value, false);
+    scrollToLine(scrollIndex.value, false);
+  },
+);
+
+watch(
+  () => lyricStore.currentTimeOffset,
+  async () => {
+    refreshLyricIndexes();
+    await nextTick();
+    updateYrcDom();
+    scrollToLine(scrollIndex.value, false, props.collapsed);
+  },
+);
+
+watch(
+  () => [lyricStore.loadedHash, lyricStore.lines.length],
+  async () => {
+    refreshLyricIndexes();
+    await nextTick();
+    updateYrcDom();
+    scrollToLine(scrollIndex.value, false, props.collapsed);
   },
 );
 </script>

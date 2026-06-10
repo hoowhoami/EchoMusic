@@ -73,6 +73,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -141,7 +143,7 @@ jobs:
           Copy-Item "$ffmpegRoot\bin\*.dll" "build\ffmpeg-dlls\"
 
       - name: Install root dependencies
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile --prod=false
 
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable

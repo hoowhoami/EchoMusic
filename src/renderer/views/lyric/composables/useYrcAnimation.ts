@@ -6,11 +6,12 @@ import { useLyricStore } from '@/stores/lyric';
  * 逐字歌词实时进度动画（毫秒级精度）
  * 使用 RAF 循环驱动，绕过 Vue 响应式以保证性能
  */
-export function useYrcAnimation(lyricListRef: Ref<HTMLElement | null>) {
+export function useYrcAnimation(lyricListRef: Ref<HTMLElement | null>, activeIndex?: Ref<number>) {
   const playerStore = usePlayerStore();
   const lyricStore = useLyricStore();
 
-  const LYRIC_LOOKAHEAD = 150;
+  // 主歌词页已经提前滚动，逐字进度本身按歌词时间轴走，避免听感抢拍。
+  const LYRIC_LOOKAHEAD = 0;
   const CLOCK_SYNC_TOLERANCE_MS = 300;
   const RECENT_SEEK_SYNC_WINDOW_MS = 800;
   const PLAYBACK_STALE_THRESHOLD_MS = 1800;
@@ -33,9 +34,12 @@ export function useYrcAnimation(lyricListRef: Ref<HTMLElement | null>) {
     return seekBaseMs;
   };
 
+  const getLyricTimelineMs = (lookaheadMs = 0) =>
+    Math.round(getNowMs() + lyricStore.currentTimeOffset + lookaheadMs);
+
   // 直接操作 DOM 更新逐字歌词样式
   const updateYrcDom = () => {
-    const lineIndex = lyricStore.currentIndex;
+    const lineIndex = activeIndex?.value ?? lyricStore.currentIndex;
     const line = lyricStore.lines[lineIndex];
     if (!line?.characters?.length) {
       cachedYrcOverlays = [];
@@ -47,7 +51,7 @@ export function useYrcAnimation(lyricListRef: Ref<HTMLElement | null>) {
       return;
     }
 
-    const seekMs = getNowMs() + LYRIC_LOOKAHEAD;
+    const seekMs = getLyricTimelineMs(LYRIC_LOOKAHEAD);
 
     // 主歌词逐字更新（仅当字符数 > 1 时）
     if (line.characters.length > 1) {
@@ -249,6 +253,7 @@ export function useYrcAnimation(lyricListRef: Ref<HTMLElement | null>) {
 
   return {
     getNowMs,
+    getLyricTimelineMs,
     updateYrcDom,
     syncSeekAnchor,
   };

@@ -6,10 +6,13 @@ import { usePlayerStore } from '@/stores/player';
 import { useSettingStore } from '@/stores/setting';
 import { useUserStore } from '@/stores/user';
 import { useToastStore } from '@/stores/toast';
+import { useThemeStore } from '@/stores/theme';
 import { getUserFollow, getUserVideoCollect } from '@/api/user';
 import { mapArtistMeta } from '@/utils/mappers';
 import type { Song } from '@/models/song';
 import type { ArtistMeta } from '@/models/artist';
+import { getAccentGradientPair } from '@/utils/color';
+import SliverHeader from '@/components/music/DetailPageSliverHeader.vue';
 import Tabs from '@/components/ui/Tabs.vue';
 import TabsList from '@/components/ui/TabsList.vue';
 import TabsTrigger from '@/components/ui/TabsTrigger.vue';
@@ -29,7 +32,7 @@ import MvCard from '@/components/music/MvCard.vue';
 import PageScrollContainer from '@/components/ui/PageScrollContainer.vue';
 import Button from '@/components/ui/Button.vue';
 import { useScrollContainer } from '@/composables/usePageScroll';
-import { iconCurrentLocation, iconHeart, iconSearch } from '@/icons';
+import { iconCurrentLocation, iconHeart, iconList, iconPlay, iconSearch } from '@/icons';
 import { replaceQueueAndPlay } from '@/utils/playback';
 import { filterSongsByQuery, sortSongs } from '@/utils/songList';
 
@@ -38,9 +41,12 @@ const playerStore = usePlayerStore();
 const settingStore = useSettingStore();
 const userStore = useUserStore();
 const toastStore = useToastStore();
+const themeStore = useThemeStore();
 
 const isLoggedIn = computed(() => userStore.isLoggedIn);
 const activeTab = ref('songs');
+const sliverHeaderRef = ref<InstanceType<typeof SliverHeader> | null>(null);
+const tabsTop = computed(() => sliverHeaderRef.value?.currentHeight || 56);
 
 // ========== 歌曲 Tab ==========
 const songs = computed(() => playlistStore.favorites);
@@ -50,6 +56,30 @@ const showBatchDrawer = ref(false);
 const sortField = ref<SortField | null>(null);
 const sortOrder = ref<SortOrder>(null);
 const activeSongId = computed(() => playerStore.currentTrackId ?? undefined);
+
+const favoriteCoverUrl = computed(() => {
+  const { from, to } = getAccentGradientPair(themeStore.sourceColor);
+  const svg = `
+    <svg xmlns="http://www.w3.org/2000/svg" width="400" height="400">
+      <defs>
+        <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stop-color="${from}" />
+          <stop offset="100%" stop-color="${to}" />
+        </linearGradient>
+      </defs>
+      <rect width="400" height="400" rx="60" fill="url(#g)" />
+      <circle cx="104" cy="96" r="52" fill="#FFFFFF" opacity="0.14" />
+      <circle cx="308" cy="304" r="72" fill="#FFFFFF" opacity="0.10" />
+      <g transform="translate(200 196)">
+        <rect x="-92" y="-92" width="184" height="184" rx="46" fill="#FFFFFF" opacity="0.18" />
+        <g transform="translate(-84 -84) scale(7)" color="#FFFFFF">
+          ${iconHeart.body}
+        </g>
+      </g>
+    </svg>
+  `;
+  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+});
 
 const sortedSongs = computed(() => {
   return sortSongs(songs.value, sortField.value, sortOrder.value, {
@@ -388,29 +418,70 @@ watch(isLoggedIn, (value) => {
 
       <!-- 已登录 -->
       <template v-else>
-        <!-- 吸顶头部卡片 -->
-        <div class="favorites-header sticky top-0 z-120 bg-bg-main">
-          <div class="px-6 py-3 flex items-center justify-between">
-            <div class="flex items-center gap-3">
-              <div
-                class="w-10 h-10 rounded-[14px] bg-primary/10 text-primary flex items-center justify-center"
-              >
-                <Icon :icon="iconHeart" width="20" height="20" />
+        <SliverHeader
+          ref="sliverHeaderRef"
+          typeLabel="FAVORITES"
+          title="我最喜爱"
+          :coverUrl="favoriteCoverUrl"
+          :hasDetails="true"
+          :expandedHeight="176"
+          :collapsedHeight="56"
+        >
+          <template #details>
+            <div class="flex flex-col gap-2">
+              <div class="text-[13px] font-semibold text-text-secondary">
+                收藏的歌曲、歌手、用户、专辑与视频
               </div>
-              <div class="text-[20px] font-semibold text-text-main tracking-tight">我最喜爱</div>
+              <div
+                class="flex flex-wrap items-center gap-x-3 gap-y-2 text-[11px] font-semibold text-text-secondary/80"
+              >
+                <div class="inline-flex items-center gap-1.5">
+                  <Icon :icon="iconHeart" width="12" height="12" />
+                  <span>{{ songs.length }} 首歌曲</span>
+                </div>
+                <span v-if="followedSingers.length > 0">{{ followedSingers.length }} 位歌手</span>
+                <span v-if="favoritedAlbums.length > 0">{{ favoritedAlbums.length }} 张专辑</span>
+                <span v-if="videos.length > 0">{{ videos.length }} 个视频</span>
+              </div>
             </div>
-            <div v-if="activeTab === 'songs'" class="overflow-x-auto">
-              <ActionRow @play="handlePlayAll" @batch="openBatchDrawer" />
-            </div>
-          </div>
-        </div>
+          </template>
+
+          <template #actions>
+            <ActionRow
+              v-if="activeTab === 'songs'"
+              @play="handlePlayAll"
+              @batch="openBatchDrawer"
+            />
+          </template>
+
+          <template #collapsed-actions>
+            <template v-if="activeTab === 'songs'">
+              <Button
+                variant="unstyled"
+                size="none"
+                @click="handlePlayAll"
+                class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] text-primary"
+              >
+                <Icon :icon="iconPlay" width="20" height="20" />
+              </Button>
+              <Button
+                variant="unstyled"
+                size="none"
+                @click="openBatchDrawer"
+                class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] text-text-main opacity-60"
+              >
+                <Icon :icon="iconList" width="18" height="18" />
+              </Button>
+            </template>
+          </template>
+        </SliverHeader>
 
         <Tabs :model-value="activeTab" class="w-full" @update:model-value="handleTabChange">
           <!-- Sticky Tabs -->
-          <div class="song-list-sticky sticky top-16 z-110 bg-bg-main">
+          <div class="song-list-sticky sticky z-110 bg-bg-main" :style="{ top: `${tabsTop}px` }">
             <div class="px-6 border-b border-[var(--border-subtle)]">
               <div class="flex items-center justify-between h-14">
-                <TabsList class="bg-transparent border-none gap-8">
+                <TabsList class="favorites-tab-list bg-transparent border-none gap-8">
                   <TabsTrigger value="songs">
                     <span class="relative">歌曲 <Badge :count="songs.length" /></span>
                   </TabsTrigger>
@@ -661,8 +732,9 @@ watch(isLoggedIn, (value) => {
 <style scoped>
 @reference "@/style.css";
 
-.favorites-header {
-  border-bottom: 0.5px solid var(--border-subtle);
+.favorites-tab-list :deep(.tab-trigger) {
+  font-size: 14px;
+  font-weight: 600;
 }
 
 .song-locate-btn {

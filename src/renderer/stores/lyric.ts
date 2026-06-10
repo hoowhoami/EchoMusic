@@ -667,6 +667,28 @@ export const useLyricStore = defineStore('lyric', {
       if (!this.loadedHash) return;
       delete this.timeOffsetMap[this.loadedHash];
     },
+    findIndexAtTimeMs(currentTimeMs: number): number {
+      if (this.lines.length === 0) return -1;
+
+      let nextIndex = -1;
+      let low = 0;
+      let high = this.lines.length - 1;
+
+      // 找到最后一个 startTime <= currentTimeMs 的行。播放中这是高频路径，用二分避免逐帧线性扫描。
+      while (low <= high) {
+        const mid = Math.floor((low + high) / 2);
+        const line = this.lines[mid];
+        const start = line.characters[0]?.startTime ?? Math.round(line.time * 1000);
+        if (currentTimeMs >= start) {
+          nextIndex = mid;
+          low = mid + 1;
+        } else {
+          high = mid - 1;
+        }
+      }
+
+      return nextIndex;
+    },
     setLyric(content: string, hash = '') {
       this.parseLyricContent({ decodeContent: content }, hash, { detailResolved: false });
     },
@@ -801,22 +823,7 @@ export const useLyricStore = defineStore('lyric', {
       // 加上当前歌曲的时间偏移
       const offsetMs = this.timeOffsetMap[this.loadedHash] || 0;
       const currentTimeMs = Math.round(currentTime * 1000) + offsetMs;
-      let nextIndex = -1;
-      let low = 0;
-      let high = this.lines.length - 1;
-
-      // 找到最后一个 startTime <= currentTimeMs 的行。播放中这是高频路径，用二分避免逐帧线性扫描。
-      while (low <= high) {
-        const mid = Math.floor((low + high) / 2);
-        const line = this.lines[mid];
-        const start = line.characters[0]?.startTime ?? Math.round(line.time * 1000);
-        if (currentTimeMs >= start) {
-          nextIndex = mid;
-          low = mid + 1;
-        } else {
-          high = mid - 1;
-        }
-      }
+      const nextIndex = this.findIndexAtTimeMs(currentTimeMs);
 
       if (this.currentIndex !== nextIndex) {
         // 逐字高亮状态只在歌词页打开时更新，避免无意义的响应式开销
