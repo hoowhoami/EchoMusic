@@ -188,22 +188,28 @@ jobs:
       - name: Install server runtime dependencies
         working-directory: server
         shell: bash
-        run: pnpm install --prod --frozen-lockfile
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci --omit=dev --no-audit --no-fund
+          else
+            npm install --omit=dev --no-audit --no-fund
+          fi
 
       - name: Remove server test files
+        working-directory: server
         shell: bash
         run: |
-          if [ -d server/module ]; then
-            find server/module -name '*.test.js' -delete
+          if [ -d module ]; then
+            find module -name '*.test.js' -delete
           fi
 
       - name: Type-check desktop app
         shell: bash
-        run: pnpm exec vue-tsc --noEmit
+        run: ./node_modules/.bin/vue-tsc --noEmit
 
       - name: Build renderer and main bundles
         shell: bash
-        run: pnpm exec vite build
+        run: ./node_modules/.bin/vite build
 
       - name: Package desktop app
         shell: bash
@@ -211,7 +217,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
           ELECTRON_BUILDER_BINARIES_MIRROR: https://github.com/electron-userland/electron-builder-binaries/releases/download/
-        run: pnpm exec electron-builder ${{ matrix.electron_builder_args }} --publish never
+        run: ./node_modules/.bin/electron-builder ${{ matrix.electron_builder_args }} --publish never
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
