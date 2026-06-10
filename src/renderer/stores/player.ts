@@ -14,7 +14,12 @@ import { createAudioManager } from './player/audio';
 import { createResolver } from './player/resolver';
 import { createHistoryManager } from './player/history';
 import { createDeviceManager } from './player/device';
-import { buildMediaState, findTrackById, resolvePlaybackNotice } from './player/utils';
+import {
+  buildMediaState,
+  findTrackById,
+  resolvePlaybackNotice,
+  timeLengthToSeconds,
+} from './player/utils';
 
 const engine = new PlayerEngine();
 
@@ -44,11 +49,13 @@ export const usePlayerStore = defineStore(
       const wasPlaying = state.isPlaying;
       const previousTime = state.currentTime;
       state.isLoading = true;
+      state.recentSeekIgnoreEnd = true;
 
       const resolved = await resolver.resolveAudioUrl(track, { forceReload: true });
       if (requestSeq !== state.playbackRequestSeq) return;
       if (!resolved.url) {
         state.isLoading = false;
+        state.recentSeekIgnoreEnd = false;
         state.lastError = 'audio-url-unavailable';
         showPlaybackNotice('audio-url-unavailable', track);
         return;
@@ -63,18 +70,14 @@ export const usePlayerStore = defineStore(
       state.currentResolvedAudioQuality = resolved.quality;
       state.currentResolvedAudioEffect = resolved.effect;
       track.audioUrl = resolved.url;
-      const savedDuration = state.duration;
-      engine.setSource(resolved.url);
-      if (!state.duration && !engine.duration && savedDuration) state.duration = savedDuration;
+      state.duration = 0;
+      engine.setSource(resolved.url, { force: true });
+      const resolvedDuration = timeLengthToSeconds(resolved.timeLength);
       engine.applyTrackLoudness(resolved.loudness);
       engine.setPlaybackRate(state.playbackRate);
       void resolver.fetchClimaxMarks(track);
 
       if (previousTime > 0) {
-        state.recentSeekIgnoreEnd = true;
-        window.setTimeout(() => {
-          state.recentSeekIgnoreEnd = false;
-        }, 1500);
         let actualDuration = engine.duration;
         if (actualDuration <= 0) {
           for (let i = 0; i < 10; i++) {
@@ -83,8 +86,10 @@ export const usePlayerStore = defineStore(
             if (actualDuration > 0) break;
           }
         }
+        if (actualDuration <= 0) actualDuration = resolvedDuration;
         let safeTime = previousTime;
-        if (actualDuration > 0 && previousTime >= actualDuration - 0.5) safeTime = 0;
+        if (actualDuration > 0)
+          safeTime = Math.min(previousTime, Math.max(0, actualDuration - 0.5));
         engine.seek(safeTime, { source: 'track-refresh' });
         state.currentTime = safeTime;
       }
@@ -98,8 +103,11 @@ export const usePlayerStore = defineStore(
         }
       }
       if (!state.duration && !engine.duration && track.duration) state.duration = track.duration;
+      if (!state.duration && !engine.duration && resolvedDuration > 0)
+        state.duration = resolvedDuration;
       if (wasPlaying) engine.setVolume(state.volume);
       state.isLoading = false;
+      state.recentSeekIgnoreEnd = false;
       if (state.pendingSettingRefresh) {
         state.pendingSettingRefresh = false;
         void refreshCurrentTrack();
@@ -312,8 +320,11 @@ export const usePlayerStore = defineStore(
           }
         },
         ended: () => {
-          if (!state.recentSeekIgnoreEnd) handlePlaybackEnded();
-          else state.recentSeekIgnoreEnd = false;
+          if (state.isLoading && state.recentSeekIgnoreEnd) {
+            state.recentSeekIgnoreEnd = false;
+            return;
+          }
+          handlePlaybackEnded();
         },
         play: () => {
           state.isPlaying = true;

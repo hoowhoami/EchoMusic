@@ -33,13 +33,16 @@ const DEMUX_PACKET_CACHE_REPLAY_SECONDS: f64 = 4.0;
 const DEMUX_PACKET_CACHE_MIN_REPLAY_SECONDS: f64 = 0.20;
 const DEMUX_PACKET_CACHE_SEEK_TOLERANCE_SECONDS: f64 = 0.08;
 const DEMUX_PACKET_CACHE_GAP_TOLERANCE_SECONDS: f64 = 1.0;
+const DEMUX_PACKET_CACHE_EOF_GUARD_SECONDS: f64 = 1.0;
 const DEMUX_PACKET_DROP_TOLERANCE_SECONDS: f64 = 0.025;
 const NETWORK_RECONNECT_ATTEMPTS: usize = 5;
 const NETWORK_RECONNECT_OVERLAP_SECONDS: f64 = 0.75;
-const NETWORK_EOF_TOLERANCE_SECONDS: f64 = 2.0;
+const NETWORK_EOF_TOLERANCE_SECONDS: f64 = 3.0;
+const NETWORK_EOF_RECONNECT_PROGRESS_SECONDS: f64 = 0.5;
 const DURATION_DISAGREEMENT_LOG_SECONDS: f64 = 1.0;
 const DURATION_DISAGREEMENT_LOG_RATIO: f64 = 0.01;
 const MAX_CONSECUTIVE_DECODE_ERRORS: usize = 16;
+const CORRUPT_TAIL_EOF_TOLERANCE_SECONDS: f64 = 2.0;
 const NETWORK_RECONNECT_BACKOFFS: [Duration; NETWORK_RECONNECT_ATTEMPTS] = [
     Duration::from_millis(150),
     Duration::from_millis(300),
@@ -162,6 +165,7 @@ struct DemuxState {
     duration: Option<f64>,
     generation: u64,
     last_packet_time: Option<f64>,
+    last_eof_reconnect_at: Option<f64>,
     reconnect_failures: usize,
     drop_packets_before: Option<f64>,
     replay_queue: VecDeque<CachedPacketReplay>,
@@ -225,6 +229,9 @@ pub struct FfmpegDecoder {
     eof_sent: bool,
     finished: bool,
     decode_error_streak: usize,
+    last_seek_time: Option<f64>,
+    last_packet_time: Option<f64>,
+    corrupt_tail_eof_logged: bool,
 }
 
 impl FfmpegDecoder {
@@ -246,6 +253,9 @@ impl FfmpegDecoder {
             eof_sent: false,
             finished: false,
             decode_error_streak: 0,
+            last_seek_time: None,
+            last_packet_time: None,
+            corrupt_tail_eof_logged: false,
         })
     }
 
@@ -289,6 +299,9 @@ impl FfmpegDecoder {
             Err(ffmpeg::Error::Other { errno }) if errno == ffmpeg::error::EAGAIN => Ok(None),
             Err(ffmpeg::Error::Eof) => Ok(None),
             Err(err) if is_recoverable_decode_error(&err) => {
+                if self.finish_after_tail_decode_error("receive frame", &err) {
+                    return Ok(None);
+                }
                 self.record_decode_error("receive frame", &err)?;
                 Ok(None)
             }
@@ -318,6 +331,12 @@ impl FfmpegDecoder {
         match event {
             DemuxEvent::Packet(packet) => {
                 self.time_base = packet.time_base;
+                if let Some((packet_time, _)) = packet_time_range(&packet.packet, packet.time_base)
+                {
+                    if packet_time.is_finite() && packet_time >= 0.0 {
+                        self.last_packet_time = Some(packet_time);
+                    }
+                }
                 let result = {
                     let decoder = self
                         .decoder
@@ -328,6 +347,9 @@ impl FfmpegDecoder {
                 match result {
                     Ok(()) => Ok(PacketReadState::Sent),
                     Err(err) if is_recoverable_decode_error(&err) => {
+                        if self.finish_after_tail_decode_error("send packet", &err) {
+                            return Ok(PacketReadState::Sent);
+                        }
                         self.record_decode_error("send packet", &err)?;
                         Ok(PacketReadState::Sent)
                     }
@@ -383,6 +405,7 @@ impl FfmpegDecoder {
         self.eof_sent = false;
         self.finished = false;
         self.decode_error_streak = 0;
+        self.corrupt_tail_eof_logged = false;
     }
 
     fn record_decode_error(&mut self, stage: &str, err: &ffmpeg::Error) -> PlayerResult<()> {
@@ -403,6 +426,34 @@ impl FfmpegDecoder {
             ));
         }
         Ok(())
+    }
+
+    fn finish_after_tail_decode_error(&mut self, stage: &str, err: &ffmpeg::Error) -> bool {
+        if !should_finish_after_tail_decode_error_values(
+            self.duration,
+            self.last_seek_time,
+            self.last_packet_time,
+        ) {
+            return false;
+        }
+
+        self.eof_sent = true;
+        self.decode_error_streak = 0;
+        if !self.corrupt_tail_eof_logged {
+            let position = self
+                .last_packet_time
+                .or(self.last_seek_time)
+                .unwrap_or_default();
+            let duration = self.duration.unwrap_or_default();
+            crate::emit_event(crate::log::event(
+                crate::log::LogLevel::Warn,
+                format!(
+                    "ffmpeg {stage} hit corrupt audio tail near EOF; finishing track: error={err} position={position:.3}s duration={duration:.3}s"
+                ),
+            ));
+            self.corrupt_tail_eof_logged = true;
+        }
+        true
     }
 
     fn flush_resampler(&mut self) -> PlayerResult<Option<DecodedAudioChunk>> {
@@ -575,6 +626,9 @@ impl DecoderBackend for FfmpegDecoder {
         self.eof_sent = false;
         self.finished = false;
         self.decode_error_streak = 0;
+        self.last_seek_time = None;
+        self.last_packet_time = None;
+        self.corrupt_tail_eof_logged = false;
 
         Ok(AudioFormat {
             sample_rate: self.target.sample_rate,
@@ -608,6 +662,8 @@ impl DecoderBackend for FfmpegDecoder {
         self.pending_events.clear();
         self.drain_packet_queue();
         self.reset_decode_pipeline();
+        self.last_seek_time = Some(time_pos.max(0.0));
+        self.last_packet_time = None;
         let elapsed = started.elapsed();
         if elapsed >= Duration::from_millis(250) {
             crate::emit_event(crate::log::event(
@@ -710,6 +766,7 @@ fn start_demux_thread(
                 duration,
                 generation: 0,
                 last_packet_time: None,
+                last_eof_reconnect_at: None,
                 reconnect_failures: 0,
                 drop_packets_before: None,
                 replay_queue: VecDeque::new(),
@@ -815,6 +872,7 @@ fn run_demux_thread(
             Ok(()) => continue,
             Err(ffmpeg::Error::Eof) => {
                 if should_reconnect_after_eof(&state) {
+                    state.last_eof_reconnect_at = Some(state.last_packet_time.unwrap_or(0.0));
                     match reconnect_demux(
                         &mut state,
                         &commands,
@@ -1032,12 +1090,13 @@ fn handle_demux_command(command: DemuxCommand, state: &mut DemuxState) -> DemuxC
         DemuxCommand::Seek { time_pos, response } => {
             state.generation = state.generation.saturating_add(1);
             state.last_packet_time = Some(time_pos.max(0.0));
+            state.last_eof_reconnect_at = None;
             state.reconnect_failures = 0;
             state.io_interrupt.store(false, Ordering::SeqCst);
             state.replay_queue.clear();
             state.pending_resume_seek = None;
 
-            let result = if let Some(replay) = state.cache.replay(time_pos) {
+            let result = if let Some(replay) = demux_cache_replay_for_seek(state, time_pos) {
                 state.drop_packets_before = Some(replay.resume_time);
                 state.pending_resume_seek = Some(replay.resume_time);
                 state.replay_queue = replay.packets.into();
@@ -1065,6 +1124,44 @@ fn handle_demux_command(command: DemuxCommand, state: &mut DemuxState) -> DemuxC
         }
         DemuxCommand::Shutdown => DemuxCommandResult::Shutdown,
     }
+}
+
+fn demux_cache_replay_for_seek(state: &DemuxState, time_pos: f64) -> Option<CacheReplay> {
+    if !should_use_demux_cache_replay(state.duration, time_pos) {
+        return None;
+    }
+    state.cache.replay(time_pos)
+}
+
+fn should_use_demux_cache_replay(duration: Option<f64>, time_pos: f64) -> bool {
+    if let Some(duration) = duration {
+        let replay_end = time_pos + DEMUX_PACKET_CACHE_REPLAY_SECONDS;
+        if replay_end >= duration - DEMUX_PACKET_CACHE_EOF_GUARD_SECONDS {
+            return false;
+        }
+    }
+    true
+}
+
+fn should_finish_after_tail_decode_error_values(
+    duration: Option<f64>,
+    last_seek_time: Option<f64>,
+    last_packet_time: Option<f64>,
+) -> bool {
+    let Some(duration) = duration else {
+        return false;
+    };
+    if !duration.is_finite() || duration <= 0.0 {
+        return false;
+    }
+    let position = [last_seek_time, last_packet_time]
+        .into_iter()
+        .flatten()
+        .filter(|position| position.is_finite() && *position >= 0.0)
+        .fold(None, |best: Option<f64>, position| {
+            Some(best.map_or(position, |best| best.max(position)))
+        });
+    position.is_some_and(|position| position + CORRUPT_TAIL_EOF_TOLERANCE_SECONDS >= duration)
 }
 
 fn update_demux_position(state: &mut DemuxState, packet: &Packet) {
@@ -1117,6 +1214,7 @@ fn should_reconnect_after_eof(state: &DemuxState) -> bool {
         state.source.is_network,
         state.last_packet_time,
         state.duration,
+        state.last_eof_reconnect_at,
     )
 }
 
@@ -1124,9 +1222,16 @@ fn should_reconnect_after_eof_values(
     is_network: bool,
     last_packet_time: Option<f64>,
     duration: Option<f64>,
+    last_eof_reconnect_at: Option<f64>,
 ) -> bool {
     if !is_network {
         return false;
+    }
+    if let Some(reconnect_at) = last_eof_reconnect_at {
+        let last = last_packet_time.unwrap_or(0.0);
+        if last < reconnect_at + NETWORK_EOF_RECONNECT_PROGRESS_SECONDS {
+            return false;
+        }
     }
     match (last_packet_time, duration) {
         (Some(last), Some(duration)) => last + NETWORK_EOF_TOLERANCE_SECONDS < duration,
@@ -1245,6 +1350,7 @@ fn wait_before_reconnect(
             Ok(DemuxCommand::Seek { time_pos, response }) => {
                 state.generation = state.generation.saturating_add(1);
                 state.last_packet_time = Some(time_pos.max(0.0));
+                state.last_eof_reconnect_at = None;
                 state.io_interrupt.store(false, Ordering::SeqCst);
                 let _ = response.send(SeekAck {
                     generation: state.generation,
@@ -1892,19 +1998,36 @@ mod tests {
         assert!(super::should_reconnect_after_eof_values(
             true,
             Some(10.0),
-            Some(60.0)
+            Some(60.0),
+            None
         ));
         assert!(!super::should_reconnect_after_eof_values(
             true,
             Some(59.0),
-            Some(60.0)
+            Some(60.0),
+            None
         ));
         assert!(!super::should_reconnect_after_eof_values(
             false,
             Some(10.0),
-            Some(60.0)
+            Some(60.0),
+            None
         ));
-        assert!(!super::should_reconnect_after_eof_values(true, None, None));
+        assert!(!super::should_reconnect_after_eof_values(
+            true, None, None, None
+        ));
+        assert!(!super::should_reconnect_after_eof_values(
+            true,
+            Some(10.1),
+            Some(60.0),
+            Some(10.0)
+        ));
+        assert!(super::should_reconnect_after_eof_values(
+            true,
+            Some(10.6),
+            Some(60.0),
+            Some(10.0)
+        ));
     }
 
     #[test]
@@ -1972,6 +2095,38 @@ mod tests {
             bitrate_estimate: true,
         }];
         assert_eq!(super::choose_duration_candidate(&bitrate_only), Some(128.0));
+    }
+
+    #[test]
+    fn demux_cache_replay_is_disabled_near_eof() {
+        assert!(super::should_use_demux_cache_replay(Some(120.0), 100.0));
+        assert!(!super::should_use_demux_cache_replay(Some(120.0), 116.0));
+        assert!(!super::should_use_demux_cache_replay(Some(120.0), 119.0));
+        assert!(super::should_use_demux_cache_replay(None, 119.0));
+    }
+
+    #[test]
+    fn corrupt_tail_decode_error_finishes_only_near_known_eof() {
+        assert!(super::should_finish_after_tail_decode_error_values(
+            Some(220.0),
+            Some(219.0),
+            None
+        ));
+        assert!(super::should_finish_after_tail_decode_error_values(
+            Some(220.0),
+            Some(200.0),
+            Some(219.5)
+        ));
+        assert!(!super::should_finish_after_tail_decode_error_values(
+            Some(220.0),
+            Some(217.9),
+            None
+        ));
+        assert!(!super::should_finish_after_tail_decode_error_values(
+            None,
+            Some(219.0),
+            None
+        ));
     }
 
     #[test]

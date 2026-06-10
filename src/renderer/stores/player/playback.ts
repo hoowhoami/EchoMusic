@@ -14,7 +14,11 @@ import {
   clampNumber,
   findPlayableIndex,
   findTrackById,
+  timeLengthToSeconds,
 } from './utils';
+
+const SEEK_DEDUPE_MS = 300;
+const SEEK_DEDUPE_EPSILON = 0.05;
 
 export const createPlaybackManager = (
   state: PlayerState,
@@ -111,6 +115,8 @@ export const createPlaybackManager = (
       void skipToNextAfterFailure();
     }, delayMs);
   };
+
+  let lastSeekRequest: { time: number; source: string; at: number } | null = null;
 
   const playTrack = async (
     id: string,
@@ -241,6 +247,7 @@ export const createPlaybackManager = (
     state.currentResolvedAudioQuality = resolved.quality;
     state.currentResolvedAudioEffect = resolved.effect;
     track.audioUrl = resolved.url;
+    const resolvedDuration = timeLengthToSeconds(resolved.timeLength);
 
     engine.setSource(resolved.url);
     engine.applyTrackLoudness(resolved.loudness);
@@ -260,7 +267,10 @@ export const createPlaybackManager = (
       state.autoNextAttempts = 0;
       state.autoNextSourceTrackId = String(track.id);
       clearAutoNextTimer();
-      if (!state.duration && !engine.duration && track.duration) state.duration = track.duration;
+      if (!state.duration && !engine.duration) {
+        if (resolvedDuration > 0) state.duration = resolvedDuration;
+        else if (track.duration) state.duration = track.duration;
+      }
       if (!autoPlay || !settingStore.volumeFade) engine.setVolume(state.volume);
       if (!autoPlay) {
         state.isPlaying = false;
@@ -333,8 +343,27 @@ export const createPlaybackManager = (
   const seek = (time: number, options?: { source?: string }) => {
     const effectiveDuration = engine.duration > 0 ? engine.duration : state.duration;
     const targetTime = Math.max(0, Math.min(effectiveDuration, time));
+    const source = options?.source ?? 'unknown';
+    const now = Date.now();
+    if (
+      lastSeekRequest &&
+      now - lastSeekRequest.at <= SEEK_DEDUPE_MS &&
+      lastSeekRequest.source === source &&
+      Math.abs(lastSeekRequest.time - targetTime) <= SEEK_DEDUPE_EPSILON
+    ) {
+      logger.debug('PlayerPlayback', 'Duplicate seek ignored', {
+        source,
+        requestedTime: time,
+        targetTime,
+        duration: effectiveDuration,
+        trackId: state.currentTrackId,
+      });
+      if (state.isDraggingProgress) state.isDraggingProgress = false;
+      return;
+    }
+    lastSeekRequest = { time: targetTime, source, at: now };
     logger.info('PlayerPlayback', 'Seek requested', {
-      source: options?.source ?? 'unknown',
+      source,
       requestedTime: time,
       targetTime,
       duration: effectiveDuration,
@@ -342,8 +371,8 @@ export const createPlaybackManager = (
     });
     if (state.isDraggingProgress) state.isDraggingProgress = false;
     state.seekTargetTime = targetTime;
-    state.seekTimestamp = Date.now();
-    engine.seek(targetTime, { source: options?.source });
+    state.seekTimestamp = now;
+    engine.seek(targetTime, { source });
     state.currentTime = targetTime;
 
     engine.updateMediaPlaybackState(buildMediaState(state));

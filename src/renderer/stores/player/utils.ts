@@ -91,6 +91,11 @@ export const normalizeEffect = (value: string | undefined): AudioEffectValue => 
 export const clampNumber = (value: number, min: number, max: number) =>
   Math.min(max, Math.max(min, value));
 
+export const timeLengthToSeconds = (timeLength: number | null | undefined): number => {
+  const value = Number(timeLength || 0);
+  return Number.isFinite(value) && value > 0 ? value / 1000 : 0;
+};
+
 export const findPlayableIndex = (
   songs: Song[],
   startIndex: number,

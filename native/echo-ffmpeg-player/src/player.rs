@@ -22,7 +22,8 @@ const BUFFERING_RETRY_DELAY: Duration = Duration::from_millis(8);
 const EOF_DRAIN_RETRY_DELAY: Duration = Duration::from_millis(10);
 const EOF_DRAIN_TIMEOUT: Duration = Duration::from_secs(5);
 const TIME_UPDATE_INTERVAL: Duration = Duration::from_millis(200);
-const DYNAMIC_DURATION_UPDATE_EPSILON: f64 = 0.25;
+const TAIL_BUFFERING_EOF_TOLERANCE_SECONDS: f64 = 2.5;
+const TAIL_BUFFERING_EOF_TIMEOUT: Duration = Duration::from_millis(250);
 
 #[derive(Debug, Default)]
 struct PlayerConfig {
@@ -1098,6 +1099,7 @@ fn run_decoder_worker(
     let mut last_time_event = Instant::now();
     let mut queued_media_time = state.lock().map(|state| state.time_pos).unwrap_or_default();
     let mut queued_playback_speed = state.lock().map(|state| state.speed as f32).unwrap_or(1.0);
+    let mut tail_buffering_started: Option<Instant> = None;
 
     loop {
         if shutdown.load(Ordering::SeqCst) || interrupt.load(Ordering::SeqCst) {
@@ -1107,6 +1109,7 @@ fn run_decoder_worker(
         if !playing {
             match commands.recv() {
                 Ok(command) => {
+                    tail_buffering_started = None;
                     if !handle_decoder_command(
                         command,
                         &mut decoder,
@@ -1128,6 +1131,7 @@ fn run_decoder_worker(
         }
 
         while let Ok(command) = commands.try_recv() {
+            tail_buffering_started = None;
             if !handle_decoder_command(
                 command,
                 &mut decoder,
@@ -1152,6 +1156,7 @@ fn run_decoder_worker(
 
         match decoder.read_chunk() {
             Ok(DecodeReadResult::Chunk(chunk)) => {
+                tail_buffering_started = None;
                 if let Err(err) = push_chunk_with_backpressure(
                     &output,
                     &commands,
@@ -1189,10 +1194,60 @@ fn run_decoder_worker(
                     }
                     buffering = true;
                     output.set_paused(true);
+                    if let Some((time_pos, duration)) = tail_buffering_eof_position(&state) {
+                        let now = Instant::now();
+                        let started = *tail_buffering_started.get_or_insert(now);
+                        if now.duration_since(started) >= TAIL_BUFFERING_EOF_TIMEOUT {
+                            crate::emit_event(crate::log::event(
+                                crate::log::LogLevel::Warn,
+                                format!(
+                                    "tail buffering timed out near EOF; finishing track: time={time_pos:.3}s duration={duration:.3}s"
+                                ),
+                            ));
+                            tail_buffering_started = None;
+                            if loop_file {
+                                match decoder.seek(0.0) {
+                                    Ok(()) => {
+                                        queued_media_time = 0.0;
+                                        if let Ok(mut state) = state.lock() {
+                                            state.time_pos = 0.0;
+                                        }
+                                        crate::emit_event(PlayerEvent::time_update(0.0));
+                                        last_time_event = Instant::now();
+                                        output.clear_blocking();
+                                        dsp.reset();
+                                        buffering = true;
+                                        buffering_resume_ms = START_PREBUFFER_MS;
+                                        output.set_paused(true);
+                                        continue;
+                                    }
+                                    Err(err) => {
+                                        crate::emit_event(crate::log::event(
+                                            crate::log::LogLevel::Error,
+                                            format!("loop seek to start failed: {err}"),
+                                        ));
+                                    }
+                                }
+                            }
+                            if let Ok(mut state) = state.lock() {
+                                state.playing = false;
+                                state.paused = true;
+                            }
+                            output.set_paused(true);
+                            crate::emit_event(PlayerEvent::playback_end("eof"));
+                            playing = false;
+                            continue;
+                        }
+                    } else {
+                        tail_buffering_started = None;
+                    }
+                } else {
+                    tail_buffering_started = None;
                 }
                 thread::sleep(BUFFERING_RETRY_DELAY);
             }
             Ok(DecodeReadResult::Eof) => {
+                tail_buffering_started = None;
                 if playing {
                     buffering = false;
                     output.set_paused(false);
@@ -1220,6 +1275,11 @@ fn run_decoder_worker(
                     match decoder.seek(0.0) {
                         Ok(()) => {
                             queued_media_time = 0.0;
+                            if let Ok(mut state) = state.lock() {
+                                state.time_pos = 0.0;
+                            }
+                            crate::emit_event(PlayerEvent::time_update(0.0));
+                            last_time_event = Instant::now();
                             output.clear_blocking();
                             dsp.reset();
                             buffering = true;
@@ -1500,28 +1560,27 @@ fn update_audible_time_pos(
     playback_speed: f32,
 ) {
     let audible_time = audible_time_pos(output, queued_media_time, playback_speed);
-    let mut duration_change = None;
     if let Ok(mut state) = state.lock() {
-        if should_extend_duration(state.duration, queued_media_time) {
-            state.duration = queued_media_time;
-            duration_change = Some(state.duration);
-        }
         state.time_pos = if state.duration > 0.0 {
             audible_time.min(state.duration)
         } else {
             audible_time
         };
     }
-    if let Some(duration) = duration_change {
-        crate::emit_event(PlayerEvent::duration_change(duration));
-    }
 }
 
-fn should_extend_duration(current_duration: f64, observed_time: f64) -> bool {
-    observed_time.is_finite()
-        && observed_time > 0.0
-        && (current_duration <= 0.0
-            || observed_time > current_duration + DYNAMIC_DURATION_UPDATE_EPSILON)
+fn tail_buffering_eof_position(state: &Arc<Mutex<PlayerState>>) -> Option<(f64, f64)> {
+    state
+        .lock()
+        .ok()
+        .and_then(|state| tail_buffering_eof_position_values(state.time_pos, state.duration))
+}
+
+fn tail_buffering_eof_position_values(time_pos: f64, duration: f64) -> Option<(f64, f64)> {
+    if !time_pos.is_finite() || !duration.is_finite() || time_pos < 0.0 || duration <= 0.0 {
+        return None;
+    }
+    (time_pos + TAIL_BUFFERING_EOF_TOLERANCE_SECONDS >= duration).then_some((time_pos, duration))
 }
 
 fn audible_time_pos(output: &AudioOutput, queued_media_time: f64, playback_speed: f32) -> f64 {
@@ -1581,8 +1640,7 @@ fn prebuffer_frames(output: &AudioOutput, millis: usize) -> usize {
 #[cfg(test)]
 mod tests {
     use super::{
-        output_push_sample_count, should_extend_duration, DYNAMIC_DURATION_UPDATE_EPSILON,
-        MAX_OUTPUT_PUSH_FRAMES,
+        output_push_sample_count, tail_buffering_eof_position_values, MAX_OUTPUT_PUSH_FRAMES,
     };
 
     #[test]
@@ -1601,15 +1659,12 @@ mod tests {
     }
 
     #[test]
-    fn duration_extends_only_after_meaningful_observed_overrun() {
-        assert!(!should_extend_duration(
-            120.0,
-            120.0 + DYNAMIC_DURATION_UPDATE_EPSILON / 2.0
-        ));
-        assert!(should_extend_duration(
-            120.0,
-            120.0 + DYNAMIC_DURATION_UPDATE_EPSILON + 0.01
-        ));
-        assert!(should_extend_duration(0.0, 1.0));
+    fn tail_buffering_eof_only_triggers_near_duration() {
+        assert_eq!(
+            tail_buffering_eof_position_values(136.3, 138.284),
+            Some((136.3, 138.284))
+        );
+        assert_eq!(tail_buffering_eof_position_values(135.0, 138.284), None);
+        assert_eq!(tail_buffering_eof_position_values(1.0, 0.0), None);
     }
 }
