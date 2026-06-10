@@ -305,8 +305,8 @@ jobs:
             }
             found && NF { print }
           ' CHANGELOG.md \
-            | sed 's/^### /\n- /' \
-            | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g; s/"/\&quot;/g' \
+            | sed 's/^### /\n📌 /' \
+            | sed 's/^- /• /' \
             | awk 'NR==1{printf "%s",$0;next}{printf "\n%s",$0}')
 
           if [ -z "$CHANGELOG" ]; then
@@ -330,35 +330,36 @@ jobs:
 
           ASSETS=$(gh api "repos/${REPO}/releases/tags/${VERSION}" --jq '.assets[].name' 2>/dev/null || true)
           if [ -z "$ASSETS" ]; then
-            echo "ARTIFACT_LINKS=无" >> "$GITHUB_ENV"
+            echo "QQ_ARTIFACT_LINKS=无" >> "$GITHUB_ENV"
             exit 0
           fi
 
           LINKS=""
-          while IFS= read -r asset; do
-            [ -n "$asset" ] || continue
-            encoded_asset=$(python3 -c 'import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1]))' "$asset")
-            url="https://github.com/${REPO}/releases/download/${VERSION}/${encoded_asset}"
-            line="- <a href=\"${url}\">${asset}</a>"
+          while IFS= read -r filename; do
+            link="https://github.com/${REPO}/releases/download/${VERSION}/${filename}"
             if [ -z "$LINKS" ]; then
-              LINKS="$line"
+              LINKS="• ${filename}\n  ${link}"
             else
-              LINKS="${LINKS}"$'\n'"$line"
+              LINKS="${LINKS}\n• ${filename}\n  ${link}"
             fi
           done <<< "$ASSETS"
 
           {
-            echo "ARTIFACT_LINKS<<EOF"
-            echo "$LINKS"
+            echo "QQ_ARTIFACT_LINKS<<EOF"
+            printf '%b\n' "$LINKS"
             echo "EOF"
           } >> "$GITHUB_ENV"
 
       - name: Send Telegram message
-        if: secrets.TELEGRAM_BOT_TOKEN != '' && secrets.TELEGRAM_CHAT_ID != ''
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
+          if [ -z "$TELEGRAM_BOT_TOKEN" ] || [ -z "$TELEGRAM_CHAT_ID" ]; then
+            echo "Telegram secrets are missing, skip Telegram notification."
+            exit 0
+          fi
+
           MESSAGE=$(cat <<EOF
           <b>EchoMusic ${GITHUB_REF_NAME} 已发布</b>
 
@@ -373,3 +374,36 @@ jobs:
             -d "chat_id=${TELEGRAM_CHAT_ID}" \
             -d "parse_mode=HTML" \
             --data-urlencode "text=${MESSAGE}"
+
+      - name: Send QQ group message via OneBot API
+        shell: bash
+        env:
+          QQ_BOT_API: ${{ secrets.QQ_BOT_API }}
+          QQ_GROUP_ID: ${{ secrets.QQ_GROUP_ID }}
+          QQ_BOT_TOKEN: ${{ secrets.QQ_BOT_TOKEN }}
+        run: |
+          set -e
+          if [ -z "$QQ_BOT_API" ] || [ -z "$QQ_GROUP_ID" ]; then
+            echo "QQ Bot secrets are missing, skip QQ notification."
+            exit 0
+          fi
+
+          VERSION="${GITHUB_REF_NAME}"
+          REPO="${GITHUB_REPOSITORY}"
+
+          MESSAGE=$(printf '🎉 EchoMusic %s 发布啦！\n\n📝 更新内容：\n%s\n\n📦 下载地址：\n%s\n\n🔗 查看完整 Release：https://github.com/%s/releases/tag/%s' \
+            "$VERSION" "$CHANGELOG" "$QQ_ARTIFACT_LINKS" "$REPO" "$VERSION")
+
+          HEADERS=(-H "Content-Type: application/json")
+          if [ -n "$QQ_BOT_TOKEN" ]; then
+            HEADERS+=(-H "Authorization: Bearer ${QQ_BOT_TOKEN}")
+          fi
+
+          PAYLOAD=$(jq -n \
+            --arg group_id "$QQ_GROUP_ID" \
+            --arg message "$MESSAGE" \
+            '{message_type: "group", group_id: $group_id, message: $message}')
+
+          curl -sS -X POST "${QQ_BOT_API}/send_msg" \
+            "${HEADERS[@]}" \
+            -d "$PAYLOAD"
