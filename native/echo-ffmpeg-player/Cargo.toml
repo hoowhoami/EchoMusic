@@ -37,7 +37,6 @@ bundled-ffmpeg = [
   "ffmpeg-next/build",
   "ffmpeg-next/build-pic",
   "ffmpeg-next/build-zlib",
-  "ffmpeg-next/build-lib-openssl",
   "ffmpeg-next/build-license-version3",
 ]
 
