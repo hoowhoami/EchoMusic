@@ -189,9 +189,11 @@ jobs:
         run: pnpm install --prod --frozen-lockfile
 
       - name: Remove server test files
-        working-directory: server
         shell: bash
-        run: find module -name '*.test.js' -delete
+        run: |
+          if [ -d server/module ]; then
+            find server/module -name '*.test.js' -delete
+          fi
 
       - name: Build desktop app
         shell: bash
