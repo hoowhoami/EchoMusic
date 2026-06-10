@@ -129,18 +129,29 @@ jobs:
           echo "OPENSSL_DIR=$(brew --prefix openssl@3)" >> "$GITHUB_ENV"
           echo "PKG_CONFIG_PATH=$(brew --prefix openssl@3)/lib/pkgconfig:$(brew --prefix zlib)/lib/pkgconfig:${PKG_CONFIG_PATH:-}" >> "$GITHUB_ENV"
 
-      - name: Install Windows static FFmpeg
+      - name: Install Windows shared FFmpeg
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $vcpkgRoot = $env:VCPKG_INSTALLATION_ROOT
-          if (-not $vcpkgRoot) {
-            $vcpkgRoot = 'C:\vcpkg'
-          }
-          & "$vcpkgRoot\vcpkg.exe" install "ffmpeg[core,avcodec,avformat,swresample]:${{ matrix.vcpkg_triplet }}" --recurse
-          "VCPKG_ROOT=$vcpkgRoot" | Out-File -FilePath $env:GITHUB_ENV -Append
-          "VCPKGRS_TRIPLET=${{ matrix.vcpkg_triplet }}" | Out-File -FilePath $env:GITHUB_ENV -Append
-          "VCPKG_DEFAULT_TRIPLET=${{ matrix.vcpkg_triplet }}" | Out-File -FilePath $env:GITHUB_ENV -Append
+          $ffmpegVersion = "7.1"
+          $arch = if ("${{ matrix.rust_target }}" -eq "aarch64-pc-windows-msvc") { "arm64" } else { "win64" }
+          $ffmpegUrl = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n$ffmpegVersion-latest-$arch-lgpl-shared-$ffmpegVersion.zip"
+          $ffmpegZip = "$env:TEMP\ffmpeg.zip"
+          $ffmpegDir = "C:\ffmpeg"
+
+          Write-Host "Downloading FFmpeg from $ffmpegUrl"
+          Invoke-WebRequest -Uri $ffmpegUrl -OutFile $ffmpegZip
+
+          Write-Host "Extracting FFmpeg..."
+          Expand-Archive -Path $ffmpegZip -DestinationPath $ffmpegDir -Force
+
+          $extractedDir = Get-ChildItem -Path $ffmpegDir -Directory | Select-Object -First 1
+          $ffmpegRoot = $extractedDir.FullName
+
+          "FFMPEG_DIR=$ffmpegRoot" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "FFMPEG_INCLUDE_DIR=$ffmpegRoot\include" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "FFMPEG_LIB_DIR=$ffmpegRoot\lib" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "$ffmpegRoot\bin" | Out-File -FilePath $env:GITHUB_PATH -Append
 
       - name: Install root dependencies
         run: pnpm install --frozen-lockfile
