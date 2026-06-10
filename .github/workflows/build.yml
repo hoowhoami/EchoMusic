@@ -186,12 +186,7 @@ jobs:
       - name: Install server runtime dependencies
         working-directory: server
         shell: bash
-        run: |
-          if [ -f package-lock.json ]; then
-            npm ci --omit=dev --no-audit --no-fund --legacy-peer-deps
-          else
-            npm install --omit=dev --no-audit --no-fund --legacy-peer-deps
-          fi
+        run: pnpm install --prod --frozen-lockfile
 
       - name: Remove server test files
         working-directory: server
