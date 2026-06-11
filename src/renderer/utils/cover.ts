@@ -51,6 +51,20 @@ export function resolveCoverDisplayUrl(
   return normalizeCoverUrl(fallbackUrl, size) || DEFAULT_COVER_URL;
 }
 
+export function resolveCoverColorUrls(
+  url: string | undefined,
+  size: number = 300,
+  options: Omit<CoverDisplayOptions, 'reason' | 'failedUrl'> = {},
+): string[] {
+  const normalizedUrl = normalizeCoverUrl(url, size);
+  const fallbackUrl = resolveCoverDisplayUrl(url, size, {
+    ...options,
+    reason: normalizedUrl ? 'error' : 'empty',
+    failedUrl: normalizedUrl,
+  });
+  return Array.from(new Set([normalizedUrl, fallbackUrl].filter(Boolean)));
+}
+
 export function getCoverUrl(url: string | undefined, size: number = 400): string {
   return normalizeCoverUrl(url, size) || DEFAULT_COVER_URL;
 }

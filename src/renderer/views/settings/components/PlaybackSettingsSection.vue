@@ -355,6 +355,48 @@ const handleRemoveImpulseResponse = (id: string) => {
       </div>
       <Switch v-model="settingStore.preventSleep" />
     </div>
+    <div class="settings-divider"></div>
+    <div class="settings-item">
+      <div class="space-y-1">
+        <h3 class="font-semibold">音频缓冲时长</h3>
+        <p class="text-sm text-text-secondary">
+          网络音频预读时长，增加可减少网络波动导致的播放中断（需重启应用生效）
+        </p>
+      </div>
+      <InputNumber
+        class="w-45"
+        :model-value="String(settingStore.audioCacheSecs ?? 30)"
+        :min="10"
+        :max="120"
+        :step="10"
+        placeholder="30"
+        suffix="秒"
+        @update:model-value="
+          settingStore.audioCacheSecs = Math.max(10, Math.min(120, Number($event) || 30))
+        "
+      />
+    </div>
+    <div class="settings-divider"></div>
+    <div class="settings-item">
+      <div class="space-y-1">
+        <h3 class="font-semibold">音频设备缓冲</h3>
+        <p class="text-sm text-text-secondary">
+          音频输出设备缓冲时长，增加可改善网络受限时的播放稳定性（需重启应用生效）
+        </p>
+      </div>
+      <InputNumber
+        class="w-45"
+        :model-value="String(settingStore.audioBufferSecs ?? 0.5)"
+        :min="0.5"
+        :max="3.0"
+        :step="0.5"
+        placeholder="0.5"
+        suffix="秒"
+        @update:model-value="
+          settingStore.audioBufferSecs = Math.max(0.5, Math.min(3.0, Number($event) || 0.5))
+        "
+      />
+    </div>
   </SettingsSectionShell>
 </template>
 

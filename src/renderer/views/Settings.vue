@@ -1,6 +1,6 @@
 <script setup lang="ts">
 defineOptions({ name: 'settings-page' });
-import { computed, ref, onMounted, onUnmounted, nextTick } from 'vue';
+import { computed, ref, onMounted, onUnmounted, nextTick, watch } from 'vue';
 import type { Component } from 'vue';
 import { useSettingStore } from '@/stores/setting';
 import { useDesktopLyricStore } from '@/desktopLyric/store';
@@ -10,7 +10,7 @@ import Button from '@/components/ui/Button.vue';
 import Scrollbar from '@/components/ui/Scrollbar.vue';
 import DisclaimerDialog from '@/components/app/DisclaimerDialog.vue';
 import UpdateDialog from '@/components/app/UpdateDialog.vue';
-import { iconArrowUp } from '@/icons';
+import { iconArrowUp, iconSearch, iconX } from '@/icons';
 import { marked } from 'marked';
 import AppearanceSettingsSection from './settings/components/AppearanceSettingsSection.vue';
 import FontSettingsSection from './settings/components/FontSettingsSection.vue';
@@ -24,6 +24,7 @@ import ExperimentalSettingsSection from './settings/components/ExperimentalSetti
 import PluginSettingsSection from './settings/components/PluginSettingsSection.vue';
 import DataSettingsSection from './settings/components/DataSettingsSection.vue';
 import AboutSettingsSection from './settings/components/AboutSettingsSection.vue';
+import { shortcutItems } from './settings/constants';
 
 const settingStore = useSettingStore();
 const desktopLyricStore = useDesktopLyricStore();
@@ -33,6 +34,14 @@ const contentRef = ref<HTMLElement | null>(null);
 const scrollbarRef = ref<InstanceType<typeof Scrollbar> | null>(null);
 const anchorListRef = ref<HTMLElement | null>(null);
 const anchorRefs = new Map<string, HTMLElement>();
+const settingsSearchKeyword = ref('');
+const settingsSearchInputRef = ref<HTMLInputElement | null>(null);
+const settingsSearchContainerRef = ref<HTMLElement | null>(null);
+const isSettingsSearchExpanded = ref(false);
+const isSettingsSearchCollapsing = ref(false);
+let settingsSearchCollapseTimer: number | null = null;
+
+const normalizeSearchText = (value: string) => value.toLocaleLowerCase().replace(/\s+/g, '');
 
 const setAnchorRef = (id: string, el: HTMLElement | null) => {
   if (el) {
@@ -120,6 +129,7 @@ const initSettings = async () => {
 onMounted(() => {
   initSettings();
   window.electron?.ipcRenderer?.on('update-check-result', handleUpdateCheckResult);
+  document.addEventListener('pointerdown', handleSettingsSearchPointerDown, true);
   nextTick(() => {
     indicatorReady.value = true;
   });
@@ -157,6 +167,7 @@ interface SettingsRenderSection {
   icon?: null;
   component: Component;
   props?: Record<string, unknown>;
+  searchKeywords?: string[];
   before?: string;
   after?: string;
   visible?: boolean | (() => boolean);
@@ -168,66 +179,193 @@ const builtinSettingsSections = computed<SettingsRenderSection[]>(() => [
     label: '外观与界面',
     order: 100,
     component: AppearanceSettingsSection,
+    searchKeywords: [
+      '主题模式',
+      '浅色模式',
+      '深色模式',
+      '跟随系统',
+      '主题色来源',
+      '跟随封面',
+      '预设主题色',
+      '自定义主题色',
+      '全局主题色',
+      '记住窗口大小',
+      '音质音效徽标',
+      '桌面歌词状态',
+      '播放列表计数',
+      '搜索框默认推荐词',
+      '全屏按钮',
+      '侧边栏折叠',
+      '关闭行为',
+      '最小化到托盘',
+      '彻底退出程序',
+      '开机自启动',
+      '启动时最小化到托盘',
+    ],
   },
   {
     id: 'font',
     label: '字体设置',
     order: 200,
     component: FontSettingsSection,
+    searchKeywords: ['全局字体', '页面歌词字体', '桌面歌词字体', '系统默认', '跟随全局'],
   },
   {
     id: 'playback',
     label: '播放体验',
     order: 300,
     component: PlaybackSettingsSection,
+    searchKeywords: [
+      '播放替换队列',
+      '双击播放',
+      '淡入淡出播放',
+      '淡入淡出时长',
+      '音量均衡',
+      '参考响度',
+      'LUFS',
+      '空间音效',
+      '导入音效文件',
+      '自动跳过错误',
+      '失败后切换延迟',
+      '最大自动切换次数',
+      '播放恢复超时',
+      '防止系统休眠',
+      '音频缓冲时长',
+      '音频设备缓冲',
+      '网络波动',
+      '播放稳定性',
+    ],
   },
   {
     id: 'quality',
     label: '播放音质',
     order: 400,
     component: QualitySettingsSection,
+    searchKeywords: [
+      '默认音质',
+      '智能兼容模式',
+      '标准品质',
+      'HQ 高品质',
+      'SQ 无损品质',
+      'Hi-Res 品质',
+      'DSD 臻品音质',
+      'flac',
+      '无损',
+    ],
   },
   {
     id: 'pageLyric',
     label: '页面歌词',
     order: 500,
     component: PageLyricSettingsSection,
+    searchKeywords: [
+      '显示翻译',
+      '显示音译',
+      '字体大小',
+      '字体字重',
+      '歌词颜色',
+      '已播字色',
+      '未播字色',
+      '封面模糊背景',
+      '背景律动',
+      '歌词过滤',
+      '过滤表达式',
+      '正则表达式',
+      '写真背景透明度',
+      '写真自动轮播',
+      '轮播间隔',
+      '歌词自动收起',
+      '收起延迟',
+      '收起时隐藏底部控件',
+    ],
   },
   {
     id: 'desktopLyric',
     label: '桌面歌词',
     order: 600,
     component: DesktopLyricSettingsSection,
+    searchKeywords: [
+      '置顶显示',
+      '显示翻译',
+      '显示音译',
+      '文字对齐',
+      '文字粗体',
+      '文字颜色',
+      '已播字色',
+      '未播字色',
+      '歌词过滤',
+      '过滤表达式',
+      '鼠标穿透',
+      'Wayland',
+      'XWayland',
+    ],
   },
   {
     id: 'shortcuts',
     label: '快捷键',
     order: 700,
     component: ShortcutSettingsSection,
+    searchKeywords: [
+      '功能说明',
+      '全局快捷键',
+      '启用全局快捷键',
+      '恢复默认',
+      ...shortcutItems.flatMap((item) => [item.command, item.title, item.desc]),
+    ],
   },
   {
     id: 'audioDevice',
     label: '音频设备',
     order: 800,
     component: AudioDeviceSettingsSection,
+    searchKeywords: [
+      '输入设备',
+      '输出设备',
+      '麦克风',
+      '听歌识曲',
+      '录音',
+      '音频播放输出设备',
+      '系统默认',
+      '独占音频设备',
+      '系统混音器',
+      '设备断开后的行为',
+      '暂停播放',
+      '切到默认设备',
+    ],
   },
   {
     id: 'experimental',
     label: '实验性功能',
     order: 1150,
     component: ExperimentalSettingsSection,
+    searchKeywords: [
+      '自动领取 VIP',
+      '页面缓存',
+      '最大缓存页面数',
+      'GitHub 加速地址',
+      '在线插件源',
+      '插件下载',
+      '日志级别',
+      'API 响应体日志',
+      '临时诊断日志',
+      '禁用 GPU 加速',
+      '花屏',
+      '渲染异常',
+    ],
   },
   {
     id: 'plugins',
     label: '插件',
     order: 1000,
     component: PluginSettingsSection,
+    searchKeywords: ['插件管理', '管理面板', '在线插件源', '已安装插件', '插件设置', '插件文档'],
   },
   {
     id: 'data',
     label: '数据与安全',
     order: 1100,
     component: DataSettingsSection,
+    searchKeywords: ['查看运行日志', '本地日志目录', '清除应用数据', '持久化设置', '缓存信息'],
     props: {
       onClear: () => {
         showConfirmClear.value = true;
@@ -239,6 +377,20 @@ const builtinSettingsSections = computed<SettingsRenderSection[]>(() => [
     label: '关于',
     order: 1200,
     component: AboutSettingsSection,
+    searchKeywords: [
+      '自动检查更新',
+      '检查预发布版本',
+      'Alpha',
+      'Beta',
+      'RC',
+      '静默安装',
+      '当前版本',
+      '更新日志',
+      '检查更新',
+      '项目源码',
+      'GitHub',
+      '免责声明',
+    ],
     props: {
       isCheckingUpdate: isCheckingUpdate.value,
       onCheckUpdates: handleCheckUpdates,
@@ -298,11 +450,81 @@ const sortSettingsSections = (sections: SettingsRenderSection[]) => {
   return sorted;
 };
 
+const normalizedSettingsSearchKeyword = computed(() =>
+  normalizeSearchText(settingsSearchKeyword.value.trim()),
+);
+
+const hasSettingsSearchKeyword = computed(() => normalizedSettingsSearchKeyword.value.length > 0);
+
+const matchesSettingsSearch = (section: SettingsRenderSection, keyword: string) => {
+  const searchText = normalizeSearchText(
+    [section.id, section.label, ...(section.searchKeywords ?? [])].join(' '),
+  );
+  return searchText.includes(keyword);
+};
+
 const settingsSections = computed(() => {
-  return sortSettingsSections([...builtinSettingsSections.value]).filter((section) =>
+  const keyword = normalizedSettingsSearchKeyword.value;
+  const sections = sortSettingsSections([...builtinSettingsSections.value]).filter((section) =>
     resolveFlag(section.visible),
   );
+
+  if (!keyword) return sections;
+
+  return sections.filter((section) => matchesSettingsSearch(section, keyword));
 });
+
+const clearSettingsSearch = () => {
+  settingsSearchKeyword.value = '';
+  nextTick(() => {
+    if (isSettingsSearchExpanded.value) settingsSearchInputRef.value?.focus();
+  });
+};
+
+const expandSettingsSearch = async () => {
+  if (settingsSearchCollapseTimer) {
+    window.clearTimeout(settingsSearchCollapseTimer);
+    settingsSearchCollapseTimer = null;
+  }
+  isSettingsSearchExpanded.value = true;
+  isSettingsSearchCollapsing.value = false;
+  await nextTick();
+  settingsSearchInputRef.value?.focus();
+};
+
+const collapseSettingsSearch = (force = false) => {
+  if (!isSettingsSearchExpanded.value || isSettingsSearchCollapsing.value) return;
+  if (settingsSearchKeyword.value.trim() && !force) return;
+  isSettingsSearchCollapsing.value = true;
+  if (settingsSearchCollapseTimer) {
+    window.clearTimeout(settingsSearchCollapseTimer);
+    settingsSearchCollapseTimer = null;
+  }
+  settingsSearchCollapseTimer = window.setTimeout(() => {
+    isSettingsSearchExpanded.value = false;
+    isSettingsSearchCollapsing.value = false;
+    settingsSearchCollapseTimer = null;
+  }, 200);
+};
+
+const handleSettingsSearchBlur = () => {
+  window.setTimeout(() => {
+    if (settingsSearchContainerRef.value?.contains(document.activeElement)) return;
+    collapseSettingsSearch();
+  }, 160);
+};
+
+const handleSettingsSearchKeydown = (event: KeyboardEvent) => {
+  if (event.key !== 'Escape') return;
+  settingsSearchKeyword.value = '';
+  collapseSettingsSearch(true);
+};
+
+const handleSettingsSearchPointerDown = (event: PointerEvent) => {
+  if (!isSettingsSearchExpanded.value) return;
+  if (settingsSearchContainerRef.value?.contains(event.target as Node)) return;
+  collapseSettingsSearch();
+};
 
 const navItems = computed(() =>
   settingsSections.value.map((section) => ({
@@ -334,20 +556,47 @@ const handleUpdateCheckResult = (payload: unknown) => {
   showUpdateResult.value = true;
 };
 
-onUnmounted(() => {
-  window.electron?.ipcRenderer?.off('update-check-result', handleUpdateCheckResult);
-});
-
-// 返回顶部
-const scrollToTop = () => {
-  scrollbarRef.value?.setScrollTop(0);
-};
-
 // 当前滚动位置
 const currentScrollTop = ref(0);
 
 // 是否显示返回顶部按钮
 const showBackToTop = ref(false);
+
+onUnmounted(() => {
+  window.electron?.ipcRenderer?.off('update-check-result', handleUpdateCheckResult);
+  document.removeEventListener('pointerdown', handleSettingsSearchPointerDown, true);
+  if (settingsSearchCollapseTimer) window.clearTimeout(settingsSearchCollapseTimer);
+});
+
+watch(
+  normalizedSettingsSearchKeyword,
+  async () => {
+    const firstSectionId = settingsSections.value[0]?.id ?? '';
+    activeSection.value = firstSectionId;
+    showBackToTop.value = false;
+    currentScrollTop.value = 0;
+    await nextTick();
+    scrollbarRef.value?.setScrollTop(0);
+    if (firstSectionId) scrollAnchorIntoView(firstSectionId);
+  },
+  { flush: 'post' },
+);
+
+watch(
+  settingsSections,
+  async (sections) => {
+    if (sections.some((section) => section.id === activeSection.value)) return;
+    activeSection.value = sections[0]?.id ?? '';
+    await nextTick();
+    if (activeSection.value) scrollAnchorIntoView(activeSection.value);
+  },
+  { flush: 'post' },
+);
+
+// 返回顶部
+const scrollToTop = () => {
+  scrollbarRef.value?.setScrollTop(0);
+};
 
 // 监听滚动，更新当前激活的锚点
 const handleScroll = () => {
@@ -383,8 +632,51 @@ const findSectionElement = (id: string) => {
   <div class="settings-page h-full flex flex-col min-h-0">
     <!-- 页面头部 -->
     <header class="settings-header shrink-0 px-6 pt-4 pb-1">
-      <div class="flex items-center justify-between">
+      <div class="flex w-full items-center justify-between">
         <h1 class="text-lg font-bold text-text-main">偏好设置</h1>
+        <div
+          ref="settingsSearchContainerRef"
+          class="settings-search-shell"
+          :class="{ 'is-expanded': isSettingsSearchExpanded || isSettingsSearchCollapsing }"
+        >
+          <button
+            v-if="!isSettingsSearchExpanded && !isSettingsSearchCollapsing"
+            type="button"
+            class="settings-search-icon-button"
+            title="搜索设置"
+            aria-label="搜索设置"
+            @click="expandSettingsSearch"
+          >
+            <Icon :icon="iconSearch" width="17" height="17" class="settings-search-trigger-icon" />
+          </button>
+          <div
+            v-if="isSettingsSearchExpanded || isSettingsSearchCollapsing"
+            class="settings-search"
+            :class="{ 'is-collapsing': isSettingsSearchCollapsing }"
+          >
+            <Icon :icon="iconSearch" width="15" height="15" class="settings-search-icon" />
+            <input
+              ref="settingsSearchInputRef"
+              v-model="settingsSearchKeyword"
+              type="search"
+              class="settings-search-input"
+              placeholder="搜索设置"
+              aria-label="搜索设置"
+              @keydown="handleSettingsSearchKeydown"
+              @blur="handleSettingsSearchBlur"
+            />
+            <button
+              v-if="settingsSearchKeyword"
+              type="button"
+              class="settings-search-clear"
+              aria-label="清空搜索"
+              @mousedown.prevent
+              @click="clearSettingsSearch"
+            >
+              <Icon :icon="iconX" width="14" height="14" />
+            </button>
+          </div>
+        </div>
       </div>
     </header>
 
@@ -415,8 +707,24 @@ const findSectionElement = (id: string) => {
       @scroll="handleScroll"
     >
       <div ref="contentRef" class="settings-content">
-        <template v-for="section in settingsSections" :key="section.id">
-          <component :is="section.component" v-bind="section.props ?? {}" />
+        <div
+          v-if="hasSettingsSearchKeyword && settingsSections.length === 0"
+          class="settings-empty"
+        >
+          <Icon :icon="iconSearch" width="22" height="22" />
+          <span>没有找到匹配的设置</span>
+          <button type="button" class="settings-empty-clear" @click="clearSettingsSearch">
+            清空搜索
+          </button>
+        </div>
+
+        <template v-else>
+          <component
+            :is="section.component"
+            v-for="section in settingsSections"
+            :key="section.id"
+            v-bind="section.props ?? {}"
+          />
         </template>
 
         <!-- 返回顶部按钮 -->
@@ -489,6 +797,93 @@ const findSectionElement = (id: string) => {
   @apply flex items-center;
 }
 
+.settings-search-shell {
+  @apply relative flex h-7 w-7 items-center justify-end transition-[width] duration-200 ease-out;
+}
+
+.settings-search-shell.is-expanded {
+  @apply w-[200px];
+}
+
+.settings-search-icon-button {
+  @apply flex h-7 w-7 items-center justify-center rounded-full text-text-main transition-colors cursor-pointer;
+  background: transparent;
+}
+
+.settings-search-icon-button:hover {
+  background: var(--control-hover-bg);
+}
+
+.settings-search-trigger-icon {
+  @apply text-text-main opacity-60 transition-opacity;
+}
+
+.settings-search-icon-button:hover .settings-search-trigger-icon {
+  @apply opacity-100;
+}
+
+.settings-search {
+  @apply relative flex h-7 items-center rounded-full border;
+  width: 200px;
+  background: var(--control-muted-bg);
+  border-color: transparent;
+  padding: 0 4px 0 9px;
+  animation: settings-search-expand 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  transform-origin: right center;
+}
+
+.settings-search.is-collapsing {
+  animation: settings-search-collapse 0.2s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+@keyframes settings-search-expand {
+  from {
+    width: 30px;
+    opacity: 0.6;
+  }
+  to {
+    width: 200px;
+    opacity: 1;
+  }
+}
+
+@keyframes settings-search-collapse {
+  from {
+    width: 200px;
+    opacity: 1;
+  }
+  to {
+    width: 30px;
+    opacity: 0;
+  }
+}
+
+.settings-search:focus-within {
+  background: var(--control-bg);
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-primary) 12%, transparent);
+}
+
+.settings-search-icon {
+  @apply shrink-0 text-text-secondary pointer-events-none opacity-60;
+}
+
+.settings-search-input {
+  @apply h-full min-w-0 flex-1 bg-transparent px-2 text-[12px] font-medium text-text-main placeholder:text-text-secondary border-0 outline-none;
+}
+
+.settings-search-input::-webkit-search-cancel-button {
+  appearance: none;
+}
+
+.settings-search-clear {
+  @apply flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-text-secondary transition-colors cursor-pointer hover:text-text-main;
+}
+
+.settings-search-clear:hover {
+  background: var(--control-hover-bg);
+}
+
 .settings-anchor-bar {
   @apply flex items-center;
   border-bottom: 1px solid var(--border-subtle);
@@ -538,6 +933,18 @@ const findSectionElement = (id: string) => {
 
 .settings-content {
   @apply space-y-7;
+}
+
+.settings-empty {
+  @apply min-h-[220px] flex flex-col items-center justify-center gap-3 text-text-secondary;
+}
+
+.settings-empty span {
+  @apply text-[13px] font-medium;
+}
+
+.settings-empty-clear {
+  @apply text-[12px] font-semibold text-primary hover:opacity-80 transition-opacity cursor-pointer;
 }
 
 .settings-section {

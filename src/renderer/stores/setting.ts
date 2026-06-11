@@ -151,6 +151,11 @@ export const useSettingStore = defineStore('setting', {
     sidebarSectionCollapsed: { discover: false, library: false } as Record<string, boolean>,
     // 歌单排序方式
     playlistSortOrder: 'default' as 'default' | 'time-desc' | 'time-asc' | 'name-asc' | 'name-desc',
+    // 音频缓冲区设置
+    audioCacheSecs: 30,
+    audioDemuxerMaxMB: 48,
+    audioDemuxerBackMB: 12,
+    audioBufferSecs: 0.5,
   }),
   actions: {
     setTheme(theme: ThemeMode) {

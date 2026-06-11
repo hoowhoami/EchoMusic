@@ -9,7 +9,15 @@ import log from '../logger';
 
 // native addon 类型（与自动生成的 index.d.ts 对齐）
 interface MpvAddon {
-  initialize(libPath: string): void;
+  initialize(
+    libPath: string,
+    config?: {
+      cacheSecs?: number;
+      demuxerMaxMb?: number;
+      demuxerBackMb?: number;
+      audioBufferSecs?: number;
+    },
+  ): void;
   destroy(): void;
   registerEventHandler(
     callback: (
@@ -174,7 +182,20 @@ export class MpvController extends EventEmitter {
 
     // 初始化 libmpv
     try {
-      this.addon.initialize(this.libmpvPath);
+      // 读取音频缓冲区配置
+      const { getKvStorage } = await import('../storage/kv');
+      const storage = getKvStorage();
+      const cacheSecs = (await storage.get('audioCacheSecs')) ?? 30;
+      const demuxerMaxMb = (await storage.get('audioDemuxerMaxMB')) ?? 48;
+      const demuxerBackMb = (await storage.get('audioDemuxerBackMB')) ?? 12;
+      const audioBufferSecs = (await storage.get('audioBufferSecs')) ?? 0.5;
+
+      this.addon.initialize(this.libmpvPath, {
+        cacheSecs: Number(cacheSecs),
+        demuxerMaxMb: Number(demuxerMaxMb),
+        demuxerBackMb: Number(demuxerBackMb),
+        audioBufferSecs: Number(audioBufferSecs),
+      });
     } catch (err) {
       log.error('[MpvController] libmpv initialize failed:', err);
       throw err;

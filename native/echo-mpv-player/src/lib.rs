@@ -10,7 +10,7 @@ use event_loop::start_event_loop;
 use mpv_ffi::MpvLib;
 use napi::threadsafe_function::{ThreadsafeFunction, ThreadsafeFunctionCallMode};
 use napi_derive::napi;
-use player::MpvPlayer;
+use player::{MpvPlayer, MpvPlayerConfig};
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
@@ -54,16 +54,43 @@ fn get_callback_arc() -> Option<Arc<Mutex<ThreadsafeFunction<PlayerEvent>>>> {
         .and_then(|guard| guard.as_ref().cloned())
 }
 
+/// 播放器配置选项（可选参数）
+#[napi(object)]
+pub struct PlayerConfigOptions {
+    pub cache_secs: Option<u32>,
+    pub demuxer_max_mb: Option<u32>,
+    pub demuxer_back_mb: Option<u32>,
+    pub audio_buffer_secs: Option<f64>,
+}
+
 /// 初始化 libmpv 播放器
 #[napi]
-pub fn initialize(lib_path: String) -> napi::Result<()> {
+pub fn initialize(lib_path: String, config: Option<PlayerConfigOptions>) -> napi::Result<()> {
     // 先销毁旧实例
     let _ = destroy();
 
     let lib = unsafe { MpvLib::load(&lib_path) }.map_err(|e| napi::Error::from_reason(e))?;
     let lib = Arc::new(lib);
 
-    let player = unsafe { MpvPlayer::new(lib) }.map_err(|e| napi::Error::from_reason(e))?;
+    // 构建配置
+    let mut player_config = MpvPlayerConfig::default();
+    if let Some(cfg) = config {
+        if let Some(v) = cfg.cache_secs {
+            player_config.cache_secs = v;
+        }
+        if let Some(v) = cfg.demuxer_max_mb {
+            player_config.demuxer_max_mb = v;
+        }
+        if let Some(v) = cfg.demuxer_back_mb {
+            player_config.demuxer_back_mb = v;
+        }
+        if let Some(v) = cfg.audio_buffer_secs {
+            player_config.audio_buffer_secs = v;
+        }
+    }
+
+    let player = unsafe { MpvPlayer::new_with_config(lib, player_config) }
+        .map_err(|e| napi::Error::from_reason(e))?;
     player
         .request_log_messages("warn")
         .map_err(|e| napi::Error::from_reason(e))?;

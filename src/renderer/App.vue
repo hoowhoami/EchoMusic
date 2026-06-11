@@ -15,7 +15,8 @@ import { initDesktopLyricSync } from '@/desktopLyric/sync';
 import { initMiniPlayerSync } from '@/miniPlayer/sync';
 import { initNowPlayingSync } from '@/nowPlaying/sync';
 import { onPluginRuntimeReloadRequested, refreshPlugins } from '@/plugins/runtime';
-import { normalizeCoverUrl } from '@/utils/cover';
+import { coverFallbackRevision } from '@/plugins/coverFallback';
+import { resolveCoverColorUrls } from '@/utils/cover';
 import type { UpdateCheckResult } from '../shared/app';
 import LyricView from '@/views/lyric/LyricPage.vue';
 
@@ -37,6 +38,9 @@ let colorSchemeMediaQuery: MediaQueryList | null = null;
 const showStartupUpdateDialog = ref(false);
 const startupUpdateResult = ref<UpdateCheckResult | null>(null);
 const isMiniPlayerRoute = computed(() => route.name === 'mini-player');
+const currentCoverColorUrls = computed(() =>
+  resolveCoverColorUrls(player.currentTrackSnapshot?.coverUrl, 300, { scope: 'theme' }),
+);
 
 const updateTheme = () => {
   const isDark =
@@ -201,17 +205,15 @@ watch(
 
 // 切歌时，cover 模式下自动提取封面主色
 watch(
-  () => player.currentTrackSnapshot?.coverUrl,
-  (coverUrl) => {
+  () => [player.currentTrackSnapshot?.coverUrl, coverFallbackRevision.value],
+  () => {
     if (isMiniPlayerRoute.value) return;
-    if (!coverUrl) {
-      void themeStore.refreshCoverColor('');
+    const coverColorUrls = currentCoverColorUrls.value;
+    if (themeStore.accentMode === 'cover') {
+      void themeStore.refreshFromCover(coverColorUrls);
       return;
     }
-    const normalizedCoverUrl = normalizeCoverUrl(coverUrl, 300);
-    void themeStore.refreshCoverColor(normalizedCoverUrl);
-    if (themeStore.accentMode !== 'cover') return;
-    void themeStore.refreshFromCover(normalizedCoverUrl);
+    void themeStore.refreshCoverColor(coverColorUrls);
   },
   { immediate: true },
 );
@@ -222,9 +224,7 @@ watch(
   (mode) => {
     if (isMiniPlayerRoute.value) return;
     if (mode !== 'cover') return;
-    const coverUrl = player.currentTrackSnapshot?.coverUrl;
-    if (!coverUrl) return;
-    void themeStore.refreshFromCover(normalizeCoverUrl(coverUrl, 300));
+    void themeStore.refreshFromCover(currentCoverColorUrls.value);
   },
 );
 </script>

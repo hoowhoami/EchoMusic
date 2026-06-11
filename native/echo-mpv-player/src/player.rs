@@ -11,10 +11,26 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 const SEEK_MUTE_HOLD_MS: u64 = 80;
-const PLAYER_CACHE_SECS: &str = "30";
-const PLAYER_DEMUXER_MAX_BYTES: &str = "48MiB";
-const PLAYER_DEMUXER_MAX_BACK_BYTES: &str = "12MiB";
-const PLAYER_CACHE_SEEK_MIN_SECS: &str = "15";
+
+/// 播放器配置
+#[derive(Clone)]
+pub struct MpvPlayerConfig {
+    pub cache_secs: u32,
+    pub demuxer_max_mb: u32,
+    pub demuxer_back_mb: u32,
+    pub audio_buffer_secs: f64,
+}
+
+impl Default for MpvPlayerConfig {
+    fn default() -> Self {
+        Self {
+            cache_secs: 30,
+            demuxer_max_mb: 48,
+            demuxer_back_mb: 12,
+            audio_buffer_secs: 0.5,
+        }
+    }
+}
 
 /// 淡入淡出请求
 #[allow(dead_code)]
@@ -48,6 +64,11 @@ unsafe impl Sync for MpvPlayer {}
 impl MpvPlayer {
     /// 创建并初始化 libmpv 播放器
     pub unsafe fn new(lib: Arc<MpvLib>) -> Result<Self, String> {
+        Self::new_with_config(lib, MpvPlayerConfig::default())
+    }
+
+    /// 使用自定义配置创建播放器
+    pub unsafe fn new_with_config(lib: Arc<MpvLib>, config: MpvPlayerConfig) -> Result<Self, String> {
         let handle = (lib.mpv_create)();
         if handle.is_null() {
             return Err("mpv_create returned null".to_string());
@@ -74,20 +95,22 @@ impl MpvPlayer {
         player.set_option("audio-display", "no");
         player.set_option("hr-seek", "yes");
         player.set_option("volume-max", "100");
-        // 网络音频保留一定预读，但避免 mpv 为音频播放长期占用过大的 demuxer cache。
-        player.set_option("demuxer-max-bytes", PLAYER_DEMUXER_MAX_BYTES);
-        player.set_option("demuxer-max-back-bytes", PLAYER_DEMUXER_MAX_BACK_BYTES);
-        player.set_option("demuxer-readahead-secs", PLAYER_CACHE_SECS);
+        // 网络音频缓冲配置
+        player.set_option("demuxer-max-bytes", &format!("{}MiB", config.demuxer_max_mb));
+        player.set_option("demuxer-max-back-bytes", &format!("{}MiB", config.demuxer_back_mb));
+        player.set_option("demuxer-readahead-secs", &config.cache_secs.to_string());
         player.set_option("cache", "yes");
-        player.set_option("cache-secs", PLAYER_CACHE_SECS);
+        player.set_option("cache-secs", &config.cache_secs.to_string());
         player.set_option("cache-pause", "yes");
-        player.set_option("cache-pause-wait", "2");
-        player.set_option("cache-seek-min", PLAYER_CACHE_SEEK_MIN_SECS);
+        player.set_option("cache-pause-wait", "5");
+        player.set_option("cache-pause-initial", "yes");
+        player.set_option("cache-seek-min", &(config.cache_secs / 2).to_string());
         player.set_option("user-agent", "Mozilla/5.0");
         player.set_option("input-media-keys", "no");
         player.set_option("audio-client-name", "EchoMusic");
         player.set_option("audio-samplerate", "0");
         player.set_option("audio-channels", "stereo");
+        player.set_option("audio-buffer", &config.audio_buffer_secs.to_string());
 
         let rc = (player.lib.mpv_initialize)(player.handle);
         if rc < 0 {
