@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
 import fs from 'fs';
 import path from 'path';
-import { app, ipcMain } from 'electron';
+import { app } from 'electron';
 import log from './logger';
 
 // --- 类型定义 ---
@@ -12,7 +12,7 @@ interface ModuleDefinition {
   module: (params: any, useAxios: any) => Promise<any>;
 }
 
-interface ApiRequest {
+export interface ApiRequest {
   method: string;
   url: string;
   params?: Record<string, any>;
@@ -20,7 +20,7 @@ interface ApiRequest {
   headers?: Record<string, string>;
 }
 
-interface ApiResponse {
+export interface ApiResponse {
   status: number;
   body: any;
   cookie?: string[];
@@ -174,7 +174,7 @@ const buildDefaultCookies = (): Record<string, string> => {
  * 处理 API 请求（核心路由分发逻辑）
  * 复现 server/server.js 中 Express 路由处理器的逻辑
  */
-const handleApiRequest = async (request: ApiRequest): Promise<ApiResponse> => {
+export const handleApiRequest = async (request: ApiRequest): Promise<ApiResponse> => {
   if (!serverReady || !createRequestFn) {
     return { status: 503, body: { code: 503, msg: 'Service not ready' } };
   }
@@ -251,15 +251,6 @@ const handleApiRequest = async (request: ApiRequest): Promise<ApiResponse> => {
     };
   }
 };
-
-/**
- * 注册 IPC handler
- */
-export function registerApiIpcHandler(): void {
-  ipcMain.handle('api:request', async (_event, request: ApiRequest): Promise<ApiResponse> => {
-    return handleApiRequest(request);
-  });
-}
 
 /**
  * 获取 server 就绪状态

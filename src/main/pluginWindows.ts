@@ -1,4 +1,5 @@
-import { BrowserWindow, app, ipcMain, screen } from 'electron';
+import { ipcRegistry } from './ipc/registry';
+import { BrowserWindow, app, screen } from 'electron';
 import { join } from 'path';
 import type {
   PluginWindowBounds,
@@ -9,6 +10,7 @@ import type {
 import {
   getPluginDescriptor,
   getPluginWindowDescriptor,
+  isPluginRendererGoneFailureReason,
   normalizePluginId,
   reportPluginFailure,
 } from './plugins';
@@ -235,6 +237,8 @@ const createPluginWindow = async (
     pluginWindows.delete(getWindowKey(descriptor.pluginId, descriptor.id));
   });
   win.webContents.on('render-process-gone', (_event, details) => {
+    if (!isPluginRendererGoneFailureReason(details.reason)) return;
+
     log.warn('[PluginWindow] renderer process gone', {
       pluginId: descriptor.pluginId,
       windowId: descriptor.id,
@@ -385,37 +389,34 @@ export const getPluginWindowContext = (pluginId: string, windowId: string) => {
 };
 
 export const registerPluginWindowHandlers = () => {
-  ipcMain.handle('plugins:window:show', (_event, pluginId: string, windowId: string, options) =>
-    showPluginWindow(pluginId, windowId, options),
+  ipcRegistry.registerHandler(
+    'plugins:window:show',
+    (_event, pluginId: string, windowId: string, options) =>
+      showPluginWindow(pluginId, windowId, options),
   );
-  ipcMain.handle('plugins:window:hide', (_event, pluginId: string, windowId: string) =>
+  ipcRegistry.registerHandler('plugins:window:hide', (_event, pluginId: string, windowId: string) =>
     hidePluginWindow(pluginId, windowId),
   );
-  ipcMain.handle('plugins:window:close', (_event, pluginId: string, windowId: string) =>
-    closePluginWindow(pluginId, windowId),
+  ipcRegistry.registerHandler(
+    'plugins:window:close',
+    (_event, pluginId: string, windowId: string) => closePluginWindow(pluginId, windowId),
   );
-  ipcMain.handle('plugins:window:move', (_event, pluginId: string, windowId: string, bounds) =>
-    movePluginWindow(pluginId, windowId, bounds),
+  ipcRegistry.registerHandler(
+    'plugins:window:move',
+    (_event, pluginId: string, windowId: string, bounds) =>
+      movePluginWindow(pluginId, windowId, bounds),
   );
-  ipcMain.handle('plugins:window:get-bounds', (_event, pluginId: string, windowId: string) =>
-    getPluginWindowBounds(pluginId, windowId),
+  ipcRegistry.registerHandler(
+    'plugins:window:get-bounds',
+    (_event, pluginId: string, windowId: string) => getPluginWindowBounds(pluginId, windowId),
   );
-  ipcMain.handle(
+  ipcRegistry.registerHandler(
     'plugins:window:set-ignore-mouse-events',
     (_event, pluginId: string, windowId: string, ignore: boolean) =>
       setPluginWindowIgnoreMouseEvents(pluginId, windowId, ignore),
   );
-  ipcMain.handle('plugins:window:get-context', (_event, pluginId: string, windowId: string) =>
-    getPluginWindowContext(pluginId, windowId),
+  ipcRegistry.registerHandler(
+    'plugins:window:get-context',
+    (_event, pluginId: string, windowId: string) => getPluginWindowContext(pluginId, windowId),
   );
-};
-
-export const unregisterPluginWindowHandlers = () => {
-  ipcMain.removeHandler('plugins:window:show');
-  ipcMain.removeHandler('plugins:window:hide');
-  ipcMain.removeHandler('plugins:window:close');
-  ipcMain.removeHandler('plugins:window:move');
-  ipcMain.removeHandler('plugins:window:get-bounds');
-  ipcMain.removeHandler('plugins:window:set-ignore-mouse-events');
-  ipcMain.removeHandler('plugins:window:get-context');
 };

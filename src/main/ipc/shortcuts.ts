@@ -1,4 +1,5 @@
-import { globalShortcut, BrowserWindow, ipcMain } from 'electron';
+import { globalShortcut, BrowserWindow } from 'electron';
+import { ipcRegistry } from './registry';
 import { hideMainWindow, showMainWindow } from '../window';
 import { restoreActiveWindowMode } from '../windowModeController';
 import { toggleMiniPlayerWindow } from '../miniPlayer';
@@ -51,18 +52,10 @@ const registerShortcuts = (
         if (didRegister && globalShortcut.isRegistered(accelerator)) {
           registered[command] = accelerator;
         } else {
-          failures.push({
-            command,
-            accelerator,
-            reason: 'conflict',
-          });
+          failures.push({ command, accelerator, reason: 'conflict' });
         }
       } catch {
-        failures.push({
-          command,
-          accelerator,
-          reason: 'invalid',
-        });
+        failures.push({ command, accelerator, reason: 'invalid' });
       }
     },
   );
@@ -70,7 +63,7 @@ const registerShortcuts = (
 };
 
 export const registerShortcutHandlers = ({ getMainWindow }: IpcContext) => {
-  ipcMain.handle(
+  ipcRegistry.registerHandler(
     'shortcuts:register',
     (_event, payload: { enabled: boolean; shortcutMap: ShortcutMap }) => {
       if (!payload?.enabled) {
@@ -82,7 +75,7 @@ export const registerShortcutHandlers = ({ getMainWindow }: IpcContext) => {
     },
   );
 
-  ipcMain.handle('shortcuts:refresh', () => {
+  ipcRegistry.registerHandler('shortcuts:refresh', () => {
     if (!requestedShortcuts) {
       return { registered: {} as ShortcutMap, failures: [] };
     }

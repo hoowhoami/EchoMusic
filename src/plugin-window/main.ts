@@ -7,7 +7,6 @@ import type {
   PluginProcessTerminateResult,
   PluginWindowDescriptor,
 } from '../shared/plugins';
-import type { NowPlayingCommand } from '../shared/now-playing';
 import type { AudioSpectrumFrame, AudioSpectrumOptions } from '../shared/audio-spectrum';
 
 type PluginWindowModule =

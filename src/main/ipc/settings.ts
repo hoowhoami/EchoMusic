@@ -1,4 +1,5 @@
-import { ipcMain, shell, app, session, dialog, type OpenDialogOptions } from 'electron';
+import { ipcRegistry } from './registry';
+import { shell, app, session, dialog, type OpenDialogOptions } from 'electron';
 import log from 'electron-log';
 import fs from 'fs';
 import { execFile } from 'child_process';
@@ -253,9 +254,9 @@ export const registerSettingsHandlers = ({ getMainWindow }: IpcContext) => {
   });
 
   // --- IPC handlers ---
-  ipcMain.handle('app:get-info', () => getAppInfo());
+  ipcRegistry.registerHandler('app:get-info', () => getAppInfo());
 
-  ipcMain.handle('app:get-changelog', () => {
+  ipcRegistry.registerHandler('app:get-changelog', () => {
     const changelogPath = isDev
       ? join(process.cwd(), 'CHANGELOG.md')
       : join(process.resourcesPath, 'CHANGELOG.md');
@@ -266,7 +267,7 @@ export const registerSettingsHandlers = ({ getMainWindow }: IpcContext) => {
     }
   });
 
-  ipcMain.handle(
+  ipcRegistry.registerHandler(
     'audio:import-impulse-response',
     async (): Promise<ImportImpulseResponseResult> => {
       const win = getMainWindow();
@@ -327,7 +328,7 @@ export const registerSettingsHandlers = ({ getMainWindow }: IpcContext) => {
     },
   );
 
-  ipcMain.handle('audio:delete-impulse-response', async (_event, filePath: string) => {
+  ipcRegistry.registerHandler('audio:delete-impulse-response', async (_event, filePath: string) => {
     if (typeof filePath !== 'string' || !filePath) return false;
     const irsDir = getImpulseResponseDir();
     if (!isPathInside(filePath, irsDir)) return false;
@@ -340,7 +341,7 @@ export const registerSettingsHandlers = ({ getMainWindow }: IpcContext) => {
     }
   });
 
-  ipcMain.handle(
+  ipcRegistry.registerHandler(
     'audio:reconcile-impulse-responses',
     async (_event, files: ImpulseResponseFile[] = []) => {
       if (!Array.isArray(files)) return [];
@@ -368,21 +369,27 @@ export const registerSettingsHandlers = ({ getMainWindow }: IpcContext) => {
     },
   );
 
-  ipcMain.on('open-log-directory', async () => {
+  ipcRegistry.registerListener('open-log-directory', async () => {
     await openLogDirectory();
   });
 
-  ipcMain.handle('logging:get-settings', () => getLogSettings());
+  ipcRegistry.registerHandler('logging:get-settings', () => getLogSettings());
 
-  ipcMain.handle('logging:update-settings', (_event, settings: Partial<LogSettings>) => {
-    return applyLogSettings(settings, true);
-  });
+  ipcRegistry.registerHandler(
+    'logging:update-settings',
+    (_event, settings: Partial<LogSettings>) => {
+      return applyLogSettings(settings, true);
+    },
+  );
 
-  ipcMain.on('logging:update-settings', (_event, settings: Partial<LogSettings>) => {
-    applyLogSettings(settings, true);
-  });
+  ipcRegistry.registerListener(
+    'logging:update-settings',
+    (_event, settings: Partial<LogSettings>) => {
+      applyLogSettings(settings, true);
+    },
+  );
 
-  ipcMain.on(
+  ipcRegistry.registerListener(
     'check-for-updates',
     (_event, payload?: { prerelease?: boolean; silent?: boolean; githubProxyUrl?: string }) => {
       const silent = Boolean(payload?.silent);
@@ -522,7 +529,7 @@ export const registerSettingsHandlers = ({ getMainWindow }: IpcContext) => {
     },
   );
 
-  ipcMain.on('update:download', () => {
+  ipcRegistry.registerListener('update:download', () => {
     autoUpdater.downloadUpdate().catch((error) => {
       log.error('[Updater] Download failed:', error);
       sendToRenderer('update-download-status', {
@@ -532,23 +539,23 @@ export const registerSettingsHandlers = ({ getMainWindow }: IpcContext) => {
     });
   });
 
-  ipcMain.on('update:install', (_event, payload?: { silent?: boolean }) => {
+  ipcRegistry.registerListener('update:install', (_event, payload?: { silent?: boolean }) => {
     const isSilent = payload?.silent ?? false;
     autoUpdater.quitAndInstall(isSilent, true);
   });
 
-  ipcMain.on('open-external', async (_event, url: string) => {
+  ipcRegistry.registerListener('open-external', async (_event, url: string) => {
     if (typeof url !== 'string' || !url.startsWith('http')) return;
     await shell.openExternal(url);
   });
 
-  ipcMain.on('open-disclaimer', () => {
+  ipcRegistry.registerListener('open-disclaimer', () => {
     const win = getMainWindow();
     if (!win) return;
     win.webContents.send('open-disclaimer');
   });
 
-  ipcMain.on('clear-app-data', async () => {
+  ipcRegistry.registerListener('clear-app-data', async () => {
     getPlaybackQueueStorage().resetAll();
     await session.defaultSession.clearCache();
     await session.defaultSession.clearStorageData();
@@ -556,12 +563,12 @@ export const registerSettingsHandlers = ({ getMainWindow }: IpcContext) => {
   });
 
   // GPU 加速设置（需重启生效）
-  ipcMain.on('update-disable-gpu-acceleration', (_event, disabled: boolean) => {
+  ipcRegistry.registerListener('update-disable-gpu-acceleration', (_event, disabled: boolean) => {
     setMainAppSetting('disableGpuAcceleration', Boolean(disabled));
   });
 
   // 获取系统全部字体
-  ipcMain.handle('get-all-fonts', async () => {
+  ipcRegistry.registerHandler('get-all-fonts', async () => {
     try {
       const fonts = await getFonts({ disableQuoting: true });
       return fonts;

@@ -1,4 +1,4 @@
-import { ipcMain } from 'electron';
+import { ipcRegistry } from './registry';
 import type { MpvController } from '../mpv/controller';
 import type { ImpulseResponsePlaybackOptions } from '../../shared/audio';
 import { restartMpvPlayer } from '../mpv';
@@ -7,49 +7,49 @@ import { restartMpvPlayer } from '../mpv';
 export type MpvRef = { current: MpvController | null };
 
 export function registerPlayerIpc(ref: MpvRef): void {
-  ipcMain.handle('mpv:load', async (_e, url: string) => {
+  ipcRegistry.registerHandler('mpv:load', async (_e, url: string) => {
     await ref.current?.loadFile(url);
   });
 
-  ipcMain.handle('mpv:load-mkv-track', async (_e, url: string, trackId: number) => {
+  ipcRegistry.registerHandler('mpv:load-mkv-track', async (_e, url: string, trackId: number) => {
     await ref.current?.loadMkvTrack(url, trackId);
   });
 
-  ipcMain.handle('mpv:get-track-list', async () => {
+  ipcRegistry.registerHandler('mpv:get-track-list', async () => {
     return (await ref.current?.getTrackList()) ?? [];
   });
 
-  ipcMain.handle('mpv:play', async () => {
+  ipcRegistry.registerHandler('mpv:play', async () => {
     await ref.current?.play();
   });
 
-  ipcMain.handle('mpv:pause', async () => {
+  ipcRegistry.registerHandler('mpv:pause', async () => {
     await ref.current?.pause();
   });
 
-  ipcMain.handle('mpv:stop', async () => {
+  ipcRegistry.registerHandler('mpv:stop', async () => {
     await ref.current?.stop();
   });
 
-  ipcMain.handle('mpv:seek', async (_e, time: number) => {
+  ipcRegistry.registerHandler('mpv:seek', async (_e, time: number) => {
     await ref.current?.seek(time);
   });
 
   // mpv volume 使用立方缩放，cbrt 补偿让体感和浏览器线性 audio.volume 一致
-  ipcMain.handle('mpv:set-volume', async (_e, volume: number) => {
+  ipcRegistry.registerHandler('mpv:set-volume', async (_e, volume: number) => {
     const mpvVolume = Math.pow(Math.max(0, volume), 1 / 3) * 100;
     await ref.current?.setVolume(mpvVolume);
   });
 
-  ipcMain.handle('mpv:set-speed', async (_e, speed: number) => {
+  ipcRegistry.registerHandler('mpv:set-speed', async (_e, speed: number) => {
     await ref.current?.setSpeed(speed);
   });
 
-  ipcMain.handle('mpv:set-equalizer', async (_e, gains: number[]) => {
+  ipcRegistry.registerHandler('mpv:set-equalizer', async (_e, gains: number[]) => {
     await ref.current?.setEq(gains);
   });
 
-  ipcMain.handle(
+  ipcRegistry.registerHandler(
     'mpv:set-impulse-response',
     async (_e, payload: string | ImpulseResponsePlaybackOptions) => {
       if (typeof payload === 'string') {
@@ -63,69 +63,78 @@ export function registerPlayerIpc(ref: MpvRef): void {
     },
   );
 
-  ipcMain.handle('mpv:get-audio-filter', async () => {
+  ipcRegistry.registerHandler('mpv:get-audio-filter', async () => {
     return (await ref.current?.getAudioFilter()) ?? '';
   });
 
   // 直接透传 mpv 设备名（如 wasapi/{id}、auto 等）
-  ipcMain.handle('mpv:set-audio-device', async (_e, deviceName: string) => {
+  ipcRegistry.registerHandler('mpv:set-audio-device', async (_e, deviceName: string) => {
     await ref.current?.setAudioDevice(deviceName || 'auto');
   });
 
-  ipcMain.handle('mpv:get-audio-devices', async () => {
+  ipcRegistry.registerHandler('mpv:get-audio-devices', async () => {
     return (await ref.current?.getAudioDevices()) ?? [];
   });
 
-  ipcMain.handle('mpv:set-normalization-gain', async (_e, gainDb: number) => {
+  ipcRegistry.registerHandler('mpv:set-normalization-gain', async (_e, gainDb: number) => {
     await ref.current?.applyNormalizationGain(gainDb);
   });
 
-  ipcMain.handle('mpv:fade', async (_e, from: number, to: number, durationMs: number) => {
-    try {
-      const fromMpv = Math.pow(Math.max(0, from), 1 / 3) * 100;
-      const toMpv = Math.pow(Math.max(0, to), 1 / 3) * 100;
-      await ref.current?.fade(fromMpv, toMpv, durationMs);
-    } catch {
-      // mpv 不可用或 fade 被中断，静默忽略
-    }
-  });
+  ipcRegistry.registerHandler(
+    'mpv:fade',
+    async (_e, from: number, to: number, durationMs: number) => {
+      try {
+        const fromMpv = Math.pow(Math.max(0, from), 1 / 3) * 100;
+        const toMpv = Math.pow(Math.max(0, to), 1 / 3) * 100;
+        await ref.current?.fade(fromMpv, toMpv, durationMs);
+      } catch {
+        // mpv 不可用或 fade 被中断，静默忽略
+      }
+    },
+  );
 
-  ipcMain.handle('mpv:cancel-fade', () => {
+  ipcRegistry.registerHandler('mpv:cancel-fade', () => {
     ref.current?.cancelFade();
   });
 
   // 复合操作：淡出 → 暂停 → 恢复音量，主进程内一次性完成
-  ipcMain.handle('mpv:pause-with-fade', async (_e, savedVolume: number, durationMs: number) => {
-    try {
-      const savedMpv = Math.pow(Math.max(0, savedVolume), 1 / 3) * 100;
-      await ref.current?.pauseWithFade(savedMpv, durationMs);
-    } catch {
-      // 淡出失败时直接暂停，确保暂停一定执行
-      await ref.current?.pause().catch(() => {});
-    }
-  });
+  ipcRegistry.registerHandler(
+    'mpv:pause-with-fade',
+    async (_e, savedVolume: number, durationMs: number) => {
+      try {
+        const savedMpv = Math.pow(Math.max(0, savedVolume), 1 / 3) * 100;
+        await ref.current?.pauseWithFade(savedMpv, durationMs);
+      } catch {
+        // 淡出失败时直接暂停，确保暂停一定执行
+        await ref.current?.pause().catch(() => {});
+      }
+    },
+  );
 
   // 复合操作：设置音量 0 → 播放 → 淡入，主进程内一次性完成
-  ipcMain.handle('mpv:play-with-fade', async (_e, targetVolume: number, durationMs: number) => {
-    try {
-      const targetMpv = Math.pow(Math.max(0, targetVolume), 1 / 3) * 100;
-      await ref.current?.playWithFade(targetMpv, durationMs);
-    } catch {
-      // 淡入失败时直接播放
-      await ref.current?.play().catch(() => {});
-    }
-  });
+  ipcRegistry.registerHandler(
+    'mpv:play-with-fade',
+    async (_e, targetVolume: number, durationMs: number) => {
+      try {
+        const targetMpv = Math.pow(Math.max(0, targetVolume), 1 / 3) * 100;
+        await ref.current?.playWithFade(targetMpv, durationMs);
+      } catch {
+        // 淡入失败时直接播放
+        await ref.current?.play().catch(() => {});
+      }
+    },
+  );
 
-  ipcMain.handle('mpv:get-state', () => {
+  ipcRegistry.registerHandler('mpv:get-state', () => {
     return ref.current?.currentState ?? null;
   });
 
-  ipcMain.handle('mpv:available', () => {
+  ipcRegistry.registerHandler('mpv:available', () => {
     return ref.current?.available ?? false;
   });
 
   // 设置系统媒体面板显示的标题
-  ipcMain.handle('mpv:set-media-title', async (_e, title: string) => {
+  ipcRegistry.registerHandler('mpv:set-media-title', async (_e, title: string) => {
     try {
       await ref.current?.command('set_property', 'force-media-title', title);
     } catch {
@@ -134,7 +143,7 @@ export function registerPlayerIpc(ref: MpvRef): void {
   });
 
   // 设置音频独占模式（需要重启 mpv 生效）
-  ipcMain.handle('mpv:set-exclusive', async (_e, exclusive: boolean) => {
+  ipcRegistry.registerHandler('mpv:set-exclusive', async (_e, exclusive: boolean) => {
     try {
       // 先停止当前播放
       await ref.current?.stop().catch(() => {});
@@ -156,14 +165,14 @@ export function registerPlayerIpc(ref: MpvRef): void {
   });
 
   // 重启 mpv 播放引擎，供 Loading 页面重试使用
-  ipcMain.handle('mpv:restart', async () => {
+  ipcRegistry.registerHandler('mpv:restart', async () => {
     const instance = await restartMpvPlayer();
     ref.current = instance;
     return !!instance;
   });
 
   // 设置文件循环模式（单曲循环用）
-  ipcMain.handle('mpv:set-loop-file', (_e, loop: boolean) => {
+  ipcRegistry.registerHandler('mpv:set-loop-file', (_e, loop: boolean) => {
     ref.current?.setLoopFile(loop);
   });
 }

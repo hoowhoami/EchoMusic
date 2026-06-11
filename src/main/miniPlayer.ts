@@ -1,4 +1,5 @@
-import { BrowserWindow, app, ipcMain, nativeTheme, screen, shell } from 'electron';
+import { ipcRegistry } from './ipc/registry';
+import { BrowserWindow, app, nativeTheme, screen, shell } from 'electron';
 import { join } from 'path';
 import type {
   MiniPlayerCommand,
@@ -624,91 +625,94 @@ const forwardCommandToMainRenderer = (command: MiniPlayerCommand) => {
 export const getMiniPlayerSnapshot = () => snapshot;
 
 export const registerMiniPlayerHandlers = () => {
-  ipcMain.handle('mini-player:get-snapshot', () => getMiniPlayerSnapshot());
+  ipcRegistry.registerHandler('mini-player:get-snapshot', () => getMiniPlayerSnapshot());
 
-  ipcMain.handle('mini-player:show', async () => showMiniPlayerWindow());
+  ipcRegistry.registerHandler('mini-player:show', async () => showMiniPlayerWindow());
 
-  ipcMain.handle('mini-player:hide', () => {
+  ipcRegistry.registerHandler('mini-player:hide', () => {
     closeMiniPlayerWindow();
     return snapshot;
   });
 
-  ipcMain.handle('mini-player:toggle', () => toggleMiniPlayerWindow());
+  ipcRegistry.registerHandler('mini-player:toggle', () => toggleMiniPlayerWindow());
 
-  ipcMain.on('mini-player:sync-snapshot', (_event, payload: MiniPlayerSnapshotPatch) => {
-    if (!payload) return;
-    if (payload.playback !== undefined) {
-      snapshot = {
-        ...snapshot,
-        playback: payload.playback,
-      };
-    }
-    if (payload.appearance !== undefined) {
-      snapshot = {
-        ...snapshot,
-        appearance: payload.appearance,
-      };
-    }
-    if (payload.queue !== undefined) {
-      snapshot = {
-        ...snapshot,
-        queue: payload.queue,
-      };
-    }
-    if (payload.lyric !== undefined) {
-      const previousLyric = snapshot.lyric;
-      const shouldKeepPreviousLyricLines =
-        Array.isArray(payload.lyric.lines) &&
-        payload.lyric.lines.length === 0 &&
-        (previousLyric?.lines.length ?? 0) > 0 &&
-        Boolean(payload.lyric.trackId) &&
-        payload.lyric.trackId === previousLyric?.trackId;
-      const nextLyric = {
-        trackId: null,
-        lines: [],
-        currentIndex: -1,
-        timeOffset: 0,
-        wantTranslation: false,
-        wantRomanization: false,
-        hasTranslation: false,
-        hasRomanization: false,
-        desktopLyricEnabled: false,
-        ...(previousLyric ?? {}),
-        ...payload.lyric,
-      };
-      snapshot = {
-        ...snapshot,
-        lyric: shouldKeepPreviousLyricLines
-          ? {
-              ...nextLyric,
-              lines: previousLyric?.lines ?? [],
-              hasTranslation: previousLyric?.hasTranslation ?? nextLyric.hasTranslation,
-              hasRomanization: previousLyric?.hasRomanization ?? nextLyric.hasRomanization,
-              tips: previousLyric?.tips ?? nextLyric.tips,
-            }
-          : nextLyric,
-      };
-    }
-    sendSnapshot();
-  });
+  ipcRegistry.registerListener(
+    'mini-player:sync-snapshot',
+    (_event, payload: MiniPlayerSnapshotPatch) => {
+      if (!payload) return;
+      if (payload.playback !== undefined) {
+        snapshot = {
+          ...snapshot,
+          playback: payload.playback,
+        };
+      }
+      if (payload.appearance !== undefined) {
+        snapshot = {
+          ...snapshot,
+          appearance: payload.appearance,
+        };
+      }
+      if (payload.queue !== undefined) {
+        snapshot = {
+          ...snapshot,
+          queue: payload.queue,
+        };
+      }
+      if (payload.lyric !== undefined) {
+        const previousLyric = snapshot.lyric;
+        const shouldKeepPreviousLyricLines =
+          Array.isArray(payload.lyric.lines) &&
+          payload.lyric.lines.length === 0 &&
+          (previousLyric?.lines.length ?? 0) > 0 &&
+          Boolean(payload.lyric.trackId) &&
+          payload.lyric.trackId === previousLyric?.trackId;
+        const nextLyric = {
+          trackId: null,
+          lines: [],
+          currentIndex: -1,
+          timeOffset: 0,
+          wantTranslation: false,
+          wantRomanization: false,
+          hasTranslation: false,
+          hasRomanization: false,
+          desktopLyricEnabled: false,
+          ...(previousLyric ?? {}),
+          ...payload.lyric,
+        };
+        snapshot = {
+          ...snapshot,
+          lyric: shouldKeepPreviousLyricLines
+            ? {
+                ...nextLyric,
+                lines: previousLyric?.lines ?? [],
+                hasTranslation: previousLyric?.hasTranslation ?? nextLyric.hasTranslation,
+                hasRomanization: previousLyric?.hasRomanization ?? nextLyric.hasRomanization,
+                tips: previousLyric?.tips ?? nextLyric.tips,
+              }
+            : nextLyric,
+        };
+      }
+      sendSnapshot();
+    },
+  );
 
-  ipcMain.handle('mini-player:set-expanded', (_event, expanded: boolean) => {
+  ipcRegistry.registerHandler('mini-player:set-expanded', (_event, expanded: boolean) => {
     setMiniPlayerExpanded(Boolean(expanded));
     return snapshot;
   });
 
-  ipcMain.handle('mini-player:set-always-on-top', (_event, alwaysOnTop: boolean) =>
+  ipcRegistry.registerHandler('mini-player:set-always-on-top', (_event, alwaysOnTop: boolean) =>
     setMiniPlayerAlwaysOnTop(Boolean(alwaysOnTop)),
   );
 
-  ipcMain.handle('mini-player:get-bounds', () => {
+  ipcRegistry.registerHandler('mini-player:get-bounds', () => {
     const win = getMiniPlayerWindow();
     if (!win || win.isDestroyed()) return { x: 0, y: 0, width: 0, height: 0 };
     return win.getBounds();
   });
 
   // 渲染层锁定展开方向后通知主进程扩窗，再触发卡片动画。
-  ipcMain.handle('mini-player:apply-expand-bounds', () => {
+  ipcRegistry.registerHandler('mini-player:apply-expand-bounds', () => {
     if (miniPlayerExpanded) {
       applyMiniPlayerExpandedBounds();
     }
@@ -717,7 +721,7 @@ export const registerMiniPlayerHandlers = () => {
 
   // 自定义拖动：渲染层用 pointer 事件计算新坐标后下发（取代 -webkit-app-region: drag，
   // 后者会吞掉拖拽区的 pointer 事件导致 hover 闪烁）
-  ipcMain.on('mini-player:move', (_event, x: number, y: number) => {
+  ipcRegistry.registerListener('mini-player:move', (_event, x: number, y: number) => {
     const win = getMiniPlayerWindow();
     if (!win || win.isDestroyed()) return;
     // 使用固定宽高避免 Windows DPI 缩放导致的尺寸舍入累积
@@ -734,7 +738,7 @@ export const registerMiniPlayerHandlers = () => {
     persistMiniPlayerBounds();
   });
 
-  ipcMain.on('mini-player:command', (_event, command: MiniPlayerCommand) => {
+  ipcRegistry.registerListener('mini-player:command', (_event, command: MiniPlayerCommand) => {
     if (command === 'showMainWindow') {
       setActiveWindowMode('main');
       showMainWindow();
@@ -749,7 +753,7 @@ export const registerMiniPlayerHandlers = () => {
   });
 
   // mini 窗口通知歌词面板可见状态，转发给主渲染进程以调整同步频率
-  ipcMain.on('mini-player:lyric-visibility', (_event, visible: boolean) => {
+  ipcRegistry.registerListener('mini-player:lyric-visibility', (_event, visible: boolean) => {
     const mainWindow = getMainRendererWindow();
     if (!mainWindow) return;
     mainWindow.webContents.send('mini-player:lyric-visibility', visible);
@@ -769,18 +773,3 @@ nativeTheme.on('updated', () => {
   };
   sendSnapshot();
 });
-
-export const unregisterMiniPlayerHandlers = () => {
-  ipcMain.removeHandler('mini-player:get-snapshot');
-  ipcMain.removeHandler('mini-player:show');
-  ipcMain.removeHandler('mini-player:hide');
-  ipcMain.removeHandler('mini-player:toggle');
-  ipcMain.removeHandler('mini-player:get-bounds');
-  ipcMain.removeHandler('mini-player:set-always-on-top');
-  ipcMain.removeAllListeners('mini-player:sync-snapshot');
-  ipcMain.removeHandler('mini-player:set-expanded');
-  ipcMain.removeHandler('mini-player:apply-expand-bounds');
-  ipcMain.removeAllListeners('mini-player:move');
-  ipcMain.removeAllListeners('mini-player:command');
-  ipcMain.removeAllListeners('mini-player:lyric-visibility');
-};

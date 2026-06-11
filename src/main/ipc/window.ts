@@ -1,10 +1,11 @@
-import { BrowserWindow, ipcMain } from 'electron';
+import { BrowserWindow } from 'electron';
+import { ipcRegistry } from './registry';
 import { hideMainWindow, quitApplication, requestMainWindowClose } from '../window';
 import { restoreActiveWindowMode } from '../windowModeController';
 import type { IpcContext } from './types';
 
 export const registerWindowHandlers = ({ getMainWindow }: IpcContext) => {
-  ipcMain.on(
+  ipcRegistry.registerListener(
     'window-control',
     (event, action: 'minimize' | 'maximize' | 'close' | 'fullscreen') => {
       const browserWindow = BrowserWindow.fromWebContents(event.sender) ?? getMainWindow();
@@ -26,13 +27,11 @@ export const registerWindowHandlers = ({ getMainWindow }: IpcContext) => {
     },
   );
 
-  // 窗口拖动已改为 CSS -webkit-app-region: drag
-  // 保留 IPC 通道兼容旧代码
-  ipcMain.on('window-drag:start', () => {});
-  ipcMain.on('window-drag:move', () => {});
-  ipcMain.on('window-drag:end', () => {});
+  ipcRegistry.registerListener('window-drag:start', () => {});
+  ipcRegistry.registerListener('window-drag:move', () => {});
+  ipcRegistry.registerListener('window-drag:end', () => {});
 
-  ipcMain.on('window-toggle', () => {
+  ipcRegistry.registerListener('window-toggle', () => {
     const browserWindow = getMainWindow();
     if (!browserWindow) return;
     if (browserWindow.isVisible()) {
@@ -42,7 +41,7 @@ export const registerWindowHandlers = ({ getMainWindow }: IpcContext) => {
     }
   });
 
-  ipcMain.on('quit-app', () => {
+  ipcRegistry.registerListener('quit-app', () => {
     quitApplication();
   });
 };

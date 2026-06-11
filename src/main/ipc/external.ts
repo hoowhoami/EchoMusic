@@ -1,11 +1,9 @@
-/** 外部歌单导入 IPC 注册 */
-
-import { ipcMain } from 'electron';
+import { ipcRegistry } from './registry';
 import { resolvePlaylist } from '../external';
 import type { ResolvePlaylistRequest, ResolvePlaylistResponse } from '../../shared/external';
 
 export const registerExternalHandlers = () => {
-  ipcMain.handle(
+  ipcRegistry.registerHandler(
     'external:resolve-playlist',
     async (_event, req: ResolvePlaylistRequest): Promise<ResolvePlaylistResponse> => {
       return resolvePlaylist(req);

@@ -12,6 +12,7 @@ import DisclaimerDialog from '@/components/app/DisclaimerDialog.vue';
 import UpdateDialog from '@/components/app/UpdateDialog.vue';
 import { iconArrowUp, iconSearch, iconX } from '@/icons';
 import { marked } from 'marked';
+import { sanitizeHtml } from '@/utils/sanitize';
 import AppearanceSettingsSection from './settings/components/AppearanceSettingsSection.vue';
 import FontSettingsSection from './settings/components/FontSettingsSection.vue';
 import PlaybackSettingsSection from './settings/components/PlaybackSettingsSection.vue';
@@ -152,7 +153,7 @@ const handleShowChangelog = async () => {
     if (!raw) {
       changelogHtml.value = '<p>暂无更新日志</p>';
     } else {
-      changelogHtml.value = marked.parse(raw, { async: false }) as string;
+      changelogHtml.value = sanitizeHtml(marked.parse(raw, { async: false }) as string);
     }
   } catch {
     changelogHtml.value = '<p>无法读取更新日志</p>';

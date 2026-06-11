@@ -1,12 +1,4 @@
-import {
-  BrowserWindow,
-  shell,
-  app,
-  nativeTheme,
-  ipcMain,
-  powerSaveBlocker,
-  screen,
-} from 'electron';
+import { BrowserWindow, shell, app, nativeTheme, powerSaveBlocker, screen } from 'electron';
 import { join } from 'path';
 import type { CloseBehavior, ThemeMode } from '../shared/app';
 import {
@@ -15,7 +7,8 @@ import {
   type MainWindowState as WindowState,
 } from './storage/settings';
 import { getActiveWindowMode, setActiveWindowMode } from './windowMode';
-import { reportPluginRendererFailure } from './plugins';
+import { isPluginRendererGoneFailureReason, reportPluginRendererFailure } from './plugins';
+import { ipcRegistry } from './ipc/registry';
 
 const minWidth: number = 1100;
 const minHeight: number = 720;
@@ -103,32 +96,6 @@ app.on('before-quit', () => {
   isQuitting = true;
 });
 
-// 监听关闭行为更新
-ipcMain.on('update-close-behavior', (_event, behavior: CloseBehavior) => {
-  closeBehavior = behavior;
-  setMainAppSetting('closeBehavior', behavior);
-});
-
-// 监听主题更新，用于同步主进程背景色判断
-ipcMain.on('update-theme', (_event, theme: ThemeMode) => {
-  currentTheme = theme;
-  setMainAppSetting('theme', theme);
-});
-
-ipcMain.on('update-remember-window-size', (_event, enabled: boolean) => {
-  rememberWindowSize = enabled;
-  setMainAppSetting('rememberWindowSize', enabled);
-});
-
-ipcMain.on('update-start-minimized', (_event, enabled: boolean) => {
-  setMainAppSetting('startMinimized', enabled);
-});
-
-ipcMain.on('update-auto-launch', (_event, enabled: boolean) => {
-  setMainAppSetting('autoLaunch', enabled);
-  app.setLoginItemSettings({ openAtLogin: enabled });
-});
-
 const syncPowerSaveBlocker = () => {
   const shouldBlock = preventSleep && isPlaybackActive && !systemSuspended;
   if (shouldBlock) {
@@ -151,15 +118,38 @@ export function setSystemSuspended(suspended: boolean) {
   syncPowerSaveBlocker();
 }
 
-ipcMain.on(
-  'update-power-save-blocker',
-  (_event, payload: { enabled: boolean; isPlaying: boolean }) => {
+export const registerMainWindowPreferenceHandlers = () => {
+  ipcRegistry.registerListener('update-close-behavior', (_event, behavior: CloseBehavior) => {
+    closeBehavior = behavior;
+    setMainAppSetting('closeBehavior', behavior);
+  });
+
+  ipcRegistry.registerListener('update-theme', (_event, theme: ThemeMode) => {
+    currentTheme = theme;
+    setMainAppSetting('theme', theme);
+  });
+
+  ipcRegistry.registerListener('update-remember-window-size', (_event, enabled: boolean) => {
+    rememberWindowSize = enabled;
+    setMainAppSetting('rememberWindowSize', enabled);
+  });
+
+  ipcRegistry.registerListener('update-start-minimized', (_event, enabled: boolean) => {
+    setMainAppSetting('startMinimized', enabled);
+  });
+
+  ipcRegistry.registerListener('update-auto-launch', (_event, enabled: boolean) => {
+    setMainAppSetting('autoLaunch', enabled);
+    app.setLoginItemSettings({ openAtLogin: enabled });
+  });
+
+  ipcRegistry.registerListener('update-power-save-blocker', (_event, payload) => {
     preventSleep = Boolean(payload?.enabled);
     isPlaybackActive = Boolean(payload?.isPlaying);
     setMainAppSetting('preventSleep', preventSleep);
     syncPowerSaveBlocker();
-  },
-);
+  });
+};
 
 const getPersistedWindowState = (): WindowState => {
   return getMainAppSettings().windowState;
@@ -303,6 +293,13 @@ export async function createWindow() {
 
   win.webContents.on('did-finish-load', enforceNoZoom);
   win.webContents.on('render-process-gone', (_event, details) => {
+    if (!isPluginRendererGoneFailureReason(details.reason)) {
+      if (details.reason === 'killed' && !isQuitting && win && !win.isDestroyed()) {
+        win.reload();
+      }
+      return;
+    }
+
     const pluginFailureRecorded = reportPluginRendererFailure(
       'render-process-gone',
       `主界面渲染进程异常退出：${details.reason}`,

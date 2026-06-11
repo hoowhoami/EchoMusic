@@ -300,6 +300,11 @@ const normalizePluginIds = (pluginIds: unknown) => {
   return Array.from(new Set(pluginIds.map(normalizePluginId).filter(Boolean)));
 };
 
+const NON_FAILURE_RENDERER_GONE_REASONS = new Set(['clean-exit', 'killed']);
+
+export const isPluginRendererGoneFailureReason = (reason: string) =>
+  !NON_FAILURE_RENDERER_GONE_REASONS.has(reason);
+
 const getRuntimeSession = (key: string): PluginRuntimeSession | null => {
   const session = getKvStorage().get<PluginRuntimeSession>(key);
   if (!session || !Array.isArray(session.pluginIds) || session.pluginIds.length === 0) return null;

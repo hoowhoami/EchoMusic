@@ -1,4 +1,5 @@
-import { BrowserWindow, dialog, ipcMain, type OpenDialogOptions } from 'electron';
+import { ipcRegistry } from './registry';
+import { BrowserWindow, dialog, type OpenDialogOptions } from 'electron';
 import type {
   PluginAssetSourceResult,
   PluginDialogResult,
@@ -94,16 +95,16 @@ const showPluginOpenDialog = async (
 };
 
 export const registerPluginHandlers = (context: IpcContext) => {
-  ipcMain.handle('plugins:list', (): PluginListResult => listPlugins());
-  ipcMain.handle('plugins:get-directory', (): string => getPluginDirectory());
-  ipcMain.handle('plugins:open-directory', (): string => openPluginDirectory());
-  ipcMain.handle(
+  ipcRegistry.registerHandler('plugins:list', (): PluginListResult => listPlugins());
+  ipcRegistry.registerHandler('plugins:get-directory', (): string => getPluginDirectory());
+  ipcRegistry.registerHandler('plugins:open-directory', (): string => openPluginDirectory());
+  ipcRegistry.registerHandler(
     'plugins:marketplace:sources:list',
     (): PluginMarketplaceSourceListResult => ({
       sources: listPluginMarketplaceSources(),
     }),
   );
-  ipcMain.handle(
+  ipcRegistry.registerHandler(
     'plugins:marketplace:sources:add',
     (
       _event,
@@ -111,7 +112,7 @@ export const registerPluginHandlers = (context: IpcContext) => {
       options?: PluginMarketplaceRequestOptions,
     ): Promise<PluginMarketplaceSourceMutationResult> => addPluginMarketplaceSource(input, options),
   );
-  ipcMain.handle(
+  ipcRegistry.registerHandler(
     'plugins:marketplace:sources:patch',
     (
       _event,
@@ -119,17 +120,17 @@ export const registerPluginHandlers = (context: IpcContext) => {
       patch: PluginMarketplaceSourcePatch,
     ): PluginMarketplaceSourceMutationResult => patchPluginMarketplaceSource(sourceId, patch),
   );
-  ipcMain.handle(
+  ipcRegistry.registerHandler(
     'plugins:marketplace:sources:remove',
     (_event, sourceId: string): PluginMarketplaceRemoveSourceResult =>
       removePluginMarketplaceSource(sourceId),
   );
-  ipcMain.handle(
+  ipcRegistry.registerHandler(
     'plugins:marketplace:list',
     (_event, options?: PluginMarketplaceRequestOptions): Promise<PluginMarketplaceListResult> =>
       listPluginMarketplace(options),
   );
-  ipcMain.handle(
+  ipcRegistry.registerHandler(
     'plugins:marketplace:install',
     (
       _event,
@@ -139,7 +140,7 @@ export const registerPluginHandlers = (context: IpcContext) => {
     ): Promise<PluginMarketplaceInstallResult> =>
       installPluginFromMarketplace(sourceId, pluginId, options),
   );
-  ipcMain.handle(
+  ipcRegistry.registerHandler(
     'plugins:install-local',
     (
       _event,
@@ -147,7 +148,7 @@ export const registerPluginHandlers = (context: IpcContext) => {
       options?: PluginLocalInstallOptions,
     ): Promise<PluginLocalInstallResult> => installPluginsFromLocal(paths, options),
   );
-  ipcMain.handle('plugins:runtime-reload', (event): void => {
+  ipcRegistry.registerHandler('plugins:runtime-reload', (event): void => {
     BrowserWindow.getAllWindows().forEach((win) => {
       try {
         if (win.isDestroyed() || win.webContents.isDestroyed()) return;
@@ -158,7 +159,7 @@ export const registerPluginHandlers = (context: IpcContext) => {
       }
     });
   });
-  ipcMain.handle(
+  ipcRegistry.registerHandler(
     'plugins:dialog:select-directory',
     (_event, options?: PluginOpenDialogOptions): Promise<PluginDialogResult> =>
       showPluginOpenDialog(
@@ -169,7 +170,7 @@ export const registerPluginHandlers = (context: IpcContext) => {
         ]),
       ),
   );
-  ipcMain.handle(
+  ipcRegistry.registerHandler(
     'plugins:dialog:select-files',
     (_event, options?: PluginOpenDialogOptions): Promise<PluginDialogResult> =>
       showPluginOpenDialog(
@@ -180,7 +181,7 @@ export const registerPluginHandlers = (context: IpcContext) => {
         ]),
       ),
   );
-  ipcMain.handle(
+  ipcRegistry.registerHandler(
     'plugins:fs:list-image-files',
     (
       _event,
@@ -188,11 +189,11 @@ export const registerPluginHandlers = (context: IpcContext) => {
       options?: PluginListImageFilesOptions,
     ): PluginListImageFilesResult => listPluginImageFiles(directoryPath, options),
   );
-  ipcMain.handle(
+  ipcRegistry.registerHandler(
     'plugins:fs:get-file-url',
     (_event, filePath: string): PluginFileUrlResult => getPluginFileUrl(filePath),
   );
-  ipcMain.handle(
+  ipcRegistry.registerHandler(
     'plugins:process:launch',
     (
       event,
@@ -205,12 +206,12 @@ export const registerPluginHandlers = (context: IpcContext) => {
         BrowserWindow.fromWebContents(event.sender) ?? context.getMainWindow(),
       ),
   );
-  ipcMain.handle(
+  ipcRegistry.registerHandler(
     'plugins:process:terminate',
     (_event, pluginId: string, pid: number): PluginProcessTerminateResult =>
       terminatePluginProcess(pluginId, pid),
   );
-  ipcMain.handle(
+  ipcRegistry.registerHandler(
     'plugins:set-enabled',
     (_event, pluginId: string, enabled: boolean): PluginSetEnabledResult => {
       const result = setPluginEnabled(pluginId, enabled);
@@ -218,25 +219,34 @@ export const registerPluginHandlers = (context: IpcContext) => {
       return result;
     },
   );
-  ipcMain.handle('plugins:set-safe-mode', (_event, enabled: boolean): PluginSetSafeModeResult => {
-    const result = setPluginSafeMode(enabled);
-    if (result.ok && enabled) closePluginWindows();
-    return result;
-  });
-  ipcMain.handle('plugins:uninstall', (_event, pluginId: string): PluginUninstallResult => {
-    closePluginWindows(pluginId);
-    return uninstallPlugin(pluginId);
-  });
-  ipcMain.handle(
+  ipcRegistry.registerHandler(
+    'plugins:set-safe-mode',
+    (_event, enabled: boolean): PluginSetSafeModeResult => {
+      const result = setPluginSafeMode(enabled);
+      if (result.ok && enabled) closePluginWindows();
+      return result;
+    },
+  );
+  ipcRegistry.registerHandler(
+    'plugins:uninstall',
+    (_event, pluginId: string): PluginUninstallResult => {
+      closePluginWindows(pluginId);
+      return uninstallPlugin(pluginId);
+    },
+  );
+  ipcRegistry.registerHandler(
     'plugins:startup:mark',
     (_event, pluginIds: string[]): PluginReportFailureResult => markPluginStartup(pluginIds),
   );
-  ipcMain.handle('plugins:startup:clear', (): PluginReportFailureResult => clearPluginStartup());
-  ipcMain.handle(
+  ipcRegistry.registerHandler(
+    'plugins:startup:clear',
+    (): PluginReportFailureResult => clearPluginStartup(),
+  );
+  ipcRegistry.registerHandler(
     'plugins:active-session:set',
     (_event, pluginIds: string[]): PluginReportFailureResult => setPluginActiveSession(pluginIds),
   );
-  ipcMain.handle(
+  ipcRegistry.registerHandler(
     'plugins:failure:report',
     (
       _event,
@@ -246,16 +256,16 @@ export const registerPluginHandlers = (context: IpcContext) => {
       },
     ): PluginReportFailureResult => reportPluginFailure(failure),
   );
-  ipcMain.handle(
+  ipcRegistry.registerHandler(
     'plugins:failure:clear',
     (_event, pluginId?: string): PluginReportFailureResult => clearPluginFailureRecord(pluginId),
   );
-  ipcMain.handle(
+  ipcRegistry.registerHandler(
     'plugins:read-asset',
     (_event, pluginId: string, asset: 'main' | 'style'): PluginAssetSourceResult =>
       readPluginTextAsset(pluginId, asset),
   );
-  ipcMain.handle(
+  ipcRegistry.registerHandler(
     'plugins:window:read-asset',
     (
       _event,
@@ -264,46 +274,14 @@ export const registerPluginHandlers = (context: IpcContext) => {
       asset: 'main' | 'style',
     ): PluginAssetSourceResult => readPluginWindowTextAsset(pluginId, windowId, asset),
   );
-  ipcMain.handle('plugins:data:get', (_event, pluginId: string, key: string) =>
+  ipcRegistry.registerHandler('plugins:data:get', (_event, pluginId: string, key: string) =>
     getPluginData(pluginId, key),
   );
-  ipcMain.handle('plugins:data:set', (_event, pluginId: string, key: string, value: unknown) =>
-    setPluginData(pluginId, key, value),
+  ipcRegistry.registerHandler(
+    'plugins:data:set',
+    (_event, pluginId: string, key: string, value: unknown) => setPluginData(pluginId, key, value),
   );
-  ipcMain.handle('plugins:data:delete', (_event, pluginId: string, key: string) =>
+  ipcRegistry.registerHandler('plugins:data:delete', (_event, pluginId: string, key: string) =>
     deletePluginData(pluginId, key),
   );
-};
-
-export const unregisterPluginHandlers = () => {
-  ipcMain.removeHandler('plugins:list');
-  ipcMain.removeHandler('plugins:get-directory');
-  ipcMain.removeHandler('plugins:open-directory');
-  ipcMain.removeHandler('plugins:marketplace:sources:list');
-  ipcMain.removeHandler('plugins:marketplace:sources:add');
-  ipcMain.removeHandler('plugins:marketplace:sources:patch');
-  ipcMain.removeHandler('plugins:marketplace:sources:remove');
-  ipcMain.removeHandler('plugins:marketplace:list');
-  ipcMain.removeHandler('plugins:marketplace:install');
-  ipcMain.removeHandler('plugins:install-local');
-  ipcMain.removeHandler('plugins:runtime-reload');
-  ipcMain.removeHandler('plugins:dialog:select-directory');
-  ipcMain.removeHandler('plugins:dialog:select-files');
-  ipcMain.removeHandler('plugins:fs:list-image-files');
-  ipcMain.removeHandler('plugins:fs:get-file-url');
-  ipcMain.removeHandler('plugins:process:launch');
-  ipcMain.removeHandler('plugins:process:terminate');
-  ipcMain.removeHandler('plugins:set-enabled');
-  ipcMain.removeHandler('plugins:set-safe-mode');
-  ipcMain.removeHandler('plugins:uninstall');
-  ipcMain.removeHandler('plugins:startup:mark');
-  ipcMain.removeHandler('plugins:startup:clear');
-  ipcMain.removeHandler('plugins:active-session:set');
-  ipcMain.removeHandler('plugins:failure:report');
-  ipcMain.removeHandler('plugins:failure:clear');
-  ipcMain.removeHandler('plugins:read-asset');
-  ipcMain.removeHandler('plugins:window:read-asset');
-  ipcMain.removeHandler('plugins:data:get');
-  ipcMain.removeHandler('plugins:data:set');
-  ipcMain.removeHandler('plugins:data:delete');
 };

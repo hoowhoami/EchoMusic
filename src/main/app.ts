@@ -9,13 +9,14 @@ import { setActiveWindowMode } from './windowMode';
 import { createDockMenu, destroyTray, initTray, refreshTray } from './tray';
 import { getDesktopLyricWindow } from './desktopLyric';
 import { initMpvPlayer, destroyMpvPlayer } from './mpv';
-import { registerPlayerIpc } from './ipc/player';
 import { registerAudioSpectrumIpc, unregisterAudioSpectrumIpc } from './audioSpectrum';
 import { initMediaControls, destroyMediaControls } from './mediaControls';
 import { initPowerMonitor } from './powerMonitor';
 import { clearPluginRuntimeSession, setPluginSafeMode } from './plugins';
+import type { MpvController } from './mpv/controller';
 
 const WM_TASKBARCREATED = 0x031a;
+const mpvRef: { current: MpvController | null } = { current: null };
 
 // --- 初始化日志 ---
 initLogger();
@@ -61,6 +62,7 @@ if (!gotTheLock) {
   // IPC handler 必须在窗口创建前注册
   registerIpcHandlers({
     getMainWindow,
+    mpvRef,
   });
 
   app.whenReady().then(async () => {
@@ -71,9 +73,7 @@ if (!gotTheLock) {
 
     // --- Loading 阶段：在窗口创建前完成核心服务初始化 ---
 
-    // 注册播放器 IPC（渲染进程启动后立即可用）
-    const mpvRef: { current: import('./mpv/controller').MpvController | null } = { current: null };
-    registerPlayerIpc(mpvRef);
+    // 注册频谱 IPC（渲染进程启动后立即可用，且拥有独立捕获生命周期）
     registerAudioSpectrumIpc();
 
     // 并行初始化 API 服务器和 mpv 播放引擎

@@ -1,6 +1,7 @@
 import { ref, watch, type ComputedRef } from 'vue';
 import { extractDominantColor, getNormalizedAccent } from '@/utils/color';
-import { normalizeCoverUrl } from '@/utils/cover';
+import { coverFallbackRevision } from '@/plugins/coverFallback';
+import { resolveCoverColorUrls } from '@/utils/cover';
 
 /**
  * 歌词页面背景主题色取色
@@ -66,14 +67,19 @@ export function useLyricBackground(coverUrl: ComputedRef<string | undefined>) {
   let requestSeq = 0;
 
   const refresh = async (url: string | undefined) => {
-    if (!url) {
+    const seq = ++requestSeq;
+    const urls = resolveCoverColorUrls(url, 300, { scope: 'lyric-background' });
+    if (urls.length === 0) {
       backgroundColor.value = '';
       return;
     }
-    const seq = ++requestSeq;
-    const processedUrl = normalizeCoverUrl(url, 300);
-    const color = await extractDominantColor(processedUrl);
-    if (seq !== requestSeq) return;
+
+    let color: string | null = null;
+    for (const candidateUrl of urls) {
+      color = await extractDominantColor(candidateUrl);
+      if (seq !== requestSeq) return;
+      if (color) break;
+    }
 
     if (!color) {
       backgroundColor.value = '';
@@ -85,7 +91,7 @@ export function useLyricBackground(coverUrl: ComputedRef<string | undefined>) {
     backgroundColor.value = darkenForBackground(normalized);
   };
 
-  watch(coverUrl, (url) => void refresh(url), { immediate: true });
+  watch([coverUrl, coverFallbackRevision], ([url]) => void refresh(url), { immediate: true });
 
   return {
     backgroundColor,

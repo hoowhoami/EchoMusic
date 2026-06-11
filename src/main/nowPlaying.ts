@@ -1,4 +1,5 @@
-import { BrowserWindow, ipcMain } from 'electron';
+import { ipcRegistry } from './ipc/registry';
+import { BrowserWindow } from 'electron';
 import type {
   NowPlayingCommand,
   NowPlayingLyricPayload,
@@ -183,25 +184,22 @@ export const syncNowPlayingSnapshot = (payload: NowPlayingSnapshotPatch) => {
 };
 
 export const registerNowPlayingHandlers = (context: IpcContext) => {
-  ipcMain.handle('now-playing:get-snapshot', () => getNowPlayingSnapshot());
+  ipcRegistry.registerHandler('now-playing:get-snapshot', () => getNowPlayingSnapshot());
 
-  ipcMain.on('now-playing:sync-snapshot', (event, payload: NowPlayingSnapshotPatch) => {
-    const mainWindow = context.getMainWindow();
-    if (!mainWindow || mainWindow.isDestroyed()) return;
-    if (event.sender.id !== mainWindow.webContents.id) return;
-    syncNowPlayingSnapshot(payload);
-  });
+  ipcRegistry.registerListener(
+    'now-playing:sync-snapshot',
+    (event, payload: NowPlayingSnapshotPatch) => {
+      const mainWindow = context.getMainWindow();
+      if (!mainWindow || mainWindow.isDestroyed()) return;
+      if (event.sender.id !== mainWindow.webContents.id) return;
+      syncNowPlayingSnapshot(payload);
+    },
+  );
 
-  ipcMain.on('now-playing:command', (_event, command: NowPlayingCommand) => {
+  ipcRegistry.registerListener('now-playing:command', (_event, command: NowPlayingCommand) => {
     if (!NOW_PLAYING_COMMANDS.has(command)) return;
     const mainWindow = context.getMainWindow();
     if (!mainWindow || mainWindow.isDestroyed() || mainWindow.webContents.isDestroyed()) return;
     mainWindow.webContents.send('now-playing:command', command);
   });
-};
-
-export const unregisterNowPlayingHandlers = () => {
-  ipcMain.removeHandler('now-playing:get-snapshot');
-  ipcMain.removeAllListeners('now-playing:sync-snapshot');
-  ipcMain.removeAllListeners('now-playing:command');
 };

@@ -1,4 +1,4 @@
-import { BrowserWindow, app, ipcMain, nativeTheme, screen } from 'electron';
+import { BrowserWindow, app, nativeTheme, screen } from 'electron';
 import type {
   DesktopLyricCommand,
   DesktopLyricLockPhase,
@@ -39,6 +39,7 @@ import log from './logger';
 import { showMainWindow, getMainWindow } from './window';
 import { getActiveWindowMode } from './windowMode';
 import { closeMiniPlayerWindow } from './miniPlayer';
+import { ipcRegistry } from './ipc/registry';
 
 export { getDesktopLyricWindow } from './desktopLyric/window';
 
@@ -410,92 +411,98 @@ export const toggleDesktopLyricLock = async () => {
 export const getDesktopLyricSnapshot = () => snapshot;
 
 export const registerDesktopLyricHandlers = () => {
-  ipcMain.handle('desktop-lyric:get-snapshot', () => getDesktopLyricSnapshot());
+  ipcRegistry.registerHandler('desktop-lyric:get-snapshot', () => getDesktopLyricSnapshot());
 
-  ipcMain.handle('desktop-lyric:show', async () => {
+  ipcRegistry.registerHandler('desktop-lyric:show', async () => {
     const result = await updateDesktopLyricSettings({ enabled: true });
     await showDesktopLyricWindow();
     return result;
   });
 
-  ipcMain.handle('desktop-lyric:hide', async () => {
+  ipcRegistry.registerHandler('desktop-lyric:hide', async () => {
     const result = await updateDesktopLyricSettings({ enabled: false });
     closeDesktopLyricWindow();
     return result;
   });
 
-  ipcMain.handle('desktop-lyric:toggle-lock', async () => toggleDesktopLyricLock());
+  ipcRegistry.registerHandler('desktop-lyric:toggle-lock', async () => toggleDesktopLyricLock());
 
-  ipcMain.handle(
+  ipcRegistry.registerHandler(
     'desktop-lyric:update-settings',
     async (_event, payload: Partial<DesktopLyricSettings>) =>
       updateDesktopLyricSettings(payload ?? {}),
   );
 
-  ipcMain.on('desktop-lyric:sync-snapshot', (_event, payload: DesktopLyricSnapshotPatch) => {
-    if (!payload) return;
-    if (payload.playback !== undefined) {
-      const nextLyricsTrackId = payload.playback?.lyricHash || payload.playback?.trackId || null;
-      snapshot = {
-        ...snapshot,
-        playback: payload.playback,
-        ...(nextLyricsTrackId !== snapshot.lyricsTrackId
-          ? {
-              lyricsTrackId: nextLyricsTrackId,
-              lyricsRevision: snapshot.lyricsRevision + 1,
-              lyrics: [],
-              currentIndex: -1,
-              lyricTimeOffset: 0,
-            }
-          : {}),
-      };
-    }
-    if (payload.lyrics !== undefined) {
-      const activeLyricsTrackId =
-        snapshot.playback?.lyricHash || snapshot.playback?.trackId || null;
-      const nextLyricsTrackId =
-        payload.lyricsTrackId !== undefined ? payload.lyricsTrackId : activeLyricsTrackId;
-      if (nextLyricsTrackId === activeLyricsTrackId) {
+  ipcRegistry.registerListener(
+    'desktop-lyric:sync-snapshot',
+    (_event, payload: DesktopLyricSnapshotPatch) => {
+      if (!payload) return;
+      if (payload.playback !== undefined) {
+        const nextLyricsTrackId = payload.playback?.lyricHash || payload.playback?.trackId || null;
         snapshot = {
           ...snapshot,
-          lyricsTrackId: nextLyricsTrackId,
-          lyricsRevision: snapshot.lyricsRevision + 1,
-          lyrics: payload.lyrics,
+          playback: payload.playback,
+          ...(nextLyricsTrackId !== snapshot.lyricsTrackId
+            ? {
+                lyricsTrackId: nextLyricsTrackId,
+                lyricsRevision: snapshot.lyricsRevision + 1,
+                lyrics: [],
+                currentIndex: -1,
+                lyricTimeOffset: 0,
+              }
+            : {}),
         };
       }
-    } else if (payload.lyricsTrackId !== undefined) {
-      const activeLyricsTrackId =
-        snapshot.playback?.lyricHash || snapshot.playback?.trackId || null;
-      if (payload.lyricsTrackId === activeLyricsTrackId) {
-        snapshot = { ...snapshot, lyricsTrackId: payload.lyricsTrackId };
+      if (payload.lyrics !== undefined) {
+        const activeLyricsTrackId =
+          snapshot.playback?.lyricHash || snapshot.playback?.trackId || null;
+        const nextLyricsTrackId =
+          payload.lyricsTrackId !== undefined ? payload.lyricsTrackId : activeLyricsTrackId;
+        if (nextLyricsTrackId === activeLyricsTrackId) {
+          snapshot = {
+            ...snapshot,
+            lyricsTrackId: nextLyricsTrackId,
+            lyricsRevision: snapshot.lyricsRevision + 1,
+            lyrics: payload.lyrics,
+          };
+        }
+      } else if (payload.lyricsTrackId !== undefined) {
+        const activeLyricsTrackId =
+          snapshot.playback?.lyricHash || snapshot.playback?.trackId || null;
+        if (payload.lyricsTrackId === activeLyricsTrackId) {
+          snapshot = { ...snapshot, lyricsTrackId: payload.lyricsTrackId };
+        }
       }
-    }
-    if (payload.currentIndex !== undefined) {
-      snapshot = { ...snapshot, currentIndex: payload.currentIndex };
-    }
-    if (payload.lyricTimeOffset !== undefined) {
-      snapshot = { ...snapshot, lyricTimeOffset: Number(payload.lyricTimeOffset) || 0 };
-    }
-    if (payload.lyricSyncWarning !== undefined) {
-      snapshot = { ...snapshot, lyricSyncWarning: payload.lyricSyncWarning };
-    }
-    if (payload.settings) {
-      snapshot = { ...snapshot, settings: { ...snapshot.settings, ...payload.settings } };
-    }
-    sendSnapshot();
-  });
+      if (payload.currentIndex !== undefined) {
+        snapshot = { ...snapshot, currentIndex: payload.currentIndex };
+      }
+      if (payload.lyricTimeOffset !== undefined) {
+        snapshot = { ...snapshot, lyricTimeOffset: Number(payload.lyricTimeOffset) || 0 };
+      }
+      if (payload.lyricSyncWarning !== undefined) {
+        snapshot = { ...snapshot, lyricSyncWarning: payload.lyricSyncWarning };
+      }
+      if (payload.settings) {
+        snapshot = { ...snapshot, settings: { ...snapshot.settings, ...payload.settings } };
+      }
+      sendSnapshot();
+    },
+  );
 
-  ipcMain.on('desktop-lyric:set-ignore-mouse-events', (_event, ignore: boolean) => {
-    const win = getDesktopLyricWindow();
-    if (!win || win.isDestroyed()) return;
-    if (ignore) {
-      win.setIgnoreMouseEvents(true, { forward: true });
-    } else {
-      win.setIgnoreMouseEvents(false);
-    }
-  });
+  ipcRegistry.registerListener(
+    'desktop-lyric:set-ignore-mouse-events',
+    (_event, ignore: boolean) => {
+      const win = getDesktopLyricWindow();
+      if (!win || win.isDestroyed()) return;
+      if (ignore) {
+        win.setIgnoreMouseEvents(true, { forward: true });
+      } else {
+        win.setIgnoreMouseEvents(false);
+      }
+    },
+  );
 
-  ipcMain.on(
+  ipcRegistry.registerListener(
     'desktop-lyric:move',
     (_event, x: number, y: number, width: number, height: number) => {
       const win = getDesktopLyricWindow();
@@ -510,7 +517,7 @@ export const registerDesktopLyricHandlers = () => {
     },
   );
 
-  ipcMain.on('desktop-lyric:resize', (_event, width: number, height: number) => {
+  ipcRegistry.registerListener('desktop-lyric:resize', (_event, width: number, height: number) => {
     const win = getDesktopLyricWindow();
     if (!win || win.isDestroyed()) return;
     const bounds = win.getBounds();
@@ -527,28 +534,28 @@ export const registerDesktopLyricHandlers = () => {
     });
   });
 
-  ipcMain.on('desktop-lyric:set-height', (_event, height: number) => {
+  ipcRegistry.registerListener('desktop-lyric:set-height', (_event, height: number) => {
     updateWindowHeight(height);
   });
 
-  ipcMain.on(
+  ipcRegistry.registerListener(
     'desktop-lyric:toggle-fixed-size',
     (_event, options: { width: number; height: number; fixed: boolean }) => {
       setDesktopLyricFixedSize(options);
     },
   );
 
-  ipcMain.handle('desktop-lyric:get-bounds', () => {
+  ipcRegistry.registerHandler('desktop-lyric:get-bounds', () => {
     const win = getDesktopLyricWindow();
     if (!win || win.isDestroyed()) return {};
     return win.getBounds();
   });
 
-  ipcMain.handle('desktop-lyric:get-virtual-screen-bounds', () => {
+  ipcRegistry.registerHandler('desktop-lyric:get-virtual-screen-bounds', () => {
     return getDesktopLyricVirtualScreenBounds();
   });
 
-  ipcMain.on('desktop-lyric:command', (_event, command: DesktopLyricCommand) => {
+  ipcRegistry.registerListener('desktop-lyric:command', (_event, command: DesktopLyricCommand) => {
     const lyricWin = getDesktopLyricWindow();
     const focusedMainWindow = BrowserWindow.getAllWindows().find(
       (win) => win !== lyricWin && !win.isDestroyed(),

@@ -2,6 +2,7 @@
 import { computed, ref, onMounted, onUnmounted } from 'vue';
 import { useVModel } from '@vueuse/core';
 import { marked } from 'marked';
+import { sanitizeHtml } from '@/utils/sanitize';
 import Dialog from '@/components/ui/Dialog.vue';
 import Button from '@/components/ui/Button.vue';
 import Scrollbar from '@/components/ui/Scrollbar.vue';
@@ -56,10 +57,10 @@ const description = computed(() => {
 const bodyHtml = computed(() => {
   const raw = props.result?.body?.trim();
   if (!raw) return '';
-  // 如果已经是 HTML（GitHub API 返回的 body_html），直接用
-  if (raw.startsWith('<')) return raw;
-  // 否则用 marked 渲染 markdown
-  return marked.parse(raw, { async: false }) as string;
+  // 如果已经是 HTML（GitHub API 返回的 body_html），清理后使用
+  if (raw.startsWith('<')) return sanitizeHtml(raw);
+  // 否则用 marked 渲染 markdown，然后清理
+  return sanitizeHtml(marked.parse(raw, { async: false }) as string);
 });
 
 const handleDownload = () => {
