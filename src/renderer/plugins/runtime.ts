@@ -64,9 +64,35 @@ export interface PluginSurfaceOptions {
   playerBackdropFilter?: string;
 }
 
+export type PluginPageTransitionMode = 'default' | 'out-in' | 'in-out';
+
+export interface PluginPageTransitionOptions {
+  enabled?: boolean;
+  name?: string;
+  css?: string;
+  mode?: PluginPageTransitionMode;
+  appear?: boolean;
+  durationMs?: number | string;
+  easing?: string;
+  enterOpacity?: number | string;
+  leaveOpacity?: number | string;
+  enterTranslateX?: number | string;
+  enterTranslateY?: number | string;
+  leaveTranslateX?: number | string;
+  leaveTranslateY?: number | string;
+  enterScale?: number | string;
+  leaveScale?: number | string;
+  enterFilter?: string;
+  leaveFilter?: string;
+}
+
 export interface PluginThemeApi {
   surface: {
     set: (options: PluginSurfaceOptions) => () => void;
+    clear: () => void;
+  };
+  pageTransition: {
+    set: (options: PluginPageTransitionOptions) => () => void;
     clear: () => void;
   };
 }
@@ -209,6 +235,42 @@ type NormalizedSurfaceContribution = {
 const pluginSurfaceContributions = new Map<string, NormalizedSurfaceContribution>();
 let surfaceContributionRevision = 0;
 
+type NormalizedPageTransitionContribution = {
+  updatedAt: number;
+  enabled?: boolean;
+  name?: string;
+  css?: string;
+  mode?: PluginPageTransitionMode;
+  appear?: boolean;
+  duration?: string;
+  easing?: string;
+  enterOpacity?: string;
+  leaveOpacity?: string;
+  enterTranslateX?: string;
+  enterTranslateY?: string;
+  leaveTranslateX?: string;
+  leaveTranslateY?: string;
+  enterScale?: string;
+  leaveScale?: string;
+  enterFilter?: string;
+  leaveFilter?: string;
+};
+
+const DEFAULT_PAGE_TRANSITION = {
+  enabled: true,
+  name: 'page',
+  mode: 'out-in' as PluginPageTransitionMode,
+  appear: true,
+};
+
+export const pageTransitionState = reactive({
+  ...DEFAULT_PAGE_TRANSITION,
+});
+
+const pluginPageTransitionContributions = new Map<string, NormalizedPageTransitionContribution>();
+const pluginPageTransitionStyleDisposers = new Map<string, () => void>();
+let pageTransitionContributionRevision = 0;
+
 const surfaceCssVariables = [
   '--surface-main-opacity',
   '--surface-sidebar-opacity',
@@ -220,7 +282,24 @@ const surfaceCssVariables = [
   '--surface-player-backdrop-filter',
 ] as const;
 
+const pageTransitionCssVariables = [
+  '--page-transition-duration',
+  '--page-transition-easing',
+  '--page-transition-enter-opacity',
+  '--page-transition-leave-opacity',
+  '--page-transition-enter-x',
+  '--page-transition-enter-y',
+  '--page-transition-leave-x',
+  '--page-transition-leave-y',
+  '--page-transition-enter-scale',
+  '--page-transition-leave-scale',
+  '--page-transition-enter-filter',
+  '--page-transition-leave-filter',
+] as const;
+
 const clampPercent = (value: number) => Math.max(0, Math.min(100, value));
+const clampNumber = (value: number, min: number, max: number) =>
+  Math.max(min, Math.min(max, value));
 
 const normalizeSurfaceOpacity = (value: number | string | undefined) => {
   if (value === undefined || value === null) return undefined;
@@ -247,6 +326,70 @@ const normalizeBackdropFilter = (value: string | undefined) => {
   return text || undefined;
 };
 
+const normalizeTransitionName = (value: string | undefined) => {
+  const text = String(value ?? '').trim();
+  return /^[A-Za-z][A-Za-z0-9_-]*$/.test(text) ? text : undefined;
+};
+
+const normalizeTransitionMode = (
+  value: PluginPageTransitionMode | undefined,
+): PluginPageTransitionMode | undefined => {
+  if (value === 'default' || value === 'out-in' || value === 'in-out') return value;
+  return undefined;
+};
+
+const normalizeTransitionDuration = (value: number | string | undefined) => {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return `${clampNumber(value, 0, 2000)}ms`;
+  }
+
+  const text = String(value).trim();
+  if (!text) return undefined;
+  const numeric = Number(text);
+  if (Number.isFinite(numeric)) return `${clampNumber(numeric, 0, 2000)}ms`;
+  if (/^\d+(\.\d+)?m?s$/.test(text)) return text;
+  return undefined;
+};
+
+const normalizeTransitionOpacity = (value: number | string | undefined) => {
+  if (value === undefined || value === null) return undefined;
+  const text = String(value).trim();
+  if (!text) return undefined;
+
+  if (text.endsWith('%')) {
+    const numeric = Number(text.slice(0, -1).trim());
+    if (Number.isFinite(numeric)) return String(clampNumber(numeric / 100, 0, 1));
+  }
+
+  const numeric = Number(text);
+  if (Number.isFinite(numeric)) return String(clampNumber(numeric, 0, 1));
+  return undefined;
+};
+
+const normalizeTransitionLength = (value: number | string | undefined) => {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value === 'number' && Number.isFinite(value)) return `${value}px`;
+
+  const text = String(value).trim();
+  if (!text) return undefined;
+  const numeric = Number(text);
+  if (Number.isFinite(numeric)) return `${numeric}px`;
+  return text;
+};
+
+const normalizeTransitionScale = (value: number | string | undefined) => {
+  if (value === undefined || value === null) return undefined;
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return undefined;
+  return String(clampNumber(numeric, 0.5, 1.5));
+};
+
+const normalizeTransitionText = (value: string | undefined) => {
+  const text = String(value ?? '').trim();
+  return text || undefined;
+};
+
 const normalizeSurfaceContribution = (
   options: PluginSurfaceOptions,
 ): NormalizedSurfaceContribution => ({
@@ -260,6 +403,29 @@ const normalizeSurfaceContribution = (
   playerOpacity: normalizeSurfaceOpacity(options.playerOpacity),
   backdropFilter: normalizeBackdropFilter(options.backdropFilter),
   playerBackdropFilter: normalizeBackdropFilter(options.playerBackdropFilter),
+});
+
+const normalizePageTransitionContribution = (
+  options: PluginPageTransitionOptions,
+): NormalizedPageTransitionContribution => ({
+  updatedAt: ++pageTransitionContributionRevision,
+  enabled: typeof options.enabled === 'boolean' ? options.enabled : undefined,
+  name: normalizeTransitionName(options.name),
+  css: normalizeTransitionText(options.css),
+  mode: normalizeTransitionMode(options.mode),
+  appear: typeof options.appear === 'boolean' ? options.appear : undefined,
+  duration: normalizeTransitionDuration(options.durationMs),
+  easing: normalizeTransitionText(options.easing),
+  enterOpacity: normalizeTransitionOpacity(options.enterOpacity),
+  leaveOpacity: normalizeTransitionOpacity(options.leaveOpacity),
+  enterTranslateX: normalizeTransitionLength(options.enterTranslateX),
+  enterTranslateY: normalizeTransitionLength(options.enterTranslateY),
+  leaveTranslateX: normalizeTransitionLength(options.leaveTranslateX),
+  leaveTranslateY: normalizeTransitionLength(options.leaveTranslateY),
+  enterScale: normalizeTransitionScale(options.enterScale),
+  leaveScale: normalizeTransitionScale(options.leaveScale),
+  enterFilter: normalizeTransitionText(options.enterFilter),
+  leaveFilter: normalizeTransitionText(options.leaveFilter),
 });
 
 const applySurfaceContributions = () => {
@@ -305,18 +471,98 @@ const applySurfaceContributions = () => {
   });
 };
 
-const createThemeApi = (pluginId: string, addDisposable: (dispose: () => void) => () => void) => {
-  let clearRegistered = false;
+const applyPageTransitionContributions = () => {
+  const contributions = Array.from(pluginPageTransitionContributions.values()).sort(
+    (a, b) => a.updatedAt - b.updatedAt,
+  );
+  const next = { ...DEFAULT_PAGE_TRANSITION };
+  const variables: Partial<Record<(typeof pageTransitionCssVariables)[number], string>> = {};
 
-  const clear = () => {
+  for (const contribution of contributions) {
+    if (contribution.enabled !== undefined) next.enabled = contribution.enabled;
+    if (contribution.name) next.name = contribution.name;
+    if (contribution.mode) next.mode = contribution.mode;
+    if (contribution.appear !== undefined) next.appear = contribution.appear;
+    if (contribution.duration) variables['--page-transition-duration'] = contribution.duration;
+    if (contribution.easing) variables['--page-transition-easing'] = contribution.easing;
+    if (contribution.enterOpacity) {
+      variables['--page-transition-enter-opacity'] = contribution.enterOpacity;
+    }
+    if (contribution.leaveOpacity) {
+      variables['--page-transition-leave-opacity'] = contribution.leaveOpacity;
+    }
+    if (contribution.enterTranslateX) {
+      variables['--page-transition-enter-x'] = contribution.enterTranslateX;
+    }
+    if (contribution.enterTranslateY) {
+      variables['--page-transition-enter-y'] = contribution.enterTranslateY;
+    }
+    if (contribution.leaveTranslateX) {
+      variables['--page-transition-leave-x'] = contribution.leaveTranslateX;
+    }
+    if (contribution.leaveTranslateY) {
+      variables['--page-transition-leave-y'] = contribution.leaveTranslateY;
+    }
+    if (contribution.enterScale)
+      variables['--page-transition-enter-scale'] = contribution.enterScale;
+    if (contribution.leaveScale)
+      variables['--page-transition-leave-scale'] = contribution.leaveScale;
+    if (contribution.enterFilter) {
+      variables['--page-transition-enter-filter'] = contribution.enterFilter;
+    }
+    if (contribution.leaveFilter) {
+      variables['--page-transition-leave-filter'] = contribution.leaveFilter;
+    }
+  }
+
+  pageTransitionState.enabled = next.enabled;
+  pageTransitionState.name = next.name;
+  pageTransitionState.mode = next.mode;
+  pageTransitionState.appear = next.appear;
+
+  if (typeof document === 'undefined') return;
+
+  const body = document.body;
+  pageTransitionCssVariables.forEach((name) => body.style.removeProperty(name));
+  body.classList.toggle('echo-page-transition-customized', contributions.length > 0);
+
+  Object.entries(variables).forEach(([name, value]) => {
+    body.style.setProperty(name, value);
+  });
+};
+
+const clearPageTransitionStyle = (pluginId: string) => {
+  const dispose = pluginPageTransitionStyleDisposers.get(pluginId);
+  if (!dispose) return;
+  dispose();
+  pluginPageTransitionStyleDisposers.delete(pluginId);
+};
+
+const createThemeApi = (pluginId: string, addDisposable: (dispose: () => void) => () => void) => {
+  let clearSurfaceRegistered = false;
+  let clearPageTransitionRegistered = false;
+
+  const clearSurface = () => {
     if (!pluginSurfaceContributions.delete(pluginId)) return;
     applySurfaceContributions();
   };
 
-  const registerClear = () => {
-    if (clearRegistered) return clear;
-    clearRegistered = true;
-    return addDisposable(clear);
+  const clearPageTransition = () => {
+    clearPageTransitionStyle(pluginId);
+    if (!pluginPageTransitionContributions.delete(pluginId)) return;
+    applyPageTransitionContributions();
+  };
+
+  const registerSurfaceClear = () => {
+    if (clearSurfaceRegistered) return clearSurface;
+    clearSurfaceRegistered = true;
+    return addDisposable(clearSurface);
+  };
+
+  const registerPageTransitionClear = () => {
+    if (clearPageTransitionRegistered) return clearPageTransition;
+    clearPageTransitionRegistered = true;
+    return addDisposable(clearPageTransition);
   };
 
   return {
@@ -324,9 +570,25 @@ const createThemeApi = (pluginId: string, addDisposable: (dispose: () => void) =
       set: (options: PluginSurfaceOptions) => {
         pluginSurfaceContributions.set(pluginId, normalizeSurfaceContribution(options));
         applySurfaceContributions();
-        return registerClear();
+        return registerSurfaceClear();
       },
-      clear,
+      clear: clearSurface,
+    },
+    pageTransition: {
+      set: (options: PluginPageTransitionOptions) => {
+        clearPageTransitionStyle(pluginId);
+        const contribution = normalizePageTransitionContribution(options);
+        pluginPageTransitionContributions.set(pluginId, contribution);
+        if (contribution.css) {
+          pluginPageTransitionStyleDisposers.set(
+            pluginId,
+            createStyleDisposer(pluginId, contribution.css, 'page-transition'),
+          );
+        }
+        applyPageTransitionContributions();
+        return registerPageTransitionClear();
+      },
+      clear: clearPageTransition,
     },
   };
 };
@@ -476,6 +738,7 @@ const hostComponentLoaders = {
   TabsContent: () => import('@/components/ui/TabsContent.vue').then((module) => module.default),
   TabsList: () => import('@/components/ui/TabsList.vue').then((module) => module.default),
   TabsTrigger: () => import('@/components/ui/TabsTrigger.vue').then((module) => module.default),
+  Textarea: () => import('@/components/ui/Textarea.vue').then((module) => module.default),
   Tooltip: () => import('@/components/ui/Tooltip.vue').then((module) => module.default),
 };
 
@@ -876,7 +1139,7 @@ const installPluginRuntimeErrorHandlers = () => {
   });
 };
 
-const createStyleDisposer = (pluginId: string, cssText: string, styleId = 'runtime') => {
+function createStyleDisposer(pluginId: string, cssText: string, styleId = 'runtime') {
   const elementId = `echo-plugin-style-${pluginId}-${styleId}`;
   document.getElementById(elementId)?.remove();
   const style = document.createElement('style');
@@ -885,7 +1148,7 @@ const createStyleDisposer = (pluginId: string, cssText: string, styleId = 'runti
   style.textContent = cssText;
   document.head.appendChild(style);
   return () => style.remove();
-};
+}
 
 const serializeForIpc = (value: unknown): unknown => {
   if (value === null || value === undefined) return value;

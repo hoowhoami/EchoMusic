@@ -224,7 +224,7 @@ onMounted(() => loadData());
     <div class="profile-page select-none bg-bg-main">
       <template v-if="userStore.isLoggedIn && userInfo">
         <div class="px-8 py-4">
-          <div class="w-full animate-in slide-in-from-bottom-4 duration-500">
+          <div class="w-full">
             <!-- 1. Header -->
             <header class="flex items-center justify-between mb-6">
               <h1 class="text-[22px] font-black tracking-tight">个人中心</h1>
@@ -498,10 +498,7 @@ onMounted(() => loadData());
           </div>
         </div>
       </template>
-      <div
-        v-else
-        class="h-full flex flex-col items-center justify-center opacity-40 italic animate-in fade-in duration-500"
-      >
+      <div v-else class="h-full flex flex-col items-center justify-center opacity-40 italic">
         <Icon :icon="iconUser" width="64" height="64" class="mb-4" />
         <span class="text-[16px] font-bold">请先登录以查看个人中心</span>
         <Button

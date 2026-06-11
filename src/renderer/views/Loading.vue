@@ -246,19 +246,6 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-.loading-view {
-  animation: fade-in 0.6s ease-out;
-}
-
-@keyframes fade-in {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
 .animate-bounce {
   animation: bounce 0.8s infinite cubic-bezier(0.45, 0.05, 0.55, 0.95);
 }

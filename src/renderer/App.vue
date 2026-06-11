@@ -14,7 +14,11 @@ import { initShortcutSync, syncGlobalShortcuts } from '@/utils/shortcuts';
 import { initDesktopLyricSync } from '@/desktopLyric/sync';
 import { initMiniPlayerSync } from '@/miniPlayer/sync';
 import { initNowPlayingSync } from '@/nowPlaying/sync';
-import { onPluginRuntimeReloadRequested, refreshPlugins } from '@/plugins/runtime';
+import {
+  onPluginRuntimeReloadRequested,
+  pageTransitionState,
+  refreshPlugins,
+} from '@/plugins/runtime';
 import { coverFallbackRevision } from '@/plugins/coverFallback';
 import { resolveCoverColorUrls } from '@/utils/cover';
 import type { UpdateCheckResult } from '../shared/app';
@@ -38,6 +42,16 @@ let colorSchemeMediaQuery: MediaQueryList | null = null;
 const showStartupUpdateDialog = ref(false);
 const startupUpdateResult = ref<UpdateCheckResult | null>(null);
 const isMiniPlayerRoute = computed(() => route.name === 'mini-player');
+const rootPageTransitionName = computed(() =>
+  isMiniPlayerRoute.value || !pageTransitionState.enabled ? undefined : pageTransitionState.name,
+);
+const rootPageTransitionMode = computed(() =>
+  pageTransitionState.mode === 'default' ? undefined : pageTransitionState.mode,
+);
+const rootPageTransitionAppear = computed(
+  () => !isMiniPlayerRoute.value && pageTransitionState.enabled && pageTransitionState.appear,
+);
+const rootPageTransitionKey = computed(() => route.matched[0]?.path ?? route.fullPath);
 const currentCoverColorUrls = computed(() =>
   resolveCoverColorUrls(player.currentTrackSnapshot?.coverUrl, 300, { scope: 'theme' }),
 );
@@ -231,11 +245,15 @@ watch(
 
 <template>
   <RouterView v-slot="{ Component, route }">
-    <transition :name="route.name === 'mini-player' ? undefined : 'page'" mode="out-in">
-      <RouteErrorBoundary :route="route">
+    <Transition
+      :name="rootPageTransitionName"
+      :mode="rootPageTransitionMode"
+      :appear="rootPageTransitionAppear"
+    >
+      <RouteErrorBoundary :key="rootPageTransitionKey" :route="route">
         <component :is="Component" />
       </RouteErrorBoundary>
-    </transition>
+    </Transition>
   </RouterView>
   <Teleport v-if="route.name !== 'mini-player'" to="body">
     <Transition name="lyric-overlay">
@@ -253,22 +271,6 @@ watch(
 </template>
 
 <style>
-.page-enter-active,
-.page-leave-active {
-  transition: all 0.3s ease-out;
-  backface-visibility: hidden;
-}
-
-.page-enter-from {
-  opacity: 0;
-  transform: translateY(8px);
-}
-
-.page-leave-to {
-  opacity: 0;
-  transform: translateY(-8px);
-}
-
 /* 歌词覆盖层动画 */
 .lyric-overlay-enter-active {
   transition:

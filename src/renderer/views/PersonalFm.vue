@@ -638,10 +638,6 @@ onActivated(() => {
 <style scoped>
 @reference "@/style.css";
 
-.personal-fm-view {
-  animation: fade-in 0.45s ease-out;
-}
-
 .fm-shell {
   margin-top: 8px;
   overflow-anchor: none;
@@ -1106,17 +1102,6 @@ onActivated(() => {
   }
   to {
     transform: rotate(360deg);
-  }
-}
-
-@keyframes fade-in {
-  from {
-    opacity: 0;
-    transform: translateY(6px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
   }
 }
 </style>

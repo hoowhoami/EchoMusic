@@ -232,10 +232,6 @@ const handleRejectAgreement = () => {
 <style scoped>
 @reference "@/style.css";
 
-.home-view {
-  animation: fade-in 0.6s ease-out;
-}
-
 .home-header {
   margin-bottom: 28px;
 }
@@ -343,16 +339,5 @@ const handleRejectAgreement = () => {
   justify-content: center;
   font-size: 12px;
   color: color-mix(in srgb, var(--color-text-main) 60%, transparent);
-}
-
-@keyframes fade-in {
-  from {
-    opacity: 0;
-    transform: translateY(6px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
 }
 </style>

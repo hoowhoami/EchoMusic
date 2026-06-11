@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import { useSettingStore } from '@/stores/setting';
+import { pageTransitionState } from '@/plugins/runtime';
 import { YzsKeepAlive } from 'yzs-keep-alive-v3';
 import Sidebar from './Sidebar.vue';
 import TitleBar from './TitleBar.vue';
@@ -10,6 +11,14 @@ import PlayerBar from './PlayerBar.vue';
 const route = useRoute();
 const settingStore = useSettingStore();
 const routeViewKey = computed(() => String(route.query._t ?? route.fullPath));
+const pageTransitionAppear = computed(
+  () => pageTransitionState.enabled && pageTransitionState.appear,
+);
+const pageRouteEnterClass = computed(
+  () => `${pageTransitionState.name || 'page'}-route-enter-active`,
+);
+const isPageRouteEntering = ref(false);
+let pageRouteAnimationFrame: number | null = null;
 const SIDEBAR_AUTO_COLLAPSE_WIDTH = 700;
 const isNarrowViewport = ref(false);
 const narrowViewportExpanded = ref(false);
@@ -46,15 +55,35 @@ const handleShortcutToggleSidebar = (event: Event) => {
   toggleSidebar();
 };
 
+const stopPageRouteAnimation = () => {
+  if (pageRouteAnimationFrame !== null) {
+    window.cancelAnimationFrame(pageRouteAnimationFrame);
+    pageRouteAnimationFrame = null;
+  }
+};
+
+const replayPageRouteAnimation = () => {
+  stopPageRouteAnimation();
+  isPageRouteEntering.value = false;
+  if (!pageTransitionState.enabled) return;
+
+  pageRouteAnimationFrame = window.requestAnimationFrame(() => {
+    isPageRouteEntering.value = true;
+    pageRouteAnimationFrame = null;
+  });
+};
+
 onMounted(() => {
   checkScreenWidth();
   window.addEventListener('resize', checkScreenWidth);
   window.addEventListener('echo:toggle-sidebar', handleShortcutToggleSidebar);
+  if (pageTransitionAppear.value) replayPageRouteAnimation();
 });
 
 onUnmounted(() => {
   window.removeEventListener('resize', checkScreenWidth);
   window.removeEventListener('echo:toggle-sidebar', handleShortcutToggleSidebar);
+  stopPageRouteAnimation();
 });
 
 const excludeFromCache = [
@@ -70,6 +99,20 @@ const excludeFromCache = [
 
 const keepAliveMax = computed(() =>
   settingStore.keepAliveEnabled ? Math.min(settingStore.keepAliveMax, 30) : 0,
+);
+
+watch(routeViewKey, () => {
+  replayPageRouteAnimation();
+});
+
+watch(
+  () => pageTransitionState.enabled,
+  (enabled) => {
+    if (!enabled) {
+      stopPageRouteAnimation();
+      isPageRouteEntering.value = false;
+    }
+  },
 );
 </script>
 
@@ -90,9 +133,18 @@ const keepAliveMax = computed(() =>
         <div class="flex-1 min-h-0 min-w-0 flex flex-col overflow-hidden">
           <router-view v-slot="{ Component }">
             <YzsKeepAlive v-if="keepAliveMax > 0" :exclude="excludeFromCache" :max="keepAliveMax">
-              <component :is="Component" :key="routeViewKey" />
+              <component
+                :is="Component"
+                :key="routeViewKey"
+                :class="{ [pageRouteEnterClass]: isPageRouteEntering }"
+              />
             </YzsKeepAlive>
-            <component v-else :is="Component" :key="routeViewKey" />
+            <component
+              v-else
+              :is="Component"
+              :key="routeViewKey"
+              :class="{ [pageRouteEnterClass]: isPageRouteEntering }"
+            />
           </router-view>
         </div>
       </main>

@@ -142,7 +142,7 @@ export const queueAndPlaySong = async (
   const queueId = manualQueueOptions?.queueId;
   if (queueId) await playlistStore.ensurePlaybackQueueSongsLoaded?.(queueId);
   const preferredList = queueId ? (playlistStore.getPlaybackQueueSongs?.(queueId) ?? []) : [];
-  const activeList = preferredList.length > 0 ? preferredList : (playlistStore.defaultList ?? []);
+  const activeList = queueId ? preferredList : (playlistStore.defaultList ?? []);
   const resolvedSong = resolvePlayableSongForRequest(song, [song]);
   if (!resolvedSong) return false;
   const nextList = activeList.slice();

@@ -17,6 +17,18 @@
   --surface-player-opacity: 100%;
   --surface-backdrop-filter: none;
   --surface-player-backdrop-filter: var(--surface-backdrop-filter);
+  --page-transition-duration: 0.45s;
+  --page-transition-easing: ease-out;
+  --page-transition-enter-opacity: 0;
+  --page-transition-leave-opacity: 0;
+  --page-transition-enter-x: 0px;
+  --page-transition-enter-y: 6px;
+  --page-transition-leave-x: 0px;
+  --page-transition-leave-y: 0px;
+  --page-transition-enter-scale: 1;
+  --page-transition-leave-scale: 1;
+  --page-transition-enter-filter: none;
+  --page-transition-leave-filter: none;
   --surface-overlay-bg: rgba(0, 0, 0, 0.3);
   --surface-scrim-bg: rgba(0, 0, 0, 0.2);
   --bg-sidebar: color-mix(
@@ -270,6 +282,96 @@ body.accent-scoped .main-layout .player-bar-container {
     -webkit-box-shadow: 0 0 0 1000px var(--color-bg-card) inset;
     transition: background-color 9999s ease-in-out 0s;
     border-color: transparent;
+  }
+}
+
+.page-enter-active,
+.page-leave-active,
+.page-appear-active {
+  transition:
+    opacity var(--page-transition-duration) var(--page-transition-easing),
+    transform var(--page-transition-duration) var(--page-transition-easing),
+    filter var(--page-transition-duration) var(--page-transition-easing);
+  backface-visibility: hidden;
+  will-change: opacity, transform, filter;
+}
+
+.page-leave-active {
+  pointer-events: none;
+}
+
+.page-enter-from,
+.page-appear-from {
+  opacity: var(--page-transition-enter-opacity);
+  transform: translate3d(
+      var(--page-transition-enter-x),
+      var(--page-transition-enter-y),
+      0
+    )
+    scale(var(--page-transition-enter-scale));
+  filter: var(--page-transition-enter-filter);
+}
+
+.page-leave-to {
+  opacity: var(--page-transition-leave-opacity);
+  transform: translate3d(
+      var(--page-transition-leave-x),
+      var(--page-transition-leave-y),
+      0
+    )
+    scale(var(--page-transition-leave-scale));
+  filter: var(--page-transition-leave-filter);
+}
+
+.page-enter-to,
+.page-leave-from,
+.page-appear-to {
+  opacity: 1;
+  transform: translate3d(0, 0, 0) scale(1);
+  filter: none;
+}
+
+.page-route-enter-active {
+  animation: page-route-enter var(--page-transition-duration) var(--page-transition-easing) both;
+  backface-visibility: hidden;
+  will-change: opacity, transform, filter;
+}
+
+@keyframes page-route-enter {
+  from {
+    opacity: var(--page-transition-enter-opacity);
+    transform: translate3d(
+        var(--page-transition-enter-x),
+        var(--page-transition-enter-y),
+        0
+      )
+      scale(var(--page-transition-enter-scale));
+    filter: var(--page-transition-enter-filter);
+  }
+
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+    filter: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .page-enter-active,
+  .page-leave-active,
+  .page-appear-active,
+  .page-route-enter-active {
+    transition: opacity 0.01ms linear;
+    animation: none;
+  }
+
+  .page-enter-from,
+  .page-leave-to,
+  .page-appear-from,
+  .page-route-enter-active {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+    filter: none;
   }
 }
 
