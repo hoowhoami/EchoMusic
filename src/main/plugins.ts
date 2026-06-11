@@ -9,6 +9,7 @@ import {
   readFileSync,
   realpathSync,
   rmSync,
+  type Stats,
   statSync,
   writeFileSync,
 } from 'fs';
@@ -35,6 +36,10 @@ import type {
   PluginListImageFilesOptions,
   PluginListImageFilesResult,
   PluginListResult,
+  PluginLocalInstallItemResult,
+  PluginLocalInstallOptions,
+  PluginLocalInstallResult,
+  PluginLocalInstallSourceKind,
   PluginMarketplaceInstallOptions,
   PluginMarketplaceInstallResult,
   PluginMarketplaceListResult,
@@ -69,6 +74,7 @@ const PLUGIN_MARKETPLACE_CACHE_KEY = 'plugins:marketplace:cache';
 const PLUGIN_PROCESS_CONSENTS_KEY = 'plugins:process-consents';
 const PLUGIN_MANIFEST_FILE = 'manifest.json';
 const PLUGIN_MARKETPLACE_INDEX_FILE = 'echo-plugins.json';
+const PLUGIN_MARKETPLACE_CACHE_VERSION = 2;
 const DEFAULT_PLUGIN_MARKETPLACE_SOURCE_URL = 'https://github.com/hoowhoami/EchoMusicPlugins';
 const DEFAULT_PLUGIN_MARKETPLACE_SOURCE_ID = 'github:hoowhoami/echomusicplugins';
 const PLUGIN_IMAGE_EXTENSIONS = new Set([
@@ -91,6 +97,7 @@ const MAX_PLUGIN_PROCESS_ARGS = 64;
 const MAX_PLUGIN_PROCESS_ARG_LENGTH = 8192;
 const MAX_PLUGIN_PROCESS_ENV_ENTRIES = 64;
 const MAX_PLUGIN_PROCESS_ENV_VALUE_LENGTH = 8192;
+const MAX_PLUGIN_PACKAGE_SIZE_BYTES = 80 * 1024 * 1024;
 const WINDOWS_EXECUTABLE_EXTENSIONS = new Set(['.exe', '.com']);
 const BLOCKED_PLUGIN_PROCESS_ENV_KEYS = new Set([
   'ECHOMUSIC_PLUGIN_DIR',
@@ -119,27 +126,18 @@ type PluginMarketplaceIndex = {
 };
 type PluginMarketplaceIndexEntry = {
   id?: string;
-  name?: string;
-  version?: string;
-  description?: string;
-  author?: string;
-  icon?: string;
   tags?: unknown;
   repo?: string;
   homepage?: string;
-  downloadUrl?: string;
   path?: string;
   packagePath?: string;
-  checksum?: string;
-  sha256?: string;
-  capabilities?: EchoPluginManifest['capabilities'];
-  requires?: EchoPluginManifest['requires'];
 };
 type PluginMarketplaceCatalogPlugin = Omit<
   PluginMarketplacePlugin,
   'installed' | 'installedVersion' | 'updateAvailable' | 'compatibility'
 >;
 type PluginMarketplaceCache = {
+  schemaVersion?: number;
   plugins: PluginMarketplaceCatalogPlugin[];
   fetchedAt: number;
 };
@@ -156,6 +154,11 @@ type PluginProcessRecord = {
   executable: string;
   child: ChildProcess;
   startedAt: number;
+};
+
+type PluginDirectoryInstallOptions = {
+  expectedPluginId?: string;
+  enableAfterInstall: boolean;
 };
 
 export const normalizePluginId = (value: unknown) =>
@@ -879,8 +882,15 @@ const saveMarketplaceSources = (sources: PluginMarketplaceSource[]) => {
 
 const getMarketplaceCache = (): PluginMarketplaceCache => {
   const cache = getKvStorage().get<PluginMarketplaceCache>(PLUGIN_MARKETPLACE_CACHE_KEY);
-  if (!cache || !Array.isArray(cache.plugins)) return { plugins: [], fetchedAt: 0 };
+  if (
+    !cache ||
+    cache.schemaVersion !== PLUGIN_MARKETPLACE_CACHE_VERSION ||
+    !Array.isArray(cache.plugins)
+  ) {
+    return { schemaVersion: PLUGIN_MARKETPLACE_CACHE_VERSION, plugins: [], fetchedAt: 0 };
+  }
   return {
+    schemaVersion: PLUGIN_MARKETPLACE_CACHE_VERSION,
     plugins: cache.plugins,
     fetchedAt: Number(cache.fetchedAt) || 0,
   };
@@ -1029,14 +1039,8 @@ const getMarketplaceEntryRepository = (
   entry: PluginMarketplaceIndexEntry,
 ) => parseGithubRepository(entry.repo) ?? sourceRepo;
 
-const getMarketplaceEntryDownloadUrl = (
-  pluginRepo: GithubRepository,
-  entry: PluginMarketplaceIndexEntry,
-) => {
-  const explicitUrl = String(entry.downloadUrl || '').trim();
-  if (/^https?:\/\//i.test(explicitUrl)) return explicitUrl;
-  return toGithubArchiveUrl(pluginRepo);
-};
+const getMarketplaceEntryDownloadUrl = (pluginRepo: GithubRepository) =>
+  toGithubArchiveUrl(pluginRepo);
 
 const resolveMarketplaceAssetUrl = (
   sourceRepo: GithubRepository,
@@ -1054,62 +1058,92 @@ const resolveMarketplaceAssetUrl = (
   return toRawGithubUrl(sourceRepo, normalizedAssetPath);
 };
 
-const normalizeMarketplaceIndexPlugins = (
+const getMarketplaceManifestUrl = (pluginRepo: GithubRepository, packagePath: string) =>
+  toRawGithubUrl(
+    pluginRepo,
+    packagePath ? `${packagePath}/${PLUGIN_MANIFEST_FILE}` : PLUGIN_MANIFEST_FILE,
+  );
+
+const fetchMarketplaceManifest = async (
+  pluginRepo: GithubRepository,
+  packagePath: string,
+  githubProxyUrl?: string,
+) => {
+  const raw = await fetchMarketplaceText(
+    getMarketplaceManifestUrl(pluginRepo, packagePath),
+    githubProxyUrl,
+  );
+  return JSON.parse(raw) as EchoPluginManifest;
+};
+
+const normalizeMarketplaceIndexPlugin = async (
+  source: PluginMarketplaceSource,
+  sourceRepo: GithubRepository,
+  rawEntry: PluginMarketplaceIndexEntry,
+  githubProxyUrl?: string,
+): Promise<PluginMarketplaceCatalogPlugin | null> => {
+  const packagePath = normalizeMarketplacePackagePath(rawEntry?.packagePath ?? rawEntry?.path);
+  if (!isSafeMarketplacePackagePath(packagePath)) return null;
+  const pluginRepo = getMarketplaceEntryRepository(sourceRepo, rawEntry);
+  const manifest = await fetchMarketplaceManifest(pluginRepo, packagePath, githubProxyUrl);
+  if (validateManifest(manifest, '')) return null;
+
+  const pluginId = normalizePluginId(manifest.id);
+  const expectedPluginId = normalizePluginId(rawEntry?.id);
+  if (!pluginId || (expectedPluginId && pluginId !== expectedPluginId)) return null;
+
+  const name = String(manifest.name || '').trim();
+  const version = String(manifest.version || '').trim();
+  if (!name || !version) return null;
+
+  const repo = String(rawEntry.repo || '').trim() || source.url;
+  const homepage = String(rawEntry.homepage || '').trim() || repo;
+  const icon = getManifestIconSource(manifest);
+  const iconUrl = resolveMarketplaceAssetUrl(pluginRepo, packagePath, icon);
+
+  return {
+    id: pluginId,
+    name,
+    version,
+    description: String(manifest.description || ''),
+    author: String(manifest.author || ''),
+    icon,
+    iconUrl,
+    tags: normalizeMarketplaceTags(rawEntry.tags),
+    repo,
+    homepage,
+    downloadUrl: getMarketplaceEntryDownloadUrl(pluginRepo),
+    packagePath,
+    checksum: '',
+    sourceId: source.id,
+    sourceName: source.name,
+    sourceUrl: source.url,
+    manifest: {
+      ...manifest,
+      id: pluginId,
+      name,
+      version,
+    },
+  };
+};
+
+const normalizeMarketplaceIndexPlugins = async (
   source: PluginMarketplaceSource,
   index: PluginMarketplaceIndex,
+  githubProxyUrl?: string,
 ) => {
   const sourceRepo = parseGithubRepository(source.url);
   if (!sourceRepo || !Array.isArray(index.plugins)) return [];
 
-  const plugins: PluginMarketplaceCatalogPlugin[] = [];
-  for (const rawEntry of index.plugins) {
-    const pluginId = normalizePluginId(rawEntry?.id);
-    const name = String(rawEntry?.name || pluginId).trim();
-    const version = String(rawEntry?.version || '').trim();
-    const packagePath = normalizeMarketplacePackagePath(rawEntry?.packagePath ?? rawEntry?.path);
-    if (!pluginId || !name || !version || !isSafeMarketplacePackagePath(packagePath)) continue;
-    const pluginRepo = getMarketplaceEntryRepository(sourceRepo, rawEntry);
+  const settled = await Promise.allSettled(
+    index.plugins.map((entry) =>
+      normalizeMarketplaceIndexPlugin(source, sourceRepo, entry, githubProxyUrl),
+    ),
+  );
 
-    const manifest: EchoPluginManifest = {
-      id: pluginId,
-      name,
-      version,
-      description: String(rawEntry.description || ''),
-      author: String(rawEntry.author || ''),
-      icon: String(rawEntry.icon || ''),
-      capabilities:
-        rawEntry.capabilities && typeof rawEntry.capabilities === 'object'
-          ? rawEntry.capabilities
-          : undefined,
-      requires: rawEntry.requires,
-    };
-    const repo = String(rawEntry.repo || '').trim() || source.url;
-    const homepage = String(rawEntry.homepage || '').trim() || repo;
-    const icon = String(rawEntry.icon || '').trim();
-    const iconUrl = resolveMarketplaceAssetUrl(pluginRepo, packagePath, icon);
-
-    plugins.push({
-      id: pluginId,
-      name,
-      version,
-      description: String(rawEntry.description || ''),
-      author: String(rawEntry.author || ''),
-      icon,
-      iconUrl,
-      tags: normalizeMarketplaceTags(rawEntry.tags),
-      repo,
-      homepage,
-      downloadUrl: getMarketplaceEntryDownloadUrl(pluginRepo, rawEntry),
-      packagePath,
-      checksum: String(rawEntry.checksum || rawEntry.sha256 || '').trim(),
-      sourceId: source.id,
-      sourceName: source.name,
-      sourceUrl: source.url,
-      manifest,
-    });
-  }
-
-  return plugins;
+  return settled
+    .map((result) => (result.status === 'fulfilled' ? result.value : null))
+    .filter(Boolean) as PluginMarketplaceCatalogPlugin[];
 };
 
 const fetchMarketplaceText = async (url: string, githubProxyUrl?: string) => {
@@ -1132,7 +1166,7 @@ const fetchMarketplaceIndex = async (source: PluginMarketplaceSource, githubProx
   const indexUrl = toRawGithubUrl(sourceRepo, PLUGIN_MARKETPLACE_INDEX_FILE);
   const raw = await fetchMarketplaceText(indexUrl, githubProxyUrl);
   const index = JSON.parse(raw) as PluginMarketplaceIndex;
-  const plugins = normalizeMarketplaceIndexPlugins(source, index);
+  const plugins = await normalizeMarketplaceIndexPlugins(source, index, githubProxyUrl);
   if (plugins.length === 0) {
     throw new Error(`${PLUGIN_MARKETPLACE_INDEX_FILE} 未提供可用插件`);
   }
@@ -1243,6 +1277,7 @@ const refreshMarketplaceCatalog = async (
   const nextSources = sources.map((source) => sourceById.get(source.id) ?? source);
   saveMarketplaceSources(nextSources);
   const cache = {
+    schemaVersion: PLUGIN_MARKETPLACE_CACHE_VERSION,
     plugins,
     fetchedAt: Date.now(),
   };
@@ -1382,8 +1417,9 @@ const downloadMarketplacePackage = async (
   });
   if (!response.ok) throw new Error(`插件下载失败 (${response.status})`);
   const buffer = Buffer.from(await response.arrayBuffer());
-  const maxSize = 80 * 1024 * 1024;
-  if (buffer.byteLength > maxSize) throw new Error('插件安装包超过 80 MB');
+  if (buffer.byteLength > MAX_PLUGIN_PACKAGE_SIZE_BYTES) {
+    throw new Error('插件安装包超过 80 MB');
+  }
 
   const zipPath = join(directory, `${plugin.id}.zip`);
   writeFileSync(zipPath, buffer);
@@ -1429,16 +1465,21 @@ const findPluginInstallSourceDirectory = (extractDirectory: string, packagePath:
   throw new Error('插件安装包中未找到 manifest.json');
 };
 
-const installExtractedPluginDirectory = (
-  plugin: PluginMarketplacePlugin,
+const installPluginDirectory = (
   sourceDirectory: string,
-  enableAfterInstall: boolean,
+  options: PluginDirectoryInstallOptions,
 ) => {
+  const sourceStats = statSync(sourceDirectory);
+  if (!sourceStats.isDirectory()) throw new Error('插件源必须是文件夹');
+
   const manifestResult = readManifest(join(sourceDirectory, PLUGIN_MANIFEST_FILE));
   if (manifestResult.error) throw new Error(manifestResult.error);
   const pluginId = normalizePluginId(manifestResult.manifest.id);
-  if (!pluginId || pluginId !== plugin.id) {
-    throw new Error(`插件清单 id 与索引不一致: ${pluginId || '空'} / ${plugin.id}`);
+  if (!pluginId) throw new Error('manifest.id 不能为空');
+
+  const expectedPluginId = normalizePluginId(options.expectedPluginId);
+  if (expectedPluginId && pluginId !== expectedPluginId) {
+    throw new Error(`插件清单 id 与索引不一致: ${pluginId || '空'} / ${expectedPluginId}`);
   }
 
   const root = resolve(ensurePluginRoot());
@@ -1453,6 +1494,7 @@ const installExtractedPluginDirectory = (
   const stagingParent = mkdtempSync(join(tmpdir(), 'echo-plugin-install-'));
   const stagingDirectory = join(stagingParent, pluginId);
   try {
+    const enableAfterInstall = Boolean(options.enableAfterInstall);
     cpSync(sourceDirectory, stagingDirectory, { recursive: true });
     const descriptor = toDescriptor(stagingDirectory, pluginId, {
       ...getEnabledState(),
@@ -1520,11 +1562,10 @@ export const installPluginFromMarketplace = async (
         extractDirectory,
         plugin.packagePath,
       );
-      const installed = installExtractedPluginDirectory(
-        plugin,
-        sourceDirectory,
-        Boolean(options.enableAfterInstall),
-      );
+      const installed = installPluginDirectory(sourceDirectory, {
+        expectedPluginId: plugin.id,
+        enableAfterInstall: Boolean(options.enableAfterInstall),
+      });
       return { ok: true, ...installed };
     } finally {
       rmSync(tempDirectory, { recursive: true, force: true });
@@ -1535,6 +1576,104 @@ export const installPluginFromMarketplace = async (
       error: error instanceof Error ? error.message : '插件安装失败',
     };
   }
+};
+
+const normalizeLocalInstallPaths = (paths: unknown) => {
+  if (!Array.isArray(paths)) return [];
+  return Array.from(
+    new Set(paths.map((item) => String(item ?? '').trim()).filter((item) => item.length > 0)),
+  );
+};
+
+const getLocalInstallSource = (
+  sourcePath: string,
+): { path: string; kind: PluginLocalInstallSourceKind; stats: Stats } => {
+  const resolvedPath = realpathSync(resolve(sourcePath));
+  const stats = statSync(resolvedPath);
+  if (stats.isDirectory()) return { path: resolvedPath, kind: 'directory', stats };
+  if (stats.isFile() && extname(resolvedPath).toLowerCase() === '.zip') {
+    return { path: resolvedPath, kind: 'zip', stats };
+  }
+  throw new Error('仅支持 .zip 插件压缩包或插件文件夹');
+};
+
+const installPluginFromLocalSource = async (
+  inputPath: string,
+  options: PluginLocalInstallOptions,
+): Promise<PluginLocalInstallItemResult> => {
+  const sourcePath = String(inputPath ?? '').trim();
+  let kind: PluginLocalInstallItemResult['kind'] = 'unknown';
+
+  try {
+    if (!sourcePath) throw new Error('插件路径为空');
+    const source = getLocalInstallSource(sourcePath);
+    kind = source.kind;
+
+    if (source.kind === 'directory') {
+      const sourceDirectory = findPluginInstallSourceDirectory(source.path, '');
+      const installed = installPluginDirectory(sourceDirectory, {
+        enableAfterInstall: Boolean(options.enableAfterInstall),
+      });
+      return {
+        ok: true,
+        sourcePath: source.path,
+        kind,
+        ...installed,
+      };
+    }
+
+    if (source.stats.size > MAX_PLUGIN_PACKAGE_SIZE_BYTES) {
+      throw new Error('插件安装包超过 80 MB');
+    }
+
+    const tempDirectory = mkdtempSync(join(tmpdir(), 'echo-plugin-local-'));
+    try {
+      const extractDirectory = join(tempDirectory, 'extracted');
+      mkdirSync(extractDirectory, { recursive: true });
+      await extractZip(source.path, { dir: extractDirectory });
+      const sourceDirectory = findPluginInstallSourceDirectory(extractDirectory, '');
+      const installed = installPluginDirectory(sourceDirectory, {
+        enableAfterInstall: Boolean(options.enableAfterInstall),
+      });
+      return {
+        ok: true,
+        sourcePath: source.path,
+        kind,
+        ...installed,
+      };
+    } finally {
+      rmSync(tempDirectory, { recursive: true, force: true });
+    }
+  } catch (error) {
+    return {
+      ok: false,
+      sourcePath,
+      kind,
+      error: error instanceof Error ? error.message : '插件安装失败',
+    };
+  }
+};
+
+export const installPluginsFromLocal = async (
+  paths: string[],
+  options: PluginLocalInstallOptions = {},
+): Promise<PluginLocalInstallResult> => {
+  const sourcePaths = normalizeLocalInstallPaths(paths);
+  const results: PluginLocalInstallItemResult[] = [];
+
+  for (const sourcePath of sourcePaths) {
+    results.push(await installPluginFromLocalSource(sourcePath, options));
+  }
+
+  const installed = results.filter((result) => result.ok).length;
+  const failed = results.length - installed;
+
+  return {
+    ok: results.length > 0 && failed === 0,
+    results,
+    installed,
+    failed,
+  };
 };
 
 const toPortableRelativePath = (parent: string, target: string) =>

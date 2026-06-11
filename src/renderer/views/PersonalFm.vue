@@ -9,9 +9,12 @@ import {
 } from '@/stores/playlist';
 import { usePlayerStore } from '@/stores/player';
 import { useUserStore } from '@/stores/user';
-import { iconHeartFilled, iconHeartOff, iconPause, iconPlay } from '@/icons';
+import { useThemeStore } from '@/stores/theme';
+import { getAccentGradientPair } from '@/utils/color';
+import { iconHeartFilled, iconHeartOff, iconPause, iconPlay, iconPulse } from '@/icons';
 import Button from '@/components/ui/Button.vue';
 import Cover from '@/components/ui/Cover.vue';
+import SliverHeader from '@/components/music/DetailPageSliverHeader.vue';
 import { getSongQualityTags } from '@/utils/song';
 import type {
   PersonalFmMode,
@@ -24,10 +27,12 @@ import PageScrollContainer from '@/components/ui/PageScrollContainer.vue';
 const playlistStore = usePlaylistStore();
 const playerStore = usePlayerStore();
 const userStore = useUserStore();
+const themeStore = useThemeStore();
 const personalFmLoading = ref(false);
 const personalFmPreloading = ref(false);
 const personalFmVinylsRef = ref<HTMLElement | null>(null);
 const personalFmVisibleSideCount = ref(3);
+const FM_PLAY_STICKY_TOP = 56;
 let personalFmVinylsObserver: ResizeObserver | null = null;
 let personalFmPreviewPromise: Promise<Song | null> | null = null;
 
@@ -38,8 +43,8 @@ const personalFmModeOptions: Array<{ value: PersonalFmMode; label: string }> = [
 ];
 
 const personalFmSongPoolOptions: Array<{ value: PersonalFmSongPoolId; label: string }> = [
-  { value: 0, label: '根据口味' },
-  { value: 1, label: '根据风格' },
+  { value: 0, label: '口味' },
+  { value: 1, label: '风格' },
   { value: 2, label: '探索' },
 ];
 
@@ -121,6 +126,30 @@ const personalFmCurrentTrackInfoChips = computed(() => {
   if (track.similarDesc) chips.push(`相似度${track.similarDesc}`);
 
   return chips.slice(0, 4);
+});
+
+const personalFmCoverUrl = computed(() => {
+  const { from, to } = getAccentGradientPair(themeStore.sourceColor);
+  const svg = `
+    <svg xmlns="http://www.w3.org/2000/svg" width="400" height="400">
+      <defs>
+        <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stop-color="${from}" />
+          <stop offset="100%" stop-color="${to}" />
+        </linearGradient>
+      </defs>
+      <rect width="400" height="400" rx="60" fill="url(#g)" />
+      <circle cx="94" cy="96" r="52" fill="#FFFFFF" opacity="0.13" />
+      <circle cx="306" cy="302" r="76" fill="#FFFFFF" opacity="0.10" />
+      <g transform="translate(200 204)">
+        <rect x="-96" y="-96" width="192" height="192" rx="48" fill="#FFFFFF" opacity="0.18" />
+        <g transform="translate(-84 -84) scale(7)" color="#FFFFFF">
+          ${iconPulse.body}
+        </g>
+      </g>
+    </svg>
+  `;
+  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
 });
 
 const buildPersonalFmQueueOptions = (): SetPlaybackQueueOptions => {
@@ -387,12 +416,7 @@ onActivated(() => {
 
 <template>
   <PageScrollContainer class="personal-fm-container">
-    <div class="personal-fm-view px-10 pt-4 pb-10">
-      <div class="fm-header">
-        <div class="fm-page-title">私人 FM</div>
-        <div class="fm-page-subtitle">实时推荐会根据你的反馈持续更新</div>
-      </div>
-
+    <div class="personal-fm-view bg-bg-main min-h-full pb-10">
       <section
         v-if="!isLoggedIn"
         class="fm-empty flex flex-col items-center justify-center text-center px-6"
@@ -406,10 +430,36 @@ onActivated(() => {
         <div class="text-[13px] text-text-secondary mt-2">猜你喜欢和实时推荐需要登录状态</div>
       </section>
 
-      <section v-else class="fm-shell">
-        <div class="fm-toolbar">
-          <div class="fm-toolbar-group">
-            <div class="fm-toolbar-label">推荐方式</div>
+      <template v-else>
+        <SliverHeader
+          typeLabel="FM"
+          title="私人 FM"
+          :coverUrl="personalFmCoverUrl"
+          :hasDetails="true"
+          :expandedHeight="176"
+          :collapsedHeight="56"
+        >
+          <template #details>
+            <div class="flex flex-col gap-2">
+              <div class="text-[13px] font-semibold text-text-secondary">
+                实时推荐会根据你的反馈持续更新
+              </div>
+              <div
+                class="flex flex-wrap items-center gap-x-3 gap-y-2 text-[11px] font-semibold text-text-secondary/80"
+              >
+                <div class="inline-flex items-center gap-1.5">
+                  <Icon :icon="iconPulse" width="12" height="12" />
+                  <span>{{ personalFmPresentation.title }}</span>
+                </div>
+                <span>{{ personalFmSongPoolPresentation.label }}</span>
+                <span v-if="personalFmCurrentDisc">
+                  {{ personalFmCurrentDisc.title }} · {{ personalFmCurrentDisc.artist }}
+                </span>
+              </div>
+            </div>
+          </template>
+
+          <template #actions>
             <div class="radio-strategy-switch outside">
               <button
                 v-for="option in personalFmSongPoolOptions"
@@ -423,144 +473,164 @@ onActivated(() => {
                 {{ option.label }}
               </button>
             </div>
-          </div>
-        </div>
+          </template>
 
-        <div class="radio-hero">
-          <div class="radio-card">
-            <div class="radio-mode-switch">
+          <template #collapsed-actions>
+            <div class="radio-strategy-switch compact">
               <button
-                v-for="option in personalFmModeOptions"
+                v-for="option in personalFmSongPoolOptions"
                 :key="option.value"
                 type="button"
-                class="radio-mode-btn"
-                :class="{ 'is-active': option.value === selectedPersonalFmMode }"
+                class="radio-strategy-btn"
+                :class="{ 'is-active': option.value === selectedPersonalFmSongPoolId }"
                 :disabled="personalFmLoading"
-                @click="handleChangePersonalFmMode(option.value)"
+                @click="handleChangePersonalFmSongPool(option.value)"
               >
                 {{ option.label }}
               </button>
             </div>
-            <div class="radio-title">{{ personalFmPresentation.title }}</div>
-            <div class="radio-subtitle">
-              {{
-                personalFmCurrentDisc
-                  ? `${personalFmCurrentDisc.title} · ${personalFmCurrentDisc.artist}`
-                  : `${personalFmPresentation.subtitle} · ${personalFmSongPoolPresentation.label}`
-              }}
-            </div>
-            <div class="radio-footer">
-              <div class="radio-bars" aria-hidden="true">
-                <span v-for="index in 10" :key="index"></span>
+          </template>
+        </SliverHeader>
+
+        <section class="fm-shell px-6 pt-3">
+          <div class="fm-play-sticky" :style="{ top: `${FM_PLAY_STICKY_TOP}px` }">
+            <div class="radio-hero">
+              <div class="radio-card">
+                <div class="radio-mode-switch">
+                  <button
+                    v-for="option in personalFmModeOptions"
+                    :key="option.value"
+                    type="button"
+                    class="radio-mode-btn"
+                    :class="{ 'is-active': option.value === selectedPersonalFmMode }"
+                    :disabled="personalFmLoading"
+                    @click="handleChangePersonalFmMode(option.value)"
+                  >
+                    {{ option.label }}
+                  </button>
+                </div>
+                <div class="radio-title">{{ personalFmPresentation.title }}</div>
+                <div class="radio-subtitle">
+                  {{
+                    personalFmCurrentDisc
+                      ? `${personalFmCurrentDisc.title} · ${personalFmCurrentDisc.artist}`
+                      : `${personalFmPresentation.subtitle} · ${personalFmSongPoolPresentation.label}`
+                  }}
+                </div>
+                <div class="radio-footer">
+                  <div class="radio-bars" aria-hidden="true">
+                    <span v-for="index in 10" :key="index"></span>
+                  </div>
+                  <div class="radio-actions">
+                    <Button
+                      variant="unstyled"
+                      size="none"
+                      class="radio-dislike"
+                      :disabled="personalFmLoading || !personalFmCurrentDisc"
+                      @click="handleDislikePersonalFm"
+                    >
+                      <Icon :icon="iconHeartOff" width="16" height="16" />
+                    </Button>
+                    <Button
+                      variant="unstyled"
+                      size="none"
+                      class="radio-play"
+                      :class="{ 'is-loading': personalFmLoading }"
+                      :aria-busy="personalFmLoading"
+                      @click="handlePlayPersonalFm"
+                    >
+                      <span
+                        v-if="personalFmLoading"
+                        class="radio-play-spinner"
+                        aria-hidden="true"
+                      ></span>
+                      <Icon
+                        v-else
+                        :icon="isPersonalFmPlaying ? iconPause : iconPlay"
+                        width="18"
+                        height="18"
+                      />
+                    </Button>
+                  </div>
+                </div>
               </div>
-              <div class="radio-actions">
-                <Button
-                  variant="unstyled"
-                  size="none"
-                  class="radio-dislike"
-                  :disabled="personalFmLoading || !personalFmCurrentDisc"
-                  @click="handleDislikePersonalFm"
-                >
-                  <Icon :icon="iconHeartOff" width="16" height="16" />
-                </Button>
-                <Button
-                  variant="unstyled"
-                  size="none"
-                  class="radio-play"
-                  :class="{ 'is-loading': personalFmLoading }"
-                  :aria-busy="personalFmLoading"
+              <div v-if="personalFmCurrentDisc" class="radio-current-disc">
+                <button
+                  type="button"
+                  class="radio-vinyl radio-vinyl-current"
+                  :title="`${isPersonalFmPlaying ? '暂停' : '播放'} ${personalFmCurrentDisc.title}`"
                   @click="handlePlayPersonalFm"
                 >
-                  <span
-                    v-if="personalFmLoading"
-                    class="radio-play-spinner"
-                    aria-hidden="true"
-                  ></span>
-                  <Icon
-                    v-else
-                    :icon="isPersonalFmPlaying ? iconPause : iconPlay"
-                    width="18"
-                    height="18"
-                  />
-                </Button>
+                  <div class="radio-vinyl-core" :class="{ 'is-spinning': isPersonalFmPlaying }">
+                    <Cover
+                      :url="personalFmCurrentDisc.coverUrl"
+                      :size="320"
+                      :borderRadius="'50%'"
+                      class="w-full h-full"
+                    />
+                  </div>
+                </button>
               </div>
-            </div>
-          </div>
-          <div v-if="personalFmCurrentDisc" class="radio-current-disc">
-            <button
-              type="button"
-              class="radio-vinyl radio-vinyl-current"
-              :title="`${isPersonalFmPlaying ? '暂停' : '播放'} ${personalFmCurrentDisc.title}`"
-              @click="handlePlayPersonalFm"
-            >
-              <div class="radio-vinyl-core" :class="{ 'is-spinning': isPersonalFmPlaying }">
-                <Cover
-                  :url="personalFmCurrentDisc.coverUrl"
-                  :size="320"
-                  :borderRadius="'50%'"
-                  class="w-full h-full"
-                />
-              </div>
-            </button>
-          </div>
-          <div ref="personalFmVinylsRef" class="radio-vinyls">
-            <button
-              v-for="(track, index) in personalFmVisibleSideTracks"
-              :key="`${track.id}:${track.hash ?? ''}:${index}`"
-              type="button"
-              class="radio-vinyl"
-              :class="[`radio-vinyl-${index + 1}`]"
-              :title="`播放 ${track.title} · ${track.artist}`"
-              @click="handleSelectPersonalFmTrack(track)"
-            >
-              <Cover
-                :url="track.coverUrl"
-                :size="320"
-                :borderRadius="'50%'"
-                class="w-full h-full"
-              />
-            </button>
-          </div>
-        </div>
-
-        <section class="fm-panel fm-now-panel">
-          <div class="fm-panel-header">
-            <div class="fm-panel-title">当前播放</div>
-          </div>
-          <div v-if="personalFmCurrentDisc" class="fm-now-card">
-            <Cover
-              :url="personalFmCurrentDisc.coverUrl"
-              :size="240"
-              :borderRadius="20"
-              class="fm-now-cover"
-            />
-            <div class="fm-now-body">
-              <div class="fm-now-heading">
-                <div class="fm-now-name">{{ personalFmCurrentDisc.title }}</div>
-                <div class="fm-now-artist">{{ personalFmCurrentDisc.artist }}</div>
-              </div>
-              <div v-if="personalFmCurrentTrackAlbum" class="fm-now-album">
-                {{ personalFmCurrentTrackAlbum }}
-              </div>
-              <div v-if="personalFmCurrentTrackReason" class="fm-now-reason">
-                {{ personalFmCurrentTrackReason }}
-              </div>
-              <div v-if="personalFmCurrentTrackInfoChips.length" class="fm-now-info-chips">
-                <span
-                  v-for="item in personalFmCurrentTrackInfoChips"
-                  :key="item"
-                  class="fm-now-info-chip"
+              <div ref="personalFmVinylsRef" class="radio-vinyls">
+                <button
+                  v-for="(track, index) in personalFmVisibleSideTracks"
+                  :key="`${track.id}:${track.hash ?? ''}:${index}`"
+                  type="button"
+                  class="radio-vinyl"
+                  :class="[`radio-vinyl-${index + 1}`]"
+                  :title="`播放 ${track.title} · ${track.artist}`"
+                  @click="handleSelectPersonalFmTrack(track)"
                 >
-                  {{ item }}
-                </span>
+                  <Cover
+                    :url="track.coverUrl"
+                    :size="320"
+                    :borderRadius="'50%'"
+                    class="w-full h-full"
+                  />
+                </button>
               </div>
             </div>
           </div>
-          <div v-else class="fm-panel-empty">
-            {{ personalFmLoading ? '正在获取推荐内容...' : '暂时没有可展示的推荐内容。' }}
-          </div>
+
+          <section class="fm-panel fm-now-panel">
+            <div class="fm-panel-header">
+              <div class="fm-panel-title">当前播放</div>
+            </div>
+            <div v-if="personalFmCurrentDisc" class="fm-now-card">
+              <Cover
+                :url="personalFmCurrentDisc.coverUrl"
+                :size="240"
+                :borderRadius="20"
+                class="fm-now-cover"
+              />
+              <div class="fm-now-body">
+                <div class="fm-now-heading">
+                  <div class="fm-now-name">{{ personalFmCurrentDisc.title }}</div>
+                  <div class="fm-now-artist">{{ personalFmCurrentDisc.artist }}</div>
+                </div>
+                <div v-if="personalFmCurrentTrackAlbum" class="fm-now-album">
+                  {{ personalFmCurrentTrackAlbum }}
+                </div>
+                <div v-if="personalFmCurrentTrackReason" class="fm-now-reason">
+                  {{ personalFmCurrentTrackReason }}
+                </div>
+                <div v-if="personalFmCurrentTrackInfoChips.length" class="fm-now-info-chips">
+                  <span
+                    v-for="item in personalFmCurrentTrackInfoChips"
+                    :key="item"
+                    class="fm-now-info-chip"
+                  >
+                    {{ item }}
+                  </span>
+                </div>
+              </div>
+            </div>
+            <div v-else class="fm-panel-empty">
+              {{ personalFmLoading ? '正在获取推荐内容...' : '暂时没有可展示的推荐内容。' }}
+            </div>
+          </section>
         </section>
-      </section>
+      </template>
     </div>
   </PageScrollContainer>
 </template>
@@ -572,63 +642,22 @@ onActivated(() => {
   animation: fade-in 0.45s ease-out;
 }
 
-.fm-header {
-  margin-bottom: 20px;
-}
-
-.fm-page-title {
-  font-size: 22px;
-  font-weight: 800;
-  letter-spacing: -0.04em;
-  color: var(--color-text-main);
-}
-
-.fm-page-subtitle {
-  margin-top: 6px;
-  font-size: 13px;
-  color: color-mix(in srgb, var(--color-text-main) 58%, transparent);
-  max-width: 520px;
-}
-
 .fm-shell {
   margin-top: 8px;
   overflow-anchor: none;
 }
 
-.fm-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 18px;
-  margin-bottom: 18px;
-  padding: 14px 16px;
-  border-radius: 20px;
-  background:
-    linear-gradient(
-      180deg,
-      color-mix(in srgb, var(--color-text-main) 2.5%, transparent),
-      transparent
-    ),
-    var(--color-bg-main);
-  border: 1px solid color-mix(in srgb, var(--color-text-main) 6%, transparent);
-}
-
-.fm-toolbar-group {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.fm-toolbar-label {
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  color: color-mix(in srgb, var(--color-text-main) 54%, transparent);
-  text-transform: uppercase;
-}
-
 .fm-empty {
   min-height: 420px;
+}
+
+.fm-play-sticky {
+  position: sticky;
+  z-index: 105;
+  margin-bottom: 18px;
+  padding: 8px 0 12px;
+  background: var(--color-bg-main);
+  border-bottom: 1px solid transparent;
 }
 
 .radio-hero {
@@ -716,38 +745,44 @@ onActivated(() => {
   padding: 4px;
   border-radius: 999px;
   background: color-mix(in srgb, var(--color-text-main) 3%, var(--color-bg-sidebar));
+  isolation: isolate;
 }
 
 .radio-strategy-switch.outside {
-  background:
-    linear-gradient(
-      180deg,
-      color-mix(in srgb, var(--color-text-main) 1.8%, transparent),
-      transparent
-    ),
-    var(--color-bg-sidebar);
+  background: color-mix(in srgb, var(--color-text-main) 3%, transparent);
   border: 1px solid color-mix(in srgb, var(--color-text-main) 8%, transparent);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.06),
-    0 10px 24px rgba(15, 23, 42, 0.06);
+  box-shadow: none;
+}
+
+.radio-strategy-switch.compact {
+  background: color-mix(in srgb, var(--color-text-main) 3%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-text-main) 8%, transparent);
 }
 
 .radio-strategy-btn {
   min-width: 88px;
   padding: 8px 14px;
+  border: 1px solid transparent;
   border-radius: 999px;
+  background: transparent;
+  background-clip: padding-box;
   font-size: 12px;
   font-weight: 700;
   color: color-mix(in srgb, var(--color-text-main) 62%, transparent);
   transition: all 0.2s ease;
 }
 
+.radio-strategy-switch.compact .radio-strategy-btn {
+  min-width: 64px;
+  padding: 6px 10px;
+  font-size: 11px;
+}
+
 .radio-strategy-btn.is-active {
   background: var(--color-primary);
+  border-color: var(--color-primary);
   color: #fff;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.24),
-    0 10px 20px rgba(var(--color-primary-rgb), 0.22);
+  box-shadow: none;
 }
 
 .radio-subtitle {

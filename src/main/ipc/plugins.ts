@@ -7,6 +7,8 @@ import type {
   PluginListImageFilesOptions,
   PluginListImageFilesResult,
   PluginListResult,
+  PluginLocalInstallOptions,
+  PluginLocalInstallResult,
   PluginMarketplaceInstallOptions,
   PluginMarketplaceInstallResult,
   PluginMarketplaceListResult,
@@ -32,6 +34,7 @@ import {
   getPluginData,
   getPluginDirectory,
   getPluginFileUrl,
+  installPluginsFromLocal,
   addPluginMarketplaceSource,
   installPluginFromMarketplace,
   listPluginImageFiles,
@@ -135,6 +138,14 @@ export const registerPluginHandlers = (context: IpcContext) => {
       options?: PluginMarketplaceInstallOptions,
     ): Promise<PluginMarketplaceInstallResult> =>
       installPluginFromMarketplace(sourceId, pluginId, options),
+  );
+  ipcMain.handle(
+    'plugins:install-local',
+    (
+      _event,
+      paths: string[],
+      options?: PluginLocalInstallOptions,
+    ): Promise<PluginLocalInstallResult> => installPluginsFromLocal(paths, options),
   );
   ipcMain.handle('plugins:runtime-reload', (event): void => {
     BrowserWindow.getAllWindows().forEach((win) => {
@@ -274,6 +285,7 @@ export const unregisterPluginHandlers = () => {
   ipcMain.removeHandler('plugins:marketplace:sources:remove');
   ipcMain.removeHandler('plugins:marketplace:list');
   ipcMain.removeHandler('plugins:marketplace:install');
+  ipcMain.removeHandler('plugins:install-local');
   ipcMain.removeHandler('plugins:runtime-reload');
   ipcMain.removeHandler('plugins:dialog:select-directory');
   ipcMain.removeHandler('plugins:dialog:select-files');

@@ -142,11 +142,13 @@ const handleOffsetAdjust = (deltaMs: number) => {
   const newOffset = lyricStore.adjustTimeOffset(deltaMs);
   const sign = newOffset >= 0 ? '+' : '';
   toastStore.success(`歌词偏移: ${sign}${(newOffset / 1000).toFixed(1)}s`);
+  lyricStore.updateCurrentIndex(playerStore.currentTime);
 };
 
 const handleOffsetReset = () => {
   lyricStore.resetTimeOffset();
   toastStore.success('歌词偏移已重置');
+  lyricStore.updateCurrentIndex(playerStore.currentTime);
 };
 
 const handleCopyLyrics = async () => {

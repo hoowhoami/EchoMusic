@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron';
+import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import log from 'electron-log/renderer';
 import type { ApiServerStatus } from '../shared/api-server';
 import type { AppInfoResult, UpdateDownloadResult } from '../shared/app';
@@ -42,6 +42,8 @@ import type {
   PluginListImageFilesOptions,
   PluginListImageFilesResult,
   PluginListResult,
+  PluginLocalInstallOptions,
+  PluginLocalInstallResult,
   PluginMarketplaceInstallOptions,
   PluginMarketplaceInstallResult,
   PluginMarketplaceListResult,
@@ -432,6 +434,8 @@ contextBridge.exposeInMainWorld('electron', {
     list: () => ipcRenderer.invoke('plugins:list') as Promise<PluginListResult>,
     getDirectory: () => ipcRenderer.invoke('plugins:get-directory') as Promise<string>,
     openDirectory: () => ipcRenderer.invoke('plugins:open-directory') as Promise<string>,
+    getDroppedFilePaths: (files: File[]) =>
+      files.map((file) => webUtils.getPathForFile(file)).filter(Boolean),
     marketplace: {
       listSources: () =>
         ipcRenderer.invoke(
@@ -478,6 +482,8 @@ contextBridge.exposeInMainWorld('electron', {
       ) as Promise<PluginSetEnabledResult>,
     setSafeMode: (enabled: boolean) =>
       ipcRenderer.invoke('plugins:set-safe-mode', enabled) as Promise<PluginSetSafeModeResult>,
+    installLocal: (paths: string[], options?: PluginLocalInstallOptions) =>
+      invokeWithPlainPayload<PluginLocalInstallResult>('plugins:install-local', paths, options),
     uninstall: (pluginId: string) =>
       ipcRenderer.invoke('plugins:uninstall', pluginId) as Promise<PluginUninstallResult>,
     markStartup: (pluginIds: string[]) =>

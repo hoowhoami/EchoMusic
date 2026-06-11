@@ -1,5 +1,6 @@
 // echo-mpv-player NAPI 入口
 
+mod audio;
 mod event_loop;
 mod mpv_ffi;
 mod player;
@@ -448,3 +449,58 @@ pub fn play_with_fade(target_volume: f64, duration_ms: f64) -> napi::Result<()> 
 pub fn is_fading() -> napi::Result<bool> {
     Ok(get_player()?.fade_active().load(Ordering::SeqCst))
 }
+
+// ============ 高级 EQ ============
+
+#[napi]
+pub fn set_eq_advanced(gains: Vec<f64>) -> napi::Result<()> {
+    if gains.len() != 18 {
+        return Err(napi::Error::new(
+            napi::Status::InvalidArg,
+            "Expected 18 equalizer gains".to_string(),
+        ));
+    }
+
+    let player = get_player()?;
+    player.set_eq_advanced(gains)
+        .map_err(|e| napi::Error::from_reason(e))
+}
+
+#[napi]
+pub fn set_eq_preset(preset_name: String) -> napi::Result<()> {
+    let preset = audio::eq::get_preset(&preset_name)
+        .ok_or_else(|| napi::Error::from_reason(format!("Unknown preset: {}", preset_name)))?;
+
+    let player = get_player()?;
+    player.set_eq_advanced(preset.gains.to_vec())
+        .map_err(|e| napi::Error::from_reason(e))
+}
+
+#[napi]
+pub fn get_eq_presets() -> napi::Result<Vec<String>> {
+    Ok(audio::eq::PRESETS.iter().map(|p| p.name.to_string()).collect())
+}
+
+// ============ 空间音效 ============
+
+#[napi]
+pub fn set_spatial_audio(ir_path: String, wet_level: f64) -> napi::Result<()> {
+    if !(0.0..=1.0).contains(&wet_level) {
+        return Err(napi::Error::new(
+            napi::Status::InvalidArg,
+            "wet_level must be between 0.0 and 1.0".to_string(),
+        ));
+    }
+
+    let player = get_player()?;
+    player.set_spatial_audio(ir_path, wet_level)
+        .map_err(|e| napi::Error::from_reason(e))
+}
+
+#[napi]
+pub fn disable_spatial_audio() -> napi::Result<()> {
+    let player = get_player()?;
+    player.disable_spatial_audio()
+        .map_err(|e| napi::Error::from_reason(e))
+}
+

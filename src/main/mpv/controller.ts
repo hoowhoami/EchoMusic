@@ -49,6 +49,20 @@ interface MpvAddon {
   pauseWithFade(savedVolume: number, durationMs: number): void;
   playWithFade(targetVolume: number, durationMs: number): void;
   isFading(): boolean;
+  // 频谱分析
+  startSpectrum(options?: { fftSize?: number; smoothing?: number; fps?: number }): {
+    running: boolean;
+    reason?: string;
+  };
+  stopSpectrum(): { running: boolean; reason?: string };
+  getSpectrumSnapshot(): { magnitudes: number[]; timestamp: number } | null;
+  // 高级 EQ
+  setEqAdvanced(gains: number[]): void;
+  setEqPreset(presetName: string): void;
+  getEqPresets(): string[];
+  // 空间音效
+  setSpatialAudio(irPath: string, wetLevel: number): void;
+  disableSpatialAudio(): void;
 }
 
 const clamp = (v: number, min: number, max: number) => Math.min(max, Math.max(min, v));
@@ -818,6 +832,97 @@ export class MpvController extends EventEmitter {
       this.addon?.setLoopFile(loop ? 'inf' : 'no');
     } catch {
       // 忽略
+    }
+  }
+
+  // ============ 频谱分析 ============
+
+  startSpectrum(options?: { fftSize?: number; smoothing?: number; fps?: number }): {
+    running: boolean;
+    reason?: string;
+  } {
+    if (!this.addon) {
+      return { running: false, reason: 'Addon not initialized' };
+    }
+    try {
+      return this.addon.startSpectrum(options);
+    } catch (err) {
+      log.error('[MpvController] startSpectrum failed:', err);
+      return { running: false, reason: err instanceof Error ? err.message : String(err) };
+    }
+  }
+
+  stopSpectrum(): { running: boolean; reason?: string } {
+    if (!this.addon) {
+      return { running: false, reason: 'Addon not initialized' };
+    }
+    try {
+      return this.addon.stopSpectrum();
+    } catch (err) {
+      log.error('[MpvController] stopSpectrum failed:', err);
+      return { running: false, reason: err instanceof Error ? err.message : String(err) };
+    }
+  }
+
+  getSpectrumSnapshot(): { magnitudes: number[]; timestamp: number } | null {
+    if (!this.addon) {
+      return null;
+    }
+    try {
+      return this.addon.getSpectrumSnapshot();
+    } catch (err) {
+      log.error('[MpvController] getSpectrumSnapshot failed:', err);
+      return null;
+    }
+  }
+
+  // ============ 高级 EQ ============
+
+  setEqAdvanced(gains: number[]): void {
+    if (!this.addon) return;
+    try {
+      this.addon.setEqAdvanced(gains);
+    } catch (err) {
+      log.error('[MpvController] setEqAdvanced failed:', err);
+    }
+  }
+
+  setEqPreset(presetName: string): void {
+    if (!this.addon) return;
+    try {
+      this.addon.setEqPreset(presetName);
+    } catch (err) {
+      log.error('[MpvController] setEqPreset failed:', err);
+    }
+  }
+
+  getEqPresets(): string[] {
+    if (!this.addon) return [];
+    try {
+      return this.addon.getEqPresets();
+    } catch (err) {
+      log.error('[MpvController] getEqPresets failed:', err);
+      return [];
+    }
+  }
+
+  // ============ 空间音效 ============
+
+  setSpatialAudioAdvanced(irPath: string, wetLevel: number): void {
+    if (!this.addon) return;
+    try {
+      this.addon.setSpatialAudio(irPath, wetLevel);
+    } catch (err) {
+      log.error('[MpvController] setSpatialAudio failed:', err);
+    }
+  }
+
+  disableSpatialAudioAdvanced(): void {
+    if (!this.addon) return;
+    try {
+      this.addon.disableSpatialAudio();
+    } catch (err) {
+      log.error('[MpvController] disableSpatialAudio failed:', err);
     }
   }
 }

@@ -15,6 +15,8 @@ export declare function cancelFade(): void
 /** 销毁播放器 */
 export declare function destroy(): void
 
+export declare function disableSpatialAudio(): void
+
 /**
  * 淡入淡出
  * 返回后 fade 在后台线程执行，完成时通过事件回调通知
@@ -24,8 +26,12 @@ export declare function fade(from: number, to: number, durationMs: number): void
 /** 获取音频设备列表 */
 export declare function getAudioDevices(): Array<AudioDevice>
 
+export declare function getEqPresets(): Array<string>
+
 /** 获取属性值（字符串形式） */
 export declare function getProperty(name: string): string
+
+export declare function getSpectrumSnapshot(): SpectrumFrame | null
 
 /** 获取当前状态快照 */
 export declare function getState(): PlayerState
@@ -107,6 +113,10 @@ export declare function setAudioTrack(trackId: number): void
 /** 设置均衡器增益 */
 export declare function setEq(gains: Array<number>): void
 
+export declare function setEqAdvanced(gains: Array<number>): void
+
+export declare function setEqPreset(presetName: string): void
+
 /** 设置独占模式 */
 export declare function setExclusive(exclusive: boolean): void
 
@@ -119,14 +129,36 @@ export declare function setMediaTitle(title: string): void
 /** 设置音量均衡增益 */
 export declare function setNormalizationGain(gainDb: number): void
 
+export declare function setSpatialAudio(irPath: string, wetLevel: number): void
+
 /** 设置播放速度 */
 export declare function setSpeed(speed: number): void
 
 /** 设置音量（0-100） */
 export declare function setVolume(volume: number): void
 
+export interface SpectrumFrame {
+  magnitudes: Array<number>
+  timestamp: number
+}
+
+export interface SpectrumOptions {
+  fftSize?: number
+  smoothing?: number
+  fps?: number
+}
+
+export interface SpectrumStatus {
+  running: boolean
+  reason?: string
+}
+
+export declare function startSpectrum(options?: SpectrumOptions | undefined | null): SpectrumStatus
+
 /** 停止 */
 export declare function stop(): void
+
+export declare function stopSpectrum(): SpectrumStatus
 
 /** 音轨信息 */
 export interface TrackInfo {

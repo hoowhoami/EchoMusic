@@ -1,5 +1,7 @@
 // MpvPlayer 核心实现
 
+use crate::audio::filter_chain::AudioFilterChain;
+use crate::audio::spatial::SpatialAudioConfig;
 use crate::mpv_ffi::*;
 use crate::types::*;
 use std::ffi::{CStr, CString};
@@ -35,6 +37,8 @@ pub struct MpvPlayer {
     state: Arc<Mutex<PlayerState>>,
     // 事件线程停止标志
     shutdown: Arc<AtomicBool>,
+    // 音频滤镜链
+    filter_chain: Mutex<AudioFilterChain>,
 }
 
 // MpvHandle 指针在线程间传递是安全的（libmpv 文档保证线程安全）
@@ -57,6 +61,7 @@ impl MpvPlayer {
             seek_mute_seq: Arc::new(AtomicU64::new(0)),
             state: Arc::new(Mutex::new(PlayerState::default())),
             shutdown: Arc::new(AtomicBool::new(false)),
+            filter_chain: Mutex::new(AudioFilterChain::new()),
         };
 
         // 设置初始化选项（必须在 mpv_initialize 之前）
@@ -655,6 +660,7 @@ impl MpvPlayer {
             seek_mute_seq: self.seek_mute_seq.clone(),
             state: self.state.clone(),
             shutdown: self.shutdown.clone(),
+            filter_chain: Mutex::new(AudioFilterChain::new()),
         });
 
         let _ = std::thread::Builder::new()
@@ -683,7 +689,50 @@ impl MpvPlayer {
             (self.lib.mpv_terminate_destroy)(self.handle);
         }
     }
+
+    // ============ 音频滤镜链管理 ============
+
+    fn update_filter_chain(&self, chain: AudioFilterChain) -> Result<(), String> {
+        let filter_str = chain.build()?;
+        if let Ok(mut guard) = self.filter_chain.lock() {
+            *guard = chain;
+        }
+        self.set_audio_filter(&filter_str)
+    }
+
+    pub fn set_property(&self, name: &str, value: &str) -> Result<(), String> {
+        self.set_property_string(name, value)
+    }
+
+    pub fn set_eq_advanced(&self, gains: Vec<f64>) -> Result<(), String> {
+        let mut chain = self.filter_chain.lock()
+            .map_err(|e| format!("lock failed: {}", e))?
+            .clone();
+        chain.eq_gains = Some(gains);
+        self.update_filter_chain(chain)
+    }
+
+    pub fn set_spatial_audio(&self, ir_path: String, wet_level: f64) -> Result<(), String> {
+        let mut chain = self.filter_chain.lock()
+            .map_err(|e| format!("lock failed: {}", e))?
+            .clone();
+        chain.spatial_config = Some(SpatialAudioConfig {
+            ir_path,
+            wet_level,
+            normalize: true,
+        });
+        self.update_filter_chain(chain)
+    }
+
+    pub fn disable_spatial_audio(&self) -> Result<(), String> {
+        let mut chain = self.filter_chain.lock()
+            .map_err(|e| format!("lock failed: {}", e))?
+            .clone();
+        chain.clear_spatial();
+        self.update_filter_chain(chain)
+    }
 }
+
 
 // ── mpv_node 解析 ──
 

@@ -263,6 +263,10 @@ export interface PluginMarketplaceInstallOptions {
   enableAfterInstall?: boolean;
 }
 
+export interface PluginLocalInstallOptions {
+  enableAfterInstall?: boolean;
+}
+
 export interface PluginMarketplacePlugin {
   id: string;
   name: string;
@@ -341,6 +345,31 @@ export type PluginMarketplaceInstallResult =
       ok: false;
       error: string;
     };
+
+export type PluginLocalInstallSourceKind = 'zip' | 'directory';
+
+export type PluginLocalInstallItemResult =
+  | {
+      ok: true;
+      sourcePath: string;
+      kind: PluginLocalInstallSourceKind;
+      plugin: EchoPluginDescriptor;
+      updated: boolean;
+      enabled: boolean;
+    }
+  | {
+      ok: false;
+      sourcePath: string;
+      kind: PluginLocalInstallSourceKind | 'unknown';
+      error: string;
+    };
+
+export interface PluginLocalInstallResult {
+  ok: boolean;
+  results: PluginLocalInstallItemResult[];
+  installed: number;
+  failed: number;
+}
 
 export interface PluginFailureRecord {
   pluginId?: string;

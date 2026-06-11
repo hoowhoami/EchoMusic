@@ -37,6 +37,7 @@ import { useSettingStore } from '@/stores/setting';
 import { useToastStore } from '@/stores/toast';
 import type {
   PluginFailureRecord,
+  PluginLocalInstallItemResult,
   PluginMarketplacePlugin,
   PluginMarketplaceSource,
 } from '../../shared/plugins';
@@ -51,6 +52,8 @@ const isClearingFailure = ref(false);
 const marketplaceLoaded = ref(false);
 const isMarketplaceLoading = ref(false);
 const isMarketplaceRefreshing = ref(false);
+const isLocalInstallDragging = ref(false);
+const isLocalInstalling = ref(false);
 const isSourceDialogOpen = ref(false);
 const isAddingSource = ref(false);
 const marketplaceSearch = ref('');
@@ -64,6 +67,8 @@ const busyPluginIds = ref<Set<string>>(new Set());
 const busyMarketplacePluginKeys = ref<Set<string>>(new Set());
 const busySourceIds = ref<Set<string>>(new Set());
 const failedPluginIconIds = ref<Set<string>>(new Set());
+const localInstallDragDepth = ref(0);
+const localInstallCount = ref(0);
 const marketplacePlugins = ref<PluginMarketplacePlugin[]>([]);
 const marketplaceSources = ref<PluginMarketplaceSource[]>([]);
 const marketplaceFetchedAt = ref(0);
@@ -92,6 +97,14 @@ const marketplaceSourceSummary = computed(() => {
 });
 const marketplaceFetchedAtLabel = computed(() =>
   marketplaceFetchedAt.value ? new Date(marketplaceFetchedAt.value).toLocaleString() : '',
+);
+const localInstallOverlayTitle = computed(() =>
+  isLocalInstalling.value
+    ? `正在安装 ${localInstallCount.value || ''} 个插件`.trim()
+    : '松开安装插件',
+);
+const localInstallOverlayDescription = computed(() =>
+  isLocalInstalling.value ? '安装完成后会自动刷新插件列表' : '支持 .zip 压缩包和插件文件夹',
 );
 
 const filteredMarketplacePlugins = computed(() => {
@@ -486,6 +499,99 @@ const installMarketplacePlugin = async (plugin: PluginMarketplacePlugin) => {
   }
 };
 
+const hasDraggedFiles = (event: DragEvent) =>
+  Array.from(event.dataTransfer?.types ?? []).includes('Files');
+
+const normalizeLocalInstallPaths = (paths: string[]) =>
+  Array.from(new Set(paths.map((path) => path.trim()).filter(Boolean)));
+
+const summarizeLocalInstallFailure = (results: PluginLocalInstallItemResult[]) => {
+  const firstFailure = results.find((result) => !result.ok);
+  return firstFailure?.ok === false ? firstFailure.error : '';
+};
+
+const installLocalPlugins = async (paths: string[]) => {
+  if (isLocalInstalling.value) return;
+  const sourcePaths = normalizeLocalInstallPaths(paths);
+  if (sourcePaths.length === 0) {
+    toastStore.warning('未读取到可安装的插件路径');
+    return;
+  }
+
+  isLocalInstalling.value = true;
+  localInstallCount.value = sourcePaths.length;
+  try {
+    const result = await window.electron.plugins?.installLocal(sourcePaths, {
+      enableAfterInstall: false,
+    });
+    if (!result) throw new Error('插件安装 API 不可用');
+
+    if (result.installed > 0) {
+      await refreshPlugins({ reloadActive: true });
+      await reloadOtherPluginRuntimes();
+      if (marketplaceLoaded.value) await loadMarketplace(false);
+    }
+
+    if (result.failed > 0) {
+      const failure = summarizeLocalInstallFailure(result.results);
+      toastStore.warning(
+        `插件安装完成：成功 ${result.installed} 个，失败 ${result.failed} 个${failure ? `。${failure}` : ''}`,
+        6000,
+      );
+      return;
+    }
+
+    if (result.installed === 1) {
+      const installed = result.results.find((item) => item.ok);
+      toastStore.actionCompleted(installed?.ok && installed.updated ? '插件已更新' : '插件已安装');
+      return;
+    }
+
+    toastStore.actionCompleted(`已安装 ${result.installed} 个插件`);
+  } catch (error) {
+    toastStore.warning(error instanceof Error ? error.message : '插件安装失败');
+  } finally {
+    isLocalInstalling.value = false;
+    localInstallCount.value = 0;
+  }
+};
+
+const handlePluginDragEnter = (event: DragEvent) => {
+  if (!hasDraggedFiles(event)) return;
+  event.preventDefault();
+  localInstallDragDepth.value += 1;
+  isLocalInstallDragging.value = true;
+};
+
+const handlePluginDragOver = (event: DragEvent) => {
+  if (!hasDraggedFiles(event)) return;
+  event.preventDefault();
+  if (event.dataTransfer) event.dataTransfer.dropEffect = isLocalInstalling.value ? 'none' : 'copy';
+  isLocalInstallDragging.value = true;
+};
+
+const handlePluginDragLeave = (event: DragEvent) => {
+  if (!hasDraggedFiles(event)) return;
+  localInstallDragDepth.value = Math.max(0, localInstallDragDepth.value - 1);
+  if (localInstallDragDepth.value === 0) isLocalInstallDragging.value = false;
+};
+
+const handlePluginDrop = (event: DragEvent) => {
+  if (!hasDraggedFiles(event)) return;
+  event.preventDefault();
+  localInstallDragDepth.value = 0;
+  isLocalInstallDragging.value = false;
+
+  if (isLocalInstalling.value) {
+    toastStore.info('插件正在安装中');
+    return;
+  }
+
+  const files = Array.from(event.dataTransfer?.files ?? []);
+  const paths = window.electron.plugins?.getDroppedFilePaths(files) ?? [];
+  void installLocalPlugins(paths);
+};
+
 const getStatusLabel = (record: (typeof records.value)[number]) => {
   if (record.descriptor.invalid) return '无效';
   if (!record.descriptor.compatibility.compatible) return '版本要求';
@@ -715,7 +821,13 @@ const requestOpenPluginSettings = (record: (typeof records.value)[number]) => {
 </script>
 
 <template>
-  <div class="plugin-management-page h-full flex flex-col min-h-0">
+  <div
+    class="plugin-management-page h-full flex flex-col min-h-0"
+    @dragenter="handlePluginDragEnter"
+    @dragover="handlePluginDragOver"
+    @dragleave="handlePluginDragLeave"
+    @drop="handlePluginDrop"
+  >
     <!-- 页面头部 -->
     <header class="plugin-header shrink-0 px-6 pt-4 pb-3">
       <div class="flex items-center justify-between">
@@ -1147,11 +1259,30 @@ const requestOpenPluginSettings = (record: (typeof records.value)[number]) => {
       </div>
     </Scrollbar>
 
+    <div
+      v-if="isLocalInstallDragging || isLocalInstalling"
+      class="plugin-local-install-overlay"
+      :class="{ 'is-installing': isLocalInstalling }"
+    >
+      <div class="plugin-local-install-panel">
+        <div class="plugin-local-install-icon">
+          <Icon
+            :icon="isLocalInstalling ? iconRefreshCw : iconArrowBarDown"
+            width="28"
+            height="28"
+            :class="{ 'animate-spin': isLocalInstalling }"
+          />
+        </div>
+        <strong>{{ localInstallOverlayTitle }}</strong>
+        <span>{{ localInstallOverlayDescription }}</span>
+      </div>
+    </div>
+
     <!-- 插件源管理 -->
     <Dialog
       v-model:open="isSourceDialogOpen"
       title="插件源"
-      description="添加 GitHub 仓库地址后，EchoMusic 会读取仓库根目录的 echo-plugins.json。"
+      description="添加 GitHub 仓库地址后，EchoMusic 会读取 echo-plugins.json 索引并同步插件清单。"
       show-close
       content-class="plugin-source-dialog"
       body-class="plugin-source-dialog-body"
@@ -1331,7 +1462,61 @@ const requestOpenPluginSettings = (record: (typeof records.value)[number]) => {
 @reference "@/style.css";
 
 .plugin-management-page {
+  position: relative;
   background: var(--color-bg-main);
+}
+
+.plugin-local-install-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+  background: color-mix(in srgb, var(--color-bg-main) 82%, transparent);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  pointer-events: none;
+}
+
+.plugin-local-install-panel {
+  width: min(22rem, 100%);
+  min-height: 11rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  padding: 1.5rem;
+  border-radius: 8px;
+  border: 1px dashed color-mix(in srgb, var(--color-primary) 54%, var(--border-subtle));
+  background: color-mix(in srgb, var(--color-bg-elevated) 96%, transparent);
+  box-shadow: 0 18px 48px color-mix(in srgb, var(--color-text-main) 14%, transparent);
+  color: var(--color-text-main);
+  text-align: center;
+}
+
+.plugin-local-install-icon {
+  width: 3.25rem;
+  height: 3.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--color-primary) 12%, transparent);
+  color: var(--color-primary);
+}
+
+.plugin-local-install-panel strong {
+  font-size: 0.95rem;
+  font-weight: 800;
+}
+
+.plugin-local-install-panel span {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--color-text-secondary);
 }
 
 /* 页面头部 - 与 Settings 保持一致 */

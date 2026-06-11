@@ -33,9 +33,9 @@
 - **歌曲详情**：支持查看歌曲档案及播放详情。
 - **歌曲评论**：支持查看歌曲评论与评论楼层跳转。
 - **歌词显示**：支持 LRC/YRC 逐字歌词解析、歌词选择、歌词翻译、正则过滤、滚动同步、全屏歌词、写真模式、桌面歌词。
-- **音频增强**：支持 10 段 EQ 均衡器、音量均衡（基于 LUFS 响度标准化）、空间音效（IR 文件导入/切换）与多种音效模式。
+- **音频增强**：支持 18 段参数化 EQ 均衡器（带自动增益补偿）、音量均衡（基于 LUFS 响度标准化）、优化的空间音效（高效 IR 卷积、Dry/Wet 混合控制、内置混响预设）与多种音效模式。
+- **实时频谱分析**：直接从播放引擎提取音频数据，使用 FFT 进行实时频谱分析，为插件 `ctx.audio.spectrum` 提供低延迟、高精度的频谱帧。
 - **系统媒体控制**：原生集成 macOS MPNowPlayingInfoCenter、Windows SMTC、Linux MPRIS，支持系统媒体按键和进度同步。
-- **系统音频频谱**：通过原生系统音频捕获为插件提供频谱数据，避免依赖播放引擎导出频谱。
 - **系统集成**：支持窗口控制、系统托盘、托盘快捷控制、全局快捷键、开机自启动、启动时最小化和 mini 模式。
 - **音频设备**：支持切换音频输出设备、独占模式输出。
 - **插件扩展**：支持在线插件源浏览安装与本地插件加载，自定义页面、侧边栏入口、设置项、播放器按钮、歌曲右键菜单与播放事件监听。
@@ -47,7 +47,11 @@
 ## 音质音效
 
 - **音质**：DSD臻品音质、Hi-Res、SQ(flac)、HQ(320)、标准(128)
-- **音效**：人声、伴奏、钢琴、骨笛、尤克里里、唢呐、DJ、蝰蛇母带、蝰蛇全景声、蝰蛇超清、空间音效（自定义 IR）
+- **音效**：人声、伴奏、钢琴、骨笛、尤克里里、唢呐、DJ、蝰蛇母带、蝰蛇全景声、蝰蛇超清
+- **高级音频处理**：
+  - **18 段参数化 EQ**：50Hz - 20kHz 精细控制，自动增益补偿，支持预设（流行、摇滚、古典、电子等）
+  - **优化的空间音效**：高效 FFT-based 卷积混响、IR 预处理和归一化、Dry/Wet 混合级别控制、内置精选混响空间（音乐厅、教堂、录音室、剧院）
+  - **统一滤镜链管理**：智能管理 EQ、混响、音量均衡等多重音频效果，避免冲突，确保最佳音质
 
 ## 🛠️ 技术栈
 
@@ -62,10 +66,9 @@
 - **Backend Service**: [Node.js](https://nodejs.org/)（内置本地服务，进程内直接调用）
 - **Audio Engine**: [libmpv](https://mpv.io/)（通过 Rust NAPI addon 进程内嵌入，零延迟直接函数调用）
 - **Native Addons**: [napi-rs](https://napi.rs/)（Rust 编写的原生扩展）
-  - `echo-mpv-player`：libmpv 播放引擎封装，支持淡入淡出、EQ、音量均衡、空间音效
+  - `echo-mpv-player`：libmpv 播放引擎封装，支持淡入淡出、高级 EQ、音量均衡、优化的空间音效、实时频谱分析
   - `echo-media-controls`：系统媒体控制集成（macOS/Windows/Linux 原生 API）
   - `echo-storage`：SQLite 本地持久化存储，负责设置、播放队列与状态快照
-  - `echo-spectrum-capture`：系统音频捕获与频谱分析，为插件 `ctx.audio.spectrum` 提供处理后的频谱帧
 
 ## 🖼️ 界面截图
 
@@ -163,14 +166,10 @@
    npm install
    npm run build
 
-   cd ../echo-spectrum-capture
-   npm install
-   npm run build
-
    cd ../..
    ```
 
-   `echo-spectrum-capture` 负责系统音频频谱捕获：Windows 使用 WASAPI loopback，Linux 使用系统 monitor/loopback 输入，macOS 使用 ScreenCaptureKit。macOS 首次使用频谱可视化或 `ctx.audio.spectrum` 时，需要在“系统设置 -> 隐私与安全性 -> 屏幕与系统音频录制”中授权 EchoMusic；开发模式下也可能需要授权 Terminal、Electron 或当前启动进程。
+   `echo-mpv-player` 集成了实时频谱分析功能，可选地支持系统音频捕获：Windows 使用 WASAPI loopback，Linux 使用 ALSA monitor，macOS 使用 ScreenCaptureKit。macOS 首次使用系统级频谱捕获时，需要在”系统设置 -> 隐私与安全性 -> 屏幕与系统音频录制”中授权 EchoMusic；开发模式下也可能需要授权 Terminal、Electron 或当前启动进程。
 
 4. **启动本地开发服务器**
 
