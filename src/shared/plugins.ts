@@ -130,10 +130,86 @@ export type PluginListImageFilesResult =
       error: string;
     };
 
+export type PluginFileKind = 'audio' | 'image' | 'lyric' | 'playlist' | 'cue' | 'other';
+
+export interface PluginFileEntry extends PluginImageFileEntry {
+  kind: PluginFileKind;
+  extension: string;
+  relativePath: string;
+}
+
+export interface PluginListFilesOptions {
+  recursive?: boolean;
+  limit?: number;
+  kinds?: PluginFileKind[];
+  extensions?: string[];
+  includeHidden?: boolean;
+  maxDepth?: number;
+}
+
+export type PluginListFilesResult =
+  | {
+      ok: true;
+      root: string;
+      files: PluginFileEntry[];
+      limitReached: boolean;
+    }
+  | {
+      ok: false;
+      error: string;
+    };
+
 export type PluginFileUrlResult =
   | {
       ok: true;
       url: string;
+    }
+  | {
+      ok: false;
+      error: string;
+    };
+
+export interface PluginReadTextFileOptions {
+  encoding?: 'utf8' | 'utf-8' | 'utf16le' | 'ucs2' | 'ucs-2' | 'latin1' | 'ascii';
+  offset?: number;
+  length?: number;
+  maxBytes?: number;
+}
+
+export type PluginReadTextFileResult =
+  | {
+      ok: true;
+      name: string;
+      path: string;
+      url: string;
+      size: number;
+      modifiedAt: number;
+      content: string;
+      bytesRead: number;
+      truncated: boolean;
+    }
+  | {
+      ok: false;
+      error: string;
+    };
+
+export interface PluginReadFileBytesOptions {
+  offset?: number;
+  length?: number;
+  maxBytes?: number;
+}
+
+export type PluginReadFileBytesResult =
+  | {
+      ok: true;
+      name: string;
+      path: string;
+      url: string;
+      size: number;
+      modifiedAt: number;
+      data: ArrayBuffer;
+      bytesRead: number;
+      truncated: boolean;
     }
   | {
       ok: false;
@@ -189,6 +265,8 @@ export interface EchoPluginManifest {
     audioSource?: boolean;
     audioSpectrum?: boolean;
     kugouApi?: boolean;
+    localFiles?: boolean;
+    lyricEffects?: boolean;
     lyrics?: boolean;
     process?: boolean;
   };

@@ -36,6 +36,7 @@ import { pluginSettingsContributions } from '@/plugins/registry';
 import { useSettingStore } from '@/stores/setting';
 import { useToastStore } from '@/stores/toast';
 import type {
+  EchoPluginManifest,
   PluginFailureRecord,
   PluginLocalInstallItemResult,
   PluginMarketplacePlugin,
@@ -639,6 +640,21 @@ const getPluginAccentStyle = (pluginId: string) => {
   };
 };
 
+const getPluginFeatureTags = (manifest: EchoPluginManifest) => {
+  const tags: string[] = [];
+  if (manifest.runtime?.miniPlayer) tags.push('Mini 运行时');
+  if (manifest.runtime?.desktopLyric) tags.push('桌面歌词');
+  if (manifest.capabilities?.lyricEffects) tags.push('歌词动效');
+  if (manifest.capabilities?.lyrics) tags.push('歌词解析');
+  if (manifest.capabilities?.audioSource) tags.push('音源解析');
+  if (manifest.capabilities?.audioSpectrum) tags.push('音频频谱');
+  if (manifest.capabilities?.kugouApi) tags.push('酷狗 API');
+  if (manifest.capabilities?.localFiles) tags.push('本地文件');
+  if (manifest.capabilities?.process) tags.push('本地进程');
+  if (manifest.contributes?.windows?.length) tags.push('插件浮窗');
+  return tags;
+};
+
 const formatFailureTime = (createdAt: number) =>
   createdAt > 0 ? new Date(createdAt).toLocaleString() : '本次扫描';
 
@@ -1024,6 +1040,18 @@ const requestOpenPluginSettings = (record: (typeof records.value)[number]) => {
                 </p>
 
                 <div
+                  v-if="getPluginFeatureTags(record.descriptor.manifest).length"
+                  class="plugin-feature-tags"
+                >
+                  <span
+                    v-for="tag in getPluginFeatureTags(record.descriptor.manifest).slice(0, 5)"
+                    :key="tag"
+                  >
+                    {{ tag }}
+                  </span>
+                </div>
+
+                <div
                   v-if="getPluginCompatibilityMessage(record)"
                   class="plugin-card-error is-warning"
                 >
@@ -1107,15 +1135,6 @@ const requestOpenPluginSettings = (record: (typeof records.value)[number]) => {
               class="marketplace-source-select"
               :options="sourceSelectOptions"
             />
-            <Button
-              variant="outline"
-              size="xs"
-              class="marketplace-source-btn"
-              @click="openSourceDialog"
-            >
-              <Icon :icon="iconCloud" width="14" height="14" />
-              插件源
-            </Button>
           </div>
 
           <div v-if="marketplaceSourceErrors.length > 0" class="marketplace-source-errors">
@@ -1213,6 +1232,12 @@ const requestOpenPluginSettings = (record: (typeof records.value)[number]) => {
               <div class="marketplace-tags">
                 <span>{{ plugin.sourceName }}</span>
                 <span v-for="tag in plugin.tags.slice(0, 3)" :key="tag">{{ tag }}</span>
+              </div>
+
+              <div v-if="getPluginFeatureTags(plugin.manifest).length" class="plugin-feature-tags">
+                <span v-for="tag in getPluginFeatureTags(plugin.manifest).slice(0, 5)" :key="tag">
+                  {{ tag }}
+                </span>
               </div>
 
               <div class="plugin-card-id" :title="plugin.id">ID: {{ plugin.id }}</div>
@@ -1631,10 +1656,6 @@ const requestOpenPluginSettings = (record: (typeof records.value)[number]) => {
   min-width: 14rem;
 }
 
-:deep(.marketplace-source-btn) {
-  gap: 0.375rem;
-}
-
 .marketplace-source-errors {
   display: flex;
   align-items: center;
@@ -1892,7 +1913,8 @@ const requestOpenPluginSettings = (record: (typeof records.value)[number]) => {
   min-height: 236px;
 }
 
-.marketplace-tags {
+.marketplace-tags,
+.plugin-feature-tags {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
@@ -1900,7 +1922,8 @@ const requestOpenPluginSettings = (record: (typeof records.value)[number]) => {
   min-height: 1.5rem;
 }
 
-.marketplace-tags span {
+.marketplace-tags span,
+.plugin-feature-tags span {
   max-width: 9rem;
   height: 1.5rem;
   display: inline-flex;
@@ -1914,6 +1937,11 @@ const requestOpenPluginSettings = (record: (typeof records.value)[number]) => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.plugin-feature-tags span {
+  background: color-mix(in srgb, var(--color-primary) 10%, var(--control-muted-bg));
+  color: color-mix(in srgb, var(--color-primary) 78%, var(--color-text-main));
 }
 
 .marketplace-install-btn {
@@ -2255,8 +2283,7 @@ const requestOpenPluginSettings = (record: (typeof records.value)[number]) => {
   }
 
   :deep(.marketplace-search),
-  :deep(.marketplace-source-select),
-  :deep(.marketplace-source-btn) {
+  :deep(.marketplace-source-select) {
     width: 100%;
     min-width: 0;
   }

@@ -14,7 +14,13 @@ import { createAudioManager } from './player/audio';
 import { createResolver } from './player/resolver';
 import { createHistoryManager } from './player/history';
 import { createDeviceManager } from './player/device';
-import { buildMediaState, findTrackById, resolvePlaybackNotice } from './player/utils';
+import {
+  buildMediaMeta,
+  buildMediaState,
+  findTrackById,
+  resolvePlaybackNotice,
+} from './player/utils';
+import { toRawSong } from './playlist/helpers';
 
 const engine = new PlayerEngine();
 
@@ -245,7 +251,61 @@ export const usePlayerStore = defineStore(
       toastStore.warning('空间音效加载失败，已自动关闭', 4200);
     };
 
+    const restorePlaybackSessionFromQueue = () => {
+      const activeQueue = playlistStore.activeQueue;
+      const activeSongs = activeQueue?.songs ?? [];
+      const queueTrackId = String(activeQueue?.currentTrackId ?? '');
+      const persistedTrackId = String(state.currentTrackId ?? '');
+      const targetTrackId = queueTrackId || persistedTrackId;
+      const targetTrack = targetTrackId
+        ? activeSongs.find((song) => String(song.id) === targetTrackId)
+        : undefined;
+
+      state.isPlaying = false;
+      state.isLoading = false;
+      state.currentTime = 0;
+      state.currentAudioUrl = '';
+      state.currentResolvedAudioQuality = null;
+      state.currentResolvedAudioEffect = 'none';
+      state.currentAudioQualityOverride = null;
+      state.historyUploadCommitted = false;
+      state.historyUploadTrackId = null;
+
+      if (!targetTrack || !targetTrackId) {
+        if (queueTrackId && activeQueue) {
+          playlistStore.updateQueueCurrentTrack(null, activeQueue.id);
+        }
+        state.currentTrackId = null;
+        state.currentSourceQueueId = null;
+        state.currentPlaylist = null;
+        state.currentTrackSnapshot = null;
+        state.duration = 0;
+        state.lastError = null;
+        clearPlaybackNotice();
+        engine.updateMediaPlaybackState(buildMediaState(state));
+        return;
+      }
+
+      state.currentTrackId = targetTrackId;
+      state.currentSourceQueueId = activeQueue?.id ?? playlistStore.activeQueueId ?? null;
+      state.currentPlaylist = activeSongs.length > 0 ? activeSongs : null;
+      state.currentTrackSnapshot = toRawSong(targetTrack);
+      state.duration = targetTrack.duration || 0;
+      state.lastError = null;
+      clearPlaybackNotice();
+
+      const mediaMeta = buildMediaMeta(targetTrack);
+      if (mediaMeta) {
+        engine.updateMediaMetadata({
+          ...mediaMeta,
+          durationMs: (targetTrack.duration || 0) * 1000,
+        });
+      }
+      engine.updateMediaPlaybackState(buildMediaState(state));
+    };
+
     const init = () => {
+      restorePlaybackSessionFromQueue();
       engine.setVolume(state.volume);
       engine.setPlaybackRate(state.playbackRate);
       engine.setEqualizer(state.equalizerGains);

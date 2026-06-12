@@ -35,6 +35,8 @@ const contentProps = computed(() => ({
   ref: (el: HTMLElement | null) => {
     scrollContainerEl.value = el;
   },
+  'data-echo-scroll-container': 'true',
+  'data-echo-scroll-role': 'page',
 }));
 
 // 实时追踪滚动位置（DOM 移到离屏容器时 scrollTop 会被重置，所以不能在 onDeactivated 时读取）

@@ -11,6 +11,7 @@ import {
 } from './coverFallback';
 import { removeAudioSourceResolversByPlugin } from './audioSource';
 import { removeLyricResolversByPlugin } from './lyrics';
+import { removeLyricEffectsByPlugin } from './lyricEffects';
 
 export type PluginIcon = string | IconifyIcon | Record<string, unknown>;
 
@@ -168,6 +169,7 @@ export const removePluginContributions = (pluginId: string) => {
   removeCoverFallbackResolversByPlugin(pluginId);
   removeAudioSourceResolversByPlugin(pluginId);
   removeLyricResolversByPlugin(pluginId);
+  removeLyricEffectsByPlugin(pluginId);
 };
 
 export const createPluginUiApi = (

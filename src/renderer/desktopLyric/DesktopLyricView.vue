@@ -37,6 +37,7 @@ interface RenderLine {
 // ── 状态 ──
 
 const snapshot = ref<DesktopLyricSnapshot | null>(null);
+const isWayland = window.electron?.isWayland ?? false;
 let disposeSnapshotListener: (() => void) | null = null;
 
 // 锚点时间（毫秒）与锚点帧时间，用于插值推进
@@ -476,6 +477,7 @@ const dragState = reactive({
 const isResizing = ref(false);
 
 const onDocPointerDown = async (event: PointerEvent) => {
+  if (isWayland) return;
   if (isLocked.value || event.button !== 0) return;
   const target = event.target as HTMLElement | null;
   if (target?.closest('.menu-btn')) return;
@@ -760,6 +762,7 @@ onBeforeUnmount(() => {
         hovered: isHovered,
         dragging: dragState.isDragging,
         resizing: isResizing,
+        'is-wayland': isWayland,
       },
     ]"
   >
@@ -1016,7 +1019,8 @@ onBeforeUnmount(() => {
 
 .desktop-lyric.hovered:not(.locked) .tran-group,
 .desktop-lyric.dragging:not(.locked) .tran-group,
-.desktop-lyric.resizing:not(.locked) .tran-group {
+.desktop-lyric.resizing:not(.locked) .tran-group,
+.desktop-lyric.is-wayland:hover:not(.locked) .tran-group {
   opacity: 1;
   background: rgba(255, 255, 255, 0.1);
 }
@@ -1072,6 +1076,15 @@ onBeforeUnmount(() => {
   padding: 0 8px;
   cursor: move;
   position: relative;
+}
+
+.desktop-lyric.is-wayland:not(.locked) .lyric-container {
+  -webkit-app-region: drag;
+}
+
+.desktop-lyric.is-wayland .header,
+.desktop-lyric.is-wayland .menu-btn {
+  -webkit-app-region: no-drag;
 }
 
 .lyric-line {
@@ -1191,8 +1204,13 @@ onBeforeUnmount(() => {
 .desktop-lyric.hovered:not(.locked) {
   background-color: rgba(0, 0, 0, 0.6);
 }
+.desktop-lyric.is-wayland:hover:not(.locked) {
+  background-color: rgba(0, 0, 0, 0.6);
+}
 .desktop-lyric.hovered:not(.locked) .song-name,
-.desktop-lyric.hovered:not(.locked) .menu-btn {
+.desktop-lyric.hovered:not(.locked) .menu-btn,
+.desktop-lyric.is-wayland:hover:not(.locked) .song-name,
+.desktop-lyric.is-wayland:hover:not(.locked) .menu-btn {
   opacity: 1;
 }
 

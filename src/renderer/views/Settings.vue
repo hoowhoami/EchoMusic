@@ -704,7 +704,11 @@ const findSectionElement = (id: string) => {
     <Scrollbar
       ref="scrollbarRef"
       class="flex-1 min-h-0 settings-content-scroll"
-      :content-props="{ class: 'settings-content-inner' }"
+      :content-props="{
+        class: 'settings-content-inner',
+        'data-echo-scroll-container': 'true',
+        'data-echo-scroll-role': 'settings',
+      }"
       @scroll="handleScroll"
     >
       <div ref="contentRef" class="settings-content">
@@ -727,17 +731,13 @@ const findSectionElement = (id: string) => {
             v-bind="section.props ?? {}"
           />
         </template>
-
-        <!-- 返回顶部按钮 -->
-        <button
-          class="settings-back-to-top"
-          :class="{ visible: showBackToTop }"
-          @click="scrollToTop"
-        >
-          <Icon :icon="iconArrowUp" width="18" height="18" />
-        </button>
       </div>
     </Scrollbar>
+
+    <!-- 返回顶部按钮 -->
+    <button class="settings-back-to-top" :class="{ visible: showBackToTop }" @click="scrollToTop">
+      <Icon :icon="iconArrowUp" width="18" height="18" />
+    </button>
 
     <!-- 弹窗组件 -->
     <Dialog
@@ -791,6 +791,7 @@ const findSectionElement = (id: string) => {
 @reference "@/style.css";
 
 .settings-page {
+  position: relative;
   background: transparent;
 }
 
@@ -1080,7 +1081,7 @@ const findSectionElement = (id: string) => {
 }
 
 .settings-back-to-top {
-  @apply fixed bottom-28 right-10 w-11 h-11 rounded-full backdrop-blur-sm border flex items-center justify-center text-text-secondary hover:text-primary hover:border-primary/60 transition-all duration-300 cursor-pointer shadow-lg shadow-black/5 z-50;
+  @apply absolute bottom-4 right-6 w-11 h-11 rounded-full backdrop-blur-sm border flex items-center justify-center text-text-secondary hover:text-primary hover:border-primary/60 transition-all duration-300 cursor-pointer shadow-lg shadow-black/5 z-50;
   background: var(--color-bg-elevated);
   border-color: var(--border-subtle);
   opacity: 0;

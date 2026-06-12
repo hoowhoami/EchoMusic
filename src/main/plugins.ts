@@ -7,8 +7,11 @@ import {
   mkdtempSync,
   readdirSync,
   readFileSync,
+  closeSync,
   realpathSync,
   rmSync,
+  openSync,
+  readSync,
   type Stats,
   statSync,
   writeFileSync,
@@ -33,8 +36,12 @@ import type {
   PluginImageFileEntry,
   PluginFileUrlResult,
   PluginFailureRecord,
+  PluginFileEntry,
+  PluginFileKind,
   PluginListImageFilesOptions,
   PluginListImageFilesResult,
+  PluginListFilesOptions,
+  PluginListFilesResult,
   PluginListResult,
   PluginLocalInstallItemResult,
   PluginLocalInstallOptions,
@@ -53,6 +60,10 @@ import type {
   PluginProcessLaunchOptions,
   PluginProcessLaunchResult,
   PluginProcessTerminateResult,
+  PluginReadFileBytesOptions,
+  PluginReadFileBytesResult,
+  PluginReadTextFileOptions,
+  PluginReadTextFileResult,
   PluginWindowDescriptor,
   PluginWindowManifest,
   PluginReportFailureResult,
@@ -74,7 +85,7 @@ const PLUGIN_MARKETPLACE_CACHE_KEY = 'plugins:marketplace:cache';
 const PLUGIN_PROCESS_CONSENTS_KEY = 'plugins:process-consents';
 const PLUGIN_MANIFEST_FILE = 'manifest.json';
 const PLUGIN_MARKETPLACE_INDEX_FILE = 'echo-plugins.json';
-const PLUGIN_MARKETPLACE_CACHE_VERSION = 2;
+const PLUGIN_MARKETPLACE_CACHE_VERSION = 3;
 const DEFAULT_PLUGIN_MARKETPLACE_SOURCE_URL = 'https://github.com/hoowhoami/EchoMusicPlugins';
 const DEFAULT_PLUGIN_MARKETPLACE_SOURCE_ID = 'github:hoowhoami/echomusicplugins';
 const PLUGIN_IMAGE_EXTENSIONS = new Set([
@@ -87,7 +98,33 @@ const PLUGIN_IMAGE_EXTENSIONS = new Set([
   '.svg',
   '.webp',
 ]);
+const PLUGIN_AUDIO_EXTENSIONS = new Set([
+  '.aac',
+  '.aif',
+  '.aiff',
+  '.alac',
+  '.ape',
+  '.dff',
+  '.dsf',
+  '.flac',
+  '.m4a',
+  '.mp3',
+  '.oga',
+  '.ogg',
+  '.opus',
+  '.wav',
+  '.webm',
+  '.wma',
+  '.wv',
+]);
+const PLUGIN_LYRIC_EXTENSIONS = new Set(['.krc', '.lrc', '.qrc', '.srt', '.ttml', '.txt']);
+const PLUGIN_PLAYLIST_EXTENSIONS = new Set(['.m3u', '.m3u8', '.pls']);
+const PLUGIN_CUE_EXTENSIONS = new Set(['.cue']);
 const MAX_PLUGIN_IMAGE_SCAN_LIMIT = 1000;
+const DEFAULT_PLUGIN_FILE_SCAN_LIMIT = 2000;
+const MAX_PLUGIN_FILE_SCAN_LIMIT = 10000;
+const DEFAULT_PLUGIN_READ_BYTES = 1024 * 1024;
+const MAX_PLUGIN_READ_BYTES = 4 * 1024 * 1024;
 const PLUGIN_WINDOW_MIN_WIDTH = 180;
 const PLUGIN_WINDOW_MIN_HEIGHT = 48;
 const PLUGIN_WINDOW_MAX_WIDTH = 1400;
@@ -140,6 +177,11 @@ type PluginMarketplaceCache = {
   schemaVersion?: number;
   plugins: PluginMarketplaceCatalogPlugin[];
   fetchedAt: number;
+};
+type PluginMarketplaceIndexPluginsResult = {
+  plugins: PluginMarketplaceCatalogPlugin[];
+  failedCount: number;
+  recoveredCount: number;
 };
 type PluginProcessConsent = {
   pluginId: string;
@@ -500,6 +542,20 @@ const isRemoteImageSource = (source: string) =>
 const isSupportedPluginImage = (source: string) =>
   isRemoteImageSource(source) || PLUGIN_IMAGE_EXTENSIONS.has(extname(source).toLowerCase());
 
+const appendUrlCacheKey = (source: string, cacheKey: string) => {
+  const target = String(source || '').trim();
+  const key = String(cacheKey || '').trim();
+  if (!target || !key || /^data:image\//i.test(target)) return target;
+
+  try {
+    const url = new URL(target);
+    url.searchParams.set('v', key);
+    return url.toString();
+  } catch {
+    return target;
+  }
+};
+
 const getManifestIconSource = (manifest: EchoPluginManifest) => {
   const icon = manifest.icon;
   if (typeof icon === 'string' && isSupportedPluginImage(icon.trim())) return icon.trim();
@@ -665,6 +721,12 @@ const validateManifestCapabilities = (manifest: EchoPluginManifest) => {
   if (capabilities.kugouApi !== undefined && typeof capabilities.kugouApi !== 'boolean') {
     return 'manifest.capabilities.kugouApi 必须是布尔值';
   }
+  if (capabilities.localFiles !== undefined && typeof capabilities.localFiles !== 'boolean') {
+    return 'manifest.capabilities.localFiles 必须是布尔值';
+  }
+  if (capabilities.lyricEffects !== undefined && typeof capabilities.lyricEffects !== 'boolean') {
+    return 'manifest.capabilities.lyricEffects 必须是布尔值';
+  }
   if (capabilities.lyrics !== undefined && typeof capabilities.lyrics !== 'boolean') {
     return 'manifest.capabilities.lyrics 必须是布尔值';
   }
@@ -734,6 +796,11 @@ const toDescriptor = (
   const iconSource = getManifestIconSource(manifest);
   const iconFile =
     iconSource && !isRemoteImageSource(iconSource) ? resolvePluginFile(directory, iconSource) : '';
+  const iconFileExists = Boolean(iconFile && existsSync(iconFile));
+  const iconVersion = String(manifest.version || '0.0.0');
+  const iconCacheKey = iconFileExists
+    ? `${iconVersion}-${Math.round(statSync(iconFile).mtimeMs)}`
+    : iconVersion;
   const validationError = validateManifest(manifest, manifestError);
   const compatibility = getEchoMusicCompatibility(manifest);
   const mainError = !validationError && mainFile && !existsSync(mainFile) ? '插件入口不存在' : '';
@@ -777,12 +844,11 @@ const toDescriptor = (
     manifestPath,
     mainFile,
     styleFile,
-    iconUrl:
-      iconFile && existsSync(iconFile)
-        ? pathToFileURL(iconFile).toString()
-        : isRemoteImageSource(iconSource)
-          ? iconSource
-          : '',
+    iconUrl: iconFileExists
+      ? appendUrlCacheKey(pathToFileURL(iconFile).toString(), iconCacheKey)
+      : isRemoteImageSource(iconSource)
+        ? appendUrlCacheKey(iconSource, iconCacheKey)
+        : '',
     windows,
     enabled: !invalid && compatibility.compatible && Boolean(enabledState[id]),
     invalid,
@@ -1039,6 +1105,22 @@ const normalizeMarketplaceTags = (value: unknown) => {
   );
 };
 
+const getMarketplaceRepositoryKey = (value: unknown) => {
+  const normalized = normalizeGithubRepositoryUrl(value);
+  return (
+    normalized?.id ??
+    String(value ?? '')
+      .trim()
+      .toLowerCase()
+  );
+};
+
+const getMarketplacePluginIdKey = (sourceId: string, pluginId: string) =>
+  `${sourceId}:id:${pluginId}`;
+
+const getMarketplacePluginPathKey = (sourceId: string, repo: unknown, packagePath: string) =>
+  `${sourceId}:path:${getMarketplaceRepositoryKey(repo)}:${normalizeMarketplacePackagePath(packagePath)}`;
+
 const getMarketplaceEntryRepository = (
   sourceRepo: GithubRepository,
   entry: PluginMarketplaceIndexEntry,
@@ -1104,7 +1186,10 @@ const normalizeMarketplaceIndexPlugin = async (
   const repo = String(rawEntry.repo || '').trim() || source.url;
   const homepage = String(rawEntry.homepage || '').trim() || repo;
   const icon = getManifestIconSource(manifest);
-  const iconUrl = resolveMarketplaceAssetUrl(pluginRepo, packagePath, icon);
+  const iconUrl = appendUrlCacheKey(
+    resolveMarketplaceAssetUrl(pluginRepo, packagePath, icon),
+    `${pluginId}-${version}`,
+  );
 
   return {
     id: pluginId,
@@ -1136,19 +1221,82 @@ const normalizeMarketplaceIndexPlugins = async (
   source: PluginMarketplaceSource,
   index: PluginMarketplaceIndex,
   githubProxyUrl?: string,
-) => {
+  previousPlugins: PluginMarketplaceCatalogPlugin[] = [],
+): Promise<PluginMarketplaceIndexPluginsResult> => {
   const sourceRepo = parseGithubRepository(source.url);
-  if (!sourceRepo || !Array.isArray(index.plugins)) return [];
+  if (!sourceRepo || !Array.isArray(index.plugins)) {
+    return { plugins: [], failedCount: 0, recoveredCount: 0 };
+  }
+
+  const cachedById = new Map<string, PluginMarketplaceCatalogPlugin>();
+  const cachedByPath = new Map<string, PluginMarketplaceCatalogPlugin>();
+  for (const plugin of previousPlugins) {
+    if (plugin.sourceId !== source.id) continue;
+    cachedById.set(getMarketplacePluginIdKey(plugin.sourceId, plugin.id), plugin);
+    cachedByPath.set(
+      getMarketplacePluginPathKey(
+        plugin.sourceId,
+        plugin.repo || plugin.sourceUrl,
+        plugin.packagePath,
+      ),
+      plugin,
+    );
+  }
+
+  const entryCacheKeys = index.plugins.map((entry) => {
+    const packagePath = normalizeMarketplacePackagePath(entry?.packagePath ?? entry?.path);
+    const expectedPluginId = normalizePluginId(entry?.id);
+    const pluginRepo = getMarketplaceEntryRepository(sourceRepo, entry);
+    return {
+      idKey: expectedPluginId ? getMarketplacePluginIdKey(source.id, expectedPluginId) : '',
+      pathKey: isSafeMarketplacePackagePath(packagePath)
+        ? getMarketplacePluginPathKey(source.id, toGithubRepositoryUrl(pluginRepo), packagePath)
+        : '',
+    };
+  });
 
   const settled = await Promise.allSettled(
     index.plugins.map((entry) =>
       normalizeMarketplaceIndexPlugin(source, sourceRepo, entry, githubProxyUrl),
     ),
   );
+  const plugins: PluginMarketplaceCatalogPlugin[] = [];
+  let failedCount = 0;
+  let recoveredCount = 0;
 
-  return settled
-    .map((result) => (result.status === 'fulfilled' ? result.value : null))
-    .filter(Boolean) as PluginMarketplaceCatalogPlugin[];
+  settled.forEach((result, index) => {
+    if (result.status === 'fulfilled') {
+      if (result.value) plugins.push(result.value);
+      return;
+    }
+
+    failedCount += 1;
+    const keys = entryCacheKeys[index];
+    const cached =
+      (keys.idKey && cachedById.get(keys.idKey)) ||
+      (keys.pathKey && cachedByPath.get(keys.pathKey)) ||
+      null;
+    if (!cached) return;
+
+    recoveredCount += 1;
+    plugins.push({
+      ...cached,
+      sourceName: source.name,
+      sourceUrl: source.url,
+    });
+  });
+
+  const dedupedPlugins = new Map<string, PluginMarketplaceCatalogPlugin>();
+  for (const plugin of plugins) {
+    const key = getMarketplacePluginIdKey(plugin.sourceId, plugin.id);
+    if (!dedupedPlugins.has(key)) dedupedPlugins.set(key, plugin);
+  }
+
+  return {
+    plugins: Array.from(dedupedPlugins.values()),
+    failedCount,
+    recoveredCount,
+  };
 };
 
 const fetchMarketplaceText = async (url: string, githubProxyUrl?: string) => {
@@ -1165,19 +1313,31 @@ const fetchMarketplaceText = async (url: string, githubProxyUrl?: string) => {
   return response.text();
 };
 
-const fetchMarketplaceIndex = async (source: PluginMarketplaceSource, githubProxyUrl?: string) => {
+const fetchMarketplaceIndex = async (
+  source: PluginMarketplaceSource,
+  githubProxyUrl?: string,
+  previousPlugins: PluginMarketplaceCatalogPlugin[] = [],
+) => {
   const sourceRepo = parseGithubRepository(source.url);
   if (!sourceRepo) throw new Error('仅支持 GitHub 仓库地址');
   const indexUrl = toRawGithubUrl(sourceRepo, PLUGIN_MARKETPLACE_INDEX_FILE);
   const raw = await fetchMarketplaceText(indexUrl, githubProxyUrl);
   const index = JSON.parse(raw) as PluginMarketplaceIndex;
-  const plugins = await normalizeMarketplaceIndexPlugins(source, index, githubProxyUrl);
+  const result = await normalizeMarketplaceIndexPlugins(
+    source,
+    index,
+    githubProxyUrl,
+    previousPlugins,
+  );
+  const plugins = result.plugins;
   if (plugins.length === 0) {
     throw new Error(`${PLUGIN_MARKETPLACE_INDEX_FILE} 未提供可用插件`);
   }
   return {
     index,
     plugins,
+    failedCount: result.failedCount,
+    recoveredCount: result.recoveredCount,
     indexUrl: toGithubBlobUrl(sourceRepo, PLUGIN_MARKETPLACE_INDEX_FILE),
   };
 };
@@ -1185,9 +1345,10 @@ const fetchMarketplaceIndex = async (source: PluginMarketplaceSource, githubProx
 const fetchMarketplaceSourceCatalog = async (
   source: PluginMarketplaceSource,
   githubProxyUrl?: string,
+  previousPlugins: PluginMarketplaceCatalogPlugin[] = [],
 ) => {
   try {
-    const result = await fetchMarketplaceIndex(source, githubProxyUrl);
+    const result = await fetchMarketplaceIndex(source, githubProxyUrl, previousPlugins);
     const now = Date.now();
     const sourceRepo = parseGithubRepository(source.url);
     const inferredName =
@@ -1207,7 +1368,10 @@ const fetchMarketplaceSourceCatalog = async (
         pluginCount: result.plugins.length,
         lastFetchedAt: now,
         updatedAt: now,
-        lastError: '',
+        lastError:
+          result.failedCount > 0
+            ? `部分插件刷新失败，已使用缓存 ${result.recoveredCount}/${result.failedCount}`
+            : '',
       },
       plugins: result.plugins.map((plugin) => ({
         ...plugin,
@@ -1221,7 +1385,13 @@ const fetchMarketplaceSourceCatalog = async (
         lastError: error instanceof Error ? error.message : '插件源刷新失败',
         updatedAt: Date.now(),
       },
-      plugins: [] as PluginMarketplaceCatalogPlugin[],
+      plugins: previousPlugins
+        .filter((plugin) => plugin.sourceId === source.id)
+        .map((plugin) => ({
+          ...plugin,
+          sourceName: source.name,
+          sourceUrl: source.url,
+        })),
     };
   }
 };
@@ -1266,10 +1436,13 @@ const hydrateMarketplacePlugins = (
 const refreshMarketplaceCatalog = async (
   sources: PluginMarketplaceSource[],
   githubProxyUrl?: string,
+  previousPlugins: PluginMarketplaceCatalogPlugin[] = [],
 ) => {
   const enabledSources = sources.filter((source) => source.enabled);
   const fetched = await Promise.all(
-    enabledSources.map((source) => fetchMarketplaceSourceCatalog(source, githubProxyUrl)),
+    enabledSources.map((source) =>
+      fetchMarketplaceSourceCatalog(source, githubProxyUrl, previousPlugins),
+    ),
   );
   const sourceById = new Map(sources.map((source) => [source.id, source]));
   const plugins: PluginMarketplaceCatalogPlugin[] = [];
@@ -1378,7 +1551,11 @@ export const listPluginMarketplace = async (
   let nextSources = sources;
 
   if (options.refresh || (enabledSources.length > 0 && cache.plugins.length === 0)) {
-    const refreshed = await refreshMarketplaceCatalog(sources, options.githubProxyUrl);
+    const refreshed = await refreshMarketplaceCatalog(
+      sources,
+      options.githubProxyUrl,
+      cache.plugins,
+    );
     nextSources = refreshed.sources;
     cache = refreshed.cache;
   }
@@ -2187,6 +2364,165 @@ const normalizeImageScanLimit = (limit: unknown) => {
   return Math.min(Math.floor(value), MAX_PLUGIN_IMAGE_SCAN_LIMIT);
 };
 
+const normalizeFileScanLimit = (limit: unknown) => {
+  const value = Number(limit);
+  if (!Number.isFinite(value) || value <= 0) return DEFAULT_PLUGIN_FILE_SCAN_LIMIT;
+  return Math.min(Math.floor(value), MAX_PLUGIN_FILE_SCAN_LIMIT);
+};
+
+const normalizeFileScanDepth = (depth: unknown) => {
+  const value = Number(depth);
+  if (!Number.isFinite(value) || value < 0) return 32;
+  return Math.min(Math.floor(value), 64);
+};
+
+const normalizePluginFileExtension = (value: unknown) => {
+  const text = String(value ?? '')
+    .trim()
+    .toLowerCase();
+  if (!text) return '';
+  return text.startsWith('.') ? text : `.${text}`;
+};
+
+const normalizePluginFileExtensions = (extensions: unknown) => {
+  if (!Array.isArray(extensions)) return new Set<string>();
+  return new Set(
+    extensions
+      .map(normalizePluginFileExtension)
+      .filter((extension) => /^\.[a-z0-9]+$/i.test(extension)),
+  );
+};
+
+const getPluginFileKind = (extension: string): PluginFileKind => {
+  if (PLUGIN_AUDIO_EXTENSIONS.has(extension)) return 'audio';
+  if (PLUGIN_IMAGE_EXTENSIONS.has(extension)) return 'image';
+  if (PLUGIN_LYRIC_EXTENSIONS.has(extension)) return 'lyric';
+  if (PLUGIN_PLAYLIST_EXTENSIONS.has(extension)) return 'playlist';
+  if (PLUGIN_CUE_EXTENSIONS.has(extension)) return 'cue';
+  return 'other';
+};
+
+const normalizePluginFileKinds = (kinds: unknown) => {
+  const validKinds = new Set<PluginFileKind>([
+    'audio',
+    'image',
+    'lyric',
+    'playlist',
+    'cue',
+    'other',
+  ]);
+  if (!Array.isArray(kinds)) return new Set<PluginFileKind>();
+  return new Set(
+    kinds
+      .map((kind) => String(kind ?? '').trim())
+      .filter((kind): kind is PluginFileKind => validKinds.has(kind as PluginFileKind)),
+  );
+};
+
+const hasPluginLocalFilesAccess = (pluginId: string) => {
+  if (getPluginSafeMode()) return { ok: false as const, error: '插件安全模式已开启' };
+  const plugin = findPlugin(pluginId);
+  if (!plugin) return { ok: false as const, error: '插件不存在' };
+  if (plugin.invalid) return { ok: false as const, error: plugin.error || '插件无效' };
+  const compatibilityError = getPluginCompatibilityError(plugin);
+  if (compatibilityError) return { ok: false as const, error: compatibilityError };
+  if (!plugin.enabled) return { ok: false as const, error: '插件未启用' };
+  if (plugin.manifest.capabilities?.localFiles !== true) {
+    return { ok: false as const, error: '插件未声明本地文件能力' };
+  }
+  return { ok: true as const, plugin };
+};
+
+const getLocalFileStats = (filePath: string) => {
+  const input = String(filePath || '').trim();
+  if (!input) throw new Error('文件路径为空');
+  const resolvedPath = realpathSync(resolve(input));
+  const stats = statSync(resolvedPath);
+  if (!stats.isFile()) throw new Error('路径不是文件');
+  return { path: resolvedPath, stats };
+};
+
+const toPluginFileEntry = (root: string, filePath: string, stats: Stats): PluginFileEntry => {
+  const extension = extname(filePath).toLowerCase();
+  return {
+    name: basename(filePath),
+    path: filePath,
+    url: pathToFileURL(filePath).toString(),
+    size: stats.size,
+    modifiedAt: stats.mtimeMs,
+    kind: getPluginFileKind(extension),
+    extension,
+    relativePath: toPortableRelativePath(root, filePath),
+  };
+};
+
+export const listPluginFiles = (
+  pluginId: string,
+  directoryPath: string,
+  options: PluginListFilesOptions = {},
+): PluginListFilesResult => {
+  const access = hasPluginLocalFilesAccess(pluginId);
+  if (!access.ok) return { ok: false, error: access.error };
+
+  try {
+    const input = String(directoryPath || '').trim();
+    if (!input) return { ok: false, error: '文件夹路径为空' };
+    const root = realpathSync(resolve(input));
+    const rootStat = statSync(root);
+    if (!rootStat.isDirectory()) return { ok: false, error: '路径不是文件夹' };
+
+    const recursive = Boolean(options.recursive);
+    const includeHidden = Boolean(options.includeHidden);
+    const limit = normalizeFileScanLimit(options.limit);
+    const maxDepth = normalizeFileScanDepth(options.maxDepth);
+    const kinds = normalizePluginFileKinds(options.kinds);
+    const extensions = normalizePluginFileExtensions(options.extensions);
+    const files: PluginFileEntry[] = [];
+    const queue: Array<{ directory: string; depth: number }> = [{ directory: root, depth: 0 }];
+    let limitReached = false;
+
+    const shouldIncludeFile = (entry: PluginFileEntry) => {
+      if (extensions.size > 0) {
+        if (!extensions.has(entry.extension)) return false;
+        return kinds.size > 0 ? kinds.has(entry.kind) : true;
+      }
+      if (kinds.size > 0) return kinds.has(entry.kind);
+      return entry.kind !== 'other';
+    };
+
+    while (queue.length > 0 && files.length < limit) {
+      const current = queue.shift()!;
+      for (const entry of readdirSync(current.directory, { withFileTypes: true })) {
+        if (!includeHidden && entry.name.startsWith('.')) continue;
+        const fullPath = join(current.directory, entry.name);
+        if (entry.isDirectory()) {
+          if (recursive && current.depth < maxDepth) {
+            queue.push({ directory: fullPath, depth: current.depth + 1 });
+          }
+          continue;
+        }
+        if (!entry.isFile()) continue;
+        const stats = statSync(fullPath);
+        const item = toPluginFileEntry(root, fullPath, stats);
+        if (!shouldIncludeFile(item)) continue;
+        files.push(item);
+        if (files.length >= limit) {
+          limitReached = true;
+          break;
+        }
+      }
+    }
+
+    files.sort((left, right) => comparePluginText(left.relativePath, right.relativePath));
+    return { ok: true, root, files, limitReached };
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : '文件夹读取失败',
+    };
+  }
+};
+
 export const listPluginImageFiles = (
   directoryPath: string,
   options: PluginListImageFilesOptions = {},
@@ -2246,6 +2582,131 @@ export const getPluginFileUrl = (filePath: string): PluginFileUrlResult => {
     return {
       ok: false,
       error: error instanceof Error ? error.message : '文件地址解析失败',
+    };
+  }
+};
+
+const normalizePluginReadOffset = (value: unknown, size: number) => {
+  const offset = Math.trunc(Number(value) || 0);
+  return clamp(offset, 0, Math.max(0, size));
+};
+
+const normalizePluginReadLength = (
+  options: PluginReadTextFileOptions | PluginReadFileBytesOptions,
+  size: number,
+  offset: number,
+) => {
+  const maxBytes = clamp(
+    Math.trunc(Number(options.maxBytes) || DEFAULT_PLUGIN_READ_BYTES),
+    1,
+    MAX_PLUGIN_READ_BYTES,
+  );
+  const requestedLength =
+    options.length === undefined || options.length === null
+      ? maxBytes
+      : Math.trunc(Number(options.length) || 0);
+  return clamp(requestedLength, 0, Math.min(maxBytes, Math.max(0, size - offset)));
+};
+
+const readPluginFileChunk = (
+  filePath: string,
+  options: PluginReadTextFileOptions | PluginReadFileBytesOptions = {},
+) => {
+  const file = getLocalFileStats(filePath);
+  const offset = normalizePluginReadOffset(options.offset, file.stats.size);
+  const length = normalizePluginReadLength(options, file.stats.size, offset);
+  const buffer = Buffer.alloc(length);
+  let fd: number | null = null;
+  try {
+    fd = openSync(file.path, 'r');
+    const bytesRead = length > 0 ? readSync(fd, buffer, 0, length, offset) : 0;
+    return {
+      ...file,
+      buffer: buffer.subarray(0, bytesRead),
+      bytesRead,
+      truncated: offset + bytesRead < file.stats.size,
+    };
+  } finally {
+    if (fd !== null) closeSync(fd);
+  }
+};
+
+const normalizePluginTextEncoding = (encoding: PluginReadTextFileOptions['encoding']) => {
+  const normalized = String(encoding || 'utf8').toLowerCase();
+  if (normalized === 'utf-8') return 'utf8';
+  if (normalized === 'ucs-2') return 'ucs2';
+  if (
+    normalized === 'utf8' ||
+    normalized === 'utf16le' ||
+    normalized === 'ucs2' ||
+    normalized === 'latin1' ||
+    normalized === 'ascii'
+  ) {
+    return normalized;
+  }
+  return 'utf8';
+};
+
+export const readPluginTextFile = (
+  pluginId: string,
+  filePath: string,
+  options: PluginReadTextFileOptions = {},
+): PluginReadTextFileResult => {
+  const access = hasPluginLocalFilesAccess(pluginId);
+  if (!access.ok) return { ok: false, error: access.error };
+
+  try {
+    const chunk = readPluginFileChunk(filePath, options);
+    const entry = toPluginFileEntry(chunk.path, chunk.path, chunk.stats);
+    return {
+      ok: true,
+      name: entry.name,
+      path: entry.path,
+      url: entry.url,
+      size: entry.size,
+      modifiedAt: entry.modifiedAt,
+      content: chunk.buffer.toString(normalizePluginTextEncoding(options.encoding)),
+      bytesRead: chunk.bytesRead,
+      truncated: chunk.truncated,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : '文件读取失败',
+    };
+  }
+};
+
+export const readPluginFileBytes = (
+  pluginId: string,
+  filePath: string,
+  options: PluginReadFileBytesOptions = {},
+): PluginReadFileBytesResult => {
+  const access = hasPluginLocalFilesAccess(pluginId);
+  if (!access.ok) return { ok: false, error: access.error };
+
+  try {
+    const chunk = readPluginFileChunk(filePath, options);
+    const entry = toPluginFileEntry(chunk.path, chunk.path, chunk.stats);
+    const data = chunk.buffer.buffer.slice(
+      chunk.buffer.byteOffset,
+      chunk.buffer.byteOffset + chunk.bytesRead,
+    );
+    return {
+      ok: true,
+      name: entry.name,
+      path: entry.path,
+      url: entry.url,
+      size: entry.size,
+      modifiedAt: entry.modifiedAt,
+      data,
+      bytesRead: chunk.bytesRead,
+      truncated: chunk.truncated,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : '文件读取失败',
     };
   }
 };

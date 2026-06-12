@@ -28,7 +28,7 @@ importers:
         version: 3.4.9
       electron-audio-loopback:
         specifier: ^1.0.6
-        version: 1.0.6(electron@42.3.3)
+        version: 1.0.6(electron@42.4.0)
       electron-log:
         specifier: ^5.4.4
         version: 5.4.4
@@ -103,8 +103,8 @@ importers:
         specifier: ^10.5.0
         version: 10.5.0(postcss@8.5.15)
       electron:
-        specifier: 42.3.3
-        version: 42.3.3
+        specifier: 42.4.0
+        version: 42.4.0
       electron-builder:
         specifier: ^26.15.2
         version: 26.15.2(electron-builder-squirrel-windows@26.15.2)
@@ -166,6 +166,10 @@ packages:
   '@babel/types@7.29.7':
     resolution: {integrity: sha512-4zBIxpPzowiZpusoFkyGVwakdRJUyuH5PxQ/PrqghfdFWWasvnCdPfQXHrenDai+gyLARulZjZowCOj6fjT4pA==}
     engines: {node: '>=6.9.0'}
+
+  '@electron-internal/extract-zip@1.0.2':
+    resolution: {integrity: sha512-VJuNETNPEhrmQEZezeTZO5TZMV+dobBRyJ7zHjGJWIhMS7m7W1UeClt69u4hkUxv9ZZVxuli/E9Yvc4gDNHGsg==}
+    engines: {node: '>=22.12.0'}
 
   '@electron/asar@3.4.1':
     resolution: {integrity: sha512-i4/rNPRS84t0vSRa2HorerGRXWyF4vThfHesw0dmcWHp+cspK743UanA0suA5Q5y8kzY2y6YKrvbIUn69BCAiA==}
@@ -1354,8 +1358,8 @@ packages:
     resolution: {integrity: sha512-bO3y10YikuUwUuDUQRM4KfwNkKhnpVO7IPdbsrejwN9/AABJzzTQ4GeHwyzNSrVO+tEH3/Np255a3sVZpZDjvg==}
     engines: {node: '>=8.0.0'}
 
-  electron@42.3.3:
-    resolution: {integrity: sha512-0MwYp9wTb7TrtTalOYqeW+suqd9T/Znstr/nDLKqFGIjHdBZX339guo3mQqTPURRZ/UQmYM4uMpzKpI5wLptfQ==}
+  electron@42.4.0:
+    resolution: {integrity: sha512-OXXqh9LD9KxXPv2Fe25EfU9N9AvWTuV6V81sfhQaNvTAXCd9ONA+Q4OWvMe+CmYD6xIwjFxGGtG/ZphDYYC5OQ==}
     engines: {node: '>= 22.12.0'}
     hasBin: true
 
@@ -2678,6 +2682,8 @@ snapshots:
       '@babel/helper-string-parser': 7.29.7
       '@babel/helper-validator-identifier': 7.29.7
 
+  '@electron-internal/extract-zip@1.0.2': {}
+
   '@electron/asar@3.4.1':
     dependencies:
       commander: 5.1.0
@@ -3918,9 +3924,9 @@ snapshots:
     dependencies:
       jake: 10.9.4
 
-  electron-audio-loopback@1.0.6(electron@42.3.3):
+  electron-audio-loopback@1.0.6(electron@42.4.0):
     dependencies:
-      electron: 42.3.3
+      electron: 42.4.0
 
   electron-builder-squirrel-windows@26.15.2(dmg-builder@26.15.2):
     dependencies:
@@ -3990,11 +3996,11 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  electron@42.3.3:
+  electron@42.4.0:
     dependencies:
+      '@electron-internal/extract-zip': 1.0.2
       '@electron/get': 5.0.0
       '@types/node': 24.12.4
-      extract-zip: 2.0.1
     transitivePeerDependencies:
       - supports-color
 

@@ -39,6 +39,8 @@ import type {
   PluginDialogResult,
   PluginFileUrlResult,
   PluginFailureRecord,
+  PluginListFilesOptions,
+  PluginListFilesResult,
   PluginListImageFilesOptions,
   PluginListImageFilesResult,
   PluginListResult,
@@ -57,6 +59,10 @@ import type {
   PluginProcessLaunchOptions,
   PluginProcessLaunchResult,
   PluginProcessTerminateResult,
+  PluginReadFileBytesOptions,
+  PluginReadFileBytesResult,
+  PluginReadTextFileOptions,
+  PluginReadTextFileResult,
   PluginReportFailureResult,
   PluginSetEnabledResult,
   PluginSetSafeModeResult,
@@ -125,8 +131,19 @@ const sendWithPlainPayload = (channel: string, ...args: unknown[]) => {
   ipcRenderer.send(channel, ...args.map(toPlainIpcPayload));
 };
 
+const windowingBackend = process.env.ECHOMUSIC_WINDOWING_BACKEND?.toLowerCase();
+const isWayland =
+  process.platform === 'linux' &&
+  (windowingBackend === 'wayland' ||
+    (!windowingBackend &&
+      (process.env.OZONE_PLATFORM === 'wayland' ||
+        process.argv.some(
+          (arg) => arg === '--ozone-platform=wayland' || arg === '--ozone-platform-hint=wayland',
+        ))));
+
 contextBridge.exposeInMainWorld('electron', {
   platform: process.platform,
+  isWayland,
   ipcRenderer: {
     send: (channel: string, ...args: any[]) => sendWithPlainPayload(channel, ...args),
     invoke: (channel: string, ...args: any[]) => invokeWithPlainPayload(channel, ...args),
@@ -563,6 +580,13 @@ contextBridge.exposeInMainWorld('electron', {
         invokeWithPlainPayload<PluginDialogResult>('plugins:dialog:select-files', options),
     },
     fs: {
+      listFiles: (pluginId: string, directoryPath: string, options?: PluginListFilesOptions) =>
+        invokeWithPlainPayload<PluginListFilesResult>(
+          'plugins:fs:list-files',
+          pluginId,
+          directoryPath,
+          options,
+        ),
       listImageFiles: (directoryPath: string, options?: PluginListImageFilesOptions) =>
         invokeWithPlainPayload<PluginListImageFilesResult>(
           'plugins:fs:list-image-files',
@@ -571,6 +595,20 @@ contextBridge.exposeInMainWorld('electron', {
         ),
       getFileUrl: (filePath: string) =>
         ipcRenderer.invoke('plugins:fs:get-file-url', filePath) as Promise<PluginFileUrlResult>,
+      readTextFile: (pluginId: string, filePath: string, options?: PluginReadTextFileOptions) =>
+        invokeWithPlainPayload<PluginReadTextFileResult>(
+          'plugins:fs:read-text-file',
+          pluginId,
+          filePath,
+          options,
+        ),
+      readFileBytes: (pluginId: string, filePath: string, options?: PluginReadFileBytesOptions) =>
+        invokeWithPlainPayload<PluginReadFileBytesResult>(
+          'plugins:fs:read-file-bytes',
+          pluginId,
+          filePath,
+          options,
+        ),
     },
     process: {
       launch: (pluginId: string, options: PluginProcessLaunchOptions) =>

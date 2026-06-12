@@ -38,6 +38,7 @@ type PersonalFmStoreShape = {
   personalFmMode: PersonalFmMode;
   personalFmSongPoolId: PersonalFmSongPoolId;
   playbackQueues: PlaybackQueueState[];
+  persistQueueAppendToStorage: (queue: PlaybackQueueState, songs: Song[]) => void;
   removePersonalFmQueue: (options?: { preserveBuffer?: boolean }) => void;
   syncLegacyPlaybackState: () => void;
   ensurePersonalFmQueue: (options?: {
@@ -335,11 +336,12 @@ export const personalFmActions = {
       const [nextSong, ...rest] = this.personalFmBuffer;
       this.personalFmBuffer = toRawSongList(rest);
       if (!nextSong) break;
-      appendQueueSong(queue, nextSong);
+      const appended = appendQueueSong(queue, nextSong);
       queue.songCount = queue.songs.length;
       this.activeQueueId = queue.id;
       queue.updatedAt = Date.now();
       this.syncLegacyPlaybackState();
+      if (appended) this.persistQueueAppendToStorage(queue, [nextSong]);
       return nextSong;
     }
 

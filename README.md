@@ -181,7 +181,7 @@
 
 ## 插件系统
 
-EchoMusic 支持在线插件源浏览安装与本地插件扩展。插件可以提供高自由度的扩展能力。
+EchoMusic 支持在线插件源浏览安装与本地插件扩展。插件可以提供高自由度的扩展能力，包括自定义页面、音源解析、歌词解析、音频频谱、插件浮窗，以及由 `ctx.lyricEffects.register()` 提供的页面歌词动效扩展点。
 
 👉 **[插件开发文档](https://github.com/hoowhoami/EchoMusicPlugins)**
 

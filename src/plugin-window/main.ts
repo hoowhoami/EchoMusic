@@ -50,6 +50,22 @@ interface EchoPluginWindowContext {
     set: (key: string, value: unknown) => Promise<unknown>;
     delete: (key: string) => Promise<unknown>;
   };
+  fs: {
+    listFiles: (
+      directoryPath: string,
+      options?: Parameters<NonNullable<Window['electron']['plugins']>['fs']['listFiles']>[2],
+    ) => ReturnType<NonNullable<Window['electron']['plugins']>['fs']['listFiles']>;
+    listImageFiles: NonNullable<Window['electron']['plugins']>['fs']['listImageFiles'];
+    getFileUrl: NonNullable<Window['electron']['plugins']>['fs']['getFileUrl'];
+    readTextFile: (
+      filePath: string,
+      options?: Parameters<NonNullable<Window['electron']['plugins']>['fs']['readTextFile']>[2],
+    ) => ReturnType<NonNullable<Window['electron']['plugins']>['fs']['readTextFile']>;
+    readFileBytes: (
+      filePath: string,
+      options?: Parameters<NonNullable<Window['electron']['plugins']>['fs']['readFileBytes']>[2],
+    ) => ReturnType<NonNullable<Window['electron']['plugins']>['fs']['readFileBytes']>;
+  };
   process: {
     launch: (options: PluginProcessLaunchOptions) => Promise<PluginProcessLaunchResult>;
     terminate: (pid: number) => Promise<PluginProcessTerminateResult>;
@@ -168,6 +184,12 @@ const importWindowModule = async (descriptor: EchoPluginDescriptor, source: stri
   return (await import(/* @vite-ignore */ url)) as PluginWindowModule;
 };
 
+const requireAudioSpectrumCapability = (descriptor: EchoPluginDescriptor) => {
+  if (descriptor.manifest.capabilities?.audioSpectrum !== true) {
+    throw new Error('插件未声明音频频谱能力');
+  }
+};
+
 const buildContext = (
   descriptor: EchoPluginDescriptor,
   windowDescriptor: PluginWindowDescriptor,
@@ -184,21 +206,30 @@ const buildContext = (
   nowPlaying: window.electron.nowPlaying,
   audio: {
     spectrum: {
-      getStatus: () =>
-        window.electron.audioSpectrum?.getStatus() ??
-        Promise.resolve({
-          available: false,
-          running: false,
-          provider: 'unavailable' as const,
-          reason: '频谱 API 不可用',
-        }),
-      getSnapshot: () => window.electron.audioSpectrum?.getSnapshot() ?? Promise.resolve(null),
-      subscribe: (options, handler) =>
-        addDisposable(
+      getStatus: () => {
+        requireAudioSpectrumCapability(descriptor);
+        return (
+          window.electron.audioSpectrum?.getStatus() ??
+          Promise.resolve({
+            available: false,
+            running: false,
+            provider: 'unavailable' as const,
+            reason: '频谱 API 不可用',
+          })
+        );
+      },
+      getSnapshot: () => {
+        requireAudioSpectrumCapability(descriptor);
+        return window.electron.audioSpectrum?.getSnapshot() ?? Promise.resolve(null);
+      },
+      subscribe: (options, handler) => {
+        requireAudioSpectrumCapability(descriptor);
+        return addDisposable(
           window.electron.audioSpectrum?.subscribe(options, handler, {
             pluginId: descriptor.id,
           }) ?? (() => undefined),
-        ),
+        );
+      },
     },
   },
   storage: {
@@ -208,6 +239,23 @@ const buildContext = (
       window.electron.plugins?.storage.set(descriptor.id, key, value) ?? Promise.resolve(null),
     delete: (key: string) =>
       window.electron.plugins?.storage.delete(descriptor.id, key) ?? Promise.resolve(null),
+  },
+  fs: {
+    listFiles: (directoryPath, options) =>
+      window.electron.plugins?.fs.listFiles(descriptor.id, directoryPath, options) ??
+      Promise.resolve({ ok: false, error: '插件文件 API 不可用' }),
+    listImageFiles: (directoryPath, options) =>
+      window.electron.plugins?.fs.listImageFiles(directoryPath, options) ??
+      Promise.resolve({ ok: false, error: '插件文件 API 不可用' }),
+    getFileUrl: (filePath) =>
+      window.electron.plugins?.fs.getFileUrl(filePath) ??
+      Promise.resolve({ ok: false, error: '插件文件 API 不可用' }),
+    readTextFile: (filePath, options) =>
+      window.electron.plugins?.fs.readTextFile(descriptor.id, filePath, options) ??
+      Promise.resolve({ ok: false, error: '插件文件 API 不可用' }),
+    readFileBytes: (filePath, options) =>
+      window.electron.plugins?.fs.readFileBytes(descriptor.id, filePath, options) ??
+      Promise.resolve({ ok: false, error: '插件文件 API 不可用' }),
   },
   process: {
     launch: (options) =>

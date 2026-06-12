@@ -203,6 +203,9 @@ export const usePlaylistStore = defineStore('playlist', {
           lastNonFmQueueId: string;
         },
       );
+      if (this.playbackQueues.some((queue) => queue.id === PERSONAL_FM_QUEUE_ID)) {
+        this.removePersonalFmQueue();
+      }
     },
     persistQueueToStorage(queue: PlaybackQueueState) {
       if (!this.playbackStorageReady || !window.electron?.storage) return;

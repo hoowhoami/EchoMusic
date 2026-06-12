@@ -8,6 +8,12 @@ import { useLyricScroll } from './composables/useLyricScroll';
 import { useYrcAnimation } from './composables/useYrcAnimation';
 import { formatDuration } from '@/utils/format';
 import { iconPlay } from '@/icons';
+import {
+  getPluginLyricEffectClassNames,
+  getPluginLyricEffectSummary,
+  registerPluginLyricEffectHost,
+  type PluginLyricEffectSnapshot,
+} from '@/plugins/lyricEffects';
 
 interface Props {
   collapsed?: boolean;
@@ -21,8 +27,13 @@ const lyricStore = useLyricStore();
 const playerStore = usePlayerStore();
 const settingStore = useSettingStore();
 
+const lyricEffectRootRef = ref<HTMLElement | null>(null);
 const lyricListRef = ref<HTMLElement | null>(null);
+const lyricEffectOverlayRef = ref<HTMLElement | null>(null);
 const scrollTargetIndex = ref(-1);
+const reducedMotion = ref(false);
+let lyricEffectHostRegistration: ReturnType<typeof registerPluginLyricEffectHost> | null = null;
+let reducedMotionQuery: MediaQueryList | null = null;
 
 const collapsedRef = computed(() => props.collapsed);
 
@@ -134,17 +145,93 @@ const handleLyricWheel = () => {
 };
 
 const lyricEntries = computed(() =>
-  lyricStore.lines.map((line, index) => ({
-    line,
-    index,
-  })),
+  lyricStore.lines.map((line, index) => {
+    const distance = currentIndex.value >= 0 ? index - currentIndex.value : 0;
+    const scrollDistance = scrollIndex.value >= 0 ? index - scrollIndex.value : distance;
+    return {
+      line,
+      index,
+      distance,
+      absDistance: Math.abs(distance),
+      scrollDistance,
+      filtered: isLineFilteredForPage(line),
+    };
+  }),
 );
+
+const lyricEffectClassName = computed(() => getPluginLyricEffectClassNames('page').join(' '));
+const lyricEffectSummary = computed(() => getPluginLyricEffectSummary('page'));
+
+const getLineStartMs = (line: (typeof lyricStore.lines)[number]) =>
+  line.characters?.[0]?.startTime ?? Math.round((Number(line.time) || 0) * 1000);
+
+const buildLyricEffectSnapshot = (): PluginLyricEffectSnapshot => {
+  const index = currentIndex.value;
+  return {
+    scope: 'page',
+    lines: lyricStore.lines,
+    currentIndex: index,
+    scrollIndex: scrollIndex.value,
+    currentLine: index >= 0 ? (lyricStore.lines[index] ?? null) : null,
+    currentTime: playerStore.currentTime,
+    duration: playerStore.duration,
+    playbackRate: playerStore.playbackRate,
+    isPlaying: playerStore.isPlaying,
+    timelineMs: getLyricTimelineMs(0),
+    lyricOffsetMs: lyricStore.currentTimeOffset,
+    lyricsMode: lyricStore.lyricsMode,
+    collapsed: props.collapsed,
+    hasLyrics: hasLyrics.value,
+    reducedMotion: reducedMotion.value,
+  };
+};
+
+const syncLyricEffectRootState = () => {
+  const root = lyricEffectRootRef.value;
+  if (!root) return;
+  root.style.setProperty('--echo-lyric-current-index', String(currentIndex.value));
+  root.style.setProperty('--echo-lyric-scroll-index', String(scrollIndex.value));
+  root.style.setProperty('--echo-lyric-timeline-ms', String(Math.round(getLyricTimelineMs(0))));
+  root.style.setProperty('--echo-lyric-current-time', String(playerStore.currentTime || 0));
+  root.style.setProperty('--echo-lyric-playback-rate', String(playerStore.playbackRate || 1));
+  root.dataset.echoLyricPlaying = playerStore.isPlaying ? 'true' : 'false';
+  root.dataset.echoLyricCollapsed = props.collapsed ? 'true' : 'false';
+  root.dataset.echoLyricReducedMotion = reducedMotion.value ? 'true' : 'false';
+};
+
+const notifyLyricEffectHost = () => {
+  syncLyricEffectRootState();
+  lyricEffectHostRegistration?.notify();
+};
+
+const setupLyricEffectHost = () => {
+  if (lyricEffectHostRegistration) return;
+  const root = lyricEffectRootRef.value;
+  const scroller = lyricListRef.value;
+  const overlay = lyricEffectOverlayRef.value;
+  if (!root || !scroller || !overlay) return;
+
+  lyricEffectHostRegistration = registerPluginLyricEffectHost({
+    scope: 'page',
+    root,
+    scroller,
+    overlay,
+    getSnapshot: buildLyricEffectSnapshot,
+  });
+  notifyLyricEffectHost();
+};
+
+const updateReducedMotion = () => {
+  reducedMotion.value = Boolean(reducedMotionQuery?.matches);
+  notifyLyricEffectHost();
+};
 
 const refreshLyricIndexes = () => {
   lyricStore.updateCurrentIndex(getNowMs() / 1000);
   scrollTargetIndex.value = lyricStore.findIndexAtTimeMs(
     getLyricTimelineMs(LYRIC_SCROLL_LOOKAHEAD_MS),
   );
+  notifyLyricEffectHost();
 };
 
 // 逐字歌词 RAF 更新
@@ -195,15 +282,25 @@ watch(
 );
 
 onMounted(() => {
+  reducedMotionQuery = window.matchMedia?.('(prefers-reduced-motion: reduce)') ?? null;
+  updateReducedMotion();
+  reducedMotionQuery?.addEventListener?.('change', updateReducedMotion);
   syncSeekAnchor();
   refreshLyricIndexes();
   if (playerStore.isPlaying) startRaf();
-  nextTick(() => scrollToLine(scrollIndex.value, false));
+  nextTick(() => {
+    setupLyricEffectHost();
+    scrollToLine(scrollIndex.value, false);
+  });
 });
 
 onUnmounted(() => {
   stopRaf();
   dispose();
+  lyricEffectHostRegistration?.dispose();
+  lyricEffectHostRegistration = null;
+  reducedMotionQuery?.removeEventListener?.('change', updateReducedMotion);
+  reducedMotionQuery = null;
 });
 
 // 收起/展开时重新定位（瞬间跳转，不用动画）
@@ -212,6 +309,7 @@ watch(
   (collapsed) => {
     nextTick(() => {
       scrollToLine(scrollIndex.value, false, collapsed);
+      notifyLyricEffectHost();
     });
   },
 );
@@ -221,6 +319,7 @@ watch(
   async () => {
     await nextTick();
     scrollToLine(scrollIndex.value, false);
+    notifyLyricEffectHost();
   },
 );
 
@@ -230,6 +329,7 @@ watch(
     refreshLyricIndexes();
     await nextTick();
     updateYrcDom();
+    notifyLyricEffectHost();
     scrollToLine(scrollIndex.value, false, props.collapsed);
   },
 );
@@ -240,18 +340,29 @@ watch(
     refreshLyricIndexes();
     await nextTick();
     updateYrcDom();
+    notifyLyricEffectHost();
     scrollToLine(scrollIndex.value, false, props.collapsed);
   },
 );
 </script>
 
 <template>
-  <div class="lyric-scroller-wrap">
+  <div
+    ref="lyricEffectRootRef"
+    class="lyric-scroller-wrap echo-lyric-effect-host"
+    :class="lyricEffectClassName"
+    data-echo-lyric-host="page"
+    :data-echo-lyric-effect-count="lyricEffectSummary.count"
+    :data-echo-lyric-effect-decorator="lyricEffectSummary.hasDecorator ? 'true' : 'false'"
+  >
     <div
       ref="lyricListRef"
       class="lyric-scroller"
       :class="{ 'is-collapsed': props.collapsed }"
       :style="{ fontFamily: lyricFontFamily }"
+      data-echo-lyric-scroller="page"
+      :data-echo-lyric-current-index="currentIndex"
+      :data-echo-lyric-scroll-index="scrollIndex"
       @wheel.passive="handleLyricWheel"
     >
       <template v-if="hasLyrics">
@@ -264,10 +375,22 @@ watch(
           <div
             v-for="entry in lyricEntries"
             :key="entry.line.time"
-            :hidden="isLineFilteredForPage(entry.line)"
+            :hidden="entry.filtered"
             class="lyric-row"
             :data-lyric-index="entry.index"
+            data-echo-lyric-row
+            :data-echo-lyric-index="entry.index"
+            :data-echo-lyric-current="currentIndex === entry.index ? 'true' : 'false'"
+            :data-echo-lyric-filtered="entry.filtered ? 'true' : 'false'"
+            :data-echo-lyric-distance="entry.distance"
+            :data-echo-lyric-abs-distance="entry.absDistance"
+            :data-echo-lyric-scroll-distance="entry.scrollDistance"
             :style="{
+              '--echo-lyric-index': String(entry.index),
+              '--echo-lyric-line-start-ms': String(getLineStartMs(entry.line)),
+              '--echo-lyric-distance': String(entry.distance),
+              '--echo-lyric-abs-distance': String(entry.absDistance),
+              '--echo-lyric-scroll-distance': String(entry.scrollDistance),
               paddingTop: props.collapsed ? '3px' : '16px',
               paddingBottom: props.collapsed ? '3px' : '16px',
               opacity: props.collapsed
@@ -284,11 +407,18 @@ watch(
                 currentIndex === entry.index ? 'is-current' : 'is-idle',
                 scrollHighlightIndex === entry.index ? 'is-scroll-highlight' : '',
               ]"
+              data-echo-lyric-line
+              :data-echo-lyric-index="entry.index"
+              :data-echo-lyric-current="currentIndex === entry.index ? 'true' : 'false'"
+              :data-echo-lyric-scroll-highlight="
+                scrollHighlightIndex === entry.index ? 'true' : 'false'
+              "
               @dblclick.prevent.stop="handleLineClick(entry.line.time)"
             >
               <!-- 主歌词 -->
               <span
                 class="block leading-[1.24] tracking-[0.01em]"
+                data-echo-lyric-primary
                 :style="{
                   fontSize: titleFontSize,
                   fontWeight: String(lyricStore.fontWeightValue),
@@ -301,6 +431,8 @@ watch(
                       v-for="(char, ci) in entry.line.characters"
                       :key="ci"
                       class="lyric-yrc-char"
+                      data-echo-lyric-char
+                      :data-echo-lyric-char-index="ci"
                       :style="{
                         backgroundImage: `linear-gradient(to right, ${effectivePlayedColor} 50%, ${effectiveUnplayedColor} 50%)`,
                       }"
@@ -327,6 +459,8 @@ watch(
                 <span
                   v-if="entry.line.romanized?.trim()"
                   class="lyric-subline mt-1 block max-w-full truncate"
+                  data-echo-lyric-secondary
+                  data-echo-lyric-secondary-kind="romanized"
                   :style="{
                     fontSize: secondaryFontSize,
                     fontWeight: String(
@@ -355,6 +489,9 @@ watch(
                         v-for="(char, ci) in entry.line.romanizedCharacters"
                         :key="ci"
                         class="lyric-yrc-sub-char"
+                        data-echo-lyric-char
+                        :data-echo-lyric-char-index="ci"
+                        data-echo-lyric-secondary-kind="romanized"
                         :style="{
                           backgroundImage: subYrcBgStyle,
                         }"
@@ -369,6 +506,8 @@ watch(
                 <span
                   v-if="entry.line.translated?.trim()"
                   class="lyric-subline mt-1 block max-w-full truncate"
+                  data-echo-lyric-secondary
+                  data-echo-lyric-secondary-kind="translated"
                   :style="{
                     fontSize: secondaryFontSize,
                     fontWeight: String(
@@ -397,6 +536,9 @@ watch(
                         v-for="(char, ci) in entry.line.translatedCharacters"
                         :key="ci"
                         class="lyric-yrc-sub-char"
+                        data-echo-lyric-char
+                        :data-echo-lyric-char-index="ci"
+                        data-echo-lyric-secondary-kind="translated"
                         :style="{
                           backgroundImage: subYrcBgStyle,
                         }"
@@ -413,6 +555,8 @@ watch(
                 <span
                   v-if="lyricStore.lineSecondaryText(entry.line)"
                   class="lyric-subline mt-1 block max-w-full truncate"
+                  data-echo-lyric-secondary
+                  :data-echo-lyric-secondary-kind="lyricStore.lyricsMode"
                   :style="{
                     fontSize: secondaryFontSize,
                     fontWeight: String(
@@ -442,6 +586,9 @@ watch(
                         v-for="(char, ci) in entry.line.romanizedCharacters"
                         :key="ci"
                         class="lyric-yrc-sub-char"
+                        data-echo-lyric-char
+                        :data-echo-lyric-char-index="ci"
+                        data-echo-lyric-secondary-kind="romanized"
                         :style="{
                           backgroundImage: subYrcBgStyle,
                         }"
@@ -464,6 +611,9 @@ watch(
                         v-for="(char, ci) in entry.line.translatedCharacters"
                         :key="ci"
                         class="lyric-yrc-sub-char"
+                        data-echo-lyric-char
+                        :data-echo-lyric-char-index="ci"
+                        data-echo-lyric-secondary-kind="translated"
                         :style="{
                           backgroundImage: subYrcBgStyle,
                         }"
@@ -487,6 +637,8 @@ watch(
             v-for="(line, index) in staticLyricLines"
             :key="`${line}-${index}`"
             class="static-lyric-row"
+            data-echo-lyric-static-row
+            :data-echo-lyric-index="index"
             :style="{
               color: effectiveUnplayedColor,
               fontSize: titleFontSize,
@@ -508,6 +660,13 @@ watch(
       </div>
     </div>
 
+    <div
+      ref="lyricEffectOverlayRef"
+      class="echo-lyric-effect-overlay"
+      data-echo-lyric-effect-overlay
+      aria-hidden="true"
+    ></div>
+
     <!-- 固定位置时间标签：滚轮停止后显示在右侧中心（在 scroller 外面，不被 mask 裁剪） -->
     <button
       v-if="scrollHighlightIndex >= 0 && hasLyrics"
@@ -527,6 +686,15 @@ watch(
   width: 100%;
 }
 
+.echo-lyric-effect-host {
+  isolation: isolate;
+  --echo-lyric-current-index: -1;
+  --echo-lyric-scroll-index: -1;
+  --echo-lyric-current-time: 0;
+  --echo-lyric-timeline-ms: 0;
+  --echo-lyric-playback-rate: 1;
+}
+
 .lyric-scroller {
   height: 100%;
   overflow-y: auto;
@@ -542,6 +710,7 @@ watch(
     black 90%,
     transparent 100%
   );
+  z-index: 1;
 }
 
 .lyric-scroller.is-collapsed {
@@ -551,6 +720,14 @@ watch(
 
 .lyric-scroller::-webkit-scrollbar {
   display: none;
+}
+
+.echo-lyric-effect-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  overflow: hidden;
+  pointer-events: none;
 }
 
 .lyric-row {

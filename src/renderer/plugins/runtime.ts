@@ -15,14 +15,23 @@ import type {
   PluginWindowShowOptions,
 } from '../../shared/plugins';
 import type { AudioSpectrumFrame, AudioSpectrumOptions } from '../../shared/audio-spectrum';
+import type {
+  NowPlayingAppearancePayload,
+  NowPlayingCommand,
+  NowPlayingLyricPayload,
+  NowPlayingSnapshot,
+} from '../../shared/now-playing';
 import * as icons from '@/icons';
+import type { Song } from '@/models/song';
 import { usePlayerStore } from '@/stores/player';
-import { usePlaylistStore } from '@/stores/playlist';
+import { usePlaylistStore, type SetPlaybackQueueOptions } from '@/stores/playlist';
 import { useLyricStore } from '@/stores/lyric';
 import { useSettingStore } from '@/stores/setting';
 import { useToastStore } from '@/stores/toast';
 import { useThemeStore } from '@/stores/theme';
+import type { AudioEffectValue, AudioQualityValue, PlayMode } from '@/types';
 import { logger } from '@/utils/logger';
+import { addSongToPlayNext, queueAndPlaySong, replaceQueueAndPlay } from '@/utils/playback';
 import {
   createPluginUiApi,
   executePluginCommand,
@@ -34,6 +43,7 @@ import {
   type PluginAudioSourceResolverContribution,
 } from './audioSource';
 import { registerPluginLyricResolver, type PluginLyricResolverContribution } from './lyrics';
+import { registerPluginLyricEffect, type PluginLyricEffectContribution } from './lyricEffects';
 import { createKugouApi, type PluginKugouApi } from './kugou';
 import type { Component } from 'vue';
 
@@ -97,6 +107,21 @@ export interface PluginThemeApi {
   };
 }
 
+export interface PluginScrollContainerState {
+  scrollTop: number;
+  scrollHeight: number;
+  clientHeight: number;
+  distanceToBottom: number;
+  canScroll: boolean;
+  atTop: boolean;
+  atBottom: boolean;
+}
+
+export interface PluginScrollContainerQueryOptions {
+  role?: string;
+  visible?: boolean;
+}
+
 export interface EchoPluginContext {
   id: string;
   manifest: EchoPluginManifest;
@@ -116,12 +141,13 @@ export interface EchoPluginContext {
   audio: ReturnType<typeof createAudioApi>;
   playlist: ReturnType<typeof createPlaylistApi>;
   lyric: ReturnType<typeof useLyricStore>;
-  lyrics: {
-    registerResolver: (contribution: PluginLyricResolverContribution) => () => void;
-  };
+  lyrics: ReturnType<typeof createLyricsApi>;
+  lyricEffects: ReturnType<typeof createLyricEffectsApi>;
   kugou: PluginKugouApi;
   settings: ReturnType<typeof useSettingStore>;
   theme: PluginThemeApi;
+  appearance: ReturnType<typeof createAppearanceApi>;
+  scroll: ReturnType<typeof createScrollApi>;
   nowPlaying: Window['electron']['nowPlaying'];
   windows: {
     show: (windowId: string, options?: PluginWindowShowOptions) => Promise<unknown>;
@@ -138,7 +164,7 @@ export interface EchoPluginContext {
     delete: (key: string) => Promise<unknown>;
   };
   dialog: NonNullable<Window['electron']['plugins']>['dialog'];
-  fs: NonNullable<Window['electron']['plugins']>['fs'];
+  fs: ReturnType<typeof createPluginFsApi>;
   process: {
     launch: (options: PluginProcessLaunchOptions) => Promise<PluginProcessLaunchResult>;
     terminate: (pid: number) => Promise<PluginProcessTerminateResult>;
@@ -593,27 +619,135 @@ const createThemeApi = (pluginId: string, addDisposable: (dispose: () => void) =
   };
 };
 
+export type PluginPlayTrackOptions = {
+  playlist?: Song[];
+  autoPlay?: boolean;
+  sourceQueueId?: string | null;
+};
+
+export type PluginPlaybackQueueOptions = SetPlaybackQueueOptions & {
+  filteredInvalidCount?: number;
+  requestedSong?: Song;
+};
+
+export type PluginLyricCommand = Extract<
+  NowPlayingCommand,
+  | 'toggleTranslation'
+  | 'toggleRomanization'
+  | 'lyricOffsetBackward'
+  | 'lyricOffsetForward'
+  | 'lyricOffsetReset'
+>;
+
+const clonePlaybackQueue = (queue: ReturnType<typeof usePlaylistStore>['activeQueue']) =>
+  queue
+    ? {
+        ...queue,
+        songs: queue.songs.slice(),
+        queuedNextTrackIds: queue.queuedNextTrackIds.slice(),
+        meta: { ...queue.meta },
+      }
+    : null;
+
+const createFallbackLyricSnapshot = (): NowPlayingLyricPayload => ({
+  trackId: null,
+  revision: 0,
+  lines: [],
+  currentIndex: -1,
+  timeOffset: 0,
+  wantTranslation: false,
+  wantRomanization: false,
+  hasTranslation: false,
+  hasRomanization: false,
+  mode: 'none',
+  tips: '暂无歌词',
+});
+
+const createFallbackAppearanceSnapshot = (): NowPlayingAppearancePayload => ({
+  isDark: document.documentElement.classList.contains('dark'),
+  accentColor: '#31cfa1',
+});
+
+const createFallbackNowPlayingSnapshot = (): NowPlayingSnapshot => ({
+  playback: null,
+  lyric: createFallbackLyricSnapshot(),
+  appearance: createFallbackAppearanceSnapshot(),
+  updatedAt: Date.now(),
+});
+
+const getNowPlayingSnapshot = () =>
+  window.electron.nowPlaying?.getSnapshot?.() ??
+  Promise.resolve(createFallbackNowPlayingSnapshot());
+
 const createPlayerApi = (
   descriptor: EchoPluginDescriptor,
   addDisposable: (dispose: () => void) => () => void,
 ) => {
   const player = usePlayerStore();
+  const playlist = usePlaylistStore();
   return {
     store: player,
     currentTrack: computed(() => player.currentTrackSnapshot),
+    currentTrackId: computed(() => player.currentTrackId),
+    currentTime: computed(() => player.currentTime),
+    duration: computed(() => player.duration),
     isPlaying: computed(() => player.isPlaying),
-    play: () => {
-      if (!player.isPlaying) void player.togglePlay();
+    playbackRate: computed(() => player.playbackRate),
+    volume: computed(() => player.volume),
+    playMode: computed(() => player.playMode),
+    audioQuality: computed(() => ({
+      effective: player.getEffectiveAudioQuality(),
+      resolved: player.currentResolvedAudioQuality,
+      override: player.currentAudioQualityOverride,
+    })),
+    audioEffect: computed(() => ({
+      current: player.audioEffect,
+      resolved: player.currentResolvedAudioEffect,
+    })),
+    play: (trackId?: string | number, options?: PluginPlayTrackOptions) => {
+      const resolvedTrackId = String(trackId ?? '').trim();
+      if (resolvedTrackId) {
+        return player.playTrack(resolvedTrackId, options?.playlist, {
+          autoPlay: options?.autoPlay,
+          sourceQueueId: options?.sourceQueueId,
+        });
+      }
+      if (!player.isPlaying) return player.togglePlay();
+      return undefined;
     },
     pause: () => {
       if (player.isPlaying) void player.togglePlay();
     },
     toggle: () => player.togglePlay(),
+    stop: () => player.stop(),
+    playTrack: (trackId: string | number, options?: PluginPlayTrackOptions) =>
+      player.playTrack(String(trackId), options?.playlist, {
+        autoPlay: options?.autoPlay,
+        sourceQueueId: options?.sourceQueueId,
+      }),
+    playSong: (song: Song, options?: SetPlaybackQueueOptions) =>
+      queueAndPlaySong(playlist, player, song, options),
+    playNext: (song: Song, options?: SetPlaybackQueueOptions) =>
+      addSongToPlayNext(playlist, player, song, options),
+    replaceQueueAndPlay: (songs: Song[], options: PluginPlaybackQueueOptions = {}) =>
+      replaceQueueAndPlay(
+        playlist,
+        player,
+        songs,
+        options.filteredInvalidCount,
+        options.requestedSong,
+        options,
+      ),
     next: () => player.next(),
     prev: () => player.prev(),
     seek: (time: number) => player.seek(time),
     setVolume: (volume: number) => player.setVolume(volume),
-    setPlayMode: player.setPlayMode,
+    setPlaybackRate: (rate: number) => player.setPlaybackRate(rate),
+    setPlayMode: (mode: PlayMode) => player.setPlayMode(mode),
+    setAudioQuality: (quality: AudioQualityValue | null, options?: { refresh?: boolean }) =>
+      player.setCurrentAudioQualityOverride(quality, options),
+    setAudioEffect: (effect: AudioEffectValue) => player.setAudioEffect(effect),
+    toggleLyricView: (open?: boolean) => player.toggleLyricView(open),
     audioSource: {
       register: (contribution: PluginAudioSourceResolverContribution) => {
         if (descriptor.manifest.capabilities?.audioSource !== true) {
@@ -629,28 +763,48 @@ const createPlayerApi = (
   };
 };
 
-const createAudioApi = (pluginId: string, addDisposable: (dispose: () => void) => () => void) => ({
-  spectrum: {
-    getStatus: () =>
-      window.electron.audioSpectrum?.getStatus() ??
-      Promise.resolve({
-        available: false,
-        running: false,
-        provider: 'unavailable' as const,
-        reason: '频谱 API 不可用',
-      }),
-    getSnapshot: () => window.electron.audioSpectrum?.getSnapshot() ?? Promise.resolve(null),
-    subscribe: (options: AudioSpectrumOptions, handler: (frame: AudioSpectrumFrame) => void) => {
-      const dispose =
-        window.electron.audioSpectrum?.subscribe(
-          options,
-          (frame) => runPluginCallback(pluginId, '音频频谱事件', () => handler(frame), undefined),
-          { pluginId },
-        ) ?? (() => undefined);
-      return addDisposable(dispose);
+const createAudioApi = (
+  descriptor: EchoPluginDescriptor,
+  addDisposable: (dispose: () => void) => () => void,
+) => {
+  const requireAudioSpectrumCapability = () => {
+    if (descriptor.manifest.capabilities?.audioSpectrum !== true) {
+      throw new Error('插件未声明音频频谱能力');
+    }
+  };
+
+  return {
+    spectrum: {
+      getStatus: () => {
+        requireAudioSpectrumCapability();
+        return (
+          window.electron.audioSpectrum?.getStatus() ??
+          Promise.resolve({
+            available: false,
+            running: false,
+            provider: 'unavailable' as const,
+            reason: '频谱 API 不可用',
+          })
+        );
+      },
+      getSnapshot: () => {
+        requireAudioSpectrumCapability();
+        return window.electron.audioSpectrum?.getSnapshot() ?? Promise.resolve(null);
+      },
+      subscribe: (options: AudioSpectrumOptions, handler: (frame: AudioSpectrumFrame) => void) => {
+        requireAudioSpectrumCapability();
+        const dispose =
+          window.electron.audioSpectrum?.subscribe(
+            options,
+            (frame) =>
+              runPluginCallback(descriptor.id, '音频频谱事件', () => handler(frame), undefined),
+            { pluginId: descriptor.id },
+          ) ?? (() => undefined);
+        return addDisposable(dispose);
+      },
     },
-  },
-});
+  };
+};
 
 const createLyricsApi = (
   descriptor: EchoPluginDescriptor,
@@ -666,17 +820,105 @@ const createLyricsApi = (
       }),
     );
   },
+  getSnapshot: async () => (await getNowPlayingSnapshot()).lyric,
+  onSnapshot: (handler: (lyric: NowPlayingLyricPayload, snapshot: NowPlayingSnapshot) => void) => {
+    const dispose =
+      window.electron.nowPlaying?.onSnapshot?.((snapshot) =>
+        runPluginCallback(
+          descriptor.id,
+          '歌词快照事件',
+          () => handler(snapshot.lyric, snapshot),
+          undefined,
+        ),
+      ) ?? (() => undefined);
+    return addDisposable(dispose);
+  },
+  command: (command: PluginLyricCommand) => window.electron.nowPlaying?.command?.(command),
+});
+
+const createLyricEffectsApi = (
+  descriptor: EchoPluginDescriptor,
+  addDisposable: (dispose: () => void) => () => void,
+) => ({
+  register: (contribution: PluginLyricEffectContribution) => {
+    if (descriptor.manifest.capabilities?.lyricEffects !== true) {
+      throw new Error('插件未声明歌词动效能力');
+    }
+    return addDisposable(
+      registerPluginLyricEffect(descriptor.id, contribution, (source, error) => {
+        void reportPluginRuntimeError(descriptor.id, error, source);
+      }),
+    );
+  },
+});
+
+const createAppearanceApi = (
+  pluginId: string,
+  addDisposable: (dispose: () => void) => () => void,
+) => ({
+  getSnapshot: async () => (await getNowPlayingSnapshot()).appearance,
+  onSnapshot: (
+    handler: (appearance: NowPlayingAppearancePayload, snapshot: NowPlayingSnapshot) => void,
+  ) => {
+    const dispose =
+      window.electron.nowPlaying?.onSnapshot?.((snapshot) =>
+        runPluginCallback(
+          pluginId,
+          '外观快照事件',
+          () => handler(snapshot.appearance, snapshot),
+          undefined,
+        ),
+      ) ?? (() => undefined);
+    return addDisposable(dispose);
+  },
 });
 
 const createPlaylistApi = () => {
   const playlist = usePlaylistStore();
+  const player = usePlayerStore();
   return {
     store: playlist,
-    setPlaybackQueue: playlist.setPlaybackQueue,
-    setPlaybackQueueWithOptions: playlist.setPlaybackQueueWithOptions,
-    appendToPlaybackQueue: playlist.appendToPlaybackQueue,
-    enqueuePlayNext: playlist.enqueuePlayNext,
-    getActiveQueue: () => playlist.activeQueue,
+    activeQueue: computed(() => clonePlaybackQueue(playlist.activeQueue)),
+    queues: computed(() => playlist.playbackQueueList.map(clonePlaybackQueue).filter(Boolean)),
+    getActiveQueue: () => clonePlaybackQueue(playlist.activeQueue),
+    getQueue: (queueId: string | number) => clonePlaybackQueue(playlist.getQueueById(queueId)),
+    getQueueSongs: (queueId?: string | number | null) =>
+      queueId === undefined || queueId === null
+        ? (playlist.activeQueue?.songs ?? playlist.defaultList).slice()
+        : playlist.getPlaybackQueueSongs(queueId),
+    setActiveQueue: (queueId: string | number) => playlist.setActiveQueue(queueId),
+    setPlaybackQueue: (songs: Song[], filteredInvalidCount = 0) =>
+      playlist.setPlaybackQueue(songs, filteredInvalidCount),
+    setPlaybackQueueWithOptions: (
+      songs: Song[],
+      filteredInvalidCount = 0,
+      options?: SetPlaybackQueueOptions,
+    ) => playlist.setPlaybackQueueWithOptions(songs, filteredInvalidCount, options),
+    replace: (songs: Song[], options: PluginPlaybackQueueOptions = {}) =>
+      playlist.setPlaybackQueueWithOptions(songs, options.filteredInvalidCount, options),
+    replaceAndPlay: (songs: Song[], options: PluginPlaybackQueueOptions = {}) =>
+      replaceQueueAndPlay(
+        playlist,
+        player,
+        songs,
+        options.filteredInvalidCount,
+        options.requestedSong,
+        options,
+      ),
+    append: (songs: Song[], options?: SetPlaybackQueueOptions) =>
+      playlist.appendToPlaybackQueue(songs, options),
+    appendToPlaybackQueue: (songs: Song[], options?: SetPlaybackQueueOptions) =>
+      playlist.appendToPlaybackQueue(songs, options),
+    playSong: (song: Song, options?: SetPlaybackQueueOptions) =>
+      queueAndPlaySong(playlist, player, song, options),
+    playNext: (song: Song, options?: SetPlaybackQueueOptions) =>
+      addSongToPlayNext(playlist, player, song, options),
+    enqueuePlayNext: (songId: string | number) => playlist.enqueuePlayNext(songId),
+    clear: (queueId?: string | number) => playlist.clearPlaybackQueue(queueId),
+    remove: (songId: string | number, queueId?: string | number) =>
+      playlist.removeFromQueue(songId, queueId),
+    reorder: (fromIndex: number, toIndex: number, queueId?: string | number) =>
+      playlist.reorderPlaybackQueue(fromIndex, toIndex, queueId),
   };
 };
 
@@ -705,6 +947,39 @@ const createPluginWindowsApi = (pluginId: string) => {
       getWindowsApi()?.getBounds(pluginId, windowId) ?? unavailable(),
     setIgnoreMouseEvents: (windowId: string, ignore: boolean) =>
       getWindowsApi()?.setIgnoreMouseEvents(pluginId, windowId, ignore) ?? unavailable(),
+  };
+};
+
+const createPluginFsApi = (pluginId: string) => {
+  const getFsApi = () => window.electron.plugins?.fs;
+  const unavailable = (message = '插件文件 API 不可用') =>
+    Promise.resolve({ ok: false as const, error: message });
+  return {
+    listFiles: (
+      directoryPath: string,
+      options?: Parameters<NonNullable<Window['electron']['plugins']>['fs']['listFiles']>[2],
+    ) =>
+      getFsApi()?.listFiles(pluginId, directoryPath, serializeForIpc(options) as typeof options) ??
+      unavailable(),
+    listImageFiles: (
+      directoryPath: string,
+      options?: Parameters<NonNullable<Window['electron']['plugins']>['fs']['listImageFiles']>[1],
+    ) =>
+      getFsApi()?.listImageFiles(directoryPath, serializeForIpc(options) as typeof options) ??
+      unavailable(),
+    getFileUrl: (filePath: string) => getFsApi()?.getFileUrl(filePath) ?? unavailable(),
+    readTextFile: (
+      filePath: string,
+      options?: Parameters<NonNullable<Window['electron']['plugins']>['fs']['readTextFile']>[2],
+    ) =>
+      getFsApi()?.readTextFile(pluginId, filePath, serializeForIpc(options) as typeof options) ??
+      unavailable(),
+    readFileBytes: (
+      filePath: string,
+      options?: Parameters<NonNullable<Window['electron']['plugins']>['fs']['readFileBytes']>[2],
+    ) =>
+      getFsApi()?.readFileBytes(pluginId, filePath, serializeForIpc(options) as typeof options) ??
+      unavailable(),
   };
 };
 
@@ -821,6 +1096,115 @@ const createMountedComponentDisposer = (
       }
     }
     container.remove();
+  };
+};
+
+const SCROLL_CONTAINER_SELECTOR = '[data-echo-scroll-container]';
+
+const isVisibleScrollContainer = (element: HTMLElement) =>
+  element.clientHeight > 0 && element.getClientRects().length > 0;
+
+const getScrollContainerState = (element: HTMLElement): PluginScrollContainerState => {
+  const scrollTop = Math.max(0, element.scrollTop || 0);
+  const scrollHeight = Math.max(0, element.scrollHeight || 0);
+  const clientHeight = Math.max(0, element.clientHeight || 0);
+  const distanceToBottom = Math.max(0, scrollHeight - clientHeight - scrollTop);
+  return {
+    scrollTop,
+    scrollHeight,
+    clientHeight,
+    distanceToBottom,
+    canScroll: scrollHeight - clientHeight > 1,
+    atTop: scrollTop <= 1,
+    atBottom: distanceToBottom <= 1,
+  };
+};
+
+const createScrollApi = (pluginId: string, addDisposable: (dispose: () => void) => () => void) => {
+  const queryContainers = (options: PluginScrollContainerQueryOptions = {}) => {
+    const containers = Array.from(
+      document.querySelectorAll<HTMLElement>(SCROLL_CONTAINER_SELECTOR),
+    );
+    return containers.filter((element) => {
+      if (options.role && element.dataset.echoScrollRole !== options.role) return false;
+      if (options.visible !== false && !isVisibleScrollContainer(element)) return false;
+      return true;
+    });
+  };
+
+  const getCurrentContainer = () => queryContainers({ visible: true })[0] ?? null;
+
+  const scrollTo = (
+    element: HTMLElement | null | undefined,
+    target: 'top' | 'bottom' | number,
+    options?: ScrollToOptions,
+  ) => {
+    if (!element) return;
+    const top =
+      target === 'top'
+        ? 0
+        : target === 'bottom'
+          ? Math.max(0, element.scrollHeight - element.clientHeight)
+          : Math.max(0, Number(target) || 0);
+    element.scrollTo({
+      ...options,
+      top,
+      behavior: options?.behavior ?? 'smooth',
+    });
+  };
+
+  const observeContainers = (
+    handler: (element: HTMLElement, state: PluginScrollContainerState) => void | (() => void),
+    options: PluginScrollContainerQueryOptions = {},
+  ) => {
+    const seen = new WeakSet<HTMLElement>();
+    const disposers: Array<() => void> = [];
+    let stopped = false;
+
+    const visit = (element: HTMLElement) => {
+      if (stopped || seen.has(element)) return;
+      seen.add(element);
+      const dispose = runPluginCallback(
+        pluginId,
+        '滚动容器监听',
+        () => handler(element, getScrollContainerState(element)),
+        undefined,
+      );
+      if (typeof dispose === 'function') disposers.push(dispose);
+    };
+
+    const scan = () => {
+      if (stopped) return;
+      queryContainers(options).forEach(visit);
+    };
+
+    const observer = new MutationObserver(scan);
+    const stop = () => {
+      if (stopped) return;
+      stopped = true;
+      observer.disconnect();
+      disposers
+        .splice(0)
+        .reverse()
+        .forEach((dispose) => runPluginCallback(pluginId, '滚动容器监听清理', dispose, undefined));
+    };
+
+    scan();
+    observer.observe(document.body, { childList: true, subtree: true });
+    return addDisposable(stop);
+  };
+
+  return {
+    selector: SCROLL_CONTAINER_SELECTOR,
+    queryContainers,
+    getCurrentContainer,
+    getState: getScrollContainerState,
+    scrollTo,
+    scrollToTop: (element?: HTMLElement | null, options?: ScrollToOptions) =>
+      scrollTo(element ?? getCurrentContainer(), 'top', options),
+    scrollToBottom: (element?: HTMLElement | null, options?: ScrollToOptions) =>
+      scrollTo(element ?? getCurrentContainer(), 'bottom', options),
+    observeContainers,
   };
 };
 
@@ -1190,13 +1574,16 @@ const createPluginContext = (
       theme: themeStore,
     },
     player: createPlayerApi(descriptor, addDisposable),
-    audio: createAudioApi(descriptor.id, addDisposable),
+    audio: createAudioApi(descriptor, addDisposable),
     playlist: createPlaylistApi(),
     lyric: lyricStore,
     lyrics: createLyricsApi(descriptor, addDisposable),
+    lyricEffects: createLyricEffectsApi(descriptor, addDisposable),
     kugou: createKugouApi(descriptor),
     settings: settingStore,
     theme: createThemeApi(descriptor.id, addDisposable),
+    appearance: createAppearanceApi(descriptor.id, addDisposable),
+    scroll: createScrollApi(descriptor.id, addDisposable),
     nowPlaying: window.electron.nowPlaying,
     windows: createPluginWindowsApi(descriptor.id),
     toast: createToastApi(),
@@ -1218,14 +1605,7 @@ const createPluginContext = (
         window.electron.plugins?.dialog.selectFiles(serializeForIpc(options) as typeof options) ??
         Promise.resolve({ canceled: true, paths: [] }),
     },
-    fs: {
-      listImageFiles: (directoryPath, options) =>
-        window.electron.plugins?.fs.listImageFiles(directoryPath, options) ??
-        Promise.resolve({ ok: false, error: '插件文件 API 不可用' }),
-      getFileUrl: (filePath) =>
-        window.electron.plugins?.fs.getFileUrl(filePath) ??
-        Promise.resolve({ ok: false, error: '插件文件 API 不可用' }),
-    },
+    fs: createPluginFsApi(descriptor.id),
     process: createPluginProcessApi(descriptor.id),
     ui: createRuntimeUiApi(descriptor.id, host, addDisposable),
     commands: {

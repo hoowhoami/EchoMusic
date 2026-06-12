@@ -18,10 +18,7 @@ const handleScroll = () => {
 
 const scrollToTop = () => {
   if (!currentTarget) return;
-  currentTarget.scrollTo({
-    top: 0,
-    behavior: 'smooth',
-  });
+  currentTarget.scrollTop = 0;
 };
 
 const unbind = () => {
@@ -61,7 +58,7 @@ onUnmounted(() => {
       size="none"
       v-if="visible"
       @click="scrollToTop"
-      class="fixed right-8 bottom-32 z-50 p-3 rounded-full border border-[var(--control-border)] back-to-top-btn shadow-lg hover:shadow-xl transition-all duration-300 active:scale-95 group"
+      class="absolute right-6 bottom-4 z-50 p-3 rounded-full border border-[var(--control-border)] back-to-top-btn shadow-lg hover:shadow-xl transition-all duration-300 active:scale-95 group"
       aria-label="回到顶部"
     >
       <Icon

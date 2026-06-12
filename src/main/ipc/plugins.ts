@@ -5,6 +5,8 @@ import type {
   PluginDialogResult,
   PluginFileUrlResult,
   PluginFailureRecord,
+  PluginListFilesOptions,
+  PluginListFilesResult,
   PluginListImageFilesOptions,
   PluginListImageFilesResult,
   PluginListResult,
@@ -23,6 +25,10 @@ import type {
   PluginProcessLaunchOptions,
   PluginProcessLaunchResult,
   PluginProcessTerminateResult,
+  PluginReadFileBytesOptions,
+  PluginReadFileBytesResult,
+  PluginReadTextFileOptions,
+  PluginReadTextFileResult,
   PluginSetEnabledResult,
   PluginReportFailureResult,
   PluginSetSafeModeResult,
@@ -38,6 +44,7 @@ import {
   installPluginsFromLocal,
   addPluginMarketplaceSource,
   installPluginFromMarketplace,
+  listPluginFiles,
   listPluginImageFiles,
   listPluginMarketplace,
   listPluginMarketplaceSources,
@@ -46,7 +53,9 @@ import {
   markPluginStartup,
   openPluginDirectory,
   patchPluginMarketplaceSource,
+  readPluginFileBytes,
   readPluginTextAsset,
+  readPluginTextFile,
   readPluginWindowTextAsset,
   removePluginMarketplaceSource,
   reportPluginFailure,
@@ -190,8 +199,35 @@ export const registerPluginHandlers = (context: IpcContext) => {
     ): PluginListImageFilesResult => listPluginImageFiles(directoryPath, options),
   );
   ipcRegistry.registerHandler(
+    'plugins:fs:list-files',
+    (
+      _event,
+      pluginId: string,
+      directoryPath: string,
+      options?: PluginListFilesOptions,
+    ): PluginListFilesResult => listPluginFiles(pluginId, directoryPath, options),
+  );
+  ipcRegistry.registerHandler(
     'plugins:fs:get-file-url',
     (_event, filePath: string): PluginFileUrlResult => getPluginFileUrl(filePath),
+  );
+  ipcRegistry.registerHandler(
+    'plugins:fs:read-text-file',
+    (
+      _event,
+      pluginId: string,
+      filePath: string,
+      options?: PluginReadTextFileOptions,
+    ): PluginReadTextFileResult => readPluginTextFile(pluginId, filePath, options),
+  );
+  ipcRegistry.registerHandler(
+    'plugins:fs:read-file-bytes',
+    (
+      _event,
+      pluginId: string,
+      filePath: string,
+      options?: PluginReadFileBytesOptions,
+    ): PluginReadFileBytesResult => readPluginFileBytes(pluginId, filePath, options),
   );
   ipcRegistry.registerHandler(
     'plugins:process:launch',

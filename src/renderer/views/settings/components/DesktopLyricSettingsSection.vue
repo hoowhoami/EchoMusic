@@ -70,7 +70,7 @@ const applyDesktopLyricColor = async (value: string) => {
           关闭后桌面歌词不会固定显示在其他窗口或全屏应用之上
         </p>
         <p v-if="isLinux" class="text-xs text-text-secondary/70">
-          Wayland 下置顶和鼠标穿透受协议限制，建议使用 XWayland 模式启动或通过窗口管理器规则配置
+          原生 Wayland 下置顶和鼠标穿透受协议限制，默认使用 XWayland 兼容路径以保证桌面歌词体验
         </p>
       </div>
       <Switch

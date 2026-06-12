@@ -212,6 +212,8 @@ export const queueActions = {
       this.personalFmBuffer = toRawSongList([]);
     }
     this.syncLegacyPlaybackState();
+    const activeQueue = this.playbackQueues.find((queue) => queue.id === this.activeQueueId);
+    if (activeQueue) this.persistQueueMetaToStorage(activeQueue);
     this.persistQueueRemovalToStorage(PERSONAL_FM_QUEUE_ID);
   },
   getQueueById(this: QueueStoreShape, queueId?: string | number | null) {

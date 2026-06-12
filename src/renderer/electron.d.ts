@@ -36,6 +36,8 @@ import type {
   PluginDialogResult,
   PluginFileUrlResult,
   PluginFailureRecord,
+  PluginListFilesOptions,
+  PluginListFilesResult,
   PluginListImageFilesOptions,
   PluginListImageFilesResult,
   PluginListResult,
@@ -54,6 +56,10 @@ import type {
   PluginProcessLaunchOptions,
   PluginProcessLaunchResult,
   PluginProcessTerminateResult,
+  PluginReadFileBytesOptions,
+  PluginReadFileBytesResult,
+  PluginReadTextFileOptions,
+  PluginReadTextFileResult,
   PluginReportFailureResult,
   PluginSetEnabledResult,
   PluginSetSafeModeResult,
@@ -78,6 +84,7 @@ import type {
 
 export interface IElectronAPI {
   platform: string;
+  isWayland?: boolean;
   ipcRenderer: {
     send: (channel: string, ...args: unknown[]) => void;
     invoke: (channel: string, ...args: unknown[]) => Promise<any>;
@@ -273,11 +280,26 @@ export interface IElectronAPI {
       selectFiles: (options?: PluginOpenDialogOptions) => Promise<PluginDialogResult>;
     };
     fs: {
+      listFiles: (
+        pluginId: string,
+        directoryPath: string,
+        options?: PluginListFilesOptions,
+      ) => Promise<PluginListFilesResult>;
       listImageFiles: (
         directoryPath: string,
         options?: PluginListImageFilesOptions,
       ) => Promise<PluginListImageFilesResult>;
       getFileUrl: (filePath: string) => Promise<PluginFileUrlResult>;
+      readTextFile: (
+        pluginId: string,
+        filePath: string,
+        options?: PluginReadTextFileOptions,
+      ) => Promise<PluginReadTextFileResult>;
+      readFileBytes: (
+        pluginId: string,
+        filePath: string,
+        options?: PluginReadFileBytesOptions,
+      ) => Promise<PluginReadFileBytesResult>;
     };
     process: {
       launch: (
