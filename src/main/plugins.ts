@@ -656,6 +656,7 @@ const normalizePluginWindowDescriptors = (
       resizable: Boolean(rawWindow.resizable),
       movable: rawWindow.movable !== false,
       rememberBounds: rawWindow.rememberBounds !== false,
+      allowOutsideWorkArea: Boolean(rawWindow.allowOutsideWorkArea),
       acceptFirstMouse: Boolean(rawWindow.acceptFirstMouse),
     });
   }

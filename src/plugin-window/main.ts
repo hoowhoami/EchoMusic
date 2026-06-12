@@ -81,6 +81,7 @@ interface EchoPluginWindowContext {
     hide: () => Promise<unknown>;
     close: () => Promise<unknown>;
     setIgnoreMouseEvents: (ignore: boolean) => Promise<unknown>;
+    setAlwaysOnTop: (alwaysOnTop: boolean) => Promise<unknown>;
   };
   electron: Window['electron'];
   dispose: (dispose: () => void) => () => void;
@@ -292,6 +293,10 @@ const buildContext = (
         windowDescriptor.id,
         ignore,
       ) ?? Promise.resolve(null),
+    setAlwaysOnTop: (alwaysOnTop) =>
+      window.electron.plugins?.windows.show(descriptor.id, windowDescriptor.id, {
+        alwaysOnTop,
+      }) ?? Promise.resolve(null),
   },
   electron: window.electron,
   dispose: addDisposable,

@@ -20,6 +20,7 @@ export interface PluginWindowManifest {
   resizable?: boolean;
   movable?: boolean;
   rememberBounds?: boolean;
+  allowOutsideWorkArea?: boolean;
   acceptFirstMouse?: boolean;
 }
 
@@ -43,6 +44,7 @@ export interface PluginWindowDescriptor extends Required<
     | 'resizable'
     | 'movable'
     | 'rememberBounds'
+    | 'allowOutsideWorkArea'
     | 'acceptFirstMouse'
   >
 > {
@@ -65,6 +67,7 @@ export interface PluginWindowShowOptions {
   x?: number;
   y?: number;
   alwaysOnTop?: boolean;
+  allowOutsideWorkArea?: boolean;
 }
 
 export type PluginWindowResult =

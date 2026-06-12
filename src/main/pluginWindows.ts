@@ -23,6 +23,7 @@ type PluginWindowRecord = {
   descriptor: PluginWindowDescriptor;
   window: BrowserWindow;
   persistTimer: ReturnType<typeof setTimeout> | null;
+  usesPanel: boolean;
 };
 
 const pluginWindowUrl = process.env.VITE_DEV_SERVER_URL;
@@ -34,6 +35,8 @@ const PLUGIN_WINDOW_RESTACK_DELAYS_MS =
     : process.platform === 'darwin'
       ? [120, 320]
       : [0, 120];
+const PLUGIN_WINDOW_DOCK_RESTORE_DELAYS_MS = [0, 120, 320];
+let pluginWindowDockTimers: ReturnType<typeof setTimeout>[] = [];
 
 const getWindowKey = (pluginId: string, windowId: string) =>
   `${normalizePluginId(pluginId)}:${normalizePluginId(windowId)}`;
@@ -45,6 +48,25 @@ const clamp = (value: number, min: number, max: number) => Math.min(max, Math.ma
 
 const canUseWindow = (win: BrowserWindow | null | undefined): win is BrowserWindow =>
   Boolean(win && !win.isDestroyed());
+
+const clearDockRestoreTimers = () => {
+  if (!pluginWindowDockTimers.length) return;
+  pluginWindowDockTimers.forEach((timer) => clearTimeout(timer));
+  pluginWindowDockTimers = [];
+};
+
+const scheduleDockRestore = () => {
+  if (process.platform !== 'darwin') return;
+  clearDockRestoreTimers();
+  pluginWindowDockTimers = PLUGIN_WINDOW_DOCK_RESTORE_DELAYS_MS.map((delay) =>
+    setTimeout(() => {
+      app.dock?.show();
+    }, delay),
+  );
+};
+
+const shouldUsePluginWindowPanel = (descriptor: Pick<PluginWindowDescriptor, 'alwaysOnTop'>) =>
+  process.platform === 'darwin' && descriptor.alwaysOnTop;
 
 const getStoredBounds = (descriptor: PluginWindowDescriptor): Partial<PluginWindowBounds> => {
   if (!descriptor.rememberBounds) return {};
@@ -84,6 +106,9 @@ const getFallbackPoint = (descriptor: PluginWindowDescriptor, width: number, hei
   return { x, y };
 };
 
+const getConstraintArea = (descriptor: PluginWindowDescriptor, display: Electron.Display) =>
+  descriptor.allowOutsideWorkArea ? display.bounds : display.workArea;
+
 const constrainBounds = (
   descriptor: PluginWindowDescriptor,
   bounds: Partial<PluginWindowBounds>,
@@ -105,13 +130,15 @@ const constrainBounds = (
     x: Math.round(rawX + width / 2),
     y: Math.round(rawY + height / 2),
   });
-  const area = display.workArea;
+  const area = getConstraintArea(descriptor, display);
+  const maxX = Math.max(area.x, area.x + area.width - width);
+  const maxY = Math.max(area.y, area.y + area.height - height);
 
   return {
     width,
     height,
-    x: clamp(Math.round(rawX), area.x, area.x + area.width - width),
-    y: clamp(Math.round(rawY), area.y, area.y + area.height - height),
+    x: clamp(Math.round(rawX), area.x, maxX),
+    y: clamp(Math.round(rawY), area.y, maxY),
   };
 };
 
@@ -140,7 +167,7 @@ const syncPresentation = (win: BrowserWindow, descriptor: PluginWindowDescriptor
     win.setVisibleOnAllWorkspaces(descriptor.alwaysOnTop, {
       visibleOnFullScreen: descriptor.alwaysOnTop,
     });
-    app.dock?.show();
+    scheduleDockRestore();
   }
 };
 
@@ -173,9 +200,11 @@ const createPluginWindow = async (
   options: PluginWindowShowOptions = {},
 ) => {
   const preload = join(__dirname, '../preload/index.js');
-  const bounds = resolveInitialBounds(descriptor, options);
   const alwaysOnTop = options.alwaysOnTop ?? descriptor.alwaysOnTop;
-  const effectiveDescriptor = { ...descriptor, alwaysOnTop };
+  const allowOutsideWorkArea = options.allowOutsideWorkArea ?? descriptor.allowOutsideWorkArea;
+  const effectiveDescriptor = { ...descriptor, alwaysOnTop, allowOutsideWorkArea };
+  const bounds = resolveInitialBounds(effectiveDescriptor, options);
+  const usesPanel = shouldUsePluginWindowPanel(effectiveDescriptor);
 
   const win = new BrowserWindow({
     title: descriptor.title,
@@ -198,7 +227,7 @@ const createPluginWindow = async (
     maximizable: false,
     acceptFirstMouse: descriptor.acceptFirstMouse,
     ...(process.platform === 'darwin'
-      ? { type: alwaysOnTop ? 'panel' : 'toolbar' }
+      ? { type: usesPanel ? 'panel' : 'toolbar' }
       : process.platform === 'linux'
         ? { type: 'toolbar' }
         : {}),
@@ -221,6 +250,7 @@ const createPluginWindow = async (
     descriptor: effectiveDescriptor,
     window: win,
     persistTimer: null,
+    usesPanel,
   };
   pluginWindows.set(getWindowKey(descriptor.pluginId, descriptor.id), record);
 
@@ -234,7 +264,9 @@ const createPluginWindow = async (
   win.on('resize', () => schedulePersistBounds(record));
   win.on('closed', () => {
     if (record.persistTimer) clearTimeout(record.persistTimer);
-    pluginWindows.delete(getWindowKey(descriptor.pluginId, descriptor.id));
+    const key = getWindowKey(descriptor.pluginId, descriptor.id);
+    if (pluginWindows.get(key) === record) pluginWindows.delete(key);
+    if (pluginWindows.size === 0) clearDockRestoreTimers();
   });
   win.webContents.on('render-process-gone', (_event, details) => {
     if (!isPluginRendererGoneFailureReason(details.reason)) return;
@@ -260,6 +292,41 @@ const createPluginWindow = async (
 
   await loadPluginWindow(win, descriptor);
   return record;
+};
+
+const recreatePluginWindowForPresentation = async (
+  record: PluginWindowRecord,
+  descriptor: PluginWindowDescriptor,
+  options: PluginWindowShowOptions = {},
+) => {
+  const previousWindow = record.window;
+  const previousBounds = previousWindow.getBounds();
+  const recreateOptions: PluginWindowShowOptions = {
+    ...previousBounds,
+    ...options,
+    alwaysOnTop: descriptor.alwaysOnTop,
+    allowOutsideWorkArea: descriptor.allowOutsideWorkArea,
+  };
+
+  if (record.persistTimer) {
+    clearTimeout(record.persistTimer);
+    record.persistTimer = null;
+  }
+  persistBounds(record);
+
+  if (process.platform === 'darwin') {
+    previousWindow.setVisibleOnAllWorkspaces(false, {
+      visibleOnFullScreen: false,
+    });
+  }
+  previousWindow.setAlwaysOnTop(false, 'normal');
+  previousWindow.hide();
+
+  const key = getWindowKey(record.pluginId, record.windowId);
+  if (pluginWindows.get(key) === record) pluginWindows.delete(key);
+  previousWindow.destroy();
+
+  return createPluginWindow(descriptor, recreateOptions);
 };
 
 const getRecord = (pluginId: string, windowId: string) =>
@@ -288,20 +355,37 @@ export const showPluginWindow = async (
   if (!record || !canUseWindow(record.window)) {
     record = await createPluginWindow(descriptor, options);
   } else {
-    if (typeof options.alwaysOnTop === 'boolean') {
-      record.descriptor = { ...record.descriptor, alwaysOnTop: options.alwaysOnTop };
-      syncPresentation(record.window, record.descriptor);
+    const nextDescriptor = {
+      ...record.descriptor,
+      ...(typeof options.alwaysOnTop === 'boolean' ? { alwaysOnTop: options.alwaysOnTop } : {}),
+      ...(typeof options.allowOutsideWorkArea === 'boolean'
+        ? { allowOutsideWorkArea: options.allowOutsideWorkArea }
+        : {}),
+    };
+    const shouldRecreate =
+      process.platform === 'darwin' &&
+      record.usesPanel !== shouldUsePluginWindowPanel(nextDescriptor);
+
+    if (shouldRecreate) {
+      record = await recreatePluginWindowForPresentation(record, nextDescriptor, options);
+    } else {
+      const alwaysOnTopChanged = record.descriptor.alwaysOnTop !== nextDescriptor.alwaysOnTop;
+      const allowOutsideWorkAreaChanged =
+        record.descriptor.allowOutsideWorkArea !== nextDescriptor.allowOutsideWorkArea;
+      record.descriptor = nextDescriptor;
+      if (alwaysOnTopChanged) syncPresentation(record.window, record.descriptor);
+      if (
+        typeof options.width === 'number' ||
+        typeof options.height === 'number' ||
+        typeof options.x === 'number' ||
+        typeof options.y === 'number' ||
+        allowOutsideWorkAreaChanged
+      ) {
+        record.window.setBounds(resolveInitialBounds(record.descriptor, options));
+      }
+      if (!record.window.isVisible()) record.window.showInactive();
+      schedulePresentationSync(record.window, record.descriptor);
     }
-    if (
-      typeof options.width === 'number' ||
-      typeof options.height === 'number' ||
-      typeof options.x === 'number' ||
-      typeof options.y === 'number'
-    ) {
-      record.window.setBounds(resolveInitialBounds(record.descriptor, options));
-    }
-    if (!record.window.isVisible()) record.window.showInactive();
-    schedulePresentationSync(record.window, record.descriptor);
   }
 
   return { ok: true, window: record.descriptor, bounds: record.window.getBounds() };
