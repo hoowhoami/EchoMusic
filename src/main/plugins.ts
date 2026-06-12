@@ -18,7 +18,7 @@ import {
 } from 'fs';
 import { createHash } from 'crypto';
 import { tmpdir } from 'os';
-import { basename, extname, isAbsolute, join, normalize, relative, resolve } from 'path';
+import { basename, dirname, extname, isAbsolute, join, normalize, relative, resolve } from 'path';
 import { pathToFileURL } from 'url';
 import extractZip from 'extract-zip';
 import {
@@ -130,7 +130,11 @@ const PLUGIN_WINDOW_MIN_HEIGHT = 48;
 const PLUGIN_WINDOW_MAX_WIDTH = 1400;
 const PLUGIN_WINDOW_MAX_HEIGHT = 900;
 const PLUGIN_MARKETPLACE_FETCH_TIMEOUT_MS = 30_000;
+const PLUGIN_MARKETPLACE_API_TIMEOUT_MS = 10_000;
 const PLUGIN_MARKETPLACE_DOWNLOAD_TIMEOUT_MS = 120_000;
+const PLUGIN_MARKETPLACE_EXTRACT_TIMEOUT_MS = 30_000;
+const MAX_PLUGIN_MARKETPLACE_TREE_FILES = 500;
+const PLUGIN_MARKETPLACE_TREE_DOWNLOAD_CONCURRENCY = 4;
 const BARE_SEMVER_PATTERN = /^v?\d+(?:\.\d+){0,2}(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
 const MAX_PLUGIN_PROCESS_ARGS = 64;
 const MAX_PLUGIN_PROCESS_ARG_LENGTH = 8192;
@@ -157,6 +161,46 @@ type PluginInstallTimes = Record<string, number>;
 type GithubRepository = {
   owner: string;
   repo: string;
+};
+type GithubRepositoryResponse = {
+  default_branch?: string;
+  message?: string;
+};
+type GithubBranchResponse = {
+  commit?: {
+    sha?: string;
+    commit?: {
+      tree?: {
+        sha?: string;
+      };
+    };
+  };
+  message?: string;
+};
+type GithubTreeEntry = {
+  path?: string;
+  type?: string;
+  size?: number;
+};
+type GithubTreeResponse = {
+  tree?: GithubTreeEntry[];
+  truncated?: boolean;
+  message?: string;
+};
+type GithubTreeRef = {
+  branch: string;
+  ref: string;
+  treeSha: string;
+};
+type GithubApiRequestTarget = {
+  url: string;
+  mode: 'proxy' | 'direct';
+  proxyKey?: string;
+};
+type MarketplaceTreeInstallFile = {
+  rawPath: string;
+  relativePath: string;
+  size: number;
 };
 type PluginMarketplaceIndex = {
   name?: string;
@@ -185,6 +229,9 @@ type PluginMarketplaceIndexPluginsResult = {
   failedCount: number;
   recoveredCount: number;
 };
+
+const unavailableGithubApiProxyUrls = new Set<string>();
+
 type PluginProcessConsent = {
   pluginId: string;
   pluginVersion: string;
@@ -1018,10 +1065,20 @@ const normalizeGithubRepositoryUrl = (value: unknown) => {
   };
 };
 
-const toRawGithubUrl = (repo: GithubRepository, filePath: string) => {
+const toRawGithubUrl = (repo: GithubRepository, filePath: string, ref = 'HEAD') => {
   const normalizedPath = normalizeMarketplacePackagePath(filePath);
-  return `https://raw.githubusercontent.com/${repo.owner}/${repo.repo}/HEAD/${normalizedPath}`;
+  const normalizedRef = String(ref || 'HEAD').trim() || 'HEAD';
+  return `https://raw.githubusercontent.com/${repo.owner}/${repo.repo}/${encodeURIComponent(normalizedRef)}/${normalizedPath}`;
 };
+
+const toGithubRepositoryApiUrl = (repo: GithubRepository) =>
+  `https://api.github.com/repos/${repo.owner}/${repo.repo}`;
+
+const toGithubBranchUrl = (repo: GithubRepository, branch: string) =>
+  `https://api.github.com/repos/${repo.owner}/${repo.repo}/branches/${encodeURIComponent(branch)}`;
+
+const toGithubTreeUrl = (repo: GithubRepository, treeSha: string) =>
+  `https://api.github.com/repos/${repo.owner}/${repo.repo}/git/trees/${encodeURIComponent(treeSha)}?recursive=1`;
 
 const toGithubArchiveUrl = (repo: GithubRepository) =>
   `https://github.com/${repo.owner}/${repo.repo}/archive/HEAD.zip`;
@@ -1029,6 +1086,15 @@ const toGithubArchiveUrl = (repo: GithubRepository) =>
 const toGithubBlobUrl = (repo: GithubRepository, filePath: string) => {
   const normalizedPath = normalizeMarketplacePackagePath(filePath);
   return `https://github.com/${repo.owner}/${repo.repo}/blob/HEAD/${normalizedPath}`;
+};
+
+const isGithubApiUrl = (value: string) => {
+  try {
+    const { hostname } = new URL(value);
+    return hostname === 'api.github.com';
+  } catch {
+    return false;
+  }
 };
 
 const isGithubHostedUrl = (value: string) => {
@@ -1045,13 +1111,43 @@ const isGithubHostedUrl = (value: string) => {
   }
 };
 
+const normalizeGithubProxyUrl = (githubProxyUrl?: string) =>
+  String(githubProxyUrl || '')
+    .trim()
+    .replace(/\/+$/, '');
+
+const toGithubProxyUrl = (url: string, githubProxyUrl: string) =>
+  `${normalizeGithubProxyUrl(githubProxyUrl)}/${url}`;
+
 const applyGithubProxyUrl = (url: string, githubProxyUrl?: string) => {
   const target = String(url || '').trim();
-  const proxy = String(githubProxyUrl || '').trim();
+  const proxy = normalizeGithubProxyUrl(githubProxyUrl);
   if (!target || !proxy || !/^https?:\/\//i.test(target) || !isGithubHostedUrl(target)) {
     return target;
   }
-  return `${proxy.replace(/\/+$/, '')}/${target}`;
+  return toGithubProxyUrl(target, proxy);
+};
+
+const getGithubApiRequestTargets = (
+  url: string,
+  githubProxyUrl?: string,
+): GithubApiRequestTarget[] => {
+  const target = String(url || '').trim();
+  const proxy = normalizeGithubProxyUrl(githubProxyUrl);
+  const directTarget: GithubApiRequestTarget = { url: target, mode: 'direct' };
+  if (
+    !target ||
+    !proxy ||
+    !/^https?:\/\//i.test(target) ||
+    !isGithubApiUrl(target) ||
+    unavailableGithubApiProxyUrls.has(proxy)
+  ) {
+    return [directTarget];
+  }
+
+  const proxyTarget = toGithubProxyUrl(target, proxy);
+  if (proxyTarget === target) return [directTarget];
+  return [{ url: proxyTarget, mode: 'proxy', proxyKey: proxy }, directTarget];
 };
 
 const fetchWithTimeout = async (
@@ -1074,6 +1170,50 @@ const fetchWithTimeout = async (
     throw error;
   } finally {
     clearTimeout(timer);
+  }
+};
+
+const runWithTimeout = async <T>(
+  task: Promise<T>,
+  timeoutMs: number,
+  timeoutMessage: string,
+  lateFailureSource: string,
+) => {
+  let timedOut = false;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  const guardedTask = task.catch((error) => {
+    if (timedOut) {
+      log.warn('[PluginMarketplace] late async failure after timeout', {
+        source: lateFailureSource,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+    throw error;
+  });
+
+  try {
+    return await Promise.race([
+      guardedTask,
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => {
+          timedOut = true;
+          reject(new Error(timeoutMessage));
+        }, timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+};
+
+const removeTemporaryDirectory = (directory: string) => {
+  try {
+    rmSync(directory, { recursive: true, force: true });
+  } catch (error) {
+    log.warn('[PluginMarketplace] temporary directory cleanup failed', {
+      directory,
+      error: error instanceof Error ? error.message : String(error),
+    });
   }
 };
 
@@ -1665,6 +1805,265 @@ const downloadMarketplacePackage = async (
   return zipPath;
 };
 
+const fetchMarketplaceFileBuffer = async (url: string, githubProxyUrl?: string) => {
+  const targetUrl = applyGithubProxyUrl(url, githubProxyUrl);
+  const response = await fetchWithTimeout(
+    targetUrl,
+    {
+      headers: {
+        Accept: 'application/octet-stream,*/*',
+        'User-Agent': 'EchoMusic-Plugin-Marketplace',
+      },
+    },
+    PLUGIN_MARKETPLACE_FETCH_TIMEOUT_MS,
+    '插件文件请求超时，请检查网络或 GitHub 代理',
+  );
+  if (!response.ok) throw new Error(`插件文件下载失败 (${response.status})`);
+  return Buffer.from(await response.arrayBuffer());
+};
+
+const writeMarketplaceInstallFile = (
+  sourceDirectory: string,
+  relativeFile: string,
+  content: string | Buffer,
+) => {
+  const normalizedRelativeFile = normalizeMarketplacePackagePath(relativeFile);
+  if (!normalizedRelativeFile || !isSafeMarketplacePackagePath(normalizedRelativeFile)) {
+    throw new Error(`插件文件路径非法: ${relativeFile}`);
+  }
+
+  const targetFile = resolve(sourceDirectory, normalizedRelativeFile);
+  if (!isPathInside(sourceDirectory, targetFile)) {
+    throw new Error(`插件文件路径越界: ${relativeFile}`);
+  }
+  mkdirSync(dirname(targetFile), { recursive: true });
+  writeFileSync(targetFile, content);
+};
+
+const fetchGithubApiJson = async <T>(
+  url: string,
+  githubProxyUrl: string | undefined,
+  timeoutMessage: string,
+  failureMessage: string,
+) => {
+  const targets = getGithubApiRequestTargets(url, githubProxyUrl);
+  let lastError: Error | null = null;
+
+  for (const target of targets) {
+    try {
+      const response = await fetchWithTimeout(
+        target.url,
+        {
+          headers: {
+            Accept: 'application/vnd.github+json,application/json,*/*',
+            'User-Agent': 'EchoMusic-Plugin-Marketplace',
+          },
+        },
+        PLUGIN_MARKETPLACE_API_TIMEOUT_MS,
+        timeoutMessage,
+      );
+      if (!response.ok) throw new Error(`${failureMessage} (${response.status})`);
+      return (await response.json()) as T;
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+      if (target.mode === 'proxy' && targets.some((item) => item.mode === 'direct')) {
+        if (target.proxyKey) unavailableGithubApiProxyUrls.add(target.proxyKey);
+        log.info('[PluginMarketplace] github api proxy disabled, retry direct', {
+          error: lastError.message,
+        });
+        continue;
+      }
+      throw lastError;
+    }
+  }
+
+  throw lastError || new Error(failureMessage);
+};
+
+const fetchGithubTreeRef = async (
+  repo: GithubRepository,
+  githubProxyUrl?: string,
+): Promise<GithubTreeRef> => {
+  log.info('[PluginMarketplace] tree ref resolve started', {
+    repo: `${repo.owner}/${repo.repo}`,
+  });
+  const repoPayload = await fetchGithubApiJson<GithubRepositoryResponse>(
+    toGithubRepositoryApiUrl(repo),
+    githubProxyUrl,
+    '插件仓库信息请求超时，请检查网络或 GitHub 代理',
+    '插件仓库信息请求失败',
+  );
+  const defaultBranch = String(repoPayload.default_branch || '').trim();
+  if (!defaultBranch) throw new Error(repoPayload.message || '插件仓库默认分支无效');
+
+  const branchPayload = await fetchGithubApiJson<GithubBranchResponse>(
+    toGithubBranchUrl(repo, defaultBranch),
+    githubProxyUrl,
+    '插件仓库分支信息请求超时，请检查网络或 GitHub 代理',
+    '插件仓库分支信息请求失败',
+  );
+  const treeSha = String(branchPayload.commit?.commit?.tree?.sha || '').trim();
+  if (!treeSha) throw new Error(branchPayload.message || '插件仓库 tree 引用无效');
+  const ref = String(branchPayload.commit?.sha || '').trim() || defaultBranch;
+  log.info('[PluginMarketplace] tree ref resolved', {
+    repo: `${repo.owner}/${repo.repo}`,
+    branch: defaultBranch,
+    ref,
+    treeSha,
+  });
+  return { branch: defaultBranch, ref, treeSha };
+};
+
+const fetchGithubTree = async (repo: GithubRepository, githubProxyUrl?: string) => {
+  log.info('[PluginMarketplace] tree fetch started', {
+    repo: `${repo.owner}/${repo.repo}`,
+  });
+  const treeRef = await fetchGithubTreeRef(repo, githubProxyUrl);
+  const payload = await fetchGithubApiJson<GithubTreeResponse>(
+    toGithubTreeUrl(repo, treeRef.treeSha),
+    githubProxyUrl,
+    '插件仓库文件列表请求超时，请检查网络或 GitHub 代理',
+    '插件仓库文件列表请求失败',
+  );
+  if (!Array.isArray(payload.tree)) {
+    throw new Error(payload.message || '插件仓库文件列表无效');
+  }
+  if (payload.truncated) {
+    throw new Error('插件仓库文件过多，请改用压缩包安装');
+  }
+  log.info('[PluginMarketplace] tree fetch finished', {
+    repo: `${repo.owner}/${repo.repo}`,
+    branch: treeRef.branch,
+    ref: treeRef.ref,
+    treeSha: treeRef.treeSha,
+    entries: payload.tree.length,
+  });
+  return {
+    tree: payload.tree,
+    ref: treeRef.ref,
+  };
+};
+
+const getMarketplaceTreeInstallFiles = (
+  plugin: PluginMarketplacePlugin,
+  tree: GithubTreeEntry[],
+): MarketplaceTreeInstallFile[] => {
+  const packagePath = normalizeMarketplacePackagePath(plugin.packagePath);
+  if (!isSafeMarketplacePackagePath(packagePath)) throw new Error('插件包路径非法');
+  const prefix = packagePath ? `${packagePath}/` : '';
+  const files: MarketplaceTreeInstallFile[] = [];
+  let totalSize = 0;
+
+  for (const entry of tree) {
+    if (entry.type !== 'blob') continue;
+    const rawPath = normalizeMarketplacePackagePath(entry.path);
+    if (!rawPath || !isSafeMarketplacePackagePath(rawPath)) continue;
+    if (prefix && !rawPath.startsWith(prefix)) continue;
+
+    const relativePath = prefix ? rawPath.slice(prefix.length) : rawPath;
+    if (!relativePath || !isSafeMarketplacePackagePath(relativePath)) continue;
+
+    const size = Math.max(0, Math.round(Number(entry.size) || 0));
+    totalSize += size;
+    files.push({ rawPath, relativePath, size });
+  }
+
+  if (!files.some((file) => file.relativePath === PLUGIN_MANIFEST_FILE)) {
+    throw new Error('插件目录缺少 manifest.json');
+  }
+  if (files.length > MAX_PLUGIN_MARKETPLACE_TREE_FILES) {
+    throw new Error(`插件文件数量超过限制 (${MAX_PLUGIN_MARKETPLACE_TREE_FILES})`);
+  }
+  if (totalSize > MAX_PLUGIN_PACKAGE_SIZE_BYTES) {
+    throw new Error('插件文件总大小超过 80 MB');
+  }
+
+  log.info('[PluginMarketplace] tree install files selected', {
+    pluginId: plugin.id,
+    sourceId: plugin.sourceId,
+    packagePath,
+    files: files.length,
+    bytes: totalSize,
+  });
+
+  return files.sort((left, right) => comparePluginText(left.relativePath, right.relativePath));
+};
+
+const prepareMarketplaceTreeInstallDirectory = async (
+  plugin: PluginMarketplacePlugin,
+  directory: string,
+  githubProxyUrl?: string,
+) => {
+  const repo = parseGithubRepository(plugin.repo || plugin.sourceUrl);
+  if (!repo) throw new Error('插件仓库地址无效');
+
+  const treeResult = await fetchGithubTree(repo, githubProxyUrl);
+  const tree = treeResult.tree;
+  const files = getMarketplaceTreeInstallFiles(plugin, tree);
+  const sourceDirectory = join(directory, 'tree', plugin.id);
+  mkdirSync(sourceDirectory, { recursive: true });
+
+  log.info('[PluginMarketplace] tree install started', {
+    pluginId: plugin.id,
+    sourceId: plugin.sourceId,
+    ref: treeResult.ref,
+    files: files.length,
+  });
+
+  for (let index = 0; index < files.length; index += PLUGIN_MARKETPLACE_TREE_DOWNLOAD_CONCURRENCY) {
+    const batch = files.slice(index, index + PLUGIN_MARKETPLACE_TREE_DOWNLOAD_CONCURRENCY);
+    await Promise.all(
+      batch.map(async (file) => {
+        try {
+          const buffer = await fetchMarketplaceFileBuffer(
+            toRawGithubUrl(repo, file.rawPath, treeResult.ref),
+            githubProxyUrl,
+          );
+          writeMarketplaceInstallFile(sourceDirectory, file.relativePath, buffer);
+        } catch (error) {
+          log.warn('[PluginMarketplace] tree file install failed', {
+            pluginId: plugin.id,
+            sourceId: plugin.sourceId,
+            file: file.relativePath,
+            error: error instanceof Error ? error.message : String(error),
+          });
+          throw error;
+        }
+      }),
+    );
+  }
+
+  log.info('[PluginMarketplace] tree install prepared', {
+    pluginId: plugin.id,
+    sourceId: plugin.sourceId,
+    ref: treeResult.ref,
+    files: files.length,
+  });
+
+  return sourceDirectory;
+};
+
+const extractMarketplacePackage = async (
+  zipPath: string,
+  extractDirectory: string,
+  plugin: Pick<PluginMarketplacePlugin, 'id' | 'sourceId'>,
+) => {
+  log.info('[PluginMarketplace] package extract started', {
+    pluginId: plugin.id,
+    sourceId: plugin.sourceId,
+  });
+  await runWithTimeout(
+    extractZip(zipPath, { dir: extractDirectory }),
+    PLUGIN_MARKETPLACE_EXTRACT_TIMEOUT_MS,
+    '插件安装包解压超时',
+    'extract-zip',
+  );
+  log.info('[PluginMarketplace] package extract finished', {
+    pluginId: plugin.id,
+    sourceId: plugin.sourceId,
+  });
+};
+
 const findExtractedArchiveRoot = (directory: string) => {
   const entries = readdirSync(directory, { withFileTypes: true }).filter(
     (entry) => !entry.name.startsWith('__MACOSX'),
@@ -1793,18 +2192,44 @@ export const installPluginFromMarketplace = async (
 
     const tempDirectory = mkdtempSync(join(tmpdir(), 'echo-plugin-download-'));
     try {
-      const zipPath = await downloadMarketplacePackage(
-        plugin,
-        tempDirectory,
-        options.githubProxyUrl,
-      );
-      const extractDirectory = join(tempDirectory, 'extracted');
-      mkdirSync(extractDirectory, { recursive: true });
-      await extractZip(zipPath, { dir: extractDirectory });
-      const sourceDirectory = findPluginInstallSourceDirectory(
-        extractDirectory,
-        plugin.packagePath,
-      );
+      let sourceDirectory = '';
+      let installMethod: 'tree' | 'archive' = 'archive';
+      try {
+        sourceDirectory = await prepareMarketplaceTreeInstallDirectory(
+          plugin,
+          tempDirectory,
+          options.githubProxyUrl,
+        );
+        installMethod = 'tree';
+      } catch (error) {
+        log.warn('[PluginMarketplace] tree install fallback to archive', {
+          sourceId,
+          pluginId: plugin.id,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+
+      if (!sourceDirectory) {
+        const zipPath = await downloadMarketplacePackage(
+          plugin,
+          tempDirectory,
+          options.githubProxyUrl,
+        );
+        const extractDirectory = join(tempDirectory, 'extracted');
+        mkdirSync(extractDirectory, { recursive: true });
+        await extractMarketplacePackage(zipPath, extractDirectory, plugin);
+        sourceDirectory = findPluginInstallSourceDirectory(extractDirectory, plugin.packagePath);
+        log.info('[PluginMarketplace] archive source directory resolved', {
+          sourceId,
+          pluginId: plugin.id,
+        });
+      }
+
+      log.info('[PluginMarketplace] install apply started', {
+        sourceId,
+        pluginId: plugin.id,
+        method: installMethod,
+      });
       const installed = installPluginDirectory(sourceDirectory, {
         expectedPluginId: plugin.id,
         enableAfterInstall: Boolean(options.enableAfterInstall),
@@ -1817,7 +2242,7 @@ export const installPluginFromMarketplace = async (
       });
       return { ok: true, ...installed };
     } finally {
-      rmSync(tempDirectory, { recursive: true, force: true });
+      removeTemporaryDirectory(tempDirectory);
     }
   } catch (error) {
     log.warn('[PluginMarketplace] install failed', {
