@@ -27,9 +27,10 @@ const configureLinuxWindowingBackend = () => {
     return;
   }
 
-  // 在 Wayland 会话下，使用 XWayland 兼容层（支持桌面歌词穿透）
-  // Electron 默认会使用 XWayland，无需设置 ozone-platform
+  // 在 Wayland 会话下，显式使用 XWayland 兼容层（支持桌面歌词穿透）
+  // 必须显式设置 ozone-platform，否则 Electron 可能无法正确初始化窗口系统
   process.env.ECHOMUSIC_WINDOWING_BACKEND = 'x11';
+  app.commandLine.appendSwitch('ozone-platform', 'x11');
 };
 
 // Linux: 检测并修复 libmpv 运行环境（必须在所有其他初始化之前）
