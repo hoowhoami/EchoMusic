@@ -129,6 +129,8 @@ const PLUGIN_WINDOW_MIN_WIDTH = 180;
 const PLUGIN_WINDOW_MIN_HEIGHT = 48;
 const PLUGIN_WINDOW_MAX_WIDTH = 1400;
 const PLUGIN_WINDOW_MAX_HEIGHT = 900;
+const PLUGIN_MARKETPLACE_FETCH_TIMEOUT_MS = 30_000;
+const PLUGIN_MARKETPLACE_DOWNLOAD_TIMEOUT_MS = 120_000;
 const BARE_SEMVER_PATTERN = /^v?\d+(?:\.\d+){0,2}(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
 const MAX_PLUGIN_PROCESS_ARGS = 64;
 const MAX_PLUGIN_PROCESS_ARG_LENGTH = 8192;
@@ -1052,6 +1054,29 @@ const applyGithubProxyUrl = (url: string, githubProxyUrl?: string) => {
   return `${proxy.replace(/\/+$/, '')}/${target}`;
 };
 
+const fetchWithTimeout = async (
+  url: string,
+  options: RequestInit,
+  timeoutMs: number,
+  timeoutMessage: string,
+) => {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    });
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new Error(timeoutMessage);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
+};
+
 const normalizeMarketplaceSource = (
   source: Partial<PluginMarketplaceSource> | null | undefined,
 ): PluginMarketplaceSource | null => {
@@ -1302,12 +1327,17 @@ const normalizeMarketplaceIndexPlugins = async (
 
 const fetchMarketplaceText = async (url: string, githubProxyUrl?: string) => {
   const targetUrl = applyGithubProxyUrl(url, githubProxyUrl);
-  const response = await fetch(targetUrl, {
-    headers: {
-      Accept: 'application/json,text/plain,*/*',
-      'User-Agent': 'EchoMusic-Plugin-Marketplace',
+  const response = await fetchWithTimeout(
+    targetUrl,
+    {
+      headers: {
+        Accept: 'application/json,text/plain,*/*',
+        'User-Agent': 'EchoMusic-Plugin-Marketplace',
+      },
     },
-  });
+    PLUGIN_MARKETPLACE_FETCH_TIMEOUT_MS,
+    '插件源请求超时，请检查网络或 GitHub 代理',
+  );
   if (!response.ok) {
     throw new Error(`请求失败 (${response.status})`);
   }
@@ -1592,14 +1622,28 @@ const downloadMarketplacePackage = async (
   githubProxyUrl?: string,
 ) => {
   const downloadUrl = applyGithubProxyUrl(plugin.downloadUrl, githubProxyUrl);
-  const response = await fetch(downloadUrl, {
-    headers: {
-      Accept: 'application/zip,application/octet-stream,*/*',
-      'User-Agent': 'EchoMusic-Plugin-Marketplace',
-    },
+  log.info('[PluginMarketplace] package download started', {
+    pluginId: plugin.id,
+    sourceId: plugin.sourceId,
   });
+  const response = await fetchWithTimeout(
+    downloadUrl,
+    {
+      headers: {
+        Accept: 'application/zip,application/octet-stream,*/*',
+        'User-Agent': 'EchoMusic-Plugin-Marketplace',
+      },
+    },
+    PLUGIN_MARKETPLACE_DOWNLOAD_TIMEOUT_MS,
+    '插件安装包下载超时，请检查网络或 GitHub 代理',
+  );
   if (!response.ok) throw new Error(`插件下载失败 (${response.status})`);
   const buffer = Buffer.from(await response.arrayBuffer());
+  log.info('[PluginMarketplace] package download finished', {
+    pluginId: plugin.id,
+    sourceId: plugin.sourceId,
+    bytes: buffer.byteLength,
+  });
   if (buffer.byteLength > MAX_PLUGIN_PACKAGE_SIZE_BYTES) {
     throw new Error('插件安装包超过 80 MB');
   }
@@ -1715,16 +1759,32 @@ export const installPluginFromMarketplace = async (
   pluginId: string,
   options: PluginMarketplaceInstallOptions = {},
 ): Promise<PluginMarketplaceInstallResult> => {
+  const normalizedPluginId = normalizePluginId(pluginId);
+  log.info('[PluginMarketplace] install requested', {
+    sourceId,
+    pluginId: normalizedPluginId,
+  });
   try {
     const marketplace = await listPluginMarketplace({
       githubProxyUrl: options.githubProxyUrl,
       refresh: false,
     });
     const plugin = marketplace.plugins.find(
-      (item) => item.sourceId === sourceId && item.id === normalizePluginId(pluginId),
+      (item) => item.sourceId === sourceId && item.id === normalizedPluginId,
     );
-    if (!plugin) return { ok: false, error: '在线插件不存在，请刷新插件源后重试' };
+    if (!plugin) {
+      log.warn('[PluginMarketplace] install target not found', {
+        sourceId,
+        pluginId: normalizedPluginId,
+      });
+      return { ok: false, error: '在线插件不存在，请刷新插件源后重试' };
+    }
     if (!plugin.compatibility.compatible) {
+      log.warn('[PluginMarketplace] install blocked by compatibility', {
+        sourceId,
+        pluginId: plugin.id,
+        message: plugin.compatibility.message,
+      });
       return {
         ok: false,
         error: plugin.compatibility.message || '插件与当前 EchoMusic 版本不兼容',
@@ -1749,11 +1809,22 @@ export const installPluginFromMarketplace = async (
         expectedPluginId: plugin.id,
         enableAfterInstall: Boolean(options.enableAfterInstall),
       });
+      log.info('[PluginMarketplace] install succeeded', {
+        sourceId,
+        pluginId: installed.plugin.id,
+        updated: installed.updated,
+        enabled: installed.enabled,
+      });
       return { ok: true, ...installed };
     } finally {
       rmSync(tempDirectory, { recursive: true, force: true });
     }
   } catch (error) {
+    log.warn('[PluginMarketplace] install failed', {
+      sourceId,
+      pluginId: normalizedPluginId,
+      error: error instanceof Error ? error.message : String(error),
+    });
     return {
       ok: false,
       error: error instanceof Error ? error.message : '插件安装失败',

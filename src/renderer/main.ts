@@ -58,14 +58,46 @@ const getComponentSummary = (instance: ComponentPublicInstance | null): string =
   return instance.$?.type ? 'anonymous-component' : 'unknown';
 };
 
-const hasPluginSource = (...sources: unknown[]) =>
+type PluginErrorSource =
+  | {
+      kind: 'plugin';
+      pluginId: string;
+    }
+  | {
+      kind: 'plugin-window';
+      pluginId: string;
+      windowId: string;
+    };
+
+const stringifyErrorSources = (...sources: unknown[]) =>
   sources
     .filter((source) => source !== null && source !== undefined)
     .map((source) =>
       source instanceof Error ? `${source.message}\n${source.stack ?? ''}` : String(source),
     )
-    .join('\n')
-    .includes('echo-plugin:');
+    .join('\n');
+
+const getPluginErrorSource = (...sources: unknown[]): PluginErrorSource | null => {
+  const text = stringifyErrorSources(...sources);
+  const windowMatch = text.match(/echo-plugin-window:([a-zA-Z0-9._-]+):([a-zA-Z0-9._-]+)/);
+  if (windowMatch) {
+    return {
+      kind: 'plugin-window',
+      pluginId: windowMatch[1],
+      windowId: windowMatch[2],
+    };
+  }
+
+  const pluginMatch = text.match(/echo-plugin:([a-zA-Z0-9._-]+)/);
+  if (pluginMatch) {
+    return {
+      kind: 'plugin',
+      pluginId: pluginMatch[1],
+    };
+  }
+
+  return null;
+};
 
 const shouldSkipErrorRedirect = (status: string, message: string, from: string): boolean => {
   const signature = `${status}|${message}|${from}`;
@@ -112,8 +144,22 @@ app.config.errorHandler = (err: unknown, instance, info) => {
 window.addEventListener('error', (event) => {
   const errorMessage = event.error?.message ?? event.message ?? '';
   const filename = event.filename ?? '';
-  if (hasPluginSource(event.error, event.message, filename)) {
-    logger.warn('App', 'Plugin window error skipped by app boundary', errorMessage);
+  const pluginSource = getPluginErrorSource(event.error, event.message, filename);
+  if (pluginSource) {
+    logger.warn(
+      'App',
+      pluginSource.kind === 'plugin-window'
+        ? 'Plugin window error skipped by app boundary'
+        : 'Plugin runtime error skipped by app boundary',
+      {
+        ...pluginSource,
+        message: errorMessage,
+        filename,
+        lineno: event.lineno,
+        colno: event.colno,
+        stack: event.error instanceof Error ? event.error.stack : '',
+      },
+    );
     return;
   }
 
@@ -145,8 +191,19 @@ window.addEventListener('error', (event) => {
 });
 
 window.addEventListener('unhandledrejection', (event) => {
-  if (hasPluginSource(event.reason)) {
-    logger.warn('App', 'Plugin promise rejection skipped by app boundary', event.reason);
+  const pluginSource = getPluginErrorSource(event.reason);
+  if (pluginSource) {
+    logger.warn(
+      'App',
+      pluginSource.kind === 'plugin-window'
+        ? 'Plugin window promise rejection skipped by app boundary'
+        : 'Plugin promise rejection skipped by app boundary',
+      {
+        ...pluginSource,
+        message: getErrorMessage(event.reason),
+        stack: event.reason instanceof Error ? event.reason.stack : '',
+      },
+    );
     return;
   }
   logger.error('App', 'Unhandled promise rejection', event.reason);

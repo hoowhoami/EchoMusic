@@ -1,4 +1,5 @@
 import { ipcMain, type IpcMainEvent, type IpcMainInvokeEvent } from 'electron';
+import log from '../logger';
 
 type IpcHandler = (event: IpcMainInvokeEvent, ...args: any[]) => Promise<any> | any;
 type IpcListener = (event: IpcMainEvent, ...args: any[]) => void;
@@ -13,7 +14,18 @@ class IpcRegistry {
       ipcMain.removeHandler(channel);
     }
     this.handlers.set(channel, handler);
-    ipcMain.handle(channel, handler);
+    ipcMain.handle(channel, async (event, ...args) => {
+      try {
+        return await handler(event, ...args);
+      } catch (error) {
+        log.error('[IPC] Handler failed', {
+          channel,
+          error: error instanceof Error ? error.message : String(error),
+          stack: error instanceof Error ? error.stack : '',
+        });
+        throw error;
+      }
+    });
   }
 
   registerListener(channel: string, listener: IpcListener): void {

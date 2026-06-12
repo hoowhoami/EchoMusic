@@ -475,6 +475,14 @@ const openExternalUrl = (url: string) => {
   window.electron.ipcRenderer.send('open-external', url);
 };
 
+const getPluginInstallErrorMessage = (error: unknown) => {
+  const message = error instanceof Error ? error.message : String(error || '');
+  if (message.includes('reply was never sent')) {
+    return '插件安装被主进程中断，请重启 EchoMusic 后检查插件状态';
+  }
+  return message || '插件安装失败';
+};
+
 const installMarketplacePlugin = async (plugin: PluginMarketplacePlugin) => {
   if (!canInstallMarketplacePlugin(plugin)) return;
   const key = getMarketplacePluginKey(plugin);
@@ -492,7 +500,7 @@ const installMarketplacePlugin = async (plugin: PluginMarketplacePlugin) => {
     await loadMarketplace(false);
     toastStore.actionCompleted(result.updated ? '插件已更新' : '插件已安装');
   } catch (error) {
-    toastStore.warning(error instanceof Error ? error.message : '插件安装失败');
+    toastStore.warning(getPluginInstallErrorMessage(error));
   } finally {
     const done = new Set(busyMarketplacePluginKeys.value);
     done.delete(key);
@@ -550,7 +558,7 @@ const installLocalPlugins = async (paths: string[]) => {
 
     toastStore.actionCompleted(`已安装 ${result.installed} 个插件`);
   } catch (error) {
-    toastStore.warning(error instanceof Error ? error.message : '插件安装失败');
+    toastStore.warning(getPluginInstallErrorMessage(error));
   } finally {
     isLocalInstalling.value = false;
     localInstallCount.value = 0;

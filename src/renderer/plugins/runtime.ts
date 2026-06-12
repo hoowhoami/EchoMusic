@@ -1424,6 +1424,14 @@ const reportPluginFailure = async (
     return;
   }
 
+  logger.warn('PluginRuntime', 'Plugin failure reported', {
+    pluginId,
+    reason,
+    source: options.source,
+    message,
+    stack: detail.stack,
+  });
+
   try {
     await window.electron.plugins?.reportFailure({
       pluginId,
