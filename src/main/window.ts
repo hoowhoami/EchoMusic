@@ -9,6 +9,7 @@ import {
 import { getActiveWindowMode, setActiveWindowMode } from './windowMode';
 import { isPluginRendererGoneFailureReason, reportPluginRendererFailure } from './plugins';
 import { ipcRegistry } from './ipc/registry';
+import { applyWindowAppIcon, resolveWindowIconPath } from './appIcons';
 
 const minWidth: number = 1100;
 const minHeight: number = 720;
@@ -88,8 +89,6 @@ export function requestMainWindowClose() {
 
   hideMainWindow();
 }
-
-const resolveDevWindowIcon = () => join(process.cwd(), 'build/icons/icon.png');
 
 // 监听应用准备退出
 app.on('before-quit', () => {
@@ -237,10 +236,11 @@ export async function createWindow() {
 
   const initialBounds = buildWindowBounds();
   const initialWindowState = getPersistedWindowState();
+  const windowIconPath = resolveWindowIconPath();
 
   win = new BrowserWindow({
     title: 'EchoMusic',
-    ...(!app.isPackaged ? { icon: resolveDevWindowIcon() } : {}),
+    ...(windowIconPath ? { icon: windowIconPath } : {}),
     ...initialBounds,
     minWidth: minWidth,
     minHeight: minHeight,
@@ -262,6 +262,7 @@ export async function createWindow() {
       backgroundThrottling: false, // 最小化后不节流，保证播放状态和歌词同步
     },
   });
+  applyWindowAppIcon(win);
 
   if (rememberWindowSize && initialWindowState.isMaximized) {
     win.maximize();

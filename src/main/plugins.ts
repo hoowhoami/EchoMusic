@@ -64,6 +64,9 @@ import type {
   PluginReadFileBytesResult,
   PluginReadTextFileOptions,
   PluginReadTextFileResult,
+  PluginWriteFileData,
+  PluginWriteFileOptions,
+  PluginWriteFileResult,
   PluginWindowDescriptor,
   PluginWindowManifest,
   PluginReportFailureResult,
@@ -125,6 +128,7 @@ const DEFAULT_PLUGIN_FILE_SCAN_LIMIT = 2000;
 const MAX_PLUGIN_FILE_SCAN_LIMIT = 10000;
 const DEFAULT_PLUGIN_READ_BYTES = 1024 * 1024;
 const MAX_PLUGIN_READ_BYTES = 4 * 1024 * 1024;
+const MAX_PLUGIN_WRITE_BYTES = 8 * 1024 * 1024;
 const PLUGIN_WINDOW_MIN_WIDTH = 180;
 const PLUGIN_WINDOW_MIN_HEIGHT = 48;
 const PLUGIN_WINDOW_MAX_WIDTH = 1400;
@@ -3230,6 +3234,113 @@ export const readPluginFileBytes = (
     return {
       ok: false,
       error: error instanceof Error ? error.message : '文件读取失败',
+    };
+  }
+};
+
+const normalizePluginWriteEncoding = (encoding: PluginWriteFileOptions['encoding']) => {
+  const normalized = String(encoding || 'utf8').toLowerCase();
+  if (normalized === 'utf-8') return 'utf8';
+  if (normalized === 'ucs-2') return 'ucs2';
+  if (
+    normalized === 'utf8' ||
+    normalized === 'utf16le' ||
+    normalized === 'ucs2' ||
+    normalized === 'latin1' ||
+    normalized === 'ascii' ||
+    normalized === 'base64'
+  ) {
+    return normalized;
+  }
+  return 'utf8';
+};
+
+const normalizePluginWriteBuffer = (data: PluginWriteFileData, options: PluginWriteFileOptions) => {
+  if (typeof data === 'string') {
+    return Buffer.from(data, normalizePluginWriteEncoding(options.encoding));
+  }
+
+  if (data instanceof ArrayBuffer) {
+    return Buffer.from(data);
+  }
+
+  if (ArrayBuffer.isView(data)) {
+    return Buffer.from(data.buffer, data.byteOffset, data.byteLength);
+  }
+
+  if (data && typeof data === 'object' && data.type === 'base64') {
+    return Buffer.from(String(data.data || ''), 'base64');
+  }
+
+  throw new Error('写入内容必须是字符串、ArrayBuffer、Uint8Array 或 base64 对象');
+};
+
+const resolvePluginWritableFile = (
+  plugin: EchoPluginDescriptor,
+  filePath: string,
+  options: PluginWriteFileOptions,
+) => {
+  const input = String(filePath || '').trim();
+  if (!input) throw new Error('文件路径为空');
+  if (input.includes('\0')) throw new Error('文件路径不能包含空字符');
+
+  const targetPath = resolvePluginFile(plugin.directory, input);
+  if (!targetPath) throw new Error('写入路径必须位于插件目录内');
+
+  const pluginRoot = realpathSync(plugin.directory);
+  const parentPath = dirname(targetPath);
+  if (options.createDirectories !== false) {
+    mkdirSync(parentPath, { recursive: true });
+  }
+
+  const parentRealPath = realpathSync(parentPath);
+  if (!isPathInside(pluginRoot, parentRealPath)) throw new Error('写入路径必须位于插件目录内');
+  if (existsSync(targetPath)) {
+    const targetRealPath = realpathSync(targetPath);
+    if (!isPathInside(pluginRoot, targetRealPath)) throw new Error('写入路径必须位于插件目录内');
+    const stats = statSync(targetPath);
+    if (!stats.isFile()) throw new Error('写入路径不是文件');
+    if (options.overwrite !== true) throw new Error('文件已存在');
+  }
+
+  return { pluginRoot, targetPath };
+};
+
+export const writePluginFile = (
+  pluginId: string,
+  filePath: string,
+  data: PluginWriteFileData,
+  options: PluginWriteFileOptions = {},
+): PluginWriteFileResult => {
+  const access = hasPluginLocalFilesAccess(pluginId);
+  if (!access.ok) return { ok: false, error: access.error };
+
+  try {
+    const buffer = normalizePluginWriteBuffer(data, options);
+    if (buffer.byteLength > MAX_PLUGIN_WRITE_BYTES) {
+      return {
+        ok: false,
+        error: `写入内容不能超过 ${Math.round(MAX_PLUGIN_WRITE_BYTES / 1024 / 1024)} MB`,
+      };
+    }
+
+    const target = resolvePluginWritableFile(access.plugin, filePath, options);
+    writeFileSync(target.targetPath, buffer, { flag: options.overwrite === true ? 'w' : 'wx' });
+    const stats = statSync(target.targetPath);
+    const entry = toPluginFileEntry(target.pluginRoot, target.targetPath, stats);
+    return {
+      ok: true,
+      name: entry.name,
+      path: entry.path,
+      url: entry.url,
+      size: entry.size,
+      modifiedAt: entry.modifiedAt,
+      bytesWritten: buffer.byteLength,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : '文件写入失败',
     };
   }
 };

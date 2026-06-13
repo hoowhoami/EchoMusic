@@ -219,6 +219,36 @@ export type PluginReadFileBytesResult =
       error: string;
     };
 
+export interface PluginWriteFileOptions {
+  encoding?: 'utf8' | 'utf-8' | 'utf16le' | 'ucs2' | 'ucs-2' | 'latin1' | 'ascii' | 'base64';
+  overwrite?: boolean;
+  createDirectories?: boolean;
+}
+
+export type PluginWriteFileData =
+  | string
+  | ArrayBuffer
+  | Uint8Array
+  | {
+      type: 'base64';
+      data: string;
+    };
+
+export type PluginWriteFileResult =
+  | {
+      ok: true;
+      name: string;
+      path: string;
+      url: string;
+      size: number;
+      modifiedAt: number;
+      bytesWritten: number;
+    }
+  | {
+      ok: false;
+      error: string;
+    };
+
 export interface PluginProcessLaunchOptions {
   executable: string;
   args?: string[];
@@ -499,6 +529,22 @@ export type PluginUninstallResult =
 
 export type PluginReportFailureResult = {
   ok: boolean;
+};
+
+export type PluginAppIconRefreshResult = {
+  ok: true;
+  trayIconPath: string | null;
+  taskbarIconPath: string | null;
+  windowIconPath: string | null;
+  desktopIconPath: string | null;
+  trayPluginId: string | null;
+  taskbarPluginId: string | null;
+  windowPluginId: string | null;
+  desktopPluginId: string | null;
+  desktopApplied: boolean;
+  desktopError: string | null;
+  taskbarShortcutApplied: boolean;
+  taskbarShortcutError: string | null;
 };
 
 export type PluginAssetSourceResult =

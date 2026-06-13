@@ -259,7 +259,9 @@ onMounted(() => {
         >
           <template #details>
             <div class="flex flex-col gap-2">
-              <div class="text-[13px] font-semibold text-text-secondary">历史记录仅供参考</div>
+              <div class="text-[13px] font-semibold text-text-secondary">
+                记录过往播放轨迹，快速回溯曾听过的歌曲与内容。
+              </div>
               <div
                 class="flex flex-wrap items-center gap-x-3 gap-y-2 text-[11px] font-semibold text-text-secondary/80"
               >

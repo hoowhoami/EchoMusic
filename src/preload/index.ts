@@ -36,6 +36,7 @@ import type { RecognizeResponse } from '../shared/shazam';
 import type { ResolvePlaylistRequest, ResolvePlaylistResponse } from '../shared/external';
 import type {
   PluginAssetSourceResult,
+  PluginAppIconRefreshResult,
   PluginDialogResult,
   PluginFileUrlResult,
   PluginFailureRecord,
@@ -67,6 +68,9 @@ import type {
   PluginSetEnabledResult,
   PluginSetSafeModeResult,
   PluginUninstallResult,
+  PluginWriteFileData,
+  PluginWriteFileOptions,
+  PluginWriteFileResult,
   PluginWindowBounds,
   PluginWindowContextResult,
   PluginWindowResult,
@@ -486,6 +490,10 @@ contextBridge.exposeInMainWorld('electron', {
         ),
     },
     reloadRuntimes: () => ipcRenderer.invoke('plugins:runtime-reload') as Promise<void>,
+    icons: {
+      refresh: () =>
+        ipcRenderer.invoke('plugins:icons:refresh') as Promise<PluginAppIconRefreshResult>,
+    },
     onRuntimeReloadRequested: (func: () => void) => {
       const listener = () => func();
       ipcRenderer.on('plugins:runtime-reload-requested', listener);
@@ -607,6 +615,19 @@ contextBridge.exposeInMainWorld('electron', {
           'plugins:fs:read-file-bytes',
           pluginId,
           filePath,
+          options,
+        ),
+      writeFile: (
+        pluginId: string,
+        filePath: string,
+        data: PluginWriteFileData,
+        options?: PluginWriteFileOptions,
+      ) =>
+        invokeWithPlainPayload<PluginWriteFileResult>(
+          'plugins:fs:write-file',
+          pluginId,
+          filePath,
+          data,
           options,
         ),
     },

@@ -430,7 +430,7 @@ watch(isLoggedIn, (value) => {
           <template #details>
             <div class="flex flex-col gap-2">
               <div class="text-[13px] font-semibold text-text-secondary">
-                收藏的歌曲、歌手、用户、专辑与视频
+                集中管理收藏的歌曲、歌手、用户、专辑与视频。
               </div>
               <div
                 class="flex flex-wrap items-center gap-x-3 gap-y-2 text-[11px] font-semibold text-text-secondary/80"

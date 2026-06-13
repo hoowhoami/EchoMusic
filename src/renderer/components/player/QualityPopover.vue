@@ -11,6 +11,7 @@ const {
   settingStore,
   currentTrack,
   effectiveAudioQuality,
+  isAudioQualitySelectionDisabled,
   isAudioQualityDisabled,
   audioQualityButtonBadge,
   getAudioQualityTagColor,
@@ -32,6 +33,7 @@ withDefaults(defineProps<Props>(), {
 
 <template>
   <Popover
+    v-if="!isAudioQualitySelectionDisabled"
     trigger="hover"
     :side="side"
     align="center"
@@ -46,7 +48,7 @@ withDefaults(defineProps<Props>(), {
         type="button"
         class="p-2 transition-all"
         :class="
-          player.currentAudioQualityOverride !== null
+          !isAudioQualitySelectionDisabled && player.currentAudioQualityOverride !== null
             ? variant === 'lyric'
               ? 'text-black dark:text-white hover:scale-110 active:scale-90'
               : 'text-primary hover:scale-110 active:scale-90'
@@ -59,7 +61,7 @@ withDefaults(defineProps<Props>(), {
         <span class="relative inline-flex w-5 h-5 items-center justify-center">
           <AudioWaveIcon class="w-5 h-5" style="transform: translateY(3px)" />
           <Badge
-            v-if="currentTrack && settingStore.showAudioQualityBadge"
+            v-if="currentTrack && settingStore.showAudioQualityBadge && audioQualityButtonBadge"
             :count="audioQualityButtonBadge"
             class="absolute top-2px"
             :style="{ right: '-12px' }"
@@ -75,10 +77,10 @@ withDefaults(defineProps<Props>(), {
         type="button"
         class="pm-item"
         :class="{
-          'is-active': effectiveAudioQuality === q,
-          'is-disabled': isAudioQualityDisabled(q) && effectiveAudioQuality !== q,
+          'is-active': !isAudioQualitySelectionDisabled && effectiveAudioQuality === q,
+          'is-disabled': isAudioQualityDisabled(q),
         }"
-        :disabled="isAudioQualityDisabled(q) && effectiveAudioQuality !== q"
+        :disabled="isAudioQualityDisabled(q)"
         @click="setAudioQuality(q)"
       >
         <span class="pm-label">{{
@@ -103,7 +105,11 @@ withDefaults(defineProps<Props>(), {
                   ? 'HR'
                   : 'DSD'
         }}</Tag>
-        <span class="pm-check" :class="{ 'is-visible': effectiveAudioQuality === q }">✓</span>
+        <span
+          class="pm-check"
+          :class="{ 'is-visible': !isAudioQualitySelectionDisabled && effectiveAudioQuality === q }"
+          >✓</span
+        >
       </button>
     </div>
   </Popover>

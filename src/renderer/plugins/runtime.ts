@@ -148,6 +148,9 @@ export interface EchoPluginContext {
   theme: PluginThemeApi;
   appearance: ReturnType<typeof createAppearanceApi>;
   scroll: ReturnType<typeof createScrollApi>;
+  appIcons: {
+    refresh: () => Promise<unknown>;
+  };
   nowPlaying: Window['electron']['nowPlaying'];
   windows: {
     show: (windowId: string, options?: PluginWindowShowOptions) => Promise<unknown>;
@@ -980,6 +983,22 @@ const createPluginFsApi = (pluginId: string) => {
     ) =>
       getFsApi()?.readFileBytes(pluginId, filePath, serializeForIpc(options) as typeof options) ??
       unavailable(),
+    writeFile: (
+      filePath: string,
+      data: Parameters<NonNullable<Window['electron']['plugins']>['fs']['writeFile']>[2],
+      options?: Parameters<NonNullable<Window['electron']['plugins']>['fs']['writeFile']>[3],
+    ) => {
+      const payload =
+        data instanceof ArrayBuffer || ArrayBuffer.isView(data) ? data : serializeForIpc(data);
+      return (
+        getFsApi()?.writeFile(
+          pluginId,
+          filePath,
+          payload as typeof data,
+          serializeForIpc(options) as typeof options,
+        ) ?? unavailable()
+      );
+    },
   };
 };
 
@@ -1592,6 +1611,9 @@ const createPluginContext = (
     theme: createThemeApi(descriptor.id, addDisposable),
     appearance: createAppearanceApi(descriptor.id, addDisposable),
     scroll: createScrollApi(descriptor.id, addDisposable),
+    appIcons: {
+      refresh: () => window.electron.plugins?.icons.refresh() ?? Promise.resolve({ ok: false }),
+    },
     nowPlaying: window.electron.nowPlaying,
     windows: createPluginWindowsApi(descriptor.id),
     toast: createToastApi(),

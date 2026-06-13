@@ -1,10 +1,10 @@
 import { Menu, Tray, app, nativeImage, type MenuItemConstructorOptions } from 'electron';
 import { quitApplication } from './window';
-import { join } from 'path';
 import type { PlayMode } from '../shared/playback';
 import type { DesktopLyricSnapshot } from '../shared/desktop-lyric';
 import type { TrayCommand, TrayPlaybackPayload } from '../shared/tray';
 import log from './logger';
+import { resolveTrayIconPath } from './appIcons';
 
 interface TrayContext {
   getMainWindow: () => Electron.BrowserWindow | null;
@@ -28,21 +28,6 @@ const playModeLabelMap: Record<PlayMode, string> = {
   list: '列表循环',
   random: '随机播放',
   single: '单曲循环',
-};
-
-const resolveTrayIconPath = () => {
-  const iconName =
-    process.platform === 'darwin'
-      ? 'IconTemplate.png'
-      : process.platform === 'win32'
-        ? 'win_tray_icon.ico'
-        : 'linux_tray_icon.png';
-
-  if (app.isPackaged) {
-    return join(process.resourcesPath, 'icons', iconName);
-  }
-
-  return join(process.cwd(), 'build/icons', iconName);
 };
 
 const createTrayImage = () => {

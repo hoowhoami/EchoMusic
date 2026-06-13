@@ -33,6 +33,7 @@ import type { RecognizeResponse } from '../shared/shazam';
 import type { ResolvePlaylistRequest, ResolvePlaylistResponse } from '../shared/external';
 import type {
   PluginAssetSourceResult,
+  PluginAppIconRefreshResult,
   PluginDialogResult,
   PluginFileUrlResult,
   PluginFailureRecord,
@@ -64,6 +65,9 @@ import type {
   PluginSetEnabledResult,
   PluginSetSafeModeResult,
   PluginUninstallResult,
+  PluginWriteFileData,
+  PluginWriteFileOptions,
+  PluginWriteFileResult,
   PluginWindowBounds,
   PluginWindowContextResult,
   PluginWindowResult,
@@ -230,6 +234,9 @@ export interface IElectronAPI {
       ) => Promise<PluginMarketplaceInstallResult>;
     };
     reloadRuntimes: () => Promise<void>;
+    icons: {
+      refresh: () => Promise<PluginAppIconRefreshResult>;
+    };
     onRuntimeReloadRequested: (func: () => void) => () => void;
     setEnabled: (pluginId: string, enabled: boolean) => Promise<PluginSetEnabledResult>;
     setSafeMode: (enabled: boolean) => Promise<PluginSetSafeModeResult>;
@@ -300,6 +307,12 @@ export interface IElectronAPI {
         filePath: string,
         options?: PluginReadFileBytesOptions,
       ) => Promise<PluginReadFileBytesResult>;
+      writeFile: (
+        pluginId: string,
+        filePath: string,
+        data: PluginWriteFileData,
+        options?: PluginWriteFileOptions,
+      ) => Promise<PluginWriteFileResult>;
     };
     process: {
       launch: (

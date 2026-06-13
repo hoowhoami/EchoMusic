@@ -296,8 +296,8 @@ onMounted(() => {
         >
           <template #details>
             <div class="flex flex-col gap-2">
-              <div class="text-[12px] font-medium text-text-secondary/75">
-                支持基础浏览、播放与容量查看
+              <div class="text-[13px] font-semibold text-text-secondary">
+                支持云端音乐浏览、播放与容量查看，随时畅听个人珍藏。
               </div>
               <div
                 class="flex flex-wrap items-center gap-x-3 gap-y-2 text-[11px] font-semibold text-text-secondary/80"

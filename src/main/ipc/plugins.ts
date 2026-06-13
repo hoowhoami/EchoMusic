@@ -2,6 +2,7 @@ import { ipcRegistry } from './registry';
 import { BrowserWindow, dialog, type OpenDialogOptions } from 'electron';
 import type {
   PluginAssetSourceResult,
+  PluginAppIconRefreshResult,
   PluginDialogResult,
   PluginFileUrlResult,
   PluginFailureRecord,
@@ -33,6 +34,9 @@ import type {
   PluginReportFailureResult,
   PluginSetSafeModeResult,
   PluginUninstallResult,
+  PluginWriteFileData,
+  PluginWriteFileOptions,
+  PluginWriteFileResult,
 } from '../../shared/plugins';
 import {
   clearPluginFailureRecord,
@@ -65,8 +69,17 @@ import {
   setPluginSafeMode,
   terminatePluginProcess,
   uninstallPlugin,
+  writePluginFile,
 } from '../plugins';
 import { closePluginWindows } from '../pluginWindows';
+import {
+  applyDesktopAppIcon,
+  applyTaskbarShortcutIcon,
+  applyWindowAppIcon,
+  isPluginAppIconStorageKey,
+  refreshAppIconConfig,
+} from '../appIcons';
+import { refreshTray } from '../tray';
 import type { IpcContext } from './types';
 
 const sanitizeDialogOptions = (
@@ -104,6 +117,14 @@ const showPluginOpenDialog = async (
 };
 
 export const registerPluginHandlers = (context: IpcContext) => {
+  const refreshPluginAppIcons = (): PluginAppIconRefreshResult => {
+    refreshAppIconConfig();
+    applyWindowAppIcon(context.getMainWindow());
+    refreshTray();
+    applyDesktopAppIcon();
+    return applyTaskbarShortcutIcon();
+  };
+
   ipcRegistry.registerHandler('plugins:list', (): PluginListResult => listPlugins());
   ipcRegistry.registerHandler('plugins:get-directory', (): string => getPluginDirectory());
   ipcRegistry.registerHandler('plugins:open-directory', (): string => openPluginDirectory());
@@ -230,6 +251,20 @@ export const registerPluginHandlers = (context: IpcContext) => {
     ): PluginReadFileBytesResult => readPluginFileBytes(pluginId, filePath, options),
   );
   ipcRegistry.registerHandler(
+    'plugins:fs:write-file',
+    (
+      _event,
+      pluginId: string,
+      filePath: string,
+      data: PluginWriteFileData,
+      options?: PluginWriteFileOptions,
+    ): PluginWriteFileResult => {
+      const result = writePluginFile(pluginId, filePath, data, options);
+      if (result.ok) refreshPluginAppIcons();
+      return result;
+    },
+  );
+  ipcRegistry.registerHandler(
     'plugins:process:launch',
     (
       event,
@@ -251,7 +286,10 @@ export const registerPluginHandlers = (context: IpcContext) => {
     'plugins:set-enabled',
     (_event, pluginId: string, enabled: boolean): PluginSetEnabledResult => {
       const result = setPluginEnabled(pluginId, enabled);
-      if (result.ok && !enabled) closePluginWindows(pluginId);
+      if (result.ok) {
+        if (!enabled) closePluginWindows(pluginId);
+        refreshPluginAppIcons();
+      }
       return result;
     },
   );
@@ -267,7 +305,9 @@ export const registerPluginHandlers = (context: IpcContext) => {
     'plugins:uninstall',
     (_event, pluginId: string): PluginUninstallResult => {
       closePluginWindows(pluginId);
-      return uninstallPlugin(pluginId);
+      const result = uninstallPlugin(pluginId);
+      if (result.ok) refreshPluginAppIcons();
+      return result;
     },
   );
   ipcRegistry.registerHandler(
@@ -315,9 +355,19 @@ export const registerPluginHandlers = (context: IpcContext) => {
   );
   ipcRegistry.registerHandler(
     'plugins:data:set',
-    (_event, pluginId: string, key: string, value: unknown) => setPluginData(pluginId, key, value),
+    (_event, pluginId: string, key: string, value: unknown) => {
+      const result = setPluginData(pluginId, key, value);
+      if (result.ok && isPluginAppIconStorageKey(key)) refreshPluginAppIcons();
+      return result;
+    },
   );
-  ipcRegistry.registerHandler('plugins:data:delete', (_event, pluginId: string, key: string) =>
-    deletePluginData(pluginId, key),
+  ipcRegistry.registerHandler('plugins:data:delete', (_event, pluginId: string, key: string) => {
+    const result = deletePluginData(pluginId, key);
+    if (result.ok && isPluginAppIconStorageKey(key)) refreshPluginAppIcons();
+    return result;
+  });
+  ipcRegistry.registerHandler(
+    'plugins:icons:refresh',
+    (): PluginAppIconRefreshResult => refreshPluginAppIcons(),
   );
 };

@@ -17,6 +17,7 @@ import { registerAudioSpectrumIpc, unregisterAudioSpectrumIpc } from './audioSpe
 import { initMediaControls, destroyMediaControls } from './mediaControls';
 import { initPowerMonitor } from './powerMonitor';
 import { clearPluginRuntimeSession, setPluginSafeMode } from './plugins';
+import { applyDesktopAppIcon, applyTaskbarShortcutIcon, refreshAppIconConfig } from './appIcons';
 import type { MpvController } from './mpv/controller';
 
 const WM_TASKBARCREATED = 0x031a;
@@ -107,6 +108,9 @@ if (!gotTheLock) {
     initPowerMonitor({ getMainWindow, getController: () => mpvRef.current });
 
     // --- 创建主窗口 ---
+    refreshAppIconConfig();
+    applyDesktopAppIcon();
+    applyTaskbarShortcutIcon();
     await createWindow();
 
     try {

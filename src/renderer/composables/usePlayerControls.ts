@@ -145,6 +145,8 @@ export function usePlayerControls() {
 
   // ── 音质 ──
   const requestedAudioQuality = computed(() => player.getEffectiveAudioQuality());
+  const isCurrentTrackCloud = computed(() => currentTrack.value?.source === 'cloud');
+  const isAudioQualitySelectionDisabled = computed(() => isCurrentTrackCloud.value);
   const effectiveAudioQuality = computed(() => {
     if (player.currentResolvedAudioQuality) return player.currentResolvedAudioQuality;
     if (!currentTrack.value) return requestedAudioQuality.value;
@@ -156,12 +158,14 @@ export function usePlayerControls() {
   });
 
   const isAudioQualityDisabled = (quality: AudioQualityValue) => {
+    if (isAudioQualitySelectionDisabled.value) return true;
     if (quality === effectiveAudioQuality.value) return false;
     if (!currentTrack.value) return quality !== '128';
     return !hasSongQuality(currentTrack.value, quality);
   };
 
   const audioQualityButtonBadge = computed(() => {
+    if (isAudioQualitySelectionDisabled.value) return null;
     if (effectiveAudioQuality.value === '128') return 'SD';
     if (effectiveAudioQuality.value === '320') return 'HQ';
     if (effectiveAudioQuality.value === 'flac') return 'SQ';
@@ -190,6 +194,7 @@ export function usePlayerControls() {
   };
 
   const setAudioQuality = (quality: AudioQualityValue) => {
+    if (isAudioQualitySelectionDisabled.value) return;
     if (player.currentAudioQualityOverride === null && effectiveAudioQuality.value === quality)
       return;
     if (player.currentAudioQualityOverride === quality) return;
@@ -361,6 +366,7 @@ export function usePlayerControls() {
     setPlaybackRate,
     // 音质
     effectiveAudioQuality,
+    isAudioQualitySelectionDisabled,
     isAudioQualityDisabled,
     audioQualityButtonBadge,
     audioEffectButtonBadge,

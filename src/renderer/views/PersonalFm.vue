@@ -442,7 +442,7 @@ onActivated(() => {
           <template #details>
             <div class="flex flex-col gap-2">
               <div class="text-[13px] font-semibold text-text-secondary">
-                实时推荐会根据你的反馈持续更新
+                实时推送契合口味的音乐，随反馈动态更新专属歌单。
               </div>
               <div
                 class="flex flex-wrap items-center gap-x-3 gap-y-2 text-[11px] font-semibold text-text-secondary/80"
