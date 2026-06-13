@@ -288,6 +288,7 @@ export interface EchoPluginManifest {
   description?: string;
   author?: string;
   icon?: string;
+  downloadUrl?: string;
   main?: string;
   style?: string;
   runtime?: {

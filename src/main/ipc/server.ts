@@ -1,5 +1,5 @@
 import { ipcRegistry } from './registry';
-import { handleApiRequest, isApiServerReady, initApiServer } from '../server';
+import { handleApiRequest, isApiServerReady, initApiServer, readVerifyAsset } from '../server';
 
 export const registerApiServerHandlers = () => {
   ipcRegistry.registerHandler('api:request', async (_event, request) => {
@@ -20,5 +20,9 @@ export const registerApiServerHandlers = () => {
     } catch (error) {
       return { success: false, error: String(error) };
     }
+  });
+
+  ipcRegistry.registerHandler('api-server:read-verify-asset', async (_event, name) => {
+    return readVerifyAsset(name);
   });
 };

@@ -4,6 +4,7 @@ import { useDeviceStore } from '@/stores/device';
 import { ensureDevice } from './device';
 import { logger } from './logger';
 import { getPayloadSize, maskSensitiveText, stringifyForLog } from '../../shared/logging';
+import { requestKugouVerification } from './kugouVerification';
 
 // --- 类型定义 ---
 
@@ -26,6 +27,11 @@ interface RequestConfig {
   params?: Record<string, any>;
   data?: any;
   headers?: Record<string, string>;
+  skipKugouVerification?: boolean;
+}
+
+interface InternalRequestOptions {
+  retriedAfterKugouVerification?: boolean;
 }
 
 // --- 拦截器逻辑（从原 axios 版本保留） ---
@@ -123,13 +129,30 @@ const handleAuthExpired = (path: string, responseStatus: number, data: unknown) 
   }, 5000);
 };
 
+const getKugouVerificationEventId = (response: ApiResponse): string => {
+  const body = response.body;
+  if (!body || typeof body !== 'object') return '';
+  if (Number((body as any).error_code) !== 20028) return '';
+
+  const eventId =
+    (body as any).ssaCode || response.headers?.['ssa-code'] || response.headers?.['SSA-CODE'] || '';
+
+  return String(eventId || '').trim();
+};
+
 /**
  * 通过 IPC 发送 API 请求
  */
-const ipcRequest = async (method: string, url: string, config?: RequestConfig): Promise<any> => {
+const ipcRequest = async (
+  method: string,
+  url: string,
+  config?: RequestConfig,
+  options?: InternalRequestOptions,
+): Promise<any> => {
   const skipAuth = config?.headers?.['X-Skip-Auth'] === '1';
   const headers: Record<string, string> = { ...(config?.headers || {}) };
   delete headers['X-Skip-Auth'];
+  const skipKugouVerification = Boolean(config?.skipKugouVerification);
 
   // 请求前确保设备已注册（跳过注册接口本身，避免循环调用）
   if (!skipAuth) {
@@ -227,6 +250,24 @@ const ipcRequest = async (method: string, url: string, config?: RequestConfig): 
 
   // 处理错误状态
   if (response.status >= 400) {
+    const verifyEventId = skipKugouVerification
+      ? ''
+      : options?.retriedAfterKugouVerification
+        ? ''
+        : getKugouVerificationEventId(response);
+
+    if (verifyEventId) {
+      logger.warn('API', `Kugou verification required (Path: ${url})`);
+      await requestKugouVerification(verifyEventId, (verifyUrl, verifyParams) =>
+        ipcRequest('GET', verifyUrl, {
+          params: verifyParams,
+          skipKugouVerification: true,
+        }),
+      );
+      logger.info('API', `Kugou verification passed, retrying ${url}`);
+      return ipcRequest(method, url, config, { retriedAfterKugouVerification: true });
+    }
+
     // 502 在本项目内是 server/util/request.js 的统一错误包装：
     // - 上游业务错误（body 含 error_code）：仅记录业务错误码
     // - 真实网关/网络失败（body 为 {status:0, msg:Error} 或 null）：保留网关告警

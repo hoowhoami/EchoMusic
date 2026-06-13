@@ -27,6 +27,8 @@ export interface ApiResponse {
   headers?: Record<string, string>;
 }
 
+type VerifyAssetName = 'verifycode.js' | 'verifycode_bg.wasm' | 'verifycode_bg_ios.wasm';
+
 // --- 状态 ---
 
 const isDev = !app.isPackaged;
@@ -48,6 +50,21 @@ const resolveServerPath = (): string => {
   }
   return path.join(process.resourcesPath, 'server');
 };
+
+export async function readVerifyAsset(name: VerifyAssetName): Promise<Buffer> {
+  const allowed = new Set<VerifyAssetName>([
+    'verifycode.js',
+    'verifycode_bg.wasm',
+    'verifycode_bg_ios.wasm',
+  ]);
+
+  if (!allowed.has(name)) {
+    throw new Error('Unsupported verify asset');
+  }
+
+  const filePath = path.join(resolveServerPath(), 'public', 'verify-pkg', name);
+  return fs.promises.readFile(filePath);
+}
 
 /**
  * 扫描并加载所有 server module

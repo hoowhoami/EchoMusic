@@ -1,6 +1,6 @@
 {
   "name": "echo-music",
-  "version": "2.2.6-beta.25",
+  "version": "2.2.6-beta.26",
   "description": "EchoMusic desktop client.",
   "author": {
     "name": "hoowhoami",
@@ -28,9 +28,9 @@
     "electron-audio-loopback": "^1.0.6",
     "electron-log": "^5.4.4",
     "electron-updater": "^6.8.9",
-    "extract-zip": "^2.0.1",
     "font-list": "^2.1.0",
     "marked": "^18.0.4",
+    "node-stream-zip": "^1.15.0",
     "pinia": "^3.0.4",
     "reka-ui": "^2.9.8",
     "semver": "^7.8.1",
@@ -147,6 +147,13 @@
         "filter": [
           "**/*.js",
           "**/*.json"
+        ]
+      },
+      {
+        "from": "server/public/verify-pkg",
+        "to": "server/public/verify-pkg",
+        "filter": [
+          "**/*"
         ]
       },
       {

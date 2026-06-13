@@ -202,6 +202,8 @@ contextBridge.exposeInMainWorld('electron', {
   apiServer: {
     start: () => ipcRenderer.invoke('api-server:start'),
     status: () => ipcRenderer.invoke('api-server:status') as Promise<ApiServerStatus>,
+    readVerifyAsset: (name: 'verifycode.js' | 'verifycode_bg.wasm' | 'verifycode_bg_ios.wasm') =>
+      ipcRenderer.invoke('api-server:read-verify-asset', name) as Promise<Uint8Array>,
   },
   api: {
     request: (config: {
