@@ -2,12 +2,15 @@ import { Menu, Tray, app, nativeImage, type MenuItemConstructorOptions } from 'e
 import { quitApplication } from './window';
 import { join } from 'path';
 import type { PlayMode } from '../shared/playback';
+import type { DesktopLyricSnapshot } from '../shared/desktop-lyric';
 import type { TrayCommand, TrayPlaybackPayload } from '../shared/tray';
 import log from './logger';
 
 interface TrayContext {
   getMainWindow: () => Electron.BrowserWindow | null;
   restoreWindow: () => void | Promise<void>;
+  getDesktopLyricSnapshot: () => DesktopLyricSnapshot;
+  toggleDesktopLyricLock: () => DesktopLyricSnapshot | Promise<DesktopLyricSnapshot>;
 }
 
 type TrayPlaybackState = Required<TrayPlaybackPayload>;
@@ -75,6 +78,17 @@ const setPlayModeFromTray = (playMode: PlayMode) => {
   mainWindow.webContents.send('tray:set-play-mode', playMode);
 };
 
+const toggleDesktopLyricLockFromMenu = async () => {
+  if (!trayContext) return;
+  const snapshot = trayContext.getDesktopLyricSnapshot();
+  if (!snapshot.settings.enabled) return;
+  try {
+    await trayContext.toggleDesktopLyricLock();
+  } catch (err) {
+    log.error('[Tray] Failed to toggle desktop lyric lock:', err);
+  }
+};
+
 const createPlaybackMenuItems = (): MenuItemConstructorOptions[] => [
   {
     label: playbackState.isPlaying ? '暂停' : '播放',
@@ -118,6 +132,20 @@ const createPlaybackMenuItems = (): MenuItemConstructorOptions[] => [
   },
 ];
 
+const createDesktopLyricMenuItems = (): MenuItemConstructorOptions[] => {
+  const snapshot = trayContext?.getDesktopLyricSnapshot();
+  const opened = snapshot?.settings.enabled ?? false;
+  const locked = opened && (snapshot?.settings.locked ?? false);
+
+  return [
+    {
+      label: locked ? '解锁桌面歌词' : '锁定桌面歌词',
+      enabled: opened,
+      click: () => void toggleDesktopLyricLockFromMenu(),
+    },
+  ];
+};
+
 const createTrayMenu = () => {
   return Menu.buildFromTemplate([
     {
@@ -127,6 +155,8 @@ const createTrayMenu = () => {
     { type: 'separator' },
     ...createPlaybackMenuItems(),
     { type: 'separator' },
+    ...createDesktopLyricMenuItems(),
+    { type: 'separator' },
     {
       label: '退出',
       click: () => quitApplication(),
@@ -134,7 +164,12 @@ const createTrayMenu = () => {
   ]);
 };
 
-export const createDockMenu = () => Menu.buildFromTemplate(createPlaybackMenuItems());
+export const createDockMenu = () =>
+  Menu.buildFromTemplate([
+    ...createPlaybackMenuItems(),
+    { type: 'separator' },
+    ...createDesktopLyricMenuItems(),
+  ]);
 
 const rebuildTrayMenu = () => {
   if (appTray) {
@@ -148,6 +183,10 @@ const rebuildTrayMenu = () => {
   if (process.platform === 'darwin') {
     app.dock?.setMenu(createDockMenu());
   }
+};
+
+export const refreshTrayMenus = () => {
+  rebuildTrayMenu();
 };
 
 export const initTray = (context: TrayContext) => {

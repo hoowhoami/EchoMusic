@@ -68,10 +68,10 @@ const openMiniPlayer = () => {
         variant="unstyled"
         size="none"
         @click="handleControl('fullscreen')"
-        class="overlay-control-btn"
+        class="overlay-control-btn overlay-control-btn--fullscreen"
         title="全屏"
       >
-        <Icon :icon="iconFullscreen" width="14" height="14" />
+        <Icon :icon="iconFullscreen" width="14" height="14" class="window-control-icon--static" />
       </Button>
       <Button
         v-if="!isMac"
@@ -151,6 +151,16 @@ const openMiniPlayer = () => {
 .overlay-control-btn:hover {
   opacity: 1;
   background: var(--control-hover-bg);
+}
+
+.overlay-control-btn--fullscreen:hover {
+  background: var(--control-hover-bg);
+}
+
+.window-control-icon--static {
+  animation: none;
+  transition: none;
+  transform: none;
 }
 
 .overlay-control-btn--close:hover {

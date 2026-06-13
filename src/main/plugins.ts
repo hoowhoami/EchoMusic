@@ -131,8 +131,8 @@ const PLUGIN_WINDOW_MAX_WIDTH = 1400;
 const PLUGIN_WINDOW_MAX_HEIGHT = 900;
 const PLUGIN_MARKETPLACE_FETCH_TIMEOUT_MS = 30_000;
 const PLUGIN_MARKETPLACE_API_TIMEOUT_MS = 10_000;
-const PLUGIN_MARKETPLACE_DOWNLOAD_TIMEOUT_MS = 120_000;
-const PLUGIN_MARKETPLACE_EXTRACT_TIMEOUT_MS = 30_000;
+const PLUGIN_MARKETPLACE_DOWNLOAD_TIMEOUT_MS = 180_000;
+const PLUGIN_MARKETPLACE_EXTRACT_TIMEOUT_MS = 120_000;
 const MAX_PLUGIN_MARKETPLACE_TREE_FILES = 500;
 const PLUGIN_MARKETPLACE_TREE_DOWNLOAD_CONCURRENCY = 4;
 const BARE_SEMVER_PATTERN = /^v?\d+(?:\.\d+){0,2}(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
@@ -2193,36 +2193,62 @@ export const installPluginFromMarketplace = async (
     const tempDirectory = mkdtempSync(join(tmpdir(), 'echo-plugin-download-'));
     try {
       let sourceDirectory = '';
-      let installMethod: 'tree' | 'archive' = 'archive';
+      let installMethod: 'tree' | 'archive' = 'tree';
+      let treeError: Error | null = null;
+
+      // 优先尝试 Tree 模式（逐文件下载，更稳定）
       try {
+        log.info('[PluginMarketplace] attempting tree install (file-by-file download)', {
+          sourceId,
+          pluginId: plugin.id,
+        });
         sourceDirectory = await prepareMarketplaceTreeInstallDirectory(
           plugin,
           tempDirectory,
           options.githubProxyUrl,
         );
         installMethod = 'tree';
-      } catch (error) {
-        log.warn('[PluginMarketplace] tree install fallback to archive', {
+        log.info('[PluginMarketplace] tree install succeeded', {
           sourceId,
           pluginId: plugin.id,
-          error: error instanceof Error ? error.message : String(error),
+        });
+      } catch (error) {
+        treeError = error instanceof Error ? error : new Error(String(error));
+        log.warn('[PluginMarketplace] tree install failed, will try archive fallback', {
+          sourceId,
+          pluginId: plugin.id,
+          error: treeError.message,
         });
       }
 
+      // Tree 失败时回退到 Archive 模式（压缩包下载+解压）
       if (!sourceDirectory) {
-        const zipPath = await downloadMarketplacePackage(
-          plugin,
-          tempDirectory,
-          options.githubProxyUrl,
-        );
-        const extractDirectory = join(tempDirectory, 'extracted');
-        mkdirSync(extractDirectory, { recursive: true });
-        await extractMarketplacePackage(zipPath, extractDirectory, plugin);
-        sourceDirectory = findPluginInstallSourceDirectory(extractDirectory, plugin.packagePath);
-        log.info('[PluginMarketplace] archive source directory resolved', {
-          sourceId,
-          pluginId: plugin.id,
-        });
+        try {
+          log.info('[PluginMarketplace] attempting archive install (zip download + extract)', {
+            sourceId,
+            pluginId: plugin.id,
+          });
+          const zipPath = await downloadMarketplacePackage(
+            plugin,
+            tempDirectory,
+            options.githubProxyUrl,
+          );
+          const extractDirectory = join(tempDirectory, 'extracted');
+          mkdirSync(extractDirectory, { recursive: true });
+          await extractMarketplacePackage(zipPath, extractDirectory, plugin);
+          sourceDirectory = findPluginInstallSourceDirectory(extractDirectory, plugin.packagePath);
+          installMethod = 'archive';
+          log.info('[PluginMarketplace] archive install succeeded', {
+            sourceId,
+            pluginId: plugin.id,
+          });
+        } catch (archiveError) {
+          // 两种方式都失败，抛出更详细的错误信息
+          const archiveMsg =
+            archiveError instanceof Error ? archiveError.message : String(archiveError);
+          const treeMsg = treeError?.message || '未知错误';
+          throw new Error(`插件安装失败。Tree 模式: ${treeMsg}；Archive 模式: ${archiveMsg}`);
+        }
       }
 
       log.info('[PluginMarketplace] install apply started', {

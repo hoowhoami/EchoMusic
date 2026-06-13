@@ -40,6 +40,7 @@ import { showMainWindow, getMainWindow } from './window';
 import { getActiveWindowMode } from './windowMode';
 import { closeMiniPlayerWindow } from './miniPlayer';
 import { ipcRegistry } from './ipc/registry';
+import { refreshTrayMenus } from './tray';
 
 export { getDesktopLyricWindow } from './desktopLyric/window';
 
@@ -355,6 +356,8 @@ export const destroyDesktopLyricWindow = () => {
 export const updateDesktopLyricSettings = async (partial: Partial<DesktopLyricSettings>) => {
   const current = snapshot.settings;
   const nextSettings = sanitizeDesktopLyricSettings(partial, current);
+  const shouldRefreshMenus =
+    current.enabled !== nextSettings.enabled || current.locked !== nextSettings.locked;
 
   snapshot = {
     ...snapshot,
@@ -392,6 +395,7 @@ export const updateDesktopLyricSettings = async (partial: Partial<DesktopLyricSe
   }
 
   sendSnapshot();
+  if (shouldRefreshMenus) refreshTrayMenus();
   return snapshot;
 };
 
@@ -405,6 +409,7 @@ export const toggleDesktopLyricLock = async () => {
   snapshot = { ...snapshot, settings: { ...snapshot.settings, locked: nextLocked } };
   setDesktopLyricLockedFlag(nextLocked);
   sendSnapshot();
+  refreshTrayMenus();
   return snapshot;
 };
 
@@ -437,6 +442,7 @@ export const registerDesktopLyricHandlers = () => {
     'desktop-lyric:sync-snapshot',
     (_event, payload: DesktopLyricSnapshotPatch) => {
       if (!payload) return;
+      let shouldRefreshMenus = false;
       if (payload.playback !== undefined) {
         const nextLyricsTrackId = payload.playback?.lyricHash || payload.playback?.trackId || null;
         snapshot = {
@@ -483,9 +489,15 @@ export const registerDesktopLyricHandlers = () => {
         snapshot = { ...snapshot, lyricSyncWarning: payload.lyricSyncWarning };
       }
       if (payload.settings) {
-        snapshot = { ...snapshot, settings: { ...snapshot.settings, ...payload.settings } };
+        const currentSettings = snapshot.settings;
+        const nextSettings = { ...currentSettings, ...payload.settings };
+        shouldRefreshMenus =
+          currentSettings.enabled !== nextSettings.enabled ||
+          currentSettings.locked !== nextSettings.locked;
+        snapshot = { ...snapshot, settings: nextSettings };
       }
       sendSnapshot();
+      if (shouldRefreshMenus) refreshTrayMenus();
     },
   );
 

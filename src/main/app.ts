@@ -7,7 +7,11 @@ import { createWindow, getMainWindow } from './window';
 import { restoreActiveWindowMode } from './windowModeController';
 import { setActiveWindowMode } from './windowMode';
 import { createDockMenu, destroyTray, initTray, refreshTray } from './tray';
-import { getDesktopLyricWindow } from './desktopLyric';
+import {
+  getDesktopLyricSnapshot,
+  getDesktopLyricWindow,
+  toggleDesktopLyricLock,
+} from './desktopLyric';
 import { initMpvPlayer, destroyMpvPlayer } from './mpv';
 import { registerAudioSpectrumIpc, unregisterAudioSpectrumIpc } from './audioSpectrum';
 import { initMediaControls, destroyMediaControls } from './mediaControls';
@@ -69,6 +73,8 @@ if (!gotTheLock) {
     const trayContext = {
       getMainWindow,
       restoreWindow: restoreActiveWindowMode,
+      getDesktopLyricSnapshot,
+      toggleDesktopLyricLock,
     };
 
     // --- Loading 阶段：在窗口创建前完成核心服务初始化 ---

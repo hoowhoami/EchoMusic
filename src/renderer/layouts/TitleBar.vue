@@ -487,10 +487,10 @@ onUnmounted(() => {
           variant="unstyled"
           size="none"
           @click="handleControl('fullscreen')"
-          class="control-btn"
+          class="control-btn control-btn--fullscreen"
           title="全屏"
         >
-          <Icon :icon="iconFullscreen" width="14" height="14" />
+          <Icon :icon="iconFullscreen" width="14" height="14" class="window-control-icon--static" />
         </Button>
         <Button
           variant="unstyled"
@@ -575,6 +575,16 @@ onUnmounted(() => {
 
 .control-btn:hover {
   background-color: var(--control-hover-bg);
+}
+
+.control-btn--fullscreen:hover {
+  background-color: var(--control-hover-bg);
+}
+
+.window-control-icon--static {
+  animation: none;
+  transition: none;
+  transform: none;
 }
 
 .control-btn:hover.hover\:bg-red-500 {
