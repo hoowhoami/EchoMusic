@@ -431,13 +431,10 @@ const recoverPreviousPluginCrash = () => {
 
   const activeSession = getRuntimeSession(PLUGIN_ACTIVE_SESSION_KEY);
   if (activeSession && activeSession.sessionId !== pluginProcessSessionId) {
-    setLastFailure({
+    log.info('[Plugin] Clearing stale active plugin session from previous app run', {
       pluginIds: activeSession.pluginIds,
-      reason: 'render-process-gone',
-      message: '上次应用在插件运行期间未正常退出，已自动进入安全模式。',
-      createdAt: Date.now(),
+      startedAt: activeSession.startedAt,
     });
-    setPluginSafeMode(true);
     getKvStorage().delete(PLUGIN_ACTIVE_SESSION_KEY);
   }
 };
