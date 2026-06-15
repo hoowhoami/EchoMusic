@@ -376,6 +376,8 @@ export const resolveShortcutMap = (scope: 'local' | 'global'): ShortcutMap => {
     togglePlayback: labelToAccelerator(bindings.togglePlayback ?? defaults.togglePlayback ?? ''),
     previousTrack: labelToAccelerator(bindings.previousTrack ?? defaults.previousTrack ?? ''),
     nextTrack: labelToAccelerator(bindings.nextTrack ?? defaults.nextTrack ?? ''),
+    seekForward: labelToAccelerator(bindings.seekForward ?? defaults.seekForward ?? ''),
+    seekBackward: labelToAccelerator(bindings.seekBackward ?? defaults.seekBackward ?? ''),
     toggleMainLyric: labelToAccelerator(bindings.toggleMainLyric ?? defaults.toggleMainLyric ?? ''),
     toggleDesktopLyric: labelToAccelerator(
       bindings.toggleDesktopLyric ?? defaults.toggleDesktopLyric ?? '',
@@ -401,6 +403,8 @@ const getShortcutCommandLabel = (command: ShortcutCommand) => {
     togglePlayback: '播放 / 暂停',
     previousTrack: '上一首',
     nextTrack: '下一首',
+    seekForward: '快进',
+    seekBackward: '快退',
     toggleMainLyric: '主歌词开关',
     toggleDesktopLyric: '桌面歌词开关',
     toggleLyricsMode: '歌词模式切换',
@@ -445,6 +449,14 @@ export const executeShortcutCommand = (command: ShortcutCommand) => {
     playerStore.prev();
   } else if (command === 'nextTrack') {
     playerStore.next();
+  } else if (command === 'seekForward') {
+    const offset = settingStore.seekForwardOffset ?? 5;
+    const newTime = Math.min(playerStore.duration, playerStore.currentTime + offset);
+    playerStore.seek(newTime);
+  } else if (command === 'seekBackward') {
+    const offset = settingStore.seekBackwardOffset ?? 5;
+    const newTime = Math.max(0, playerStore.currentTime - offset);
+    playerStore.seek(newTime);
   } else if (command === 'toggleMainLyric') {
     playerStore.toggleLyricView();
   } else if (command === 'toggleDesktopLyric') {

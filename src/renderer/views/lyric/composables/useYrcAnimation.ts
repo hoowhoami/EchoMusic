@@ -93,8 +93,13 @@ export function useYrcAnimation(lyricListRef: Ref<HTMLElement | null>, activeInd
             pos = '100%';
           } else {
             const duration = charEnd - charStart;
-            const progress = (seekMs - charStart) / duration;
-            pos = `${100 - progress * 100}%`;
+            // 防止 duration 为 0 导致计算失效
+            if (duration <= 0) {
+              pos = '0%';
+            } else {
+              const progress = (seekMs - charStart) / duration;
+              pos = `${100 - progress * 100}%`;
+            }
           }
           cachedYrcOverlays[i].style.backgroundPositionX = pos;
         }
@@ -222,8 +227,13 @@ export function useYrcAnimation(lyricListRef: Ref<HTMLElement | null>, activeInd
         pos = '100%';
       } else {
         const duration = charEnd - charStart;
-        const progress = (seekMs - charStart) / duration;
-        pos = `${100 - progress * 100}%`;
+        // 防止 duration 为 0 导致计算失效
+        if (duration <= 0) {
+          pos = '0%';
+        } else {
+          const progress = (seekMs - charStart) / duration;
+          pos = `${100 - progress * 100}%`;
+        }
       }
       elements[i].style.backgroundPositionX = pos;
     }

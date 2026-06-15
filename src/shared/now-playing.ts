@@ -9,7 +9,9 @@ export type NowPlayingCommand =
   | 'toggleRomanization'
   | 'lyricOffsetBackward'
   | 'lyricOffsetForward'
-  | 'lyricOffsetReset';
+  | 'lyricOffsetReset'
+  | 'seekForward'
+  | 'seekBackward';
 
 export interface NowPlayingPlaybackPayload {
   trackId: string;
@@ -21,6 +23,7 @@ export interface NowPlayingPlaybackPayload {
   duration: number;
   currentTime: number;
   isPlaying: boolean;
+  isFavorite: boolean;
   playbackRate: number;
   updatedAt: number;
 }

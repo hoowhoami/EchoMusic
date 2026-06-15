@@ -2,6 +2,8 @@ export type ShortcutCommand =
   | 'togglePlayback'
   | 'previousTrack'
   | 'nextTrack'
+  | 'seekForward'
+  | 'seekBackward'
   | 'toggleMainLyric'
   | 'toggleDesktopLyric'
   | 'toggleLyricsMode'

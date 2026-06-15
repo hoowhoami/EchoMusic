@@ -55,6 +55,15 @@ export function loginBySms(mobile: string, code: string) {
 }
 
 /**
+ * 用户名/密码登录
+ */
+export function loginByPassword(username: string, password: string) {
+  return request.get('/login', {
+    params: { username, password },
+  });
+}
+
+/**
  * 创建微信登录二维码
  */
 export function createWxLogin() {

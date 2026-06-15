@@ -27,8 +27,6 @@ export interface ApiResponse {
   headers?: Record<string, string>;
 }
 
-type VerifyAssetName = 'verifycode.js' | 'verifycode_bg.wasm' | 'verifycode_bg_ios.wasm';
-
 // --- 状态 ---
 
 const isDev = !app.isPackaged;
@@ -40,6 +38,7 @@ let createRequestFn: ((config: any) => Promise<any>) | null = null;
 let guid = '';
 let serverDev = '';
 let mid = '';
+let webglHash = '';
 
 /**
  * 解析 server 目录路径
@@ -50,21 +49,6 @@ const resolveServerPath = (): string => {
   }
   return path.join(process.resourcesPath, 'server');
 };
-
-export async function readVerifyAsset(name: VerifyAssetName): Promise<Buffer> {
-  const allowed = new Set<VerifyAssetName>([
-    'verifycode.js',
-    'verifycode_bg.wasm',
-    'verifycode_bg_ios.wasm',
-  ]);
-
-  if (!allowed.has(name)) {
-    throw new Error('Unsupported verify asset');
-  }
-
-  const filePath = path.join(resolveServerPath(), 'public', 'verify-pkg', name);
-  return fs.promises.readFile(filePath);
-}
 
 /**
  * 扫描并加载所有 server module
@@ -112,7 +96,9 @@ export async function initApiServer(): Promise<void> {
   // 初始化 server 内部工具
   const utilPath = path.join(serverPath, 'util');
   const { cryptoMd5 } = require(path.join(utilPath, 'crypto'));
-  const { getGuid, randomString, calculateMid } = require(path.join(utilPath, 'util'));
+  const { getGuid, randomString, calculateMid, generateWebGLHash } = require(
+    path.join(utilPath, 'util'),
+  );
   const { createRequest } = require(path.join(utilPath, 'request'));
   const { applyCliOverrides } = require(path.join(utilPath, 'runtime'));
 
@@ -123,6 +109,7 @@ export async function initApiServer(): Promise<void> {
   guid = process.env.KUGOU_API_GUID || cryptoMd5(getGuid());
   serverDev = (process.env.KUGOU_API_DEV || randomString(10)).toUpperCase();
   mid = calculateMid(guid);
+  webglHash = process.env.KUGOU_API_WEBGL || generateWebGLHash();
 
   createRequestFn = createRequest;
 
@@ -184,6 +171,7 @@ const buildDefaultCookies = (): Record<string, string> => {
     KUGOU_API_GUID: guid,
     KUGOU_API_DEV: serverDev,
     KUGOU_API_MAC: (process.env.KUGOU_API_MAC || '02:00:00:00:00:00').toUpperCase(),
+    KUGOU_API_WEBGL: webglHash,
   };
 };
 

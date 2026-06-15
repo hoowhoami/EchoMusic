@@ -4,7 +4,7 @@ import { useDeviceStore } from '@/stores/device';
 import { ensureDevice } from './device';
 import { logger } from './logger';
 import { getPayloadSize, maskSensitiveText, stringifyForLog } from '../../shared/logging';
-import { requestKugouVerification } from './kugouVerification';
+import { requestKugouVerification, type KugouVerificationChallenge } from './kugouVerification';
 
 // --- 类型定义 ---
 
@@ -129,15 +129,30 @@ const handleAuthExpired = (path: string, responseStatus: number, data: unknown) 
   }, 5000);
 };
 
-const getKugouVerificationEventId = (response: ApiResponse): string => {
+const getKugouVerificationChallenge = (
+  response: ApiResponse,
+): KugouVerificationChallenge | null => {
   const body = response.body;
-  if (!body || typeof body !== 'object') return '';
-  if (Number((body as any).error_code) !== 20028) return '';
+  const bodyRecord =
+    body && typeof body === 'object' ? (body as Record<string, unknown>) : undefined;
+  const dataRecord =
+    bodyRecord?.data && typeof bodyRecord.data === 'object'
+      ? (bodyRecord.data as Record<string, unknown>)
+      : undefined;
 
   const eventId =
-    (body as any).ssaCode || response.headers?.['ssa-code'] || response.headers?.['SSA-CODE'] || '';
+    bodyRecord?.ssaCode || response.headers?.['ssa-code'] || response.headers?.['SSA-CODE'] || '';
+  const normalizedEventId = String(eventId || '').trim();
+  if (!normalizedEventId) return null;
 
-  return String(eventId || '').trim();
+  const errorCode = bodyRecord?.error_code;
+  if (errorCode != null && Number(errorCode) !== 20028) return null;
+
+  return {
+    eventId: normalizedEventId,
+    sid: String(bodyRecord?.sid || dataRecord?.sid || '').trim(),
+    edt: String(bodyRecord?.edt || dataRecord?.edt || '').trim(),
+  };
 };
 
 /**
@@ -250,15 +265,15 @@ const ipcRequest = async (
 
   // 处理错误状态
   if (response.status >= 400) {
-    const verifyEventId = skipKugouVerification
-      ? ''
+    const verifyChallenge = skipKugouVerification
+      ? null
       : options?.retriedAfterKugouVerification
-        ? ''
-        : getKugouVerificationEventId(response);
+        ? null
+        : getKugouVerificationChallenge(response);
 
-    if (verifyEventId) {
+    if (verifyChallenge) {
       logger.warn('API', `Kugou verification required (Path: ${url})`);
-      await requestKugouVerification(verifyEventId, (verifyUrl, verifyParams) =>
+      await requestKugouVerification(verifyChallenge, (verifyUrl, verifyParams) =>
         ipcRequest('GET', verifyUrl, {
           params: verifyParams,
           skipKugouVerification: true,

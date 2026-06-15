@@ -10,6 +10,7 @@ import {
   checkLoginQr,
   sendSmsCode,
   loginBySms,
+  loginByPassword,
   createWxLogin,
   checkWxLogin,
   loginByOpenPlat,
@@ -35,6 +36,7 @@ import {
   iconQrCode,
   iconRefreshCw,
   iconSmartphone,
+  iconUser,
 } from '@/icons';
 
 const router = useRouter();
@@ -53,7 +55,7 @@ const triggerAutoReceiveVipAfterLogin = () => {
     });
 };
 
-// 当前选中的 Tab (0: 扫码, 1: 验证码, 2: 微信)
+// 当前选中的 Tab (0: 扫码, 1: 验证码, 2: 微信, 3: 账号)
 const activeTab = ref('0');
 
 const closeLoginPage = async () => {
@@ -68,6 +70,13 @@ const isLoadingQr = ref(false);
 const qrError = ref('');
 let isPollingQr = false;
 let isLoginDone = false;
+
+const completeLogin = (data: Record<string, unknown>) => {
+  isLoginDone = true;
+  userStore.handleLoginSuccess(data);
+  triggerAutoReceiveVipAfterLogin();
+  router.push('/main/home');
+};
 
 const loadQrCode = async () => {
   if (activeTab.value !== '0' || isLoginDone) return;
@@ -116,10 +125,7 @@ const startCheckStatus = async () => {
         qrStatus.value = status;
         if (status === 4 && res.data) {
           isPollingQr = false;
-          isLoginDone = true;
-          userStore.handleLoginSuccess(res.data);
-          triggerAutoReceiveVipAfterLogin();
-          router.push('/main/home');
+          completeLogin(res.data);
           break;
         } else if (status === 0) {
           isPollingQr = false;
@@ -187,10 +193,7 @@ const handleSmsLogin = async () => {
   try {
     const res: any = await loginBySms(mobile, smsData.code);
     if (res.status === 1 && res.data) {
-      isLoginDone = true;
-      userStore.handleLoginSuccess(res.data);
-      triggerAutoReceiveVipAfterLogin();
-      router.push('/main/home');
+      completeLogin(res.data);
     } else {
       smsData.error = res.error || '登录失败，请稍后重试';
     }
@@ -198,6 +201,50 @@ const handleSmsLogin = async () => {
     smsData.error = '登录失败，请稍后重试';
   } finally {
     smsData.isSending = false;
+  }
+};
+
+// --- 账号密码登录逻辑 ---
+const accountData = reactive({
+  username: '',
+  password: '',
+  isSubmitting: false,
+  error: '',
+});
+
+const handleAccountLogin = async () => {
+  const username = accountData.username.trim();
+  const password = accountData.password.trim();
+  if (!username || !password || accountData.isSubmitting) {
+    accountData.error = '请输入用户名和密码';
+    return;
+  }
+
+  accountData.isSubmitting = true;
+  accountData.error = '';
+
+  try {
+    const res: any = await loginByPassword(username, password);
+    if (res?.status === 1 && res.data) {
+      completeLogin(res.data);
+    } else {
+      accountData.error = res?.error || res?.message || res?.msg || '登录失败，请稍后重试';
+    }
+  } catch (e) {
+    if (e instanceof Error && e.message.includes('已取消安全验证')) {
+      logger.warn('Login', 'Account login verification cancelled');
+      accountData.error = '已取消安全验证';
+    } else if (e instanceof Error && e.message.includes('验证未通过')) {
+      logger.warn('Login', 'Account login verification failed');
+      accountData.error = e.message;
+    } else {
+      logger.error('Login', 'Account login failed:', e);
+      const response = (e as any)?.response;
+      const body = response?.body;
+      accountData.error = body?.data || body?.error || body?.message || body?.msg || '登录失败，请稍后重试';
+    }
+  } finally {
+    accountData.isSubmitting = false;
   }
 };
 
@@ -257,10 +304,7 @@ const startCheckWxStatus = async () => {
           if (wxCode) {
             const loginRes: any = await loginByOpenPlat(wxCode);
             if (loginRes?.status === 1 || loginRes?.code === 200) {
-              isLoginDone = true;
-              userStore.handleLoginSuccess(loginRes.data || loginRes.body?.data || loginRes);
-              triggerAutoReceiveVipAfterLogin();
-              router.push('/main/home');
+              completeLogin(loginRes.data || loginRes.body?.data || loginRes);
             }
           }
           break;
@@ -451,7 +495,46 @@ onUnmounted(() => {
                 </div>
               </TabsContent>
 
-              <!-- 3. 微信扫码 -->
+              <!-- 3. 账号登录 -->
+              <TabsContent value="3" class="w-full animate-fade-in pb-2">
+                <div class="text-center mb-4">
+                  <h1 class="text-[26px] font-black mb-1">账号登录</h1>
+                  <p class="text-[13px] opacity-60 font-bold uppercase tracking-[1.5px]">
+                    可能需要安全验证
+                  </p>
+                </div>
+                <div class="flex flex-col">
+                  <Input
+                    v-model="accountData.username"
+                    type="text"
+                    placeholder="用户名"
+                    class="mb-4"
+                    @keyup.enter="handleAccountLogin"
+                  />
+                  <Input
+                    v-model="accountData.password"
+                    type="password"
+                    placeholder="密码"
+                    class="mb-1"
+                    @keyup.enter="handleAccountLogin"
+                  />
+                  <div class="h-5 flex items-center px-2 mb-1">
+                    <p v-if="accountData.error" class="text-[11px] text-red-500 font-bold">
+                      {{ accountData.error }}
+                    </p>
+                  </div>
+                  <Button
+                    class="w-full"
+                    :loading="accountData.isSubmitting"
+                    :disabled="!accountData.username.trim() || !accountData.password.trim()"
+                    @click="handleAccountLogin"
+                  >
+                    立即登录
+                  </Button>
+                </div>
+              </TabsContent>
+
+              <!-- 4. 微信扫码 -->
               <TabsContent value="2" class="w-full animate-fade-in flex flex-col items-center">
                 <div class="text-center mb-4">
                   <h1 class="text-[26px] font-black mb-1">微信登录</h1>
@@ -532,6 +615,16 @@ onUnmounted(() => {
                       class="w-14 h-14 rounded-full border border-[var(--control-border)] flex items-center justify-center text-text-main/50 group-hover:text-primary transition-all group-active:scale-90 group-hover:bg-primary/5"
                     >
                       <Icon :icon="iconSmartphone" width="22" height="22" />
+                    </div>
+                  </TabsTrigger>
+                  <TabsTrigger
+                    value="3"
+                    class="group h-auto! pb-0! items-center data-[state=active]:hidden [&_.active-line]:hidden"
+                  >
+                    <div
+                      class="w-14 h-14 rounded-full border border-[var(--control-border)] flex items-center justify-center text-text-main/50 group-hover:text-primary transition-all group-active:scale-90 group-hover:bg-primary/5"
+                    >
+                      <Icon :icon="iconUser" width="22" height="22" />
                     </div>
                   </TabsTrigger>
                   <TabsTrigger

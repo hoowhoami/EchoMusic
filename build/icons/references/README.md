@@ -13,6 +13,7 @@
 ## 当前项目实际使用的主要图标
 
 - `build/icons/icon.png`
+- `build/icons/icon_macos.png`
 - `build/icons/icon.ico`
 - `build/icons/icon.icns`
 - `build/icons/IconTemplate.png`

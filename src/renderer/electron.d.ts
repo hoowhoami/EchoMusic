@@ -124,9 +124,6 @@ export interface IElectronAPI {
   apiServer: {
     start: () => Promise<{ success: boolean; error?: string }>;
     status: () => Promise<ApiServerStatus>;
-    readVerifyAsset: (
-      name: 'verifycode.js' | 'verifycode_bg.wasm' | 'verifycode_bg_ios.wasm',
-    ) => Promise<Uint8Array>;
   };
   api: {
     request: (config: {

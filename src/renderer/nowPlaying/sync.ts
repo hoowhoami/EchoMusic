@@ -1,11 +1,14 @@
 import { watch, type WatchStopHandle } from 'vue';
 import { storeToRefs } from 'pinia';
 import { usePlayerStore } from '@/stores/player';
+import { usePlaylistStore } from '@/stores/playlist';
 import { useLyricStore } from '@/stores/lyric';
 import { useSettingStore } from '@/stores/setting';
 import { useThemeStore } from '@/stores/theme';
 import { useToastStore } from '@/stores/toast';
 import { executeShortcutCommand } from '@/utils/shortcuts';
+import type { Song } from '@/models/song';
+import { resolveFavoriteSongKey } from '@/stores/playlist/helpers';
 import type {
   NowPlayingCommand,
   NowPlayingPlaybackPayload,
@@ -16,11 +19,16 @@ import type { ShortcutCommand } from '../../shared/shortcuts';
 
 const NOW_PLAYING_PROGRESS_SYNC_INTERVAL_MS = 120;
 const LYRIC_OFFSET_STEP_MS = 500;
+const FAVORITES_QUEUE_ID = 'queue:favorites';
+
+const favoriteStateCache = new Map<string, boolean>();
 
 const SHORTCUT_COMMANDS = new Set<ShortcutCommand>([
   'togglePlayback',
   'previousTrack',
   'nextTrack',
+  'seekForward',
+  'seekBackward',
   'toggleMainLyric',
   'toggleDesktopLyric',
   'toggleLyricsMode',
@@ -62,6 +70,60 @@ const normalizeLinePayload = (
   })),
 });
 
+const resolveCurrentPlaybackQueue = () => {
+  const playerStore = usePlayerStore();
+  const playlistStore = usePlaylistStore();
+  return (
+    playlistStore.getQueueById(playerStore.currentSourceQueueId) ??
+    playlistStore.activeQueue ??
+    playlistStore.customPlaybackQueue ??
+    null
+  );
+};
+
+const resolveFavoriteCacheKey = (track: Song, fallbackId?: string | number | null) =>
+  resolveFavoriteSongKey(track) || `id:${String(fallbackId ?? track.id ?? '')}`;
+
+const isCurrentTrackFromFavoritesQueue = (track: Song) => {
+  const playerStore = usePlayerStore();
+  const queue = resolveCurrentPlaybackQueue();
+  if (queue?.id !== FAVORITES_QUEUE_ID) return false;
+
+  const currentId = String(playerStore.currentTrackId ?? track.id ?? '');
+  const currentFavoriteKey = resolveFavoriteCacheKey(track, currentId);
+  return queue.songs.some(
+    (song) =>
+      String(song.id) === currentId ||
+      resolveFavoriteCacheKey(song, song.id) === currentFavoriteKey,
+  );
+};
+
+const resolveFavoriteState = (track: Song): boolean => {
+  const playerStore = usePlayerStore();
+  const playlistStore = usePlaylistStore();
+  const cacheKey = resolveFavoriteCacheKey(track, playerStore.currentTrackId);
+
+  if (playlistStore.isFavoriteSong(track)) {
+    favoriteStateCache.set(cacheKey, true);
+    return true;
+  }
+
+  if (playlistStore.favoritesLoaded) {
+    favoriteStateCache.set(cacheKey, false);
+    return false;
+  }
+
+  const cached = favoriteStateCache.get(cacheKey);
+  if (cached !== undefined) return cached;
+
+  if (isCurrentTrackFromFavoritesQueue(track)) {
+    favoriteStateCache.set(cacheKey, true);
+    return true;
+  }
+
+  return false;
+};
+
 const buildPlaybackPayload = (): NowPlayingPlaybackPayload | null => {
   const playerStore = usePlayerStore();
   const track = playerStore.currentTrackSnapshot;
@@ -80,6 +142,7 @@ const buildPlaybackPayload = (): NowPlayingPlaybackPayload | null => {
     duration: Number(playerStore.duration || track.duration || 0),
     currentTime: Number(playerStore.currentTime || 0),
     isPlaying: Boolean(playerStore.isPlaying),
+    isFavorite: resolveFavoriteState(track as Song),
     playbackRate: Number(playerStore.playbackRate || 1),
     updatedAt: Date.now(),
   };
@@ -89,6 +152,7 @@ export const initNowPlayingSync = async () => {
   if (!window.electron?.nowPlaying) return () => {};
 
   const playerStore = usePlayerStore();
+  const playlistStore = usePlaylistStore();
   const lyricStore = useLyricStore();
   const settingStore = useSettingStore();
   const themeStore = useThemeStore();
@@ -96,6 +160,7 @@ export const initNowPlayingSync = async () => {
   const stops: WatchStopHandle[] = [];
   const { currentTime, isPlaying, duration, playbackRate, currentTrackId, currentTrackSnapshot } =
     storeToRefs(playerStore);
+  const { favorites, favoritesLoaded } = storeToRefs(playlistStore);
   const {
     lines,
     currentIndex,
@@ -230,7 +295,17 @@ export const initNowPlayingSync = async () => {
 
   stops.push(
     watch(
-      [currentTime, isPlaying, duration, playbackRate, currentTrackId, currentTrackSnapshot],
+      [
+        currentTime,
+        isPlaying,
+        duration,
+        playbackRate,
+        currentTrackId,
+        currentTrackSnapshot,
+        favorites,
+        favoritesLoaded,
+        () => resolveCurrentPlaybackQueue()?.songs?.length ?? 0,
+      ],
       scheduleProgressSync,
       { deep: true },
     ),

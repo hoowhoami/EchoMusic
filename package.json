@@ -1,6 +1,6 @@
 {
   "name": "echo-music",
-  "version": "2.2.6",
+  "version": "2.2.7-beta.1",
   "description": "EchoMusic desktop client.",
   "author": {
     "name": "hoowhoami",
@@ -147,13 +147,6 @@
         "filter": [
           "**/*.js",
           "**/*.json"
-        ]
-      },
-      {
-        "from": "server/public/verify-pkg",
-        "to": "server/public/verify-pkg",
-        "filter": [
-          "**/*"
         ]
       },
       {

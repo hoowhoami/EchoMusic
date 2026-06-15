@@ -21,6 +21,7 @@ import type {
   NowPlayingLyricPayload,
   NowPlayingSnapshot,
 } from '../../shared/now-playing';
+import { createFontApi } from '../../shared/font';
 import * as icons from '@/icons';
 import type { Song } from '@/models/song';
 import { usePlayerStore } from '@/stores/player';
@@ -147,6 +148,7 @@ export interface EchoPluginContext {
   settings: ReturnType<typeof useSettingStore>;
   theme: PluginThemeApi;
   appearance: ReturnType<typeof createAppearanceApi>;
+  fonts: ReturnType<typeof createFontsApi>;
   scroll: ReturnType<typeof createScrollApi>;
   appIcons: {
     refresh: () => Promise<unknown>;
@@ -180,6 +182,9 @@ export interface EchoPluginContext {
       options?: { title?: string },
     ) => () => void;
     execute: (id: string, ...args: unknown[]) => unknown;
+  };
+  shortcuts: {
+    register: (accelerator: string, handler: () => void) => () => void;
   };
   css: {
     inject: (cssText: string, options?: { id?: string }) => () => void;
@@ -640,6 +645,8 @@ export type PluginLyricCommand = Extract<
   | 'lyricOffsetBackward'
   | 'lyricOffsetForward'
   | 'lyricOffsetReset'
+  | 'seekForward'
+  | 'seekBackward'
 >;
 
 const clonePlaybackQueue = (queue: ReturnType<typeof usePlaylistStore>['activeQueue']) =>
@@ -875,6 +882,9 @@ const createAppearanceApi = (
     return addDisposable(dispose);
   },
 });
+
+const createFontsApi = () =>
+  createFontApi(() => window.electron.fonts?.getAll?.() ?? Promise.resolve([]));
 
 const createPlaylistApi = () => {
   const playlist = usePlaylistStore();
@@ -1282,6 +1292,93 @@ const createDomApi = (pluginId: string, addDisposable: (dispose: () => void) => 
   },
 });
 
+const createShortcutsApi = (
+  pluginId: string,
+  addDisposable: (dispose: () => void) => () => void,
+) => {
+  const acceleratorToKeys = (accelerator: string): string[] => {
+    const cleaned = accelerator.replace(/\s+/g, '');
+    if (!cleaned) return [];
+    const parts = cleaned.split('+').filter(Boolean);
+    const modifiers: string[] = [];
+    const keys: string[] = [];
+    let hasCmdOrCtrl = false;
+
+    const normalizeKey = (key: string) => key.toLowerCase();
+
+    for (const part of parts) {
+      const lower = part.toLowerCase();
+      if (['cmdorctrl', 'commandorcontrol', 'command', 'cmd'].includes(lower)) {
+        hasCmdOrCtrl = true;
+        continue;
+      }
+      if (['ctrl', 'control'].includes(lower)) {
+        modifiers.push('ctrl');
+        continue;
+      }
+      if (['shift'].includes(lower)) {
+        modifiers.push('shift');
+        continue;
+      }
+      if (['alt', 'option'].includes(lower)) {
+        modifiers.push('alt');
+        continue;
+      }
+      if (['meta', 'win', 'super'].includes(lower)) {
+        modifiers.push('meta');
+        continue;
+      }
+      keys.push(normalizeKey(part));
+    }
+
+    const buildCombo = (extra: string[]) => {
+      const combo = Array.from(new Set([...modifiers, ...extra, ...keys]));
+      return combo.sort().join('+');
+    };
+
+    if (hasCmdOrCtrl) {
+      return [buildCombo(['meta']), buildCombo(['ctrl'])];
+    }
+    return [buildCombo([])];
+  };
+
+  const buildShortcut = (event: KeyboardEvent): string => {
+    const keys = new Set<string>();
+    if (event.ctrlKey) keys.add('ctrl');
+    if (event.metaKey) keys.add('meta');
+    if (event.altKey) keys.add('alt');
+    if (event.shiftKey) keys.add('shift');
+    const mainKey = event.key?.toLowerCase() || '';
+    if (mainKey && !['control', 'shift', 'alt', 'meta'].includes(mainKey)) {
+      keys.add(mainKey);
+    }
+    return Array.from(keys).sort().join('+');
+  };
+
+  return {
+    register: (accelerator: string, handler: () => void) => {
+      const targetKeys = acceleratorToKeys(accelerator);
+      if (!targetKeys.length) {
+        throw new Error(`Invalid accelerator: ${accelerator}`);
+      }
+
+      const keydownHandler = (event: KeyboardEvent) => {
+        if (event.repeat) return;
+        const pressed = buildShortcut(event);
+        if (targetKeys.includes(pressed)) {
+          event.preventDefault();
+          runPluginCallback(pluginId, `快捷键: ${accelerator}`, () => handler(), undefined);
+        }
+      };
+
+      window.addEventListener('keydown', keydownHandler);
+      return addDisposable(() => {
+        window.removeEventListener('keydown', keydownHandler);
+      });
+    },
+  };
+};
+
 const createRuntimeUiApi = (
   pluginId: string,
   host: PluginRuntimeHost,
@@ -1610,6 +1707,7 @@ const createPluginContext = (
     settings: settingStore,
     theme: createThemeApi(descriptor.id, addDisposable),
     appearance: createAppearanceApi(descriptor.id, addDisposable),
+    fonts: createFontsApi(),
     scroll: createScrollApi(descriptor.id, addDisposable),
     appIcons: {
       refresh: () => window.electron.plugins?.icons.refresh() ?? Promise.resolve({ ok: false }),
@@ -1655,6 +1753,7 @@ const createPluginContext = (
       },
       execute: executePluginCommand,
     },
+    shortcuts: createShortcutsApi(descriptor.id, addDisposable),
     css: {
       inject: (cssText, options) =>
         addDisposable(createStyleDisposer(descriptor.id, cssText, options?.id)),

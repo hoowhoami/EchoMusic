@@ -2,7 +2,7 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { RouterView, useRoute } from 'vue-router';
 import AuthExpiredDialog from '@/components/app/AuthExpiredDialog.vue';
-import KugouVerificationDialog from '@/components/app/KugouVerificationDialog.vue';
+import KugouVerificationFlow from '@/components/app/KugouVerificationFlow.vue';
 import ToastViewport from '@/components/app/ToastViewport.vue';
 import UpdateDialog from '@/components/app/UpdateDialog.vue';
 import RouteErrorBoundary from '@/components/app/RouteErrorBoundary.vue';
@@ -262,7 +262,7 @@ watch(
     </Transition>
   </Teleport>
   <AuthExpiredDialog v-if="route.name !== 'mini-player'" />
-  <KugouVerificationDialog v-if="route.name !== 'mini-player'" />
+  <KugouVerificationFlow v-if="route.name !== 'mini-player'" />
   <ToastViewport v-if="route.name !== 'mini-player'" />
   <UpdateDialog
     v-if="route.name !== 'mini-player'"

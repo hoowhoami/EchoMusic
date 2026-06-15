@@ -15,6 +15,8 @@ const NOW_PLAYING_COMMANDS = new Set<NowPlayingCommand>([
   'togglePlayback',
   'previousTrack',
   'nextTrack',
+  'seekForward',
+  'seekBackward',
   'toggleMainLyric',
   'toggleDesktopLyric',
   'toggleLyricsMode',
@@ -93,6 +95,7 @@ const sanitizePlayback = (payload: unknown): NowPlayingPlaybackPayload | null =>
     duration: Math.max(0, toFiniteNumber(payload.duration)),
     currentTime: Math.max(0, toFiniteNumber(payload.currentTime)),
     isPlaying: Boolean(payload.isPlaying),
+    isFavorite: Boolean(payload.isFavorite),
     playbackRate: Math.max(0.1, toFiniteNumber(payload.playbackRate, 1)),
     updatedAt: toFiniteNumber(payload.updatedAt, Date.now()),
   };

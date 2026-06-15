@@ -345,7 +345,7 @@ export const resolveWindowIconPath = () => {
     process.platform === 'win32'
       ? 'icon.ico'
       : process.platform === 'darwin'
-        ? 'icon.icns'
+        ? 'icon_macos.png'
         : 'icon.png';
   return resolveDefaultIconPath(iconName);
 };

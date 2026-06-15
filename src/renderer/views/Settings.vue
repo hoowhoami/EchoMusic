@@ -754,7 +754,7 @@ const findSectionElement = (id: string) => {
           >取消</Button
         >
         <Button
-          class="settings-button danger"
+          class="settings-button"
           variant="danger"
           size="sm"
           @click="
@@ -982,10 +982,6 @@ const findSectionElement = (id: string) => {
 
 .settings-button {
   @apply text-sm font-semibold;
-}
-
-.settings-button.danger {
-  @apply text-red-500 hover:text-red-400 transition-colors;
 }
 
 .settings-color-swatch {

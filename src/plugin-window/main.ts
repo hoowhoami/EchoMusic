@@ -8,6 +8,7 @@ import type {
   PluginWindowDescriptor,
 } from '../shared/plugins';
 import type { AudioSpectrumFrame, AudioSpectrumOptions } from '../shared/audio-spectrum';
+import { createFontApi } from '../shared/font';
 
 type PluginWindowModule =
   | {
@@ -35,6 +36,7 @@ interface EchoPluginWindowContext {
   vue: typeof Vue;
   container: HTMLElement;
   nowPlaying: NonNullable<Window['electron']['nowPlaying']>;
+  fonts: ReturnType<typeof createFontsApi>;
   audio: {
     spectrum: {
       getStatus: NonNullable<Window['electron']['audioSpectrum']>['getStatus'];
@@ -191,6 +193,9 @@ const requireAudioSpectrumCapability = (descriptor: EchoPluginDescriptor) => {
   }
 };
 
+const createFontsApi = () =>
+  createFontApi(() => window.electron.fonts?.getAll?.() ?? Promise.resolve([]));
+
 const buildContext = (
   descriptor: EchoPluginDescriptor,
   windowDescriptor: PluginWindowDescriptor,
@@ -205,6 +210,7 @@ const buildContext = (
   vue: Vue,
   container,
   nowPlaying: window.electron.nowPlaying,
+  fonts: createFontsApi(),
   audio: {
     spectrum: {
       getStatus: () => {

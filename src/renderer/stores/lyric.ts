@@ -233,12 +233,17 @@ const buildFallbackCharacters = (
   if (!safeText) return [];
   const total = Math.max(duration, safeText.length * 120);
 
-  return safeText.split('').map((char, index, arr) => ({
-    text: char,
-    startTime: startTime + Math.floor((index * total) / arr.length),
-    endTime: startTime + Math.floor(((index + 1) * total) / arr.length),
-    highlighted: false,
-  }));
+  return safeText.split('').map((char, index, arr) => {
+    const charStart = startTime + Math.floor((index * total) / arr.length);
+    const charEnd = startTime + Math.floor(((index + 1) * total) / arr.length);
+    // 确保每个字符至少有 1ms 的持续时间，防止逐字显示失效
+    return {
+      text: char,
+      startTime: charStart,
+      endTime: Math.max(charEnd, charStart + 1),
+      highlighted: false,
+    };
+  });
 };
 
 const getSecondaryText = (line: LyricLine, mode: LyricsMode): string => {
@@ -318,10 +323,12 @@ const parseLyricDetailPayload = (payload: LyricDetailResponse): ParsedLyricPrevi
           const text = match[3] ?? '';
           const duration = Number.parseInt(match[2] ?? '0', 10);
           const startTime = lineStart + Number.parseInt(match[1] ?? '0', 10);
+          // 确保 duration 至少为 1ms，防止 endTime === startTime 导致逐字显示失效
+          const safeDuration = Math.max(duration, 1);
           characters.push({
             text,
             startTime,
-            endTime: startTime + duration,
+            endTime: startTime + safeDuration,
             highlighted: false,
           });
         }
@@ -458,7 +465,13 @@ const parseLyricDetailPayload = (payload: LyricDetailResponse): ParsedLyricPrevi
           const start = lineStart + Math.round(offset * totalDuration);
           offset += ratio;
           const end = lineStart + Math.round(offset * totalDuration);
-          return { text: t, startTime: start, endTime: end, highlighted: false };
+          // 确保每个字符至少有 1ms 的持续时间，防止逐字显示失效
+          return {
+            text: t,
+            startTime: start,
+            endTime: Math.max(end, start + 1),
+            highlighted: false,
+          };
         });
       }
     }
@@ -468,12 +481,17 @@ const parseLyricDetailPayload = (payload: LyricDetailResponse): ParsedLyricPrevi
       const totalDuration = Math.max(origLineEnd - origLineStart, translated.length * 120);
       const chars = translated.split('');
       const totalLen = chars.length;
-      translatedCharacters = chars.map((char, i) => ({
-        text: char,
-        startTime: origLineStart + Math.round((i / totalLen) * totalDuration),
-        endTime: origLineStart + Math.round(((i + 1) / totalLen) * totalDuration),
-        highlighted: false,
-      }));
+      translatedCharacters = chars.map((char, i) => {
+        const charStart = origLineStart + Math.round((i / totalLen) * totalDuration);
+        const charEnd = origLineStart + Math.round(((i + 1) / totalLen) * totalDuration);
+        // 确保每个字符至少有 1ms 的持续时间，防止逐字显示失效
+        return {
+          text: char,
+          startTime: charStart,
+          endTime: Math.max(charEnd, charStart + 1),
+          highlighted: false,
+        };
+      });
     }
 
     return {

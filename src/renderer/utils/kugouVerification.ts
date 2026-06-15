@@ -1,9 +1,13 @@
 import { reactive } from 'vue';
 import logger from '@/utils/logger';
 
-type VerifyAssetName = 'verifycode.js' | 'verifycode_bg.wasm' | 'verifycode_bg_ios.wasm';
-
 type VerifyApiRequest = (url: string, params: Record<string, string | number>) => Promise<any>;
+
+export interface KugouVerificationChallenge {
+  eventId: string;
+  sid?: string;
+  edt?: string;
+}
 
 export interface KugouVerificationInfo {
   v_type?: number | string;
@@ -28,9 +32,15 @@ export const KUGOU_CAPTCHA_PROVIDER_NAMES: Record<KugouCaptchaProvider, string> 
 
 interface PendingChallenge {
   eventId: string;
+  sid: string;
+  edt: string;
   request: VerifyApiRequest;
   resolve: () => void;
   reject: (error: Error) => void;
+}
+
+interface LoadVerifyInfoOptions {
+  readyError?: string;
 }
 
 export const kugouVerificationState = reactive({
@@ -44,7 +54,6 @@ export const kugouVerificationState = reactive({
 let activeChallenge: PendingChallenge | null = null;
 const challengeQueue: PendingChallenge[] = [];
 const challengePromises = new Map<string, Promise<void>>();
-let verifyRuntimePromise: Promise<any> | null = null;
 
 export const getKugouCaptchaProvider = (
   verifyInfo: KugouVerificationInfo | null | undefined,
@@ -68,81 +77,30 @@ export const getKugouCaptchaProvider = (
   return 'UNKNOWN';
 };
 
-const toArrayBuffer = (value: ArrayBuffer | ArrayBufferView): ArrayBuffer => {
-  if (value instanceof ArrayBuffer) return value;
-  const buffer = new ArrayBuffer(value.byteLength);
-  new Uint8Array(buffer).set(new Uint8Array(value.buffer, value.byteOffset, value.byteLength));
-  return buffer;
-};
-
-const readVerifyAsset = async (name: VerifyAssetName): Promise<ArrayBuffer> => {
-  const asset = await window.electron?.apiServer?.readVerifyAsset?.(name);
-  if (!asset) {
-    throw new Error('安全验证资源不可用');
-  }
-  return toArrayBuffer(asset);
-};
-
-const loadScriptFromServerAsset = async () => {
-  if (typeof window === 'undefined') return;
-  if ((window as any).wasm_bindgen?.EData) return;
-
-  const scriptBytes = await readVerifyAsset('verifycode.js');
-  const scriptText = new TextDecoder('utf-8').decode(scriptBytes);
-  const blobUrl = URL.createObjectURL(new Blob([scriptText], { type: 'text/javascript' }));
-
-  await new Promise<void>((resolve, reject) => {
-    const script = document.createElement('script');
-    script.src = blobUrl;
-    script.async = true;
-    script.onload = () => resolve();
-    script.onerror = () => reject(new Error('安全验证脚本加载失败'));
-    document.head.appendChild(script);
-  });
-  URL.revokeObjectURL(blobUrl);
-};
-
-const ensureVerifyRuntime = async () => {
-  if (!verifyRuntimePromise) {
-    verifyRuntimePromise = (async () => {
-      await loadScriptFromServerAsset();
-      const wasmBindgen = (window as any).wasm_bindgen;
-      if (!wasmBindgen?.EData) {
-        throw new Error('安全验证运行时初始化失败');
-      }
-
-      const wasmBytes = await readVerifyAsset('verifycode_bg_ios.wasm');
-      await wasmBindgen(wasmBytes);
-      wasmBindgen.run?.();
-      return wasmBindgen;
-    })().catch((error) => {
-      verifyRuntimePromise = null;
-      throw error;
-    });
-  }
-
-  return verifyRuntimePromise;
-};
-
-const createVerifyPayload = async () => {
-  const wasmBindgen = await ensureVerifyRuntime();
-  const eData = new wasmBindgen.EData();
-  try {
-    return {
-      sid: eData.get_sid(),
-      edt: eData.get_edt(),
-    };
-  } finally {
-    eData.free?.();
-  }
-};
-
 const resetState = () => {
   kugouVerificationState.open = false;
   kugouVerificationState.eventId = '';
   kugouVerificationState.verifyInfo = null;
   kugouVerificationState.status = 'idle';
   kugouVerificationState.error = '';
+};
+
+const loadVerifyInfoForChallenge = async (
+  challenge: PendingChallenge,
+  options: LoadVerifyInfoOptions = {},
+) => {
+  kugouVerificationState.status = 'loading';
+  kugouVerificationState.error = '';
+
+  const body = await challenge.request('/get/verify/info', {
+    eventid: challenge.eventId,
+  });
+
+  if (activeChallenge !== challenge) return;
+
+  kugouVerificationState.verifyInfo = body?.data ?? body;
+  kugouVerificationState.status = 'ready';
+  kugouVerificationState.error = options.readyError ?? '';
 };
 
 const startNextChallenge = async () => {
@@ -158,16 +116,29 @@ const startNextChallenge = async () => {
   kugouVerificationState.error = '';
 
   try {
-    const body = await activeChallenge.request('/get/verify/info', {
-      eventid: activeChallenge.eventId,
-    });
-    kugouVerificationState.verifyInfo = body?.data ?? body;
-    kugouVerificationState.status = 'ready';
+    await loadVerifyInfoForChallenge(activeChallenge);
   } catch (error) {
     logger.error('KugouVerification', 'Failed to load verify info', error);
-    kugouVerificationState.status = 'error';
-    kugouVerificationState.error = '安全验证信息获取失败，请稍后重试';
+    if (activeChallenge) {
+      kugouVerificationState.status = 'error';
+      kugouVerificationState.error = '安全验证信息获取失败，请稍后重试';
+    }
   }
+};
+
+const getVerifyFailureMessage = (error: unknown) => {
+  const response = (error as any)?.response;
+  const body = response?.body;
+  const errorCode = Number(body?.error_code ?? body?.errorCode ?? 0);
+  const dataMessage = typeof body?.data === 'string' ? body.data : '';
+  const msgMessage = typeof body?.msg === 'string' ? body.msg : '';
+  const message = dataMessage || msgMessage;
+
+  if (errorCode === 30791 || message.includes('验证不通过')) {
+    return '验证未通过，请重新完成图形验证';
+  }
+
+  return '验证失败，请重新验证';
 };
 
 const finishActiveChallenge = (error?: Error) => {
@@ -183,8 +154,21 @@ const finishActiveChallenge = (error?: Error) => {
   void startNextChallenge();
 };
 
-export const requestKugouVerification = (eventId: string, request: VerifyApiRequest) => {
-  const normalizedEventId = String(eventId || '').trim();
+const normalizeChallenge = (
+  challenge: string | KugouVerificationChallenge,
+): KugouVerificationChallenge => {
+  if (typeof challenge === 'string') {
+    return { eventId: challenge };
+  }
+  return challenge;
+};
+
+export const requestKugouVerification = (
+  challenge: string | KugouVerificationChallenge,
+  request: VerifyApiRequest,
+) => {
+  const challengeInfo = normalizeChallenge(challenge);
+  const normalizedEventId = String(challengeInfo.eventId || '').trim();
   if (!normalizedEventId) {
     return Promise.reject(new Error('缺少安全验证事件标识'));
   }
@@ -195,6 +179,8 @@ export const requestKugouVerification = (eventId: string, request: VerifyApiRequ
   const promise = new Promise<void>((resolve, reject) => {
     challengeQueue.push({
       eventId: normalizedEventId,
+      sid: String(challengeInfo.sid || '').trim(),
+      edt: String(challengeInfo.edt || '').trim(),
       request,
       resolve,
       reject,
@@ -211,15 +197,16 @@ export const requestKugouVerification = (eventId: string, request: VerifyApiRequ
   return promise;
 };
 
-export const submitKugouVerification = async (verifyCode: string) => {
-  if (!activeChallenge) {
+export const submitKugouVerification = async (verifyCode: string): Promise<boolean> => {
+  const challenge = activeChallenge;
+  if (!challenge) {
     throw new Error('当前没有待处理的安全验证');
   }
 
   const code = String(verifyCode || '').trim();
   if (!code) {
     kugouVerificationState.error = '请输入验证码';
-    return;
+    return false;
   }
 
   const verifyInfo = kugouVerificationState.verifyInfo;
@@ -228,20 +215,51 @@ export const submitKugouVerification = async (verifyCode: string) => {
   kugouVerificationState.error = '';
 
   try {
-    const payload = await createVerifyPayload();
-    await activeChallenge.request('/verify/user/info', {
-      eventid: activeChallenge.eventId,
-      v_type: verifyType,
-      verifycode: encodeURIComponent(code),
-      sid: encodeURIComponent(payload.sid),
-      edt: encodeURIComponent(payload.edt),
-    });
+    if (challenge.sid && challenge.edt) {
+      await challenge.request('/verify/user/info', {
+        eventid: challenge.eventId,
+        v_type: verifyType,
+        verifycode: code,
+        sid: challenge.sid,
+        edt: challenge.edt,
+      });
+    } else {
+      await challenge.request('/sidedt', {
+        eventid: challenge.eventId,
+        v_type: verifyType,
+        verifycode: code,
+      });
+    }
+    if (activeChallenge !== challenge) return false;
     kugouVerificationState.status = 'success';
     finishActiveChallenge();
+    return true;
   } catch (error) {
     logger.error('KugouVerification', 'Verify user info failed', error);
+    if (activeChallenge !== challenge) return false;
+    const readyError = getVerifyFailureMessage(error);
     kugouVerificationState.status = 'error';
-    kugouVerificationState.error = '验证失败，请重试';
+    kugouVerificationState.error = readyError;
+    finishActiveChallenge(new Error(readyError));
+    return false;
+  }
+};
+
+export const refreshKugouVerificationInfo = async (readyError = '') => {
+  const challenge = activeChallenge;
+  if (!challenge) {
+    throw new Error('当前没有待处理的安全验证');
+  }
+
+  try {
+    await loadVerifyInfoForChallenge(challenge, { readyError });
+  } catch (error) {
+    logger.error('KugouVerification', 'Failed to refresh verify info', error);
+    if (activeChallenge === challenge) {
+      kugouVerificationState.status = 'error';
+      kugouVerificationState.error = '验证信息刷新失败，请重新触发操作';
+    }
+    throw error;
   }
 };
 
