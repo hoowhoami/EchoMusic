@@ -152,6 +152,10 @@ export interface EchoPluginContext {
   scroll: ReturnType<typeof createScrollApi>;
   appIcons: {
     refresh: () => Promise<unknown>;
+    restoreDefaultDesktopIcon: () => Promise<unknown>;
+    restoreDefaultTaskbarIcon: () => Promise<unknown>;
+    setRuntimeWindowIcon: (iconPath: string) => Promise<unknown>;
+    restoreDefaultWindowIcon: () => Promise<unknown>;
   };
   nowPlaying: Window['electron']['nowPlaying'];
   windows: {
@@ -1009,6 +1013,7 @@ const createPluginFsApi = (pluginId: string) => {
         ) ?? unavailable()
       );
     },
+    deleteFile: (filePath: string) => getFsApi()?.deleteFile(pluginId, filePath) ?? unavailable(),
   };
 };
 
@@ -1711,6 +1716,18 @@ const createPluginContext = (
     scroll: createScrollApi(descriptor.id, addDisposable),
     appIcons: {
       refresh: () => window.electron.plugins?.icons.refresh() ?? Promise.resolve({ ok: false }),
+      restoreDefaultDesktopIcon: () =>
+        window.electron.plugins?.icons.restoreDefaultDesktopIcon() ??
+        Promise.resolve({ ok: false, error: '图标 API 不可用' }),
+      restoreDefaultTaskbarIcon: () =>
+        window.electron.plugins?.icons.restoreDefaultTaskbarIcon() ??
+        Promise.resolve({ ok: false, error: '图标 API 不可用' }),
+      setRuntimeWindowIcon: (iconPath: string) =>
+        window.electron.plugins?.icons.setRuntimeWindowIcon(iconPath) ??
+        Promise.resolve({ ok: false, error: '图标 API 不可用' }),
+      restoreDefaultWindowIcon: () =>
+        window.electron.plugins?.icons.restoreDefaultWindowIcon() ??
+        Promise.resolve({ ok: false, error: '图标 API 不可用' }),
     },
     nowPlaying: window.electron.nowPlaying,
     windows: createPluginWindowsApi(descriptor.id),

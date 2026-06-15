@@ -299,8 +299,8 @@ export const registerPluginHandlers = (context: IpcContext) => {
   );
   ipcRegistry.registerHandler(
     'plugins:set-enabled',
-    (_event, pluginId: string, enabled: boolean): PluginSetEnabledResult => {
-      const result = setPluginEnabled(pluginId, enabled);
+    async (_event, pluginId: string, enabled: boolean): Promise<PluginSetEnabledResult> => {
+      const result = await setPluginEnabled(pluginId, enabled);
       if (result.ok) {
         if (!enabled) closePluginWindows(pluginId);
         refreshPluginAppIcons();
@@ -310,17 +310,17 @@ export const registerPluginHandlers = (context: IpcContext) => {
   );
   ipcRegistry.registerHandler(
     'plugins:set-safe-mode',
-    (_event, enabled: boolean): PluginSetSafeModeResult => {
-      const result = setPluginSafeMode(enabled);
+    async (_event, enabled: boolean): Promise<PluginSetSafeModeResult> => {
+      const result = await setPluginSafeMode(enabled);
       if (result.ok && enabled) closePluginWindows();
       return result;
     },
   );
   ipcRegistry.registerHandler(
     'plugins:uninstall',
-    (_event, pluginId: string): PluginUninstallResult => {
+    async (_event, pluginId: string): Promise<PluginUninstallResult> => {
       closePluginWindows(pluginId);
-      const result = uninstallPlugin(pluginId);
+      const result = await uninstallPlugin(pluginId);
       if (result.ok) refreshPluginAppIcons();
       return result;
     },

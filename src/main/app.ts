@@ -33,12 +33,14 @@ if (process.platform === 'win32') {
 const hasSafeModeArg = (argv: string[]) => argv.includes('--safe-mode');
 
 if (hasSafeModeArg(process.argv)) {
-  const result = setPluginSafeMode(true);
-  if (result.ok) {
-    log.warn('[Plugin] Safe mode enabled from command line');
-  } else {
-    log.error('[Plugin] Failed to enable safe mode from command line', result.error);
-  }
+  void (async () => {
+    const result = await setPluginSafeMode(true);
+    if (result.ok) {
+      log.warn('[Plugin] Safe mode enabled from command line');
+    } else {
+      log.error('[Plugin] Failed to enable safe mode from command line', result.error);
+    }
+  })();
 }
 
 const installWindowsTrayRecovery = () => {

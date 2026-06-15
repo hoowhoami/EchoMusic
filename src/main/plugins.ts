@@ -440,13 +440,13 @@ const recoverPreviousPluginCrash = () => {
   }
 };
 
-export const setPluginSafeMode = (enabled: boolean): PluginSetSafeModeResult => {
+export const setPluginSafeMode = async (enabled: boolean): Promise<PluginSetSafeModeResult> => {
   try {
     getKvStorage().set(PLUGIN_SAFE_MODE_KEY, Boolean(enabled));
     if (enabled) {
       getKvStorage().delete(PLUGIN_STARTUP_SESSION_KEY);
       getKvStorage().delete(PLUGIN_ACTIVE_SESSION_KEY);
-      terminatePluginProcesses();
+      await terminatePluginProcesses();
     }
     return { ok: true, safeMode: Boolean(enabled) };
   } catch (error) {
@@ -1832,7 +1832,7 @@ const findPluginInstallSourceDirectory = (extractDirectory: string, packagePath:
   throw new Error('插件安装包中未找到 manifest.json');
 };
 
-const installPluginDirectory = (
+const installPluginDirectory = async (
   sourceDirectory: string,
   options: PluginDirectoryInstallOptions,
 ) => {
@@ -1875,7 +1875,10 @@ const installPluginDirectory = (
     const nextState = getEnabledState();
     const wasEnabled = Boolean(nextState[pluginId]);
     if (enableAfterInstall) nextState[pluginId] = true;
-    terminatePluginProcesses(pluginId);
+    await terminatePluginProcesses(pluginId);
+    if (process.platform === 'win32') {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
     rmSync(targetDirectory, { recursive: true, force: true });
     cpSync(stagingDirectory, targetDirectory, { recursive: true });
     if (!existingPlugin) setPluginInstalledAt(pluginId, Date.now());
@@ -1959,7 +1962,7 @@ export const installPluginFromMarketplace = async (
         pluginId: plugin.id,
         method: 'archive',
       });
-      const installed = installPluginDirectory(sourceDirectory, {
+      const installed = await installPluginDirectory(sourceDirectory, {
         expectedPluginId: plugin.id,
         enableAfterInstall: Boolean(options.enableAfterInstall),
       });
@@ -2019,7 +2022,7 @@ const installPluginFromLocalSource = async (
 
     if (source.kind === 'directory') {
       const sourceDirectory = findPluginInstallSourceDirectory(source.path, '');
-      const installed = installPluginDirectory(sourceDirectory, {
+      const installed = await installPluginDirectory(sourceDirectory, {
         enableAfterInstall: Boolean(options.enableAfterInstall),
       });
       return {
@@ -2045,7 +2048,7 @@ const installPluginFromLocalSource = async (
         'node-stream-zip',
       );
       const sourceDirectory = findPluginInstallSourceDirectory(extractDirectory, '');
-      const installed = installPluginDirectory(sourceDirectory, {
+      const installed = await installPluginDirectory(sourceDirectory, {
         enableAfterInstall: Boolean(options.enableAfterInstall),
       });
       return {
@@ -2366,25 +2369,64 @@ export const terminatePluginProcess = (
   }
 };
 
-export const terminatePluginProcesses = (pluginId?: string) => {
+export const terminatePluginProcesses = (pluginId?: string): Promise<void> => {
   const normalizedPluginId = pluginId ? normalizePluginId(pluginId) : '';
+  const terminationPromises: Promise<void>[] = [];
+
   for (const [pid, record] of Array.from(pluginProcesses.entries())) {
     if (normalizedPluginId && record.pluginId !== normalizedPluginId) continue;
-    try {
-      record.child.kill();
-    } catch (error) {
-      log.warn('[Plugin] Failed to terminate plugin process', {
-        pluginId: record.pluginId,
-        pid,
-        error,
-      });
-    } finally {
-      pluginProcesses.delete(pid);
-    }
+
+    const terminationPromise = new Promise<void>((resolve) => {
+      const cleanup = () => {
+        pluginProcesses.delete(pid);
+        resolve();
+      };
+
+      // 如果进程已经退出，立即清理
+      if (record.child.exitCode !== null || record.child.killed) {
+        cleanup();
+        return;
+      }
+
+      // 设置超时（5秒），防止永久等待
+      const timeout = setTimeout(() => {
+        log.warn('[Plugin] Process termination timeout, forcing cleanup', {
+          pluginId: record.pluginId,
+          pid,
+        });
+        cleanup();
+      }, 5000);
+
+      // 监听进程退出
+      const onExit = () => {
+        clearTimeout(timeout);
+        cleanup();
+      };
+
+      record.child.once('exit', onExit);
+      record.child.once('error', onExit);
+
+      // 尝试终止进程
+      try {
+        record.child.kill();
+      } catch (error) {
+        log.warn('[Plugin] Failed to terminate plugin process', {
+          pluginId: record.pluginId,
+          pid,
+          error,
+        });
+        clearTimeout(timeout);
+        cleanup();
+      }
+    });
+
+    terminationPromises.push(terminationPromise);
   }
+
+  return Promise.all(terminationPromises).then(() => undefined);
 };
 
-app.once('before-quit', () => terminatePluginProcesses());
+app.once('before-quit', () => void terminatePluginProcesses());
 
 export const launchPluginProcess = async (
   pluginId: string,
@@ -2491,7 +2533,10 @@ export const getPluginWindowDescriptor = (pluginId: string, windowId: string) =>
   return plugin.windows.find((item) => item.id === normalizedWindowId) ?? null;
 };
 
-export const setPluginEnabled = (pluginId: string, enabled: boolean): PluginSetEnabledResult => {
+export const setPluginEnabled = async (
+  pluginId: string,
+  enabled: boolean,
+): Promise<PluginSetEnabledResult> => {
   const plugin = findPlugin(pluginId);
   if (!plugin) return { ok: false, error: '插件不存在' };
   if (plugin.invalid) return { ok: false, error: plugin.error || '插件无效' };
@@ -2503,7 +2548,7 @@ export const setPluginEnabled = (pluginId: string, enabled: boolean): PluginSetE
   const nextState = getEnabledState();
   nextState[plugin.id] = Boolean(enabled);
   setEnabledState(nextState);
-  if (!enabled) terminatePluginProcesses(plugin.id);
+  if (!enabled) await terminatePluginProcesses(plugin.id);
   const refreshed = findPlugin(plugin.id);
   return refreshed ? { ok: true, plugin: refreshed } : { ok: false, error: '插件刷新失败' };
 };
@@ -3090,7 +3135,7 @@ export const deletePluginFile = (pluginId: string, filePath: string): PluginDele
   }
 };
 
-export const uninstallPlugin = (pluginId: string): PluginUninstallResult => {
+export const uninstallPlugin = async (pluginId: string): Promise<PluginUninstallResult> => {
   const plugin = findPlugin(pluginId);
   if (!plugin) return { ok: false, error: '插件不存在' };
 
@@ -3111,7 +3156,15 @@ export const uninstallPlugin = (pluginId: string): PluginUninstallResult => {
     clearPluginStorage(plugin.id);
     removePluginInstalledAt(plugin.id);
     clearPluginProcessConsents(plugin.id);
-    terminatePluginProcesses(plugin.id);
+
+    // 等待进程完全终止
+    await terminatePluginProcesses(plugin.id);
+
+    // Windows下额外等待一小段时间，确保文件句柄被释放
+    if (process.platform === 'win32') {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+
     rmSync(directory, { recursive: true, force: true });
     return { ok: true, pluginId: plugin.id };
   } catch (error) {
