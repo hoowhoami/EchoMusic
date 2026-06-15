@@ -21,6 +21,7 @@ let closeBehavior: CloseBehavior = initialSettings.closeBehavior;
 let currentTheme: ThemeMode = initialSettings.theme;
 let rememberWindowSize = initialSettings.rememberWindowSize;
 let preventSleep = initialSettings.preventSleep;
+let devToolsEnabled = initialSettings.devToolsEnabled;
 let isPlaybackActive = false;
 let systemSuspended = false;
 let powerSaveBlockerId = -1;
@@ -148,6 +149,11 @@ export const registerMainWindowPreferenceHandlers = () => {
     setMainAppSetting('preventSleep', preventSleep);
     syncPowerSaveBlocker();
   });
+
+  ipcRegistry.registerListener('update-devtools-enabled', (_event, enabled: boolean) => {
+    devToolsEnabled = enabled;
+    setMainAppSetting('devToolsEnabled', enabled);
+  });
 };
 
 const getPersistedWindowState = (): WindowState => {
@@ -260,6 +266,7 @@ export async function createWindow() {
       allowRunningInsecureContent: true, // 允许混合内容
       zoomFactor: 1.0,
       backgroundThrottling: false, // 最小化后不节流，保证播放状态和歌词同步
+      devTools: devToolsEnabled, // 控制是否允许打开开发者工具
     },
   });
   applyWindowAppIcon(win);

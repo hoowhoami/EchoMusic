@@ -466,6 +466,7 @@ const updateCachedBounds = async () => {
 
 const dragState = reactive({
   isDragging: false,
+  hasMoved: false,
   startX: 0,
   startY: 0,
   startWinX: 0,
@@ -498,18 +499,13 @@ const onDocPointerDown = async (event: PointerEvent) => {
   const safeWidth = cachedBounds.width > 0 ? cachedBounds.width : 800;
   const safeHeight = cachedBounds.height > 0 ? cachedBounds.height : 180;
   dragState.isDragging = true;
+  dragState.hasMoved = false;
   dragState.startX = event.screenX;
   dragState.startY = event.screenY;
   dragState.startWinX = cachedBounds.x;
   dragState.startWinY = cachedBounds.y;
   dragState.winWidth = safeWidth;
   dragState.winHeight = safeHeight;
-  // 固定最大尺寸以规避 DPI 缩放 bug
-  sendToMain('desktop-lyric:toggle-fixed-size', {
-    width: safeWidth,
-    height: safeHeight,
-    fixed: true,
-  });
   // 捕获 pointer，确保触摸拖拽时手指移出窗口边界后仍能收到事件
   (event.target as HTMLElement)?.setPointerCapture?.(event.pointerId);
   document.addEventListener('pointermove', onDocPointerMove);
@@ -521,9 +517,23 @@ const onDocPointerDown = async (event: PointerEvent) => {
 const onDocPointerMove = useThrottleFn(
   (event: PointerEvent) => {
     if (!dragState.isDragging || isLocked.value) return;
-    const newX = Math.round(dragState.startWinX + (event.screenX - dragState.startX));
-    const newY = Math.round(dragState.startWinY + (event.screenY - dragState.startY));
-    sendToMain('desktop-lyric:move', newX, newY, dragState.winWidth, dragState.winHeight);
+    const deltaX = event.screenX - dragState.startX;
+    const deltaY = event.screenY - dragState.startY;
+    // 判断是否真正移动（超过 3px 阈值）
+    if (!dragState.hasMoved && (Math.abs(deltaX) > 3 || Math.abs(deltaY) > 3)) {
+      dragState.hasMoved = true;
+      // 只有真正开始拖动时才固定尺寸
+      sendToMain('desktop-lyric:toggle-fixed-size', {
+        width: dragState.winWidth,
+        height: dragState.winHeight,
+        fixed: true,
+      });
+    }
+    if (dragState.hasMoved) {
+      const newX = Math.round(dragState.startWinX + deltaX);
+      const newY = Math.round(dragState.startWinY + deltaY);
+      sendToMain('desktop-lyric:move', newX, newY, dragState.winWidth, dragState.winHeight);
+    }
   },
   16,
   true,
@@ -532,7 +542,9 @@ const onDocPointerMove = useThrottleFn(
 
 const onDocPointerUp = (event?: PointerEvent | Event) => {
   if (!dragState.isDragging) return;
+  const wasDragging = dragState.hasMoved;
   dragState.isDragging = false;
+  dragState.hasMoved = false;
   // 释放 pointer capture
   if (event && 'pointerId' in event) {
     (event.target as HTMLElement)?.releasePointerCapture?.((event as PointerEvent).pointerId);
@@ -540,17 +552,19 @@ const onDocPointerUp = (event?: PointerEvent | Event) => {
   document.removeEventListener('pointermove', onDocPointerMove);
   document.removeEventListener('pointerup', onDocPointerUp);
   document.removeEventListener('pointercancel', onDocPointerUp);
-  requestAnimationFrame(() => {
-    sendToMain('desktop-lyric:resize', dragState.winWidth, dragState.winHeight);
-    const height = fontSizeToHeight(localFontSize.value);
-    if (height) pushWindowHeight(height);
-    sendToMain('desktop-lyric:toggle-fixed-size', {
-      width: dragState.winWidth,
-      height: dragState.winHeight,
-      fixed: false,
+
+  // 只有真正拖动过才需要恢复尺寸限制
+  if (wasDragging) {
+    requestAnimationFrame(() => {
+      // 恢复窗口最大尺寸限制（取消 fixed 状态）
+      sendToMain('desktop-lyric:toggle-fixed-size', {
+        width: dragState.winWidth,
+        height: dragState.winHeight,
+        fixed: false,
+      });
+      updateCachedBounds();
     });
-    updateCachedBounds();
-  });
+  }
 };
 
 // 字体大小随窗口变化

@@ -29,6 +29,7 @@ export type MainAppSettings = {
   disableGpuAcceleration: boolean;
   autoLaunch: boolean;
   startMinimized: boolean;
+  devToolsEnabled: boolean;
   windowState: MainWindowState;
   miniPlayerWindowState: MiniPlayerWindowState;
 };
@@ -52,6 +53,7 @@ export const DEFAULT_MAIN_APP_SETTINGS: MainAppSettings = {
   disableGpuAcceleration: false,
   autoLaunch: false,
   startMinimized: false,
+  devToolsEnabled: false,
   windowState: {
     width: 1100,
     height: 750,
@@ -111,6 +113,8 @@ export const setMainAppSetting = <K extends keyof MainAppSettings>(
 
 export const getDisableGpuAccelerationSetting = () =>
   Boolean(getMainAppSettings().disableGpuAcceleration);
+
+export const getDevToolsEnabledSetting = () => Boolean(getMainAppSettings().devToolsEnabled);
 
 export const getPersistedLogSettings = (): LogSettings =>
   getKvStorage().get<LogSettings>(LOG_SETTINGS_KEY) ?? DEFAULT_LOG_SETTINGS;

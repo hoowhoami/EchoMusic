@@ -71,6 +71,8 @@ import type {
   PluginWriteFileData,
   PluginWriteFileOptions,
   PluginWriteFileResult,
+  PluginDeleteFileResult,
+  PluginRestoreIconResult,
   PluginWindowBounds,
   PluginWindowContextResult,
   PluginWindowResult,
@@ -493,6 +495,23 @@ contextBridge.exposeInMainWorld('electron', {
     icons: {
       refresh: () =>
         ipcRenderer.invoke('plugins:icons:refresh') as Promise<PluginAppIconRefreshResult>,
+      restoreDefaultDesktopIcon: () =>
+        ipcRenderer.invoke(
+          'plugins:icons:restore-default-desktop',
+        ) as Promise<PluginRestoreIconResult>,
+      restoreDefaultTaskbarIcon: () =>
+        ipcRenderer.invoke(
+          'plugins:icons:restore-default-taskbar',
+        ) as Promise<PluginRestoreIconResult>,
+      setRuntimeWindowIcon: (iconPath: string) =>
+        ipcRenderer.invoke(
+          'plugins:icons:set-runtime-window-icon',
+          iconPath,
+        ) as Promise<PluginRestoreIconResult>,
+      restoreDefaultWindowIcon: () =>
+        ipcRenderer.invoke(
+          'plugins:icons:restore-default-window-icon',
+        ) as Promise<PluginRestoreIconResult>,
     },
     onRuntimeReloadRequested: (func: () => void) => {
       const listener = () => func();
@@ -630,6 +649,12 @@ contextBridge.exposeInMainWorld('electron', {
           data,
           options,
         ),
+      deleteFile: (pluginId: string, filePath: string) =>
+        ipcRenderer.invoke(
+          'plugins:fs:delete-file',
+          pluginId,
+          filePath,
+        ) as Promise<PluginDeleteFileResult>,
     },
     process: {
       launch: (pluginId: string, options: PluginProcessLaunchOptions) =>

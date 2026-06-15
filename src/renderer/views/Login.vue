@@ -241,7 +241,8 @@ const handleAccountLogin = async () => {
       logger.error('Login', 'Account login failed:', e);
       const response = (e as any)?.response;
       const body = response?.body;
-      accountData.error = body?.data || body?.error || body?.message || body?.msg || '登录失败，请稍后重试';
+      accountData.error =
+        body?.data || body?.error || body?.message || body?.msg || '登录失败，请稍后重试';
     }
   } finally {
     accountData.isSubmitting = false;

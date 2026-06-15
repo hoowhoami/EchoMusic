@@ -37,11 +37,14 @@ import type {
   PluginWriteFileData,
   PluginWriteFileOptions,
   PluginWriteFileResult,
+  PluginDeleteFileResult,
+  PluginRestoreIconResult,
 } from '../../shared/plugins';
 import {
   clearPluginFailureRecord,
   clearPluginStartup,
   deletePluginData,
+  deletePluginFile,
   getPluginData,
   getPluginDirectory,
   getPluginFileUrl,
@@ -78,6 +81,10 @@ import {
   applyWindowAppIcon,
   isPluginAppIconStorageKey,
   refreshAppIconConfig,
+  restoreDefaultDesktopIcon,
+  restoreDefaultTaskbarIcon,
+  setRuntimeWindowIcon,
+  restoreDefaultWindowIcon,
 } from '../appIcons';
 import { refreshTray } from '../tray';
 import type { IpcContext } from './types';
@@ -265,6 +272,14 @@ export const registerPluginHandlers = (context: IpcContext) => {
     },
   );
   ipcRegistry.registerHandler(
+    'plugins:fs:delete-file',
+    (_event, pluginId: string, filePath: string): PluginDeleteFileResult => {
+      const result = deletePluginFile(pluginId, filePath);
+      if (result.ok) refreshPluginAppIcons();
+      return result;
+    },
+  );
+  ipcRegistry.registerHandler(
     'plugins:process:launch',
     (
       event,
@@ -369,5 +384,22 @@ export const registerPluginHandlers = (context: IpcContext) => {
   ipcRegistry.registerHandler(
     'plugins:icons:refresh',
     (): PluginAppIconRefreshResult => refreshPluginAppIcons(),
+  );
+  ipcRegistry.registerHandler(
+    'plugins:icons:restore-default-desktop',
+    (): PluginRestoreIconResult => restoreDefaultDesktopIcon(),
+  );
+  ipcRegistry.registerHandler(
+    'plugins:icons:restore-default-taskbar',
+    (): PluginRestoreIconResult => restoreDefaultTaskbarIcon(),
+  );
+  ipcRegistry.registerHandler(
+    'plugins:icons:set-runtime-window-icon',
+    (_event, iconPath: string): PluginRestoreIconResult =>
+      setRuntimeWindowIcon(context.getMainWindow(), iconPath),
+  );
+  ipcRegistry.registerHandler(
+    'plugins:icons:restore-default-window-icon',
+    (): PluginRestoreIconResult => restoreDefaultWindowIcon(context.getMainWindow()),
   );
 };

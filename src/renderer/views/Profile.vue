@@ -140,11 +140,11 @@ const formatVipDate = (value?: string | number) => {
   }
 };
 
-const loadData = async () => {
+const loadData = async (options?: { refreshPlayback?: boolean }) => {
   if (!userStore.isLoggedIn) return;
   isLoading.value = true;
   try {
-    await userStore.fetchUserInfo();
+    const success = await userStore.fetchUserInfo();
 
     const recordRes = await getVipMonthRecord();
     const today = new Date().toISOString().split('T')[0];
@@ -153,6 +153,22 @@ const loadData = async () => {
     const isSvipActive = !!svip.value;
 
     userStore.setClaimStatus(isTvipClaimed, isSvipActive);
+
+    // 会员状态更新后，刷新当前播放的音源
+    // 在组件层协调 userStore 和 playerStore，而不是让 userStore 依赖 playerStore
+    if (success && options?.refreshPlayback) {
+      try {
+        const { usePlayerStore } = await import('@/stores/player');
+        const playerStore = usePlayerStore();
+
+        if (playerStore.currentTrackId && !playerStore.isLoading) {
+          logger.info('Profile', 'Refreshing current track after VIP status update');
+          await playerStore.refreshCurrentTrack();
+        }
+      } catch (e) {
+        logger.warn('Profile', 'Failed to refresh current playback:', e);
+      }
+    }
   } catch (e) {
     logger.error('Profile', 'Load Data Error:', e);
   } finally {
@@ -177,7 +193,7 @@ const handleClaimTvip = async () => {
     const res = (await claimDayVip(today)) as VipActionResponse;
     if (res.status === 1) {
       userStore.setClaimStatus(true, userStore.isSvipClaimedToday);
-      await loadData();
+      await loadData({ refreshPlayback: true });
     }
   } catch (e) {
     logger.error('Profile', 'Claim TVIP error:', e);
@@ -193,7 +209,7 @@ const handleUpgradeSvip = async () => {
     const res = (await upgradeDayVip()) as VipActionResponse;
     if (res.status === 1 || res.error_code === 297002) {
       userStore.setClaimStatus(userStore.isTvipClaimedToday, true);
-      await loadData(); // 刷新
+      await loadData({ refreshPlayback: true }); // 刷新并更新播放状态
     }
   } catch (e) {
     logger.error('Profile', 'Upgrade SVIP error:', e);

@@ -179,8 +179,11 @@ export const useUserStore = defineStore('user', {
             }),
           );
         }
+
+        return true;
       } catch (e) {
         logger.error('UserStore', 'Fetch user info error:', e);
+        return false;
       }
     },
     async fetchUserInfoOnce() {

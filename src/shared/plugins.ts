@@ -249,6 +249,29 @@ export type PluginWriteFileResult =
       error: string;
     };
 
+export type PluginDeleteFileResult =
+  | {
+      ok: true;
+      name: string;
+      path: string;
+      existed: boolean;
+    }
+  | {
+      ok: false;
+      error: string;
+    };
+
+export type PluginRestoreIconResult =
+  | {
+      ok: true;
+      applied: boolean;
+      message: string;
+    }
+  | {
+      ok: false;
+      error: string;
+    };
+
 export interface PluginProcessLaunchOptions {
   executable: string;
   args?: string[];

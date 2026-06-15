@@ -164,6 +164,22 @@ const diagnosticLabel = computed(() => {
         "
       />
     </div>
+    <div class="settings-divider"></div>
+    <div class="settings-item">
+      <div class="space-y-1">
+        <h3 class="font-semibold">开发者工具</h3>
+        <p class="text-sm text-text-secondary">开启后允许打开开发者工具进行调试，重启后生效</p>
+      </div>
+      <Switch
+        :model-value="settingStore.devToolsEnabled"
+        @update:model-value="
+          (v: boolean) => {
+            settingStore.devToolsEnabled = v;
+            settingStore.syncDevToolsEnabled();
+          }
+        "
+      />
+    </div>
   </SettingsSectionShell>
 </template>
 

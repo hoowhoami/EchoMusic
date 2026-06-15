@@ -67,6 +67,7 @@ import type {
   PluginWriteFileData,
   PluginWriteFileOptions,
   PluginWriteFileResult,
+  PluginDeleteFileResult,
   PluginWindowDescriptor,
   PluginWindowManifest,
   PluginReportFailureResult,
@@ -3044,6 +3045,47 @@ export const writePluginFile = (
     return {
       ok: false,
       error: error instanceof Error ? error.message : '文件写入失败',
+    };
+  }
+};
+
+export const deletePluginFile = (pluginId: string, filePath: string): PluginDeleteFileResult => {
+  const access = hasPluginLocalFilesAccess(pluginId);
+  if (!access.ok) return { ok: false, error: access.error };
+
+  try {
+    const input = String(filePath || '').trim();
+    if (!input) return { ok: false, error: '文件路径为空' };
+    if (input.includes('\0')) return { ok: false, error: '文件路径不能包含空字符' };
+
+    const targetPath = resolvePluginFile(access.plugin.directory, input);
+    if (!targetPath) return { ok: false, error: '删除路径必须位于插件目录内' };
+
+    const pluginRoot = realpathSync(access.plugin.directory);
+    const existed = existsSync(targetPath);
+
+    if (existed) {
+      const targetRealPath = realpathSync(targetPath);
+      if (!isPathInside(pluginRoot, targetRealPath)) {
+        return { ok: false, error: '删除路径必须位于插件目录内' };
+      }
+
+      const stats = statSync(targetPath);
+      if (!stats.isFile()) return { ok: false, error: '删除路径不是文件' };
+
+      rmSync(targetPath, { force: true });
+    }
+
+    return {
+      ok: true,
+      name: basename(targetPath),
+      path: targetPath,
+      existed,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : '文件删除失败',
     };
   }
 };

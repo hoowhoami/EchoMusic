@@ -68,6 +68,8 @@ import type {
   PluginWriteFileData,
   PluginWriteFileOptions,
   PluginWriteFileResult,
+  PluginDeleteFileResult,
+  PluginRestoreIconResult,
   PluginWindowBounds,
   PluginWindowContextResult,
   PluginWindowResult,
@@ -236,6 +238,10 @@ export interface IElectronAPI {
     reloadRuntimes: () => Promise<void>;
     icons: {
       refresh: () => Promise<PluginAppIconRefreshResult>;
+      restoreDefaultDesktopIcon: () => Promise<PluginRestoreIconResult>;
+      restoreDefaultTaskbarIcon: () => Promise<PluginRestoreIconResult>;
+      setRuntimeWindowIcon: (iconPath: string) => Promise<PluginRestoreIconResult>;
+      restoreDefaultWindowIcon: () => Promise<PluginRestoreIconResult>;
     };
     onRuntimeReloadRequested: (func: () => void) => () => void;
     setEnabled: (pluginId: string, enabled: boolean) => Promise<PluginSetEnabledResult>;
@@ -313,6 +319,7 @@ export interface IElectronAPI {
         data: PluginWriteFileData,
         options?: PluginWriteFileOptions,
       ) => Promise<PluginWriteFileResult>;
+      deleteFile: (pluginId: string, filePath: string) => Promise<PluginDeleteFileResult>;
     };
     process: {
       launch: (

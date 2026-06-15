@@ -156,6 +156,11 @@ export const useSettingStore = defineStore('setting', {
     audioDemuxerMaxMB: 48,
     audioDemuxerBackMB: 12,
     audioBufferSecs: 0.5,
+    // 快进 / 快退步长（秒）
+    seekForwardOffset: 5,
+    seekBackwardOffset: 5,
+    // DevTools 开关
+    devToolsEnabled: false,
   }),
   actions: {
     setTheme(theme: ThemeMode) {
@@ -264,6 +269,11 @@ export const useSettingStore = defineStore('setting', {
     syncStartMinimized() {
       if (window.electron?.ipcRenderer) {
         window.electron.ipcRenderer.send('update-start-minimized', this.startMinimized);
+      }
+    },
+    syncDevToolsEnabled() {
+      if (window.electron?.ipcRenderer) {
+        window.electron.ipcRenderer.send('update-devtools-enabled', this.devToolsEnabled);
       }
     },
     getLogSettings(): LogSettings {

@@ -2,7 +2,7 @@ import { app, nativeImage, shell, type BrowserWindow } from 'electron';
 import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from 'fs';
 import { dirname, extname, isAbsolute, join, relative, resolve } from 'path';
 import { fileURLToPath } from 'url';
-import type { PluginAppIconRefreshResult } from '../shared/plugins';
+import type { PluginAppIconRefreshResult, PluginRestoreIconResult } from '../shared/plugins';
 import { getKvStorage } from './storage/kv';
 import log from './logger';
 
@@ -494,4 +494,114 @@ export const applyTaskbarShortcutIcon = () => {
   iconState.taskbarShortcutApplied = result.applied;
   iconState.taskbarShortcutError = result.error;
   return getAppIconRefreshResult();
+};
+
+export const restoreDefaultDesktopIcon = (): PluginRestoreIconResult => {
+  if (process.platform === 'darwin') {
+    return { ok: false, error: 'macOS 不支持运行时替换桌面图标' };
+  }
+
+  const defaultIconName = process.platform === 'win32' ? 'icon.ico' : 'icon.png';
+  const defaultIconPath = resolveDefaultIconPath(defaultIconName);
+
+  if (!defaultIconPath) {
+    return { ok: false, error: '未找到默认图标文件' };
+  }
+
+  const result =
+    process.platform === 'win32'
+      ? applyWindowsShortcutIcon('desktop', defaultIconPath)
+      : process.platform === 'linux'
+        ? applyLinuxDesktopEntryIcon(defaultIconPath)
+        : { applied: false, error: '当前平台不支持运行时替换桌面图标' };
+
+  if (result.applied) {
+    iconState.desktopApplied = true;
+    iconState.desktopError = null;
+    return { ok: true, applied: true, message: '桌面图标已恢复为默认' };
+  }
+
+  iconState.desktopApplied = false;
+  iconState.desktopError = result.error;
+  return { ok: false, error: result.error || '桌面图标恢复失败' };
+};
+
+export const restoreDefaultTaskbarIcon = (): PluginRestoreIconResult => {
+  if (process.platform !== 'win32') {
+    return { ok: false, error: '仅 Windows 支持运行时替换任务栏快捷方式图标' };
+  }
+
+  const defaultIconPath = resolveDefaultIconPath('icon.ico');
+
+  if (!defaultIconPath) {
+    return { ok: false, error: '未找到默认图标文件' };
+  }
+
+  const result = applyWindowsShortcutIcon('taskbar', defaultIconPath);
+
+  if (result.applied) {
+    iconState.taskbarShortcutApplied = true;
+    iconState.taskbarShortcutError = null;
+    return { ok: true, applied: true, message: '任务栏图标已恢复为默认' };
+  }
+
+  iconState.taskbarShortcutApplied = false;
+  iconState.taskbarShortcutError = result.error;
+  return { ok: false, error: result.error || '任务栏图标恢复失败' };
+};
+
+export const setRuntimeWindowIcon = (
+  mainWindow: BrowserWindow | null,
+  iconPath: string,
+): PluginRestoreIconResult => {
+  const resolvedPath = String(iconPath || '').trim();
+
+  if (!resolvedPath) {
+    return { ok: false, error: '图标路径不能为空' };
+  }
+
+  if (!existsSync(resolvedPath)) {
+    return { ok: false, error: '图标文件不存在' };
+  }
+
+  try {
+    const stats = statSync(resolvedPath);
+    if (!stats.isFile()) {
+      return { ok: false, error: '图标路径不是文件' };
+    }
+
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.setIcon(resolvedPath);
+    }
+
+    if (process.platform === 'darwin') {
+      app.dock?.setIcon(resolvedPath);
+    }
+
+    return { ok: true, applied: true, message: '窗口图标已更新' };
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : '窗口图标更新失败',
+    };
+  }
+};
+
+export const restoreDefaultWindowIcon = (
+  mainWindow: BrowserWindow | null,
+): PluginRestoreIconResult => {
+  const defaultIconName =
+    process.platform === 'win32'
+      ? 'icon.ico'
+      : process.platform === 'darwin'
+        ? 'icon_macos.png'
+        : 'icon.png';
+
+  const defaultIconPath = resolveDefaultIconPath(defaultIconName);
+
+  if (!defaultIconPath) {
+    return { ok: false, error: '未找到默认图标文件' };
+  }
+
+  return setRuntimeWindowIcon(mainWindow, defaultIconPath);
 };
