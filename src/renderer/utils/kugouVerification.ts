@@ -5,8 +5,6 @@ type VerifyApiRequest = (url: string, params: Record<string, string | number>) =
 
 export interface KugouVerificationChallenge {
   eventId: string;
-  sid?: string;
-  edt?: string;
 }
 
 export interface KugouVerificationInfo {
@@ -32,8 +30,6 @@ export const KUGOU_CAPTCHA_PROVIDER_NAMES: Record<KugouCaptchaProvider, string> 
 
 interface PendingChallenge {
   eventId: string;
-  sid: string;
-  edt: string;
   request: VerifyApiRequest;
   resolve: () => void;
   reject: (error: Error) => void;
@@ -179,8 +175,6 @@ export const requestKugouVerification = (
   const promise = new Promise<void>((resolve, reject) => {
     challengeQueue.push({
       eventId: normalizedEventId,
-      sid: String(challengeInfo.sid || '').trim(),
-      edt: String(challengeInfo.edt || '').trim(),
       request,
       resolve,
       reject,
@@ -215,21 +209,12 @@ export const submitKugouVerification = async (verifyCode: string): Promise<boole
   kugouVerificationState.error = '';
 
   try {
-    if (challenge.sid && challenge.edt) {
-      await challenge.request('/verify/user/info', {
-        eventid: challenge.eventId,
-        v_type: verifyType,
-        verifycode: code,
-        sid: challenge.sid,
-        edt: challenge.edt,
-      });
-    } else {
-      await challenge.request('/sidedt', {
-        eventid: challenge.eventId,
-        v_type: verifyType,
-        verifycode: code,
-      });
-    }
+    // 桌面端无法在浏览器侧采集行为指纹，统一交由服务端 /sidedt 模拟生成 sid/edt 并完成校验。
+    await challenge.request('/sidedt', {
+      eventid: challenge.eventId,
+      v_type: verifyType,
+      verifycode: code,
+    });
     if (activeChallenge !== challenge) return false;
     kugouVerificationState.status = 'success';
     finishActiveChallenge();

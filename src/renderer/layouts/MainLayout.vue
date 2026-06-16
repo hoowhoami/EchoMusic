@@ -118,8 +118,11 @@ watch(
 
 <template>
   <div
-    class="main-layout h-screen w-screen flex overflow-hidden bg-bg-main text-text-main transition-colors duration-300"
+    class="main-layout relative h-screen w-screen flex overflow-hidden bg-bg-main text-text-main transition-colors duration-300"
   >
+    <!-- 主题色顶部渐变氛围层（横跨侧栏与内容，盖住中缝避免出现分隔白线） -->
+    <div class="layout-accent-gradient"></div>
+
     <div
       class="sidebar-wrapper shrink-0 relative"
       :style="{ width: isSidebarCollapsed ? '64px' : '230px' }"

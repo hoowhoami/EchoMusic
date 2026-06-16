@@ -53,6 +53,9 @@ const isClearingFailure = ref(false);
 const marketplaceLoaded = ref(false);
 const isMarketplaceLoading = ref(false);
 const isMarketplaceRefreshing = ref(false);
+const isUpdatingAllMarketplace = ref(false);
+const updateAllProgress = ref(0);
+const updateAllTotal = ref(0);
 const isLocalInstallDragging = ref(false);
 const isLocalInstalling = ref(false);
 const isSourceDialogOpen = ref(false);
@@ -132,6 +135,17 @@ const filteredMarketplacePlugins = computed(() => {
   });
 });
 const marketplaceCountLabel = computed(() => `${filteredMarketplacePlugins.value.length} 个可浏览`);
+const updatableMarketplacePlugins = computed(() =>
+  marketplacePlugins.value.filter(
+    (plugin) => plugin.installed && plugin.updateAvailable && plugin.compatibility.compatible,
+  ),
+);
+const updatableMarketplaceCount = computed(() => updatableMarketplacePlugins.value.length);
+const updateAllButtonLabel = computed(() =>
+  isUpdatingAllMarketplace.value
+    ? `更新中 ${updateAllProgress.value}/${updateAllTotal.value}`
+    : `一键更新 (${updatableMarketplaceCount.value})`,
+);
 const marketplaceSourceErrors = computed(() =>
   marketplaceSources.value.filter((source) => source.enabled && source.lastError),
 );
@@ -505,6 +519,64 @@ const installMarketplacePlugin = async (plugin: PluginMarketplacePlugin) => {
     const done = new Set(busyMarketplacePluginKeys.value);
     done.delete(key);
     busyMarketplacePluginKeys.value = done;
+  }
+};
+
+const updateAllMarketplacePlugins = async () => {
+  if (isUpdatingAllMarketplace.value) return;
+  const targets = [...updatableMarketplacePlugins.value];
+  if (targets.length === 0) return;
+
+  isUpdatingAllMarketplace.value = true;
+  updateAllTotal.value = targets.length;
+  updateAllProgress.value = 0;
+  let succeeded = 0;
+  const failures: string[] = [];
+  try {
+    for (const plugin of targets) {
+      const key = getMarketplacePluginKey(plugin);
+      const next = new Set(busyMarketplacePluginKeys.value);
+      next.add(key);
+      busyMarketplacePluginKeys.value = next;
+      try {
+        const result = await window.electron.plugins?.marketplace.install(
+          plugin.sourceId,
+          plugin.id,
+          {
+            githubProxyUrl: settingStore.githubProxyUrl,
+            enableAfterInstall: false,
+          },
+        );
+        if (!result?.ok) throw new Error(result?.error || '插件更新失败');
+        succeeded += 1;
+      } catch (error) {
+        failures.push(`${plugin.name}：${getPluginInstallErrorMessage(error)}`);
+      } finally {
+        const done = new Set(busyMarketplacePluginKeys.value);
+        done.delete(key);
+        busyMarketplacePluginKeys.value = done;
+        updateAllProgress.value += 1;
+      }
+    }
+
+    if (succeeded > 0) {
+      await refreshPlugins({ reloadActive: true });
+      await reloadOtherPluginRuntimes();
+    }
+    await loadMarketplace(false);
+  } finally {
+    isUpdatingAllMarketplace.value = false;
+    updateAllProgress.value = 0;
+    updateAllTotal.value = 0;
+  }
+
+  if (failures.length === 0) {
+    toastStore.actionCompleted(`已更新 ${succeeded} 个插件`);
+  } else {
+    toastStore.warning(
+      `更新完成：成功 ${succeeded} 个，失败 ${failures.length} 个。${failures[0]}`,
+      6000,
+    );
   }
 };
 
@@ -1143,6 +1215,24 @@ const requestOpenPluginSettings = (record: (typeof records.value)[number]) => {
               class="marketplace-source-select"
               :options="sourceSelectOptions"
             />
+            <Button
+              v-if="updatableMarketplaceCount > 0 || isUpdatingAllMarketplace"
+              variant="primary"
+              size="sm"
+              class="marketplace-update-all-btn !h-9 shrink-0"
+              :loading="isUpdatingAllMarketplace"
+              :disabled="isUpdatingAllMarketplace || isMarketplaceRefreshing"
+              :title="`更新全部 ${updatableMarketplaceCount} 个插件`"
+              @click="updateAllMarketplacePlugins"
+            >
+              <Icon
+                v-if="!isUpdatingAllMarketplace"
+                :icon="iconArrowBarDown"
+                width="16"
+                height="16"
+              />
+              <span class="ml-1">{{ updateAllButtonLabel }}</span>
+            </Button>
           </div>
 
           <div v-if="marketplaceSourceErrors.length > 0" class="marketplace-source-errors">
@@ -1272,6 +1362,7 @@ const requestOpenPluginSettings = (record: (typeof records.value)[number]) => {
                   :loading="busyMarketplacePluginKeys.has(getMarketplacePluginKey(plugin))"
                   :disabled="
                     !canInstallMarketplacePlugin(plugin) ||
+                    isUpdatingAllMarketplace ||
                     busyMarketplacePluginKeys.has(getMarketplacePluginKey(plugin))
                   "
                   @click="installMarketplacePlugin(plugin)"

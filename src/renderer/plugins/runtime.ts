@@ -24,6 +24,7 @@ import type {
 import { createFontApi } from '../../shared/font';
 import * as icons from '@/icons';
 import type { Song } from '@/models/song';
+import { hexToRgb } from '@/utils/color';
 import { usePlayerStore } from '@/stores/player';
 import { usePlaylistStore, type SetPlaybackQueueOptions } from '@/stores/playlist';
 import { useLyricStore } from '@/stores/lyric';
@@ -97,6 +98,38 @@ export interface PluginPageTransitionOptions {
   leaveFilter?: string;
 }
 
+/** 顶部主题色渐变氛围层的暗色专属覆盖（仅覆盖与主题强相关的视觉字段） */
+export interface PluginAccentGradientDarkVariant {
+  color?: string;
+  peakOpacity?: number | string;
+  midOpacity?: number | string;
+  background?: string;
+}
+
+/** 顶部主题色渐变氛围层（横跨侧栏与内容顶部的色带）配置 */
+export interface PluginAccentGradientOptions {
+  /** 为 false 时隐藏整条渐变（等效 opacity:0） */
+  enabled?: boolean;
+  /** 整层不透明度倍率，支持 0-1 小数、0-100 数字或百分比字符串 */
+  opacity?: number | string;
+  /** 渐变基础颜色，支持十六进制或 'r,g,b' 字符串，默认跟随主题色 */
+  color?: string;
+  /** 渐变角度，数字按 deg 处理，如 180 或 '180deg' */
+  angle?: number | string;
+  /** 色带高度，数字按百分比处理，也接受 '240px' / '50%' */
+  height?: number | string;
+  /** 中段色标位置，数字按百分比处理，默认 60% */
+  midPosition?: number | string;
+  /** 顶部色标透明度（rgba alpha），支持 0-1 / 0-100 / 百分比 */
+  peakOpacity?: number | string;
+  /** 中段色标透明度（rgba alpha），支持 0-1 / 0-100 / 百分比 */
+  midOpacity?: number | string;
+  /** 完整 background 覆盖（逃生通道，设置后忽略上述颜色/透明度字段） */
+  background?: string;
+  /** 暗色模式专属覆盖 */
+  dark?: PluginAccentGradientDarkVariant;
+}
+
 export interface PluginThemeApi {
   surface: {
     set: (options: PluginSurfaceOptions) => () => void;
@@ -104,6 +137,10 @@ export interface PluginThemeApi {
   };
   pageTransition: {
     set: (options: PluginPageTransitionOptions) => () => void;
+    clear: () => void;
+  };
+  accentGradient: {
+    set: (options: PluginAccentGradientOptions) => () => void;
     clear: () => void;
   };
 }
@@ -272,7 +309,6 @@ type NormalizedSurfaceContribution = {
 
 const pluginSurfaceContributions = new Map<string, NormalizedSurfaceContribution>();
 let surfaceContributionRevision = 0;
-
 type NormalizedPageTransitionContribution = {
   updatedAt: number;
   enabled?: boolean;
@@ -335,6 +371,29 @@ const pageTransitionCssVariables = [
   '--page-transition-leave-filter',
 ] as const;
 
+const accentGradientCssVariables = [
+  '--accent-gradient-opacity',
+  '--accent-gradient-color-rgb',
+  '--accent-gradient-color-rgb-dark',
+  '--accent-gradient-angle',
+  '--accent-gradient-height',
+  '--accent-gradient-mid-position',
+  '--accent-gradient-peak-opacity',
+  '--accent-gradient-peak-opacity-dark',
+  '--accent-gradient-mid-opacity',
+  '--accent-gradient-mid-opacity-dark',
+  '--accent-gradient-background',
+  '--accent-gradient-background-dark',
+] as const;
+
+type NormalizedAccentGradientContribution = {
+  updatedAt: number;
+  variables: Partial<Record<(typeof accentGradientCssVariables)[number], string>>;
+};
+
+const pluginAccentGradientContributions = new Map<string, NormalizedAccentGradientContribution>();
+let accentGradientContributionRevision = 0;
+
 const clampPercent = (value: number) => Math.max(0, Math.min(100, value));
 const clampNumber = (value: number, min: number, max: number) =>
   Math.max(min, Math.min(max, value));
@@ -362,6 +421,115 @@ const normalizeSurfaceOpacity = (value: number | string | undefined) => {
 const normalizeBackdropFilter = (value: string | undefined) => {
   const text = String(value ?? '').trim();
   return text || undefined;
+};
+
+const normalizeAccentColorRgb = (value: string | undefined) => {
+  const text = String(value ?? '').trim();
+  if (!text) return undefined;
+  const rgb = hexToRgb(text);
+  if (rgb) return `${rgb.r}, ${rgb.g}, ${rgb.b}`;
+  const parts = text
+    .split(/[\s,]+/)
+    .map((part) => Number(part))
+    .filter((num) => Number.isFinite(num));
+  if (parts.length === 3 && parts.every((num) => num >= 0 && num <= 255)) {
+    return parts.map((num) => Math.round(num)).join(', ');
+  }
+  return undefined;
+};
+
+const normalizeAccentAlpha = (value: number | string | undefined) => {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return String(clampNumber(value > 1 ? value / 100 : value, 0, 1));
+  }
+  const text = String(value).trim();
+  if (!text) return undefined;
+  if (text.endsWith('%')) {
+    const numeric = Number(text.slice(0, -1).trim());
+    if (Number.isFinite(numeric)) return String(clampNumber(numeric / 100, 0, 1));
+  }
+  const numeric = Number(text);
+  if (Number.isFinite(numeric))
+    return String(clampNumber(numeric > 1 ? numeric / 100 : numeric, 0, 1));
+  return undefined;
+};
+
+const normalizeAccentAngle = (value: number | string | undefined) => {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value === 'number' && Number.isFinite(value)) return `${value}deg`;
+  const text = String(value).trim();
+  if (!text) return undefined;
+  if (/^-?\d+(\.\d+)?$/.test(text)) return `${text}deg`;
+  if (/^-?\d+(\.\d+)?(deg|turn|rad|grad)$/.test(text)) return text;
+  return undefined;
+};
+
+const normalizeAccentLength = (value: number | string | undefined) => {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value === 'number' && Number.isFinite(value)) return `${value}%`;
+  const text = String(value).trim();
+  if (!text) return undefined;
+  if (/^-?\d+(\.\d+)?$/.test(text)) return `${text}%`;
+  if (/^-?\d+(\.\d+)?(px|%|vh|vw|em|rem)$/.test(text)) return text;
+  return undefined;
+};
+
+const normalizeAccentBackground = (value: string | undefined) => {
+  const text = String(value ?? '').trim();
+  return text || undefined;
+};
+
+const normalizeAccentGradientContribution = (
+  options: PluginAccentGradientOptions,
+): NormalizedAccentGradientContribution => {
+  const variables: NormalizedAccentGradientContribution['variables'] = {};
+  const assign = (name: (typeof accentGradientCssVariables)[number], value: string | undefined) => {
+    if (value !== undefined) variables[name] = value;
+  };
+
+  assign('--accent-gradient-opacity', normalizeAccentAlpha(options.opacity));
+  assign('--accent-gradient-color-rgb', normalizeAccentColorRgb(options.color));
+  assign('--accent-gradient-angle', normalizeAccentAngle(options.angle));
+  assign('--accent-gradient-height', normalizeAccentLength(options.height));
+  assign('--accent-gradient-mid-position', normalizeAccentLength(options.midPosition));
+  assign('--accent-gradient-peak-opacity', normalizeAccentAlpha(options.peakOpacity));
+  assign('--accent-gradient-mid-opacity', normalizeAccentAlpha(options.midOpacity));
+  assign('--accent-gradient-background', normalizeAccentBackground(options.background));
+
+  if (options.dark) {
+    assign('--accent-gradient-color-rgb-dark', normalizeAccentColorRgb(options.dark.color));
+    assign('--accent-gradient-peak-opacity-dark', normalizeAccentAlpha(options.dark.peakOpacity));
+    assign('--accent-gradient-mid-opacity-dark', normalizeAccentAlpha(options.dark.midOpacity));
+    assign('--accent-gradient-background-dark', normalizeAccentBackground(options.dark.background));
+  }
+
+  // enabled:false 强制隐藏整条渐变，优先级高于 opacity 字段
+  if (options.enabled === false) variables['--accent-gradient-opacity'] = '0';
+
+  return {
+    updatedAt: ++accentGradientContributionRevision,
+    variables,
+  };
+};
+
+const applyAccentGradientContributions = () => {
+  if (typeof document === 'undefined') return;
+
+  const body = document.body;
+  accentGradientCssVariables.forEach((name) => body.style.removeProperty(name));
+
+  const contributions = Array.from(pluginAccentGradientContributions.values()).sort(
+    (a, b) => a.updatedAt - b.updatedAt,
+  );
+  if (contributions.length === 0) return;
+
+  const merged: NormalizedAccentGradientContribution['variables'] = {};
+  for (const contribution of contributions) Object.assign(merged, contribution.variables);
+
+  Object.entries(merged).forEach(([name, value]) => {
+    body.style.setProperty(name, value);
+  });
 };
 
 const normalizeTransitionName = (value: string | undefined) => {
@@ -579,6 +747,7 @@ const clearPageTransitionStyle = (pluginId: string) => {
 const createThemeApi = (pluginId: string, addDisposable: (dispose: () => void) => () => void) => {
   let clearSurfaceRegistered = false;
   let clearPageTransitionRegistered = false;
+  let clearAccentGradientRegistered = false;
 
   const clearSurface = () => {
     if (!pluginSurfaceContributions.delete(pluginId)) return;
@@ -591,6 +760,11 @@ const createThemeApi = (pluginId: string, addDisposable: (dispose: () => void) =
     applyPageTransitionContributions();
   };
 
+  const clearAccentGradient = () => {
+    if (!pluginAccentGradientContributions.delete(pluginId)) return;
+    applyAccentGradientContributions();
+  };
+
   const registerSurfaceClear = () => {
     if (clearSurfaceRegistered) return clearSurface;
     clearSurfaceRegistered = true;
@@ -601,6 +775,12 @@ const createThemeApi = (pluginId: string, addDisposable: (dispose: () => void) =
     if (clearPageTransitionRegistered) return clearPageTransition;
     clearPageTransitionRegistered = true;
     return addDisposable(clearPageTransition);
+  };
+
+  const registerAccentGradientClear = () => {
+    if (clearAccentGradientRegistered) return clearAccentGradient;
+    clearAccentGradientRegistered = true;
+    return addDisposable(clearAccentGradient);
   };
 
   return {
@@ -627,6 +807,17 @@ const createThemeApi = (pluginId: string, addDisposable: (dispose: () => void) =
         return registerPageTransitionClear();
       },
       clear: clearPageTransition,
+    },
+    accentGradient: {
+      set: (options: PluginAccentGradientOptions) => {
+        pluginAccentGradientContributions.set(
+          pluginId,
+          normalizeAccentGradientContribution(options),
+        );
+        applyAccentGradientContributions();
+        return registerAccentGradientClear();
+      },
+      clear: clearAccentGradient,
     },
   };
 };

@@ -1,7 +1,7 @@
 import { watch, type WatchStopHandle } from 'vue';
 import { storeToRefs } from 'pinia';
 import { usePlayerStore } from '@/stores/player';
-import { usePlaylistStore } from '@/stores/playlist';
+import { PERSONAL_FM_QUEUE_ID, usePlaylistStore } from '@/stores/playlist';
 import { useLyricStore } from '@/stores/lyric';
 import { useSettingStore } from '@/stores/setting';
 import { useThemeStore } from '@/stores/theme';
@@ -143,6 +143,7 @@ const buildPlaybackPayload = (): NowPlayingPlaybackPayload | null => {
     currentTime: Number(playerStore.currentTime || 0),
     isPlaying: Boolean(playerStore.isPlaying),
     isFavorite: resolveFavoriteState(track as Song),
+    isPersonalFM: resolveCurrentPlaybackQueue()?.id === PERSONAL_FM_QUEUE_ID,
     playbackRate: Number(playerStore.playbackRate || 1),
     updatedAt: Date.now(),
   };

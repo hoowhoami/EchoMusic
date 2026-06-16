@@ -24,6 +24,7 @@ export interface NowPlayingPlaybackPayload {
   currentTime: number;
   isPlaying: boolean;
   isFavorite: boolean;
+  isPersonalFM: boolean;
   playbackRate: number;
   updatedAt: number;
 }

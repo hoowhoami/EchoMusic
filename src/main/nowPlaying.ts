@@ -96,6 +96,7 @@ const sanitizePlayback = (payload: unknown): NowPlayingPlaybackPayload | null =>
     currentTime: Math.max(0, toFiniteNumber(payload.currentTime)),
     isPlaying: Boolean(payload.isPlaying),
     isFavorite: Boolean(payload.isFavorite),
+    isPersonalFM: Boolean(payload.isPersonalFM),
     playbackRate: Math.max(0.1, toFiniteNumber(payload.playbackRate, 1)),
     updatedAt: toFiniteNumber(payload.updatedAt, Date.now()),
   };

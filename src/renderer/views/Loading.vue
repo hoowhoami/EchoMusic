@@ -93,7 +93,7 @@ const completeStartup = async () => {
   statusMessage.value = '引擎就绪，正在开启音乐世界...';
   window.setTimeout(() => {
     navigateToHome();
-  }, 800);
+  }, 200);
 };
 
 const applyStatus = async (status: ApiServerStatus) => {
@@ -174,6 +174,9 @@ const closeWindow = () => {
 };
 
 onMounted(async () => {
+  // 提前预加载主界面相关 chunk，利用启动等待时间，缩短跳转后首屏挂载前的等待
+  void import('@/layouts/MainLayout.vue').catch(() => {});
+  void import('@/views/Home.vue').catch(() => {});
   await initStatus();
 });
 

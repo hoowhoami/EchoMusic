@@ -1,5 +1,13 @@
 <script setup lang="ts">
-import { computed, ref, watch, nextTick, onMounted, onUnmounted } from 'vue';
+import {
+  computed,
+  ref,
+  watch,
+  nextTick,
+  onMounted,
+  onUnmounted,
+  type ComponentPublicInstance,
+} from 'vue';
 import { useLyricStore } from '@/stores/lyric';
 import { usePlayerStore } from '@/stores/player';
 import { useSettingStore } from '@/stores/setting';
@@ -80,10 +88,18 @@ const { scrollHighlightIndex, scrollToLine, handleWheel, dispose } = useLyricScr
   scrollIndex,
 );
 
-const { getNowMs, getLyricTimelineMs, updateYrcDom, syncSeekAnchor } = useYrcAnimation(
-  lyricListRef,
-  currentIndex,
-);
+const {
+  getNowMs,
+  getLyricTimelineMs,
+  updateYrcDom,
+  syncSeekAnchor,
+  registerMainChar,
+  registerSubChar,
+  resetCharRegistry,
+} = useYrcAnimation(currentIndex);
+
+type CharRefEl = Element | ComponentPublicInstance | null;
+const toHtmlEl = (el: CharRefEl): HTMLElement | null => (el instanceof HTMLElement ? el : null);
 
 const effectivePlayedColor = computed(() => lyricStore.effectivePlayedColor);
 const effectiveUnplayedColor = computed(() => lyricStore.effectiveUnplayedColor);
@@ -337,6 +353,7 @@ watch(
 watch(
   () => [lyricStore.loadedHash, lyricStore.lines.length],
   async () => {
+    resetCharRegistry();
     refreshLyricIndexes();
     await nextTick();
     updateYrcDom();
@@ -430,6 +447,7 @@ watch(
                     <span
                       v-for="(char, ci) in entry.line.characters"
                       :key="ci"
+                      :ref="(el) => registerMainChar(entry.index, ci, toHtmlEl(el))"
                       class="lyric-yrc-char"
                       data-echo-lyric-char
                       :data-echo-lyric-char-index="ci"
@@ -488,6 +506,7 @@ watch(
                       <span
                         v-for="(char, ci) in entry.line.romanizedCharacters"
                         :key="ci"
+                        :ref="(el) => registerSubChar(entry.index, 'romanized', ci, toHtmlEl(el))"
                         class="lyric-yrc-sub-char"
                         data-echo-lyric-char
                         :data-echo-lyric-char-index="ci"
@@ -535,6 +554,7 @@ watch(
                       <span
                         v-for="(char, ci) in entry.line.translatedCharacters"
                         :key="ci"
+                        :ref="(el) => registerSubChar(entry.index, 'translated', ci, toHtmlEl(el))"
                         class="lyric-yrc-sub-char"
                         data-echo-lyric-char
                         :data-echo-lyric-char-index="ci"
@@ -585,6 +605,7 @@ watch(
                       <span
                         v-for="(char, ci) in entry.line.romanizedCharacters"
                         :key="ci"
+                        :ref="(el) => registerSubChar(entry.index, 'romanized', ci, toHtmlEl(el))"
                         class="lyric-yrc-sub-char"
                         data-echo-lyric-char
                         :data-echo-lyric-char-index="ci"
@@ -610,6 +631,7 @@ watch(
                       <span
                         v-for="(char, ci) in entry.line.translatedCharacters"
                         :key="ci"
+                        :ref="(el) => registerSubChar(entry.index, 'translated', ci, toHtmlEl(el))"
                         class="lyric-yrc-sub-char"
                         data-echo-lyric-char
                         :data-echo-lyric-char-index="ci"

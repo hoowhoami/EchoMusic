@@ -135,11 +135,8 @@ const getKugouVerificationChallenge = (
   const body = response.body;
   const bodyRecord =
     body && typeof body === 'object' ? (body as Record<string, unknown>) : undefined;
-  const dataRecord =
-    bodyRecord?.data && typeof bodyRecord.data === 'object'
-      ? (bodyRecord.data as Record<string, unknown>)
-      : undefined;
 
+  // sid/edt 不会在报错响应中返回，由服务端 /sidedt 在校验时模拟生成，这里只解析事件标识。
   const eventId =
     bodyRecord?.ssaCode || response.headers?.['ssa-code'] || response.headers?.['SSA-CODE'] || '';
   const normalizedEventId = String(eventId || '').trim();
@@ -150,8 +147,6 @@ const getKugouVerificationChallenge = (
 
   return {
     eventId: normalizedEventId,
-    sid: String(bodyRecord?.sid || dataRecord?.sid || '').trim(),
-    edt: String(bodyRecord?.edt || dataRecord?.edt || '').trim(),
   };
 };
 

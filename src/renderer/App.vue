@@ -43,14 +43,24 @@ let colorSchemeMediaQuery: MediaQueryList | null = null;
 const showStartupUpdateDialog = ref(false);
 const startupUpdateResult = ref<UpdateCheckResult | null>(null);
 const isMiniPlayerRoute = computed(() => route.name === 'mini-player');
+// 首屏从 loading 切到主界面时跳过根级过渡，避免 out-in "先淡出旧页 → 空档" 造成的白屏
+const suppressRootTransition = ref(false);
 const rootPageTransitionName = computed(() =>
-  isMiniPlayerRoute.value || !pageTransitionState.enabled ? undefined : pageTransitionState.name,
+  isMiniPlayerRoute.value || suppressRootTransition.value || !pageTransitionState.enabled
+    ? undefined
+    : pageTransitionState.name,
 );
 const rootPageTransitionMode = computed(() =>
-  pageTransitionState.mode === 'default' ? undefined : pageTransitionState.mode,
+  suppressRootTransition.value || pageTransitionState.mode === 'default'
+    ? undefined
+    : pageTransitionState.mode,
 );
 const rootPageTransitionAppear = computed(
-  () => !isMiniPlayerRoute.value && pageTransitionState.enabled && pageTransitionState.appear,
+  () =>
+    !isMiniPlayerRoute.value &&
+    !suppressRootTransition.value &&
+    pageTransitionState.enabled &&
+    pageTransitionState.appear,
 );
 const rootPageTransitionKey = computed(() => route.matched[0]?.path ?? route.fullPath);
 const currentCoverColorUrls = computed(() =>
@@ -166,6 +176,13 @@ onUnmounted(() => {
   colorSchemeMediaQuery = null;
 });
 
+watch(
+  () => route.name,
+  (toName, fromName) => {
+    // 从 loading 进入主界面这次切换跳过过渡，其余路由切换恢复正常过渡
+    suppressRootTransition.value = fromName === 'loading' && toName !== 'loading';
+  },
+);
 watch(
   () => settings.theme,
   () => {

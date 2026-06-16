@@ -303,22 +303,14 @@ body.accent-scoped .main-layout .player-bar-container {
 .page-enter-from,
 .page-appear-from {
   opacity: var(--page-transition-enter-opacity);
-  transform: translate3d(
-      var(--page-transition-enter-x),
-      var(--page-transition-enter-y),
-      0
-    )
+  transform: translate3d(var(--page-transition-enter-x), var(--page-transition-enter-y), 0)
     scale(var(--page-transition-enter-scale));
   filter: var(--page-transition-enter-filter);
 }
 
 .page-leave-to {
   opacity: var(--page-transition-leave-opacity);
-  transform: translate3d(
-      var(--page-transition-leave-x),
-      var(--page-transition-leave-y),
-      0
-    )
+  transform: translate3d(var(--page-transition-leave-x), var(--page-transition-leave-y), 0)
     scale(var(--page-transition-leave-scale));
   filter: var(--page-transition-leave-filter);
 }
@@ -340,11 +332,7 @@ body.accent-scoped .main-layout .player-bar-container {
 @keyframes page-route-enter {
   from {
     opacity: var(--page-transition-enter-opacity);
-    transform: translate3d(
-        var(--page-transition-enter-x),
-        var(--page-transition-enter-y),
-        0
-      )
+    transform: translate3d(var(--page-transition-enter-x), var(--page-transition-enter-y), 0)
       scale(var(--page-transition-enter-scale));
     filter: var(--page-transition-enter-filter);
   }
@@ -702,39 +690,54 @@ body.echo-surface-translucent .player-bar {
 }
 
 /* 主题色顶部渐变氛围层 */
-.main-content {
-  position: relative;
-}
-
-.main-content::after {
+.layout-accent-gradient {
   content: '';
   position: absolute;
   top: 0;
   left: 0;
   right: 0;
-  height: 50%;
+  height: var(--accent-gradient-height, 50%);
   pointer-events: none;
   z-index: 200;
-  background: linear-gradient(
-    180deg,
-    rgba(var(--color-primary-rgb), 0.1) 0%,
-    rgba(var(--color-primary-rgb), 0.03) 60%,
-    transparent 100%
+  opacity: var(--accent-gradient-opacity, 1);
+  --agc: var(--accent-gradient-color-rgb, var(--color-primary-rgb));
+  --agp: var(--accent-gradient-peak-opacity, 0.2);
+  --agm: var(--accent-gradient-mid-opacity, 0.07);
+  background: var(
+    --accent-gradient-background,
+    linear-gradient(
+      var(--accent-gradient-angle, 180deg),
+      rgba(var(--agc), var(--agp)) 0%,
+      rgba(var(--agc), var(--agm)) var(--accent-gradient-mid-position, 60%),
+      transparent 100%
+    )
   );
   transition:
     background 0.6s ease,
     opacity 0.3s ease;
 }
 
-.dark .main-content::after {
-  background: linear-gradient(
-    180deg,
-    rgba(var(--color-primary-rgb), 0.18) 0%,
-    rgba(var(--color-primary-rgb), 0.05) 60%,
-    transparent 100%
+.dark .layout-accent-gradient {
+  --agc: var(
+    --accent-gradient-color-rgb-dark,
+    var(--accent-gradient-color-rgb, var(--color-primary-rgb))
+  );
+  --agp: var(--accent-gradient-peak-opacity-dark, var(--accent-gradient-peak-opacity, 0.32));
+  --agm: var(--accent-gradient-mid-opacity-dark, var(--accent-gradient-mid-opacity, 0.11));
+  background: var(
+    --accent-gradient-background-dark,
+    var(
+      --accent-gradient-background,
+      linear-gradient(
+        var(--accent-gradient-angle, 180deg),
+        rgba(var(--agc), var(--agp)) 0%,
+        rgba(var(--agc), var(--agm)) var(--accent-gradient-mid-position, 60%),
+        transparent 100%
+      )
+    )
   );
 }
 
-body.echo-surface-translucent .main-content::after {
+body.echo-surface-translucent .layout-accent-gradient {
   opacity: 0;
 }
