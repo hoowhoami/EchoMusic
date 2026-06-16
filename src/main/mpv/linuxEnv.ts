@@ -72,8 +72,8 @@ function findVersionedLib(dir: string, dirEntries: string[], pattern: string): s
     .filter((e) => {
       if (!e.startsWith(baseName)) return false;
       const suffix = e.slice(baseName.length);
-      // 必须是数字开头的版本后缀（如 '60' 或 '60.3.100'）
-      return /^\d+/.test(suffix);
+      // 版本后缀可能以点号开头，如 libavformat.so.62 → '.62'
+      return /^\.?\d+/.test(suffix);
     })
     .sort((a, b) => a.length - b.length);
 
