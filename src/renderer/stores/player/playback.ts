@@ -361,6 +361,48 @@ export const createPlaybackManager = (
     }
   };
 
+  // 私人 FM「不喜欢」：上报 garbage、从队列移除当前曲目并切到下一首
+  const dislikePersonalFm = async () => {
+    if (playlistStore.activeQueue?.id !== PERSONAL_FM_QUEUE_ID) return false;
+    if (!state.currentTrackId) return false;
+
+    playlistStore.syncQueuedNextTrackIds();
+    const list = playlistStore.activeQueue?.songs ?? state.currentPlaylist ?? [];
+    const currentIndex = list.findIndex((s) => String(s.id) === String(state.currentTrackId));
+    const currentTrack =
+      (currentIndex >= 0 ? list[currentIndex] : null) ||
+      findTrackById(state.currentTrackId, state.currentPlaylist, playlistStore) ||
+      state.currentTrackSnapshot;
+    if (!currentTrack) return false;
+
+    clearAutoNextTimer();
+
+    // 上报「不喜欢」
+    await playlistStore.ensurePersonalFmQueue({
+      track: currentTrack,
+      playtime: Math.max(0, Math.floor(state.currentTime || 0)),
+      action: 'garbage',
+      isOverplay: false,
+    });
+
+    // 从私人 FM 队列移除当前曲目
+    playlistStore.removeFromQueue(String(currentTrack.id));
+
+    // 取下一首并播放
+    const fmNextSong = await playlistStore.consumeNextPersonalFmTrack({
+      playtime: 0,
+      isOverplay: false,
+    });
+    if (!fmNextSong) return true;
+
+    const fmList =
+      (playlistStore.activeQueue?.songs?.length ?? 0) > 0
+        ? (playlistStore.activeQueue?.songs ?? [])
+        : list;
+    await playTrack(String(fmNextSong.id), fmList, { sourceQueueId: PERSONAL_FM_QUEUE_ID });
+    return true;
+  };
+
   const next = async () => {
     playlistStore.syncQueuedNextTrackIds();
     const list =
@@ -575,6 +617,7 @@ export const createPlaybackManager = (
     togglePlay,
     seek,
     next,
+    dislikePersonalFm,
     prev,
     stop,
     pickRandomIndex,

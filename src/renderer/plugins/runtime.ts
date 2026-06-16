@@ -945,6 +945,7 @@ const createPlayerApi = (
       ),
     next: () => player.next(),
     prev: () => player.prev(),
+    dislikePersonalFm: () => player.dislikePersonalFm(),
     seek: (time: number) => player.seek(time),
     setVolume: (volume: number) => player.setVolume(volume),
     setPlaybackRate: (rate: number) => player.setPlaybackRate(rate),

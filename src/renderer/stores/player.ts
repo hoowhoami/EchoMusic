@@ -467,6 +467,7 @@ export const usePlayerStore = defineStore(
       togglePlay: playbackManager.togglePlay,
       seek: playbackManager.seek,
       next: playbackManager.next,
+      dislikePersonalFm: playbackManager.dislikePersonalFm,
       prev: playbackManager.prev,
       stop: playbackManager.stop,
 
