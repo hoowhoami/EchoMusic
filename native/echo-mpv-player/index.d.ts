@@ -31,8 +31,6 @@ export declare function getEqPresets(): Array<string>
 /** 获取属性值（字符串形式） */
 export declare function getProperty(name: string): string
 
-export declare function getSpectrumSnapshot(): SpectrumFrame | null
-
 /** 获取当前状态快照 */
 export declare function getState(): PlayerState
 
@@ -40,7 +38,7 @@ export declare function getState(): PlayerState
 export declare function getTrackList(): Array<TrackInfo>
 
 /** 初始化 libmpv 播放器 */
-export declare function initialize(libPath: string): void
+export declare function initialize(libPath: string, config?: PlayerConfigOptions | undefined | null): void
 
 /** 检查 fade 是否正在执行 */
 export declare function isFading(): boolean
@@ -59,6 +57,14 @@ export declare function pauseWithFade(savedVolume: number, durationMs: number): 
 
 /** 播放 */
 export declare function play(): void
+
+/** 播放器配置选项（可选参数） */
+export interface PlayerConfigOptions {
+  cacheSecs?: number
+  demuxerMaxMb?: number
+  demuxerBackMb?: number
+  audioBufferSecs?: number
+}
 
 /** 播放器事件 */
 export interface PlayerEvent {
@@ -137,28 +143,8 @@ export declare function setSpeed(speed: number): void
 /** 设置音量（0-100） */
 export declare function setVolume(volume: number): void
 
-export interface SpectrumFrame {
-  magnitudes: Array<number>
-  timestamp: number
-}
-
-export interface SpectrumOptions {
-  fftSize?: number
-  smoothing?: number
-  fps?: number
-}
-
-export interface SpectrumStatus {
-  running: boolean
-  reason?: string
-}
-
-export declare function startSpectrum(options?: SpectrumOptions | undefined | null): SpectrumStatus
-
 /** 停止 */
 export declare function stop(): void
-
-export declare function stopSpectrum(): SpectrumStatus
 
 /** 音轨信息 */
 export interface TrackInfo {
