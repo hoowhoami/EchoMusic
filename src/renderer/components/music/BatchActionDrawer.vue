@@ -166,7 +166,7 @@ const wrapperStyle = computed(() => ({
 }));
 
 const visibleBlockStyle = computed(() => ({
-  transform: `translateY(${visibleOffset.value}px)`,
+  transform: `translateY(${Math.round(visibleOffset.value)}px)`,
 }));
 
 const createdPlaylists = computed(() => playlistStore.getCreatedPlaylists(userStore.info?.userid));

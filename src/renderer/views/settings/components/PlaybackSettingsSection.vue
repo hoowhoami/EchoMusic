@@ -127,6 +127,14 @@ const handleRemoveImpulseResponse = (id: string) => {
     <div class="settings-divider"></div>
     <div class="settings-item">
       <div class="space-y-1">
+        <h3 class="font-semibold">启动时自动播放</h3>
+        <p class="text-sm text-text-secondary">打开应用时如果有恢复的播放会话则自动开始播放</p>
+      </div>
+      <Switch v-model="settingStore.autoPlayOnLaunch" />
+    </div>
+    <div class="settings-divider"></div>
+    <div class="settings-item">
+      <div class="space-y-1">
         <h3 class="font-semibold">淡入淡出播放</h3>
         <p class="text-sm text-text-secondary">启用歌曲切换时的过渡效果</p>
       </div>

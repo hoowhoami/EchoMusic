@@ -205,7 +205,7 @@ const wrapperStyle = computed(() => ({
 }));
 
 const visibleBlockStyle = computed(() => ({
-  transform: `translateY(${visibleOffset.value}px)`,
+  transform: `translateY(${Math.round(visibleOffset.value)}px)`,
 }));
 
 const rowGridTemplate = computed(() =>
@@ -635,6 +635,15 @@ const ctxExtensionAction = async (item: (typeof extensionContextMenuItems.value)
 watch(contextMenuOpen, (isOpen) => {
   if (!isOpen) {
     contextMenuTargetId.value = null;
+  }
+  // 菜单打开时禁止滚动容器滚动
+  const scrollContainer = scrollContainerRef.value;
+  if (scrollContainer) {
+    if (isOpen) {
+      scrollContainer.style.overflow = 'hidden';
+    } else {
+      scrollContainer.style.overflow = '';
+    }
   }
 });
 

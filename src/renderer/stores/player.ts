@@ -305,6 +305,22 @@ export const usePlayerStore = defineStore(
     };
 
     const init = () => {
+      // 提前注册 MediaSession handlers，避免启动时丢失系统媒体控制事件
+      engine.setMediaSessionHandlers({
+        play: () => {
+          if (!state.isPlaying) playbackManager.togglePlay();
+        },
+        pause: () => {
+          if (state.isPlaying) playbackManager.togglePlay();
+        },
+        previoustrack: () => playbackManager.prev(),
+        nexttrack: () => playbackManager.next(),
+        seekto: (time) => playbackManager.seek(time),
+        seekbackward: (offset) => playbackManager.seek(Math.max(0, state.currentTime - offset)),
+        seekforward: (offset) =>
+          playbackManager.seek(Math.min(state.duration, state.currentTime + offset)),
+      });
+
       restorePlaybackSessionFromQueue();
       engine.setVolume(state.volume);
       engine.setPlaybackRate(state.playbackRate);
@@ -399,20 +415,6 @@ export const usePlayerStore = defineStore(
         },
       };
       engine.setEvents(events);
-      engine.setMediaSessionHandlers({
-        play: () => {
-          if (!state.isPlaying) playbackManager.togglePlay();
-        },
-        pause: () => {
-          if (state.isPlaying) playbackManager.togglePlay();
-        },
-        previoustrack: () => playbackManager.prev(),
-        nexttrack: () => playbackManager.next(),
-        seekto: (time) => playbackManager.seek(time),
-        seekbackward: (offset) => playbackManager.seek(Math.max(0, state.currentTime - offset)),
-        seekforward: (offset) =>
-          playbackManager.seek(Math.min(state.duration, state.currentTime + offset)),
-      });
       window.electron?.mpv?.getState?.().then((mpvState) => {
         if (!mpvState) return;
         if (mpvState.playing && !state.isPlaying) {

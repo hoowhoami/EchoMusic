@@ -78,6 +78,7 @@ export const useSettingStore = defineStore('setting', {
     searchDefaultEnabled: false,
     closeBehavior: 'tray' as CloseBehavior,
     replacePlaylist: false,
+    autoPlayOnLaunch: false,
     volumeFade: true,
     volumeFadeTime: 1000,
     lyricViewMode: 'cover' as 'cover' | 'portrait' | 'lyric',

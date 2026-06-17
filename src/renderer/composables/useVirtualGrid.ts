@@ -124,7 +124,7 @@ export function useVirtualGrid<T extends Record<string, any>>(options: UseVirtua
     position: shouldVirtualize.value ? ('absolute' as const) : ('static' as const),
     left: '0',
     right: '0',
-    top: shouldVirtualize.value ? `${virtualList.offset.value}px` : '0',
+    top: shouldVirtualize.value ? `${Math.round(virtualList.offset.value)}px` : '0',
   }));
 
   const visibleGridStyle = computed(() => ({

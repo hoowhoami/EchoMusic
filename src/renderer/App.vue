@@ -112,6 +112,17 @@ onMounted(async () => {
   settings.ensureShortcutDefaults();
   await playlistStore.hydratePlaybackStateFromStorage();
   player.init();
+
+  // 启动时自动播放：如果开启了设置且有恢复的曲目
+  if (settings.autoPlayOnLaunch && player.currentTrackId && !player.isPlaying) {
+    // 延迟启动播放，确保所有初始化完成
+    window.setTimeout(() => {
+      if (player.currentTrackId && !player.isPlaying) {
+        void player.togglePlay();
+      }
+    }, 300);
+  }
+
   updateTheme();
   applyGlobalFont();
   themeStore.applyCurrent();
