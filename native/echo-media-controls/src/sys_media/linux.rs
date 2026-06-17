@@ -1,8 +1,10 @@
 use crate::model::{MediaControlEvent, MetadataPayload, PlayStatePayload, TimelinePayload};
 use super::{EventCallback, SystemMediaControls};
+use image::ImageFormat;
 use napi::threadsafe_function::ThreadsafeFunctionCallMode;
 use std::sync::{Arc, Mutex};
 use mpris_server::{Metadata, PlaybackStatus, Player, Time, TrackId, Uri};
+use tempfile::NamedTempFile;
 use tokio::sync::mpsc::{UnboundedSender, UnboundedReceiver, unbounded_channel};
 
 /// 通过回调发送媒体控制事件
@@ -34,7 +36,6 @@ enum MprisCommand {
 pub struct LinuxMediaControls {
     command_tx: Option<UnboundedSender<MprisCommand>>,
     callback: Arc<Mutex<Option<EventCallback>>>,
-    cover_temp_dir: Option<tempfile::TempDir>,
 }
 
 unsafe impl Send for LinuxMediaControls {}
@@ -45,7 +46,6 @@ impl LinuxMediaControls {
         Self {
             command_tx: None,
             callback: Arc::new(Mutex::new(None)),
-            cover_temp_dir: None,
         }
     }
 }
@@ -89,12 +89,94 @@ fn setup_signals(player: &Player, callback: Arc<Mutex<Option<EventCallback>>>) {
     });
 }
 
+/// 处理元数据更新
+async fn process_metadata_update(
+    player: &Player,
+    title: String,
+    artist: String,
+    album: String,
+    duration_ms: Option<f64>,
+    cover_data: Option<Vec<u8>>,
+    cover_url: Option<String>,
+    track_counter: &mut u64,
+    cover_guard: &mut Option<NamedTempFile>,
+) {
+    *track_counter += 1;
+    let track_path = format!("/org/mpris/MediaPlayer2/Track/{}", *track_counter);
+    let track_id = TrackId::try_from(track_path.as_str())
+        .unwrap_or_else(|_| TrackId::NO_TRACK);
+
+    let mut meta = Metadata::builder()
+        .trackid(track_id)
+        .title(title)
+        .artist([artist])
+        .album(album);
+
+    if let Some(ms) = duration_ms {
+        meta = meta.length(Time::from_micros((ms * 1000.0) as i64));
+    }
+
+    // 封面处理
+    let mut cover_set = false;
+    if let Some(ref data) = cover_data {
+        if !data.is_empty() {
+            // 用 image crate 解码（自动识别 PNG/WebP/JPEG/GIF 等格式）
+            match image::load_from_memory(data) {
+                Ok(img) => {
+                    // 创建带唯一名的临时文件，避免覆盖竞态
+                    match tempfile::Builder::new()
+                        .prefix(".echomusic-cover-")
+                        .suffix(".jpg")
+                        .tempfile()
+                    {
+                        Ok(file) => {
+                            let cover_path = file.path().to_path_buf();
+                            // 统一转码为 JPEG，扩展名与实际内容一致
+                            match img.save_with_format(&cover_path, ImageFormat::Jpeg) {
+                                Ok(()) => {
+                                    let uri = format!("file://{}", cover_path.display());
+                                    meta = meta.art_url(Uri::from(uri.as_str()));
+                                    // 持有新文件所有权，旧文件自动 Drop 删除
+                                    *cover_guard = Some(file);
+                                    cover_set = true;
+                                }
+                                Err(e) => {
+                                    tracing::warn!("Failed to save cover as JPEG: {e}");
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            tracing::warn!("Failed to create cover temp file: {e}");
+                        }
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        "Cover decode failed, will fall back to cover_url if present: {e}"
+                    );
+                }
+            }
+        }
+    }
+
+    // 转码/写入失败，或 cover_data 为空/None 时回退到 HTTP URL
+    if !cover_set {
+        *cover_guard = None;
+        if let Some(ref url) = cover_url {
+            meta = meta.art_url(Uri::from(url.as_str()));
+        }
+    }
+
+    player.set_metadata(meta.build()).await.ok();
+    // 切歌时重置 position 为 0
+    player.set_position(Time::ZERO);
+}
+
 /// MPRIS 事件循环：在独立线程的 tokio runtime 中运行
 #[allow(clippy::future_not_send)]
 async fn run_mpris_loop(
     mut rx: UnboundedReceiver<MprisCommand>,
     callback: Arc<Mutex<Option<EventCallback>>>,
-    cover_temp_path: std::path::PathBuf,
 ) {
     let player = match Player::builder("EchoMusic")
         .can_play(true)
@@ -118,6 +200,8 @@ async fn run_mpris_loop(
     let mut track_counter: u64 = 0;
     // 上次已知的 position，用于检测 seek 跳变
     let mut last_position_us: i64 = 0;
+    // 当前封面临时文件的持有句柄，Drop 时自动删除文件
+    let mut cover_guard: Option<NamedTempFile> = None;
 
     // pin server_task 以便在 select! 中使用
     let server_task = player.run();
@@ -137,34 +221,17 @@ async fn run_mpris_loop(
                     MprisCommand::UpdateMetadata {
                         title, artist, album, duration_ms, cover_data, cover_url,
                     } => {
-                        track_counter += 1;
-                        let track_path = format!("/org/mpris/MediaPlayer2/Track/{}", track_counter);
-                        let track_id = TrackId::try_from(track_path.as_str())
-                            .unwrap_or_else(|_| TrackId::NO_TRACK);
-
-                        let mut meta = Metadata::builder()
-                            .trackid(track_id)
-                            .title(title)
-                            .artist([artist])
-                            .album(album);
-                        if let Some(ms) = duration_ms {
-                            meta = meta.length(Time::from_micros((ms * 1000.0) as i64));
-                        }
-                        // 封面
-                        if let Some(ref data) = cover_data {
-                            if !data.is_empty() {
-                                let cover_path = cover_temp_path.join("cover.jpg");
-                                if std::fs::write(&cover_path, data).is_ok() {
-                                    let uri = format!("file://{}", cover_path.display());
-                                    meta = meta.art_url(Uri::from(uri.as_str()));
-                                }
-                            }
-                        } else if let Some(ref url) = cover_url {
-                            meta = meta.art_url(Uri::from(url.as_str()));
-                        }
-                        player.set_metadata(meta.build()).await.ok();
-                        // 切歌时重置 position 为 0
-                        player.set_position(Time::ZERO);
+                        process_metadata_update(
+                            &player,
+                            title,
+                            artist,
+                            album,
+                            duration_ms,
+                            cover_data,
+                            cover_url,
+                            &mut track_counter,
+                            &mut cover_guard,
+                        ).await;
                         last_position_us = 0;
                     }
                     MprisCommand::UpdatePlayState(status) => {
@@ -193,11 +260,6 @@ async fn run_mpris_loop(
 
 impl SystemMediaControls for LinuxMediaControls {
     fn initialize(&mut self, _app_name: &str) -> Result<(), String> {
-        let temp_dir = tempfile::TempDir::new()
-            .map_err(|e| format!("Failed to create temp dir: {e}"))?;
-        let temp_path = temp_dir.path().to_path_buf();
-        self.cover_temp_dir = Some(temp_dir);
-
         let (cmd_tx, cmd_rx) = unbounded_channel::<MprisCommand>();
         let callback = self.callback.clone();
 
@@ -209,7 +271,7 @@ impl SystemMediaControls for LinuxMediaControls {
                     .enable_all()
                     .build()
                     .expect("failed to create MPRIS tokio runtime");
-                rt.block_on(run_mpris_loop(cmd_rx, callback, temp_path));
+                rt.block_on(run_mpris_loop(cmd_rx, callback));
             })
             .map_err(|e| format!("Failed to spawn MPRIS thread: {e}"))?;
 
@@ -222,7 +284,6 @@ impl SystemMediaControls for LinuxMediaControls {
         if let Some(tx) = self.command_tx.take() {
             let _ = tx.send(MprisCommand::Shutdown);
         }
-        self.cover_temp_dir = None;
         tracing::info!("Linux MPRIS D-Bus service shut down");
     }
 
