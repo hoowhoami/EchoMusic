@@ -33,7 +33,12 @@ import { useToastStore } from '@/stores/toast';
 import { useThemeStore } from '@/stores/theme';
 import type { AudioEffectValue, AudioQualityValue, PlayMode } from '@/types';
 import { logger } from '@/utils/logger';
-import { addSongToPlayNext, queueAndPlaySong, replaceQueueAndPlay } from '@/utils/playback';
+import {
+  addSongToPlayNext,
+  addSongToPlayLast,
+  queueAndPlaySong,
+  replaceQueueAndPlay,
+} from '@/utils/playback';
 import {
   createPluginUiApi,
   executePluginCommand,
@@ -934,6 +939,8 @@ const createPlayerApi = (
       queueAndPlaySong(playlist, player, song, options),
     playNext: (song: Song, options?: SetPlaybackQueueOptions) =>
       addSongToPlayNext(playlist, player, song, options),
+    playLast: (song: Song, options?: SetPlaybackQueueOptions) =>
+      addSongToPlayLast(playlist, player, song, options),
     replaceQueueAndPlay: (songs: Song[], options: PluginPlaybackQueueOptions = {}) =>
       replaceQueueAndPlay(
         playlist,
@@ -1122,7 +1129,11 @@ const createPlaylistApi = () => {
       queueAndPlaySong(playlist, player, song, options),
     playNext: (song: Song, options?: SetPlaybackQueueOptions) =>
       addSongToPlayNext(playlist, player, song, options),
+    playLast: (song: Song, options?: SetPlaybackQueueOptions) =>
+      addSongToPlayLast(playlist, player, song, options),
     enqueuePlayNext: (songId: string | number) => playlist.enqueuePlayNext(songId),
+    enqueuePlayNextSequential: (songId: string | number) =>
+      playlist.enqueuePlayNextSequential(songId),
     clear: (queueId?: string | number) => playlist.clearPlaybackQueue(queueId),
     remove: (songId: string | number, queueId?: string | number) =>
       playlist.removeFromQueue(songId, queueId),

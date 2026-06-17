@@ -329,6 +329,7 @@ export const usePlaylistStore = defineStore('playlist', {
     appendToPlaybackQueue: queueActions.appendToPlaybackQueue,
     removePlaybackQueue: queueActions.removePlaybackQueue,
     enqueuePlayNext: queueActions.enqueuePlayNext,
+    enqueuePlayNextSequential: queueActions.enqueuePlayNextSequential,
     consumeQueuedNextTrackId: queueActions.consumeQueuedNextTrackId,
     peekQueuedNextTrackId: queueActions.peekQueuedNextTrackId,
     syncQueuedNextTrackIds: queueActions.syncQueuedNextTrackIds,

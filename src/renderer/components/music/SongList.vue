@@ -11,7 +11,12 @@ import { usePlaylistStore } from '@/stores/playlist';
 import { useToastStore } from '@/stores/toast';
 import { buildSongListGridTemplate } from './songListLayout';
 import { isPlayableSong } from '@/utils/song';
-import { playSongInContext, queueAndPlaySong, addSongToPlayNext } from '@/utils/playback';
+import {
+  playSongInContext,
+  queueAndPlaySong,
+  addSongToPlayNext,
+  addSongToPlayLast,
+} from '@/utils/playback';
 import Button from '@/components/ui/Button.vue';
 import Dialog from '@/components/ui/Dialog.vue';
 import { useUserStore } from '@/stores/user';
@@ -577,6 +582,12 @@ const ctxPlayNext = () => {
   addSongToPlayNext(playlistStore, playerStore, song);
 };
 
+const ctxPlayLast = () => {
+  const song = contextMenuTarget.value;
+  if (!song || !isPlayableSong(song)) return;
+  addSongToPlayLast(playlistStore, playerStore, song);
+};
+
 const ctxAddToPlaylist = async () => {
   showPlaylistDialog.value = true;
   if (playlistStore.userPlaylists.length === 0) {
@@ -852,6 +863,14 @@ defineExpose({ scrollToActive, filteredCount: computed(() => filteredSongsRef.va
         @click="handleContextMenuAction(ctxPlayNext)"
       >
         下一首播放
+      </button>
+      <button
+        type="button"
+        class="song-context-item"
+        role="menuitem"
+        @click="handleContextMenuAction(ctxPlayLast)"
+      >
+        排队候播
       </button>
       <button
         type="button"

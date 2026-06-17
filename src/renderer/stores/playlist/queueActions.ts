@@ -398,6 +398,16 @@ export const queueActions = {
     this.syncLegacyPlaybackState();
     this.persistQueueMetaToStorage(targetQueue);
   },
+  enqueuePlayNextSequential(this: QueueStoreShape, songId: string | number) {
+    const id = String(songId ?? '');
+    if (!id) return;
+    const targetQueue = this.ensurePlaybackQueue();
+    targetQueue.queuedNextTrackIds = targetQueue.queuedNextTrackIds.filter((item) => item !== id);
+    targetQueue.queuedNextTrackIds.push(id);
+    targetQueue.updatedAt = Date.now();
+    this.syncLegacyPlaybackState();
+    this.persistQueueMetaToStorage(targetQueue);
+  },
   consumeQueuedNextTrackId(this: QueueStoreShape, songId: string | number) {
     const id = String(songId ?? '');
     const targetQueue = this.ensurePlaybackQueue();

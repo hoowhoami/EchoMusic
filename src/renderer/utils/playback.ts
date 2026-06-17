@@ -19,7 +19,9 @@ export interface PlaybackQueueStoreLike {
   getPreferredManualQueueOptions?: (options?: SetPlaybackQueueOptions) => SetPlaybackQueueOptions;
   getPlaybackQueueSongs?: (queueId?: string | number | null) => Song[];
   enqueuePlayNext?: (songId: string | number) => void;
+  enqueuePlayNextSequential?: (songId: string | number) => void;
   syncQueuedNextTrackIds?: () => void;
+  getQueueById?: (queueId?: string | number | null) => { queuedNextTrackIds: string[] } | null;
 }
 
 export interface PlaybackPlayerLike {
@@ -186,10 +188,30 @@ export const queueAndPlaySong = async (
   return true;
 };
 
-export const addSongToPlayNext = (
+type PlayNextInsertMode = 'cut' | 'append';
+
+const computePlayNextInsertIndex = (
+  list: Song[],
+  currentIndex: number,
+  queuedNextIds: string[],
+  mode: PlayNextInsertMode,
+): number => {
+  const blockStart = currentIndex >= 0 ? currentIndex + 1 : 0;
+  if (mode === 'cut') return blockStart;
+  // 顺序添加：跳过当前歌曲后面已排队的"下一首播放组"，插到该组末尾
+  const queuedSet = new Set(queuedNextIds.map((id) => String(id)));
+  let cursor = blockStart;
+  while (cursor < list.length && queuedSet.has(String(list[cursor]?.id))) {
+    cursor += 1;
+  }
+  return cursor;
+};
+
+const addSongToPlayQueueNext = (
   playlistStore: PlaybackQueueStoreLike,
   playerStore: PlaybackPlayerLike,
   song: Song,
+  mode: PlayNextInsertMode,
   options?: SetPlaybackQueueOptions,
 ): boolean => {
   const manualQueueOptions = playlistStore.getPreferredManualQueueOptions?.(options) ?? options;
@@ -212,11 +234,13 @@ export const addSongToPlayNext = (
     return true;
   }
 
-  let insertIndex = currentIndex >= 0 ? currentIndex + 1 : 0;
+  const queuedNextIds = playlistStore.getQueueById?.(queueId)?.queuedNextTrackIds ?? [];
+  let insertIndex = computePlayNextInsertIndex(list, currentIndex, queuedNextIds, mode);
+
   const existingIndex = list.findIndex((item) => isSameSong(item, resolvedSong));
   const item = existingIndex >= 0 ? list.splice(existingIndex, 1)[0] : resolvedSong;
 
-  if (existingIndex !== -1 && currentIndex > existingIndex) {
+  if (existingIndex !== -1 && existingIndex < insertIndex) {
     insertIndex -= 1;
   }
 
@@ -229,7 +253,25 @@ export const addSongToPlayNext = (
   } else {
     playlistStore.setPlaybackQueue(list, 0);
   }
-  playlistStore.enqueuePlayNext?.(item.id);
+  if (mode === 'cut') {
+    playlistStore.enqueuePlayNext?.(item.id);
+  } else {
+    playlistStore.enqueuePlayNextSequential?.(item.id);
+  }
   playlistStore.syncQueuedNextTrackIds?.();
   return true;
 };
+
+export const addSongToPlayNext = (
+  playlistStore: PlaybackQueueStoreLike,
+  playerStore: PlaybackPlayerLike,
+  song: Song,
+  options?: SetPlaybackQueueOptions,
+): boolean => addSongToPlayQueueNext(playlistStore, playerStore, song, 'cut', options);
+
+export const addSongToPlayLast = (
+  playlistStore: PlaybackQueueStoreLike,
+  playerStore: PlaybackPlayerLike,
+  song: Song,
+  options?: SetPlaybackQueueOptions,
+): boolean => addSongToPlayQueueNext(playlistStore, playerStore, song, 'append', options);
