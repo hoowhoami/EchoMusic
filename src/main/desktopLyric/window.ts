@@ -10,6 +10,7 @@ import {
   persistDesktopLyricWindowState,
   resolveInitialBounds,
 } from './store';
+import { enforceWindowZoomFactor } from '../windowZoom';
 
 const getBackgroundColor = () => '#00000000';
 const desktopLyricUrl = process.env.VITE_DEV_SERVER_URL;
@@ -169,9 +170,8 @@ export const createDesktopLyricWindow = () => {
 
   desktopLyricWindow = win;
 
-  win.webContents.on('did-finish-load', () => {
-    win.webContents.setZoomFactor(1.0);
-  });
+  // 高 DPI 设备缩放修复
+  enforceWindowZoomFactor(win);
 
   win.once('ready-to-show', () => {
     // 只有在内容准备就绪后才显示，避免灰色/黑色闪烁

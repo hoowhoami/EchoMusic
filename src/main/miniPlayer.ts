@@ -11,6 +11,7 @@ import { MINI_PLAYER_DIMENSIONS } from '../shared/mini-player';
 import { getMainWindow, hideMainWindow, showMainWindow } from './window';
 import { getActiveWindowMode, setActiveWindowMode } from './windowMode';
 import { getMainAppSettings, setMainAppSetting } from './storage/settings';
+import { enforceWindowZoomFactor } from './windowZoom';
 
 const MINI_PLAYER_WIDTH = MINI_PLAYER_DIMENSIONS.width;
 const MINI_PLAYER_HEIGHT = MINI_PLAYER_DIMENSIONS.collapsedHeight;
@@ -508,8 +509,10 @@ export const ensureMiniPlayerWindow = async () => {
   updateWindowSnapshot();
   applyMiniPlayerAlwaysOnTop();
 
+  // 高 DPI 设备缩放修复
+  enforceWindowZoomFactor(win);
+
   win.webContents.on('did-finish-load', () => {
-    win.webContents.setZoomFactor(1.0);
     sendSnapshot();
   });
 

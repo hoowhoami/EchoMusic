@@ -10,11 +10,23 @@ import { getActiveWindowMode, setActiveWindowMode } from './windowMode';
 import { isPluginRendererGoneFailureReason, reportPluginRendererFailure } from './plugins';
 import { ipcRegistry } from './ipc/registry';
 import { applyWindowAppIcon, resolveWindowIconPath } from './appIcons';
+import { enforceWindowZoomFactor } from './windowZoom';
 
 const minWidth: number = 1100;
-const minHeight: number = 720;
 const defaultWidth: number = 1150;
 const defaultHeight: number = 750;
+
+/**
+ * 动态计算最小窗口高度，避免在高 DPI 缩放下超出屏幕可用区域。
+ * 1920x1080 @ 150% → 可用高度约 693px
+ * 3840x2160 @ 300% → 可用高度约 707px
+ */
+const getMinHeight = (): number => {
+  const primaryDisplay = screen.getPrimaryDisplay();
+  const availableHeight = primaryDisplay.workArea.height;
+  // 最小高度不超过可用高度的 95%，但至少 650px，最多 720px
+  return Math.max(650, Math.min(720, Math.floor(availableHeight * 0.95)));
+};
 
 const initialSettings = getMainAppSettings();
 let closeBehavior: CloseBehavior = initialSettings.closeBehavior;
@@ -180,6 +192,7 @@ const buildWindowBounds = () => {
   }
 
   const state = getPersistedWindowState();
+  const minHeight = getMinHeight();
   const bounds = {
     width: Math.max(minWidth, state.width || defaultWidth),
     height: Math.max(minHeight, state.height || defaultHeight),
@@ -243,6 +256,7 @@ export async function createWindow() {
   const initialBounds = buildWindowBounds();
   const initialWindowState = getPersistedWindowState();
   const windowIconPath = resolveWindowIconPath();
+  const minHeight = getMinHeight();
 
   win = new BrowserWindow({
     title: 'EchoMusic',
@@ -283,23 +297,15 @@ export async function createWindow() {
     }
   });
 
-  // 禁止视觉缩放 + 强制 zoomFactor，兜底防止 Windows 高 DPI 下意外缩放。
-  // Windows 高 DPI（如 200%）下，全屏 / 最大化等窗口状态切换会意外重置 zoomFactor，
-  // 使页面被整体放大，右上角窗口控制按钮被挤出可视区域而“消失”。
-  // 因此除首次加载外，每次窗口状态切换后都重新强制一次。
-  const enforceNoZoom = () => {
-    if (!win || win.isDestroyed()) return;
-    win.webContents.setZoomFactor(1.0);
-    win.webContents.setVisualZoomLevelLimits(1, 1);
-  };
+  // 高 DPI 设备缩放修复：防止窗口状态变化或刷新时意外缩放导致界面模糊
+  enforceWindowZoomFactor(win, [
+    'did-finish-load',
+    'enter-full-screen',
+    'leave-full-screen',
+    'maximize',
+    'unmaximize',
+  ]);
 
-  // 部分高 DPI 设备上 zoomFactor 重置发生在事件回调之后，增加延时兜底
-  const enforceNoZoomDeferred = () => {
-    enforceNoZoom();
-    setTimeout(enforceNoZoom, 80);
-  };
-
-  win.webContents.on('did-finish-load', enforceNoZoom);
   win.webContents.on('render-process-gone', (_event, details) => {
     if (!isPluginRendererGoneFailureReason(details.reason)) {
       if (details.reason === 'killed' && !isQuitting && win && !win.isDestroyed()) {
@@ -316,10 +322,6 @@ export async function createWindow() {
       win.reload();
     }
   });
-  win.on('enter-full-screen', enforceNoZoomDeferred);
-  win.on('leave-full-screen', enforceNoZoomDeferred);
-  win.on('maximize', enforceNoZoomDeferred);
-  win.on('unmaximize', enforceNoZoomDeferred);
   win.on('unresponsive', () => {
     reportPluginRendererFailure('unresponsive', '主界面渲染进程无响应，已记录插件救援信息。');
   });
