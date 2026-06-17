@@ -297,14 +297,9 @@ export async function createWindow() {
     }
   });
 
-  // 高 DPI 设备缩放修复：防止窗口状态变化或刷新时意外缩放导致界面模糊
-  enforceWindowZoomFactor(win, [
-    'did-finish-load',
-    'enter-full-screen',
-    'leave-full-screen',
-    'maximize',
-    'unmaximize',
-  ]);
+  // 高 DPI 缩放兜底：初始加载/刷新/路由的锁定已由 preload 接管，
+  // 这里只兜底最大化/全屏等会异步重置 zoom 且不重载文档的窗口状态切换。
+  enforceWindowZoomFactor(win);
 
   win.webContents.on('render-process-gone', (_event, details) => {
     if (!isPluginRendererGoneFailureReason(details.reason)) {

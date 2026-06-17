@@ -210,7 +210,7 @@ const wrapperStyle = computed(() => ({
 }));
 
 const visibleBlockStyle = computed(() => ({
-  transform: `translateY(${Math.round(visibleOffset.value)}px)`,
+  transform: `translateY(${visibleOffset.value}px)`,
 }));
 
 const rowGridTemplate = computed(() =>

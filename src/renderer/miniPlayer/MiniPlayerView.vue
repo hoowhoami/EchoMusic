@@ -218,7 +218,7 @@ const queueWrapperStyle = computed(() => ({
   position: 'relative' as const,
 }));
 const queueOffsetStyle = computed(() => ({
-  transform: `translateY(${Math.round(offset.value)}px)`,
+  transform: `translateY(${offset.value}px)`,
 }));
 
 // 打开队列时定位到正在播放的歌曲（若已在可视范围内则不滚动）

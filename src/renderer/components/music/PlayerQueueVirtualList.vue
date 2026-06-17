@@ -63,7 +63,7 @@ const wrapperStyle = computed(() => ({
 }));
 
 const offsetStyle = computed(() => ({
-  transform: `translateY(${Math.round(offset.value)}px)`,
+  transform: `translateY(${offset.value}px)`,
 }));
 
 const isCurrentSong = (song: Song) =>
