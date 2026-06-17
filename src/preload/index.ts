@@ -77,6 +77,9 @@ import type {
   PluginWindowContextResult,
   PluginWindowResult,
   PluginWindowShowOptions,
+  PluginShowOnTopOptions,
+  PluginHostWindowTarget,
+  PluginHostWindowResult,
 } from '../shared/plugins';
 import type {
   StorageAppendQueueItemsPayload,
@@ -586,6 +589,13 @@ contextBridge.exposeInMainWorld('electron', {
           windowId,
           ignore,
         ) as Promise<PluginWindowResult>,
+      showOnTop: (pluginId: string, windowId: string, options?: PluginShowOnTopOptions) =>
+        ipcRenderer.invoke(
+          'plugins:window:show-on-top',
+          pluginId,
+          windowId,
+          options,
+        ) as Promise<PluginWindowResult>,
       getContext: (pluginId: string, windowId: string) =>
         ipcRenderer.invoke(
           'plugins:window:get-context',
@@ -599,6 +609,14 @@ contextBridge.exposeInMainWorld('electron', {
           windowId,
           asset,
         ) as Promise<PluginAssetSourceResult>,
+    },
+    host: {
+      showOnTop: (target?: PluginHostWindowTarget, options?: PluginShowOnTopOptions) =>
+        ipcRenderer.invoke(
+          'plugins:host:show-on-top',
+          target ?? 'main',
+          options,
+        ) as Promise<PluginHostWindowResult>,
     },
     dialog: {
       selectDirectory: (options?: PluginOpenDialogOptions) =>

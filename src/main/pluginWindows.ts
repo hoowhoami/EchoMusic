@@ -2,6 +2,7 @@ import { ipcRegistry } from './ipc/registry';
 import { BrowserWindow, app, screen } from 'electron';
 import { join } from 'path';
 import type {
+  PluginShowOnTopOptions,
   PluginWindowBounds,
   PluginWindowDescriptor,
   PluginWindowResult,
@@ -445,6 +446,27 @@ export const setPluginWindowIgnoreMouseEvents = (
   return { ok: true, window: record.descriptor, bounds: record.window.getBounds() };
 };
 
+const raiseWindowToFront = (win: BrowserWindow, focus: boolean) => {
+  if (win.isMinimized()) win.restore();
+  if (!win.isVisible()) {
+    if (focus) win.show();
+    else win.showInactive();
+  }
+  if (typeof win.moveTop === 'function') win.moveTop();
+  if (focus) win.focus();
+};
+
+export const showPluginWindowOnTop = (
+  pluginId: string,
+  windowId: string,
+  options: PluginShowOnTopOptions = {},
+): PluginWindowResult => {
+  const record = getRecord(pluginId, windowId);
+  if (!record || !canUseWindow(record.window)) return { ok: false, error: '插件窗口未打开' };
+  raiseWindowToFront(record.window, options?.focus !== false);
+  return { ok: true, window: record.descriptor, bounds: record.window.getBounds() };
+};
+
 export const closePluginWindows = (pluginId?: string) => {
   for (const record of Array.from(pluginWindows.values())) {
     if (pluginId && record.pluginId !== normalizePluginId(pluginId)) continue;
@@ -502,6 +524,11 @@ export const registerPluginWindowHandlers = () => {
     'plugins:window:set-ignore-mouse-events',
     (_event, pluginId: string, windowId: string, ignore: boolean) =>
       setPluginWindowIgnoreMouseEvents(pluginId, windowId, ignore),
+  );
+  ipcRegistry.registerHandler(
+    'plugins:window:show-on-top',
+    (_event, pluginId: string, windowId: string, options?: PluginShowOnTopOptions) =>
+      showPluginWindowOnTop(pluginId, windowId, options),
   );
   ipcRegistry.registerHandler(
     'plugins:window:get-context',

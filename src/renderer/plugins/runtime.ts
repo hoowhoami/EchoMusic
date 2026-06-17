@@ -13,6 +13,8 @@ import type {
   PluginProcessTerminateResult,
   PluginWindowBounds,
   PluginWindowShowOptions,
+  PluginShowOnTopOptions,
+  PluginHostWindowTarget,
 } from '../../shared/plugins';
 import type { AudioSpectrumFrame, AudioSpectrumOptions } from '../../shared/audio-spectrum';
 import type {
@@ -207,6 +209,13 @@ export interface EchoPluginContext {
     move: (windowId: string, bounds: Partial<PluginWindowBounds>) => Promise<unknown>;
     getBounds: (windowId: string) => Promise<unknown>;
     setIgnoreMouseEvents: (windowId: string, ignore: boolean) => Promise<unknown>;
+    showOnTop: (windowId: string, options?: PluginShowOnTopOptions) => Promise<unknown>;
+  };
+  host: {
+    showOnTop: (
+      target?: PluginHostWindowTarget,
+      options?: PluginShowOnTopOptions,
+    ) => Promise<unknown>;
   };
   toast: ReturnType<typeof createToastApi>;
   storage: {
@@ -1167,6 +1176,17 @@ const createPluginWindowsApi = (pluginId: string) => {
       getWindowsApi()?.getBounds(pluginId, windowId) ?? unavailable(),
     setIgnoreMouseEvents: (windowId: string, ignore: boolean) =>
       getWindowsApi()?.setIgnoreMouseEvents(pluginId, windowId, ignore) ?? unavailable(),
+    showOnTop: (windowId: string, options?: PluginShowOnTopOptions) =>
+      getWindowsApi()?.showOnTop(pluginId, windowId, options) ?? unavailable(),
+  };
+};
+
+const createPluginHostApi = () => {
+  const getHostApi = () => window.electron.plugins?.host;
+  const unavailable = () => Promise.reject(new Error('插件宿主窗口 API 不可用'));
+  return {
+    showOnTop: (target?: PluginHostWindowTarget, options?: PluginShowOnTopOptions) =>
+      getHostApi()?.showOnTop(target, options) ?? unavailable(),
   };
 };
 
@@ -1934,6 +1954,7 @@ const createPluginContext = (
     },
     nowPlaying: window.electron.nowPlaying,
     windows: createPluginWindowsApi(descriptor.id),
+    host: createPluginHostApi(),
     toast: createToastApi(),
     storage: {
       get: <T = unknown>(key: string) =>

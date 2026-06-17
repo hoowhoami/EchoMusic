@@ -6,6 +6,8 @@ import type {
   PluginProcessLaunchResult,
   PluginProcessTerminateResult,
   PluginWindowDescriptor,
+  PluginShowOnTopOptions,
+  PluginHostWindowTarget,
 } from '../shared/plugins';
 import type { AudioSpectrumFrame, AudioSpectrumOptions } from '../shared/audio-spectrum';
 import { createFontApi } from '../shared/font';
@@ -84,6 +86,13 @@ interface EchoPluginWindowContext {
     close: () => Promise<unknown>;
     setIgnoreMouseEvents: (ignore: boolean) => Promise<unknown>;
     setAlwaysOnTop: (alwaysOnTop: boolean) => Promise<unknown>;
+    showOnTop: (options?: PluginShowOnTopOptions) => Promise<unknown>;
+  };
+  host: {
+    showOnTop: (
+      target?: PluginHostWindowTarget,
+      options?: PluginShowOnTopOptions,
+    ) => Promise<unknown>;
   };
   electron: Window['electron'];
   dispose: (dispose: () => void) => () => void;
@@ -303,6 +312,13 @@ const buildContext = (
       window.electron.plugins?.windows.show(descriptor.id, windowDescriptor.id, {
         alwaysOnTop,
       }) ?? Promise.resolve(null),
+    showOnTop: (options) =>
+      window.electron.plugins?.windows.showOnTop(descriptor.id, windowDescriptor.id, options) ??
+      Promise.resolve(null),
+  },
+  host: {
+    showOnTop: (target, options) =>
+      window.electron.plugins?.host.showOnTop(target, options) ?? Promise.resolve(null),
   },
   electron: window.electron,
   dispose: addDisposable,

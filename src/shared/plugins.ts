@@ -70,6 +70,25 @@ export interface PluginWindowShowOptions {
   allowOutsideWorkArea?: boolean;
 }
 
+/** 将窗口抬到最前的选项，不改变置顶状态 */
+export interface PluginShowOnTopOptions {
+  /** 是否抢占焦点并激活窗口，默认 true；为 false 时仅抬升层级、不打断当前输入 */
+  focus?: boolean;
+}
+
+/** 宿主窗口目标：主窗口或 mini 播放器 */
+export type PluginHostWindowTarget = 'main' | 'mini-player';
+
+export type PluginHostWindowResult =
+  | {
+      ok: true;
+      target: PluginHostWindowTarget;
+    }
+  | {
+      ok: false;
+      error: string;
+    };
+
 export type PluginWindowResult =
   | {
       ok: true;

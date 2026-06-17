@@ -74,6 +74,9 @@ import type {
   PluginWindowContextResult,
   PluginWindowResult,
   PluginWindowShowOptions,
+  PluginShowOnTopOptions,
+  PluginHostWindowTarget,
+  PluginHostWindowResult,
 } from '../shared/plugins';
 import type {
   StorageAppendQueueItemsPayload,
@@ -281,12 +284,23 @@ export interface IElectronAPI {
         windowId: string,
         ignore: boolean,
       ) => Promise<PluginWindowResult>;
+      showOnTop: (
+        pluginId: string,
+        windowId: string,
+        options?: PluginShowOnTopOptions,
+      ) => Promise<PluginWindowResult>;
       getContext: (pluginId: string, windowId: string) => Promise<PluginWindowContextResult>;
       readAsset: (
         pluginId: string,
         windowId: string,
         asset: 'main' | 'style',
       ) => Promise<PluginAssetSourceResult>;
+    };
+    host: {
+      showOnTop: (
+        target?: PluginHostWindowTarget,
+        options?: PluginShowOnTopOptions,
+      ) => Promise<PluginHostWindowResult>;
     };
     dialog: {
       selectDirectory: (options?: PluginOpenDialogOptions) => Promise<PluginDialogResult>;

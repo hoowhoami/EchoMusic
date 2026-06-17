@@ -627,6 +627,19 @@ const forwardCommandToMainRenderer = (command: MiniPlayerCommand) => {
 
 export const getMiniPlayerSnapshot = () => snapshot;
 
+export const showMiniPlayerWindowOnTop = (focus = true): boolean => {
+  const win = getMiniPlayerWindow();
+  if (!canUseWindow(win)) return false;
+  if (win.isMinimized()) win.restore();
+  if (!win.isVisible()) {
+    if (focus) win.show();
+    else win.showInactive();
+  }
+  if (typeof win.moveTop === 'function') win.moveTop();
+  if (focus) win.focus();
+  return true;
+};
+
 export const registerMiniPlayerHandlers = () => {
   ipcRegistry.registerHandler('mini-player:get-snapshot', () => getMiniPlayerSnapshot());
 
