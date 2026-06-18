@@ -63,8 +63,8 @@ jobs:
             artifact_glob: |
               release/EchoMusic-*-Windows-Setup-x64.exe
               release/latest.yml
-          - os: windows-latest
-            rust_target: aarch64-pc-windows-msvc
+          - os: windows-11-arm
+            rust_target: ''
             electron_builder_args: '--win --arm64'
             artifact_name: EchoMusic-Windows-arm64
             artifact_glob: |
@@ -318,8 +318,8 @@ jobs:
               ;;
             *:windows-*)
               # Windows: 从 zhongfly 预编译构建下载 dev 包（含 libmpv-2.dll）
-              # 根据 rust_target 决定下载 x64 还是 arm64
-              if [ "${{ matrix.rust_target }}" = "aarch64-pc-windows-msvc" ]; then
+              # 根据 runner.arch 决定下载 x64 还是 arm64
+              if [ "${{ runner.arch }}" = "ARM64" ]; then
                 export MPV_ARCH_FILTER="aarch64"
               else
                 export MPV_ARCH_FILTER="x86_64"
@@ -362,7 +362,7 @@ jobs:
         run: |
           set -e
 
-          if [ "${{ matrix.rust_target }}" = "aarch64-pc-windows-msvc" ]; then
+          if [ "${{ runner.arch }}" = "ARM64" ]; then
             app_exe="release/win-arm64-unpacked/EchoMusic.exe"
           else
             app_exe="release/win-unpacked/EchoMusic.exe"
