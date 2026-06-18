@@ -69,6 +69,13 @@ export const usePlayerStore = defineStore(
         if (next && next !== prev) emitPlayerEvent('seek');
       },
     );
+    // 同步播放状态到主进程，更新 Windows 任务栏缩略图按钮图标
+    watch(
+      () => state.isPlaying,
+      (isPlaying) => {
+        window.electron?.ipcRenderer?.send('thumbar:update-play-state', isPlaying);
+      },
+    );
 
     const refreshCurrentTrack = async () => {
       if (!state.currentTrackId) return;

@@ -18,6 +18,7 @@ import { initMediaControls, destroyMediaControls } from './mediaControls';
 import { initPowerMonitor } from './powerMonitor';
 import { clearPluginRuntimeSession, setPluginSafeMode } from './plugins';
 import { applyDesktopAppIcon, applyTaskbarShortcutIcon, refreshAppIconConfig } from './appIcons';
+import { setupThumbarButtons } from './thumbar';
 import type { MpvController } from './mpv/controller';
 
 const WM_TASKBARCREATED = 0x031a;
@@ -50,6 +51,12 @@ const installWindowsTrayRecovery = () => {
 
   mainWindow.hookWindowMessage(WM_TASKBARCREATED, () => {
     refreshTray();
+    // Windows 资源管理器重启后需要重新设置 thumbar 按钮
+    try {
+      setupThumbarButtons(mainWindow);
+    } catch (err) {
+      log.error('[Main] Failed to re-init thumbar after taskbar created:', err);
+    }
   });
 };
 
@@ -115,6 +122,24 @@ if (!gotTheLock) {
     applyTaskbarShortcutIcon();
     await createWindow();
 
+    // 初始化 Windows 任务栏缩略图工具栏按钮（上一曲/播放暂停/下一曲）
+    // 需要在窗口显示后设置，否则按钮不会显示
+    const mainWindow = getMainWindow();
+    if (mainWindow) {
+      const initThumbar = () => {
+        try {
+          setupThumbarButtons(mainWindow);
+        } catch (err) {
+          log.error('[Main] Failed to init thumbar:', err);
+        }
+      };
+      if (mainWindow.isVisible()) {
+        initThumbar();
+      } else {
+        mainWindow.once('show', initThumbar);
+      }
+    }
+
     try {
       initTray(trayContext);
     } catch (err) {
@@ -140,6 +165,7 @@ if (!gotTheLock) {
       await restoreActiveWindowMode();
     } else {
       await createWindow();
+      setupThumbarButtons(getMainWindow()!);
       installWindowsTrayRecovery();
       await restoreActiveWindowMode();
     }
