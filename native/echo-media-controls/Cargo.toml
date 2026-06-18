@@ -16,10 +16,16 @@ image = "0.25"
 [build-dependencies]
 napi-build = "2"
 
-# Windows: WinRT SMTC
+# Windows: WinRT SMTC + Win32 DWM 任务栏缩略图
 [target.'cfg(target_os = "windows")'.dependencies.windows]
 version = "0.62"
-features = ["Media_Playback", "Storage_Streams"]
+features = [
+    "Media_Playback",
+    "Storage_Streams",
+    "Win32_Foundation",
+    "Win32_Graphics_Dwm",
+    "Win32_Graphics_Gdi",
+]
 
 # Linux: MPRIS D-Bus
 [target.'cfg(target_os = "linux")'.dependencies]

@@ -19,6 +19,7 @@ import { initPowerMonitor } from './powerMonitor';
 import { clearPluginRuntimeSession, setPluginSafeMode } from './plugins';
 import { applyDesktopAppIcon, applyTaskbarShortcutIcon, refreshAppIconConfig } from './appIcons';
 import { setupThumbarButtons } from './thumbar';
+import { setupTaskbarThumbnail, destroyTaskbarThumbnail } from './taskbarThumbnail';
 import type { MpvController } from './mpv/controller';
 
 const WM_TASKBARCREATED = 0x031a;
@@ -56,6 +57,11 @@ const installWindowsTrayRecovery = () => {
       setupThumbarButtons(mainWindow);
     } catch (err) {
       log.error('[Main] Failed to re-init thumbar after taskbar created:', err);
+    }
+    try {
+      setupTaskbarThumbnail(mainWindow);
+    } catch (err) {
+      log.error('[Main] Failed to re-init taskbar thumbnail after taskbar created:', err);
     }
   });
 };
@@ -132,6 +138,11 @@ if (!gotTheLock) {
         } catch (err) {
           log.error('[Main] Failed to init thumbar:', err);
         }
+        try {
+          setupTaskbarThumbnail(mainWindow);
+        } catch (err) {
+          log.error('[Main] Failed to init taskbar thumbnail:', err);
+        }
       };
       if (mainWindow.isVisible()) {
         initThumbar();
@@ -166,6 +177,7 @@ if (!gotTheLock) {
     } else {
       await createWindow();
       setupThumbarButtons(getMainWindow()!);
+      setupTaskbarThumbnail(getMainWindow()!);
       installWindowsTrayRecovery();
       await restoreActiveWindowMode();
     }
@@ -192,6 +204,7 @@ if (!gotTheLock) {
       clearPluginRuntimeSession();
       unregisterAudioSpectrumIpc();
       destroyMediaControls();
+      destroyTaskbarThumbnail();
       destroyMpvPlayer();
       // 销毁桌面歌词窗口
       try {

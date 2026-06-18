@@ -1,5 +1,7 @@
 mod model;
 mod sys_media;
+#[cfg(target_os = "windows")]
+mod taskbar;
 
 use model::{MediaControlEvent, MetadataPayload, PlayStatePayload, TimelinePayload};
 use napi::threadsafe_function::ThreadsafeFunction;
