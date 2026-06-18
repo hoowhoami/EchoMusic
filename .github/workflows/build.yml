@@ -152,11 +152,10 @@ jobs:
         working-directory: server
         shell: bash
         run: |
-          if [ -f package-lock.json ]; then
-            npm ci --omit=dev --no-audit --no-fund
-          else
-            npm install --omit=dev --no-audit --no-fund
-          fi
+          # server 是外部子模块，其 package-lock.json 常与 package.json 不同步，
+          # 且 devDependencies(tsdown) 与 typescript@4.x 存在 peer 冲突。
+          # 运行时只需 --omit=dev 的依赖，故统一用 npm install + --legacy-peer-deps。
+          npm install --omit=dev --no-audit --no-fund --legacy-peer-deps
 
       - name: Remove server test files
         working-directory: server
