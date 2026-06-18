@@ -87,20 +87,14 @@ function createRgbaPng(
   ]);
 }
 
-// --- 图标绘制（32x32 高分辨率 + 抗锯齿） ---
+// --- 图标绘制（64x64 超采样 + 抗锯齿） ---
 
-const ICON_SIZE = 32;
-// 深灰色图标，匹配参考样式
+const ICON_SIZE = 64;
 const ICON_R = 51;
 const ICON_G = 51;
 const ICON_B = 54;
 
-/** 点到三角形边的有符号距离 */
-function edgeDist(x: number, y: number, ax: number, ay: number, bx: number, by: number): number {
-  return (bx - ax) * (y - ay) - (by - ay) * (x - ax);
-}
-
-/** 判断点在三角形内外，返回有符号面积 */
+/** 三角形 SDF（基于重心坐标的有符号距离） */
 function triangleSdf(
   x: number,
   y: number,
@@ -111,9 +105,15 @@ function triangleSdf(
   cx: number,
   cy: number,
 ): number {
-  const d0 = edgeDist(x, y, ax, ay, bx, by);
-  const d1 = edgeDist(x, y, bx, by, cx, cy);
-  const d2 = edgeDist(x, y, cx, cy, ax, ay);
+  const ex0 = bx - ax,
+    ey0 = by - ay;
+  const ex1 = cx - bx,
+    ey1 = cy - by;
+  const ex2 = ax - cx,
+    ey2 = ay - cy;
+  const d0 = ex0 * (y - ay) - ey0 * (x - ax);
+  const d1 = ex1 * (y - by) - ey1 * (x - bx);
+  const d2 = ex2 * (y - cy) - ey2 * (x - cx);
   const inside = (d0 >= 0 && d1 >= 0 && d2 >= 0) || (d0 <= 0 && d1 <= 0 && d2 <= 0);
   if (!inside) return Math.max(Math.abs(d0), Math.abs(d1), Math.abs(d2));
   return -Math.min(Math.abs(d0), Math.abs(d1), Math.abs(d2));
@@ -136,97 +136,97 @@ function rectSdf(
   return dx > 0 || dy > 0 ? d : -d;
 }
 
-function sdfToAlpha(sdf: number, radius: number): number {
-  const aa = 0.8;
-  if (sdf < -radius) return 255;
-  if (sdf > radius) return 0;
-  const t = (sdf + radius) / (2 * radius);
-  return Math.round(255 * Math.max(0, Math.min(1, 1 - (t - 0.5 + aa / 2 / radius) / aa)));
+/** SDF → alpha（平滑抗锯齿过渡） */
+function sdfToAlpha(sdf: number, halfWidth: number): number {
+  const aa = 1.2;
+  if (sdf < -halfWidth) return 255;
+  if (sdf > halfWidth) return 0;
+  const t = (sdf + halfWidth) / (2 * halfWidth);
+  const edge = 0.5 - aa / (2 * halfWidth);
+  return Math.round(255 * Math.max(0, Math.min(1, 1 - (t - edge) / aa)));
 }
 
-// Previous: |◀◀ (竖线 + 两个向左三角形)
+// Previous: |◀◀
 function makePrevIcon(): Buffer {
   return createRgbaPng(ICON_SIZE, ICON_SIZE, (setPixel) => {
-    const barLeft = 5;
-    const barRight = 8;
-    const barTop = 7;
-    const barBottom = 25;
-    // 两个向左的三角形（底边在右，顶点在左）
-    const tri1 = { ax: 24, ay: 7, bx: 24, by: 25, cx: 13, cy: 16 };
-    const tri2 = { ax: 30, ay: 7, bx: 30, by: 25, cx: 19, cy: 16 };
+    const barL = 10,
+      barR = 16,
+      barT = 14,
+      barB = 50;
+    const t1 = { ax: 48, ay: 14, bx: 48, by: 50, cx: 26, cy: 32 };
+    const t2 = { ax: 60, ay: 14, bx: 60, by: 50, cx: 38, cy: 32 };
     for (let y = 0; y < ICON_SIZE; y++) {
       for (let x = 0; x < ICON_SIZE; x++) {
-        const dBar = rectSdf(x, y, barLeft, barTop, barRight, barBottom);
-        const dTri1 = triangleSdf(x, y, tri1.ax, tri1.ay, tri1.bx, tri1.by, tri1.cx, tri1.cy);
-        const dTri2 = triangleSdf(x, y, tri2.ax, tri2.ay, tri2.bx, tri2.by, tri2.cx, tri2.cy);
-        const d = Math.min(dBar, dTri1, dTri2);
-        const alpha = sdfToAlpha(d, 1.0);
+        const d = Math.min(
+          rectSdf(x, y, barL, barT, barR, barB),
+          triangleSdf(x, y, t1.ax, t1.ay, t1.bx, t1.by, t1.cx, t1.cy),
+          triangleSdf(x, y, t2.ax, t2.ay, t2.bx, t2.by, t2.cx, t2.cy),
+        );
+        const alpha = sdfToAlpha(d, 2.0);
         if (alpha > 0) setPixel(x, y, ICON_R, ICON_G, ICON_B, alpha);
       }
     }
   });
 }
 
-// Play: ▶ (单个向右三角形)
+// Play: ▶
 function makePlayIcon(): Buffer {
   return createRgbaPng(ICON_SIZE, ICON_SIZE, (setPixel) => {
-    const ax = 9;
-    const ay = 5;
-    const bx = 9;
-    const by = 27;
-    const cx = 25;
-    const cy = 16;
+    const ax = 18;
+    const ay = 10;
+    const bx = 18;
+    const by = 54;
+    const cx = 50;
+    const cy = 32;
     for (let y = 0; y < ICON_SIZE; y++) {
       for (let x = 0; x < ICON_SIZE; x++) {
-        const sdf = triangleSdf(x, y, ax, ay, bx, by, cx, cy);
-        const alpha = sdfToAlpha(sdf, 1.0);
+        const d = triangleSdf(x, y, ax, ay, bx, by, cx, cy);
+        const alpha = sdfToAlpha(d, 2.0);
         if (alpha > 0) setPixel(x, y, ICON_R, ICON_G, ICON_B, alpha);
       }
     }
   });
 }
 
-// Pause: ⏸ (两个竖条)
+// Pause: ⏸
 function makePauseIcon(): Buffer {
   return createRgbaPng(ICON_SIZE, ICON_SIZE, (setPixel) => {
-    const gap = 4;
-    const barWidth = 6;
-    const barHeight = 20;
-    const top = (ICON_SIZE - barHeight) / 2;
-    const bottom = top + barHeight;
-    const left1 = (ICON_SIZE - gap) / 2 - barWidth;
-    const right1 = left1 + barWidth;
-    const left2 = (ICON_SIZE + gap) / 2;
-    const right2 = left2 + barWidth;
+    const gap = 8;
+    const bw = 12;
+    const bh = 40;
+    const top = (ICON_SIZE - bh) / 2;
+    const bot = top + bh;
+    const l1 = (ICON_SIZE - gap) / 2 - bw;
+    const r1 = l1 + bw;
+    const l2 = (ICON_SIZE + gap) / 2;
+    const r2 = l2 + bw;
     for (let y = 0; y < ICON_SIZE; y++) {
       for (let x = 0; x < ICON_SIZE; x++) {
-        const d1 = rectSdf(x, y, left1, top, right1, bottom);
-        const d2 = rectSdf(x, y, left2, top, right2, bottom);
-        const d = Math.min(d1, d2);
-        const alpha = sdfToAlpha(d, 1.0);
+        const d = Math.min(rectSdf(x, y, l1, top, r1, bot), rectSdf(x, y, l2, top, r2, bot));
+        const alpha = sdfToAlpha(d, 2.0);
         if (alpha > 0) setPixel(x, y, ICON_R, ICON_G, ICON_B, alpha);
       }
     }
   });
 }
 
-// Next: ▶▶| (两个向右三角形 + 竖线)
+// Next: ▶▶|
 function makeNextIcon(): Buffer {
   return createRgbaPng(ICON_SIZE, ICON_SIZE, (setPixel) => {
-    const barLeft = 24;
-    const barRight = 27;
-    const barTop = 7;
-    const barBottom = 25;
-    // 两个向右的三角形
-    const tri1 = { ax: 2, ay: 7, bx: 2, by: 25, cx: 13, cy: 16 };
-    const tri2 = { ax: 9, ay: 7, bx: 9, by: 25, cx: 20, cy: 16 };
+    const barL = 48,
+      barR = 54,
+      barT = 14,
+      barB = 50;
+    const t1 = { ax: 4, ay: 14, bx: 4, by: 50, cx: 26, cy: 32 };
+    const t2 = { ax: 18, ay: 14, bx: 18, by: 50, cx: 40, cy: 32 };
     for (let y = 0; y < ICON_SIZE; y++) {
       for (let x = 0; x < ICON_SIZE; x++) {
-        const dBar = rectSdf(x, y, barLeft, barTop, barRight, barBottom);
-        const dTri1 = triangleSdf(x, y, tri1.ax, tri1.ay, tri1.bx, tri1.by, tri1.cx, tri1.cy);
-        const dTri2 = triangleSdf(x, y, tri2.ax, tri2.ay, tri2.bx, tri2.by, tri2.cx, tri2.cy);
-        const d = Math.min(dBar, dTri1, dTri2);
-        const alpha = sdfToAlpha(d, 1.0);
+        const d = Math.min(
+          rectSdf(x, y, barL, barT, barR, barB),
+          triangleSdf(x, y, t1.ax, t1.ay, t1.bx, t1.by, t1.cx, t1.cy),
+          triangleSdf(x, y, t2.ax, t2.ay, t2.bx, t2.by, t2.cx, t2.cy),
+        );
+        const alpha = sdfToAlpha(d, 2.0);
         if (alpha > 0) setPixel(x, y, ICON_R, ICON_G, ICON_B, alpha);
       }
     }
