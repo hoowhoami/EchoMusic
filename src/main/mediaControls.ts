@@ -3,7 +3,7 @@ import type { BrowserWindow } from 'electron';
 import { app } from 'electron';
 import path from 'path';
 import log from './logger';
-import { setTaskbarCover, setTaskbarPlaying } from './taskbarThumbnail';
+import { setTaskbarCover } from './taskbarThumbnail';
 
 // native addon 类型（与自动生成的 index.d.ts 对齐）
 interface NativeMediaControls {
@@ -196,8 +196,6 @@ export function initMediaControls(getMainWindow: () => BrowserWindow | null): vo
     } catch (err) {
       log.warn('[MediaControls] updatePlayState failed:', err);
     }
-    // 同步播放状态到任务栏缩略图（决定是否显示封面预览）
-    setTaskbarPlaying(payload.status === 'Playing');
   });
 
   // IPC: 更新播放进度

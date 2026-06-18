@@ -6,7 +6,7 @@ import log from './logger';
 /**
  * Windows 任务栏 iconic 缩略图。
  *
- * 播放时把任务栏悬停预览替换为歌曲封面，暂停/停止或无封面时回退为窗口实时画面。
+ * 有封面时把任务栏悬停预览替换为歌曲封面，无封面时回退为窗口实时画面。
  * 通过 DWM iconic representation 实现：开启后系统会发来缩略图请求消息，
  * 这里用 `hookWindowMessage` 接收并调用原生模块写入封面位图。
  */
@@ -32,7 +32,6 @@ let nativeModule: NativeTaskbar | null = null;
 let targetWindow: BrowserWindow | null = null;
 let hwndStr: string | null = null;
 let coverBuffer: Buffer | null = null;
-let isPlaying = false;
 let iconicEnabled = false;
 let hooked = false;
 
@@ -69,10 +68,10 @@ function resolveHwnd(win: BrowserWindow): string | null {
   }
 }
 
-/** 根据「是否播放 + 是否有封面」决定开启或关闭 iconic 表示 */
+/** 根据「是否有封面」决定开启或关闭 iconic 表示（有封面就显示封面，否则窗口实时预览） */
 function applyState(): void {
   if (!nativeModule || !hwndStr) return;
-  const shouldShowCover = isPlaying && !!coverBuffer;
+  const shouldShowCover = !!coverBuffer;
   try {
     if (shouldShowCover) {
       if (!iconicEnabled) {
@@ -166,14 +165,6 @@ export function setTaskbarCover(cover: Buffer | null): void {
   applyState();
 }
 
-/** 更新播放状态：true 表示正在播放。 */
-export function setTaskbarPlaying(playing: boolean): void {
-  if (process.platform !== 'win32') return;
-  if (isPlaying === playing) return;
-  isPlaying = playing;
-  applyState();
-}
-
 /** 销毁：关闭 iconic 表示并解除消息钩子。 */
 export function destroyTaskbarThumbnail(): void {
   if (process.platform !== 'win32') return;
@@ -192,7 +183,6 @@ export function destroyTaskbarThumbnail(): void {
   iconicEnabled = false;
   hooked = false;
   coverBuffer = null;
-  isPlaying = false;
   hwndStr = null;
   targetWindow = null;
 }
