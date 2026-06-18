@@ -176,6 +176,19 @@ const buildDefaultCookies = (): Record<string, string> => {
 };
 
 /**
+ * 将经 IPC 传输的二进制数据统一转换为 Buffer
+ * （ArrayBuffer / TypedArray → Buffer，其它类型原样返回）
+ */
+const toBufferIfBinary = (data: any): any => {
+  if (Buffer.isBuffer(data)) return data;
+  if (data instanceof ArrayBuffer) return Buffer.from(data);
+  if (ArrayBuffer.isView(data)) {
+    return Buffer.from(data.buffer, data.byteOffset, data.byteLength);
+  }
+  return data;
+};
+
+/**
  * 处理 API 请求（核心路由分发逻辑）
  * 复现 server/server.js 中 Express 路由处理器的逻辑
  */
@@ -221,9 +234,18 @@ export const handleApiRequest = async (request: ApiRequest): Promise<ApiResponse
     ...restParams,
   };
 
-  // 如果有 body 数据
-  if (request.data) {
-    query.body = request.data;
+  // 合并请求体：
+  // - 二进制 body（Buffer，如听歌识曲 PCM）需放入 query.data，
+  //   复现 server/server.js 中 `Buffer.isBuffer(req.body) ? { data: req.body }` 的逻辑，
+  //   module（如 audio_match）通过 params.data 读取并作为 octet-stream 上传。
+  // - 其余（JSON 对象）保持原有 query.body 行为。
+  if (request.data !== undefined && request.data !== null) {
+    const normalizedBody = toBufferIfBinary(request.data);
+    if (Buffer.isBuffer(normalizedBody)) {
+      query.data = normalizedBody;
+    } else {
+      query.body = normalizedBody;
+    }
   }
 
   try {

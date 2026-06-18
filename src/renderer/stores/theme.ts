@@ -4,6 +4,8 @@ import {
   DEFAULT_ACCENT,
   applyAccentToRoot,
   extractDominantColor,
+  getNormalizedAccent,
+  hexToRgb,
 } from '@/utils/color';
 
 export type AccentMode = 'cover' | 'preset' | 'custom';
@@ -39,6 +41,15 @@ export const useThemeStore = defineStore('theme', {
   getters: {
     currentPreset: (state) =>
       ACCENT_PRESETS.find((item) => item.id === state.presetId) ?? ACCENT_PRESETS[0],
+    // 最终生效的主题色（已按深浅色归一化）。对应主题色过渡动画的“目标色”，
+    // 切歌/切主题时立即变到终值，不随 600ms 动画逐帧抖动。供组件与插件稳定消费。
+    accentColor: (state): string =>
+      getNormalizedAccent(state.sourceColor || DEFAULT_ACCENT, state.isDark),
+    // 最终主题色的 RGB 形式，格式为 "r, g, b"，方便插件拼 rgba()。
+    accentColorRgb(): string {
+      const rgb = hexToRgb(this.accentColor) ?? hexToRgb(DEFAULT_ACCENT);
+      return rgb ? `${rgb.r}, ${rgb.g}, ${rgb.b}` : '49, 207, 161';
+    },
   },
   actions: {
     // 根据当前模式计算 source 并应用

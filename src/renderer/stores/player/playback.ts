@@ -186,6 +186,7 @@ export const createPlaybackManager = (
     state.isPlaying = false;
     state.isLoading = true;
     state.lastError = null;
+    state.stallRecovering = false;
     clearPlaybackNotice();
     state.climaxMarks = [];
 
@@ -212,11 +213,11 @@ export const createPlaybackManager = (
     const resolved = await resolver.resolveAudioUrl(track);
     if (requestSeq !== state.playbackRequestSeq) return;
 
-    // resolve 完成后用 song/url 返回的 timeLength 发起歌词搜索
+    // resolve 完成后发起歌词搜索，duration 用歌曲时长（秒）转毫秒传入
     if (lyricHash) {
       void lyricStore.fetchLyrics(lyricHash, {
         preserveCurrent: Boolean(track.lyric),
-        duration: resolved.timeLength || 0,
+        duration: track.duration ? track.duration * 1000 : 0,
         track,
       });
     } else if (!track.lyric) {
@@ -545,6 +546,9 @@ export const createPlaybackManager = (
     state.currentTime = 0;
     state.duration = 0;
     state.isPlaying = false;
+    state.stallRecovering = false;
+    state.stallRecoverTrackId = null;
+    state.stallRecoverAttempts = 0;
     state.currentTrackId = null;
     state.currentSourceQueueId = null;
     state.currentAudioUrl = '';
@@ -557,6 +561,89 @@ export const createPlaybackManager = (
     state.isLoading = false;
     playlistStore.updateQueueCurrentTrack(null, sourceQueueId);
     engine.updateMediaPlaybackState(buildMediaState(state));
+  };
+
+  // 主进程看门狗检测到播放卡死后的恢复：重取最新地址 → 从断点续播。
+  // 进度防跳由 store 的 stallRecovering 护栏保证（UI 停在断点，忽略 reload 期间的归零/回跳）。
+  const recoverFromStall = async (position: number) => {
+    if (!state.currentTrackId) return;
+    // 用户已暂停 / 正在加载 / 已在恢复中，均不处理
+    if (!state.isPlaying || state.isLoading || state.stallRecovering) return;
+
+    const trackId = String(state.currentTrackId);
+    const track =
+      findTrackById(state.currentTrackId, state.currentPlaylist, playlistStore) ||
+      state.currentTrackSnapshot;
+    if (!track) return;
+
+    // 按曲目统计恢复次数；切到新曲目则重置计数
+    if (state.stallRecoverTrackId !== trackId) {
+      state.stallRecoverTrackId = trackId;
+      state.stallRecoverAttempts = 0;
+    }
+    const maxAttempts = Math.max(0, Math.floor(settingStore.playbackStallMaxAttempts ?? 3));
+    if (maxAttempts > 0 && state.stallRecoverAttempts >= maxAttempts) {
+      logger.warn('PlayerPlayback', 'Stall recovery gave up after max attempts', {
+        trackId,
+        attempts: state.stallRecoverAttempts,
+      });
+      state.lastError = 'playback-failed';
+      showPlaybackNotice('playback-failed', track);
+      applyFailedPlaybackState({ keepResolvedSource: true });
+      if (settingStore.autoNext && (state.currentPlaylist?.length ?? 0) > 0) {
+        state.autoNextSourceTrackId = trackId;
+        scheduleAutoNext();
+      }
+      return;
+    }
+    state.stallRecoverAttempts += 1;
+
+    const targetPosition = Math.max(0, Number(position) || state.currentTime || 0);
+
+    // 开启进度防跳护栏：UI 停在断点位置
+    state.stallRecovering = true;
+    state.stallRecoverTarget = targetPosition;
+    state.stallRecoverDeadline = Date.now() + 20000;
+    state.currentTime = targetPosition;
+
+    logger.warn('PlayerPlayback', 'Recovering from playback stall', {
+      trackId,
+      position: targetPosition,
+      attempt: state.stallRecoverAttempts,
+    });
+
+    try {
+      const resolved = await resolver.resolveAudioUrl(track, { forceReload: true });
+      if (String(state.currentTrackId) !== trackId) {
+        state.stallRecovering = false;
+        return;
+      }
+      if (!resolved.url) {
+        state.stallRecovering = false;
+        state.lastError = 'audio-url-unavailable';
+        showPlaybackNotice('audio-url-unavailable', track);
+        if (settingStore.autoNext && (state.currentPlaylist?.length ?? 0) > 0) {
+          state.autoNextSourceTrackId = trackId;
+          scheduleAutoNext();
+        }
+        return;
+      }
+      state.currentAudioUrl = resolved.url;
+      state.currentResolvedAudioQuality = resolved.quality;
+      state.currentResolvedAudioEffect = resolved.effect;
+      track.audioUrl = resolved.url;
+      engine.reloadSource(resolved.url);
+      engine.applyTrackLoudness(resolved.loudness);
+      await engine.play();
+      if (String(state.currentTrackId) !== trackId) {
+        state.stallRecovering = false;
+        return;
+      }
+      if (targetPosition > 0) engine.seek(targetPosition);
+    } catch (error) {
+      logger.error('PlayerPlayback', 'Recover from stall failed:', error);
+      state.stallRecovering = false;
+    }
   };
 
   const pickRandomIndex = (length: number, currentIndex: number) => {
@@ -607,7 +694,6 @@ export const createPlaybackManager = (
     return indices;
   };
 
-  // 预加载下一首歌曲的音频 URL，减少切歌时的空隙
   return {
     applyFailedPlaybackState,
     clearAutoNextTimer,
@@ -620,6 +706,7 @@ export const createPlaybackManager = (
     dislikePersonalFm,
     prev,
     stop,
+    recoverFromStall,
     pickRandomIndex,
     shuffleInsert,
     buildShuffleQueue,

@@ -10,7 +10,6 @@ import { getActiveWindowMode, setActiveWindowMode } from './windowMode';
 import { isPluginRendererGoneFailureReason, reportPluginRendererFailure } from './plugins';
 import { ipcRegistry } from './ipc/registry';
 import { applyWindowAppIcon, resolveWindowIconPath } from './appIcons';
-import { enforceWindowZoomFactor } from './windowZoom';
 
 const minWidth: number = 1100;
 const defaultWidth: number = 1150;
@@ -296,10 +295,6 @@ export async function createWindow() {
       win?.show();
     }
   });
-
-  // 高 DPI 缩放兜底：初始加载/刷新/路由的锁定已由 preload 接管，
-  // 这里只兜底最大化/全屏等会异步重置 zoom 且不重载文档的窗口状态切换。
-  enforceWindowZoomFactor(win);
 
   win.webContents.on('render-process-gone', (_event, details) => {
     if (!isPluginRendererGoneFailureReason(details.reason)) {

@@ -15,13 +15,11 @@ import {
   iconHeart,
   iconHeartFilled,
   iconX,
-  iconSearch,
   iconInfo,
   iconPlaylistAdd,
   iconChevronDown,
 } from '@/icons';
-import { search } from '@/api/search';
-import { mapSearchSong } from '@/utils/mappers';
+import { recognizeAudio } from '@/api/recognize';
 import { usePlaylistStore } from '@/stores/playlist';
 import { usePlayerStore } from '@/stores/player';
 import { useUserStore } from '@/stores/user';
@@ -30,9 +28,13 @@ import { useToastStore } from '@/stores/toast';
 import { queueAndPlaySong } from '@/utils/playback';
 import { logger } from '@/utils/logger';
 import type { Song } from '@/models/song';
-import type { RecognizeStatus, ShazamResult } from '../../shared/shazam';
+import type { RecognizeMatch } from '@/utils/mappers';
+import type { RecognizeStatus } from '../../shared/recognize';
 
 type AudioSource = 'mic' | 'system';
+
+const SAMPLE_RATE = 8000;
+const MAX_SECONDS = 10;
 
 const router = useRouter();
 const playlistStore = usePlaylistStore();
@@ -43,12 +45,12 @@ const toastStore = useToastStore();
 
 const showPlaylistDialog = ref(false);
 const isPlaylistLoading = ref(false);
+const pendingSong = ref<Song | null>(null);
 
 const audioSource = ref<AudioSource>('mic');
 const sourceMenuOpen = ref(false);
 const status = ref<RecognizeStatus>('idle');
-const shazamResult = ref<ShazamResult | null>(null);
-const matchedSong = ref<Song | null>(null);
+const matches = ref<RecognizeMatch[]>([]);
 const errorMsg = ref('');
 const recordingSeconds = ref(0);
 
@@ -85,11 +87,6 @@ async function fetchMicDevices() {
   }
 }
 
-const isFavorite = computed(() => {
-  if (!matchedSong.value) return false;
-  return playlistStore.isFavoriteSong(matchedSong.value);
-});
-
 const sourceIcon = computed(() =>
   audioSource.value === 'mic' ? iconMicrophone : iconDeviceSpeaker,
 );
@@ -100,37 +97,29 @@ const currentSourceLabel = computed(() => {
   return matched?.label || '麦克风';
 });
 
-const displayTitle = computed(() => matchedSong.value?.title || shazamResult.value?.title || '');
-const displayArtist = computed(() => matchedSong.value?.artist || shazamResult.value?.artist || '');
-const displayAlbum = computed(() => matchedSong.value?.album || shazamResult.value?.album || '');
-const displayCover = computed(
-  () => matchedSong.value?.coverUrl || shazamResult.value?.coverUrl || '',
-);
-
-function audioBufferToPCM(audioBuffer: AudioBuffer): ArrayBuffer {
-  const targetSampleRate = 16000;
-  const sourceData = audioBuffer.getChannelData(0);
-  const ratio = audioBuffer.sampleRate / targetSampleRate;
-  const targetLength = Math.floor(sourceData.length / ratio);
-  const pcmData = new Int16Array(targetLength);
-  for (let i = 0; i < targetLength; i++) {
-    const sample = Math.max(-1, Math.min(1, sourceData[Math.floor(i * ratio)]));
-    pcmData[i] = sample < 0 ? sample * 0x8000 : sample * 0x7fff;
-  }
-  return pcmData.buffer;
+function isFavorite(song: Song): boolean {
+  return playlistStore.isFavoriteSong(song);
 }
 
-async function decodeAudioBlob(blob: Blob): Promise<AudioBuffer> {
+function distPercent(confidence: number): string {
+  return `${Math.round(confidence * 100)}%`;
+}
+
+/** 解码录音并重采样为 8000Hz / 16bit / 单声道 PCM */
+async function decodeToPCM(blob: Blob): Promise<ArrayBuffer> {
+  const offlineCtx = new OfflineAudioContext(1, SAMPLE_RATE * MAX_SECONDS, SAMPLE_RATE);
   const arrayBuffer = await blob.arrayBuffer();
-  const ctx = new AudioContext();
-  try {
-    return await ctx.decodeAudioData(arrayBuffer);
-  } finally {
-    await ctx.close();
+  const audioBuffer = await offlineCtx.decodeAudioData(arrayBuffer);
+  const float32 = audioBuffer.getChannelData(0);
+  const int16 = new Int16Array(float32.length);
+  for (let i = 0; i < float32.length; i++) {
+    const s = Math.max(-1, Math.min(1, float32[i]));
+    int16[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
   }
+  return int16.buffer;
 }
 
-async function recognizeAudio(stream: MediaStream) {
+async function recognizeStream(stream: MediaStream) {
   audioChunks = [];
   mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm;codecs=opus' });
   mediaRecorder.ondataavailable = (e) => {
@@ -146,23 +135,14 @@ async function recognizeAudio(stream: MediaStream) {
     status.value = 'recognizing';
     try {
       const blob = new Blob(audioChunks, { type: 'audio/webm' });
-      const pcmData = audioBufferToPCM(await decodeAudioBlob(blob));
-      const res = await window.electron.shazam.recognize(pcmData);
-      if (res.success && res.result) {
-        shazamResult.value = res.result;
-        matchedSong.value = null;
-        try {
-          const kw = `${res.result.artist} ${res.result.title}`.trim();
-          const sr = await search(kw, 'song', 1, 1);
-          const lists = (sr as any)?.data?.lists ?? (sr as any)?.data?.list ?? [];
-          if (Array.isArray(lists) && lists.length > 0) matchedSong.value = mapSearchSong(lists[0]);
-        } catch {
-          /* 搜索失败不影响展示 */
-        }
+      const pcm = await decodeToPCM(blob);
+      const results = await recognizeAudio(pcm);
+      if (results.length > 0) {
+        matches.value = results;
         status.value = 'success';
       } else {
         status.value = 'failed';
-        errorMsg.value = res.error || '未识别到歌曲';
+        errorMsg.value = '未识别到歌曲，请靠近音源重试';
       }
     } catch (err) {
       status.value = 'failed';
@@ -173,7 +153,7 @@ async function recognizeAudio(stream: MediaStream) {
   mediaRecorder.start(500);
   recordingTimer = setInterval(() => {
     recordingSeconds.value++;
-    if (recordingSeconds.value >= 8) stopRecording();
+    if (recordingSeconds.value >= MAX_SECONDS) stopRecording();
   }, 1000);
 }
 
@@ -192,7 +172,7 @@ async function getMicStream(): Promise<MediaStream> {
 }
 
 async function getSystemAudioStream(): Promise<MediaStream> {
-  await window.electron.shazam.enableLoopback();
+  await window.electron.recognize.enableLoopback();
   try {
     const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
     stream.getVideoTracks().forEach((t) => {
@@ -202,21 +182,20 @@ async function getSystemAudioStream(): Promise<MediaStream> {
     if (stream.getAudioTracks().length === 0) throw new Error('未获取到系统音频轨道');
     return stream;
   } finally {
-    await window.electron.shazam.disableLoopback();
+    await window.electron.recognize.disableLoopback();
   }
 }
 
 async function startRecording() {
   if (isActive.value) return;
   status.value = 'recording';
-  shazamResult.value = null;
-  matchedSong.value = null;
+  matches.value = [];
   errorMsg.value = '';
   recordingSeconds.value = 0;
   try {
     const stream =
       audioSource.value === 'mic' ? await getMicStream() : await getSystemAudioStream();
-    await recognizeAudio(stream);
+    await recognizeStream(stream);
   } catch (err) {
     status.value = 'failed';
     errorMsg.value =
@@ -239,8 +218,7 @@ function stopRecording() {
 function resetAndRestart() {
   stopRecording();
   status.value = 'idle';
-  shazamResult.value = null;
-  matchedSong.value = null;
+  matches.value = [];
   errorMsg.value = '';
   recordingSeconds.value = 0;
 }
@@ -263,27 +241,16 @@ function selectSystemAudio() {
   sourceMenuOpen.value = false;
 }
 
-async function handlePlay() {
-  if (matchedSong.value) await queueAndPlaySong(playlistStore, playerStore, matchedSong.value);
+async function handlePlay(song: Song) {
+  await queueAndPlaySong(playlistStore, playerStore, song);
 }
 
-function handleFavorite() {
-  if (!matchedSong.value) return;
-  if (isFavorite.value) void playlistStore.removeFavoriteSong(matchedSong.value);
-  else void playlistStore.addToFavorites(matchedSong.value);
+function handleFavorite(song: Song) {
+  if (isFavorite(song)) void playlistStore.removeFavoriteSong(song);
+  else void playlistStore.addToFavorites(song);
 }
 
-function goToSearch() {
-  if (!shazamResult.value) return;
-  router.push({
-    name: 'search',
-    query: { q: `${shazamResult.value.artist} ${shazamResult.value.title}`.trim() },
-  });
-}
-
-function goToDetail() {
-  if (!matchedSong.value) return;
-  const song = matchedSong.value;
+function goToDetail(song: Song) {
   const commentId = song.mixSongId || song.id;
   router.push({
     name: 'comment',
@@ -307,7 +274,8 @@ const selectablePlaylists = computed(() =>
   playlistStore.getCreatedPlaylists(userStore.info?.userid),
 );
 
-async function handleAddToPlaylist() {
+async function handleAddToPlaylist(song: Song) {
+  pendingSong.value = song;
   showPlaylistDialog.value = true;
   if (playlistStore.userPlaylists.length === 0) {
     isPlaylistLoading.value = true;
@@ -322,9 +290,9 @@ async function handleAddToPlaylist() {
 }
 
 async function handleSelectPlaylist(listId: string | number) {
-  if (!matchedSong.value) return;
+  if (!pendingSong.value) return;
   try {
-    const result = await playlistStore.addToPlaylist(String(listId), matchedSong.value);
+    const result = await playlistStore.addToPlaylist(String(listId), pendingSong.value);
     if (result === 'added') {
       toastStore.actionCompleted('添加成功');
       showPlaylistDialog.value = false;
@@ -360,85 +328,92 @@ onUnmounted(() => {
       <h1 class="rec-page-title">听歌识曲</h1>
 
       <Transition name="rec-fade" mode="out-in">
-        <!-- 识别成功 -->
+        <!-- 识别成功：候选列表 -->
         <div v-if="status === 'success'" key="result" class="rec-result">
-          <div class="rec-result-card">
-            <!-- 封面 -->
-            <div class="rec-cover-area">
-              <Cover
-                v-if="displayCover"
-                :url="displayCover"
-                :size="400"
-                :borderRadius="16"
-                class="rec-cover"
-              />
-              <div v-else class="rec-cover rec-cover-empty">
-                <Icon :icon="iconMicrophone" width="48" height="48" class="opacity-20" />
+          <p class="rec-result-label">识别结果 · 共 {{ matches.length }} 个匹配</p>
+          <div class="rec-match-list">
+            <div
+              v-for="(match, index) in matches"
+              :key="`${match.song.id}-${index}`"
+              class="rec-match-item"
+              @dblclick="handlePlay(match.song)"
+            >
+              <div
+                class="rec-match-score"
+                :title="`匹配度 ${distPercent(match.confidence)}`"
+                :style="{ '--score': match.confidence }"
+              >
+                <span class="rec-match-score-num">{{ distPercent(match.confidence) }}</span>
+                <span class="rec-match-score-label">匹配度</span>
               </div>
-            </div>
 
-            <!-- 信息区 -->
-            <div class="rec-detail">
-              <p class="rec-label">识别结果</p>
-              <h2 class="rec-song-title">{{ displayTitle }}</h2>
-              <p class="rec-song-artist">{{ displayArtist }}</p>
-              <p v-if="displayAlbum" class="rec-song-album">{{ displayAlbum }}</p>
+              <Cover
+                v-if="match.song.coverUrl"
+                :url="match.song.coverUrl"
+                :size="96"
+                :borderRadius="10"
+                class="rec-match-cover"
+              />
+              <div v-else class="rec-match-cover rec-match-cover-empty">
+                <Icon :icon="iconMicrophone" width="22" height="22" class="opacity-20" />
+              </div>
 
-              <!-- 第一排：播放、收藏、添加到歌单 -->
-              <div class="rec-action-row">
+              <div class="rec-match-info">
+                <div class="rec-match-title">{{ match.song.title }}</div>
+                <div class="rec-match-sub">
+                  {{ match.song.artist }}
+                  <template v-if="match.song.album"> · {{ match.song.album }}</template>
+                </div>
+              </div>
+
+              <div class="rec-match-actions">
                 <Button
-                  v-if="matchedSong"
                   variant="unstyled"
                   size="none"
                   class="rec-circle-btn rec-circle-primary"
                   title="播放"
-                  @click="handlePlay"
+                  @click="handlePlay(match.song)"
                 >
-                  <Icon :icon="iconPlay" width="20" height="20" />
+                  <Icon :icon="iconPlay" width="17" height="17" />
                 </Button>
                 <Button
-                  v-if="matchedSong"
                   variant="unstyled"
                   size="none"
                   :class="[
                     'rec-circle-btn',
-                    isFavorite ? 'rec-circle-fav-active' : 'rec-circle-fav',
+                    isFavorite(match.song) ? 'rec-circle-fav-active' : 'rec-circle-fav',
                   ]"
-                  :title="isFavorite ? '已收藏' : '收藏'"
-                  @click="handleFavorite"
+                  :title="isFavorite(match.song) ? '已收藏' : '收藏'"
+                  @click="handleFavorite(match.song)"
                 >
-                  <Icon :icon="isFavorite ? iconHeartFilled : iconHeart" width="20" height="20" />
+                  <Icon
+                    :icon="isFavorite(match.song) ? iconHeartFilled : iconHeart"
+                    width="17"
+                    height="17"
+                  />
                 </Button>
                 <Button
-                  v-if="matchedSong"
                   variant="unstyled"
                   size="none"
                   class="rec-circle-btn rec-circle-ghost"
                   title="添加到歌单"
-                  @click="handleAddToPlaylist"
+                  @click="handleAddToPlaylist(match.song)"
                 >
-                  <Icon :icon="iconPlaylistAdd" width="19" height="19" />
+                  <Icon :icon="iconPlaylistAdd" width="16" height="16" />
                 </Button>
-              </div>
-              <!-- 第二排：详情、搜索 -->
-              <div class="rec-action-row rec-action-row-secondary">
                 <Button
-                  v-if="matchedSong"
                   variant="unstyled"
                   size="none"
-                  class="rec-text-btn"
-                  @click="goToDetail"
+                  class="rec-circle-btn rec-circle-ghost"
+                  title="歌曲详情"
+                  @click="goToDetail(match.song)"
                 >
-                  <Icon :icon="iconInfo" width="14" height="14" />
-                  歌曲详情
-                </Button>
-                <Button variant="unstyled" size="none" class="rec-text-btn" @click="goToSearch">
-                  <Icon :icon="iconSearch" width="14" height="14" />
-                  去搜索
+                  <Icon :icon="iconInfo" width="16" height="16" />
                 </Button>
               </div>
             </div>
           </div>
+
           <div class="rec-retry-center">
             <Button variant="unstyled" size="none" class="rec-retry-btn" @click="resetAndRestart">
               <Icon :icon="iconMicrophone" width="15" height="15" />
@@ -872,76 +847,148 @@ onUnmounted(() => {
   background: color-mix(in srgb, var(--color-text-main) 25%, transparent);
 }
 
-/* === 结果状态 === */
+/* === 结果状态：候选列表 === */
 .rec-result {
   width: 100%;
-  max-width: 560px;
+  max-width: 640px;
   flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-self: center;
+  padding-top: 20px;
+}
+
+.rec-result-label {
+  @apply text-xs font-semibold text-primary/70 uppercase tracking-widest mb-4;
+  align-self: center;
+  flex-shrink: 0;
+}
+
+.rec-match-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 2px 8px 2px 2px;
+}
+
+.rec-match-list::-webkit-scrollbar {
+  width: 5px;
+}
+
+.rec-match-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.rec-match-list::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--color-text-main) 15%, transparent);
+  border-radius: 3px;
+}
+
+.rec-match-list::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--color-text-main) 28%, transparent);
+}
+
+.rec-match-item {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--color-text-main) 3%, transparent);
+  border: 1px solid transparent;
+  transition: all 0.2s ease;
+  cursor: default;
+}
+
+.rec-match-item:hover {
+  background: color-mix(in srgb, var(--color-text-main) 6%, transparent);
+  border-color: color-mix(in srgb, var(--color-primary) 25%, transparent);
+}
+
+/* 匹配度徽章（置于最前） */
+.rec-match-score {
+  flex-shrink: 0;
+  width: 50px;
+  height: 50px;
+  border-radius: 12px;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  align-self: center;
+  gap: 1px;
+  background: color-mix(
+    in srgb,
+    var(--color-primary) calc(8% + var(--score, 0) * 16%),
+    transparent
+  );
+  color: var(--color-primary);
 }
 
-.rec-result-card {
-  display: flex;
-  gap: 36px;
-  align-items: stretch;
+.rec-match-score-num {
+  font-size: 14px;
+  font-weight: 800;
+  line-height: 1;
 }
 
-.rec-cover-area {
+.rec-match-score-label {
+  font-size: 9px;
+  font-weight: 600;
+  opacity: 0.7;
+  transform: scale(0.92);
+}
+
+.rec-match-cover {
+  width: 48px;
+  height: 48px;
+  border-radius: 10px;
   flex-shrink: 0;
 }
 
-.rec-cover {
-  width: 200px;
-  height: 200px;
-  border-radius: 16px;
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.18);
-}
-
-.rec-cover-empty {
+.rec-match-cover-empty {
   display: flex;
   align-items: center;
   justify-content: center;
   background: var(--control-muted-bg);
 }
 
-.rec-detail {
+.rec-match-info {
   flex: 1;
   min-width: 0;
   display: flex;
   flex-direction: column;
+  gap: 3px;
 }
 
-.rec-label {
-  @apply text-xs font-semibold text-primary/70 uppercase tracking-widest mb-2;
+.rec-match-title {
+  @apply text-sm font-semibold text-text-main truncate;
 }
 
-.rec-song-title {
-  @apply text-xl font-bold text-text-main truncate leading-tight;
+.rec-match-sub {
+  @apply text-xs text-text-secondary truncate;
 }
 
-.rec-song-artist {
-  @apply text-sm text-text-secondary mt-1.5 truncate;
-}
-
-.rec-song-album {
-  @apply text-xs text-text-secondary/50 mt-1 truncate;
-}
-
-.rec-action-row {
+.rec-match-actions {
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin-top: auto;
-  padding-top: 16px;
+  gap: 4px;
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.rec-match-item:hover .rec-match-actions {
+  opacity: 1;
 }
 
 .rec-circle-btn {
-  width: 40px;
-  height: 40px;
+  width: 34px;
+  height: 34px;
   border-radius: 9999px;
   display: flex;
   align-items: center;
@@ -986,31 +1033,6 @@ onUnmounted(() => {
   background: color-mix(in srgb, var(--color-text-main) 12%, transparent);
 }
 
-.rec-action-row-secondary {
-  margin-top: 8px;
-  gap: 6px;
-}
-
-.rec-text-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 5px 12px;
-  border-radius: 999px;
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--color-text-secondary);
-  background: color-mix(in srgb, var(--color-text-main) 5%, transparent);
-  transition: all 0.2s ease;
-  cursor: pointer;
-  border: none;
-}
-
-.rec-text-btn:hover {
-  color: var(--color-primary);
-  background: color-mix(in srgb, var(--color-primary) 10%, transparent);
-}
-
 .rec-playlist-item {
   width: 100%;
   padding: 8px 12px;
@@ -1035,7 +1057,8 @@ onUnmounted(() => {
 .rec-retry-center {
   display: flex;
   justify-content: center;
-  margin-top: 32px;
+  margin-top: 20px;
+  flex-shrink: 0;
 }
 
 .rec-retry-btn {

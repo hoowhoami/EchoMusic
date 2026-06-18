@@ -102,6 +102,18 @@ export class MpvController extends EventEmitter {
   private libmpvPath: string | null;
   private isDestroyed = false;
 
+  // ── 播放卡死看门狗 ──
+  // 主进程定时检测：播放中（非暂停/非 idle）若超过 stallTimeoutMs 收不到进度推进，
+  // 判定为卡死并 emit('stall', 当前位置)，交由渲染进程重取地址并从断点恢复。
+  // 放主进程而非 renderer：主进程 setInterval 不受 Chromium 后台节流影响，窗口最小化时仍可靠。
+  private stallTimeoutMs = 8000;
+  private stallWatchdogTimer: ReturnType<typeof setInterval> | null = null;
+  private stallLastProgressAt = 0;
+  // 只有"播放已推进过一次"后才布防，避免把首次加载/起播缓冲误判为卡死（起播另有加载超时处理）。
+  private stallArmed = false;
+  // 一次卡死只通知一次，恢复重载后重新布防，防止重复触发。
+  private stallNotified = false;
+
   // 文件加载就绪 promise
   private fileReadyPromise: Promise<void> = Promise.resolve();
   private fileReadyResolve: (() => void) | null = null;
@@ -210,11 +222,14 @@ export class MpvController extends EventEmitter {
       this.handleEvent(event);
     });
 
+    this.startStallWatchdog();
+
     this.emit('ready');
   }
 
   destroy(): void {
     this.isDestroyed = true;
+    this.stopStallWatchdog();
     try {
       this.addon?.cancelFade();
       this.addon?.destroy();
@@ -222,6 +237,47 @@ export class MpvController extends EventEmitter {
       log.warn('[MpvController] destroy error:', err);
     }
     this.addon = null;
+  }
+
+  // ── 播放卡死看门狗 ──
+
+  /** 设置卡死判定阈值（秒，<=0 表示禁用检测）。由渲染进程根据用户设置下发。 */
+  setStallTimeout(seconds: number): void {
+    const value = Number(seconds);
+    this.stallTimeoutMs = Number.isFinite(value) && value > 0 ? value * 1000 : 0;
+  }
+
+  private startStallWatchdog(): void {
+    if (this.stallWatchdogTimer) return;
+    this.stallWatchdogTimer = setInterval(() => {
+      if (!this.stallArmed || this.stallNotified) return;
+      if (this.stallTimeoutMs <= 0) return;
+      // 暂停或空闲状态不算卡死（暂停时本就不推进进度）。
+      if (this.state.paused || this.state.idle) return;
+      const elapsed = Date.now() - this.stallLastProgressAt;
+      if (elapsed < this.stallTimeoutMs) return;
+      // 撤防 + 标记已通知，等渲染进程重载后由 time-update 重新布防，避免重复触发。
+      this.stallNotified = true;
+      this.stallArmed = false;
+      log.warn('[MpvController] Playback stall detected', {
+        position: this.state.timePos,
+        elapsedMs: elapsed,
+      });
+      this.emit('stall', this.state.timePos);
+    }, 1000);
+  }
+
+  private stopStallWatchdog(): void {
+    if (this.stallWatchdogTimer) {
+      clearInterval(this.stallWatchdogTimer);
+      this.stallWatchdogTimer = null;
+    }
+  }
+
+  /** 撤防卡死检测（加载新文件 / 停止时调用），等下一次进度推进重新布防。 */
+  private disarmStallWatchdog(): void {
+    this.stallArmed = false;
+    this.stallNotified = false;
   }
 
   // ── 内部方法 ──
@@ -260,6 +316,10 @@ export class MpvController extends EventEmitter {
       case 'time-update':
         if (typeof event.value === 'number') {
           this.state.timePos = event.value;
+          // 收到进度推进即视为播放正常：刷新计时并布防（首次推进后才开始监测卡死）。
+          this.stallLastProgressAt = Date.now();
+          this.stallArmed = true;
+          this.stallNotified = false;
           this.emit('time-update', event.value);
         }
         break;
@@ -449,10 +509,12 @@ export class MpvController extends EventEmitter {
       return undefined;
     }
     if (cmd === 'loadfile') {
+      this.disarmStallWatchdog();
       this.addon.loadFile(String(args[1]));
       return undefined;
     }
     if (cmd === 'stop') {
+      this.disarmStallWatchdog();
       this.addon.stop();
       return undefined;
     }
@@ -469,6 +531,7 @@ export class MpvController extends EventEmitter {
 
   async loadFile(url: string): Promise<void> {
     if (!this.addon) throw new Error('addon not initialized');
+    this.disarmStallWatchdog();
     this.state.path = url;
     this.state.idle = true;
     this.fileReadyPromise = new Promise<void>((resolve) => {
@@ -485,6 +548,7 @@ export class MpvController extends EventEmitter {
 
   async loadMkvTrack(url: string, audioTrackId: number): Promise<void> {
     if (!this.addon) throw new Error('addon not initialized');
+    this.disarmStallWatchdog();
     this.state.path = url;
     this.state.idle = true;
     this.fileReadyPromise = new Promise<void>((resolve) => {
@@ -536,6 +600,7 @@ export class MpvController extends EventEmitter {
 
   async stop(): Promise<void> {
     if (!this.addon) return;
+    this.disarmStallWatchdog();
     try {
       this.addon.stop();
     } catch {

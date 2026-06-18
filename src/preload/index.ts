@@ -32,7 +32,6 @@ import type {
   AudioSpectrumSubscribeResult,
 } from '../shared/audio-spectrum';
 import type { LogSettings } from '../shared/logging';
-import type { RecognizeResponse } from '../shared/shazam';
 import type { ResolvePlaylistRequest, ResolvePlaylistResponse } from '../shared/external';
 import type {
   PluginAssetSourceResult,
@@ -159,13 +158,13 @@ const isWayland =
  * 本 preload 被主窗口、mini 播放器、插件窗口、桌面歌词等所有窗口共用，
  * 因此这一处即可覆盖全部窗口及插件页（含 SPA 路由切换、刷新、重启）。
  *
- * - setZoomLevel(0)：清掉 Chromium 按 origin 持久化的缩放脏值，避免"重启后一开机就糊"。
- * - setVisualZoomLevelLimits(1, 1)：禁用触控板/触屏捏合缩放。
+ * setZoomLevel(0)：清掉 Chromium 按 origin 持久化的缩放脏值，避免"重启后一开机就糊"。
  */
 const lockWindowZoom = () => {
   try {
+    // 锁定页面缩放级别为 0（= 100%），清掉 Chromium 按 origin 持久化的缩放脏值。
+    // 视觉（捏合）缩放 Electron 默认已禁用，且捏合会合成为 ctrl+wheel 被 blockUserZoomShortcuts 拦截，无需额外处理。
     if (webFrame.getZoomLevel() !== 0) webFrame.setZoomLevel(0);
-    webFrame.setVisualZoomLevelLimits(1, 1);
   } catch {
     // 个别非常规渲染上下文可能不支持，忽略即可
   }
@@ -269,7 +268,24 @@ contextBridge.exposeInMainWorld('electron', {
       params?: Record<string, any>;
       data?: any;
       headers?: Record<string, string>;
-    }) => invokeWithPlainPayload('api:request', config),
+    }) => {
+      const data = config?.data;
+      // 二进制 body（如听歌识曲 PCM）经 JSON 序列化会被破坏，需保留原始引用。
+      // ArrayBuffer.isView 与 toString tag 在 contextBridge 跨上下文场景下比
+      // `instanceof` 更可靠；命中后仅对其余字段做普通序列化，data 走结构化克隆透传。
+      const isBinary =
+        !!data &&
+        typeof data === 'object' &&
+        (ArrayBuffer.isView(data) ||
+          data instanceof ArrayBuffer ||
+          Object.prototype.toString.call(data) === '[object ArrayBuffer]');
+      if (isBinary) {
+        const { data: _binary, ...rest } = config;
+        void _binary;
+        return ipcRenderer.invoke('api:request', { ...toPlainIpcPayload(rest), data });
+      }
+      return invokeWithPlainPayload('api:request', config);
+    },
   },
   tray: {
     syncPlayback: (payload: { isPlaying?: boolean; playMode?: PlayMode; volume?: number }) =>
@@ -419,6 +435,7 @@ contextBridge.exposeInMainWorld('electron', {
     setExclusive: (exclusive: boolean) => ipcRenderer.invoke('mpv:set-exclusive', exclusive),
     setMediaTitle: (title: string) => ipcRenderer.invoke('mpv:set-media-title', title),
     setLoopFile: (loop: boolean) => ipcRenderer.invoke('mpv:set-loop-file', loop),
+    setStallTimeout: (seconds: number) => ipcRenderer.invoke('mpv:set-stall-timeout', seconds),
     onTimeUpdate: (func: (time: number) => void) => {
       const listener = (_event: Electron.IpcRendererEvent, time: number) => func(time);
       ipcRenderer.on('mpv:time-update', listener);
@@ -441,6 +458,11 @@ contextBridge.exposeInMainWorld('electron', {
       const listener = (_event: Electron.IpcRendererEvent, reason: string) => func(reason);
       ipcRenderer.on('mpv:playback-end', listener);
       return () => ipcRenderer.removeListener('mpv:playback-end', listener);
+    },
+    onStall: (func: (position: number) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, position: number) => func(position);
+      ipcRenderer.on('mpv:stall', listener);
+      return () => ipcRenderer.removeListener('mpv:stall', listener);
     },
     onError: (func: (message: string) => void) => {
       const listener = (_event: Electron.IpcRendererEvent, message: string) => func(message);
@@ -500,9 +522,7 @@ contextBridge.exposeInMainWorld('electron', {
       };
     },
   },
-  shazam: {
-    recognize: (pcmData: ArrayBuffer) =>
-      ipcRenderer.invoke('shazam:recognize', pcmData) as Promise<RecognizeResponse>,
+  recognize: {
     enableLoopback: () => ipcRenderer.invoke('enable-loopback-audio'),
     disableLoopback: () => ipcRenderer.invoke('disable-loopback-audio'),
   },

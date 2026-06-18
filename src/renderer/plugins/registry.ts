@@ -193,6 +193,14 @@ export const createPluginUiApi = (
     onRuntimeError?.(source, error);
   };
 
+  // 记录上一次封面兜底注册，用于去重：插件以相同 id + 相同 resolveUrl 引用重复注册时直接复用，
+  // 避免反复触发 coverFallbackRevision 抖动导致列表封面闪烁
+  let lastCoverFallback: {
+    id: string;
+    resolveUrl: CoverFallbackResolver;
+    dispose: () => void;
+  } | null = null;
+
   const normalizeCoverFallback = (
     contribution: PluginCoverFallbackInput,
   ): PluginCoverFallbackContribution => {
@@ -351,15 +359,26 @@ export const createPluginUiApi = (
           throw new Error('封面兜底 resolveUrl 必须是函数');
         }
 
-        const dispose = registerCoverFallbackResolver({
+        const fallbackId = item.id || 'default';
+
+        // 去重：相同 id 且 resolveUrl 引用未变时，复用上一次注册，避免无意义的重注册与 revision 抖动
+        if (
+          lastCoverFallback &&
+          lastCoverFallback.id === fallbackId &&
+          lastCoverFallback.resolveUrl === item.resolveUrl
+        ) {
+          return lastCoverFallback.dispose;
+        }
+
+        const rawDispose = registerCoverFallbackResolver({
           pluginId,
-          id: item.id || 'default',
+          id: fallbackId,
           resolveUrl: (context: CoverFallbackContext) => {
             try {
               const value = item.resolveUrl(context) as unknown;
               if (value instanceof Promise) {
                 reportError(
-                  `封面兜底: ${item.id || 'default'}`,
+                  `封面兜底: ${fallbackId}`,
                   new Error('封面兜底 resolver 必须同步返回字符串'),
                 );
                 return null;
@@ -368,11 +387,18 @@ export const createPluginUiApi = (
                 ? value
                 : null;
             } catch (error) {
-              reportError(`封面兜底: ${item.id || 'default'}`, error);
+              reportError(`封面兜底: ${fallbackId}`, error);
               return null;
             }
           },
         });
+
+        const dispose = () => {
+          if (lastCoverFallback?.dispose === dispose) lastCoverFallback = null;
+          rawDispose();
+        };
+
+        lastCoverFallback = { id: fallbackId, resolveUrl: item.resolveUrl, dispose };
         return add(dispose);
       },
     },

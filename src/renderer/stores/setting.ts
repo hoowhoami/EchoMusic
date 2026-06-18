@@ -157,6 +157,10 @@ export const useSettingStore = defineStore('setting', {
     audioDemuxerMaxMB: 48,
     audioDemuxerBackMB: 12,
     audioBufferSecs: 0.5,
+    // 播放卡死检测：播放中进度超过该秒数无推进则判定卡死并自动恢复（0=禁用）
+    playbackStallTimeout: 8,
+    // 同一首歌连续卡死的最大自动恢复次数，超过则回退到失败提示/自动下一首
+    playbackStallMaxAttempts: 3,
     // 快进 / 快退步长（秒）
     seekForwardOffset: 5,
     seekBackwardOffset: 5,

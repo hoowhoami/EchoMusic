@@ -405,6 +405,50 @@ const handleRemoveImpulseResponse = (id: string) => {
         "
       />
     </div>
+    <div class="settings-divider"></div>
+    <div class="settings-item">
+      <div class="space-y-1">
+        <h3 class="font-semibold">播放卡死自动恢复</h3>
+        <p class="text-sm text-text-secondary">
+          播放中进度超过该秒数无推进则判定为卡死，自动重取地址并从断点续播。设为 0 禁用
+        </p>
+      </div>
+      <InputNumber
+        class="w-45"
+        :model-value="String(settingStore.playbackStallTimeout ?? 8)"
+        :min="0"
+        :max="60"
+        :step="1"
+        placeholder="8"
+        suffix="秒"
+        @update:model-value="
+          settingStore.playbackStallTimeout = Math.max(0, Math.min(60, Number($event) || 0))
+        "
+      />
+    </div>
+    <template v-if="(settingStore.playbackStallTimeout ?? 8) > 0">
+      <div class="settings-divider"></div>
+      <div class="settings-item">
+        <div class="space-y-1">
+          <h3 class="font-semibold">最大自动恢复次数</h3>
+          <p class="text-sm text-text-secondary">
+            同一首歌连续卡死时最多自动恢复的次数，超过则提示并按设置自动切下一首
+          </p>
+        </div>
+        <InputNumber
+          class="w-45"
+          :model-value="String(settingStore.playbackStallMaxAttempts ?? 3)"
+          :min="1"
+          :max="10"
+          :step="1"
+          placeholder="3"
+          suffix="次"
+          @update:model-value="
+            settingStore.playbackStallMaxAttempts = Math.max(1, Math.min(10, Number($event) || 3))
+          "
+        />
+      </div>
+    </template>
   </SettingsSectionShell>
 </template>
 

@@ -8,6 +8,8 @@ export interface PlayerEngineEvents {
   play?: () => void;
   pause?: () => void;
   error?: (event: Event) => void;
+  /** 主进程看门狗检测到播放卡死，携带卡死时的播放位置（秒） */
+  stalled?: (position: number) => void;
 }
 
 export interface MediaSessionMeta {
@@ -116,6 +118,11 @@ export class PlayerEngine {
       logger.error('PlayerEngine', 'mpv error', { message });
     });
     this.cleanupFns.push(offError);
+
+    const offStall = mpv.onStall?.((position: number) => {
+      this.events.stalled?.(position);
+    });
+    if (offStall) this.cleanupFns.push(offStall);
   }
 
   // ── 公开 API ──
@@ -160,6 +167,28 @@ export class PlayerEngine {
     this.lastTimeValue = -1;
     this.events.durationChange?.(0);
     mpv?.loadMkvTrack(url, audioTrackId);
+  }
+
+  /**
+   * 卡死恢复专用重载：换用新地址重新加载，但不重置 UI 的 duration/lastTime，
+   * 避免进度条在 reload 期间闪回 0。归零/回跳的过滤由 store 的 stallRecovering 护栏处理。
+   */
+  reloadSource(url: string): void {
+    if (!url) return;
+    this.sourceUrl = url;
+    if (url.startsWith('mpv-mkv://')) {
+      const params = new URLSearchParams(url.slice('mpv-mkv://'.length));
+      const trackId = parseInt(params.get('track') || '1', 10);
+      const mkvUrl = params.get('url') || '';
+      mpv?.loadMkvTrack(mkvUrl, trackId);
+    } else {
+      mpv?.load(url);
+    }
+  }
+
+  /** 下发播放卡死检测阈值（秒，0=禁用）到主进程看门狗 */
+  setStallTimeout(seconds: number): void {
+    mpv?.setStallTimeout?.(Math.max(0, Number(seconds) || 0));
   }
 
   async play(options?: {

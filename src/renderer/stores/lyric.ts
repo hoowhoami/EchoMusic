@@ -157,37 +157,22 @@ const compactCandidate = (candidate: LyricSearchCandidate): ManualLyricSelection
   adjust: candidate.adjust,
 });
 
-const scoreCandidate = (
-  candidate: LyricSearchCandidate,
-  parsed?: Pick<ParsedLyricPreview, 'hasTranslation' | 'hasRomanization' | 'lines'> | null,
-) => {
-  let priority = 0;
-  if (parsed?.hasTranslation && parsed.hasRomanization) priority += 220;
-  else if (parsed?.hasTranslation) priority += 140;
-  else if (parsed?.hasRomanization) priority += 100;
-  if ((parsed?.lines.length ?? 0) > 0) priority += 30;
-  if (candidate.contenttype !== 2) priority += 20;
-  if (candidate.product_from === '官方推荐歌词') priority += 300;
-  if (candidate.krctype === 1) priority += 10;
-  priority += (candidate.score ?? 0) / 100;
-  return priority;
+// 歌词候选排序：官方推荐歌词优先，其次按接口返回的 score 从高到低
+const isOfficialCandidate = (candidate: LyricSearchCandidate) =>
+  candidate.product_from === '官方推荐歌词';
+
+const compareCandidates = (a: LyricSearchCandidate, b: LyricSearchCandidate) => {
+  const officialDiff = Number(isOfficialCandidate(b)) - Number(isOfficialCandidate(a));
+  if (officialDiff !== 0) return officialDiff;
+  return Number(b.score ?? 0) - Number(a.score ?? 0);
 };
 
-const selectBestCandidate = (
-  candidates: LyricSearchCandidate[],
-  parsedByKey?: Record<string, ParsedLyricPreview | null | undefined>,
-): LyricSearchCandidate | null => {
-  if (candidates.length === 0) return null;
-  if (candidates.length === 1) return candidates[0];
+const sortCandidates = (candidates: LyricSearchCandidate[]): LyricSearchCandidate[] =>
+  candidates.slice().sort(compareCandidates);
 
-  const scored = candidates.map((c) => {
-    const priority = scoreCandidate(c, parsedByKey?.[getLyricCandidateKey(c)] ?? null);
-    return { candidate: c, priority };
-  });
-
-  scored.sort((a, b) => b.priority - a.priority);
-  return scored[0].candidate;
-};
+// 排序后取第一条作为默认歌词
+const pickDefaultCandidate = (candidates: LyricSearchCandidate[]): LyricSearchCandidate | null =>
+  candidates[0] ?? null;
 
 const decodeLanguageLine = (
   line: string,
@@ -726,7 +711,10 @@ export const useLyricStore = defineStore('lyric', {
       this.hasRomanization = parsed.hasRomanization;
       this.tips = parsed.tips;
     },
-    async fetchLyricCandidates(hash: string, options?: { duration?: number; force?: boolean }) {
+    async fetchLyricCandidates(
+      hash: string,
+      options?: { duration?: number; keywords?: string; force?: boolean },
+    ) {
       const normalizedHash = String(hash ?? '').trim();
       if (!normalizedHash) return [] as LyricSearchCandidate[];
       if (!options?.force && this.candidateHash === normalizedHash && this.candidates.length > 0) {
@@ -734,15 +722,16 @@ export const useLyricStore = defineStore('lyric', {
       }
 
       const searchResult = normalizeSearchPayload(
-        await searchLyric(normalizedHash, options?.duration),
+        await searchLyric(normalizedHash, options?.duration, options?.keywords),
       );
-      const candidates =
+      const candidates = sortCandidates(
         Array.isArray(searchResult?.candidates) && searchResult.candidates.length > 0
           ? searchResult.candidates
           : Array.isArray(searchResult?.info)
             ? searchResult.info
-            : [];
-      const autoCandidate = selectBestCandidate(candidates);
+            : [],
+      );
+      const autoCandidate = pickDefaultCandidate(candidates);
 
       this.candidateHash = normalizedHash;
       this.candidates = candidates;
@@ -793,15 +782,6 @@ export const useLyricStore = defineStore('lyric', {
           }),
         ),
       );
-
-      const resolvedCandidates = candidates.filter((candidate) =>
-        Boolean(this.candidateDetailMap[getLyricCandidateKey(candidate)]),
-      );
-      const autoCandidate = selectBestCandidate(
-        resolvedCandidates.length > 0 ? resolvedCandidates : candidates,
-        this.candidatePreviewMap,
-      );
-      this.autoCandidateKey = autoCandidate ? getLyricCandidateKey(autoCandidate) : '';
     },
     async previewCandidate(candidate: LyricSearchCandidate): Promise<ParsedLyricPreview | null> {
       const resolved = await this.resolveCandidateDetail(candidate);
@@ -825,12 +805,16 @@ export const useLyricStore = defineStore('lyric', {
       }
       return true;
     },
-    async restoreAutoLyric(hash: string, options?: { duration?: number }) {
+    async restoreAutoLyric(hash: string, options?: { duration?: number; keywords?: string }) {
       const normalizedHash = String(hash ?? '').trim();
       if (!normalizedHash) return;
       delete this.manualLyricMap[normalizedHash];
       this.currentCandidateKey = '';
-      await this.fetchLyrics(normalizedHash, { duration: options?.duration, force: true });
+      await this.fetchLyrics(normalizedHash, {
+        duration: options?.duration,
+        keywords: options?.keywords,
+        force: true,
+      });
     },
     updateCurrentIndex(currentTime: number, isLyricViewOpen = false) {
       if (this.lines.length === 0) {
@@ -867,7 +851,13 @@ export const useLyricStore = defineStore('lyric', {
     },
     async fetchLyrics(
       hash: string,
-      options?: { preserveCurrent?: boolean; duration?: number; force?: boolean; track?: Song },
+      options?: {
+        preserveCurrent?: boolean;
+        duration?: number;
+        keywords?: string;
+        force?: boolean;
+        track?: Song;
+      },
     ) {
       const normalizedHash = String(hash ?? '').trim();
       if (!normalizedHash) {
@@ -921,6 +911,7 @@ export const useLyricStore = defineStore('lyric', {
 
         const candidates = await this.fetchLyricCandidates(normalizedHash, {
           duration: options?.duration,
+          keywords: options?.keywords ?? options?.track?.title ?? options?.track?.name ?? '',
           force: true,
         });
         if (requestSerial !== this.requestSerial) return;
@@ -928,7 +919,7 @@ export const useLyricStore = defineStore('lyric', {
         const target =
           (isUsableCandidate(manualCandidate)
             ? manualCandidate
-            : selectBestCandidate(candidates, this.candidatePreviewMap)) ?? null;
+            : pickDefaultCandidate(candidates)) ?? null;
 
         if (!target?.id || !target.accesskey) {
           if (options?.preserveCurrent && this.lines.length > 0) {

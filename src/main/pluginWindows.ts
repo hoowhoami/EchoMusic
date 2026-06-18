@@ -17,7 +17,6 @@ import {
 } from './plugins';
 import { getKvStorage } from './storage/kv';
 import log from './logger';
-import { enforceWindowZoomFactor } from './windowZoom';
 
 type PluginWindowRecord = {
   pluginId: string;
@@ -255,9 +254,6 @@ const createPluginWindow = async (
     usesPanel,
   };
   pluginWindows.set(getWindowKey(descriptor.pluginId, descriptor.id), record);
-
-  // 高 DPI 设备缩放修复
-  enforceWindowZoomFactor(win);
 
   win.once('ready-to-show', () => {
     syncPresentation(win, effectiveDescriptor);

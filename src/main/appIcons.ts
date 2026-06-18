@@ -77,6 +77,24 @@ let iconState: AppIconState = {
   initialized: false,
 };
 
+// 上一次「实际应用过」的图标签名（tray/taskbar/desktop 解析路径）。
+// 用于按需刷新：开关插件时若解析结果未变，则跳过昂贵的图标应用步骤。
+let appliedIconSignature: string | null = null;
+
+const getCurrentIconSignature = () =>
+  [iconState.trayIconPath, iconState.taskbarIconPath, iconState.desktopIconPath]
+    .map((value) => value ?? '')
+    .join('|');
+
+/** 当前解析出的图标配置是否与上一次实际应用过的不同 */
+export const hasAppIconConfigChanged = (): boolean =>
+  appliedIconSignature !== getCurrentIconSignature();
+
+/** 标记当前图标配置已实际应用，更新签名基线 */
+export const markAppIconsApplied = (): void => {
+  appliedIconSignature = getCurrentIconSignature();
+};
+
 const normalizePluginId = (value: unknown) =>
   String(value ?? '')
     .trim()
@@ -270,6 +288,8 @@ export const isPluginAppIconStorageKey = (key: string) => {
 };
 
 export const refreshAppIconConfig = (): PluginAppIconRefreshResult => {
+  const previousSignature = getCurrentIconSignature();
+  const wasInitialized = iconState.initialized;
   const trayIcon = resolvePluginIcon('tray');
   const taskbarIcon = resolvePluginIcon('taskbar');
   const desktopIcon = resolvePluginIcon('desktop');
@@ -287,14 +307,17 @@ export const refreshAppIconConfig = (): PluginAppIconRefreshResult => {
     initialized: true,
   };
 
-  log.info('[AppIcons] Refreshed plugin app icons', {
-    trayPluginId: iconState.trayPluginId,
-    taskbarPluginId: iconState.taskbarPluginId,
-    desktopPluginId: iconState.desktopPluginId,
-    hasTrayIcon: Boolean(iconState.trayIconPath),
-    hasTaskbarIcon: Boolean(iconState.taskbarIconPath),
-    hasDesktopIcon: Boolean(iconState.desktopIconPath),
-  });
+  // 仅在图标配置真正发生变化（或首次初始化）时记录，避免每次插件开关都打印空转日志
+  if (!wasInitialized || getCurrentIconSignature() !== previousSignature) {
+    log.info('[AppIcons] Refreshed plugin app icons', {
+      trayPluginId: iconState.trayPluginId,
+      taskbarPluginId: iconState.taskbarPluginId,
+      desktopPluginId: iconState.desktopPluginId,
+      hasTrayIcon: Boolean(iconState.trayIconPath),
+      hasTaskbarIcon: Boolean(iconState.taskbarIconPath),
+      hasDesktopIcon: Boolean(iconState.desktopIconPath),
+    });
+  }
 
   return getAppIconRefreshResult();
 };

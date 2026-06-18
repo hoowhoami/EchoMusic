@@ -28,6 +28,7 @@ import * as icons from '@/icons';
 import type { Song } from '@/models/song';
 import { hexToRgb } from '@/utils/color';
 import { usePlayerStore } from '@/stores/player';
+import type { PlayerEventName, PlayerEventPayload } from '@/stores/player/events';
 import { usePlaylistStore, type SetPlaybackQueueOptions } from '@/stores/playlist';
 import { useLyricStore } from '@/stores/lyric';
 import { useSettingStore } from '@/stores/setting';
@@ -247,6 +248,16 @@ export interface EchoPluginContext {
   events: {
     onTrackChange: (handler: (track: unknown) => void) => () => void;
     onPlaybackChange: (handler: (isPlaying: boolean) => void) => () => void;
+    onPlay: (
+      handler: (payload: PlayerEventPayload) => void,
+      options?: { immediate?: boolean },
+    ) => () => void;
+    onPause: (handler: (payload: PlayerEventPayload) => void) => () => void;
+    onEnded: (handler: (payload: PlayerEventPayload) => void) => () => void;
+    onSeek: (handler: (payload: PlayerEventPayload) => void) => () => void;
+    onError: (handler: (payload: PlayerEventPayload) => void) => () => void;
+    onTimeUpdate: (handler: (payload: PlayerEventPayload) => void) => () => void;
+    on: (event: PlayerEventName, handler: (payload: PlayerEventPayload) => void) => () => void;
   };
   dom: {
     query: <T extends Element = Element>(selector: string) => T | null;
@@ -1905,6 +1916,22 @@ const createPluginContext = (
     return dispose;
   };
   const playerStore = usePlayerStore();
+
+  const registerPlayerEvent = (
+    event: PlayerEventName,
+    handler: (payload: PlayerEventPayload) => void,
+    options?: { immediate?: boolean },
+  ) => {
+    const wrapped = (payload: PlayerEventPayload) =>
+      runPluginCallback(descriptor.id, `播放事件: ${event}`, () => handler(payload), undefined);
+    const off = playerStore.onPlayerEvent(event, wrapped);
+    addDisposable(off);
+    // immediate：订阅时若当前已处于该状态，立即用当前状态回调一次（仅对 play 有意义）
+    if (options?.immediate && event === 'play' && playerStore.isPlaying) {
+      wrapped(playerStore.getPlayerEventPayload('play'));
+    }
+    return off;
+  };
   const playlistStore = usePlaylistStore();
   const lyricStore = useLyricStore();
   const settingStore = useSettingStore();
@@ -2022,6 +2049,13 @@ const createPluginContext = (
               ),
           ),
         ),
+      onPlay: (handler, options) => registerPlayerEvent('play', handler, options),
+      onPause: (handler) => registerPlayerEvent('pause', handler),
+      onEnded: (handler) => registerPlayerEvent('ended', handler),
+      onSeek: (handler) => registerPlayerEvent('seek', handler),
+      onError: (handler) => registerPlayerEvent('error', handler),
+      onTimeUpdate: (handler) => registerPlayerEvent('timeupdate', handler),
+      on: (event, handler) => registerPlayerEvent(event, handler),
     },
     dom: createDomApi(descriptor.id, addDisposable),
     net: {

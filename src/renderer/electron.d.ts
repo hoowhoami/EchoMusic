@@ -29,7 +29,6 @@ import type {
   AudioSpectrumStatus,
 } from '../shared/audio-spectrum';
 import type { LogSettings } from '../shared/logging';
-import type { RecognizeResponse } from '../shared/shazam';
 import type { ResolvePlaylistRequest, ResolvePlaylistResponse } from '../shared/external';
 import type {
   PluginAssetSourceResult,
@@ -207,8 +206,7 @@ export interface IElectronAPI {
       metadata?: { pluginId?: string },
     ) => () => void;
   };
-  shazam: {
-    recognize: (pcmData: ArrayBuffer) => Promise<RecognizeResponse>;
+  recognize: {
     enableLoopback: () => Promise<void>;
     disableLoopback: () => Promise<void>;
   };
@@ -426,10 +424,12 @@ export interface IElectronAPI {
     setExclusive: (exclusive: boolean) => Promise<boolean>;
     setMediaTitle: (title: string) => Promise<void>;
     setLoopFile: (loop: boolean) => Promise<void>;
+    setStallTimeout: (seconds: number) => Promise<void>;
     onTimeUpdate: (func: (time: number) => void) => () => void;
     onDurationChange: (func: (duration: number) => void) => () => void;
     onStateChange: (func: (state: { playing?: boolean; paused?: boolean }) => void) => () => void;
     onPlaybackEnd: (func: (reason: string) => void) => () => void;
+    onStall: (func: (position: number) => void) => () => void;
     onError: (func: (message: string) => void) => () => void;
     onImpulseResponseDisabled: (
       func: (payload: { path?: string; reason?: string }) => void,

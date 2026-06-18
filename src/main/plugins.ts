@@ -1259,10 +1259,12 @@ const fetchMarketplaceManifest = async (
   pluginRepo: GithubRepository,
   packagePath: string,
   githubProxyUrl?: string,
+  forceNetwork = false,
 ) => {
   const raw = await fetchMarketplaceText(
     getMarketplaceManifestUrl(pluginRepo, packagePath),
     githubProxyUrl,
+    forceNetwork,
   );
   return JSON.parse(raw) as EchoPluginManifest;
 };
@@ -1272,11 +1274,17 @@ const normalizeMarketplaceIndexPlugin = async (
   sourceRepo: GithubRepository,
   rawEntry: PluginMarketplaceIndexEntry,
   githubProxyUrl?: string,
+  forceNetwork = false,
 ): Promise<PluginMarketplaceCatalogPlugin | null> => {
   const packagePath = normalizeMarketplacePackagePath(rawEntry?.packagePath ?? rawEntry?.path);
   if (!isSafeMarketplacePackagePath(packagePath)) return null;
   const pluginRepo = getMarketplaceEntryRepository(sourceRepo, rawEntry);
-  const manifest = await fetchMarketplaceManifest(pluginRepo, packagePath, githubProxyUrl);
+  const manifest = await fetchMarketplaceManifest(
+    pluginRepo,
+    packagePath,
+    githubProxyUrl,
+    forceNetwork,
+  );
   if (validateManifest(manifest, '')) return null;
 
   const pluginId = normalizePluginId(manifest.id);
@@ -1326,6 +1334,7 @@ const normalizeMarketplaceIndexPlugins = async (
   index: PluginMarketplaceIndex,
   githubProxyUrl?: string,
   previousPlugins: PluginMarketplaceCatalogPlugin[] = [],
+  forceNetwork = false,
 ): Promise<PluginMarketplaceIndexPluginsResult> => {
   const sourceRepo = parseGithubRepository(source.url);
   if (!sourceRepo || !Array.isArray(index.plugins)) {
@@ -1361,7 +1370,7 @@ const normalizeMarketplaceIndexPlugins = async (
 
   const settled = await Promise.allSettled(
     index.plugins.map((entry) =>
-      normalizeMarketplaceIndexPlugin(source, sourceRepo, entry, githubProxyUrl),
+      normalizeMarketplaceIndexPlugin(source, sourceRepo, entry, githubProxyUrl, forceNetwork),
     ),
   );
   const plugins: PluginMarketplaceCatalogPlugin[] = [];
@@ -1403,16 +1412,22 @@ const normalizeMarketplaceIndexPlugins = async (
   };
 };
 
-const fetchMarketplaceText = async (url: string, githubProxyUrl?: string) => {
-  const targetUrl = applyGithubProxyUrl(url, githubProxyUrl);
+const fetchMarketplaceText = async (url: string, githubProxyUrl?: string, forceNetwork = false) => {
+  // forceNetwork（用户手动刷新）时附加唯一查询参数破除 GitHub CDN/本地 HTTP 缓存，
+  // 并带上 no-cache 请求头，确保拿到仓库最新内容。
+  const bustedUrl = forceNetwork ? appendUrlCacheKey(url, `cb-${Date.now()}`) : url;
+  const targetUrl = applyGithubProxyUrl(bustedUrl, githubProxyUrl);
+  const headers: Record<string, string> = {
+    Accept: 'application/json,text/plain,*/*',
+    'User-Agent': 'EchoMusic-Plugin-Marketplace',
+  };
+  if (forceNetwork) {
+    headers['Cache-Control'] = 'no-cache';
+    headers.Pragma = 'no-cache';
+  }
   const response = await fetchWithTimeout(
     targetUrl,
-    {
-      headers: {
-        Accept: 'application/json,text/plain,*/*',
-        'User-Agent': 'EchoMusic-Plugin-Marketplace',
-      },
-    },
+    { headers },
     PLUGIN_MARKETPLACE_FETCH_TIMEOUT_MS,
     '插件源请求超时，请检查网络或 GitHub 代理',
   );
@@ -1426,17 +1441,19 @@ const fetchMarketplaceIndex = async (
   source: PluginMarketplaceSource,
   githubProxyUrl?: string,
   previousPlugins: PluginMarketplaceCatalogPlugin[] = [],
+  forceNetwork = false,
 ) => {
   const sourceRepo = parseGithubRepository(source.url);
   if (!sourceRepo) throw new Error('仅支持 GitHub 仓库地址');
   const indexUrl = toRawGithubUrl(sourceRepo, PLUGIN_MARKETPLACE_INDEX_FILE);
-  const raw = await fetchMarketplaceText(indexUrl, githubProxyUrl);
+  const raw = await fetchMarketplaceText(indexUrl, githubProxyUrl, forceNetwork);
   const index = JSON.parse(raw) as PluginMarketplaceIndex;
   const result = await normalizeMarketplaceIndexPlugins(
     source,
     index,
     githubProxyUrl,
     previousPlugins,
+    forceNetwork,
   );
   const plugins = result.plugins;
   if (plugins.length === 0) {
@@ -1455,9 +1472,15 @@ const fetchMarketplaceSourceCatalog = async (
   source: PluginMarketplaceSource,
   githubProxyUrl?: string,
   previousPlugins: PluginMarketplaceCatalogPlugin[] = [],
+  forceNetwork = false,
 ) => {
   try {
-    const result = await fetchMarketplaceIndex(source, githubProxyUrl, previousPlugins);
+    const result = await fetchMarketplaceIndex(
+      source,
+      githubProxyUrl,
+      previousPlugins,
+      forceNetwork,
+    );
     const now = Date.now();
     const sourceRepo = parseGithubRepository(source.url);
     const inferredName =
@@ -1546,11 +1569,12 @@ const refreshMarketplaceCatalog = async (
   sources: PluginMarketplaceSource[],
   githubProxyUrl?: string,
   previousPlugins: PluginMarketplaceCatalogPlugin[] = [],
+  forceNetwork = false,
 ) => {
   const enabledSources = sources.filter((source) => source.enabled);
   const fetched = await Promise.all(
     enabledSources.map((source) =>
-      fetchMarketplaceSourceCatalog(source, githubProxyUrl, previousPlugins),
+      fetchMarketplaceSourceCatalog(source, githubProxyUrl, previousPlugins, forceNetwork),
     ),
   );
   const sourceById = new Map(sources.map((source) => [source.id, source]));
@@ -1664,6 +1688,8 @@ export const listPluginMarketplace = async (
       sources,
       options.githubProxyUrl,
       cache.plugins,
+      // 仅用户手动刷新时强制破缓存；缓存为空的自动拉取走常规请求即可
+      Boolean(options.refresh),
     );
     nextSources = refreshed.sources;
     cache = refreshed.cache;

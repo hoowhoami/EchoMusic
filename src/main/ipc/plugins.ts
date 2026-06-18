@@ -79,7 +79,10 @@ import {
   applyDesktopAppIcon,
   applyTaskbarShortcutIcon,
   applyWindowAppIcon,
+  getAppIconRefreshResult,
+  hasAppIconConfigChanged,
   isPluginAppIconStorageKey,
+  markAppIconsApplied,
   refreshAppIconConfig,
   restoreDefaultDesktopIcon,
   restoreDefaultTaskbarIcon,
@@ -87,6 +90,7 @@ import {
   restoreDefaultWindowIcon,
 } from '../appIcons';
 import { refreshTray } from '../tray';
+import log from '../logger';
 import type { IpcContext } from './types';
 
 const sanitizeDialogOptions = (
@@ -124,12 +128,21 @@ const showPluginOpenDialog = async (
 };
 
 export const registerPluginHandlers = (context: IpcContext) => {
-  const refreshPluginAppIcons = (): PluginAppIconRefreshResult => {
+  const refreshPluginAppIcons = (options?: { force?: boolean }): PluginAppIconRefreshResult => {
     refreshAppIconConfig();
+    // 按需：若解析出的图标配置与上次已应用的一致，则跳过昂贵的应用步骤
+    // （applyWindowAppIcon / refreshTray / applyDesktopAppIcon / applyTaskbarShortcutIcon）。
+    // force 用于「显式图标操作」（手动刷新、写图标文件、改图标存储键）——此时即便路径未变，
+    // 图标内容也可能已变，必须重新应用。
+    if (!options?.force && !hasAppIconConfigChanged()) {
+      return getAppIconRefreshResult();
+    }
     applyWindowAppIcon(context.getMainWindow());
     refreshTray();
     applyDesktopAppIcon();
-    return applyTaskbarShortcutIcon();
+    const result = applyTaskbarShortcutIcon();
+    markAppIconsApplied();
+    return result;
   };
 
   ipcRegistry.registerHandler('plugins:list', (): PluginListResult => listPlugins());
@@ -267,7 +280,7 @@ export const registerPluginHandlers = (context: IpcContext) => {
       options?: PluginWriteFileOptions,
     ): PluginWriteFileResult => {
       const result = writePluginFile(pluginId, filePath, data, options);
-      if (result.ok) refreshPluginAppIcons();
+      if (result.ok) refreshPluginAppIcons({ force: true });
       return result;
     },
   );
@@ -275,7 +288,7 @@ export const registerPluginHandlers = (context: IpcContext) => {
     'plugins:fs:delete-file',
     (_event, pluginId: string, filePath: string): PluginDeleteFileResult => {
       const result = deletePluginFile(pluginId, filePath);
-      if (result.ok) refreshPluginAppIcons();
+      if (result.ok) refreshPluginAppIcons({ force: true });
       return result;
     },
   );
@@ -303,7 +316,15 @@ export const registerPluginHandlers = (context: IpcContext) => {
       const result = await setPluginEnabled(pluginId, enabled);
       if (result.ok) {
         if (!enabled) closePluginWindows(pluginId);
-        refreshPluginAppIcons();
+        // 不阻塞开关：图标刷新放到下一轮事件循环，且仅在图标配置确有变化时才应用，
+        // 普通插件（不提供 app 图标）开关因此瞬间完成。
+        setImmediate(() => {
+          try {
+            refreshPluginAppIcons();
+          } catch (error) {
+            log.warn('[Plugin] Refresh app icons after set-enabled failed', { pluginId, error });
+          }
+        });
       }
       return result;
     },
@@ -321,7 +342,7 @@ export const registerPluginHandlers = (context: IpcContext) => {
     async (_event, pluginId: string): Promise<PluginUninstallResult> => {
       closePluginWindows(pluginId);
       const result = await uninstallPlugin(pluginId);
-      if (result.ok) refreshPluginAppIcons();
+      if (result.ok) refreshPluginAppIcons({ force: true });
       return result;
     },
   );
@@ -372,18 +393,18 @@ export const registerPluginHandlers = (context: IpcContext) => {
     'plugins:data:set',
     (_event, pluginId: string, key: string, value: unknown) => {
       const result = setPluginData(pluginId, key, value);
-      if (result.ok && isPluginAppIconStorageKey(key)) refreshPluginAppIcons();
+      if (result.ok && isPluginAppIconStorageKey(key)) refreshPluginAppIcons({ force: true });
       return result;
     },
   );
   ipcRegistry.registerHandler('plugins:data:delete', (_event, pluginId: string, key: string) => {
     const result = deletePluginData(pluginId, key);
-    if (result.ok && isPluginAppIconStorageKey(key)) refreshPluginAppIcons();
+    if (result.ok && isPluginAppIconStorageKey(key)) refreshPluginAppIcons({ force: true });
     return result;
   });
   ipcRegistry.registerHandler(
     'plugins:icons:refresh',
-    (): PluginAppIconRefreshResult => refreshPluginAppIcons(),
+    (): PluginAppIconRefreshResult => refreshPluginAppIcons({ force: true }),
   );
   ipcRegistry.registerHandler(
     'plugins:icons:restore-default-desktop',

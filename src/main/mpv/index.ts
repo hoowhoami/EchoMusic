@@ -54,6 +54,9 @@ function bindEventForwarding(
   controller.on('playback-end', (reason: string) => {
     getMainWindow()?.webContents.send('mpv:playback-end', reason);
   });
+  controller.on('stall', (position: number) => {
+    getMainWindow()?.webContents.send('mpv:stall', position);
+  });
   controller.on('error', (error: Error) => {
     getMainWindow()?.webContents.send('mpv:error', error.message);
   });

@@ -65,7 +65,6 @@ export default defineConfig({
               external: [
                 'electron',
                 'font-list',
-                'shazam-api',
                 'electron-audio-loopback',
                 '../../native/echo-media-controls',
                 '../../native/echo-mpv-player',

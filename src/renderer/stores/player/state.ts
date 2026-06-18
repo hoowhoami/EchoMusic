@@ -46,6 +46,12 @@ export const createPlayerState = () => ({
   seekTargetTime: null as number | null,
   seekTimestamp: 0,
   isResuming: false,
+  // 卡死恢复：恢复期间 UI 停在断点位置，忽略 reload 过程中 mpv 回报的归零/回跳值，避免进度条跳动
+  stallRecovering: false,
+  stallRecoverTarget: 0,
+  stallRecoverDeadline: 0,
+  stallRecoverAttempts: 0,
+  stallRecoverTrackId: null as string | null,
 });
 
 export type PlayerState = ReturnType<typeof createPlayerState>;

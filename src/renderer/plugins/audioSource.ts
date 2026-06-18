@@ -87,7 +87,6 @@ const normalizeResolvedAudioSource = (
     quality: normalizeAudioQuality(value.quality),
     effect: normalizeAudioEffect(value.effect),
     loudness: normalizedLoudness,
-    timeLength: Math.max(0, Number(value.timeLength) || 0),
   };
 };
 

@@ -175,4 +175,9 @@ export function registerPlayerIpc(ref: MpvRef): void {
   ipcRegistry.registerHandler('mpv:set-loop-file', (_e, loop: boolean) => {
     ref.current?.setLoopFile(loop);
   });
+
+  // 设置播放卡死检测阈值（秒，0=禁用），由渲染进程根据用户设置下发
+  ipcRegistry.registerHandler('mpv:set-stall-timeout', (_e, seconds: number) => {
+    ref.current?.setStallTimeout(Number(seconds) || 0);
+  });
 }

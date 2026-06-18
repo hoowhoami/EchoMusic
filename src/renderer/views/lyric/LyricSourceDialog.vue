@@ -50,18 +50,7 @@ const durationMs = computed(() => Math.round(Number(props.duration || 0) * 1000)
 const candidates = computed(() =>
   lyricStore.candidateHash === normalizedHash.value ? lyricStore.candidates : [],
 );
-const displayedCandidates = computed(() => {
-  const recommendedKey = lyricStore.autoCandidateKey;
-  if (!recommendedKey) return candidates.value;
-  const recommended = candidates.value.find(
-    (candidate) => getLyricCandidateKey(candidate) === recommendedKey,
-  );
-  if (!recommended) return candidates.value;
-  return [
-    recommended,
-    ...candidates.value.filter((candidate) => getLyricCandidateKey(candidate) !== recommendedKey),
-  ];
-});
+const displayedCandidates = computed(() => candidates.value);
 const selectedCandidate = computed(
   () =>
     candidates.value.find((candidate) => getLyricCandidateKey(candidate) === selectedKey.value) ??
@@ -91,16 +80,19 @@ const candidatePreview = (candidate: LyricSearchCandidate): ParsedLyricPreview |
   lyricStore.candidatePreviewMap[getLyricCandidateKey(candidate)] ?? null;
 
 const recommendationLevel = (candidate: LyricSearchCandidate) => {
-  if (lyricStore.autoCandidateKey === getLyricCandidateKey(candidate)) return 5;
-  const preview = candidatePreview(candidate);
-  let score = 1;
-  if (candidate.product_from === '官方推荐歌词') score += 1;
-  if (isScrollableCandidate(candidate)) score += 1;
-  if (candidate.krctype === 1) score += 1;
-  if (preview?.hasTranslation && preview.hasRomanization) score += 1;
-  else if (preview?.hasTranslation || preview?.hasRomanization) score += 0.5;
-  if ((candidate.score ?? 0) >= 50) score += 0.5;
-  return Math.min(5, Math.max(1, Math.round(score)));
+  // 星级由接口返回的 score（0-100）映射为 0-5 星，按 0.5 粒度（支持半星）
+  const score = Number(candidate.score ?? 0);
+  if (!Number.isFinite(score) || score <= 0) return 0;
+  const stars = Math.round((score / 20) * 2) / 2;
+  return Math.min(5, Math.max(0, stars));
+};
+
+// 单颗星的状态：实心 / 半星 / 空
+const starClass = (candidate: LyricSearchCandidate, index: number) => {
+  const rating = recommendationLevel(candidate);
+  if (index <= Math.floor(rating)) return 'filled';
+  if (index === Math.ceil(rating) && rating % 1 !== 0) return 'half';
+  return '';
 };
 
 const typeLabels = (candidate: LyricSearchCandidate) => {
@@ -149,6 +141,7 @@ const loadCandidates = async (force = false) => {
   try {
     await lyricStore.fetchLyricCandidates(normalizedHash.value, {
       duration: durationMs.value || undefined,
+      keywords: props.title || undefined,
       force,
     });
     pickInitialCandidate();
@@ -241,6 +234,7 @@ const restoreAuto = async () => {
   try {
     await lyricStore.restoreAutoLyric(normalizedHash.value, {
       duration: durationMs.value || undefined,
+      keywords: props.title || undefined,
     });
     pickInitialCandidate();
     toastStore.success('已改为智能推荐');
@@ -327,7 +321,8 @@ watch(selectedKey, () => {
                   <span
                     v-for="index in 5"
                     :key="index"
-                    :class="{ filled: index <= recommendationLevel(candidate) }"
+                    class="star"
+                    :class="starClass(candidate, index)"
                   >
                     ★
                   </span>
@@ -653,7 +648,22 @@ watch(selectedKey, () => {
   line-height: 1;
 }
 
+.star-rating .star {
+  position: relative;
+  display: inline-block;
+}
+
 .star-rating .filled {
+  color: var(--color-primary);
+}
+
+.star-rating .half::before {
+  content: '★';
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 50%;
+  overflow: hidden;
   color: var(--color-primary);
 }
 

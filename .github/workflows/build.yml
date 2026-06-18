@@ -357,6 +357,27 @@ jobs:
           pnpm exec vue-tsc --noEmit && pnpm exec vite build
           pnpm exec electron-builder ${{ matrix.electron_builder_args }} --publish never
 
+      - name: Verify bundled Windows executable
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          set -e
+
+          if [ "${{ matrix.rust_target }}" = "aarch64-pc-windows-msvc" ]; then
+            app_exe="release/win-arm64-unpacked/EchoMusic.exe"
+          else
+            app_exe="release/win-unpacked/EchoMusic.exe"
+          fi
+
+          if [ ! -f "$app_exe" ]; then
+            echo "ERROR: bundled app executable not found: $app_exe"
+            echo "=== release directories ==="
+            find release -maxdepth 2 -type d -print
+            echo "=== executable files ==="
+            find release -maxdepth 3 -type f -name '*.exe' -print
+            exit 1
+          fi
+
       - name: Verify bundled macOS mpv signatures
         if: runner.os == 'macOS'
         shell: bash
