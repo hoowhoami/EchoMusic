@@ -302,6 +302,13 @@ export function setupThumbarButtons(win: BrowserWindow) {
         applyThumbarButtons(win);
       }
     });
+
+    // 窗口从隐藏恢复时重新设置 thumbar 按钮（setSkipTaskbar 会清除按钮）
+    win.on('show', () => {
+      if (!win.isDestroyed()) {
+        applyThumbarButtons(win);
+      }
+    });
   }
 
   applyThumbarButtons(win);
