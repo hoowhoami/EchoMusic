@@ -20,9 +20,6 @@ export const createHistoryManager = (state: PlayerState) => {
     if (String(target.id) !== activeTrackId) return;
     if (state.historyUploadCommitted && state.historyUploadTrackId === activeTrackId) return;
 
-    const mxid = resolveTrackMxid(target);
-    if (!mxid) return;
-
     const effectiveDuration = Number(target.duration || state.duration || 0);
     const effectiveProgress = Number(state.currentTime || 0);
     const requiredProgress =
@@ -34,6 +31,9 @@ export const createHistoryManager = (state: PlayerState) => {
         : HISTORY_UPLOAD_MIN_SECONDS;
 
     if (effectiveProgress < requiredProgress) return;
+
+    const mxid = resolveTrackMxid(target);
+    if (!mxid) return;
 
     try {
       state.historyUploadCommitted = true;
