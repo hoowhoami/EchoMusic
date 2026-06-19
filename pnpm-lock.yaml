@@ -66,6 +66,9 @@ importers:
         specifier: ^0.1.2
         version: 0.1.2(vue@3.5.38(typescript@5.9.3))
     devDependencies:
+      '@rolldown/binding-win32-x64-msvc':
+        specifier: 1.0.2
+        version: 1.0.2
       '@tailwindcss/vite':
         specifier: ^4.3.0
         version: 4.3.0(vite@8.0.14(@types/node@25.9.1)(esbuild@0.28.0)(jiti@2.7.0)(yaml@2.9.0))
@@ -600,7 +603,6 @@ packages:
   '@rolldown/binding-win32-x64-msvc@1.0.2':
     resolution: {integrity: sha512-v7qRI7gXLRINcOGXt+7YmAZ6iFuyZVMIoXAxhd8oP+DR9dLfL9GfNIx7PLMxmhZdvq8waUJBQiWN9EKNy+TRBQ==}
     engines: {node: ^20.19.0 || >=22.12.0}
-    cpu: [x64]
     os: [win32]
 
   '@rolldown/pluginutils@1.0.1':
@@ -3002,8 +3004,7 @@ snapshots:
   '@rolldown/binding-win32-arm64-msvc@1.0.2':
     optional: true
 
-  '@rolldown/binding-win32-x64-msvc@1.0.2':
-    optional: true
+  '@rolldown/binding-win32-x64-msvc@1.0.2': {}
 
   '@rolldown/pluginutils@1.0.1': {}
 
