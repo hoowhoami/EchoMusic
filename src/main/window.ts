@@ -74,11 +74,12 @@ export function showMainWindow() {
     win.restore();
   }
 
-  win.setSkipTaskbar(false);
-
+  // 先 show 再 setSkipTaskbar(false)，确保窗口可见后任务栏条目能正确创建
   if (!wasVisible) {
     win.show();
   }
+
+  win.setSkipTaskbar(false);
 
   if (!wasVisible || wasMinimized || !wasFocused) {
     win.moveTop();
