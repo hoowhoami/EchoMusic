@@ -13,6 +13,7 @@ import { createPlaybackManager } from './player/playback';
 import { createAudioManager } from './player/audio';
 import { createResolver } from './player/resolver';
 import { createHistoryManager } from './player/history';
+import { useHistoryStore } from './historyStore';
 import { createDeviceManager } from './player/device';
 import {
   createPlayerEventBus,
@@ -466,6 +467,10 @@ export const usePlayerStore = defineStore(
           settingStore.syncPreventSleep(true);
           engine.updateMediaPlaybackState(buildMediaState(state));
           emitPlayerEvent('play');
+          if (state.currentTrackSnapshot && !state.historyLocalRecorded) {
+            useHistoryStore().recordPlay(state.currentTrackSnapshot);
+            state.historyLocalRecorded = true;
+          }
         },
         pause: () => {
           state.isPlaying = false;
