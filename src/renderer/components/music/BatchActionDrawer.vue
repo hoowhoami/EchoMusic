@@ -23,6 +23,8 @@ interface Props {
   open?: boolean;
   songs: Song[];
   sourceId?: string | number;
+  /** 自定义批量删除回调。传入后优先使用，代替原有的歌单删除逻辑。 */
+  onBatchRemove?: (songs: Song[]) => void;
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -179,13 +181,21 @@ const addToPlaybackQueues = computed(() =>
 
 const canPlaySelected = computed(() => selectedSongs.value.some((song) => isPlayableSong(song)));
 const canAddSelected = computed(() => userStore.isLoggedIn && selectedSongs.value.length > 0);
-const canRemoveSelected = computed(
+/** 歌单专用删除：需要 sourceId + 登录 + 是自己创建的歌单 */
+const canRemoveFromPlaylist = computed(
   () =>
     Boolean(props.sourceId) &&
     userStore.isLoggedIn &&
     selectedSongs.value.length > 0 &&
     playlistStore.isOwnedPlaylist(props.sourceId, userStore.info?.userid),
 );
+
+/** 通用批量删除：有自定义回调时直接可用，否则回退到歌单删除逻辑 */
+const canBatchRemove = computed(() => {
+  if (selectedSongs.value.length === 0) return false;
+  if (props.onBatchRemove) return true;
+  return canRemoveFromPlaylist.value;
+});
 
 const handlePlaySelected = async () => {
   if (!canPlaySelected.value) return;
@@ -274,13 +284,23 @@ const handleSelectPlaylist = async (listId: string | number) => {
 };
 
 const handleRemoveFromPlaylist = () => {
-  if (!canRemoveSelected.value) return;
+  if (!canBatchRemove.value) return;
   if (isBatchBusy.value) return;
   showRemoveConfirm.value = true;
 };
 
+const confirmBatchRemove = async () => {
+  showRemoveConfirm.value = false;
+  if (props.onBatchRemove) {
+    props.onBatchRemove([...selectedSongs.value]);
+    open.value = false;
+    return;
+  }
+  await confirmRemoveFromPlaylist();
+};
+
 const confirmRemoveFromPlaylist = async () => {
-  if (!canRemoveSelected.value) return;
+  if (!canRemoveFromPlaylist.value) return;
   const total = selectedSongs.value.length;
   if (total === 0) return;
 
@@ -357,7 +377,7 @@ const confirmRemoveFromPlaylist = async () => {
           class="batch-action danger"
           variant="ghost"
           size="xs"
-          :disabled="!canRemoveSelected || isBatchBusy"
+          :disabled="!canBatchRemove || isBatchBusy"
           :loading="batchOp === 'remove'"
           @click="handleRemoveFromPlaylist"
         >
@@ -502,13 +522,13 @@ const confirmRemoveFromPlaylist = async () => {
   <Dialog
     v-model:open="showRemoveConfirm"
     title="从歌单移除"
-    :description="`确认从当前歌单移除选中的 ${selectedKeys.size} 首歌曲？此操作无法撤销。`"
+    :description="props.onBatchRemove ? `确认从播放历史移除选中的 ${selectedKeys.size} 首歌曲？此操作无法撤销。` : `确认从当前歌单移除选中的 ${selectedKeys.size} 首歌曲？此操作无法撤销。`"
     overlayClass="batch-playlist-overlay"
     contentClass="batch-playlist-dialog max-w-[420px]"
   >
     <template #footer>
       <Button variant="outline" size="sm" @click="showRemoveConfirm = false">取消</Button>
-      <Button variant="danger" size="sm" @click="confirmRemoveFromPlaylist">确认移除</Button>
+      <Button variant="danger" size="sm" @click="confirmBatchRemove">确认移除</Button>
     </template>
   </Dialog>
 </template>
