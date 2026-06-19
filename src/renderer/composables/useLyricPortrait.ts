@@ -1,5 +1,6 @@
 import { ref, computed, watch, type ComputedRef } from 'vue';
 import { getAudioImages, type AudioImageAuthor, type AudioImagePortrait } from '@/api/music';
+import { setWithLimit } from '@/utils/lruMap';
 
 // 写真图片获取、轮播、预解码逻辑
 
@@ -18,6 +19,8 @@ const singerPortraitPending = new Map<string, Promise<string[]>>();
 // 有写真结果时缓存 30 分钟，空结果缓存 5 分钟后重试
 const CACHE_TTL_HIT = 30 * 60 * 1000;
 const CACHE_TTL_EMPTY = 5 * 60 * 1000;
+// 写真缓存最大条目数，超出后裁剪最旧条目，避免过期但不再访问的条目长期驻留
+const SINGER_PORTRAIT_CACHE_MAX = 50;
 
 const normalizeRemoteImageUrl = (url: string | undefined): string => {
   return String(url ?? '')
@@ -183,7 +186,12 @@ export function useLyricPortrait(options: PortraitOptions) {
             }
             const portraitUrls = [...portraitSet].slice(0, 5);
             const ttl = portraitUrls.length > 0 ? CACHE_TTL_HIT : CACHE_TTL_EMPTY;
-            singerPortraitCache.set(lyricHash, { urls: portraitUrls, expiresAt: Date.now() + ttl });
+            setWithLimit(
+              singerPortraitCache,
+              lyricHash,
+              { urls: portraitUrls, expiresAt: Date.now() + ttl },
+              SINGER_PORTRAIT_CACHE_MAX,
+            );
             return portraitUrls;
           } finally {
             singerPortraitPending.delete(lyricHash);

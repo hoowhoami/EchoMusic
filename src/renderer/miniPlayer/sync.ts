@@ -7,6 +7,7 @@ import { useSettingStore } from '@/stores/setting';
 import { useThemeStore } from '@/stores/theme';
 import { useDesktopLyricStore } from '@/desktopLyric/store';
 import { executeShortcutCommand } from '@/utils/shortcuts';
+import { setWithLimit } from '@/utils/lruMap';
 import type { Song } from '@/models/song';
 import { resolveFavoriteSongKey } from '@/stores/playlist/helpers';
 import type {
@@ -21,6 +22,8 @@ const MINI_PLAYER_PROGRESS_SYNC_INTERVAL_MS = 120;
 // 歌词面板未展开时使用较低的同步频率，减少 IPC 开销
 const MINI_PLAYER_IDLE_SYNC_INTERVAL_MS = 500;
 const FAVORITES_QUEUE_ID = 'queue:favorites';
+// 收藏状态缓存上限，按歌曲键裁剪最旧条目，避免长会话无界增长
+const FAVORITE_STATE_CACHE_MAX = 500;
 
 const favoriteStateCache = new Map<string, boolean>();
 const favoriteStateOverrides = new Map<string, boolean>();
@@ -94,12 +97,12 @@ const resolveFavoriteState = (track: Song): boolean => {
   if (override !== undefined) return override;
 
   if (playlistStore.isFavoriteSong(track)) {
-    favoriteStateCache.set(cacheKey, true);
+    setWithLimit(favoriteStateCache, cacheKey, true, FAVORITE_STATE_CACHE_MAX);
     return true;
   }
 
   if (playlistStore.favoritesLoaded) {
-    favoriteStateCache.set(cacheKey, false);
+    setWithLimit(favoriteStateCache, cacheKey, false, FAVORITE_STATE_CACHE_MAX);
     return false;
   }
 
@@ -107,7 +110,7 @@ const resolveFavoriteState = (track: Song): boolean => {
   if (cached !== undefined) return cached;
 
   if (isCurrentTrackFromFavoritesQueue(track)) {
-    favoriteStateCache.set(cacheKey, true);
+    setWithLimit(favoriteStateCache, cacheKey, true, FAVORITE_STATE_CACHE_MAX);
     return true;
   }
 
@@ -222,16 +225,16 @@ const executeMiniPlayerCommand = (command: MiniPlayerCommand) => {
         .then((success) => {
           favoriteStateOverrides.delete(cacheKey);
           if (success !== false) {
-            favoriteStateCache.set(cacheKey, !wasFavorite);
+            setWithLimit(favoriteStateCache, cacheKey, !wasFavorite, FAVORITE_STATE_CACHE_MAX);
             syncPlaybackSnapshotNow();
             return;
           }
-          favoriteStateCache.set(cacheKey, wasFavorite);
+          setWithLimit(favoriteStateCache, cacheKey, wasFavorite, FAVORITE_STATE_CACHE_MAX);
           syncPlaybackSnapshotNow();
         })
         .catch(() => {
           favoriteStateOverrides.delete(cacheKey);
-          favoriteStateCache.set(cacheKey, wasFavorite);
+          setWithLimit(favoriteStateCache, cacheKey, wasFavorite, FAVORITE_STATE_CACHE_MAX);
           syncPlaybackSnapshotNow();
         });
       return;

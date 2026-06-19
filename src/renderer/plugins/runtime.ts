@@ -1263,27 +1263,34 @@ const createPluginProcessApi = (pluginId: string) => {
   };
 };
 
-const hostComponentLoaders = {
-  Avatar: () => import('@/components/ui/Avatar.vue').then((module) => module.default),
-  Badge: () => import('@/components/ui/Badge.vue').then((module) => module.default),
-  Button: () => import('@/components/ui/Button.vue').then((module) => module.default),
-  Cover: () => import('@/components/ui/Cover.vue').then((module) => module.default),
-  Dialog: () => import('@/components/ui/Dialog.vue').then((module) => module.default),
-  Drawer: () => import('@/components/ui/Drawer.vue').then((module) => module.default),
-  Input: () => import('@/components/ui/Input.vue').then((module) => module.default),
-  InputNumber: () => import('@/components/ui/InputNumber.vue').then((module) => module.default),
-  Popover: () => import('@/components/ui/Popover.vue').then((module) => module.default),
-  Scrollbar: () => import('@/components/ui/Scrollbar.vue').then((module) => module.default),
-  Select: () => import('@/components/ui/Select.vue').then((module) => module.default),
-  Slider: () => import('@/components/ui/Slider.vue').then((module) => module.default),
-  Switch: () => import('@/components/ui/Switch.vue').then((module) => module.default),
-  Tabs: () => import('@/components/ui/Tabs.vue').then((module) => module.default),
-  TabsContent: () => import('@/components/ui/TabsContent.vue').then((module) => module.default),
-  TabsList: () => import('@/components/ui/TabsList.vue').then((module) => module.default),
-  TabsTrigger: () => import('@/components/ui/TabsTrigger.vue').then((module) => module.default),
-  Textarea: () => import('@/components/ui/Textarea.vue').then((module) => module.default),
-  Tooltip: () => import('@/components/ui/Tooltip.vue').then((module) => module.default),
-};
+type HostComponentLoader = () => Promise<Component>;
+
+/**
+ * 自动收集宿主可复用组件，暴露给插件按需异步加载。
+ * 覆盖 ui（基础控件）、music（音乐业务组件）、player（播放器弹层）三类目录，
+ * 新增组件无需手动登记即可出现在 `ctx.ui.components` 中；app/ 目录为应用级业务弹窗，故不暴露。
+ * 文件名（去除 .vue 后缀）作为组件键，`{ import: 'default' }` 让 loader 直接返回组件实例，
+ * 保持 `() => Promise<Component>` 的调用签名不变。
+ */
+const HOST_COMPONENT_DIR_PRIORITY = ['/ui/', '/music/', '/player/'];
+
+const hostComponentLoaders = Object.entries(
+  import.meta.glob<Component>(
+    ['../components/ui/*.vue', '../components/music/*.vue', '../components/player/*.vue'],
+    { import: 'default' },
+  ),
+)
+  // 按目录优先级排序：同名时以更通用的 ui 控件为准（先到先得）
+  .sort(([leftPath], [rightPath]) => {
+    const weight = (path: string) =>
+      HOST_COMPONENT_DIR_PRIORITY.findIndex((segment) => path.includes(segment));
+    return weight(leftPath) - weight(rightPath) || leftPath.localeCompare(rightPath);
+  })
+  .reduce<Record<string, HostComponentLoader>>((loaders, [path, loader]) => {
+    const name = path.match(/\/([^/]+)\.vue$/)?.[1];
+    if (name && !(name in loaders)) loaders[name] = loader as HostComponentLoader;
+    return loaders;
+  }, {});
 
 const resolveMountTarget = (target: string | Element): Element | null => {
   if (typeof target !== 'string') return target;

@@ -7,6 +7,7 @@ import { useSettingStore } from '@/stores/setting';
 import { useThemeStore } from '@/stores/theme';
 import { useToastStore } from '@/stores/toast';
 import { executeShortcutCommand } from '@/utils/shortcuts';
+import { setWithLimit } from '@/utils/lruMap';
 import type { Song } from '@/models/song';
 import { resolveFavoriteSongKey } from '@/stores/playlist/helpers';
 import type {
@@ -20,6 +21,8 @@ import type { ShortcutCommand } from '../../shared/shortcuts';
 const NOW_PLAYING_PROGRESS_SYNC_INTERVAL_MS = 120;
 const LYRIC_OFFSET_STEP_MS = 500;
 const FAVORITES_QUEUE_ID = 'queue:favorites';
+// 收藏状态缓存上限，按歌曲键裁剪最旧条目，避免长会话无界增长
+const FAVORITE_STATE_CACHE_MAX = 500;
 
 const favoriteStateCache = new Map<string, boolean>();
 
@@ -104,12 +107,12 @@ const resolveFavoriteState = (track: Song): boolean => {
   const cacheKey = resolveFavoriteCacheKey(track, playerStore.currentTrackId);
 
   if (playlistStore.isFavoriteSong(track)) {
-    favoriteStateCache.set(cacheKey, true);
+    setWithLimit(favoriteStateCache, cacheKey, true, FAVORITE_STATE_CACHE_MAX);
     return true;
   }
 
   if (playlistStore.favoritesLoaded) {
-    favoriteStateCache.set(cacheKey, false);
+    setWithLimit(favoriteStateCache, cacheKey, false, FAVORITE_STATE_CACHE_MAX);
     return false;
   }
 
@@ -117,7 +120,7 @@ const resolveFavoriteState = (track: Song): boolean => {
   if (cached !== undefined) return cached;
 
   if (isCurrentTrackFromFavoritesQueue(track)) {
-    favoriteStateCache.set(cacheKey, true);
+    setWithLimit(favoriteStateCache, cacheKey, true, FAVORITE_STATE_CACHE_MAX);
     return true;
   }
 
