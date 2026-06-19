@@ -9,7 +9,6 @@ import { useSettingStore } from '@/stores/setting';
 import { useUserStore } from '@/stores/user';
 import { useThemeStore } from '@/stores/theme';
 import { getAccentGradientPair } from '@/utils/color';
-import { useHistoryStore, type LocalHistoryEntry } from '@/stores/historyStore';
 import SliverHeader from '@/components/music/DetailPageSliverHeader.vue';
 import ActionRow from '@/components/music/DetailPageActionRow.vue';
 import SongList from '@/components/music/SongList.vue';
@@ -31,7 +30,6 @@ const settingStore = useSettingStore();
 const userStore = useUserStore();
 const toastStore = useToastStore();
 const themeStore = useThemeStore();
-const historyStore = useHistoryStore();
 
 const loading = ref(false);
 const loadingMore = ref(false);
@@ -45,54 +43,37 @@ const sortField = ref<SortField | null>(null);
 const sortOrder = ref<SortOrder>(null);
 
 const isLoggedIn = computed(() => userStore.isLoggedIn);
-
-const mapLocalEntryToSong = (entry: LocalHistoryEntry): Song => ({
-  ...entry.song,
-  lastPlayedAt: entry.lastPlayedAt,
-  playCount: entry.playCount,
-  historyKey: entry.historyKey,
-});
-
-const resolveSongMxid = (song: Song): string =>
-  String(song.mixSongId || song.fileId || song.id || '0');
-
-const localSongs = computed(() =>
-  historyStore.entries.map(mapLocalEntryToSong),
-);
-
-const localCount = computed(() => localSongs.value.length);
-
-const songs = computed(() => {
-  const local = localSongs.value;
-  if (isLoggedIn.value && remoteSongs.value.length > 0) {
-    const localMxids = new Set(local.map(resolveSongMxid));
-    const remoteOnly = remoteSongs.value.filter(
-      (s) => !localMxids.has(resolveSongMxid(s)),
-    );
-    const merged = [...local, ...remoteOnly];
-    return merged.sort((a, b) => {
-      const aLocal = localMxids.has(resolveSongMxid(a));
-      const bLocal = localMxids.has(resolveSongMxid(b));
-      if (aLocal && !bLocal) return -1;
-      if (!aLocal && bLocal) return 1;
-      return (b.lastPlayedAt ?? 0) - (a.lastPlayedAt ?? 0);
-    });
-  }
-  return local;
-});
+const songs = computed(() => remoteSongs.value);
 const activeSongId = computed(() => playerStore.currentTrackId ?? undefined);
 const songCount = computed(() => songs.value.length);
 const displayedCountLabel = computed(() => `${songCount.value}`);
 
-/**
- * 分页加载时合并远端数据，按 historyKey 去重。
- * 仅用于 fetchRemoteHistory 的增量翻页，展示合并由 songs computed 完成。
- */
-const mergeRemotePage = (existing: Song[], incoming: Song[]): Song[] => {
-  if (existing.length === 0) return incoming;
-  const keys = new Set(existing.map((s) => s.historyKey ?? `${s.id}:${s.lastPlayedAt ?? ''}`));
-  const newItems = incoming.filter((s) => !keys.has(s.historyKey ?? `${s.id}:${s.lastPlayedAt ?? ''}`));
-  return [...existing, ...newItems];
+const mergeHistorySongs = (current: Song[], incoming: Song[]): Song[] => {
+  if (current.length === 0) return incoming.slice();
+
+  const merged = current.slice();
+  const keyIndexMap = new Map<string, number>();
+  merged.forEach((song, index) => {
+    keyIndexMap.set(song.historyKey ?? `${song.id}:${song.lastPlayedAt ?? ''}`, index);
+  });
+
+  incoming.forEach((song) => {
+    const key = song.historyKey ?? `${song.id}:${song.lastPlayedAt ?? ''}`;
+    const existingIndex = keyIndexMap.get(key);
+    if (existingIndex === undefined) {
+      keyIndexMap.set(key, merged.length);
+      merged.push(song);
+      return;
+    }
+
+    merged[existingIndex] = {
+      ...merged[existingIndex],
+      ...song,
+      playCount: Math.max(merged[existingIndex].playCount ?? 0, song.playCount ?? 0) || undefined,
+    };
+  });
+
+  return merged;
 };
 
 const historyCoverUrl = computed(() => {
@@ -182,8 +163,8 @@ const loadHistory = async (append = false) => {
       .map((item) => mapHistorySong(item));
 
     remoteSongs.value = append
-      ? mergeRemotePage(remoteSongs.value, mapped)
-      : mergeRemotePage([], mapped);
+      ? mergeHistorySongs(remoteSongs.value, mapped)
+      : mergeHistorySongs([], mapped);
     nextBp.value = typeof data?.bp === 'string' ? data.bp : '';
     hasMore.value = Boolean(data?.has_more ?? (mapped.length > 0 && nextBp.value));
   } catch {
@@ -229,7 +210,9 @@ const openBatchDrawer = () => {
 
 const handleLocate = () => songListRef.value?.scrollToActive?.();
 const handleLoadMore = () => {
-  void loadHistory(true);
+  if (isLoggedIn.value) {
+    void loadHistory(true);
+  }
 };
 
 watch(
@@ -254,7 +237,7 @@ onMounted(() => {
   <PageScrollContainer class="history-view-container">
     <div class="history-view bg-bg-main min-h-full">
       <div
-        v-if="!isLoggedIn && localCount === 0"
+        v-if="!isLoggedIn"
         class="history-empty flex flex-col items-center justify-center min-h-105 text-center px-6"
       >
         <div
@@ -266,12 +249,6 @@ onMounted(() => {
       </div>
 
       <template v-else>
-        <div
-          v-if="!isLoggedIn"
-          class="mx-6 mt-4 px-4 py-2.5 rounded-xl bg-primary/8 text-[12px] font-semibold text-primary/80 text-center"
-        >
-          未登录 · 以下为本地播放记录。登录后可同步云端历史。
-        </div>
         <SliverHeader
           typeLabel="HISTORY"
           title="最近播放"

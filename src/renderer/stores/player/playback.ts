@@ -7,7 +7,6 @@ import type { usePlaylistStore } from '../playlist';
 import type { useSettingStore } from '../setting';
 import { PERSONAL_FM_QUEUE_ID } from '../playlist';
 import { toRawSong, toRawSongList } from '../playlist/helpers';
-import { useHistoryStore } from '../historyStore';
 import {
   buildMediaMeta,
   buildMediaState,
@@ -123,7 +122,6 @@ export const createPlaybackManager = (
     },
   ) => {
     const requestSeq = ++state.playbackRequestSeq;
-    state.historyLocalRecorded = false;
     const sourceList = playlist
       ? toRawSongList(playlist)
       : (playlistStore.activeQueue?.songs ?? playlistStore.defaultList);
@@ -173,8 +171,7 @@ export const createPlaybackManager = (
       playlistStore.activeQueue?.id ??
       playlistStore.activeQueueId ??
       null;
-    const snapshot = toRawSong(track);
-    state.currentTrackSnapshot = snapshot;
+    state.currentTrackSnapshot = toRawSong(track);
     historyManager.resetHistoryUploadState(track);
     state.currentPlaylist = sourceList;
     playlistStore.updateQueueCurrentTrack(
@@ -260,12 +257,6 @@ export const createPlaybackManager = (
         }
       }
       if (requestSeq !== state.playbackRequestSeq) return;
-
-      // 在 engine.play() 成功后立即记录本地历史，使用闭包捕获的 snapshot
-      // 避免因 mpv end-file 事件竞态导致 state.currentTrackSnapshot 被下一首覆盖
-      useHistoryStore().recordPlay(snapshot);
-      state.historyLocalRecorded = true;
-
       state.isLoading = false;
       state.autoNextAttempts = 0;
       state.autoNextSourceTrackId = String(track.id);
