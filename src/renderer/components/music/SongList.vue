@@ -47,6 +47,10 @@ interface Props {
   showLyricColumn?: boolean;
   stickySelector?: string;
   disableInternalFilter?: boolean;
+  /** 正在退场的歌曲 historyKey（播放历史页面两阶段动画） */
+  promotedKey?: string | null;
+  /** 正在被删除的歌曲 historyKey 集合（播放历史页面删除退场动画） */
+  removingKeys?: Set<string>;
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -67,6 +71,8 @@ const props = withDefaults(defineProps<Props>(), {
   stickySelector: '',
   contextSongs: undefined,
   disableInternalFilter: false,
+  promotedKey: null,
+  removingKeys: undefined,
 });
 
 // const emit = defineEmits<{
@@ -698,6 +704,8 @@ defineExpose({ scrollToActive, filteredCount: computed(() => filteredSongsRef.va
           :class="{
             'is-active': entry.isActive,
             'is-context-target': contextMenuOpen && contextMenuTargetId === entry.idText,
+            'is-leaving': (promotedKey != null && entry.data.historyKey === promotedKey) ||
+              (entry.data.historyKey && removingKeys?.has(entry.data.historyKey)),
           }"
           :data-song-row="true"
           :data-song-id="entry.idText"
@@ -964,6 +972,17 @@ defineExpose({ scrollToActive, filteredCount: computed(() => filteredSongsRef.va
   color: var(--color-primary);
 }
 
+/* ─── 播放历史退场动画：缩小 + 降低透明度 ─── */
+.song-list-row.is-leaving {
+  animation: songRowExit 250ms cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  pointer-events: none;
+}
+
+@keyframes songRowExit {
+  0%   { opacity: 1;   transform: scale(1); }
+  100% { opacity: 0;   transform: scale(0.85); }
+}
+
 .will-change-transform {
   will-change: transform;
 }
@@ -1056,4 +1075,5 @@ defineExpose({ scrollToActive, filteredCount: computed(() => filteredSongsRef.va
   border-color: var(--color-primary);
   color: var(--color-primary);
 }
+
 </style>

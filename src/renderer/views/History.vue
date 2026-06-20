@@ -1,6 +1,7 @@
 <script setup lang="ts">
 defineOptions({ name: 'history' });
-import { computed, onMounted, ref, shallowRef, watch } from 'vue';
+import { computed, nextTick, onMounted, onUnmounted, ref, shallowRef, watch } from 'vue';
+import { useRoute } from 'vue-router';
 import { getUserHistory } from '@/api/user';
 import { usePlaylistStore } from '@/stores/playlist';
 import type { Song } from '@/models/song';
@@ -9,6 +10,11 @@ import { useSettingStore } from '@/stores/setting';
 import { useUserStore } from '@/stores/user';
 import { useThemeStore } from '@/stores/theme';
 import { getAccentGradientPair } from '@/utils/color';
+import { useHistoryStore, type LocalHistoryEntry } from '@/stores/historyStore';
+import {
+  registerSongContextMenuExtension,
+  type SongContextMenuExtension,
+} from '@/components/music/songContextMenuExtensions';
 import SliverHeader from '@/components/music/DetailPageSliverHeader.vue';
 import ActionRow from '@/components/music/DetailPageActionRow.vue';
 import SongList from '@/components/music/SongList.vue';
@@ -16,10 +22,11 @@ import SongListHeader from '@/components/music/SongListHeader.vue';
 import BatchActionDrawer from '@/components/music/BatchActionDrawer.vue';
 import { mapHistorySong } from '@/utils/mappers';
 import type { SortField, SortOrder } from '@/components/music/SongListHeader.vue';
-import { iconClock, iconCurrentLocation, iconList, iconPlay, iconSearch } from '@/icons';
+import { iconClock, iconCurrentLocation, iconList, iconPlay, iconSearch, iconTrash } from '@/icons';
 import { replaceQueueAndPlay } from '@/utils/playback';
 import Button from '@/components/ui/Button.vue';
 import Badge from '@/components/ui/Badge.vue';
+import Dialog from '@/components/ui/Dialog.vue';
 import { useToastStore } from '@/stores/toast';
 import PageScrollContainer from '@/components/ui/PageScrollContainer.vue';
 import { filterSongsByQuery, sortSongs } from '@/utils/songList';
@@ -30,6 +37,28 @@ const settingStore = useSettingStore();
 const userStore = useUserStore();
 const toastStore = useToastStore();
 const themeStore = useThemeStore();
+const historyStore = useHistoryStore();
+const route = useRoute();
+
+/** 动画状态：切歌置顶时触发列表滚动效果 */
+const animatingList = ref(false);
+let animTimer: ReturnType<typeof setTimeout> | null = null;
+
+watch(
+  () => historyStore.playRecordVersion,
+  () => {
+    if (animTimer !== null) clearTimeout(animTimer);
+    animatingList.value = false;
+    // 在下一帧启动动画，确保 CSS class 被移除后重新应用
+    requestAnimationFrame(() => {
+      animatingList.value = true;
+      animTimer = setTimeout(() => {
+        animatingList.value = false;
+        animTimer = null;
+      }, 300);
+    });
+  },
+);
 
 const loading = ref(false);
 const loadingMore = ref(false);
@@ -38,42 +67,90 @@ const nextBp = ref('');
 const remoteSongs = shallowRef<Song[]>([]);
 const searchQuery = ref('');
 const showBatchDrawer = ref(false);
+const showClearDialog = ref(false);
+const clearCountdown = ref(0);
+let clearCountdownTimer: ReturnType<typeof setInterval> | null = null;
+
+watch(showClearDialog, (open) => {
+  if (open) {
+    clearCountdown.value = 5;
+    clearCountdownTimer = setInterval(() => {
+      clearCountdown.value--;
+      if (clearCountdown.value <= 0) {
+        if (clearCountdownTimer) clearInterval(clearCountdownTimer);
+        clearCountdownTimer = null;
+      }
+    }, 1000);
+  } else {
+    if (clearCountdownTimer) {
+      clearInterval(clearCountdownTimer);
+      clearCountdownTimer = null;
+    }
+    clearCountdown.value = 0;
+  }
+});
+
+const confirmClear = () => {
+  if (clearCountdown.value > 0) return;
+  historyStore.clear();
+  resetRemoteState();
+  showClearDialog.value = false;
+  toastStore.success('播放历史已清空');
+};
 const songListRef = ref<{ scrollToActive?: () => void } | null>(null);
 const sortField = ref<SortField | null>(null);
 const sortOrder = ref<SortOrder>(null);
 
 const isLoggedIn = computed(() => userStore.isLoggedIn);
-const songs = computed(() => remoteSongs.value);
+
+const mapLocalEntryToSong = (entry: LocalHistoryEntry): Song => ({
+  ...entry.song,
+  lastPlayedAt: entry.lastPlayedAt,
+  playCount: entry.playCount,
+  historyKey: entry.historyKey,
+});
+
+const resolveSongMxid = (song: Song): string =>
+  String(song.mixSongId || song.fileId || song.id || '0');
+
+const localSongs = computed(() =>
+  historyStore.entries.map(mapLocalEntryToSong),
+);
+
+const localCount = computed(() => localSongs.value.length);
+
+// local 按 lastPlayedAt 降序（historyStore 维护），remote 服务端降序，无需重排
+const songs = computed(() => {
+  const local = localSongs.value;
+  if (isLoggedIn.value && remoteSongs.value.length > 0) {
+    const localMxids = new Set(local.map(resolveSongMxid));
+    const remoteOnly = remoteSongs.value.filter(
+      (s) => !localMxids.has(resolveSongMxid(s)),
+    );
+    return [...local, ...remoteOnly];
+  }
+  return local;
+});
 const activeSongId = computed(() => playerStore.currentTrackId ?? undefined);
+
+/** 切歌时自动滚动到高亮的当前播放歌曲 */
+watch(activeSongId, async () => {
+  if (!activeSongId.value) return;
+  await nextTick();
+  songListRef.value?.scrollToActive?.();
+});
 const songCount = computed(() => songs.value.length);
 const displayedCountLabel = computed(() => `${songCount.value}`);
 
-const mergeHistorySongs = (current: Song[], incoming: Song[]): Song[] => {
-  if (current.length === 0) return incoming.slice();
-
-  const merged = current.slice();
-  const keyIndexMap = new Map<string, number>();
-  merged.forEach((song, index) => {
-    keyIndexMap.set(song.historyKey ?? `${song.id}:${song.lastPlayedAt ?? ''}`, index);
-  });
-
-  incoming.forEach((song) => {
-    const key = song.historyKey ?? `${song.id}:${song.lastPlayedAt ?? ''}`;
-    const existingIndex = keyIndexMap.get(key);
-    if (existingIndex === undefined) {
-      keyIndexMap.set(key, merged.length);
-      merged.push(song);
-      return;
-    }
-
-    merged[existingIndex] = {
-      ...merged[existingIndex],
-      ...song,
-      playCount: Math.max(merged[existingIndex].playCount ?? 0, song.playCount ?? 0) || undefined,
-    };
-  });
-
-  return merged;
+/**
+ * 分页加载时合并远端数据，按 historyKey 去重。
+ * 仅用于 fetchRemoteHistory 的增量翻页，展示合并由 songs computed 完成。
+ */
+const mergeRemotePage = (existing: Song[], incoming: Song[]): Song[] => {
+  if (existing.length === 0) return incoming;
+  const keys = new Set(existing.map((s) => s.historyKey ?? `${s.id}:${s.lastPlayedAt ?? ''}`));
+  const newItems = incoming.filter((s) => !keys.has(s.historyKey ?? `${s.id}:${s.lastPlayedAt ?? ''}`));
+  return [...existing, ...newItems];
 };
 
 const historyCoverUrl = computed(() => {
@@ -163,8 +240,8 @@ const loadHistory = async (append = false) => {
       .map((item) => mapHistorySong(item));
 
     remoteSongs.value = append
-      ? mergeHistorySongs(remoteSongs.value, mapped)
-      : mergeHistorySongs([], mapped);
+      ? mergeRemotePage(remoteSongs.value, mapped)
+      : mergeRemotePage([], mapped);
     nextBp.value = typeof data?.bp === 'string' ? data.bp : '';
     hasMore.value = Boolean(data?.has_more ?? (mapped.length > 0 && nextBp.value));
   } catch {
@@ -208,11 +285,17 @@ const openBatchDrawer = () => {
   showBatchDrawer.value = true;
 };
 
+const handleBatchRemove = (selected: Song[]) => {
+  const keys = selected.map((s) => s.historyKey).filter(Boolean) as string[];
+  if (keys.length > 0) {
+    historyStore.removeEntries(keys);
+  }
+  toastStore.actionCompleted(`已从播放历史移除 ${selected.length} 首`);
+};
+
 const handleLocate = () => songListRef.value?.scrollToActive?.();
 const handleLoadMore = () => {
-  if (isLoggedIn.value) {
-    void loadHistory(true);
-  }
+  void loadHistory(true);
 };
 
 watch(
@@ -226,10 +309,27 @@ watch(
   },
 );
 
+let unregisterContextMenu: (() => void) | null = null;
+
 onMounted(() => {
   if (isLoggedIn.value) {
     void loadHistory();
   }
+  unregisterContextMenu = registerSongContextMenuExtension({
+    id: 'history-remove-song',
+    label: '从播放历史中移除',
+    order: 1000,
+    danger: true,
+    visible: () => route.name === 'history',
+    onSelect: (song: Song) => {
+      if (song.historyKey) historyStore.removeEntry(song.historyKey);
+    },
+  });
+});
+
+onUnmounted(() => {
+  unregisterContextMenu?.();
+  if (clearCountdownTimer) clearInterval(clearCountdownTimer);
 });
 </script>
 
@@ -237,7 +337,7 @@ onMounted(() => {
   <PageScrollContainer class="history-view-container">
     <div class="history-view bg-bg-main min-h-full">
       <div
-        v-if="!isLoggedIn"
+        v-if="!isLoggedIn && localCount === 0"
         class="history-empty flex flex-col items-center justify-center min-h-105 text-center px-6"
       >
         <div
@@ -249,6 +349,12 @@ onMounted(() => {
       </div>
 
       <template v-else>
+        <div
+          v-if="!isLoggedIn"
+          class="mx-6 mt-4 px-4 py-2.5 rounded-xl bg-primary/8 text-[12px] font-semibold text-primary/80 text-center"
+        >
+          未登录 · 以下为本地播放记录。登录后可同步云端历史。
+        </div>
         <SliverHeader
           typeLabel="HISTORY"
           title="最近播放"
@@ -297,7 +403,7 @@ onMounted(() => {
           </template>
         </SliverHeader>
 
-        <BatchActionDrawer v-model:open="showBatchDrawer" :songs="songs" source-id="history" />
+        <BatchActionDrawer v-model:open="showBatchDrawer" :songs="songs" source-id="history" :on-batch-remove="handleBatchRemove" />
 
         <div class="song-list-sticky sticky z-110 bg-bg-main" :style="{ top: '56px' }">
           <div class="px-6 border-b border-[var(--border-subtle)]">
@@ -328,6 +434,16 @@ onMounted(() => {
                   title="定位当前播放"
                 >
                   <Icon :icon="iconCurrentLocation" width="16" height="16" />
+                </Button>
+                <Button
+                  variant="unstyled"
+                  size="none"
+                  :disabled="songCount === 0"
+                  @click="showClearDialog = true"
+                  class="song-locate-btn p-2 rounded-lg text-text-main/40 hover:text-danger transition-colors"
+                  title="清空播放历史"
+                >
+                  <Icon :icon="iconTrash" width="16" height="16" />
                 </Button>
               </div>
             </div>
@@ -362,11 +478,17 @@ onMounted(() => {
               最近播放的歌曲会展示在这里
             </div>
           </div>
-          <SongList
+          <div
             v-else
+            class="history-song-list-wrapper"
+            :class="{ 'is-scrolling-in': animatingList }"
+          >
+          <SongList
             ref="songListRef"
             :songs="displayedSongs"
             :contextSongs="sortedSongs"
+            :promotedKey="historyStore.promotedKey"
+            :removingKeys="historyStore.removingKeys"
             itemKeyField="historyKey"
             :searchQuery="searchQuery"
             :disableInternalFilter="true"
@@ -384,6 +506,7 @@ onMounted(() => {
               settingStore.replacePlaylist ? handleSongDoubleTapPlay : undefined
             "
           />
+          </div>
           <div v-if="!loading && hasMore" class="flex justify-center pt-4">
             <Button
               variant="unstyled"
@@ -399,6 +522,23 @@ onMounted(() => {
       </template>
     </div>
   </PageScrollContainer>
+
+  <Dialog
+    v-model:open="showClearDialog"
+    title="清空播放历史"
+    description="确认清空全部本地播放历史？此操作不可撤销。"
+  >
+    <template #footer>
+      <div class="flex justify-end gap-3">
+        <Button variant="outline" size="sm" @click="showClearDialog = false">
+          取消
+        </Button>
+        <Button variant="primary" size="sm" :disabled="clearCountdown > 0" @click="confirmClear">
+          确认清空<span v-if="clearCountdown > 0"> ({{ clearCountdown }}s)</span>
+        </Button>
+      </div>
+    </template>
+  </Dialog>
 </template>
 
 <style scoped>
@@ -406,5 +546,25 @@ onMounted(() => {
 
 .history-empty {
   min-height: 320px;
+}
+
+/* 切歌置顶滚动动画 */
+.history-song-list-wrapper {
+  overflow: hidden;
+}
+
+.history-song-list-wrapper.is-scrolling-in {
+  animation: historyListScrollIn 280ms cubic-bezier(0.33, 0, 0.2, 1);
+}
+
+@keyframes historyListScrollIn {
+  from {
+    transform: translateY(-52px);
+    opacity: 0.92;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
 }
 </style>
