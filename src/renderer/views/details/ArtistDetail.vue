@@ -703,109 +703,112 @@ onUnmounted(() => {
 
         <Tabs v-model="activeTab" class="w-full">
           <div class="song-list-sticky sticky z-110 bg-bg-main" :style="{ top: `${tabsTop}px` }">
-            <div class="px-6 border-b border-[var(--border-subtle)]">
-              <div class="flex items-center justify-between h-14">
-                <TabsList class="bg-transparent border-none gap-8">
-                  <TabsTrigger value="songs">
-                    <span class="relative"
-                      >歌曲 <Badge v-if="loadedSongCount > 0" :count="loadedSongCount"
-                    /></span>
-                  </TabsTrigger>
-                  <TabsTrigger value="albums">
-                    <span class="relative"
-                      >专辑 <Badge v-if="albumFetched && albums.length > 0" :count="albums.length"
-                    /></span>
-                  </TabsTrigger>
-                  <TabsTrigger value="mvs">
-                    <span class="relative"
-                      >MV <Badge v-if="mvFetched && mvs.length > 0" :count="mvs.length"
-                    /></span>
-                  </TabsTrigger>
-                </TabsList>
+            <div class="px-6">
+              <div class="border-b border-[var(--border-subtle)]">
+                <div class="flex items-center justify-between h-14">
+                  <TabsList class="bg-transparent border-none gap-8">
+                    <TabsTrigger value="songs">
+                      <span class="relative"
+                        >歌曲 <Badge v-if="loadedSongCount > 0" :count="loadedSongCount"
+                      /></span>
+                    </TabsTrigger>
+                    <TabsTrigger value="albums">
+                      <span class="relative"
+                        >专辑
+                        <Badge v-if="albumFetched && albums.length > 0" :count="albums.length"
+                      /></span>
+                    </TabsTrigger>
+                    <TabsTrigger value="mvs">
+                      <span class="relative"
+                        >MV <Badge v-if="mvFetched && mvs.length > 0" :count="mvs.length"
+                      /></span>
+                    </TabsTrigger>
+                  </TabsList>
 
-                <div v-if="activeTab === 'songs'" class="flex items-center gap-2">
-                  <Popover
-                    v-model:open="songSortMenuOpen"
-                    trigger="click"
-                    side="bottom"
-                    align="end"
-                    :side-offset="6"
-                    :show-arrow="false"
-                    content-class="artist-sort-menu"
-                  >
-                    <template #trigger>
-                      <Button
-                        variant="unstyled"
-                        size="none"
-                        type="button"
-                        class="artist-sort-trigger"
-                        title="歌曲排序"
-                      >
-                        <Icon :icon="iconArrowsSort" width="15" height="15" />
-                        <span>{{ songSortLabel }}</span>
-                        <Icon class="artist-sort-trigger-arrow" :icon="iconChevronDown" />
-                      </Button>
-                    </template>
-                    <div class="artist-sort-menu-list">
-                      <div class="artist-sort-menu-title">歌曲排序</div>
-                      <button
-                        v-for="opt in songSortOptions"
-                        :key="opt.value"
-                        type="button"
-                        class="artist-sort-menu-item"
-                        :class="{ 'is-active': songSort === opt.value }"
-                        @click="switchSongSort(opt.value)"
-                      >
-                        <span>{{ opt.label }}</span>
-                        <Icon
-                          v-if="songSort === opt.value"
-                          :icon="iconCheckMark"
-                          width="13"
-                          height="13"
-                        />
-                      </button>
+                  <div v-if="activeTab === 'songs'" class="flex items-center gap-2">
+                    <Popover
+                      v-model:open="songSortMenuOpen"
+                      trigger="click"
+                      side="bottom"
+                      align="end"
+                      :side-offset="6"
+                      :show-arrow="false"
+                      content-class="artist-sort-menu"
+                    >
+                      <template #trigger>
+                        <Button
+                          variant="unstyled"
+                          size="none"
+                          type="button"
+                          class="artist-sort-trigger"
+                          title="歌曲排序"
+                        >
+                          <Icon :icon="iconArrowsSort" width="15" height="15" />
+                          <span>{{ songSortLabel }}</span>
+                          <Icon class="artist-sort-trigger-arrow" :icon="iconChevronDown" />
+                        </Button>
+                      </template>
+                      <div class="artist-sort-menu-list">
+                        <div class="artist-sort-menu-title">歌曲排序</div>
+                        <button
+                          v-for="opt in songSortOptions"
+                          :key="opt.value"
+                          type="button"
+                          class="artist-sort-menu-item"
+                          :class="{ 'is-active': songSort === opt.value }"
+                          @click="switchSongSort(opt.value)"
+                        >
+                          <span>{{ opt.label }}</span>
+                          <Icon
+                            v-if="songSort === opt.value"
+                            :icon="iconCheckMark"
+                            width="13"
+                            height="13"
+                          />
+                        </button>
+                      </div>
+                    </Popover>
+                    <div class="relative">
+                      <input
+                        v-model="searchQuery"
+                        type="text"
+                        placeholder="搜索歌曲..."
+                        class="song-search-input w-52 h-9 pl-8 pr-3 rounded-lg text-text-main placeholder:text-text-main/50 outline-none text-[12px] transition-all"
+                      />
+                      <Icon
+                        class="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-main/60 dark:text-text-main/60"
+                        :icon="iconSearch"
+                        width="14"
+                        height="14"
+                      />
                     </div>
-                  </Popover>
-                  <div class="relative">
-                    <input
-                      v-model="searchQuery"
-                      type="text"
-                      placeholder="搜索歌曲..."
-                      class="song-search-input w-52 h-9 pl-8 pr-3 rounded-lg text-text-main placeholder:text-text-main/50 outline-none text-[12px] transition-all"
-                    />
-                    <Icon
-                      class="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-main/60 dark:text-text-main/60"
-                      :icon="iconSearch"
-                      width="14"
-                      height="14"
-                    />
+                    <Button
+                      variant="unstyled"
+                      size="none"
+                      @click="handleLocate"
+                      class="song-locate-btn p-2 rounded-lg"
+                      title="定位当前播放"
+                    >
+                      <Icon :icon="iconCurrentLocation" width="18" height="18" />
+                    </Button>
                   </div>
-                  <Button
-                    variant="unstyled"
-                    size="none"
-                    @click="handleLocate"
-                    class="song-locate-btn p-2 rounded-lg"
-                    title="定位当前播放"
-                  >
-                    <Icon :icon="iconCurrentLocation" width="18" height="18" />
-                  </Button>
-                </div>
 
-                <!-- 专辑 tab 右侧搜索 -->
-                <div v-if="activeTab === 'albums'" class="flex items-center gap-2">
-                  <div class="relative">
-                    <input
-                      v-model="albumSearchQuery"
-                      type="text"
-                      placeholder="搜索专辑..."
-                      class="song-search-input w-52 h-9 pl-8 pr-3 rounded-lg text-text-main placeholder:text-text-main/50 outline-none text-[12px] transition-all"
-                    />
-                    <Icon
-                      class="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-main/60 dark:text-text-main/60"
-                      :icon="iconSearch"
-                      width="14"
-                      height="14"
-                    />
+                  <!-- 专辑 tab 右侧搜索 -->
+                  <div v-if="activeTab === 'albums'" class="flex items-center gap-2">
+                    <div class="relative">
+                      <input
+                        v-model="albumSearchQuery"
+                        type="text"
+                        placeholder="搜索专辑..."
+                        class="song-search-input w-52 h-9 pl-8 pr-3 rounded-lg text-text-main placeholder:text-text-main/50 outline-none text-[12px] transition-all"
+                      />
+                      <Icon
+                        class="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-main/60 dark:text-text-main/60"
+                        :icon="iconSearch"
+                        width="14"
+                        height="14"
+                      />
+                    </div>
                   </div>
                 </div>
               </div>

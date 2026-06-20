@@ -20,6 +20,9 @@ import { iconCloud, iconCurrentLocation, iconList, iconPlay, iconSearch } from '
 import { replaceQueueAndPlay } from '@/utils/playback';
 import Button from '@/components/ui/Button.vue';
 import Badge from '@/components/ui/Badge.vue';
+import Tabs from '@/components/ui/Tabs.vue';
+import TabsList from '@/components/ui/TabsList.vue';
+import TabsTrigger from '@/components/ui/TabsTrigger.vue';
 import PageScrollContainer from '@/components/ui/PageScrollContainer.vue';
 import { filterSongsByQuery, sortSongs } from '@/utils/songList';
 
@@ -360,96 +363,103 @@ onMounted(() => {
           </div>
         </div>
 
-        <div class="song-list-sticky sticky z-110 bg-bg-main" :style="{ top: '56px' }">
-          <div class="px-6 border-b border-[var(--border-subtle)]">
-            <div class="flex items-center justify-between h-14">
-              <div class="text-[14px] font-semibold text-text-main relative">
-                歌曲 <Badge :count="displaySongCount" />
-              </div>
-              <div class="flex items-center gap-2">
-                <div class="relative">
-                  <input
-                    v-model="searchQuery"
-                    type="text"
-                    placeholder="搜索歌曲..."
-                    class="song-search-input w-52 h-9 pl-8 pr-3 rounded-lg text-text-main placeholder:text-text-main/50 outline-none text-[12px] transition-all"
-                  />
-                  <Icon
-                    class="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-main/60"
-                    :icon="iconSearch"
-                    width="14"
-                    height="14"
-                  />
+        <Tabs model-value="songs" class="w-full">
+          <div class="song-list-sticky sticky z-110 bg-bg-main" :style="{ top: '56px' }">
+            <div class="px-6">
+              <div class="border-b border-[var(--border-subtle)]">
+                <div class="flex items-center justify-between h-14">
+                  <TabsList class="bg-transparent border-none gap-8">
+                    <TabsTrigger value="songs">
+                      <span class="relative">歌曲 <Badge :count="displaySongCount" /></span>
+                    </TabsTrigger>
+                  </TabsList>
+
+                  <div class="flex items-center gap-2">
+                    <div class="relative">
+                      <input
+                        v-model="searchQuery"
+                        type="text"
+                        placeholder="搜索歌曲..."
+                        class="song-search-input w-52 h-9 pl-8 pr-3 rounded-lg text-text-main placeholder:text-text-main/50 outline-none text-[12px] transition-all"
+                      />
+                      <Icon
+                        class="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-main/60"
+                        :icon="iconSearch"
+                        width="14"
+                        height="14"
+                      />
+                    </div>
+                    <Button
+                      variant="unstyled"
+                      size="none"
+                      @click="handleLocate"
+                      class="song-locate-btn p-2 rounded-lg"
+                      title="定位当前播放"
+                    >
+                      <Icon :icon="iconCurrentLocation" width="16" height="16" />
+                    </Button>
+                  </div>
                 </div>
-                <Button
-                  variant="unstyled"
-                  size="none"
-                  @click="handleLocate"
-                  class="song-locate-btn p-2 rounded-lg"
-                  title="定位当前播放"
-                >
-                  <Icon :icon="iconCurrentLocation" width="16" height="16" />
-                </Button>
+              </div>
+            </div>
+
+            <SongListHeader
+              :sortField="sortField"
+              :sortOrder="sortOrder"
+              :showCover="true"
+              paddingClass="px-6"
+              @sort="handleSort"
+            />
+          </div>
+
+          <div class="px-6 pb-12">
+            <div v-if="loading" class="flex items-center justify-center py-20">
+              <div
+                class="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin"
+              ></div>
+            </div>
+            <div
+              v-else-if="songs.length === 0"
+              class="cloud-empty flex flex-col items-center justify-center py-24 text-center"
+            >
+              <div
+                class="w-16 h-16 rounded-[18px] bg-primary/10 text-primary flex items-center justify-center mb-4"
+              >
+                <Icon :icon="iconCloud" width="28" height="28" />
+              </div>
+              <div class="text-[18px] font-semibold text-text-main">云盘暂无歌曲</div>
+              <div class="mt-2 text-[13px] font-medium text-text-secondary/75">
+                上传后会展示在这里
+              </div>
+            </div>
+            <SongList
+              v-else
+              ref="songListRef"
+              :songs="displayedSongs"
+              :contextSongs="sortedSongs"
+              :searchQuery="searchQuery"
+              :disableInternalFilter="true"
+              :activeId="activeSongId"
+              :showCover="true"
+              :queueOptions="{
+                queueId: 'queue:cloud',
+                title: '云盘音乐',
+                subtitle: '你的云盘收藏',
+                type: 'cloud',
+                dynamic: false,
+              }"
+              :enableDefaultDoubleTapPlay="true"
+              :onSongDoubleTapPlay="
+                settingStore.replacePlaylist ? handleSongDoubleTapPlay : undefined
+              "
+            />
+            <div v-if="!loading && isBackgroundResolving" class="flex justify-center pt-4">
+              <div class="text-[12px] font-semibold text-text-secondary/70">
+                正在后台补全剩余云盘歌曲...
               </div>
             </div>
           </div>
-
-          <SongListHeader
-            :sortField="sortField"
-            :sortOrder="sortOrder"
-            :showCover="true"
-            paddingClass="px-6"
-            @sort="handleSort"
-          />
-        </div>
-
-        <div class="px-6 pb-12">
-          <div v-if="loading" class="flex items-center justify-center py-20">
-            <div
-              class="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin"
-            ></div>
-          </div>
-          <div
-            v-else-if="songs.length === 0"
-            class="cloud-empty flex flex-col items-center justify-center py-24 text-center"
-          >
-            <div
-              class="w-16 h-16 rounded-[18px] bg-primary/10 text-primary flex items-center justify-center mb-4"
-            >
-              <Icon :icon="iconCloud" width="28" height="28" />
-            </div>
-            <div class="text-[18px] font-semibold text-text-main">云盘暂无歌曲</div>
-            <div class="mt-2 text-[13px] font-medium text-text-secondary/75">
-              上传后会展示在这里
-            </div>
-          </div>
-          <SongList
-            v-else
-            ref="songListRef"
-            :songs="displayedSongs"
-            :contextSongs="sortedSongs"
-            :searchQuery="searchQuery"
-            :disableInternalFilter="true"
-            :activeId="activeSongId"
-            :showCover="true"
-            :queueOptions="{
-              queueId: 'queue:cloud',
-              title: '云盘音乐',
-              subtitle: '你的云盘收藏',
-              type: 'cloud',
-              dynamic: false,
-            }"
-            :enableDefaultDoubleTapPlay="true"
-            :onSongDoubleTapPlay="
-              settingStore.replacePlaylist ? handleSongDoubleTapPlay : undefined
-            "
-          />
-          <div v-if="!loading && isBackgroundResolving" class="flex justify-center pt-4">
-            <div class="text-[12px] font-semibold text-text-secondary/70">
-              正在后台补全剩余云盘歌曲...
-            </div>
-          </div>
-        </div>
+        </Tabs>
       </template>
     </div>
   </PageScrollContainer>

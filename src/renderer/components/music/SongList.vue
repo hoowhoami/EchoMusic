@@ -704,7 +704,8 @@ defineExpose({ scrollToActive, filteredCount: computed(() => filteredSongsRef.va
           :class="{
             'is-active': entry.isActive,
             'is-context-target': contextMenuOpen && contextMenuTargetId === entry.idText,
-            'is-leaving': (promotedKey != null && entry.data.historyKey === promotedKey) ||
+            'is-leaving':
+              (promotedKey != null && entry.data.historyKey === promotedKey) ||
               (entry.data.historyKey && removingKeys?.has(entry.data.historyKey)),
           }"
           :data-song-row="true"
@@ -979,8 +980,14 @@ defineExpose({ scrollToActive, filteredCount: computed(() => filteredSongsRef.va
 }
 
 @keyframes songRowExit {
-  0%   { opacity: 1;   transform: scale(1); }
-  100% { opacity: 0;   transform: scale(0.85); }
+  0% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.85);
+  }
 }
 
 .will-change-transform {
@@ -1075,5 +1082,4 @@ defineExpose({ scrollToActive, filteredCount: computed(() => filteredSongsRef.va
   border-color: var(--color-primary);
   color: var(--color-primary);
 }
-
 </style>

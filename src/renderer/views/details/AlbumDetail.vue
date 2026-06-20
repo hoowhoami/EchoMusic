@@ -641,44 +641,46 @@ const activeSongId = computed(() => playerStore.currentTrackId ?? undefined);
         <!-- 2. Sticky Tabs + 表头 -->
         <Tabs :model-value="activeTab" class="w-full" @update:model-value="handleTabChange">
           <div class="song-list-sticky sticky z-110 bg-bg-main" :style="{ top: `${tabsTop}px` }">
-            <div class="px-6 border-b border-[var(--border-subtle)]">
-              <div class="flex items-center justify-between h-14">
-                <TabsList class="bg-transparent border-none gap-8">
-                  <TabsTrigger value="songs">
-                    <span class="relative">歌曲 <Badge :count="loadedSongCount" /></span>
-                  </TabsTrigger>
-                  <TabsTrigger value="comments">
-                    <span class="relative">
-                      评论
-                      <Badge v-if="commentTotal > 0" :count="commentTotal" class="-right-6" />
-                    </span>
-                  </TabsTrigger>
-                </TabsList>
+            <div class="px-6">
+              <div class="border-b border-[var(--border-subtle)]">
+                <div class="flex items-center justify-between h-14">
+                  <TabsList class="bg-transparent border-none gap-8">
+                    <TabsTrigger value="songs">
+                      <span class="relative">歌曲 <Badge :count="loadedSongCount" /></span>
+                    </TabsTrigger>
+                    <TabsTrigger value="comments">
+                      <span class="relative">
+                        评论
+                        <Badge v-if="commentTotal > 0" :count="commentTotal" class="-right-6" />
+                      </span>
+                    </TabsTrigger>
+                  </TabsList>
 
-                <div v-if="activeTab === 'songs'" class="flex items-center gap-2">
-                  <div class="relative">
-                    <input
-                      v-model="searchQuery"
-                      type="text"
-                      placeholder="搜索歌曲..."
-                      class="song-search-input w-52 h-9 pl-8 pr-3 rounded-lg text-text-main placeholder:text-text-main/50 outline-none text-[12px] transition-all"
-                    />
-                    <Icon
-                      class="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-main/60 dark:text-text-main/60"
-                      :icon="iconSearch"
-                      width="14"
-                      height="14"
-                    />
+                  <div v-if="activeTab === 'songs'" class="flex items-center gap-2">
+                    <div class="relative">
+                      <input
+                        v-model="searchQuery"
+                        type="text"
+                        placeholder="搜索歌曲..."
+                        class="song-search-input w-52 h-9 pl-8 pr-3 rounded-lg text-text-main placeholder:text-text-main/50 outline-none text-[12px] transition-all"
+                      />
+                      <Icon
+                        class="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-main/60 dark:text-text-main/60"
+                        :icon="iconSearch"
+                        width="14"
+                        height="14"
+                      />
+                    </div>
+                    <Button
+                      variant="unstyled"
+                      size="none"
+                      @click="handleLocate"
+                      class="song-locate-btn p-2 rounded-lg"
+                      title="定位当前播放"
+                    >
+                      <Icon :icon="iconCurrentLocation" width="18" height="18" />
+                    </Button>
                   </div>
-                  <Button
-                    variant="unstyled"
-                    size="none"
-                    @click="handleLocate"
-                    class="song-locate-btn p-2 rounded-lg"
-                    title="定位当前播放"
-                  >
-                    <Icon :icon="iconCurrentLocation" width="18" height="18" />
-                  </Button>
                 </div>
               </div>
             </div>

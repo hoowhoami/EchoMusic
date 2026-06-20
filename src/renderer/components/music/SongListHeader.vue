@@ -47,40 +47,19 @@ const gridTemplate = computed(() =>
 </script>
 
 <template>
-  <div
-    class="grid items-center h-11 text-[12px] text-text-main/80 font-bold border-b border-[var(--border-subtle)]"
-    :class="props.paddingClass"
-    :style="{ gridTemplateColumns: gridTemplate }"
-  >
+  <div :class="props.paddingClass">
     <div
-      v-if="showIndex"
-      class="pl-2 cursor-pointer hover:opacity-100 transition-opacity flex items-center gap-1"
-      @click="handleSort('index')"
-    >
-      <span>#</span>
-      <Icon
-        v-if="sortField === 'index'"
-        class="sort-icon"
-        :icon="
-          sortOrder === 'asc' ? iconSortUp : sortOrder === 'desc' ? iconSortDown : iconChevronUpDown
-        "
-      />
-      <Icon v-else class="sort-icon" :icon="iconChevronUpDown" />
-    </div>
-
-    <div
-      class="min-w-0 cursor-pointer hover:opacity-100 transition-opacity flex items-center"
-      @click="handleSort('title')"
+      class="grid items-center h-11 text-[12px] text-text-main/80 font-bold border-b border-[var(--border-subtle)]"
+      :style="{ gridTemplateColumns: gridTemplate }"
     >
       <div
-        v-if="props.showCover"
-        class="shrink-0"
-        :style="{ width: `${SONG_LIST_TITLE_OFFSET_WITH_COVER}px` }"
-      ></div>
-      <div class="min-w-0 flex items-center gap-1">
-        <span>歌曲</span>
+        v-if="showIndex"
+        class="pl-2 cursor-pointer hover:opacity-100 transition-opacity flex items-center gap-1"
+        @click="handleSort('index')"
+      >
+        <span>#</span>
         <Icon
-          v-if="sortField === 'title'"
+          v-if="sortField === 'index'"
           class="sort-icon"
           :icon="
             sortOrder === 'asc'
@@ -92,37 +71,71 @@ const gridTemplate = computed(() =>
         />
         <Icon v-else class="sort-icon" :icon="iconChevronUpDown" />
       </div>
-    </div>
 
-    <div
-      v-if="showAlbum"
-      class="min-w-0 hidden md:flex pr-3 cursor-pointer hover:opacity-100 transition-opacity items-center gap-1 whitespace-nowrap"
-      @click="handleSort('album')"
-    >
-      <span>{{ albumLabel }}</span>
-      <Icon
-        v-if="sortField === 'album'"
-        class="sort-icon"
-        :icon="
-          sortOrder === 'asc' ? iconSortUp : sortOrder === 'desc' ? iconSortDown : iconChevronUpDown
-        "
-      />
-      <Icon v-else class="sort-icon" :icon="iconChevronUpDown" />
-    </div>
+      <div
+        class="min-w-0 cursor-pointer hover:opacity-100 transition-opacity flex items-center"
+        @click="handleSort('title')"
+      >
+        <div
+          v-if="props.showCover"
+          class="shrink-0"
+          :style="{ width: `${SONG_LIST_TITLE_OFFSET_WITH_COVER}px` }"
+        ></div>
+        <div class="min-w-0 flex items-center gap-1">
+          <span>歌曲</span>
+          <Icon
+            v-if="sortField === 'title'"
+            class="sort-icon"
+            :icon="
+              sortOrder === 'asc'
+                ? iconSortUp
+                : sortOrder === 'desc'
+                  ? iconSortDown
+                  : iconChevronUpDown
+            "
+          />
+          <Icon v-else class="sort-icon" :icon="iconChevronUpDown" />
+        </div>
+      </div>
 
-    <div
-      class="pl-2 cursor-pointer hover:opacity-100 transition-opacity flex items-center justify-start gap-1 whitespace-nowrap"
-      @click="handleSort('duration')"
-    >
-      <span>时长</span>
-      <Icon
-        v-if="sortField === 'duration'"
-        class="sort-icon"
-        :icon="
-          sortOrder === 'asc' ? iconSortUp : sortOrder === 'desc' ? iconSortDown : iconChevronUpDown
-        "
-      />
-      <Icon v-else class="sort-icon" :icon="iconChevronUpDown" />
+      <div
+        v-if="showAlbum"
+        class="min-w-0 hidden md:flex pr-3 cursor-pointer hover:opacity-100 transition-opacity items-center gap-1 whitespace-nowrap"
+        @click="handleSort('album')"
+      >
+        <span>{{ albumLabel }}</span>
+        <Icon
+          v-if="sortField === 'album'"
+          class="sort-icon"
+          :icon="
+            sortOrder === 'asc'
+              ? iconSortUp
+              : sortOrder === 'desc'
+                ? iconSortDown
+                : iconChevronUpDown
+          "
+        />
+        <Icon v-else class="sort-icon" :icon="iconChevronUpDown" />
+      </div>
+
+      <div
+        class="pl-2 cursor-pointer hover:opacity-100 transition-opacity flex items-center justify-start gap-1 whitespace-nowrap"
+        @click="handleSort('duration')"
+      >
+        <span>时长</span>
+        <Icon
+          v-if="sortField === 'duration'"
+          class="sort-icon"
+          :icon="
+            sortOrder === 'asc'
+              ? iconSortUp
+              : sortOrder === 'desc'
+                ? iconSortDown
+                : iconChevronUpDown
+          "
+        />
+        <Icon v-else class="sort-icon" :icon="iconChevronUpDown" />
+      </div>
     </div>
   </div>
 </template>

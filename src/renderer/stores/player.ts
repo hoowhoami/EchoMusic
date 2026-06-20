@@ -467,10 +467,8 @@ export const usePlayerStore = defineStore(
           settingStore.syncPreventSleep(true);
           engine.updateMediaPlaybackState(buildMediaState(state));
           emitPlayerEvent('play');
-          if (state.currentTrackSnapshot && !state.historyLocalRecorded) {
-            useHistoryStore().recordPlay(state.currentTrackSnapshot);
-            state.historyLocalRecorded = true;
-          }
+          // 本地历史记录已在 playback.ts 的 playTrack 中调用
+          // 此处不再重复调用，避免同一首歌被记录两次
         },
         pause: () => {
           state.isPlaying = false;

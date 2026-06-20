@@ -25,11 +25,14 @@ interface Props {
   sourceId?: string | number;
   /** 自定义批量删除回调。传入后优先使用，代替原有的歌单删除逻辑。 */
   onBatchRemove?: (songs: Song[]) => void;
+  /** 删除操作的上下文，用于显示正确的确认对话框文案 */
+  removeContext?: 'playlist' | 'history';
 }
 
 const props = withDefaults(defineProps<Props>(), {
   open: false,
   sourceId: '',
+  removeContext: 'playlist',
 });
 
 const emit = defineEmits<{
@@ -522,7 +525,11 @@ const confirmRemoveFromPlaylist = async () => {
   <Dialog
     v-model:open="showRemoveConfirm"
     title="从歌单移除"
-    :description="props.onBatchRemove ? `确认从播放历史移除选中的 ${selectedKeys.size} 首歌曲？此操作无法撤销。` : `确认从当前歌单移除选中的 ${selectedKeys.size} 首歌曲？此操作无法撤销。`"
+    :description="
+      props.removeContext === 'history'
+        ? `确认从播放历史移除选中的 ${selectedKeys.size} 首歌曲？此操作无法撤销。`
+        : `确认从当前歌单移除选中的 ${selectedKeys.size} 首歌曲？此操作无法撤销。`
+    "
     overlayClass="batch-playlist-overlay"
     contentClass="batch-playlist-dialog max-w-[420px]"
   >
