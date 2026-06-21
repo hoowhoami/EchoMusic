@@ -18,15 +18,17 @@ type AudioSpectrumSubscription = {
 };
 
 const subscriptions = new Map<string, AudioSpectrumSubscription>();
-const destroyedWebContents = new WeakSet<WebContents>();
+let destroyedWebContents = new WeakSet<WebContents>();
 let registered = false;
 let capture: NativeSpectrumCapture | null | undefined;
 let currentOptionsKey = '';
 let pollingTimer: ReturnType<typeof setInterval> | null = null;
 let pollingIntervalMs = 0;
 let lastFrameTimestamp = 0;
+let lastSuccessfulPollTime = 0;
 
 const UNAVAILABLE_REASON = '系统音频频谱捕获不可用';
+const POLLING_TIMEOUT_MS = 30000;
 
 const getSubscriptionKey = (webContents: WebContents, subscriptionId: string) =>
   `${webContents.id}:${String(subscriptionId || '').trim()}`;
@@ -113,6 +115,7 @@ const stopPolling = () => {
   pollingTimer = null;
   pollingIntervalMs = 0;
   lastFrameTimestamp = 0;
+  lastSuccessfulPollTime = 0;
 };
 
 const removeDeadSubscriptions = () => {
@@ -147,6 +150,13 @@ const pollFrame = () => {
     return;
   }
 
+  // 超时检测：如果超过 30 秒没有成功轮询，自动停止
+  if (lastSuccessfulPollTime > 0 && Date.now() - lastSuccessfulPollTime > POLLING_TIMEOUT_MS) {
+    log.warn('[AudioSpectrum] Polling timeout, stopping capture');
+    stopCapture();
+    return;
+  }
+
   const nativeCapture = getCapture();
   if (!nativeCapture) {
     stopPolling();
@@ -157,6 +167,7 @@ const pollFrame = () => {
     const frame = nativeCapture.getSnapshot();
     if (!frame || frame.timestamp === lastFrameTimestamp) return;
     lastFrameTimestamp = frame.timestamp;
+    lastSuccessfulPollTime = Date.now();
     broadcastFrame(frame);
     if (removeDeadSubscriptions() && subscriptions.size === 0) stopCapture();
   } catch (err) {
@@ -170,6 +181,7 @@ const startPolling = (fps = 30) => {
   if (pollingTimer && pollingIntervalMs === intervalMs) return;
   stopPolling();
   pollingIntervalMs = intervalMs;
+  lastSuccessfulPollTime = Date.now();
   pollingTimer = setInterval(pollFrame, intervalMs);
   pollFrame();
 };
@@ -278,8 +290,16 @@ export const registerAudioSpectrumIpc = () => {
       if (!destroyedWebContents.has(webContents)) {
         destroyedWebContents.add(webContents);
         webContents.once('destroyed', () => {
+          // 立即停止轮询，避免在清理过程中继续产生新的帧数据
+          stopPolling();
+
           if (removeWebContentsSubscriptions(webContents)) {
             syncCaptureForSubscriptions();
+          }
+
+          // 如果没有订阅了，强制停止捕获
+          if (subscriptions.size === 0) {
+            stopCapture();
           }
         });
       }
@@ -303,10 +323,22 @@ export const registerAudioSpectrumIpc = () => {
 export const unregisterAudioSpectrumIpc = () => {
   if (!registered) return;
   registered = false;
+
+  // 强制停止所有轮询
+  stopPolling();
+
+  // 清理订阅
   subscriptions.clear();
+
+  // 停止捕获
   stopCapture();
+
+  // 清理 IPC handlers
   ipcMain.removeHandler('audio-spectrum:get-status');
   ipcMain.removeHandler('audio-spectrum:get-snapshot');
   ipcMain.removeHandler('audio-spectrum:subscribe');
   ipcMain.removeHandler('audio-spectrum:unsubscribe');
+
+  // 重置 WebContents 引用
+  destroyedWebContents = new WeakSet();
 };

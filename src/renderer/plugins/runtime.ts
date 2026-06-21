@@ -1361,7 +1361,27 @@ const createMountedComponentDisposer = (
   mountedApp.mount(container);
 
   return () => {
-    mountedApp.unmount();
+    // 先尝试清理 pinia store 订阅
+    try {
+      const storeNames = ['player', 'playlist', 'lyric', 'settings', 'theme'];
+      storeNames.forEach((storeName) => {
+        const store = (mountedApp.config.globalProperties as any)?.$pinia?._s?.get(storeName);
+        if (store?.$dispose) {
+          store.$dispose();
+        }
+      });
+    } catch (error) {
+      logger.warn('PluginRuntime', 'Store cleanup failed', { pluginId, error });
+    }
+
+    // 卸载应用
+    try {
+      mountedApp.unmount();
+    } catch (error) {
+      logger.warn('PluginRuntime', 'Component unmount failed', { pluginId, error });
+    }
+
+    // 清理 DOM
     if (position === 'replace') {
       const replaced = container.querySelector<HTMLElement>('[data-echo-plugin-replaced="true"]');
       if (replaced) {
@@ -2128,6 +2148,9 @@ const deactivatePlugin = async (pluginId: string) => {
   const active = activePlugins.get(pluginId);
   if (!active) return;
 
+  // 收集失败的清理函数，稍后重试
+  const failedDisposables: Array<() => void> = [];
+
   try {
     const deactivator = resolvePluginDeactivator(active);
     if (deactivator) await deactivator(active.context);
@@ -2136,22 +2159,58 @@ const deactivatePlugin = async (pluginId: string) => {
     void reportPluginRuntimeError(pluginId, error, '插件停用');
   }
 
-  for (const dispose of active.disposables.slice().reverse()) {
+  // 按照反向顺序清理 disposables
+  const disposables = active.disposables.slice().reverse();
+  for (const dispose of disposables) {
     try {
       dispose();
     } catch (error) {
       logger.warn('PluginRuntime', 'Plugin disposable failed', { pluginId, error });
+      failedDisposables.push(dispose);
       void reportPluginRuntimeError(pluginId, error, '插件资源清理');
     }
   }
+
+  // 重试失败的清理
+  if (failedDisposables.length > 0) {
+    logger.warn('PluginRuntime', 'Retrying failed disposables', {
+      pluginId,
+      count: failedDisposables.length,
+    });
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    for (const dispose of failedDisposables) {
+      try {
+        dispose();
+      } catch (error) {
+        logger.error('PluginRuntime', 'Plugin disposable retry failed', { pluginId, error });
+      }
+    }
+  }
+
+  // 关闭插件窗口
   await Promise.allSettled(
     active.descriptor.windows.map((item) =>
       window.electron.plugins?.windows.close(active.descriptor.id, item.id),
     ),
   );
-  active.blobUrls.forEach((url) => URL.revokeObjectURL(url));
+
+  // 先撤销 Blob URL，再删除引用
+  const urls = active.blobUrls.slice();
+  active.blobUrls.length = 0;
+  urls.forEach((url) => {
+    try {
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      logger.warn('PluginRuntime', 'Blob URL revoke failed', { pluginId, url, error });
+    }
+  });
+
   removePluginContributions(pluginId);
+
+  // 延迟删除，确保所有异步清理完成
+  await new Promise((resolve) => setTimeout(resolve, 50));
   activePlugins.delete(pluginId);
+
   await syncActivePluginSession();
 };
 

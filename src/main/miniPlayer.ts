@@ -497,7 +497,6 @@ export const ensureMiniPlayerWindow = async () => {
       webSecurity: false,
       allowRunningInsecureContent: true,
       backgroundThrottling: false,
-      zoomFactor: 1.0,
     },
   });
 
@@ -772,16 +771,41 @@ export const registerMiniPlayerHandlers = () => {
   });
 };
 
-// 系统主题变化时，根据应用设置决定是否更新 mini player 的深浅色状态
-nativeTheme.on('updated', () => {
-  if (!canUseWindow(miniPlayerWindow)) return;
-  if (!snapshot.appearance) return;
-  const theme = getMainAppSettings().theme;
-  const isDark = theme === 'dark' || (theme === 'system' && nativeTheme.shouldUseDarkColors);
-  if (snapshot.appearance.isDark === isDark) return;
-  snapshot = {
-    ...snapshot,
-    appearance: { ...snapshot.appearance, isDark },
+let miniPlayerNativeThemeHandler: (() => void) | null = null;
+
+const installMiniPlayerNativeThemeListener = () => {
+  if (miniPlayerNativeThemeHandler) return;
+  miniPlayerNativeThemeHandler = () => {
+    if (!canUseWindow(miniPlayerWindow)) return;
+    if (!snapshot.appearance) return;
+    const theme = getMainAppSettings().theme;
+    const isDark = theme === 'dark' || (theme === 'system' && nativeTheme.shouldUseDarkColors);
+    if (snapshot.appearance.isDark === isDark) return;
+    snapshot = {
+      ...snapshot,
+      appearance: { ...snapshot.appearance, isDark },
+    };
+    sendSnapshot();
   };
-  sendSnapshot();
-});
+  nativeTheme.on('updated', miniPlayerNativeThemeHandler);
+};
+
+const uninstallMiniPlayerNativeThemeListener = () => {
+  if (!miniPlayerNativeThemeHandler) return;
+  nativeTheme.removeListener('updated', miniPlayerNativeThemeHandler);
+  miniPlayerNativeThemeHandler = null;
+};
+
+export const cleanupMiniPlayer = () => {
+  uninstallMiniPlayerNativeThemeListener();
+  clearMiniPlayerPresentationTimers();
+  clearMiniPlayerDockRestoreTimers();
+  clearCollapseTimer();
+  if (persistBoundsTimer) {
+    clearTimeout(persistBoundsTimer);
+    persistBoundsTimer = null;
+  }
+};
+
+// 系统主题变化时，根据应用设置决定是否更新 mini player 的深浅色状态
+installMiniPlayerNativeThemeListener();

@@ -91,6 +91,6 @@ export const sqlitePersistPlugin = ({ store, options }: PiniaPluginContext) => {
         void window.electron?.storage?.setKv(storageKey, payload);
       }, 120);
     },
-    { detached: true },
+    { detached: false },
   );
 };

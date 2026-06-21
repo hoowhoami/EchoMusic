@@ -8,13 +8,15 @@ import { restoreActiveWindowMode } from './windowModeController';
 import { setActiveWindowMode } from './windowMode';
 import { createDockMenu, destroyTray, initTray, refreshTray } from './tray';
 import {
+  destroyDesktopLyricWindow,
   getDesktopLyricSnapshot,
-  getDesktopLyricWindow,
   toggleDesktopLyricLock,
+  cleanupDesktopLyric,
 } from './desktopLyric';
 import { initMpvPlayer, destroyMpvPlayer } from './mpv';
 import { registerAudioSpectrumIpc, unregisterAudioSpectrumIpc } from './audioSpectrum';
 import { initMediaControls, destroyMediaControls } from './mediaControls';
+import { cleanupMiniPlayer } from './miniPlayer';
 import { initPowerMonitor } from './powerMonitor';
 import { clearPluginRuntimeSession, setPluginSafeMode } from './plugins';
 import { applyDesktopAppIcon, applyTaskbarShortcutIcon, refreshAppIconConfig } from './appIcons';
@@ -203,15 +205,18 @@ if (!gotTheLock) {
       globalShortcut.unregisterAll();
       clearPluginRuntimeSession();
       unregisterAudioSpectrumIpc();
+      // 清理桌面歌词模块的事件监听器和定时器
+      cleanupDesktopLyric();
+      // 清理 mini 播放器模块的事件监听器和定时器
+      cleanupMiniPlayer();
       destroyMediaControls();
       destroyTaskbarThumbnail();
       destroyMpvPlayer();
-      // 销毁桌面歌词窗口
+      // 销毁桌面歌词窗口，确保清理所有定时器
       try {
-        const lyricWin = getDesktopLyricWindow();
-        if (lyricWin && !lyricWin.isDestroyed()) lyricWin.destroy();
-      } catch {
-        // 忽略
+        destroyDesktopLyricWindow();
+      } catch (err) {
+        log.warn('[Main] Failed to destroy desktop lyric window:', err);
       }
       // 销毁所有剩余窗口
       BrowserWindow.getAllWindows().forEach((w) => {

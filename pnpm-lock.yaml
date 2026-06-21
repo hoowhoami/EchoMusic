@@ -28,7 +28,7 @@ importers:
         version: 3.4.11
       electron-audio-loopback:
         specifier: ^1.0.6
-        version: 1.0.6(electron@42.4.1)
+        version: 1.0.6(electron@42.2.0)
       electron-log:
         specifier: ^5.4.4
         version: 5.4.4
@@ -100,8 +100,8 @@ importers:
         specifier: ^10.5.0
         version: 10.5.0(postcss@8.5.15)
       electron:
-        specifier: 42.4.1
-        version: 42.4.1
+        specifier: 42.2.0
+        version: 42.2.0
       electron-builder:
         specifier: 26.8.1
         version: 26.8.1(electron-builder-squirrel-windows@26.8.1)
@@ -170,10 +170,6 @@ packages:
   '@develar/schema-utils@2.6.5':
     resolution: {integrity: sha512-0cp4PsWQ/9avqTVMCtZ+GirikIA36ikvjtHweU4/j8yLtgObI0+JUPhYFScgwlteveGB1rt3Cm8UhN04XayDig==}
     engines: {node: '>= 8.9.0'}
-
-  '@electron-internal/extract-zip@1.0.2':
-    resolution: {integrity: sha512-VJuNETNPEhrmQEZezeTZO5TZMV+dobBRyJ7zHjGJWIhMS7m7W1UeClt69u4hkUxv9ZZVxuli/E9Yvc4gDNHGsg==}
-    engines: {node: '>=22.12.0'}
 
   '@electron/asar@3.4.1':
     resolution: {integrity: sha512-i4/rNPRS84t0vSRa2HorerGRXWyF4vThfHesw0dmcWHp+cspK743UanA0suA5Q5y8kzY2y6YKrvbIUn69BCAiA==}
@@ -780,6 +776,9 @@ packages:
   '@types/web-bluetooth@0.0.21':
     resolution: {integrity: sha512-oIQLCGWtcFZy2JW77j9k8nHzAOpqMHLQejDA48XXMWH6tjCQHz5RCFz1bzsmROyL6PUm+LLnUiI4BCn221inxA==}
 
+  '@types/yauzl@2.10.3':
+    resolution: {integrity: sha512-oJoftv0LSuaDZE3Le4DbKX+KS9G36NzOeSap90UIK0yMA/NhKJhqlSGtNDORNRaIbQfzjXDrQa0ytJ6mNRGz/Q==}
+
   '@typescript-eslint/eslint-plugin@8.57.2':
     resolution: {integrity: sha512-NZZgp0Fm2IkD+La5PR81sd+g+8oS6JwJje+aRWsDocxHkjyRw0J5L5ZTlN3LI1LlOcGL7ph3eaIUmTXMIjLk0w==}
     engines: {node: ^18.18.0 || ^20.9.0 || >=21.1.0}
@@ -1139,6 +1138,9 @@ packages:
     engines: {node: ^6 || ^7 || ^8 || ^9 || ^10 || ^11 || ^12 || >=13.7}
     hasBin: true
 
+  buffer-crc32@0.2.13:
+    resolution: {integrity: sha512-VO9Ht/+p3SN7SKWqcrgEzjGbRSJYTx+Q1pTQC0wrWqHx0vpJraQ6GtHx8tvcg1rlK1byhU5gccxgOgj7B0TDkQ==}
+
   buffer-from@1.1.2:
     resolution: {integrity: sha512-E+XQCRwSbaaiChtv6k6Dwgc+bx+Bs6vuKJHHl5kox/BaKbhiXzqQOwK4cO22yElGp2OCmjwVhT3HmxgyPGnJfQ==}
 
@@ -1356,8 +1358,8 @@ packages:
     resolution: {integrity: sha512-bO3y10YikuUwUuDUQRM4KfwNkKhnpVO7IPdbsrejwN9/AABJzzTQ4GeHwyzNSrVO+tEH3/Np255a3sVZpZDjvg==}
     engines: {node: '>=8.0.0'}
 
-  electron@42.4.1:
-    resolution: {integrity: sha512-8CYHJP5O4wFO+ycoJR98yy907MmPeo+vWXrzjxmGGgRNKqv8pOjjm+wphO0CCgQJnBU7+QUPSJS4QXhbKrO50w==}
+  electron@42.2.0:
+    resolution: {integrity: sha512-b2Tc7sIKiZEl0tBVwFM5GJ+FT5KYhmy9QJHjx8BGVZPVW2SctXWEvrE959ElB56qw7H05dBkhlikDA1DmpaAMw==}
     engines: {node: '>= 22.12.0'}
     hasBin: true
 
@@ -1500,6 +1502,11 @@ packages:
   exponential-backoff@3.1.3:
     resolution: {integrity: sha512-ZgEeZXj30q+I0EN+CbSSpIyPaJ5HVQD18Z1m+u1FXbAeT94mr1zw50q4q6jiiC447Nl/YTcIYSAftiGqetwXCA==}
 
+  extract-zip@2.0.1:
+    resolution: {integrity: sha512-GDhU9ntwuKyGXdZBUgTIe+vXnWj0fppUEtMDL0+idd5Sta8TGpHssn/eusA9mrPr9qNDym6SxAYZjNvCn/9RBg==}
+    engines: {node: '>= 10.17.0'}
+    hasBin: true
+
   extsprintf@1.4.1:
     resolution: {integrity: sha512-Wrk35e8ydCKDj/ArClo1VrPVmN8zph5V4AtHwIuHhvMXsKf73UT3BOD+azBIW+3wOJ4FhEH7zyaJCFvChjYvMA==}
     engines: {'0': node >=0.6.0}
@@ -1522,6 +1529,9 @@ packages:
 
   fastq@1.20.1:
     resolution: {integrity: sha512-GGToxJ/w1x32s/D2EKND7kTil4n8OVk/9mycTc4VDza13lOvpUZTGX3mFSCtV9ksdGBVzvsyAVLM6mHFThxXxw==}
+
+  fd-slicer@1.1.0:
+    resolution: {integrity: sha512-cE1qsB/VwyQozZ+q1dGxR8LBYNZeofhEdUNGSMbQD3Gw2lAzX9Zb3uIU6Ebc/Fmyjo9AWWfnn0AUCHqtevs/8g==}
 
   fdir@6.5.0:
     resolution: {integrity: sha512-tIbYtZbucOs0BRGqPJkshJUYdL+SDH7dVM8gjy+ERp3WAUjLEFJE+02kanyHtwjWOnwrKYBiwAmM0p4kLJAnXg==}
@@ -2084,6 +2094,9 @@ packages:
     resolution: {integrity: sha512-eRWB5LBz7PpDu4PUlwT0PhnQfTQJlDDdPa35urV4Osrm0t0AqQFGn+UIkU3klZvwJ8KPO3VbBFsXquA6p6kqZw==}
     engines: {node: '>=12', npm: '>=6'}
 
+  pend@1.2.0:
+    resolution: {integrity: sha512-F3asv42UuXchdzt+xXqfW1OGlVBe+mxa2mqI0pg5yAHZPvFmY3Y6drSf/GQ1A86WgWEN9Kzh/WrgKa6iGcHXLg==}
+
   perfect-debounce@1.0.0:
     resolution: {integrity: sha512-xCy9V055GLEqoFaHoC1SoLIaLmWctgCUaBaWxDZ7/Zx4CTyX7cJQLJOok/orfjZAh9kEYpjJa4d0KcJmCbctZA==}
 
@@ -2598,6 +2611,9 @@ packages:
     resolution: {integrity: sha512-7dSzzRQ++CKnNI/krKnYRV7JKKPUXMEh61soaHKg9mrWEhzFWhFnxPxGl+69cD1Ou63C13NUPCnmIcrvqCuM6w==}
     engines: {node: '>=12'}
 
+  yauzl@2.10.0:
+    resolution: {integrity: sha512-p4a9I6X6nu6IhoGmBqAcbJy1mlC4j27vEPZX9F4L4/vZT3Lyq1VkFHw/V/PUcB9Buo+DG3iHkT0x3Qya58zc3g==}
+
   yocto-queue@0.1.0:
     resolution: {integrity: sha512-rVksvsnNCdJ/ohGc6xgPwyN8eheCxsiLM8mxuE/t/mOVqJewPuO1miLpTHQiRgTKCLexL4MeAFVagts7HmNZ2Q==}
     engines: {node: '>=10'}
@@ -2628,8 +2644,6 @@ snapshots:
     dependencies:
       ajv: 6.14.0
       ajv-keywords: 3.5.2(ajv@6.14.0)
-
-  '@electron-internal/extract-zip@1.0.2': {}
 
   '@electron/asar@3.4.1':
     dependencies:
@@ -3160,6 +3174,11 @@ snapshots:
 
   '@types/web-bluetooth@0.0.21': {}
 
+  '@types/yauzl@2.10.3':
+    dependencies:
+      '@types/node': 25.9.1
+    optional: true
+
   '@typescript-eslint/eslint-plugin@8.57.2(@typescript-eslint/parser@8.57.2(eslint@10.4.1(jiti@2.7.0))(typescript@5.9.3))(eslint@10.4.1(jiti@2.7.0))(typescript@5.9.3)':
     dependencies:
       '@eslint-community/regexpp': 4.12.2
@@ -3659,6 +3678,8 @@ snapshots:
       node-releases: 2.0.46
       update-browserslist-db: 1.2.3(browserslist@4.28.2)
 
+  buffer-crc32@0.2.13: {}
+
   buffer-from@1.1.2: {}
 
   buffer@5.7.1:
@@ -3879,9 +3900,9 @@ snapshots:
     dependencies:
       jake: 10.9.4
 
-  electron-audio-loopback@1.0.6(electron@42.4.1):
+  electron-audio-loopback@1.0.6(electron@42.2.0):
     dependencies:
-      electron: 42.4.1
+      electron: 42.2.0
 
   electron-builder-squirrel-windows@26.8.1(dmg-builder@26.8.1):
     dependencies:
@@ -3950,11 +3971,11 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  electron@42.4.1:
+  electron@42.2.0:
     dependencies:
-      '@electron-internal/extract-zip': 1.0.2
       '@electron/get': 5.0.0
       '@types/node': 24.12.4
+      extract-zip: 2.0.1
     transitivePeerDependencies:
       - supports-color
 
@@ -4124,6 +4145,16 @@ snapshots:
 
   exponential-backoff@3.1.3: {}
 
+  extract-zip@2.0.1:
+    dependencies:
+      debug: 4.4.3
+      get-stream: 5.2.0
+      yauzl: 2.10.0
+    optionalDependencies:
+      '@types/yauzl': 2.10.3
+    transitivePeerDependencies:
+      - supports-color
+
   extsprintf@1.4.1:
     optional: true
 
@@ -4146,6 +4177,10 @@ snapshots:
   fastq@1.20.1:
     dependencies:
       reusify: 1.1.0
+
+  fd-slicer@1.1.0:
+    dependencies:
+      pend: 1.2.0
 
   fdir@6.5.0(picomatch@4.0.4):
     optionalDependencies:
@@ -4660,6 +4695,8 @@ snapshots:
 
   pe-library@0.4.1: {}
 
+  pend@1.2.0: {}
+
   perfect-debounce@1.0.0: {}
 
   picocolors@1.1.1: {}
@@ -5123,6 +5160,11 @@ snapshots:
       string-width: 4.2.3
       y18n: 5.0.8
       yargs-parser: 21.1.1
+
+  yauzl@2.10.0:
+    dependencies:
+      buffer-crc32: 0.2.13
+      fd-slicer: 1.1.0
 
   yocto-queue@0.1.0: {}
 

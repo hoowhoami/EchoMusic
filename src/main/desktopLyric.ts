@@ -222,19 +222,22 @@ const unbindMainWindowEvents = () => {
   if (!desktopLyricMainWindowBound) return;
   desktopLyricMainWindowBound = false;
   const lyricWin = getDesktopLyricWindow();
+  // 查找主窗口，忽略已销毁的窗口和桌面歌词窗口
   const mainWin = BrowserWindow.getAllWindows().find(
     (win) => win !== lyricWin && !win.isDestroyed(),
   );
+  // 即使找不到主窗口，也要清理定时器
+  if (desktopLyricForwardRestoreTimer) {
+    clearTimeout(desktopLyricForwardRestoreTimer);
+    desktopLyricForwardRestoreTimer = null;
+  }
+  // 如果主窗口已销毁，监听器会自动清理，无需手动移除
   if (!mainWin) return;
   mainWin.removeListener('move', onMainWindowMoveOrResize);
   mainWin.removeListener('resize', onMainWindowMoveOrResize);
   if (process.platform !== 'linux') {
     mainWin.removeListener('moved', onMainWindowMoveOrResizeEnd);
     mainWin.removeListener('resized', onMainWindowMoveOrResizeEnd);
-  }
-  if (desktopLyricForwardRestoreTimer) {
-    clearTimeout(desktopLyricForwardRestoreTimer);
-    desktopLyricForwardRestoreTimer = null;
   }
 };
 
@@ -597,11 +600,7 @@ export const registerDesktopLyricHandlers = () => {
   });
 };
 
-nativeTheme.on('updated', () => {
-  if (snapshot.settings.theme !== 'system') return;
-  sendSnapshot();
-});
-
+let desktopLyricNativeThemeHandler: (() => void) | null = null;
 let desktopLyricDisplayListenersInstalled = false;
 
 const installDesktopLyricDisplayListeners = () => {
@@ -612,10 +611,47 @@ const installDesktopLyricDisplayListeners = () => {
   screen.on('display-metrics-changed', scheduleDesktopLyricBoundsReconcile);
 };
 
+const uninstallDesktopLyricDisplayListeners = () => {
+  if (!desktopLyricDisplayListenersInstalled) return;
+  desktopLyricDisplayListenersInstalled = false;
+  screen.removeListener('display-added', scheduleDesktopLyricBoundsReconcile);
+  screen.removeListener('display-removed', scheduleDesktopLyricBoundsReconcile);
+  screen.removeListener('display-metrics-changed', scheduleDesktopLyricBoundsReconcile);
+};
+
+const installDesktopLyricNativeThemeListener = () => {
+  if (desktopLyricNativeThemeHandler) return;
+  desktopLyricNativeThemeHandler = () => {
+    if (snapshot.settings.theme !== 'system') return;
+    sendSnapshot();
+  };
+  nativeTheme.on('updated', desktopLyricNativeThemeHandler);
+};
+
+const uninstallDesktopLyricNativeThemeListener = () => {
+  if (!desktopLyricNativeThemeHandler) return;
+  nativeTheme.removeListener('updated', desktopLyricNativeThemeHandler);
+  desktopLyricNativeThemeHandler = null;
+};
+
+export const cleanupDesktopLyric = () => {
+  uninstallDesktopLyricDisplayListeners();
+  uninstallDesktopLyricNativeThemeListener();
+  clearDesktopLyricDisplayMetricsTimer();
+  clearDesktopLyricLockPhaseTimer();
+  if (desktopLyricForwardRestoreTimer) {
+    clearTimeout(desktopLyricForwardRestoreTimer);
+    desktopLyricForwardRestoreTimer = null;
+  }
+  unbindMainWindowEvents();
+};
+
 if (app.isReady()) {
   installDesktopLyricDisplayListeners();
+  installDesktopLyricNativeThemeListener();
 } else {
   void app.whenReady().then(() => {
     installDesktopLyricDisplayListeners();
+    installDesktopLyricNativeThemeListener();
   });
 }

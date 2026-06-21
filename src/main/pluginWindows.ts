@@ -240,7 +240,6 @@ const createPluginWindow = async (
       webSecurity: false,
       allowRunningInsecureContent: true,
       backgroundThrottling: false,
-      zoomFactor: 1.0,
       partition: `persist:plugin-window-${descriptor.pluginId}-${descriptor.id}`,
     },
   });
@@ -268,6 +267,8 @@ const createPluginWindow = async (
     const key = getWindowKey(descriptor.pluginId, descriptor.id);
     if (pluginWindows.get(key) === record) pluginWindows.delete(key);
     if (pluginWindows.size === 0) clearDockRestoreTimers();
+    // 显式移除所有事件监听器，防止闭包持有 record 引用
+    win.removeAllListeners();
   });
   win.webContents.on('render-process-gone', (_event, details) => {
     if (!isPluginRendererGoneFailureReason(details.reason)) return;

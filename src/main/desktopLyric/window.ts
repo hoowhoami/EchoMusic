@@ -162,7 +162,6 @@ export const createDesktopLyricWindow = () => {
       webSecurity: false,
       allowRunningInsecureContent: true,
       backgroundThrottling: false,
-      zoomFactor: 1.0,
       partition: 'persist:desktop-lyric',
     },
   });

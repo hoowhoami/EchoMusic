@@ -42,10 +42,20 @@ struct CaptureSession {
 
 impl CaptureSession {
     fn stop(mut self) {
+        // 设置停止标志
         self.stop_flag.store(true, Ordering::Release);
+
+        // 等待分析线程结束
         if let Some(handle) = self.analyzer_thread.take() {
             let _ = handle.join();
         }
+
+        // 显式清理最后的帧数据，释放内存
+        if let Ok(mut guard) = self.latest_frame.lock() {
+            *guard = None;
+        }
+
+        // 清理后端资源
         drop(self.backend);
     }
 
@@ -112,8 +122,11 @@ pub fn stop() -> napi::Result<SpectrumStatus> {
         if let Some(session) = state.session.take() {
             session.stop();
         }
+
+        // 重置状态，避免残留引用
         let status = stopped_status();
         state.last_status = status.clone();
+
         Ok(status)
     })
 }

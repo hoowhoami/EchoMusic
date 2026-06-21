@@ -13,7 +13,6 @@ import { createPlaybackManager } from './player/playback';
 import { createAudioManager } from './player/audio';
 import { createResolver } from './player/resolver';
 import { createHistoryManager } from './player/history';
-import { useHistoryStore } from './historyStore';
 import { createDeviceManager } from './player/device';
 import {
   createPlayerEventBus,
@@ -240,7 +239,8 @@ export const usePlayerStore = defineStore(
         impulseResponseCount: settingStore.impulseResponseFiles.length,
         playbackStallTimeout: settingStore.playbackStallTimeout,
       };
-      settingStore.$subscribe(() => {
+      // 保存取消函数，以便在需要时清理订阅
+      const unsubscribeSettings = settingStore.$subscribe(() => {
         const shouldRefresh =
           (state.currentAudioQualityOverride === null &&
             settingStore.defaultAudioQuality !== snapshot.defaultAudioQuality) ||
@@ -288,6 +288,10 @@ export const usePlayerStore = defineStore(
         if (shouldUpdateStallTimeout)
           engine.setStallTimeout(settingStore.playbackStallTimeout ?? 8);
       });
+      // 返回清理函数
+      return () => {
+        unsubscribeSettings();
+      };
     };
 
     const disableActiveImpulseResponse = (failedPath?: string) => {
