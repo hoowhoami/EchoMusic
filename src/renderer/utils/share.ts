@@ -1,4 +1,6 @@
 import type { Router } from 'vue-router';
+import type { PlaylistMeta } from '@/models/playlist';
+import type { Song } from '@/models/song';
 import { useUserStore } from '@/stores/user';
 import { buildShareText, type ShareResourceType, type ShareTarget } from '../../shared/share';
 
@@ -37,19 +39,73 @@ const getCurrentSharerName = () => {
   );
 };
 
+const normalizeShareQuery = (query: Record<string, unknown> | undefined) => {
+  const result: Record<string, string> = {};
+  if (!query) return result;
+  Object.entries(query).forEach(([key, value]) => {
+    const name = cleanId(key);
+    const text = cleanId(value);
+    if (name && text) result[name] = text;
+  });
+  return result;
+};
+
 export const createShareTarget = (
   type: ShareResourceType,
   id: string | number | null | undefined,
   title?: string,
+  query?: Record<string, unknown>,
 ): ShareTarget | null => {
   const resolvedId = cleanId(id);
   if (!resolvedId) return null;
+  const resolvedQuery = normalizeShareQuery(query);
   return {
     type,
     id: resolvedId,
     ...(title?.trim() ? { title: title.trim() } : {}),
+    ...(Object.keys(resolvedQuery).length > 0 ? { query: resolvedQuery } : {}),
   };
 };
+
+export const createSongShareTarget = (song: Song): ShareTarget | null => {
+  const id = song.mixSongId || song.albumAudioId || song.id;
+  const title = song.title || song.name || '';
+  const album = song.album || song.albumName || '';
+  const cover = song.coverUrl || song.cover || '';
+  const mixSongId = song.mixSongId || song.albumAudioId || song.id;
+  return createShareTarget('song', id, title, {
+    mainTab: 'detail',
+    type: 'music',
+    title,
+    artist: song.artist,
+    artistId: song.artists?.[0]?.id ?? song.singers?.[0]?.id,
+    album,
+    cover,
+    albumId: song.albumId,
+    hash: song.hash,
+    mixSongId,
+  });
+};
+
+export const resolvePlaylistShareId = (
+  meta: PlaylistMeta,
+  fallbackId?: string | number | null,
+): string | number | null => {
+  if (meta.globalCollectionId?.startsWith('collection_')) return meta.globalCollectionId;
+  if (meta.listCreateGid?.startsWith('collection_')) return meta.listCreateGid;
+  if (meta.listCreateUserid && meta.listCreateListid) {
+    return `collection_3_${meta.listCreateUserid}_${meta.listCreateListid}_0`;
+  }
+  if (meta.globalCollectionId) return meta.globalCollectionId;
+  if (meta.listCreateGid) return meta.listCreateGid;
+  return meta.listid ?? meta.id ?? fallbackId ?? null;
+};
+
+export const createPlaylistShareTarget = (
+  meta: PlaylistMeta,
+  fallbackId?: string | number | null,
+): ShareTarget | null =>
+  createShareTarget('playlist', resolvePlaylistShareId(meta, fallbackId), meta.name);
 
 export const copyShareTarget = async (target: ShareTarget): Promise<boolean> => {
   const text = buildShareText({
@@ -85,6 +141,7 @@ export const navigateToShareTarget = (router: Router, target: ShareTarget) => {
         mainTab: 'detail',
         type: 'music',
         mixSongId: id,
+        ...target.query,
       },
     });
     return true;
@@ -99,6 +156,7 @@ export const navigateToShareTarget = (router: Router, target: ShareTarget) => {
   void router.push({
     name: routeNames[target.type],
     params: { id },
+    ...(target.query ? { query: target.query } : {}),
   });
   return true;
 };

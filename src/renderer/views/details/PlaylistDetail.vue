@@ -43,7 +43,7 @@ import {
   iconShare,
 } from '@/icons';
 import { replaceQueueAndPlay } from '@/utils/playback';
-import { copyShareTarget, createShareTarget } from '@/utils/share';
+import { copyShareTarget, createPlaylistShareTarget } from '@/utils/share';
 import { useToastStore } from '@/stores/toast';
 import { toRecord } from '../../../shared/object';
 import { PagedSongLoader } from '@/utils/PagedSongLoader';
@@ -454,11 +454,7 @@ watch(
 const handleSharePlaylist = async () => {
   const meta = playlist.value;
   if (!meta) return;
-  const target = createShareTarget(
-    'playlist',
-    meta.listid ?? meta.id ?? getPlaylistId(),
-    meta.name,
-  );
+  const target = createPlaylistShareTarget(meta, getPlaylistId());
   if (!target) return;
   try {
     await copyShareTarget(target);

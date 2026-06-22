@@ -33,7 +33,7 @@ import { usePlayerStore } from '@/stores/player';
 import { useUserStore } from '@/stores/user';
 import { queueAndPlaySong } from '@/utils/playback';
 import { isPlayableSong } from '@/utils/song';
-import { copyShareTarget, createShareTarget } from '@/utils/share';
+import { copyShareTarget, createSongShareTarget } from '@/utils/share';
 import { iconList, iconPlay, iconShare } from '@/icons';
 
 interface CommentPayload {
@@ -513,7 +513,12 @@ const handleSelectPlaylist = async (listId: string | number) => {
 };
 
 const handleShareSong = async () => {
-  const target = createShareTarget('song', songMixSongId.value || id, songTitle.value);
+  const song = actionSong.value;
+  if (!song) {
+    toastStore.unavailable('当前歌曲');
+    return;
+  }
+  const target = createSongShareTarget(song);
   if (!target) return;
   try {
     await copyShareTarget(target);

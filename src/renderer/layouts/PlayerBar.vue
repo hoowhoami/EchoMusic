@@ -48,6 +48,7 @@ const {
   toggleDesktopLyric,
   resolveNumericId,
   goToComments,
+  hasCurrentTrackMv,
   goToMv,
   queueCount,
   isQueueDrawerOpen,
@@ -335,7 +336,7 @@ onUnmounted(() => {
             </Button>
 
             <Button
-              v-if="currentTrack?.mvHash"
+              v-if="hasCurrentTrackMv"
               variant="unstyled"
               size="none"
               @click="goToMv"

@@ -74,6 +74,12 @@ const songDuration = computed(() => songPayload.value.duration ?? 0);
 const songHash = computed(() => songPayload.value.hash ?? '');
 const songMixSongId = computed(() => songPayload.value.mixSongId ?? songPayload.value.id ?? '');
 const songMvHash = computed(() => songPayload.value.mvHash ?? '');
+const songAlbumAudioId = computed(
+  () =>
+    resolveNumericId(songPayload.value.albumAudioId) ??
+    resolveNumericId(songMixSongId.value) ??
+    resolveNumericId(songId.value),
+);
 const songIsOriginal = computed(() => Boolean(songPayload.value.isOriginal));
 
 const derivedState = computed(() => getSongDerivedState(songPayload.value));
@@ -180,19 +186,18 @@ const goToSongDetail = () => {
   });
 };
 
-const hasMv = computed(() => Boolean(String(songMvHash.value ?? '').trim()));
+const hasMv = computed(() => Boolean(songAlbumAudioId.value));
 
 const goToMvDetail = () => {
   const mvHash = String(songMvHash.value ?? '').trim();
-  if (!mvHash) return;
-  const albumAudioId =
-    resolveNumericId(songMixSongId.value) ?? resolveNumericId(songId.value) ?? songId.value;
+  const albumAudioId = songAlbumAudioId.value;
+  if (!albumAudioId) return;
   router.push({
     name: 'mv-detail',
-    params: { id: mvHash },
+    params: { id: String(albumAudioId) },
     query: {
       hash: mvHash,
-      albumAudioId: albumAudioId,
+      albumAudioId,
       title: songTitle.value,
       artist: songArtistText.value,
       cover: songCoverUrl.value,

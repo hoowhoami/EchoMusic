@@ -2,12 +2,14 @@ export const SHARE_SCHEME = 'echomusic';
 export const SHARE_WEB_BASE_URL = 'https://hoowhoami.github.io/EchoMusic/share/';
 
 export type ShareResourceType = 'song' | 'playlist' | 'artist' | 'album';
+export type ShareTargetQuery = Record<string, string>;
 
 export interface ShareTarget {
   type: ShareResourceType;
   id: string;
   title?: string;
   sharer?: string;
+  query?: ShareTargetQuery;
 }
 
 const SHARE_TYPE_LABELS: Record<ShareResourceType, string> = {
@@ -33,6 +35,32 @@ const stripTrailingUrlPunctuation = (value: string) =>
 
 export const getShareResourceLabel = (type: ShareResourceType) => SHARE_TYPE_LABELS[type];
 
+const normalizeShareQuery = (query: Record<string, unknown> | undefined): ShareTargetQuery => {
+  const result: ShareTargetQuery = {};
+  if (!query) return result;
+  Object.entries(query).forEach(([key, value]) => {
+    const name = readText(key);
+    const text = readText(value);
+    if (name && text) result[name] = text;
+  });
+  return result;
+};
+
+const readSearchParams = (searchParams: URLSearchParams, excludedKeys: string[] = []) => {
+  const excluded = new Set(excludedKeys);
+  const query: ShareTargetQuery = {};
+  searchParams.forEach((value, key) => {
+    if (excluded.has(key)) return;
+    const name = readText(key);
+    const text = readText(value);
+    if (name && text) query[name] = text;
+  });
+  return query;
+};
+
+const withQuery = (target: ShareTarget, query: ShareTargetQuery): ShareTarget =>
+  Object.keys(query).length > 0 ? { ...target, query } : target;
+
 const parseCustomShareUrl = (value: string): ShareTarget | null => {
   const text = stripTrailingUrlPunctuation(value);
   let url: URL;
@@ -53,17 +81,21 @@ const parseCustomShareUrl = (value: string): ShareTarget | null => {
   const id = readText(segments.shift());
   if (!id) return null;
 
-  return { type: typeText, id };
+  return withQuery({ type: typeText, id }, readSearchParams(url.searchParams));
 };
 
-const parseShareTargetParts = (type: string | null, id: string | null): ShareTarget | null => {
+const parseShareTargetParts = (
+  type: string | null,
+  id: string | null,
+  query: ShareTargetQuery = {},
+): ShareTarget | null => {
   const typeText = readText(type);
   if (!isShareResourceType(typeText)) return null;
 
   const targetId = readText(id);
   if (!targetId) return null;
 
-  return { type: typeText, id: targetId };
+  return withQuery({ type: typeText, id: targetId }, query);
 };
 
 export const buildShareUrl = (target: ShareTarget): string => {
@@ -72,7 +104,12 @@ export const buildShareUrl = (target: ShareTarget): string => {
     throw new Error('Invalid share target');
   }
 
-  return `${SHARE_SCHEME}://${target.type}/${encodeURIComponent(id)}`;
+  const url = new URL(`${SHARE_SCHEME}://${target.type}/${encodeURIComponent(id)}`);
+  const query = normalizeShareQuery(target.query);
+  Object.entries(query).forEach(([key, value]) => {
+    url.searchParams.set(key, value);
+  });
+  return url.toString();
 };
 
 export const buildShareWebUrl = (target: ShareTarget): string => {
@@ -82,8 +119,7 @@ export const buildShareWebUrl = (target: ShareTarget): string => {
   }
 
   const url = new URL(SHARE_WEB_BASE_URL);
-  url.searchParams.set('type', target.type);
-  url.searchParams.set('id', id);
+  url.searchParams.set('target', buildShareUrl({ ...target, id }));
   return url.toString();
 };
 
@@ -109,6 +145,7 @@ export const parseShareWebUrl = (value: string): ShareTarget | null => {
   const queryTarget = parseShareTargetParts(
     url.searchParams.get('type'),
     url.searchParams.get('id'),
+    readSearchParams(url.searchParams, ['type', 'id', 'target']),
   );
   if (queryTarget) return queryTarget;
 
@@ -116,7 +153,11 @@ export const parseShareWebUrl = (value: string): ShareTarget | null => {
   const [pathType, ...pathIdParts] = pathRest.split('/').filter(Boolean);
   if (!pathType || pathIdParts.length === 0) return null;
 
-  return parseShareTargetParts(pathType, decodeURIComponent(pathIdParts.join('/')));
+  return parseShareTargetParts(
+    pathType,
+    decodeURIComponent(pathIdParts.join('/')),
+    readSearchParams(url.searchParams, ['target']),
+  );
 };
 
 export const parseShareUrl = (value: string): ShareTarget | null =>

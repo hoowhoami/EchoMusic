@@ -240,19 +240,31 @@ export function usePlayerControls() {
     });
   };
 
+  const resolveTrackAlbumAudioId = (track?: Song | null) => {
+    if (!track) return null;
+    return (
+      resolveNumericId(track.albumAudioId) ??
+      resolveNumericId(track.mixSongId) ??
+      resolveNumericId(track.id)
+    );
+  };
+
+  const hasCurrentTrackMv = computed(() => Boolean(resolveTrackAlbumAudioId(currentTrack.value)));
+
   const goToMv = async () => {
     const track = currentTrack.value;
-    const mvHash = String(track?.mvHash ?? '').trim();
-    if (!track || !mvHash) return;
+    const albumAudioId = resolveTrackAlbumAudioId(track);
+    if (!track || !albumAudioId) return;
+    const mvHash = String(track.mvHash ?? '').trim();
     if (player.isPlaying) {
       await player.togglePlay();
     }
     router.push({
       name: 'mv-detail',
-      params: { id: mvHash },
+      params: { id: String(albumAudioId) },
       query: {
         hash: mvHash,
-        albumAudioId: track.mixSongId ?? track.id,
+        albumAudioId,
         title: track.title,
         artist: track.artist,
         cover: track.coverUrl ?? '',
@@ -379,6 +391,7 @@ export function usePlayerControls() {
     // 导航
     resolveNumericId,
     goToComments,
+    hasCurrentTrackMv,
     goToMv,
     // 队列
     queueCount,

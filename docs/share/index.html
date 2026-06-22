@@ -144,7 +144,7 @@
           const type = url.hostname || segments.shift() || '';
           const id = segments.shift() || '';
           if (!isShareType(type) || !id) return null;
-          return { type, id };
+          return { type, id, appUrl: url.toString() };
         } catch {
           return null;
         }
@@ -171,7 +171,7 @@
       };
 
       const buildAppUrl = (target) =>
-        `${SHARE_SCHEME}://${target.type}/${encodeURIComponent(target.id)}`;
+        target.appUrl || `${SHARE_SCHEME}://${target.type}/${encodeURIComponent(target.id)}`;
 
       const target = parseTarget();
       const title = document.getElementById('title');

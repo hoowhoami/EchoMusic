@@ -16,6 +16,7 @@ export type StorageSong = {
   audioUrl: string;
   hash: string;
   mvHash?: string;
+  albumAudioId?: string | number;
   mixSongId: string | number;
   fileId?: string | number;
   source?: string;

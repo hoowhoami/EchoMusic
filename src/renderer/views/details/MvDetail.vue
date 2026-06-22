@@ -31,11 +31,19 @@ const currentSourceHash = ref('');
 const currentVideoUrl = ref('');
 const playbackError = ref('');
 
-const routeHash = computed(() => String(route.query.hash ?? route.params.id ?? '').trim());
-const routeVideoId = computed(() => String(route.query.videoId ?? route.params.id ?? '').trim());
 const routeAlbumAudioId = computed(() =>
   String(route.query.albumAudioId ?? route.query.mixSongId ?? '').trim(),
 );
+const routeHash = computed(() => {
+  const hash = String(route.query.hash ?? '').trim();
+  if (hash) return hash;
+  return routeAlbumAudioId.value ? '' : String(route.params.id ?? '').trim();
+});
+const routeVideoId = computed(() => {
+  const videoId = String(route.query.videoId ?? '').trim();
+  if (videoId) return videoId;
+  return routeHash.value ? String(route.params.id ?? '').trim() : '';
+});
 
 const fallbackTitle = computed(() => String(route.query.title ?? 'MV播放'));
 const fallbackArtist = computed(() => String(route.query.artist ?? ''));
@@ -78,7 +86,7 @@ const publishText = computed(() =>
 );
 
 const buildInitialMeta = (): VideoMeta => ({
-  id: routeVideoId.value || routeHash.value,
+  id: routeVideoId.value || routeHash.value || routeAlbumAudioId.value,
   hash: routeHash.value,
   title: fallbackTitle.value || 'MV播放',
   coverUrl: fallbackCover.value,

@@ -23,7 +23,7 @@ import { useUserStore } from '@/stores/user';
 import { useScrollContainer } from '@/composables/usePageScroll';
 import { useVirtualList } from '@/composables/useVirtualList';
 import { songContextMenuExtensions } from './songContextMenuExtensions';
-import { copyShareTarget, createShareTarget } from '@/utils/share';
+import { copyShareTarget, createSongShareTarget } from '@/utils/share';
 
 interface Props {
   songs: Song[];
@@ -621,7 +621,7 @@ const ctxAddToPlaylist = async () => {
 const ctxShareSong = async () => {
   const song = contextMenuTarget.value;
   if (!song) return;
-  const target = createShareTarget('song', song.mixSongId || song.id, song.title || song.name);
+  const target = createSongShareTarget(song);
   if (!target) return;
   try {
     await copyShareTarget(target);
