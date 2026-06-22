@@ -4,7 +4,7 @@
  * 复刻 PlayerBar 三栏布局：左侧歌曲信息+操作、中间播放控制+进度条、右侧功能按钮
  * 沉浸在页面底部，不浮动
  */
-import { computed, ref } from 'vue';
+import { computed, ref, watchEffect } from 'vue';
 import { SliderRoot, SliderTrack, SliderRange, SliderThumb } from 'reka-ui';
 import { usePlayerControls } from '@/composables/usePlayerControls';
 import { useSettingStore } from '@/stores/setting';
@@ -66,11 +66,8 @@ const isDraggingSeek = ref(false);
 const lastTrackId = ref<string | null>(null);
 const frozenProgress = ref<number | null>(null);
 
-const progressValue = computed(() => {
-  if (isDraggingSeek.value && pendingSeekTime.value !== null) {
-    return [pendingSeekTime.value];
-  }
-
+// 使用 watchEffect 处理状态更新，避免在 computed 中产生副作用
+watchEffect(() => {
   const currentTrackId = playerStore.currentTrackId;
 
   // 检测切歌：trackId 变化
@@ -92,6 +89,12 @@ const progressValue = computed(() => {
   if (!playerStore.isLoading || playerStore.currentTime > 0) {
     frozenProgress.value = null;
   }
+});
+
+const progressValue = computed(() => {
+  if (isDraggingSeek.value && pendingSeekTime.value !== null) {
+    return [pendingSeekTime.value];
+  }
 
   // 如果冻结了，返回冻结值；否则返回实际进度
   if (frozenProgress.value !== null && playerStore.isLoading && playerStore.currentTime === 0) {
@@ -106,7 +109,11 @@ const progressTooltipPercent = computed(() => {
 
   if (isDraggingSeek.value && pendingSeekTime.value !== null) {
     displayTime = pendingSeekTime.value;
-  } else if (frozenProgress.value !== null && playerStore.isLoading && playerStore.currentTime === 0) {
+  } else if (
+    frozenProgress.value !== null &&
+    playerStore.isLoading &&
+    playerStore.currentTime === 0
+  ) {
     displayTime = frozenProgress.value;
   }
 
