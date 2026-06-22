@@ -81,6 +81,14 @@
       "output": "release",
       "buildResources": "build"
     },
+    "protocols": [
+      {
+        "name": "EchoMusic Share",
+        "schemes": [
+          "echomusic"
+        ]
+      }
+    ],
     "afterPack": "./build/afterPack.js",
     "files": [
       "dist",

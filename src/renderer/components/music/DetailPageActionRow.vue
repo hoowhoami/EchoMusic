@@ -6,18 +6,25 @@ interface Action {
   icon: IconifyIcon;
   label: string;
   onTap: () => void | Promise<void>;
+  disabled?: boolean;
   emphasized?: boolean;
   tone?: 'default' | 'favorite';
 }
 
 interface Props {
   playLabel?: string;
+  playDisabled?: boolean;
+  batchLabel?: string;
+  batchDisabled?: boolean;
   onPlay?: () => void;
   secondaryActions?: Action[];
 }
 
 withDefaults(defineProps<Props>(), {
   playLabel: '播放',
+  playDisabled: false,
+  batchLabel: '批量',
+  batchDisabled: false,
   secondaryActions: () => [],
 });
 
@@ -29,12 +36,37 @@ const emit = defineEmits<{
 
 <template>
   <div class="action-row-wrap flex flex-wrap gap-2">
-    <!-- 次要操作 (收藏、批量等) -->
+    <!-- 主要操作 (播放) -->
+    <Button
+      variant="unstyled"
+      size="none"
+      :disabled="playDisabled"
+      @click="emit('play')"
+      class="action-btn primary"
+    >
+      <Icon :icon="iconPlay" width="16" height="16" />
+      <span>{{ playLabel }}</span>
+    </Button>
+
+    <!-- 次主操作 (批量/添加到等) -->
+    <Button
+      variant="unstyled"
+      size="none"
+      :disabled="batchDisabled"
+      @click="emit('batch')"
+      class="action-btn secondary"
+    >
+      <Icon :icon="iconList" width="16" height="16" />
+      <span>{{ batchLabel }}</span>
+    </Button>
+
+    <!-- 次要操作 (收藏、分享等) -->
     <Button
       variant="unstyled"
       size="none"
       v-for="action in secondaryActions"
       :key="action.label"
+      :disabled="action.disabled"
       @click="action.onTap"
       class="action-btn secondary"
       :class="[{ emphasized: action.emphasized }, action.tone === 'favorite' ? 'favorite' : '']"
@@ -43,18 +75,6 @@ const emit = defineEmits<{
         <Icon :icon="action.icon" width="16" height="16" />
       </div>
       <span>{{ action.label }}</span>
-    </Button>
-
-    <!-- 主要操作 (播放) -->
-    <Button variant="unstyled" size="none" @click="emit('play')" class="action-btn primary">
-      <Icon :icon="iconPlay" width="16" height="16" />
-      <span>{{ playLabel }}</span>
-    </Button>
-
-    <!-- 批量 (抽屉) -->
-    <Button variant="unstyled" size="none" @click="emit('batch')" class="action-btn secondary">
-      <Icon :icon="iconList" width="16" height="16" />
-      <span>批量</span>
     </Button>
   </div>
 </template>

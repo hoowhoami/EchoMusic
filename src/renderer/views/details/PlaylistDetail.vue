@@ -40,8 +40,10 @@ import {
   iconHeart,
   iconHeartFilled,
   iconInfo,
+  iconShare,
 } from '@/icons';
 import { replaceQueueAndPlay } from '@/utils/playback';
+import { copyShareTarget, createShareTarget } from '@/utils/share';
 import { useToastStore } from '@/stores/toast';
 import { toRecord } from '../../../shared/object';
 import { PagedSongLoader } from '@/utils/PagedSongLoader';
@@ -449,6 +451,23 @@ watch(
   },
 );
 
+const handleSharePlaylist = async () => {
+  const meta = playlist.value;
+  if (!meta) return;
+  const target = createShareTarget(
+    'playlist',
+    meta.listid ?? meta.id ?? getPlaylistId(),
+    meta.name,
+  );
+  if (!target) return;
+  try {
+    await copyShareTarget(target);
+    toastStore.actionCompleted('分享链接已复制');
+  } catch {
+    toastStore.actionFailed('复制分享链接');
+  }
+};
+
 const secondaryActions = computed(() => {
   const actions = [] as {
     icon: typeof iconHeart;
@@ -473,6 +492,14 @@ const secondaryActions = computed(() => {
           await playlistStore.favoritePlaylist(playlist.value, userStore.info?.userid);
         }
       },
+    });
+  }
+
+  if (playlist.value) {
+    actions.push({
+      icon: iconShare,
+      label: '分享',
+      onTap: handleSharePlaylist,
     });
   }
 
@@ -736,6 +763,22 @@ watch(
 
           <template #collapsed-actions>
             <Button
+              variant="unstyled"
+              size="none"
+              @click="handlePlayAll"
+              class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] text-primary"
+            >
+              <Icon :icon="iconPlay" width="20" height="20" />
+            </Button>
+            <Button
+              variant="unstyled"
+              size="none"
+              @click="openBatchDrawer"
+              class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] text-text-main opacity-60"
+            >
+              <Icon :icon="iconList" width="18" height="18" />
+            </Button>
+            <Button
               v-if="!isOwnerPlaylist && userStore.isLoggedIn"
               variant="unstyled"
               size="none"
@@ -760,18 +803,10 @@ watch(
             <Button
               variant="unstyled"
               size="none"
-              @click="handlePlayAll"
-              class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] text-primary"
-            >
-              <Icon :icon="iconPlay" width="20" height="20" />
-            </Button>
-            <Button
-              variant="unstyled"
-              size="none"
-              @click="openBatchDrawer"
+              @click="handleSharePlaylist"
               class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] text-text-main opacity-60"
             >
-              <Icon :icon="iconList" width="18" height="18" />
+              <Icon :icon="iconShare" width="18" height="18" />
             </Button>
           </template>
         </SliverHeader>

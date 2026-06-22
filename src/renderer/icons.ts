@@ -92,6 +92,7 @@ import pictureInPicture from '@iconify/icons-tabler/picture-in-picture';
 import pinned from '@iconify/icons-tabler/pinned';
 import puzzle from '@iconify/icons-tabler/puzzle';
 import folderOpen from '@iconify/icons-tabler/folder-open';
+import share from '@iconify/icons-tabler/share';
 
 export const iconChevronDown = chevronDown as IconifyIcon;
 export const iconChevronUp = chevronUp as IconifyIcon;
@@ -188,3 +189,4 @@ export const iconPictureInPicture = pictureInPicture as IconifyIcon;
 export const iconPinned = pinned as IconifyIcon;
 export const iconPlugin = puzzle as IconifyIcon;
 export const iconFolderOpen = folderOpen as IconifyIcon;
+export const iconShare = share as IconifyIcon;

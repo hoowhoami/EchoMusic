@@ -7,7 +7,7 @@ import { formatDuration } from '@/utils/format';
 import SongCard from './SongCard.vue';
 import { iconPlay, iconPause } from '@/icons';
 import { usePlayerStore } from '@/stores/player';
-import { usePlaylistStore } from '@/stores/playlist';
+import { PERSONAL_FM_QUEUE_ID, usePlaylistStore } from '@/stores/playlist';
 import { useToastStore } from '@/stores/toast';
 import { buildSongListGridTemplate } from './songListLayout';
 import { isPlayableSong } from '@/utils/song';
@@ -18,11 +18,12 @@ import {
   addSongToPlayLast,
 } from '@/utils/playback';
 import Button from '@/components/ui/Button.vue';
-import Dialog from '@/components/ui/Dialog.vue';
+import AddToPlaylistDialog from '@/components/music/AddToPlaylistDialog.vue';
 import { useUserStore } from '@/stores/user';
 import { useScrollContainer } from '@/composables/usePageScroll';
 import { useVirtualList } from '@/composables/useVirtualList';
 import { songContextMenuExtensions } from './songContextMenuExtensions';
+import { copyShareTarget, createShareTarget } from '@/utils/share';
 
 interface Props {
   songs: Song[];
@@ -434,6 +435,13 @@ const selectablePlaylists = computed(() =>
   playlistStore.getCreatedPlaylists(userStore.info?.userid),
 );
 
+const addToPlaybackQueues = computed(() =>
+  playlistStore.playbackQueueList.filter(
+    (queue) =>
+      queue.id !== PERSONAL_FM_QUEUE_ID && Math.max(0, queue.songCount ?? queue.songs.length) > 0,
+  ),
+);
+
 const contextMenuCanRemove = computed(() => {
   if (!props.enableRemoveFromPlaylist || !contextMenuTarget.value) return false;
   return playlistStore.isOwnedPlaylist(props.parentPlaylistId, userStore.info?.userid);
@@ -473,9 +481,11 @@ const clearContextMenuTarget = () => {
 
 const estimateContextMenuHeight = () => {
   const itemCount =
-    3 + extensionContextMenuItems.value.length + (contextMenuCanRemove.value ? 1 : 0);
+    5 + extensionContextMenuItems.value.length + (contextMenuCanRemove.value ? 1 : 0);
   const separatorCount =
-    (extensionContextMenuItems.value.length > 0 ? 1 : 0) + (contextMenuCanRemove.value ? 1 : 0);
+    (extensionContextMenuItems.value.length > 0 ? 1 : 0) +
+    (contextMenuCanRemove.value ? 1 : 0) +
+    (extensionContextMenuItems.value.length > 0 || contextMenuCanRemove.value ? 1 : 0);
   return 12 + itemCount * 30 + separatorCount * 9 + Math.max(0, itemCount + separatorCount - 1) * 4;
 };
 
@@ -608,6 +618,19 @@ const ctxAddToPlaylist = async () => {
   }
 };
 
+const ctxShareSong = async () => {
+  const song = contextMenuTarget.value;
+  if (!song) return;
+  const target = createShareTarget('song', song.mixSongId || song.id, song.title || song.name);
+  if (!target) return;
+  try {
+    await copyShareTarget(target);
+    toastStore.actionCompleted('分享链接已复制');
+  } catch {
+    toastStore.actionFailed('复制分享链接');
+  }
+};
+
 const ctxSelectPlaylist = async (listId: string | number) => {
   const song = contextMenuTarget.value;
   if (!song) return;
@@ -627,6 +650,19 @@ const ctxSelectPlaylist = async (listId: string | number) => {
   } catch {
     toastStore.actionFailed('添加到歌单');
   }
+};
+
+const ctxAddToQueue = (queueId?: string) => {
+  const song = contextMenuTarget.value;
+  if (!song) return;
+  const options = queueId ? { queueId } : {};
+  const addedCount = playlistStore.appendToPlaybackQueue?.([song], options) ?? 0;
+  if (addedCount > 0) {
+    toastStore.actionCompleted('已添加到队列');
+  } else {
+    toastStore.actionCompleted('歌曲已在队列中');
+  }
+  showPlaylistDialog.value = false;
 };
 
 const ctxRemoveFromPlaylist = async () => {
@@ -814,37 +850,15 @@ defineExpose({ scrollToActive, filteredCount: computed(() => filteredSongsRef.va
       {{ hasSearchQuery ? '未找到相关歌曲' : '暂无歌曲' }}
     </div>
 
-    <!-- 单例添加到歌单对话框 -->
-    <Dialog
+    <!-- 单例添加到对话框 -->
+    <AddToPlaylistDialog
       v-model:open="showPlaylistDialog"
-      title="添加到歌单"
-      contentClass="max-w-[420px]"
-      showClose
-    >
-      <div class="flex flex-col gap-3">
-        <div v-if="isPlaylistLoading" class="py-6 text-center text-text-secondary text-[12px]">
-          加载歌单中...
-        </div>
-        <div
-          v-else-if="selectablePlaylists.length === 0"
-          class="py-6 text-center text-text-secondary text-[12px]"
-        >
-          暂无可用歌单
-        </div>
-        <Button
-          v-for="entry in selectablePlaylists"
-          :key="entry.listid ?? entry.id"
-          type="button"
-          class="playlist-picker-item"
-          variant="ghost"
-          size="sm"
-          @click="ctxSelectPlaylist(entry.listid ?? entry.id)"
-        >
-          <span class="text-[13px] font-semibold text-text-main truncate">{{ entry.name }}</span>
-          <span class="text-[11px] text-text-secondary/60">{{ entry.count ?? 0 }} 首</span>
-        </Button>
-      </div>
-    </Dialog>
+      :playbackQueues="addToPlaybackQueues"
+      :playlists="selectablePlaylists"
+      :loading="isPlaylistLoading"
+      @selectQueue="ctxAddToQueue"
+      @selectPlaylist="ctxSelectPlaylist"
+    />
   </div>
 
   <!-- 单例右键菜单（整个列表共享一个实例） -->
@@ -911,6 +925,18 @@ defineExpose({ scrollToActive, filteredCount: computed(() => filteredSongsRef.va
         @click="handleContextMenuAction(ctxRemoveFromPlaylist)"
       >
         从歌单删除
+      </button>
+      <div
+        v-if="extensionContextMenuItems.length > 0 || contextMenuCanRemove"
+        class="song-context-separator"
+      ></div>
+      <button
+        type="button"
+        class="song-context-item"
+        role="menuitem"
+        @click="handleContextMenuAction(ctxShareSong)"
+      >
+        分享
       </button>
     </div>
   </Teleport>
@@ -1060,26 +1086,5 @@ defineExpose({ scrollToActive, filteredCount: computed(() => filteredSongsRef.va
   height: 1px;
   margin: 4px 6px;
   background-color: var(--border-subtle);
-}
-
-.playlist-picker-item {
-  width: 100%;
-  padding: 8px 12px;
-  border-radius: 8px;
-  border: 1px solid var(--control-border);
-  background: var(--control-bg);
-  text-align: left;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  color: var(--color-text-main);
-  transition:
-    color 0.2s ease,
-    border-color 0.2s ease;
-}
-
-.playlist-picker-item:hover {
-  border-color: var(--color-primary);
-  color: var(--color-primary);
 }
 </style>

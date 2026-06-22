@@ -1,5 +1,5 @@
 <script setup lang="ts">
-defineOptions({ name: 'comment-page' });
+defineOptions({ name: 'song-detail-page' });
 import { ref, onMounted, onBeforeUnmount, computed, watch, nextTick } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import {
@@ -14,6 +14,7 @@ import {
 import { getSongPrivilegeLite, getSongRanking } from '@/api/music';
 import { mapCommentItem } from '@/utils/mappers';
 import type { Comment } from '@/models/comment';
+import type { Song } from '@/models/song';
 import { getSongEffectTags, getSongQualityTags } from '@/utils/song';
 import Tabs from '@/components/ui/Tabs.vue';
 import TabsList from '@/components/ui/TabsList.vue';
@@ -22,9 +23,18 @@ import TabsContent from '@/components/ui/TabsContent.vue';
 import CustomTabBar from '@/components/ui/CustomTabBar.vue';
 import CommentList from '@/components/music/CommentList.vue';
 import SliverHeader from '@/components/music/DetailPageSliverHeader.vue';
+import ActionRow from '@/components/music/DetailPageActionRow.vue';
+import AddToPlaylistDialog from '@/components/music/AddToPlaylistDialog.vue';
 import PageScrollContainer from '@/components/ui/PageScrollContainer.vue';
 import Button from '@/components/ui/Button.vue';
 import { useToastStore } from '@/stores/toast';
+import { PERSONAL_FM_QUEUE_ID, usePlaylistStore } from '@/stores/playlist';
+import { usePlayerStore } from '@/stores/player';
+import { useUserStore } from '@/stores/user';
+import { queueAndPlaySong } from '@/utils/playback';
+import { isPlayableSong } from '@/utils/song';
+import { copyShareTarget, createShareTarget } from '@/utils/share';
+import { iconList, iconPlay, iconShare } from '@/icons';
 
 interface CommentPayload {
   hot?: Comment[];
@@ -37,17 +47,27 @@ interface CommentPayload {
 const route = useRoute();
 const router = useRouter();
 const toastStore = useToastStore();
+const playlistStore = usePlaylistStore();
+const playerStore = usePlayerStore();
+const userStore = useUserStore();
 const id = route.params.id as string;
 const type = route.query.type as 'music' | 'playlist' | 'album';
 
-const songTitle = computed(() => String(route.query.title ?? ''));
-const songArtist = computed(() => String(route.query.artist ?? ''));
-const songAlbum = computed(() => String(route.query.album ?? ''));
-// const songCover = computed(() => String(route.query.cover ?? ''));
-const songHash = computed(() => String(route.query.hash ?? ''));
-const songArtistIdFromQuery = computed(() => String(route.query.artistId ?? ''));
-const songAlbumId = computed(() => String(route.query.albumId ?? ''));
-const songMixSongId = computed(() => String(route.query.mixSongId ?? id));
+const detailSong = ref<Song | null>(null);
+const showPlaylistDialog = ref(false);
+const isPlaylistLoading = ref(false);
+
+const songTitle = computed(() => String(route.query.title ?? detailSong.value?.title ?? ''));
+const songArtist = computed(() => String(route.query.artist ?? detailSong.value?.artist ?? ''));
+const songAlbum = computed(() => String(route.query.album ?? detailSong.value?.album ?? ''));
+const songHash = computed(() => String(route.query.hash ?? detailSong.value?.hash ?? ''));
+const songArtistIdFromQuery = computed(() =>
+  String(route.query.artistId ?? detailSong.value?.artists?.[0]?.id ?? ''),
+);
+const songAlbumId = computed(() => String(route.query.albumId ?? detailSong.value?.albumId ?? ''));
+const songMixSongId = computed(() =>
+  String(route.query.mixSongId ?? detailSong.value?.mixSongId ?? id),
+);
 
 const isMusicType = computed(() => type === 'music');
 const resourceTitle = computed(() => songTitle.value || String(route.query.title ?? ''));
@@ -57,7 +77,7 @@ const resourceTitle = computed(() => songTitle.value || String(route.query.title
 //   }
 //   return String(route.query.artist ?? route.query.subtitle ?? '');
 // });
-const resourceCover = computed(() => String(route.query.cover ?? ''));
+const resourceCover = computed(() => String(route.query.cover ?? detailSong.value?.coverUrl ?? ''));
 const headerTypeLabel = computed(() => {
   switch (type) {
     case 'music':
@@ -121,7 +141,7 @@ const hotwordChipRowRef = ref<HTMLElement | null>(null);
 const title = computed(() => {
   switch (type) {
     case 'music':
-      return '歌曲评论';
+      return '歌曲详情';
     case 'playlist':
       return '歌单评论';
     case 'album':
@@ -136,6 +156,179 @@ const songLanguage = computed(() => {
     (privilegeData.value?.trans_param as Record<string, unknown> | undefined) ?? undefined;
   return String(transParam?.language ?? '未知');
 });
+
+const toPlainRecord = (value: unknown): Record<string, unknown> | null =>
+  value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+
+const readText = (...values: unknown[]) => {
+  for (const value of values) {
+    if (value === undefined || value === null) continue;
+    const text = String(value).trim();
+    if (text) return text;
+  }
+  return '';
+};
+
+const readNumber = (...values: unknown[]) => {
+  const text = readText(...values);
+  if (!text) return 0;
+  const parsed = Number.parseInt(text, 10);
+  return Number.isNaN(parsed) ? 0 : parsed;
+};
+
+const readRecord = (record: Record<string, unknown>, key: string) => toPlainRecord(record[key]);
+
+const readArray = (...values: unknown[]) => {
+  for (const value of values) {
+    if (Array.isArray(value)) return value;
+  }
+  return [];
+};
+
+const normalizeCover = (value: string) => {
+  if (!value) return '';
+  const resolved = value.replaceAll('{size}', '400');
+  return resolved.startsWith('//') ? `https:${resolved}` : resolved;
+};
+
+const normalizeDuration = (value: number) => {
+  if (!Number.isFinite(value) || value <= 0) return 0;
+  return value > 1000 ? Math.floor(value / 1000) : value;
+};
+
+const buildArtistsFromPrivilege = (record: Record<string, unknown>) => {
+  const audioInfo = readRecord(record, 'audio_info') ?? {};
+  const authors = readArray(record.authors, record.singerinfo, audioInfo.singerinfo);
+  const artists = authors
+    .map((item) => {
+      const author = toPlainRecord(item);
+      if (!author) return null;
+      const base = readRecord(author, 'base') ?? author;
+      const name = readText(
+        base.name,
+        base.author_name,
+        base.AuthorName,
+        base.singername,
+        base.singer,
+      );
+      if (!name) return null;
+      const authorId = readText(
+        base.id,
+        base.author_id,
+        base.AuthorId,
+        base.singerid,
+        base.singer_id,
+      );
+      return { ...(authorId ? { id: authorId } : {}), name };
+    })
+    .filter((item): item is { id?: string; name: string } => Boolean(item));
+
+  if (artists.length > 0) return artists;
+
+  const fallbackName = readText(
+    record.author_name,
+    record.AuthorName,
+    record.singername,
+    record.singer,
+    audioInfo.author_name,
+    audioInfo.AuthorName,
+    audioInfo.singername,
+  );
+  if (!fallbackName) return [];
+
+  const fallbackId = readText(
+    record.author_id,
+    record.AuthorId,
+    record.singerid,
+    record.singer_id,
+    audioInfo.author_id,
+    audioInfo.AuthorId,
+    audioInfo.singerid,
+    audioInfo.singer_id,
+  );
+  return [{ ...(fallbackId ? { id: fallbackId } : {}), name: fallbackName }];
+};
+
+const buildSongFromPrivilege = (record: Record<string, unknown>): Song => {
+  const base = readRecord(record, 'base') ?? {};
+  const audioInfo = readRecord(record, 'audio_info') ?? {};
+  const albumInfo = readRecord(record, 'album_info') ?? {};
+  const transParam = readRecord(record, 'trans_param') ?? {};
+  const artists = buildArtistsFromPrivilege(record);
+  const artistName = artists.map((item) => item.name).join(', ') || readText(route.query.artist);
+  const cover = normalizeCover(
+    readText(
+      route.query.cover,
+      record.pic,
+      record.img,
+      audioInfo.img,
+      albumInfo.sizable_cover,
+      albumInfo.cover,
+      transParam.union_cover,
+    ),
+  );
+  const targetId = readText(
+    route.query.mixSongId,
+    id,
+    base.mixsongid,
+    base.album_audio_id,
+    base.audio_id,
+    record.mixsongid,
+    record.album_audio_id,
+    record.audio_id,
+  );
+  const title = readText(
+    route.query.title,
+    base.audio_name,
+    record.audio_name,
+    record.songname,
+    record.name,
+    record.filename,
+    '未知歌曲',
+  );
+  const albumName = readText(
+    route.query.album,
+    albumInfo.album_name,
+    albumInfo.albumname,
+    record.album_name,
+    record.albumname,
+  );
+  const albumId = readText(
+    route.query.albumId,
+    base.album_id,
+    base.albumid,
+    albumInfo.album_id,
+    albumInfo.albumid,
+    record.album_id,
+    record.albumid,
+  );
+
+  return {
+    id: targetId || readText(route.params.id),
+    title,
+    name: title,
+    artist: artistName || '未知歌手',
+    artists,
+    singers: artists,
+    album: albumName,
+    albumName,
+    albumId,
+    duration: normalizeDuration(
+      readNumber(audioInfo.duration, audioInfo.duration_128, record.timelength, record.duration),
+    ),
+    coverUrl: cover,
+    cover,
+    audioUrl: '',
+    hash: readText(route.query.hash, audioInfo.hash, record.hash, record.hash_128),
+    mixSongId: targetId || id,
+    privilege: readNumber(record.privilege) || undefined,
+    payType: readNumber(record.pay_type, record.PayType, record.payType) || undefined,
+    oldCpy: readNumber(record.old_cpy, record.media_old_cpy) || undefined,
+    relateGoods: relateGoods.value,
+  };
+};
 
 const resolveNumericId = (value: unknown) => {
   if (value === undefined || value === null || value === '') return null;
@@ -199,6 +392,144 @@ const openAlbumDetail = () => {
     params: { id: String(albumId) },
   });
 };
+
+const actionSong = computed<Song | null>(() => {
+  if (!isMusicType.value) return null;
+  if (detailSong.value) return detailSong.value;
+
+  const targetId = songMixSongId.value || id;
+  if (!targetId) return null;
+
+  return {
+    id: targetId,
+    title: songTitle.value || '未知歌曲',
+    name: songTitle.value || '未知歌曲',
+    artist: songArtist.value || '未知歌手',
+    artists: songArtist.value
+      ? [{ id: songArtistIdFromQuery.value || undefined, name: songArtist.value }]
+      : [],
+    singers: songArtist.value
+      ? [{ id: songArtistIdFromQuery.value || undefined, name: songArtist.value }]
+      : [],
+    album: songAlbum.value,
+    albumName: songAlbum.value,
+    albumId: songAlbumId.value,
+    duration: 0,
+    coverUrl: resourceCover.value,
+    cover: resourceCover.value,
+    audioUrl: '',
+    hash: songHash.value,
+    mixSongId: targetId,
+  };
+});
+
+const selectablePlaylists = computed(() =>
+  playlistStore.getCreatedPlaylists(userStore.info?.userid),
+);
+
+const addToPlaybackQueues = computed(() =>
+  playlistStore.playbackQueueList.filter(
+    (queue) =>
+      queue.id !== PERSONAL_FM_QUEUE_ID && Math.max(0, queue.songCount ?? queue.songs.length) > 0,
+  ),
+);
+
+const canUseSongActions = computed(() =>
+  Boolean(actionSong.value && isPlayableSong(actionSong.value)),
+);
+
+const handlePlaySong = async () => {
+  const song = actionSong.value;
+  if (!song || !isPlayableSong(song)) {
+    toastStore.unavailable('当前歌曲');
+    return;
+  }
+
+  try {
+    const played = await queueAndPlaySong(playlistStore, playerStore, song);
+    if (!played) toastStore.unavailable('当前歌曲');
+  } catch {
+    toastStore.actionFailed('播放');
+  }
+};
+
+const handleOpenAddToPlaylist = async () => {
+  const song = actionSong.value;
+  if (!song || !isPlayableSong(song)) {
+    toastStore.unavailable('当前歌曲');
+    return;
+  }
+  if (!userStore.isLoggedIn) {
+    toastStore.loginRequired('添加到歌单');
+    return;
+  }
+
+  showPlaylistDialog.value = true;
+  if (playlistStore.userPlaylists.length === 0) {
+    isPlaylistLoading.value = true;
+    try {
+      await playlistStore.fetchUserPlaylists();
+    } catch {
+      toastStore.loadFailed('歌单');
+    } finally {
+      isPlaylistLoading.value = false;
+    }
+  }
+};
+
+const handleAddToQueue = (queueId?: string) => {
+  const song = actionSong.value;
+  if (!song) return;
+  const options = queueId ? { queueId } : {};
+  const addedCount = playlistStore.appendToPlaybackQueue?.([song], options) ?? 0;
+  if (addedCount > 0) {
+    toastStore.actionCompleted('已添加到队列');
+  } else {
+    toastStore.actionCompleted('歌曲已在队列中');
+  }
+  showPlaylistDialog.value = false;
+};
+
+const handleSelectPlaylist = async (listId: string | number) => {
+  const song = actionSong.value;
+  if (!song) return;
+
+  try {
+    const result = await playlistStore.addToPlaylist(String(listId), song);
+    if (result === 'added') {
+      toastStore.actionCompleted('添加成功');
+      showPlaylistDialog.value = false;
+      return;
+    }
+    if (result === 'exists') {
+      toastStore.warning('歌单中已有此内容');
+      showPlaylistDialog.value = false;
+      return;
+    }
+    toastStore.actionFailed('添加到歌单');
+  } catch {
+    toastStore.actionFailed('添加到歌单');
+  }
+};
+
+const handleShareSong = async () => {
+  const target = createShareTarget('song', songMixSongId.value || id, songTitle.value);
+  if (!target) return;
+  try {
+    await copyShareTarget(target);
+    toastStore.actionCompleted('分享链接已复制');
+  } catch {
+    toastStore.actionFailed('复制分享链接');
+  }
+};
+
+const songSecondaryActions = computed(() => [
+  {
+    icon: iconShare,
+    label: '分享',
+    onTap: handleShareSong,
+  },
+]);
 
 // const totalLabel = computed(() => (total.value > 0 ? `(${total.value})` : ''));
 const showCommentsEnd = computed(
@@ -639,9 +970,10 @@ const handleCommentTabChange = (value: string | number) => {
 const fetchHeaderStats = async () => {
   if (type !== 'music') return;
   try {
+    const hash = songHash.value;
     const [favoriteRes, commentRes] = await Promise.all([
       getFavoriteCount(songMixSongId.value || id),
-      getCommentCount(songHash.value || ''),
+      hash ? getCommentCount(hash) : Promise.resolve(null),
     ]);
     if (favoriteRes && typeof favoriteRes === 'object') {
       const record = favoriteRes as unknown as Record<string, unknown>;
@@ -667,11 +999,11 @@ const fetchHeaderStats = async () => {
 
 const fetchDetailData = async () => {
   if (type !== 'music') return;
-  if (!songHash.value) return;
   detailLoading.value = true;
   try {
+    const hash = songHash.value;
     const [privilegeRes, rankingRes] = await Promise.all([
-      getSongPrivilegeLite(songHash.value, songAlbumId.value || undefined),
+      hash ? getSongPrivilegeLite(hash, songAlbumId.value || undefined) : Promise.resolve(null),
       getSongRanking(songMixSongId.value || id),
     ]);
     if (privilegeRes && typeof privilegeRes === 'object') {
@@ -682,24 +1014,34 @@ const fetchDetailData = async () => {
         list.length > 0 && typeof list[0] === 'object'
           ? (list[0] as Record<string, unknown>)
           : null;
+      if (privilegeData.value) {
+        detailSong.value = buildSongFromPrivilege(privilegeData.value);
+      }
     }
     if (rankingRes && typeof rankingRes === 'object') {
       rankingData.value = rankingRes as unknown as Record<string, unknown>;
     }
+  } catch {
+    toastStore.loadFailed('歌曲详情');
   } finally {
     detailLoading.value = false;
   }
 };
 
-onMounted(async () => {
+const loadCurrentResource = async () => {
   mainTab.value =
     String(route.query.tab ?? route.query.mainTab ?? 'detail') === 'comment' ? 'comment' : 'detail';
-  setupCommentLoadMoreObserver();
   await fetchComments(true);
   if (isMusicType.value) {
-    void fetchHeaderStats();
-    void fetchDetailData();
+    void fetchDetailData().finally(() => {
+      void fetchHeaderStats();
+    });
   }
+};
+
+onMounted(async () => {
+  setupCommentLoadMoreObserver();
+  await loadCurrentResource();
   void nextTick(() => {
     scrollChipRowToActive(classifyChipRowRef.value);
     scrollChipRowToActive(hotwordChipRowRef.value);
@@ -734,58 +1076,89 @@ watch(total, (value) => {
         :title="headerTitle"
         :coverUrl="resourceCover"
         :hasDetails="true"
-        :expandedHeight="164"
+        :expandedHeight="196"
         :collapsedHeight="56"
-        :contentPaddingX="0"
-        :contentGap="10"
-        :coverBaseSize="124"
-        :titleFontSize="20"
-        :detailsGap="6"
-        :detailsMarginTop="6"
       >
         <template #details>
-          <div class="comment-song-header">
+          <div class="song-detail-header">
             <Button
               variant="unstyled"
               size="none"
               v-if="songArtist"
               type="button"
-              class="comment-song-subtitle"
+              class="song-detail-artist"
               :class="{ 'is-link': canOpenArtist }"
               :disabled="!canOpenArtist"
               @click="openArtistDetail"
             >
               {{ songArtist }}
             </Button>
-            <div v-if="isMusicType" class="comment-song-meta-row">
+            <div v-if="isMusicType" class="song-detail-meta-line">
               <Button
                 variant="unstyled"
                 size="none"
                 type="button"
-                class="comment-song-meta"
+                class="song-detail-meta-link"
                 :class="{ 'is-link': canOpenAlbum }"
                 :disabled="!canOpenAlbum"
                 @click="openAlbumDetail"
               >
-                <span class="comment-song-meta-label">专辑</span>
-                <span class="comment-song-meta-value">{{ songAlbum || '单曲' }}</span>
+                {{ songAlbum || '单曲' }}
               </Button>
-            </div>
-            <div v-if="isMusicType" class="comment-song-meta-row">
-              <div class="comment-song-meta">
-                <span class="comment-song-meta-label">语言</span>
-                <span class="comment-song-meta-value">{{ songLanguage }}</span>
-              </div>
-              <div class="comment-song-meta">
-                <span class="comment-song-meta-label">累计收藏</span>
-                <span class="comment-song-meta-value">{{ formatCount(favoriteCount) }}</span>
-              </div>
-              <div class="comment-song-meta">
-                <span class="comment-song-meta-label">评论</span>
-                <span class="comment-song-meta-value">{{ formatCount(commentCount) }}</span>
-              </div>
+              <span>{{ songLanguage }}</span>
+              <span>{{ formatCount(favoriteCount) }} 收藏</span>
+              <span>{{ formatCount(commentCount) }} 评论</span>
             </div>
           </div>
+        </template>
+
+        <template v-if="isMusicType" #actions>
+          <ActionRow
+            batchLabel="添加到"
+            :playDisabled="!canUseSongActions || detailLoading"
+            :batchDisabled="!canUseSongActions || detailLoading"
+            :secondaryActions="songSecondaryActions"
+            @play="handlePlaySong"
+            @batch="handleOpenAddToPlaylist"
+          />
+        </template>
+
+        <template v-if="isMusicType" #collapsed-actions>
+          <Button
+            type="button"
+            class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] text-primary"
+            variant="unstyled"
+            size="none"
+            title="播放"
+            aria-label="播放"
+            :disabled="!canUseSongActions || detailLoading"
+            @click="handlePlaySong"
+          >
+            <Icon :icon="iconPlay" width="18" height="18" />
+          </Button>
+          <Button
+            type="button"
+            class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] text-text-main opacity-60"
+            variant="unstyled"
+            size="none"
+            title="添加到"
+            aria-label="添加到"
+            :disabled="!canUseSongActions || detailLoading"
+            @click="handleOpenAddToPlaylist"
+          >
+            <Icon :icon="iconList" width="17" height="17" />
+          </Button>
+          <Button
+            type="button"
+            class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] text-text-main opacity-60"
+            variant="unstyled"
+            size="none"
+            title="分享"
+            aria-label="分享"
+            @click="handleShareSong"
+          >
+            <Icon :icon="iconShare" width="17" height="17" />
+          </Button>
         </template>
       </SliverHeader>
 
@@ -989,20 +1362,29 @@ watch(total, (value) => {
       </div>
     </div>
   </PageScrollContainer>
+
+  <AddToPlaylistDialog
+    v-model:open="showPlaylistDialog"
+    :playbackQueues="addToPlaybackQueues"
+    :playlists="selectablePlaylists"
+    :loading="isPlaylistLoading"
+    @selectQueue="handleAddToQueue"
+    @selectPlaylist="handleSelectPlaylist"
+  />
 </template>
 
 <style scoped>
 @reference "@/style.css";
 
 .comment-page {
-  padding: 0 24px 40px;
+  padding: 0 0 40px;
 }
 
 .comment-content-wrap {
   width: 100%;
   max-width: none;
   margin: 0;
-  padding: 8px 0 40px;
+  padding: 8px 24px 40px;
 }
 
 .comment-content-wrap--music {
@@ -1028,61 +1410,62 @@ watch(total, (value) => {
   @apply h-auto! pb-2! text-[15px] font-semibold text-text-main/55 data-[state=active]:text-text-main;
 }
 
-.comment-song-header {
+.song-detail-header {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
+  min-width: 0;
 }
 
-.comment-song-subtitle {
-  font-size: 14px;
+.song-detail-artist {
+  align-self: flex-start;
+  max-width: 100%;
+  padding: 0;
+  background: transparent;
+  font-size: 13px;
   font-weight: 600;
   color: var(--color-primary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  padding: 0;
-  background: transparent;
   text-align: left;
 }
 
-.comment-song-subtitle.is-link {
+.song-detail-artist.is-link,
+.song-detail-meta-link.is-link {
   cursor: pointer;
 }
 
-.comment-song-meta-row {
+.song-detail-meta-line {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px 14px;
+  gap: 0 8px;
+  align-items: baseline;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.7;
+  color: var(--color-text-secondary);
 }
 
-.comment-song-meta {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 8px;
+.song-detail-meta-line > *:not(:last-child)::after {
+  content: '•';
+  margin-left: 8px;
+  color: color-mix(in srgb, var(--color-text-secondary) 65%, transparent);
+}
+
+.song-detail-meta-link {
+  max-width: min(360px, 100%);
   padding: 0;
   background: transparent;
+  color: var(--color-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   text-align: left;
 }
 
-.comment-song-meta.is-link {
-  cursor: pointer;
-}
-
-.comment-song-meta-label {
-  font-size: 12px;
-  font-weight: 600;
-  color: color-mix(in srgb, var(--color-text-main) 50%, transparent);
-}
-
-.comment-song-meta-value {
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--color-text-main);
-}
-
-.comment-song-meta.is-link .comment-song-meta-value {
-  color: var(--color-primary);
+.song-detail-meta-link:disabled {
+  color: var(--color-text-secondary);
 }
 
 .comment-sub-tabs {

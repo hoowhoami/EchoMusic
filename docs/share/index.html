@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light dark" />
+    <title>打开 EchoMusic 分享</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #f7f8fb;
+        --panel: #ffffff;
+        --text: #181c22;
+        --muted: #687386;
+        --border: #dce2eb;
+        --primary: #2563eb;
+        --primary-text: #ffffff;
+      }
+
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #12151b;
+          --panel: #1b2029;
+          --text: #eef2f7;
+          --muted: #a6b0c0;
+          --border: #303746;
+          --primary: #60a5fa;
+          --primary-text: #08111f;
+        }
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        min-height: 100vh;
+        margin: 0;
+        display: grid;
+        place-items: center;
+        padding: 28px;
+        background: var(--bg);
+        color: var(--text);
+        font-family:
+          -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei',
+          sans-serif;
+      }
+
+      main {
+        width: min(440px, 100%);
+        padding: 28px;
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        background: var(--panel);
+        box-shadow: 0 18px 54px rgb(15 23 42 / 10%);
+      }
+
+      h1 {
+        margin: 0 0 10px;
+        font-size: 24px;
+        line-height: 1.25;
+        letter-spacing: 0;
+      }
+
+      p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 14px;
+        line-height: 1.7;
+      }
+
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: 22px;
+      }
+
+      button,
+      a {
+        min-height: 40px;
+        border-radius: 8px;
+        border: 1px solid var(--border);
+        padding: 0 14px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font: inherit;
+        font-size: 14px;
+        text-decoration: none;
+        color: var(--text);
+        background: transparent;
+        cursor: pointer;
+      }
+
+      .primary {
+        border-color: var(--primary);
+        color: var(--primary-text);
+        background: var(--primary);
+      }
+
+      .link {
+        margin-top: 18px;
+        padding: 10px 12px;
+        border-radius: 8px;
+        border: 1px solid var(--border);
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.6;
+        overflow-wrap: anywhere;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1 id="title">打开 EchoMusic 分享</h1>
+      <p id="desc">正在尝试唤起 EchoMusic。如果没有反应，可以手动复制链接后在应用内打开。</p>
+      <div class="actions">
+        <a id="open" class="primary" href="#">打开 EchoMusic</a>
+        <button id="copy" type="button">复制 App 链接</button>
+      </div>
+      <div id="link" class="link"></div>
+    </main>
+
+    <script>
+      const SHARE_SCHEME = 'echomusic';
+      const TYPE_LABELS = {
+        song: '歌曲',
+        playlist: '歌单',
+        artist: '歌手',
+        album: '专辑',
+      };
+
+      const isShareType = (value) => Object.prototype.hasOwnProperty.call(TYPE_LABELS, value);
+
+      const parseCustomTarget = (value) => {
+        try {
+          const url = new URL(value);
+          if (url.protocol !== `${SHARE_SCHEME}:`) return null;
+          const segments = url.pathname
+            .split('/')
+            .map((segment) => decodeURIComponent(segment.trim()))
+            .filter(Boolean);
+          const type = url.hostname || segments.shift() || '';
+          const id = segments.shift() || '';
+          if (!isShareType(type) || !id) return null;
+          return { type, id };
+        } catch {
+          return null;
+        }
+      };
+
+      const parseTarget = () => {
+        const url = new URL(window.location.href);
+        const customTarget = parseCustomTarget(url.searchParams.get('target') || '');
+        if (customTarget) return customTarget;
+
+        const type = String(url.searchParams.get('type') || '').trim();
+        const id = String(url.searchParams.get('id') || '').trim();
+        if (isShareType(type) && id) return { type, id };
+
+        const parts = url.pathname.split('/').filter(Boolean);
+        const shareIndex = parts.lastIndexOf('share');
+        const pathType = shareIndex >= 0 ? parts[shareIndex + 1] : '';
+        const pathId = shareIndex >= 0 ? parts[shareIndex + 2] : '';
+        if (isShareType(pathType) && pathId) {
+          return { type: pathType, id: decodeURIComponent(pathId) };
+        }
+
+        return null;
+      };
+
+      const buildAppUrl = (target) =>
+        `${SHARE_SCHEME}://${target.type}/${encodeURIComponent(target.id)}`;
+
+      const target = parseTarget();
+      const title = document.getElementById('title');
+      const desc = document.getElementById('desc');
+      const open = document.getElementById('open');
+      const copy = document.getElementById('copy');
+      const link = document.getElementById('link');
+
+      if (!target) {
+        title.textContent = '分享链接无效';
+        desc.textContent = '这个链接里没有可打开的 EchoMusic 分享内容。';
+        open.style.display = 'none';
+        copy.style.display = 'none';
+      } else {
+        const appUrl = buildAppUrl(target);
+        title.textContent = `打开 EchoMusic ${TYPE_LABELS[target.type]}`;
+        open.href = appUrl;
+        link.textContent = appUrl;
+
+        const openApp = () => {
+          window.location.href = appUrl;
+        };
+
+        open.addEventListener('click', (event) => {
+          event.preventDefault();
+          openApp();
+        });
+
+        copy.addEventListener('click', async () => {
+          try {
+            await navigator.clipboard.writeText(appUrl);
+            copy.textContent = '已复制';
+          } catch {
+            copy.textContent = '复制失败';
+          }
+          window.setTimeout(() => {
+            copy.textContent = '复制 App 链接';
+          }, 1800);
+        });
+
+        window.setTimeout(openApp, 200);
+      }
+    </script>
+  </body>
+</html>

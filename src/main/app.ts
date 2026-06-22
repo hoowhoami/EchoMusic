@@ -22,6 +22,12 @@ import { clearPluginRuntimeSession, setPluginSafeMode } from './plugins';
 import { applyDesktopAppIcon, applyTaskbarShortcutIcon, refreshAppIconConfig } from './appIcons';
 import { setupThumbarButtons } from './thumbar';
 import { setupTaskbarThumbnail, destroyTaskbarThumbnail } from './taskbarThumbnail';
+import {
+  flushPendingShareTargets,
+  openShareUrl,
+  openShareUrlFromArgv,
+  registerShareProtocol,
+} from './share';
 import type { MpvController } from './mpv/controller';
 
 const WM_TASKBARCREATED = 0x031a;
@@ -35,6 +41,11 @@ if (process.platform === 'win32') {
 }
 
 const hasSafeModeArg = (argv: string[]) => argv.includes('--safe-mode');
+
+app.on('open-url', (event, url) => {
+  event.preventDefault();
+  openShareUrl(url);
+});
 
 if (hasSafeModeArg(process.argv)) {
   void (async () => {
@@ -73,12 +84,15 @@ const gotTheLock = app.requestSingleInstanceLock();
 if (!gotTheLock) {
   app.quit();
 } else {
+  registerShareProtocol(getMainWindow);
+
   app.on('second-instance', (_event, argv) => {
+    const openedShareUrl = openShareUrlFromArgv(argv);
     if (hasSafeModeArg(argv)) {
       void setPluginSafeMode(true);
       setActiveWindowMode('main');
     }
-    void restoreActiveWindowMode();
+    if (!openedShareUrl) void restoreActiveWindowMode();
   });
 
   // IPC handler 必须在窗口创建前注册
@@ -129,6 +143,8 @@ if (!gotTheLock) {
     applyDesktopAppIcon();
     applyTaskbarShortcutIcon();
     await createWindow();
+    openShareUrlFromArgv(process.argv);
+    flushPendingShareTargets();
 
     // 初始化 Windows 任务栏缩略图工具栏按钮（上一曲/播放暂停/下一曲）
     // 需要在窗口显示后设置，否则按钮不会显示

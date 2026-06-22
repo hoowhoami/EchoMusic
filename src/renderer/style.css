@@ -516,7 +516,7 @@ body.echo-surface-translucent .drawer-panel,
 body.echo-surface-translucent .echo-popover-content,
 body.echo-surface-translucent .app-tooltip-content,
 body.echo-surface-translucent .song-context-menu,
-body.echo-surface-translucent .playlist-picker-item,
+body.echo-surface-translucent .add-to-item,
 body.echo-surface-translucent .toast-card,
 body.echo-surface-translucent .card-container,
 body.echo-surface-translucent .plugin-card,
@@ -531,8 +531,7 @@ body.echo-surface-translucent .login-panel-card,
 body.echo-surface-translucent .tb-suggestions,
 body.echo-surface-translucent .search-suggestions-panel,
 body.echo-surface-translucent .profile-archive-card,
-body.echo-surface-translucent .rec-playlist-item,
-body.echo-surface-translucent .add-playlist-item {
+body.echo-surface-translucent .rec-playlist-item {
   -webkit-backdrop-filter: var(--surface-backdrop-filter);
   backdrop-filter: var(--surface-backdrop-filter);
 }
@@ -558,7 +557,7 @@ body .drawer-panel,
 body .echo-popover-content,
 body .app-tooltip-content,
 body .song-context-menu,
-body .playlist-picker-item,
+body .add-to-item,
 body .toast-card,
 body .card-container,
 body .plugin-card,
@@ -571,8 +570,7 @@ body .login-panel-card,
 body .tb-suggestions,
 body .search-suggestions-panel,
 body .profile-archive-card,
-body .rec-playlist-item,
-body .add-playlist-item {
+body .rec-playlist-item {
   background: var(--color-bg-elevated);
 }
 

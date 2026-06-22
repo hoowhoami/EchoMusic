@@ -13,7 +13,7 @@ import { coverFallbackRevision } from '@/plugins/coverFallback';
 import { resolveCoverDisplayUrl } from '@/utils/cover';
 import OverlayHeader from '@/layouts/OverlayHeader.vue';
 import Button from '@/components/ui/Button.vue';
-import Dialog from '@/components/ui/Dialog.vue';
+import AddToPlaylistDialog from '@/components/music/AddToPlaylistDialog.vue';
 import PlayerQueueDrawer from '@/components/music/PlayerQueueDrawer.vue';
 import CommentDrawer from '@/components/music/CommentDrawer.vue';
 import CoverMode from './CoverMode.vue';
@@ -513,48 +513,15 @@ onUnmounted(() => {
       title="评论"
     />
 
-    <!-- 添加到歌单对话框 -->
-    <Dialog
+    <!-- 添加到对话框 -->
+    <AddToPlaylistDialog
       v-model:open="showAddToPlaylistDialog"
-      title="添加到"
-      contentClass="max-w-[420px]"
-      showClose
-    >
-      <div class="add-playlist-body">
-        <div class="add-playlist-divider"><span>播放队列</span></div>
-        <div v-if="addToPlaybackQueues.length === 0" class="add-playlist-empty">暂无播放队列</div>
-        <Button
-          v-for="queue in addToPlaybackQueues"
-          :key="queue.id"
-          type="button"
-          class="add-playlist-item"
-          variant="ghost"
-          size="sm"
-          @click="handleAddToQueue(queue.id)"
-        >
-          <span class="add-playlist-name">
-            <Icon :icon="iconList" width="16" height="16" />
-            {{ queue.title || '播放队列' }}
-          </span>
-          <span class="add-playlist-count">{{ queue.songCount ?? queue.songs.length }} 首</span>
-        </Button>
-        <div class="add-playlist-divider"><span>歌单</span></div>
-        <div v-if="isPlaylistLoading" class="add-playlist-empty">加载歌单中...</div>
-        <div v-else-if="createdPlaylists.length === 0" class="add-playlist-empty">暂无可用歌单</div>
-        <Button
-          v-for="entry in createdPlaylists"
-          :key="entry.listid ?? entry.id"
-          type="button"
-          class="add-playlist-item"
-          variant="ghost"
-          size="sm"
-          @click="handleSelectPlaylist(entry.listid ?? entry.id)"
-        >
-          <span class="add-playlist-name">{{ entry.name }}</span>
-          <span class="add-playlist-count">{{ entry.count ?? 0 }} 首</span>
-        </Button>
-      </div>
-    </Dialog>
+      :playbackQueues="addToPlaybackQueues"
+      :playlists="createdPlaylists"
+      :loading="isPlaylistLoading"
+      @selectQueue="handleAddToQueue"
+      @selectPlaylist="handleSelectPlaylist"
+    />
   </div>
 </template>
 
@@ -841,60 +808,5 @@ onUnmounted(() => {
   background: rgba(255, 255, 255, 0.2);
   color: white;
   border-color: rgba(255, 255, 255, 0.3);
-}
-
-.add-playlist-body {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.add-playlist-divider {
-  padding: 4px 0;
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--color-text-secondary);
-}
-
-.add-playlist-empty {
-  padding: 18px 0;
-  text-align: center;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--color-text-secondary);
-}
-
-.add-playlist-item {
-  width: 100%;
-  padding: 8px 12px;
-  border-radius: 8px;
-  border: 1px solid var(--control-border);
-  background: var(--color-bg-elevated);
-  text-align: left;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  color: var(--color-text-main);
-  transition:
-    color 0.2s,
-    border-color 0.2s;
-}
-
-.add-playlist-item:hover {
-  border-color: var(--color-primary);
-  color: var(--color-primary);
-}
-
-.add-playlist-name {
-  font-size: 13px;
-  font-weight: 600;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.add-playlist-count {
-  font-size: 11px;
-  opacity: 0.6;
 }
 </style>

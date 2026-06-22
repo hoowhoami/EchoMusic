@@ -91,7 +91,7 @@ const excludeFromCache = [
   'loading-page',
   'error-page',
   'lyric-page',
-  'comment-page',
+  'song-detail-page',
   'mv-detail',
   'profile',
   'settings-page',

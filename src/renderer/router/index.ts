@@ -125,10 +125,10 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '专辑详情' },
       },
       {
-        path: 'comment/:id',
-        name: 'comment',
-        component: () => import('@/views/details/CommentPage.vue'),
-        meta: { title: '评论' },
+        path: 'detail/:id',
+        name: 'song-detail',
+        component: () => import('@/views/details/SongDetail.vue'),
+        meta: { title: '歌曲详情' },
       },
       {
         path: 'mv/:id',

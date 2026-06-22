@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
-import { RouterView, useRoute } from 'vue-router';
+import { RouterView, useRoute, useRouter } from 'vue-router';
 import AuthExpiredDialog from '@/components/app/AuthExpiredDialog.vue';
 import KugouVerificationFlow from '@/components/app/KugouVerificationFlow.vue';
 import ToastViewport from '@/components/app/ToastViewport.vue';
@@ -11,6 +11,7 @@ import { useSettingStore } from './stores/setting';
 import { useThemeStore } from './stores/theme';
 import { usePlaylistStore } from './stores/playlist';
 import { useHistoryStore } from './stores/historyStore';
+import { useToastStore } from './stores/toast';
 import { waitForSqlitePersistHydration } from './stores/sqlitePersist';
 import { initShortcutSync, syncGlobalShortcuts } from '@/utils/shortcuts';
 import { initDesktopLyricSync } from '@/desktopLyric/sync';
@@ -23,15 +24,20 @@ import {
 } from '@/plugins/runtime';
 import { coverFallbackRevision } from '@/plugins/coverFallback';
 import { resolveCoverColorUrls } from '@/utils/cover';
+import { logger } from '@/utils/logger';
+import { navigateToShareTarget, SHARE_COPIED_EVENT } from '@/utils/share';
 import type { UpdateCheckResult } from '../shared/app';
+import { extractShareTarget, getShareResourceLabel, type ShareTarget } from '../shared/share';
 import LyricView from '@/views/lyric/LyricPage.vue';
 
 const route = useRoute();
+const router = useRouter();
 const player = usePlayerStore();
 const settings = useSettingStore();
 const themeStore = useThemeStore();
 const playlistStore = usePlaylistStore();
 const historyStore = useHistoryStore();
+const toastStore = useToastStore();
 let disposeShortcuts: (() => void) | null = null;
 let disposeDesktopLyricSync: (() => void) | null = null;
 let disposeMiniPlayerSync: (() => void) | null = null;
@@ -39,7 +45,11 @@ let disposeNowPlayingSync: (() => void) | null = null;
 let disposeTrayPlayModeSync: (() => void) | null = null;
 let disposePowerResumeSync: (() => void) | null = null;
 let disposePluginRuntimeReload: (() => void) | null = null;
+let disposeShareOpen: (() => void) | null = null;
 let silentUpdateCheckTimer: number | null = null;
+let clipboardShareCheckTimer: number | null = null;
+let lastClipboardShareKey = '';
+let isCheckingClipboardShare = false;
 let colorSchemeMediaQuery: MediaQueryList | null = null;
 
 const showStartupUpdateDialog = ref(false);
@@ -47,6 +57,7 @@ const startupUpdateResult = ref<UpdateCheckResult | null>(null);
 const isMiniPlayerRoute = computed(() => route.name === 'mini-player');
 // 首屏从 loading 切到主界面时跳过根级过渡，避免 out-in "先淡出旧页 → 空档" 造成的白屏
 const suppressRootTransition = ref(false);
+const pendingShareTarget = ref<ShareTarget | null>(null);
 const rootPageTransitionName = computed(() =>
   isMiniPlayerRoute.value || suppressRootTransition.value || !pageTransitionState.enabled
     ? undefined
@@ -98,7 +109,76 @@ const handleSilentUpdateCheckResult = (payload: unknown) => {
   showStartupUpdateDialog.value = true;
 };
 
+const openShareTarget = (target: ShareTarget) => {
+  if (route.name === 'loading') {
+    pendingShareTarget.value = target;
+    return;
+  }
+  if (!navigateToShareTarget(router, target)) {
+    logger.warn('App', 'Invalid share target skipped', target);
+  }
+};
+
+const getShareTargetKey = (target: ShareTarget) => `${target.type}:${target.id}`;
+
+const rememberClipboardShareTarget = (target: ShareTarget) => {
+  lastClipboardShareKey = getShareTargetKey(target);
+};
+
+const handleShareCopied = (event: Event) => {
+  const target = (event as CustomEvent<ShareTarget>).detail;
+  if (target?.type && target.id) rememberClipboardShareTarget(target);
+};
+
+const checkClipboardShareTarget = async () => {
+  if (isMiniPlayerRoute.value || isCheckingClipboardShare) return;
+  const readClipboard = window.electron?.share?.readClipboard;
+  if (!readClipboard) return;
+
+  isCheckingClipboardShare = true;
+  try {
+    const text = await readClipboard();
+    const target = extractShareTarget(text);
+    if (!target) return;
+
+    const key = getShareTargetKey(target);
+    if (key === lastClipboardShareKey) return;
+    lastClipboardShareKey = key;
+
+    const label = getShareResourceLabel(target.type);
+    toastStore.showAction(`检测到 EchoMusic ${label}分享`, {
+      label: '打开',
+      handler: () => openShareTarget(target),
+    });
+  } catch (error) {
+    logger.debug('App', 'Failed to inspect clipboard share link', error);
+  } finally {
+    isCheckingClipboardShare = false;
+  }
+};
+
+const scheduleClipboardShareCheck = () => {
+  if (clipboardShareCheckTimer !== null) {
+    window.clearTimeout(clipboardShareCheckTimer);
+  }
+  clipboardShareCheckTimer = window.setTimeout(() => {
+    clipboardShareCheckTimer = null;
+    void checkClipboardShareTarget();
+  }, 350);
+};
+
+const flushPendingShareTarget = () => {
+  if (route.name === 'loading' || !pendingShareTarget.value) return;
+  const target = pendingShareTarget.value;
+  pendingShareTarget.value = null;
+  openShareTarget(target);
+};
+
 onMounted(async () => {
+  disposeShareOpen = window.electron?.share?.onOpen(openShareTarget) ?? null;
+  window.addEventListener('focus', scheduleClipboardShareCheck);
+  window.addEventListener(SHARE_COPIED_EVENT, handleShareCopied);
+
   disposePluginRuntimeReload = onPluginRuntimeReloadRequested(() => {
     void refreshPlugins(
       isMiniPlayerRoute.value ? { miniPlayer: true, reloadActive: true } : { reloadActive: true },
@@ -161,14 +241,21 @@ onMounted(async () => {
     }, 4000);
   }
   void refreshPlugins();
+  scheduleClipboardShareCheck();
   colorSchemeMediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
   colorSchemeMediaQuery.addEventListener('change', updateTheme);
 });
 
 onUnmounted(() => {
+  window.removeEventListener('focus', scheduleClipboardShareCheck);
+  window.removeEventListener(SHARE_COPIED_EVENT, handleShareCopied);
   if (silentUpdateCheckTimer !== null) {
     window.clearTimeout(silentUpdateCheckTimer);
     silentUpdateCheckTimer = null;
+  }
+  if (clipboardShareCheckTimer !== null) {
+    window.clearTimeout(clipboardShareCheckTimer);
+    clipboardShareCheckTimer = null;
   }
   window.electron?.ipcRenderer?.off('update-check-result', handleSilentUpdateCheckResult);
   disposeShortcuts?.();
@@ -185,6 +272,8 @@ onUnmounted(() => {
   disposePowerResumeSync = null;
   disposePluginRuntimeReload?.();
   disposePluginRuntimeReload = null;
+  disposeShareOpen?.();
+  disposeShareOpen = null;
   colorSchemeMediaQuery?.removeEventListener('change', updateTheme);
   colorSchemeMediaQuery = null;
 });
@@ -194,6 +283,7 @@ watch(
   (toName, fromName) => {
     // 从 loading 进入主界面这次切换跳过过渡，其余路由切换恢复正常过渡
     suppressRootTransition.value = fromName === 'loading' && toName !== 'loading';
+    flushPendingShareTarget();
   },
 );
 watch(

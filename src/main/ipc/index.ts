@@ -13,6 +13,7 @@ import { registerExternalHandlers } from './external';
 import { registerStorageHandlers } from './storage';
 import { registerPluginHandlers } from './plugins';
 import { registerPluginWindowHandlers } from '../pluginWindows';
+import { registerShareHandlers } from './share';
 import type { IpcContext } from './types';
 
 let registered = false;
@@ -33,6 +34,7 @@ export const registerIpcHandlers = (context: IpcContext) => {
   registerStorageHandlers();
   registerPluginHandlers(context);
   registerPluginWindowHandlers();
+  registerShareHandlers();
   registered = true;
 };
 

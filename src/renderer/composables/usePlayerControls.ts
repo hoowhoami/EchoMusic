@@ -223,7 +223,7 @@ export function usePlayerControls() {
     if (!currentTrack.value) return;
     const track = currentTrack.value;
     router.push({
-      name: 'comment',
+      name: 'song-detail',
       params: { id: track.mixSongId ? String(track.mixSongId) : String(track.id) },
       query: {
         mainTab: 'detail',

@@ -5,7 +5,7 @@ import { useVModel } from '@vueuse/core';
 import Sortable from 'sortablejs';
 import Drawer from '@/components/ui/Drawer.vue';
 import PlayerQueueVirtualList from '@/components/music/PlayerQueueVirtualList.vue';
-import Dialog from '@/components/ui/Dialog.vue';
+import AddToPlaylistDialog from '@/components/music/AddToPlaylistDialog.vue';
 import Button from '@/components/ui/Button.vue';
 import { usePlaylistStore } from '@/stores/playlist';
 import { usePlayerStore } from '@/stores/player';
@@ -882,36 +882,14 @@ onBeforeUnmount(() => {
     </div>
   </Drawer>
 
-  <Dialog
+  <AddToPlaylistDialog
     v-model:open="showPlaylistDialog"
-    title="添加到"
-    overlayClass="batch-playlist-overlay"
-    contentClass="batch-playlist-dialog max-w-[420px]"
-    showClose
-  >
-    <div class="batch-playlist-body">
-      <div class="batch-playlist-divider">
-        <span>歌单</span>
-      </div>
-      <div v-if="isPlaylistLoading" class="batch-playlist-status">加载歌单中...</div>
-      <div v-else-if="createdPlaylists.length === 0" class="batch-playlist-status">
-        暂无可用歌单
-      </div>
-      <Button
-        v-for="entry in createdPlaylists"
-        :key="entry.listid ?? entry.id"
-        type="button"
-        class="playlist-picker-item"
-        variant="ghost"
-        size="sm"
-        :disabled="isAddingToPlaylist"
-        @click="handleSelectPlaylist(entry.listid ?? entry.id)"
-      >
-        <span class="batch-playlist-name">{{ entry.name }}</span>
-        <span class="batch-playlist-count">{{ entry.count ?? 0 }} 首</span>
-      </Button>
-    </div>
-  </Dialog>
+    :playlists="createdPlaylists"
+    :loading="isPlaylistLoading"
+    :disabled="isAddingToPlaylist"
+    :showPlaybackQueues="false"
+    @selectPlaylist="handleSelectPlaylist"
+  />
 </template>
 
 <style scoped>
@@ -1093,67 +1071,6 @@ onBeforeUnmount(() => {
   .queue-title-subtitle {
     max-width: 140px;
   }
-}
-
-.batch-playlist-body {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.batch-playlist-status {
-  padding: 18px 0;
-  font-size: 12px;
-  font-weight: 600;
-  text-align: center;
-  color: var(--color-text-secondary);
-}
-
-.batch-playlist-name {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--color-text-main);
-}
-
-.batch-playlist-count {
-  font-size: 11px;
-  color: var(--color-text-secondary);
-}
-
-:global(.batch-playlist-overlay) {
-  z-index: 1600 !important;
-}
-
-:global(.batch-playlist-dialog) {
-  z-index: 1610 !important;
-}
-
-.playlist-picker-item {
-  width: 100%;
-  padding: 8px 12px;
-  border-radius: 8px;
-  border: 1px solid var(--control-border);
-  background: var(--control-bg);
-  text-align: left;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  color: var(--color-text-main);
-  transition:
-    color 0.2s ease,
-    border-color 0.2s ease;
-}
-
-.playlist-picker-item:hover {
-  border-color: var(--color-primary);
-  color: var(--color-primary);
-}
-
-.batch-playlist-divider {
-  padding: 4px 0;
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--color-text-secondary);
 }
 
 .queue-slides {

@@ -30,6 +30,7 @@ import type {
 } from '../shared/audio-spectrum';
 import type { LogSettings } from '../shared/logging';
 import type { ResolvePlaylistRequest, ResolvePlaylistResponse } from '../shared/external';
+import type { ShareTarget } from '../shared/share';
 import type {
   PluginAssetSourceResult,
   PluginAppIconRefreshResult,
@@ -115,6 +116,11 @@ export interface IElectronAPI {
   appInfo: {
     get: () => Promise<AppInfoResult>;
     getChangelog: () => Promise<string>;
+  };
+  share?: {
+    copy: (text: string) => Promise<boolean>;
+    readClipboard: () => Promise<string>;
+    onOpen: (func: (target: ShareTarget) => void) => () => void;
   };
   fonts: {
     getAll: () => Promise<string[]>;

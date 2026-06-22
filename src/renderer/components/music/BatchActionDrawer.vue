@@ -12,10 +12,11 @@ import { usePlayerStore } from '@/stores/player';
 import { useUserStore } from '@/stores/user';
 import { formatDuration } from '@/utils/format';
 import SongCard from '@/components/music/SongCard.vue';
+import AddToPlaylistDialog from '@/components/music/AddToPlaylistDialog.vue';
 import { isPlayableSong } from '@/utils/song';
 import { replaceQueueAndPlay } from '@/utils/playback';
 import { useToastStore } from '@/stores/toast';
-import { iconList, iconPlay, iconPlus, iconTrash, iconX } from '@/icons';
+import { iconPlay, iconPlus, iconTrash, iconX } from '@/icons';
 import { MANUAL_PLAYBACK_QUEUE_ID, PERSONAL_FM_QUEUE_ID } from '@/stores/playlist';
 import { useVirtualList } from '@/composables/useVirtualList';
 
@@ -475,52 +476,14 @@ const confirmRemoveFromPlaylist = async () => {
     </div>
   </Drawer>
 
-  <Dialog
+  <AddToPlaylistDialog
     v-model:open="showPlaylistDialog"
-    title="添加到"
-    overlayClass="batch-playlist-overlay"
-    contentClass="batch-playlist-dialog max-w-[420px]"
-    showClose
-  >
-    <div class="batch-playlist-body">
-      <div class="batch-playlist-divider"><span>播放队列</span></div>
-      <div v-if="addToPlaybackQueues.length === 0" class="batch-playlist-status">暂无播放队列</div>
-      <Button
-        v-for="queue in addToPlaybackQueues"
-        :key="queue.id"
-        type="button"
-        class="playlist-picker-item playlist-picker-queue"
-        variant="ghost"
-        size="sm"
-        @click="handleAddToQueue(queue.id)"
-      >
-        <span class="batch-playlist-name">
-          <Icon :icon="iconList" width="16" height="16" />
-          {{ queue.title || '播放队列' }}
-        </span>
-        <span class="batch-playlist-count">{{ queue.songCount ?? queue.songs.length }} 首</span>
-      </Button>
-      <div class="batch-playlist-divider">
-        <span>歌单</span>
-      </div>
-      <div v-if="isPlaylistLoading" class="batch-playlist-status">加载歌单中...</div>
-      <div v-else-if="createdPlaylists.length === 0" class="batch-playlist-status">
-        暂无可用歌单
-      </div>
-      <Button
-        v-for="entry in createdPlaylists"
-        :key="entry.listid ?? entry.id"
-        type="button"
-        class="playlist-picker-item"
-        variant="ghost"
-        size="sm"
-        @click="handleSelectPlaylist(entry.listid ?? entry.id)"
-      >
-        <span class="batch-playlist-name">{{ entry.name }}</span>
-        <span class="batch-playlist-count">{{ entry.count ?? 0 }} 首</span>
-      </Button>
-    </div>
-  </Dialog>
+    :playbackQueues="addToPlaybackQueues"
+    :playlists="createdPlaylists"
+    :loading="isPlaylistLoading"
+    @selectQueue="handleAddToQueue"
+    @selectPlaylist="handleSelectPlaylist"
+  />
 
   <Dialog
     v-model:open="showRemoveConfirm"
@@ -823,74 +786,11 @@ const confirmRemoveFromPlaylist = async () => {
   }
 }
 
-.batch-playlist-body {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.batch-playlist-status {
-  padding: 18px 0;
-  text-align: center;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--color-text-secondary);
-}
-
-.batch-playlist-name {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--color-text-main);
-}
-
-.batch-playlist-count {
-  font-size: 11px;
-  color: var(--color-text-secondary);
-}
-
 :global(.batch-playlist-overlay) {
   z-index: 1600 !important;
 }
 
 :global(.batch-playlist-dialog) {
   z-index: 1610 !important;
-}
-
-.playlist-picker-item {
-  width: 100%;
-  padding: 8px 12px;
-  border-radius: 8px;
-  border: 1px solid var(--control-border);
-  background: var(--control-bg);
-  text-align: left;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  color: var(--color-text-main);
-  transition:
-    color 0.2s ease,
-    border-color 0.2s ease;
-}
-
-.playlist-picker-item:hover {
-  border-color: var(--color-primary);
-  color: var(--color-primary);
-}
-
-.playlist-picker-queue {
-  border-style: dashed;
-}
-
-.playlist-picker-queue .batch-playlist-name {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.batch-playlist-divider {
-  padding: 4px 0;
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--color-text-secondary);
 }
 </style>

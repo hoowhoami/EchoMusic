@@ -47,8 +47,10 @@ import {
   iconArrowsSort,
   iconCheckMark,
   iconChevronDown,
+  iconShare,
 } from '@/icons';
 import { replaceQueueAndPlay } from '@/utils/playback';
+import { copyShareTarget, createShareTarget } from '@/utils/share';
 import Button from '@/components/ui/Button.vue';
 import { extractFirstObject, extractList } from '@/utils/extractors';
 import { filterSongsByQuery, sortSongs } from '@/utils/songList';
@@ -342,11 +344,31 @@ const toggleArtistFollow = async () => {
   }
 };
 
-const secondaryActions = computed(() => {
-  if (!artist.value || !userStore.isLoggedIn) return [];
+const handleShareArtist = async () => {
+  const meta = artist.value;
+  if (!meta) return;
+  const target = createShareTarget('artist', meta.id ?? getArtistId(), meta.name);
+  if (!target) return;
+  try {
+    await copyShareTarget(target);
+    toastStore.actionCompleted('分享链接已复制');
+  } catch {
+    toastStore.actionFailed('复制分享链接');
+  }
+};
 
-  return [
-    {
+const secondaryActions = computed(() => {
+  if (!artist.value) return [];
+  const actions = [] as {
+    icon: typeof iconHeart;
+    label: string;
+    emphasized?: boolean;
+    tone?: 'default' | 'favorite';
+    onTap: () => void | Promise<void>;
+  }[];
+
+  if (userStore.isLoggedIn) {
+    actions.push({
       icon: isFollowed.value ? iconHeartFilled : iconHeart,
       label: togglingFollow.value
         ? isFollowed.value
@@ -358,8 +380,16 @@ const secondaryActions = computed(() => {
       emphasized: isFollowed.value,
       tone: 'favorite' as const,
       onTap: toggleArtistFollow,
-    },
-  ];
+    });
+  }
+
+  actions.push({
+    icon: iconShare,
+    label: '分享',
+    onTap: handleShareArtist,
+  });
+
+  return actions;
 });
 
 const handleSongDoubleTapPlay = async (song: Song) => {
@@ -656,15 +686,6 @@ onUnmounted(() => {
 
           <template #collapsed-actions>
             <Button
-              v-if="userStore.isLoggedIn"
-              variant="unstyled"
-              size="none"
-              @click="toggleArtistFollow"
-              class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] text-red-500"
-            >
-              <Icon :icon="isFollowed ? iconHeartFilled : iconHeart" width="18" height="18" />
-            </Button>
-            <Button
               variant="unstyled"
               size="none"
               @click="handlePlayAll"
@@ -679,6 +700,23 @@ onUnmounted(() => {
               class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] text-text-main opacity-60"
             >
               <Icon :icon="iconList" width="18" height="18" />
+            </Button>
+            <Button
+              v-if="userStore.isLoggedIn"
+              variant="unstyled"
+              size="none"
+              @click="toggleArtistFollow"
+              class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] text-red-500"
+            >
+              <Icon :icon="isFollowed ? iconHeartFilled : iconHeart" width="18" height="18" />
+            </Button>
+            <Button
+              variant="unstyled"
+              size="none"
+              @click="handleShareArtist"
+              class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] text-text-main opacity-60"
+            >
+              <Icon :icon="iconShare" width="18" height="18" />
             </Button>
           </template>
         </SliverHeader>

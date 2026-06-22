@@ -40,8 +40,10 @@ import {
   iconList,
   iconHeart,
   iconHeartFilled,
+  iconShare,
 } from '@/icons';
 import { replaceQueueAndPlay } from '@/utils/playback';
+import { copyShareTarget, createShareTarget } from '@/utils/share';
 import { useUserStore } from '@/stores/user';
 import { useToastStore } from '@/stores/toast';
 import PageScrollContainer from '@/components/ui/PageScrollContainer.vue';
@@ -465,10 +467,31 @@ onIdChange(() => {
   }
 });
 
+const handleShareAlbum = async () => {
+  const meta = album.value;
+  if (!meta) return;
+  const target = createShareTarget('album', meta.id ?? getAlbumId(), meta.name);
+  if (!target) return;
+  try {
+    await copyShareTarget(target);
+    toastStore.actionCompleted('分享链接已复制');
+  } catch {
+    toastStore.actionFailed('复制分享链接');
+  }
+};
+
 const secondaryActions = computed(() => {
-  if (!userStore.isLoggedIn || !album.value) return [];
-  return [
-    {
+  if (!album.value) return [];
+  const actions = [] as {
+    icon: typeof iconHeart;
+    label: string;
+    emphasized?: boolean;
+    tone?: 'default' | 'favorite';
+    onTap: () => void | Promise<void>;
+  }[];
+
+  if (userStore.isLoggedIn) {
+    actions.push({
       icon: iconHeart,
       label: isFavoriteAlbum.value ? '已收藏' : '收藏',
       emphasized: isFavoriteAlbum.value,
@@ -477,8 +500,16 @@ const secondaryActions = computed(() => {
         if (!album.value) return;
         await toggleFavoriteAlbum();
       },
-    },
-  ];
+    });
+  }
+
+  actions.push({
+    icon: iconShare,
+    label: '分享',
+    onTap: handleShareAlbum,
+  });
+
+  return actions;
 });
 
 const handleSongDoubleTapPlay = async (song: Song) => {
@@ -593,15 +624,6 @@ const activeSongId = computed(() => playerStore.currentTrackId ?? undefined);
 
           <template #collapsed-actions>
             <Button
-              v-if="userStore.isLoggedIn"
-              variant="unstyled"
-              size="none"
-              @click="toggleFavoriteAlbum"
-              class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] text-red-500"
-            >
-              <Icon :icon="isFavoriteAlbum ? iconHeartFilled : iconHeart" width="18" height="18" />
-            </Button>
-            <Button
               variant="unstyled"
               size="none"
               @click="handlePlayAll"
@@ -616,6 +638,23 @@ const activeSongId = computed(() => playerStore.currentTrackId ?? undefined);
               class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] text-text-main opacity-60"
             >
               <Icon :icon="iconList" width="18" height="18" />
+            </Button>
+            <Button
+              v-if="userStore.isLoggedIn"
+              variant="unstyled"
+              size="none"
+              @click="toggleFavoriteAlbum"
+              class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] text-red-500"
+            >
+              <Icon :icon="isFavoriteAlbum ? iconHeartFilled : iconHeart" width="18" height="18" />
+            </Button>
+            <Button
+              variant="unstyled"
+              size="none"
+              @click="handleShareAlbum"
+              class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] text-text-main opacity-60"
+            >
+              <Icon :icon="iconShare" width="18" height="18" />
             </Button>
           </template>
         </SliverHeader>

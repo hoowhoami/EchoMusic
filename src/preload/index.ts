@@ -33,6 +33,7 @@ import type {
 } from '../shared/audio-spectrum';
 import type { LogSettings } from '../shared/logging';
 import type { ResolvePlaylistRequest, ResolvePlaylistResponse } from '../shared/external';
+import type { ShareTarget } from '../shared/share';
 import type {
   PluginAssetSourceResult,
   PluginAppIconRefreshResult,
@@ -239,6 +240,15 @@ contextBridge.exposeInMainWorld('electron', {
   appInfo: {
     get: () => ipcRenderer.invoke('app:get-info') as Promise<AppInfoResult>,
     getChangelog: () => ipcRenderer.invoke('app:get-changelog') as Promise<string>,
+  },
+  share: {
+    copy: (text: string) => ipcRenderer.invoke('share:copy', text) as Promise<boolean>,
+    readClipboard: () => ipcRenderer.invoke('share:read-clipboard') as Promise<string>,
+    onOpen: (func: (target: ShareTarget) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, target: ShareTarget) => func(target);
+      ipcRenderer.on('share:open', listener);
+      return () => ipcRenderer.removeListener('share:open', listener);
+    },
   },
   fonts: {
     getAll: () => ipcRenderer.invoke('get-all-fonts') as Promise<string[]>,

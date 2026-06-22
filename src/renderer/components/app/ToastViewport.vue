@@ -10,6 +10,13 @@ const toneClassMap = {
   warning: 'toast-card is-warning',
   danger: 'toast-card is-danger',
 } as const;
+
+const runToastAction = (id: number) => {
+  const item = toastStore.items.find((toast) => toast.id === id);
+  if (!item?.action) return;
+  item.action.handler();
+  toastStore.remove(id);
+};
 </script>
 
 <template>
@@ -25,6 +32,15 @@ const toneClassMap = {
         class="pointer-events-auto"
       >
         <div class="toast-message">{{ item.message }}</div>
+        <Button
+          v-if="item.action"
+          variant="unstyled"
+          size="none"
+          class="toast-action"
+          @click="runToastAction(item.id)"
+        >
+          {{ item.action.label }}
+        </Button>
         <Button
           variant="unstyled"
           size="none"
@@ -75,6 +91,16 @@ const toneClassMap = {
 
 .toast-close:hover {
   @apply opacity-100;
+}
+
+.toast-action {
+  @apply h-7 shrink-0 rounded-lg px-2 text-[12px] font-semibold transition;
+  color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 12%, transparent);
+}
+
+.toast-action:hover {
+  background: color-mix(in srgb, var(--color-primary) 18%, transparent);
 }
 
 .toast-slide-enter-active,

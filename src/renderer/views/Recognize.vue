@@ -253,7 +253,7 @@ function handleFavorite(song: Song) {
 function goToDetail(song: Song) {
   const commentId = song.mixSongId || song.id;
   router.push({
-    name: 'comment',
+    name: 'song-detail',
     params: { id: String(commentId) },
     query: {
       mainTab: 'detail',

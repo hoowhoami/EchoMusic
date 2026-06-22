@@ -163,7 +163,7 @@ const goToSongDetail = () => {
   const commentId =
     resolveNumericId(songMixSongId.value) ?? resolveNumericId(songId.value) ?? songId.value;
   router.push({
-    name: 'comment',
+    name: 'song-detail',
     params: { id: String(commentId) },
     query: {
       mainTab: 'detail',
@@ -531,26 +531,6 @@ const handleFavorite = () => {
   background-color: var(--border-subtle);
 }
 
-.playlist-picker-item {
-  width: 100%;
-  padding: 8px 12px;
-  border-radius: 8px;
-  border: 1px solid var(--control-border);
-  background: var(--control-bg);
-  text-align: left;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  color: var(--color-text-main);
-  transition:
-    color 0.2s ease,
-    border-color 0.2s ease;
-}
-
-.playlist-picker-item:hover {
-  border-color: var(--color-primary);
-  color: var(--color-primary);
-}
 .song-title-row {
   min-width: 0;
   flex-wrap: nowrap;
