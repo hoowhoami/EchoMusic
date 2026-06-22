@@ -25,7 +25,11 @@ import {
 import { coverFallbackRevision } from '@/plugins/coverFallback';
 import { resolveCoverColorUrls } from '@/utils/cover';
 import { logger } from '@/utils/logger';
-import { navigateToShareTarget, SHARE_COPIED_EVENT } from '@/utils/share';
+import {
+  navigateToShareTarget,
+  SHARE_COPIED_EVENT,
+  type ShareCopiedEventDetail,
+} from '@/utils/share';
 import type { UpdateCheckResult } from '../shared/app';
 import { extractShareTarget, getShareResourceLabel, type ShareTarget } from '../shared/share';
 import LyricView from '@/views/lyric/LyricPage.vue';
@@ -48,7 +52,7 @@ let disposePluginRuntimeReload: (() => void) | null = null;
 let disposeShareOpen: (() => void) | null = null;
 let silentUpdateCheckTimer: number | null = null;
 let clipboardShareCheckTimer: number | null = null;
-let lastClipboardShareKey = '';
+let lastHandledClipboardText = '';
 let isCheckingClipboardShare = false;
 let colorSchemeMediaQuery: MediaQueryList | null = null;
 
@@ -119,15 +123,14 @@ const openShareTarget = (target: ShareTarget) => {
   }
 };
 
-const getShareTargetKey = (target: ShareTarget) => `${target.type}:${target.id}`;
-
-const rememberClipboardShareTarget = (target: ShareTarget) => {
-  lastClipboardShareKey = getShareTargetKey(target);
-};
+const normalizeClipboardText = (value: unknown) => String(value ?? '').trim();
 
 const handleShareCopied = (event: Event) => {
-  const target = (event as CustomEvent<ShareTarget>).detail;
-  if (target?.type && target.id) rememberClipboardShareTarget(target);
+  const detail = (event as CustomEvent<ShareCopiedEventDetail>).detail;
+  const text = normalizeClipboardText(detail?.text);
+  if (detail?.target?.type && detail.target.id && text) {
+    lastHandledClipboardText = text;
+  }
 };
 
 const checkClipboardShareTarget = async () => {
@@ -138,12 +141,15 @@ const checkClipboardShareTarget = async () => {
   isCheckingClipboardShare = true;
   try {
     const text = await readClipboard();
+    const normalizedText = normalizeClipboardText(text);
     const target = extractShareTarget(text);
-    if (!target) return;
+    if (!target) {
+      lastHandledClipboardText = '';
+      return;
+    }
 
-    const key = getShareTargetKey(target);
-    if (key === lastClipboardShareKey) return;
-    lastClipboardShareKey = key;
+    if (normalizedText && normalizedText === lastHandledClipboardText) return;
+    lastHandledClipboardText = normalizedText;
 
     const label = getShareResourceLabel(target.type);
     toastStore.showAction(`检测到 EchoMusic ${label}分享`, {

@@ -6,6 +6,11 @@ import { buildShareText, type ShareResourceType, type ShareTarget } from '../../
 
 export const SHARE_COPIED_EVENT = 'echomusic:share-copied';
 
+export interface ShareCopiedEventDetail {
+  target: ShareTarget;
+  text: string;
+}
+
 const cleanId = (value: unknown) => String(value ?? '').trim();
 
 const readNestedText = (record: Record<string, unknown> | undefined, key: string) => {
@@ -121,8 +126,8 @@ export const copyShareTarget = async (target: ShareTarget): Promise<boolean> => 
   }
   if (copied) {
     window.dispatchEvent(
-      new CustomEvent<ShareTarget>(SHARE_COPIED_EVENT, {
-        detail: target,
+      new CustomEvent<ShareCopiedEventDetail>(SHARE_COPIED_EVENT, {
+        detail: { target, text },
       }),
     );
   }
