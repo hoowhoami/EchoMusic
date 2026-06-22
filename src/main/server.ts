@@ -30,7 +30,8 @@ export interface ApiResponse {
 // --- 状态 ---
 
 const isDev = !app.isPackaged;
-let moduleMap: Map<string, ModuleDefinition> = new Map();
+let moduleMap: Map<string, string> = new Map(); // 改为存储 route -> modulePath
+const moduleCache: Map<string, ModuleDefinition> = new Map(); // 缓存已加载的模块
 let serverReady = false;
 let createRequestFn: ((config: any) => Promise<any>) | null = null;
 
@@ -51,23 +52,44 @@ const resolveServerPath = (): string => {
 };
 
 /**
- * 扫描并加载所有 server module
- * 复现 server/server.js 中 getModulesDefinitions 的逻辑
+ * 扫描 server module 路径映射（不立即加载）
+ * 复现 server/server.js 中 getModulesDefinitions 的逻辑，但延迟实际 require
  */
-const loadModules = (serverPath: string): ModuleDefinition[] => {
+const scanModules = (serverPath: string): Map<string, string> => {
   const modulesPath = path.join(serverPath, 'module');
   const files = fs.readdirSync(modulesPath);
+  const routeMap = new Map<string, string>();
 
-  return files
+  files
     .reverse()
     .filter((fileName) => fileName.endsWith('.js') && !fileName.startsWith('_'))
-    .map((fileName) => {
-      const identifier = fileName.split('.').shift() || fileName;
+    .forEach((fileName) => {
       const route = '/' + fileName.replace(/\.js$/i, '').replace(/_/g, '/');
       const modulePath = path.resolve(modulesPath, fileName);
-      const mod = require(modulePath);
-      return { identifier, route, module: mod };
+      routeMap.set(route, modulePath);
     });
+
+  return routeMap;
+};
+
+/**
+ * 按需加载单个模块并缓存
+ */
+const loadModule = (modulePath: string, route: string): ModuleDefinition => {
+  // 检查缓存
+  const cached = moduleCache.get(route);
+  if (cached) return cached;
+
+  // 首次加载
+  const identifier = path.basename(modulePath, '.js');
+  const mod = require(modulePath);
+  const definition: ModuleDefinition = { identifier, route, module: mod };
+
+  // 缓存
+  moduleCache.set(route, definition);
+  log.debug(`[IPC-Server] Module loaded on-demand: ${route}`);
+
+  return definition;
 };
 
 /**
@@ -113,35 +135,37 @@ export async function initApiServer(): Promise<void> {
 
   createRequestFn = createRequest;
 
-  // 加载所有 module
-  const modules = loadModules(serverPath);
-  moduleMap = new Map();
-  for (const mod of modules) {
-    moduleMap.set(mod.route, mod);
-    log.debug(`[IPC-Server] Route registered: ${mod.route}`);
-  }
+  // 扫描所有 module 路径（不立即加载）
+  moduleMap = scanModules(serverPath);
+  log.info(`[IPC-Server] Initialized, ${moduleMap.size} modules registered (lazy-load)`);
 
   serverReady = true;
-  log.info(`[IPC-Server] Initialized, ${moduleMap.size} modules loaded`);
 }
 
 /**
- * 根据请求 URL 匹配 module
+ * 根据请求 URL 匹配并按需加载 module
  * URL 格式如 /song/url → 匹配 route "/song/url"
  */
 const matchModule = (url: string): ModuleDefinition | null => {
   // 去掉查询参数
   const pathname = url.split('?')[0];
-  // 精确匹配
-  if (moduleMap.has(pathname)) {
-    return moduleMap.get(pathname)!;
-  }
+
+  // 尝试精确匹配
+  let route = pathname;
+  let modulePath = moduleMap.get(pathname);
+
   // 尝试去掉尾部斜杠
-  const normalized = pathname.endsWith('/') ? pathname.slice(0, -1) : pathname;
-  if (moduleMap.has(normalized)) {
-    return moduleMap.get(normalized)!;
+  if (!modulePath) {
+    route = pathname.endsWith('/') ? pathname.slice(0, -1) : pathname;
+    modulePath = moduleMap.get(route);
   }
-  return null;
+
+  if (!modulePath) {
+    return null;
+  }
+
+  // 按需加载模块
+  return loadModule(modulePath, route);
 };
 
 /**

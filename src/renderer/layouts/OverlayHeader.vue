@@ -129,7 +129,7 @@ const openMiniPlayer = () => {
 }
 
 .overlay-header-left.mac-offset {
-  left: 70px;
+  left: 80px;
 }
 
 .overlay-control-btn {

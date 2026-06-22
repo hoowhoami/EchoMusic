@@ -62,18 +62,54 @@ const isHoveringProgress = ref(false);
 const pendingSeekTime = ref<number | null>(null);
 const isDraggingSeek = ref(false);
 
+// 防止切歌时进度条跳动：记录上一首歌的 trackId，如果切歌时进度归零则保持显示直到新歌加载
+const lastTrackId = ref<string | null>(null);
+const frozenProgress = ref<number | null>(null);
+
 const progressValue = computed(() => {
   if (isDraggingSeek.value && pendingSeekTime.value !== null) {
     return [pendingSeekTime.value];
   }
+
+  const currentTrackId = playerStore.currentTrackId;
+
+  // 检测切歌：trackId 变化
+  if (currentTrackId !== lastTrackId.value) {
+    // 切歌了，冻结进度条显示
+    if (lastTrackId.value !== null && playerStore.currentTime === 0 && playerStore.isLoading) {
+      // 新歌还在加载中，保持冻结
+      if (frozenProgress.value === null) {
+        frozenProgress.value = 0;
+      }
+    } else {
+      // 新歌已经开始播放，解冻
+      frozenProgress.value = null;
+    }
+    lastTrackId.value = currentTrackId;
+  }
+
+  // 如果不在加载中，或者进度已经开始更新，解冻
+  if (!playerStore.isLoading || playerStore.currentTime > 0) {
+    frozenProgress.value = null;
+  }
+
+  // 如果冻结了，返回冻结值；否则返回实际进度
+  if (frozenProgress.value !== null && playerStore.isLoading && playerStore.currentTime === 0) {
+    return [frozenProgress.value];
+  }
+
   return [playerStore.currentTime];
 });
 
 const progressTooltipPercent = computed(() => {
-  const displayTime =
-    isDraggingSeek.value && pendingSeekTime.value !== null
-      ? pendingSeekTime.value
-      : playerStore.currentTime;
+  let displayTime = playerStore.currentTime;
+
+  if (isDraggingSeek.value && pendingSeekTime.value !== null) {
+    displayTime = pendingSeekTime.value;
+  } else if (frozenProgress.value !== null && playerStore.isLoading && playerStore.currentTime === 0) {
+    displayTime = frozenProgress.value;
+  }
+
   return (displayTime / Math.max(playerStore.duration, 1)) * 100;
 });
 
@@ -174,7 +210,11 @@ const handleCopySongInfo = async () => {
       >
         {{
           formatTime(
-            isDraggingSeek && pendingSeekTime !== null ? pendingSeekTime : playerStore.currentTime,
+            isDraggingSeek && pendingSeekTime !== null
+              ? pendingSeekTime
+              : frozenProgress !== null && playerStore.isLoading && playerStore.currentTime === 0
+                ? frozenProgress
+                : playerStore.currentTime,
           )
         }}
         / {{ formatTime(playerStore.duration) }}
