@@ -519,6 +519,10 @@ export function testLyricFilter(text: string, enabled: boolean, pattern: string)
   }
 }
 
+// 同一 hash 的在途歌词请求去重：避免切歌瞬间 playTrack 与歌词页 watch 各自触发，
+// 导致对同一首歌并发多次 searchLyric/getLyric，挤占本地服务器、拖慢音频首包。
+let inflightLyricHash: string | null = null;
+
 export const useLyricStore = defineStore('lyric', {
   state: () => ({
     lines: [] as LyricLine[],
@@ -874,8 +878,14 @@ export const useLyricStore = defineStore('lyric', {
         return;
       }
 
+      // 同一 hash 已有在途请求时跳过，避免并发重复拉取
+      if (inflightLyricHash === normalizedHash && !options?.force) {
+        return;
+      }
+
       const requestSerial = this.requestSerial + 1;
       this.requestSerial = requestSerial;
+      inflightLyricHash = normalizedHash;
 
       const shouldPreserveCurrentLines =
         Boolean(options?.preserveCurrent) &&
@@ -961,6 +971,9 @@ export const useLyricStore = defineStore('lyric', {
           return;
         }
         this.clear(normalizedHash, '歌词加载失败');
+      } finally {
+        // 仅当当前在途标记仍属于本次请求时才清除，避免误清后续请求
+        if (inflightLyricHash === normalizedHash) inflightLyricHash = null;
       }
     },
   },

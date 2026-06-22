@@ -125,6 +125,7 @@ export const createPlaybackManager = (
   ) => {
     const requestSeq = ++state.playbackRequestSeq;
     state.historyLocalRecorded = false;
+    state.historyLocalRecorded = false;
     const sourceList = playlist
       ? toRawSongList(playlist)
       : (playlistStore.activeQueue?.songs ?? playlistStore.defaultList);

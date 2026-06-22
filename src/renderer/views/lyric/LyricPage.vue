@@ -230,7 +230,7 @@ const handleKeydown = (event: KeyboardEvent) => {
 };
 
 watch(
-  () => [currentTrack.value?.id, playerStore.isPlaying],
+  () => currentTrack.value?.id,
   () => {
     ensureLyricsForCurrentTrack();
   },
