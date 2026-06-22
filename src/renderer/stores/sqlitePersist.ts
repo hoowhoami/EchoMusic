@@ -117,6 +117,10 @@ export const sqlitePersistPlugin = ({ store, options }: PiniaPluginContext) => {
         void window.electron?.storage?.setKv(storageKey, payload);
       }, 120);
     },
-    { detached: false },
+    // 持久化的均为全局单例 store，其订阅应随应用整个生命周期存在；
+    // detached:false 会把订阅绑定到「首次创建该 store 时所处的组件 scope」，
+    // 若该 store 恰好首次在会卸载的组件（如插件迷你 app）内被访问，
+    // 组件卸载时订阅会被一并摘除，导致此后静默不再存盘。
+    { detached: true },
   );
 };

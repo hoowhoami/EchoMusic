@@ -33,6 +33,7 @@ export const createPlaybackManager = (
     state.isPlaying = false;
     state.currentTime = 0;
     state.duration = 0;
+    state.awaitingTrackLoad = false;
     if (!options?.keepResolvedSource) {
       state.currentAudioUrl = '';
       state.currentResolvedAudioQuality = null;
@@ -190,6 +191,8 @@ export const createPlaybackManager = (
     state.isLoading = true;
     state.lastError = null;
     state.stallRecovering = false;
+    // 开启切歌加载护栏：在新文件 file-loaded 之前丢弃上一首的残留进度回报
+    state.awaitingTrackLoad = true;
     clearPlaybackNotice();
     state.climaxMarks = [];
 
@@ -556,6 +559,7 @@ export const createPlaybackManager = (
     state.duration = 0;
     state.isPlaying = false;
     state.stallRecovering = false;
+    state.awaitingTrackLoad = false;
     state.stallRecoverTrackId = null;
     state.stallRecoverAttempts = 0;
     state.currentTrackId = null;

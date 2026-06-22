@@ -48,6 +48,11 @@ function bindEventForwarding(
   controller.on('duration-change', (duration: number) => {
     getMainWindow()?.webContents.send('mpv:duration-change', duration);
   });
+  // 新文件加载完成信号，渲染进程据此放行切歌后的 time/duration 回报，
+  // 丢弃 loadFile 替换期间上一首残留的进度，避免进度条先跳旧值再归零
+  controller.on('mpv:file-loaded', () => {
+    getMainWindow()?.webContents.send('mpv:file-loaded');
+  });
   controller.on('state-change', (state: unknown) => {
     getMainWindow()?.webContents.send('mpv:state-change', state);
   });

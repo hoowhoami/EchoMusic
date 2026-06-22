@@ -450,6 +450,11 @@ contextBridge.exposeInMainWorld('electron', {
       ipcRenderer.on('mpv:duration-change', listener);
       return () => ipcRenderer.removeListener('mpv:duration-change', listener);
     },
+    onFileLoaded: (func: () => void) => {
+      const listener = () => func();
+      ipcRenderer.on('mpv:file-loaded', listener);
+      return () => ipcRenderer.removeListener('mpv:file-loaded', listener);
+    },
     onStateChange: (func: (state: { playing?: boolean; paused?: boolean }) => void) => {
       const listener = (
         _event: Electron.IpcRendererEvent,

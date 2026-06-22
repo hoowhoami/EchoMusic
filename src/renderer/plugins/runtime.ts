@@ -1361,20 +1361,10 @@ const createMountedComponentDisposer = (
   mountedApp.mount(container);
 
   return () => {
-    // 先尝试清理 pinia store 订阅
-    try {
-      const storeNames = ['player', 'playlist', 'lyric', 'settings', 'theme'];
-      storeNames.forEach((storeName) => {
-        const store = (mountedApp.config.globalProperties as any)?.$pinia?._s?.get(storeName);
-        if (store?.$dispose) {
-          store.$dispose();
-        }
-      });
-    } catch (error) {
-      logger.warn('PluginRuntime', 'Store cleanup failed', { pluginId, error });
-    }
-
-    // 卸载应用
+    // 卸载应用。迷你 app 与主应用共享同一个 pinia 实例，
+    // 这里只能卸载自身组件树（unmount 会清理该子树的 watcher/effect），
+    // 绝不能去 $dispose 共享的全局 store，否则会连带销毁主应用的
+    // player/lyric/settings 等 store，导致页面响应式失效、卡死。
     try {
       mountedApp.unmount();
     } catch (error) {

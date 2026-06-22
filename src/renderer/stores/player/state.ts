@@ -47,6 +47,10 @@ export const createPlayerState = () => ({
   seekTargetTime: null as number | null,
   seekTimestamp: 0,
   isResuming: false,
+  // 切歌加载护栏：playTrack 重置时置 true，mpv 回报 file-loaded（新文件真正加载完成）后置 false。
+  // 期间 timeUpdate/durationChange 收到的多为上一首在 loadFile 替换前后的残留回报，一律丢弃，
+  // 避免进度条切歌时先跳到旧值再归零。
+  awaitingTrackLoad: false,
   // 卡死恢复：恢复期间 UI 停在断点位置，忽略 reload 过程中 mpv 回报的归零/回跳值，避免进度条跳动
   stallRecovering: false,
   stallRecoverTarget: 0,

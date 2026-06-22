@@ -413,6 +413,9 @@ export const usePlayerStore = defineStore(
       const events: PlayerEngineEvents = {
         timeUpdate: (currentTime) => {
           if (state.isDraggingProgress) return;
+          // 切歌加载护栏：新文件 file-loaded 之前到达的回报多为上一首的残留位置，一律丢弃，
+          // 避免进度条切歌瞬间先跳到旧进度再归零
+          if (state.awaitingTrackLoad) return;
           // 卡死恢复护栏：reload 期间还没追回断点的回报值（含归零）一律忽略，UI 停在断点不跳动；
           // 追回到断点附近或超时兜底后解除护栏。
           if (state.stallRecovering) {
@@ -446,6 +449,9 @@ export const usePlayerStore = defineStore(
           }
         },
         durationChange: (duration) => {
+          // 切歌加载护栏：file-loaded 之前的 duration 回报（含 setSource 的归零与上一首残留）一律丢弃，
+          // 真实时长在 fileLoaded 时从引擎补回
+          if (state.awaitingTrackLoad) return;
           // 卡死恢复 reload 期间，mpv 会先回报 duration=0，忽略以免进度条最大值瞬间归零
           if (state.stallRecovering && duration <= 0) return;
           state.duration = duration;
@@ -456,6 +462,16 @@ export const usePlayerStore = defineStore(
             lyricStore.lyricSyncWarning = diff > 10 && diff / trackDuration > 0.1;
           } else {
             lyricStore.lyricSyncWarning = false;
+          }
+        },
+        fileLoaded: () => {
+          // 新文件真正加载完成，解除切歌加载护栏，放行后续进度回报
+          if (!state.awaitingTrackLoad) return;
+          state.awaitingTrackLoad = false;
+          // 补回加载窗口内被丢弃的真实时长，避免进度条最大值停留在 0
+          if (engine.duration > 0) {
+            state.duration = engine.duration;
+            engine.updateMediaPlaybackState(buildMediaState(state));
           }
         },
         ended: () => {

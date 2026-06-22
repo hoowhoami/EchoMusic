@@ -4,6 +4,8 @@ import type { ImpulseResponsePlaybackOptions } from '../../shared/audio';
 export interface PlayerEngineEvents {
   timeUpdate?: (currentTime: number) => void;
   durationChange?: (duration: number) => void;
+  /** 新文件加载完成（mpv file-loaded），用于切歌后放行进度回报 */
+  fileLoaded?: () => void;
   ended?: () => void;
   play?: () => void;
   pause?: () => void;
@@ -95,6 +97,11 @@ export class PlayerEngine {
       this.events.durationChange?.(duration);
     });
     this.cleanupFns.push(offDuration);
+
+    const offFileLoaded = mpv.onFileLoaded?.(() => {
+      this.events.fileLoaded?.();
+    });
+    if (offFileLoaded) this.cleanupFns.push(offFileLoaded);
 
     const offState = mpv.onStateChange((state: { playing?: boolean; paused?: boolean }) => {
       if (state.playing) {
