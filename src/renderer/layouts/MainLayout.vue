@@ -125,7 +125,7 @@ watch(
 
     <div
       class="sidebar-wrapper shrink-0 relative"
-      :style="{ width: isSidebarCollapsed ? '64px' : '230px' }"
+      :style="{ width: isSidebarCollapsed ? '80px' : '230px' }"
     >
       <Sidebar class="absolute inset-0" :collapsed="isSidebarCollapsed" />
     </div>

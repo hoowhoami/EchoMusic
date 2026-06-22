@@ -1482,7 +1482,7 @@ watch(
 }
 
 .sidebar.is-rail {
-  width: 64px;
+  width: 80px;
 }
 
 :deep(.sidebar-scroll) {
@@ -1607,7 +1607,7 @@ watch(
 }
 
 .sidebar-rail-scroll {
-  width: 64px;
+  width: 80px;
   max-width: none !important;
 }
 

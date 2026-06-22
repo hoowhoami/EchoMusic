@@ -291,7 +291,7 @@ export async function createWindow() {
     transparent: false,
     hasShadow: true,
     titleBarStyle: 'hidden',
-    trafficLightPosition: { x: 5, y: 14 },
+    trafficLightPosition: { x: 14, y: 14 },
     webPreferences: {
       preload,
       contextIsolation: true,
