@@ -34,6 +34,7 @@ import {
   iconRepeatOff,
   iconShuffle,
   iconListRestart,
+  iconShare,
 } from '@/icons';
 
 const emit = defineEmits<{
@@ -56,6 +57,8 @@ const {
   toggleDesktopLyric,
   queueCount,
   canAddToPlaylist,
+  canShareCurrentTrack,
+  handleShareCurrentTrack,
 } = usePlayerControls();
 
 const isHoveringProgress = ref(false);
@@ -326,6 +329,17 @@ const handleCopySongInfo = async () => {
 
       <!-- 3. 右侧：功能选项 -->
       <div class="bar-right">
+        <Button
+          v-if="canShareCurrentTrack"
+          variant="unstyled"
+          size="none"
+          class="bar-func-btn bar-func-muted"
+          title="分享"
+          @click="handleShareCurrentTrack"
+        >
+          <Icon :icon="iconShare" width="20" height="20" />
+        </Button>
+
         <SpeedPopover />
         <QualityPopover />
         <EffectPopover />

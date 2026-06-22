@@ -30,6 +30,8 @@ const readText = (value: unknown): string => {
   return String(value).trim();
 };
 
+export const isSongShareId = (value: unknown): boolean => /^[a-f0-9]{32}$/i.test(readText(value));
+
 const stripTrailingUrlPunctuation = (value: string) =>
   value.trim().replace(/[)\]}>,，。！？；;]+$/g, '');
 
@@ -80,6 +82,7 @@ const parseCustomShareUrl = (value: string): ShareTarget | null => {
 
   const id = readText(segments.shift());
   if (!id) return null;
+  if (typeText === 'song' && !isSongShareId(id)) return null;
 
   return withQuery({ type: typeText, id }, readSearchParams(url.searchParams));
 };
@@ -94,6 +97,7 @@ const parseShareTargetParts = (
 
   const targetId = readText(id);
   if (!targetId) return null;
+  if (typeText === 'song' && !isSongShareId(targetId)) return null;
 
   return withQuery({ type: typeText, id: targetId }, query);
 };
@@ -102,6 +106,9 @@ export const buildShareUrl = (target: ShareTarget): string => {
   const id = readText(target.id);
   if (!isShareResourceType(target.type) || !id) {
     throw new Error('Invalid share target');
+  }
+  if (target.type === 'song' && !isSongShareId(id)) {
+    throw new Error('Invalid song share target');
   }
 
   const url = new URL(`${SHARE_SCHEME}://${target.type}/${encodeURIComponent(id)}`);
@@ -117,9 +124,17 @@ export const buildShareWebUrl = (target: ShareTarget): string => {
   if (!isShareResourceType(target.type) || !id) {
     throw new Error('Invalid share target');
   }
+  if (target.type === 'song' && !isSongShareId(id)) {
+    throw new Error('Invalid song share target');
+  }
 
   const url = new URL(SHARE_WEB_BASE_URL);
-  url.searchParams.set('target', buildShareUrl({ ...target, id }));
+  if (Object.keys(normalizeShareQuery(target.query)).length === 0) {
+    url.searchParams.set('type', target.type);
+    url.searchParams.set('id', id);
+  } else {
+    url.searchParams.set('target', buildShareUrl({ ...target, id }));
+  }
   return url.toString();
 };
 

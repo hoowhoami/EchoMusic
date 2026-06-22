@@ -2,7 +2,12 @@ import type { Router } from 'vue-router';
 import type { PlaylistMeta } from '@/models/playlist';
 import type { Song } from '@/models/song';
 import { useUserStore } from '@/stores/user';
-import { buildShareText, type ShareResourceType, type ShareTarget } from '../../shared/share';
+import {
+  buildShareText,
+  isSongShareId,
+  type ShareResourceType,
+  type ShareTarget,
+} from '../../shared/share';
 
 export const SHARE_COPIED_EVENT = 'echomusic:share-copied';
 
@@ -12,6 +17,8 @@ export interface ShareCopiedEventDetail {
 }
 
 const cleanId = (value: unknown) => String(value ?? '').trim();
+
+export const isSongHashId = isSongShareId;
 
 const readNestedText = (record: Record<string, unknown> | undefined, key: string) => {
   const value = record?.[key];
@@ -73,23 +80,10 @@ export const createShareTarget = (
 };
 
 export const createSongShareTarget = (song: Song): ShareTarget | null => {
-  const id = song.mixSongId || song.albumAudioId || song.id;
   const title = song.title || song.name || '';
-  const album = song.album || song.albumName || '';
-  const cover = song.coverUrl || song.cover || '';
-  const mixSongId = song.mixSongId || song.albumAudioId || song.id;
-  return createShareTarget('song', id, title, {
-    mainTab: 'detail',
-    type: 'music',
-    title,
-    artist: song.artist,
-    artistId: song.artists?.[0]?.id ?? song.singers?.[0]?.id,
-    album,
-    cover,
-    albumId: song.albumId,
-    hash: song.hash,
-    mixSongId,
-  });
+  const hash = cleanId(song.hash);
+  if (!isSongHashId(hash)) return null;
+  return createShareTarget('song', hash, title);
 };
 
 export const resolvePlaylistShareId = (
@@ -139,13 +133,14 @@ export const navigateToShareTarget = (router: Router, target: ShareTarget) => {
   if (!id) return false;
 
   if (target.type === 'song') {
+    if (!isSongHashId(id)) return false;
     void router.push({
       name: 'song-detail',
       params: { id },
       query: {
         mainTab: 'detail',
         type: 'music',
-        mixSongId: id,
+        hash: id,
         ...target.query,
       },
     });

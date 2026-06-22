@@ -132,6 +132,10 @@
       };
 
       const isShareType = (value) => Object.prototype.hasOwnProperty.call(TYPE_LABELS, value);
+      const isSongShareId = (value) => /^[a-f0-9]{32}$/i.test(String(value || '').trim());
+      const isValidTarget = (target) =>
+        Boolean(target && isShareType(target.type) && target.id) &&
+        (target.type !== 'song' || isSongShareId(target.id));
 
       const parseCustomTarget = (value) => {
         try {
@@ -143,8 +147,8 @@
             .filter(Boolean);
           const type = url.hostname || segments.shift() || '';
           const id = segments.shift() || '';
-          if (!isShareType(type) || !id) return null;
-          return { type, id, appUrl: url.toString() };
+          const target = { type, id, appUrl: url.toString() };
+          return isValidTarget(target) ? target : null;
         } catch {
           return null;
         }
@@ -157,15 +161,15 @@
 
         const type = String(url.searchParams.get('type') || '').trim();
         const id = String(url.searchParams.get('id') || '').trim();
-        if (isShareType(type) && id) return { type, id };
+        const queryTarget = { type, id };
+        if (isValidTarget(queryTarget)) return queryTarget;
 
         const parts = url.pathname.split('/').filter(Boolean);
         const shareIndex = parts.lastIndexOf('share');
         const pathType = shareIndex >= 0 ? parts[shareIndex + 1] : '';
         const pathId = shareIndex >= 0 ? parts[shareIndex + 2] : '';
-        if (isShareType(pathType) && pathId) {
-          return { type: pathType, id: decodeURIComponent(pathId) };
-        }
+        const pathTarget = { type: pathType, id: decodeURIComponent(pathId || '') };
+        if (isValidTarget(pathTarget)) return pathTarget;
 
         return null;
       };

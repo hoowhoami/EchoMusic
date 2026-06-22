@@ -13,6 +13,7 @@ import { useToastStore } from '@/stores/toast';
 import type { Song } from '@/models/song';
 import type { AudioEffectValue, AudioQualityValue, PlayMode } from '@/types';
 import { hasSongQuality, resolveEffectiveSongQuality } from '@/utils/song';
+import { copyShareTarget, createSongShareTarget, isSongHashId } from '@/utils/share';
 import {
   iconRepeat,
   iconRepeatOff,
@@ -276,6 +277,25 @@ export function usePlayerControls() {
     });
   };
 
+  // ── 分享 ──
+  const canShareCurrentTrack = computed(() => isSongHashId(currentTrack.value?.hash));
+
+  const handleShareCurrentTrack = async () => {
+    const track = currentTrack.value;
+    if (!track) return;
+    const target = createSongShareTarget(track);
+    if (!target) {
+      toastStore.unavailable('当前歌曲');
+      return;
+    }
+    try {
+      await copyShareTarget(target);
+      toastStore.actionCompleted('分享链接已复制');
+    } catch {
+      toastStore.actionFailed('复制分享链接');
+    }
+  };
+
   // ── 队列 ──
   const queueCount = computed(() =>
     Math.max(
@@ -393,6 +413,9 @@ export function usePlayerControls() {
     goToComments,
     hasCurrentTrackMv,
     goToMv,
+    // 分享
+    canShareCurrentTrack,
+    handleShareCurrentTrack,
     // 队列
     queueCount,
     isQueueDrawerOpen,

@@ -33,6 +33,7 @@ import {
   iconList,
   iconPlaylistAdd,
   iconTypography,
+  iconShare,
 } from '@/icons';
 import { usePlayerControls } from '@/composables/usePlayerControls';
 
@@ -61,6 +62,8 @@ const {
   handleOpenAddToPlaylist,
   handleAddToQueue,
   handleSelectPlaylist,
+  canShareCurrentTrack,
+  handleShareCurrentTrack,
 } = usePlayerControls();
 
 const playbackNotice = computed(() => player.playbackNotice);
@@ -517,6 +520,17 @@ onUnmounted(() => {
 
       <!-- 3. 右侧：功能选项 - 弹性增长 -->
       <div class="player-actions flex-1 flex justify-end items-center gap-1 min-w-30 max-w-[320px]">
+        <Button
+          v-if="canShareCurrentTrack"
+          variant="unstyled"
+          size="none"
+          class="p-2 text-text-main/50 hover:text-primary transition-all hover:scale-110 active:scale-90"
+          title="分享"
+          @click="handleShareCurrentTrack"
+        >
+          <Icon :icon="iconShare" width="20" height="20" />
+        </Button>
+
         <SpeedPopover />
         <QualityPopover />
         <EffectPopover />

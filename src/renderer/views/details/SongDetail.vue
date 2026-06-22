@@ -33,7 +33,7 @@ import { usePlayerStore } from '@/stores/player';
 import { useUserStore } from '@/stores/user';
 import { queueAndPlaySong } from '@/utils/playback';
 import { isPlayableSong } from '@/utils/song';
-import { copyShareTarget, createSongShareTarget } from '@/utils/share';
+import { copyShareTarget, createSongShareTarget, isSongHashId } from '@/utils/share';
 import { iconList, iconPlay, iconShare } from '@/icons';
 
 interface CommentPayload {
@@ -60,13 +60,15 @@ const isPlaylistLoading = ref(false);
 const songTitle = computed(() => String(route.query.title ?? detailSong.value?.title ?? ''));
 const songArtist = computed(() => String(route.query.artist ?? detailSong.value?.artist ?? ''));
 const songAlbum = computed(() => String(route.query.album ?? detailSong.value?.album ?? ''));
-const songHash = computed(() => String(route.query.hash ?? detailSong.value?.hash ?? ''));
+const songHash = computed(() =>
+  String(route.query.hash ?? detailSong.value?.hash ?? (isSongHashId(id) ? id : '')),
+);
 const songArtistIdFromQuery = computed(() =>
   String(route.query.artistId ?? detailSong.value?.artists?.[0]?.id ?? ''),
 );
 const songAlbumId = computed(() => String(route.query.albumId ?? detailSong.value?.albumId ?? ''));
 const songMixSongId = computed(() =>
-  String(route.query.mixSongId ?? detailSong.value?.mixSongId ?? id),
+  String(route.query.mixSongId ?? detailSong.value?.mixSongId ?? (isSongHashId(id) ? '' : id)),
 );
 
 const isMusicType = computed(() => type === 'music');
@@ -271,13 +273,13 @@ const buildSongFromPrivilege = (record: Record<string, unknown>): Song => {
   );
   const targetId = readText(
     route.query.mixSongId,
-    id,
     base.mixsongid,
     base.album_audio_id,
     base.audio_id,
     record.mixsongid,
     record.album_audio_id,
     record.audio_id,
+    isSongHashId(id) ? '' : id,
   );
   const title = readText(
     route.query.title,
@@ -321,8 +323,14 @@ const buildSongFromPrivilege = (record: Record<string, unknown>): Song => {
     coverUrl: cover,
     cover,
     audioUrl: '',
-    hash: readText(route.query.hash, audioInfo.hash, record.hash, record.hash_128),
-    mixSongId: targetId || id,
+    hash: readText(
+      route.query.hash,
+      audioInfo.hash,
+      record.hash,
+      record.hash_128,
+      isSongHashId(id) ? id : '',
+    ),
+    mixSongId: targetId || '',
     privilege: readNumber(record.privilege) || undefined,
     payType: readNumber(record.pay_type, record.PayType, record.payType) || undefined,
     oldCpy: readNumber(record.old_cpy, record.media_old_cpy) || undefined,
@@ -397,7 +405,7 @@ const actionSong = computed<Song | null>(() => {
   if (!isMusicType.value) return null;
   if (detailSong.value) return detailSong.value;
 
-  const targetId = songMixSongId.value || id;
+  const targetId = songMixSongId.value;
   if (!targetId) return null;
 
   return {
@@ -735,12 +743,20 @@ const fetchMusicComments = async (reset = false) => {
   if (reset) {
     page.value = 1;
     comments.value = [];
+    hotComments.value = [];
+    classifyList.value = [];
+    hotwordList.value = [];
     total.value = 0;
     hasMore.value = true;
   }
+  const mixSongId = songMixSongId.value;
+  if (!mixSongId) {
+    hasMore.value = false;
+    return;
+  }
   isLoadingComments.value = true;
   try {
-    const res = await getMusicComments(songMixSongId.value || id, page.value, 30, {
+    const res = await getMusicComments(mixSongId, page.value, 30, {
       showClassify: reset,
       showHotwordList: reset,
     });
@@ -876,10 +892,15 @@ const fetchClassifyComments = async (reset = false) => {
     classifyComments.value = [];
     hasMoreClassify.value = true;
   }
+  const mixSongId = songMixSongId.value;
+  if (!mixSongId) {
+    hasMoreClassify.value = false;
+    return;
+  }
   isLoadingClassify.value = true;
   try {
     const res = await getMusicClassifyComments(
-      songMixSongId.value || id,
+      mixSongId,
       selectedClassify.value,
       classifyPage.value,
       30,
@@ -918,10 +939,15 @@ const fetchHotwordComments = async (reset = false) => {
     hotwordComments.value = [];
     hasMoreHotword.value = true;
   }
+  const mixSongId = songMixSongId.value;
+  if (!mixSongId) {
+    hasMoreHotword.value = false;
+    return;
+  }
   isLoadingHotword.value = true;
   try {
     const res = await getMusicHotwordComments(
-      songMixSongId.value || id,
+      mixSongId,
       selectedHotword.value,
       hotwordPage.value,
       30,
@@ -976,8 +1002,9 @@ const fetchHeaderStats = async () => {
   if (type !== 'music') return;
   try {
     const hash = songHash.value;
+    const mixSongId = songMixSongId.value;
     const [favoriteRes, commentRes] = await Promise.all([
-      getFavoriteCount(songMixSongId.value || id),
+      mixSongId ? getFavoriteCount(mixSongId) : Promise.resolve(null),
       hash ? getCommentCount(hash) : Promise.resolve(null),
     ]);
     if (favoriteRes && typeof favoriteRes === 'object') {
@@ -1007,10 +1034,9 @@ const fetchDetailData = async () => {
   detailLoading.value = true;
   try {
     const hash = songHash.value;
-    const [privilegeRes, rankingRes] = await Promise.all([
-      hash ? getSongPrivilegeLite(hash, songAlbumId.value || undefined) : Promise.resolve(null),
-      getSongRanking(songMixSongId.value || id),
-    ]);
+    const privilegeRes = hash
+      ? await getSongPrivilegeLite(hash, songAlbumId.value || undefined)
+      : null;
     if (privilegeRes && typeof privilegeRes === 'object') {
       const record = privilegeRes as unknown as Record<string, unknown>;
       const data = (record.data as unknown[]) || [];
@@ -1023,6 +1049,8 @@ const fetchDetailData = async () => {
         detailSong.value = buildSongFromPrivilege(privilegeData.value);
       }
     }
+    const mixSongId = songMixSongId.value;
+    const rankingRes = mixSongId ? await getSongRanking(mixSongId) : null;
     if (rankingRes && typeof rankingRes === 'object') {
       rankingData.value = rankingRes as unknown as Record<string, unknown>;
     }
@@ -1036,12 +1064,13 @@ const fetchDetailData = async () => {
 const loadCurrentResource = async () => {
   mainTab.value =
     String(route.query.tab ?? route.query.mainTab ?? 'detail') === 'comment' ? 'comment' : 'detail';
-  await fetchComments(true);
   if (isMusicType.value) {
-    void fetchDetailData().finally(() => {
-      void fetchHeaderStats();
-    });
+    await fetchDetailData();
+    await fetchComments(true);
+    void fetchHeaderStats();
+    return;
   }
+  await fetchComments(true);
 };
 
 onMounted(async () => {
@@ -1237,7 +1266,7 @@ watch(total, (value) => {
                       :comments="singerComments"
                       :loading="false"
                       :resourceType="type"
-                      :fallbackMixSongId="songMixSongId || id"
+                      :fallbackMixSongId="songMixSongId"
                       compact
                       hide-empty
                     />
@@ -1246,7 +1275,7 @@ watch(total, (value) => {
                       :comments="comments"
                       :loading="isLoadingComments"
                       :resourceType="type"
-                      :fallbackMixSongId="songMixSongId || id"
+                      :fallbackMixSongId="songMixSongId"
                       compact
                     />
                     <div v-if="hasMore" ref="commentSentinelRef" class="h-1" />
@@ -1282,7 +1311,7 @@ watch(total, (value) => {
                       :comments="classifyComments"
                       :loading="isLoadingClassify"
                       :resourceType="type"
-                      :fallbackMixSongId="songMixSongId || id"
+                      :fallbackMixSongId="songMixSongId"
                       compact
                       empty-text="该分类下暂无评论"
                     />
@@ -1319,7 +1348,7 @@ watch(total, (value) => {
                       :comments="hotwordComments"
                       :loading="isLoadingHotword"
                       :resourceType="type"
-                      :fallbackMixSongId="songMixSongId || id"
+                      :fallbackMixSongId="songMixSongId"
                       compact
                       empty-text="该热词下暂无评论"
                     />
@@ -1344,7 +1373,7 @@ watch(total, (value) => {
             :comments="hotComments"
             :loading="isLoadingComments"
             :resourceType="type"
-            :fallbackMixSongId="songMixSongId || id"
+            :fallbackMixSongId="songMixSongId"
             compact
             hide-empty
           />
@@ -1352,7 +1381,7 @@ watch(total, (value) => {
             :comments="comments"
             :loading="isLoadingComments"
             :resourceType="type"
-            :fallbackMixSongId="songMixSongId || id"
+            :fallbackMixSongId="songMixSongId"
             compact
           />
           <div v-if="hasMore" ref="commentSentinelRef" class="h-1" />
