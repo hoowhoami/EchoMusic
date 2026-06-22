@@ -11,6 +11,7 @@ import Drawer from '@/components/ui/Drawer.vue';
 import { SliderRoot, SliderTrack, SliderRange, SliderThumb } from 'reka-ui';
 import Switch from '@/components/ui/Switch.vue';
 import Button from '@/components/ui/Button.vue';
+import InputNumber from '@/components/ui/InputNumber.vue';
 import ColorPickerDialog from '@/components/ui/ColorPickerDialog.vue';
 import { iconX } from '@/icons';
 
@@ -141,6 +142,29 @@ const close = () => {
             </SliderTrack>
             <SliderThumb class="settings-slider-thumb" />
           </SliderRoot>
+        </div>
+
+        <!-- 歌词对齐 -->
+        <div class="settings-section lyric-settings-card">
+          <div class="section-title">歌词对齐</div>
+          <div class="setting-row">
+            <div class="setting-text">
+              <span class="setting-label">微调步长</span>
+              <span class="setting-hint">前进 / 后退按钮每次调整的时间量</span>
+            </div>
+            <InputNumber
+              class="w-32"
+              :model-value="String(settingStore.lyricOffsetStep ?? 0.1)"
+              :min="0.1"
+              :max="5"
+              :step="0.1"
+              placeholder="0.1"
+              suffix="秒"
+              @update:model-value="
+                settingStore.lyricOffsetStep = Math.max(0.1, Math.min(5, Number($event) || 0.1))
+              "
+            />
+          </div>
         </div>
 
         <!-- 歌词颜色 -->

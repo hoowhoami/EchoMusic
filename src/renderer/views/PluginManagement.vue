@@ -1219,7 +1219,7 @@ const requestOpenPluginSettings = (record: (typeof records.value)[number]) => {
               v-if="updatableMarketplaceCount > 0 || isUpdatingAllMarketplace"
               variant="primary"
               size="sm"
-              class="marketplace-update-all-btn !h-9 shrink-0"
+              class="marketplace-update-all-btn h-9! shrink-0"
               :loading="isUpdatingAllMarketplace"
               :disabled="isUpdatingAllMarketplace || isMarketplaceRefreshing"
               :title="`更新全部 ${updatableMarketplaceCount} 个插件`"

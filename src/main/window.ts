@@ -233,6 +233,27 @@ const persistWindowState = () => {
   });
 };
 
+let persistWindowStateTimer: ReturnType<typeof setTimeout> | null = null;
+
+const clearPersistWindowStateTimer = () => {
+  if (!persistWindowStateTimer) return;
+  clearTimeout(persistWindowStateTimer);
+  persistWindowStateTimer = null;
+};
+
+const schedulePersistWindowState = () => {
+  clearPersistWindowStateTimer();
+  persistWindowStateTimer = setTimeout(() => {
+    persistWindowStateTimer = null;
+    persistWindowState();
+  }, 180);
+};
+
+const flushPersistWindowState = () => {
+  clearPersistWindowStateTimer();
+  persistWindowState();
+};
+
 export function getMainWindow() {
   return win;
 }
@@ -340,22 +361,23 @@ export async function createWindow() {
   });
 
   win.on('resize', () => {
-    if (!win?.isMaximized()) persistWindowState();
+    if (!win?.isMaximized()) schedulePersistWindowState();
   });
 
   win.on('move', () => {
-    if (!win?.isMaximized()) persistWindowState();
+    if (!win?.isMaximized()) schedulePersistWindowState();
   });
 
   win.on('maximize', () => {
-    persistWindowState();
+    flushPersistWindowState();
   });
 
   win.on('unmaximize', () => {
-    persistWindowState();
+    flushPersistWindowState();
   });
 
   win.on('closed', () => {
+    clearPersistWindowStateTimer();
     syncPowerSaveBlocker();
     win = null;
   });

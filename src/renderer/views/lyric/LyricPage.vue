@@ -144,7 +144,15 @@ const isCollapsed = computed(
 // 歌词工具按钮
 const hasLyrics = computed(() => lyricStore.lines.length > 0);
 
-const handleOffsetAdjust = (deltaMs: number) => {
+// 歌词对齐微调步长（秒），来自设置，兜底 0.5s
+const lyricOffsetStep = computed(() => {
+  const step = Number(settingStore.lyricOffsetStep);
+  return Number.isFinite(step) && step > 0 ? step : 0.5;
+});
+const lyricOffsetStepLabel = computed(() => `${lyricOffsetStep.value.toFixed(1)}s`);
+
+const handleOffsetAdjust = (direction: 1 | -1) => {
+  const deltaMs = direction * Math.round(lyricOffsetStep.value * 1000);
   const newOffset = lyricStore.adjustTimeOffset(deltaMs);
   const sign = newOffset >= 0 ? '+' : '';
   toastStore.success(`歌词偏移: ${sign}${(newOffset / 1000).toFixed(1)}s`);
@@ -429,16 +437,16 @@ onUnmounted(() => {
         <button
           v-if="hasLyrics"
           class="lyric-page-tool-btn"
-          title="歌词后退 0.5s"
-          @click="handleOffsetAdjust(-500)"
+          :title="`歌词后退 ${lyricOffsetStepLabel}`"
+          @click="handleOffsetAdjust(-1)"
         >
           <Icon :icon="iconRotateCcw" width="15" height="15" />
         </button>
         <button
           v-if="hasLyrics"
           class="lyric-page-tool-btn"
-          title="歌词前进 0.5s"
-          @click="handleOffsetAdjust(500)"
+          :title="`歌词前进 ${lyricOffsetStepLabel}`"
+          @click="handleOffsetAdjust(1)"
         >
           <Icon :icon="iconRotateCw" width="15" height="15" />
         </button>

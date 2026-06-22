@@ -28,6 +28,7 @@ import {
   createDesktopLyricWindow,
   getDesktopLyricWindow,
   loadDesktopLyricWindow,
+  schedulePersistWindowBounds,
   scheduleWindowInteractionSync,
   scheduleWindowPresentationSync,
   setDesktopLyricFixedSize,
@@ -70,15 +71,23 @@ let snapshot: DesktopLyricSnapshot = {
 };
 desktopLyricIsLocked = snapshot.settings.locked;
 
-const sendSnapshot = () => {
-  BrowserWindow.getAllWindows().forEach((win) => {
-    try {
-      if (win.isDestroyed() || win.webContents.isDestroyed()) return;
-      win.webContents.send('desktop-lyric:snapshot', snapshot);
-    } catch {
-      // ignore destroyed frames while broadcasting
-    }
-  });
+const sendSnapshotToWindow = (win: BrowserWindow | null | undefined) => {
+  try {
+    if (!win || win.isDestroyed() || win.webContents.isDestroyed()) return;
+    win.webContents.send('desktop-lyric:snapshot', snapshot);
+  } catch {
+    // ignore destroyed frames while broadcasting
+  }
+};
+
+const sendSnapshot = (scope: 'desktop' | 'settings' = 'settings') => {
+  const lyricWin = getDesktopLyricWindow();
+  sendSnapshotToWindow(lyricWin);
+
+  if (scope === 'desktop') return;
+
+  const mainWin = getMainWindow();
+  if (mainWin && mainWin !== lyricWin) sendSnapshotToWindow(mainWin);
 };
 
 const clearDesktopLyricLockPhaseTimer = () => {
@@ -102,7 +111,7 @@ const setDesktopLyricLockPhase = (phase: DesktopLyricLockPhase, withCooldown = f
       ...snapshot,
       lockPhase: phase,
     };
-    sendSnapshot();
+    sendSnapshot('desktop');
   }
   if (!withCooldown || phase === 'idle') return;
   desktopLyricLockPhaseTimer = setTimeout(() => {
@@ -258,7 +267,7 @@ export const ensureDesktopLyricWindow = async () => {
   win.once('ready-to-show', () => {
     refreshDesktopLyricPresentation();
     refreshDesktopLyricInteraction(true);
-    sendSnapshot();
+    sendSnapshot('desktop');
     bindMainWindowEvents();
   });
 
@@ -334,7 +343,7 @@ export const showDesktopLyricWindow = async () => {
   refreshDesktopLyricInteraction(true);
   refreshDesktopLyricPresentation(true);
   bindMainWindowEvents();
-  sendSnapshot();
+  sendSnapshot('desktop');
   return snapshot;
 };
 
@@ -499,7 +508,7 @@ export const registerDesktopLyricHandlers = () => {
           currentSettings.locked !== nextSettings.locked;
         snapshot = { ...snapshot, settings: nextSettings };
       }
-      sendSnapshot();
+      sendSnapshot(payload.settings ? 'settings' : 'desktop');
       if (shouldRefreshMenus) refreshTrayMenus();
     },
   );
@@ -528,7 +537,7 @@ export const registerDesktopLyricHandlers = () => {
         width,
         height,
       });
-      persistDesktopLyricWindowState({ x, y, width, height });
+      schedulePersistWindowBounds();
     },
   );
 
@@ -542,11 +551,7 @@ export const registerDesktopLyricHandlers = () => {
       width,
       height,
     });
-    persistDesktopLyricWindowState({
-      ...bounds,
-      width,
-      height,
-    });
+    schedulePersistWindowBounds();
   });
 
   ipcRegistry.registerListener('desktop-lyric:set-height', (_event, height: number) => {
@@ -623,7 +628,7 @@ const installDesktopLyricNativeThemeListener = () => {
   if (desktopLyricNativeThemeHandler) return;
   desktopLyricNativeThemeHandler = () => {
     if (snapshot.settings.theme !== 'system') return;
-    sendSnapshot();
+    sendSnapshot('desktop');
   };
   nativeTheme.on('updated', desktopLyricNativeThemeHandler);
 };

@@ -263,7 +263,7 @@ export const createPlaybackManager = (
 
       // 在 engine.play() 成功后立即记录本地历史，使用闭包捕获的 snapshot
       // 避免因 mpv end-file 事件竞态导致 state.currentTrackSnapshot 被下一首覆盖
-      useHistoryStore().recordPlay(snapshot);
+      void useHistoryStore().recordPlay(snapshot);
       state.historyLocalRecorded = true;
 
       state.isLoading = false;

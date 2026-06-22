@@ -42,6 +42,8 @@ export type DesktopLyricSettings = {
   strokeColor: string;
   strokeEnabled: boolean;
   bold: boolean;
+  /** 歌词对齐微调步长（秒） */
+  offsetStep: number;
 };
 
 export const DEFAULT_DESKTOP_LYRIC_SETTINGS: DesktopLyricSettings = {
@@ -66,6 +68,7 @@ export const DEFAULT_DESKTOP_LYRIC_SETTINGS: DesktopLyricSettings = {
   strokeColor: '#f1b8b3',
   strokeEnabled: false,
   bold: false,
+  offsetStep: 0.1,
 };
 
 export type DesktopLyricLockPhase = 'idle' | 'locking' | 'unlocking';

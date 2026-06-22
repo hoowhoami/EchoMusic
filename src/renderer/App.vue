@@ -10,6 +10,7 @@ import { usePlayerStore } from './stores/player';
 import { useSettingStore } from './stores/setting';
 import { useThemeStore } from './stores/theme';
 import { usePlaylistStore } from './stores/playlist';
+import { useHistoryStore } from './stores/historyStore';
 import { waitForSqlitePersistHydration } from './stores/sqlitePersist';
 import { initShortcutSync, syncGlobalShortcuts } from '@/utils/shortcuts';
 import { initDesktopLyricSync } from '@/desktopLyric/sync';
@@ -30,6 +31,7 @@ const player = usePlayerStore();
 const settings = useSettingStore();
 const themeStore = useThemeStore();
 const playlistStore = usePlaylistStore();
+const historyStore = useHistoryStore();
 let disposeShortcuts: (() => void) | null = null;
 let disposeDesktopLyricSync: (() => void) | null = null;
 let disposeMiniPlayerSync: (() => void) | null = null;
@@ -110,7 +112,7 @@ onMounted(async () => {
 
   await waitForSqlitePersistHydration();
   settings.ensureShortcutDefaults();
-  await playlistStore.hydratePlaybackStateFromStorage();
+  await Promise.all([playlistStore.hydratePlaybackStateFromStorage(), historyStore.hydrate()]);
   player.init();
 
   // 启动时自动播放：如果开启了设置且有恢复的曲目

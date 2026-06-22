@@ -8,11 +8,12 @@ import { useDesktopLyricStore } from './store';
 import type {
   DesktopLyricCommand,
   DesktopLyricPlaybackPayload,
+  DesktopLyricSettings,
   LyricLinePayload,
 } from '../../shared/desktop-lyric';
 
 const DESKTOP_LYRIC_PROGRESS_SYNC_INTERVAL_MS = 80;
-const DESKTOP_LYRIC_OFFSET_STEP_MS = 500;
+const DEFAULT_DESKTOP_LYRIC_OFFSET_STEP_MS = 500;
 const DESKTOP_LYRIC_COMMANDS = new Set<DesktopLyricCommand>([
   'togglePlayback',
   'previousTrack',
@@ -29,6 +30,87 @@ const DESKTOP_LYRIC_COMMANDS = new Set<DesktopLyricCommand>([
 
 const isDesktopLyricCommand = (value: unknown): value is DesktopLyricCommand =>
   typeof value === 'string' && DESKTOP_LYRIC_COMMANDS.has(value as DesktopLyricCommand);
+
+const boolKey = (value: unknown) => (value ? '1' : '0');
+
+const stableNumberKey = (value: unknown, scale = 1) => {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return '0';
+  return String(Math.round(number * scale));
+};
+
+const hashText = (value: string, seed = 5381) => {
+  let hash = seed;
+  for (let i = 0; i < value.length; i++) {
+    hash = ((hash << 5) + hash + value.charCodeAt(i)) >>> 0;
+  }
+  return hash;
+};
+
+const buildSettingsSignature = (settings: DesktopLyricSettings) =>
+  [
+    boolKey(settings.enabled),
+    boolKey(settings.locked),
+    boolKey(settings.autoShow),
+    boolKey(settings.alwaysOnTop),
+    boolKey(settings.wantTranslation),
+    boolKey(settings.wantRomanization),
+    settings.theme,
+    stableNumberKey(settings.opacity, 1000),
+    stableNumberKey(settings.scale, 1000),
+    settings.fontFamily,
+    settings.resolvedFontFamily ?? '',
+    settings.inactiveFontSize,
+    settings.activeFontSize,
+    settings.secondaryFontSize,
+    settings.lineGap,
+    settings.alignment,
+    boolKey(settings.doubleLine),
+    settings.playedColor,
+    settings.unplayedColor,
+    settings.strokeColor,
+    boolKey(settings.strokeEnabled),
+    boolKey(settings.bold),
+    stableNumberKey(settings.offsetStep, 1000),
+  ].join('\u001f');
+
+const buildPlaybackSignature = (
+  playback: DesktopLyricPlaybackPayload | null,
+  currentIndex: number,
+  lyricTimeOffset: number,
+  lyricSyncWarning: boolean | undefined,
+) =>
+  [
+    playback?.trackId ?? '',
+    playback?.lyricHash ?? '',
+    playback?.title ?? '',
+    playback?.artist ?? '',
+    playback?.album ?? '',
+    playback?.coverUrl ?? '',
+    stableNumberKey(playback?.duration, 1000),
+    stableNumberKey(playback?.currentTime, 1000),
+    boolKey(playback?.isPlaying),
+    stableNumberKey(playback?.playbackRate ?? 1, 1000),
+    currentIndex,
+    lyricTimeOffset,
+    boolKey(lyricSyncWarning),
+  ].join('\u001f');
+
+const buildLyricsSignature = (lyricsTrackId: string | null, lyrics: LyricLinePayload[]) => {
+  let hash = hashText(lyricsTrackId ?? '');
+  let characterCount = 0;
+  for (const line of lyrics) {
+    hash = hashText(
+      `${line.time}|${line.text}|${line.translated ?? ''}|${line.romanized ?? ''}`,
+      hash,
+    );
+    for (const character of line.characters ?? []) {
+      characterCount++;
+      hash = hashText(`${character.startTime}:${character.endTime}:${character.text}`, hash);
+    }
+  }
+  return `${lyricsTrackId ?? ''}\u001f${lyrics.length}\u001f${characterCount}\u001f${hash}`;
+};
 
 const normalizeLinePayload = (
   line: ReturnType<typeof useLyricStore>['lines'][number],
@@ -98,7 +180,7 @@ export const initDesktopLyricSync = async () => {
     };
   };
 
-  let lastSyncedSettingsKey = JSON.stringify(buildSyncedSettings());
+  let lastSyncedSettingsKey = buildSettingsSignature(buildSyncedSettings());
   let lastSyncedLyricsKey = '';
   let lastSyncedPlaybackKey = '';
   let progressSyncTimer: ReturnType<typeof setTimeout> | null = null;
@@ -138,12 +220,12 @@ export const initDesktopLyricSync = async () => {
 
   const syncPlaybackSnapshot = async () => {
     const playback = buildPlaybackPayload();
-    const nextPlaybackKey = JSON.stringify({
+    const nextPlaybackKey = buildPlaybackSignature(
       playback,
-      currentIndex: currentIndex.value,
-      lyricTimeOffset: currentTimeOffset.value,
-      lyricSyncWarning: lyricStore.lyricSyncWarning,
-    });
+      currentIndex.value,
+      currentTimeOffset.value,
+      lyricStore.lyricSyncWarning,
+    );
     if (nextPlaybackKey === lastSyncedPlaybackKey) return;
 
     window.electron.desktopLyric.syncSnapshot({
@@ -159,7 +241,7 @@ export const initDesktopLyricSync = async () => {
     const playback = buildPlaybackPayload();
     const lyricsTrackId = playback?.lyricHash || playback?.trackId || null;
     const lyrics = lyricStore.loadedHash === (lyricsTrackId ?? '') ? buildLyricsPayload() : [];
-    const nextLyricsKey = JSON.stringify({ lyricsTrackId, lyrics });
+    const nextLyricsKey = buildLyricsSignature(lyricsTrackId, lyrics);
     if (nextLyricsKey === lastSyncedLyricsKey) return;
 
     window.electron.desktopLyric.syncSnapshot({
@@ -184,7 +266,7 @@ export const initDesktopLyricSync = async () => {
 
   const syncSettingsSnapshot = async () => {
     const nextSettings = buildSyncedSettings();
-    const nextSettingsKey = JSON.stringify(nextSettings);
+    const nextSettingsKey = buildSettingsSignature(nextSettings);
     if (nextSettingsKey === lastSyncedSettingsKey) return;
 
     window.electron.desktopLyric.syncSnapshot({
@@ -195,20 +277,23 @@ export const initDesktopLyricSync = async () => {
 
   const disposeSnapshotListener = window.electron.desktopLyric.onSnapshot((nextSnapshot) => {
     desktopLyricStore.setLocal(nextSnapshot.settings);
-    lastSyncedSettingsKey = JSON.stringify(buildSyncedSettings(nextSnapshot.settings));
-    lastSyncedPlaybackKey = JSON.stringify({
-      playback: nextSnapshot.playback,
-      currentIndex: nextSnapshot.currentIndex,
-      lyricTimeOffset: nextSnapshot.lyricTimeOffset,
-      lyricSyncWarning: nextSnapshot.lyricSyncWarning,
-    });
-    lastSyncedLyricsKey = JSON.stringify({
-      lyricsTrackId: nextSnapshot.lyricsTrackId,
-      lyrics: nextSnapshot.lyrics,
-    });
+    lastSyncedSettingsKey = buildSettingsSignature(buildSyncedSettings(nextSnapshot.settings));
+    lastSyncedPlaybackKey = buildPlaybackSignature(
+      nextSnapshot.playback,
+      nextSnapshot.currentIndex,
+      nextSnapshot.lyricTimeOffset,
+      nextSnapshot.lyricSyncWarning,
+    );
+    lastSyncedLyricsKey = buildLyricsSignature(nextSnapshot.lyricsTrackId, nextSnapshot.lyrics);
   });
 
   const handleDesktopLyricCommand = (command: DesktopLyricCommand) => {
+    const resolveOffsetStepMs = () => {
+      const step = Number(desktopLyricStore.settings.offsetStep);
+      return Number.isFinite(step) && step > 0
+        ? Math.round(step * 1000)
+        : DEFAULT_DESKTOP_LYRIC_OFFSET_STEP_MS;
+    };
     if (command === 'toggleTranslation') {
       lyricStore.wantTranslation = !lyricStore.wantTranslation;
       void syncSettingsSnapshot();
@@ -220,7 +305,7 @@ export const initDesktopLyricSync = async () => {
       return;
     }
     if (command === 'lyricOffsetBackward') {
-      const nextOffset = lyricStore.adjustTimeOffset(-DESKTOP_LYRIC_OFFSET_STEP_MS);
+      const nextOffset = lyricStore.adjustTimeOffset(-resolveOffsetStepMs());
       const sign = nextOffset >= 0 ? '+' : '';
       toastStore.success(`歌词偏移: ${sign}${(nextOffset / 1000).toFixed(1)}s`);
       lyricStore.updateCurrentIndex(playerStore.currentTime);
@@ -228,7 +313,7 @@ export const initDesktopLyricSync = async () => {
       return;
     }
     if (command === 'lyricOffsetForward') {
-      const nextOffset = lyricStore.adjustTimeOffset(DESKTOP_LYRIC_OFFSET_STEP_MS);
+      const nextOffset = lyricStore.adjustTimeOffset(resolveOffsetStepMs());
       const sign = nextOffset >= 0 ? '+' : '';
       toastStore.success(`歌词偏移: ${sign}${(nextOffset / 1000).toFixed(1)}s`);
       lyricStore.updateCurrentIndex(playerStore.currentTime);

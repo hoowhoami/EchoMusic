@@ -82,6 +82,10 @@ import type {
 } from '../shared/plugins';
 import type {
   StorageAppendQueueItemsPayload,
+  StorageHistoryEntry,
+  StorageHistoryGetEntriesPayload,
+  StorageHistoryRecordPlayPayload,
+  StorageHistoryRemoveEntriesPayload,
   StoragePlaybackSnapshot,
   StoragePlaybackQueueState,
   StorageQueueIdPayload,
@@ -824,6 +828,14 @@ contextBridge.exposeInMainWorld('electron', {
         'storage:playback:set-active-queue',
         queueId,
       ) as Promise<StorageResetResult>,
+    getHistoryEntries: (payload?: StorageHistoryGetEntriesPayload) =>
+      invokeWithPlainPayload<StorageHistoryEntry[]>('storage:history:get-entries', payload ?? {}),
+    recordHistoryPlay: (payload: StorageHistoryRecordPlayPayload) =>
+      invokeWithPlainPayload<StorageHistoryEntry | null>('storage:history:record-play', payload),
+    removeHistoryEntries: (payload: StorageHistoryRemoveEntriesPayload) =>
+      invokeWithPlainPayload<StorageResetResult>('storage:history:remove-entries', payload),
+    clearHistory: () =>
+      ipcRenderer.invoke('storage:history:clear') as Promise<StorageResetResult>,
     getKv: <T = unknown>(key: string) =>
       ipcRenderer.invoke('storage:kv:get', key) as Promise<T | null>,
     setKv: (key: string, value: unknown) =>

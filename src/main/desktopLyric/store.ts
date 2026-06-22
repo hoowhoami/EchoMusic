@@ -66,6 +66,11 @@ export function getDesktopLyricSettings(): DesktopLyricSettings {
     strokeColor: String(raw.strokeColor || '#f1b8b3'),
     strokeEnabled: Boolean(raw.strokeEnabled),
     bold: Boolean(raw.bold),
+    offsetStep: clamp(
+      Number(raw.offsetStep) || DEFAULT_DESKTOP_LYRIC_PERSISTED_SETTINGS.offsetStep,
+      0.1,
+      5,
+    ),
   };
 }
 
@@ -112,6 +117,7 @@ export function sanitizeDesktopLyricSettings(
     strokeColor: String(mergedBase.strokeColor || current.strokeColor),
     strokeEnabled: Boolean(mergedBase.strokeEnabled),
     bold: Boolean(mergedBase.bold),
+    offsetStep: clamp(Number(mergedBase.offsetStep) || current.offsetStep, 0.1, 5),
   };
 }
 
@@ -138,6 +144,7 @@ export function persistDesktopLyricSettings(nextSettings: DesktopLyricSettings) 
     strokeColor: nextSettings.strokeColor,
     strokeEnabled: nextSettings.strokeEnabled,
     bold: nextSettings.bold,
+    offsetStep: nextSettings.offsetStep,
   });
 }
 

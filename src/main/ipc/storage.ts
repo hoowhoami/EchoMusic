@@ -1,6 +1,9 @@
 import { ipcRegistry } from './registry';
 import type {
   StorageAppendQueueItemsPayload,
+  StorageHistoryGetEntriesPayload,
+  StorageHistoryRecordPlayPayload,
+  StorageHistoryRemoveEntriesPayload,
   StorageQueueIdPayload,
   StorageReplaceQueuePayload,
   StorageRemoveQueueItemPayload,
@@ -9,6 +12,7 @@ import type {
   StorageUpdateQueueMetaPayload,
 } from '../../shared/storage';
 import { getPlaybackQueueStorage } from '../storage/playbackQueues';
+import { getHistoryStorage } from '../storage/history';
 import { getKvStorage } from '../storage/kv';
 
 export const registerStorageHandlers = () => {
@@ -71,6 +75,25 @@ export const registerStorageHandlers = () => {
   ipcRegistry.registerHandler('storage:playback:set-active-queue', (_event, queueId: string) =>
     getPlaybackQueueStorage().setActiveQueue(queueId),
   );
+
+  ipcRegistry.registerHandler(
+    'storage:history:get-entries',
+    (_event, payload: StorageHistoryGetEntriesPayload) =>
+      getHistoryStorage().getEntries(payload ?? {}),
+  );
+
+  ipcRegistry.registerHandler(
+    'storage:history:record-play',
+    (_event, payload: StorageHistoryRecordPlayPayload) => getHistoryStorage().recordPlay(payload),
+  );
+
+  ipcRegistry.registerHandler(
+    'storage:history:remove-entries',
+    (_event, payload: StorageHistoryRemoveEntriesPayload) =>
+      getHistoryStorage().removeEntries(payload),
+  );
+
+  ipcRegistry.registerHandler('storage:history:clear', () => getHistoryStorage().clear());
 
   ipcRegistry.registerHandler('storage:kv:get', (_event, key: string) =>
     getKvStorage().get(String(key)),

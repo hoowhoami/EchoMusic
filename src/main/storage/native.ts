@@ -20,6 +20,10 @@ export interface NativeStorageAddon {
   playbackReorderQueueItems(payloadJson: string): string;
   playbackSetQueueCurrentTrack(payloadJson: string): string;
   playbackSetActiveQueue(queueId: string): string;
+  historyGetEntries(payloadJson?: string): string;
+  historyRecordPlay(payloadJson: string): string;
+  historyRemoveEntries(payloadJson: string): string;
+  historyClear(): string;
 }
 
 let addon: NativeStorageAddon | null = null;

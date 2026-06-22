@@ -18,18 +18,11 @@ import {
 } from 'fs';
 import { createHash } from 'crypto';
 import { tmpdir } from 'os';
-import { basename, dirname, extname, isAbsolute, join, normalize, relative, resolve } from 'path';
+import { basename, dirname, extname, isAbsolute, join, resolve } from 'path';
 import { pathToFileURL } from 'url';
 import StreamZip from 'node-stream-zip';
-import {
-  coerce as semverCoerce,
-  gt as semverGt,
-  satisfies as semverSatisfies,
-  valid as semverValid,
-  validRange as semverValidRange,
-} from 'semver';
+import { coerce as semverCoerce, gt as semverGt, valid as semverValid } from 'semver';
 import type {
-  EchoPluginCompatibility,
   EchoPluginDescriptor,
   EchoPluginManifest,
   PluginAssetSourceResult,
@@ -68,8 +61,6 @@ import type {
   PluginWriteFileOptions,
   PluginWriteFileResult,
   PluginDeleteFileResult,
-  PluginWindowDescriptor,
-  PluginWindowManifest,
   PluginReportFailureResult,
   PluginSetSafeModeResult,
   PluginSetEnabledResult,
@@ -77,81 +68,63 @@ import type {
 } from '../shared/plugins';
 import { getKvStorage } from './storage/kv';
 import log from './logger';
+import {
+  BLOCKED_PLUGIN_PROCESS_ENV_KEYS,
+  DEFAULT_PLUGIN_FILE_SCAN_LIMIT,
+  DEFAULT_PLUGIN_MARKETPLACE_SOURCE_ID,
+  DEFAULT_PLUGIN_MARKETPLACE_SOURCE_URL,
+  DEFAULT_PLUGIN_READ_BYTES,
+  MAX_PLUGIN_FILE_SCAN_LIMIT,
+  MAX_PLUGIN_IMAGE_SCAN_LIMIT,
+  MAX_PLUGIN_PACKAGE_SIZE_BYTES,
+  MAX_PLUGIN_PROCESS_ARGS,
+  MAX_PLUGIN_PROCESS_ARG_LENGTH,
+  MAX_PLUGIN_PROCESS_ENV_ENTRIES,
+  MAX_PLUGIN_PROCESS_ENV_VALUE_LENGTH,
+  MAX_PLUGIN_READ_BYTES,
+  MAX_PLUGIN_WRITE_BYTES,
+  PLUGIN_ACTIVE_SESSION_KEY,
+  PLUGIN_AUDIO_EXTENSIONS,
+  PLUGIN_CUE_EXTENSIONS,
+  PLUGIN_IMAGE_EXTENSIONS,
+  PLUGIN_INSTALL_TIMES_KEY,
+  PLUGIN_LAST_FAILURE_KEY,
+  PLUGIN_LYRIC_EXTENSIONS,
+  PLUGIN_MANIFEST_FILE,
+  PLUGIN_MARKETPLACE_CACHE_KEY,
+  PLUGIN_MARKETPLACE_CACHE_VERSION,
+  PLUGIN_MARKETPLACE_DOWNLOAD_TIMEOUT_MS,
+  PLUGIN_MARKETPLACE_EXTRACT_TIMEOUT_MS,
+  PLUGIN_MARKETPLACE_FETCH_TIMEOUT_MS,
+  PLUGIN_MARKETPLACE_INDEX_FILE,
+  PLUGIN_MARKETPLACE_SOURCES_KEY,
+  PLUGIN_PLAYLIST_EXTENSIONS,
+  PLUGIN_PROCESS_CONSENTS_KEY,
+  PLUGIN_SAFE_MODE_KEY,
+  PLUGIN_STARTUP_SESSION_KEY,
+  PLUGIN_STATE_KEY,
+  WINDOWS_EXECUTABLE_EXTENSIONS,
+  clamp,
+  comparePluginText,
+  normalizePluginId,
+} from './plugins/common';
+import {
+  appendUrlCacheKey,
+  getEchoMusicCompatibility,
+  getManifestIconSource,
+  isSupportedPluginImage,
+  readManifest,
+  toDescriptor,
+  validateManifest,
+} from './plugins/descriptor';
+import {
+  ensurePluginRoot,
+  isPathInside,
+  resolvePluginFile,
+  toPortableRelativePath,
+} from './plugins/path';
 
-const PLUGIN_STATE_KEY = 'plugins:enabled';
-const PLUGIN_SAFE_MODE_KEY = 'plugins:safe-mode';
-const PLUGIN_LAST_FAILURE_KEY = 'plugins:last-failure';
-const PLUGIN_STARTUP_SESSION_KEY = 'plugins:startup-session';
-const PLUGIN_ACTIVE_SESSION_KEY = 'plugins:active-session';
-const PLUGIN_INSTALL_TIMES_KEY = 'plugins:install-times';
-const PLUGIN_MARKETPLACE_SOURCES_KEY = 'plugins:marketplace:sources';
-const PLUGIN_MARKETPLACE_CACHE_KEY = 'plugins:marketplace:cache';
-const PLUGIN_PROCESS_CONSENTS_KEY = 'plugins:process-consents';
-const PLUGIN_MANIFEST_FILE = 'manifest.json';
-const PLUGIN_MARKETPLACE_INDEX_FILE = 'echo-plugins.json';
-const PLUGIN_MARKETPLACE_CACHE_VERSION = 4;
-const DEFAULT_PLUGIN_MARKETPLACE_SOURCE_URL = 'https://github.com/hoowhoami/EchoMusicPlugins';
-const DEFAULT_PLUGIN_MARKETPLACE_SOURCE_ID = 'github:hoowhoami/echomusicplugins';
-const PLUGIN_IMAGE_EXTENSIONS = new Set([
-  '.apng',
-  '.avif',
-  '.gif',
-  '.jpg',
-  '.jpeg',
-  '.png',
-  '.svg',
-  '.webp',
-]);
-const PLUGIN_AUDIO_EXTENSIONS = new Set([
-  '.aac',
-  '.aif',
-  '.aiff',
-  '.alac',
-  '.ape',
-  '.dff',
-  '.dsf',
-  '.flac',
-  '.m4a',
-  '.mp3',
-  '.oga',
-  '.ogg',
-  '.opus',
-  '.wav',
-  '.webm',
-  '.wma',
-  '.wv',
-]);
-const PLUGIN_LYRIC_EXTENSIONS = new Set(['.krc', '.lrc', '.qrc', '.srt', '.ttml', '.txt']);
-const PLUGIN_PLAYLIST_EXTENSIONS = new Set(['.m3u', '.m3u8', '.pls']);
-const PLUGIN_CUE_EXTENSIONS = new Set(['.cue']);
-const MAX_PLUGIN_IMAGE_SCAN_LIMIT = 1000;
-const DEFAULT_PLUGIN_FILE_SCAN_LIMIT = 2000;
-const MAX_PLUGIN_FILE_SCAN_LIMIT = 10000;
-const DEFAULT_PLUGIN_READ_BYTES = 1024 * 1024;
-const MAX_PLUGIN_READ_BYTES = 4 * 1024 * 1024;
-const MAX_PLUGIN_WRITE_BYTES = 8 * 1024 * 1024;
-const PLUGIN_WINDOW_MIN_WIDTH = 180;
-const PLUGIN_WINDOW_MIN_HEIGHT = 48;
-const PLUGIN_WINDOW_MAX_WIDTH = 1400;
-const PLUGIN_WINDOW_MAX_HEIGHT = 900;
-const PLUGIN_MARKETPLACE_FETCH_TIMEOUT_MS = 30_000;
-const PLUGIN_MARKETPLACE_DOWNLOAD_TIMEOUT_MS = 180_000;
-const PLUGIN_MARKETPLACE_EXTRACT_TIMEOUT_MS = 120_000;
-const BARE_SEMVER_PATTERN = /^v?\d+(?:\.\d+){0,2}(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
-const MAX_PLUGIN_PROCESS_ARGS = 64;
-const MAX_PLUGIN_PROCESS_ARG_LENGTH = 8192;
-const MAX_PLUGIN_PROCESS_ENV_ENTRIES = 64;
-const MAX_PLUGIN_PROCESS_ENV_VALUE_LENGTH = 8192;
-const MAX_PLUGIN_PACKAGE_SIZE_BYTES = 80 * 1024 * 1024;
-const WINDOWS_EXECUTABLE_EXTENSIONS = new Set(['.exe', '.com']);
-const BLOCKED_PLUGIN_PROCESS_ENV_KEYS = new Set([
-  'ECHOMUSIC_PLUGIN_DIR',
-  'ECHOMUSIC_PLUGIN_ID',
-  'ELECTRON_RUN_AS_NODE',
-  'NODE_OPTIONS',
-  'DYLD_INSERT_LIBRARIES',
-  'LD_PRELOAD',
-]);
+export { normalizePluginId } from './plugins/common';
 
 type PluginEnabledState = Record<string, boolean>;
 type PluginRuntimeSession = {
@@ -214,16 +187,6 @@ type PluginDirectoryInstallOptions = {
   enableAfterInstall: boolean;
 };
 
-export const normalizePluginId = (value: unknown) =>
-  String(value ?? '')
-    .trim()
-    .replace(/[^a-zA-Z0-9._-]/g, '');
-
-const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
-
-const comparePluginText = (left: string, right: string) =>
-  left.localeCompare(right, 'zh-Hans-CN', { numeric: true, sensitivity: 'base' });
-
 const compareInstalledPlugins = (
   left: EchoPluginDescriptor,
   right: EchoPluginDescriptor,
@@ -240,14 +203,6 @@ const compareInstalledPlugins = (
 
 const pluginProcessSessionId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 const pluginProcesses = new Map<number, PluginProcessRecord>();
-
-const getPluginRoot = () => join(app.getPath('userData'), 'plugins');
-
-const ensurePluginRoot = () => {
-  const root = getPluginRoot();
-  mkdirSync(root, { recursive: true });
-  return root;
-};
 
 const getEnabledState = (): PluginEnabledState =>
   getKvStorage().get<PluginEnabledState>(PLUGIN_STATE_KEY) ?? {};
@@ -529,347 +484,6 @@ export const reportPluginRendererFailure = (
   });
   clearPluginRuntimeSession();
   return true;
-};
-
-const isPathInside = (parent: string, target: string) => {
-  const diff = relative(parent, target);
-  return diff === '' || (!!diff && !diff.startsWith('..') && !isAbsolute(diff));
-};
-
-const resolvePluginFile = (directory: string, fileName: unknown) => {
-  const normalizedFileName = normalize(String(fileName ?? '').trim());
-  if (!normalizedFileName || normalizedFileName.startsWith('..')) return '';
-  const fullPath = resolve(directory, normalizedFileName);
-  if (!isPathInside(resolve(directory), fullPath)) return '';
-  return fullPath;
-};
-
-const isRemoteImageSource = (source: string) =>
-  /^https?:\/\//i.test(source) || /^data:image\//i.test(source);
-
-const isSupportedPluginImage = (source: string) =>
-  isRemoteImageSource(source) || PLUGIN_IMAGE_EXTENSIONS.has(extname(source).toLowerCase());
-
-const appendUrlCacheKey = (source: string, cacheKey: string) => {
-  const target = String(source || '').trim();
-  const key = String(cacheKey || '').trim();
-  if (!target || !key || /^data:image\//i.test(target)) return target;
-
-  try {
-    const url = new URL(target);
-    url.searchParams.set('v', key);
-    return url.toString();
-  } catch {
-    return target;
-  }
-};
-
-const getManifestIconSource = (manifest: EchoPluginManifest) => {
-  const icon = manifest.icon;
-  if (typeof icon === 'string' && isSupportedPluginImage(icon.trim())) return icon.trim();
-  return '';
-};
-
-const normalizeWindowDimension = (value: unknown, fallback: number, min: number, max: number) => {
-  const next = Math.round(Number(value));
-  if (!Number.isFinite(next) || next <= 0) return fallback;
-  return clamp(next, min, max);
-};
-
-const normalizePluginWindowDescriptors = (
-  pluginId: string,
-  directory: string,
-  manifest: EchoPluginManifest,
-): { windows: PluginWindowDescriptor[]; error: string } => {
-  const rawWindows = manifest.contributes?.windows;
-  if (!rawWindows) return { windows: [], error: '' };
-  if (!Array.isArray(rawWindows)) return { windows: [], error: 'contributes.windows 必须是数组' };
-
-  const windows: PluginWindowDescriptor[] = [];
-  const seenWindowIds = new Set<string>();
-
-  for (const rawWindow of rawWindows as PluginWindowManifest[]) {
-    const windowId = normalizePluginId(rawWindow?.id);
-    if (!windowId) return { windows, error: '插件窗口 id 不能为空' };
-    if (seenWindowIds.has(windowId)) {
-      return { windows, error: `插件窗口 id 重复: ${windowId}` };
-    }
-    seenWindowIds.add(windowId);
-
-    const main = String(rawWindow?.main || '').trim();
-    if (!main) return { windows, error: `插件窗口 ${windowId} 缺少 main 入口` };
-    const mainFile = resolvePluginFile(directory, main);
-    if (!mainFile) return { windows, error: `插件窗口 ${windowId} 入口路径非法` };
-
-    const style = String(rawWindow?.style || '').trim();
-    const styleFile = style ? resolvePluginFile(directory, style) : '';
-    if (style && !styleFile) return { windows, error: `插件窗口 ${windowId} 样式路径非法` };
-
-    const defaultWidth = normalizeWindowDimension(
-      rawWindow.defaultWidth,
-      420,
-      PLUGIN_WINDOW_MIN_WIDTH,
-      PLUGIN_WINDOW_MAX_WIDTH,
-    );
-    const defaultHeight = normalizeWindowDimension(
-      rawWindow.defaultHeight,
-      72,
-      PLUGIN_WINDOW_MIN_HEIGHT,
-      PLUGIN_WINDOW_MAX_HEIGHT,
-    );
-    const minWidth = normalizeWindowDimension(
-      rawWindow.minWidth,
-      Math.min(defaultWidth, PLUGIN_WINDOW_MIN_WIDTH),
-      PLUGIN_WINDOW_MIN_WIDTH,
-      PLUGIN_WINDOW_MAX_WIDTH,
-    );
-    const minHeight = normalizeWindowDimension(
-      rawWindow.minHeight,
-      Math.min(defaultHeight, PLUGIN_WINDOW_MIN_HEIGHT),
-      PLUGIN_WINDOW_MIN_HEIGHT,
-      PLUGIN_WINDOW_MAX_HEIGHT,
-    );
-    const maxWidth = normalizeWindowDimension(
-      rawWindow.maxWidth,
-      Math.max(defaultWidth, minWidth),
-      minWidth,
-      PLUGIN_WINDOW_MAX_WIDTH,
-    );
-    const maxHeight = normalizeWindowDimension(
-      rawWindow.maxHeight,
-      Math.max(defaultHeight, minHeight),
-      minHeight,
-      PLUGIN_WINDOW_MAX_HEIGHT,
-    );
-
-    windows.push({
-      pluginId,
-      id: windowId,
-      type: 'floating',
-      title: String(rawWindow.title || `${manifest.name || pluginId} - ${windowId}`),
-      main,
-      style,
-      mainFile,
-      styleFile,
-      defaultWidth: clamp(defaultWidth, minWidth, maxWidth),
-      defaultHeight: clamp(defaultHeight, minHeight, maxHeight),
-      minWidth,
-      minHeight,
-      maxWidth,
-      maxHeight,
-      position: rawWindow.position === 'center' ? 'center' : 'top-center',
-      transparent: rawWindow.transparent !== false,
-      alwaysOnTop: rawWindow.alwaysOnTop !== false,
-      skipTaskbar: rawWindow.skipTaskbar !== false,
-      resizable: Boolean(rawWindow.resizable),
-      movable: rawWindow.movable !== false,
-      rememberBounds: rawWindow.rememberBounds !== false,
-      allowOutsideWorkArea: Boolean(rawWindow.allowOutsideWorkArea),
-      acceptFirstMouse: Boolean(rawWindow.acceptFirstMouse),
-    });
-  }
-
-  return { windows, error: '' };
-};
-
-const readManifest = (manifestPath: string): { manifest: EchoPluginManifest; error: string } => {
-  try {
-    const raw = readFileSync(manifestPath, 'utf8');
-    const parsed = JSON.parse(raw) as EchoPluginManifest;
-    return { manifest: parsed, error: '' };
-  } catch (error) {
-    return {
-      manifest: {
-        id: basename(manifestPath),
-        name: basename(manifestPath),
-        version: '0.0.0',
-      },
-      error: error instanceof Error ? error.message : 'manifest 读取失败',
-    };
-  }
-};
-
-const getHostVersion = () =>
-  semverValid(app.getVersion()) ?? semverCoerce(app.getVersion())?.version ?? '';
-
-const normalizeEchoMusicVersionRequirement = (value: unknown) => {
-  const text = String(value ?? '').trim();
-  if (!text) return { range: '', error: '' };
-
-  if (BARE_SEMVER_PATTERN.test(text)) {
-    const version = semverValid(text) ?? semverCoerce(text)?.version;
-    return version
-      ? { range: `>=${version}`, error: '' }
-      : { range: '', error: `requires.echoMusicVersion 主程序版本要求无效: ${text}` };
-  }
-
-  const range = semverValidRange(text);
-  if (!range) return { range: '', error: `requires.echoMusicVersion 主程序版本范围无效: ${text}` };
-  return { range, error: '' };
-};
-
-const validateEchoMusicVersionRequirement = (manifest: EchoPluginManifest) => {
-  const requirement = manifest.requires?.echoMusicVersion;
-  if (!requirement) return '';
-
-  return normalizeEchoMusicVersionRequirement(requirement).error;
-};
-
-const validateManifestCapabilities = (manifest: EchoPluginManifest) => {
-  const capabilities = manifest.capabilities;
-  if (capabilities === undefined) return '';
-  if (!capabilities || typeof capabilities !== 'object' || Array.isArray(capabilities)) {
-    return 'manifest.capabilities 必须是对象';
-  }
-  if (capabilities.audioSource !== undefined && typeof capabilities.audioSource !== 'boolean') {
-    return 'manifest.capabilities.audioSource 必须是布尔值';
-  }
-  if (capabilities.audioSpectrum !== undefined && typeof capabilities.audioSpectrum !== 'boolean') {
-    return 'manifest.capabilities.audioSpectrum 必须是布尔值';
-  }
-  if (capabilities.kugouApi !== undefined && typeof capabilities.kugouApi !== 'boolean') {
-    return 'manifest.capabilities.kugouApi 必须是布尔值';
-  }
-  if (capabilities.localFiles !== undefined && typeof capabilities.localFiles !== 'boolean') {
-    return 'manifest.capabilities.localFiles 必须是布尔值';
-  }
-  if (capabilities.lyricEffects !== undefined && typeof capabilities.lyricEffects !== 'boolean') {
-    return 'manifest.capabilities.lyricEffects 必须是布尔值';
-  }
-  if (capabilities.lyrics !== undefined && typeof capabilities.lyrics !== 'boolean') {
-    return 'manifest.capabilities.lyrics 必须是布尔值';
-  }
-  if (capabilities.process !== undefined && typeof capabilities.process !== 'boolean') {
-    return 'manifest.capabilities.process 必须是布尔值';
-  }
-  return '';
-};
-
-const getEchoMusicCompatibility = (manifest: EchoPluginManifest): EchoPluginCompatibility => {
-  const requirement = String(manifest.requires?.echoMusicVersion ?? '').trim();
-  const hostVersion = getHostVersion();
-
-  if (!requirement) {
-    return {
-      compatible: true,
-      currentEchoMusicVersion: hostVersion,
-      requiredEchoMusicVersion: '',
-      message: '',
-    };
-  }
-
-  const { range, error } = normalizeEchoMusicVersionRequirement(requirement);
-  if (error || !range || !hostVersion) {
-    return {
-      compatible: false,
-      currentEchoMusicVersion: hostVersion,
-      requiredEchoMusicVersion: requirement,
-      message: error || '无法确认当前 EchoMusic 版本',
-    };
-  }
-
-  const compatible = semverSatisfies(hostVersion, range, { includePrerelease: true });
-  return {
-    compatible,
-    currentEchoMusicVersion: hostVersion,
-    requiredEchoMusicVersion: range,
-    message: compatible
-      ? ''
-      : `版本不兼容：需要 EchoMusic 主程序 ${range}，当前版本 ${hostVersion}`,
-  };
-};
-
-const validateManifest = (manifest: EchoPluginManifest, manifestError: string) => {
-  if (manifestError) return manifestError;
-  if (!normalizePluginId(manifest.id)) return 'manifest.id 不能为空';
-  if (!String(manifest.name ?? '').trim()) return 'manifest.name 不能为空';
-  if (!String(manifest.version ?? '').trim()) return 'manifest.version 不能为空';
-  const capabilitiesError = validateManifestCapabilities(manifest);
-  if (capabilitiesError) return capabilitiesError;
-  const versionRequirementError = validateEchoMusicVersionRequirement(manifest);
-  if (versionRequirementError) return versionRequirementError;
-  return '';
-};
-
-const toDescriptor = (
-  directory: string,
-  directoryName: string,
-  enabledState: PluginEnabledState,
-): EchoPluginDescriptor => {
-  const manifestPath = join(directory, PLUGIN_MANIFEST_FILE);
-  const { manifest, error: manifestError } = readManifest(manifestPath);
-  const id = normalizePluginId(manifest.id) || normalizePluginId(directoryName) || directoryName;
-  const mainFile = resolvePluginFile(directory, manifest.main || 'index.js');
-  const styleFile = manifest.style ? resolvePluginFile(directory, manifest.style) : '';
-  const { windows, error: windowError } = normalizePluginWindowDescriptors(id, directory, manifest);
-  const iconSource = getManifestIconSource(manifest);
-  const iconFile =
-    iconSource && !isRemoteImageSource(iconSource) ? resolvePluginFile(directory, iconSource) : '';
-  const iconFileExists = Boolean(iconFile && existsSync(iconFile));
-  const iconVersion = String(manifest.version || '0.0.0');
-  const iconCacheKey = iconFileExists
-    ? `${iconVersion}-${Math.round(statSync(iconFile).mtimeMs)}`
-    : iconVersion;
-  const validationError = validateManifest(manifest, manifestError);
-  const compatibility = getEchoMusicCompatibility(manifest);
-  const mainError = !validationError && mainFile && !existsSync(mainFile) ? '插件入口不存在' : '';
-  const styleError =
-    !validationError && styleFile && !existsSync(styleFile) ? '插件样式文件不存在' : '';
-  const missingWindowError =
-    !validationError && !windowError
-      ? (windows.find((item) => !existsSync(item.mainFile)) &&
-          `插件窗口 ${windows.find((item) => !existsSync(item.mainFile))?.id} 入口不存在`) ||
-        (windows.find((item) => item.styleFile && !existsSync(item.styleFile)) &&
-          `插件窗口 ${windows.find((item) => item.styleFile && !existsSync(item.styleFile))?.id} 样式文件不存在`) ||
-        ''
-      : '';
-  const windowExtensionError =
-    !validationError && !windowError && !missingWindowError
-      ? (windows.find((item) => !['.js', '.mjs'].includes(extname(item.mainFile).toLowerCase())) &&
-          `插件窗口 ${windows.find((item) => !['.js', '.mjs'].includes(extname(item.mainFile).toLowerCase()))?.id} 入口必须是 .js 或 .mjs`) ||
-        (windows.find(
-          (item) => item.styleFile && extname(item.styleFile).toLowerCase() !== '.css',
-        ) &&
-          `插件窗口 ${windows.find((item) => item.styleFile && extname(item.styleFile).toLowerCase() !== '.css')?.id} 样式必须是 .css`) ||
-        ''
-      : '';
-  const error =
-    validationError ||
-    mainError ||
-    styleError ||
-    windowError ||
-    missingWindowError ||
-    windowExtensionError;
-  const invalid = Boolean(error);
-
-  return {
-    id,
-    name: String(manifest.name || id),
-    version: String(manifest.version || '0.0.0'),
-    description: String(manifest.description || ''),
-    author: String(manifest.author || ''),
-    directoryName,
-    directory,
-    manifestPath,
-    mainFile,
-    styleFile,
-    iconUrl: iconFileExists
-      ? appendUrlCacheKey(pathToFileURL(iconFile).toString(), iconCacheKey)
-      : isRemoteImageSource(iconSource)
-        ? appendUrlCacheKey(iconSource, iconCacheKey)
-        : '',
-    windows,
-    enabled: !invalid && compatibility.compatible && Boolean(enabledState[id]),
-    invalid,
-    error,
-    compatibility,
-    manifest: {
-      ...manifest,
-      id,
-      name: String(manifest.name || id),
-      version: String(manifest.version || '0.0.0'),
-    },
-  };
 };
 
 export const listPlugins = (): PluginListResult => {
@@ -2117,9 +1731,6 @@ export const installPluginsFromLocal = async (
     failed,
   };
 };
-
-const toPortableRelativePath = (parent: string, target: string) =>
-  relative(parent, target).replace(/\\/g, '/');
 
 const hashFileSha256 = (filePath: string) =>
   createHash('sha256').update(readFileSync(filePath)).digest('hex');

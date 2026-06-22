@@ -65,8 +65,15 @@ const decrement = () => {
 
 const handleInput = (e: Event) => {
   const raw = (e.target as HTMLInputElement).value;
-  // 只允许数字、负号和空值
-  const filtered = raw.replace(/[^\d-]/g, '').replace(/(?!^)-/g, '');
+  // 允许数字、小数点、负号和空值；只保留第一个小数点和第一个负号
+  let filtered = raw.replace(/[^\d.-]/g, '');
+  // 负号只允许出现在开头
+  filtered = filtered.replace(/(?!^)-/g, '');
+  // 只保留第一个小数点
+  const dotIndex = filtered.indexOf('.');
+  if (dotIndex !== -1) {
+    filtered = filtered.slice(0, dotIndex + 1) + filtered.slice(dotIndex + 1).replace(/\./g, '');
+  }
   if (raw !== filtered) {
     (e.target as HTMLInputElement).value = filtered;
   }

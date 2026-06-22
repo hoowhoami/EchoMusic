@@ -7,6 +7,7 @@ import type { DesktopLyricSettings } from '../../../../shared/desktop-lyric';
 import { DEFAULT_DESKTOP_LYRIC_SETTINGS } from '../../../../shared/desktop-lyric';
 import Select from '@/components/ui/Select.vue';
 import Switch from '@/components/ui/Switch.vue';
+import InputNumber from '@/components/ui/InputNumber.vue';
 import ColorPickerDialog from '@/components/ui/ColorPickerDialog.vue';
 import FontIcon from '@/components/ui/FontIcon.vue';
 import { Icon } from '@iconify/vue';
@@ -111,6 +112,27 @@ const applyDesktopLyricColor = async (value: string) => {
         :model-value="desktopLyricStore.settings.alignment"
         :options="desktopLyricAlignOptions"
         @update:model-value="commitDesktopLyricSettings({ alignment: $event as any })"
+      />
+    </div>
+    <div class="settings-divider"></div>
+    <div class="settings-item">
+      <div class="space-y-1">
+        <h3 class="font-semibold">对齐微调步长</h3>
+        <p class="text-sm text-text-secondary">桌面歌词前进 / 后退按钮每次调整的时间量</p>
+      </div>
+      <InputNumber
+        class="w-45"
+        :model-value="String(desktopLyricStore.settings.offsetStep ?? 0.5)"
+        :min="0.1"
+        :max="5"
+        :step="0.1"
+        placeholder="0.5"
+        suffix="秒"
+        @update:model-value="
+          commitDesktopLyricSettings({
+            offsetStep: Math.max(0.1, Math.min(5, Number($event) || 0.5)),
+          })
+        "
       />
     </div>
     <div class="settings-divider"></div>

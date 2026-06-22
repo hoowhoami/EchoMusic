@@ -27,6 +27,7 @@ let desktopLyricWindow: BrowserWindow | null = null;
 let desktopLyricRestackTimers: NodeJS.Timeout[] = [];
 let desktopLyricInteractionTimers: NodeJS.Timeout[] = [];
 let desktopLyricDockTimers: NodeJS.Timeout[] = [];
+let desktopLyricPersistBoundsTimer: NodeJS.Timeout | null = null;
 let desktopLyricWorkspaceVisibility: boolean | null = null;
 
 export const getDesktopLyricWindow = () => desktopLyricWindow;
@@ -35,6 +36,7 @@ export const withDesktopLyricWindow = (window: BrowserWindow | null) => {
   desktopLyricWindow = window;
   if (!window) {
     desktopLyricWorkspaceVisibility = null;
+    clearPersistBoundsTimer();
     clearDockRestoreTimers();
   }
 };
@@ -46,6 +48,25 @@ export const persistWindowBounds = () => {
   if (!desktopLyricWindow || desktopLyricWindow.isDestroyed()) return;
   const bounds = desktopLyricWindow.getBounds();
   persistDesktopLyricWindowState(bounds);
+};
+
+const clearPersistBoundsTimer = () => {
+  if (!desktopLyricPersistBoundsTimer) return;
+  clearTimeout(desktopLyricPersistBoundsTimer);
+  desktopLyricPersistBoundsTimer = null;
+};
+
+export const schedulePersistWindowBounds = () => {
+  clearPersistBoundsTimer();
+  desktopLyricPersistBoundsTimer = setTimeout(() => {
+    desktopLyricPersistBoundsTimer = null;
+    persistWindowBounds();
+  }, 160);
+};
+
+export const flushPersistWindowBounds = () => {
+  clearPersistBoundsTimer();
+  persistWindowBounds();
 };
 
 export const clearWindowPresentationTimers = () => {
@@ -185,8 +206,8 @@ export const createDesktopLyricWindow = () => {
     win.on('moved', persistWindowBounds);
     win.on('resized', persistWindowBounds);
   } else {
-    win.on('move', persistWindowBounds);
-    win.on('resize', persistWindowBounds);
+    win.on('move', schedulePersistWindowBounds);
+    win.on('resize', schedulePersistWindowBounds);
   }
 
   return win;

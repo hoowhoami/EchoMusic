@@ -115,6 +115,28 @@ export interface StorageUpdateQueueMetaPayload {
   lastNonFmQueueId: string;
 }
 
+export interface StorageHistoryEntry {
+  song: StorageSong;
+  lastPlayedAt: number;
+  playCount: number;
+  historyKey: string;
+}
+
+export interface StorageHistoryGetEntriesPayload {
+  offset?: number;
+  limit?: number;
+}
+
+export interface StorageHistoryRecordPlayPayload {
+  song: StorageSong;
+  playedAt?: number;
+  maxEntries?: number;
+}
+
+export interface StorageHistoryRemoveEntriesPayload {
+  historyKeys: string[];
+}
+
 export interface StorageResetResult {
   ok: true;
 }

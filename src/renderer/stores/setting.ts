@@ -164,6 +164,8 @@ export const useSettingStore = defineStore('setting', {
     // 快进 / 快退步长（秒）
     seekForwardOffset: 5,
     seekBackwardOffset: 5,
+    // 歌词对齐微调步长（秒）
+    lyricOffsetStep: 0.1,
     // DevTools 开关
     devToolsEnabled: false,
   }),

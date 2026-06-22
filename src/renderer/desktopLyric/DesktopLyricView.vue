@@ -194,6 +194,7 @@ const lyrics = computed(() => {
 const isLocked = computed(() => settings.value?.locked ?? false);
 const hasLyrics = computed(() => lyrics.value.length > 0);
 const lyricTimeOffset = computed(() => snapshot.value?.lyricTimeOffset ?? 0);
+const offsetStepLabel = computed(() => `${Number(settings.value?.offsetStep ?? 0.5).toFixed(1)}s`);
 
 // 本地计算 currentIndex，不再依赖主窗口传来的值
 const currentIndex = computed(() => activeLineIndex.value);
@@ -785,10 +786,18 @@ onBeforeUnmount(() => {
       <div class="header-left" @pointerdown.stop>
         <span class="song-name">{{ songName }} - {{ artistName }}</span>
         <div v-if="hasLyrics" class="offset-controls">
-          <button class="menu-btn" title="歌词后退 0.5s" @click.stop="adjustLyricOffsetBackward">
+          <button
+            class="menu-btn"
+            :title="`歌词后退 ${offsetStepLabel}`"
+            @click.stop="adjustLyricOffsetBackward"
+          >
             <Icon :icon="iconRotateCcw" width="18" height="18" />
           </button>
-          <button class="menu-btn" title="歌词前进 0.5s" @click.stop="adjustLyricOffsetForward">
+          <button
+            class="menu-btn"
+            :title="`歌词前进 ${offsetStepLabel}`"
+            @click.stop="adjustLyricOffsetForward"
+          >
             <Icon :icon="iconRotateCw" width="18" height="18" />
           </button>
           <button

@@ -79,6 +79,10 @@ import type {
 } from '../shared/plugins';
 import type {
   StorageAppendQueueItemsPayload,
+  StorageHistoryEntry,
+  StorageHistoryGetEntriesPayload,
+  StorageHistoryRecordPlayPayload,
+  StorageHistoryRemoveEntriesPayload,
   StoragePlaybackSnapshot,
   StoragePlaybackQueueState,
   StorageQueueIdPayload,
@@ -368,6 +372,16 @@ export interface IElectronAPI {
       payload: StorageSetQueueCurrentTrackPayload,
     ) => Promise<StorageResetResult>;
     setActiveQueue: (queueId: string) => Promise<StorageResetResult>;
+    getHistoryEntries: (
+      payload?: StorageHistoryGetEntriesPayload,
+    ) => Promise<StorageHistoryEntry[]>;
+    recordHistoryPlay: (
+      payload: StorageHistoryRecordPlayPayload,
+    ) => Promise<StorageHistoryEntry | null>;
+    removeHistoryEntries: (
+      payload: StorageHistoryRemoveEntriesPayload,
+    ) => Promise<StorageResetResult>;
+    clearHistory: () => Promise<StorageResetResult>;
     getKv: <T = unknown>(key: string) => Promise<T | null>;
     setKv: (key: string, value: unknown) => Promise<StorageResetResult>;
     deleteKv: (key: string) => Promise<StorageResetResult>;

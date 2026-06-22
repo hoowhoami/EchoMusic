@@ -145,6 +145,17 @@ fn ensure_schema(connection: &Connection) -> NativeResult<()> {
 
         CREATE INDEX IF NOT EXISTS idx_queue_items_song_key
           ON queue_items(song_key);
+
+        CREATE TABLE IF NOT EXISTS play_history (
+          song_key TEXT PRIMARY KEY,
+          history_key TEXT NOT NULL UNIQUE,
+          last_played_at INTEGER NOT NULL,
+          play_count INTEGER NOT NULL DEFAULT 1,
+          FOREIGN KEY (song_key) REFERENCES songs(song_key) ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_play_history_last_played_at
+          ON play_history(last_played_at DESC);
         "#,
     ))
 }
@@ -306,6 +317,15 @@ fn song_field(song: &Value, primary: &str, secondary: Option<&str>) -> String {
 fn song_duration(song: &Value) -> i64 {
     let map = song.as_object().cloned().unwrap_or_default();
     int_prop(&map, "duration", 0).max(0)
+}
+
+fn history_key_for_song(song: &Value, played_at: i64) -> String {
+    let map = song.as_object().cloned().unwrap_or_default();
+    let mxid = optional_string_prop(&map, "mixSongId")
+        .or_else(|| optional_string_prop(&map, "fileId"))
+        .or_else(|| optional_string_prop(&map, "id"))
+        .unwrap_or_else(|| "0".to_string());
+    format!("{mxid}:{played_at}")
 }
 
 fn upsert_queue(
@@ -658,10 +678,127 @@ fn queue_json_by_id(connection: &Connection, queue_id: &str) -> NativeResult<Opt
     }
 }
 
+fn history_entry_from_row(
+    history_key: String,
+    last_played_at: i64,
+    play_count: i64,
+    payload_json: String,
+) -> Value {
+    let mut song = parse_json_fallback(&payload_json, json!({}));
+    if let Value::Object(song_map) = &mut song {
+        song_map.insert("historyKey".to_string(), Value::String(history_key.clone()));
+        song_map.insert("lastPlayedAt".to_string(), Value::Number(last_played_at.into()));
+        song_map.insert("playCount".to_string(), Value::Number(play_count.into()));
+    }
+    json!({
+        "song": song,
+        "lastPlayedAt": last_played_at,
+        "playCount": play_count,
+        "historyKey": history_key,
+    })
+}
+
+fn history_entries_json(connection: &Connection, offset: i64, limit: i64) -> NativeResult<String> {
+    let safe_offset = offset.max(0);
+    let safe_limit = limit.clamp(1, 5000);
+    let mut stmt = map_sql(connection.prepare(
+        r#"
+        SELECT play_history.history_key, play_history.last_played_at,
+               play_history.play_count, songs.payload_json
+        FROM play_history
+        INNER JOIN songs ON songs.song_key = play_history.song_key
+        ORDER BY play_history.last_played_at DESC
+        LIMIT ? OFFSET ?
+        "#,
+    ))?;
+    let rows = map_sql(stmt.query_map(params![safe_limit, safe_offset], |row| {
+        Ok(history_entry_from_row(
+            row.get(0)?,
+            row.get(1)?,
+            row.get(2)?,
+            row.get(3)?,
+        ))
+    }))?;
+
+    let mut entries = Vec::new();
+    for row in rows {
+        entries.push(map_sql(row)?);
+    }
+    map_json(serde_json::to_string(&entries))
+}
+
+fn history_entry_json_by_song_key(
+    connection: &Connection,
+    song_key: &str,
+) -> NativeResult<Option<String>> {
+    let entry = map_sql(
+        connection
+            .query_row(
+                r#"
+                SELECT play_history.history_key, play_history.last_played_at,
+                       play_history.play_count, songs.payload_json
+                FROM play_history
+                INNER JOIN songs ON songs.song_key = play_history.song_key
+                WHERE play_history.song_key = ?
+                "#,
+                params![song_key],
+                |row| {
+                    Ok(history_entry_from_row(
+                        row.get(0)?,
+                        row.get(1)?,
+                        row.get(2)?,
+                        row.get(3)?,
+                    ))
+                },
+            )
+            .optional(),
+    )?;
+
+    match entry {
+        Some(entry) => Ok(Some(map_json(serde_json::to_string(&entry))?)),
+        None => Ok(None),
+    }
+}
+
+fn prune_history(tx: &Transaction<'_>, max_entries: i64) -> NativeResult<()> {
+    let safe_max = max_entries.clamp(1, 5000);
+    map_sql(tx.execute(
+        r#"
+        DELETE FROM play_history
+        WHERE song_key NOT IN (
+          SELECT song_key FROM play_history
+          ORDER BY last_played_at DESC
+          LIMIT ?
+        )
+        "#,
+        params![safe_max],
+    ))?;
+    Ok(())
+}
+
+fn cleanup_orphan_songs(connection: &Connection) -> NativeResult<()> {
+    map_sql(connection.execute(
+        r#"
+        DELETE FROM songs
+        WHERE NOT EXISTS (
+          SELECT 1 FROM queue_items
+          WHERE queue_items.song_key = songs.song_key
+        )
+        AND NOT EXISTS (
+          SELECT 1 FROM play_history
+          WHERE play_history.song_key = songs.song_key
+        )
+        "#,
+        [],
+    ))?;
+    Ok(())
+}
+
 #[napi]
 pub fn initialize(database_path: String) -> NativeResult<()> {
     let connection = map_sql(Connection::open(database_path))?;
     ensure_schema(&connection)?;
+    cleanup_orphan_songs(&connection)?;
     let mut guard = DATABASE
         .lock()
         .map_err(|error| err(format!("Database lock failed: {error}")))?;
@@ -720,6 +857,7 @@ pub fn kv_delete(key: String) -> NativeResult<()> {
 pub fn reset_all() -> NativeResult<()> {
     with_connection_mut(|connection| {
         let tx = map_sql(connection.transaction())?;
+        map_sql(tx.execute("DELETE FROM play_history", []))?;
         map_sql(tx.execute("DELETE FROM queue_items", []))?;
         map_sql(tx.execute("DELETE FROM playback_queues", []))?;
         map_sql(tx.execute("DELETE FROM songs", []))?;
@@ -994,6 +1132,93 @@ pub fn playback_set_active_queue(queue_id: String) -> NativeResult<String> {
             "UPDATE playback_queues SET last_non_fm = 1 WHERE id = ?",
             params![queue_id],
         ))?;
+        map_sql(tx.commit())?;
+        Ok(ok_json())
+    })
+}
+
+#[napi]
+pub fn history_get_entries(payload_json: Option<String>) -> NativeResult<String> {
+    let payload = match payload_json {
+        Some(value) if !value.trim().is_empty() => parse_payload(&value)?,
+        _ => Map::new(),
+    };
+    let offset = int_prop(&payload, "offset", 0);
+    let limit = int_prop(&payload, "limit", 500);
+
+    with_connection(|connection| history_entries_json(connection, offset, limit))
+}
+
+#[napi]
+pub fn history_record_play(payload_json: String) -> NativeResult<String> {
+    let payload = parse_payload(&payload_json)?;
+    let song = payload
+        .get("song")
+        .ok_or_else(|| err("History payload is missing song"))?
+        .clone();
+    let played_at = int_prop(&payload, "playedAt", now_ms());
+    let max_entries = int_prop(&payload, "maxEntries", 500);
+    let history_key = history_key_for_song(&song, played_at);
+
+    with_connection_mut(|connection| {
+        let tx = map_sql(connection.transaction())?;
+        let song_key = upsert_song(&tx, &song, played_at)?;
+        let existing_play_count: Option<i64> = map_sql(
+            tx.query_row(
+                "SELECT play_count FROM play_history WHERE song_key = ?",
+                params![song_key.as_str()],
+                |row| row.get(0),
+            )
+            .optional(),
+        )?;
+        let play_count = existing_play_count.unwrap_or(0) + 1;
+        map_sql(tx.execute(
+            r#"
+            INSERT INTO play_history (song_key, history_key, last_played_at, play_count)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(song_key) DO UPDATE SET
+              history_key = excluded.history_key,
+              last_played_at = excluded.last_played_at,
+              play_count = excluded.play_count
+            "#,
+            params![song_key.as_str(), history_key, played_at, play_count],
+        ))?;
+        prune_history(&tx, max_entries)?;
+        cleanup_orphan_songs(&tx)?;
+        map_sql(tx.commit())?;
+        history_entry_json_by_song_key(connection, &normalize_song_key(&song))?
+            .ok_or_else(|| err("History entry was not saved"))
+    })
+}
+
+#[napi]
+pub fn history_remove_entries(payload_json: String) -> NativeResult<String> {
+    let payload = parse_payload(&payload_json)?;
+    let keys = array_strings(payload.get("historyKeys"));
+    if keys.is_empty() {
+        return Ok(ok_json());
+    }
+
+    with_connection_mut(|connection| {
+        let tx = map_sql(connection.transaction())?;
+        for key in keys {
+            map_sql(tx.execute(
+                "DELETE FROM play_history WHERE history_key = ?",
+                params![key],
+            ))?;
+        }
+        cleanup_orphan_songs(&tx)?;
+        map_sql(tx.commit())?;
+        Ok(ok_json())
+    })
+}
+
+#[napi]
+pub fn history_clear() -> NativeResult<String> {
+    with_connection_mut(|connection| {
+        let tx = map_sql(connection.transaction())?;
+        map_sql(tx.execute("DELETE FROM play_history", []))?;
+        cleanup_orphan_songs(&tx)?;
         map_sql(tx.commit())?;
         Ok(ok_json())
     })

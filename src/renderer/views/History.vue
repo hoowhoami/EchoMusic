@@ -199,6 +199,7 @@ const handleLocate = () => songListRef.value?.scrollToActive?.();
 let unregisterContextMenu: (() => void) | null = null;
 
 onMounted(() => {
+  void historyStore.hydrate();
   unregisterContextMenu = registerSongContextMenuExtension({
     id: 'history-remove-song',
     label: '从播放历史中移除',

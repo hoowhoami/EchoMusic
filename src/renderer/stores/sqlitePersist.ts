@@ -19,7 +19,34 @@ export const waitForSqlitePersistHydration = async () => {
 };
 
 const clone = <T>(value: T): T => {
+  if (typeof structuredClone === 'function') {
+    try {
+      return structuredClone(value);
+    } catch {
+      // Some reactive proxies and platform objects cannot be cloned structurally.
+    }
+  }
   return JSON.parse(JSON.stringify(value)) as T;
+};
+
+const isSamePersistedValue = (left: unknown, right: unknown): boolean => {
+  if (Object.is(left, right)) return true;
+  if (typeof left !== typeof right) return false;
+  if (Array.isArray(left) || Array.isArray(right)) {
+    if (!Array.isArray(left) || !Array.isArray(right)) return false;
+    if (left.length !== right.length) return false;
+    return left.every((value, index) => isSamePersistedValue(value, right[index]));
+  }
+  if (!isObject(left) || !isObject(right)) return false;
+
+  const leftKeys = Object.keys(left);
+  const rightKeys = Object.keys(right);
+  if (leftKeys.length !== rightKeys.length) return false;
+  return leftKeys.every(
+    (key) =>
+      Object.prototype.hasOwnProperty.call(right, key) &&
+      isSamePersistedValue(left[key], right[key]),
+  );
 };
 
 const getPersistOptions = (options: unknown): PersistOptions => {
@@ -62,7 +89,7 @@ export const sqlitePersistPlugin = ({ store, options }: PiniaPluginContext) => {
   const storageKey = `pinia:${store.$id}`;
   let hydrated = false;
   let pendingSave = 0;
-  let lastPersistedJson = '';
+  let lastPersistedState: StateTree | null = null;
 
   const hydration = window.electron.storage
     .getKv<StateTree>(storageKey)
@@ -70,7 +97,7 @@ export const sqlitePersistPlugin = ({ store, options }: PiniaPluginContext) => {
       if (saved && typeof saved === 'object') {
         store.$patch(saved);
       }
-      lastPersistedJson = JSON.stringify(buildPersistedState(store.$state, persist));
+      lastPersistedState = buildPersistedState(store.$state, persist);
       hydrated = true;
     })
     .finally(() => {
@@ -85,9 +112,8 @@ export const sqlitePersistPlugin = ({ store, options }: PiniaPluginContext) => {
       pendingSave = window.setTimeout(() => {
         pendingSave = 0;
         const payload = buildPersistedState(state, persist);
-        const nextPersistedJson = JSON.stringify(payload);
-        if (nextPersistedJson === lastPersistedJson) return;
-        lastPersistedJson = nextPersistedJson;
+        if (lastPersistedState && isSamePersistedValue(payload, lastPersistedState)) return;
+        lastPersistedState = payload;
         void window.electron?.storage?.setKv(storageKey, payload);
       }, 120);
     },
