@@ -202,17 +202,49 @@ const buildLyricEffectSnapshot = (): PluginLyricEffectSnapshot => {
   };
 };
 
+// 上次写入歌词特效根元素的离散状态，避免每帧重复写 DOM 触发整片歌词区重绘（内存泄漏根因）。
+const lastEffectRootState = {
+  currentIndex: Number.NaN,
+  scrollIndex: Number.NaN,
+  playing: '',
+  collapsed: '',
+  reducedMotion: '',
+};
+
+// 同步歌词特效根元素状态。
+// 注意：timelineMs / currentTime / playbackRate 等每帧变化的高频数据「不再写成 CSS 变量」，
+// 因为把它们逐帧写到带 mask-image/isolation/contain 的歌词根上会触发整片歌词区重绘，
+// 渲染进程光栅缓存持续堆积导致内存泄漏。插件统一通过 host.subscribe 的快照获取这些数据
+// （PluginLyricEffectSnapshot 已包含 timelineMs/currentTime/playbackRate）。
+// 这里只写「离散、低频」状态，且仅在值真正变化时才写，确保稳定播放时每帧零 DOM 写入。
 const syncLyricEffectRootState = () => {
   const root = lyricEffectRootRef.value;
   if (!root) return;
-  root.style.setProperty('--echo-lyric-current-index', String(currentIndex.value));
-  root.style.setProperty('--echo-lyric-scroll-index', String(scrollIndex.value));
-  root.style.setProperty('--echo-lyric-timeline-ms', String(Math.round(getLyricTimelineMs(0))));
-  root.style.setProperty('--echo-lyric-current-time', String(playerStore.currentTime || 0));
-  root.style.setProperty('--echo-lyric-playback-rate', String(playerStore.playbackRate || 1));
-  root.dataset.echoLyricPlaying = playerStore.isPlaying ? 'true' : 'false';
-  root.dataset.echoLyricCollapsed = props.collapsed ? 'true' : 'false';
-  root.dataset.echoLyricReducedMotion = reducedMotion.value ? 'true' : 'false';
+
+  if (lastEffectRootState.currentIndex !== currentIndex.value) {
+    lastEffectRootState.currentIndex = currentIndex.value;
+    root.style.setProperty('--echo-lyric-current-index', String(currentIndex.value));
+  }
+  if (lastEffectRootState.scrollIndex !== scrollIndex.value) {
+    lastEffectRootState.scrollIndex = scrollIndex.value;
+    root.style.setProperty('--echo-lyric-scroll-index', String(scrollIndex.value));
+  }
+
+  const playing = playerStore.isPlaying ? 'true' : 'false';
+  if (lastEffectRootState.playing !== playing) {
+    lastEffectRootState.playing = playing;
+    root.dataset.echoLyricPlaying = playing;
+  }
+  const collapsed = props.collapsed ? 'true' : 'false';
+  if (lastEffectRootState.collapsed !== collapsed) {
+    lastEffectRootState.collapsed = collapsed;
+    root.dataset.echoLyricCollapsed = collapsed;
+  }
+  const reduced = reducedMotion.value ? 'true' : 'false';
+  if (lastEffectRootState.reducedMotion !== reduced) {
+    lastEffectRootState.reducedMotion = reduced;
+    root.dataset.echoLyricReducedMotion = reduced;
+  }
 };
 
 const notifyLyricEffectHost = () => {
