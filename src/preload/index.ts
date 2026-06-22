@@ -834,8 +834,7 @@ contextBridge.exposeInMainWorld('electron', {
       invokeWithPlainPayload<StorageHistoryEntry | null>('storage:history:record-play', payload),
     removeHistoryEntries: (payload: StorageHistoryRemoveEntriesPayload) =>
       invokeWithPlainPayload<StorageResetResult>('storage:history:remove-entries', payload),
-    clearHistory: () =>
-      ipcRenderer.invoke('storage:history:clear') as Promise<StorageResetResult>,
+    clearHistory: () => ipcRenderer.invoke('storage:history:clear') as Promise<StorageResetResult>,
     getKv: <T = unknown>(key: string) =>
       ipcRenderer.invoke('storage:kv:get', key) as Promise<T | null>,
     setKv: (key: string, value: unknown) =>

@@ -32,7 +32,8 @@ const toLocalEntry = (entry: StorageHistoryEntry): LocalHistoryEntry => ({
   historyKey: entry.historyKey,
 });
 
-const resolveSongHistoryId = (song: Song) => String(song.mixSongId || song.fileId || song.id || '0');
+const resolveSongHistoryId = (song: Song) =>
+  String(song.mixSongId || song.fileId || song.id || '0');
 
 const upsertEntryAtTop = (
   current: LocalHistoryEntry[],
