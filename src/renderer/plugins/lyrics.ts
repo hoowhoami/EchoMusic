@@ -46,6 +46,25 @@ interface RegisteredPluginLyricResolver {
 }
 
 const lyricResolvers: RegisteredPluginLyricResolver[] = [];
+const PLUGIN_LYRIC_RESOLVER_TIMEOUT_MS = 2500;
+
+const withResolverTimeout = async <T>(task: Promise<T>, source: string): Promise<T> =>
+  new Promise<T>((resolve, reject) => {
+    const timer = window.setTimeout(() => {
+      reject(new Error(`${source} 超时`));
+    }, PLUGIN_LYRIC_RESOLVER_TIMEOUT_MS);
+
+    task.then(
+      (value) => {
+        window.clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        window.clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
 
 const normalizeLyricResolveResult = (
   resolver: Pick<RegisteredPluginLyricResolver, 'pluginId' | 'id'>,
@@ -122,10 +141,15 @@ export const resolvePluginLyric = async (
   for (const resolver of lyricResolvers.slice()) {
     const source = `歌词解析: ${resolver.id}`;
     try {
-      const matched = resolver.match ? await resolver.match(context) : true;
+      const matched = resolver.match
+        ? await withResolverTimeout(Promise.resolve(resolver.match(context)), source)
+        : true;
       if (!matched) continue;
 
-      const result = normalizeLyricResolveResult(resolver, await resolver.resolve(context));
+      const result = normalizeLyricResolveResult(
+        resolver,
+        await withResolverTimeout(Promise.resolve(resolver.resolve(context)), source),
+      );
       if (result) return result;
     } catch (error) {
       resolver.onError?.(source, error);

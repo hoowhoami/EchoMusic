@@ -203,8 +203,18 @@ export const createPlaybackManager = (
     const lyricHash = String(track.hash ?? track.id ?? '');
     if (track.lyric) {
       lyricStore.setLyric(track.lyric, lyricHash);
-    } else {
+    } else if (lyricHash) {
       lyricStore.clear(lyricHash, '歌词加载中...');
+    } else {
+      lyricStore.clear('', '暂无歌词');
+    }
+
+    if (lyricHash) {
+      void lyricStore.fetchLyrics(lyricHash, {
+        preserveCurrent: Boolean(track.lyric),
+        duration: track.duration ? track.duration * 1000 : 0,
+        track,
+      });
     }
 
     const pendingMediaMeta = buildMediaMeta(track);
@@ -220,16 +230,6 @@ export const createPlaybackManager = (
     const resolved = await resolver.resolveAudioUrl(track);
     if (requestSeq !== state.playbackRequestSeq) return;
 
-    // resolve 完成后发起歌词搜索，duration 用歌曲时长（秒）转毫秒传入
-    if (lyricHash) {
-      void lyricStore.fetchLyrics(lyricHash, {
-        preserveCurrent: Boolean(track.lyric),
-        duration: track.duration ? track.duration * 1000 : 0,
-        track,
-      });
-    } else if (!track.lyric) {
-      lyricStore.clear('', '暂无歌词');
-    }
     if (!resolved.url) {
       state.lastError = 'audio-url-unavailable';
       state.currentTrackSnapshot = toRawSong(track);

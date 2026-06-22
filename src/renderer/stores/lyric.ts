@@ -78,6 +78,11 @@ type CandidateLyricDetail = {
   parsed: ParsedLyricPreview;
 };
 
+type CachedLyricResult = {
+  detail: LyricDetailResponse;
+  currentCandidateKey: string;
+};
+
 type LyricSearchResponse = {
   candidates?: LyricSearchCandidate[];
   info?: LyricSearchCandidate[];
@@ -522,6 +527,30 @@ export function testLyricFilter(text: string, enabled: boolean, pattern: string)
 // 同一 hash 的在途歌词请求去重：避免切歌瞬间 playTrack 与歌词页 watch 各自触发，
 // 导致对同一首歌并发多次 searchLyric/getLyric，挤占本地服务器、拖慢音频首包。
 let inflightLyricHash: string | null = null;
+const inflightCandidateDetailMap = new Map<string, Promise<CandidateLyricDetail | null>>();
+const lyricResultCache = new Map<string, CachedLyricResult>();
+const LYRIC_RESULT_CACHE_LIMIT = 32;
+
+const getLyricResultCacheKey = (hash: string, candidate?: LyricSearchCandidate | null) =>
+  `${hash}:${candidate ? getLyricCandidateKey(candidate) : 'auto'}`;
+
+const rememberLyricResult = (key: string, value: CachedLyricResult) => {
+  if (!key) return;
+  if (lyricResultCache.has(key)) lyricResultCache.delete(key);
+  lyricResultCache.set(key, value);
+  while (lyricResultCache.size > LYRIC_RESULT_CACHE_LIMIT) {
+    const oldestKey = lyricResultCache.keys().next().value;
+    if (!oldestKey) break;
+    lyricResultCache.delete(oldestKey);
+  }
+};
+
+const shouldPreferPluginLyric = (track?: Song): boolean => {
+  const source = String(track?.source ?? '')
+    .trim()
+    .toLowerCase();
+  return Boolean(source && source !== 'cloud');
+};
 
 export const useLyricStore = defineStore('lyric', {
   state: () => ({
@@ -717,11 +746,17 @@ export const useLyricStore = defineStore('lyric', {
     },
     async fetchLyricCandidates(
       hash: string,
-      options?: { duration?: number; keywords?: string; force?: boolean },
+      options?: {
+        duration?: number;
+        keywords?: string;
+        force?: boolean;
+        hydratePreviews?: boolean;
+      },
     ) {
       const normalizedHash = String(hash ?? '').trim();
       if (!normalizedHash) return [] as LyricSearchCandidate[];
       if (!options?.force && this.candidateHash === normalizedHash && this.candidates.length > 0) {
+        if (options?.hydratePreviews) await this.hydrateCandidatePreviews(this.candidates);
         return this.candidates;
       }
 
@@ -742,7 +777,7 @@ export const useLyricStore = defineStore('lyric', {
       this.candidatePreviewMap = {};
       this.candidateDetailMap = {};
       this.autoCandidateKey = autoCandidate ? getLyricCandidateKey(autoCandidate) : '';
-      await this.hydrateCandidatePreviews(candidates);
+      if (options?.hydratePreviews) await this.hydrateCandidatePreviews(candidates);
       return candidates;
     },
     async resolveCandidateDetail(
@@ -756,19 +791,31 @@ export const useLyricStore = defineStore('lyric', {
         return detail && parsed ? { detail, parsed } : null;
       }
 
-      const lyricData = normalizeDetailPayload(
-        await getLyric(String(candidate.id), String(candidate.accesskey)),
-      );
-      if (!lyricData) {
-        this.candidateDetailMap[key] = null;
-        this.candidatePreviewMap[key] = null;
-        return null;
-      }
+      const pending = inflightCandidateDetailMap.get(key);
+      if (pending) return pending;
 
-      const parsed = parseLyricDetailPayload(lyricData);
-      this.candidateDetailMap[key] = lyricData;
-      this.candidatePreviewMap[key] = parsed;
-      return { detail: lyricData, parsed };
+      const request = (async () => {
+        try {
+          const lyricData = normalizeDetailPayload(
+            await getLyric(String(candidate.id), String(candidate.accesskey)),
+          );
+          if (!lyricData) {
+            this.candidateDetailMap[key] = null;
+            this.candidatePreviewMap[key] = null;
+            return null;
+          }
+
+          const parsed = parseLyricDetailPayload(lyricData);
+          this.candidateDetailMap[key] = lyricData;
+          this.candidatePreviewMap[key] = parsed;
+          return { detail: lyricData, parsed };
+        } finally {
+          inflightCandidateDetailMap.delete(key);
+        }
+      })();
+
+      inflightCandidateDetailMap.set(key, request);
+      return request;
     },
     async hydrateCandidatePreviews(candidates: LyricSearchCandidate[]) {
       const usableCandidates = candidates.filter(isUsableCandidate);
@@ -804,6 +851,10 @@ export const useLyricStore = defineStore('lyric', {
 
       this.parseLyricContent(resolved.detail, normalizedHash, { detailResolved: true });
       this.currentCandidateKey = getLyricCandidateKey(candidate);
+      rememberLyricResult(getLyricResultCacheKey(normalizedHash, candidate), {
+        detail: resolved.detail,
+        currentCandidateKey: this.currentCandidateKey,
+      });
       if (options?.remember) {
         this.manualLyricMap[normalizedHash] = compactCandidate(candidate);
       }
@@ -901,7 +952,22 @@ export const useLyricStore = defineStore('lyric', {
 
       try {
         const manualCandidate = this.manualLyricMap[normalizedHash];
-        if (!isUsableCandidate(manualCandidate)) {
+        const cacheKey = getLyricResultCacheKey(
+          normalizedHash,
+          isUsableCandidate(manualCandidate) ? manualCandidate : null,
+        );
+        const cached = !options?.force ? lyricResultCache.get(cacheKey) : null;
+        if (cached) {
+          this.parseLyricContent(cached.detail, normalizedHash, { detailResolved: true });
+          this.currentCandidateKey = cached.currentCandidateKey;
+          return;
+        }
+
+        const canUsePluginLyric = !isUsableCandidate(manualCandidate);
+        const preferPluginLyric =
+          canUsePluginLyric && (Boolean(options?.force) || shouldPreferPluginLyric(options?.track));
+        const tryResolvePluginLyric = async (): Promise<boolean> => {
+          if (!canUsePluginLyric) return false;
           const pluginLyric = await resolvePluginLyric({
             hash: normalizedHash,
             track: options?.track,
@@ -909,14 +975,22 @@ export const useLyricStore = defineStore('lyric', {
             force: Boolean(options?.force),
             preserveCurrent: Boolean(options?.preserveCurrent),
           });
-          if (requestSerial !== this.requestSerial) return;
-          if (pluginLyric) {
-            this.parseLyricContent({ decodeContent: pluginLyric.decodeContent }, normalizedHash, {
-              detailResolved: true,
-            });
-            this.currentCandidateKey = `plugin:${pluginLyric.pluginId}:${pluginLyric.resolverId}`;
-            return;
-          }
+          if (requestSerial !== this.requestSerial) return true;
+          if (!pluginLyric) return false;
+
+          const detail = { decodeContent: pluginLyric.decodeContent };
+          const pluginCandidateKey = `plugin:${pluginLyric.pluginId}:${pluginLyric.resolverId}`;
+          this.parseLyricContent(detail, normalizedHash, { detailResolved: true });
+          this.currentCandidateKey = pluginCandidateKey;
+          rememberLyricResult(cacheKey, {
+            detail,
+            currentCandidateKey: pluginCandidateKey,
+          });
+          return true;
+        };
+
+        if (preferPluginLyric && (await tryResolvePluginLyric())) {
+          return;
         }
 
         const candidates = await this.fetchLyricCandidates(normalizedHash, {
@@ -932,6 +1006,9 @@ export const useLyricStore = defineStore('lyric', {
             : pickDefaultCandidate(candidates)) ?? null;
 
         if (!target?.id || !target.accesskey) {
+          if (!preferPluginLyric && (await tryResolvePluginLyric())) {
+            return;
+          }
           if (options?.preserveCurrent && this.lines.length > 0) {
             this.isLoading = false;
             this.loadedHash = normalizedHash;
@@ -947,6 +1024,9 @@ export const useLyricStore = defineStore('lyric', {
         if (requestSerial !== this.requestSerial) return;
 
         if (!resolved) {
+          if (!preferPluginLyric && (await tryResolvePluginLyric())) {
+            return;
+          }
           if (options?.preserveCurrent && this.lines.length > 0) {
             this.isLoading = false;
             this.loadedHash = normalizedHash;
@@ -958,8 +1038,13 @@ export const useLyricStore = defineStore('lyric', {
           return;
         }
 
+        const currentCandidateKey = getLyricCandidateKey(target);
         this.parseLyricContent(resolved.detail, normalizedHash, { detailResolved: true });
-        this.currentCandidateKey = getLyricCandidateKey(target);
+        this.currentCandidateKey = currentCandidateKey;
+        rememberLyricResult(cacheKey, {
+          detail: resolved.detail,
+          currentCandidateKey,
+        });
       } catch (error) {
         if (requestSerial !== this.requestSerial) return;
         logger.error('LyricStore', 'Fetch lyrics failed', error, { hash: normalizedHash });

@@ -139,12 +139,14 @@ const loadCandidates = async (force = false) => {
   if (!normalizedHash.value) return;
   isLoading.value = true;
   try {
+    const previousSelectedKey = selectedKey.value;
     await lyricStore.fetchLyricCandidates(normalizedHash.value, {
       duration: durationMs.value || undefined,
       keywords: props.title || undefined,
       force,
     });
     pickInitialCandidate();
+    if (selectedKey.value === previousSelectedKey) void loadPreview();
   } catch {
     toastStore.loadFailed('歌词候选');
   } finally {
