@@ -14,7 +14,7 @@ const { currentTrack } = usePlayerControls();
         <Cover :url="currentTrack?.coverUrl" :size="800" :borderRadius="24" class="cover-img" />
       </div>
       <div class="song-info">
-        <h1 class="song-title">{{ currentTrack?.title || '未在播放' }}</h1>
+        <h1 class="song-title">{{ currentTrack?.name || '未在播放' }}</h1>
         <p class="song-artist">{{ currentTrack?.artist || '' }}</p>
       </div>
     </section>

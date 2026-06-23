@@ -708,7 +708,7 @@ watch(isLoggedIn, (value) => {
                   <MvCard
                     :videoId="item.id"
                     :hash="item.hash"
-                    :title="item.title"
+                    :title="item.name"
                     :coverUrl="item.coverUrl"
                     :artist="item.artist"
                     :duration="item.duration"

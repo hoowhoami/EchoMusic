@@ -229,7 +229,7 @@ export function usePlayerControls() {
       query: {
         mainTab: 'detail',
         type: 'music',
-        title: track.title,
+        title: track.name,
         artist: track.artist,
         artistId: track.artists?.[0]?.id ?? '',
         album: track.album ?? '',
@@ -266,7 +266,7 @@ export function usePlayerControls() {
       query: {
         hash: mvHash,
         albumAudioId,
-        title: track.title,
+        title: track.name,
         artist: track.artist,
         cover: track.coverUrl ?? '',
         album: track.album ?? '',

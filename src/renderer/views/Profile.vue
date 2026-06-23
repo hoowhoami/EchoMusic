@@ -175,8 +175,8 @@ const loadData = async (options?: { refreshPlayback?: boolean }) => {
     isLoading.value = false;
   }
 
-  // 如果开启了自动领取 VIP，尝试领取一次
-  if (settingStore.autoReceiveVip && userStore.isLoggedIn) {
+  // 如果开启了自动领取 VIP 且 VIP 领取功能已启用，尝试领取一次
+  if (settingStore.autoReceiveVip && settingStore.vipClaimEnabled && userStore.isLoggedIn) {
     try {
       await userStore.autoReceiveVipIfNeeded();
     } catch (e) {
@@ -186,6 +186,8 @@ const loadData = async (options?: { refreshPlayback?: boolean }) => {
 };
 
 const handleClaimTvip = async () => {
+  // 如果未开启VIP领取功能，静默返回
+  if (!settingStore.vipClaimEnabled) return;
   if (userStore.isTvipClaimedToday) return;
   isLoading.value = true;
   try {
@@ -203,6 +205,8 @@ const handleClaimTvip = async () => {
 };
 
 const handleUpgradeSvip = async () => {
+  // 如果未开启VIP领取功能，静默返回
+  if (!settingStore.vipClaimEnabled) return;
   if (userStore.isSvipClaimedToday || !userStore.isTvipClaimedToday) return;
   isLoading.value = true;
   try {

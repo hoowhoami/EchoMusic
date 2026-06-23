@@ -314,7 +314,7 @@ onUnmounted(() => {
       <!-- 中间：轮播切换按钮 或 歌曲信息（歌词模式） -->
       <div class="toolbar-center">
         <div v-if="viewMode === 'lyric'" class="toolbar-song-info">
-          <span class="toolbar-song-title">{{ currentTrack?.title || '未在播放' }}</span>
+          <span class="toolbar-song-title">{{ currentTrack?.name || '未在播放' }}</span>
           <span v-if="currentTrack?.artist" class="toolbar-song-artist">{{
             currentTrack.artist
           }}</span>
@@ -494,7 +494,7 @@ onUnmounted(() => {
       v-model:open="lyricStore.sourceDialogOpen"
       :hash="currentTrackLyricHash"
       :duration="playerStore.duration || currentTrack?.duration || 0"
-      :title="currentTrack?.title"
+      :title="currentTrack?.name"
       :artist="currentTrack?.artist"
     />
 

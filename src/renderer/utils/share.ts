@@ -82,7 +82,7 @@ export const createShareTarget = (
 };
 
 export const createSongShareTarget = (song: Song): ShareTarget | null => {
-  const title = song.title || song.name || '';
+  const title = song.name || '';
   const hash = cleanId(song.hash);
   if (!isSongHashId(hash)) return null;
   return createShareTarget('song', hash, title);

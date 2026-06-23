@@ -149,7 +149,7 @@ export const resolveFavoriteSongKey = (song: Song | null | undefined): string =>
 };
 
 export const buildPlaylistTrackPayload = (song: Song): string =>
-  `${song.title}|${song.hash}|${song.albumId || 0}|${song.mixSongId}`;
+  `${song.name}|${song.hash}|${song.albumId || 0}|${song.mixSongId}`;
 
 export const removeSongsFromKnownList = (existing: Song[], songs: Song[]): Song[] => {
   if (existing.length === 0 || songs.length === 0) return existing.slice();

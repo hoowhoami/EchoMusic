@@ -258,7 +258,7 @@ export const getSongDerivedState = (song: Song): SongDerivedState => {
 export const hasUsableSongHash = (song: Song): boolean => Boolean(String(song.hash ?? '').trim());
 
 export const isMeaninglessHashlessSong = (song: Song): boolean => {
-  const title = String(song.title ?? '').trim();
+  const title = String(song.name ?? '').trim();
   const artist = String(song.artist ?? '').trim();
   const album = String(song.album ?? '').trim();
   const cover = String(song.coverUrl ?? '').trim();

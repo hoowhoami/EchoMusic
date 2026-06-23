@@ -64,7 +64,7 @@ const baseClass = computed(() =>
 
 const songPayload = computed(() => props.song);
 const songId = computed(() => String(songPayload.value.id ?? ''));
-const songTitle = computed(() => songPayload.value.title || songPayload.value.name || '');
+const songTitle = computed(() => songPayload.value.name || '');
 const songArtistText = computed(() => songPayload.value.artist || '');
 const songArtists = computed(() => songPayload.value.artists ?? songPayload.value.singers ?? []);
 const songAlbum = computed(() => songPayload.value.album ?? songPayload.value.albumName ?? '');

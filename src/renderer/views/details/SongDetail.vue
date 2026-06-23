@@ -58,7 +58,7 @@ const detailSong = ref<Song | null>(null);
 const showPlaylistDialog = ref(false);
 const isPlaylistLoading = ref(false);
 
-const songTitle = computed(() => String(route.query.title ?? detailSong.value?.title ?? ''));
+const songTitle = computed(() => String(route.query.title ?? detailSong.value?.name ?? ''));
 const songArtist = computed(() => String(route.query.artist ?? detailSong.value?.artist ?? ''));
 const songAlbum = computed(() => String(route.query.album ?? detailSong.value?.album ?? ''));
 const songHash = computed(() =>

@@ -44,7 +44,7 @@ const userStore = useUserStore();
 const settingStore = useSettingStore();
 
 const triggerAutoReceiveVipAfterLogin = () => {
-  if (!settingStore.autoReceiveVip) return;
+  if (!settingStore.autoReceiveVip || !settingStore.vipClaimEnabled) return;
 
   void userStore
     .fetchUserInfoOnce()

@@ -115,7 +115,7 @@ const formatTime = (seconds: number) => {
 const handleCopySongInfo = async () => {
   const track = currentTrack.value;
   if (!track) return;
-  const title = track.title || '';
+  const title = track.name || '';
   const artist = track.artist || '';
   const text = artist ? `${title} - ${artist}` : title;
   if (!text) return;
@@ -196,7 +196,7 @@ const handleCopySongInfo = async () => {
             title="点击复制歌曲信息"
             @click="handleCopySongInfo"
           >
-            <span class="bar-song-title">{{ currentTrack?.title || '未在播放' }}</span>
+            <span class="bar-song-title">{{ currentTrack?.name || '未在播放' }}</span>
             <span v-if="currentTrack" class="bar-song-sep">-</span>
             <span v-if="currentTrack" class="bar-song-artist">{{ currentTrack.artist }}</span>
           </div>

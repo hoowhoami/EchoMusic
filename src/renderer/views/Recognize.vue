@@ -258,7 +258,7 @@ function goToDetail(song: Song) {
     query: {
       mainTab: 'detail',
       type: 'music',
-      title: song.title,
+      title: song.name,
       artist: song.artist,
       artistId: song.artists?.[0]?.id ?? '',
       album: song.album ?? '',
@@ -359,7 +359,7 @@ onUnmounted(() => {
               </div>
 
               <div class="rec-match-info">
-                <div class="rec-match-title">{{ match.song.title }}</div>
+                <div class="rec-match-title">{{ match.song.name }}</div>
                 <div class="rec-match-sub">
                   {{ match.song.artist }}
                   <template v-if="match.song.album"> · {{ match.song.album }}</template>

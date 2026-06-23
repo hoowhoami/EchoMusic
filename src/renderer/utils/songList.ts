@@ -11,7 +11,7 @@ export const normalizeSongSearchQuery = (query: string): string => query.trim().
 export const songMatchesQuery = (song: Song, normalizedQuery: string): boolean => {
   if (!normalizedQuery) return true;
   return (
-    song.title.toLowerCase().includes(normalizedQuery) ||
+    song.name.toLowerCase().includes(normalizedQuery) ||
     song.artist.toLowerCase().includes(normalizedQuery) ||
     Boolean(song.album?.toLowerCase().includes(normalizedQuery))
   );

@@ -162,18 +162,8 @@ const compactCandidate = (candidate: LyricSearchCandidate): ManualLyricSelection
   adjust: candidate.adjust,
 });
 
-// 歌词候选排序：官方推荐歌词优先，其次按接口返回的 score 从高到低
-const isOfficialCandidate = (candidate: LyricSearchCandidate) =>
-  candidate.product_from === '官方推荐歌词';
-
-const compareCandidates = (a: LyricSearchCandidate, b: LyricSearchCandidate) => {
-  const officialDiff = Number(isOfficialCandidate(b)) - Number(isOfficialCandidate(a));
-  if (officialDiff !== 0) return officialDiff;
-  return Number(b.score ?? 0) - Number(a.score ?? 0);
-};
-
-const sortCandidates = (candidates: LyricSearchCandidate[]): LyricSearchCandidate[] =>
-  candidates.slice().sort(compareCandidates);
+// 保持接口返回的原始顺序
+const sortCandidates = (candidates: LyricSearchCandidate[]): LyricSearchCandidate[] => candidates;
 
 // 排序后取第一条作为默认歌词
 const pickDefaultCandidate = (candidates: LyricSearchCandidate[]): LyricSearchCandidate | null =>

@@ -226,7 +226,7 @@ export const favoritesActions = {
     try {
       let existingSongs = this.getKnownPlaylistSongs(targetId);
       if (existingSongs.some((item) => isSameSong(item, song))) {
-        logger.info('PlaylistStore', `Song ${song.title} already exists in playlist ${targetId}`);
+        logger.info('PlaylistStore', `Song ${song.name} already exists in playlist ${targetId}`);
         return 'exists';
       }
 
@@ -245,7 +245,7 @@ export const favoritesActions = {
             if (existingSongs.some((item) => isSameSong(item, song))) {
               logger.info(
                 'PlaylistStore',
-                `Song ${song.title} already exists in playlist ${targetId}`,
+                `Song ${song.name} already exists in playlist ${targetId}`,
               );
               return 'exists';
             }
@@ -259,7 +259,7 @@ export const favoritesActions = {
           this.rememberPlaylistSongs(targetId, [...existingSongs, song], true);
         }
         this.markPlaylistContentChanged(targetId, 'add', [song]);
-        logger.info('PlaylistStore', `Song ${song.title} added to playlist ${targetId}`);
+        logger.info('PlaylistStore', `Song ${song.name} added to playlist ${targetId}`);
         return 'added';
       }
     } catch (e) {
@@ -277,7 +277,7 @@ export const favoritesActions = {
       if (res && typeof res === 'object' && 'status' in res && res.status === 1) {
         this.forgetPlaylistSongs(targetId, [song]);
         this.markPlaylistContentChanged(targetId, 'remove', [song]);
-        logger.info('PlaylistStore', `Song ${song.title} removed from playlist ${targetId}`);
+        logger.info('PlaylistStore', `Song ${song.name} removed from playlist ${targetId}`);
         return true;
       }
     } catch (e) {
@@ -453,7 +453,7 @@ export const favoritesActions = {
 
     if (listId) {
       try {
-        const songData = `${song.title}|${song.hash}|${song.albumId || 0}|${song.mixSongId}`;
+        const songData = `${song.name}|${song.hash}|${song.albumId || 0}|${song.mixSongId}`;
         const res = await addPlaylistTrack(listId, songData);
         if (res && typeof res === 'object' && 'status' in res && res.status === 1) {
           if (!alreadyFavorited) {
@@ -466,7 +466,7 @@ export const favoritesActions = {
             }
             this.markPlaylistContentChanged(listId, 'add', [song]);
           }
-          logger.info('PlaylistStore', `Song ${song.title} added to favorites on cloud`);
+          logger.info('PlaylistStore', `Song ${song.name} added to favorites on cloud`);
           return true;
         }
         if (!alreadyFavorited) {
@@ -506,7 +506,7 @@ export const favoritesActions = {
         if (res && typeof res === 'object' && 'status' in res && res.status === 1) {
           this.forgetPlaylistSongs(listId, [song]);
           this.markPlaylistContentChanged(listId, 'remove', [song]);
-          logger.info('PlaylistStore', `Song ${song.title} removed from favorites on cloud`);
+          logger.info('PlaylistStore', `Song ${song.name} removed from favorites on cloud`);
           return true;
         }
         this.favorites = previousFavorites;
@@ -554,7 +554,7 @@ export const favoritesActions = {
         const removedSong = matched ?? song;
         this.forgetPlaylistSongs(listId, [removedSong]);
         this.markPlaylistContentChanged(listId, 'remove', [removedSong]);
-        logger.info('PlaylistStore', `Song ${song.title} removed from favorites on cloud`);
+        logger.info('PlaylistStore', `Song ${song.name} removed from favorites on cloud`);
         return true;
       }
       this.favorites = previousFavorites;

@@ -136,7 +136,7 @@ const buildPlaybackPayload = (): DesktopLyricPlaybackPayload | null => {
   return {
     trackId: String(playerStore.currentTrackId),
     lyricHash,
-    title: String(track.title || track.name || '未知歌曲'),
+    title: String(track.name || '未知歌曲'),
     artist: String(
       track.artist || track.artists?.map((item: any) => item.name).join(' / ') || '未知歌手',
     ),
@@ -197,9 +197,7 @@ export const initDesktopLyricSync = async () => {
     let lastValidLine: LyricLinePayload | null = null;
     const playerStore = usePlayerStore();
     const track = playerStore.currentTrackSnapshot;
-    const fallbackText = track
-      ? `${track.title || '未知歌曲'} - ${track.artist || '未知歌手'}`
-      : '';
+    const fallbackText = track ? `${track.name || '未知歌曲'} - ${track.artist || '未知歌手'}` : '';
 
     return raw.map((line) => {
       if (testLyricFilter(line.text, enabled, pattern)) {

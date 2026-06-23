@@ -220,7 +220,7 @@ const handleSongInfoHover = () => {
 };
 
 watch(
-  () => [currentTrack.value?.id, currentTrack.value?.title, currentTrack.value?.artist],
+  () => [currentTrack.value?.id, currentTrack.value?.name, currentTrack.value?.artist],
   async () => {
     await nextTick();
     checkMarquee();
@@ -280,7 +280,7 @@ onUnmounted(() => {
                 class="text-[14px] font-bold text-primary cursor-pointer transition-colors"
                 @click="navigateToLyric"
               >
-                {{ currentTrack ? currentTrack.title : '未在播放' }}
+                {{ currentTrack ? currentTrack.name : '未在播放' }}
               </span>
               <span v-if="currentTrack" class="text-[14px] text-primary/60 mx-0.5">-</span>
               <div v-if="currentTrack" class="flex items-center">

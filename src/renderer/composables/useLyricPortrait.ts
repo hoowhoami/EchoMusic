@@ -171,7 +171,7 @@ export function useLyricPortrait(options: PortraitOptions) {
               hash: lyricHash,
               audioId: track.fileId,
               albumAudioId: track.mixSongId,
-              filename: track.name ?? track.title,
+              filename: track.name,
               count: 5,
             });
             const data = Array.isArray((res as { data?: unknown[] })?.data)

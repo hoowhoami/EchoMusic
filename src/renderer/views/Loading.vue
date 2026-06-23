@@ -54,7 +54,8 @@ const navigateToHome = () => {
 };
 
 const maybeAutoReceiveVip = async () => {
-  if (!settingStore.autoReceiveVip || !userStore.isLoggedIn) return;
+  if (!settingStore.autoReceiveVip || !settingStore.vipClaimEnabled || !userStore.isLoggedIn)
+    return;
 
   try {
     await userStore.fetchUserInfoOnce();

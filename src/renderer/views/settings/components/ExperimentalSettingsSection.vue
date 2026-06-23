@@ -44,14 +44,14 @@ const diagnosticLabel = computed(() => {
       <FontIcon v-else :size="20" class="text-primary" />
     </template>
 
-    <div class="settings-item">
+    <div class="settings-item" v-if="settingStore.vipClaimEnabled">
       <div class="space-y-1">
         <h3 class="font-semibold">自动领取 VIP</h3>
         <p class="text-sm text-text-secondary">每次启动自动领取每日 VIP</p>
       </div>
       <Switch v-model="settingStore.autoReceiveVip" />
     </div>
-    <div class="settings-divider"></div>
+    <div class="settings-divider" v-if="settingStore.vipClaimEnabled"></div>
     <div class="settings-item">
       <div class="space-y-1">
         <h3 class="font-semibold">页面缓存</h3>

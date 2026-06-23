@@ -136,7 +136,7 @@ const buildPlaybackPayload = (): NowPlayingPlaybackPayload | null => {
   return {
     trackId: String(playerStore.currentTrackId),
     lyricHash,
-    title: String(track.title || track.name || '未知歌曲'),
+    title: String(track.name || '未知歌曲'),
     artist: String(
       track.artist || track.artists?.map((item: any) => item.name).join(' / ') || '未知歌手',
     ),

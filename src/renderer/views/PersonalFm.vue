@@ -578,7 +578,7 @@ onActivated(() => {
                   type="button"
                   class="radio-vinyl"
                   :class="[`radio-vinyl-${index + 1}`]"
-                  :title="`播放 ${track.title} · ${track.artist}`"
+                  :title="`播放 ${track.name} · ${track.artist}`"
                   @click="handleSelectPersonalFmTrack(track)"
                 >
                   <Cover

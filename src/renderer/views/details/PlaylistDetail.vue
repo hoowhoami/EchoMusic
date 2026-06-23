@@ -966,7 +966,7 @@ watch(
           v-model:open="showIntroDialog"
           :title="'歌单介绍'"
           :description="playlist.intro"
-          contentClass="detail-intro-dialog max-w-[720px]"
+          contentClass="detail-intro-dialog"
           descriptionClass="text-[13px]"
           showClose
         />

@@ -1009,7 +1009,7 @@ onUnmounted(() => {
           v-model:open="showIntroDialog"
           title="歌手介绍"
           :description="artist.intro"
-          contentClass="detail-intro-dialog max-w-[720px]"
+          contentClass="detail-intro-dialog"
           descriptionClass="text-[13px]"
           showClose
         />

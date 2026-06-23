@@ -810,7 +810,7 @@ const activeSongId = computed(() => playerStore.currentTrackId ?? undefined);
           v-model:open="showIntroDialog"
           title="专辑介绍"
           :description="album.intro"
-          contentClass="detail-intro-dialog max-w-[720px]"
+          contentClass="detail-intro-dialog"
           descriptionClass="text-[13px]"
           showClose
         />

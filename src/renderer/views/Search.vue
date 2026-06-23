@@ -797,7 +797,7 @@ onUnmounted(() => {
               <MvCard
                 :video-id="item.videoId"
                 :hash="item.hash"
-                :title="item.title"
+                :title="item.name"
                 :cover-url="item.coverUrl"
                 :artist="item.artist"
                 :duration="item.duration"

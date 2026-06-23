@@ -168,6 +168,8 @@ export const useSettingStore = defineStore('setting', {
     lyricOffsetStep: 0.1,
     // DevTools 开关
     devToolsEnabled: false,
+    // VIP 领取功能开关（隐藏功能，通过点击版本号5次开启）
+    vipClaimEnabled: false,
   }),
   actions: {
     setTheme(theme: ThemeMode) {

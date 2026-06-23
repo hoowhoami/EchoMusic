@@ -283,7 +283,7 @@ const historyStats = computed(() => {
     .slice(0, 6)
     .map((entry) => ({
       key: entry.historyKey,
-      title: entry.song.title || entry.song.name || '未知歌曲',
+      title: entry.song.name || '未知歌曲',
       artist: entry.song.artist || '未知歌手',
       coverUrl: entry.song.coverUrl || entry.song.cover || '',
       plays: safePlayCount(entry),
@@ -975,7 +975,7 @@ onUnmounted(() => {
                         <Icon v-else :icon="iconMusic" width="18" height="18" />
                       </div>
                       <div class="history-song-rank-main">
-                        <div class="history-song-rank-title">{{ song.title }}</div>
+                        <div class="history-song-rank-title">{{ song.name }}</div>
                         <div class="history-song-rank-meta">
                           {{ song.artist }} · {{ song.lastPlayedLabel }}
                         </div>

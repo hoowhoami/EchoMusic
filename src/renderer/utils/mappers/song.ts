@@ -35,11 +35,11 @@ export const mapTopSong = (json: unknown): Song => {
   const recSongInfo = getRecord(record, 'rec_song_info') ?? EMPTY_RECORD;
 
   let singerName = readString(pickValue(record.author_name, record.singername, record.singer), '');
-  let title = processSongTitle(
-    readString(pickValue(record.songname, record.filename, record.name, '未知歌曲')),
-  );
+  let rawTitle = readString(pickValue(record.songname, record.filename, record.name, '未知歌曲'));
+  let name = processSongTitle(rawTitle);
 
-  title = cleanupAudioExtension(title);
+  rawTitle = cleanupAudioExtension(rawTitle);
+  name = cleanupAudioExtension(name);
   singerName = cleanupAudioExtension(singerName);
 
   const artists = buildArtists(record, EMPTY_RECORD);
@@ -61,8 +61,8 @@ export const mapTopSong = (json: unknown): Song => {
       pickValue(record.mixsongid, record.audio_id, record.album_audio_id, record.hash, ''),
     ),
     songId: readString(pickValue(record.songid, record.song_id, record.audio_id, '')),
-    title: title || '未知歌曲',
-    name: title || '未知歌曲',
+    title: rawTitle || '未知歌曲',
+    name: name || '未知歌曲',
     artist: normalizeText(
       singerName || (singers.length > 0 ? singers.map((item) => item.name).join(', ') : '未知歌手'),
     ),
@@ -126,8 +126,8 @@ export const mapPlaylistSong = (json: unknown): Song => {
     singerName = rawName.split(' - ')[0];
   }
 
-  let title = processSongTitle(rawName);
-  title = cleanupAudioExtension(title);
+  let name = processSongTitle(rawName);
+  name = cleanupAudioExtension(name);
   singerName = cleanupAudioExtension(singerName);
 
   const albumInfo =
@@ -187,8 +187,8 @@ export const mapPlaylistSong = (json: unknown): Song => {
   return {
     id: readString(pickValue(record.mixsongid, record.audio_id, audioInfo.audio_id, hash)),
     songId: readString(pickValue(record.songid, record.song_id, record.audio_id, '')),
-    title: title || '未知歌曲',
-    name: title || '未知歌曲',
+    title: cleanupAudioExtension(rawName) || '未知歌曲',
+    name: name || '未知歌曲',
     artist: normalizeText(singerName || '未知歌手'),
     artists: singers,
     singers,
@@ -239,7 +239,7 @@ export const mapArtistSong = (artistId: string | number, json: unknown): Song =>
     id: readString(pickValue(record.mixsongid, record.album_audio_id, hash)),
     songId: readString(pickValue(record.songid, record.song_id, record.audio_id, '')),
     title: readString(record.audio_name, '未知歌曲'),
-    name: readString(record.audio_name, '未知歌曲'),
+    name: processSongTitle(readString(record.audio_name, '未知歌曲')),
     artist: fallbackArtistName || '未知歌手',
     artists: singers,
     singers,
@@ -299,7 +299,7 @@ export const mapAlbumSong = (json: unknown): Song => {
 
   return {
     id: uniqueId,
-    title: processSongTitle(readString(pickValue(base.audio_name, record.songname, '未知歌曲'))),
+    title: readString(pickValue(base.audio_name, record.songname, '未知歌曲')),
     name: processSongTitle(readString(pickValue(base.audio_name, record.songname, '未知歌曲'))),
     artist: fallbackArtistName,
     artists: singers,
@@ -375,7 +375,7 @@ export const mapRankSong = (json: unknown): Song => {
 
   return {
     id: readString(pickValue(record.audio_id, record.mixsongid, audioInfo.audio_id, '')),
-    title: processSongTitle(readString(pickValue(record.songname, record.name, '未知歌曲'))),
+    title: readString(pickValue(record.songname, record.name, '未知歌曲')),
     name: processSongTitle(readString(pickValue(record.songname, record.name, '未知歌曲'))),
     artist: fallbackArtistName,
     artists: singers,
@@ -448,7 +448,7 @@ export const mapSearchSong = (json: unknown): Song => {
 
   return {
     id: readString(pickValue(record.MixSongID, record.Audioid, record.FileHash, '')),
-    title: processSongTitle(readString(pickValue(record.SongName, record.FileName, '未知歌曲'))),
+    title: readString(pickValue(record.SongName, record.FileName, '未知歌曲')),
     name: processSongTitle(readString(pickValue(record.SongName, record.FileName, '未知歌曲'))),
     artist: normalizeText(
       artists.length > 0
@@ -537,7 +537,7 @@ export const mapCloudSong = (json: unknown): Song => {
     singerName = rawName.split(' - ')[0];
   }
 
-  const title = cleanupAudioExtension(processSongTitle(rawName));
+  const name = cleanupAudioExtension(processSongTitle(rawName));
   singerName = cleanupAudioExtension(singerName) || '未知歌手';
 
   const parsedSingers = buildArtists(record, audioInfo);
@@ -568,8 +568,8 @@ export const mapCloudSong = (json: unknown): Song => {
         '',
       ),
     ),
-    title,
-    name: title,
+    title: cleanupAudioExtension(rawName),
+    name,
     artist: normalizeText(singerName),
     artists: singers,
     singers,

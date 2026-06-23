@@ -95,7 +95,7 @@ const durationScore = (a?: number, b?: number): number => {
 };
 
 const scoreCandidate = (ext: ExternalTrack, song: Song): number => {
-  const t = titleScore(ext.title, song.title);
+  const t = titleScore(ext.title, song.name);
   const a = artistScore(ext.artist, song.artist);
   const d = durationScore(ext.duration, song.duration);
   return 0.55 * t + 0.3 * a + 0.15 * d;
@@ -136,7 +136,7 @@ const findBestMatch = async (
 };
 
 const buildSongPayload = (song: Song): string => {
-  return `${song.title}|${song.hash}|${song.albumId || 0}|${song.mixSongId}`;
+  return `${song.name}|${song.hash}|${song.albumId || 0}|${song.mixSongId}`;
 };
 
 const DEFAULT_ADD_BATCH_SIZE = 50;

@@ -347,8 +347,6 @@ export class MpvController extends EventEmitter {
           this.fileReadyResolve();
           this.fileReadyResolve = null;
         }
-        // 打印音频详细信息
-        this.logAudioInfo();
         // 重新应用音频滤镜（防止被新文件加载重置）。强制下一次 sync 整链重设，确保这次重应用
         // 一定下发——否则若 mpv 在换文件时重置了 af，幂等命中会跳过、导致换歌后音效悄悄消失。
         // 走整链重设而非 af-command，且不做 duck（换歌本身另有淡入淡出）。
@@ -441,23 +439,6 @@ export class MpvController extends EventEmitter {
       this.impulseResponseFailureRecovering = false;
     }
     this.emit('impulse-response-disabled', { path: failedPath, reason });
-  }
-
-  /** 文件加载后打印音频详细信息 */
-  private logAudioInfo(): void {
-    setTimeout(() => {
-      if (!this.addon) return;
-      const props = ['audio-params', 'audio-codec-name', 'audio-exclusive', 'audio-device'];
-      const info: Record<string, string | null> = {};
-      for (const p of props) {
-        try {
-          info[p] = this.addon.getProperty(p);
-        } catch {
-          info[p] = null;
-        }
-      }
-      log.info('[MpvController] Audio info', info);
-    }, 500);
   }
 
   // ── 命令发送 ──
@@ -799,8 +780,22 @@ export class MpvController extends EventEmitter {
 
     log.info('[MpvController] Applying audio filter:', filterString || '(cleared)');
     try {
-      if (shouldDuck) await this.applyFilterWithDuck(filterString);
-      else this.addon.setAudioFilter(filterString);
+      if (shouldDuck) {
+        await this.applyFilterWithDuck(filterString);
+      } else {
+        // 非 duck 场景（如切歌）：异步调用避免阻塞主进程
+        // 使用 setImmediate 让滤镜设置脱离当前事件循环 tick
+        await new Promise<void>((resolve, reject) => {
+          setImmediate(() => {
+            try {
+              this.addon?.setAudioFilter(filterString);
+              resolve();
+            } catch (err) {
+              reject(err);
+            }
+          });
+        });
+      }
       this.lastStructuralKey = structuralKey;
       this.lastAppliedMix = mix;
       this.lastIrActive = irActive;
@@ -840,8 +835,18 @@ export class MpvController extends EventEmitter {
     } catch {
       // 淡出失败也要继续应用滤镜
     }
+    // 异步调用避免阻塞主进程，await 确保淡入前滤镜已应用完成
     try {
-      this.addon.setAudioFilter(filterString);
+      await new Promise<void>((resolve, reject) => {
+        setImmediate(() => {
+          try {
+            this.addon?.setAudioFilter(filterString);
+            resolve();
+          } catch (err) {
+            reject(err);
+          }
+        });
+      });
     } catch (err) {
       applyErr = err;
     }
