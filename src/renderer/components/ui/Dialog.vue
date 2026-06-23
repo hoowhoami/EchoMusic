@@ -195,11 +195,10 @@ const handleInteractOutside = (event: Event) => {
 }
 
 :global(.dialog-content.detail-intro-dialog) {
-  left: calc(var(--drawer-content-left, 0px) + (var(--drawer-content-width, 100vw) / 2));
-  top: calc(var(--drawer-content-top, 0px) + (var(--drawer-content-height, 100vh) / 2));
-  width: min(720px, calc(var(--drawer-content-width, 100vw) - 40px));
-  max-width: calc(var(--drawer-content-width, 100vw) - 40px);
-  max-height: min(760px, calc(var(--drawer-content-height, 100vh) - 24px));
+  /* 与普通弹框一致的屏幕居中（继承基类 left/top + translate(-50%,-50%)），仅放大宽度 */
+  width: min(720px, 92vw);
+  max-width: 92vw;
+  max-height: min(760px, calc(100vh - 160px));
 }
 
 .dialog-header {
