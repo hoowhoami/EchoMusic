@@ -48,6 +48,7 @@ import { useUserStore } from '@/stores/user';
 import { useToastStore } from '@/stores/toast';
 import PageScrollContainer from '@/components/ui/PageScrollContainer.vue';
 import { useScrollContainer } from '@/composables/usePageScroll';
+import { useStickyTabsLayout } from '@/composables/useStickyTabsLayout';
 import { isRecord, toRecord } from '../../../shared/object';
 import { PagedSongLoader } from '@/utils/PagedSongLoader';
 import { filterSongsByQuery, sortSongs } from '@/utils/songList';
@@ -101,12 +102,7 @@ const toastStore = useToastStore();
 const searchQuery = ref('');
 const songListRef = ref<{ scrollToActive?: () => void } | null>(null);
 const sliverHeaderRef = ref<{ currentHeight?: number } | null>(null);
-
-// 计算 Tabs 的 sticky top 位置
-const tabsTop = computed(() => {
-  const headerHeight = sliverHeaderRef.value?.currentHeight || 52;
-  return headerHeight;
-});
+const { tabsTop, tabsMinHeight } = useStickyTabsLayout(sliverHeaderRef);
 
 const albumArtists = ref<SongArtist[]>([]);
 
@@ -617,28 +613,31 @@ const activeSongId = computed(() => playerStore.currentTrackId ?? undefined);
           <template #actions>
             <ActionRow
               :secondaryActions="secondaryActions"
+              :showPlaybackActions="activeTab === 'songs'"
               @play="handlePlayAll"
               @batch="openBatchDrawer"
             />
           </template>
 
           <template #collapsed-actions>
-            <Button
-              variant="unstyled"
-              size="none"
-              @click="handlePlayAll"
-              class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] text-primary"
-            >
-              <Icon :icon="iconPlay" width="20" height="20" />
-            </Button>
-            <Button
-              variant="unstyled"
-              size="none"
-              @click="openBatchDrawer"
-              class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] text-text-main opacity-60"
-            >
-              <Icon :icon="iconList" width="18" height="18" />
-            </Button>
+            <template v-if="activeTab === 'songs'">
+              <Button
+                variant="unstyled"
+                size="none"
+                @click="handlePlayAll"
+                class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] text-primary"
+              >
+                <Icon :icon="iconPlay" width="20" height="20" />
+              </Button>
+              <Button
+                variant="unstyled"
+                size="none"
+                @click="openBatchDrawer"
+                class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] text-text-main opacity-60"
+              >
+                <Icon :icon="iconList" width="18" height="18" />
+              </Button>
+            </template>
             <Button
               v-if="userStore.isLoggedIn"
               variant="unstyled"
@@ -678,7 +677,12 @@ const activeSongId = computed(() => playerStore.currentTrackId ?? undefined);
         </div>
 
         <!-- 2. Sticky Tabs + 表头 -->
-        <Tabs :model-value="activeTab" class="w-full" @update:model-value="handleTabChange">
+        <Tabs
+          :model-value="activeTab"
+          class="w-full"
+          :style="{ minHeight: tabsMinHeight }"
+          @update:model-value="handleTabChange"
+        >
           <div class="song-list-sticky sticky z-110 bg-bg-main" :style="{ top: `${tabsTop}px` }">
             <div class="px-6">
               <div class="border-b border-[var(--border-subtle)]">

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 defineOptions({ name: 'share-resolve-page' });
 
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { getAlbumDetail } from '@/api/album';
 import { getArtistDetail } from '@/api/artist';
@@ -25,7 +25,29 @@ const router = useRouter();
 const state = ref<ResolveState>('loading');
 const reason = ref<FailureReason>('load-failed');
 const resolving = ref(false);
+const showLoadingSpinner = ref(false);
 let resolveToken = 0;
+let loadingSpinnerTimer: number | null = null;
+
+const clearLoadingSpinnerTimer = () => {
+  if (loadingSpinnerTimer === null) return;
+  window.clearTimeout(loadingSpinnerTimer);
+  loadingSpinnerTimer = null;
+};
+
+const scheduleLoadingSpinner = () => {
+  clearLoadingSpinnerTimer();
+  showLoadingSpinner.value = false;
+  loadingSpinnerTimer = window.setTimeout(() => {
+    loadingSpinnerTimer = null;
+    showLoadingSpinner.value = true;
+  }, 220);
+};
+
+const stopLoadingSpinner = () => {
+  clearLoadingSpinnerTimer();
+  showLoadingSpinner.value = false;
+};
 
 const readText = (value: unknown) => {
   if (Array.isArray(value)) return String(value[0] ?? '').trim();
@@ -71,6 +93,14 @@ const readFirstText = (...values: unknown[]) => {
     if (text) return text;
   }
   return '';
+};
+
+const readPositiveId = (...values: unknown[]) => {
+  const text = readFirstText(...values);
+  if (!text) return '';
+  const parsed = Number.parseInt(text, 10);
+  if (Number.isNaN(parsed) || parsed <= 0) return '';
+  return String(parsed);
 };
 
 const normalizeCover = (value: string) => {
@@ -147,7 +177,7 @@ const buildSongDetailQuery = (hash: string, record: Record<string, unknown>) => 
   const firstArtist = artists[0];
   const query = detailQuery.value;
 
-  const mixSongId = readFirstText(
+  const mixSongId = readPositiveId(
     query.mixSongId,
     base.mixsongid,
     base.album_audio_id,
@@ -212,10 +242,12 @@ const resolveSong = async (id: string) => {
   if (!isSongHashId(id)) return false;
   const record = getSongPrivilegeRecord(await getSongPrivilegeLite(id, detailQuery.value.albumId));
   if (!record) return false;
+  const query = buildSongDetailQuery(id, record);
+  if (!query.mixSongId || !query.title) return false;
   router.replace({
     name: 'song-detail',
     params: { id },
-    query: buildSongDetailQuery(id, record),
+    query,
   });
   return true;
 };
@@ -248,6 +280,7 @@ const resolveAlbum = async (id: string) => {
 };
 
 const fail = (nextReason: FailureReason) => {
+  stopLoadingSpinner();
   reason.value = nextReason;
   state.value = 'failed';
 };
@@ -269,6 +302,7 @@ const resolveShare = async () => {
 
   state.value = 'loading';
   resolving.value = true;
+  scheduleLoadingSpinner();
   try {
     const ok =
       type === 'song'
@@ -285,7 +319,10 @@ const resolveShare = async () => {
     logger.warn('ShareResolve', 'Failed to resolve share target', { type, id, error });
     fail('load-failed');
   } finally {
-    if (token === resolveToken) resolving.value = false;
+    if (token === resolveToken) {
+      resolving.value = false;
+      stopLoadingSpinner();
+    }
   }
 };
 
@@ -322,6 +359,10 @@ onMounted(() => {
   void resolveShare();
 });
 
+onBeforeUnmount(() => {
+  stopLoadingSpinner();
+});
+
 watch(
   () => route.fullPath,
   () => {
@@ -340,7 +381,8 @@ watch(
 
       <template v-if="state === 'loading'">
         <div class="share-resolve-loading">
-          <div class="share-resolve-spinner"></div>
+          <div v-if="showLoadingSpinner" class="share-resolve-spinner"></div>
+          <div v-else class="share-resolve-spinner-placeholder"></div>
           <div>
             <h1>正在打开分享的{{ resourceLabel }}</h1>
             <p>正在确认分享内容是否可用。</p>
@@ -438,12 +480,19 @@ watch(
 
 .share-resolve-spinner {
   flex: 0 0 auto;
-  width: 44px;
-  height: 44px;
+  width: 24px;
+  height: 24px;
   border-radius: 50%;
-  border: 4px solid color-mix(in srgb, var(--color-primary) 20%, transparent);
+  border: 3px solid color-mix(in srgb, var(--color-primary) 18%, transparent);
   border-top-color: var(--color-primary);
   animation: share-resolve-spin 0.85s linear infinite;
+  margin: 4px 10px 0 10px;
+}
+
+.share-resolve-spinner-placeholder {
+  flex: 0 0 auto;
+  width: 44px;
+  height: 32px;
 }
 
 .share-resolve-icon {

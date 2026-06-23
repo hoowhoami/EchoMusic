@@ -24,6 +24,7 @@ import Tabs from '@/components/ui/Tabs.vue';
 import TabsList from '@/components/ui/TabsList.vue';
 import TabsTrigger from '@/components/ui/TabsTrigger.vue';
 import PageScrollContainer from '@/components/ui/PageScrollContainer.vue';
+import { useStickyTabsLayout } from '@/composables/useStickyTabsLayout';
 import { filterSongsByQuery, sortSongs } from '@/utils/songList';
 
 const playlistStore = usePlaylistStore();
@@ -36,6 +37,8 @@ const songs = ref<Song[]>([]);
 const showBatchDrawer = ref(false);
 const searchQuery = ref('');
 const songListRef = ref<{ scrollToActive?: () => void } | null>(null);
+const sliverHeaderRef = ref<{ currentHeight?: number } | null>(null);
+const { tabsTop, tabsMinHeight } = useStickyTabsLayout(sliverHeaderRef);
 
 const sortField = ref<SortField | null>(null);
 const sortOrder = ref<SortOrder>(null);
@@ -137,6 +140,7 @@ onMounted(() => {
   <PageScrollContainer class="recommend-songs-container">
     <div class="recommend-songs-view bg-bg-main min-h-full">
       <SliverHeader
+        ref="sliverHeaderRef"
         typeLabel="RECOMMEND"
         title="每日推荐"
         :coverUrl="recommendCoverUrl"
@@ -176,8 +180,8 @@ onMounted(() => {
 
       <BatchActionDrawer v-model:open="showBatchDrawer" :songs="songs" source-id="recommend" />
 
-      <Tabs model-value="songs" class="w-full">
-        <div class="song-list-sticky sticky z-110 bg-bg-main" :style="{ top: '56px' }">
+      <Tabs model-value="songs" class="w-full" :style="{ minHeight: tabsMinHeight }">
+        <div class="song-list-sticky sticky z-110 bg-bg-main" :style="{ top: `${tabsTop}px` }">
           <div class="px-6">
             <div class="border-b border-[var(--border-subtle)]">
               <div class="flex items-center justify-between h-14">

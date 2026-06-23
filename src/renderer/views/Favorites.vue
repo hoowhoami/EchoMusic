@@ -32,6 +32,7 @@ import MvCard from '@/components/music/MvCard.vue';
 import PageScrollContainer from '@/components/ui/PageScrollContainer.vue';
 import Button from '@/components/ui/Button.vue';
 import { useScrollContainer } from '@/composables/usePageScroll';
+import { useStickyTabsLayout } from '@/composables/useStickyTabsLayout';
 import { iconCurrentLocation, iconHeart, iconList, iconPlay, iconSearch } from '@/icons';
 import { replaceQueueAndPlay } from '@/utils/playback';
 import { filterSongsByQuery, sortSongs } from '@/utils/songList';
@@ -46,7 +47,7 @@ const themeStore = useThemeStore();
 const isLoggedIn = computed(() => userStore.isLoggedIn);
 const activeTab = ref('songs');
 const sliverHeaderRef = ref<InstanceType<typeof SliverHeader> | null>(null);
-const tabsTop = computed(() => sliverHeaderRef.value?.currentHeight || 56);
+const { tabsTop, tabsMinHeight } = useStickyTabsLayout(sliverHeaderRef);
 
 // ========== 歌曲 Tab ==========
 const songs = computed(() => playlistStore.favorites);
@@ -476,7 +477,12 @@ watch(isLoggedIn, (value) => {
           </template>
         </SliverHeader>
 
-        <Tabs :model-value="activeTab" class="w-full" @update:model-value="handleTabChange">
+        <Tabs
+          :model-value="activeTab"
+          class="w-full"
+          :style="{ minHeight: tabsMinHeight }"
+          @update:model-value="handleTabChange"
+        >
           <!-- Sticky Tabs -->
           <div class="song-list-sticky sticky z-110 bg-bg-main" :style="{ top: `${tabsTop}px` }">
             <div class="px-6">

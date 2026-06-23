@@ -16,6 +16,7 @@ interface Props {
   playDisabled?: boolean;
   batchLabel?: string;
   batchDisabled?: boolean;
+  showPlaybackActions?: boolean;
   onPlay?: () => void;
   secondaryActions?: Action[];
 }
@@ -25,6 +26,7 @@ withDefaults(defineProps<Props>(), {
   playDisabled: false,
   batchLabel: '批量',
   batchDisabled: false,
+  showPlaybackActions: true,
   secondaryActions: () => [],
 });
 
@@ -38,6 +40,7 @@ const emit = defineEmits<{
   <div class="action-row-wrap flex flex-wrap gap-2">
     <!-- 主要操作 (播放) -->
     <Button
+      v-if="showPlaybackActions"
       variant="unstyled"
       size="none"
       :disabled="playDisabled"
@@ -50,6 +53,7 @@ const emit = defineEmits<{
 
     <!-- 次主操作 (批量/添加到等) -->
     <Button
+      v-if="showPlaybackActions"
       variant="unstyled"
       size="none"
       :disabled="batchDisabled"

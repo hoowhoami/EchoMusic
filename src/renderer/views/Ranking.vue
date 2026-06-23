@@ -27,6 +27,7 @@ import { replaceQueueAndPlay } from '@/utils/playback';
 import { useToastStore } from '@/stores/toast';
 import Badge from '@/components/ui/Badge.vue';
 import PageScrollContainer from '@/components/ui/PageScrollContainer.vue';
+import { useStickyTabsLayout } from '@/composables/useStickyTabsLayout';
 import { filterSongsByQuery, sortSongs } from '@/utils/songList';
 
 const playlistStore = usePlaylistStore();
@@ -44,6 +45,8 @@ const showBatchDrawer = ref(false);
 const showSelectorDialog = ref(false);
 const searchQuery = ref('');
 const songListRef = ref<{ scrollToActive?: () => void } | null>(null);
+const sliverHeaderRef = ref<{ currentHeight?: number } | null>(null);
+const { tabsTop, tabsMinHeight } = useStickyTabsLayout(sliverHeaderRef);
 
 const sortField = ref<SortField | null>(null);
 const sortOrder = ref<SortOrder>(null);
@@ -272,6 +275,7 @@ watch(
 
       <template v-else>
         <SliverHeader
+          ref="sliverHeaderRef"
           typeLabel="RANK"
           title="排行榜"
           :coverUrl="todayRankCover"
@@ -330,8 +334,8 @@ watch(
 
         <BatchActionDrawer v-model:open="showBatchDrawer" :songs="songs" source-id="rank" />
 
-        <Tabs model-value="songs" class="w-full">
-          <div class="song-list-sticky sticky z-110 bg-bg-main" :style="{ top: '56px' }">
+        <Tabs model-value="songs" class="w-full" :style="{ minHeight: tabsMinHeight }">
+          <div class="song-list-sticky sticky z-110 bg-bg-main" :style="{ top: `${tabsTop}px` }">
             <div class="px-6">
               <div class="border-b border-[var(--border-subtle)]">
                 <div class="flex items-center justify-between h-14">

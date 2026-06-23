@@ -27,6 +27,7 @@ import ActionRow from '@/components/music/DetailPageActionRow.vue';
 import AddToPlaylistDialog from '@/components/music/AddToPlaylistDialog.vue';
 import PageScrollContainer from '@/components/ui/PageScrollContainer.vue';
 import Button from '@/components/ui/Button.vue';
+import { useStickyTabsLayout } from '@/composables/useStickyTabsLayout';
 import { useToastStore } from '@/stores/toast';
 import { PERSONAL_FM_QUEUE_ID, usePlaylistStore } from '@/stores/playlist';
 import { usePlayerStore } from '@/stores/player';
@@ -96,6 +97,8 @@ const headerTypeLabel = computed(() => {
 const headerTitle = computed(() => resourceTitle.value || title.value);
 
 const mainTab = ref<'detail' | 'comment'>('detail');
+const sliverHeaderRef = ref<{ currentHeight?: number } | null>(null);
+const { tabsTop, tabsMinHeight } = useStickyTabsLayout(sliverHeaderRef);
 
 const activeCommentTab = ref('all');
 const commentTabValues = ['all', 'classify', 'hotword'] as const;
@@ -271,7 +274,7 @@ const buildSongFromPrivilege = (record: Record<string, unknown>): Song => {
       transParam.union_cover,
     ),
   );
-  const targetId = readText(
+  const rawTargetId = readText(
     route.query.mixSongId,
     base.mixsongid,
     base.album_audio_id,
@@ -281,6 +284,8 @@ const buildSongFromPrivilege = (record: Record<string, unknown>): Song => {
     record.audio_id,
     isSongHashId(id) ? '' : id,
   );
+  const targetId = resolveNumericId(rawTargetId);
+  const targetIdText = targetId !== null ? String(targetId) : '';
   const title = readText(
     route.query.title,
     base.audio_name,
@@ -308,7 +313,7 @@ const buildSongFromPrivilege = (record: Record<string, unknown>): Song => {
   );
 
   return {
-    id: targetId || readText(route.params.id),
+    id: targetIdText || readText(route.params.id),
     title,
     name: title,
     artist: artistName || '未知歌手',
@@ -330,7 +335,7 @@ const buildSongFromPrivilege = (record: Record<string, unknown>): Song => {
       record.hash_128,
       isSongHashId(id) ? id : '',
     ),
-    mixSongId: targetId || '',
+    mixSongId: targetIdText,
     privilege: readNumber(record.privilege) || undefined,
     payType: readNumber(record.pay_type, record.PayType, record.payType) || undefined,
     oldCpy: readNumber(record.old_cpy, record.media_old_cpy) || undefined,
@@ -343,6 +348,11 @@ const resolveNumericId = (value: unknown) => {
   const parsed = Number.parseInt(String(value), 10);
   if (Number.isNaN(parsed) || parsed <= 0) return null;
   return parsed;
+};
+
+const getValidMixSongId = () => {
+  const value = resolveNumericId(songMixSongId.value);
+  return value !== null ? String(value) : '';
 };
 
 const isSameRoute = (name: string, targetId: string | number) => {
@@ -405,7 +415,7 @@ const actionSong = computed<Song | null>(() => {
   if (!isMusicType.value) return null;
   if (detailSong.value) return detailSong.value;
 
-  const targetId = songMixSongId.value;
+  const targetId = getValidMixSongId();
   if (!targetId) return null;
 
   return {
@@ -749,7 +759,7 @@ const fetchMusicComments = async (reset = false) => {
     total.value = 0;
     hasMore.value = true;
   }
-  const mixSongId = songMixSongId.value;
+  const mixSongId = getValidMixSongId();
   if (!mixSongId) {
     hasMore.value = false;
     return;
@@ -892,7 +902,7 @@ const fetchClassifyComments = async (reset = false) => {
     classifyComments.value = [];
     hasMoreClassify.value = true;
   }
-  const mixSongId = songMixSongId.value;
+  const mixSongId = getValidMixSongId();
   if (!mixSongId) {
     hasMoreClassify.value = false;
     return;
@@ -939,7 +949,7 @@ const fetchHotwordComments = async (reset = false) => {
     hotwordComments.value = [];
     hasMoreHotword.value = true;
   }
-  const mixSongId = songMixSongId.value;
+  const mixSongId = getValidMixSongId();
   if (!mixSongId) {
     hasMoreHotword.value = false;
     return;
@@ -1002,7 +1012,7 @@ const fetchHeaderStats = async () => {
   if (type !== 'music') return;
   try {
     const hash = songHash.value;
-    const mixSongId = songMixSongId.value;
+    const mixSongId = getValidMixSongId();
     const [favoriteRes, commentRes] = await Promise.all([
       mixSongId ? getFavoriteCount(mixSongId) : Promise.resolve(null),
       hash ? getCommentCount(hash) : Promise.resolve(null),
@@ -1049,7 +1059,7 @@ const fetchDetailData = async () => {
         detailSong.value = buildSongFromPrivilege(privilegeData.value);
       }
     }
-    const mixSongId = songMixSongId.value;
+    const mixSongId = getValidMixSongId();
     const rankingRes = mixSongId ? await getSongRanking(mixSongId) : null;
     if (rankingRes && typeof rankingRes === 'object') {
       rankingData.value = rankingRes as unknown as Record<string, unknown>;
@@ -1106,6 +1116,7 @@ watch(total, (value) => {
   <PageScrollContainer class="comment-page-container" :back-to-top-threshold="360">
     <div class="comment-page bg-bg-main min-h-full">
       <SliverHeader
+        ref="sliverHeaderRef"
         :typeLabel="headerTypeLabel"
         :title="headerTitle"
         :coverUrl="resourceCover"
@@ -1200,9 +1211,10 @@ watch(total, (value) => {
         <template v-if="isMusicType">
           <Tabs
             :model-value="mainTab"
+            :style="{ minHeight: tabsMinHeight }"
             @update:model-value="mainTab = $event as 'detail' | 'comment'"
           >
-            <div class="comment-main-tabs sticky z-120 bg-bg-main" :style="{ top: '56px' }">
+            <div class="comment-main-tabs sticky z-120 bg-bg-main" :style="{ top: `${tabsTop}px` }">
               <TabsList class="comment-main-tab-list">
                 <TabsTrigger value="detail" class="comment-main-tab-trigger">详情</TabsTrigger>
                 <TabsTrigger value="comment" class="comment-main-tab-trigger">评论</TabsTrigger>

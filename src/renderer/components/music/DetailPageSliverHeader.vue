@@ -35,6 +35,9 @@ const scrollThreshold = computed(() => props.expandedHeight - props.collapsedHei
 const currentHeight = computed(() =>
   Math.max(props.collapsedHeight, props.expandedHeight - scrollY.value),
 );
+const backgroundTranslateY = computed(() =>
+  Math.min(scrollY.value, Math.max(0, scrollThreshold.value)),
+);
 
 // 计算收缩比例 (0 到 1)
 const progress = computed(() => {
@@ -134,16 +137,16 @@ onUnmounted(() => {
   >
     <!-- 展开背景层：不再使用 opacity 变化，仅随滚动上移 -->
     <div
-      class="sliver-header-background absolute inset-0 bg-bg-main -z-10 origin-top"
+      class="sliver-header-background absolute inset-0 z-0 pointer-events-none bg-bg-main origin-top"
       :style="{
         height: `${props.expandedHeight}px`,
-        transform: `translateY(${-scrollY}px)`,
+        transform: `translateY(${-backgroundTranslateY}px)`,
       }"
     ></div>
 
     <!-- 内容层 -->
     <div
-      class="relative h-full items-start overflow-visible pointer-events-none flex"
+      class="relative z-10 h-full items-start overflow-visible pointer-events-none flex"
       :style="{
         paddingLeft: `${props.contentPaddingX}px`,
         paddingRight: `${props.contentPaddingX}px`,
@@ -232,7 +235,10 @@ onUnmounted(() => {
     </div>
   </div>
 
-  <div :style="{ height: `${props.expandedHeight - props.collapsedHeight}px` }"></div>
+  <div
+    class="sliver-header-spacer relative w-full bg-bg-main"
+    :style="{ height: `${props.expandedHeight - props.collapsedHeight}px` }"
+  ></div>
 </template>
 
 <style scoped>

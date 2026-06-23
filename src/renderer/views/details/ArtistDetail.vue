@@ -31,6 +31,7 @@ import { usePlaylistStore } from '@/stores/playlist';
 import type { Song } from '@/models/song';
 import { mapAlbumMeta, mapArtistDetailMeta, mapArtistSong } from '@/utils/mappers';
 import { useScrollContainer } from '@/composables/usePageScroll';
+import { useStickyTabsLayout } from '@/composables/useStickyTabsLayout';
 import { usePlayerStore } from '@/stores/player';
 import { useSettingStore } from '@/stores/setting';
 import { useUserStore } from '@/stores/user';
@@ -127,11 +128,7 @@ const togglingFollow = ref(false);
 const searchQuery = ref('');
 const songListRef = ref<{ scrollToActive?: () => void } | null>(null);
 const sliverHeaderRef = ref<{ currentHeight?: number } | null>(null);
-
-const tabsTop = computed(() => {
-  const headerHeight = sliverHeaderRef.value?.currentHeight || 52;
-  return headerHeight;
-});
+const { tabsTop, tabsMinHeight } = useStickyTabsLayout(sliverHeaderRef);
 
 const sortField = ref<SortField | null>(null);
 const sortOrder = ref<SortOrder>(null);
@@ -679,28 +676,31 @@ onUnmounted(() => {
           <template #actions>
             <ActionRow
               :secondaryActions="secondaryActions"
+              :showPlaybackActions="activeTab === 'songs'"
               @play="handlePlayAll"
               @batch="openBatchDrawer"
             />
           </template>
 
           <template #collapsed-actions>
-            <Button
-              variant="unstyled"
-              size="none"
-              @click="handlePlayAll"
-              class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] text-primary"
-            >
-              <Icon :icon="iconPlay" width="20" height="20" />
-            </Button>
-            <Button
-              variant="unstyled"
-              size="none"
-              @click="openBatchDrawer"
-              class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] text-text-main opacity-60"
-            >
-              <Icon :icon="iconList" width="18" height="18" />
-            </Button>
+            <template v-if="activeTab === 'songs'">
+              <Button
+                variant="unstyled"
+                size="none"
+                @click="handlePlayAll"
+                class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] text-primary"
+              >
+                <Icon :icon="iconPlay" width="20" height="20" />
+              </Button>
+              <Button
+                variant="unstyled"
+                size="none"
+                @click="openBatchDrawer"
+                class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] text-text-main opacity-60"
+              >
+                <Icon :icon="iconList" width="18" height="18" />
+              </Button>
+            </template>
             <Button
               v-if="userStore.isLoggedIn"
               variant="unstyled"
@@ -739,7 +739,7 @@ onUnmounted(() => {
           </Button>
         </div>
 
-        <Tabs v-model="activeTab" class="w-full">
+        <Tabs v-model="activeTab" class="w-full" :style="{ minHeight: tabsMinHeight }">
           <div class="song-list-sticky sticky z-110 bg-bg-main" :style="{ top: `${tabsTop}px` }">
             <div class="px-6">
               <div class="border-b border-[var(--border-subtle)]">

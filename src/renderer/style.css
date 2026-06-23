@@ -546,7 +546,7 @@ body.echo-surface-translucent .comment-main-tabs {
 }
 
 body.echo-surface-translucent .sliver-header-background {
-  background: transparent !important;
+  background: var(--surface-main-base) !important;
 }
 
 body .dialog-content {
