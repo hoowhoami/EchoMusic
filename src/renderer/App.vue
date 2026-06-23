@@ -27,6 +27,7 @@ import { resolveCoverColorUrls } from '@/utils/cover';
 import { logger } from '@/utils/logger';
 import {
   navigateToShareTarget,
+  SHARE_RESOLVE_ROUTE_NAME,
   SHARE_COPIED_EVENT,
   type ShareCopiedEventDetail,
 } from '@/utils/share';
@@ -120,6 +121,14 @@ const openShareTarget = (target: ShareTarget) => {
   }
   if (!navigateToShareTarget(router, target)) {
     logger.warn('App', 'Invalid share target skipped', target);
+    void router.push({
+      name: SHARE_RESOLVE_ROUTE_NAME,
+      query: {
+        type: target.type,
+        id: target.id,
+        reason: 'invalid',
+      },
+    });
   }
 };
 

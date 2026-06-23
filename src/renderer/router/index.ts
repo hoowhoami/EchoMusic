@@ -137,6 +137,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: 'MV详情' },
       },
       {
+        path: 'share',
+        name: 'share-resolve',
+        component: () => import('@/views/ShareResolve.vue'),
+        meta: { title: '分享链接' },
+      },
+      {
         path: 'error',
         name: 'error',
         component: () => import('@/views/ErrorPage.vue'),

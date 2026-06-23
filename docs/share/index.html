@@ -137,6 +137,18 @@
         Boolean(target && isShareType(target.type) && target.id) &&
         (target.type !== 'song' || isSongShareId(target.id));
 
+      const readExtraParams = (searchParams, excludedKeys = []) => {
+        const excluded = new Set(excludedKeys);
+        const query = {};
+        searchParams.forEach((value, key) => {
+          const name = String(key || '').trim();
+          const text = String(value || '').trim();
+          if (!name || !text || excluded.has(name)) return;
+          query[name] = text;
+        });
+        return query;
+      };
+
       const parseCustomTarget = (value) => {
         try {
           const url = new URL(value);
@@ -161,21 +173,35 @@
 
         const type = String(url.searchParams.get('type') || '').trim();
         const id = String(url.searchParams.get('id') || '').trim();
-        const queryTarget = { type, id };
+        const queryTarget = {
+          type,
+          id,
+          query: readExtraParams(url.searchParams, ['type', 'id', 'target']),
+        };
         if (isValidTarget(queryTarget)) return queryTarget;
 
         const parts = url.pathname.split('/').filter(Boolean);
         const shareIndex = parts.lastIndexOf('share');
         const pathType = shareIndex >= 0 ? parts[shareIndex + 1] : '';
         const pathId = shareIndex >= 0 ? parts[shareIndex + 2] : '';
-        const pathTarget = { type: pathType, id: decodeURIComponent(pathId || '') };
+        const pathTarget = {
+          type: pathType,
+          id: decodeURIComponent(pathId || ''),
+          query: readExtraParams(url.searchParams, ['target']),
+        };
         if (isValidTarget(pathTarget)) return pathTarget;
 
         return null;
       };
 
-      const buildAppUrl = (target) =>
-        target.appUrl || `${SHARE_SCHEME}://${target.type}/${encodeURIComponent(target.id)}`;
+      const buildAppUrl = (target) => {
+        if (target.appUrl) return target.appUrl;
+        const appUrl = new URL(`${SHARE_SCHEME}://${target.type}/${encodeURIComponent(target.id)}`);
+        Object.entries(target.query || {}).forEach(([key, value]) => {
+          appUrl.searchParams.set(key, value);
+        });
+        return appUrl.toString();
+      };
 
       const target = parseTarget();
       const title = document.getElementById('title');

@@ -10,6 +10,8 @@ import {
 } from '../../shared/share';
 
 export const SHARE_COPIED_EVENT = 'echomusic:share-copied';
+export const SHARE_RESOLVE_ROUTE_NAME = 'share-resolve';
+export const SHARE_DETAIL_QUERY_PREFIX = 'q.';
 
 export interface ShareCopiedEventDetail {
   target: ShareTarget;
@@ -128,35 +130,42 @@ export const copyShareTarget = async (target: ShareTarget): Promise<boolean> => 
   return copied;
 };
 
-export const navigateToShareTarget = (router: Router, target: ShareTarget) => {
+export const buildShareResolveRoute = (target: ShareTarget) => {
   const id = cleanId(target.id);
-  if (!id) return false;
+  if (!id) return null;
+  if (target.type === 'song' && !isSongHashId(id)) return null;
 
-  if (target.type === 'song') {
-    if (!isSongHashId(id)) return false;
-    void router.push({
-      name: 'song-detail',
-      params: { id },
-      query: {
-        mainTab: 'detail',
-        type: 'music',
-        hash: id,
-        ...target.query,
-      },
-    });
-    return true;
-  }
-
-  const routeNames: Record<Exclude<ShareResourceType, 'song'>, string> = {
-    playlist: 'playlist-detail',
-    artist: 'artist-detail',
-    album: 'album-detail',
+  const title = cleanId(target.title);
+  const query: Record<string, string> = {
+    type: target.type,
+    id,
+    ...(title ? { title } : {}),
   };
 
-  void router.push({
-    name: routeNames[target.type],
-    params: { id },
-    ...(target.query ? { query: target.query } : {}),
+  Object.entries(normalizeShareQuery(target.query)).forEach(([key, value]) => {
+    query[`${SHARE_DETAIL_QUERY_PREFIX}${key}`] = value;
   });
+
+  return {
+    name: SHARE_RESOLVE_ROUTE_NAME,
+    query,
+  };
+};
+
+export const readShareDetailQuery = (query: Record<string, unknown>) => {
+  const result: Record<string, string> = {};
+  Object.entries(query).forEach(([key, value]) => {
+    if (!key.startsWith(SHARE_DETAIL_QUERY_PREFIX)) return;
+    const name = key.slice(SHARE_DETAIL_QUERY_PREFIX.length).trim();
+    const text = Array.isArray(value) ? cleanId(value[0]) : cleanId(value);
+    if (name && text) result[name] = text;
+  });
+  return result;
+};
+
+export const navigateToShareTarget = (router: Router, target: ShareTarget) => {
+  const route = buildShareResolveRoute(target);
+  if (!route) return false;
+  void router.push(route);
   return true;
 };
