@@ -195,6 +195,7 @@ const buildSongDetailQuery = (hash: string, record: Record<string, unknown>) => 
     record.name,
     record.filename,
   );
+  const processedTitle = title.includes(' - ') ? title.split(' - ').slice(1).join(' - ') : title;
   const album = readFirstText(
     query.album,
     albumInfo.album_name,
@@ -228,7 +229,7 @@ const buildSongDetailQuery = (hash: string, record: Record<string, unknown>) => 
     mainTab: 'detail',
     type: 'music',
     hash,
-    ...(title ? { title } : {}),
+    ...(processedTitle ? { title: processedTitle } : {}),
     ...(artists.length > 0 ? { artist: artists.map((item) => item.name).join(', ') } : {}),
     ...(firstArtist?.id ? { artistId: firstArtist.id } : {}),
     ...(album ? { album } : {}),
