@@ -27,7 +27,7 @@ const readNestedText = (record: Record<string, unknown> | undefined, key: string
   return typeof value === 'string' ? value.trim() : '';
 };
 
-const getCurrentSharerName = () => {
+export const getCurrentSharerName = () => {
   const userStore = useUserStore();
   const info = userStore.info;
   if (!info) return 'EchoMusic';

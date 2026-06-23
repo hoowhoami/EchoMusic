@@ -33,7 +33,7 @@ import type {
 } from '../shared/audio-spectrum';
 import type { LogSettings } from '../shared/logging';
 import type { ResolvePlaylistRequest, ResolvePlaylistResponse } from '../shared/external';
-import type { ShareTarget } from '../shared/share';
+import type { ShareCaptureRect, ShareTarget } from '../shared/share';
 import type {
   PluginAssetSourceResult,
   PluginAppIconRefreshResult,
@@ -244,6 +244,8 @@ contextBridge.exposeInMainWorld('electron', {
   share: {
     copy: (text: string) => ipcRenderer.invoke('share:copy', text) as Promise<boolean>,
     readClipboard: () => ipcRenderer.invoke('share:read-clipboard') as Promise<string>,
+    captureRectToClipboard: (rect: ShareCaptureRect) =>
+      invokeWithPlainPayload<boolean>('share:capture-rect-to-clipboard', rect),
     onOpen: (func: (target: ShareTarget) => void) => {
       const listener = (_event: Electron.IpcRendererEvent, target: ShareTarget) => func(target);
       ipcRenderer.on('share:open', listener);

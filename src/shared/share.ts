@@ -12,6 +12,13 @@ export interface ShareTarget {
   query?: ShareTargetQuery;
 }
 
+export interface ShareCaptureRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
 const SHARE_TYPE_LABELS: Record<ShareResourceType, string> = {
   song: '歌曲',
   playlist: '歌单',

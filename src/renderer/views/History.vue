@@ -24,6 +24,7 @@ import {
   iconPlay,
   iconPulse,
   iconSearch,
+  iconShare,
   iconStar,
   iconTrash,
 } from '@/icons';
@@ -34,6 +35,7 @@ import Dialog from '@/components/ui/Dialog.vue';
 import { useToastStore } from '@/stores/toast';
 import PageScrollContainer from '@/components/ui/PageScrollContainer.vue';
 import { filterSongsByQuery, sortSongs } from '@/utils/songList';
+import { getCurrentSharerName } from '@/utils/share';
 import Tabs from '@/components/ui/Tabs.vue';
 import TabsList from '@/components/ui/TabsList.vue';
 import TabsTrigger from '@/components/ui/TabsTrigger.vue';
@@ -106,6 +108,8 @@ const { tabsTop, tabsMinHeight } = useStickyTabsLayout(sliverHeaderRef);
 const sortField = ref<SortField | null>(null);
 const sortOrder = ref<SortOrder>(null);
 const activeTab = ref<'songs' | 'stats'>('songs');
+const historyStatsRef = ref<HTMLElement | null>(null);
+const sharingStats = ref(false);
 
 const handleTabChange = (value: string | number) => {
   const next = String(value);
@@ -159,6 +163,15 @@ const formatHistoryDate = (timestamp: number | undefined) => {
   return `${date.getMonth() + 1}月${date.getDate()}日 ${String(date.getHours()).padStart(2, '0')}:${String(
     date.getMinutes(),
   ).padStart(2, '0')}`;
+};
+
+const formatShareTimestamp = (date = new Date()) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  const hours = String(date.getHours()).padStart(2, '0');
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+  return `${year}-${month}-${day} ${hours}:${minutes}`;
 };
 
 const startOfDay = (timestamp: number) => {
@@ -414,6 +427,173 @@ const handleBatchRemove = (selected: Song[]) => {
 
 const handleLocate = () => songListRef.value?.scrollToActive?.();
 
+const waitForAnimationFrame = () =>
+  new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+
+const waitForPaint = async () => {
+  await waitForAnimationFrame();
+  await waitForAnimationFrame();
+};
+
+const waitForImages = async (root: HTMLElement) => {
+  const images = Array.from(root.querySelectorAll('img')).filter((image) => !image.complete);
+  if (images.length === 0) return;
+
+  await Promise.race([
+    Promise.all(
+      images.map(
+        (image) =>
+          new Promise<void>((resolve) => {
+            image.addEventListener('load', () => resolve(), { once: true });
+            image.addEventListener('error', () => resolve(), { once: true });
+          }),
+      ),
+    ),
+    new Promise<void>((resolve) => window.setTimeout(resolve, 800)),
+  ]);
+};
+
+const buildHistoryStatsShareText = () => {
+  const sharer = getCurrentSharerName();
+  const updatedAt = formatShareTimestamp();
+  return {
+    title: `${sharer} 的听歌统计`,
+    updatedAt,
+  };
+};
+
+const createStatsCaptureStage = (shareText: ReturnType<typeof buildHistoryStatsShareText>) => {
+  if (!historyStatsRef.value) return null;
+
+  const stage = document.createElement('div');
+  stage.className = 'history-share-capture-stage';
+  Object.assign(stage.style, {
+    position: 'fixed',
+    left: '16px',
+    top: '16px',
+    zIndex: '2147483647',
+    width: `${Math.min(1180, Math.max(760, window.innerWidth - 32))}px`,
+    padding: '16px',
+    borderRadius: '12px',
+    background: 'var(--color-bg-main)',
+    boxShadow: '0 24px 60px rgb(0 0 0 / 18%)',
+    pointerEvents: 'none',
+    transformOrigin: 'top left',
+    visibility: 'hidden',
+  });
+
+  const header = document.createElement('div');
+  Object.assign(header.style, {
+    display: 'flex',
+    alignItems: 'flex-end',
+    justifyContent: 'space-between',
+    gap: '16px',
+    marginBottom: '14px',
+    padding: '2px 2px 0',
+  });
+
+  const title = document.createElement('div');
+  title.textContent = shareText.title;
+  Object.assign(title.style, {
+    minWidth: '0',
+    color: 'var(--color-text-main)',
+    fontSize: '22px',
+    fontWeight: '800',
+    lineHeight: '1.2',
+  });
+
+  const updatedAt = document.createElement('div');
+  updatedAt.textContent = `更新时间：${shareText.updatedAt}`;
+  Object.assign(updatedAt.style, {
+    flex: '0 0 auto',
+    color: 'var(--color-text-secondary)',
+    fontSize: '12px',
+    fontWeight: '700',
+    lineHeight: '1.4',
+    opacity: '0.78',
+    whiteSpace: 'nowrap',
+  });
+
+  header.append(title, updatedAt);
+  stage.appendChild(header);
+
+  const clone = historyStatsRef.value.cloneNode(true) as HTMLElement;
+  clone.classList.add('is-share-capture');
+  stage.appendChild(clone);
+  document.body.appendChild(stage);
+  return stage;
+};
+
+const captureStageToClipboard = async (stage: HTMLElement) => {
+  const capture = window.electron?.share?.captureRectToClipboard;
+  if (!capture) return false;
+
+  const margin = 16;
+  const viewportWidth = Math.max(1, window.innerWidth || document.documentElement.clientWidth);
+  const viewportHeight = Math.max(1, window.innerHeight || document.documentElement.clientHeight);
+  const scale = Math.min(
+    1,
+    (viewportWidth - margin * 2) / Math.max(1, stage.offsetWidth),
+    (viewportHeight - margin * 2) / Math.max(1, stage.offsetHeight),
+  );
+
+  stage.style.transform = `scale(${scale})`;
+  stage.style.visibility = 'visible';
+  await waitForPaint();
+
+  const rect = stage.getBoundingClientRect();
+  const padding = 8;
+  const x = Math.max(0, Math.floor(rect.left - padding));
+  const y = Math.max(0, Math.floor(rect.top - padding));
+  const width = Math.max(1, Math.min(viewportWidth - x, Math.ceil(rect.width + padding * 2)));
+  const height = Math.max(1, Math.min(viewportHeight - y, Math.ceil(rect.height + padding * 2)));
+
+  return capture({ x, y, width, height });
+};
+
+const handleShareStats = async () => {
+  if (sharingStats.value) return;
+  if (!window.electron?.share?.captureRectToClipboard) {
+    toastStore.unavailable('听歌统计');
+    return;
+  }
+
+  sharingStats.value = true;
+  let stage: HTMLElement | null = null;
+  try {
+    await nextTick();
+    const shareText = buildHistoryStatsShareText();
+    stage = createStatsCaptureStage(shareText);
+    if (!stage) {
+      toastStore.actionFailed('复制听歌统计');
+      return;
+    }
+
+    await waitForImages(stage);
+    await waitForPaint();
+    const copied = await captureStageToClipboard(stage);
+    if (copied) {
+      toastStore.actionCompleted('听歌统计已复制');
+    } else {
+      toastStore.actionFailed('复制听歌统计');
+    }
+  } catch {
+    toastStore.actionFailed('复制听歌统计');
+  } finally {
+    stage?.remove();
+    sharingStats.value = false;
+  }
+};
+
+const statsSecondaryActions = computed(() => [
+  {
+    icon: iconShare,
+    label: '分享',
+    onTap: handleShareStats,
+    disabled: sharingStats.value,
+  },
+]);
+
 let unregisterContextMenu: (() => void) | null = null;
 
 onMounted(() => {
@@ -467,17 +647,25 @@ onUnmounted(() => {
 
         <template #actions>
           <ActionRow
-            v-if="activeTab === 'songs' && songCount > 0"
+            v-if="activeTab === 'songs'"
+            :playDisabled="songCount === 0"
+            :batchDisabled="songCount === 0"
             @play="handlePlayAll"
             @batch="openBatchDrawer"
+          />
+          <ActionRow
+            v-else
+            :showPlaybackActions="false"
+            :secondaryActions="statsSecondaryActions"
           />
         </template>
 
         <template #collapsed-actions>
-          <template v-if="activeTab === 'songs' && songCount > 0">
+          <template v-if="activeTab === 'songs'">
             <Button
               variant="unstyled"
               size="none"
+              :disabled="songCount === 0"
               @click="handlePlayAll"
               class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] text-primary"
             >
@@ -486,12 +674,25 @@ onUnmounted(() => {
             <Button
               variant="unstyled"
               size="none"
+              :disabled="songCount === 0"
               @click="openBatchDrawer"
               class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] text-text-main opacity-60"
             >
               <Icon :icon="iconList" width="18" height="18" />
             </Button>
           </template>
+          <Button
+            v-else
+            variant="unstyled"
+            size="none"
+            :disabled="sharingStats"
+            @click="handleShareStats"
+            class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] text-text-main opacity-70"
+            title="分享听歌统计"
+            aria-label="分享听歌统计"
+          >
+            <Icon :icon="iconShare" width="18" height="18" />
+          </Button>
         </template>
       </SliverHeader>
 
@@ -638,7 +839,7 @@ onUnmounted(() => {
           </TabsContent>
 
           <TabsContent value="stats" class="px-6 pt-5">
-            <div class="history-stats">
+            <div ref="historyStatsRef" class="history-stats">
               <div class="history-stat-grid">
                 <div
                   v-for="card in historyStats.statCards"
@@ -842,6 +1043,11 @@ onUnmounted(() => {
   gap: 16px;
   max-width: 1180px;
   padding-bottom: 16px;
+}
+
+.history-stats.is-share-capture {
+  max-width: none;
+  padding-bottom: 0;
 }
 
 .history-stat-grid {
