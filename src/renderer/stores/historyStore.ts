@@ -15,8 +15,6 @@ export interface LocalHistoryEntry {
 }
 
 const DEFAULT_MAX_ENTRIES = 500;
-/** 同一首歌在此时间窗口内不重复记录（防止 play 事件重复触发） */
-const RECORD_DEBOUNCE_MS = 60_000;
 /** 退场动画时长（ms），需与 CSS animation-duration 一致 */
 const EXIT_ANIM_MS = 250;
 
@@ -49,12 +47,6 @@ export const useHistoryStore = defineStore('history', () => {
   const entries = ref<LocalHistoryEntry[]>([]);
   const maxEntries = ref(DEFAULT_MAX_ENTRIES);
   const hydrated = ref(false);
-
-  /**
-   * Session 内已记录追踪（不持久化）。
-   * 应用重启后自动清空，替代脆弱的 historyLocalRecorded 标志位。
-   */
-  const playedThisSession = new Map<string, number>();
 
   /**
    * 播放记录版本号。每次 recordPlay 递增，供 History.vue 监听以触发滚动动画。
@@ -122,13 +114,6 @@ export const useHistoryStore = defineStore('history', () => {
     const mxid = resolveSongHistoryId(song);
     const existing = entries.value.find((entry) => resolveSongHistoryId(entry.song) === mxid);
 
-    // Session 去重仅对新建条目生效；已存在条目永远更新 lastPlayedAt 并置顶
-    if (!existing) {
-      const lastRecorded = playedThisSession.get(mxid);
-      if (lastRecorded !== undefined && now - lastRecorded < RECORD_DEBOUNCE_MS) return;
-      playedThisSession.set(mxid, now);
-    }
-
     let stored: StorageHistoryEntry | null | undefined;
     try {
       stored = await window.electron?.storage?.recordHistoryPlay({
@@ -157,7 +142,6 @@ export const useHistoryStore = defineStore('history', () => {
       clearTimeout(removeTimer);
       removeTimer = null;
     }
-    playedThisSession.clear();
     void window.electron?.storage?.clearHistory();
   };
 

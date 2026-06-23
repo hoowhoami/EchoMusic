@@ -1,5 +1,5 @@
 import { screen } from 'electron';
-import type { DesktopLyricSettings } from '../../shared/desktop-lyric';
+import type { DesktopLyricSettings, DesktopLyricShadowStrength } from '../../shared/desktop-lyric';
 import {
   DEFAULT_DESKTOP_LYRIC_PERSISTED_SETTINGS,
   getDesktopLyricPersistedSettings,
@@ -15,6 +15,8 @@ export const DESKTOP_LYRIC_MAX_WIDTH = 1400;
 export const DESKTOP_LYRIC_MAX_HEIGHT = 360;
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
+const isDesktopLyricShadowStrength = (value: unknown): value is DesktopLyricShadowStrength =>
+  value === 'none' || value === 'soft' || value === 'normal' || value === 'strong';
 
 export function getDesktopLyricSettings(): DesktopLyricSettings {
   const raw = getDesktopLyricPersistedSettings();
@@ -65,6 +67,9 @@ export function getDesktopLyricSettings(): DesktopLyricSettings {
     unplayedColor: String(raw.unplayedColor || '#7a7a7a'),
     strokeColor: String(raw.strokeColor || '#f1b8b3'),
     strokeEnabled: Boolean(raw.strokeEnabled),
+    shadowStrength: isDesktopLyricShadowStrength(raw.shadowStrength)
+      ? raw.shadowStrength
+      : DEFAULT_DESKTOP_LYRIC_PERSISTED_SETTINGS.shadowStrength,
     bold: Boolean(raw.bold),
     offsetStep: clamp(
       Number(raw.offsetStep) || DEFAULT_DESKTOP_LYRIC_PERSISTED_SETTINGS.offsetStep,
@@ -116,6 +121,9 @@ export function sanitizeDesktopLyricSettings(
     unplayedColor: String(mergedBase.unplayedColor || current.unplayedColor),
     strokeColor: String(mergedBase.strokeColor || current.strokeColor),
     strokeEnabled: Boolean(mergedBase.strokeEnabled),
+    shadowStrength: isDesktopLyricShadowStrength(mergedBase.shadowStrength)
+      ? mergedBase.shadowStrength
+      : current.shadowStrength,
     bold: Boolean(mergedBase.bold),
     offsetStep: clamp(Number(mergedBase.offsetStep) || current.offsetStep, 0.1, 5),
   };
@@ -143,6 +151,7 @@ export function persistDesktopLyricSettings(nextSettings: DesktopLyricSettings) 
     unplayedColor: nextSettings.unplayedColor,
     strokeColor: nextSettings.strokeColor,
     strokeEnabled: nextSettings.strokeEnabled,
+    shadowStrength: nextSettings.shadowStrength,
     bold: nextSettings.bold,
     offsetStep: nextSettings.offsetStep,
   });

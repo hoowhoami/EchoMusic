@@ -68,6 +68,13 @@ export const desktopLyricAlignOptions = [
   { label: '交替', value: 'both' },
 ];
 
+export const desktopLyricShadowOptions = [
+  { label: '关闭', value: 'none' },
+  { label: '柔和', value: 'soft' },
+  { label: '标准', value: 'normal' },
+  { label: '清晰', value: 'strong' },
+];
+
 export const audioQualityOptions: { label: string; value: AudioQualityValue }[] = [
   { label: '标准品质', value: '128' },
   { label: 'HQ 高品质', value: '320' },

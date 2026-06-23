@@ -125,7 +125,12 @@ export const createPlaybackManager = (
   ) => {
     const requestSeq = ++state.playbackRequestSeq;
     state.historyLocalRecorded = false;
-    state.historyLocalRecorded = false;
+    const recordLocalHistoryOnce = (song: Song) => {
+      if (requestSeq !== state.playbackRequestSeq) return;
+      if (state.historyLocalRecorded) return;
+      state.historyLocalRecorded = true;
+      void useHistoryStore().recordPlay(song);
+    };
     const sourceList = playlist
       ? toRawSongList(playlist)
       : (playlistStore.activeQueue?.songs ?? playlistStore.defaultList);
@@ -267,8 +272,7 @@ export const createPlaybackManager = (
 
       // 在 engine.play() 成功后立即记录本地历史，使用闭包捕获的 snapshot
       // 避免因 mpv end-file 事件竞态导致 state.currentTrackSnapshot 被下一首覆盖
-      void useHistoryStore().recordPlay(snapshot);
-      state.historyLocalRecorded = true;
+      recordLocalHistoryOnce(snapshot);
 
       state.isLoading = false;
       state.autoNextAttempts = 0;

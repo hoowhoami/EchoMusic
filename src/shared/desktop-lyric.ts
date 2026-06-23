@@ -18,6 +18,7 @@ export type DesktopLyricPlaybackPayload = {
 
 export type DesktopLyricThemeMode = 'light' | 'dark' | 'system';
 export type DesktopLyricAlign = 'left' | 'center' | 'right' | 'both';
+export type DesktopLyricShadowStrength = 'none' | 'soft' | 'normal' | 'strong';
 
 export type DesktopLyricSettings = {
   enabled: boolean;
@@ -41,6 +42,7 @@ export type DesktopLyricSettings = {
   unplayedColor: string;
   strokeColor: string;
   strokeEnabled: boolean;
+  shadowStrength: DesktopLyricShadowStrength;
   bold: boolean;
   /** 歌词对齐微调步长（秒） */
   offsetStep: number;
@@ -67,6 +69,7 @@ export const DEFAULT_DESKTOP_LYRIC_SETTINGS: DesktopLyricSettings = {
   unplayedColor: '#7a7a7a',
   strokeColor: '#f1b8b3',
   strokeEnabled: false,
+  shadowStrength: 'normal',
   bold: false,
   offsetStep: 0.1,
 };

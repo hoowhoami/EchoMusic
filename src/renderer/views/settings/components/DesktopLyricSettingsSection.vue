@@ -12,7 +12,12 @@ import ColorPickerDialog from '@/components/ui/ColorPickerDialog.vue';
 import FontIcon from '@/components/ui/FontIcon.vue';
 import { Icon } from '@iconify/vue';
 import SettingsSectionShell from './SettingsSectionShell.vue';
-import { desktopLyricAlignOptions, desktopLyricColorPresets, sectionTitles } from '../constants';
+import {
+  desktopLyricAlignOptions,
+  desktopLyricColorPresets,
+  desktopLyricShadowOptions,
+  sectionTitles,
+} from '../constants';
 
 const settingStore = useSettingStore();
 const desktopLyricStore = useDesktopLyricStore();
@@ -131,6 +136,23 @@ const applyDesktopLyricColor = async (value: string) => {
         @update:model-value="
           commitDesktopLyricSettings({
             offsetStep: Math.max(0.1, Math.min(5, Number($event) || 0.5)),
+          })
+        "
+      />
+    </div>
+    <div class="settings-divider"></div>
+    <div class="settings-item">
+      <div class="space-y-1">
+        <h3 class="font-semibold">文字阴影</h3>
+        <p class="text-sm text-text-secondary">调整桌面歌词在其他窗口上的清晰度</p>
+      </div>
+      <Select
+        class="w-45"
+        :model-value="desktopLyricStore.settings.shadowStrength"
+        :options="desktopLyricShadowOptions"
+        @update:model-value="
+          commitDesktopLyricSettings({
+            shadowStrength: $event as DesktopLyricSettings['shadowStrength'],
           })
         "
       />

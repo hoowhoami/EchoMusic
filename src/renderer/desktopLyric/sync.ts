@@ -70,6 +70,7 @@ const buildSettingsSignature = (settings: DesktopLyricSettings) =>
     settings.unplayedColor,
     settings.strokeColor,
     boolKey(settings.strokeEnabled),
+    settings.shadowStrength,
     boolKey(settings.bold),
     stableNumberKey(settings.offsetStep, 1000),
   ].join('\u001f');

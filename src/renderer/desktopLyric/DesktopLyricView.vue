@@ -223,6 +223,32 @@ const hasRomanization = computed(() => lyrics.value.some((l) => l.romanized?.tri
 const hasSecondary = computed(() => hasTranslation.value || hasRomanization.value);
 const playedColor = computed(() => settings.value?.playedColor ?? '#31cfa1');
 const unplayedColor = computed(() => settings.value?.unplayedColor ?? '#7a7a7a');
+const lyricTextShadow = computed(() => {
+  switch (settings.value?.shadowStrength ?? 'normal') {
+    case 'none':
+      return 'none';
+    case 'soft':
+      return '0 1px 2px rgba(0,0,0,0.32)';
+    case 'strong':
+      return '0 1px 0 rgba(0,0,0,0.95), 1px 0 0 rgba(0,0,0,0.78), -1px 0 0 rgba(0,0,0,0.78), 0 2px 2px rgba(0,0,0,0.45)';
+    case 'normal':
+    default:
+      return '0 1px 2px rgba(0,0,0,0.58), 0 0 3px rgba(0,0,0,0.38)';
+  }
+});
+const lyricDropShadow = computed(() => {
+  switch (settings.value?.shadowStrength ?? 'normal') {
+    case 'none':
+      return 'none';
+    case 'soft':
+      return 'drop-shadow(0 1px 1px rgba(0,0,0,0.35))';
+    case 'strong':
+      return 'drop-shadow(0 1px 0 rgba(0,0,0,0.95)) drop-shadow(1px 0 0 rgba(0,0,0,0.78)) drop-shadow(-1px 0 0 rgba(0,0,0,0.78))';
+    case 'normal':
+    default:
+      return 'drop-shadow(0 1px 1px rgba(0,0,0,0.65)) drop-shadow(0 0 2px rgba(0,0,0,0.45))';
+  }
+});
 const fontFamily = computed(() => {
   const raw = settings.value?.fontFamily ?? 'follow';
   const resolved = raw === 'follow' ? settings.value?.resolvedFontFamily : raw;
@@ -862,7 +888,7 @@ onBeforeUnmount(() => {
         fontSize: localFontSize + 'px',
         fontFamily,
         fontWeight,
-        textShadow: `0 1px 2px rgba(0,0,0,0.2)`,
+        textShadow: lyricTextShadow,
       }"
       :class="['lyric-container', alignment]"
     >
@@ -906,7 +932,7 @@ onBeforeUnmount(() => {
                       ? {
                           backgroundImage: `linear-gradient(to right, ${playedColor} 50%, ${unplayedColor} 50%)`,
                           textShadow: 'none',
-                          filter: `drop-shadow(0 1px 1px rgba(0,0,0,0.2))`,
+                          filter: lyricDropShadow,
                           backgroundPositionX: '100%',
                         }
                       : undefined
