@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from 'vue';
+import { computed, ref } from 'vue';
 import { useRoute } from 'vue-router';
 import { Icon } from '@iconify/vue';
 import Button from '@/components/ui/Button.vue';
@@ -8,23 +8,24 @@ import Input from '@/components/ui/Input.vue';
 import Select from '@/components/ui/Select.vue';
 import Switch from '@/components/ui/Switch.vue';
 import Scrollbar from '@/components/ui/Scrollbar.vue';
+import InstalledPluginCard from '@/views/plugins/InstalledPluginCard.vue';
+import PluginLocalInstallOverlay from '@/views/plugins/PluginLocalInstallOverlay.vue';
+import MarketplacePluginCard from '@/views/plugins/MarketplacePluginCard.vue';
+import PluginSourceDialog from '@/views/plugins/PluginSourceDialog.vue';
+import { usePluginFailures } from '@/views/plugins/usePluginFailures';
+import { usePluginLocalInstall } from '@/views/plugins/usePluginLocalInstall';
+import { usePluginMarketplace } from '@/views/plugins/usePluginMarketplace';
+import { usePluginSettingsDialog } from '@/views/plugins/usePluginSettingsDialog';
 import {
   iconArrowBarDown,
-  iconCheck,
   iconCloud,
-  iconExternalLink,
   iconFolderOpen,
-  iconPlus,
   iconPlugin,
   iconRefreshCw,
-  iconSettings,
-  iconShare,
   iconShield,
-  iconTrash,
   iconTriangleAlert,
 } from '@/icons';
 import {
-  clearRuntimePluginFailure,
   uninstallRuntimePlugin,
   openPluginDirectory,
   pluginRuntimeState,
@@ -32,69 +33,62 @@ import {
   refreshPlugins,
   setRuntimePluginEnabled,
   setRuntimePluginSafeMode,
-  type PluginRuntimeFailureDetail,
 } from '@/plugins/runtime';
-import { pluginSettingsContributions } from '@/plugins/registry';
-import { useSettingStore } from '@/stores/setting';
 import { useToastStore } from '@/stores/toast';
-import { copyShareTarget, createPluginShareTarget, isPluginIdShareable } from '@/utils/share';
-import type {
-  EchoPluginManifest,
-  PluginFailureRecord,
-  PluginLocalInstallItemResult,
-  PluginMarketplacePlugin,
-  PluginMarketplaceSource,
-} from '../../shared/plugins';
+import type { EchoPluginManifest } from '../../shared/plugins';
 
 const route = useRoute();
 const toastStore = useToastStore();
-const settingStore = useSettingStore();
 const activeView = ref<'installed' | 'marketplace'>('installed');
 const isRefreshing = ref(false);
 const isSafeModeBusy = ref(false);
 const isUninstalling = ref(false);
-const isClearingFailure = ref(false);
-const marketplaceLoaded = ref(false);
-const isMarketplaceLoading = ref(false);
-const isMarketplaceRefreshing = ref(false);
-const isUpdatingAllMarketplace = ref(false);
-const updateAllProgress = ref(0);
-const updateAllTotal = ref(0);
-const isLocalInstallDragging = ref(false);
-const isLocalInstalling = ref(false);
-const isSourceDialogOpen = ref(false);
-const isAddingSource = ref(false);
-const marketplaceSearch = ref('');
-const marketplaceSourceFilter = ref('all');
-const newSourceUrl = ref('');
-const newSourceName = ref('');
 const pendingUninstallPluginId = ref('');
-const pendingSharedInstallPluginKey = ref('');
-const highlightedMarketplacePluginKey = ref('');
-const settingsPluginId = ref('');
-const failureDetailPluginId = ref('');
-const sharedSourceTarget = ref<SharedPluginRouteTarget | null>(null);
-const isAddingSharedSource = ref(false);
-const handledSharedRouteKey = ref('');
 const busyPluginIds = ref<Set<string>>(new Set());
-const busyMarketplacePluginKeys = ref<Set<string>>(new Set());
-const busySourceIds = ref<Set<string>>(new Set());
 const failedPluginIconIds = ref<Set<string>>(new Set());
-const localInstallDragDepth = ref(0);
-const localInstallCount = ref(0);
-const marketplacePlugins = ref<PluginMarketplacePlugin[]>([]);
-const marketplaceSources = ref<PluginMarketplaceSource[]>([]);
-const marketplaceFetchedAt = ref(0);
 
-interface SharedPluginRouteTarget {
-  pluginId: string;
-  pluginName: string;
-  sourceId: string;
-  sourceUrl: string;
-  version: string;
-  checksum: string;
-  homepage: string;
-}
+const {
+  marketplaceLoaded,
+  isMarketplaceLoading,
+  isMarketplaceRefreshing,
+  isUpdatingAllMarketplace,
+  isSourceDialogOpen,
+  isAddingSource,
+  marketplaceSearch,
+  marketplaceSourceFilter,
+  newSourceUrl,
+  newSourceName,
+  highlightedMarketplacePluginKey,
+  busyMarketplacePluginKeys,
+  busySourceIds,
+  marketplacePlugins,
+  marketplaceSources,
+  sourceSelectOptions,
+  marketplaceSourceSummary,
+  marketplaceFetchedAtLabel,
+  filteredMarketplacePlugins,
+  marketplaceCountLabel,
+  updatableMarketplaceCount,
+  updateAllButtonLabel,
+  marketplaceSourceErrors,
+  loadMarketplace,
+  switchView,
+  openSourceDialog,
+  addMarketplaceSource,
+  patchMarketplaceSource,
+  removeMarketplaceSource,
+  getMarketplacePluginKey,
+  getMarketplaceInstallLabel,
+  getMarketplaceCompatibilityMessage,
+  getMarketplaceStatusLabel,
+  getMarketplaceStatusTitle,
+  getMarketplaceInstallTitle,
+  canInstallMarketplacePlugin,
+  openExternalUrl,
+  shareMarketplacePlugin,
+  installMarketplacePlugin,
+  updateAllMarketplacePlugins,
+} = usePluginMarketplace({ route, activeView });
 
 const records = computed(() => pluginRuntimeState.records);
 const pluginCountLabel = computed(() => {
@@ -102,116 +96,53 @@ const pluginCountLabel = computed(() => {
   const enabled = records.value.filter((record) => record.descriptor.enabled).length;
   return `${enabled}/${total} 个已启用`;
 });
-const sourceSelectOptions = computed(() => [
-  { label: '全部源', value: 'all' },
-  ...marketplaceSources.value.map((source) => ({
-    label: source.name,
-    value: source.id,
-    disabled: !source.enabled,
-  })),
-]);
-const enabledMarketplaceSourceCount = computed(
-  () => marketplaceSources.value.filter((source) => source.enabled).length,
-);
-const marketplaceSourceSummary = computed(() => {
-  const total = marketplaceSources.value.length;
-  if (total === 0) return '暂无插件源';
-  return `${enabledMarketplaceSourceCount.value}/${total} 个源启用`;
-});
-const marketplaceFetchedAtLabel = computed(() =>
-  marketplaceFetchedAt.value ? new Date(marketplaceFetchedAt.value).toLocaleString() : '',
-);
-const localInstallOverlayTitle = computed(() =>
-  isLocalInstalling.value
-    ? `正在安装 ${localInstallCount.value || ''} 个插件`.trim()
-    : '松开安装插件',
-);
-const localInstallOverlayDescription = computed(() =>
-  isLocalInstalling.value ? '安装完成后会自动刷新插件列表' : '支持 .zip 压缩包和插件文件夹',
-);
 
-const filteredMarketplacePlugins = computed(() => {
-  const keyword = marketplaceSearch.value.trim().toLowerCase();
-  return marketplacePlugins.value.filter((plugin) => {
-    if (
-      marketplaceSourceFilter.value !== 'all' &&
-      plugin.sourceId !== marketplaceSourceFilter.value
-    ) {
-      return false;
-    }
-    if (!keyword) return true;
-    return [
-      plugin.name,
-      plugin.id,
-      plugin.description,
-      plugin.author,
-      plugin.sourceName,
-      plugin.tags.join(' '),
-    ]
-      .join(' ')
-      .toLowerCase()
-      .includes(keyword);
-  });
-});
-const marketplaceCountLabel = computed(() => `${filteredMarketplacePlugins.value.length} 个可浏览`);
-const updatableMarketplacePlugins = computed(() =>
-  marketplacePlugins.value.filter(
-    (plugin) => plugin.installed && plugin.updateAvailable && plugin.compatibility.compatible,
-  ),
-);
-const updatableMarketplaceCount = computed(() => updatableMarketplacePlugins.value.length);
-const updateAllButtonLabel = computed(() =>
-  isUpdatingAllMarketplace.value
-    ? `更新中 ${updateAllProgress.value}/${updateAllTotal.value}`
-    : `一键更新 (${updatableMarketplaceCount.value})`,
-);
-const marketplaceSourceErrors = computed(() =>
-  marketplaceSources.value.filter((source) => source.enabled && source.lastError),
-);
+const {
+  isLocalInstallDragging,
+  isLocalInstalling,
+  localInstallOverlayTitle,
+  localInstallOverlayDescription,
+  handlePluginDragEnter,
+  handlePluginDragOver,
+  handlePluginDragLeave,
+  handlePluginDrop,
+} = usePluginLocalInstall({ marketplaceLoaded, loadMarketplace });
+
+const {
+  isClearingFailure,
+  pluginCardFailureReasonLabels,
+  globalFailure,
+  failureTime,
+  globalFailureTitle,
+  showFailureDetailDialog,
+  activeFailureDetail,
+  activeFailureTitle,
+  canClearActiveFailureDetail,
+  formatFailureTime,
+  getCurrentPluginCardFailure,
+  getPluginCardFailure,
+  hasPluginCardFailure,
+  hasCurrentPluginCardFailure,
+  hasHistoricalPluginCardFailure,
+  getPluginFailureButtonTitle,
+  openPluginFailureDetail,
+  clearActiveFailureRecord,
+} = usePluginFailures({ records });
+
+const {
+  settingsPluginId,
+  activeSettingsContribution,
+  activeSettingsTitle,
+  activeSettingsDescription,
+  showSettingsDialog,
+  getSettingsContribution,
+  getPluginSettingsButtonTitle,
+  requestOpenPluginSettings,
+} = usePluginSettingsDialog({ records });
+
 const pendingUninstallRecord = computed(
   () =>
     records.value.find((record) => record.descriptor.id === pendingUninstallPluginId.value) ?? null,
-);
-const settingsContributionByPluginId = computed(
-  () =>
-    new Map(
-      pluginSettingsContributions.value.map((contribution) => [
-        contribution.pluginId,
-        contribution,
-      ]),
-    ),
-);
-const settingsPluginRecord = computed(
-  () => records.value.find((record) => record.descriptor.id === settingsPluginId.value) ?? null,
-);
-const failureDetailRecord = computed(
-  () =>
-    records.value.find((record) => record.descriptor.id === failureDetailPluginId.value) ?? null,
-);
-const pendingSharedInstallPlugin = computed(() =>
-  pendingSharedInstallPluginKey.value
-    ? (marketplacePlugins.value.find(
-        (plugin) => getMarketplacePluginKey(plugin) === pendingSharedInstallPluginKey.value,
-      ) ?? null)
-    : null,
-);
-const activeSettingsContribution = computed(() =>
-  settingsPluginId.value
-    ? (settingsContributionByPluginId.value.get(settingsPluginId.value) ?? null)
-    : null,
-);
-const activeSettingsTitle = computed(
-  () =>
-    activeSettingsContribution.value?.title ||
-    (settingsPluginRecord.value
-      ? `${settingsPluginRecord.value.descriptor.name} 设置`
-      : '插件设置'),
-);
-const activeSettingsDescription = computed(
-  () =>
-    activeSettingsContribution.value?.description ||
-    settingsPluginRecord.value?.descriptor.description ||
-    '',
 );
 const showUninstallDialog = computed({
   get: () => Boolean(pendingUninstallPluginId.value),
@@ -219,125 +150,6 @@ const showUninstallDialog = computed({
     if (!open && !isUninstalling.value) pendingUninstallPluginId.value = '';
   },
 });
-const showSettingsDialog = computed({
-  get: () => Boolean(settingsPluginId.value),
-  set: (open: boolean) => {
-    if (!open) settingsPluginId.value = '';
-  },
-});
-const showFailureDetailDialog = computed({
-  get: () => Boolean(failureDetailPluginId.value),
-  set: (open: boolean) => {
-    if (!open) failureDetailPluginId.value = '';
-  },
-});
-const showSharedInstallDialog = computed({
-  get: () => Boolean(pendingSharedInstallPlugin.value),
-  set: (open: boolean) => {
-    if (!open) pendingSharedInstallPluginKey.value = '';
-  },
-});
-const showSharedSourceDialog = computed({
-  get: () => Boolean(sharedSourceTarget.value),
-  set: (open: boolean) => {
-    if (!open && !isAddingSharedSource.value) sharedSourceTarget.value = null;
-  },
-});
-const sharedSourceDialogTitle = computed(() => {
-  const target = sharedSourceTarget.value;
-  if (!target) return '添加插件源';
-  const existing = findMarketplaceSourceForSharedTarget(target);
-  return existing ? '启用插件源' : '添加插件源';
-});
-const sharedSourceDialogDescription = computed(() => {
-  const target = sharedSourceTarget.value;
-  if (!target) return '';
-  const name = target.pluginName || target.pluginId;
-  const existing = findMarketplaceSourceForSharedTarget(target);
-  if (existing) {
-    return `分享的插件「${name}」来自已停用的插件源，启用后会刷新在线插件列表。`;
-  }
-  return `分享的插件「${name}」来自新的插件源，添加后才能查看和安装。`;
-});
-const sharedSourceActionLabel = computed(() => {
-  const target = sharedSourceTarget.value;
-  if (!target) return '添加并刷新';
-  return findMarketplaceSourceForSharedTarget(target) ? '启用并刷新' : '添加并刷新';
-});
-const sharedInstallDialogDescription = computed(() => {
-  const plugin = pendingSharedInstallPlugin.value;
-  if (!plugin) return '';
-  const parts = [`来源：${plugin.sourceName || plugin.sourceUrl}`];
-  if (plugin.updateAvailable) parts.push(`当前已安装 v${plugin.installedVersion}`);
-  parts.push(`将安装 v${plugin.version}`);
-  return parts.join(' · ');
-});
-const sharedInstallWarnings = computed(() => {
-  const plugin = pendingSharedInstallPlugin.value;
-  const target = getSharedPluginRouteTarget();
-  if (!plugin || !target) return [];
-  const warnings: string[] = [];
-  if (target.version && target.version !== plugin.version) {
-    warnings.push(`分享时版本为 v${target.version}，当前插件源提供 v${plugin.version}。`);
-  }
-  if (target.checksum && plugin.checksum && target.checksum !== plugin.checksum) {
-    warnings.push('分享链接中的校验值与当前插件源不一致，请确认来源后再安装。');
-  }
-  return warnings;
-});
-
-const failureReasonLabels: Record<PluginFailureRecord['reason'], string> = {
-  'activation-error': '插件启动失败',
-  'runtime-error': '插件运行异常',
-  'render-process-gone': '渲染进程异常退出',
-  unresponsive: '渲染进程无响应',
-};
-const pluginCardFailureReasonLabels = {
-  ...failureReasonLabels,
-  invalid: '插件无效',
-  incompatible: '版本不兼容',
-  record: '插件异常',
-} as const;
-
-type PluginCardFailureReason = keyof typeof pluginCardFailureReasonLabels;
-
-interface PluginCardFailureDetail {
-  pluginId: string;
-  reason: PluginCardFailureReason;
-  source: string;
-  message: string;
-  stack: string;
-  createdAt: number;
-  isHistorical?: boolean;
-}
-
-const failurePluginIds = computed(() => {
-  const failure = pluginRuntimeState.lastFailure;
-  if (!failure) return [];
-  const installedIds = new Set(records.value.map((record) => record.descriptor.id));
-  return Array.from(
-    new Set(
-      ([failure.pluginId, ...(failure.pluginIds ?? [])].filter(Boolean) as string[]).filter((id) =>
-        installedIds.has(id),
-      ),
-    ),
-  );
-});
-
-const globalFailure = computed(() => {
-  const failure = pluginRuntimeState.lastFailure;
-  if (!failure || failurePluginIds.value.length > 0) return null;
-  return failure;
-});
-
-const failureTime = computed(() => {
-  const createdAt = globalFailure.value?.createdAt;
-  if (!createdAt) return '';
-  return new Date(createdAt).toLocaleString();
-});
-const globalFailureTitle = computed(() =>
-  globalFailure.value ? failureReasonLabels[globalFailure.value.reason] : '',
-);
 
 const refresh = async () => {
   if (isRefreshing.value) return;
@@ -358,233 +170,6 @@ const openDirectory = async () => {
     await openPluginDirectory();
   } catch {
     toastStore.actionFailed('打开插件目录');
-  }
-};
-
-const getMarketplaceRequestOptions = (refresh = false) => ({
-  refresh,
-  githubProxyUrl: settingStore.githubProxyUrl,
-});
-
-let marketplaceLoadPromise: Promise<void> | null = null;
-
-const readRouteText = (value: unknown) => {
-  if (Array.isArray(value)) return String(value[0] ?? '').trim();
-  return String(value ?? '').trim();
-};
-
-const getSharedPluginRouteTarget = (): SharedPluginRouteTarget | null => {
-  const pluginId = readRouteText(route.query.pluginId);
-  if (!pluginId || !isPluginIdShareable(pluginId)) return null;
-  return {
-    pluginId,
-    pluginName: readRouteText(route.query.pluginName || route.query.name),
-    sourceId: readRouteText(route.query.sourceId),
-    sourceUrl: readRouteText(route.query.source || route.query.sourceUrl),
-    version: readRouteText(route.query.version),
-    checksum: readRouteText(route.query.checksum),
-    homepage: readRouteText(route.query.homepage),
-  };
-};
-
-const getSharedPluginRouteKey = (target: SharedPluginRouteTarget) =>
-  [target.pluginId, target.sourceId, target.sourceUrl, target.version, target.checksum].join('|');
-
-const normalizeUrlText = (value: string) => value.trim().replace(/\/+$/, '').toLowerCase();
-
-const findMarketplaceSourceForSharedTarget = (target: SharedPluginRouteTarget) =>
-  marketplaceSources.value.find((source) => {
-    if (target.sourceId && source.id === target.sourceId) return true;
-    if (target.sourceUrl && normalizeUrlText(source.url) === normalizeUrlText(target.sourceUrl)) {
-      return true;
-    }
-    return false;
-  }) ?? null;
-
-const findMarketplacePluginForSharedTarget = (target: SharedPluginRouteTarget) =>
-  marketplacePlugins.value.find((plugin) => {
-    if (plugin.id !== target.pluginId) return false;
-    if (target.sourceId && plugin.sourceId === target.sourceId) return true;
-    if (
-      target.sourceUrl &&
-      normalizeUrlText(plugin.sourceUrl) === normalizeUrlText(target.sourceUrl)
-    ) {
-      return true;
-    }
-    return !target.sourceId && !target.sourceUrl;
-  }) ??
-  (!target.sourceId && !target.sourceUrl
-    ? marketplacePlugins.value.find((plugin) => plugin.id === target.pluginId)
-    : null) ??
-  null;
-
-const highlightMarketplacePlugin = async (plugin: PluginMarketplacePlugin) => {
-  const key = getMarketplacePluginKey(plugin);
-  highlightedMarketplacePluginKey.value = key;
-  marketplaceSearch.value = '';
-  marketplaceSourceFilter.value = plugin.sourceId;
-  await nextTick();
-  document
-    .querySelector(`[data-marketplace-plugin-key="${CSS.escape(key)}"]`)
-    ?.scrollIntoView({ block: 'center', behavior: 'smooth' });
-  window.setTimeout(() => {
-    if (highlightedMarketplacePluginKey.value === key) highlightedMarketplacePluginKey.value = '';
-  }, 4200);
-};
-
-const processSharedPluginRoute = async (force = false) => {
-  const target = getSharedPluginRouteTarget();
-  if (!target) return;
-  const routeKey = getSharedPluginRouteKey(target);
-  if (!force && handledSharedRouteKey.value === routeKey) return;
-  handledSharedRouteKey.value = routeKey;
-  activeView.value = 'marketplace';
-
-  if (!marketplaceLoaded.value) await loadMarketplace(false);
-
-  let plugin = findMarketplacePluginForSharedTarget(target);
-  if (!plugin && (target.sourceId || target.sourceUrl)) {
-    const source = findMarketplaceSourceForSharedTarget(target);
-    if ((source && !source.enabled) || (!source && target.sourceUrl)) {
-      sharedSourceTarget.value = target;
-      return;
-    }
-    if (source) {
-      await loadMarketplace(true);
-      plugin = findMarketplacePluginForSharedTarget(target);
-    }
-  }
-
-  if (!plugin) {
-    toastStore.warning(`未找到分享的插件${target.pluginName ? `「${target.pluginName}」` : ''}`);
-    return;
-  }
-
-  await highlightMarketplacePlugin(plugin);
-  if (!plugin.compatibility.compatible) {
-    toastStore.warning(plugin.compatibility.message || '插件与当前 EchoMusic 主程序版本不兼容');
-    return;
-  }
-  if (plugin.installed && !plugin.updateAvailable) {
-    toastStore.info('分享的插件已安装');
-    return;
-  }
-  pendingSharedInstallPluginKey.value = getMarketplacePluginKey(plugin);
-};
-
-const loadMarketplace = async (refreshSource = false) => {
-  if (isMarketplaceLoading.value || isMarketplaceRefreshing.value) {
-    return marketplaceLoadPromise ?? Promise.resolve();
-  }
-  if (refreshSource) isMarketplaceRefreshing.value = true;
-  else isMarketplaceLoading.value = true;
-
-  marketplaceLoadPromise = (async () => {
-    try {
-      const result = await window.electron.plugins?.marketplace.list(
-        getMarketplaceRequestOptions(refreshSource),
-      );
-      marketplaceSources.value = result?.sources ?? [];
-      marketplacePlugins.value = result?.plugins ?? [];
-      marketplaceFetchedAt.value = result?.fetchedAt ?? 0;
-      marketplaceLoaded.value = true;
-      if (result && !result.ok) {
-        toastStore.warning(result.error || '插件源刷新失败');
-      } else if (refreshSource) {
-        toastStore.actionCompleted('在线插件列表已刷新');
-      }
-    } catch (error) {
-      toastStore.warning(error instanceof Error ? error.message : '在线插件列表加载失败');
-    } finally {
-      isMarketplaceLoading.value = false;
-      isMarketplaceRefreshing.value = false;
-      marketplaceLoadPromise = null;
-    }
-  })();
-
-  return marketplaceLoadPromise;
-};
-
-const switchView = (view: 'installed' | 'marketplace') => {
-  activeView.value = view;
-  if (view === 'marketplace' && !marketplaceLoaded.value) {
-    void loadMarketplace(false);
-  }
-};
-
-const openSourceDialog = async () => {
-  isSourceDialogOpen.value = true;
-  try {
-    const result = await window.electron.plugins?.marketplace.listSources();
-    marketplaceSources.value = result?.sources ?? marketplaceSources.value;
-  } catch {
-    toastStore.warning('插件源列表读取失败');
-  }
-};
-
-const addMarketplaceSource = async () => {
-  const url = newSourceUrl.value.trim();
-  if (!url || isAddingSource.value) return;
-  isAddingSource.value = true;
-  try {
-    const result = await window.electron.plugins?.marketplace.addSource(
-      {
-        url,
-        name: newSourceName.value.trim() || undefined,
-      },
-      getMarketplaceRequestOptions(false),
-    );
-    if (!result?.ok) throw new Error(result?.error || '插件源添加失败');
-    marketplaceSources.value = result.sources;
-    newSourceUrl.value = '';
-    newSourceName.value = '';
-    toastStore.actionCompleted('插件源已添加');
-    await loadMarketplace(true);
-  } catch (error) {
-    toastStore.warning(error instanceof Error ? error.message : '插件源添加失败');
-  } finally {
-    isAddingSource.value = false;
-  }
-};
-
-const patchMarketplaceSource = async (
-  source: PluginMarketplaceSource,
-  patch: { name?: string; enabled?: boolean },
-) => {
-  const next = new Set(busySourceIds.value);
-  next.add(source.id);
-  busySourceIds.value = next;
-  try {
-    const result = await window.electron.plugins?.marketplace.patchSource(source.id, patch);
-    if (!result?.ok) throw new Error(result?.error || '插件源更新失败');
-    marketplaceSources.value = result.sources;
-    if (patch.enabled !== undefined) await loadMarketplace(true);
-  } catch (error) {
-    toastStore.warning(error instanceof Error ? error.message : '插件源更新失败');
-  } finally {
-    const done = new Set(busySourceIds.value);
-    done.delete(source.id);
-    busySourceIds.value = done;
-  }
-};
-
-const removeMarketplaceSource = async (source: PluginMarketplaceSource) => {
-  const next = new Set(busySourceIds.value);
-  next.add(source.id);
-  busySourceIds.value = next;
-  try {
-    const result = await window.electron.plugins?.marketplace.removeSource(source.id);
-    if (!result?.ok) throw new Error(result?.error || '插件源删除失败');
-    marketplaceSources.value = result.sources;
-    if (marketplaceSourceFilter.value === source.id) marketplaceSourceFilter.value = 'all';
-    toastStore.actionCompleted('插件源已删除');
-    await loadMarketplace(true);
-  } catch (error) {
-    toastStore.warning(error instanceof Error ? error.message : '插件源删除失败');
-  } finally {
-    const done = new Set(busySourceIds.value);
-    done.delete(source.id);
-    busySourceIds.value = done;
   }
 };
 
@@ -641,290 +226,6 @@ const confirmUninstallPlugin = async () => {
     busyPluginIds.value = done;
     isUninstalling.value = false;
   }
-};
-
-const getMarketplacePluginKey = (plugin: PluginMarketplacePlugin) =>
-  `${plugin.sourceId}:${plugin.id}`;
-
-const getMarketplaceInstallLabel = (plugin: PluginMarketplacePlugin) => {
-  if (plugin.updateAvailable) return '更新';
-  if (plugin.installed) return '已安装';
-  return '安装';
-};
-
-const getMarketplaceCompatibilityMessage = (plugin: PluginMarketplacePlugin) =>
-  plugin.compatibility.compatible
-    ? ''
-    : plugin.compatibility.message || '插件与当前 EchoMusic 主程序版本不兼容';
-
-const getMarketplaceStatusLabel = (plugin: PluginMarketplacePlugin) => {
-  if (!plugin.compatibility.compatible) return '版本要求';
-  if (plugin.updateAvailable) return `可更新至 v${plugin.version}`;
-  if (plugin.installed) return `已安装 v${plugin.installedVersion}`;
-  return '未安装';
-};
-
-const getMarketplaceStatusTitle = (plugin: PluginMarketplacePlugin) =>
-  getMarketplaceCompatibilityMessage(plugin) || getMarketplaceStatusLabel(plugin);
-
-const getMarketplaceInstallTitle = (plugin: PluginMarketplacePlugin) => {
-  const compatibilityMessage = getMarketplaceCompatibilityMessage(plugin);
-  if (compatibilityMessage) return compatibilityMessage;
-  if (plugin.installed && !plugin.updateAvailable) return '当前版本已安装';
-  return getMarketplaceInstallLabel(plugin);
-};
-
-const canInstallMarketplacePlugin = (plugin: PluginMarketplacePlugin) =>
-  plugin.compatibility.compatible && (!plugin.installed || plugin.updateAvailable);
-
-const openExternalUrl = (url: string) => {
-  if (!url) return;
-  window.electron.ipcRenderer.send('open-external', url);
-};
-
-const shareMarketplacePlugin = async (plugin: PluginMarketplacePlugin) => {
-  const target = createPluginShareTarget(plugin);
-  if (!target) {
-    toastStore.warning('插件分享信息不完整');
-    return;
-  }
-  try {
-    await copyShareTarget(target);
-    toastStore.actionCompleted('插件分享链接已复制');
-  } catch {
-    toastStore.actionFailed('复制插件分享链接');
-  }
-};
-
-const getPluginInstallErrorMessage = (error: unknown) => {
-  const message = error instanceof Error ? error.message : String(error || '');
-  if (message.includes('reply was never sent')) {
-    return '插件安装被主进程中断，请重启 EchoMusic 后检查插件状态';
-  }
-  return message || '插件安装失败';
-};
-
-const installMarketplacePlugin = async (plugin: PluginMarketplacePlugin) => {
-  if (!canInstallMarketplacePlugin(plugin)) return false;
-  const key = getMarketplacePluginKey(plugin);
-  const next = new Set(busyMarketplacePluginKeys.value);
-  next.add(key);
-  busyMarketplacePluginKeys.value = next;
-  try {
-    const result = await window.electron.plugins?.marketplace.install(plugin.sourceId, plugin.id, {
-      githubProxyUrl: settingStore.githubProxyUrl,
-      enableAfterInstall: false,
-    });
-    if (!result?.ok) throw new Error(result?.error || '插件安装失败');
-    await refreshPlugins({ reloadActive: true });
-    await reloadOtherPluginRuntimes();
-    await loadMarketplace(false);
-    toastStore.actionCompleted(result.updated ? '插件已更新' : '插件已安装');
-    return true;
-  } catch (error) {
-    toastStore.warning(getPluginInstallErrorMessage(error));
-    return false;
-  } finally {
-    const done = new Set(busyMarketplacePluginKeys.value);
-    done.delete(key);
-    busyMarketplacePluginKeys.value = done;
-  }
-};
-
-const confirmSharedInstallPlugin = async () => {
-  const plugin = pendingSharedInstallPlugin.value;
-  if (!plugin) return;
-  const installed = await installMarketplacePlugin(plugin);
-  if (installed) pendingSharedInstallPluginKey.value = '';
-};
-
-const confirmSharedMarketplaceSource = async () => {
-  const target = sharedSourceTarget.value;
-  if (!target || isAddingSharedSource.value) return;
-  isAddingSharedSource.value = true;
-  try {
-    const existing = findMarketplaceSourceForSharedTarget(target);
-    if (existing) {
-      if (!existing.enabled) {
-        const result = await window.electron.plugins?.marketplace.patchSource(existing.id, {
-          enabled: true,
-        });
-        if (!result?.ok) throw new Error(result?.error || '插件源启用失败');
-        marketplaceSources.value = result.sources;
-      }
-    } else {
-      if (!target.sourceUrl) throw new Error('分享链接没有包含插件源地址');
-      const result = await window.electron.plugins?.marketplace.addSource(
-        {
-          url: target.sourceUrl,
-          name: target.pluginName ? `${target.pluginName} 来源` : undefined,
-        },
-        getMarketplaceRequestOptions(false),
-      );
-      if (!result?.ok) throw new Error(result?.error || '插件源添加失败');
-      marketplaceSources.value = result.sources;
-    }
-
-    sharedSourceTarget.value = null;
-    await loadMarketplace(true);
-    handledSharedRouteKey.value = '';
-    await processSharedPluginRoute(true);
-  } catch (error) {
-    toastStore.warning(error instanceof Error ? error.message : '插件源添加失败');
-  } finally {
-    isAddingSharedSource.value = false;
-  }
-};
-
-const updateAllMarketplacePlugins = async () => {
-  if (isUpdatingAllMarketplace.value) return;
-  const targets = [...updatableMarketplacePlugins.value];
-  if (targets.length === 0) return;
-
-  isUpdatingAllMarketplace.value = true;
-  updateAllTotal.value = targets.length;
-  updateAllProgress.value = 0;
-  let succeeded = 0;
-  const failures: string[] = [];
-  try {
-    for (const plugin of targets) {
-      const key = getMarketplacePluginKey(plugin);
-      const next = new Set(busyMarketplacePluginKeys.value);
-      next.add(key);
-      busyMarketplacePluginKeys.value = next;
-      try {
-        const result = await window.electron.plugins?.marketplace.install(
-          plugin.sourceId,
-          plugin.id,
-          {
-            githubProxyUrl: settingStore.githubProxyUrl,
-            enableAfterInstall: false,
-          },
-        );
-        if (!result?.ok) throw new Error(result?.error || '插件更新失败');
-        succeeded += 1;
-      } catch (error) {
-        failures.push(`${plugin.name}：${getPluginInstallErrorMessage(error)}`);
-      } finally {
-        const done = new Set(busyMarketplacePluginKeys.value);
-        done.delete(key);
-        busyMarketplacePluginKeys.value = done;
-        updateAllProgress.value += 1;
-      }
-    }
-
-    if (succeeded > 0) {
-      await refreshPlugins({ reloadActive: true });
-      await reloadOtherPluginRuntimes();
-    }
-    await loadMarketplace(false);
-  } finally {
-    isUpdatingAllMarketplace.value = false;
-    updateAllProgress.value = 0;
-    updateAllTotal.value = 0;
-  }
-
-  if (failures.length === 0) {
-    toastStore.actionCompleted(`已更新 ${succeeded} 个插件`);
-  } else {
-    toastStore.warning(
-      `更新完成：成功 ${succeeded} 个，失败 ${failures.length} 个。${failures[0]}`,
-      6000,
-    );
-  }
-};
-
-const hasDraggedFiles = (event: DragEvent) =>
-  Array.from(event.dataTransfer?.types ?? []).includes('Files');
-
-const normalizeLocalInstallPaths = (paths: string[]) =>
-  Array.from(new Set(paths.map((path) => path.trim()).filter(Boolean)));
-
-const summarizeLocalInstallFailure = (results: PluginLocalInstallItemResult[]) => {
-  const firstFailure = results.find((result) => !result.ok);
-  return firstFailure?.ok === false ? firstFailure.error : '';
-};
-
-const installLocalPlugins = async (paths: string[]) => {
-  if (isLocalInstalling.value) return;
-  const sourcePaths = normalizeLocalInstallPaths(paths);
-  if (sourcePaths.length === 0) {
-    toastStore.warning('未读取到可安装的插件路径');
-    return;
-  }
-
-  isLocalInstalling.value = true;
-  localInstallCount.value = sourcePaths.length;
-  try {
-    const result = await window.electron.plugins?.installLocal(sourcePaths, {
-      enableAfterInstall: false,
-    });
-    if (!result) throw new Error('插件安装 API 不可用');
-
-    if (result.installed > 0) {
-      await refreshPlugins({ reloadActive: true });
-      await reloadOtherPluginRuntimes();
-      if (marketplaceLoaded.value) await loadMarketplace(false);
-    }
-
-    if (result.failed > 0) {
-      const failure = summarizeLocalInstallFailure(result.results);
-      toastStore.warning(
-        `插件安装完成：成功 ${result.installed} 个，失败 ${result.failed} 个${failure ? `。${failure}` : ''}`,
-        6000,
-      );
-      return;
-    }
-
-    if (result.installed === 1) {
-      const installed = result.results.find((item) => item.ok);
-      toastStore.actionCompleted(installed?.ok && installed.updated ? '插件已更新' : '插件已安装');
-      return;
-    }
-
-    toastStore.actionCompleted(`已安装 ${result.installed} 个插件`);
-  } catch (error) {
-    toastStore.warning(getPluginInstallErrorMessage(error));
-  } finally {
-    isLocalInstalling.value = false;
-    localInstallCount.value = 0;
-  }
-};
-
-const handlePluginDragEnter = (event: DragEvent) => {
-  if (!hasDraggedFiles(event)) return;
-  event.preventDefault();
-  localInstallDragDepth.value += 1;
-  isLocalInstallDragging.value = true;
-};
-
-const handlePluginDragOver = (event: DragEvent) => {
-  if (!hasDraggedFiles(event)) return;
-  event.preventDefault();
-  if (event.dataTransfer) event.dataTransfer.dropEffect = isLocalInstalling.value ? 'none' : 'copy';
-  isLocalInstallDragging.value = true;
-};
-
-const handlePluginDragLeave = (event: DragEvent) => {
-  if (!hasDraggedFiles(event)) return;
-  localInstallDragDepth.value = Math.max(0, localInstallDragDepth.value - 1);
-  if (localInstallDragDepth.value === 0) isLocalInstallDragging.value = false;
-};
-
-const handlePluginDrop = (event: DragEvent) => {
-  if (!hasDraggedFiles(event)) return;
-  event.preventDefault();
-  localInstallDragDepth.value = 0;
-  isLocalInstallDragging.value = false;
-
-  if (isLocalInstalling.value) {
-    toastStore.info('插件正在安装中');
-    return;
-  }
-
-  const files = Array.from(event.dataTransfer?.files ?? []);
-  const paths = window.electron.plugins?.getDroppedFilePaths(files) ?? [];
-  void installLocalPlugins(paths);
 };
 
 const getStatusLabel = (record: (typeof records.value)[number]) => {
@@ -988,200 +289,6 @@ const getPluginFeatureTags = (manifest: EchoPluginManifest) => {
   if (manifest.contributes?.windows?.length) tags.push('插件浮窗');
   return tags;
 };
-
-const formatFailureTime = (createdAt: number) =>
-  createdAt > 0 ? new Date(createdAt).toLocaleString() : '本次扫描';
-
-const toPluginCardRuntimeFailure = (
-  failure: PluginRuntimeFailureDetail,
-): PluginCardFailureDetail => ({
-  pluginId: failure.pluginId,
-  reason: failure.reason,
-  source: failure.source,
-  message: failure.message,
-  stack: failure.stack,
-  createdAt: failure.createdAt,
-});
-
-const getLastFailureForPlugin = (pluginId: string): PluginCardFailureDetail | null => {
-  const failure = pluginRuntimeState.lastFailure;
-  if (!failure) return null;
-  const record = records.value.find((item) => item.descriptor.id === pluginId);
-  if (!record) return null;
-  const ids = new Set([failure.pluginId, ...(failure.pluginIds ?? [])].filter(Boolean));
-  if (!ids.has(pluginId)) return null;
-  return {
-    pluginId,
-    reason: failure.reason,
-    source: pluginRuntimeState.safeMode ? '最近一次故障恢复' : '最近一次插件异常',
-    message: failure.message,
-    stack: '',
-    createdAt: failure.createdAt,
-    isHistorical: true,
-  };
-};
-
-const getCurrentPluginCardFailure = (
-  record: (typeof records.value)[number],
-): PluginCardFailureDetail | null => {
-  const pluginId = record.descriptor.id;
-  const runtimeFailure = pluginRuntimeState.failures[pluginId];
-  if (runtimeFailure) return toPluginCardRuntimeFailure(runtimeFailure);
-
-  if (record.descriptor.invalid && record.descriptor.error) {
-    return {
-      pluginId,
-      reason: 'invalid',
-      source: '插件清单',
-      message: record.descriptor.error,
-      stack: '',
-      createdAt: 0,
-    };
-  }
-
-  if (!record.descriptor.compatibility.compatible) {
-    return {
-      pluginId,
-      reason: 'incompatible',
-      source: '版本兼容性',
-      message: record.descriptor.compatibility.message || '插件与当前 EchoMusic 主程序版本不兼容',
-      stack: '',
-      createdAt: 0,
-    };
-  }
-
-  if (record.status === 'error' && record.error) {
-    return {
-      pluginId,
-      reason: 'record',
-      source: record.status === 'error' ? '当前运行状态' : '插件扫描',
-      message: record.error,
-      stack: '',
-      createdAt: 0,
-    };
-  }
-
-  return null;
-};
-
-const getPluginCardFailure = (
-  record: (typeof records.value)[number],
-): PluginCardFailureDetail | null =>
-  getCurrentPluginCardFailure(record) ?? getLastFailureForPlugin(record.descriptor.id);
-
-const hasPluginCardFailure = (record: (typeof records.value)[number]) =>
-  Boolean(getPluginCardFailure(record));
-
-const hasCurrentPluginCardFailure = (record: (typeof records.value)[number]) =>
-  Boolean(getCurrentPluginCardFailure(record));
-
-const hasHistoricalPluginCardFailure = (record: (typeof records.value)[number]) =>
-  Boolean(getPluginCardFailure(record)?.isHistorical);
-
-const getPluginFailureButtonTitle = (record: (typeof records.value)[number]) =>
-  hasHistoricalPluginCardFailure(record) ? '查看最近一次插件异常' : '查看插件异常详情';
-
-const activeFailureDetail = computed(() =>
-  failureDetailRecord.value ? getPluginCardFailure(failureDetailRecord.value) : null,
-);
-
-const activeFailureTitle = computed(() => {
-  const detail = activeFailureDetail.value;
-  const record = failureDetailRecord.value;
-  if (!detail || !record) return '插件异常详情';
-  return `${record.descriptor.name} · ${pluginCardFailureReasonLabels[detail.reason]}`;
-});
-
-const canClearActiveFailureDetail = computed(
-  () =>
-    Boolean(activeFailureDetail.value) &&
-    activeFailureDetail.value?.reason !== 'invalid' &&
-    activeFailureDetail.value?.reason !== 'incompatible',
-);
-
-const openPluginFailureDetail = (pluginId: string) => {
-  failureDetailPluginId.value = pluginId;
-};
-
-const clearActiveFailureRecord = async () => {
-  const detail = activeFailureDetail.value;
-  if (!detail || !canClearActiveFailureDetail.value || isClearingFailure.value) return;
-
-  isClearingFailure.value = true;
-  try {
-    await clearRuntimePluginFailure(detail.pluginId);
-    toastStore.actionCompleted('插件异常记录已清除');
-    showFailureDetailDialog.value = false;
-  } catch (error) {
-    toastStore.warning(error instanceof Error ? error.message : '插件异常记录清除失败');
-  } finally {
-    isClearingFailure.value = false;
-  }
-};
-
-const getSettingsContribution = (pluginId: string) =>
-  settingsContributionByPluginId.value.get(pluginId) ?? null;
-
-const getPluginSettingsButtonTitle = (record: (typeof records.value)[number]) => {
-  if (getSettingsContribution(record.descriptor.id)) return '打开插件设置';
-  if (record.descriptor.invalid) return '插件无效，无法读取设置';
-  if (!record.descriptor.compatibility.compatible)
-    return '插件与当前主程序版本不兼容，无法加载设置';
-  if (!record.descriptor.enabled) return '启用插件后可读取设置项';
-  if (pluginRuntimeState.safeMode) return '安全模式下不会加载插件设置';
-  if (record.status !== 'active') return '插件运行后可读取设置项';
-  return '该插件没有提供设置项';
-};
-
-const openPluginSettings = (pluginId: string) => {
-  if (getSettingsContribution(pluginId)) settingsPluginId.value = pluginId;
-};
-
-const requestOpenPluginSettings = (record: (typeof records.value)[number]) => {
-  const pluginId = record.descriptor.id;
-  if (getSettingsContribution(pluginId)) {
-    openPluginSettings(pluginId);
-    return;
-  }
-
-  if (record.descriptor.invalid) {
-    toastStore.warning('插件无效，无法读取设置');
-    return;
-  }
-  if (!record.descriptor.compatibility.compatible) {
-    toastStore.warning(
-      record.descriptor.compatibility.message || '插件与当前主程序版本不兼容，无法加载设置',
-    );
-    return;
-  }
-  if (!record.descriptor.enabled) {
-    toastStore.warning('启用插件后才能读取它提供的设置项');
-    return;
-  }
-  if (pluginRuntimeState.safeMode) {
-    toastStore.warning('安全模式下不会加载插件设置');
-    return;
-  }
-  if (record.status !== 'active') {
-    toastStore.warning('插件运行后才能读取它提供的设置项');
-    return;
-  }
-  toastStore.info('该插件没有提供设置项');
-};
-
-onMounted(() => {
-  if (readRouteText(route.query.view) === 'marketplace') switchView('marketplace');
-  void processSharedPluginRoute(false);
-});
-
-watch(
-  () => route.fullPath,
-  () => {
-    if (route.name !== 'plugin-management') return;
-    if (readRouteText(route.query.view) === 'marketplace') switchView('marketplace');
-    void processSharedPluginRoute(false);
-  },
-);
 </script>
 
 <template>
@@ -1316,156 +423,32 @@ watch(
             </div>
 
             <div class="plugin-card-grid">
-              <article
+              <InstalledPluginCard
                 v-for="record in records"
                 :key="record.descriptor.id"
-                class="plugin-card"
-                :class="{
-                  'is-disabled':
-                    !record.descriptor.enabled ||
-                    record.descriptor.invalid ||
-                    !record.descriptor.compatibility.compatible,
-                  'is-error':
-                    hasCurrentPluginCardFailure(record) &&
-                    getPluginCardFailure(record)?.reason !== 'incompatible',
-                  'is-warning': getPluginCardFailure(record)?.reason === 'incompatible',
-                }"
-              >
-                <div class="plugin-card-main">
-                  <div
-                    class="plugin-card-media"
-                    :class="{ 'has-icon': getPluginIconUrl(record) }"
-                    :style="getPluginAccentStyle(record.descriptor.id)"
-                  >
-                    <img
-                      v-if="getPluginIconUrl(record)"
-                      :src="getPluginIconUrl(record)"
-                      :alt="record.descriptor.name"
-                      class="plugin-card-icon"
-                      @error="markPluginIconFailed(record.descriptor.id)"
-                    />
-                    <span v-else class="plugin-card-initial">
-                      {{ getPluginInitial(record) }}
-                    </span>
-                  </div>
-
-                  <div class="plugin-card-summary">
-                    <div class="plugin-card-header">
-                      <h3 class="plugin-card-name" :title="record.descriptor.name">
-                        {{ record.descriptor.name }}
-                      </h3>
-                      <span
-                        class="plugin-status-badge"
-                        :title="getStatusTitle(record)"
-                        :class="{
-                          'is-active':
-                            record.status === 'active' && !hasCurrentPluginCardFailure(record),
-                          'is-error':
-                            hasCurrentPluginCardFailure(record) &&
-                            getPluginCardFailure(record)?.reason !== 'incompatible',
-                          'is-safe':
-                            pluginRuntimeState.safeMode &&
-                            record.descriptor.enabled &&
-                            !hasCurrentPluginCardFailure(record),
-                          'is-warning': getPluginCardFailure(record)?.reason === 'incompatible',
-                        }"
-                      >
-                        {{ getStatusLabel(record) }}
-                      </span>
-                    </div>
-
-                    <div class="plugin-card-meta">
-                      <span>v{{ record.descriptor.version }}</span>
-                      <span v-if="record.descriptor.manifest.author">
-                        · {{ record.descriptor.manifest.author }}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                <p class="plugin-card-description">
-                  {{ record.descriptor.description || '暂无描述' }}
-                </p>
-
-                <div
-                  v-if="getPluginFeatureTags(record.descriptor.manifest).length"
-                  class="plugin-feature-tags"
-                >
-                  <span
-                    v-for="tag in getPluginFeatureTags(record.descriptor.manifest).slice(0, 5)"
-                    :key="tag"
-                  >
-                    {{ tag }}
-                  </span>
-                </div>
-
-                <div
-                  v-if="getPluginCompatibilityMessage(record)"
-                  class="plugin-card-error is-warning"
-                >
-                  <Icon :icon="iconTriangleAlert" width="14" height="14" />
-                  <span>{{ getPluginCompatibilityMessage(record) }}</span>
-                </div>
-
-                <div class="plugin-card-id" :title="record.descriptor.id">
-                  ID: {{ record.descriptor.id }}
-                </div>
-
-                <div class="plugin-card-actions">
-                  <div class="plugin-card-action-group">
-                    <div class="plugin-card-primary-actions">
-                      <Button
-                        variant="ghost"
-                        size="xs"
-                        class="plugin-settings-btn"
-                        :class="{
-                          'is-unavailable': !getSettingsContribution(record.descriptor.id),
-                        }"
-                        :title="getPluginSettingsButtonTitle(record)"
-                        :disabled="busyPluginIds.has(record.descriptor.id)"
-                        @click="requestOpenPluginSettings(record)"
-                      >
-                        <Icon :icon="iconSettings" width="14" height="14" />
-                        设置
-                      </Button>
-
-                      <Button
-                        variant="ghost"
-                        size="xs"
-                        class="plugin-remove-btn"
-                        :disabled="busyPluginIds.has(record.descriptor.id)"
-                        @click="requestUninstallPlugin(record.descriptor.id)"
-                      >
-                        移除
-                      </Button>
-                    </div>
-
-                    <button
-                      v-if="hasPluginCardFailure(record)"
-                      class="plugin-card-failure-btn"
-                      :class="{
-                        'is-historical': hasHistoricalPluginCardFailure(record),
-                        'is-warning': getPluginCardFailure(record)?.reason === 'incompatible',
-                      }"
-                      type="button"
-                      :title="getPluginFailureButtonTitle(record)"
-                      @click="openPluginFailureDetail(record.descriptor.id)"
-                    >
-                      <Icon :icon="iconTriangleAlert" width="14" height="14" />
-                    </button>
-                  </div>
-
-                  <Switch
-                    :model-value="record.descriptor.enabled"
-                    :disabled="
-                      record.descriptor.invalid ||
-                      !record.descriptor.compatibility.compatible ||
-                      busyPluginIds.has(record.descriptor.id)
-                    "
-                    @update:model-value="(value) => togglePlugin(record.descriptor.id, value)"
-                  />
-                </div>
-              </article>
+                :record="record"
+                :busy="busyPluginIds.has(record.descriptor.id)"
+                :safe-mode="pluginRuntimeState.safeMode"
+                :icon-url="getPluginIconUrl(record)"
+                :initial="getPluginInitial(record)"
+                :accent-style="getPluginAccentStyle(record.descriptor.id)"
+                :status-label="getStatusLabel(record)"
+                :status-title="getStatusTitle(record)"
+                :compatibility-message="getPluginCompatibilityMessage(record)"
+                :feature-tags="getPluginFeatureTags(record.descriptor.manifest)"
+                :card-failure="getPluginCardFailure(record)"
+                :has-current-failure="hasCurrentPluginCardFailure(record)"
+                :has-failure="hasPluginCardFailure(record)"
+                :has-historical-failure="hasHistoricalPluginCardFailure(record)"
+                :failure-title="getPluginFailureButtonTitle(record)"
+                :settings-available="Boolean(getSettingsContribution(record.descriptor.id))"
+                :settings-title="getPluginSettingsButtonTitle(record)"
+                @toggle="togglePlugin"
+                @settings="requestOpenPluginSettings"
+                @uninstall="requestUninstallPlugin"
+                @failure-detail="openPluginFailureDetail"
+                @icon-error="markPluginIconFailed"
+              />
             </div>
           </template>
         </template>
@@ -1537,332 +520,49 @@ watch(
           </div>
 
           <div v-else class="plugin-card-grid">
-            <article
+            <MarketplacePluginCard
               v-for="plugin in filteredMarketplacePlugins"
               :key="getMarketplacePluginKey(plugin)"
-              :data-marketplace-plugin-key="getMarketplacePluginKey(plugin)"
-              class="plugin-card marketplace-card"
-              :class="{
-                'is-disabled': !plugin.compatibility.compatible,
-                'is-warning': !plugin.compatibility.compatible,
-                'is-shared-target':
-                  highlightedMarketplacePluginKey === getMarketplacePluginKey(plugin),
-              }"
-            >
-              <div class="plugin-card-main">
-                <div
-                  class="plugin-card-media"
-                  :class="{ 'has-icon': plugin.iconUrl }"
-                  :style="getPluginAccentStyle(plugin.id)"
-                >
-                  <img
-                    v-if="plugin.iconUrl"
-                    :src="plugin.iconUrl"
-                    :alt="plugin.name"
-                    class="plugin-card-icon"
-                  />
-                  <span v-else class="plugin-card-initial">
-                    {{ plugin.name.trim()[0]?.toUpperCase() || 'E' }}
-                  </span>
-                </div>
-
-                <div class="plugin-card-summary">
-                  <div class="plugin-card-header">
-                    <h3 class="plugin-card-name" :title="plugin.name">{{ plugin.name }}</h3>
-                    <span
-                      class="plugin-status-badge"
-                      :title="getMarketplaceStatusTitle(plugin)"
-                      :class="{
-                        'is-active': plugin.installed && !plugin.updateAvailable,
-                        'is-warning': plugin.updateAvailable || !plugin.compatibility.compatible,
-                      }"
-                    >
-                      {{ getMarketplaceStatusLabel(plugin) }}
-                    </span>
-                  </div>
-
-                  <div class="plugin-card-meta">
-                    <span>v{{ plugin.version }}</span>
-                    <span v-if="plugin.author"> · {{ plugin.author }}</span>
-                  </div>
-                </div>
-              </div>
-
-              <p class="plugin-card-description">{{ plugin.description || '暂无描述' }}</p>
-
-              <div
-                v-if="getMarketplaceCompatibilityMessage(plugin)"
-                class="plugin-card-error is-warning"
-              >
-                <Icon :icon="iconTriangleAlert" width="14" height="14" />
-                <span>{{ getMarketplaceCompatibilityMessage(plugin) }}</span>
-              </div>
-
-              <div class="marketplace-tags">
-                <span>{{ plugin.sourceName }}</span>
-                <span v-for="tag in plugin.tags.slice(0, 3)" :key="tag">{{ tag }}</span>
-              </div>
-
-              <div v-if="getPluginFeatureTags(plugin.manifest).length" class="plugin-feature-tags">
-                <span v-for="tag in getPluginFeatureTags(plugin.manifest).slice(0, 5)" :key="tag">
-                  {{ tag }}
-                </span>
-              </div>
-
-              <div class="plugin-card-id" :title="plugin.id">ID: {{ plugin.id }}</div>
-
-              <div class="plugin-card-actions">
-                <div class="plugin-card-primary-actions">
-                  <Button
-                    variant="ghost"
-                    size="xs"
-                    class="plugin-settings-btn"
-                    title="复制插件分享链接"
-                    @click="shareMarketplacePlugin(plugin)"
-                  >
-                    <Icon :icon="iconShare" width="14" height="14" />
-                    分享
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="xs"
-                    class="plugin-settings-btn"
-                    :disabled="!plugin.repo"
-                    @click="openExternalUrl(plugin.repo || plugin.homepage)"
-                  >
-                    <Icon :icon="iconExternalLink" width="14" height="14" />
-                    仓库
-                  </Button>
-                </div>
-
-                <Button
-                  variant="primary"
-                  size="xs"
-                  class="marketplace-install-btn"
-                  :title="getMarketplaceInstallTitle(plugin)"
-                  :loading="busyMarketplacePluginKeys.has(getMarketplacePluginKey(plugin))"
-                  :disabled="
-                    !canInstallMarketplacePlugin(plugin) ||
-                    isUpdatingAllMarketplace ||
-                    busyMarketplacePluginKeys.has(getMarketplacePluginKey(plugin))
-                  "
-                  @click="installMarketplacePlugin(plugin)"
-                >
-                  <Icon
-                    v-if="plugin.installed && !plugin.updateAvailable"
-                    :icon="iconCheck"
-                    width="14"
-                    height="14"
-                  />
-                  <Icon v-else :icon="iconArrowBarDown" width="14" height="14" />
-                  {{ getMarketplaceInstallLabel(plugin) }}
-                </Button>
-              </div>
-            </article>
+              :plugin="plugin"
+              :plugin-key="getMarketplacePluginKey(plugin)"
+              :highlighted="highlightedMarketplacePluginKey === getMarketplacePluginKey(plugin)"
+              :busy="busyMarketplacePluginKeys.has(getMarketplacePluginKey(plugin))"
+              :updating-all="isUpdatingAllMarketplace"
+              :accent-style="getPluginAccentStyle(plugin.id)"
+              :status-label="getMarketplaceStatusLabel(plugin)"
+              :status-title="getMarketplaceStatusTitle(plugin)"
+              :install-label="getMarketplaceInstallLabel(plugin)"
+              :install-title="getMarketplaceInstallTitle(plugin)"
+              :compatibility-message="getMarketplaceCompatibilityMessage(plugin)"
+              :can-install="canInstallMarketplacePlugin(plugin)"
+              :feature-tags="getPluginFeatureTags(plugin.manifest)"
+              @share="shareMarketplacePlugin"
+              @install="installMarketplacePlugin"
+              @open-external="openExternalUrl"
+            />
           </div>
         </template>
       </div>
     </Scrollbar>
 
-    <div
-      v-if="isLocalInstallDragging || isLocalInstalling"
-      class="plugin-local-install-overlay"
-      :class="{ 'is-installing': isLocalInstalling }"
-    >
-      <div class="plugin-local-install-panel">
-        <div class="plugin-local-install-icon">
-          <Icon
-            :icon="isLocalInstalling ? iconRefreshCw : iconArrowBarDown"
-            width="28"
-            height="28"
-            :class="{ 'animate-spin': isLocalInstalling }"
-          />
-        </div>
-        <strong>{{ localInstallOverlayTitle }}</strong>
-        <span>{{ localInstallOverlayDescription }}</span>
-      </div>
-    </div>
+    <PluginLocalInstallOverlay
+      :dragging="isLocalInstallDragging"
+      :installing="isLocalInstalling"
+      :title="localInstallOverlayTitle"
+      :description="localInstallOverlayDescription"
+    />
 
-    <!-- 插件源管理 -->
-    <Dialog
+    <PluginSourceDialog
       v-model:open="isSourceDialogOpen"
-      title="插件源"
-      description="添加 GitHub 仓库地址后，EchoMusic 会读取 echo-plugins.json 索引并同步插件清单。"
-      show-close
-      content-class="plugin-source-dialog"
-      body-class="plugin-source-dialog-body"
-    >
-      <div class="plugin-source-manager">
-        <div class="plugin-source-add">
-          <Input
-            v-model="newSourceUrl"
-            placeholder="https://github.com/owner/repo"
-            input-class="!h-9 !rounded-lg !pl-3 !pr-8 !text-sm"
-          />
-          <Input
-            v-model="newSourceName"
-            placeholder="显示名称，可选"
-            input-class="!h-9 !rounded-lg !pl-3 !pr-8 !text-sm"
-          />
-          <Button
-            variant="primary"
-            size="xs"
-            :loading="isAddingSource"
-            :disabled="!newSourceUrl.trim() || isAddingSource"
-            @click="addMarketplaceSource"
-          >
-            <Icon :icon="iconPlus" width="14" height="14" />
-            添加
-          </Button>
-        </div>
-
-        <div v-if="marketplaceSources.length === 0" class="plugin-source-empty">暂无插件源</div>
-
-        <div v-else class="plugin-source-list">
-          <div v-for="source in marketplaceSources" :key="source.id" class="plugin-source-row">
-            <div class="plugin-source-main">
-              <div class="plugin-source-title">
-                <strong>{{ source.name }}</strong>
-                <span v-if="source.official">官方</span>
-              </div>
-              <p :title="source.url">{{ source.url }}</p>
-              <small>
-                {{ source.pluginCount }} 个插件
-                <template v-if="source.lastFetchedAt">
-                  · {{ new Date(source.lastFetchedAt).toLocaleString() }}
-                </template>
-              </small>
-              <div v-if="source.lastError" class="plugin-source-error">
-                {{ source.lastError }}
-              </div>
-            </div>
-
-            <div class="plugin-source-actions">
-              <Switch
-                :model-value="source.enabled"
-                :disabled="busySourceIds.has(source.id)"
-                @update:model-value="(enabled) => patchMarketplaceSource(source, { enabled })"
-              />
-              <Button
-                variant="ghost"
-                size="xs"
-                class="plugin-source-delete-btn"
-                :title="source.official ? '官方插件源可停用，但不能删除' : '删除插件源'"
-                :disabled="source.official || busySourceIds.has(source.id)"
-                @click="removeMarketplaceSource(source)"
-              >
-                <Icon :icon="iconTrash" width="14" height="14" />
-              </Button>
-            </div>
-          </div>
-        </div>
-      </div>
-    </Dialog>
-
-    <!-- 分享插件源确认 -->
-    <Dialog
-      v-model:open="showSharedSourceDialog"
-      :title="sharedSourceDialogTitle"
-      :description="sharedSourceDialogDescription"
-    >
-      <div v-if="sharedSourceTarget" class="plugin-share-dialog-body">
-        <div class="plugin-share-meta">
-          <span>插件 ID</span>
-          <strong>{{ sharedSourceTarget.pluginId }}</strong>
-          <span>插件源</span>
-          <strong>{{
-            sharedSourceTarget.sourceUrl || sharedSourceTarget.sourceId || '未知来源'
-          }}</strong>
-        </div>
-      </div>
-
-      <template #footer>
-        <Button
-          variant="ghost"
-          size="xs"
-          :disabled="isAddingSharedSource"
-          @click="showSharedSourceDialog = false"
-        >
-          取消
-        </Button>
-        <Button
-          variant="primary"
-          size="xs"
-          :loading="isAddingSharedSource"
-          @click="confirmSharedMarketplaceSource"
-        >
-          {{ sharedSourceActionLabel }}
-        </Button>
-      </template>
-    </Dialog>
-
-    <!-- 分享插件安装确认 -->
-    <Dialog
-      v-model:open="showSharedInstallDialog"
-      :title="
-        pendingSharedInstallPlugin
-          ? `${pendingSharedInstallPlugin.updateAvailable ? '更新' : '安装'}分享的插件`
-          : '安装分享的插件'
-      "
-      :description="sharedInstallDialogDescription"
-    >
-      <div v-if="pendingSharedInstallPlugin" class="plugin-share-dialog-body">
-        <div class="plugin-share-plugin">
-          <div
-            class="plugin-card-media"
-            :class="{ 'has-icon': pendingSharedInstallPlugin.iconUrl }"
-            :style="getPluginAccentStyle(pendingSharedInstallPlugin.id)"
-          >
-            <img
-              v-if="pendingSharedInstallPlugin.iconUrl"
-              :src="pendingSharedInstallPlugin.iconUrl"
-              :alt="pendingSharedInstallPlugin.name"
-              class="plugin-card-icon"
-            />
-            <span v-else class="plugin-card-initial">
-              {{ pendingSharedInstallPlugin.name.trim()[0]?.toUpperCase() || 'E' }}
-            </span>
-          </div>
-          <div>
-            <h3>{{ pendingSharedInstallPlugin.name }}</h3>
-            <p>{{ pendingSharedInstallPlugin.description || '暂无描述' }}</p>
-          </div>
-        </div>
-
-        <div v-if="sharedInstallWarnings.length" class="plugin-share-warning">
-          <Icon :icon="iconTriangleAlert" width="15" height="15" />
-          <span>{{ sharedInstallWarnings[0] }}</span>
-        </div>
-
-        <div class="plugin-share-meta">
-          <span>插件 ID</span>
-          <strong>{{ pendingSharedInstallPlugin.id }}</strong>
-          <span>作者</span>
-          <strong>{{ pendingSharedInstallPlugin.author || '未知' }}</strong>
-          <span>来源</span>
-          <strong>{{ pendingSharedInstallPlugin.sourceUrl }}</strong>
-        </div>
-      </div>
-
-      <template #footer>
-        <Button variant="ghost" size="xs" @click="showSharedInstallDialog = false"> 取消 </Button>
-        <Button
-          variant="primary"
-          size="xs"
-          :loading="
-            pendingSharedInstallPlugin
-              ? busyMarketplacePluginKeys.has(getMarketplacePluginKey(pendingSharedInstallPlugin))
-              : false
-          "
-          :disabled="
-            !pendingSharedInstallPlugin || !canInstallMarketplacePlugin(pendingSharedInstallPlugin)
-          "
-          @click="confirmSharedInstallPlugin"
-        >
-          {{ pendingSharedInstallPlugin?.updateAvailable ? '更新插件' : '安装插件' }}
-        </Button>
-      </template>
-    </Dialog>
+      v-model:source-url="newSourceUrl"
+      v-model:source-name="newSourceName"
+      :sources="marketplaceSources"
+      :busy-source-ids="busySourceIds"
+      :adding="isAddingSource"
+      @add="addMarketplaceSource"
+      @patch="patchMarketplaceSource"
+      @remove="removeMarketplaceSource"
+    />
 
     <!-- 卸载对话框 -->
     <Dialog
@@ -1968,917 +668,4 @@ watch(
   </div>
 </template>
 
-<style scoped>
-@reference "@/style.css";
-
-.plugin-management-page {
-  position: relative;
-  background: var(--color-bg-main);
-}
-
-.plugin-local-install-overlay {
-  position: absolute;
-  inset: 0;
-  z-index: 30;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 2rem;
-  background: color-mix(in srgb, var(--color-bg-main) 82%, transparent);
-  -webkit-backdrop-filter: blur(8px);
-  backdrop-filter: blur(8px);
-  pointer-events: none;
-}
-
-.plugin-local-install-panel {
-  width: min(22rem, 100%);
-  min-height: 11rem;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 0.75rem;
-  padding: 1.5rem;
-  border-radius: 8px;
-  border: 1px dashed color-mix(in srgb, var(--color-primary) 54%, var(--border-subtle));
-  background: color-mix(in srgb, var(--color-bg-elevated) 96%, transparent);
-  box-shadow: 0 18px 48px color-mix(in srgb, var(--color-text-main) 14%, transparent);
-  color: var(--color-text-main);
-  text-align: center;
-}
-
-.plugin-local-install-icon {
-  width: 3.25rem;
-  height: 3.25rem;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--color-primary) 12%, transparent);
-  color: var(--color-primary);
-}
-
-.plugin-local-install-panel strong {
-  font-size: 0.95rem;
-  font-weight: 800;
-}
-
-.plugin-local-install-panel span {
-  font-size: 0.75rem;
-  font-weight: 600;
-  color: var(--color-text-secondary);
-}
-
-/* 页面头部 - 与 Settings 保持一致 */
-.plugin-header {
-  border-bottom: 1px solid var(--border-subtle);
-}
-
-.plugin-header-icon {
-  width: 32px;
-  height: 32px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 8px;
-  background: var(--color-primary);
-  color: white;
-}
-
-.plugin-safe-mode-control {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.375rem 0.75rem;
-  border-radius: 8px;
-  background: var(--control-bg);
-  border: 1px solid var(--control-border);
-  color: var(--color-text-main);
-}
-
-.plugin-view-tabs {
-  display: inline-grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  align-items: center;
-  gap: 0.25rem;
-  padding: 0.25rem;
-  border-radius: 10px;
-  background: color-mix(in srgb, var(--control-bg) 92%, var(--color-text-main) 4%);
-  border: 1px solid var(--control-border);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
-}
-
-.plugin-view-tab {
-  height: 2.125rem;
-  min-width: 8.25rem;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.45rem;
-  padding: 0 0.625rem;
-  border-radius: 8px;
-  color: var(--color-text-secondary);
-  font-size: 0.75rem;
-  font-weight: 800;
-  transition:
-    background 0.18s ease,
-    color 0.18s ease,
-    box-shadow 0.18s ease;
-}
-
-.plugin-view-tab:hover {
-  color: var(--color-text-main);
-  background: var(--row-hover-bg);
-}
-
-.plugin-view-tab span {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.plugin-view-tab small {
-  min-width: 1.375rem;
-  height: 1.25rem;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0 0.375rem;
-  border-radius: 999px;
-  background: color-mix(in srgb, currentColor 12%, transparent);
-  font-size: 0.6875rem;
-  font-weight: 900;
-  line-height: 1;
-}
-
-.plugin-view-tab.is-active {
-  color: var(--color-primary);
-  background: color-mix(in srgb, var(--color-primary) 12%, var(--color-bg-elevated));
-  box-shadow:
-    0 1px 2px rgba(0, 0, 0, 0.06),
-    inset 0 0 0 1px color-mix(in srgb, var(--color-primary) 18%, transparent);
-}
-
-.plugin-content {
-  padding-top: 1.25rem;
-}
-
-.marketplace-toolbar {
-  display: flex;
-  align-items: center;
-  gap: 0.625rem;
-  flex-wrap: wrap;
-  margin-bottom: 0.875rem;
-}
-
-:deep(.marketplace-search) {
-  width: min(22rem, 100%);
-}
-
-:deep(.marketplace-source-select) {
-  width: min(17rem, 100%);
-  min-width: 14rem;
-}
-
-.marketplace-source-errors {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  min-height: 2.25rem;
-  padding: 0.5rem 0.75rem;
-  margin-bottom: 0.875rem;
-  border-radius: 8px;
-  border: 1px solid rgba(245, 158, 11, 0.22);
-  background: rgba(245, 158, 11, 0.08);
-  color: rgb(180, 83, 9);
-  font-size: 0.75rem;
-  font-weight: 600;
-}
-
-:global(.dark) .marketplace-source-errors {
-  color: rgb(251, 191, 36);
-}
-
-.plugin-empty-state {
-  @apply py-16 text-center flex flex-col items-center justify-center;
-}
-
-.plugin-content-heading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  margin-bottom: 0.875rem;
-}
-
-.plugin-content-heading h2 {
-  margin: 0;
-  font-size: 0.875rem;
-  font-weight: 700;
-  color: var(--color-text-main);
-}
-
-.plugin-content-heading span {
-  font-size: 0.75rem;
-  font-weight: 600;
-  color: var(--color-text-secondary);
-}
-
-.plugin-card-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-  gap: 0.875rem;
-}
-
-.plugin-card {
-  min-height: 212px;
-  background: var(--color-bg-elevated);
-  border: 1px solid var(--border-subtle);
-  border-radius: 8px;
-  padding: 1rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.875rem;
-  transition:
-    border-color 0.18s ease,
-    box-shadow 0.18s ease,
-    transform 0.18s ease;
-}
-
-.plugin-card:hover {
-  border-color: color-mix(in srgb, var(--color-primary) 45%, var(--control-border));
-  box-shadow: 0 6px 18px color-mix(in srgb, var(--color-text-main) 6%, transparent);
-  transform: translateY(-1px);
-}
-
-.plugin-card.is-disabled {
-  opacity: 0.72;
-}
-
-.plugin-card.is-error {
-  border-color: color-mix(in srgb, var(--state-danger) 30%, var(--border-subtle));
-  background: var(--state-danger-bg-soft);
-}
-
-.plugin-card.is-warning {
-  border-color: color-mix(in srgb, var(--state-warning) 34%, var(--border-subtle));
-  background: var(--state-warning-bg-soft);
-}
-
-.plugin-card-main {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.875rem;
-  min-width: 0;
-}
-
-.plugin-card-media {
-  width: 56px;
-  height: 56px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 8px;
-  background:
-    linear-gradient(
-      135deg,
-      color-mix(in srgb, var(--plugin-accent) 18%, transparent),
-      color-mix(in srgb, var(--plugin-accent) 7%, transparent)
-    ),
-    var(--color-bg-main);
-  border: 1px solid color-mix(in srgb, var(--plugin-accent) 18%, var(--border-subtle));
-  flex-shrink: 0;
-  overflow: hidden;
-}
-
-.plugin-card-media.has-icon {
-  background: transparent;
-  border: 0;
-}
-
-.plugin-card-icon {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.plugin-card-initial {
-  color: var(--plugin-accent);
-  font-size: 1.35rem;
-  font-weight: 800;
-  line-height: 1;
-}
-
-.plugin-card-summary {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-  min-width: 0;
-}
-
-.plugin-card-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 0.75rem;
-  min-width: 0;
-}
-
-.plugin-card-name {
-  font-size: 0.95rem;
-  font-weight: 700;
-  color: var(--color-text-main);
-  margin: 0;
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.plugin-card-failure-btn {
-  width: 24px;
-  height: 24px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: 0;
-  border-radius: 999px;
-  color: var(--color-red-500);
-  background: var(--state-danger-bg-soft);
-  flex-shrink: 0;
-  cursor: pointer;
-  transition:
-    color 0.16s ease,
-    background-color 0.16s ease,
-    transform 0.16s ease;
-}
-
-.plugin-card-failure-btn:hover {
-  color: white;
-  background: var(--color-red-500);
-  transform: translateY(-1px);
-}
-
-.plugin-card-failure-btn.is-historical {
-  color: var(--state-warning);
-  background: var(--state-warning-bg-soft);
-}
-
-.plugin-card-failure-btn.is-warning {
-  color: var(--state-warning);
-  background: var(--state-warning-bg-soft);
-}
-
-.plugin-card-failure-btn.is-historical:hover {
-  color: white;
-  background: var(--state-warning);
-}
-
-.plugin-card-failure-btn.is-warning:hover {
-  color: white;
-  background: var(--state-warning);
-}
-
-.plugin-status-badge {
-  @apply rounded-full px-2 py-0.5 text-[10px] font-semibold text-text-secondary bg-text-secondary/10 shrink-0;
-  line-height: 1.35;
-}
-
-.plugin-status-badge.is-active {
-  @apply text-primary bg-primary/10;
-}
-
-.plugin-status-badge.is-error {
-  @apply text-red-500 bg-red-500/10;
-}
-
-.plugin-status-badge.is-safe {
-  @apply text-amber-500 bg-amber-500/10;
-}
-
-.plugin-status-badge.is-warning {
-  @apply text-amber-500 bg-amber-500/10;
-}
-
-.plugin-card-description {
-  min-height: 42px;
-  font-size: 0.8125rem;
-  color: var(--color-text-secondary);
-  line-height: 1.6;
-  margin: 0;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-
-.plugin-card-meta {
-  font-size: 0.75rem;
-  color: var(--color-text-secondary);
-  opacity: 0.8;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.plugin-card-id {
-  margin-top: auto;
-  font-size: 0.6875rem;
-  font-weight: 600;
-  color: color-mix(in srgb, var(--color-text-secondary) 82%, transparent);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.marketplace-card {
-  min-height: 236px;
-}
-
-.marketplace-card.is-shared-target {
-  border-color: color-mix(in srgb, var(--color-primary) 72%, var(--border-subtle));
-  box-shadow:
-    0 0 0 3px color-mix(in srgb, var(--color-primary) 14%, transparent),
-    0 12px 28px color-mix(in srgb, var(--color-primary) 12%, transparent);
-}
-
-.marketplace-tags,
-.plugin-feature-tags {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 0.375rem;
-  min-height: 1.5rem;
-}
-
-.marketplace-tags span,
-.plugin-feature-tags span {
-  max-width: 9rem;
-  height: 1.5rem;
-  display: inline-flex;
-  align-items: center;
-  padding: 0 0.5rem;
-  border-radius: 6px;
-  background: var(--control-muted-bg);
-  color: var(--color-text-secondary);
-  font-size: 0.6875rem;
-  font-weight: 700;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.plugin-feature-tags span {
-  background: color-mix(in srgb, var(--color-primary) 10%, var(--control-muted-bg));
-  color: color-mix(in srgb, var(--color-primary) 78%, var(--color-text-main));
-}
-
-.marketplace-install-btn {
-  min-width: 5rem;
-  gap: 0.375rem;
-}
-
-.plugin-card-error {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.5rem;
-  font-size: 0.75rem;
-  color: var(--color-red-500);
-  padding: 0.5rem;
-  background: var(--state-danger-bg-soft);
-  border-radius: 8px;
-}
-
-.plugin-card-error.is-warning {
-  color: rgb(180, 83, 9);
-  background: rgba(245, 158, 11, 0.08);
-  border: 1px solid rgba(245, 158, 11, 0.18);
-}
-
-:global(.dark) .plugin-card-error.is-warning {
-  color: rgb(251, 191, 36);
-}
-
-.plugin-card-error svg {
-  flex-shrink: 0;
-  margin-top: 0.1rem;
-}
-
-.plugin-card-error span {
-  min-width: 0;
-  word-break: break-word;
-}
-
-.plugin-card-actions {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-  min-height: 33px;
-  margin-top: 0.125rem;
-  padding-top: 0.875rem;
-  border-top: 1px solid var(--border-subtle);
-}
-
-.plugin-card-action-group {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  min-width: 0;
-}
-
-.plugin-card-primary-actions {
-  display: flex;
-  align-items: center;
-  gap: 0.375rem;
-  min-width: 0;
-}
-
-.plugin-settings-btn {
-  @apply text-text-main hover:text-primary;
-  gap: 0.25rem;
-}
-
-.plugin-settings-btn.is-unavailable {
-  color: color-mix(in srgb, var(--color-text-secondary) 78%, transparent);
-}
-
-.plugin-remove-btn {
-  @apply text-primary hover:text-primary-hover;
-}
-
-.plugin-card.is-error .plugin-remove-btn {
-  @apply text-red-500 hover:text-red-400;
-}
-
-.plugin-share-dialog-body {
-  display: grid;
-  gap: 0.875rem;
-}
-
-.plugin-share-plugin {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.875rem;
-  min-width: 0;
-  padding: 0.875rem;
-  border: 1px solid var(--border-subtle);
-  border-radius: 8px;
-  background: var(--control-muted-bg);
-}
-
-.plugin-share-plugin > div:last-child {
-  min-width: 0;
-}
-
-.plugin-share-plugin h3 {
-  margin: 0;
-  color: var(--color-text-main);
-  font-size: 0.9375rem;
-  font-weight: 800;
-  line-height: 1.35;
-}
-
-.plugin-share-plugin p {
-  margin: 0.375rem 0 0;
-  color: var(--color-text-secondary);
-  font-size: 0.8125rem;
-  line-height: 1.6;
-  word-break: break-word;
-}
-
-.plugin-share-warning {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.5rem;
-  padding: 0.625rem 0.75rem;
-  border-radius: 8px;
-  border: 1px solid rgba(245, 158, 11, 0.18);
-  background: rgba(245, 158, 11, 0.08);
-  color: rgb(180, 83, 9);
-  font-size: 0.75rem;
-  font-weight: 700;
-  line-height: 1.55;
-}
-
-:global(.dark) .plugin-share-warning {
-  color: rgb(251, 191, 36);
-}
-
-.plugin-share-warning svg {
-  flex-shrink: 0;
-  margin-top: 0.1rem;
-}
-
-.plugin-share-meta {
-  display: grid;
-  grid-template-columns: 72px minmax(0, 1fr);
-  gap: 0.5rem 0.875rem;
-  padding: 0.875rem;
-  border: 1px solid var(--border-subtle);
-  border-radius: 8px;
-  background: var(--control-muted-bg);
-}
-
-.plugin-share-meta span {
-  color: var(--color-text-secondary);
-  font-size: 0.75rem;
-  font-weight: 800;
-}
-
-.plugin-share-meta strong {
-  min-width: 0;
-  color: var(--color-text-main);
-  font-size: 0.75rem;
-  font-weight: 700;
-  line-height: 1.5;
-  overflow-wrap: anywhere;
-}
-
-:global(.dialog-content.plugin-source-dialog) {
-  width: min(680px, 92vw);
-  max-height: min(720px, calc(100vh - 120px));
-}
-
-:global(.plugin-source-dialog-body) {
-  padding-right: 1.25rem;
-}
-
-.plugin-source-manager {
-  display: grid;
-  gap: 1rem;
-}
-
-.plugin-source-add {
-  display: grid;
-  grid-template-columns: minmax(0, 1.4fr) minmax(0, 0.9fr) auto;
-  gap: 0.625rem;
-  align-items: center;
-}
-
-.plugin-source-list {
-  display: grid;
-  gap: 0.625rem;
-}
-
-.plugin-source-row {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 1rem;
-  padding: 0.875rem;
-  border: 1px solid var(--border-subtle);
-  border-radius: 8px;
-  background: var(--color-bg-elevated);
-}
-
-.plugin-source-main {
-  min-width: 0;
-  display: grid;
-  gap: 0.25rem;
-}
-
-.plugin-source-title {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.plugin-source-title strong {
-  min-width: 0;
-  color: var(--color-text-main);
-  font-size: 0.875rem;
-  font-weight: 800;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.plugin-source-title span {
-  height: 1.25rem;
-  display: inline-flex;
-  align-items: center;
-  padding: 0 0.375rem;
-  border-radius: 6px;
-  background: color-mix(in srgb, var(--color-primary) 12%, transparent);
-  color: var(--color-primary);
-  font-size: 0.6875rem;
-  font-weight: 800;
-}
-
-.plugin-source-main p,
-.plugin-source-main small {
-  color: var(--color-text-secondary);
-  font-size: 0.75rem;
-}
-
-.plugin-source-main p {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.plugin-source-error {
-  color: rgb(180, 83, 9);
-  font-size: 0.75rem;
-  font-weight: 600;
-}
-
-:global(.dark) .plugin-source-error {
-  color: rgb(251, 191, 36);
-}
-
-.plugin-source-actions {
-  display: flex;
-  align-items: center;
-  gap: 0.375rem;
-}
-
-.plugin-source-delete-btn {
-  width: 2rem;
-  min-width: 2rem;
-  padding: 0;
-  color: var(--color-text-secondary);
-}
-
-.plugin-source-empty {
-  min-height: 5rem;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--color-text-secondary);
-  font-size: 0.8125rem;
-  font-weight: 700;
-  border: 1px dashed var(--border-subtle);
-  border-radius: 8px;
-}
-
-:global(.plugin-failure-detail-dialog) {
-  width: min(560px, 92vw);
-}
-
-:global(.plugin-failure-detail-body) {
-  padding-right: 1.125rem;
-}
-
-.plugin-failure-detail {
-  display: flex;
-  flex-direction: column;
-  gap: 0.875rem;
-}
-
-.plugin-failure-detail-grid {
-  display: grid;
-  grid-template-columns: 64px minmax(0, 1fr);
-  gap: 0.5rem 0.875rem;
-  padding: 0.875rem;
-  border: 1px solid var(--border-subtle);
-  border-radius: 8px;
-  background: var(--control-muted-bg);
-}
-
-.plugin-failure-detail-grid span {
-  font-size: 0.75rem;
-  font-weight: 700;
-  color: var(--color-text-secondary);
-}
-
-.plugin-failure-detail-grid strong {
-  min-width: 0;
-  font-size: 0.75rem;
-  font-weight: 700;
-  color: var(--color-text-main);
-  word-break: break-word;
-}
-
-.plugin-failure-detail-block {
-  padding: 0.875rem;
-  border: 1px solid var(--border-subtle);
-  border-radius: 8px;
-  background: var(--control-muted-bg);
-}
-
-.plugin-failure-detail-block h4 {
-  margin: 0 0 0.5rem;
-  font-size: 0.75rem;
-  font-weight: 800;
-  color: var(--color-text-main);
-}
-
-.plugin-failure-detail-block p,
-.plugin-failure-detail-block pre {
-  margin: 0;
-  color: var(--color-text-secondary);
-}
-
-.plugin-failure-detail-block p {
-  font-size: 0.8125rem;
-  line-height: 1.6;
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-
-.plugin-failure-detail-block pre {
-  max-height: 220px;
-  overflow: auto;
-  font-size: 0.6875rem;
-  line-height: 1.5;
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-
-.plugin-failure-detail-footer {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 0.75rem;
-  width: 100%;
-}
-
-:global(.dialog-content.plugin-settings-dialog) {
-  width: min(640px, 92vw);
-  max-height: min(760px, calc(100vh - 120px));
-  --plugin-settings-dialog-bg: color-mix(in srgb, var(--surface-dialog-base) 96%, transparent);
-  background: var(--plugin-settings-dialog-bg);
-  -webkit-backdrop-filter: blur(18px) saturate(140%);
-  backdrop-filter: blur(18px) saturate(140%);
-}
-
-:global(.dark .dialog-content.plugin-settings-dialog) {
-  --plugin-settings-dialog-bg: color-mix(in srgb, var(--surface-dialog-base) 98%, transparent);
-}
-
-:global(.plugin-settings-dialog-body) {
-  padding-right: 1.125rem;
-}
-
-.plugin-settings-content {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-}
-
-.plugin-settings-empty {
-  padding: 2rem 0;
-  text-align: center;
-  font-size: 0.8125rem;
-  color: var(--color-text-secondary);
-}
-
-/* 错误提示卡片 */
-.plugin-failure-card {
-  @apply flex gap-2.5 rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2.5;
-}
-
-.plugin-failure-icon {
-  @apply w-8 h-8 rounded-lg bg-amber-500/15 text-amber-500 flex items-center justify-center shrink-0;
-}
-
-.plugin-failure-title {
-  @apply text-[13px] font-semibold text-text-main;
-}
-
-.plugin-failure-meta {
-  @apply mt-0.5 text-[11px] text-text-secondary;
-}
-
-.plugin-failure-message {
-  @apply mt-0.5 text-[11px] text-amber-600 dark:text-amber-400 whitespace-pre-wrap break-words;
-}
-
-@media (max-width: 720px) {
-  .plugin-view-tabs {
-    width: 100%;
-  }
-
-  .plugin-view-tab {
-    min-width: 0;
-  }
-
-  :deep(.marketplace-search),
-  :deep(.marketplace-source-select) {
-    width: 100%;
-    min-width: 0;
-  }
-
-  .plugin-source-add {
-    grid-template-columns: 1fr;
-  }
-
-  .plugin-source-row {
-    flex-direction: column;
-  }
-
-  .plugin-source-actions {
-    width: 100%;
-    justify-content: space-between;
-  }
-
-  .plugin-share-meta {
-    grid-template-columns: 1fr;
-  }
-}
-</style>
+<style src="./plugins/pluginManagement.css"></style>

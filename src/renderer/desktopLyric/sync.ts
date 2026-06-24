@@ -5,6 +5,7 @@ import { useLyricStore, testLyricFilter } from '@/stores/lyric';
 import { useSettingStore } from '@/stores/setting';
 import { useToastStore } from '@/stores/toast';
 import { useDesktopLyricStore } from './store';
+import { mergeDesktopLyricSnapshotMessage } from '../../shared/desktop-lyric';
 import type {
   DesktopLyricCommand,
   DesktopLyricPlaybackPayload,
@@ -274,7 +275,9 @@ export const initDesktopLyricSync = async () => {
     lastSyncedSettingsKey = nextSettingsKey;
   };
 
-  const disposeSnapshotListener = window.electron.desktopLyric.onSnapshot((nextSnapshot) => {
+  const disposeSnapshotListener = window.electron.desktopLyric.onSnapshot((message) => {
+    const nextSnapshot = mergeDesktopLyricSnapshotMessage(null, message);
+    if (!nextSnapshot) return;
     desktopLyricStore.setLocal(nextSnapshot.settings);
     lastSyncedSettingsKey = buildSettingsSignature(buildSyncedSettings(nextSnapshot.settings));
     lastSyncedPlaybackKey = buildPlaybackSignature(

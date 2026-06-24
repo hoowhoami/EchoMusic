@@ -4,6 +4,7 @@ import type {
   DesktopLyricLockPhase,
   DesktopLyricSettings,
   DesktopLyricSnapshot,
+  DesktopLyricSnapshotMessage,
   DesktopLyricSnapshotPatch,
 } from '../shared/desktop-lyric';
 import {
@@ -54,6 +55,7 @@ let desktopLyricDisplayMetricsTimer: NodeJS.Timeout | null = null;
 let desktopLyricLockPhaseTimer: NodeJS.Timeout | null = null;
 let desktopLyricForwardRestoreTimer: NodeJS.Timeout | null = null;
 let desktopLyricMainWindowBound = false;
+let desktopLyricIgnoreMouseEventsKey: string | null = null;
 // 锁定状态下用光标轮询可靠检测鼠标进出窗口，规避 forward 穿透模式下
 // mouseleave 不可靠（尤其 Windows）导致解锁按钮卡住不消失的问题
 let desktopLyricHoverPollTimer: NodeJS.Timeout | null = null;
@@ -76,29 +78,53 @@ let snapshot: DesktopLyricSnapshot = {
 };
 desktopLyricIsLocked = snapshot.settings.locked;
 
-const sendSnapshotToWindow = (win: BrowserWindow | null | undefined) => {
+const sendSnapshotToWindow = (
+  win: BrowserWindow | null | undefined,
+  message: DesktopLyricSnapshotMessage = snapshot,
+) => {
   try {
     if (!win || win.isDestroyed() || win.webContents.isDestroyed()) return;
-    win.webContents.send('desktop-lyric:snapshot', snapshot);
+    win.webContents.send('desktop-lyric:snapshot', message);
   } catch {
     // ignore destroyed frames while broadcasting
   }
 };
 
-const sendSnapshot = (scope: 'desktop' | 'settings' = 'settings') => {
+const sendSnapshot = (
+  scope: 'desktop' | 'settings' = 'settings',
+  message: DesktopLyricSnapshotMessage = snapshot,
+) => {
   const lyricWin = getDesktopLyricWindow();
-  sendSnapshotToWindow(lyricWin);
+  sendSnapshotToWindow(lyricWin, message);
 
   if (scope === 'desktop') return;
 
   const mainWin = getMainWindow();
-  if (mainWin && mainWin !== lyricWin) sendSnapshotToWindow(mainWin);
+  if (mainWin && mainWin !== lyricWin) sendSnapshotToWindow(mainWin, message);
 };
 
 const clearDesktopLyricLockPhaseTimer = () => {
   if (!desktopLyricLockPhaseTimer) return;
   clearTimeout(desktopLyricLockPhaseTimer);
   desktopLyricLockPhaseTimer = null;
+};
+
+const resetDesktopLyricIgnoreMouseEventsCache = () => {
+  desktopLyricIgnoreMouseEventsKey = null;
+};
+
+const applyDesktopLyricIgnoreMouseEvents = (
+  ignore: boolean,
+  options?: { forward?: boolean; force?: boolean },
+) => {
+  const win = getDesktopLyricWindow();
+  if (!win || win.isDestroyed()) return;
+
+  const forward = Boolean(ignore && options?.forward);
+  const nextKey = `${ignore ? '1' : '0'}:${forward ? '1' : '0'}`;
+  if (!options?.force && desktopLyricIgnoreMouseEventsKey === nextKey) return;
+  desktopLyricIgnoreMouseEventsKey = nextKey;
+  win.setIgnoreMouseEvents(ignore, forward ? { forward: true } : undefined);
 };
 
 const DESKTOP_LYRIC_RENDERER_COMMANDS = new Set<DesktopLyricCommand>([
@@ -162,10 +188,8 @@ const scheduleDesktopLyricBoundsReconcile = () => {
 };
 
 const setDesktopLyricForward = (enableForward: boolean) => {
-  const win = getDesktopLyricWindow();
-  if (!win || win.isDestroyed()) return;
   if (!snapshot.settings.locked) return;
-  win.setIgnoreMouseEvents(true, enableForward ? { forward: true } : undefined);
+  applyDesktopLyricIgnoreMouseEvents(true, { forward: enableForward });
 };
 
 const sendDesktopLyricHover = (hovered: boolean) => {
@@ -208,7 +232,7 @@ const pollDesktopLyricHover = () => {
   desktopLyricCursorInside = inside;
   // 鼠标离开窗口时强制恢复穿透，避免之前停留在解锁按钮上取消的穿透残留
   if (!inside) {
-    win.setIgnoreMouseEvents(true, { forward: true });
+    applyDesktopLyricIgnoreMouseEvents(true, { forward: true, force: true });
   }
   sendDesktopLyricHover(inside);
 };
@@ -226,10 +250,10 @@ const applyDesktopLyricInteractionState = () => {
   const win = getDesktopLyricWindow();
   if (!win || win.isDestroyed()) return;
   if (desktopLyricIsLocked) {
-    win.setIgnoreMouseEvents(true, { forward: true });
+    applyDesktopLyricIgnoreMouseEvents(true, { forward: true, force: true });
     startDesktopLyricHoverPolling();
   } else {
-    win.setIgnoreMouseEvents(false);
+    applyDesktopLyricIgnoreMouseEvents(false, { force: true });
     stopDesktopLyricHoverPolling();
     // 解锁后通知渲染进程隐藏解锁按钮，避免残留 hover 状态
     sendDesktopLyricHover(false);
@@ -351,6 +375,7 @@ export const ensureDesktopLyricWindow = async () => {
     clearWindowPresentationTimers();
     stopDesktopLyricHoverPolling();
     unbindMainWindowEvents();
+    resetDesktopLyricIgnoreMouseEventsCache();
     withDesktopLyricWindow(null);
     desktopLyricClosingFromFailure = false;
 
@@ -427,6 +452,7 @@ export const destroyDesktopLyricWindow = () => {
   clearWindowPresentationTimers();
   stopDesktopLyricHoverPolling();
   unbindMainWindowEvents();
+  resetDesktopLyricIgnoreMouseEventsCache();
   withDesktopLyricWindow(null);
   win.destroy();
 };
@@ -521,18 +547,33 @@ export const registerDesktopLyricHandlers = () => {
     (_event, payload: DesktopLyricSnapshotPatch) => {
       if (!payload) return;
       let shouldRefreshMenus = false;
+      let desktopPatch: DesktopLyricSnapshotPatch = {};
       if (payload.playback !== undefined) {
         const nextLyricsTrackId = payload.playback?.lyricHash || payload.playback?.trackId || null;
+        const trackChanged = nextLyricsTrackId !== snapshot.lyricsTrackId;
         snapshot = {
           ...snapshot,
           playback: payload.playback,
-          ...(nextLyricsTrackId !== snapshot.lyricsTrackId
+          ...(trackChanged
             ? {
                 lyricsTrackId: nextLyricsTrackId,
                 lyricsRevision: snapshot.lyricsRevision + 1,
                 lyrics: [],
                 currentIndex: -1,
                 lyricTimeOffset: 0,
+              }
+            : {}),
+        };
+        desktopPatch = {
+          ...desktopPatch,
+          playback: snapshot.playback,
+          ...(trackChanged
+            ? {
+                lyricsTrackId: snapshot.lyricsTrackId,
+                lyricsRevision: snapshot.lyricsRevision,
+                lyrics: snapshot.lyrics,
+                currentIndex: snapshot.currentIndex,
+                lyricTimeOffset: snapshot.lyricTimeOffset,
               }
             : {}),
         };
@@ -549,22 +590,32 @@ export const registerDesktopLyricHandlers = () => {
             lyricsRevision: snapshot.lyricsRevision + 1,
             lyrics: payload.lyrics,
           };
+          desktopPatch = {
+            ...desktopPatch,
+            lyricsTrackId: snapshot.lyricsTrackId,
+            lyricsRevision: snapshot.lyricsRevision,
+            lyrics: snapshot.lyrics,
+          };
         }
       } else if (payload.lyricsTrackId !== undefined) {
         const activeLyricsTrackId =
           snapshot.playback?.lyricHash || snapshot.playback?.trackId || null;
         if (payload.lyricsTrackId === activeLyricsTrackId) {
           snapshot = { ...snapshot, lyricsTrackId: payload.lyricsTrackId };
+          desktopPatch = { ...desktopPatch, lyricsTrackId: snapshot.lyricsTrackId };
         }
       }
       if (payload.currentIndex !== undefined) {
         snapshot = { ...snapshot, currentIndex: payload.currentIndex };
+        desktopPatch = { ...desktopPatch, currentIndex: snapshot.currentIndex };
       }
       if (payload.lyricTimeOffset !== undefined) {
         snapshot = { ...snapshot, lyricTimeOffset: Number(payload.lyricTimeOffset) || 0 };
+        desktopPatch = { ...desktopPatch, lyricTimeOffset: snapshot.lyricTimeOffset };
       }
       if (payload.lyricSyncWarning !== undefined) {
         snapshot = { ...snapshot, lyricSyncWarning: payload.lyricSyncWarning };
+        desktopPatch = { ...desktopPatch, lyricSyncWarning: snapshot.lyricSyncWarning };
       }
       if (payload.settings) {
         const currentSettings = snapshot.settings;
@@ -574,7 +625,11 @@ export const registerDesktopLyricHandlers = () => {
           currentSettings.locked !== nextSettings.locked;
         snapshot = { ...snapshot, settings: nextSettings };
       }
-      sendSnapshot(payload.settings ? 'settings' : 'desktop');
+      if (payload.settings) {
+        sendSnapshot('settings');
+      } else {
+        sendSnapshot('desktop', desktopPatch);
+      }
       if (shouldRefreshMenus) refreshTrayMenus();
     },
   );
@@ -582,12 +637,10 @@ export const registerDesktopLyricHandlers = () => {
   ipcRegistry.registerListener(
     'desktop-lyric:set-ignore-mouse-events',
     (_event, ignore: boolean) => {
-      const win = getDesktopLyricWindow();
-      if (!win || win.isDestroyed()) return;
       if (ignore) {
-        win.setIgnoreMouseEvents(true, { forward: true });
+        applyDesktopLyricIgnoreMouseEvents(true, { forward: true });
       } else {
-        win.setIgnoreMouseEvents(false);
+        applyDesktopLyricIgnoreMouseEvents(false);
       }
     },
   );

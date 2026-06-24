@@ -93,6 +93,8 @@ const excludeFromCache = [
   'lyric-page',
   'song-detail-page',
   'mv-detail',
+  'share-resolve-page',
+  'plugin-share-resolve-page',
   'profile',
   'settings-page',
 ];

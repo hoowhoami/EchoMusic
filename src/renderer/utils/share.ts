@@ -153,7 +153,6 @@ export const buildShareResolveRoute = (target: ShareTarget) => {
   const title = cleanId(target.title);
   if (target.type === 'plugin') {
     const pluginQuery: Record<string, string> = {
-      view: 'marketplace',
       pluginId: id,
       ...(title ? { pluginName: title } : {}),
     };
@@ -161,7 +160,7 @@ export const buildShareResolveRoute = (target: ShareTarget) => {
       pluginQuery[key] = value;
     });
     return {
-      name: 'plugin-management',
+      name: 'plugin-share-resolve',
       query: pluginQuery,
     };
   }

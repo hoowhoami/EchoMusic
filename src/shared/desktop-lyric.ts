@@ -94,13 +94,58 @@ export type DesktopLyricSnapshotPatch = Partial<
     DesktopLyricSnapshot,
     | 'playback'
     | 'lyricsTrackId'
+    | 'lyricsRevision'
     | 'lyrics'
     | 'currentIndex'
     | 'lyricTimeOffset'
+    | 'lockPhase'
     | 'lyricSyncWarning'
   >
 > & {
   settings?: Partial<DesktopLyricSettings>;
+};
+
+export type DesktopLyricSnapshotMessage = DesktopLyricSnapshot | DesktopLyricSnapshotPatch;
+
+export const isDesktopLyricFullSnapshot = (
+  value: DesktopLyricSnapshotMessage,
+): value is DesktopLyricSnapshot =>
+  Boolean(
+    value &&
+    typeof value === 'object' &&
+    'playback' in value &&
+    'lyricsTrackId' in value &&
+    'lyricsRevision' in value &&
+    'lyrics' in value &&
+    'currentIndex' in value &&
+    'lyricTimeOffset' in value &&
+    'settings' in value &&
+    'lockPhase' in value,
+  );
+
+export const mergeDesktopLyricSnapshotMessage = (
+  current: DesktopLyricSnapshot | null | undefined,
+  message: DesktopLyricSnapshotMessage,
+): DesktopLyricSnapshot | null => {
+  if (isDesktopLyricFullSnapshot(message)) return message;
+  if (!current) return null;
+
+  return {
+    ...current,
+    ...(message.playback !== undefined ? { playback: message.playback } : {}),
+    ...(message.lyricsTrackId !== undefined ? { lyricsTrackId: message.lyricsTrackId } : {}),
+    ...(message.lyricsRevision !== undefined ? { lyricsRevision: message.lyricsRevision } : {}),
+    ...(message.lyrics !== undefined ? { lyrics: message.lyrics } : {}),
+    ...(message.currentIndex !== undefined ? { currentIndex: message.currentIndex } : {}),
+    ...(message.lyricTimeOffset !== undefined
+      ? { lyricTimeOffset: Number(message.lyricTimeOffset) || 0 }
+      : {}),
+    ...(message.lockPhase !== undefined ? { lockPhase: message.lockPhase } : {}),
+    ...(message.lyricSyncWarning !== undefined
+      ? { lyricSyncWarning: message.lyricSyncWarning }
+      : {}),
+    ...(message.settings ? { settings: { ...current.settings, ...message.settings } } : {}),
+  };
 };
 
 export type DesktopLyricCommand =

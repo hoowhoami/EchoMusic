@@ -1,0 +1,824 @@
+@reference "@/style.css";
+
+.plugin-management-page {
+  position: relative;
+  background: var(--color-bg-main);
+}
+
+.plugin-local-install-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+  background: color-mix(in srgb, var(--color-bg-main) 82%, transparent);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  pointer-events: none;
+}
+
+.plugin-local-install-panel {
+  width: min(22rem, 100%);
+  min-height: 11rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  padding: 1.5rem;
+  border-radius: 8px;
+  border: 1px dashed color-mix(in srgb, var(--color-primary) 54%, var(--border-subtle));
+  background: color-mix(in srgb, var(--color-bg-elevated) 96%, transparent);
+  box-shadow: 0 18px 48px color-mix(in srgb, var(--color-text-main) 14%, transparent);
+  color: var(--color-text-main);
+  text-align: center;
+}
+
+.plugin-local-install-icon {
+  width: 3.25rem;
+  height: 3.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--color-primary) 12%, transparent);
+  color: var(--color-primary);
+}
+
+.plugin-local-install-panel strong {
+  font-size: 0.95rem;
+  font-weight: 800;
+}
+
+.plugin-local-install-panel span {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+}
+
+/* 页面头部 - 与 Settings 保持一致 */
+.plugin-header {
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.plugin-header-icon {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  background: var(--color-primary);
+  color: white;
+}
+
+.plugin-safe-mode-control {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.375rem 0.75rem;
+  border-radius: 8px;
+  background: var(--control-bg);
+  border: 1px solid var(--control-border);
+  color: var(--color-text-main);
+}
+
+.plugin-view-tabs {
+  display: inline-grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.25rem;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--control-bg) 92%, var(--color-text-main) 4%);
+  border: 1px solid var(--control-border);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.plugin-view-tab {
+  height: 2.125rem;
+  min-width: 8.25rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  padding: 0 0.625rem;
+  border-radius: 8px;
+  color: var(--color-text-secondary);
+  font-size: 0.75rem;
+  font-weight: 800;
+  transition:
+    background 0.18s ease,
+    color 0.18s ease,
+    box-shadow 0.18s ease;
+}
+
+.plugin-view-tab:hover {
+  color: var(--color-text-main);
+  background: var(--row-hover-bg);
+}
+
+.plugin-view-tab span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.plugin-view-tab small {
+  min-width: 1.375rem;
+  height: 1.25rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 0.375rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, currentColor 12%, transparent);
+  font-size: 0.6875rem;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.plugin-view-tab.is-active {
+  color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 12%, var(--color-bg-elevated));
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.06),
+    inset 0 0 0 1px color-mix(in srgb, var(--color-primary) 18%, transparent);
+}
+
+.plugin-content {
+  padding-top: 1.25rem;
+}
+
+.marketplace-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.875rem;
+}
+
+.marketplace-search {
+  width: min(22rem, 100%);
+}
+
+.marketplace-source-select {
+  width: min(17rem, 100%);
+  min-width: 14rem;
+}
+
+.marketplace-source-errors {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 2.25rem;
+  padding: 0.5rem 0.75rem;
+  margin-bottom: 0.875rem;
+  border-radius: 8px;
+  border: 1px solid rgba(245, 158, 11, 0.22);
+  background: rgba(245, 158, 11, 0.08);
+  color: rgb(180, 83, 9);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.dark .marketplace-source-errors {
+  color: rgb(251, 191, 36);
+}
+
+.plugin-empty-state {
+  @apply py-16 text-center flex flex-col items-center justify-center;
+}
+
+.plugin-content-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.875rem;
+}
+
+.plugin-content-heading h2 {
+  margin: 0;
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: var(--color-text-main);
+}
+
+.plugin-content-heading span {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+}
+
+.plugin-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 0.875rem;
+}
+
+.plugin-card {
+  min-height: 212px;
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.875rem;
+  transition:
+    border-color 0.18s ease,
+    box-shadow 0.18s ease,
+    transform 0.18s ease;
+}
+
+.plugin-card:hover {
+  border-color: color-mix(in srgb, var(--color-primary) 45%, var(--control-border));
+  box-shadow: 0 6px 18px color-mix(in srgb, var(--color-text-main) 6%, transparent);
+  transform: translateY(-1px);
+}
+
+.plugin-card.is-disabled {
+  opacity: 0.72;
+}
+
+.plugin-card.is-error {
+  border-color: color-mix(in srgb, var(--state-danger) 30%, var(--border-subtle));
+  background: var(--state-danger-bg-soft);
+}
+
+.plugin-card.is-warning {
+  border-color: color-mix(in srgb, var(--state-warning) 34%, var(--border-subtle));
+  background: var(--state-warning-bg-soft);
+}
+
+.plugin-card-main {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.875rem;
+  min-width: 0;
+}
+
+.plugin-card-media {
+  width: 56px;
+  height: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  background:
+    linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--plugin-accent) 18%, transparent),
+      color-mix(in srgb, var(--plugin-accent) 7%, transparent)
+    ),
+    var(--color-bg-main);
+  border: 1px solid color-mix(in srgb, var(--plugin-accent) 18%, var(--border-subtle));
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+.plugin-card-media.has-icon {
+  background: transparent;
+  border: 0;
+}
+
+.plugin-card-icon {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.plugin-card-initial {
+  color: var(--plugin-accent);
+  font-size: 1.35rem;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.plugin-card-summary {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.plugin-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.plugin-card-name {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--color-text-main);
+  margin: 0;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.plugin-card-failure-btn {
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 999px;
+  color: var(--color-red-500);
+  background: var(--state-danger-bg-soft);
+  flex-shrink: 0;
+  cursor: pointer;
+  transition:
+    color 0.16s ease,
+    background-color 0.16s ease,
+    transform 0.16s ease;
+}
+
+.plugin-card-failure-btn:hover {
+  color: white;
+  background: var(--color-red-500);
+  transform: translateY(-1px);
+}
+
+.plugin-card-failure-btn.is-historical {
+  color: var(--state-warning);
+  background: var(--state-warning-bg-soft);
+}
+
+.plugin-card-failure-btn.is-warning {
+  color: var(--state-warning);
+  background: var(--state-warning-bg-soft);
+}
+
+.plugin-card-failure-btn.is-historical:hover {
+  color: white;
+  background: var(--state-warning);
+}
+
+.plugin-card-failure-btn.is-warning:hover {
+  color: white;
+  background: var(--state-warning);
+}
+
+.plugin-status-badge {
+  @apply rounded-full px-2 py-0.5 text-[10px] font-semibold text-text-secondary bg-text-secondary/10 shrink-0;
+  line-height: 1.35;
+}
+
+.plugin-status-badge.is-active {
+  @apply text-primary bg-primary/10;
+}
+
+.plugin-status-badge.is-error {
+  @apply text-red-500 bg-red-500/10;
+}
+
+.plugin-status-badge.is-safe {
+  @apply text-amber-500 bg-amber-500/10;
+}
+
+.plugin-status-badge.is-warning {
+  @apply text-amber-500 bg-amber-500/10;
+}
+
+.plugin-card-description {
+  min-height: 42px;
+  font-size: 0.8125rem;
+  color: var(--color-text-secondary);
+  line-height: 1.6;
+  margin: 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.plugin-card-meta {
+  font-size: 0.75rem;
+  color: var(--color-text-secondary);
+  opacity: 0.8;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.plugin-card-id {
+  margin-top: auto;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: color-mix(in srgb, var(--color-text-secondary) 82%, transparent);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.marketplace-card {
+  min-height: 236px;
+}
+
+.marketplace-card.is-shared-target {
+  border-color: color-mix(in srgb, var(--color-primary) 72%, var(--border-subtle));
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--color-primary) 14%, transparent),
+    0 12px 28px color-mix(in srgb, var(--color-primary) 12%, transparent);
+}
+
+.marketplace-tags,
+.plugin-feature-tags {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+  min-height: 1.5rem;
+}
+
+.marketplace-tags span,
+.plugin-feature-tags span {
+  max-width: 9rem;
+  height: 1.5rem;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 0.5rem;
+  border-radius: 6px;
+  background: var(--control-muted-bg);
+  color: var(--color-text-secondary);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.plugin-feature-tags span {
+  background: color-mix(in srgb, var(--color-primary) 10%, var(--control-muted-bg));
+  color: color-mix(in srgb, var(--color-primary) 78%, var(--color-text-main));
+}
+
+.marketplace-install-btn {
+  min-width: 5rem;
+  gap: 0.375rem;
+}
+
+.plugin-card-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  font-size: 0.75rem;
+  color: var(--color-red-500);
+  padding: 0.5rem;
+  background: var(--state-danger-bg-soft);
+  border-radius: 8px;
+}
+
+.plugin-card-error.is-warning {
+  color: rgb(180, 83, 9);
+  background: rgba(245, 158, 11, 0.08);
+  border: 1px solid rgba(245, 158, 11, 0.18);
+}
+
+.dark .plugin-card-error.is-warning {
+  color: rgb(251, 191, 36);
+}
+
+.plugin-card-error svg {
+  flex-shrink: 0;
+  margin-top: 0.1rem;
+}
+
+.plugin-card-error span {
+  min-width: 0;
+  word-break: break-word;
+}
+
+.plugin-card-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  min-height: 33px;
+  margin-top: 0.125rem;
+  padding-top: 0.875rem;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.plugin-card-action-group {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.plugin-card-primary-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  min-width: 0;
+}
+
+.plugin-settings-btn {
+  @apply text-text-main hover:text-primary;
+  gap: 0.25rem;
+}
+
+.plugin-settings-btn.is-unavailable {
+  color: color-mix(in srgb, var(--color-text-secondary) 78%, transparent);
+}
+
+.plugin-remove-btn {
+  @apply text-primary hover:text-primary-hover;
+}
+
+.plugin-card.is-error .plugin-remove-btn {
+  @apply text-red-500 hover:text-red-400;
+}
+
+.dialog-content.plugin-source-dialog {
+  width: min(680px, 92vw);
+  max-height: min(720px, calc(100vh - 120px));
+}
+
+.plugin-source-dialog-body {
+  padding-right: 1.25rem;
+}
+
+.plugin-source-manager {
+  display: grid;
+  gap: 1rem;
+}
+
+.plugin-source-add {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 0.9fr) auto;
+  gap: 0.625rem;
+  align-items: center;
+}
+
+.plugin-source-list {
+  display: grid;
+  gap: 0.625rem;
+}
+
+.plugin-source-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.875rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  background: var(--color-bg-elevated);
+}
+
+.plugin-source-main {
+  min-width: 0;
+  display: grid;
+  gap: 0.25rem;
+}
+
+.plugin-source-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.plugin-source-title strong {
+  min-width: 0;
+  color: var(--color-text-main);
+  font-size: 0.875rem;
+  font-weight: 800;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.plugin-source-title span {
+  height: 1.25rem;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 0.375rem;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--color-primary) 12%, transparent);
+  color: var(--color-primary);
+  font-size: 0.6875rem;
+  font-weight: 800;
+}
+
+.plugin-source-main p,
+.plugin-source-main small {
+  color: var(--color-text-secondary);
+  font-size: 0.75rem;
+}
+
+.plugin-source-main p {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.plugin-source-error {
+  color: rgb(180, 83, 9);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.dark .plugin-source-error {
+  color: rgb(251, 191, 36);
+}
+
+.plugin-source-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.plugin-source-delete-btn {
+  width: 2rem;
+  min-width: 2rem;
+  padding: 0;
+  color: var(--color-text-secondary);
+}
+
+.plugin-source-empty {
+  min-height: 5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-secondary);
+  font-size: 0.8125rem;
+  font-weight: 700;
+  border: 1px dashed var(--border-subtle);
+  border-radius: 8px;
+}
+
+.plugin-failure-detail-dialog {
+  width: min(560px, 92vw);
+}
+
+.plugin-failure-detail-body {
+  padding-right: 1.125rem;
+}
+
+.plugin-failure-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 0.875rem;
+}
+
+.plugin-failure-detail-grid {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  gap: 0.5rem 0.875rem;
+  padding: 0.875rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  background: var(--control-muted-bg);
+}
+
+.plugin-failure-detail-grid span {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--color-text-secondary);
+}
+
+.plugin-failure-detail-grid strong {
+  min-width: 0;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--color-text-main);
+  word-break: break-word;
+}
+
+.plugin-failure-detail-block {
+  padding: 0.875rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  background: var(--control-muted-bg);
+}
+
+.plugin-failure-detail-block h4 {
+  margin: 0 0 0.5rem;
+  font-size: 0.75rem;
+  font-weight: 800;
+  color: var(--color-text-main);
+}
+
+.plugin-failure-detail-block p,
+.plugin-failure-detail-block pre {
+  margin: 0;
+  color: var(--color-text-secondary);
+}
+
+.plugin-failure-detail-block p {
+  font-size: 0.8125rem;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.plugin-failure-detail-block pre {
+  max-height: 220px;
+  overflow: auto;
+  font-size: 0.6875rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.plugin-failure-detail-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+}
+
+.dialog-content.plugin-settings-dialog {
+  width: min(640px, 92vw);
+  max-height: min(760px, calc(100vh - 120px));
+  --plugin-settings-dialog-bg: color-mix(in srgb, var(--surface-dialog-base) 96%, transparent);
+  background: var(--plugin-settings-dialog-bg);
+  -webkit-backdrop-filter: blur(18px) saturate(140%);
+  backdrop-filter: blur(18px) saturate(140%);
+}
+
+.dark .dialog-content.plugin-settings-dialog {
+  --plugin-settings-dialog-bg: color-mix(in srgb, var(--surface-dialog-base) 98%, transparent);
+}
+
+.plugin-settings-dialog-body {
+  padding-right: 1.125rem;
+}
+
+.plugin-settings-content {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.plugin-settings-empty {
+  padding: 2rem 0;
+  text-align: center;
+  font-size: 0.8125rem;
+  color: var(--color-text-secondary);
+}
+
+/* 错误提示卡片 */
+.plugin-failure-card {
+  @apply flex gap-2.5 rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2.5;
+}
+
+.plugin-failure-icon {
+  @apply w-8 h-8 rounded-lg bg-amber-500/15 text-amber-500 flex items-center justify-center shrink-0;
+}
+
+.plugin-failure-title {
+  @apply text-[13px] font-semibold text-text-main;
+}
+
+.plugin-failure-meta {
+  @apply mt-0.5 text-[11px] text-text-secondary;
+}
+
+.plugin-failure-message {
+  @apply mt-0.5 text-[11px] text-amber-600 dark:text-amber-400 whitespace-pre-wrap break-words;
+}
+
+@media (max-width: 720px) {
+  .plugin-view-tabs {
+    width: 100%;
+  }
+
+  .plugin-view-tab {
+    min-width: 0;
+  }
+
+  .marketplace-search,
+  .marketplace-source-select {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .plugin-source-add {
+    grid-template-columns: 1fr;
+  }
+
+  .plugin-source-row {
+    flex-direction: column;
+  }
+
+  .plugin-source-actions {
+    width: 100%;
+    justify-content: space-between;
+  }
+}

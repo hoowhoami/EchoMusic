@@ -8,6 +8,7 @@ import type {
   DesktopLyricCommand,
   DesktopLyricSettings,
   DesktopLyricSnapshot,
+  DesktopLyricSnapshotMessage,
   DesktopLyricSnapshotPatch,
 } from '../shared/desktop-lyric';
 import type {
@@ -335,9 +336,11 @@ contextBridge.exposeInMainWorld('electron', {
       invokeWithPlainPayload<DesktopLyricSnapshot>('desktop-lyric:update-settings', payload),
     syncSnapshot: (payload: DesktopLyricSnapshotPatch) =>
       sendWithPlainPayload('desktop-lyric:sync-snapshot', payload),
-    onSnapshot: (func: (snapshot: DesktopLyricSnapshot) => void) => {
-      const listener = (_event: Electron.IpcRendererEvent, snapshotPayload: DesktopLyricSnapshot) =>
-        func(snapshotPayload);
+    onSnapshot: (func: (snapshot: DesktopLyricSnapshotMessage) => void) => {
+      const listener = (
+        _event: Electron.IpcRendererEvent,
+        snapshotPayload: DesktopLyricSnapshotMessage,
+      ) => func(snapshotPayload);
       ipcRenderer.on('desktop-lyric:snapshot', listener);
       return () => ipcRenderer.removeListener('desktop-lyric:snapshot', listener);
     },

@@ -22,7 +22,11 @@ import {
   iconRotateCw,
   iconX,
 } from '@/icons';
-import type { DesktopLyricSnapshot, LyricLinePayload } from '../../shared/desktop-lyric';
+import {
+  mergeDesktopLyricSnapshotMessage,
+  type DesktopLyricSnapshot,
+  type LyricLinePayload,
+} from '../../shared/desktop-lyric';
 import { buildFontFamily } from '../../shared/font';
 
 // ── 渲染行类型 ──
@@ -259,6 +263,13 @@ const fontWeight = computed(() => (settings.value?.bold ? 700 : 400));
 
 // hover 状态
 const isHovered = ref(false);
+let lastRequestedIgnoreMouseEvents: boolean | null = null;
+
+const setDesktopLyricIgnoreMouseEvents = (ignore: boolean, force = false) => {
+  if (!force && lastRequestedIgnoreMouseEvents === ignore) return;
+  lastRequestedIgnoreMouseEvents = ignore;
+  window.electron?.desktopLyric?.setIgnoreMouseEvents(ignore);
+};
 
 const handleMouseMove = (event: MouseEvent) => {
   const target = event.target as HTMLElement | null;
@@ -268,7 +279,7 @@ const handleMouseMove = (event: MouseEvent) => {
     // 鼠标离开由主进程光标轮询兜底重置（规避 forward 模式下 mouseleave 不可靠）
     isHovered.value = true;
     const isOnLockBtn = target?.closest('.lock-btn') !== null;
-    window.electron?.desktopLyric?.setIgnoreMouseEvents(!isOnLockBtn);
+    setDesktopLyricIgnoreMouseEvents(!isOnLockBtn);
     return;
   }
 
@@ -298,7 +309,7 @@ const handleMouseMove = (event: MouseEvent) => {
 const handleMouseLeave = () => {
   isHovered.value = false;
   if (isLocked.value) {
-    window.electron?.desktopLyric?.setIgnoreMouseEvents(true);
+    setDesktopLyricIgnoreMouseEvents(true);
   }
 };
 
@@ -661,7 +672,7 @@ const toggleLyricLock = () => {
   if (!isLocked.value) {
     // 即将变为锁定状态
     isHovered.value = false;
-    window.electron?.desktopLyric?.setIgnoreMouseEvents(true);
+    setDesktopLyricIgnoreMouseEvents(true, true);
   }
 };
 
@@ -741,7 +752,9 @@ onMounted(async () => {
   localFontSize.value = computedFontSize.value;
 
   disposeSnapshotListener =
-    window.electron?.desktopLyric?.onSnapshot((next) => {
+    window.electron?.desktopLyric?.onSnapshot((message) => {
+      const next = mergeDesktopLyricSnapshotMessage(snapshot.value, message);
+      if (!next) return;
       snapshot.value = next;
       // 每次收到 snapshot 都同步锚点，保持时间精度
       syncAnchor();

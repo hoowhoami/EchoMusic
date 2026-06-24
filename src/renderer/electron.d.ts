@@ -6,6 +6,7 @@ import type {
   DesktopLyricCommand,
   DesktopLyricSettings,
   DesktopLyricSnapshot,
+  DesktopLyricSnapshotMessage,
   DesktopLyricSnapshotPatch,
 } from '../shared/desktop-lyric';
 import type {
@@ -169,7 +170,7 @@ export interface IElectronAPI {
     toggleLock: () => Promise<DesktopLyricSnapshot>;
     updateSettings: (payload: Partial<DesktopLyricSettings>) => Promise<DesktopLyricSnapshot>;
     syncSnapshot: (payload: DesktopLyricSnapshotPatch) => void;
-    onSnapshot: (func: (snapshot: DesktopLyricSnapshot) => void) => () => void;
+    onSnapshot: (func: (snapshot: DesktopLyricSnapshotMessage) => void) => () => void;
     setIgnoreMouseEvents: (ignore: boolean) => void;
     onHover: (func: (hovered: boolean) => void) => () => void;
     command: (command: DesktopLyricCommand) => void;
