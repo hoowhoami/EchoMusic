@@ -32,7 +32,7 @@ import { useToastStore } from '@/stores/toast';
 import { PERSONAL_FM_QUEUE_ID, usePlaylistStore } from '@/stores/playlist';
 import { usePlayerStore } from '@/stores/player';
 import { useUserStore } from '@/stores/user';
-import { queueAndPlaySong } from '@/utils/playback';
+import { playSongInContext } from '@/utils/playback';
 import { isPlayableSong } from '@/utils/song';
 import { copyShareTarget, createSongShareTarget, isSongHashId } from '@/utils/share';
 import { iconList, iconPlay, iconShare } from '@/icons';
@@ -464,7 +464,7 @@ const handlePlaySong = async () => {
   }
 
   try {
-    const played = await queueAndPlaySong(playlistStore, playerStore, song);
+    const played = await playSongInContext(playlistStore, playerStore, song, [song]);
     if (!played) toastStore.unavailable('当前歌曲');
   } catch {
     toastStore.actionFailed('播放');

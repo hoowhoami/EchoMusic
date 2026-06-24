@@ -71,16 +71,20 @@ export async function getCloudSongUrl(hash: string): Promise<string | null> {
 /**
  * 搜索歌词
  * @param hash 歌曲 hash
- * @param duration 歌曲时长（毫秒），来自歌曲自身 duration（秒）转毫秒
- * @param keywords 搜索关键词（歌曲名），辅助提升匹配准确度
+ * @param options.duration 歌曲时长（毫秒），来自歌曲自身 duration（秒）转毫秒
+ * @param options.albumAudioId 歌曲的 album_audio_id，辅助提升匹配准确度
+ * @param options.man 是否返回多个歌词：'no' 获取默认歌词，'yes' 获取歌词候选列表
  */
-export function searchLyric(hash: string, duration?: number, keywords?: string) {
+export function searchLyric(
+  hash: string,
+  options?: { duration?: number; albumAudioId?: string | number; man?: 'yes' | 'no' },
+) {
   return request.get('/search/lyric', {
     params: {
       hash,
-      man: 'yes',
-      ...(duration ? { duration } : {}),
-      ...(keywords ? { keywords } : {}),
+      man: options?.man ?? 'no',
+      ...(options?.duration ? { duration: options.duration } : {}),
+      ...(options?.albumAudioId ? { album_audio_id: options.albumAudioId } : {}),
     },
   });
 }

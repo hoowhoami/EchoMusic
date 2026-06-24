@@ -33,7 +33,7 @@ export const buildMediaMeta = (track: Song | undefined): MediaSessionMeta | null
   );
 
   return {
-    title: track.name,
+    title: track.name ?? track.title ?? '',
     artist: track.artist || '未知歌手',
     album: track.album ?? '',
     artwork,
@@ -193,7 +193,7 @@ export const summarizeSong = (track: Song | undefined) => {
   if (!track) return null;
   return {
     id: String(track.id),
-    title: track.name,
+    title: track.name ?? track.title ?? '',
     artist: track.artist || '未知歌手',
     album: track.album || '',
     duration: track.duration || 0,

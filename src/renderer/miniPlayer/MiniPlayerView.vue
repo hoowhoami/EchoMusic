@@ -1023,7 +1023,7 @@ onUnmounted(() => {
                 :class="{ active: entry.track.trackId === currentQueueTrackId }"
                 :style="{ height: `${MINI_QUEUE_ITEM_HEIGHT}px` }"
                 :tabindex="isQueueOpen ? 0 : -1"
-                :title="`${entry.track.name} - ${entry.track.artist}`"
+                :title="`${entry.track.title} - ${entry.track.artist}`"
                 @click="playQueueTrack(entry.track.trackId)"
               >
                 <div class="mini-queue-cover">
@@ -1046,7 +1046,7 @@ onUnmounted(() => {
                   </span>
                 </div>
                 <div class="mini-queue-meta">
-                  <div class="mini-queue-song">{{ entry.track.name }}</div>
+                  <div class="mini-queue-song">{{ entry.track.title }}</div>
                   <div class="mini-queue-artist">{{ entry.track.artist }}</div>
                 </div>
               </button>

@@ -95,7 +95,7 @@ const durationScore = (a?: number, b?: number): number => {
 };
 
 const scoreCandidate = (ext: ExternalTrack, song: Song): number => {
-  const t = titleScore(ext.title, song.name);
+  const t = titleScore(ext.title, song.name ?? song.title ?? '');
   const a = artistScore(ext.artist, song.artist);
   const d = durationScore(ext.duration, song.duration);
   return 0.55 * t + 0.3 * a + 0.15 * d;

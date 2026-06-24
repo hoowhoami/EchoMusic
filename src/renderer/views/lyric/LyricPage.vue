@@ -496,6 +496,7 @@ onUnmounted(() => {
       :duration="playerStore.duration || currentTrack?.duration || 0"
       :title="currentTrack?.name"
       :artist="currentTrack?.artist"
+      :album-audio-id="currentTrack?.albumAudioId ?? currentTrack?.mixSongId"
     />
 
     <!-- 播放队列抽屉 -->

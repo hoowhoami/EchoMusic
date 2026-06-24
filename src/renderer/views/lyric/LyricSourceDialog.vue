@@ -20,6 +20,7 @@ const props = defineProps<{
   duration?: number;
   title?: string;
   artist?: string;
+  albumAudioId?: string | number;
 }>();
 
 const emit = defineEmits<{
@@ -128,11 +129,14 @@ const getStaticLyricLines = (raw: string) =>
     });
 
 const pickInitialCandidate = () => {
+  const preferred =
+    currentCandidateKey.value || manualCandidateKey.value || lyricStore.autoCandidateKey;
+  const matched =
+    preferred && candidates.value.some((candidate) => getLyricCandidateKey(candidate) === preferred)
+      ? preferred
+      : '';
   selectedKey.value =
-    currentCandidateKey.value ||
-    manualCandidateKey.value ||
-    lyricStore.autoCandidateKey ||
-    (candidates.value[0] ? getLyricCandidateKey(candidates.value[0]) : '');
+    matched || (candidates.value[0] ? getLyricCandidateKey(candidates.value[0]) : '');
 };
 
 const loadCandidates = async (force = false) => {
@@ -142,7 +146,7 @@ const loadCandidates = async (force = false) => {
     const previousSelectedKey = selectedKey.value;
     await lyricStore.fetchLyricCandidates(normalizedHash.value, {
       duration: durationMs.value || undefined,
-      keywords: props.title || undefined,
+      albumAudioId: props.albumAudioId || undefined,
       force,
     });
     pickInitialCandidate();
@@ -236,7 +240,7 @@ const restoreAuto = async () => {
   try {
     await lyricStore.restoreAutoLyric(normalizedHash.value, {
       duration: durationMs.value || undefined,
-      keywords: props.title || undefined,
+      albumAudioId: props.albumAudioId || undefined,
     });
     pickInitialCandidate();
     toastStore.success('已改为智能推荐');
@@ -249,10 +253,11 @@ const restoreAuto = async () => {
 };
 
 watch(
-  () => open.value,
-  (value) => {
-    if (value) void loadCandidates(false);
+  [() => open.value, normalizedHash],
+  ([isOpen, hash]) => {
+    if (isOpen && hash) void loadCandidates(false);
   },
+  { immediate: true },
 );
 
 watch(selectedKey, () => {

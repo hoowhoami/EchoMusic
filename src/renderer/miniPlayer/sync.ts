@@ -131,7 +131,7 @@ const buildPlaybackPayload = (): MiniPlayerPlaybackPayload | null => {
 
   return {
     trackId,
-    title: String(track.name || '未知歌曲'),
+    title: String(track.name || track.title || '未知歌曲'),
     artist: resolveSongArtist(track),
     album: String(track.album ?? track.albumName ?? ''),
     coverUrl: String(track.coverUrl || track.cover || ''),
@@ -159,7 +159,7 @@ const buildQueuePayload = (): MiniPlayerQueuePayload => {
     currentTrackId,
     tracks: queue.songs.map((song) => ({
       trackId: String(song.id),
-      title: String(song.name || '未知歌曲'),
+      title: String(song.name || song.title || '未知歌曲'),
       artist: resolveSongArtist(song),
       coverUrl: String(song.coverUrl || song.cover || ''),
     })),

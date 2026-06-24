@@ -734,11 +734,34 @@ export const useLyricStore = defineStore('lyric', {
       this.hasRomanization = parsed.hasRomanization;
       this.tips = parsed.tips;
     },
+    // 默认歌词解析（man=no）：仅返回最佳匹配候选，不触碰弹窗候选列表状态
+    async resolveDefaultLyricTarget(
+      hash: string,
+      options?: { duration?: number; albumAudioId?: string | number },
+    ): Promise<LyricSearchCandidate | null> {
+      const normalizedHash = String(hash ?? '').trim();
+      if (!normalizedHash) return null;
+
+      const searchResult = normalizeSearchPayload(
+        await searchLyric(normalizedHash, {
+          duration: options?.duration,
+          albumAudioId: options?.albumAudioId,
+          man: 'no',
+        }),
+      );
+      const candidates =
+        Array.isArray(searchResult?.candidates) && searchResult.candidates.length > 0
+          ? searchResult.candidates
+          : Array.isArray(searchResult?.info)
+            ? searchResult.info
+            : [];
+      return pickDefaultCandidate(candidates);
+    },
     async fetchLyricCandidates(
       hash: string,
       options?: {
         duration?: number;
-        keywords?: string;
+        albumAudioId?: string | number;
         force?: boolean;
         hydratePreviews?: boolean;
       },
@@ -751,7 +774,11 @@ export const useLyricStore = defineStore('lyric', {
       }
 
       const searchResult = normalizeSearchPayload(
-        await searchLyric(normalizedHash, options?.duration, options?.keywords),
+        await searchLyric(normalizedHash, {
+          duration: options?.duration,
+          albumAudioId: options?.albumAudioId,
+          man: 'yes',
+        }),
       );
       const candidates = sortCandidates(
         Array.isArray(searchResult?.candidates) && searchResult.candidates.length > 0
@@ -760,10 +787,27 @@ export const useLyricStore = defineStore('lyric', {
             ? searchResult.info
             : [],
       );
-      const autoCandidate = pickDefaultCandidate(candidates);
+
+      // 智能推荐标记“默认歌词”：再取一次 man=no 的最佳匹配，按候选 id 在列表中定位。
+      // accesskey 跨请求可能变化，故只能用 id 匹配；匹配不到时回退为列表首条。
+      const defaultTarget = await this.resolveDefaultLyricTarget(normalizedHash, {
+        duration: options?.duration,
+        albumAudioId: options?.albumAudioId,
+      });
+      const defaultId = defaultTarget?.id != null ? String(defaultTarget.id) : '';
+      const autoCandidate =
+        (defaultId
+          ? candidates.find((candidate) => String(candidate.id ?? '') === defaultId)
+          : null) ?? pickDefaultCandidate(candidates);
+
+      // 智能推荐（默认歌词）排到列表首位，其余保持原始顺序
+      const orderedCandidates =
+        autoCandidate && candidates[0] !== autoCandidate
+          ? [autoCandidate, ...candidates.filter((candidate) => candidate !== autoCandidate)]
+          : candidates;
 
       this.candidateHash = normalizedHash;
-      this.candidates = candidates;
+      this.candidates = orderedCandidates;
       this.candidatePreviewMap = {};
       this.candidateDetailMap = {};
       this.autoCandidateKey = autoCandidate ? getLyricCandidateKey(autoCandidate) : '';
@@ -850,14 +894,17 @@ export const useLyricStore = defineStore('lyric', {
       }
       return true;
     },
-    async restoreAutoLyric(hash: string, options?: { duration?: number; keywords?: string }) {
+    async restoreAutoLyric(
+      hash: string,
+      options?: { duration?: number; albumAudioId?: string | number },
+    ) {
       const normalizedHash = String(hash ?? '').trim();
       if (!normalizedHash) return;
       delete this.manualLyricMap[normalizedHash];
       this.currentCandidateKey = '';
       await this.fetchLyrics(normalizedHash, {
         duration: options?.duration,
-        keywords: options?.keywords,
+        albumAudioId: options?.albumAudioId,
         force: true,
       });
     },
@@ -899,7 +946,7 @@ export const useLyricStore = defineStore('lyric', {
       options?: {
         preserveCurrent?: boolean;
         duration?: number;
-        keywords?: string;
+        albumAudioId?: string | number;
         force?: boolean;
         track?: Song;
       },
@@ -983,17 +1030,15 @@ export const useLyricStore = defineStore('lyric', {
           return;
         }
 
-        const candidates = await this.fetchLyricCandidates(normalizedHash, {
-          duration: options?.duration,
-          keywords: options?.keywords ?? options?.track?.title ?? options?.track?.name ?? '',
-          force: true,
-        });
+        const albumAudioId =
+          options?.albumAudioId ?? options?.track?.albumAudioId ?? options?.track?.mixSongId;
+        const target = isUsableCandidate(manualCandidate)
+          ? manualCandidate
+          : await this.resolveDefaultLyricTarget(normalizedHash, {
+              duration: options?.duration,
+              albumAudioId,
+            });
         if (requestSerial !== this.requestSerial) return;
-
-        const target =
-          (isUsableCandidate(manualCandidate)
-            ? manualCandidate
-            : pickDefaultCandidate(candidates)) ?? null;
 
         if (!target?.id || !target.accesskey) {
           if (!preferPluginLyric && (await tryResolvePluginLyric())) {

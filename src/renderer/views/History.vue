@@ -975,7 +975,7 @@ onUnmounted(() => {
                         <Icon v-else :icon="iconMusic" width="18" height="18" />
                       </div>
                       <div class="history-song-rank-main">
-                        <div class="history-song-rank-title">{{ song.name }}</div>
+                        <div class="history-song-rank-title">{{ song.title }}</div>
                         <div class="history-song-rank-meta">
                           {{ song.artist }} · {{ song.lastPlayedLabel }}
                         </div>

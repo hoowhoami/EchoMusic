@@ -901,7 +901,7 @@ defineExpose({ scrollToActive, filteredCount: computed(() => filteredSongsRef.va
         role="menuitem"
         @click="handleContextMenuAction(ctxAddToPlaylist)"
       >
-        添加到歌单
+        添加到
       </button>
       <div v-if="extensionContextMenuItems.length > 0" class="song-context-separator"></div>
       <button
