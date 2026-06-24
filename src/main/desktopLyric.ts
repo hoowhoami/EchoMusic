@@ -54,6 +54,11 @@ let desktopLyricDisplayMetricsTimer: NodeJS.Timeout | null = null;
 let desktopLyricLockPhaseTimer: NodeJS.Timeout | null = null;
 let desktopLyricForwardRestoreTimer: NodeJS.Timeout | null = null;
 let desktopLyricMainWindowBound = false;
+// 锁定状态下用光标轮询可靠检测鼠标进出窗口，规避 forward 穿透模式下
+// mouseleave 不可靠（尤其 Windows）导致解锁按钮卡住不消失的问题
+let desktopLyricHoverPollTimer: NodeJS.Timeout | null = null;
+let desktopLyricCursorInside = false;
+const DESKTOP_LYRIC_HOVER_POLL_INTERVAL_MS = 150;
 
 app.on('before-quit', () => {
   desktopLyricAppIsQuitting = true;
@@ -163,13 +168,71 @@ const setDesktopLyricForward = (enableForward: boolean) => {
   win.setIgnoreMouseEvents(true, enableForward ? { forward: true } : undefined);
 };
 
+const sendDesktopLyricHover = (hovered: boolean) => {
+  const win = getDesktopLyricWindow();
+  if (!win || win.isDestroyed() || win.webContents.isDestroyed()) return;
+  try {
+    win.webContents.send('desktop-lyric:hover', hovered);
+  } catch {
+    // 窗口正在销毁时忽略
+  }
+};
+
+const stopDesktopLyricHoverPolling = () => {
+  if (desktopLyricHoverPollTimer) {
+    clearInterval(desktopLyricHoverPollTimer);
+    desktopLyricHoverPollTimer = null;
+  }
+  desktopLyricCursorInside = false;
+};
+
+const pollDesktopLyricHover = () => {
+  const win = getDesktopLyricWindow();
+  if (!win || win.isDestroyed() || !win.isVisible() || !desktopLyricIsLocked) {
+    stopDesktopLyricHoverPolling();
+    return;
+  }
+  let inside = false;
+  try {
+    const point = screen.getCursorScreenPoint();
+    const bounds = win.getBounds();
+    inside =
+      point.x >= bounds.x &&
+      point.x < bounds.x + bounds.width &&
+      point.y >= bounds.y &&
+      point.y < bounds.y + bounds.height;
+  } catch {
+    return;
+  }
+  if (inside === desktopLyricCursorInside) return;
+  desktopLyricCursorInside = inside;
+  // 鼠标离开窗口时强制恢复穿透，避免之前停留在解锁按钮上取消的穿透残留
+  if (!inside) {
+    win.setIgnoreMouseEvents(true, { forward: true });
+  }
+  sendDesktopLyricHover(inside);
+};
+
+const startDesktopLyricHoverPolling = () => {
+  if (desktopLyricHoverPollTimer) return;
+  desktopLyricCursorInside = false;
+  desktopLyricHoverPollTimer = setInterval(
+    pollDesktopLyricHover,
+    DESKTOP_LYRIC_HOVER_POLL_INTERVAL_MS,
+  );
+};
+
 const applyDesktopLyricInteractionState = () => {
   const win = getDesktopLyricWindow();
   if (!win || win.isDestroyed()) return;
   if (desktopLyricIsLocked) {
     win.setIgnoreMouseEvents(true, { forward: true });
+    startDesktopLyricHoverPolling();
   } else {
     win.setIgnoreMouseEvents(false);
+    stopDesktopLyricHoverPolling();
+    // 解锁后通知渲染进程隐藏解锁按钮，避免残留 hover 状态
+    sendDesktopLyricHover(false);
   }
 };
 
@@ -276,6 +339,7 @@ export const ensureDesktopLyricWindow = async () => {
     clearDesktopLyricLockPhaseTimer();
     clearWindowInteractionTimers();
     clearWindowPresentationTimers();
+    stopDesktopLyricHoverPolling();
     unbindMainWindowEvents();
     setDesktopLyricLockPhase('idle');
   });
@@ -285,6 +349,7 @@ export const ensureDesktopLyricWindow = async () => {
     clearDesktopLyricLockPhaseTimer();
     clearWindowInteractionTimers();
     clearWindowPresentationTimers();
+    stopDesktopLyricHoverPolling();
     unbindMainWindowEvents();
     withDesktopLyricWindow(null);
     desktopLyricClosingFromFailure = false;
@@ -360,6 +425,7 @@ export const destroyDesktopLyricWindow = () => {
   clearDesktopLyricLockPhaseTimer();
   clearWindowInteractionTimers();
   clearWindowPresentationTimers();
+  stopDesktopLyricHoverPolling();
   unbindMainWindowEvents();
   withDesktopLyricWindow(null);
   win.destroy();
@@ -644,6 +710,7 @@ export const cleanupDesktopLyric = () => {
   uninstallDesktopLyricNativeThemeListener();
   clearDesktopLyricDisplayMetricsTimer();
   clearDesktopLyricLockPhaseTimer();
+  stopDesktopLyricHoverPolling();
   if (desktopLyricForwardRestoreTimer) {
     clearTimeout(desktopLyricForwardRestoreTimer);
     desktopLyricForwardRestoreTimer = null;

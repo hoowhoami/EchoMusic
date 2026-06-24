@@ -1,7 +1,7 @@
 export const SHARE_SCHEME = 'echomusic';
 export const SHARE_WEB_BASE_URL = 'https://hoowhoami.github.io/EchoMusic/share/';
 
-export type ShareResourceType = 'song' | 'playlist' | 'artist' | 'album';
+export type ShareResourceType = 'song' | 'playlist' | 'artist' | 'album' | 'plugin';
 export type ShareTargetQuery = Record<string, string>;
 
 export interface ShareTarget {
@@ -24,13 +24,18 @@ const SHARE_TYPE_LABELS: Record<ShareResourceType, string> = {
   playlist: '歌单',
   artist: '歌手',
   album: '专辑',
+  plugin: '插件',
 };
 
 const SHARE_WEB_ORIGIN = new URL(SHARE_WEB_BASE_URL).origin;
 const SHARE_WEB_PATH = new URL(SHARE_WEB_BASE_URL).pathname.replace(/\/$/, '');
 
 const isShareResourceType = (value: string): value is ShareResourceType =>
-  value === 'song' || value === 'playlist' || value === 'artist' || value === 'album';
+  value === 'song' ||
+  value === 'playlist' ||
+  value === 'artist' ||
+  value === 'album' ||
+  value === 'plugin';
 
 const readText = (value: unknown): string => {
   if (value === undefined || value === null) return '';
@@ -38,6 +43,9 @@ const readText = (value: unknown): string => {
 };
 
 export const isSongShareId = (value: unknown): boolean => /^[a-f0-9]{32}$/i.test(readText(value));
+
+export const isPluginShareId = (value: unknown): boolean =>
+  /^[a-zA-Z0-9._-]+$/.test(readText(value));
 
 const stripTrailingUrlPunctuation = (value: string) =>
   value.trim().replace(/[)\]}>,，。！？；;]+$/g, '');
@@ -90,6 +98,7 @@ const parseCustomShareUrl = (value: string): ShareTarget | null => {
   const id = readText(segments.shift());
   if (!id) return null;
   if (typeText === 'song' && !isSongShareId(id)) return null;
+  if (typeText === 'plugin' && !isPluginShareId(id)) return null;
 
   return withQuery({ type: typeText, id }, readSearchParams(url.searchParams));
 };
@@ -105,6 +114,7 @@ const parseShareTargetParts = (
   const targetId = readText(id);
   if (!targetId) return null;
   if (typeText === 'song' && !isSongShareId(targetId)) return null;
+  if (typeText === 'plugin' && !isPluginShareId(targetId)) return null;
 
   return withQuery({ type: typeText, id: targetId }, query);
 };
@@ -116,6 +126,9 @@ export const buildShareUrl = (target: ShareTarget): string => {
   }
   if (target.type === 'song' && !isSongShareId(id)) {
     throw new Error('Invalid song share target');
+  }
+  if (target.type === 'plugin' && !isPluginShareId(id)) {
+    throw new Error('Invalid plugin share target');
   }
 
   const url = new URL(`${SHARE_SCHEME}://${target.type}/${encodeURIComponent(id)}`);
@@ -133,6 +146,9 @@ export const buildShareWebUrl = (target: ShareTarget): string => {
   }
   if (target.type === 'song' && !isSongShareId(id)) {
     throw new Error('Invalid song share target');
+  }
+  if (target.type === 'plugin' && !isPluginShareId(id)) {
+    throw new Error('Invalid plugin share target');
   }
 
   const url = new URL(SHARE_WEB_BASE_URL);

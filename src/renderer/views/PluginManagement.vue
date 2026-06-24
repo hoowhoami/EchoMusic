@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, nextTick, onMounted, ref, watch } from 'vue';
+import { useRoute } from 'vue-router';
 import { Icon } from '@iconify/vue';
 import Button from '@/components/ui/Button.vue';
 import Dialog from '@/components/ui/Dialog.vue';
@@ -17,6 +18,7 @@ import {
   iconPlugin,
   iconRefreshCw,
   iconSettings,
+  iconShare,
   iconShield,
   iconTrash,
   iconTriangleAlert,
@@ -35,6 +37,7 @@ import {
 import { pluginSettingsContributions } from '@/plugins/registry';
 import { useSettingStore } from '@/stores/setting';
 import { useToastStore } from '@/stores/toast';
+import { copyShareTarget, createPluginShareTarget, isPluginIdShareable } from '@/utils/share';
 import type {
   EchoPluginManifest,
   PluginFailureRecord,
@@ -43,6 +46,7 @@ import type {
   PluginMarketplaceSource,
 } from '../../shared/plugins';
 
+const route = useRoute();
 const toastStore = useToastStore();
 const settingStore = useSettingStore();
 const activeView = ref<'installed' | 'marketplace'>('installed');
@@ -65,8 +69,13 @@ const marketplaceSourceFilter = ref('all');
 const newSourceUrl = ref('');
 const newSourceName = ref('');
 const pendingUninstallPluginId = ref('');
+const pendingSharedInstallPluginKey = ref('');
+const highlightedMarketplacePluginKey = ref('');
 const settingsPluginId = ref('');
 const failureDetailPluginId = ref('');
+const sharedSourceTarget = ref<SharedPluginRouteTarget | null>(null);
+const isAddingSharedSource = ref(false);
+const handledSharedRouteKey = ref('');
 const busyPluginIds = ref<Set<string>>(new Set());
 const busyMarketplacePluginKeys = ref<Set<string>>(new Set());
 const busySourceIds = ref<Set<string>>(new Set());
@@ -76,6 +85,16 @@ const localInstallCount = ref(0);
 const marketplacePlugins = ref<PluginMarketplacePlugin[]>([]);
 const marketplaceSources = ref<PluginMarketplaceSource[]>([]);
 const marketplaceFetchedAt = ref(0);
+
+interface SharedPluginRouteTarget {
+  pluginId: string;
+  pluginName: string;
+  sourceId: string;
+  sourceUrl: string;
+  version: string;
+  checksum: string;
+  homepage: string;
+}
 
 const records = computed(() => pluginRuntimeState.records);
 const pluginCountLabel = computed(() => {
@@ -169,6 +188,13 @@ const failureDetailRecord = computed(
   () =>
     records.value.find((record) => record.descriptor.id === failureDetailPluginId.value) ?? null,
 );
+const pendingSharedInstallPlugin = computed(() =>
+  pendingSharedInstallPluginKey.value
+    ? (marketplacePlugins.value.find(
+        (plugin) => getMarketplacePluginKey(plugin) === pendingSharedInstallPluginKey.value,
+      ) ?? null)
+    : null,
+);
 const activeSettingsContribution = computed(() =>
   settingsPluginId.value
     ? (settingsContributionByPluginId.value.get(settingsPluginId.value) ?? null)
@@ -204,6 +230,60 @@ const showFailureDetailDialog = computed({
   set: (open: boolean) => {
     if (!open) failureDetailPluginId.value = '';
   },
+});
+const showSharedInstallDialog = computed({
+  get: () => Boolean(pendingSharedInstallPlugin.value),
+  set: (open: boolean) => {
+    if (!open) pendingSharedInstallPluginKey.value = '';
+  },
+});
+const showSharedSourceDialog = computed({
+  get: () => Boolean(sharedSourceTarget.value),
+  set: (open: boolean) => {
+    if (!open && !isAddingSharedSource.value) sharedSourceTarget.value = null;
+  },
+});
+const sharedSourceDialogTitle = computed(() => {
+  const target = sharedSourceTarget.value;
+  if (!target) return '添加插件源';
+  const existing = findMarketplaceSourceForSharedTarget(target);
+  return existing ? '启用插件源' : '添加插件源';
+});
+const sharedSourceDialogDescription = computed(() => {
+  const target = sharedSourceTarget.value;
+  if (!target) return '';
+  const name = target.pluginName || target.pluginId;
+  const existing = findMarketplaceSourceForSharedTarget(target);
+  if (existing) {
+    return `分享的插件「${name}」来自已停用的插件源，启用后会刷新在线插件列表。`;
+  }
+  return `分享的插件「${name}」来自新的插件源，添加后才能查看和安装。`;
+});
+const sharedSourceActionLabel = computed(() => {
+  const target = sharedSourceTarget.value;
+  if (!target) return '添加并刷新';
+  return findMarketplaceSourceForSharedTarget(target) ? '启用并刷新' : '添加并刷新';
+});
+const sharedInstallDialogDescription = computed(() => {
+  const plugin = pendingSharedInstallPlugin.value;
+  if (!plugin) return '';
+  const parts = [`来源：${plugin.sourceName || plugin.sourceUrl}`];
+  if (plugin.updateAvailable) parts.push(`当前已安装 v${plugin.installedVersion}`);
+  parts.push(`将安装 v${plugin.version}`);
+  return parts.join(' · ');
+});
+const sharedInstallWarnings = computed(() => {
+  const plugin = pendingSharedInstallPlugin.value;
+  const target = getSharedPluginRouteTarget();
+  if (!plugin || !target) return [];
+  const warnings: string[] = [];
+  if (target.version && target.version !== plugin.version) {
+    warnings.push(`分享时版本为 v${target.version}，当前插件源提供 v${plugin.version}。`);
+  }
+  if (target.checksum && plugin.checksum && target.checksum !== plugin.checksum) {
+    warnings.push('分享链接中的校验值与当前插件源不一致，请确认来源后再安装。');
+  }
+  return warnings;
 });
 
 const failureReasonLabels: Record<PluginFailureRecord['reason'], string> = {
@@ -286,30 +366,143 @@ const getMarketplaceRequestOptions = (refresh = false) => ({
   githubProxyUrl: settingStore.githubProxyUrl,
 });
 
+let marketplaceLoadPromise: Promise<void> | null = null;
+
+const readRouteText = (value: unknown) => {
+  if (Array.isArray(value)) return String(value[0] ?? '').trim();
+  return String(value ?? '').trim();
+};
+
+const getSharedPluginRouteTarget = (): SharedPluginRouteTarget | null => {
+  const pluginId = readRouteText(route.query.pluginId);
+  if (!pluginId || !isPluginIdShareable(pluginId)) return null;
+  return {
+    pluginId,
+    pluginName: readRouteText(route.query.pluginName || route.query.name),
+    sourceId: readRouteText(route.query.sourceId),
+    sourceUrl: readRouteText(route.query.source || route.query.sourceUrl),
+    version: readRouteText(route.query.version),
+    checksum: readRouteText(route.query.checksum),
+    homepage: readRouteText(route.query.homepage),
+  };
+};
+
+const getSharedPluginRouteKey = (target: SharedPluginRouteTarget) =>
+  [target.pluginId, target.sourceId, target.sourceUrl, target.version, target.checksum].join('|');
+
+const normalizeUrlText = (value: string) => value.trim().replace(/\/+$/, '').toLowerCase();
+
+const findMarketplaceSourceForSharedTarget = (target: SharedPluginRouteTarget) =>
+  marketplaceSources.value.find((source) => {
+    if (target.sourceId && source.id === target.sourceId) return true;
+    if (target.sourceUrl && normalizeUrlText(source.url) === normalizeUrlText(target.sourceUrl)) {
+      return true;
+    }
+    return false;
+  }) ?? null;
+
+const findMarketplacePluginForSharedTarget = (target: SharedPluginRouteTarget) =>
+  marketplacePlugins.value.find((plugin) => {
+    if (plugin.id !== target.pluginId) return false;
+    if (target.sourceId && plugin.sourceId === target.sourceId) return true;
+    if (
+      target.sourceUrl &&
+      normalizeUrlText(plugin.sourceUrl) === normalizeUrlText(target.sourceUrl)
+    ) {
+      return true;
+    }
+    return !target.sourceId && !target.sourceUrl;
+  }) ??
+  (!target.sourceId && !target.sourceUrl
+    ? marketplacePlugins.value.find((plugin) => plugin.id === target.pluginId)
+    : null) ??
+  null;
+
+const highlightMarketplacePlugin = async (plugin: PluginMarketplacePlugin) => {
+  const key = getMarketplacePluginKey(plugin);
+  highlightedMarketplacePluginKey.value = key;
+  marketplaceSearch.value = '';
+  marketplaceSourceFilter.value = plugin.sourceId;
+  await nextTick();
+  document
+    .querySelector(`[data-marketplace-plugin-key="${CSS.escape(key)}"]`)
+    ?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  window.setTimeout(() => {
+    if (highlightedMarketplacePluginKey.value === key) highlightedMarketplacePluginKey.value = '';
+  }, 4200);
+};
+
+const processSharedPluginRoute = async (force = false) => {
+  const target = getSharedPluginRouteTarget();
+  if (!target) return;
+  const routeKey = getSharedPluginRouteKey(target);
+  if (!force && handledSharedRouteKey.value === routeKey) return;
+  handledSharedRouteKey.value = routeKey;
+  activeView.value = 'marketplace';
+
+  if (!marketplaceLoaded.value) await loadMarketplace(false);
+
+  let plugin = findMarketplacePluginForSharedTarget(target);
+  if (!plugin && (target.sourceId || target.sourceUrl)) {
+    const source = findMarketplaceSourceForSharedTarget(target);
+    if ((source && !source.enabled) || (!source && target.sourceUrl)) {
+      sharedSourceTarget.value = target;
+      return;
+    }
+    if (source) {
+      await loadMarketplace(true);
+      plugin = findMarketplacePluginForSharedTarget(target);
+    }
+  }
+
+  if (!plugin) {
+    toastStore.warning(`未找到分享的插件${target.pluginName ? `「${target.pluginName}」` : ''}`);
+    return;
+  }
+
+  await highlightMarketplacePlugin(plugin);
+  if (!plugin.compatibility.compatible) {
+    toastStore.warning(plugin.compatibility.message || '插件与当前 EchoMusic 主程序版本不兼容');
+    return;
+  }
+  if (plugin.installed && !plugin.updateAvailable) {
+    toastStore.info('分享的插件已安装');
+    return;
+  }
+  pendingSharedInstallPluginKey.value = getMarketplacePluginKey(plugin);
+};
+
 const loadMarketplace = async (refreshSource = false) => {
-  if (isMarketplaceLoading.value || isMarketplaceRefreshing.value) return;
+  if (isMarketplaceLoading.value || isMarketplaceRefreshing.value) {
+    return marketplaceLoadPromise ?? Promise.resolve();
+  }
   if (refreshSource) isMarketplaceRefreshing.value = true;
   else isMarketplaceLoading.value = true;
 
-  try {
-    const result = await window.electron.plugins?.marketplace.list(
-      getMarketplaceRequestOptions(refreshSource),
-    );
-    marketplaceSources.value = result?.sources ?? [];
-    marketplacePlugins.value = result?.plugins ?? [];
-    marketplaceFetchedAt.value = result?.fetchedAt ?? 0;
-    marketplaceLoaded.value = true;
-    if (result && !result.ok) {
-      toastStore.warning(result.error || '插件源刷新失败');
-    } else if (refreshSource) {
-      toastStore.actionCompleted('在线插件列表已刷新');
+  marketplaceLoadPromise = (async () => {
+    try {
+      const result = await window.electron.plugins?.marketplace.list(
+        getMarketplaceRequestOptions(refreshSource),
+      );
+      marketplaceSources.value = result?.sources ?? [];
+      marketplacePlugins.value = result?.plugins ?? [];
+      marketplaceFetchedAt.value = result?.fetchedAt ?? 0;
+      marketplaceLoaded.value = true;
+      if (result && !result.ok) {
+        toastStore.warning(result.error || '插件源刷新失败');
+      } else if (refreshSource) {
+        toastStore.actionCompleted('在线插件列表已刷新');
+      }
+    } catch (error) {
+      toastStore.warning(error instanceof Error ? error.message : '在线插件列表加载失败');
+    } finally {
+      isMarketplaceLoading.value = false;
+      isMarketplaceRefreshing.value = false;
+      marketplaceLoadPromise = null;
     }
-  } catch (error) {
-    toastStore.warning(error instanceof Error ? error.message : '在线插件列表加载失败');
-  } finally {
-    isMarketplaceLoading.value = false;
-    isMarketplaceRefreshing.value = false;
-  }
+  })();
+
+  return marketplaceLoadPromise;
 };
 
 const switchView = (view: 'installed' | 'marketplace') => {
@@ -489,6 +682,20 @@ const openExternalUrl = (url: string) => {
   window.electron.ipcRenderer.send('open-external', url);
 };
 
+const shareMarketplacePlugin = async (plugin: PluginMarketplacePlugin) => {
+  const target = createPluginShareTarget(plugin);
+  if (!target) {
+    toastStore.warning('插件分享信息不完整');
+    return;
+  }
+  try {
+    await copyShareTarget(target);
+    toastStore.actionCompleted('插件分享链接已复制');
+  } catch {
+    toastStore.actionFailed('复制插件分享链接');
+  }
+};
+
 const getPluginInstallErrorMessage = (error: unknown) => {
   const message = error instanceof Error ? error.message : String(error || '');
   if (message.includes('reply was never sent')) {
@@ -498,7 +705,7 @@ const getPluginInstallErrorMessage = (error: unknown) => {
 };
 
 const installMarketplacePlugin = async (plugin: PluginMarketplacePlugin) => {
-  if (!canInstallMarketplacePlugin(plugin)) return;
+  if (!canInstallMarketplacePlugin(plugin)) return false;
   const key = getMarketplacePluginKey(plugin);
   const next = new Set(busyMarketplacePluginKeys.value);
   next.add(key);
@@ -513,12 +720,59 @@ const installMarketplacePlugin = async (plugin: PluginMarketplacePlugin) => {
     await reloadOtherPluginRuntimes();
     await loadMarketplace(false);
     toastStore.actionCompleted(result.updated ? '插件已更新' : '插件已安装');
+    return true;
   } catch (error) {
     toastStore.warning(getPluginInstallErrorMessage(error));
+    return false;
   } finally {
     const done = new Set(busyMarketplacePluginKeys.value);
     done.delete(key);
     busyMarketplacePluginKeys.value = done;
+  }
+};
+
+const confirmSharedInstallPlugin = async () => {
+  const plugin = pendingSharedInstallPlugin.value;
+  if (!plugin) return;
+  const installed = await installMarketplacePlugin(plugin);
+  if (installed) pendingSharedInstallPluginKey.value = '';
+};
+
+const confirmSharedMarketplaceSource = async () => {
+  const target = sharedSourceTarget.value;
+  if (!target || isAddingSharedSource.value) return;
+  isAddingSharedSource.value = true;
+  try {
+    const existing = findMarketplaceSourceForSharedTarget(target);
+    if (existing) {
+      if (!existing.enabled) {
+        const result = await window.electron.plugins?.marketplace.patchSource(existing.id, {
+          enabled: true,
+        });
+        if (!result?.ok) throw new Error(result?.error || '插件源启用失败');
+        marketplaceSources.value = result.sources;
+      }
+    } else {
+      if (!target.sourceUrl) throw new Error('分享链接没有包含插件源地址');
+      const result = await window.electron.plugins?.marketplace.addSource(
+        {
+          url: target.sourceUrl,
+          name: target.pluginName ? `${target.pluginName} 来源` : undefined,
+        },
+        getMarketplaceRequestOptions(false),
+      );
+      if (!result?.ok) throw new Error(result?.error || '插件源添加失败');
+      marketplaceSources.value = result.sources;
+    }
+
+    sharedSourceTarget.value = null;
+    await loadMarketplace(true);
+    handledSharedRouteKey.value = '';
+    await processSharedPluginRoute(true);
+  } catch (error) {
+    toastStore.warning(error instanceof Error ? error.message : '插件源添加失败');
+  } finally {
+    isAddingSharedSource.value = false;
   }
 };
 
@@ -914,6 +1168,20 @@ const requestOpenPluginSettings = (record: (typeof records.value)[number]) => {
   }
   toastStore.info('该插件没有提供设置项');
 };
+
+onMounted(() => {
+  if (readRouteText(route.query.view) === 'marketplace') switchView('marketplace');
+  void processSharedPluginRoute(false);
+});
+
+watch(
+  () => route.fullPath,
+  () => {
+    if (route.name !== 'plugin-management') return;
+    if (readRouteText(route.query.view) === 'marketplace') switchView('marketplace');
+    void processSharedPluginRoute(false);
+  },
+);
 </script>
 
 <template>
@@ -1272,10 +1540,13 @@ const requestOpenPluginSettings = (record: (typeof records.value)[number]) => {
             <article
               v-for="plugin in filteredMarketplacePlugins"
               :key="getMarketplacePluginKey(plugin)"
+              :data-marketplace-plugin-key="getMarketplacePluginKey(plugin)"
               class="plugin-card marketplace-card"
               :class="{
                 'is-disabled': !plugin.compatibility.compatible,
                 'is-warning': !plugin.compatibility.compatible,
+                'is-shared-target':
+                  highlightedMarketplacePluginKey === getMarketplacePluginKey(plugin),
               }"
             >
               <div class="plugin-card-main">
@@ -1342,6 +1613,16 @@ const requestOpenPluginSettings = (record: (typeof records.value)[number]) => {
 
               <div class="plugin-card-actions">
                 <div class="plugin-card-primary-actions">
+                  <Button
+                    variant="ghost"
+                    size="xs"
+                    class="plugin-settings-btn"
+                    title="复制插件分享链接"
+                    @click="shareMarketplacePlugin(plugin)"
+                  >
+                    <Icon :icon="iconShare" width="14" height="14" />
+                    分享
+                  </Button>
                   <Button
                     variant="ghost"
                     size="xs"
@@ -1476,6 +1757,111 @@ const requestOpenPluginSettings = (record: (typeof records.value)[number]) => {
           </div>
         </div>
       </div>
+    </Dialog>
+
+    <!-- 分享插件源确认 -->
+    <Dialog
+      v-model:open="showSharedSourceDialog"
+      :title="sharedSourceDialogTitle"
+      :description="sharedSourceDialogDescription"
+    >
+      <div v-if="sharedSourceTarget" class="plugin-share-dialog-body">
+        <div class="plugin-share-meta">
+          <span>插件 ID</span>
+          <strong>{{ sharedSourceTarget.pluginId }}</strong>
+          <span>插件源</span>
+          <strong>{{
+            sharedSourceTarget.sourceUrl || sharedSourceTarget.sourceId || '未知来源'
+          }}</strong>
+        </div>
+      </div>
+
+      <template #footer>
+        <Button
+          variant="ghost"
+          size="xs"
+          :disabled="isAddingSharedSource"
+          @click="showSharedSourceDialog = false"
+        >
+          取消
+        </Button>
+        <Button
+          variant="primary"
+          size="xs"
+          :loading="isAddingSharedSource"
+          @click="confirmSharedMarketplaceSource"
+        >
+          {{ sharedSourceActionLabel }}
+        </Button>
+      </template>
+    </Dialog>
+
+    <!-- 分享插件安装确认 -->
+    <Dialog
+      v-model:open="showSharedInstallDialog"
+      :title="
+        pendingSharedInstallPlugin
+          ? `${pendingSharedInstallPlugin.updateAvailable ? '更新' : '安装'}分享的插件`
+          : '安装分享的插件'
+      "
+      :description="sharedInstallDialogDescription"
+    >
+      <div v-if="pendingSharedInstallPlugin" class="plugin-share-dialog-body">
+        <div class="plugin-share-plugin">
+          <div
+            class="plugin-card-media"
+            :class="{ 'has-icon': pendingSharedInstallPlugin.iconUrl }"
+            :style="getPluginAccentStyle(pendingSharedInstallPlugin.id)"
+          >
+            <img
+              v-if="pendingSharedInstallPlugin.iconUrl"
+              :src="pendingSharedInstallPlugin.iconUrl"
+              :alt="pendingSharedInstallPlugin.name"
+              class="plugin-card-icon"
+            />
+            <span v-else class="plugin-card-initial">
+              {{ pendingSharedInstallPlugin.name.trim()[0]?.toUpperCase() || 'E' }}
+            </span>
+          </div>
+          <div>
+            <h3>{{ pendingSharedInstallPlugin.name }}</h3>
+            <p>{{ pendingSharedInstallPlugin.description || '暂无描述' }}</p>
+          </div>
+        </div>
+
+        <div v-if="sharedInstallWarnings.length" class="plugin-share-warning">
+          <Icon :icon="iconTriangleAlert" width="15" height="15" />
+          <span>{{ sharedInstallWarnings[0] }}</span>
+        </div>
+
+        <div class="plugin-share-meta">
+          <span>插件 ID</span>
+          <strong>{{ pendingSharedInstallPlugin.id }}</strong>
+          <span>作者</span>
+          <strong>{{ pendingSharedInstallPlugin.author || '未知' }}</strong>
+          <span>来源</span>
+          <strong>{{ pendingSharedInstallPlugin.sourceUrl }}</strong>
+        </div>
+      </div>
+
+      <template #footer>
+        <Button variant="ghost" size="xs" @click="showSharedInstallDialog = false"> 取消 </Button>
+        <Button
+          variant="primary"
+          size="xs"
+          :loading="
+            pendingSharedInstallPlugin
+              ? busyMarketplacePluginKeys.has(getMarketplacePluginKey(pendingSharedInstallPlugin))
+              : false
+          "
+          :disabled="
+            !pendingSharedInstallPlugin || !canInstallMarketplacePlugin(pendingSharedInstallPlugin)
+          "
+          @click="confirmSharedInstallPlugin"
+        >
+          {{ pendingSharedInstallPlugin?.updateAvailable ? '更新插件' : '安装插件' }}
+        </Button>
+      </template>
     </Dialog>
 
     <!-- 卸载对话框 -->
@@ -2012,6 +2398,13 @@ const requestOpenPluginSettings = (record: (typeof records.value)[number]) => {
   min-height: 236px;
 }
 
+.marketplace-card.is-shared-target {
+  border-color: color-mix(in srgb, var(--color-primary) 72%, var(--border-subtle));
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--color-primary) 14%, transparent),
+    0 12px 28px color-mix(in srgb, var(--color-primary) 12%, transparent);
+}
+
 .marketplace-tags,
 .plugin-feature-tags {
   display: flex;
@@ -2119,6 +2512,90 @@ const requestOpenPluginSettings = (record: (typeof records.value)[number]) => {
 
 .plugin-card.is-error .plugin-remove-btn {
   @apply text-red-500 hover:text-red-400;
+}
+
+.plugin-share-dialog-body {
+  display: grid;
+  gap: 0.875rem;
+}
+
+.plugin-share-plugin {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.875rem;
+  min-width: 0;
+  padding: 0.875rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  background: var(--control-muted-bg);
+}
+
+.plugin-share-plugin > div:last-child {
+  min-width: 0;
+}
+
+.plugin-share-plugin h3 {
+  margin: 0;
+  color: var(--color-text-main);
+  font-size: 0.9375rem;
+  font-weight: 800;
+  line-height: 1.35;
+}
+
+.plugin-share-plugin p {
+  margin: 0.375rem 0 0;
+  color: var(--color-text-secondary);
+  font-size: 0.8125rem;
+  line-height: 1.6;
+  word-break: break-word;
+}
+
+.plugin-share-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  padding: 0.625rem 0.75rem;
+  border-radius: 8px;
+  border: 1px solid rgba(245, 158, 11, 0.18);
+  background: rgba(245, 158, 11, 0.08);
+  color: rgb(180, 83, 9);
+  font-size: 0.75rem;
+  font-weight: 700;
+  line-height: 1.55;
+}
+
+:global(.dark) .plugin-share-warning {
+  color: rgb(251, 191, 36);
+}
+
+.plugin-share-warning svg {
+  flex-shrink: 0;
+  margin-top: 0.1rem;
+}
+
+.plugin-share-meta {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  gap: 0.5rem 0.875rem;
+  padding: 0.875rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  background: var(--control-muted-bg);
+}
+
+.plugin-share-meta span {
+  color: var(--color-text-secondary);
+  font-size: 0.75rem;
+  font-weight: 800;
+}
+
+.plugin-share-meta strong {
+  min-width: 0;
+  color: var(--color-text-main);
+  font-size: 0.75rem;
+  font-weight: 700;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
 }
 
 :global(.dialog-content.plugin-source-dialog) {
@@ -2398,6 +2875,10 @@ const requestOpenPluginSettings = (record: (typeof records.value)[number]) => {
   .plugin-source-actions {
     width: 100%;
     justify-content: space-between;
+  }
+
+  .plugin-share-meta {
+    grid-template-columns: 1fr;
   }
 }
 </style>

@@ -39,6 +39,7 @@ interface RenderLine {
 const snapshot = ref<DesktopLyricSnapshot | null>(null);
 const isWayland = window.electron?.isWayland ?? false;
 let disposeSnapshotListener: (() => void) | null = null;
+let disposeHoverListener: (() => void) | null = null;
 
 // 锚点时间（毫秒）与锚点帧时间，用于插值推进
 let baseMs = 0;
@@ -263,17 +264,9 @@ const handleMouseMove = (event: MouseEvent) => {
   const target = event.target as HTMLElement | null;
 
   if (isLocked.value) {
-    // 锁定状态：鼠标在窗口内任意位置都显示锁定按钮，但只有在按钮上才取消穿透
-    const container = document.querySelector('.desktop-lyric');
-    if (container) {
-      const rect = container.getBoundingClientRect();
-      const isInContainer =
-        event.clientX >= rect.left &&
-        event.clientX <= rect.right &&
-        event.clientY >= rect.top &&
-        event.clientY <= rect.bottom;
-      isHovered.value = isInContainer;
-    }
+    // forward 穿透模式下能收到 mousemove 即说明鼠标在窗口内，立即显示解锁按钮；
+    // 鼠标离开由主进程光标轮询兜底重置（规避 forward 模式下 mouseleave 不可靠）
+    isHovered.value = true;
     const isOnLockBtn = target?.closest('.lock-btn') !== null;
     window.electron?.desktopLyric?.setIgnoreMouseEvents(!isOnLockBtn);
     return;
@@ -764,6 +757,13 @@ onMounted(async () => {
 
   await updateCachedBounds();
 
+  // 锁定状态下，由主进程光标轮询驱动解锁按钮的显隐（可靠跨平台）
+  disposeHoverListener =
+    window.electron?.desktopLyric?.onHover((hovered) => {
+      if (!isLocked.value) return;
+      isHovered.value = hovered;
+    }) ?? null;
+
   // 启动 RAF
   if (isPlaying.value) {
     resumeSeek();
@@ -791,6 +791,7 @@ onBeforeUnmount(() => {
   document.body.classList.remove('desktop-lyric-window');
   document.getElementById('app')?.classList.remove('desktop-lyric-window');
   disposeSnapshotListener?.();
+  disposeHoverListener?.();
 });
 </script>
 

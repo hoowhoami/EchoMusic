@@ -1,6 +1,11 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
+import { useClipboard } from '@vueuse/core';
 import { useSettingStore } from '@/stores/setting';
+import { useUserStore } from '@/stores/user';
+import { useDeviceStore } from '@/stores/device';
+import { useToastStore } from '@/stores/toast';
+import { buildAuthHeader } from '@/utils/request';
 import type { AppLogLevel } from '../../../../shared/logging';
 import Switch from '@/components/ui/Switch.vue';
 import Input from '@/components/ui/Input.vue';
@@ -8,11 +13,16 @@ import InputNumber from '@/components/ui/InputNumber.vue';
 import FontIcon from '@/components/ui/FontIcon.vue';
 import Select from '@/components/ui/Select.vue';
 import Button from '@/components/ui/Button.vue';
+import Dialog from '@/components/ui/Dialog.vue';
 import { Icon } from '@iconify/vue';
 import SettingsSectionShell from './SettingsSectionShell.vue';
 import { sectionTitles } from '../constants';
 
 const settingStore = useSettingStore();
+const userStore = useUserStore();
+const deviceStore = useDeviceStore();
+const toastStore = useToastStore();
+const { copy } = useClipboard();
 
 const logLevelOptions: { label: string; value: AppLogLevel }[] = [
   { label: '标准', value: 'info' },
@@ -29,6 +39,44 @@ const diagnosticLabel = computed(() => {
   const remaining = Math.max(0, settingStore.logDiagnosticUntil - Date.now());
   return `剩余约 ${Math.ceil(remaining / 60000)} 分钟`;
 });
+
+const showUserInfo = ref(false);
+
+const userInfoEntries = computed(() => {
+  const info = userStore.info;
+  const device = deviceStore.info;
+  const entries: { label: string; value: string }[] = [];
+  const push = (label: string, value: string | number | undefined | null) => {
+    if (value !== undefined && value !== null && String(value).length > 0) {
+      entries.push({ label, value: String(value) });
+    }
+  };
+  push('用户 ID', info?.userid);
+  push('昵称', info?.nickname ?? info?.username);
+  push('token', info?.token);
+  push('t1', info?.t1);
+  push('dfid', device?.dfid);
+  push('mid', device?.mid);
+  push('uuid', device?.uuid);
+  push('guid', device?.guid);
+  push('dev', device?.serverDev);
+  push('mac', device?.mac);
+  return entries;
+});
+
+const copyAuthHeader = async () => {
+  const header = buildAuthHeader();
+  if (!header) {
+    toastStore.warning('当前没有可用的鉴权头，请先登录');
+    return;
+  }
+  try {
+    await copy(header);
+    toastStore.success('鉴权头已复制');
+  } catch {
+    toastStore.actionFailed('复制');
+  }
+};
 </script>
 
 <template>
@@ -180,7 +228,67 @@ const diagnosticLabel = computed(() => {
         "
       />
     </div>
+    <div class="settings-divider"></div>
+    <div class="settings-item">
+      <div class="space-y-1">
+        <h3 class="font-semibold">用户信息</h3>
+        <p class="text-sm text-text-secondary">查看当前账号与设备信息，可复制鉴权头用于调试接口</p>
+      </div>
+      <Button variant="secondary" size="xs" @click="showUserInfo = true">查看</Button>
+    </div>
+
+    <Dialog v-model:open="showUserInfo" title="用户信息" showClose contentClass="user-info-dialog">
+      <div class="user-info-list">
+        <div v-for="entry in userInfoEntries" :key="entry.label" class="user-info-row">
+          <span class="user-info-label">{{ entry.label }}</span>
+          <span class="user-info-value">{{ entry.value }}</span>
+        </div>
+        <p v-if="userInfoEntries.length === 0" class="user-info-empty">暂无用户信息，请先登录</p>
+      </div>
+      <template #footer>
+        <Button variant="primary" size="sm" @click="copyAuthHeader">复制鉴权头</Button>
+      </template>
+    </Dialog>
   </SettingsSectionShell>
 </template>
 
 <style scoped src="../settingsSection.css"></style>
+
+<style scoped>
+.user-info-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.user-info-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--control-muted-bg);
+}
+
+.user-info-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--color-text-secondary);
+}
+
+.user-info-value {
+  font-size: 13px;
+  color: var(--color-text-main);
+  word-break: break-all;
+  user-select: text;
+}
+
+.user-info-empty {
+  padding: 20px 0;
+  text-align: center;
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+</style>

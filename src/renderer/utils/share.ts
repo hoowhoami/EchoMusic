@@ -2,8 +2,10 @@ import type { Router } from 'vue-router';
 import type { PlaylistMeta } from '@/models/playlist';
 import type { Song } from '@/models/song';
 import { useUserStore } from '@/stores/user';
+import type { PluginMarketplacePlugin } from '../../shared/plugins';
 import {
   buildShareText,
+  isPluginShareId,
   isSongShareId,
   type ShareResourceType,
   type ShareTarget,
@@ -21,6 +23,7 @@ export interface ShareCopiedEventDetail {
 const cleanId = (value: unknown) => String(value ?? '').trim();
 
 export const isSongHashId = isSongShareId;
+export const isPluginIdShareable = isPluginShareId;
 
 const readNestedText = (record: Record<string, unknown> | undefined, key: string) => {
   const value = record?.[key];
@@ -108,6 +111,17 @@ export const createPlaylistShareTarget = (
 ): ShareTarget | null =>
   createShareTarget('playlist', resolvePlaylistShareId(meta, fallbackId), meta.name);
 
+export const createPluginShareTarget = (plugin: PluginMarketplacePlugin): ShareTarget | null => {
+  if (!isPluginIdShareable(plugin.id)) return null;
+  return createShareTarget('plugin', plugin.id, plugin.name, {
+    sourceId: plugin.sourceId,
+    source: plugin.sourceUrl,
+    version: plugin.version,
+    checksum: plugin.checksum,
+    homepage: plugin.homepage,
+  });
+};
+
 export const copyShareTarget = async (target: ShareTarget): Promise<boolean> => {
   const text = buildShareText({
     ...target,
@@ -134,8 +148,24 @@ export const buildShareResolveRoute = (target: ShareTarget) => {
   const id = cleanId(target.id);
   if (!id) return null;
   if (target.type === 'song' && !isSongHashId(id)) return null;
+  if (target.type === 'plugin' && !isPluginIdShareable(id)) return null;
 
   const title = cleanId(target.title);
+  if (target.type === 'plugin') {
+    const pluginQuery: Record<string, string> = {
+      view: 'marketplace',
+      pluginId: id,
+      ...(title ? { pluginName: title } : {}),
+    };
+    Object.entries(normalizeShareQuery(target.query)).forEach(([key, value]) => {
+      pluginQuery[key] = value;
+    });
+    return {
+      name: 'plugin-management',
+      query: pluginQuery,
+    };
+  }
+
   const query: Record<string, string> = {
     type: target.type,
     id,

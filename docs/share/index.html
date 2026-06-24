@@ -129,13 +129,16 @@
         playlist: '歌单',
         artist: '歌手',
         album: '专辑',
+        plugin: '插件',
       };
 
       const isShareType = (value) => Object.prototype.hasOwnProperty.call(TYPE_LABELS, value);
       const isSongShareId = (value) => /^[a-f0-9]{32}$/i.test(String(value || '').trim());
+      const isPluginShareId = (value) => /^[a-zA-Z0-9._-]+$/.test(String(value || '').trim());
       const isValidTarget = (target) =>
         Boolean(target && isShareType(target.type) && target.id) &&
-        (target.type !== 'song' || isSongShareId(target.id));
+        (target.type !== 'song' || isSongShareId(target.id)) &&
+        (target.type !== 'plugin' || isPluginShareId(target.id));
 
       const readExtraParams = (searchParams, excludedKeys = []) => {
         const excluded = new Set(excludedKeys);

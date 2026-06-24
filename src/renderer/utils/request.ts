@@ -65,7 +65,7 @@ const summarizeApiBody = (body: unknown): Record<string, unknown> => {
 /**
  * 构建 Authorization header（复现原请求拦截器逻辑）
  */
-const buildAuthHeader = (skipAuth: boolean): string => {
+export const buildAuthHeader = (skipAuth = false): string => {
   if (skipAuth) return '';
 
   const authParts: string[] = [];

@@ -171,6 +171,7 @@ export interface IElectronAPI {
     syncSnapshot: (payload: DesktopLyricSnapshotPatch) => void;
     onSnapshot: (func: (snapshot: DesktopLyricSnapshot) => void) => () => void;
     setIgnoreMouseEvents: (ignore: boolean) => void;
+    onHover: (func: (hovered: boolean) => void) => () => void;
     command: (command: DesktopLyricCommand) => void;
   };
   nowPlaying: {

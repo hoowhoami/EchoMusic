@@ -343,6 +343,11 @@ contextBridge.exposeInMainWorld('electron', {
     },
     setIgnoreMouseEvents: (ignore: boolean) =>
       ipcRenderer.send('desktop-lyric:set-ignore-mouse-events', ignore),
+    onHover: (func: (hovered: boolean) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, hovered: boolean) => func(hovered);
+      ipcRenderer.on('desktop-lyric:hover', listener);
+      return () => ipcRenderer.removeListener('desktop-lyric:hover', listener);
+    },
     command: (command: DesktopLyricCommand) => ipcRenderer.send('desktop-lyric:command', command),
   },
   nowPlaying: {
