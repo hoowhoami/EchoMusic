@@ -225,6 +225,15 @@ pub fn set_audio_track(track_id: i64) -> napi::Result<()> {
         .map_err(|e| napi::Error::from_reason(e))
 }
 
+/// 设置响度归一增益（dB）。走 mpv 的 volume-gain 属性，不重建 af 链；老版 mpv 不支持时返回错误，
+/// 由 JS 层回退到 af 滤镜方式。属性设置开销极小，保持同步。
+#[napi]
+pub fn set_volume_gain(gain_db: f64) -> napi::Result<()> {
+    get_player()?
+        .set_volume_gain(gain_db)
+        .map_err(|e| napi::Error::from_reason(e))
+}
+
 /// 获取音轨列表任务
 pub struct GetTrackListTask;
 
@@ -249,12 +258,26 @@ pub fn get_track_list() -> AsyncTask<GetTrackListTask> {
     AsyncTask::new(GetTrackListTask)
 }
 
-/// 播放
+/// 播放任务（开始播放新文件时会构建 afir 卷积链，可能耗时；放到工作线程执行）
+pub struct PlayTask;
+
+impl Task for PlayTask {
+    type Output = ();
+    type JsValue = ();
+
+    fn compute(&mut self) -> napi::Result<Self::Output> {
+        get_player()?.play().map_err(|e| napi::Error::from_reason(e))
+    }
+
+    fn resolve(&mut self, _env: Env, _output: Self::Output) -> napi::Result<Self::JsValue> {
+        Ok(())
+    }
+}
+
+/// 播放，返回 Promise<void>。新文件起播的滤镜链构建在工作线程完成，不阻塞主线程。
 #[napi]
-pub fn play() -> napi::Result<()> {
-    get_player()?
-        .play()
-        .map_err(|e| napi::Error::from_reason(e))
+pub fn play() -> AsyncTask<PlayTask> {
+    AsyncTask::new(PlayTask)
 }
 
 /// 暂停
@@ -289,12 +312,31 @@ pub fn set_volume(volume: f64) -> napi::Result<()> {
         .map_err(|e| napi::Error::from_reason(e))
 }
 
-/// 设置播放速度
+/// 设置播放速度任务（改 speed 会让 mpv 重建音频滤镜链；开启 afir/IR 卷积时重建很重，
+/// 放到工作线程执行，避免阻塞主线程）
+pub struct SetSpeedTask {
+    speed: f64,
+}
+
+impl Task for SetSpeedTask {
+    type Output = ();
+    type JsValue = ();
+
+    fn compute(&mut self) -> napi::Result<Self::Output> {
+        get_player()?
+            .set_speed(self.speed)
+            .map_err(|e| napi::Error::from_reason(e))
+    }
+
+    fn resolve(&mut self, _env: Env, _output: Self::Output) -> napi::Result<Self::JsValue> {
+        Ok(())
+    }
+}
+
+/// 设置播放速度，返回 Promise<void>。滤镜链重建在工作线程完成，不阻塞主线程。
 #[napi]
-pub fn set_speed(speed: f64) -> napi::Result<()> {
-    get_player()?
-        .set_speed(speed)
-        .map_err(|e| napi::Error::from_reason(e))
+pub fn set_speed(speed: f64) -> AsyncTask<SetSpeedTask> {
+    AsyncTask::new(SetSpeedTask { speed })
 }
 
 /// 设置音频输出设备任务（切设备会重建音频输出，可能阻塞）
@@ -425,12 +467,31 @@ pub fn set_media_title(title: String) -> napi::Result<()> {
         .map_err(|e| napi::Error::from_reason(e))
 }
 
-/// 设置文件循环（"inf" 无限循环，"no" 不循环）
+/// 设置文件循环任务（改 loop-file 同样会让 mpv 重建音频滤镜链；afir 激活时重建很重，
+/// 放到工作线程执行，避免阻塞主线程）
+pub struct SetLoopFileTask {
+    value: String,
+}
+
+impl Task for SetLoopFileTask {
+    type Output = ();
+    type JsValue = ();
+
+    fn compute(&mut self) -> napi::Result<Self::Output> {
+        get_player()?
+            .set_loop_file(&self.value)
+            .map_err(|e| napi::Error::from_reason(e))
+    }
+
+    fn resolve(&mut self, _env: Env, _output: Self::Output) -> napi::Result<Self::JsValue> {
+        Ok(())
+    }
+}
+
+/// 设置文件循环（"inf" 无限循环，"no" 不循环），返回 Promise<void>。
 #[napi]
-pub fn set_loop_file(value: String) -> napi::Result<()> {
-    get_player()?
-        .set_loop_file(&value)
-        .map_err(|e| napi::Error::from_reason(e))
+pub fn set_loop_file(value: String) -> AsyncTask<SetLoopFileTask> {
+    AsyncTask::new(SetLoopFileTask { value })
 }
 
 /// 获取当前状态快照
@@ -529,48 +590,72 @@ pub fn pause_with_fade(saved_volume: f64, duration_ms: f64) -> napi::Result<()> 
     Ok(())
 }
 
-/// 复合操作：设置音量 0 → 播放 → 淡入
-#[napi]
-pub fn play_with_fade(target_volume: f64, duration_ms: f64) -> napi::Result<()> {
-    let player = get_player()?;
-    let duration = duration_ms as u64;
+/// 复合操作任务：设置音量 0 → 播放 → 淡入。其中 play() 会触发新文件的 afir 卷积链构建
+/// （可能数百 ms），放到工作线程执行，避免阻塞主线程；淡入本身仍在独立线程后台进行。
+pub struct PlayWithFadeTask {
+    target_volume: f64,
+    duration_ms: f64,
+}
 
-    // 先设置音量为 0 并播放
-    player
-        .set_volume(0.0)
-        .map_err(|e| napi::Error::from_reason(e))?;
-    player.play().map_err(|e| napi::Error::from_reason(e))?;
+impl Task for PlayWithFadeTask {
+    type Output = ();
+    type JsValue = ();
 
-    if duration == 0 {
+    fn compute(&mut self) -> napi::Result<Self::Output> {
+        let player = get_player()?;
+        let duration = self.duration_ms as u64;
+        let target_volume = self.target_volume;
+
+        // 先设置音量为 0 并播放（afir 构建发生在此处，于工作线程执行）
         player
-            .set_volume(target_volume)
+            .set_volume(0.0)
             .map_err(|e| napi::Error::from_reason(e))?;
-        return Ok(());
+        player.play().map_err(|e| napi::Error::from_reason(e))?;
+
+        if duration == 0 {
+            player
+                .set_volume(target_volume)
+                .map_err(|e| napi::Error::from_reason(e))?;
+            return Ok(());
+        }
+
+        let seq = player.start_fade(0.0, target_volume, duration);
+        let cb_arc = get_callback_arc();
+
+        let player_clone = player.clone();
+        std::thread::Builder::new()
+            .name("mpv-play-fade".to_string())
+            .spawn(move || {
+                let completed = player_clone.execute_fade(0.0, target_volume, duration, seq);
+                if completed {
+                    let _ = player_clone.set_volume(target_volume);
+                }
+                if let Some(cb_arc) = cb_arc {
+                    if let Ok(cb) = cb_arc.lock() {
+                        cb.call(
+                            Ok(PlayerEvent::fade_complete()),
+                            ThreadsafeFunctionCallMode::NonBlocking,
+                        );
+                    }
+                }
+            })
+            .map_err(|e| napi::Error::from_reason(format!("failed to spawn fade thread: {e}")))?;
+
+        Ok(())
     }
 
-    let seq = player.start_fade(0.0, target_volume, duration);
-    let cb_arc = get_callback_arc();
+    fn resolve(&mut self, _env: Env, _output: Self::Output) -> napi::Result<Self::JsValue> {
+        Ok(())
+    }
+}
 
-    let player_clone = player.clone();
-    std::thread::Builder::new()
-        .name("mpv-play-fade".to_string())
-        .spawn(move || {
-            let completed = player_clone.execute_fade(0.0, target_volume, duration, seq);
-            if completed {
-                let _ = player_clone.set_volume(target_volume);
-            }
-            if let Some(cb_arc) = cb_arc {
-                if let Ok(cb) = cb_arc.lock() {
-                    cb.call(
-                        Ok(PlayerEvent::fade_complete()),
-                        ThreadsafeFunctionCallMode::NonBlocking,
-                    );
-                }
-            }
-        })
-        .map_err(|e| napi::Error::from_reason(format!("failed to spawn fade thread: {e}")))?;
-
-    Ok(())
+/// 复合操作：设置音量 0 → 播放 → 淡入，返回 Promise<void>。起播的滤镜链构建在工作线程完成。
+#[napi]
+pub fn play_with_fade(target_volume: f64, duration_ms: f64) -> AsyncTask<PlayWithFadeTask> {
+    AsyncTask::new(PlayWithFadeTask {
+        target_volume,
+        duration_ms,
+    })
 }
 
 /// 检查 fade 是否正在执行

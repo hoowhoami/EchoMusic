@@ -2,7 +2,12 @@ import { app } from 'electron';
 import { join } from 'path';
 import fs from 'fs';
 import log from 'electron-log';
-import { getEffectiveLogLevel, normalizeLogSettings, type LogSettings } from '../shared/logging';
+import {
+  getEffectiveLogLevel,
+  isDiagnosticActive,
+  normalizeLogSettings,
+  type LogSettings,
+} from '../shared/logging';
 import { getPersistedLogSettings, setPersistedLogSettings } from './storage/settings';
 
 /** 单个日志文件最大 5MB，超出后自动轮转 */
@@ -75,6 +80,25 @@ export function getLogSettings(): LogSettings {
   return currentLogSettings;
 }
 
+/**
+ * 当前是否处于诊断模式（用户临时开启的高级日志窗口期内）。
+ * 性能哨兵（事件循环卡顿探测、IPC 同步占用计时）据此判断是否输出，
+ * 平时（非诊断模式）不产生日志、近乎零开销。
+ */
+export function isDiagnosticModeActive(): boolean {
+  return isDiagnosticActive(currentLogSettings);
+}
+
+// 诊断状态变更监听：用于让性能哨兵（事件循环卡顿探测器）仅在诊断模式期间启停其定时器，
+// 非诊断模式下完全不占用资源（连定时器都不创建）。
+let diagnosticStateListener: ((active: boolean) => void) | null = null;
+
+export function setDiagnosticStateListener(listener: ((active: boolean) => void) | null): void {
+  diagnosticStateListener = listener;
+  // 注册即用当前状态触发一次，保证启动时若已处于诊断窗口期能立即生效
+  if (listener) listener(isDiagnosticActive(currentLogSettings));
+}
+
 export function applyLogSettings(settings?: Partial<LogSettings> | null, persist = false) {
   currentLogSettings = normalizeLogSettings(settings);
   if (persist) {
@@ -102,6 +126,9 @@ export function applyLogSettings(settings?: Partial<LogSettings> | null, persist
       Math.min(remainingMs, 2 ** 31 - 1),
     );
   }
+
+  // 通知监听者当前诊断状态，驱动性能哨兵启停
+  diagnosticStateListener?.(isDiagnosticActive(currentLogSettings));
 
   return currentLogSettings;
 }

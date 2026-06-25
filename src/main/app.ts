@@ -1,6 +1,7 @@
 import { app, BrowserWindow, globalShortcut } from 'electron';
-import { initLogger } from './logger';
+import { initLogger, setDiagnosticStateListener } from './logger';
 import log from './logger';
+import { startEventLoopMonitor, stopEventLoopMonitor } from './eventLoopMonitor';
 import { initApiServer } from './server';
 import { registerIpcHandlers } from './ipc';
 import { createWindow, getMainWindow } from './window';
@@ -35,6 +36,12 @@ const mpvRef: { current: MpvController | null } = { current: null };
 
 // --- 初始化日志 ---
 initLogger();
+
+// --- 主进程事件循环卡顿探测器（仅诊断模式期间运行，避免常驻定时器开销）---
+setDiagnosticStateListener((active) => {
+  if (active) startEventLoopMonitor();
+  else stopEventLoopMonitor();
+});
 
 const hasSafeModeArg = (argv: string[]) => argv.includes('--safe-mode');
 

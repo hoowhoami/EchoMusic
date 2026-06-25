@@ -695,6 +695,12 @@ impl MpvPlayer {
     pub fn set_property(&self, name: &str, value: &str) -> Result<(), String> {
         self.set_property_string(name, value)
     }
+
+    /// 设置响度归一增益（dB）。走 mpv 的 volume-gain 属性，作为独立输出增益，
+    /// 不重建音频滤镜链（区别于在 af 串尾部追加 volume 滤镜）。老版 mpv 不支持时返回 Err。
+    pub fn set_volume_gain(&self, gain_db: f64) -> Result<(), String> {
+        self.set_property_double("volume-gain", gain_db)
+    }
 }
 
 

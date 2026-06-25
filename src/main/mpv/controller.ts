@@ -38,27 +38,29 @@ interface MpvAddon {
   getTrackList(): Promise<
     Array<{ id: number; type: string; codec: string; title?: string; lang?: string }>
   >;
-  play(): void;
+  play(): Promise<void>;
   pause(): void;
   stop(): void;
   seek(time: number): void;
   setVolume(volume: number): void;
-  setSpeed(speed: number): void;
+  setSpeed(speed: number): Promise<void>;
   setAudioDevice(deviceName: string): Promise<void>;
   getAudioDevices(): Promise<Array<{ name: string; description: string }>>;
   setAudioFilter(filter: string): void;
   // 异步设置音频滤镜：在工作线程重建滤镜链，不阻塞主线程
   setAudioFilterAsync(filter: string): Promise<void>;
+  // 设置响度归一增益（dB），走 volume-gain 属性，不重建 af 链
+  setVolumeGain(gainDb: number): void;
   afCommand(label: string, cmd: string, arg: string, target: string): void;
   setExclusive(exclusive: boolean): Promise<void>;
   setMediaTitle(title: string): void;
   getState(): MpvState;
   getProperty(name: string): string;
-  setLoopFile(value: string): void;
+  setLoopFile(value: string): Promise<void>;
   fade(from: number, to: number, durationMs: number): void;
   cancelFade(): void;
   pauseWithFade(savedVolume: number, durationMs: number): void;
-  playWithFade(targetVolume: number, durationMs: number): void;
+  playWithFade(targetVolume: number, durationMs: number): Promise<void>;
   isFading(): boolean;
 }
 
@@ -123,6 +125,11 @@ export class MpvController extends EventEmitter {
 
   private equalizerGains: number[] = Array(10).fill(0);
   private normalizationGainDb = 0;
+  // 响度归一默认走 mpv 的 volume-gain 属性（不重建 af 链）；若某次设置失败（老版 mpv 不支持），
+  // 永久切到 af 滤镜回退（在 af 串尾部追加 volume=XdB，老行为）。
+  private normalizationUsesAfFallback = false;
+  // 当前 loop-file 值缓存（null 表示未知/未设置），用于跳过未变更的重复设置
+  private loopFileValue: string | null = null;
   private impulseResponsePath = '';
   private impulseResponseMix = DEFAULT_IMPULSE_RESPONSE_MIX;
   private impulseResponseFailureRecovering = false;
@@ -454,11 +461,11 @@ export class MpvController extends EventEmitter {
         await this.addon.setAudioDevice(String(value));
       } else if (prop === 'pause') {
         if (value) this.addon.pause();
-        else this.addon.play();
+        else await this.addon.play();
       } else if (prop === 'volume') {
         this.addon.setVolume(Number(value));
       } else if (prop === 'speed') {
-        this.addon.setSpeed(Number(value));
+        await this.addon.setSpeed(Number(value));
       } else if (prop === 'aid') {
         this.addon.setAudioTrack(Number(value));
       } else if (prop === 'af') {
@@ -560,7 +567,7 @@ export class MpvController extends EventEmitter {
   async play(): Promise<void> {
     if (!this.addon) return;
     await this.whenReady();
-    this.addon.play();
+    await this.addon.play();
   }
 
   async pause(): Promise<void> {
@@ -603,7 +610,10 @@ export class MpvController extends EventEmitter {
   async setSpeed(speed: number): Promise<void> {
     if (!this.addon) return;
     const s = clamp(speed, 0.1, 5);
-    this.addon.setSpeed(s);
+    // 值未变则跳过：设置 speed 会触发 mpv 重建音频滤镜链（含 afir/IR 卷积，约 500ms），
+    // 切歌时 speed 恒为默认值，重复下发会无谓地阻塞/重建，这里直接短路。
+    if (s === this.state.speed) return;
+    await this.addon.setSpeed(s);
     this.state.speed = s;
   }
 
@@ -680,6 +690,24 @@ export class MpvController extends EventEmitter {
 
   async applyNormalizationGain(gainDb: number): Promise<void> {
     this.normalizationGainDb = gainDb;
+    if (!this.addon) return;
+    // 优先走 volume-gain 属性：作为独立输出增益，切歌改响度时不重建 afir 卷积链。
+    if (!this.normalizationUsesAfFallback) {
+      try {
+        this.addon.setVolumeGain(gainDb);
+        return;
+      } catch (err) {
+        // 老版 mpv 不支持 volume-gain → 永久回退到 af 滤镜方式
+        log.warn('[MpvController] volume-gain unsupported, fallback to af volume filter:', err);
+        this.normalizationUsesAfFallback = true;
+        try {
+          this.addon.setVolumeGain(0);
+        } catch {
+          // 忽略：回退时清零失败无影响
+        }
+      }
+    }
+    // 回退路径：把 volume=XdB 并入 af 串（老行为，会触发整链重建）
     await this.syncAudioFilters();
   }
 
@@ -744,7 +772,9 @@ export class MpvController extends EventEmitter {
       }
     }
 
-    if (this.normalizationGainDb !== 0) {
+    // 响度归一默认走 volume-gain 属性（见 applyNormalizationGain），不进 af 链，
+    // 避免切歌改响度时重建 afir。仅在回退模式下才把 volume 并入 af 串。
+    if (this.normalizationUsesAfFallback && this.normalizationGainDb !== 0) {
       const volFilter = `volume=${this.normalizationGainDb}dB`;
       filters.push(volFilter);
       structuralParts.push(volFilter);
@@ -896,7 +926,7 @@ export class MpvController extends EventEmitter {
   async playWithFade(targetVolumePercent: number, durationMs: number): Promise<void> {
     if (!this.addon) return;
     // Rust 侧会先设置音量 0、播放、然后后台 fade
-    this.addon.playWithFade(targetVolumePercent, durationMs);
+    await this.addon.playWithFade(targetVolumePercent, durationMs);
   }
 
   cancelFade(): void {
@@ -908,9 +938,15 @@ export class MpvController extends EventEmitter {
   }
 
   /** 设置文件循环模式 */
-  setLoopFile(loop: boolean): void {
+  async setLoopFile(loop: boolean): Promise<void> {
+    if (!this.addon) return;
+    const value = loop ? 'inf' : 'no';
+    // 值未变则跳过：设置 loop-file 会触发 mpv 重建音频滤镜链（含 afir/IR 卷积，约 350ms），
+    // 切歌时循环值通常恒为 'no'，重复下发会无谓阻塞/重建，这里直接短路。
+    if (value === this.loopFileValue) return;
     try {
-      this.addon?.setLoopFile(loop ? 'inf' : 'no');
+      await this.addon.setLoopFile(value);
+      this.loopFileValue = value;
     } catch {
       // 忽略循环设置失败
     }

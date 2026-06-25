@@ -172,8 +172,8 @@ export function registerPlayerIpc(ref: MpvRef): void {
   });
 
   // 设置文件循环模式（单曲循环用）
-  ipcRegistry.registerHandler('mpv:set-loop-file', (_e, loop: boolean) => {
-    ref.current?.setLoopFile(loop);
+  ipcRegistry.registerHandler('mpv:set-loop-file', async (_e, loop: boolean) => {
+    await ref.current?.setLoopFile(loop);
   });
 
   // 设置播放卡死检测阈值（秒，0=禁用），由渲染进程根据用户设置下发

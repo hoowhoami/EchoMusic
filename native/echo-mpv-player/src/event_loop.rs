@@ -9,6 +9,11 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 
+/// 解码相关的高频噪声日志前缀：坏帧/解码错误（如从 CDN 流式拉取的 FLAC 字节错位）会逐帧上报，
+/// 这类日志诊断价值低、却可能成簇爆发并逐条经 ThreadsafeFunction 派发到主进程。
+/// 直接在事件线程按前缀丢弃，根本不跨线程，避免给主进程添负担。
+const NOISE_LOG_PREFIXES: &[&str] = &["ffmpeg/audio", "ad"];
+
 /// 包装裸指针使其可以跨线程传递
 /// libmpv 文档保证 mpv_handle 的线程安全性
 struct SendPtr(usize);
@@ -110,6 +115,10 @@ fn handle_log_message(
     callback: &Arc<Mutex<ThreadsafeFunction<PlayerEvent>>>,
 ) {
     let prefix = read_c_string(message.prefix);
+    // 解码噪声（坏帧/解码错误）直接在事件线程丢弃，不跨线程到主进程
+    if NOISE_LOG_PREFIXES.contains(&prefix.as_str()) {
+        return;
+    }
     let level = read_c_string(message.level);
     let text = read_c_string(message.text);
     if text.is_empty() {

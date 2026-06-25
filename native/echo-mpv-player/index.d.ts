@@ -51,8 +51,8 @@ export declare function pause(): void
 /** 复合操作：淡出 → 暂停 → 恢复音量 */
 export declare function pauseWithFade(savedVolume: number, durationMs: number): void
 
-/** 播放 */
-export declare function play(): void
+/** 播放，返回 Promise<void>。新文件起播的滤镜链构建在工作线程完成，不阻塞主线程。 */
+export declare function play(): Promise<unknown>
 
 /** 播放器配置选项（可选参数） */
 export interface PlayerConfigOptions {
@@ -94,8 +94,8 @@ export interface PlayerState {
   audioTrackId: number
 }
 
-/** 复合操作：设置音量 0 → 播放 → 淡入 */
-export declare function playWithFade(targetVolume: number, durationMs: number): void
+/** 复合操作：设置音量 0 → 播放 → 淡入，返回 Promise<void>。起播的滤镜链构建在工作线程完成。 */
+export declare function playWithFade(targetVolume: number, durationMs: number): Promise<unknown>
 
 /** 注册事件回调并启动事件循环 */
 export declare function registerEventHandler(callback: ((err: Error | null, arg: PlayerEvent) => any)): void
@@ -121,17 +121,23 @@ export declare function setAudioTrack(trackId: number): void
 /** 设置独占模式，返回 Promise<void>。音频输出重启在工作线程执行，不阻塞主线程。 */
 export declare function setExclusive(exclusive: boolean): Promise<unknown>
 
-/** 设置文件循环（"inf" 无限循环，"no" 不循环） */
-export declare function setLoopFile(value: string): void
+/** 设置文件循环（"inf" 无限循环，"no" 不循环），返回 Promise<void>。 */
+export declare function setLoopFile(value: string): Promise<unknown>
 
 /** 设置 force-media-title */
 export declare function setMediaTitle(title: string): void
 
-/** 设置播放速度 */
-export declare function setSpeed(speed: number): void
+/** 设置播放速度，返回 Promise<void>。滤镜链重建在工作线程完成，不阻塞主线程。 */
+export declare function setSpeed(speed: number): Promise<unknown>
 
 /** 设置音量（0-100） */
 export declare function setVolume(volume: number): void
+
+/**
+ * 设置响度归一增益（dB）。走 mpv 的 volume-gain 属性，不重建 af 链；老版 mpv 不支持时返回错误，
+ * 由 JS 层回退到 af 滤镜方式。属性设置开销极小，保持同步。
+ */
+export declare function setVolumeGain(gainDb: number): void
 
 /** 停止 */
 export declare function stop(): void
