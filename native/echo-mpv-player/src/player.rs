@@ -91,7 +91,6 @@ impl MpvPlayer {
         player.set_option("video", "no");
         player.set_option("terminal", "no");
         player.set_option("config", "no");
-        player.set_option("volume", "100");
         player.set_option("audio-display", "no");
         player.set_option("hr-seek", "yes");
         player.set_option("volume-max", "100");
