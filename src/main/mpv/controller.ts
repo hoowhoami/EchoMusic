@@ -32,22 +32,25 @@ interface MpvAddon {
       },
     ) => void,
   ): void;
-  loadFile(url: string): void;
-  loadMkvTrack(url: string, trackId: number): void;
+  loadFile(url: string): Promise<void>;
+  loadMkvTrack(url: string, trackId: number): Promise<void>;
   setAudioTrack(trackId: number): void;
-  getTrackList(): Array<{ id: number; type: string; codec: string; title?: string; lang?: string }>;
+  getTrackList(): Promise<
+    Array<{ id: number; type: string; codec: string; title?: string; lang?: string }>
+  >;
   play(): void;
   pause(): void;
   stop(): void;
   seek(time: number): void;
   setVolume(volume: number): void;
   setSpeed(speed: number): void;
-  setAudioDevice(deviceName: string): void;
-  getAudioDevices(): Array<{ name: string; description: string }>;
+  setAudioDevice(deviceName: string): Promise<void>;
+  getAudioDevices(): Promise<Array<{ name: string; description: string }>>;
   setAudioFilter(filter: string): void;
+  // 异步设置音频滤镜：在工作线程重建滤镜链，不阻塞主线程
+  setAudioFilterAsync(filter: string): Promise<void>;
   afCommand(label: string, cmd: string, arg: string, target: string): void;
-  setNormalizationGain(gainDb: number): void;
-  setExclusive(exclusive: boolean): void;
+  setExclusive(exclusive: boolean): Promise<void>;
   setMediaTitle(title: string): void;
   getState(): MpvState;
   getProperty(name: string): string;
@@ -57,20 +60,6 @@ interface MpvAddon {
   pauseWithFade(savedVolume: number, durationMs: number): void;
   playWithFade(targetVolume: number, durationMs: number): void;
   isFading(): boolean;
-  // 频谱分析
-  startSpectrum(options?: { fftSize?: number; smoothing?: number; fps?: number }): {
-    running: boolean;
-    reason?: string;
-  };
-  stopSpectrum(): { running: boolean; reason?: string };
-  getSpectrumSnapshot(): { magnitudes: number[]; timestamp: number } | null;
-  // 高级 EQ
-  setEqAdvanced(gains: number[]): void;
-  setEqPreset(presetName: string): void;
-  getEqPresets(): string[];
-  // 空间音效
-  setSpatialAudio(irPath: string, wetLevel: number): void;
-  disableSpatialAudio(): void;
 }
 
 const clamp = (v: number, min: number, max: number) => Math.min(max, Math.max(min, v));
@@ -460,9 +449,9 @@ export class MpvController extends EventEmitter {
       if (prop === 'force-media-title') {
         this.addon.setMediaTitle(String(value));
       } else if (prop === 'audio-exclusive') {
-        this.addon.setExclusive(value === 'yes' || value === true);
+        await this.addon.setExclusive(value === 'yes' || value === true);
       } else if (prop === 'audio-device') {
-        this.addon.setAudioDevice(String(value));
+        await this.addon.setAudioDevice(String(value));
       } else if (prop === 'pause') {
         if (value) this.addon.pause();
         else this.addon.play();
@@ -491,7 +480,7 @@ export class MpvController extends EventEmitter {
     }
     if (cmd === 'loadfile') {
       this.disarmStallWatchdog();
-      this.addon.loadFile(String(args[1]));
+      await this.addon.loadFile(String(args[1]));
       return undefined;
     }
     if (cmd === 'stop') {
@@ -524,7 +513,7 @@ export class MpvController extends EventEmitter {
         }
       }, 15000);
     });
-    this.addon.loadFile(url);
+    await this.addon.loadFile(url);
   }
 
   async loadMkvTrack(url: string, audioTrackId: number): Promise<void> {
@@ -541,7 +530,7 @@ export class MpvController extends EventEmitter {
         }
       }, 15000);
     });
-    this.addon.loadFile(url);
+    await this.addon.loadFile(url);
     // file-loaded 后设置音轨
     this.fileReadyPromise
       .then(() => {
@@ -557,7 +546,7 @@ export class MpvController extends EventEmitter {
   async getTrackList(): Promise<MpvTrackInfo[]> {
     if (!this.addon) return [];
     try {
-      return this.addon.getTrackList();
+      return await this.addon.getTrackList();
     } catch {
       return [];
     }
@@ -624,6 +613,17 @@ export class MpvController extends EventEmitter {
     await this.syncAudioFilters();
   }
 
+  // af 滤镜应用串行化队列：自从滤镜重建改到工作线程异步执行后，多个触发源
+  // （file-loaded 重应用、EQ、IR、归一化）可能并发，用链式 Promise 串行化，
+  // 保证滤镜下发顺序与 lastStructuralKey 等状态记账一致。
+  private afSyncQueue: Promise<void> = Promise.resolve();
+
+  /** 在工作线程应用滤镜串，避免阻塞主线程。 */
+  private async applyAudioFilterString(filterString: string): Promise<void> {
+    if (!this.addon) return;
+    await this.addon.setAudioFilterAsync(filterString);
+  }
+
   async setEq(gains: number[]): Promise<void> {
     this.equalizerGains = gains.map((g) => clamp(g, -12, 12));
     await this.syncAudioFilters();
@@ -651,14 +651,14 @@ export class MpvController extends EventEmitter {
 
   async setAudioDevice(deviceName: string): Promise<void> {
     if (!this.addon) return;
-    this.addon.setAudioDevice(deviceName);
+    await this.addon.setAudioDevice(deviceName);
     this.state.audioDevice = deviceName;
   }
 
   async getAudioDevices(): Promise<MpvAudioDevice[]> {
     if (!this.addon) return [];
     try {
-      return this.addon.getAudioDevices();
+      return await this.addon.getAudioDevices();
     } catch {
       return [];
     }
@@ -685,6 +685,13 @@ export class MpvController extends EventEmitter {
 
   /** 同步合并后的音频滤镜到 mpv */
   private async syncAudioFilters(): Promise<void> {
+    // 串行化：把本次同步排到队列尾部，避免异步滤镜应用并发导致状态记账错乱。
+    const run = this.afSyncQueue.catch(() => {}).then(() => this.syncAudioFiltersInner());
+    this.afSyncQueue = run.catch(() => {});
+    return run;
+  }
+
+  private async syncAudioFiltersInner(): Promise<void> {
     if (!this.addon) return;
 
     const filters: string[] = [];
@@ -783,18 +790,9 @@ export class MpvController extends EventEmitter {
       if (shouldDuck) {
         await this.applyFilterWithDuck(filterString);
       } else {
-        // 非 duck 场景（如切歌）：异步调用避免阻塞主进程
-        // 使用 setImmediate 让滤镜设置脱离当前事件循环 tick
-        await new Promise<void>((resolve, reject) => {
-          setImmediate(() => {
-            try {
-              this.addon?.setAudioFilter(filterString);
-              resolve();
-            } catch (err) {
-              reject(err);
-            }
-          });
-        });
+        // 非 duck 场景（如切歌）：在工作线程异步重建滤镜链，避免阻塞主进程，
+        // 否则锁定桌面歌词时 Windows 全局鼠标钩子会被饿死导致光标卡顿。
+        await this.applyAudioFilterString(filterString);
       }
       this.lastStructuralKey = structuralKey;
       this.lastAppliedMix = mix;
@@ -810,7 +808,8 @@ export class MpvController extends EventEmitter {
       this.lastStructuralKey = null;
       this.impulseResponseFailureRecovering = true;
       try {
-        await this.syncAudioFilters();
+        // 直接调用 inner：当前已在串行队列内执行，走 syncAudioFilters 会等待自身完成而死锁。
+        await this.syncAudioFiltersInner();
       } finally {
         this.impulseResponseFailureRecovering = false;
       }
@@ -837,16 +836,7 @@ export class MpvController extends EventEmitter {
     }
     // 异步调用避免阻塞主进程，await 确保淡入前滤镜已应用完成
     try {
-      await new Promise<void>((resolve, reject) => {
-        setImmediate(() => {
-          try {
-            this.addon?.setAudioFilter(filterString);
-            resolve();
-          } catch (err) {
-            reject(err);
-          }
-        });
-      });
+      await this.applyAudioFilterString(filterString);
     } catch (err) {
       applyErr = err;
     }
@@ -922,98 +912,7 @@ export class MpvController extends EventEmitter {
     try {
       this.addon?.setLoopFile(loop ? 'inf' : 'no');
     } catch {
-      // 忽略
-    }
-  }
-
-  // ============ 频谱分析 ============
-
-  startSpectrum(options?: { fftSize?: number; smoothing?: number; fps?: number }): {
-    running: boolean;
-    reason?: string;
-  } {
-    if (!this.addon) {
-      return { running: false, reason: 'Addon not initialized' };
-    }
-    try {
-      return this.addon.startSpectrum(options);
-    } catch (err) {
-      log.error('[MpvController] startSpectrum failed:', err);
-      return { running: false, reason: err instanceof Error ? err.message : String(err) };
-    }
-  }
-
-  stopSpectrum(): { running: boolean; reason?: string } {
-    if (!this.addon) {
-      return { running: false, reason: 'Addon not initialized' };
-    }
-    try {
-      return this.addon.stopSpectrum();
-    } catch (err) {
-      log.error('[MpvController] stopSpectrum failed:', err);
-      return { running: false, reason: err instanceof Error ? err.message : String(err) };
-    }
-  }
-
-  getSpectrumSnapshot(): { magnitudes: number[]; timestamp: number } | null {
-    if (!this.addon) {
-      return null;
-    }
-    try {
-      return this.addon.getSpectrumSnapshot();
-    } catch (err) {
-      log.error('[MpvController] getSpectrumSnapshot failed:', err);
-      return null;
-    }
-  }
-
-  // ============ 高级 EQ ============
-
-  setEqAdvanced(gains: number[]): void {
-    if (!this.addon) return;
-    try {
-      this.addon.setEqAdvanced(gains);
-    } catch (err) {
-      log.error('[MpvController] setEqAdvanced failed:', err);
-    }
-  }
-
-  setEqPreset(presetName: string): void {
-    if (!this.addon) return;
-    try {
-      this.addon.setEqPreset(presetName);
-    } catch (err) {
-      log.error('[MpvController] setEqPreset failed:', err);
-    }
-  }
-
-  getEqPresets(): string[] {
-    if (!this.addon) return [];
-    try {
-      return this.addon.getEqPresets();
-    } catch (err) {
-      log.error('[MpvController] getEqPresets failed:', err);
-      return [];
-    }
-  }
-
-  // ============ 空间音效 ============
-
-  setSpatialAudioAdvanced(irPath: string, wetLevel: number): void {
-    if (!this.addon) return;
-    try {
-      this.addon.setSpatialAudio(irPath, wetLevel);
-    } catch (err) {
-      log.error('[MpvController] setSpatialAudio failed:', err);
-    }
-  }
-
-  disableSpatialAudioAdvanced(): void {
-    if (!this.addon) return;
-    try {
-      this.addon.disableSpatialAudio();
-    } catch (err) {
-      log.error('[MpvController] disableSpatialAudio failed:', err);
+      // 忽略循环设置失败
     }
   }
 }

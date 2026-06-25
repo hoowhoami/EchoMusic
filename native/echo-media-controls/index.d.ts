@@ -47,8 +47,8 @@ export interface TimelinePayload {
   totalTimeMs: number
 }
 
-/** 更新歌曲元数据 */
-export declare function updateMetadata(payload: MetadataPayload): void
+/** 更新歌曲元数据，返回 Promise<void>。封面处理在工作线程完成，不阻塞主线程。 */
+export declare function updateMetadata(payload: MetadataPayload): Promise<unknown>
 
 /** 更新播放状态 */
 export declare function updatePlayState(payload: PlayStatePayload): void

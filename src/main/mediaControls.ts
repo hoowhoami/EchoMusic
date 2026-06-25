@@ -16,7 +16,7 @@ interface NativeMediaControls {
     coverData?: number[];
     coverUrl?: string;
     durationMs?: number;
-  }): void;
+  }): Promise<void>;
   updatePlayState(payload: { status: string }): void;
   updateTimeline(payload: { currentTimeMs: number; totalTimeMs: number }): void;
   registerEventHandler(
@@ -172,7 +172,8 @@ export function initMediaControls(getMainWindow: () => BrowserWindow | null): vo
 
       try {
         // native addon 期望 coverData 为 number[]（NAPI-RS 的 Vec<u8> 映射）
-        nativeModule.updateMetadata({
+        // 异步：封面解码/重编码在工作线程执行，不阻塞主进程
+        await nativeModule.updateMetadata({
           title: payload.title,
           artist: payload.artist,
           album: payload.album,

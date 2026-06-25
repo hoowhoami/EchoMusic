@@ -1,6 +1,5 @@
 // echo-mpv-player NAPI 入口
 
-mod audio;
 mod event_loop;
 mod mpv_ffi;
 mod player;
@@ -8,7 +7,9 @@ mod types;
 
 use event_loop::start_event_loop;
 use mpv_ffi::MpvLib;
+use napi::bindgen_prelude::AsyncTask;
 use napi::threadsafe_function::{ThreadsafeFunction, ThreadsafeFunctionCallMode};
+use napi::{Env, Task};
 use napi_derive::napi;
 use player::{MpvPlayer, MpvPlayerConfig};
 use std::sync::atomic::Ordering;
@@ -163,20 +164,57 @@ pub fn register_event_handler(callback: ThreadsafeFunction<PlayerEvent>) -> napi
     Ok(())
 }
 
-/// 加载音频文件
-#[napi]
-pub fn load_file(url: String) -> napi::Result<()> {
-    get_player()?
-        .load_file(&url)
-        .map_err(|e| napi::Error::from_reason(e))
+/// 加载音频文件任务（loadfile 命令）
+pub struct LoadFileTask {
+    url: String,
 }
 
-/// 加载 MKV 并选择音轨
+impl Task for LoadFileTask {
+    type Output = ();
+    type JsValue = ();
+
+    fn compute(&mut self) -> napi::Result<Self::Output> {
+        get_player()?
+            .load_file(&self.url)
+            .map_err(|e| napi::Error::from_reason(e))
+    }
+
+    fn resolve(&mut self, _env: Env, _output: Self::Output) -> napi::Result<Self::JsValue> {
+        Ok(())
+    }
+}
+
+/// 加载音频文件，返回 Promise<void>。在工作线程发命令，不阻塞主线程。
 #[napi]
-pub fn load_mkv_track(url: String, track_id: i64) -> napi::Result<()> {
-    get_player()?
-        .load_mkv_track(&url, track_id)
-        .map_err(|e| napi::Error::from_reason(e))
+pub fn load_file(url: String) -> AsyncTask<LoadFileTask> {
+    AsyncTask::new(LoadFileTask { url })
+}
+
+/// 加载 MKV 并选择音轨任务
+pub struct LoadMkvTrackTask {
+    url: String,
+    track_id: i64,
+}
+
+impl Task for LoadMkvTrackTask {
+    type Output = ();
+    type JsValue = ();
+
+    fn compute(&mut self) -> napi::Result<Self::Output> {
+        get_player()?
+            .load_mkv_track(&self.url, self.track_id)
+            .map_err(|e| napi::Error::from_reason(e))
+    }
+
+    fn resolve(&mut self, _env: Env, _output: Self::Output) -> napi::Result<Self::JsValue> {
+        Ok(())
+    }
+}
+
+/// 加载 MKV 并选择音轨，返回 Promise<void>。
+#[napi]
+pub fn load_mkv_track(url: String, track_id: i64) -> AsyncTask<LoadMkvTrackTask> {
+    AsyncTask::new(LoadMkvTrackTask { url, track_id })
 }
 
 /// 设置音轨 ID（file-loaded 后调用）
@@ -187,12 +225,28 @@ pub fn set_audio_track(track_id: i64) -> napi::Result<()> {
         .map_err(|e| napi::Error::from_reason(e))
 }
 
-/// 获取音轨列表
+/// 获取音轨列表任务
+pub struct GetTrackListTask;
+
+impl Task for GetTrackListTask {
+    type Output = Vec<TrackInfo>;
+    type JsValue = Vec<TrackInfo>;
+
+    fn compute(&mut self) -> napi::Result<Self::Output> {
+        get_player()?
+            .get_track_list()
+            .map_err(|e| napi::Error::from_reason(e))
+    }
+
+    fn resolve(&mut self, _env: Env, output: Self::Output) -> napi::Result<Self::JsValue> {
+        Ok(output)
+    }
+}
+
+/// 获取音轨列表，返回 Promise<TrackInfo[]>。track-list 属性读取在工作线程执行。
 #[napi]
-pub fn get_track_list() -> napi::Result<Vec<TrackInfo>> {
-    get_player()?
-        .get_track_list()
-        .map_err(|e| napi::Error::from_reason(e))
+pub fn get_track_list() -> AsyncTask<GetTrackListTask> {
+    AsyncTask::new(GetTrackListTask)
 }
 
 /// 播放
@@ -243,20 +297,54 @@ pub fn set_speed(speed: f64) -> napi::Result<()> {
         .map_err(|e| napi::Error::from_reason(e))
 }
 
-/// 设置音频输出设备
-#[napi]
-pub fn set_audio_device(device_name: String) -> napi::Result<()> {
-    get_player()?
-        .set_audio_device(&device_name)
-        .map_err(|e| napi::Error::from_reason(e))
+/// 设置音频输出设备任务（切设备会重建音频输出，可能阻塞）
+pub struct SetAudioDeviceTask {
+    device_name: String,
 }
 
-/// 获取音频设备列表
+impl Task for SetAudioDeviceTask {
+    type Output = ();
+    type JsValue = ();
+
+    fn compute(&mut self) -> napi::Result<Self::Output> {
+        get_player()?
+            .set_audio_device(&self.device_name)
+            .map_err(|e| napi::Error::from_reason(e))
+    }
+
+    fn resolve(&mut self, _env: Env, _output: Self::Output) -> napi::Result<Self::JsValue> {
+        Ok(())
+    }
+}
+
+/// 设置音频输出设备，返回 Promise<void>。设备重建在工作线程执行，不阻塞主线程。
 #[napi]
-pub fn get_audio_devices() -> napi::Result<Vec<AudioDevice>> {
-    get_player()?
-        .get_audio_devices()
-        .map_err(|e| napi::Error::from_reason(e))
+pub fn set_audio_device(device_name: String) -> AsyncTask<SetAudioDeviceTask> {
+    AsyncTask::new(SetAudioDeviceTask { device_name })
+}
+
+/// 获取音频设备列表任务（Windows WASAPI 枚举可能耗时数百 ms）
+pub struct GetAudioDevicesTask;
+
+impl Task for GetAudioDevicesTask {
+    type Output = Vec<AudioDevice>;
+    type JsValue = Vec<AudioDevice>;
+
+    fn compute(&mut self) -> napi::Result<Self::Output> {
+        get_player()?
+            .get_audio_devices()
+            .map_err(|e| napi::Error::from_reason(e))
+    }
+
+    fn resolve(&mut self, _env: Env, output: Self::Output) -> napi::Result<Self::JsValue> {
+        Ok(output)
+    }
+}
+
+/// 获取音频设备列表，返回 Promise<AudioDevice[]>。设备枚举在工作线程执行。
+#[napi]
+pub fn get_audio_devices() -> AsyncTask<GetAudioDevicesTask> {
+    AsyncTask::new(GetAudioDevicesTask)
 }
 
 /// 设置音频滤镜
@@ -267,6 +355,34 @@ pub fn set_audio_filter(filter: String) -> napi::Result<()> {
         .map_err(|e| napi::Error::from_reason(e))
 }
 
+/// 异步设置音频滤镜任务：在 libuv 工作线程执行，避免重建 af 滤镜链
+/// （尤其 afir 卷积）时阻塞 Node 主线程导致 UI / 系统光标卡顿。
+pub struct SetAudioFilterTask {
+    filter: String,
+}
+
+impl Task for SetAudioFilterTask {
+    type Output = ();
+    type JsValue = ();
+
+    fn compute(&mut self) -> napi::Result<Self::Output> {
+        get_player()?
+            .set_audio_filter(&self.filter)
+            .map_err(|e| napi::Error::from_reason(e))
+    }
+
+    fn resolve(&mut self, _env: Env, _output: Self::Output) -> napi::Result<Self::JsValue> {
+        Ok(())
+    }
+}
+
+/// 异步设置音频滤镜，返回 Promise<void>。滤镜链重建在工作线程完成，
+/// 不阻塞主线程，错误通过 Promise reject 抛回 JS 层。
+#[napi]
+pub fn set_audio_filter_async(filter: String) -> AsyncTask<SetAudioFilterTask> {
+    AsyncTask::new(SetAudioFilterTask { filter })
+}
+
 /// 运行时向已加载的 af 滤镜发送命令（如改 amix 权重），不重建整条滤镜链
 #[napi]
 pub fn af_command(label: String, cmd: String, arg: String, target: String) -> napi::Result<()> {
@@ -275,44 +391,30 @@ pub fn af_command(label: String, cmd: String, arg: String, target: String) -> na
         .map_err(|e| napi::Error::from_reason(e))
 }
 
-/// 设置均衡器增益
-#[napi]
-pub fn set_eq(gains: Vec<f64>) -> napi::Result<()> {
-    if gains.len() != 10 {
-        return Err(napi::Error::new(
-            napi::Status::InvalidArg,
-            "Expected 10 equalizer gains".to_string(),
-        ));
+/// 设置独占模式任务（切独占会重启音频输出，阻塞）
+pub struct SetExclusiveTask {
+    exclusive: bool,
+}
+
+impl Task for SetExclusiveTask {
+    type Output = ();
+    type JsValue = ();
+
+    fn compute(&mut self) -> napi::Result<Self::Output> {
+        get_player()?
+            .set_exclusive(self.exclusive)
+            .map_err(|e| napi::Error::from_reason(e))
     }
 
-    let freqs = [60, 170, 310, 600, 1000, 3000, 6000, 12000, 14000, 16000];
-    let filter_parts: Vec<String> = gains
-        .iter()
-        .zip(freqs.iter())
-        .map(|(gain, freq)| format!("f={}:g={}", freq, gain))
-        .collect();
-
-    let filter_str = format!("equalizer={}", filter_parts.join(":"));
-
-    get_player()?
-        .set_audio_filter(&filter_str)
-        .map_err(|e| napi::Error::from_reason(e))
+    fn resolve(&mut self, _env: Env, _output: Self::Output) -> napi::Result<Self::JsValue> {
+        Ok(())
+    }
 }
 
-/// 设置音量均衡增益
+/// 设置独占模式，返回 Promise<void>。音频输出重启在工作线程执行，不阻塞主线程。
 #[napi]
-pub fn set_normalization_gain(gain_db: f64) -> napi::Result<()> {
-    get_player()?
-        .set_normalization_gain(gain_db)
-        .map_err(|e| napi::Error::from_reason(e))
-}
-
-/// 设置独占模式
-#[napi]
-pub fn set_exclusive(exclusive: bool) -> napi::Result<()> {
-    get_player()?
-        .set_exclusive(exclusive)
-        .map_err(|e| napi::Error::from_reason(e))
+pub fn set_exclusive(exclusive: bool) -> AsyncTask<SetExclusiveTask> {
+    AsyncTask::new(SetExclusiveTask { exclusive })
 }
 
 /// 设置 force-media-title
@@ -477,57 +579,4 @@ pub fn is_fading() -> napi::Result<bool> {
     Ok(get_player()?.fade_active().load(Ordering::SeqCst))
 }
 
-// ============ 高级 EQ ============
-
-#[napi]
-pub fn set_eq_advanced(gains: Vec<f64>) -> napi::Result<()> {
-    if gains.len() != 18 {
-        return Err(napi::Error::new(
-            napi::Status::InvalidArg,
-            "Expected 18 equalizer gains".to_string(),
-        ));
-    }
-
-    let player = get_player()?;
-    player.set_eq_advanced(gains)
-        .map_err(|e| napi::Error::from_reason(e))
-}
-
-#[napi]
-pub fn set_eq_preset(preset_name: String) -> napi::Result<()> {
-    let preset = audio::eq::get_preset(&preset_name)
-        .ok_or_else(|| napi::Error::from_reason(format!("Unknown preset: {}", preset_name)))?;
-
-    let player = get_player()?;
-    player.set_eq_advanced(preset.gains.to_vec())
-        .map_err(|e| napi::Error::from_reason(e))
-}
-
-#[napi]
-pub fn get_eq_presets() -> napi::Result<Vec<String>> {
-    Ok(audio::eq::PRESETS.iter().map(|p| p.name.to_string()).collect())
-}
-
-// ============ 空间音效 ============
-
-#[napi]
-pub fn set_spatial_audio(ir_path: String, wet_level: f64) -> napi::Result<()> {
-    if !(0.0..=1.0).contains(&wet_level) {
-        return Err(napi::Error::new(
-            napi::Status::InvalidArg,
-            "wet_level must be between 0.0 and 1.0".to_string(),
-        ));
-    }
-
-    let player = get_player()?;
-    player.set_spatial_audio(ir_path, wet_level)
-        .map_err(|e| napi::Error::from_reason(e))
-}
-
-#[napi]
-pub fn disable_spatial_audio() -> napi::Result<()> {
-    let player = get_player()?;
-    player.disable_spatial_audio()
-        .map_err(|e| napi::Error::from_reason(e))
-}
 

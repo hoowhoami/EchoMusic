@@ -196,31 +196,44 @@ export const usePlayerStore = defineStore(
       state.isLyricViewOpen = open ?? !state.isLyricViewOpen;
     };
 
+    // 切歌重入保护：防止极短音频 / 临近结尾 seek / 异常重复 EOF 等场景下
+    // handlePlaybackEnded 在上一次切歌尚未完成时被再次触发，导致连续多次切换。
+    let handlingPlaybackEnd = false;
     const handlePlaybackEnded = async () => {
-      if (playlistStore.activeQueue?.id === PERSONAL_FM_QUEUE_ID) {
-        const nextFmSong = await playlistStore.consumeNextPersonalFmTrack({
-          track: state.currentTrackSnapshot,
-          playtime: state.duration,
-          isOverplay: true,
-        });
-
-        if (nextFmSong) {
-          await playbackManager.playTrack(String(nextFmSong.id), playlistStore.activeQueue.songs, {
-            sourceQueueId: PERSONAL_FM_QUEUE_ID,
+      if (handlingPlaybackEnd) return;
+      handlingPlaybackEnd = true;
+      try {
+        if (playlistStore.activeQueue?.id === PERSONAL_FM_QUEUE_ID) {
+          const nextFmSong = await playlistStore.consumeNextPersonalFmTrack({
+            track: state.currentTrackSnapshot,
+            playtime: state.duration,
+            isOverplay: true,
           });
-        } else {
-          playbackManager.stop();
+
+          if (nextFmSong) {
+            await playbackManager.playTrack(
+              String(nextFmSong.id),
+              playlistStore.activeQueue.songs,
+              {
+                sourceQueueId: PERSONAL_FM_QUEUE_ID,
+              },
+            );
+          } else {
+            playbackManager.stop();
+          }
+          return;
         }
-        return;
-      }
-      if (state.playMode === 'single') {
-        if (state.currentAudioUrl) {
-          engine.setSource(state.currentAudioUrl);
-          void engine.play();
+        if (state.playMode === 'single') {
+          if (state.currentAudioUrl) {
+            engine.setSource(state.currentAudioUrl);
+            void engine.play();
+          }
+          return;
         }
-        return;
+        await playbackManager.next();
+      } finally {
+        handlingPlaybackEnd = false;
       }
-      playbackManager.next();
     };
 
     const registerSettingWatchers = () => {

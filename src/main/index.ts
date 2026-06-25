@@ -18,8 +18,9 @@ if (process.platform === 'win32') {
 // 初始化系统音频 loopback（必须在 app.ready 之前）
 initAudioLoopback();
 
-if (process.platform === 'win32' && app.isPackaged) {
+if (process.platform === 'win32') {
   app.commandLine.appendSwitch('no-sandbox');
+  app.commandLine.appendSwitch('disable-features', 'UseZoomForDSF');
 }
 
 // 必须在 app.ready 之前读取并应用 GPU 加速设置

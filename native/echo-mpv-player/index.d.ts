@@ -15,18 +15,14 @@ export declare function cancelFade(): void
 /** 销毁播放器 */
 export declare function destroy(): void
 
-export declare function disableSpatialAudio(): void
-
 /**
  * 淡入淡出
  * 返回后 fade 在后台线程执行，完成时通过事件回调通知
  */
 export declare function fade(from: number, to: number, durationMs: number): void
 
-/** 获取音频设备列表 */
-export declare function getAudioDevices(): Array<AudioDevice>
-
-export declare function getEqPresets(): Array<string>
+/** 获取音频设备列表，返回 Promise<AudioDevice[]>。设备枚举在工作线程执行。 */
+export declare function getAudioDevices(): Promise<unknown>
 
 /** 获取属性值（字符串形式） */
 export declare function getProperty(name: string): string
@@ -34,8 +30,8 @@ export declare function getProperty(name: string): string
 /** 获取当前状态快照 */
 export declare function getState(): PlayerState
 
-/** 获取音轨列表 */
-export declare function getTrackList(): Array<TrackInfo>
+/** 获取音轨列表，返回 Promise<TrackInfo[]>。track-list 属性读取在工作线程执行。 */
+export declare function getTrackList(): Promise<unknown>
 
 /** 初始化 libmpv 播放器 */
 export declare function initialize(libPath: string, config?: PlayerConfigOptions | undefined | null): void
@@ -43,11 +39,11 @@ export declare function initialize(libPath: string, config?: PlayerConfigOptions
 /** 检查 fade 是否正在执行 */
 export declare function isFading(): boolean
 
-/** 加载音频文件 */
-export declare function loadFile(url: string): void
+/** 加载音频文件，返回 Promise<void>。在工作线程发命令，不阻塞主线程。 */
+export declare function loadFile(url: string): Promise<unknown>
 
-/** 加载 MKV 并选择音轨 */
-export declare function loadMkvTrack(url: string, trackId: number): void
+/** 加载 MKV 并选择音轨，返回 Promise<void>。 */
+export declare function loadMkvTrack(url: string, trackId: number): Promise<unknown>
 
 /** 暂停 */
 export declare function pause(): void
@@ -107,35 +103,29 @@ export declare function registerEventHandler(callback: ((err: Error | null, arg:
 /** 跳转（秒） */
 export declare function seek(time: number): void
 
-/** 设置音频输出设备 */
-export declare function setAudioDevice(deviceName: string): void
+/** 设置音频输出设备，返回 Promise<void>。设备重建在工作线程执行，不阻塞主线程。 */
+export declare function setAudioDevice(deviceName: string): Promise<unknown>
 
 /** 设置音频滤镜 */
 export declare function setAudioFilter(filter: string): void
 
+/**
+ * 异步设置音频滤镜，返回 Promise<void>。滤镜链重建在工作线程完成，
+ * 不阻塞主线程，错误通过 Promise reject 抛回 JS 层。
+ */
+export declare function setAudioFilterAsync(filter: string): Promise<unknown>
+
 /** 设置音轨 ID（file-loaded 后调用） */
 export declare function setAudioTrack(trackId: number): void
 
-/** 设置均衡器增益 */
-export declare function setEq(gains: Array<number>): void
-
-export declare function setEqAdvanced(gains: Array<number>): void
-
-export declare function setEqPreset(presetName: string): void
-
-/** 设置独占模式 */
-export declare function setExclusive(exclusive: boolean): void
+/** 设置独占模式，返回 Promise<void>。音频输出重启在工作线程执行，不阻塞主线程。 */
+export declare function setExclusive(exclusive: boolean): Promise<unknown>
 
 /** 设置文件循环（"inf" 无限循环，"no" 不循环） */
 export declare function setLoopFile(value: string): void
 
 /** 设置 force-media-title */
 export declare function setMediaTitle(title: string): void
-
-/** 设置音量均衡增益 */
-export declare function setNormalizationGain(gainDb: number): void
-
-export declare function setSpatialAudio(irPath: string, wetLevel: number): void
 
 /** 设置播放速度 */
 export declare function setSpeed(speed: number): void
