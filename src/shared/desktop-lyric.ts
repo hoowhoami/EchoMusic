@@ -74,13 +74,20 @@ export const DEFAULT_DESKTOP_LYRIC_SETTINGS: DesktopLyricSettings = {
   offsetStep: 0.1,
 };
 
+/** 桌面歌词行切换视觉提前量，逐字高亮仍按真实歌词时间推进。 */
+export const DESKTOP_LYRIC_LINE_LOOKAHEAD_MS = 420;
+
 export type DesktopLyricLockPhase = 'idle' | 'locking' | 'unlocking';
 
 export type DesktopLyricSnapshot = {
   playback: DesktopLyricPlaybackPayload | null;
   lyricsTrackId: string | null;
   lyricsRevision: number;
+  /** 整首歌轻量时间轴：保留每行文本/翻译/音译和行级时间锚点，不承载整首逐字数据 */
   lyrics: LyricLinePayload[];
+  lyricDetailsRevision: number;
+  /** 当前可见窗口的完整逐字歌词，key 为歌词行 index */
+  lyricDetails: Record<number, LyricLinePayload>;
   currentIndex: number;
   lyricTimeOffset: number;
   settings: DesktopLyricSettings;
@@ -96,6 +103,8 @@ export type DesktopLyricSnapshotPatch = Partial<
     | 'lyricsTrackId'
     | 'lyricsRevision'
     | 'lyrics'
+    | 'lyricDetailsRevision'
+    | 'lyricDetails'
     | 'currentIndex'
     | 'lyricTimeOffset'
     | 'lockPhase'
@@ -117,6 +126,8 @@ export const isDesktopLyricFullSnapshot = (
     'lyricsTrackId' in value &&
     'lyricsRevision' in value &&
     'lyrics' in value &&
+    'lyricDetailsRevision' in value &&
+    'lyricDetails' in value &&
     'currentIndex' in value &&
     'lyricTimeOffset' in value &&
     'settings' in value &&
@@ -136,6 +147,10 @@ export const mergeDesktopLyricSnapshotMessage = (
     ...(message.lyricsTrackId !== undefined ? { lyricsTrackId: message.lyricsTrackId } : {}),
     ...(message.lyricsRevision !== undefined ? { lyricsRevision: message.lyricsRevision } : {}),
     ...(message.lyrics !== undefined ? { lyrics: message.lyrics } : {}),
+    ...(message.lyricDetailsRevision !== undefined
+      ? { lyricDetailsRevision: message.lyricDetailsRevision }
+      : {}),
+    ...(message.lyricDetails !== undefined ? { lyricDetails: message.lyricDetails } : {}),
     ...(message.currentIndex !== undefined ? { currentIndex: message.currentIndex } : {}),
     ...(message.lyricTimeOffset !== undefined
       ? { lyricTimeOffset: Number(message.lyricTimeOffset) || 0 }

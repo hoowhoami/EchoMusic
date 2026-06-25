@@ -240,6 +240,7 @@ const createPluginWindow = async (
       webSecurity: false,
       allowRunningInsecureContent: true,
       backgroundThrottling: false,
+      zoomFactor: 1.0,
       partition: `persist:plugin-window-${descriptor.pluginId}-${descriptor.id}`,
     },
   });

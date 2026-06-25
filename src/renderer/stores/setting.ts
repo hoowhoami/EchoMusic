@@ -138,6 +138,8 @@ export const useSettingStore = defineStore('setting', {
     searchHistory: [] as string[],
     userAgreementAccepted: false,
     disableGpuAcceleration: false,
+    highDpiEnabled: false,
+    dpiScale: 1,
     autoLaunch: false,
     startMinimized: false,
     logLevel: 'info' as AppLogLevel,
@@ -268,6 +270,15 @@ export const useSettingStore = defineStore('setting', {
           'update-disable-gpu-acceleration',
           this.disableGpuAcceleration,
         );
+      }
+    },
+    syncHighDpiSettings() {
+      this.dpiScale = Math.min(2, Math.max(0.5, Number(this.dpiScale) || 1));
+      if (window.electron?.ipcRenderer) {
+        window.electron.ipcRenderer.send('update-high-dpi-settings', {
+          enabled: this.highDpiEnabled,
+          dpiScale: this.dpiScale,
+        });
       }
     },
     syncAutoLaunch() {

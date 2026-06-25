@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer, webUtils, webFrame } from 'electron';
+import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import log from 'electron-log/renderer';
 import type { ApiServerStatus } from '../shared/api-server';
 import type { AppInfoResult, UpdateDownloadResult } from '../shared/app';
@@ -154,60 +154,6 @@ const isWayland =
         process.argv.some(
           (arg) => arg === '--ozone-platform=wayland' || arg === '--ozone-platform-hint=wayland',
         ))));
-
-/**
- * 高 DPI 缩放锁定（对标 VS Code 的 applyZoom 工程实践）。
- *
- * 思路：缩放是渲染进程（webFrame）的属性，在渲染进程侧确定性地锁定为 zoom level 0（= 100%），
- * 而不是在主进程用 did-finish-load + 定时器反复 setZoomFactor 去"追症状"。
- *
- * 本 preload 被主窗口、mini 播放器、插件窗口、桌面歌词等所有窗口共用，
- * 因此这一处即可覆盖全部窗口及插件页（含 SPA 路由切换、刷新、重启）。
- *
- * setZoomLevel(0)：清掉 Chromium 按 origin 持久化的缩放脏值，避免"重启后一开机就糊"。
- */
-const lockWindowZoom = () => {
-  try {
-    // 锁定页面缩放级别为 0（= 100%），清掉 Chromium 按 origin 持久化的缩放脏值。
-    // 视觉（捏合）缩放 Electron 默认已禁用，且捏合会合成为 ctrl+wheel 被 blockUserZoomShortcuts 拦截，无需额外处理。
-    if (webFrame.getZoomLevel() !== 0) webFrame.setZoomLevel(0);
-  } catch {
-    // 个别非常规渲染上下文可能不支持，忽略即可
-  }
-};
-
-/**
- * 拦截用户主动缩放界面的入口（Ctrl/Cmd + +/-/=/0、Ctrl/Cmd + 滚轮）。
- *
- * 目的：应用界面固定 100%，不提供缩放功能。一旦放任用户缩放，Chromium 会按 origin 把缩放级别
- * 持久化，下次启动自动恢复，是"重启后界面发虚"的诱因之一。
- *
- * 仅调用 preventDefault 取消浏览器内置缩放这一默认行为，不调用 stopPropagation，
- * 因此不影响应用自身的快捷键（渲染层 JS 监听仍会收到事件，主进程 globalShortcut 更不经过此处）。
- */
-const blockUserZoomShortcuts = () => {
-  window.addEventListener(
-    'keydown',
-    (event) => {
-      if (!event.ctrlKey && !event.metaKey) return;
-      if (['+', '-', '=', '0'].includes(event.key)) {
-        event.preventDefault();
-      }
-    },
-    { passive: false },
-  );
-  window.addEventListener(
-    'wheel',
-    (event) => {
-      if (event.ctrlKey || event.metaKey) event.preventDefault();
-    },
-    { passive: false },
-  );
-};
-
-lockWindowZoom();
-window.addEventListener('DOMContentLoaded', lockWindowZoom);
-blockUserZoomShortcuts();
 
 contextBridge.exposeInMainWorld('electron', {
   platform: process.platform,

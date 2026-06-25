@@ -71,6 +71,8 @@ let snapshot: DesktopLyricSnapshot = {
   lyricsTrackId: null,
   lyricsRevision: 0,
   lyrics: [],
+  lyricDetailsRevision: 0,
+  lyricDetails: {},
   currentIndex: -1,
   lyricTimeOffset: 0,
   settings: getDesktopLyricSettings(),
@@ -559,6 +561,8 @@ export const registerDesktopLyricHandlers = () => {
                 lyricsTrackId: nextLyricsTrackId,
                 lyricsRevision: snapshot.lyricsRevision + 1,
                 lyrics: [],
+                lyricDetailsRevision: snapshot.lyricDetailsRevision + 1,
+                lyricDetails: {},
                 currentIndex: -1,
                 lyricTimeOffset: 0,
               }
@@ -572,6 +576,8 @@ export const registerDesktopLyricHandlers = () => {
                 lyricsTrackId: snapshot.lyricsTrackId,
                 lyricsRevision: snapshot.lyricsRevision,
                 lyrics: snapshot.lyrics,
+                lyricDetailsRevision: snapshot.lyricDetailsRevision,
+                lyricDetails: snapshot.lyricDetails,
                 currentIndex: snapshot.currentIndex,
                 lyricTimeOffset: snapshot.lyricTimeOffset,
               }
@@ -603,6 +609,24 @@ export const registerDesktopLyricHandlers = () => {
         if (payload.lyricsTrackId === activeLyricsTrackId) {
           snapshot = { ...snapshot, lyricsTrackId: payload.lyricsTrackId };
           desktopPatch = { ...desktopPatch, lyricsTrackId: snapshot.lyricsTrackId };
+        }
+      }
+      if (payload.lyricDetails !== undefined) {
+        const activeLyricsTrackId =
+          snapshot.playback?.lyricHash || snapshot.playback?.trackId || null;
+        const nextLyricsTrackId =
+          payload.lyricsTrackId !== undefined ? payload.lyricsTrackId : activeLyricsTrackId;
+        if (nextLyricsTrackId === activeLyricsTrackId) {
+          snapshot = {
+            ...snapshot,
+            lyricDetailsRevision: snapshot.lyricDetailsRevision + 1,
+            lyricDetails: payload.lyricDetails,
+          };
+          desktopPatch = {
+            ...desktopPatch,
+            lyricDetailsRevision: snapshot.lyricDetailsRevision,
+            lyricDetails: snapshot.lyricDetails,
+          };
         }
       }
       if (payload.currentIndex !== undefined) {

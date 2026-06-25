@@ -143,6 +143,15 @@ const findPlugin = (shared: SharedPluginTarget) =>
     : null) ??
   null;
 
+const shouldRefreshResolvedPlugin = (
+  shared: SharedPluginTarget,
+  plugin: PluginMarketplacePlugin | null,
+) => {
+  if (!plugin) return true;
+  if (shared.version && shared.version !== plugin.version) return true;
+  return Boolean(shared.checksum && plugin.checksum && shared.checksum !== plugin.checksum);
+};
+
 const loadMarketplace = async (refresh = false) => {
   const result = await window.electron.plugins?.marketplace.list({
     refresh,
@@ -166,7 +175,7 @@ const resolveShare = async (refresh = false) => {
   targetPlugin.value = null;
   try {
     await loadMarketplace(refresh);
-    const source = findSource(shared);
+    let source = findSource(shared);
     targetSource.value = source;
 
     let plugin = findPlugin(shared);
@@ -177,8 +186,17 @@ const resolveShare = async (refresh = false) => {
       }
       if (source) {
         await loadMarketplace(true);
+        source = findSource(shared);
+        targetSource.value = source;
         plugin = findPlugin(shared);
       }
+    }
+
+    if (source?.enabled && !refresh && shouldRefreshResolvedPlugin(shared, plugin)) {
+      await loadMarketplace(true);
+      source = findSource(shared);
+      targetSource.value = source;
+      plugin = findPlugin(shared) ?? plugin;
     }
 
     if (!plugin) {

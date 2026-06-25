@@ -497,6 +497,7 @@ export const ensureMiniPlayerWindow = async () => {
       webSecurity: false,
       allowRunningInsecureContent: true,
       backgroundThrottling: false,
+      zoomFactor: 1.0,
     },
   });
 

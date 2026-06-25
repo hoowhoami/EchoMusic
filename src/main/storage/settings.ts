@@ -29,6 +29,8 @@ export type MainAppSettings = {
   disableGpuAcceleration: boolean;
   autoLaunch: boolean;
   startMinimized: boolean;
+  highDpiEnabled: boolean;
+  dpiScale: number;
   devToolsEnabled: boolean;
   windowState: MainWindowState;
   miniPlayerWindowState: MiniPlayerWindowState;
@@ -53,6 +55,8 @@ export const DEFAULT_MAIN_APP_SETTINGS: MainAppSettings = {
   disableGpuAcceleration: false,
   autoLaunch: false,
   startMinimized: false,
+  highDpiEnabled: false,
+  dpiScale: 1,
   devToolsEnabled: false,
   windowState: {
     width: 1100,
@@ -113,6 +117,15 @@ export const setMainAppSetting = <K extends keyof MainAppSettings>(
 
 export const getDisableGpuAccelerationSetting = () =>
   Boolean(getMainAppSettings().disableGpuAcceleration);
+
+export const getHighDpiSettings = () => {
+  const settings = getMainAppSettings();
+  const dpiScale = Math.min(2, Math.max(0.5, Number(settings.dpiScale) || 1));
+  return {
+    enabled: Boolean(settings.highDpiEnabled),
+    dpiScale,
+  };
+};
 
 export const getDevToolsEnabledSetting = () => Boolean(getMainAppSettings().devToolsEnabled);
 

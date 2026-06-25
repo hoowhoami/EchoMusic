@@ -567,6 +567,16 @@ export const registerSettingsHandlers = ({ getMainWindow }: IpcContext) => {
     setMainAppSetting('disableGpuAcceleration', Boolean(disabled));
   });
 
+  // 高 DPI 支持（需重启生效）
+  ipcRegistry.registerListener(
+    'update-high-dpi-settings',
+    (_event, payload: { enabled?: boolean; dpiScale?: number }) => {
+      const dpiScale = Math.min(2, Math.max(0.5, Number(payload?.dpiScale) || 1));
+      setMainAppSetting('highDpiEnabled', Boolean(payload?.enabled));
+      setMainAppSetting('dpiScale', dpiScale);
+    },
+  );
+
   // 获取系统全部字体
   ipcRegistry.registerHandler('get-all-fonts', async () => {
     try {

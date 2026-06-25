@@ -10,6 +10,7 @@ import type { AppLogLevel } from '../../../../shared/logging';
 import Switch from '@/components/ui/Switch.vue';
 import Input from '@/components/ui/Input.vue';
 import InputNumber from '@/components/ui/InputNumber.vue';
+import Slider from '@/components/ui/Slider.vue';
 import FontIcon from '@/components/ui/FontIcon.vue';
 import Select from '@/components/ui/Select.vue';
 import Button from '@/components/ui/Button.vue';
@@ -39,6 +40,8 @@ const diagnosticLabel = computed(() => {
   const remaining = Math.max(0, settingStore.logDiagnosticUntil - Date.now());
   return `剩余约 ${Math.ceil(remaining / 60000)} 分钟`;
 });
+
+const dpiScaleLabel = computed(() => Number(settingStore.dpiScale || 1).toFixed(1));
 
 const showUserInfo = ref(false);
 
@@ -76,6 +79,16 @@ const copyAuthHeader = async () => {
   } catch {
     toastStore.actionFailed('复制');
   }
+};
+
+const setHighDpiEnabled = (enabled: boolean) => {
+  settingStore.highDpiEnabled = enabled;
+  settingStore.syncHighDpiSettings();
+};
+
+const setDpiScale = (value: number) => {
+  settingStore.dpiScale = Math.round((Number(value) || 1) * 10) / 10;
+  settingStore.syncHighDpiSettings();
 };
 </script>
 
@@ -212,6 +225,37 @@ const copyAuthHeader = async () => {
         "
       />
     </div>
+    <div class="settings-divider"></div>
+    <div class="settings-item">
+      <div class="space-y-1">
+        <h3 class="font-semibold">高 DPI 支持</h3>
+        <p class="text-sm text-text-secondary">按指定缩放因子适配高分屏，重启后生效</p>
+      </div>
+      <Switch
+        :model-value="settingStore.highDpiEnabled"
+        @update:model-value="setHighDpiEnabled(Boolean($event))"
+      />
+    </div>
+    <template v-if="settingStore.highDpiEnabled">
+      <div class="settings-divider"></div>
+      <div class="settings-item">
+        <div class="space-y-1">
+          <h3 class="font-semibold">缩放因子</h3>
+          <p class="text-sm text-text-secondary">当前 {{ dpiScaleLabel }}，范围 0.5 至 2.0</p>
+        </div>
+        <Slider
+          class="w-60"
+          :model-value="settingStore.dpiScale"
+          :min="0.5"
+          :max="2"
+          :step="0.1"
+          show-value
+          :format-value="(value) => value.toFixed(1)"
+          @update:model-value="setDpiScale"
+          @value-commit="setDpiScale"
+        />
+      </div>
+    </template>
     <div class="settings-divider"></div>
     <div class="settings-item">
       <div class="space-y-1">

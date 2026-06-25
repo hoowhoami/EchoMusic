@@ -136,6 +136,26 @@ const updateYrcDomManual = () => {
   }
 };
 
+const getWordBackgroundPositionX = (line: RenderLine, charIndex: number) => {
+  if (!line.active) return '100%';
+  const char = line.line.characters[charIndex];
+  if (!char) return '100%';
+  const seekMs = playSeekMsRaw + lyricTimeOffset.value + LYRIC_LOOKAHEAD;
+  const duration = Math.max((char.endTime || 0) - (char.startTime || 0), 0.001);
+  const progress = Math.max(Math.min((seekMs - (char.startTime || 0)) / duration, 1), 0);
+  return `${100 - progress * 100}%`;
+};
+
+const getWordStyle = (line: RenderLine, charIndex: number) => {
+  if (!line.active) return { color: unplayedColor.value };
+  return {
+    backgroundImage: `linear-gradient(to right, ${playedColor.value} 50%, ${unplayedColor.value} 50%)`,
+    textShadow: 'none',
+    filter: lyricDropShadow.value,
+    backgroundPositionX: getWordBackgroundPositionX(line, charIndex),
+  };
+};
+
 const updateScrollManual = () => {
   renderLyricLines.value.forEach((line) => {
     const container = lineRefs.get(line.key);
@@ -191,11 +211,15 @@ const renderScopeKey = computed(
       snapshot.value?.lyricsRevision ?? 0
     }`,
 );
+const lyricDetailsRevision = computed(() => snapshot.value?.lyricDetailsRevision ?? 0);
 const lyrics = computed(() => {
   if (!snapshot.value) return [];
   if (snapshot.value.lyricsTrackId !== activeLyricsTrackId.value) return [];
   return snapshot.value.lyrics ?? [];
 });
+const lyricDetails = computed(() => snapshot.value?.lyricDetails ?? {});
+const resolveRenderLine = (line: LyricLinePayload, index: number) =>
+  lyricDetails.value[index] ?? line;
 const isLocked = computed(() => settings.value?.locked ?? false);
 const hasLyrics = computed(() => lyrics.value.length > 0);
 const lyricTimeOffset = computed(() => snapshot.value?.lyricTimeOffset ?? 0);
@@ -335,6 +359,20 @@ const getLineTop = (index: number) => {
   return `${localFontSize.value * 1.9}px`;
 };
 
+const createRenderLine = (
+  line: LyricLinePayload,
+  index: number,
+  options: {
+    active?: boolean;
+    suffix?: string;
+  },
+): RenderLine => ({
+  line,
+  index,
+  key: `${renderScopeKey.value}:${index}-${options.suffix ?? 'orig'}`,
+  active: Boolean(options.active),
+});
+
 const renderLyricLines = computed<RenderLine[]>(() => {
   if (!snapshot.value) return [];
   const lines = lyrics.value;
@@ -351,11 +389,13 @@ const renderLyricLines = computed<RenderLine[]>(() => {
   const current = lines[idx];
   if (!current) return [];
   const next = lines[idx + 1];
+  const currentDetail = resolveRenderLine(current, idx);
+  const nextDetail = next ? resolveRenderLine(next, idx + 1) : undefined;
 
   // 计算安全结束时间
   const safeEnd = next
     ? (next.characters?.[0]?.startTime ?? next.time * 1000)
-    : (current.characters?.[current.characters.length - 1]?.endTime ?? 0);
+    : (currentDetail.characters?.[currentDetail.characters.length - 1]?.endTime ?? 0);
 
   // 翻译模式
   if (secondaryEnabled.value && hasSecondary.value) {
@@ -374,57 +414,39 @@ const renderLyricLines = computed<RenderLine[]>(() => {
     }
     if (secondaryText) {
       return [
-        {
-          line: { ...current, characters: current.characters.map((c) => ({ ...c })) },
-          index: idx,
-          key: `${renderScopeKey.value}:${idx}-orig`,
-          active: true,
-        },
-        {
-          line: {
+        createRenderLine(
+          { ...currentDetail, characters: currentDetail.characters.map((c) => ({ ...c })) },
+          idx,
+          {
+            active: true,
+          },
+        ),
+        createRenderLine(
+          {
             time: current.time,
             text: secondaryText,
+            translated: current.translated,
+            romanized: current.romanized,
             characters: [
               {
                 text: secondaryText,
-                startTime: current.characters?.[0]?.startTime ?? 0,
+                startTime: currentDetail.characters?.[0]?.startTime ?? 0,
                 endTime: safeEnd,
               },
             ],
           },
-          index: idx,
-          key: `${renderScopeKey.value}:${idx}-secondary`,
-          active: false,
-        },
+          idx,
+          {
+            suffix: 'secondary',
+          },
+        ),
       ];
     }
   }
-  // 双行模式：当前 + 下一句
-  if (doubleLine.value) {
-    const result: RenderLine[] = [
-      { line: current, index: idx, key: `${renderScopeKey.value}:${idx}-orig`, active: true },
-    ];
-    if (next) {
-      result.push({
-        line: next,
-        index: idx + 1,
-        key: `${renderScopeKey.value}:${idx + 1}-orig`,
-        active: false,
-      });
-    }
-    return result;
-  }
-  // 单行模式：也预渲染下一句（视觉隐藏），切换时走 move 动画而非 enter/leave
-  const result: RenderLine[] = [
-    { line: current, index: idx, key: `${renderScopeKey.value}:${idx}-orig`, active: true },
-  ];
+
+  const result: RenderLine[] = [createRenderLine(currentDetail, idx, { active: true })];
   if (next) {
-    result.push({
-      line: next,
-      index: idx + 1,
-      key: `${renderScopeKey.value}:${idx + 1}-orig`,
-      active: false,
-    });
+    result.push(createRenderLine(nextDetail ?? next, idx + 1, {}));
   }
   return result;
 });
@@ -452,6 +474,10 @@ watch(renderScopeKey, () => {
   lineRefs.clear();
   contentRefs.clear();
   activeLineIndex.value = calculateCurrentIndex(playSeekMsRaw + lyricTimeOffset.value);
+});
+
+watch(lyricDetailsRevision, () => {
+  resetLyricDomCache();
 });
 
 watch(lyricTimeOffset, () => {
@@ -939,20 +965,7 @@ onBeforeUnmount(() => {
                   'end-with-space': char.text.endsWith(' ') || char.startTime === 0,
                 }"
               >
-                <span
-                  class="word"
-                  :style="
-                    line.active
-                      ? {
-                          backgroundImage: `linear-gradient(to right, ${playedColor} 50%, ${unplayedColor} 50%)`,
-                          textShadow: 'none',
-                          filter: lyricDropShadow,
-                          backgroundPositionX: '100%',
-                        }
-                      : undefined
-                  "
-                  >{{ char.text }}</span
-                >
+                <span class="word" :style="getWordStyle(line, ci)">{{ char.text }}</span>
               </span>
             </span>
           </span>
