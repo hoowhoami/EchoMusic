@@ -40,10 +40,10 @@ export declare function initialize(libPath: string, config?: PlayerConfigOptions
 export declare function isFading(): boolean
 
 /** 加载音频文件，返回 Promise<void>。在工作线程发命令，不阻塞主线程。 */
-export declare function loadFile(url: string): Promise<unknown>
+export declare function loadFile(url: string, seq?: number | undefined | null): Promise<unknown>
 
 /** 加载 MKV 并选择音轨，返回 Promise<void>。 */
-export declare function loadMkvTrack(url: string, trackId: number): Promise<unknown>
+export declare function loadMkvTrack(url: string, trackId: number, seq?: number | undefined | null): Promise<unknown>
 
 /** 暂停 */
 export declare function pause(): void

@@ -1,10 +1,12 @@
 // 事件轮询线程
 
 use crate::mpv_ffi::*;
-use crate::types::*;
 use crate::player::MpvPlayer;
+use crate::take_pending_load;
+use crate::types::*;
 use napi::threadsafe_function::{ThreadsafeFunction, ThreadsafeFunctionCallMode};
-use std::ffi::CStr;
+use std::ffi::{CStr, CString};
+use std::os::raw::c_void;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
@@ -53,24 +55,21 @@ pub fn start_event_loop(
                         if event_ref.data.is_null() {
                             continue;
                         }
-                        let prop =
-                            unsafe { &*(event_ref.data as *const MpvEventProperty) };
+                        let prop = unsafe { &*(event_ref.data as *const MpvEventProperty) };
                         handle_property_change(prop, &state, &callback);
                     }
                     MPV_EVENT_LOG_MESSAGE => {
                         if event_ref.data.is_null() {
                             continue;
                         }
-                        let message =
-                            unsafe { &*(event_ref.data as *const MpvEventLogMessage) };
+                        let message = unsafe { &*(event_ref.data as *const MpvEventLogMessage) };
                         handle_log_message(message, &callback);
                     }
                     MPV_EVENT_END_FILE => {
                         let reason = if event_ref.data.is_null() {
                             "eof"
                         } else {
-                            let end_file =
-                                unsafe { &*(event_ref.data as *const MpvEventEndFile) };
+                            let end_file = unsafe { &*(event_ref.data as *const MpvEventEndFile) };
                             match end_file.reason {
                                 MPV_END_FILE_REASON_EOF => "eof",
                                 MPV_END_FILE_REASON_STOP => "stop",
@@ -85,10 +84,21 @@ pub fn start_event_loop(
                         call_callback(&callback, PlayerEvent::playback_end(reason));
                     }
                     MPV_EVENT_FILE_LOADED => {
+                        let loaded_path = get_string_property(&lib, handle, "path");
+                        let pending = take_pending_load(&loaded_path);
+                        let path = pending
+                            .as_ref()
+                            .map(|load| load.path.clone())
+                            .filter(|path| !path.is_empty())
+                            .unwrap_or_else(|| loaded_path.clone());
                         if let Ok(mut s) = state.lock() {
                             s.idle = false;
+                            if !path.is_empty() {
+                                s.path = path.clone();
+                            }
                         }
-                        call_callback(&callback, PlayerEvent::file_loaded());
+                        let seq = pending.map(|load| load.seq).unwrap_or(0);
+                        call_callback(&callback, PlayerEvent::file_loaded(seq, path));
                     }
                     MPV_EVENT_IDLE => {
                         if let Ok(mut s) = state.lock() {
@@ -110,6 +120,20 @@ fn read_c_string(ptr: *const std::os::raw::c_char) -> String {
     unsafe { CStr::from_ptr(ptr).to_string_lossy().trim().to_string() }
 }
 
+fn get_string_property(lib: &MpvLib, handle: *mut MpvHandle, name: &str) -> String {
+    let c_name = match CString::new(name) {
+        Ok(value) => value,
+        Err(_) => return String::new(),
+    };
+    let ptr = unsafe { (lib.mpv_get_property_string)(handle, c_name.as_ptr()) };
+    if ptr.is_null() {
+        return String::new();
+    }
+    let value = unsafe { CStr::from_ptr(ptr).to_string_lossy().into_owned() };
+    unsafe { (lib.mpv_free)(ptr as *mut c_void) };
+    value
+}
+
 fn handle_log_message(
     message: &MpvEventLogMessage,
     callback: &Arc<Mutex<ThreadsafeFunction<PlayerEvent>>>,
@@ -128,10 +152,7 @@ fn handle_log_message(
 }
 
 /// 通过 Arc<Mutex> 包装的回调发送事件
-fn call_callback(
-    callback: &Arc<Mutex<ThreadsafeFunction<PlayerEvent>>>,
-    event: PlayerEvent,
-) {
+fn call_callback(callback: &Arc<Mutex<ThreadsafeFunction<PlayerEvent>>>, event: PlayerEvent) {
     if let Ok(cb) = callback.lock() {
         cb.call(Ok(event), ThreadsafeFunctionCallMode::NonBlocking);
     }
@@ -197,8 +218,7 @@ fn handle_property_change(
         }
         "audio-device-list" => {
             // 设备列表变化，解析属性节点中的设备列表一并发送
-            let devices = MpvPlayer::parse_audio_device_list_json(prop)
-                .unwrap_or_default();
+            let devices = MpvPlayer::parse_audio_device_list_json(prop).unwrap_or_default();
             call_callback(callback, PlayerEvent::audio_device_list_changed(devices));
         }
         _ => {}

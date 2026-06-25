@@ -104,12 +104,12 @@ impl PlayerEvent {
         }
     }
 
-    pub fn file_loaded() -> Self {
+    pub fn file_loaded(seq: u64, path: String) -> Self {
         Self {
             r#type: "file-loaded".to_string(),
-            value: None,
+            value: Some(seq as f64),
             flag: None,
-            message: None,
+            message: Some(path),
             devices: None,
             prefix: None,
             level: None,

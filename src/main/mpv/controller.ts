@@ -32,8 +32,8 @@ interface MpvAddon {
       },
     ) => void,
   ): void;
-  loadFile(url: string): Promise<void>;
-  loadMkvTrack(url: string, trackId: number): Promise<void>;
+  loadFile(url: string, seq?: number): Promise<void>;
+  loadMkvTrack(url: string, trackId: number, seq?: number): Promise<void>;
   setAudioTrack(trackId: number): void;
   getTrackList(): Promise<
     Array<{ id: number; type: string; codec: string; title?: string; lang?: string }>
@@ -111,6 +111,14 @@ export class MpvController extends EventEmitter {
   // 文件加载就绪 promise
   private fileReadyPromise: Promise<void> = Promise.resolve();
   private fileReadyResolve: (() => void) | null = null;
+  private fileReadyTimer: ReturnType<typeof setTimeout> | null = null;
+  private loadSeq = 0;
+  private fileReadySeq = 0;
+  private pendingFileReady: {
+    seq: number;
+    url: string;
+    resolve: () => void;
+  } | null = null;
 
   // 内部状态（与 addon 同步）
   private state: MpvState = {
@@ -167,16 +175,37 @@ export class MpvController extends EventEmitter {
     return run;
   }
 
-  private resetFileReadyWait(): void {
+  private resolvePendingFileReady(markReady: boolean): void {
+    if (this.fileReadyTimer) {
+      clearTimeout(this.fileReadyTimer);
+      this.fileReadyTimer = null;
+    }
+    const pending = this.pendingFileReady;
+    if (!pending) return;
+    if (markReady) this.fileReadySeq = Math.max(this.fileReadySeq, pending.seq);
+    this.pendingFileReady = null;
+    this.fileReadyResolve = null;
+    pending.resolve();
+  }
+
+  private resetFileReadyWait(url: string): number {
+    // Wake waiters for the superseded load so they can observe loadSeq changed and wait on the
+    // replacement instead of sitting on the old 15s timeout.
+    this.resolvePendingFileReady(false);
+    const seq = this.loadSeq + 1;
+    this.loadSeq = seq;
     this.fileReadyPromise = new Promise<void>((resolve) => {
+      this.pendingFileReady = { seq, url, resolve };
       this.fileReadyResolve = resolve;
-      setTimeout(() => {
-        if (this.fileReadyResolve === resolve) {
-          resolve();
-          this.fileReadyResolve = null;
+      this.fileReadyTimer = setTimeout(() => {
+        if (this.pendingFileReady?.seq === seq) {
+          log.warn('[MpvController] file-loaded wait timed out, continuing', { seq, url });
+          this.resolvePendingFileReady(true);
         }
       }, 15000);
+      if (typeof this.fileReadyTimer.unref === 'function') this.fileReadyTimer.unref();
     });
+    return seq;
   }
 
   get available(): boolean {
@@ -368,9 +397,23 @@ export class MpvController extends EventEmitter {
         break;
       case 'file-loaded':
         this.state.idle = false;
-        if (this.fileReadyResolve) {
-          this.fileReadyResolve();
-          this.fileReadyResolve = null;
+        if (this.pendingFileReady) {
+          const loadedSeq = Number(event.value || 0);
+          const loadedPath = String(event.message || '');
+          if (
+            loadedSeq === this.pendingFileReady.seq ||
+            (loadedSeq <= 0 && (!loadedPath || loadedPath === this.pendingFileReady.url))
+          ) {
+            this.resolvePendingFileReady(true);
+          } else {
+            log.warn('[MpvController] Ignoring stale file-loaded event', {
+              expectedSeq: this.pendingFileReady.seq,
+              actualSeq: loadedSeq,
+              expected: this.pendingFileReady.url,
+              actual: loadedPath,
+            });
+            break;
+          }
         }
         // 重新应用音频滤镜（防止被新文件加载重置）。强制下一次 sync 整链重设，确保这次重应用
         // 一定下发——否则若 mpv 在换文件时重置了 af，幂等命中会跳过、导致换歌后音效悄悄消失。
@@ -517,8 +560,12 @@ export class MpvController extends EventEmitter {
       return undefined;
     }
     if (cmd === 'loadfile') {
+      const url = String(args[1]);
       this.disarmStallWatchdog();
-      await this.enqueueMpvCommand(() => this.getAddonOrThrow().loadFile(String(args[1])));
+      this.state.path = url;
+      this.state.idle = true;
+      const loadSeq = this.resetFileReadyWait(url);
+      await this.enqueueMpvCommand(() => this.getAddonOrThrow().loadFile(url, loadSeq));
       return undefined;
     }
     if (cmd === 'stop') {
@@ -542,8 +589,8 @@ export class MpvController extends EventEmitter {
     this.disarmStallWatchdog();
     this.state.path = url;
     this.state.idle = true;
-    this.resetFileReadyWait();
-    await this.enqueueMpvCommand(() => this.getAddonOrThrow().loadFile(url));
+    const loadSeq = this.resetFileReadyWait(url);
+    await this.enqueueMpvCommand(() => this.getAddonOrThrow().loadFile(url, loadSeq));
   }
 
   async loadMkvTrack(url: string, audioTrackId: number): Promise<void> {
@@ -551,11 +598,12 @@ export class MpvController extends EventEmitter {
     this.disarmStallWatchdog();
     this.state.path = url;
     this.state.idle = true;
-    this.resetFileReadyWait();
-    await this.enqueueMpvCommand(() => this.getAddonOrThrow().loadFile(url));
+    const loadSeq = this.resetFileReadyWait(url);
+    await this.enqueueMpvCommand(() => this.getAddonOrThrow().loadFile(url, loadSeq));
     // file-loaded 后设置音轨
     this.fileReadyPromise
       .then(async () => {
+        if (loadSeq !== this.loadSeq || loadSeq > this.fileReadySeq) return;
         try {
           await this.enqueueMpvCommand(() => this.getAddonOrThrow().setAudioTrack(audioTrackId));
         } catch (err) {
@@ -576,7 +624,13 @@ export class MpvController extends EventEmitter {
 
   /** 等待文件加载就绪 */
   private async whenReady(): Promise<void> {
-    await this.fileReadyPromise;
+    for (;;) {
+      const seq = this.loadSeq;
+      if (this.fileReadySeq >= seq) return;
+      const wait = this.fileReadyPromise;
+      await wait;
+      if (seq === this.loadSeq && this.fileReadySeq >= seq) return;
+    }
   }
 
   async play(): Promise<void> {
