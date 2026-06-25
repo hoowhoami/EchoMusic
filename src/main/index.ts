@@ -10,6 +10,11 @@ if (!ensureLinuxMpvEnv()) {
   process.exit(0);
 }
 
+// Windows 音频/媒体会话初始化前先固定应用身份，避免系统把后续会话识别成临时客户端。
+if (process.platform === 'win32') {
+  app.setAppUserModelId('com.hoowhoami.echomusic');
+}
+
 // 初始化系统音频 loopback（必须在 app.ready 之前）
 initAudioLoopback();
 

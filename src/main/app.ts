@@ -36,10 +36,6 @@ const mpvRef: { current: MpvController | null } = { current: null };
 // --- 初始化日志 ---
 initLogger();
 
-if (process.platform === 'win32') {
-  app.setAppUserModelId('com.hoowhoami.echomusic');
-}
-
 const hasSafeModeArg = (argv: string[]) => argv.includes('--safe-mode');
 
 app.on('open-url', (event, url) => {
