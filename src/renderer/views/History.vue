@@ -334,14 +334,6 @@ const historyStats = computed(() => {
   };
 });
 
-/** 切歌时自动滚动到高亮的当前播放歌曲 */
-watch(activeSongId, async () => {
-  if (activeTab.value !== 'songs') return;
-  if (!activeSongId.value) return;
-  await nextTick();
-  songListRef.value?.scrollToActive?.();
-});
-
 const songCount = computed(() => songs.value.length);
 const displayedCountLabel = computed(() => `${songCount.value}`);
 
