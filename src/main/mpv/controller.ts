@@ -50,7 +50,7 @@ interface MpvAddon {
   // 异步设置音频滤镜：在工作线程重建滤镜链，不阻塞主线程
   setAudioFilterAsync(filter: string): Promise<void>;
   // 设置响度归一增益（dB），走 volume-gain 属性，不重建 af 链
-  setVolumeGain(gainDb: number): void;
+  setVolumeGain(gainDb: number): Promise<void>;
   afCommand(label: string, cmd: string, arg: string, target: string): void;
   setExclusive(exclusive: boolean): Promise<void>;
   setMediaTitle(title: string): void;
@@ -92,6 +92,9 @@ export class MpvController extends EventEmitter {
   private addon: MpvAddon | null = null;
   private libmpvPath: string | null;
   private isDestroyed = false;
+  // mpv/libuv 工作线程命令串行化：异步 native 调用不会阻塞主线程，但多个会重建输出链的
+  // 操作若并发进入 worker pool，业务顺序可能被打乱。这里统一按 JS 侧提交顺序下发。
+  private mpvCommandQueue: Promise<void> = Promise.resolve();
 
   // ── 播放卡死看门狗 ──
   // 主进程定时检测：播放中（非暂停/非 idle）若超过 stallTimeoutMs 收不到进度推进，
@@ -148,6 +151,32 @@ export class MpvController extends EventEmitter {
   constructor() {
     super();
     this.libmpvPath = resolveLibmpvPath();
+  }
+
+  private getAddonOrThrow(): MpvAddon {
+    if (!this.addon) throw new Error('addon not initialized');
+    return this.addon;
+  }
+
+  private enqueueMpvCommand<T>(operation: () => Promise<T> | T): Promise<T> {
+    const run = this.mpvCommandQueue.catch(() => {}).then(operation);
+    this.mpvCommandQueue = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    return run;
+  }
+
+  private resetFileReadyWait(): void {
+    this.fileReadyPromise = new Promise<void>((resolve) => {
+      this.fileReadyResolve = resolve;
+      setTimeout(() => {
+        if (this.fileReadyResolve === resolve) {
+          resolve();
+          this.fileReadyResolve = null;
+        }
+      }, 15000);
+    });
   }
 
   get available(): boolean {
@@ -454,22 +483,24 @@ export class MpvController extends EventEmitter {
       }
       // 根据属性名路由到对应方法
       if (prop === 'force-media-title') {
-        this.addon.setMediaTitle(String(value));
+        await this.enqueueMpvCommand(() => this.getAddonOrThrow().setMediaTitle(String(value)));
       } else if (prop === 'audio-exclusive') {
-        await this.addon.setExclusive(value === 'yes' || value === true);
+        await this.enqueueMpvCommand(() =>
+          this.getAddonOrThrow().setExclusive(value === 'yes' || value === true),
+        );
       } else if (prop === 'audio-device') {
-        await this.addon.setAudioDevice(String(value));
+        await this.enqueueMpvCommand(() => this.getAddonOrThrow().setAudioDevice(String(value)));
       } else if (prop === 'pause') {
-        if (value) this.addon.pause();
-        else await this.addon.play();
+        if (value) await this.enqueueMpvCommand(() => this.getAddonOrThrow().pause());
+        else await this.enqueueMpvCommand(() => this.getAddonOrThrow().play());
       } else if (prop === 'volume') {
-        this.addon.setVolume(Number(value));
+        await this.setVolume(Number(value));
       } else if (prop === 'speed') {
-        await this.addon.setSpeed(Number(value));
+        await this.setSpeed(Number(value));
       } else if (prop === 'aid') {
-        this.addon.setAudioTrack(Number(value));
+        await this.enqueueMpvCommand(() => this.getAddonOrThrow().setAudioTrack(Number(value)));
       } else if (prop === 'af') {
-        this.addon.setAudioFilter(String(value));
+        await this.enqueueMpvCommand(() => this.getAddonOrThrow().setAudioFilter(String(value)));
       }
       return undefined;
     }
@@ -487,16 +518,16 @@ export class MpvController extends EventEmitter {
     }
     if (cmd === 'loadfile') {
       this.disarmStallWatchdog();
-      await this.addon.loadFile(String(args[1]));
+      await this.enqueueMpvCommand(() => this.getAddonOrThrow().loadFile(String(args[1])));
       return undefined;
     }
     if (cmd === 'stop') {
       this.disarmStallWatchdog();
-      this.addon.stop();
+      await this.enqueueMpvCommand(() => this.getAddonOrThrow().stop());
       return undefined;
     }
     if (cmd === 'seek') {
-      this.addon.seek(Number(args[1]));
+      await this.enqueueMpvCommand(() => this.getAddonOrThrow().seek(Number(args[1])));
       return undefined;
     }
 
@@ -511,16 +542,8 @@ export class MpvController extends EventEmitter {
     this.disarmStallWatchdog();
     this.state.path = url;
     this.state.idle = true;
-    this.fileReadyPromise = new Promise<void>((resolve) => {
-      this.fileReadyResolve = resolve;
-      setTimeout(() => {
-        if (this.fileReadyResolve === resolve) {
-          resolve();
-          this.fileReadyResolve = null;
-        }
-      }, 15000);
-    });
-    await this.addon.loadFile(url);
+    this.resetFileReadyWait();
+    await this.enqueueMpvCommand(() => this.getAddonOrThrow().loadFile(url));
   }
 
   async loadMkvTrack(url: string, audioTrackId: number): Promise<void> {
@@ -528,21 +551,13 @@ export class MpvController extends EventEmitter {
     this.disarmStallWatchdog();
     this.state.path = url;
     this.state.idle = true;
-    this.fileReadyPromise = new Promise<void>((resolve) => {
-      this.fileReadyResolve = resolve;
-      setTimeout(() => {
-        if (this.fileReadyResolve === resolve) {
-          resolve();
-          this.fileReadyResolve = null;
-        }
-      }, 15000);
-    });
-    await this.addon.loadFile(url);
+    this.resetFileReadyWait();
+    await this.enqueueMpvCommand(() => this.getAddonOrThrow().loadFile(url));
     // file-loaded 后设置音轨
     this.fileReadyPromise
-      .then(() => {
+      .then(async () => {
         try {
-          this.addon?.setAudioTrack(audioTrackId);
+          await this.enqueueMpvCommand(() => this.getAddonOrThrow().setAudioTrack(audioTrackId));
         } catch (err) {
           log.warn('[MpvController] setAudioTrack failed:', err);
         }
@@ -567,19 +582,19 @@ export class MpvController extends EventEmitter {
   async play(): Promise<void> {
     if (!this.addon) return;
     await this.whenReady();
-    await this.addon.play();
+    await this.enqueueMpvCommand(() => this.getAddonOrThrow().play());
   }
 
   async pause(): Promise<void> {
     if (!this.addon) return;
-    this.addon.pause();
+    await this.enqueueMpvCommand(() => this.getAddonOrThrow().pause());
   }
 
   async stop(): Promise<void> {
     if (!this.addon) return;
     this.disarmStallWatchdog();
     try {
-      this.addon.stop();
+      await this.enqueueMpvCommand(() => this.getAddonOrThrow().stop());
     } catch {
       // idle 状态下 stop 可能失败
     }
@@ -594,7 +609,7 @@ export class MpvController extends EventEmitter {
     if (!this.addon) return;
     try {
       await this.whenReady();
-      this.addon.seek(time);
+      await this.enqueueMpvCommand(() => this.getAddonOrThrow().seek(time));
     } catch {
       // seek 失败时忽略
     }
@@ -603,18 +618,22 @@ export class MpvController extends EventEmitter {
   async setVolume(volume: number): Promise<void> {
     if (!this.addon) return;
     const v = clamp(volume, 0, 100);
-    this.addon.setVolume(v);
-    this.state.volume = v;
+    await this.enqueueMpvCommand(() => {
+      this.getAddonOrThrow().setVolume(v);
+      this.state.volume = v;
+    });
   }
 
   async setSpeed(speed: number): Promise<void> {
     if (!this.addon) return;
     const s = clamp(speed, 0.1, 5);
-    // 值未变则跳过：设置 speed 会触发 mpv 重建音频滤镜链（含 afir/IR 卷积，约 500ms），
-    // 切歌时 speed 恒为默认值，重复下发会无谓地阻塞/重建，这里直接短路。
-    if (s === this.state.speed) return;
-    await this.addon.setSpeed(s);
-    this.state.speed = s;
+    await this.enqueueMpvCommand(async () => {
+      // 值未变则跳过：设置 speed 会触发 mpv 重建音频滤镜链（含 afir/IR 卷积，约 500ms），
+      // 切歌时 speed 恒为默认值，重复下发会无谓地阻塞/重建，这里直接短路。
+      if (s === this.state.speed) return;
+      await this.getAddonOrThrow().setSpeed(s);
+      this.state.speed = s;
+    });
   }
 
   private async updateAudioFilter(updater: () => void): Promise<void> {
@@ -631,7 +650,7 @@ export class MpvController extends EventEmitter {
   /** 在工作线程应用滤镜串，避免阻塞主线程。 */
   private async applyAudioFilterString(filterString: string): Promise<void> {
     if (!this.addon) return;
-    await this.addon.setAudioFilterAsync(filterString);
+    await this.enqueueMpvCommand(() => this.getAddonOrThrow().setAudioFilterAsync(filterString));
   }
 
   async setEq(gains: number[]): Promise<void> {
@@ -661,8 +680,10 @@ export class MpvController extends EventEmitter {
 
   async setAudioDevice(deviceName: string): Promise<void> {
     if (!this.addon) return;
-    await this.addon.setAudioDevice(deviceName);
-    this.state.audioDevice = deviceName;
+    await this.enqueueMpvCommand(async () => {
+      await this.getAddonOrThrow().setAudioDevice(deviceName);
+      this.state.audioDevice = deviceName;
+    });
   }
 
   async getAudioDevices(): Promise<MpvAudioDevice[]> {
@@ -676,7 +697,7 @@ export class MpvController extends EventEmitter {
 
   async setAudioFilter(filterString: string): Promise<void> {
     if (!this.addon) return;
-    this.addon.setAudioFilter(filterString || '');
+    await this.enqueueMpvCommand(() => this.getAddonOrThrow().setAudioFilter(filterString || ''));
   }
 
   async getAudioFilter(): Promise<string> {
@@ -694,14 +715,14 @@ export class MpvController extends EventEmitter {
     // 优先走 volume-gain 属性：作为独立输出增益，切歌改响度时不重建 afir 卷积链。
     if (!this.normalizationUsesAfFallback) {
       try {
-        this.addon.setVolumeGain(gainDb);
+        await this.enqueueMpvCommand(() => this.getAddonOrThrow().setVolumeGain(gainDb));
         return;
       } catch (err) {
         // 老版 mpv 不支持 volume-gain → 永久回退到 af 滤镜方式
         log.warn('[MpvController] volume-gain unsupported, fallback to af volume filter:', err);
         this.normalizationUsesAfFallback = true;
         try {
-          this.addon.setVolumeGain(0);
+          await this.enqueueMpvCommand(() => this.getAddonOrThrow().setVolumeGain(0));
         } catch {
           // 忽略：回退时清零失败无影响
         }
@@ -789,11 +810,13 @@ export class MpvController extends EventEmitter {
     if (structuralKey === this.lastStructuralKey && !this.forceReapply) {
       if (irActive && mix !== this.lastAppliedMix) {
         try {
-          this.addon.afCommand(
-            IMPULSE_RESPONSE_AF_LABEL,
-            'weights',
-            `1 ${mix}`,
-            IMPULSE_RESPONSE_MIX_FILTER,
+          await this.enqueueMpvCommand(() =>
+            this.getAddonOrThrow().afCommand(
+              IMPULSE_RESPONSE_AF_LABEL,
+              'weights',
+              `1 ${mix}`,
+              IMPULSE_RESPONSE_MIX_FILTER,
+            ),
           );
           this.lastAppliedMix = mix;
           return;
@@ -893,20 +916,34 @@ export class MpvController extends EventEmitter {
       return;
     }
     // Rust 侧异步执行，通过 fade-complete 事件通知完成
-    return new Promise<void>((resolve) => {
+    let resolveComplete: (() => void) | null = null;
+    const completion = new Promise<void>((resolve) => {
+      resolveComplete = resolve;
+    });
+
+    await this.enqueueMpvCommand(() => {
       const onComplete = () => {
         this.removeListener('fade-complete', onComplete);
         clearTimeout(timer);
-        resolve();
+        resolveComplete?.();
       };
       // 安全超时
       const timer = setTimeout(() => {
         this.removeListener('fade-complete', onComplete);
-        resolve();
+        resolveComplete?.();
       }, durationMs + 500);
       this.once('fade-complete', onComplete);
-      this.addon!.fade(fromPercent, toPercent, durationMs);
+      try {
+        this.getAddonOrThrow().fade(fromPercent, toPercent, durationMs);
+      } catch (err) {
+        this.removeListener('fade-complete', onComplete);
+        clearTimeout(timer);
+        resolveComplete?.();
+        throw err;
+      }
     });
+
+    return completion;
   }
 
   /**
@@ -916,7 +953,9 @@ export class MpvController extends EventEmitter {
   async pauseWithFade(savedVolumePercent: number, durationMs: number): Promise<void> {
     if (!this.addon) return;
     // 非阻塞调用，淡出在 Rust 后台线程执行
-    this.addon.pauseWithFade(savedVolumePercent, durationMs);
+    await this.enqueueMpvCommand(() =>
+      this.getAddonOrThrow().pauseWithFade(savedVolumePercent, durationMs),
+    );
   }
 
   /**
@@ -926,27 +965,27 @@ export class MpvController extends EventEmitter {
   async playWithFade(targetVolumePercent: number, durationMs: number): Promise<void> {
     if (!this.addon) return;
     // Rust 侧会先设置音量 0、播放、然后后台 fade
-    await this.addon.playWithFade(targetVolumePercent, durationMs);
+    await this.enqueueMpvCommand(() =>
+      this.getAddonOrThrow().playWithFade(targetVolumePercent, durationMs),
+    );
   }
 
   cancelFade(): void {
-    try {
-      this.addon?.cancelFade();
-    } catch {
-      // 忽略
-    }
+    void this.enqueueMpvCommand(() => this.getAddonOrThrow().cancelFade()).catch(() => {});
   }
 
   /** 设置文件循环模式 */
   async setLoopFile(loop: boolean): Promise<void> {
     if (!this.addon) return;
     const value = loop ? 'inf' : 'no';
-    // 值未变则跳过：设置 loop-file 会触发 mpv 重建音频滤镜链（含 afir/IR 卷积，约 350ms），
-    // 切歌时循环值通常恒为 'no'，重复下发会无谓阻塞/重建，这里直接短路。
-    if (value === this.loopFileValue) return;
     try {
-      await this.addon.setLoopFile(value);
-      this.loopFileValue = value;
+      await this.enqueueMpvCommand(async () => {
+        // 值未变则跳过：设置 loop-file 会触发 mpv 重建音频滤镜链（含 afir/IR 卷积，约 350ms），
+        // 切歌时循环值通常恒为 'no'，重复下发会无谓阻塞/重建，这里直接短路。
+        if (value === this.loopFileValue) return;
+        await this.getAddonOrThrow().setLoopFile(value);
+        this.loopFileValue = value;
+      });
     } catch {
       // 忽略循环设置失败
     }

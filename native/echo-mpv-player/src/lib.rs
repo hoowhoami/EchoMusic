@@ -225,13 +225,32 @@ pub fn set_audio_track(track_id: i64) -> napi::Result<()> {
         .map_err(|e| napi::Error::from_reason(e))
 }
 
-/// 设置响度归一增益（dB）。走 mpv 的 volume-gain 属性，不重建 af 链；老版 mpv 不支持时返回错误，
-/// 由 JS 层回退到 af 滤镜方式。属性设置开销极小，保持同步。
+/// 设置响度归一增益任务。Windows 下 volume-gain 属性设置也可能短暂阻塞，
+/// 放到工作线程执行，避免卡住主进程事件循环。
+pub struct SetVolumeGainTask {
+    gain_db: f64,
+}
+
+impl Task for SetVolumeGainTask {
+    type Output = ();
+    type JsValue = ();
+
+    fn compute(&mut self) -> napi::Result<Self::Output> {
+        get_player()?
+            .set_volume_gain(self.gain_db)
+            .map_err(|e| napi::Error::from_reason(e))
+    }
+
+    fn resolve(&mut self, _env: Env, _output: Self::Output) -> napi::Result<Self::JsValue> {
+        Ok(())
+    }
+}
+
+/// 设置响度归一增益（dB），返回 Promise<void>。走 mpv 的 volume-gain 属性，不重建 af 链；
+/// 老版 mpv 不支持时 Promise reject，由 JS 层回退到 af 滤镜方式。
 #[napi]
-pub fn set_volume_gain(gain_db: f64) -> napi::Result<()> {
-    get_player()?
-        .set_volume_gain(gain_db)
-        .map_err(|e| napi::Error::from_reason(e))
+pub fn set_volume_gain(gain_db: f64) -> AsyncTask<SetVolumeGainTask> {
+    AsyncTask::new(SetVolumeGainTask { gain_db })
 }
 
 /// 获取音轨列表任务
@@ -663,5 +682,4 @@ pub fn play_with_fade(target_volume: f64, duration_ms: f64) -> AsyncTask<PlayWit
 pub fn is_fading() -> napi::Result<bool> {
     Ok(get_player()?.fade_active().load(Ordering::SeqCst))
 }
-
 

@@ -134,10 +134,10 @@ export declare function setSpeed(speed: number): Promise<unknown>
 export declare function setVolume(volume: number): void
 
 /**
- * 设置响度归一增益（dB）。走 mpv 的 volume-gain 属性，不重建 af 链；老版 mpv 不支持时返回错误，
- * 由 JS 层回退到 af 滤镜方式。属性设置开销极小，保持同步。
+ * 设置响度归一增益（dB），返回 Promise<void>。走 mpv 的 volume-gain 属性，不重建 af 链；
+ * 老版 mpv 不支持时 Promise reject，由 JS 层回退到 af 滤镜方式。
  */
-export declare function setVolumeGain(gainDb: number): void
+export declare function setVolumeGain(gainDb: number): Promise<unknown>
 
 /** 停止 */
 export declare function stop(): void

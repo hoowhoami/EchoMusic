@@ -121,10 +121,15 @@ export function applyLogSettings(settings?: Partial<LogSettings> | null, persist
     diagnosticTimer = setTimeout(
       () => {
         diagnosticTimer = null;
-        applyLogSettings({ ...currentLogSettings, diagnosticUntil: 0 }, true);
+        if (isDiagnosticActive(currentLogSettings)) {
+          applyLogSettings(currentLogSettings);
+        } else {
+          applyLogSettings({ ...currentLogSettings, diagnosticUntil: 0 }, true);
+        }
       },
       Math.min(remainingMs, 2 ** 31 - 1),
     );
+    if (typeof diagnosticTimer.unref === 'function') diagnosticTimer.unref();
   }
 
   // 通知监听者当前诊断状态，驱动性能哨兵启停
