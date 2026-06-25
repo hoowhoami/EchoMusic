@@ -5,10 +5,7 @@ import { useLyricStore, testLyricFilter } from '@/stores/lyric';
 import { useSettingStore } from '@/stores/setting';
 import { useToastStore } from '@/stores/toast';
 import { useDesktopLyricStore } from './store';
-import {
-  DESKTOP_LYRIC_LINE_LOOKAHEAD_MS,
-  mergeDesktopLyricSnapshotMessage,
-} from '../../shared/desktop-lyric';
+import { mergeDesktopLyricSnapshotMessage } from '../../shared/desktop-lyric';
 import type {
   DesktopLyricCommand,
   DesktopLyricPlaybackPayload,
@@ -17,7 +14,6 @@ import type {
 } from '../../shared/desktop-lyric';
 
 const DESKTOP_LYRIC_PROGRESS_SYNC_INTERVAL_MS = 80;
-const DESKTOP_LYRIC_DETAILS_SYNC_DELAY_MS = 700;
 const DEFAULT_DESKTOP_LYRIC_OFFSET_STEP_MS = 500;
 const DESKTOP_LYRIC_COMMANDS = new Set<DesktopLyricCommand>([
   'togglePlayback',
@@ -102,44 +98,20 @@ const buildPlaybackSignature = (
     boolKey(lyricSyncWarning),
   ].join('\u001f');
 
-const hashLyricLine = (hash: number, line: LyricLinePayload) => {
-  let nextHash = hashText(
-    `${line.time}|${line.text}|${line.translated ?? ''}|${line.romanized ?? ''}`,
-    hash,
-  );
-  for (const character of line.characters ?? []) {
-    nextHash = hashText(`${character.startTime}:${character.endTime}:${character.text}`, nextHash);
-  }
-  return nextHash;
-};
-
 const buildLyricsSignature = (lyricsTrackId: string | null, lyrics: LyricLinePayload[]) => {
   let hash = hashText(lyricsTrackId ?? '');
   let characterCount = 0;
   for (const line of lyrics) {
-    characterCount += line.characters?.length ?? 0;
-    hash = hashLyricLine(hash, line);
+    hash = hashText(
+      `${line.time}|${line.text}|${line.translated ?? ''}|${line.romanized ?? ''}`,
+      hash,
+    );
+    for (const character of line.characters ?? []) {
+      characterCount++;
+      hash = hashText(`${character.startTime}:${character.endTime}:${character.text}`, hash);
+    }
   }
   return `${lyricsTrackId ?? ''}\u001f${lyrics.length}\u001f${characterCount}\u001f${hash}`;
-};
-
-const buildLyricDetailsSignature = (
-  lyricsTrackId: string | null,
-  lyricDetails: Record<number, LyricLinePayload>,
-) => {
-  let hash = hashText(lyricsTrackId ?? '');
-  const indexes = Object.keys(lyricDetails)
-    .map((key) => Number(key))
-    .filter((index) => Number.isInteger(index))
-    .sort((a, b) => a - b);
-  let characterCount = 0;
-  for (const index of indexes) {
-    const line = lyricDetails[index];
-    if (!line) continue;
-    characterCount += line.characters?.length ?? 0;
-    hash = hashText(String(index), hashLyricLine(hash, line));
-  }
-  return `${lyricsTrackId ?? ''}\u001f${indexes.join(',')}\u001f${characterCount}\u001f${hash}`;
 };
 
 const normalizeLinePayload = (
@@ -155,38 +127,6 @@ const normalizeLinePayload = (
     endTime: Number(char.endTime) || Number(char.startTime) || 0,
   })),
 });
-
-const toTimelineLinePayload = (line: LyricLinePayload): LyricLinePayload => {
-  const firstCharacter = line.characters?.[0];
-  const lastCharacter = line.characters?.[line.characters.length - 1];
-  const startTime = firstCharacter?.startTime ?? Math.round(line.time * 1000);
-  const endTime = lastCharacter?.endTime ?? firstCharacter?.endTime ?? startTime;
-  return {
-    ...line,
-    characters: [
-      {
-        text: line.text,
-        startTime,
-        endTime,
-      },
-    ],
-  };
-};
-
-const buildVisibleLyricDetails = (lyrics: LyricLinePayload[], activeIndexes: number[]) => {
-  const details: Record<number, LyricLinePayload> = {};
-  const centers = activeIndexes.filter((index) => Number.isInteger(index) && index >= 0);
-  if (centers.length === 0 && lyrics.length > 0) centers.push(0);
-  for (const activeIndex of centers) {
-    const start = Math.max(0, activeIndex - 1);
-    const end = Math.min(lyrics.length - 1, activeIndex + 4);
-    for (let index = start; index <= end; index++) {
-      const line = lyrics[index];
-      if (line && (line.characters?.length ?? 0) > 1) details[index] = line;
-    }
-  }
-  return details;
-};
 
 const buildPlaybackPayload = (): DesktopLyricPlaybackPayload | null => {
   const playerStore = usePlayerStore();
@@ -244,15 +184,11 @@ export const initDesktopLyricSync = async () => {
 
   let lastSyncedSettingsKey = buildSettingsSignature(buildSyncedSettings());
   let lastSyncedLyricsKey = '';
-  let lastSyncedLyricDetailsKey = '';
   let lastSyncedPlaybackKey = '';
-  let lastFullLyricsTrackId: string | null = null;
-  let lastFullLyricsPayload: LyricLinePayload[] = [];
   let progressSyncTimer: ReturnType<typeof setTimeout> | null = null;
   let progressSyncQueued = false;
-  let lyricDetailsSyncTimer: ReturnType<typeof setTimeout> | null = null;
 
-  const buildFullLyricsPayload = () => {
+  const buildLyricsPayload = () => {
     const enabled = settingStore.desktopLyricFilterEnabled;
     const pattern = settingStore.desktopLyricFilterPattern;
     const raw = lines.value.map(normalizeLinePayload);
@@ -265,74 +201,21 @@ export const initDesktopLyricSync = async () => {
     const fallbackText = track ? `${track.name || '未知歌曲'} - ${track.artist || '未知歌手'}` : '';
 
     return raw.map((line) => {
-      const lineStart = line.characters?.[0]?.startTime ?? Math.round(line.time * 1000);
-      const lineEnd = line.characters?.[line.characters.length - 1]?.endTime ?? lineStart;
-      if (!testLyricFilter(line.text, enabled, pattern)) {
-        lastValidLine = line;
-        return line;
-      }
-
-      // 被过滤：用上一个有效行替代，保留时间
-      if (lastValidLine) {
+      if (testLyricFilter(line.text, enabled, pattern)) {
+        // 被过滤：用上一个有效行替代，保留时间
+        if (lastValidLine) {
+          return { ...lastValidLine, time: line.time, characters: lastValidLine.characters };
+        }
+        // 首行即过滤：显示歌曲标题
         return {
-          ...lastValidLine,
           time: line.time,
-          characters: [{ text: lastValidLine.text, startTime: lineStart, endTime: lineEnd }],
+          text: fallbackText,
+          characters: [{ text: fallbackText, startTime: 0, endTime: 0 }],
         };
       }
-      // 首行即过滤：显示歌曲标题
-      return {
-        time: line.time,
-        text: fallbackText,
-        characters: [
-          {
-            text: fallbackText,
-            startTime: lineStart,
-            endTime: lineEnd,
-          },
-        ],
-      };
+      lastValidLine = line;
+      return line;
     });
-  };
-
-  const calculateDesktopLyricVisualIndex = (playback: DesktopLyricPlaybackPayload | null) => {
-    const currentTimeMs = Math.round(
-      (playback?.currentTime ?? playerStore.currentTime ?? 0) * 1000,
-    );
-    return lyricStore.findIndexAtTimeMs(
-      currentTimeMs + currentTimeOffset.value + DESKTOP_LYRIC_LINE_LOOKAHEAD_MS,
-    );
-  };
-
-  const buildLyricDetailsPayload = (
-    fullLyrics?: LyricLinePayload[],
-    playback: DesktopLyricPlaybackPayload | null = buildPlaybackPayload(),
-  ) => {
-    const visual = calculateDesktopLyricVisualIndex(playback);
-    return buildVisibleLyricDetails(fullLyrics ?? buildFullLyricsPayload(), [
-      currentIndex.value,
-      visual,
-    ]);
-  };
-
-  const syncLyricDetailsSnapshot = async (fullLyrics?: LyricLinePayload[]) => {
-    const playback = buildPlaybackPayload();
-    const lyricsTrackId = playback?.lyricHash || playback?.trackId || null;
-    const detailSource =
-      fullLyrics ??
-      (lastFullLyricsTrackId === lyricsTrackId ? lastFullLyricsPayload : buildFullLyricsPayload());
-    const lyricDetails =
-      lyricStore.loadedHash === (lyricsTrackId ?? '')
-        ? buildLyricDetailsPayload(detailSource, playback)
-        : {};
-    const nextLyricDetailsKey = buildLyricDetailsSignature(lyricsTrackId, lyricDetails);
-    if (nextLyricDetailsKey === lastSyncedLyricDetailsKey) return;
-
-    window.electron.desktopLyric.syncSnapshot({
-      lyricsTrackId,
-      lyricDetails,
-    });
-    lastSyncedLyricDetailsKey = nextLyricDetailsKey;
   };
 
   const syncPlaybackSnapshot = async () => {
@@ -357,30 +240,16 @@ export const initDesktopLyricSync = async () => {
   const syncLyricsSnapshot = async () => {
     const playback = buildPlaybackPayload();
     const lyricsTrackId = playback?.lyricHash || playback?.trackId || null;
-    const fullLyrics =
-      lyricStore.loadedHash === (lyricsTrackId ?? '') ? buildFullLyricsPayload() : [];
-    lastFullLyricsTrackId = lyricsTrackId;
-    lastFullLyricsPayload = fullLyrics;
-    const lyrics = fullLyrics.map(toTimelineLinePayload);
+    const lyrics = lyricStore.loadedHash === (lyricsTrackId ?? '') ? buildLyricsPayload() : [];
     const nextLyricsKey = buildLyricsSignature(lyricsTrackId, lyrics);
-    const lyricDetails = buildLyricDetailsPayload(fullLyrics, playback);
-    const nextLyricDetailsKey = buildLyricDetailsSignature(lyricsTrackId, lyricDetails);
-    if (nextLyricsKey === lastSyncedLyricsKey && nextLyricDetailsKey === lastSyncedLyricDetailsKey)
-      return;
+    if (nextLyricsKey === lastSyncedLyricsKey) return;
 
-    if (nextLyricsKey !== lastSyncedLyricsKey) {
-      window.electron.desktopLyric.syncSnapshot({
-        playback,
-        lyricsTrackId,
-        lyrics,
-        lyricDetails,
-      });
-      lastSyncedLyricsKey = nextLyricsKey;
-      lastSyncedLyricDetailsKey = nextLyricDetailsKey;
-      return;
-    }
-
-    await syncLyricDetailsSnapshot(fullLyrics);
+    window.electron.desktopLyric.syncSnapshot({
+      playback,
+      lyricsTrackId,
+      lyrics,
+    });
+    lastSyncedLyricsKey = nextLyricsKey;
   };
 
   const scheduleProgressSync = () => {
@@ -393,15 +262,6 @@ export const initDesktopLyricSync = async () => {
       progressSyncQueued = false;
       void syncPlaybackSnapshot();
     }, DESKTOP_LYRIC_PROGRESS_SYNC_INTERVAL_MS);
-  };
-
-  const scheduleLyricDetailsSync = (delayMs = DESKTOP_LYRIC_DETAILS_SYNC_DELAY_MS) => {
-    if (lyricDetailsSyncTimer) clearTimeout(lyricDetailsSyncTimer);
-    lyricDetailsSyncTimer = setTimeout(() => {
-      lyricDetailsSyncTimer = null;
-      if (!desktopLyricStore.settings.enabled || lines.value.length === 0) return;
-      void syncLyricDetailsSnapshot();
-    }, delayMs);
   };
 
   const syncSettingsSnapshot = async () => {
@@ -427,10 +287,6 @@ export const initDesktopLyricSync = async () => {
       nextSnapshot.lyricSyncWarning,
     );
     lastSyncedLyricsKey = buildLyricsSignature(nextSnapshot.lyricsTrackId, nextSnapshot.lyrics);
-    lastSyncedLyricDetailsKey = buildLyricDetailsSignature(
-      nextSnapshot.lyricsTrackId,
-      nextSnapshot.lyricDetails,
-    );
   });
 
   const handleDesktopLyricCommand = (command: DesktopLyricCommand) => {
@@ -527,7 +383,6 @@ export const initDesktopLyricSync = async () => {
       [currentIndex],
       () => {
         scheduleProgressSync();
-        scheduleLyricDetailsSync();
       },
       { immediate: true },
     ),
@@ -554,10 +409,6 @@ export const initDesktopLyricSync = async () => {
     if (progressSyncTimer) {
       clearTimeout(progressSyncTimer);
       progressSyncTimer = null;
-    }
-    if (lyricDetailsSyncTimer) {
-      clearTimeout(lyricDetailsSyncTimer);
-      lyricDetailsSyncTimer = null;
     }
     stops.forEach((stop) => stop());
   };
