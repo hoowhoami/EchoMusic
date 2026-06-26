@@ -455,6 +455,12 @@ const collapseMiniPlayer = () => {
   miniPlayerExpanded = false;
 };
 
+const notifyMiniPlayerLyricVisibility = (visible: boolean) => {
+  const mainWindow = getMainRendererWindow();
+  if (!mainWindow) return;
+  mainWindow.webContents.send('mini-player:lyric-visibility', visible);
+};
+
 export const ensureMiniPlayerWindow = async () => {
   if (canUseWindow(miniPlayerWindow)) {
     if (miniPlayerWindow.isMinimized()) miniPlayerWindow.restore();
@@ -585,7 +591,8 @@ export const closeMiniPlayerWindow = () => {
   }
   writeMiniPlayerBounds();
   collapseMiniPlayer();
-  win.hide();
+  notifyMiniPlayerLyricVisibility(false);
+  win.destroy();
   scheduleMiniPlayerDockRestore();
 };
 
@@ -610,6 +617,12 @@ export const destroyMiniPlayerWindow = () => {
   clearMiniPlayerPresentationTimers();
   clearMiniPlayerDockRestoreTimers();
   clearCollapseTimer();
+  if (persistBoundsTimer) {
+    clearTimeout(persistBoundsTimer);
+    persistBoundsTimer = null;
+  }
+  writeMiniPlayerBounds();
+  notifyMiniPlayerLyricVisibility(false);
   miniPlayerWindow = null;
   miniPlayerWindowUsesPanel = false;
   win.destroy();
@@ -650,7 +663,9 @@ export const registerMiniPlayerHandlers = () => {
 
   ipcRegistry.registerListener(
     'mini-player:sync-snapshot',
-    (_event, payload: MiniPlayerSnapshotPatch) => {
+    (event, payload: MiniPlayerSnapshotPatch) => {
+      const win = getMiniPlayerWindow();
+      if (win && !win.isDestroyed() && event.sender === win.webContents) return;
       if (!payload) return;
       if (payload.playback !== undefined) {
         snapshot = {
@@ -766,9 +781,7 @@ export const registerMiniPlayerHandlers = () => {
 
   // mini 窗口通知歌词面板可见状态，转发给主渲染进程以调整同步频率
   ipcRegistry.registerListener('mini-player:lyric-visibility', (_event, visible: boolean) => {
-    const mainWindow = getMainRendererWindow();
-    if (!mainWindow) return;
-    mainWindow.webContents.send('mini-player:lyric-visibility', visible);
+    notifyMiniPlayerLyricVisibility(visible);
   });
 };
 

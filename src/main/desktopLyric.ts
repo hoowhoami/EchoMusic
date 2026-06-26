@@ -484,15 +484,15 @@ export const updateDesktopLyricSettings = async (partial: Partial<DesktopLyricSe
   if (win && !win.isDestroyed()) {
     win.setMinimumSize(DESKTOP_LYRIC_MIN_WIDTH, DESKTOP_LYRIC_MIN_HEIGHT);
     win.setMaximumSize(DESKTOP_LYRIC_MAX_WIDTH, DESKTOP_LYRIC_MAX_HEIGHT);
-    refreshDesktopLyricInteraction(nextSettings.enabled);
-    refreshDesktopLyricPresentation();
 
     if (nextSettings.enabled) {
+      refreshDesktopLyricInteraction(true);
+      refreshDesktopLyricPresentation();
       if (!win.isVisible()) win.showInactive();
       refreshDesktopLyricInteraction(true);
       refreshDesktopLyricPresentation(process.platform === 'win32');
-    } else if (win.isVisible()) {
-      win.hide();
+    } else {
+      destroyDesktopLyricWindow();
     }
   } else if (nextSettings.enabled) {
     await showDesktopLyricWindow();
