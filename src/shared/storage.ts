@@ -37,6 +37,7 @@ export type StorageSong = {
 export type StoragePlaybackQueueType =
   | 'default'
   | 'daily-recommend'
+  | 'style-recommend'
   | 'playlist'
   | 'ranking'
   | 'album'

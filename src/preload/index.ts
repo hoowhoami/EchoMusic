@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import log from 'electron-log/renderer';
 import type { ApiServerStatus } from '../shared/api-server';
-import type { AppInfoResult, UpdateDownloadResult } from '../shared/app';
+import type { AppInfoResult, UpdateDownloadResult, UpdateState } from '../shared/app';
 import type { PlayMode } from '../shared/playback';
 import type { ShortcutMap, ShortcutRegistrationResult } from '../shared/shortcuts';
 import type {
@@ -213,6 +213,7 @@ contextBridge.exposeInMainWorld('electron', {
   updater: {
     download: () => ipcRenderer.send('update:download'),
     install: (silent?: boolean) => ipcRenderer.send('update:install', { silent: !!silent }),
+    getState: () => ipcRenderer.invoke('update:get-state') as Promise<UpdateState>,
     onDownloadStatus: (func: (result: UpdateDownloadResult) => void) => {
       const listener = (_event: Electron.IpcRendererEvent, result: UpdateDownloadResult) =>
         func(result);

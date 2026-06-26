@@ -30,6 +30,11 @@ export type UpdateDownloadResult = {
   error?: string;
 };
 
+export type UpdateState = {
+  checkResult: UpdateCheckResult | null;
+  download: UpdateDownloadResult;
+};
+
 export type AppInfoResult = {
   version: string;
   isPrerelease: boolean;

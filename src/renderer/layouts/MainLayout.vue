@@ -62,10 +62,22 @@ const stopPageRouteAnimation = () => {
   }
 };
 
+// 动画结束/中断后移除 page-route-enter-active：该 class 携带 will-change 与 animation fill=both 的
+// 残留 transform，会把整页常驻提升为 GPU 合成层，在高 DPI（2K 缩放）下导致整页发虚。
+const handlePageRouteAnimationEnd = (event: AnimationEvent) => {
+  // 仅响应页面根元素自身的进入动画，忽略子元素冒泡上来的其它动画
+  if (event.target !== event.currentTarget) return;
+  if (event.animationName !== 'page-route-enter') return;
+  isPageRouteEntering.value = false;
+};
+
 const replayPageRouteAnimation = () => {
   stopPageRouteAnimation();
   isPageRouteEntering.value = false;
   if (!pageTransitionState.enabled) return;
+  // prefers-reduced-motion 下 CSS 已把 animation 置为 none：加了 class 也不会播放动画、
+  // animationend 不会触发，反而让 will-change 常驻。此时直接跳过，无需进入动画。
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
 
   pageRouteAnimationFrame = window.requestAnimationFrame(() => {
     isPageRouteEntering.value = true;
@@ -142,6 +154,8 @@ watch(
                 :is="Component"
                 :key="routeViewKey"
                 :class="{ [pageRouteEnterClass]: isPageRouteEntering }"
+                @animationend="handlePageRouteAnimationEnd"
+                @animationcancel="handlePageRouteAnimationEnd"
               />
             </YzsKeepAlive>
             <component
@@ -149,6 +163,8 @@ watch(
               :is="Component"
               :key="routeViewKey"
               :class="{ [pageRouteEnterClass]: isPageRouteEntering }"
+              @animationend="handlePageRouteAnimationEnd"
+              @animationcancel="handlePageRouteAnimationEnd"
             />
           </router-view>
         </div>

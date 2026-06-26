@@ -9,7 +9,7 @@ import type { SetPlaybackQueueOptions } from '@/stores/playlist';
 import { usePlaylistStore } from '@/stores/playlist';
 import { usePlayerStore } from '@/stores/player';
 import Button from '@/components/ui/Button.vue';
-import { iconMessageCircle, iconHeart, iconHeartFilled } from '@/icons';
+import { iconMessageCircle, iconHeart, iconHeartFilled, iconPlay } from '@/icons';
 import MvIcon from '@/components/ui/MvIcon.vue';
 import { playSongInContext, queueAndPlaySong } from '@/utils/playback';
 import { getSongDerivedState } from '@/utils/song';
@@ -31,8 +31,10 @@ interface Props {
   queueOptions?: SetPlaybackQueueOptions;
   queueFilteredInvalidCount?: number;
   onDoubleTapPlay?: (song: Song) => void | Promise<void>;
+  onCoverPlay?: (song: Song) => void | Promise<void>;
   onRemovedFromPlaylist?: (song: Song) => void;
   enableDefaultDoubleTapPlay?: boolean;
+  showCoverPlayButton?: boolean;
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -47,6 +49,7 @@ const props = withDefaults(defineProps<Props>(), {
   variant: 'card',
   disableLinks: false,
   enableDefaultDoubleTapPlay: false,
+  showCoverPlayButton: false,
   queueFilteredInvalidCount: 0,
 });
 
@@ -241,6 +244,16 @@ const handleDoubleClick = async () => {
   await handleQueueAndPlayCurrentSong(payload);
 };
 
+const handleCoverPlay = async () => {
+  const payload = songPayload.value;
+  if (props.onCoverPlay) {
+    await props.onCoverPlay(payload);
+    return;
+  }
+  if (!isPlayable.value) return;
+  await handleQueueAndPlayCurrentSong(payload);
+};
+
 const handleFavorite = () => {
   const payload = songPayload.value;
   if (isFavorite.value) {
@@ -257,10 +270,22 @@ const handleFavorite = () => {
     <!-- 封面 -->
     <div
       v-if="showCover"
-      class="relative w-[46px] h-[46px] shrink-0 rounded-[12px] shadow-sm"
+      class="song-cover-frame relative w-[46px] h-[46px] shrink-0 rounded-[12px] shadow-sm"
+      :class="{ 'has-cover-play': showCoverPlayButton }"
       :style="{ opacity: contentOpacity }"
     >
       <Cover :url="songCoverUrl" :size="160" :borderRadius="12" class="w-full h-full" />
+      <Button
+        v-if="showCoverPlayButton"
+        variant="unstyled"
+        size="none"
+        class="song-cover-play"
+        title="播放"
+        @click.stop="handleCoverPlay"
+        @dblclick.stop
+      >
+        <Icon :icon="iconPlay" width="14" height="14" />
+      </Button>
     </div>
 
     <!-- 信息 -->
@@ -372,6 +397,60 @@ const handleFavorite = () => {
 
 .song-card-surface:hover {
   background: var(--row-hover-bg);
+}
+
+.song-cover-frame {
+  overflow: hidden;
+}
+
+.song-cover-frame.has-cover-play::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  border-radius: inherit;
+  background: rgba(0, 0, 0, 0.36);
+  opacity: 0;
+  transition: opacity 0.18s ease;
+  pointer-events: none;
+}
+
+.song-card:hover .song-cover-frame.has-cover-play::after,
+.song-card:focus-within .song-cover-frame.has-cover-play::after {
+  opacity: 1;
+}
+
+.song-cover-play {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  margin: auto;
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  background: transparent;
+  opacity: 0;
+  transform: scale(0.92);
+  pointer-events: none;
+  transition:
+    opacity 0.18s ease,
+    transform 0.18s ease;
+  filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.55));
+}
+
+.song-card:hover .song-cover-play,
+.song-card:focus-within .song-cover-play {
+  opacity: 1;
+  transform: scale(1);
+  pointer-events: auto;
+}
+
+.song-cover-play:hover {
+  background: transparent;
+  transform: scale(1.08);
 }
 
 .song-card .song-title {

@@ -154,6 +154,10 @@ export const registerSettingsHandlers = ({ getMainWindow }: IpcContext) => {
 
   const isDev = !app.isPackaged;
 
+  // 更新状态的单一可信来源（供渲染层在重新打开弹窗时恢复进度）
+  let lastCheckResult: UpdateCheckResult | null = null;
+  let downloadState: UpdateDownloadResult = { status: 'idle' };
+
   const readCurrentVersionChangelog = (): string => {
     const version = app.getVersion();
     const changelogPath = isDev
@@ -205,13 +209,14 @@ export const registerSettingsHandlers = ({ getMainWindow }: IpcContext) => {
       body,
       silent,
     };
+    lastCheckResult = result;
     sendToRenderer('update-check-result', result);
   });
 
   autoUpdater.on('update-not-available', (info) => {
     const { version: currentVersion } = getAppInfo();
     const silent = (autoUpdater as any)._echoSilent ?? false;
-    sendToRenderer('update-check-result', {
+    const result: UpdateCheckResult = {
       status: 'latest',
       currentVersion,
       latestVersion: info.version,
@@ -219,24 +224,30 @@ export const registerSettingsHandlers = ({ getMainWindow }: IpcContext) => {
       releaseUrl: `https://github.com/hoowhoami/EchoMusic/releases/tag/v${info.version}`,
       body: readCurrentVersionChangelog(),
       silent,
-    } satisfies UpdateCheckResult);
+    };
+    lastCheckResult = result;
+    sendToRenderer('update-check-result', result);
   });
 
   autoUpdater.on('error', (error) => {
     log.error('[Updater] Error:', error);
-    sendToRenderer('update-check-result', {
-      status: 'error',
-      currentVersion: getAppInfo().version,
-      message: error?.message || '更新检查失败，请稍后重试。',
-    } satisfies UpdateCheckResult);
-    sendToRenderer('update-download-status', {
-      status: 'error',
-      error: error?.message || '下载失败',
-    } satisfies UpdateDownloadResult);
+    const message = error?.message || '更新失败，请稍后重试。';
+    // 区分检查阶段与下载阶段的错误，避免下载出错时弹窗被「检查更新失败」覆盖
+    if (downloadState.status === 'downloading') {
+      downloadState = { status: 'error', error: message };
+      sendToRenderer('update-download-status', downloadState);
+    } else {
+      sendToRenderer('update-check-result', {
+        status: 'error',
+        currentVersion: getAppInfo().version,
+        message,
+        silent: (autoUpdater as any)._echoSilent ?? false,
+      } satisfies UpdateCheckResult);
+    }
   });
 
   autoUpdater.on('download-progress', (progress) => {
-    sendToRenderer('update-download-status', {
+    downloadState = {
       status: 'downloading',
       progress: {
         percent: progress.percent,
@@ -244,13 +255,13 @@ export const registerSettingsHandlers = ({ getMainWindow }: IpcContext) => {
         transferred: progress.transferred,
         total: progress.total,
       },
-    } satisfies UpdateDownloadResult);
+    };
+    sendToRenderer('update-download-status', downloadState);
   });
 
   autoUpdater.on('update-downloaded', () => {
-    sendToRenderer('update-download-status', {
-      status: 'downloaded',
-    } satisfies UpdateDownloadResult);
+    downloadState = { status: 'downloaded' };
+    sendToRenderer('update-download-status', downloadState);
   });
 
   // --- IPC handlers ---
@@ -407,6 +418,16 @@ export const registerSettingsHandlers = ({ getMainWindow }: IpcContext) => {
         return;
       }
 
+      // 已在下载或已下载完成：不重复检查/下载，直接回传当前状态，
+      // 保证再次点击「检查更新」时能复现弹窗并看到真实进度。
+      if (downloadState.status === 'downloading' || downloadState.status === 'downloaded') {
+        if (lastCheckResult) {
+          sendToRenderer('update-check-result', { ...lastCheckResult, silent });
+        }
+        sendToRenderer('update-download-status', downloadState);
+        return;
+      }
+
       // 配置更新源
       if (githubProxyUrl) {
         const proxyBase = githubProxyUrl.endsWith('/') ? githubProxyUrl : `${githubProxyUrl}/`;
@@ -529,13 +550,29 @@ export const registerSettingsHandlers = ({ getMainWindow }: IpcContext) => {
     },
   );
 
+  ipcRegistry.registerHandler('update:get-state', () => ({
+    checkResult: lastCheckResult,
+    download: downloadState,
+  }));
+
   ipcRegistry.registerListener('update:download', () => {
+    // 防重入：正在下载或已下载完成时忽略，仅回传当前状态
+    if (downloadState.status === 'downloading' || downloadState.status === 'downloaded') {
+      sendToRenderer('update-download-status', downloadState);
+      return;
+    }
+    downloadState = {
+      status: 'downloading',
+      progress: { percent: 0, bytesPerSecond: 0, transferred: 0, total: 0 },
+    };
+    sendToRenderer('update-download-status', downloadState);
     autoUpdater.downloadUpdate().catch((error) => {
       log.error('[Updater] Download failed:', error);
-      sendToRenderer('update-download-status', {
+      downloadState = {
         status: 'error',
         error: error?.message || '下载失败',
-      } satisfies UpdateDownloadResult);
+      };
+      sendToRenderer('update-download-status', downloadState);
     });
   });
 

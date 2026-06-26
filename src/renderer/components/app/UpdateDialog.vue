@@ -1,39 +1,42 @@
 <script setup lang="ts">
-import { computed, ref, onMounted, onUnmounted } from 'vue';
-import { useVModel } from '@vueuse/core';
+import { computed } from 'vue';
+import { storeToRefs } from 'pinia';
 import { marked } from 'marked';
 import { sanitizeHtml } from '@/utils/sanitize';
 import Dialog from '@/components/ui/Dialog.vue';
 import Button from '@/components/ui/Button.vue';
 import Scrollbar from '@/components/ui/Scrollbar.vue';
-import type { UpdateCheckResult } from '@/../shared/app';
-import type { UpdateDownloadStatus } from '@/../shared/app';
-import { useSettingStore } from '@/stores/setting';
+import { useUpdateStore } from '@/stores/update';
 
 interface Props {
-  open?: boolean;
-  result: UpdateCheckResult | null;
   dismissLabel?: string;
 }
 
 const props = withDefaults(defineProps<Props>(), {
-  open: false,
   dismissLabel: '关闭',
 });
 
-const emit = defineEmits<{
-  (e: 'update:open', value: boolean): void;
-}>();
+const updateStore = useUpdateStore();
+const { checkResult, downloadStatus, downloadPercent, downloadError } = storeToRefs(updateStore);
 
-const open = useVModel(props, 'open', emit, { defaultValue: false });
+const open = computed({
+  get: () => updateStore.dialogOpen,
+  set: (value: boolean) => {
+    if (value) {
+      updateStore.dialogOpen = true;
+    } else {
+      updateStore.closeDialog();
+    }
+  },
+});
 
-const downloadStatus = ref<UpdateDownloadStatus>('idle');
-const downloadPercent = ref(0);
-const downloadError = ref('');
-let disposeListener: (() => void) | null = null;
+// 下载中/已下载时禁止「点击外部」「ESC」关闭，避免误触丢失下载进度视图
+const allowDismiss = computed(
+  () => downloadStatus.value !== 'downloading' && downloadStatus.value !== 'downloaded',
+);
 
 const title = computed(() => {
-  const r = props.result;
+  const r = checkResult.value;
   if (!r) return '检查更新';
   if (r.status === 'available') {
     return `发现新版本 ${r.releaseName || r.latestVersion || ''}`.trim();
@@ -43,7 +46,7 @@ const title = computed(() => {
 });
 
 const description = computed(() => {
-  const r = props.result;
+  const r = checkResult.value;
   if (!r) return '';
   if (r.status === 'available') {
     return `当前版本 v${r.currentVersion}，发现新版本 ${r.releaseName || r.latestVersion || ''}`.trim();
@@ -55,7 +58,7 @@ const description = computed(() => {
 });
 
 const bodyHtml = computed(() => {
-  const raw = props.result?.body?.trim();
+  const raw = checkResult.value?.body?.trim();
   if (!raw) return '';
   // 如果已经是 HTML（GitHub API 返回的 body_html），清理后使用
   if (raw.startsWith('<')) return sanitizeHtml(raw);
@@ -63,53 +66,10 @@ const bodyHtml = computed(() => {
   return sanitizeHtml(marked.parse(raw, { async: false }) as string);
 });
 
-const handleDownload = () => {
-  downloadStatus.value = 'downloading';
-  downloadPercent.value = 0;
-  downloadError.value = '';
-  window.electron?.updater?.download();
-};
-
-const handleInstall = () => {
-  const settingStore = useSettingStore();
-  window.electron?.updater?.install(settingStore.silentUpdate);
-};
-
-const handleOpenRelease = () => {
-  const url = props.result?.releaseUrl;
-  if (!url) return;
-  window.electron?.ipcRenderer?.send('open-external', url);
-};
-
-// 重置下载状态（弹窗关闭时或 result 变化时）
-const resetDownload = () => {
-  downloadStatus.value = 'idle';
-  downloadPercent.value = 0;
-  downloadError.value = '';
-};
-
-onMounted(() => {
-  disposeListener =
-    window.electron?.updater?.onDownloadStatus((result) => {
-      downloadStatus.value = result.status;
-      if (result.progress) {
-        downloadPercent.value = Math.round(result.progress.percent);
-      }
-      if (result.error) {
-        downloadError.value = result.error;
-      }
-    }) ?? null;
-});
-
-onUnmounted(() => {
-  disposeListener?.();
-  disposeListener = null;
-});
-
-const handleClose = () => {
-  open.value = false;
-  resetDownload();
-};
+const handleDownload = () => updateStore.download();
+const handleInstall = () => updateStore.install();
+const handleOpenRelease = () => updateStore.openRelease();
+const handleClose = () => updateStore.closeDialog();
 </script>
 
 <template>
@@ -119,6 +79,8 @@ const handleClose = () => {
     :description="description"
     showClose
     :noScroll="Boolean(bodyHtml)"
+    :close-on-escape="allowDismiss"
+    :close-on-interact-outside="allowDismiss"
     :content-style="{ width: '520px' }"
   >
     <Scrollbar v-if="bodyHtml" class="update-changelog" :content-props="{ class: 'px-4 py-3' }">
@@ -129,7 +91,7 @@ const handleClose = () => {
       <!-- 左侧：进度条 -->
       <div
         v-if="
-          result?.status === 'available' &&
+          checkResult?.status === 'available' &&
           (downloadStatus === 'downloading' || downloadStatus === 'downloaded')
         "
         class="flex-1 min-w-0 flex items-center gap-2 mr-3"
@@ -145,7 +107,7 @@ const handleClose = () => {
         </div>
       </div>
       <div
-        v-else-if="result?.status === 'available' && downloadStatus === 'error'"
+        v-else-if="checkResult?.status === 'available' && downloadStatus === 'error'"
         class="flex-1 min-w-0 mr-3 flex items-center gap-2 overflow-hidden"
       >
         <span class="text-xs text-red-500 truncate min-w-0 flex-1">
@@ -158,9 +120,9 @@ const handleClose = () => {
       <div v-else class="flex-1"></div>
 
       <!-- 右侧：按钮 -->
-      <Button variant="ghost" size="sm" @click="handleClose">{{ dismissLabel }}</Button>
-      <template v-if="result?.status === 'available'">
-        <Button v-if="result?.releaseUrl" variant="ghost" size="sm" @click="handleOpenRelease">
+      <Button variant="ghost" size="sm" @click="handleClose">{{ props.dismissLabel }}</Button>
+      <template v-if="checkResult?.status === 'available'">
+        <Button v-if="checkResult?.releaseUrl" variant="ghost" size="sm" @click="handleOpenRelease">
           前往下载
         </Button>
         <Button

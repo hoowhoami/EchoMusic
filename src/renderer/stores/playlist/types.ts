@@ -3,6 +3,7 @@ import type { Song } from '@/models/song';
 export type PlaybackQueueType =
   | 'default'
   | 'daily-recommend'
+  | 'style-recommend'
   | 'playlist'
   | 'ranking'
   | 'album'

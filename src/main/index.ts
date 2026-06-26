@@ -20,7 +20,6 @@ initAudioLoopback();
 
 if (process.platform === 'win32') {
   app.commandLine.appendSwitch('no-sandbox');
-  app.commandLine.appendSwitch('disable-features', 'UseZoomForDSF');
 }
 
 // 必须在 app.ready 之前读取并应用 GPU 加速设置

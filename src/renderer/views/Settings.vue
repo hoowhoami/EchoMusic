@@ -3,13 +3,12 @@ defineOptions({ name: 'settings-page' });
 import { computed, ref, onMounted, onUnmounted, nextTick, watch } from 'vue';
 import type { Component } from 'vue';
 import { useSettingStore } from '@/stores/setting';
+import { useUpdateStore } from '@/stores/update';
 import { useDesktopLyricStore } from '@/desktopLyric/store';
-import type { UpdateCheckResult } from '../../shared/app';
 import Dialog from '@/components/ui/Dialog.vue';
 import Button from '@/components/ui/Button.vue';
 import Scrollbar from '@/components/ui/Scrollbar.vue';
 import DisclaimerDialog from '@/components/app/DisclaimerDialog.vue';
-import UpdateDialog from '@/components/app/UpdateDialog.vue';
 import { iconArrowUp, iconSearch, iconX } from '@/icons';
 import { marked } from 'marked';
 import { sanitizeHtml } from '@/utils/sanitize';
@@ -28,6 +27,7 @@ import AboutSettingsSection from './settings/components/AboutSettingsSection.vue
 import { shortcutItems } from './settings/constants';
 
 const settingStore = useSettingStore();
+const updateStore = useUpdateStore();
 const desktopLyricStore = useDesktopLyricStore();
 const showDisclaimer = ref(false);
 
@@ -129,7 +129,6 @@ const initSettings = async () => {
 
 onMounted(() => {
   initSettings();
-  window.electron?.ipcRenderer?.on('update-check-result', handleUpdateCheckResult);
   document.addEventListener('pointerdown', handleSettingsSearchPointerDown, true);
   nextTick(() => {
     indicatorReady.value = true;
@@ -137,14 +136,11 @@ onMounted(() => {
 });
 
 const showConfirmClear = ref(false);
-const showUpdateResult = ref(false);
 const showChangelog = ref(false);
 const changelogHtml = ref('');
-const isCheckingUpdate = ref(false);
-const updateResult = ref<UpdateCheckResult | null>(null);
+const isCheckingUpdate = computed(() => updateStore.isChecking);
 const handleCheckUpdates = () => {
-  isCheckingUpdate.value = true;
-  settingStore.checkForUpdates();
+  updateStore.check();
 };
 
 const handleShowChangelog = async () => {
@@ -560,29 +556,6 @@ const navItems = computed(() =>
   })),
 );
 
-const handleUpdateCheckResult = (payload: unknown) => {
-  if (
-    payload &&
-    typeof payload === 'object' &&
-    Reflect.get(payload, 'silent') === true &&
-    !isCheckingUpdate.value
-  ) {
-    return;
-  }
-
-  isCheckingUpdate.value = false;
-  if (!payload || typeof payload !== 'object') {
-    updateResult.value = {
-      status: 'error',
-      currentVersion: settingStore.appVersion || '未知',
-      message: '返回的更新信息无效。',
-    };
-  } else {
-    updateResult.value = payload as typeof updateResult.value;
-  }
-  showUpdateResult.value = true;
-};
-
 // 当前滚动位置
 const currentScrollTop = ref(0);
 
@@ -590,7 +563,6 @@ const currentScrollTop = ref(0);
 const showBackToTop = ref(false);
 
 onUnmounted(() => {
-  window.electron?.ipcRenderer?.off('update-check-result', handleUpdateCheckResult);
   document.removeEventListener('pointerdown', handleSettingsSearchPointerDown, true);
   if (settingsSearchCollapseTimer) window.clearTimeout(settingsSearchCollapseTimer);
 });
@@ -791,8 +763,6 @@ const findSectionElement = (id: string) => {
         >
       </template>
     </Dialog>
-
-    <UpdateDialog v-model:open="showUpdateResult" :result="updateResult" />
 
     <Dialog
       v-model:open="showChangelog"

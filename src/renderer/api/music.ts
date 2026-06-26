@@ -31,6 +31,11 @@ export interface PersonalFmParams {
   remain_songcnt?: string | number;
 }
 
+export interface EverydayStyleRecommendParams {
+  platform?: 'ios' | 'android';
+  tagids?: string;
+}
+
 /**
  * 获取歌曲播放地址
  */
@@ -121,6 +126,18 @@ export function getAlbumTop(type = '') {
  */
 export function getEverydayRecommend() {
   return request.get('/everyday/recommend');
+}
+
+/**
+ * 获取风格推荐歌曲
+ */
+export function getEverydayStyleRecommend(params: EverydayStyleRecommendParams = {}) {
+  return request.get('/everyday/style/recommend', {
+    params: {
+      platform: params.platform ?? 'ios',
+      ...(params.tagids ? { tagids: params.tagids } : {}),
+    },
+  });
 }
 
 export function getPersonalFm(params: PersonalFmParams = {}) {

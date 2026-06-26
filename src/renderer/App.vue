@@ -8,6 +8,7 @@ import UpdateDialog from '@/components/app/UpdateDialog.vue';
 import RouteErrorBoundary from '@/components/app/RouteErrorBoundary.vue';
 import { usePlayerStore } from './stores/player';
 import { useSettingStore } from './stores/setting';
+import { useUpdateStore } from './stores/update';
 import { useThemeStore } from './stores/theme';
 import { usePlaylistStore } from './stores/playlist';
 import { useHistoryStore } from './stores/historyStore';
@@ -31,7 +32,6 @@ import {
   SHARE_COPIED_EVENT,
   type ShareCopiedEventDetail,
 } from '@/utils/share';
-import type { UpdateCheckResult } from '../shared/app';
 import { extractShareTarget, getShareResourceLabel, type ShareTarget } from '../shared/share';
 import LyricView from '@/views/lyric/LyricPage.vue';
 
@@ -39,6 +39,7 @@ const route = useRoute();
 const router = useRouter();
 const player = usePlayerStore();
 const settings = useSettingStore();
+const updateStore = useUpdateStore();
 const themeStore = useThemeStore();
 const playlistStore = usePlaylistStore();
 const historyStore = useHistoryStore();
@@ -57,8 +58,6 @@ let lastHandledClipboardText = '';
 let isCheckingClipboardShare = false;
 let colorSchemeMediaQuery: MediaQueryList | null = null;
 
-const showStartupUpdateDialog = ref(false);
-const startupUpdateResult = ref<UpdateCheckResult | null>(null);
 const isMiniPlayerRoute = computed(() => route.name === 'mini-player');
 // 首屏从 loading 切到主界面时跳过根级过渡，避免 out-in "先淡出旧页 → 空档" 造成的白屏
 const suppressRootTransition = ref(false);
@@ -103,15 +102,6 @@ const syncTrayPlayback = () => {
     playMode: player.playMode,
     volume: player.volume,
   });
-};
-
-const handleSilentUpdateCheckResult = (payload: unknown) => {
-  if (!payload || typeof payload !== 'object') return;
-  if (Reflect.get(payload, 'silent') !== true) return;
-  if (Reflect.get(payload, 'status') !== 'available') return;
-
-  startupUpdateResult.value = payload as typeof startupUpdateResult.value;
-  showStartupUpdateDialog.value = true;
 };
 
 const openShareTarget = (target: ShareTarget) => {
@@ -249,10 +239,10 @@ onMounted(async () => {
       void player.refreshOutputDevices();
     }) ?? null;
   syncTrayPlayback();
-  window.electron?.ipcRenderer?.on('update-check-result', handleSilentUpdateCheckResult);
+  void updateStore.init();
   if (settings.autoCheckUpdate) {
     silentUpdateCheckTimer = window.setTimeout(() => {
-      settings.checkForUpdates(true);
+      updateStore.check(true);
     }, 4000);
   }
   void refreshPlugins();
@@ -272,7 +262,7 @@ onUnmounted(() => {
     window.clearTimeout(clipboardShareCheckTimer);
     clipboardShareCheckTimer = null;
   }
-  window.electron?.ipcRenderer?.off('update-check-result', handleSilentUpdateCheckResult);
+  updateStore.dispose();
   disposeShortcuts?.();
   disposeShortcuts = null;
   disposeDesktopLyricSync?.();
@@ -399,12 +389,7 @@ watch(
   <AuthExpiredDialog v-if="route.name !== 'mini-player'" />
   <KugouVerificationFlow v-if="route.name !== 'mini-player'" />
   <ToastViewport v-if="route.name !== 'mini-player'" />
-  <UpdateDialog
-    v-if="route.name !== 'mini-player'"
-    v-model:open="showStartupUpdateDialog"
-    :result="startupUpdateResult"
-    dismiss-label="稍后"
-  />
+  <UpdateDialog v-if="route.name !== 'mini-player'" dismiss-label="稍后" />
 </template>
 
 <style>
