@@ -426,6 +426,9 @@ export const useSettingStore = defineStore('setting', {
     acceptUserAgreement() {
       this.userAgreementAccepted = true;
     },
+    setVipClaimEnabled(enabled: boolean) {
+      this.vipClaimEnabled = enabled === true;
+    },
     // 获取系统字体列表
     async fetchSystemFonts(): Promise<string[]> {
       if (!window.electron?.fonts) return [];

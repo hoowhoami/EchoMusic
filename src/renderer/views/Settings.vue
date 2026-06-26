@@ -30,6 +30,7 @@ const settingStore = useSettingStore();
 const updateStore = useUpdateStore();
 const desktopLyricStore = useDesktopLyricStore();
 const showDisclaimer = ref(false);
+const vipClaimFeatureVisible = computed(() => settingStore.vipClaimEnabled === true);
 
 const contentRef = ref<HTMLElement | null>(null);
 const scrollbarRef = ref<InstanceType<typeof Scrollbar> | null>(null);
@@ -352,7 +353,7 @@ const builtinSettingsSections = computed<SettingsRenderSection[]>(() => [
     order: 1150,
     component: ExperimentalSettingsSection,
     searchKeywords: [
-      '自动领取 VIP',
+      ...(vipClaimFeatureVisible.value ? ['自动领取 VIP'] : []),
       '页面缓存',
       '最大缓存页面数',
       'GitHub 加速地址',
@@ -496,6 +497,11 @@ const settingsSections = computed(() => {
 
   return sections.filter((section) => matchesSettingsSearch(section, keyword));
 });
+
+const getSectionRenderKey = (section: SettingsRenderSection) =>
+  section.id === 'experimental'
+    ? `${section.id}:${Number(vipClaimFeatureVisible.value)}`
+    : section.id;
 
 const clearSettingsSearch = () => {
   settingsSearchKeyword.value = '';
@@ -725,7 +731,7 @@ const findSectionElement = (id: string) => {
           <component
             :is="section.component"
             v-for="section in settingsSections"
-            :key="section.id"
+            :key="getSectionRenderKey(section)"
             v-bind="section.props ?? {}"
           />
         </template>

@@ -16,7 +16,10 @@ const releaseChannelLabel = computed(() => (settingStore.isPrerelease ? 'Prerele
 
 // 版本号点击计数器（用于开启隐藏功能）
 const versionClickCount = ref(0);
-const versionClickTimer = ref<ReturnType<typeof setTimeout> | null>(null);
+const versionToggleLocked = ref(false);
+const versionToggleLockTimer = ref<ReturnType<typeof setTimeout> | null>(null);
+const targetVersionClicks = 5;
+const versionToggleLockMs = 800;
 
 // 礼花效果状态
 const showConfetti = ref(false);
@@ -35,6 +38,21 @@ const confettiColors = [
   '#fd79a8',
   '#00b894',
 ];
+
+const resetVersionClickCount = () => {
+  versionClickCount.value = 0;
+};
+
+const lockVersionToggle = () => {
+  versionToggleLocked.value = true;
+  if (versionToggleLockTimer.value) {
+    clearTimeout(versionToggleLockTimer.value);
+  }
+  versionToggleLockTimer.value = setTimeout(() => {
+    versionToggleLocked.value = false;
+    versionToggleLockTimer.value = null;
+  }, versionToggleLockMs);
+};
 
 const triggerConfetti = () => {
   // 生成礼花粒子
@@ -59,45 +77,23 @@ const triggerConfetti = () => {
 };
 
 const handleVersionClick = () => {
-  // 如果已开启，点击5次关闭
-  // 如果已关闭，点击5次开启
-  const targetClicks = 5;
+  if (versionToggleLocked.value) return;
 
   versionClickCount.value += 1;
-
-  // 清除之前的定时器
-  if (versionClickTimer.value) {
-    clearTimeout(versionClickTimer.value);
-  }
-
-  // 1秒内未达到目标次数则重置
-  versionClickTimer.value = setTimeout(() => {
-    versionClickCount.value = 0;
-  }, 1000);
+  if (versionClickCount.value < targetVersionClicks) return;
 
   // 达到目标次数
-  if (versionClickCount.value >= targetClicks) {
-    versionClickCount.value = 0;
-    if (versionClickTimer.value) {
-      clearTimeout(versionClickTimer.value);
-      versionClickTimer.value = null;
-    }
-
-    // 切换状态
-    const newState = !settingStore.vipClaimEnabled;
-    settingStore.vipClaimEnabled = newState;
-
-    // 开启时显示礼花效果
-    if (newState) {
-      triggerConfetti();
-    }
-  }
+  resetVersionClickCount();
+  const nextEnabled = settingStore.vipClaimEnabled !== true;
+  settingStore.setVipClaimEnabled(nextEnabled);
+  lockVersionToggle();
+  triggerConfetti();
 };
 
 // 清理定时器
 onUnmounted(() => {
-  if (versionClickTimer.value) {
-    clearTimeout(versionClickTimer.value);
+  if (versionToggleLockTimer.value) {
+    clearTimeout(versionToggleLockTimer.value);
   }
 });
 
@@ -147,12 +143,16 @@ defineProps<{
     </div>
     <div class="settings-divider"></div>
     <div class="settings-item">
-      <div class="space-y-1">
+      <button
+        type="button"
+        class="version-info-trigger space-y-1 text-left min-w-0"
+        @click="handleVersionClick"
+      >
         <h3 class="font-semibold">当前版本</h3>
-        <p class="text-sm text-text-secondary cursor-pointer" @click="handleVersionClick">
+        <p class="text-sm text-text-secondary">
           Version v{{ versionLabel }} {{ releaseChannelLabel }}
         </p>
-      </div>
+      </button>
       <div class="flex items-center gap-2">
         <Button
           variant="ghost"
@@ -224,6 +224,17 @@ defineProps<{
 </template>
 
 <style scoped src="../settingsSection.css"></style>
+
+<style scoped>
+.version-info-trigger {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  border-radius: 8px;
+}
+</style>
 
 <style>
 /* 礼花效果 - 放在全局样式，因为粒子通过 Teleport 渲染到 body */
