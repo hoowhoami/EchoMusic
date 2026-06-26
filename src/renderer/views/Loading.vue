@@ -22,29 +22,33 @@ const statusMessage = ref('正在初始化音乐引擎...');
 const hasError = ref(false);
 const isDeviceReady = ref(false);
 const hasCompletedStartup = ref(false);
+const canEnterWithoutDevice = ref(false);
 let isNavigating = false;
 
 const ensureDeviceReady = async () => {
   if (deviceStore.info?.dfid || isDeviceReady.value) {
     isDeviceReady.value = true;
-    return;
+    return true;
   }
 
   statusMessage.value = '正在注册设备信息...';
 
   try {
     await ensureDevice();
-  } catch {
+  } catch (error) {
+    logger.warn('Loading', 'Device register failed:', error);
     toastStore.actionFailed('注册设备');
-    throw new Error('设备注册失败');
+    return false;
   }
 
   if (!deviceStore.info?.dfid) {
-    throw new Error('设备注册失败');
+    toastStore.actionFailed('注册设备');
+    return false;
   }
 
   isDeviceReady.value = true;
   logger.info('Loading', 'Device registered', deviceStore.info);
+  return true;
 };
 
 const navigateToHome = () => {
@@ -68,6 +72,7 @@ const maybeAutoReceiveVip = async () => {
 const completeStartup = async () => {
   if (hasCompletedStartup.value) return;
   hasCompletedStartup.value = true;
+  canEnterWithoutDevice.value = false;
 
   // 检查 mpv 播放引擎是否可用
   statusMessage.value = '正在检查播放引擎...';
@@ -102,8 +107,16 @@ const applyStatus = async (status: ApiServerStatus) => {
 
   if (status.state === 'ready') {
     hasError.value = false;
+    canEnterWithoutDevice.value = false;
     try {
-      await ensureDeviceReady();
+      const deviceReady = await ensureDeviceReady();
+      if (!deviceReady) {
+        logger.error('Loading', 'Device init failed: device register failed');
+        statusMessage.value = '设备注册失败，部分在线功能可能无法正常使用。';
+        hasError.value = true;
+        canEnterWithoutDevice.value = true;
+        return;
+      }
       await completeStartup();
     } catch (error) {
       logger.error('Loading', 'Device init failed:', error);
@@ -145,6 +158,7 @@ const initStatus = async () => {
 const retryStart = async () => {
   hasCompletedStartup.value = false;
   hasError.value = false;
+  canEnterWithoutDevice.value = false;
   statusMessage.value = '正在重新启动...';
 
   // 尝试重启 mpv 播放引擎
@@ -172,6 +186,14 @@ const retryStart = async () => {
 
 const closeWindow = () => {
   window.close();
+};
+
+const enterWithoutDevice = async () => {
+  logger.warn('Loading', 'Entering app without registered device');
+  hasCompletedStartup.value = false;
+  hasError.value = false;
+  canEnterWithoutDevice.value = false;
+  await completeStartup();
 };
 
 onMounted(async () => {
@@ -231,10 +253,20 @@ onUnmounted(() => {
           <Icon class="text-red-500" :icon="iconTriangleAlert" width="32" height="32" />
         </div>
         <div class="text-center space-y-2">
-          <h2 class="text-lg font-bold text-red-500/90">启动失败</h2>
+          <h2 class="text-lg font-bold text-red-500/90">
+            {{ canEnterWithoutDevice ? '设备注册失败' : '启动失败' }}
+          </h2>
           <p class="text-sm text-text-secondary max-w-xs">{{ statusMessage }}</p>
         </div>
-        <div class="flex gap-4 pt-6 no-drag">
+        <div class="flex flex-wrap justify-center gap-4 pt-6 no-drag">
+          <Button
+            v-if="canEnterWithoutDevice"
+            variant="primary"
+            size="sm"
+            @click="enterWithoutDevice"
+          >
+            进入软件
+          </Button>
           <Button variant="primary" size="sm" @click="retryStart"> 重试启动 </Button>
           <Button variant="secondary" size="sm" @click="closeWindow"> 退出应用 </Button>
         </div>

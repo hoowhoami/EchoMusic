@@ -1,7 +1,6 @@
 import { useAuthStore } from '@/stores/auth';
 import { useUserStore } from '@/stores/user';
 import { useDeviceStore } from '@/stores/device';
-import { ensureDevice } from './device';
 import { logger } from './logger';
 import { getPayloadSize, maskSensitiveText, stringifyForLog } from '../../shared/logging';
 import { requestKugouVerification, type KugouVerificationChallenge } from './kugouVerification';
@@ -163,11 +162,6 @@ const ipcRequest = async (
   const headers: Record<string, string> = { ...(config?.headers || {}) };
   delete headers['X-Skip-Auth'];
   const skipKugouVerification = Boolean(config?.skipKugouVerification);
-
-  // 请求前确保设备已注册（跳过注册接口本身，避免循环调用）
-  if (!skipAuth) {
-    await ensureDevice();
-  }
 
   // 请求拦截：注入 Authorization
   const auth = buildAuthHeader(skipAuth);
