@@ -11,7 +11,7 @@ import {
   getFavoriteCount,
   getCommentCount,
 } from '@/api/comment';
-import { getSongPrivilegeLite, getSongRanking } from '@/api/music';
+import { getSongPrivilegeLite, getSongRanking, getSongRankingFilter } from '@/api/music';
 import { mapCommentItem } from '@/utils/mappers';
 import type { Comment } from '@/models/comment';
 import type { Song } from '@/models/song';
@@ -35,7 +35,7 @@ import { useUserStore } from '@/stores/user';
 import { playSongInContext } from '@/utils/playback';
 import { isPlayableSong } from '@/utils/song';
 import { copyShareTarget, createSongShareTarget, isSongHashId } from '@/utils/share';
-import { iconList, iconPlay, iconShare } from '@/icons';
+import { iconChevronDown, iconList, iconPlay, iconShare } from '@/icons';
 
 interface CommentPayload {
   hot?: Comment[];
@@ -136,6 +136,10 @@ const selectedHotword = ref<string | null>(null);
 const detailLoading = ref(false);
 const privilegeData = ref<Record<string, unknown> | null>(null);
 const rankingData = ref<Record<string, unknown> | null>(null);
+const rankingFilterData = ref<Record<string, unknown> | null>(null);
+const rankingFilterLoading = ref(false);
+const rankingFilterLoaded = ref(false);
+const expandedRankingKey = ref('');
 const favoriteCount = ref(0);
 const commentCount = ref(0);
 const commentCountData = ref<Record<string, unknown> | null>(null);
@@ -697,6 +701,78 @@ const rankingSummary = computed(() => {
   return String(data?.title2 ?? '');
 });
 
+interface SongRankingFilterItem {
+  area: number;
+  count: number;
+  logoPic: string;
+  name: string;
+  platform: number;
+  platformName: string;
+  sharePic: string;
+  topRanking: number;
+}
+
+const rankingFilterList = computed<SongRankingFilterItem[]>(() => {
+  const data = rankingFilterData.value?.data as Record<string, unknown> | undefined;
+  return readArray(data?.list)
+    .map((item) => {
+      const record = toPlainRecord(item);
+      if (!record) return null;
+      const name = readText(record.name);
+      const platformName = readText(record.platform_name, record.platformName);
+      if (!name && !platformName) return null;
+      return {
+        area: readNumber(record.area),
+        count: readNumber(record.count),
+        logoPic: normalizeCover(readText(record.logo_pic, record.logoPic)),
+        name,
+        platform: readNumber(record.platform),
+        platformName,
+        sharePic: normalizeCover(readText(record.share_pic, record.sharePic)),
+        topRanking: readNumber(record.top_ranking, record.topRanking),
+      };
+    })
+    .filter((item): item is SongRankingFilterItem => Boolean(item));
+});
+
+const getRankingCardKey = (rank: Record<string, unknown>, index: number) => {
+  const platform = readText(rank.platform, rank.platform_id, rank.platformId);
+  const platformName = readText(rank.platform_name, rank.platformName);
+  return `${platform || platformName || 'rank'}:${index}`;
+};
+
+const getRankingCardPlatform = (rank: Record<string, unknown>) =>
+  readNumber(rank.platform, rank.platform_id, rank.platformId);
+
+const getRankingCardPlatformName = (rank: Record<string, unknown>) =>
+  readText(rank.platform_name, rank.platformName);
+
+const getRankingFilterItems = (rank: Record<string, unknown>) => {
+  const platform = getRankingCardPlatform(rank);
+  const platformName = getRankingCardPlatformName(rank);
+  const matched = rankingFilterList.value.filter((item) => {
+    if (platform > 0 && item.platform === platform) return true;
+    return Boolean(platformName && item.platformName === platformName);
+  });
+  if (matched.length > 0) return matched;
+  return rankingInfo.value.length <= 1 ? rankingFilterList.value : [];
+};
+
+const getRankingCardLogo = (rank: Record<string, unknown>) => {
+  const detailLogo = getRankingFilterItems(rank).find((item) => item.logoPic)?.logoPic ?? '';
+  if (detailLogo) return detailLogo;
+
+  const ownLogo = normalizeCover(
+    readText(rank.logo_pic, rank.logoPic, rank.logo, rank.platform_logo, rank.platformLogo),
+  );
+  if (ownLogo) return ownLogo;
+
+  return normalizeCover(readText(rank.share_pic, rank.sharePic));
+};
+
+const isRankingExpanded = (rank: Record<string, unknown>, index: number) =>
+  expandedRankingKey.value === getRankingCardKey(rank, index);
+
 const singerComments = computed(() => hotComments.value.filter((item) => item.isStar));
 // const popularComments = computed(() =>
 //   hotComments.value.filter((item) => item.isHot && !item.isStar),
@@ -1042,6 +1118,12 @@ const fetchHeaderStats = async () => {
 const fetchDetailData = async () => {
   if (type !== 'music') return;
   detailLoading.value = true;
+  privilegeData.value = null;
+  rankingData.value = null;
+  rankingFilterData.value = null;
+  rankingFilterLoaded.value = false;
+  rankingFilterLoading.value = false;
+  expandedRankingKey.value = '';
   try {
     const hash = songHash.value;
     const privilegeRes = hash
@@ -1060,15 +1142,59 @@ const fetchDetailData = async () => {
       }
     }
     const mixSongId = getValidMixSongId();
-    const rankingRes = mixSongId ? await getSongRanking(mixSongId) : null;
-    if (rankingRes && typeof rankingRes === 'object') {
-      rankingData.value = rankingRes as unknown as Record<string, unknown>;
+    if (mixSongId) {
+      rankingFilterLoading.value = true;
+      const [rankingResult, rankingFilterResult] = await Promise.allSettled([
+        getSongRanking(mixSongId),
+        getSongRankingFilter(mixSongId),
+      ]);
+      const rankingRes = rankingResult.status === 'fulfilled' ? rankingResult.value : null;
+      const rankingFilterRes =
+        rankingFilterResult.status === 'fulfilled' ? rankingFilterResult.value : null;
+      if (rankingRes && typeof rankingRes === 'object') {
+        rankingData.value = rankingRes as unknown as Record<string, unknown>;
+      }
+      if (rankingFilterRes && typeof rankingFilterRes === 'object') {
+        rankingFilterData.value = rankingFilterRes as unknown as Record<string, unknown>;
+      }
+      rankingFilterLoaded.value = true;
+      rankingFilterLoading.value = false;
     }
   } catch {
     toastStore.loadFailed('歌曲详情');
   } finally {
+    rankingFilterLoading.value = false;
     detailLoading.value = false;
   }
+};
+
+const ensureRankingFilterData = async () => {
+  if (rankingFilterLoaded.value || rankingFilterLoading.value) return;
+  const mixSongId = getValidMixSongId();
+  if (!mixSongId) return;
+
+  rankingFilterLoading.value = true;
+  try {
+    const rankingFilterRes = await getSongRankingFilter(mixSongId);
+    if (rankingFilterRes && typeof rankingFilterRes === 'object') {
+      rankingFilterData.value = rankingFilterRes as unknown as Record<string, unknown>;
+    }
+    rankingFilterLoaded.value = true;
+  } catch {
+    rankingFilterData.value = null;
+  } finally {
+    rankingFilterLoading.value = false;
+  }
+};
+
+const toggleRankingDetail = (rank: Record<string, unknown>, index: number) => {
+  const key = getRankingCardKey(rank, index);
+  if (expandedRankingKey.value === key) {
+    expandedRankingKey.value = '';
+    return;
+  }
+  expandedRankingKey.value = key;
+  void ensureRankingFilterData();
 };
 
 const loadCurrentResource = async () => {
@@ -1245,14 +1371,67 @@ watch(total, (value) => {
                   <div class="detail-title">榜单成就</div>
                   <div v-if="rankingSummary" class="detail-summary">• {{ rankingSummary }}</div>
                   <div v-if="rankingInfo.length" class="ranking-list">
-                    <div v-for="(rank, index) in rankingInfo" :key="index" class="ranking-card">
-                      <div class="ranking-card-header">
-                        <div class="ranking-title">{{ rank.platform_name || '未知平台' }}</div>
+                    <div
+                      v-for="(rank, index) in rankingInfo"
+                      :key="getRankingCardKey(rank, index)"
+                      class="ranking-card"
+                      :class="{ 'is-expanded': isRankingExpanded(rank, index) }"
+                    >
+                      <button
+                        class="ranking-card-toggle"
+                        type="button"
+                        @click="toggleRankingDetail(rank, index)"
+                      >
+                        <img
+                          v-if="getRankingCardLogo(rank)"
+                          class="ranking-card-logo"
+                          :src="getRankingCardLogo(rank)"
+                          alt=""
+                        />
+                        <div class="ranking-card-main">
+                          <div class="ranking-card-header">
+                            <div class="ranking-title">
+                              {{ getRankingCardPlatformName(rank) || '未知平台' }}
+                            </div>
+                          </div>
+                          <div class="ranking-meta">
+                            <span>累计上榜：{{ rank.ranking_times || 0 }}次</span>
+                            <span>最近上榜：{{ rank.last_time || '未知' }}</span>
+                          </div>
+                        </div>
                         <div class="ranking-rank">第 {{ rank.ranking_num || 0 }} 名</div>
-                      </div>
-                      <div class="ranking-meta">
-                        <span>累计上榜：{{ rank.ranking_times || 0 }}次</span>
-                        <span>最近上榜：{{ rank.last_time || '未知' }}</span>
+                        <Icon
+                          :icon="iconChevronDown"
+                          width="18"
+                          height="18"
+                          class="ranking-expand-icon"
+                        />
+                      </button>
+                      <div v-if="isRankingExpanded(rank, index)" class="ranking-filter-panel">
+                        <div v-if="rankingFilterLoading" class="ranking-filter-empty">
+                          正在加载榜单详情...
+                        </div>
+                        <template v-else-if="getRankingFilterItems(rank).length">
+                          <div
+                            v-for="item in getRankingFilterItems(rank)"
+                            :key="`${item.platform}-${item.name}-${item.topRanking}`"
+                            class="ranking-filter-row"
+                          >
+                            <div class="ranking-filter-main">
+                              <div class="ranking-filter-title">{{ item.name || '未知榜单' }}</div>
+                              <div class="ranking-filter-meta">
+                                <span>{{ item.platformName || '未知平台' }}</span>
+                                <span>累计上榜 {{ item.count }} 次</span>
+                              </div>
+                            </div>
+                            <div class="ranking-filter-rank">
+                              {{
+                                item.topRanking > 0 ? `最高第 ${item.topRanking} 名` : '暂无排名'
+                              }}
+                            </div>
+                          </div>
+                        </template>
+                        <div v-else class="ranking-filter-empty">暂无更多榜单详情</div>
                       </div>
                     </div>
                   </div>
@@ -1701,18 +1880,48 @@ watch(total, (value) => {
 }
 
 .ranking-card {
-  padding: 18px;
   border-radius: 18px;
   background: color-mix(in srgb, var(--color-text-main) 6%, transparent);
   border: 1px solid color-mix(in srgb, var(--color-text-main) 10%, transparent);
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  overflow: hidden;
+}
+
+.ranking-card-toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 18px;
+  border: 0;
+  text-align: left;
+  color: inherit;
+  background: transparent;
+  cursor: pointer;
+}
+
+.ranking-card-toggle:hover {
+  background: color-mix(in srgb, var(--color-text-main) 4%, transparent);
+}
+
+.ranking-card-logo {
+  width: 42px;
+  height: 42px;
+  border-radius: 10px;
+  object-fit: cover;
+  flex-shrink: 0;
+  background: color-mix(in srgb, var(--color-text-main) 8%, transparent);
+}
+
+.ranking-card-main {
+  min-width: 0;
+  flex: 1;
 }
 
 .ranking-card-header {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 12px;
 }
@@ -1734,10 +1943,81 @@ watch(total, (value) => {
 
 .ranking-rank {
   flex-shrink: 0;
-  font-size: 18px;
+  align-self: center;
+  padding: 5px 9px;
+  border-radius: 999px;
+  font-size: 14px;
   font-weight: 700;
-  color: var(--color-text-main);
+  color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-primary) 22%, transparent);
   text-align: right;
+  white-space: nowrap;
+}
+
+.ranking-expand-icon {
+  flex-shrink: 0;
+  color: var(--color-text-secondary);
+  transition: transform 0.18s ease;
+}
+
+.ranking-card.is-expanded .ranking-expand-icon {
+  transform: rotate(180deg);
+}
+
+.ranking-filter-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 0 18px 18px;
+}
+
+.ranking-filter-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--color-text-main) 4%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-text-main) 8%, transparent);
+}
+
+.ranking-filter-main {
+  min-width: 0;
+}
+
+.ranking-filter-title {
+  font-size: 14px;
+  font-weight: 650;
+  color: var(--color-text-main);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ranking-filter-meta {
+  display: flex;
+  gap: 10px;
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  flex-wrap: wrap;
+}
+
+.ranking-filter-rank {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--color-primary);
+  white-space: nowrap;
+}
+
+.ranking-filter-empty {
+  padding: 12px 14px;
+  border-radius: 12px;
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  background: color-mix(in srgb, var(--color-text-main) 4%, transparent);
 }
 
 @media (max-width: 520px) {
@@ -1748,6 +2028,14 @@ watch(total, (value) => {
 
   .ranking-rank {
     text-align: left;
+  }
+
+  .ranking-filter-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .ranking-filter-rank {
+    grid-column: 1;
   }
 }
 
