@@ -66,6 +66,38 @@ const ensurePersonalFmPlaybackQueue = (store: PersonalFmStoreShape) => {
   });
 };
 
+const buildPersonalFmParams = (
+  queue: PlaybackQueueState,
+  track: Song | null,
+  remainSongcnt: number,
+  options?: {
+    playtime?: number;
+    action?: 'play' | 'garbage';
+    isOverplay?: boolean;
+  },
+): PersonalFmParams => {
+  const params: PersonalFmParams = {
+    mode: String(queue.meta.mode ?? PERSONAL_FM_MODE),
+    action: options?.action ?? 'play',
+    song_pool_id: Number(queue.meta.song_pool_id ?? 0),
+    remain_songcnt: remainSongcnt,
+  };
+
+  if (track) {
+    if (track.hash) params.hash = track.hash;
+    const songid = resolveSongNumericId(track);
+    if (songid) params.songid = songid;
+    if (options?.playtime !== undefined) {
+      params.playtime = Math.max(0, Math.floor(options.playtime));
+    }
+    if (options?.isOverplay !== undefined) {
+      params.is_overplay = options.isOverplay ? 1 : 0;
+    }
+  }
+
+  return params;
+};
+
 export const personalFmActions = {
   getPersonalFmPreviewTrack(this: PersonalFmStoreShape) {
     const queue = this.playbackQueues.find((item) => item.id === PERSONAL_FM_QUEUE_ID);
@@ -286,30 +318,14 @@ export const personalFmActions = {
       queue.songs.find((song) => String(song.id) === String(queue.currentTrackId ?? '')) ??
       null;
     const remainSongcnt = this.personalFmBuffer.length;
-    if (remainSongcnt > 4) return 0;
+    const shouldTopUpBuffer = remainSongcnt <= 4;
+    if (!shouldTopUpBuffer && options?.action !== 'garbage') return 0;
 
-    const params: PersonalFmParams = {
-      mode: String(queue.meta.mode ?? PERSONAL_FM_MODE),
-      action: options?.action ?? 'play',
-      song_pool_id: Number(queue.meta.song_pool_id ?? 0),
-      remain_songcnt: remainSongcnt,
-    };
-
-    if (track) {
-      if (track.hash) params.hash = track.hash;
-      const songid = resolveSongNumericId(track);
-      if (songid) params.songid = songid;
-      if (options?.playtime !== undefined) {
-        params.playtime = Math.max(0, Math.floor(options.playtime));
-      }
-      if (options?.isOverplay !== undefined) {
-        params.is_overplay = options.isOverplay ? 1 : 0;
-      }
-    }
+    const params = buildPersonalFmParams(queue, track, remainSongcnt, options);
 
     try {
       const nextSongs = await this.fetchPersonalFmSongs(params);
-      if (nextSongs.length === 0) return 0;
+      if (nextSongs.length === 0 || !shouldTopUpBuffer) return 0;
       this.personalFmBuffer = toRawSongList(mergeQueueSongs(this.personalFmBuffer, nextSongs));
       return nextSongs.length;
     } catch (error) {

@@ -62,6 +62,11 @@ const vipInfo = computed<VipInfoState>(
   () => (userInfo.value?.extendsInfo?.vip as VipInfoState | undefined) || {},
 );
 const busiVip = computed<VipLevelInfo[]>(() => vipInfo.value?.busi_vip || []);
+const visitorCount = computed(() => {
+  const value = detail.value.hvisitors ?? 0;
+  const count = Number(value);
+  return Number.isFinite(count) ? count : 0;
+});
 
 const tvip = computed(() => busiVip.value.find((v) => v.product_type === 'tvip' && v.is_vip === 1));
 const svip = computed(() => busiVip.value.find((v) => v.product_type === 'svip' && v.is_vip === 1));
@@ -314,7 +319,7 @@ onMounted(() => loadData());
                       </div>
                       <div class="w-px h-4 bg-[var(--border-subtle)]"></div>
                       <div class="flex flex-col">
-                        <span class="text-[15px] font-black">{{ detail.nvisitors || 0 }}</span>
+                        <span class="text-[15px] font-black">{{ visitorCount }}</span>
                         <span class="text-[10px] opacity-60 uppercase font-bold tracking-wider"
                           >访客</span
                         >

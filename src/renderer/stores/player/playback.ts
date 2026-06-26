@@ -406,12 +406,19 @@ export const createPlaybackManager = (
     // 从私人 FM 队列移除当前曲目
     playlistStore.removeFromQueue(String(currentTrack.id));
 
-    // 取下一首并播放
-    const fmNextSong = await playlistStore.consumeNextPersonalFmTrack({
-      playtime: 0,
-      isOverplay: false,
-    });
-    if (!fmNextSong) return true;
+    // 删除后优先播放队列中原位置的下一首；队列没有下一首时再从 FM buffer 消费
+    const queueSongs = playlistStore.activeQueue?.songs ?? [];
+    const fmNextSong =
+      currentIndex >= 0 && currentIndex < queueSongs.length
+        ? queueSongs[currentIndex]
+        : await playlistStore.consumeNextPersonalFmTrack({
+            playtime: 0,
+            isOverplay: false,
+          });
+    if (!fmNextSong) {
+      stop();
+      return true;
+    }
 
     const fmList =
       (playlistStore.activeQueue?.songs?.length ?? 0) > 0

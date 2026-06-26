@@ -33,34 +33,121 @@ export const mapTopSong = (json: unknown): Song => {
   const record = toRecord(json);
   const transParam = getRecord(record, 'trans_param') ?? EMPTY_RECORD;
   const recSongInfo = getRecord(record, 'rec_song_info') ?? EMPTY_RECORD;
+  const base = getRecord(record, 'base') ?? EMPTY_RECORD;
+  const audioInfo = getRecord(record, 'audio_info') ?? EMPTY_RECORD;
+  const albumInfo =
+    getRecord(record, 'album_info') ?? getRecord(record, 'albuminfo') ?? EMPTY_RECORD;
+  const relateGoodsRaw = getArray(record.relate_goods) ?? [];
+  const primaryRelateGood = relateGoodsRaw.find((item) => isRecord(item)) ?? EMPTY_RECORD;
+  const primaryRelateGoodInfo = isRecord(primaryRelateGood)
+    ? (getRecord(primaryRelateGood, 'info') ?? EMPTY_RECORD)
+    : EMPTY_RECORD;
 
-  let singerName = readString(pickValue(record.author_name, record.singername, record.singer), '');
-  let rawTitle = readString(pickValue(record.songname, record.filename, record.name, '未知歌曲'));
+  let singerName = readString(
+    pickValue(
+      record.author_name,
+      record.singername,
+      record.singer,
+      record.AuthorName,
+      base.author_name,
+      base.AuthorName,
+      audioInfo.author_name,
+      audioInfo.singername,
+      audioInfo.AuthorName,
+    ),
+    '',
+  );
+  let rawTitle = readString(
+    pickValue(
+      record.songname,
+      record.filename,
+      record.name,
+      record.audio_name,
+      base.audio_name,
+      audioInfo.songname,
+      audioInfo.filename,
+      audioInfo.name,
+      '未知歌曲',
+    ),
+  );
   let name = processSongTitle(rawTitle);
 
   rawTitle = cleanupAudioExtension(rawTitle);
   name = cleanupAudioExtension(name);
   singerName = cleanupAudioExtension(singerName);
 
-  const artists = buildArtists(record, EMPTY_RECORD);
+  const artists = buildArtists(record, audioInfo);
   const singers = artists.length > 0 ? artists : singerName ? [{ name: singerName }] : [];
-  const relateGoods = buildRelateGoods(record, EMPTY_RECORD);
+  const relateGoods = buildRelateGoods(record, audioInfo);
   const durationFromTimeLength = parseIntSafe(pickValue(record.time_length, 0));
   const durationRaw =
     durationFromTimeLength !== 0
       ? durationFromTimeLength
-      : parseIntSafe(pickValue(record.timelength, record.duration, 0));
+      : parseIntSafe(
+          pickValue(
+            record.timelength,
+            record.duration,
+            audioInfo.duration_128,
+            audioInfo.duration,
+            0,
+          ),
+        );
   const duration = durationFromTimeLength !== 0 ? durationRaw : Math.floor(durationRaw / 1000);
-  const albumName = normalizeText(readString(pickValue(record.album_name, record.albumname, '')));
+  const albumName = normalizeText(
+    readString(
+      pickValue(
+        record.album_name,
+        record.albumname,
+        record.AlbumName,
+        albumInfo.album_name,
+        albumInfo.albumname,
+        albumInfo.name,
+        base.album_name,
+        base.albumname,
+        audioInfo.album_name,
+        audioInfo.albumname,
+        isRecord(primaryRelateGood) ? primaryRelateGood.albumname : undefined,
+        isRecord(primaryRelateGood) ? primaryRelateGood.album_name : undefined,
+        '',
+      ),
+    ),
+  );
   const cover = formatPic(
-    pickValue(record.album_sizable_cover, transParam.union_cover, record.cover, ''),
+    pickValue(
+      record.album_sizable_cover,
+      record.sizable_cover,
+      record.cover,
+      record.pic,
+      record.img,
+      transParam.union_cover,
+      albumInfo.sizable_cover,
+      albumInfo.cover,
+      audioInfo.img,
+      isRecord(primaryRelateGood) ? primaryRelateGood.cover : undefined,
+      isRecord(primaryRelateGood) ? primaryRelateGood.pic : undefined,
+      primaryRelateGoodInfo.image,
+      '',
+    ),
   );
 
   return {
     id: readString(
-      pickValue(record.mixsongid, record.audio_id, record.album_audio_id, record.hash, ''),
+      pickValue(
+        record.mixsongid,
+        record.MixSongID,
+        base.mixsongid,
+        record.audio_id,
+        base.audio_id,
+        audioInfo.audio_id,
+        record.album_audio_id,
+        base.album_audio_id,
+        record.hash,
+        '',
+      ),
     ),
-    songId: readString(pickValue(record.songid, record.song_id, record.audio_id, '')),
+    songId: readString(
+      pickValue(record.songid, record.song_id, base.songid, base.song_id, record.audio_id, ''),
+    ),
     title: rawTitle || '未知歌曲',
     name: name || '未知歌曲',
     artist: normalizeText(
@@ -71,16 +158,64 @@ export const mapTopSong = (json: unknown): Song => {
     singers,
     album: albumName,
     albumName,
-    albumId: readString(pickValue(record.album_id, record.albumid, '')),
+    albumId: readString(
+      pickValue(
+        record.album_id,
+        record.albumid,
+        record.AlbumID,
+        record.AlbumId,
+        albumInfo.id,
+        albumInfo.album_id,
+        albumInfo.albumid,
+        base.album_id,
+        base.albumid,
+        audioInfo.album_id,
+        audioInfo.albumid,
+        isRecord(primaryRelateGood) ? primaryRelateGood.album_id : undefined,
+        isRecord(primaryRelateGood) ? primaryRelateGood.albumid : undefined,
+        '',
+      ),
+    ),
     duration,
     coverUrl: normalizeCoverUrl(cover, 400),
     cover,
     audioUrl: '',
-    hash: readString(pickValue(record.hash, record.hash_128, record.FileHash, '')),
-    mixSongId: parseIntSafe(pickValue(record.mixsongid, record.album_audio_id, record.audio_id, 0)),
+    hash: readString(
+      pickValue(
+        record.hash,
+        record.hash_128,
+        record.FileHash,
+        audioInfo.hash,
+        audioInfo.hash_128,
+        '',
+      ),
+    ),
+    mixSongId: parseIntSafe(
+      pickValue(
+        record.mixsongid,
+        record.MixSongID,
+        base.mixsongid,
+        record.album_audio_id,
+        base.album_audio_id,
+        record.audio_id,
+        base.audio_id,
+        audioInfo.audio_id,
+        0,
+      ),
+    ),
     mvHash: readString(pickValue(record.video_hash, record.mvhash, ''), ''),
     fileId: parseOptionalInt(
-      pickValue(record.fileid, record.file_id, record.Audioid, record.audio_id),
+      pickValue(record.fileid, record.file_id, record.Audioid, record.audio_id, audioInfo.audio_id),
+    ),
+    albumAudioId: readString(
+      pickValue(
+        record.album_audio_id,
+        base.album_audio_id,
+        isRecord(primaryRelateGood) ? primaryRelateGood.album_audio_id : undefined,
+        record.mixsongid,
+        base.mixsongid,
+        '',
+      ),
     ),
     privilege: parseOptionalInt(pickValue(record.privilege, undefined)),
     payType: parseOptionalInt(pickValue(record.pay_type, undefined)),
