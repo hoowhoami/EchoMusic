@@ -288,59 +288,45 @@ body.accent-scoped .main-layout .player-bar-container {
 .page-enter-active,
 .page-leave-active,
 .page-appear-active {
-  transition:
-    opacity var(--page-transition-duration) var(--page-transition-easing),
-    transform var(--page-transition-duration) var(--page-transition-easing),
-    filter var(--page-transition-duration) var(--page-transition-easing);
-  backface-visibility: hidden;
-  will-change: opacity, transform, filter;
+  transition: opacity var(--page-transition-duration) var(--page-transition-easing);
 }
 
 .page-leave-active {
   pointer-events: none;
 }
 
+/*
+ * 仅做透明度淡入淡出，刻意不使用 transform / filter / will-change。
+ * 页面内含 position: sticky 吸顶头与 will-change:transform 的虚拟列表，
+ * 任何作用在页面根上的 transform/filter 都会改变 sticky 的包含块、并在高 DPI（2K 缩放）
+ * 下把整页提升为合成层导致重采样发虚。纯 opacity 不会触发这些问题。
+ */
 .page-enter-from,
 .page-appear-from {
   opacity: var(--page-transition-enter-opacity);
-  transform: translate3d(var(--page-transition-enter-x), var(--page-transition-enter-y), 0)
-    scale(var(--page-transition-enter-scale));
-  filter: var(--page-transition-enter-filter);
 }
 
 .page-leave-to {
   opacity: var(--page-transition-leave-opacity);
-  transform: translate3d(var(--page-transition-leave-x), var(--page-transition-leave-y), 0)
-    scale(var(--page-transition-leave-scale));
-  filter: var(--page-transition-leave-filter);
 }
 
 .page-enter-to,
 .page-leave-from,
 .page-appear-to {
   opacity: 1;
-  transform: translate3d(0, 0, 0) scale(1);
-  filter: none;
 }
 
 .page-route-enter-active {
   animation: page-route-enter var(--page-transition-duration) var(--page-transition-easing) both;
-  backface-visibility: hidden;
-  will-change: opacity, transform, filter;
 }
 
 @keyframes page-route-enter {
   from {
     opacity: var(--page-transition-enter-opacity);
-    transform: translate3d(var(--page-transition-enter-x), var(--page-transition-enter-y), 0)
-      scale(var(--page-transition-enter-scale));
-    filter: var(--page-transition-enter-filter);
   }
 
   to {
     opacity: 1;
-    transform: translate3d(0, 0, 0) scale(1);
-    filter: none;
   }
 }
 
@@ -358,8 +344,6 @@ body.accent-scoped .main-layout .player-bar-container {
   .page-appear-from,
   .page-route-enter-active {
     opacity: 1;
-    transform: translate3d(0, 0, 0) scale(1);
-    filter: none;
   }
 }
 
