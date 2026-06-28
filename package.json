@@ -124,6 +124,13 @@
         ]
       },
       {
+        "from": "build/thumbbar-icons",
+        "to": "thumbbar-icons",
+        "filter": [
+          "**/*.png"
+        ]
+      },
+      {
         "from": "build/icons",
         "to": "icons",
         "filter": [

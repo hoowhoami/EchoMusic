@@ -18,6 +18,7 @@ import { initMediaControls, destroyMediaControls } from './mediaControls';
 import { initPowerMonitor } from './powerMonitor';
 import { clearPluginRuntimeSession, setPluginSafeMode } from './plugins';
 import { applyDesktopAppIcon, applyTaskbarShortcutIcon, refreshAppIconConfig } from './appIcons';
+import { initThumbBar, clearThumbBar, updateThumbBarButtons, onMainWindowShown } from './thumbbar';
 import type { MpvController } from './mpv/controller';
 
 const WM_TASKBARCREATED = 0x031a;
@@ -50,6 +51,8 @@ const installWindowsTrayRecovery = () => {
 
   mainWindow.hookWindowMessage(WM_TASKBARCREATED, () => {
     refreshTray();
+    // Explorer 重启后缩略图工具栏按钮也会丢失，需要重建
+    updateThumbBarButtons();
   });
 };
 
@@ -122,6 +125,18 @@ if (!gotTheLock) {
     }
     installWindowsTrayRecovery();
 
+    // 初始化 Windows 缩略图工具栏按钮（上一首 / 播放暂停 / 下一首）
+    // 首次注册需要窗口可见，后续状态更新不受限制
+    try {
+      initThumbBar({ getMainWindow });
+      const mw = getMainWindow();
+      if (mw && !mw.isDestroyed()) {
+        mw.once('show', onMainWindowShown);
+      }
+    } catch (err) {
+      log.error('[Main] Failed to init thumbbar:', err);
+    }
+
     if (process.platform === 'darwin') {
       app.dock?.setMenu(createDockMenu());
     }
@@ -166,6 +181,7 @@ if (!gotTheLock) {
       clearPluginRuntimeSession();
       unregisterAudioSpectrumIpc();
       destroyMediaControls();
+      clearThumbBar();
       destroyMpvPlayer();
       // 销毁桌面歌词窗口
       try {
