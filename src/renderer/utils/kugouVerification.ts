@@ -223,9 +223,8 @@ export const submitKugouVerification = async (verifyCode: string): Promise<boole
     logger.error('KugouVerification', 'Verify user info failed', error);
     if (activeChallenge !== challenge) return false;
     const readyError = getVerifyFailureMessage(error);
-    kugouVerificationState.status = 'error';
+    kugouVerificationState.status = 'ready';
     kugouVerificationState.error = readyError;
-    finishActiveChallenge(new Error(readyError));
     return false;
   }
 };

@@ -110,6 +110,17 @@
 - [mpv / libmpv](https://mpv.io/)（播放引擎，macOS: `brew install mpv`，Linux: `apt install libmpv-dev`，Windows: 自行下载 `libmpv-2.dll` 到 `build\mpv` 目录）
 - Linux 构建系统音频捕获模块需要 ALSA 开发库（Debian/Ubuntu: `sudo apt install libasound2-dev`）
 
+### Linux 发行版打包说明
+
+如果发行版包使用系统 Electron 启动 EchoMusic（例如 Arch/Manjaro 的 `electron42 /usr/lib/echo-music/app.asar`），入口脚本必须在启动 Electron 前预加载系统 FFmpeg/libav 库，否则 Electron 内置裁剪版 `libffmpeg.so` 可能与系统 `libmpv` 发生符号冲突，导致 HTTP 音频流无法播放。
+
+可直接安装并使用：
+
+- `build/linux-libmpv-env.sh`：共享的 libmpv 环境修复脚本
+- `build/linux-system-electron-wrapper.sh`：系统 Electron 启动入口模板
+
+`electron-builder` 产物会在 `afterPack` 阶段自动安装同一套 wrapper。
+
 ### 本地开发
 
 1. **克隆仓库**

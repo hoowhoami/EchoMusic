@@ -22,8 +22,19 @@ const statusMessage = ref('正在初始化音乐引擎...');
 const hasError = ref(false);
 const isDeviceReady = ref(false);
 const hasCompletedStartup = ref(false);
-const canEnterWithoutDevice = ref(false);
+const canForceEnter = ref(false);
+const forceEnterHint = ref('');
 let isNavigating = false;
+
+const clearForceEnter = () => {
+  canForceEnter.value = false;
+  forceEnterHint.value = '';
+};
+
+const allowForceEnter = (hint: string) => {
+  canForceEnter.value = true;
+  forceEnterHint.value = hint;
+};
 
 const ensureDeviceReady = async () => {
   if (deviceStore.info?.dfid || isDeviceReady.value) {
@@ -72,7 +83,7 @@ const maybeAutoReceiveVip = async () => {
 const completeStartup = async () => {
   if (hasCompletedStartup.value) return;
   hasCompletedStartup.value = true;
-  canEnterWithoutDevice.value = false;
+  clearForceEnter();
 
   // 检查 mpv 播放引擎是否可用
   statusMessage.value = '正在检查播放引擎...';
@@ -82,6 +93,7 @@ const completeStartup = async () => {
       logger.error('Loading', 'mpv player engine is not available');
       statusMessage.value = '播放引擎初始化失败';
       hasError.value = true;
+      allowForceEnter('仍然进入后可以打开主界面，但播放相关功能可能不可用。');
       hasCompletedStartup.value = false;
       return;
     }
@@ -90,6 +102,7 @@ const completeStartup = async () => {
     logger.error('Loading', 'mpv availability check failed:', error);
     statusMessage.value = '播放引擎检查失败';
     hasError.value = true;
+    allowForceEnter('仍然进入后可以打开主界面，但播放相关功能可能不可用。');
     hasCompletedStartup.value = false;
     return;
   }
@@ -107,14 +120,14 @@ const applyStatus = async (status: ApiServerStatus) => {
 
   if (status.state === 'ready') {
     hasError.value = false;
-    canEnterWithoutDevice.value = false;
+    clearForceEnter();
     try {
       const deviceReady = await ensureDeviceReady();
       if (!deviceReady) {
         logger.error('Loading', 'Device init failed: device register failed');
         statusMessage.value = '设备注册失败，部分在线功能可能无法正常使用。';
         hasError.value = true;
-        canEnterWithoutDevice.value = true;
+        allowForceEnter('仍然进入后可以使用主界面，但推荐、搜索等在线功能可能受影响。');
         return;
       }
       await completeStartup();
@@ -158,7 +171,7 @@ const initStatus = async () => {
 const retryStart = async () => {
   hasCompletedStartup.value = false;
   hasError.value = false;
-  canEnterWithoutDevice.value = false;
+  clearForceEnter();
   statusMessage.value = '正在重新启动...';
 
   // 尝试重启 mpv 播放引擎
@@ -188,12 +201,13 @@ const closeWindow = () => {
   window.close();
 };
 
-const enterWithoutDevice = async () => {
-  logger.warn('Loading', 'Entering app without registered device');
+const forceEnterApp = async () => {
+  logger.warn('Loading', 'Force entering app despite startup issue:', statusMessage.value);
   hasCompletedStartup.value = false;
   hasError.value = false;
-  canEnterWithoutDevice.value = false;
-  await completeStartup();
+  clearForceEnter();
+  await maybeAutoReceiveVip();
+  navigateToHome();
 };
 
 onMounted(async () => {
@@ -254,18 +268,16 @@ onUnmounted(() => {
         </div>
         <div class="text-center space-y-2">
           <h2 class="text-lg font-bold text-red-500/90">
-            {{ canEnterWithoutDevice ? '设备注册失败' : '启动失败' }}
+            {{ canForceEnter ? '启动未完全就绪' : '启动失败' }}
           </h2>
           <p class="text-sm text-text-secondary max-w-xs">{{ statusMessage }}</p>
+          <p v-if="forceEnterHint" class="text-xs leading-5 text-text-secondary/80 max-w-xs">
+            {{ forceEnterHint }}
+          </p>
         </div>
         <div class="flex flex-wrap justify-center gap-4 pt-6 no-drag">
-          <Button
-            v-if="canEnterWithoutDevice"
-            variant="primary"
-            size="sm"
-            @click="enterWithoutDevice"
-          >
-            进入软件
+          <Button v-if="canForceEnter" variant="primary" size="sm" @click="forceEnterApp">
+            仍然进入
           </Button>
           <Button variant="primary" size="sm" @click="retryStart"> 重试启动 </Button>
           <Button variant="secondary" size="sm" @click="closeWindow"> 退出应用 </Button>

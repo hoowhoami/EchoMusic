@@ -141,8 +141,9 @@ const getKugouVerificationChallenge = (
   const normalizedEventId = String(eventId || '').trim();
   if (!normalizedEventId) return null;
 
-  const errorCode = bodyRecord?.error_code;
-  if (errorCode != null && Number(errorCode) !== 20028) return null;
+  const errorCode = Number(bodyRecord?.error_code ?? 0);
+  const failed = Number(bodyRecord?.status ?? 0) === 0;
+  if (errorCode !== 20028 && !failed) return null;
 
   return {
     eventId: normalizedEventId,
@@ -252,14 +253,8 @@ const ipcRequest = async (
   // 响应拦截：auth 过期检测
   handleAuthExpired(url, response.status, response.body);
 
-  // 处理错误状态
-  if (response.status >= 400) {
-    const verifyChallenge = skipKugouVerification
-      ? null
-      : options?.retriedAfterKugouVerification
-        ? null
-        : getKugouVerificationChallenge(response);
-
+  if (!skipKugouVerification && !options?.retriedAfterKugouVerification) {
+    const verifyChallenge = getKugouVerificationChallenge(response);
     if (verifyChallenge) {
       logger.warn('API', `Kugou verification required (Path: ${url})`);
       await requestKugouVerification(verifyChallenge, (verifyUrl, verifyParams) =>
@@ -271,7 +266,10 @@ const ipcRequest = async (
       logger.info('API', `Kugou verification passed, retrying ${url}`);
       return ipcRequest(method, url, config, { retriedAfterKugouVerification: true });
     }
+  }
 
+  // 处理错误状态
+  if (response.status >= 400) {
     // 502 在本项目内是 server/util/request.js 的统一错误包装：
     // - 上游业务错误（body 含 error_code）：仅记录业务错误码
     // - 真实网关/网络失败（body 为 {status:0, msg:Error} 或 null）：保留网关告警

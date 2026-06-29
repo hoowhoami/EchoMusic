@@ -3,8 +3,8 @@ import { initMain as initAudioLoopback } from 'electron-audio-loopback';
 import { ensureLinuxMpvEnv } from './mpv/linuxEnv';
 import { getDisableGpuAccelerationSetting, getHighDpiSettings } from './storage/settings';
 
-// Linux: 检测并修复 libmpv 运行环境（必须在所有其他初始化之前）
-// 如果环境未正确设置，会自动 relaunch 并退出当前进程
+// Linux: 兜底检测 libmpv 运行环境。
+// 正式包应优先由启动 wrapper 在 Electron 启动前设置 LD_PRELOAD；这里仅处理异常入口。
 if (!ensureLinuxMpvEnv()) {
   // relaunch 已触发，当前进程即将退出，不继续初始化
   process.exit(0);
