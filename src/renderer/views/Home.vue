@@ -48,6 +48,11 @@ interface StyleRecommendGroup {
   child: StyleRecommendTag[];
 }
 
+const RECOMMEND_PLAYLIST_CATEGORIES = [
+  { id: '0', label: '推荐' },
+  { id: '11292', label: 'Hi-Res' },
+] as const;
+
 const router = useRouter();
 const userStore = useUserStore();
 const settingStore = useSettingStore();
@@ -82,6 +87,7 @@ const styleSongs = ref<Song[]>([]);
 const styleGroups = ref<StyleRecommendGroup[]>([]);
 const selectedStyleTagIds = ref<Set<string>>(new Set());
 const activeStyleGroupName = ref('');
+const activeRecommendCategoryId = ref<(typeof RECOMMEND_PLAYLIST_CATEGORIES)[number]['id']>('0');
 
 const recommendState = ref<RecommendSectionState>({ loading: true, error: '' });
 const topIpState = ref<RecommendSectionState>({ loading: true, error: '' });
@@ -90,16 +96,25 @@ const styleState = ref<RecommendSectionState>({ loading: true, error: '' });
 const extractPlaylistList = (payload: unknown): unknown[] => extractList(payload);
 const extractIpList = (payload: unknown): unknown[] => extractList(payload);
 
+let recommendRequestId = 0;
+
 const loadRecommendPlaylists = async () => {
+  const requestId = ++recommendRequestId;
+  const categoryId = activeRecommendCategoryId.value;
   recommendState.value = { loading: true, error: '' };
   try {
-    const res = await getPlaylistByCategory('0', 0, 1);
+    const res = await getPlaylistByCategory(categoryId, 0, 1);
+    if (requestId !== recommendRequestId) return;
     recommendedPlaylists.value = extractPlaylistList(res).map((item) => mapPlaylistMeta(item));
   } catch {
-    recommendState.value = { loading: false, error: '推荐歌单加载失败' };
+    if (requestId === recommendRequestId) {
+      recommendState.value = { loading: false, error: '推荐歌单加载失败' };
+    }
     return;
   }
-  recommendState.value = { loading: false, error: '' };
+  if (requestId === recommendRequestId) {
+    recommendState.value = { loading: false, error: '' };
+  }
 };
 
 const loadTopIp = async () => {
@@ -221,6 +236,14 @@ const recommendedPlaylistCards = computed(() =>
 const topIpPlaylistCards = computed(() =>
   topIpPlaylists.value.map((entry) => getPlaylistCardProps(entry)),
 );
+
+const switchRecommendCategory = (
+  categoryId: (typeof RECOMMEND_PLAYLIST_CATEGORIES)[number]['id'],
+) => {
+  if (activeRecommendCategoryId.value === categoryId) return;
+  activeRecommendCategoryId.value = categoryId;
+  void loadRecommendPlaylists();
+};
 
 const activeStyleGroup = computed(
   () =>
@@ -447,6 +470,19 @@ const handleRejectAgreement = () => {
       <section class="home-section">
         <div class="section-header">
           <div class="section-title">推荐歌单</div>
+          <div class="playlist-source-tabs">
+            <Button
+              v-for="category in RECOMMEND_PLAYLIST_CATEGORIES"
+              :key="category.id"
+              variant="unstyled"
+              size="none"
+              class="playlist-source-btn"
+              :class="{ active: activeRecommendCategoryId === category.id }"
+              @click="switchRecommendCategory(category.id)"
+            >
+              {{ category.label }}
+            </Button>
+          </div>
         </div>
         <div v-if="recommendState.loading" class="section-placeholder">加载中...</div>
         <div v-else-if="recommendState.error" class="section-placeholder">
@@ -602,6 +638,35 @@ const handleRejectAgreement = () => {
   font-size: 15px;
   font-weight: 600;
   color: var(--color-text-main);
+}
+
+.playlist-source-tabs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 10px;
+  background: var(--control-muted-bg);
+}
+
+.playlist-source-btn {
+  height: 28px;
+  padding: 0 12px;
+  border-radius: 8px;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.playlist-source-btn:hover {
+  color: var(--color-text-main);
+  background: var(--control-hover-bg);
+}
+
+.playlist-source-btn.active {
+  color: var(--color-text-main);
+  background: var(--color-bg-elevated);
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
 }
 
 .section-placeholder {

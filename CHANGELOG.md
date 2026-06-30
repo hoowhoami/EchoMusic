@@ -20,6 +20,7 @@
 
 ### 优化
 
+- 优化首页推荐歌单增加 Hi-Res 分类选择
 - 优化播放栏歌名点击后优先跳转专辑详情
 - 优化应用启动流程，提供【仍然进入】功能及流程
 - 统一 Linux 启动 wrapper，在 Electron 启动前预加载系统 libav 库，避免系统 libmpv 与 Electron 内置 libffmpeg 符号冲突
