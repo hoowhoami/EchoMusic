@@ -181,15 +181,36 @@ const lyricEffectSummary = computed(() => getPluginLyricEffectSummary('page'));
 const getLineStartMs = (line: (typeof lyricStore.lines)[number]) =>
   line.characters?.[0]?.startTime ?? Math.round((Number(line.time) || 0) * 1000);
 
+let lastStableLyricIndex = -1;
+let lastStableLyricTime = 0;
+
 const buildLyricEffectSnapshot = (): PluginLyricEffectSnapshot => {
-  const index = currentIndex.value;
+  let index = currentIndex.value;
+  const time = playerStore.currentTime;
+
+  // Filter out playback jitter: if the index jumped backward by <= 2 lines
+  // and time hasn't regressed significantly, keep the previous stable index.
+  // This prevents the lyric effect from briefly highlighting the wrong line.
+  if (
+    lastStableLyricIndex >= 0 &&
+    index >= 0 &&
+    index < lastStableLyricIndex &&
+    lastStableLyricIndex - index <= 2 &&
+    time >= lastStableLyricTime - 0.35
+  ) {
+    index = lastStableLyricIndex;
+  } else {
+    lastStableLyricIndex = index;
+  }
+  lastStableLyricTime = time;
+
   return {
     scope: 'page',
     lines: lyricStore.lines,
     currentIndex: index,
     scrollIndex: scrollIndex.value,
     currentLine: index >= 0 ? (lyricStore.lines[index] ?? null) : null,
-    currentTime: playerStore.currentTime,
+    currentTime: time,
     duration: playerStore.duration,
     playbackRate: playerStore.playbackRate,
     isPlaying: playerStore.isPlaying,
