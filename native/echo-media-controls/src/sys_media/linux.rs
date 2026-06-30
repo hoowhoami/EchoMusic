@@ -61,8 +61,13 @@ fn setup_signals(player: &Player, callback: Arc<Mutex<Option<EventCallback>>>) {
         emit_event(&cb, MediaControlEvent::pause());
     });
     let cb = callback.clone();
-    player.connect_play_pause(move |_| {
-        emit_event(&cb, MediaControlEvent::play());
+    player.connect_play_pause(move |player| {
+        let status = player.playback_status();
+        let event = match status {
+            PlaybackStatus::Playing => MediaControlEvent::pause(),
+            _ => MediaControlEvent::play(),
+        };
+        emit_event(&cb, event);
     });
     let cb = callback.clone();
     player.connect_stop(move |_| {
