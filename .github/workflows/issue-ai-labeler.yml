@@ -51,7 +51,7 @@ jobs:
               ]
             }')
 
-          API_URL="https://x666.me/v1beta/models/gemini-3-flash-preview:generateContent"
+          API_URL="https://runanytime.hxi.me/v1beta/models/gemini-2.5-flash:generateContent"
 
           # 调用 Gemini
           RESPONSE=$(curl -s "$API_URL?key=$GEMINI_API_KEY" \
