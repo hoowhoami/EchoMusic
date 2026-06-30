@@ -317,29 +317,93 @@ jobs:
               echo "libmpv Linux prepared (system deps not bundled)"
               ;;
             *:windows-*)
-              # Windows: 从 zhongfly 预编译构建下载 dev 包（含 libmpv-2.dll）
+              # Windows: 从 zhongfly 预编译构建下载 libmpv 运行库。
+              # 优先使用非 LGPL dev 包；若上游只提供 LGPL/dev 或资产名调整，则回退到可用包，
+              # 但必须在解压后找到 libmpv-2.dll/mpv-2.dll，否则立即失败，避免产出不可播放的安装包。
               # 根据 runner.arch 决定下载 x64 还是 arm64
               if [ "${{ runner.arch }}" = "ARM64" ]; then
                 export MPV_ARCH_FILTER="aarch64"
               else
                 export MPV_ARCH_FILTER="x86_64"
               fi
-              DOWNLOAD_URL=$(curl -sL "https://api.github.com/repos/zhongfly/mpv-winbuild/releases/latest" \
-                | python3 -c "import sys,json,os; arch=os.environ['MPV_ARCH_FILTER']; assets=json.load(sys.stdin).get('assets',[]); urls=[a['browser_download_url'] for a in assets if 'dev' in a['name'] and arch in a['name'] and 'lgpl' not in a['name']]; print(urls[0] if urls else '')")
-              if [ -z "$DOWNLOAD_URL" ]; then
-                echo "WARNING: Failed to find mpv ${MPV_ARCH_FILTER} dev package, mpv will be unavailable"
-              else
-                echo "Downloading mpv ${MPV_ARCH_FILTER} dev package from: $DOWNLOAD_URL"
-                curl -L -o /tmp/mpv-dev.7z "$DOWNLOAD_URL"
-                7z x /tmp/mpv-dev.7z -o"/tmp/mpv-dev-extract" -y
-                find /tmp/mpv-dev-extract -name "libmpv-2.dll" -exec cp {} build/mpv/ \;
-                find /tmp/mpv-dev-extract -name "*.dll" -exec cp {} build/mpv/ \;
-                if [ ! -f "build/mpv/libmpv-2.dll" ]; then
-                  echo "WARNING: libmpv-2.dll not found after extraction"
-                else
-                  echo "libmpv Windows ${MPV_ARCH_FILTER} prepared"
-                fi
+
+              RELEASE_JSON="/tmp/mpv-winbuild-release.json"
+              curl -fsSL "https://api.github.com/repos/zhongfly/mpv-winbuild/releases/latest" -o "$RELEASE_JSON"
+              DOWNLOAD_URL=$(python3 - "$RELEASE_JSON" <<'PY'
+          import json
+          import os
+          import sys
+
+          release_path = sys.argv[1]
+          arch = os.environ["MPV_ARCH_FILTER"].lower()
+
+          with open(release_path, encoding="utf-8") as f:
+              assets = json.load(f).get("assets", [])
+
+          def asset_name(asset):
+              return str(asset.get("name", "")).lower()
+
+          def is_archive(asset):
+              name = asset_name(asset)
+              return name.endswith((".7z", ".zip"))
+
+          base = [
+              asset
+              for asset in assets
+              if is_archive(asset)
+              and arch in asset_name(asset)
+              and asset.get("browser_download_url")
+          ]
+
+          def choose(predicate):
+              matches = [asset for asset in base if predicate(asset_name(asset))]
+              return matches[0] if matches else None
+
+          selected = (
+              choose(lambda name: "dev" in name and "lgpl" not in name)
+              or choose(lambda name: "dev" in name)
+              or choose(lambda name: "libmpv" in name and "lgpl" not in name)
+              or choose(lambda name: "libmpv" in name)
+              or choose(
+                  lambda name: "lgpl" not in name
+                  and "debug" not in name
+                  and "symbol" not in name
+                  and "source" not in name
+                  and "src" not in name
+              )
+              or choose(
+                  lambda name: "debug" not in name
+                  and "symbol" not in name
+                  and "source" not in name
+                  and "src" not in name
+              )
+          )
+
+          if not selected:
+              print(f"ERROR: no usable mpv Windows asset found for {arch}. Available assets:", file=sys.stderr)
+              for asset in assets:
+                  print(f"  - {asset.get('name', '')}", file=sys.stderr)
+              sys.exit(1)
+
+          print(f"Selected mpv asset: {selected.get('name', '')}", file=sys.stderr)
+          print(selected["browser_download_url"])
+          PY
+              )
+
+              echo "Downloading mpv ${MPV_ARCH_FILTER} package from: $DOWNLOAD_URL"
+              curl -fL -o /tmp/mpv-winbuild.7z "$DOWNLOAD_URL"
+              7z x /tmp/mpv-winbuild.7z -o"/tmp/mpv-winbuild-extract" -y
+              find /tmp/mpv-winbuild-extract -name "*.dll" -exec cp {} build/mpv/ \;
+
+              if [ ! -f "build/mpv/libmpv-2.dll" ] && [ ! -f "build/mpv/mpv-2.dll" ]; then
+                echo "ERROR: libmpv DLL not found after extracting mpv Windows package"
+                echo "=== extracted DLLs ==="
+                find /tmp/mpv-winbuild-extract -name "*.dll" -print
+                exit 1
               fi
+
+              dll_count=$(find build/mpv -maxdepth 1 -name "*.dll" | wc -l | tr -d ' ')
+              echo "libmpv Windows ${MPV_ARCH_FILTER} prepared (${dll_count} DLLs)"
               ;;
           esac
 
@@ -376,6 +440,17 @@ jobs:
             find release -maxdepth 3 -type f -name '*.exe' -print
             exit 1
           fi
+
+          app_dir=$(dirname "$app_exe")
+          mpv_dir="$app_dir/resources/mpv"
+          if [ ! -f "$mpv_dir/libmpv-2.dll" ] && [ ! -f "$mpv_dir/mpv-2.dll" ]; then
+            echo "ERROR: bundled libmpv DLL not found in $mpv_dir"
+            echo "=== bundled resources ==="
+            find "$app_dir/resources" -maxdepth 3 -print
+            exit 1
+          fi
+
+          echo "bundled libmpv DLL found in $mpv_dir"
 
       - name: Verify bundled macOS mpv signatures
         if: runner.os == 'macOS'
