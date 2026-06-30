@@ -108,6 +108,32 @@ const goToArtist = (artist: SongArtist) => {
   router.push({ name: 'artist-detail', params: { id: String(artistId) } });
 };
 
+const currentAlbumName = computed(() =>
+  String(currentTrack.value?.album ?? currentTrack.value?.albumName ?? '').trim(),
+);
+
+const currentAlbumId = computed(() => resolveNumericId(currentTrack.value?.albumId));
+
+const isCurrentAlbumClickable = computed(() => {
+  const albumId = currentAlbumId.value;
+  if (!albumId || !currentAlbumName.value) return false;
+  const routeId = Array.isArray(router.currentRoute.value.params.id)
+    ? router.currentRoute.value.params.id[0]
+    : router.currentRoute.value.params.id;
+  return !(
+    router.currentRoute.value.name === 'album-detail' && String(routeId) === String(albumId)
+  );
+});
+
+const goToCurrentAlbum = () => {
+  const albumId = currentAlbumId.value;
+  if (!albumId || !isCurrentAlbumClickable.value) {
+    navigateToLyric();
+    return;
+  }
+  router.push({ name: 'album-detail', params: { id: String(albumId) } });
+};
+
 const isHoveringProgress = ref(false);
 
 const pendingSeekTime = ref<number | null>(null);
@@ -278,7 +304,9 @@ onUnmounted(() => {
             >
               <span
                 class="text-[14px] font-bold text-primary cursor-pointer transition-colors"
-                @click="navigateToLyric"
+                :class="{ 'hover:text-primary/80': isCurrentAlbumClickable }"
+                :title="isCurrentAlbumClickable ? '查看专辑' : '打开歌词'"
+                @click="goToCurrentAlbum"
               >
                 {{ currentTrack ? currentTrack.name : '未在播放' }}
               </span>
