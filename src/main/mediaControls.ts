@@ -27,6 +27,7 @@ interface NativeMediaControls {
 let nativeModule: NativeMediaControls | null = null;
 // 封面下载中止控制器
 let coverAbortController: AbortController | null = null;
+let metadataUpdateSeq = 0;
 
 /** 加载 native addon */
 function loadNativeModule(): NativeMediaControls | null {
@@ -68,34 +69,39 @@ async function downloadCoverImage(url: string, signal?: AbortSignal): Promise<Bu
     log.debug('[MediaControls] Starting cover download', { url });
 
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 5000);
+    let timeout: NodeJS.Timeout | null = setTimeout(() => controller.abort(), 5000);
 
     if (signal) {
       signal.addEventListener('abort', () => controller.abort(), { once: true });
     }
 
-    const response = await fetch(url, {
-      signal: controller.signal,
-      headers: {
-        'User-Agent':
-          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        Accept: 'image/jpeg,image/png,image/webp,*/*;q=0.8',
-        Referer: 'https://www.kugou.com/',
-      },
-    });
+    try {
+      const response = await fetch(url, {
+        signal: controller.signal,
+        headers: {
+          'User-Agent':
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          Accept: 'image/jpeg,image/png,image/webp,*/*;q=0.8',
+          Referer: 'https://www.kugou.com/',
+        },
+      });
 
-    clearTimeout(timeout);
+      if (!response.ok) {
+        log.warn('[MediaControls] Cover download failed', { status: response.status, url });
+        return null;
+      }
 
-    if (!response.ok) {
-      log.warn('[MediaControls] Cover download failed', { status: response.status, url });
-      return null;
+      const arrayBuffer = await response.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
+
+      log.debug('[MediaControls] Cover download completed', { size: buffer.length, url });
+      return buffer;
+    } finally {
+      if (timeout) {
+        clearTimeout(timeout);
+        timeout = null;
+      }
     }
-
-    const arrayBuffer = await response.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
-
-    log.debug('[MediaControls] Cover download completed', { size: buffer.length, url });
-    return buffer;
   } catch (err) {
     log.warn('[MediaControls] Cover download exception:', err);
     return null;
@@ -144,7 +150,9 @@ export function initMediaControls(getMainWindow: () => BrowserWindow | null): vo
         durationMs?: number;
       },
     ) => {
-      if (!nativeModule) return;
+      const controls = nativeModule;
+      if (!controls) return;
+      const requestSeq = ++metadataUpdateSeq;
 
       log.debug('[MediaControls] Metadata update received', {
         title: payload.title,
@@ -157,12 +165,13 @@ export function initMediaControls(getMainWindow: () => BrowserWindow | null): vo
       if (coverAbortController) {
         coverAbortController.abort();
       }
-      coverAbortController = new AbortController();
+      const coverController = new AbortController();
+      coverAbortController = coverController;
 
       let coverData: Buffer | null = null;
       if (payload.coverUrl) {
         log.debug('[MediaControls] Starting cover download', { url: payload.coverUrl });
-        coverData = await downloadCoverImage(payload.coverUrl, coverAbortController.signal);
+        coverData = await downloadCoverImage(payload.coverUrl, coverController.signal);
         log.debug('[MediaControls] Cover download result', {
           success: !!coverData,
           size: coverData?.length ?? 0,
@@ -170,10 +179,24 @@ export function initMediaControls(getMainWindow: () => BrowserWindow | null): vo
         });
       }
 
+      if (requestSeq !== metadataUpdateSeq) {
+        log.debug('[MediaControls] Ignored stale metadata update', {
+          title: payload.title,
+          url: payload.coverUrl,
+        });
+        return;
+      }
+      if (coverAbortController === coverController) {
+        coverAbortController = null;
+      }
+
+      // 任务栏 DWM 缩略图需要及时响应系统请求，不能被 SMTC 的异步元数据更新挡住。
+      setTaskbarCover(coverData);
+
       try {
         // native addon 期望 coverData 为 number[]（NAPI-RS 的 Vec<u8> 映射）
         // 异步：封面解码/重编码在工作线程执行，不阻塞主进程
-        await nativeModule.updateMetadata({
+        await controls.updateMetadata({
           title: payload.title,
           artist: payload.artist,
           album: payload.album,
@@ -184,9 +207,6 @@ export function initMediaControls(getMainWindow: () => BrowserWindow | null): vo
       } catch (err) {
         log.warn('[MediaControls] updateMetadata failed:', err);
       }
-
-      // 同步封面到 Windows 任务栏缩略图（仅 Windows 生效）
-      setTaskbarCover(coverData);
     },
   );
 

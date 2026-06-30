@@ -90,16 +90,32 @@ function applyState(): void {
   }
 }
 
+function disableIconicFallback(reason: string, err?: unknown): void {
+  if (!nativeModule || !hwndStr || !iconicEnabled) return;
+  try {
+    nativeModule.taskbarDisableIconic(hwndStr);
+    iconicEnabled = false;
+    nativeModule.taskbarInvalidate(hwndStr);
+    log.warn(`[TaskbarThumbnail] Disabled iconic thumbnail fallback: ${reason}`, err);
+  } catch (disableErr) {
+    log.warn('[TaskbarThumbnail] disable iconic fallback failed:', disableErr);
+  }
+}
+
 /** 处理悬停缩略图请求：从 lParam 解析最大尺寸并写入封面 */
 function onThumbnailRequest(lParam: Buffer): void {
-  if (!nativeModule || !hwndStr || !coverBuffer) return;
+  if (!nativeModule || !hwndStr) return;
+  if (!coverBuffer) {
+    disableIconicFallback('thumbnail requested without cover');
+    return;
+  }
   let maxWidth = DEFAULT_THUMBNAIL_MAX;
   let maxHeight = DEFAULT_THUMBNAIL_MAX;
   try {
-    // lParam 低 32 位：LOWORD = 最大宽度，HIWORD = 最大高度
+    // lParam 低 32 位：HIWORD = 最大宽度，LOWORD = 最大高度
     const packed = lParam.length >= 4 ? lParam.readUInt32LE(0) : 0;
-    const w = packed & 0xffff;
-    const h = (packed >>> 16) & 0xffff;
+    const w = (packed >>> 16) & 0xffff;
+    const h = packed & 0xffff;
     if (w > 0) maxWidth = w;
     if (h > 0) maxHeight = h;
   } catch {
@@ -109,16 +125,22 @@ function onThumbnailRequest(lParam: Buffer): void {
     nativeModule.taskbarSetThumbnail(hwndStr, coverBuffer, maxWidth, maxHeight);
   } catch (err) {
     log.warn('[TaskbarThumbnail] setThumbnail failed:', err);
+    disableIconicFallback('setThumbnail failed', err);
   }
 }
 
 /** 处理 Aero Peek 大预览请求：写入封面 */
 function onLivePreviewRequest(): void {
-  if (!nativeModule || !hwndStr || !coverBuffer) return;
+  if (!nativeModule || !hwndStr) return;
+  if (!coverBuffer) {
+    disableIconicFallback('live preview requested without cover');
+    return;
+  }
   try {
     nativeModule.taskbarSetLivePreview(hwndStr, coverBuffer, LIVE_PREVIEW_MAX, LIVE_PREVIEW_MAX);
   } catch (err) {
     log.warn('[TaskbarThumbnail] setLivePreview failed:', err);
+    disableIconicFallback('setLivePreview failed', err);
   }
 }
 

@@ -1,6 +1,7 @@
 import { ref, watch, nextTick, type Ref } from 'vue';
 import { useLyricStore } from '@/stores/lyric';
 import { usePlayerStore } from '@/stores/player';
+import { requestPluginLyricAutoScroll } from '@/plugins/lyricEffects';
 
 /**
  * 歌词滚动逻辑
@@ -64,7 +65,14 @@ export function useLyricScroll(
         container.clientHeight +
         twoLineHeight +
         bottomMargin;
-      container.scrollTo({ top: Math.max(0, offset), behavior: smooth ? 'smooth' : 'auto' });
+      const targetTop = Math.max(0, offset);
+      const handled = requestPluginLyricAutoScroll('page', {
+        index,
+        targetTop,
+        smooth,
+        collapsed,
+      });
+      if (!handled) container.scrollTo({ top: targetTop, behavior: smooth ? 'smooth' : 'auto' });
       return;
     }
 
@@ -75,7 +83,14 @@ export function useLyricScroll(
       container.scrollTop -
       container.clientHeight * anchorRatio +
       targetRect.height / 2;
-    container.scrollTo({ top: Math.max(0, offset), behavior: smooth ? 'smooth' : 'auto' });
+    const targetTop = Math.max(0, offset);
+    const handled = requestPluginLyricAutoScroll('page', {
+      index,
+      targetTop,
+      smooth,
+      collapsed,
+    });
+    if (!handled) container.scrollTo({ top: targetTop, behavior: smooth ? 'smooth' : 'auto' });
   };
 
   const scrollToLine = (index: number, smooth: boolean, collapsed = false) => {

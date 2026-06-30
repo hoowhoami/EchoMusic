@@ -27,6 +27,15 @@ export type PluginLyricEffectSnapshot = {
   reducedMotion: boolean;
 };
 
+export type PluginLyricEffectAutoScrollRequest = {
+  scope: PluginLyricEffectScope;
+  index: number;
+  targetTop: number;
+  smooth: boolean;
+  collapsed: boolean;
+  snapshot: PluginLyricEffectSnapshot;
+};
+
 export interface PluginLyricEffectHost {
   scope: PluginLyricEffectScope;
   root: HTMLElement;
@@ -34,6 +43,9 @@ export interface PluginLyricEffectHost {
   overlay: HTMLElement;
   getSnapshot: () => PluginLyricEffectSnapshot;
   subscribe: (handler: (snapshot: PluginLyricEffectSnapshot) => void) => () => void;
+  setAutoScrollHandler: (
+    handler: (request: PluginLyricEffectAutoScrollRequest) => boolean | void,
+  ) => () => void;
   requestUpdate: () => void;
 }
 
@@ -69,6 +81,12 @@ type RegisteredPluginLyricEffectHostSubscriber = {
   handler: (snapshot: PluginLyricEffectSnapshot) => void;
 };
 
+type RegisteredPluginLyricEffectAutoScrollHandler = {
+  effectKey: string;
+  order: number;
+  handler: (request: PluginLyricEffectAutoScrollRequest) => boolean | void;
+};
+
 type RegisteredPluginLyricEffectHost = {
   id: number;
   scope: PluginLyricEffectScope;
@@ -77,6 +95,7 @@ type RegisteredPluginLyricEffectHost = {
   overlay: HTMLElement;
   getSnapshot: () => PluginLyricEffectSnapshot;
   subscribers: Set<RegisteredPluginLyricEffectHostSubscriber>;
+  autoScrollHandlers: Set<RegisteredPluginLyricEffectAutoScrollHandler>;
 };
 
 export const pluginLyricEffectState = reactive({
@@ -171,6 +190,22 @@ const createHostFacade = (
     subscriber.handler(host.getSnapshot());
     return () => host.subscribers.delete(subscriber);
   },
+  setAutoScrollHandler: (handler) => {
+    const scrollHandler: RegisteredPluginLyricEffectAutoScrollHandler = {
+      effectKey: effect.key,
+      order: effect.order,
+      handler: (request) => {
+        try {
+          return handler(request);
+        } catch (error) {
+          effect.onError?.(`歌词动效滚动: ${effect.title}`, error);
+          return false;
+        }
+      },
+    };
+    host.autoScrollHandlers.add(scrollHandler);
+    return () => host.autoScrollHandlers.delete(scrollHandler);
+  },
   requestUpdate: () => notifyLyricEffectHost(host),
 });
 
@@ -210,6 +245,9 @@ const unmountEffectFromHost = (
   if (!host) return;
   for (const subscriber of Array.from(host.subscribers)) {
     if (subscriber.effectKey === effect.key) host.subscribers.delete(subscriber);
+  }
+  for (const handler of Array.from(host.autoScrollHandlers)) {
+    if (handler.effectKey === effect.key) host.autoScrollHandlers.delete(handler);
   }
 };
 
@@ -325,6 +363,7 @@ export const registerPluginLyricEffectHost = (options: {
     overlay: options.overlay,
     getSnapshot: options.getSnapshot,
     subscribers: new Set(),
+    autoScrollHandlers: new Set(),
   };
 
   lyricEffectHosts.set(host.id, host);
@@ -336,7 +375,39 @@ export const registerPluginLyricEffectHost = (options: {
     dispose: () => {
       lyricEffects.forEach((effect) => unmountEffectFromHost(effect, host.id));
       host.subscribers.clear();
+      host.autoScrollHandlers.clear();
       lyricEffectHosts.delete(host.id);
     },
   };
+};
+
+export const requestPluginLyricAutoScroll = (
+  scope: PluginLyricEffectScope,
+  request: Omit<PluginLyricEffectAutoScrollRequest, 'scope' | 'snapshot'>,
+) => {
+  let handled = false;
+  const hosts = Array.from(lyricEffectHosts.values()).filter((host) => host.scope === scope);
+
+  for (const host of hosts) {
+    const snapshot = host.getSnapshot();
+    const fullRequest: PluginLyricEffectAutoScrollRequest = {
+      ...request,
+      scope,
+      snapshot,
+    };
+    const handlers = Array.from(host.autoScrollHandlers).sort(
+      (left, right) =>
+        left.order - right.order || left.effectKey.localeCompare(right.effectKey, 'zh-Hans-CN'),
+    );
+
+    for (const entry of handlers) {
+      try {
+        if (entry.handler(fullRequest) === true) handled = true;
+      } catch {
+        host.autoScrollHandlers.delete(entry);
+      }
+    }
+  }
+
+  return handled;
 };
