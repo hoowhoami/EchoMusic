@@ -212,6 +212,9 @@ if (!gotTheLock) {
     event.preventDefault();
     log.info('[Main] before-quit: hiding windows and scheduling cleanup');
 
+    // 先在主窗口 HWND 仍有效时关闭 DWM iconic 缩略图，避免任务栏保留等待位图的缓存状态。
+    destroyTaskbarThumbnail();
+
     // 第一步：立即隐藏所有窗口 + 销毁托盘，用户视觉上已退出
     destroyTray();
     BrowserWindow.getAllWindows().forEach((w) => {
@@ -229,7 +232,6 @@ if (!gotTheLock) {
       // 清理 mini 播放器模块的事件监听器和定时器
       cleanupMiniPlayer();
       destroyMediaControls();
-      destroyTaskbarThumbnail();
       destroyMpvPlayer();
       // 销毁桌面歌词窗口，确保清理所有定时器
       try {
