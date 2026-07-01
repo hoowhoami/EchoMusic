@@ -1,16 +1,18 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
+import { useRouter } from 'vue-router';
 import Dialog from '@/components/ui/Dialog.vue';
 import Button from '@/components/ui/Button.vue';
 import Input from '@/components/ui/Input.vue';
 import {
+  awaitKugouLoginVerification,
   cancelKugouVerification,
   getKugouCaptchaProvider,
   KUGOU_CAPTCHA_PROVIDER_NAMES,
   kugouVerificationState,
   submitKugouVerification,
 } from '@/utils/kugouVerification';
-import { iconShield, iconSmartphone } from '@/icons';
+import { iconShield, iconSmartphone, iconUser } from '@/icons';
 
 type TencentCaptchaResult = {
   ret: number;
@@ -33,6 +35,7 @@ type TencentCaptchaConstructor = new (
 const smsCode = ref('');
 const captchaLoading = ref(false);
 const captchaPanelOpen = ref(false);
+const router = useRouter();
 let tencentCaptchaPromise: Promise<TencentCaptchaConstructor> | null = null;
 let captchaLoadTimer: number | null = null;
 let activeTencentCaptcha: TencentCaptchaInstance | null = null;
@@ -49,15 +52,27 @@ const isLoading = computed(() => kugouVerificationState.status === 'loading');
 const isVerifying = computed(() => kugouVerificationState.status === 'verifying');
 const isTencentCaptcha = computed(() => provider.value === 'TX');
 const isSmsCaptcha = computed(() => provider.value === 'SMS');
+const isLoginVerification = computed(() => provider.value === 'LOGIN');
 const isUnsupported = computed(
   () =>
-    Boolean(kugouVerificationState.verifyInfo) && !isTencentCaptcha.value && !isSmsCaptcha.value,
+    Boolean(kugouVerificationState.verifyInfo) &&
+    !isTencentCaptcha.value &&
+    !isSmsCaptcha.value &&
+    !isLoginVerification.value,
 );
-const title = computed(() => (isSmsCaptcha.value ? '短信安全验证' : '安全验证'));
+const loginMessage = computed(() =>
+  String(kugouVerificationState.verifyInfo?.show?.msg || '').trim(),
+);
+const title = computed(() => {
+  if (isSmsCaptcha.value) return '短信安全验证';
+  if (isLoginVerification.value) return '登录确认';
+  return '安全验证';
+});
 const tencentActionText = computed(() => (kugouVerificationState.error ? '重新验证' : '开始验证'));
 const description = computed(() => {
   if (isLoading.value) return '正在准备验证';
   if (isSmsCaptcha.value) return '请输入酷狗下发的验证码';
+  if (isLoginVerification.value) return loginMessage.value || '请登录账号以确认身份';
   if (isTencentCaptcha.value) return '完成验证后将继续刚才的操作';
   return `当前需要${providerName.value}，暂不支持自动处理`;
 });
@@ -291,6 +306,24 @@ const cancelCurrentVerification = () => {
   cancelKugouVerification();
 };
 
+const startLoginVerification = async () => {
+  resetTencentCaptcha();
+  try {
+    awaitKugouLoginVerification();
+    const currentRoute = router.currentRoute.value;
+    const from =
+      currentRoute.name === 'login' ? '/main/home' : currentRoute.fullPath || '/main/home';
+    await router.push({
+      name: 'login',
+      query: { from },
+    });
+  } catch (error) {
+    kugouVerificationState.status = 'ready';
+    kugouVerificationState.error =
+      error instanceof Error ? error.message : '无法打开登录页，请稍后重试';
+  }
+};
+
 const loadTencentCaptcha = () => {
   if ((window as any).TencentCaptcha) {
     return Promise.resolve((window as any).TencentCaptcha as TencentCaptchaConstructor);
@@ -430,8 +463,15 @@ onBeforeUnmount(resetTencentCaptcha);
     @update:open="(value) => !value && cancelKugouVerification()"
   >
     <div class="verification-shell">
-      <div class="verification-icon" :class="{ 'is-sms': isSmsCaptcha }">
-        <Icon :icon="isSmsCaptcha ? iconSmartphone : iconShield" width="26" height="26" />
+      <div
+        class="verification-icon"
+        :class="{ 'is-sms': isSmsCaptcha, 'is-login': isLoginVerification }"
+      >
+        <Icon
+          :icon="isSmsCaptcha ? iconSmartphone : isLoginVerification ? iconUser : iconShield"
+          width="26"
+          height="26"
+        />
       </div>
 
       <div v-if="isLoading" class="verification-loading">
@@ -466,6 +506,10 @@ onBeforeUnmount(resetTencentCaptcha);
         >
           提交验证
         </Button>
+      </template>
+
+      <template v-else-if="isLoginVerification">
+        <Button class="w-full" @click="startLoginVerification"> 去登录确认 </Button>
       </template>
 
       <p v-if="kugouVerificationState.error" class="verification-error">
@@ -529,6 +573,11 @@ onBeforeUnmount(resetTencentCaptcha);
 .verification-icon.is-sms {
   color: #07c160;
   background: color-mix(in srgb, #07c160 12%, transparent);
+}
+
+.verification-icon.is-login {
+  color: var(--color-text-main);
+  background: color-mix(in srgb, var(--color-text-main) 10%, transparent);
 }
 
 .verification-loading {
@@ -606,6 +655,10 @@ onBeforeUnmount(resetTencentCaptcha);
 
 :global(.dialog-content.kugou-verification-dialog) {
   width: 360px;
+}
+
+:global(.dialog-content.kugou-verification-dialog .dialog-body) {
+  padding-right: 1.5rem;
 }
 
 @keyframes verification-spin {

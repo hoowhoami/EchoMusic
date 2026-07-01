@@ -9,13 +9,26 @@ export interface KugouVerificationChallenge {
 
 export interface KugouVerificationInfo {
   v_type?: number | string;
+  v_type_list?: unknown[];
   txappid?: string;
   business?: string;
   sessionid?: string;
   url?: string;
+  show?: {
+    msg?: string;
+  };
 }
 
-export type KugouCaptchaProvider = 'TX' | 'GT' | 'KG' | 'KG2' | 'SM' | 'YD' | 'SMS' | 'UNKNOWN';
+export type KugouCaptchaProvider =
+  | 'TX'
+  | 'GT'
+  | 'KG'
+  | 'KG2'
+  | 'SM'
+  | 'YD'
+  | 'SMS'
+  | 'LOGIN'
+  | 'UNKNOWN';
 
 export const KUGOU_CAPTCHA_PROVIDER_NAMES: Record<KugouCaptchaProvider, string> = {
   TX: '腾讯验证码',
@@ -25,6 +38,7 @@ export const KUGOU_CAPTCHA_PROVIDER_NAMES: Record<KugouCaptchaProvider, string> 
   SM: '数美验证码',
   YD: '网易易盾',
   SMS: '手机验证码',
+  LOGIN: '登录确认',
   UNKNOWN: '未知验证',
 };
 
@@ -43,7 +57,14 @@ export const kugouVerificationState = reactive({
   open: false,
   eventId: '',
   verifyInfo: null as KugouVerificationInfo | null,
-  status: 'idle' as 'idle' | 'loading' | 'ready' | 'verifying' | 'success' | 'error',
+  status: 'idle' as
+    | 'idle'
+    | 'loading'
+    | 'ready'
+    | 'awaiting-login'
+    | 'verifying'
+    | 'success'
+    | 'error',
   error: '',
 });
 
@@ -56,6 +77,7 @@ export const getKugouCaptchaProvider = (
 ): KugouCaptchaProvider => {
   const verifyType = Number(verifyInfo?.v_type || 0);
   if (verifyType === 32) return 'SMS';
+  if (verifyType === 38) return 'LOGIN';
 
   const url = String(verifyInfo?.url || '').trim();
   const match = url.match(/^KGCode([A-Z0-9]+)\|/i);
@@ -205,6 +227,10 @@ export const submitKugouVerification = async (verifyCode: string): Promise<boole
 
   const verifyInfo = kugouVerificationState.verifyInfo;
   const verifyType = Number(verifyInfo?.v_type || 23);
+  if (verifyType === 38) {
+    kugouVerificationState.error = '请先完成登录确认';
+    return false;
+  }
   kugouVerificationState.status = 'verifying';
   kugouVerificationState.error = '';
 
@@ -245,6 +271,24 @@ export const refreshKugouVerificationInfo = async (readyError = '') => {
     }
     throw error;
   }
+};
+
+export const awaitKugouLoginVerification = () => {
+  if (!activeChallenge) {
+    throw new Error('当前没有待处理的安全验证');
+  }
+
+  kugouVerificationState.open = false;
+  kugouVerificationState.status = 'awaiting-login';
+  kugouVerificationState.error = '';
+};
+
+export const completeKugouLoginVerification = () => {
+  const verifyType = Number(kugouVerificationState.verifyInfo?.v_type || 0);
+  if (!activeChallenge || verifyType !== 38) return;
+
+  kugouVerificationState.status = 'success';
+  finishActiveChallenge();
 };
 
 export const cancelKugouVerification = () => {

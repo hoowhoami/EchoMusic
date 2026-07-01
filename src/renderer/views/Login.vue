@@ -15,6 +15,11 @@ import {
   checkWxLogin,
   loginByOpenPlat,
 } from '@/api/user';
+import {
+  cancelKugouVerification,
+  completeKugouLoginVerification,
+  kugouVerificationState,
+} from '@/utils/kugouVerification';
 import logger from '@/utils/logger';
 import { closeTransientView } from '@/utils/navigation';
 
@@ -59,6 +64,9 @@ const triggerAutoReceiveVipAfterLogin = () => {
 const activeTab = ref('0');
 
 const closeLoginPage = async () => {
+  if (kugouVerificationState.status === 'awaiting-login') {
+    cancelKugouVerification();
+  }
   await closeTransientView(router, { query: router.currentRoute.value.query });
 };
 
@@ -74,8 +82,9 @@ let isLoginDone = false;
 const completeLogin = (data: Record<string, unknown>) => {
   isLoginDone = true;
   userStore.handleLoginSuccess(data);
+  completeKugouLoginVerification();
   triggerAutoReceiveVipAfterLogin();
-  router.push('/main/home');
+  void closeTransientView(router, { query: router.currentRoute.value.query });
 };
 
 const loadQrCode = async () => {
