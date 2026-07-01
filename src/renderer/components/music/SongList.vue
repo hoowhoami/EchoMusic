@@ -485,7 +485,7 @@ const estimateContextMenuHeight = () => {
   const separatorCount =
     (extensionContextMenuItems.value.length > 0 ? 1 : 0) +
     (contextMenuCanRemove.value ? 1 : 0) +
-    (extensionContextMenuItems.value.length > 0 || contextMenuCanRemove.value ? 1 : 0);
+    2;
   return 12 + itemCount * 30 + separatorCount * 9 + Math.max(0, itemCount + separatorCount - 1) * 4;
 };
 
@@ -895,6 +895,7 @@ defineExpose({ scrollToActive, filteredCount: computed(() => filteredSongsRef.va
       >
         排队候播
       </button>
+      <div class="song-context-separator"></div>
       <button
         type="button"
         class="song-context-item"
@@ -926,10 +927,7 @@ defineExpose({ scrollToActive, filteredCount: computed(() => filteredSongsRef.va
       >
         从歌单删除
       </button>
-      <div
-        v-if="extensionContextMenuItems.length > 0 || contextMenuCanRemove"
-        class="song-context-separator"
-      ></div>
+      <div class="song-context-separator"></div>
       <button
         type="button"
         class="song-context-item"

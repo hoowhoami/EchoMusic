@@ -2,9 +2,11 @@
 import { Icon } from '@iconify/vue';
 import Button from '@/components/ui/Button.vue';
 import {
-  iconArrowBarDown,
+  iconArrowBarToDown,
   iconCheck,
   iconExternalLink,
+  iconPulse,
+  iconRefreshCw,
   iconShare,
   iconTriangleAlert,
 } from '@/icons';
@@ -34,6 +36,22 @@ const emit = defineEmits<{
 
 const getInitial = (plugin: Pick<PluginMarketplacePlugin, 'name'>) =>
   plugin.name.trim()[0]?.toUpperCase() || 'E';
+
+const formatCount = (value: number) =>
+  new Intl.NumberFormat('zh-CN', {
+    notation: value >= 10000 ? 'compact' : 'standard',
+    maximumFractionDigits: 1,
+  }).format(Math.max(0, Number(value) || 0));
+
+const getStatsTitle = (plugin: PluginMarketplacePlugin) =>
+  `安装/更新 ${formatCount(plugin.stats.installCount + plugin.stats.updateCount)} · 安装 ${formatCount(plugin.stats.installCount)} · 更新 ${formatCount(plugin.stats.updateCount)}`;
+
+const getVersionTitle = (plugin: PluginMarketplacePlugin) => {
+  if (!plugin.installed) return `最新版本 v${plugin.version}`;
+  if (plugin.updateAvailable)
+    return `已安装 v${plugin.installedVersion}，可更新至 v${plugin.version}`;
+  return `已安装 v${plugin.installedVersion}`;
+};
 </script>
 
 <template>
@@ -74,11 +92,23 @@ const getInitial = (plugin: Pick<PluginMarketplacePlugin, 'name'>) =>
           </span>
         </div>
 
-        <div class="plugin-card-meta">
-          <span>v{{ plugin.version }}</span>
-          <span v-if="plugin.author"> · {{ plugin.author }}</span>
-        </div>
+        <div v-if="plugin.author" class="plugin-card-meta">{{ plugin.author }}</div>
       </div>
+    </div>
+
+    <div class="marketplace-version-row" :title="getVersionTitle(plugin)">
+      <span class="marketplace-version-pill">
+        <span>最新</span>
+        <strong>v{{ plugin.version }}</strong>
+      </span>
+      <span
+        v-if="plugin.installed"
+        class="marketplace-version-pill"
+        :class="{ 'is-update': plugin.updateAvailable }"
+      >
+        <span>已装</span>
+        <strong>v{{ plugin.installedVersion }}</strong>
+      </span>
     </div>
 
     <p class="plugin-card-description">{{ plugin.description || '暂无描述' }}</p>
@@ -91,6 +121,21 @@ const getInitial = (plugin: Pick<PluginMarketplacePlugin, 'name'>) =>
     <div class="marketplace-tags">
       <span>{{ plugin.sourceName }}</span>
       <span v-for="tag in plugin.tags.slice(0, 3)" :key="tag">{{ tag }}</span>
+    </div>
+
+    <div class="marketplace-stats" :title="getStatsTitle(plugin)">
+      <span class="marketplace-stat-item" title="安装和更新总量">
+        <Icon :icon="iconArrowBarToDown" width="13" height="13" />
+        {{ formatCount(plugin.stats.installCount + plugin.stats.updateCount) }}
+      </span>
+      <span class="marketplace-stat-item" title="更新量">
+        <Icon :icon="iconRefreshCw" width="13" height="13" />
+        {{ formatCount(plugin.stats.updateCount) }}
+      </span>
+      <span class="marketplace-stat-item" title="热度">
+        <Icon :icon="iconPulse" width="13" height="13" />
+        {{ formatCount(plugin.stats.score) }}
+      </span>
     </div>
 
     <div v-if="featureTags.length" class="plugin-feature-tags">
@@ -140,7 +185,7 @@ const getInitial = (plugin: Pick<PluginMarketplacePlugin, 'name'>) =>
           width="14"
           height="14"
         />
-        <Icon v-else :icon="iconArrowBarDown" width="14" height="14" />
+        <Icon v-else :icon="iconArrowBarToDown" width="14" height="14" />
         {{ installLabel }}
       </Button>
     </div>

@@ -50,6 +50,7 @@ import type {
   PluginMarketplaceSourceInput,
   PluginMarketplaceSourceMutationResult,
   PluginMarketplaceSourcePatch,
+  PluginMarketplaceStats,
   PluginProcessLaunchOptions,
   PluginProcessLaunchResult,
   PluginProcessTerminateResult,
@@ -73,6 +74,7 @@ import {
   DEFAULT_PLUGIN_FILE_SCAN_LIMIT,
   DEFAULT_PLUGIN_MARKETPLACE_SOURCE_ID,
   DEFAULT_PLUGIN_MARKETPLACE_SOURCE_URL,
+  DEFAULT_PLUGIN_MARKETPLACE_STATS_API_URL,
   DEFAULT_PLUGIN_READ_BYTES,
   MAX_PLUGIN_FILE_SCAN_LIMIT,
   MAX_PLUGIN_IMAGE_SCAN_LIMIT,
@@ -154,7 +156,7 @@ type PluginMarketplaceIndexEntry = {
 };
 type PluginMarketplaceCatalogPlugin = Omit<
   PluginMarketplacePlugin,
-  'installed' | 'installedVersion' | 'updateAvailable' | 'compatibility'
+  'installed' | 'installedVersion' | 'updateAvailable' | 'compatibility' | 'stats'
 >;
 type PluginMarketplaceCache = {
   schemaVersion?: number;
@@ -683,6 +685,196 @@ const applyGithubProxyUrl = (url: string, githubProxyUrl?: string) => {
   return toGithubProxyUrl(target, proxy);
 };
 
+const normalizeMarketplaceStatsApiUrl = (value?: string) =>
+  String(
+    value || process.env.ECHOMUSIC_PLUGIN_STATS_API_URL || DEFAULT_PLUGIN_MARKETPLACE_STATS_API_URL,
+  )
+    .trim()
+    .replace(/\/+$/, '');
+
+const getUniqueUrls = (urls: string[]) =>
+  urls.filter((url, index, list) => url && list.findIndex((item) => item === url) === index);
+
+const getMarketplaceStatsApiUrlCandidates = (path: string) => {
+  const baseUrl = normalizeMarketplaceStatsApiUrl();
+  if (!baseUrl) return [];
+  const targetUrl = `${baseUrl}${path.startsWith('/') ? path : `/${path}`}`;
+  return getUniqueUrls([targetUrl]);
+};
+
+const getHttpFailureMessage = async (response: Response, fallback: string) => {
+  const body = await response.text().catch(() => '');
+  if (!body) return `${fallback} (${response.status})`;
+  try {
+    const payload = JSON.parse(body) as { error?: unknown };
+    const error = String(payload?.error || '').trim();
+    if (error) return `${fallback} (${response.status}): ${error}`;
+  } catch {
+    // keep raw body below
+  }
+  return `${fallback} (${response.status}): ${body.slice(0, 240)}`;
+};
+
+const getEmptyMarketplaceStats = (): PluginMarketplaceStats => ({
+  installCount: 0,
+  updateCount: 0,
+  failureCount: 0,
+  score: 0,
+  lastInstalledAt: '',
+  lastUpdatedAt: '',
+});
+
+const normalizeMarketplaceStats = (value: unknown): PluginMarketplaceStats => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return getEmptyMarketplaceStats();
+  }
+  const stats = value as Partial<PluginMarketplaceStats>;
+  return {
+    installCount: Math.max(0, Math.floor(Number(stats.installCount) || 0)),
+    updateCount: Math.max(0, Math.floor(Number(stats.updateCount) || 0)),
+    failureCount: Math.max(0, Math.floor(Number(stats.failureCount) || 0)),
+    score: Math.max(0, Number(stats.score) || 0),
+    lastInstalledAt: String(stats.lastInstalledAt || ''),
+    lastUpdatedAt: String(stats.lastUpdatedAt || ''),
+  };
+};
+
+const getMarketplaceStatsKey = (sourceId: string, pluginId: string) => `${sourceId}:${pluginId}`;
+
+const fetchMarketplacePluginStats = async (
+  plugins: PluginMarketplacePlugin[],
+): Promise<Map<string, PluginMarketplaceStats>> => {
+  const urlCandidates = getMarketplaceStatsApiUrlCandidates('/v1/plugins/stats');
+  if (urlCandidates.length === 0 || plugins.length === 0) return new Map();
+
+  try {
+    let response: Response | null = null;
+    let lastError: unknown = null;
+    for (const url of urlCandidates) {
+      try {
+        const result = await fetchWithTimeout(
+          url,
+          {
+            method: 'POST',
+            headers: {
+              Accept: 'application/json',
+              'Content-Type': 'application/json',
+              'User-Agent': 'EchoMusic-Plugin-Marketplace',
+            },
+            body: JSON.stringify({
+              plugins: plugins.map((plugin) => ({
+                sourceId: plugin.sourceId,
+                pluginId: plugin.id,
+                version: plugin.version,
+                sourceUrl: plugin.sourceUrl,
+                sourceName: plugin.sourceName,
+                repo: plugin.repo,
+                packagePath: plugin.packagePath,
+                downloadUrl: plugin.downloadUrl,
+                checksum: plugin.checksum,
+              })),
+            }),
+          },
+          PLUGIN_MARKETPLACE_FETCH_TIMEOUT_MS,
+          '插件热度统计请求超时',
+        );
+        if (!result.ok) throw new Error(await getHttpFailureMessage(result, '统计请求失败'));
+        response = result;
+        break;
+      } catch (error) {
+        lastError = error;
+        log.warn('[PluginMarketplace] stats request attempt failed', {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+    if (!response) {
+      throw lastError instanceof Error ? lastError : new Error('统计请求失败');
+    }
+    const payload = (await response.json()) as { plugins?: unknown };
+    const rows = Array.isArray(payload.plugins) ? payload.plugins : [];
+    const statsByKey = new Map<string, PluginMarketplaceStats>();
+    for (const row of rows) {
+      if (!row || typeof row !== 'object') continue;
+      const item = row as { sourceId?: unknown; pluginId?: unknown; stats?: unknown };
+      const sourceId = String(item.sourceId || '').trim();
+      const pluginId = normalizePluginId(item.pluginId);
+      if (!sourceId || !pluginId) continue;
+      statsByKey.set(
+        getMarketplaceStatsKey(sourceId, pluginId),
+        normalizeMarketplaceStats(item.stats),
+      );
+    }
+    return statsByKey;
+  } catch (error) {
+    log.warn('[PluginMarketplace] stats request failed', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return new Map();
+  }
+};
+
+const reportMarketplacePluginInstallEvent = async (
+  plugin: PluginMarketplacePlugin,
+  event: 'install' | 'update' | 'failure',
+  error?: unknown,
+) => {
+  const urlCandidates = getMarketplaceStatsApiUrlCandidates('/v1/plugins/events');
+  if (urlCandidates.length === 0) return;
+  try {
+    let lastError: unknown = null;
+    for (const url of urlCandidates) {
+      try {
+        const response = await fetchWithTimeout(
+          url,
+          {
+            method: 'POST',
+            headers: {
+              Accept: 'application/json',
+              'Content-Type': 'application/json',
+              'User-Agent': 'EchoMusic-Plugin-Marketplace',
+            },
+            body: JSON.stringify({
+              event,
+              plugin: {
+                sourceId: plugin.sourceId,
+                pluginId: plugin.id,
+                version: plugin.version,
+                sourceUrl: plugin.sourceUrl,
+                sourceName: plugin.sourceName,
+                repo: plugin.repo,
+                packagePath: plugin.packagePath,
+                downloadUrl: plugin.downloadUrl,
+                checksum: plugin.checksum,
+              },
+              error:
+                error instanceof Error ? error.message : typeof error === 'string' ? error : '',
+            }),
+          },
+          PLUGIN_MARKETPLACE_FETCH_TIMEOUT_MS,
+          '插件安装统计上报超时',
+        );
+        if (!response.ok) throw new Error(await getHttpFailureMessage(response, '统计上报失败'));
+        return;
+      } catch (reportError) {
+        lastError = reportError;
+        log.warn('[PluginMarketplace] install event report attempt failed', {
+          pluginId: plugin.id,
+          event,
+          error: reportError instanceof Error ? reportError.message : String(reportError),
+        });
+      }
+    }
+    throw lastError instanceof Error ? lastError : new Error('插件安装统计上报失败');
+  } catch (reportError) {
+    log.warn('[PluginMarketplace] install event report failed', {
+      pluginId: plugin.id,
+      event,
+      error: reportError instanceof Error ? reportError.message : String(reportError),
+    });
+  }
+};
+
 const fetchWithTimeout = async (
   url: string,
   options: RequestInit,
@@ -1152,17 +1344,17 @@ const isMarketplaceVersionGreater = (candidate: string, current: string) => {
   return candidate.localeCompare(current, undefined, { numeric: true, sensitivity: 'base' }) > 0;
 };
 
-const hydrateMarketplacePlugins = (
+const hydrateMarketplacePlugins = async (
   plugins: PluginMarketplaceCatalogPlugin[],
   sources: PluginMarketplaceSource[],
   githubProxyUrl?: string,
-): PluginMarketplacePlugin[] => {
+): Promise<PluginMarketplacePlugin[]> => {
   const installedById = new Map(listPlugins().plugins.map((plugin) => [plugin.id, plugin]));
   const enabledSourceIds = new Set(
     sources.filter((source) => source.enabled).map((source) => source.id),
   );
 
-  return plugins
+  const hydrated = plugins
     .filter((plugin) => enabledSourceIds.has(plugin.sourceId))
     .map((plugin) => {
       const installed = installedById.get(plugin.id);
@@ -1175,8 +1367,22 @@ const hydrateMarketplacePlugins = (
           ? isMarketplaceVersionGreater(plugin.version, installed.version)
           : false,
         compatibility: getEchoMusicCompatibility(plugin.manifest),
+        stats: getEmptyMarketplaceStats(),
       };
     });
+  const statsByKey = await fetchMarketplacePluginStats(hydrated);
+  return hydrated
+    .map((plugin) => ({
+      ...plugin,
+      stats: statsByKey.get(getMarketplaceStatsKey(plugin.sourceId, plugin.id)) ?? plugin.stats,
+    }))
+    .sort(
+      (left, right) =>
+        right.stats.score - left.stats.score ||
+        right.stats.installCount +
+          right.stats.updateCount -
+          (left.stats.installCount + left.stats.updateCount),
+    );
 };
 
 const refreshMarketplaceCatalog = async (
@@ -1309,7 +1515,11 @@ export const listPluginMarketplace = async (
     cache = refreshed.cache;
   }
 
-  const plugins = hydrateMarketplacePlugins(cache.plugins, nextSources, options.githubProxyUrl);
+  const plugins = await hydrateMarketplacePlugins(
+    cache.plugins,
+    nextSources,
+    options.githubProxyUrl,
+  );
   const enabledSourceErrors = nextSources
     .filter((source) => source.enabled && source.lastError)
     .map((source) => `${source.name}: ${source.lastError}`);
@@ -1547,6 +1757,7 @@ export const installPluginFromMarketplace = async (
     sourceId,
     pluginId: normalizedPluginId,
   });
+  let installTarget: PluginMarketplacePlugin | null = null;
   try {
     const marketplace = await listPluginMarketplace({
       githubProxyUrl: options.githubProxyUrl,
@@ -1573,6 +1784,7 @@ export const installPluginFromMarketplace = async (
         error: plugin.compatibility.message || '插件与当前 EchoMusic 版本不兼容',
       };
     }
+    installTarget = plugin;
 
     const tempDirectory = mkdtempSync(join(tmpdir(), 'echo-plugin-download-'));
     try {
@@ -1606,6 +1818,7 @@ export const installPluginFromMarketplace = async (
         expectedPluginId: plugin.id,
         enableAfterInstall: Boolean(options.enableAfterInstall),
       });
+      void reportMarketplacePluginInstallEvent(plugin, installed.updated ? 'update' : 'install');
       log.info('[PluginMarketplace] install succeeded', {
         sourceId,
         pluginId: installed.plugin.id,
@@ -1617,6 +1830,9 @@ export const installPluginFromMarketplace = async (
       removeTemporaryDirectory(tempDirectory);
     }
   } catch (error) {
+    if (installTarget) {
+      void reportMarketplacePluginInstallEvent(installTarget, 'failure', error);
+    }
     log.warn('[PluginMarketplace] install failed', {
       sourceId,
       pluginId: normalizedPluginId,

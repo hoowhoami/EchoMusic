@@ -58,3 +58,8 @@ Thumbs.db
 native/*/target/
 native/*/*.node
 native/*/node_modules/
+
+# cloudflare
+cloudflare/**/.wrangler/
+cloudflare/**/*.dev.vars
+cloudflare/**/*.local.toml

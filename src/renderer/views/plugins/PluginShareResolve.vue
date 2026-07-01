@@ -300,7 +300,6 @@ const goPluginManagement = async () => {
             ...(plugin?.sourceUrl || shared.sourceUrl
               ? { source: plugin?.sourceUrl || shared.sourceUrl }
               : {}),
-            refreshMarketplace: '1',
           }
         : {}),
     },

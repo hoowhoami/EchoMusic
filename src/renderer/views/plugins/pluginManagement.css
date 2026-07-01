@@ -424,7 +424,7 @@
 }
 
 .marketplace-card {
-  min-height: 236px;
+  min-height: 260px;
 }
 
 .marketplace-card.is-shared-target {
@@ -441,6 +441,46 @@
   flex-wrap: wrap;
   gap: 0.375rem;
   min-height: 1.5rem;
+}
+
+.marketplace-version-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+  min-height: 1.625rem;
+}
+
+.marketplace-version-pill {
+  min-width: 0;
+  max-width: 100%;
+  height: 1.625rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0 0.5rem;
+  border-radius: 6px;
+  background: var(--control-muted-bg);
+  color: var(--color-text-secondary);
+  font-size: 0.6875rem;
+  font-weight: 700;
+}
+
+.marketplace-version-pill strong {
+  min-width: 0;
+  color: var(--color-text-main);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.marketplace-version-pill.is-update {
+  background: rgba(245, 158, 11, 0.1);
+  color: rgb(180, 83, 9);
+}
+
+.marketplace-version-pill.is-update strong {
+  color: rgb(180, 83, 9);
 }
 
 .marketplace-tags span,
@@ -463,6 +503,35 @@
 .plugin-feature-tags span {
   background: color-mix(in srgb, var(--color-primary) 10%, var(--control-muted-bg));
   color: color-mix(in srgb, var(--color-primary) 78%, var(--color-text-main));
+}
+
+.marketplace-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.375rem;
+  min-height: 1.75rem;
+  color: var(--color-text-secondary);
+  font-size: 0.6875rem;
+  font-weight: 700;
+}
+
+.marketplace-stat-item {
+  min-width: 0;
+  height: 1.75rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3125rem;
+  padding: 0 0.375rem;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--control-muted-bg) 82%, transparent);
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.marketplace-stat-item svg {
+  flex: 0 0 auto;
+  color: color-mix(in srgb, var(--color-primary) 72%, var(--color-text-secondary));
 }
 
 .marketplace-install-btn {

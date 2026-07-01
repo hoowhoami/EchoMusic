@@ -9,10 +9,12 @@ export const PLUGIN_MARKETPLACE_CACHE_KEY = 'plugins:marketplace:cache';
 export const PLUGIN_PROCESS_CONSENTS_KEY = 'plugins:process-consents';
 export const PLUGIN_MANIFEST_FILE = 'manifest.json';
 export const PLUGIN_MARKETPLACE_INDEX_FILE = 'echo-plugins.json';
-export const PLUGIN_MARKETPLACE_CACHE_VERSION = 4;
+export const PLUGIN_MARKETPLACE_CACHE_VERSION = 5;
 export const DEFAULT_PLUGIN_MARKETPLACE_SOURCE_URL =
   'https://github.com/hoowhoami/EchoMusicPlugins';
 export const DEFAULT_PLUGIN_MARKETPLACE_SOURCE_ID = 'github:hoowhoami/echomusicplugins';
+export const DEFAULT_PLUGIN_MARKETPLACE_STATS_API_URL =
+  'https://echomusic-plugin-marketplace.hoowhoami.dpdns.org';
 
 export const PLUGIN_IMAGE_EXTENSIONS = new Set([
   '.apng',

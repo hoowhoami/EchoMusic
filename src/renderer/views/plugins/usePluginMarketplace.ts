@@ -321,8 +321,8 @@ export const usePluginMarketplace = ({ route, activeView }: UsePluginMarketplace
 
   const getMarketplaceStatusLabel = (plugin: PluginMarketplacePlugin) => {
     if (!plugin.compatibility.compatible) return '版本要求';
-    if (plugin.updateAvailable) return `可更新至 v${plugin.version}`;
-    if (plugin.installed) return `已安装 v${plugin.installedVersion}`;
+    if (plugin.updateAvailable) return '可更新';
+    if (plugin.installed) return '已安装';
     return '未安装';
   };
 
@@ -358,6 +358,18 @@ export const usePluginMarketplace = ({ route, activeView }: UsePluginMarketplace
     }
   };
 
+  const markMarketplacePluginInstalled = (plugin: PluginMarketplacePlugin) => {
+    marketplacePlugins.value = marketplacePlugins.value.map((item) => {
+      if (item.sourceId !== plugin.sourceId || item.id !== plugin.id) return item;
+      return {
+        ...item,
+        installed: true,
+        installedVersion: item.version,
+        updateAvailable: false,
+      };
+    });
+  };
+
   const installMarketplacePlugin = async (plugin: PluginMarketplacePlugin) => {
     if (!canInstallMarketplacePlugin(plugin)) return false;
     const key = getMarketplacePluginKey(plugin);
@@ -376,7 +388,7 @@ export const usePluginMarketplace = ({ route, activeView }: UsePluginMarketplace
       if (!result?.ok) throw new Error(result?.error || '插件安装失败');
       await refreshPlugins({ reloadActive: true });
       await reloadOtherPluginRuntimes();
-      await loadMarketplace(false);
+      markMarketplacePluginInstalled(plugin);
       toastStore.actionCompleted(result.updated ? '插件已更新' : '插件已安装');
       return true;
     } catch (error) {
@@ -416,6 +428,7 @@ export const usePluginMarketplace = ({ route, activeView }: UsePluginMarketplace
           );
           if (!result?.ok) throw new Error(result?.error || '插件更新失败');
           succeeded += 1;
+          markMarketplacePluginInstalled(plugin);
         } catch (error) {
           failures.push(`${plugin.name}：${getPluginInstallErrorMessage(error)}`);
         } finally {
@@ -430,7 +443,6 @@ export const usePluginMarketplace = ({ route, activeView }: UsePluginMarketplace
         await refreshPlugins({ reloadActive: true });
         await reloadOtherPluginRuntimes();
       }
-      await loadMarketplace(false);
     } finally {
       isUpdatingAllMarketplace.value = false;
       updateAllProgress.value = 0;

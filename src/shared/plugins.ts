@@ -417,6 +417,15 @@ export interface PluginMarketplaceInstallOptions {
   enableAfterInstall?: boolean;
 }
 
+export interface PluginMarketplaceStats {
+  installCount: number;
+  updateCount: number;
+  failureCount: number;
+  score: number;
+  lastInstalledAt: string;
+  lastUpdatedAt: string;
+}
+
 export interface PluginLocalInstallOptions {
   enableAfterInstall?: boolean;
 }
@@ -442,6 +451,7 @@ export interface PluginMarketplacePlugin {
   installedVersion: string;
   updateAvailable: boolean;
   compatibility: EchoPluginCompatibility;
+  stats: PluginMarketplaceStats;
   manifest: EchoPluginManifest;
 }
 
