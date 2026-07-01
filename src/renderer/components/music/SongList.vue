@@ -1083,8 +1083,8 @@ defineExpose({ scrollToActive, filteredCount: computed(() => filteredSongsRef.va
 }
 
 :global(.song-context-separator) {
-  height: 1px;
+  border: none;
+  border-top: 1px solid var(--border-subtle);
   margin: 4px 6px;
-  background-color: var(--border-subtle);
 }
 </style>

@@ -610,9 +610,9 @@ const handleFavorite = () => {
 }
 
 :deep(.song-context-separator) {
-  height: 1px;
+  border: none;
+  border-top: 1px solid var(--border-subtle);
   margin: 4px 6px;
-  background-color: var(--border-subtle);
 }
 
 .song-title-row {
