@@ -68,6 +68,11 @@ export const desktopLyricAlignOptions = [
   { label: '交替', value: 'both' },
 ];
 
+export const desktopLyricLayoutOptions = [
+  { label: '横排', value: 'horizontal' },
+  { label: '竖排', value: 'vertical' },
+];
+
 export const desktopLyricShadowOptions = [
   { label: '关闭', value: 'none' },
   { label: '柔和', value: 'soft' },

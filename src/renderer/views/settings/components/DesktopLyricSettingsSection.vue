@@ -15,6 +15,7 @@ import SettingsSectionShell from './SettingsSectionShell.vue';
 import {
   desktopLyricAlignOptions,
   desktopLyricColorPresets,
+  desktopLyricLayoutOptions,
   desktopLyricShadowOptions,
   sectionTitles,
 } from '../constants';
@@ -82,6 +83,23 @@ const applyDesktopLyricColor = async (value: string) => {
       <Switch
         :model-value="desktopLyricStore.settings.alwaysOnTop"
         @update:model-value="commitDesktopLyricSettings({ alwaysOnTop: Boolean($event) })"
+      />
+    </div>
+    <div class="settings-divider"></div>
+    <div class="settings-item">
+      <div class="space-y-1">
+        <h3 class="font-semibold">显示布局</h3>
+        <p class="text-sm text-text-secondary">切换桌面歌词的横排或竖排显示</p>
+      </div>
+      <Select
+        class="w-45"
+        :model-value="desktopLyricStore.settings.layout"
+        :options="desktopLyricLayoutOptions"
+        @update:model-value="
+          commitDesktopLyricSettings({
+            layout: $event as DesktopLyricSettings['layout'],
+          })
+        "
       />
     </div>
     <div class="settings-divider"></div>

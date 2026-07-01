@@ -11,12 +11,21 @@ import type {
   PluginProcessLaunchOptions,
   PluginProcessLaunchResult,
   PluginProcessTerminateResult,
+  PluginWebServerHandlerResult,
+  PluginWebServerListenOptions,
+  PluginWebServerRequest,
+  PluginWebServerResponse,
+  PluginWebServerResponsePayload,
   PluginWindowBounds,
   PluginWindowShowOptions,
   PluginShowOnTopOptions,
   PluginHostWindowTarget,
 } from '../../shared/plugins';
 import type { AudioSpectrumFrame, AudioSpectrumOptions } from '../../shared/audio-spectrum';
+import type {
+  DesktopLyricSettings,
+  DesktopLyricWindowBoundsUpdate,
+} from '../../shared/desktop-lyric';
 import type {
   NowPlayingAppearancePayload,
   NowPlayingCommand,
@@ -203,6 +212,18 @@ export interface EchoPluginContext {
     restoreDefaultWindowIcon: () => Promise<unknown>;
   };
   nowPlaying: Window['electron']['nowPlaying'];
+  desktopLyric: {
+    getSnapshot: () => ReturnType<Window['electron']['desktopLyric']['getSnapshot']>;
+    getWindow: () => ReturnType<Window['electron']['desktopLyric']['getWindow']>;
+    show: () => ReturnType<Window['electron']['desktopLyric']['show']>;
+    hide: () => ReturnType<Window['electron']['desktopLyric']['hide']>;
+    updateSettings: (
+      payload: Partial<DesktopLyricSettings>,
+    ) => ReturnType<Window['electron']['desktopLyric']['updateSettings']>;
+    updateWindow: (
+      payload: DesktopLyricWindowBoundsUpdate,
+    ) => ReturnType<Window['electron']['desktopLyric']['updateWindow']>;
+  };
   windows: {
     show: (windowId: string, options?: PluginWindowShowOptions) => Promise<unknown>;
     hide: (windowId: string) => Promise<unknown>;
@@ -229,6 +250,17 @@ export interface EchoPluginContext {
   process: {
     launch: (options: PluginProcessLaunchOptions) => Promise<PluginProcessLaunchResult>;
     terminate: (pid: number) => Promise<PluginProcessTerminateResult>;
+  };
+  webServer: {
+    listen: (
+      handler: (request: PluginWebServerRequest) => PluginWebServerHandlerResult,
+      options?: PluginWebServerListenOptions,
+    ) => ReturnType<NonNullable<Window['electron']['plugins']>['webServer']['listen']>;
+    status: () => ReturnType<NonNullable<Window['electron']['plugins']>['webServer']['status']>;
+    close: () => ReturnType<NonNullable<Window['electron']['plugins']>['webServer']['close']>;
+    onRequest: (
+      handler: (request: PluginWebServerRequest) => PluginWebServerHandlerResult,
+    ) => () => void;
   };
   ui: ReturnType<typeof createRuntimeUiApi>;
   commands: {
@@ -1085,6 +1117,17 @@ const createLyricEffectsApi = (
   },
 });
 
+const createDesktopLyricApi = () => ({
+  getSnapshot: () => window.electron.desktopLyric.getSnapshot(),
+  getWindow: () => window.electron.desktopLyric.getWindow(),
+  show: () => window.electron.desktopLyric.show(),
+  hide: () => window.electron.desktopLyric.hide(),
+  updateSettings: (payload: Partial<DesktopLyricSettings>) =>
+    window.electron.desktopLyric.updateSettings(payload),
+  updateWindow: (payload: DesktopLyricWindowBoundsUpdate) =>
+    window.electron.desktopLyric.updateWindow(payload),
+});
+
 const createAppearanceApi = (
   pluginId: string,
   addDisposable: (dispose: () => void) => () => void,
@@ -1260,6 +1303,153 @@ const createPluginProcessApi = (pluginId: string) => {
     terminate: (pid: number) =>
       getProcessApi()?.terminate(pluginId, pid) ??
       Promise.resolve({ ok: false as const, error: '插件进程 API 不可用' }),
+  };
+};
+
+const isArrayBufferLike = (value: unknown): value is ArrayBuffer =>
+  value instanceof ArrayBuffer || Object.prototype.toString.call(value) === '[object ArrayBuffer]';
+
+const isPluginWebServerBase64Body = (value: unknown): value is { type: 'base64'; data: string } =>
+  Boolean(
+    value &&
+    typeof value === 'object' &&
+    !Array.isArray(value) &&
+    Reflect.get(value, 'type') === 'base64',
+  );
+
+const isPluginWebServerResponseLike = (value: unknown): value is PluginWebServerResponse =>
+  Boolean(
+    value &&
+    typeof value === 'object' &&
+    !Array.isArray(value) &&
+    ('status' in value || 'headers' in value || 'body' in value),
+  );
+
+const normalizePluginWebServerBody = (body: unknown): PluginWebServerResponsePayload['body'] => {
+  if (body === undefined || body === null) return body;
+  if (typeof body === 'string') return body;
+  if (isArrayBufferLike(body) || ArrayBuffer.isView(body)) return body;
+  if (isPluginWebServerBase64Body(body)) {
+    return {
+      type: 'base64' as const,
+      data: String(body.data || ''),
+    };
+  }
+  return serializeForIpc(body) as PluginWebServerResponsePayload['body'];
+};
+
+const normalizePluginWebServerResponse = (
+  requestId: string,
+  result: Awaited<PluginWebServerHandlerResult>,
+): PluginWebServerResponsePayload => {
+  if (result === undefined) {
+    return {
+      requestId,
+      status: 204,
+    };
+  }
+
+  if (isPluginWebServerResponseLike(result)) {
+    return {
+      requestId,
+      status: result.status,
+      headers: serializeForIpc(result.headers) as PluginWebServerResponsePayload['headers'],
+      body: normalizePluginWebServerBody(result.body),
+    };
+  }
+
+  return {
+    requestId,
+    body: normalizePluginWebServerBody(result),
+  };
+};
+
+const createPluginWebServerApi = (
+  descriptor: EchoPluginDescriptor,
+  addDisposable: (dispose: () => void) => () => void,
+) => {
+  const getWebServerApi = () => window.electron.plugins?.webServer;
+  const requireWebServerCapability = () => {
+    if (descriptor.manifest.capabilities?.webServer !== true) {
+      throw new Error('插件未声明 Web 服务能力');
+    }
+  };
+  let closeOnDisposeRegistered = false;
+  let listenRequestDisposer: (() => void) | null = null;
+  const ensureCloseOnDispose = () => {
+    if (closeOnDisposeRegistered) return;
+    closeOnDisposeRegistered = true;
+    addDisposable(() => {
+      void getWebServerApi()?.close(descriptor.id);
+    });
+  };
+
+  const onRequest = (
+    handler: (request: PluginWebServerRequest) => PluginWebServerHandlerResult,
+  ) => {
+    requireWebServerCapability();
+    const dispose =
+      getWebServerApi()?.onRequest((request) => {
+        if (request.pluginId !== descriptor.id) return;
+        void (async () => {
+          let payload: PluginWebServerResponsePayload;
+          try {
+            const result = await runPluginCallback(
+              descriptor.id,
+              '插件 Web 服务请求',
+              () => handler(request),
+              { status: 500, body: '插件 Web 服务处理异常' },
+            );
+            payload = normalizePluginWebServerResponse(request.requestId, result);
+          } catch (error) {
+            void reportPluginRuntimeError(descriptor.id, error, '插件 Web 服务请求');
+            payload = {
+              requestId: request.requestId,
+              status: 500,
+              body: '插件 Web 服务处理异常',
+            };
+          }
+          await getWebServerApi()?.respond(descriptor.id, payload);
+        })();
+      }) ?? (() => undefined);
+    return addDisposable(dispose);
+  };
+
+  return {
+    listen: async (
+      handler: (request: PluginWebServerRequest) => PluginWebServerHandlerResult,
+      options?: PluginWebServerListenOptions,
+    ) => {
+      requireWebServerCapability();
+      listenRequestDisposer?.();
+      const disposeRequestHandler = onRequest(handler);
+      listenRequestDisposer = disposeRequestHandler;
+      ensureCloseOnDispose();
+      const result = (await getWebServerApi()?.listen(
+        descriptor.id,
+        serializeForIpc(options) as PluginWebServerListenOptions,
+      )) ?? { ok: false as const, error: '插件 Web 服务 API 不可用' };
+      if (!result.ok) {
+        disposeRequestHandler();
+        if (listenRequestDisposer === disposeRequestHandler) listenRequestDisposer = null;
+      }
+      return result;
+    },
+    status: () => {
+      requireWebServerCapability();
+      return (
+        getWebServerApi()?.status(descriptor.id) ??
+        Promise.resolve({ ok: false as const, error: '插件 Web 服务 API 不可用' })
+      );
+    },
+    close: () => {
+      requireWebServerCapability();
+      return (
+        getWebServerApi()?.close(descriptor.id) ??
+        Promise.resolve({ ok: false as const, error: '插件 Web 服务 API 不可用' })
+      );
+    },
+    onRequest,
   };
 };
 
@@ -1997,6 +2187,7 @@ const createPluginContext = (
         Promise.resolve({ ok: false, error: '图标 API 不可用' }),
     },
     nowPlaying: window.electron.nowPlaying,
+    desktopLyric: createDesktopLyricApi(),
     windows: createPluginWindowsApi(descriptor.id),
     host: createPluginHostApi(),
     toast: createToastApi(),
@@ -2020,6 +2211,7 @@ const createPluginContext = (
     },
     fs: createPluginFsApi(descriptor.id),
     process: createPluginProcessApi(descriptor.id),
+    webServer: createPluginWebServerApi(descriptor, addDisposable),
     ui: createRuntimeUiApi(descriptor.id, host, addDisposable),
     commands: {
       register: (id, handler, options) => {

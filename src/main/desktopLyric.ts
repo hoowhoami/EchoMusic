@@ -6,12 +6,9 @@ import type {
   DesktopLyricSnapshot,
   DesktopLyricSnapshotMessage,
   DesktopLyricSnapshotPatch,
+  DesktopLyricWindowBoundsUpdate,
 } from '../shared/desktop-lyric';
 import {
-  DESKTOP_LYRIC_MAX_HEIGHT,
-  DESKTOP_LYRIC_MAX_WIDTH,
-  DESKTOP_LYRIC_MIN_HEIGHT,
-  DESKTOP_LYRIC_MIN_WIDTH,
   constrainBoundsToDisplay,
   getDesktopLyricSettings,
   getDesktopLyricVirtualScreenBounds,
@@ -23,6 +20,7 @@ import {
   setDesktopLyricLockedFlag,
 } from './desktopLyric/store';
 import {
+  applyWindowSizeLimits,
   applyWindowBounds,
   clearWindowPresentationTimers,
   clearWindowInteractionTimers,
@@ -34,6 +32,7 @@ import {
   scheduleWindowPresentationSync,
   setDesktopLyricFixedSize,
   syncWindowPresentation,
+  updateWindowBounds,
   updateWindowHeight,
   withDesktopLyricWindow,
 } from './desktopLyric/window';
@@ -156,6 +155,63 @@ const persistWindowBounds = () => {
   if (!win || win.isDestroyed()) return;
   const bounds = win.getBounds();
   persistDesktopLyricWindowState(bounds);
+};
+
+const toFiniteNumber = (value: unknown, fallback: number) => {
+  const numberValue = Number(value);
+  return Number.isFinite(numberValue) ? numberValue : fallback;
+};
+
+const toOptionalFiniteNumber = (value: unknown, fallback?: number) => {
+  if (value === undefined) return fallback;
+  const numberValue = Number(value);
+  return Number.isFinite(numberValue) ? numberValue : fallback;
+};
+
+const buildDesktopLyricWindowBounds = (patch: DesktopLyricWindowBoundsUpdate) => {
+  const win = getDesktopLyricWindow();
+  const storedWindowState = getDesktopLyricWindowState();
+  const currentBounds = win && !win.isDestroyed() ? win.getBounds() : null;
+  return constrainBoundsToDisplay({
+    width: toFiniteNumber(patch.width, currentBounds?.width ?? storedWindowState.width),
+    height: toFiniteNumber(patch.height, currentBounds?.height ?? storedWindowState.height),
+    x: toOptionalFiniteNumber(patch.x, currentBounds?.x ?? storedWindowState.x),
+    y: toOptionalFiniteNumber(patch.y, currentBounds?.y ?? storedWindowState.y),
+  });
+};
+
+export const updateDesktopLyricWindowBounds = (patch: DesktopLyricWindowBoundsUpdate = {}) => {
+  const nextWindowState = buildDesktopLyricWindowBounds(patch);
+  persistDesktopLyricWindowState(nextWindowState);
+  const win = getDesktopLyricWindow();
+  if (win && !win.isDestroyed()) {
+    applyWindowSizeLimits();
+    return updateWindowBounds(nextWindowState);
+  }
+  return nextWindowState;
+};
+
+const getLayoutPreferredBounds = (
+  bounds: { x?: number; y?: number; width: number; height: number },
+  layout: DesktopLyricSettings['layout'],
+) => {
+  const shouldUseVerticalPreset = layout === 'vertical' && bounds.width >= bounds.height;
+  const shouldUseHorizontalPreset = layout === 'horizontal' && bounds.height > bounds.width;
+  if (!shouldUseVerticalPreset && !shouldUseHorizontalPreset) return bounds;
+
+  const width = shouldUseVerticalPreset ? 240 : 800;
+  const height = shouldUseVerticalPreset ? 720 : 180;
+  if (typeof bounds.x !== 'number' || typeof bounds.y !== 'number') {
+    return { width, height };
+  }
+  const centerX = (bounds.x ?? 0) + bounds.width / 2;
+  const centerY = (bounds.y ?? 0) + bounds.height / 2;
+  return {
+    width,
+    height,
+    x: Math.round(centerX - width / 2),
+    y: Math.round(centerY - height / 2),
+  };
 };
 
 const reconcileDesktopLyricBounds = () => {
@@ -460,6 +516,7 @@ export const destroyDesktopLyricWindow = () => {
 export const updateDesktopLyricSettings = async (partial: Partial<DesktopLyricSettings>) => {
   const current = snapshot.settings;
   const nextSettings = sanitizeDesktopLyricSettings(partial, current);
+  const layoutChanged = current.layout !== nextSettings.layout;
   const shouldRefreshMenus =
     current.enabled !== nextSettings.enabled || current.locked !== nextSettings.locked;
 
@@ -473,17 +530,24 @@ export const updateDesktopLyricSettings = async (partial: Partial<DesktopLyricSe
   const storedWindowState = getDesktopLyricWindowState();
   const win = getDesktopLyricWindow();
   const currentBounds = win && !win.isDestroyed() ? win.getBounds() : null;
-  const nextWindowState = constrainBoundsToDisplay({
+  const candidateWindowState = {
     width: currentBounds?.width ?? storedWindowState.width,
     height: currentBounds?.height ?? storedWindowState.height,
     x: currentBounds?.x ?? storedWindowState.x,
     y: currentBounds?.y ?? storedWindowState.y,
-  });
+  };
+  const nextWindowState = constrainBoundsToDisplay(
+    layoutChanged
+      ? getLayoutPreferredBounds(candidateWindowState, nextSettings.layout)
+      : candidateWindowState,
+  );
   persistDesktopLyricWindowState(nextWindowState);
 
   if (win && !win.isDestroyed()) {
-    win.setMinimumSize(DESKTOP_LYRIC_MIN_WIDTH, DESKTOP_LYRIC_MIN_HEIGHT);
-    win.setMaximumSize(DESKTOP_LYRIC_MAX_WIDTH, DESKTOP_LYRIC_MAX_HEIGHT);
+    applyWindowSizeLimits();
+    if (layoutChanged) {
+      updateWindowBounds(nextWindowState);
+    }
 
     if (nextSettings.enabled) {
       refreshDesktopLyricInteraction(true);
@@ -522,6 +586,13 @@ export const getDesktopLyricSnapshot = () => snapshot;
 export const registerDesktopLyricHandlers = () => {
   ipcRegistry.registerHandler('desktop-lyric:get-snapshot', () => getDesktopLyricSnapshot());
 
+  ipcRegistry.registerHandler('desktop-lyric:get-window', () => {
+    const win = getDesktopLyricWindow();
+    if (win && !win.isDestroyed()) return win.getBounds();
+    const storedWindowState = getDesktopLyricWindowState();
+    return constrainBoundsToDisplay(storedWindowState);
+  });
+
   ipcRegistry.registerHandler('desktop-lyric:show', async () => {
     const result = await updateDesktopLyricSettings({ enabled: true });
     await showDesktopLyricWindow();
@@ -540,6 +611,12 @@ export const registerDesktopLyricHandlers = () => {
     'desktop-lyric:update-settings',
     async (_event, payload: Partial<DesktopLyricSettings>) =>
       updateDesktopLyricSettings(payload ?? {}),
+  );
+
+  ipcRegistry.registerHandler(
+    'desktop-lyric:update-window',
+    (_event, payload: DesktopLyricWindowBoundsUpdate) =>
+      updateDesktopLyricWindowBounds(payload ?? {}),
   );
 
   ipcRegistry.registerListener(

@@ -10,6 +10,7 @@ import type {
   DesktopLyricSnapshot,
   DesktopLyricSnapshotMessage,
   DesktopLyricSnapshotPatch,
+  DesktopLyricWindowBoundsUpdate,
 } from '../shared/desktop-lyric';
 import type {
   NowPlayingCommand,
@@ -69,6 +70,12 @@ import type {
   PluginSetEnabledResult,
   PluginSetSafeModeResult,
   PluginUninstallResult,
+  PluginWebServerCloseResult,
+  PluginWebServerListenOptions,
+  PluginWebServerListenResult,
+  PluginWebServerRequest,
+  PluginWebServerResponsePayload,
+  PluginWebServerStatusResult,
   PluginWriteFileData,
   PluginWriteFileOptions,
   PluginWriteFileResult,
@@ -275,12 +282,24 @@ contextBridge.exposeInMainWorld('electron', {
   desktopLyric: {
     getSnapshot: () =>
       ipcRenderer.invoke('desktop-lyric:get-snapshot') as Promise<DesktopLyricSnapshot>,
+    getWindow: () =>
+      ipcRenderer.invoke('desktop-lyric:get-window') as Promise<{
+        x: number;
+        y: number;
+        width: number;
+        height: number;
+      }>,
     show: () => ipcRenderer.invoke('desktop-lyric:show') as Promise<DesktopLyricSnapshot>,
     hide: () => ipcRenderer.invoke('desktop-lyric:hide') as Promise<DesktopLyricSnapshot>,
     toggleLock: () =>
       ipcRenderer.invoke('desktop-lyric:toggle-lock') as Promise<DesktopLyricSnapshot>,
     updateSettings: (payload: Partial<DesktopLyricSettings>) =>
       invokeWithPlainPayload<DesktopLyricSnapshot>('desktop-lyric:update-settings', payload),
+    updateWindow: (payload: DesktopLyricWindowBoundsUpdate) =>
+      invokeWithPlainPayload<{ x: number; y: number; width: number; height: number }>(
+        'desktop-lyric:update-window',
+        payload,
+      ),
     syncSnapshot: (payload: DesktopLyricSnapshotPatch) =>
       sendWithPlainPayload('desktop-lyric:sync-snapshot', payload),
     onSnapshot: (func: (snapshot: DesktopLyricSnapshotMessage) => void) => {
@@ -737,6 +756,35 @@ contextBridge.exposeInMainWorld('electron', {
           pluginId,
           pid,
         ) as Promise<PluginProcessTerminateResult>,
+    },
+    webServer: {
+      listen: (pluginId: string, options?: PluginWebServerListenOptions) =>
+        invokeWithPlainPayload<PluginWebServerListenResult>(
+          'plugins:web-server:listen',
+          pluginId,
+          options,
+        ),
+      status: (pluginId: string) =>
+        ipcRenderer.invoke(
+          'plugins:web-server:status',
+          pluginId,
+        ) as Promise<PluginWebServerStatusResult>,
+      respond: (pluginId: string, payload: PluginWebServerResponsePayload) =>
+        ipcRenderer.invoke('plugins:web-server:respond', pluginId, payload) as Promise<{
+          ok: boolean;
+          error?: string;
+        }>,
+      close: (pluginId: string) =>
+        ipcRenderer.invoke(
+          'plugins:web-server:close',
+          pluginId,
+        ) as Promise<PluginWebServerCloseResult>,
+      onRequest: (func: (request: PluginWebServerRequest) => void) => {
+        const listener = (_event: Electron.IpcRendererEvent, request: PluginWebServerRequest) =>
+          func(request);
+        ipcRenderer.on('plugins:web-server:request', listener);
+        return () => ipcRenderer.removeListener('plugins:web-server:request', listener);
+      },
     },
     storage: {
       get: <T = unknown>(pluginId: string, key: string) =>

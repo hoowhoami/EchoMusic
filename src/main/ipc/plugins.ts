@@ -34,6 +34,11 @@ import type {
   PluginReportFailureResult,
   PluginSetSafeModeResult,
   PluginUninstallResult,
+  PluginWebServerCloseResult,
+  PluginWebServerListenOptions,
+  PluginWebServerListenResult,
+  PluginWebServerResponsePayload,
+  PluginWebServerStatusResult,
   PluginWriteFileData,
   PluginWriteFileOptions,
   PluginWriteFileResult,
@@ -48,6 +53,7 @@ import {
   getPluginData,
   getPluginDirectory,
   getPluginFileUrl,
+  getPluginWebServerStatusForPlugin,
   installPluginsFromLocal,
   addPluginMarketplaceSource,
   installPluginFromMarketplace,
@@ -66,12 +72,15 @@ import {
   readPluginWindowTextAsset,
   removePluginMarketplaceSource,
   reportPluginFailure,
+  respondPluginWebServerRequestForPlugin,
   setPluginData,
   setPluginActiveSession,
   setPluginEnabled,
   setPluginSafeMode,
   terminatePluginProcess,
   uninstallPlugin,
+  closePluginWebServerForPlugin,
+  listenPluginWebServerForPlugin,
   writePluginFile,
 } from '../plugins';
 import { closePluginWindows } from '../pluginWindows';
@@ -309,6 +318,34 @@ export const registerPluginHandlers = (context: IpcContext) => {
     'plugins:process:terminate',
     (_event, pluginId: string, pid: number): PluginProcessTerminateResult =>
       terminatePluginProcess(pluginId, pid),
+  );
+  ipcRegistry.registerHandler(
+    'plugins:web-server:listen',
+    (
+      event,
+      pluginId: string,
+      options?: PluginWebServerListenOptions,
+    ): Promise<PluginWebServerListenResult> =>
+      listenPluginWebServerForPlugin(pluginId, options, event.sender),
+  );
+  ipcRegistry.registerHandler(
+    'plugins:web-server:status',
+    (_event, pluginId: string): PluginWebServerStatusResult =>
+      getPluginWebServerStatusForPlugin(pluginId),
+  );
+  ipcRegistry.registerHandler(
+    'plugins:web-server:respond',
+    (
+      event,
+      pluginId: string,
+      payload: PluginWebServerResponsePayload,
+    ): { ok: boolean; error?: string } =>
+      respondPluginWebServerRequestForPlugin(pluginId, payload, event.sender),
+  );
+  ipcRegistry.registerHandler(
+    'plugins:web-server:close',
+    (event, pluginId: string): Promise<PluginWebServerCloseResult> =>
+      closePluginWebServerForPlugin(pluginId, event.sender),
   );
   ipcRegistry.registerHandler(
     'plugins:set-enabled',

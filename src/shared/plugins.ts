@@ -323,6 +323,100 @@ export type PluginProcessTerminateResult =
       error: string;
     };
 
+export interface PluginWebServerListenOptions {
+  port?: number;
+  host?: '127.0.0.1' | 'localhost';
+}
+
+export interface PluginWebServerRequest {
+  requestId: string;
+  pluginId: string;
+  method: string;
+  url: string;
+  path: string;
+  query: Record<string, string | string[]>;
+  headers: Record<string, string | string[]>;
+  body: ArrayBuffer;
+  remoteAddress: string;
+}
+
+export type PluginWebServerJsonBody =
+  | null
+  | string
+  | number
+  | boolean
+  | PluginWebServerJsonBody[]
+  | { [key: string]: PluginWebServerJsonBody };
+
+export type PluginWebServerResponseBody =
+  | string
+  | ArrayBuffer
+  | ArrayBufferView<ArrayBufferLike>
+  | {
+      type: 'base64';
+      data: string;
+    }
+  | PluginWebServerJsonBody;
+
+export interface PluginWebServerResponse {
+  status?: number;
+  headers?: Record<string, string | number | boolean | string[]>;
+  body?: PluginWebServerResponseBody;
+}
+
+export interface PluginWebServerResponsePayload extends PluginWebServerResponse {
+  requestId: string;
+}
+
+export type PluginWebServerHandlerResult =
+  | PluginWebServerResponse
+  | PluginWebServerResponseBody
+  | void
+  | Promise<PluginWebServerResponse | PluginWebServerResponseBody | void>;
+
+export type PluginWebServerListenResult =
+  | {
+      ok: true;
+      pluginId: string;
+      host: string;
+      port: number;
+      origin: string;
+      url: string;
+      startedAt: number;
+    }
+  | {
+      ok: false;
+      error: string;
+    };
+
+export type PluginWebServerStatusResult =
+  | {
+      ok: true;
+      pluginId: string;
+      running: boolean;
+      host: string;
+      port: number;
+      origin: string;
+      url: string;
+      startedAt: number;
+      pendingRequests: number;
+    }
+  | {
+      ok: false;
+      error: string;
+    };
+
+export type PluginWebServerCloseResult =
+  | {
+      ok: true;
+      pluginId: string;
+      closed: boolean;
+    }
+  | {
+      ok: false;
+      error: string;
+    };
+
 export interface EchoPluginManifest {
   id: string;
   name: string;
@@ -345,6 +439,7 @@ export interface EchoPluginManifest {
     lyricEffects?: boolean;
     lyrics?: boolean;
     process?: boolean;
+    webServer?: boolean;
   };
   contributes?: {
     windows?: PluginWindowManifest[];

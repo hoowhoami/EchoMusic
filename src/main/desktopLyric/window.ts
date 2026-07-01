@@ -1,10 +1,7 @@
 import { BrowserWindow, app } from 'electron';
 import { join } from 'path';
 import {
-  DESKTOP_LYRIC_MAX_HEIGHT,
-  DESKTOP_LYRIC_MAX_WIDTH,
-  DESKTOP_LYRIC_MIN_HEIGHT,
-  DESKTOP_LYRIC_MIN_WIDTH,
+  getDesktopLyricWindowLimits,
   type DesktopLyricWindowState,
   getDesktopLyricSettings,
   persistDesktopLyricWindowState,
@@ -145,6 +142,7 @@ export const createDesktopLyricWindow = () => {
   const preload = join(__dirname, '../preload/index.js');
   const bounds = resolveInitialBounds();
   const settings = getDesktopLyricSettings();
+  const limits = getDesktopLyricWindowLimits();
 
   const win = new BrowserWindow({
     title: 'EchoMusic Desktop Lyric',
@@ -153,10 +151,10 @@ export const createDesktopLyricWindow = () => {
     height: bounds.height,
     x: bounds.x,
     y: bounds.y,
-    minWidth: DESKTOP_LYRIC_MIN_WIDTH,
-    minHeight: DESKTOP_LYRIC_MIN_HEIGHT,
-    maxWidth: DESKTOP_LYRIC_MAX_WIDTH,
-    maxHeight: DESKTOP_LYRIC_MAX_HEIGHT,
+    minWidth: limits.minWidth,
+    minHeight: limits.minHeight,
+    maxWidth: limits.maxWidth,
+    maxHeight: limits.maxHeight,
     frame: false,
     transparent: true,
     backgroundColor: getBackgroundColor(),
@@ -249,6 +247,22 @@ export const updateWindowHeight = (height: number) => {
   });
 };
 
+export const updateWindowBounds = (bounds: DesktopLyricWindowState) => {
+  if (!desktopLyricWindow || desktopLyricWindow.isDestroyed()) return bounds;
+  applyWindowBounds(bounds);
+  persistDesktopLyricWindowState(bounds);
+  return desktopLyricWindow.getBounds();
+};
+
+export const applyWindowSizeLimits = () => {
+  if (!desktopLyricWindow || desktopLyricWindow.isDestroyed()) return;
+  const limits = getDesktopLyricWindowLimits();
+  desktopLyricWindow.setMinimumSize(1, 1);
+  desktopLyricWindow.setMaximumSize(100000, 100000);
+  desktopLyricWindow.setMinimumSize(limits.minWidth, limits.minHeight);
+  desktopLyricWindow.setMaximumSize(limits.maxWidth, limits.maxHeight);
+};
+
 export const setDesktopLyricFixedSize = (options: {
   width: number;
   height: number;
@@ -258,6 +272,7 @@ export const setDesktopLyricFixedSize = (options: {
   if (options.fixed) {
     desktopLyricWindow.setMaximumSize(options.width, options.height);
   } else {
-    desktopLyricWindow.setMaximumSize(DESKTOP_LYRIC_MAX_WIDTH, DESKTOP_LYRIC_MAX_HEIGHT);
+    const limits = getDesktopLyricWindowLimits();
+    desktopLyricWindow.setMaximumSize(limits.maxWidth, limits.maxHeight);
   }
 };

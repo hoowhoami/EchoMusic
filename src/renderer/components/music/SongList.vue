@@ -483,9 +483,7 @@ const estimateContextMenuHeight = () => {
   const itemCount =
     5 + extensionContextMenuItems.value.length + (contextMenuCanRemove.value ? 1 : 0);
   const separatorCount =
-    (extensionContextMenuItems.value.length > 0 ? 1 : 0) +
-    (contextMenuCanRemove.value ? 1 : 0) +
-    2;
+    (extensionContextMenuItems.value.length > 0 ? 1 : 0) + (contextMenuCanRemove.value ? 1 : 0) + 2;
   return 12 + itemCount * 30 + separatorCount * 9 + Math.max(0, itemCount + separatorCount - 1) * 4;
 };
 

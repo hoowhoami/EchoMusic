@@ -123,6 +123,14 @@ const getVersionTitle = (plugin: PluginMarketplacePlugin) => {
       <span v-for="tag in plugin.tags.slice(0, 3)" :key="tag">{{ tag }}</span>
     </div>
 
+    <div v-if="featureTags.length" class="plugin-feature-tags">
+      <span v-for="tag in featureTags.slice(0, 5)" :key="tag">
+        {{ tag }}
+      </span>
+    </div>
+
+    <div class="plugin-card-id" :title="plugin.id">ID: {{ plugin.id }}</div>
+
     <div class="marketplace-stats" :title="getStatsTitle(plugin)">
       <span class="marketplace-stat-item" title="安装和更新总量">
         <Icon :icon="iconArrowBarToDown" width="13" height="13" />
@@ -137,14 +145,6 @@ const getVersionTitle = (plugin: PluginMarketplacePlugin) => {
         {{ formatCount(plugin.stats.score) }}
       </span>
     </div>
-
-    <div v-if="featureTags.length" class="plugin-feature-tags">
-      <span v-for="tag in featureTags.slice(0, 5)" :key="tag">
-        {{ tag }}
-      </span>
-    </div>
-
-    <div class="plugin-card-id" :title="plugin.id">ID: {{ plugin.id }}</div>
 
     <div class="plugin-card-actions">
       <div class="plugin-card-primary-actions">

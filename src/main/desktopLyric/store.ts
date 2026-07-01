@@ -1,5 +1,9 @@
 import { screen } from 'electron';
-import type { DesktopLyricSettings, DesktopLyricShadowStrength } from '../../shared/desktop-lyric';
+import type {
+  DesktopLyricLayout,
+  DesktopLyricSettings,
+  DesktopLyricShadowStrength,
+} from '../../shared/desktop-lyric';
 import {
   DEFAULT_DESKTOP_LYRIC_PERSISTED_SETTINGS,
   getDesktopLyricPersistedSettings,
@@ -9,14 +13,23 @@ import {
 
 export type { DesktopLyricWindowState } from '../storage/settings';
 
-export const DESKTOP_LYRIC_MIN_WIDTH = 640;
-export const DESKTOP_LYRIC_MIN_HEIGHT = 140;
-export const DESKTOP_LYRIC_MAX_WIDTH = 1400;
-export const DESKTOP_LYRIC_MAX_HEIGHT = 360;
+export const DESKTOP_LYRIC_MIN_WIDTH = 80;
+export const DESKTOP_LYRIC_MIN_HEIGHT = 80;
+export const DESKTOP_LYRIC_MAX_WIDTH = 100000;
+export const DESKTOP_LYRIC_MAX_HEIGHT = 100000;
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 const isDesktopLyricShadowStrength = (value: unknown): value is DesktopLyricShadowStrength =>
   value === 'none' || value === 'soft' || value === 'normal' || value === 'strong';
+const isDesktopLyricLayout = (value: unknown): value is DesktopLyricLayout =>
+  value === 'horizontal' || value === 'vertical';
+
+export const getDesktopLyricWindowLimits = () => ({
+  minWidth: DESKTOP_LYRIC_MIN_WIDTH,
+  minHeight: DESKTOP_LYRIC_MIN_HEIGHT,
+  maxWidth: DESKTOP_LYRIC_MAX_WIDTH,
+  maxHeight: DESKTOP_LYRIC_MAX_HEIGHT,
+});
 
 export function getDesktopLyricSettings(): DesktopLyricSettings {
   const raw = getDesktopLyricPersistedSettings();
@@ -71,6 +84,7 @@ export function getDesktopLyricSettings(): DesktopLyricSettings {
       ? raw.shadowStrength
       : DEFAULT_DESKTOP_LYRIC_PERSISTED_SETTINGS.shadowStrength,
     bold: Boolean(raw.bold),
+    layout: isDesktopLyricLayout(raw.layout) ? raw.layout : 'horizontal',
     offsetStep: clamp(
       Number(raw.offsetStep) || DEFAULT_DESKTOP_LYRIC_PERSISTED_SETTINGS.offsetStep,
       0.1,
@@ -125,6 +139,7 @@ export function sanitizeDesktopLyricSettings(
       ? mergedBase.shadowStrength
       : current.shadowStrength,
     bold: Boolean(mergedBase.bold),
+    layout: isDesktopLyricLayout(mergedBase.layout) ? mergedBase.layout : current.layout,
     offsetStep: clamp(Number(mergedBase.offsetStep) || current.offsetStep, 0.1, 5),
   };
 }
@@ -153,6 +168,7 @@ export function persistDesktopLyricSettings(nextSettings: DesktopLyricSettings) 
     strokeEnabled: nextSettings.strokeEnabled,
     shadowStrength: nextSettings.shadowStrength,
     bold: nextSettings.bold,
+    layout: nextSettings.layout,
     offsetStep: nextSettings.offsetStep,
   });
 }
@@ -167,18 +183,19 @@ export function setDesktopLyricLockedFlag(locked: boolean) {
 
 export function getDesktopLyricWindowState(): DesktopLyricWindowState {
   const state = getDesktopLyricPersistedSettings().windowState;
+  const limits = getDesktopLyricWindowLimits();
   return {
     width: clamp(
       Math.round(Number(state.width) || DEFAULT_DESKTOP_LYRIC_PERSISTED_SETTINGS.windowState.width),
-      DESKTOP_LYRIC_MIN_WIDTH,
-      DESKTOP_LYRIC_MAX_WIDTH,
+      limits.minWidth,
+      limits.maxWidth,
     ),
     height: clamp(
       Math.round(
         Number(state.height) || DEFAULT_DESKTOP_LYRIC_PERSISTED_SETTINGS.windowState.height,
       ),
-      DESKTOP_LYRIC_MIN_HEIGHT,
-      DESKTOP_LYRIC_MAX_HEIGHT,
+      limits.minHeight,
+      limits.maxHeight,
     ),
     ...(typeof state.x === 'number' ? { x: state.x } : {}),
     ...(typeof state.y === 'number' ? { y: state.y } : {}),
@@ -214,16 +231,9 @@ const getBestDisplayForBounds = (bounds: DesktopLyricWindowState) => {
 export function constrainBoundsToDisplay(bounds: DesktopLyricWindowState): DesktopLyricWindowState {
   const display = getBestDisplayForBounds(bounds);
   const area = display.workArea;
-  const width = clamp(
-    bounds.width,
-    DESKTOP_LYRIC_MIN_WIDTH,
-    Math.min(DESKTOP_LYRIC_MAX_WIDTH, area.width),
-  );
-  const height = clamp(
-    bounds.height,
-    DESKTOP_LYRIC_MIN_HEIGHT,
-    Math.min(DESKTOP_LYRIC_MAX_HEIGHT, area.height),
-  );
+  const limits = getDesktopLyricWindowLimits();
+  const width = clamp(bounds.width, limits.minWidth, Math.min(limits.maxWidth, area.width));
+  const height = clamp(bounds.height, limits.minHeight, Math.min(limits.maxHeight, area.height));
   const rawX =
     typeof bounds.x === 'number' ? bounds.x : area.x + Math.round((area.width - width) / 2);
   const rawY =

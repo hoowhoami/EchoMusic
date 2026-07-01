@@ -8,6 +8,7 @@ import type {
   DesktopLyricSnapshot,
   DesktopLyricSnapshotMessage,
   DesktopLyricSnapshotPatch,
+  DesktopLyricWindowBoundsUpdate,
 } from '../shared/desktop-lyric';
 import type {
   NowPlayingCommand,
@@ -66,6 +67,12 @@ import type {
   PluginSetEnabledResult,
   PluginSetSafeModeResult,
   PluginUninstallResult,
+  PluginWebServerCloseResult,
+  PluginWebServerListenOptions,
+  PluginWebServerListenResult,
+  PluginWebServerRequest,
+  PluginWebServerResponsePayload,
+  PluginWebServerStatusResult,
   PluginWriteFileData,
   PluginWriteFileOptions,
   PluginWriteFileResult,
@@ -166,10 +173,14 @@ export interface IElectronAPI {
   };
   desktopLyric: {
     getSnapshot: () => Promise<DesktopLyricSnapshot>;
+    getWindow: () => Promise<{ x: number; y: number; width: number; height: number }>;
     show: () => Promise<DesktopLyricSnapshot>;
     hide: () => Promise<DesktopLyricSnapshot>;
     toggleLock: () => Promise<DesktopLyricSnapshot>;
     updateSettings: (payload: Partial<DesktopLyricSettings>) => Promise<DesktopLyricSnapshot>;
+    updateWindow: (
+      payload: DesktopLyricWindowBoundsUpdate,
+    ) => Promise<{ x: number; y: number; width: number; height: number }>;
     syncSnapshot: (payload: DesktopLyricSnapshotPatch) => void;
     onSnapshot: (func: (snapshot: DesktopLyricSnapshotMessage) => void) => () => void;
     setIgnoreMouseEvents: (ignore: boolean) => void;
@@ -353,6 +364,19 @@ export interface IElectronAPI {
         options: PluginProcessLaunchOptions,
       ) => Promise<PluginProcessLaunchResult>;
       terminate: (pluginId: string, pid: number) => Promise<PluginProcessTerminateResult>;
+    };
+    webServer: {
+      listen: (
+        pluginId: string,
+        options?: PluginWebServerListenOptions,
+      ) => Promise<PluginWebServerListenResult>;
+      status: (pluginId: string) => Promise<PluginWebServerStatusResult>;
+      respond: (
+        pluginId: string,
+        payload: PluginWebServerResponsePayload,
+      ) => Promise<{ ok: boolean; error?: string }>;
+      close: (pluginId: string) => Promise<PluginWebServerCloseResult>;
+      onRequest: (func: (request: PluginWebServerRequest) => void) => () => void;
     };
     storage: {
       get: <T = unknown>(pluginId: string, key: string) => Promise<T | null>;

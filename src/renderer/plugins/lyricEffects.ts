@@ -1,7 +1,7 @@
 import { reactive } from 'vue';
 import type { LyricCharacterPayload, LyricLinePayload } from '../../shared/lyrics';
 
-export type PluginLyricEffectScope = 'page';
+export type PluginLyricEffectScope = 'page' | 'desktop';
 export type PluginLyricEffectLayer = 'style' | 'decorator';
 
 export type PluginLyricEffectLine = LyricLinePayload & {
@@ -106,7 +106,7 @@ const lyricEffects: RegisteredPluginLyricEffect[] = [];
 const lyricEffectHosts = new Map<number, RegisteredPluginLyricEffectHost>();
 let nextLyricEffectHostId = 1;
 
-const validScopes = new Set<PluginLyricEffectScope>(['page']);
+const validScopes = new Set<PluginLyricEffectScope>(['page', 'desktop']);
 const validLayers = new Set<PluginLyricEffectLayer>(['style', 'decorator']);
 
 const bumpLyricEffectRevision = () => {

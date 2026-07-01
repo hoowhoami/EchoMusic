@@ -28,6 +28,12 @@ import {
   type LyricLinePayload,
 } from '../../shared/desktop-lyric';
 import { buildFontFamily } from '../../shared/font';
+import {
+  getPluginLyricEffectClassNames,
+  getPluginLyricEffectSummary,
+  registerPluginLyricEffectHost,
+  type PluginLyricEffectSnapshot,
+} from '@/plugins/lyricEffects';
 
 // ── 渲染行类型 ──
 
@@ -44,6 +50,8 @@ const snapshot = ref<DesktopLyricSnapshot | null>(null);
 const isWayland = window.electron?.isWayland ?? false;
 let disposeSnapshotListener: (() => void) | null = null;
 let disposeHoverListener: (() => void) | null = null;
+let lyricEffectHostRegistration: ReturnType<typeof registerPluginLyricEffectHost> | null = null;
+let reducedMotionQuery: MediaQueryList | null = null;
 
 // 锚点时间（毫秒）与锚点帧时间，用于插值推进
 let baseMs = 0;
@@ -53,6 +61,10 @@ let lastPlaybackUpdateTick = 0;
 // 实时播放进度（毫秒） - 非响应式以提升性能
 let playSeekMsRaw = 0;
 const activeLineIndex = ref(-1);
+const lyricEffectRootRef = ref<HTMLElement | null>(null);
+const lyricEffectScrollerRef = ref<HTMLElement | null>(null);
+const lyricEffectOverlayRef = ref<HTMLElement | null>(null);
+const reducedMotion = ref(false);
 
 // 缓存 DOM 引用
 let cachedYrcElements: HTMLElement[] = [];
@@ -93,6 +105,7 @@ const { pause: pauseSeek, resume: resumeSeek } = useRafFn(() => {
   // 手动更新 DOM
   updateYrcDomManual();
   updateScrollManual();
+  notifyLyricEffectHost();
 });
 
 const updateYrcDomManual = () => {
@@ -124,6 +137,7 @@ const updateYrcDomManual = () => {
 
   const seekMs = playSeekMsRaw + lyricTimeOffset.value + LYRIC_LOOKAHEAD;
   const characters = activeRenderLine.line.characters;
+  const vertical = lyricLayout.value === 'vertical';
 
   for (let i = 0; i < cachedYrcElements.length; i++) {
     const char = characters[i];
@@ -132,19 +146,29 @@ const updateYrcDomManual = () => {
 
     const duration = Math.max((char.endTime || 0) - (char.startTime || 0), 0.001);
     const progress = Math.max(Math.min((seekMs - (char.startTime || 0)) / duration, 1), 0);
-    el.style.backgroundPositionX = `${100 - progress * 100}%`;
+    const position = `${100 - progress * 100}%`;
+    if (vertical) {
+      el.style.backgroundPositionX = '0%';
+      el.style.backgroundPositionY = position;
+    } else {
+      el.style.backgroundPositionX = position;
+      el.style.backgroundPositionY = '0%';
+    }
   }
 };
 
 const updateScrollManual = () => {
+  const vertical = lyricLayout.value === 'vertical';
   renderLyricLines.value.forEach((line) => {
     const container = lineRefs.get(line.key);
     const content = contentRefs.get(line.key);
     if (!container || !content || !line.line) return;
 
-    const overflow = Math.max(0, content.scrollWidth - container.clientWidth);
+    const overflow = vertical
+      ? Math.max(0, content.scrollHeight - container.clientHeight)
+      : Math.max(0, content.scrollWidth - container.clientWidth);
     if (overflow <= 0) {
-      content.style.transform = 'translateX(0px)';
+      content.style.transform = vertical ? 'translateY(0px)' : 'translateX(0px)';
       return;
     }
 
@@ -165,7 +189,7 @@ const updateScrollManual = () => {
       const ratio = (progress - 0.3) / 0.7;
       tx = -Math.round(overflow * ratio);
     }
-    content.style.transform = `translateX(${tx}px)`;
+    content.style.transform = vertical ? `translateY(${tx}px)` : `translateX(${tx}px)`;
   });
 };
 
@@ -208,6 +232,8 @@ const songName = computed(() => playback.value?.title || 'EchoMusic');
 const artistName = computed(() => playback.value?.artist || '');
 const alignment = computed(() => settings.value?.alignment ?? 'center');
 const doubleLine = computed(() => settings.value?.doubleLine ?? true);
+const lyricLayout = computed(() => settings.value?.layout ?? 'horizontal');
+const isVerticalLayout = computed(() => lyricLayout.value === 'vertical');
 const lyricSyncWarning = computed(() => snapshot.value?.lyricSyncWarning ?? false);
 const secondaryEnabled = computed(() => {
   const s = settings.value;
@@ -260,6 +286,8 @@ const fontFamily = computed(() => {
   return buildFontFamily(resolved || 'system-ui');
 });
 const fontWeight = computed(() => (settings.value?.bold ? 700 : 400));
+const lyricEffectClassName = computed(() => getPluginLyricEffectClassNames('desktop').join(' '));
+const lyricEffectSummary = computed(() => getPluginLyricEffectSummary('desktop'));
 
 // hover 状态
 const isHovered = ref(false);
@@ -326,13 +354,20 @@ const placeholder = (word: string): RenderLine[] => [
 
 // ── 过渡名称 ──
 
-const transitionName = computed(() => 'lyric-slide');
+const transitionName = computed(() =>
+  isVerticalLayout.value ? 'lyric-slide-vertical' : 'lyric-slide',
+);
 
 // ── 行高计算 ──
 
 const getLineTop = (index: number) => {
   if (index === 0) return '0px';
   return `${localFontSize.value * 1.9}px`;
+};
+
+const getLineInlineOffset = (index: number) => {
+  if (index === 0) return '0px';
+  return `${localFontSize.value * 1.35}px`;
 };
 
 const renderLyricLines = computed<RenderLine[]>(() => {
@@ -428,6 +463,63 @@ const renderLyricLines = computed<RenderLine[]>(() => {
   }
   return result;
 });
+
+const buildLyricEffectSnapshot = (): PluginLyricEffectSnapshot => {
+  const index = currentIndex.value;
+  const state = playback.value;
+  return {
+    scope: 'desktop',
+    lines: lyrics.value,
+    currentIndex: index,
+    scrollIndex: index,
+    currentLine: index >= 0 ? (lyrics.value[index] ?? null) : null,
+    currentTime: Math.max(0, playSeekMsRaw / 1000),
+    duration: state?.duration ?? 0,
+    playbackRate: state?.playbackRate ?? 1,
+    isPlaying: state?.isPlaying ?? false,
+    timelineMs: playSeekMsRaw + lyricTimeOffset.value,
+    lyricOffsetMs: lyricTimeOffset.value,
+    lyricsMode: lyricsMode.value,
+    collapsed: false,
+    hasLyrics: hasLyrics.value,
+    reducedMotion: reducedMotion.value,
+  };
+};
+
+const notifyLyricEffectHost = () => {
+  const root = lyricEffectRootRef.value;
+  if (root) {
+    root.style.setProperty('--echo-lyric-current-index', String(currentIndex.value));
+    root.style.setProperty('--echo-lyric-scroll-index', String(currentIndex.value));
+    root.dataset.echoLyricPlaying = isPlaying.value ? 'true' : 'false';
+    root.dataset.echoLyricCollapsed = 'false';
+    root.dataset.echoLyricReducedMotion = reducedMotion.value ? 'true' : 'false';
+    root.dataset.echoLyricLayout = lyricLayout.value;
+  }
+  lyricEffectHostRegistration?.notify();
+};
+
+const setupLyricEffectHost = () => {
+  if (lyricEffectHostRegistration) return;
+  const root = lyricEffectRootRef.value;
+  const scroller = lyricEffectScrollerRef.value;
+  const overlay = lyricEffectOverlayRef.value;
+  if (!root || !scroller || !overlay) return;
+
+  lyricEffectHostRegistration = registerPluginLyricEffectHost({
+    scope: 'desktop',
+    root,
+    scroller,
+    overlay,
+    getSnapshot: buildLyricEffectSnapshot,
+  });
+  notifyLyricEffectHost();
+};
+
+const updateReducedMotion = () => {
+  reducedMotion.value = Boolean(reducedMotionQuery?.matches);
+  notifyLyricEffectHost();
+};
 // 判断行是否有逐字数据
 const isYrcLine = (line: LyricLinePayload) => (line.characters?.length ?? 0) > 1;
 
@@ -452,10 +544,16 @@ watch(renderScopeKey, () => {
   lineRefs.clear();
   contentRefs.clear();
   activeLineIndex.value = calculateCurrentIndex(playSeekMsRaw + lyricTimeOffset.value);
+  notifyLyricEffectHost();
 });
 
 watch(lyricTimeOffset, () => {
   activeLineIndex.value = calculateCurrentIndex(playSeekMsRaw + lyricTimeOffset.value);
+  notifyLyricEffectHost();
+});
+
+watch([renderLyricLines, lyricsMode, lyricLayout, isPlaying], () => {
+  notifyLyricEffectHost();
 });
 
 // 拖拽
@@ -624,6 +722,16 @@ watch([winWidth, winHeight], ([w, h], [oldW, oldH]) => {
 const localFontSize = ref(30);
 
 const computedFontSize = computed(() => {
+  if (isVerticalLayout.value) {
+    const w = dragState.isDragging ? dragState.winWidth : Math.round(Number(winWidth.value ?? 0));
+    const minW = 120;
+    const maxW = 520;
+    const minF = 20;
+    const maxF = 64;
+    if (!Number.isFinite(w) || w <= minW) return minF;
+    if (w >= maxW) return maxF;
+    return Math.round(minF + ((w - minW) / (maxW - minW)) * (maxF - minF));
+  }
   const h = dragState.isDragging ? dragState.winHeight : Math.round(Number(winHeight.value ?? 0));
   const minH = 140;
   const maxH = 360;
@@ -649,7 +757,8 @@ const fontSizeToHeight = (size: number) => {
 };
 
 const pushWindowHeight = (nextHeight: number) => {
-  if (!Number.isFinite(nextHeight) || dragState.isDragging) return;
+  if (!Number.isFinite(nextHeight) || dragState.isDragging || lyricLayout.value !== 'horizontal')
+    return;
   sendToMain('desktop-lyric:set-height', nextHeight);
 };
 
@@ -660,7 +769,7 @@ watch(computedFontSize, (size) => {
   if (!Number.isFinite(size) || dragState.isDragging || !initialized) return;
   if (Math.abs(localFontSize.value - size) > 1) {
     localFontSize.value = size;
-    debouncedSaveConfig(size);
+    if (!isVerticalLayout.value) debouncedSaveConfig(size);
   }
 });
 
@@ -750,6 +859,10 @@ onMounted(async () => {
   syncAnchor(true);
   // 从窗口高度计算初始字体大小
   localFontSize.value = computedFontSize.value;
+  reducedMotionQuery = window.matchMedia?.('(prefers-reduced-motion: reduce)') ?? null;
+  updateReducedMotion();
+  reducedMotionQuery?.addEventListener?.('change', updateReducedMotion);
+  setupLyricEffectHost();
 
   disposeSnapshotListener =
     window.electron?.desktopLyric?.onSnapshot((message) => {
@@ -766,6 +879,7 @@ onMounted(async () => {
         anchorTick = performance.now();
         pauseSeek();
       }
+      notifyLyricEffectHost();
     }) ?? null;
 
   await updateCachedBounds();
@@ -799,6 +913,10 @@ onBeforeUnmount(() => {
   document.removeEventListener('pointerdown', onDocPointerDown);
   document.removeEventListener('mousemove', handleMouseMove);
   document.removeEventListener('mouseleave', handleMouseLeave);
+  reducedMotionQuery?.removeEventListener?.('change', updateReducedMotion);
+  reducedMotionQuery = null;
+  lyricEffectHostRegistration?.dispose();
+  lyricEffectHostRegistration = null;
   if (dragState.isDragging) onDocPointerUp();
   document.documentElement.classList.remove('desktop-lyric-window');
   document.body.classList.remove('desktop-lyric-window');
@@ -810,8 +928,11 @@ onBeforeUnmount(() => {
 
 <template>
   <div
+    ref="lyricEffectRootRef"
     :class="[
       'desktop-lyric',
+      'echo-lyric-effect-host',
+      lyricEffectClassName,
       {
         locked: isLocked,
         hovered: isHovered,
@@ -820,6 +941,10 @@ onBeforeUnmount(() => {
         'is-wayland': isWayland,
       },
     ]"
+    data-echo-lyric-host="desktop"
+    :data-echo-lyric-layout="lyricLayout"
+    :data-echo-lyric-effect-count="lyricEffectSummary.count"
+    :data-echo-lyric-effect-decorator="lyricEffectSummary.hasDecorator ? 'true' : 'false'"
   >
     <!-- 顶部工具栏 -->
     <div class="header">
@@ -896,6 +1021,7 @@ onBeforeUnmount(() => {
 
     <!-- 歌词区域 -->
     <TransitionGroup
+      ref="lyricEffectScrollerRef"
       tag="div"
       :name="transitionName"
       :style="{
@@ -904,7 +1030,10 @@ onBeforeUnmount(() => {
         fontWeight,
         textShadow: lyricTextShadow,
       }"
-      :class="['lyric-container', alignment]"
+      :class="['lyric-container', alignment, lyricLayout]"
+      data-echo-lyric-scroller="desktop"
+      :data-echo-lyric-current-index="currentIndex"
+      :data-echo-lyric-scroll-index="currentIndex"
     >
       <div
         v-for="(line, index) in renderLyricLines"
@@ -922,15 +1051,32 @@ onBeforeUnmount(() => {
         ]"
         :style="{
           color: line.active ? playedColor : unplayedColor,
-          top: getLineTop(index),
+          top: isVerticalLayout ? '0px' : getLineTop(index),
+          right: isVerticalLayout
+            ? `calc(${getLineInlineOffset(index)} + var(--desktop-lyric-vertical-safe-inline))`
+            : undefined,
+          left: isVerticalLayout ? 'auto' : undefined,
           fontSize: index > 0 ? '0.8em' : '1em',
         }"
+        data-echo-lyric-row
+        :data-echo-lyric-index="line.index"
+        :data-echo-lyric-current="line.active ? 'true' : 'false'"
+        :data-echo-lyric-distance="line.index - currentIndex"
+        :data-echo-lyric-abs-distance="Math.abs(line.index - currentIndex)"
+        :data-echo-lyric-line-start-ms="
+          line.line.characters?.[0]?.startTime ?? Math.round(line.line.time * 1000)
+        "
         :ref="(el) => setLineRef(el, line.key)"
       >
         <!-- 逐字歌词 (如果存在逐字数据则始终渲染 YRC 结构，以便手动补丁 DOM) -->
         <template v-if="isYrcLine(line.line)">
           <span class="scroll-content" :ref="(el) => setContentRef(el, line.key)">
-            <span class="content">
+            <span
+              class="content"
+              data-echo-lyric-line
+              data-echo-lyric-primary
+              :data-echo-lyric-current="line.active ? 'true' : 'false'"
+            >
               <span
                 v-for="(char, ci) in line.line.characters"
                 :key="ci"
@@ -941,13 +1087,16 @@ onBeforeUnmount(() => {
               >
                 <span
                   class="word"
+                  data-echo-lyric-char
                   :style="
                     line.active
                       ? {
-                          backgroundImage: `linear-gradient(to right, ${playedColor} 50%, ${unplayedColor} 50%)`,
+                          backgroundImage: `linear-gradient(${isVerticalLayout ? 'to bottom' : 'to right'}, ${playedColor} 50%, ${unplayedColor} 50%)`,
+                          backgroundSize: isVerticalLayout ? '100% 200%' : '200% 100%',
                           textShadow: 'none',
                           filter: lyricDropShadow,
-                          backgroundPositionX: '100%',
+                          backgroundPositionX: isVerticalLayout ? '0%' : '100%',
+                          backgroundPositionY: isVerticalLayout ? '100%' : '0%',
                         }
                       : undefined
                   "
@@ -959,14 +1108,25 @@ onBeforeUnmount(() => {
         </template>
         <!-- 普通歌词 -->
         <template v-else>
-          <span class="scroll-content" :ref="(el) => setContentRef(el, line.key)">{{
-            line.line.text || ''
-          }}</span>
+          <span
+            class="scroll-content"
+            data-echo-lyric-line
+            data-echo-lyric-primary
+            :data-echo-lyric-current="line.active ? 'true' : 'false'"
+            :ref="(el) => setContentRef(el, line.key)"
+            >{{ line.line.text || '' }}</span
+          >
         </template>
       </div>
       <!-- 占位 -->
       <span v-if="renderLyricLines.length === 0" class="lyric-line" key="placeholder">&nbsp;</span>
     </TransitionGroup>
+
+    <div
+      ref="lyricEffectOverlayRef"
+      class="desktop-lyric-effect-overlay"
+      data-echo-lyric-effect-overlay
+    ></div>
 
     <!-- 歌词同步警告 -->
     <div v-if="lyricSyncWarning" class="sync-warning">播放时长与原曲存在差异，歌词可能不同步</div>
@@ -975,6 +1135,14 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .desktop-lyric {
+  position: relative;
+  --desktop-lyric-vertical-rail-width: 36px;
+  --desktop-lyric-vertical-rail-inset: 8px;
+  --desktop-lyric-vertical-lyric-gap: 12px;
+  --desktop-lyric-vertical-safe-inline: calc(
+    var(--desktop-lyric-vertical-rail-width) + var(--desktop-lyric-vertical-rail-inset) +
+      var(--desktop-lyric-vertical-lyric-gap)
+  );
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -989,6 +1157,18 @@ onBeforeUnmount(() => {
   user-select: none;
 }
 
+.desktop-lyric-effect-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.desktop-lyric[data-echo-lyric-layout='vertical'] {
+  padding: 10px;
+}
+
 /* 顶部工具栏 */
 .header {
   position: relative;
@@ -997,6 +1177,89 @@ onBeforeUnmount(() => {
   display: grid;
   grid-template-columns: 1fr auto 1fr;
   grid-gap: 12px;
+}
+
+.desktop-lyric[data-echo-lyric-layout='vertical'] .header {
+  position: absolute;
+  top: 10px;
+  right: var(--desktop-lyric-vertical-rail-inset);
+  bottom: 10px;
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  width: var(--desktop-lyric-vertical-rail-width);
+  max-height: calc(100% - 20px);
+  margin-bottom: 0;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.desktop-lyric[data-echo-lyric-layout='vertical'] .header-left,
+.desktop-lyric[data-echo-lyric-layout='vertical'] .header-center,
+.desktop-lyric[data-echo-lyric-layout='vertical'] .header-right {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 6px;
+  overflow: visible;
+  pointer-events: auto;
+}
+
+.desktop-lyric[data-echo-lyric-layout='vertical'] .header-left {
+  justify-content: flex-start;
+}
+
+.desktop-lyric[data-echo-lyric-layout='vertical'] .header-center {
+  justify-content: center;
+}
+
+.desktop-lyric[data-echo-lyric-layout='vertical'] .header-right {
+  justify-content: flex-end;
+}
+
+.desktop-lyric[data-echo-lyric-layout='vertical'] .song-name {
+  display: none;
+}
+
+.desktop-lyric[data-echo-lyric-layout='vertical'] .menu-btn {
+  width: 30px;
+  height: 30px;
+  padding: 4px;
+}
+
+.desktop-lyric[data-echo-lyric-layout='vertical'] .offset-controls {
+  flex-direction: column;
+  gap: 6px;
+}
+
+.desktop-lyric[data-echo-lyric-layout='vertical'] .tran-group {
+  flex-direction: column;
+  gap: 0;
+}
+
+.desktop-lyric[data-echo-lyric-layout='vertical'] .tran-group .menu-btn {
+  border-radius: 0;
+}
+
+.desktop-lyric[data-echo-lyric-layout='vertical'] .tran-group .menu-btn:first-child {
+  border-radius: 8px 8px 0 0;
+}
+
+.desktop-lyric[data-echo-lyric-layout='vertical'] .tran-group .menu-btn:last-child {
+  border-radius: 0 0 8px 8px;
+}
+
+.desktop-lyric[data-echo-lyric-layout='vertical'] .tran-group .menu-btn:only-child {
+  border-radius: 8px;
+}
+
+.desktop-lyric[data-echo-lyric-layout='vertical'] .tran-group .menu-btn + .menu-btn {
+  border-left: 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
 }
 .header > * {
   min-width: 0;
@@ -1141,6 +1404,13 @@ onBeforeUnmount(() => {
   position: relative;
 }
 
+.lyric-container.vertical {
+  min-height: 0;
+  padding: 4px 0;
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+}
+
 .desktop-lyric.is-wayland:not(.locked) .lyric-container {
   -webkit-app-region: drag;
 }
@@ -1169,6 +1439,24 @@ onBeforeUnmount(() => {
   transform-origin: left center;
 }
 
+.lyric-container.vertical .lyric-line {
+  top: 0;
+  bottom: 0;
+  width: auto;
+  height: 100%;
+  min-width: 1em;
+  padding: 4px 6px;
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  transition:
+    right 0.6s cubic-bezier(0.55, 0, 0.1, 1),
+    font-size 0.6s cubic-bezier(0.55, 0, 0.1, 1),
+    color 0.6s cubic-bezier(0.55, 0, 0.1, 1),
+    opacity 0.6s cubic-bezier(0.55, 0, 0.1, 1),
+    transform 0.6s cubic-bezier(0.55, 0, 0.1, 1);
+  transform-origin: center top;
+}
+
 /* 单行模式：隐藏预渲染的下一句，不占视觉空间 */
 .lyric-line.is-hidden-next {
   opacity: 0 !important;
@@ -1184,6 +1472,10 @@ onBeforeUnmount(() => {
   will-change: transform;
 }
 
+.lyric-container.vertical .scroll-content {
+  max-height: 100%;
+}
+
 /* 逐字歌词 */
 .lyric-line.is-yrc .content {
   display: inline-flex;
@@ -1193,6 +1485,14 @@ onBeforeUnmount(() => {
   word-break: normal;
   white-space: nowrap;
   text-align: inherit;
+}
+.lyric-container.vertical .lyric-line.is-yrc .content {
+  flex-direction: row;
+  align-items: center;
+  height: auto;
+  max-height: none;
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
 }
 .lyric-line.is-yrc .content-text {
   position: relative;
@@ -1208,11 +1508,18 @@ onBeforeUnmount(() => {
   background-position-x: 100%;
   will-change: background-position-x;
 }
+.lyric-container.vertical .lyric-line.is-yrc .content-text .word {
+  background-size: 100% 200%;
+  will-change: background-position-y;
+}
 .lyric-line.is-yrc .content-text.end-with-space {
-  margin-right: 5vh;
+  margin-inline-end: 5vh;
+}
+.lyric-container.vertical .lyric-line.is-yrc .content-text.end-with-space {
+  margin-inline-end: 2vh;
 }
 .lyric-line.is-yrc .content-text.end-with-space:last-child {
-  margin-right: 0;
+  margin-inline-end: 0;
 }
 
 /* 对齐方式 */
@@ -1220,12 +1527,22 @@ onBeforeUnmount(() => {
   text-align: center;
   transform-origin: center center;
 }
+.lyric-container.vertical.center .lyric-line {
+  text-align: center;
+}
 .lyric-container.center .lyric-line.is-yrc .content {
   justify-content: center;
+}
+.lyric-container.vertical.center .lyric-line.is-yrc .content {
+  align-items: center;
 }
 .lyric-container.right .lyric-line {
   text-align: right;
   transform-origin: right center;
+}
+.lyric-container.vertical.right .lyric-line {
+  text-align: end;
+  transform-origin: center bottom;
 }
 .lyric-container.right .lyric-line.is-yrc .content {
   justify-content: flex-end;
@@ -1234,9 +1551,17 @@ onBeforeUnmount(() => {
   text-align: right;
   transform-origin: right center;
 }
+.lyric-container.vertical.both .lyric-line.align-right {
+  text-align: end;
+  transform-origin: center bottom;
+}
 .lyric-container.both .lyric-line.align-left {
   text-align: left;
   transform-origin: left center;
+}
+.lyric-container.vertical.both .lyric-line.align-left {
+  text-align: start;
+  transform-origin: center top;
 }
 .lyric-container.both .lyric-line.is-yrc.align-right .content {
   justify-content: flex-end;
@@ -1260,6 +1585,26 @@ onBeforeUnmount(() => {
   transform: translateY(-100%);
 }
 .lyric-slide-leave-active {
+  position: absolute;
+}
+
+.lyric-slide-vertical-move,
+.lyric-slide-vertical-enter-active,
+.lyric-slide-vertical-leave-active {
+  transition:
+    transform 0.6s cubic-bezier(0.55, 0, 0.1, 1),
+    opacity 0.6s cubic-bezier(0.55, 0, 0.1, 1);
+  will-change: transform, opacity;
+}
+.lyric-slide-vertical-enter-from {
+  opacity: 0;
+  transform: translateX(100%);
+}
+.lyric-slide-vertical-leave-to {
+  opacity: 0;
+  transform: translateX(-100%);
+}
+.lyric-slide-vertical-leave-active {
   position: absolute;
 }
 

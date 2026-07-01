@@ -1,4 +1,4 @@
-import { app, dialog, shell, type BrowserWindow } from 'electron';
+import { app, dialog, shell, type BrowserWindow, type WebContents } from 'electron';
 import { spawn, type ChildProcess } from 'child_process';
 import {
   cpSync,
@@ -66,6 +66,11 @@ import type {
   PluginSetSafeModeResult,
   PluginSetEnabledResult,
   PluginUninstallResult,
+  PluginWebServerCloseResult,
+  PluginWebServerListenOptions,
+  PluginWebServerListenResult,
+  PluginWebServerResponsePayload,
+  PluginWebServerStatusResult,
 } from '../shared/plugins';
 import { getKvStorage } from './storage/kv';
 import log from './logger';
@@ -125,6 +130,13 @@ import {
   resolvePluginFile,
   toPortableRelativePath,
 } from './plugins/path';
+import {
+  closePluginWebServer,
+  closePluginWebServers,
+  getPluginWebServerStatus,
+  listenPluginWebServer,
+  respondPluginWebServerRequest,
+} from './pluginWebServer';
 
 export { normalizePluginId } from './plugins/common';
 
@@ -403,6 +415,7 @@ export const setPluginSafeMode = async (enabled: boolean): Promise<PluginSetSafe
     if (enabled) {
       getKvStorage().delete(PLUGIN_STARTUP_SESSION_KEY);
       getKvStorage().delete(PLUGIN_ACTIVE_SESSION_KEY);
+      await closePluginWebServers();
       await terminatePluginProcesses();
     }
     return { ok: true, safeMode: Boolean(enabled) };
@@ -541,6 +554,55 @@ const getPluginCompatibilityError = (plugin: EchoPluginDescriptor) =>
     : plugin.compatibility.message || '插件与当前 EchoMusic 主程序版本不兼容';
 
 export const getPluginDescriptor = (pluginId: string) => findPlugin(pluginId);
+
+const getPluginWebServerAccessError = (plugin: EchoPluginDescriptor) => {
+  if (plugin.invalid) return plugin.error || '插件无效';
+  const compatibilityError = getPluginCompatibilityError(plugin);
+  if (compatibilityError) return compatibilityError;
+  if (!plugin.enabled) return '插件未启用';
+  if (plugin.manifest.capabilities?.webServer !== true) {
+    return '插件未声明 Web 服务能力';
+  }
+  return '';
+};
+
+export const listenPluginWebServerForPlugin = async (
+  pluginId: string,
+  options: PluginWebServerListenOptions | undefined,
+  webContents: WebContents,
+): Promise<PluginWebServerListenResult> => {
+  if (getPluginSafeMode()) return { ok: false, error: '插件安全模式已开启' };
+
+  const plugin = findPlugin(pluginId);
+  if (!plugin) return { ok: false, error: '插件不存在' };
+
+  const accessError = getPluginWebServerAccessError(plugin);
+  if (accessError) return { ok: false, error: accessError };
+
+  try {
+    return await listenPluginWebServer(plugin, options, webContents);
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : '插件 Web 服务启动失败',
+    };
+  }
+};
+
+export const getPluginWebServerStatusForPlugin = (pluginId: string): PluginWebServerStatusResult =>
+  getPluginWebServerStatus(normalizePluginId(pluginId));
+
+export const respondPluginWebServerRequestForPlugin = (
+  pluginId: string,
+  payload: PluginWebServerResponsePayload,
+  webContents?: WebContents,
+) => respondPluginWebServerRequest(normalizePluginId(pluginId), payload, webContents);
+
+export const closePluginWebServerForPlugin = async (
+  pluginId: string,
+  webContents?: WebContents,
+): Promise<PluginWebServerCloseResult> =>
+  closePluginWebServer(normalizePluginId(pluginId), webContents);
 
 const createDefaultMarketplaceSource = (): PluginMarketplaceSource => ({
   id: DEFAULT_PLUGIN_MARKETPLACE_SOURCE_ID,
@@ -2401,7 +2463,10 @@ export const setPluginEnabled = async (
   const nextState = getEnabledState();
   nextState[plugin.id] = Boolean(enabled);
   setEnabledState(nextState);
-  if (!enabled) await terminatePluginProcesses(plugin.id);
+  if (!enabled) {
+    await closePluginWebServer(plugin.id);
+    await terminatePluginProcesses(plugin.id);
+  }
   const refreshed = findPlugin(plugin.id);
   return refreshed ? { ok: true, plugin: refreshed } : { ok: false, error: '插件刷新失败' };
 };
@@ -3009,6 +3074,8 @@ export const uninstallPlugin = async (pluginId: string): Promise<PluginUninstall
     clearPluginStorage(plugin.id);
     removePluginInstalledAt(plugin.id);
     clearPluginProcessConsents(plugin.id);
+
+    await closePluginWebServer(plugin.id);
 
     // 等待进程完全终止
     await terminatePluginProcesses(plugin.id);
