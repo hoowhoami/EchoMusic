@@ -1,11 +1,13 @@
 import type { Song } from '@/models/song';
 import type { AudioEffectValue, AudioQualityValue, PlayMode } from '../../types';
 import type { ClimaxMark, PlaybackNotice } from './types';
+import { DEFAULT_PLAYER_VOLUME } from '../../../shared/playback';
 
 export const createPlayerState = () => ({
   isPlaying: false,
   isLyricViewOpen: false,
-  volume: 0.8,
+  volume: DEFAULT_PLAYER_VOLUME,
+  lastNonZeroVolume: DEFAULT_PLAYER_VOLUME,
   currentTime: 0,
   duration: 0,
   playbackRate: 1,

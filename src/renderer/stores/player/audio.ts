@@ -2,14 +2,42 @@ import type { PlayerState } from './state';
 import type { PlayerEngine } from '@/utils/player';
 import type { AudioEffectValue, AudioQualityValue, PlayMode } from '../../types';
 import { clampNumber, normalizeEffect, normalizeQuality } from './utils';
+import { DEFAULT_PLAYER_VOLUME } from '../../../shared/playback';
 
 export const createAudioManager = (
   state: PlayerState,
   engine: PlayerEngine,
   refreshCurrentTrack: () => Promise<void>,
 ) => {
+  const normalizeVolume = (value: number, fallback = DEFAULT_PLAYER_VOLUME) => {
+    const candidate = Number.isFinite(value) ? value : fallback;
+    return clampNumber(Number.isFinite(candidate) ? candidate : DEFAULT_PLAYER_VOLUME, 0, 1);
+  };
+
+  const rememberVolume = (value = state.volume) => {
+    if (value > 0) state.lastNonZeroVolume = normalizeVolume(value);
+  };
+
+  const getRestoreVolume = () =>
+    state.lastNonZeroVolume > 0 ? normalizeVolume(state.lastNonZeroVolume) : DEFAULT_PLAYER_VOLUME;
+
   const setVolume = (value: number) => {
-    state.volume = engine.setVolume(value);
+    state.volume = engine.setVolume(normalizeVolume(value, state.volume));
+    rememberVolume();
+  };
+
+  const adjustVolume = (delta: number) => {
+    const base = state.volume > 0 ? state.volume : getRestoreVolume();
+    setVolume(base + delta);
+  };
+
+  const toggleMute = () => {
+    if (state.volume > 0) {
+      rememberVolume();
+      setVolume(0);
+    } else {
+      setVolume(getRestoreVolume());
+    }
   };
 
   const setPlaybackRate = (rate: number) => {
@@ -65,6 +93,7 @@ export const createAudioManager = (
     return engine.fadeTo(targetValue, durationMs).then(() => {
       if (!respectUserVolume) {
         state.volume = engine.volume;
+        rememberVolume();
       }
     });
   };
@@ -87,6 +116,8 @@ export const createAudioManager = (
 
   return {
     setVolume,
+    adjustVolume,
+    toggleMute,
     setPlaybackRate,
     setPlayMode,
     setVolumeNormalization,

@@ -31,6 +31,7 @@ import type {
   MiniPlayerSnapshot,
 } from '../../shared/mini-player';
 import { MINI_PLAYER_DIMENSIONS } from '../../shared/mini-player';
+import { DEFAULT_PLAYER_VOLUME } from '../../shared/playback';
 
 // 卡片折叠/展开高度，源自共享尺寸常量，保证与主进程窗口尺寸一致、不漂移
 const cardCollapsedHeight = `${MINI_PLAYER_DIMENSIONS.controlsHeight}px`;
@@ -480,8 +481,26 @@ const closeVolume = (immediate = false) => {
 
 const setVolume = (value: number) => {
   const nextVolume = Math.min(1, Math.max(0, value));
-  if (playback.value) playback.value.volume = nextVolume;
+  if (playback.value) {
+    playback.value.volume = nextVolume;
+    if (nextVolume > 0) playback.value.lastNonZeroVolume = nextVolume;
+  }
   command({ type: 'setVolume', value: nextVolume });
+};
+
+const adjustVolume = (delta: number) => {
+  if (playback.value) {
+    const currentVolume = playback.value.volume ?? 0;
+    const restoreVolume =
+      (playback.value.lastNonZeroVolume ?? 0) > 0
+        ? playback.value.lastNonZeroVolume!
+        : DEFAULT_PLAYER_VOLUME;
+    const baseVolume = currentVolume > 0 ? currentVolume : restoreVolume;
+    const nextVolume = Math.min(1, Math.max(0, baseVolume + delta));
+    playback.value.volume = nextVolume;
+    if (nextVolume > 0) playback.value.lastNonZeroVolume = nextVolume;
+  }
+  command({ type: 'adjustVolume', delta });
 };
 
 const setVolumeFromEvent = (event: PointerEvent, sliderEl: HTMLElement) => {
@@ -523,7 +542,7 @@ const handleVolumeWheel = (event: WheelEvent) => {
   const normalized = Math.sign(event.deltaY) * Math.min(Math.abs(event.deltaY), 120);
   const step = (normalized / 120) * 0.05;
   const direction = isMac ? 1 : -1;
-  setVolume((playback.value.volume ?? 0) + step * direction);
+  adjustVolume(step * direction);
   scheduleVolumeClose(1200);
 };
 

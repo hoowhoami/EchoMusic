@@ -35,7 +35,6 @@ export function usePlayerControls() {
   const toastStore = useToastStore();
 
   const isQueueDrawerOpen = ref(false);
-  const lastVolume = ref(0.8);
   const currentPlaybackQueue = computed(
     () =>
       playlist.getQueueById(player.currentSourceQueueId) ??
@@ -114,12 +113,7 @@ export function usePlayerControls() {
   };
 
   const toggleMute = () => {
-    if (player.volume > 0) {
-      lastVolume.value = player.volume;
-      player.setVolume(0);
-    } else {
-      player.setVolume(lastVolume.value || 0.8);
-    }
+    player.toggleMute();
   };
 
   // ── 倍速 ──
@@ -388,7 +382,6 @@ export function usePlayerControls() {
     cyclePlayMode,
     // 音量
     volumeIcon,
-    lastVolume,
     handleVolumeChange,
     toggleMute,
     // 倍速

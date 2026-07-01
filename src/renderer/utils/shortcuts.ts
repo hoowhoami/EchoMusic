@@ -481,12 +481,11 @@ export const executeShortcutCommand = (command: ShortcutCommand) => {
     playerStore.toggleLyricView(true);
     lyricStore.sourceDialogOpen = true;
   } else if (command === 'volumeUp') {
-    playerStore.setVolume(playerStore.volume + 0.05);
+    playerStore.adjustVolume(0.05);
   } else if (command === 'volumeDown') {
-    playerStore.setVolume(playerStore.volume - 0.05);
+    playerStore.adjustVolume(-0.05);
   } else if (command === 'toggleMute') {
-    const next = playerStore.volume > 0 ? 0 : 0.8;
-    playerStore.setVolume(next);
+    playerStore.toggleMute();
   } else if (command === 'toggleFavorite') {
     const track =
       (playlistStore.activeQueue?.songs ?? []).find((s) => s.id === playerStore.currentTrackId) ||

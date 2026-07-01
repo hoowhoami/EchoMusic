@@ -1,5 +1,6 @@
 import logger from './logger';
 import type { ImpulseResponsePlaybackOptions } from '../../shared/audio';
+import { DEFAULT_PLAYER_VOLUME } from '../../shared/playback';
 
 export interface PlayerEngineEvents {
   timeUpdate?: (currentTime: number) => void;
@@ -53,7 +54,7 @@ const mediaControls = window.electron?.mediaControls;
 export class PlayerEngine {
   private events: PlayerEngineEvents = {};
   private sourceUrl = '';
-  private volumeValue = 1;
+  private volumeValue = DEFAULT_PLAYER_VOLUME;
   private playbackRateValue = 1;
   private durationValue = 0;
   private lastTimeValue = -1;

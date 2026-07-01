@@ -142,6 +142,7 @@ const buildPlaybackPayload = (): MiniPlayerPlaybackPayload | null => {
     isFavorite: resolveFavoriteState(track),
     lyricsLabel: lyricStore.currentDisplayLabel,
     volume: Number(playerStore.volume || 0),
+    lastNonZeroVolume: Number(playerStore.lastNonZeroVolume || 0),
     updatedAt: Date.now(),
   };
 };
@@ -255,6 +256,10 @@ const executeMiniPlayerCommand = (command: MiniPlayerCommand) => {
   const playerStore = usePlayerStore();
   if (command.type === 'setVolume') {
     playerStore.setVolume(command.value);
+    return;
+  }
+  if (command.type === 'adjustVolume') {
+    playerStore.adjustVolume(command.delta);
     return;
   }
   if (command.type === 'seek') {

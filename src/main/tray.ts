@@ -1,6 +1,6 @@
 import { Menu, Tray, app, nativeImage, type MenuItemConstructorOptions } from 'electron';
 import { quitApplication } from './window';
-import type { PlayMode } from '../shared/playback';
+import { DEFAULT_PLAYER_VOLUME, type PlayMode } from '../shared/playback';
 import type { DesktopLyricSnapshot } from '../shared/desktop-lyric';
 import type { TrayCommand, TrayPlaybackPayload } from '../shared/tray';
 import log from './logger';
@@ -20,7 +20,7 @@ let trayContext: TrayContext | null = null;
 let playbackState: TrayPlaybackState = {
   isPlaying: false,
   playMode: 'list',
-  volume: 0.8,
+  volume: DEFAULT_PLAYER_VOLUME,
 };
 
 const playModeLabelMap: Record<PlayMode, string> = {

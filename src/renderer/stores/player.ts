@@ -103,7 +103,7 @@ export const usePlayerStore = defineStore(
 
       clearPlaybackNotice();
 
-      engine.setVolume(state.volume);
+      audioManager.setVolume(state.volume);
       if (requestSeq !== state.playbackRequestSeq) return;
 
       state.currentAudioUrl = resolved.url;
@@ -387,7 +387,7 @@ export const usePlayerStore = defineStore(
       });
 
       restorePlaybackSessionFromQueue();
-      engine.setVolume(state.volume);
+      audioManager.setVolume(state.volume);
       engine.setPlaybackRate(state.playbackRate);
       engine.setEqualizer(state.equalizerGains);
       if (!settingStore.impulseResponseSafetyMigrationDone) {
@@ -546,6 +546,7 @@ export const usePlayerStore = defineStore(
     const setVolumeSmooth = async (value: number, durationMs?: number) => {
       await engine.fadeTo(value, durationMs ?? 1000);
       state.volume = engine.volume;
+      if (state.volume > 0) state.lastNonZeroVolume = state.volume;
     };
 
     // Explicitly return state and actions to help TypeScript
@@ -562,6 +563,8 @@ export const usePlayerStore = defineStore(
       commitListeningHistory: historyManager.commitListeningHistory,
 
       setVolume: audioManager.setVolume,
+      adjustVolume: audioManager.adjustVolume,
+      toggleMute: audioManager.toggleMute,
       setPlaybackRate: audioManager.setPlaybackRate,
       setPlayMode: audioManager.setPlayMode,
       setVolumeNormalization: audioManager.setVolumeNormalization,
@@ -599,6 +602,7 @@ export const usePlayerStore = defineStore(
     persist: {
       pick: [
         'volume',
+        'lastNonZeroVolume',
         'playMode',
         'currentTrackId',
         'playbackRate',

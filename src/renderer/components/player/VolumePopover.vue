@@ -33,7 +33,7 @@ const handleWheel = (e: WheelEvent) => {
   const normalized = Math.sign(e.deltaY) * Math.min(Math.abs(e.deltaY), 120);
   const step = (normalized / 120) * 0.05;
   const direction = isMac ? 1 : -1;
-  player.setVolume(Math.max(0, Math.min(1, player.volume + step * direction)));
+  player.adjustVolume(step * direction);
 
   // 滚轮操作时保持弹出层打开
   if (wheelKeepAliveTimer) clearTimeout(wheelKeepAliveTimer);
