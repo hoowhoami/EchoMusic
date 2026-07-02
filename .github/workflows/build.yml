@@ -43,6 +43,7 @@ jobs:
             artifact_glob: |
               release/EchoMusic-*.AppImage
               release/EchoMusic-*.deb
+              release/EchoMusic-*.pkg.tar.zst
               release/EchoMusic-*.rpm
               release/EchoMusic-*.tar.gz
               release/latest-linux.yml
@@ -53,6 +54,7 @@ jobs:
             artifact_glob: |
               release/EchoMusic-*.AppImage
               release/EchoMusic-*.deb
+              release/EchoMusic-*.pkg.tar.zst
               release/EchoMusic-*.rpm
               release/EchoMusic-*.tar.gz
               release/latest-linux-arm64.yml

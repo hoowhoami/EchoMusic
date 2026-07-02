@@ -63,6 +63,8 @@ type LinuxDistribution = {
   idLike: string[];
 };
 
+type LinuxPackageType = 'deb' | 'rpm' | 'pacman';
+
 const readLinuxDistribution = (): LinuxDistribution | null => {
   if (process.platform !== 'linux') return null;
   try {
@@ -86,6 +88,22 @@ const isArchLinux = (): boolean => {
   const distro = readLinuxDistribution();
   if (!distro) return false;
   return distro.id === 'arch' || distro.idLike.includes('arch');
+};
+
+const readLinuxPackageType = (): LinuxPackageType | null => {
+  if (process.platform !== 'linux') return null;
+  try {
+    const value = fs.readFileSync(join(process.resourcesPath, 'package-type'), 'utf-8').trim();
+    return value === 'deb' || value === 'rpm' || value === 'pacman' ? value : null;
+  } catch {
+    return null;
+  }
+};
+
+const shouldUseArchManualUpdate = (): boolean => {
+  if (!isArchLinux()) return false;
+  if (process.env.APPIMAGE) return false;
+  return readLinuxPackageType() !== 'pacman';
 };
 
 const requestJson = <T>(url: string): Promise<T> =>
@@ -141,7 +159,7 @@ const isNewerRelease = (nextVersion: string, currentVersion: string): boolean =>
   return nextVersion !== currentVersion;
 };
 
-const getLinuxArchiveAsset = (release: GithubRelease): GithubReleaseAsset | null => {
+const getArchLinuxPackageAsset = (release: GithubRelease): GithubReleaseAsset | null => {
   const assets = Array.isArray(release.assets) ? (release.assets as GithubReleaseAsset[]) : [];
   const archTokens =
     process.arch === 'x64'
@@ -151,6 +169,14 @@ const getLinuxArchiveAsset = (release: GithubRelease): GithubReleaseAsset | null
         : [process.arch];
 
   return (
+    assets.find((asset) => {
+      const name = String(asset.name || '').toLowerCase();
+      return name.endsWith('.pkg.tar.zst') && archTokens.some((token) => name.includes(token));
+    }) ??
+    assets.find((asset) => {
+      const name = String(asset.name || '').toLowerCase();
+      return name.endsWith('.pkg.tar.zst');
+    }) ??
     assets.find((asset) => {
       const name = String(asset.name || '').toLowerCase();
       return (
@@ -436,12 +462,18 @@ export const registerSettingsHandlers = ({ getMainWindow }: IpcContext) => {
       return;
     }
 
-    const archiveAsset = getLinuxArchiveAsset(release);
+    const archiveAsset = getArchLinuxPackageAsset(release);
+    const archiveName = String(archiveAsset?.name || '').toLowerCase();
+    const isPacmanPackage = archiveName.endsWith('.pkg.tar.zst');
     const downloadUrl =
       typeof archiveAsset?.browser_download_url === 'string'
         ? withGithubProxy(archiveAsset.browser_download_url, payload.githubProxyUrl)
         : releaseUrl;
-    const downloadLabel = archiveAsset ? '下载 tar.gz' : '前往发布页下载';
+    const downloadLabel = archiveAsset
+      ? isPacmanPackage
+        ? '下载 pacman 包'
+        : '下载 tar.gz'
+      : '前往发布页下载';
 
     const result: UpdateCheckResult = {
       status: 'available',
@@ -454,7 +486,9 @@ export const registerSettingsHandlers = ({ getMainWindow }: IpcContext) => {
       manualDownload: true,
       body: typeof release.body === 'string' ? release.body.slice(0, 4000) : '',
       message: archiveAsset
-        ? 'Arch Linux 暂不使用内置安装器，请下载 tar.gz 压缩包后手动替换安装目录。'
+        ? isPacmanPackage
+          ? 'Arch Linux 暂不使用内置安装器，请下载 pacman 包后使用 pacman -U 手动安装。'
+          : 'Arch Linux 暂不使用内置安装器，请下载 tar.gz 压缩包后手动替换安装目录。'
         : 'Arch Linux 暂不使用内置安装器，请前往发布页选择适合当前系统的安装包。',
       silent: payload.silent,
     };
@@ -618,7 +652,7 @@ export const registerSettingsHandlers = ({ getMainWindow }: IpcContext) => {
         return;
       }
 
-      if (isArchLinux()) {
+      if (shouldUseArchManualUpdate()) {
         checkArchLinuxManualUpdate({ prerelease, silent, githubProxyUrl }).catch((error) => {
           log.error('[Updater] Arch Linux manual check failed:', error);
           sendToRenderer('update-check-result', {
