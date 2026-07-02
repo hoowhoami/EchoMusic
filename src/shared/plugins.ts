@@ -417,8 +417,9 @@ export type PluginWebServerCloseResult =
       error: string;
     };
 
+export type PluginSqliteBlobValue = { type: 'hex' | 'base64'; data: string };
 export type PluginSqliteValue = string | number | boolean | null | { type: 'hex'; data: string };
-export type PluginSqliteParam = string | number | boolean | null;
+export type PluginSqliteParam = string | number | boolean | null | PluginSqliteBlobValue;
 export type PluginSqliteParams = PluginSqliteParam[];
 
 export interface PluginSqliteMigration {

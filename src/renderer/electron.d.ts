@@ -390,7 +390,10 @@ export interface IElectronAPI {
       onRequest: (func: (request: PluginWebServerRequest) => void) => () => void;
     };
     sqlite: {
-      open: (pluginId: string, options?: PluginSqliteOpenOptions) => Promise<PluginSqliteOpenResult>;
+      open: (
+        pluginId: string,
+        options?: PluginSqliteOpenOptions,
+      ) => Promise<PluginSqliteOpenResult>;
       exec: (pluginId: string, databaseId: string, sql: string) => Promise<PluginSqliteExecResult>;
       run: (
         pluginId: string,

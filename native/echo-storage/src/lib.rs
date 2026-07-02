@@ -183,6 +183,32 @@ fn parse_array(value: &str) -> NativeResult<Vec<Value>> {
     }
 }
 
+fn hex_nibble(byte: u8) -> Option<u8> {
+    match byte {
+        b'0'..=b'9' => Some(byte - b'0'),
+        b'a'..=b'f' => Some(byte - b'a' + 10),
+        b'A'..=b'F' => Some(byte - b'A' + 10),
+        _ => None,
+    }
+}
+
+fn decode_hex_blob(value: &str) -> NativeResult<Vec<u8>> {
+    let bytes = value.as_bytes();
+    if bytes.len() % 2 != 0 {
+        return Err(err("SQLite hex blob parameter must have an even length"));
+    }
+
+    let mut output = Vec::with_capacity(bytes.len() / 2);
+    for pair in bytes.chunks_exact(2) {
+        let high = hex_nibble(pair[0])
+            .ok_or_else(|| err("SQLite hex blob parameter contains invalid characters"))?;
+        let low = hex_nibble(pair[1])
+            .ok_or_else(|| err("SQLite hex blob parameter contains invalid characters"))?;
+        output.push((high << 4) | low);
+    }
+    Ok(output)
+}
+
 fn json_to_sql_value(value: &Value) -> NativeResult<SqlValue> {
     match value {
         Value::Null => Ok(SqlValue::Null),
@@ -201,7 +227,19 @@ fn json_to_sql_value(value: &Value) -> NativeResult<SqlValue> {
             }
         }
         Value::String(value) => Ok(SqlValue::Text(value.clone())),
-        _ => Err(err("SQLite parameters only support string, number, boolean, and null")),
+        Value::Object(map) => {
+            let value_type = map.get("type").and_then(Value::as_str).unwrap_or_default();
+            let data = map.get("data").and_then(Value::as_str).unwrap_or_default();
+            if value_type.eq_ignore_ascii_case("hex") {
+                return Ok(SqlValue::Blob(decode_hex_blob(data)?));
+            }
+            Err(err(
+                "SQLite object parameters only support { type: \"hex\", data } blobs",
+            ))
+        }
+        _ => Err(err(
+            "SQLite parameters only support string, number, boolean, null, and hex blobs",
+        )),
     }
 }
 
@@ -304,7 +342,10 @@ fn plugin_sqlite_query_rows(
         }
         let mut result_row = Map::new();
         for (index, name) in column_names.iter().enumerate() {
-            result_row.insert(name.clone(), value_ref_to_json(map_sql(row.get_ref(index))?));
+            result_row.insert(
+                name.clone(),
+                value_ref_to_json(map_sql(row.get_ref(index))?),
+            );
         }
         result_rows.push(Value::Object(result_row));
         row_count += 1;
@@ -834,7 +875,10 @@ fn history_entry_from_row(
     let mut song = parse_json_fallback(&payload_json, json!({}));
     if let Value::Object(song_map) = &mut song {
         song_map.insert("historyKey".to_string(), Value::String(history_key.clone()));
-        song_map.insert("lastPlayedAt".to_string(), Value::Number(last_played_at.into()));
+        song_map.insert(
+            "lastPlayedAt".to_string(),
+            Value::Number(last_played_at.into()),
+        );
         song_map.insert("playCount".to_string(), Value::Number(play_count.into()));
     }
     json!({

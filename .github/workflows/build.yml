@@ -44,6 +44,7 @@ jobs:
               release/EchoMusic-*.AppImage
               release/EchoMusic-*.deb
               release/EchoMusic-*.pacman
+              release/EchoMusic-*.pkg.tar.zst
               release/EchoMusic-*.rpm
               release/EchoMusic-*.tar.gz
               release/latest-linux.yml
@@ -55,6 +56,7 @@ jobs:
               release/EchoMusic-*.AppImage
               release/EchoMusic-*.deb
               release/EchoMusic-*.pacman
+              release/EchoMusic-*.pkg.tar.zst
               release/EchoMusic-*.rpm
               release/EchoMusic-*.tar.gz
               release/latest-linux-arm64.yml
@@ -421,6 +423,16 @@ jobs:
         run: |
           pnpm exec vue-tsc --noEmit && pnpm exec vite build
           pnpm exec electron-builder ${{ matrix.electron_builder_args }} --publish never
+
+      - name: Create Arch Linux package alias
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -e
+          shopt -s nullglob
+          for package_path in release/EchoMusic-*.pacman; do
+            cp "$package_path" "${package_path%.pacman}.pkg.tar.zst"
+          done
 
       - name: Verify bundled Windows executable
         if: runner.os == 'Windows'

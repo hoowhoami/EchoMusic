@@ -387,9 +387,10 @@ const createPluginSqliteApi = (descriptor: EchoPluginDescriptor) => {
   };
 
   const closeDatabase = async (databaseId: string) => {
-    const result =
-      (await getSqliteApi()?.close(descriptor.id, databaseId)) ??
-      ({ ok: false as const, error: '插件 SQLite API 不可用' });
+    const result = (await getSqliteApi()?.close(descriptor.id, databaseId)) ?? {
+      ok: false as const,
+      error: '插件 SQLite API 不可用',
+    };
     if (result.ok) openDatabaseIds.delete(databaseId);
     return result;
   };
@@ -404,11 +405,10 @@ const createPluginSqliteApi = (descriptor: EchoPluginDescriptor) => {
   return {
     open: async (options?: PluginSqliteOpenOptions) => {
       requireSqliteCapability();
-      const result =
-        (await getSqliteApi()?.open(
-          descriptor.id,
-          serializeForIpc(options) as PluginSqliteOpenOptions,
-        )) ?? { ok: false as const, error: '插件 SQLite API 不可用' };
+      const result = (await getSqliteApi()?.open(
+        descriptor.id,
+        serializeForIpc(options) as PluginSqliteOpenOptions,
+      )) ?? { ok: false as const, error: '插件 SQLite API 不可用' };
       if (!result.ok) return result;
 
       const databaseId = result.databaseId;
@@ -434,13 +434,12 @@ const createPluginSqliteApi = (descriptor: EchoPluginDescriptor) => {
             serializeForIpc(queryOptions) as PluginSqliteQueryOptions,
           ) ?? Promise.resolve({ ok: false as const, error: '插件 SQLite API 不可用' }),
         get: async (sql: string, params?: PluginSqliteParams) => {
-          const queryResult =
-            (await getSqliteApi()?.get(
-              descriptor.id,
-              databaseId,
-              sql,
-              serializeForIpc(params) as PluginSqliteParams,
-            )) ?? { ok: false as const, error: '插件 SQLite API 不可用' };
+          const queryResult = (await getSqliteApi()?.get(
+            descriptor.id,
+            databaseId,
+            sql,
+            serializeForIpc(params) as PluginSqliteParams,
+          )) ?? { ok: false as const, error: '插件 SQLite API 不可用' };
           if (!queryResult.ok) return queryResult;
           return {
             ok: true as const,

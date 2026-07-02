@@ -28,9 +28,12 @@ const DEFAULT_QUERY_LIMIT = 1000;
 const MAX_QUERY_LIMIT = 5000;
 const MAX_TRANSACTION_STATEMENTS = 500;
 const MAX_RESULT_JSON_BYTES = 8 * 1024 * 1024;
+const MAX_BLOB_PARAM_BYTES = 8 * 1024 * 1024;
 const DATABASE_NAME_RE = /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/;
 const BLOCKED_SQL_RE =
   /\b(?:ATTACH|DETACH)\b|\bVACUUM\s+INTO\b|\bload_extension\s*\(|\bPRAGMA\s+database_list\b/i;
+const HEX_RE = /^[0-9a-fA-F]*$/;
+const BASE64_RE = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
 
 const ok = <T extends object>(value: T): T & { ok: true } => ({ ok: true, ...value });
 const fail = (error: unknown, fallback: string) => ({
@@ -45,12 +48,15 @@ const normalizeDatabaseName = (name?: string) => {
     throw new Error(`SQLite 数据库名不能超过 ${MAX_DATABASE_NAME_LENGTH} 个字符`);
   }
   if (!DATABASE_NAME_RE.test(normalized)) {
-    throw new Error('SQLite 数据库名只能包含字母、数字、点、下划线和短横线，且必须以字母或数字开头');
+    throw new Error(
+      'SQLite 数据库名只能包含字母、数字、点、下划线和短横线，且必须以字母或数字开头',
+    );
   }
   return normalized;
 };
 
-const getPluginSqliteRoot = (pluginId: string) => join(app.getPath('userData'), PLUGIN_SQLITE_ROOT, pluginId);
+const getPluginSqliteRoot = (pluginId: string) =>
+  join(app.getPath('userData'), PLUGIN_SQLITE_ROOT, pluginId);
 
 const getDatabasePath = (pluginId: string, name: string) =>
   join(getPluginSqliteRoot(pluginId), `${name}.sqlite`);
@@ -90,7 +96,37 @@ const normalizeParams = (params?: PluginSqliteParams) => {
       }
       return value;
     }
-    throw new Error('SQLite 参数仅支持 string、number、boolean 和 null');
+    if (value && typeof value === 'object') {
+      const type = String((value as { type?: unknown }).type || '').toLowerCase();
+      const data = (value as { data?: unknown }).data;
+      if (typeof data !== 'string') {
+        throw new Error('SQLite 二进制参数 data 必须是字符串');
+      }
+      if (type === 'hex') {
+        if (data.length % 2 !== 0 || !HEX_RE.test(data)) {
+          throw new Error('SQLite hex 二进制参数格式无效');
+        }
+        if (data.length / 2 > MAX_BLOB_PARAM_BYTES) {
+          throw new Error(`SQLite 二进制参数不能超过 ${MAX_BLOB_PARAM_BYTES} 字节`);
+        }
+        return { type, data };
+      }
+      if (type === 'base64') {
+        const normalized = data.trim();
+        if (!BASE64_RE.test(normalized)) {
+          throw new Error('SQLite base64 二进制参数格式无效');
+        }
+        const buffer = Buffer.from(normalized, 'base64');
+        const byteLength = buffer.byteLength;
+        if (byteLength > MAX_BLOB_PARAM_BYTES) {
+          throw new Error(`SQLite 二进制参数不能超过 ${MAX_BLOB_PARAM_BYTES} 字节`);
+        }
+        return { type: 'hex', data: buffer.toString('hex') };
+      }
+    }
+    throw new Error(
+      'SQLite 参数仅支持 string、number、boolean、null、{ type: "hex", data } 和 { type: "base64", data }',
+    );
   });
 };
 
@@ -170,7 +206,9 @@ export const openPluginSqliteDatabase = (
         busyTimeoutMs: Number(options?.busyTimeoutMs) || 3000,
       }),
     );
-    const version = options?.readOnly ? getCurrentUserVersion(databaseId) : applyMigrations(databaseId, options?.migrations);
+    const version = options?.readOnly
+      ? getCurrentUserVersion(databaseId)
+      : applyMigrations(databaseId, options?.migrations);
     return ok({ pluginId: plugin.id, databaseId, name, version });
   } catch (error) {
     if (databaseId) {
@@ -207,7 +245,11 @@ export const runPluginSqlite = (
 ): PluginSqliteRunResult => {
   try {
     getNameFromDatabaseId(pluginId, databaseId);
-    const raw = getNativeStorage().pluginSqliteRun(databaseId, validateSql(sql), toParamsJson(params));
+    const raw = getNativeStorage().pluginSqliteRun(
+      databaseId,
+      validateSql(sql),
+      toParamsJson(params),
+    );
     return ok(parseNativeJson<{ changes: number; lastInsertRowid: number }>(raw));
   } catch (error) {
     return fail(error, '插件 SQLite 写入失败');

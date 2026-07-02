@@ -838,11 +838,7 @@ contextBridge.exposeInMainWorld('electron', {
           sql,
           params,
         ),
-      transaction: (
-        pluginId: string,
-        databaseId: string,
-        statements: PluginSqliteStatement[],
-      ) =>
+      transaction: (pluginId: string, databaseId: string, statements: PluginSqliteStatement[]) =>
         invokeWithPlainPayload<PluginSqliteExecResult>(
           'plugins:sqlite:transaction',
           pluginId,

@@ -23,6 +23,7 @@ import { clearPluginRuntimeSession, setPluginSafeMode } from './plugins';
 import { applyDesktopAppIcon, applyTaskbarShortcutIcon, refreshAppIconConfig } from './appIcons';
 import { setupThumbarButtons } from './thumbar';
 import { setupTaskbarThumbnail, destroyTaskbarThumbnail } from './taskbarThumbnail';
+import { configureApplicationMenu, configureWebContentsShortcuts } from './applicationMenu';
 import {
   flushPendingShareTargets,
   openShareUrl,
@@ -104,7 +105,13 @@ if (!gotTheLock) {
     mpvRef,
   });
 
+  app.on('web-contents-created', (_event, contents) => {
+    configureWebContentsShortcuts(contents);
+  });
+
   app.whenReady().then(async () => {
+    configureApplicationMenu();
+
     const trayContext = {
       getMainWindow,
       restoreWindow: restoreActiveWindowMode,

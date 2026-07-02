@@ -159,8 +159,10 @@ const isNewerRelease = (nextVersion: string, currentVersion: string): boolean =>
   return nextVersion !== currentVersion;
 };
 
+const isArchPacmanPackageName = (name: string): boolean => name.endsWith('.pkg.tar.zst');
+const isElectronUpdaterPacmanPackageName = (name: string): boolean => name.endsWith('.pacman');
 const isPacmanAssetName = (name: string): boolean =>
-  name.endsWith('.pacman') || name.endsWith('.pkg.tar.zst');
+  isArchPacmanPackageName(name) || isElectronUpdaterPacmanPackageName(name);
 
 const getArchLinuxPackageAsset = (release: GithubRelease): GithubReleaseAsset | null => {
   const assets = Array.isArray(release.assets) ? (release.assets as GithubReleaseAsset[]) : [];
@@ -174,11 +176,21 @@ const getArchLinuxPackageAsset = (release: GithubRelease): GithubReleaseAsset | 
   return (
     assets.find((asset) => {
       const name = String(asset.name || '').toLowerCase();
-      return isPacmanAssetName(name) && archTokens.some((token) => name.includes(token));
+      return isArchPacmanPackageName(name) && archTokens.some((token) => name.includes(token));
     }) ??
     assets.find((asset) => {
       const name = String(asset.name || '').toLowerCase();
-      return isPacmanAssetName(name);
+      return isArchPacmanPackageName(name);
+    }) ??
+    assets.find((asset) => {
+      const name = String(asset.name || '').toLowerCase();
+      return (
+        isElectronUpdaterPacmanPackageName(name) && archTokens.some((token) => name.includes(token))
+      );
+    }) ??
+    assets.find((asset) => {
+      const name = String(asset.name || '').toLowerCase();
+      return isElectronUpdaterPacmanPackageName(name);
     }) ??
     assets.find((asset) => {
       const name = String(asset.name || '').toLowerCase();
