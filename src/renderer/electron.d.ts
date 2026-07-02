@@ -66,6 +66,17 @@ import type {
   PluginReportFailureResult,
   PluginSetEnabledResult,
   PluginSetSafeModeResult,
+  PluginSqliteCloseResult,
+  PluginSqliteDeleteResult,
+  PluginSqliteExecResult,
+  PluginSqliteListResult,
+  PluginSqliteOpenOptions,
+  PluginSqliteOpenResult,
+  PluginSqliteParams,
+  PluginSqliteQueryOptions,
+  PluginSqliteQueryResult,
+  PluginSqliteRunResult,
+  PluginSqliteStatement,
   PluginUninstallResult,
   PluginWebServerCloseResult,
   PluginWebServerListenOptions,
@@ -377,6 +388,37 @@ export interface IElectronAPI {
       ) => Promise<{ ok: boolean; error?: string }>;
       close: (pluginId: string) => Promise<PluginWebServerCloseResult>;
       onRequest: (func: (request: PluginWebServerRequest) => void) => () => void;
+    };
+    sqlite: {
+      open: (pluginId: string, options?: PluginSqliteOpenOptions) => Promise<PluginSqliteOpenResult>;
+      exec: (pluginId: string, databaseId: string, sql: string) => Promise<PluginSqliteExecResult>;
+      run: (
+        pluginId: string,
+        databaseId: string,
+        sql: string,
+        params?: PluginSqliteParams,
+      ) => Promise<PluginSqliteRunResult>;
+      all: (
+        pluginId: string,
+        databaseId: string,
+        sql: string,
+        params?: PluginSqliteParams,
+        options?: PluginSqliteQueryOptions,
+      ) => Promise<PluginSqliteQueryResult>;
+      get: (
+        pluginId: string,
+        databaseId: string,
+        sql: string,
+        params?: PluginSqliteParams,
+      ) => Promise<PluginSqliteQueryResult>;
+      transaction: (
+        pluginId: string,
+        databaseId: string,
+        statements: PluginSqliteStatement[],
+      ) => Promise<PluginSqliteExecResult>;
+      close: (pluginId: string, databaseId: string) => Promise<PluginSqliteCloseResult>;
+      list: (pluginId: string) => Promise<PluginSqliteListResult>;
+      delete: (pluginId: string, name?: string) => Promise<PluginSqliteDeleteResult>;
     };
     storage: {
       get: <T = unknown>(pluginId: string, key: string) => Promise<T | null>;

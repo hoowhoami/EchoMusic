@@ -69,6 +69,17 @@ import type {
   PluginReportFailureResult,
   PluginSetEnabledResult,
   PluginSetSafeModeResult,
+  PluginSqliteCloseResult,
+  PluginSqliteDeleteResult,
+  PluginSqliteExecResult,
+  PluginSqliteListResult,
+  PluginSqliteOpenOptions,
+  PluginSqliteOpenResult,
+  PluginSqliteParams,
+  PluginSqliteQueryOptions,
+  PluginSqliteQueryResult,
+  PluginSqliteRunResult,
+  PluginSqliteStatement,
   PluginUninstallResult,
   PluginWebServerCloseResult,
   PluginWebServerListenOptions,
@@ -785,6 +796,73 @@ contextBridge.exposeInMainWorld('electron', {
         ipcRenderer.on('plugins:web-server:request', listener);
         return () => ipcRenderer.removeListener('plugins:web-server:request', listener);
       },
+    },
+    sqlite: {
+      open: (pluginId: string, options?: PluginSqliteOpenOptions) =>
+        invokeWithPlainPayload<PluginSqliteOpenResult>('plugins:sqlite:open', pluginId, options),
+      exec: (pluginId: string, databaseId: string, sql: string) =>
+        ipcRenderer.invoke(
+          'plugins:sqlite:exec',
+          pluginId,
+          databaseId,
+          sql,
+        ) as Promise<PluginSqliteExecResult>,
+      run: (pluginId: string, databaseId: string, sql: string, params?: PluginSqliteParams) =>
+        invokeWithPlainPayload<PluginSqliteRunResult>(
+          'plugins:sqlite:run',
+          pluginId,
+          databaseId,
+          sql,
+          params,
+        ),
+      all: (
+        pluginId: string,
+        databaseId: string,
+        sql: string,
+        params?: PluginSqliteParams,
+        options?: PluginSqliteQueryOptions,
+      ) =>
+        invokeWithPlainPayload<PluginSqliteQueryResult>(
+          'plugins:sqlite:all',
+          pluginId,
+          databaseId,
+          sql,
+          params,
+          options,
+        ),
+      get: (pluginId: string, databaseId: string, sql: string, params?: PluginSqliteParams) =>
+        invokeWithPlainPayload<PluginSqliteQueryResult>(
+          'plugins:sqlite:get',
+          pluginId,
+          databaseId,
+          sql,
+          params,
+        ),
+      transaction: (
+        pluginId: string,
+        databaseId: string,
+        statements: PluginSqliteStatement[],
+      ) =>
+        invokeWithPlainPayload<PluginSqliteExecResult>(
+          'plugins:sqlite:transaction',
+          pluginId,
+          databaseId,
+          statements,
+        ),
+      close: (pluginId: string, databaseId: string) =>
+        ipcRenderer.invoke(
+          'plugins:sqlite:close',
+          pluginId,
+          databaseId,
+        ) as Promise<PluginSqliteCloseResult>,
+      list: (pluginId: string) =>
+        ipcRenderer.invoke('plugins:sqlite:list', pluginId) as Promise<PluginSqliteListResult>,
+      delete: (pluginId: string, name?: string) =>
+        ipcRenderer.invoke(
+          'plugins:sqlite:delete',
+          pluginId,
+          name,
+        ) as Promise<PluginSqliteDeleteResult>,
     },
     storage: {
       get: <T = unknown>(pluginId: string, key: string) =>

@@ -127,6 +127,12 @@ export const useUpdateStore = defineStore('update', {
       window.electron?.ipcRenderer?.send('open-external', url);
     },
 
+    openDownload() {
+      const url = this.checkResult?.downloadUrl || this.checkResult?.releaseUrl;
+      if (!url) return;
+      window.electron?.ipcRenderer?.send('open-external', url);
+    },
+
     /** 关闭弹窗仅隐藏，不取消下载、不清空状态，便于稍后重新打开查看进度。 */
     closeDialog() {
       this.dialogOpen = false;

@@ -10,6 +10,9 @@ export type UpdateCheckResult = {
   latestVersion?: string;
   releaseName?: string;
   releaseUrl?: string;
+  downloadUrl?: string;
+  downloadLabel?: string;
+  manualDownload?: boolean;
   body?: string;
   message?: string;
   silent?: boolean;

@@ -286,6 +286,7 @@ const getPluginFeatureTags = (manifest: EchoPluginManifest) => {
   if (manifest.capabilities?.kugouApi) tags.push('酷狗 API');
   if (manifest.capabilities?.localFiles) tags.push('本地文件');
   if (manifest.capabilities?.process) tags.push('本地进程');
+  if (manifest.capabilities?.sqlite) tags.push('SQLite');
   if (manifest.contributes?.windows?.length) tags.push('插件浮窗');
   return tags;
 };

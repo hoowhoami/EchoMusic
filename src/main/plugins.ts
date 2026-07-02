@@ -65,6 +65,17 @@ import type {
   PluginReportFailureResult,
   PluginSetSafeModeResult,
   PluginSetEnabledResult,
+  PluginSqliteCloseResult,
+  PluginSqliteDeleteResult,
+  PluginSqliteExecResult,
+  PluginSqliteListResult,
+  PluginSqliteOpenOptions,
+  PluginSqliteOpenResult,
+  PluginSqliteParams,
+  PluginSqliteQueryOptions,
+  PluginSqliteQueryResult,
+  PluginSqliteRunResult,
+  PluginSqliteStatement,
   PluginUninstallResult,
   PluginWebServerCloseResult,
   PluginWebServerListenOptions,
@@ -137,6 +148,19 @@ import {
   listenPluginWebServer,
   respondPluginWebServerRequest,
 } from './pluginWebServer';
+import {
+  allPluginSqlite,
+  closePluginSqliteDatabase,
+  closePluginSqliteDatabases,
+  deletePluginSqliteDatabase,
+  deletePluginSqliteDatabases,
+  execPluginSqlite,
+  getPluginSqlite,
+  listPluginSqliteDatabases,
+  openPluginSqliteDatabase,
+  runPluginSqlite,
+  transactionPluginSqlite,
+} from './pluginSqlite';
 
 export { normalizePluginId } from './plugins/common';
 
@@ -416,6 +440,7 @@ export const setPluginSafeMode = async (enabled: boolean): Promise<PluginSetSafe
       getKvStorage().delete(PLUGIN_STARTUP_SESSION_KEY);
       getKvStorage().delete(PLUGIN_ACTIVE_SESSION_KEY);
       await closePluginWebServers();
+      closePluginSqliteDatabases();
       await terminatePluginProcesses();
     }
     return { ok: true, safeMode: Boolean(enabled) };
@@ -565,6 +590,118 @@ const getPluginWebServerAccessError = (plugin: EchoPluginDescriptor) => {
   }
   return '';
 };
+
+const getPluginSqliteAccessError = (plugin: EchoPluginDescriptor) => {
+  if (plugin.invalid) return plugin.error || '插件无效';
+  const compatibilityError = getPluginCompatibilityError(plugin);
+  if (compatibilityError) return compatibilityError;
+  if (!plugin.enabled) return '插件未启用';
+  if (plugin.manifest.capabilities?.sqlite !== true) {
+    return '插件未声明 SQLite 能力';
+  }
+  return '';
+};
+
+const withPluginSqliteAccess = <T>(
+  pluginId: string,
+  fallback: string,
+  callback: (plugin: EchoPluginDescriptor) => T,
+): T | { ok: false; error: string } => {
+  if (getPluginSafeMode()) return { ok: false, error: '插件安全模式已开启' };
+
+  const plugin = findPlugin(pluginId);
+  if (!plugin) return { ok: false, error: '插件不存在' };
+
+  const accessError = getPluginSqliteAccessError(plugin);
+  if (accessError) return { ok: false, error: accessError };
+
+  try {
+    return callback(plugin);
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : fallback,
+    };
+  }
+};
+
+export const openPluginSqliteDatabaseForPlugin = (
+  pluginId: string,
+  options?: PluginSqliteOpenOptions,
+): PluginSqliteOpenResult =>
+  withPluginSqliteAccess(pluginId, '插件 SQLite 数据库打开失败', (plugin) =>
+    openPluginSqliteDatabase(plugin, options),
+  ) as PluginSqliteOpenResult;
+
+export const execPluginSqliteForPlugin = (
+  pluginId: string,
+  databaseId: string,
+  sql: string,
+): PluginSqliteExecResult =>
+  withPluginSqliteAccess(pluginId, '插件 SQLite 执行失败', (plugin) =>
+    execPluginSqlite(plugin.id, databaseId, sql),
+  ) as PluginSqliteExecResult;
+
+export const runPluginSqliteForPlugin = (
+  pluginId: string,
+  databaseId: string,
+  sql: string,
+  params?: PluginSqliteParams,
+): PluginSqliteRunResult =>
+  withPluginSqliteAccess(pluginId, '插件 SQLite 写入失败', (plugin) =>
+    runPluginSqlite(plugin.id, databaseId, sql, params),
+  ) as PluginSqliteRunResult;
+
+export const allPluginSqliteForPlugin = (
+  pluginId: string,
+  databaseId: string,
+  sql: string,
+  params?: PluginSqliteParams,
+  options?: PluginSqliteQueryOptions,
+): PluginSqliteQueryResult =>
+  withPluginSqliteAccess(pluginId, '插件 SQLite 查询失败', (plugin) =>
+    allPluginSqlite(plugin.id, databaseId, sql, params, options),
+  ) as PluginSqliteQueryResult;
+
+export const getPluginSqliteForPlugin = (
+  pluginId: string,
+  databaseId: string,
+  sql: string,
+  params?: PluginSqliteParams,
+): PluginSqliteQueryResult =>
+  withPluginSqliteAccess(pluginId, '插件 SQLite 查询失败', (plugin) =>
+    getPluginSqlite(plugin.id, databaseId, sql, params),
+  ) as PluginSqliteQueryResult;
+
+export const transactionPluginSqliteForPlugin = (
+  pluginId: string,
+  databaseId: string,
+  statements: PluginSqliteStatement[],
+): PluginSqliteExecResult =>
+  withPluginSqliteAccess(pluginId, '插件 SQLite 事务执行失败', (plugin) =>
+    transactionPluginSqlite(plugin.id, databaseId, statements),
+  ) as PluginSqliteExecResult;
+
+export const closePluginSqliteDatabaseForPlugin = (
+  pluginId: string,
+  databaseId: string,
+): PluginSqliteCloseResult =>
+  withPluginSqliteAccess(pluginId, '插件 SQLite 数据库关闭失败', (plugin) =>
+    closePluginSqliteDatabase(plugin.id, databaseId),
+  ) as PluginSqliteCloseResult;
+
+export const listPluginSqliteDatabasesForPlugin = (pluginId: string): PluginSqliteListResult =>
+  withPluginSqliteAccess(pluginId, '插件 SQLite 数据库列表读取失败', (plugin) =>
+    listPluginSqliteDatabases(plugin.id),
+  ) as PluginSqliteListResult;
+
+export const deletePluginSqliteDatabaseForPlugin = (
+  pluginId: string,
+  name?: string,
+): PluginSqliteDeleteResult =>
+  withPluginSqliteAccess(pluginId, '插件 SQLite 数据库删除失败', (plugin) =>
+    deletePluginSqliteDatabase(plugin.id, name),
+  ) as PluginSqliteDeleteResult;
 
 export const listenPluginWebServerForPlugin = async (
   pluginId: string,
@@ -2465,6 +2602,7 @@ export const setPluginEnabled = async (
   setEnabledState(nextState);
   if (!enabled) {
     await closePluginWebServer(plugin.id);
+    closePluginSqliteDatabases(plugin.id);
     await terminatePluginProcesses(plugin.id);
   }
   const refreshed = findPlugin(plugin.id);
@@ -3076,6 +3214,7 @@ export const uninstallPlugin = async (pluginId: string): Promise<PluginUninstall
     clearPluginProcessConsents(plugin.id);
 
     await closePluginWebServer(plugin.id);
+    deletePluginSqliteDatabases(plugin.id);
 
     // 等待进程完全终止
     await terminatePluginProcesses(plugin.id);

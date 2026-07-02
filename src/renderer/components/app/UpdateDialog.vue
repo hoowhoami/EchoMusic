@@ -49,6 +49,7 @@ const description = computed(() => {
   const r = checkResult.value;
   if (!r) return '';
   if (r.status === 'available') {
+    if (r.message) return r.message;
     return `当前版本 v${r.currentVersion}，发现新版本 ${r.releaseName || r.latestVersion || ''}`.trim();
   }
   if (r.status === 'latest') {
@@ -69,6 +70,7 @@ const bodyHtml = computed(() => {
 const handleDownload = () => updateStore.download();
 const handleInstall = () => updateStore.install();
 const handleOpenRelease = () => updateStore.openRelease();
+const handleOpenDownload = () => updateStore.openDownload();
 const handleClose = () => updateStore.closeDialog();
 </script>
 
@@ -132,6 +134,14 @@ const handleClose = () => updateStore.closeDialog();
           @click="handleInstall"
         >
           立即安装
+        </Button>
+        <Button
+          v-else-if="checkResult?.manualDownload"
+          variant="primary"
+          size="sm"
+          @click="handleOpenDownload"
+        >
+          {{ checkResult.downloadLabel || '前往下载' }}
         </Button>
         <Button v-else-if="downloadStatus === 'downloading'" variant="secondary" size="sm" disabled>
           下载中

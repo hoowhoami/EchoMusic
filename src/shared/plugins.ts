@@ -417,6 +417,114 @@ export type PluginWebServerCloseResult =
       error: string;
     };
 
+export type PluginSqliteValue = string | number | boolean | null | { type: 'hex'; data: string };
+export type PluginSqliteParam = string | number | boolean | null;
+export type PluginSqliteParams = PluginSqliteParam[];
+
+export interface PluginSqliteMigration {
+  version: number;
+  sql: string | string[];
+}
+
+export interface PluginSqliteOpenOptions {
+  name?: string;
+  migrations?: PluginSqliteMigration[];
+  readOnly?: boolean;
+  busyTimeoutMs?: number;
+}
+
+export interface PluginSqliteQueryOptions {
+  limit?: number;
+}
+
+export interface PluginSqliteStatement {
+  sql: string;
+  params?: PluginSqliteParams;
+}
+
+export type PluginSqliteRow = Record<string, PluginSqliteValue>;
+
+export type PluginSqliteOpenResult =
+  | {
+      ok: true;
+      pluginId: string;
+      databaseId: string;
+      name: string;
+      version: number;
+    }
+  | {
+      ok: false;
+      error: string;
+    };
+
+export type PluginSqliteExecResult =
+  | {
+      ok: true;
+    }
+  | {
+      ok: false;
+      error: string;
+    };
+
+export type PluginSqliteRunResult =
+  | {
+      ok: true;
+      changes: number;
+      lastInsertRowid: number;
+    }
+  | {
+      ok: false;
+      error: string;
+    };
+
+export type PluginSqliteQueryResult =
+  | {
+      ok: true;
+      rows: PluginSqliteRow[];
+      rowCount: number;
+      truncated: boolean;
+    }
+  | {
+      ok: false;
+      error: string;
+    };
+
+export type PluginSqliteCloseResult =
+  | {
+      ok: true;
+      closed: boolean;
+    }
+  | {
+      ok: false;
+      error: string;
+    };
+
+export interface PluginSqliteDatabaseInfo {
+  name: string;
+  size: number;
+  modifiedAt: number;
+}
+
+export type PluginSqliteListResult =
+  | {
+      ok: true;
+      databases: PluginSqliteDatabaseInfo[];
+    }
+  | {
+      ok: false;
+      error: string;
+    };
+
+export type PluginSqliteDeleteResult =
+  | {
+      ok: true;
+      deleted: boolean;
+    }
+  | {
+      ok: false;
+      error: string;
+    };
+
 export interface EchoPluginManifest {
   id: string;
   name: string;
@@ -439,6 +547,7 @@ export interface EchoPluginManifest {
     lyricEffects?: boolean;
     lyrics?: boolean;
     process?: boolean;
+    sqlite?: boolean;
     webServer?: boolean;
   };
   contributes?: {

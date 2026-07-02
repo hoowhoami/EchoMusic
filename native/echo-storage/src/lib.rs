@@ -1,12 +1,17 @@
 use napi_derive::napi;
 use once_cell::sync::Lazy;
-use rusqlite::{params, Connection, OptionalExtension, Transaction};
+use rusqlite::types::{Value as SqlValue, ValueRef};
+use rusqlite::{params, params_from_iter, Connection, OpenFlags, OptionalExtension, Transaction};
 use serde_json::{json, Map, Value};
+use std::collections::HashMap;
 use std::sync::Mutex;
+use std::time::Duration;
 
 const DEFAULT_PLAYBACK_QUEUE_ID: &str = "queue:default";
 
 static DATABASE: Lazy<Mutex<Option<Connection>>> = Lazy::new(|| Mutex::new(None));
+static PLUGIN_DATABASES: Lazy<Mutex<HashMap<String, Connection>>> =
+    Lazy::new(|| Mutex::new(HashMap::new()));
 
 type NativeResult<T> = napi::Result<T>;
 
@@ -169,6 +174,148 @@ fn parse_payload(value: &str) -> NativeResult<Map<String, Value>> {
         Value::Object(map) => Ok(map),
         _ => Err(err("Storage payload must be a JSON object")),
     }
+}
+
+fn parse_array(value: &str) -> NativeResult<Vec<Value>> {
+    match parse_json(value)? {
+        Value::Array(values) => Ok(values),
+        _ => Err(err("SQLite parameters must be a JSON array")),
+    }
+}
+
+fn json_to_sql_value(value: &Value) -> NativeResult<SqlValue> {
+    match value {
+        Value::Null => Ok(SqlValue::Null),
+        Value::Bool(value) => Ok(SqlValue::Integer(if *value { 1 } else { 0 })),
+        Value::Number(value) => {
+            if let Some(value) = value.as_i64() {
+                Ok(SqlValue::Integer(value))
+            } else if let Some(value) = value.as_u64() {
+                i64::try_from(value)
+                    .map(SqlValue::Integer)
+                    .map_err(|_| err("SQLite integer parameter is out of range"))
+            } else if let Some(value) = value.as_f64() {
+                Ok(SqlValue::Real(value))
+            } else {
+                Err(err("Invalid SQLite number parameter"))
+            }
+        }
+        Value::String(value) => Ok(SqlValue::Text(value.clone())),
+        _ => Err(err("SQLite parameters only support string, number, boolean, and null")),
+    }
+}
+
+fn parse_sql_params(params_json: Option<String>) -> NativeResult<Vec<SqlValue>> {
+    let values = match params_json {
+        Some(value) if !value.trim().is_empty() => parse_array(&value)?,
+        _ => Vec::new(),
+    };
+    values.iter().map(json_to_sql_value).collect()
+}
+
+fn value_ref_to_json(value: ValueRef<'_>) -> Value {
+    match value {
+        ValueRef::Null => Value::Null,
+        ValueRef::Integer(value) => json!(value),
+        ValueRef::Real(value) => json!(value),
+        ValueRef::Text(value) => json!(String::from_utf8_lossy(value).to_string()),
+        ValueRef::Blob(value) => {
+            let hex = value
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect::<String>();
+            json!({ "type": "hex", "data": hex })
+        }
+    }
+}
+
+fn configure_plugin_connection(
+    connection: &Connection,
+    busy_timeout_ms: u64,
+    read_only: bool,
+) -> NativeResult<()> {
+    map_sql(connection.busy_timeout(Duration::from_millis(busy_timeout_ms)))?;
+    if read_only {
+        map_sql(connection.execute_batch(
+            r#"
+            PRAGMA foreign_keys = ON;
+            PRAGMA temp_store = MEMORY;
+            "#,
+        ))
+    } else {
+        map_sql(connection.execute_batch(
+            r#"
+            PRAGMA journal_mode = WAL;
+            PRAGMA foreign_keys = ON;
+            PRAGMA synchronous = NORMAL;
+            PRAGMA temp_store = MEMORY;
+            "#,
+        ))
+    }
+}
+
+fn with_plugin_connection<T>(
+    database_id: &str,
+    callback: impl FnOnce(&Connection) -> NativeResult<T>,
+) -> NativeResult<T> {
+    let guard = PLUGIN_DATABASES
+        .lock()
+        .map_err(|error| err(format!("Plugin database lock failed: {error}")))?;
+    let connection = guard
+        .get(database_id)
+        .ok_or_else(|| err("Plugin SQLite database is not open"))?;
+    callback(connection)
+}
+
+fn with_plugin_connection_mut<T>(
+    database_id: &str,
+    callback: impl FnOnce(&mut Connection) -> NativeResult<T>,
+) -> NativeResult<T> {
+    let mut guard = PLUGIN_DATABASES
+        .lock()
+        .map_err(|error| err(format!("Plugin database lock failed: {error}")))?;
+    let connection = guard
+        .get_mut(database_id)
+        .ok_or_else(|| err("Plugin SQLite database is not open"))?;
+    callback(connection)
+}
+
+fn plugin_sqlite_query_rows(
+    connection: &Connection,
+    sql: &str,
+    params: Vec<SqlValue>,
+    limit: i64,
+) -> NativeResult<String> {
+    let mut statement = map_sql(connection.prepare(sql))?;
+    let column_names = statement
+        .column_names()
+        .into_iter()
+        .map(str::to_string)
+        .collect::<Vec<_>>();
+    let mut rows = map_sql(statement.query(params_from_iter(params)))?;
+    let mut result_rows = Vec::new();
+    let mut row_count = 0_i64;
+    let mut truncated = false;
+
+    while let Some(row) = map_sql(rows.next())? {
+        if row_count >= limit {
+            truncated = true;
+            break;
+        }
+        let mut result_row = Map::new();
+        for (index, name) in column_names.iter().enumerate() {
+            result_row.insert(name.clone(), value_ref_to_json(map_sql(row.get_ref(index))?));
+        }
+        result_rows.push(Value::Object(result_row));
+        row_count += 1;
+    }
+
+    Ok(json!({
+        "rows": result_rows,
+        "rowCount": row_count,
+        "truncated": truncated
+    })
+    .to_string())
 }
 
 fn json_string(value: &Value) -> Option<String> {
@@ -1219,6 +1366,130 @@ pub fn history_clear() -> NativeResult<String> {
         let tx = map_sql(connection.transaction())?;
         map_sql(tx.execute("DELETE FROM play_history", []))?;
         cleanup_orphan_songs(&tx)?;
+        map_sql(tx.commit())?;
+        Ok(ok_json())
+    })
+}
+
+#[napi]
+pub fn plugin_sqlite_open(
+    database_id: String,
+    database_path: String,
+    options_json: Option<String>,
+) -> NativeResult<String> {
+    let options = match options_json {
+        Some(value) if !value.trim().is_empty() => parse_payload(&value)?,
+        _ => Map::new(),
+    };
+    let read_only = bool_prop(&options, "readOnly", false);
+    let busy_timeout_ms = int_prop(&options, "busyTimeoutMs", 3000).clamp(100, 30000) as u64;
+
+    let flags = if read_only {
+        OpenFlags::SQLITE_OPEN_READ_ONLY
+    } else {
+        OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_CREATE
+    };
+    let connection = map_sql(Connection::open_with_flags(database_path, flags))?;
+    configure_plugin_connection(&connection, busy_timeout_ms, read_only)?;
+
+    let mut guard = PLUGIN_DATABASES
+        .lock()
+        .map_err(|error| err(format!("Plugin database lock failed: {error}")))?;
+    guard.insert(database_id, connection);
+    Ok(ok_json())
+}
+
+#[napi]
+pub fn plugin_sqlite_close(database_id: String) -> NativeResult<String> {
+    let mut guard = PLUGIN_DATABASES
+        .lock()
+        .map_err(|error| err(format!("Plugin database lock failed: {error}")))?;
+    let closed = guard.remove(&database_id).is_some();
+    Ok(json!({ "ok": true, "closed": closed }).to_string())
+}
+
+#[napi]
+pub fn plugin_sqlite_close_by_prefix(prefix: String) -> NativeResult<String> {
+    let mut guard = PLUGIN_DATABASES
+        .lock()
+        .map_err(|error| err(format!("Plugin database lock failed: {error}")))?;
+    let keys = guard
+        .keys()
+        .filter(|key| key.starts_with(&prefix))
+        .cloned()
+        .collect::<Vec<_>>();
+    let closed = keys.len();
+    for key in keys {
+        guard.remove(&key);
+    }
+    Ok(json!({ "ok": true, "closed": closed }).to_string())
+}
+
+#[napi]
+pub fn plugin_sqlite_exec(database_id: String, sql: String) -> NativeResult<String> {
+    with_plugin_connection(&database_id, |connection| {
+        map_sql(connection.execute_batch(&sql))?;
+        Ok(ok_json())
+    })
+}
+
+#[napi]
+pub fn plugin_sqlite_run(
+    database_id: String,
+    sql: String,
+    params_json: Option<String>,
+) -> NativeResult<String> {
+    let params = parse_sql_params(params_json)?;
+    with_plugin_connection(&database_id, |connection| {
+        let changes = map_sql(connection.execute(&sql, params_from_iter(params)))?;
+        Ok(json!({
+            "changes": changes,
+            "lastInsertRowid": connection.last_insert_rowid()
+        })
+        .to_string())
+    })
+}
+
+#[napi]
+pub fn plugin_sqlite_all(
+    database_id: String,
+    sql: String,
+    params_json: Option<String>,
+    limit: Option<i64>,
+) -> NativeResult<String> {
+    let params = parse_sql_params(params_json)?;
+    let limit = limit.unwrap_or(1000).clamp(1, 5000);
+    with_plugin_connection(&database_id, |connection| {
+        plugin_sqlite_query_rows(connection, &sql, params, limit)
+    })
+}
+
+#[napi]
+pub fn plugin_sqlite_transaction(
+    database_id: String,
+    statements_json: String,
+) -> NativeResult<String> {
+    let statements = parse_array(&statements_json)?;
+    with_plugin_connection_mut(&database_id, |connection| {
+        let tx = map_sql(connection.transaction())?;
+        for statement in statements {
+            let map = statement
+                .as_object()
+                .ok_or_else(|| err("SQLite transaction statement must be an object"))?;
+            let sql = map
+                .get("sql")
+                .and_then(Value::as_str)
+                .ok_or_else(|| err("SQLite transaction statement is missing sql"))?;
+            let params = match map.get("params") {
+                Some(Value::Array(values)) => values
+                    .iter()
+                    .map(json_to_sql_value)
+                    .collect::<NativeResult<Vec<_>>>()?,
+                Some(_) => return Err(err("SQLite transaction params must be an array")),
+                None => Vec::new(),
+            };
+            map_sql(tx.execute(sql, params_from_iter(params)))?;
+        }
         map_sql(tx.commit())?;
         Ok(ok_json())
     })

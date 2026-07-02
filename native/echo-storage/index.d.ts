@@ -40,4 +40,18 @@ export declare function playbackSetQueueCurrentTrack(payloadJson: string): Nativ
 
 export declare function playbackUpdateQueueMeta(payloadJson: string): NativeResult<string>
 
+export declare function pluginSqliteAll(databaseId: string, sql: string, paramsJson?: string | undefined | null, limit?: number | undefined | null): NativeResult<string>
+
+export declare function pluginSqliteClose(databaseId: string): NativeResult<string>
+
+export declare function pluginSqliteCloseByPrefix(prefix: string): NativeResult<string>
+
+export declare function pluginSqliteExec(databaseId: string, sql: string): NativeResult<string>
+
+export declare function pluginSqliteOpen(databaseId: string, databasePath: string, optionsJson?: string | undefined | null): NativeResult<string>
+
+export declare function pluginSqliteRun(databaseId: string, sql: string, paramsJson?: string | undefined | null): NativeResult<string>
+
+export declare function pluginSqliteTransaction(databaseId: string, statementsJson: string): NativeResult<string>
+
 export declare function resetAll(): NativeResult<undefined>

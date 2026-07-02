@@ -24,6 +24,18 @@ export interface NativeStorageAddon {
   historyRecordPlay(payloadJson: string): string;
   historyRemoveEntries(payloadJson: string): string;
   historyClear(): string;
+  pluginSqliteOpen(databaseId: string, databasePath: string, optionsJson?: string | null): string;
+  pluginSqliteClose(databaseId: string): string;
+  pluginSqliteCloseByPrefix(prefix: string): string;
+  pluginSqliteExec(databaseId: string, sql: string): string;
+  pluginSqliteRun(databaseId: string, sql: string, paramsJson?: string | null): string;
+  pluginSqliteAll(
+    databaseId: string,
+    sql: string,
+    paramsJson?: string | null,
+    limit?: number | null,
+  ): string;
+  pluginSqliteTransaction(databaseId: string, statementsJson: string): string;
 }
 
 let addon: NativeStorageAddon | null = null;

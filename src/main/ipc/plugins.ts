@@ -31,6 +31,17 @@ import type {
   PluginReadTextFileOptions,
   PluginReadTextFileResult,
   PluginSetEnabledResult,
+  PluginSqliteCloseResult,
+  PluginSqliteDeleteResult,
+  PluginSqliteExecResult,
+  PluginSqliteListResult,
+  PluginSqliteOpenOptions,
+  PluginSqliteOpenResult,
+  PluginSqliteParams,
+  PluginSqliteQueryOptions,
+  PluginSqliteQueryResult,
+  PluginSqliteRunResult,
+  PluginSqliteStatement,
   PluginReportFailureResult,
   PluginSetSafeModeResult,
   PluginUninstallResult,
@@ -61,9 +72,11 @@ import {
   listPluginImageFiles,
   listPluginMarketplace,
   listPluginMarketplaceSources,
+  listPluginSqliteDatabasesForPlugin,
   listPlugins,
   launchPluginProcess,
   markPluginStartup,
+  openPluginSqliteDatabaseForPlugin,
   openPluginDirectory,
   patchPluginMarketplaceSource,
   readPluginFileBytes,
@@ -78,10 +91,17 @@ import {
   setPluginEnabled,
   setPluginSafeMode,
   terminatePluginProcess,
+  transactionPluginSqliteForPlugin,
   uninstallPlugin,
   closePluginWebServerForPlugin,
+  closePluginSqliteDatabaseForPlugin,
+  deletePluginSqliteDatabaseForPlugin,
+  execPluginSqliteForPlugin,
+  getPluginSqliteForPlugin,
   listenPluginWebServerForPlugin,
+  runPluginSqliteForPlugin,
   writePluginFile,
+  allPluginSqliteForPlugin,
 } from '../plugins';
 import { closePluginWindows } from '../pluginWindows';
 import {
@@ -346,6 +366,72 @@ export const registerPluginHandlers = (context: IpcContext) => {
     'plugins:web-server:close',
     (event, pluginId: string): Promise<PluginWebServerCloseResult> =>
       closePluginWebServerForPlugin(pluginId, event.sender),
+  );
+  ipcRegistry.registerHandler(
+    'plugins:sqlite:open',
+    (_event, pluginId: string, options?: PluginSqliteOpenOptions): PluginSqliteOpenResult =>
+      openPluginSqliteDatabaseForPlugin(pluginId, options),
+  );
+  ipcRegistry.registerHandler(
+    'plugins:sqlite:exec',
+    (_event, pluginId: string, databaseId: string, sql: string): PluginSqliteExecResult =>
+      execPluginSqliteForPlugin(pluginId, databaseId, sql),
+  );
+  ipcRegistry.registerHandler(
+    'plugins:sqlite:run',
+    (
+      _event,
+      pluginId: string,
+      databaseId: string,
+      sql: string,
+      params?: PluginSqliteParams,
+    ): PluginSqliteRunResult => runPluginSqliteForPlugin(pluginId, databaseId, sql, params),
+  );
+  ipcRegistry.registerHandler(
+    'plugins:sqlite:all',
+    (
+      _event,
+      pluginId: string,
+      databaseId: string,
+      sql: string,
+      params?: PluginSqliteParams,
+      options?: PluginSqliteQueryOptions,
+    ): PluginSqliteQueryResult =>
+      allPluginSqliteForPlugin(pluginId, databaseId, sql, params, options),
+  );
+  ipcRegistry.registerHandler(
+    'plugins:sqlite:get',
+    (
+      _event,
+      pluginId: string,
+      databaseId: string,
+      sql: string,
+      params?: PluginSqliteParams,
+    ): PluginSqliteQueryResult => getPluginSqliteForPlugin(pluginId, databaseId, sql, params),
+  );
+  ipcRegistry.registerHandler(
+    'plugins:sqlite:transaction',
+    (
+      _event,
+      pluginId: string,
+      databaseId: string,
+      statements: PluginSqliteStatement[],
+    ): PluginSqliteExecResult => transactionPluginSqliteForPlugin(pluginId, databaseId, statements),
+  );
+  ipcRegistry.registerHandler(
+    'plugins:sqlite:close',
+    (_event, pluginId: string, databaseId: string): PluginSqliteCloseResult =>
+      closePluginSqliteDatabaseForPlugin(pluginId, databaseId),
+  );
+  ipcRegistry.registerHandler(
+    'plugins:sqlite:list',
+    (_event, pluginId: string): PluginSqliteListResult =>
+      listPluginSqliteDatabasesForPlugin(pluginId),
+  );
+  ipcRegistry.registerHandler(
+    'plugins:sqlite:delete',
+    (_event, pluginId: string, name?: string): PluginSqliteDeleteResult =>
+      deletePluginSqliteDatabaseForPlugin(pluginId, name),
   );
   ipcRegistry.registerHandler(
     'plugins:set-enabled',

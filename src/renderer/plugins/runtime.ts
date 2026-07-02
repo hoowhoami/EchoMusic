@@ -11,6 +11,11 @@ import type {
   PluginProcessLaunchOptions,
   PluginProcessLaunchResult,
   PluginProcessTerminateResult,
+  PluginSqliteOpenOptions,
+  PluginSqliteParams,
+  PluginSqliteQueryOptions,
+  PluginSqliteRow,
+  PluginSqliteStatement,
   PluginWebServerHandlerResult,
   PluginWebServerListenOptions,
   PluginWebServerRequest,
@@ -262,6 +267,7 @@ export interface EchoPluginContext {
       handler: (request: PluginWebServerRequest) => PluginWebServerHandlerResult,
     ) => () => void;
   };
+  sqlite: ReturnType<typeof createPluginSqliteApi>;
   ui: ReturnType<typeof createRuntimeUiApi>;
   commands: {
     register: (
@@ -1453,6 +1459,105 @@ const createPluginWebServerApi = (
   };
 };
 
+const createPluginSqliteApi = (
+  descriptor: EchoPluginDescriptor,
+  addDisposable: (dispose: () => void) => () => void,
+) => {
+  const getSqliteApi = () => window.electron.plugins?.sqlite;
+  const openDatabaseIds = new Set<string>();
+  const requireSqliteCapability = () => {
+    if (descriptor.manifest.capabilities?.sqlite !== true) {
+      throw new Error('插件未声明 SQLite 能力');
+    }
+  };
+
+  const closeDatabase = async (databaseId: string) => {
+    const result =
+      (await getSqliteApi()?.close(descriptor.id, databaseId)) ??
+      ({ ok: false as const, error: '插件 SQLite API 不可用' });
+    if (result.ok) openDatabaseIds.delete(databaseId);
+    return result;
+  };
+
+  addDisposable(() => {
+    for (const databaseId of openDatabaseIds) {
+      void getSqliteApi()?.close(descriptor.id, databaseId);
+    }
+    openDatabaseIds.clear();
+  });
+
+  return {
+    open: async (options?: PluginSqliteOpenOptions) => {
+      requireSqliteCapability();
+      const result =
+        (await getSqliteApi()?.open(
+          descriptor.id,
+          serializeForIpc(options) as PluginSqliteOpenOptions,
+        )) ?? { ok: false as const, error: '插件 SQLite API 不可用' };
+      if (!result.ok) return result;
+
+      const databaseId = result.databaseId;
+      openDatabaseIds.add(databaseId);
+      return {
+        ...result,
+        exec: (sql: string) =>
+          getSqliteApi()?.exec(descriptor.id, databaseId, sql) ??
+          Promise.resolve({ ok: false as const, error: '插件 SQLite API 不可用' }),
+        run: (sql: string, params?: PluginSqliteParams) =>
+          getSqliteApi()?.run(
+            descriptor.id,
+            databaseId,
+            sql,
+            serializeForIpc(params) as PluginSqliteParams,
+          ) ?? Promise.resolve({ ok: false as const, error: '插件 SQLite API 不可用' }),
+        all: (sql: string, params?: PluginSqliteParams, queryOptions?: PluginSqliteQueryOptions) =>
+          getSqliteApi()?.all(
+            descriptor.id,
+            databaseId,
+            sql,
+            serializeForIpc(params) as PluginSqliteParams,
+            serializeForIpc(queryOptions) as PluginSqliteQueryOptions,
+          ) ?? Promise.resolve({ ok: false as const, error: '插件 SQLite API 不可用' }),
+        get: async (sql: string, params?: PluginSqliteParams) => {
+          const queryResult =
+            (await getSqliteApi()?.get(
+              descriptor.id,
+              databaseId,
+              sql,
+              serializeForIpc(params) as PluginSqliteParams,
+            )) ?? { ok: false as const, error: '插件 SQLite API 不可用' };
+          if (!queryResult.ok) return queryResult;
+          return {
+            ok: true as const,
+            row: (queryResult.rows[0] ?? null) as PluginSqliteRow | null,
+          };
+        },
+        transaction: (statements: PluginSqliteStatement[]) =>
+          getSqliteApi()?.transaction(
+            descriptor.id,
+            databaseId,
+            serializeForIpc(statements) as PluginSqliteStatement[],
+          ) ?? Promise.resolve({ ok: false as const, error: '插件 SQLite API 不可用' }),
+        close: () => closeDatabase(databaseId),
+      };
+    },
+    listDatabases: () => {
+      requireSqliteCapability();
+      return (
+        getSqliteApi()?.list(descriptor.id) ??
+        Promise.resolve({ ok: false as const, error: '插件 SQLite API 不可用' })
+      );
+    },
+    deleteDatabase: (name?: string) => {
+      requireSqliteCapability();
+      return (
+        getSqliteApi()?.delete(descriptor.id, name) ??
+        Promise.resolve({ ok: false as const, error: '插件 SQLite API 不可用' })
+      );
+    },
+  };
+};
+
 type HostComponentLoader = () => Promise<Component>;
 
 /**
@@ -2212,6 +2317,7 @@ const createPluginContext = (
     fs: createPluginFsApi(descriptor.id),
     process: createPluginProcessApi(descriptor.id),
     webServer: createPluginWebServerApi(descriptor, addDisposable),
+    sqlite: createPluginSqliteApi(descriptor, addDisposable),
     ui: createRuntimeUiApi(descriptor.id, host, addDisposable),
     commands: {
       register: (id, handler, options) => {

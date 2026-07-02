@@ -6,6 +6,7 @@ import { execFile } from 'child_process';
 import { dirname, extname, join, resolve, sep, basename } from 'path';
 import { autoUpdater } from 'electron-updater';
 import { getFonts } from 'font-list';
+import { coerce as semverCoerce, gt as semverGt, valid as semverValid } from 'semver';
 import type { AppInfoResult, UpdateCheckResult, UpdateDownloadResult } from '../../shared/app';
 import {
   normalizeImpulseResponseName,
@@ -42,6 +43,135 @@ const SUPPORTED_IMPULSE_RESPONSE_EXTENSIONS = new Set([
   '.aac',
   '.opus',
 ]);
+
+type GithubReleaseAsset = {
+  name?: unknown;
+  browser_download_url?: unknown;
+};
+
+type GithubRelease = {
+  tag_name?: unknown;
+  name?: unknown;
+  body?: unknown;
+  html_url?: unknown;
+  prerelease?: unknown;
+  assets?: unknown;
+};
+
+type LinuxDistribution = {
+  id: string;
+  idLike: string[];
+};
+
+const readLinuxDistribution = (): LinuxDistribution | null => {
+  if (process.platform !== 'linux') return null;
+  try {
+    const content = fs.readFileSync('/etc/os-release', 'utf-8');
+    const values = new Map<string, string>();
+    for (const line of content.split('\n')) {
+      const match = line.match(/^([A-Z_]+)=(.*)$/);
+      if (!match) continue;
+      values.set(match[1], match[2].trim().replace(/^"(.*)"$/, '$1'));
+    }
+    const id = values.get('ID')?.toLowerCase() || '';
+    const idLike = (values.get('ID_LIKE') || '').toLowerCase().split(/\s+/).filter(Boolean);
+    return { id, idLike };
+  } catch (error) {
+    log.warn('[Updater] Failed to read Linux distribution:', error);
+    return null;
+  }
+};
+
+const isArchLinux = (): boolean => {
+  const distro = readLinuxDistribution();
+  if (!distro) return false;
+  return distro.id === 'arch' || distro.idLike.includes('arch');
+};
+
+const requestJson = <T>(url: string): Promise<T> =>
+  new Promise((resolveRequest, rejectRequest) => {
+    import('https')
+      .then((https) => {
+        const req = https.get(
+          url,
+          { headers: { 'User-Agent': 'EchoMusic-Updater', Accept: 'application/json' } },
+          (res) => {
+            const statusCode = res.statusCode || 0;
+            if (statusCode >= 300 && statusCode < 400 && res.headers.location) {
+              res.resume();
+              requestJson<T>(res.headers.location).then(resolveRequest, rejectRequest);
+              return;
+            }
+
+            let data = '';
+            res.setEncoding('utf8');
+            res.on('data', (chunk: string) => (data += chunk));
+            res.on('end', () => {
+              if (statusCode < 200 || statusCode >= 300) {
+                rejectRequest(new Error(`GitHub API returned HTTP ${statusCode}`));
+                return;
+              }
+              try {
+                resolveRequest(JSON.parse(data) as T);
+              } catch (error) {
+                rejectRequest(error);
+              }
+            });
+          },
+        );
+        req.on('error', rejectRequest);
+        req.setTimeout(15000, () => {
+          req.destroy(new Error('GitHub API request timed out'));
+        });
+      })
+      .catch(rejectRequest);
+  });
+
+const normalizeReleaseVersion = (tagName: unknown): string => {
+  const raw = String(tagName || '')
+    .trim()
+    .replace(/^v/i, '');
+  return semverValid(raw) ?? semverCoerce(raw)?.version ?? raw;
+};
+
+const isNewerRelease = (nextVersion: string, currentVersion: string): boolean => {
+  const next = semverValid(nextVersion) ?? semverCoerce(nextVersion)?.version;
+  const current = semverValid(currentVersion) ?? semverCoerce(currentVersion)?.version;
+  if (next && current) return semverGt(next, current);
+  return nextVersion !== currentVersion;
+};
+
+const getLinuxArchiveAsset = (release: GithubRelease): GithubReleaseAsset | null => {
+  const assets = Array.isArray(release.assets) ? (release.assets as GithubReleaseAsset[]) : [];
+  const archTokens =
+    process.arch === 'x64'
+      ? ['x86_64', 'x64', 'amd64']
+      : process.arch === 'arm64'
+        ? ['arm64', 'aarch64']
+        : [process.arch];
+
+  return (
+    assets.find((asset) => {
+      const name = String(asset.name || '').toLowerCase();
+      return (
+        name.endsWith('.tar.gz') &&
+        name.includes('linux') &&
+        archTokens.some((token) => name.includes(token))
+      );
+    }) ??
+    assets.find((asset) => {
+      const name = String(asset.name || '').toLowerCase();
+      return name.endsWith('.tar.gz') && name.includes('linux');
+    }) ??
+    null
+  );
+};
+
+const withGithubProxy = (url: string, githubProxyUrl: string): string => {
+  const proxyBase = githubProxyUrl.trim();
+  if (!proxyBase || !url.startsWith('http')) return url;
+  return `${proxyBase.endsWith('/') ? proxyBase : `${proxyBase}/`}${url}`;
+};
 
 const probeAudioFileWithFfprobe = async (filePath: string): Promise<boolean | null> =>
   new Promise((resolveProbe) => {
@@ -264,6 +394,76 @@ export const registerSettingsHandlers = ({ getMainWindow }: IpcContext) => {
     sendToRenderer('update-download-status', downloadState);
   });
 
+  const checkArchLinuxManualUpdate = async (payload: {
+    prerelease: boolean;
+    silent: boolean;
+    githubProxyUrl: string;
+  }): Promise<void> => {
+    const { version: currentVersion } = getAppInfo();
+    const releasesUrl = payload.prerelease
+      ? 'https://api.github.com/repos/hoowhoami/EchoMusic/releases?per_page=20'
+      : 'https://api.github.com/repos/hoowhoami/EchoMusic/releases/latest';
+
+    const response = payload.prerelease
+      ? await requestJson<GithubRelease[]>(releasesUrl)
+      : await requestJson<GithubRelease>(releasesUrl);
+    const release = Array.isArray(response)
+      ? response.find((item) => item && item.prerelease === true) || response[0]
+      : response;
+
+    if (!release?.tag_name) {
+      throw new Error('未找到可用的 GitHub Release。');
+    }
+
+    const latestVersion = normalizeReleaseVersion(release.tag_name);
+    const releaseUrl =
+      typeof release.html_url === 'string'
+        ? release.html_url
+        : `https://github.com/hoowhoami/EchoMusic/releases/tag/${release.tag_name}`;
+
+    if (!isNewerRelease(latestVersion, currentVersion)) {
+      const result: UpdateCheckResult = {
+        status: 'latest',
+        currentVersion,
+        latestVersion,
+        releaseName: String(release.name || release.tag_name || `v${latestVersion}`),
+        releaseUrl,
+        body: readCurrentVersionChangelog(),
+        silent: payload.silent,
+      };
+      lastCheckResult = result;
+      sendToRenderer('update-check-result', result);
+      return;
+    }
+
+    const archiveAsset = getLinuxArchiveAsset(release);
+    const downloadUrl =
+      typeof archiveAsset?.browser_download_url === 'string'
+        ? withGithubProxy(archiveAsset.browser_download_url, payload.githubProxyUrl)
+        : releaseUrl;
+    const downloadLabel = archiveAsset ? '下载 tar.gz' : '前往发布页下载';
+
+    const result: UpdateCheckResult = {
+      status: 'available',
+      currentVersion,
+      latestVersion,
+      releaseName: String(release.name || release.tag_name || `v${latestVersion}`),
+      releaseUrl,
+      downloadUrl,
+      downloadLabel,
+      manualDownload: true,
+      body: typeof release.body === 'string' ? release.body.slice(0, 4000) : '',
+      message: archiveAsset
+        ? 'Arch Linux 暂不使用内置安装器，请下载 tar.gz 压缩包后手动替换安装目录。'
+        : 'Arch Linux 暂不使用内置安装器，请前往发布页选择适合当前系统的安装包。',
+      silent: payload.silent,
+    };
+    lastCheckResult = result;
+    downloadState = { status: 'idle' };
+    sendToRenderer('update-check-result', result);
+    sendToRenderer('update-download-status', downloadState);
+  };
+
   // --- IPC handlers ---
   ipcRegistry.registerHandler('app:get-info', () => getAppInfo());
 
@@ -415,6 +615,19 @@ export const registerSettingsHandlers = ({ getMainWindow }: IpcContext) => {
           message: '开发模式下不支持在线更新。',
           silent,
         } satisfies UpdateCheckResult);
+        return;
+      }
+
+      if (isArchLinux()) {
+        checkArchLinuxManualUpdate({ prerelease, silent, githubProxyUrl }).catch((error) => {
+          log.error('[Updater] Arch Linux manual check failed:', error);
+          sendToRenderer('update-check-result', {
+            status: 'error',
+            currentVersion: getAppInfo().version,
+            message: error?.message || '更新检查失败，请稍后重试。',
+            silent,
+          } satisfies UpdateCheckResult);
+        });
         return;
       }
 
