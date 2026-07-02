@@ -159,6 +159,9 @@ const isNewerRelease = (nextVersion: string, currentVersion: string): boolean =>
   return nextVersion !== currentVersion;
 };
 
+const isPacmanAssetName = (name: string): boolean =>
+  name.endsWith('.pacman') || name.endsWith('.pkg.tar.zst');
+
 const getArchLinuxPackageAsset = (release: GithubRelease): GithubReleaseAsset | null => {
   const assets = Array.isArray(release.assets) ? (release.assets as GithubReleaseAsset[]) : [];
   const archTokens =
@@ -171,11 +174,11 @@ const getArchLinuxPackageAsset = (release: GithubRelease): GithubReleaseAsset | 
   return (
     assets.find((asset) => {
       const name = String(asset.name || '').toLowerCase();
-      return name.endsWith('.pkg.tar.zst') && archTokens.some((token) => name.includes(token));
+      return isPacmanAssetName(name) && archTokens.some((token) => name.includes(token));
     }) ??
     assets.find((asset) => {
       const name = String(asset.name || '').toLowerCase();
-      return name.endsWith('.pkg.tar.zst');
+      return isPacmanAssetName(name);
     }) ??
     assets.find((asset) => {
       const name = String(asset.name || '').toLowerCase();
@@ -464,7 +467,7 @@ export const registerSettingsHandlers = ({ getMainWindow }: IpcContext) => {
 
     const archiveAsset = getArchLinuxPackageAsset(release);
     const archiveName = String(archiveAsset?.name || '').toLowerCase();
-    const isPacmanPackage = archiveName.endsWith('.pkg.tar.zst');
+    const isPacmanPackage = isPacmanAssetName(archiveName);
     const downloadUrl =
       typeof archiveAsset?.browser_download_url === 'string'
         ? withGithubProxy(archiveAsset.browser_download_url, payload.githubProxyUrl)
