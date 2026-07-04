@@ -9,6 +9,7 @@
  */
 
 import { app } from 'electron';
+import { execFileSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 
@@ -84,9 +85,76 @@ function findVersionedLib(dir: string, dirEntries: string[], pattern: string): s
 }
 
 /**
- * 构建需要 LD_PRELOAD 的库列表
+ * 通过 ldd 查询 libmpv 实际依赖的 libav* 库路径。
+ *
+ * 当系统存在多套 FFmpeg（如 ffmpeg4.4 与 ffmpeg 8.1 共存）时，
+ * 目录扫描可能因文件名排序选错版本。而 ldd 直接输出动态链接器
+ * 解析后的实际依赖路径，精确匹配 libmpv 正在使用的那一套。
+ *
+ * 失败时返回空数组，由调用者决定是否回退其他方式。
+ */
+function getLibAvDepsViaLdd(libmpvPath: string): string[] {
+  try {
+    const output = execFileSync('ldd', [libmpvPath], {
+      encoding: 'utf-8',
+      timeout: 5000,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+
+    // 解析 ldd 输出：建立 SONAME → 实际路径 的映射
+    // 输出格式示例：
+    //   libavcodec.so.62 => /usr/lib/libavcodec.so.62 (0x00007f...)
+    //   libavformat.so.62 => /usr/lib/libavformat.so.62 (0x00007f...)
+    const depMap = new Map<string, string>();
+    for (const line of output.split('\n')) {
+      const m = line.match(/^\s*(\S+\.so[\d.]*)\s+=>\s+(\/\S+)/);
+      if (m) depMap.set(m[1], m[2]);
+    }
+
+    // 按 PRELOAD_LIB_PATTERNS 的顺序输出，保持正确的依赖加载顺序
+    // libavutil 应在 libavcodec 之前加载，这是 ldd 不保证的
+    const libs: string[] = [];
+    const seen = new Set<string>();
+    for (const pattern of PRELOAD_LIB_PATTERNS) {
+      const baseName = pattern.replace('.*', '');
+      // 在 ldd 输出中找 SONAME 以 baseName 开头的库
+      for (const [soname, resolvedPath] of depMap) {
+        if (!soname.startsWith(baseName)) continue;
+        if (seen.has(resolvedPath)) continue;
+        seen.add(resolvedPath);
+        libs.push(resolvedPath);
+        break; // 每个 pattern 只取第一个匹配
+      }
+    }
+    return libs;
+  } catch {
+    // ldd 不可用 / 非动态库 / 不存在 → 调用者回退
+    return [];
+  }
+}
+
+/**
+ * 构建需要 LD_PRELOAD 的库列表。
+ *
+ * 优先策略：通过 ldd 查询 libmpv 实际依赖的 libav* 路径（精确匹配）。
+ * 回退策略：当 ldd 不可用或失败时，扫描目录按名称匹配查找。
  */
 function buildPreloadList(libDir: string): string[] {
+  // ---- 优先策略：ldd 精确查询 ----
+  // 当系统存在多套 FFmpeg（如 ffmpeg4.4 和 ffmpeg 8.1 共存）时，
+  // 目录扫描排序可能选错版本。ldd 直接查询运行时链接路径，精确可靠。
+  const libmpvPath = findLibmpvInDir(libDir);
+  if (libmpvPath) {
+    const lddLibs = getLibAvDepsViaLdd(libmpvPath);
+    // ldd 至少命中核心库（libavformat + libavcodec + libavutil 等 ≥ 3 个）
+    // 才认为结果可用。少于 3 个说明 ldd 输出可能不完整，回退目录扫描。
+    if (lddLibs.length >= 3) {
+      return lddLibs;
+    }
+  }
+
+  // ---- 回退策略：目录扫描 ----
+  // 兼容无 ldd 命令、libmpv 非动态链接、或 ldd 输出异常的场景
   let dirEntries: string[];
   try {
     dirEntries = fs.readdirSync(libDir);
