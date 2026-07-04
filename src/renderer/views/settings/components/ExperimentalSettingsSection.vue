@@ -34,7 +34,6 @@ const logLevelOptions: { label: string; value: AppLogLevel }[] = [
 ];
 
 const diagnosticActive = computed(() => settingStore.logDiagnosticUntil > Date.now());
-const vipClaimFeatureVisible = computed(() => settingStore.vipClaimEnabled === true);
 
 const diagnosticLabel = computed(() => {
   if (!diagnosticActive.value) return '未启用';
@@ -106,14 +105,6 @@ const setDpiScale = (value: number) => {
       <FontIcon v-else :size="20" class="text-primary" />
     </template>
 
-    <div class="settings-item" v-if="vipClaimFeatureVisible">
-      <div class="space-y-1">
-        <h3 class="font-semibold">自动领取 VIP</h3>
-        <p class="text-sm text-text-secondary">每次启动自动领取每日 VIP</p>
-      </div>
-      <Switch v-model="settingStore.autoReceiveVip" />
-    </div>
-    <div class="settings-divider" v-if="vipClaimFeatureVisible"></div>
     <div class="settings-item">
       <div class="space-y-1">
         <h3 class="font-semibold">页面缓存</h3>

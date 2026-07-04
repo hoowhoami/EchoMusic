@@ -4,9 +4,7 @@ import { onMounted, onUnmounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { iconTriangleAlert } from '@/icons';
 import { useDeviceStore } from '@/stores/device';
-import { useSettingStore } from '@/stores/setting';
 import { useToastStore } from '@/stores/toast';
-import { useUserStore } from '@/stores/user';
 import { ensureDevice } from '@/utils/device';
 import logger from '@/utils/logger';
 import Button from '@/components/ui/Button.vue';
@@ -15,9 +13,7 @@ import type { ApiServerStatus } from '@/../shared/api-server';
 
 const router = useRouter();
 const deviceStore = useDeviceStore();
-const settingStore = useSettingStore();
 const toastStore = useToastStore();
-const userStore = useUserStore();
 const statusMessage = ref('正在初始化音乐引擎...');
 const hasError = ref(false);
 const isDeviceReady = ref(false);
@@ -68,18 +64,6 @@ const navigateToHome = () => {
   router.push('/main/home');
 };
 
-const maybeAutoReceiveVip = async () => {
-  if (!settingStore.autoReceiveVip || !settingStore.vipClaimEnabled || !userStore.isLoggedIn)
-    return;
-
-  try {
-    await userStore.fetchUserInfoOnce();
-    await userStore.autoReceiveVipIfNeeded();
-  } catch (error) {
-    logger.warn('Loading', 'Auto receive VIP after startup skipped:', error);
-  }
-};
-
 const completeStartup = async () => {
   if (hasCompletedStartup.value) return;
   hasCompletedStartup.value = true;
@@ -106,8 +90,6 @@ const completeStartup = async () => {
     hasCompletedStartup.value = false;
     return;
   }
-
-  await maybeAutoReceiveVip();
 
   statusMessage.value = '引擎就绪，正在开启音乐世界...';
   window.setTimeout(() => {
@@ -206,7 +188,6 @@ const forceEnterApp = async () => {
   hasCompletedStartup.value = false;
   hasError.value = false;
   clearForceEnter();
-  await maybeAutoReceiveVip();
   navigateToHome();
 };
 

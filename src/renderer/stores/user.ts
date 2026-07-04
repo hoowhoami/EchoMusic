@@ -1,12 +1,5 @@
 import { defineStore } from 'pinia';
-import {
-  claimDayVip,
-  getServerNow,
-  getUserDetail,
-  getUserFollow,
-  getUserVipDetail,
-  upgradeDayVip,
-} from '@/api/user';
+import { getUserDetail, getUserFollow, getUserVipDetail } from '@/api/user';
 import type { User, UserExtendsInfo } from '@/models/user';
 import { mapUser } from '@/utils/mappers';
 import logger from '@/utils/logger';
@@ -88,9 +81,6 @@ export const useUserStore = defineStore('user', {
     isLoggedIn: false,
     hasFetchedUserInfo: false,
     isFetchingUserInfo: false,
-    isTvipClaimedToday: false,
-    isSvipClaimedToday: false,
-    isAutoClaimingVip: false,
     followedArtistIds: new Set<string>(),
     hasFetchedFollowedArtists: false,
   }),
@@ -197,54 +187,11 @@ export const useUserStore = defineStore('user', {
       }
     },
 
-    async autoReceiveVipIfNeeded() {
-      if (!this.isLoggedIn || this.isAutoClaimingVip) return;
-      this.isAutoClaimingVip = true;
-
-      try {
-        // 使用服务器时间获取日期，避免本地时区导致日期不一致
-        const today = await this.getServerToday();
-
-        // 尝试领取
-        try {
-          await claimDayVip(today);
-        } catch (e) {
-          logger.warn('UserStore', 'VIP claim: claimDayVip failed', e);
-        }
-
-        // 尝试升级
-        try {
-          await upgradeDayVip();
-        } catch (e) {
-          logger.warn('UserStore', 'VIP claim: upgradeDayVip failed', e);
-        }
-
-        // 刷新用户信息
-        try {
-          await this.fetchUserInfo();
-          this.hasFetchedUserInfo = true;
-        } catch (e) {
-          logger.warn('UserStore', 'VIP claim: fetchUserInfo failed', e);
-        }
-      } catch (error) {
-        logger.warn('UserStore', 'Auto receive VIP unexpected error:', error);
-      } finally {
-        this.isAutoClaimingVip = false;
-      }
-    },
-
-    setClaimStatus(tvip: boolean, svip: boolean) {
-      this.isTvipClaimedToday = tvip;
-      this.isSvipClaimedToday = svip;
-    },
     logout() {
       this.info = null;
       this.isLoggedIn = false;
       this.hasFetchedUserInfo = false;
       this.isFetchingUserInfo = false;
-      this.isTvipClaimedToday = false;
-      this.isSvipClaimedToday = false;
-      this.isAutoClaimingVip = false;
       this.followedArtistIds = new Set();
       this.hasFetchedFollowedArtists = false;
     },
@@ -288,50 +235,11 @@ export const useUserStore = defineStore('user', {
       if (this.hasFetchedFollowedArtists) return;
       await this.fetchFollowedArtists();
     },
-
-    async getServerToday(): Promise<string> {
-      try {
-        const res = await getServerNow();
-        if (res && typeof res === 'object') {
-          const record = res as unknown as Record<string, unknown>;
-          const source = (
-            record.data && typeof record.data === 'object' ? record.data : record
-          ) as Record<string, unknown>;
-          const candidates = [
-            source.now,
-            source.time,
-            source.timestamp,
-            source.server_time,
-            source.serverTime,
-          ];
-          for (const candidate of candidates) {
-            const value = Number(candidate);
-            if (Number.isFinite(value) && value > 0) {
-              // 服务器返回的是秒级或毫秒级时间戳
-              const ms = value > 1e12 ? value : value * 1000;
-              // 使用北京时间（UTC+8）格式化日期
-              const date = new Date(ms);
-              const offset = 8 * 60;
-              const local = new Date(date.getTime() + offset * 60 * 1000);
-              return local.toISOString().split('T')[0];
-            }
-          }
-        }
-      } catch (e) {
-        logger.warn('UserStore', 'Failed to get server time, using local time', e);
-      }
-      // 兜底：使用本地时间（北京时间）
-      const now = new Date();
-      const offset = 8 * 60;
-      const local = new Date(now.getTime() + offset * 60 * 1000);
-      return local.toISOString().split('T')[0];
-    },
   },
   persist: {
     omit: [
       'hasFetchedUserInfo',
       'isFetchingUserInfo',
-      'isAutoClaimingVip',
       'followedArtistIds',
       'hasFetchedFollowedArtists',
     ],

@@ -3,7 +3,6 @@ defineOptions({ name: 'login-page' });
 import { ref, onMounted, onUnmounted, reactive, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { useUserStore } from '@/stores/user';
-import { useSettingStore } from '@/stores/setting';
 import {
   getLoginQrKey,
   createLoginQr,
@@ -46,19 +45,6 @@ import {
 
 const router = useRouter();
 const userStore = useUserStore();
-const settingStore = useSettingStore();
-
-const triggerAutoReceiveVipAfterLogin = () => {
-  if (!settingStore.autoReceiveVip || !settingStore.vipClaimEnabled) return;
-
-  void userStore
-    .fetchUserInfoOnce()
-    .then(() => userStore.autoReceiveVipIfNeeded())
-    .catch((e) => {
-      // 登录后自动领取失败不影响正常使用
-      logger.warn('Login', 'triggerAutoReceiveVipAfterLogin failed', e);
-    });
-};
 
 // 当前选中的 Tab (0: 扫码, 1: 验证码, 2: 微信, 3: 账号)
 const activeTab = ref('0');
@@ -83,7 +69,6 @@ const completeLogin = (data: Record<string, unknown>) => {
   isLoginDone = true;
   userStore.handleLoginSuccess(data);
   completeKugouLoginVerification();
-  triggerAutoReceiveVipAfterLogin();
   void closeTransientView(router, { query: router.currentRoute.value.query });
 };
 

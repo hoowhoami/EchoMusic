@@ -4,31 +4,15 @@ import { computed, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { useUserStore } from '@/stores/user';
 import { useDeviceStore } from '@/stores/device';
-import { useSettingStore } from '@/stores/setting';
 import Button from '@/components/ui/Button.vue';
 import Dialog from '@/components/ui/Dialog.vue';
 import Popover from '@/components/ui/Popover.vue';
 
-import { claimDayVip, upgradeDayVip, getVipMonthRecord } from '@/api/user';
 import Avatar from '@/components/ui/Avatar.vue';
 
 import logger from '@/utils/logger';
-import {
-  iconLogOut,
-  iconUser,
-  iconGift,
-  iconHome,
-  iconScan,
-  iconCheck,
-  iconChevronRight,
-  iconInfo,
-} from '@/icons';
+import { iconLogOut, iconUser, iconGift, iconHome, iconScan, iconCheck, iconInfo } from '@/icons';
 import PageScrollContainer from '@/components/ui/PageScrollContainer.vue';
-
-interface VipActionResponse {
-  status?: number;
-  error_code?: number;
-}
 
 interface VipLevelInfo {
   product_type?: string;
@@ -49,7 +33,6 @@ interface DetailState {
 
 const router = useRouter();
 const userStore = useUserStore();
-const settingStore = useSettingStore();
 const userInfo = computed(() => userStore.info);
 
 const isLoading = ref(false);
@@ -145,83 +128,13 @@ const formatVipDate = (value?: string | number) => {
   }
 };
 
-const loadData = async (options?: { refreshPlayback?: boolean }) => {
+const loadData = async () => {
   if (!userStore.isLoggedIn) return;
   isLoading.value = true;
   try {
-    const success = await userStore.fetchUserInfo();
-
-    const recordRes = await getVipMonthRecord();
-    const today = new Date().toISOString().split('T')[0];
-    const recordList = recordRes?.data?.list || [];
-    const isTvipClaimed = recordList.some((item: any) => item.day === today);
-    const isSvipActive = !!svip.value;
-
-    userStore.setClaimStatus(isTvipClaimed, isSvipActive);
-
-    // 会员状态更新后，刷新当前播放的音源
-    // 在组件层协调 userStore 和 playerStore，而不是让 userStore 依赖 playerStore
-    if (success && options?.refreshPlayback) {
-      try {
-        const { usePlayerStore } = await import('@/stores/player');
-        const playerStore = usePlayerStore();
-
-        if (playerStore.currentTrackId && !playerStore.isLoading) {
-          logger.info('Profile', 'Refreshing current track after VIP status update');
-          await playerStore.refreshCurrentTrack();
-        }
-      } catch (e) {
-        logger.warn('Profile', 'Failed to refresh current playback:', e);
-      }
-    }
+    await userStore.fetchUserInfo();
   } catch (e) {
     logger.error('Profile', 'Load Data Error:', e);
-  } finally {
-    isLoading.value = false;
-  }
-
-  // 如果开启了自动领取 VIP 且 VIP 领取功能已启用，尝试领取一次
-  if (settingStore.autoReceiveVip && settingStore.vipClaimEnabled && userStore.isLoggedIn) {
-    try {
-      await userStore.autoReceiveVipIfNeeded();
-    } catch (e) {
-      logger.warn('Profile', 'Auto receive VIP skipped:', e);
-    }
-  }
-};
-
-const handleClaimTvip = async () => {
-  // 如果未开启VIP领取功能，静默返回
-  if (!settingStore.vipClaimEnabled) return;
-  if (userStore.isTvipClaimedToday) return;
-  isLoading.value = true;
-  try {
-    const today = await userStore.getServerToday();
-    const res = (await claimDayVip(today)) as VipActionResponse;
-    if (res.status === 1) {
-      userStore.setClaimStatus(true, userStore.isSvipClaimedToday);
-      await loadData({ refreshPlayback: true });
-    }
-  } catch (e) {
-    logger.error('Profile', 'Claim TVIP error:', e);
-  } finally {
-    isLoading.value = false;
-  }
-};
-
-const handleUpgradeSvip = async () => {
-  // 如果未开启VIP领取功能，静默返回
-  if (!settingStore.vipClaimEnabled) return;
-  if (userStore.isSvipClaimedToday || !userStore.isTvipClaimedToday) return;
-  isLoading.value = true;
-  try {
-    const res = (await upgradeDayVip()) as VipActionResponse;
-    if (res.status === 1 || res.error_code === 297002) {
-      userStore.setClaimStatus(userStore.isTvipClaimedToday, true);
-      await loadData({ refreshPlayback: true }); // 刷新并更新播放状态
-    }
-  } catch (e) {
-    logger.error('Profile', 'Upgrade SVIP error:', e);
   } finally {
     isLoading.value = false;
   }
@@ -369,27 +282,26 @@ onMounted(() => loadData());
                 </div>
               </div>
 
-              <!-- 4. Daily Benefits -->
+              <!-- 4. Membership Status -->
               <div class="md:col-span-2">
                 <div class="flex items-center gap-2 mb-4">
                   <Icon :icon="iconGift" width="16" height="16" class="text-primary" />
-                  <h3 class="text-[16px] font-black">每日权益</h3>
+                  <h3 class="text-[16px] font-black">会员状态</h3>
                 </div>
                 <div class="space-y-2">
                   <!-- TVIP -->
                   <div
-                    @click="handleClaimTvip"
                     :class="[
-                      'flex items-center gap-3 p-3 rounded-2xl transition-all border',
-                      userStore.isTvipClaimedToday
+                      'flex items-center gap-3 p-3 rounded-2xl border',
+                      tvip
                         ? 'bg-green-500/10 border-green-500/20'
-                        : 'bg-[var(--control-muted-bg)] border-transparent hover:bg-[var(--control-hover-bg)] cursor-pointer',
+                        : 'bg-[var(--control-muted-bg)] border-transparent opacity-60',
                     ]"
                   >
                     <div
                       :class="[
                         'w-9 h-9 rounded-full flex items-center justify-center shrink-0',
-                        userStore.isTvipClaimedToday
+                        tvip
                           ? 'bg-green-500/20 text-green-500'
                           : 'bg-[var(--control-hover-bg)] opacity-60',
                       ]"
@@ -397,13 +309,8 @@ onMounted(() => loadData());
                       <Icon :icon="iconHome" width="18" height="18" />
                     </div>
                     <div class="flex-1">
-                      <h4
-                        :class="[
-                          'text-[13px] font-black',
-                          userStore.isTvipClaimedToday ? 'text-green-500' : '',
-                        ]"
-                      >
-                        领取畅听会员
+                      <h4 :class="['text-[13px] font-black', tvip ? 'text-green-500' : '']">
+                        畅听会员
                       </h4>
                       <div v-if="tvip" @click.stop>
                         <Popover
@@ -437,31 +344,26 @@ onMounted(() => loadData());
                           </div>
                         </Popover>
                       </div>
+                      <p v-else class="text-[11px] opacity-60 font-bold uppercase">未开通</p>
                     </div>
-                    <div v-if="userStore.isTvipClaimedToday" class="text-green-500">
+                    <div v-if="tvip" class="text-green-500">
                       <Icon :icon="iconCheck" width="16" height="16" />
-                    </div>
-                    <div v-else class="opacity-40">
-                      <Icon :icon="iconChevronRight" width="12" height="12" />
                     </div>
                   </div>
 
                   <!-- SVIP -->
                   <div
-                    @click="handleUpgradeSvip"
                     :class="[
-                      'flex items-center gap-3 p-3 rounded-2xl transition-all border',
-                      userStore.isSvipClaimedToday || svip
+                      'flex items-center gap-3 p-3 rounded-2xl border',
+                      svip
                         ? 'bg-orange-500/10 border-orange-500/20'
-                        : userStore.isTvipClaimedToday
-                          ? 'bg-[var(--control-muted-bg)] border-transparent hover:bg-[var(--control-hover-bg)] cursor-pointer'
-                          : 'bg-[var(--control-muted-bg)] opacity-60 cursor-not-allowed',
+                        : 'bg-[var(--control-muted-bg)] border-transparent opacity-60',
                     ]"
                   >
                     <div
                       :class="[
                         'w-9 h-9 rounded-full flex items-center justify-center shrink-0',
-                        userStore.isSvipClaimedToday || svip
+                        svip
                           ? 'bg-orange-500/20 text-orange-500'
                           : 'bg-[var(--control-hover-bg)] opacity-60',
                       ]"
@@ -469,13 +371,8 @@ onMounted(() => loadData());
                       <Icon :icon="iconScan" width="18" height="18" />
                     </div>
                     <div class="flex-1">
-                      <h4
-                        :class="[
-                          'text-[13px] font-black',
-                          userStore.isSvipClaimedToday || svip ? 'text-orange-500' : '',
-                        ]"
-                      >
-                        升级概念会员
+                      <h4 :class="['text-[13px] font-black', svip ? 'text-orange-500' : '']">
+                        概念会员
                       </h4>
                       <div v-if="svip" @click.stop>
                         <Popover
@@ -509,12 +406,10 @@ onMounted(() => loadData());
                           </div>
                         </Popover>
                       </div>
+                      <p v-else class="text-[11px] opacity-60 font-bold uppercase">未开通</p>
                     </div>
-                    <div v-if="userStore.isSvipClaimedToday || svip" class="text-orange-500">
+                    <div v-if="svip" class="text-orange-500">
                       <Icon :icon="iconCheck" width="16" height="16" />
-                    </div>
-                    <div v-else class="opacity-40">
-                      <Icon :icon="iconChevronRight" width="12" height="12" />
                     </div>
                   </div>
                 </div>
