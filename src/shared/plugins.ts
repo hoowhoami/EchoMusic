@@ -544,6 +544,7 @@ export interface EchoPluginManifest {
     audioSource?: boolean;
     audioSpectrum?: boolean;
     kugouApi?: boolean;
+    kugouVerification?: boolean;
     localFiles?: boolean;
     lyricEffects?: boolean;
     lyrics?: boolean;

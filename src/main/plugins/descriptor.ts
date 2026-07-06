@@ -216,6 +216,12 @@ const validateManifestCapabilities = (manifest: EchoPluginManifest) => {
   if (capabilities.kugouApi !== undefined && typeof capabilities.kugouApi !== 'boolean') {
     return 'manifest.capabilities.kugouApi 必须是布尔值';
   }
+  if (
+    capabilities.kugouVerification !== undefined &&
+    typeof capabilities.kugouVerification !== 'boolean'
+  ) {
+    return 'manifest.capabilities.kugouVerification 必须是布尔值';
+  }
   if (capabilities.localFiles !== undefined && typeof capabilities.localFiles !== 'boolean') {
     return 'manifest.capabilities.localFiles 必须是布尔值';
   }

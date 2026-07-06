@@ -49,7 +49,9 @@ import { useSettingStore } from '@/stores/setting';
 import { useToastStore } from '@/stores/toast';
 import { useThemeStore } from '@/stores/theme';
 import type { AudioEffectValue, AudioQualityValue, PlayMode } from '@/types';
+import request from '@/utils/request';
 import { logger } from '@/utils/logger';
+import { requestKugouVerification } from '@/utils/kugouVerification';
 import {
   addSongToPlayNext,
   addSongToPlayLast,
@@ -204,6 +206,7 @@ export interface EchoPluginContext {
   lyrics: ReturnType<typeof createLyricsApi>;
   lyricEffects: ReturnType<typeof createLyricEffectsApi>;
   kugou: PluginKugouApi;
+  kugouVerification: ReturnType<typeof createKugouVerificationApi>;
   settings: ReturnType<typeof useSettingStore>;
   theme: PluginThemeApi;
   appearance: ReturnType<typeof createAppearanceApi>;
@@ -1073,6 +1076,69 @@ const createAudioApi = (
           ) ?? (() => undefined);
         return addDisposable(dispose);
       },
+    },
+  };
+};
+
+export type PluginKugouVerificationChallenge =
+  | string
+  | number
+  | {
+      eventId?: string | number;
+      ssaCode?: string | number;
+    };
+
+export type PluginKugouVerificationResult =
+  | {
+      ok: true;
+      eventId: string;
+    }
+  | {
+      ok: false;
+      error: string;
+      canceled?: boolean;
+    };
+
+const normalizeKugouVerificationEventId = (challenge: PluginKugouVerificationChallenge) => {
+  if (typeof challenge === 'string' || typeof challenge === 'number') {
+    return String(challenge || '').trim();
+  }
+
+  return String(challenge?.eventId ?? challenge?.ssaCode ?? '').trim();
+};
+
+const createKugouVerificationApi = (descriptor: EchoPluginDescriptor) => {
+  const requireKugouVerificationCapability = () => {
+    if (descriptor.manifest.capabilities?.kugouVerification !== true) {
+      throw new Error('插件未声明酷狗安全验证能力');
+    }
+  };
+
+  return {
+    request: async (
+      challenge: PluginKugouVerificationChallenge,
+    ): Promise<PluginKugouVerificationResult> => {
+      requireKugouVerificationCapability();
+
+      const eventId = normalizeKugouVerificationEventId(challenge);
+      if (!eventId) return { ok: false, error: '缺少安全验证事件标识' };
+
+      try {
+        await requestKugouVerification({ eventId }, (verifyUrl, verifyParams) =>
+          request.get(verifyUrl, {
+            params: verifyParams,
+            skipKugouVerification: true,
+          }),
+        );
+        return { ok: true, eventId };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error || '安全验证失败');
+        return {
+          ok: false,
+          error: message,
+          canceled: message.includes('已取消安全验证'),
+        };
+      }
     },
   };
 };
@@ -2270,6 +2336,7 @@ const createPluginContext = (
     lyrics: createLyricsApi(descriptor, addDisposable),
     lyricEffects: createLyricEffectsApi(descriptor, addDisposable),
     kugou: createKugouApi(descriptor),
+    kugouVerification: createKugouVerificationApi(descriptor),
     settings: settingStore,
     theme: createThemeApi(descriptor.id, addDisposable),
     appearance: createAppearanceApi(descriptor.id, addDisposable),
