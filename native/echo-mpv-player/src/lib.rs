@@ -139,8 +139,8 @@ fn destroy_locked() -> napi::Result<()> {
         guard.take()
     };
 
-    if let Some(p) = player {
-        p.destroy();
+    if let Some(p) = player.as_ref() {
+        p.request_shutdown();
     }
 
     // 等待事件线程结束
@@ -148,6 +148,10 @@ fn destroy_locked() -> napi::Result<()> {
         if let Some(handle) = guard.take() {
             let _ = handle.join();
         }
+    }
+
+    if let Some(p) = player {
+        p.terminate_destroy();
     }
     if let Ok(mut loads) = PENDING_LOADS.lock() {
         loads.clear();

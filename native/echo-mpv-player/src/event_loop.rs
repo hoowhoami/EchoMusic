@@ -46,6 +46,9 @@ pub fn start_event_loop(
                 if event.is_null() {
                     continue;
                 }
+                if shutdown.load(Ordering::SeqCst) {
+                    break;
+                }
 
                 let event_ref = unsafe { &*event };
                 match event_ref.event_id {

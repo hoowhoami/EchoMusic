@@ -55,6 +55,8 @@ pub struct MpvPlayer {
     state: Arc<Mutex<PlayerState>>,
     // 事件线程停止标志
     shutdown: Arc<AtomicBool>,
+    // 串行化 libmpv 句柄访问，确保销毁不会与后台 fade/seek 线程并发操作同一 handle。
+    op_lock: Arc<Mutex<()>>,
 }
 
 // MpvHandle 指针在线程间传递是安全的（libmpv 文档保证线程安全）
@@ -68,7 +70,10 @@ impl MpvPlayer {
     }
 
     /// 使用自定义配置创建播放器
-    pub unsafe fn new_with_config(lib: Arc<MpvLib>, config: MpvPlayerConfig) -> Result<Self, String> {
+    pub unsafe fn new_with_config(
+        lib: Arc<MpvLib>,
+        config: MpvPlayerConfig,
+    ) -> Result<Self, String> {
         let handle = (lib.mpv_create)();
         if handle.is_null() {
             return Err("mpv_create returned null".to_string());
@@ -82,6 +87,7 @@ impl MpvPlayer {
             seek_mute_seq: Arc::new(AtomicU64::new(0)),
             state: Arc::new(Mutex::new(PlayerState::default())),
             shutdown: Arc::new(AtomicBool::new(false)),
+            op_lock: Arc::new(Mutex::new(())),
         };
 
         // 设置初始化选项（必须在 mpv_initialize 之前）
@@ -94,8 +100,14 @@ impl MpvPlayer {
         player.set_option("hr-seek", "yes");
         player.set_option("volume-max", "100");
         // 网络音频缓冲配置
-        player.set_option("demuxer-max-bytes", &format!("{}MiB", config.demuxer_max_mb));
-        player.set_option("demuxer-max-back-bytes", &format!("{}MiB", config.demuxer_back_mb));
+        player.set_option(
+            "demuxer-max-bytes",
+            &format!("{}MiB", config.demuxer_max_mb),
+        );
+        player.set_option(
+            "demuxer-max-back-bytes",
+            &format!("{}MiB", config.demuxer_back_mb),
+        );
         player.set_option("demuxer-readahead-secs", &config.cache_secs.to_string());
         player.set_option("cache", "yes");
         player.set_option("cache-secs", &config.cache_secs.to_string());
@@ -131,8 +143,9 @@ impl MpvPlayer {
         player.observe_property("speed", MPV_FORMAT_DOUBLE);
         player.observe_property("eof-reached", MPV_FORMAT_FLAG);
         player.observe_property("idle-active", MPV_FORMAT_FLAG);
-        // 观察音频设备列表变化，同时触发设备枚举
-        player.observe_property("audio-device-list", MPV_FORMAT_NONE);
+        // 观察音频设备列表变化，动态刷新设置页设备列表。
+        // 使用 NODE 格式拿到完整设备列表；销毁时先退出事件线程再释放 handle，避免 HAL 回调踩旧句柄。
+        player.observe_property("audio-device-list", MPV_FORMAT_NODE);
 
         Ok(player)
     }
@@ -140,6 +153,15 @@ impl MpvPlayer {
     // ── 内部辅助方法 ──
 
     fn set_option(&self, name: &str, value: &str) {
+        if self.shutdown.load(Ordering::SeqCst) {
+            return;
+        }
+        let Ok(_op) = self.op_lock.lock() else {
+            return;
+        };
+        if self.shutdown.load(Ordering::SeqCst) {
+            return;
+        }
         let c_name = CString::new(name).unwrap();
         let c_value = CString::new(value).unwrap();
         unsafe {
@@ -148,7 +170,10 @@ impl MpvPlayer {
     }
 
     pub fn request_log_messages(&self, level: &str) -> Result<(), String> {
+        self.ensure_active()?;
         let c_level = CString::new(level).unwrap();
+        let _op = self.lock_op()?;
+        self.ensure_active()?;
         let rc = unsafe { (self.lib.mpv_request_log_messages)(self.handle, c_level.as_ptr()) };
         if rc < 0 {
             Err(format!(
@@ -161,10 +186,33 @@ impl MpvPlayer {
     }
 
     fn observe_property(&self, name: &str, format: c_int) {
+        if self.shutdown.load(Ordering::SeqCst) {
+            return;
+        }
+        let Ok(_op) = self.op_lock.lock() else {
+            return;
+        };
+        if self.shutdown.load(Ordering::SeqCst) {
+            return;
+        }
         let c_name = CString::new(name).unwrap();
         unsafe {
             (self.lib.mpv_observe_property)(self.handle, 0, c_name.as_ptr(), format);
         }
+    }
+
+    fn ensure_active(&self) -> Result<(), String> {
+        if self.shutdown.load(Ordering::SeqCst) {
+            Err("player is shutting down".to_string())
+        } else {
+            Ok(())
+        }
+    }
+
+    fn lock_op(&self) -> Result<std::sync::MutexGuard<'_, ()>, String> {
+        self.op_lock
+            .lock()
+            .map_err(|e| format!("failed to acquire player operation lock: {e}"))
     }
 
     fn error_string(&self, code: c_int) -> String {
@@ -179,13 +227,20 @@ impl MpvPlayer {
 
     /// 执行 mpv 命令（如 loadfile、stop、seek 等）
     fn command(&self, args: &[&str]) -> Result<(), String> {
+        self.ensure_active()?;
         let c_args: Vec<CString> = args.iter().map(|s| CString::new(*s).unwrap()).collect();
         let mut ptrs: Vec<*const c_char> = c_args.iter().map(|s| s.as_ptr()).collect();
         ptrs.push(std::ptr::null());
 
+        let _op = self.lock_op()?;
+        self.ensure_active()?;
         let rc = unsafe { (self.lib.mpv_command)(self.handle, ptrs.as_ptr()) };
         if rc < 0 {
-            Err(format!("mpv command {:?} failed: {}", args, self.error_string(rc)))
+            Err(format!(
+                "mpv command {:?} failed: {}",
+                args,
+                self.error_string(rc)
+            ))
         } else {
             Ok(())
         }
@@ -193,13 +248,19 @@ impl MpvPlayer {
 
     /// 设置字符串属性
     fn set_property_string(&self, name: &str, value: &str) -> Result<(), String> {
+        self.ensure_active()?;
         let c_name = CString::new(name).unwrap();
         let c_value = CString::new(value).unwrap();
+        let _op = self.lock_op()?;
+        self.ensure_active()?;
         let rc = unsafe {
             (self.lib.mpv_set_property_string)(self.handle, c_name.as_ptr(), c_value.as_ptr())
         };
         if rc < 0 {
-            Err(format!("failed to set property {name}={value}: {}", self.error_string(rc)))
+            Err(format!(
+                "failed to set property {name}={value}: {}",
+                self.error_string(rc)
+            ))
         } else {
             Ok(())
         }
@@ -207,8 +268,11 @@ impl MpvPlayer {
 
     /// 设置 double 属性
     fn set_property_double(&self, name: &str, value: f64) -> Result<(), String> {
+        self.ensure_active()?;
         let c_name = CString::new(name).unwrap();
         let mut val = value;
+        let _op = self.lock_op()?;
+        self.ensure_active()?;
         let rc = unsafe {
             (self.lib.mpv_set_property)(
                 self.handle,
@@ -218,7 +282,10 @@ impl MpvPlayer {
             )
         };
         if rc < 0 {
-            Err(format!("failed to set property {name}={value}: {}", self.error_string(rc)))
+            Err(format!(
+                "failed to set property {name}={value}: {}",
+                self.error_string(rc)
+            ))
         } else {
             Ok(())
         }
@@ -226,8 +293,11 @@ impl MpvPlayer {
 
     /// 设置 flag 属性
     fn set_property_flag(&self, name: &str, value: bool) -> Result<(), String> {
+        self.ensure_active()?;
         let c_name = CString::new(name).unwrap();
         let mut val: c_int = if value { 1 } else { 0 };
+        let _op = self.lock_op()?;
+        self.ensure_active()?;
         let rc = unsafe {
             (self.lib.mpv_set_property)(
                 self.handle,
@@ -237,7 +307,10 @@ impl MpvPlayer {
             )
         };
         if rc < 0 {
-            Err(format!("failed to set property {name}={value}: {}", self.error_string(rc)))
+            Err(format!(
+                "failed to set property {name}={value}: {}",
+                self.error_string(rc)
+            ))
         } else {
             Ok(())
         }
@@ -246,8 +319,11 @@ impl MpvPlayer {
     /// 获取 double 属性
     #[allow(dead_code)]
     fn get_property_double(&self, name: &str) -> Result<f64, String> {
+        self.ensure_active()?;
         let c_name = CString::new(name).unwrap();
         let mut val: f64 = 0.0;
+        let _op = self.lock_op()?;
+        self.ensure_active()?;
         let rc = unsafe {
             (self.lib.mpv_get_property)(
                 self.handle,
@@ -257,7 +333,10 @@ impl MpvPlayer {
             )
         };
         if rc < 0 {
-            Err(format!("failed to get property {name}: {}", self.error_string(rc)))
+            Err(format!(
+                "failed to get property {name}: {}",
+                self.error_string(rc)
+            ))
         } else {
             Ok(val)
         }
@@ -265,7 +344,10 @@ impl MpvPlayer {
 
     /// 获取字符串属性
     fn get_property_string(&self, name: &str) -> Result<String, String> {
+        self.ensure_active()?;
         let c_name = CString::new(name).unwrap();
+        let _op = self.lock_op()?;
+        self.ensure_active()?;
         let ptr = unsafe { (self.lib.mpv_get_property_string)(self.handle, c_name.as_ptr()) };
         if ptr.is_null() {
             return Err(format!("failed to get property {name}: returned null"));
@@ -277,8 +359,11 @@ impl MpvPlayer {
 
     /// 获取 node 属性（用于 track-list、audio-device-list 等复杂类型）
     fn get_property_node(&self, name: &str) -> Result<MpvNodeOwned, String> {
+        self.ensure_active()?;
         let c_name = CString::new(name).unwrap();
         let mut node = std::mem::MaybeUninit::<MpvNode>::uninit();
+        let _op = self.lock_op()?;
+        self.ensure_active()?;
         let rc = unsafe {
             (self.lib.mpv_get_property)(
                 self.handle,
@@ -288,7 +373,10 @@ impl MpvPlayer {
             )
         };
         if rc < 0 {
-            return Err(format!("failed to get property {name}: {}", self.error_string(rc)));
+            return Err(format!(
+                "failed to get property {name}: {}",
+                self.error_string(rc)
+            ));
         }
         let node = unsafe { node.assume_init() };
         let owned = unsafe { parse_mpv_node(&node) };
@@ -354,29 +442,40 @@ impl MpvPlayer {
         if let MpvNodeOwned::Array(items) = node {
             for item in items {
                 if let MpvNodeOwned::Map(map) = item {
-                    let id = map.iter()
+                    let id = map
+                        .iter()
                         .find(|(k, _)| k == "id")
                         .and_then(|(_, v)| v.as_i64())
                         .unwrap_or(0);
-                    let track_type = map.iter()
+                    let track_type = map
+                        .iter()
                         .find(|(k, _)| k == "type")
                         .and_then(|(_, v)| v.as_str())
                         .unwrap_or("unknown")
                         .to_string();
-                    let codec = map.iter()
+                    let codec = map
+                        .iter()
                         .find(|(k, _)| k == "codec")
                         .and_then(|(_, v)| v.as_str())
                         .unwrap_or("unknown")
                         .to_string();
-                    let title = map.iter()
+                    let title = map
+                        .iter()
                         .find(|(k, _)| k == "title")
                         .and_then(|(_, v)| v.as_str())
                         .map(|s| s.to_string());
-                    let lang = map.iter()
+                    let lang = map
+                        .iter()
                         .find(|(k, _)| k == "lang")
                         .and_then(|(_, v)| v.as_str())
                         .map(|s| s.to_string());
-                    tracks.push(TrackInfo { id, r#type: track_type, codec, title, lang });
+                    tracks.push(TrackInfo {
+                        id,
+                        r#type: track_type,
+                        codec,
+                        title,
+                        lang,
+                    });
                 }
             }
         }
@@ -509,12 +608,14 @@ impl MpvPlayer {
             if let MpvNodeOwned::Array(arr) = owned {
                 for item in arr {
                     if let MpvNodeOwned::Map(map) = item {
-                        let name = map.iter()
+                        let name = map
+                            .iter()
                             .find(|(k, _)| k == "name")
                             .and_then(|(_, v)| v.as_str())
                             .unwrap_or("auto")
                             .to_string();
-                        let description = map.iter()
+                        let description = map
+                            .iter()
                             .find(|(k, _)| k == "description")
                             .and_then(|(_, v)| v.as_str())
                             .unwrap_or("")
@@ -549,7 +650,13 @@ impl MpvPlayer {
 
     /// 运行时向已加载的 af 滤镜发送命令（如改 amix 权重），不重建整条滤镜链。
     /// label 为 af 项的标签（如 "irs"），target 为图内部滤镜实例名（如 "amix@irsmix"）。
-    pub fn af_command(&self, label: &str, cmd: &str, arg: &str, target: &str) -> Result<(), String> {
+    pub fn af_command(
+        &self,
+        label: &str,
+        cmd: &str,
+        arg: &str,
+        target: &str,
+    ) -> Result<(), String> {
         self.command(&["af-command", label, cmd, arg, target])
     }
 
@@ -589,8 +696,11 @@ impl MpvPlayer {
 
     /// 设置音轨 ID
     pub fn set_audio_track(&self, track_id: i64) -> Result<(), String> {
+        self.ensure_active()?;
         let c_name = CString::new("aid").unwrap();
         let mut val = track_id;
+        let _op = self.lock_op()?;
+        self.ensure_active()?;
         let rc = unsafe {
             (self.lib.mpv_set_property)(
                 self.handle,
@@ -600,7 +710,10 @@ impl MpvPlayer {
             )
         };
         if rc < 0 {
-            Err(format!("failed to set audio track {track_id}: {}", self.error_string(rc)))
+            Err(format!(
+                "failed to set audio track {track_id}: {}",
+                self.error_string(rc)
+            ))
         } else {
             if let Ok(mut s) = self.state.lock() {
                 s.audio_track_id = track_id;
@@ -640,8 +753,13 @@ impl MpvPlayer {
 
     /// 在当前线程执行淡入淡出（由 fade 线程调用）
     pub fn execute_fade(&self, from: f64, to: f64, duration_ms: u64, seq: u64) -> bool {
+        if self.shutdown.load(Ordering::SeqCst) {
+            return false;
+        }
         if duration_ms == 0 {
-            let _ = self.set_volume(to);
+            if self.set_volume(to).is_err() {
+                return false;
+            }
             self.fade_active.store(false, Ordering::SeqCst);
             return true;
         }
@@ -652,7 +770,7 @@ impl MpvPlayer {
 
         for i in 1..=steps {
             // 检查是否被取消
-            if self.fade_seq.load(Ordering::SeqCst) != seq {
+            if self.shutdown.load(Ordering::SeqCst) || self.fade_seq.load(Ordering::SeqCst) != seq {
                 return false;
             }
 
@@ -660,7 +778,12 @@ impl MpvPlayer {
             // ease-out-quad 缓动
             let eased = 1.0 - (1.0 - progress).powi(2);
             let current = from + diff * eased;
-            let _ = self.set_property_double("volume", current.clamp(0.0, 100.0));
+            if self
+                .set_property_double("volume", current.clamp(0.0, 100.0))
+                .is_err()
+            {
+                return false;
+            }
 
             if i < steps {
                 std::thread::sleep(step_duration);
@@ -668,7 +791,15 @@ impl MpvPlayer {
         }
 
         // 确保最终值精确
-        let _ = self.set_property_double("volume", to.clamp(0.0, 100.0));
+        if self.shutdown.load(Ordering::SeqCst) {
+            return false;
+        }
+        if self
+            .set_property_double("volume", to.clamp(0.0, 100.0))
+            .is_err()
+        {
+            return false;
+        }
         self.fade_active.store(false, Ordering::SeqCst);
         true
     }
@@ -682,6 +813,7 @@ impl MpvPlayer {
             seek_mute_seq: self.seek_mute_seq.clone(),
             state: self.state.clone(),
             shutdown: self.shutdown.clone(),
+            op_lock: self.op_lock.clone(),
         });
 
         let _ = std::thread::Builder::new()
@@ -698,15 +830,21 @@ impl MpvPlayer {
             });
     }
 
-    /// 销毁播放器
-    pub fn destroy(&self) {
+    /// 请求播放器停止后台事件/辅助线程。调用方应先 join 事件线程，再销毁 mpv handle。
+    pub fn request_shutdown(&self) {
         self.shutdown.store(true, Ordering::SeqCst);
         self.cancel_fade();
         unsafe {
-            // 先唤醒事件循环线程（正在 mpv_wait_event 中阻塞），使其立即退出
             (self.lib.mpv_wakeup)(self.handle);
-            // 短暂 yield 让事件线程有机会检查 shutdown 标志
-            std::thread::yield_now();
+        }
+    }
+
+    /// 销毁播放器 handle。必须在事件线程退出后调用。
+    pub fn terminate_destroy(&self) {
+        self.shutdown.store(true, Ordering::SeqCst);
+        self.cancel_fade();
+        let _op = self.op_lock.lock().unwrap_or_else(|e| e.into_inner());
+        unsafe {
             (self.lib.mpv_terminate_destroy)(self.handle);
         }
     }
@@ -723,7 +861,6 @@ impl MpvPlayer {
         self.set_property_double("volume-gain", gain_db)
     }
 }
-
 
 // ── mpv_node 解析 ──
 

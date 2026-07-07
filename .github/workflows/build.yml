@@ -331,18 +331,20 @@ jobs:
                 export MPV_ARCH_FILTER="x86_64"
               fi
 
-              RELEASE_JSON="/tmp/mpv-winbuild-release.json"
-              curl -fsSL "https://api.github.com/repos/zhongfly/mpv-winbuild/releases/latest" -o "$RELEASE_JSON"
-              DOWNLOAD_URL=$(python3 - "$RELEASE_JSON" <<'PY'
+              RELEASES_JSON="/tmp/mpv-winbuild-releases.json"
+              curl -fsSL "https://api.github.com/repos/zhongfly/mpv-winbuild/releases?per_page=20" -o "$RELEASES_JSON"
+              DOWNLOAD_URL=$(python3 - "$RELEASES_JSON" <<'PY'
           import json
           import os
           import sys
 
-          release_path = sys.argv[1]
+          releases_path = sys.argv[1]
           arch = os.environ["MPV_ARCH_FILTER"].lower()
 
-          with open(release_path, encoding="utf-8") as f:
-              assets = json.load(f).get("assets", [])
+          with open(releases_path, encoding="utf-8") as f:
+              payload = json.load(f)
+
+          releases = payload if isinstance(payload, list) else [payload]
 
           def asset_name(asset):
               return str(asset.get("name", "")).lower()
@@ -351,45 +353,62 @@ jobs:
               name = asset_name(asset)
               return name.endswith((".7z", ".zip"))
 
-          base = [
-              asset
-              for asset in assets
-              if is_archive(asset)
-              and arch in asset_name(asset)
-              and asset.get("browser_download_url")
-          ]
+          def is_candidate(asset):
+              name = asset_name(asset)
+              return (
+                  is_archive(asset)
+                  and arch in name
+                  and "mpv" in name
+                  and "ffmpeg" not in name
+                  and asset.get("browser_download_url")
+              )
 
-          def choose(predicate):
+          def choose(base, predicate):
               matches = [asset for asset in base if predicate(asset_name(asset))]
               return matches[0] if matches else None
 
-          selected = (
-              choose(lambda name: "dev" in name and "lgpl" not in name)
-              or choose(lambda name: "dev" in name)
-              or choose(lambda name: "libmpv" in name and "lgpl" not in name)
-              or choose(lambda name: "libmpv" in name)
-              or choose(
-                  lambda name: "lgpl" not in name
-                  and "debug" not in name
-                  and "symbol" not in name
-                  and "source" not in name
-                  and "src" not in name
+          scanned = []
+          selected = None
+          selected_release = None
+          for release in releases:
+              assets = release.get("assets", []) if isinstance(release, dict) else []
+              release_name = release.get("tag_name") or release.get("name") or "(unknown release)"
+              scanned.append((release_name, [asset.get("name", "") for asset in assets]))
+              base = [asset for asset in assets if is_candidate(asset)]
+              selected = (
+                  choose(base, lambda name: "dev" in name and "lgpl" not in name)
+                  or choose(base, lambda name: "dev" in name)
+                  or choose(base, lambda name: "libmpv" in name and "lgpl" not in name)
+                  or choose(base, lambda name: "libmpv" in name)
+                  or choose(
+                      base,
+                      lambda name: "lgpl" not in name
+                      and "debug" not in name
+                      and "symbol" not in name
+                      and "source" not in name
+                      and "src" not in name,
+                  )
+                  or choose(
+                      base,
+                      lambda name: "debug" not in name
+                      and "symbol" not in name
+                      and "source" not in name
+                      and "src" not in name,
+                  )
               )
-              or choose(
-                  lambda name: "debug" not in name
-                  and "symbol" not in name
-                  and "source" not in name
-                  and "src" not in name
-              )
-          )
+              if selected:
+                  selected_release = release_name
+                  break
 
           if not selected:
-              print(f"ERROR: no usable mpv Windows asset found for {arch}. Available assets:", file=sys.stderr)
-              for asset in assets:
-                  print(f"  - {asset.get('name', '')}", file=sys.stderr)
+              print(f"ERROR: no usable mpv Windows asset found for {arch}. Scanned releases:", file=sys.stderr)
+              for release_name, asset_names in scanned:
+                  print(f"  {release_name}:", file=sys.stderr)
+                  for name in asset_names:
+                      print(f"    - {name}", file=sys.stderr)
               sys.exit(1)
 
-          print(f"Selected mpv asset: {selected.get('name', '')}", file=sys.stderr)
+          print(f"Selected mpv asset: {selected.get('name', '')} from {selected_release}", file=sys.stderr)
           print(selected["browser_download_url"])
           PY
               )

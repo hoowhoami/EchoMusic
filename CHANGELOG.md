@@ -23,6 +23,8 @@
 
 ### 修复
 
+- 修复 macOS 下播放过程中偶发 CoreAudio/HAL 崩溃的问题
+- 修复 Windows x64 打包在上游最新 mpv release 仅含 arm64 资产时失败的问题
 - 修复 Linux 查找livmpv的问题
 - 修复 Arch Linux 上检测更新一直显示“检查中...”的问题
 - 修复歌曲右键菜单分割线粗细不一致的问题
