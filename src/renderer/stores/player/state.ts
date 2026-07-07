@@ -19,6 +19,8 @@ export const createPlayerState = () => ({
   lastError: '' as string | null,
   currentPlaylist: null as Song[] | null,
   currentAudioUrl: '' as string,
+  currentAudioCandidateUrls: [] as string[],
+  currentAudioCandidateIndex: -1,
   currentResolvedAudioQuality: null as AudioQualityValue | null,
   currentResolvedAudioEffect: 'none' as AudioEffectValue,
   audioEffect: 'none' as AudioEffectValue,

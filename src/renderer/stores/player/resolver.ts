@@ -13,7 +13,7 @@ import {
   normalizeEffect,
   normalizeQuality,
   resolveTrackLoudness,
-  resolveUrlFromResponse,
+  resolveUrlsFromResponse,
   summarizeSong,
 } from './utils';
 import type { ClimaxMark, ResolvedAudioSource } from './types';
@@ -132,6 +132,9 @@ export const createResolver = (
     if (canReuseCurrentSource) {
       return {
         url: track.audioUrl!,
+        urls: state.currentAudioCandidateUrls.length
+          ? [...state.currentAudioCandidateUrls]
+          : [track.audioUrl!],
         quality: state.currentResolvedAudioQuality,
         effect: state.currentResolvedAudioEffect,
         loudness: null,
@@ -183,11 +186,14 @@ export const createResolver = (
       for (const effectHash of effectHashes) {
         try {
           const effectRes = await getSongUrl(effectHash, apiEffect);
-          let effectUrl = resolveUrlFromResponse(effectRes);
-          if (effectUrl) {
-            effectUrl = await resolveVocalExtractUrl(effectUrl, audioEffect, effectHash);
+          const rawEffectUrls = resolveUrlsFromResponse(effectRes);
+          if (rawEffectUrls.length > 0) {
+            const effectUrls = await Promise.all(
+              rawEffectUrls.map((url) => resolveVocalExtractUrl(url, audioEffect, effectHash)),
+            );
             return {
-              url: effectUrl,
+              url: effectUrls[0],
+              urls: effectUrls,
               quality: audioQuality,
               effect: audioEffect,
               loudness: resolveTrackLoudness(effectRes),
@@ -207,10 +213,11 @@ export const createResolver = (
       if (!matched?.hash) continue;
       try {
         const res = await getSongUrl(matched.hash, quality);
-        const url = resolveUrlFromResponse(res);
-        if (url) {
+        const urls = resolveUrlsFromResponse(res);
+        if (urls.length > 0) {
           return {
-            url,
+            url: urls[0],
+            urls,
             quality,
             effect: 'none',
             loudness: resolveTrackLoudness(res),
@@ -224,10 +231,11 @@ export const createResolver = (
     if (compatibilityMode) {
       try {
         const res = await getSongUrl(track.hash);
-        const url = resolveUrlFromResponse(res);
-        if (url) {
+        const urls = resolveUrlsFromResponse(res);
+        if (urls.length > 0) {
           return {
-            url,
+            url: urls[0],
+            urls,
             quality: getResolvedAudioQuality(track),
             effect: 'none',
             loudness: resolveTrackLoudness(res),
@@ -240,10 +248,11 @@ export const createResolver = (
 
     try {
       const res = await getSongUrl(track.hash, '', 356753938);
-      const url = resolveUrlFromResponse(res);
-      if (url) {
+      const urls = resolveUrlsFromResponse(res);
+      if (urls.length > 0) {
         return {
-          url,
+          url: urls[0],
+          urls,
           quality: getResolvedAudioQuality(track),
           effect: 'none',
           loudness: resolveTrackLoudness(res),

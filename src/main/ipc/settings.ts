@@ -8,6 +8,7 @@ import { autoUpdater } from 'electron-updater';
 import { getFonts } from 'font-list';
 import { coerce as semverCoerce, gt as semverGt, valid as semverValid } from 'semver';
 import type { AppInfoResult, UpdateCheckResult, UpdateDownloadResult } from '../../shared/app';
+import type { NetworkSettings } from '../../shared/network';
 import {
   normalizeImpulseResponseName,
   type ImportImpulseResponseResult,
@@ -17,6 +18,7 @@ import type { LogSettings } from '../../shared/logging';
 import { applyLogSettings, getLogSettings } from '../logger';
 import { getPlaybackQueueStorage } from '../storage/playbackQueues';
 import { setMainAppSetting } from '../storage/settings';
+import { updateNetworkSettings } from '../networkSettings';
 import type { IpcContext } from './types';
 
 const openLogDirectory = async () => {
@@ -318,7 +320,7 @@ const getAppInfo = (): AppInfoResult => {
   return { version, isPrerelease: version.includes('-') };
 };
 
-export const registerSettingsHandlers = ({ getMainWindow }: IpcContext) => {
+export const registerSettingsHandlers = ({ getMainWindow, mpvRef }: IpcContext) => {
   autoUpdater.autoDownload = false;
   autoUpdater.autoInstallOnAppQuit = true;
   autoUpdater.logger = log;
@@ -646,6 +648,19 @@ export const registerSettingsHandlers = ({ getMainWindow }: IpcContext) => {
     'logging:update-settings',
     (_event, settings: Partial<LogSettings>) => {
       applyLogSettings(settings, true);
+    },
+  );
+
+  ipcRegistry.registerHandler(
+    'network:update-settings',
+    async (_event, settings: Partial<NetworkSettings>) => {
+      const next = updateNetworkSettings(settings);
+      try {
+        await mpvRef.current?.setNetworkSettings(next);
+      } catch (error) {
+        log.warn('[Network] Failed to apply mpv network settings:', error);
+      }
+      return next;
     },
   );
 

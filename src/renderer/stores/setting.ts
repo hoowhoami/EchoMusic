@@ -9,6 +9,11 @@ import type {
 } from '../types';
 import { buildFontFamily } from '../../shared/font';
 import { normalizeImpulseResponseName, type ImpulseResponseFile } from '../../shared/audio';
+import {
+  DEFAULT_NETWORK_SETTINGS,
+  normalizeNetworkSettings,
+  type NetworkSettings,
+} from '../../shared/network';
 import { configureRendererLogger } from '@/utils/logger';
 
 export const DEFAULT_SHORTCUT_LABELS: Record<string, string> = {
@@ -158,6 +163,10 @@ export const useSettingStore = defineStore('setting', {
     audioDemuxerMaxMB: 48,
     audioDemuxerBackMB: 12,
     audioBufferSecs: 0.5,
+    kugouApiProxyUrl: DEFAULT_NETWORK_SETTINGS.kugouApiProxyUrl,
+    kugouApiTimeoutSecs: DEFAULT_NETWORK_SETTINGS.kugouApiTimeoutSecs,
+    mpvHttpProxyUrl: DEFAULT_NETWORK_SETTINGS.mpvHttpProxyUrl,
+    mpvNetworkTimeoutSecs: DEFAULT_NETWORK_SETTINGS.mpvNetworkTimeoutSecs,
     // 播放卡死检测：播放中进度超过该秒数无推进则判定卡死并自动恢复（0=禁用）
     playbackStallTimeout: 8,
     // 同一首歌连续卡死的最大自动恢复次数，超过则回退到失败提示/自动下一首
@@ -316,6 +325,20 @@ export const useSettingStore = defineStore('setting', {
     setLogApiResponseBody(enabled: boolean) {
       this.logApiResponseBody = enabled;
       this.syncLogSettings();
+    },
+    getNetworkSettings(): NetworkSettings {
+      return normalizeNetworkSettings({
+        kugouApiProxyUrl: this.kugouApiProxyUrl,
+        kugouApiTimeoutSecs: this.kugouApiTimeoutSecs,
+        mpvHttpProxyUrl: this.mpvHttpProxyUrl,
+        mpvNetworkTimeoutSecs: this.mpvNetworkTimeoutSecs,
+      });
+    },
+    syncNetworkSettings() {
+      const settings = this.getNetworkSettings();
+      this.kugouApiTimeoutSecs = settings.kugouApiTimeoutSecs;
+      this.mpvNetworkTimeoutSecs = settings.mpvNetworkTimeoutSecs;
+      void window.electron?.network?.update(settings);
     },
     enableTemporaryDiagnosticLogging(minutes = 10) {
       this.logDiagnosticUntil = Date.now() + Math.max(1, minutes) * 60 * 1000;

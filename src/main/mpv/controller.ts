@@ -6,6 +6,8 @@ import { resolveLibmpvPath, resolveLibmpvDir } from './path';
 import type { MpvAudioDevice, MpvState, MpvTrackInfo } from './types';
 import type { ImpulseResponsePlaybackOptions } from '../../shared/audio';
 import log from '../logger';
+import { refreshNetworkSettingsFromStorage } from '../networkSettings';
+import type { NetworkSettings } from '../../shared/network';
 
 // native addon 类型（与自动生成的 index.d.ts 对齐）
 interface MpvAddon {
@@ -16,6 +18,8 @@ interface MpvAddon {
       demuxerMaxMb?: number;
       demuxerBackMb?: number;
       audioBufferSecs?: number;
+      networkTimeoutSecs?: number;
+      httpProxy?: string;
     },
   ): void;
   destroy(): void;
@@ -35,6 +39,8 @@ interface MpvAddon {
   loadFile(url: string, seq?: number): Promise<void>;
   loadMkvTrack(url: string, trackId: number, seq?: number): Promise<void>;
   setAudioTrack(trackId: number): void;
+  setHttpProxy(proxy: string): void;
+  setNetworkTimeout(seconds: number): void;
   getTrackList(): Promise<
     Array<{ id: number; type: string; codec: string; title?: string; lang?: string }>
   >;
@@ -255,12 +261,15 @@ export class MpvController extends EventEmitter {
       const demuxerMaxMb = (await storage.get('audioDemuxerMaxMB')) ?? 48;
       const demuxerBackMb = (await storage.get('audioDemuxerBackMB')) ?? 12;
       const audioBufferSecs = (await storage.get('audioBufferSecs')) ?? 0.5;
+      const networkSettings = refreshNetworkSettingsFromStorage();
 
       this.addon.initialize(this.libmpvPath, {
         cacheSecs: Number(cacheSecs),
         demuxerMaxMb: Number(demuxerMaxMb),
         demuxerBackMb: Number(demuxerBackMb),
         audioBufferSecs: Number(audioBufferSecs),
+        networkTimeoutSecs: networkSettings.mpvNetworkTimeoutSecs,
+        httpProxy: networkSettings.mpvHttpProxyUrl,
       });
     } catch (err) {
       log.error('[MpvController] libmpv initialize failed:', err);
@@ -1043,5 +1052,18 @@ export class MpvController extends EventEmitter {
     } catch {
       // 忽略循环设置失败
     }
+  }
+
+  async setNetworkSettings(settings: NetworkSettings): Promise<void> {
+    if (!this.addon) return;
+    await this.enqueueMpvCommand(() => {
+      const addon = this.getAddonOrThrow();
+      addon.setNetworkTimeout(settings.mpvNetworkTimeoutSecs);
+      addon.setHttpProxy(settings.mpvHttpProxyUrl);
+    });
+    log.info('[MpvController] Applied network settings', {
+      proxy: settings.mpvHttpProxyUrl ? 'configured' : 'none',
+      timeoutSecs: settings.mpvNetworkTimeoutSecs,
+    });
   }
 }

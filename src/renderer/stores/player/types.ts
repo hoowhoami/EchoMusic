@@ -13,6 +13,7 @@ export type PlaybackNotice = {
 
 export type ResolvedAudioSource = {
   url: string;
+  urls?: string[];
   quality: AudioQualityValue | null;
   effect: AudioEffectValue;
   loudness: TrackLoudness | null;

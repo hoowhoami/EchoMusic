@@ -31,6 +31,7 @@ import type {
   AudioSpectrumStatus,
 } from '../shared/audio-spectrum';
 import type { LogSettings } from '../shared/logging';
+import type { NetworkSettings } from '../shared/network';
 import type { ResolvePlaylistRequest, ResolvePlaylistResponse } from '../shared/external';
 import type { ShareCaptureRect, ShareTarget } from '../shared/share';
 import type {
@@ -232,6 +233,9 @@ export interface IElectronAPI {
   logging?: {
     get: () => Promise<LogSettings>;
     update: (settings: Partial<LogSettings>) => Promise<LogSettings>;
+  };
+  network?: {
+    update: (settings: Partial<NetworkSettings>) => Promise<NetworkSettings>;
   };
   audioSpectrum?: {
     getStatus: () => Promise<AudioSpectrumStatus>;

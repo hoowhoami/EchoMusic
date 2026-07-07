@@ -330,6 +330,8 @@ export const usePlayerStore = defineStore(
       state.isLoading = false;
       state.currentTime = 0;
       state.currentAudioUrl = '';
+      state.currentAudioCandidateUrls = [];
+      state.currentAudioCandidateIndex = -1;
       state.currentResolvedAudioQuality = null;
       state.currentResolvedAudioEffect = 'none';
       state.currentAudioQualityOverride = null;
@@ -511,14 +513,22 @@ export const usePlayerStore = defineStore(
         },
         error: (event) => {
           if (event && !event.isTrusted && !(event as any)?.detail) return;
-          state.lastError = (event as any)?.type ?? 'playback-error';
-          showPlaybackNotice('playback-failed', state.currentTrackSnapshot);
-          playbackManager.applyFailedPlaybackState({ keepResolvedSource: true });
-          settingStore.syncPreventSleep(false);
-          if (settingStore.autoNext && state.currentPlaylist?.length)
-            playbackManager.scheduleAutoNext();
-          else playbackManager.clearAutoNextTimer();
-          emitPlayerEvent('error', { error: state.lastError ?? 'playback-error' });
+          void (async () => {
+            const triedFallback = await playbackManager.tryNextAudioCandidate({
+              reason: 'mpv-error',
+              position: state.currentTime,
+            });
+            if (triedFallback) return;
+
+            state.lastError = (event as any)?.type ?? 'playback-error';
+            showPlaybackNotice('playback-failed', state.currentTrackSnapshot);
+            playbackManager.applyFailedPlaybackState({ keepResolvedSource: true });
+            settingStore.syncPreventSleep(false);
+            if (settingStore.autoNext && state.currentPlaylist?.length)
+              playbackManager.scheduleAutoNext();
+            else playbackManager.clearAutoNextTimer();
+            emitPlayerEvent('error', { error: state.lastError ?? 'playback-error' });
+          })();
         },
         stalled: (position) => {
           void playbackManager.recoverFromStall(position);

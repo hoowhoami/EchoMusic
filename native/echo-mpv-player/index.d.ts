@@ -60,6 +60,8 @@ export interface PlayerConfigOptions {
   demuxerMaxMb?: number
   demuxerBackMb?: number
   audioBufferSecs?: number
+  networkTimeoutSecs?: number
+  httpProxy?: string
 }
 
 /** 播放器事件 */
@@ -121,11 +123,17 @@ export declare function setAudioTrack(trackId: number): void
 /** 设置独占模式，返回 Promise<void>。音频输出重启在工作线程执行，不阻塞主线程。 */
 export declare function setExclusive(exclusive: boolean): Promise<unknown>
 
+/** 设置 HTTP 代理，空字符串表示直连 */
+export declare function setHttpProxy(proxy: string): void
+
 /** 设置文件循环（"inf" 无限循环，"no" 不循环），返回 Promise<void>。 */
 export declare function setLoopFile(value: string): Promise<unknown>
 
 /** 设置 force-media-title */
 export declare function setMediaTitle(title: string): void
+
+/** 设置网络超时（秒） */
+export declare function setNetworkTimeout(seconds: number): void
 
 /** 设置播放速度，返回 Promise<void>。滤镜链重建在工作线程完成，不阻塞主线程。 */
 export declare function setSpeed(speed: number): Promise<unknown>

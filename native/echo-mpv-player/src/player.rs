@@ -17,6 +17,8 @@ pub struct MpvPlayerConfig {
     pub demuxer_max_mb: u32,
     pub demuxer_back_mb: u32,
     pub audio_buffer_secs: f64,
+    pub network_timeout_secs: f64,
+    pub http_proxy: String,
 }
 
 impl Default for MpvPlayerConfig {
@@ -26,6 +28,8 @@ impl Default for MpvPlayerConfig {
             demuxer_max_mb: 48,
             demuxer_back_mb: 12,
             audio_buffer_secs: 0.5,
+            network_timeout_secs: 60.0,
+            http_proxy: String::new(),
         }
     }
 }
@@ -99,7 +103,13 @@ impl MpvPlayer {
         player.set_option("cache-pause-wait", "5");
         player.set_option("cache-pause-initial", "yes");
         player.set_option("cache-seek-min", &(config.cache_secs / 2).to_string());
-        player.set_option("user-agent", "Mozilla/5.0");
+        player.set_option("user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
+        player.set_option("referrer", "https://www.kugou.com/");
+        player.set_option("ytdl", "no");
+        player.set_option("network-timeout", &config.network_timeout_secs.to_string());
+        if !config.http_proxy.trim().is_empty() {
+            player.set_option("http-proxy", config.http_proxy.trim());
+        }
         player.set_option("input-media-keys", "no");
         player.set_option("audio-client-name", "EchoMusic");
         player.set_option("audio-samplerate", "0");
@@ -564,6 +574,17 @@ impl MpvPlayer {
     /// 设置文件循环模式
     pub fn set_loop_file(&self, value: &str) -> Result<(), String> {
         self.set_property_string("loop-file", value)
+    }
+
+    /// 设置网络超时（秒）
+    pub fn set_network_timeout(&self, seconds: f64) -> Result<(), String> {
+        let value = seconds.clamp(1.0, 300.0);
+        self.set_property_string("network-timeout", &value.to_string())
+    }
+
+    /// 设置 HTTP 代理，空字符串表示直连
+    pub fn set_http_proxy(&self, proxy: &str) -> Result<(), String> {
+        self.set_property_string("http-proxy", proxy.trim())
     }
 
     /// 设置音轨 ID

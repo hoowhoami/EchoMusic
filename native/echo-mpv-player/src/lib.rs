@@ -189,6 +189,12 @@ fn initialize_player(lib_path: String, config: Option<PlayerConfigOptions>) -> n
         if let Some(v) = cfg.audio_buffer_secs {
             player_config.audio_buffer_secs = v;
         }
+        if let Some(v) = cfg.network_timeout_secs {
+            player_config.network_timeout_secs = v.clamp(1.0, 300.0);
+        }
+        if let Some(v) = cfg.http_proxy {
+            player_config.http_proxy = v;
+        }
     }
 
     let player = unsafe { MpvPlayer::new_with_config(lib, player_config) }
@@ -233,6 +239,8 @@ pub struct PlayerConfigOptions {
     pub demuxer_max_mb: Option<u32>,
     pub demuxer_back_mb: Option<u32>,
     pub audio_buffer_secs: Option<f64>,
+    pub network_timeout_secs: Option<f64>,
+    pub http_proxy: Option<String>,
 }
 
 /// 初始化 libmpv 播放器
@@ -357,6 +365,22 @@ pub fn load_mkv_track(url: String, track_id: i64, seq: Option<f64>) -> AsyncTask
 pub fn set_audio_track(track_id: i64) -> napi::Result<()> {
     get_player()?
         .set_audio_track(track_id)
+        .map_err(|e| napi::Error::from_reason(e))
+}
+
+/// 设置网络超时（秒）
+#[napi]
+pub fn set_network_timeout(seconds: f64) -> napi::Result<()> {
+    get_player()?
+        .set_network_timeout(seconds)
+        .map_err(|e| napi::Error::from_reason(e))
+}
+
+/// 设置 HTTP 代理，空字符串表示直连
+#[napi]
+pub fn set_http_proxy(proxy: String) -> napi::Result<()> {
+    get_player()?
+        .set_http_proxy(&proxy)
         .map_err(|e| napi::Error::from_reason(e))
 }
 

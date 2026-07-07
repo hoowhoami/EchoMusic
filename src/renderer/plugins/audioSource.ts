@@ -67,6 +67,13 @@ const normalizeResolvedAudioSource = (
 
   const url = String(value.url || '').trim();
   if (!url) return null;
+  const urls = [url];
+  if (Array.isArray(value.urls)) {
+    value.urls.forEach((item) => {
+      const candidate = String(item || '').trim();
+      if (candidate && !urls.includes(candidate)) urls.push(candidate);
+    });
+  }
 
   const loudness = value.loudness;
   const normalizedLoudness: TrackLoudness | null =
@@ -84,6 +91,7 @@ const normalizeResolvedAudioSource = (
 
   return {
     url,
+    urls,
     quality: normalizeAudioQuality(value.quality),
     effect: normalizeAudioEffect(value.effect),
     loudness: normalizedLoudness,

@@ -3,6 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import { app } from 'electron';
 import log from './logger';
+import { applyKugouApiNetworkSettings, refreshNetworkSettingsFromStorage } from './networkSettings';
 
 // --- 类型定义 ---
 
@@ -100,6 +101,8 @@ export async function initApiServer(): Promise<void> {
   if (serverReady) return;
 
   const serverPath = resolveServerPath();
+  const networkSettings = refreshNetworkSettingsFromStorage();
+  applyKugouApiNetworkSettings(networkSettings, serverPath);
 
   // 设置环境变量，与 spawn 方式保持一致
   process.env.platform = 'lite';

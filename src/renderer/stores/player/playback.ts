@@ -16,6 +16,7 @@ import {
   findPlayableIndex,
   findTrackById,
 } from './utils';
+import type { ResolvedAudioSource } from './types';
 
 export const createPlaybackManager = (
   state: PlayerState,
@@ -36,10 +37,93 @@ export const createPlaybackManager = (
     state.awaitingTrackLoad = false;
     if (!options?.keepResolvedSource) {
       state.currentAudioUrl = '';
+      state.currentAudioCandidateUrls = [];
+      state.currentAudioCandidateIndex = -1;
       state.currentResolvedAudioQuality = null;
       state.currentResolvedAudioEffect = 'none';
     }
     engine.updateMediaPlaybackState(buildStoppedPlaybackState(state));
+  };
+
+  const getAudioCandidateUrls = (resolved: ResolvedAudioSource): string[] => {
+    const urls: string[] = [];
+    [resolved.url, ...(resolved.urls ?? [])].forEach((url) => {
+      const candidate = String(url || '').trim();
+      if (candidate && !urls.includes(candidate)) urls.push(candidate);
+    });
+    return urls;
+  };
+
+  const applyResolvedAudioSource = (track: Song, resolved: ResolvedAudioSource) => {
+    const urls = getAudioCandidateUrls(resolved);
+    const currentIndex = Math.max(0, urls.indexOf(resolved.url));
+    state.currentAudioQualityOverride = null;
+    state.currentAudioUrl = resolved.url;
+    state.currentAudioCandidateUrls = urls.length ? urls : resolved.url ? [resolved.url] : [];
+    state.currentAudioCandidateIndex = currentIndex;
+    state.currentResolvedAudioQuality = resolved.quality;
+    state.currentResolvedAudioEffect = resolved.effect;
+    track.audioUrl = resolved.url;
+  };
+
+  const tryNextAudioCandidate = async (options?: {
+    position?: number;
+    reason?: string;
+    autoPlay?: boolean;
+    trackId?: string;
+  }): Promise<boolean> => {
+    const trackId = String(options?.trackId ?? state.currentTrackId ?? '');
+    if (!trackId) return false;
+    const candidates = state.currentAudioCandidateUrls;
+    if (candidates.length <= 1) return false;
+
+    const track =
+      findTrackById(trackId, state.currentPlaylist, playlistStore) || state.currentTrackSnapshot;
+    if (!track) return false;
+
+    let nextIndex = state.currentAudioCandidateIndex + 1;
+    while (nextIndex >= 0 && nextIndex < candidates.length) {
+      const nextUrl = candidates[nextIndex];
+      if (!nextUrl || nextUrl === state.currentAudioUrl) {
+        nextIndex += 1;
+        continue;
+      }
+
+      state.currentAudioCandidateIndex = nextIndex;
+      state.currentAudioUrl = nextUrl;
+      track.audioUrl = nextUrl;
+      state.isLoading = true;
+      state.awaitingTrackLoad = true;
+      state.lastError = null;
+
+      const targetPosition = Math.max(0, Number(options?.position) || 0);
+      if (targetPosition > 0) {
+        state.stallRecovering = true;
+        state.stallRecoverTarget = targetPosition;
+        state.stallRecoverDeadline = Date.now() + 20000;
+        state.currentTime = targetPosition;
+      }
+
+      logger.warn('PlayerPlayback', 'Trying fallback audio url', {
+        trackId,
+        reason: options?.reason ?? 'playback-error',
+        candidate: nextIndex + 1,
+        total: candidates.length,
+      });
+
+      try {
+        engine.reloadSource(nextUrl);
+        await engine.play();
+        if (String(state.currentTrackId ?? '') !== trackId) return false;
+        if (targetPosition > 0) engine.seek(targetPosition);
+        return true;
+      } catch (error) {
+        logger.warn('PlayerPlayback', 'Fallback audio url failed:', error);
+        nextIndex += 1;
+      }
+    }
+
+    return false;
   };
 
   const clearAutoNextTimer = () => {
@@ -189,6 +273,8 @@ export const createPlaybackManager = (
       state.currentSourceQueueId ?? playlistStore.activeQueue?.id ?? playlistStore.activeQueueId,
     );
     state.currentAudioUrl = '';
+    state.currentAudioCandidateUrls = [];
+    state.currentAudioCandidateIndex = -1;
     state.currentResolvedAudioQuality = null;
     state.currentResolvedAudioEffect = 'none';
     state.currentTime = 0;
@@ -249,11 +335,7 @@ export const createPlaybackManager = (
       return;
     }
 
-    state.currentAudioQualityOverride = null;
-    state.currentAudioUrl = resolved.url;
-    state.currentResolvedAudioQuality = resolved.quality;
-    state.currentResolvedAudioEffect = resolved.effect;
-    track.audioUrl = resolved.url;
+    applyResolvedAudioSource(track, resolved);
 
     engine.setSource(resolved.url);
     engine.applyTrackLoudness(resolved.loudness);
@@ -290,6 +372,9 @@ export const createPlaybackManager = (
     } catch (error) {
       logger.error('PlayerPlayback', 'Play track failed:', error);
       if (requestSeq !== state.playbackRequestSeq) return;
+      if (await tryNextAudioCandidate({ reason: 'play-track-failed', trackId: resolvedId })) {
+        return;
+      }
       state.lastError = 'playback-failed';
       showPlaybackNotice('playback-failed', track);
       applyFailedPlaybackState({ keepResolvedSource: true });
@@ -577,6 +662,8 @@ export const createPlaybackManager = (
     state.currentTrackId = null;
     state.currentSourceQueueId = null;
     state.currentAudioUrl = '';
+    state.currentAudioCandidateUrls = [];
+    state.currentAudioCandidateIndex = -1;
     state.currentResolvedAudioQuality = null;
     state.currentResolvedAudioEffect = 'none';
     state.currentAudioQualityOverride = null;
@@ -638,6 +725,13 @@ export const createPlaybackManager = (
     });
 
     try {
+      const triedCandidate = await tryNextAudioCandidate({
+        reason: 'playback-stall',
+        position: targetPosition,
+        trackId,
+      });
+      if (triedCandidate) return;
+
       const resolved = await resolver.resolveAudioUrl(track, { forceReload: true });
       if (String(state.currentTrackId) !== trackId) {
         state.stallRecovering = false;
@@ -653,10 +747,7 @@ export const createPlaybackManager = (
         }
         return;
       }
-      state.currentAudioUrl = resolved.url;
-      state.currentResolvedAudioQuality = resolved.quality;
-      state.currentResolvedAudioEffect = resolved.effect;
-      track.audioUrl = resolved.url;
+      applyResolvedAudioSource(track, resolved);
       engine.reloadSource(resolved.url);
       engine.applyTrackLoudness(resolved.loudness);
       await engine.play();
@@ -732,6 +823,7 @@ export const createPlaybackManager = (
     prev,
     stop,
     recoverFromStall,
+    tryNextAudioCandidate,
     pickRandomIndex,
     shuffleInsert,
     buildShuffleQueue,

@@ -110,24 +110,45 @@ export const findPlayableIndex = (
 };
 
 export const resolveUrlFromResponse = (payload: unknown): string => {
-  if (!payload) return '';
-  if (typeof payload === 'string') return payload.trim();
+  return resolveUrlsFromResponse(payload)[0] ?? '';
+};
+
+const appendUrlCandidate = (urls: string[], value: unknown) => {
+  if (typeof value === 'string') {
+    const url = value.trim();
+    if (url && !urls.includes(url)) urls.push(url);
+    return;
+  }
+  if (Array.isArray(value)) {
+    value.forEach((item) => appendUrlCandidate(urls, item));
+  }
+};
+
+export const resolveUrlsFromResponse = (payload: unknown): string[] => {
+  if (!payload) return [];
+  if (typeof payload === 'string') {
+    const url = payload.trim();
+    return url ? [url] : [];
+  }
   if (Array.isArray(payload)) {
-    const first = payload.find((item) => typeof item === 'string' && item.trim());
-    return typeof first === 'string' ? first : '';
+    const urls: string[] = [];
+    appendUrlCandidate(urls, payload);
+    return urls;
   }
   if (typeof payload === 'object') {
     const record = payload as Record<string, unknown>;
-    const urlField = record.url ?? record.play_url ?? record.playUrl;
-    if (typeof urlField === 'string' && urlField.trim()) return urlField;
-    if (Array.isArray(urlField)) {
-      const candidate = urlField.find((item) => typeof item === 'string' && item.trim());
-      return typeof candidate === 'string' ? candidate : '';
-    }
-    if ('data' in record) return resolveUrlFromResponse(record.data);
-    if ('info' in record) return resolveUrlFromResponse(record.info);
+    const urls: string[] = [];
+    appendUrlCandidate(urls, record.url);
+    appendUrlCandidate(urls, record.play_url);
+    appendUrlCandidate(urls, record.playUrl);
+    appendUrlCandidate(urls, record.backupUrl);
+    appendUrlCandidate(urls, record.backup_url);
+    appendUrlCandidate(urls, record.backupUrls);
+    if (urls.length > 0) return urls;
+    if ('data' in record) return resolveUrlsFromResponse(record.data);
+    if ('info' in record) return resolveUrlsFromResponse(record.info);
   }
-  return '';
+  return [];
 };
 
 /** 从 API 响应中提取曲目响度信息 */

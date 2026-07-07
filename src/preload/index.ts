@@ -34,6 +34,7 @@ import type {
   AudioSpectrumSubscribeResult,
 } from '../shared/audio-spectrum';
 import type { LogSettings } from '../shared/logging';
+import type { NetworkSettings } from '../shared/network';
 import type { ResolvePlaylistRequest, ResolvePlaylistResponse } from '../shared/external';
 import type { ShareCaptureRect, ShareTarget } from '../shared/share';
 import type {
@@ -400,6 +401,10 @@ contextBridge.exposeInMainWorld('electron', {
     get: () => ipcRenderer.invoke('logging:get-settings') as Promise<LogSettings>,
     update: (settings: Partial<LogSettings>) =>
       invokeWithPlainPayload<LogSettings>('logging:update-settings', settings),
+  },
+  network: {
+    update: (settings: Partial<NetworkSettings>) =>
+      invokeWithPlainPayload<NetworkSettings>('network:update-settings', settings),
   },
   mpv: {
     load: (url: string) => ipcRenderer.invoke('mpv:load', url),

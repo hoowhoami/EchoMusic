@@ -5,6 +5,7 @@ import { usePlayerStore } from '@/stores/player';
 import { useToastStore } from '@/stores/toast';
 import Switch from '@/components/ui/Switch.vue';
 import Slider from '@/components/ui/Slider.vue';
+import Input from '@/components/ui/Input.vue';
 import InputNumber from '@/components/ui/InputNumber.vue';
 import Button from '@/components/ui/Button.vue';
 import Dialog from '@/components/ui/Dialog.vue';
@@ -108,6 +109,26 @@ const handleImportImpulseResponse = async () => {
 const handleRemoveImpulseResponse = (id: string) => {
   settingStore.removeImpulseResponseFile(id);
   toastStore.actionCompleted('已移除音效文件');
+};
+
+const updateKugouApiProxy = (value: string | number) => {
+  settingStore.kugouApiProxyUrl = String(value ?? '');
+  settingStore.syncNetworkSettings();
+};
+
+const updateKugouApiTimeout = (value: string | number) => {
+  settingStore.kugouApiTimeoutSecs = Math.max(0, Math.min(300, Number(value) || 0));
+  settingStore.syncNetworkSettings();
+};
+
+const updateMpvHttpProxy = (value: string | number) => {
+  settingStore.mpvHttpProxyUrl = String(value ?? '');
+  settingStore.syncNetworkSettings();
+};
+
+const updateMpvNetworkTimeout = (value: string | number) => {
+  settingStore.mpvNetworkTimeoutSecs = Math.max(1, Math.min(300, Number(value) || 60));
+  settingStore.syncNetworkSettings();
 };
 </script>
 
@@ -403,6 +424,72 @@ const handleRemoveImpulseResponse = (id: string) => {
         @update:model-value="
           settingStore.audioBufferSecs = Math.max(0.5, Math.min(3.0, Number($event) || 0.5))
         "
+      />
+    </div>
+    <div class="settings-divider"></div>
+    <div class="settings-item">
+      <div class="space-y-1">
+        <h3 class="font-semibold">酷狗 API 代理</h3>
+        <p class="text-sm text-text-secondary">
+          用于歌曲地址、歌词和推荐等接口，支持 HTTP/HTTPS 代理
+        </p>
+      </div>
+      <Input
+        :model-value="settingStore.kugouApiProxyUrl"
+        placeholder="http://127.0.0.1:7890"
+        class="w-60! rounded-lg"
+        input-class="!h-9 !rounded-lg !pl-3 !pr-8 !text-sm"
+        @update:model-value="updateKugouApiProxy"
+        @clear="updateKugouApiProxy('')"
+      />
+    </div>
+    <div class="settings-divider"></div>
+    <div class="settings-item">
+      <div class="space-y-1">
+        <h3 class="font-semibold">酷狗 API 超时</h3>
+        <p class="text-sm text-text-secondary">接口请求超过该时间后中止，设为 0 使用默认行为</p>
+      </div>
+      <InputNumber
+        class="w-45"
+        :model-value="String(settingStore.kugouApiTimeoutSecs ?? 0)"
+        :min="0"
+        :max="300"
+        :step="10"
+        placeholder="0"
+        suffix="秒"
+        @update:model-value="updateKugouApiTimeout"
+      />
+    </div>
+    <div class="settings-divider"></div>
+    <div class="settings-item">
+      <div class="space-y-1">
+        <h3 class="font-semibold">mpv HTTP 代理</h3>
+        <p class="text-sm text-text-secondary">用于播放器直接加载音频直链，支持 HTTP/HTTPS 代理</p>
+      </div>
+      <Input
+        :model-value="settingStore.mpvHttpProxyUrl"
+        placeholder="http://127.0.0.1:7890"
+        class="w-60! rounded-lg"
+        input-class="!h-9 !rounded-lg !pl-3 !pr-8 !text-sm"
+        @update:model-value="updateMpvHttpProxy"
+        @clear="updateMpvHttpProxy('')"
+      />
+    </div>
+    <div class="settings-divider"></div>
+    <div class="settings-item">
+      <div class="space-y-1">
+        <h3 class="font-semibold">mpv 网络超时</h3>
+        <p class="text-sm text-text-secondary">播放器打开音频直链的网络等待时间</p>
+      </div>
+      <InputNumber
+        class="w-45"
+        :model-value="String(settingStore.mpvNetworkTimeoutSecs ?? 60)"
+        :min="1"
+        :max="300"
+        :step="10"
+        placeholder="60"
+        suffix="秒"
+        @update:model-value="updateMpvNetworkTimeout"
       />
     </div>
     <div class="settings-divider"></div>
