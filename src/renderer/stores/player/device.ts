@@ -4,9 +4,8 @@ import type { useSettingStore } from '../setting';
 import type { PlayerEngine } from '@/utils/player';
 import type { OutputDeviceDisconnectBehavior } from '../../types';
 
-let outputDeviceChangeHandler:
-  | ((devices: Array<{ name: string; description: string }>) => void)
-  | null = null;
+const OUTPUT_DEVICE_REFRESH_DEBOUNCE_MS = 800;
+const OUTPUT_DEVICE_POLL_INTERVAL_MS = 8000;
 
 export const createDeviceManager = (
   state: PlayerState,
@@ -20,10 +19,30 @@ export const createDeviceManager = (
     }
   };
 
+  const clearOutputDevicePollTimer = () => {
+    if (state.outputDevicePollTimer !== null) {
+      window.clearInterval(state.outputDevicePollTimer);
+      state.outputDevicePollTimer = null;
+    }
+  };
+
+  let removeMediaDeviceChangeListener: (() => void) | null = null;
+  let refreshingOutputDevices = false;
+
+  const scheduleOutputDeviceRefresh = (delayMs = OUTPUT_DEVICE_REFRESH_DEBOUNCE_MS) => {
+    clearOutputDeviceRefreshTimer();
+    state.outputDeviceRefreshTimer = window.setTimeout(() => {
+      state.outputDeviceRefreshTimer = null;
+      void refreshOutputDevices();
+    }, delayMs);
+  };
+
   const unregisterOutputDeviceWatcher = () => {
-    outputDeviceChangeHandler = null;
     state.outputDeviceWatcherRegistered = false;
     clearOutputDeviceRefreshTimer();
+    clearOutputDevicePollTimer();
+    removeMediaDeviceChangeListener?.();
+    removeMediaDeviceChangeListener = null;
   };
 
   const applyOutputDevice = async (deviceId: string, options?: { persistSelection?: boolean }) => {
@@ -75,6 +94,8 @@ export const createDeviceManager = (
   const refreshOutputDevices = async (
     mpvDevicesArg?: Array<{ name: string; description: string }>,
   ) => {
+    if (refreshingOutputDevices) return;
+    refreshingOutputDevices = true;
     const fallbackOptions = [{ label: '系统默认', value: 'default' }];
     try {
       let mpvDevices: Array<{ name: string; description: string }>;
@@ -124,6 +145,8 @@ export const createDeviceManager = (
     } catch (error) {
       logger.warn('PlayerDevice', 'Refresh output devices failed:', error);
       settingStore.outputDevices = fallbackOptions;
+    } finally {
+      refreshingOutputDevices = false;
     }
   };
 
@@ -131,16 +154,20 @@ export const createDeviceManager = (
     if (state.outputDeviceWatcherRegistered) return;
     state.outputDeviceWatcherRegistered = true;
 
-    if (!window.electron?.mpv?.onAudioDeviceListChanged) return;
+    const mediaDevices = navigator.mediaDevices;
+    if (mediaDevices?.addEventListener) {
+      // Chromium 的 devicechange 只作为“设备拓扑可能变了”的信号。
+      // 输出设备 ID 仍统一从 mpv audio-device-list 获取，避免混用浏览器 deviceId。
+      const handleDeviceChange = () => scheduleOutputDeviceRefresh();
+      mediaDevices.addEventListener('devicechange', handleDeviceChange);
+      removeMediaDeviceChangeListener = () => {
+        mediaDevices.removeEventListener('devicechange', handleDeviceChange);
+      };
+    }
 
-    outputDeviceChangeHandler = () => {
-      clearOutputDeviceRefreshTimer();
-      state.outputDeviceRefreshTimer = window.setTimeout(() => {
-        state.outputDeviceRefreshTimer = null;
-        void refreshOutputDevices();
-      }, 800);
-    };
-    window.electron.mpv.onAudioDeviceListChanged(outputDeviceChangeHandler);
+    state.outputDevicePollTimer = window.setInterval(() => {
+      void refreshOutputDevices();
+    }, OUTPUT_DEVICE_POLL_INTERVAL_MS);
   };
 
   return {

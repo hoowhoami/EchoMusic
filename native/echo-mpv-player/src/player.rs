@@ -143,9 +143,8 @@ impl MpvPlayer {
         player.observe_property("speed", MPV_FORMAT_DOUBLE);
         player.observe_property("eof-reached", MPV_FORMAT_FLAG);
         player.observe_property("idle-active", MPV_FORMAT_FLAG);
-        // 观察音频设备列表变化，动态刷新设置页设备列表。
-        // 使用 NODE 格式拿到完整设备列表；销毁时先退出事件线程再释放 handle，避免 HAL 回调踩旧句柄。
-        player.observe_property("audio-device-list", MPV_FORMAT_NODE);
+        // 不常驻观察 audio-device-list。macOS 27 beta 下 libmpv 的 CoreAudio hotplug
+        // 回调可能在 HAL 通知线程里崩溃；设备列表由渲染进程低频轮询按需刷新。
 
         Ok(player)
     }
