@@ -191,6 +191,7 @@ export const usePlayerStore = defineStore(
       clearPlaybackNotice,
     );
     let impulseResponseFailureListenerRegistered = false;
+    let audioDeviceListListenerRegistered = false;
 
     const toggleLyricView = (open?: boolean) => {
       state.isLyricViewOpen = open ?? !state.isLyricViewOpen;
@@ -415,7 +416,12 @@ export const usePlayerStore = defineStore(
           disableActiveImpulseResponse(payload?.path);
         });
       }
-      deviceManager.registerOutputDeviceWatcher();
+      if (!audioDeviceListListenerRegistered) {
+        audioDeviceListListenerRegistered = true;
+        window.electron?.mpv?.onAudioDeviceListChanged?.((devices) => {
+          void deviceManager.refreshOutputDevices(devices);
+        });
+      }
       void deviceManager.refreshOutputDevices();
 
       let lastMediaSessionSync = 0;

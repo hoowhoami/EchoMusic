@@ -127,6 +127,7 @@ impl MpvPlayer {
         player.set_option("audio-samplerate", "0");
         player.set_option("audio-channels", "stereo");
         player.set_option("audio-buffer", &config.audio_buffer_secs.to_string());
+        player.set_option("audio-fallback-to-null", "yes");
 
         let rc = (player.lib.mpv_initialize)(player.handle);
         if rc < 0 {
@@ -143,8 +144,9 @@ impl MpvPlayer {
         player.observe_property("speed", MPV_FORMAT_DOUBLE);
         player.observe_property("eof-reached", MPV_FORMAT_FLAG);
         player.observe_property("idle-active", MPV_FORMAT_FLAG);
-        // 不常驻观察 audio-device-list。macOS 27 beta 下 libmpv 的 CoreAudio hotplug
-        // 回调可能在 HAL 通知线程里崩溃；设备列表由渲染进程低频轮询按需刷新。
+        // 统一由 libmpv 的音频设备列表事件驱动热插拔处理，避免混用 Chromium
+        // deviceId 与 mpv audio-device 名称。
+        player.observe_property("audio-device-list", MPV_FORMAT_NODE);
 
         Ok(player)
     }
@@ -625,11 +627,7 @@ impl MpvPlayer {
             }
             Ok(devices)
         } else if prop.format == MPV_FORMAT_STRING || prop.format == MPV_FORMAT_OSD_STRING {
-            let ptr = prop.data as *const *const c_char;
-            if ptr.is_null() {
-                return Ok(Vec::new());
-            }
-            let c_str = unsafe { *ptr };
+            let c_str = prop.data as *const c_char;
             if c_str.is_null() {
                 return Ok(Vec::new());
             }

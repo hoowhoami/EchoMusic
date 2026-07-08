@@ -33,6 +33,7 @@ interface MpvAddon {
         message?: string;
         prefix?: string;
         level?: string;
+        devices?: Array<{ name: string; description: string }>;
       },
     ) => void,
   ): void;
@@ -83,6 +84,7 @@ const IMPULSE_RESPONSE_AF_LABEL = 'irs';
 const IMPULSE_RESPONSE_MIX_FILTER = 'amix@irsmix';
 // 构造「结构键」时用占位符替换真实 mix：只有 mix 变化时结构键不变 → 走 af-command 而非重建。
 const IMPULSE_RESPONSE_MIX_PLACEHOLDER = '__IRS_MIX__';
+const AUDIO_DEVICE_HOTPLUG_DEBOUNCE_MS = 600;
 
 // IR 路径会放进 lavfi 图的单引号里传给 amovie 滤镜。amovie 用 ':' 分隔 filename 与选项，
 // 图层单引号只能挡住图解析器、挡不住 amovie 自己的选项解析器，因此 Windows 盘符里的 ':'
@@ -161,6 +163,9 @@ export class MpvController extends EventEmitter {
   private lastIrPath = '';
   // file-loaded 后置位：强制下一次 sync 整链重设（mpv 换文件可能重置 af），且不做 duck。
   private forceReapply = false;
+  private audioDeviceHotplugTimer: ReturnType<typeof setTimeout> | null = null;
+  private latestAudioDevices: MpvAudioDevice[] = [];
+  private resumeAfterAudioDeviceRecovery = false;
 
   constructor() {
     super();
@@ -292,6 +297,10 @@ export class MpvController extends EventEmitter {
 
   destroy(): void {
     this.isDestroyed = true;
+    if (this.audioDeviceHotplugTimer) {
+      clearTimeout(this.audioDeviceHotplugTimer);
+      this.audioDeviceHotplugTimer = null;
+    }
     this.stopStallWatchdog();
     try {
       this.addon?.cancelFade();
@@ -442,11 +451,77 @@ export class MpvController extends EventEmitter {
         this.emit('fade-complete');
         break;
       case 'audio-device-list-changed':
+        this.scheduleAudioDeviceHotplugRecovery(event.devices ?? []);
         this.emit('audio-device-list-changed', event.devices ?? []);
         break;
       case 'log-message':
         this.handleLogMessage(event);
         break;
+    }
+  }
+
+  private scheduleAudioDeviceHotplugRecovery(devices: MpvAudioDevice[]): void {
+    if (this.isDestroyed) return;
+    this.latestAudioDevices = Array.isArray(devices) ? devices : [];
+    if (this.audioDeviceHotplugTimer) clearTimeout(this.audioDeviceHotplugTimer);
+    this.audioDeviceHotplugTimer = setTimeout(() => {
+      this.audioDeviceHotplugTimer = null;
+      void this.recoverAudioOutputAfterHotplug(this.latestAudioDevices);
+    }, AUDIO_DEVICE_HOTPLUG_DEBOUNCE_MS);
+    if (typeof this.audioDeviceHotplugTimer.unref === 'function') {
+      this.audioDeviceHotplugTimer.unref();
+    }
+  }
+
+  private async recoverAudioOutputAfterHotplug(devices: MpvAudioDevice[]): Promise<void> {
+    if (!this.addon || this.isDestroyed) return;
+
+    const wasPlaying = this.state.playing && !this.state.paused && !this.state.idle;
+    if (wasPlaying) this.resumeAfterAudioDeviceRecovery = true;
+
+    const deviceNames = new Set(
+      devices.map((device) => device.name).filter((name) => name && name !== 'null'),
+    );
+    const hasUsableDevice = Array.from(deviceNames).some((name) => name !== 'auto');
+
+    let currentDevice = this.state.audioDevice || 'auto';
+    try {
+      currentDevice =
+        String(this.addon.getProperty('audio-device') || currentDevice || 'auto') || 'auto';
+    } catch {
+      // 使用缓存的 state.audioDevice 继续恢复。
+    }
+
+    const targetDevice =
+      currentDevice === 'auto' || (deviceNames.size > 0 && deviceNames.has(currentDevice))
+        ? currentDevice
+        : 'auto';
+
+    log.info('[MpvController] Audio device hotplug detected, reinitializing output', {
+      currentDevice,
+      targetDevice,
+      wasPlaying,
+      pendingResume: this.resumeAfterAudioDeviceRecovery,
+      deviceCount: devices.length,
+    });
+
+    try {
+      if (wasPlaying) await this.pause();
+      await this.setAudioDevice(targetDevice || 'auto');
+      if (targetDevice !== currentDevice) this.state.audioDevice = targetDevice || 'auto';
+    } catch (err) {
+      log.warn('[MpvController] Audio output hotplug recovery failed:', err);
+      return;
+    }
+
+    if (!this.resumeAfterAudioDeviceRecovery || !hasUsableDevice) return;
+
+    try {
+      await this.play();
+      this.resumeAfterAudioDeviceRecovery = false;
+      log.info('[MpvController] Playback resumed after audio device hotplug');
+    } catch (err) {
+      log.warn('[MpvController] Resume after audio device hotplug failed:', err);
     }
   }
 
