@@ -144,8 +144,7 @@ impl MpvPlayer {
         player.observe_property("speed", MPV_FORMAT_DOUBLE);
         player.observe_property("eof-reached", MPV_FORMAT_FLAG);
         player.observe_property("idle-active", MPV_FORMAT_FLAG);
-        // 统一由 libmpv 的音频设备列表事件驱动热插拔处理，避免混用 Chromium
-        // deviceId 与 mpv audio-device 名称。
+        // 统一由 libmpv 的音频设备列表事件驱动热插拔处理
         player.observe_property("audio-device-list", MPV_FORMAT_NODE);
 
         Ok(player)
