@@ -18,9 +18,9 @@ export interface PlaybackQueueStoreLike {
   defaultList?: Song[];
   getPreferredManualQueueOptions?: (options?: SetPlaybackQueueOptions) => SetPlaybackQueueOptions;
   getPlaybackQueueSongs?: (queueId?: string | number | null) => Song[];
-  enqueuePlayNext?: (songId: string | number) => void;
-  enqueuePlayNextSequential?: (songId: string | number) => void;
-  syncQueuedNextTrackIds?: () => void;
+  enqueuePlayNext?: (songId: string | number, queueId?: string | number) => void;
+  enqueuePlayNextSequential?: (songId: string | number, queueId?: string | number) => void;
+  syncQueuedNextTrackIds?: (queueId?: string | number) => void;
   getQueueById?: (queueId?: string | number | null) => { queuedNextTrackIds: string[] } | null;
 }
 
@@ -214,7 +214,9 @@ const addSongToPlayQueueNext = (
   mode: PlayNextInsertMode,
   options?: SetPlaybackQueueOptions,
 ): boolean => {
-  const manualQueueOptions = playlistStore.getPreferredManualQueueOptions?.(options) ?? options;
+  const nextQueueOptions = { ...(options ?? {}), activate: false };
+  const manualQueueOptions =
+    playlistStore.getPreferredManualQueueOptions?.(nextQueueOptions) ?? nextQueueOptions;
   const resolvedSong = resolvePlayableSongForRequest(song, [song]);
   if (!resolvedSong) return false;
 
@@ -222,10 +224,9 @@ const addSongToPlayQueueNext = (
   if (queueId) {
     void playlistStore.ensurePlaybackQueueSongsLoaded?.(queueId);
   }
-  const preferredList = queueId ? (playlistStore.getPlaybackQueueSongs?.(queueId) ?? []) : [];
-  const list = (
-    preferredList.length > 0 ? preferredList : (playlistStore.defaultList ?? [])
-  ).slice();
+  const list = queueId
+    ? (playlistStore.getPlaybackQueueSongs?.(queueId) ?? []).slice()
+    : (playlistStore.defaultList ?? []).slice();
   const currentTrackId = String(playerStore.currentTrackId ?? '');
   const currentIndex = list.findIndex((item) => String(item.id) === currentTrackId);
   const currentSong = currentIndex >= 0 ? list[currentIndex] : null;
@@ -254,11 +255,11 @@ const addSongToPlayQueueNext = (
     playlistStore.setPlaybackQueue(list, 0);
   }
   if (mode === 'cut') {
-    playlistStore.enqueuePlayNext?.(item.id);
+    playlistStore.enqueuePlayNext?.(item.id, queueId);
   } else {
-    playlistStore.enqueuePlayNextSequential?.(item.id);
+    playlistStore.enqueuePlayNextSequential?.(item.id, queueId);
   }
-  playlistStore.syncQueuedNextTrackIds?.();
+  playlistStore.syncQueuedNextTrackIds?.(queueId);
   return true;
 };
 

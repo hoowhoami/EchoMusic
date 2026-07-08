@@ -5,7 +5,7 @@ import type { PlayerState } from './state';
 import type { PlayerEngine } from '@/utils/player';
 import type { usePlaylistStore } from '../playlist';
 import type { useSettingStore } from '../setting';
-import { PERSONAL_FM_QUEUE_ID } from '../playlist';
+import { PERSONAL_FM_QUEUE_ID, type PlaybackQueueState } from '../playlist';
 import { toRawSong, toRawSongList } from '../playlist/helpers';
 import { useHistoryStore } from '../historyStore';
 import {
@@ -464,6 +464,63 @@ export const createPlaybackManager = (
     }
   };
 
+  const playQueuedNextOutsidePersonalFm = async (options?: {
+    track?: Song | null;
+    playtime?: number;
+    isOverplay?: boolean;
+  }) => {
+    if (playlistStore.activeQueue?.id !== PERSONAL_FM_QUEUE_ID) return false;
+
+    const candidateQueues: PlaybackQueueState[] = [];
+    const seenQueueIds = new Set<string>();
+    const addCandidateQueue = (queueId?: string | number | null) => {
+      const resolvedId = String(queueId ?? '');
+      if (!resolvedId || resolvedId === PERSONAL_FM_QUEUE_ID || seenQueueIds.has(resolvedId)) {
+        return;
+      }
+      const queue = playlistStore.getQueueById(resolvedId);
+      if (!queue) return;
+      seenQueueIds.add(resolvedId);
+      candidateQueues.push(queue);
+    };
+
+    addCandidateQueue(playlistStore.lastNonFmQueueId);
+    playlistStore.playbackQueueList.forEach((queue) => {
+      if (queue.queuedNextTrackIds.length > 0) addCandidateQueue(queue.id);
+    });
+
+    for (const queue of candidateQueues) {
+      await playlistStore.ensurePlaybackQueueSongsLoaded(queue.id);
+      const targetQueue = playlistStore.getQueueById(queue.id);
+      if (!targetQueue) continue;
+
+      playlistStore.syncQueuedNextTrackIds(targetQueue.id);
+      let queuedNextId = playlistStore.peekQueuedNextTrackId(targetQueue.id);
+      while (queuedNextId) {
+        const queuedSong = targetQueue.songs.find(
+          (song) => String(song.id) === String(queuedNextId),
+        );
+        playlistStore.consumeQueuedNextTrackId(queuedNextId, targetQueue.id);
+        if (queuedSong && isPlayableSong(queuedSong)) {
+          await playlistStore.ensurePersonalFmQueue({
+            track: options?.track ?? state.currentTrackSnapshot,
+            playtime: options?.playtime ?? state.currentTime,
+            isOverplay:
+              options?.isOverplay ??
+              (state.duration > 0 ? state.currentTime >= Math.max(0, state.duration - 2) : false),
+          });
+          const queueSongs = targetQueue.songs.slice();
+          playlistStore.setActiveQueue(targetQueue.id);
+          await playTrack(String(queuedSong.id), queueSongs, { sourceQueueId: targetQueue.id });
+          return true;
+        }
+        queuedNextId = playlistStore.peekQueuedNextTrackId(targetQueue.id);
+      }
+    }
+
+    return false;
+  };
+
   // 私人 FM「不喜欢」：上报 garbage、从队列移除当前曲目并切到下一首
   const dislikePersonalFm = async () => {
     if (playlistStore.activeQueue?.id !== PERSONAL_FM_QUEUE_ID) return false;
@@ -526,6 +583,21 @@ export const createPlaybackManager = (
     // 随机模式下，切歌前将当前曲目记入历史
     if (state.playMode === 'random' && state.currentTrackId) {
       pushShuffleHistory(state.currentTrackId);
+    }
+
+    if (
+      playlistStore.activeQueue?.id === PERSONAL_FM_QUEUE_ID &&
+      (await playQueuedNextOutsidePersonalFm({
+        track:
+          list.find((song) => String(song.id) === String(state.currentTrackId)) ||
+          findTrackById(state.currentTrackId, state.currentPlaylist, playlistStore) ||
+          state.currentTrackSnapshot,
+        playtime: state.currentTime,
+        isOverplay:
+          state.duration > 0 ? state.currentTime >= Math.max(0, state.duration - 2) : false,
+      }))
+    ) {
+      return;
     }
 
     const queuedNextId = playlistStore.peekQueuedNextTrackId();
@@ -820,6 +892,7 @@ export const createPlaybackManager = (
     seek,
     next,
     dislikePersonalFm,
+    playQueuedNextOutsidePersonalFm,
     prev,
     stop,
     recoverFromStall,

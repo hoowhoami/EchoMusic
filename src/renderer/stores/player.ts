@@ -205,6 +205,13 @@ export const usePlayerStore = defineStore(
       handlingPlaybackEnd = true;
       try {
         if (playlistStore.activeQueue?.id === PERSONAL_FM_QUEUE_ID) {
+          const playedQueuedNext = await playbackManager.playQueuedNextOutsidePersonalFm({
+            track: state.currentTrackSnapshot,
+            playtime: state.duration,
+            isOverplay: true,
+          });
+          if (playedQueuedNext) return;
+
           const nextFmSong = await playlistStore.consumeNextPersonalFmTrack({
             track: state.currentTrackSnapshot,
             playtime: state.duration,
