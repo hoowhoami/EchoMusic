@@ -1,5 +1,5 @@
 import type { Song } from '@/models/song';
-import { isPlayableSong, isPaidSong } from '@/utils/song';
+import { isPlayableSong, isPaidSong, isVipSong } from '@/utils/song';
 import type { usePlaylistStore } from '../playlist';
 import type { AudioEffectValue, AudioQualityValue } from '../../types';
 import type { TrackLoudness } from '@/utils/player';
@@ -230,19 +230,23 @@ export const resolvePlaybackNotice = (params: {
   track?: Song | null;
   autoNextEnabled?: boolean;
   autoNextDelaySeconds?: number;
+  isUserNovip?: boolean;
 }): PlaybackNotice => {
   const trackId = params.track ? String(params.track.id) : null;
   const requiresPurchase = Boolean(params.track && isPaidSong(params.track));
+  const requiresVip = Boolean(params.isUserNovip && params.track && isVipSong(params.track));
   const autoNextDelay = Math.max(0, Math.floor(params.autoNextDelaySeconds ?? 0));
   const autoNextDetail = params.autoNextEnabled
     ? `${autoNextDelay > 0 ? `${autoNextDelay} 秒后` : '即将'}尝试下一首`
     : '请稍后重试';
 
+  const vipReason = requiresVip ? '当前歌曲需要 VIP 权限' : null;
+
   if (params.code === 'track-not-playable') {
     return {
       code: params.code,
       title: '播放失败',
-      reason: '当前歌曲暂不可播放',
+      reason: vipReason || '当前歌曲暂不可播放',
       detail: autoNextDetail,
       trackId,
     };
@@ -252,7 +256,7 @@ export const resolvePlaybackNotice = (params: {
     return {
       code: params.code,
       title: '播放失败',
-      reason: requiresPurchase ? '可能需要购买或账号权限' : '暂时无法获取可用音源',
+      reason: vipReason || (requiresPurchase ? '可能需要购买或账号权限' : '暂时无法获取可用音源'),
       detail: autoNextDetail,
       trackId,
     };
@@ -261,7 +265,7 @@ export const resolvePlaybackNotice = (params: {
   return {
     code: params.code,
     title: '播放失败',
-    reason: requiresPurchase ? '可能需要购买或账号权限' : '音频加载或播放过程中出现异常',
+    reason: vipReason || (requiresPurchase ? '可能需要购买或账号权限' : '音频加载或播放过程中出现异常'),
     detail: autoNextDetail,
     trackId,
   };
