@@ -105,6 +105,12 @@ const handleSeekEnd = () => {
   playerStore.notifySeekEnd();
 };
 
+const handleSeekCancel = () => {
+  pendingSeekTime.value = null;
+  isDraggingSeek.value = false;
+  playerStore.notifySeekEnd();
+};
+
 const formatTime = (seconds: number) => {
   if (!seconds || isNaN(seconds)) return '00:00';
   const mins = Math.floor(seconds / 60);
@@ -138,9 +144,9 @@ const handleCopySongInfo = async () => {
         :step="0.1"
         class="bar-slider-top group/progress"
         @update:model-value="handleSeek"
-        @pointerdown="handleSeekStart"
+        @pointerdown.capture="handleSeekStart"
         @pointerup="handleSeekEnd"
-        @pointercancel="handleSeekEnd"
+        @pointercancel="handleSeekCancel"
         @mouseenter="isHoveringProgress = true"
         @mouseleave="isHoveringProgress = false"
       >

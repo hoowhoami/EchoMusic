@@ -172,6 +172,12 @@ const handleSeekEnd = () => {
   player.notifySeekEnd();
 };
 
+const handleSeekCancel = () => {
+  pendingSeekTime.value = null;
+  isDraggingSeek.value = false;
+  player.notifySeekEnd();
+};
+
 const toggleFavoritePB = (e: Event) => {
   e.stopPropagation();
   toggleFavorite();
@@ -509,9 +515,9 @@ onUnmounted(() => {
             :step="0.1"
             class="relative flex items-center select-none touch-none flex-1 min-w-0 h-4 cursor-pointer group/progress"
             @update:model-value="handleSeek"
-            @pointerdown="handleSeekStart"
+            @pointerdown.capture="handleSeekStart"
             @pointerup="handleSeekEnd"
-            @pointercancel="handleSeekEnd"
+            @pointercancel="handleSeekCancel"
             @mouseenter="isHoveringProgress = true"
             @mouseleave="isHoveringProgress = false"
           >
