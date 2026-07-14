@@ -58,6 +58,30 @@ const isMac = computed(() => window.electron.platform === 'darwin');
 const isLoggedIn = computed(() => userStore.isLoggedIn);
 const userInfo = computed(() => userStore.info);
 
+interface VipLevelInfo {
+  product_type?: string
+  is_vip?: number
+  vip_begin_time?: string | number
+  vip_end_time?: string | number
+}
+
+interface VipInfoState {
+  busi_vip?: VipLevelInfo[]
+  [key: string]: unknown
+}
+
+const vipInfo = computed<VipInfoState>(
+  () => (userInfo.value?.extendsInfo?.vip as VipInfoState | undefined) || {},
+)
+const busiVip = computed<VipLevelInfo[]>(() => vipInfo.value?.busi_vip || [])
+const svip = computed(() => busiVip.value.find((v) => v.product_type === 'svip' && v.is_vip === 1))
+const tvip = computed(() => busiVip.value.find((v) => v.product_type === 'tvip' && v.is_vip === 1))
+const vipBadge = computed(() => {
+  if (svip.value) return 'svip'
+  if (tvip.value) return 'tvip'
+  return 'novip'
+})
+
 const activePlaylistTab = ref(0);
 const showCreateDialog = ref(false);
 const showRemoveDialog = ref(false);
@@ -957,9 +981,24 @@ watch(
                   {{ isLoggedIn ? userInfo?.nickname : '未登录' }}
                 </span>
                 <span
-                  class="truncate text-[9px] text-text-secondary font-medium opacity-60 tracking-wider"
+                  class="truncate text-[9px] text-text-secondary font-medium opacity-60 tracking-wider inline-flex items-center gap-1"
                 >
-                  {{ isLoggedIn ? `Lv.${userInfo?.p_grade || 0}` : '点击登录账号' }}
+                  <template v-if="isLoggedIn">
+                    <span
+                      v-if="vipBadge === 'svip'"
+                      class="px-1 py-0.5 rounded-sm bg-linear-to-r from-orange-500 to-orange-500/80 text-white font-black leading-none"
+                    >SVIP</span>
+                    <span
+                      v-else-if="vipBadge === 'tvip'"
+                      class="px-1 py-0.5 rounded-sm bg-linear-to-r from-[#07C160] to-[#07C160]/80 text-white font-black leading-none"
+                    >TVIP</span>
+                    <span
+                      v-else
+                      class="px-1 py-0.5 rounded-sm bg-linear-to-r from-gray-500/60 to-gray-500/40 text-white/60 font-black leading-none"
+                    >NOVIP</span>
+                    <span>Lv.{{ userInfo?.p_grade || 0 }}</span>
+                  </template>
+                  <span v-else>点击登录账号</span>
                 </span>
               </div>
             </div>
