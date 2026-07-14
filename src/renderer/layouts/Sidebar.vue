@@ -59,28 +59,28 @@ const isLoggedIn = computed(() => userStore.isLoggedIn);
 const userInfo = computed(() => userStore.info);
 
 interface VipLevelInfo {
-  product_type?: string
-  is_vip?: number
-  vip_begin_time?: string | number
-  vip_end_time?: string | number
+  product_type?: string;
+  is_vip?: number;
+  vip_begin_time?: string | number;
+  vip_end_time?: string | number;
 }
 
 interface VipInfoState {
-  busi_vip?: VipLevelInfo[]
-  [key: string]: unknown
+  busi_vip?: VipLevelInfo[];
+  [key: string]: unknown;
 }
 
 const vipInfo = computed<VipInfoState>(
   () => (userInfo.value?.extendsInfo?.vip as VipInfoState | undefined) || {},
-)
-const busiVip = computed<VipLevelInfo[]>(() => vipInfo.value?.busi_vip || [])
-const svip = computed(() => busiVip.value.find((v) => v.product_type === 'svip' && v.is_vip === 1))
-const tvip = computed(() => busiVip.value.find((v) => v.product_type === 'tvip' && v.is_vip === 1))
+);
+const busiVip = computed<VipLevelInfo[]>(() => vipInfo.value?.busi_vip || []);
+const svip = computed(() => busiVip.value.find((v) => v.product_type === 'svip' && v.is_vip === 1));
+const tvip = computed(() => busiVip.value.find((v) => v.product_type === 'tvip' && v.is_vip === 1));
 const vipBadge = computed(() => {
-  if (svip.value) return 'svip'
-  if (tvip.value) return 'tvip'
-  return 'novip'
-})
+  if (svip.value) return 'svip';
+  if (tvip.value) return 'tvip';
+  return 'novip';
+});
 
 const activePlaylistTab = ref(0);
 const showCreateDialog = ref(false);
@@ -989,15 +989,18 @@ watch(
                     <span
                       v-if="vipBadge === 'svip'"
                       class="shrink-0 px-0.75 py-[1.5px] rounded-sm bg-linear-to-r from-orange-500 to-orange-500/80 text-[8px] text-white font-black leading-none"
-                    >SVIP</span>
+                      >SVIP</span
+                    >
                     <span
                       v-else-if="vipBadge === 'tvip'"
                       class="shrink-0 px-0.75 py-[1.5px] rounded-sm bg-linear-to-r from-[#07C160] to-[#07C160]/80 text-[8px] text-white font-black leading-none"
-                    >TVIP</span>
+                      >TVIP</span
+                    >
                     <span
                       v-else
                       class="shrink-0 px-0.75 py-[1.5px] rounded-sm bg-linear-to-r from-gray-500/60 to-gray-500/40 text-[8px] text-white/60 font-black leading-none"
-                    >NOVIP</span>
+                      >NOVIP</span
+                    >
                   </template>
                   <span v-else class="opacity-60">点击登录账号</span>
                 </span>

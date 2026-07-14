@@ -75,8 +75,6 @@ const {
 } = useDeferredSeek({
   getCurrentTime: () => playerStore.currentTime,
   seek: (time) => playerStore.seek(time),
-  onStart: () => playerStore.notifySeekStart(),
-  onEnd: () => playerStore.notifySeekEnd(),
 });
 
 const progressTooltipPercent = computed(() => {

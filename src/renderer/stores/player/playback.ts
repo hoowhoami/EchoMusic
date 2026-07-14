@@ -436,7 +436,6 @@ export const createPlaybackManager = (
   const seek = (time: number) => {
     const effectiveDuration = engine.duration > 0 ? engine.duration : state.duration;
     const targetTime = Math.max(0, Math.min(effectiveDuration, time));
-    if (state.isDraggingProgress) state.isDraggingProgress = false;
     state.seekTargetTime = targetTime;
     state.seekTimestamp = Date.now();
     engine.seek(targetTime);

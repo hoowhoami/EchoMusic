@@ -149,8 +149,6 @@ const {
 } = useDeferredSeek({
   getCurrentTime: () => player.currentTime,
   seek: (time) => player.seek(time),
-  onStart: () => player.notifySeekStart(),
-  onEnd: () => player.notifySeekEnd(),
 });
 
 const toggleFavoritePB = (e: Event) => {

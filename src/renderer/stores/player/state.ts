@@ -26,7 +26,6 @@ export const createPlayerState = () => ({
   audioEffect: 'none' as AudioEffectValue,
   recentSeekIgnoreEnd: false,
   settingsWatcherRegistered: false,
-  isDraggingProgress: false,
   pendingSettingRefresh: false,
   climaxMarks: [] as ClimaxMark[],
   appliedOutputDeviceId: 'default' as string,

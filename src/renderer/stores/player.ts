@@ -449,7 +449,6 @@ export const usePlayerStore = defineStore(
 
       const events: PlayerEngineEvents = {
         timeUpdate: (currentTime) => {
-          if (state.isDraggingProgress) return;
           // 切歌加载护栏：新文件 file-loaded 之前到达的回报多为上一首的残留位置，一律丢弃，
           // 避免进度条切歌瞬间先跳到旧进度再归零
           if (state.awaitingTrackLoad) return;
@@ -569,12 +568,6 @@ export const usePlayerStore = defineStore(
       });
     };
 
-    const notifySeekStart = () => {
-      state.isDraggingProgress = true;
-    };
-    const notifySeekEnd = () => {
-      state.isDraggingProgress = false;
-    };
     const setVolumeSmooth = async (value: number, durationMs?: number) => {
       await engine.fadeTo(value, durationMs ?? 1000);
       state.volume = engine.volume;
@@ -623,8 +616,6 @@ export const usePlayerStore = defineStore(
       clearPlaybackNotice,
       refreshCurrentTrack,
       init,
-      notifySeekStart,
-      notifySeekEnd,
       setVolumeSmooth,
       onPlayerEvent: playerEvents.on,
       getPlayerEventPayload,

@@ -3,8 +3,6 @@ import { computed, ref } from 'vue';
 interface DeferredSeekOptions {
   getCurrentTime: () => number;
   seek: (time: number) => void;
-  onStart?: () => void;
-  onEnd?: () => void;
 }
 
 /**
@@ -21,16 +19,13 @@ export function useDeferredSeek(options: DeferredSeekOptions) {
   ]);
 
   const reset = () => {
-    const wasDragging = isDragging.value;
     pendingSeekTime.value = null;
     isDragging.value = false;
-    if (wasDragging) options.onEnd?.();
   };
 
   const handleStart = () => {
     isDragging.value = true;
     pendingSeekTime.value = options.getCurrentTime();
-    options.onStart?.();
   };
 
   const handleValueUpdate = (value: number[] | undefined) => {

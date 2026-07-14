@@ -265,7 +265,8 @@ export const resolvePlaybackNotice = (params: {
   return {
     code: params.code,
     title: '播放失败',
-    reason: vipReason || (requiresPurchase ? '可能需要购买或账号权限' : '音频加载或播放过程中出现异常'),
+    reason:
+      vipReason || (requiresPurchase ? '可能需要购买或账号权限' : '音频加载或播放过程中出现异常'),
     detail: autoNextDetail,
     trackId,
   };
