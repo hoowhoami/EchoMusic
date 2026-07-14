@@ -42,8 +42,8 @@ const handleUpdate = (next: unknown) => {
   @apply relative inline-flex h-6 w-11 items-center rounded-full transition-colors outline-none;
   @apply data-disabled:opacity-60 data-disabled:cursor-not-allowed;
   @apply focus-visible:outline-none;
-  border: 1px solid var(--control-border);
-  background: var(--control-muted-bg);
+  border: 1px solid color-mix(in srgb, var(--color-text-main) 26%, var(--control-border));
+  background: color-mix(in srgb, var(--color-text-main) 14%, var(--control-muted-bg));
 }
 
 .switch-root[data-state='checked'] {
@@ -51,8 +51,13 @@ const handleUpdate = (next: unknown) => {
   background: var(--color-primary);
 }
 
+.switch-root:not([data-state='checked']):not([data-disabled]):hover {
+  border-color: color-mix(in srgb, var(--color-text-main) 36%, var(--control-border));
+  background: color-mix(in srgb, var(--color-text-main) 20%, var(--control-muted-bg));
+}
+
 .switch-root:focus-visible {
-  box-shadow: none;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 22%, transparent);
 }
 
 .switch-thumb {

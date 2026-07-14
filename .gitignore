@@ -63,3 +63,5 @@ native/*/node_modules/
 cloudflare/**/.wrangler/
 cloudflare/**/*.dev.vars
 cloudflare/**/*.local.toml
+
+.planning

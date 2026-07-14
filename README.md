@@ -238,7 +238,7 @@ xattr -cr /Applications/EchoMusic.app && codesign --force --deep --sign - /Appli
 
 ## 交流群
 
-- [Telegram](https://t.me/+H9vpkAJrDlViZjU1)
+- [Telegram](https://telegram.me/+H9vpkAJrDlViZjU1)
 - QQ1群: 1036693403（已满，加了会被直接拒绝）
 - QQ2群：[491694809](https://qun.qq.com/universal-share/share?ac=1&authKey=XOL9fQGcJA%2FrPnEMB3ye5uizEGZd%2Bd0%2BqXVcoNcsRsE44r%2FTuZxTMpbOEb09sD1c&busi_data=eyJncm91cENvZGUiOiI0OTE2OTQ4MDkiLCJ0b2tlbiI6IlROYm1OblFUc1o2NzBMQVNMWTlmY1QwOVZxU1RuelIvcVB1bzlPVXd0dVB3ZHNBWm0vMEVNZkQzVXFOQ3I0YUoiLCJ1aW4iOiIzNTM4OTA0MDc4In0%3D&data=Wg3hFwudAwgWfojZNMpcyK5KoGydAM9hijUfwcvg-MqqjTepIcVdA0zr5Pnms_fAAgvm_7U3yK8Br9ocKbuQDg&svctype=4&tempid=h5_group_info)
 

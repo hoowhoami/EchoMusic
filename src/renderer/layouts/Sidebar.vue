@@ -981,24 +981,25 @@ watch(
                   {{ isLoggedIn ? userInfo?.nickname : '未登录' }}
                 </span>
                 <span
-                  class="truncate text-[9px] text-text-secondary font-medium opacity-60 tracking-wider inline-flex items-center gap-1"
+                  class="truncate text-[9px] text-text-secondary font-medium tracking-wider inline-flex items-center gap-1.5"
                 >
                   <template v-if="isLoggedIn">
+                    <span class="shrink-0 opacity-60">Lv.{{ userInfo?.p_grade || 0 }}</span>
+                    <span class="h-2.5 w-px shrink-0 bg-text-main/15"></span>
                     <span
                       v-if="vipBadge === 'svip'"
-                      class="px-1 py-0.5 rounded-sm bg-linear-to-r from-orange-500 to-orange-500/80 text-white font-black leading-none"
+                      class="shrink-0 px-0.75 py-[1.5px] rounded-sm bg-linear-to-r from-orange-500 to-orange-500/80 text-[8px] text-white font-black leading-none"
                     >SVIP</span>
                     <span
                       v-else-if="vipBadge === 'tvip'"
-                      class="px-1 py-0.5 rounded-sm bg-linear-to-r from-[#07C160] to-[#07C160]/80 text-white font-black leading-none"
+                      class="shrink-0 px-0.75 py-[1.5px] rounded-sm bg-linear-to-r from-[#07C160] to-[#07C160]/80 text-[8px] text-white font-black leading-none"
                     >TVIP</span>
                     <span
                       v-else
-                      class="px-1 py-0.5 rounded-sm bg-linear-to-r from-gray-500/60 to-gray-500/40 text-white/60 font-black leading-none"
+                      class="shrink-0 px-0.75 py-[1.5px] rounded-sm bg-linear-to-r from-gray-500/60 to-gray-500/40 text-[8px] text-white/60 font-black leading-none"
                     >NOVIP</span>
-                    <span>Lv.{{ userInfo?.p_grade || 0 }}</span>
                   </template>
-                  <span v-else>点击登录账号</span>
+                  <span v-else class="opacity-60">点击登录账号</span>
                 </span>
               </div>
             </div>
