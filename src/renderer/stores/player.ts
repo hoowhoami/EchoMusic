@@ -4,6 +4,7 @@ import { PERSONAL_FM_QUEUE_ID, usePlaylistStore } from './playlist';
 import { useLyricStore } from './lyric';
 import { useSettingStore } from './setting';
 import { useToastStore } from './toast';
+import { useUserStore } from './user';
 import logger from '@/utils/logger';
 import { PlayerEngine, type PlayerEngineEvents } from '@/utils/player';
 import type { Song } from '@/models/song';
@@ -160,11 +161,19 @@ export const usePlayerStore = defineStore(
       return settingStore.getSelectedImpulseResponse()?.path ?? null;
     };
     const showPlaybackNotice = (code: string, track?: Song | null) => {
+      const userStore = useUserStore();
+      const vipInfo = (userStore.info?.extendsInfo?.vip as any) || {};
+      const busiVip: any[] = vipInfo?.busi_vip || [];
+      const hasSvip = busiVip.some((v: any) => v.product_type === 'svip' && v.is_vip === 1);
+      const hasTvip = busiVip.some((v: any) => v.product_type === 'tvip' && v.is_vip === 1);
+      const isUserNovip = userStore.isLoggedIn && !hasSvip && !hasTvip;
+
       state.playbackNotice = resolvePlaybackNotice({
         code,
         track,
         autoNextEnabled: settingStore.autoNext,
         autoNextDelaySeconds: settingStore.autoNextDelaySeconds,
+        isUserNovip,
       });
     };
 
