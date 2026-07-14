@@ -7,6 +7,7 @@
 import { computed, ref } from 'vue';
 import { SliderRoot, SliderTrack, SliderRange, SliderThumb } from 'reka-ui';
 import { usePlayerControls } from '@/composables/usePlayerControls';
+import { useDeferredSeek } from '@/composables/useDeferredSeek';
 import { useSettingStore } from '@/stores/setting';
 import { useDesktopLyricStore } from '@/desktopLyric/store';
 import { useToastStore } from '@/stores/toast';
@@ -62,14 +63,20 @@ const {
 } = usePlayerControls();
 
 const isHoveringProgress = ref(false);
-const pendingSeekTime = ref<number | null>(null);
-const isDraggingSeek = ref(false);
-
-const progressValue = computed(() => {
-  if (isDraggingSeek.value && pendingSeekTime.value !== null) {
-    return [pendingSeekTime.value];
-  }
-  return [playerStore.currentTime];
+const {
+  pendingSeekTime,
+  isDragging: isDraggingSeek,
+  progressValue,
+  handleStart: handleSeekStart,
+  handleValueUpdate: handleSeek,
+  handleCommit: handleSeekCommit,
+  handleEnd: handleSeekEnd,
+  handleCancel: handleSeekCancel,
+} = useDeferredSeek({
+  getCurrentTime: () => playerStore.currentTime,
+  seek: (time) => playerStore.seek(time),
+  onStart: () => playerStore.notifySeekStart(),
+  onEnd: () => playerStore.notifySeekEnd(),
 });
 
 const progressTooltipPercent = computed(() => {
@@ -80,36 +87,6 @@ const progressTooltipPercent = computed(() => {
 
   return (displayTime / Math.max(playerStore.duration, 1)) * 100;
 });
-
-const handleSeek = (value: number[] | undefined) => {
-  if (!value || value.length === 0) return;
-  if (isDraggingSeek.value) {
-    pendingSeekTime.value = value[0];
-  } else {
-    playerStore.seek(value[0]);
-  }
-};
-
-const handleSeekStart = () => {
-  isDraggingSeek.value = true;
-  pendingSeekTime.value = playerStore.currentTime;
-  playerStore.notifySeekStart();
-};
-
-const handleSeekEnd = () => {
-  if (pendingSeekTime.value !== null) {
-    playerStore.seek(pendingSeekTime.value);
-    pendingSeekTime.value = null;
-  }
-  isDraggingSeek.value = false;
-  playerStore.notifySeekEnd();
-};
-
-const handleSeekCancel = () => {
-  pendingSeekTime.value = null;
-  isDraggingSeek.value = false;
-  playerStore.notifySeekEnd();
-};
 
 const formatTime = (seconds: number) => {
   if (!seconds || isNaN(seconds)) return '00:00';
@@ -145,6 +122,7 @@ const handleCopySongInfo = async () => {
         class="bar-slider-top group/progress"
         @update:model-value="handleSeek"
         @pointerdown.capture="handleSeekStart"
+        @value-commit="handleSeekCommit"
         @pointerup="handleSeekEnd"
         @pointercancel="handleSeekCancel"
         @mouseenter="isHoveringProgress = true"

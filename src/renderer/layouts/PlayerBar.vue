@@ -11,6 +11,7 @@ import Cover from '@/components/ui/Cover.vue';
 import Badge from '@/components/ui/Badge.vue';
 import Button from '@/components/ui/Button.vue';
 import Tooltip from '@/components/ui/Tooltip.vue';
+import { useDeferredSeek } from '@/composables/useDeferredSeek';
 import Popover from '@/components/ui/Popover.vue';
 import MvIcon from '@/components/ui/MvIcon.vue';
 import PlayerQueueDrawer from '@/components/music/PlayerQueueDrawer.vue';
@@ -136,47 +137,21 @@ const goToCurrentAlbum = () => {
 
 const isHoveringProgress = ref(false);
 
-const pendingSeekTime = ref<number | null>(null);
-const isDraggingSeek = ref(false);
-
-const progressValue = computed(() => {
-  if (isDraggingSeek.value && pendingSeekTime.value !== null) {
-    return [pendingSeekTime.value];
-  }
-  return [player.currentTime];
+const {
+  pendingSeekTime,
+  isDragging: isDraggingSeek,
+  progressValue,
+  handleStart: handleSeekStart,
+  handleValueUpdate: handleSeek,
+  handleCommit: handleSeekCommit,
+  handleEnd: handleSeekEnd,
+  handleCancel: handleSeekCancel,
+} = useDeferredSeek({
+  getCurrentTime: () => player.currentTime,
+  seek: (time) => player.seek(time),
+  onStart: () => player.notifySeekStart(),
+  onEnd: () => player.notifySeekEnd(),
 });
-
-const handleSeek = (value: number[] | undefined) => {
-  if (!value || value.length === 0) return;
-  if (isDraggingSeek.value) {
-    // 拖动中只更新视觉，不 seek
-    pendingSeekTime.value = value[0];
-  } else {
-    // 点击直接 seek
-    player.seek(value[0]);
-  }
-};
-
-const handleSeekStart = () => {
-  isDraggingSeek.value = true;
-  pendingSeekTime.value = player.currentTime;
-  player.notifySeekStart();
-};
-
-const handleSeekEnd = () => {
-  if (pendingSeekTime.value !== null) {
-    player.seek(pendingSeekTime.value);
-    pendingSeekTime.value = null;
-  }
-  isDraggingSeek.value = false;
-  player.notifySeekEnd();
-};
-
-const handleSeekCancel = () => {
-  pendingSeekTime.value = null;
-  isDraggingSeek.value = false;
-  player.notifySeekEnd();
-};
 
 const toggleFavoritePB = (e: Event) => {
   e.stopPropagation();
@@ -516,6 +491,7 @@ onUnmounted(() => {
             class="relative flex items-center select-none touch-none flex-1 min-w-0 h-4 cursor-pointer group/progress"
             @update:model-value="handleSeek"
             @pointerdown.capture="handleSeekStart"
+            @value-commit="handleSeekCommit"
             @pointerup="handleSeekEnd"
             @pointercancel="handleSeekCancel"
             @mouseenter="isHoveringProgress = true"
