@@ -915,18 +915,30 @@ onActivated(() => {
   width: 176px;
   height: 176px;
   flex: 0 0 auto;
-  padding: 0;
-  border: 8px solid rgba(72, 46, 53, 0.82);
+  padding: 6px;
+  border: 1px solid color-mix(in srgb, var(--color-text-main) 20%, transparent);
   border-radius: 999px;
-  box-shadow: 0 26px 40px rgba(5, 12, 20, 0.32);
   background:
     radial-gradient(
       circle at center,
-      rgba(0, 0, 0, 0.26) 0 14%,
-      rgba(255, 255, 255, 0.05) 15%,
-      transparent 16%
+      color-mix(in srgb, var(--color-text-main) 18%, transparent) 0 7%,
+      color-mix(in srgb, var(--color-text-main) 4%, transparent) 8% 18%,
+      transparent 19%
     ),
-    linear-gradient(135deg, rgba(255, 179, 122, 0.68), rgba(51, 21, 39, 0.96));
+    repeating-radial-gradient(
+      circle at center,
+      color-mix(in srgb, var(--color-text-main) 10%, transparent) 0 0.75px,
+      transparent 1px 3px
+    ),
+    linear-gradient(
+      135deg,
+      color-mix(in srgb, #000 42%, var(--color-bg-main)),
+      color-mix(in srgb, #000 68%, var(--color-bg-main)) 54%,
+      color-mix(in srgb, #000 50%, var(--color-bg-main))
+    );
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, #000 34%, transparent),
+    0 26px 40px rgba(5, 12, 20, 0.32);
   z-index: 1;
   cursor: pointer;
   transition:
@@ -936,7 +948,14 @@ onActivated(() => {
 
 .radio-vinyl:hover {
   transform: translateY(-2px);
-  box-shadow: 0 30px 44px rgba(5, 12, 20, 0.38);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, #000 34%, transparent),
+    0 30px 44px rgba(5, 12, 20, 0.38);
+}
+
+.radio-vinyl:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 4px;
 }
 
 .radio-vinyl :deep(.cover-container),
