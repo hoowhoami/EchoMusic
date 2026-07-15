@@ -189,6 +189,7 @@ async fn run_mpris_loop(
         .can_go_next(true)
         .can_go_previous(true)
         .can_seek(true)
+        .identity("EchoMusic")
         .build()
         .await
     {
