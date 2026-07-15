@@ -316,7 +316,14 @@ const handleStyleSongCoverPlay = async (song: Song) => {
   }
 
   try {
-    const played = await playSongInContext(playlistStore, playerStore, song, [song]);
+    const played = await playSongInContext(
+      playlistStore,
+      playerStore,
+      song,
+      styleSongs.value,
+      0,
+      styleQueueOptions.value,
+    );
     if (!played) toastStore.unavailable('当前歌曲');
   } catch {
     toastStore.actionFailed('播放');

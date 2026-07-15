@@ -118,13 +118,15 @@ export const playSongInContext = async (
   playlistStore: PlaybackQueueStoreLike,
   playerStore: PlaybackPlayerLike,
   song: Song,
-  _contextSongs: Song[],
-  _filteredInvalidCount = 0,
-  _options?: SetPlaybackQueueOptions,
+  contextSongs: Song[],
+  filteredInvalidCount = 0,
+  options?: SetPlaybackQueueOptions,
 ): Promise<boolean> => {
-  void _contextSongs;
-  void _filteredInvalidCount;
-  void _options;
+  if (contextSongs.length > 0 && options?.queueId) {
+    void filteredInvalidCount;
+    return queueAndPlaySong(playlistStore, playerStore, song, options);
+  }
+
   return queueAndPlaySong(playlistStore, playerStore, song, {
     queueId: MANUAL_PLAYBACK_QUEUE_ID,
     title: '我的队列',
