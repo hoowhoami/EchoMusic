@@ -352,6 +352,7 @@ const builtinSettingsSections = computed<SettingsRenderSection[]>(() => [
     order: 1150,
     component: ExperimentalSettingsSection,
     searchKeywords: [
+      '自动领取 VIP',
       '页面缓存',
       '最大缓存页面数',
       'GitHub 加速地址',

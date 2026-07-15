@@ -107,6 +107,14 @@ const setDpiScale = (value: number) => {
 
     <div class="settings-item">
       <div class="space-y-1">
+        <h3 class="font-semibold">自动领取 VIP</h3>
+        <p class="text-sm text-text-secondary">每次进入个人中心时自动领取每日会员权益</p>
+      </div>
+      <Switch v-model="settingStore.autoReceiveVip" />
+    </div>
+    <div class="settings-divider"></div>
+    <div class="settings-item">
+      <div class="space-y-1">
         <h3 class="font-semibold">页面缓存</h3>
         <p class="text-sm text-text-secondary">
           缓存已访问的页面，返回时无需重新加载，关闭后所有页面不缓存

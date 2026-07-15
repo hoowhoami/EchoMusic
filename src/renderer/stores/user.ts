@@ -1,5 +1,12 @@
 import { defineStore } from 'pinia';
-import { getUserDetail, getUserFollow, getUserVipDetail } from '@/api/user';
+import {
+  claimDayVip,
+  getServerNow,
+  getUserDetail,
+  getUserFollow,
+  getUserVipDetail,
+  upgradeDayVip,
+} from '@/api/user';
 import type { User, UserExtendsInfo } from '@/models/user';
 import { mapUser } from '@/utils/mappers';
 import logger from '@/utils/logger';
@@ -10,6 +17,11 @@ interface ApiPayload {
   status?: number;
   data?: unknown;
   [key: string]: unknown;
+}
+
+interface VipActionResponse {
+  status?: number;
+  error_code?: number;
 }
 
 const asApiPayload = (value: unknown): ApiPayload | null => {
@@ -81,6 +93,9 @@ export const useUserStore = defineStore('user', {
     isLoggedIn: false,
     hasFetchedUserInfo: false,
     isFetchingUserInfo: false,
+    isTvipClaimedToday: false,
+    isSvipClaimedToday: false,
+    isAutoClaimingVip: false,
     followedArtistIds: new Set<string>(),
     hasFetchedFollowedArtists: false,
   }),
@@ -187,11 +202,61 @@ export const useUserStore = defineStore('user', {
       }
     },
 
+    async autoReceiveVipIfNeeded() {
+      if (!this.isLoggedIn || this.isAutoClaimingVip) return;
+      this.isAutoClaimingVip = true;
+
+      try {
+        const today = await this.getServerToday();
+
+        try {
+          const result = (await claimDayVip(today)) as VipActionResponse;
+          if (result.status !== 1) {
+            logger.warn(
+              'UserStore',
+              'VIP claim: claimDayVip returned an unsuccessful status',
+              result,
+            );
+          }
+        } catch (error) {
+          logger.warn('UserStore', 'VIP claim: claimDayVip failed', error);
+        }
+
+        try {
+          const result = (await upgradeDayVip()) as VipActionResponse;
+          if (result.status !== 1 && result.error_code !== 297002) {
+            logger.warn(
+              'UserStore',
+              'VIP claim: upgradeDayVip returned an unsuccessful status',
+              result,
+            );
+          }
+        } catch (error) {
+          logger.warn('UserStore', 'VIP claim: upgradeDayVip failed', error);
+        }
+
+        await this.fetchUserInfo();
+        this.hasFetchedUserInfo = true;
+      } catch (error) {
+        logger.warn('UserStore', 'Auto receive VIP failed', error);
+      } finally {
+        this.isAutoClaimingVip = false;
+      }
+    },
+
+    setClaimStatus(tvip: boolean, svip: boolean) {
+      this.isTvipClaimedToday = tvip;
+      this.isSvipClaimedToday = svip;
+    },
+
     logout() {
       this.info = null;
       this.isLoggedIn = false;
       this.hasFetchedUserInfo = false;
       this.isFetchingUserInfo = false;
+      this.isTvipClaimedToday = false;
+      this.isSvipClaimedToday = false;
+      this.isAutoClaimingVip = false;
       this.followedArtistIds = new Set();
       this.hasFetchedFollowedArtists = false;
     },
@@ -235,11 +300,46 @@ export const useUserStore = defineStore('user', {
       if (this.hasFetchedFollowedArtists) return;
       await this.fetchFollowedArtists();
     },
+
+    async getServerToday(): Promise<string> {
+      const toBeijingDate = (timestamp: number) => {
+        const milliseconds = timestamp > 1e12 ? timestamp : timestamp * 1000;
+        return new Date(new Date(milliseconds).getTime() + 8 * 60 * 60 * 1000)
+          .toISOString()
+          .split('T')[0];
+      };
+
+      try {
+        const response = await getServerNow();
+        if (response && typeof response === 'object') {
+          const record = response as Record<string, unknown>;
+          const source =
+            record.data && typeof record.data === 'object'
+              ? (record.data as Record<string, unknown>)
+              : record;
+          const timestamp = [
+            source.now,
+            source.time,
+            source.timestamp,
+            source.server_time,
+            source.serverTime,
+          ]
+            .map(Number)
+            .find((value) => Number.isFinite(value) && value > 0);
+          if (timestamp) return toBeijingDate(timestamp);
+        }
+      } catch (error) {
+        logger.warn('UserStore', 'Failed to get server time, using local time', error);
+      }
+
+      return toBeijingDate(Date.now());
+    },
   },
   persist: {
     omit: [
       'hasFetchedUserInfo',
       'isFetchingUserInfo',
+      'isAutoClaimingVip',
       'followedArtistIds',
       'hasFetchedFollowedArtists',
     ],
