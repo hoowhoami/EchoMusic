@@ -847,15 +847,19 @@ watch(
             content-class="sidebar-rail-more-menu"
           >
             <template #trigger>
-              <Button
-                variant="unstyled"
-                size="none"
-                type="button"
-                class="sidebar-rail-item"
-                title="歌单操作"
-              >
-                <Icon :icon="iconDotsVertical" width="18" height="18" />
-              </Button>
+              <Tooltip content="歌单操作" side="right">
+                <template #trigger>
+                  <Button
+                    variant="unstyled"
+                    size="none"
+                    type="button"
+                    class="sidebar-rail-item"
+                    title="歌单操作"
+                  >
+                    <Icon :icon="iconDotsVertical" width="18" height="18" />
+                  </Button>
+                </template>
+              </Tooltip>
             </template>
             <div class="sidebar-rail-more-list">
               <div class="sidebar-sort-menu-title">歌单操作</div>

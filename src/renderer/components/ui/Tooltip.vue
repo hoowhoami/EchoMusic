@@ -67,7 +67,7 @@ const props = withDefaults(defineProps<Props>(), {
   font-weight: 600;
   line-height: 1.45;
   box-shadow: var(--shadow-elevated);
-  z-index: 300;
+  z-index: 2000;
   user-select: none;
 }
 
