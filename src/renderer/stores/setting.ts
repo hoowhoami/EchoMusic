@@ -165,8 +165,8 @@ export const useSettingStore = defineStore('setting', {
     audioBufferSecs: 0.5,
     kugouApiProxyUrl: DEFAULT_NETWORK_SETTINGS.kugouApiProxyUrl,
     kugouApiTimeoutSecs: DEFAULT_NETWORK_SETTINGS.kugouApiTimeoutSecs,
-    mpvHttpProxyUrl: DEFAULT_NETWORK_SETTINGS.mpvHttpProxyUrl,
-    mpvNetworkTimeoutSecs: DEFAULT_NETWORK_SETTINGS.mpvNetworkTimeoutSecs,
+    playerHttpProxyUrl: DEFAULT_NETWORK_SETTINGS.playerHttpProxyUrl,
+    playerNetworkTimeoutSecs: DEFAULT_NETWORK_SETTINGS.playerNetworkTimeoutSecs,
     // 播放卡死检测：播放中进度超过该秒数无推进则判定卡死并自动恢复（0=禁用）
     playbackStallTimeout: 8,
     // 同一首歌连续卡死的最大自动恢复次数，超过则回退到失败提示/自动下一首
@@ -330,14 +330,14 @@ export const useSettingStore = defineStore('setting', {
       return normalizeNetworkSettings({
         kugouApiProxyUrl: this.kugouApiProxyUrl,
         kugouApiTimeoutSecs: this.kugouApiTimeoutSecs,
-        mpvHttpProxyUrl: this.mpvHttpProxyUrl,
-        mpvNetworkTimeoutSecs: this.mpvNetworkTimeoutSecs,
+        playerHttpProxyUrl: this.playerHttpProxyUrl,
+        playerNetworkTimeoutSecs: this.playerNetworkTimeoutSecs,
       });
     },
     syncNetworkSettings() {
       const settings = this.getNetworkSettings();
       this.kugouApiTimeoutSecs = settings.kugouApiTimeoutSecs;
-      this.mpvNetworkTimeoutSecs = settings.mpvNetworkTimeoutSecs;
+      this.playerNetworkTimeoutSecs = settings.playerNetworkTimeoutSecs;
       void window.electron?.network?.update(settings);
     },
     enableTemporaryDiagnosticLogging(minutes = 10) {

@@ -121,13 +121,13 @@ const updateKugouApiTimeout = (value: string | number) => {
   settingStore.syncNetworkSettings();
 };
 
-const updateMpvHttpProxy = (value: string | number) => {
-  settingStore.mpvHttpProxyUrl = String(value ?? '');
+const updatePlayerHttpProxy = (value: string | number) => {
+  settingStore.playerHttpProxyUrl = String(value ?? '');
   settingStore.syncNetworkSettings();
 };
 
-const updateMpvNetworkTimeout = (value: string | number) => {
-  settingStore.mpvNetworkTimeoutSecs = Math.max(1, Math.min(300, Number(value) || 60));
+const updatePlayerNetworkTimeout = (value: string | number) => {
+  settingStore.playerNetworkTimeoutSecs = Math.max(1, Math.min(300, Number(value) || 60));
   settingStore.syncNetworkSettings();
 };
 </script>
@@ -463,33 +463,33 @@ const updateMpvNetworkTimeout = (value: string | number) => {
     <div class="settings-divider"></div>
     <div class="settings-item">
       <div class="space-y-1">
-        <h3 class="font-semibold">mpv HTTP 代理</h3>
+        <h3 class="font-semibold">播放器 HTTP 代理</h3>
         <p class="text-sm text-text-secondary">用于播放器直接加载音频直链，支持 HTTP/HTTPS 代理</p>
       </div>
       <Input
-        :model-value="settingStore.mpvHttpProxyUrl"
+        :model-value="settingStore.playerHttpProxyUrl"
         placeholder="http://127.0.0.1:7890"
         class="w-60! rounded-lg"
         input-class="!h-9 !rounded-lg !pl-3 !pr-8 !text-sm"
-        @update:model-value="updateMpvHttpProxy"
-        @clear="updateMpvHttpProxy('')"
+        @update:model-value="updatePlayerHttpProxy"
+        @clear="updatePlayerHttpProxy('')"
       />
     </div>
     <div class="settings-divider"></div>
     <div class="settings-item">
       <div class="space-y-1">
-        <h3 class="font-semibold">mpv 网络超时</h3>
+        <h3 class="font-semibold">播放器网络超时</h3>
         <p class="text-sm text-text-secondary">播放器打开音频直链的网络等待时间</p>
       </div>
       <InputNumber
         class="w-45"
-        :model-value="String(settingStore.mpvNetworkTimeoutSecs ?? 60)"
+        :model-value="String(settingStore.playerNetworkTimeoutSecs ?? 60)"
         :min="1"
         :max="300"
         :step="10"
         placeholder="60"
         suffix="秒"
-        @update:model-value="updateMpvNetworkTimeout"
+        @update:model-value="updatePlayerNetworkTimeout"
       />
     </div>
     <div class="settings-divider"></div>

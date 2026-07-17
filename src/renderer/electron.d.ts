@@ -483,7 +483,7 @@ export interface IElectronAPI {
     available: () => Promise<boolean>;
     onEvent: (func: (event: { type: string; positionMs?: number }) => void) => () => void;
   };
-  mpv: {
+  player: {
     load: (url: string) => Promise<void>;
     loadMkvTrack: (url: string, trackId: number) => Promise<void>;
     getTrackList: () => Promise<

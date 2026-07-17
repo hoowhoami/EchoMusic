@@ -18,7 +18,7 @@ export function useYrcAnimation(activeIndex?: Ref<number>) {
   const lyricStore = useLyricStore();
 
   // 主歌词页提前的是滚动位置；逐字进度本身按歌词时间轴走。
-  // 但 mpv 上报时间有 250ms 节流 + IPC 延迟，锚点时间偏旧会导致逐字整体滞后（行尾尤其明显），
+  // 但 player 上报时间有 250ms 节流 + IPC 延迟，锚点时间偏旧会导致逐字整体滞后（行尾尤其明显），
   // 这里给一个小的提前量抵消该固定延迟，让逐字跟手又不至于明显抢拍。
   const LYRIC_LOOKAHEAD = 120;
   const CLOCK_SYNC_TOLERANCE_MS = 300;

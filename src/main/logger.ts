@@ -61,7 +61,7 @@ export function initLogger() {
   log.transports.file.format = logFormat;
 
   // 文件写入改为异步：electron-log 默认 sync=true，会在主进程用 fs.writeFileSync 同步写盘，
-  // 日志爆发（如 mpv 坏帧成簇报错）时会串行阻塞主进程；叠加锁定桌面歌词的全局鼠标钩子会卡光标。
+  // 日志爆发时会串行阻塞主进程；叠加锁定桌面歌词的全局鼠标钩子会卡光标。
   // 异步模式下写入进入队列、由 fs.writeFile 批量刷盘，不阻塞主线程（顺序仍有保证）。
   log.transports.file.sync = false;
 

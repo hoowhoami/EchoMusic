@@ -1,15 +1,15 @@
 export interface NetworkSettings {
   kugouApiProxyUrl: string;
   kugouApiTimeoutSecs: number;
-  mpvHttpProxyUrl: string;
-  mpvNetworkTimeoutSecs: number;
+  playerHttpProxyUrl: string;
+  playerNetworkTimeoutSecs: number;
 }
 
 export const DEFAULT_NETWORK_SETTINGS: NetworkSettings = {
   kugouApiProxyUrl: '',
   kugouApiTimeoutSecs: 0,
-  mpvHttpProxyUrl: '',
-  mpvNetworkTimeoutSecs: 60,
+  playerHttpProxyUrl: '',
+  playerNetworkTimeoutSecs: 60,
 };
 
 const clampNumber = (value: unknown, fallback: number, min: number, max: number) => {
@@ -40,10 +40,10 @@ export const normalizeNetworkSettings = (
     0,
     300,
   ),
-  mpvHttpProxyUrl: normalizeProxyUrl(value?.mpvHttpProxyUrl),
-  mpvNetworkTimeoutSecs: clampNumber(
-    value?.mpvNetworkTimeoutSecs,
-    DEFAULT_NETWORK_SETTINGS.mpvNetworkTimeoutSecs,
+  playerHttpProxyUrl: normalizeProxyUrl(value?.playerHttpProxyUrl),
+  playerNetworkTimeoutSecs: clampNumber(
+    value?.playerNetworkTimeoutSecs,
+    DEFAULT_NETWORK_SETTINGS.playerNetworkTimeoutSecs,
     1,
     300,
   ),

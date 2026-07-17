@@ -1,0 +1,23 @@
+{
+	"name": "ffmpeg-audio",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"lint": "biome lint . --error-on-warnings",
+		"format": "biome format --write .",
+		"format:check": "biome format .",
+		"typecheck": "tsc -b",
+		"extract:slim": "node scripts/extract_slim.ts",
+		"generate:config": "node scripts/generate_config.ts"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "^2.5.3",
+		"@types/node": "^26.1.1",
+		"tinyglobby": "^0.2.17",
+		"typescript": "^7.0.2"
+	},
+	"dependencies": {
+		"jszip": "^3.10.1"
+	},
+	"packageManager": "pnpm@11.10.0"
+}

@@ -1,0 +1,38 @@
+[package]
+name = "echo-ffmpeg-player"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+napi = { version = "3", features = ["napi9", "serde-json"] }
+napi-derive = "3"
+ffmpeg_audio = { path = "vendor/ffmpeg-audio/crates/ffmpeg_audio", features = ["http"] }
+cpal = "0.16"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+rubato = "0.16"
+rustfft = "6.4"
+
+[target.'cfg(target_os = "windows")'.dependencies]
+windows = { version = "0.58", features = [
+  "implement",
+  "Win32_Devices_Properties",
+  "Win32_Foundation",
+  "Win32_Media_Audio",
+  "Win32_Media_KernelStreaming",
+  "Win32_Media_Multimedia",
+  "Win32_System_Com",
+  "Win32_System_Threading",
+  "Win32_System_Variant",
+  "Win32_UI_Shell_PropertiesSystem"
+] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+coreaudio-sys = "0.2"
+objc2-core-audio-types = "0.3"
+
+[build-dependencies]
+napi-build = "2"

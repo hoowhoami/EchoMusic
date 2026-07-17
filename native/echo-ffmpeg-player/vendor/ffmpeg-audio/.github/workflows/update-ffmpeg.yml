@@ -1,0 +1,277 @@
+name: Update Bundled FFmpeg
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  ubuntu-targets:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: android
+            arch: armeabi-v7a
+          - os: android
+            arch: arm64-v8a
+          - os: android
+            arch: x86
+          - os: android
+            arch: x86_64
+          - os: linux
+            arch: x86_64
+          - os: linux
+            arch: arm64
+          - os: linux
+            arch: x86
+          - os: linux
+            arch: armv7
+          - os: windows-gnu
+            arch: x86_64
+          - os: windows-gnu
+            arch: x86
+          - os: windows-gnu
+            arch: aarch64
+          - os: windows-gnu
+            arch: arm
+          - os: emscripten
+            arch: wasm32
+    name: Build (${{ matrix.os }}-${{ matrix.arch }})
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: lts/*
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Emscripten SDK
+        if: matrix.os == 'emscripten'
+        uses: emscripten-core/setup-emsdk@v16
+
+      - name: Install Linux Cross Compilers
+        if: matrix.os == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu gcc-arm-linux-gnueabihf gcc-i686-linux-gnu make
+
+      - name: Install LLVM-MinGW for Windows-GNU targets
+        if: matrix.os == 'windows-gnu'
+        run: |
+          wget https://github.com/mstorsjo/llvm-mingw/releases/download/20260602/llvm-mingw-20260602-ucrt-ubuntu-22.04-x86_64.tar.xz
+          tar -xf llvm-mingw-20260602-ucrt-ubuntu-22.04-x86_64.tar.xz
+          echo "$(pwd)/llvm-mingw-20260602-ucrt-ubuntu-22.04-x86_64/bin" >> $GITHUB_PATH
+
+      - name: Clone FFmpeg
+        run: |
+          git clone --depth 1 --branch n8.1.2 https://github.com/FFmpeg/FFmpeg.git ffmpeg
+          cp scripts/generate_config.ts ffmpeg/
+
+      - name: Run Configuration Script
+        env:
+          ANDROID_NDK_HOME: ${{ env.ANDROID_NDK_LATEST_HOME }}
+        run: |
+          cd ffmpeg
+          node generate_config.ts ${{ matrix.os }} ${{ matrix.arch }}
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: ffmpeg-config-${{ matrix.os }}-${{ matrix.arch }}
+          path: |
+            ffmpeg/build_out_${{ matrix.os }}_*/**
+
+  macos-targets:
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos
+            arch: x86_64
+          - os: macos
+            arch: arm64
+          - os: ios
+            arch: arm64
+    name: Build (${{ matrix.os }}-${{ matrix.arch }})
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: lts/*
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Clone FFmpeg
+        run: |
+          git clone --depth 1 --branch n8.1.2 https://github.com/FFmpeg/FFmpeg.git ffmpeg
+          cp scripts/generate_config.ts ffmpeg/
+
+      - name: Run Configuration Script
+        run: |
+          cd ffmpeg
+          node generate_config.ts ${{ matrix.os }} ${{ matrix.arch }}
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: ffmpeg-config-${{ matrix.os }}-${{ matrix.arch }}
+          path: |
+            ffmpeg/build_out_${{ matrix.os }}_*/**
+
+  windows-targets:
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows
+            arch: x86_64
+            msvc_arch: x64
+          - os: windows
+            arch: x86
+            msvc_arch: x86
+          - os: windows
+            arch: arm64
+            msvc_arch: amd64_arm64
+    name: Build (${{ matrix.os }}-${{ matrix.arch }})
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: lts/*
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Setup MSVC Compiler
+        uses: apoint123/msvc-dev-cmd@v1
+        with:
+          arch: ${{ matrix.msvc_arch }}
+
+      - name: Setup MSYS2 Environment
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MSYS
+          path-type: inherit
+          update: true
+          install: >-
+            make
+            git
+            diffutils
+
+      - name: Clone FFmpeg and Run Script
+        shell: msys2 {0}
+        run: |
+          git clone --depth 1 --branch n8.1.2 https://github.com/FFmpeg/FFmpeg.git ffmpeg
+          cp scripts/generate_config.ts ffmpeg/
+          cd ffmpeg
+          node generate_config.ts ${{ matrix.os }} ${{ matrix.arch }}
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: ffmpeg-config-${{ matrix.os }}-${{ matrix.arch }}
+          path: |
+            ffmpeg/build_out_${{ matrix.os }}_*/**
+
+  generate-and-pr:
+    runs-on: ubuntu-latest
+    needs: [ubuntu-targets, macos-targets, windows-targets]
+    name: Generate Zips and Open PR
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: lts/*
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Download all platform artifacts
+        uses: actions/download-artifact@v8
+        with:
+          pattern: ffmpeg-config-*
+          path: _artifacts/
+          merge-multiple: false
+
+      - name: Reorganize artifacts into configs/ structure
+        run: |
+          mkdir -p configs
+          find _artifacts -type d -name "build_out_*" | while read d; do
+              name=$(basename "$d")
+              cp -r "$d" "configs/$name"
+              echo "  已复制: $name"
+          done
+
+      - name: Clone FFmpeg
+        run: git clone --depth 1 --branch n8.1.2 https://github.com/FFmpeg/FFmpeg.git ffmpeg
+
+      - name: Generate ffmpeg_slim and pack zips
+        run: |
+          node scripts/extract_slim.ts
+
+      - name: Show zip sizes
+        run: |
+          ls -lh crates/ffmpeg_audio_sys/vendor/ffmpeg_slim.zip crates/ffmpeg_audio_sys/vendor/configs.zip
+
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@v8
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          branch: update/bundled-ffmpeg
+          title: "chore: update bundled FFmpeg"
+          body: |
+            Auto-generated by the **Update Bundled FFmpeg** workflow.
+
+            ## Changes
+            - `ffmpeg_slim.zip` — trimmed FFmpeg source for all supported platforms
+            - `configs.zip` — per-platform `config.h` and `make_dryrun.log`
+            ## Platforms included
+            | Platform   | Arch                                |
+            | ---------- | ----------------------------------- |
+            | Android    | armeabi-v7a, arm64-v8a, x86, x86_64 |
+            | Linux      | x86_64, arm64                       |
+            | macOS      | x86_64, arm64                       |
+            | iOS        | arm64                               |
+            | Windows    | x86_64, x86, arm64                  |
+            | Emscripten | wasm32                              |
+          commit-message: "chore: update bundled FFmpeg zips"
+          add-paths: |
+            crates/ffmpeg_audio_sys/vendor/ffmpeg_slim.zip
+            crates/ffmpeg_audio_sys/vendor/configs.zip
+          delete-branch: true

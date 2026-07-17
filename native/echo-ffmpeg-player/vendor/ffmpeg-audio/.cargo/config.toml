@@ -1,0 +1,49 @@
+[target.wasm32-unknown-emscripten]
+rustflags = [
+    "-C",
+    "target-feature=+simd128",
+
+    "-C",
+    "target-feature=+bulk-memory",
+
+    "-C",
+    "target-feature=+nontrapping-fptoint",
+
+    "-C",
+    "target-feature=+sign-ext",
+
+    "-C",
+    "target-feature=+mutable-globals",
+
+    "-C",
+    "linker-plugin-lto",
+
+    "-C",
+    "link-arg=-sEXPORT_ES6=1",
+    "-C",
+    "link-arg=-sMODULARIZE=1",
+]
+
+runner = "node"
+
+[target.wasm32-unknown-unknown]
+rustflags = [
+    "-C",
+    "target-feature=+simd128",
+
+    "-C",
+    "target-feature=+bulk-memory",
+
+    "-C",
+    "target-feature=+nontrapping-fptoint",
+
+    "-C",
+    "target-feature=+sign-ext",
+
+    "-C",
+    "target-feature=+mutable-globals",
+]
+
+[unstable]
+build-std = ["core", "alloc", "std", "panic_abort", "proc_macro"]
+panic-immediate-abort = true

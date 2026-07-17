@@ -23,7 +23,7 @@ export const registerIpcHandlers = (context: IpcContext) => {
   registerWindowHandlers(context);
   registerMainWindowPreferenceHandlers();
   registerApiServerHandlers();
-  registerPlayerIpc(context.mpvRef);
+  registerPlayerIpc(context.playerRef);
   registerSettingsHandlers(context);
   registerShortcutHandlers(context);
   registerTrayHandlers();

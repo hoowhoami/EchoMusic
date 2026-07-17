@@ -1,0 +1,30 @@
+[package]
+name = "ffmpeg_audio_sys"
+description = "Raw FFmpeg FFI bindings for ffmpeg_audio."
+license = "GPL-3.0-only"
+repository = "https://github.com/apoint123/ffmpeg-audio"
+readme = "README.md"
+keywords = ["ffmpeg", "audio", "ffi", "bindings"]
+categories = ["external-ffi-bindings", "multimedia::audio"]
+version = "0.1.2"
+edition = "2024"
+
+[lib]
+doctest = false
+
+[dependencies]
+libc = "0.2"
+
+[build-dependencies]
+bindgen = "0.72"
+cc = { version = "1", features = ["parallel"] }
+pkg-config = "0.3"
+vcpkg = "0.2"
+zip = { version = "8", default-features = false, features = ["deflate"] }
+
+[lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+nursery = { level = "warn", priority = -1 }
+
+missing_errors_doc = "allow"
+doc_markdown = "allow"

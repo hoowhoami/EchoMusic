@@ -1,0 +1,201 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    name: Test (${{ matrix.target }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Windows MSVC targets
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+          - target: i686-pc-windows-msvc
+            os: windows-latest
+            msvc_arch: x86
+          - target: aarch64-pc-windows-msvc
+            os: windows-latest
+            msvc_arch: amd64_arm64
+            check_only: true
+
+          # Windows GNU targets
+          - target: x86_64-pc-windows-gnu
+            os: ubuntu-latest
+            apt_packages: mingw-w64
+            check_only: true
+          - target: aarch64-pc-windows-gnullvm
+            os: ubuntu-latest
+            llvm_mingw: true
+            check_only: true
+
+          # macOS targets
+          - target: x86_64-apple-darwin
+            os: macos-latest
+          - target: aarch64-apple-darwin
+            os: macos-latest
+
+          # Linux GNU targets
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-latest
+            apt_packages: gcc-aarch64-linux-gnu libclang-dev
+            check_only: true
+          - target: i686-unknown-linux-gnu
+            os: ubuntu-latest
+            apt_packages: gcc-multilib libc6-dev-i386 libclang-dev
+            check_sys_only: true
+          - target: armv7-unknown-linux-gnueabihf
+            os: ubuntu-latest
+            apt_packages: gcc-arm-linux-gnueabihf libc6-dev-armhf-cross libclang-dev
+            check_only: true
+
+          # Android targets
+          - target: aarch64-linux-android
+            os: ubuntu-latest
+            cross: true
+          - target: armv7-linux-androideabi
+            os: ubuntu-latest
+            cross: true
+          - target: i686-linux-android
+            os: ubuntu-latest
+            cross: true
+          - target: x86_64-linux-android
+            os: ubuntu-latest
+            cross: true
+
+          # iOS target
+          - target: aarch64-apple-ios
+            os: macos-latest
+            check_only: true
+
+          # WASM target
+          - target: wasm32-unknown-emscripten
+            os: ubuntu-latest
+            emscripten: true
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          targets: ${{ matrix.target }}
+          components: rust-src
+
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux' && !matrix.cross && !matrix.llvm_mingw
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev ${{ matrix.apt_packages }}
+
+      - name: Setup MSVC Compiler
+        if: runner.os == 'Windows' && matrix.msvc_arch
+        uses: apoint123/msvc-dev-cmd@v1
+        with:
+          arch: ${{ matrix.msvc_arch }}
+
+      - name: Install cross
+        if: matrix.cross
+        uses: taiki-e/install-action@cross
+
+      - name: Install Emscripten SDK
+        if: matrix.emscripten
+        uses: emscripten-core/setup-emsdk@v16
+
+      - name: Install LLVM-MinGW
+        if: matrix.llvm_mingw
+        run: |
+          wget https://github.com/mstorsjo/llvm-mingw/releases/download/20260602/llvm-mingw-20260602-ucrt-ubuntu-22.04-x86_64.tar.xz
+          tar -xf llvm-mingw-20260602-ucrt-ubuntu-22.04-x86_64.tar.xz
+          echo "$(pwd)/llvm-mingw-20260602-ucrt-ubuntu-22.04-x86_64/bin" >> $GITHUB_PATH
+
+      - name: Add Emscripten target
+        if: matrix.emscripten
+        run: rustup target add ${{ matrix.target }}
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Run cross check
+        if: matrix.cross
+        run: cross check --target ${{ matrix.target }} --workspace
+
+      - name: Run sys-only check
+        if: matrix.check_sys_only
+        run: cargo check --target ${{ matrix.target }} -p ffmpeg_audio_sys
+
+      - name: Run cargo check
+        if: "!matrix.cross && !matrix.check_sys_only && matrix.check_only"
+        run: cargo check --target ${{ matrix.target }} --workspace
+
+      - name: Run cargo test
+        if: "!matrix.cross && !matrix.check_sys_only && !matrix.check_only"
+        run: cargo test --target ${{ matrix.target }} -p ffmpeg_audio
+
+  clippy:
+    name: Clippy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: clippy, rust-src
+
+      - name: Run clippy
+        run: cargo clippy --workspace -- -D warnings
+
+  fmt:
+    name: Format
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: rustfmt, rust-src
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+  ts:
+    name: TypeScript
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: lts/*
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm run lint
+
+      - name: Check formatting
+        run: pnpm run format:check
+
+      - name: Type check
+        run: pnpm run typecheck

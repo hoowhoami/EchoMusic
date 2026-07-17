@@ -1,7 +1,7 @@
-export type AudioSpectrumSource = 'system-loopback' | 'silence' | 'unavailable';
+export type AudioSpectrumSource = 'player' | 'silence' | 'unavailable';
 export type AudioSpectrumPlaybackState = 'playing' | 'paused' | 'idle';
 export type AudioSpectrumScale = 'linear' | 'log' | 'mel';
-export type AudioSpectrumProvider = 'system-loopback' | 'unavailable';
+export type AudioSpectrumProvider = 'player' | 'unavailable';
 
 export interface AudioSpectrumOptions {
   fps?: number;
@@ -23,6 +23,9 @@ export interface AudioSpectrumFrame {
   fftSize: number;
   minFrequency: number;
   maxFrequency: number;
+  /**
+   * Frequency magnitudes normalized to 0..1 from the player engine.
+   */
   bins: number[];
   waveform?: number[];
   rms: number;

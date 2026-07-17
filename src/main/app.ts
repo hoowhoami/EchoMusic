@@ -14,7 +14,7 @@ import {
   toggleDesktopLyricLock,
   cleanupDesktopLyric,
 } from './desktopLyric';
-import { initMpvPlayer, destroyMpvPlayer } from './mpv';
+import { initPlayer, destroyPlayer } from './player';
 import { registerAudioSpectrumIpc, unregisterAudioSpectrumIpc } from './audioSpectrum';
 import { initMediaControls, destroyMediaControls } from './mediaControls';
 import { cleanupMiniPlayer } from './miniPlayer';
@@ -30,10 +30,10 @@ import {
   openShareUrlFromArgv,
   registerShareProtocol,
 } from './share';
-import type { MpvController } from './mpv/controller';
+import type { PlayerController } from './player/controller';
 
 const WM_TASKBARCREATED = 0x031a;
-const mpvRef: { current: MpvController | null } = { current: null };
+const playerRef: { current: PlayerController | null } = { current: null };
 
 // --- 初始化日志 ---
 initLogger();
@@ -102,7 +102,7 @@ if (!gotTheLock) {
   // IPC handler 必须在窗口创建前注册
   registerIpcHandlers({
     getMainWindow,
-    mpvRef,
+    playerRef,
   });
 
   app.on('web-contents-created', (_event, contents) => {
@@ -122,22 +122,22 @@ if (!gotTheLock) {
     // --- Loading 阶段：在窗口创建前完成核心服务初始化 ---
 
     // 注册频谱 IPC（渲染进程启动后立即可用，且拥有独立捕获生命周期）
-    registerAudioSpectrumIpc();
+    registerAudioSpectrumIpc(() => playerRef.current);
 
-    // 并行初始化 API 服务器和 mpv 播放引擎
-    const [, mpvInstance] = await Promise.all([
+    // 并行初始化 API 服务器和播放引擎
+    const [, playerInstance] = await Promise.all([
       initApiServer().catch((err) => {
         log.error('[Main] Failed to init API server:', err);
       }),
-      initMpvPlayer(getMainWindow).catch((err) => {
-        log.error('[Main] Failed to init mpv player:', err);
+      initPlayer(getMainWindow).catch((err) => {
+        log.error('[Main] Failed to init player:', err);
         return null;
       }),
     ]);
 
-    mpvRef.current = mpvInstance ?? null;
+    playerRef.current = playerInstance ?? null;
     log.info('[Main] Pre-window initialization complete', {
-      mpvAvailable: !!mpvRef.current,
+      playerAvailable: !!playerRef.current,
       platform: process.platform,
       arch: process.arch,
     });
@@ -146,7 +146,7 @@ if (!gotTheLock) {
     initMediaControls(getMainWindow);
 
     // 注册系统挂起/唤醒处理：盒盖睡眠后暂停并释放 blocker，唤醒后重建音频并恢复播放
-    initPowerMonitor({ getMainWindow, getController: () => mpvRef.current });
+    initPowerMonitor({ getMainWindow, getController: () => playerRef.current });
 
     // --- 创建主窗口 ---
     refreshAppIconConfig();
@@ -239,7 +239,7 @@ if (!gotTheLock) {
       // 清理 mini 播放器模块的事件监听器和定时器
       cleanupMiniPlayer();
       destroyMediaControls();
-      destroyMpvPlayer();
+      destroyPlayer();
       // 销毁桌面歌词窗口，确保清理所有定时器
       try {
         destroyDesktopLyricWindow();

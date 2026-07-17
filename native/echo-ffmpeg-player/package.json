@@ -1,0 +1,16 @@
+{
+  "name": "echo-ffmpeg-player",
+  "version": "0.1.0",
+  "main": "echo-ffmpeg-player.node",
+  "devDependencies": {
+    "@napi-rs/cli": "^3.5.1"
+  },
+  "napi": {
+    "binaryName": "echo-ffmpeg-player",
+    "triples": {}
+  },
+  "scripts": {
+    "build": "napi build --release --no-const-enum",
+    "build:debug": "napi build --no-const-enum"
+  }
+}

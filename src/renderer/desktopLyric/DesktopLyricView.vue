@@ -197,7 +197,7 @@ const updateScrollManual = () => {
 const LYRIC_LOOKAHEAD = 150;
 // 锚点同步阈值（毫秒）
 const SYNC_THRESHOLD = 300;
-// mpv 没有持续上报进度时，桌面歌词不再自行推进
+// player 没有持续上报进度时，桌面歌词不再自行推进
 const PLAYBACK_STALE_THRESHOLD = 1800;
 // ── 计算属性 ──
 

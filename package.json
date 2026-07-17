@@ -1,7 +1,8 @@
 {
   "name": "echo-music",
-  "version": "2.2.8-beta.18",
+  "version": "2.2.9-beta.1",
   "description": "EchoMusic desktop client.",
+  "license": "GPL-3.0-only",
   "author": {
     "name": "hoowhoami",
     "email": "hoowhoami@qq.com"
@@ -89,7 +90,6 @@
         ]
       }
     ],
-    "afterPack": "./build/afterPack.js",
     "files": [
       "dist",
       "dist-electron"
@@ -103,8 +103,8 @@
         ]
       },
       {
-        "from": "native/echo-mpv-player/echo-mpv-player.node",
-        "to": "native/echo-mpv-player.node",
+        "from": "native/echo-ffmpeg-player/echo-ffmpeg-player.node",
+        "to": "native/echo-ffmpeg-player.node",
         "filter": [
           "**/*"
         ]
@@ -112,20 +112,6 @@
       {
         "from": "native/echo-storage/echo-storage.node",
         "to": "native/echo-storage.node",
-        "filter": [
-          "**/*"
-        ]
-      },
-      {
-        "from": "native/echo-spectrum-capture/echo-spectrum-capture.node",
-        "to": "native/echo-spectrum-capture.node",
-        "filter": [
-          "**/*"
-        ]
-      },
-      {
-        "from": "build/mpv",
-        "to": "mpv",
         "filter": [
           "**/*"
         ]
@@ -140,6 +126,14 @@
       {
         "from": "CHANGELOG.md",
         "to": "CHANGELOG.md"
+      },
+      {
+        "from": "LICENSE",
+        "to": "LICENSE"
+      },
+      {
+        "from": "THIRD_PARTY_NOTICES.md",
+        "to": "THIRD_PARTY_NOTICES.md"
       },
       {
         "from": "server/module",
@@ -187,19 +181,7 @@
     },
     "deb": {
       "depends": [
-        "libasound2",
-        "libmpv2 | libmpv1"
-      ]
-    },
-    "pacman": {
-      "fpm": [
-        "-d",
-        "mpv"
-      ]
-    },
-    "rpm": {
-      "depends": [
-        "mpv-libs"
+        "libasound2"
       ]
     },
     "nsis": {

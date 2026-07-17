@@ -14,7 +14,7 @@
   <img src="https://img.shields.io/badge/TypeScript-5.9-blue?logo=typescript" alt="TypeScript">
   <img src="https://img.shields.io/badge/Rust-napi--rs-orange?logo=rust" alt="Rust">
   <img src="https://img.shields.io/badge/Platform-macOS%20%7C%20Windows%20%7C%20Linux-brightgreen" alt="Platform">
-  <img src="https://img.shields.io/badge/License-MIT-orange" alt="License">
+  <img src="https://img.shields.io/badge/License-GPLv3-orange" alt="License">
 </p>
 
 ---
@@ -65,9 +65,9 @@
 - **Routing**: [Vue Router](https://router.vuejs.org/)
 - **Package Manager**: [pnpm](https://pnpm.io/)
 - **Backend Service**: [Node.js](https://nodejs.org/)（内置本地服务，进程内直接调用）
-- **Audio Engine**: [libmpv](https://mpv.io/)（通过 Rust NAPI addon 进程内嵌入，零延迟直接函数调用）
+- **Audio Engine**: FFmpeg 解码 + 原生音频输出（通过 Rust NAPI addon 进程内嵌入）
 - **Native Addons**: [napi-rs](https://napi.rs/)（Rust 编写的原生扩展）
-  - `echo-mpv-player`：libmpv 播放引擎封装，支持淡入淡出、高级 EQ、音量均衡、优化的空间音效、实时频谱分析
+  - `echo-ffmpeg-player`：播放引擎封装，支持淡入淡出、EQ、音量均衡、输出设备切换、独占输出与实时频谱分析
   - `echo-media-controls`：系统媒体控制集成（macOS/Windows/Linux 原生 API）
   - `echo-storage`：SQLite 本地持久化存储，负责设置、播放队列与状态快照
 
@@ -107,19 +107,7 @@
 - [Node.js](https://nodejs.org/) 18+
 - [pnpm](https://pnpm.io/) 9+
 - [Rust](https://www.rust-lang.org/)（编译原生模块需要）
-- [mpv / libmpv](https://mpv.io/)（播放引擎，macOS: `brew install mpv`，Linux: `apt install libmpv-dev`，Windows: 自行下载 `libmpv-2.dll` 到 `build\mpv` 目录）
-- Linux 构建系统音频捕获模块需要 ALSA 开发库（Debian/Ubuntu: `sudo apt install libasound2-dev`）
-
-### Linux 发行版打包说明
-
-如果发行版包使用系统 Electron 启动 EchoMusic（例如 Arch/Manjaro 的 `electron42 /usr/lib/echo-music/app.asar`），入口脚本必须在启动 Electron 前预加载系统 FFmpeg/libav 库，否则 Electron 内置裁剪版 `libffmpeg.so` 可能与系统 `libmpv` 发生符号冲突，导致 HTTP 音频流无法播放。
-
-可直接安装并使用：
-
-- `build/linux-libmpv-env.sh`：共享的 libmpv 环境修复脚本
-- `build/linux-system-electron-wrapper.sh`：系统 Electron 启动入口模板
-
-`electron-builder` 产物会在 `afterPack` 阶段自动安装同一套 wrapper。
+- FFmpeg 开发库（编译播放引擎原生模块需要；运行时不依赖外部 `ffmpeg` 可执行文件）
 
 ### 本地开发
 
@@ -159,16 +147,16 @@
    倘若出现如下报错:
 
    ```bash
-   Error: Cannot find module '/home/myname/EchoMusic/native/echo-mpv-player/echo-mpv-player.node'
-   [error] [MpvController] Failed to load echo-mpv-player addon
+   Error: Cannot find module '/home/myname/EchoMusic/native/echo-ffmpeg-player/echo-ffmpeg-player.node'
+   [error] [PlayerController] Failed to load echo-ffmpeg-player addon
    ```
 
    需要手动编译 Rust 原生模块，因为 `*.node` 文件在 `.gitignore` 中被排除。推荐使用各 addon 自带的 napi-rs 构建脚本生成平台对应的 `.node`：
 
    ```bash
-   cd native/echo-mpv-player
-   npm install
-   npm run build
+   cd native/echo-ffmpeg-player
+   pnpm install --ignore-workspace
+   pnpm exec napi build --release --no-const-enum
 
    cd ../echo-media-controls
    npm install
@@ -180,8 +168,6 @@
 
    cd ../..
    ```
-
-   `echo-mpv-player` 集成了实时频谱分析功能，可选地支持系统音频捕获：Windows 使用 WASAPI loopback，Linux 使用 ALSA monitor，macOS 使用 ScreenCaptureKit。macOS 首次使用系统级频谱捕获时，需要在”系统设置 -> 隐私与安全性 -> 屏幕与系统音频录制”中授权 EchoMusic；开发模式下也可能需要授权 Terminal、Electron 或当前启动进程。
 
 4. **启动本地开发服务器**
 
@@ -248,6 +234,7 @@ xattr -cr /Applications/EchoMusic.app && codesign --force --deep --sign - /Appli
 
 - [KuGouMusicApi](https://github.com/MakcRe/KuGouMusicApi) - 酷狗音乐 NodeJS 版 API
 - [SPlayer](https://github.com/imsyy/SPlayer) - 一个简约的音乐播放器
+- [ffmpeg-audio](https://github.com/apoint123/ffmpeg-audio) - 基于 FFmpeg 的 Rust 音频解码库
 - [MoeKoeMusic](https://github.com/MoeKoeMusic/MoeKoeMusic) - 一款开源简洁高颜值的酷狗第三方客户端
 
 ## 📄 免责声明
@@ -264,6 +251,6 @@ xattr -cr /Applications/EchoMusic.app && codesign --force --deep --sign - /Appli
 
 ## ⚖️ 开源协议
 
-基于 [MIT License](LICENSE) 协议发布。
+基于 [GNU General Public License v3.0](LICENSE) 协议发布。
 
-本项目使用 [mpv](https://mpv.io/) 作为音频播放引擎（LGPL-2.1+ / GPL-2.0+），通过动态链接方式加载。
+第三方依赖与授权说明见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。

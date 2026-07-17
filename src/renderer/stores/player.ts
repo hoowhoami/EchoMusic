@@ -428,13 +428,13 @@ export const usePlayerStore = defineStore(
       registerSettingWatchers();
       if (!impulseResponseFailureListenerRegistered) {
         impulseResponseFailureListenerRegistered = true;
-        window.electron?.mpv?.onImpulseResponseDisabled?.((payload) => {
+        window.electron?.player?.onImpulseResponseDisabled?.((payload) => {
           disableActiveImpulseResponse(payload?.path);
         });
       }
       if (!audioDeviceListListenerRegistered) {
         audioDeviceListListenerRegistered = true;
-        window.electron?.mpv?.onAudioDeviceListChanged?.(() => {
+        window.electron?.player?.onAudioDeviceListChanged?.(() => {
           void deviceManager.refreshOutputDevices();
         });
       }
@@ -488,7 +488,7 @@ export const usePlayerStore = defineStore(
           // 切歌加载护栏：file-loaded 之前的 duration 回报（含 setSource 的归零与上一首残留）一律丢弃，
           // 真实时长在 fileLoaded 时从引擎补回
           if (state.awaitingTrackLoad) return;
-          // 卡死恢复 reload 期间，mpv 会先回报 duration=0，忽略以免进度条最大值瞬间归零
+          // 卡死恢复 reload 期间，player 会先回报 duration=0，忽略以免进度条最大值瞬间归零
           if (state.stallRecovering && duration <= 0) return;
           state.duration = duration;
           engine.updateMediaPlaybackState(buildMediaState(state));
@@ -536,7 +536,7 @@ export const usePlayerStore = defineStore(
           if (event && !event.isTrusted && !(event as any)?.detail) return;
           void (async () => {
             const triedFallback = await playbackManager.tryNextAudioCandidate({
-              reason: 'mpv-error',
+              reason: 'player-error',
               position: state.currentTime,
             });
             if (triedFallback) return;
@@ -556,15 +556,15 @@ export const usePlayerStore = defineStore(
         },
       };
       engine.setEvents(events);
-      window.electron?.mpv?.getState?.().then((mpvState) => {
-        if (!mpvState) return;
-        if (mpvState.playing && !state.isPlaying) {
+      window.electron?.player?.getState?.().then((playerState) => {
+        if (!playerState) return;
+        if (playerState.playing && !state.isPlaying) {
           state.isPlaying = true;
           state.isLoading = false;
           settingStore.syncPreventSleep(true);
         }
-        if (mpvState.duration > 0) state.duration = mpvState.duration;
-        if (mpvState.timePos > 0) state.currentTime = mpvState.timePos;
+        if (playerState.duration > 0) state.duration = playerState.duration;
+        if (playerState.timePos > 0) state.currentTime = playerState.timePos;
       });
     };
 

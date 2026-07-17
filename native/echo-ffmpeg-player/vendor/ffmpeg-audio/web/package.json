@@ -1,0 +1,19 @@
+{
+	"name": "@ffmpeg-audio/web",
+	"private": true,
+	"version": "0.0.0",
+	"type": "module",
+	"scripts": {
+		"wasm": "node scripts/build-wasm.ts",
+		"dev": "vite",
+		"build": "vite build",
+		"preview": "vite preview",
+		"typecheck": "tsc -b"
+	},
+	"devDependencies": {
+		"vite": "^8.1.4",
+		"@types/audioworklet": "^0.0.100",
+		"@types/node": "^26.1.1",
+		"@types/wicg-file-system-access": "^2023.10.7"
+	}
+}

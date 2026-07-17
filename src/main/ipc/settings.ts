@@ -320,7 +320,7 @@ const getAppInfo = (): AppInfoResult => {
   return { version, isPrerelease: version.includes('-') };
 };
 
-export const registerSettingsHandlers = ({ getMainWindow, mpvRef }: IpcContext) => {
+export const registerSettingsHandlers = ({ getMainWindow, playerRef }: IpcContext) => {
   autoUpdater.autoDownload = false;
   autoUpdater.autoInstallOnAppQuit = true;
   autoUpdater.logger = log;
@@ -656,9 +656,9 @@ export const registerSettingsHandlers = ({ getMainWindow, mpvRef }: IpcContext) 
     async (_event, settings: Partial<NetworkSettings>) => {
       const next = updateNetworkSettings(settings);
       try {
-        await mpvRef.current?.setNetworkSettings(next);
+        await playerRef.current?.setNetwork(next);
       } catch (error) {
-        log.warn('[Network] Failed to apply mpv network settings:', error);
+        log.warn('[Network] Failed to apply player network settings:', error);
       }
       return next;
     },

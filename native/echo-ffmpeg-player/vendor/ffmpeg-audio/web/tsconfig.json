@@ -1,0 +1,18 @@
+{
+	"extends": "../tsconfig.base.json",
+	"compilerOptions": {
+		"lib": ["ESNext", "WebWorker", "DOM", "DOM.Iterable"],
+		"types": [
+			"audioworklet",
+			"wicg-file-system-access",
+			"vite/client",
+			"@types/node"
+		],
+		"allowJs": true,
+		"jsx": "react-jsx",
+		"paths": {
+			"@/*": ["./src/*"]
+		}
+	},
+	"include": ["./src", "./scripts"]
+}
