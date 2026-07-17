@@ -139,7 +139,7 @@ struct DeviceNotificationClient {
 }
 
 #[allow(non_snake_case)]
-impl IMMNotificationClient_Impl for DeviceNotificationClient {
+impl IMMNotificationClient_Impl for DeviceNotificationClient_Impl {
     fn OnDeviceStateChanged(
         &self,
         _pwstrdeviceid: &PCWSTR,
@@ -187,6 +187,12 @@ impl DeviceNotificationClient {
             Ok(()) | Err(TrySendError::Full(())) => {}
             Err(TrySendError::Disconnected(())) => {}
         }
+    }
+}
+
+impl DeviceNotificationClient_Impl {
+    fn notify(&self) {
+        self.this.notify();
     }
 }
 
