@@ -251,6 +251,6 @@ xattr -cr /Applications/EchoMusic.app && codesign --force --deep --sign - /Appli
 
 ## ⚖️ 开源协议
 
-基于 [GNU General Public License v3.0](LICENSE) 协议发布。
+基于 [GNU General Public License v3.0](https://www.gnu.org/licenses/gpl-3.0.html) 协议发布，完整协议文本见 [LICENSE](LICENSE)。
 
 第三方依赖与授权说明见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
