@@ -17,6 +17,7 @@ rubato = "0.16"
 rustfft = "6.4"
 
 [target.'cfg(target_os = "windows")'.dependencies]
+windows-core = "0.58"
 windows = { version = "0.58", features = [
   "implement",
   "Win32_Devices_Properties",
@@ -24,6 +25,7 @@ windows = { version = "0.58", features = [
   "Win32_Media_Audio",
   "Win32_Media_KernelStreaming",
   "Win32_Media_Multimedia",
+  "Win32_Security",
   "Win32_System_Com",
   "Win32_System_Threading",
   "Win32_System_Variant",
