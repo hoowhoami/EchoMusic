@@ -263,10 +263,8 @@ export const usePlayerStore = defineStore(
         volumeFadeTime: settingStore.volumeFadeTime,
         outputDevice: settingStore.outputDevice,
         exclusiveAudioDevice: settingStore.exclusiveAudioDevice,
-        impulseResponseEnabled: settingStore.impulseResponseEnabled,
-        selectedImpulseResponseId: settingStore.selectedImpulseResponseId,
+        impulseResponsePath: getActiveImpulseResponsePath(),
         impulseResponseMix: settingStore.impulseResponseMix,
-        impulseResponseCount: settingStore.impulseResponseFiles.length,
         playbackStallTimeout: settingStore.playbackStallTimeout,
       };
       // 保存取消函数，以便在需要时清理订阅
@@ -281,11 +279,10 @@ export const usePlayerStore = defineStore(
         const shouldUpdateOutputDevice =
           settingStore.outputDevice !== snapshot.outputDevice ||
           settingStore.exclusiveAudioDevice !== snapshot.exclusiveAudioDevice;
-        const shouldUpdateImpulseResponse =
-          settingStore.impulseResponseEnabled !== snapshot.impulseResponseEnabled ||
-          settingStore.selectedImpulseResponseId !== snapshot.selectedImpulseResponseId ||
-          settingStore.impulseResponseMix !== snapshot.impulseResponseMix ||
-          settingStore.impulseResponseFiles.length !== snapshot.impulseResponseCount;
+        const nextImpulseResponsePath = getActiveImpulseResponsePath();
+        const shouldLoadImpulseResponse = nextImpulseResponsePath !== snapshot.impulseResponsePath;
+        const shouldUpdateImpulseResponseMix =
+          settingStore.impulseResponseMix !== snapshot.impulseResponseMix;
         const shouldUpdateStallTimeout =
           settingStore.playbackStallTimeout !== snapshot.playbackStallTimeout;
         snapshot = {
@@ -295,10 +292,8 @@ export const usePlayerStore = defineStore(
           volumeFadeTime: settingStore.volumeFadeTime,
           outputDevice: settingStore.outputDevice,
           exclusiveAudioDevice: settingStore.exclusiveAudioDevice,
-          impulseResponseEnabled: settingStore.impulseResponseEnabled,
-          selectedImpulseResponseId: settingStore.selectedImpulseResponseId,
+          impulseResponsePath: nextImpulseResponsePath,
           impulseResponseMix: settingStore.impulseResponseMix,
-          impulseResponseCount: settingStore.impulseResponseFiles.length,
           playbackStallTimeout: settingStore.playbackStallTimeout,
         };
         if (shouldRefresh) {
@@ -310,11 +305,10 @@ export const usePlayerStore = defineStore(
         }
         if (shouldUpdateOutputDevice)
           void deviceManager.applyOutputDevice(settingStore.outputDevice);
-        if (shouldUpdateImpulseResponse)
-          audioManager.setImpulseResponse(
-            getActiveImpulseResponsePath(),
-            settingStore.impulseResponseMix,
-          );
+        if (shouldLoadImpulseResponse)
+          audioManager.setImpulseResponse(nextImpulseResponsePath, settingStore.impulseResponseMix);
+        else if (shouldUpdateImpulseResponseMix)
+          audioManager.setImpulseResponseMix(settingStore.impulseResponseMix);
         if (shouldUpdateStallTimeout)
           engine.setStallTimeout(settingStore.playbackStallTimeout ?? 8);
       });

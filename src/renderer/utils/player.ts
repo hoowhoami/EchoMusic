@@ -1,5 +1,8 @@
 import logger from './logger';
-import type { ImpulseResponsePlaybackOptions } from '../../shared/audio';
+import {
+  DEFAULT_IMPULSE_RESPONSE_MIX,
+  type ImpulseResponsePlaybackOptions,
+} from '../../shared/audio';
 import { DEFAULT_PLAYER_VOLUME } from '../../shared/playback';
 
 export interface PlayerEngineEvents {
@@ -217,7 +220,11 @@ export class PlayerEngine {
         'player play',
       );
     } else {
-      await this.withTimeout(player?.play() ?? Promise.resolve(), options?.timeoutMs, 'player play');
+      await this.withTimeout(
+        player?.play() ?? Promise.resolve(),
+        options?.timeoutMs,
+        'player play',
+      );
     }
   }
 
@@ -243,12 +250,27 @@ export class PlayerEngine {
     player?.setEqualizer(gains.map((gain) => Number(gain) || 0));
   }
 
-  setImpulseResponse(filePath: string | null, mix = 0.4): void {
+  setImpulseResponse(filePath: string | null, mix = DEFAULT_IMPULSE_RESPONSE_MIX): void {
     const payload: ImpulseResponsePlaybackOptions = {
       filePath: filePath || '',
-      mix: clamp(Number(mix) || 0.4, 0.1, 1),
+      mix: clamp(Number(mix) || DEFAULT_IMPULSE_RESPONSE_MIX, 0, 1),
     };
-    player?.setImpulseResponse(payload);
+    void player?.setImpulseResponse(payload).catch((error: unknown) => {
+      logger.warn('PlayerEngine', 'set impulse response failed', {
+        filePath: payload.filePath,
+        error: String(error),
+      });
+    });
+  }
+
+  setImpulseResponseMix(mix: number): void {
+    const nextMix = clamp(Number(mix) || DEFAULT_IMPULSE_RESPONSE_MIX, 0, 1);
+    void player?.setImpulseResponseMix(nextMix).catch((error: unknown) => {
+      logger.warn('PlayerEngine', 'set impulse response mix failed', {
+        mix: nextMix,
+        error: String(error),
+      });
+    });
   }
 
   async getAudioFilter(): Promise<string> {

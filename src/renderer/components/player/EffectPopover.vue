@@ -51,8 +51,7 @@ const impulseResponseActive = computed(
 const impulseResponseStrengthSaved = computed(() =>
   Math.round(settingStore.impulseResponseMix * 100),
 );
-// 拖动时只更新本地显示值，松手（valueCommit）才写入 store；否则每个 step 都会重建整张
-// afir 卷积图（重载 IR + 重新分区卷积），高频触发会卡顿甚至爆音。null = 未在拖动，用已保存值。
+// 拖动时保留本地草稿，避免持久化状态的显示延迟；null = 未在拖动，用已保存值。
 const impulseResponseStrengthDraft = ref<number | null>(null);
 const impulseResponseStrength = computed(
   () => impulseResponseStrengthDraft.value ?? impulseResponseStrengthSaved.value,
@@ -94,8 +93,7 @@ const selectImpulseResponse = (id: string) => {
   settingStore.setSelectedImpulseResponse(id);
 };
 
-// 强度变化现在只是一条 af-command 运行时改 amix 权重（不重建 afir），开销极低，所以拖动中即可
-// 实时下发，手感更顺滑。节流 ~50ms 限制 IPC/命令频率；松手再 commit 一次最终值兜底。
+// 强度变化走原生轻量 mix 更新，不重载 IR 文件；节流限制 IPC 频率，松手再 commit 最终值兜底。
 const throttledCommitImpulseResponseStrength = useThrottleFn((percent: number) => {
   settingStore.setImpulseResponseMix(percent / 100);
 }, 50);

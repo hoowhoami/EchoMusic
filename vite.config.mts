@@ -55,7 +55,7 @@ export default defineConfig({
       {
         entry: 'src/main/index.ts',
         onstart(options) {
-          options.startup();
+          options.startup(['.', '--no-sandbox', '--no-stdio-init']);
         },
         vite: {
           build: {

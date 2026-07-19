@@ -12,7 +12,10 @@ mod tempo;
 
 use crate::config::{PlayerConfig, PlayerConfigOptions, SpectrumConfig};
 use crate::decoder::{audio_stream_ordinal_from_track_id, list_tracks_for_url, open_decoder};
-use crate::effects::{prepare_spatial_effect, DspSettings, PreparedSpatialEffect};
+use crate::effects::{
+    clamp_spatial_mix, prepare_spatial_effect, DspSettings, PreparedSpatialEffect,
+    DEFAULT_SPATIAL_MIX, EQ_BAND_COUNT,
+};
 use crate::events::{
     AudioDevice, PlayerEvent, PlayerState, SpectrumFrame, SpectrumOptions, SpectrumStatus,
     TrackInfo,
@@ -47,6 +50,8 @@ struct PlayerRuntime {
     loop_file: bool,
     audio_filter: String,
     spectrum_signal_logged: bool,
+    spatial_request_seq: u64,
+    spatial_mix: f32,
 }
 
 struct PreparedSource {
@@ -82,6 +87,8 @@ impl PlayerRuntime {
             loop_file: false,
             audio_filter: String::new(),
             spectrum_signal_logged: false,
+            spatial_request_seq: 0,
+            spatial_mix: DEFAULT_SPATIAL_MIX,
         }
     }
 
@@ -678,9 +685,11 @@ pub fn set_speed(speed: f64) -> AsyncTask<SetSpeedTask> {
 #[napi]
 pub fn set_equalizer(gains: Vec<f64>) -> napi::Result<()> {
     with_runtime(|runtime| {
-        for (index, value) in gains.into_iter().take(10).enumerate() {
-            runtime.dsp_settings.equalizer[index] = value.clamp(-24.0, 24.0) as f32;
+        let mut next = [0.0f32; EQ_BAND_COUNT];
+        for (index, value) in gains.into_iter().take(EQ_BAND_COUNT).enumerate() {
+            next[index] = value.clamp(-12.0, 12.0) as f32;
         }
+        runtime.dsp_settings.equalizer = next;
         if let Some(session) = runtime.session.as_ref() {
             if let Ok(mut chain) = session.shared.effects.lock() {
                 chain.update_settings(&runtime.dsp_settings);
@@ -703,6 +712,7 @@ impl Task for SetImpulseResponseTask {
             parse_impulse_response_payload(&self.payload).map_err(napi::Error::from_reason)?
         else {
             with_runtime(|runtime| {
+                runtime.spatial_request_seq = runtime.spatial_request_seq.wrapping_add(1);
                 runtime.dsp_settings.spatial = None;
                 if let Some(session) = runtime.session.as_ref() {
                     if let Ok(mut chain) = session.shared.effects.lock() {
@@ -718,15 +728,35 @@ impl Task for SetImpulseResponseTask {
             return Ok(());
         };
 
-        let sample_rate = with_runtime(|runtime| {
-            if let Some(session) = runtime.session.as_ref() {
-                return Ok(session.shared.sample_rate);
+        let (sample_rate, request_seq, should_prepare) = with_runtime(|runtime| {
+            runtime.spatial_request_seq = runtime.spatial_request_seq.wrapping_add(1);
+            runtime.spatial_mix = clamp_spatial_mix(mix);
+            let sample_rate = if let Some(session) = runtime.session.as_ref() {
+                session.shared.sample_rate
+            } else {
+                device::resolve_output_sample_rate(
+                    &runtime.config.audio_device,
+                    runtime.config.exclusive_output,
+                )
+            };
+
+            let can_reuse_current = runtime
+                .dsp_settings
+                .spatial
+                .as_ref()
+                .is_some_and(|spatial| {
+                    spatial.file_path == file_path && spatial.sample_rate() == sample_rate
+                });
+            if can_reuse_current {
+                update_spatial_mix(runtime, mix);
             }
-            Ok(device::resolve_output_sample_rate(
-                &runtime.config.audio_device,
-                runtime.config.exclusive_output,
-            ))
+
+            Ok((sample_rate, runtime.spatial_request_seq, !can_reuse_current))
         })?;
+
+        if !should_prepare {
+            return Ok(());
+        }
 
         let spatial = prepare_spatial_effect(&file_path, mix, sample_rate).map_err(|err| {
             emit_event(PlayerEvent::impulse_response_disabled(err.clone()));
@@ -734,6 +764,15 @@ impl Task for SetImpulseResponseTask {
         })?;
 
         with_runtime(|runtime| {
+            if runtime.spatial_request_seq != request_seq {
+                emit_event(PlayerEvent::log(
+                    "debug",
+                    "stale impulse response load ignored".to_string(),
+                ));
+                return Ok(());
+            }
+            let mut spatial = spatial;
+            spatial.mix = runtime.spatial_mix;
             let spatial_path = spatial.file_path.clone();
             let spatial_mix = spatial.mix;
             apply_prepared_spatial_effect(runtime, spatial);
@@ -759,6 +798,19 @@ fn apply_prepared_spatial_effect(runtime: &mut PlayerRuntime, spatial: PreparedS
     }
 }
 
+fn update_spatial_mix(runtime: &mut PlayerRuntime, mix: f32) {
+    let mix = clamp_spatial_mix(mix);
+    runtime.spatial_mix = mix;
+    if let Some(spatial) = runtime.dsp_settings.spatial.as_mut() {
+        spatial.mix = mix;
+    }
+    if let Some(session) = runtime.session.as_ref() {
+        if let Ok(mut chain) = session.shared.effects.lock() {
+            chain.set_spatial_mix(mix);
+        }
+    }
+}
+
 fn parse_impulse_response_payload(
     payload: &serde_json::Value,
 ) -> Result<Option<(String, f32)>, String> {
@@ -769,7 +821,7 @@ fn parse_impulse_response_payload(
             if path.is_empty() {
                 Ok(None)
             } else {
-                Ok(Some((path.to_string(), 0.4)))
+                Ok(Some((path.to_string(), DEFAULT_SPATIAL_MIX)))
             }
         }
         serde_json::Value::Object(object) => {
@@ -784,7 +836,7 @@ fn parse_impulse_response_payload(
             let mix = object
                 .get("mix")
                 .and_then(serde_json::Value::as_f64)
-                .unwrap_or(0.4)
+                .unwrap_or(DEFAULT_SPATIAL_MIX as f64)
                 .clamp(0.0, 1.0) as f32;
             Ok(Some((path.to_string(), mix)))
         }
@@ -795,6 +847,14 @@ fn parse_impulse_response_payload(
 #[napi]
 pub fn set_impulse_response(payload: serde_json::Value) -> AsyncTask<SetImpulseResponseTask> {
     AsyncTask::new(SetImpulseResponseTask { payload })
+}
+
+#[napi]
+pub fn set_impulse_response_mix(mix: f64) -> napi::Result<()> {
+    with_runtime(|runtime| {
+        update_spatial_mix(runtime, mix as f32);
+        Ok(())
+    })
 }
 
 #[napi]

@@ -3,6 +3,7 @@ import type { PlayerEngine } from '@/utils/player';
 import type { AudioEffectValue, AudioQualityValue, PlayMode } from '../../types';
 import { clampNumber, normalizeEffect, normalizeQuality } from './utils';
 import { DEFAULT_PLAYER_VOLUME } from '../../../shared/playback';
+import { DEFAULT_IMPULSE_RESPONSE_MIX } from '../../../shared/audio';
 
 export const createAudioManager = (
   state: PlayerState,
@@ -67,8 +68,12 @@ export const createAudioManager = (
     engine.setEqualizer(clampedGains);
   };
 
-  const setImpulseResponse = (filePath: string | null, mix = 0.4) => {
+  const setImpulseResponse = (filePath: string | null, mix = DEFAULT_IMPULSE_RESPONSE_MIX) => {
     engine.setImpulseResponse(filePath, mix);
+  };
+
+  const setImpulseResponseMix = (mix: number) => {
+    engine.setImpulseResponseMix(mix);
   };
 
   const setAudioEffect = (effect: AudioEffectValue) => {
@@ -124,6 +129,7 @@ export const createAudioManager = (
     setReferenceLufs,
     setEq,
     setImpulseResponse,
+    setImpulseResponseMix,
     setAudioEffect,
     fadeVolume,
     setCurrentAudioQualityOverride,

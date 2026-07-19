@@ -19,9 +19,15 @@
   ; 清理重命名的旧卸载程序
   Delete "$INSTDIR\\Uninstall ${PRODUCT_NAME}.exe.old"
 
-  Delete "$DESKTOP\\${PRODUCT_NAME}.lnk"
-  CreateShortCut "$DESKTOP\\${PRODUCT_NAME}.lnk" "$INSTDIR\\${APP_EXECUTABLE_FILENAME}" "--no-sandbox"
+  ; Electron 43 on Windows can abort before app code starts if the NUL device is
+  ; unavailable. Pass --no-stdio-init from shortcuts so startup reaches main.
+  Delete "$newDesktopLink"
+  CreateShortCut "$newDesktopLink" "$appExe" "--no-sandbox --no-stdio-init" "$appExe" 0 "" "" "${APP_DESCRIPTION}"
+  ClearErrors
+  WinShell::SetLnkAUMI "$newDesktopLink" "${APP_ID}"
 
-  Delete "$SMPROGRAMS\\${PRODUCT_NAME}\\${PRODUCT_NAME}.lnk"
-  CreateShortCut "$SMPROGRAMS\\${PRODUCT_NAME}\\${PRODUCT_NAME}.lnk" "$INSTDIR\\${APP_EXECUTABLE_FILENAME}" "--no-sandbox"
+  Delete "$newStartMenuLink"
+  CreateShortCut "$newStartMenuLink" "$appExe" "--no-sandbox --no-stdio-init" "$appExe" 0 "" "" "${APP_DESCRIPTION}"
+  ClearErrors
+  WinShell::SetLnkAUMI "$newStartMenuLink" "${APP_ID}"
 !macroend

@@ -497,6 +497,7 @@ export interface IElectronAPI {
     setSpeed: (speed: number) => Promise<void>;
     setEqualizer: (gains: number[]) => Promise<void>;
     setImpulseResponse: (payload: string | ImpulseResponsePlaybackOptions) => Promise<void>;
+    setImpulseResponseMix: (mix: number) => Promise<void>;
     getAudioFilter: () => Promise<string>;
     setAudioDevice: (deviceName: string) => Promise<void>;
     getAudioDevices: () => Promise<Array<{ name: string; description: string }>>;

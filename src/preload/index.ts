@@ -420,8 +420,11 @@ contextBridge.exposeInMainWorld('electron', {
     setEqualizer: (gains: number[]) => invokeWithPlainPayload('player:set-equalizer', gains),
     setImpulseResponse: (payload: string | ImpulseResponsePlaybackOptions) =>
       invokeWithPlainPayload('player:set-impulse-response', payload),
+    setImpulseResponseMix: (mix: number) =>
+      invokeWithPlainPayload('player:set-impulse-response-mix', mix),
     getAudioFilter: () => ipcRenderer.invoke('player:get-audio-filter') as Promise<string>,
-    setAudioDevice: (deviceName: string) => ipcRenderer.invoke('player:set-audio-device', deviceName),
+    setAudioDevice: (deviceName: string) =>
+      ipcRenderer.invoke('player:set-audio-device', deviceName),
     getAudioDevices: () =>
       ipcRenderer.invoke('player:get-audio-devices') as Promise<
         Array<{ name: string; description: string }>

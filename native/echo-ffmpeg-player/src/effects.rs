@@ -7,6 +7,8 @@ use std::sync::Arc;
 const EQ_FREQUENCIES: [f32; 10] = [
     60.0, 170.0, 310.0, 600.0, 1_000.0, 3_000.0, 6_000.0, 12_000.0, 14_000.0, 16_000.0,
 ];
+pub const EQ_BAND_COUNT: usize = EQ_FREQUENCIES.len();
+pub const DEFAULT_SPATIAL_MIX: f32 = 0.15;
 const EQ_Q: f32 = 1.414;
 const CONVOLUTION_BLOCK_SIZE: usize = 1024;
 const MAX_IR_SECONDS: f32 = 8.0;
@@ -50,6 +52,7 @@ struct PreparedImpulseChannel {
 pub struct DspChain {
     settings: DspSettings,
     gain_linear: f32,
+    eq_headroom_linear: f32,
     eq: StereoEqualizer,
     spatial: Option<SpatialEffect>,
 }
@@ -59,6 +62,7 @@ impl DspChain {
         Self {
             settings: settings.clone(),
             gain_linear: db_to_gain(settings.normalization_gain_db),
+            eq_headroom_linear: eq_headroom_gain(&settings.equalizer),
             eq: StereoEqualizer::new(sample_rate, &settings.equalizer),
             spatial: settings
                 .spatial
@@ -71,12 +75,13 @@ impl DspChain {
     pub fn update_settings(&mut self, settings: &DspSettings) {
         let sample_rate = self.eq.sample_rate;
         let eq_changed = self.settings.equalizer != settings.equalizer;
-        let spatial_changed =
-            spatial_identity(&self.settings.spatial) != spatial_identity(&settings.spatial);
+        let spatial_changed = spatial_resource_identity(&self.settings.spatial)
+            != spatial_resource_identity(&settings.spatial);
 
         self.settings = settings.clone();
         self.gain_linear = db_to_gain(settings.normalization_gain_db);
         if eq_changed {
+            self.eq_headroom_linear = eq_headroom_gain(&settings.equalizer);
             self.eq = StereoEqualizer::new(sample_rate, &settings.equalizer);
         }
         if spatial_changed {
@@ -85,11 +90,20 @@ impl DspChain {
                 .as_ref()
                 .filter(|spatial| spatial.sample_rate == sample_rate)
                 .map(SpatialEffect::new);
+        } else if let (Some(active), Some(next)) =
+            (self.spatial.as_mut(), settings.spatial.as_ref())
+        {
+            active.set_mix(next.mix);
         }
     }
 
     pub fn process_interleaved(&mut self, samples: &mut [f32]) {
         self.eq.process_interleaved(samples);
+        if (self.eq_headroom_linear - 1.0).abs() >= f32::EPSILON {
+            for sample in samples.iter_mut() {
+                *sample *= self.eq_headroom_linear;
+            }
+        }
         if let Some(spatial) = self.spatial.as_mut() {
             spatial.process_interleaved(samples);
         }
@@ -100,6 +114,22 @@ impl DspChain {
             *sample = sample.clamp(-1.0, 1.0);
         }
     }
+
+    pub fn set_spatial_mix(&mut self, mix: f32) {
+        let mix = clamp_spatial_mix(mix);
+        if let Some(spatial) = self.settings.spatial.as_mut() {
+            spatial.mix = mix;
+        }
+        if let Some(spatial) = self.spatial.as_mut() {
+            spatial.set_mix(mix);
+        }
+    }
+}
+
+impl PreparedSpatialEffect {
+    pub fn sample_rate(&self) -> u32 {
+        self.sample_rate
+    }
 }
 
 pub fn prepare_spatial_effect(
@@ -107,7 +137,7 @@ pub fn prepare_spatial_effect(
     mix: f32,
     sample_rate: u32,
 ) -> Result<PreparedSpatialEffect, String> {
-    let mix = mix.clamp(0.0, 1.0);
+    let mix = clamp_spatial_mix(mix);
     let file = File::open(file_path)
         .map_err(|err| format!("failed to open impulse response file: {err}"))?;
     let mut reader = AudioReader::new(file)
@@ -159,14 +189,17 @@ pub fn prepare_spatial_effect(
     })
 }
 
-fn spatial_identity(spatial: &Option<PreparedSpatialEffect>) -> Option<(&str, u32, u32)> {
-    spatial.as_ref().map(|spatial| {
-        (
-            spatial.file_path.as_str(),
-            spatial.sample_rate,
-            spatial.mix.to_bits(),
-        )
-    })
+pub fn clamp_spatial_mix(mix: f32) -> f32 {
+    if !mix.is_finite() {
+        return DEFAULT_SPATIAL_MIX;
+    }
+    mix.clamp(0.0, 1.0)
+}
+
+fn spatial_resource_identity(spatial: &Option<PreparedSpatialEffect>) -> Option<(&str, u32)> {
+    spatial
+        .as_ref()
+        .map(|spatial| (spatial.file_path.as_str(), spatial.sample_rate))
 }
 
 fn trim_impulse_response(samples: &mut Vec<f32>) {
@@ -319,14 +352,19 @@ impl SpatialEffect {
             return;
         }
         let wet = self.mix;
+        let dry = 1.0 - wet;
         for frame in samples.chunks_exact_mut(2) {
             let left = frame[0];
             let right = frame[1];
             let wet_left = self.left.process_sample(left);
             let wet_right = self.right.process_sample(right);
-            frame[0] = (left + wet_left * wet).clamp(-1.0, 1.0);
-            frame[1] = (right + wet_right * wet).clamp(-1.0, 1.0);
+            frame[0] = (left * dry + wet_left * wet).clamp(-1.0, 1.0);
+            frame[1] = (right * dry + wet_right * wet).clamp(-1.0, 1.0);
         }
+    }
+
+    fn set_mix(&mut self, mix: f32) {
+        self.mix = clamp_spatial_mix(mix);
     }
 }
 
@@ -335,6 +373,7 @@ struct PartitionedConvolver {
     forward: Arc<dyn Fft<f32>>,
     inverse: Arc<dyn Fft<f32>>,
     input_spectra: Vec<Vec<Complex32>>,
+    input_fft: Vec<Complex32>,
     input_block: Vec<f32>,
     overlap: Vec<f32>,
     scratch: Vec<Complex32>,
@@ -350,6 +389,7 @@ impl PartitionedConvolver {
         let partitions = prepared.partitions.len().max(1);
         Self {
             input_spectra: vec![vec![Complex32::ZERO; prepared.fft_size]; partitions],
+            input_fft: vec![Complex32::ZERO; prepared.fft_size],
             input_block: Vec::with_capacity(prepared.block_size),
             overlap: vec![0.0; prepared.block_size],
             scratch: vec![Complex32::ZERO; prepared.fft_size],
@@ -378,12 +418,16 @@ impl PartitionedConvolver {
 
         let fft_size = self.prepared.fft_size;
         let block_size = self.prepared.block_size;
-        let mut input_fft = vec![Complex32::ZERO; fft_size];
-        for (target, sample) in input_fft.iter_mut().zip(self.input_block.iter().copied()) {
+        self.input_fft.fill(Complex32::ZERO);
+        for (target, sample) in self
+            .input_fft
+            .iter_mut()
+            .zip(self.input_block.iter().copied())
+        {
             target.re = sample;
         }
-        self.forward.process(&mut input_fft);
-        self.input_spectra[self.write_pos] = input_fft;
+        self.forward.process(&mut self.input_fft);
+        std::mem::swap(&mut self.input_spectra[self.write_pos], &mut self.input_fft);
 
         self.scratch.fill(Complex32::ZERO);
         for (partition_index, partition) in self.prepared.partitions.iter().enumerate() {
@@ -439,4 +483,9 @@ impl PreparedImpulseChannel {
 
 fn db_to_gain(db: f32) -> f32 {
     10.0f32.powf(db / 20.0)
+}
+
+fn eq_headroom_gain(gains: &[f32; 10]) -> f32 {
+    let max_boost = gains.iter().copied().fold(0.0f32, f32::max);
+    db_to_gain(-max_boost.max(0.0))
 }

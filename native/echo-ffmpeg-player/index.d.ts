@@ -79,6 +79,8 @@ export declare function setHttpProxy(proxy: string): void
 
 export declare function setImpulseResponse(payload: any): Promise<unknown>
 
+export declare function setImpulseResponseMix(mix: number): void
+
 export declare function setLoopFile(loopFile: boolean): void
 
 export declare function setNetworkTimeout(seconds: number): void

@@ -53,6 +53,10 @@ export function registerPlayerIpc(ref: PlayerRef): void {
     },
   );
 
+  ipcRegistry.registerHandler('player:set-impulse-response-mix', async (_e, mix: number) => {
+    await ref.current?.setImpulseResponseMix(mix);
+  });
+
   ipcRegistry.registerHandler('player:get-audio-filter', async () => {
     return (await ref.current?.getAudioFilter()) ?? '';
   });

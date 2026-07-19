@@ -20,6 +20,8 @@ export interface ImpulseResponsePlaybackOptions {
   mix: number;
 }
 
+export const DEFAULT_IMPULSE_RESPONSE_MIX = 0.15;
+
 const IMPULSE_RESPONSE_DISPLAY_EXTENSION =
   /\.(irs|wav|wave|flac|aif|aiff|caf|ogg|oga|mp3|m4a|aac|opus)$/i;
 

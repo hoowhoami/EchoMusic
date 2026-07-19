@@ -8,7 +8,11 @@ import type {
   OutputDeviceStatus,
 } from '../types';
 import { buildFontFamily } from '../../shared/font';
-import { normalizeImpulseResponseName, type ImpulseResponseFile } from '../../shared/audio';
+import {
+  DEFAULT_IMPULSE_RESPONSE_MIX,
+  normalizeImpulseResponseName,
+  type ImpulseResponseFile,
+} from '../../shared/audio';
 import {
   DEFAULT_NETWORK_SETTINGS,
   normalizeNetworkSettings,
@@ -127,7 +131,7 @@ export const useSettingStore = defineStore('setting', {
     volumeNormalizationLufs: -14,
     impulseResponseEnabled: false,
     selectedImpulseResponseId: '',
-    impulseResponseMix: 0.4,
+    impulseResponseMix: DEFAULT_IMPULSE_RESPONSE_MIX,
     impulseResponseFiles: [] as ImpulseResponseFile[],
     impulseResponseSafetyMigrationDone: false,
     keepAliveEnabled: true,
@@ -421,7 +425,10 @@ export const useSettingStore = defineStore('setting', {
       );
     },
     setImpulseResponseMix(value: number) {
-      this.impulseResponseMix = Math.min(1, Math.max(0.1, Number(value) || 0.4));
+      this.impulseResponseMix = Math.min(
+        1,
+        Math.max(0.1, Number(value) || DEFAULT_IMPULSE_RESPONSE_MIX),
+      );
     },
     getSelectedImpulseResponse(): ImpulseResponseFile | null {
       if (!this.selectedImpulseResponseId) return null;

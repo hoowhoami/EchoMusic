@@ -41,6 +41,7 @@ interface PlayerAddon {
   setSpeed(speed: number): Promise<void>;
   setEqualizer(gains: number[]): void;
   setImpulseResponse(payload: string | ImpulseResponsePlaybackOptions): Promise<void>;
+  setImpulseResponseMix(mix: number): void;
   getAudioFilter(): string;
   setAudioDevice(deviceName: string): Promise<void>;
   getAudioDevices(): Promise<Array<{ name: string; description: string }>>;
@@ -165,7 +166,11 @@ export class PlayerController extends EventEmitter {
   }
 
   async setImpulseResponse(payload: string | ImpulseResponsePlaybackOptions): Promise<void> {
-    return this.enqueue(() => this.getAddonOrThrow().setImpulseResponse(payload));
+    return this.getAddonOrThrow().setImpulseResponse(payload);
+  }
+
+  async setImpulseResponseMix(mix: number): Promise<void> {
+    this.getAddonOrThrow().setImpulseResponseMix(mix);
   }
 
   async getAudioFilter(): Promise<string> {
