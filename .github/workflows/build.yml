@@ -23,7 +23,7 @@ jobs:
         include:
           - os: macos-14
             rust_target: aarch64-apple-darwin
-            electron_builder_args: ''
+            electron_builder_args: '--mac --arm64'
             artifact_name: EchoMusic-macOS-arm64
             artifact_glob: |
               release/EchoMusic-*.zip
@@ -43,7 +43,6 @@ jobs:
             artifact_glob: |
               release/EchoMusic-*.AppImage
               release/EchoMusic-*.deb
-              release/EchoMusic-*.pacman
               release/EchoMusic-*.pkg.tar.zst
               release/EchoMusic-*.rpm
               release/EchoMusic-*.tar.gz
@@ -55,7 +54,6 @@ jobs:
             artifact_glob: |
               release/EchoMusic-*.AppImage
               release/EchoMusic-*.deb
-              release/EchoMusic-*.pacman
               release/EchoMusic-*.pkg.tar.zst
               release/EchoMusic-*.rpm
               release/EchoMusic-*.tar.gz
@@ -130,6 +128,23 @@ jobs:
             npm run build
           fi
 
+      - name: Verify macOS ffmpeg player linkage
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -e
+          addon="native/echo-ffmpeg-player/echo-ffmpeg-player.node"
+          if [ ! -f "$addon" ]; then
+            echo "ERROR: ffmpeg player addon not found: $addon"
+            exit 1
+          fi
+
+          otool -L "$addon" | tee /tmp/echo-ffmpeg-player-otool.txt
+          if grep -E 'lib(avcodec|avformat|avutil|swresample|mpv).*\.(dylib|so)' /tmp/echo-ffmpeg-player-otool.txt; then
+            echo "ERROR: ffmpeg player addon unexpectedly links to system FFmpeg/mpv libraries"
+            exit 1
+          fi
+
       - name: Build native storage addon
         working-directory: native/echo-storage
         shell: bash
@@ -139,6 +154,23 @@ jobs:
             npx napi build --release --no-const-enum --target ${{ matrix.rust_target }}
           else
             npm run build
+          fi
+
+      - name: Verify Linux ffmpeg player linkage
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -e
+          addon="native/echo-ffmpeg-player/echo-ffmpeg-player.node"
+          if [ ! -f "$addon" ]; then
+            echo "ERROR: ffmpeg player addon not found: $addon"
+            exit 1
+          fi
+
+          ldd "$addon" | tee /tmp/echo-ffmpeg-player-ldd.txt
+          if grep -E 'lib(avcodec|avformat|avutil|swresample|mpv)\.so' /tmp/echo-ffmpeg-player-ldd.txt; then
+            echo "ERROR: ffmpeg player addon unexpectedly links to system FFmpeg/mpv libraries"
+            exit 1
           fi
 
       - name: Install server runtime dependencies
@@ -165,14 +197,53 @@ jobs:
           pnpm exec vue-tsc --noEmit && pnpm exec vite build
           pnpm exec electron-builder ${{ matrix.electron_builder_args }} --publish never
 
-      - name: Create Arch Linux package alias
+      - name: Verify packaged native addons
+        shell: bash
+        run: |
+          set -e
+          for addon in echo-media-controls echo-ffmpeg-player echo-storage; do
+            matches=$(find release \( \
+              -path "*/resources/native/${addon}.node" -o \
+              -path "*/Contents/Resources/native/${addon}.node" \
+            \) -type f -print)
+            if [ -z "$matches" ]; then
+              echo "ERROR: packaged native addon not found: ${addon}.node"
+              find release -maxdepth 4 -type f -name '*.node' -print
+              exit 1
+            fi
+            printf 'Packaged native addon found: %s\n' "$matches"
+          done
+
+      - name: Normalize and verify Arch Linux package
         if: runner.os == 'Linux'
         shell: bash
         run: |
           set -e
           shopt -s nullglob
           for package_path in release/EchoMusic-*.pacman; do
-            cp "$package_path" "${package_path%.pacman}.pkg.tar.zst"
+            mv "$package_path" "${package_path%.pacman}.pkg.tar.zst"
+          done
+
+          packages=(release/EchoMusic-*.pkg.tar.zst)
+          if [ ${#packages[@]} -eq 0 ]; then
+            echo "ERROR: Arch package artifact was not generated"
+            find release -maxdepth 2 -type f -print
+            exit 1
+          fi
+
+          for package_path in "${packages[@]}"; do
+            pkginfo="$(mktemp)"
+            bsdtar -xOf "$package_path" .PKGINFO > "$pkginfo"
+            if grep -Eq '^depend = (http-parser|ffmpeg|mpv)([<>= ].*)?$' "$pkginfo"; then
+              echo "ERROR: unexpected Arch dependency in $package_path"
+              grep -E '^depend = (http-parser|ffmpeg|mpv)([<>= ].*)?$' "$pkginfo"
+              exit 1
+            fi
+            if ! grep -Eq '^depend = alsa-lib([<>= ].*)?$' "$pkginfo"; then
+              echo "ERROR: Arch package is missing alsa-lib runtime dependency"
+              exit 1
+            fi
+            echo "Verified Arch package metadata: $package_path"
           done
 
       - name: Verify bundled Windows executable
