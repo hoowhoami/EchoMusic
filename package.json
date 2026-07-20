@@ -136,6 +136,13 @@
         "to": "THIRD_PARTY_NOTICES.md"
       },
       {
+        "from": "LICENSES",
+        "to": "LICENSES",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
         "from": "server/module",
         "to": "server/module",
         "filter": [
