@@ -449,16 +449,6 @@ fn restart_output_for_config(config: PlayerConfig) -> napi::Result<()> {
     Ok(())
 }
 
-fn restore_seek_output(session: &mut PlaybackSession, audio_device: &str, exclusive_output: bool) {
-    session.shared.prepare_output_restart();
-    session.output_thread = Some(output::spawn_output_thread(
-        audio_device.to_string(),
-        exclusive_output,
-        session.shared.clone(),
-        emit_event,
-    ));
-}
-
 fn take_current_for_replace(
     runtime: &mut PlayerRuntime,
     url: Option<String>,
@@ -738,11 +728,8 @@ pub struct SeekTask {
 struct SeekPlan {
     shared: Arc<SharedAudio>,
     decode_thread: Option<std::thread::JoinHandle<Option<decoder::DecoderData>>>,
-    output_thread: Option<std::thread::JoinHandle<()>>,
     was_paused: bool,
     current_position: f64,
-    audio_device: String,
-    exclusive_output: bool,
     dsp_settings: DspSettings,
 }
 
@@ -760,15 +747,11 @@ impl Task for SeekTask {
             let was_paused = shared.paused.load(Ordering::Acquire);
             shared.paused.store(true, Ordering::Release);
             shared.request_decode_stop();
-            shared.request_output_stop();
             Ok(Some(SeekPlan {
                 shared,
                 decode_thread: session.decode_thread.take(),
-                output_thread: session.output_thread.take(),
                 was_paused,
                 current_position: session.shared.position_secs(),
-                audio_device: runtime.config.audio_device.clone(),
-                exclusive_output: runtime.config.exclusive_output,
                 dsp_settings: runtime.dsp_settings.clone(),
             }))
         })?
@@ -779,15 +762,11 @@ impl Task for SeekTask {
         let reused = plan
             .decode_thread
             .and_then(|handle| handle.join().ok().flatten());
-        if let Some(handle) = plan.output_thread {
-            let _ = handle.join();
-        }
 
         let Some(mut decoder) = reused else {
             with_runtime(|runtime| {
                 if let Some(session) = runtime.session.as_mut() {
                     if Arc::ptr_eq(&session.shared, &plan.shared) {
-                        restore_seek_output(session, &plan.audio_device, plan.exclusive_output);
                         session
                             .shared
                             .paused
@@ -816,7 +795,6 @@ impl Task for SeekTask {
                         .shared
                         .reset_for_decode_resume(plan.current_position, &plan.dsp_settings);
                     session.shared.bind_interrupt(decoder.interrupt_handle());
-                    restore_seek_output(session, &plan.audio_device, plan.exclusive_output);
                     session.decode_thread = Some(decoder::spawn_decode_thread(
                         decoder,
                         session.shared.clone(),
@@ -847,7 +825,6 @@ impl Task for SeekTask {
                 .shared
                 .reset_for_decode_resume(position, &plan.dsp_settings);
             session.shared.bind_interrupt(decoder.interrupt_handle());
-            restore_seek_output(session, &plan.audio_device, plan.exclusive_output);
             session.decode_thread = Some(decoder::spawn_decode_thread(
                 decoder,
                 session.shared.clone(),
