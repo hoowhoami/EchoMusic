@@ -55,9 +55,11 @@ pub fn list_output_devices() -> Vec<AudioDevice> {
             } else {
                 display_name
             };
+            let is_default = duplicate_count == 1 && default_name.as_ref() == Some(&raw_name);
             AudioDevice {
                 name: key,
                 description,
+                is_default: Some(is_default),
             }
         })
         .collect();
@@ -279,6 +281,7 @@ fn with_default_device(mut devices: Vec<AudioDevice>) -> Vec<AudioDevice> {
         AudioDevice {
             name: DEFAULT_DEVICE_NAME.to_string(),
             description: "Autoselect device".to_string(),
+            is_default: Some(false),
         },
     );
     devices
@@ -315,10 +318,12 @@ mod tests {
             AudioDevice {
                 name: "default".to_string(),
                 description: "System Default".to_string(),
+                is_default: Some(false),
             },
             AudioDevice {
                 name: "USB DAC".to_string(),
                 description: "USB DAC".to_string(),
+                is_default: Some(false),
             },
         ]);
         assert_eq!(devices[0].name, DEFAULT_DEVICE_NAME);

@@ -79,10 +79,6 @@ impl DecoderData {
         self.interrupt.clone()
     }
 
-    pub fn reset_interrupt(&self) {
-        self.interrupt.store(false, Ordering::Release);
-    }
-
     pub fn seek(&mut self, position_secs: f64) -> Result<(), String> {
         let target = Duration::from_secs_f64(position_secs.max(0.0));
         self.reader
@@ -104,7 +100,7 @@ impl DecoderData {
         Ok(())
     }
 
-    pub fn decode_into(mut self, shared: Arc<SharedAudio>) -> Option<Self> {
+    pub fn decode_into(mut self, shared: Arc<SharedAudio>, generation: u64) -> Option<Self> {
         shared.bind_interrupt(self.interrupt.clone());
         let mut produced_frames = 0u64;
         let mut tempo = match TempoProcessor::new(shared.speed(), shared.sample_rate) {
@@ -117,12 +113,15 @@ impl DecoderData {
         };
         let mut tempo_output = Vec::<f32>::new();
         loop {
-            if shared.should_stop_decoding() {
+            if shared.should_stop_decoding() || !shared.is_decode_generation_current(generation) {
                 return (!shared.stop.load(Ordering::Acquire)).then_some(self);
             }
             match self.reader.receive_frame() {
                 Ok(Some(frame)) => match self.resampler.process::<f32>(Some(&frame)) {
                     Ok(true) => {
+                        if !shared.is_decode_generation_current(generation) {
+                            return (!shared.stop.load(Ordering::Acquire)).then_some(self);
+                        }
                         let output = self.resampler.output_as::<f32>();
                         if let Some(requested_position) = self.pending_seek_position {
                             if !output.is_empty() {
@@ -148,7 +147,13 @@ impl DecoderData {
                             (tempo_output.len() / crate::shared::TARGET_CHANNELS) as u64,
                         );
                         let source_frames = tempo_source_frames(tempo_output.len(), speed);
-                        if !shared.push_samples_with_source_frames(&tempo_output, source_frames) {
+                        if !shared.is_decode_generation_current(generation)
+                            || !shared.push_samples_with_source_frames_for_generation(
+                                &tempo_output,
+                                source_frames,
+                                generation,
+                            )
+                        {
                             return (!shared.stop.load(Ordering::Acquire)).then_some(self);
                         }
                     }
@@ -160,6 +165,9 @@ impl DecoderData {
                     }
                 },
                 Ok(None) => {
+                    if !shared.is_decode_generation_current(generation) {
+                        return (!shared.stop.load(Ordering::Acquire)).then_some(self);
+                    }
                     if let Ok(true) = self.resampler.process::<f32>(None) {
                         let speed = shared.speed();
                         if let Err(err) = tempo.set_speed(speed).and_then(|_| {
@@ -170,8 +178,14 @@ impl DecoderData {
                             return None;
                         }
                         let source_frames = tempo_source_frames(tempo_output.len(), speed);
-                        let _ =
-                            shared.push_samples_with_source_frames(&tempo_output, source_frames);
+                        if !shared.is_decode_generation_current(generation) {
+                            return (!shared.stop.load(Ordering::Acquire)).then_some(self);
+                        }
+                        let _ = shared.push_samples_with_source_frames_for_generation(
+                            &tempo_output,
+                            source_frames,
+                            generation,
+                        );
                     }
                     if let Err(err) = tempo.finish_into(&mut tempo_output) {
                         shared.mark_decode_failed();
@@ -179,8 +193,18 @@ impl DecoderData {
                         return None;
                     }
                     let source_frames = tempo_source_frames(tempo_output.len(), tempo.speed());
-                    let _ = shared.push_samples_with_source_frames(&tempo_output, source_frames);
-                    match crate::try_activate_gapless_next(shared.clone()) {
+                    if !shared.is_decode_generation_current(generation) {
+                        return (!shared.stop.load(Ordering::Acquire)).then_some(self);
+                    }
+                    let _ = shared.push_samples_with_source_frames_for_generation(
+                        &tempo_output,
+                        source_frames,
+                        generation,
+                    );
+                    if !shared.is_decode_generation_current(generation) {
+                        return (!shared.stop.load(Ordering::Acquire)).then_some(self);
+                    }
+                    match crate::try_activate_gapless_next(shared.clone(), generation) {
                         crate::GaplessDecodeResult::Activated(decoder) => return decoder,
                         crate::GaplessDecodeResult::NotPrepared => {}
                     }
@@ -188,13 +212,19 @@ impl DecoderData {
                     return Some(self);
                 }
                 Err(err) => {
-                    if self.interrupt.load(Ordering::Acquire) || shared.should_stop_decoding() {
+                    if self.interrupt.load(Ordering::Acquire)
+                        || shared.should_stop_decoding()
+                        || !shared.is_decode_generation_current(generation)
+                    {
                         return (!shared.stop.load(Ordering::Acquire)).then_some(self);
                     }
                     if self.is_recoverable_tail_error(&err, produced_frames) {
                         emit_decode_warning(format!(
                             "treating trailing decode error as EOF: {err}"
                         ));
+                        if !shared.is_decode_generation_current(generation) {
+                            return (!shared.stop.load(Ordering::Acquire)).then_some(self);
+                        }
                         if let Ok(true) = self.resampler.process::<f32>(None) {
                             let speed = shared.speed();
                             if let Err(err) = tempo.set_speed(speed).and_then(|_| {
@@ -208,8 +238,14 @@ impl DecoderData {
                                 return None;
                             }
                             let source_frames = tempo_source_frames(tempo_output.len(), speed);
-                            let _ = shared
-                                .push_samples_with_source_frames(&tempo_output, source_frames);
+                            if !shared.is_decode_generation_current(generation) {
+                                return (!shared.stop.load(Ordering::Acquire)).then_some(self);
+                            }
+                            let _ = shared.push_samples_with_source_frames_for_generation(
+                                &tempo_output,
+                                source_frames,
+                                generation,
+                            );
                         }
                         if let Err(err) = tempo.finish_into(&mut tempo_output) {
                             shared.mark_decode_failed();
@@ -217,9 +253,18 @@ impl DecoderData {
                             return None;
                         }
                         let source_frames = tempo_source_frames(tempo_output.len(), tempo.speed());
-                        let _ =
-                            shared.push_samples_with_source_frames(&tempo_output, source_frames);
-                        match crate::try_activate_gapless_next(shared.clone()) {
+                        if !shared.is_decode_generation_current(generation) {
+                            return (!shared.stop.load(Ordering::Acquire)).then_some(self);
+                        }
+                        let _ = shared.push_samples_with_source_frames_for_generation(
+                            &tempo_output,
+                            source_frames,
+                            generation,
+                        );
+                        if !shared.is_decode_generation_current(generation) {
+                            return (!shared.stop.load(Ordering::Acquire)).then_some(self);
+                        }
+                        match crate::try_activate_gapless_next(shared.clone(), generation) {
                             crate::GaplessDecodeResult::Activated(decoder) => return decoder,
                             crate::GaplessDecodeResult::NotPrepared => {}
                         }
@@ -276,10 +321,11 @@ fn tempo_source_frames(output_samples: usize, speed: f32) -> u64 {
 pub fn spawn_decode_thread(
     data: DecoderData,
     shared: Arc<SharedAudio>,
+    generation: u64,
 ) -> JoinHandle<Option<DecoderData>> {
     thread::Builder::new()
         .name("player-decode".to_string())
-        .spawn(move || data.decode_into(shared))
+        .spawn(move || data.decode_into(shared, generation))
         .expect("failed to spawn player decode thread")
 }
 

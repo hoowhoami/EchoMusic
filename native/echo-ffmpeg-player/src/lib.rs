@@ -81,14 +81,7 @@ pub(crate) enum GaplessDecodeResult {
 
 struct ContinuousLoadPlan {
     shared: Arc<SharedAudio>,
-    decode_thread: Option<std::thread::JoinHandle<Option<decoder::DecoderData>>>,
     request_seq: u64,
-    was_paused: bool,
-    previous_url: Option<String>,
-    previous_audio_stream_ordinal: Option<usize>,
-    previous_seq: u64,
-    previous_duration: f64,
-    previous_position: f64,
     config: PlayerConfig,
     dsp_settings: DspSettings,
 }
@@ -264,7 +257,8 @@ fn prepare_source(
         shared.clone(),
         emit_event,
     );
-    let decode_thread = decoder::spawn_decode_thread(decoder, shared.clone());
+    let decode_generation = shared.current_decode_generation();
+    let decode_thread = decoder::spawn_decode_thread(decoder, shared.clone(), decode_generation);
     Ok(PreparedSource {
         session: PlaybackSession {
             shared,
@@ -347,7 +341,13 @@ fn replace_source_async(
     })
 }
 
-pub(crate) fn try_activate_gapless_next(shared: Arc<SharedAudio>) -> GaplessDecodeResult {
+pub(crate) fn try_activate_gapless_next(
+    shared: Arc<SharedAudio>,
+    generation: u64,
+) -> GaplessDecodeResult {
+    if !shared.is_decode_generation_current(generation) {
+        return GaplessDecodeResult::NotPrepared;
+    }
     let next = with_runtime(|runtime| {
         let Some(session) = runtime.session.as_ref() else {
             return Ok(None);
@@ -377,7 +377,7 @@ pub(crate) fn try_activate_gapless_next(shared: Arc<SharedAudio>) -> GaplessDeco
         seq: next.seq,
         duration: next.duration,
     });
-    GaplessDecodeResult::Activated(next.decoder.decode_into(shared))
+    GaplessDecodeResult::Activated(next.decoder.decode_into(shared, generation))
 }
 
 fn restart_loop_if_enabled(shared: Arc<SharedAudio>) -> bool {
@@ -533,19 +533,12 @@ impl Task for LoadFileTask {
                 });
             };
             let shared = session.shared.clone();
-            let was_paused = shared.paused.load(Ordering::Acquire);
             shared.paused.store(true, Ordering::Release);
             shared.request_decode_stop();
+            let _ = session.decode_thread.take();
             Ok(LoadPlan::Continuous(ContinuousLoadPlan {
                 shared,
-                decode_thread: session.decode_thread.take(),
                 request_seq: seq,
-                was_paused,
-                previous_url: runtime.current_url.clone(),
-                previous_audio_stream_ordinal: runtime.current_audio_stream_ordinal,
-                previous_seq: runtime.current_seq,
-                previous_duration: runtime.state.duration,
-                previous_position: session.shared.position_secs(),
                 config: runtime.config.clone(),
                 dsp_settings: runtime.dsp_settings.clone(),
             }))
@@ -557,9 +550,6 @@ impl Task for LoadFileTask {
                 dsp_settings,
             } => replace_source_async(url, audio_stream, seq, 0.0, false, config, dsp_settings),
             LoadPlan::Continuous(plan) => {
-                let reused = plan
-                    .decode_thread
-                    .and_then(|handle| handle.join().ok().flatten());
                 let new_decoder = open_decoder(
                     url.clone(),
                     audio_stream,
@@ -578,13 +568,14 @@ impl Task for LoadFileTask {
                             {
                                 return Ok(());
                             }
-                            session
+                            let generation = session
                                 .shared
                                 .reset_for_decode_resume(0.0, &plan.dsp_settings);
                             session.shared.bind_interrupt(decoder.interrupt_handle());
                             session.decode_thread = Some(decoder::spawn_decode_thread(
                                 decoder,
                                 session.shared.clone(),
+                                generation,
                             ));
                             session.shared.paused.store(true, Ordering::Release);
                             runtime.current_url = Some(url.clone());
@@ -601,65 +592,18 @@ impl Task for LoadFileTask {
                         })
                     }
                     Err(err) => {
-                        if let Some(mut decoder) = reused {
-                            decoder.reset_interrupt();
-                            let restored = decoder.seek(plan.previous_position).is_ok();
-                            with_runtime(|runtime| {
-                                let Some(session) = runtime.session.as_mut() else {
-                                    return Ok(());
-                                };
-                                if !Arc::ptr_eq(&session.shared, &plan.shared)
-                                    || runtime.latest_load_seq != plan.request_seq
-                                {
-                                    return Ok(());
-                                }
-                                if restored {
-                                    session.shared.reset_for_decode_resume(
-                                        plan.previous_position,
-                                        &plan.dsp_settings,
-                                    );
-                                    session.shared.bind_interrupt(decoder.interrupt_handle());
-                                    session.decode_thread = Some(decoder::spawn_decode_thread(
-                                        decoder,
-                                        session.shared.clone(),
-                                    ));
-                                    session
-                                        .shared
-                                        .paused
-                                        .store(plan.was_paused, Ordering::Release);
-                                    runtime.current_url = plan.previous_url.clone();
-                                    runtime.current_audio_stream_ordinal =
-                                        plan.previous_audio_stream_ordinal;
-                                    runtime.current_seq = plan.previous_seq;
-                                    runtime.state.duration = plan.previous_duration;
-                                    runtime.state.time_pos = plan.previous_position;
-                                    runtime.state.playing = !plan.was_paused;
-                                    runtime.state.paused = plan.was_paused;
-                                    emit_event(PlayerEvent::state_change(runtime.state.clone()));
-                                    emit_event(PlayerEvent::time_update(plan.previous_position));
-                                } else {
-                                    session.shared.mark_decode_failed();
+                        with_runtime(|runtime| {
+                            if let Some(session) = runtime.session.as_mut() {
+                                if Arc::ptr_eq(&session.shared, &plan.shared) {
                                     session.shared.paused.store(true, Ordering::Release);
-                                    runtime.state.playing = false;
-                                    runtime.state.paused = true;
-                                    emit_event(PlayerEvent::state_change(runtime.state.clone()));
+                                    session.shared.mark_decode_failed();
                                 }
-                                Ok(())
-                            })?;
-                        } else {
-                            with_runtime(|runtime| {
-                                if let Some(session) = runtime.session.as_mut() {
-                                    if Arc::ptr_eq(&session.shared, &plan.shared) {
-                                        session.shared.paused.store(true, Ordering::Release);
-                                        session.shared.mark_decode_failed();
-                                    }
-                                }
-                                runtime.state.playing = false;
-                                runtime.state.paused = true;
-                                emit_event(PlayerEvent::state_change(runtime.state.clone()));
-                                Ok(())
-                            })?;
-                        }
+                            }
+                            runtime.state.playing = false;
+                            runtime.state.paused = true;
+                            emit_event(PlayerEvent::state_change(runtime.state.clone()));
+                            Ok(())
+                        })?;
                         Err(napi::Error::from_reason(err))
                     }
                 }
@@ -865,10 +809,30 @@ pub struct SeekTask {
 
 struct SeekPlan {
     shared: Arc<SharedAudio>,
-    decode_thread: Option<std::thread::JoinHandle<Option<decoder::DecoderData>>>,
     was_paused: bool,
-    current_position: f64,
-    dsp_settings: DspSettings,
+    url: String,
+    audio_stream_ordinal: Option<usize>,
+    generation: u64,
+    config: PlayerConfig,
+}
+
+fn mark_seek_plan_failed(plan: &SeekPlan) -> napi::Result<()> {
+    with_runtime(|runtime| {
+        let Some(session) = runtime.session.as_mut() else {
+            return Ok(());
+        };
+        if !Arc::ptr_eq(&session.shared, &plan.shared)
+            || !session.shared.is_decode_generation_current(plan.generation)
+        {
+            return Ok(());
+        }
+        session.shared.mark_decode_failed();
+        session.shared.paused.store(true, Ordering::Release);
+        runtime.state.playing = false;
+        runtime.state.paused = true;
+        emit_event(PlayerEvent::state_change(runtime.state.clone()));
+        Ok(())
+    })
 }
 
 impl Task for SeekTask {
@@ -881,74 +845,44 @@ impl Task for SeekTask {
             let Some(session) = runtime.session.as_mut() else {
                 return Ok(None);
             };
+            let Some(url) = runtime.current_url.clone() else {
+                return Ok(None);
+            };
             let shared = session.shared.clone();
             let was_paused = shared.paused.load(Ordering::Acquire);
             shared.paused.store(true, Ordering::Release);
             shared.request_decode_stop();
+            runtime.prepared_next = None;
+            let _ = session.decode_thread.take();
+            let generation = shared.reset_for_decode_resume(position, &runtime.dsp_settings);
             Ok(Some(SeekPlan {
                 shared,
-                decode_thread: session.decode_thread.take(),
                 was_paused,
-                current_position: session.shared.position_secs(),
-                dsp_settings: runtime.dsp_settings.clone(),
+                url,
+                audio_stream_ordinal: runtime.current_audio_stream_ordinal,
+                generation,
+                config: runtime.config.clone(),
             }))
         })?
         else {
             return Ok(());
         };
 
-        let reused = plan
-            .decode_thread
-            .and_then(|handle| handle.join().ok().flatten());
-
-        let Some(mut decoder) = reused else {
-            with_runtime(|runtime| {
-                if let Some(session) = runtime.session.as_mut() {
-                    if Arc::ptr_eq(&session.shared, &plan.shared) {
-                        session
-                            .shared
-                            .paused
-                            .store(plan.was_paused, Ordering::Release);
-                    }
-                }
-                Ok(())
-            })?;
-            return Err(napi::Error::from_reason(
-                "decoder is not available for seeking".to_string(),
-            ));
+        let mut decoder = match open_decoder(
+            plan.url.clone(),
+            plan.audio_stream_ordinal,
+            plan.shared.sample_rate,
+            plan.config.packet_cache_options(),
+        ) {
+            Ok(decoder) => decoder,
+            Err(err) => {
+                mark_seek_plan_failed(&plan)?;
+                return Err(napi::Error::from_reason(err));
+            }
         };
 
-        decoder.reset_interrupt();
         if let Err(err) = decoder.seek(position) {
-            let restored = decoder.seek(plan.current_position).is_ok();
-            with_runtime(|runtime| {
-                let Some(session) = runtime.session.as_mut() else {
-                    return Ok(());
-                };
-                if !Arc::ptr_eq(&session.shared, &plan.shared) {
-                    return Ok(());
-                }
-                if restored {
-                    session
-                        .shared
-                        .reset_for_decode_resume(plan.current_position, &plan.dsp_settings);
-                    session.shared.bind_interrupt(decoder.interrupt_handle());
-                    session.decode_thread = Some(decoder::spawn_decode_thread(
-                        decoder,
-                        session.shared.clone(),
-                    ));
-                    session
-                        .shared
-                        .paused
-                        .store(plan.was_paused, Ordering::Release);
-                    runtime.state.time_pos = plan.current_position;
-                    emit_event(PlayerEvent::time_update(plan.current_position));
-                } else {
-                    session.shared.mark_decode_failed();
-                    session.shared.paused.store(true, Ordering::Release);
-                }
-                Ok(())
-            })?;
+            mark_seek_plan_failed(&plan)?;
             return Err(napi::Error::from_reason(err));
         }
 
@@ -956,22 +890,26 @@ impl Task for SeekTask {
             let Some(session) = runtime.session.as_mut() else {
                 return Ok(());
             };
-            if !Arc::ptr_eq(&session.shared, &plan.shared) {
+            if !Arc::ptr_eq(&session.shared, &plan.shared)
+                || !session.shared.is_decode_generation_current(plan.generation)
+            {
                 return Ok(());
             }
-            session
-                .shared
-                .reset_for_decode_resume(position, &plan.dsp_settings);
             session.shared.bind_interrupt(decoder.interrupt_handle());
             session.decode_thread = Some(decoder::spawn_decode_thread(
                 decoder,
                 session.shared.clone(),
+                plan.generation,
             ));
             session
                 .shared
                 .paused
                 .store(plan.was_paused, Ordering::Release);
             runtime.state.time_pos = position;
+            runtime.state.playing = !plan.was_paused;
+            runtime.state.paused = plan.was_paused;
+            emit_event(PlayerEvent::seeked(position));
+            emit_event(PlayerEvent::time_update(position));
             Ok(())
         })
     }

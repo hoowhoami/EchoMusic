@@ -509,7 +509,9 @@ export interface IElectronAPI {
     setImpulseResponseMix: (mix: number) => Promise<void>;
     getAudioFilter: () => Promise<string>;
     setAudioDevice: (deviceName: string) => Promise<void>;
-    getAudioDevices: () => Promise<Array<{ name: string; description: string }>>;
+    getAudioDevices: () => Promise<
+      Array<{ name: string; description: string; isDefault?: boolean }>
+    >;
     setNormalizationGain: (gainDb: number) => Promise<void>;
     fade: (from: number, to: number, durationMs: number) => Promise<void>;
     cancelFade: () => Promise<void>;
@@ -544,7 +546,7 @@ export interface IElectronAPI {
       func: (payload: { path?: string; reason?: string }) => void,
     ) => () => void;
     onAudioDeviceListChanged: (
-      func: (devices: Array<{ name: string; description: string }>) => void,
+      func: (devices: Array<{ name: string; description: string; isDefault?: boolean }>) => void,
     ) => () => void;
   };
 }

@@ -130,6 +130,7 @@ pub struct SharedAudio {
     output_stop: AtomicBool,
     output_started: AtomicBool,
     decode_stop: AtomicBool,
+    decode_generation: AtomicU64,
     eof: AtomicBool,
     decode_failed: AtomicBool,
     end_reported: AtomicBool,
@@ -166,6 +167,7 @@ impl SharedAudio {
             output_stop: AtomicBool::new(false),
             output_started: AtomicBool::new(false),
             decode_stop: AtomicBool::new(false),
+            decode_generation: AtomicU64::new(0),
             eof: AtomicBool::new(false),
             decode_failed: AtomicBool::new(false),
             end_reported: AtomicBool::new(false),
@@ -232,6 +234,14 @@ impl SharedAudio {
         self.stop.load(Ordering::Acquire) || self.decode_stop.load(Ordering::Acquire)
     }
 
+    pub fn current_decode_generation(&self) -> u64 {
+        self.decode_generation.load(Ordering::Acquire)
+    }
+
+    pub fn is_decode_generation_current(&self, generation: u64) -> bool {
+        self.decode_generation.load(Ordering::Acquire) == generation
+    }
+
     pub fn bind_interrupt(&self, interrupt: Arc<AtomicBool>) {
         interrupt.store(false, Ordering::Release);
         if let Ok(mut guard) = self.interrupt.lock() {
@@ -259,26 +269,51 @@ impl SharedAudio {
     }
 
     pub fn push_samples_with_source_frames(&self, samples: &[f32], source_frames: u64) -> bool {
+        self.push_samples_with_source_frames_checked(samples, source_frames, None)
+    }
+
+    pub fn push_samples_with_source_frames_for_generation(
+        &self,
+        samples: &[f32],
+        source_frames: u64,
+        generation: u64,
+    ) -> bool {
+        self.push_samples_with_source_frames_checked(samples, source_frames, Some(generation))
+    }
+
+    fn push_samples_with_source_frames_checked(
+        &self,
+        samples: &[f32],
+        source_frames: u64,
+        generation: Option<u64>,
+    ) -> bool {
         if samples.is_empty() {
             return true;
         }
         let mut offset = 0usize;
         let mut source_frames_remaining = source_frames;
         while offset < samples.len() {
-            if self.should_stop_decoding() {
+            if self.should_stop_decoding()
+                || generation.is_some_and(|value| !self.is_decode_generation_current(value))
+            {
                 return false;
             }
             let mut queue = match self.queue.lock() {
                 Ok(queue) => queue,
                 Err(_) => return false,
             };
-            while queue.samples >= self.queue_capacity && !self.should_stop_decoding() {
+            while queue.samples >= self.queue_capacity
+                && !self.should_stop_decoding()
+                && !generation.is_some_and(|value| !self.is_decode_generation_current(value))
+            {
                 queue = match self.queue_changed.wait(queue) {
                     Ok(queue) => queue,
                     Err(_) => return false,
                 };
             }
-            if self.should_stop_decoding() {
+            if self.should_stop_decoding()
+                || generation.is_some_and(|value| !self.is_decode_generation_current(value))
+            {
                 return false;
             }
             let space = self.queue_capacity.saturating_sub(queue.samples).max(1);
@@ -507,10 +542,11 @@ impl SharedAudio {
             && !self.decode_failed.load(Ordering::Acquire)
     }
 
-    pub fn reset_for_decode_resume(&self, position_secs: f64, dsp_settings: &DspSettings) {
+    pub fn reset_for_decode_resume(&self, position_secs: f64, dsp_settings: &DspSettings) -> u64 {
         if let Ok(mut queue) = self.queue.lock() {
             queue.clear();
         }
+        let generation = self.decode_generation.fetch_add(1, Ordering::AcqRel) + 1;
         self.decode_stop.store(false, Ordering::Release);
         self.eof.store(false, Ordering::Release);
         self.decode_failed.store(false, Ordering::Release);
@@ -528,6 +564,7 @@ impl SharedAudio {
             *effects = DspChain::new(self.sample_rate, dsp_settings);
         }
         self.queue_changed.notify_all();
+        generation
     }
 
     fn source_frames_for_output(&self, output_samples: usize) -> u64 {

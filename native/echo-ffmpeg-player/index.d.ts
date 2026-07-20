@@ -3,6 +3,7 @@
 export interface AudioDevice {
   name: string
   description: string
+  isDefault?: boolean
 }
 
 export declare function cancelFade(): void

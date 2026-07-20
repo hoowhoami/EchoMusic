@@ -5,6 +5,7 @@ use napi_derive::napi;
 pub struct AudioDevice {
     pub name: String,
     pub description: String,
+    pub is_default: Option<bool>,
 }
 
 #[napi(object)]

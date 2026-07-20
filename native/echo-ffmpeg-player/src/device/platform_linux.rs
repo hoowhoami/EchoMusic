@@ -9,9 +9,13 @@ pub(crate) fn list_output_devices() -> Option<Vec<AudioDevice>> {
     let mut occurrences = HashMap::<String, usize>::new();
 
     let default_host = cpal::default_host();
+    let default_name = default_host
+        .default_output_device()
+        .and_then(|device| device.name().ok());
     append_host_devices(
         &default_host,
         false,
+        default_name.as_deref(),
         &mut devices,
         &mut seen_keys,
         &mut occurrences,
@@ -21,6 +25,7 @@ pub(crate) fn list_output_devices() -> Option<Vec<AudioDevice>> {
         append_host_devices(
             &alsa_host,
             true,
+            default_name.as_deref(),
             &mut devices,
             &mut seen_keys,
             &mut occurrences,
@@ -38,6 +43,7 @@ pub(crate) fn is_alsa_hardware_pcm(name: &str) -> bool {
 fn append_host_devices(
     host: &cpal::Host,
     hardware_only: bool,
+    default_name: Option<&str>,
     devices: &mut Vec<AudioDevice>,
     seen_keys: &mut HashSet<String>,
     occurrences: &mut HashMap<String, usize>,
@@ -67,6 +73,7 @@ fn append_host_devices(
         devices.push(AudioDevice {
             name: key,
             description: display_name(&raw_name, is_hardware, *occurrence),
+            is_default: Some(!hardware_only && default_name == Some(raw_name.as_str())),
         });
     }
 }

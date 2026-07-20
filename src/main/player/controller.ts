@@ -72,7 +72,7 @@ interface PlayerAddonEvent {
   reason?: string;
   message?: string;
   level?: string;
-  devices?: Array<{ name: string; description: string }>;
+  devices?: Array<{ name: string; description: string; isDefault?: boolean }>;
   path?: string;
   seq?: number;
 }
@@ -114,7 +114,7 @@ interface PlayerAddon {
   setImpulseResponseMix(mix: number): Promise<void>;
   getAudioFilter(): string;
   setAudioDevice(deviceName: string): Promise<void>;
-  getAudioDevices(): Promise<Array<{ name: string; description: string }>>;
+  getAudioDevices(): Promise<Array<{ name: string; description: string; isDefault?: boolean }>>;
   setNormalizationGain(gainDb: number): Promise<void>;
   fade(from: number, to: number, durationMs: number): Promise<void>;
   cancelFade(): void;

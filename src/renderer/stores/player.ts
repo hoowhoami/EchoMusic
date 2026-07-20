@@ -510,8 +510,8 @@ export const usePlayerStore = defineStore(
       }
       if (!audioDeviceListListenerRegistered) {
         audioDeviceListListenerRegistered = true;
-        window.electron?.player?.onAudioDeviceListChanged?.(() => {
-          void deviceManager.refreshOutputDevices();
+        window.electron?.player?.onAudioDeviceListChanged?.((devices) => {
+          void deviceManager.refreshOutputDevices(devices);
         });
       }
       void deviceManager.refreshOutputDevices();

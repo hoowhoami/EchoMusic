@@ -5,12 +5,27 @@ import type { PlayerEngine } from '@/utils/player';
 import type { OutputDeviceDisconnectBehavior } from '../../types';
 import { getPlaybackIsPlaying } from './stateMachine';
 
+type PlayerAudioDevice = { name: string; description: string; isDefault?: boolean };
+
 export const createDeviceManager = (
   state: PlayerState,
   engine: PlayerEngine,
   settingStore: ReturnType<typeof useSettingStore>,
 ) => {
   let refreshingOutputDevices = false;
+  let lastDefaultOutputDeviceId: string | null | undefined;
+
+  const resolveDefaultOutputDeviceId = (devices: PlayerAudioDevice[]) =>
+    devices.find((device) => device.isDefault)?.name ?? null;
+
+  const setReadyOutputDeviceStatus = (deviceId: string) => {
+    if (deviceId === 'default') {
+      settingStore.setOutputDeviceStatus('ready', '当前使用系统默认输出设备。');
+      return;
+    }
+    const matched = settingStore.outputDevices.find((item) => item.value === deviceId);
+    settingStore.setOutputDeviceStatus('ready', `已切换到 ${matched?.label || deviceId}。`);
+  };
 
   const applyOutputDevice = async (deviceId: string, options?: { persistSelection?: boolean }) => {
     const persistSelection = options?.persistSelection ?? true;
@@ -19,30 +34,32 @@ export const createDeviceManager = (
 
     const player = window.electron?.player;
     const exclusiveChanged = exclusive !== (state._lastAppliedExclusive ?? false);
+    const deviceChanged = state.appliedOutputDeviceId !== deviceId;
     let applied = false;
 
+    if (!exclusiveChanged && !deviceChanged) {
+      setReadyOutputDeviceStatus(deviceId);
+      return;
+    }
+
     if (exclusiveChanged) {
-      const wasPlaying = getPlaybackIsPlaying(state);
+      let exclusiveApplied = false;
       try {
         await player?.setExclusive(exclusive);
+        exclusiveApplied = true;
       } catch {
-        // ignore
+        exclusiveApplied = false;
       }
-      state._lastAppliedExclusive = exclusive;
-      applied = await engine.setOutputDevice(playerDevice);
-      if (applied) state.appliedOutputDeviceId = deviceId;
-
-      if (
-        wasPlaying &&
-        state.currentTrackId &&
-        (state.currentPlaybackSource || state.currentAudioUrl)
-      ) {
-        const savedSource = state.currentPlaybackSource ?? { url: state.currentAudioUrl };
-        const savedTime = state.currentTime;
-        engine.reset();
-        await engine.setSource(savedSource);
-        await engine.play();
-        if (savedTime > 0) engine.seek(savedTime);
+      if (!exclusiveApplied) {
+        applied = false;
+      } else {
+        state._lastAppliedExclusive = exclusive;
+        if (!deviceChanged) {
+          applied = true;
+        } else {
+          applied = await engine.setOutputDevice(playerDevice);
+          if (applied) state.appliedOutputDeviceId = deviceId;
+        }
       }
     } else {
       applied = await engine.setOutputDevice(playerDevice);
@@ -54,22 +71,17 @@ export const createDeviceManager = (
       state.appliedOutputDeviceId = 'default';
       if (persistSelection) settingStore.outputDevice = 'default';
       settingStore.setOutputDeviceStatus('fallback', '当前设备不支持切换到所选输出，已回退。');
-    } else if (deviceId === 'default') {
-      settingStore.setOutputDeviceStatus('ready', '当前使用系统默认输出设备。');
     } else {
-      const matched = settingStore.outputDevices.find((item) => item.value === deviceId);
-      settingStore.setOutputDeviceStatus('ready', `已切换到 ${matched?.label || deviceId}。`);
+      setReadyOutputDeviceStatus(deviceId);
     }
   };
 
-  const refreshOutputDevices = async (
-    playerDevicesArg?: Array<{ name: string; description: string }>,
-  ) => {
+  const refreshOutputDevices = async (playerDevicesArg?: PlayerAudioDevice[]) => {
     if (refreshingOutputDevices) return;
     refreshingOutputDevices = true;
     const fallbackOptions = [{ label: '系统默认', value: 'default' }];
     try {
-      let playerDevices: Array<{ name: string; description: string }>;
+      let playerDevices: PlayerAudioDevice[];
       if (playerDevicesArg) {
         playerDevices = playerDevicesArg;
       } else {
@@ -94,6 +106,18 @@ export const createDeviceManager = (
         );
 
       const currentOutput = settingStore.outputDevice;
+      const defaultOutputDeviceId = resolveDefaultOutputDeviceId(playerDevices);
+      const hasDefaultOutputDeviceInfo = playerDevices.some(
+        (device) => typeof device.isDefault === 'boolean',
+      );
+      const defaultOutputDeviceChanged =
+        hasDefaultOutputDeviceInfo &&
+        currentOutput === 'default' &&
+        lastDefaultOutputDeviceId !== undefined &&
+        lastDefaultOutputDeviceId !== defaultOutputDeviceId;
+      lastDefaultOutputDeviceId = hasDefaultOutputDeviceInfo
+        ? defaultOutputDeviceId
+        : lastDefaultOutputDeviceId;
       const hasCurrentDevice =
         currentOutput === 'default' || outputOptions.some((item) => item.value === currentOutput);
       const currentOutputOptions = [...fallbackOptions, ...outputOptions];
@@ -109,6 +133,15 @@ export const createDeviceManager = (
       }
 
       settingStore.outputDevices = currentOutputOptions;
+
+      if (defaultOutputDeviceChanged && settingStore.outputDeviceDisconnectBehavior === 'pause') {
+        if (getPlaybackIsPlaying(state)) void engine.pause();
+        settingStore.setOutputDeviceStatus(
+          'fallback',
+          '系统默认输出设备已变化，已按设置暂停播放。',
+        );
+        return;
+      }
 
       if (!hasCurrentDevice) {
         const disconnectBehavior =

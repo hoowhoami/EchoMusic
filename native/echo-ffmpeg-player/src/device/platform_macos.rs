@@ -27,6 +27,7 @@ extern "C" {
 
 pub(crate) fn list_output_devices() -> Option<Vec<AudioDevice>> {
     let mut devices = Vec::new();
+    let default_output_id = default_output_device_id();
     for id in all_audio_devices()? {
         if !has_output_streams(id) {
             continue;
@@ -38,6 +39,7 @@ pub(crate) fn list_output_devices() -> Option<Vec<AudioDevice>> {
         devices.push(AudioDevice {
             name: format!("{COREAUDIO_DEVICE_KEY_PREFIX}{uid}"),
             description: name,
+            is_default: Some(default_output_id == Some(id)),
         });
     }
     (!devices.is_empty()).then_some(devices)
@@ -167,6 +169,27 @@ fn register_coreaudio_listener(
         address,
         context,
     })
+}
+
+fn default_output_device_id() -> Option<ca::AudioDeviceID> {
+    let address = ca::AudioObjectPropertyAddress {
+        mSelector: ca::kAudioHardwarePropertyDefaultOutputDevice,
+        mScope: ca::kAudioObjectPropertyScopeGlobal,
+        mElement: ca::kAudioObjectPropertyElementMain,
+    };
+    let mut id = ca::kAudioObjectUnknown;
+    let mut size = mem::size_of::<ca::AudioDeviceID>() as u32;
+    let status = unsafe {
+        ca::AudioObjectGetPropertyData(
+            ca::kAudioObjectSystemObject,
+            &address,
+            0,
+            std::ptr::null(),
+            &mut size,
+            (&mut id as *mut ca::AudioDeviceID).cast(),
+        )
+    };
+    (status == 0 && id != ca::kAudioObjectUnknown).then_some(id)
 }
 
 extern "C" fn coreaudio_device_listener(

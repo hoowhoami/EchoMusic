@@ -258,13 +258,15 @@ pub(crate) fn list_output_devices() -> Option<Vec<AudioDevice>> {
             };
             *occurrence += 1;
 
-            if default_endpoint_id.as_deref() == Some(endpoint_id.as_str()) {
+            let is_default = default_endpoint_id.as_deref() == Some(endpoint_id.as_str());
+            if is_default {
                 description = format!("{description} (默认)");
             }
 
             AudioDevice {
                 name: format!("{WASAPI_DEVICE_KEY_PREFIX}{endpoint_id}"),
                 description,
+                is_default: Some(is_default),
             }
         })
         .collect::<Vec<_>>();
