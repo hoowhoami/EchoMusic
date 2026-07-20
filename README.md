@@ -65,9 +65,9 @@
 - **Routing**: [Vue Router](https://router.vuejs.org/)
 - **Package Manager**: [pnpm](https://pnpm.io/)
 - **Backend Service**: [Node.js](https://nodejs.org/)（内置本地服务，进程内直接调用）
-- **Audio Engine**: FFmpeg 解码 + 原生音频输出（通过 Rust NAPI addon 进程内嵌入）
+- **Audio Engine**: FFmpeg 解码 + SoundTouch 变速处理 + 原生音频输出（通过 Rust NAPI addon 进程内嵌入）
 - **Native Addons**: [napi-rs](https://napi.rs/)（Rust 编写的原生扩展）
-  - `echo-ffmpeg-player`：播放引擎封装，支持淡入淡出、EQ、音量均衡、输出设备切换、独占输出与实时频谱分析
+  - `echo-ffmpeg-player`：播放引擎封装，使用 vendored `ffmpeg-audio` 与 `soundtouch-rs`，支持淡入淡出、EQ、音量均衡、倍速播放、输出设备切换、独占输出与实时频谱分析
   - `echo-media-controls`：系统媒体控制集成（macOS/Windows/Linux 原生 API）
   - `echo-sqlite-store`：SQLite 本地持久化存储，负责设置、播放队列与状态快照
 
@@ -235,6 +235,7 @@ xattr -cr /Applications/EchoMusic.app && codesign --force --deep --sign - /Appli
 - [KuGouMusicApi](https://github.com/MakcRe/KuGouMusicApi) - 酷狗音乐 NodeJS 版 API
 - [SPlayer](https://github.com/imsyy/SPlayer) - 一个简约的音乐播放器
 - [ffmpeg-audio](https://github.com/apoint123/ffmpeg-audio) - 基于 FFmpeg 的 Rust 音频解码库
+- [soundtouch-rs](https://github.com/apoint123/soundtouch-rs) - Rust 音频变速处理库
 - [MoeKoeMusic](https://github.com/MoeKoeMusic/MoeKoeMusic) - 一款开源简洁高颜值的酷狗第三方客户端
 
 ## 📄 免责声明
