@@ -269,11 +269,10 @@ export const createPlaybackManager = (
   const takeGaplessPreparedSource = (
     targetTrackId: string,
     sourceQueueId: string | null,
-  ): ResolvedAudioSource | undefined => {
+  ): GaplessPreparedSource | null => {
     const key = getGaplessPrepareKey(targetTrackId, sourceQueueId);
-    if (gaplessPreparedSource?.key !== key) return undefined;
-    const prepared = gaplessPreparedSource.resolved;
-    clearGaplessPreparedSource();
+    if (gaplessPreparedSource?.key !== key) return null;
+    const prepared = gaplessPreparedSource;
     return prepared;
   };
 
@@ -905,12 +904,17 @@ export const createPlaybackManager = (
       if (queuedSong && isPlayableSong(queuedSong)) {
         playlistStore.consumeQueuedNextTrackId(queuedNextId);
         const targetTrackId = String(queuedSong.id);
-        const preResolved = options?.gaplessTransition
+        const prepared = options?.gaplessTransition
           ? takeGaplessPreparedSource(targetTrackId, state.currentSourceQueueId)
-          : undefined;
+          : null;
+        if (prepared?.nativeSeq) {
+          state.playbackRequestSeq += 1;
+          if (activateGaplessPreparedTransition(prepared.nativeSeq)) return;
+        }
+        if (prepared) clearGaplessPreparedSource();
         void playTrack(targetTrackId, list, {
           sourceQueueId: state.currentSourceQueueId,
-          preResolved,
+          preResolved: prepared?.resolved,
         });
         return;
       }
@@ -977,12 +981,17 @@ export const createPlaybackManager = (
     const nextSong = list[nextIndex];
     if (!nextSong) return;
     const targetTrackId = String(nextSong.id);
-    const preResolved = options?.gaplessTransition
+    const prepared = options?.gaplessTransition
       ? takeGaplessPreparedSource(targetTrackId, state.currentSourceQueueId)
-      : undefined;
+      : null;
+    if (prepared?.nativeSeq) {
+      state.playbackRequestSeq += 1;
+      if (activateGaplessPreparedTransition(prepared.nativeSeq)) return;
+    }
+    if (prepared) clearGaplessPreparedSource();
     await playTrack(targetTrackId, list, {
       sourceQueueId: state.currentSourceQueueId,
-      preResolved,
+      preResolved: prepared?.resolved,
     });
   };
 
