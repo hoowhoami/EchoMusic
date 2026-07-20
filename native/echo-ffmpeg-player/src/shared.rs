@@ -216,6 +216,10 @@ impl SharedAudio {
         self.stop.load(Ordering::Acquire) || self.output_stop.load(Ordering::Acquire)
     }
 
+    pub fn output_is_stopped(&self) -> bool {
+        self.output_stop.load(Ordering::Acquire)
+    }
+
     pub fn mark_output_started(&self) {
         self.output_started.store(true, Ordering::Release);
     }

@@ -615,6 +615,13 @@ export const usePlayerStore = defineStore(
         error: (event) => {
           if (event && !event.isTrusted && !(event as any)?.detail) return;
           void (async () => {
+            const detail = (event as CustomEvent<{ message?: string }> | undefined)?.detail;
+            if (detail?.message && (await deviceManager.handleOutputDeviceError(detail.message))) {
+              engine.updateMediaPlaybackState(buildMediaState(state));
+              emitPlayerEvent('pause');
+              return;
+            }
+
             const triedFallback = await playbackManager.tryNextAudioCandidate({
               reason: 'player-error',
               position: state.currentTime,

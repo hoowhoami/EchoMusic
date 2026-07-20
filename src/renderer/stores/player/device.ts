@@ -3,7 +3,11 @@ import type { PlayerState } from './state';
 import type { useSettingStore } from '../setting';
 import type { PlayerEngine } from '@/utils/player';
 import type { OutputDeviceDisconnectBehavior } from '../../types';
-import { getPlaybackIsPlaying } from './stateMachine';
+import {
+  getPlaybackIsPlaying,
+  setEnginePlaybackStatus,
+  setPlaybackIntentPlayback,
+} from './stateMachine';
 
 type PlayerAudioDevice = { name: string; description: string; isDefault?: boolean };
 
@@ -18,6 +22,19 @@ export const createDeviceManager = (
   const resolveDefaultOutputDeviceId = (devices: PlayerAudioDevice[]) =>
     devices.find((device) => device.isDefault)?.name ?? null;
 
+  const isOutputDeviceError = (message: string) => {
+    const normalized = message.toLowerCase();
+    return (
+      normalized.includes('audio output error') ||
+      normalized.includes('audio output device') ||
+      normalized.includes('output device') ||
+      normalized.includes('output stream') ||
+      normalized.includes('output config') ||
+      normalized.includes('requested device is no longer available') ||
+      normalized.includes('device is no longer available')
+    );
+  };
+
   const setReadyOutputDeviceStatus = (deviceId: string) => {
     if (deviceId === 'default') {
       settingStore.setOutputDeviceStatus('ready', '当前使用系统默认输出设备。');
@@ -27,8 +44,37 @@ export const createDeviceManager = (
     settingStore.setOutputDeviceStatus('ready', `已切换到 ${matched?.label || deviceId}。`);
   };
 
-  const applyOutputDevice = async (deviceId: string, options?: { persistSelection?: boolean }) => {
+  const pauseForOutputDeviceDisconnect = (message: string) => {
+    if (getPlaybackIsPlaying(state)) void engine.pause();
+    state.awaitingTrackLoad = false;
+    setPlaybackIntentPlayback(state, false);
+    setEnginePlaybackStatus(state, 'paused');
+    settingStore.syncPreventSleep(false);
+    settingStore.setOutputDeviceStatus('fallback', message);
+  };
+
+  const handleOutputDeviceError = async (message: string): Promise<boolean> => {
+    if (!isOutputDeviceError(message)) return false;
+
+    const disconnectBehavior =
+      settingStore.outputDeviceDisconnectBehavior as OutputDeviceDisconnectBehavior;
+
+    if (disconnectBehavior === 'pause') {
+      pauseForOutputDeviceDisconnect('输出设备已不可用，已按设置暂停播放。');
+      return true;
+    }
+
+    await applyOutputDevice('default', { persistSelection: false, force: true });
+    settingStore.setOutputDeviceStatus('fallback', '输出设备已不可用，已临时切回系统默认设备。');
+    return true;
+  };
+
+  const applyOutputDevice = async (
+    deviceId: string,
+    options?: { persistSelection?: boolean; force?: boolean },
+  ) => {
     const persistSelection = options?.persistSelection ?? true;
+    const force = options?.force ?? false;
     const playerDevice = !deviceId || deviceId === 'default' ? 'auto' : deviceId;
     const exclusive = settingStore.exclusiveAudioDevice;
 
@@ -37,7 +83,7 @@ export const createDeviceManager = (
     const deviceChanged = state.appliedOutputDeviceId !== deviceId;
     let applied = false;
 
-    if (!exclusiveChanged && !deviceChanged) {
+    if (!force && !exclusiveChanged && !deviceChanged) {
       setReadyOutputDeviceStatus(deviceId);
       return;
     }
@@ -135,11 +181,7 @@ export const createDeviceManager = (
       settingStore.outputDevices = currentOutputOptions;
 
       if (defaultOutputDeviceChanged && settingStore.outputDeviceDisconnectBehavior === 'pause') {
-        if (getPlaybackIsPlaying(state)) void engine.pause();
-        settingStore.setOutputDeviceStatus(
-          'fallback',
-          '系统默认输出设备已变化，已按设置暂停播放。',
-        );
+        pauseForOutputDeviceDisconnect('系统默认输出设备已变化，已按设置暂停播放。');
         return;
       }
 
@@ -147,15 +189,11 @@ export const createDeviceManager = (
         const disconnectBehavior =
           settingStore.outputDeviceDisconnectBehavior as OutputDeviceDisconnectBehavior;
         if (disconnectBehavior === 'fallback') {
-          await applyOutputDevice('default', { persistSelection: false });
+          await applyOutputDevice('default', { persistSelection: false, force: true });
           settingStore.setOutputDeviceStatus('fallback', '所选输出设备已不可用，已临时切回。');
         } else if (disconnectBehavior === 'pause') {
-          if (getPlaybackIsPlaying(state)) engine.pause();
+          pauseForOutputDeviceDisconnect('所选输出设备已不可用，已保持选择并暂停。');
           state.appliedOutputDeviceId = currentOutput;
-          settingStore.setOutputDeviceStatus(
-            'fallback',
-            '所选输出设备已不可用，已保持选择并暂停。',
-          );
         }
         return;
       }
@@ -172,5 +210,6 @@ export const createDeviceManager = (
   return {
     refreshOutputDevices,
     applyOutputDevice,
+    handleOutputDeviceError,
   };
 };

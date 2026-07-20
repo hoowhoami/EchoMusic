@@ -159,6 +159,7 @@ export class PlayerEngine {
 
     const offError = player.onError((message: string) => {
       logger.error('PlayerEngine', 'player error', { message });
+      this.events.error?.(new CustomEvent('error', { detail: { message } }));
     });
     this.cleanupFns.push(offError);
 

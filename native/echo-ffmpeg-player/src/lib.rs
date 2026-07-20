@@ -755,6 +755,21 @@ impl Task for PlayTask {
     type JsValue = ();
 
     fn compute(&mut self) -> napi::Result<Self::Output> {
+        let restart_config = with_runtime(|runtime| {
+            let Some(session) = runtime.session.as_ref() else {
+                return Err(napi::Error::from_reason(
+                    "no audio source loaded".to_string(),
+                ));
+            };
+            Ok(session
+                .shared
+                .output_is_stopped()
+                .then(|| runtime.config.clone()))
+        })?;
+        if let Some(config) = restart_config {
+            restart_output_for_config(config)?;
+        }
+
         with_runtime(|runtime| {
             let Some(session) = runtime.session.as_ref() else {
                 return Err(napi::Error::from_reason(
