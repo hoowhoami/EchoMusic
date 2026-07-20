@@ -571,7 +571,6 @@ export const createPlaybackManager = (
     }
 
     const autoPlay = options?.autoPlay ?? true;
-    const wasPlaying = autoPlay ? getPlaybackIsPlaying(state) : false;
     const snapshot = toRawSong(track);
 
     // 不调用 engine.reset()，避免释放音频设备导致多设备同步抢占
@@ -644,11 +643,6 @@ export const createPlaybackManager = (
     // 保持上一首的 Playing 状态，直到新歌开始播放或加载失败
     if (autoPlay) {
       engine.updateMediaPlaybackState(buildMediaState(state));
-    }
-
-    if (wasPlaying && settingStore.volumeFade) {
-      const fadeMs = clampNumber(settingStore.volumeFadeTime ?? 1000, 500, 3000);
-      await engine.pause({ fadeOut: true, fadeDurationMs: fadeMs });
     }
 
     if (requestSeq !== state.playbackRequestSeq) return;

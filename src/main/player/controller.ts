@@ -298,7 +298,15 @@ export class PlayerController extends EventEmitter {
   }
 
   playWithFade(targetVolume: number, durationMs: number) {
-    return this.enqueue(() => this.getAddonOrThrow().playWithFade(targetVolume, durationMs));
+    return this.enqueue(async () => {
+      const addon = this.getAddonOrThrow();
+      addon.cancelFade();
+      addon.setVolume(0);
+      await addon.play();
+      void addon.playWithFade(targetVolume, durationMs).catch((error: unknown) => {
+        log.warn('[PlayerController] play fade failed:', error);
+      });
+    });
   }
 
   setExclusive(exclusive: boolean) {

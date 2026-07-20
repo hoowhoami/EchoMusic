@@ -583,6 +583,7 @@ export const usePlayerStore = defineStore(
           }
         },
         ended: () => {
+          if (state.awaitingTrackLoad) return;
           setEnginePlaybackStatus(state, 'stopped');
           if (!state.recentSeekIgnoreEnd) {
             emitPlayerEvent('ended');
