@@ -218,7 +218,6 @@ fn prepare_source(
                             if !restart_loop_if_enabled(signal_shared.clone()) {
                                 emit_event(PlayerEvent::playback_end("eof"));
                             }
-                            break;
                         }
                         PlaybackSignal::Stop => break,
                     },
