@@ -939,10 +939,6 @@ export const createPlaybackManager = (
         const prepared = options?.gaplessTransition
           ? takeGaplessPreparedSource(targetTrackId, state.currentSourceQueueId)
           : null;
-        if (prepared?.nativeSeq) {
-          state.playbackRequestSeq += 1;
-          if (activateGaplessPreparedTransition(prepared.nativeSeq)) return;
-        }
         if (prepared) clearGaplessPreparedSource();
         void playTrack(targetTrackId, list, {
           sourceQueueId: state.currentSourceQueueId,
@@ -1018,10 +1014,6 @@ export const createPlaybackManager = (
     const prepared = options?.gaplessTransition
       ? takeGaplessPreparedSource(targetTrackId, state.currentSourceQueueId)
       : null;
-    if (prepared?.nativeSeq) {
-      state.playbackRequestSeq += 1;
-      if (activateGaplessPreparedTransition(prepared.nativeSeq)) return;
-    }
     if (prepared) clearGaplessPreparedSource();
     await playTrack(targetTrackId, list, {
       sourceQueueId: state.currentSourceQueueId,
