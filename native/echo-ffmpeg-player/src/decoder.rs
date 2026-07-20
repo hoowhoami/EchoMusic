@@ -269,7 +269,8 @@ pub fn open_decoder(
 
 fn tempo_source_frames(output_samples: usize, speed: f32) -> u64 {
     let output_frames = output_samples / crate::shared::TARGET_CHANNELS;
-    ((output_frames as f64) * speed.clamp(0.25, 4.0) as f64).round() as u64
+    ((output_frames as f64) * speed.clamp(crate::tempo::MIN_SPEED, crate::tempo::MAX_SPEED) as f64)
+        .round() as u64
 }
 
 pub fn spawn_decode_thread(

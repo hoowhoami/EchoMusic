@@ -2,9 +2,11 @@ use soundtouch_rs::{InterpolationAlgorithm, SoundTouch, SoundTouchPreset};
 
 const CHANNELS: usize = 2;
 const OUTPUT_CHUNK_FRAMES: usize = 2048;
+pub const MIN_SPEED: f32 = 0.1;
+pub const MAX_SPEED: f32 = 5.0;
 
 pub fn normalize_speed(value: f64) -> f32 {
-    value.clamp(0.25, 4.0) as f32
+    value.clamp(MIN_SPEED as f64, MAX_SPEED as f64) as f32
 }
 
 pub struct TempoProcessor {
@@ -16,7 +18,7 @@ pub struct TempoProcessor {
 
 impl TempoProcessor {
     pub fn new(speed: f32, sample_rate: u32) -> Result<Self, String> {
-        let speed = speed.clamp(0.25, 4.0);
+        let speed = speed.clamp(MIN_SPEED, MAX_SPEED);
         let mut engine = SoundTouch::builder(CHANNELS, sample_rate.max(1) as usize)
             .tempo(speed as f64)
             .pitch(1.0)
@@ -39,7 +41,7 @@ impl TempoProcessor {
     }
 
     pub fn set_speed(&mut self, speed: f32) -> Result<(), String> {
-        let next = speed.clamp(0.25, 4.0);
+        let next = speed.clamp(MIN_SPEED, MAX_SPEED);
         if (self.speed - next).abs() < f32::EPSILON {
             return Ok(());
         }
@@ -125,6 +127,19 @@ mod tests {
             samples.push(sample);
         }
         samples
+    }
+
+    #[test]
+    fn speed_range_matches_legacy_player_ui() {
+        assert_eq!(normalize_speed(0.01), MIN_SPEED);
+        assert_eq!(normalize_speed(0.1), MIN_SPEED);
+        assert_eq!(normalize_speed(5.0), MAX_SPEED);
+        assert_eq!(normalize_speed(8.0), MAX_SPEED);
+
+        let low = TempoProcessor::new(0.01, 48_000).expect("tempo processor");
+        assert!((low.speed() - MIN_SPEED).abs() < f32::EPSILON);
+        let high = TempoProcessor::new(8.0, 48_000).expect("tempo processor");
+        assert!((high.speed() - MAX_SPEED).abs() < f32::EPSILON);
     }
 
     #[test]

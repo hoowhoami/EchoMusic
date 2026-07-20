@@ -4,6 +4,7 @@ import type { AudioEffectValue, AudioQualityValue, PlayMode } from '../../types'
 import { clampNumber, normalizeEffect, normalizeQuality } from './utils';
 import { DEFAULT_PLAYER_VOLUME } from '../../../shared/playback';
 import { DEFAULT_IMPULSE_RESPONSE_MIX } from '../../../shared/audio';
+import { getPlaybackIsLoading } from './stateMachine';
 
 export const createAudioManager = (
   state: PlayerState,
@@ -81,7 +82,7 @@ export const createAudioManager = (
     if (state.audioEffect === nextEffect) return;
     state.audioEffect = nextEffect;
     if (!state.currentTrackId) return;
-    if (state.isLoading || state.pendingSettingRefresh) {
+    if (getPlaybackIsLoading(state) || state.pendingSettingRefresh) {
       state.pendingSettingRefresh = true;
       return;
     }
@@ -112,7 +113,7 @@ export const createAudioManager = (
     state.currentAudioQualityOverride = nextQuality;
     if (options?.refresh === false) return;
     if (!state.currentTrackId) return;
-    if (state.isLoading || state.pendingSettingRefresh) {
+    if (getPlaybackIsLoading(state) || state.pendingSettingRefresh) {
       state.pendingSettingRefresh = true;
       return;
     }

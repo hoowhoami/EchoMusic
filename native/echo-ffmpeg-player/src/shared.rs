@@ -473,12 +473,17 @@ impl SharedAudio {
     }
 
     pub fn set_speed(&self, speed: f32) {
-        self.speed_bits
-            .store(speed.clamp(0.25, 4.0).to_bits(), Ordering::Release);
+        self.speed_bits.store(
+            speed
+                .clamp(crate::tempo::MIN_SPEED, crate::tempo::MAX_SPEED)
+                .to_bits(),
+            Ordering::Release,
+        );
     }
 
     pub fn speed(&self) -> f32 {
-        f32::from_bits(self.speed_bits.load(Ordering::Acquire)).clamp(0.25, 4.0)
+        f32::from_bits(self.speed_bits.load(Ordering::Acquire))
+            .clamp(crate::tempo::MIN_SPEED, crate::tempo::MAX_SPEED)
     }
 
     pub fn set_volume(&self, volume: f32) {

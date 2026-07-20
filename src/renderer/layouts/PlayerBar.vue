@@ -68,6 +68,7 @@ const {
 } = usePlayerControls();
 
 const playbackNotice = computed(() => player.playbackNotice);
+const isPlaybackLoading = computed(() => player.playbackIsLoading);
 
 const artistList = computed(() => {
   if (!currentTrack.value) return [];
@@ -444,7 +445,10 @@ onUnmounted(() => {
             variant="unstyled"
             size="none"
             @click="player.prev"
-            class="p-2 text-text-main/60 hover:text-primary transition-all hover:scale-110 active:scale-90"
+            :class="[
+              'p-2 text-text-main/60 hover:text-primary transition-all hover:scale-110 active:scale-90',
+              { 'player-step-busy': isPlaybackLoading },
+            ]"
           >
             <Icon :icon="iconSkipBack" width="22" height="22" />
           </Button>
@@ -453,9 +457,20 @@ onUnmounted(() => {
             variant="unstyled"
             size="none"
             @click="player.togglePlay"
-            class="player-toggle w-9.5 h-9.5 rounded-full flex items-center justify-center hover:scale-110 hover:text-primary active:scale-95 transition-all border"
+            :class="[
+              'player-toggle w-9.5 h-9.5 rounded-full flex items-center justify-center hover:scale-110 hover:text-primary active:scale-95 transition-all border',
+              { 'is-loading': isPlaybackLoading },
+            ]"
+            :aria-busy="isPlaybackLoading"
           >
-            <Icon v-if="!player.isPlaying" :icon="iconPlay" width="16" height="16" class="ml-0.5" />
+            <span v-if="isPlaybackLoading" class="player-toggle-spinner" aria-hidden="true"></span>
+            <Icon
+              v-else-if="!player.isPlaying"
+              :icon="iconPlay"
+              width="16"
+              height="16"
+              class="ml-0.5"
+            />
             <Icon v-else :icon="iconPause" width="20" height="20" />
           </Button>
 
@@ -463,7 +478,10 @@ onUnmounted(() => {
             variant="unstyled"
             size="none"
             @click="player.next"
-            class="p-2 text-text-main/60 hover:text-primary transition-all hover:scale-110 active:scale-90"
+            :class="[
+              'p-2 text-text-main/60 hover:text-primary transition-all hover:scale-110 active:scale-90',
+              { 'player-step-busy': isPlaybackLoading },
+            ]"
           >
             <Icon :icon="iconSkipForward" width="22" height="22" />
           </Button>
@@ -717,6 +735,29 @@ onUnmounted(() => {
 .player-toggle {
   background-color: var(--control-muted-bg);
   border-color: transparent;
+}
+
+.player-toggle.is-loading {
+  color: var(--color-primary);
+}
+
+.player-toggle-spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 999px;
+  animation: player-toggle-spin 0.8s linear infinite;
+}
+
+.player-step-busy {
+  opacity: 0.75;
+}
+
+@keyframes player-toggle-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 :global(.dark) .player-toggle {

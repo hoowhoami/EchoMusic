@@ -360,7 +360,7 @@ export class PlayerEngine {
   }
 
   setPlaybackRate(rate: number): number {
-    const next = clamp(rate, 0.25, 4);
+    const next = clamp(rate, 0.1, 5);
     this.playbackRateValue = next;
     void player?.setSpeed(next)?.catch((error: unknown) => {
       logger.warn('PlayerEngine', 'set speed failed', { error: String(error) });

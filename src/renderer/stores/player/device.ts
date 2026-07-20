@@ -3,6 +3,7 @@ import type { PlayerState } from './state';
 import type { useSettingStore } from '../setting';
 import type { PlayerEngine } from '@/utils/player';
 import type { OutputDeviceDisconnectBehavior } from '../../types';
+import { getPlaybackIsPlaying } from './stateMachine';
 
 export const createDeviceManager = (
   state: PlayerState,
@@ -21,7 +22,7 @@ export const createDeviceManager = (
     let applied = false;
 
     if (exclusiveChanged) {
-      const wasPlaying = state.isPlaying;
+      const wasPlaying = getPlaybackIsPlaying(state);
       try {
         await player?.setExclusive(exclusive);
       } catch {
@@ -92,11 +93,22 @@ export const createDeviceManager = (
           (item, index, arr) => arr.findIndex((other) => other.label === item.label) === index,
         );
 
-      settingStore.outputDevices = [...fallbackOptions, ...outputOptions];
-
       const currentOutput = settingStore.outputDevice;
       const hasCurrentDevice =
         currentOutput === 'default' || outputOptions.some((item) => item.value === currentOutput);
+      const currentOutputOptions = [...fallbackOptions, ...outputOptions];
+      const previousCurrentOutputLabel =
+        settingStore.outputDevices.find((item) => item.value === currentOutput)?.label ??
+        currentOutput;
+
+      if (currentOutput !== 'default' && !hasCurrentDevice) {
+        currentOutputOptions.push({
+          label: `${previousCurrentOutputLabel}（不可用）`,
+          value: currentOutput,
+        });
+      }
+
+      settingStore.outputDevices = currentOutputOptions;
 
       if (!hasCurrentDevice) {
         const disconnectBehavior =
@@ -104,9 +116,13 @@ export const createDeviceManager = (
         if (disconnectBehavior === 'fallback') {
           await applyOutputDevice('default', { persistSelection: false });
           settingStore.setOutputDeviceStatus('fallback', '所选输出设备已不可用，已临时切回。');
-        } else if (disconnectBehavior === 'pause' && state.isPlaying) {
-          engine.pause();
-          settingStore.setOutputDeviceStatus('fallback', '所选输出设备已不可用，播放已暂停。');
+        } else if (disconnectBehavior === 'pause') {
+          if (getPlaybackIsPlaying(state)) engine.pause();
+          state.appliedOutputDeviceId = currentOutput;
+          settingStore.setOutputDeviceStatus(
+            'fallback',
+            '所选输出设备已不可用，已保持选择并暂停。',
+          );
         }
         return;
       }

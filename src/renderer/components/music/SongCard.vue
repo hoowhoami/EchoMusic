@@ -9,7 +9,7 @@ import type { SetPlaybackQueueOptions } from '@/stores/playlist';
 import { usePlaylistStore } from '@/stores/playlist';
 import { usePlayerStore } from '@/stores/player';
 import Button from '@/components/ui/Button.vue';
-import { iconMessageCircle, iconHeart, iconHeartFilled, iconPlay } from '@/icons';
+import { iconMessageCircle, iconHeart, iconHeartFilled, iconPlay, iconPause } from '@/icons';
 import MvIcon from '@/components/ui/MvIcon.vue';
 import { playSongInContext, queueAndPlaySong } from '@/utils/playback';
 import { getSongDerivedState } from '@/utils/song';
@@ -102,6 +102,19 @@ const qualityTag = computed(() => derivedState.value.qualityTag);
 const privilegeTags = computed(() => derivedState.value.privilegeTags);
 
 const isFavorite = computed(() => playlistStore.isFavoriteSong(songPayload.value));
+const isCoverPlayPending = computed(
+  () => playerStore.playbackIsLoading && playerStore.playbackTargetTrackId === songId.value,
+);
+const isCurrentCoverSong = computed(
+  () => String(playerStore.currentTrackId ?? '') === songId.value,
+);
+const isCoverPlaying = computed(
+  () => !isCoverPlayPending.value && isCurrentCoverSong.value && playerStore.isPlaying,
+);
+const coverPlayTitle = computed(() => {
+  if (isCoverPlayPending.value) return '加载中';
+  return isCoverPlaying.value ? '暂停' : '播放';
+});
 
 const artistList = computed(() => {
   if (songArtists.value && songArtists.value.length > 0) return songArtists.value;
@@ -251,6 +264,10 @@ const handleCoverPlay = async () => {
     return;
   }
   if (!isPlayable.value) return;
+  if (isCurrentCoverSong.value && playerStore.isPlaying) {
+    await playerStore.togglePlay();
+    return;
+  }
   await handleQueueAndPlayCurrentSong(payload);
 };
 
@@ -271,7 +288,11 @@ const handleFavorite = () => {
     <div
       v-if="showCover"
       class="song-cover-frame relative w-[46px] h-[46px] shrink-0 rounded-[12px] shadow-sm"
-      :class="{ 'has-cover-play': showCoverPlayButton }"
+      :class="{
+        'has-cover-play': showCoverPlayButton,
+        'is-cover-loading': isCoverPlayPending,
+        'is-cover-active': isCoverPlaying,
+      }"
       :style="{ opacity: contentOpacity }"
     >
       <Cover :url="songCoverUrl" :size="160" :borderRadius="12" class="w-full h-full" />
@@ -280,11 +301,15 @@ const handleFavorite = () => {
         variant="unstyled"
         size="none"
         class="song-cover-play"
-        title="播放"
+        :class="{ 'is-loading': isCoverPlayPending, 'is-playing': isCoverPlaying }"
+        :title="coverPlayTitle"
+        :aria-busy="isCoverPlayPending"
         @click.stop="handleCoverPlay"
         @dblclick.stop
       >
-        <Icon :icon="iconPlay" width="14" height="14" />
+        <span v-if="isCoverPlayPending" class="song-cover-spinner" aria-hidden="true"></span>
+        <Icon v-else-if="isCoverPlaying" :icon="iconPause" width="15" height="15" />
+        <Icon v-else :icon="iconPlay" width="14" height="14" />
       </Button>
     </div>
 
@@ -416,7 +441,9 @@ const handleFavorite = () => {
 }
 
 .song-card:hover .song-cover-frame.has-cover-play::after,
-.song-card:focus-within .song-cover-frame.has-cover-play::after {
+.song-card:focus-within .song-cover-frame.has-cover-play::after,
+.song-cover-frame.has-cover-play.is-cover-loading::after,
+.song-cover-frame.has-cover-play.is-cover-active::after {
   opacity: 1;
 }
 
@@ -442,15 +469,36 @@ const handleFavorite = () => {
 }
 
 .song-card:hover .song-cover-play,
-.song-card:focus-within .song-cover-play {
+.song-card:focus-within .song-cover-play,
+.song-cover-play.is-loading,
+.song-cover-play.is-playing {
   opacity: 1;
   transform: scale(1);
   pointer-events: auto;
 }
 
+.song-cover-play.is-loading {
+  pointer-events: none;
+}
+
 .song-cover-play:hover {
   background: transparent;
   transform: scale(1.08);
+}
+
+.song-cover-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 999px;
+  animation: song-cover-spin 0.8s linear infinite;
+}
+
+@keyframes song-cover-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .song-card .song-title {

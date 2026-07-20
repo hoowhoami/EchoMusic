@@ -63,6 +63,7 @@ const {
 } = usePlayerControls();
 
 const isHoveringProgress = ref(false);
+const isPlaybackLoading = computed(() => playerStore.playbackIsLoading);
 const {
   pendingSeekTime,
   isDragging: isDraggingSeek,
@@ -275,7 +276,7 @@ const handleCopySongInfo = async () => {
             variant="unstyled"
             size="none"
             @click="playerStore.prev()"
-            class="bar-ctrl-btn bar-ctrl-main"
+            :class="['bar-ctrl-btn bar-ctrl-main', { 'is-busy': isPlaybackLoading }]"
           >
             <Icon :icon="iconSkipBack" width="22" height="22" />
           </Button>
@@ -284,10 +285,12 @@ const handleCopySongInfo = async () => {
             variant="unstyled"
             size="none"
             @click="playerStore.togglePlay()"
-            class="bar-play-btn"
+            :class="['bar-play-btn', { 'is-loading': isPlaybackLoading }]"
+            :aria-busy="isPlaybackLoading"
           >
+            <span v-if="isPlaybackLoading" class="bar-play-spinner" aria-hidden="true"></span>
             <Icon
-              v-if="!playerStore.isPlaying"
+              v-else-if="!playerStore.isPlaying"
               :icon="iconPlay"
               width="16"
               height="16"
@@ -300,7 +303,7 @@ const handleCopySongInfo = async () => {
             variant="unstyled"
             size="none"
             @click="playerStore.next()"
-            class="bar-ctrl-btn bar-ctrl-main"
+            :class="['bar-ctrl-btn bar-ctrl-main', { 'is-busy': isPlaybackLoading }]"
           >
             <Icon :icon="iconSkipForward" width="22" height="22" />
           </Button>
@@ -610,6 +613,10 @@ const handleCopySongInfo = async () => {
   transform: scale(0.9);
 }
 
+.bar-ctrl-btn.is-busy {
+  opacity: 0.75;
+}
+
 .bar-ctrl-muted {
   color: rgba(255, 255, 255, 0.5);
 }
@@ -646,6 +653,25 @@ const handleCopySongInfo = async () => {
 
 .bar-play-btn:active {
   transform: scale(0.95);
+}
+
+.bar-play-btn.is-loading {
+  background: rgba(255, 255, 255, 0.22);
+}
+
+.bar-play-spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 999px;
+  animation: bar-play-spin 0.8s linear infinite;
+}
+
+@keyframes bar-play-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 /* 3. 右侧 */

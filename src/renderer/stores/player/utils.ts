@@ -41,12 +41,15 @@ export const buildMediaMeta = (track: Song | undefined): MediaSessionMeta | null
 };
 
 export const buildMediaState = (state: {
-  isPlaying: boolean;
+  playbackIntent?: { shouldPlay: boolean };
+  enginePlayback?: { status: string };
   duration: number;
   currentTime: number;
   playbackRate: number;
 }): MediaSessionState => ({
-  isPlaying: state.isPlaying,
+  isPlaying: Boolean(
+    state.playbackIntent?.shouldPlay || state.enginePlayback?.status === 'playing',
+  ),
   duration: state.duration,
   currentTime: state.currentTime,
   playbackRate: state.playbackRate,

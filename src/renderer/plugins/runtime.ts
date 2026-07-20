@@ -289,6 +289,9 @@ export interface EchoPluginContext {
   events: {
     onTrackChange: (handler: (track: unknown) => void) => () => void;
     onPlaybackChange: (handler: (isPlaying: boolean) => void) => () => void;
+    onPlaybackStateChange: (
+      handler: (state: ReturnType<typeof usePlayerStore>['playbackDisplayState']) => void,
+    ) => () => void;
     onPlay: (
       handler: (payload: PlayerEventPayload) => void,
       options?: { immediate?: boolean },
@@ -963,6 +966,9 @@ const createPlayerApi = (
     currentTime: computed(() => player.currentTime),
     duration: computed(() => player.duration),
     isPlaying: computed(() => player.isPlaying),
+    isLoading: computed(() => player.isLoading),
+    playbackState: computed(() => player.playbackDisplayState),
+    playbackTargetTrackId: computed(() => player.playbackTargetTrackId),
     playbackRate: computed(() => player.playbackRate),
     volume: computed(() => player.volume),
     playMode: computed(() => player.playMode),
@@ -2426,6 +2432,19 @@ const createPluginContext = (
                 descriptor.id,
                 '播放状态变化事件',
                 () => handler(isPlaying),
+                undefined,
+              ),
+          ),
+        ),
+      onPlaybackStateChange: (handler) =>
+        addDisposable(
+          watch(
+            () => playerStore.playbackDisplayState,
+            (state) =>
+              runPluginCallback(
+                descriptor.id,
+                '播放展示状态变化事件',
+                () => handler(state),
                 undefined,
               ),
           ),
