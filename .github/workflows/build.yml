@@ -145,8 +145,8 @@ jobs:
             exit 1
           fi
 
-      - name: Build native storage addon
-        working-directory: native/echo-storage
+      - name: Build native SQLite store addon
+        working-directory: native/echo-sqlite-store
         shell: bash
         run: |
           npm install
@@ -201,7 +201,7 @@ jobs:
         shell: bash
         run: |
           set -e
-          for addon in echo-media-controls echo-ffmpeg-player echo-storage; do
+          for addon in echo-media-controls echo-ffmpeg-player echo-sqlite-store; do
             matches=$(find release \( \
               -path "*/resources/native/${addon}.node" -o \
               -path "*/Contents/Resources/native/${addon}.node" \

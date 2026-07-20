@@ -486,8 +486,17 @@ export interface IElectronAPI {
   player: {
     load: (url: string) => Promise<void>;
     loadMkvTrack: (url: string, trackId: number) => Promise<void>;
-    getTrackList: () => Promise<
-      Array<{ id: number; type: string; codec: string; title?: string; lang?: string }>
+    prepareNextSource: (url: string, trackId?: number | null) => Promise<number | null>;
+    clearPreparedNextSource: () => Promise<void>;
+    getTrackList: (url?: string) => Promise<
+      Array<{
+        id: number;
+        type: string;
+        codec?: string;
+        selected?: boolean;
+        title?: string;
+        lang?: string;
+      }>
     >;
     play: () => Promise<void>;
     pause: () => Promise<void>;
@@ -524,8 +533,9 @@ export interface IElectronAPI {
     setLoopFile: (loop: boolean) => Promise<void>;
     setStallTimeout: (seconds: number) => Promise<void>;
     onTimeUpdate: (func: (time: number) => void) => () => void;
+    onSeeked: (func: (time: number) => void) => () => void;
     onDurationChange: (func: (duration: number) => void) => () => void;
-    onFileLoaded: (func: () => void) => () => void;
+    onFileLoaded: (func: (payload?: { path?: string; seq?: number }) => void) => () => void;
     onStateChange: (func: (state: { playing?: boolean; paused?: boolean }) => void) => () => void;
     onPlaybackEnd: (func: (reason: string) => void) => () => void;
     onStall: (func: (position: number) => void) => () => void;

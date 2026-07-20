@@ -13,6 +13,7 @@ pub struct TrackInfo {
     pub id: i64,
     pub r#type: String,
     pub selected: bool,
+    pub codec: Option<String>,
     pub title: Option<String>,
     pub lang: Option<String>,
 }
@@ -124,6 +125,22 @@ impl PlayerEvent {
             event: "playback-end".to_string(),
             reason: Some(reason.to_string()),
             ..Self::empty("playback-end")
+        }
+    }
+
+    pub fn stalled(time: f64) -> Self {
+        Self {
+            event: "stalled".to_string(),
+            time: Some(time),
+            ..Self::empty("stalled")
+        }
+    }
+
+    pub fn seeked(time: f64) -> Self {
+        Self {
+            event: "seeked".to_string(),
+            time: Some(time),
+            ..Self::empty("seeked")
         }
     }
 

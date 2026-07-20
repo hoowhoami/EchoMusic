@@ -157,7 +157,7 @@ pub(crate) fn fill_output(output: &mut [f32], output_channels: usize, shared: &S
         output.fill(0.0);
         return;
     }
-    let volume = shared.volume.lock().map(|value| *value).unwrap_or(1.0);
+    let volume = shared.volume();
     let output_channels = output_channels.max(1);
     if output_channels == TARGET_CHANNELS {
         shared.pop_into(output);

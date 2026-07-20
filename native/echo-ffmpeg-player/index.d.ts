@@ -7,6 +7,8 @@ export interface AudioDevice {
 
 export declare function cancelFade(): void
 
+export declare function clearPreparedNextSource(): void
+
 export declare function configureSpectrum(options?: SpectrumOptions | undefined | null): SpectrumStatus
 
 export declare function destroy(): void
@@ -17,13 +19,13 @@ export declare function getAudioDevices(): Promise<unknown>
 
 export declare function getAudioFilter(): string
 
-export declare function getSpectrumSnapshot(): SpectrumFrame | null
+export declare function getSpectrumSnapshot(): Promise<unknown>
 
 export declare function getSpectrumStatus(): SpectrumStatus
 
 export declare function getState(): PlayerState
 
-export declare function getTrackList(): Promise<unknown>
+export declare function getTrackList(url?: string | undefined | null): Promise<unknown>
 
 export declare function initialize(config?: PlayerConfigOptions | undefined | null): void
 
@@ -39,7 +41,11 @@ export declare function play(): Promise<unknown>
 
 export interface PlayerConfigOptions {
   audioBufferSecs?: number
+  audioCacheSecs?: number
+  audioDemuxerMaxMb?: number
+  audioDemuxerBackMb?: number
   networkTimeoutSecs?: number
+  playbackStallTimeoutSecs?: number
   httpProxy?: string
 }
 
@@ -65,13 +71,15 @@ export interface PlayerState {
 
 export declare function playWithFade(targetVolume: number, durationMs: number): Promise<unknown>
 
+export declare function prepareNextSource(url: string, trackId?: number | undefined | null, seq?: number | undefined | null): Promise<unknown>
+
 export declare function registerEventHandler(callback: ((err: Error | null, arg: PlayerEvent) => any)): void
 
 export declare function seek(time: number): Promise<unknown>
 
 export declare function setAudioDevice(deviceName: string): Promise<unknown>
 
-export declare function setEqualizer(gains: Array<number>): void
+export declare function setEqualizer(gains: Array<number>): Promise<unknown>
 
 export declare function setExclusiveOutput(exclusive: boolean): Promise<unknown>
 
@@ -79,15 +87,17 @@ export declare function setHttpProxy(proxy: string): void
 
 export declare function setImpulseResponse(payload: any): Promise<unknown>
 
-export declare function setImpulseResponseMix(mix: number): void
+export declare function setImpulseResponseMix(mix: number): Promise<unknown>
 
 export declare function setLoopFile(loopFile: boolean): void
 
 export declare function setNetworkTimeout(seconds: number): void
 
-export declare function setNormalizationGain(gainDb: number): void
+export declare function setNormalizationGain(gainDb: number): Promise<unknown>
 
 export declare function setSpeed(speed: number): Promise<unknown>
+
+export declare function setStallTimeout(seconds: number): void
 
 export declare function setVolume(volume: number): void
 
@@ -118,6 +128,7 @@ export interface TrackInfo {
   id: number
   type: string
   selected: boolean
+  codec?: string
   title?: string
   lang?: string
 }

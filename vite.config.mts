@@ -68,7 +68,7 @@ export default defineConfig({
                 'electron-audio-loopback',
                 '../../native/echo-media-controls',
                 '../../native/echo-ffmpeg-player',
-                '../../native/echo-storage',
+                '../../native/echo-sqlite-store',
               ],
             },
           },

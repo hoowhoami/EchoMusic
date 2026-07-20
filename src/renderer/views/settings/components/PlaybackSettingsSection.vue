@@ -3,16 +3,17 @@ import { computed, ref } from 'vue';
 import { useSettingStore } from '@/stores/setting';
 import { usePlayerStore } from '@/stores/player';
 import { useToastStore } from '@/stores/toast';
+import type { AudioQualityValue } from '@/types';
 import Switch from '@/components/ui/Switch.vue';
 import Slider from '@/components/ui/Slider.vue';
-import Input from '@/components/ui/Input.vue';
 import InputNumber from '@/components/ui/InputNumber.vue';
+import Select from '@/components/ui/Select.vue';
 import Button from '@/components/ui/Button.vue';
 import Dialog from '@/components/ui/Dialog.vue';
 import { Icon } from '@iconify/vue';
 import { iconCheckMark, iconPencil, iconPlayerPlay, iconPlus, iconTrash, iconX } from '@/icons';
 import SettingsSectionShell from './SettingsSectionShell.vue';
-import { sectionTitles } from '../constants';
+import { audioQualityOptions, sectionTitles } from '../constants';
 import { normalizeImpulseResponseName, type ImpulseResponseFile } from '../../../../shared/audio';
 
 const settingStore = useSettingStore();
@@ -110,26 +111,6 @@ const handleRemoveImpulseResponse = (id: string) => {
   settingStore.removeImpulseResponseFile(id);
   toastStore.actionCompleted('已移除音效文件');
 };
-
-const updateKugouApiProxy = (value: string | number) => {
-  settingStore.kugouApiProxyUrl = String(value ?? '');
-  settingStore.syncNetworkSettings();
-};
-
-const updateKugouApiTimeout = (value: string | number) => {
-  settingStore.kugouApiTimeoutSecs = Math.max(0, Math.min(300, Number(value) || 0));
-  settingStore.syncNetworkSettings();
-};
-
-const updatePlayerHttpProxy = (value: string | number) => {
-  settingStore.playerHttpProxyUrl = String(value ?? '');
-  settingStore.syncNetworkSettings();
-};
-
-const updatePlayerNetworkTimeout = (value: string | number) => {
-  settingStore.playerNetworkTimeoutSecs = Math.max(1, Math.min(300, Number(value) || 60));
-  settingStore.syncNetworkSettings();
-};
 </script>
 
 <template>
@@ -152,6 +133,37 @@ const updatePlayerNetworkTimeout = (value: string | number) => {
         <p class="text-sm text-text-secondary">打开应用时如果有恢复的播放会话则自动开始播放</p>
       </div>
       <Switch v-model="settingStore.autoPlayOnLaunch" />
+    </div>
+    <div class="settings-divider"></div>
+    <div class="settings-item">
+      <div class="space-y-1">
+        <h3 class="font-semibold">默认音质</h3>
+        <p class="text-sm text-text-secondary">
+          新歌曲默认按此音质解析，播放器中可临时覆盖当前歌曲
+        </p>
+      </div>
+      <Select
+        class="w-45"
+        :model-value="settingStore.defaultAudioQuality"
+        :options="audioQualityOptions"
+        @update:model-value="settingStore.defaultAudioQuality = $event as AudioQualityValue"
+      />
+    </div>
+    <div class="settings-divider"></div>
+    <div class="settings-item">
+      <div class="space-y-1">
+        <h3 class="font-semibold">智能兼容模式</h3>
+        <p class="text-sm text-text-secondary">首选音质不可用时自动尝试备选</p>
+      </div>
+      <Switch v-model="settingStore.compatibilityMode" />
+    </div>
+    <div class="settings-divider"></div>
+    <div class="settings-item">
+      <div class="space-y-1">
+        <h3 class="font-semibold">无缝播放</h3>
+        <p class="text-sm text-text-secondary">提前准备下一首，减少歌曲衔接时的停顿</p>
+      </div>
+      <Switch v-model="settingStore.gaplessPlayback" />
     </div>
     <div class="settings-divider"></div>
     <div class="settings-item">
@@ -358,184 +370,11 @@ const updatePlayerNetworkTimeout = (value: string | number) => {
     <div class="settings-divider"></div>
     <div class="settings-item">
       <div class="space-y-1">
-        <h3 class="font-semibold">播放恢复超时</h3>
-        <p class="text-sm text-text-secondary">
-          长时间暂停后恢复播放可能卡住，超时后自动重新加载音频源。设为 0 禁用
-        </p>
-      </div>
-      <InputNumber
-        class="w-45"
-        :model-value="String(settingStore.playResumeTimeout ?? 5)"
-        :min="0"
-        :max="30"
-        :step="1"
-        placeholder="5"
-        suffix="秒"
-        @update:model-value="
-          settingStore.playResumeTimeout = Math.max(0, Math.min(30, Number($event) || 0))
-        "
-      />
-    </div>
-    <div class="settings-divider"></div>
-    <div class="settings-item">
-      <div class="space-y-1">
         <h3 class="font-semibold">防止系统休眠</h3>
         <p class="text-sm text-text-secondary">播放音乐时阻止系统进入睡眠</p>
       </div>
       <Switch v-model="settingStore.preventSleep" />
     </div>
-    <div class="settings-divider"></div>
-    <div class="settings-item">
-      <div class="space-y-1">
-        <h3 class="font-semibold">音频缓冲时长</h3>
-        <p class="text-sm text-text-secondary">
-          网络音频预读时长，增加可减少网络波动导致的播放中断（需重启应用生效）
-        </p>
-      </div>
-      <InputNumber
-        class="w-45"
-        :model-value="String(settingStore.audioCacheSecs ?? 30)"
-        :min="10"
-        :max="120"
-        :step="10"
-        placeholder="30"
-        suffix="秒"
-        @update:model-value="
-          settingStore.audioCacheSecs = Math.max(10, Math.min(120, Number($event) || 30))
-        "
-      />
-    </div>
-    <div class="settings-divider"></div>
-    <div class="settings-item">
-      <div class="space-y-1">
-        <h3 class="font-semibold">音频设备缓冲</h3>
-        <p class="text-sm text-text-secondary">
-          音频输出设备缓冲时长，增加可改善网络受限时的播放稳定性（需重启应用生效）
-        </p>
-      </div>
-      <InputNumber
-        class="w-45"
-        :model-value="String(settingStore.audioBufferSecs ?? 0.5)"
-        :min="0.5"
-        :max="3.0"
-        :step="0.5"
-        placeholder="0.5"
-        suffix="秒"
-        @update:model-value="
-          settingStore.audioBufferSecs = Math.max(0.5, Math.min(3.0, Number($event) || 0.5))
-        "
-      />
-    </div>
-    <div class="settings-divider"></div>
-    <div class="settings-item">
-      <div class="space-y-1">
-        <h3 class="font-semibold">酷狗 API 代理</h3>
-        <p class="text-sm text-text-secondary">
-          用于歌曲地址、歌词和推荐等接口，支持 HTTP/HTTPS 代理
-        </p>
-      </div>
-      <Input
-        :model-value="settingStore.kugouApiProxyUrl"
-        placeholder="http://127.0.0.1:7890"
-        class="w-60! rounded-lg"
-        input-class="!h-9 !rounded-lg !pl-3 !pr-8 !text-sm"
-        @update:model-value="updateKugouApiProxy"
-        @clear="updateKugouApiProxy('')"
-      />
-    </div>
-    <div class="settings-divider"></div>
-    <div class="settings-item">
-      <div class="space-y-1">
-        <h3 class="font-semibold">酷狗 API 超时</h3>
-        <p class="text-sm text-text-secondary">接口请求超过该时间后中止，设为 0 使用默认行为</p>
-      </div>
-      <InputNumber
-        class="w-45"
-        :model-value="String(settingStore.kugouApiTimeoutSecs ?? 0)"
-        :min="0"
-        :max="300"
-        :step="10"
-        placeholder="0"
-        suffix="秒"
-        @update:model-value="updateKugouApiTimeout"
-      />
-    </div>
-    <div class="settings-divider"></div>
-    <div class="settings-item">
-      <div class="space-y-1">
-        <h3 class="font-semibold">播放器 HTTP 代理</h3>
-        <p class="text-sm text-text-secondary">用于播放器直接加载音频直链，支持 HTTP/HTTPS 代理</p>
-      </div>
-      <Input
-        :model-value="settingStore.playerHttpProxyUrl"
-        placeholder="http://127.0.0.1:7890"
-        class="w-60! rounded-lg"
-        input-class="!h-9 !rounded-lg !pl-3 !pr-8 !text-sm"
-        @update:model-value="updatePlayerHttpProxy"
-        @clear="updatePlayerHttpProxy('')"
-      />
-    </div>
-    <div class="settings-divider"></div>
-    <div class="settings-item">
-      <div class="space-y-1">
-        <h3 class="font-semibold">播放器网络超时</h3>
-        <p class="text-sm text-text-secondary">播放器打开音频直链的网络等待时间</p>
-      </div>
-      <InputNumber
-        class="w-45"
-        :model-value="String(settingStore.playerNetworkTimeoutSecs ?? 60)"
-        :min="1"
-        :max="300"
-        :step="10"
-        placeholder="60"
-        suffix="秒"
-        @update:model-value="updatePlayerNetworkTimeout"
-      />
-    </div>
-    <div class="settings-divider"></div>
-    <div class="settings-item">
-      <div class="space-y-1">
-        <h3 class="font-semibold">播放卡死自动恢复</h3>
-        <p class="text-sm text-text-secondary">
-          播放中进度超过该秒数无推进则判定为卡死，自动重取地址并从断点续播。设为 0 禁用
-        </p>
-      </div>
-      <InputNumber
-        class="w-45"
-        :model-value="String(settingStore.playbackStallTimeout ?? 8)"
-        :min="0"
-        :max="60"
-        :step="1"
-        placeholder="8"
-        suffix="秒"
-        @update:model-value="
-          settingStore.playbackStallTimeout = Math.max(0, Math.min(60, Number($event) || 0))
-        "
-      />
-    </div>
-    <template v-if="(settingStore.playbackStallTimeout ?? 8) > 0">
-      <div class="settings-divider"></div>
-      <div class="settings-item">
-        <div class="space-y-1">
-          <h3 class="font-semibold">最大自动恢复次数</h3>
-          <p class="text-sm text-text-secondary">
-            同一首歌连续卡死时最多自动恢复的次数，超过则提示并按设置自动切下一首
-          </p>
-        </div>
-        <InputNumber
-          class="w-45"
-          :model-value="String(settingStore.playbackStallMaxAttempts ?? 3)"
-          :min="1"
-          :max="10"
-          :step="1"
-          placeholder="3"
-          suffix="次"
-          @update:model-value="
-            settingStore.playbackStallMaxAttempts = Math.max(1, Math.min(10, Number($event) || 3))
-          "
-        />
-      </div>
-    </template>
   </SettingsSectionShell>
 </template>
 

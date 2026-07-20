@@ -1,11 +1,68 @@
 import { EventEmitter } from 'events';
 import { app } from 'electron';
 import fs from 'fs';
+import { createRequire } from 'node:module';
 import path from 'path';
 import log from '../logger';
 import { refreshNetworkSettingsFromStorage } from '../networkSettings';
+import { getKvStorage } from '../storage/kv';
 import type { NetworkSettings } from '../../shared/network';
 import type { ImpulseResponsePlaybackOptions } from '../../shared/audio';
+
+const PINIA_SETTING_KEY = 'pinia:setting';
+const DEFAULT_AUDIO_CACHE_SECS = 30;
+const DEFAULT_AUDIO_OUTPUT_BUFFER_SECS = 2;
+const DEFAULT_DEMUXER_MAX_MB = 48;
+const DEFAULT_DEMUXER_BACK_MB = 12;
+const DEFAULT_PLAYBACK_STALL_TIMEOUT_SECS = 8;
+const nativeRequire = createRequire(path.join(process.cwd(), 'package.json'));
+
+const readClampedNumber = (value: unknown, fallback: number, min: number, max: number): number => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(max, Math.max(min, parsed));
+};
+
+const getPersistedNativeAudioConfig = () => {
+  const saved = getKvStorage().get<Record<string, unknown>>(PINIA_SETTING_KEY);
+  const audioCacheSecs = readClampedNumber(
+    saved?.audioCacheSecs,
+    DEFAULT_AUDIO_CACHE_SECS,
+    10,
+    120,
+  );
+  const audioBufferSecs = readClampedNumber(
+    saved?.audioBufferSecs,
+    DEFAULT_AUDIO_OUTPUT_BUFFER_SECS,
+    1,
+    5,
+  );
+  const audioDemuxerMaxMB = readClampedNumber(
+    saved?.audioDemuxerMaxMB,
+    DEFAULT_DEMUXER_MAX_MB,
+    8,
+    512,
+  );
+  const audioDemuxerBackMB = readClampedNumber(
+    saved?.audioDemuxerBackMB,
+    DEFAULT_DEMUXER_BACK_MB,
+    0,
+    audioDemuxerMaxMB,
+  );
+  const playbackStallTimeoutSecs = readClampedNumber(
+    saved?.playbackStallTimeout,
+    DEFAULT_PLAYBACK_STALL_TIMEOUT_SECS,
+    0,
+    60,
+  );
+  return {
+    audioBufferSecs,
+    audioCacheSecs,
+    audioDemuxerMaxMB,
+    audioDemuxerBackMB,
+    playbackStallTimeoutSecs,
+  };
+};
 
 interface PlayerAddonEvent {
   event: string;
@@ -23,15 +80,28 @@ interface PlayerAddonEvent {
 interface PlayerAddon {
   initialize(config?: {
     audioBufferSecs?: number;
+    audioCacheSecs?: number;
+    audioDemuxerMaxMb?: number;
+    audioDemuxerBackMb?: number;
     networkTimeoutSecs?: number;
+    playbackStallTimeoutSecs?: number;
     httpProxy?: string;
   }): void;
   destroy(): void;
   registerEventHandler(callback: (err: Error | null, event: PlayerAddonEvent) => void): void;
   loadFile(url: string, seq?: number): Promise<void>;
   loadMkvTrack(url: string, trackId: number, seq?: number): Promise<void>;
-  getTrackList(): Promise<
-    Array<{ id: number; type: string; selected?: boolean; title?: string; lang?: string }>
+  prepareNextSource(url: string, trackId?: number | null, seq?: number): Promise<boolean>;
+  clearPreparedNextSource(): void;
+  getTrackList(url?: string): Promise<
+    Array<{
+      id: number;
+      type: string;
+      selected?: boolean;
+      codec?: string;
+      title?: string;
+      lang?: string;
+    }>
   >;
   play(): Promise<void>;
   pause(): void;
@@ -39,13 +109,13 @@ interface PlayerAddon {
   seek(time: number): Promise<void>;
   setVolume(volume: number): void;
   setSpeed(speed: number): Promise<void>;
-  setEqualizer(gains: number[]): void;
+  setEqualizer(gains: number[]): Promise<void>;
   setImpulseResponse(payload: string | ImpulseResponsePlaybackOptions): Promise<void>;
-  setImpulseResponseMix(mix: number): void;
+  setImpulseResponseMix(mix: number): Promise<void>;
   getAudioFilter(): string;
   setAudioDevice(deviceName: string): Promise<void>;
   getAudioDevices(): Promise<Array<{ name: string; description: string }>>;
-  setNormalizationGain(gainDb: number): void;
+  setNormalizationGain(gainDb: number): Promise<void>;
   fade(from: number, to: number, durationMs: number): Promise<void>;
   cancelFade(): void;
   pauseWithFade(savedVolume: number, durationMs: number): Promise<void>;
@@ -53,11 +123,12 @@ interface PlayerAddon {
   getState(): PlayerState;
   setExclusiveOutput(exclusive: boolean): Promise<void>;
   setLoopFile(loop: boolean): void;
+  setStallTimeout(seconds: number): void;
   setNetworkTimeout(seconds: number): void;
   setHttpProxy(proxy: string): void;
   configureSpectrum(options?: unknown): { available: boolean; running: boolean; reason?: string };
   getSpectrumStatus(): { available: boolean; running: boolean; reason?: string };
-  getSpectrumSnapshot(): unknown;
+  getSpectrumSnapshot(): Promise<unknown>;
 }
 
 export interface PlayerState {
@@ -102,10 +173,18 @@ export class PlayerController extends EventEmitter {
     if (!this.available) return false;
     this.addon = this.loadAddon();
     const networkSettings = refreshNetworkSettingsFromStorage();
+    const audioConfig = getPersistedNativeAudioConfig();
     this.addon.initialize({
-      audioBufferSecs: 2,
+      audioBufferSecs: audioConfig.audioBufferSecs,
+      audioCacheSecs: audioConfig.audioCacheSecs,
+      audioDemuxerMaxMb: audioConfig.audioDemuxerMaxMB,
+      audioDemuxerBackMb: audioConfig.audioDemuxerBackMB,
       networkTimeoutSecs: networkSettings.playerNetworkTimeoutSecs,
+      playbackStallTimeoutSecs: audioConfig.playbackStallTimeoutSecs,
       httpProxy: networkSettings.playerHttpProxyUrl,
+    });
+    log.info('[PlayerController]', 'native audio cache configured', {
+      ...audioConfig,
     });
     this.addon.registerEventHandler((_err, event) => this.handleAddonEvent(event));
     return true;
@@ -131,8 +210,18 @@ export class PlayerController extends EventEmitter {
     await this.enqueue(() => this.getAddonOrThrow().loadMkvTrack(url, trackId, seq));
   }
 
-  getTrackList() {
-    return this.getAddonOrThrow().getTrackList();
+  async prepareNextSource(url: string, trackId?: number | null): Promise<number | null> {
+    const seq = ++this.loadSeq;
+    const prepared = await this.getAddonOrThrow().prepareNextSource(url, trackId ?? null, seq);
+    return prepared ? seq : null;
+  }
+
+  clearPreparedNextSource(): void {
+    this.getAddonOrThrow().clearPreparedNextSource();
+  }
+
+  getTrackList(url?: string) {
+    return this.getAddonOrThrow().getTrackList(url);
   }
 
   play() {
@@ -162,7 +251,7 @@ export class PlayerController extends EventEmitter {
   }
 
   async setEq(gains: number[]): Promise<void> {
-    this.getAddonOrThrow().setEqualizer(gains);
+    await this.getAddonOrThrow().setEqualizer(gains);
   }
 
   async setImpulseResponse(payload: string | ImpulseResponsePlaybackOptions): Promise<void> {
@@ -170,7 +259,7 @@ export class PlayerController extends EventEmitter {
   }
 
   async setImpulseResponseMix(mix: number): Promise<void> {
-    this.getAddonOrThrow().setImpulseResponseMix(mix);
+    await this.getAddonOrThrow().setImpulseResponseMix(mix);
   }
 
   async getAudioFilter(): Promise<string> {
@@ -189,7 +278,7 @@ export class PlayerController extends EventEmitter {
   }
 
   async applyNormalizationGain(gainDb: number): Promise<void> {
-    this.getAddonOrThrow().setNormalizationGain(gainDb);
+    await this.getAddonOrThrow().setNormalizationGain(gainDb);
   }
 
   fade(from: number, to: number, durationMs: number) {
@@ -220,8 +309,8 @@ export class PlayerController extends EventEmitter {
     this.getAddonOrThrow().setLoopFile(loop);
   }
 
-  setStallTimeout(_seconds: number): void {
-    // Progress is emitted by the native engine; renderer-side recovery still owns stall policy.
+  setStallTimeout(seconds: number): void {
+    this.getAddonOrThrow().setStallTimeout(Math.max(0, Math.min(60, Number(seconds) || 0)));
   }
 
   async setNetwork(settings: NetworkSettings): Promise<void> {
@@ -264,6 +353,12 @@ export class PlayerController extends EventEmitter {
           this.emit('time-update', event.time);
         }
         break;
+      case 'seeked':
+        if (typeof event.time === 'number') {
+          this.state.timePos = event.time;
+          this.emit('seeked', event.time);
+        }
+        break;
       case 'duration-change':
         if (typeof event.duration === 'number') {
           this.state.duration = event.duration;
@@ -271,7 +366,7 @@ export class PlayerController extends EventEmitter {
         }
         break;
       case 'file-loaded':
-        this.emit('file-loaded');
+        this.emit('file-loaded', { path: event.path, seq: event.seq });
         break;
       case 'state-change':
         if (event.state) this.state = { ...this.state, ...event.state };
@@ -281,6 +376,11 @@ export class PlayerController extends EventEmitter {
         this.state.playing = false;
         this.state.paused = true;
         this.emit('playback-end', event.reason || 'eof');
+        break;
+      case 'stalled':
+        if (typeof event.time === 'number') {
+          this.emit('stalled', event.time);
+        }
         break;
       case 'audio-device-list-changed':
         this.emit('audio-device-list-changed', event.devices || []);
@@ -312,7 +412,7 @@ export class PlayerController extends EventEmitter {
 
   private loadAddon(): PlayerAddon {
     const addonPath = this.resolveAddonPath();
-    if (addonPath) return require(addonPath) as PlayerAddon;
-    return require('../../native/echo-ffmpeg-player') as PlayerAddon;
+    if (addonPath) return nativeRequire(addonPath) as PlayerAddon;
+    return nativeRequire(path.join(process.cwd(), 'native/echo-ffmpeg-player')) as PlayerAddon;
   }
 }

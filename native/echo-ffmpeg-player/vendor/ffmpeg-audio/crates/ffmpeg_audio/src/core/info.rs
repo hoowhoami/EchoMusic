@@ -1,9 +1,22 @@
 use std::ffi::CStr;
 
 use crate::{
-    decode::DecodeEngine,
+    decode::{
+        Decoder,
+        Demuxer,
+    },
     sys,
 };
+
+#[derive(Debug, Clone)]
+pub struct AudioStreamInfo {
+    pub ordinal: usize,
+    pub stream_index: usize,
+    pub selected: bool,
+    pub codec_name: Option<String>,
+    pub title: Option<String>,
+    pub lang: Option<String>,
+}
 
 #[derive(Debug, Clone)]
 pub struct SourceAudioInfo {
@@ -38,11 +51,8 @@ pub struct SourceAudioInfo {
 }
 
 impl SourceAudioInfo {
-    /// Extracts and maps raw FFmpeg audio properties into a high-level representation.
-    pub(crate) fn probe(engine: &DecodeEngine) -> Self {
+    pub(crate) fn probe_parts(demuxer: &Demuxer, decoder: &Decoder) -> Self {
         unsafe {
-            let demuxer = engine.demuxer();
-            let decoder = engine.decoder();
             let codec_params = demuxer.stream_codec_params();
 
             let codec_id = (*codec_params).codec_id;

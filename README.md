@@ -69,7 +69,7 @@
 - **Native Addons**: [napi-rs](https://napi.rs/)（Rust 编写的原生扩展）
   - `echo-ffmpeg-player`：播放引擎封装，支持淡入淡出、EQ、音量均衡、输出设备切换、独占输出与实时频谱分析
   - `echo-media-controls`：系统媒体控制集成（macOS/Windows/Linux 原生 API）
-  - `echo-storage`：SQLite 本地持久化存储，负责设置、播放队列与状态快照
+  - `echo-sqlite-store`：SQLite 本地持久化存储，负责设置、播放队列与状态快照
 
 ## 🖼️ 界面截图
 
@@ -162,7 +162,7 @@
    npm install
    npm run build
 
-   cd ../echo-storage
+   cd ../echo-sqlite-store
    npm install
    npm run build
 

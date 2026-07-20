@@ -27,6 +27,7 @@ let getControllerRef: (() => PlayerController | null) | null = null;
 let emptySnapshotCount = 0;
 let silentFrameCount = 0;
 let broadcastSignalLogged = false;
+let pollingInFlight = false;
 
 const getSubscriptionKey = (webContents: WebContents, subscriptionId: string) =>
   `${webContents.id}:${String(subscriptionId || '').trim()}`;
@@ -155,16 +156,19 @@ const toAudioSpectrumFrame = (
   };
 };
 
-const pollFrame = () => {
+const pollFrame = async () => {
   if (subscriptions.size === 0) {
     stopPolling();
     return;
   }
+  if (pollingInFlight) return;
   const controller = getControllerRef?.();
   if (!controller) return;
+  pollingInFlight = true;
   try {
     const options = getMergedOptions();
-    const frame = toAudioSpectrumFrame(controller.getSpectrumSnapshot(), controller, options);
+    const snapshot = await controller.getSpectrumSnapshot();
+    const frame = toAudioSpectrumFrame(snapshot, controller, options);
     if (!frame) {
       emptySnapshotCount += 1;
       if (emptySnapshotCount === 30) {
@@ -190,6 +194,8 @@ const pollFrame = () => {
     if (removeDeadSubscriptions() && subscriptions.size === 0) stopPolling();
   } catch (error) {
     log.warn('[AudioSpectrum] get player spectrum snapshot failed:', error);
+  } finally {
+    pollingInFlight = false;
   }
 };
 
@@ -223,8 +229,8 @@ const syncForSubscriptions = (): AudioSpectrumStatus => {
   if (!pollingTimer || pollingIntervalMs !== intervalMs) {
     stopPolling();
     pollingIntervalMs = intervalMs;
-    pollingTimer = setInterval(pollFrame, intervalMs);
-    pollFrame();
+    pollingTimer = setInterval(() => void pollFrame(), intervalMs);
+    void pollFrame();
   }
   return status(true);
 };
@@ -239,10 +245,14 @@ const getStatus = (): AudioSpectrumStatus => {
   };
 };
 
-const getSnapshot = (): AudioSpectrumFrame | null => {
+const getSnapshot = async (): Promise<AudioSpectrumFrame | null> => {
   const controller = getControllerRef?.();
   if (!controller) return null;
-  return toAudioSpectrumFrame(controller.getSpectrumSnapshot(), controller, getMergedOptions());
+  return toAudioSpectrumFrame(
+    await controller.getSpectrumSnapshot(),
+    controller,
+    getMergedOptions(),
+  );
 };
 
 const removeWebContentsSubscriptions = (webContents: WebContents) => {

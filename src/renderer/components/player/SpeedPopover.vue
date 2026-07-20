@@ -48,14 +48,14 @@ withDefaults(defineProps<Props>(), {
               ? 'text-black/40 dark:text-white/40 hover:scale-110 active:scale-90'
               : 'text-text-main/50 hover:text-primary hover:scale-110 active:scale-90'
         "
-        title="播放倍速"
+        title="倍速播放"
       >
         <Icon :icon="iconSpeedometer" width="20" height="20" />
       </Button>
     </template>
     <div class="space-y-3">
       <div class="flex items-center justify-between">
-        <span class="text-[11px] font-bold opacity-50">播放倍速</span>
+        <span class="text-[11px] font-bold opacity-50">倍速播放</span>
         <Button
           variant="unstyled"
           size="none"
@@ -66,12 +66,12 @@ withDefaults(defineProps<Props>(), {
         >
       </div>
       <div class="flex items-center gap-2">
-        <span class="text-[10px] font-semibold opacity-40 shrink-0">0.1</span>
+        <span class="text-[10px] font-semibold opacity-40 shrink-0">0.25</span>
         <SliderRoot
           class="relative flex items-center select-none touch-none cursor-pointer flex-1 h-5"
-          :model-value="[Math.round(player.playbackRate * 10)]"
-          :min="1"
-          :max="50"
+          :model-value="[Math.round(player.playbackRate * 100)]"
+          :min="25"
+          :max="400"
           :step="1"
           orientation="horizontal"
           @update:model-value="handlePlaybackRateSlider"
@@ -83,11 +83,11 @@ withDefaults(defineProps<Props>(), {
             class="speed-thumb block w-3 h-3 cursor-pointer border rounded-full shadow-md focus-visible:outline-none"
           />
         </SliderRoot>
-        <span class="text-[10px] font-semibold opacity-40 shrink-0">5x</span>
+        <span class="text-[10px] font-semibold opacity-40 shrink-0">4x</span>
       </div>
       <div class="flex items-center justify-between">
         <Button
-          v-for="r in [0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 3.0]"
+          v-for="r in [0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 3.0, 4.0]"
           :key="r"
           variant="unstyled"
           size="none"

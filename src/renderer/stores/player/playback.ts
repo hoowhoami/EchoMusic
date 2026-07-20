@@ -16,7 +16,21 @@ import {
   findPlayableIndex,
   findTrackById,
 } from './utils';
-import type { ResolvedAudioSource } from './types';
+import type { PlaybackSource, ResolvedAudioSource } from './types';
+
+const GAPLESS_PREFETCH_WINDOW_SECS = 30;
+
+type GaplessPreparedSource = {
+  key: string;
+  currentTrackId: string;
+  targetTrackId: string;
+  sourceQueueId: string | null;
+  queuedNextId?: string | null;
+  track: Song;
+  list: Song[];
+  resolved: ResolvedAudioSource;
+  nativeSeq: number | null;
+};
 
 export const createPlaybackManager = (
   state: PlayerState,
@@ -29,6 +43,9 @@ export const createPlaybackManager = (
   showPlaybackNotice: (code: string, track?: Song | null) => void,
   clearPlaybackNotice: (trackId?: string | number | null) => void,
 ) => {
+  let gaplessPreparingKey = '';
+  let gaplessPreparedSource: GaplessPreparedSource | null = null;
+
   const applyFailedPlaybackState = (options?: { keepResolvedSource?: boolean }) => {
     state.isLoading = false;
     state.isPlaying = false;
@@ -37,7 +54,9 @@ export const createPlaybackManager = (
     state.awaitingTrackLoad = false;
     if (!options?.keepResolvedSource) {
       state.currentAudioUrl = '';
+      state.currentPlaybackSource = null;
       state.currentAudioCandidateUrls = [];
+      state.currentAudioCandidateSources = [];
       state.currentAudioCandidateIndex = -1;
       state.currentResolvedAudioQuality = null;
       state.currentResolvedAudioEffect = 'none';
@@ -45,25 +64,62 @@ export const createPlaybackManager = (
     engine.updateMediaPlaybackState(buildStoppedPlaybackState(state));
   };
 
-  const getAudioCandidateUrls = (resolved: ResolvedAudioSource): string[] => {
-    const urls: string[] = [];
-    [resolved.url, ...(resolved.urls ?? [])].forEach((url) => {
-      const candidate = String(url || '').trim();
-      if (candidate && !urls.includes(candidate)) urls.push(candidate);
+  const normalizePlaybackSource = (
+    source: PlaybackSource | string | null | undefined,
+    fallbackAudioTrackId?: number | null,
+  ): PlaybackSource | null => {
+    const candidate =
+      typeof source === 'string'
+        ? { url: source, audioTrackId: fallbackAudioTrackId ?? null }
+        : {
+            url: String(source?.url || '').trim(),
+            audioTrackId: source?.audioTrackId ?? fallbackAudioTrackId ?? null,
+          };
+    if (!candidate.url) return null;
+    return candidate;
+  };
+
+  const playbackSourceKey = (source: PlaybackSource | null) =>
+    source ? `${source.audioTrackId ? `mkv:${source.audioTrackId}:` : ''}${source.url}` : '';
+
+  const getAudioCandidateSources = (resolved: ResolvedAudioSource): PlaybackSource[] => {
+    const fallbackTrackId = resolved.source?.audioTrackId ?? resolved.audioTrackId ?? null;
+    const primary =
+      normalizePlaybackSource(resolved.source, fallbackTrackId) ??
+      normalizePlaybackSource(resolved.url, fallbackTrackId);
+    const sources: PlaybackSource[] = [];
+
+    [primary, ...(resolved.sources ?? []), ...(resolved.urls ?? [])].forEach((source) => {
+      const candidate = normalizePlaybackSource(source, primary?.audioTrackId ?? fallbackTrackId);
+      if (!candidate) return;
+      if (!sources.some((item) => playbackSourceKey(item) === playbackSourceKey(candidate))) {
+        sources.push(candidate);
+      }
     });
-    return urls;
+
+    return sources;
   };
 
   const applyResolvedAudioSource = (track: Song, resolved: ResolvedAudioSource) => {
-    const urls = getAudioCandidateUrls(resolved);
-    const currentIndex = Math.max(0, urls.indexOf(resolved.url));
+    const sources = getAudioCandidateSources(resolved);
+    const primarySource = sources[0] ?? normalizePlaybackSource(resolved.url);
+    const currentIndex = primarySource
+      ? Math.max(
+          0,
+          sources.findIndex(
+            (source) => playbackSourceKey(source) === playbackSourceKey(primarySource),
+          ),
+        )
+      : -1;
     state.currentAudioQualityOverride = null;
-    state.currentAudioUrl = resolved.url;
-    state.currentAudioCandidateUrls = urls.length ? urls : resolved.url ? [resolved.url] : [];
+    state.currentAudioUrl = primarySource?.url ?? resolved.url;
+    state.currentPlaybackSource = primarySource;
+    state.currentAudioCandidateUrls = sources.map((source) => source.url);
+    state.currentAudioCandidateSources = sources;
     state.currentAudioCandidateIndex = currentIndex;
     state.currentResolvedAudioQuality = resolved.quality;
     state.currentResolvedAudioEffect = resolved.effect;
-    track.audioUrl = resolved.url;
+    track.audioUrl = primarySource?.url ?? resolved.url;
   };
 
   const tryNextAudioCandidate = async (options?: {
@@ -74,7 +130,11 @@ export const createPlaybackManager = (
   }): Promise<boolean> => {
     const trackId = String(options?.trackId ?? state.currentTrackId ?? '');
     if (!trackId) return false;
-    const candidates = state.currentAudioCandidateUrls;
+    const candidates = state.currentAudioCandidateSources.length
+      ? state.currentAudioCandidateSources
+      : state.currentAudioCandidateUrls
+          .map((url) => normalizePlaybackSource(url, state.currentPlaybackSource?.audioTrackId))
+          .filter((source): source is PlaybackSource => !!source);
     if (candidates.length <= 1) return false;
 
     const track =
@@ -83,15 +143,19 @@ export const createPlaybackManager = (
 
     let nextIndex = state.currentAudioCandidateIndex + 1;
     while (nextIndex >= 0 && nextIndex < candidates.length) {
-      const nextUrl = candidates[nextIndex];
-      if (!nextUrl || nextUrl === state.currentAudioUrl) {
+      const nextSource = candidates[nextIndex];
+      if (
+        !nextSource ||
+        playbackSourceKey(nextSource) === playbackSourceKey(state.currentPlaybackSource)
+      ) {
         nextIndex += 1;
         continue;
       }
 
       state.currentAudioCandidateIndex = nextIndex;
-      state.currentAudioUrl = nextUrl;
-      track.audioUrl = nextUrl;
+      state.currentAudioUrl = nextSource.url;
+      state.currentPlaybackSource = nextSource;
+      track.audioUrl = nextSource.url;
       state.isLoading = true;
       state.awaitingTrackLoad = true;
       state.lastError = null;
@@ -112,7 +176,7 @@ export const createPlaybackManager = (
       });
 
       try {
-        engine.reloadSource(nextUrl);
+        await engine.reloadSource(nextSource);
         await engine.play();
         if (String(state.currentTrackId ?? '') !== trackId) return false;
         if (targetPosition > 0) engine.seek(targetPosition);
@@ -131,6 +195,239 @@ export const createPlaybackManager = (
       window.clearTimeout(state.autoNextTimer);
       state.autoNextTimer = null;
     }
+  };
+
+  const getPlaybackList = (): Song[] =>
+    (playlistStore.activeQueue?.songs?.length ?? 0) > 0
+      ? (playlistStore.activeQueue?.songs ?? [])
+      : (state.currentPlaylist ?? []);
+
+  const getGaplessPrepareKey = (targetTrackId: string, sourceQueueId: string | null) =>
+    [
+      state.currentTrackId ?? '',
+      targetTrackId,
+      sourceQueueId ?? '',
+      state.audioEffect,
+      state.currentAudioQualityOverride ?? settingStore.defaultAudioQuality,
+      settingStore.compatibilityMode ? 'compat' : 'strict',
+    ].join('|');
+
+  const clearGaplessPreparedSource = () => {
+    gaplessPreparingKey = '';
+    gaplessPreparedSource = null;
+    engine.clearPreparedNextSource();
+  };
+
+  const peekNextPlayableTrack = (): {
+    track: Song;
+    list: Song[];
+    sourceQueueId: string | null;
+    queuedNextId?: string | null;
+  } | null => {
+    if (!state.currentTrackId || state.playMode === 'single' || state.playMode === 'random') {
+      return null;
+    }
+    if (playlistStore.activeQueue?.id === PERSONAL_FM_QUEUE_ID) return null;
+
+    playlistStore.syncQueuedNextTrackIds();
+    const list = getPlaybackList();
+    if (list.length === 0) return null;
+
+    const queuedNextId = playlistStore.peekQueuedNextTrackId();
+    if (queuedNextId) {
+      const queuedSong = list.find((song) => String(song.id) === queuedNextId);
+      if (queuedSong && isPlayableSong(queuedSong)) {
+        return {
+          track: queuedSong,
+          list,
+          sourceQueueId: state.currentSourceQueueId,
+          queuedNextId,
+        };
+      }
+      return null;
+    }
+
+    const currentIndex = list.findIndex((song) => String(song.id) === String(state.currentTrackId));
+    if (currentIndex < 0) return null;
+    if (state.playMode === 'sequential' && currentIndex >= list.length - 1) return null;
+
+    const startIndex =
+      state.playMode === 'sequential' ? currentIndex + 1 : (currentIndex + 1) % list.length;
+    const nextIndex = findPlayableIndex(list, startIndex, true, state.playMode !== 'sequential');
+    if (nextIndex < 0 || (state.playMode === 'sequential' && nextIndex <= currentIndex))
+      return null;
+
+    const track = list[nextIndex];
+    if (!track || !isPlayableSong(track)) return null;
+    return {
+      track,
+      list,
+      sourceQueueId: state.currentSourceQueueId,
+    };
+  };
+
+  const takeGaplessPreparedSource = (
+    targetTrackId: string,
+    sourceQueueId: string | null,
+  ): ResolvedAudioSource | undefined => {
+    const key = getGaplessPrepareKey(targetTrackId, sourceQueueId);
+    if (gaplessPreparedSource?.key !== key) return undefined;
+    const prepared = gaplessPreparedSource.resolved;
+    clearGaplessPreparedSource();
+    return prepared;
+  };
+
+  const activateGaplessPreparedTransition = (seq?: number): boolean => {
+    if (!seq || gaplessPreparedSource?.nativeSeq !== seq) return false;
+    const prepared = gaplessPreparedSource;
+    if (String(state.currentTrackId ?? '') !== prepared.currentTrackId) {
+      clearGaplessPreparedSource();
+      return false;
+    }
+    clearGaplessPreparedSource();
+    logger.info('PlayerPlayback', 'Gapless transition activated', {
+      fromTrackId: prepared.currentTrackId,
+      targetTrackId: prepared.targetTrackId,
+      nativeSeq: seq,
+    });
+
+    const targetTrack =
+      prepared.list.find((song) => String(song.id) === prepared.targetTrackId) ?? prepared.track;
+    if (!targetTrack) return false;
+
+    const snapshot = toRawSong(targetTrack);
+    if (prepared.queuedNextId) {
+      playlistStore.consumeQueuedNextTrackId(prepared.queuedNextId);
+    }
+    state.historyLocalRecorded = false;
+    state.currentTrackId = prepared.targetTrackId;
+    state.currentSourceQueueId =
+      prepared.sourceQueueId ??
+      playlistStore.activeQueue?.id ??
+      playlistStore.activeQueueId ??
+      null;
+    state.currentPlaylist = prepared.list;
+    state.currentTrackSnapshot = snapshot;
+    playlistStore.updateQueueCurrentTrack(
+      prepared.targetTrackId,
+      state.currentSourceQueueId ?? playlistStore.activeQueue?.id ?? playlistStore.activeQueueId,
+    );
+    historyManager.resetHistoryUploadState(targetTrack);
+    applyResolvedAudioSource(targetTrack, prepared.resolved);
+    engine.adoptPreparedSource(state.currentPlaybackSource ?? prepared.resolved.url);
+    state.currentTime = 0;
+    state.duration = prepared.resolved.url ? engine.duration || state.duration : state.duration;
+    state.isPlaying = true;
+    state.isLoading = false;
+    state.awaitingTrackLoad = false;
+    state.lastError = null;
+    state.stallRecovering = false;
+    state.autoNextAttempts = 0;
+    state.autoNextSourceTrackId = prepared.targetTrackId;
+    clearAutoNextTimer();
+    clearPlaybackNotice();
+    state.climaxMarks = [];
+    state.currentAudioQualityOverride = null;
+    engine.applyTrackLoudness(prepared.resolved.loudness);
+    engine.setLoopFile(state.playMode === 'single');
+
+    const lyricHash = String(targetTrack.hash ?? targetTrack.id ?? '');
+    if (targetTrack.lyric) {
+      lyricStore.setLyric(targetTrack.lyric, lyricHash);
+    } else if (lyricHash) {
+      lyricStore.clear(lyricHash, '歌词加载中...');
+    } else {
+      lyricStore.clear('', '暂无歌词');
+    }
+    if (lyricHash) {
+      void lyricStore.fetchLyrics(lyricHash, {
+        preserveCurrent: Boolean(targetTrack.lyric),
+        duration: targetTrack.duration ? targetTrack.duration * 1000 : 0,
+        track: targetTrack,
+      });
+    }
+
+    const mediaMeta = buildMediaMeta(targetTrack);
+    if (mediaMeta) {
+      engine.updateMediaMetadata({
+        ...mediaMeta,
+        durationMs: (targetTrack.duration || 0) * 1000,
+      });
+    }
+    engine.updateMediaPlaybackState(buildMediaState(state));
+    state.historyLocalRecorded = true;
+    void useHistoryStore().recordPlay(snapshot);
+    void resolver.fetchClimaxMarks(targetTrack);
+    return true;
+  };
+
+  const prepareGaplessNext = () => {
+    if (!settingStore.gaplessPlayback || !state.isPlaying || state.isLoading) return;
+    if (state.awaitingTrackLoad || state.stallRecovering) return;
+    if (state.duration <= 0 || state.currentTime <= 0) return;
+    const remaining = state.duration - state.currentTime;
+    if (remaining > GAPLESS_PREFETCH_WINDOW_SECS || remaining < 0.2) return;
+
+    const next = peekNextPlayableTrack();
+    if (!next) {
+      clearGaplessPreparedSource();
+      return;
+    }
+
+    const targetTrackId = String(next.track.id);
+    const key = getGaplessPrepareKey(targetTrackId, next.sourceQueueId);
+    if (gaplessPreparedSource?.key === key || gaplessPreparingKey === key) return;
+
+    logger.info('PlayerPlayback', 'Gapless prepare requested', {
+      currentTrackId: state.currentTrackId,
+      targetTrackId,
+      remaining: Number(remaining.toFixed(2)),
+    });
+    gaplessPreparingKey = key;
+    void resolver
+      .resolveAudioUrl(next.track)
+      .then(async (resolved: ResolvedAudioSource) => {
+        if (gaplessPreparingKey !== key) return;
+        if (!resolved.url) {
+          logger.warn('PlayerPlayback', 'Gapless prepare skipped: empty resolved url', {
+            targetTrackId,
+          });
+          return;
+        }
+        const sources = getAudioCandidateSources(resolved);
+        const primarySource = sources[0] ?? normalizePlaybackSource(resolved.url);
+        const nativeSeq = primarySource
+          ? await engine.prepareNextSource(primarySource).catch((error: unknown) => {
+              logger.warn('PlayerPlayback', 'Native gapless prepare failed:', error);
+              return null;
+            })
+          : null;
+        if (gaplessPreparingKey !== key) {
+          if (nativeSeq) engine.clearPreparedNextSource();
+          return;
+        }
+        logger.info('PlayerPlayback', 'Gapless prepare completed', {
+          targetTrackId,
+          nativeSeq,
+        });
+        gaplessPreparedSource = {
+          key,
+          currentTrackId: String(state.currentTrackId ?? ''),
+          targetTrackId,
+          sourceQueueId: next.sourceQueueId,
+          queuedNextId: next.queuedNextId,
+          track: toRawSong(next.track),
+          list: toRawSongList(next.list),
+          resolved,
+          nativeSeq,
+        };
+      })
+      .catch((error: unknown) => {
+        logger.warn('PlayerPlayback', 'Prepare gapless next source failed:', error);
+      })
+      .finally(() => {
+        if (gaplessPreparingKey === key) gaplessPreparingKey = '';
+      });
   };
 
   const skipToNextAfterFailure = async () => {
@@ -205,6 +502,7 @@ export const createPlaybackManager = (
       preserveFailureChain?: boolean;
       autoPlay?: boolean;
       sourceQueueId?: string | null;
+      preResolved?: ResolvedAudioSource;
     },
   ) => {
     const requestSeq = ++state.playbackRequestSeq;
@@ -229,6 +527,7 @@ export const createPlaybackManager = (
       playlistStore.favorites.find((s) => String(s.id) === resolvedId);
 
     if (!track) return;
+    if (!options?.preResolved) clearGaplessPreparedSource();
 
     if (!isPlayableSong(track)) {
       state.lastError = 'track-not-playable';
@@ -273,7 +572,9 @@ export const createPlaybackManager = (
       state.currentSourceQueueId ?? playlistStore.activeQueue?.id ?? playlistStore.activeQueueId,
     );
     state.currentAudioUrl = '';
+    state.currentPlaybackSource = null;
     state.currentAudioCandidateUrls = [];
+    state.currentAudioCandidateSources = [];
     state.currentAudioCandidateIndex = -1;
     state.currentResolvedAudioQuality = null;
     state.currentResolvedAudioEffect = 'none';
@@ -318,7 +619,7 @@ export const createPlaybackManager = (
     // 切歌期间不发送 Paused 状态，避免蓝牙耳机多点连接将音频路由切走
     // 保持上一首的 Playing 状态，直到新歌开始播放或加载失败
 
-    const resolved = await resolver.resolveAudioUrl(track);
+    const resolved = options?.preResolved ?? (await resolver.resolveAudioUrl(track));
     if (requestSeq !== state.playbackRequestSeq) return;
 
     if (!resolved.url) {
@@ -337,11 +638,10 @@ export const createPlaybackManager = (
 
     applyResolvedAudioSource(track, resolved);
 
-    engine.setSource(resolved.url);
-    engine.applyTrackLoudness(resolved.loudness);
-    engine.setLoopFile(state.playMode === 'single');
-
     try {
+      await engine.setSource(state.currentPlaybackSource ?? resolved.url);
+      engine.applyTrackLoudness(resolved.loudness);
+      engine.setLoopFile(state.playMode === 'single');
       if (autoPlay) {
         if (settingStore.volumeFade) {
           const fadeMs = clampNumber(settingStore.volumeFadeTime ?? 1000, 500, 3000);
@@ -569,7 +869,7 @@ export const createPlaybackManager = (
     return true;
   };
 
-  const next = async () => {
+  const next = async (options?: { gaplessTransition?: boolean }) => {
     playlistStore.syncQueuedNextTrackIds();
     const list =
       (playlistStore.activeQueue?.songs?.length ?? 0) > 0
@@ -604,7 +904,14 @@ export const createPlaybackManager = (
       const queuedSong = list.find((song) => String(song.id) === queuedNextId);
       if (queuedSong && isPlayableSong(queuedSong)) {
         playlistStore.consumeQueuedNextTrackId(queuedNextId);
-        void playTrack(String(queuedSong.id), list, { sourceQueueId: state.currentSourceQueueId });
+        const targetTrackId = String(queuedSong.id);
+        const preResolved = options?.gaplessTransition
+          ? takeGaplessPreparedSource(targetTrackId, state.currentSourceQueueId)
+          : undefined;
+        void playTrack(targetTrackId, list, {
+          sourceQueueId: state.currentSourceQueueId,
+          preResolved,
+        });
         return;
       }
       playlistStore.consumeQueuedNextTrackId(queuedNextId);
@@ -669,7 +976,14 @@ export const createPlaybackManager = (
 
     const nextSong = list[nextIndex];
     if (!nextSong) return;
-    await playTrack(String(nextSong.id), list, { sourceQueueId: state.currentSourceQueueId });
+    const targetTrackId = String(nextSong.id);
+    const preResolved = options?.gaplessTransition
+      ? takeGaplessPreparedSource(targetTrackId, state.currentSourceQueueId)
+      : undefined;
+    await playTrack(targetTrackId, list, {
+      sourceQueueId: state.currentSourceQueueId,
+      preResolved,
+    });
   };
 
   const prev = async () => {
@@ -717,6 +1031,7 @@ export const createPlaybackManager = (
     const sourceQueueId =
       state.currentSourceQueueId ?? playlistStore.activeQueue?.id ?? playlistStore.activeQueueId;
     clearAutoNextTimer();
+    clearGaplessPreparedSource();
     state.autoNextAttempts = 0;
     state.autoNextSourceTrackId = null;
     state.currentTrackSnapshot = null;
@@ -733,7 +1048,9 @@ export const createPlaybackManager = (
     state.currentTrackId = null;
     state.currentSourceQueueId = null;
     state.currentAudioUrl = '';
+    state.currentPlaybackSource = null;
     state.currentAudioCandidateUrls = [];
+    state.currentAudioCandidateSources = [];
     state.currentAudioCandidateIndex = -1;
     state.currentResolvedAudioQuality = null;
     state.currentResolvedAudioEffect = 'none';
@@ -819,7 +1136,7 @@ export const createPlaybackManager = (
         return;
       }
       applyResolvedAudioSource(track, resolved);
-      engine.reloadSource(resolved.url);
+      await engine.reloadSource(state.currentPlaybackSource ?? resolved.url);
       engine.applyTrackLoudness(resolved.loudness);
       await engine.play();
       if (String(state.currentTrackId) !== trackId) {
@@ -896,6 +1213,9 @@ export const createPlaybackManager = (
     stop,
     recoverFromStall,
     tryNextAudioCandidate,
+    prepareGaplessNext,
+    activateGaplessPreparedTransition,
+    clearGaplessPreparedSource,
     pickRandomIndex,
     shuffleInsert,
     buildShuffleQueue,

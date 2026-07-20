@@ -410,7 +410,10 @@ contextBridge.exposeInMainWorld('electron', {
     load: (url: string) => ipcRenderer.invoke('player:load', url),
     loadMkvTrack: (url: string, trackId: number) =>
       ipcRenderer.invoke('player:load-mkv-track', url, trackId),
-    getTrackList: () => ipcRenderer.invoke('player:get-track-list'),
+    prepareNextSource: (url: string, trackId?: number | null) =>
+      ipcRenderer.invoke('player:prepare-next-source', url, trackId),
+    clearPreparedNextSource: () => ipcRenderer.invoke('player:clear-prepared-next-source'),
+    getTrackList: (url?: string) => ipcRenderer.invoke('player:get-track-list', url),
     play: () => ipcRenderer.invoke('player:play'),
     pause: () => ipcRenderer.invoke('player:pause'),
     stop: () => ipcRenderer.invoke('player:stop'),
@@ -450,13 +453,21 @@ contextBridge.exposeInMainWorld('electron', {
       ipcRenderer.on('player:time-update', listener);
       return () => ipcRenderer.removeListener('player:time-update', listener);
     },
+    onSeeked: (func: (time: number) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, time: number) => func(time);
+      ipcRenderer.on('player:seeked', listener);
+      return () => ipcRenderer.removeListener('player:seeked', listener);
+    },
     onDurationChange: (func: (duration: number) => void) => {
       const listener = (_event: Electron.IpcRendererEvent, duration: number) => func(duration);
       ipcRenderer.on('player:duration-change', listener);
       return () => ipcRenderer.removeListener('player:duration-change', listener);
     },
-    onFileLoaded: (func: () => void) => {
-      const listener = () => func();
+    onFileLoaded: (func: (payload?: { path?: string; seq?: number }) => void) => {
+      const listener = (
+        _event: Electron.IpcRendererEvent,
+        payload?: { path?: string; seq?: number },
+      ) => func(payload);
       ipcRenderer.on('player:file-loaded', listener);
       return () => ipcRenderer.removeListener('player:file-loaded', listener);
     },

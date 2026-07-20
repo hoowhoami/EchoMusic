@@ -12,7 +12,10 @@ pub use core::{
         AudioFrame,
         RawAudioData,
     },
-    info::SourceAudioInfo,
+    info::{
+        AudioStreamInfo,
+        SourceAudioInfo,
+    },
     time::TimeBase,
 };
 use std::{
@@ -25,6 +28,7 @@ use std::{
 };
 
 pub use decode::{
+    PacketCacheOptions,
     ScanMode,
     SeekMode,
 };
@@ -58,6 +62,10 @@ pub struct AudioCover {
 pub struct AudioReader {
     engine: DecodeEngine,
     source_info: SourceAudioInfo,
+    metadata: HashMap<String, String>,
+    audio_streams: Vec<AudioStreamInfo>,
+    duration: Option<Duration>,
+    cover: Option<AudioCover>,
 }
 
 #[allow(clippy::non_send_fields_in_send_ty)]
@@ -78,15 +86,49 @@ impl AudioReader {
     where
         T: Read + Seek + Send + 'static,
     {
+        Self::new_with_audio_stream_and_packet_cache(
+            source,
+            audio_stream_ordinal,
+            PacketCacheOptions::default(),
+        )
+    }
+
+    pub fn new_with_audio_stream_and_packet_cache<T>(
+        source: T,
+        audio_stream_ordinal: Option<usize>,
+        packet_cache_options: PacketCacheOptions,
+    ) -> Result<Self>
+    where
+        T: Read + Seek + Send + 'static,
+    {
         init_ffmpeg_logging();
 
-        let engine = DecodeEngine::new_with_audio_stream(source, audio_stream_ordinal)?;
-
-        let source_info = SourceAudioInfo::probe(&engine);
+        let io_ctx = IoContext::new(source)?;
+        let demuxer = Demuxer::new_with_audio_stream(io_ctx, audio_stream_ordinal)?;
+        let codec_params = demuxer.stream_codec_params();
+        let decoder = Decoder::new(codec_params)?;
+        let time_base = demuxer.time_base()?;
+        let timeline_origin_pts = demuxer.timeline_origin_pts();
+        let source_info = SourceAudioInfo::probe_parts(&demuxer, &decoder);
+        let metadata = demuxer.metadata();
+        let audio_streams = demuxer.audio_streams();
+        let duration = demuxer.duration();
+        let cover = demuxer.cover();
+        let engine = DecodeEngine::from_parts(
+            demuxer,
+            decoder,
+            time_base,
+            timeline_origin_pts,
+            packet_cache_options,
+        )?;
 
         Ok(Self {
             engine,
             source_info,
+            metadata,
+            audio_streams,
+            duration,
+            cover,
         })
     }
 
@@ -183,17 +225,22 @@ impl AudioReader {
 
     #[must_use]
     pub fn metadata(&self) -> HashMap<String, String> {
-        self.engine.demuxer().metadata()
+        self.metadata.clone()
+    }
+
+    #[must_use]
+    pub fn audio_streams(&self) -> Vec<AudioStreamInfo> {
+        self.audio_streams.clone()
     }
 
     #[must_use]
     pub fn duration(&self) -> Option<Duration> {
-        self.engine.demuxer().duration()
+        self.duration
     }
 
     #[must_use]
     pub fn cover(&self) -> Option<AudioCover> {
-        self.engine.demuxer().cover()
+        self.cover.clone()
     }
 }
 

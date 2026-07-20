@@ -1,7 +1,7 @@
 import type { Song } from '@/models/song';
 import type { TrackLoudness } from '@/utils/player';
 import type { AudioEffectValue, AudioQualityValue } from '@/types';
-import type { ResolvedAudioSource } from '@/stores/player/types';
+import type { PlaybackSource, ResolvedAudioSource } from '@/stores/player/types';
 
 export interface PluginAudioSourceResolveContext {
   track: Song;
@@ -59,21 +59,72 @@ const normalizeAudioEffect = (value: unknown): AudioEffectValue => {
   return effects.includes(value as AudioEffectValue) ? (value as AudioEffectValue) : 'none';
 };
 
+const normalizePlaybackSource = (
+  value: unknown,
+  fallbackAudioTrackId?: number | null,
+): PlaybackSource | null => {
+  const source =
+    typeof value === 'string'
+      ? { url: value, audioTrackId: fallbackAudioTrackId ?? null }
+      : (value as Partial<PlaybackSource> | null | undefined);
+  const url = String(source?.url || '').trim();
+  if (!url) return null;
+  const rawAudioTrackId =
+    source?.audioTrackId !== undefined && source.audioTrackId !== null
+      ? Number(source.audioTrackId)
+      : (fallbackAudioTrackId ?? null);
+  const audioTrackId = Number(rawAudioTrackId);
+  return {
+    url,
+    audioTrackId: Number.isFinite(audioTrackId) && audioTrackId > 0 ? audioTrackId : null,
+  };
+};
+
 const normalizeResolvedAudioSource = (
   result: PluginAudioSourceResolveResult,
 ): ResolvedAudioSource | null => {
   const value = typeof result === 'string' ? { url: result } : result;
   if (!value || typeof value !== 'object') return null;
 
-  const url = String(value.url || '').trim();
-  if (!url) return null;
-  const urls = [url];
+  const audioTrackId =
+    value.audioTrackId !== undefined && value.audioTrackId !== null
+      ? Number(value.audioTrackId)
+      : null;
+  const rawSources = Array.isArray(value.sources) ? value.sources : [];
+  const firstSourceFromList =
+    rawSources
+      .map((item) => normalizePlaybackSource(item, audioTrackId))
+      .find((item): item is PlaybackSource => !!item) ?? null;
+  const source =
+    normalizePlaybackSource(value.source, audioTrackId) ??
+    normalizePlaybackSource(value.url, audioTrackId) ??
+    firstSourceFromList;
+  if (!source) return null;
+
+  const sources: PlaybackSource[] = [source];
+  rawSources.forEach((item) => {
+    const candidate = normalizePlaybackSource(item, source.audioTrackId);
+    if (
+      candidate &&
+      !sources.some(
+        (existing) =>
+          existing.url === candidate.url && existing.audioTrackId === candidate.audioTrackId,
+      )
+    ) {
+      sources.push(candidate);
+    }
+  });
+
+  const urls = [source.url];
   if (Array.isArray(value.urls)) {
     value.urls.forEach((item) => {
       const candidate = String(item || '').trim();
       if (candidate && !urls.includes(candidate)) urls.push(candidate);
     });
   }
+  sources.forEach((item) => {
+    if (!urls.includes(item.url)) urls.push(item.url);
+  });
 
   const loudness = value.loudness;
   const normalizedLoudness: TrackLoudness | null =
@@ -90,8 +141,11 @@ const normalizeResolvedAudioSource = (
       : null;
 
   return {
-    url,
+    url: source.url,
     urls,
+    audioTrackId: source.audioTrackId,
+    source,
+    sources,
     quality: normalizeAudioQuality(value.quality),
     effect: normalizeAudioEffect(value.effect),
     loudness: normalizedLoudness,

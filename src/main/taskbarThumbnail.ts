@@ -1,5 +1,6 @@
 import type { BrowserWindow } from 'electron';
 import { app } from 'electron';
+import { createRequire } from 'node:module';
 import path from 'path';
 import log from './logger';
 
@@ -34,6 +35,7 @@ let hwndStr: string | null = null;
 let coverBuffer: Buffer | null = null;
 let iconicEnabled = false;
 let hooked = false;
+const nativeRequire = createRequire(path.join(process.cwd(), 'package.json'));
 
 /** 加载 native addon（与 mediaControls 共用同一个 .node，require 缓存保证单例） */
 function loadNativeModule(): NativeTaskbar | null {
@@ -41,13 +43,11 @@ function loadNativeModule(): NativeTaskbar | null {
     const resourcePath = app.isPackaged
       ? path.join(process.resourcesPath, 'native', 'echo-media-controls.node')
       : path.join(__dirname, '../../native/echo-media-controls/echo-media-controls.node');
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    return require(resourcePath) as NativeTaskbar;
+    return nativeRequire(resourcePath) as NativeTaskbar;
   } catch (err) {
     log.warn('[TaskbarThumbnail] Primary path load failed:', err);
     try {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      return require('../../native/echo-media-controls') as NativeTaskbar;
+      return nativeRequire(path.join(process.cwd(), 'native/echo-media-controls')) as NativeTaskbar;
     } catch (err2) {
       log.error('[TaskbarThumbnail] Native addon load failed:', err, err2);
       return null;

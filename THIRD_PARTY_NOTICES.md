@@ -21,7 +21,7 @@ This file summarizes important third-party components used by EchoMusic, especia
 
 - `native/echo-ffmpeg-player` embeds the playback engine and depends on vendored `ffmpeg-audio`.
 - `native/echo-media-controls` integrates platform media controls.
-- `native/echo-storage` provides local SQLite-backed storage.
+- `native/echo-sqlite-store` provides local SQLite-backed storage.
 
 ## GPLv3 Distribution Note
 

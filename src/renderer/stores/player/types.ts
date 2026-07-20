@@ -11,9 +11,17 @@ export type PlaybackNotice = {
   trackId: string | null;
 };
 
+export type PlaybackSource = {
+  url: string;
+  audioTrackId?: number | null;
+};
+
 export type ResolvedAudioSource = {
   url: string;
   urls?: string[];
+  audioTrackId?: number | null;
+  source?: PlaybackSource;
+  sources?: PlaybackSource[];
   quality: AudioQualityValue | null;
   effect: AudioEffectValue;
   loudness: TrackLoudness | null;

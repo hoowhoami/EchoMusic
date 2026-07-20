@@ -1,6 +1,7 @@
 import { ipcMain } from 'electron';
 import type { BrowserWindow } from 'electron';
 import { app } from 'electron';
+import { createRequire } from 'node:module';
 import path from 'path';
 import log from './logger';
 import { setTaskbarCover } from './taskbarThumbnail';
@@ -28,6 +29,7 @@ let nativeModule: NativeMediaControls | null = null;
 // 封面下载中止控制器
 let coverAbortController: AbortController | null = null;
 let metadataUpdateSeq = 0;
+const nativeRequire = createRequire(path.join(process.cwd(), 'package.json'));
 
 /** 加载 native addon */
 function loadNativeModule(): NativeMediaControls | null {
@@ -38,14 +40,14 @@ function loadNativeModule(): NativeMediaControls | null {
       : path.join(__dirname, '../../native/echo-media-controls/echo-media-controls.node');
 
     log.info('[MediaControls] Loading native addon:', resourcePath);
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    return require(resourcePath) as NativeMediaControls;
+    return nativeRequire(resourcePath) as NativeMediaControls;
   } catch (err) {
     log.warn('[MediaControls] Primary path load failed:', err);
     // 开发环境可能未编译，尝试直接加载
     try {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      return require('../../native/echo-media-controls') as NativeMediaControls;
+      return nativeRequire(
+        path.join(process.cwd(), 'native/echo-media-controls'),
+      ) as NativeMediaControls;
     } catch (err2) {
       log.error(
         '[MediaControls] All load attempts failed. ' +

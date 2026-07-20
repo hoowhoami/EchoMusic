@@ -1,22 +1,14 @@
-use std::{
-    io::{
-        Read,
-        Seek,
-    },
-    time::Duration,
-};
+use std::time::Duration;
 
 use crate::{
     AudioError,
     AudioFrame,
     Decoder,
     Demuxer,
+    PacketCacheOptions,
     Result,
     TimeBase,
-    decode::{
-        SeekMode,
-        io::IoContext,
-    },
+    decode::{PacketCache, SeekMode},
     sys,
 };
 
@@ -45,8 +37,8 @@ pub enum ScanMode {
 /// and decompression (`Decoder`) stages. It encapsulates the complex send/receive
 /// state machines, timestamp alignments, and buffering required to safely yield raw audio frames.
 pub struct DecodeEngine {
-    /// The underlying component responsible for reading and parsing the media container.
-    demuxer: Demuxer,
+    /// Background demux packet cache. This mirrors mpv's default demuxer-thread path.
+    packet_cache: PacketCache,
 
     /// The underlying component responsible for decompressing raw packets into audio frames.
     decoder: Decoder,
@@ -71,38 +63,15 @@ pub struct DecodeEngine {
 }
 
 impl DecodeEngine {
-    /// Constructs a new `DecodeEngine` by taking full ownership of a demuxer and a decoder.
-    ///
-    /// # Arguments
-    /// * `demuxer` - A fully initialized demuxer pointing to a valid audio stream.
-    /// * `decoder` - A fully initialized decoder configured with the matching codec parameters.
-    ///
-    /// # Returns
-    /// * `Ok(DecodeEngine)` if the engine is successfully initialized and the time base is valid.
-    /// * `Err(AudioError)` if the demuxer fails to provide a valid time base for synchronization.
-    pub fn new<T>(source: T) -> Result<Self>
-    where
-        T: Read + Seek + Send + 'static,
-    {
-        Self::new_with_audio_stream(source, None)
-    }
-
-    pub fn new_with_audio_stream<T>(source: T, audio_stream_ordinal: Option<usize>) -> Result<Self>
-    where
-        T: Read + Seek + Send + 'static,
-    {
-        let io_ctx = IoContext::new(source)?;
-
-        let demuxer = Demuxer::new_with_audio_stream(io_ctx, audio_stream_ordinal)?;
-
-        let codec_params = demuxer.stream_codec_params();
-        let decoder = Decoder::new(codec_params)?;
-
-        let time_base = demuxer.time_base()?;
-        let timeline_origin_pts = demuxer.timeline_origin_pts();
-
+    pub(crate) fn from_parts(
+        demuxer: Demuxer,
+        decoder: Decoder,
+        time_base: TimeBase,
+        timeline_origin_pts: i64,
+        packet_cache_options: PacketCacheOptions,
+    ) -> Result<Self> {
         Ok(Self {
-            demuxer,
+            packet_cache: PacketCache::new(demuxer, time_base, packet_cache_options),
             decoder,
             time_base,
             timeline_origin_pts,
@@ -187,8 +156,8 @@ impl DecodeEngine {
                     return Ok(Some(audio_frame));
                 }
                 Err(AudioError::Eagain) => {
-                    if let Some(packet) = self.demuxer.read_packet()? {
-                        self.decoder.send_packet(packet)?;
+                    if let Some(packet) = self.read_packet()? {
+                        self.decoder.send_packet(packet.as_ptr())?;
                     } else {
                         if self.decoder.is_flushing() {
                             self.is_exhausted = true;
@@ -220,7 +189,7 @@ impl DecodeEngine {
     pub fn seek(&mut self, target: Duration, mode: SeekMode) -> Result<()> {
         self.debug_verify();
 
-        self.demuxer.seek_to(target)?;
+        self.packet_cache.seek_to(target);
         self.decoder.flush();
 
         self.is_exhausted = false;
@@ -321,15 +290,15 @@ impl DecodeEngine {
 
         match mode {
             ScanMode::Packet => loop {
-                match self.demuxer.read_packet() {
+                match self.read_packet() {
                     Ok(Some(packet)) => unsafe {
-                        let pts = (*packet).pts;
+                        let pts = (*packet.as_ptr()).pts;
                         if pts == sys::AV_NOPTS_VALUE {
                             continue;
                         }
 
                         if let Some(start_us) = self.time_base.calc_micros(pts) {
-                            let duration = (*packet).duration;
+                            let duration = (*packet.as_ptr()).duration;
                             let end_pts = if duration > 0 {
                                 pts.saturating_add(duration)
                             } else {
@@ -401,10 +370,6 @@ impl DecodeEngine {
     }
 
     /// Returns a shared, immutable reference to the underlying demuxer.
-    pub(crate) const fn demuxer(&self) -> &Demuxer {
-        &self.demuxer
-    }
-
     /// Returns a shared, immutable reference to the underlying decoder.
     pub(crate) const fn decoder(&self) -> &Decoder {
         &self.decoder
@@ -417,5 +382,9 @@ impl DecodeEngine {
     /// * `None` if no frames have been successfully decoded yet, or immediately after a seek.
     pub const fn stream_position(&self) -> Option<Duration> {
         self.current_pts
+    }
+
+    fn read_packet(&mut self) -> Result<Option<crate::decode::demuxer::CachedPacket>> {
+        self.packet_cache.read_packet()
     }
 }

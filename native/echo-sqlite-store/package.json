@@ -1,12 +1,12 @@
 {
-  "name": "echo-storage",
+  "name": "echo-sqlite-store",
   "version": "0.1.0",
-  "main": "echo-storage.node",
+  "main": "echo-sqlite-store.node",
   "devDependencies": {
     "@napi-rs/cli": "^3.5.1"
   },
   "napi": {
-    "binaryName": "echo-storage",
+    "binaryName": "echo-sqlite-store",
     "triples": {}
   },
   "scripts": {

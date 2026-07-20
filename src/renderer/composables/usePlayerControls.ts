@@ -125,7 +125,7 @@ export function usePlayerControls() {
 
   const handlePlaybackRateSlider = (value: number[] | undefined) => {
     if (!value) return;
-    const rate = Math.round(value[0] ?? 10) / 10;
+    const rate = Math.round(value[0] ?? 100) / 100;
     player.setPlaybackRate(rate);
   };
 

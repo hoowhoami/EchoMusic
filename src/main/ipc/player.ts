@@ -14,8 +14,19 @@ export function registerPlayerIpc(ref: PlayerRef): void {
     await ref.current?.loadMkvTrack(url, trackId);
   });
 
-  ipcRegistry.registerHandler('player:get-track-list', async () => {
-    return (await ref.current?.getTrackList()) ?? [];
+  ipcRegistry.registerHandler(
+    'player:prepare-next-source',
+    async (_e, url: string, trackId?: number | null) => {
+      return (await ref.current?.prepareNextSource(url, trackId)) ?? null;
+    },
+  );
+
+  ipcRegistry.registerHandler('player:clear-prepared-next-source', async () => {
+    ref.current?.clearPreparedNextSource();
+  });
+
+  ipcRegistry.registerHandler('player:get-track-list', async (_e, url?: string) => {
+    return (await ref.current?.getTrackList(url)) ?? [];
   });
 
   ipcRegistry.registerHandler('player:play', async () => {

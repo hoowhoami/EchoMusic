@@ -4,7 +4,11 @@ mod engine;
 pub mod io;
 
 pub(crate) use decoder::Decoder;
-pub(crate) use demuxer::Demuxer;
+pub(crate) use demuxer::{
+    Demuxer,
+    PacketCache,
+};
+pub use demuxer::PacketCacheOptions;
 pub(crate) use engine::DecodeEngine;
 pub use engine::ScanMode;
 

@@ -16,11 +16,44 @@ import {
   resolveUrlsFromResponse,
   summarizeSong,
 } from './utils';
-import type { ClimaxMark, ResolvedAudioSource } from './types';
+import type { ClimaxMark, PlaybackSource, ResolvedAudioSource } from './types';
 import type { usePlaylistStore } from '../playlist';
 import type { useSettingStore } from '../setting';
 
 const privilegeLiteRequests = new Map<string, Promise<SongRelateGood[]>>();
+
+type PlayerTrackInfo = {
+  id: number;
+  type: string;
+  codec?: string;
+  selected?: boolean;
+  title?: string;
+  lang?: string;
+};
+
+const VOCAL_TRACK_KEYWORDS = ['人声', 'vocal', 'voice', 'vox', 'stem'];
+const ACCOMPANIMENT_TRACK_KEYWORDS = [
+  '伴奏',
+  'accompaniment',
+  'instrumental',
+  'karaoke',
+  'backing',
+  'music',
+];
+
+const isMkvUrl = (url: string) => /\.mkv(?:[?#]|$)/i.test(url);
+
+const normalizeTrackText = (track: PlayerTrackInfo) =>
+  [track.title, track.lang, track.codec].filter(Boolean).join(' ').toLowerCase();
+
+const getMkvFallbackTrackId = (tracks: PlayerTrackInfo[], effect: string): number | null => {
+  const preferredTrackId = effect === 'vocal' ? 2 : 1;
+  return (
+    tracks.find((track) => Number(track.id) === preferredTrackId)?.id ??
+    tracks[Math.min(preferredTrackId - 1, Math.max(0, tracks.length - 1))]?.id ??
+    null
+  );
+};
 
 export const parseRelateGoodsFromPrivilege = (payload: unknown): SongRelateGood[] => {
   if (!payload || typeof payload !== 'object') return [];
@@ -104,18 +137,72 @@ export const createResolver = (
     return request;
   };
 
-  const resolveVocalExtractUrl = async (
+  const resolveMkvExtractTrackId = async (
     url: string,
     effect: string,
     hash: string,
-  ): Promise<string> => {
-    if (effect !== 'vocal' && effect !== 'accompaniment') return url;
-    if (!url.toLowerCase().includes('.mkv')) return url;
+  ): Promise<number | null> => {
+    if (effect !== 'vocal' && effect !== 'accompaniment') return null;
+    if (!isMkvUrl(url)) return null;
 
-    const trackNum = effect === 'vocal' ? 2 : 1;
-    const proxyUrl = `player-mkv://track=${trackNum}&url=${encodeURIComponent(url)}`;
-    logger.debug('PlayerResolver', 'Resolved MKV extract url', { effect, trackNum, hash });
-    return proxyUrl;
+    const fallbackTrackId = effect === 'vocal' ? 2 : 1;
+    let tracks: PlayerTrackInfo[] = [];
+    try {
+      tracks = ((await window.electron?.player?.getTrackList(url)) ?? []).filter(
+        (track): track is PlayerTrackInfo =>
+          track?.type === 'audio' && Number.isFinite(Number(track.id)) && Number(track.id) > 0,
+      );
+    } catch (error) {
+      logger.warn('PlayerResolver', 'Probe MKV audio tracks failed:', error, { effect, hash });
+    }
+
+    if (tracks.length === 0) {
+      logger.debug('PlayerResolver', 'Using MKV fallback track without probe result', {
+        effect,
+        trackId: fallbackTrackId,
+        hash,
+      });
+      return fallbackTrackId;
+    }
+
+    const keywords = effect === 'vocal' ? VOCAL_TRACK_KEYWORDS : ACCOMPANIMENT_TRACK_KEYWORDS;
+    const matchedTrack =
+      tracks.find((track) =>
+        keywords.some((keyword) => normalizeTrackText(track).includes(keyword)),
+      ) ?? null;
+    const trackId = matchedTrack?.id ?? getMkvFallbackTrackId(tracks, effect);
+    logger.debug('PlayerResolver', 'Resolved MKV extract track', {
+      effect,
+      trackId,
+      hash,
+      tracks,
+    });
+    return trackId;
+  };
+
+  const resolveVocalExtractSources = async (
+    urls: string[],
+    effect: string,
+    hash: string,
+  ): Promise<Pick<ResolvedAudioSource, 'url' | 'urls' | 'source' | 'sources' | 'audioTrackId'>> => {
+    const primaryUrl = urls[0] ?? '';
+    if ((effect !== 'vocal' && effect !== 'accompaniment') || !urls.some(isMkvUrl)) {
+      return { url: primaryUrl, urls };
+    }
+
+    const probeUrl = urls.find(isMkvUrl) ?? primaryUrl;
+    const audioTrackId = await resolveMkvExtractTrackId(probeUrl, effect, hash);
+    const sources: PlaybackSource[] = urls.map((url) =>
+      isMkvUrl(url) && audioTrackId ? { url, audioTrackId } : { url },
+    );
+
+    return {
+      url: sources[0]?.url ?? primaryUrl,
+      urls: sources.map((source) => source.url),
+      audioTrackId,
+      source: sources[0],
+      sources,
+    };
   };
 
   const resolveAudioUrl = async (
@@ -135,6 +222,14 @@ export const createResolver = (
         urls: state.currentAudioCandidateUrls.length
           ? [...state.currentAudioCandidateUrls]
           : [track.audioUrl!],
+        audioTrackId: state.currentPlaybackSource?.audioTrackId ?? null,
+        source: state.currentPlaybackSource ?? { url: track.audioUrl! },
+        sources: state.currentAudioCandidateSources.length
+          ? [...state.currentAudioCandidateSources]
+          : state.currentAudioCandidateUrls.map((url) => ({
+              url,
+              audioTrackId: state.currentPlaybackSource?.audioTrackId ?? null,
+            })),
         quality: state.currentResolvedAudioQuality,
         effect: state.currentResolvedAudioEffect,
         loudness: null,
@@ -188,12 +283,13 @@ export const createResolver = (
           const effectRes = await getSongUrl(effectHash, apiEffect);
           const rawEffectUrls = resolveUrlsFromResponse(effectRes);
           if (rawEffectUrls.length > 0) {
-            const effectUrls = await Promise.all(
-              rawEffectUrls.map((url) => resolveVocalExtractUrl(url, audioEffect, effectHash)),
+            const effectSource = await resolveVocalExtractSources(
+              rawEffectUrls,
+              audioEffect,
+              effectHash,
             );
             return {
-              url: effectUrls[0],
-              urls: effectUrls,
+              ...effectSource,
               quality: audioQuality,
               effect: audioEffect,
               loudness: resolveTrackLoudness(effectRes),
@@ -331,7 +427,8 @@ export const createResolver = (
     getEffectiveAudioQuality,
     getResolvedAudioQuality,
     ensureTrackRelateGoods,
-    resolveVocalExtractUrl,
+    resolveMkvExtractTrackId,
+    resolveVocalExtractSources,
     resolveAudioUrl,
     fetchClimaxMarks,
   };

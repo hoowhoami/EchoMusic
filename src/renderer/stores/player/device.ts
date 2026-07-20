@@ -31,11 +31,15 @@ export const createDeviceManager = (
       applied = await engine.setOutputDevice(playerDevice);
       if (applied) state.appliedOutputDeviceId = deviceId;
 
-      if (wasPlaying && state.currentTrackId && state.currentAudioUrl) {
-        const savedUrl = state.currentAudioUrl;
+      if (
+        wasPlaying &&
+        state.currentTrackId &&
+        (state.currentPlaybackSource || state.currentAudioUrl)
+      ) {
+        const savedSource = state.currentPlaybackSource ?? { url: state.currentAudioUrl };
         const savedTime = state.currentTime;
         engine.reset();
-        engine.setSource(savedUrl);
+        await engine.setSource(savedSource);
         await engine.play();
         if (savedTime > 0) engine.seek(savedTime);
       }

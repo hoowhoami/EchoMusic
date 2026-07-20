@@ -1,6 +1,6 @@
 import type { Song } from '@/models/song';
 import type { AudioEffectValue, AudioQualityValue, PlayMode } from '../../types';
-import type { ClimaxMark, PlaybackNotice } from './types';
+import type { ClimaxMark, PlaybackNotice, PlaybackSource } from './types';
 import { DEFAULT_PLAYER_VOLUME } from '../../../shared/playback';
 
 export const createPlayerState = () => ({
@@ -19,7 +19,9 @@ export const createPlayerState = () => ({
   lastError: '' as string | null,
   currentPlaylist: null as Song[] | null,
   currentAudioUrl: '' as string,
+  currentPlaybackSource: null as PlaybackSource | null,
   currentAudioCandidateUrls: [] as string[],
+  currentAudioCandidateSources: [] as PlaybackSource[],
   currentAudioCandidateIndex: -1,
   currentResolvedAudioQuality: null as AudioQualityValue | null,
   currentResolvedAudioEffect: 'none' as AudioEffectValue,

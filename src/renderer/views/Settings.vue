@@ -15,7 +15,7 @@ import { sanitizeHtml } from '@/utils/sanitize';
 import AppearanceSettingsSection from './settings/components/AppearanceSettingsSection.vue';
 import FontSettingsSection from './settings/components/FontSettingsSection.vue';
 import PlaybackSettingsSection from './settings/components/PlaybackSettingsSection.vue';
-import QualitySettingsSection from './settings/components/QualitySettingsSection.vue';
+import PlayerSettingsSection from './settings/components/PlayerSettingsSection.vue';
 import PageLyricSettingsSection from './settings/components/PageLyricSettingsSection.vue';
 import DesktopLyricSettingsSection from './settings/components/DesktopLyricSettingsSection.vue';
 import ShortcutSettingsSection from './settings/components/ShortcutSettingsSection.vue';
@@ -217,6 +217,16 @@ const builtinSettingsSections = computed<SettingsRenderSection[]>(() => [
       '双击播放',
       '启动时自动播放',
       '自动播放',
+      '默认音质',
+      '智能兼容模式',
+      '标准品质',
+      'HQ 高品质',
+      'SQ 无损品质',
+      'Hi-Res 品质',
+      'DSD 臻品音质',
+      'flac',
+      '无损',
+      '无缝播放',
       '淡入淡出播放',
       '淡入淡出时长',
       '音量均衡',
@@ -229,32 +239,32 @@ const builtinSettingsSections = computed<SettingsRenderSection[]>(() => [
       '自动跳过错误',
       '失败后切换延迟',
       '最大自动切换次数',
-      '播放恢复超时',
       '防止系统休眠',
+    ],
+  },
+  {
+    id: 'player',
+    label: '播放器设置',
+    order: 350,
+    component: PlayerSettingsSection,
+    searchKeywords: [
       '音频缓冲时长',
+      '预读缓存上限',
+      '回退缓存上限',
       '音频设备缓冲',
+      'packet cache',
+      '播放恢复超时',
       '播放卡死自动恢复',
       '播放卡死',
       '最大自动恢复次数',
       '网络波动',
       '播放稳定性',
-    ],
-  },
-  {
-    id: 'quality',
-    label: '播放音质',
-    order: 400,
-    component: QualitySettingsSection,
-    searchKeywords: [
-      '默认音质',
-      '智能兼容模式',
-      '标准品质',
-      'HQ 高品质',
-      'SQ 无损品质',
-      'Hi-Res 品质',
-      'DSD 臻品音质',
-      'flac',
-      '无损',
+      '酷狗 API 代理',
+      '酷狗 API 超时',
+      '播放器 HTTP 代理',
+      '播放器网络超时',
+      '代理',
+      '超时',
     ],
   },
   {

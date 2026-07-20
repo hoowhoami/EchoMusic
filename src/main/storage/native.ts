@@ -1,5 +1,6 @@
 import { app } from 'electron';
 import { mkdirSync } from 'fs';
+import { createRequire } from 'node:module';
 import { join } from 'path';
 
 export interface NativeStorageAddon {
@@ -40,22 +41,21 @@ export interface NativeStorageAddon {
 
 let addon: NativeStorageAddon | null = null;
 let initialized = false;
+const nativeRequire = createRequire(join(process.cwd(), 'package.json'));
 
 const loadNativeStorageAddon = (): NativeStorageAddon => {
   if (addon) return addon;
 
   const primaryPath = app.isPackaged
-    ? join(process.resourcesPath, 'native', 'echo-storage.node')
-    : join(__dirname, '../../native/echo-storage/echo-storage.node');
+    ? join(process.resourcesPath, 'native', 'echo-sqlite-store.node')
+    : join(__dirname, '../../native/echo-sqlite-store/echo-sqlite-store.node');
 
   try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    addon = require(primaryPath) as NativeStorageAddon;
+    addon = nativeRequire(primaryPath) as NativeStorageAddon;
     return addon;
   } catch (primaryError) {
     try {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      addon = require('../../native/echo-storage') as NativeStorageAddon;
+      addon = nativeRequire(join(process.cwd(), 'native/echo-sqlite-store')) as NativeStorageAddon;
       return addon;
     } catch (fallbackError) {
       console.error('[Storage] Native storage addon is unavailable', primaryError, fallbackError);
