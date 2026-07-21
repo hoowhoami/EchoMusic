@@ -57,6 +57,7 @@ export interface PlayerEvent {
   state?: PlayerState
   reason?: string
   message?: string
+  errorCode?: string
   level?: string
   devices?: Array<AudioDevice>
   deviceChangeKind?: string

@@ -32,6 +32,8 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
+const IDLE_OUTPUT_RELEASE_DELAY_SECS: u64 = 3;
+
 static RUNTIME: Mutex<Option<PlayerRuntime>> = Mutex::new(None);
 static EVENT_CALLBACK: Mutex<Option<Arc<Mutex<ThreadsafeFunction<PlayerEvent>>>>> =
     Mutex::new(None);
@@ -53,6 +55,7 @@ struct PlayerRuntime {
     audio_filter: String,
     spectrum_signal_logged: bool,
     spatial_request_seq: u64,
+    idle_output_release_seq: u64,
     spatial_mix: f32,
     prepared_next: Option<PreparedNextSource>,
 }
@@ -120,12 +123,23 @@ impl PlayerRuntime {
             audio_filter: String::new(),
             spectrum_signal_logged: false,
             spatial_request_seq: 0,
+            idle_output_release_seq: 0,
             spatial_mix: DEFAULT_SPATIAL_MIX,
             prepared_next: None,
         }
     }
 
+    fn cancel_idle_output_release(&mut self) {
+        self.idle_output_release_seq = self.idle_output_release_seq.wrapping_add(1);
+    }
+
+    fn next_idle_output_release_seq(&mut self) -> u64 {
+        self.idle_output_release_seq = self.idle_output_release_seq.wrapping_add(1);
+        self.idle_output_release_seq
+    }
+
     fn stop_session(&mut self) {
+        self.cancel_idle_output_release();
         self.prepared_next = None;
         if let Some(session) = self.session.take() {
             session.stop_background();
@@ -153,6 +167,88 @@ fn with_runtime<T>(f: impl FnOnce(&mut PlayerRuntime) -> napi::Result<T>) -> nap
         .as_mut()
         .ok_or_else(|| napi::Error::from_reason("player addon not initialized".to_string()))?;
     f(runtime)
+}
+
+fn schedule_idle_output_release(shared: Arc<SharedAudio>, release_seq: u64) {
+    let _ = thread::Builder::new()
+        .name("player-output-idle-release".to_string())
+        .spawn(move || {
+            thread::sleep(Duration::from_secs(IDLE_OUTPUT_RELEASE_DELAY_SECS));
+            let output_thread = with_runtime(|runtime| {
+                if runtime.idle_output_release_seq != release_seq {
+                    return Ok(None);
+                }
+                if runtime.state.playing || !runtime.state.paused {
+                    return Ok(None);
+                }
+                let Some(session) = runtime.session.as_mut() else {
+                    return Ok(None);
+                };
+                if !Arc::ptr_eq(&session.shared, &shared) || session.shared.output_is_stopped() {
+                    return Ok(None);
+                }
+                session.shared.request_output_stop();
+                emit_event(PlayerEvent::log(
+                    "info",
+                    format!(
+                        "audio output idle release after {}s pause",
+                        IDLE_OUTPUT_RELEASE_DELAY_SECS
+                    ),
+                ));
+                Ok(session.output_thread.take())
+            })
+            .ok()
+            .flatten();
+
+            if let Some(handle) = output_thread {
+                let _ = handle.join();
+            }
+        });
+}
+
+fn schedule_idle_output_release_for_current_session() -> napi::Result<()> {
+    let release = with_runtime(|runtime| {
+        let Some(session) = runtime.session.as_ref() else {
+            return Ok(None);
+        };
+        if session.shared.output_is_stopped() {
+            return Ok(None);
+        }
+        let shared = session.shared.clone();
+        let release_seq = runtime.next_idle_output_release_seq();
+        Ok(Some((shared, release_seq)))
+    })?;
+
+    if let Some((shared, release_seq)) = release {
+        schedule_idle_output_release(shared, release_seq);
+    }
+    Ok(())
+}
+
+fn mark_playback_idle_after_end(shared: Arc<SharedAudio>) {
+    let release = with_runtime(|runtime| {
+        let Some(session) = runtime.session.as_ref() else {
+            return Ok(None);
+        };
+        if !Arc::ptr_eq(&session.shared, &shared) {
+            return Ok(None);
+        }
+        runtime.state.playing = false;
+        runtime.state.paused = true;
+        emit_event(PlayerEvent::state_change(runtime.state.clone()));
+        if session.shared.output_is_stopped() {
+            return Ok(None);
+        }
+        let shared = session.shared.clone();
+        let release_seq = runtime.next_idle_output_release_seq();
+        Ok(Some((shared, release_seq)))
+    })
+    .ok()
+    .flatten();
+
+    if let Some((shared, release_seq)) = release {
+        schedule_idle_output_release(shared, release_seq);
+    }
 }
 
 fn prepare_source(
@@ -217,6 +313,7 @@ fn prepare_source(
                         }
                         PlaybackSignal::PlaybackEnd => {
                             if !restart_loop_if_enabled(signal_shared.clone()) {
+                                mark_playback_idle_after_end(signal_shared.clone());
                                 emit_event(PlayerEvent::playback_end("eof"));
                             }
                         }
@@ -277,7 +374,12 @@ fn prepare_source(
     })
 }
 
-fn apply_prepared_source(runtime: &mut PlayerRuntime, prepared: PreparedSource) {
+fn apply_prepared_source(
+    runtime: &mut PlayerRuntime,
+    prepared: PreparedSource,
+) -> Option<(Arc<SharedAudio>, u64)> {
+    runtime.cancel_idle_output_release();
+    let should_release_when_idle = !prepared.autostart;
     runtime.prepared_next = None;
     runtime.session = Some(prepared.session);
     runtime.current_url = Some(prepared.url.clone());
@@ -292,6 +394,16 @@ fn apply_prepared_source(runtime: &mut PlayerRuntime, prepared: PreparedSource) 
     emit_event(PlayerEvent::duration_change(prepared.duration));
     emit_event(PlayerEvent::file_loaded(prepared.url, prepared.seq));
     emit_event(PlayerEvent::state_change(runtime.state.clone()));
+
+    if !should_release_when_idle {
+        return None;
+    }
+    let shared = runtime.session.as_ref()?.shared.clone();
+    if shared.output_is_stopped() {
+        return None;
+    }
+    let release_seq = runtime.next_idle_output_release_seq();
+    Some((shared, release_seq))
 }
 
 fn apply_track_switch(info: TrackSwitchInfo, shared: Arc<SharedAudio>) {
@@ -302,6 +414,7 @@ fn apply_track_switch(info: TrackSwitchInfo, shared: Arc<SharedAudio>) {
         if !Arc::ptr_eq(&session.shared, &shared) {
             return Ok(());
         }
+        runtime.cancel_idle_output_release();
         runtime.current_url = Some(info.url.clone());
         runtime.current_audio_stream_ordinal = info.audio_stream_ordinal;
         runtime.current_seq = info.seq;
@@ -337,10 +450,11 @@ fn replace_source_async(
         dsp_settings,
     )
     .map_err(napi::Error::from_reason)?;
-    with_runtime(|runtime| {
-        apply_prepared_source(runtime, prepared);
-        Ok(())
-    })
+    let release = with_runtime(|runtime| Ok(apply_prepared_source(runtime, prepared)))?;
+    if let Some((shared, release_seq)) = release {
+        schedule_idle_output_release(shared, release_seq);
+    }
+    Ok(())
 }
 
 pub(crate) fn try_activate_gapless_next(
@@ -693,6 +807,7 @@ impl Task for LoadFileTask {
         let audio_stream = self.audio_stream_ordinal;
         let seq = self.seq;
         let plan = with_runtime(|runtime| {
+            runtime.cancel_idle_output_release();
             runtime.prepared_next = None;
             runtime.latest_load_seq = seq;
             let Some(session) = runtime.session.as_mut() else {
@@ -926,6 +1041,7 @@ impl Task for PlayTask {
 
     fn compute(&mut self) -> napi::Result<Self::Output> {
         let restart_config = with_runtime(|runtime| {
+            runtime.cancel_idle_output_release();
             let Some(session) = runtime.session.as_ref() else {
                 return Err(napi::Error::from_reason(
                     "no audio source loaded".to_string(),
@@ -974,7 +1090,8 @@ pub fn pause() -> napi::Result<()> {
         runtime.state.paused = true;
         emit_event(PlayerEvent::state_change(runtime.state.clone()));
         Ok(())
-    })
+    })?;
+    schedule_idle_output_release_for_current_session()
 }
 
 #[napi]
