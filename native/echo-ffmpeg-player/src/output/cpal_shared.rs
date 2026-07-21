@@ -124,35 +124,75 @@ fn build_output_stream(
         ));
     };
     match sample_format {
-        SampleFormat::F32 => device
-            .build_output_stream(
-                config,
-                move |data: &mut [f32], _| fill_output(data, output_channels, &shared),
-                err_fn,
-                None,
-            )
-            .map_err(|err| format!("failed to build f32 output stream: {err}")),
-        SampleFormat::I16 => device
-            .build_output_stream(
-                config,
-                move |data: &mut [i16], _| fill_output_converted(data, output_channels, &shared),
-                err_fn,
-                None,
-            )
-            .map_err(|err| format!("failed to build i16 output stream: {err}")),
-        SampleFormat::U16 => device
-            .build_output_stream(
-                config,
-                move |data: &mut [u16], _| fill_output_converted(data, output_channels, &shared),
-                err_fn,
-                None,
-            )
-            .map_err(|err| format!("failed to build u16 output stream: {err}")),
+        SampleFormat::F32 => {
+            let mut stereo_scratch = Vec::<f32>::new();
+            device
+                .build_output_stream(
+                    config,
+                    move |data: &mut [f32], _| {
+                        fill_output_reusing(data, output_channels, &shared, &mut stereo_scratch)
+                    },
+                    err_fn,
+                    None,
+                )
+                .map_err(|err| format!("failed to build f32 output stream: {err}"))
+        }
+        SampleFormat::I16 => {
+            let mut output_scratch = Vec::<f32>::new();
+            let mut stereo_scratch = Vec::<f32>::new();
+            device
+                .build_output_stream(
+                    config,
+                    move |data: &mut [i16], _| {
+                        fill_output_converted(
+                            data,
+                            output_channels,
+                            &shared,
+                            &mut output_scratch,
+                            &mut stereo_scratch,
+                        )
+                    },
+                    err_fn,
+                    None,
+                )
+                .map_err(|err| format!("failed to build i16 output stream: {err}"))
+        }
+        SampleFormat::U16 => {
+            let mut output_scratch = Vec::<f32>::new();
+            let mut stereo_scratch = Vec::<f32>::new();
+            device
+                .build_output_stream(
+                    config,
+                    move |data: &mut [u16], _| {
+                        fill_output_converted(
+                            data,
+                            output_channels,
+                            &shared,
+                            &mut output_scratch,
+                            &mut stereo_scratch,
+                        )
+                    },
+                    err_fn,
+                    None,
+                )
+                .map_err(|err| format!("failed to build u16 output stream: {err}"))
+        }
         _ => Err("audio output sample format is not available".to_string()),
     }
 }
 
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
 pub(crate) fn fill_output(output: &mut [f32], output_channels: usize, shared: &SharedAudio) {
+    let mut stereo_scratch = Vec::<f32>::new();
+    fill_output_reusing(output, output_channels, shared, &mut stereo_scratch);
+}
+
+fn fill_output_reusing(
+    output: &mut [f32],
+    output_channels: usize,
+    shared: &SharedAudio,
+    stereo_scratch: &mut Vec<f32>,
+) {
     if shared.paused.load(Ordering::Acquire) || shared.should_stop_output() {
         output.fill(0.0);
         return;
@@ -164,35 +204,37 @@ pub(crate) fn fill_output(output: &mut [f32], output_channels: usize, shared: &S
         process_stereo_output(output, volume, shared);
     } else {
         let frames = output.len() / output_channels;
-        let mut stereo = vec![0.0f32; frames * TARGET_CHANNELS];
-        shared.pop_into(&mut stereo);
-        process_stereo_output(&mut stereo, volume, shared);
-        map_stereo_to_output(&stereo, output, output_channels);
+        stereo_scratch.resize(frames * TARGET_CHANNELS, 0.0);
+        shared.pop_into(stereo_scratch);
+        process_stereo_output(stereo_scratch, volume, shared);
+        map_stereo_to_output(stereo_scratch, output, output_channels);
     }
-    if shared.is_drained() && shared.mark_end_reported() {
+    if shared.is_drained_for_output() && shared.mark_end_reported() {
         shared.notify_signal(crate::shared::PlaybackSignal::PlaybackEnd);
     }
 }
 
-fn fill_output_converted<T>(output: &mut [T], output_channels: usize, shared: &SharedAudio)
-where
+fn fill_output_converted<T>(
+    output: &mut [T],
+    output_channels: usize,
+    shared: &SharedAudio,
+    output_scratch: &mut Vec<f32>,
+    stereo_scratch: &mut Vec<f32>,
+) where
     T: cpal::Sample + cpal::FromSample<f32>,
 {
-    let mut temp = vec![0.0f32; output.len()];
-    fill_output(&mut temp, output_channels, shared);
-    for (target, sample) in output.iter_mut().zip(temp) {
+    output_scratch.resize(output.len(), 0.0);
+    fill_output_reusing(output_scratch, output_channels, shared, stereo_scratch);
+    for (target, sample) in output.iter_mut().zip(output_scratch.iter().copied()) {
         *target = T::from_sample(sample);
     }
 }
 
 fn process_stereo_output(output: &mut [f32], volume: f32, shared: &SharedAudio) {
-    if let Ok(mut effects) = shared.effects.lock() {
-        effects.process_interleaved(output);
-    }
     for sample in output.iter_mut() {
         *sample = (*sample * volume).clamp(-1.0, 1.0);
     }
-    if let Ok(mut ring) = shared.spectrum_ring.lock() {
+    if let Ok(mut ring) = shared.spectrum_ring.try_lock() {
         ring.push_interleaved(output, TARGET_CHANNELS);
     }
 }

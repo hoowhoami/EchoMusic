@@ -81,6 +81,7 @@ fn run_exclusive_output(device_name: &str, shared: Arc<SharedAudio>) -> Result<(
             .Start()
             .map_err(|err| format!("failed to start WASAPI exclusive output: {err}"))?;
         shared.mark_output_started();
+        let mut output_scratch = Vec::<f32>::new();
 
         while !shared.should_stop_output() {
             match Threading::WaitForSingleObject(event.0, 50) {
@@ -90,7 +91,13 @@ fn run_exclusive_output(device_name: &str, shared: Arc<SharedAudio>) -> Result<(
                         .map_err(|err| format!("failed to query WASAPI output padding: {err}"))?;
                     let frames_available = buffer_frames.saturating_sub(padding);
                     if frames_available > 0 {
-                        write_frames(&render_client, frames_available, sample_format, &shared)?;
+                        write_frames(
+                            &render_client,
+                            frames_available,
+                            sample_format,
+                            &shared,
+                            &mut output_scratch,
+                        )?;
                     }
                 }
                 WAIT_TIMEOUT => {}
@@ -110,6 +117,7 @@ fn write_frames(
     frames: u32,
     sample_format: WasapiSampleFormat,
     shared: &SharedAudio,
+    output_scratch: &mut Vec<f32>,
 ) -> Result<(), String> {
     unsafe {
         let buffer = render_client
@@ -123,9 +131,9 @@ fn write_frames(
             }
             WasapiSampleFormat::I16 => {
                 let data = slice::from_raw_parts_mut(buffer as *mut i16, sample_count);
-                let mut temp = vec![0.0f32; sample_count];
-                fill_output(&mut temp, TARGET_CHANNELS, shared);
-                for (target, sample) in data.iter_mut().zip(temp) {
+                output_scratch.resize(sample_count, 0.0);
+                fill_output(output_scratch, TARGET_CHANNELS, shared);
+                for (target, sample) in data.iter_mut().zip(output_scratch.iter().copied()) {
                     *target = (sample.clamp(-1.0, 1.0) * i16::MAX as f32).round() as i16;
                 }
             }

@@ -5,6 +5,7 @@ mod dsp;
 mod effects;
 mod events;
 mod exclusive;
+mod filter;
 mod network_stream;
 mod output;
 mod shared;
@@ -256,12 +257,14 @@ fn prepare_source(
         shared.clone(),
         emit_event,
     );
+    let filter_thread = filter::spawn_filter_thread(shared.clone());
     let decode_generation = shared.current_decode_generation();
     let decode_thread = decoder::spawn_decode_thread(decoder, shared.clone(), decode_generation);
     Ok(PreparedSource {
         session: PlaybackSession {
             shared,
             output_thread: Some(output_thread),
+            filter_thread: Some(filter_thread),
             decode_thread: Some(decode_thread),
             position_thread: Some(position_thread),
         },
@@ -849,6 +852,62 @@ fn mark_seek_plan_failed(plan: &SeekPlan) -> napi::Result<()> {
     })
 }
 
+fn open_decoder_at_position(plan: &SeekPlan, position: f64) -> napi::Result<decoder::DecoderData> {
+    let mut decoder = open_decoder(
+        plan.url.clone(),
+        plan.audio_stream_ordinal,
+        plan.shared.sample_rate,
+        plan.config.packet_cache_options(),
+    )
+    .map_err(napi::Error::from_reason)?;
+
+    if position > 0.0 {
+        decoder.seek(position).map_err(napi::Error::from_reason)?;
+    }
+
+    Ok(decoder)
+}
+
+fn attach_restarted_decoder(
+    plan: &SeekPlan,
+    decoder: decoder::DecoderData,
+    position: f64,
+    emit_seek_events: bool,
+) -> napi::Result<()> {
+    let mut decoder = Some(decoder);
+    with_runtime(|runtime| {
+        let Some(session) = runtime.session.as_mut() else {
+            return Ok(());
+        };
+        if !Arc::ptr_eq(&session.shared, &plan.shared)
+            || !session.shared.is_decode_generation_current(plan.generation)
+        {
+            return Ok(());
+        }
+        let decoder = decoder
+            .take()
+            .ok_or_else(|| napi::Error::from_reason("decoder already attached".to_string()))?;
+        session.shared.bind_interrupt(decoder.interrupt_handle());
+        session.decode_thread = Some(decoder::spawn_decode_thread(
+            decoder,
+            session.shared.clone(),
+            plan.generation,
+        ));
+        session
+            .shared
+            .paused
+            .store(plan.was_paused, Ordering::Release);
+        runtime.state.time_pos = position;
+        runtime.state.playing = !plan.was_paused;
+        runtime.state.paused = plan.was_paused;
+        if emit_seek_events {
+            emit_event(PlayerEvent::seeked(position));
+        }
+        emit_event(PlayerEvent::time_update(position));
+        Ok(())
+    })
+}
+
 impl Task for SeekTask {
     type Output = ();
     type JsValue = ();
@@ -882,50 +941,15 @@ impl Task for SeekTask {
             return Ok(());
         };
 
-        let mut decoder = match open_decoder(
-            plan.url.clone(),
-            plan.audio_stream_ordinal,
-            plan.shared.sample_rate,
-            plan.config.packet_cache_options(),
-        ) {
+        let decoder = match open_decoder_at_position(&plan, position) {
             Ok(decoder) => decoder,
             Err(err) => {
                 mark_seek_plan_failed(&plan)?;
-                return Err(napi::Error::from_reason(err));
+                return Err(err);
             }
         };
 
-        if let Err(err) = decoder.seek(position) {
-            mark_seek_plan_failed(&plan)?;
-            return Err(napi::Error::from_reason(err));
-        }
-
-        with_runtime(|runtime| {
-            let Some(session) = runtime.session.as_mut() else {
-                return Ok(());
-            };
-            if !Arc::ptr_eq(&session.shared, &plan.shared)
-                || !session.shared.is_decode_generation_current(plan.generation)
-            {
-                return Ok(());
-            }
-            session.shared.bind_interrupt(decoder.interrupt_handle());
-            session.decode_thread = Some(decoder::spawn_decode_thread(
-                decoder,
-                session.shared.clone(),
-                plan.generation,
-            ));
-            session
-                .shared
-                .paused
-                .store(plan.was_paused, Ordering::Release);
-            runtime.state.time_pos = position;
-            runtime.state.playing = !plan.was_paused;
-            runtime.state.paused = plan.was_paused;
-            emit_event(PlayerEvent::seeked(position));
-            emit_event(PlayerEvent::time_update(position));
-            Ok(())
-        })
+        attach_restarted_decoder(&plan, decoder, position, true)
     }
 
     fn resolve(&mut self, _env: Env, _output: Self::Output) -> napi::Result<Self::JsValue> {
@@ -958,12 +982,19 @@ impl Task for SetSpeedTask {
     type JsValue = ();
 
     fn compute(&mut self) -> napi::Result<Self::Output> {
+        let speed = tempo::normalize_speed(self.speed);
         with_runtime(|runtime| {
-            let speed = tempo::normalize_speed(self.speed);
-            runtime.dsp_settings.speed = speed;
-            if let Some(session) = runtime.session.as_ref() {
-                session.shared.set_speed(speed);
+            if (runtime.dsp_settings.speed - speed).abs() < f32::EPSILON {
+                return Ok(());
             }
+            runtime.dsp_settings.speed = speed;
+            let Some(session) = runtime.session.as_ref() else {
+                return Ok(());
+            };
+            session
+                .shared
+                .reset_filter_for_speed_change(&runtime.dsp_settings);
+            emit_event(PlayerEvent::time_update(session.shared.position_secs()));
             Ok(())
         })
     }

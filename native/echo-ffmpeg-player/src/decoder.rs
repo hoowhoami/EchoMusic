@@ -1,7 +1,6 @@
 use crate::events::{PlayerErrorCode, PlayerEvent, TrackInfo};
 use crate::network_stream::{open_source, ReadSeek};
 use crate::shared::SharedAudio;
-use crate::tempo::TempoProcessor;
 use ffmpeg_audio::{
     sys, AudioError, AudioReader, PacketCacheOptions, ResampleOptions, Resampler, SeekMode,
 };
@@ -103,15 +102,6 @@ impl DecoderData {
     pub fn decode_into(mut self, shared: Arc<SharedAudio>, generation: u64) -> Option<Self> {
         shared.bind_interrupt(self.interrupt.clone());
         let mut produced_frames = 0u64;
-        let mut tempo = match TempoProcessor::new(shared.speed(), shared.sample_rate) {
-            Ok(tempo) => tempo,
-            Err(err) => {
-                shared.mark_decode_failed();
-                emit_decode_error(err);
-                return None;
-            }
-        };
-        let mut tempo_output = Vec::<f32>::new();
         loop {
             if shared.should_stop_decoding() || !shared.is_decode_generation_current(generation) {
                 return (!shared.stop.load(Ordering::Acquire)).then_some(self);
@@ -134,22 +124,12 @@ impl DecoderData {
                                 self.pending_seek_position = None;
                             }
                         }
-                        let speed = shared.speed();
-                        if let Err(err) = tempo
-                            .set_speed(speed)
-                            .and_then(|_| tempo.process_into(output, &mut tempo_output))
-                        {
-                            shared.mark_decode_failed();
-                            emit_decode_error(err);
-                            return None;
-                        }
-                        produced_frames = produced_frames.saturating_add(
-                            (tempo_output.len() / crate::shared::TARGET_CHANNELS) as u64,
-                        );
-                        let source_frames = tempo_source_frames(tempo_output.len(), speed);
+                        produced_frames = produced_frames
+                            .saturating_add((output.len() / crate::shared::TARGET_CHANNELS) as u64);
+                        let source_frames = (output.len() / crate::shared::TARGET_CHANNELS) as u64;
                         if !shared.is_decode_generation_current(generation)
-                            || !shared.push_samples_with_source_frames_for_generation(
-                                &tempo_output,
+                            || !shared.push_decoded_samples_with_source_frames_for_generation(
+                                output,
                                 source_frames,
                                 generation,
                             )
@@ -169,38 +149,17 @@ impl DecoderData {
                         return (!shared.stop.load(Ordering::Acquire)).then_some(self);
                     }
                     if let Ok(true) = self.resampler.process::<f32>(None) {
-                        let speed = shared.speed();
-                        if let Err(err) = tempo.set_speed(speed).and_then(|_| {
-                            tempo.process_into(self.resampler.output_as::<f32>(), &mut tempo_output)
-                        }) {
-                            shared.mark_decode_failed();
-                            emit_decode_error(err);
-                            return None;
-                        }
-                        let source_frames = tempo_source_frames(tempo_output.len(), speed);
+                        let output = self.resampler.output_as::<f32>();
+                        let source_frames = (output.len() / crate::shared::TARGET_CHANNELS) as u64;
                         if !shared.is_decode_generation_current(generation) {
                             return (!shared.stop.load(Ordering::Acquire)).then_some(self);
                         }
-                        let _ = shared.push_samples_with_source_frames_for_generation(
-                            &tempo_output,
+                        let _ = shared.push_decoded_samples_with_source_frames_for_generation(
+                            output,
                             source_frames,
                             generation,
                         );
                     }
-                    if let Err(err) = tempo.finish_into(&mut tempo_output) {
-                        shared.mark_decode_failed();
-                        emit_decode_error(err);
-                        return None;
-                    }
-                    let source_frames = tempo_source_frames(tempo_output.len(), tempo.speed());
-                    if !shared.is_decode_generation_current(generation) {
-                        return (!shared.stop.load(Ordering::Acquire)).then_some(self);
-                    }
-                    let _ = shared.push_samples_with_source_frames_for_generation(
-                        &tempo_output,
-                        source_frames,
-                        generation,
-                    );
                     if !shared.is_decode_generation_current(generation) {
                         return (!shared.stop.load(Ordering::Acquire)).then_some(self);
                     }
@@ -208,7 +167,7 @@ impl DecoderData {
                         crate::GaplessDecodeResult::Activated(decoder) => return decoder,
                         crate::GaplessDecodeResult::NotPrepared => {}
                     }
-                    shared.mark_eof();
+                    shared.mark_decoded_eof();
                     return Some(self);
                 }
                 Err(err) => {
@@ -226,41 +185,18 @@ impl DecoderData {
                             return (!shared.stop.load(Ordering::Acquire)).then_some(self);
                         }
                         if let Ok(true) = self.resampler.process::<f32>(None) {
-                            let speed = shared.speed();
-                            if let Err(err) = tempo.set_speed(speed).and_then(|_| {
-                                tempo.process_into(
-                                    self.resampler.output_as::<f32>(),
-                                    &mut tempo_output,
-                                )
-                            }) {
-                                shared.mark_decode_failed();
-                                emit_decode_error(err);
-                                return None;
-                            }
-                            let source_frames = tempo_source_frames(tempo_output.len(), speed);
+                            let output = self.resampler.output_as::<f32>();
+                            let source_frames =
+                                (output.len() / crate::shared::TARGET_CHANNELS) as u64;
                             if !shared.is_decode_generation_current(generation) {
                                 return (!shared.stop.load(Ordering::Acquire)).then_some(self);
                             }
-                            let _ = shared.push_samples_with_source_frames_for_generation(
-                                &tempo_output,
+                            let _ = shared.push_decoded_samples_with_source_frames_for_generation(
+                                output,
                                 source_frames,
                                 generation,
                             );
                         }
-                        if let Err(err) = tempo.finish_into(&mut tempo_output) {
-                            shared.mark_decode_failed();
-                            emit_decode_error(err);
-                            return None;
-                        }
-                        let source_frames = tempo_source_frames(tempo_output.len(), tempo.speed());
-                        if !shared.is_decode_generation_current(generation) {
-                            return (!shared.stop.load(Ordering::Acquire)).then_some(self);
-                        }
-                        let _ = shared.push_samples_with_source_frames_for_generation(
-                            &tempo_output,
-                            source_frames,
-                            generation,
-                        );
                         if !shared.is_decode_generation_current(generation) {
                             return (!shared.stop.load(Ordering::Acquire)).then_some(self);
                         }
@@ -268,7 +204,7 @@ impl DecoderData {
                             crate::GaplessDecodeResult::Activated(decoder) => return decoder,
                             crate::GaplessDecodeResult::NotPrepared => {}
                         }
-                        shared.mark_eof();
+                        shared.mark_decoded_eof();
                         return Some(self);
                     }
                     shared.mark_decode_failed();
@@ -310,12 +246,6 @@ pub fn open_decoder(
         Arc::new(AtomicBool::new(false)),
         packet_cache,
     )
-}
-
-fn tempo_source_frames(output_samples: usize, speed: f32) -> u64 {
-    let output_frames = output_samples / crate::shared::TARGET_CHANNELS;
-    ((output_frames as f64) * speed.clamp(crate::tempo::MIN_SPEED, crate::tempo::MAX_SPEED) as f64)
-        .round() as u64
 }
 
 pub fn spawn_decode_thread(
@@ -360,7 +290,7 @@ pub fn audio_stream_ordinal_from_track_id(track_id: i64) -> Option<usize> {
     }
 }
 
-fn emit_decode_error(message: String) {
+pub(crate) fn emit_decode_error(message: String) {
     crate::emit_event(PlayerEvent::error(PlayerErrorCode::Decode, message));
 }
 
