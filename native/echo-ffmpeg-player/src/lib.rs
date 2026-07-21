@@ -387,7 +387,7 @@ fn restart_loop_if_enabled(shared: Arc<SharedAudio>) -> bool {
         if !runtime.loop_file {
             return Ok(None);
         }
-        let Some(session) = runtime.session.as_ref() else {
+        let Some(session) = runtime.session.as_mut() else {
             return Ok(None);
         };
         if !Arc::ptr_eq(&session.shared, &shared) {
@@ -396,27 +396,52 @@ fn restart_loop_if_enabled(shared: Arc<SharedAudio>) -> bool {
         let Some(url) = runtime.current_url.clone() else {
             return Ok(None);
         };
-        let audio_stream = runtime.current_audio_stream_ordinal;
-        let seq = runtime.current_seq;
-        let config = runtime.config.clone();
-        let dsp_settings = runtime.dsp_settings.clone();
-        runtime.stop_session();
+        shared.paused.store(true, Ordering::Release);
+        shared.request_decode_stop();
+        runtime.prepared_next = None;
+        let _ = session.decode_thread.take();
+        let generation = shared.reset_for_decode_resume(0.0, &runtime.dsp_settings);
+        let eq_active = runtime
+            .dsp_settings
+            .equalizer
+            .iter()
+            .any(|gain| gain.abs() >= 0.01);
+        let spatial = runtime.dsp_settings.spatial.as_ref();
+        emit_event(PlayerEvent::log(
+            "info",
+            format!(
+                "loop restart reusing audio filter chain: speed={:.2}x, normalization_gain_db={:.2} dB, eq_active={}, spatial_enabled={}, spatial_mix={:.2}",
+                runtime.dsp_settings.speed,
+                runtime.dsp_settings.normalization_gain_db,
+                eq_active,
+                spatial.is_some(),
+                spatial.map(|effect| effect.mix).unwrap_or_default()
+            ),
+        ));
         runtime.state.time_pos = 0.0;
-        Ok(Some((url, audio_stream, seq, config, dsp_settings)))
+        Ok(Some(SeekPlan {
+            shared,
+            was_paused: false,
+            url,
+            audio_stream_ordinal: runtime.current_audio_stream_ordinal,
+            generation,
+            config: runtime.config.clone(),
+        }))
     })
     .ok()
     .flatten();
 
-    let Some((url, audio_stream, seq, config, dsp_settings)) = plan else {
+    let Some(plan) = plan else {
         return false;
     };
 
     let _ = thread::Builder::new()
         .name("player-loop-restart".to_string())
         .spawn(move || {
-            if let Err(err) =
-                replace_source_async(url, audio_stream, seq, 0.0, true, config, dsp_settings)
-            {
+            let result = open_decoder_at_position(&plan, 0.0)
+                .and_then(|decoder| attach_restarted_decoder(&plan, decoder, 0.0, false));
+            if let Err(err) = result {
+                let _ = mark_seek_plan_failed(&plan);
                 emit_event(PlayerEvent::error(
                     events::PlayerErrorCode::Decode,
                     format!("failed to restart loop playback: {err}"),
