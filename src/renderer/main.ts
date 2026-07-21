@@ -229,6 +229,12 @@ router.onError((error) => {
   void navigateToErrorPage(error, 'Route Error');
 });
 
+window.electron?.appInfo?.onOpenSettings?.(() => {
+  router.push('/main/settings').catch((error: unknown) => {
+    logger.error('App', 'Failed to open settings from application menu', error);
+  });
+});
+
 app.use(pinia);
 app.use(router);
 app.component('Icon', Icon);

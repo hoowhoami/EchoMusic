@@ -105,12 +105,21 @@ if (!gotTheLock) {
     playerRef,
   });
 
+  const openSettingsFromNativeShell = async () => {
+    await restoreActiveWindowMode();
+    getMainWindow()?.webContents.send('app:open-settings');
+  };
+
   app.on('web-contents-created', (_event, contents) => {
-    configureWebContentsShortcuts(contents);
+    configureWebContentsShortcuts(contents, {
+      openSettings: openSettingsFromNativeShell,
+    });
   });
 
   app.whenReady().then(async () => {
-    configureApplicationMenu();
+    configureApplicationMenu({
+      openSettings: openSettingsFromNativeShell,
+    });
 
     const trayContext = {
       getMainWindow,

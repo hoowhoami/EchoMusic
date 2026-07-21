@@ -4,12 +4,23 @@ import { getDevToolsEnabledSetting } from './storage/settings';
 const isMac = process.platform === 'darwin';
 const appDisplayName = 'EchoMusic';
 
-const buildMacApplicationMenu = () => {
+interface ApplicationMenuOptions {
+  openSettings?: () => void | Promise<void>;
+}
+
+const buildMacApplicationMenu = (options: ApplicationMenuOptions = {}) => {
   const template: MenuItemConstructorOptions[] = [
     {
       label: appDisplayName,
       submenu: [
         { role: 'about', label: `关于 ${appDisplayName}` },
+        {
+          label: '偏好设置…',
+          accelerator: 'Command+,',
+          click: () => {
+            void options.openSettings?.();
+          },
+        },
         { type: 'separator' },
         { role: 'services', label: '服务' },
         { type: 'separator' },
@@ -48,7 +59,7 @@ const buildMacApplicationMenu = () => {
   return Menu.buildFromTemplate(template);
 };
 
-export const configureApplicationMenu = () => {
+export const configureApplicationMenu = (options: ApplicationMenuOptions = {}) => {
   app.setName(appDisplayName);
 
   if (!isMac) {
@@ -56,18 +67,28 @@ export const configureApplicationMenu = () => {
     return;
   }
 
-  Menu.setApplicationMenu(buildMacApplicationMenu());
+  Menu.setApplicationMenu(buildMacApplicationMenu(options));
 };
 
-export const configureWebContentsShortcuts = (webContents: WebContents) => {
+export const configureWebContentsShortcuts = (
+  webContents: WebContents,
+  options: ApplicationMenuOptions = {},
+) => {
   webContents.on('before-input-event', (event, input) => {
     if (input.type !== 'keyDown') return;
 
     const key = input.key.toLowerCase();
+    const isSettingsShortcut = (input.control || input.meta) && key === ',';
     const isDevToolsShortcut =
       key === 'f12' ||
       ((input.control || input.meta) && input.shift && key === 'i') ||
       (input.meta && input.alt && key === 'i');
+
+    if (!isMac && isSettingsShortcut) {
+      event.preventDefault();
+      void options.openSettings?.();
+      return;
+    }
 
     if (isDevToolsShortcut && getDevToolsEnabledSetting()) {
       event.preventDefault();

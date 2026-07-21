@@ -137,6 +137,7 @@ export interface IElectronAPI {
   appInfo: {
     get: () => Promise<AppInfoResult>;
     getChangelog: () => Promise<string>;
+    onOpenSettings: (func: () => void) => () => void;
   };
   share?: {
     copy: (text: string) => Promise<boolean>;

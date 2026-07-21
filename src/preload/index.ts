@@ -207,6 +207,11 @@ contextBridge.exposeInMainWorld('electron', {
   appInfo: {
     get: () => ipcRenderer.invoke('app:get-info') as Promise<AppInfoResult>,
     getChangelog: () => ipcRenderer.invoke('app:get-changelog') as Promise<string>,
+    onOpenSettings: (func: () => void) => {
+      const listener = () => func();
+      ipcRenderer.on('app:open-settings', listener);
+      return () => ipcRenderer.removeListener('app:open-settings', listener);
+    },
   },
   share: {
     copy: (text: string) => ipcRenderer.invoke('share:copy', text) as Promise<boolean>,
