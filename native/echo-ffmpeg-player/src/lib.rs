@@ -451,36 +451,121 @@ fn restart_loop_if_enabled(shared: Arc<SharedAudio>) -> bool {
     true
 }
 
-fn restart_output_for_config(config: PlayerConfig) -> napi::Result<()> {
-    device::validate_output_device(&config.audio_device, config.exclusive_output)
-        .map_err(napi::Error::from_reason)?;
+struct OutputRestartPlan {
+    shared: Option<Arc<SharedAudio>>,
+    output_thread: Option<thread::JoinHandle<()>>,
+    previous_config: PlayerConfig,
+    next_config: PlayerConfig,
+}
 
-    let restart = with_runtime(|runtime| {
-        runtime.config = config.clone();
+fn restart_output_for_config(config: PlayerConfig) -> napi::Result<()> {
+    let plan = with_runtime(|runtime| {
+        let previous_config = runtime.config.clone();
         let Some(session) = runtime.session.as_mut() else {
-            return Ok(None);
+            return Ok(OutputRestartPlan {
+                shared: None,
+                output_thread: None,
+                previous_config,
+                next_config: config,
+            });
         };
-        Ok(Some((
-            session.shared.clone(),
-            session.output_thread.take(),
-            config.audio_device.clone(),
-            config.exclusive_output,
-        )))
+        Ok(OutputRestartPlan {
+            shared: Some(session.shared.clone()),
+            output_thread: session.output_thread.take(),
+            previous_config,
+            next_config: config,
+        })
     })?;
 
-    let Some((shared, output_thread, audio_device, exclusive_output)) = restart else {
-        return Ok(());
+    let Some(shared) = plan.shared else {
+        validate_output_restart_config(&plan.next_config, None)
+            .map_err(napi::Error::from_reason)?;
+        return with_runtime(|runtime| {
+            runtime.config = plan.next_config;
+            Ok(())
+        });
     };
 
     shared.request_output_stop();
-    if let Some(handle) = output_thread {
+    if let Some(handle) = plan.output_thread {
         let _ = handle.join();
     }
 
+    if let Err(err) = validate_output_restart_config(&plan.next_config, Some(&shared)) {
+        emit_event(PlayerEvent::log(
+            "warn",
+            format!("audio output restart validation failed, restoring previous output: {err}"),
+        ));
+        shared.prepare_output_restart();
+        let _ = spawn_and_attach_output_thread(shared, plan.previous_config);
+        return Err(napi::Error::from_reason(err));
+    }
+
     shared.prepare_output_restart();
-    let new_output_thread =
-        output::spawn_output_thread(audio_device, exclusive_output, shared.clone(), emit_event);
-    let mut new_output_thread = Some(new_output_thread);
+    match spawn_and_attach_output_thread_confirmed(shared.clone(), plan.next_config) {
+        Ok(()) => Ok(()),
+        Err(err) => {
+            emit_event(PlayerEvent::log(
+                "warn",
+                format!("audio output restart failed, restoring previous output: {err}"),
+            ));
+            shared.prepare_output_restart();
+            let _ = spawn_and_attach_output_thread(shared, plan.previous_config);
+            Err(napi::Error::from_reason(err))
+        }
+    }
+}
+
+fn validate_output_restart_config(
+    config: &PlayerConfig,
+    shared: Option<&SharedAudio>,
+) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    if config.exclusive_output {
+        let sample_rate = shared.map(|shared| shared.sample_rate).unwrap_or_else(|| {
+            device::resolve_output_sample_rate(&config.audio_device, config.exclusive_output)
+        });
+        return device::platform_windows::validate_wasapi_output_device_at_sample_rate(
+            &config.audio_device,
+            sample_rate,
+        );
+    }
+    #[cfg(target_os = "macos")]
+    if config.exclusive_output {
+        let sample_rate = shared.map(|shared| shared.sample_rate).unwrap_or_else(|| {
+            device::resolve_output_sample_rate(&config.audio_device, config.exclusive_output)
+        });
+        return device::platform_macos::validate_coreaudio_exclusive_output(
+            &config.audio_device,
+            sample_rate,
+        );
+    }
+    #[cfg(target_os = "linux")]
+    if config.exclusive_output {
+        let sample_rate = shared.map(|shared| shared.sample_rate).unwrap_or_else(|| {
+            device::resolve_output_sample_rate(&config.audio_device, config.exclusive_output)
+        });
+        return device::platform_linux::validate_alsa_exclusive_output(
+            &config.audio_device,
+            sample_rate,
+        );
+    }
+
+    let _ = shared;
+    device::validate_output_device(&config.audio_device, config.exclusive_output)
+}
+
+fn spawn_and_attach_output_thread(
+    shared: Arc<SharedAudio>,
+    config: PlayerConfig,
+) -> napi::Result<()> {
+    let output_thread = output::spawn_output_thread(
+        config.audio_device.clone(),
+        config.exclusive_output,
+        shared.clone(),
+        emit_event,
+    );
+    let mut output_thread = Some(output_thread);
     let attached = with_runtime(|runtime| {
         let Some(session) = runtime.session.as_mut() else {
             return Ok(false);
@@ -488,13 +573,70 @@ fn restart_output_for_config(config: PlayerConfig) -> napi::Result<()> {
         if !Arc::ptr_eq(&session.shared, &shared) {
             return Ok(false);
         }
-        session.output_thread = new_output_thread.take();
+        runtime.config = config;
+        session.output_thread = output_thread.take();
         Ok(true)
     })?;
 
     if !attached {
         shared.request_output_stop();
-        if let Some(handle) = new_output_thread {
+        if let Some(handle) = output_thread {
+            let _ = handle.join();
+        }
+    }
+
+    Ok(())
+}
+
+fn spawn_and_attach_output_thread_confirmed(
+    shared: Arc<SharedAudio>,
+    config: PlayerConfig,
+) -> Result<(), String> {
+    let (start_tx, start_rx) = sync_channel(1);
+    let output_thread = output::spawn_output_thread_with_start_notify(
+        config.audio_device.clone(),
+        config.exclusive_output,
+        shared.clone(),
+        emit_event,
+        Some(start_tx),
+    );
+
+    match start_rx.recv_timeout(Duration::from_secs(3)) {
+        Ok(Ok(())) => {}
+        Ok(Err(err)) => {
+            shared.request_output_stop();
+            let _ = output_thread.join();
+            return Err(err);
+        }
+        Err(RecvTimeoutError::Timeout) => {
+            shared.request_output_stop();
+            drop(output_thread);
+            return Err("audio output did not start within 3 seconds".to_string());
+        }
+        Err(RecvTimeoutError::Disconnected) => {
+            shared.request_output_stop();
+            let _ = output_thread.join();
+            return Err("audio output exited before startup completed".to_string());
+        }
+    }
+
+    let mut output_thread = Some(output_thread);
+    let attached = with_runtime(|runtime| {
+        let Some(session) = runtime.session.as_mut() else {
+            return Ok(false);
+        };
+        if !Arc::ptr_eq(&session.shared, &shared) {
+            return Ok(false);
+        }
+        runtime.config = config;
+        session.output_thread = output_thread.take();
+        Ok(true)
+    })
+    .map_err(|err| err.to_string())?;
+
+    if !attached {
+        shared.request_output_stop();
+        if let Some(handle) = output_thread {
             let _ = handle.join();
         }
     }

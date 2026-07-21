@@ -147,7 +147,7 @@ const buildPlaybackPayload = (): DesktopLyricPlaybackPayload | null => {
     currentTime: Number(playerStore.currentTime || 0),
     isPlaying: Boolean(playerStore.isPlaying),
     playbackRate: Number(playerStore.playbackRate || 1),
-    updatedAt: Date.now(),
+    updatedAt: Number(playerStore.currentTimeUpdatedAt || Date.now()),
   };
 };
 

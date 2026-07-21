@@ -32,6 +32,7 @@ import type {
 } from '../../shared/mini-player';
 import { MINI_PLAYER_DIMENSIONS } from '../../shared/mini-player';
 import { DEFAULT_PLAYER_VOLUME } from '../../shared/playback';
+import { createLyricTimeline } from '@/composables/useLyricTimeline';
 
 // 卡片折叠/展开高度，源自共享尺寸常量，保证与主进程窗口尺寸一致、不漂移
 const cardCollapsedHeight = `${MINI_PLAYER_DIMENSIONS.controlsHeight}px`;
@@ -39,7 +40,7 @@ const cardExpandedHeight = `${
   MINI_PLAYER_DIMENSIONS.expandedHeight - MINI_PLAYER_DIMENSIONS.shellPadding * 2
 }px`;
 const COLLAPSE_ANCHOR_HOLD_MS = 320;
-const LYRIC_LOOKAHEAD_MS = 150;
+const LYRIC_LOOKAHEAD_MS = 0;
 const LYRIC_CLOCK_INTERVAL_MS = 80;
 const isMac = navigator.platform.toLowerCase().includes('mac');
 const isWayland = window.electron?.isWayland ?? false;
@@ -63,9 +64,6 @@ const isDraggingVolume = ref(false);
 let volumeCloseTimer: ReturnType<typeof setTimeout> | null = null;
 let shellDirectionHoldTimer: ReturnType<typeof setTimeout> | null = null;
 let disposeSnapshot: (() => void) | null = null;
-let lastAppliedLyricTrackId: string | null = null;
-let lastAppliedLyricIndex = -1;
-let lastAppliedLyricTime = 0;
 let lyricClockTimer: ReturnType<typeof setInterval> | null = null;
 
 const isQueueOpen = computed(() => expandedMode.value === 'queue');
@@ -110,41 +108,18 @@ const lyricTitle = computed(() => playback.value?.title || '未在播放');
 const lyricArtist = computed(() => playback.value?.artist || 'EchoMusic');
 const lyricLines = computed(() => lyric.value?.lines ?? []);
 const liveLyricIndex = ref(-1);
+const lyricTimeline = createLyricTimeline();
 
-const getLyricLineStartMs = (line: MiniPlayerLyricPayload['lines'][number]) =>
-  line.characters?.[0]?.startTime ?? Math.round((line.time || 0) * 1000);
-
-const calculateLyricIndex = (lines: MiniPlayerLyricPayload['lines'], seekMs: number) => {
-  if (lines.length === 0) return -1;
-  let index = -1;
-  let low = 0;
-  let high = lines.length - 1;
-
-  while (low <= high) {
-    const mid = Math.floor((low + high) / 2);
-    if (seekMs >= getLyricLineStartMs(lines[mid])) {
-      index = mid;
-      low = mid + 1;
-    } else {
-      high = mid - 1;
-    }
-  }
-
-  return index;
-};
-
-const getLivePlaybackTimeMs = () => {
+const getTimelinePlayback = () => {
   const currentPlayback = playback.value;
-  if (!currentPlayback) return 0;
-  const baseMs = Math.max(0, Number(currentPlayback.currentTime || 0) * 1000);
-  if (!currentPlayback.isPlaying) return baseMs;
-
-  const updatedAt = Number(currentPlayback.updatedAt || Date.now());
-  const playbackRate = Math.max(0.1, Number(currentPlayback.playbackRate || 1));
-  const elapsedMs = Math.max(0, Date.now() - updatedAt) * playbackRate;
-  const durationMs = Math.max(0, Number(currentPlayback.duration || 0) * 1000);
-  const nextMs = baseMs + elapsedMs;
-  return durationMs > 0 ? Math.min(nextMs, durationMs) : nextMs;
+  if (!currentPlayback) return null;
+  return {
+    currentTime: currentPlayback.currentTime,
+    duration: currentPlayback.duration,
+    isPlaying: currentPlayback.isPlaying,
+    playbackRate: currentPlayback.playbackRate,
+    updatedAt: currentPlayback.updatedAt,
+  };
 };
 
 const resolveLiveLyricIndex = () => {
@@ -158,9 +133,12 @@ const resolveLiveLyricIndex = () => {
     Boolean(playbackTrackId) && (!lyricTrackId || lyricTrackId === playbackTrackId);
 
   if (canPredictByPlaybackTime) {
-    const seekMs =
-      getLivePlaybackTimeMs() + Number(currentLyric.timeOffset || 0) + LYRIC_LOOKAHEAD_MS;
-    const predictedIndex = calculateLyricIndex(lines, seekMs);
+    const predictedIndex = lyricTimeline.findIndex(
+      lines,
+      getTimelinePlayback(),
+      Number(currentLyric.timeOffset || 0),
+      LYRIC_LOOKAHEAD_MS,
+    );
     if (predictedIndex >= 0) return predictedIndex;
   }
 
@@ -170,6 +148,7 @@ const resolveLiveLyricIndex = () => {
 };
 
 const refreshLiveLyricIndex = () => {
+  lyricTimeline.sync(getTimelinePlayback());
   const nextIndex = resolveLiveLyricIndex();
   if (liveLyricIndex.value !== nextIndex) liveLyricIndex.value = nextIndex;
 };
@@ -316,41 +295,11 @@ const shouldApplyLyricSnapshot = (
   );
 };
 
-const stabilizeIncomingLyricSnapshot = (
-  nextLyric: MiniPlayerLyricPayload | null | undefined,
-  nextPlayback: MiniPlayerPlaybackPayload | null,
-) => {
-  if (!nextLyric) return nextLyric;
-  const trackId = nextLyric.trackId;
-  const time = Number(nextPlayback?.currentTime ?? playback.value?.currentTime ?? 0);
-
-  if (trackId !== lastAppliedLyricTrackId) {
-    lastAppliedLyricTrackId = trackId;
-    lastAppliedLyricIndex = nextLyric.currentIndex;
-    lastAppliedLyricTime = time;
-    return nextLyric;
-  }
-
-  const isPlaybackJitterBackwards =
-    Boolean(trackId) &&
-    Boolean(nextPlayback?.isPlaying ?? playback.value?.isPlaying) &&
-    nextLyric.currentIndex < lastAppliedLyricIndex &&
-    lastAppliedLyricIndex - nextLyric.currentIndex <= 2 &&
-    time >= lastAppliedLyricTime - 0.35;
-
-  const currentIndex = isPlaybackJitterBackwards ? lastAppliedLyricIndex : nextLyric.currentIndex;
-
-  lastAppliedLyricIndex = currentIndex;
-  lastAppliedLyricTime = time;
-
-  if (currentIndex === nextLyric.currentIndex) return nextLyric;
-  return { ...nextLyric, currentIndex };
-};
-
 const applySnapshot = (snapshot: MiniPlayerSnapshot | null | undefined) => {
   const nextPlayback = snapshot?.playback ?? null;
-  const nextLyric = stabilizeIncomingLyricSnapshot(snapshot?.lyric, nextPlayback);
+  const nextLyric = snapshot?.lyric;
   const nextCoverUrl = nextPlayback?.coverUrl ?? '';
+  const previousPlaybackTrackId = playback.value?.trackId ?? null;
   if (nextCoverUrl !== lyricCoverUrl.value) lyricCoverUrl.value = nextCoverUrl;
   if (!nextPlayback) {
     playback.value = null;
@@ -359,6 +308,7 @@ const applySnapshot = (snapshot: MiniPlayerSnapshot | null | undefined) => {
   } else {
     Object.assign(playback.value, nextPlayback);
   }
+  lyricTimeline.sync(getTimelinePlayback(), nextPlayback?.trackId !== previousPlaybackTrackId);
   appearance.value = snapshot?.appearance ?? appearance.value;
   if (snapshot?.window) {
     alwaysOnTop.value = snapshot.window.alwaysOnTop;

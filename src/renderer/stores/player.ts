@@ -203,6 +203,7 @@ export const usePlayerStore = defineStore(
         if (actualDuration > 0 && previousTime >= actualDuration - 0.5) safeTime = 0;
         engine.seek(safeTime);
         state.currentTime = safeTime;
+        state.currentTimeUpdatedAt = Date.now();
       }
 
       let resumed = !wasPlaying;
@@ -227,7 +228,6 @@ export const usePlayerStore = defineStore(
     };
 
     const audioManager = createAudioManager(state, engine, refreshCurrentTrack);
-    const deviceManager = createDeviceManager(state, engine, settingStore);
     const getActiveImpulseResponsePath = () => {
       if (!settingStore.impulseResponseEnabled) return null;
       return settingStore.getSelectedImpulseResponse()?.path ?? null;
@@ -259,6 +259,44 @@ export const usePlayerStore = defineStore(
         return;
       state.playbackNotice = null;
     };
+
+    const recoverPlaybackStatusAfterOutputChange = (
+      playerState: {
+        playing?: boolean;
+        paused?: boolean;
+        duration?: number;
+        timePos?: number;
+      } | null,
+    ) => {
+      if (!playerState?.playing && !playerState?.paused) return;
+      if (
+        state.enginePlayback.status !== 'error' &&
+        state.playbackIntent.phase !== 'failed' &&
+        !state.playbackNotice
+      )
+        return;
+
+      state.lastError = null;
+      state.awaitingTrackLoad = false;
+      clearPlaybackNotice(state.currentTrackId);
+
+      if (typeof playerState.duration === 'number' && playerState.duration > 0) {
+        state.duration = playerState.duration;
+      }
+      if (typeof playerState.timePos === 'number' && playerState.timePos >= 0) {
+        state.currentTime = playerState.timePos;
+        state.currentTimeUpdatedAt = Date.now();
+      }
+
+      setPlaybackIntentPlayback(state, Boolean(playerState.playing));
+      setEnginePlaybackStatus(state, playerState.playing ? 'playing' : 'paused');
+      settingStore.syncPreventSleep(Boolean(playerState.playing));
+      engine.updateMediaPlaybackState(buildMediaState(state));
+    };
+
+    const deviceManager = createDeviceManager(state, engine, settingStore, {
+      recoverPlaybackStatusAfterOutputChange,
+    });
 
     const playbackManager = createPlaybackManager(
       state,
@@ -420,6 +458,7 @@ export const usePlayerStore = defineStore(
       clearPlaybackIntent(state);
       setEnginePlaybackStatus(state, 'idle');
       state.currentTime = 0;
+      state.currentTimeUpdatedAt = Date.now();
       state.currentAudioUrl = '';
       state.currentPlaybackSource = null;
       state.currentAudioCandidateUrls = [];
@@ -539,6 +578,7 @@ export const usePlayerStore = defineStore(
             state.stallRecovering = false;
           }
           state.currentTime = currentTime;
+          state.currentTimeUpdatedAt = Date.now();
           playbackManager.prepareGaplessNext();
           const now = Date.now();
           if (now - lastEventTimeUpdate >= EVENT_TIMEUPDATE_MS) {
@@ -616,9 +656,12 @@ export const usePlayerStore = defineStore(
           if (event && !event.isTrusted && !(event as any)?.detail) return;
           void (async () => {
             const detail = (event as CustomEvent<{ message?: string }> | undefined)?.detail;
+            const wasPlayingBeforeOutputError = getPlaybackIsPlaying(state);
             if (detail?.message && (await deviceManager.handleOutputDeviceError(detail.message))) {
               engine.updateMediaPlaybackState(buildMediaState(state));
-              emitPlayerEvent('pause');
+              if (wasPlayingBeforeOutputError && !getPlaybackIsPlaying(state)) {
+                emitPlayerEvent('pause');
+              }
               return;
             }
 
@@ -645,6 +688,7 @@ export const usePlayerStore = defineStore(
         seeked: (currentTime) => {
           state.seekTargetTime = null;
           state.currentTime = currentTime;
+          state.currentTimeUpdatedAt = Date.now();
           engine.updateMediaPlaybackState(buildMediaState(state));
         },
       };
@@ -660,7 +704,10 @@ export const usePlayerStore = defineStore(
           playerState.playing ? 'playing' : playerState.paused ? 'paused' : 'idle',
         );
         if (playerState.duration > 0) state.duration = playerState.duration;
-        if (playerState.timePos > 0) state.currentTime = playerState.timePos;
+        if (playerState.timePos > 0) {
+          state.currentTime = playerState.timePos;
+          state.currentTimeUpdatedAt = Date.now();
+        }
       });
     };
 

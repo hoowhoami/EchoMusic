@@ -1,4 +1,6 @@
-use crate::device::selection::DEVICE_KEY_SEPARATOR;
+use crate::device::selection::{
+    device_name_matches_key, is_default_device_name, parse_device_key, DEVICE_KEY_SEPARATOR,
+};
 use crate::events::AudioDevice;
 use cpal::traits::{DeviceTrait, HostTrait};
 use std::collections::{HashMap, HashSet};
@@ -38,6 +40,50 @@ pub(crate) fn list_output_devices() -> Option<Vec<AudioDevice>> {
 pub(crate) fn is_alsa_hardware_pcm(name: &str) -> bool {
     let lower = name.trim().to_ascii_lowercase();
     lower.starts_with("hw:") || lower.starts_with("plughw:")
+}
+
+pub(crate) fn resolve_alsa_exclusive_device_name(device_name: &str) -> Option<String> {
+    if is_alsa_hardware_pcm(device_name) {
+        return Some(device_name.to_string());
+    }
+
+    let alsa_host = cpal::host_from_id(cpal::HostId::Alsa).ok()?;
+    if is_default_device_name(device_name) {
+        return alsa_host
+            .output_devices()
+            .ok()?
+            .filter_map(|device| device.name().ok())
+            .find(|name| is_alsa_hardware_pcm(name));
+    }
+
+    let selector = parse_device_key(device_name);
+    let mut occurrence = 0usize;
+    alsa_host
+        .output_devices()
+        .ok()?
+        .filter_map(|device| device.name().ok())
+        .find(|name| {
+            if !is_alsa_hardware_pcm(name) || !device_name_matches_key(name, &selector) {
+                return false;
+            }
+            let matched = occurrence == selector.occurrence;
+            occurrence += 1;
+            matched
+        })
+}
+
+pub(crate) fn validate_alsa_exclusive_output(
+    device_name: &str,
+    sample_rate: u32,
+) -> Result<(), String> {
+    let resolved = resolve_alsa_exclusive_device_name(device_name).ok_or_else(|| {
+        if is_default_device_name(device_name) {
+            "default ALSA hardware output is not available".to_string()
+        } else {
+            format!("ALSA hardware output not found: {device_name}")
+        }
+    })?;
+    crate::output::alsa_exclusive::probe_output(&resolved, sample_rate)
 }
 
 fn append_host_devices(

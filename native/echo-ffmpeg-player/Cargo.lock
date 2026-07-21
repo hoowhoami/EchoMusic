@@ -248,6 +248,7 @@ dependencies = [
 name = "echo-ffmpeg-player"
 version = "0.1.0"
 dependencies = [
+ "alsa",
  "coreaudio-sys",
  "cpal",
  "ffmpeg_audio",

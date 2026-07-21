@@ -1,6 +1,10 @@
 import type { Ref } from 'vue';
 import { usePlayerStore } from '@/stores/player';
 import { useLyricStore } from '@/stores/lyric';
+import {
+  computeLyricCharBackgroundPosition,
+  createLyricTimeline,
+} from '@/composables/useLyricTimeline';
 
 /** 副歌词类型：音译 / 翻译 */
 export type SubLyricKind = 'romanized' | 'translated';
@@ -18,19 +22,18 @@ export function useYrcAnimation(activeIndex?: Ref<number>) {
   const lyricStore = useLyricStore();
 
   // 主歌词页提前的是滚动位置；逐字进度本身按歌词时间轴走。
-  // 但 player 上报时间有 250ms 节流 + IPC 延迟，锚点时间偏旧会导致逐字整体滞后（行尾尤其明显），
-  // 这里给一个小的提前量抵消该固定延迟，让逐字跟手又不至于明显抢拍。
-  const LYRIC_LOOKAHEAD = 120;
-  const CLOCK_SYNC_TOLERANCE_MS = 300;
-  const RECENT_SEEK_SYNC_WINDOW_MS = 800;
-  const PLAYBACK_STALE_THRESHOLD_MS = 1800;
-  // 播放中允许的「回退」阈值：超过此值才认为是真实跳转（手动 seek 之外的不连续），
-  // 否则忽略，避免播放器上报时间抖动把歌词时钟往回拨导致逐字/滚动倒退弹跳。
-  const BACKWARD_RESYNC_THRESHOLD_MS = 1500;
-  let seekBaseMs = 0;
-  let seekAnchorTick = 0;
-  let lastPlaybackUpdateTick = 0;
-  let lastObservedPlayerTimeMs = -1;
+  // 播放引擎时间锚点已由共享时间轴插值补偿，逐字进度不再额外提前。
+  const LYRIC_LOOKAHEAD = 0;
+  const timeline = createLyricTimeline();
+
+  const getPlayback = () => ({
+    currentTime: playerStore.currentTime,
+    duration: playerStore.duration,
+    isPlaying: playerStore.isPlaying,
+    playbackRate: playerStore.playbackRate,
+    updatedAt: playerStore.currentTimeUpdatedAt,
+    seekTimestamp: playerStore.seekTimestamp,
+  });
 
   // ── 字符元素注册表 ──
   // 主歌词：行索引 -> 字符元素数组（按字符下标存放）
@@ -89,28 +92,10 @@ export function useYrcAnimation(activeIndex?: Ref<number>) {
   };
 
   // 获取当前播放时间（毫秒），非响应式
-  const getNowMs = () => {
-    const now = performance.now();
-    const hasFreshPlaybackProgress = now - lastPlaybackUpdateTick <= PLAYBACK_STALE_THRESHOLD_MS;
-    if (playerStore.isPlaying && hasFreshPlaybackProgress) {
-      return seekBaseMs + (now - seekAnchorTick) * (playerStore.playbackRate || 1);
-    }
-    return seekBaseMs;
-  };
+  const getNowMs = () => timeline.getPlaybackMs(getPlayback());
 
   const getLyricTimelineMs = (lookaheadMs = 0) =>
-    Math.round(getNowMs() + lyricStore.currentTimeOffset + lookaheadMs);
-
-  // 计算单个字符的 background-position-x
-  const computeCharPos = (charStart: number, charEnd: number, seekMs: number): string => {
-    if (seekMs >= charEnd) return '0%';
-    if (seekMs <= charStart) return '100%';
-    const duration = charEnd - charStart;
-    // 防止 duration 为 0 导致计算失效
-    if (duration <= 0) return '0%';
-    const progress = (seekMs - charStart) / duration;
-    return `${100 - progress * 100}%`;
-  };
+    timeline.getTimelineMs(getPlayback(), lyricStore.currentTimeOffset, lookaheadMs);
 
   // 按字符时间轴更新一组字符元素的进度
   const applyCharsProgress = (
@@ -123,7 +108,11 @@ export function useYrcAnimation(activeIndex?: Ref<number>) {
       const el = elements[i];
       const char = chars[i];
       if (!el || !char) continue;
-      el.style.backgroundPositionX = computeCharPos(char.startTime || 0, char.endTime || 0, seekMs);
+      el.style.backgroundPositionX = computeLyricCharBackgroundPosition(
+        char.startTime || 0,
+        char.endTime || 0,
+        seekMs,
+      );
     }
   };
 
@@ -167,30 +156,7 @@ export function useYrcAnimation(activeIndex?: Ref<number>) {
   };
 
   const syncSeekAnchor = (force = false) => {
-    const nextBaseMs = Math.round((playerStore.currentTime || 0) * 1000);
-    const now = performance.now();
-    const hasNewPlayerTime = force || nextBaseMs !== lastObservedPlayerTimeMs;
-    if (hasNewPlayerTime) {
-      lastPlaybackUpdateTick = now;
-      lastObservedPlayerTimeMs = nextBaseMs;
-    }
-
-    if (playerStore.isPlaying && !force) {
-      const predictedMs = seekBaseMs + (now - seekAnchorTick) * (playerStore.playbackRate || 1);
-      const driftMs = nextBaseMs - predictedMs;
-      const recentSeek = Date.now() - (playerStore.seekTimestamp || 0) < RECENT_SEEK_SYNC_WINDOW_MS;
-
-      if (!recentSeek) {
-        // 播放器上报时间可能有轻微回退/抖动，播放中用本地单调时钟更稳。
-        if (Math.abs(driftMs) < CLOCK_SYNC_TOLERANCE_MS) return;
-        // 非最近 seek 时，忽略中等幅度的「回退」：只有超过阈值的大幅回退才认为是
-        // 真实跳转并重置，避免播放器抖动把歌词时钟往回拨造成逐字/滚动倒退弹跳。
-        if (driftMs < 0 && -driftMs < BACKWARD_RESYNC_THRESHOLD_MS) return;
-      }
-    }
-
-    seekBaseMs = nextBaseMs;
-    seekAnchorTick = now;
+    timeline.sync(getPlayback(), force);
   };
 
   return {

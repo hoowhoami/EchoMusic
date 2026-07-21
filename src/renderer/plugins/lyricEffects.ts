@@ -25,6 +25,15 @@ export type PluginLyricEffectSnapshot = {
   collapsed: boolean;
   hasLyrics: boolean;
   reducedMotion: boolean;
+  appearance: {
+    playedColor: string;
+    unplayedColor: string;
+    fontFamily: string;
+    fontScale: number;
+    fontWeight: number;
+    textShadow?: string;
+    dropShadow?: string;
+  };
 };
 
 export type PluginLyricEffectAutoScrollRequest = {

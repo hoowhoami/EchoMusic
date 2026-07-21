@@ -71,6 +71,21 @@ pub fn resolve_output_sample_rate(device_name: &str, exclusive: bool) -> u32 {
     if exclusive {
         return crate::device::platform_windows::resolve_wasapi_output_sample_rate(device_name);
     }
+    #[cfg(target_os = "macos")]
+    if exclusive {
+        return crate::device::platform_macos::resolve_coreaudio_output_sample_rate(device_name);
+    }
+    #[cfg(target_os = "linux")]
+    if exclusive {
+        let Ok(device) = select_output_device_checked(device_name, exclusive) else {
+            return FALLBACK_SAMPLE_RATE;
+        };
+        return device
+            .default_output_config()
+            .ok()
+            .map(|config| config.sample_rate().0)
+            .unwrap_or(FALLBACK_SAMPLE_RATE);
+    }
 
     let Ok(device) = select_output_device_checked(device_name, exclusive) else {
         return FALLBACK_SAMPLE_RATE;
@@ -87,6 +102,14 @@ pub fn validate_output_device(device_name: &str, exclusive: bool) -> Result<(), 
     if exclusive {
         return crate::device::platform_windows::validate_wasapi_output_device(device_name);
     }
+    #[cfg(target_os = "linux")]
+    if exclusive {
+        let sample_rate = resolve_output_sample_rate(device_name, exclusive);
+        return crate::device::platform_linux::validate_alsa_exclusive_output(
+            device_name,
+            sample_rate,
+        );
+    }
 
     let device = select_output_device_checked(device_name, exclusive)?;
     let config = device
@@ -94,6 +117,7 @@ pub fn validate_output_device(device_name: &str, exclusive: bool) -> Result<(), 
         .map_err(|err| format!("failed to read output config for '{device_name}': {err}"))?;
     validate_platform_exclusive_open(
         &device,
+        device_name,
         exclusive,
         config.sample_format(),
         config.sample_rate().0,
@@ -347,6 +371,7 @@ mod tests {
 #[cfg(target_os = "linux")]
 fn validate_platform_exclusive_open(
     device: &cpal::Device,
+    _device_name: &str,
     exclusive: bool,
     sample_format: SampleFormat,
     sample_rate: u32,
@@ -364,9 +389,26 @@ fn validate_platform_exclusive_open(
         .map_err(|err| format!("failed to open ALSA hardware output for exclusive mode: {err}"))
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(target_os = "macos")]
 fn validate_platform_exclusive_open(
     _device: &cpal::Device,
+    device_name: &str,
+    exclusive: bool,
+    _sample_format: SampleFormat,
+    _sample_rate: u32,
+) -> Result<(), String> {
+    if !exclusive {
+        return Ok(());
+    }
+    let sample_rate =
+        crate::device::platform_macos::resolve_coreaudio_output_sample_rate(device_name);
+    crate::device::platform_macos::validate_coreaudio_exclusive_output(device_name, sample_rate)
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
+fn validate_platform_exclusive_open(
+    _device: &cpal::Device,
+    _device_name: &str,
     _exclusive: bool,
     _sample_format: SampleFormat,
     _sample_rate: u32,

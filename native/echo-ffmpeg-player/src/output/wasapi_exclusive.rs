@@ -1,9 +1,10 @@
 use crate::device::platform_windows::{
-    activate_wasapi_audio_client, choose_wasapi_sample_format, resolve_wasapi_output_device,
+    activate_wasapi_audio_client, choose_wasapi_sample_format_at_sample_rate,
+    is_wasapi_buffer_size_not_aligned, resolve_wasapi_output_device, wasapi_duration_from_frames,
     wasapi_exclusive_buffer_duration, wasapi_wave_format, ComApartment, WasapiSampleFormat,
 };
 use crate::events::{PlayerErrorCode, PlayerEvent};
-use crate::output::fill_output;
+use crate::output::{fill_output, report_output_start, OutputStartSender};
 use crate::shared::{SharedAudio, TARGET_CHANNELS};
 use std::ptr;
 use std::slice;
@@ -23,13 +24,23 @@ impl Drop for EventHandle {
     }
 }
 
+struct WasapiExclusiveOutput {
+    audio_client: Audio::IAudioClient,
+    render_client: Audio::IAudioRenderClient,
+    buffer_frames: u32,
+    buffer_duration: i64,
+}
+
 pub fn spawn_output_thread(
     device_name: String,
     shared: Arc<SharedAudio>,
     emit: fn(PlayerEvent),
+    mut start_notify: Option<OutputStartSender>,
 ) -> JoinHandle<()> {
     thread::spawn(move || {
-        if let Err(message) = run_exclusive_output(&device_name, shared.clone()) {
+        if let Err(message) = run_exclusive_output(&device_name, shared.clone(), &mut start_notify)
+        {
+            report_output_start(&mut start_notify, Err(message.clone()));
             shared.request_output_stop();
             emit(PlayerEvent::error(
                 PlayerErrorCode::OutputExclusive,
@@ -39,65 +50,67 @@ pub fn spawn_output_thread(
     })
 }
 
-fn run_exclusive_output(device_name: &str, shared: Arc<SharedAudio>) -> Result<(), String> {
+fn run_exclusive_output(
+    device_name: &str,
+    shared: Arc<SharedAudio>,
+    start_notify: &mut Option<OutputStartSender>,
+) -> Result<(), String> {
     let _com = ComApartment::init()?;
     boost_current_thread_priority();
 
     let device = resolve_wasapi_output_device(device_name)?;
-    let audio_client = activate_wasapi_audio_client(&device)?;
-    let sample_format = choose_wasapi_sample_format(&audio_client, shared.sample_rate)?;
-    let wave_format = wasapi_wave_format(shared.sample_rate, sample_format);
-    let buffer_duration = wasapi_exclusive_buffer_duration(&audio_client);
+    let probe_client = activate_wasapi_audio_client(&device)?;
+    let sample_format =
+        choose_wasapi_sample_format_at_sample_rate(&probe_client, shared.sample_rate)?;
+    let event = EventHandle(
+        unsafe { Threading::CreateEventA(None, false, false, windows::core::PCSTR(ptr::null())) }
+            .map_err(|err| format!("failed to create WASAPI output event: {err}"))?,
+    );
+    let output = open_wasapi_exclusive_output(&device, event.0, shared.sample_rate, sample_format)?;
+    emit(PlayerEvent::log(
+        "info",
+        format!(
+            "WASAPI exclusive opening: requested='{device_name}', sample_rate={}, channels={}, format={:?}, buffer_100ns={buffer_duration}",
+            shared.sample_rate,
+            TARGET_CHANNELS,
+            sample_format,
+            buffer_duration = output.buffer_duration
+        ),
+    ));
 
     unsafe {
-        audio_client
-            .Initialize(
-                Audio::AUDCLNT_SHAREMODE_EXCLUSIVE,
-                Audio::AUDCLNT_STREAMFLAGS_EVENTCALLBACK,
-                buffer_duration,
-                buffer_duration,
-                &wave_format.Format,
-                None,
-            )
-            .map_err(|err| format!("failed to open WASAPI exclusive output: {err}"))?;
-
-        let event = EventHandle(
-            Threading::CreateEventA(None, false, false, windows::core::PCSTR(ptr::null()))
-                .map_err(|err| format!("failed to create WASAPI output event: {err}"))?,
-        );
-        audio_client
-            .SetEventHandle(event.0)
-            .map_err(|err| format!("failed to bind WASAPI output event: {err}"))?;
-
-        let render_client = audio_client
-            .GetService::<Audio::IAudioRenderClient>()
-            .map_err(|err| format!("failed to create WASAPI render client: {err}"))?;
-        let buffer_frames = audio_client
-            .GetBufferSize()
-            .map_err(|err| format!("failed to query WASAPI buffer size: {err}"))?;
-
-        write_silence(&render_client, buffer_frames, sample_format)?;
-        audio_client
+        write_silence(&output.render_client, output.buffer_frames, sample_format)?;
+        output
+            .audio_client
             .Start()
             .map_err(|err| format!("failed to start WASAPI exclusive output: {err}"))?;
         shared.mark_output_started();
+        report_output_start(start_notify, Ok(()));
         let mut output_scratch = Vec::<f32>::new();
 
         while !shared.should_stop_output() {
             match Threading::WaitForSingleObject(event.0, 50) {
                 WAIT_OBJECT_0 => {
-                    let padding = audio_client
-                        .GetCurrentPadding()
-                        .map_err(|err| format!("failed to query WASAPI output padding: {err}"))?;
-                    let frames_available = buffer_frames.saturating_sub(padding);
-                    if frames_available > 0 {
-                        write_frames(
-                            &render_client,
-                            frames_available,
-                            sample_format,
-                            &shared,
-                            &mut output_scratch,
-                        )?;
+                    if feed_wasapi_exclusive(
+                        &output.audio_client,
+                        &output.render_client,
+                        output.buffer_frames,
+                        sample_format,
+                        &shared,
+                        &mut output_scratch,
+                    )? && feed_wasapi_exclusive(
+                        &output.audio_client,
+                        &output.render_client,
+                        output.buffer_frames,
+                        sample_format,
+                        &shared,
+                        &mut output_scratch,
+                    )? {
+                        emit(PlayerEvent::log(
+                            "warn",
+                            "WASAPI exclusive output could not catch up with the device buffer"
+                                .to_string(),
+                        ));
                     }
                 }
                 WAIT_TIMEOUT => {}
@@ -106,10 +119,94 @@ fn run_exclusive_output(device_name: &str, shared: Arc<SharedAudio>) -> Result<(
             }
         }
 
-        let _ = audio_client.Stop();
+        let _ = output.audio_client.Stop();
     }
 
     Ok(())
+}
+
+fn open_wasapi_exclusive_output(
+    device: &Audio::IMMDevice,
+    event: HANDLE,
+    sample_rate: u32,
+    sample_format: WasapiSampleFormat,
+) -> Result<WasapiExclusiveOutput, String> {
+    let wave_format = wasapi_wave_format(sample_rate, sample_format);
+    let mut aligned_buffer_frames = None;
+
+    loop {
+        let audio_client = activate_wasapi_audio_client(device)?;
+        let buffer_duration = aligned_buffer_frames
+            .map(|frames| wasapi_duration_from_frames(frames, sample_rate))
+            .unwrap_or_else(|| wasapi_exclusive_buffer_duration(&audio_client));
+        let result = unsafe {
+            audio_client.Initialize(
+                Audio::AUDCLNT_SHAREMODE_EXCLUSIVE,
+                Audio::AUDCLNT_STREAMFLAGS_EVENTCALLBACK,
+                buffer_duration,
+                buffer_duration,
+                &wave_format.Format,
+                None,
+            )
+        };
+
+        match result {
+            Ok(()) => unsafe {
+                audio_client
+                    .SetEventHandle(event)
+                    .map_err(|err| format!("failed to bind WASAPI output event: {err}"))?;
+                let render_client = audio_client
+                    .GetService::<Audio::IAudioRenderClient>()
+                    .map_err(|err| format!("failed to create WASAPI render client: {err}"))?;
+                let buffer_frames = audio_client
+                    .GetBufferSize()
+                    .map_err(|err| format!("failed to query WASAPI buffer size: {err}"))?;
+                return Ok(WasapiExclusiveOutput {
+                    audio_client,
+                    render_client,
+                    buffer_frames,
+                    buffer_duration,
+                });
+            },
+            Err(err)
+                if is_wasapi_buffer_size_not_aligned(&err) && aligned_buffer_frames.is_none() =>
+            {
+                let frames = unsafe { audio_client.GetBufferSize() }
+                    .map_err(|err| format!("failed to read WASAPI aligned buffer size: {err}"))?;
+                aligned_buffer_frames = Some(frames);
+            }
+            Err(err) => return Err(format!("failed to open WASAPI exclusive output: {err}")),
+        }
+    }
+}
+
+fn feed_wasapi_exclusive(
+    audio_client: &Audio::IAudioClient,
+    render_client: &Audio::IAudioRenderClient,
+    buffer_frames: u32,
+    sample_format: WasapiSampleFormat,
+    shared: &SharedAudio,
+    output_scratch: &mut Vec<f32>,
+) -> Result<bool, String> {
+    let padding = unsafe {
+        audio_client
+            .GetCurrentPadding()
+            .map_err(|err| format!("failed to query WASAPI output padding: {err}"))?
+    };
+    if padding >= buffer_frames {
+        return Ok(false);
+    }
+
+    let frames_available = buffer_frames.saturating_sub(padding);
+    let refill = padding == 0;
+    write_frames(
+        render_client,
+        frames_available,
+        sample_format,
+        shared,
+        output_scratch,
+    )?;
+    Ok(refill)
 }
 
 fn write_frames(

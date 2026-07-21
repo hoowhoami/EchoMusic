@@ -60,6 +60,7 @@ export const createPlaybackManager = (
     failPlaybackIntent(state);
     setEnginePlaybackStatus(state, 'error');
     state.currentTime = 0;
+    state.currentTimeUpdatedAt = Date.now();
     state.duration = 0;
     state.awaitingTrackLoad = false;
     if (!options?.keepResolvedSource) {
@@ -181,6 +182,7 @@ export const createPlaybackManager = (
         state.stallRecoverTarget = targetPosition;
         state.stallRecoverDeadline = Date.now() + 20000;
         state.currentTime = targetPosition;
+        state.currentTimeUpdatedAt = Date.now();
       }
 
       logger.warn('PlayerPlayback', 'Trying fallback audio url', {
@@ -338,6 +340,7 @@ export const createPlaybackManager = (
     applyResolvedAudioSource(targetTrack, prepared.resolved);
     engine.adoptPreparedSource(state.currentPlaybackSource ?? prepared.resolved.url);
     state.currentTime = 0;
+    state.currentTimeUpdatedAt = Date.now();
     state.duration = prepared.resolved.url ? engine.duration || state.duration : state.duration;
     completePlaybackIntent(state, state.playbackRequestSeq, { isPlaying: true });
     setEnginePlaybackStatus(state, 'playing', prepared.targetTrackId);
@@ -598,6 +601,7 @@ export const createPlaybackManager = (
     state.currentResolvedAudioQuality = null;
     state.currentResolvedAudioEffect = 'none';
     state.currentTime = 0;
+    state.currentTimeUpdatedAt = Date.now();
     state.duration = 0;
     beginPlaybackIntent(state, {
       seq: requestSeq,
@@ -771,6 +775,7 @@ export const createPlaybackManager = (
     state.seekTimestamp = Date.now();
     engine.seek(targetTime);
     state.currentTime = targetTime;
+    state.currentTimeUpdatedAt = state.seekTimestamp;
 
     // 当 seek 目标接近结尾时（距结尾 < 2 秒），不忽略 EOF 事件，
     // 否则播放完毕后不会自动切下一首
@@ -1074,6 +1079,7 @@ export const createPlaybackManager = (
     state.historyUploadTrackId = null;
     engine.reset();
     state.currentTime = 0;
+    state.currentTimeUpdatedAt = Date.now();
     state.duration = 0;
     state.stallRecovering = false;
     state.awaitingTrackLoad = false;
@@ -1141,6 +1147,7 @@ export const createPlaybackManager = (
     state.stallRecoverTarget = targetPosition;
     state.stallRecoverDeadline = Date.now() + 20000;
     state.currentTime = targetPosition;
+    state.currentTimeUpdatedAt = Date.now();
 
     logger.warn('PlayerPlayback', 'Recovering from playback stall', {
       trackId,

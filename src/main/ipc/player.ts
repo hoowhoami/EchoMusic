@@ -110,7 +110,7 @@ export function registerPlayerIpc(ref: PlayerRef): void {
   );
 
   ipcRegistry.registerHandler('player:get-state', () => {
-    return ref.current?.currentState ?? null;
+    return ref.current?.getState() ?? null;
   });
 
   ipcRegistry.registerHandler('player:available', () => {

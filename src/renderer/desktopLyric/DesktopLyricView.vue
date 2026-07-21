@@ -34,6 +34,11 @@ import {
   registerPluginLyricEffectHost,
   type PluginLyricEffectSnapshot,
 } from '@/plugins/lyricEffects';
+import {
+  computeLyricCharBackgroundPosition,
+  computeLyricCharProgress,
+  createLyricTimeline,
+} from '@/composables/useLyricTimeline';
 
 // ── 渲染行类型 ──
 
@@ -53,11 +58,6 @@ let disposeHoverListener: (() => void) | null = null;
 let lyricEffectHostRegistration: ReturnType<typeof registerPluginLyricEffectHost> | null = null;
 let reducedMotionQuery: MediaQueryList | null = null;
 
-// 锚点时间（毫秒）与锚点帧时间，用于插值推进
-let baseMs = 0;
-let anchorTick = 0;
-let lastPlaybackUpdateTick = 0;
-
 // 实时播放进度（毫秒） - 非响应式以提升性能
 let playSeekMsRaw = 0;
 const activeLineIndex = ref(-1);
@@ -69,40 +69,32 @@ const reducedMotion = ref(false);
 // 缓存 DOM 引用
 let cachedYrcElements: HTMLElement[] = [];
 let cachedYrcLineKey = '';
+const lyricTimeline = createLyricTimeline();
 
-const calculateCurrentIndex = (seekMs: number) => {
-  const lines = lyrics.value;
-  if (lines.length === 0) return -1;
-  let idx = -1;
-  for (let i = 0; i < lines.length; i++) {
-    const start = lines[i].characters?.[0]?.startTime ?? Math.round(lines[i].time * 1000);
-    if (seekMs >= start) {
-      idx = i;
-    } else {
-      break;
-    }
+const getTimelinePlayback = () => {
+  const state = snapshot.value?.playback;
+  if (!state) return null;
+  return {
+    currentTime: state.currentTime,
+    duration: state.duration,
+    isPlaying: state.isPlaying,
+    playbackRate: state.playbackRate,
+    updatedAt: state.updatedAt,
+  };
+};
+
+const refreshTimelineState = () => {
+  const state = getTimelinePlayback();
+  playSeekMsRaw = lyricTimeline.getPlaybackMs(state);
+  const nextIndex = lyricTimeline.findIndex(lyrics.value, state, lyricTimeOffset.value);
+  if (nextIndex !== activeLineIndex.value) {
+    activeLineIndex.value = nextIndex;
   }
-  return idx;
 };
 
 // 每帧推进播放游标
 const { pause: pauseSeek, resume: resumeSeek } = useRafFn(() => {
-  const state = snapshot.value?.playback;
-  const now = performance.now();
-  const hasFreshPlaybackProgress = now - lastPlaybackUpdateTick <= PLAYBACK_STALE_THRESHOLD;
-  if (state?.isPlaying && hasFreshPlaybackProgress) {
-    playSeekMsRaw = baseMs + (now - anchorTick) * (state.playbackRate || 1);
-  } else {
-    playSeekMsRaw = baseMs;
-  }
-
-  // 更新 currentIndexRef (触发 Vue 更新行)
-  const nextIndex = calculateCurrentIndex(playSeekMsRaw + lyricTimeOffset.value);
-  if (nextIndex !== activeLineIndex.value) {
-    activeLineIndex.value = nextIndex;
-  }
-
-  // 手动更新 DOM
+  refreshTimelineState();
   updateYrcDomManual();
   updateScrollManual();
   notifyLyricEffectHost();
@@ -135,7 +127,11 @@ const updateYrcDomManual = () => {
 
   if (cachedYrcElements.length === 0) return;
 
-  const seekMs = playSeekMsRaw + lyricTimeOffset.value + LYRIC_LOOKAHEAD;
+  const seekMs = lyricTimeline.getTimelineMs(
+    getTimelinePlayback(),
+    lyricTimeOffset.value,
+    LYRIC_LOOKAHEAD,
+  );
   const characters = activeRenderLine.line.characters;
   const vertical = lyricLayout.value === 'vertical';
 
@@ -144,9 +140,11 @@ const updateYrcDomManual = () => {
     const el = cachedYrcElements[i];
     if (!char || !el) continue;
 
-    const duration = Math.max((char.endTime || 0) - (char.startTime || 0), 0.001);
-    const progress = Math.max(Math.min((seekMs - (char.startTime || 0)) / duration, 1), 0);
-    const position = `${100 - progress * 100}%`;
+    const position = computeLyricCharBackgroundPosition(
+      char.startTime || 0,
+      char.endTime || 0,
+      seekMs,
+    );
     if (vertical) {
       el.style.backgroundPositionX = '0%';
       el.style.backgroundPositionY = position;
@@ -172,7 +170,7 @@ const updateScrollManual = () => {
       return;
     }
 
-    const seekMs = playSeekMsRaw + lyricTimeOffset.value;
+    const seekMs = lyricTimeline.getTimelineMs(getTimelinePlayback(), lyricTimeOffset.value);
     const chars = line.line.characters;
     if (!chars?.length) return;
 
@@ -181,8 +179,7 @@ const updateScrollManual = () => {
     if (!endRaw || endRaw <= start) return;
 
     const end = Math.max(start + 0.001, endRaw - 2000);
-    const duration = Math.max(end - start, 0.001);
-    const progress = Math.max(Math.min((seekMs - start) / duration, 1), 0);
+    const progress = computeLyricCharProgress(start, end, seekMs);
 
     let tx = 0;
     if (progress > 0.3) {
@@ -193,12 +190,8 @@ const updateScrollManual = () => {
   });
 };
 
-// 逐字高亮提前量（毫秒）
-const LYRIC_LOOKAHEAD = 150;
-// 锚点同步阈值（毫秒）
-const SYNC_THRESHOLD = 300;
-// player 没有持续上报进度时，桌面歌词不再自行推进
-const PLAYBACK_STALE_THRESHOLD = 1800;
+// 播放引擎时间锚点已由共享时间轴插值补偿，逐字进度不再额外提前。
+const LYRIC_LOOKAHEAD = 0;
 // ── 计算属性 ──
 
 const settings = computed(() => snapshot.value?.settings);
@@ -483,6 +476,15 @@ const buildLyricEffectSnapshot = (): PluginLyricEffectSnapshot => {
     collapsed: false,
     hasLyrics: hasLyrics.value,
     reducedMotion: reducedMotion.value,
+    appearance: {
+      playedColor: playedColor.value,
+      unplayedColor: unplayedColor.value,
+      fontFamily: fontFamily.value,
+      fontScale: Math.max(0.1, localFontSize.value / 32),
+      fontWeight: fontWeight.value,
+      textShadow: lyricTextShadow.value,
+      dropShadow: lyricDropShadow.value,
+    },
   };
 };
 
@@ -543,12 +545,12 @@ watch(renderScopeKey, () => {
   resetLyricDomCache();
   lineRefs.clear();
   contentRefs.clear();
-  activeLineIndex.value = calculateCurrentIndex(playSeekMsRaw + lyricTimeOffset.value);
+  refreshTimelineState();
   notifyLyricEffectHost();
 });
 
 watch(lyricTimeOffset, () => {
-  activeLineIndex.value = calculateCurrentIndex(playSeekMsRaw + lyricTimeOffset.value);
+  refreshTimelineState();
   notifyLyricEffectHost();
 });
 
@@ -831,21 +833,8 @@ const playNext = () => {
 // ── 锚点同步 ──
 
 const syncAnchor = (force = false) => {
-  const state = playback.value;
-  if (!state) return;
-  lastPlaybackUpdateTick = performance.now();
-  const newBaseMs = Math.round((state.currentTime || 0) * 1000);
-  const ipcDelay = performance.now() - (state.updatedAt || performance.now());
-  const compensated = ipcDelay > 0 && ipcDelay < 1000 ? newBaseMs + ipcDelay : newBaseMs;
-  if (force || Math.abs(compensated - playSeekMsRaw) > SYNC_THRESHOLD) {
-    baseMs = compensated;
-    anchorTick = performance.now();
-    playSeekMsRaw = compensated;
-  }
-  if (!state.isPlaying) {
-    baseMs = newBaseMs;
-    anchorTick = performance.now();
-  }
+  lyricTimeline.sync(getTimelinePlayback(), force);
+  refreshTimelineState();
 };
 
 // ── 生命周期 ──
@@ -875,9 +864,9 @@ onMounted(async () => {
       if (next.playback?.isPlaying) {
         resumeSeek();
       } else {
-        baseMs = playSeekMsRaw;
-        anchorTick = performance.now();
         pauseSeek();
+        updateYrcDomManual();
+        updateScrollManual();
       }
       notifyLyricEffectHost();
     }) ?? null;
@@ -1430,11 +1419,11 @@ onBeforeUnmount(() => {
   text-overflow: ellipsis;
   white-space: nowrap;
   transition:
-    top 0.6s cubic-bezier(0.55, 0, 0.1, 1),
-    font-size 0.6s cubic-bezier(0.55, 0, 0.1, 1),
-    color 0.6s cubic-bezier(0.55, 0, 0.1, 1),
-    opacity 0.6s cubic-bezier(0.55, 0, 0.1, 1),
-    transform 0.6s cubic-bezier(0.55, 0, 0.1, 1);
+    top 0.22s cubic-bezier(0.22, 1, 0.36, 1),
+    font-size 0.22s cubic-bezier(0.22, 1, 0.36, 1),
+    color 0.18s ease,
+    opacity 0.18s ease,
+    transform 0.22s cubic-bezier(0.22, 1, 0.36, 1);
   will-change: top, font-size, transform;
   transform-origin: left center;
 }
@@ -1449,11 +1438,11 @@ onBeforeUnmount(() => {
   writing-mode: vertical-rl;
   text-orientation: mixed;
   transition:
-    right 0.6s cubic-bezier(0.55, 0, 0.1, 1),
-    font-size 0.6s cubic-bezier(0.55, 0, 0.1, 1),
-    color 0.6s cubic-bezier(0.55, 0, 0.1, 1),
-    opacity 0.6s cubic-bezier(0.55, 0, 0.1, 1),
-    transform 0.6s cubic-bezier(0.55, 0, 0.1, 1);
+    right 0.22s cubic-bezier(0.22, 1, 0.36, 1),
+    font-size 0.22s cubic-bezier(0.22, 1, 0.36, 1),
+    color 0.18s ease,
+    opacity 0.18s ease,
+    transform 0.22s cubic-bezier(0.22, 1, 0.36, 1);
   transform-origin: center top;
 }
 
@@ -1572,8 +1561,8 @@ onBeforeUnmount(() => {
 .lyric-slide-enter-active,
 .lyric-slide-leave-active {
   transition:
-    transform 0.6s cubic-bezier(0.55, 0, 0.1, 1),
-    opacity 0.6s cubic-bezier(0.55, 0, 0.1, 1);
+    transform 0.22s cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 0.18s ease;
   will-change: transform, opacity;
 }
 .lyric-slide-enter-from {
@@ -1592,8 +1581,8 @@ onBeforeUnmount(() => {
 .lyric-slide-vertical-enter-active,
 .lyric-slide-vertical-leave-active {
   transition:
-    transform 0.6s cubic-bezier(0.55, 0, 0.1, 1),
-    opacity 0.6s cubic-bezier(0.55, 0, 0.1, 1);
+    transform 0.22s cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 0.18s ease;
   will-change: transform, opacity;
 }
 .lyric-slide-vertical-enter-from {

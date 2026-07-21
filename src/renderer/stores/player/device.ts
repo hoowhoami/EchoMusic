@@ -9,18 +9,29 @@ import {
 } from './stateMachine';
 
 type PlayerAudioDevice = { name: string; description: string; isDefault?: boolean };
+type NativePlayerState = {
+  playing?: boolean;
+  paused?: boolean;
+  duration?: number;
+  timePos?: number;
+} | null;
 type PlayerAudioDeviceListChangedPayload = {
   devices: PlayerAudioDevice[];
   deviceChangeKind?: string;
   disconnectedDevices?: PlayerAudioDevice[];
+};
+type DeviceManagerCallbacks = {
+  recoverPlaybackStatusAfterOutputChange?: (playerState: NativePlayerState) => void;
 };
 
 export const createDeviceManager = (
   state: PlayerState,
   engine: PlayerEngine,
   settingStore: ReturnType<typeof useSettingStore>,
+  callbacks: DeviceManagerCallbacks = {},
 ) => {
   let refreshingOutputDevices = false;
+  let applyingOutputDevice = false;
   let lastDefaultOutputDeviceId: string | null | undefined;
 
   const resolveDefaultOutputDeviceId = (devices: PlayerAudioDevice[]) =>
@@ -37,10 +48,14 @@ export const createDeviceManager = (
       normalized.includes('output device') ||
       normalized.includes('output stream') ||
       normalized.includes('output config') ||
+      normalized.includes('exclusive output') ||
       normalized.includes('requested device is no longer available') ||
       normalized.includes('device is no longer available')
     );
   };
+
+  const isExclusiveOutputError = (message: string) =>
+    message.toLowerCase().includes('exclusive output');
 
   const setReadyOutputDeviceStatus = (deviceId: string) => {
     if (deviceId === 'default') {
@@ -49,6 +64,16 @@ export const createDeviceManager = (
     }
     const matched = settingStore.outputDevices.find((item) => item.value === deviceId);
     settingStore.setOutputDeviceStatus('ready', `已切换到 ${matched?.label || deviceId}。`);
+  };
+
+  const recoverPlaybackStatusAfterOutputChange = async () => {
+    if (!callbacks.recoverPlaybackStatusAfterOutputChange) return;
+    try {
+      const playerState = (await window.electron?.player?.getState?.()) ?? null;
+      callbacks.recoverPlaybackStatusAfterOutputChange(playerState);
+    } catch (error) {
+      logger.warn('PlayerDevice', 'Read player state after output change failed:', error);
+    }
   };
 
   const pauseForOutputDeviceDisconnect = (message: string) => {
@@ -60,11 +85,41 @@ export const createDeviceManager = (
     settingStore.setOutputDeviceStatus('fallback', message);
   };
 
+  const recoverFromExclusiveOutputError = async () => {
+    if (!settingStore.exclusiveAudioDevice && !state._lastAppliedExclusive) return false;
+    applyingOutputDevice = true;
+    try {
+      await window.electron?.player?.setExclusive(false);
+      state._lastAppliedExclusive = false;
+      if (settingStore.exclusiveAudioDevice) {
+        settingStore.exclusiveAudioDevice = false;
+      }
+      settingStore.setOutputDeviceStatus('fallback', '独占音频输出不可用，已切回普通输出。');
+      await recoverPlaybackStatusAfterOutputChange();
+      return true;
+    } catch (error) {
+      logger.warn('PlayerDevice', 'Recover from exclusive audio output failed:', error);
+      return false;
+    } finally {
+      applyingOutputDevice = false;
+    }
+  };
+
   const handleOutputDeviceError = async (message: string): Promise<boolean> => {
     if (!isOutputDeviceError(message)) return false;
 
+    if (applyingOutputDevice) return true;
+
+    if (isExclusiveOutputError(message) && (await recoverFromExclusiveOutputError())) return true;
+
     if (settingStore.pauseOnOutputDeviceDisconnect) {
       pauseForOutputDeviceDisconnect('输出设备不可用，已暂停播放。');
+      return true;
+    }
+
+    if (settingStore.outputDevice !== 'default' && state.appliedOutputDeviceId === 'default') {
+      settingStore.setOutputDeviceStatus('fallback', '输出设备已不可用，已临时切回系统默认设备。');
+      await recoverPlaybackStatusAfterOutputChange();
       return true;
     }
 
@@ -76,11 +131,13 @@ export const createDeviceManager = (
 
     if (applied) {
       settingStore.setOutputDeviceStatus('fallback', '输出设备已不可用，已临时切回系统默认设备。');
+    } else {
+      pauseForOutputDeviceDisconnect('输出设备不可用，已暂停播放。');
     }
     return true;
   };
 
-  const applyOutputDevice = async (
+  const applyOutputDeviceUnchecked = async (
     deviceId: string,
     options?: { persistSelection?: boolean; force?: boolean },
   ): Promise<boolean> => {
@@ -101,14 +158,28 @@ export const createDeviceManager = (
 
     if (exclusiveChanged) {
       let exclusiveApplied = false;
+      let exclusiveError = '';
       try {
         await player?.setExclusive(exclusive);
         exclusiveApplied = true;
-      } catch {
+      } catch (error) {
+        exclusiveError = String(error);
         exclusiveApplied = false;
       }
       if (!exclusiveApplied) {
-        applied = false;
+        const previousExclusive = state._lastAppliedExclusive ?? false;
+        state._lastAppliedExclusive = previousExclusive;
+        if (settingStore.exclusiveAudioDevice !== previousExclusive) {
+          settingStore.exclusiveAudioDevice = previousExclusive;
+        }
+        settingStore.setOutputDeviceStatus(
+          'fallback',
+          exclusive
+            ? '独占音频设备不可用，已保持当前输出模式。'
+            : '关闭独占音频设备失败，已保持当前输出模式。',
+        );
+        logger.warn('PlayerDevice', 'Apply exclusive audio output failed:', exclusiveError);
+        return false;
       } else {
         state._lastAppliedExclusive = exclusive;
         if (!deviceChanged) {
@@ -137,10 +208,25 @@ export const createDeviceManager = (
           ? '当前设备不支持切换到所选输出，已回退。'
           : '当前设备不支持切换到所选输出，且回退系统默认失败。',
       );
+      if (fallbackApplied) await recoverPlaybackStatusAfterOutputChange();
       return fallbackApplied;
     } else {
       setReadyOutputDeviceStatus(deviceId);
+      await recoverPlaybackStatusAfterOutputChange();
       return true;
+    }
+  };
+
+  const applyOutputDevice = async (
+    deviceId: string,
+    options?: { persistSelection?: boolean; force?: boolean },
+  ): Promise<boolean> => {
+    if (applyingOutputDevice) return false;
+    applyingOutputDevice = true;
+    try {
+      return await applyOutputDeviceUnchecked(deviceId, options);
+    } finally {
+      applyingOutputDevice = false;
     }
   };
 
@@ -231,6 +317,9 @@ export const createDeviceManager = (
         if (settingStore.pauseOnOutputDeviceDisconnect) {
           pauseForOutputDeviceDisconnect('所选输出设备已不可用，已暂停播放。');
           state.appliedOutputDeviceId = currentOutput;
+        } else if (state.appliedOutputDeviceId === 'default') {
+          settingStore.setOutputDeviceStatus('fallback', '所选输出设备已不可用，已临时切回。');
+          await recoverPlaybackStatusAfterOutputChange();
         } else {
           await applyOutputDevice('default', { persistSelection: false, force: true });
           settingStore.setOutputDeviceStatus('fallback', '所选输出设备已不可用，已临时切回。');

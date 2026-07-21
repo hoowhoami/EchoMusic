@@ -183,6 +183,23 @@ export class PlayerController extends EventEmitter {
     return { ...this.state };
   }
 
+  getState(): PlayerState {
+    let nativeState: PlayerState | undefined;
+    try {
+      nativeState = this.addon?.getState();
+    } catch (error) {
+      log.debug('[PlayerController] native state unavailable:', error);
+    }
+    if (!nativeState) return this.currentState;
+    this.state = {
+      ...this.state,
+      ...nativeState,
+      audioDevice: this.state.audioDevice,
+      audioTrackId: this.state.audioTrackId,
+    };
+    return this.currentState;
+  }
+
   start(): boolean {
     if (!this.available) return false;
     this.addon = this.loadAddon();
@@ -281,10 +298,11 @@ export class PlayerController extends EventEmitter {
   }
 
   setAudioDevice(deviceName: string) {
-    this.state.audioDevice = deviceName || 'auto';
-    return this.enqueue(() =>
-      this.getAddonOrThrow().setAudioDevice(this.state.audioDevice || 'auto'),
-    );
+    const nextDevice = deviceName || 'auto';
+    return this.enqueue(async () => {
+      await this.getAddonOrThrow().setAudioDevice(nextDevice);
+      this.state.audioDevice = nextDevice;
+    });
   }
 
   getAudioDevices() {

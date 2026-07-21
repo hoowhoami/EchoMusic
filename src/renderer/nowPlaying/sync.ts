@@ -148,7 +148,7 @@ const buildPlaybackPayload = (): NowPlayingPlaybackPayload | null => {
     isFavorite: resolveFavoriteState(track as Song),
     isPersonalFM: resolveCurrentPlaybackQueue()?.id === PERSONAL_FM_QUEUE_ID,
     playbackRate: Number(playerStore.playbackRate || 1),
-    updatedAt: Date.now(),
+    updatedAt: Number(playerStore.currentTimeUpdatedAt || Date.now()),
   };
 };
 
@@ -162,8 +162,15 @@ export const initNowPlayingSync = async () => {
   const themeStore = useThemeStore();
   const toastStore = useToastStore();
   const stops: WatchStopHandle[] = [];
-  const { currentTime, isPlaying, duration, playbackRate, currentTrackId, currentTrackSnapshot } =
-    storeToRefs(playerStore);
+  const {
+    currentTime,
+    currentTimeUpdatedAt,
+    isPlaying,
+    duration,
+    playbackRate,
+    currentTrackId,
+    currentTrackSnapshot,
+  } = storeToRefs(playerStore);
   const { favorites, favoritesLoaded } = storeToRefs(playlistStore);
   const {
     lines,
@@ -301,6 +308,7 @@ export const initNowPlayingSync = async () => {
     watch(
       [
         currentTime,
+        currentTimeUpdatedAt,
         isPlaying,
         duration,
         playbackRate,

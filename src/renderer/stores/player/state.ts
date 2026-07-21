@@ -29,6 +29,7 @@ export const createPlayerState = () => ({
   volume: DEFAULT_PLAYER_VOLUME,
   lastNonZeroVolume: DEFAULT_PLAYER_VOLUME,
   currentTime: 0,
+  currentTimeUpdatedAt: 0,
   duration: 0,
   playbackRate: 1,
   playMode: 'list' as PlayMode,

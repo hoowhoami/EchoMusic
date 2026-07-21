@@ -181,23 +181,6 @@
 
 EchoMusic 支持在线插件源浏览安装与本地插件扩展。插件可以提供高自由度的扩展能力，包括自定义页面、音源解析、歌词解析、音频频谱、插件浮窗、本地 Web 服务，以及由 `ctx.lyricEffects.register()` 提供的页面歌词/桌面歌词动效扩展点。
 
-插件声明 `capabilities.webServer: true` 后，可以通过 `ctx.webServer.listen()` 创建仅监听 `127.0.0.1` 的本地 HTTP 服务，供 Wallpaper Engine 等外部软件访问；插件停用、卸载、进入安全模式或应用退出时会自动释放端口。
-
-插件声明 `capabilities.kugouVerification: true` 后，可以把接口返回的 `ssaCode` / `eventId` 交给 `ctx.kugouVerification.request()`；EchoMusic 会复用主程序的安全验证弹窗，验证通过后插件再重试原请求。
-
-```js
-export async function activate(ctx) {
-  const server = await ctx.webServer.listen(() => ({
-    headers: { 'content-type': 'text/html; charset=utf-8' },
-    body: '<!doctype html><title>EchoMusic</title><h1>EchoMusic Plugin Page</h1>',
-  }));
-
-  if (server.ok) {
-    ctx.toast.success(`Web 服务已启动: ${server.url}`);
-  }
-}
-```
-
 👉 **[插件开发文档](https://github.com/hoowhoami/EchoMusicPlugins)**
 
 ## 🏗️ 编译发布

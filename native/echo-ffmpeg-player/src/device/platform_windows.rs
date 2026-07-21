@@ -29,7 +29,7 @@ const DEFAULT_EXCLUSIVE_BUFFER_100NS: i64 = 200_000;
 const WASAPI_DEVICE_KEY_PREFIX: &str = "wasapi:";
 const DEVICE_KEY_SEPARATOR: &str = "\u{1f}";
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub(crate) enum WasapiSampleFormat {
     F32,
     I16,
@@ -42,6 +42,12 @@ impl WasapiSampleFormat {
             Self::I16 => 2,
         }
     }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct WasapiOutputFormat {
+    pub sample_rate: u32,
+    pub sample_format: WasapiSampleFormat,
 }
 
 pub(crate) struct ComApartment {
@@ -197,16 +203,28 @@ impl DeviceNotificationClient_Impl {
 }
 
 pub(crate) fn validate_wasapi_output_device(device_name: &str) -> Result<(), String> {
+    let sample_rate = resolve_wasapi_output_sample_rate(device_name);
+    validate_wasapi_output_device_at_sample_rate(device_name, sample_rate)
+}
+
+pub(crate) fn validate_wasapi_output_device_at_sample_rate(
+    device_name: &str,
+    sample_rate: u32,
+) -> Result<(), String> {
     let _com = ComApartment::init()?;
     let device = resolve_wasapi_output_device(device_name)?;
-    let sample_rate = resolve_wasapi_output_sample_rate(device_name);
-    let audio_client = activate_wasapi_audio_client(&device)?;
-    let sample_format = choose_wasapi_sample_format(&audio_client, sample_rate)?;
+    let probe_client = activate_wasapi_audio_client(&device)?;
+    let sample_format = choose_wasapi_sample_format_at_sample_rate(&probe_client, sample_rate)?;
     let wave_format = wasapi_wave_format(sample_rate, sample_format);
-    let buffer_duration = wasapi_exclusive_buffer_duration(&audio_client);
-    unsafe {
-        audio_client
-            .Initialize(
+    let mut aligned_buffer_frames = None;
+
+    loop {
+        let audio_client = activate_wasapi_audio_client(&device)?;
+        let buffer_duration = aligned_buffer_frames
+            .map(|frames| wasapi_duration_from_frames(frames, sample_rate))
+            .unwrap_or_else(|| wasapi_exclusive_buffer_duration(&audio_client));
+        let result = unsafe {
+            audio_client.Initialize(
                 Audio::AUDCLNT_SHAREMODE_EXCLUSIVE,
                 Audio::AUDCLNT_STREAMFLAGS_EVENTCALLBACK,
                 buffer_duration,
@@ -214,7 +232,18 @@ pub(crate) fn validate_wasapi_output_device(device_name: &str) -> Result<(), Str
                 &wave_format.Format,
                 None,
             )
-            .map_err(|err| format!("failed to validate WASAPI exclusive output: {err}"))
+        };
+        match result {
+            Ok(()) => return Ok(()),
+            Err(err)
+                if is_wasapi_buffer_size_not_aligned(&err) && aligned_buffer_frames.is_none() =>
+            {
+                let frames = unsafe { audio_client.GetBufferSize() }
+                    .map_err(|err| format!("failed to read WASAPI aligned buffer size: {err}"))?;
+                aligned_buffer_frames = Some(frames);
+            }
+            Err(err) => return Err(format!("failed to validate WASAPI exclusive output: {err}")),
+        }
     }
 }
 
@@ -356,7 +385,7 @@ fn cpal_device_key_for_endpoint_id(target_endpoint_id: &str) -> Option<String> {
 
 pub(crate) fn resolve_wasapi_output_sample_rate(device_name: &str) -> u32 {
     let host = cpal::default_host();
-    let device = if is_default_device_name(device_name) {
+    let cpal_device = if is_default_device_name(device_name) {
         host.default_output_device()
     } else if is_wasapi_device_key(device_name) {
         resolve_wasapi_device_name(device_name).and_then(|device_key| {
@@ -367,10 +396,23 @@ pub(crate) fn resolve_wasapi_output_sample_rate(device_name: &str) -> u32 {
         let selector = parse_device_key(device_name);
         select_named_output_device(&host, &selector)
     };
-    device
+    let preferred_sample_rate = cpal_device
         .and_then(|device| device.default_output_config().ok())
         .map(|config| config.sample_rate().0)
-        .unwrap_or(48_000)
+        .unwrap_or(48_000);
+
+    let Ok(_com) = ComApartment::init() else {
+        return preferred_sample_rate;
+    };
+    let Ok(device) = resolve_wasapi_output_device(device_name) else {
+        return preferred_sample_rate;
+    };
+    let Ok(audio_client) = activate_wasapi_audio_client(&device) else {
+        return preferred_sample_rate;
+    };
+    choose_wasapi_output_format(&audio_client, preferred_sample_rate)
+        .map(|format| format.sample_rate)
+        .unwrap_or(preferred_sample_rate)
 }
 
 pub(crate) fn resolve_wasapi_output_device(device_name: &str) -> Result<Audio::IMMDevice, String> {
@@ -428,7 +470,26 @@ pub(crate) fn activate_wasapi_audio_client(
     }
 }
 
-pub(crate) fn choose_wasapi_sample_format(
+pub(crate) fn choose_wasapi_output_format(
+    audio_client: &Audio::IAudioClient,
+    preferred_sample_rate: u32,
+) -> Result<WasapiOutputFormat, String> {
+    for sample_rate in wasapi_sample_rate_candidates(preferred_sample_rate) {
+        if let Ok(sample_format) =
+            choose_wasapi_sample_format_at_sample_rate(audio_client, sample_rate)
+        {
+            return Ok(WasapiOutputFormat {
+                sample_rate,
+                sample_format,
+            });
+        }
+    }
+    Err(format!(
+        "WASAPI exclusive output does not accept stereo PCM near {preferred_sample_rate} Hz"
+    ))
+}
+
+pub(crate) fn choose_wasapi_sample_format_at_sample_rate(
     audio_client: &Audio::IAudioClient,
     sample_rate: u32,
 ) -> Result<WasapiSampleFormat, String> {
@@ -448,6 +509,19 @@ pub(crate) fn choose_wasapi_sample_format(
     Err(format!(
         "WASAPI exclusive output does not accept stereo PCM at {sample_rate} Hz"
     ))
+}
+
+fn wasapi_sample_rate_candidates(preferred_sample_rate: u32) -> Vec<u32> {
+    let mut sample_rates = vec![preferred_sample_rate];
+    for sample_rate in [
+        48_000, 44_100, 96_000, 88_200, 192_000, 176_400, 32_000, 22_050, 11_025, 8_000, 16_000,
+        352_800, 384_000,
+    ] {
+        if !sample_rates.contains(&sample_rate) {
+            sample_rates.push(sample_rate);
+        }
+    }
+    sample_rates
 }
 
 pub(crate) fn wasapi_wave_format(
@@ -477,7 +551,7 @@ pub(crate) fn wasapi_wave_format(
         Samples: Audio::WAVEFORMATEXTENSIBLE_0 {
             wValidBitsPerSample: bits_per_sample,
         },
-        dwChannelMask: KernelStreaming::KSAUDIO_SPEAKER_DIRECTOUT,
+        dwChannelMask: KernelStreaming::SPEAKER_FRONT_LEFT | KernelStreaming::SPEAKER_FRONT_RIGHT,
         SubFormat: sub_format,
     }
 }
@@ -493,6 +567,14 @@ pub(crate) fn wasapi_exclusive_buffer_duration(audio_client: &Audio::IAudioClien
     } else {
         DEFAULT_EXCLUSIVE_BUFFER_100NS
     }
+}
+
+pub(crate) fn wasapi_duration_from_frames(frames: u32, sample_rate: u32) -> i64 {
+    ((10_000_000.0 * frames as f64 / sample_rate.max(1) as f64) + 0.5) as i64
+}
+
+pub(crate) fn is_wasapi_buffer_size_not_aligned(err: &windows::core::Error) -> bool {
+    err.code() == Audio::AUDCLNT_E_BUFFER_SIZE_NOT_ALIGNED
 }
 
 fn device_enumerator() -> Result<Audio::IMMDeviceEnumerator, String> {

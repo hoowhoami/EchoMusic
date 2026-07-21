@@ -220,6 +220,13 @@ const buildLyricEffectSnapshot = (): PluginLyricEffectSnapshot => {
     collapsed: props.collapsed,
     hasLyrics: hasLyrics.value,
     reducedMotion: reducedMotion.value,
+    appearance: {
+      playedColor: effectivePlayedColor.value,
+      unplayedColor: effectiveUnplayedColor.value,
+      fontFamily: lyricFontFamily.value,
+      fontScale: lyricStore.fontScale,
+      fontWeight: lyricStore.fontWeightValue,
+    },
   };
 };
 

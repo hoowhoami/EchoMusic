@@ -143,7 +143,7 @@ const buildPlaybackPayload = (): MiniPlayerPlaybackPayload | null => {
     lyricsLabel: lyricStore.currentDisplayLabel,
     volume: Number(playerStore.volume || 0),
     lastNonZeroVolume: Number(playerStore.lastNonZeroVolume || 0),
-    updatedAt: Date.now(),
+    updatedAt: Number(playerStore.currentTimeUpdatedAt || Date.now()),
   };
 };
 
@@ -314,9 +314,6 @@ export const initMiniPlayerSync = async () => {
   let lastSyncedQueueKey = '';
   let lastSyncedLyricLinesKey = '';
   let lastSyncedLyricStateKey = '';
-  let lastStableLyricTrackId: string | null = null;
-  let lastStableLyricIndex = -1;
-  let lastStableLyricTime = 0;
   let progressSyncTimer: ReturnType<typeof setTimeout> | null = null;
   let progressSyncQueued = false;
   // mini 窗口歌词面板是否展开中（由 mini 窗口通过 IPC 通知主渲染进程）
@@ -333,32 +330,6 @@ export const initMiniPlayerSync = async () => {
     miniLyricPanelVisible
       ? MINI_PLAYER_PROGRESS_SYNC_INTERVAL_MS
       : MINI_PLAYER_IDLE_SYNC_INTERVAL_MS;
-
-  const stabilizeLyricPayload = (payload: MiniPlayerLyricPayload): MiniPlayerLyricPayload => {
-    const trackId = payload.trackId;
-    const time = Number(currentTime.value || 0);
-    if (trackId !== lastStableLyricTrackId) {
-      lastStableLyricTrackId = trackId;
-      lastStableLyricIndex = payload.currentIndex;
-      lastStableLyricTime = time;
-      return payload;
-    }
-
-    const isPlaybackJitterBackwards =
-      Boolean(trackId) &&
-      isPlaying.value &&
-      payload.currentIndex < lastStableLyricIndex &&
-      lastStableLyricIndex - payload.currentIndex <= 2 &&
-      time >= lastStableLyricTime - 0.35;
-
-    const currentIndex = isPlaybackJitterBackwards ? lastStableLyricIndex : payload.currentIndex;
-
-    lastStableLyricIndex = currentIndex;
-    lastStableLyricTime = time;
-
-    if (currentIndex === payload.currentIndex) return payload;
-    return { ...payload, currentIndex };
-  };
 
   const syncPlaybackSnapshot = () => {
     const playback = buildPlaybackPayload();
@@ -379,7 +350,7 @@ export const initMiniPlayerSync = async () => {
   };
 
   const syncLyricLinesSnapshot = () => {
-    const lyric = stabilizeLyricPayload(buildLyricPayload());
+    const lyric = buildLyricPayload();
     const nextLinesKey = lyricLinesPayloadKey(lyric);
     const nextStateKey = JSON.stringify({
       currentIndex: lyric.currentIndex,
@@ -397,7 +368,7 @@ export const initMiniPlayerSync = async () => {
 
   const syncLyricStateSnapshot = () => {
     lyricStore.updateCurrentIndex(currentTime.value);
-    const lyric = stabilizeLyricPayload(buildLyricPayload());
+    const lyric = buildLyricPayload();
     const nextStateKey = JSON.stringify({
       currentIndex: lyric.currentIndex,
       timeOffset: lyric.timeOffset,
