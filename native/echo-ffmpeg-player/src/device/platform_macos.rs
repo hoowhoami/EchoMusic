@@ -14,6 +14,7 @@ use std::time::{Duration, Instant};
 
 const COREAUDIO_DEVICE_KEY_PREFIX: &str = "coreaudio:";
 const COREAUDIO_HOG_NO_OWNER: i32 = -1;
+const COREAUDIO_DEVICE_PROPERTY_SUPPORTS_MIXING: ca::AudioObjectPropertySelector = 0x6d69783f;
 const FALLBACK_SAMPLE_RATE: u32 = 48_000;
 const K_CF_STRING_ENCODING_UTF8: u32 = 0x0800_0100;
 
@@ -62,6 +63,25 @@ impl Drop for CoreAudioPhysicalFormatGuard {
     fn drop(&mut self) {
         if let Some(original_format) = self.original_format.take() {
             let _ = change_physical_format_sync(self.stream_id, original_format);
+        }
+    }
+}
+
+pub(crate) struct CoreAudioMixingGuard {
+    device_id: ca::AudioDeviceID,
+    original_value: Option<u32>,
+}
+
+impl Drop for CoreAudioMixingGuard {
+    fn drop(&mut self) {
+        if let Some(original_value) = self.original_value.take() {
+            let _ = set_property_data(
+                self.device_id,
+                COREAUDIO_DEVICE_PROPERTY_SUPPORTS_MIXING,
+                ca::kAudioObjectPropertyScopeGlobal,
+                ca::kAudioObjectPropertyElementMain,
+                &original_value,
+            );
         }
     }
 }
@@ -166,40 +186,49 @@ pub(crate) fn prepare_coreaudio_exclusive_format(
     sample_rate: u32,
 ) -> Result<(CoreAudioPcmFormat, Option<CoreAudioPhysicalFormatGuard>), String> {
     let stream_id = coreaudio_output_stream(device_id)?;
-    let target_format = match find_best_physical_format(stream_id, sample_rate) {
-        Ok(format) => format,
-        Err(err) => {
-            let current_format = coreaudio_stream_virtual_format(stream_id)?;
-            if current_format.sample_rate == sample_rate {
-                return Ok((current_format, None));
-            }
-            return Err(err);
-        }
-    };
+    let target_format = find_best_physical_format(stream_id, sample_rate).ok();
     let original_format = coreaudio_physical_format(stream_id)?;
-    let changed = !coreaudio_asbd_equals(&original_format, &target_format);
-    if changed && !change_physical_format_sync(stream_id, target_format)? {
-        return Err(format!(
-            "failed to switch CoreAudio physical format to {sample_rate} Hz"
-        ));
-    }
+    let changed = target_format
+        .filter(|format| !coreaudio_asbd_equals(&original_format, format))
+        .is_some_and(|format| change_physical_format_sync(stream_id, format).unwrap_or(false));
 
     let format = coreaudio_stream_virtual_format(stream_id)?;
-    if format.sample_rate != sample_rate {
-        if changed {
-            let _ = change_physical_format_sync(stream_id, original_format);
-        }
-        return Err(format!(
-            "CoreAudio exclusive output sample rate mismatch after format switch: engine={sample_rate} Hz, device={} Hz",
-            format.sample_rate
-        ));
-    }
-
     let guard = changed.then_some(CoreAudioPhysicalFormatGuard {
         stream_id,
         original_format: Some(original_format),
     });
     Ok((format, guard))
+}
+
+pub(crate) fn try_disable_coreaudio_mixing(
+    device_id: ca::AudioDeviceID,
+) -> Option<CoreAudioMixingGuard> {
+    let current = property_data::<u32>(
+        device_id,
+        COREAUDIO_DEVICE_PROPERTY_SUPPORTS_MIXING,
+        ca::kAudioObjectPropertyScopeGlobal,
+        ca::kAudioObjectPropertyElementMain,
+    )
+    .ok()?;
+    if current == 0 {
+        return Some(CoreAudioMixingGuard {
+            device_id,
+            original_value: None,
+        });
+    }
+    let disabled = 0u32;
+    set_property_data(
+        device_id,
+        COREAUDIO_DEVICE_PROPERTY_SUPPORTS_MIXING,
+        ca::kAudioObjectPropertyScopeGlobal,
+        ca::kAudioObjectPropertyElementMain,
+        &disabled,
+    )
+    .ok()?;
+    Some(CoreAudioMixingGuard {
+        device_id,
+        original_value: Some(current),
+    })
 }
 
 fn coreaudio_stream_virtual_format(
@@ -489,7 +518,7 @@ fn find_best_physical_format(
         ca::kAudioObjectPropertyElementMain,
     )?;
     let mut best = None::<ca::AudioStreamBasicDescription>;
-    let mut best_score = u32::MAX;
+    let mut best_score = u64::MAX;
 
     for ranged in formats {
         let mut asbd = ranged.mFormat;
@@ -499,22 +528,21 @@ fn find_best_physical_format(
         let Ok(format) = coreaudio_pcm_format(asbd) else {
             continue;
         };
-        if format.sample_rate != sample_rate {
-            continue;
-        }
+        let rate_penalty = format.sample_rate.abs_diff(sample_rate) as u64;
         let channel_penalty = if format.channels >= TARGET_CHANNELS {
-            format.channels.saturating_sub(TARGET_CHANNELS) as u32
+            format.channels.saturating_sub(TARGET_CHANNELS) as u64
         } else {
-            (TARGET_CHANNELS.saturating_sub(format.channels) as u32).saturating_add(16)
+            (TARGET_CHANNELS.saturating_sub(format.channels) as u64).saturating_add(16)
         };
         let sample_penalty = match format.sample_format {
             CoreAudioPcmSampleFormat::F32 => 0,
             CoreAudioPcmSampleFormat::I32 => 1,
             CoreAudioPcmSampleFormat::I16 => 2,
         };
-        let interleaved_penalty = u32::from(format.non_interleaved);
-        let score = channel_penalty
-            .saturating_mul(16)
+        let interleaved_penalty = u64::from(format.non_interleaved);
+        let score = rate_penalty
+            .saturating_mul(1024)
+            .saturating_add(channel_penalty.saturating_mul(16))
             .saturating_add(sample_penalty)
             .saturating_add(interleaved_penalty);
         if score < best_score {

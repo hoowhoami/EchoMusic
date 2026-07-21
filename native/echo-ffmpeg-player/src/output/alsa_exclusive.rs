@@ -1,3 +1,4 @@
+use super::cpal_shared::OutputResampler;
 use crate::device::platform_linux::resolve_alsa_exclusive_device_name;
 use crate::events::{PlayerErrorCode, PlayerEvent};
 use crate::output::{fill_output_reusing, report_output_start, OutputStartSender};
@@ -67,8 +68,9 @@ fn run_exclusive_output(
     emit(PlayerEvent::log(
         "info",
         format!(
-            "ALSA exclusive opening: requested='{device_name}', resolved='{resolved}', sample_rate={}, channels={}, format={:?}, period_frames={}, buffer_frames={}",
+            "ALSA exclusive opening: requested='{device_name}', resolved='{resolved}', sample_rate={}, engine_sample_rate={}, channels={}, format={:?}, period_frames={}, buffer_frames={}",
             format.sample_rate,
+            shared.sample_rate,
             format.channels,
             format.sample_format,
             format.period_frames,
@@ -82,6 +84,7 @@ fn run_exclusive_output(
     let mut stereo_scratch = Vec::<f32>::new();
     let mut converted_i16 = Vec::<i16>::new();
     let mut converted_i32 = Vec::<i32>::new();
+    let mut resampler = OutputResampler::new(shared.sample_rate, format.sample_rate);
     let mut paused = false;
 
     while !shared.should_stop_output() {
@@ -101,12 +104,16 @@ fn run_exclusive_output(
         recover_pcm_state(&pcm)?;
         let samples = format.period_frames.saturating_mul(format.channels);
         output_scratch.resize(samples, 0.0);
-        fill_output_reusing(
-            &mut output_scratch,
-            format.channels,
-            &shared,
-            &mut stereo_scratch,
-        );
+        if format.sample_rate == shared.sample_rate {
+            fill_output_reusing(
+                &mut output_scratch,
+                format.channels,
+                &shared,
+                &mut stereo_scratch,
+            );
+        } else {
+            resampler.fill_output(&mut output_scratch, format.channels, &shared);
+        }
 
         write_frames(
             &pcm,
@@ -142,11 +149,6 @@ fn configure_pcm(pcm: &PCM, sample_rate: u32) -> Result<AlsaOutputFormat, String
     let actual_rate = hwp
         .set_rate_near(sample_rate, ValueOr::Nearest)
         .map_err(|err| format!("failed to set ALSA output sample rate: {err}"))?;
-    if actual_rate != sample_rate {
-        return Err(format!(
-            "ALSA exclusive output sample rate mismatch: engine={sample_rate} Hz, device={actual_rate} Hz"
-        ));
-    }
     let _ = hwp.set_buffer_time_near(ALSA_BUFFER_TIME_US, ValueOr::Nearest);
     let _ = hwp.set_periods(ALSA_PERIODS, ValueOr::Nearest);
     pcm.hw_params(&hwp)
@@ -182,7 +184,7 @@ fn configure_pcm(pcm: &PCM, sample_rate: u32) -> Result<AlsaOutputFormat, String
 
     Ok(AlsaOutputFormat {
         sample_format,
-        sample_rate,
+        sample_rate: actual_rate,
         channels,
         period_frames,
         buffer_frames,

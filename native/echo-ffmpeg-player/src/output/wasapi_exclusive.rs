@@ -11,9 +11,13 @@ use std::ptr;
 use std::slice;
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
+use std::time::{Duration, Instant};
 use windows::Win32::Foundation::{CloseHandle, HANDLE, WAIT_FAILED, WAIT_OBJECT_0, WAIT_TIMEOUT};
 use windows::Win32::Media::Audio;
 use windows::Win32::System::Threading;
+
+const WASAPI_EVENT_WAIT_MS: u32 = 10;
+const WASAPI_FALLBACK_FEED_MS: u64 = 10;
 
 struct EventHandle(HANDLE);
 
@@ -81,11 +85,17 @@ fn run_exclusive_output(
         ),
     ));
 
+    let mut output_scratch = Vec::<f32>::new();
+    let mut resampler = OutputResampler::new(shared.sample_rate, output_format.sample_rate);
+
     unsafe {
-        write_silence(
+        write_frames(
             &output.render_client,
             output.buffer_frames,
-            output_format.sample_format,
+            output_format,
+            &shared,
+            &mut output_scratch,
+            &mut resampler,
         )?;
         output
             .audio_client
@@ -93,12 +103,19 @@ fn run_exclusive_output(
             .map_err(|err| format!("failed to start WASAPI exclusive output: {err}"))?;
         shared.mark_output_started();
         report_output_start(start_notify, Ok(()));
-        let mut output_scratch = Vec::<f32>::new();
-        let mut resampler = OutputResampler::new(shared.sample_rate, output_format.sample_rate);
+        emit(PlayerEvent::log(
+            "info",
+            format!(
+                "WASAPI exclusive output started: requested='{device_name}', sample_rate={}, engine_sample_rate={}",
+                output_format.sample_rate, shared.sample_rate
+            ),
+        ));
+        let mut last_feed_at = Instant::now();
 
         while !shared.should_stop_output() {
-            match Threading::WaitForSingleObject(event.0, 50) {
+            match Threading::WaitForSingleObject(event.0, WASAPI_EVENT_WAIT_MS) {
                 WAIT_OBJECT_0 => {
+                    last_feed_at = Instant::now();
                     if feed_wasapi_exclusive(
                         &output.audio_client,
                         &output.render_client,
@@ -123,7 +140,21 @@ fn run_exclusive_output(
                         ));
                     }
                 }
-                WAIT_TIMEOUT => {}
+                WAIT_TIMEOUT => {
+                    if last_feed_at.elapsed() >= Duration::from_millis(WASAPI_FALLBACK_FEED_MS)
+                        && feed_wasapi_exclusive(
+                            &output.audio_client,
+                            &output.render_client,
+                            output.buffer_frames,
+                            output_format,
+                            &shared,
+                            &mut output_scratch,
+                            &mut resampler,
+                        )?
+                    {
+                        last_feed_at = Instant::now();
+                    }
+                }
                 WAIT_FAILED => return Err("waiting for WASAPI output event failed".to_string()),
                 other => return Err(format!("unexpected WASAPI wait result: {other:?}")),
             }
@@ -203,15 +234,14 @@ fn feed_wasapi_exclusive(
             .GetCurrentPadding()
             .map_err(|err| format!("failed to query WASAPI output padding: {err}"))?
     };
-    if padding >= buffer_frames {
+    if padding >= buffer_frames.saturating_mul(2) {
         return Ok(false);
     }
 
-    let frames_available = buffer_frames.saturating_sub(padding);
-    let refill = padding == 0;
+    let refill = padding < buffer_frames;
     write_frames(
         render_client,
-        frames_available,
+        buffer_frames,
         output_format,
         shared,
         output_scratch,
@@ -263,30 +293,6 @@ fn fill_wasapi_output(
         fill_output(output, TARGET_CHANNELS, shared);
     } else {
         resampler.fill_output(output, TARGET_CHANNELS, shared);
-    }
-}
-
-fn write_silence(
-    render_client: &Audio::IAudioRenderClient,
-    frames: u32,
-    sample_format: WasapiSampleFormat,
-) -> Result<(), String> {
-    unsafe {
-        let buffer = render_client
-            .GetBuffer(frames)
-            .map_err(|err| format!("failed to obtain WASAPI output buffer: {err}"))?;
-        let sample_count = frames as usize * TARGET_CHANNELS;
-        match sample_format {
-            WasapiSampleFormat::F32 => {
-                slice::from_raw_parts_mut(buffer as *mut f32, sample_count).fill(0.0);
-            }
-            WasapiSampleFormat::I16 => {
-                slice::from_raw_parts_mut(buffer as *mut i16, sample_count).fill(0);
-            }
-        }
-        render_client
-            .ReleaseBuffer(frames, 0)
-            .map_err(|err| format!("failed to release WASAPI output buffer: {err}"))
     }
 }
 
