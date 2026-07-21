@@ -2,6 +2,7 @@ import logger from '@/utils/logger';
 import type { PlayerState } from './state';
 import type { useSettingStore } from '../setting';
 import type { PlayerEngine } from '@/utils/player';
+import type { PlayerErrorCode, PlayerErrorPayload } from '../../../shared/player-error';
 import {
   getPlaybackIsPlaying,
   setEnginePlaybackStatus,
@@ -40,7 +41,17 @@ export const createDeviceManager = (
   const isConcreteOutputDevice = (device: PlayerAudioDevice) =>
     Boolean(device.name && device.name !== 'auto' && device.name !== 'null');
 
-  const isOutputDeviceError = (message: string) => {
+  const outputDeviceErrorCodes = new Set<PlayerErrorCode>([
+    'output-config',
+    'output-device-unavailable',
+    'output-exclusive',
+    'output-runtime',
+    'output-stream',
+  ]);
+
+  const isOutputDeviceError = (error: PlayerErrorPayload) => {
+    if (error.errorCode && outputDeviceErrorCodes.has(error.errorCode)) return true;
+    const message = error.message || '';
     const normalized = message.toLowerCase();
     return (
       normalized.includes('audio output error') ||
@@ -54,8 +65,9 @@ export const createDeviceManager = (
     );
   };
 
-  const isExclusiveOutputError = (message: string) =>
-    message.toLowerCase().includes('exclusive output');
+  const isExclusiveOutputError = (error: PlayerErrorPayload) =>
+    error.errorCode === 'output-exclusive' ||
+    error.message.toLowerCase().includes('exclusive output');
 
   const setReadyOutputDeviceStatus = (deviceId: string) => {
     if (deviceId === 'default') {
@@ -105,12 +117,12 @@ export const createDeviceManager = (
     }
   };
 
-  const handleOutputDeviceError = async (message: string): Promise<boolean> => {
-    if (!isOutputDeviceError(message)) return false;
+  const handleOutputDeviceError = async (error: PlayerErrorPayload): Promise<boolean> => {
+    if (!isOutputDeviceError(error)) return false;
 
     if (applyingOutputDevice) return true;
 
-    if (isExclusiveOutputError(message) && (await recoverFromExclusiveOutputError())) return true;
+    if (isExclusiveOutputError(error) && (await recoverFromExclusiveOutputError())) return true;
 
     if (settingStore.pauseOnOutputDeviceDisconnect) {
       pauseForOutputDeviceDisconnect('输出设备不可用，已暂停播放。');

@@ -35,6 +35,7 @@ import type {
 } from '../shared/audio-spectrum';
 import type { LogSettings } from '../shared/logging';
 import type { NetworkSettings } from '../shared/network';
+import type { PlayerErrorPayload } from '../shared/player-error';
 import type { ResolvePlaylistRequest, ResolvePlaylistResponse } from '../shared/external';
 import type { ShareCaptureRect, ShareTarget } from '../shared/share';
 import type {
@@ -489,8 +490,9 @@ contextBridge.exposeInMainWorld('electron', {
       ipcRenderer.on('player:stall', listener);
       return () => ipcRenderer.removeListener('player:stall', listener);
     },
-    onError: (func: (message: string) => void) => {
-      const listener = (_event: Electron.IpcRendererEvent, message: string) => func(message);
+    onError: (func: (payload: PlayerErrorPayload) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, payload: PlayerErrorPayload) =>
+        func(payload);
       ipcRenderer.on('player:error', listener);
       return () => ipcRenderer.removeListener('player:error', listener);
     },

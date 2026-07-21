@@ -8,6 +8,7 @@ import { refreshNetworkSettingsFromStorage } from '../networkSettings';
 import { getKvStorage } from '../storage/kv';
 import type { NetworkSettings } from '../../shared/network';
 import type { ImpulseResponsePlaybackOptions } from '../../shared/audio';
+import type { PlayerErrorCode, PlayerErrorPayload } from '../../shared/player-error';
 
 const PINIA_SETTING_KEY = 'pinia:setting';
 const DEFAULT_AUDIO_CACHE_SECS = 30;
@@ -71,6 +72,7 @@ interface PlayerAddonEvent {
   state?: PlayerState;
   reason?: string;
   message?: string;
+  errorCode?: PlayerErrorCode;
   level?: string;
   devices?: Array<{ name: string; description: string; isDefault?: boolean }>;
   deviceChangeKind?: string;
@@ -433,7 +435,10 @@ export class PlayerController extends EventEmitter {
         this.emit('impulse-response-disabled', { reason: event.reason || event.message });
         break;
       case 'error':
-        this.emit('error', new Error(event.message || 'player error'));
+        this.emit('error', {
+          message: event.message || 'player error',
+          errorCode: event.errorCode,
+        } satisfies PlayerErrorPayload);
         break;
       case 'log':
         log[event.level === 'error' ? 'error' : event.level === 'warn' ? 'warn' : 'info'](

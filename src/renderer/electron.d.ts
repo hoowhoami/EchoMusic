@@ -32,6 +32,7 @@ import type {
 } from '../shared/audio-spectrum';
 import type { LogSettings } from '../shared/logging';
 import type { NetworkSettings } from '../shared/network';
+import type { PlayerErrorPayload } from '../shared/player-error';
 import type { ResolvePlaylistRequest, ResolvePlaylistResponse } from '../shared/external';
 import type { ShareCaptureRect, ShareTarget } from '../shared/share';
 import type {
@@ -541,7 +542,7 @@ export interface IElectronAPI {
     onStateChange: (func: (state: { playing?: boolean; paused?: boolean }) => void) => () => void;
     onPlaybackEnd: (func: (reason: string) => void) => () => void;
     onStall: (func: (position: number) => void) => () => void;
-    onError: (func: (message: string) => void) => () => void;
+    onError: (func: (payload: PlayerErrorPayload) => void) => () => void;
     onImpulseResponseDisabled: (
       func: (payload: { path?: string; reason?: string }) => void,
     ) => () => void;

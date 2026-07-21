@@ -8,6 +8,7 @@ import { useUserStore } from './user';
 import logger from '@/utils/logger';
 import { PlayerEngine, type PlayerEngineEvents } from '@/utils/player';
 import type { Song } from '@/models/song';
+import type { PlayerErrorPayload } from '../../shared/player-error';
 
 import { createPlayerState } from './player/state';
 import { createPlaybackManager } from './player/playback';
@@ -655,9 +656,9 @@ export const usePlayerStore = defineStore(
         error: (event) => {
           if (event && !event.isTrusted && !(event as any)?.detail) return;
           void (async () => {
-            const detail = (event as CustomEvent<{ message?: string }> | undefined)?.detail;
+            const detail = (event as CustomEvent<PlayerErrorPayload> | undefined)?.detail;
             const wasPlayingBeforeOutputError = getPlaybackIsPlaying(state);
-            if (detail?.message && (await deviceManager.handleOutputDeviceError(detail.message))) {
+            if (detail?.message && (await deviceManager.handleOutputDeviceError(detail))) {
               engine.updateMediaPlaybackState(buildMediaState(state));
               if (wasPlayingBeforeOutputError && !getPlaybackIsPlaying(state)) {
                 emitPlayerEvent('pause');

@@ -3,6 +3,7 @@ import {
   DEFAULT_IMPULSE_RESPONSE_MIX,
   type ImpulseResponsePlaybackOptions,
 } from '../../shared/audio';
+import type { PlayerErrorPayload } from '../../shared/player-error';
 import { DEFAULT_PLAYER_VOLUME } from '../../shared/playback';
 import type { PlaybackSource } from '@/stores/player/types';
 
@@ -157,9 +158,9 @@ export class PlayerEngine {
     });
     this.cleanupFns.push(offEnd);
 
-    const offError = player.onError((message: string) => {
-      logger.error('PlayerEngine', 'player error', { message });
-      this.events.error?.(new CustomEvent('error', { detail: { message } }));
+    const offError = player.onError((payload: PlayerErrorPayload) => {
+      logger.error('PlayerEngine', 'player error', payload);
+      this.events.error?.(new CustomEvent('error', { detail: payload }));
     });
     this.cleanupFns.push(offError);
 

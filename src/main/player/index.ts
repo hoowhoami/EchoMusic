@@ -1,6 +1,7 @@
 import log from '../logger';
 import { getMainWindow } from '../window';
 import { PlayerController } from './controller';
+import type { PlayerErrorPayload } from '../../shared/player-error';
 
 let playerController: PlayerController | null = null;
 let cachedGetMainWindow: (() => Electron.BrowserWindow | null) | null = null;
@@ -49,8 +50,8 @@ function registerEventForwarding(controller: PlayerController): void {
   controller.on('stalled', (position) =>
     getMainWindow()?.webContents.send('player:stall', position),
   );
-  controller.on('error', (error: Error) =>
-    getMainWindow()?.webContents.send('player:error', error.message),
+  controller.on('error', (payload: PlayerErrorPayload) =>
+    getMainWindow()?.webContents.send('player:error', payload),
   );
   controller.on('impulse-response-disabled', (payload) =>
     getMainWindow()?.webContents.send('player:impulse-response-disabled', payload),

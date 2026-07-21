@@ -64,6 +64,7 @@ pub struct PlayerEvent {
     pub state: Option<PlayerState>,
     pub reason: Option<String>,
     pub message: Option<String>,
+    pub error_code: Option<String>,
     pub level: Option<String>,
     pub devices: Option<Vec<AudioDevice>>,
     pub device_change_kind: Option<String>,
@@ -82,6 +83,19 @@ pub enum PlayerErrorCode {
     OutputStream,
 }
 
+impl PlayerErrorCode {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Decode => "decode",
+            Self::OutputConfig => "output-config",
+            Self::OutputDeviceUnavailable => "output-device-unavailable",
+            Self::OutputExclusive => "output-exclusive",
+            Self::OutputRuntime => "output-runtime",
+            Self::OutputStream => "output-stream",
+        }
+    }
+}
+
 impl PlayerEvent {
     pub fn time_update(time: f64) -> Self {
         Self {
@@ -91,6 +105,7 @@ impl PlayerEvent {
             state: None,
             reason: None,
             message: None,
+            error_code: None,
             level: None,
             devices: None,
             device_change_kind: None,
@@ -163,10 +178,11 @@ impl PlayerEvent {
         }
     }
 
-    pub fn error(_code: PlayerErrorCode, message: String) -> Self {
+    pub fn error(code: PlayerErrorCode, message: String) -> Self {
         Self {
             event: "error".to_string(),
             message: Some(message),
+            error_code: Some(code.as_str().to_string()),
             ..Self::empty("error")
         }
     }
@@ -196,6 +212,7 @@ impl PlayerEvent {
             state: None,
             reason: None,
             message: None,
+            error_code: None,
             level: None,
             devices: None,
             device_change_kind: None,
@@ -203,5 +220,18 @@ impl PlayerEvent {
             path: None,
             seq: None,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn error_event_exposes_stable_error_code() {
+        let event = PlayerEvent::error(PlayerErrorCode::OutputStream, "failed".to_string());
+
+        assert_eq!(event.error_code.as_deref(), Some("output-stream"));
+        assert_eq!(event.message.as_deref(), Some("failed"));
     }
 }
