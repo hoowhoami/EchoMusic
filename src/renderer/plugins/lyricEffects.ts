@@ -345,12 +345,15 @@ export const getPluginLyricEffectSummary = (scope: PluginLyricEffectScope) => {
   };
 };
 
-const notifyLyricEffectHost = (host: RegisteredPluginLyricEffectHost) => {
+const notifyLyricEffectHost = (
+  host: RegisteredPluginLyricEffectHost,
+  snapshot?: PluginLyricEffectSnapshot,
+) => {
   if (host.subscribers.size === 0) return;
-  const snapshot = host.getSnapshot();
+  const currentSnapshot = snapshot ?? host.getSnapshot();
   for (const subscriber of Array.from(host.subscribers)) {
     try {
-      subscriber.handler(snapshot);
+      subscriber.handler(currentSnapshot);
     } catch {
       host.subscribers.delete(subscriber);
     }
@@ -380,7 +383,7 @@ export const registerPluginLyricEffectHost = (options: {
   notifyLyricEffectHost(host);
 
   return {
-    notify: () => notifyLyricEffectHost(host),
+    notify: (snapshot?: PluginLyricEffectSnapshot) => notifyLyricEffectHost(host, snapshot),
     dispose: () => {
       lyricEffects.forEach((effect) => unmountEffectFromHost(effect, host.id));
       host.subscribers.clear();

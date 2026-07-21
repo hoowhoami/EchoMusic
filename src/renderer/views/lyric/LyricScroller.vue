@@ -78,6 +78,7 @@ const resolveVisibleIndex = (idx: number) => {
 };
 
 const currentIndex = computed(() => resolveVisibleIndex(lyricStore.currentIndex));
+const lyricEffectCurrentIndex = ref(currentIndex.value);
 const scrollIndex = computed(() => {
   const index = resolveVisibleIndex(scrollTargetIndex.value);
   return index >= 0 ? index : currentIndex.value;
@@ -162,7 +163,7 @@ const handleLyricWheel = () => {
 
 const lyricEntries = computed(() =>
   lyricStore.lines.map((line, index) => {
-    const distance = currentIndex.value >= 0 ? index - currentIndex.value : 0;
+    const distance = lyricEffectCurrentIndex.value >= 0 ? index - lyricEffectCurrentIndex.value : 0;
     const scrollDistance = scrollIndex.value >= 0 ? index - scrollIndex.value : distance;
     return {
       line,
@@ -184,9 +185,9 @@ const getLineStartMs = (line: (typeof lyricStore.lines)[number]) =>
 let lastStableLyricIndex = -1;
 let lastStableLyricTime = 0;
 
-const buildLyricEffectSnapshot = (): PluginLyricEffectSnapshot => {
+const resolveLyricEffectCurrentIndex = (timelineMs: number) => {
   let index = currentIndex.value;
-  const time = playerStore.currentTime;
+  const time = timelineMs / 1000;
 
   // Filter out playback jitter: if the index jumped backward by <= 2 lines
   // and time hasn't regressed significantly, keep the previous stable index.
@@ -204,6 +205,18 @@ const buildLyricEffectSnapshot = (): PluginLyricEffectSnapshot => {
   }
   lastStableLyricTime = time;
 
+  if (lyricEffectCurrentIndex.value !== index) {
+    lyricEffectCurrentIndex.value = index;
+  }
+
+  return index;
+};
+
+const buildLyricEffectSnapshot = (): PluginLyricEffectSnapshot => {
+  const timelineMs = getLyricTimelineMs(0);
+  const index = resolveLyricEffectCurrentIndex(timelineMs);
+  const time = Math.max(0, (timelineMs - lyricStore.currentTimeOffset) / 1000);
+
   return {
     scope: 'page',
     lines: lyricStore.lines,
@@ -214,7 +227,7 @@ const buildLyricEffectSnapshot = (): PluginLyricEffectSnapshot => {
     duration: playerStore.duration,
     playbackRate: playerStore.playbackRate,
     isPlaying: playerStore.isPlaying,
-    timelineMs: getLyricTimelineMs(0),
+    timelineMs,
     lyricOffsetMs: lyricStore.currentTimeOffset,
     lyricsMode: lyricStore.lyricsMode,
     collapsed: props.collapsed,
@@ -239,19 +252,44 @@ const lastEffectRootState = {
   reducedMotion: '',
 };
 
+const syncLyricEffectLineCurrentState = (root: HTMLElement, index: number) => {
+  const rows = root.querySelectorAll<HTMLElement>('[data-echo-lyric-row][data-echo-lyric-index]');
+  rows.forEach((row) => {
+    const rowIndex = Number(row.dataset.echoLyricIndex);
+    const isCurrent = Number.isFinite(rowIndex) && rowIndex === index;
+    const value = isCurrent ? 'true' : 'false';
+    const distance = index >= 0 && Number.isFinite(rowIndex) ? rowIndex - index : 0;
+
+    row.dataset.echoLyricCurrent = value;
+    row.dataset.echoLyricDistance = String(distance);
+    row.dataset.echoLyricAbsDistance = String(Math.abs(distance));
+    row.style.setProperty('--echo-lyric-distance', String(distance));
+    row.style.setProperty('--echo-lyric-abs-distance', String(Math.abs(distance)));
+
+    row.querySelectorAll<HTMLElement>('[data-echo-lyric-line]').forEach((line) => {
+      line.dataset.echoLyricCurrent = value;
+    });
+  });
+};
+
 // 同步歌词特效根元素状态。
 // 注意：timelineMs / currentTime / playbackRate 等每帧变化的高频数据「不再写成 CSS 变量」，
 // 因为把它们逐帧写到带 mask-image/isolation/contain 的歌词根上会触发整片歌词区重绘，
 // 渲染进程光栅缓存持续堆积导致内存泄漏。插件统一通过 host.subscribe 的快照获取这些数据
 // （PluginLyricEffectSnapshot 已包含 timelineMs/currentTime/playbackRate）。
 // 这里只写「离散、低频」状态，且仅在值真正变化时才写，确保稳定播放时每帧零 DOM 写入。
-const syncLyricEffectRootState = () => {
+const syncLyricEffectRootState = (snapshot: PluginLyricEffectSnapshot) => {
   const root = lyricEffectRootRef.value;
   if (!root) return;
 
-  if (lastEffectRootState.currentIndex !== currentIndex.value) {
-    lastEffectRootState.currentIndex = currentIndex.value;
-    root.style.setProperty('--echo-lyric-current-index', String(currentIndex.value));
+  if (lastEffectRootState.currentIndex !== snapshot.currentIndex) {
+    lastEffectRootState.currentIndex = snapshot.currentIndex;
+    root.style.setProperty('--echo-lyric-current-index', String(snapshot.currentIndex));
+    lyricListRef.value?.setAttribute(
+      'data-echo-lyric-current-index',
+      String(snapshot.currentIndex),
+    );
+    syncLyricEffectLineCurrentState(root, snapshot.currentIndex);
   }
   if (lastEffectRootState.scrollIndex !== scrollIndex.value) {
     lastEffectRootState.scrollIndex = scrollIndex.value;
@@ -276,8 +314,9 @@ const syncLyricEffectRootState = () => {
 };
 
 const notifyLyricEffectHost = () => {
-  syncLyricEffectRootState();
-  lyricEffectHostRegistration?.notify();
+  const snapshot = buildLyricEffectSnapshot();
+  syncLyricEffectRootState(snapshot);
+  lyricEffectHostRegistration?.notify(snapshot);
 };
 
 const setupLyricEffectHost = () => {
@@ -438,7 +477,7 @@ watch(
       :class="{ 'is-collapsed': props.collapsed }"
       :style="{ fontFamily: lyricFontFamily }"
       data-echo-lyric-scroller="page"
-      :data-echo-lyric-current-index="currentIndex"
+      :data-echo-lyric-current-index="lyricEffectCurrentIndex"
       :data-echo-lyric-scroll-index="scrollIndex"
       @wheel.passive="handleLyricWheel"
     >
@@ -457,7 +496,7 @@ watch(
             :data-lyric-index="entry.index"
             data-echo-lyric-row
             :data-echo-lyric-index="entry.index"
-            :data-echo-lyric-current="currentIndex === entry.index ? 'true' : 'false'"
+            :data-echo-lyric-current="lyricEffectCurrentIndex === entry.index ? 'true' : 'false'"
             :data-echo-lyric-filtered="entry.filtered ? 'true' : 'false'"
             :data-echo-lyric-distance="entry.distance"
             :data-echo-lyric-abs-distance="entry.absDistance"
@@ -486,7 +525,7 @@ watch(
               ]"
               data-echo-lyric-line
               :data-echo-lyric-index="entry.index"
-              :data-echo-lyric-current="currentIndex === entry.index ? 'true' : 'false'"
+              :data-echo-lyric-current="lyricEffectCurrentIndex === entry.index ? 'true' : 'false'"
               :data-echo-lyric-scroll-highlight="
                 scrollHighlightIndex === entry.index ? 'true' : 'false'
               "
