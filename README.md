@@ -108,6 +108,16 @@
 - [pnpm](https://pnpm.io/) 9+
 - [Rust](https://www.rust-lang.org/)（编译原生模块需要）
 - FFmpeg 开发库（编译播放引擎原生模块需要；运行时不依赖外部 `ffmpeg` 可执行文件）
+- Windows 编译 `echo-ffmpeg-player` 时还需要 LLVM/libclang（`bindgen` 生成 FFmpeg 绑定需要）
+
+Windows 上如遇到 `Unable to find libclang`，先安装 LLVM，并确保 `LIBCLANG_PATH` 指向包含 `libclang.dll` 的目录：
+
+```powershell
+winget install LLVM.LLVM
+setx LIBCLANG_PATH "C:\Program Files\LLVM\bin"
+```
+
+重新打开终端后再执行原生模块构建命令。若使用 Visual Studio 自带的 LLVM，也可以把 `LIBCLANG_PATH` 设置为对应的 `VC\Tools\Llvm\x64\bin` 目录。
 
 ### 本地开发
 
