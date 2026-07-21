@@ -38,7 +38,8 @@ pub fn spawn_output_thread(
     mut start_notify: Option<OutputStartSender>,
 ) -> JoinHandle<()> {
     thread::spawn(move || {
-        if let Err(message) = run_exclusive_output(&device_name, shared.clone(), &mut start_notify)
+        if let Err(message) =
+            run_exclusive_output(&device_name, shared.clone(), emit, &mut start_notify)
         {
             report_output_start(&mut start_notify, Err(message.clone()));
             shared.request_output_stop();
@@ -53,6 +54,7 @@ pub fn spawn_output_thread(
 fn run_exclusive_output(
     device_name: &str,
     shared: Arc<SharedAudio>,
+    emit: fn(PlayerEvent),
     start_notify: &mut Option<OutputStartSender>,
 ) -> Result<(), String> {
     let _com = ComApartment::init()?;
