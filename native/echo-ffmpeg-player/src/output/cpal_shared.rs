@@ -283,7 +283,7 @@ fn fill_output_converted<T>(
     }
 }
 
-struct OutputResampler {
+pub(crate) struct OutputResampler {
     ratio: f64,
     position: f64,
     pending: VecDeque<f32>,
@@ -292,7 +292,7 @@ struct OutputResampler {
 }
 
 impl OutputResampler {
-    fn new(input_sample_rate: u32, output_sample_rate: u32) -> Self {
+    pub(crate) fn new(input_sample_rate: u32, output_sample_rate: u32) -> Self {
         Self {
             ratio: input_sample_rate.max(1) as f64 / output_sample_rate.max(1) as f64,
             position: 0.0,
@@ -302,7 +302,12 @@ impl OutputResampler {
         }
     }
 
-    fn fill_output(&mut self, output: &mut [f32], output_channels: usize, shared: &SharedAudio) {
+    pub(crate) fn fill_output(
+        &mut self,
+        output: &mut [f32],
+        output_channels: usize,
+        shared: &SharedAudio,
+    ) {
         output.fill(0.0);
         if shared.paused.load(Ordering::Acquire) || shared.should_stop_output() {
             return;

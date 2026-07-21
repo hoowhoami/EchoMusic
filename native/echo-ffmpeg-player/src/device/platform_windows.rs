@@ -214,14 +214,14 @@ pub(crate) fn validate_wasapi_output_device_at_sample_rate(
     let _com = ComApartment::init()?;
     let device = resolve_wasapi_output_device(device_name)?;
     let probe_client = activate_wasapi_audio_client(&device)?;
-    let sample_format = choose_wasapi_sample_format_at_sample_rate(&probe_client, sample_rate)?;
-    let wave_format = wasapi_wave_format(sample_rate, sample_format);
+    let output_format = choose_wasapi_output_format(&probe_client, sample_rate)?;
+    let wave_format = wasapi_wave_format(output_format.sample_rate, output_format.sample_format);
     let mut aligned_buffer_frames = None;
 
     loop {
         let audio_client = activate_wasapi_audio_client(&device)?;
         let buffer_duration = aligned_buffer_frames
-            .map(|frames| wasapi_duration_from_frames(frames, sample_rate))
+            .map(|frames| wasapi_duration_from_frames(frames, output_format.sample_rate))
             .unwrap_or_else(|| wasapi_exclusive_buffer_duration(&audio_client));
         let result = unsafe {
             audio_client.Initialize(

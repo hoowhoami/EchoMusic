@@ -570,10 +570,12 @@ struct OutputRestartPlan {
     output_thread: Option<thread::JoinHandle<()>>,
     previous_config: PlayerConfig,
     next_config: PlayerConfig,
+    was_paused: bool,
 }
 
 fn restart_output_for_config(config: PlayerConfig) -> napi::Result<()> {
     let plan = with_runtime(|runtime| {
+        runtime.cancel_idle_output_release();
         let previous_config = runtime.config.clone();
         let Some(session) = runtime.session.as_mut() else {
             return Ok(OutputRestartPlan {
@@ -581,13 +583,16 @@ fn restart_output_for_config(config: PlayerConfig) -> napi::Result<()> {
                 output_thread: None,
                 previous_config,
                 next_config: config,
+                was_paused: true,
             });
         };
+        let was_paused = session.shared.paused.load(Ordering::Acquire);
         Ok(OutputRestartPlan {
             shared: Some(session.shared.clone()),
             output_thread: session.output_thread.take(),
             previous_config,
             next_config: config,
+            was_paused,
         })
     })?;
 
@@ -611,23 +616,44 @@ fn restart_output_for_config(config: PlayerConfig) -> napi::Result<()> {
             format!("audio output restart validation failed, restoring previous output: {err}"),
         ));
         shared.prepare_output_restart();
-        let _ = spawn_and_attach_output_thread(shared, plan.previous_config);
+        let _ = spawn_and_attach_output_thread(shared.clone(), plan.previous_config);
+        restore_output_restart_playback_state(shared, plan.was_paused);
         return Err(napi::Error::from_reason(err));
     }
 
     shared.prepare_output_restart();
     match spawn_and_attach_output_thread_confirmed(shared.clone(), plan.next_config) {
-        Ok(()) => Ok(()),
+        Ok(()) => {
+            restore_output_restart_playback_state(shared, plan.was_paused);
+            Ok(())
+        }
         Err(err) => {
             emit_event(PlayerEvent::log(
                 "warn",
                 format!("audio output restart failed, restoring previous output: {err}"),
             ));
             shared.prepare_output_restart();
-            let _ = spawn_and_attach_output_thread(shared, plan.previous_config);
+            let _ = spawn_and_attach_output_thread(shared.clone(), plan.previous_config);
+            restore_output_restart_playback_state(shared, plan.was_paused);
             Err(napi::Error::from_reason(err))
         }
     }
+}
+
+fn restore_output_restart_playback_state(shared: Arc<SharedAudio>, was_paused: bool) {
+    shared.paused.store(was_paused, Ordering::Release);
+    let _ = with_runtime(|runtime| {
+        let Some(session) = runtime.session.as_ref() else {
+            return Ok(());
+        };
+        if !Arc::ptr_eq(&session.shared, &shared) {
+            return Ok(());
+        }
+        runtime.state.playing = !was_paused;
+        runtime.state.paused = was_paused;
+        emit_event(PlayerEvent::state_change(runtime.state.clone()));
+        Ok(())
+    });
 }
 
 fn validate_output_restart_config(
