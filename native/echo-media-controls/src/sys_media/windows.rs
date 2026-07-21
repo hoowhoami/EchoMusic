@@ -6,7 +6,8 @@ use std::io::Cursor;
 use std::sync::{Arc, Mutex};
 use windows::Media::Playback::{MediaPlayer, MediaPlayerAudioCategory};
 use windows::Media::{
-    MediaPlaybackStatus, MediaPlaybackType, SystemMediaTransportControls,
+    MediaPlaybackStatus, MediaPlaybackType, PlaybackPositionChangeRequestedEventArgs,
+    SystemMediaTransportControls,
     SystemMediaTransportControlsButtonPressedEventArgs,
 };
 use windows::Storage::Streams::{DataWriter, InMemoryRandomAccessStream, RandomAccessStreamReference};
@@ -19,6 +20,8 @@ pub struct WindowsMediaControls {
 
 unsafe impl Send for WindowsMediaControls {}
 unsafe impl Sync for WindowsMediaControls {}
+
+const HUNDRED_NANOSECONDS_PER_MILLISECOND: f64 = 10_000.0;
 
 impl WindowsMediaControls {
     pub fn new() -> Self {
@@ -155,6 +158,31 @@ impl SystemMediaControls for WindowsMediaControls {
             }),
         )
         .map_err(|e| format!("Failed to register button event: {e}"))?;
+
+        // 注册 SMTC 进度调整事件。WinIsland 等第三方媒体面板通过这个事件请求 seek。
+        let cb = self.callback.clone();
+        smtc.PlaybackPositionChangeRequested(
+            &windows::Foundation::TypedEventHandler::<
+                SystemMediaTransportControls,
+                PlaybackPositionChangeRequestedEventArgs,
+            >::new(move |_, args| {
+                let Some(ref args) = *args else { return Ok(()) };
+                let position = args.RequestedPlaybackPosition()?;
+                let position_ms =
+                    (position.Duration as f64 / HUNDRED_NANOSECONDS_PER_MILLISECOND).max(0.0);
+
+                if let Ok(guard) = cb.lock() {
+                    if let Some(ref tsfn) = *guard {
+                        tsfn.call(
+                            Ok(MediaControlEvent::seek(position_ms)),
+                            ThreadsafeFunctionCallMode::NonBlocking,
+                        );
+                    }
+                }
+                Ok(())
+            }),
+        )
+        .map_err(|e| format!("Failed to register seek event: {e}"))?;
 
         self.player = Some(player);
         self.smtc = Some(smtc);

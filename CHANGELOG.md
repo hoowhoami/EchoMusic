@@ -28,10 +28,7 @@
 
 ### 修复
 
-- 修复 macOS 下开启独占音频设备只更新设置但未真正进入 CoreAudio 独占输出的问题，并改为独立 CoreAudio exclusive 输出后端
-- 对齐 mpv 的独占音频输出形态：macOS 改为 CoreAudio IOProc 独占输出并支持 physical format 切换/恢复，Windows 优化 WASAPI exclusive 格式/采样率协商、事件补帧与 buffer alignment retry，Linux 新增 ALSA 硬件设备原生独占输出
-- 修复 Windows 下开启独占音频设备失败时可能破坏当前播放输出链路的问题，并修正 WASAPI 独占 stereo 声道布局与当前播放采样率验证
-- 修复单曲循环重启播放时可能未正确延续原生 filter 链路的问题
+- 修复 Windows SMTC 未响应第三方媒体面板播放进度调整请求的问题
 - 修复空间音效 Dry/Wet 混合公式不准确导致湿声叠加后响度偏高的问题
 - 修复 EQ 设置传入短数组时部分频段可能残留旧值的问题
 - 修复 Windows 11 下 Electron 可能因无法打开 `nul` 设备而启动崩溃的问题
