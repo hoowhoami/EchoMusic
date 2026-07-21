@@ -67,6 +67,9 @@ const getPersistedNativeAudioConfig = () => {
 
 interface PlayerAddonEvent {
   event: string;
+  eventId?: number;
+  trackSeq?: number;
+  generation?: number;
   time?: number;
   duration?: number;
   state?: PlayerState;
@@ -164,6 +167,9 @@ export class PlayerController extends EventEmitter {
   private addon: PlayerAddon | null = null;
   private commandQueue: Promise<void> = Promise.resolve();
   private loadSeq = 0;
+  private activeTrackSeq = 0;
+  private activeGeneration = 0;
+  private pendingLoadSeq: number | null = null;
   private state: PlayerState = {
     playing: false,
     paused: true,
@@ -232,7 +238,13 @@ export class PlayerController extends EventEmitter {
     const seq = ++this.loadSeq;
     this.state.path = url;
     this.state.idle = false;
-    await this.enqueue(() => this.getAddonOrThrow().loadFile(url, seq));
+    this.pendingLoadSeq = seq;
+    try {
+      await this.enqueue(() => this.getAddonOrThrow().loadFile(url, seq));
+    } catch (err) {
+      if (this.pendingLoadSeq === seq) this.pendingLoadSeq = null;
+      throw err;
+    }
   }
 
   async loadMkvTrack(url: string, trackId: number): Promise<void> {
@@ -240,7 +252,13 @@ export class PlayerController extends EventEmitter {
     this.state.path = url;
     this.state.audioTrackId = trackId;
     this.state.idle = false;
-    await this.enqueue(() => this.getAddonOrThrow().loadMkvTrack(url, trackId, seq));
+    this.pendingLoadSeq = seq;
+    try {
+      await this.enqueue(() => this.getAddonOrThrow().loadMkvTrack(url, trackId, seq));
+    } catch (err) {
+      if (this.pendingLoadSeq === seq) this.pendingLoadSeq = null;
+      throw err;
+    }
   }
 
   async prepareNextSource(url: string, trackId?: number | null): Promise<number | null> {
@@ -387,7 +405,50 @@ export class PlayerController extends EventEmitter {
     return this.addon;
   }
 
+  private shouldAcceptAddonEvent(event: PlayerAddonEvent): boolean {
+    const trackSeq = Number(event.trackSeq);
+    if (!Number.isFinite(trackSeq) || trackSeq <= 0) return true;
+
+    if (this.pendingLoadSeq !== null) {
+      return trackSeq === this.pendingLoadSeq;
+    }
+
+    if (this.activeTrackSeq > 0 && trackSeq < this.activeTrackSeq) return false;
+    if (this.activeTrackSeq > 0 && trackSeq === this.activeTrackSeq) {
+      const generation = Number(event.generation);
+      if (
+        Number.isFinite(generation) &&
+        generation > 0 &&
+        this.activeGeneration > 0 &&
+        generation < this.activeGeneration
+      ) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  private rememberAcceptedAddonEventContext(event: PlayerAddonEvent): void {
+    const trackSeq = Number(event.trackSeq);
+    const generation = Number(event.generation);
+    if (Number.isFinite(trackSeq) && trackSeq > 0 && trackSeq >= this.activeTrackSeq) {
+      if (trackSeq > this.activeTrackSeq) this.activeGeneration = 0;
+      this.activeTrackSeq = trackSeq;
+    }
+    if (
+      Number.isFinite(generation) &&
+      generation > 0 &&
+      (!Number.isFinite(trackSeq) || trackSeq <= 0 || trackSeq === this.activeTrackSeq)
+    ) {
+      this.activeGeneration = Math.max(this.activeGeneration, generation);
+    }
+  }
+
   private handleAddonEvent(event: PlayerAddonEvent): void {
+    if (!this.shouldAcceptAddonEvent(event)) return;
+    this.rememberAcceptedAddonEventContext(event);
+
     switch (event.event) {
       case 'time-update':
         if (typeof event.time === 'number') {
@@ -408,6 +469,17 @@ export class PlayerController extends EventEmitter {
         }
         break;
       case 'file-loaded':
+        if (typeof event.seq === 'number' && Number.isFinite(event.seq) && event.seq > 0) {
+          this.activeTrackSeq = event.seq;
+          if (this.pendingLoadSeq === event.seq) this.pendingLoadSeq = null;
+        } else if (
+          typeof event.trackSeq === 'number' &&
+          Number.isFinite(event.trackSeq) &&
+          event.trackSeq > 0
+        ) {
+          this.activeTrackSeq = event.trackSeq;
+          if (this.pendingLoadSeq === event.trackSeq) this.pendingLoadSeq = null;
+        }
         this.emit('file-loaded', { path: event.path, seq: event.seq });
         break;
       case 'state-change':

@@ -52,6 +52,9 @@ export interface PlayerConfigOptions {
 
 export interface PlayerEvent {
   event: string
+  eventId?: number
+  trackSeq?: number
+  generation?: number
   time?: number
   duration?: number
   state?: PlayerState

@@ -26,10 +26,11 @@ use napi::bindgen_prelude::AsyncTask;
 use napi::threadsafe_function::{ThreadsafeFunction, ThreadsafeFunctionCallMode};
 use napi::{Env, Task};
 use napi_derive::napi;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::{sync_channel, RecvTimeoutError};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::mpsc::{channel, sync_channel, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread;
+use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 const IDLE_OUTPUT_RELEASE_DELAY_SECS: u64 = 3;
@@ -37,6 +38,19 @@ const IDLE_OUTPUT_RELEASE_DELAY_SECS: u64 = 3;
 static RUNTIME: Mutex<Option<PlayerRuntime>> = Mutex::new(None);
 static EVENT_CALLBACK: Mutex<Option<Arc<Mutex<ThreadsafeFunction<PlayerEvent>>>>> =
     Mutex::new(None);
+static EVENT_DISPATCHER: Mutex<Option<EventDispatcher>> = Mutex::new(None);
+static NEXT_EVENT_ID: AtomicU64 = AtomicU64::new(0);
+
+enum EventDispatcherMessage {
+    Event(PlayerEvent),
+    Batch(Vec<PlayerEvent>),
+    Shutdown,
+}
+
+struct EventDispatcher {
+    sender: Sender<EventDispatcherMessage>,
+    handle: Option<JoinHandle<()>>,
+}
 
 struct PlayerRuntime {
     config: PlayerConfig,
@@ -149,7 +163,9 @@ impl PlayerRuntime {
     }
 }
 
-pub(crate) fn emit_event(event: PlayerEvent) {
+fn dispatch_event_to_callback(mut event: PlayerEvent) {
+    let event_id = NEXT_EVENT_ID.fetch_add(1, Ordering::AcqRel) + 1;
+    event = event.with_event_id(event_id);
     if let Ok(guard) = EVENT_CALLBACK.lock() {
         if let Some(callback) = guard.as_ref() {
             if let Ok(callback) = callback.lock() {
@@ -157,6 +173,140 @@ pub(crate) fn emit_event(event: PlayerEvent) {
             }
         }
     }
+}
+
+fn start_event_dispatcher() -> napi::Result<()> {
+    let mut guard = EVENT_DISPATCHER.lock().map_err(|err| {
+        napi::Error::from_reason(format!("failed to lock event dispatcher: {err}"))
+    })?;
+    if guard.is_some() {
+        return Ok(());
+    }
+
+    let (sender, receiver) = channel::<EventDispatcherMessage>();
+    let handle = thread::Builder::new()
+        .name("player-event-dispatcher".to_string())
+        .spawn(move || {
+            while let Ok(message) = receiver.recv() {
+                match message {
+                    EventDispatcherMessage::Event(event) => dispatch_event_to_callback(event),
+                    EventDispatcherMessage::Batch(events) => {
+                        for event in events {
+                            dispatch_event_to_callback(event);
+                        }
+                    }
+                    EventDispatcherMessage::Shutdown => break,
+                }
+            }
+        })
+        .map_err(|err| {
+            napi::Error::from_reason(format!("failed to spawn event dispatcher: {err}"))
+        })?;
+
+    *guard = Some(EventDispatcher {
+        sender,
+        handle: Some(handle),
+    });
+    Ok(())
+}
+
+fn stop_event_dispatcher() {
+    let dispatcher = EVENT_DISPATCHER
+        .lock()
+        .ok()
+        .and_then(|mut guard| guard.take());
+
+    if let Some(mut dispatcher) = dispatcher {
+        let _ = dispatcher.sender.send(EventDispatcherMessage::Shutdown);
+        if let Some(handle) = dispatcher.handle.take() {
+            let _ = handle.join();
+        }
+    }
+}
+
+fn send_dispatcher_message(message: EventDispatcherMessage) {
+    let sender = EVENT_DISPATCHER
+        .lock()
+        .ok()
+        .and_then(|guard| guard.as_ref().map(|dispatcher| dispatcher.sender.clone()));
+
+    let Some(sender) = sender else {
+        match message {
+            EventDispatcherMessage::Event(event) => dispatch_event_to_callback(event),
+            EventDispatcherMessage::Batch(events) => {
+                for event in events {
+                    dispatch_event_to_callback(event);
+                }
+            }
+            EventDispatcherMessage::Shutdown => {}
+        }
+        return;
+    };
+
+    if let Err(err) = sender.send(message) {
+        match err.0 {
+            EventDispatcherMessage::Event(event) => dispatch_event_to_callback(event),
+            EventDispatcherMessage::Batch(events) => {
+                for event in events {
+                    dispatch_event_to_callback(event);
+                }
+            }
+            EventDispatcherMessage::Shutdown => {}
+        }
+    }
+}
+
+pub(crate) fn emit_event(event: PlayerEvent) {
+    send_dispatcher_message(EventDispatcherMessage::Event(event));
+}
+
+fn emit_events(events: Vec<PlayerEvent>) {
+    if events.is_empty() {
+        return;
+    }
+    send_dispatcher_message(EventDispatcherMessage::Batch(events));
+}
+
+fn contextualize_runtime_event(runtime: &PlayerRuntime, event: PlayerEvent) -> PlayerEvent {
+    let generation = runtime
+        .session
+        .as_ref()
+        .map(|session| session.shared.current_decode_generation())
+        .unwrap_or_default();
+    event.with_playback_context(runtime.current_seq, generation)
+}
+
+fn contextualize_shared_event(shared: &SharedAudio, event: PlayerEvent) -> PlayerEvent {
+    event.with_playback_context(
+        shared.current_track_seq(),
+        shared.current_decode_generation(),
+    )
+}
+
+fn emit_runtime_event(runtime: &PlayerRuntime, event: PlayerEvent) {
+    emit_event(contextualize_runtime_event(runtime, event));
+}
+
+fn emit_runtime_events(runtime: &PlayerRuntime, events: Vec<PlayerEvent>) {
+    emit_events(
+        events
+            .into_iter()
+            .map(|event| contextualize_runtime_event(runtime, event))
+            .collect(),
+    );
+}
+
+fn emit_shared_event(shared: &SharedAudio, event: PlayerEvent) {
+    emit_event(contextualize_shared_event(shared, event));
+}
+
+fn emit_shared_events(shared: &SharedAudio, events: Vec<PlayerEvent>) {
+    emit_events(
+        events
+            .into_iter()
+            .map(|event| contextualize_shared_event(shared, event))
+            .collect(),
+    );
 }
 
 fn with_runtime<T>(f: impl FnOnce(&mut PlayerRuntime) -> napi::Result<T>) -> napi::Result<T> {
@@ -188,14 +338,16 @@ fn schedule_idle_output_release(shared: Arc<SharedAudio>, release_seq: u64) {
                     return Ok(None);
                 }
                 session.shared.request_output_stop();
-                emit_event(PlayerEvent::log(
+                let output_thread = session.output_thread.take();
+                let event = PlayerEvent::log(
                     "info",
                     format!(
                         "audio output idle release after {}s pause",
                         IDLE_OUTPUT_RELEASE_DELAY_SECS
                     ),
-                ));
-                Ok(session.output_thread.take())
+                );
+                emit_runtime_event(runtime, event);
+                Ok(output_thread)
             })
             .ok()
             .flatten();
@@ -235,7 +387,13 @@ fn mark_playback_idle_after_end(shared: Arc<SharedAudio>) {
         }
         runtime.state.playing = false;
         runtime.state.paused = true;
-        emit_event(PlayerEvent::state_change(runtime.state.clone()));
+        emit_runtime_events(
+            runtime,
+            vec![
+                PlayerEvent::state_change(runtime.state.clone()),
+                PlayerEvent::playback_end("eof"),
+            ],
+        );
         if session.shared.output_is_stopped() {
             return Ok(None);
         }
@@ -278,6 +436,7 @@ fn prepare_source(
         config.playback_stall_timeout_secs,
         &dsp_settings,
     ));
+    shared.set_track_seq(seq);
     shared.set_volume(1.0);
     shared.set_position_secs(start_position);
     shared.paused.store(!autostart, Ordering::Release);
@@ -301,12 +460,20 @@ fn prepare_source(
                 match signal_rx.recv_timeout(tick) {
                     Ok(signal) => match signal {
                         PlaybackSignal::TimeUpdate => {
-                            emit_event(PlayerEvent::time_update(signal_shared.position_secs()));
+                            emit_shared_event(
+                                &signal_shared,
+                                PlayerEvent::time_update(signal_shared.position_secs()),
+                            );
                         }
                         PlaybackSignal::Seeked => {
                             let position = signal_shared.position_secs();
-                            emit_event(PlayerEvent::seeked(position));
-                            emit_event(PlayerEvent::time_update(position));
+                            emit_shared_events(
+                                &signal_shared,
+                                vec![
+                                    PlayerEvent::seeked(position),
+                                    PlayerEvent::time_update(position),
+                                ],
+                            );
                         }
                         PlaybackSignal::TrackSwitch(info) => {
                             apply_track_switch(info, signal_shared.clone());
@@ -314,7 +481,6 @@ fn prepare_source(
                         PlaybackSignal::PlaybackEnd => {
                             if !restart_loop_if_enabled(signal_shared.clone()) {
                                 mark_playback_idle_after_end(signal_shared.clone());
-                                emit_event(PlayerEvent::playback_end("eof"));
                             }
                         }
                         PlaybackSignal::Stop => break,
@@ -341,7 +507,10 @@ fn prepare_source(
                 }
                 if !stall_reported && last_progress_at.elapsed() >= stall_timeout {
                     stall_reported = true;
-                    emit_event(PlayerEvent::stalled(signal_shared.position_secs()));
+                    emit_shared_event(
+                        &signal_shared,
+                        PlayerEvent::stalled(signal_shared.position_secs()),
+                    );
                 }
             }
             let _ = (signal_url, signal_seq);
@@ -391,9 +560,14 @@ fn apply_prepared_source(
     runtime.state.playing = prepared.autostart;
     runtime.state.paused = !prepared.autostart;
 
-    emit_event(PlayerEvent::duration_change(prepared.duration));
-    emit_event(PlayerEvent::file_loaded(prepared.url, prepared.seq));
-    emit_event(PlayerEvent::state_change(runtime.state.clone()));
+    emit_runtime_events(
+        runtime,
+        vec![
+            PlayerEvent::duration_change(prepared.duration),
+            PlayerEvent::file_loaded(prepared.url, prepared.seq),
+            PlayerEvent::state_change(runtime.state.clone()),
+        ],
+    );
 
     if !should_release_when_idle {
         return None;
@@ -423,10 +597,16 @@ fn apply_track_switch(info: TrackSwitchInfo, shared: Arc<SharedAudio>) {
         runtime.state.time_pos = 0.0;
         runtime.state.playing = true;
         runtime.state.paused = false;
-        emit_event(PlayerEvent::duration_change(info.duration));
-        emit_event(PlayerEvent::file_loaded(info.url, info.seq));
-        emit_event(PlayerEvent::state_change(runtime.state.clone()));
-        emit_event(PlayerEvent::time_update(0.0));
+        shared.set_track_seq(info.seq);
+        emit_runtime_events(
+            runtime,
+            vec![
+                PlayerEvent::duration_change(info.duration),
+                PlayerEvent::file_loaded(info.url, info.seq),
+                PlayerEvent::state_change(runtime.state.clone()),
+                PlayerEvent::time_update(0.0),
+            ],
+        );
         Ok(())
     });
 }
@@ -480,13 +660,16 @@ pub(crate) fn try_activate_gapless_next(
         return GaplessDecodeResult::NotPrepared;
     };
 
-    emit_event(PlayerEvent::log(
-        "info",
-        format!(
-            "gapless activating prepared next source: url='{}'",
-            next.url
+    emit_shared_event(
+        &shared,
+        PlayerEvent::log(
+            "info",
+            format!(
+                "gapless activating prepared next source: url='{}'",
+                next.url
+            ),
         ),
-    ));
+    );
     shared.mark_gapless_boundary(TrackSwitchInfo {
         url: next.url,
         audio_stream_ordinal: next.audio_stream_ordinal,
@@ -521,7 +704,7 @@ fn restart_loop_if_enabled(shared: Arc<SharedAudio>) -> bool {
             .iter()
             .any(|gain| gain.abs() >= 0.01);
         let spatial = runtime.dsp_settings.spatial.as_ref();
-        emit_event(PlayerEvent::log(
+        emit_runtime_event(runtime, PlayerEvent::log(
             "info",
             format!(
                 "loop restart reusing audio filter chain: speed={:.2}x, normalization_gain_db={:.2} dB, eq_active={}, spatial_enabled={}, spatial_mix={:.2}",
@@ -556,10 +739,13 @@ fn restart_loop_if_enabled(shared: Arc<SharedAudio>) -> bool {
                 .and_then(|decoder| attach_restarted_decoder(&plan, decoder, 0.0, false));
             if let Err(err) = result {
                 let _ = mark_seek_plan_failed(&plan);
-                emit_event(PlayerEvent::error(
-                    events::PlayerErrorCode::Decode,
-                    format!("failed to restart loop playback: {err}"),
-                ));
+                emit_event(
+                    PlayerEvent::error(
+                        events::PlayerErrorCode::Decode,
+                        format!("failed to restart loop playback: {err}"),
+                    )
+                    .with_playback_context(plan.shared.current_track_seq(), plan.generation),
+                );
             }
         });
     true
@@ -611,10 +797,13 @@ fn restart_output_for_config(config: PlayerConfig) -> napi::Result<()> {
     }
 
     if let Err(err) = validate_output_restart_config(&plan.next_config, Some(&shared)) {
-        emit_event(PlayerEvent::log(
-            "warn",
-            format!("audio output restart validation failed, restoring previous output: {err}"),
-        ));
+        emit_shared_event(
+            &shared,
+            PlayerEvent::log(
+                "warn",
+                format!("audio output restart validation failed, restoring previous output: {err}"),
+            ),
+        );
         shared.prepare_output_restart();
         let _ = spawn_and_attach_output_thread(shared.clone(), plan.previous_config);
         restore_output_restart_playback_state(shared, plan.was_paused);
@@ -628,10 +817,13 @@ fn restart_output_for_config(config: PlayerConfig) -> napi::Result<()> {
             Ok(())
         }
         Err(err) => {
-            emit_event(PlayerEvent::log(
-                "warn",
-                format!("audio output restart failed, restoring previous output: {err}"),
-            ));
+            emit_shared_event(
+                &shared,
+                PlayerEvent::log(
+                    "warn",
+                    format!("audio output restart failed, restoring previous output: {err}"),
+                ),
+            );
             shared.prepare_output_restart();
             let _ = spawn_and_attach_output_thread(shared.clone(), plan.previous_config);
             restore_output_restart_playback_state(shared, plan.was_paused);
@@ -651,7 +843,7 @@ fn restore_output_restart_playback_state(shared: Arc<SharedAudio>, was_paused: b
         }
         runtime.state.playing = !was_paused;
         runtime.state.paused = was_paused;
-        emit_event(PlayerEvent::state_change(runtime.state.clone()));
+        emit_runtime_event(runtime, PlayerEvent::state_change(runtime.state.clone()));
         Ok(())
     });
 }
@@ -787,6 +979,8 @@ fn spawn_and_attach_output_thread_confirmed(
 #[napi]
 pub fn initialize(config: Option<PlayerConfigOptions>) -> napi::Result<()> {
     destroy()?;
+    NEXT_EVENT_ID.store(0, Ordering::Release);
+    start_event_dispatcher()?;
     let mut runtime = PlayerRuntime::new(PlayerConfig::from_options(config));
     runtime.device_watcher = device::DeviceWatcher::start(emit_event).unwrap_or(None);
     *RUNTIME.lock().map_err(|err| {
@@ -807,11 +1001,13 @@ pub fn destroy() -> napi::Result<()> {
     if let Some(mut runtime) = runtime {
         runtime.stop_session();
     }
+    stop_event_dispatcher();
     Ok(())
 }
 
 #[napi]
 pub fn register_event_handler(callback: ThreadsafeFunction<PlayerEvent>) -> napi::Result<()> {
+    start_event_dispatcher()?;
     *EVENT_CALLBACK.lock().map_err(|err| {
         napi::Error::from_reason(format!("failed to lock event callback: {err}"))
     })? = Some(Arc::new(Mutex::new(callback)));
@@ -891,13 +1087,19 @@ impl Task for LoadFileTask {
                             runtime.current_url = Some(url.clone());
                             runtime.current_audio_stream_ordinal = audio_stream;
                             runtime.current_seq = seq;
+                            session.shared.set_track_seq(seq);
                             runtime.state.duration = duration;
                             runtime.state.time_pos = 0.0;
                             runtime.state.playing = false;
                             runtime.state.paused = true;
-                            emit_event(PlayerEvent::duration_change(duration));
-                            emit_event(PlayerEvent::file_loaded(url.clone(), seq));
-                            emit_event(PlayerEvent::state_change(runtime.state.clone()));
+                            emit_runtime_events(
+                                runtime,
+                                vec![
+                                    PlayerEvent::duration_change(duration),
+                                    PlayerEvent::file_loaded(url.clone(), seq),
+                                    PlayerEvent::state_change(runtime.state.clone()),
+                                ],
+                            );
                             Ok(())
                         })
                     }
@@ -911,7 +1113,10 @@ impl Task for LoadFileTask {
                             }
                             runtime.state.playing = false;
                             runtime.state.paused = true;
-                            emit_event(PlayerEvent::state_change(runtime.state.clone()));
+                            emit_runtime_event(
+                                runtime,
+                                PlayerEvent::state_change(runtime.state.clone()),
+                            );
                             Ok(())
                         })?;
                         Err(napi::Error::from_reason(err))
@@ -992,10 +1197,13 @@ impl Task for PrepareNextSourceTask {
                 return Ok(false);
             }
             runtime.prepared_next = prepared.take();
-            emit_event(PlayerEvent::log(
-                "info",
-                format!("gapless prepared next source: url='{}'", self.url),
-            ));
+            emit_runtime_event(
+                runtime,
+                PlayerEvent::log(
+                    "info",
+                    format!("gapless prepared next source: url='{}'", self.url),
+                ),
+            );
             Ok(true)
         })
     }
@@ -1091,7 +1299,7 @@ impl Task for PlayTask {
             session.shared.paused.store(false, Ordering::Release);
             runtime.state.playing = true;
             runtime.state.paused = false;
-            emit_event(PlayerEvent::state_change(runtime.state.clone()));
+            emit_runtime_event(runtime, PlayerEvent::state_change(runtime.state.clone()));
             Ok(())
         })
     }
@@ -1114,7 +1322,7 @@ pub fn pause() -> napi::Result<()> {
         }
         runtime.state.playing = false;
         runtime.state.paused = true;
-        emit_event(PlayerEvent::state_change(runtime.state.clone()));
+        emit_runtime_event(runtime, PlayerEvent::state_change(runtime.state.clone()));
         Ok(())
     })?;
     schedule_idle_output_release_for_current_session()
@@ -1125,7 +1333,7 @@ pub fn stop() -> napi::Result<()> {
     with_runtime(|runtime| {
         runtime.stop_session();
         runtime.state.time_pos = 0.0;
-        emit_event(PlayerEvent::state_change(runtime.state.clone()));
+        emit_runtime_event(runtime, PlayerEvent::state_change(runtime.state.clone()));
         Ok(())
     })
 }
@@ -1157,7 +1365,7 @@ fn mark_seek_plan_failed(plan: &SeekPlan) -> napi::Result<()> {
         session.shared.paused.store(true, Ordering::Release);
         runtime.state.playing = false;
         runtime.state.paused = true;
-        emit_event(PlayerEvent::state_change(runtime.state.clone()));
+        emit_runtime_event(runtime, PlayerEvent::state_change(runtime.state.clone()));
         Ok(())
     })
 }
@@ -1210,10 +1418,12 @@ fn attach_restarted_decoder(
         runtime.state.time_pos = position;
         runtime.state.playing = !plan.was_paused;
         runtime.state.paused = plan.was_paused;
+        let mut events = Vec::with_capacity(2);
         if emit_seek_events {
-            emit_event(PlayerEvent::seeked(position));
+            events.push(PlayerEvent::seeked(position));
         }
-        emit_event(PlayerEvent::time_update(position));
+        events.push(PlayerEvent::time_update(position));
+        emit_runtime_events(runtime, events);
         Ok(())
     })
 }
@@ -1304,7 +1514,10 @@ impl Task for SetSpeedTask {
             session
                 .shared
                 .reset_filter_for_speed_change(&runtime.dsp_settings);
-            emit_event(PlayerEvent::time_update(session.shared.position_secs()));
+            emit_runtime_event(
+                runtime,
+                PlayerEvent::time_update(session.shared.position_secs()),
+            );
             Ok(())
         })
     }
@@ -1373,10 +1586,10 @@ impl Task for SetImpulseResponseTask {
                         chain.update_settings(&runtime.dsp_settings);
                     }
                 }
-                emit_event(PlayerEvent::log(
-                    "info",
-                    "impulse response disabled".to_string(),
-                ));
+                emit_runtime_event(
+                    runtime,
+                    PlayerEvent::log("info", "impulse response disabled".to_string()),
+                );
                 Ok(())
             })?;
             return Ok(());
@@ -1419,10 +1632,10 @@ impl Task for SetImpulseResponseTask {
 
         with_runtime(|runtime| {
             if runtime.spatial_request_seq != request_seq {
-                emit_event(PlayerEvent::log(
-                    "debug",
-                    "stale impulse response load ignored".to_string(),
-                ));
+                emit_runtime_event(
+                    runtime,
+                    PlayerEvent::log("debug", "stale impulse response load ignored".to_string()),
+                );
                 return Ok(());
             }
             let mut spatial = spatial;
@@ -1430,10 +1643,15 @@ impl Task for SetImpulseResponseTask {
             let spatial_path = spatial.file_path.clone();
             let spatial_mix = spatial.mix;
             apply_prepared_spatial_effect(runtime, spatial);
-            emit_event(PlayerEvent::log(
-                "info",
-                format!("impulse response enabled: path='{spatial_path}', mix={spatial_mix:.2}"),
-            ));
+            emit_runtime_event(
+                runtime,
+                PlayerEvent::log(
+                    "info",
+                    format!(
+                        "impulse response enabled: path='{spatial_path}', mix={spatial_mix:.2}"
+                    ),
+                ),
+            );
             Ok(())
         })
     }
@@ -1633,7 +1851,7 @@ impl Task for FadeTask {
                 }
                 runtime.state.playing = true;
                 runtime.state.paused = false;
-                emit_event(PlayerEvent::state_change(runtime.state.clone()));
+                emit_runtime_event(runtime, PlayerEvent::state_change(runtime.state.clone()));
                 Ok(())
             })?;
         }
@@ -1838,15 +2056,18 @@ impl Task for GetSpectrumSnapshotTask {
             if let Some(frame) = frame.as_ref() {
                 if !runtime.spectrum_signal_logged && (frame.peak > 0.0 || frame.rms > 0.0) {
                     runtime.spectrum_signal_logged = true;
-                    emit_event(PlayerEvent::log(
-                        "info",
-                        format!(
-                            "spectrum signal detected: peak={:.4}, rms={:.4}, bins={}",
-                            frame.peak,
-                            frame.rms,
-                            frame.bins.len()
+                    emit_runtime_event(
+                        runtime,
+                        PlayerEvent::log(
+                            "info",
+                            format!(
+                                "spectrum signal detected: peak={:.4}, rms={:.4}, bins={}",
+                                frame.peak,
+                                frame.rms,
+                                frame.bins.len()
+                            ),
                         ),
-                    ));
+                    );
                 }
             }
             Ok(frame)

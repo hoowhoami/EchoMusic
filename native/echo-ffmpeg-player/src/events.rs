@@ -59,6 +59,9 @@ pub struct SpectrumOptions {
 #[derive(Clone, Debug)]
 pub struct PlayerEvent {
     pub event: String,
+    pub event_id: Option<f64>,
+    pub track_seq: Option<f64>,
+    pub generation: Option<f64>,
     pub time: Option<f64>,
     pub duration: Option<f64>,
     pub state: Option<PlayerState>,
@@ -101,17 +104,7 @@ impl PlayerEvent {
         Self {
             event: "time-update".to_string(),
             time: Some(time),
-            duration: None,
-            state: None,
-            reason: None,
-            message: None,
-            error_code: None,
-            level: None,
-            devices: None,
-            device_change_kind: None,
-            disconnected_devices: None,
-            path: None,
-            seq: None,
+            ..Self::empty("time-update")
         }
     }
 
@@ -207,6 +200,9 @@ impl PlayerEvent {
     fn empty(event: &str) -> Self {
         Self {
             event: event.to_string(),
+            event_id: None,
+            track_seq: None,
+            generation: None,
             time: None,
             duration: None,
             state: None,
@@ -220,6 +216,23 @@ impl PlayerEvent {
             path: None,
             seq: None,
         }
+    }
+
+    pub fn with_event_id(mut self, event_id: u64) -> Self {
+        self.event_id = Some(event_id as f64);
+        self
+    }
+
+    pub fn with_playback_context(mut self, track_seq: u64, generation: u64) -> Self {
+        if track_seq > 0 {
+            self.track_seq = Some(track_seq as f64);
+        }
+        self.generation = Some(generation as f64);
+        self
+    }
+
+    pub fn is_droppable_when_event_queue_is_full(&self) -> bool {
+        matches!(self.event.as_str(), "time-update" | "log")
     }
 }
 

@@ -150,6 +150,7 @@ pub struct SharedAudio {
     gapless_boundary: Mutex<Option<GaplessBoundary>>,
     volume_bits: AtomicU32,
     pub sample_rate: u32,
+    track_seq: AtomicU64,
     pub played_samples: AtomicU64,
     last_time_event_samples: AtomicU64,
     stall_timeout_ms: AtomicU64,
@@ -202,6 +203,7 @@ impl SharedAudio {
             speed_bits: AtomicU32::new(dsp_settings.speed.to_bits()),
             interrupt: Mutex::new(None),
             signal_tx: Mutex::new(None),
+            track_seq: AtomicU64::new(0),
         }
     }
 
@@ -264,6 +266,14 @@ impl SharedAudio {
 
     pub fn current_decode_generation(&self) -> u64 {
         self.decode_generation.load(Ordering::Acquire)
+    }
+
+    pub fn current_track_seq(&self) -> u64 {
+        self.track_seq.load(Ordering::Acquire)
+    }
+
+    pub fn set_track_seq(&self, seq: u64) {
+        self.track_seq.store(seq, Ordering::Release);
     }
 
     pub fn is_decode_generation_current(&self, generation: u64) -> bool {
