@@ -1,12 +1,7 @@
 import { defineStore } from 'pinia';
 import type { CloseBehavior, ThemeMode } from '../../shared/app';
 import type { AppLogLevel, LogSettings } from '../../shared/logging';
-import type {
-  AudioQualityValue,
-  OutputDeviceDisconnectBehavior,
-  OutputDeviceOption,
-  OutputDeviceStatus,
-} from '../types';
+import type { AudioQualityValue, OutputDeviceOption, OutputDeviceStatus } from '../types';
 import { buildFontFamily } from '../../shared/font';
 import {
   DEFAULT_IMPULSE_RESPONSE_MIX,
@@ -125,7 +120,7 @@ export const useSettingStore = defineStore('setting', {
     exclusiveAudioDevice: false,
     outputDeviceStatus: 'idle' as OutputDeviceStatus,
     outputDeviceStatusMessage: '',
-    outputDeviceDisconnectBehavior: 'pause' as OutputDeviceDisconnectBehavior,
+    pauseOnOutputDeviceDisconnect: false,
     showAudioQualityBadge: true,
     showDesktopLyricStatus: true,
     volumeNormalization: true,

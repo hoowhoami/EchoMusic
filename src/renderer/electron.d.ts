@@ -546,7 +546,11 @@ export interface IElectronAPI {
       func: (payload: { path?: string; reason?: string }) => void,
     ) => () => void;
     onAudioDeviceListChanged: (
-      func: (devices: Array<{ name: string; description: string; isDefault?: boolean }>) => void,
+      func: (payload: {
+        devices: Array<{ name: string; description: string; isDefault?: boolean }>;
+        deviceChangeKind?: string;
+        disconnectedDevices?: Array<{ name: string; description: string; isDefault?: boolean }>;
+      }) => void,
     ) => () => void;
   };
 }

@@ -55,8 +55,8 @@ function registerEventForwarding(controller: PlayerController): void {
   controller.on('impulse-response-disabled', (payload) =>
     getMainWindow()?.webContents.send('player:impulse-response-disabled', payload),
   );
-  controller.on('audio-device-list-changed', (devices) =>
-    getMainWindow()?.webContents.send('player:audio-device-list-changed', devices),
+  controller.on('audio-device-list-changed', (payload) =>
+    getMainWindow()?.webContents.send('player:audio-device-list-changed', payload),
   );
 }
 

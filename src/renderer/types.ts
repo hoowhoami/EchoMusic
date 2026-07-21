@@ -24,8 +24,6 @@ export type OutputDeviceOption = {
   disabled?: boolean;
 };
 
-export type OutputDeviceDisconnectBehavior = 'pause' | 'fallback';
-
 export type OutputDeviceStatus =
   | 'idle'
   | 'ready'

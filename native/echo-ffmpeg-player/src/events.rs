@@ -66,6 +66,8 @@ pub struct PlayerEvent {
     pub message: Option<String>,
     pub level: Option<String>,
     pub devices: Option<Vec<AudioDevice>>,
+    pub device_change_kind: Option<String>,
+    pub disconnected_devices: Option<Vec<AudioDevice>>,
     pub path: Option<String>,
     pub seq: Option<f64>,
 }
@@ -91,6 +93,8 @@ impl PlayerEvent {
             message: None,
             level: None,
             devices: None,
+            device_change_kind: None,
+            disconnected_devices: None,
             path: None,
             seq: None,
         }
@@ -145,10 +149,16 @@ impl PlayerEvent {
         }
     }
 
-    pub fn audio_device_list_changed(devices: Vec<AudioDevice>) -> Self {
+    pub fn audio_device_list_changed(
+        devices: Vec<AudioDevice>,
+        device_change_kind: &str,
+        disconnected_devices: Vec<AudioDevice>,
+    ) -> Self {
         Self {
             event: "audio-device-list-changed".to_string(),
             devices: Some(devices),
+            device_change_kind: Some(device_change_kind.to_string()),
+            disconnected_devices: Some(disconnected_devices),
             ..Self::empty("audio-device-list-changed")
         }
     }
@@ -188,6 +198,8 @@ impl PlayerEvent {
             message: None,
             level: None,
             devices: None,
+            device_change_kind: None,
+            disconnected_devices: None,
             path: None,
             seq: None,
         }

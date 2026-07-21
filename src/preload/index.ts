@@ -503,12 +503,20 @@ contextBridge.exposeInMainWorld('electron', {
       return () => ipcRenderer.removeListener('player:impulse-response-disabled', listener);
     },
     onAudioDeviceListChanged: (
-      func: (devices: Array<{ name: string; description: string; isDefault?: boolean }>) => void,
+      func: (payload: {
+        devices: Array<{ name: string; description: string; isDefault?: boolean }>;
+        deviceChangeKind?: string;
+        disconnectedDevices?: Array<{ name: string; description: string; isDefault?: boolean }>;
+      }) => void,
     ) => {
       const listener = (
         _event: Electron.IpcRendererEvent,
-        devices: Array<{ name: string; description: string; isDefault?: boolean }>,
-      ) => func(devices);
+        payload: {
+          devices: Array<{ name: string; description: string; isDefault?: boolean }>;
+          deviceChangeKind?: string;
+          disconnectedDevices?: Array<{ name: string; description: string; isDefault?: boolean }>;
+        },
+      ) => func(payload);
       ipcRenderer.on('player:audio-device-list-changed', listener);
       return () => ipcRenderer.removeListener('player:audio-device-list-changed', listener);
     },

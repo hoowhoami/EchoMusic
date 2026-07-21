@@ -82,7 +82,6 @@ impl DeviceWatcher {
             .name("player-device-watcher".to_string())
             .spawn(move || run_debounced_device_events(rx, thread_stop, emit))
             .map_err(|err| format!("failed to spawn CoreAudio device watcher: {err}"))?;
-        let _ = tx.try_send(());
         Ok(Some(Self {
             stop,
             sender: tx,

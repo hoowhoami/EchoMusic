@@ -2,13 +2,12 @@
 import { computed, onMounted, ref } from 'vue';
 import { usePlayerStore } from '@/stores/player';
 import { useSettingStore } from '@/stores/setting';
-import type { OutputDeviceDisconnectBehavior } from '@/types';
 import Select from '@/components/ui/Select.vue';
 import Switch from '@/components/ui/Switch.vue';
 import FontIcon from '@/components/ui/FontIcon.vue';
 import { Icon } from '@iconify/vue';
 import SettingsSectionShell from './SettingsSectionShell.vue';
-import { outputDeviceDisconnectBehaviorOptions, sectionTitles } from '../constants';
+import { sectionTitles } from '../constants';
 
 const settingStore = useSettingStore();
 const playerStore = usePlayerStore();
@@ -115,19 +114,10 @@ onMounted(() => {
     <div class="settings-divider"></div>
     <div class="settings-item">
       <div class="space-y-1">
-        <h3 class="font-semibold">设备断开后的行为</h3>
-        <p class="text-sm text-text-secondary">
-          当前所选输出设备断开时，选择暂停播放或临时切换到系统默认设备
-        </p>
+        <h3 class="font-semibold">设备断开时暂停</h3>
+        <p class="text-sm text-text-secondary">输出设备断开时自动暂停播放，避免声音切到其他设备</p>
       </div>
-      <Select
-        class="w-45"
-        :model-value="settingStore.outputDeviceDisconnectBehavior"
-        :options="outputDeviceDisconnectBehaviorOptions"
-        @update:model-value="
-          settingStore.outputDeviceDisconnectBehavior = $event as OutputDeviceDisconnectBehavior
-        "
-      />
+      <Switch v-model="settingStore.pauseOnOutputDeviceDisconnect" />
     </div>
   </SettingsSectionShell>
 </template>

@@ -351,9 +351,11 @@ const builtinSettingsSections = computed<SettingsRenderSection[]>(() => [
       '系统默认',
       '独占音频设备',
       '系统混音器',
-      '设备断开后的行为',
+      '设备断开时暂停',
+      '设备断开',
+      '耳机断开',
+      '避免外放',
       '暂停播放',
-      '切到默认设备',
     ],
   },
   {

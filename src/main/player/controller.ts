@@ -73,8 +73,22 @@ interface PlayerAddonEvent {
   message?: string;
   level?: string;
   devices?: Array<{ name: string; description: string; isDefault?: boolean }>;
+  deviceChangeKind?: string;
+  disconnectedDevices?: Array<{ name: string; description: string; isDefault?: boolean }>;
   path?: string;
   seq?: number;
+}
+
+export interface PlayerAudioDevice {
+  name: string;
+  description: string;
+  isDefault?: boolean;
+}
+
+export interface PlayerAudioDeviceListChangedPayload {
+  devices: PlayerAudioDevice[];
+  deviceChangeKind?: string;
+  disconnectedDevices?: PlayerAudioDevice[];
 }
 
 interface PlayerAddon {
@@ -391,7 +405,11 @@ export class PlayerController extends EventEmitter {
         }
         break;
       case 'audio-device-list-changed':
-        this.emit('audio-device-list-changed', event.devices || []);
+        this.emit('audio-device-list-changed', {
+          devices: event.devices || [],
+          deviceChangeKind: event.deviceChangeKind,
+          disconnectedDevices: event.disconnectedDevices || [],
+        });
         break;
       case 'impulse-response-disabled':
         this.emit('impulse-response-disabled', { reason: event.reason || event.message });

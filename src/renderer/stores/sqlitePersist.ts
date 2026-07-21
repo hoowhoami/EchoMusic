@@ -81,6 +81,11 @@ const buildPersistedState = (state: StateTree, options: true | PersistConfig): S
   return source;
 };
 
+const pickDeclaredState = (saved: StateTree, current: StateTree): StateTree => {
+  const declaredKeys = new Set(Object.keys(current));
+  return Object.fromEntries(Object.entries(saved).filter(([key]) => declaredKeys.has(key)));
+};
+
 export const sqlitePersistPlugin = ({ store, options }: PiniaPluginContext) => {
   if (store.$id === 'playlist') return;
   const persist = getPersistOptions(options);
@@ -95,7 +100,7 @@ export const sqlitePersistPlugin = ({ store, options }: PiniaPluginContext) => {
     .getKv<StateTree>(storageKey)
     .then((saved) => {
       if (saved && typeof saved === 'object') {
-        store.$patch(saved);
+        store.$patch(pickDeclaredState(saved, store.$state));
       }
       lastPersistedState = buildPersistedState(store.$state, persist);
       hydrated = true;

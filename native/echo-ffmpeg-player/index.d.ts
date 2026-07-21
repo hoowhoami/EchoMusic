@@ -59,6 +59,8 @@ export interface PlayerEvent {
   message?: string
   level?: string
   devices?: Array<AudioDevice>
+  deviceChangeKind?: string
+  disconnectedDevices?: Array<AudioDevice>
   path?: string
   seq?: number
 }

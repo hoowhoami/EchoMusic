@@ -1,4 +1,4 @@
-use crate::events::PlayerEvent;
+use crate::events::{AudioDevice, PlayerEvent};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::Receiver;
 use std::sync::Arc;
@@ -53,9 +53,13 @@ impl DeviceWatcher {
             let thread = thread::Builder::new()
                 .name("player-device-watcher".to_string())
                 .spawn(move || {
-                    let initial_devices = crate::device::list_output_devices();
-                    let mut last_signature = device_list_signature(&initial_devices);
-                    emit(PlayerEvent::audio_device_list_changed(initial_devices));
+                    let mut last_devices = crate::device::list_output_devices();
+                    let mut last_signature = device_list_signature(&last_devices);
+                    emit(PlayerEvent::audio_device_list_changed(
+                        last_devices.clone(),
+                        "initial",
+                        Vec::new(),
+                    ));
                     while !thread_stop.load(Ordering::Acquire) {
                         thread::sleep(Duration::from_secs(1));
                         let devices = crate::device::list_output_devices();
@@ -63,8 +67,19 @@ impl DeviceWatcher {
                         if signature == last_signature {
                             continue;
                         }
+                        let disconnected_devices = disconnected_devices(&last_devices, &devices);
+                        let change_kind = if disconnected_devices.is_empty() {
+                            "changed"
+                        } else {
+                            "disconnected"
+                        };
                         last_signature = signature;
-                        emit(PlayerEvent::audio_device_list_changed(devices));
+                        last_devices = devices.clone();
+                        emit(PlayerEvent::audio_device_list_changed(
+                            devices,
+                            change_kind,
+                            disconnected_devices,
+                        ));
                     }
                 })
                 .map_err(|err| format!("failed to spawn device watcher thread: {err}"))?;
@@ -103,6 +118,13 @@ pub(crate) fn run_debounced_device_events(
     stop: Arc<AtomicBool>,
     emit: fn(PlayerEvent),
 ) {
+    let mut last_devices = crate::device::list_output_devices();
+    emit(PlayerEvent::audio_device_list_changed(
+        last_devices.clone(),
+        "initial",
+        Vec::new(),
+    ));
+
     while !stop.load(Ordering::Acquire) {
         if rx.recv_timeout(Duration::from_millis(100)).is_err() {
             continue;
@@ -114,8 +136,30 @@ pub(crate) fn run_debounced_device_events(
                 break;
             }
         }
+        let devices = crate::device::list_output_devices();
+        let disconnected_devices = disconnected_devices(&last_devices, &devices);
+        let change_kind = if disconnected_devices.is_empty() {
+            "changed"
+        } else {
+            "disconnected"
+        };
+        last_devices = devices.clone();
         emit(PlayerEvent::audio_device_list_changed(
-            crate::device::list_output_devices(),
+            devices,
+            change_kind,
+            disconnected_devices,
         ));
     }
+}
+
+fn disconnected_devices(previous: &[AudioDevice], current: &[AudioDevice]) -> Vec<AudioDevice> {
+    previous
+        .iter()
+        .filter(|previous_device| {
+            !current
+                .iter()
+                .any(|current_device| current_device.name == previous_device.name)
+        })
+        .cloned()
+        .collect()
 }

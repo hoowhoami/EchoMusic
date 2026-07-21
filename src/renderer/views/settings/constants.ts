@@ -1,5 +1,5 @@
 import type { AccentMode } from '@/stores/theme';
-import type { AudioQualityValue, OutputDeviceDisconnectBehavior, ShortcutItem } from '@/types';
+import type { AudioQualityValue, ShortcutItem } from '@/types';
 import type { CloseBehavior, ThemeMode } from '../../../shared/app';
 import {
   iconDeviceSpeaker,
@@ -91,14 +91,6 @@ export const audioQualityOptions: { label: string; value: AudioQualityValue }[] 
 export const closeBehaviorOptions: { label: string; value: CloseBehavior }[] = [
   { label: '最小化到托盘', value: 'tray' },
   { label: '彻底退出程序', value: 'exit' },
-];
-
-export const outputDeviceDisconnectBehaviorOptions: {
-  label: string;
-  value: OutputDeviceDisconnectBehavior;
-}[] = [
-  { label: '暂停播放', value: 'pause' },
-  { label: '切到默认设备', value: 'fallback' },
 ];
 
 export const desktopLyricColorPresets = [
