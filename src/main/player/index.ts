@@ -35,6 +35,9 @@ function registerEventForwarding(controller: PlayerController): void {
     getMainWindow()?.webContents.send('player:time-update', time),
   );
   controller.on('seeked', (time) => getMainWindow()?.webContents.send('player:seeked', time));
+  controller.on('playback-restart', (payload) =>
+    getMainWindow()?.webContents.send('player:playback-restart', payload),
+  );
   controller.on('duration-change', (duration) =>
     getMainWindow()?.webContents.send('player:duration-change', duration),
   );

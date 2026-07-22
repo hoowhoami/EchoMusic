@@ -10,6 +10,7 @@ import type { PlaybackSource } from '@/stores/player/types';
 export interface PlayerEngineEvents {
   timeUpdate?: (currentTime: number) => void;
   seeked?: (currentTime: number) => void;
+  playbackRestart?: (payload?: { time?: number; reason?: string }) => void;
   durationChange?: (duration: number) => void;
   /** 新文件加载完成（player file-loaded），用于切歌后放行进度回报 */
   fileLoaded?: (payload?: { path?: string; seq?: number }) => void;
@@ -120,13 +121,23 @@ export class PlayerEngine {
     this.cleanupFns.push(offTime);
 
     const offSeeked = player.onSeeked?.((time: number) => {
-      this.seekPending = false;
+      this.clearSeekPending();
       this.lastTimeValue = time;
       this.lastTimeUpdateMs = Date.now();
       this.events.seeked?.(time);
       this.events.timeUpdate?.(time);
     });
     if (offSeeked) this.cleanupFns.push(offSeeked);
+
+    const offPlaybackRestart = player.onPlaybackRestart?.((payload) => {
+      this.clearSeekPending();
+      if (typeof payload?.time === 'number') {
+        this.lastTimeValue = payload.time;
+        this.lastTimeUpdateMs = Date.now();
+      }
+      this.events.playbackRestart?.(payload);
+    });
+    if (offPlaybackRestart) this.cleanupFns.push(offPlaybackRestart);
 
     const offDuration = player.onDurationChange((duration: number) => {
       if (duration === this.durationValue) return;
@@ -136,6 +147,7 @@ export class PlayerEngine {
     this.cleanupFns.push(offDuration);
 
     const offFileLoaded = player.onFileLoaded?.((payload?: { path?: string; seq?: number }) => {
+      this.clearSeekPending();
       this.events.fileLoaded?.(payload);
     });
     if (offFileLoaded) this.cleanupFns.push(offFileLoaded);
@@ -170,6 +182,10 @@ export class PlayerEngine {
     if (offStall) this.cleanupFns.push(offStall);
   }
 
+  private clearSeekPending(): void {
+    this.seekPending = false;
+  }
+
   // ── 公开 API ──
 
   setEvents(events: PlayerEngineEvents): void {
@@ -192,6 +208,7 @@ export class PlayerEngine {
     if (!playbackSource.url) return;
     const sourceKey = getPlaybackSourceKey(playbackSource);
     if (this.sourceUrl === sourceKey && !options?.force) return;
+    this.clearSeekPending();
     this.sourceUrl = sourceKey;
     this.durationValue = 0;
     this.lastTimeValue = -1;
@@ -216,6 +233,7 @@ export class PlayerEngine {
   async reloadSource(source: string | PlaybackSource): Promise<void> {
     const playbackSource = normalizePlaybackSource(source);
     if (!playbackSource.url) return;
+    this.clearSeekPending();
     this.sourceUrl = getPlaybackSourceKey(playbackSource);
     if (playbackSource.audioTrackId && playbackSource.audioTrackId > 0) {
       await player?.loadMkvTrack(playbackSource.url, playbackSource.audioTrackId);
@@ -244,6 +262,7 @@ export class PlayerEngine {
   adoptPreparedSource(source: string | PlaybackSource): void {
     const playbackSource = normalizePlaybackSource(source);
     if (!playbackSource.url) return;
+    this.clearSeekPending();
     this.sourceUrl = getPlaybackSourceKey(playbackSource);
     this.lastTimeValue = -1;
   }
@@ -294,7 +313,7 @@ export class PlayerEngine {
   seek(time: number): void {
     this.seekPending = true;
     player?.seek(time)?.catch((err: unknown) => {
-      this.seekPending = false;
+      this.clearSeekPending();
       logger.warn('PlayerEngine', 'seek failed', { time, error: String(err) });
     });
     this.lastTimeValue = -1;
@@ -382,6 +401,7 @@ export class PlayerEngine {
   }
 
   reset(): void {
+    this.clearSeekPending();
     void player?.stop()?.catch((error: unknown) => {
       logger.warn('PlayerEngine', 'stop failed', { error: String(error) });
     });

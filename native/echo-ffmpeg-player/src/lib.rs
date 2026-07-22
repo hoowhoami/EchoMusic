@@ -67,6 +67,7 @@ struct PlayerRuntime {
     spatial_mix: f32,
     spatial_file_path: Option<String>,
     prepared_next: Option<PreparedNextSource>,
+    seek_restart_interrupt: Option<Arc<AtomicBool>>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -173,6 +174,7 @@ impl PlayerRuntime {
             spatial_mix: DEFAULT_SPATIAL_MIX,
             spatial_file_path: None,
             prepared_next: None,
+            seek_restart_interrupt: None,
         }
     }
 
@@ -187,6 +189,7 @@ impl PlayerRuntime {
 
     fn stop_session(&mut self) {
         self.cancel_idle_output_release();
+        self.cancel_pending_seek_restart();
         self.prepared_next = None;
         if let Some(session) = self.session.take() {
             session.stop_background();
@@ -194,6 +197,25 @@ impl PlayerRuntime {
         self.state.playing = false;
         self.state.paused = true;
         self.core_state = PlaybackCoreState::Idle;
+    }
+
+    fn cancel_pending_seek_restart(&mut self) {
+        if let Some(interrupt) = self.seek_restart_interrupt.take() {
+            interrupt.store(true, Ordering::Release);
+        }
+    }
+
+    fn clear_pending_seek_restart(&mut self, interrupt: Option<&Arc<AtomicBool>>) {
+        let Some(interrupt) = interrupt else {
+            return;
+        };
+        if self
+            .seek_restart_interrupt
+            .as_ref()
+            .is_some_and(|current| Arc::ptr_eq(current, interrupt))
+        {
+            self.seek_restart_interrupt = None;
+        }
     }
 }
 
@@ -452,11 +474,11 @@ fn prepare_source(
                                 PlayerEvent::time_update(signal_shared.position_secs()),
                             );
                         }
-                        PlaybackSignal::Seeked => {
-                            let position = signal_shared.position_secs();
+                        PlaybackSignal::Seeked(position) => {
                             emit_shared_events(
                                 &signal_shared,
                                 vec![
+                                    PlayerEvent::playback_restart(position, "seek"),
                                     PlayerEvent::seeked(position),
                                     PlayerEvent::time_update(position),
                                 ],
@@ -619,14 +641,17 @@ fn apply_prepared_source(
         "source-applied",
     );
 
-    emit_runtime_events(
-        runtime,
-        vec![
+    emit_runtime_events(runtime, {
+        let mut events = vec![
             PlayerEvent::duration_change(duration),
             PlayerEvent::file_loaded(url, seq),
             PlayerEvent::state_change(runtime.state.clone()),
-        ],
-    );
+        ];
+        if autostart {
+            events.push(PlayerEvent::playback_restart(start_position, "load"));
+        }
+        events
+    });
 
     if !should_release_when_idle {
         return None;
@@ -666,6 +691,7 @@ fn apply_track_switch(info: TrackSwitchInfo, shared: Arc<SharedAudio>) {
                     PlayerEvent::duration_change(info.duration),
                     PlayerEvent::file_loaded(info.url, info.seq),
                     PlayerEvent::state_change(runtime.state.clone()),
+                    PlayerEvent::playback_restart(0.0, "gapless-track-switch"),
                     PlayerEvent::time_update(0.0),
                 ],
             );
@@ -803,6 +829,7 @@ fn restart_loop_if_enabled(shared: Arc<SharedAudio>) -> bool {
             audio_stream_ordinal: runtime.current_audio_stream_ordinal,
             generation,
             config: runtime.config.clone(),
+            interrupt: None,
         }))
     })
     .ok()
@@ -1116,6 +1143,7 @@ impl Task for LoadFileTask {
         let seq = self.seq;
         let plan = with_runtime(|runtime| {
             runtime.cancel_idle_output_release();
+            runtime.cancel_pending_seek_restart();
             runtime.prepared_next = None;
             runtime.latest_load_seq = seq;
             set_runtime_core_state(runtime, PlaybackCoreState::Loading, "load");
@@ -1508,10 +1536,12 @@ struct SeekPlan {
     audio_stream_ordinal: Option<usize>,
     generation: u64,
     config: PlayerConfig,
+    interrupt: Option<Arc<AtomicBool>>,
 }
 
 fn mark_seek_plan_failed(plan: &SeekPlan) -> napi::Result<()> {
     with_runtime(|runtime| {
+        runtime.clear_pending_seek_restart(plan.interrupt.as_ref());
         let Some(session) = runtime.session.as_mut() else {
             return Ok(());
         };
@@ -1531,13 +1561,24 @@ fn mark_seek_plan_failed(plan: &SeekPlan) -> napi::Result<()> {
 }
 
 fn open_decoder_at_position(plan: &SeekPlan, position: f64) -> napi::Result<decoder::DecoderData> {
-    let mut decoder = open_decoder(
-        plan.url.clone(),
-        plan.audio_stream_ordinal,
-        Some(plan.shared.mix_format.sample_rate),
-        plan.config.packet_cache_options(),
-        &plan.config.stream_options(),
-    )
+    let mut decoder = if let Some(interrupt) = plan.interrupt.as_ref() {
+        decoder::DecoderData::open(
+            plan.url.clone(),
+            plan.audio_stream_ordinal,
+            Some(plan.shared.mix_format.sample_rate),
+            interrupt.clone(),
+            plan.config.packet_cache_options(),
+            &plan.config.stream_options(),
+        )
+    } else {
+        open_decoder(
+            plan.url.clone(),
+            plan.audio_stream_ordinal,
+            Some(plan.shared.mix_format.sample_rate),
+            plan.config.packet_cache_options(),
+            &plan.config.stream_options(),
+        )
+    }
     .map_err(napi::Error::from_reason)?;
 
     if position > 0.0 {
@@ -1551,10 +1592,11 @@ fn attach_restarted_decoder(
     plan: &SeekPlan,
     decoder: decoder::DecoderData,
     position: f64,
-    emit_seek_events: bool,
+    defer_restart_events_until_audio_ready: bool,
 ) -> napi::Result<()> {
     let mut decoder = Some(decoder);
     with_runtime(|runtime| {
+        runtime.clear_pending_seek_restart(plan.interrupt.as_ref());
         let Some(session) = runtime.session.as_mut() else {
             return Ok(());
         };
@@ -1591,12 +1633,9 @@ fn attach_restarted_decoder(
             },
             "seek-complete",
         );
-        let mut events = Vec::with_capacity(2);
-        if emit_seek_events {
-            events.push(PlayerEvent::seeked(position));
+        if !defer_restart_events_until_audio_ready {
+            emit_runtime_event(runtime, PlayerEvent::time_update(position));
         }
-        events.push(PlayerEvent::time_update(position));
-        emit_runtime_events(runtime, events);
         Ok(())
     })
 }
@@ -1607,32 +1646,59 @@ impl Task for SeekTask {
 
     fn compute(&mut self) -> napi::Result<Self::Output> {
         let position = self.position.max(0.0);
-        with_runtime(|runtime| {
+        let plan = with_runtime(|runtime| {
             let Some(session) = runtime.session.as_ref() else {
-                return Ok(());
+                return Ok(None);
             };
             let shared = session.shared.clone();
             let was_paused = shared.paused.load(Ordering::Acquire);
             set_runtime_core_state(runtime, PlaybackCoreState::Seeking, "seek");
+            runtime.cancel_pending_seek_restart();
+            let interrupt = Arc::new(AtomicBool::new(false));
+            runtime.seek_restart_interrupt = Some(interrupt.clone());
             shared.paused.store(true, Ordering::Release);
             runtime.prepared_next = None;
-            shared.request_decode_seek(position, &runtime.dsp_settings);
-            shared.paused.store(was_paused, Ordering::Release);
+            shared.request_decode_stop();
+            if let Some(session) = runtime.session.as_mut() {
+                if Arc::ptr_eq(&session.shared, &shared) {
+                    let _ = session.decode_thread.take();
+                }
+            }
+            let generation = shared.reset_for_decode_resume(position, &runtime.dsp_settings);
             runtime.state.time_pos = position;
-            runtime.state.playing = !was_paused;
-            runtime.state.paused = was_paused;
-            set_runtime_core_state(
-                runtime,
-                if was_paused {
-                    PlaybackCoreState::Paused
-                } else {
-                    PlaybackCoreState::Playing
-                },
-                "seek-dispatched",
-            );
-            emit_runtime_event(runtime, PlayerEvent::time_update(position));
-            Ok(())
-        })
+            runtime.state.playing = false;
+            runtime.state.paused = true;
+            Ok(runtime.current_url.clone().map(|url| SeekPlan {
+                shared,
+                was_paused,
+                url,
+                audio_stream_ordinal: runtime.current_audio_stream_ordinal,
+                generation,
+                config: runtime.config.clone(),
+                interrupt: Some(interrupt),
+            }))
+        })?;
+
+        let Some(plan) = plan else {
+            return Ok(());
+        };
+
+        match open_decoder_at_position(&plan, position)
+            .and_then(|decoder| attach_restarted_decoder(&plan, decoder, position, true))
+        {
+            Ok(()) => Ok(()),
+            Err(err) => {
+                mark_seek_plan_failed(&plan)?;
+                emit_event(
+                    PlayerEvent::error(
+                        events::PlayerErrorCode::Decode,
+                        format!("failed to seek playback: {err}"),
+                    )
+                    .with_playback_context(plan.shared.current_track_seq(), plan.generation),
+                );
+                Err(err)
+            }
+        }
     }
 
     fn resolve(&mut self, _env: Env, _output: Self::Output) -> napi::Result<Self::JsValue> {

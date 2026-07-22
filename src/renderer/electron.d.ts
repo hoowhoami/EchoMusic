@@ -562,6 +562,7 @@ export interface IElectronAPI {
     setStallTimeout: (seconds: number) => Promise<void>;
     onTimeUpdate: (func: (time: number) => void) => () => void;
     onSeeked: (func: (time: number) => void) => () => void;
+    onPlaybackRestart: (func: (payload?: { time?: number; reason?: string }) => void) => () => void;
     onDurationChange: (func: (duration: number) => void) => () => void;
     onFileLoaded: (func: (payload?: { path?: string; seq?: number }) => void) => () => void;
     onStateChange: (func: (state: { playing?: boolean; paused?: boolean }) => void) => () => void;

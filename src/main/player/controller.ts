@@ -484,6 +484,19 @@ export class PlayerController extends EventEmitter {
           this.emit('seeked', event.time);
         }
         break;
+      case 'playback-restart':
+        if (typeof event.time === 'number') {
+          this.state.timePos = event.time;
+        }
+        log.info('[PlayerController]', 'playback restart', {
+          time: event.time,
+          reason: event.reason,
+        });
+        this.emit('playback-restart', {
+          time: event.time,
+          reason: event.reason,
+        });
+        break;
       case 'duration-change':
         if (typeof event.duration === 'number') {
           this.state.duration = event.duration;

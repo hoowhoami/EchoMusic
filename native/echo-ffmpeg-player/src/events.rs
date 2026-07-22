@@ -133,6 +133,15 @@ impl PlayerEvent {
         }
     }
 
+    pub fn playback_restart(time: f64, reason: &str) -> Self {
+        Self {
+            event: "playback-restart".to_string(),
+            time: Some(time.max(0.0)),
+            reason: Some(reason.to_string()),
+            ..Self::empty("playback-restart")
+        }
+    }
+
     pub fn state_change(state: PlayerState) -> Self {
         Self {
             event: "state-change".to_string(),

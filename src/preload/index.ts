@@ -464,6 +464,14 @@ contextBridge.exposeInMainWorld('electron', {
       ipcRenderer.on('player:seeked', listener);
       return () => ipcRenderer.removeListener('player:seeked', listener);
     },
+    onPlaybackRestart: (func: (payload?: { time?: number; reason?: string }) => void) => {
+      const listener = (
+        _event: Electron.IpcRendererEvent,
+        payload?: { time?: number; reason?: string },
+      ) => func(payload);
+      ipcRenderer.on('player:playback-restart', listener);
+      return () => ipcRenderer.removeListener('player:playback-restart', listener);
+    },
     onDurationChange: (func: (duration: number) => void) => {
       const listener = (_event: Electron.IpcRendererEvent, duration: number) => func(duration);
       ipcRenderer.on('player:duration-change', listener);

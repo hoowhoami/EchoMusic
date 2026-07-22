@@ -122,24 +122,11 @@ impl DecoderData {
         shared.update_packet_cache_stats(packet_cache_stats_from_reader(&self.reader));
     }
 
-    pub fn decode_into(mut self, shared: Arc<SharedAudio>, mut generation: u64) -> Option<Self> {
+    pub fn decode_into(mut self, shared: Arc<SharedAudio>, generation: u64) -> Option<Self> {
         shared.bind_interrupt(self.interrupt.clone());
         let mut produced_frames = 0u64;
         loop {
             self.publish_packet_cache_stats(&shared);
-            if let Some(seek) = shared.take_pending_decode_seek(generation) {
-                if shared.should_stop_decoding() || shared.stop.load(Ordering::Acquire) {
-                    return (!shared.stop.load(Ordering::Acquire)).then_some(self);
-                }
-                if let Err(err) = self.seek(seek.position_secs) {
-                    shared.mark_decode_failed();
-                    emit_decode_error(format!("failed to seek decoder: {err}"));
-                    return None;
-                }
-                self.publish_packet_cache_stats(&shared);
-                generation = seek.generation;
-                produced_frames = 0;
-            }
             if shared.should_stop_decoding() || !shared.is_decode_generation_current(generation) {
                 return (!shared.stop.load(Ordering::Acquire)).then_some(self);
             }

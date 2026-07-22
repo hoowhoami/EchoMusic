@@ -41,7 +41,7 @@ pub struct TrackSwitchInfo {
 #[derive(Clone, Debug, PartialEq)]
 pub enum PlaybackSignal {
     TimeUpdate,
-    Seeked,
+    Seeked(f64),
     CacheState {
         paused: bool,
         buffering_state: f64,
@@ -62,12 +62,6 @@ pub enum FilterInput {
     Boundary,
     Eof,
     Stopped,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct PendingDecodeSeek {
-    pub position_secs: f64,
-    pub generation: u64,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

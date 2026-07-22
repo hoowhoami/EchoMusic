@@ -10,8 +10,7 @@ use realtime_ring::RealtimeAudioRing;
 pub use session::PlaybackSession;
 pub use types::{
     AudioOutputStats, AudioSampleFormat, DecodedAudioChunk, DecodedAudioData, DecodedAudioFormat,
-    FilterInput, MixFormat, PacketCacheStats, PendingDecodeSeek, PlaybackSignal, TrackSwitchInfo,
-    MIX_CHANNELS,
+    FilterInput, MixFormat, PacketCacheStats, PlaybackSignal, TrackSwitchInfo, MIX_CHANNELS,
 };
 
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
@@ -55,8 +54,6 @@ pub struct SharedAudio {
     packet_cache_stats: Mutex<Option<PacketCacheStats>>,
     output_stats: Mutex<Option<AudioOutputStats>>,
     gapless_boundary: Mutex<Option<GaplessBoundary>>,
-    pending_decode_seek: Mutex<Option<PendingDecodeSeek>>,
-    pending_seek_confirmation: Mutex<Option<f64>>,
     volume_bits: AtomicU32,
     pub mix_format: MixFormat,
     track_seq: AtomicU64,
@@ -116,8 +113,6 @@ impl SharedAudio {
             packet_cache_stats: Mutex::new(None),
             output_stats: Mutex::new(None),
             gapless_boundary: Mutex::new(None),
-            pending_decode_seek: Mutex::new(None),
-            pending_seek_confirmation: Mutex::new(None),
             volume_bits: AtomicU32::new(1.0f32.to_bits()),
             mix_format,
             played_samples: AtomicU64::new(0),
@@ -418,6 +413,7 @@ impl SharedAudio {
                 offset = offset.saturating_add(pushed_samples);
                 source_frames_remaining =
                     source_frames_remaining.saturating_sub(pushed_source_frames);
+                self.resume_cache_after_first_seek_audio(pushed_samples);
                 self.output_queue_changed.notify_all();
                 continue;
             }
@@ -442,6 +438,20 @@ impl SharedAudio {
             drop(queue);
         }
         true
+    }
+
+    fn resume_cache_after_first_seek_audio(&self, pushed_samples: usize) {
+        if !self.resume_when_buffered.load(Ordering::Acquire) {
+            return;
+        }
+        self.underflow_buffering.store(false, Ordering::Release);
+        let buffered_samples = self.realtime_output.buffered_samples().max(pushed_samples);
+        self.publish_cache_state(
+            false,
+            buffered_samples,
+            pushed_samples.max(1),
+            pushed_samples.max(1),
+        );
     }
 
     pub fn pop_decoded_for_filter(&self, generation: u64) -> FilterInput {
@@ -476,30 +486,10 @@ impl SharedAudio {
         }
     }
 
-    pub fn take_pending_decode_seek(&self, current_generation: u64) -> Option<PendingDecodeSeek> {
-        let mut guard = self.pending_decode_seek.lock().ok()?;
-        if guard
-            .as_ref()
-            .is_some_and(|seek| seek.generation > current_generation)
-        {
-            guard.take()
-        } else {
-            None
-        }
-    }
-
     pub fn mark_seek_audio_ready(&self, position_secs: f64) {
+        let position_secs = position_secs.max(0.0);
         self.set_position_secs(position_secs);
-        if let Ok(mut pending) = self.pending_seek_confirmation.lock() {
-            *pending = Some(position_secs.max(0.0));
-        }
-    }
-
-    fn take_pending_seek_confirmation(&self) -> Option<f64> {
-        self.pending_seek_confirmation
-            .try_lock()
-            .ok()
-            .and_then(|mut pending| pending.take())
+        self.notify_signal(PlaybackSignal::Seeked(position_secs));
     }
 
     pub fn pop_into(&self, output: &mut [f32]) -> usize {
@@ -551,11 +541,7 @@ impl SharedAudio {
                     .played_samples
                     .fetch_add(consumed_source_frames, Ordering::AcqRel);
                 let current = previous.saturating_add(consumed_source_frames);
-                if self.take_pending_seek_confirmation().is_some() {
-                    self.notify_signal(PlaybackSignal::Seeked);
-                } else {
-                    self.notify_time_update_if_due(current);
-                }
+                self.notify_time_update_if_due(current);
             }
             consumed_frames
         } else {
@@ -831,19 +817,6 @@ impl SharedAudio {
         self.reset_decode_pipeline(position_secs, dsp_settings, true)
     }
 
-    pub fn request_decode_seek(&self, position_secs: f64, dsp_settings: &DspSettings) -> u64 {
-        let generation = self.reset_decode_pipeline(position_secs, dsp_settings, true);
-        if let Ok(mut pending) = self.pending_decode_seek.lock() {
-            *pending = Some(PendingDecodeSeek {
-                position_secs: position_secs.max(0.0),
-                generation,
-            });
-        }
-        self.decoded_queue_changed.notify_all();
-        self.output_queue_changed.notify_all();
-        generation
-    }
-
     fn reset_decode_pipeline(
         &self,
         position_secs: f64,
@@ -868,9 +841,6 @@ impl SharedAudio {
         self.publish_cache_state(false, 0, 1, 1);
         if let Ok(mut boundary) = self.gapless_boundary.lock() {
             *boundary = None;
-        }
-        if let Ok(mut pending) = self.pending_seek_confirmation.lock() {
-            *pending = None;
         }
         self.set_position_secs(position_secs);
         self.set_speed(dsp_settings.speed);
@@ -1012,7 +982,7 @@ mod tests {
     }
 
     #[test]
-    fn seek_confirmation_waits_until_output_consumes_target_audio() {
+    fn seek_confirmation_is_emitted_when_seek_audio_is_ready() {
         let shared = SharedAudio::new(
             MixFormat::stereo_f32(100),
             0.1,
@@ -1022,13 +992,14 @@ mod tests {
         let (tx, rx) = std::sync::mpsc::sync_channel(4);
         shared.bind_signal_sender(tx);
         shared.mark_seek_audio_ready(1.0);
-        assert!(shared.push_samples(&[0.1, 0.2, 0.3, 0.4]));
 
-        assert!(rx.try_recv().is_err());
+        assert!(matches!(
+            rx.try_recv(),
+            Ok(PlaybackSignal::Seeked(position)) if (position - 1.0).abs() < f64::EPSILON
+        ));
+        assert!(shared.push_samples(&[0.1, 0.2, 0.3, 0.4]));
         let mut output = [0.0f32; 4];
         assert_eq!(shared.pop_into(&mut output), 2);
-
-        assert!(matches!(rx.try_recv(), Ok(PlaybackSignal::Seeked)));
     }
 
     #[test]
@@ -1139,6 +1110,32 @@ mod tests {
         assert_eq!(frames, 2);
         assert_eq!(output, [0.1, 0.2, 0.3, 0.4, 0.0, 0.0, 0.0, 0.0]);
         assert!((shared.position_secs() - 1.02).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn reset_for_decode_resume_publishes_resume_when_first_audio_arrives() {
+        let shared = SharedAudio::new(
+            MixFormat::stereo_f32(100),
+            2.0,
+            8.0,
+            &DspSettings::default(),
+        );
+        let (tx, rx) = std::sync::mpsc::sync_channel(4);
+        shared.bind_signal_sender(tx);
+        shared.reset_for_decode_resume(1.0, &DspSettings::default());
+
+        let mut output = [1.0f32; 4];
+        assert_eq!(shared.pop_into(&mut output), 0);
+        assert!(matches!(
+            rx.try_recv(),
+            Ok(PlaybackSignal::CacheState { paused: true, .. })
+        ));
+
+        assert!(shared.push_samples(&[0.1, 0.2, 0.3, 0.4]));
+        assert!(matches!(
+            rx.try_recv(),
+            Ok(PlaybackSignal::CacheState { paused: false, .. })
+        ));
     }
 
     #[test]
