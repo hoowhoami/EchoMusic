@@ -68,7 +68,7 @@ pub(crate) struct WasapiOutputFormat {
     pub sample_format: WasapiSampleFormat,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy)]
 pub(crate) struct WasapiResolvedFormat {
     pub wave_format: Audio::WAVEFORMATEXTENSIBLE,
     pub output: WasapiOutputFormat,

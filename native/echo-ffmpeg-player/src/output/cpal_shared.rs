@@ -1,15 +1,26 @@
+#[cfg(not(target_os = "windows"))]
 use crate::device::select_output_device_checked;
-use crate::events::{PlayerErrorCode, PlayerEvent};
+#[cfg(not(target_os = "windows"))]
+use crate::events::PlayerErrorCode;
+use crate::events::PlayerEvent;
+#[cfg(not(target_os = "windows"))]
 use crate::exclusive::ExclusiveGuard;
-use crate::output::{report_output_start, report_output_start_failure, OutputStartSender};
+use crate::output::OutputStartSender;
+#[cfg(not(target_os = "windows"))]
+use crate::output::{report_output_start, report_output_start_failure};
 use crate::shared::SharedAudio;
+#[cfg(not(target_os = "windows"))]
 use cpal::traits::{DeviceTrait, StreamTrait};
+#[cfg(not(target_os = "windows"))]
 use cpal::{BufferSize, SampleFormat, Stream, StreamConfig};
 use ffmpeg_audio::{sys, SwrContext};
 use std::collections::VecDeque;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
-use std::thread::{self, JoinHandle};
+#[cfg(not(target_os = "windows"))]
+use std::thread;
+use std::thread::JoinHandle;
+#[cfg(not(target_os = "windows"))]
 use std::time::Duration;
 use std::{mem, ptr};
 
@@ -27,7 +38,7 @@ pub(crate) fn spawn_output_thread_with_start_notify(
     exclusive: bool,
     shared: Arc<SharedAudio>,
     emit: fn(PlayerEvent),
-    mut start_notify: Option<OutputStartSender>,
+    start_notify: Option<OutputStartSender>,
 ) -> JoinHandle<()> {
     #[cfg(target_os = "windows")]
     {
@@ -39,104 +50,123 @@ pub(crate) fn spawn_output_thread_with_start_notify(
             start_notify,
         );
     }
-    #[cfg(target_os = "linux")]
-    if exclusive {
-        return super::alsa_exclusive::spawn_output_thread(device_name, shared, emit, start_notify);
-    }
-    #[cfg(target_os = "macos")]
-    if exclusive {
-        return super::coreaudio_exclusive::spawn_output_thread(
-            device_name,
-            shared,
-            emit,
-            start_notify,
-        );
-    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let mut start_notify = start_notify;
+        #[cfg(target_os = "linux")]
+        if exclusive {
+            return super::alsa_exclusive::spawn_output_thread(
+                device_name,
+                shared,
+                emit,
+                start_notify,
+            );
+        }
+        #[cfg(target_os = "macos")]
+        if exclusive {
+            return super::coreaudio_exclusive::spawn_output_thread(
+                device_name,
+                shared,
+                emit,
+                start_notify,
+            );
+        }
 
-    thread::spawn(move || {
-        let device = match select_output_device_checked(&device_name, exclusive) {
-            Ok(device) => device,
-            Err(message) => {
-                let startup_failure =
-                    report_output_start_failure(&mut start_notify, message.clone());
-                shared.request_output_stop();
-                if !startup_failure {
-                    emit(PlayerEvent::error(
-                        PlayerErrorCode::OutputDeviceUnavailable,
-                        message,
-                    ));
-                }
-                return;
-            }
-        };
-        let resolved_device_name = device.name().unwrap_or_else(|_| device_name.clone());
-        let supported = match device.default_output_config() {
-            Ok(config) => config,
-            Err(err) => {
-                let message = format!("failed to get default output config: {err}");
-                let startup_failure =
-                    report_output_start_failure(&mut start_notify, message.clone());
-                shared.request_output_stop();
-                if !startup_failure {
-                    emit(PlayerEvent::error(PlayerErrorCode::OutputConfig, message));
-                }
-                return;
-            }
-        };
-        let stream_config = supported.config();
-        let output_channels = usize::from(stream_config.channels.max(1));
-        let buffer_frames = cpal_buffer_frames(&stream_config);
-        let output_stats = crate::shared::AudioOutputStats {
-            backend: "cpal".to_string(),
-            sample_rate: f64::from(stream_config.sample_rate.0),
-            engine_sample_rate: f64::from(shared.mix_format.sample_rate),
-            channels: output_channels as f64,
-            format: format!("{:?}", supported.sample_format()),
-            buffer_frames: buffer_frames as f64,
-            buffer_secs: buffer_frames as f64 / f64::from(stream_config.sample_rate.0.max(1)),
-            delay_secs: buffer_frames as f64 / f64::from(stream_config.sample_rate.0.max(1)),
-            underruns: 0.0,
-        };
-        emit(PlayerEvent::log(
-            "info",
-            format!(
-                "audio output opening: requested='{device_name}', resolved='{resolved_device_name}', exclusive={exclusive}, sample_rate={}, engine_sample_rate={}, channels={}, format={:?}",
-                stream_config.sample_rate.0,
-                shared.mix_format.sample_rate,
-                output_channels,
-                supported.sample_format()
-            ),
-        ));
-        shared.update_output_stats(output_stats);
-        let exclusive_guard = if exclusive {
-            match ExclusiveGuard::acquire(&device_name) {
-                Ok(guard) => guard,
+        thread::spawn(move || {
+            let device = match select_output_device_checked(&device_name, exclusive) {
+                Ok(device) => device,
                 Err(message) => {
                     let startup_failure =
                         report_output_start_failure(&mut start_notify, message.clone());
                     shared.request_output_stop();
                     if !startup_failure {
                         emit(PlayerEvent::error(
-                            PlayerErrorCode::OutputExclusive,
+                            PlayerErrorCode::OutputDeviceUnavailable,
                             message,
                         ));
                     }
                     return;
                 }
-            }
-        } else {
-            None
-        };
-        let stream = match build_output_stream(
-            &device,
-            supported.sample_format(),
-            &stream_config,
-            output_channels,
-            shared.clone(),
-            emit,
-        ) {
-            Ok(stream) => stream,
-            Err(message) => {
+            };
+            let resolved_device_name = device.name().unwrap_or_else(|_| device_name.clone());
+            let supported = match device.default_output_config() {
+                Ok(config) => config,
+                Err(err) => {
+                    let message = format!("failed to get default output config: {err}");
+                    let startup_failure =
+                        report_output_start_failure(&mut start_notify, message.clone());
+                    shared.request_output_stop();
+                    if !startup_failure {
+                        emit(PlayerEvent::error(PlayerErrorCode::OutputConfig, message));
+                    }
+                    return;
+                }
+            };
+            let stream_config = supported.config();
+            let output_channels = usize::from(stream_config.channels.max(1));
+            let buffer_frames = cpal_buffer_frames(&stream_config);
+            let output_stats = crate::shared::AudioOutputStats {
+                backend: "cpal".to_string(),
+                sample_rate: f64::from(stream_config.sample_rate.0),
+                engine_sample_rate: f64::from(shared.mix_format.sample_rate),
+                channels: output_channels as f64,
+                format: format!("{:?}", supported.sample_format()),
+                buffer_frames: buffer_frames as f64,
+                buffer_secs: buffer_frames as f64 / f64::from(stream_config.sample_rate.0.max(1)),
+                delay_secs: buffer_frames as f64 / f64::from(stream_config.sample_rate.0.max(1)),
+                underruns: 0.0,
+            };
+            emit(PlayerEvent::log(
+                "info",
+                format!(
+                    "audio output opening: requested='{device_name}', resolved='{resolved_device_name}', exclusive={exclusive}, sample_rate={}, engine_sample_rate={}, channels={}, format={:?}",
+                    stream_config.sample_rate.0,
+                    shared.mix_format.sample_rate,
+                    output_channels,
+                    supported.sample_format()
+                ),
+            ));
+            shared.update_output_stats(output_stats);
+            let exclusive_guard = if exclusive {
+                match ExclusiveGuard::acquire(&device_name) {
+                    Ok(guard) => guard,
+                    Err(message) => {
+                        let startup_failure =
+                            report_output_start_failure(&mut start_notify, message.clone());
+                        shared.request_output_stop();
+                        if !startup_failure {
+                            emit(PlayerEvent::error(
+                                PlayerErrorCode::OutputExclusive,
+                                message,
+                            ));
+                        }
+                        return;
+                    }
+                }
+            } else {
+                None
+            };
+            let stream = match build_output_stream(
+                &device,
+                supported.sample_format(),
+                &stream_config,
+                output_channels,
+                shared.clone(),
+                emit,
+            ) {
+                Ok(stream) => stream,
+                Err(message) => {
+                    let startup_failure =
+                        report_output_start_failure(&mut start_notify, message.clone());
+                    shared.request_output_stop();
+                    if !startup_failure {
+                        emit(PlayerEvent::error(PlayerErrorCode::OutputStream, message));
+                    }
+                    return;
+                }
+            };
+            if let Err(err) = stream.play() {
+                let message = format!("failed to start audio output: {err}");
                 let startup_failure =
                     report_output_start_failure(&mut start_notify, message.clone());
                 shared.request_output_stop();
@@ -145,30 +175,22 @@ pub(crate) fn spawn_output_thread_with_start_notify(
                 }
                 return;
             }
-        };
-        if let Err(err) = stream.play() {
-            let message = format!("failed to start audio output: {err}");
-            let startup_failure = report_output_start_failure(&mut start_notify, message.clone());
-            shared.request_output_stop();
-            if !startup_failure {
-                emit(PlayerEvent::error(PlayerErrorCode::OutputStream, message));
+            shared.mark_output_started();
+            report_output_start(&mut start_notify, Ok(()));
+            emit(PlayerEvent::log(
+                "info",
+                format!("audio output started: resolved='{resolved_device_name}'"),
+            ));
+            while !shared.should_stop_output() {
+                thread::sleep(Duration::from_millis(50));
             }
-            return;
-        }
-        shared.mark_output_started();
-        report_output_start(&mut start_notify, Ok(()));
-        emit(PlayerEvent::log(
-            "info",
-            format!("audio output started: resolved='{resolved_device_name}'"),
-        ));
-        while !shared.should_stop_output() {
-            thread::sleep(Duration::from_millis(50));
-        }
-        drop(stream);
-        drop(exclusive_guard);
-    })
+            drop(stream);
+            drop(exclusive_guard);
+        })
+    }
 }
 
+#[cfg(not(target_os = "windows"))]
 fn cpal_buffer_frames(config: &StreamConfig) -> u32 {
     match config.buffer_size {
         BufferSize::Fixed(frames) => frames,
@@ -176,6 +198,7 @@ fn cpal_buffer_frames(config: &StreamConfig) -> u32 {
     }
 }
 
+#[cfg(not(target_os = "windows"))]
 fn build_output_stream(
     device: &cpal::Device,
     sample_format: SampleFormat,
@@ -318,6 +341,7 @@ pub(crate) fn fill_output_reusing(
     }
 }
 
+#[cfg(not(target_os = "windows"))]
 fn fill_output_converted<T>(
     output: &mut [T],
     output_channels: usize,
