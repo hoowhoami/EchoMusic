@@ -26,12 +26,7 @@ const readClampedNumber = (value: unknown, fallback: number, min: number, max: n
 
 const getPersistedNativeAudioConfig = () => {
   const saved = getKvStorage().get<Record<string, unknown>>(PINIA_SETTING_KEY);
-  const audioCacheSecs = readClampedNumber(
-    saved?.audioCacheSecs,
-    DEFAULT_AUDIO_CACHE_SECS,
-    1,
-    120,
-  );
+  const audioCacheSecs = readClampedNumber(saved?.audioCacheSecs, DEFAULT_AUDIO_CACHE_SECS, 1, 120);
   const audioBufferSecs = readClampedNumber(
     saved?.audioBufferSecs,
     DEFAULT_AUDIO_OUTPUT_BUFFER_SECS,
