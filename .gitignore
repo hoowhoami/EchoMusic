@@ -25,6 +25,12 @@ build/mpv/
 *.deb
 *.rpm
 *.AppImage
+native/*/index.d.ts
+native/*/package-lock.json
+native/*/target/
+native/*/node_modules/
+native/*/*.node
+native/*/.napi-rs
 
 # IDEs and editors
 .vscode/*
