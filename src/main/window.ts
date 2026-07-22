@@ -210,7 +210,7 @@ const buildWindowBounds = (): Pick<
     height: Math.max(minHeight, state.height || defaultHeight),
     ...(typeof state.x === 'number' ? { x: state.x } : {}),
     ...(typeof state.y === 'number' ? { y: state.y } : {}),
-    ...(process.platform !== 'win32' && state.boundsMode === 'content'
+    ...(shouldUseContentWindowState() && state.boundsMode === 'content'
       ? { useContentSize: true }
       : {}),
   };
@@ -222,10 +222,53 @@ const buildWindowBounds = (): Pick<
   return bounds;
 };
 
-let manualWindowResizePending = false;
-let manualWindowMovePending = false;
-let windowSizeDirty = false;
-let windowPositionDirty = false;
+type WindowBoundsChangeKind = 'move' | 'resize';
+
+const shouldUseContentWindowState = () => process.platform !== 'win32';
+const shouldPersistDirtyWindowStateOnly = () => process.platform === 'win32';
+
+const pendingManualWindowChange: Record<WindowBoundsChangeKind, boolean> = {
+  move: false,
+  resize: false,
+};
+
+const dirtyWindowState = {
+  size: false,
+  position: false,
+};
+
+const markWindowStateDirty = (fields: Partial<typeof dirtyWindowState>) => {
+  dirtyWindowState.size = dirtyWindowState.size || Boolean(fields.size);
+  dirtyWindowState.position = dirtyWindowState.position || Boolean(fields.position);
+};
+
+const markManualWindowResize = () => {
+  pendingManualWindowChange.resize = true;
+  // 从左侧或顶部缩放时坐标也会变化。
+  markWindowStateDirty({ size: true, position: true });
+};
+
+const markManualWindowMove = () => {
+  pendingManualWindowChange.move = true;
+  markWindowStateDirty({ position: true });
+};
+
+const consumeWindowBoundsChange = (kind: WindowBoundsChangeKind) => {
+  if (!shouldPersistDirtyWindowStateOnly()) {
+    markWindowStateDirty(kind === 'resize' ? { size: true, position: true } : { position: true });
+    return true;
+  }
+
+  if (!pendingManualWindowChange[kind]) return false;
+  pendingManualWindowChange[kind] = false;
+  markWindowStateDirty(kind === 'resize' ? { size: true, position: true } : { position: true });
+  return true;
+};
+
+const resetDirtyWindowState = () => {
+  dirtyWindowState.size = false;
+  dirtyWindowState.position = false;
+};
 
 const persistWindowState = (dirtyOnly = false) => {
   if (!win || !rememberWindowSize || win.isDestroyed()) return;
@@ -247,11 +290,12 @@ const persistWindowState = (dirtyOnly = false) => {
   const prev = getPersistedWindowState();
   const bounds = win.getBounds();
   const contentBounds = win.getContentBounds();
-  const nextBoundsMode: WindowState['boundsMode'] =
-    process.platform === 'win32' ? 'window' : 'content';
-  const sizeBounds = process.platform === 'win32' ? bounds : contentBounds;
-  const shouldUpdateSize = !dirtyOnly || windowSizeDirty;
-  const shouldUpdatePosition = !dirtyOnly || windowPositionDirty;
+  const nextBoundsMode: WindowState['boundsMode'] = shouldUseContentWindowState()
+    ? 'content'
+    : 'window';
+  const sizeBounds = shouldUseContentWindowState() ? contentBounds : bounds;
+  const shouldUpdateSize = !dirtyOnly || dirtyWindowState.size;
+  const shouldUpdatePosition = !dirtyOnly || dirtyWindowState.position;
 
   setMainAppSetting('windowState', {
     width: shouldUpdateSize ? sizeBounds.width : prev.width,
@@ -261,8 +305,7 @@ const persistWindowState = (dirtyOnly = false) => {
     isMaximized: false,
     boundsMode: shouldUpdateSize ? nextBoundsMode : prev.boundsMode,
   });
-  windowSizeDirty = false;
-  windowPositionDirty = false;
+  resetDirtyWindowState();
 };
 
 let persistWindowStateTimer: ReturnType<typeof setTimeout> | null = null;
@@ -277,13 +320,13 @@ const schedulePersistWindowState = () => {
   clearPersistWindowStateTimer();
   persistWindowStateTimer = setTimeout(() => {
     persistWindowStateTimer = null;
-    persistWindowState(process.platform === 'win32');
+    persistWindowState(shouldPersistDirtyWindowStateOnly());
   }, 180);
 };
 
 const flushPersistWindowState = () => {
   clearPersistWindowStateTimer();
-  persistWindowState(process.platform === 'win32');
+  persistWindowState(shouldPersistDirtyWindowStateOnly());
 };
 
 export function getMainWindow() {
@@ -404,39 +447,15 @@ export async function createWindow() {
     }
   });
 
-  const handleWindowBoundsChanged = (kind: 'move' | 'resize') => {
+  const handleWindowBoundsChanged = (kind: WindowBoundsChangeKind) => {
     if (!win || win.isDestroyed() || win.isMaximized()) return;
-
-    if (process.platform === 'win32') {
-      if (kind === 'resize') {
-        if (!manualWindowResizePending) return;
-        manualWindowResizePending = false;
-        windowSizeDirty = true;
-        // 从左侧或顶部缩放时坐标也会变化。
-        windowPositionDirty = true;
-      } else {
-        if (!manualWindowMovePending) return;
-        manualWindowMovePending = false;
-        windowPositionDirty = true;
-      }
-    } else {
-      windowSizeDirty = true;
-      windowPositionDirty = true;
-    }
-
+    if (!consumeWindowBoundsChange(kind)) return;
     schedulePersistWindowState();
   };
 
   if (process.platform === 'win32') {
-    win.on('will-resize', () => {
-      manualWindowResizePending = true;
-      windowSizeDirty = true;
-      windowPositionDirty = true;
-    });
-    win.on('will-move', () => {
-      manualWindowMovePending = true;
-      windowPositionDirty = true;
-    });
+    win.on('will-resize', markManualWindowResize);
+    win.on('will-move', markManualWindowMove);
     win.on('resized', () => handleWindowBoundsChanged('resize'));
     win.on('moved', () => handleWindowBoundsChanged('move'));
   } else {
