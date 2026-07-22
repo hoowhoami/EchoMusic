@@ -218,57 +218,6 @@ impl DeviceNotificationClient_Impl {
     }
 }
 
-pub(crate) fn validate_wasapi_output_device(device_name: &str) -> Result<(), String> {
-    let sample_rate = resolve_wasapi_output_sample_rate(device_name);
-    validate_wasapi_output_device_at_sample_rate(device_name, sample_rate)
-}
-
-pub(crate) fn validate_wasapi_output_device_at_sample_rate(
-    device_name: &str,
-    sample_rate: u32,
-) -> Result<(), String> {
-    let _com = ComApartment::init()?;
-    let device = resolve_wasapi_output_device(device_name)?;
-    let probe_client = activate_wasapi_audio_client(&device)?;
-    let output_format =
-        choose_wasapi_output_format(&probe_client, sample_rate, AudioSampleFormat::Unknown)?;
-    let wave_format = wasapi_wave_format(output_format.sample_rate, output_format.sample_format);
-    let mut aligned_buffer_frames = None;
-
-    loop {
-        let audio_client = activate_wasapi_audio_client(&device)?;
-        let buffer_duration = aligned_buffer_frames
-            .map(|frames| wasapi_duration_from_frames(frames, output_format.sample_rate))
-            .unwrap_or_else(|| wasapi_exclusive_buffer_duration(&audio_client));
-        let result = unsafe {
-            audio_client.Initialize(
-                Audio::AUDCLNT_SHAREMODE_EXCLUSIVE,
-                Audio::AUDCLNT_STREAMFLAGS_EVENTCALLBACK,
-                buffer_duration,
-                buffer_duration,
-                &wave_format.Format,
-                None,
-            )
-        };
-        match result {
-            Ok(()) => return Ok(()),
-            Err(err)
-                if is_wasapi_buffer_size_not_aligned(&err) && aligned_buffer_frames.is_none() =>
-            {
-                let frames = unsafe { audio_client.GetBufferSize() }
-                    .map_err(|err| format!("failed to read WASAPI aligned buffer size: {err}"))?;
-                aligned_buffer_frames = Some(frames);
-            }
-            Err(err) => {
-                return Err(wasapi_client_error_message(
-                    "failed to validate WASAPI exclusive output",
-                    &err,
-                ));
-            }
-        }
-    }
-}
-
 pub(crate) fn list_output_devices() -> Option<Vec<AudioDevice>> {
     let _com = ComApartment::init().ok()?;
     let enumerator = device_enumerator().ok()?;

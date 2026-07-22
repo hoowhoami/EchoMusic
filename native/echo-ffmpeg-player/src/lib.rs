@@ -944,15 +944,8 @@ fn validate_output_restart_config(
 ) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     if config.exclusive_output {
-        let sample_rate = shared
-            .map(|shared| shared.mix_format.sample_rate)
-            .unwrap_or_else(|| {
-                device::resolve_output_sample_rate(&config.audio_device, config.exclusive_output)
-            });
-        return device::platform_windows::validate_wasapi_output_device_at_sample_rate(
-            &config.audio_device,
-            sample_rate,
-        );
+        let _ = shared;
+        return Ok(());
     }
     #[cfg(target_os = "macos")]
     if config.exclusive_output {

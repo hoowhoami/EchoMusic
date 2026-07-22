@@ -100,7 +100,8 @@ pub fn resolve_output_sample_rate(device_name: &str, exclusive: bool) -> u32 {
 pub fn validate_output_device(device_name: &str, exclusive: bool) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     if exclusive {
-        return crate::device::platform_windows::validate_wasapi_output_device(device_name);
+        return crate::device::platform_windows::resolve_wasapi_output_device(device_name)
+            .map(|_| ());
     }
     #[cfg(target_os = "linux")]
     if exclusive {
