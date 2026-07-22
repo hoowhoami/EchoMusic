@@ -485,6 +485,14 @@ contextBridge.exposeInMainWorld('electron', {
       ipcRenderer.on('player:state-change', listener);
       return () => ipcRenderer.removeListener('player:state-change', listener);
     },
+    onCoreStateChange: (func: (payload: { state?: string; reason?: string }) => void) => {
+      const listener = (
+        _event: Electron.IpcRendererEvent,
+        payload: { state?: string; reason?: string },
+      ) => func(payload);
+      ipcRenderer.on('player:core-state-change', listener);
+      return () => ipcRenderer.removeListener('player:core-state-change', listener);
+    },
     onPlaybackEnd: (func: (reason: string) => void) => {
       const listener = (_event: Electron.IpcRendererEvent, reason: string) => func(reason);
       ipcRenderer.on('player:playback-end', listener);

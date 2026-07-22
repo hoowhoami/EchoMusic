@@ -565,6 +565,7 @@ export interface IElectronAPI {
     onDurationChange: (func: (duration: number) => void) => () => void;
     onFileLoaded: (func: (payload?: { path?: string; seq?: number }) => void) => () => void;
     onStateChange: (func: (state: { playing?: boolean; paused?: boolean }) => void) => () => void;
+    onCoreStateChange: (func: (payload: { state?: string; reason?: string }) => void) => () => void;
     onPlaybackEnd: (func: (reason: string) => void) => () => void;
     onStall: (func: (position: number) => void) => () => void;
     onError: (func: (payload: PlayerErrorPayload) => void) => () => void;

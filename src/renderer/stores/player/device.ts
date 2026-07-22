@@ -21,9 +21,15 @@ type PlayerAudioDeviceListChangedPayload = {
   deviceChangeKind?: string;
   disconnectedDevices?: PlayerAudioDevice[];
 };
+type PlayerCoreStateChangedPayload = {
+  state?: string;
+  reason?: string;
+};
 type DeviceManagerCallbacks = {
   recoverPlaybackStatusAfterOutputChange?: (playerState: NativePlayerState) => void;
 };
+
+const OUTPUT_RECONFIG_SETTLE_MS = 3000;
 
 export const createDeviceManager = (
   state: PlayerState,
@@ -33,6 +39,8 @@ export const createDeviceManager = (
 ) => {
   let refreshingOutputDevices = false;
   let applyingOutputDevice = false;
+  let nativeOutputReconfigActive = false;
+  let outputReconfigSettleUntil = 0;
   let lastDefaultOutputDeviceId: string | null | undefined;
 
   const resolveDefaultOutputDeviceId = (devices: PlayerAudioDevice[]) =>
@@ -68,6 +76,29 @@ export const createDeviceManager = (
   const isExclusiveOutputError = (error: PlayerErrorPayload) =>
     error.errorCode === 'output-exclusive' ||
     error.message.toLowerCase().includes('exclusive output');
+
+  const beginIntentionalOutputReconfig = () => {
+    nativeOutputReconfigActive = true;
+    outputReconfigSettleUntil = Date.now() + OUTPUT_RECONFIG_SETTLE_MS;
+  };
+
+  const settleIntentionalOutputReconfig = () => {
+    nativeOutputReconfigActive = false;
+    outputReconfigSettleUntil = Date.now() + OUTPUT_RECONFIG_SETTLE_MS;
+  };
+
+  const isIntentionalOutputReconfigActive = () =>
+    applyingOutputDevice || nativeOutputReconfigActive || Date.now() < outputReconfigSettleUntil;
+
+  const handleCoreStateChange = (payload: PlayerCoreStateChangedPayload) => {
+    if (payload.state === 'output-reconfig') {
+      beginIntentionalOutputReconfig();
+      return;
+    }
+    if (nativeOutputReconfigActive) {
+      settleIntentionalOutputReconfig();
+    }
+  };
 
   const setReadyOutputDeviceStatus = (deviceId: string) => {
     if (deviceId === 'default') {
@@ -120,7 +151,7 @@ export const createDeviceManager = (
   const handleOutputDeviceError = async (error: PlayerErrorPayload): Promise<boolean> => {
     if (!isOutputDeviceError(error)) return false;
 
-    if (applyingOutputDevice) return true;
+    if (isIntentionalOutputReconfigActive()) return true;
 
     if (isExclusiveOutputError(error) && (await recoverFromExclusiveOutputError())) return true;
 
@@ -235,9 +266,11 @@ export const createDeviceManager = (
   ): Promise<boolean> => {
     if (applyingOutputDevice) return false;
     applyingOutputDevice = true;
+    beginIntentionalOutputReconfig();
     try {
       return await applyOutputDeviceUnchecked(deviceId, options);
     } finally {
+      settleIntentionalOutputReconfig();
       applyingOutputDevice = false;
     }
   };
@@ -309,7 +342,10 @@ export const createDeviceManager = (
 
       settingStore.outputDevices = currentOutputOptions;
 
-      if (hasDisconnectedOutputDevice && settingStore.pauseOnOutputDeviceDisconnect) {
+      const shouldPauseForDisconnect =
+        settingStore.pauseOnOutputDeviceDisconnect && !isIntentionalOutputReconfigActive();
+
+      if (hasDisconnectedOutputDevice && shouldPauseForDisconnect) {
         pauseForOutputDeviceDisconnect('检测到输出设备断开，已暂停播放。');
         return;
       }
@@ -326,7 +362,7 @@ export const createDeviceManager = (
       }
 
       if (!hasCurrentDevice) {
-        if (settingStore.pauseOnOutputDeviceDisconnect) {
+        if (shouldPauseForDisconnect) {
           pauseForOutputDeviceDisconnect('所选输出设备已不可用，已暂停播放。');
           state.appliedOutputDeviceId = currentOutput;
         } else if (state.appliedOutputDeviceId === 'default') {
@@ -352,5 +388,6 @@ export const createDeviceManager = (
     refreshOutputDevices,
     applyOutputDevice,
     handleOutputDeviceError,
+    handleCoreStateChange,
   };
 };

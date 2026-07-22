@@ -44,6 +44,9 @@ function registerEventForwarding(controller: PlayerController): void {
   controller.on('state-change', (state) =>
     getMainWindow()?.webContents.send('player:state-change', state),
   );
+  controller.on('core-state-change', (payload) =>
+    getMainWindow()?.webContents.send('player:core-state-change', payload),
+  );
   controller.on('playback-end', (reason) =>
     getMainWindow()?.webContents.send('player:playback-end', reason),
   );
