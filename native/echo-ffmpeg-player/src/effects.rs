@@ -44,8 +44,8 @@ pub struct PreparedSpatialEffect {
     pub file_path: String,
     pub mix: f32,
     sample_rate: u32,
-    left: Arc<PreparedImpulseChannel>,
-    right: Arc<PreparedImpulseChannel>,
+    channels: usize,
+    responses: Vec<Arc<PreparedImpulseChannel>>,
 }
 
 #[derive(Debug)]
@@ -120,9 +120,8 @@ impl DspChain {
         }
         for sample in samples {
             if (self.gain_linear - 1.0).abs() >= f32::EPSILON {
-                *sample = (*sample * self.gain_linear).clamp(-1.0, 1.0);
+                *sample *= self.gain_linear;
             }
-            *sample = sample.clamp(-1.0, 1.0);
         }
     }
 
@@ -138,6 +137,18 @@ impl PreparedSpatialEffect {
     pub fn sample_rate(&self) -> u32 {
         self.sample_rate
     }
+
+    pub fn channels(&self) -> usize {
+        self.channels
+    }
+
+    pub fn mode(&self) -> &'static str {
+        if self.channels >= 4 {
+            "true-stereo"
+        } else {
+            "stereo"
+        }
+    }
 }
 
 pub fn prepare_spatial_effect(
@@ -150,16 +161,21 @@ pub fn prepare_spatial_effect(
         .map_err(|err| format!("failed to open impulse response file: {err}"))?;
     let mut reader = AudioReader::new(file)
         .map_err(|err| format!("failed to decode impulse response file: {err}"))?;
+    let source_channels = usize::try_from(reader.source_info().channels)
+        .ok()
+        .filter(|channels| *channels > 0)
+        .unwrap_or(2);
+    let ir_channels = if source_channels >= 4 { 4 } else { 2 };
     let mut resampler = reader
         .build_resampler(
             ResampleOptions::new()
                 .sample_rate(sample_rate as i32)
-                .channels(2)
+                .channels(ir_channels as i32)
                 .format::<f32>(),
         )
         .map_err(|err| format!("failed to create impulse response resampler: {err}"))?;
 
-    let max_samples = (sample_rate as f32 * MAX_IR_SECONDS) as usize * 2;
+    let max_samples = (sample_rate as f32 * MAX_IR_SECONDS) as usize * ir_channels;
     let mut interleaved = Vec::<f32>::new();
     loop {
         let frame = reader
@@ -184,16 +200,19 @@ pub fn prepare_spatial_effect(
         return Err("impulse response file did not contain audio samples".to_string());
     }
 
-    trim_impulse_response(&mut interleaved);
-    normalize_impulse_response(&mut interleaved);
+    trim_impulse_response(&mut interleaved, ir_channels);
+    normalize_impulse_response(&mut interleaved, ir_channels);
 
-    let (left, right) = split_stereo(&interleaved);
+    let responses = split_impulse_channels(&interleaved, ir_channels)
+        .into_iter()
+        .map(|channel| Arc::new(PreparedImpulseChannel::new(&channel)))
+        .collect();
     Ok(PreparedSpatialEffect {
         file_path: file_path.to_string(),
         mix,
         sample_rate,
-        left: Arc::new(PreparedImpulseChannel::new(&left)),
-        right: Arc::new(PreparedImpulseChannel::new(&right)),
+        channels: ir_channels,
+        responses,
     })
 }
 
@@ -210,27 +229,39 @@ fn spatial_resource_identity(spatial: &Option<PreparedSpatialEffect>) -> Option<
         .map(|spatial| (spatial.file_path.as_str(), spatial.sample_rate))
 }
 
-fn trim_impulse_response(samples: &mut Vec<f32>) {
-    let frames = samples.len() / 2;
+fn trim_impulse_response(samples: &mut Vec<f32>, channels: usize) {
+    let channels = channels.max(1);
+    let frames = samples.len() / channels;
     let mut last_active = 0usize;
     for frame in 0..frames {
-        let left = samples[frame * 2].abs();
-        let right = samples[frame * 2 + 1].abs();
-        if left.max(right) >= IR_TRIM_THRESHOLD {
+        let frame_start = frame * channels;
+        let peak = samples
+            .get(frame_start..frame_start + channels)
+            .unwrap_or(&[])
+            .iter()
+            .copied()
+            .map(f32::abs)
+            .fold(0.0, f32::max);
+        if peak >= IR_TRIM_THRESHOLD {
             last_active = frame;
         }
     }
     let keep_frames = (last_active + 1).max(1);
-    samples.truncate(keep_frames * 2);
+    samples.truncate(keep_frames * channels);
 }
 
-fn normalize_impulse_response(samples: &mut [f32]) {
-    let (left_energy, right_energy) = samples
-        .chunks_exact(2)
-        .fold((0.0f32, 0.0f32), |(left, right), frame| {
-            (left + frame[0] * frame[0], right + frame[1] * frame[1])
-        });
-    let energy = left_energy.sqrt().max(right_energy.sqrt());
+fn normalize_impulse_response(samples: &mut [f32], channels: usize) {
+    let channels = channels.max(1);
+    let mut channel_energy = vec![0.0f32; channels];
+    for frame in samples.chunks_exact(channels) {
+        for (channel, sample) in frame.iter().copied().enumerate() {
+            channel_energy[channel] += sample * sample;
+        }
+    }
+    let energy = channel_energy
+        .into_iter()
+        .map(f32::sqrt)
+        .fold(0.0f32, f32::max);
     if energy <= f32::EPSILON {
         return;
     }
@@ -240,14 +271,17 @@ fn normalize_impulse_response(samples: &mut [f32]) {
     }
 }
 
-fn split_stereo(samples: &[f32]) -> (Vec<f32>, Vec<f32>) {
-    let mut left = Vec::with_capacity(samples.len() / 2);
-    let mut right = Vec::with_capacity(samples.len() / 2);
-    for frame in samples.chunks_exact(2) {
-        left.push(frame[0]);
-        right.push(frame[1]);
+fn split_impulse_channels(samples: &[f32], channels: usize) -> Vec<Vec<f32>> {
+    let channels = channels.max(1);
+    let mut output = (0..channels)
+        .map(|_| Vec::with_capacity(samples.len() / channels))
+        .collect::<Vec<_>>();
+    for frame in samples.chunks_exact(channels) {
+        for (channel, sample) in frame.iter().copied().enumerate() {
+            output[channel].push(sample);
+        }
     }
-    (left, right)
+    output
 }
 
 struct MultichannelEqualizer {
@@ -345,16 +379,21 @@ impl Biquad {
 
 struct SpatialEffect {
     mix: f32,
-    left: PartitionedConvolver,
-    right: PartitionedConvolver,
+    channels: usize,
+    convolvers: Vec<PartitionedConvolver>,
 }
 
 impl SpatialEffect {
     fn new(prepared: &PreparedSpatialEffect) -> Self {
         Self {
             mix: prepared.mix,
-            left: PartitionedConvolver::new(prepared.left.clone()),
-            right: PartitionedConvolver::new(prepared.right.clone()),
+            channels: prepared.channels,
+            convolvers: prepared
+                .responses
+                .iter()
+                .cloned()
+                .map(PartitionedConvolver::new)
+                .collect(),
         }
     }
 
@@ -367,10 +406,26 @@ impl SpatialEffect {
         for frame in samples.chunks_exact_mut(2) {
             let left = frame[0];
             let right = frame[1];
-            let wet_left = self.left.process_sample(left);
-            let wet_right = self.right.process_sample(right);
-            frame[0] = (left * dry + wet_left * wet).clamp(-1.0, 1.0);
-            frame[1] = (right * dry + wet_right * wet).clamp(-1.0, 1.0);
+            let (wet_left, wet_right) = if self.channels >= 4 && self.convolvers.len() >= 4 {
+                (
+                    self.convolvers[0].process_sample(left)
+                        + self.convolvers[2].process_sample(right),
+                    self.convolvers[1].process_sample(left)
+                        + self.convolvers[3].process_sample(right),
+                )
+            } else if self.convolvers.len() >= 2 {
+                (
+                    self.convolvers[0].process_sample(left),
+                    self.convolvers[1].process_sample(right),
+                )
+            } else if let Some(convolver) = self.convolvers.first_mut() {
+                let wet_left = convolver.process_sample(left);
+                (wet_left, wet_left)
+            } else {
+                (left, right)
+            };
+            frame[0] = left * dry + wet_left * wet;
+            frame[1] = right * dry + wet_right * wet;
         }
     }
 
@@ -382,7 +437,11 @@ impl SpatialEffect {
         if self.mix <= 0.0 {
             0
         } else {
-            self.left.latency_frames().max(self.right.latency_frames())
+            self.convolvers
+                .iter()
+                .map(PartitionedConvolver::latency_frames)
+                .max()
+                .unwrap_or_default()
         }
     }
 }
@@ -515,4 +574,79 @@ fn db_to_gain(db: f32) -> f32 {
 fn eq_headroom_gain(gains: &[f32; 10]) -> f32 {
     let max_boost = gains.iter().copied().fold(0.0f32, f32::max);
     db_to_gain(-max_boost.max(0.0))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn prepared_spatial(channels: usize, responses: &[&[f32]]) -> PreparedSpatialEffect {
+        PreparedSpatialEffect {
+            file_path: "test.irs".to_string(),
+            mix: 1.0,
+            sample_rate: 48_000,
+            channels,
+            responses: responses
+                .iter()
+                .map(|response| Arc::new(PreparedImpulseChannel::new(response)))
+                .collect(),
+        }
+    }
+
+    fn rms(samples: &[f32]) -> f32 {
+        let energy = samples.iter().map(|sample| sample * sample).sum::<f32>();
+        (energy / samples.len().max(1) as f32).sqrt()
+    }
+
+    #[test]
+    fn equalizer_changes_target_band_energy() {
+        let sample_rate = 48_000;
+        let mut settings = DspSettings::default();
+        settings.equalizer[4] = -12.0;
+        let mut chain = DspChain::new(sample_rate, 2, &settings);
+        let frames = sample_rate as usize / 20;
+        let mut samples = Vec::with_capacity(frames * 2);
+        for frame in 0..frames {
+            let value = (2.0 * std::f32::consts::PI * 1_000.0 * frame as f32 / sample_rate as f32)
+                .sin()
+                * 0.25;
+            samples.push(value);
+            samples.push(value);
+        }
+        let before = rms(&samples);
+
+        chain.process_interleaved(&mut samples);
+
+        assert!(rms(&samples) < before * 0.75);
+    }
+
+    #[test]
+    fn spatial_impulse_response_adds_wet_signal() {
+        let prepared = prepared_spatial(2, &[&[1.0], &[1.0]]);
+        let mut spatial = SpatialEffect::new(&prepared);
+        let mut samples = vec![0.0f32; CONVOLUTION_BLOCK_SIZE * 2];
+        samples[0] = 0.5;
+        samples[1] = -0.25;
+
+        spatial.process_interleaved(&mut samples);
+
+        let delayed_frame = (CONVOLUTION_BLOCK_SIZE - 1) * 2;
+        assert!((samples[delayed_frame] - 0.5).abs() < 0.00001);
+        assert!((samples[delayed_frame + 1] + 0.25).abs() < 0.00001);
+    }
+
+    #[test]
+    fn true_stereo_impulse_response_routes_cross_channels() {
+        let prepared = prepared_spatial(4, &[&[1.0], &[0.25], &[0.5], &[1.0]]);
+        let mut spatial = SpatialEffect::new(&prepared);
+        let mut samples = vec![0.0f32; CONVOLUTION_BLOCK_SIZE * 2];
+        samples[0] = 0.4;
+        samples[1] = 0.2;
+
+        spatial.process_interleaved(&mut samples);
+
+        let delayed_frame = (CONVOLUTION_BLOCK_SIZE - 1) * 2;
+        assert!((samples[delayed_frame] - 0.5).abs() < 0.00001);
+        assert!((samples[delayed_frame + 1] - 0.3).abs() < 0.00001);
+    }
 }

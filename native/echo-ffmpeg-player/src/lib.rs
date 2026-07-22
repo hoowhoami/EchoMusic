@@ -433,8 +433,12 @@ fn prepare_source(
         emit_event(PlayerEvent::log(
             "info",
             format!(
-                "impulse response enabled: path='{}', mix={:.2}, mix_sample_rate={}",
-                spatial.file_path, spatial.mix, mix_sample_rate
+                "impulse response enabled: path='{}', mix={:.2}, mix_sample_rate={}, ir_channels={}, mode={}",
+                spatial.file_path,
+                spatial.mix,
+                mix_sample_rate,
+                spatial.channels(),
+                spatial.mode()
             ),
         ));
     }
@@ -1885,13 +1889,15 @@ impl Task for SetImpulseResponseTask {
             let spatial_path = spatial.file_path.clone();
             let spatial_mix = spatial.mix;
             let spatial_sample_rate = spatial.sample_rate();
+            let spatial_channels = spatial.channels();
+            let spatial_mode = spatial.mode();
             apply_prepared_spatial_effect(runtime, spatial);
             emit_runtime_event(
                 runtime,
                 PlayerEvent::log(
                     "info",
                     format!(
-                        "impulse response enabled: path='{spatial_path}', mix={spatial_mix:.2}, mix_sample_rate={spatial_sample_rate}"
+                        "impulse response enabled: path='{spatial_path}', mix={spatial_mix:.2}, mix_sample_rate={spatial_sample_rate}, ir_channels={spatial_channels}, mode={spatial_mode}"
                     ),
                 ),
             );

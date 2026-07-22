@@ -37,6 +37,7 @@ enum AudioFilterNodeKind {
     Equalizer,
     Spatial,
     Normalization,
+    Limiter,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -96,6 +97,8 @@ impl AudioFilterGraph {
         if self.converted_output.is_empty() {
             return Ok(0);
         }
+        self.effects.update_settings(settings);
+        self.effects.process_interleaved(&mut self.converted_output);
         output.extend_from_slice(&self.converted_output);
 
         self.process_graph_output(settings, output)
@@ -107,6 +110,8 @@ impl AudioFilterGraph {
         self.converted_output.clear();
         self.converter.finish(&mut self.converted_output)?;
         if !self.converted_output.is_empty() {
+            self.effects.update_settings(settings);
+            self.effects.process_interleaved(&mut self.converted_output);
             output.extend_from_slice(&self.converted_output);
             source_frames =
                 source_frames.saturating_add(self.process_graph_output(settings, output)?);
@@ -115,8 +120,7 @@ impl AudioFilterGraph {
         self.processed_output.clear();
         self.tempo.finish_into(&mut self.processed_output)?;
         if !self.processed_output.is_empty() {
-            self.effects.update_settings(settings);
-            self.effects.process_interleaved(&mut self.processed_output);
+            soft_limit_interleaved(&mut self.processed_output);
             source_frames = source_frames.saturating_add(tempo_source_frames(
                 self.processed_output.len(),
                 self.tempo.speed(),
@@ -157,8 +161,7 @@ impl AudioFilterGraph {
         self.tempo
             .set_speed(speed)
             .and_then(|_| self.tempo.process_into(output, &mut self.processed_output))?;
-        self.effects.update_settings(settings);
-        self.effects.process_interleaved(&mut self.processed_output);
+        soft_limit_interleaved(&mut self.processed_output);
         let source_frames = tempo_source_frames(
             self.processed_output.len(),
             speed,
@@ -188,14 +191,9 @@ fn process_format_for_output(output_format: MixFormat, settings: &DspSettings) -
 }
 
 fn filter_nodes_for_settings(settings: &DspSettings) -> Vec<AudioFilterNode> {
-    let mut nodes = Vec::with_capacity(5);
+    let mut nodes = Vec::with_capacity(6);
     nodes.push(AudioFilterNode {
         kind: AudioFilterNodeKind::FormatConvert,
-        channels: ChannelRequirement::Preserve,
-        flush: FilterFlushMode::Drain,
-    });
-    nodes.push(AudioFilterNode {
-        kind: AudioFilterNodeKind::Tempo,
         channels: ChannelRequirement::Preserve,
         flush: FilterFlushMode::Drain,
     });
@@ -220,6 +218,16 @@ fn filter_nodes_for_settings(settings: &DspSettings) -> Vec<AudioFilterNode> {
             flush: FilterFlushMode::Reset,
         });
     }
+    nodes.push(AudioFilterNode {
+        kind: AudioFilterNodeKind::Tempo,
+        channels: ChannelRequirement::Preserve,
+        flush: FilterFlushMode::Drain,
+    });
+    nodes.push(AudioFilterNode {
+        kind: AudioFilterNodeKind::Limiter,
+        channels: ChannelRequirement::Preserve,
+        flush: FilterFlushMode::Reset,
+    });
     nodes
 }
 
@@ -420,6 +428,26 @@ fn append_graph_output(
     output.extend_from_slice(scratch);
 }
 
+fn soft_limit_interleaved(samples: &mut [f32]) {
+    for sample in samples {
+        *sample = soft_limit_sample(*sample);
+    }
+}
+
+fn soft_limit_sample(sample: f32) -> f32 {
+    const KNEE: f32 = 0.95;
+    const RANGE: f32 = 1.0 - KNEE;
+    if !sample.is_finite() {
+        return 0.0;
+    }
+    let magnitude = sample.abs();
+    if magnitude <= KNEE {
+        return sample;
+    }
+    let limited = KNEE + RANGE * (1.0 - (-(magnitude - KNEE) / RANGE).exp());
+    sample.signum() * limited.min(1.0)
+}
+
 fn map_channels(input: &[f32], input_channels: usize, output: &mut [f32], output_channels: usize) {
     let input_channels = input_channels.max(1);
     let output_channels = output_channels.max(1);
@@ -522,16 +550,18 @@ mod tests {
             nodes.iter().map(|node| node.kind).collect::<Vec<_>>(),
             vec![
                 AudioFilterNodeKind::FormatConvert,
-                AudioFilterNodeKind::Tempo,
                 AudioFilterNodeKind::Equalizer,
                 AudioFilterNodeKind::Normalization,
+                AudioFilterNodeKind::Tempo,
+                AudioFilterNodeKind::Limiter,
             ]
         );
         assert!(nodes
             .iter()
             .all(|node| node.channels == ChannelRequirement::Preserve));
         assert_eq!(nodes[0].flush, FilterFlushMode::Drain);
-        assert_eq!(nodes[2].flush, FilterFlushMode::Reset);
+        assert_eq!(nodes[1].flush, FilterFlushMode::Reset);
+        assert_eq!(nodes[3].flush, FilterFlushMode::Drain);
     }
 
     #[test]
@@ -571,5 +601,15 @@ mod tests {
         assert!(total_output.len() >= frames * MIX_CHANNELS);
         assert_eq!(total_output[0], 0.0);
         assert_eq!(total_output[1], 0.0);
+    }
+
+    #[test]
+    fn soft_limiter_preserves_low_level_samples_and_limits_overload() {
+        assert_eq!(soft_limit_sample(0.5), 0.5);
+        assert_eq!(soft_limit_sample(-0.5), -0.5);
+        assert!(soft_limit_sample(1.5) < 1.0);
+        assert!(soft_limit_sample(1.5) > 0.95);
+        assert!(soft_limit_sample(-1.5) > -1.0);
+        assert!(soft_limit_sample(-1.5) < -0.95);
     }
 }
