@@ -194,28 +194,7 @@ export const initDesktopLyricSync = async () => {
     const raw = lines.value.map(normalizeLinePayload);
     if (!enabled) return raw;
 
-    // 被过滤的行替换为上一个有效行的内容（保持时间索引不变）
-    let lastValidLine: LyricLinePayload | null = null;
-    const playerStore = usePlayerStore();
-    const track = playerStore.currentTrackSnapshot;
-    const fallbackText = track ? `${track.name || '未知歌曲'} - ${track.artist || '未知歌手'}` : '';
-
-    return raw.map((line) => {
-      if (testLyricFilter(line.text, enabled, pattern)) {
-        // 被过滤：用上一个有效行替代，保留时间
-        if (lastValidLine) {
-          return { ...lastValidLine, time: line.time, characters: lastValidLine.characters };
-        }
-        // 首行即过滤：显示歌曲标题
-        return {
-          time: line.time,
-          text: fallbackText,
-          characters: [{ text: fallbackText, startTime: 0, endTime: 0 }],
-        };
-      }
-      lastValidLine = line;
-      return line;
-    });
+    return raw.filter((line) => !testLyricFilter(line.text, enabled, pattern));
   };
 
   const syncPlaybackSnapshot = async () => {
