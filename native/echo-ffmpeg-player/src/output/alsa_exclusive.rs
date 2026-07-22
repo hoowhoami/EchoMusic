@@ -15,8 +15,12 @@ const ALSA_PERIODS: u32 = 4;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum AlsaSampleFormat {
     F32,
+    F64,
     I32,
+    I24In32,
+    I24,
     I16,
+    U8,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -84,6 +88,9 @@ fn run_exclusive_output(
     let mut stereo_scratch = Vec::<f32>::new();
     let mut converted_i16 = Vec::<i16>::new();
     let mut converted_i32 = Vec::<i32>::new();
+    let mut converted_i24 = Vec::<u8>::new();
+    let mut converted_u8 = Vec::<u8>::new();
+    let mut converted_f64 = Vec::<f64>::new();
     let mut resampler = OutputResampler::new(shared.sample_rate, format.sample_rate);
     let mut paused = false;
 
@@ -121,6 +128,9 @@ fn run_exclusive_output(
             &output_scratch,
             &mut converted_i16,
             &mut converted_i32,
+            &mut converted_i24,
+            &mut converted_u8,
+            &mut converted_f64,
         )?;
         if pcm.state() != State::Running {
             let _ = pcm.start();
@@ -195,14 +205,18 @@ fn configure_pcm(pcm: &PCM, sample_rate: u32) -> Result<AlsaOutputFormat, String
 fn choose_sample_format(hwp: &HwParams<'_>) -> Result<AlsaSampleFormat, String> {
     for (alsa_format, sample_format) in [
         (Format::float(), AlsaSampleFormat::F32),
+        (Format::float64(), AlsaSampleFormat::F64),
         (Format::s32(), AlsaSampleFormat::I32),
+        (Format::s24(), AlsaSampleFormat::I24In32),
+        (Format::s24_3(), AlsaSampleFormat::I24),
         (Format::s16(), AlsaSampleFormat::I16),
+        (Format::U8, AlsaSampleFormat::U8),
     ] {
         if hwp.test_format(alsa_format).is_ok() && hwp.set_format(alsa_format).is_ok() {
             return Ok(sample_format);
         }
     }
-    Err("ALSA exclusive output does not accept f32/s32/s16 PCM".to_string())
+    Err("ALSA exclusive output does not accept f32/f64/s32/s24/s16/u8 PCM".to_string())
 }
 
 fn pause_pcm(pcm: &PCM, format: &AlsaOutputFormat) {
@@ -250,9 +264,19 @@ fn write_frames(
     samples: &[f32],
     converted_i16: &mut Vec<i16>,
     converted_i32: &mut Vec<i32>,
+    converted_i24: &mut Vec<u8>,
+    converted_u8: &mut Vec<u8>,
+    converted_f64: &mut Vec<f64>,
 ) -> Result<(), String> {
     match format.sample_format {
         AlsaSampleFormat::F32 => write_typed_frames(pcm, format.channels, samples),
+        AlsaSampleFormat::F64 => {
+            converted_f64.resize(samples.len(), 0.0);
+            for (target, sample) in converted_f64.iter_mut().zip(samples.iter().copied()) {
+                *target = sample as f64;
+            }
+            write_typed_frames(pcm, format.channels, converted_f64)
+        }
         AlsaSampleFormat::I16 => {
             converted_i16.resize(samples.len(), 0);
             for (target, sample) in converted_i16.iter_mut().zip(samples.iter().copied()) {
@@ -267,7 +291,74 @@ fn write_frames(
             }
             write_typed_frames(pcm, format.channels, converted_i32)
         }
+        AlsaSampleFormat::I24In32 => {
+            converted_i32.resize(samples.len(), 0);
+            for (target, sample) in converted_i32.iter_mut().zip(samples.iter().copied()) {
+                let value = (sample.clamp(-1.0, 1.0) * 8_388_607.0).round() as i32;
+                *target = value << 8;
+            }
+            write_i24_in_32_frames(pcm, format.channels, converted_i32)
+        }
+        AlsaSampleFormat::I24 => {
+            converted_i24.resize(samples.len() * 3, 0);
+            for (target, sample) in converted_i24
+                .chunks_exact_mut(3)
+                .zip(samples.iter().copied())
+            {
+                write_i24_packed_sample(target, sample);
+            }
+            write_i24_packed_frames(pcm, converted_i24)
+        }
+        AlsaSampleFormat::U8 => {
+            converted_u8.resize(samples.len(), 0);
+            for (target, sample) in converted_u8.iter_mut().zip(samples.iter().copied()) {
+                *target = ((sample.clamp(-1.0, 1.0) + 1.0) * 127.5).round() as u8;
+            }
+            write_typed_frames(pcm, format.channels, converted_u8)
+        }
     }
+}
+
+fn write_i24_in_32_frames(pcm: &PCM, channels: usize, samples: &[i32]) -> Result<(), String> {
+    let io = unsafe { pcm.io_unchecked::<i32>() };
+    write_frames_with_io(pcm, &io, channels, samples)
+}
+
+fn write_i24_packed_frames(pcm: &PCM, samples: &[u8]) -> Result<(), String> {
+    let io = pcm.io_bytes();
+    let mut offset = 0usize;
+    while offset < samples.len() {
+        match io.writei(&samples[offset..]) {
+            Ok(0) => return Err("ALSA output wrote zero frames".to_string()),
+            Ok(frames) => {
+                let bytes = pcm.frames_to_bytes(frames as i64).max(0) as usize;
+                offset = offset.saturating_add(bytes);
+            }
+            Err(err) => recover_write_error(pcm, err)?,
+        }
+    }
+    Ok(())
+}
+
+fn write_i24_packed_sample(target: &mut [u8], sample: f32) {
+    let value = (sample.clamp(-1.0, 1.0) * 8_388_607.0).round() as i32;
+    write_i24_ne_bytes(target, value);
+}
+
+#[cfg(target_endian = "little")]
+fn write_i24_ne_bytes(target: &mut [u8], value: i32) {
+    let bytes = value.to_le_bytes();
+    target[0] = bytes[0];
+    target[1] = bytes[1];
+    target[2] = bytes[2];
+}
+
+#[cfg(target_endian = "big")]
+fn write_i24_ne_bytes(target: &mut [u8], value: i32) {
+    let bytes = value.to_be_bytes();
+    target[0] = bytes[1];
+    target[1] = bytes[2];
+    target[2] = bytes[3];
 }
 
 fn write_typed_frames<T>(pcm: &PCM, channels: usize, samples: &[T]) -> Result<(), String>
@@ -277,6 +368,18 @@ where
     let io = pcm
         .io_checked::<T>()
         .map_err(|err| format!("failed to create ALSA output writer: {err}"))?;
+    write_frames_with_io(pcm, &io, channels, samples)
+}
+
+fn write_frames_with_io<T>(
+    pcm: &PCM,
+    io: &alsa::pcm::IO<'_, T>,
+    channels: usize,
+    samples: &[T],
+) -> Result<(), String>
+where
+    T: Copy + alsa::pcm::IoFormat,
+{
     let mut offset_frames = 0usize;
     let total_frames = samples.len() / channels.max(1);
     while offset_frames < total_frames {

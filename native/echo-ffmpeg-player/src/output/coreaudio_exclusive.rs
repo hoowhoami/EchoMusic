@@ -88,12 +88,15 @@ fn run_exclusive_output(
     emit(PlayerEvent::log(
         "info",
         format!(
-            "CoreAudio exclusive opening: requested='{device_name}', resolved='{resolved_device_name}', sample_rate={}, engine_sample_rate={}, channels={}, format={:?}, non_interleaved={}, mixing_disabled={}",
+            "CoreAudio exclusive opening: requested='{device_name}', resolved='{resolved_device_name}', sample_rate={}, engine_sample_rate={}, channels={}, format={:?}, bytes_per_sample={}, non_interleaved={}, high_aligned={}, big_endian={}, mixing_disabled={}",
             format.sample_rate,
             shared.sample_rate,
             format.channels,
             format.sample_format,
+            format.bytes_per_sample(),
             format.non_interleaved,
+            format.high_aligned,
+            format.big_endian,
             mixing_guard.is_some()
         ),
     ));
@@ -208,6 +211,15 @@ fn fill_interleaved(buffer: &mut ca::AudioBuffer, context: &CoreAudioOutputConte
             let output = slice::from_raw_parts_mut(buffer.mData.cast::<f32>(), frame_samples);
             fill_coreaudio_interleaved_output(output, channels, context);
         },
+        CoreAudioPcmSampleFormat::F64 => unsafe {
+            let output = slice::from_raw_parts_mut(buffer.mData.cast::<f64>(), frame_samples);
+            let output_scratch = &mut *context.output_scratch.get();
+            output_scratch.resize(frame_samples, 0.0);
+            fill_coreaudio_interleaved_output(output_scratch, channels, context);
+            for (target, sample) in output.iter_mut().zip(output_scratch.iter().copied()) {
+                *target = sample as f64;
+            }
+        },
         CoreAudioPcmSampleFormat::I16 => unsafe {
             let output = slice::from_raw_parts_mut(buffer.mData.cast::<i16>(), frame_samples);
             let output_scratch = &mut *context.output_scratch.get();
@@ -215,6 +227,36 @@ fn fill_interleaved(buffer: &mut ca::AudioBuffer, context: &CoreAudioOutputConte
             fill_coreaudio_interleaved_output(output_scratch, channels, context);
             for (target, sample) in output.iter_mut().zip(output_scratch.iter().copied()) {
                 *target = (sample.clamp(-1.0, 1.0) * i16::MAX as f32).round() as i16;
+            }
+        },
+        CoreAudioPcmSampleFormat::U8 => unsafe {
+            let output = slice::from_raw_parts_mut(buffer.mData.cast::<u8>(), frame_samples);
+            let output_scratch = &mut *context.output_scratch.get();
+            output_scratch.resize(frame_samples, 0.0);
+            fill_coreaudio_interleaved_output(output_scratch, channels, context);
+            for (target, sample) in output.iter_mut().zip(output_scratch.iter().copied()) {
+                *target = u8_sample(sample);
+            }
+        },
+        CoreAudioPcmSampleFormat::I24 => unsafe {
+            let output = slice::from_raw_parts_mut(buffer.mData.cast::<u8>(), frame_samples * 3);
+            let output_scratch = &mut *context.output_scratch.get();
+            output_scratch.resize(frame_samples, 0.0);
+            fill_coreaudio_interleaved_output(output_scratch, channels, context);
+            for (target, sample) in output
+                .chunks_exact_mut(3)
+                .zip(output_scratch.iter().copied())
+            {
+                write_i24_packed_sample(target, sample, context.format.big_endian);
+            }
+        },
+        CoreAudioPcmSampleFormat::I24In32 => unsafe {
+            let output = slice::from_raw_parts_mut(buffer.mData.cast::<i32>(), frame_samples);
+            let output_scratch = &mut *context.output_scratch.get();
+            output_scratch.resize(frame_samples, 0.0);
+            fill_coreaudio_interleaved_output(output_scratch, channels, context);
+            for (target, sample) in output.iter_mut().zip(output_scratch.iter().copied()) {
+                *target = i24_in_32_sample(sample, context.format.high_aligned);
             }
         },
         CoreAudioPcmSampleFormat::I32 => unsafe {
@@ -278,11 +320,37 @@ fn fill_non_interleaved(buffers: &mut [ca::AudioBuffer], context: &CoreAudioOutp
                 let output = slice::from_raw_parts_mut(buffer.mData.cast::<f32>(), frames);
                 write_non_interleaved_channel(output, stereo_scratch, channel);
             },
+            CoreAudioPcmSampleFormat::F64 => unsafe {
+                let output = slice::from_raw_parts_mut(buffer.mData.cast::<f64>(), frames);
+                for (frame, target) in output.iter_mut().enumerate() {
+                    *target = non_interleaved_sample(stereo_scratch, frame, channel) as f64;
+                }
+            },
             CoreAudioPcmSampleFormat::I16 => unsafe {
                 let output = slice::from_raw_parts_mut(buffer.mData.cast::<i16>(), frames);
                 for (frame, target) in output.iter_mut().enumerate() {
                     let sample = non_interleaved_sample(stereo_scratch, frame, channel);
                     *target = (sample.clamp(-1.0, 1.0) * i16::MAX as f32).round() as i16;
+                }
+            },
+            CoreAudioPcmSampleFormat::U8 => unsafe {
+                let output = slice::from_raw_parts_mut(buffer.mData.cast::<u8>(), frames);
+                for (frame, target) in output.iter_mut().enumerate() {
+                    *target = u8_sample(non_interleaved_sample(stereo_scratch, frame, channel));
+                }
+            },
+            CoreAudioPcmSampleFormat::I24 => unsafe {
+                let output = slice::from_raw_parts_mut(buffer.mData.cast::<u8>(), frames * 3);
+                for (frame, target) in output.chunks_exact_mut(3).enumerate() {
+                    let sample = non_interleaved_sample(stereo_scratch, frame, channel);
+                    write_i24_packed_sample(target, sample, context.format.big_endian);
+                }
+            },
+            CoreAudioPcmSampleFormat::I24In32 => unsafe {
+                let output = slice::from_raw_parts_mut(buffer.mData.cast::<i32>(), frames);
+                for (frame, target) in output.iter_mut().enumerate() {
+                    let sample = non_interleaved_sample(stereo_scratch, frame, channel);
+                    *target = i24_in_32_sample(sample, context.format.high_aligned);
                 }
             },
             CoreAudioPcmSampleFormat::I32 => unsafe {
@@ -293,6 +361,38 @@ fn fill_non_interleaved(buffers: &mut [ca::AudioBuffer], context: &CoreAudioOutp
                 }
             },
         }
+    }
+}
+
+fn u8_sample(sample: f32) -> u8 {
+    ((sample.clamp(-1.0, 1.0) + 1.0) * 127.5).round() as u8
+}
+
+fn i24_sample(sample: f32) -> i32 {
+    (sample.clamp(-1.0, 1.0) * 8_388_607.0).round() as i32
+}
+
+fn i24_in_32_sample(sample: f32, high_aligned: bool) -> i32 {
+    let value = i24_sample(sample);
+    if high_aligned {
+        value << 8
+    } else {
+        value
+    }
+}
+
+fn write_i24_packed_sample(target: &mut [u8], sample: f32, big_endian: bool) {
+    let value = i24_sample(sample);
+    if big_endian {
+        let bytes = value.to_be_bytes();
+        target[0] = bytes[1];
+        target[1] = bytes[2];
+        target[2] = bytes[3];
+    } else {
+        let bytes = value.to_le_bytes();
+        target[0] = bytes[0];
+        target[1] = bytes[1];
+        target[2] = bytes[2];
     }
 }
 

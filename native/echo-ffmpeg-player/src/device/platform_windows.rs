@@ -32,14 +32,29 @@ const DEVICE_KEY_SEPARATOR: &str = "\u{1f}";
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum WasapiSampleFormat {
     F32,
+    I32,
+    I24In32,
+    I24,
     I16,
+    U8,
 }
 
 impl WasapiSampleFormat {
     pub(crate) fn sample_bytes(self) -> u16 {
         match self {
-            Self::F32 => 4,
+            Self::F32 | Self::I32 | Self::I24In32 => 4,
+            Self::I24 => 3,
             Self::I16 => 2,
+            Self::U8 => 1,
+        }
+    }
+
+    fn valid_bits(self) -> u16 {
+        match self {
+            Self::F32 | Self::I32 => 32,
+            Self::I24In32 | Self::I24 => 24,
+            Self::I16 => 16,
+            Self::U8 => 8,
         }
     }
 }
@@ -493,7 +508,14 @@ pub(crate) fn choose_wasapi_sample_format_at_sample_rate(
     audio_client: &Audio::IAudioClient,
     sample_rate: u32,
 ) -> Result<WasapiSampleFormat, String> {
-    for sample_format in [WasapiSampleFormat::F32, WasapiSampleFormat::I16] {
+    for sample_format in [
+        WasapiSampleFormat::F32,
+        WasapiSampleFormat::I32,
+        WasapiSampleFormat::I24In32,
+        WasapiSampleFormat::I24,
+        WasapiSampleFormat::I16,
+        WasapiSampleFormat::U8,
+    ] {
         let wave_format = wasapi_wave_format(sample_rate, sample_format);
         let result = unsafe {
             audio_client.IsFormatSupported(
@@ -532,6 +554,7 @@ pub(crate) fn wasapi_wave_format(
     let sample_bytes = sample_format.sample_bytes();
     let block_align = channels * sample_bytes;
     let bits_per_sample = sample_bytes * 8;
+    let valid_bits_per_sample = sample_format.valid_bits();
     let format = Audio::WAVEFORMATEX {
         wFormatTag: KernelStreaming::WAVE_FORMAT_EXTENSIBLE as u16,
         nChannels: channels,
@@ -544,12 +567,16 @@ pub(crate) fn wasapi_wave_format(
     };
     let sub_format = match sample_format {
         WasapiSampleFormat::F32 => Multimedia::KSDATAFORMAT_SUBTYPE_IEEE_FLOAT,
-        WasapiSampleFormat::I16 => KernelStreaming::KSDATAFORMAT_SUBTYPE_PCM,
+        WasapiSampleFormat::I32
+        | WasapiSampleFormat::I24In32
+        | WasapiSampleFormat::I24
+        | WasapiSampleFormat::I16
+        | WasapiSampleFormat::U8 => KernelStreaming::KSDATAFORMAT_SUBTYPE_PCM,
     };
     Audio::WAVEFORMATEXTENSIBLE {
         Format: format,
         Samples: Audio::WAVEFORMATEXTENSIBLE_0 {
-            wValidBitsPerSample: bits_per_sample,
+            wValidBitsPerSample: valid_bits_per_sample,
         },
         dwChannelMask: KernelStreaming::SPEAKER_FRONT_LEFT | KernelStreaming::SPEAKER_FRONT_RIGHT,
         SubFormat: sub_format,

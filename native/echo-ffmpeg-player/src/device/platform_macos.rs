@@ -15,6 +15,8 @@ use std::time::{Duration, Instant};
 const COREAUDIO_DEVICE_KEY_PREFIX: &str = "coreaudio:";
 const COREAUDIO_HOG_NO_OWNER: i32 = -1;
 const COREAUDIO_DEVICE_PROPERTY_SUPPORTS_MIXING: ca::AudioObjectPropertySelector = 0x6d69783f;
+const COREAUDIO_FORMAT_FLAG_IS_BIG_ENDIAN: u32 = 1 << 1;
+const COREAUDIO_FORMAT_FLAG_IS_ALIGNED_HIGH: u32 = 1 << 4;
 const FALLBACK_SAMPLE_RATE: u32 = 48_000;
 const K_CF_STRING_ENCODING_UTF8: u32 = 0x0800_0100;
 
@@ -25,8 +27,12 @@ type Boolean = u8;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum CoreAudioPcmSampleFormat {
     F32,
+    F64,
     I16,
+    I24,
+    I24In32,
     I32,
+    U8,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -35,14 +41,14 @@ pub(crate) struct CoreAudioPcmFormat {
     pub channels: usize,
     pub sample_format: CoreAudioPcmSampleFormat,
     pub non_interleaved: bool,
+    pub high_aligned: bool,
+    pub big_endian: bool,
+    bytes_per_sample: usize,
 }
 
 impl CoreAudioPcmFormat {
     pub fn bytes_per_sample(self) -> usize {
-        match self.sample_format {
-            CoreAudioPcmSampleFormat::F32 | CoreAudioPcmSampleFormat::I32 => 4,
-            CoreAudioPcmSampleFormat::I16 => 2,
-        }
+        self.bytes_per_sample
     }
 }
 
@@ -482,28 +488,67 @@ fn coreaudio_pcm_format(
     }
     let flags = asbd.mFormatFlags;
     let bits = asbd.mBitsPerChannel;
-    let sample_format = if flags & ca::kAudioFormatFlagIsFloat != 0 && bits == 32 {
-        CoreAudioPcmSampleFormat::F32
-    } else if flags & ca::kAudioFormatFlagIsSignedInteger != 0 && bits == 16 {
-        CoreAudioPcmSampleFormat::I16
-    } else if flags & ca::kAudioFormatFlagIsSignedInteger != 0 && bits == 32 {
-        CoreAudioPcmSampleFormat::I32
-    } else {
-        return Err(format!(
-            "CoreAudio exclusive output unsupported PCM format: flags={}, bits={bits}",
-            asbd.mFormatFlags
-        ));
-    };
     let sample_rate = asbd.mSampleRate.round() as u32;
     let channels = asbd.mChannelsPerFrame as usize;
     if sample_rate == 0 || channels == 0 {
         return Err("CoreAudio exclusive output reported an invalid stream format".to_string());
     }
+    let non_interleaved = flags & ca::kAudioFormatFlagIsNonInterleaved != 0;
+    let bytes_per_sample = if non_interleaved {
+        asbd.mBytesPerFrame as usize
+    } else {
+        let frame_bytes = asbd.mBytesPerFrame as usize;
+        if frame_bytes % channels != 0 {
+            return Err(
+                "CoreAudio exclusive output reported a non-integral PCM frame size".to_string(),
+            );
+        }
+        frame_bytes / channels
+    };
+    let sample_format = if flags & ca::kAudioFormatFlagIsFloat != 0
+        && bits == 32
+        && bytes_per_sample == 4
+    {
+        CoreAudioPcmSampleFormat::F32
+    } else if flags & ca::kAudioFormatFlagIsFloat != 0 && bits == 64 && bytes_per_sample == 8 {
+        CoreAudioPcmSampleFormat::F64
+    } else if flags & ca::kAudioFormatFlagIsSignedInteger == 0 && bits == 8 && bytes_per_sample == 1
+    {
+        CoreAudioPcmSampleFormat::U8
+    } else if flags & ca::kAudioFormatFlagIsSignedInteger != 0
+        && bits == 16
+        && bytes_per_sample == 2
+    {
+        CoreAudioPcmSampleFormat::I16
+    } else if flags & ca::kAudioFormatFlagIsSignedInteger != 0
+        && bits == 24
+        && bytes_per_sample == 3
+    {
+        CoreAudioPcmSampleFormat::I24
+    } else if flags & ca::kAudioFormatFlagIsSignedInteger != 0
+        && bits == 24
+        && bytes_per_sample == 4
+    {
+        CoreAudioPcmSampleFormat::I24In32
+    } else if flags & ca::kAudioFormatFlagIsSignedInteger != 0
+        && bits == 32
+        && bytes_per_sample == 4
+    {
+        CoreAudioPcmSampleFormat::I32
+    } else {
+        return Err(format!(
+            "CoreAudio exclusive output unsupported PCM format: flags={}, bits={bits}, bytes_per_sample={bytes_per_sample}",
+            asbd.mFormatFlags
+        ));
+    };
     Ok(CoreAudioPcmFormat {
         sample_rate,
         channels,
         sample_format,
-        non_interleaved: flags & ca::kAudioFormatFlagIsNonInterleaved != 0,
+        non_interleaved,
+        high_aligned: flags & COREAUDIO_FORMAT_FLAG_IS_ALIGNED_HIGH != 0,
+        big_endian: flags & COREAUDIO_FORMAT_FLAG_IS_BIG_ENDIAN != 0,
+        bytes_per_sample,
     })
 }
 
@@ -536,8 +581,12 @@ fn find_best_physical_format(
         };
         let sample_penalty = match format.sample_format {
             CoreAudioPcmSampleFormat::F32 => 0,
-            CoreAudioPcmSampleFormat::I32 => 1,
-            CoreAudioPcmSampleFormat::I16 => 2,
+            CoreAudioPcmSampleFormat::F64 => 1,
+            CoreAudioPcmSampleFormat::I32 => 2,
+            CoreAudioPcmSampleFormat::I24In32 => 3,
+            CoreAudioPcmSampleFormat::I24 => 4,
+            CoreAudioPcmSampleFormat::I16 => 5,
+            CoreAudioPcmSampleFormat::U8 => 6,
         };
         let interleaved_penalty = u64::from(format.non_interleaved);
         let score = rate_penalty

@@ -276,6 +276,44 @@ fn write_frames(
                     *target = (sample.clamp(-1.0, 1.0) * i16::MAX as f32).round() as i16;
                 }
             }
+            WasapiSampleFormat::U8 => {
+                let data = slice::from_raw_parts_mut(buffer as *mut u8, sample_count);
+                output_scratch.resize(sample_count, 0.0);
+                fill_wasapi_output(output_scratch, output_format.sample_rate, shared, resampler);
+                for (target, sample) in data.iter_mut().zip(output_scratch.iter().copied()) {
+                    *target = ((sample.clamp(-1.0, 1.0) + 1.0) * 127.5).round() as u8;
+                }
+            }
+            WasapiSampleFormat::I24 => {
+                let data = slice::from_raw_parts_mut(buffer as *mut u8, sample_count * 3);
+                output_scratch.resize(sample_count, 0.0);
+                fill_wasapi_output(output_scratch, output_format.sample_rate, shared, resampler);
+                for (target, sample) in data.chunks_exact_mut(3).zip(output_scratch.iter().copied())
+                {
+                    let value = (sample.clamp(-1.0, 1.0) * 8_388_607.0).round() as i32;
+                    let bytes = value.to_le_bytes();
+                    target[0] = bytes[0];
+                    target[1] = bytes[1];
+                    target[2] = bytes[2];
+                }
+            }
+            WasapiSampleFormat::I24In32 => {
+                let data = slice::from_raw_parts_mut(buffer as *mut i32, sample_count);
+                output_scratch.resize(sample_count, 0.0);
+                fill_wasapi_output(output_scratch, output_format.sample_rate, shared, resampler);
+                for (target, sample) in data.iter_mut().zip(output_scratch.iter().copied()) {
+                    let value = (sample.clamp(-1.0, 1.0) * 8_388_607.0).round() as i32;
+                    *target = value << 8;
+                }
+            }
+            WasapiSampleFormat::I32 => {
+                let data = slice::from_raw_parts_mut(buffer as *mut i32, sample_count);
+                output_scratch.resize(sample_count, 0.0);
+                fill_wasapi_output(output_scratch, output_format.sample_rate, shared, resampler);
+                for (target, sample) in data.iter_mut().zip(output_scratch.iter().copied()) {
+                    *target = (sample.clamp(-1.0, 1.0) * i32::MAX as f32).round() as i32;
+                }
+            }
         }
         render_client
             .ReleaseBuffer(frames, 0)
