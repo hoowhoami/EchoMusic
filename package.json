@@ -1,6 +1,6 @@
 {
   "name": "echo-music",
-  "version": "2.2.9-beta.7",
+  "version": "2.2.9-beta.8",
   "description": "EchoMusic desktop client.",
   "license": "GPL-3.0-only",
   "author": {
@@ -52,7 +52,7 @@
     "@vue/eslint-config-prettier": "^10.2.0",
     "@vue/eslint-config-typescript": "^14.7.0",
     "autoprefixer": "^10.5.0",
-    "electron": "43.1.1",
+    "electron": "43.2.0",
     "electron-builder": "26.8.1",
     "esbuild": "^0.28.0",
     "eslint": "^10.4.1",

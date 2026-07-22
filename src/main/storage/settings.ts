@@ -11,6 +11,7 @@ export type MainWindowState = {
   x?: number;
   y?: number;
   isMaximized: boolean;
+  boundsMode?: 'window' | 'content';
 };
 
 export type MiniPlayerWindowState = {

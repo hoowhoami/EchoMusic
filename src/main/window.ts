@@ -1,4 +1,12 @@
-import { BrowserWindow, shell, app, nativeTheme, powerSaveBlocker, screen } from 'electron';
+import {
+  BrowserWindow,
+  shell,
+  app,
+  nativeTheme,
+  powerSaveBlocker,
+  screen,
+  type BrowserWindowConstructorOptions,
+} from 'electron';
 import { join } from 'path';
 import type { CloseBehavior, ThemeMode } from '../shared/app';
 import {
@@ -105,6 +113,7 @@ export function requestMainWindowClose() {
 
 // 监听应用准备退出
 app.on('before-quit', () => {
+  flushPersistWindowState();
   isQuitting = true;
 });
 
@@ -186,7 +195,10 @@ const hasVisibleArea = (bounds: { x?: number; y?: number; width: number; height:
   });
 };
 
-const buildWindowBounds = () => {
+const buildWindowBounds = (): Pick<
+  BrowserWindowConstructorOptions,
+  'width' | 'height' | 'x' | 'y' | 'useContentSize'
+> => {
   if (!rememberWindowSize) {
     return { width: defaultWidth, height: defaultHeight } as const;
   }
@@ -198,6 +210,7 @@ const buildWindowBounds = () => {
     height: Math.max(minHeight, state.height || defaultHeight),
     ...(typeof state.x === 'number' ? { x: state.x } : {}),
     ...(typeof state.y === 'number' ? { y: state.y } : {}),
+    ...(state.boundsMode === 'content' ? { useContentSize: true } : {}),
   };
 
   if ((typeof bounds.x === 'number' || typeof bounds.y === 'number') && !hasVisibleArea(bounds)) {
@@ -220,16 +233,19 @@ const persistWindowState = () => {
       x: prev.x,
       y: prev.y,
       isMaximized: true,
+      boundsMode: prev.boundsMode,
     });
     return;
   }
   const bounds = win.getBounds();
+  const contentBounds = win.getContentBounds();
   setMainAppSetting('windowState', {
-    width: bounds.width,
-    height: bounds.height,
+    width: contentBounds.width,
+    height: contentBounds.height,
     x: bounds.x,
     y: bounds.y,
     isMaximized: false,
+    boundsMode: 'content',
   });
 };
 
@@ -349,6 +365,17 @@ export async function createWindow() {
     return { action: 'deny' };
   });
 
+  const handleSystemSessionEnd = () => {
+    isQuitting = true;
+    flushPersistWindowState();
+  };
+
+  if (process.platform === 'win32') {
+    // Windows 关机/重启/注销不会触发 app.before-quit，必须在窗口会话结束事件里落盘。
+    win.on('query-session-end', handleSystemSessionEnd);
+    win.on('session-end', handleSystemSessionEnd);
+  }
+
   // 拦截关闭事件
   win.on('close', (event) => {
     if (isQuitting) return;
@@ -361,13 +388,17 @@ export async function createWindow() {
     }
   });
 
-  win.on('resize', () => {
+  const handleWindowBoundsChanged = () => {
     if (!win?.isMaximized()) schedulePersistWindowState();
-  });
+  };
 
-  win.on('move', () => {
-    if (!win?.isMaximized()) schedulePersistWindowState();
-  });
+  if (process.platform === 'win32') {
+    win.on('resized', handleWindowBoundsChanged);
+    win.on('moved', handleWindowBoundsChanged);
+  } else {
+    win.on('resize', handleWindowBoundsChanged);
+    win.on('move', handleWindowBoundsChanged);
+  }
 
   win.on('maximize', () => {
     flushPersistWindowState();
