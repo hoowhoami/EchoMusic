@@ -167,7 +167,7 @@ fn run_exclusive_output(
             match Threading::WaitForSingleObject(event.0, WASAPI_EVENT_WAIT_MS) {
                 WAIT_OBJECT_0 => {
                     last_feed_at = Instant::now();
-                    if feed_wasapi_exclusive(
+                    feed_wasapi_exclusive(
                         &output.audio_client,
                         &output.render_client,
                         output.buffer_frames,
@@ -175,21 +175,7 @@ fn run_exclusive_output(
                         &shared,
                         &mut output_scratch,
                         &mut resampler,
-                    )? && feed_wasapi_exclusive(
-                        &output.audio_client,
-                        &output.render_client,
-                        output.buffer_frames,
-                        output_format,
-                        &shared,
-                        &mut output_scratch,
-                        &mut resampler,
-                    )? {
-                        emit(PlayerEvent::log(
-                            "warn",
-                            "WASAPI exclusive output could not catch up with the device buffer"
-                                .to_string(),
-                        ));
-                    }
+                    )?;
                 }
                 WAIT_TIMEOUT => {
                     if last_feed_at.elapsed() >= Duration::from_millis(WASAPI_FALLBACK_FEED_MS)
@@ -285,20 +271,23 @@ fn feed_wasapi_exclusive(
             .GetCurrentPadding()
             .map_err(|err| format!("failed to query WASAPI output padding: {err}"))?
     };
-    if padding >= buffer_frames.saturating_mul(2) {
+    let available_frames = wasapi_available_frames(buffer_frames, padding);
+    if available_frames == 0 {
         return Ok(false);
     }
-
-    let refill = padding < buffer_frames;
     write_frames(
         render_client,
-        buffer_frames,
+        available_frames,
         output_format,
         shared,
         output_scratch,
         resampler,
     )?;
-    Ok(refill)
+    Ok(true)
+}
+
+fn wasapi_available_frames(buffer_frames: u32, padding: u32) -> u32 {
+    buffer_frames.saturating_sub(padding)
 }
 
 fn write_frames(
@@ -384,5 +373,18 @@ fn fill_wasapi_output(
         fill_output(output, MIX_CHANNELS, shared);
     } else {
         resampler.fill_output(output, MIX_CHANNELS, shared);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn wasapi_available_frames_follow_device_padding() {
+        assert_eq!(wasapi_available_frames(512, 0), 512);
+        assert_eq!(wasapi_available_frames(512, 128), 384);
+        assert_eq!(wasapi_available_frames(512, 512), 0);
+        assert_eq!(wasapi_available_frames(512, 768), 0);
     }
 }
