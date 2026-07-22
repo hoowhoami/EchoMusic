@@ -1,4 +1,4 @@
-use super::cpal_shared::OutputResampler;
+use super::cpal_shared::{fill_output_reusing, OutputResampler};
 use crate::device::platform_windows::{
     activate_wasapi_audio_client, choose_wasapi_output_format, is_wasapi_buffer_size_not_aligned,
     resolve_wasapi_output_device, wasapi_duration_from_frames, wasapi_exclusive_buffer_duration,
@@ -11,14 +11,12 @@ use std::ptr;
 use std::slice;
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
-use std::time::{Duration, Instant};
 use windows::core::PCSTR;
 use windows::Win32::Foundation::{CloseHandle, HANDLE, WAIT_FAILED, WAIT_OBJECT_0, WAIT_TIMEOUT};
 use windows::Win32::Media::Audio;
 use windows::Win32::System::Threading;
 
 const WASAPI_EVENT_WAIT_MS: u32 = 10;
-const WASAPI_FALLBACK_FEED_MS: u64 = 10;
 
 struct EventHandle(HANDLE);
 
@@ -132,6 +130,7 @@ fn run_exclusive_output(
     ));
 
     let mut output_scratch = Vec::<f32>::new();
+    let mut graph_scratch = Vec::<f32>::new();
     let mut resampler = OutputResampler::new(
         shared.mix_format.sample_rate,
         output_format.sample_rate,
@@ -146,6 +145,7 @@ fn run_exclusive_output(
             output_format,
             &shared,
             &mut output_scratch,
+            &mut graph_scratch,
             &mut resampler,
         )?;
         output
@@ -161,37 +161,20 @@ fn run_exclusive_output(
                 output_format.sample_rate, shared.mix_format.sample_rate
             ),
         ));
-        let mut last_feed_at = Instant::now();
-
         while !shared.should_stop_output() {
             match Threading::WaitForSingleObject(event.0, WASAPI_EVENT_WAIT_MS) {
                 WAIT_OBJECT_0 => {
-                    last_feed_at = Instant::now();
                     feed_wasapi_exclusive(
-                        &output.audio_client,
                         &output.render_client,
                         output.buffer_frames,
                         output_format,
                         &shared,
                         &mut output_scratch,
+                        &mut graph_scratch,
                         &mut resampler,
                     )?;
                 }
-                WAIT_TIMEOUT => {
-                    if last_feed_at.elapsed() >= Duration::from_millis(WASAPI_FALLBACK_FEED_MS)
-                        && feed_wasapi_exclusive(
-                            &output.audio_client,
-                            &output.render_client,
-                            output.buffer_frames,
-                            output_format,
-                            &shared,
-                            &mut output_scratch,
-                            &mut resampler,
-                        )?
-                    {
-                        last_feed_at = Instant::now();
-                    }
-                }
+                WAIT_TIMEOUT => {}
                 WAIT_FAILED => return Err("waiting for WASAPI output event failed".to_string()),
                 other => return Err(format!("unexpected WASAPI wait result: {other:?}")),
             }
@@ -258,36 +241,27 @@ fn open_wasapi_exclusive_output(
 }
 
 fn feed_wasapi_exclusive(
-    audio_client: &Audio::IAudioClient,
     render_client: &Audio::IAudioRenderClient,
     buffer_frames: u32,
     output_format: WasapiOutputFormat,
     shared: &SharedAudio,
     output_scratch: &mut Vec<f32>,
+    graph_scratch: &mut Vec<f32>,
     resampler: &mut OutputResampler,
 ) -> Result<bool, String> {
-    let padding = unsafe {
-        audio_client
-            .GetCurrentPadding()
-            .map_err(|err| format!("failed to query WASAPI output padding: {err}"))?
-    };
-    let available_frames = wasapi_available_frames(buffer_frames, padding);
-    if available_frames == 0 {
+    if buffer_frames == 0 {
         return Ok(false);
     }
     write_frames(
         render_client,
-        available_frames,
+        buffer_frames,
         output_format,
         shared,
         output_scratch,
+        graph_scratch,
         resampler,
     )?;
     Ok(true)
-}
-
-fn wasapi_available_frames(buffer_frames: u32, padding: u32) -> u32 {
-    buffer_frames.saturating_sub(padding)
 }
 
 fn write_frames(
@@ -296,6 +270,7 @@ fn write_frames(
     output_format: WasapiOutputFormat,
     shared: &SharedAudio,
     output_scratch: &mut Vec<f32>,
+    graph_scratch: &mut Vec<f32>,
     resampler: &mut OutputResampler,
 ) -> Result<(), String> {
     unsafe {
@@ -306,12 +281,24 @@ fn write_frames(
         match output_format.sample_format {
             WasapiSampleFormat::F32 => {
                 let data = slice::from_raw_parts_mut(buffer as *mut f32, sample_count);
-                fill_wasapi_output(data, output_format.sample_rate, shared, resampler);
+                fill_wasapi_output(
+                    data,
+                    output_format.sample_rate,
+                    shared,
+                    graph_scratch,
+                    resampler,
+                );
             }
             WasapiSampleFormat::I16 => {
                 let data = slice::from_raw_parts_mut(buffer as *mut i16, sample_count);
                 output_scratch.resize(sample_count, 0.0);
-                fill_wasapi_output(output_scratch, output_format.sample_rate, shared, resampler);
+                fill_wasapi_output(
+                    output_scratch,
+                    output_format.sample_rate,
+                    shared,
+                    graph_scratch,
+                    resampler,
+                );
                 for (target, sample) in data.iter_mut().zip(output_scratch.iter().copied()) {
                     *target = (sample.clamp(-1.0, 1.0) * i16::MAX as f32).round() as i16;
                 }
@@ -319,7 +306,13 @@ fn write_frames(
             WasapiSampleFormat::U8 => {
                 let data = slice::from_raw_parts_mut(buffer as *mut u8, sample_count);
                 output_scratch.resize(sample_count, 0.0);
-                fill_wasapi_output(output_scratch, output_format.sample_rate, shared, resampler);
+                fill_wasapi_output(
+                    output_scratch,
+                    output_format.sample_rate,
+                    shared,
+                    graph_scratch,
+                    resampler,
+                );
                 for (target, sample) in data.iter_mut().zip(output_scratch.iter().copied()) {
                     *target = ((sample.clamp(-1.0, 1.0) + 1.0) * 127.5).round() as u8;
                 }
@@ -327,7 +320,13 @@ fn write_frames(
             WasapiSampleFormat::I24 => {
                 let data = slice::from_raw_parts_mut(buffer as *mut u8, sample_count * 3);
                 output_scratch.resize(sample_count, 0.0);
-                fill_wasapi_output(output_scratch, output_format.sample_rate, shared, resampler);
+                fill_wasapi_output(
+                    output_scratch,
+                    output_format.sample_rate,
+                    shared,
+                    graph_scratch,
+                    resampler,
+                );
                 for (target, sample) in data.chunks_exact_mut(3).zip(output_scratch.iter().copied())
                 {
                     let value = (sample.clamp(-1.0, 1.0) * 8_388_607.0).round() as i32;
@@ -340,7 +339,13 @@ fn write_frames(
             WasapiSampleFormat::I24In32 => {
                 let data = slice::from_raw_parts_mut(buffer as *mut i32, sample_count);
                 output_scratch.resize(sample_count, 0.0);
-                fill_wasapi_output(output_scratch, output_format.sample_rate, shared, resampler);
+                fill_wasapi_output(
+                    output_scratch,
+                    output_format.sample_rate,
+                    shared,
+                    graph_scratch,
+                    resampler,
+                );
                 for (target, sample) in data.iter_mut().zip(output_scratch.iter().copied()) {
                     let value = (sample.clamp(-1.0, 1.0) * 8_388_607.0).round() as i32;
                     *target = value << 8;
@@ -349,7 +354,13 @@ fn write_frames(
             WasapiSampleFormat::I32 => {
                 let data = slice::from_raw_parts_mut(buffer as *mut i32, sample_count);
                 output_scratch.resize(sample_count, 0.0);
-                fill_wasapi_output(output_scratch, output_format.sample_rate, shared, resampler);
+                fill_wasapi_output(
+                    output_scratch,
+                    output_format.sample_rate,
+                    shared,
+                    graph_scratch,
+                    resampler,
+                );
                 for (target, sample) in data.iter_mut().zip(output_scratch.iter().copied()) {
                     *target = (sample.clamp(-1.0, 1.0) * i32::MAX as f32).round() as i32;
                 }
@@ -365,26 +376,14 @@ fn fill_wasapi_output(
     output: &mut [f32],
     output_sample_rate: u32,
     shared: &SharedAudio,
+    graph_scratch: &mut Vec<f32>,
     resampler: &mut OutputResampler,
 ) {
     if output_sample_rate == shared.mix_format.sample_rate
         && shared.mix_format.channels == MIX_CHANNELS
     {
-        fill_output(output, MIX_CHANNELS, shared);
+        fill_output_reusing(output, MIX_CHANNELS, shared, graph_scratch);
     } else {
         resampler.fill_output(output, MIX_CHANNELS, shared);
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn wasapi_available_frames_follow_device_padding() {
-        assert_eq!(wasapi_available_frames(512, 0), 512);
-        assert_eq!(wasapi_available_frames(512, 128), 384);
-        assert_eq!(wasapi_available_frames(512, 512), 0);
-        assert_eq!(wasapi_available_frames(512, 768), 0);
     }
 }
