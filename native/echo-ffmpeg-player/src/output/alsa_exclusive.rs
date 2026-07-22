@@ -2,7 +2,7 @@ use super::cpal_shared::OutputResampler;
 use crate::device::platform_linux::resolve_alsa_exclusive_device_name;
 use crate::events::{PlayerErrorCode, PlayerEvent};
 use crate::output::{fill_output_reusing, report_output_start, OutputStartSender};
-use crate::shared::{SharedAudio, TARGET_CHANNELS};
+use crate::shared::{AudioSampleFormat, SharedAudio, MIX_CHANNELS};
 use alsa::pcm::{Access, Format, HwParams, State, PCM};
 use alsa::{Direction, Error, ValueOr};
 use std::sync::Arc;
@@ -35,7 +35,7 @@ struct AlsaOutputFormat {
 
 pub(crate) fn probe_output(device_name: &str, sample_rate: u32) -> Result<(), String> {
     let pcm = open_pcm(device_name)?;
-    configure_pcm(&pcm, sample_rate).map(|_| ())
+    configure_pcm(&pcm, sample_rate, AudioSampleFormat::Unknown).map(|_| ())
 }
 
 pub fn spawn_output_thread(
@@ -68,14 +68,16 @@ fn run_exclusive_output(
         format!("ALSA hardware output is not available for exclusive mode: {device_name}")
     })?;
     let pcm = open_pcm(&resolved)?;
-    let format = configure_pcm(&pcm, shared.sample_rate)?;
+    let source_format = shared.source_sample_format();
+    let format = configure_pcm(&pcm, shared.mix_format.sample_rate, source_format)?;
     emit(PlayerEvent::log(
         "info",
         format!(
-            "ALSA exclusive opening: requested='{device_name}', resolved='{resolved}', sample_rate={}, engine_sample_rate={}, channels={}, format={:?}, period_frames={}, buffer_frames={}",
+            "ALSA exclusive opening: requested='{device_name}', resolved='{resolved}', sample_rate={}, engine_sample_rate={}, channels={}, source_format={:?}, format={:?}, period_frames={}, buffer_frames={}",
             format.sample_rate,
-            shared.sample_rate,
+            shared.mix_format.sample_rate,
             format.channels,
+            source_format,
             format.sample_format,
             format.period_frames,
             format.buffer_frames
@@ -91,7 +93,12 @@ fn run_exclusive_output(
     let mut converted_i24 = Vec::<u8>::new();
     let mut converted_u8 = Vec::<u8>::new();
     let mut converted_f64 = Vec::<f64>::new();
-    let mut resampler = OutputResampler::new(shared.sample_rate, format.sample_rate);
+    let mut resampler = OutputResampler::new(
+        shared.mix_format.sample_rate,
+        format.sample_rate,
+        shared.mix_format.channels,
+        format.channels,
+    )?;
     let mut paused = false;
 
     while !shared.should_stop_output() {
@@ -111,7 +118,9 @@ fn run_exclusive_output(
         recover_pcm_state(&pcm)?;
         let samples = format.period_frames.saturating_mul(format.channels);
         output_scratch.resize(samples, 0.0);
-        if format.sample_rate == shared.sample_rate {
+        if format.sample_rate == shared.mix_format.sample_rate
+            && format.channels == shared.mix_format.channels
+        {
             fill_output_reusing(
                 &mut output_scratch,
                 format.channels,
@@ -146,15 +155,19 @@ fn open_pcm(device_name: &str) -> Result<PCM, String> {
         .map_err(|err| format!("failed to open ALSA exclusive output '{device_name}': {err}"))
 }
 
-fn configure_pcm(pcm: &PCM, sample_rate: u32) -> Result<AlsaOutputFormat, String> {
+fn configure_pcm(
+    pcm: &PCM,
+    sample_rate: u32,
+    source_format: AudioSampleFormat,
+) -> Result<AlsaOutputFormat, String> {
     let hwp = HwParams::any(pcm).map_err(|err| format!("failed to query ALSA hw params: {err}"))?;
     hwp.set_rate_resample(false)
         .map_err(|err| format!("failed to disable ALSA resampling: {err}"))?;
     hwp.set_access(Access::RWInterleaved)
         .map_err(|err| format!("failed to set ALSA interleaved access: {err}"))?;
-    let sample_format = choose_sample_format(&hwp)?;
+    let sample_format = choose_sample_format(&hwp, source_format)?;
     let channels = hwp
-        .set_channels_near(TARGET_CHANNELS as u32)
+        .set_channels_near(MIX_CHANNELS as u32)
         .map_err(|err| format!("failed to set ALSA output channels: {err}"))?;
     let actual_rate = hwp
         .set_rate_near(sample_rate, ValueOr::Nearest)
@@ -202,21 +215,33 @@ fn configure_pcm(pcm: &PCM, sample_rate: u32) -> Result<AlsaOutputFormat, String
     })
 }
 
-fn choose_sample_format(hwp: &HwParams<'_>) -> Result<AlsaSampleFormat, String> {
-    for (alsa_format, sample_format) in [
-        (Format::float(), AlsaSampleFormat::F32),
-        (Format::float64(), AlsaSampleFormat::F64),
-        (Format::s32(), AlsaSampleFormat::I32),
-        (Format::s24(), AlsaSampleFormat::I24In32),
-        (Format::s24_3(), AlsaSampleFormat::I24),
-        (Format::s16(), AlsaSampleFormat::I16),
-        (Format::U8, AlsaSampleFormat::U8),
-    ] {
-        if hwp.test_format(alsa_format).is_ok() && hwp.set_format(alsa_format).is_ok() {
-            return Ok(sample_format);
+fn choose_sample_format(
+    hwp: &HwParams<'_>,
+    source_format: AudioSampleFormat,
+) -> Result<AlsaSampleFormat, String> {
+    for format in source_format.best_output_formats() {
+        for (alsa_format, sample_format) in alsa_formats_for_audio_format(format) {
+            if hwp.test_format(alsa_format).is_ok() && hwp.set_format(alsa_format).is_ok() {
+                return Ok(sample_format);
+            }
         }
     }
     Err("ALSA exclusive output does not accept f32/f64/s32/s24/s16/u8 PCM".to_string())
+}
+
+fn alsa_formats_for_audio_format(format: AudioSampleFormat) -> Vec<(Format, AlsaSampleFormat)> {
+    match format {
+        AudioSampleFormat::U8 => vec![(Format::U8, AlsaSampleFormat::U8)],
+        AudioSampleFormat::S16 => vec![(Format::s16(), AlsaSampleFormat::I16)],
+        AudioSampleFormat::S32 => vec![
+            (Format::s32(), AlsaSampleFormat::I32),
+            (Format::s24(), AlsaSampleFormat::I24In32),
+            (Format::s24_3(), AlsaSampleFormat::I24),
+        ],
+        AudioSampleFormat::F32 => vec![(Format::float(), AlsaSampleFormat::F32)],
+        AudioSampleFormat::F64 => vec![(Format::float64(), AlsaSampleFormat::F64)],
+        AudioSampleFormat::Unknown => Vec::new(),
+    }
 }
 
 fn pause_pcm(pcm: &PCM, format: &AlsaOutputFormat) {

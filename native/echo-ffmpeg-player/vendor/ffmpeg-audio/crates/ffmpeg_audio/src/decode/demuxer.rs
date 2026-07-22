@@ -51,7 +51,11 @@ impl PacketCacheOptions {
 
 impl Default for PacketCacheOptions {
     fn default() -> Self {
-        Self::new(8 * 1024 * 1024, 2 * 1024 * 1024, Duration::from_secs(30))
+        Self::new(
+            150 * 1024 * 1024,
+            50 * 1024 * 1024,
+            Duration::from_secs(1),
+        )
     }
 }
 

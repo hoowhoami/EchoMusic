@@ -1,6 +1,6 @@
 use crate::events::AudioDevice;
 #[cfg(target_os = "linux")]
-use crate::shared::TARGET_CHANNELS;
+use crate::shared::MIX_CHANNELS;
 use cpal::traits::{DeviceTrait, HostTrait};
 use cpal::SampleFormat;
 #[cfg(target_os = "linux")]
@@ -380,7 +380,7 @@ fn validate_platform_exclusive_open(
         return Ok(());
     }
     let config = StreamConfig {
-        channels: TARGET_CHANNELS as u16,
+        channels: MIX_CHANNELS as u16,
         sample_rate: cpal::SampleRate(sample_rate),
         buffer_size: cpal::BufferSize::Default,
     };

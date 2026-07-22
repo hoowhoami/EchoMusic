@@ -11,10 +11,10 @@ import type { ImpulseResponsePlaybackOptions } from '../../shared/audio';
 import type { PlayerErrorCode, PlayerErrorPayload } from '../../shared/player-error';
 
 const PINIA_SETTING_KEY = 'pinia:setting';
-const DEFAULT_AUDIO_CACHE_SECS = 30;
-const DEFAULT_AUDIO_OUTPUT_BUFFER_SECS = 2;
-const DEFAULT_DEMUXER_MAX_MB = 48;
-const DEFAULT_DEMUXER_BACK_MB = 12;
+const DEFAULT_AUDIO_CACHE_SECS = 1;
+const DEFAULT_AUDIO_OUTPUT_BUFFER_SECS = 0.2;
+const DEFAULT_DEMUXER_MAX_MB = 150;
+const DEFAULT_DEMUXER_BACK_MB = 50;
 const DEFAULT_PLAYBACK_STALL_TIMEOUT_SECS = 8;
 const nativeRequire = createRequire(path.join(process.cwd(), 'package.json'));
 
@@ -29,14 +29,14 @@ const getPersistedNativeAudioConfig = () => {
   const audioCacheSecs = readClampedNumber(
     saved?.audioCacheSecs,
     DEFAULT_AUDIO_CACHE_SECS,
-    10,
+    1,
     120,
   );
   const audioBufferSecs = readClampedNumber(
     saved?.audioBufferSecs,
     DEFAULT_AUDIO_OUTPUT_BUFFER_SECS,
+    0.05,
     1,
-    5,
   );
   const audioDemuxerMaxMB = readClampedNumber(
     saved?.audioDemuxerMaxMB,

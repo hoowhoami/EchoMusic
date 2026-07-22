@@ -3,6 +3,7 @@ use crate::device::selection::{
 };
 use crate::device::watcher::run_debounced_device_events;
 use crate::events::{AudioDevice, PlayerEvent};
+use crate::shared::AudioSampleFormat;
 use cpal::traits::{DeviceTrait, HostTrait};
 use std::ffi::{c_void, OsString};
 use std::mem;
@@ -229,7 +230,8 @@ pub(crate) fn validate_wasapi_output_device_at_sample_rate(
     let _com = ComApartment::init()?;
     let device = resolve_wasapi_output_device(device_name)?;
     let probe_client = activate_wasapi_audio_client(&device)?;
-    let output_format = choose_wasapi_output_format(&probe_client, sample_rate)?;
+    let output_format =
+        choose_wasapi_output_format(&probe_client, sample_rate, AudioSampleFormat::Unknown)?;
     let wave_format = wasapi_wave_format(output_format.sample_rate, output_format.sample_format);
     let mut aligned_buffer_frames = None;
 
@@ -425,9 +427,13 @@ pub(crate) fn resolve_wasapi_output_sample_rate(device_name: &str) -> u32 {
     let Ok(audio_client) = activate_wasapi_audio_client(&device) else {
         return preferred_sample_rate;
     };
-    choose_wasapi_output_format(&audio_client, preferred_sample_rate)
-        .map(|format| format.sample_rate)
-        .unwrap_or(preferred_sample_rate)
+    choose_wasapi_output_format(
+        &audio_client,
+        preferred_sample_rate,
+        AudioSampleFormat::Unknown,
+    )
+    .map(|format| format.sample_rate)
+    .unwrap_or(preferred_sample_rate)
 }
 
 pub(crate) fn resolve_wasapi_output_device(device_name: &str) -> Result<Audio::IMMDevice, String> {
@@ -488,10 +494,11 @@ pub(crate) fn activate_wasapi_audio_client(
 pub(crate) fn choose_wasapi_output_format(
     audio_client: &Audio::IAudioClient,
     preferred_sample_rate: u32,
+    source_format: AudioSampleFormat,
 ) -> Result<WasapiOutputFormat, String> {
     for sample_rate in wasapi_sample_rate_candidates(preferred_sample_rate) {
         if let Ok(sample_format) =
-            choose_wasapi_sample_format_at_sample_rate(audio_client, sample_rate)
+            choose_wasapi_sample_format_at_sample_rate(audio_client, sample_rate, source_format)
         {
             return Ok(WasapiOutputFormat {
                 sample_rate,
@@ -507,15 +514,9 @@ pub(crate) fn choose_wasapi_output_format(
 pub(crate) fn choose_wasapi_sample_format_at_sample_rate(
     audio_client: &Audio::IAudioClient,
     sample_rate: u32,
+    source_format: AudioSampleFormat,
 ) -> Result<WasapiSampleFormat, String> {
-    for sample_format in [
-        WasapiSampleFormat::F32,
-        WasapiSampleFormat::I32,
-        WasapiSampleFormat::I24In32,
-        WasapiSampleFormat::I24,
-        WasapiSampleFormat::I16,
-        WasapiSampleFormat::U8,
-    ] {
+    for sample_format in wasapi_sample_format_candidates(source_format) {
         let wave_format = wasapi_wave_format(sample_rate, sample_format);
         let result = unsafe {
             audio_client.IsFormatSupported(
@@ -531,6 +532,24 @@ pub(crate) fn choose_wasapi_sample_format_at_sample_rate(
     Err(format!(
         "WASAPI exclusive output does not accept stereo PCM at {sample_rate} Hz"
     ))
+}
+
+fn wasapi_sample_format_candidates(source_format: AudioSampleFormat) -> Vec<WasapiSampleFormat> {
+    let mut candidates = Vec::new();
+    for format in source_format.best_output_formats() {
+        match format {
+            AudioSampleFormat::U8 => candidates.push(WasapiSampleFormat::U8),
+            AudioSampleFormat::S16 => candidates.push(WasapiSampleFormat::I16),
+            AudioSampleFormat::S32 => {
+                candidates.push(WasapiSampleFormat::I32);
+                candidates.push(WasapiSampleFormat::I24In32);
+                candidates.push(WasapiSampleFormat::I24);
+            }
+            AudioSampleFormat::F32 => candidates.push(WasapiSampleFormat::F32),
+            AudioSampleFormat::F64 | AudioSampleFormat::Unknown => {}
+        }
+    }
+    candidates
 }
 
 fn wasapi_sample_rate_candidates(preferred_sample_rate: u32) -> Vec<u32> {
@@ -550,7 +569,7 @@ pub(crate) fn wasapi_wave_format(
     sample_rate: u32,
     sample_format: WasapiSampleFormat,
 ) -> Audio::WAVEFORMATEXTENSIBLE {
-    let channels = crate::shared::TARGET_CHANNELS as u16;
+    let channels = crate::shared::MIX_CHANNELS as u16;
     let sample_bytes = sample_format.sample_bytes();
     let block_align = channels * sample_bytes;
     let bits_per_sample = sample_bytes * 8;

@@ -159,10 +159,10 @@ export const useSettingStore = defineStore('setting', {
     // 歌单排序方式
     playlistSortOrder: 'default' as 'default' | 'time-desc' | 'time-asc' | 'name-asc' | 'name-desc',
     // 音频缓冲区设置
-    audioCacheSecs: 30,
-    audioDemuxerMaxMB: 48,
-    audioDemuxerBackMB: 12,
-    audioBufferSecs: 2,
+    audioCacheSecs: 1,
+    audioDemuxerMaxMB: 150,
+    audioDemuxerBackMB: 50,
+    audioBufferSecs: 0.2,
     kugouApiProxyUrl: DEFAULT_NETWORK_SETTINGS.kugouApiProxyUrl,
     kugouApiTimeoutSecs: DEFAULT_NETWORK_SETTINGS.kugouApiTimeoutSecs,
     playerHttpProxyUrl: DEFAULT_NETWORK_SETTINGS.playerHttpProxyUrl,

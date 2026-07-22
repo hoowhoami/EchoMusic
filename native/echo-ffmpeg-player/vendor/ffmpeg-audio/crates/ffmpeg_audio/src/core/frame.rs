@@ -91,8 +91,14 @@ impl<'a> AudioFrame<'a> {
     }
 
     /// Returns the actual sample format of this specific frame.
-    pub(crate) fn sample_fmt(&self) -> sys::AVSampleFormat {
+    pub fn sample_fmt(&self) -> sys::AVSampleFormat {
         unsafe { (*self.ptr.as_ptr()).format }
+    }
+
+    /// Returns the number of channels in this frame's actual channel layout.
+    #[must_use]
+    pub fn channels(&self) -> usize {
+        unsafe { (*self.ptr.as_ptr()).ch_layout.nb_channels.max(0) as usize }
     }
 
     /// Returns a reference to the actual channel layout of this specific frame.
@@ -101,7 +107,7 @@ impl<'a> AudioFrame<'a> {
     }
 
     /// Returns the actual sample rate of this specific frame.
-    pub(crate) fn frame_sample_rate(&self) -> i32 {
+    pub fn frame_sample_rate(&self) -> i32 {
         unsafe { (*self.ptr.as_ptr()).sample_rate }
     }
 

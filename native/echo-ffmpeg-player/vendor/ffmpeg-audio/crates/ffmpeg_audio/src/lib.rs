@@ -41,6 +41,7 @@ pub use ffmpeg_audio_sys as sys;
 pub use resample::{
     ResampleOptions,
     Resampler,
+    SwrContext,
 };
 
 use crate::{

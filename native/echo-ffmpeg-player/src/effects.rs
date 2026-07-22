@@ -33,6 +33,12 @@ impl Default for DspSettings {
     }
 }
 
+impl DspSettings {
+    pub fn requires_stereo_graph(&self) -> bool {
+        self.spatial.is_some()
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct PreparedSpatialEffect {
     pub file_path: String,
@@ -51,23 +57,26 @@ struct PreparedImpulseChannel {
 
 pub struct DspChain {
     settings: DspSettings,
+    channels: usize,
     gain_linear: f32,
     eq_headroom_linear: f32,
-    eq: StereoEqualizer,
+    eq: MultichannelEqualizer,
     spatial: Option<SpatialEffect>,
 }
 
 impl DspChain {
-    pub fn new(sample_rate: u32, settings: &DspSettings) -> Self {
+    pub fn new(sample_rate: u32, channels: usize, settings: &DspSettings) -> Self {
+        let channels = channels.max(1);
         Self {
             settings: settings.clone(),
+            channels,
             gain_linear: db_to_gain(settings.normalization_gain_db),
             eq_headroom_linear: eq_headroom_gain(&settings.equalizer),
-            eq: StereoEqualizer::new(sample_rate, &settings.equalizer),
+            eq: MultichannelEqualizer::new(sample_rate, channels, &settings.equalizer),
             spatial: settings
                 .spatial
                 .as_ref()
-                .filter(|spatial| spatial.sample_rate == sample_rate)
+                .filter(|spatial| channels == 2 && spatial.sample_rate == sample_rate)
                 .map(SpatialEffect::new),
         }
     }
@@ -82,13 +91,13 @@ impl DspChain {
         self.gain_linear = db_to_gain(settings.normalization_gain_db);
         if eq_changed {
             self.eq_headroom_linear = eq_headroom_gain(&settings.equalizer);
-            self.eq = StereoEqualizer::new(sample_rate, &settings.equalizer);
+            self.eq = MultichannelEqualizer::new(sample_rate, self.channels, &settings.equalizer);
         }
         if spatial_changed {
             self.spatial = settings
                 .spatial
                 .as_ref()
-                .filter(|spatial| spatial.sample_rate == sample_rate)
+                .filter(|spatial| self.channels == 2 && spatial.sample_rate == sample_rate)
                 .map(SpatialEffect::new);
         } else if let (Some(active), Some(next)) =
             (self.spatial.as_mut(), settings.spatial.as_ref())
@@ -104,24 +113,16 @@ impl DspChain {
                 *sample *= self.eq_headroom_linear;
             }
         }
-        if let Some(spatial) = self.spatial.as_mut() {
-            spatial.process_interleaved(samples);
+        if self.channels == 2 {
+            if let Some(spatial) = self.spatial.as_mut() {
+                spatial.process_interleaved(samples);
+            }
         }
         for sample in samples {
             if (self.gain_linear - 1.0).abs() >= f32::EPSILON {
                 *sample = (*sample * self.gain_linear).clamp(-1.0, 1.0);
             }
             *sample = sample.clamp(-1.0, 1.0);
-        }
-    }
-
-    pub fn set_spatial_mix(&mut self, mix: f32) {
-        let mix = clamp_spatial_mix(mix);
-        if let Some(spatial) = self.settings.spatial.as_mut() {
-            spatial.mix = mix;
-        }
-        if let Some(spatial) = self.spatial.as_mut() {
-            spatial.set_mix(mix);
         }
     }
 }
@@ -242,33 +243,36 @@ fn split_stereo(samples: &[f32]) -> (Vec<f32>, Vec<f32>) {
     (left, right)
 }
 
-struct StereoEqualizer {
+struct MultichannelEqualizer {
     sample_rate: u32,
-    left: Vec<Biquad>,
-    right: Vec<Biquad>,
+    channels: usize,
+    filters: Vec<Vec<Biquad>>,
 }
 
-impl StereoEqualizer {
-    fn new(sample_rate: u32, gains: &[f32; 10]) -> Self {
+impl MultichannelEqualizer {
+    fn new(sample_rate: u32, channels: usize, gains: &[f32; 10]) -> Self {
+        let channels = channels.max(1);
         Self {
             sample_rate,
-            left: make_eq_filters(sample_rate, gains),
-            right: make_eq_filters(sample_rate, gains),
+            channels,
+            filters: (0..channels)
+                .map(|_| make_eq_filters(sample_rate, gains))
+                .collect(),
         }
     }
 
     fn process_interleaved(&mut self, samples: &mut [f32]) {
-        for frame in samples.chunks_exact_mut(2) {
-            let mut left = frame[0];
-            let mut right = frame[1];
-            for filter in &mut self.left {
-                left = filter.process(left);
+        if self.filters.iter().all(Vec::is_empty) {
+            return;
+        }
+        for frame in samples.chunks_exact_mut(self.channels) {
+            for (channel, sample) in frame.iter_mut().enumerate() {
+                let mut value = *sample;
+                for filter in &mut self.filters[channel] {
+                    value = filter.process(value);
+                }
+                *sample = value;
             }
-            for filter in &mut self.right {
-                right = filter.process(right);
-            }
-            frame[0] = left;
-            frame[1] = right;
         }
     }
 }

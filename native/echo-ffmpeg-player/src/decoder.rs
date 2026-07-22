@@ -1,9 +1,9 @@
 use crate::events::{PlayerErrorCode, PlayerEvent, TrackInfo};
-use crate::network_stream::{open_source, ReadSeek};
-use crate::shared::SharedAudio;
-use ffmpeg_audio::{
-    sys, AudioError, AudioReader, PacketCacheOptions, ResampleOptions, Resampler, SeekMode,
+use crate::shared::{
+    AudioSampleFormat, DecodedAudioChunk, DecodedAudioData, DecodedAudioFormat, SharedAudio,
 };
+use crate::stream::{open_stream, ReadSeek};
+use ffmpeg_audio::{sys, AudioError, AudioReader, PacketCacheOptions, RawAudioData, SeekMode};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
@@ -11,25 +11,27 @@ use std::time::Duration;
 
 pub struct DecoderData {
     reader: AudioReader,
-    resampler: Resampler,
     interrupt: Arc<AtomicBool>,
     duration: Option<Duration>,
     pending_seek_position: Option<f64>,
+    mix_sample_rate: u32,
+    source_channels: usize,
+    source_sample_format: AudioSampleFormat,
 }
 
 impl DecoderData {
     pub fn open(
         url: String,
         audio_stream_ordinal: Option<usize>,
-        sample_rate: u32,
+        mix_sample_rate: Option<u32>,
         interrupt: Arc<AtomicBool>,
         packet_cache: PacketCacheOptions,
     ) -> Result<Self, String> {
-        let source = open_source(&url, interrupt.clone())?;
+        let source = open_stream(&url, interrupt.clone())?;
         Self::from_source(
             url,
             audio_stream_ordinal,
-            sample_rate,
+            mix_sample_rate,
             interrupt,
             source,
             packet_cache,
@@ -39,7 +41,7 @@ impl DecoderData {
     fn from_source(
         _url: String,
         audio_stream_ordinal: Option<usize>,
-        sample_rate: u32,
+        mix_sample_rate: Option<u32>,
         interrupt: Arc<AtomicBool>,
         source: Box<dyn ReadSeek>,
         packet_cache: PacketCacheOptions,
@@ -51,20 +53,18 @@ impl DecoderData {
         )
         .map_err(|err| format!("failed to create audio decoder: {err}"))?;
         let duration = reader.duration();
-        let resampler = reader
-            .build_resampler(
-                ResampleOptions::new()
-                    .sample_rate(sample_rate as i32)
-                    .channels(crate::shared::TARGET_CHANNELS as i32)
-                    .format::<f32>(),
-            )
-            .map_err(|err| format!("failed to create audio resampler: {err}"))?;
+        let source_info = reader.source_info();
+        let source_sample_format = source_sample_format(source_info);
+        let source_channels = source_channels(source_info);
+        let mix_sample_rate = mix_sample_rate.unwrap_or_else(|| source_sample_rate(source_info));
         Ok(Self {
             reader,
-            resampler,
             interrupt,
             duration,
             pending_seek_position: None,
+            mix_sample_rate,
+            source_channels,
+            source_sample_format,
         })
     }
 
@@ -76,6 +76,18 @@ impl DecoderData {
 
     pub fn interrupt_handle(&self) -> Arc<AtomicBool> {
         self.interrupt.clone()
+    }
+
+    pub fn source_sample_format(&self) -> AudioSampleFormat {
+        self.source_sample_format
+    }
+
+    pub fn mix_sample_rate(&self) -> u32 {
+        self.mix_sample_rate
+    }
+
+    pub fn source_channels(&self) -> usize {
+        self.source_channels
     }
 
     pub fn seek(&mut self, position_secs: f64) -> Result<(), String> {
@@ -92,9 +104,6 @@ impl DecoderData {
                     )
                 })
             })?;
-        self.resampler
-            .flush()
-            .map_err(|err| format!("failed to flush resampler after seek: {err}"))?;
         self.pending_seek_position = Some(position_secs.max(0.0));
         Ok(())
     }
@@ -107,58 +116,37 @@ impl DecoderData {
                 return (!shared.stop.load(Ordering::Acquire)).then_some(self);
             }
             match self.reader.receive_frame() {
-                Ok(Some(frame)) => match self.resampler.process::<f32>(Some(&frame)) {
-                    Ok(true) => {
+                Ok(Some(frame)) => match decoded_chunk_from_frame(&frame) {
+                    Ok(chunk) => {
                         if !shared.is_decode_generation_current(generation) {
                             return (!shared.stop.load(Ordering::Acquire)).then_some(self);
                         }
-                        let output = self.resampler.output_as::<f32>();
                         if let Some(requested_position) = self.pending_seek_position {
-                            if !output.is_empty() {
-                                let position = frame
-                                    .pts()
-                                    .map(|position| position.as_secs_f64())
-                                    .unwrap_or(requested_position);
+                            if chunk.frames > 0 {
+                                let position = chunk.pts_secs.unwrap_or(requested_position);
                                 shared.set_position_secs(position);
                                 shared.notify_signal(crate::shared::PlaybackSignal::Seeked);
                                 self.pending_seek_position = None;
                             }
                         }
-                        produced_frames = produced_frames
-                            .saturating_add((output.len() / crate::shared::TARGET_CHANNELS) as u64);
-                        let source_frames = (output.len() / crate::shared::TARGET_CHANNELS) as u64;
+                        produced_frames = produced_frames.saturating_add(chunk.frames as u64);
                         if !shared.is_decode_generation_current(generation)
-                            || !shared.push_decoded_samples_with_source_frames_for_generation(
-                                output,
-                                source_frames,
-                                generation,
-                            )
+                            || !shared.push_decoded_chunk_for_generation(chunk, generation)
                         {
                             return (!shared.stop.load(Ordering::Acquire)).then_some(self);
                         }
                     }
-                    Ok(false) => {}
                     Err(err) => {
                         shared.mark_decode_failed();
-                        emit_decode_error(format!("failed to resample audio frame: {err}"));
+                        emit_decode_error(format!(
+                            "failed to materialize decoded audio frame: {err}"
+                        ));
                         return None;
                     }
                 },
                 Ok(None) => {
                     if !shared.is_decode_generation_current(generation) {
                         return (!shared.stop.load(Ordering::Acquire)).then_some(self);
-                    }
-                    if let Ok(true) = self.resampler.process::<f32>(None) {
-                        let output = self.resampler.output_as::<f32>();
-                        let source_frames = (output.len() / crate::shared::TARGET_CHANNELS) as u64;
-                        if !shared.is_decode_generation_current(generation) {
-                            return (!shared.stop.load(Ordering::Acquire)).then_some(self);
-                        }
-                        let _ = shared.push_decoded_samples_with_source_frames_for_generation(
-                            output,
-                            source_frames,
-                            generation,
-                        );
                     }
                     if !shared.is_decode_generation_current(generation) {
                         return (!shared.stop.load(Ordering::Acquire)).then_some(self);
@@ -183,19 +171,6 @@ impl DecoderData {
                         ));
                         if !shared.is_decode_generation_current(generation) {
                             return (!shared.stop.load(Ordering::Acquire)).then_some(self);
-                        }
-                        if let Ok(true) = self.resampler.process::<f32>(None) {
-                            let output = self.resampler.output_as::<f32>();
-                            let source_frames =
-                                (output.len() / crate::shared::TARGET_CHANNELS) as u64;
-                            if !shared.is_decode_generation_current(generation) {
-                                return (!shared.stop.load(Ordering::Acquire)).then_some(self);
-                            }
-                            let _ = shared.push_decoded_samples_with_source_frames_for_generation(
-                                output,
-                                source_frames,
-                                generation,
-                            );
                         }
                         if !shared.is_decode_generation_current(generation) {
                             return (!shared.stop.load(Ordering::Acquire)).then_some(self);
@@ -233,16 +208,139 @@ impl DecoderData {
     }
 }
 
+fn source_sample_format(info: &ffmpeg_audio::SourceAudioInfo) -> AudioSampleFormat {
+    match info.sample_fmt.as_deref().map(strip_planar_suffix) {
+        Some("u8") => AudioSampleFormat::U8,
+        Some("s16") => AudioSampleFormat::S16,
+        Some("s32") => AudioSampleFormat::S32,
+        Some("flt") => AudioSampleFormat::F32,
+        Some("dbl") => AudioSampleFormat::F64,
+        _ if info.bits_per_sample > 16 => AudioSampleFormat::S32,
+        _ if info.bits_per_sample > 0 => AudioSampleFormat::S16,
+        _ => AudioSampleFormat::Unknown,
+    }
+}
+
+fn strip_planar_suffix(format: &str) -> &str {
+    format.strip_suffix('p').unwrap_or(format)
+}
+
+fn decoded_chunk_from_frame(
+    frame: &ffmpeg_audio::AudioFrame<'_>,
+) -> Result<DecodedAudioChunk, String> {
+    let sample_format = frame_sample_format(frame.sample_fmt()).ok_or_else(|| {
+        format!(
+            "unsupported decoded sample format: {:?}",
+            frame.sample_fmt()
+        )
+    })?;
+    let sample_rate = u32::try_from(frame.frame_sample_rate())
+        .ok()
+        .filter(|rate| *rate > 0)
+        .unwrap_or(48_000);
+    let channels = frame.channels().max(1);
+    let frames = frame.samples();
+    let pts_secs = frame.pts().map(|pts| pts.as_secs_f64());
+    let format = DecodedAudioFormat {
+        sample_rate,
+        sample_format,
+        channels,
+    };
+
+    let data = match sample_format {
+        AudioSampleFormat::U8 => DecodedAudioData::U8(copy_frame_data::<u8>(frame, channels)?),
+        AudioSampleFormat::S16 => DecodedAudioData::I16(copy_frame_data::<i16>(frame, channels)?),
+        AudioSampleFormat::S32 => DecodedAudioData::I32(copy_frame_data::<i32>(frame, channels)?),
+        AudioSampleFormat::F32 => DecodedAudioData::F32(copy_frame_data::<f32>(frame, channels)?),
+        AudioSampleFormat::F64 => DecodedAudioData::F64(copy_frame_data::<f64>(frame, channels)?),
+        AudioSampleFormat::Unknown => {
+            return Err("decoded audio frame has unknown sample format".to_string());
+        }
+    };
+
+    Ok(DecodedAudioChunk::new(format, frames, pts_secs, data))
+}
+
+fn frame_sample_format(format: sys::AVSampleFormat) -> Option<AudioSampleFormat> {
+    match format {
+        sys::AVSampleFormat_AV_SAMPLE_FMT_U8 | sys::AVSampleFormat_AV_SAMPLE_FMT_U8P => {
+            Some(AudioSampleFormat::U8)
+        }
+        sys::AVSampleFormat_AV_SAMPLE_FMT_S16 | sys::AVSampleFormat_AV_SAMPLE_FMT_S16P => {
+            Some(AudioSampleFormat::S16)
+        }
+        sys::AVSampleFormat_AV_SAMPLE_FMT_S32 | sys::AVSampleFormat_AV_SAMPLE_FMT_S32P => {
+            Some(AudioSampleFormat::S32)
+        }
+        sys::AVSampleFormat_AV_SAMPLE_FMT_FLT | sys::AVSampleFormat_AV_SAMPLE_FMT_FLTP => {
+            Some(AudioSampleFormat::F32)
+        }
+        sys::AVSampleFormat_AV_SAMPLE_FMT_DBL | sys::AVSampleFormat_AV_SAMPLE_FMT_DBLP => {
+            Some(AudioSampleFormat::F64)
+        }
+        _ => None,
+    }
+}
+
+fn copy_frame_data<T>(
+    frame: &ffmpeg_audio::AudioFrame<'_>,
+    channels: usize,
+) -> Result<Vec<T>, String>
+where
+    T: ffmpeg_audio::AudioSample,
+{
+    match frame.raw_data::<T>() {
+        Ok(RawAudioData::Packed(samples)) => Ok(samples.to_vec()),
+        Ok(RawAudioData::Planar(planes)) => Ok(interleave_planes(&planes, channels)),
+        Err(err) => Err(format!("failed to read decoded frame data: {err}")),
+    }
+}
+
+fn interleave_planes<T>(planes: &[&[T]], channels: usize) -> Vec<T>
+where
+    T: Copy,
+{
+    let frames = planes.first().map(|plane| plane.len()).unwrap_or_default();
+    let channels = channels.max(1);
+    let mut output = Vec::with_capacity(frames.saturating_mul(channels));
+    for frame in 0..frames {
+        for channel in 0..channels {
+            if let Some(sample) = planes
+                .get(channel)
+                .and_then(|plane| plane.get(frame))
+                .or_else(|| planes.first().and_then(|plane| plane.get(frame)))
+            {
+                output.push(*sample);
+            }
+        }
+    }
+    output
+}
+
+fn source_sample_rate(info: &ffmpeg_audio::SourceAudioInfo) -> u32 {
+    u32::try_from(info.sample_rate)
+        .ok()
+        .filter(|sample_rate| *sample_rate > 0)
+        .unwrap_or(48_000)
+}
+
+fn source_channels(info: &ffmpeg_audio::SourceAudioInfo) -> usize {
+    usize::try_from(info.channels)
+        .ok()
+        .filter(|channels| *channels > 0)
+        .unwrap_or(2)
+}
+
 pub fn open_decoder(
     url: String,
     audio_stream_ordinal: Option<usize>,
-    sample_rate: u32,
+    mix_sample_rate: Option<u32>,
     packet_cache: PacketCacheOptions,
 ) -> Result<DecoderData, String> {
     DecoderData::open(
         url,
         audio_stream_ordinal,
-        sample_rate,
+        mix_sample_rate,
         Arc::new(AtomicBool::new(false)),
         packet_cache,
     )
@@ -261,7 +359,7 @@ pub fn spawn_decode_thread(
 
 pub fn list_tracks_for_url(url: &str) -> Vec<TrackInfo> {
     let interrupt = Arc::new(AtomicBool::new(false));
-    let Ok(source) = open_source(url, interrupt) else {
+    let Ok(source) = open_stream(url, interrupt) else {
         return Vec::new();
     };
     let Ok(reader) = AudioReader::new(source) else {

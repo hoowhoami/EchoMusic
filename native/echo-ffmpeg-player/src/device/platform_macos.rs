@@ -1,7 +1,7 @@
 use crate::device::watcher::run_debounced_device_events;
 use crate::events::{AudioDevice, PlayerEvent};
 use crate::exclusive::ExclusiveGuard;
-use crate::shared::TARGET_CHANNELS;
+use crate::shared::{AudioSampleFormat, MIX_CHANNELS};
 use coreaudio_sys as ca;
 use objc2_core_audio_types::{AudioBufferList, AudioValueRange};
 use std::ffi::{c_char, c_void, CStr};
@@ -167,7 +167,8 @@ pub(crate) fn validate_coreaudio_exclusive_output(
     let guard = acquire_exclusive(device_name)?;
     let device_id = resolve_coreaudio_device_id(device_name)
         .ok_or_else(|| coreaudio_device_not_found_message(device_name))?;
-    let (_format, format_guard) = prepare_coreaudio_exclusive_format(device_id, sample_rate)?;
+    let (_format, format_guard) =
+        prepare_coreaudio_exclusive_format(device_id, sample_rate, AudioSampleFormat::Unknown)?;
     drop(format_guard);
     drop(guard);
     Ok(())
@@ -190,9 +191,10 @@ pub(crate) fn coreaudio_stream_format(
 pub(crate) fn prepare_coreaudio_exclusive_format(
     device_id: ca::AudioDeviceID,
     sample_rate: u32,
+    source_format: AudioSampleFormat,
 ) -> Result<(CoreAudioPcmFormat, Option<CoreAudioPhysicalFormatGuard>), String> {
     let stream_id = coreaudio_output_stream(device_id)?;
-    let target_format = find_best_physical_format(stream_id, sample_rate).ok();
+    let target_format = find_best_physical_format(stream_id, sample_rate, source_format).ok();
     let original_format = coreaudio_physical_format(stream_id)?;
     let changed = target_format
         .filter(|format| !coreaudio_asbd_equals(&original_format, format))
@@ -555,6 +557,7 @@ fn coreaudio_pcm_format(
 fn find_best_physical_format(
     stream_id: ca::AudioStreamID,
     sample_rate: u32,
+    source_format: AudioSampleFormat,
 ) -> Result<ca::AudioStreamBasicDescription, String> {
     let formats = property_data_array::<AudioStreamRangedDescription>(
         stream_id,
@@ -574,20 +577,12 @@ fn find_best_physical_format(
             continue;
         };
         let rate_penalty = format.sample_rate.abs_diff(sample_rate) as u64;
-        let channel_penalty = if format.channels >= TARGET_CHANNELS {
-            format.channels.saturating_sub(TARGET_CHANNELS) as u64
+        let channel_penalty = if format.channels >= MIX_CHANNELS {
+            format.channels.saturating_sub(MIX_CHANNELS) as u64
         } else {
-            (TARGET_CHANNELS.saturating_sub(format.channels) as u64).saturating_add(16)
+            (MIX_CHANNELS.saturating_sub(format.channels) as u64).saturating_add(16)
         };
-        let sample_penalty = match format.sample_format {
-            CoreAudioPcmSampleFormat::F32 => 0,
-            CoreAudioPcmSampleFormat::F64 => 1,
-            CoreAudioPcmSampleFormat::I32 => 2,
-            CoreAudioPcmSampleFormat::I24In32 => 3,
-            CoreAudioPcmSampleFormat::I24 => 4,
-            CoreAudioPcmSampleFormat::I16 => 5,
-            CoreAudioPcmSampleFormat::U8 => 6,
-        };
+        let sample_penalty = coreaudio_sample_format_penalty(format.sample_format, source_format);
         let interleaved_penalty = u64::from(format.non_interleaved);
         let score = rate_penalty
             .saturating_mul(1024)
@@ -603,6 +598,35 @@ fn find_best_physical_format(
     best.ok_or_else(|| {
         format!("CoreAudio exclusive output has no physical PCM format at {sample_rate} Hz")
     })
+}
+
+fn coreaudio_sample_format_penalty(
+    sample_format: CoreAudioPcmSampleFormat,
+    source_format: AudioSampleFormat,
+) -> u64 {
+    let audio_format = match sample_format {
+        CoreAudioPcmSampleFormat::F32 => AudioSampleFormat::F32,
+        CoreAudioPcmSampleFormat::F64 => AudioSampleFormat::F64,
+        CoreAudioPcmSampleFormat::I32
+        | CoreAudioPcmSampleFormat::I24In32
+        | CoreAudioPcmSampleFormat::I24 => AudioSampleFormat::S32,
+        CoreAudioPcmSampleFormat::I16 => AudioSampleFormat::S16,
+        CoreAudioPcmSampleFormat::U8 => AudioSampleFormat::U8,
+    };
+    let conversion_penalty = source_format
+        .best_output_formats()
+        .iter()
+        .position(|format| *format == audio_format)
+        .unwrap_or(usize::MAX) as u64;
+    let container_penalty = match sample_format {
+        CoreAudioPcmSampleFormat::I32 => 0,
+        CoreAudioPcmSampleFormat::I24In32 => 1,
+        CoreAudioPcmSampleFormat::I24 => 2,
+        _ => 0,
+    };
+    conversion_penalty
+        .saturating_mul(4)
+        .saturating_add(container_penalty)
 }
 
 fn coreaudio_rate_in_range(sample_rate: u32, range: AudioValueRange) -> bool {

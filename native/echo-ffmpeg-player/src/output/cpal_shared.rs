@@ -2,14 +2,16 @@ use crate::device::select_output_device_checked;
 use crate::events::{PlayerErrorCode, PlayerEvent};
 use crate::exclusive::ExclusiveGuard;
 use crate::output::{report_output_start, OutputStartSender};
-use crate::shared::{SharedAudio, TARGET_CHANNELS};
+use crate::shared::SharedAudio;
 use cpal::traits::{DeviceTrait, StreamTrait};
 use cpal::{SampleFormat, Stream, StreamConfig};
+use ffmpeg_audio::{sys, SwrContext};
 use std::collections::VecDeque;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
+use std::{mem, ptr};
 
 pub fn spawn_output_thread(
     device_name: String,
@@ -81,7 +83,7 @@ pub(crate) fn spawn_output_thread_with_start_notify(
             format!(
                 "audio output opening: requested='{device_name}', resolved='{resolved_device_name}', exclusive={exclusive}, sample_rate={}, engine_sample_rate={}, channels={}, format={:?}",
                 stream_config.sample_rate.0,
-                shared.sample_rate,
+                shared.mix_format.sample_rate,
                 output_channels,
                 supported.sample_format()
             ),
@@ -161,14 +163,19 @@ fn build_output_stream(
     };
     match sample_format {
         SampleFormat::F32 => {
-            let mut stereo_scratch = Vec::<f32>::new();
-            let mut resampler = OutputResampler::new(shared.sample_rate, output_sample_rate);
+            let mut graph_scratch = Vec::<f32>::new();
+            let mut resampler = OutputResampler::new(
+                shared.mix_format.sample_rate,
+                output_sample_rate,
+                shared.mix_format.channels,
+                output_channels,
+            )?;
             device
                 .build_output_stream(
                     config,
                     move |data: &mut [f32], _| {
-                        if output_sample_rate == shared.sample_rate {
-                            fill_output_reusing(data, output_channels, &shared, &mut stereo_scratch)
+                        if can_copy_graph_to_device(&shared, output_sample_rate, output_channels) {
+                            fill_output_reusing(data, output_channels, &shared, &mut graph_scratch)
                         } else {
                             resampler.fill_output(data, output_channels, &shared)
                         }
@@ -180,8 +187,13 @@ fn build_output_stream(
         }
         SampleFormat::I16 => {
             let mut output_scratch = Vec::<f32>::new();
-            let mut stereo_scratch = Vec::<f32>::new();
-            let mut resampler = OutputResampler::new(shared.sample_rate, output_sample_rate);
+            let mut graph_scratch = Vec::<f32>::new();
+            let mut resampler = OutputResampler::new(
+                shared.mix_format.sample_rate,
+                output_sample_rate,
+                shared.mix_format.channels,
+                output_channels,
+            )?;
             device
                 .build_output_stream(
                     config,
@@ -190,9 +202,8 @@ fn build_output_stream(
                             data,
                             output_channels,
                             &shared,
-                            output_sample_rate,
                             &mut output_scratch,
-                            &mut stereo_scratch,
+                            &mut graph_scratch,
                             &mut resampler,
                         )
                     },
@@ -203,8 +214,13 @@ fn build_output_stream(
         }
         SampleFormat::U16 => {
             let mut output_scratch = Vec::<f32>::new();
-            let mut stereo_scratch = Vec::<f32>::new();
-            let mut resampler = OutputResampler::new(shared.sample_rate, output_sample_rate);
+            let mut graph_scratch = Vec::<f32>::new();
+            let mut resampler = OutputResampler::new(
+                shared.mix_format.sample_rate,
+                output_sample_rate,
+                shared.mix_format.channels,
+                output_channels,
+            )?;
             device
                 .build_output_stream(
                     config,
@@ -213,9 +229,8 @@ fn build_output_stream(
                             data,
                             output_channels,
                             &shared,
-                            output_sample_rate,
                             &mut output_scratch,
-                            &mut stereo_scratch,
+                            &mut graph_scratch,
                             &mut resampler,
                         )
                     },
@@ -238,7 +253,7 @@ pub(crate) fn fill_output_reusing(
     output: &mut [f32],
     output_channels: usize,
     shared: &SharedAudio,
-    stereo_scratch: &mut Vec<f32>,
+    graph_scratch: &mut Vec<f32>,
 ) {
     if shared.paused.load(Ordering::Acquire) || shared.should_stop_output() {
         output.fill(0.0);
@@ -246,15 +261,28 @@ pub(crate) fn fill_output_reusing(
     }
     let volume = shared.volume();
     let output_channels = output_channels.max(1);
-    if output_channels == TARGET_CHANNELS {
+    let graph_channels = shared.mix_format.channels.max(1);
+    if output_channels == graph_channels {
         shared.pop_into(output);
-        process_stereo_output(output, volume, shared);
+        process_output_signal(
+            output,
+            output_channels,
+            shared.mix_format.sample_rate,
+            volume,
+            shared,
+        );
     } else {
         let frames = output.len() / output_channels;
-        stereo_scratch.resize(frames * TARGET_CHANNELS, 0.0);
-        shared.pop_into(stereo_scratch);
-        process_stereo_output(stereo_scratch, volume, shared);
-        map_stereo_to_output(stereo_scratch, output, output_channels);
+        graph_scratch.resize(frames * graph_channels, 0.0);
+        shared.pop_into(graph_scratch);
+        map_channels_to_output(graph_scratch, graph_channels, output, output_channels);
+        process_output_signal(
+            output,
+            output_channels,
+            shared.mix_format.sample_rate,
+            volume,
+            shared,
+        );
     }
     if shared.is_drained_for_output() && shared.mark_end_reported() {
         shared.notify_signal(crate::shared::PlaybackSignal::PlaybackEnd);
@@ -265,16 +293,15 @@ fn fill_output_converted<T>(
     output: &mut [T],
     output_channels: usize,
     shared: &SharedAudio,
-    output_sample_rate: u32,
     output_scratch: &mut Vec<f32>,
-    stereo_scratch: &mut Vec<f32>,
+    graph_scratch: &mut Vec<f32>,
     resampler: &mut OutputResampler,
 ) where
     T: cpal::Sample + cpal::FromSample<f32>,
 {
     output_scratch.resize(output.len(), 0.0);
-    if output_sample_rate == shared.sample_rate {
-        fill_output_reusing(output_scratch, output_channels, shared, stereo_scratch);
+    if can_copy_graph_to_device(shared, resampler.output_sample_rate, output_channels) {
+        fill_output_reusing(output_scratch, output_channels, shared, graph_scratch);
     } else {
         resampler.fill_output(output_scratch, output_channels, shared);
     }
@@ -284,22 +311,42 @@ fn fill_output_converted<T>(
 }
 
 pub(crate) struct OutputResampler {
-    ratio: f64,
-    position: f64,
-    pending: VecDeque<f32>,
+    context: SwrContext,
+    input_sample_rate: u32,
+    output_sample_rate: u32,
+    input_channels: usize,
+    output_channels: usize,
+    converted_pending: VecDeque<f32>,
     input_scratch: Vec<f32>,
-    stereo_output: Vec<f32>,
+    converted_scratch: Vec<f32>,
+    device_output: Vec<f32>,
 }
 
 impl OutputResampler {
-    pub(crate) fn new(input_sample_rate: u32, output_sample_rate: u32) -> Self {
-        Self {
-            ratio: input_sample_rate.max(1) as f64 / output_sample_rate.max(1) as f64,
-            position: 0.0,
-            pending: VecDeque::new(),
+    pub(crate) fn new(
+        input_sample_rate: u32,
+        output_sample_rate: u32,
+        input_channels: usize,
+        output_channels: usize,
+    ) -> Result<Self, String> {
+        let input_channels = input_channels.max(1);
+        let output_channels = output_channels.max(1);
+        Ok(Self {
+            context: build_swr_context(
+                input_sample_rate,
+                output_sample_rate,
+                input_channels,
+                output_channels,
+            )?,
+            input_sample_rate: input_sample_rate.max(1),
+            output_sample_rate: output_sample_rate.max(1),
+            input_channels,
+            output_channels,
+            converted_pending: VecDeque::new(),
             input_scratch: Vec::new(),
-            stereo_output: Vec::new(),
-        }
+            converted_scratch: Vec::new(),
+            device_output: Vec::new(),
+        })
     }
 
     pub(crate) fn fill_output(
@@ -319,138 +366,225 @@ impl OutputResampler {
             return;
         }
 
-        self.stereo_output.resize(frames * TARGET_CHANNELS, 0.0);
-        self.fill_stereo(frames, shared);
-        process_stereo_output(&mut self.stereo_output, shared.volume(), shared);
+        self.device_output.resize(frames * output_channels, 0.0);
+        self.fill_device(frames, shared);
+        let take = output.len().min(self.device_output.len());
+        output[..take].copy_from_slice(&self.device_output[..take]);
 
-        if output_channels == TARGET_CHANNELS {
-            output[..self.stereo_output.len()].copy_from_slice(&self.stereo_output);
-        } else {
-            map_stereo_to_output(&self.stereo_output, output, output_channels);
-        }
-
-        if shared.is_drained_for_output() && self.pending.is_empty() && shared.mark_end_reported() {
+        if shared.is_drained_for_output()
+            && self.converted_pending.is_empty()
+            && shared.mark_end_reported()
+        {
             shared.notify_signal(crate::shared::PlaybackSignal::PlaybackEnd);
         }
     }
 
-    fn fill_stereo(&mut self, frames: usize, shared: &SharedAudio) {
-        let needed_frames = ((self.position + (frames.saturating_sub(1) as f64) * self.ratio)
-            .floor() as usize)
-            .saturating_add(2);
-        self.ensure_pending_frames(needed_frames, shared);
-
-        let pending_frames = self.pending.len() / TARGET_CHANNELS;
-        if pending_frames == 0 {
-            self.stereo_output.fill(0.0);
-            self.position = 0.0;
-            return;
+    fn fill_device(&mut self, frames: usize, shared: &SharedAudio) {
+        self.ensure_converted_frames(frames, shared);
+        let take_samples = self.device_output.len().min(self.converted_pending.len());
+        for sample in self.device_output.iter_mut().take(take_samples) {
+            *sample = self.converted_pending.pop_front().unwrap_or(0.0);
         }
-
-        for frame_index in 0..frames {
-            let base = self.position.floor().max(0.0) as usize;
-            let frac = (self.position - base as f64) as f32;
-            let out = frame_index * TARGET_CHANNELS;
-            if base + 1 < pending_frames {
-                let a = base * TARGET_CHANNELS;
-                let b = (base + 1) * TARGET_CHANNELS;
-                self.stereo_output[out] = lerp(self.pending[a], self.pending[b], frac);
-                self.stereo_output[out + 1] = lerp(self.pending[a + 1], self.pending[b + 1], frac);
-            } else if base < pending_frames {
-                let a = base * TARGET_CHANNELS;
-                self.stereo_output[out] = self.pending[a];
-                self.stereo_output[out + 1] = self.pending[a + 1];
-            } else {
-                self.stereo_output[out] = 0.0;
-                self.stereo_output[out + 1] = 0.0;
-            }
-            self.position += self.ratio;
-        }
-
-        self.drain_consumed_frames(shared);
+        process_output_signal(
+            &mut self.device_output,
+            self.output_channels,
+            self.output_sample_rate,
+            shared.volume(),
+            shared,
+        );
     }
 
-    fn ensure_pending_frames(&mut self, needed_frames: usize, shared: &SharedAudio) {
-        while self.pending.len() / TARGET_CHANNELS < needed_frames {
-            let missing_frames = needed_frames.saturating_sub(self.pending.len() / TARGET_CHANNELS);
-            if missing_frames == 0 {
-                break;
-            }
+    fn ensure_converted_frames(&mut self, needed_frames: usize, shared: &SharedAudio) {
+        while self.converted_pending.len() / self.output_channels < needed_frames {
+            let missing_output_frames =
+                needed_frames.saturating_sub(self.converted_pending.len() / self.output_channels);
+            let input_frames = self
+                .input_frames_for_output(missing_output_frames)
+                .saturating_add(256)
+                .max(2048);
             self.input_scratch
-                .resize(missing_frames * TARGET_CHANNELS, 0.0);
+                .resize(input_frames * self.input_channels, 0.0);
             let consumed_frames = shared.pop_into(&mut self.input_scratch);
             if consumed_frames == 0 {
+                if shared.is_drained_for_output() {
+                    self.flush_converter();
+                }
                 break;
             }
-            let consumed_samples = consumed_frames * TARGET_CHANNELS;
-            self.pending
-                .extend(self.input_scratch[..consumed_samples].iter().copied());
-            if consumed_frames < missing_frames {
+            let consumed_samples = consumed_frames * self.input_channels;
+            self.converted_scratch.clear();
+            if convert_with_swr(
+                &mut self.context,
+                &self.input_scratch[..consumed_samples],
+                consumed_frames,
+                self.output_channels,
+                &mut self.converted_scratch,
+            )
+            .is_err()
+            {
                 break;
             }
+            self.converted_pending
+                .extend(self.converted_scratch.iter().copied());
         }
     }
 
-    fn drain_consumed_frames(&mut self, shared: &SharedAudio) {
-        let pending_frames = self.pending.len() / TARGET_CHANNELS;
-        if pending_frames == 0 {
-            self.position = 0.0;
-            return;
-        }
+    fn input_frames_for_output(&self, output_frames: usize) -> usize {
+        ((output_frames as u128 * self.input_sample_rate as u128) / self.output_sample_rate as u128)
+            as usize
+    }
 
-        let max_drain_frames = if shared.is_drained_for_output() {
-            pending_frames
-        } else {
-            pending_frames.saturating_sub(1)
-        };
-        let drain_frames = (self.position.floor() as usize).min(max_drain_frames);
-        if drain_frames == 0 {
-            return;
-        }
-
-        let drain_samples = drain_frames * TARGET_CHANNELS;
-        for _ in 0..drain_samples {
-            let _ = self.pending.pop_front();
-        }
-        self.position -= drain_frames as f64;
-        if self.pending.is_empty() {
-            self.position = 0.0;
+    fn flush_converter(&mut self) {
+        self.converted_scratch.clear();
+        if convert_with_swr(
+            &mut self.context,
+            &[],
+            0,
+            self.output_channels,
+            &mut self.converted_scratch,
+        )
+        .is_ok()
+        {
+            self.converted_pending
+                .extend(self.converted_scratch.iter().copied());
         }
     }
 }
 
-fn lerp(a: f32, b: f32, t: f32) -> f32 {
-    a + (b - a) * t
+fn build_swr_context(
+    input_sample_rate: u32,
+    output_sample_rate: u32,
+    input_channels: usize,
+    output_channels: usize,
+) -> Result<SwrContext, String> {
+    let input_rate = i32::try_from(input_sample_rate.max(1))
+        .map_err(|_| "input sample rate is too large for output resampler".to_string())?;
+    let output_rate = i32::try_from(output_sample_rate.max(1))
+        .map_err(|_| "output sample rate is too large for output resampler".to_string())?;
+    unsafe {
+        let mut input_layout = mem::zeroed::<sys::AVChannelLayout>();
+        let mut output_layout = mem::zeroed::<sys::AVChannelLayout>();
+        sys::av_channel_layout_default(&raw mut input_layout, input_channels.max(1) as i32);
+        sys::av_channel_layout_default(&raw mut output_layout, output_channels.max(1) as i32);
+        let result = SwrContext::new(
+            &output_layout,
+            sys::AVSampleFormat_AV_SAMPLE_FMT_FLT,
+            output_rate,
+            &input_layout,
+            sys::AVSampleFormat_AV_SAMPLE_FMT_FLT,
+            input_rate,
+        )
+        .map_err(|err| format!("failed to create output resampler: {err}"));
+        sys::av_channel_layout_uninit(&raw mut input_layout);
+        sys::av_channel_layout_uninit(&raw mut output_layout);
+        result
+    }
 }
 
-fn process_stereo_output(output: &mut [f32], volume: f32, shared: &SharedAudio) {
+fn convert_with_swr(
+    context: &mut SwrContext,
+    input: &[f32],
+    input_frames: usize,
+    output_channels: usize,
+    output: &mut Vec<f32>,
+) -> Result<(), String> {
+    let input_frames_i32 = i32::try_from(input_frames)
+        .map_err(|_| "output resampler input is too large".to_string())?;
+    let expected_frames = context
+        .get_out_samples(input_frames_i32)
+        .map_err(|err| format!("failed to size output resampler buffer: {err}"))?;
+    if expected_frames <= 0 {
+        return Ok(());
+    }
+    let expected_samples = (expected_frames as usize)
+        .checked_mul(output_channels.max(1))
+        .ok_or_else(|| "output resampler sample count overflowed".to_string())?;
+    output.resize(expected_samples, 0.0);
+    let byte_len = output
+        .len()
+        .checked_mul(mem::size_of::<f32>())
+        .ok_or_else(|| "output resampler byte count overflowed".to_string())?;
+    let input_ptrs = [if input.is_empty() {
+        ptr::null()
+    } else {
+        input.as_ptr().cast::<u8>()
+    }];
+    let actual_frames = unsafe {
+        let output_bytes = std::slice::from_raw_parts_mut(
+            output.as_mut_ptr().cast::<mem::MaybeUninit<u8>>(),
+            byte_len,
+        );
+        context
+            .convert_packed(input_ptrs.as_ptr(), input_frames_i32, output_bytes)
+            .map_err(|err| format!("failed to resample output buffer: {err}"))?
+    };
+    output.truncate(actual_frames.saturating_mul(output_channels.max(1)));
+    Ok(())
+}
+
+fn process_output_signal(
+    output: &mut [f32],
+    channels: usize,
+    sample_rate: u32,
+    volume: f32,
+    shared: &SharedAudio,
+) {
     for sample in output.iter_mut() {
         *sample = (*sample * volume).clamp(-1.0, 1.0);
     }
+    shared.set_spectrum_sample_rate(sample_rate);
     if let Ok(mut ring) = shared.spectrum_ring.try_lock() {
-        ring.push_interleaved(output, TARGET_CHANNELS);
+        ring.push_interleaved(output, channels.max(1));
     }
 }
 
-fn map_stereo_to_output(stereo: &[f32], output: &mut [f32], output_channels: usize) {
+fn can_copy_graph_to_device(
+    shared: &SharedAudio,
+    output_sample_rate: u32,
+    output_channels: usize,
+) -> bool {
+    output_sample_rate == shared.mix_format.sample_rate
+        && output_channels.max(1) == shared.mix_format.channels.max(1)
+}
+
+fn map_channels_to_output(
+    input: &[f32],
+    input_channels: usize,
+    output: &mut [f32],
+    output_channels: usize,
+) {
     output.fill(0.0);
-    if output_channels == 0 {
+    let input_channels = input_channels.max(1);
+    let output_channels = output_channels.max(1);
+    if input.is_empty() {
         return;
     }
     for (frame_index, frame) in output.chunks_exact_mut(output_channels).enumerate() {
-        let left = stereo
-            .get(frame_index * TARGET_CHANNELS)
-            .copied()
-            .unwrap_or(0.0);
-        let right = stereo
-            .get(frame_index * TARGET_CHANNELS + 1)
-            .copied()
-            .unwrap_or(left);
+        let input_frame_start = frame_index * input_channels;
         if output_channels == 1 {
-            frame[0] = (left + right) * 0.5;
-        } else {
-            frame[0] = left;
-            frame[1] = right;
+            let mut sum = 0.0;
+            let mut count = 0usize;
+            for sample in input
+                .get(input_frame_start..input_frame_start + input_channels)
+                .unwrap_or(&[])
+            {
+                sum += *sample;
+                count += 1;
+            }
+            frame[0] = if count == 0 { 0.0 } else { sum / count as f32 };
+            continue;
+        }
+        if input_channels == 1 {
+            let sample = input.get(input_frame_start).copied().unwrap_or(0.0);
+            for target in frame.iter_mut() {
+                *target = sample;
+            }
+            continue;
+        }
+        let copy_channels = output_channels.min(input_channels);
+        if let Some(input_frame) = input.get(input_frame_start..input_frame_start + input_channels)
+        {
+            frame[..copy_channels].copy_from_slice(&input_frame[..copy_channels]);
         }
     }
 }
@@ -459,41 +593,65 @@ fn map_stereo_to_output(stereo: &[f32], output: &mut [f32], output_channels: usi
 mod tests {
     use super::*;
     use crate::effects::DspSettings;
+    use crate::shared::{MixFormat, MIX_CHANNELS};
 
     #[test]
     fn output_resampler_converts_engine_rate_to_device_rate() {
-        let shared = SharedAudio::new(48_000, 1.0, 8.0, &DspSettings::default());
+        let shared = SharedAudio::new(
+            MixFormat::stereo_f32(48_000),
+            1.0,
+            8.0,
+            &DspSettings::default(),
+        );
         shared.paused.store(false, Ordering::Release);
 
-        let input_frames = 480usize;
-        let mut samples = Vec::with_capacity(input_frames * TARGET_CHANNELS);
+        let input_frames = 4096usize;
+        let mut samples = Vec::with_capacity(input_frames * MIX_CHANNELS);
         for frame in 0..input_frames {
             let value = frame as f32 / input_frames as f32;
             samples.push(value);
             samples.push(-value);
         }
         assert!(shared.push_samples(&samples));
+        shared.mark_eof();
 
-        let mut resampler = OutputResampler::new(48_000, 44_100);
-        let mut output = vec![0.0; 441 * TARGET_CHANNELS];
-        resampler.fill_output(&mut output, TARGET_CHANNELS, &shared);
+        let mut resampler = OutputResampler::new(48_000, 44_100, MIX_CHANNELS, MIX_CHANNELS)
+            .expect("output resampler should initialize");
+        let mut output = vec![0.0; 441 * MIX_CHANNELS];
+        resampler.fill_output(&mut output, MIX_CHANNELS, &shared);
 
         assert!(output.iter().any(|sample| sample.abs() > 0.001));
-        assert_eq!(shared.played_sample_count(), 480);
+        assert!(shared.played_sample_count() > 0);
+        assert!(shared.played_sample_count() <= input_frames as u64);
     }
 
     #[test]
     fn output_resampler_maps_stereo_to_device_channels() {
-        let shared = SharedAudio::new(44_100, 1.0, 8.0, &DspSettings::default());
+        let shared = SharedAudio::new(
+            MixFormat::stereo_f32(44_100),
+            1.0,
+            8.0,
+            &DspSettings::default(),
+        );
         shared.paused.store(false, Ordering::Release);
-        assert!(shared.push_samples(&[0.25, -0.25, 0.5, -0.5]));
+        let mut samples = Vec::new();
+        for frame in 0..4096 {
+            let value = frame as f32 / 4096.0;
+            samples.push(value);
+            samples.push(-value);
+        }
+        assert!(shared.push_samples(&samples));
+        shared.mark_eof();
 
-        let mut resampler = OutputResampler::new(44_100, 48_000);
-        let mut output = vec![0.0; 2 * 4];
+        let mut resampler = OutputResampler::new(44_100, 48_000, MIX_CHANNELS, 4)
+            .expect("output resampler should initialize");
+        let mut output = vec![0.0; 512 * 4];
         resampler.fill_output(&mut output, 4, &shared);
 
-        assert!(output[0].abs() > 0.0);
-        assert_eq!(output[2], 0.0);
-        assert_eq!(output[3], 0.0);
+        assert!(output
+            .chunks_exact(4)
+            .any(|frame| frame[0].abs() > 0.001 || frame[1].abs() > 0.001));
+        assert!(output.chunks_exact(4).all(|frame| frame[2] == 0.0));
+        assert!(output.chunks_exact(4).all(|frame| frame[3] == 0.0));
     }
 }

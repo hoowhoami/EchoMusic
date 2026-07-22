@@ -1,6 +1,7 @@
 use soundtouch_rs::{InterpolationAlgorithm, SoundTouch, SoundTouchPreset};
 
-const CHANNELS: usize = 2;
+#[cfg(test)]
+const TEST_CHANNELS: usize = 2;
 const OUTPUT_CHUNK_FRAMES: usize = 2048;
 pub const MIN_SPEED: f32 = 0.1;
 pub const MAX_SPEED: f32 = 5.0;
@@ -11,15 +12,17 @@ pub fn normalize_speed(value: f64) -> f32 {
 
 pub struct TempoProcessor {
     speed: f32,
+    channels: usize,
     engine: SoundTouch,
     input_planar: Vec<Vec<f32>>,
     output_planar: Vec<Vec<f32>>,
 }
 
 impl TempoProcessor {
-    pub fn new(speed: f32, sample_rate: u32) -> Result<Self, String> {
+    pub fn new(speed: f32, sample_rate: u32, channels: usize) -> Result<Self, String> {
         let speed = speed.clamp(MIN_SPEED, MAX_SPEED);
-        let mut engine = SoundTouch::builder(CHANNELS, sample_rate.max(1) as usize)
+        let channels = channels.max(1);
+        let mut engine = SoundTouch::builder(channels, sample_rate.max(1) as usize)
             .tempo(speed as f64)
             .pitch(1.0)
             .rate(1.0)
@@ -34,9 +37,10 @@ impl TempoProcessor {
         }
         Ok(Self {
             speed,
+            channels,
             engine,
-            input_planar: vec![Vec::new(); CHANNELS],
-            output_planar: vec![vec![0.0; OUTPUT_CHUNK_FRAMES]; CHANNELS],
+            input_planar: vec![Vec::new(); channels],
+            output_planar: vec![vec![0.0; OUTPUT_CHUNK_FRAMES]; channels],
         })
     }
 
@@ -83,14 +87,15 @@ impl TempoProcessor {
     }
 
     fn push_interleaved(&mut self, samples: &[f32]) -> Result<(), String> {
-        let frames = samples.len() / CHANNELS;
+        let frames = samples.len() / self.channels;
         for channel in &mut self.input_planar {
             channel.clear();
             channel.reserve(frames);
         }
-        for frame in samples.chunks_exact(CHANNELS) {
-            self.input_planar[0].push(frame[0]);
-            self.input_planar[1].push(frame[1]);
+        for frame in samples.chunks_exact(self.channels) {
+            for (channel, sample) in frame.iter().copied().enumerate() {
+                self.input_planar[channel].push(sample);
+            }
         }
         self.engine
             .put_samples(&self.input_planar)
@@ -106,10 +111,11 @@ impl TempoProcessor {
             if frames == 0 {
                 return Ok(());
             }
-            output.reserve(frames * CHANNELS);
+            output.reserve(frames * self.channels);
             for index in 0..frames {
-                output.push(self.output_planar[0][index]);
-                output.push(self.output_planar[1][index]);
+                for channel in 0..self.channels {
+                    output.push(self.output_planar[channel][index]);
+                }
             }
         }
     }
@@ -120,7 +126,7 @@ mod tests {
     use super::*;
 
     fn stereo_tone(frames: usize) -> Vec<f32> {
-        let mut samples = Vec::with_capacity(frames * CHANNELS);
+        let mut samples = Vec::with_capacity(frames * TEST_CHANNELS);
         for frame in 0..frames {
             let sample = (frame as f32 * 0.01).sin();
             samples.push(sample);
@@ -136,15 +142,15 @@ mod tests {
         assert_eq!(normalize_speed(5.0), MAX_SPEED);
         assert_eq!(normalize_speed(8.0), MAX_SPEED);
 
-        let low = TempoProcessor::new(0.01, 48_000).expect("tempo processor");
+        let low = TempoProcessor::new(0.01, 48_000, TEST_CHANNELS).expect("tempo processor");
         assert!((low.speed() - MIN_SPEED).abs() < f32::EPSILON);
-        let high = TempoProcessor::new(8.0, 48_000).expect("tempo processor");
+        let high = TempoProcessor::new(8.0, 48_000, TEST_CHANNELS).expect("tempo processor");
         assert!((high.speed() - MAX_SPEED).abs() < f32::EPSILON);
     }
 
     #[test]
     fn faster_speed_outputs_fewer_frames_after_flush() {
-        let mut tempo = TempoProcessor::new(2.0, 48_000).expect("tempo processor");
+        let mut tempo = TempoProcessor::new(2.0, 48_000, TEST_CHANNELS).expect("tempo processor");
         let mut output = Vec::new();
         tempo
             .process_into(&stereo_tone(48_000), &mut output)
@@ -153,13 +159,13 @@ mod tests {
         tempo.finish_into(&mut tail).expect("finish");
         output.extend(tail);
 
-        assert!(output.len() < 48_000 * CHANNELS);
-        assert_eq!(output.len() % CHANNELS, 0);
+        assert!(output.len() < 48_000 * TEST_CHANNELS);
+        assert_eq!(output.len() % TEST_CHANNELS, 0);
     }
 
     #[test]
     fn slower_speed_outputs_more_frames_after_flush() {
-        let mut tempo = TempoProcessor::new(0.5, 48_000).expect("tempo processor");
+        let mut tempo = TempoProcessor::new(0.5, 48_000, TEST_CHANNELS).expect("tempo processor");
         let mut output = Vec::new();
         tempo
             .process_into(&stereo_tone(48_000), &mut output)
@@ -168,14 +174,14 @@ mod tests {
         tempo.finish_into(&mut tail).expect("finish");
         output.extend(tail);
 
-        assert!(output.len() > 48_000 * CHANNELS);
-        assert_eq!(output.len() % CHANNELS, 0);
+        assert!(output.len() > 48_000 * TEST_CHANNELS);
+        assert_eq!(output.len() % TEST_CHANNELS, 0);
     }
 
     #[test]
     fn normal_speed_bypasses_without_latency() {
         let input = stereo_tone(128);
-        let mut tempo = TempoProcessor::new(1.0, 48_000).expect("tempo processor");
+        let mut tempo = TempoProcessor::new(1.0, 48_000, TEST_CHANNELS).expect("tempo processor");
         let mut output = Vec::new();
         tempo.process_into(&input, &mut output).expect("process");
 

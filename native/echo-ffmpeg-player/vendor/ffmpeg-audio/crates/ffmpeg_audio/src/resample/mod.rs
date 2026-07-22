@@ -5,4 +5,4 @@ pub use resampler::{
     ResampleOptions,
     Resampler,
 };
-pub(crate) use swr::SwrContext;
+pub use swr::SwrContext;

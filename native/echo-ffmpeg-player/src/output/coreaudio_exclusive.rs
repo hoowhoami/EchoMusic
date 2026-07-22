@@ -7,7 +7,7 @@ use crate::device::platform_macos::{
 use crate::events::{PlayerErrorCode, PlayerEvent};
 use crate::exclusive::ExclusiveGuard;
 use crate::output::{fill_output_reusing, report_output_start, OutputStartSender};
-use crate::shared::{SharedAudio, TARGET_CHANNELS};
+use crate::shared::SharedAudio;
 use coreaudio_sys as ca;
 use std::cell::UnsafeCell;
 use std::ffi::c_void;
@@ -83,15 +83,20 @@ fn run_exclusive_output(
     let resolved_device_name = coreaudio_device_display_name(device_id);
     let exclusive_guard = ExclusiveGuard::acquire(device_name)?;
     let mixing_guard = try_disable_coreaudio_mixing(device_id);
-    let (format, physical_format_guard) =
-        prepare_coreaudio_exclusive_format(device_id, shared.sample_rate)?;
+    let source_format = shared.source_sample_format();
+    let (format, physical_format_guard) = prepare_coreaudio_exclusive_format(
+        device_id,
+        shared.mix_format.sample_rate,
+        source_format,
+    )?;
     emit(PlayerEvent::log(
         "info",
         format!(
-            "CoreAudio exclusive opening: requested='{device_name}', resolved='{resolved_device_name}', sample_rate={}, engine_sample_rate={}, channels={}, format={:?}, bytes_per_sample={}, non_interleaved={}, high_aligned={}, big_endian={}, mixing_disabled={}",
+            "CoreAudio exclusive opening: requested='{device_name}', resolved='{resolved_device_name}', sample_rate={}, engine_sample_rate={}, channels={}, source_format={:?}, format={:?}, bytes_per_sample={}, non_interleaved={}, high_aligned={}, big_endian={}, mixing_disabled={}",
             format.sample_rate,
-            shared.sample_rate,
+            shared.mix_format.sample_rate,
             format.channels,
+            source_format,
             format.sample_format,
             format.bytes_per_sample(),
             format.non_interleaved,
@@ -102,7 +107,12 @@ fn run_exclusive_output(
     ));
 
     let context = Box::into_raw(Box::new(CoreAudioOutputContext {
-        resampler: UnsafeCell::new(OutputResampler::new(shared.sample_rate, format.sample_rate)),
+        resampler: UnsafeCell::new(OutputResampler::new(
+            shared.mix_format.sample_rate,
+            format.sample_rate,
+            shared.mix_format.channels,
+            format.channels,
+        )?),
         format,
         shared,
         stereo_scratch: UnsafeCell::new(Vec::new()),
@@ -276,7 +286,9 @@ fn fill_coreaudio_interleaved_output(
     channels: usize,
     context: &CoreAudioOutputContext,
 ) {
-    if context.format.sample_rate == context.shared.sample_rate {
+    if context.format.sample_rate == context.shared.mix_format.sample_rate
+        && channels == context.shared.mix_format.channels
+    {
         let stereo_scratch = unsafe { &mut *context.stereo_scratch.get() };
         fill_output_reusing(output, channels, &context.shared, stereo_scratch);
     } else {
@@ -298,17 +310,15 @@ fn fill_non_interleaved(buffers: &mut [ca::AudioBuffer], context: &CoreAudioOutp
 
     let stereo_scratch = unsafe { &mut *context.stereo_scratch.get() };
     let output_scratch = unsafe { &mut *context.output_scratch.get() };
-    stereo_scratch.resize(frames * TARGET_CHANNELS, 0.0);
-    if context.format.sample_rate == context.shared.sample_rate {
-        fill_output_reusing(
-            stereo_scratch,
-            TARGET_CHANNELS,
-            &context.shared,
-            output_scratch,
-        );
+    let channels = context.format.channels.max(1);
+    stereo_scratch.resize(frames * channels, 0.0);
+    if context.format.sample_rate == context.shared.mix_format.sample_rate
+        && channels == context.shared.mix_format.channels
+    {
+        fill_output_reusing(stereo_scratch, channels, &context.shared, output_scratch);
     } else {
         let resampler = unsafe { &mut *context.resampler.get() };
-        resampler.fill_output(stereo_scratch, TARGET_CHANNELS, &context.shared);
+        resampler.fill_output(stereo_scratch, channels, &context.shared);
     }
 
     for (channel, buffer) in buffers.iter_mut().enumerate() {
@@ -318,45 +328,51 @@ fn fill_non_interleaved(buffers: &mut [ca::AudioBuffer], context: &CoreAudioOutp
         match context.format.sample_format {
             CoreAudioPcmSampleFormat::F32 => unsafe {
                 let output = slice::from_raw_parts_mut(buffer.mData.cast::<f32>(), frames);
-                write_non_interleaved_channel(output, stereo_scratch, channel);
+                write_non_interleaved_channel(output, stereo_scratch, channels, channel);
             },
             CoreAudioPcmSampleFormat::F64 => unsafe {
                 let output = slice::from_raw_parts_mut(buffer.mData.cast::<f64>(), frames);
                 for (frame, target) in output.iter_mut().enumerate() {
-                    *target = non_interleaved_sample(stereo_scratch, frame, channel) as f64;
+                    *target =
+                        non_interleaved_sample(stereo_scratch, channels, frame, channel) as f64;
                 }
             },
             CoreAudioPcmSampleFormat::I16 => unsafe {
                 let output = slice::from_raw_parts_mut(buffer.mData.cast::<i16>(), frames);
                 for (frame, target) in output.iter_mut().enumerate() {
-                    let sample = non_interleaved_sample(stereo_scratch, frame, channel);
+                    let sample = non_interleaved_sample(stereo_scratch, channels, frame, channel);
                     *target = (sample.clamp(-1.0, 1.0) * i16::MAX as f32).round() as i16;
                 }
             },
             CoreAudioPcmSampleFormat::U8 => unsafe {
                 let output = slice::from_raw_parts_mut(buffer.mData.cast::<u8>(), frames);
                 for (frame, target) in output.iter_mut().enumerate() {
-                    *target = u8_sample(non_interleaved_sample(stereo_scratch, frame, channel));
+                    *target = u8_sample(non_interleaved_sample(
+                        stereo_scratch,
+                        channels,
+                        frame,
+                        channel,
+                    ));
                 }
             },
             CoreAudioPcmSampleFormat::I24 => unsafe {
                 let output = slice::from_raw_parts_mut(buffer.mData.cast::<u8>(), frames * 3);
                 for (frame, target) in output.chunks_exact_mut(3).enumerate() {
-                    let sample = non_interleaved_sample(stereo_scratch, frame, channel);
+                    let sample = non_interleaved_sample(stereo_scratch, channels, frame, channel);
                     write_i24_packed_sample(target, sample, context.format.big_endian);
                 }
             },
             CoreAudioPcmSampleFormat::I24In32 => unsafe {
                 let output = slice::from_raw_parts_mut(buffer.mData.cast::<i32>(), frames);
                 for (frame, target) in output.iter_mut().enumerate() {
-                    let sample = non_interleaved_sample(stereo_scratch, frame, channel);
+                    let sample = non_interleaved_sample(stereo_scratch, channels, frame, channel);
                     *target = i24_in_32_sample(sample, context.format.high_aligned);
                 }
             },
             CoreAudioPcmSampleFormat::I32 => unsafe {
                 let output = slice::from_raw_parts_mut(buffer.mData.cast::<i32>(), frames);
                 for (frame, target) in output.iter_mut().enumerate() {
-                    let sample = non_interleaved_sample(stereo_scratch, frame, channel);
+                    let sample = non_interleaved_sample(stereo_scratch, channels, frame, channel);
                     *target = (sample.clamp(-1.0, 1.0) * i32::MAX as f32).round() as i32;
                 }
             },
@@ -396,21 +412,26 @@ fn write_i24_packed_sample(target: &mut [u8], sample: f32, big_endian: bool) {
     }
 }
 
-fn write_non_interleaved_channel(output: &mut [f32], stereo: &[f32], channel: usize) {
+fn write_non_interleaved_channel(
+    output: &mut [f32],
+    interleaved: &[f32],
+    channels: usize,
+    channel: usize,
+) {
     for (frame, target) in output.iter_mut().enumerate() {
-        *target = non_interleaved_sample(stereo, frame, channel);
+        *target = non_interleaved_sample(interleaved, channels, frame, channel);
     }
 }
 
-fn non_interleaved_sample(stereo: &[f32], frame: usize, channel: usize) -> f32 {
-    let left = stereo.get(frame * TARGET_CHANNELS).copied().unwrap_or(0.0);
-    let right = stereo
-        .get(frame * TARGET_CHANNELS + 1)
+fn non_interleaved_sample(
+    interleaved: &[f32],
+    channels: usize,
+    frame: usize,
+    channel: usize,
+) -> f32 {
+    let channels = channels.max(1);
+    interleaved
+        .get(frame.saturating_mul(channels).saturating_add(channel))
         .copied()
-        .unwrap_or(left);
-    match channel {
-        0 => left,
-        1 => right,
-        _ => 0.0,
-    }
+        .unwrap_or(0.0)
 }

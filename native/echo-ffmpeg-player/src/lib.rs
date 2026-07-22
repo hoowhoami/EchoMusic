@@ -1,3 +1,4 @@
+mod audio_graph;
 mod config;
 mod decoder;
 mod device;
@@ -6,9 +7,9 @@ mod effects;
 mod events;
 mod exclusive;
 mod filter;
-mod network_stream;
 mod output;
 mod shared;
+mod stream;
 mod tempo;
 
 use crate::config::{PlayerConfig, PlayerConfigOptions, SpectrumConfig};
@@ -21,11 +22,12 @@ use crate::events::{
     AudioDevice, PlayerEvent, PlayerState, SpectrumFrame, SpectrumOptions, SpectrumStatus,
     TrackInfo,
 };
-use crate::shared::{PlaybackSession, PlaybackSignal, SharedAudio, TrackSwitchInfo};
+use crate::shared::{MixFormat, PlaybackSession, PlaybackSignal, SharedAudio, TrackSwitchInfo};
 use napi::bindgen_prelude::AsyncTask;
 use napi::threadsafe_function::{ThreadsafeFunction, ThreadsafeFunctionCallMode};
 use napi::{Env, Task};
 use napi_derive::napi;
+use std::cell::Cell;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{channel, sync_channel, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex};
@@ -39,7 +41,12 @@ static RUNTIME: Mutex<Option<PlayerRuntime>> = Mutex::new(None);
 static EVENT_CALLBACK: Mutex<Option<Arc<Mutex<ThreadsafeFunction<PlayerEvent>>>>> =
     Mutex::new(None);
 static EVENT_DISPATCHER: Mutex<Option<EventDispatcher>> = Mutex::new(None);
+static CORE_DISPATCHER: Mutex<Option<CoreDispatcher>> = Mutex::new(None);
 static NEXT_EVENT_ID: AtomicU64 = AtomicU64::new(0);
+
+thread_local! {
+    static CORE_DISPATCH_ACTIVE: Cell<bool> = const { Cell::new(false) };
+}
 
 enum EventDispatcherMessage {
     Event(PlayerEvent),
@@ -49,6 +56,21 @@ enum EventDispatcherMessage {
 
 struct EventDispatcher {
     sender: Sender<EventDispatcherMessage>,
+    handle: Option<JoinHandle<()>>,
+}
+
+type RuntimeCommand = Box<dyn FnOnce(&mut PlayerRuntime) + Send + 'static>;
+
+enum CoreDispatcherMessage {
+    Command {
+        name: &'static str,
+        command: RuntimeCommand,
+    },
+    Shutdown,
+}
+
+struct CoreDispatcher {
+    sender: Sender<CoreDispatcherMessage>,
     handle: Option<JoinHandle<()>>,
 }
 
@@ -71,6 +93,7 @@ struct PlayerRuntime {
     spatial_request_seq: u64,
     idle_output_release_seq: u64,
     spatial_mix: f32,
+    spatial_file_path: Option<String>,
     prepared_next: Option<PreparedNextSource>,
 }
 
@@ -102,12 +125,16 @@ struct ContinuousLoadPlan {
     request_seq: u64,
     config: PlayerConfig,
     dsp_settings: DspSettings,
+    spatial_file_path: Option<String>,
+    spatial_mix: f32,
 }
 
 enum LoadPlan {
     Initial {
         config: PlayerConfig,
         dsp_settings: DspSettings,
+        spatial_file_path: Option<String>,
+        spatial_mix: f32,
     },
     Continuous(ContinuousLoadPlan),
 }
@@ -139,6 +166,7 @@ impl PlayerRuntime {
             spatial_request_seq: 0,
             idle_output_release_seq: 0,
             spatial_mix: DEFAULT_SPATIAL_MIX,
+            spatial_file_path: None,
             prepared_next: None,
         }
     }
@@ -222,6 +250,113 @@ fn stop_event_dispatcher() {
             let _ = handle.join();
         }
     }
+}
+
+fn start_core_dispatcher() -> napi::Result<()> {
+    let mut guard = CORE_DISPATCHER.lock().map_err(|err| {
+        napi::Error::from_reason(format!("failed to lock core dispatcher: {err}"))
+    })?;
+    if guard.is_some() {
+        return Ok(());
+    }
+
+    let (sender, receiver) = channel::<CoreDispatcherMessage>();
+    let handle = thread::Builder::new()
+        .name("player-core-dispatcher".to_string())
+        .spawn(move || {
+            while let Ok(message) = receiver.recv() {
+                match message {
+                    CoreDispatcherMessage::Command { name, command } => {
+                        let result = RUNTIME.lock();
+                        let Ok(mut guard) = result else {
+                            emit_event(PlayerEvent::log(
+                                "error",
+                                format!("core command '{name}' failed: runtime lock poisoned"),
+                            ));
+                            continue;
+                        };
+                        let Some(runtime) = guard.as_mut() else {
+                            emit_event(PlayerEvent::log(
+                                "debug",
+                                format!("core command '{name}' ignored: runtime stopped"),
+                            ));
+                            continue;
+                        };
+                        CORE_DISPATCH_ACTIVE.set(true);
+                        command(runtime);
+                        CORE_DISPATCH_ACTIVE.set(false);
+                    }
+                    CoreDispatcherMessage::Shutdown => break,
+                }
+            }
+        })
+        .map_err(|err| {
+            napi::Error::from_reason(format!("failed to spawn core dispatcher: {err}"))
+        })?;
+
+    *guard = Some(CoreDispatcher {
+        sender,
+        handle: Some(handle),
+    });
+    Ok(())
+}
+
+fn stop_core_dispatcher() {
+    let dispatcher = CORE_DISPATCHER
+        .lock()
+        .ok()
+        .and_then(|mut guard| guard.take());
+
+    if let Some(mut dispatcher) = dispatcher {
+        let _ = dispatcher.sender.send(CoreDispatcherMessage::Shutdown);
+        if let Some(handle) = dispatcher.handle.take() {
+            let _ = handle.join();
+        }
+    }
+}
+
+fn core_sender() -> Option<Sender<CoreDispatcherMessage>> {
+    CORE_DISPATCHER
+        .lock()
+        .ok()
+        .and_then(|guard| guard.as_ref().map(|dispatcher| dispatcher.sender.clone()))
+}
+
+fn dispatch_core_command(name: &'static str, command: RuntimeCommand) {
+    let Some(sender) = core_sender() else {
+        let _ = with_runtime(|runtime| {
+            command(runtime);
+            Ok(())
+        });
+        return;
+    };
+    let _ = sender.send(CoreDispatcherMessage::Command { name, command });
+}
+
+fn call_core_command<T: Send + 'static>(
+    name: &'static str,
+    command: impl FnOnce(&mut PlayerRuntime) -> napi::Result<T> + Send + 'static,
+) -> napi::Result<T> {
+    if CORE_DISPATCH_ACTIVE.get() {
+        return Err(napi::Error::from_reason(format!(
+            "core command '{name}' cannot synchronously dispatch from core dispatcher"
+        )));
+    }
+    let Some(sender) = core_sender() else {
+        return with_runtime(command);
+    };
+    let (reply_tx, reply_rx) = sync_channel(1);
+    sender
+        .send(CoreDispatcherMessage::Command {
+            name,
+            command: Box::new(move |runtime| {
+                let _ = reply_tx.send(command(runtime));
+            }),
+        })
+        .map_err(|_| napi::Error::from_reason(format!("core command '{name}' dispatch failed")))?;
+    reply_rx.recv().map_err(|_| {
+        napi::Error::from_reason(format!("core command '{name}' reply channel closed"))
+    })?
 }
 
 fn send_dispatcher_message(message: EventDispatcherMessage) {
@@ -378,35 +513,32 @@ fn schedule_idle_output_release_for_current_session() -> napi::Result<()> {
 }
 
 fn mark_playback_idle_after_end(shared: Arc<SharedAudio>) {
-    let release = with_runtime(|runtime| {
-        let Some(session) = runtime.session.as_ref() else {
-            return Ok(None);
-        };
-        if !Arc::ptr_eq(&session.shared, &shared) {
-            return Ok(None);
-        }
-        runtime.state.playing = false;
-        runtime.state.paused = true;
-        emit_runtime_events(
-            runtime,
-            vec![
-                PlayerEvent::state_change(runtime.state.clone()),
-                PlayerEvent::playback_end("eof"),
-            ],
-        );
-        if session.shared.output_is_stopped() {
-            return Ok(None);
-        }
-        let shared = session.shared.clone();
-        let release_seq = runtime.next_idle_output_release_seq();
-        Ok(Some((shared, release_seq)))
-    })
-    .ok()
-    .flatten();
-
-    if let Some((shared, release_seq)) = release {
-        schedule_idle_output_release(shared, release_seq);
-    }
+    dispatch_core_command(
+        "playback-end",
+        Box::new(move |runtime| {
+            let Some(session) = runtime.session.as_ref() else {
+                return;
+            };
+            if !Arc::ptr_eq(&session.shared, &shared) {
+                return;
+            }
+            runtime.state.playing = false;
+            runtime.state.paused = true;
+            emit_runtime_events(
+                runtime,
+                vec![
+                    PlayerEvent::state_change(runtime.state.clone()),
+                    PlayerEvent::playback_end("eof"),
+                ],
+            );
+            if session.shared.output_is_stopped() {
+                return;
+            }
+            let shared = session.shared.clone();
+            let release_seq = runtime.next_idle_output_release_seq();
+            schedule_idle_output_release(shared, release_seq);
+        }),
+    );
 }
 
 fn prepare_source(
@@ -417,25 +549,44 @@ fn prepare_source(
     autostart: bool,
     config: PlayerConfig,
     dsp_settings: DspSettings,
+    spatial_file_path: Option<String>,
+    spatial_mix: f32,
 ) -> Result<PreparedSource, String> {
-    let sample_rate =
-        device::resolve_output_sample_rate(&config.audio_device, config.exclusive_output);
     let mut decoder = open_decoder(
         url.clone(),
         audio_stream_ordinal,
-        sample_rate,
+        None,
         config.packet_cache_options(),
     )?;
     if start_position > 0.0 {
         decoder.seek(start_position)?;
     }
     let duration = decoder.duration_secs();
+    let mix_sample_rate = decoder.mix_sample_rate();
+    let dsp_settings = prepare_dsp_settings_for_mix_rate(
+        dsp_settings,
+        spatial_file_path.as_deref(),
+        spatial_mix,
+        mix_sample_rate,
+    )?;
+    let mix_channels = preferred_mix_channels(&dsp_settings, decoder.source_channels());
+    let mix_format = MixFormat::f32(mix_sample_rate, mix_channels);
+    if let Some(spatial) = dsp_settings.spatial.as_ref() {
+        emit_event(PlayerEvent::log(
+            "info",
+            format!(
+                "impulse response enabled: path='{}', mix={:.2}, mix_sample_rate={}",
+                spatial.file_path, spatial.mix, mix_sample_rate
+            ),
+        ));
+    }
     let shared = Arc::new(SharedAudio::new(
-        sample_rate,
+        mix_format,
         config.audio_buffer_secs,
         config.playback_stall_timeout_secs,
         &dsp_settings,
     ));
+    shared.set_source_sample_format(decoder.source_sample_format());
     shared.set_track_seq(seq);
     shared.set_volume(1.0);
     shared.set_position_secs(start_position);
@@ -547,24 +698,35 @@ fn apply_prepared_source(
     runtime: &mut PlayerRuntime,
     prepared: PreparedSource,
 ) -> Option<(Arc<SharedAudio>, u64)> {
+    let PreparedSource {
+        session,
+        url,
+        audio_stream_ordinal,
+        seq,
+        duration,
+        start_position,
+        autostart,
+    } = prepared;
     runtime.cancel_idle_output_release();
-    let should_release_when_idle = !prepared.autostart;
+    let should_release_when_idle = !autostart;
     runtime.prepared_next = None;
-    runtime.session = Some(prepared.session);
-    runtime.current_url = Some(prepared.url.clone());
-    runtime.current_audio_stream_ordinal = prepared.audio_stream_ordinal;
-    runtime.current_seq = prepared.seq;
-    runtime.latest_load_seq = runtime.latest_load_seq.max(prepared.seq);
-    runtime.state.duration = prepared.duration;
-    runtime.state.time_pos = prepared.start_position;
-    runtime.state.playing = prepared.autostart;
-    runtime.state.paused = !prepared.autostart;
+    if let Some(previous) = runtime.session.replace(session) {
+        previous.stop_background();
+    }
+    runtime.current_url = Some(url.clone());
+    runtime.current_audio_stream_ordinal = audio_stream_ordinal;
+    runtime.current_seq = seq;
+    runtime.latest_load_seq = runtime.latest_load_seq.max(seq);
+    runtime.state.duration = duration;
+    runtime.state.time_pos = start_position;
+    runtime.state.playing = autostart;
+    runtime.state.paused = !autostart;
 
     emit_runtime_events(
         runtime,
         vec![
-            PlayerEvent::duration_change(prepared.duration),
-            PlayerEvent::file_loaded(prepared.url, prepared.seq),
+            PlayerEvent::duration_change(duration),
+            PlayerEvent::file_loaded(url, seq),
             PlayerEvent::state_change(runtime.state.clone()),
         ],
     );
@@ -581,34 +743,36 @@ fn apply_prepared_source(
 }
 
 fn apply_track_switch(info: TrackSwitchInfo, shared: Arc<SharedAudio>) {
-    let _ = with_runtime(|runtime| {
-        let Some(session) = runtime.session.as_ref() else {
-            return Ok(());
-        };
-        if !Arc::ptr_eq(&session.shared, &shared) {
-            return Ok(());
-        }
-        runtime.cancel_idle_output_release();
-        runtime.current_url = Some(info.url.clone());
-        runtime.current_audio_stream_ordinal = info.audio_stream_ordinal;
-        runtime.current_seq = info.seq;
-        runtime.latest_load_seq = runtime.latest_load_seq.max(info.seq);
-        runtime.state.duration = info.duration;
-        runtime.state.time_pos = 0.0;
-        runtime.state.playing = true;
-        runtime.state.paused = false;
-        shared.set_track_seq(info.seq);
-        emit_runtime_events(
-            runtime,
-            vec![
-                PlayerEvent::duration_change(info.duration),
-                PlayerEvent::file_loaded(info.url, info.seq),
-                PlayerEvent::state_change(runtime.state.clone()),
-                PlayerEvent::time_update(0.0),
-            ],
-        );
-        Ok(())
-    });
+    dispatch_core_command(
+        "track-switch",
+        Box::new(move |runtime| {
+            let Some(session) = runtime.session.as_ref() else {
+                return;
+            };
+            if !Arc::ptr_eq(&session.shared, &shared) {
+                return;
+            }
+            runtime.cancel_idle_output_release();
+            runtime.current_url = Some(info.url.clone());
+            runtime.current_audio_stream_ordinal = info.audio_stream_ordinal;
+            runtime.current_seq = info.seq;
+            runtime.latest_load_seq = runtime.latest_load_seq.max(info.seq);
+            runtime.state.duration = info.duration;
+            runtime.state.time_pos = 0.0;
+            runtime.state.playing = true;
+            runtime.state.paused = false;
+            shared.set_track_seq(info.seq);
+            emit_runtime_events(
+                runtime,
+                vec![
+                    PlayerEvent::duration_change(info.duration),
+                    PlayerEvent::file_loaded(info.url, info.seq),
+                    PlayerEvent::state_change(runtime.state.clone()),
+                    PlayerEvent::time_update(0.0),
+                ],
+            );
+        }),
+    );
 }
 
 fn replace_source_async(
@@ -619,6 +783,8 @@ fn replace_source_async(
     autostart: bool,
     config: PlayerConfig,
     dsp_settings: DspSettings,
+    spatial_file_path: Option<String>,
+    spatial_mix: f32,
 ) -> napi::Result<()> {
     let prepared = prepare_source(
         url,
@@ -628,6 +794,8 @@ fn replace_source_async(
         autostart,
         config,
         dsp_settings,
+        spatial_file_path,
+        spatial_mix,
     )
     .map_err(napi::Error::from_reason)?;
     let release = with_runtime(|runtime| Ok(apply_prepared_source(runtime, prepared)))?;
@@ -635,6 +803,14 @@ fn replace_source_async(
         schedule_idle_output_release(shared, release_seq);
     }
     Ok(())
+}
+
+fn preferred_mix_channels(settings: &DspSettings, source_channels: usize) -> usize {
+    if settings.requires_stereo_graph() {
+        2
+    } else {
+        source_channels.max(1)
+    }
 }
 
 pub(crate) fn try_activate_gapless_next(
@@ -670,6 +846,7 @@ pub(crate) fn try_activate_gapless_next(
             ),
         ),
     );
+    shared.set_source_sample_format(next.decoder.source_sample_format());
     shared.mark_gapless_boundary(TrackSwitchInfo {
         url: next.url,
         audio_stream_ordinal: next.audio_stream_ordinal,
@@ -680,7 +857,7 @@ pub(crate) fn try_activate_gapless_next(
 }
 
 fn restart_loop_if_enabled(shared: Arc<SharedAudio>) -> bool {
-    let plan = with_runtime(|runtime| {
+    let plan = call_core_command("loop-restart-plan", move |runtime| {
         if !runtime.loop_file {
             return Ok(None);
         }
@@ -854,9 +1031,11 @@ fn validate_output_restart_config(
 ) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     if config.exclusive_output {
-        let sample_rate = shared.map(|shared| shared.sample_rate).unwrap_or_else(|| {
-            device::resolve_output_sample_rate(&config.audio_device, config.exclusive_output)
-        });
+        let sample_rate = shared
+            .map(|shared| shared.mix_format.sample_rate)
+            .unwrap_or_else(|| {
+                device::resolve_output_sample_rate(&config.audio_device, config.exclusive_output)
+            });
         return device::platform_windows::validate_wasapi_output_device_at_sample_rate(
             &config.audio_device,
             sample_rate,
@@ -864,9 +1043,11 @@ fn validate_output_restart_config(
     }
     #[cfg(target_os = "macos")]
     if config.exclusive_output {
-        let sample_rate = shared.map(|shared| shared.sample_rate).unwrap_or_else(|| {
-            device::resolve_output_sample_rate(&config.audio_device, config.exclusive_output)
-        });
+        let sample_rate = shared
+            .map(|shared| shared.mix_format.sample_rate)
+            .unwrap_or_else(|| {
+                device::resolve_output_sample_rate(&config.audio_device, config.exclusive_output)
+            });
         return device::platform_macos::validate_coreaudio_exclusive_output(
             &config.audio_device,
             sample_rate,
@@ -874,9 +1055,11 @@ fn validate_output_restart_config(
     }
     #[cfg(target_os = "linux")]
     if config.exclusive_output {
-        let sample_rate = shared.map(|shared| shared.sample_rate).unwrap_or_else(|| {
-            device::resolve_output_sample_rate(&config.audio_device, config.exclusive_output)
-        });
+        let sample_rate = shared
+            .map(|shared| shared.mix_format.sample_rate)
+            .unwrap_or_else(|| {
+                device::resolve_output_sample_rate(&config.audio_device, config.exclusive_output)
+            });
         return device::platform_linux::validate_alsa_exclusive_output(
             &config.audio_device,
             sample_rate,
@@ -986,6 +1169,7 @@ pub fn initialize(config: Option<PlayerConfigOptions>) -> napi::Result<()> {
     *RUNTIME.lock().map_err(|err| {
         napi::Error::from_reason(format!("failed to lock player runtime: {err}"))
     })? = Some(runtime);
+    start_core_dispatcher()?;
     Ok(())
 }
 
@@ -994,6 +1178,7 @@ pub fn destroy() -> napi::Result<()> {
     if let Ok(mut callback) = EVENT_CALLBACK.lock() {
         *callback = None;
     }
+    stop_core_dispatcher();
     let runtime = RUNTIME
         .lock()
         .map_err(|err| napi::Error::from_reason(format!("failed to lock player runtime: {err}")))?
@@ -1036,6 +1221,8 @@ impl Task for LoadFileTask {
                 return Ok(LoadPlan::Initial {
                     config: runtime.config.clone(),
                     dsp_settings: runtime.dsp_settings.clone(),
+                    spatial_file_path: runtime.spatial_file_path.clone(),
+                    spatial_mix: runtime.spatial_mix,
                 });
             };
             let shared = session.shared.clone();
@@ -1047,6 +1234,8 @@ impl Task for LoadFileTask {
                 request_seq: seq,
                 config: runtime.config.clone(),
                 dsp_settings: runtime.dsp_settings.clone(),
+                spatial_file_path: runtime.spatial_file_path.clone(),
+                spatial_mix: runtime.spatial_mix,
             }))
         })?;
 
@@ -1054,17 +1243,37 @@ impl Task for LoadFileTask {
             LoadPlan::Initial {
                 config,
                 dsp_settings,
-            } => replace_source_async(url, audio_stream, seq, 0.0, false, config, dsp_settings),
+                spatial_file_path,
+                spatial_mix,
+            } => replace_source_async(
+                url,
+                audio_stream,
+                seq,
+                0.0,
+                false,
+                config,
+                dsp_settings,
+                spatial_file_path,
+                spatial_mix,
+            ),
             LoadPlan::Continuous(plan) => {
                 let new_decoder = open_decoder(
                     url.clone(),
                     audio_stream,
-                    plan.shared.sample_rate,
+                    Some(plan.shared.mix_format.sample_rate),
                     plan.config.packet_cache_options(),
                 );
                 match new_decoder {
                     Ok(decoder) => {
                         let duration = decoder.duration_secs();
+                        let source_sample_format = decoder.source_sample_format();
+                        let dsp_settings = prepare_dsp_settings_for_mix_rate(
+                            plan.dsp_settings,
+                            plan.spatial_file_path.as_deref(),
+                            plan.spatial_mix,
+                            plan.shared.mix_format.sample_rate,
+                        )
+                        .map_err(napi::Error::from_reason)?;
                         with_runtime(|runtime| {
                             let Some(session) = runtime.session.as_mut() else {
                                 return Ok(());
@@ -1074,9 +1283,11 @@ impl Task for LoadFileTask {
                             {
                                 return Ok(());
                             }
-                            let generation = session
+                            let generation =
+                                session.shared.reset_for_decode_resume(0.0, &dsp_settings);
+                            session
                                 .shared
-                                .reset_for_decode_resume(0.0, &plan.dsp_settings);
+                                .set_source_sample_format(source_sample_format);
                             session.shared.bind_interrupt(decoder.interrupt_handle());
                             session.decode_thread = Some(decoder::spawn_decode_thread(
                                 decoder,
@@ -1165,7 +1376,7 @@ impl Task for PrepareNextSourceTask {
                 return Ok(None);
             };
             Ok(Some((
-                session.shared.sample_rate,
+                session.shared.mix_format.sample_rate,
                 runtime.current_seq,
                 session.shared.clone(),
                 runtime.config.clone(),
@@ -1176,7 +1387,7 @@ impl Task for PrepareNextSourceTask {
         let decoder = open_decoder(
             self.url.clone(),
             self.audio_stream_ordinal,
-            sample_rate,
+            Some(sample_rate),
             config.packet_cache_options(),
         )
         .map_err(napi::Error::from_reason)?;
@@ -1374,7 +1585,7 @@ fn open_decoder_at_position(plan: &SeekPlan, position: f64) -> napi::Result<deco
     let mut decoder = open_decoder(
         plan.url.clone(),
         plan.audio_stream_ordinal,
-        plan.shared.sample_rate,
+        Some(plan.shared.mix_format.sample_rate),
         plan.config.packet_cache_options(),
     )
     .map_err(napi::Error::from_reason)?;
@@ -1405,6 +1616,9 @@ fn attach_restarted_decoder(
         let decoder = decoder
             .take()
             .ok_or_else(|| napi::Error::from_reason("decoder already attached".to_string()))?;
+        session
+            .shared
+            .set_source_sample_format(decoder.source_sample_format());
         session.shared.bind_interrupt(decoder.interrupt_handle());
         session.decode_thread = Some(decoder::spawn_decode_thread(
             decoder,
@@ -1547,11 +1761,7 @@ impl Task for SetEqualizerTask {
                 next[index] = value.clamp(-12.0, 12.0) as f32;
             }
             runtime.dsp_settings.equalizer = next;
-            if let Some(session) = runtime.session.as_ref() {
-                if let Ok(mut chain) = session.shared.effects.lock() {
-                    chain.update_settings(&runtime.dsp_settings);
-                }
-            }
+            sync_current_session_dsp_settings(runtime);
             Ok(())
         })
     }
@@ -1580,12 +1790,9 @@ impl Task for SetImpulseResponseTask {
         else {
             with_runtime(|runtime| {
                 runtime.spatial_request_seq = runtime.spatial_request_seq.wrapping_add(1);
+                runtime.spatial_file_path = None;
                 runtime.dsp_settings.spatial = None;
-                if let Some(session) = runtime.session.as_ref() {
-                    if let Ok(mut chain) = session.shared.effects.lock() {
-                        chain.update_settings(&runtime.dsp_settings);
-                    }
-                }
+                sync_current_session_dsp_settings(runtime);
                 emit_runtime_event(
                     runtime,
                     PlayerEvent::log("info", "impulse response disabled".to_string()),
@@ -1595,17 +1802,25 @@ impl Task for SetImpulseResponseTask {
             return Ok(());
         };
 
-        let (sample_rate, request_seq, should_prepare) = with_runtime(|runtime| {
+        let prepare = with_runtime(|runtime| {
             runtime.spatial_request_seq = runtime.spatial_request_seq.wrapping_add(1);
             runtime.spatial_mix = clamp_spatial_mix(mix);
-            let sample_rate = if let Some(session) = runtime.session.as_ref() {
-                session.shared.sample_rate
-            } else {
-                device::resolve_output_sample_rate(
-                    &runtime.config.audio_device,
-                    runtime.config.exclusive_output,
-                )
+            runtime.spatial_file_path = Some(file_path.clone());
+            let Some(session) = runtime.session.as_ref() else {
+                runtime.dsp_settings.spatial = None;
+                emit_runtime_event(
+                    runtime,
+                    PlayerEvent::log(
+                        "info",
+                        format!(
+                            "impulse response pending: path='{file_path}', mix={:.2}",
+                            runtime.spatial_mix
+                        ),
+                    ),
+                );
+                return Ok(None);
             };
+            let sample_rate = session.shared.mix_format.sample_rate;
 
             let can_reuse_current = runtime
                 .dsp_settings
@@ -1616,19 +1831,31 @@ impl Task for SetImpulseResponseTask {
                 });
             if can_reuse_current {
                 update_spatial_mix(runtime, mix);
+                return Ok(None);
             }
 
-            Ok((sample_rate, runtime.spatial_request_seq, !can_reuse_current))
+            Ok(Some((sample_rate, runtime.spatial_request_seq)))
         })?;
 
-        if !should_prepare {
+        let Some((sample_rate, request_seq)) = prepare else {
             return Ok(());
-        }
+        };
 
-        let spatial = prepare_spatial_effect(&file_path, mix, sample_rate).map_err(|err| {
-            emit_event(PlayerEvent::impulse_response_disabled(err.clone()));
-            napi::Error::from_reason(err)
-        })?;
+        let spatial = match prepare_spatial_effect(&file_path, mix, sample_rate) {
+            Ok(spatial) => spatial,
+            Err(err) => {
+                emit_event(PlayerEvent::impulse_response_disabled(err.clone()));
+                with_runtime(|runtime| {
+                    if runtime.spatial_request_seq == request_seq {
+                        runtime.spatial_file_path = None;
+                        runtime.dsp_settings.spatial = None;
+                        sync_current_session_dsp_settings(runtime);
+                    }
+                    Ok(())
+                })?;
+                return Err(napi::Error::from_reason(err));
+            }
+        };
 
         with_runtime(|runtime| {
             if runtime.spatial_request_seq != request_seq {
@@ -1642,18 +1869,20 @@ impl Task for SetImpulseResponseTask {
             spatial.mix = runtime.spatial_mix;
             let spatial_path = spatial.file_path.clone();
             let spatial_mix = spatial.mix;
+            let spatial_sample_rate = spatial.sample_rate();
             apply_prepared_spatial_effect(runtime, spatial);
             emit_runtime_event(
                 runtime,
                 PlayerEvent::log(
                     "info",
                     format!(
-                        "impulse response enabled: path='{spatial_path}', mix={spatial_mix:.2}"
+                        "impulse response enabled: path='{spatial_path}', mix={spatial_mix:.2}, mix_sample_rate={spatial_sample_rate}"
                     ),
                 ),
             );
             Ok(())
-        })
+        })?;
+        Ok(())
     }
 
     fn resolve(&mut self, _env: Env, _output: Self::Output) -> napi::Result<Self::JsValue> {
@@ -1663,11 +1892,51 @@ impl Task for SetImpulseResponseTask {
 
 fn apply_prepared_spatial_effect(runtime: &mut PlayerRuntime, spatial: PreparedSpatialEffect) {
     runtime.dsp_settings.spatial = Some(spatial);
+    sync_current_session_dsp_settings(runtime);
+    reset_current_filter_if_process_format_changed(runtime);
+}
+
+fn sync_current_session_dsp_settings(runtime: &PlayerRuntime) {
     if let Some(session) = runtime.session.as_ref() {
-        if let Ok(mut chain) = session.shared.effects.lock() {
-            chain.update_settings(&runtime.dsp_settings);
-        }
+        session.shared.update_dsp_settings(&runtime.dsp_settings);
     }
+}
+
+fn reset_current_filter_if_process_format_changed(runtime: &PlayerRuntime) {
+    let Some(session) = runtime.session.as_ref() else {
+        return;
+    };
+    if runtime.dsp_settings.requires_stereo_graph() && session.shared.mix_format.channels != 2 {
+        session
+            .shared
+            .reset_filter_for_speed_change(&runtime.dsp_settings);
+    }
+}
+
+fn prepare_dsp_settings_for_mix_rate(
+    mut settings: DspSettings,
+    spatial_file_path: Option<&str>,
+    spatial_mix: f32,
+    mix_sample_rate: u32,
+) -> Result<DspSettings, String> {
+    let Some(file_path) = spatial_file_path else {
+        settings.spatial = None;
+        return Ok(settings);
+    };
+
+    let mix = clamp_spatial_mix(spatial_mix);
+    let can_reuse = settings.spatial.as_ref().is_some_and(|spatial| {
+        spatial.file_path == file_path && spatial.sample_rate() == mix_sample_rate
+    });
+    if can_reuse {
+        if let Some(spatial) = settings.spatial.as_mut() {
+            spatial.mix = mix;
+        }
+        return Ok(settings);
+    }
+
+    settings.spatial = Some(prepare_spatial_effect(file_path, mix, mix_sample_rate)?);
+    Ok(settings)
 }
 
 fn update_spatial_mix(runtime: &mut PlayerRuntime, mix: f32) {
@@ -1676,11 +1945,7 @@ fn update_spatial_mix(runtime: &mut PlayerRuntime, mix: f32) {
     if let Some(spatial) = runtime.dsp_settings.spatial.as_mut() {
         spatial.mix = mix;
     }
-    if let Some(session) = runtime.session.as_ref() {
-        if let Ok(mut chain) = session.shared.effects.lock() {
-            chain.set_spatial_mix(mix);
-        }
-    }
+    sync_current_session_dsp_settings(runtime);
 }
 
 fn parse_impulse_response_payload(
@@ -1809,11 +2074,7 @@ impl Task for SetNormalizationGainTask {
     fn compute(&mut self) -> napi::Result<Self::Output> {
         with_runtime(|runtime| {
             runtime.dsp_settings.normalization_gain_db = self.gain_db.clamp(-24.0, 24.0) as f32;
-            if let Some(session) = runtime.session.as_ref() {
-                if let Ok(mut chain) = session.shared.effects.lock() {
-                    chain.update_settings(&runtime.dsp_settings);
-                }
-            }
+            sync_current_session_dsp_settings(runtime);
             Ok(())
         })
     }
@@ -2050,7 +2311,7 @@ impl Task for GetSpectrumSnapshotTask {
                 .map(|ring| {
                     runtime
                         .spectrum_analyzer
-                        .analyze(&ring, session.shared.sample_rate)
+                        .analyze(&ring, session.shared.spectrum_sample_rate())
                 })
                 .ok();
             if let Some(frame) = frame.as_ref() {

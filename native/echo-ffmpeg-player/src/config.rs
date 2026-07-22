@@ -4,10 +4,10 @@ use ffmpeg_audio::PacketCacheOptions;
 use napi_derive::napi;
 use std::time::Duration;
 
-const DEFAULT_BUFFER_SECS: f64 = 2.0;
-const DEFAULT_AUDIO_CACHE_SECS: f64 = 30.0;
-const DEFAULT_DEMUXER_MAX_MB: f64 = 48.0;
-const DEFAULT_DEMUXER_BACK_MB: f64 = 12.0;
+const DEFAULT_BUFFER_SECS: f64 = 0.2;
+const DEFAULT_AUDIO_CACHE_SECS: f64 = 1.0;
+const DEFAULT_DEMUXER_MAX_MB: f64 = 150.0;
+const DEFAULT_DEMUXER_BACK_MB: f64 = 50.0;
 const DEFAULT_NETWORK_TIMEOUT_SECS: f64 = 60.0;
 const DEFAULT_PLAYBACK_STALL_TIMEOUT_SECS: f64 = 8.0;
 
@@ -56,10 +56,10 @@ impl PlayerConfig {
         let mut config = Self::default();
         if let Some(options) = options {
             if let Some(value) = options.audio_buffer_secs {
-                config.audio_buffer_secs = value.clamp(1.0, 5.0);
+                config.audio_buffer_secs = value.clamp(0.05, 1.0);
             }
             if let Some(value) = options.audio_cache_secs {
-                config.audio_cache_secs = value.clamp(10.0, 120.0);
+                config.audio_cache_secs = value.clamp(1.0, 120.0);
             }
             if let Some(value) = options.audio_demuxer_max_mb {
                 config.audio_demuxer_max_mb = value.clamp(8.0, 512.0);
@@ -104,6 +104,44 @@ impl PlayerConfig {
 
 fn mb_to_bytes(value: f64) -> usize {
     (value * 1024.0 * 1024.0).round().max(0.0) as usize
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn player_config_defaults_follow_mpv_cache_shape() {
+        let config = PlayerConfig::default();
+        let packet_cache = config.packet_cache_options();
+
+        assert_eq!(config.audio_buffer_secs, 0.2);
+        assert_eq!(config.audio_cache_secs, 1.0);
+        assert_eq!(config.audio_demuxer_max_mb, 150.0);
+        assert_eq!(config.audio_demuxer_back_mb, 50.0);
+        assert_eq!(packet_cache.max_bytes, 150 * 1024 * 1024);
+        assert_eq!(packet_cache.back_bytes, 50 * 1024 * 1024);
+        assert_eq!(packet_cache.max_duration, Duration::from_secs(1));
+    }
+
+    #[test]
+    fn player_config_accepts_small_output_buffer_and_short_readahead() {
+        let config = PlayerConfig::from_options(Some(PlayerConfigOptions {
+            audio_buffer_secs: Some(0.01),
+            audio_cache_secs: Some(0.1),
+            audio_demuxer_max_mb: Some(2.0),
+            audio_demuxer_back_mb: Some(999.0),
+            network_timeout_secs: None,
+            playback_stall_timeout_secs: None,
+            http_proxy: None,
+        }));
+
+        assert_eq!(config.audio_buffer_secs, 0.05);
+        assert_eq!(config.audio_cache_secs, 1.0);
+        assert_eq!(config.audio_demuxer_max_mb, 8.0);
+        assert_eq!(config.audio_demuxer_back_mb, 512.0);
+        assert_eq!(config.packet_cache_options().back_bytes, 8 * 1024 * 1024);
+    }
 }
 
 #[derive(Clone, Debug)]

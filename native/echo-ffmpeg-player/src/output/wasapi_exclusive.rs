@@ -6,7 +6,7 @@ use crate::device::platform_windows::{
 };
 use crate::events::{PlayerErrorCode, PlayerEvent};
 use crate::output::{fill_output, report_output_start, OutputStartSender};
-use crate::shared::{SharedAudio, TARGET_CHANNELS};
+use crate::shared::{SharedAudio, MIX_CHANNELS};
 use std::ptr;
 use std::slice;
 use std::sync::Arc;
@@ -110,7 +110,9 @@ fn run_exclusive_output(
 
     let device = resolve_wasapi_output_device(device_name)?;
     let probe_client = activate_wasapi_audio_client(&device)?;
-    let output_format = choose_wasapi_output_format(&probe_client, shared.sample_rate)?;
+    let source_format = shared.source_sample_format();
+    let output_format =
+        choose_wasapi_output_format(&probe_client, shared.mix_format.sample_rate, source_format)?;
     let event = EventHandle(
         unsafe { Threading::CreateEventA(None, false, false, windows::core::PCSTR(ptr::null())) }
             .map_err(|err| format!("failed to create WASAPI output event: {err}"))?,
@@ -119,17 +121,23 @@ fn run_exclusive_output(
     emit(PlayerEvent::log(
         "info",
         format!(
-            "WASAPI exclusive opening: requested='{device_name}', sample_rate={}, engine_sample_rate={}, channels={}, format={:?}, buffer_100ns={buffer_duration}",
+            "WASAPI exclusive opening: requested='{device_name}', sample_rate={}, engine_sample_rate={}, channels={}, source_format={:?}, format={:?}, buffer_100ns={buffer_duration}",
             output_format.sample_rate,
-            shared.sample_rate,
-            TARGET_CHANNELS,
+            shared.mix_format.sample_rate,
+            MIX_CHANNELS,
+            source_format,
             output_format.sample_format,
             buffer_duration = output.buffer_duration
         ),
     ));
 
     let mut output_scratch = Vec::<f32>::new();
-    let mut resampler = OutputResampler::new(shared.sample_rate, output_format.sample_rate);
+    let mut resampler = OutputResampler::new(
+        shared.mix_format.sample_rate,
+        output_format.sample_rate,
+        shared.mix_format.channels,
+        MIX_CHANNELS,
+    )?;
 
     unsafe {
         write_frames(
@@ -150,7 +158,7 @@ fn run_exclusive_output(
             "info",
             format!(
                 "WASAPI exclusive output started: requested='{device_name}', sample_rate={}, engine_sample_rate={}",
-                output_format.sample_rate, shared.sample_rate
+                output_format.sample_rate, shared.mix_format.sample_rate
             ),
         ));
         let mut last_feed_at = Instant::now();
@@ -305,7 +313,7 @@ fn write_frames(
         let buffer = render_client
             .GetBuffer(frames)
             .map_err(|err| format!("failed to obtain WASAPI output buffer: {err}"))?;
-        let sample_count = frames as usize * TARGET_CHANNELS;
+        let sample_count = frames as usize * MIX_CHANNELS;
         match output_format.sample_format {
             WasapiSampleFormat::F32 => {
                 let data = slice::from_raw_parts_mut(buffer as *mut f32, sample_count);
@@ -370,9 +378,11 @@ fn fill_wasapi_output(
     shared: &SharedAudio,
     resampler: &mut OutputResampler,
 ) {
-    if output_sample_rate == shared.sample_rate {
-        fill_output(output, TARGET_CHANNELS, shared);
+    if output_sample_rate == shared.mix_format.sample_rate
+        && shared.mix_format.channels == MIX_CHANNELS
+    {
+        fill_output(output, MIX_CHANNELS, shared);
     } else {
-        resampler.fill_output(output, TARGET_CHANNELS, shared);
+        resampler.fill_output(output, MIX_CHANNELS, shared);
     }
 }

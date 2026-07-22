@@ -17,21 +17,26 @@ const clampNumber = (value: string | number, fallback: number, min: number, max:
 };
 
 const updateAudioCacheSecs = (value: string | number) => {
-  settingStore.audioCacheSecs = clampNumber(value, 30, 10, 120);
+  settingStore.audioCacheSecs = clampNumber(value, 1, 1, 120);
 };
 
 const updateAudioDemuxerMaxMB = (value: string | number) => {
-  const maxMB = clampNumber(value, 48, 8, 512);
+  const maxMB = clampNumber(value, 150, 8, 512);
   settingStore.audioDemuxerMaxMB = maxMB;
-  settingStore.audioDemuxerBackMB = Math.min(settingStore.audioDemuxerBackMB ?? 12, maxMB);
+  settingStore.audioDemuxerBackMB = Math.min(settingStore.audioDemuxerBackMB ?? 50, maxMB);
 };
 
 const updateAudioDemuxerBackMB = (value: string | number) => {
-  settingStore.audioDemuxerBackMB = clampNumber(value, 12, 0, settingStore.audioDemuxerMaxMB ?? 48);
+  settingStore.audioDemuxerBackMB = clampNumber(
+    value,
+    50,
+    0,
+    settingStore.audioDemuxerMaxMB ?? 150,
+  );
 };
 
 const updateAudioBufferSecs = (value: string | number) => {
-  settingStore.audioBufferSecs = clampNumber(value, 2, 1, 5);
+  settingStore.audioBufferSecs = clampNumber(value, 0.2, 0.05, 1);
 };
 
 const updatePlayResumeTimeout = (value: string | number) => {
@@ -88,11 +93,11 @@ const updatePlayerNetworkTimeout = (value: string | number) => {
       </div>
       <InputNumber
         class="w-45"
-        :model-value="String(settingStore.audioCacheSecs ?? 30)"
-        :min="10"
+        :model-value="String(settingStore.audioCacheSecs ?? 1)"
+        :min="1"
         :max="120"
-        :step="10"
-        placeholder="30"
+        :step="1"
+        placeholder="1"
         suffix="秒"
         @update:model-value="updateAudioCacheSecs"
       />
@@ -107,11 +112,11 @@ const updatePlayerNetworkTimeout = (value: string | number) => {
       </div>
       <InputNumber
         class="w-45"
-        :model-value="String(settingStore.audioDemuxerMaxMB ?? 48)"
+        :model-value="String(settingStore.audioDemuxerMaxMB ?? 150)"
         :min="8"
         :max="512"
         :step="8"
-        placeholder="48"
+        placeholder="150"
         suffix="MB"
         @update:model-value="updateAudioDemuxerMaxMB"
       />
@@ -126,11 +131,11 @@ const updatePlayerNetworkTimeout = (value: string | number) => {
       </div>
       <InputNumber
         class="w-45"
-        :model-value="String(settingStore.audioDemuxerBackMB ?? 12)"
+        :model-value="String(settingStore.audioDemuxerBackMB ?? 50)"
         :min="0"
-        :max="settingStore.audioDemuxerMaxMB ?? 48"
+        :max="settingStore.audioDemuxerMaxMB ?? 150"
         :step="4"
-        placeholder="12"
+        placeholder="50"
         suffix="MB"
         @update:model-value="updateAudioDemuxerBackMB"
       />
@@ -140,16 +145,16 @@ const updatePlayerNetworkTimeout = (value: string | number) => {
       <div class="space-y-1">
         <h3 class="font-semibold">音频设备缓冲</h3>
         <p class="text-sm text-text-secondary">
-          音频输出设备缓冲时长，增加可改善网络受限时的播放稳定性（需重启应用生效）
+          输出设备侧的小缓冲，网络波动由预读缓存和暂停恢复策略处理（需重启应用生效）
         </p>
       </div>
       <InputNumber
         class="w-45"
-        :model-value="String(settingStore.audioBufferSecs ?? 2)"
-        :min="1"
-        :max="5"
-        :step="0.5"
-        placeholder="2"
+        :model-value="String(settingStore.audioBufferSecs ?? 0.2)"
+        :min="0.05"
+        :max="1"
+        :step="0.05"
+        placeholder="0.2"
         suffix="秒"
         @update:model-value="updateAudioBufferSecs"
       />

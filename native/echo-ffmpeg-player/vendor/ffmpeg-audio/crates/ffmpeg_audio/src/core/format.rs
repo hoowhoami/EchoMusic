@@ -25,6 +25,12 @@ impl AudioSample for f32 {
     const PLANAR_FORMAT: sys::AVSampleFormat = sys::AVSampleFormat_AV_SAMPLE_FMT_FLTP;
 }
 
+impl private::Sealed for f64 {}
+impl AudioSample for f64 {
+    const PACKED_FORMAT: sys::AVSampleFormat = sys::AVSampleFormat_AV_SAMPLE_FMT_DBL;
+    const PLANAR_FORMAT: sys::AVSampleFormat = sys::AVSampleFormat_AV_SAMPLE_FMT_DBLP;
+}
+
 impl private::Sealed for i16 {}
 impl AudioSample for i16 {
     const PACKED_FORMAT: sys::AVSampleFormat = sys::AVSampleFormat_AV_SAMPLE_FMT_S16;
