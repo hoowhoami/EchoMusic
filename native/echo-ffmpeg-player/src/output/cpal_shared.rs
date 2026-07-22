@@ -30,9 +30,10 @@ pub(crate) fn spawn_output_thread_with_start_notify(
     mut start_notify: Option<OutputStartSender>,
 ) -> JoinHandle<()> {
     #[cfg(target_os = "windows")]
-    if exclusive {
-        return super::wasapi_exclusive::spawn_output_thread(
+    {
+        return super::wasapi::spawn_output_thread(
             device_name,
+            exclusive,
             shared,
             emit,
             start_notify,
@@ -275,12 +276,6 @@ fn build_output_stream(
         }
         _ => Err("audio output sample format is not available".to_string()),
     }
-}
-
-#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
-pub(crate) fn fill_output(output: &mut [f32], output_channels: usize, shared: &SharedAudio) {
-    let mut stereo_scratch = Vec::<f32>::new();
-    fill_output_reusing(output, output_channels, shared, &mut stereo_scratch);
 }
 
 pub(crate) fn fill_output_reusing(

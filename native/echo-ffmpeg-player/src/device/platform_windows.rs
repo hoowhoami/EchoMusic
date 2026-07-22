@@ -8,6 +8,7 @@ use cpal::traits::{DeviceTrait, HostTrait};
 use std::ffi::{c_void, OsString};
 use std::mem;
 use std::os::windows::ffi::OsStringExt;
+use std::ptr;
 use std::slice;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{sync_channel, SyncSender, TrySendError};
@@ -63,7 +64,14 @@ impl WasapiSampleFormat {
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct WasapiOutputFormat {
     pub sample_rate: u32,
+    pub channels: usize,
     pub sample_format: WasapiSampleFormat,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct WasapiResolvedFormat {
+    pub wave_format: Audio::WAVEFORMATEXTENSIBLE,
+    pub output: WasapiOutputFormat,
 }
 
 pub(crate) struct ComApartment {
@@ -386,7 +394,7 @@ pub(crate) fn resolve_wasapi_output_sample_rate(device_name: &str) -> u32 {
         preferred_sample_rate,
         AudioSampleFormat::Unknown,
     )
-    .map(|format| format.sample_rate)
+    .map(|format| format.output.sample_rate)
     .unwrap_or(preferred_sample_rate)
 }
 
@@ -449,20 +457,70 @@ pub(crate) fn choose_wasapi_output_format(
     audio_client: &Audio::IAudioClient,
     preferred_sample_rate: u32,
     source_format: AudioSampleFormat,
-) -> Result<WasapiOutputFormat, String> {
+) -> Result<WasapiResolvedFormat, String> {
     for sample_rate in wasapi_sample_rate_candidates(preferred_sample_rate) {
         if let Ok(sample_format) =
             choose_wasapi_sample_format_at_sample_rate(audio_client, sample_rate, source_format)
         {
-            return Ok(WasapiOutputFormat {
+            return Ok(wasapi_resolved_format(
                 sample_rate,
+                crate::shared::MIX_CHANNELS,
                 sample_format,
-            });
+            ));
         }
     }
     Err(format!(
         "WASAPI exclusive output does not accept stereo PCM near {preferred_sample_rate} Hz"
     ))
+}
+
+pub(crate) fn choose_wasapi_shared_output_format(
+    audio_client: &Audio::IAudioClient,
+    preferred_channels: usize,
+) -> Result<WasapiResolvedFormat, String> {
+    let mix_ptr = unsafe {
+        audio_client
+            .GetMixFormat()
+            .map_err(|err| format!("failed to get WASAPI shared mix format: {err}"))?
+    };
+    let mix_format = unsafe { wasapi_resolved_format_from_wave_format(&*mix_ptr) };
+    unsafe {
+        Com::CoTaskMemFree(Some(mix_ptr as *const c_void));
+    }
+    let mix_format = mix_format?;
+    let try_format = wasapi_resolved_format(
+        mix_format.output.sample_rate,
+        preferred_channels,
+        mix_format.output.sample_format,
+    );
+    let mut closest_match: *mut Audio::WAVEFORMATEX = ptr::null_mut();
+    let result = unsafe {
+        audio_client.IsFormatSupported(
+            Audio::AUDCLNT_SHAREMODE_SHARED,
+            &try_format.wave_format.Format,
+            Some(&mut closest_match),
+        )
+    };
+
+    if result == S_OK {
+        return Ok(try_format);
+    }
+
+    if result == S_FALSE && !closest_match.is_null() {
+        let closest = unsafe { wasapi_resolved_format_from_wave_format(&*closest_match) };
+        unsafe {
+            Com::CoTaskMemFree(Some(closest_match as *const c_void));
+        }
+        return closest;
+    }
+
+    if !closest_match.is_null() {
+        unsafe {
+            Com::CoTaskMemFree(Some(closest_match as *const c_void));
+        }
+    }
+
+    Ok(mix_format)
 }
 
 pub(crate) fn choose_wasapi_sample_format_at_sample_rate(
@@ -471,7 +529,8 @@ pub(crate) fn choose_wasapi_sample_format_at_sample_rate(
     source_format: AudioSampleFormat,
 ) -> Result<WasapiSampleFormat, String> {
     for sample_format in wasapi_sample_format_candidates(source_format) {
-        let wave_format = wasapi_wave_format(sample_rate, sample_format);
+        let wave_format =
+            wasapi_wave_format(sample_rate, crate::shared::MIX_CHANNELS, sample_format);
         let result = unsafe {
             audio_client.IsFormatSupported(
                 Audio::AUDCLNT_SHAREMODE_EXCLUSIVE,
@@ -521,9 +580,10 @@ fn wasapi_sample_rate_candidates(preferred_sample_rate: u32) -> Vec<u32> {
 
 pub(crate) fn wasapi_wave_format(
     sample_rate: u32,
+    channels: usize,
     sample_format: WasapiSampleFormat,
 ) -> Audio::WAVEFORMATEXTENSIBLE {
-    let channels = crate::shared::MIX_CHANNELS as u16;
+    let channels = channels.clamp(1, 8) as u16;
     let sample_bytes = sample_format.sample_bytes();
     let block_align = channels * sample_bytes;
     let bits_per_sample = sample_bytes * 8;
@@ -551,8 +611,148 @@ pub(crate) fn wasapi_wave_format(
         Samples: Audio::WAVEFORMATEXTENSIBLE_0 {
             wValidBitsPerSample: valid_bits_per_sample,
         },
-        dwChannelMask: KernelStreaming::SPEAKER_FRONT_LEFT | KernelStreaming::SPEAKER_FRONT_RIGHT,
+        dwChannelMask: wasapi_channel_mask(usize::from(channels)),
         SubFormat: sub_format,
+    }
+}
+
+fn wasapi_resolved_format(
+    sample_rate: u32,
+    channels: usize,
+    sample_format: WasapiSampleFormat,
+) -> WasapiResolvedFormat {
+    let channels = channels.clamp(1, 8);
+    WasapiResolvedFormat {
+        wave_format: wasapi_wave_format(sample_rate, channels, sample_format),
+        output: WasapiOutputFormat {
+            sample_rate,
+            channels,
+            sample_format,
+        },
+    }
+}
+
+unsafe fn wasapi_resolved_format_from_wave_format(
+    wave_format: &Audio::WAVEFORMATEX,
+) -> Result<WasapiResolvedFormat, String> {
+    let format_tag = wave_format.wFormatTag;
+    let channels = wave_format.nChannels;
+    let sample_rate = wave_format.nSamplesPerSec;
+    let bits_per_sample = wave_format.wBitsPerSample;
+    let sample_format = match u32::from(format_tag) {
+        Audio::WAVE_FORMAT_PCM => match bits_per_sample {
+            8 => WasapiSampleFormat::U8,
+            16 => WasapiSampleFormat::I16,
+            24 => WasapiSampleFormat::I24,
+            32 => WasapiSampleFormat::I32,
+            bits => {
+                return Err(format!(
+                    "WASAPI shared mix format has unsupported PCM bits: {bits}"
+                ));
+            }
+        },
+        Multimedia::WAVE_FORMAT_IEEE_FLOAT => {
+            if bits_per_sample == 32 {
+                WasapiSampleFormat::F32
+            } else {
+                return Err(format!(
+                    "WASAPI shared mix format has unsupported float bits: {}",
+                    bits_per_sample
+                ));
+            }
+        }
+        KernelStreaming::WAVE_FORMAT_EXTENSIBLE => {
+            let extensible = &*(wave_format as *const _ as *const Audio::WAVEFORMATEXTENSIBLE);
+            let sub_format = extensible.SubFormat;
+            let valid_bits_per_sample = extensible.Samples.wValidBitsPerSample;
+            if sub_format == Multimedia::KSDATAFORMAT_SUBTYPE_IEEE_FLOAT {
+                if bits_per_sample == 32 {
+                    WasapiSampleFormat::F32
+                } else {
+                    return Err(format!(
+                        "WASAPI shared mix format has unsupported float bits: {}",
+                        bits_per_sample
+                    ));
+                }
+            } else if sub_format == KernelStreaming::KSDATAFORMAT_SUBTYPE_PCM {
+                match (bits_per_sample, valid_bits_per_sample) {
+                    (8, _) => WasapiSampleFormat::U8,
+                    (16, _) => WasapiSampleFormat::I16,
+                    (24, _) => WasapiSampleFormat::I24,
+                    (32, 24) => WasapiSampleFormat::I24In32,
+                    (32, _) => WasapiSampleFormat::I32,
+                    (bits, valid_bits) => {
+                        return Err(format!(
+                            "WASAPI shared mix format has unsupported PCM bits: {bits}/{valid_bits}"
+                        ));
+                    }
+                }
+            } else {
+                return Err("WASAPI shared mix format is not PCM/float".to_string());
+            }
+        }
+        tag => {
+            return Err(format!(
+                "WASAPI shared mix format has unsupported wave tag: {tag}"
+            ));
+        }
+    };
+    Ok(wasapi_resolved_format(
+        sample_rate,
+        usize::from(channels.max(1)),
+        sample_format,
+    ))
+}
+
+fn wasapi_channel_mask(channels: usize) -> u32 {
+    match channels {
+        1 => KernelStreaming::SPEAKER_FRONT_CENTER,
+        2 => KernelStreaming::SPEAKER_FRONT_LEFT | KernelStreaming::SPEAKER_FRONT_RIGHT,
+        3 => {
+            KernelStreaming::SPEAKER_FRONT_LEFT
+                | KernelStreaming::SPEAKER_FRONT_RIGHT
+                | KernelStreaming::SPEAKER_FRONT_CENTER
+        }
+        4 => {
+            KernelStreaming::SPEAKER_FRONT_LEFT
+                | KernelStreaming::SPEAKER_FRONT_RIGHT
+                | KernelStreaming::SPEAKER_BACK_LEFT
+                | KernelStreaming::SPEAKER_BACK_RIGHT
+        }
+        5 => {
+            KernelStreaming::SPEAKER_FRONT_LEFT
+                | KernelStreaming::SPEAKER_FRONT_RIGHT
+                | KernelStreaming::SPEAKER_FRONT_CENTER
+                | KernelStreaming::SPEAKER_BACK_LEFT
+                | KernelStreaming::SPEAKER_BACK_RIGHT
+        }
+        6 => {
+            KernelStreaming::SPEAKER_FRONT_LEFT
+                | KernelStreaming::SPEAKER_FRONT_RIGHT
+                | KernelStreaming::SPEAKER_FRONT_CENTER
+                | KernelStreaming::SPEAKER_LOW_FREQUENCY
+                | KernelStreaming::SPEAKER_SIDE_LEFT
+                | KernelStreaming::SPEAKER_SIDE_RIGHT
+        }
+        7 => {
+            KernelStreaming::SPEAKER_FRONT_LEFT
+                | KernelStreaming::SPEAKER_FRONT_RIGHT
+                | KernelStreaming::SPEAKER_FRONT_CENTER
+                | KernelStreaming::SPEAKER_LOW_FREQUENCY
+                | KernelStreaming::SPEAKER_BACK_CENTER
+                | KernelStreaming::SPEAKER_SIDE_LEFT
+                | KernelStreaming::SPEAKER_SIDE_RIGHT
+        }
+        _ => {
+            KernelStreaming::SPEAKER_FRONT_LEFT
+                | KernelStreaming::SPEAKER_FRONT_RIGHT
+                | KernelStreaming::SPEAKER_FRONT_CENTER
+                | KernelStreaming::SPEAKER_LOW_FREQUENCY
+                | KernelStreaming::SPEAKER_BACK_LEFT
+                | KernelStreaming::SPEAKER_BACK_RIGHT
+                | KernelStreaming::SPEAKER_SIDE_LEFT
+                | KernelStreaming::SPEAKER_SIDE_RIGHT
+        }
     }
 }
 
@@ -575,6 +775,10 @@ pub(crate) fn wasapi_duration_from_frames(frames: u32, sample_rate: u32) -> i64 
 
 pub(crate) fn is_wasapi_buffer_size_not_aligned(err: &windows::core::Error) -> bool {
     err.code() == Audio::AUDCLNT_E_BUFFER_SIZE_NOT_ALIGNED
+}
+
+pub(crate) fn is_wasapi_device_in_use(err: &windows::core::Error) -> bool {
+    err.code() == Audio::AUDCLNT_E_DEVICE_IN_USE
 }
 
 pub(crate) fn wasapi_client_error_message(context: &str, err: &windows::core::Error) -> String {

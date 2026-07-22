@@ -1,25 +1,26 @@
 use super::cpal_shared::{fill_output_reusing, OutputResampler};
 use crate::device::platform_windows::{
-    activate_wasapi_audio_client, choose_wasapi_output_format, is_wasapi_buffer_size_not_aligned,
-    resolve_wasapi_output_device, wasapi_client_error_message, wasapi_duration_from_frames,
-    wasapi_exclusive_buffer_duration, wasapi_wave_format, ComApartment, WasapiOutputFormat,
-    WasapiSampleFormat,
+    activate_wasapi_audio_client, choose_wasapi_output_format, choose_wasapi_shared_output_format,
+    is_wasapi_buffer_size_not_aligned, is_wasapi_device_in_use, resolve_wasapi_output_device,
+    wasapi_client_error_message, wasapi_duration_from_frames, wasapi_exclusive_buffer_duration,
+    ComApartment, WasapiOutputFormat, WasapiResolvedFormat, WasapiSampleFormat,
 };
 use crate::events::{PlayerErrorCode, PlayerEvent};
-use crate::output::{
-    fill_output, report_output_start, report_output_start_failure, OutputStartSender,
-};
-use crate::shared::{SharedAudio, MIX_CHANNELS};
+use crate::output::{report_output_start, report_output_start_failure, OutputStartSender};
+use crate::shared::SharedAudio;
 use std::ptr;
 use std::slice;
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
+use std::time::{Duration, Instant};
 use windows::core::PCSTR;
 use windows::Win32::Foundation::{CloseHandle, HANDLE, WAIT_FAILED, WAIT_OBJECT_0, WAIT_TIMEOUT};
 use windows::Win32::Media::Audio;
 use windows::Win32::System::Threading;
 
 const WASAPI_EVENT_WAIT_MS: u32 = 10;
+const WASAPI_EXCLUSIVE_DEVICE_RELEASE_TIMEOUT: Duration = Duration::from_millis(1500);
+const WASAPI_EXCLUSIVE_DEVICE_RELEASE_RETRY: Duration = Duration::from_millis(50);
 
 struct EventHandle(HANDLE);
 
@@ -31,7 +32,51 @@ impl Drop for EventHandle {
     }
 }
 
-struct WasapiExclusiveOutput {
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum WasapiShareMode {
+    Shared,
+    Exclusive,
+}
+
+impl WasapiShareMode {
+    fn from_exclusive(exclusive: bool) -> Self {
+        if exclusive {
+            Self::Exclusive
+        } else {
+            Self::Shared
+        }
+    }
+
+    fn as_wasapi(self) -> Audio::AUDCLNT_SHAREMODE {
+        match self {
+            Self::Shared => Audio::AUDCLNT_SHAREMODE_SHARED,
+            Self::Exclusive => Audio::AUDCLNT_SHAREMODE_EXCLUSIVE,
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::Shared => "shared",
+            Self::Exclusive => "exclusive",
+        }
+    }
+
+    fn backend(self) -> &'static str {
+        match self {
+            Self::Shared => "wasapi",
+            Self::Exclusive => "wasapi-exclusive",
+        }
+    }
+
+    fn error_code(self) -> PlayerErrorCode {
+        match self {
+            Self::Shared => PlayerErrorCode::OutputStream,
+            Self::Exclusive => PlayerErrorCode::OutputExclusive,
+        }
+    }
+}
+
+struct WasapiOutput {
     audio_client: Audio::IAudioClient,
     render_client: Audio::IAudioRenderClient,
     buffer_frames: u32,
@@ -70,19 +115,24 @@ impl Drop for MmcssTask {
 
 pub fn spawn_output_thread(
     device_name: String,
+    exclusive: bool,
     shared: Arc<SharedAudio>,
     emit: fn(PlayerEvent),
     mut start_notify: Option<OutputStartSender>,
 ) -> JoinHandle<()> {
     thread::spawn(move || {
-        if let Err(message) =
-            run_exclusive_output(&device_name, shared.clone(), emit, &mut start_notify)
-        {
+        if let Err(message) = run_wasapi_output(
+            &device_name,
+            WasapiShareMode::from_exclusive(exclusive),
+            shared.clone(),
+            emit,
+            &mut start_notify,
+        ) {
             let startup_failure = report_output_start_failure(&mut start_notify, message.clone());
             shared.request_output_stop();
             if !startup_failure {
                 emit(PlayerEvent::error(
-                    PlayerErrorCode::OutputExclusive,
+                    WasapiShareMode::from_exclusive(exclusive).error_code(),
                     message,
                 ));
             }
@@ -90,8 +140,9 @@ pub fn spawn_output_thread(
     })
 }
 
-fn run_exclusive_output(
+fn run_wasapi_output(
     device_name: &str,
+    share_mode: WasapiShareMode,
     shared: Arc<SharedAudio>,
     emit: fn(PlayerEvent),
     start_notify: &mut Option<OutputStartSender>,
@@ -101,7 +152,10 @@ fn run_exclusive_output(
         Ok(task) => {
             emit(PlayerEvent::log(
                 "info",
-                "WASAPI exclusive output thread registered with MMCSS Pro Audio".to_string(),
+                format!(
+                    "WASAPI {} output thread registered with MMCSS Pro Audio",
+                    share_mode.label()
+                ),
             ));
             Some(task)
         }
@@ -114,18 +168,27 @@ fn run_exclusive_output(
     let device = resolve_wasapi_output_device(device_name)?;
     let probe_client = activate_wasapi_audio_client(&device)?;
     let source_format = shared.source_sample_format();
-    let output_format =
-        choose_wasapi_output_format(&probe_client, shared.mix_format.sample_rate, source_format)?;
+    let resolved_format = match share_mode {
+        WasapiShareMode::Shared => {
+            choose_wasapi_shared_output_format(&probe_client, shared.mix_format.channels)?
+        }
+        WasapiShareMode::Exclusive => choose_wasapi_output_format(
+            &probe_client,
+            shared.mix_format.sample_rate,
+            source_format,
+        )?,
+    };
+    let output_format = resolved_format.output;
     let event = EventHandle(
         unsafe { Threading::CreateEventA(None, false, false, windows::core::PCSTR(ptr::null())) }
             .map_err(|err| format!("failed to create WASAPI output event: {err}"))?,
     );
-    let output = open_wasapi_exclusive_output(&device, event.0, output_format)?;
+    let output = open_wasapi_output(&device, event.0, resolved_format, share_mode, emit)?;
     shared.update_output_stats(crate::shared::AudioOutputStats {
-        backend: "wasapi-exclusive".to_string(),
+        backend: share_mode.backend().to_string(),
         sample_rate: f64::from(output_format.sample_rate),
         engine_sample_rate: f64::from(shared.mix_format.sample_rate),
-        channels: MIX_CHANNELS as f64,
+        channels: output_format.channels as f64,
         format: format!("{:?}", output_format.sample_format),
         buffer_frames: f64::from(output.buffer_frames),
         buffer_secs: output.buffer_frames as f64 / f64::from(output_format.sample_rate.max(1)),
@@ -135,10 +198,11 @@ fn run_exclusive_output(
     emit(PlayerEvent::log(
         "info",
         format!(
-            "WASAPI exclusive opening: requested='{device_name}', sample_rate={}, engine_sample_rate={}, channels={}, source_format={:?}, format={:?}, buffer_frames={}, buffer_100ns={buffer_duration}",
+            "WASAPI {} opening: requested='{device_name}', sample_rate={}, engine_sample_rate={}, channels={}, source_format={:?}, format={:?}, buffer_frames={}, buffer_100ns={buffer_duration}",
+            share_mode.label(),
             output_format.sample_rate,
             shared.mix_format.sample_rate,
-            MIX_CHANNELS,
+            output_format.channels,
             source_format,
             output_format.sample_format,
             output.buffer_frames,
@@ -152,7 +216,7 @@ fn run_exclusive_output(
         shared.mix_format.sample_rate,
         output_format.sample_rate,
         shared.mix_format.channels,
-        MIX_CHANNELS,
+        output_format.channels,
     )?;
 
     unsafe {
@@ -166,36 +230,41 @@ fn run_exclusive_output(
             &mut resampler,
         )?;
         output.audio_client.Start().map_err(|err| {
-            wasapi_client_error_message("failed to start WASAPI exclusive output", &err)
+            wasapi_client_error_message(
+                &format!("failed to start WASAPI {} output", share_mode.label()),
+                &err,
+            )
         })?;
         shared.mark_output_started();
         report_output_start(start_notify, Ok(()));
         emit(PlayerEvent::log(
             "info",
             format!(
-                "WASAPI exclusive output started: requested='{device_name}', sample_rate={}, engine_sample_rate={}",
-                output_format.sample_rate, shared.mix_format.sample_rate
+                "WASAPI {} output started: requested='{device_name}', sample_rate={}, engine_sample_rate={}",
+                share_mode.label(), output_format.sample_rate, shared.mix_format.sample_rate
             ),
         ));
         while !shared.should_stop_output() {
             match Threading::WaitForSingleObject(event.0, WASAPI_EVENT_WAIT_MS) {
                 WAIT_OBJECT_0 => {
-                    let refill = feed_wasapi_exclusive(
+                    let refill = feed_wasapi_output(
                         &output.audio_client,
                         &output.render_client,
                         output.buffer_frames,
                         output_format,
+                        share_mode,
                         &shared,
                         &mut output_scratch,
                         &mut graph_scratch,
                         &mut resampler,
                     )?;
                     if refill
-                        && feed_wasapi_exclusive(
+                        && feed_wasapi_output(
                             &output.audio_client,
                             &output.render_client,
                             output.buffer_frames,
                             output_format,
+                            share_mode,
                             &shared,
                             &mut output_scratch,
                             &mut graph_scratch,
@@ -204,8 +273,10 @@ fn run_exclusive_output(
                     {
                         emit(PlayerEvent::log(
                             "warn",
-                            "WASAPI exclusive output could not refill the device buffer fast enough"
-                                .to_string(),
+                            format!(
+                                "WASAPI {} output could not refill the device buffer fast enough",
+                                share_mode.label()
+                            ),
                         ));
                     }
                 }
@@ -221,26 +292,33 @@ fn run_exclusive_output(
     Ok(())
 }
 
-fn open_wasapi_exclusive_output(
+fn open_wasapi_output(
     device: &Audio::IMMDevice,
     event: HANDLE,
-    output_format: WasapiOutputFormat,
-) -> Result<WasapiExclusiveOutput, String> {
-    let wave_format = wasapi_wave_format(output_format.sample_rate, output_format.sample_format);
+    resolved_format: WasapiResolvedFormat,
+    share_mode: WasapiShareMode,
+    emit: fn(PlayerEvent),
+) -> Result<WasapiOutput, String> {
+    let output_format = resolved_format.output;
     let mut aligned_buffer_frames = None;
+    let wait_started_at = Instant::now();
+    let mut logged_device_wait = false;
 
     loop {
         let audio_client = activate_wasapi_audio_client(device)?;
         let buffer_duration = aligned_buffer_frames
             .map(|frames| wasapi_duration_from_frames(frames, output_format.sample_rate))
-            .unwrap_or_else(|| wasapi_exclusive_buffer_duration(&audio_client));
+            .unwrap_or_else(|| match share_mode {
+                WasapiShareMode::Shared => 0,
+                WasapiShareMode::Exclusive => wasapi_exclusive_buffer_duration(&audio_client),
+            });
         let result = unsafe {
             audio_client.Initialize(
-                Audio::AUDCLNT_SHAREMODE_EXCLUSIVE,
+                share_mode.as_wasapi(),
                 Audio::AUDCLNT_STREAMFLAGS_EVENTCALLBACK,
                 buffer_duration,
                 buffer_duration,
-                &wave_format.Format,
+                &resolved_format.wave_format.Format,
                 None,
             )
         };
@@ -256,7 +334,7 @@ fn open_wasapi_exclusive_output(
                 let buffer_frames = audio_client
                     .GetBufferSize()
                     .map_err(|err| format!("failed to query WASAPI buffer size: {err}"))?;
-                return Ok(WasapiExclusiveOutput {
+                return Ok(WasapiOutput {
                     audio_client,
                     render_client,
                     buffer_frames,
@@ -264,15 +342,31 @@ fn open_wasapi_exclusive_output(
                 });
             },
             Err(err)
-                if is_wasapi_buffer_size_not_aligned(&err) && aligned_buffer_frames.is_none() =>
+                if share_mode == WasapiShareMode::Exclusive
+                    && is_wasapi_buffer_size_not_aligned(&err)
+                    && aligned_buffer_frames.is_none() =>
             {
                 let frames = unsafe { audio_client.GetBufferSize() }
                     .map_err(|err| format!("failed to read WASAPI aligned buffer size: {err}"))?;
                 aligned_buffer_frames = Some(frames);
             }
+            Err(err)
+                if share_mode == WasapiShareMode::Exclusive
+                    && is_wasapi_device_in_use(&err)
+                    && wait_started_at.elapsed() < WASAPI_EXCLUSIVE_DEVICE_RELEASE_TIMEOUT =>
+            {
+                if !logged_device_wait {
+                    emit(PlayerEvent::log(
+                        "info",
+                        "WASAPI exclusive output waiting for endpoint release".to_string(),
+                    ));
+                    logged_device_wait = true;
+                }
+                thread::sleep(WASAPI_EXCLUSIVE_DEVICE_RELEASE_RETRY);
+            }
             Err(err) => {
                 return Err(wasapi_client_error_message(
-                    "failed to open WASAPI exclusive output",
+                    &format!("failed to open WASAPI {} output", share_mode.label()),
                     &err,
                 ));
             }
@@ -280,11 +374,12 @@ fn open_wasapi_exclusive_output(
     }
 }
 
-fn feed_wasapi_exclusive(
+fn feed_wasapi_output(
     audio_client: &Audio::IAudioClient,
     render_client: &Audio::IAudioRenderClient,
     buffer_frames: u32,
     output_format: WasapiOutputFormat,
+    share_mode: WasapiShareMode,
     shared: &SharedAudio,
     output_scratch: &mut Vec<f32>,
     graph_scratch: &mut Vec<f32>,
@@ -298,13 +393,23 @@ fn feed_wasapi_exclusive(
             wasapi_client_error_message("failed to query WASAPI output padding", &err)
         })?
     };
-    if padding >= buffer_frames.saturating_mul(2) {
-        return Ok(false);
-    }
-    let refill = padding < buffer_frames;
+    let (frames_to_write, refill) = match share_mode {
+        WasapiShareMode::Shared => {
+            if buffer_frames <= padding {
+                return Ok(false);
+            }
+            (buffer_frames - padding, false)
+        }
+        WasapiShareMode::Exclusive => {
+            if padding >= buffer_frames.saturating_mul(2) {
+                return Ok(false);
+            }
+            (buffer_frames, padding < buffer_frames)
+        }
+    };
     write_frames(
         render_client,
-        buffer_frames,
+        frames_to_write,
         output_format,
         shared,
         output_scratch,
@@ -327,13 +432,15 @@ fn write_frames(
         let buffer = render_client.GetBuffer(frames).map_err(|err| {
             wasapi_client_error_message("failed to obtain WASAPI output buffer", &err)
         })?;
-        let sample_count = frames as usize * MIX_CHANNELS;
+        let output_channels = output_format.channels.max(1);
+        let sample_count = frames as usize * output_channels;
         match output_format.sample_format {
             WasapiSampleFormat::F32 => {
                 let data = slice::from_raw_parts_mut(buffer as *mut f32, sample_count);
                 fill_wasapi_output(
                     data,
                     output_format.sample_rate,
+                    output_channels,
                     shared,
                     graph_scratch,
                     resampler,
@@ -345,6 +452,7 @@ fn write_frames(
                 fill_wasapi_output(
                     output_scratch,
                     output_format.sample_rate,
+                    output_channels,
                     shared,
                     graph_scratch,
                     resampler,
@@ -359,6 +467,7 @@ fn write_frames(
                 fill_wasapi_output(
                     output_scratch,
                     output_format.sample_rate,
+                    output_channels,
                     shared,
                     graph_scratch,
                     resampler,
@@ -373,6 +482,7 @@ fn write_frames(
                 fill_wasapi_output(
                     output_scratch,
                     output_format.sample_rate,
+                    output_channels,
                     shared,
                     graph_scratch,
                     resampler,
@@ -392,6 +502,7 @@ fn write_frames(
                 fill_wasapi_output(
                     output_scratch,
                     output_format.sample_rate,
+                    output_channels,
                     shared,
                     graph_scratch,
                     resampler,
@@ -407,6 +518,7 @@ fn write_frames(
                 fill_wasapi_output(
                     output_scratch,
                     output_format.sample_rate,
+                    output_channels,
                     shared,
                     graph_scratch,
                     resampler,
@@ -425,15 +537,16 @@ fn write_frames(
 fn fill_wasapi_output(
     output: &mut [f32],
     output_sample_rate: u32,
+    output_channels: usize,
     shared: &SharedAudio,
     graph_scratch: &mut Vec<f32>,
     resampler: &mut OutputResampler,
 ) {
     if output_sample_rate == shared.mix_format.sample_rate
-        && shared.mix_format.channels == MIX_CHANNELS
+        && shared.mix_format.channels == output_channels
     {
-        fill_output_reusing(output, MIX_CHANNELS, shared, graph_scratch);
+        fill_output_reusing(output, output_channels, shared, graph_scratch);
     } else {
-        resampler.fill_output(output, MIX_CHANNELS, shared);
+        resampler.fill_output(output, output_channels, shared);
     }
 }

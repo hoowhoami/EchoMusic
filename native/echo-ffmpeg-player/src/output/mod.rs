@@ -9,10 +9,8 @@ pub(crate) mod alsa_exclusive;
 mod coreaudio_exclusive;
 
 #[cfg(target_os = "windows")]
-mod wasapi_exclusive;
+mod wasapi;
 
-#[cfg(target_os = "windows")]
-pub(crate) use cpal_shared::fill_output;
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 pub(crate) use cpal_shared::fill_output_reusing;
 pub use cpal_shared::spawn_output_thread;
