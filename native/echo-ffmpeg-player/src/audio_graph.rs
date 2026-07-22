@@ -9,6 +9,7 @@ use std::{mem, ptr};
 pub struct AudioFilterGraph {
     output_format: MixFormat,
     process_format: MixFormat,
+    nodes: Vec<AudioFilterNode>,
     converter: SwrMixConverter,
     tempo: TempoProcessor,
     effects: DspChain,
@@ -17,12 +18,42 @@ pub struct AudioFilterGraph {
     mapped_output: Vec<f32>,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ChannelRequirement {
+    Preserve,
+    Stereo,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum FilterFlushMode {
+    Drain,
+    Reset,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum AudioFilterNodeKind {
+    FormatConvert,
+    Tempo,
+    Equalizer,
+    Spatial,
+    Normalization,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct AudioFilterNode {
+    kind: AudioFilterNodeKind,
+    channels: ChannelRequirement,
+    flush: FilterFlushMode,
+}
+
 impl AudioFilterGraph {
     pub fn new(output_format: MixFormat, settings: &DspSettings) -> Result<Self, String> {
         let process_format = process_format_for_output(output_format, settings);
+        let nodes = filter_nodes_for_settings(settings);
         Ok(Self {
             output_format,
             process_format,
+            nodes,
             converter: SwrMixConverter::default(),
             tempo: TempoProcessor::new(
                 settings.speed,
@@ -102,6 +133,10 @@ impl AudioFilterGraph {
         Ok(source_frames)
     }
 
+    pub fn latency_secs(&self) -> f64 {
+        self.tempo.latency_secs(self.process_format.sample_rate) + self.effects.latency_secs()
+    }
+
     fn process_graph_output(
         &mut self,
         settings: &DspSettings,
@@ -110,6 +145,13 @@ impl AudioFilterGraph {
         if output.is_empty() {
             return Ok(0);
         }
+        debug_assert!(
+            !self
+                .nodes
+                .iter()
+                .any(|node| node.channels == ChannelRequirement::Stereo)
+                || self.process_format.channels == 2
+        );
         let speed = settings.speed.clamp(MIN_SPEED, MAX_SPEED);
         self.processed_output.clear();
         self.tempo
@@ -135,11 +177,50 @@ impl AudioFilterGraph {
 }
 
 fn process_format_for_output(output_format: MixFormat, settings: &DspSettings) -> MixFormat {
-    if settings.requires_stereo_graph() {
+    if filter_nodes_for_settings(settings)
+        .iter()
+        .any(|node| node.channels == ChannelRequirement::Stereo)
+    {
         MixFormat::stereo_f32(output_format.sample_rate)
     } else {
         output_format
     }
+}
+
+fn filter_nodes_for_settings(settings: &DspSettings) -> Vec<AudioFilterNode> {
+    let mut nodes = Vec::with_capacity(5);
+    nodes.push(AudioFilterNode {
+        kind: AudioFilterNodeKind::FormatConvert,
+        channels: ChannelRequirement::Preserve,
+        flush: FilterFlushMode::Drain,
+    });
+    nodes.push(AudioFilterNode {
+        kind: AudioFilterNodeKind::Tempo,
+        channels: ChannelRequirement::Preserve,
+        flush: FilterFlushMode::Drain,
+    });
+    if settings.equalizer.iter().any(|gain| gain.abs() >= 0.05) {
+        nodes.push(AudioFilterNode {
+            kind: AudioFilterNodeKind::Equalizer,
+            channels: ChannelRequirement::Preserve,
+            flush: FilterFlushMode::Reset,
+        });
+    }
+    if settings.spatial.is_some() {
+        nodes.push(AudioFilterNode {
+            kind: AudioFilterNodeKind::Spatial,
+            channels: ChannelRequirement::Stereo,
+            flush: FilterFlushMode::Reset,
+        });
+    }
+    if settings.normalization_gain_db.abs() >= 0.01 {
+        nodes.push(AudioFilterNode {
+            kind: AudioFilterNodeKind::Normalization,
+            channels: ChannelRequirement::Preserve,
+            flush: FilterFlushMode::Reset,
+        });
+    }
+    nodes
 }
 
 #[derive(Default)]
@@ -427,6 +508,30 @@ mod tests {
 
         assert_eq!(source_frames, 3);
         assert_eq!(output, vec![0.25, -0.25, 0.5]);
+    }
+
+    #[test]
+    fn filter_nodes_declare_format_and_flush_semantics() {
+        let mut settings = DspSettings::default();
+        settings.equalizer[0] = 3.0;
+        settings.normalization_gain_db = -4.0;
+
+        let nodes = filter_nodes_for_settings(&settings);
+
+        assert_eq!(
+            nodes.iter().map(|node| node.kind).collect::<Vec<_>>(),
+            vec![
+                AudioFilterNodeKind::FormatConvert,
+                AudioFilterNodeKind::Tempo,
+                AudioFilterNodeKind::Equalizer,
+                AudioFilterNodeKind::Normalization,
+            ]
+        );
+        assert!(nodes
+            .iter()
+            .all(|node| node.channels == ChannelRequirement::Preserve));
+        assert_eq!(nodes[0].flush, FilterFlushMode::Drain);
+        assert_eq!(nodes[2].flush, FilterFlushMode::Reset);
     }
 
     #[test]

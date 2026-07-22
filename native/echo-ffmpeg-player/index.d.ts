@@ -6,6 +6,18 @@ export interface AudioDevice {
   isDefault?: boolean
 }
 
+export interface AudioOutputStats {
+  backend: string
+  sampleRate: number
+  engineSampleRate: number
+  channels: number
+  format: string
+  bufferFrames: number
+  bufferSecs: number
+  delaySecs: number
+  underruns: number
+}
+
 export declare function cancelFade(): void
 
 export declare function clearPreparedNextSource(): void
@@ -33,6 +45,18 @@ export declare function initialize(config?: PlayerConfigOptions | undefined | nu
 export declare function loadFile(url: string, seq?: number | undefined | null): Promise<unknown>
 
 export declare function loadMkvTrack(url: string, trackId: number, seq?: number | undefined | null): Promise<unknown>
+
+export interface PacketCacheStats {
+  forwardBytes: number
+  backBytes: number
+  totalBytes: number
+  forwardSecs?: number
+  seekableStartSecs?: number
+  seekableEndSecs?: number
+  eof: boolean
+  pendingSeek: boolean
+  hasError: boolean
+}
 
 export declare function pause(): void
 
@@ -67,6 +91,13 @@ export interface PlayerEvent {
   disconnectedDevices?: Array<AudioDevice>
   path?: string
   seq?: number
+  coreState?: string
+  cachePaused?: boolean
+  cacheBufferingState?: number
+  cacheBufferedSecs?: number
+  cacheTargetSecs?: number
+  packetCache?: PacketCacheStats
+  outputStats?: AudioOutputStats
 }
 
 export interface PlayerState {

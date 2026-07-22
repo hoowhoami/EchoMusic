@@ -4,7 +4,7 @@ use crate::exclusive::ExclusiveGuard;
 use crate::output::{report_output_start, OutputStartSender};
 use crate::shared::SharedAudio;
 use cpal::traits::{DeviceTrait, StreamTrait};
-use cpal::{SampleFormat, Stream, StreamConfig};
+use cpal::{BufferSize, SampleFormat, Stream, StreamConfig};
 use ffmpeg_audio::{sys, SwrContext};
 use std::collections::VecDeque;
 use std::sync::atomic::Ordering;
@@ -78,6 +78,18 @@ pub(crate) fn spawn_output_thread_with_start_notify(
         };
         let stream_config = supported.config();
         let output_channels = usize::from(stream_config.channels.max(1));
+        let buffer_frames = cpal_buffer_frames(&stream_config);
+        let output_stats = crate::shared::AudioOutputStats {
+            backend: "cpal".to_string(),
+            sample_rate: f64::from(stream_config.sample_rate.0),
+            engine_sample_rate: f64::from(shared.mix_format.sample_rate),
+            channels: output_channels as f64,
+            format: format!("{:?}", supported.sample_format()),
+            buffer_frames: buffer_frames as f64,
+            buffer_secs: buffer_frames as f64 / f64::from(stream_config.sample_rate.0.max(1)),
+            delay_secs: buffer_frames as f64 / f64::from(stream_config.sample_rate.0.max(1)),
+            underruns: 0.0,
+        };
         emit(PlayerEvent::log(
             "info",
             format!(
@@ -88,6 +100,7 @@ pub(crate) fn spawn_output_thread_with_start_notify(
                 supported.sample_format()
             ),
         ));
+        shared.update_output_stats(output_stats);
         let exclusive_guard = if exclusive {
             match ExclusiveGuard::acquire(&device_name) {
                 Ok(guard) => guard,
@@ -139,6 +152,13 @@ pub(crate) fn spawn_output_thread_with_start_notify(
         drop(stream);
         drop(exclusive_guard);
     })
+}
+
+fn cpal_buffer_frames(config: &StreamConfig) -> u32 {
+    match config.buffer_size {
+        BufferSize::Fixed(frames) => frames,
+        BufferSize::Default => 0,
+    }
 }
 
 fn build_output_stream(
@@ -653,5 +673,40 @@ mod tests {
             .any(|frame| frame[0].abs() > 0.001 || frame[1].abs() > 0.001));
         assert!(output.chunks_exact(4).all(|frame| frame[2] == 0.0));
         assert!(output.chunks_exact(4).all(|frame| frame[3] == 0.0));
+    }
+
+    #[test]
+    fn shared_output_path_records_underrun_for_all_backends() {
+        let shared = SharedAudio::new(
+            MixFormat::stereo_f32(48_000),
+            1.0,
+            8.0,
+            &DspSettings::default(),
+        );
+        shared.paused.store(false, Ordering::Release);
+
+        let mut output = vec![0.0; 256 * MIX_CHANNELS];
+        let mut scratch = Vec::new();
+        fill_output_reusing(&mut output, MIX_CHANNELS, &shared, &mut scratch);
+
+        assert_eq!(shared.output_underrun_count(), 1);
+    }
+
+    #[test]
+    fn resampled_output_path_records_underrun_for_all_backends() {
+        let shared = SharedAudio::new(
+            MixFormat::stereo_f32(44_100),
+            1.0,
+            8.0,
+            &DspSettings::default(),
+        );
+        shared.paused.store(false, Ordering::Release);
+        let mut resampler = OutputResampler::new(44_100, 48_000, MIX_CHANNELS, MIX_CHANNELS)
+            .expect("output resampler should initialize");
+
+        let mut output = vec![0.0; 256 * MIX_CHANNELS];
+        resampler.fill_output(&mut output, MIX_CHANNELS, &shared);
+
+        assert_eq!(shared.output_underrun_count(), 1);
     }
 }

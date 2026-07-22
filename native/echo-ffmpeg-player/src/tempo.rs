@@ -62,6 +62,14 @@ impl TempoProcessor {
         self.speed
     }
 
+    pub fn latency_secs(&self, sample_rate: u32) -> f64 {
+        if (self.speed - 1.0).abs() < 0.001 {
+            0.0
+        } else {
+            self.engine.initial_latency() as f64 / f64::from(sample_rate.max(1))
+        }
+    }
+
     pub fn process_into(&mut self, samples: &[f32], output: &mut Vec<f32>) -> Result<(), String> {
         output.clear();
         if (self.speed - 1.0).abs() < 0.001 {
@@ -186,5 +194,16 @@ mod tests {
         tempo.process_into(&input, &mut output).expect("process");
 
         assert_eq!(output, input);
+        assert_eq!(tempo.latency_secs(48_000), 0.0);
+    }
+
+    #[test]
+    fn tempo_latency_comes_from_soundtouch_pipeline() {
+        let tempo = TempoProcessor::new(1.5, 48_000, TEST_CHANNELS).expect("tempo processor");
+
+        assert_eq!(
+            tempo.latency_secs(48_000),
+            tempo.engine.initial_latency() as f64 / 48_000.0
+        );
     }
 }

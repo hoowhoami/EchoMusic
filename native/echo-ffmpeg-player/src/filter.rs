@@ -21,6 +21,7 @@ fn run_filter(shared: Arc<SharedAudio>) {
             return;
         }
     };
+    shared.set_filter_latency_secs(graph.latency_secs());
     let mut output = Vec::<f32>::new();
 
     loop {
@@ -35,6 +36,7 @@ fn run_filter(shared: Arc<SharedAudio>) {
                 crate::decoder::emit_decode_error(err);
                 return;
             }
+            shared.set_filter_latency_secs(graph.latency_secs());
             output.clear();
         }
 
@@ -49,7 +51,17 @@ fn run_filter(shared: Arc<SharedAudio>) {
                         return;
                     }
                 };
+                shared.set_filter_latency_secs(graph.latency_secs());
                 push_filter_output(&shared, &mut output, source_frames, generation);
+            }
+            FilterInput::Boundary => {
+                if let Err(err) = graph.reset(shared.mix_format, &shared.dsp_settings()) {
+                    shared.mark_decode_failed();
+                    crate::decoder::emit_decode_error(err);
+                    return;
+                }
+                shared.set_filter_latency_secs(graph.latency_secs());
+                output.clear();
             }
             FilterInput::Eof => {
                 let settings = shared.dsp_settings();
@@ -61,6 +73,7 @@ fn run_filter(shared: Arc<SharedAudio>) {
                         return;
                     }
                 };
+                shared.set_filter_latency_secs(graph.latency_secs());
                 push_filter_output(&shared, &mut output, source_frames, generation);
                 if shared.is_filter_generation_current(generation) {
                     shared.mark_eof();

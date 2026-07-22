@@ -116,6 +116,17 @@ fn run_exclusive_output(
             .map_err(|err| format!("failed to create WASAPI output event: {err}"))?,
     );
     let output = open_wasapi_exclusive_output(&device, event.0, output_format)?;
+    shared.update_output_stats(crate::shared::AudioOutputStats {
+        backend: "wasapi-exclusive".to_string(),
+        sample_rate: f64::from(output_format.sample_rate),
+        engine_sample_rate: f64::from(shared.mix_format.sample_rate),
+        channels: MIX_CHANNELS as f64,
+        format: format!("{:?}", output_format.sample_format),
+        buffer_frames: f64::from(output.buffer_frames),
+        buffer_secs: output.buffer_frames as f64 / f64::from(output_format.sample_rate.max(1)),
+        delay_secs: output.buffer_frames as f64 / f64::from(output_format.sample_rate.max(1)),
+        underruns: 0.0,
+    });
     emit(PlayerEvent::log(
         "info",
         format!(

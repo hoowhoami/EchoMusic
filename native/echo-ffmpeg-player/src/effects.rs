@@ -125,6 +125,13 @@ impl DspChain {
             *sample = sample.clamp(-1.0, 1.0);
         }
     }
+
+    pub fn latency_secs(&self) -> f64 {
+        self.spatial
+            .as_ref()
+            .map(|spatial| spatial.latency_frames() as f64 / f64::from(self.eq.sample_rate.max(1)))
+            .unwrap_or_default()
+    }
 }
 
 impl PreparedSpatialEffect {
@@ -370,6 +377,14 @@ impl SpatialEffect {
     fn set_mix(&mut self, mix: f32) {
         self.mix = clamp_spatial_mix(mix);
     }
+
+    fn latency_frames(&self) -> usize {
+        if self.mix <= 0.0 {
+            0
+        } else {
+            self.left.latency_frames().max(self.right.latency_frames())
+        }
+    }
 }
 
 struct PartitionedConvolver {
@@ -412,6 +427,14 @@ impl PartitionedConvolver {
             self.input_block.clear();
         }
         self.output.pop_front().unwrap_or(0.0)
+    }
+
+    fn latency_frames(&self) -> usize {
+        if self.prepared.partitions.is_empty() {
+            0
+        } else {
+            self.prepared.block_size
+        }
     }
 
     fn process_block(&mut self) {

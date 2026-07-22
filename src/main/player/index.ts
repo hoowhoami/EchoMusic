@@ -59,6 +59,12 @@ function registerEventForwarding(controller: PlayerController): void {
   controller.on('audio-device-list-changed', (payload) =>
     getMainWindow()?.webContents.send('player:audio-device-list-changed', payload),
   );
+  controller.on('packet-cache-stats', (payload) =>
+    getMainWindow()?.webContents.send('player:packet-cache-stats', payload),
+  );
+  controller.on('audio-output-stats', (payload) =>
+    getMainWindow()?.webContents.send('player:audio-output-stats', payload),
+  );
 }
 
 export type { PlayerController } from './controller';

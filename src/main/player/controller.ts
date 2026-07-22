@@ -77,6 +77,33 @@ interface PlayerAddonEvent {
   disconnectedDevices?: Array<{ name: string; description: string; isDefault?: boolean }>;
   path?: string;
   seq?: number;
+  coreState?: string;
+  cachePaused?: boolean;
+  cacheBufferingState?: number;
+  cacheBufferedSecs?: number;
+  cacheTargetSecs?: number;
+  packetCache?: {
+    forwardBytes: number;
+    backBytes: number;
+    totalBytes: number;
+    forwardSecs?: number;
+    seekableStartSecs?: number;
+    seekableEndSecs?: number;
+    eof: boolean;
+    pendingSeek: boolean;
+    hasError: boolean;
+  };
+  outputStats?: {
+    backend: string;
+    sampleRate: number;
+    engineSampleRate: number;
+    channels: number;
+    format: string;
+    bufferFrames: number;
+    bufferSecs: number;
+    delaySecs: number;
+    underruns: number;
+  };
 }
 
 export interface PlayerAudioDevice {
@@ -490,6 +517,38 @@ export class PlayerController extends EventEmitter {
         if (typeof event.time === 'number') {
           this.emit('stalled', event.time);
         }
+        break;
+      case 'core-state-change':
+        log.info('[PlayerController]', 'core state changed', {
+          state: event.coreState,
+          reason: event.reason,
+        });
+        this.emit('core-state-change', {
+          state: event.coreState,
+          reason: event.reason,
+        });
+        break;
+      case 'cache-state-change':
+        log.info('[PlayerController]', 'cache state changed', {
+          paused: event.cachePaused,
+          bufferingState: event.cacheBufferingState,
+          bufferedSecs: event.cacheBufferedSecs,
+          targetSecs: event.cacheTargetSecs,
+          packetCache: event.packetCache,
+        });
+        this.emit('cache-state-change', {
+          paused: event.cachePaused,
+          bufferingState: event.cacheBufferingState,
+          bufferedSecs: event.cacheBufferedSecs,
+          targetSecs: event.cacheTargetSecs,
+          packetCache: event.packetCache,
+        });
+        break;
+      case 'packet-cache-stats':
+        this.emit('packet-cache-stats', event.packetCache);
+        break;
+      case 'audio-output-stats':
+        this.emit('audio-output-stats', event.outputStats);
         break;
       case 'audio-device-list-changed':
         this.emit('audio-device-list-changed', {

@@ -2,6 +2,7 @@ mod audio_graph;
 mod config;
 mod decoder;
 mod device;
+mod dispatcher;
 mod dsp;
 mod effects;
 mod events;
@@ -14,6 +15,11 @@ mod tempo;
 
 use crate::config::{PlayerConfig, PlayerConfigOptions, SpectrumConfig};
 use crate::decoder::{audio_stream_ordinal_from_track_id, list_tracks_for_url, open_decoder};
+use crate::dispatcher::{
+    call_core_command, clear_event_callback, dispatch_core_command, reset_event_ids, send_event,
+    send_events, set_event_callback, start_core_dispatcher, start_event_dispatcher,
+    stop_core_dispatcher, stop_event_dispatcher,
+};
 use crate::effects::{
     clamp_spatial_mix, prepare_spatial_effect, DspSettings, PreparedSpatialEffect,
     DEFAULT_SPATIAL_MIX, EQ_BAND_COUNT,
@@ -24,60 +30,26 @@ use crate::events::{
 };
 use crate::shared::{MixFormat, PlaybackSession, PlaybackSignal, SharedAudio, TrackSwitchInfo};
 use napi::bindgen_prelude::AsyncTask;
-use napi::threadsafe_function::{ThreadsafeFunction, ThreadsafeFunctionCallMode};
+use napi::threadsafe_function::ThreadsafeFunction;
 use napi::{Env, Task};
 use napi_derive::napi;
-use std::cell::Cell;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::mpsc::{channel, sync_channel, RecvTimeoutError, Sender};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::{sync_channel, RecvTimeoutError};
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 const IDLE_OUTPUT_RELEASE_DELAY_SECS: u64 = 3;
+const GAPLESS_PREDECODE_SECS: f64 = 0.5;
 
 static RUNTIME: Mutex<Option<PlayerRuntime>> = Mutex::new(None);
-static EVENT_CALLBACK: Mutex<Option<Arc<Mutex<ThreadsafeFunction<PlayerEvent>>>>> =
-    Mutex::new(None);
-static EVENT_DISPATCHER: Mutex<Option<EventDispatcher>> = Mutex::new(None);
-static CORE_DISPATCHER: Mutex<Option<CoreDispatcher>> = Mutex::new(None);
-static NEXT_EVENT_ID: AtomicU64 = AtomicU64::new(0);
-
-thread_local! {
-    static CORE_DISPATCH_ACTIVE: Cell<bool> = const { Cell::new(false) };
-}
-
-enum EventDispatcherMessage {
-    Event(PlayerEvent),
-    Batch(Vec<PlayerEvent>),
-    Shutdown,
-}
-
-struct EventDispatcher {
-    sender: Sender<EventDispatcherMessage>,
-    handle: Option<JoinHandle<()>>,
-}
-
 type RuntimeCommand = Box<dyn FnOnce(&mut PlayerRuntime) + Send + 'static>;
-
-enum CoreDispatcherMessage {
-    Command {
-        name: &'static str,
-        command: RuntimeCommand,
-    },
-    Shutdown,
-}
-
-struct CoreDispatcher {
-    sender: Sender<CoreDispatcherMessage>,
-    handle: Option<JoinHandle<()>>,
-}
 
 struct PlayerRuntime {
     config: PlayerConfig,
     session: Option<PlaybackSession>,
     state: PlayerState,
+    core_state: PlaybackCoreState,
     current_url: Option<String>,
     current_audio_stream_ordinal: Option<usize>,
     current_seq: u64,
@@ -97,6 +69,37 @@ struct PlayerRuntime {
     prepared_next: Option<PreparedNextSource>,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PlaybackCoreState {
+    Idle,
+    Loading,
+    Buffering,
+    Playing,
+    Paused,
+    Seeking,
+    Draining,
+    Error,
+    DeviceLost,
+    OutputReconfig,
+}
+
+impl PlaybackCoreState {
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::Idle => "idle",
+            Self::Loading => "loading",
+            Self::Buffering => "buffering",
+            Self::Playing => "playing",
+            Self::Paused => "paused",
+            Self::Seeking => "seeking",
+            Self::Draining => "draining",
+            Self::Error => "error",
+            Self::DeviceLost => "device-lost",
+            Self::OutputReconfig => "output-reconfig",
+        }
+    }
+}
+
 struct PreparedSource {
     session: PlaybackSession,
     url: String,
@@ -109,6 +112,7 @@ struct PreparedSource {
 
 struct PreparedNextSource {
     decoder: decoder::DecoderData,
+    predecoded: Vec<shared::DecodedAudioChunk>,
     url: String,
     audio_stream_ordinal: Option<usize>,
     seq: u64,
@@ -151,6 +155,7 @@ impl PlayerRuntime {
                 duration: 0.0,
                 time_pos: 0.0,
             },
+            core_state: PlaybackCoreState::Idle,
             current_url: None,
             current_audio_stream_ordinal: None,
             current_seq: 0,
@@ -188,218 +193,30 @@ impl PlayerRuntime {
         }
         self.state.playing = false;
         self.state.paused = true;
-    }
-}
-
-fn dispatch_event_to_callback(mut event: PlayerEvent) {
-    let event_id = NEXT_EVENT_ID.fetch_add(1, Ordering::AcqRel) + 1;
-    event = event.with_event_id(event_id);
-    if let Ok(guard) = EVENT_CALLBACK.lock() {
-        if let Some(callback) = guard.as_ref() {
-            if let Ok(callback) = callback.lock() {
-                callback.call(Ok(event), ThreadsafeFunctionCallMode::NonBlocking);
-            }
-        }
-    }
-}
-
-fn start_event_dispatcher() -> napi::Result<()> {
-    let mut guard = EVENT_DISPATCHER.lock().map_err(|err| {
-        napi::Error::from_reason(format!("failed to lock event dispatcher: {err}"))
-    })?;
-    if guard.is_some() {
-        return Ok(());
-    }
-
-    let (sender, receiver) = channel::<EventDispatcherMessage>();
-    let handle = thread::Builder::new()
-        .name("player-event-dispatcher".to_string())
-        .spawn(move || {
-            while let Ok(message) = receiver.recv() {
-                match message {
-                    EventDispatcherMessage::Event(event) => dispatch_event_to_callback(event),
-                    EventDispatcherMessage::Batch(events) => {
-                        for event in events {
-                            dispatch_event_to_callback(event);
-                        }
-                    }
-                    EventDispatcherMessage::Shutdown => break,
-                }
-            }
-        })
-        .map_err(|err| {
-            napi::Error::from_reason(format!("failed to spawn event dispatcher: {err}"))
-        })?;
-
-    *guard = Some(EventDispatcher {
-        sender,
-        handle: Some(handle),
-    });
-    Ok(())
-}
-
-fn stop_event_dispatcher() {
-    let dispatcher = EVENT_DISPATCHER
-        .lock()
-        .ok()
-        .and_then(|mut guard| guard.take());
-
-    if let Some(mut dispatcher) = dispatcher {
-        let _ = dispatcher.sender.send(EventDispatcherMessage::Shutdown);
-        if let Some(handle) = dispatcher.handle.take() {
-            let _ = handle.join();
-        }
-    }
-}
-
-fn start_core_dispatcher() -> napi::Result<()> {
-    let mut guard = CORE_DISPATCHER.lock().map_err(|err| {
-        napi::Error::from_reason(format!("failed to lock core dispatcher: {err}"))
-    })?;
-    if guard.is_some() {
-        return Ok(());
-    }
-
-    let (sender, receiver) = channel::<CoreDispatcherMessage>();
-    let handle = thread::Builder::new()
-        .name("player-core-dispatcher".to_string())
-        .spawn(move || {
-            while let Ok(message) = receiver.recv() {
-                match message {
-                    CoreDispatcherMessage::Command { name, command } => {
-                        let result = RUNTIME.lock();
-                        let Ok(mut guard) = result else {
-                            emit_event(PlayerEvent::log(
-                                "error",
-                                format!("core command '{name}' failed: runtime lock poisoned"),
-                            ));
-                            continue;
-                        };
-                        let Some(runtime) = guard.as_mut() else {
-                            emit_event(PlayerEvent::log(
-                                "debug",
-                                format!("core command '{name}' ignored: runtime stopped"),
-                            ));
-                            continue;
-                        };
-                        CORE_DISPATCH_ACTIVE.set(true);
-                        command(runtime);
-                        CORE_DISPATCH_ACTIVE.set(false);
-                    }
-                    CoreDispatcherMessage::Shutdown => break,
-                }
-            }
-        })
-        .map_err(|err| {
-            napi::Error::from_reason(format!("failed to spawn core dispatcher: {err}"))
-        })?;
-
-    *guard = Some(CoreDispatcher {
-        sender,
-        handle: Some(handle),
-    });
-    Ok(())
-}
-
-fn stop_core_dispatcher() {
-    let dispatcher = CORE_DISPATCHER
-        .lock()
-        .ok()
-        .and_then(|mut guard| guard.take());
-
-    if let Some(mut dispatcher) = dispatcher {
-        let _ = dispatcher.sender.send(CoreDispatcherMessage::Shutdown);
-        if let Some(handle) = dispatcher.handle.take() {
-            let _ = handle.join();
-        }
-    }
-}
-
-fn core_sender() -> Option<Sender<CoreDispatcherMessage>> {
-    CORE_DISPATCHER
-        .lock()
-        .ok()
-        .and_then(|guard| guard.as_ref().map(|dispatcher| dispatcher.sender.clone()))
-}
-
-fn dispatch_core_command(name: &'static str, command: RuntimeCommand) {
-    let Some(sender) = core_sender() else {
-        let _ = with_runtime(|runtime| {
-            command(runtime);
-            Ok(())
-        });
-        return;
-    };
-    let _ = sender.send(CoreDispatcherMessage::Command { name, command });
-}
-
-fn call_core_command<T: Send + 'static>(
-    name: &'static str,
-    command: impl FnOnce(&mut PlayerRuntime) -> napi::Result<T> + Send + 'static,
-) -> napi::Result<T> {
-    if CORE_DISPATCH_ACTIVE.get() {
-        return Err(napi::Error::from_reason(format!(
-            "core command '{name}' cannot synchronously dispatch from core dispatcher"
-        )));
-    }
-    let Some(sender) = core_sender() else {
-        return with_runtime(command);
-    };
-    let (reply_tx, reply_rx) = sync_channel(1);
-    sender
-        .send(CoreDispatcherMessage::Command {
-            name,
-            command: Box::new(move |runtime| {
-                let _ = reply_tx.send(command(runtime));
-            }),
-        })
-        .map_err(|_| napi::Error::from_reason(format!("core command '{name}' dispatch failed")))?;
-    reply_rx.recv().map_err(|_| {
-        napi::Error::from_reason(format!("core command '{name}' reply channel closed"))
-    })?
-}
-
-fn send_dispatcher_message(message: EventDispatcherMessage) {
-    let sender = EVENT_DISPATCHER
-        .lock()
-        .ok()
-        .and_then(|guard| guard.as_ref().map(|dispatcher| dispatcher.sender.clone()));
-
-    let Some(sender) = sender else {
-        match message {
-            EventDispatcherMessage::Event(event) => dispatch_event_to_callback(event),
-            EventDispatcherMessage::Batch(events) => {
-                for event in events {
-                    dispatch_event_to_callback(event);
-                }
-            }
-            EventDispatcherMessage::Shutdown => {}
-        }
-        return;
-    };
-
-    if let Err(err) = sender.send(message) {
-        match err.0 {
-            EventDispatcherMessage::Event(event) => dispatch_event_to_callback(event),
-            EventDispatcherMessage::Batch(events) => {
-                for event in events {
-                    dispatch_event_to_callback(event);
-                }
-            }
-            EventDispatcherMessage::Shutdown => {}
-        }
+        self.core_state = PlaybackCoreState::Idle;
     }
 }
 
 pub(crate) fn emit_event(event: PlayerEvent) {
-    send_dispatcher_message(EventDispatcherMessage::Event(event));
+    if event.event == "error" {
+        let core_state = match event.error_code.as_deref() {
+            Some("output-device-unavailable") | Some("output-runtime") => {
+                PlaybackCoreState::DeviceLost
+            }
+            _ => PlaybackCoreState::Error,
+        };
+        dispatch_core_command(
+            "player-error",
+            Box::new(move |runtime| {
+                set_runtime_core_state(runtime, core_state, "player-error");
+            }),
+        );
+    }
+    send_event(event);
 }
 
 fn emit_events(events: Vec<PlayerEvent>) {
-    if events.is_empty() {
-        return;
-    }
-    send_dispatcher_message(EventDispatcherMessage::Batch(events));
+    send_events(events);
 }
 
 fn contextualize_runtime_event(runtime: &PlayerRuntime, event: PlayerEvent) -> PlayerEvent {
@@ -428,6 +245,21 @@ fn emit_runtime_events(runtime: &PlayerRuntime, events: Vec<PlayerEvent>) {
             .into_iter()
             .map(|event| contextualize_runtime_event(runtime, event))
             .collect(),
+    );
+}
+
+fn set_runtime_core_state(
+    runtime: &mut PlayerRuntime,
+    state: PlaybackCoreState,
+    reason: &'static str,
+) {
+    if runtime.core_state == state {
+        return;
+    }
+    runtime.core_state = state;
+    emit_runtime_event(
+        runtime,
+        PlayerEvent::core_state_change(state.as_str(), reason),
     );
 }
 
@@ -516,14 +348,18 @@ fn mark_playback_idle_after_end(shared: Arc<SharedAudio>) {
     dispatch_core_command(
         "playback-end",
         Box::new(move |runtime| {
-            let Some(session) = runtime.session.as_ref() else {
-                return;
+            let release_shared = {
+                let Some(session) = runtime.session.as_ref() else {
+                    return;
+                };
+                if !Arc::ptr_eq(&session.shared, &shared) {
+                    return;
+                }
+                (!session.shared.output_is_stopped()).then(|| session.shared.clone())
             };
-            if !Arc::ptr_eq(&session.shared, &shared) {
-                return;
-            }
             runtime.state.playing = false;
             runtime.state.paused = true;
+            set_runtime_core_state(runtime, PlaybackCoreState::Draining, "playback-end");
             emit_runtime_events(
                 runtime,
                 vec![
@@ -531,10 +367,9 @@ fn mark_playback_idle_after_end(shared: Arc<SharedAudio>) {
                     PlayerEvent::playback_end("eof"),
                 ],
             );
-            if session.shared.output_is_stopped() {
+            let Some(shared) = release_shared else {
                 return;
-            }
-            let shared = session.shared.clone();
+            };
             let release_seq = runtime.next_idle_output_release_seq();
             schedule_idle_output_release(shared, release_seq);
         }),
@@ -557,6 +392,7 @@ fn prepare_source(
         audio_stream_ordinal,
         None,
         config.packet_cache_options(),
+        &config.stream_options(),
     )?;
     if start_position > 0.0 {
         decoder.seek(start_position)?;
@@ -625,6 +461,58 @@ fn prepare_source(
                                     PlayerEvent::time_update(position),
                                 ],
                             );
+                        }
+                        PlaybackSignal::CacheState {
+                            paused,
+                            buffering_state,
+                            buffered_secs,
+                            target_secs,
+                            packet_cache,
+                        } => {
+                            emit_shared_event(
+                                &signal_shared,
+                                PlayerEvent::cache_state_change(
+                                    paused,
+                                    buffering_state,
+                                    buffered_secs,
+                                    target_secs,
+                                    packet_cache,
+                                ),
+                            );
+                            let cache_shared = signal_shared.clone();
+                            dispatch_core_command(
+                                "cache-state",
+                                Box::new(move |runtime| {
+                                    let Some(session) = runtime.session.as_ref() else {
+                                        return;
+                                    };
+                                    if !Arc::ptr_eq(&session.shared, &cache_shared) {
+                                        return;
+                                    }
+                                    if paused {
+                                        set_runtime_core_state(
+                                            runtime,
+                                            PlaybackCoreState::Buffering,
+                                            "cache-pause",
+                                        );
+                                    } else if runtime.state.playing && !runtime.state.paused {
+                                        set_runtime_core_state(
+                                            runtime,
+                                            PlaybackCoreState::Playing,
+                                            "cache-resume",
+                                        );
+                                    }
+                                }),
+                            );
+                        }
+                        PlaybackSignal::PacketCacheStats(stats) => {
+                            emit_shared_event(
+                                &signal_shared,
+                                PlayerEvent::packet_cache_stats(stats),
+                            );
+                        }
+                        PlaybackSignal::OutputStats(stats) => {
+                            emit_shared_event(&signal_shared, PlayerEvent::output_stats(stats));
                         }
                         PlaybackSignal::TrackSwitch(info) => {
                             apply_track_switch(info, signal_shared.clone());
@@ -721,6 +609,15 @@ fn apply_prepared_source(
     runtime.state.time_pos = start_position;
     runtime.state.playing = autostart;
     runtime.state.paused = !autostart;
+    set_runtime_core_state(
+        runtime,
+        if autostart {
+            PlaybackCoreState::Playing
+        } else {
+            PlaybackCoreState::Paused
+        },
+        "source-applied",
+    );
 
     emit_runtime_events(
         runtime,
@@ -761,6 +658,7 @@ fn apply_track_switch(info: TrackSwitchInfo, shared: Arc<SharedAudio>) {
             runtime.state.time_pos = 0.0;
             runtime.state.playing = true;
             runtime.state.paused = false;
+            set_runtime_core_state(runtime, PlaybackCoreState::Playing, "gapless-track-switch");
             shared.set_track_seq(info.seq);
             emit_runtime_events(
                 runtime,
@@ -853,6 +751,11 @@ pub(crate) fn try_activate_gapless_next(
         seq: next.seq,
         duration: next.duration,
     });
+    for chunk in next.predecoded {
+        if !shared.push_decoded_chunk_for_generation(chunk, generation) {
+            return GaplessDecodeResult::Activated(None);
+        }
+    }
     GaplessDecodeResult::Activated(next.decoder.decode_into(shared, generation))
 }
 
@@ -939,6 +842,7 @@ struct OutputRestartPlan {
 fn restart_output_for_config(config: PlayerConfig) -> napi::Result<()> {
     let plan = with_runtime(|runtime| {
         runtime.cancel_idle_output_release();
+        set_runtime_core_state(runtime, PlaybackCoreState::OutputReconfig, "output-restart");
         let previous_config = runtime.config.clone();
         let Some(session) = runtime.session.as_mut() else {
             return Ok(OutputRestartPlan {
@@ -1020,6 +924,15 @@ fn restore_output_restart_playback_state(shared: Arc<SharedAudio>, was_paused: b
         }
         runtime.state.playing = !was_paused;
         runtime.state.paused = was_paused;
+        set_runtime_core_state(
+            runtime,
+            if was_paused {
+                PlaybackCoreState::Paused
+            } else {
+                PlaybackCoreState::Playing
+            },
+            "output-restart-restored",
+        );
         emit_runtime_event(runtime, PlayerEvent::state_change(runtime.state.clone()));
         Ok(())
     });
@@ -1162,7 +1075,7 @@ fn spawn_and_attach_output_thread_confirmed(
 #[napi]
 pub fn initialize(config: Option<PlayerConfigOptions>) -> napi::Result<()> {
     destroy()?;
-    NEXT_EVENT_ID.store(0, Ordering::Release);
+    reset_event_ids();
     start_event_dispatcher()?;
     let mut runtime = PlayerRuntime::new(PlayerConfig::from_options(config));
     runtime.device_watcher = device::DeviceWatcher::start(emit_event).unwrap_or(None);
@@ -1175,9 +1088,7 @@ pub fn initialize(config: Option<PlayerConfigOptions>) -> napi::Result<()> {
 
 #[napi]
 pub fn destroy() -> napi::Result<()> {
-    if let Ok(mut callback) = EVENT_CALLBACK.lock() {
-        *callback = None;
-    }
+    clear_event_callback();
     stop_core_dispatcher();
     let runtime = RUNTIME
         .lock()
@@ -1193,10 +1104,7 @@ pub fn destroy() -> napi::Result<()> {
 #[napi]
 pub fn register_event_handler(callback: ThreadsafeFunction<PlayerEvent>) -> napi::Result<()> {
     start_event_dispatcher()?;
-    *EVENT_CALLBACK.lock().map_err(|err| {
-        napi::Error::from_reason(format!("failed to lock event callback: {err}"))
-    })? = Some(Arc::new(Mutex::new(callback)));
-    Ok(())
+    set_event_callback(callback)
 }
 
 pub struct LoadFileTask {
@@ -1217,6 +1125,7 @@ impl Task for LoadFileTask {
             runtime.cancel_idle_output_release();
             runtime.prepared_next = None;
             runtime.latest_load_seq = seq;
+            set_runtime_core_state(runtime, PlaybackCoreState::Loading, "load");
             let Some(session) = runtime.session.as_mut() else {
                 return Ok(LoadPlan::Initial {
                     config: runtime.config.clone(),
@@ -1262,6 +1171,7 @@ impl Task for LoadFileTask {
                     audio_stream,
                     Some(plan.shared.mix_format.sample_rate),
                     plan.config.packet_cache_options(),
+                    &plan.config.stream_options(),
                 );
                 match new_decoder {
                     Ok(decoder) => {
@@ -1303,6 +1213,11 @@ impl Task for LoadFileTask {
                             runtime.state.time_pos = 0.0;
                             runtime.state.playing = false;
                             runtime.state.paused = true;
+                            set_runtime_core_state(
+                                runtime,
+                                PlaybackCoreState::Paused,
+                                "load-complete",
+                            );
                             emit_runtime_events(
                                 runtime,
                                 vec![
@@ -1324,6 +1239,7 @@ impl Task for LoadFileTask {
                             }
                             runtime.state.playing = false;
                             runtime.state.paused = true;
+                            set_runtime_core_state(runtime, PlaybackCoreState::Error, "load-error");
                             emit_runtime_event(
                                 runtime,
                                 PlayerEvent::state_change(runtime.state.clone()),
@@ -1384,16 +1300,20 @@ impl Task for PrepareNextSourceTask {
         })?
         .ok_or_else(|| napi::Error::from_reason("no active audio session".to_string()))?;
 
-        let decoder = open_decoder(
+        let mut decoder = open_decoder(
             self.url.clone(),
             self.audio_stream_ordinal,
             Some(sample_rate),
             config.packet_cache_options(),
+            &config.stream_options(),
         )
         .map_err(napi::Error::from_reason)?;
         let duration = decoder.duration_secs();
+        let predecoded =
+            predecode_gapless_head(&mut decoder, sample_rate).map_err(napi::Error::from_reason)?;
         let mut prepared = Some(PreparedNextSource {
             decoder,
+            predecoded,
             url: self.url.clone(),
             audio_stream_ordinal: self.audio_stream_ordinal,
             seq: self.seq,
@@ -1412,7 +1332,15 @@ impl Task for PrepareNextSourceTask {
                 runtime,
                 PlayerEvent::log(
                     "info",
-                    format!("gapless prepared next source: url='{}'", self.url),
+                    format!(
+                        "gapless prepared next source: url='{}', predecoded_chunks={}",
+                        self.url,
+                        runtime
+                            .prepared_next
+                            .as_ref()
+                            .map(|next| next.predecoded.len())
+                            .unwrap_or_default()
+                    ),
                 ),
             );
             Ok(true)
@@ -1422,6 +1350,23 @@ impl Task for PrepareNextSourceTask {
     fn resolve(&mut self, _env: Env, output: Self::Output) -> napi::Result<Self::JsValue> {
         Ok(output)
     }
+}
+
+fn predecode_gapless_head(
+    decoder: &mut decoder::DecoderData,
+    mix_sample_rate: u32,
+) -> Result<Vec<shared::DecodedAudioChunk>, String> {
+    let target_frames = ((mix_sample_rate.max(1) as f64) * GAPLESS_PREDECODE_SECS) as usize;
+    let mut frames = 0usize;
+    let mut chunks = Vec::new();
+    while frames < target_frames {
+        let Some(chunk) = decoder.decode_next_chunk()? else {
+            break;
+        };
+        frames = frames.saturating_add(chunk.estimated_mix_frames(mix_sample_rate));
+        chunks.push(chunk);
+    }
+    Ok(chunks)
 }
 
 #[napi]
@@ -1447,6 +1392,7 @@ pub fn clear_prepared_next_source() -> napi::Result<()> {
 
 pub struct GetTrackListTask {
     url: Option<String>,
+    config: PlayerConfig,
 }
 
 impl Task for GetTrackListTask {
@@ -1454,10 +1400,11 @@ impl Task for GetTrackListTask {
     type JsValue = Vec<TrackInfo>;
 
     fn compute(&mut self) -> napi::Result<Self::Output> {
+        let stream_options = self.config.stream_options();
         Ok(self
             .url
             .as_deref()
-            .map(list_tracks_for_url)
+            .map(|url| list_tracks_for_url(url, &stream_options))
             .unwrap_or_default())
     }
 
@@ -1468,14 +1415,19 @@ impl Task for GetTrackListTask {
 
 #[napi]
 pub fn get_track_list(url: Option<String>) -> AsyncTask<GetTrackListTask> {
-    let url = url.or_else(|| {
-        RUNTIME.lock().ok().and_then(|runtime| {
-            runtime
-                .as_ref()
-                .and_then(|runtime| runtime.current_url.clone())
+    let (url, config) = RUNTIME
+        .lock()
+        .ok()
+        .and_then(|runtime| {
+            runtime.as_ref().map(|runtime| {
+                (
+                    url.clone().or_else(|| runtime.current_url.clone()),
+                    runtime.config.clone(),
+                )
+            })
         })
-    });
-    AsyncTask::new(GetTrackListTask { url })
+        .unwrap_or_else(|| (url, PlayerConfig::default()));
+    AsyncTask::new(GetTrackListTask { url, config })
 }
 
 pub struct PlayTask;
@@ -1510,6 +1462,7 @@ impl Task for PlayTask {
             session.shared.paused.store(false, Ordering::Release);
             runtime.state.playing = true;
             runtime.state.paused = false;
+            set_runtime_core_state(runtime, PlaybackCoreState::Playing, "play");
             emit_runtime_event(runtime, PlayerEvent::state_change(runtime.state.clone()));
             Ok(())
         })
@@ -1533,6 +1486,7 @@ pub fn pause() -> napi::Result<()> {
         }
         runtime.state.playing = false;
         runtime.state.paused = true;
+        set_runtime_core_state(runtime, PlaybackCoreState::Paused, "pause");
         emit_runtime_event(runtime, PlayerEvent::state_change(runtime.state.clone()));
         Ok(())
     })?;
@@ -1544,6 +1498,7 @@ pub fn stop() -> napi::Result<()> {
     with_runtime(|runtime| {
         runtime.stop_session();
         runtime.state.time_pos = 0.0;
+        set_runtime_core_state(runtime, PlaybackCoreState::Idle, "stop");
         emit_runtime_event(runtime, PlayerEvent::state_change(runtime.state.clone()));
         Ok(())
     })
@@ -1576,6 +1531,7 @@ fn mark_seek_plan_failed(plan: &SeekPlan) -> napi::Result<()> {
         session.shared.paused.store(true, Ordering::Release);
         runtime.state.playing = false;
         runtime.state.paused = true;
+        set_runtime_core_state(runtime, PlaybackCoreState::Error, "seek-error");
         emit_runtime_event(runtime, PlayerEvent::state_change(runtime.state.clone()));
         Ok(())
     })
@@ -1587,6 +1543,7 @@ fn open_decoder_at_position(plan: &SeekPlan, position: f64) -> napi::Result<deco
         plan.audio_stream_ordinal,
         Some(plan.shared.mix_format.sample_rate),
         plan.config.packet_cache_options(),
+        &plan.config.stream_options(),
     )
     .map_err(napi::Error::from_reason)?;
 
@@ -1632,6 +1589,15 @@ fn attach_restarted_decoder(
         runtime.state.time_pos = position;
         runtime.state.playing = !plan.was_paused;
         runtime.state.paused = plan.was_paused;
+        set_runtime_core_state(
+            runtime,
+            if plan.was_paused {
+                PlaybackCoreState::Paused
+            } else {
+                PlaybackCoreState::Playing
+            },
+            "seek-complete",
+        );
         let mut events = Vec::with_capacity(2);
         if emit_seek_events {
             events.push(PlayerEvent::seeked(position));
@@ -1648,42 +1614,32 @@ impl Task for SeekTask {
 
     fn compute(&mut self) -> napi::Result<Self::Output> {
         let position = self.position.max(0.0);
-        let Some(plan) = with_runtime(|runtime| {
-            let Some(session) = runtime.session.as_mut() else {
-                return Ok(None);
-            };
-            let Some(url) = runtime.current_url.clone() else {
-                return Ok(None);
+        with_runtime(|runtime| {
+            let Some(session) = runtime.session.as_ref() else {
+                return Ok(());
             };
             let shared = session.shared.clone();
             let was_paused = shared.paused.load(Ordering::Acquire);
+            set_runtime_core_state(runtime, PlaybackCoreState::Seeking, "seek");
             shared.paused.store(true, Ordering::Release);
-            shared.request_decode_stop();
             runtime.prepared_next = None;
-            let _ = session.decode_thread.take();
-            let generation = shared.reset_for_decode_resume(position, &runtime.dsp_settings);
-            Ok(Some(SeekPlan {
-                shared,
-                was_paused,
-                url,
-                audio_stream_ordinal: runtime.current_audio_stream_ordinal,
-                generation,
-                config: runtime.config.clone(),
-            }))
-        })?
-        else {
-            return Ok(());
-        };
-
-        let decoder = match open_decoder_at_position(&plan, position) {
-            Ok(decoder) => decoder,
-            Err(err) => {
-                mark_seek_plan_failed(&plan)?;
-                return Err(err);
-            }
-        };
-
-        attach_restarted_decoder(&plan, decoder, position, true)
+            shared.request_decode_seek(position, &runtime.dsp_settings);
+            shared.paused.store(was_paused, Ordering::Release);
+            runtime.state.time_pos = position;
+            runtime.state.playing = !was_paused;
+            runtime.state.paused = was_paused;
+            set_runtime_core_state(
+                runtime,
+                if was_paused {
+                    PlaybackCoreState::Paused
+                } else {
+                    PlaybackCoreState::Playing
+                },
+                "seek-dispatched",
+            );
+            emit_runtime_event(runtime, PlayerEvent::time_update(position));
+            Ok(())
+        })
     }
 
     fn resolve(&mut self, _env: Env, _output: Self::Output) -> napi::Result<Self::JsValue> {

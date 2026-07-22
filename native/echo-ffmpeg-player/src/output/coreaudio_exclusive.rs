@@ -89,6 +89,17 @@ fn run_exclusive_output(
         shared.mix_format.sample_rate,
         source_format,
     )?;
+    shared.update_output_stats(crate::shared::AudioOutputStats {
+        backend: "coreaudio-exclusive".to_string(),
+        sample_rate: f64::from(format.sample_rate),
+        engine_sample_rate: f64::from(shared.mix_format.sample_rate),
+        channels: format.channels as f64,
+        format: format!("{:?}", format.sample_format),
+        buffer_frames: 0.0,
+        buffer_secs: 0.0,
+        delay_secs: 0.0,
+        underruns: 0.0,
+    });
     emit(PlayerEvent::log(
         "info",
         format!(

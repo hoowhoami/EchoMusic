@@ -1,3 +1,4 @@
+use crate::shared::{AudioOutputStats, PacketCacheStats};
 use napi_derive::napi;
 
 #[napi(object)]
@@ -74,6 +75,13 @@ pub struct PlayerEvent {
     pub disconnected_devices: Option<Vec<AudioDevice>>,
     pub path: Option<String>,
     pub seq: Option<f64>,
+    pub core_state: Option<String>,
+    pub cache_paused: Option<bool>,
+    pub cache_buffering_state: Option<f64>,
+    pub cache_buffered_secs: Option<f64>,
+    pub cache_target_secs: Option<f64>,
+    pub packet_cache: Option<PacketCacheStats>,
+    pub output_stats: Option<AudioOutputStats>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -149,6 +157,49 @@ impl PlayerEvent {
         }
     }
 
+    pub fn core_state_change(state: &str, reason: &str) -> Self {
+        Self {
+            event: "core-state-change".to_string(),
+            core_state: Some(state.to_string()),
+            reason: Some(reason.to_string()),
+            ..Self::empty("core-state-change")
+        }
+    }
+
+    pub fn cache_state_change(
+        paused: bool,
+        buffering_state: f64,
+        buffered_secs: f64,
+        target_secs: f64,
+        packet_cache: Option<PacketCacheStats>,
+    ) -> Self {
+        Self {
+            event: "cache-state-change".to_string(),
+            cache_paused: Some(paused),
+            cache_buffering_state: Some(buffering_state.clamp(0.0, 100.0)),
+            cache_buffered_secs: Some(buffered_secs.max(0.0)),
+            cache_target_secs: Some(target_secs.max(0.0)),
+            packet_cache,
+            ..Self::empty("cache-state-change")
+        }
+    }
+
+    pub fn packet_cache_stats(stats: PacketCacheStats) -> Self {
+        Self {
+            event: "packet-cache-stats".to_string(),
+            packet_cache: Some(stats),
+            ..Self::empty("packet-cache-stats")
+        }
+    }
+
+    pub fn output_stats(stats: AudioOutputStats) -> Self {
+        Self {
+            event: "audio-output-stats".to_string(),
+            output_stats: Some(stats),
+            ..Self::empty("audio-output-stats")
+        }
+    }
+
     pub fn seeked(time: f64) -> Self {
         Self {
             event: "seeked".to_string(),
@@ -215,6 +266,13 @@ impl PlayerEvent {
             disconnected_devices: None,
             path: None,
             seq: None,
+            core_state: None,
+            cache_paused: None,
+            cache_buffering_state: None,
+            cache_buffered_secs: None,
+            cache_target_secs: None,
+            packet_cache: None,
+            output_stats: None,
         }
     }
 
@@ -232,7 +290,14 @@ impl PlayerEvent {
     }
 
     pub fn is_droppable_when_event_queue_is_full(&self) -> bool {
-        matches!(self.event.as_str(), "time-update" | "log")
+        matches!(
+            self.event.as_str(),
+            "time-update"
+                | "log"
+                | "cache-state-change"
+                | "packet-cache-stats"
+                | "audio-output-stats"
+        )
     }
 }
 
@@ -246,5 +311,17 @@ mod tests {
 
         assert_eq!(event.error_code.as_deref(), Some("output-stream"));
         assert_eq!(event.message.as_deref(), Some("failed"));
+    }
+
+    #[test]
+    fn cache_state_event_clamps_public_values() {
+        let event = PlayerEvent::cache_state_change(true, 120.0, -1.0, -2.0, None);
+
+        assert_eq!(event.event, "cache-state-change");
+        assert_eq!(event.cache_paused, Some(true));
+        assert_eq!(event.cache_buffering_state, Some(100.0));
+        assert_eq!(event.cache_buffered_secs, Some(0.0));
+        assert_eq!(event.cache_target_secs, Some(0.0));
+        assert!(event.packet_cache.is_none());
     }
 }

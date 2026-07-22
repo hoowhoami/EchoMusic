@@ -1,8 +1,9 @@
 use crate::events::{PlayerErrorCode, PlayerEvent, TrackInfo};
 use crate::shared::{
-    AudioSampleFormat, DecodedAudioChunk, DecodedAudioData, DecodedAudioFormat, SharedAudio,
+    AudioSampleFormat, DecodedAudioChunk, DecodedAudioData, DecodedAudioFormat, PacketCacheStats,
+    SharedAudio,
 };
-use crate::stream::{open_stream, ReadSeek};
+use crate::stream::{open_stream, ReadSeek, StreamOptions};
 use ffmpeg_audio::{sys, AudioError, AudioReader, PacketCacheOptions, RawAudioData, SeekMode};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -26,8 +27,9 @@ impl DecoderData {
         mix_sample_rate: Option<u32>,
         interrupt: Arc<AtomicBool>,
         packet_cache: PacketCacheOptions,
+        stream_options: &StreamOptions,
     ) -> Result<Self, String> {
-        let source = open_stream(&url, interrupt.clone())?;
+        let source = open_stream(&url, interrupt.clone(), stream_options)?;
         Self::from_source(
             url,
             audio_stream_ordinal,
@@ -108,24 +110,50 @@ impl DecoderData {
         Ok(())
     }
 
-    pub fn decode_into(mut self, shared: Arc<SharedAudio>, generation: u64) -> Option<Self> {
+    pub fn decode_next_chunk(&mut self) -> Result<Option<DecodedAudioChunk>, String> {
+        self.reader
+            .receive_frame()
+            .map_err(|err| format!("failed to decode audio source: {err}"))?
+            .map(|frame| decoded_chunk_from_frame(&frame))
+            .transpose()
+    }
+
+    fn publish_packet_cache_stats(&self, shared: &SharedAudio) {
+        shared.update_packet_cache_stats(packet_cache_stats_from_reader(&self.reader));
+    }
+
+    pub fn decode_into(mut self, shared: Arc<SharedAudio>, mut generation: u64) -> Option<Self> {
         shared.bind_interrupt(self.interrupt.clone());
         let mut produced_frames = 0u64;
         loop {
+            self.publish_packet_cache_stats(&shared);
+            if let Some(seek) = shared.take_pending_decode_seek(generation) {
+                if shared.should_stop_decoding() || shared.stop.load(Ordering::Acquire) {
+                    return (!shared.stop.load(Ordering::Acquire)).then_some(self);
+                }
+                if let Err(err) = self.seek(seek.position_secs) {
+                    shared.mark_decode_failed();
+                    emit_decode_error(format!("failed to seek decoder: {err}"));
+                    return None;
+                }
+                self.publish_packet_cache_stats(&shared);
+                generation = seek.generation;
+                produced_frames = 0;
+            }
             if shared.should_stop_decoding() || !shared.is_decode_generation_current(generation) {
                 return (!shared.stop.load(Ordering::Acquire)).then_some(self);
             }
             match self.reader.receive_frame() {
                 Ok(Some(frame)) => match decoded_chunk_from_frame(&frame) {
                     Ok(chunk) => {
+                        self.publish_packet_cache_stats(&shared);
                         if !shared.is_decode_generation_current(generation) {
                             return (!shared.stop.load(Ordering::Acquire)).then_some(self);
                         }
                         if let Some(requested_position) = self.pending_seek_position {
                             if chunk.frames > 0 {
                                 let position = chunk.pts_secs.unwrap_or(requested_position);
-                                shared.set_position_secs(position);
-                                shared.notify_signal(crate::shared::PlaybackSignal::Seeked);
+                                shared.mark_seek_audio_ready(position);
                                 self.pending_seek_position = None;
                             }
                         }
@@ -145,6 +173,7 @@ impl DecoderData {
                     }
                 },
                 Ok(None) => {
+                    self.publish_packet_cache_stats(&shared);
                     if !shared.is_decode_generation_current(generation) {
                         return (!shared.stop.load(Ordering::Acquire)).then_some(self);
                     }
@@ -159,6 +188,7 @@ impl DecoderData {
                     return Some(self);
                 }
                 Err(err) => {
+                    self.publish_packet_cache_stats(&shared);
                     if self.interrupt.load(Ordering::Acquire)
                         || shared.should_stop_decoding()
                         || !shared.is_decode_generation_current(generation)
@@ -331,11 +361,29 @@ fn source_channels(info: &ffmpeg_audio::SourceAudioInfo) -> usize {
         .unwrap_or(2)
 }
 
+fn packet_cache_stats_from_reader(reader: &AudioReader) -> PacketCacheStats {
+    let stats = reader.packet_cache_stats();
+    PacketCacheStats {
+        forward_bytes: stats.forward_bytes as f64,
+        back_bytes: stats.back_bytes as f64,
+        total_bytes: stats.total_bytes as f64,
+        forward_secs: stats
+            .forward_duration
+            .map(|duration| duration.as_secs_f64()),
+        seekable_start_secs: stats.seekable_start.map(|duration| duration.as_secs_f64()),
+        seekable_end_secs: stats.seekable_end.map(|duration| duration.as_secs_f64()),
+        eof: stats.eof,
+        pending_seek: stats.pending_seek,
+        has_error: stats.has_error,
+    }
+}
+
 pub fn open_decoder(
     url: String,
     audio_stream_ordinal: Option<usize>,
     mix_sample_rate: Option<u32>,
     packet_cache: PacketCacheOptions,
+    stream_options: &StreamOptions,
 ) -> Result<DecoderData, String> {
     DecoderData::open(
         url,
@@ -343,6 +391,7 @@ pub fn open_decoder(
         mix_sample_rate,
         Arc::new(AtomicBool::new(false)),
         packet_cache,
+        stream_options,
     )
 }
 
@@ -357,9 +406,9 @@ pub fn spawn_decode_thread(
         .expect("failed to spawn player decode thread")
 }
 
-pub fn list_tracks_for_url(url: &str) -> Vec<TrackInfo> {
+pub fn list_tracks_for_url(url: &str, stream_options: &StreamOptions) -> Vec<TrackInfo> {
     let interrupt = Arc::new(AtomicBool::new(false));
-    let Ok(source) = open_stream(url, interrupt) else {
+    let Ok(source) = open_stream(url, interrupt, stream_options) else {
         return Vec::new();
     };
     let Ok(reader) = AudioReader::new(source) else {

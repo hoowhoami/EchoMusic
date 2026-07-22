@@ -8,7 +8,7 @@ pub(crate) use demuxer::{
     Demuxer,
     PacketCache,
 };
-pub use demuxer::PacketCacheOptions;
+pub use demuxer::{PacketCacheOptions, PacketCacheStats};
 pub(crate) use engine::DecodeEngine;
 pub use engine::ScanMode;
 

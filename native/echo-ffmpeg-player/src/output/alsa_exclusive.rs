@@ -70,6 +70,17 @@ fn run_exclusive_output(
     let pcm = open_pcm(&resolved)?;
     let source_format = shared.source_sample_format();
     let format = configure_pcm(&pcm, shared.mix_format.sample_rate, source_format)?;
+    shared.update_output_stats(crate::shared::AudioOutputStats {
+        backend: "alsa-exclusive".to_string(),
+        sample_rate: f64::from(format.sample_rate),
+        engine_sample_rate: f64::from(shared.mix_format.sample_rate),
+        channels: format.channels as f64,
+        format: format!("{:?}", format.sample_format),
+        buffer_frames: format.buffer_frames as f64,
+        buffer_secs: format.buffer_frames as f64 / f64::from(format.sample_rate.max(1)),
+        delay_secs: format.buffer_frames as f64 / f64::from(format.sample_rate.max(1)),
+        underruns: 0.0,
+    });
     emit(PlayerEvent::log(
         "info",
         format!(

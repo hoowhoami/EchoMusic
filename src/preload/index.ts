@@ -527,6 +527,66 @@ contextBridge.exposeInMainWorld('electron', {
       ipcRenderer.on('player:audio-device-list-changed', listener);
       return () => ipcRenderer.removeListener('player:audio-device-list-changed', listener);
     },
+    onPacketCacheStats: (
+      func: (payload?: {
+        forwardBytes: number;
+        backBytes: number;
+        totalBytes: number;
+        forwardSecs?: number;
+        seekableStartSecs?: number;
+        seekableEndSecs?: number;
+        eof: boolean;
+        pendingSeek: boolean;
+        hasError: boolean;
+      }) => void,
+    ) => {
+      const listener = (
+        _event: Electron.IpcRendererEvent,
+        payload?: {
+          forwardBytes: number;
+          backBytes: number;
+          totalBytes: number;
+          forwardSecs?: number;
+          seekableStartSecs?: number;
+          seekableEndSecs?: number;
+          eof: boolean;
+          pendingSeek: boolean;
+          hasError: boolean;
+        },
+      ) => func(payload);
+      ipcRenderer.on('player:packet-cache-stats', listener);
+      return () => ipcRenderer.removeListener('player:packet-cache-stats', listener);
+    },
+    onAudioOutputStats: (
+      func: (payload?: {
+        backend: string;
+        sampleRate: number;
+        engineSampleRate: number;
+        channels: number;
+        format: string;
+        bufferFrames: number;
+        bufferSecs: number;
+        delaySecs: number;
+        underruns: number;
+      }) => void,
+    ) => {
+      const listener = (
+        _event: Electron.IpcRendererEvent,
+        payload?: {
+          backend: string;
+          sampleRate: number;
+          engineSampleRate: number;
+          channels: number;
+          format: string;
+          bufferFrames: number;
+          bufferSecs: number;
+          delaySecs: number;
+          underruns: number;
+        },
+      ) => func(payload);
+      ipcRenderer.on('player:audio-output-stats', listener);
+      return () => ipcRenderer.removeListener('player:audio-output-stats', listener);
+    },
   },
   audioSpectrum: {
     getStatus: () =>

@@ -17,10 +17,7 @@ use std::{
     time::Duration,
 };
 
-use ureq::{
-    Agent,
-    http::Response,
-};
+use ureq::{Agent, Proxy, http::Response};
 
 use crate::{
     Result,
@@ -48,6 +45,23 @@ enum FetchAction {
     Success(Box<dyn Read + Send + Sync + 'static>),
     Retry(Option<Duration>),
     Fatal(HttpError),
+}
+
+#[derive(Clone, Debug)]
+pub struct HttpAudioSourceOptions {
+    pub connect_timeout: Duration,
+    pub recv_timeout: Duration,
+    pub proxy_url: Option<String>,
+}
+
+impl Default for HttpAudioSourceOptions {
+    fn default() -> Self {
+        Self {
+            connect_timeout: CONNECT_TIMEOUT,
+            recv_timeout: RECV_TIMEOUT,
+            proxy_url: None,
+        }
+    }
 }
 
 /// An HTTP audio source that supports remote range requests and is compatible with `std::io::Read +
@@ -80,9 +94,20 @@ impl HttpAudioSource {
     /// Connection is permitted only if the server explicitly supports Range requests
     /// and can provide a stream of determinate length.
     pub fn new(url: &str) -> Result<Self> {
+        Self::new_with_options(url, HttpAudioSourceOptions::default())
+    }
+
+    pub fn new_with_options(url: &str, options: HttpAudioSourceOptions) -> Result<Self> {
+        let proxy = options
+            .proxy_url
+            .as_deref()
+            .map(Proxy::new)
+            .transpose()
+            .map_err(|err| HttpError::Transport(format!("invalid proxy url: {err}")))?;
         let agent = Agent::config_builder()
-            .timeout_connect(Some(CONNECT_TIMEOUT))
-            .timeout_recv_body(Some(RECV_TIMEOUT))
+            .timeout_connect(Some(options.connect_timeout))
+            .timeout_recv_body(Some(options.recv_timeout))
+            .proxy(proxy)
             // Disabling treating 4xx and 5xx HTTP status codes as errors allows us
             // to handle 4xx/5xx errors with a clean match
             .http_status_as_error(false)

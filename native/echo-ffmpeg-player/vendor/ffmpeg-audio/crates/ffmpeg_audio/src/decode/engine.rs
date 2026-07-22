@@ -6,6 +6,7 @@ use crate::{
     Decoder,
     Demuxer,
     PacketCacheOptions,
+    PacketCacheStats,
     Result,
     TimeBase,
     decode::{PacketCache, SeekMode},
@@ -382,6 +383,10 @@ impl DecodeEngine {
     /// * `None` if no frames have been successfully decoded yet, or immediately after a seek.
     pub const fn stream_position(&self) -> Option<Duration> {
         self.current_pts
+    }
+
+    pub fn packet_cache_stats(&self) -> PacketCacheStats {
+        self.packet_cache.stats()
     }
 
     fn read_packet(&mut self) -> Result<Option<crate::decode::demuxer::CachedPacket>> {

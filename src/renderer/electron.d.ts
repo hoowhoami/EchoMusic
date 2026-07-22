@@ -116,6 +116,30 @@ import type {
   StorageUpdateQueueMetaPayload,
 } from '../shared/storage';
 
+type PlayerPacketCacheStats = {
+  forwardBytes: number;
+  backBytes: number;
+  totalBytes: number;
+  forwardSecs?: number;
+  seekableStartSecs?: number;
+  seekableEndSecs?: number;
+  eof: boolean;
+  pendingSeek: boolean;
+  hasError: boolean;
+};
+
+type PlayerAudioOutputStats = {
+  backend: string;
+  sampleRate: number;
+  engineSampleRate: number;
+  channels: number;
+  format: string;
+  bufferFrames: number;
+  bufferSecs: number;
+  delaySecs: number;
+  underruns: number;
+};
+
 export interface IElectronAPI {
   platform: string;
   isWayland?: boolean;
@@ -554,6 +578,8 @@ export interface IElectronAPI {
         disconnectedDevices?: Array<{ name: string; description: string; isDefault?: boolean }>;
       }) => void,
     ) => () => void;
+    onPacketCacheStats: (func: (payload?: PlayerPacketCacheStats) => void) => () => void;
+    onAudioOutputStats: (func: (payload?: PlayerAudioOutputStats) => void) => () => void;
   };
 }
 

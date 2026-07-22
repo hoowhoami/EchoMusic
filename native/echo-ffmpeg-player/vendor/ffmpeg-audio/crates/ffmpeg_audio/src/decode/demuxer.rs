@@ -59,6 +59,19 @@ impl Default for PacketCacheOptions {
     }
 }
 
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct PacketCacheStats {
+    pub forward_bytes: usize,
+    pub back_bytes: usize,
+    pub total_bytes: usize,
+    pub forward_duration: Option<Duration>,
+    pub seekable_start: Option<Duration>,
+    pub seekable_end: Option<Duration>,
+    pub eof: bool,
+    pub pending_seek: bool,
+    pub has_error: bool,
+}
+
 pub struct CachedPacket {
     packet: *mut sys::AVPacket,
     pts: Option<Duration>,
@@ -527,6 +540,27 @@ impl PacketCache {
         }
     }
 
+    pub fn stats(&self) -> PacketCacheStats {
+        let Ok(state) = self.shared.state.lock() else {
+            return PacketCacheStats::default();
+        };
+        PacketCacheStats {
+            forward_bytes: packet_cache_forward_bytes(&state),
+            back_bytes: packet_cache_back_bytes(&state),
+            total_bytes: state.total_bytes,
+            forward_duration: packet_cache_forward_duration(&state),
+            seekable_start: state.packets.iter().find_map(|packet| packet.pts.or(packet.end)),
+            seekable_end: state
+                .packets
+                .iter()
+                .rev()
+                .find_map(|packet| packet.end.or(packet.pts)),
+            eof: state.eof,
+            pending_seek: state.pending_seek.is_some(),
+            has_error: state.error.is_some(),
+        }
+    }
+
     fn try_seek_cached(&mut self, target: Duration) -> bool {
         let Ok(mut state) = self.shared.state.lock() else {
             return false;
@@ -637,6 +671,16 @@ fn packet_cache_forward_bytes(state: &PacketCacheState) -> usize {
         .packets
         .iter()
         .skip(state.read_index.saturating_sub(state.base_index) as usize)
+        .map(|packet| packet.size)
+        .sum()
+}
+
+fn packet_cache_back_bytes(state: &PacketCacheState) -> usize {
+    let read_offset = state.read_index.saturating_sub(state.base_index) as usize;
+    state
+        .packets
+        .iter()
+        .take(read_offset.min(state.packets.len()))
         .map(|packet| packet.size)
         .sum()
 }
@@ -768,6 +812,28 @@ mod tests {
             packet_cache_forward_duration(&state),
             Some(Duration::from_secs(3)),
         );
+    }
+
+    #[test]
+    fn packet_cache_byte_stats_split_back_and_forward_windows() {
+        let state = PacketCacheState {
+            packets: vec![
+                packet_with_time(10, 11, 80),
+                packet_with_time(11, 12, 120),
+                packet_with_time(12, 13, 160),
+            ],
+            base_index: 5,
+            read_index: 7,
+            total_bytes: 360,
+            eof: false,
+            stop: false,
+            pending_seek: None,
+            error: None,
+            epoch: 0,
+        };
+
+        assert_eq!(packet_cache_back_bytes(&state), 200);
+        assert_eq!(packet_cache_forward_bytes(&state), 160);
     }
 
     #[test]

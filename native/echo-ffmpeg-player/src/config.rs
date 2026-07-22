@@ -1,5 +1,6 @@
 use crate::device::normalize_device_name;
 use crate::events::SpectrumOptions;
+use crate::stream::StreamOptions;
 use ffmpeg_audio::PacketCacheOptions;
 use napi_derive::napi;
 use std::time::Duration;
@@ -100,6 +101,13 @@ impl PlayerConfig {
             Duration::from_secs_f64(self.audio_cache_secs.max(1.0)),
         )
     }
+
+    pub fn stream_options(&self) -> StreamOptions {
+        StreamOptions {
+            network_timeout: Duration::from_secs_f64(self.network_timeout_secs.max(1.0)),
+            http_proxy: self.http_proxy.clone(),
+        }
+    }
 }
 
 fn mb_to_bytes(value: f64) -> usize {
@@ -122,6 +130,10 @@ mod tests {
         assert_eq!(packet_cache.max_bytes, 150 * 1024 * 1024);
         assert_eq!(packet_cache.back_bytes, 50 * 1024 * 1024);
         assert_eq!(packet_cache.max_duration, Duration::from_secs(1));
+        assert_eq!(
+            config.stream_options().network_timeout,
+            Duration::from_secs(60)
+        );
     }
 
     #[test]

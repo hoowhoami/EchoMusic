@@ -5,7 +5,7 @@ pub mod log;
 pub mod resample;
 
 #[cfg(feature = "http")]
-pub use core::http::HttpAudioSource;
+pub use core::http::{HttpAudioSource, HttpAudioSourceOptions};
 pub use core::{
     format::AudioSample,
     frame::{
@@ -29,6 +29,7 @@ use std::{
 
 pub use decode::{
     PacketCacheOptions,
+    PacketCacheStats,
     ScanMode,
     SeekMode,
 };
@@ -146,6 +147,11 @@ impl AudioReader {
     /// - `Err(AudioError)` if an underlying I/O or FFmpeg decoding error occurs.
     pub fn receive_frame(&mut self) -> Result<Option<AudioFrame<'_>>> {
         self.engine.receive_frame()
+    }
+
+    #[must_use]
+    pub fn packet_cache_stats(&self) -> PacketCacheStats {
+        self.engine.packet_cache_stats()
     }
 
     /// Seeks the underlying audio stream to the specified target duration.
