@@ -180,7 +180,8 @@ fn run_exclusive_output(
         while !shared.should_stop_output() {
             match Threading::WaitForSingleObject(event.0, WASAPI_EVENT_WAIT_MS) {
                 WAIT_OBJECT_0 => {
-                    feed_wasapi_exclusive(
+                    let refill = feed_wasapi_exclusive(
+                        &output.audio_client,
                         &output.render_client,
                         output.buffer_frames,
                         output_format,
@@ -189,6 +190,24 @@ fn run_exclusive_output(
                         &mut graph_scratch,
                         &mut resampler,
                     )?;
+                    if refill
+                        && feed_wasapi_exclusive(
+                            &output.audio_client,
+                            &output.render_client,
+                            output.buffer_frames,
+                            output_format,
+                            &shared,
+                            &mut output_scratch,
+                            &mut graph_scratch,
+                            &mut resampler,
+                        )?
+                    {
+                        emit(PlayerEvent::log(
+                            "warn",
+                            "WASAPI exclusive output could not refill the device buffer fast enough"
+                                .to_string(),
+                        ));
+                    }
                 }
                 WAIT_TIMEOUT => {}
                 WAIT_FAILED => return Err("waiting for WASAPI output event failed".to_string()),
@@ -262,6 +281,7 @@ fn open_wasapi_exclusive_output(
 }
 
 fn feed_wasapi_exclusive(
+    audio_client: &Audio::IAudioClient,
     render_client: &Audio::IAudioRenderClient,
     buffer_frames: u32,
     output_format: WasapiOutputFormat,
@@ -273,6 +293,15 @@ fn feed_wasapi_exclusive(
     if buffer_frames == 0 {
         return Ok(false);
     }
+    let padding = unsafe {
+        audio_client.GetCurrentPadding().map_err(|err| {
+            wasapi_client_error_message("failed to query WASAPI output padding", &err)
+        })?
+    };
+    if padding >= buffer_frames.saturating_mul(2) {
+        return Ok(false);
+    }
+    let refill = padding < buffer_frames;
     write_frames(
         render_client,
         buffer_frames,
@@ -282,7 +311,7 @@ fn feed_wasapi_exclusive(
         graph_scratch,
         resampler,
     )?;
-    Ok(true)
+    Ok(refill)
 }
 
 fn write_frames(
