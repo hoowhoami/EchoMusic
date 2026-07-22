@@ -12,6 +12,7 @@ use std::slice;
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
+use windows::core::PCSTR;
 use windows::Win32::Foundation::{CloseHandle, HANDLE, WAIT_FAILED, WAIT_OBJECT_0, WAIT_TIMEOUT};
 use windows::Win32::Media::Audio;
 use windows::Win32::System::Threading;
@@ -34,6 +35,36 @@ struct WasapiExclusiveOutput {
     render_client: Audio::IAudioRenderClient,
     buffer_frames: u32,
     buffer_duration: i64,
+}
+
+struct MmcssTask {
+    handle: HANDLE,
+}
+
+impl MmcssTask {
+    fn register() -> Result<Self, String> {
+        let mut task_index = 0u32;
+        let handle = unsafe {
+            Threading::AvSetMmThreadCharacteristicsA(
+                PCSTR(b"Pro Audio\0".as_ptr()),
+                &mut task_index,
+            )
+        }
+        .map_err(|err| format!("failed to set WASAPI thread to Pro Audio MMCSS: {err}"))?;
+        unsafe {
+            Threading::AvSetMmThreadPriority(handle, Threading::AVRT_PRIORITY_HIGH)
+                .map_err(|err| format!("failed to raise WASAPI MMCSS priority: {err}"))?;
+        }
+        Ok(Self { handle })
+    }
+}
+
+impl Drop for MmcssTask {
+    fn drop(&mut self) {
+        unsafe {
+            let _ = Threading::AvRevertMmThreadCharacteristics(self.handle);
+        }
+    }
 }
 
 pub fn spawn_output_thread(
@@ -63,7 +94,19 @@ fn run_exclusive_output(
     start_notify: &mut Option<OutputStartSender>,
 ) -> Result<(), String> {
     let _com = ComApartment::init()?;
-    boost_current_thread_priority();
+    let _mmcss = match MmcssTask::register() {
+        Ok(task) => {
+            emit(PlayerEvent::log(
+                "info",
+                "WASAPI exclusive output thread registered with MMCSS Pro Audio".to_string(),
+            ));
+            Some(task)
+        }
+        Err(err) => {
+            emit(PlayerEvent::log("warn", err));
+            None
+        }
+    };
 
     let device = resolve_wasapi_output_device(device_name)?;
     let probe_client = activate_wasapi_audio_client(&device)?;
@@ -331,14 +374,5 @@ fn fill_wasapi_output(
         fill_output(output, TARGET_CHANNELS, shared);
     } else {
         resampler.fill_output(output, TARGET_CHANNELS, shared);
-    }
-}
-
-fn boost_current_thread_priority() {
-    unsafe {
-        let _ = Threading::SetThreadPriority(
-            Threading::GetCurrentThread(),
-            Threading::THREAD_PRIORITY_TIME_CRITICAL,
-        );
     }
 }
