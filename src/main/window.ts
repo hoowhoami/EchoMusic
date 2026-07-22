@@ -210,7 +210,9 @@ const buildWindowBounds = (): Pick<
     height: Math.max(minHeight, state.height || defaultHeight),
     ...(typeof state.x === 'number' ? { x: state.x } : {}),
     ...(typeof state.y === 'number' ? { y: state.y } : {}),
-    ...(state.boundsMode === 'content' ? { useContentSize: true } : {}),
+    ...(process.platform !== 'win32' && state.boundsMode === 'content'
+      ? { useContentSize: true }
+      : {}),
   };
 
   if ((typeof bounds.x === 'number' || typeof bounds.y === 'number') && !hasVisibleArea(bounds)) {
@@ -220,7 +222,12 @@ const buildWindowBounds = (): Pick<
   return bounds;
 };
 
-const persistWindowState = () => {
+let manualWindowResizePending = false;
+let manualWindowMovePending = false;
+let windowSizeDirty = false;
+let windowPositionDirty = false;
+
+const persistWindowState = (dirtyOnly = false) => {
   if (!win || !rememberWindowSize || win.isDestroyed()) return;
   const maximized = win.isMaximized();
   // 最大化时 getBounds 返回的是全屏尺寸，会污染窗口化后恢复的大小
@@ -237,16 +244,25 @@ const persistWindowState = () => {
     });
     return;
   }
+  const prev = getPersistedWindowState();
   const bounds = win.getBounds();
   const contentBounds = win.getContentBounds();
+  const nextBoundsMode: WindowState['boundsMode'] =
+    process.platform === 'win32' ? 'window' : 'content';
+  const sizeBounds = process.platform === 'win32' ? bounds : contentBounds;
+  const shouldUpdateSize = !dirtyOnly || windowSizeDirty;
+  const shouldUpdatePosition = !dirtyOnly || windowPositionDirty;
+
   setMainAppSetting('windowState', {
-    width: contentBounds.width,
-    height: contentBounds.height,
-    x: bounds.x,
-    y: bounds.y,
+    width: shouldUpdateSize ? sizeBounds.width : prev.width,
+    height: shouldUpdateSize ? sizeBounds.height : prev.height,
+    x: shouldUpdatePosition ? bounds.x : prev.x,
+    y: shouldUpdatePosition ? bounds.y : prev.y,
     isMaximized: false,
-    boundsMode: 'content',
+    boundsMode: shouldUpdateSize ? nextBoundsMode : prev.boundsMode,
   });
+  windowSizeDirty = false;
+  windowPositionDirty = false;
 };
 
 let persistWindowStateTimer: ReturnType<typeof setTimeout> | null = null;
@@ -261,13 +277,13 @@ const schedulePersistWindowState = () => {
   clearPersistWindowStateTimer();
   persistWindowStateTimer = setTimeout(() => {
     persistWindowStateTimer = null;
-    persistWindowState();
+    persistWindowState(process.platform === 'win32');
   }, 180);
 };
 
 const flushPersistWindowState = () => {
   clearPersistWindowStateTimer();
-  persistWindowState();
+  persistWindowState(process.platform === 'win32');
 };
 
 export function getMainWindow() {
@@ -388,16 +404,44 @@ export async function createWindow() {
     }
   });
 
-  const handleWindowBoundsChanged = () => {
-    if (!win?.isMaximized()) schedulePersistWindowState();
+  const handleWindowBoundsChanged = (kind: 'move' | 'resize') => {
+    if (!win || win.isDestroyed() || win.isMaximized()) return;
+
+    if (process.platform === 'win32') {
+      if (kind === 'resize') {
+        if (!manualWindowResizePending) return;
+        manualWindowResizePending = false;
+        windowSizeDirty = true;
+        // 从左侧或顶部缩放时坐标也会变化。
+        windowPositionDirty = true;
+      } else {
+        if (!manualWindowMovePending) return;
+        manualWindowMovePending = false;
+        windowPositionDirty = true;
+      }
+    } else {
+      windowSizeDirty = true;
+      windowPositionDirty = true;
+    }
+
+    schedulePersistWindowState();
   };
 
   if (process.platform === 'win32') {
-    win.on('resized', handleWindowBoundsChanged);
-    win.on('moved', handleWindowBoundsChanged);
+    win.on('will-resize', () => {
+      manualWindowResizePending = true;
+      windowSizeDirty = true;
+      windowPositionDirty = true;
+    });
+    win.on('will-move', () => {
+      manualWindowMovePending = true;
+      windowPositionDirty = true;
+    });
+    win.on('resized', () => handleWindowBoundsChanged('resize'));
+    win.on('moved', () => handleWindowBoundsChanged('move'));
   } else {
-    win.on('resize', handleWindowBoundsChanged);
-    win.on('move', handleWindowBoundsChanged);
+    win.on('resize', () => handleWindowBoundsChanged('resize'));
+    win.on('move', () => handleWindowBoundsChanged('move'));
   }
 
   win.on('maximize', () => {
