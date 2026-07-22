@@ -1,11 +1,14 @@
 use super::cpal_shared::{fill_output_reusing, OutputResampler};
 use crate::device::platform_windows::{
     activate_wasapi_audio_client, choose_wasapi_output_format, is_wasapi_buffer_size_not_aligned,
-    resolve_wasapi_output_device, wasapi_duration_from_frames, wasapi_exclusive_buffer_duration,
-    wasapi_wave_format, ComApartment, WasapiOutputFormat, WasapiSampleFormat,
+    resolve_wasapi_output_device, wasapi_client_error_message, wasapi_duration_from_frames,
+    wasapi_exclusive_buffer_duration, wasapi_wave_format, ComApartment, WasapiOutputFormat,
+    WasapiSampleFormat,
 };
 use crate::events::{PlayerErrorCode, PlayerEvent};
-use crate::output::{fill_output, report_output_start, OutputStartSender};
+use crate::output::{
+    fill_output, report_output_start, report_output_start_failure, OutputStartSender,
+};
 use crate::shared::{SharedAudio, MIX_CHANNELS};
 use std::ptr;
 use std::slice;
@@ -75,12 +78,14 @@ pub fn spawn_output_thread(
         if let Err(message) =
             run_exclusive_output(&device_name, shared.clone(), emit, &mut start_notify)
         {
-            report_output_start(&mut start_notify, Err(message.clone()));
+            let startup_failure = report_output_start_failure(&mut start_notify, message.clone());
             shared.request_output_stop();
-            emit(PlayerEvent::error(
-                PlayerErrorCode::OutputExclusive,
-                message,
-            ));
+            if !startup_failure {
+                emit(PlayerEvent::error(
+                    PlayerErrorCode::OutputExclusive,
+                    message,
+                ));
+            }
         }
     })
 }
@@ -130,12 +135,13 @@ fn run_exclusive_output(
     emit(PlayerEvent::log(
         "info",
         format!(
-            "WASAPI exclusive opening: requested='{device_name}', sample_rate={}, engine_sample_rate={}, channels={}, source_format={:?}, format={:?}, buffer_100ns={buffer_duration}",
+            "WASAPI exclusive opening: requested='{device_name}', sample_rate={}, engine_sample_rate={}, channels={}, source_format={:?}, format={:?}, buffer_frames={}, buffer_100ns={buffer_duration}",
             output_format.sample_rate,
             shared.mix_format.sample_rate,
             MIX_CHANNELS,
             source_format,
             output_format.sample_format,
+            output.buffer_frames,
             buffer_duration = output.buffer_duration
         ),
     ));
@@ -159,10 +165,9 @@ fn run_exclusive_output(
             &mut graph_scratch,
             &mut resampler,
         )?;
-        output
-            .audio_client
-            .Start()
-            .map_err(|err| format!("failed to start WASAPI exclusive output: {err}"))?;
+        output.audio_client.Start().map_err(|err| {
+            wasapi_client_error_message("failed to start WASAPI exclusive output", &err)
+        })?;
         shared.mark_output_started();
         report_output_start(start_notify, Ok(()));
         emit(PlayerEvent::log(
@@ -246,7 +251,12 @@ fn open_wasapi_exclusive_output(
                     .map_err(|err| format!("failed to read WASAPI aligned buffer size: {err}"))?;
                 aligned_buffer_frames = Some(frames);
             }
-            Err(err) => return Err(format!("failed to open WASAPI exclusive output: {err}")),
+            Err(err) => {
+                return Err(wasapi_client_error_message(
+                    "failed to open WASAPI exclusive output",
+                    &err,
+                ));
+            }
         }
     }
 }
@@ -285,9 +295,9 @@ fn write_frames(
     resampler: &mut OutputResampler,
 ) -> Result<(), String> {
     unsafe {
-        let buffer = render_client
-            .GetBuffer(frames)
-            .map_err(|err| format!("failed to obtain WASAPI output buffer: {err}"))?;
+        let buffer = render_client.GetBuffer(frames).map_err(|err| {
+            wasapi_client_error_message("failed to obtain WASAPI output buffer", &err)
+        })?;
         let sample_count = frames as usize * MIX_CHANNELS;
         match output_format.sample_format {
             WasapiSampleFormat::F32 => {
@@ -377,9 +387,9 @@ fn write_frames(
                 }
             }
         }
-        render_client
-            .ReleaseBuffer(frames, 0)
-            .map_err(|err| format!("failed to release WASAPI output buffer: {err}"))
+        render_client.ReleaseBuffer(frames, 0).map_err(|err| {
+            wasapi_client_error_message("failed to release WASAPI output buffer", &err)
+        })
     }
 }
 

@@ -28,3 +28,12 @@ pub(crate) fn report_output_start(
         let _ = sender.send(result);
     }
 }
+
+pub(crate) fn report_output_start_failure(
+    start_notify: &mut Option<OutputStartSender>,
+    message: String,
+) -> bool {
+    let was_starting = start_notify.is_some();
+    report_output_start(start_notify, Err(message));
+    was_starting
+}

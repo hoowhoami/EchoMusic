@@ -6,7 +6,9 @@ use crate::device::platform_macos::{
 };
 use crate::events::{PlayerErrorCode, PlayerEvent};
 use crate::exclusive::ExclusiveGuard;
-use crate::output::{fill_output_reusing, report_output_start, OutputStartSender};
+use crate::output::{
+    fill_output_reusing, report_output_start, report_output_start_failure, OutputStartSender,
+};
 use crate::shared::SharedAudio;
 use coreaudio_sys as ca;
 use std::cell::UnsafeCell;
@@ -62,12 +64,14 @@ pub fn spawn_output_thread(
         if let Err(message) =
             run_exclusive_output(&device_name, shared.clone(), emit, &mut start_notify)
         {
-            report_output_start(&mut start_notify, Err(message.clone()));
+            let startup_failure = report_output_start_failure(&mut start_notify, message.clone());
             shared.request_output_stop();
-            emit(PlayerEvent::error(
-                PlayerErrorCode::OutputExclusive,
-                message,
-            ));
+            if !startup_failure {
+                emit(PlayerEvent::error(
+                    PlayerErrorCode::OutputExclusive,
+                    message,
+                ));
+            }
         }
     })
 }

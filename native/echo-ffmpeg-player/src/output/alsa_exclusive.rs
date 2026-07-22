@@ -1,7 +1,9 @@
 use super::cpal_shared::OutputResampler;
 use crate::device::platform_linux::resolve_alsa_exclusive_device_name;
 use crate::events::{PlayerErrorCode, PlayerEvent};
-use crate::output::{fill_output_reusing, report_output_start, OutputStartSender};
+use crate::output::{
+    fill_output_reusing, report_output_start, report_output_start_failure, OutputStartSender,
+};
 use crate::shared::{AudioSampleFormat, SharedAudio, MIX_CHANNELS};
 use alsa::pcm::{Access, Format, HwParams, State, PCM};
 use alsa::{Direction, Error, ValueOr};
@@ -48,12 +50,14 @@ pub fn spawn_output_thread(
         if let Err(message) =
             run_exclusive_output(&device_name, shared.clone(), emit, &mut start_notify)
         {
-            report_output_start(&mut start_notify, Err(message.clone()));
+            let startup_failure = report_output_start_failure(&mut start_notify, message.clone());
             shared.request_output_stop();
-            emit(PlayerEvent::error(
-                PlayerErrorCode::OutputExclusive,
-                message,
-            ));
+            if !startup_failure {
+                emit(PlayerEvent::error(
+                    PlayerErrorCode::OutputExclusive,
+                    message,
+                ));
+            }
         }
     })
 }

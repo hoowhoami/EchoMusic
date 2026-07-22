@@ -1,7 +1,7 @@
 use crate::device::select_output_device_checked;
 use crate::events::{PlayerErrorCode, PlayerEvent};
 use crate::exclusive::ExclusiveGuard;
-use crate::output::{report_output_start, OutputStartSender};
+use crate::output::{report_output_start, report_output_start_failure, OutputStartSender};
 use crate::shared::SharedAudio;
 use cpal::traits::{DeviceTrait, StreamTrait};
 use cpal::{BufferSize, SampleFormat, Stream, StreamConfig};
@@ -56,12 +56,15 @@ pub(crate) fn spawn_output_thread_with_start_notify(
         let device = match select_output_device_checked(&device_name, exclusive) {
             Ok(device) => device,
             Err(message) => {
-                report_output_start(&mut start_notify, Err(message.clone()));
+                let startup_failure =
+                    report_output_start_failure(&mut start_notify, message.clone());
                 shared.request_output_stop();
-                emit(PlayerEvent::error(
-                    PlayerErrorCode::OutputDeviceUnavailable,
-                    message,
-                ));
+                if !startup_failure {
+                    emit(PlayerEvent::error(
+                        PlayerErrorCode::OutputDeviceUnavailable,
+                        message,
+                    ));
+                }
                 return;
             }
         };
@@ -70,9 +73,12 @@ pub(crate) fn spawn_output_thread_with_start_notify(
             Ok(config) => config,
             Err(err) => {
                 let message = format!("failed to get default output config: {err}");
-                report_output_start(&mut start_notify, Err(message.clone()));
+                let startup_failure =
+                    report_output_start_failure(&mut start_notify, message.clone());
                 shared.request_output_stop();
-                emit(PlayerEvent::error(PlayerErrorCode::OutputConfig, message));
+                if !startup_failure {
+                    emit(PlayerEvent::error(PlayerErrorCode::OutputConfig, message));
+                }
                 return;
             }
         };
@@ -105,12 +111,15 @@ pub(crate) fn spawn_output_thread_with_start_notify(
             match ExclusiveGuard::acquire(&device_name) {
                 Ok(guard) => guard,
                 Err(message) => {
-                    report_output_start(&mut start_notify, Err(message.clone()));
+                    let startup_failure =
+                        report_output_start_failure(&mut start_notify, message.clone());
                     shared.request_output_stop();
-                    emit(PlayerEvent::error(
-                        PlayerErrorCode::OutputExclusive,
-                        message,
-                    ));
+                    if !startup_failure {
+                        emit(PlayerEvent::error(
+                            PlayerErrorCode::OutputExclusive,
+                            message,
+                        ));
+                    }
                     return;
                 }
             }
@@ -127,17 +136,22 @@ pub(crate) fn spawn_output_thread_with_start_notify(
         ) {
             Ok(stream) => stream,
             Err(message) => {
-                report_output_start(&mut start_notify, Err(message.clone()));
+                let startup_failure =
+                    report_output_start_failure(&mut start_notify, message.clone());
                 shared.request_output_stop();
-                emit(PlayerEvent::error(PlayerErrorCode::OutputStream, message));
+                if !startup_failure {
+                    emit(PlayerEvent::error(PlayerErrorCode::OutputStream, message));
+                }
                 return;
             }
         };
         if let Err(err) = stream.play() {
             let message = format!("failed to start audio output: {err}");
-            report_output_start(&mut start_notify, Err(message.clone()));
+            let startup_failure = report_output_start_failure(&mut start_notify, message.clone());
             shared.request_output_stop();
-            emit(PlayerEvent::error(PlayerErrorCode::OutputStream, message));
+            if !startup_failure {
+                emit(PlayerEvent::error(PlayerErrorCode::OutputStream, message));
+            }
             return;
         }
         shared.mark_output_started();

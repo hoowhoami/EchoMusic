@@ -26,7 +26,7 @@ use windows::Win32::System::Com::{
 };
 use windows::Win32::System::Variant::VT_LPWSTR;
 
-const DEFAULT_EXCLUSIVE_BUFFER_100NS: i64 = 200_000;
+const STABLE_EXCLUSIVE_BUFFER_100NS: i64 = 500_000;
 const WASAPI_DEVICE_KEY_PREFIX: &str = "wasapi:";
 const DEVICE_KEY_SEPARATOR: &str = "\u{1f}";
 
@@ -259,7 +259,12 @@ pub(crate) fn validate_wasapi_output_device_at_sample_rate(
                     .map_err(|err| format!("failed to read WASAPI aligned buffer size: {err}"))?;
                 aligned_buffer_frames = Some(frames);
             }
-            Err(err) => return Err(format!("failed to validate WASAPI exclusive output: {err}")),
+            Err(err) => {
+                return Err(wasapi_client_error_message(
+                    "failed to validate WASAPI exclusive output",
+                    &err,
+                ));
+            }
         }
     }
 }
@@ -609,9 +614,9 @@ pub(crate) fn wasapi_exclusive_buffer_duration(audio_client: &Audio::IAudioClien
         audio_client.GetDevicePeriod(Some(&mut default_period), Some(&mut minimum_period))
     };
     if result.is_ok() && default_period > 0 {
-        default_period
+        default_period.max(STABLE_EXCLUSIVE_BUFFER_100NS)
     } else {
-        DEFAULT_EXCLUSIVE_BUFFER_100NS
+        STABLE_EXCLUSIVE_BUFFER_100NS
     }
 }
 
@@ -621,6 +626,28 @@ pub(crate) fn wasapi_duration_from_frames(frames: u32, sample_rate: u32) -> i64 
 
 pub(crate) fn is_wasapi_buffer_size_not_aligned(err: &windows::core::Error) -> bool {
     err.code() == Audio::AUDCLNT_E_BUFFER_SIZE_NOT_ALIGNED
+}
+
+pub(crate) fn wasapi_client_error_message(context: &str, err: &windows::core::Error) -> String {
+    let code = err.code();
+    let reason = if code == Audio::AUDCLNT_E_DEVICE_IN_USE {
+        Some("device is already in use by another exclusive stream or driver session")
+    } else if code == Audio::AUDCLNT_E_UNSUPPORTED_FORMAT {
+        Some("device rejected the exclusive PCM format")
+    } else if code == Audio::AUDCLNT_E_BUFFER_SIZE_ERROR {
+        Some("device rejected the exclusive buffer size")
+    } else if code == Audio::AUDCLNT_E_BUFFER_SIZE_NOT_ALIGNED {
+        Some("device requires an aligned exclusive buffer size")
+    } else if code == Audio::AUDCLNT_E_ENDPOINT_CREATE_FAILED {
+        Some("device endpoint could not be created")
+    } else {
+        None
+    };
+    let hex_code = format!("0x{:08X}", code.0 as u32);
+    match reason {
+        Some(reason) => format!("{context}: {reason} ({hex_code})"),
+        None => format!("{context}: {err}"),
+    }
 }
 
 fn device_enumerator() -> Result<Audio::IMMDeviceEnumerator, String> {
