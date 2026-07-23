@@ -442,9 +442,10 @@ fn prepare_source(
             ),
         ));
     }
-    let shared = Arc::new(SharedAudio::new(
+    let shared = Arc::new(SharedAudio::with_cache_pause_wait(
         mix_format,
         config.audio_buffer_secs,
+        config.audio_cache_pause_wait_secs,
         config.playback_stall_timeout_secs,
         &dsp_settings,
     ));

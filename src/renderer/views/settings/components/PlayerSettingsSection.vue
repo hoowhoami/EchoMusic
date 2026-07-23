@@ -20,6 +20,10 @@ const updateAudioCacheSecs = (value: string | number) => {
   settingStore.audioCacheSecs = clampNumber(value, 1, 1, 120);
 };
 
+const updateAudioCachePauseWaitSecs = (value: string | number) => {
+  settingStore.audioCachePauseWaitSecs = clampNumber(value, 1, 0.1, 30);
+};
+
 const updateAudioDemuxerMaxMB = (value: string | number) => {
   const maxMB = clampNumber(value, 150, 8, 512);
   settingStore.audioDemuxerMaxMB = maxMB;
@@ -100,6 +104,25 @@ const updatePlayerNetworkTimeout = (value: string | number) => {
         placeholder="1"
         suffix="秒"
         @update:model-value="updateAudioCacheSecs"
+      />
+    </div>
+    <div class="settings-divider"></div>
+    <div class="settings-item">
+      <div class="space-y-1">
+        <h3 class="font-semibold">缓冲恢复等待</h3>
+        <p class="text-sm text-text-secondary">
+          缓存耗尽进入缓冲后，恢复播放前需要等待的可播放缓存时长（需重启应用生效）
+        </p>
+      </div>
+      <InputNumber
+        class="w-45"
+        :model-value="String(settingStore.audioCachePauseWaitSecs ?? 1)"
+        :min="0.1"
+        :max="30"
+        :step="0.1"
+        placeholder="1"
+        suffix="秒"
+        @update:model-value="updateAudioCachePauseWaitSecs"
       />
     </div>
     <div class="settings-divider"></div>

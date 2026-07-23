@@ -12,6 +12,7 @@ import type { PlayerErrorCode, PlayerErrorPayload } from '../../shared/player-er
 
 const PINIA_SETTING_KEY = 'pinia:setting';
 const DEFAULT_AUDIO_CACHE_SECS = 1;
+const DEFAULT_AUDIO_CACHE_PAUSE_WAIT_SECS = 1;
 const DEFAULT_AUDIO_OUTPUT_BUFFER_SECS = 0.2;
 const DEFAULT_DEMUXER_MAX_MB = 150;
 const DEFAULT_DEMUXER_BACK_MB = 50;
@@ -27,6 +28,12 @@ const readClampedNumber = (value: unknown, fallback: number, min: number, max: n
 const getPersistedNativeAudioConfig = () => {
   const saved = getKvStorage().get<Record<string, unknown>>(PINIA_SETTING_KEY);
   const audioCacheSecs = readClampedNumber(saved?.audioCacheSecs, DEFAULT_AUDIO_CACHE_SECS, 1, 120);
+  const audioCachePauseWaitSecs = readClampedNumber(
+    saved?.audioCachePauseWaitSecs,
+    DEFAULT_AUDIO_CACHE_PAUSE_WAIT_SECS,
+    0.1,
+    30,
+  );
   const audioBufferSecs = readClampedNumber(
     saved?.audioBufferSecs,
     DEFAULT_AUDIO_OUTPUT_BUFFER_SECS,
@@ -54,6 +61,7 @@ const getPersistedNativeAudioConfig = () => {
   return {
     audioBufferSecs,
     audioCacheSecs,
+    audioCachePauseWaitSecs,
     audioDemuxerMaxMB,
     audioDemuxerBackMB,
     playbackStallTimeoutSecs,
@@ -122,6 +130,7 @@ interface PlayerAddon {
   initialize(config?: {
     audioBufferSecs?: number;
     audioCacheSecs?: number;
+    audioCachePauseWaitSecs?: number;
     audioDemuxerMaxMb?: number;
     audioDemuxerBackMb?: number;
     networkTimeoutSecs?: number;
@@ -238,6 +247,7 @@ export class PlayerController extends EventEmitter {
     this.addon.initialize({
       audioBufferSecs: audioConfig.audioBufferSecs,
       audioCacheSecs: audioConfig.audioCacheSecs,
+      audioCachePauseWaitSecs: audioConfig.audioCachePauseWaitSecs,
       audioDemuxerMaxMb: audioConfig.audioDemuxerMaxMB,
       audioDemuxerBackMb: audioConfig.audioDemuxerBackMB,
       networkTimeoutSecs: networkSettings.playerNetworkTimeoutSecs,

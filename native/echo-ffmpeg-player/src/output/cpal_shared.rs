@@ -420,6 +420,7 @@ impl OutputResampler {
         }
 
         self.device_output.resize(frames * output_channels, 0.0);
+        self.device_output.fill(0.0);
         self.fill_device(frames, shared);
         let take = output.len().min(self.device_output.len());
         output[..take].copy_from_slice(&self.device_output[..take]);
@@ -434,6 +435,11 @@ impl OutputResampler {
 
     fn fill_device(&mut self, frames: usize, shared: &SharedAudio) {
         self.ensure_converted_frames(frames, shared);
+        if self.converted_pending.len() < self.device_output.len()
+            && !shared.is_drained_for_output()
+        {
+            return;
+        }
         let take_samples = self.device_output.len().min(self.converted_pending.len());
         for sample in self.device_output.iter_mut().take(take_samples) {
             *sample = self.converted_pending.pop_front().unwrap_or(0.0);
@@ -706,6 +712,38 @@ mod tests {
             .any(|frame| frame[0].abs() > 0.001 || frame[1].abs() > 0.001));
         assert!(output.chunks_exact(4).all(|frame| frame[2] == 0.0));
         assert!(output.chunks_exact(4).all(|frame| frame[3] == 0.0));
+    }
+
+    #[test]
+    fn output_resampler_holds_partial_pending_audio_during_underflow() {
+        let shared = SharedAudio::new(
+            MixFormat::stereo_f32(44_100),
+            1.0,
+            8.0,
+            &DspSettings::default(),
+        );
+        shared.paused.store(false, Ordering::Release);
+
+        let input_frames = 2048usize;
+        let mut samples = Vec::with_capacity(input_frames * MIX_CHANNELS);
+        for frame in 0..input_frames {
+            let value = (frame as f32 + 1.0) / input_frames as f32;
+            samples.push(value);
+            samples.push(-value);
+        }
+        assert!(shared.push_samples(&samples));
+
+        let mut resampler = OutputResampler::new(44_100, 48_000, MIX_CHANNELS, MIX_CHANNELS)
+            .expect("output resampler should initialize");
+        let mut first_output = vec![0.0; 64 * MIX_CHANNELS];
+        resampler.fill_output(&mut first_output, MIX_CHANNELS, &shared);
+        assert!(first_output.iter().any(|sample| sample.abs() > 0.001));
+
+        let mut underflow_output = vec![0.0; 131_072 * MIX_CHANNELS];
+        resampler.fill_output(&mut underflow_output, MIX_CHANNELS, &shared);
+
+        assert!(underflow_output.iter().all(|sample| *sample == 0.0));
+        assert_eq!(shared.output_underrun_count(), 1);
     }
 
     #[test]

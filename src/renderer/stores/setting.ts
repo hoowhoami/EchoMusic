@@ -160,6 +160,7 @@ export const useSettingStore = defineStore('setting', {
     playlistSortOrder: 'default' as 'default' | 'time-desc' | 'time-asc' | 'name-asc' | 'name-desc',
     // 音频缓冲区设置
     audioCacheSecs: 1,
+    audioCachePauseWaitSecs: 1,
     audioDemuxerMaxMB: 150,
     audioDemuxerBackMB: 50,
     audioBufferSecs: 0.2,

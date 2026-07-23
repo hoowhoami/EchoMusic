@@ -7,6 +7,7 @@ use std::time::Duration;
 
 const DEFAULT_BUFFER_SECS: f64 = 0.2;
 const DEFAULT_AUDIO_CACHE_SECS: f64 = 1.0;
+const DEFAULT_CACHE_PAUSE_WAIT_SECS: f64 = 1.0;
 const DEFAULT_DEMUXER_MAX_MB: f64 = 150.0;
 const DEFAULT_DEMUXER_BACK_MB: f64 = 50.0;
 const DEFAULT_NETWORK_TIMEOUT_SECS: f64 = 60.0;
@@ -16,6 +17,7 @@ const DEFAULT_PLAYBACK_STALL_TIMEOUT_SECS: f64 = 8.0;
 pub struct PlayerConfigOptions {
     pub audio_buffer_secs: Option<f64>,
     pub audio_cache_secs: Option<f64>,
+    pub audio_cache_pause_wait_secs: Option<f64>,
     pub audio_demuxer_max_mb: Option<f64>,
     pub audio_demuxer_back_mb: Option<f64>,
     pub network_timeout_secs: Option<f64>,
@@ -27,6 +29,7 @@ pub struct PlayerConfigOptions {
 pub struct PlayerConfig {
     pub audio_buffer_secs: f64,
     pub audio_cache_secs: f64,
+    pub audio_cache_pause_wait_secs: f64,
     pub audio_demuxer_max_mb: f64,
     pub audio_demuxer_back_mb: f64,
     pub network_timeout_secs: f64,
@@ -41,6 +44,7 @@ impl Default for PlayerConfig {
         Self {
             audio_buffer_secs: DEFAULT_BUFFER_SECS,
             audio_cache_secs: DEFAULT_AUDIO_CACHE_SECS,
+            audio_cache_pause_wait_secs: DEFAULT_CACHE_PAUSE_WAIT_SECS,
             audio_demuxer_max_mb: DEFAULT_DEMUXER_MAX_MB,
             audio_demuxer_back_mb: DEFAULT_DEMUXER_BACK_MB,
             network_timeout_secs: DEFAULT_NETWORK_TIMEOUT_SECS,
@@ -61,6 +65,9 @@ impl PlayerConfig {
             }
             if let Some(value) = options.audio_cache_secs {
                 config.audio_cache_secs = value.clamp(1.0, 120.0);
+            }
+            if let Some(value) = options.audio_cache_pause_wait_secs {
+                config.audio_cache_pause_wait_secs = value.clamp(0.1, 30.0);
             }
             if let Some(value) = options.audio_demuxer_max_mb {
                 config.audio_demuxer_max_mb = value.clamp(8.0, 512.0);
@@ -125,6 +132,7 @@ mod tests {
 
         assert_eq!(config.audio_buffer_secs, 0.2);
         assert_eq!(config.audio_cache_secs, 1.0);
+        assert_eq!(config.audio_cache_pause_wait_secs, 1.0);
         assert_eq!(config.audio_demuxer_max_mb, 150.0);
         assert_eq!(config.audio_demuxer_back_mb, 50.0);
         assert_eq!(packet_cache.max_bytes, 150 * 1024 * 1024);
@@ -141,6 +149,7 @@ mod tests {
         let config = PlayerConfig::from_options(Some(PlayerConfigOptions {
             audio_buffer_secs: Some(0.01),
             audio_cache_secs: Some(0.1),
+            audio_cache_pause_wait_secs: Some(0.01),
             audio_demuxer_max_mb: Some(2.0),
             audio_demuxer_back_mb: Some(999.0),
             network_timeout_secs: None,
@@ -150,6 +159,7 @@ mod tests {
 
         assert_eq!(config.audio_buffer_secs, 0.05);
         assert_eq!(config.audio_cache_secs, 1.0);
+        assert_eq!(config.audio_cache_pause_wait_secs, 0.1);
         assert_eq!(config.audio_demuxer_max_mb, 8.0);
         assert_eq!(config.audio_demuxer_back_mb, 512.0);
         assert_eq!(config.packet_cache_options().back_bytes, 8 * 1024 * 1024);
