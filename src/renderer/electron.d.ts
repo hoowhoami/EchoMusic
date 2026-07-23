@@ -506,8 +506,11 @@ export interface IElectronAPI {
     }) => Promise<void>;
     updateState: (payload: { status: string }) => Promise<void>;
     updateTimeline: (payload: { currentTimeMs: number; totalTimeMs: number }) => Promise<void>;
+    updateSkipIntervals: (payload: { forwardMs: number; backwardMs: number }) => Promise<void>;
     available: () => Promise<boolean>;
-    onEvent: (func: (event: { type: string; positionMs?: number }) => void) => () => void;
+    onEvent: (
+      func: (event: { type: string; positionMs?: number; offsetMs?: number }) => void,
+    ) => () => void;
   };
   player: {
     load: (url: string) => Promise<void>;

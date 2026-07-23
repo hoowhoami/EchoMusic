@@ -1059,11 +1059,13 @@ contextBridge.exposeInMainWorld('electron', {
       invokeWithPlainPayload('media-control:update-state', payload),
     updateTimeline: (payload: { currentTimeMs: number; totalTimeMs: number }) =>
       invokeWithPlainPayload('media-control:update-timeline', payload),
+    updateSkipIntervals: (payload: { forwardMs: number; backwardMs: number }) =>
+      invokeWithPlainPayload('media-control:update-skip-intervals', payload),
     available: () => ipcRenderer.invoke('media-control:available') as Promise<boolean>,
-    onEvent: (func: (event: { type: string; positionMs?: number }) => void) => {
+    onEvent: (func: (event: { type: string; positionMs?: number; offsetMs?: number }) => void) => {
       const listener = (
         _event: Electron.IpcRendererEvent,
-        data: { type: string; positionMs?: number },
+        data: { type: string; positionMs?: number; offsetMs?: number },
       ) => func(data);
       ipcRenderer.on('media-control:event', listener);
       return () => ipcRenderer.removeListener('media-control:event', listener);

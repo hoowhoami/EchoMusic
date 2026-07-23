@@ -121,6 +121,8 @@ impl SystemMediaControls for WindowsMediaControls {
         smtc.SetIsNextEnabled(true).ok();
         smtc.SetIsPreviousEnabled(true).ok();
         smtc.SetIsStopEnabled(true).ok();
+        smtc.SetIsFastForwardEnabled(true).ok();
+        smtc.SetIsRewindEnabled(true).ok();
         smtc.SetPlaybackStatus(MediaPlaybackStatus::Closed).ok();
 
         // 注册按钮事件
@@ -146,6 +148,12 @@ impl SystemMediaControls for WindowsMediaControls {
                         }
                         windows::Media::SystemMediaTransportControlsButton::Previous => {
                             MediaControlEvent::previous()
+                        }
+                        windows::Media::SystemMediaTransportControlsButton::FastForward => {
+                            MediaControlEvent::seek_forward(None)
+                        }
+                        windows::Media::SystemMediaTransportControlsButton::Rewind => {
+                            MediaControlEvent::seek_backward(None)
                         }
                         _ => return Ok(()),
                     };

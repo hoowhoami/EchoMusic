@@ -3,7 +3,9 @@ mod sys_media;
 #[cfg(target_os = "windows")]
 mod taskbar;
 
-use model::{MediaControlEvent, MetadataPayload, PlayStatePayload, TimelinePayload};
+use model::{
+    MediaControlEvent, MetadataPayload, PlayStatePayload, SkipIntervalPayload, TimelinePayload,
+};
 use napi::bindgen_prelude::AsyncTask;
 use napi::threadsafe_function::ThreadsafeFunction;
 use napi::{Env, Task};
@@ -93,6 +95,18 @@ pub fn update_timeline(payload: TimelinePayload) -> napi::Result<()> {
         .map_err(|e| napi::Error::from_reason(format!("Lock failed: {e}")))?;
     if let Some(ref controls) = *guard {
         controls.update_timeline(&payload);
+    }
+    Ok(())
+}
+
+/// 更新系统媒体控制中的快进 / 快退偏好间隔
+#[napi]
+pub fn update_skip_intervals(payload: SkipIntervalPayload) -> napi::Result<()> {
+    let guard = CONTROLS
+        .read()
+        .map_err(|e| napi::Error::from_reason(format!("Lock failed: {e}")))?;
+    if let Some(ref controls) = *guard {
+        controls.update_skip_intervals(&payload);
     }
     Ok(())
 }

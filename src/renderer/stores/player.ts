@@ -134,6 +134,17 @@ export const usePlayerStore = defineStore(
         window.electron?.ipcRenderer?.send('thumbar:update-play-state', isPlaying);
       },
     );
+    const syncMediaSkipIntervals = () => {
+      engine.updateMediaSkipIntervals({
+        forwardOffset: settingStore.seekForwardOffset ?? 5,
+        backwardOffset: settingStore.seekBackwardOffset ?? 5,
+      });
+    };
+    watch(
+      () => [settingStore.seekForwardOffset, settingStore.seekBackwardOffset],
+      syncMediaSkipIntervals,
+      { immediate: true },
+    );
 
     const refreshCurrentTrack = async () => {
       if (!state.currentTrackId) return;
@@ -516,9 +527,17 @@ export const usePlayerStore = defineStore(
         previoustrack: () => playbackManager.prev(),
         nexttrack: () => playbackManager.next(),
         seekto: (time) => playbackManager.seek(time),
-        seekbackward: (offset) => playbackManager.seek(Math.max(0, state.currentTime - offset)),
+        seekbackward: (offset) =>
+          playbackManager.seek(
+            Math.max(0, state.currentTime - (offset ?? settingStore.seekBackwardOffset ?? 5)),
+          ),
         seekforward: (offset) =>
-          playbackManager.seek(Math.min(state.duration, state.currentTime + offset)),
+          playbackManager.seek(
+            Math.min(
+              state.duration,
+              state.currentTime + (offset ?? settingStore.seekForwardOffset ?? 5),
+            ),
+          ),
       });
 
       restorePlaybackSessionFromQueue();

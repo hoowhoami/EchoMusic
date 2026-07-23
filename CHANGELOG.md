@@ -6,6 +6,7 @@
 
 ### 新增
 
+- 新增 macOS / Windows 系统媒体控制快进、快退语义支持，Linux 继续通过 MPRIS 相对 Seek 覆盖
 - 新增 4 通道 true-stereo 空间音效 IR 支持
 - 新增插件播放展示状态 API
 - 新增无缝播放功能

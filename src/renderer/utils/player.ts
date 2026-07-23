@@ -38,6 +38,11 @@ export interface MediaSessionState {
   playbackRate: number;
 }
 
+export interface MediaSessionSkipIntervals {
+  forwardOffset: number;
+  backwardOffset: number;
+}
+
 export interface TrackLoudness {
   /** 曲目集成响度（LUFS） */
   lufs: number;
@@ -527,6 +532,14 @@ export class PlayerEngine {
     }
   }
 
+  /** 更新系统媒体控制的快进 / 快退偏好间隔 */
+  updateMediaSkipIntervals(intervals: MediaSessionSkipIntervals): void {
+    mediaControls?.updateSkipIntervals({
+      forwardMs: Math.max(0, Number(intervals.forwardOffset) || 0) * 1000,
+      backwardMs: Math.max(0, Number(intervals.backwardOffset) || 0) * 1000,
+    });
+  }
+
   /** 注册系统媒体控制事件处理（通过主进程 IPC 转发） */
   setMediaSessionHandlers(handlers: {
     play?: () => void;
@@ -534,31 +547,43 @@ export class PlayerEngine {
     previoustrack?: () => void;
     nexttrack?: () => void;
     seekto?: (time: number) => void;
-    seekbackward?: (offset: number) => void;
-    seekforward?: (offset: number) => void;
+    seekbackward?: (offset?: number) => void;
+    seekforward?: (offset?: number) => void;
   }): void {
     // 监听主进程转发的原生媒体控制事件
-    const offEvent = mediaControls?.onEvent?.((event: { type: string; positionMs?: number }) => {
-      switch (event.type) {
-        case 'Play':
-          handlers.play?.();
-          break;
-        case 'Pause':
-          handlers.pause?.();
-          break;
-        case 'NextSong':
-          handlers.nexttrack?.();
-          break;
-        case 'PreviousSong':
-          handlers.previoustrack?.();
-          break;
-        case 'Seek':
-          if (event.positionMs !== undefined) {
-            handlers.seekto?.(event.positionMs / 1000);
-          }
-          break;
-      }
-    });
+    const offEvent = mediaControls?.onEvent?.(
+      (event: { type: string; positionMs?: number; offsetMs?: number }) => {
+        switch (event.type) {
+          case 'Play':
+            handlers.play?.();
+            break;
+          case 'Pause':
+            handlers.pause?.();
+            break;
+          case 'NextSong':
+            handlers.nexttrack?.();
+            break;
+          case 'PreviousSong':
+            handlers.previoustrack?.();
+            break;
+          case 'Seek':
+            if (event.positionMs !== undefined) {
+              handlers.seekto?.(event.positionMs / 1000);
+            }
+            break;
+          case 'SeekForward':
+            handlers.seekforward?.(
+              event.offsetMs !== undefined ? event.offsetMs / 1000 : undefined,
+            );
+            break;
+          case 'SeekBackward':
+            handlers.seekbackward?.(
+              event.offsetMs !== undefined ? event.offsetMs / 1000 : undefined,
+            );
+            break;
+        }
+      },
+    );
     if (offEvent) this.cleanupFns.push(offEvent);
   }
 

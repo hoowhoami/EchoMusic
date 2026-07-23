@@ -5,7 +5,9 @@ mod macos;
 #[cfg(target_os = "linux")]
 mod linux;
 
-use crate::model::{MediaControlEvent, MetadataPayload, PlayStatePayload, TimelinePayload};
+use crate::model::{
+    MediaControlEvent, MetadataPayload, PlayStatePayload, SkipIntervalPayload, TimelinePayload,
+};
 use napi::threadsafe_function::ThreadsafeFunction;
 
 /// 事件回调类型
@@ -18,6 +20,7 @@ pub trait SystemMediaControls: Send + Sync {
     fn update_metadata(&self, payload: &MetadataPayload);
     fn update_play_state(&self, payload: &PlayStatePayload);
     fn update_timeline(&self, payload: &TimelinePayload);
+    fn update_skip_intervals(&self, _payload: &SkipIntervalPayload) {}
     fn set_event_callback(&mut self, callback: EventCallback);
 }
 

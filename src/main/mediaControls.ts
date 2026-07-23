@@ -20,8 +20,12 @@ interface NativeMediaControls {
   }): Promise<void>;
   updatePlayState(payload: { status: string }): void;
   updateTimeline(payload: { currentTimeMs: number; totalTimeMs: number }): void;
+  updateSkipIntervals(payload: { forwardMs: number; backwardMs: number }): void;
   registerEventHandler(
-    callback: (err: Error | null, event: { type: string; positionMs?: number }) => void,
+    callback: (
+      err: Error | null,
+      event: { type: string; positionMs?: number; offsetMs?: number },
+    ) => void,
   ): void;
 }
 
@@ -233,6 +237,18 @@ export function initMediaControls(getMainWindow: () => BrowserWindow | null): vo
     },
   );
 
+  // IPC: 更新系统媒体控制的快进 / 快退偏好间隔
+  ipcMain.handle(
+    'media-control:update-skip-intervals',
+    (_e, payload: { forwardMs: number; backwardMs: number }) => {
+      try {
+        nativeModule?.updateSkipIntervals(payload);
+      } catch (err) {
+        log.warn('[MediaControls] updateSkipIntervals failed:', err);
+      }
+    },
+  );
+
   // IPC: 查询 native addon 是否可用
   ipcMain.handle('media-control:available', () => {
     return nativeModule !== null;
@@ -249,6 +265,9 @@ function registerFallbackIpc(): void {
   }
   if (!ipcMain.listenerCount('media-control:update-timeline')) {
     ipcMain.handle('media-control:update-timeline', () => {});
+  }
+  if (!ipcMain.listenerCount('media-control:update-skip-intervals')) {
+    ipcMain.handle('media-control:update-skip-intervals', () => {});
   }
   if (!ipcMain.listenerCount('media-control:available')) {
     ipcMain.handle('media-control:available', () => false);
