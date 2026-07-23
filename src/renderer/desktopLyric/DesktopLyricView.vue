@@ -82,6 +82,8 @@ const getTimelinePlayback = () => {
     isPlaying: state.isPlaying,
     playbackRate: state.playbackRate,
     updatedAt: state.updatedAt,
+    seekTimestamp: state.seekTimestamp,
+    clock: state.clock,
   };
 };
 

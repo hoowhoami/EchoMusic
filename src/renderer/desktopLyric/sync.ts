@@ -6,6 +6,7 @@ import { useSettingStore } from '@/stores/setting';
 import { useToastStore } from '@/stores/toast';
 import { useDesktopLyricStore } from './store';
 import { mergeDesktopLyricSnapshotMessage } from '../../shared/desktop-lyric';
+import { buildPlaybackClockSnapshot } from '../../shared/playback';
 import type {
   DesktopLyricCommand,
   DesktopLyricPlaybackPayload,
@@ -95,6 +96,7 @@ const buildPlaybackSignature = (
     stableNumberKey(playback?.currentTime, 1000),
     boolKey(playback?.isPlaying),
     stableNumberKey(playback?.playbackRate ?? 1, 1000),
+    stableNumberKey(playback?.seekTimestamp ?? 0),
     currentIndex,
     lyricTimeOffset,
     boolKey(lyricSyncWarning),
@@ -135,9 +137,16 @@ const buildPlaybackPayload = (): DesktopLyricPlaybackPayload | null => {
   const track = playerStore.currentTrackSnapshot;
   if (!track || !playerStore.currentTrackId) return null;
   const lyricHash = String(track.hash ?? track.id ?? playerStore.currentTrackId ?? '').trim();
+  const trackId = String(playerStore.currentTrackId);
+  const duration = Number(playerStore.duration || track.duration || 0);
+  const currentTime = Number(playerStore.currentTime || 0);
+  const isPlaying = Boolean(playerStore.isPlaying);
+  const playbackRate = Number(playerStore.playbackRate || 1);
+  const updatedAt = Number(playerStore.currentTimeUpdatedAt || Date.now());
+  const seekTimestamp = Number(playerStore.seekTimestamp || 0);
 
   return {
-    trackId: String(playerStore.currentTrackId),
+    trackId,
     lyricHash,
     title: String(track.name || '未知歌曲'),
     artist: String(
@@ -145,11 +154,21 @@ const buildPlaybackPayload = (): DesktopLyricPlaybackPayload | null => {
     ),
     album: String(track.album ?? track.albumName ?? ''),
     coverUrl: String(track.coverUrl || track.cover || ''),
-    duration: Number(playerStore.duration || track.duration || 0),
-    currentTime: Number(playerStore.currentTime || 0),
-    isPlaying: Boolean(playerStore.isPlaying),
-    playbackRate: Number(playerStore.playbackRate || 1),
-    updatedAt: Number(playerStore.currentTimeUpdatedAt || Date.now()),
+    duration,
+    currentTime,
+    isPlaying,
+    playbackRate,
+    updatedAt,
+    seekTimestamp,
+    clock: buildPlaybackClockSnapshot({
+      trackId,
+      currentTime,
+      duration,
+      isPlaying,
+      playbackRate,
+      updatedAt,
+      seekTimestamp,
+    }),
   };
 };
 
@@ -168,8 +187,15 @@ export const initDesktopLyricSync = async () => {
   }
 
   const stops: WatchStopHandle[] = [];
-  const { currentTime, isPlaying, duration, playbackRate, currentTrackId, currentTrackSnapshot } =
-    storeToRefs(playerStore);
+  const {
+    currentTime,
+    isPlaying,
+    duration,
+    playbackRate,
+    currentTrackId,
+    currentTrackSnapshot,
+    seekTimestamp,
+  } = storeToRefs(playerStore);
   const { lines, currentIndex, wantTranslation, wantRomanization, loadedHash, currentTimeOffset } =
     storeToRefs(lyricStore);
   const settingStore = useSettingStore();
@@ -324,6 +350,7 @@ export const initDesktopLyricSync = async () => {
         currentTrackId,
         currentTrackSnapshot,
         currentTimeOffset,
+        seekTimestamp,
       ],
       () => {
         // 桌面歌词启用时自驱动歌词行索引（不更新逐字高亮，桌面歌词窗口自己处理）

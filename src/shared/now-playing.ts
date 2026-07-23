@@ -1,4 +1,5 @@
 import type { LyricLinePayload } from './lyrics';
+import type { PlaybackClockSnapshot } from './playback';
 import type { ShortcutCommand } from './shortcuts';
 
 export type NowPlayingLyricsMode = 'none' | 'translation' | 'romanization' | 'both';
@@ -27,6 +28,8 @@ export interface NowPlayingPlaybackPayload {
   isPersonalFM: boolean;
   playbackRate: number;
   updatedAt: number;
+  seekTimestamp?: number;
+  clock?: PlaybackClockSnapshot;
 }
 
 export interface NowPlayingLyricPayload {

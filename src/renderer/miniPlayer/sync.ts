@@ -10,6 +10,7 @@ import { executeShortcutCommand } from '@/utils/shortcuts';
 import { setWithLimit } from '@/utils/lruMap';
 import type { Song } from '@/models/song';
 import { resolveFavoriteSongKey } from '@/stores/playlist/helpers';
+import { buildPlaybackClockSnapshot } from '../../shared/playback';
 import type {
   MiniPlayerCommand,
   MiniPlayerLyricPayload,
@@ -128,6 +129,12 @@ const buildPlaybackPayload = (): MiniPlayerPlaybackPayload | null => {
   if (!track || !playerStore.currentTrackId) return null;
 
   const trackId = String(playerStore.currentTrackId);
+  const duration = Number(playerStore.duration || track.duration || 0);
+  const currentTime = Number(playerStore.currentTime || 0);
+  const playbackRate = Number(playerStore.playbackRate || 1);
+  const isPlaying = Boolean(playerStore.isPlaying);
+  const updatedAt = Number(playerStore.currentTimeUpdatedAt || Date.now());
+  const seekTimestamp = Number(playerStore.seekTimestamp || 0);
 
   return {
     trackId,
@@ -135,15 +142,25 @@ const buildPlaybackPayload = (): MiniPlayerPlaybackPayload | null => {
     artist: resolveSongArtist(track),
     album: String(track.album ?? track.albumName ?? ''),
     coverUrl: String(track.coverUrl || track.cover || ''),
-    duration: Number(playerStore.duration || track.duration || 0),
-    currentTime: Number(playerStore.currentTime || 0),
-    playbackRate: Number(playerStore.playbackRate || 1),
-    isPlaying: Boolean(playerStore.isPlaying),
+    duration,
+    currentTime,
+    playbackRate,
+    isPlaying,
     isFavorite: resolveFavoriteState(track),
     lyricsLabel: lyricStore.currentDisplayLabel,
     volume: Number(playerStore.volume || 0),
     lastNonZeroVolume: Number(playerStore.lastNonZeroVolume || 0),
-    updatedAt: Number(playerStore.currentTimeUpdatedAt || Date.now()),
+    updatedAt,
+    seekTimestamp,
+    clock: buildPlaybackClockSnapshot({
+      trackId,
+      currentTime,
+      duration,
+      isPlaying,
+      playbackRate,
+      updatedAt,
+      seekTimestamp,
+    }),
   };
 };
 
@@ -298,6 +315,7 @@ export const initMiniPlayerSync = async () => {
     currentTrackSnapshot,
     volume,
     currentSourceQueueId,
+    seekTimestamp,
   } = storeToRefs(playerStore);
   const { favorites, favoritesLoaded } = storeToRefs(playlistStore);
   const {
@@ -425,6 +443,7 @@ export const initMiniPlayerSync = async () => {
         currentTrackId,
         currentTrackSnapshot,
         volume,
+        seekTimestamp,
         favorites,
         favoritesLoaded,
         // 启动恢复后快照可能为空，需在队列歌曲加载完成时按 id 重新解析当前曲

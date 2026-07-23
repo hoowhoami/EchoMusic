@@ -31,7 +31,7 @@ import type {
   MiniPlayerSnapshot,
 } from '../../shared/mini-player';
 import { MINI_PLAYER_DIMENSIONS } from '../../shared/mini-player';
-import { DEFAULT_PLAYER_VOLUME } from '../../shared/playback';
+import { DEFAULT_PLAYER_VOLUME, buildPlaybackClockSnapshot } from '../../shared/playback';
 import { createLyricTimeline } from '@/composables/useLyricTimeline';
 
 // 卡片折叠/展开高度，源自共享尺寸常量，保证与主进程窗口尺寸一致、不漂移
@@ -119,6 +119,8 @@ const getTimelinePlayback = () => {
     isPlaying: currentPlayback.isPlaying,
     playbackRate: currentPlayback.playbackRate,
     updatedAt: currentPlayback.updatedAt,
+    seekTimestamp: currentPlayback.seekTimestamp,
+    clock: currentPlayback.clock,
   };
 };
 
@@ -526,8 +528,20 @@ const handleSeekPointerUp = (event: PointerEvent) => {
   if (duration > 0) {
     // 乐观更新本地进度，避免等待 ~120ms 回传时进度条回跳
     if (playback.value) {
+      const now = Date.now();
       playback.value.currentTime = ratio * duration;
-      playback.value.updatedAt = Date.now();
+      playback.value.updatedAt = now;
+      playback.value.seekTimestamp = now;
+      playback.value.clock = buildPlaybackClockSnapshot({
+        trackId: playback.value.trackId,
+        currentTime: playback.value.currentTime,
+        duration,
+        isPlaying: playback.value.isPlaying,
+        playbackRate: playback.value.playbackRate,
+        updatedAt: now,
+        seekTimestamp: now,
+        reason: 'seek',
+      });
       refreshLiveLyricIndex();
     }
     command({ type: 'seek', value: ratio * duration });
@@ -724,6 +738,7 @@ watch(
     playback.value?.trackId ?? null,
     playback.value?.currentTime ?? 0,
     playback.value?.updatedAt ?? 0,
+    playback.value?.seekTimestamp ?? 0,
     playback.value?.isPlaying ?? false,
     playback.value?.playbackRate ?? 1,
     lyric.value?.trackId ?? null,

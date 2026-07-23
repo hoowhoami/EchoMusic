@@ -1,4 +1,5 @@
 import type { LyricLinePayload } from './lyrics';
+import type { PlaybackClockSnapshot } from './playback';
 
 export type MiniPlayerExpandDirection = 'down' | 'up';
 
@@ -45,6 +46,8 @@ export interface MiniPlayerPlaybackPayload {
   volume?: number;
   lastNonZeroVolume?: number;
   updatedAt: number;
+  seekTimestamp?: number;
+  clock?: PlaybackClockSnapshot;
 }
 
 export interface MiniPlayerQueueTrack {

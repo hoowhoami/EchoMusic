@@ -10,6 +10,7 @@ import { executeShortcutCommand } from '@/utils/shortcuts';
 import { setWithLimit } from '@/utils/lruMap';
 import type { Song } from '@/models/song';
 import { resolveFavoriteSongKey } from '@/stores/playlist/helpers';
+import { buildPlaybackClockSnapshot } from '../../shared/playback';
 import type {
   NowPlayingCommand,
   NowPlayingPlaybackPayload,
@@ -132,9 +133,16 @@ const buildPlaybackPayload = (): NowPlayingPlaybackPayload | null => {
   const track = playerStore.currentTrackSnapshot;
   if (!track || !playerStore.currentTrackId) return null;
   const lyricHash = String(track.hash ?? track.id ?? playerStore.currentTrackId ?? '').trim();
+  const trackId = String(playerStore.currentTrackId);
+  const duration = Number(playerStore.duration || track.duration || 0);
+  const currentTime = Number(playerStore.currentTime || 0);
+  const isPlaying = Boolean(playerStore.isPlaying);
+  const playbackRate = Number(playerStore.playbackRate || 1);
+  const updatedAt = Number(playerStore.currentTimeUpdatedAt || Date.now());
+  const seekTimestamp = Number(playerStore.seekTimestamp || 0);
 
   return {
-    trackId: String(playerStore.currentTrackId),
+    trackId,
     lyricHash,
     title: String(track.name || '未知歌曲'),
     artist: String(
@@ -142,13 +150,23 @@ const buildPlaybackPayload = (): NowPlayingPlaybackPayload | null => {
     ),
     album: String(track.album ?? track.albumName ?? ''),
     coverUrl: String(track.coverUrl || track.cover || ''),
-    duration: Number(playerStore.duration || track.duration || 0),
-    currentTime: Number(playerStore.currentTime || 0),
-    isPlaying: Boolean(playerStore.isPlaying),
+    duration,
+    currentTime,
+    isPlaying,
     isFavorite: resolveFavoriteState(track as Song),
     isPersonalFM: resolveCurrentPlaybackQueue()?.id === PERSONAL_FM_QUEUE_ID,
-    playbackRate: Number(playerStore.playbackRate || 1),
-    updatedAt: Number(playerStore.currentTimeUpdatedAt || Date.now()),
+    playbackRate,
+    updatedAt,
+    seekTimestamp,
+    clock: buildPlaybackClockSnapshot({
+      trackId,
+      currentTime,
+      duration,
+      isPlaying,
+      playbackRate,
+      updatedAt,
+      seekTimestamp,
+    }),
   };
 };
 
@@ -170,6 +188,7 @@ export const initNowPlayingSync = async () => {
     playbackRate,
     currentTrackId,
     currentTrackSnapshot,
+    seekTimestamp,
   } = storeToRefs(playerStore);
   const { favorites, favoritesLoaded } = storeToRefs(playlistStore);
   const {
@@ -314,6 +333,7 @@ export const initNowPlayingSync = async () => {
         playbackRate,
         currentTrackId,
         currentTrackSnapshot,
+        seekTimestamp,
         favorites,
         favoritesLoaded,
         () => resolveCurrentPlaybackQueue()?.songs?.length ?? 0,

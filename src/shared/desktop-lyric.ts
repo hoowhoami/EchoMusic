@@ -1,4 +1,5 @@
 import type { LyricLinePayload } from './lyrics';
+import type { PlaybackClockSnapshot } from './playback';
 
 export type { LyricCharacterPayload, LyricLinePayload } from './lyrics';
 
@@ -14,6 +15,8 @@ export type DesktopLyricPlaybackPayload = {
   isPlaying: boolean;
   playbackRate: number;
   updatedAt: number;
+  seekTimestamp?: number;
+  clock?: PlaybackClockSnapshot;
 };
 
 export type DesktopLyricThemeMode = 'light' | 'dark' | 'system';
