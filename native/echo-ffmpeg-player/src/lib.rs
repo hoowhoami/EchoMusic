@@ -478,7 +478,7 @@ fn prepare_source(
                                 PlayerEvent::time_update(signal_shared.position_secs()),
                             );
                         }
-                        PlaybackSignal::Seeked(position) => {
+                        PlaybackSignal::PlaybackRestart(position) => {
                             emit_shared_events(
                                 &signal_shared,
                                 vec![
@@ -1587,6 +1587,8 @@ fn open_decoder_at_position(plan: &SeekPlan, position: f64) -> napi::Result<deco
 
     if position > 0.0 {
         decoder.seek(position).map_err(napi::Error::from_reason)?;
+    } else {
+        decoder.confirm_playback_restart_when_audio_ready(position);
     }
 
     Ok(decoder)
@@ -1672,6 +1674,7 @@ impl Task for SeekTask {
             runtime.state.time_pos = position;
             runtime.state.playing = false;
             runtime.state.paused = true;
+            emit_runtime_event(runtime, PlayerEvent::seek(position));
             Ok(runtime.current_url.clone().map(|url| SeekPlan {
                 shared,
                 was_paused,

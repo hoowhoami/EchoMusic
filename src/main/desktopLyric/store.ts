@@ -85,6 +85,8 @@ export function getDesktopLyricSettings(): DesktopLyricSettings {
       : DEFAULT_DESKTOP_LYRIC_PERSISTED_SETTINGS.shadowStrength,
     bold: Boolean(raw.bold),
     layout: isDesktopLyricLayout(raw.layout) ? raw.layout : 'horizontal',
+    filterEnabled: Boolean(raw.filterEnabled),
+    filterPattern: String(raw.filterPattern || ''),
     offsetStep: clamp(
       Number(raw.offsetStep) || DEFAULT_DESKTOP_LYRIC_PERSISTED_SETTINGS.offsetStep,
       0.1,
@@ -140,6 +142,8 @@ export function sanitizeDesktopLyricSettings(
       : current.shadowStrength,
     bold: Boolean(mergedBase.bold),
     layout: isDesktopLyricLayout(mergedBase.layout) ? mergedBase.layout : current.layout,
+    filterEnabled: Boolean(mergedBase.filterEnabled),
+    filterPattern: String(mergedBase.filterPattern || ''),
     offsetStep: clamp(Number(mergedBase.offsetStep) || current.offsetStep, 0.1, 5),
   };
 }

@@ -40,12 +40,15 @@ export function useYrcAnimation(activeIndex?: Ref<number>) {
   const mainCharEls = new Map<number, (HTMLElement | null)[]>();
   // 副歌词：`${行索引}:${kind}` -> 字符元素数组
   const subCharEls = new Map<string, (HTMLElement | null)[]>();
+  let lastActiveLineIndex = -1;
 
   const subKey = (lineIndex: number, kind: SubLyricKind) => `${lineIndex}:${kind}`;
+  const readActiveLineIndex = () => activeIndex?.value ?? lyricStore.currentIndex;
 
   // 模板 ref 回调：注册/注销主歌词字符元素
   const registerMainChar = (lineIndex: number, charIndex: number, el: HTMLElement | null) => {
     if (el) {
+      if (lineIndex !== readActiveLineIndex()) el.style.backgroundPositionX = '100%';
       let arr = mainCharEls.get(lineIndex);
       if (!arr) {
         arr = [];
@@ -70,6 +73,7 @@ export function useYrcAnimation(activeIndex?: Ref<number>) {
   ) => {
     const key = subKey(lineIndex, kind);
     if (el) {
+      if (lineIndex !== readActiveLineIndex()) el.style.backgroundPositionX = '100%';
       let arr = subCharEls.get(key);
       if (!arr) {
         arr = [];
@@ -89,6 +93,7 @@ export function useYrcAnimation(activeIndex?: Ref<number>) {
   const resetCharRegistry = () => {
     mainCharEls.clear();
     subCharEls.clear();
+    lastActiveLineIndex = -1;
   };
 
   // 获取当前播放时间（毫秒），非响应式
@@ -116,13 +121,36 @@ export function useYrcAnimation(activeIndex?: Ref<number>) {
     }
   };
 
+  const resetCharsProgress = (elements: (HTMLElement | null)[] | undefined) => {
+    if (!elements) return;
+    for (const el of elements) {
+      if (el) el.style.backgroundPositionX = '100%';
+    }
+  };
+
+  const resetYrcLineDom = (lineIndex: number) => {
+    if (lineIndex < 0) return;
+    resetCharsProgress(mainCharEls.get(lineIndex));
+    resetCharsProgress(subCharEls.get(subKey(lineIndex, 'romanized')));
+    resetCharsProgress(subCharEls.get(subKey(lineIndex, 'translated')));
+  };
+
   // 每帧更新逐字歌词样式（直接操作已注册的 DOM 元素）
   const updateYrcDom = () => {
-    const lineIndex = activeIndex?.value ?? lyricStore.currentIndex;
+    const lineIndex = readActiveLineIndex();
     const line = lyricStore.lines[lineIndex];
-    if (!line?.characters?.length) return;
+    if (!line?.characters?.length) {
+      resetYrcLineDom(lastActiveLineIndex);
+      lastActiveLineIndex = -1;
+      return;
+    }
 
     const seekMs = getLyricTimelineMs(LYRIC_LOOKAHEAD);
+
+    if (lineIndex !== lastActiveLineIndex) {
+      resetYrcLineDom(lastActiveLineIndex);
+      lastActiveLineIndex = lineIndex;
+    }
 
     // 主歌词逐字（仅当字符数 > 1 时才有逐字结构）
     if (line.characters.length > 1) {

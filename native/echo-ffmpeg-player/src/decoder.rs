@@ -14,7 +14,7 @@ pub struct DecoderData {
     reader: AudioReader,
     interrupt: Arc<AtomicBool>,
     duration: Option<Duration>,
-    pending_seek_position: Option<f64>,
+    pending_playback_restart_position: Option<f64>,
     mix_sample_rate: u32,
     source_channels: usize,
     source_sample_format: AudioSampleFormat,
@@ -63,7 +63,7 @@ impl DecoderData {
             reader,
             interrupt,
             duration,
-            pending_seek_position: None,
+            pending_playback_restart_position: None,
             mix_sample_rate,
             source_channels,
             source_sample_format,
@@ -106,8 +106,13 @@ impl DecoderData {
                     )
                 })
             })?;
-        self.pending_seek_position = Some(position_secs.max(0.0));
+        self.pending_playback_restart_position = Some(position_secs.max(0.0));
         Ok(())
+    }
+
+    /// Emit the playback-restart confirmation after the first decoded frame reaches the audio pipeline.
+    pub fn confirm_playback_restart_when_audio_ready(&mut self, position_secs: f64) {
+        self.pending_playback_restart_position = Some(position_secs.max(0.0));
     }
 
     pub fn decode_next_chunk(&mut self) -> Result<Option<DecodedAudioChunk>, String> {
@@ -137,11 +142,11 @@ impl DecoderData {
                         if !shared.is_decode_generation_current(generation) {
                             return (!shared.stop.load(Ordering::Acquire)).then_some(self);
                         }
-                        if let Some(requested_position) = self.pending_seek_position {
+                        if let Some(requested_position) = self.pending_playback_restart_position {
                             if chunk.frames > 0 {
                                 let position = chunk.pts_secs.unwrap_or(requested_position);
-                                shared.mark_seek_audio_ready(position);
-                                self.pending_seek_position = None;
+                                shared.mark_playback_restart_ready(position);
+                                self.pending_playback_restart_position = None;
                             }
                         }
                         produced_frames = produced_frames.saturating_add(chunk.frames as u64);

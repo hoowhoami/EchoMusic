@@ -53,6 +53,8 @@ export type DesktopLyricSettings = {
   shadowStrength: DesktopLyricShadowStrength;
   bold: boolean;
   layout: DesktopLyricLayout;
+  filterEnabled: boolean;
+  filterPattern: string;
   /** 歌词对齐微调步长（秒） */
   offsetStep: number;
 };
@@ -81,6 +83,8 @@ export const DEFAULT_DESKTOP_LYRIC_SETTINGS: DesktopLyricSettings = {
   shadowStrength: 'normal',
   bold: false,
   layout: 'horizontal',
+  filterEnabled: false,
+  filterPattern: '',
   offsetStep: 0.1,
 };
 

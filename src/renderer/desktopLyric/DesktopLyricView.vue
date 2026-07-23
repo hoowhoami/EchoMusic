@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import {
   computed,
+  nextTick,
   onBeforeUnmount,
   onMounted,
   reactive,
@@ -39,6 +40,7 @@ import {
   computeLyricCharProgress,
   createLyricTimeline,
 } from '@/composables/useLyricTimeline';
+import { findNextVisibleLyricIndex, resolveVisibleLyricIndex } from '@/utils/lyricFilter';
 
 // ── 渲染行类型 ──
 
@@ -101,10 +103,9 @@ const { pause: pauseSeek, resume: resumeSeek } = useRafFn(() => {
 });
 
 const updateYrcDomManual = () => {
-  const idx = activeLineIndex.value;
   const renderLines = renderLyricLines.value;
   // 查找当前活跃的渲染行（逐字层）
-  const activeRenderLine = renderLines.find((l) => l.active && l.index === idx);
+  const activeRenderLine = renderLines.find((line) => line.active);
 
   if (!activeRenderLine || !isYrcLine(activeRenderLine.line)) {
     cachedYrcElements = [];
@@ -190,6 +191,15 @@ const updateScrollManual = () => {
   });
 };
 
+const syncManualDomAfterRender = () => {
+  void nextTick(() => {
+    refreshTimelineState();
+    updateYrcDomManual();
+    updateScrollManual();
+    notifyLyricEffectHost();
+  });
+};
+
 // 播放引擎时间锚点已由共享时间轴插值补偿，逐字进度不再额外提前。
 const LYRIC_LOOKAHEAD = 0;
 // ── 计算属性 ──
@@ -228,6 +238,13 @@ const doubleLine = computed(() => settings.value?.doubleLine ?? true);
 const lyricLayout = computed(() => settings.value?.layout ?? 'horizontal');
 const isVerticalLayout = computed(() => lyricLayout.value === 'vertical');
 const lyricSyncWarning = computed(() => snapshot.value?.lyricSyncWarning ?? false);
+const lyricFilterConfig = computed(() => ({
+  enabled: settings.value?.filterEnabled ?? false,
+  pattern: settings.value?.filterPattern ?? '',
+}));
+const visibleCurrentIndex = computed(() =>
+  resolveVisibleLyricIndex(lyrics.value, currentIndex.value, lyricFilterConfig.value),
+);
 const secondaryEnabled = computed(() => {
   const s = settings.value;
   return (s?.wantTranslation ?? false) || (s?.wantRomanization ?? false);
@@ -366,7 +383,7 @@ const getLineInlineOffset = (index: number) => {
 const renderLyricLines = computed<RenderLine[]>(() => {
   if (!snapshot.value) return [];
   const lines = lyrics.value;
-  const idx = currentIndex.value;
+  const idx = visibleCurrentIndex.value;
   // 无歌词
   if (!lines.length) {
     if (!songName.value) return placeholder('EchoMusic Desktop Lyric');
@@ -378,7 +395,8 @@ const renderLyricLines = computed<RenderLine[]>(() => {
   }
   const current = lines[idx];
   if (!current) return [];
-  const next = lines[idx + 1];
+  const nextIndex = findNextVisibleLyricIndex(lines, idx, lyricFilterConfig.value);
+  const next = nextIndex >= 0 ? lines[nextIndex] : undefined;
 
   // 计算安全结束时间
   const safeEnd = next
@@ -435,8 +453,8 @@ const renderLyricLines = computed<RenderLine[]>(() => {
     if (next) {
       result.push({
         line: next,
-        index: idx + 1,
-        key: `${renderScopeKey.value}:${idx + 1}-orig`,
+        index: nextIndex,
+        key: `${renderScopeKey.value}:${nextIndex}-orig`,
         active: false,
       });
     }
@@ -449,8 +467,8 @@ const renderLyricLines = computed<RenderLine[]>(() => {
   if (next) {
     result.push({
       line: next,
-      index: idx + 1,
-      key: `${renderScopeKey.value}:${idx + 1}-orig`,
+      index: nextIndex,
+      key: `${renderScopeKey.value}:${nextIndex}-orig`,
       active: false,
     });
   }
@@ -464,7 +482,7 @@ const buildLyricEffectSnapshot = (): PluginLyricEffectSnapshot => {
     scope: 'desktop',
     lines: lyrics.value,
     currentIndex: index,
-    scrollIndex: index,
+    scrollIndex: visibleCurrentIndex.value,
     currentLine: index >= 0 ? (lyrics.value[index] ?? null) : null,
     currentTime: Math.max(0, playSeekMsRaw / 1000),
     duration: state?.duration ?? 0,
@@ -492,7 +510,7 @@ const notifyLyricEffectHost = () => {
   const root = lyricEffectRootRef.value;
   if (root) {
     root.style.setProperty('--echo-lyric-current-index', String(currentIndex.value));
-    root.style.setProperty('--echo-lyric-scroll-index', String(currentIndex.value));
+    root.style.setProperty('--echo-lyric-scroll-index', String(visibleCurrentIndex.value));
     root.dataset.echoLyricPlaying = isPlaying.value ? 'true' : 'false';
     root.dataset.echoLyricCollapsed = 'false';
     root.dataset.echoLyricReducedMotion = reducedMotion.value ? 'true' : 'false';
@@ -546,16 +564,16 @@ watch(renderScopeKey, () => {
   lineRefs.clear();
   contentRefs.clear();
   refreshTimelineState();
-  notifyLyricEffectHost();
+  syncManualDomAfterRender();
 });
 
 watch(lyricTimeOffset, () => {
   refreshTimelineState();
-  notifyLyricEffectHost();
+  syncManualDomAfterRender();
 });
 
 watch([renderLyricLines, lyricsMode, lyricLayout, isPlaying], () => {
-  notifyLyricEffectHost();
+  syncManualDomAfterRender();
 });
 
 // 拖拽
@@ -865,8 +883,7 @@ onMounted(async () => {
         resumeSeek();
       } else {
         pauseSeek();
-        updateYrcDomManual();
-        updateScrollManual();
+        syncManualDomAfterRender();
       }
       notifyLyricEffectHost();
     }) ?? null;
@@ -1022,7 +1039,7 @@ onBeforeUnmount(() => {
       :class="['lyric-container', alignment, lyricLayout]"
       data-echo-lyric-scroller="desktop"
       :data-echo-lyric-current-index="currentIndex"
-      :data-echo-lyric-scroll-index="currentIndex"
+      :data-echo-lyric-scroll-index="visibleCurrentIndex"
     >
       <div
         v-for="(line, index) in renderLyricLines"
@@ -1084,8 +1101,6 @@ onBeforeUnmount(() => {
                           backgroundSize: isVerticalLayout ? '100% 200%' : '200% 100%',
                           textShadow: 'none',
                           filter: lyricDropShadow,
-                          backgroundPositionX: isVerticalLayout ? '0%' : '100%',
-                          backgroundPositionY: isVerticalLayout ? '100%' : '0%',
                         }
                       : undefined
                   "

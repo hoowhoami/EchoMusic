@@ -142,6 +142,14 @@ impl PlayerEvent {
         }
     }
 
+    pub fn seek(time: f64) -> Self {
+        Self {
+            event: "seek".to_string(),
+            time: Some(time.max(0.0)),
+            ..Self::empty("seek")
+        }
+    }
+
     pub fn state_change(state: PlayerState) -> Self {
         Self {
             event: "state-change".to_string(),

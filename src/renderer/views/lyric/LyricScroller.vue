@@ -11,10 +11,10 @@ import {
 import { useLyricStore } from '@/stores/lyric';
 import { usePlayerStore } from '@/stores/player';
 import { useSettingStore } from '@/stores/setting';
-import { testLyricFilter } from '@/stores/lyric';
 import { useLyricScroll } from './composables/useLyricScroll';
 import { useYrcAnimation } from './composables/useYrcAnimation';
 import { formatDuration } from '@/utils/format';
+import { buildFilteredLyricEntries, resolveVisibleLyricIndex } from '@/utils/lyricFilter';
 import { iconPlay } from '@/icons';
 import {
   getPluginLyricEffectClassNames,
@@ -48,34 +48,13 @@ const collapsedRef = computed(() => props.collapsed);
 // 主歌词页只提前滚动，不提前切换当前行，避免逐字进度听起来抢拍。
 const LYRIC_SCROLL_LOOKAHEAD_MS = 100;
 
-const resolveVisibleIndex = (idx: number) => {
-  if (idx < 0) return idx;
-  // 如果当前行被过滤，回退到上一个未被过滤的行
-  const lines = lyricStore.lines;
-  if (
-    settingStore.lyricFilterEnabled &&
-    lines[idx] &&
-    testLyricFilter(
-      lines[idx].text,
-      settingStore.lyricFilterEnabled,
-      settingStore.lyricFilterPattern,
-    )
-  ) {
-    for (let i = idx - 1; i >= 0; i--) {
-      if (
-        !testLyricFilter(
-          lines[i].text,
-          settingStore.lyricFilterEnabled,
-          settingStore.lyricFilterPattern,
-        )
-      ) {
-        return i;
-      }
-    }
-    return -1;
-  }
-  return idx;
-};
+const lyricFilterConfig = computed(() => ({
+  enabled: settingStore.lyricFilterEnabled,
+  pattern: settingStore.lyricFilterPattern,
+}));
+
+const resolveVisibleIndex = (idx: number) =>
+  resolveVisibleLyricIndex(lyricStore.lines, idx, lyricFilterConfig.value);
 
 const currentIndex = computed(() => resolveVisibleIndex(lyricStore.currentIndex));
 const lyricEffectCurrentIndex = ref(currentIndex.value);
@@ -124,9 +103,10 @@ const hasStaticLyrics = computed(
 );
 const titleFontSize = computed(() => `${1.5 * lyricStore.fontScale}rem`);
 const secondaryFontSize = computed(() => `${1.2 * lyricStore.fontScale}rem`);
+const secondaryFontWeight = computed(() => String(Math.max(500, lyricStore.fontWeightValue - 200)));
 const lyricFontFamily = computed(() => settingStore.buildLyricFontFamily());
-// 副歌词逐字渐变背景（已播色 → 半透明未播色）
-const subYrcBgStyle = computed(
+// 逐字渐变背景（已播色 → 未播色）
+const activeYrcBgStyle = computed(
   () =>
     `linear-gradient(to right, ${effectivePlayedColor.value} 50%, ${effectiveUnplayedColor.value} 50%)`,
 );
@@ -148,21 +128,13 @@ const handleLineClick = (time: number) => {
   });
 };
 
-// 判断歌词行是否被过滤（如制作人信息、版权声明等）
-const isLineFilteredForPage = (line: { text: string }) => {
-  return testLyricFilter(
-    line.text,
-    settingStore.lyricFilterEnabled,
-    settingStore.lyricFilterPattern,
-  );
-};
-
 const handleLyricWheel = () => {
   handleWheel();
 };
 
 const lyricEntries = computed(() =>
-  lyricStore.lines.map((line, index) => {
+  buildFilteredLyricEntries(lyricStore.lines, lyricFilterConfig.value).map((entry) => {
+    const { line, index, filtered } = entry;
     const distance = lyricEffectCurrentIndex.value >= 0 ? index - lyricEffectCurrentIndex.value : 0;
     const scrollDistance = scrollIndex.value >= 0 ? index - scrollIndex.value : distance;
     return {
@@ -171,7 +143,7 @@ const lyricEntries = computed(() =>
       distance,
       absDistance: Math.abs(distance),
       scrollDistance,
-      filtered: isLineFilteredForPage(line),
+      filtered,
     };
   }),
 );
@@ -396,6 +368,15 @@ watch(
   },
 );
 
+watch(
+  currentIndex,
+  () => {
+    updateYrcDom();
+    notifyLyricEffectHost();
+  },
+  { flush: 'sync' },
+);
+
 onMounted(() => {
   reducedMotionQuery = window.matchMedia?.('(prefers-reduced-motion: reduce)') ?? null;
   updateReducedMotion();
@@ -490,7 +471,7 @@ watch(
         >
           <div
             v-for="entry in lyricEntries"
-            :key="entry.line.time"
+            :key="`${entry.index}-${entry.line.time}`"
             :hidden="entry.filtered"
             class="lyric-row"
             :data-lyric-index="entry.index"
@@ -541,7 +522,7 @@ watch(
                 }"
               >
                 <!-- 逐字歌词 -->
-                <template v-if="currentIndex === entry.index && isYrcLine(entry.line)">
+                <template v-if="isYrcLine(entry.line)">
                   <span class="lyric-yrc-line-wrap">
                     <span
                       v-for="(char, ci) in entry.line.characters"
@@ -551,7 +532,7 @@ watch(
                       data-echo-lyric-char
                       :data-echo-lyric-char-index="ci"
                       :style="{
-                        backgroundImage: `linear-gradient(to right, ${effectivePlayedColor} 50%, ${effectiveUnplayedColor} 50%)`,
+                        backgroundImage: activeYrcBgStyle,
                       }"
                       >{{ char.text }}</span
                     >
@@ -580,11 +561,7 @@ watch(
                   data-echo-lyric-secondary-kind="romanized"
                   :style="{
                     fontSize: secondaryFontSize,
-                    fontWeight: String(
-                      currentIndex === entry.index
-                        ? Math.max(500, lyricStore.fontWeightValue - 200)
-                        : 400,
-                    ),
+                    fontWeight: secondaryFontWeight,
                     color:
                       currentIndex === entry.index && !isYrcLine(entry.line)
                         ? effectivePlayedColor
@@ -595,7 +572,6 @@ watch(
                   <!-- 音译逐字高亮 -->
                   <template
                     v-if="
-                      currentIndex === entry.index &&
                       isYrcLine(entry.line) &&
                       entry.line.romanizedCharacters &&
                       entry.line.romanizedCharacters.length > 1
@@ -611,7 +587,7 @@ watch(
                         :data-echo-lyric-char-index="ci"
                         data-echo-lyric-secondary-kind="romanized"
                         :style="{
-                          backgroundImage: subYrcBgStyle,
+                          backgroundImage: activeYrcBgStyle,
                         }"
                         >{{ char.text }}</span
                       >
@@ -628,11 +604,7 @@ watch(
                   data-echo-lyric-secondary-kind="translated"
                   :style="{
                     fontSize: secondaryFontSize,
-                    fontWeight: String(
-                      currentIndex === entry.index
-                        ? Math.max(500, lyricStore.fontWeightValue - 200)
-                        : 400,
-                    ),
+                    fontWeight: secondaryFontWeight,
                     color:
                       currentIndex === entry.index && !isYrcLine(entry.line)
                         ? effectivePlayedColor
@@ -643,7 +615,6 @@ watch(
                   <!-- 翻译逐字高亮 -->
                   <template
                     v-if="
-                      currentIndex === entry.index &&
                       isYrcLine(entry.line) &&
                       entry.line.translatedCharacters &&
                       entry.line.translatedCharacters.length > 1
@@ -659,7 +630,7 @@ watch(
                         :data-echo-lyric-char-index="ci"
                         data-echo-lyric-secondary-kind="translated"
                         :style="{
-                          backgroundImage: subYrcBgStyle,
+                          backgroundImage: activeYrcBgStyle,
                         }"
                         >{{ char.text }}</span
                       >
@@ -678,11 +649,7 @@ watch(
                   :data-echo-lyric-secondary-kind="lyricStore.lyricsMode"
                   :style="{
                     fontSize: secondaryFontSize,
-                    fontWeight: String(
-                      currentIndex === entry.index
-                        ? Math.max(500, lyricStore.fontWeightValue - 200)
-                        : 400,
-                    ),
+                    fontWeight: secondaryFontWeight,
                     color:
                       currentIndex === entry.index && !isYrcLine(entry.line)
                         ? effectivePlayedColor
@@ -693,7 +660,6 @@ watch(
                   <!-- 单模式逐字高亮（音译） -->
                   <template
                     v-if="
-                      currentIndex === entry.index &&
                       isYrcLine(entry.line) &&
                       lyricStore.lyricsMode === 'romanization' &&
                       entry.line.romanizedCharacters &&
@@ -710,7 +676,7 @@ watch(
                         :data-echo-lyric-char-index="ci"
                         data-echo-lyric-secondary-kind="romanized"
                         :style="{
-                          backgroundImage: subYrcBgStyle,
+                          backgroundImage: activeYrcBgStyle,
                         }"
                         >{{ char.text }}</span
                       >
@@ -719,7 +685,6 @@ watch(
                   <!-- 单模式逐字高亮（翻译） -->
                   <template
                     v-else-if="
-                      currentIndex === entry.index &&
                       isYrcLine(entry.line) &&
                       lyricStore.lyricsMode === 'translation' &&
                       entry.line.translatedCharacters &&
@@ -736,7 +701,7 @@ watch(
                         :data-echo-lyric-char-index="ci"
                         data-echo-lyric-secondary-kind="translated"
                         :style="{
-                          backgroundImage: subYrcBgStyle,
+                          backgroundImage: activeYrcBgStyle,
                         }"
                         >{{ char.text }}</span
                       >
@@ -864,9 +829,7 @@ watch(
   padding: 6px 16px;
   border-radius: 8px;
   cursor: default;
-  transition:
-    opacity 0.26s ease,
-    transform 0.26s ease;
+  transition: opacity 0.22s ease;
   position: relative;
   text-align: center;
 }
@@ -881,17 +844,14 @@ watch(
 
 .lyric-line.is-idle {
   opacity: 0.6;
-  transform: scale(0.97);
 }
 
 .lyric-line.is-current {
   opacity: 1;
-  transform: scale(1);
 }
 
 .lyric-line.is-scroll-highlight {
   opacity: 1;
-  transform: scale(1);
 }
 
 .lyric-time-tag-fixed {

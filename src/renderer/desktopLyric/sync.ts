@@ -1,7 +1,7 @@
 import { watch, type WatchStopHandle } from 'vue';
 import { storeToRefs } from 'pinia';
 import { usePlayerStore } from '@/stores/player';
-import { useLyricStore, testLyricFilter } from '@/stores/lyric';
+import { useLyricStore } from '@/stores/lyric';
 import { useSettingStore } from '@/stores/setting';
 import { useToastStore } from '@/stores/toast';
 import { useDesktopLyricStore } from './store';
@@ -73,6 +73,8 @@ const buildSettingsSignature = (settings: DesktopLyricSettings) =>
     boolKey(settings.strokeEnabled),
     settings.shadowStrength,
     boolKey(settings.bold),
+    boolKey(settings.filterEnabled),
+    settings.filterPattern,
     stableNumberKey(settings.offsetStep, 1000),
   ].join('\u001f');
 
@@ -179,6 +181,8 @@ export const initDesktopLyricSync = async () => {
         settings.fontFamily === 'follow' ? settingStore.globalFont : settings.resolvedFontFamily,
       wantTranslation: wantTranslation.value,
       wantRomanization: wantRomanization.value,
+      filterEnabled: settingStore.desktopLyricFilterEnabled,
+      filterPattern: settingStore.desktopLyricFilterPattern,
     };
   };
 
@@ -189,12 +193,7 @@ export const initDesktopLyricSync = async () => {
   let progressSyncQueued = false;
 
   const buildLyricsPayload = () => {
-    const enabled = settingStore.desktopLyricFilterEnabled;
-    const pattern = settingStore.desktopLyricFilterPattern;
-    const raw = lines.value.map(normalizeLinePayload);
-    if (!enabled) return raw;
-
-    return raw.filter((line) => !testLyricFilter(line.text, enabled, pattern));
+    return lines.value.map(normalizeLinePayload);
   };
 
   const syncPlaybackSnapshot = async () => {
@@ -352,7 +351,7 @@ export const initDesktopLyricSync = async () => {
     watch(
       () => [settingStore.desktopLyricFilterEnabled, settingStore.desktopLyricFilterPattern],
       () => {
-        void syncLyricsSnapshot();
+        void syncSettingsSnapshot();
       },
     ),
   );
@@ -374,6 +373,8 @@ export const initDesktopLyricSync = async () => {
         () => settingStore.globalFont,
         wantTranslation,
         wantRomanization,
+        () => settingStore.desktopLyricFilterEnabled,
+        () => settingStore.desktopLyricFilterPattern,
       ],
       () => {
         void syncSettingsSnapshot();

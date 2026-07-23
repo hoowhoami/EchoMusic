@@ -486,10 +486,10 @@ impl SharedAudio {
         }
     }
 
-    pub fn mark_seek_audio_ready(&self, position_secs: f64) {
+    pub fn mark_playback_restart_ready(&self, position_secs: f64) {
         let position_secs = position_secs.max(0.0);
         self.set_position_secs(position_secs);
-        self.notify_signal(PlaybackSignal::Seeked(position_secs));
+        self.notify_signal(PlaybackSignal::PlaybackRestart(position_secs));
     }
 
     pub fn pop_into(&self, output: &mut [f32]) -> usize {
@@ -982,7 +982,7 @@ mod tests {
     }
 
     #[test]
-    fn seek_confirmation_is_emitted_when_seek_audio_is_ready() {
+    fn playback_restart_is_emitted_when_restart_audio_is_ready() {
         let shared = SharedAudio::new(
             MixFormat::stereo_f32(100),
             0.1,
@@ -991,11 +991,11 @@ mod tests {
         );
         let (tx, rx) = std::sync::mpsc::sync_channel(4);
         shared.bind_signal_sender(tx);
-        shared.mark_seek_audio_ready(1.0);
+        shared.mark_playback_restart_ready(1.0);
 
         assert!(matches!(
             rx.try_recv(),
-            Ok(PlaybackSignal::Seeked(position)) if (position - 1.0).abs() < f64::EPSILON
+            Ok(PlaybackSignal::PlaybackRestart(position)) if (position - 1.0).abs() < f64::EPSILON
         ));
         assert!(shared.push_samples(&[0.1, 0.2, 0.3, 0.4]));
         let mut output = [0.0f32; 4];

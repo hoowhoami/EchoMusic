@@ -41,7 +41,7 @@ pub struct TrackSwitchInfo {
 #[derive(Clone, Debug, PartialEq)]
 pub enum PlaybackSignal {
     TimeUpdate,
-    Seeked(f64),
+    PlaybackRestart(f64),
     CacheState {
         paused: bool,
         buffering_state: f64,
