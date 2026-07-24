@@ -9,7 +9,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{sync_channel, Receiver, SyncSender, TryRecvError};
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 pub enum DecodeCommand {
     Seek {
@@ -104,6 +104,7 @@ impl DecoderData {
 
     pub fn seek(&mut self, position_secs: f64) -> Result<(), String> {
         let target = Duration::from_secs_f64(position_secs.max(0.0));
+        let started = Instant::now();
         self.reader
             .seek(target, SeekMode::Accurate)
             .or_else(|accurate_err| {
@@ -117,6 +118,20 @@ impl DecoderData {
                 })
             })?;
         self.pending_playback_restart_position = Some(position_secs.max(0.0));
+        let elapsed_ms = started.elapsed().as_millis();
+        if elapsed_ms >= 250 {
+            emit_decode_warning(format!(
+                "decoder seek completed slowly: target={:.3}s elapsed={}ms",
+                position_secs.max(0.0),
+                elapsed_ms
+            ));
+        } else {
+            emit_decode_debug(format!(
+                "decoder seek completed: target={:.3}s elapsed={}ms",
+                position_secs.max(0.0),
+                elapsed_ms
+            ));
+        }
         Ok(())
     }
 
@@ -362,7 +377,7 @@ fn decode_worker_loop(
                     if let Some(requested_position) = data.pending_playback_restart_position {
                         if chunk.frames > 0 {
                             let position = chunk.pts_secs.unwrap_or(requested_position);
-                            shared.mark_playback_restart_ready(position);
+                            shared.mark_playback_restart_ready_for_generation(position, generation);
                             data.pending_playback_restart_position = None;
                         }
                     }
@@ -493,10 +508,15 @@ fn handle_decode_command(
             generation,
             reply,
         } => {
+            if shared.should_stop_decoding() {
+                let _ = reply.send(Err("decoder stopping".to_string()));
+                return DecodeCommandResult::Stop;
+            }
             if !shared.is_decode_generation_current(generation) {
                 let _ = reply.send(Err("stale seek generation".to_string()));
                 return DecodeCommandResult::Ignored;
             }
+            data.interrupt.store(false, Ordering::Release);
             let result = data.seek(position_secs);
             let _ = reply.send(result);
             if shared.is_decode_generation_current(generation) {
@@ -546,4 +566,8 @@ pub(crate) fn emit_decode_error(message: String) {
 
 fn emit_decode_warning(message: String) {
     crate::emit_event(PlayerEvent::log("warn", message));
+}
+
+fn emit_decode_debug(message: String) {
+    crate::emit_event(PlayerEvent::log("debug", message));
 }

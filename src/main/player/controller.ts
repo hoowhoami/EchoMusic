@@ -208,6 +208,7 @@ export class PlayerController extends EventEmitter {
   private loadSeq = 0;
   private activeTrackSeq = 0;
   private activeGeneration = 0;
+  private seekSeq = 0;
   private pendingLoadSeq: number | null = null;
   private state: PlayerState = {
     playing: false,
@@ -328,7 +329,12 @@ export class PlayerController extends EventEmitter {
   }
 
   async seek(time: number): Promise<void> {
-    await this.enqueue(() => this.getAddonOrThrow().seek(time));
+    const seq = ++this.seekSeq;
+    try {
+      await this.getAddonOrThrow().seek(time);
+    } catch (err) {
+      if (seq === this.seekSeq) throw err;
+    }
   }
 
   async setVolume(volume: number): Promise<void> {

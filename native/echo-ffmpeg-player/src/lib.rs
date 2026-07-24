@@ -36,8 +36,9 @@ use napi::bindgen_prelude::AsyncTask;
 use napi::threadsafe_function::ThreadsafeFunction;
 use napi::{Env, Task};
 use napi_derive::napi;
+use std::sync::atomic::AtomicU64;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::{sync_channel, RecvTimeoutError, SyncSender};
+use std::sync::mpsc::{sync_channel, RecvTimeoutError, SyncSender, TrySendError};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -46,6 +47,8 @@ const IDLE_OUTPUT_RELEASE_DELAY_SECS: u64 = 3;
 const GAPLESS_PREDECODE_SECS: f64 = 0.5;
 
 static RUNTIME: Mutex<Option<PlayerRuntime>> = Mutex::new(None);
+static NEXT_SEEK_REQUEST_SEQ: AtomicU64 = AtomicU64::new(0);
+static LATEST_SEEK_REQUEST_SEQ: AtomicU64 = AtomicU64::new(0);
 type RuntimeCommand = Box<dyn FnOnce(&mut PlayerRuntime) + Send + 'static>;
 
 struct PlayerRuntime {
@@ -72,6 +75,8 @@ struct PlayerRuntime {
     spatial_file_path: Option<String>,
     prepared_next: Option<PreparedNextSource>,
     seek_restart_interrupt: Option<Arc<AtomicBool>>,
+    seek_request_seq: u64,
+    seek_restore_paused: Option<bool>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -180,6 +185,8 @@ impl PlayerRuntime {
             spatial_file_path: None,
             prepared_next: None,
             seek_restart_interrupt: None,
+            seek_request_seq: 0,
+            seek_restore_paused: None,
         }
     }
 
@@ -195,6 +202,7 @@ impl PlayerRuntime {
     fn stop_session(&mut self) {
         self.cancel_idle_output_release();
         self.cancel_pending_seek_restart();
+        self.seek_restore_paused = None;
         self.prepared_next = None;
         if let Some(session) = self.session.take() {
             session.stop_background();
@@ -222,6 +230,47 @@ impl PlayerRuntime {
             self.seek_restart_interrupt = None;
         }
     }
+
+    fn accept_seek_request_seq(&mut self, request_seq: u64) -> bool {
+        if !is_latest_seek_request_seq(request_seq) {
+            return false;
+        }
+        self.seek_request_seq = request_seq;
+        true
+    }
+
+    fn is_seek_request_current(&self, request_seq: u64) -> bool {
+        request_seq == 0 || self.seek_request_seq == request_seq
+    }
+
+    fn begin_seek_restore_paused(&mut self) -> bool {
+        let was_paused = self.seek_restore_paused.unwrap_or(self.state.paused);
+        self.seek_restore_paused = Some(was_paused);
+        was_paused
+    }
+
+    fn clear_seek_restore_paused_if_current(&mut self, request_seq: u64) {
+        if self.is_seek_request_current(request_seq) {
+            self.seek_restore_paused = None;
+        }
+    }
+}
+
+fn next_seek_request_seq() -> u64 {
+    let seq = NEXT_SEEK_REQUEST_SEQ
+        .fetch_add(1, Ordering::AcqRel)
+        .wrapping_add(1)
+        .max(1);
+    LATEST_SEEK_REQUEST_SEQ.store(seq, Ordering::Release);
+    seq
+}
+
+fn invalidate_seek_requests() {
+    let _ = next_seek_request_seq();
+}
+
+fn is_latest_seek_request_seq(seq: u64) -> bool {
+    seq == 0 || LATEST_SEEK_REQUEST_SEQ.load(Ordering::Acquire) == seq
 }
 
 pub(crate) fn emit_event(event: PlayerEvent) {
@@ -657,6 +706,7 @@ fn apply_prepared_source(
     runtime.cancel_idle_output_release();
     let should_release_when_idle = !autostart;
     runtime.prepared_next = None;
+    runtime.seek_restore_paused = None;
     if let Some(previous) = runtime.session.replace(session) {
         previous.stop_background();
     }
@@ -890,6 +940,7 @@ fn restart_loop_if_enabled(shared: Arc<SharedAudio>) -> bool {
             url,
             audio_stream_ordinal: runtime.current_audio_stream_ordinal,
             generation,
+            request_seq: 0,
             config: runtime.config.clone(),
             interrupt: None,
             decode_commands: None,
@@ -1172,6 +1223,7 @@ pub fn initialize(config: Option<PlayerConfigOptions>) -> napi::Result<()> {
 
 #[napi]
 pub fn destroy() -> napi::Result<()> {
+    invalidate_seek_requests();
     clear_event_callback();
     stop_core_dispatcher();
     let runtime = RUNTIME
@@ -1208,6 +1260,7 @@ impl Task for LoadFileTask {
         let plan = with_runtime(|runtime| {
             runtime.cancel_idle_output_release();
             runtime.cancel_pending_seek_restart();
+            runtime.seek_restore_paused = None;
             runtime.prepared_next = None;
             runtime.latest_load_seq = seq;
             set_runtime_core_state(runtime, PlaybackCoreState::Loading, "load");
@@ -1348,6 +1401,7 @@ impl Task for LoadFileTask {
 
 #[napi]
 pub fn load_file(url: String, seq: Option<f64>) -> AsyncTask<LoadFileTask> {
+    invalidate_seek_requests();
     AsyncTask::new(LoadFileTask {
         url,
         seq: seq.unwrap_or(0.0).max(0.0) as u64,
@@ -1357,6 +1411,7 @@ pub fn load_file(url: String, seq: Option<f64>) -> AsyncTask<LoadFileTask> {
 
 #[napi]
 pub fn load_mkv_track(url: String, track_id: i64, seq: Option<f64>) -> AsyncTask<LoadFileTask> {
+    invalidate_seek_requests();
     AsyncTask::new(LoadFileTask {
         url,
         seq: seq.unwrap_or(0.0).max(0.0) as u64,
@@ -1583,6 +1638,7 @@ pub fn pause() -> napi::Result<()> {
 
 #[napi]
 pub fn stop() -> napi::Result<()> {
+    invalidate_seek_requests();
     with_runtime(|runtime| {
         runtime.stop_session();
         runtime.state.time_pos = 0.0;
@@ -1595,6 +1651,7 @@ pub fn stop() -> napi::Result<()> {
 
 pub struct SeekTask {
     position: f64,
+    request_seq: u64,
 }
 
 struct SeekPlan {
@@ -1603,22 +1660,40 @@ struct SeekPlan {
     url: String,
     audio_stream_ordinal: Option<usize>,
     generation: u64,
+    request_seq: u64,
     config: PlayerConfig,
     interrupt: Option<Arc<AtomicBool>>,
     decode_commands: Option<SyncSender<decoder::DecodeCommand>>,
 }
 
+fn is_seek_plan_current(plan: &SeekPlan) -> napi::Result<bool> {
+    with_runtime(|runtime| {
+        let Some(session) = runtime.session.as_ref() else {
+            return Ok(false);
+        };
+        Ok(Arc::ptr_eq(&session.shared, &plan.shared)
+            && session.shared.is_decode_generation_current(plan.generation)
+            && runtime.is_seek_request_current(plan.request_seq))
+    })
+}
+
 fn mark_seek_plan_failed(plan: &SeekPlan) -> napi::Result<()> {
     with_runtime(|runtime| {
         runtime.clear_pending_seek_restart(plan.interrupt.as_ref());
+        if !runtime.is_seek_request_current(plan.request_seq) {
+            return Ok(());
+        }
+        let matches_plan = runtime.session.as_ref().is_some_and(|session| {
+            Arc::ptr_eq(&session.shared, &plan.shared)
+                && session.shared.is_decode_generation_current(plan.generation)
+        });
+        if !matches_plan {
+            return Ok(());
+        }
+        runtime.clear_seek_restore_paused_if_current(plan.request_seq);
         let Some(session) = runtime.session.as_mut() else {
             return Ok(());
         };
-        if !Arc::ptr_eq(&session.shared, &plan.shared)
-            || !session.shared.is_decode_generation_current(plan.generation)
-        {
-            return Ok(());
-        }
         session.shared.mark_decode_failed();
         session.shared.paused.store(true, Ordering::Release);
         runtime.state.playing = false;
@@ -1668,14 +1743,20 @@ fn attach_restarted_decoder(
     let mut decoder = Some(decoder);
     with_runtime(|runtime| {
         runtime.clear_pending_seek_restart(plan.interrupt.as_ref());
+        if !runtime.is_seek_request_current(plan.request_seq) {
+            return Ok(());
+        }
+        let matches_plan = runtime.session.as_ref().is_some_and(|session| {
+            Arc::ptr_eq(&session.shared, &plan.shared)
+                && session.shared.is_decode_generation_current(plan.generation)
+        });
+        if !matches_plan {
+            return Ok(());
+        }
+        runtime.clear_seek_restore_paused_if_current(plan.request_seq);
         let Some(session) = runtime.session.as_mut() else {
             return Ok(());
         };
-        if !Arc::ptr_eq(&session.shared, &plan.shared)
-            || !session.shared.is_decode_generation_current(plan.generation)
-        {
-            return Ok(());
-        }
         let decoder = decoder
             .take()
             .ok_or_else(|| napi::Error::from_reason("decoder already attached".to_string()))?;
@@ -1716,18 +1797,16 @@ fn restore_seek_playback_state(
     reason: &'static str,
 ) -> napi::Result<()> {
     with_runtime(|runtime| {
-        let Some(session) = runtime.session.as_ref() else {
+        let Some(shared) = runtime.session.as_ref().and_then(|session| {
+            (Arc::ptr_eq(&session.shared, &plan.shared)
+                && session.shared.is_decode_generation_current(plan.generation)
+                && runtime.is_seek_request_current(plan.request_seq))
+            .then(|| session.shared.clone())
+        }) else {
             return Ok(());
         };
-        if !Arc::ptr_eq(&session.shared, &plan.shared)
-            || !session.shared.is_decode_generation_current(plan.generation)
-        {
-            return Ok(());
-        }
-        session
-            .shared
-            .paused
-            .store(plan.was_paused, Ordering::Release);
+        runtime.clear_seek_restore_paused_if_current(plan.request_seq);
+        shared.paused.store(plan.was_paused, Ordering::Release);
         runtime.state.time_pos = position;
         runtime.state.playing = !plan.was_paused;
         runtime.state.paused = plan.was_paused;
@@ -1749,23 +1828,55 @@ fn try_seek_current_decoder(plan: &SeekPlan, position: f64) -> napi::Result<bool
     let Some(sender) = plan.decode_commands.as_ref() else {
         return Ok(false);
     };
+    if !is_seek_plan_current(plan)? {
+        return Ok(true);
+    }
     let (reply_tx, reply_rx) = sync_channel(1);
-    if sender
-        .send(decoder::DecodeCommand::Seek {
-            position_secs: position,
-            generation: plan.generation,
-            reply: reply_tx,
-        })
-        .is_err()
-    {
-        emit_shared_event(
-            &plan.shared,
-            PlayerEvent::log(
-                "warn",
-                "decoder seek command failed to send; falling back to reopen".to_string(),
-            ),
-        );
-        return Ok(false);
+    match sender.try_send(decoder::DecodeCommand::Seek {
+        position_secs: position,
+        generation: plan.generation,
+        reply: reply_tx,
+    }) {
+        Ok(()) => {
+            plan.shared.request_decode_interrupt();
+            emit_shared_event(
+                &plan.shared,
+                PlayerEvent::log(
+                    "debug",
+                    format!(
+                        "decoder seek command queued: target={:.3}s seq={}",
+                        position, plan.request_seq
+                    ),
+                ),
+            );
+        }
+        Err(TrySendError::Full(_)) => {
+            plan.shared.request_decode_interrupt();
+            if !is_seek_plan_current(plan)? {
+                return Ok(true);
+            }
+            emit_shared_event(
+                &plan.shared,
+                PlayerEvent::log(
+                    "warn",
+                    "decoder seek command queue full; falling back to reopen".to_string(),
+                ),
+            );
+            return Ok(false);
+        }
+        Err(TrySendError::Disconnected(_)) => {
+            if !is_seek_plan_current(plan)? {
+                return Ok(true);
+            }
+            emit_shared_event(
+                &plan.shared,
+                PlayerEvent::log(
+                    "warn",
+                    "decoder seek command disconnected; falling back to reopen".to_string(),
+                ),
+            );
+            return Ok(false);
+        }
     }
 
     match reply_rx.recv_timeout(Duration::from_secs(2)) {
@@ -1774,6 +1885,9 @@ fn try_seek_current_decoder(plan: &SeekPlan, position: f64) -> napi::Result<bool
             Ok(true)
         }
         Ok(Err(err)) => {
+            if !is_seek_plan_current(plan)? {
+                return Ok(true);
+            }
             emit_shared_event(
                 &plan.shared,
                 PlayerEvent::log(
@@ -1784,6 +1898,9 @@ fn try_seek_current_decoder(plan: &SeekPlan, position: f64) -> napi::Result<bool
             Ok(false)
         }
         Err(RecvTimeoutError::Timeout) => {
+            if !is_seek_plan_current(plan)? {
+                return Ok(true);
+            }
             emit_shared_event(
                 &plan.shared,
                 PlayerEvent::log(
@@ -1794,6 +1911,9 @@ fn try_seek_current_decoder(plan: &SeekPlan, position: f64) -> napi::Result<bool
             Ok(false)
         }
         Err(RecvTimeoutError::Disconnected) => {
+            if !is_seek_plan_current(plan)? {
+                return Ok(true);
+            }
             emit_shared_event(
                 &plan.shared,
                 PlayerEvent::log(
@@ -1809,13 +1929,20 @@ fn try_seek_current_decoder(plan: &SeekPlan, position: f64) -> napi::Result<bool
 fn prepare_reopen_seek_plan(previous: &SeekPlan, position: f64) -> napi::Result<Option<SeekPlan>> {
     let interrupt = Arc::new(AtomicBool::new(false));
     with_runtime(|runtime| {
-        runtime.seek_restart_interrupt = Some(interrupt.clone());
+        if !runtime.is_seek_request_current(previous.request_seq) {
+            return Ok(None);
+        }
         let Some(session) = runtime.session.as_mut() else {
             return Ok(None);
         };
-        if !Arc::ptr_eq(&session.shared, &previous.shared) {
+        if !Arc::ptr_eq(&session.shared, &previous.shared)
+            || !session
+                .shared
+                .is_decode_generation_current(previous.generation)
+        {
             return Ok(None);
         }
+        runtime.seek_restart_interrupt = Some(interrupt.clone());
         session.shared.paused.store(true, Ordering::Release);
         session.shared.request_decode_stop();
         session.stop_decode_background("seek-fallback");
@@ -1831,6 +1958,7 @@ fn prepare_reopen_seek_plan(previous: &SeekPlan, position: f64) -> napi::Result<
             url,
             audio_stream_ordinal: runtime.current_audio_stream_ordinal,
             generation,
+            request_seq: previous.request_seq,
             config: runtime.config.clone(),
             interrupt: Some(interrupt),
             decode_commands: None,
@@ -1844,18 +1972,22 @@ impl Task for SeekTask {
 
     fn compute(&mut self) -> napi::Result<Self::Output> {
         let position = self.position.max(0.0);
+        let request_seq = self.request_seq;
+        if !is_latest_seek_request_seq(request_seq) {
+            return Ok(());
+        }
         let plan = with_runtime(|runtime| {
-            let Some((shared, was_paused, decode_commands)) =
-                runtime.session.as_ref().map(|session| {
-                    (
-                        session.shared.clone(),
-                        session.shared.paused.load(Ordering::Acquire),
-                        session.decode_commands.clone(),
-                    )
-                })
+            if !runtime.accept_seek_request_seq(request_seq) {
+                return Ok(None);
+            }
+            let Some((shared, decode_commands)) = runtime
+                .session
+                .as_ref()
+                .map(|session| (session.shared.clone(), session.decode_commands.clone()))
             else {
                 return Ok(None);
             };
+            let was_paused = runtime.begin_seek_restore_paused();
             set_runtime_core_state(runtime, PlaybackCoreState::Seeking, "seek");
             runtime.cancel_pending_seek_restart();
             shared.paused.store(true, Ordering::Release);
@@ -1871,6 +2003,7 @@ impl Task for SeekTask {
                 url,
                 audio_stream_ordinal: runtime.current_audio_stream_ordinal,
                 generation,
+                request_seq,
                 config: runtime.config.clone(),
                 interrupt: None,
                 decode_commands,
@@ -1914,7 +2047,10 @@ impl Task for SeekTask {
 
 #[napi]
 pub fn seek(time: f64) -> AsyncTask<SeekTask> {
-    AsyncTask::new(SeekTask { position: time })
+    AsyncTask::new(SeekTask {
+        position: time,
+        request_seq: next_seek_request_seq(),
+    })
 }
 
 #[napi]

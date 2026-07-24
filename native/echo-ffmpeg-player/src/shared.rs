@@ -201,6 +201,16 @@ impl SharedAudio {
         self.decoded_queue_changed.notify_all();
     }
 
+    pub fn request_decode_interrupt(&self) {
+        if let Ok(guard) = self.interrupt.lock() {
+            if let Some(interrupt) = guard.as_ref() {
+                interrupt.store(true, Ordering::Release);
+            }
+        }
+        self.output_queue_changed.notify_all();
+        self.decoded_queue_changed.notify_all();
+    }
+
     pub fn should_stop_decoding(&self) -> bool {
         self.stop.load(Ordering::Acquire) || self.decode_stop.load(Ordering::Acquire)
     }
@@ -532,7 +542,18 @@ impl SharedAudio {
         });
     }
 
+    #[cfg(test)]
     pub fn mark_playback_restart_ready(&self, position_secs: f64) {
+        self.mark_playback_restart_ready_for_generation(
+            position_secs,
+            self.current_decode_generation(),
+        );
+    }
+
+    pub fn mark_playback_restart_ready_for_generation(&self, position_secs: f64, generation: u64) {
+        if !self.is_decode_generation_current(generation) {
+            return;
+        }
         let position_secs = position_secs.max(0.0);
         self.set_position_secs(position_secs);
         self.notify_signal(PlaybackSignal::PlaybackRestart(position_secs));
