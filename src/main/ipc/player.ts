@@ -1,6 +1,10 @@
 import { ipcRegistry } from './registry';
 import type { PlayerController } from '../player/controller';
 import type { ImpulseResponsePlaybackOptions } from '../../shared/audio';
+import type {
+  PlayerAudioGraphParameterPatch,
+  PlayerAudioGraphPlanPatch,
+} from '../../shared/player-audio-graph';
 import { restartPlayer } from '../player';
 
 export type PlayerRef = { current: PlayerController | null };
@@ -68,9 +72,23 @@ export function registerPlayerIpc(ref: PlayerRef): void {
     await ref.current?.setImpulseResponseMix(mix);
   });
 
-  ipcRegistry.registerHandler('player:get-audio-filter', async () => {
-    return (await ref.current?.getAudioFilter()) ?? '';
+  ipcRegistry.registerHandler('player:get-audio-graph', async () => {
+    return (await ref.current?.getAudioGraph()) ?? null;
   });
+
+  ipcRegistry.registerHandler(
+    'player:set-audio-graph-parameter',
+    async (_e, patch: PlayerAudioGraphParameterPatch) => {
+      await ref.current?.setAudioGraphParameter(patch);
+    },
+  );
+
+  ipcRegistry.registerHandler(
+    'player:set-audio-graph-plan',
+    async (_e, plan: PlayerAudioGraphPlanPatch) => {
+      await ref.current?.setAudioGraphPlan(plan);
+    },
+  );
 
   ipcRegistry.registerHandler('player:set-audio-device', async (_e, deviceName: string) => {
     await ref.current?.setAudioDevice(deviceName || 'auto');

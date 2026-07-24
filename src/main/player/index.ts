@@ -50,6 +50,9 @@ function registerEventForwarding(controller: PlayerController): void {
   controller.on('core-state-change', (payload) =>
     getMainWindow()?.webContents.send('player:core-state-change', payload),
   );
+  controller.on('cache-state-change', (payload) =>
+    getMainWindow()?.webContents.send('player:cache-state-change', payload),
+  );
   controller.on('playback-end', (reason) =>
     getMainWindow()?.webContents.send('player:playback-end', reason),
   );
@@ -70,6 +73,9 @@ function registerEventForwarding(controller: PlayerController): void {
   );
   controller.on('audio-output-stats', (payload) =>
     getMainWindow()?.webContents.send('player:audio-output-stats', payload),
+  );
+  controller.on('audio-graph-change', (payload) =>
+    getMainWindow()?.webContents.send('player:audio-graph-change', payload),
   );
 }
 

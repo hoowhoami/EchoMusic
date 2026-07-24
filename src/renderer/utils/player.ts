@@ -4,6 +4,11 @@ import {
   type ImpulseResponsePlaybackOptions,
 } from '../../shared/audio';
 import type { PlayerErrorPayload } from '../../shared/player-error';
+import type {
+  PlayerAudioGraphParameterPatch,
+  PlayerAudioGraphPlanPatch,
+  PlayerAudioGraphSnapshot,
+} from '../../shared/player-audio-graph';
 import { DEFAULT_PLAYER_VOLUME } from '../../shared/playback';
 import type { PlaybackSource } from '@/stores/player/types';
 
@@ -20,6 +25,50 @@ export interface PlayerEngineEvents {
   error?: (event: Event) => void;
   /** Native 播放引擎检测到播放卡死，携带卡死时的播放位置（秒） */
   stalled?: (position: number) => void;
+  coreStateChange?: (payload: PlayerCoreStatePayload) => void;
+  cacheStateChange?: (payload: PlayerCacheStatePayload) => void;
+  packetCacheStats?: (payload?: PlayerPacketCacheStats) => void;
+  audioOutputStats?: (payload?: PlayerAudioOutputStats) => void;
+  audioGraphChange?: (payload: PlayerAudioGraphSnapshot | null) => void;
+}
+
+export type { PlayerAudioGraphSnapshot };
+
+export interface PlayerPacketCacheStats {
+  forwardBytes: number;
+  backBytes: number;
+  totalBytes: number;
+  forwardSecs?: number;
+  seekableStartSecs?: number;
+  seekableEndSecs?: number;
+  eof: boolean;
+  pendingSeek: boolean;
+  hasError: boolean;
+}
+
+export interface PlayerAudioOutputStats {
+  backend: string;
+  sampleRate: number;
+  engineSampleRate: number;
+  channels: number;
+  format: string;
+  bufferFrames: number;
+  bufferSecs: number;
+  delaySecs: number;
+  underruns: number;
+}
+
+export interface PlayerCoreStatePayload {
+  state?: string;
+  reason?: string;
+}
+
+export interface PlayerCacheStatePayload {
+  paused?: boolean;
+  bufferingState?: number;
+  bufferedSecs?: number;
+  targetSecs?: number;
+  packetCache?: PlayerPacketCacheStats;
 }
 
 export interface MediaSessionMeta {
@@ -185,6 +234,31 @@ export class PlayerEngine {
       this.events.stalled?.(position);
     });
     if (offStall) this.cleanupFns.push(offStall);
+
+    const offCoreState = player.onCoreStateChange?.((payload) => {
+      this.events.coreStateChange?.(payload);
+    });
+    if (offCoreState) this.cleanupFns.push(offCoreState);
+
+    const offCacheState = player.onCacheStateChange?.((payload) => {
+      this.events.cacheStateChange?.(payload);
+    });
+    if (offCacheState) this.cleanupFns.push(offCacheState);
+
+    const offPacketCache = player.onPacketCacheStats?.((payload) => {
+      this.events.packetCacheStats?.(payload);
+    });
+    if (offPacketCache) this.cleanupFns.push(offPacketCache);
+
+    const offOutputStats = player.onAudioOutputStats?.((payload) => {
+      this.events.audioOutputStats?.(payload);
+    });
+    if (offOutputStats) this.cleanupFns.push(offOutputStats);
+
+    const offAudioGraph = player.onAudioGraphChange?.((payload) => {
+      this.events.audioGraphChange?.(payload ?? null);
+    });
+    if (offAudioGraph) this.cleanupFns.push(offAudioGraph);
   }
 
   private clearSeekPending(): void {
@@ -326,7 +400,9 @@ export class PlayerEngine {
   }
 
   setEqualizer(gains: number[]): void {
-    void player?.setEqualizer(gains.map((gain) => Number(gain) || 0))?.catch((error: unknown) => {
+    const command = player?.setEqualizer(gains.map((gain) => Number(gain) || 0));
+    if (!command) return;
+    void command.catch((error: unknown) => {
       logger.warn('PlayerEngine', 'set equalizer failed', { error: String(error) });
     });
   }
@@ -336,7 +412,9 @@ export class PlayerEngine {
       filePath: filePath || '',
       mix: clamp(Number(mix) || DEFAULT_IMPULSE_RESPONSE_MIX, 0, 1),
     };
-    void player?.setImpulseResponse(payload)?.catch((error: unknown) => {
+    const command = player?.setImpulseResponse(payload);
+    if (!command) return;
+    void command.catch((error: unknown) => {
       logger.warn('PlayerEngine', 'set impulse response failed', {
         filePath: payload.filePath,
         error: String(error),
@@ -346,7 +424,9 @@ export class PlayerEngine {
 
   setImpulseResponseMix(mix: number): void {
     const nextMix = clamp(Number(mix) || DEFAULT_IMPULSE_RESPONSE_MIX, 0, 1);
-    void player?.setImpulseResponseMix(nextMix)?.catch((error: unknown) => {
+    const command = player?.setImpulseResponseMix(nextMix);
+    if (!command) return;
+    void command.catch((error: unknown) => {
       logger.warn('PlayerEngine', 'set impulse response mix failed', {
         mix: nextMix,
         error: String(error),
@@ -354,8 +434,30 @@ export class PlayerEngine {
     });
   }
 
-  async getAudioFilter(): Promise<string> {
-    return (await player?.getAudioFilter()) || '';
+  async getAudioGraph(): Promise<PlayerAudioGraphSnapshot | null> {
+    return (await player?.getAudioGraph?.()) ?? null;
+  }
+
+  setAudioGraphParameter(patch: PlayerAudioGraphParameterPatch): void {
+    const command = player?.setAudioGraphParameter?.(patch);
+    if (!command) return;
+    void command.catch((error: unknown) => {
+      logger.warn('PlayerEngine', 'set audio graph parameter failed', {
+        patch,
+        error: String(error),
+      });
+    });
+  }
+
+  setAudioGraphPlan(plan: PlayerAudioGraphPlanPatch): void {
+    const command = player?.setAudioGraphPlan?.(plan);
+    if (!command) return;
+    void command.catch((error: unknown) => {
+      logger.warn('PlayerEngine', 'set audio graph plan failed', {
+        plan,
+        error: String(error),
+      });
+    });
   }
 
   setVolume(value: number): number {
@@ -388,7 +490,9 @@ export class PlayerEngine {
   setPlaybackRate(rate: number): number {
     const next = clamp(rate, 0.1, 5);
     this.playbackRateValue = next;
-    void player?.setSpeed(next)?.catch((error: unknown) => {
+    const command = player?.setSpeed(next);
+    if (!command) return next;
+    void command.catch((error: unknown) => {
       logger.warn('PlayerEngine', 'set speed failed', { error: String(error) });
     });
     return next;
@@ -429,9 +533,12 @@ export class PlayerEngine {
   setVolumeNormalization(enabled: boolean): void {
     this.normalizationEnabled = enabled;
     if (!enabled) {
-      void player?.setNormalizationGain(0)?.catch((error: unknown) => {
-        logger.warn('PlayerEngine', 'set normalization gain failed', { error: String(error) });
-      });
+      const command = player?.setNormalizationGain(0);
+      if (command) {
+        void command.catch((error: unknown) => {
+          logger.warn('PlayerEngine', 'set normalization gain failed', { error: String(error) });
+        });
+      }
       this.normalizationGain = 1.0;
     } else if (this.lastTrackLoudness) {
       // 开启时用已有的响度数据重新应用增益
@@ -444,25 +551,34 @@ export class PlayerEngine {
     this.lastTrackLoudness = loudness;
     if (!loudness || !this.normalizationEnabled) {
       this.normalizationGain = 1.0;
-      void player?.setNormalizationGain(0)?.catch((error: unknown) => {
-        logger.warn('PlayerEngine', 'set normalization gain failed', { error: String(error) });
-      });
+      const command = player?.setNormalizationGain(0);
+      if (command) {
+        void command.catch((error: unknown) => {
+          logger.warn('PlayerEngine', 'set normalization gain failed', { error: String(error) });
+        });
+      }
       return;
     }
     const { lufs } = loudness;
     if (!Number.isFinite(lufs)) {
       this.normalizationGain = 1.0;
-      void player?.setNormalizationGain(0)?.catch((error: unknown) => {
-        logger.warn('PlayerEngine', 'set normalization gain failed', { error: String(error) });
-      });
+      const command = player?.setNormalizationGain(0);
+      if (command) {
+        void command.catch((error: unknown) => {
+          logger.warn('PlayerEngine', 'set normalization gain failed', { error: String(error) });
+        });
+      }
       return;
     }
     const gainLinear = this.computeNormalizationGain(loudness);
     const gainDb = 20 * Math.log10(gainLinear);
     this.normalizationGain = gainLinear;
-    void player?.setNormalizationGain(gainDb)?.catch((error: unknown) => {
-      logger.warn('PlayerEngine', 'set normalization gain failed', { error: String(error) });
-    });
+    const command = player?.setNormalizationGain(gainDb);
+    if (command) {
+      void command.catch((error: unknown) => {
+        logger.warn('PlayerEngine', 'set normalization gain failed', { error: String(error) });
+      });
+    }
     logger.info('PlayerEngine', 'Track loudness applied', {
       lufs,
       gainDb: gainDb.toFixed(2) + ' dB',

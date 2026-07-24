@@ -708,6 +708,48 @@ export const usePlayerStore = defineStore(
         stalled: (position) => {
           void playbackManager.recoverFromStall(position);
         },
+        coreStateChange: (payload) => {
+          state.playbackDiagnostics.core = {
+            ...payload,
+            updatedAt: Date.now(),
+          };
+        },
+        cacheStateChange: (payload) => {
+          state.playbackDiagnostics.cache = {
+            ...payload,
+            updatedAt: Date.now(),
+          };
+          if (payload.packetCache) {
+            state.playbackDiagnostics.packetCache = {
+              ...payload.packetCache,
+              updatedAt: Date.now(),
+            };
+          }
+        },
+        packetCacheStats: (payload) => {
+          state.playbackDiagnostics.packetCache = payload
+            ? {
+                ...payload,
+                updatedAt: Date.now(),
+              }
+            : null;
+        },
+        audioOutputStats: (payload) => {
+          state.playbackDiagnostics.output = payload
+            ? {
+                ...payload,
+                updatedAt: Date.now(),
+              }
+            : null;
+        },
+        audioGraphChange: (payload) => {
+          state.playbackDiagnostics.graph = payload
+            ? {
+                ...payload,
+                updatedAt: Date.now(),
+              }
+            : null;
+        },
         seeked: (currentTime) => {
           state.seekTargetTime = null;
           state.currentTime = currentTime;

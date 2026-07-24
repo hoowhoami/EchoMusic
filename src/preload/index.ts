@@ -36,6 +36,11 @@ import type {
 import type { LogSettings } from '../shared/logging';
 import type { NetworkSettings } from '../shared/network';
 import type { PlayerErrorPayload } from '../shared/player-error';
+import type {
+  PlayerAudioGraphParameterPatch,
+  PlayerAudioGraphPlanPatch,
+  PlayerAudioGraphSnapshot,
+} from '../shared/player-audio-graph';
 import type { ResolvePlaylistRequest, ResolvePlaylistResponse } from '../shared/external';
 import type { ShareCaptureRect, ShareTarget } from '../shared/share';
 import type {
@@ -431,7 +436,12 @@ contextBridge.exposeInMainWorld('electron', {
       invokeWithPlainPayload('player:set-impulse-response', payload),
     setImpulseResponseMix: (mix: number) =>
       invokeWithPlainPayload('player:set-impulse-response-mix', mix),
-    getAudioFilter: () => ipcRenderer.invoke('player:get-audio-filter') as Promise<string>,
+    getAudioGraph: () =>
+      ipcRenderer.invoke('player:get-audio-graph') as Promise<PlayerAudioGraphSnapshot | null>,
+    setAudioGraphParameter: (patch: PlayerAudioGraphParameterPatch) =>
+      invokeWithPlainPayload('player:set-audio-graph-parameter', patch),
+    setAudioGraphPlan: (plan: PlayerAudioGraphPlanPatch) =>
+      invokeWithPlainPayload('player:set-audio-graph-plan', plan),
     setAudioDevice: (deviceName: string) =>
       ipcRenderer.invoke('player:set-audio-device', deviceName),
     getAudioDevices: () =>
@@ -500,6 +510,48 @@ contextBridge.exposeInMainWorld('electron', {
       ) => func(payload);
       ipcRenderer.on('player:core-state-change', listener);
       return () => ipcRenderer.removeListener('player:core-state-change', listener);
+    },
+    onCacheStateChange: (
+      func: (payload: {
+        paused?: boolean;
+        bufferingState?: number;
+        bufferedSecs?: number;
+        targetSecs?: number;
+        packetCache?: {
+          forwardBytes: number;
+          backBytes: number;
+          totalBytes: number;
+          forwardSecs?: number;
+          seekableStartSecs?: number;
+          seekableEndSecs?: number;
+          eof: boolean;
+          pendingSeek: boolean;
+          hasError: boolean;
+        };
+      }) => void,
+    ) => {
+      const listener = (
+        _event: Electron.IpcRendererEvent,
+        payload: {
+          paused?: boolean;
+          bufferingState?: number;
+          bufferedSecs?: number;
+          targetSecs?: number;
+          packetCache?: {
+            forwardBytes: number;
+            backBytes: number;
+            totalBytes: number;
+            forwardSecs?: number;
+            seekableStartSecs?: number;
+            seekableEndSecs?: number;
+            eof: boolean;
+            pendingSeek: boolean;
+            hasError: boolean;
+          };
+        },
+      ) => func(payload);
+      ipcRenderer.on('player:cache-state-change', listener);
+      return () => ipcRenderer.removeListener('player:cache-state-change', listener);
     },
     onPlaybackEnd: (func: (reason: string) => void) => {
       const listener = (_event: Electron.IpcRendererEvent, reason: string) => func(reason);
@@ -602,6 +654,12 @@ contextBridge.exposeInMainWorld('electron', {
       ) => func(payload);
       ipcRenderer.on('player:audio-output-stats', listener);
       return () => ipcRenderer.removeListener('player:audio-output-stats', listener);
+    },
+    onAudioGraphChange: (func: (payload?: PlayerAudioGraphSnapshot) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, payload?: PlayerAudioGraphSnapshot) =>
+        func(payload);
+      ipcRenderer.on('player:audio-graph-change', listener);
+      return () => ipcRenderer.removeListener('player:audio-graph-change', listener);
     },
   },
   audioSpectrum: {

@@ -2,7 +2,6 @@ use crate::audio_graph::AudioFilterGraph;
 use crate::shared::{FilterInput, SharedAudio};
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
-use std::time::Duration;
 
 pub fn spawn_filter_thread(shared: Arc<SharedAudio>) -> JoinHandle<()> {
     thread::Builder::new()
@@ -78,15 +77,9 @@ fn run_filter(shared: Arc<SharedAudio>) {
                 if shared.is_filter_generation_current(generation) {
                     shared.mark_eof();
                 }
-                while shared.is_filter_generation_current(generation)
-                    && !shared.stop.load(std::sync::atomic::Ordering::Acquire)
-                {
-                    thread::sleep(Duration::from_millis(20));
-                }
+                shared.wait_for_filter_generation_change(generation);
             }
-            FilterInput::Stopped => {
-                thread::sleep(Duration::from_millis(2));
-            }
+            FilterInput::Stopped => {}
         }
     }
 }
@@ -116,6 +109,7 @@ mod tests {
         MIX_CHANNELS,
     };
     use std::sync::atomic::Ordering;
+    use std::time::Duration;
 
     #[test]
     fn filter_thread_moves_decoded_samples_to_output_queue() {

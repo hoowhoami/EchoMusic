@@ -29,12 +29,15 @@ use crate::events::{
     TrackInfo,
 };
 use crate::shared::{MixFormat, PlaybackSession, PlaybackSignal, SharedAudio, TrackSwitchInfo};
+use audio_graph::{
+    AudioGraphNodePlanPatch, AudioGraphParameterPatch, AudioGraphPlanPatch, AudioGraphSnapshot,
+};
 use napi::bindgen_prelude::AsyncTask;
 use napi::threadsafe_function::ThreadsafeFunction;
 use napi::{Env, Task};
 use napi_derive::napi;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::{sync_channel, RecvTimeoutError};
+use std::sync::mpsc::{sync_channel, RecvTimeoutError, SyncSender};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -60,7 +63,8 @@ struct PlayerRuntime {
     device_watcher: Option<device::DeviceWatcher>,
     fade_stop: Arc<AtomicBool>,
     loop_file: bool,
-    audio_filter: String,
+    audio_graph: AudioGraphSnapshot,
+    audio_graph_revision: u64,
     spectrum_signal_logged: bool,
     spatial_request_seq: u64,
     idle_output_release_seq: u64,
@@ -167,7 +171,8 @@ impl PlayerRuntime {
             device_watcher: None,
             fade_stop: Arc::new(AtomicBool::new(false)),
             loop_file: false,
-            audio_filter: String::new(),
+            audio_graph: AudioGraphSnapshot::default(),
+            audio_graph_revision: 0,
             spectrum_signal_logged: false,
             spatial_request_seq: 0,
             idle_output_release_seq: 0,
@@ -283,6 +288,18 @@ fn set_runtime_core_state(
         runtime,
         PlayerEvent::core_state_change(state.as_str(), reason),
     );
+}
+
+pub(crate) fn on_core_loop_tick(runtime: &mut PlayerRuntime) {
+    let Some(session) = runtime.session.as_ref() else {
+        return;
+    };
+    if runtime.state.playing
+        && !session.shared.paused.load(Ordering::Acquire)
+        && matches!(runtime.core_state, PlaybackCoreState::Paused)
+    {
+        set_runtime_core_state(runtime, PlaybackCoreState::Playing, "core-loop-tick");
+    }
 }
 
 fn emit_shared_event(shared: &SharedAudio, event: PlayerEvent) {
@@ -540,6 +557,18 @@ fn prepare_source(
                         }
                         PlaybackSignal::OutputStats(stats) => {
                             emit_shared_event(&signal_shared, PlayerEvent::output_stats(stats));
+                            let output_shared = signal_shared.clone();
+                            dispatch_core_command(
+                                "audio-output-stats",
+                                Box::new(move |runtime| {
+                                    let Some(session) = runtime.session.as_ref() else {
+                                        return;
+                                    };
+                                    if Arc::ptr_eq(&session.shared, &output_shared) {
+                                        update_runtime_audio_graph(runtime);
+                                    }
+                                }),
+                            );
                         }
                         PlaybackSignal::TrackSwitch(info) => {
                             apply_track_switch(info, signal_shared.clone());
@@ -583,21 +612,24 @@ fn prepare_source(
         })
         .map_err(|err| format!("failed to spawn signal thread: {err}"))?;
 
-    let output_thread = output::spawn_output_thread(
+    let output_thread = output::spawn_output_backend(
         config.audio_device.clone(),
         config.exclusive_output,
         shared.clone(),
         emit_event,
+        None,
     );
     let filter_thread = filter::spawn_filter_thread(shared.clone());
     let decode_generation = shared.current_decode_generation();
-    let decode_thread = decoder::spawn_decode_thread(decoder, shared.clone(), decode_generation);
+    let (decode_thread, decode_commands) =
+        decoder::spawn_decode_worker(decoder, shared.clone(), decode_generation);
     Ok(PreparedSource {
         session: PlaybackSession {
             shared,
             output_thread: Some(output_thread),
             filter_thread: Some(filter_thread),
             decode_thread: Some(decode_thread),
+            decode_commands: Some(decode_commands),
             position_thread: Some(position_thread),
         },
         url,
@@ -636,6 +668,7 @@ fn apply_prepared_source(
     runtime.state.time_pos = start_position;
     runtime.state.playing = autostart;
     runtime.state.paused = !autostart;
+    update_runtime_audio_graph(runtime);
     set_runtime_core_state(
         runtime,
         if autostart {
@@ -742,7 +775,31 @@ fn preferred_mix_channels(settings: &DspSettings, source_channels: usize) -> usi
     }
 }
 
-pub(crate) fn try_activate_gapless_next(
+fn update_runtime_audio_graph(runtime: &mut PlayerRuntime) {
+    let previous = runtime.audio_graph.clone();
+    let mut next = if let Some(session) = runtime.session.as_ref() {
+        let output_stats = session.shared.output_stats();
+        audio_graph::snapshot_filter_graph_with_device_output(
+            session.shared.mix_format,
+            &runtime.dsp_settings,
+            output_stats.as_ref(),
+        )
+    } else {
+        AudioGraphSnapshot::default()
+    };
+    next.revision = previous.revision;
+    if next != previous {
+        runtime.audio_graph_revision = runtime.audio_graph_revision.wrapping_add(1);
+        next.revision = runtime.audio_graph_revision as f64;
+        runtime.audio_graph = next;
+        emit_runtime_event(
+            runtime,
+            PlayerEvent::audio_graph_change(runtime.audio_graph.clone()),
+        );
+    }
+}
+
+pub(crate) fn activate_gapless_next_decoder(
     shared: Arc<SharedAudio>,
     generation: u64,
 ) -> GaplessDecodeResult {
@@ -787,7 +844,7 @@ pub(crate) fn try_activate_gapless_next(
             return GaplessDecodeResult::Activated(None);
         }
     }
-    GaplessDecodeResult::Activated(next.decoder.decode_into(shared, generation))
+    GaplessDecodeResult::Activated(Some(next.decoder))
 }
 
 fn restart_loop_if_enabled(shared: Arc<SharedAudio>) -> bool {
@@ -807,7 +864,7 @@ fn restart_loop_if_enabled(shared: Arc<SharedAudio>) -> bool {
         shared.paused.store(true, Ordering::Release);
         shared.request_decode_stop();
         runtime.prepared_next = None;
-        let _ = session.decode_thread.take();
+        session.stop_decode_background("loop-restart");
         let generation = shared.reset_for_decode_resume(0.0, &runtime.dsp_settings);
         let eq_active = runtime
             .dsp_settings
@@ -835,6 +892,7 @@ fn restart_loop_if_enabled(shared: Arc<SharedAudio>) -> bool {
             generation,
             config: runtime.config.clone(),
             interrupt: None,
+            decode_commands: None,
         }))
     })
     .ok()
@@ -1012,11 +1070,12 @@ fn spawn_and_attach_output_thread(
     shared: Arc<SharedAudio>,
     config: PlayerConfig,
 ) -> napi::Result<()> {
-    let output_thread = output::spawn_output_thread(
+    let output_thread = output::spawn_output_backend(
         config.audio_device.clone(),
         config.exclusive_output,
         shared.clone(),
         emit_event,
+        None,
     );
     let mut output_thread = Some(output_thread);
     let attached = with_runtime(|runtime| {
@@ -1046,7 +1105,7 @@ fn spawn_and_attach_output_thread_confirmed(
     config: PlayerConfig,
 ) -> Result<(), String> {
     let (start_tx, start_rx) = sync_channel(1);
-    let output_thread = output::spawn_output_thread_with_start_notify(
+    let output_thread = output::spawn_output_backend(
         config.audio_device.clone(),
         config.exclusive_output,
         shared.clone(),
@@ -1163,7 +1222,7 @@ impl Task for LoadFileTask {
             let shared = session.shared.clone();
             shared.paused.store(true, Ordering::Release);
             shared.request_decode_stop();
-            let _ = session.decode_thread.take();
+            session.stop_decode_background("load-replace");
             Ok(LoadPlan::Continuous(ContinuousLoadPlan {
                 shared,
                 request_seq: seq,
@@ -1225,11 +1284,13 @@ impl Task for LoadFileTask {
                                 .shared
                                 .set_source_sample_format(source_sample_format);
                             session.shared.bind_interrupt(decoder.interrupt_handle());
-                            session.decode_thread = Some(decoder::spawn_decode_thread(
+                            let (decode_thread, decode_commands) = decoder::spawn_decode_worker(
                                 decoder,
                                 session.shared.clone(),
                                 generation,
-                            ));
+                            );
+                            session.decode_thread = Some(decode_thread);
+                            session.decode_commands = Some(decode_commands);
                             session.shared.paused.store(true, Ordering::Release);
                             runtime.current_url = Some(url.clone());
                             runtime.current_audio_stream_ordinal = audio_stream;
@@ -1239,6 +1300,7 @@ impl Task for LoadFileTask {
                             runtime.state.time_pos = 0.0;
                             runtime.state.playing = false;
                             runtime.state.paused = true;
+                            update_runtime_audio_graph(runtime);
                             set_runtime_core_state(
                                 runtime,
                                 PlaybackCoreState::Paused,
@@ -1524,6 +1586,7 @@ pub fn stop() -> napi::Result<()> {
     with_runtime(|runtime| {
         runtime.stop_session();
         runtime.state.time_pos = 0.0;
+        update_runtime_audio_graph(runtime);
         set_runtime_core_state(runtime, PlaybackCoreState::Idle, "stop");
         emit_runtime_event(runtime, PlayerEvent::state_change(runtime.state.clone()));
         Ok(())
@@ -1542,6 +1605,7 @@ struct SeekPlan {
     generation: u64,
     config: PlayerConfig,
     interrupt: Option<Arc<AtomicBool>>,
+    decode_commands: Option<SyncSender<decoder::DecodeCommand>>,
 }
 
 fn mark_seek_plan_failed(plan: &SeekPlan) -> napi::Result<()> {
@@ -1619,11 +1683,10 @@ fn attach_restarted_decoder(
             .shared
             .set_source_sample_format(decoder.source_sample_format());
         session.shared.bind_interrupt(decoder.interrupt_handle());
-        session.decode_thread = Some(decoder::spawn_decode_thread(
-            decoder,
-            session.shared.clone(),
-            plan.generation,
-        ));
+        let (decode_thread, decode_commands) =
+            decoder::spawn_decode_worker(decoder, session.shared.clone(), plan.generation);
+        session.decode_thread = Some(decode_thread);
+        session.decode_commands = Some(decode_commands);
         session
             .shared
             .paused
@@ -1647,6 +1710,134 @@ fn attach_restarted_decoder(
     })
 }
 
+fn restore_seek_playback_state(
+    plan: &SeekPlan,
+    position: f64,
+    reason: &'static str,
+) -> napi::Result<()> {
+    with_runtime(|runtime| {
+        let Some(session) = runtime.session.as_ref() else {
+            return Ok(());
+        };
+        if !Arc::ptr_eq(&session.shared, &plan.shared)
+            || !session.shared.is_decode_generation_current(plan.generation)
+        {
+            return Ok(());
+        }
+        session
+            .shared
+            .paused
+            .store(plan.was_paused, Ordering::Release);
+        runtime.state.time_pos = position;
+        runtime.state.playing = !plan.was_paused;
+        runtime.state.paused = plan.was_paused;
+        set_runtime_core_state(
+            runtime,
+            if plan.was_paused {
+                PlaybackCoreState::Paused
+            } else {
+                PlaybackCoreState::Playing
+            },
+            reason,
+        );
+        emit_runtime_event(runtime, PlayerEvent::state_change(runtime.state.clone()));
+        Ok(())
+    })
+}
+
+fn try_seek_current_decoder(plan: &SeekPlan, position: f64) -> napi::Result<bool> {
+    let Some(sender) = plan.decode_commands.as_ref() else {
+        return Ok(false);
+    };
+    let (reply_tx, reply_rx) = sync_channel(1);
+    if sender
+        .send(decoder::DecodeCommand::Seek {
+            position_secs: position,
+            generation: plan.generation,
+            reply: reply_tx,
+        })
+        .is_err()
+    {
+        emit_shared_event(
+            &plan.shared,
+            PlayerEvent::log(
+                "warn",
+                "decoder seek command failed to send; falling back to reopen".to_string(),
+            ),
+        );
+        return Ok(false);
+    }
+
+    match reply_rx.recv_timeout(Duration::from_secs(2)) {
+        Ok(Ok(())) => {
+            restore_seek_playback_state(plan, position, "seek-command")?;
+            Ok(true)
+        }
+        Ok(Err(err)) => {
+            emit_shared_event(
+                &plan.shared,
+                PlayerEvent::log(
+                    "warn",
+                    format!("decoder seek command failed; falling back to reopen: {err}"),
+                ),
+            );
+            Ok(false)
+        }
+        Err(RecvTimeoutError::Timeout) => {
+            emit_shared_event(
+                &plan.shared,
+                PlayerEvent::log(
+                    "warn",
+                    "decoder seek command timed out; falling back to reopen".to_string(),
+                ),
+            );
+            Ok(false)
+        }
+        Err(RecvTimeoutError::Disconnected) => {
+            emit_shared_event(
+                &plan.shared,
+                PlayerEvent::log(
+                    "warn",
+                    "decoder seek command disconnected; falling back to reopen".to_string(),
+                ),
+            );
+            Ok(false)
+        }
+    }
+}
+
+fn prepare_reopen_seek_plan(previous: &SeekPlan, position: f64) -> napi::Result<Option<SeekPlan>> {
+    let interrupt = Arc::new(AtomicBool::new(false));
+    with_runtime(|runtime| {
+        runtime.seek_restart_interrupt = Some(interrupt.clone());
+        let Some(session) = runtime.session.as_mut() else {
+            return Ok(None);
+        };
+        if !Arc::ptr_eq(&session.shared, &previous.shared) {
+            return Ok(None);
+        }
+        session.shared.paused.store(true, Ordering::Release);
+        session.shared.request_decode_stop();
+        session.stop_decode_background("seek-fallback");
+        let generation = session
+            .shared
+            .reset_for_decode_resume(position, &runtime.dsp_settings);
+        runtime.state.time_pos = position;
+        runtime.state.playing = false;
+        runtime.state.paused = true;
+        Ok(runtime.current_url.clone().map(|url| SeekPlan {
+            shared: session.shared.clone(),
+            was_paused: previous.was_paused,
+            url,
+            audio_stream_ordinal: runtime.current_audio_stream_ordinal,
+            generation,
+            config: runtime.config.clone(),
+            interrupt: Some(interrupt),
+            decode_commands: None,
+        }))
+    })
+}
+
 impl Task for SeekTask {
     type Output = ();
     type JsValue = ();
@@ -1654,23 +1845,21 @@ impl Task for SeekTask {
     fn compute(&mut self) -> napi::Result<Self::Output> {
         let position = self.position.max(0.0);
         let plan = with_runtime(|runtime| {
-            let Some(session) = runtime.session.as_ref() else {
+            let Some((shared, was_paused, decode_commands)) =
+                runtime.session.as_ref().map(|session| {
+                    (
+                        session.shared.clone(),
+                        session.shared.paused.load(Ordering::Acquire),
+                        session.decode_commands.clone(),
+                    )
+                })
+            else {
                 return Ok(None);
             };
-            let shared = session.shared.clone();
-            let was_paused = shared.paused.load(Ordering::Acquire);
             set_runtime_core_state(runtime, PlaybackCoreState::Seeking, "seek");
             runtime.cancel_pending_seek_restart();
-            let interrupt = Arc::new(AtomicBool::new(false));
-            runtime.seek_restart_interrupt = Some(interrupt.clone());
             shared.paused.store(true, Ordering::Release);
             runtime.prepared_next = None;
-            shared.request_decode_stop();
-            if let Some(session) = runtime.session.as_mut() {
-                if Arc::ptr_eq(&session.shared, &shared) {
-                    let _ = session.decode_thread.take();
-                }
-            }
             let generation = shared.reset_for_decode_resume(position, &runtime.dsp_settings);
             runtime.state.time_pos = position;
             runtime.state.playing = false;
@@ -1683,11 +1872,20 @@ impl Task for SeekTask {
                 audio_stream_ordinal: runtime.current_audio_stream_ordinal,
                 generation,
                 config: runtime.config.clone(),
-                interrupt: Some(interrupt),
+                interrupt: None,
+                decode_commands,
             }))
         })?;
 
         let Some(plan) = plan else {
+            return Ok(());
+        };
+
+        if try_seek_current_decoder(&plan, position)? {
+            return Ok(());
+        }
+
+        let Some(plan) = prepare_reopen_seek_plan(&plan, position)? else {
             return Ok(());
         };
 
@@ -1699,7 +1897,7 @@ impl Task for SeekTask {
                 mark_seek_plan_failed(&plan)?;
                 emit_event(
                     PlayerEvent::error(
-                        events::PlayerErrorCode::Decode,
+                        events::PlayerErrorCode::Seek,
                         format!("failed to seek playback: {err}"),
                     )
                     .with_playback_context(plan.shared.current_track_seq(), plan.generation),
@@ -1751,10 +1949,9 @@ impl Task for SetSpeedTask {
             session
                 .shared
                 .reset_filter_for_speed_change(&runtime.dsp_settings);
-            emit_runtime_event(
-                runtime,
-                PlayerEvent::time_update(session.shared.position_secs()),
-            );
+            let position = session.shared.position_secs();
+            update_runtime_audio_graph(runtime);
+            emit_runtime_event(runtime, PlayerEvent::time_update(position));
             Ok(())
         })
     }
@@ -1785,6 +1982,7 @@ impl Task for SetEqualizerTask {
             }
             runtime.dsp_settings.equalizer = next;
             sync_current_session_dsp_settings(runtime);
+            update_runtime_audio_graph(runtime);
             Ok(())
         })
     }
@@ -1816,6 +2014,7 @@ impl Task for SetImpulseResponseTask {
                 runtime.spatial_file_path = None;
                 runtime.dsp_settings.spatial = None;
                 sync_current_session_dsp_settings(runtime);
+                update_runtime_audio_graph(runtime);
                 emit_runtime_event(
                     runtime,
                     PlayerEvent::log("info", "impulse response disabled".to_string()),
@@ -1873,6 +2072,7 @@ impl Task for SetImpulseResponseTask {
                         runtime.spatial_file_path = None;
                         runtime.dsp_settings.spatial = None;
                         sync_current_session_dsp_settings(runtime);
+                        update_runtime_audio_graph(runtime);
                     }
                     Ok(())
                 })?;
@@ -1919,6 +2119,7 @@ fn apply_prepared_spatial_effect(runtime: &mut PlayerRuntime, spatial: PreparedS
     runtime.dsp_settings.spatial = Some(spatial);
     sync_current_session_dsp_settings(runtime);
     reset_current_filter_if_process_format_changed(runtime);
+    update_runtime_audio_graph(runtime);
 }
 
 fn sync_current_session_dsp_settings(runtime: &PlayerRuntime) {
@@ -1971,6 +2172,7 @@ fn update_spatial_mix(runtime: &mut PlayerRuntime, mix: f32) {
         spatial.mix = mix;
     }
     sync_current_session_dsp_settings(runtime);
+    update_runtime_audio_graph(runtime);
 }
 
 fn parse_impulse_response_payload(
@@ -2037,8 +2239,360 @@ pub fn set_impulse_response_mix(mix: f64) -> AsyncTask<SetImpulseResponseMixTask
 }
 
 #[napi]
-pub fn get_audio_filter() -> napi::Result<String> {
-    with_runtime(|runtime| Ok(runtime.audio_filter.clone()))
+pub fn get_audio_graph() -> napi::Result<AudioGraphSnapshot> {
+    with_runtime(|runtime| Ok(runtime.audio_graph.clone()))
+}
+
+pub struct SetAudioGraphParameterTask {
+    patch: AudioGraphParameterPatch,
+}
+
+pub struct SetAudioGraphPlanTask {
+    plan: AudioGraphPlanPatch,
+}
+
+impl Task for SetAudioGraphParameterTask {
+    type Output = ();
+    type JsValue = ();
+
+    fn compute(&mut self) -> napi::Result<Self::Output> {
+        with_runtime(|runtime| apply_audio_graph_parameter_patches(runtime, &[self.patch.clone()]))
+    }
+
+    fn resolve(&mut self, _env: Env, _output: Self::Output) -> napi::Result<Self::JsValue> {
+        Ok(())
+    }
+}
+
+impl Task for SetAudioGraphPlanTask {
+    type Output = ();
+    type JsValue = ();
+
+    fn compute(&mut self) -> napi::Result<Self::Output> {
+        with_runtime(|runtime| apply_audio_graph_plan_patch(runtime, &self.plan))
+    }
+
+    fn resolve(&mut self, _env: Env, _output: Self::Output) -> napi::Result<Self::JsValue> {
+        Ok(())
+    }
+}
+
+struct GraphPatchEffects {
+    changed: bool,
+    tempo_changed: bool,
+    spatial_resource_changed: bool,
+}
+
+#[derive(Clone)]
+struct GraphPlanDraft {
+    dsp_settings: DspSettings,
+    spatial_mix: f32,
+    spatial_file_path: Option<String>,
+}
+
+fn apply_audio_graph_parameter_patches(
+    runtime: &mut PlayerRuntime,
+    patches: &[AudioGraphParameterPatch],
+) -> napi::Result<()> {
+    apply_audio_graph_plan_parts(runtime, None, patches)
+}
+
+fn apply_audio_graph_plan_patch(
+    runtime: &mut PlayerRuntime,
+    plan: &AudioGraphPlanPatch,
+) -> napi::Result<()> {
+    apply_audio_graph_plan_parts(runtime, plan.nodes.as_deref(), &plan.patches)
+}
+
+fn apply_audio_graph_plan_parts(
+    runtime: &mut PlayerRuntime,
+    nodes: Option<&[AudioGraphNodePlanPatch]>,
+    patches: &[AudioGraphParameterPatch],
+) -> napi::Result<()> {
+    if nodes.is_none_or(|nodes| nodes.is_empty()) && patches.is_empty() {
+        return Ok(());
+    }
+    let mut effects = GraphPatchEffects {
+        changed: false,
+        tempo_changed: false,
+        spatial_resource_changed: false,
+    };
+    let mut draft = GraphPlanDraft {
+        dsp_settings: runtime.dsp_settings.clone(),
+        spatial_mix: runtime.spatial_mix,
+        spatial_file_path: runtime.spatial_file_path.clone(),
+    };
+    if let Some(nodes) = nodes {
+        for node in nodes {
+            apply_audio_graph_node_patch_to_draft(&mut draft, node, &mut effects)?;
+        }
+    }
+    for patch in patches {
+        apply_audio_graph_parameter_patch_to_draft(&mut draft, patch, &mut effects)?;
+    }
+    if !effects.changed {
+        return Ok(());
+    }
+    runtime.dsp_settings = draft.dsp_settings;
+    runtime.spatial_mix = draft.spatial_mix;
+    runtime.spatial_file_path = draft.spatial_file_path;
+    if effects.spatial_resource_changed {
+        runtime.spatial_request_seq = runtime.spatial_request_seq.wrapping_add(1);
+    }
+    if effects.tempo_changed {
+        if let Some(session) = runtime.session.as_ref() {
+            session
+                .shared
+                .reset_filter_for_speed_change(&runtime.dsp_settings);
+            let position = session.shared.position_secs();
+            update_runtime_audio_graph(runtime);
+            emit_runtime_event(runtime, PlayerEvent::time_update(position));
+        } else {
+            update_runtime_audio_graph(runtime);
+        }
+    } else {
+        sync_current_session_dsp_settings(runtime);
+        update_runtime_audio_graph(runtime);
+    }
+    Ok(())
+}
+
+fn apply_audio_graph_node_patch_to_draft(
+    draft: &mut GraphPlanDraft,
+    node: &AudioGraphNodePlanPatch,
+    effects: &mut GraphPatchEffects,
+) -> napi::Result<()> {
+    let Some(enabled) = node.enabled else {
+        return Ok(());
+    };
+    match node.kind.trim() {
+        "equalizer" => {
+            if !enabled
+                && draft
+                    .dsp_settings
+                    .equalizer
+                    .iter()
+                    .any(|gain| gain.abs() >= 0.05)
+            {
+                draft.dsp_settings.equalizer = [0.0; EQ_BAND_COUNT];
+                effects.changed = true;
+            }
+            Ok(())
+        }
+        "normalization" => {
+            if !enabled && draft.dsp_settings.normalization_gain_db.abs() >= 0.01 {
+                draft.dsp_settings.normalization_gain_db = 0.0;
+                effects.changed = true;
+            }
+            Ok(())
+        }
+        "spatial" => {
+            if enabled {
+                if draft.dsp_settings.spatial.is_none() {
+                    return Err(napi::Error::from_reason(
+                        "spatial node requires an impulse response resource".to_string(),
+                    ));
+                }
+                return Ok(());
+            }
+            if draft.dsp_settings.spatial.is_some() || draft.spatial_file_path.is_some() {
+                draft.spatial_file_path = None;
+                draft.dsp_settings.spatial = None;
+                effects.changed = true;
+                effects.spatial_resource_changed = true;
+            }
+            Ok(())
+        }
+        "tempo" => {
+            if !enabled && (draft.dsp_settings.speed - 1.0).abs() >= f32::EPSILON {
+                draft.dsp_settings.speed = 1.0;
+                effects.changed = true;
+                effects.tempo_changed = true;
+            }
+            Ok(())
+        }
+        "format-convert" | "limiter" => {
+            if enabled {
+                return Ok(());
+            }
+            Err(napi::Error::from_reason(format!(
+                "audio graph node '{}' cannot be disabled",
+                node.kind
+            )))
+        }
+        _ => Err(napi::Error::from_reason(format!(
+            "unsupported audio graph node '{}'",
+            node.kind
+        ))),
+    }
+}
+
+fn apply_audio_graph_parameter_patch_to_draft(
+    draft: &mut GraphPlanDraft,
+    patch: &AudioGraphParameterPatch,
+    effects: &mut GraphPatchEffects,
+) -> napi::Result<()> {
+    let kind = patch.kind.trim();
+    let name = patch.name.trim();
+    match kind {
+        "tempo" if name == "speed" => {
+            let speed = tempo::normalize_speed(patch.value);
+            if (draft.dsp_settings.speed - speed).abs() < f32::EPSILON {
+                return Ok(());
+            }
+            draft.dsp_settings.speed = speed;
+            effects.changed = true;
+            effects.tempo_changed = true;
+            Ok(())
+        }
+        "equalizer" => {
+            let index = parse_equalizer_band_name(name)?;
+            let value = patch.value.clamp(-12.0, 12.0) as f32;
+            if (draft.dsp_settings.equalizer[index] - value).abs() < f32::EPSILON {
+                return Ok(());
+            }
+            draft.dsp_settings.equalizer[index] = value;
+            effects.changed = true;
+            Ok(())
+        }
+        "normalization" if name == "gain" => {
+            let value = patch.value.clamp(-24.0, 24.0) as f32;
+            if (draft.dsp_settings.normalization_gain_db - value).abs() < f32::EPSILON {
+                return Ok(());
+            }
+            draft.dsp_settings.normalization_gain_db = value;
+            effects.changed = true;
+            Ok(())
+        }
+        "spatial" if name == "mix" => {
+            let mix = clamp_spatial_mix(patch.value as f32);
+            if (draft.spatial_mix - mix).abs() < f32::EPSILON
+                && draft
+                    .dsp_settings
+                    .spatial
+                    .as_ref()
+                    .is_none_or(|spatial| (spatial.mix - mix).abs() < f32::EPSILON)
+            {
+                return Ok(());
+            }
+            draft.spatial_mix = mix;
+            if let Some(spatial) = draft.dsp_settings.spatial.as_mut() {
+                spatial.mix = mix;
+            }
+            effects.changed = true;
+            Ok(())
+        }
+        _ => Err(napi::Error::from_reason(format!(
+            "unsupported audio graph parameter '{}.{}'",
+            patch.kind, patch.name
+        ))),
+    }
+}
+
+fn parse_equalizer_band_name(name: &str) -> napi::Result<usize> {
+    let Some(suffix) = name.strip_prefix("band") else {
+        return Err(napi::Error::from_reason(format!(
+            "unsupported equalizer parameter '{name}'"
+        )));
+    };
+    let index = suffix
+        .parse::<usize>()
+        .map_err(|_| napi::Error::from_reason(format!("invalid equalizer band '{name}'")))?;
+    if index >= EQ_BAND_COUNT {
+        return Err(napi::Error::from_reason(format!(
+            "equalizer band index out of range: {index}"
+        )));
+    }
+    Ok(index)
+}
+
+#[cfg(test)]
+mod graph_plan_tests {
+    use super::*;
+
+    #[test]
+    fn audio_graph_plan_is_transactional_when_validation_fails() {
+        let mut runtime = PlayerRuntime::new(PlayerConfig::default());
+        runtime.dsp_settings.equalizer[0] = 3.0;
+        runtime.dsp_settings.normalization_gain_db = -4.0;
+        let before_settings = runtime.dsp_settings.clone();
+
+        let plan = AudioGraphPlanPatch {
+            nodes: Some(vec![AudioGraphNodePlanPatch {
+                kind: "equalizer".to_string(),
+                enabled: Some(false),
+            }]),
+            patches: vec![AudioGraphParameterPatch {
+                kind: "equalizer".to_string(),
+                name: "band99".to_string(),
+                value: 6.0,
+            }],
+        };
+
+        let err = apply_audio_graph_plan_patch(&mut runtime, &plan)
+            .expect_err("invalid patch should reject the whole plan");
+
+        assert!(err.reason.contains("equalizer band index out of range"));
+        assert_eq!(runtime.dsp_settings.equalizer, before_settings.equalizer);
+        assert_eq!(
+            runtime.dsp_settings.normalization_gain_db,
+            before_settings.normalization_gain_db
+        );
+        assert_eq!(runtime.audio_graph_revision, 0);
+    }
+
+    #[test]
+    fn audio_graph_plan_commits_nodes_and_parameters_together() {
+        let mut runtime = PlayerRuntime::new(PlayerConfig::default());
+        runtime.dsp_settings.equalizer[0] = 3.0;
+        runtime.dsp_settings.normalization_gain_db = -4.0;
+        runtime.dsp_settings.speed = 1.5;
+        runtime.spatial_file_path = Some("room.wav".to_string());
+        runtime.spatial_request_seq = 7;
+
+        let plan = AudioGraphPlanPatch {
+            nodes: Some(vec![
+                AudioGraphNodePlanPatch {
+                    kind: "equalizer".to_string(),
+                    enabled: Some(false),
+                },
+                AudioGraphNodePlanPatch {
+                    kind: "tempo".to_string(),
+                    enabled: Some(false),
+                },
+                AudioGraphNodePlanPatch {
+                    kind: "spatial".to_string(),
+                    enabled: Some(false),
+                },
+            ]),
+            patches: vec![AudioGraphParameterPatch {
+                kind: "normalization".to_string(),
+                name: "gain".to_string(),
+                value: 2.5,
+            }],
+        };
+
+        apply_audio_graph_plan_patch(&mut runtime, &plan).expect("valid plan should commit");
+
+        assert_eq!(runtime.dsp_settings.equalizer, [0.0; EQ_BAND_COUNT]);
+        assert_eq!(runtime.dsp_settings.speed, 1.0);
+        assert_eq!(runtime.dsp_settings.normalization_gain_db, 2.5);
+        assert!(runtime.spatial_file_path.is_none());
+        assert_eq!(runtime.spatial_request_seq, 8);
+        assert_eq!(runtime.audio_graph_revision, 0);
+    }
+}
+
+#[napi]
+pub fn set_audio_graph_parameter(
+    patch: AudioGraphParameterPatch,
+) -> AsyncTask<SetAudioGraphParameterTask> {
+    AsyncTask::new(SetAudioGraphParameterTask { patch })
+}
+
+#[napi]
+pub fn set_audio_graph_plan(plan: AudioGraphPlanPatch) -> AsyncTask<SetAudioGraphPlanTask> {
+    AsyncTask::new(SetAudioGraphPlanTask { plan })
 }
 
 pub struct SetAudioDeviceTask {
@@ -2100,6 +2654,7 @@ impl Task for SetNormalizationGainTask {
         with_runtime(|runtime| {
             runtime.dsp_settings.normalization_gain_db = self.gain_db.clamp(-24.0, 24.0) as f32;
             sync_current_session_dsp_settings(runtime);
+            update_runtime_audio_graph(runtime);
             Ok(())
         })
     }

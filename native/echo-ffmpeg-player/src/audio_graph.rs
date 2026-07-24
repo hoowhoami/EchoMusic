@@ -1,9 +1,11 @@
 use crate::effects::{DspChain, DspSettings};
 use crate::shared::{
-    AudioSampleFormat, DecodedAudioChunk, DecodedAudioData, DecodedAudioFormat, MixFormat,
+    AudioOutputStats, AudioSampleFormat, DecodedAudioChunk, DecodedAudioData, DecodedAudioFormat,
+    MixFormat,
 };
 use crate::tempo::{TempoProcessor, MAX_SPEED, MIN_SPEED};
 use ffmpeg_audio::{sys, SwrContext};
+use napi_derive::napi;
 use std::{mem, ptr};
 
 pub struct AudioFilterGraph {
@@ -45,6 +47,290 @@ struct AudioFilterNode {
     kind: AudioFilterNodeKind,
     channels: ChannelRequirement,
     flush: FilterFlushMode,
+}
+
+#[napi(object)]
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct AudioGraphFormatSnapshot {
+    pub sample_rate: f64,
+    pub channels: f64,
+    pub sample_format: String,
+}
+
+#[napi(object)]
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct AudioGraphNodeParameterSnapshot {
+    pub name: String,
+    pub value: String,
+    pub unit: Option<String>,
+    pub min: Option<f64>,
+    pub max: Option<f64>,
+    pub runtime_editable: bool,
+}
+
+#[napi(object)]
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct AudioGraphNodeSnapshot {
+    pub kind: String,
+    pub channel_requirement: String,
+    pub flush_mode: String,
+    pub reinit_on_format_change: bool,
+    pub latency_secs: f64,
+    pub runtime_editable: bool,
+    pub parameters: Vec<AudioGraphNodeParameterSnapshot>,
+}
+
+#[napi(object)]
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct AudioGraphDeviceOutputSnapshot {
+    pub backend: String,
+    pub format: AudioGraphFormatSnapshot,
+    pub buffer_secs: f64,
+    pub delay_secs: f64,
+    pub underruns: f64,
+}
+
+#[napi(object)]
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct AudioGraphSnapshot {
+    pub revision: f64,
+    pub process_format: AudioGraphFormatSnapshot,
+    pub output_format: AudioGraphFormatSnapshot,
+    pub device_output: Option<AudioGraphDeviceOutputSnapshot>,
+    pub latency_secs: f64,
+    pub nodes: Vec<AudioGraphNodeSnapshot>,
+}
+
+#[napi(object)]
+#[derive(Clone, Debug)]
+pub struct AudioGraphParameterPatch {
+    pub kind: String,
+    pub name: String,
+    pub value: f64,
+}
+
+#[napi(object)]
+#[derive(Clone, Debug)]
+pub struct AudioGraphNodePlanPatch {
+    pub kind: String,
+    pub enabled: Option<bool>,
+}
+
+#[napi(object)]
+#[derive(Clone, Debug)]
+pub struct AudioGraphPlanPatch {
+    pub nodes: Option<Vec<AudioGraphNodePlanPatch>>,
+    pub patches: Vec<AudioGraphParameterPatch>,
+}
+
+pub fn snapshot_filter_graph(
+    output_format: MixFormat,
+    settings: &DspSettings,
+) -> AudioGraphSnapshot {
+    snapshot_filter_graph_with_device_output(output_format, settings, None)
+}
+
+pub fn snapshot_filter_graph_with_device_output(
+    output_format: MixFormat,
+    settings: &DspSettings,
+    device_output: Option<&AudioOutputStats>,
+) -> AudioGraphSnapshot {
+    let process_format = process_format_for_output(output_format, settings);
+    let latency_secs = TempoProcessor::new(
+        settings.speed,
+        process_format.sample_rate,
+        process_format.channels,
+    )
+    .map(|tempo| tempo.latency_secs(process_format.sample_rate))
+    .unwrap_or_default()
+        + DspChain::new(
+            process_format.sample_rate,
+            process_format.channels,
+            settings,
+        )
+        .latency_secs();
+    AudioGraphSnapshot {
+        revision: 0.0,
+        process_format: format_snapshot(process_format),
+        output_format: format_snapshot(output_format),
+        device_output: device_output.map(device_output_snapshot),
+        latency_secs,
+        nodes: filter_nodes_for_settings(settings)
+            .into_iter()
+            .map(|node| graph_node_snapshot(node, process_format, settings))
+            .collect(),
+    }
+}
+
+fn device_output_snapshot(stats: &AudioOutputStats) -> AudioGraphDeviceOutputSnapshot {
+    AudioGraphDeviceOutputSnapshot {
+        backend: stats.backend.clone(),
+        format: AudioGraphFormatSnapshot {
+            sample_rate: stats.sample_rate,
+            channels: stats.channels,
+            sample_format: stats.format.clone(),
+        },
+        buffer_secs: stats.buffer_secs.max(0.0),
+        delay_secs: stats.delay_secs.max(0.0),
+        underruns: stats.underruns.max(0.0),
+    }
+}
+
+fn format_snapshot(format: MixFormat) -> AudioGraphFormatSnapshot {
+    AudioGraphFormatSnapshot {
+        sample_rate: f64::from(format.sample_rate),
+        channels: format.channels as f64,
+        sample_format: format.sample_format.as_str().to_string(),
+    }
+}
+
+impl ChannelRequirement {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Preserve => "preserve",
+            Self::Stereo => "stereo",
+        }
+    }
+}
+
+impl FilterFlushMode {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Drain => "drain",
+            Self::Reset => "reset",
+        }
+    }
+}
+
+impl AudioFilterNodeKind {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::FormatConvert => "format-convert",
+            Self::Tempo => "tempo",
+            Self::Equalizer => "equalizer",
+            Self::Spatial => "spatial",
+            Self::Normalization => "normalization",
+            Self::Limiter => "limiter",
+        }
+    }
+}
+
+impl AudioSampleFormat {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Unknown => "unknown",
+            Self::U8 => "u8",
+            Self::S16 => "s16",
+            Self::S32 => "s32",
+            Self::F32 => "f32",
+            Self::F64 => "f64",
+        }
+    }
+}
+
+fn graph_node_snapshot(
+    node: AudioFilterNode,
+    process_format: MixFormat,
+    settings: &DspSettings,
+) -> AudioGraphNodeSnapshot {
+    let latency_secs = match node.kind {
+        AudioFilterNodeKind::Tempo => TempoProcessor::new(
+            settings.speed,
+            process_format.sample_rate,
+            process_format.channels,
+        )
+        .map(|tempo| tempo.latency_secs(process_format.sample_rate))
+        .unwrap_or_default(),
+        AudioFilterNodeKind::Spatial => DspChain::new(
+            process_format.sample_rate,
+            process_format.channels,
+            settings,
+        )
+        .latency_secs(),
+        _ => 0.0,
+    };
+    let parameters = graph_node_parameters(node.kind, settings);
+    AudioGraphNodeSnapshot {
+        kind: node.kind.as_str().to_string(),
+        channel_requirement: node.channels.as_str().to_string(),
+        flush_mode: node.flush.as_str().to_string(),
+        reinit_on_format_change: matches!(node.flush, FilterFlushMode::Reset),
+        latency_secs,
+        runtime_editable: node_kind_runtime_editable(node.kind),
+        parameters,
+    }
+}
+
+fn graph_node_parameters(
+    kind: AudioFilterNodeKind,
+    settings: &DspSettings,
+) -> Vec<AudioGraphNodeParameterSnapshot> {
+    match kind {
+        AudioFilterNodeKind::Equalizer => settings
+            .equalizer
+            .iter()
+            .enumerate()
+            .filter(|(_, gain)| gain.abs() >= 0.05)
+            .map(|(index, gain)| AudioGraphNodeParameterSnapshot {
+                name: format!("band{index}"),
+                value: format!("{gain:.2}"),
+                unit: Some("dB".to_string()),
+                min: Some(-12.0),
+                max: Some(12.0),
+                runtime_editable: true,
+            })
+            .collect(),
+        AudioFilterNodeKind::Spatial => {
+            let Some(spatial) = settings.spatial.as_ref() else {
+                return Vec::new();
+            };
+            vec![
+                AudioGraphNodeParameterSnapshot {
+                    name: "mix".to_string(),
+                    value: format!("{:.3}", spatial.mix),
+                    unit: None,
+                    min: Some(0.0),
+                    max: Some(1.0),
+                    runtime_editable: true,
+                },
+                AudioGraphNodeParameterSnapshot {
+                    name: "mode".to_string(),
+                    value: spatial.mode().to_string(),
+                    unit: None,
+                    min: None,
+                    max: None,
+                    runtime_editable: false,
+                },
+            ]
+        }
+        AudioFilterNodeKind::Normalization => vec![AudioGraphNodeParameterSnapshot {
+            name: "gain".to_string(),
+            value: format!("{:.2}", settings.normalization_gain_db),
+            unit: Some("dB".to_string()),
+            min: Some(-24.0),
+            max: Some(24.0),
+            runtime_editable: true,
+        }],
+        AudioFilterNodeKind::Tempo => vec![AudioGraphNodeParameterSnapshot {
+            name: "speed".to_string(),
+            value: format!("{:.3}", settings.speed),
+            unit: None,
+            min: Some(f64::from(MIN_SPEED)),
+            max: Some(f64::from(MAX_SPEED)),
+            runtime_editable: true,
+        }],
+        AudioFilterNodeKind::FormatConvert | AudioFilterNodeKind::Limiter => Vec::new(),
+    }
+}
+
+fn node_kind_runtime_editable(kind: AudioFilterNodeKind) -> bool {
+    matches!(
+        kind,
+        AudioFilterNodeKind::Equalizer
+            | AudioFilterNodeKind::Spatial
+            | AudioFilterNodeKind::Normalization
+            | AudioFilterNodeKind::Tempo
+    )
 }
 
 impl AudioFilterGraph {
@@ -562,6 +848,65 @@ mod tests {
         assert_eq!(nodes[0].flush, FilterFlushMode::Drain);
         assert_eq!(nodes[1].flush, FilterFlushMode::Reset);
         assert_eq!(nodes[3].flush, FilterFlushMode::Drain);
+    }
+
+    #[test]
+    fn graph_snapshot_exposes_structured_node_metadata() {
+        let mut settings = DspSettings::default();
+        settings.equalizer[1] = 2.0;
+        settings.speed = 1.5;
+
+        let snapshot = snapshot_filter_graph(MixFormat::stereo_f32(48_000), &settings);
+
+        assert_eq!(snapshot.process_format.sample_rate, 48_000.0);
+        assert_eq!(snapshot.process_format.channels, 2.0);
+        assert_eq!(snapshot.process_format.sample_format, "f32");
+        assert_eq!(snapshot.output_format.sample_rate, 48_000.0);
+        assert!(snapshot.latency_secs > 0.0);
+        assert_eq!(
+            snapshot
+                .nodes
+                .iter()
+                .map(|node| node.kind.as_str())
+                .collect::<Vec<_>>(),
+            vec!["format-convert", "equalizer", "tempo", "limiter"]
+        );
+        assert_eq!(snapshot.nodes[1].flush_mode, "reset");
+        assert!(snapshot.nodes[1].reinit_on_format_change);
+        assert!(snapshot.nodes[1].runtime_editable);
+        assert_eq!(snapshot.nodes[1].parameters[0].name, "band1");
+        assert_eq!(snapshot.nodes[1].parameters[0].unit.as_deref(), Some("dB"));
+        assert_eq!(snapshot.nodes[2].parameters[0].name, "speed");
+        assert!(snapshot.nodes[2].latency_secs > 0.0);
+    }
+
+    #[test]
+    fn graph_snapshot_includes_runtime_device_output_when_available() {
+        let stats = AudioOutputStats {
+            backend: "cpal".to_string(),
+            sample_rate: 44_100.0,
+            engine_sample_rate: 48_000.0,
+            channels: 2.0,
+            format: "f32".to_string(),
+            buffer_frames: 512.0,
+            buffer_secs: 512.0 / 44_100.0,
+            delay_secs: 0.02,
+            underruns: 3.0,
+        };
+
+        let snapshot = snapshot_filter_graph_with_device_output(
+            MixFormat::stereo_f32(48_000),
+            &DspSettings::default(),
+            Some(&stats),
+        );
+
+        let device_output = snapshot
+            .device_output
+            .expect("runtime device output should be present");
+        assert_eq!(device_output.backend, "cpal");
+        assert_eq!(device_output.format.sample_rate, 44_100.0);
+        assert_eq!(device_output.format.sample_format, "f32");
+        assert_eq!(device_output.underruns, 3.0);
     }
 
     #[test]

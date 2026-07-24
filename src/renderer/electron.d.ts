@@ -33,6 +33,11 @@ import type {
 import type { LogSettings } from '../shared/logging';
 import type { NetworkSettings } from '../shared/network';
 import type { PlayerErrorPayload } from '../shared/player-error';
+import type {
+  PlayerAudioGraphParameterPatch,
+  PlayerAudioGraphPlanPatch,
+  PlayerAudioGraphSnapshot,
+} from '../shared/player-audio-graph';
 import type { ResolvePlaylistRequest, ResolvePlaylistResponse } from '../shared/external';
 import type { ShareCaptureRect, ShareTarget } from '../shared/share';
 import type {
@@ -138,6 +143,14 @@ type PlayerAudioOutputStats = {
   bufferSecs: number;
   delaySecs: number;
   underruns: number;
+};
+
+type PlayerCacheState = {
+  paused?: boolean;
+  bufferingState?: number;
+  bufferedSecs?: number;
+  targetSecs?: number;
+  packetCache?: PlayerPacketCacheStats;
 };
 
 export interface IElectronAPI {
@@ -536,7 +549,9 @@ export interface IElectronAPI {
     setEqualizer: (gains: number[]) => Promise<void>;
     setImpulseResponse: (payload: string | ImpulseResponsePlaybackOptions) => Promise<void>;
     setImpulseResponseMix: (mix: number) => Promise<void>;
-    getAudioFilter: () => Promise<string>;
+    getAudioGraph: () => Promise<PlayerAudioGraphSnapshot | null>;
+    setAudioGraphParameter: (patch: PlayerAudioGraphParameterPatch) => Promise<void>;
+    setAudioGraphPlan: (plan: PlayerAudioGraphPlanPatch) => Promise<void>;
     setAudioDevice: (deviceName: string) => Promise<void>;
     getAudioDevices: () => Promise<
       Array<{ name: string; description: string; isDefault?: boolean }>
@@ -570,6 +585,7 @@ export interface IElectronAPI {
     onFileLoaded: (func: (payload?: { path?: string; seq?: number }) => void) => () => void;
     onStateChange: (func: (state: { playing?: boolean; paused?: boolean }) => void) => () => void;
     onCoreStateChange: (func: (payload: { state?: string; reason?: string }) => void) => () => void;
+    onCacheStateChange: (func: (payload: PlayerCacheState) => void) => () => void;
     onPlaybackEnd: (func: (reason: string) => void) => () => void;
     onStall: (func: (position: number) => void) => () => void;
     onError: (func: (payload: PlayerErrorPayload) => void) => () => void;
@@ -585,6 +601,7 @@ export interface IElectronAPI {
     ) => () => void;
     onPacketCacheStats: (func: (payload?: PlayerPacketCacheStats) => void) => () => void;
     onAudioOutputStats: (func: (payload?: PlayerAudioOutputStats) => void) => () => void;
+    onAudioGraphChange: (func: (payload?: PlayerAudioGraphSnapshot) => void) => () => void;
   };
 }
 

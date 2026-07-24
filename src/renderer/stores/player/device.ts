@@ -39,8 +39,12 @@ export const createDeviceManager = (
 ) => {
   let refreshingOutputDevices = false;
   let applyingOutputDevice = false;
+  let applyingOutputDeviceKey: string | null = null;
+  let applyingOutputDevicePromise: Promise<boolean> | null = null;
   let nativeOutputReconfigActive = false;
   let outputReconfigSettleUntil = 0;
+  let lastAppliedOutputDeviceKey: string | null = null;
+  let lastAppliedOutputDeviceAt = 0;
   let lastDefaultOutputDeviceId: string | null | undefined;
 
   const resolveDefaultOutputDeviceId = (devices: PlayerAudioDevice[]) =>
@@ -108,6 +112,9 @@ export const createDeviceManager = (
     const matched = settingStore.outputDevices.find((item) => item.value === deviceId);
     settingStore.setOutputDeviceStatus('ready', `已切换到 ${matched?.label || deviceId}。`);
   };
+
+  const outputDeviceApplyKey = (deviceId: string, exclusive: boolean) =>
+    `${!deviceId || deviceId === 'default' ? 'default' : deviceId}\u0000${exclusive ? 'exclusive' : 'shared'}`;
 
   const recoverPlaybackStatusAfterOutputChange = async () => {
     if (!callbacks.recoverPlaybackStatusAfterOutputChange) return;
@@ -192,9 +199,23 @@ export const createDeviceManager = (
     const player = window.electron?.player;
     const exclusiveChanged = exclusive !== (state._lastAppliedExclusive ?? false);
     const deviceChanged = state.appliedOutputDeviceId !== deviceId;
+    const applyKey = outputDeviceApplyKey(deviceId, exclusive);
     let applied = false;
 
     if (!force && !exclusiveChanged && !deviceChanged) {
+      setReadyOutputDeviceStatus(deviceId);
+      lastAppliedOutputDeviceKey = applyKey;
+      lastAppliedOutputDeviceAt = Date.now();
+      return true;
+    }
+
+    if (
+      force &&
+      !exclusiveChanged &&
+      !deviceChanged &&
+      lastAppliedOutputDeviceKey === applyKey &&
+      Date.now() - lastAppliedOutputDeviceAt < OUTPUT_RECONFIG_SETTLE_MS
+    ) {
       setReadyOutputDeviceStatus(deviceId);
       return true;
     }
@@ -255,6 +276,8 @@ export const createDeviceManager = (
       return fallbackApplied;
     } else {
       setReadyOutputDeviceStatus(deviceId);
+      lastAppliedOutputDeviceKey = applyKey;
+      lastAppliedOutputDeviceAt = Date.now();
       await recoverPlaybackStatusAfterOutputChange();
       return true;
     }
@@ -264,14 +287,24 @@ export const createDeviceManager = (
     deviceId: string,
     options?: { persistSelection?: boolean; force?: boolean },
   ): Promise<boolean> => {
-    if (applyingOutputDevice) return false;
+    const applyKey = outputDeviceApplyKey(deviceId, settingStore.exclusiveAudioDevice);
+    if (applyingOutputDevice) {
+      if (applyingOutputDeviceKey === applyKey && applyingOutputDevicePromise) {
+        return applyingOutputDevicePromise;
+      }
+      return false;
+    }
     applyingOutputDevice = true;
+    applyingOutputDeviceKey = applyKey;
     beginIntentionalOutputReconfig();
+    applyingOutputDevicePromise = applyOutputDeviceUnchecked(deviceId, options);
     try {
-      return await applyOutputDeviceUnchecked(deviceId, options);
+      return await applyingOutputDevicePromise;
     } finally {
       settleIntentionalOutputReconfig();
       applyingOutputDevice = false;
+      applyingOutputDeviceKey = null;
+      applyingOutputDevicePromise = null;
     }
   };
 

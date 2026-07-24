@@ -3,6 +3,7 @@ import type { AudioEffectValue, AudioQualityValue, PlayMode } from '../../types'
 import type {
   ClimaxMark,
   EnginePlaybackState,
+  PlaybackDiagnostics,
   PlaybackIntent,
   PlaybackNotice,
   PlaybackSource,
@@ -22,6 +23,14 @@ const createEnginePlaybackState = (): EnginePlaybackState => ({
   status: 'idle',
   trackId: null,
   updatedAt: 0,
+});
+
+const createPlaybackDiagnostics = (): PlaybackDiagnostics => ({
+  core: null,
+  cache: null,
+  packetCache: null,
+  output: null,
+  graph: null,
 });
 
 export const createPlayerState = () => ({
@@ -72,6 +81,7 @@ export const createPlayerState = () => ({
   isResuming: false,
   playbackIntent: createPlaybackIntent(),
   enginePlayback: createEnginePlaybackState(),
+  playbackDiagnostics: createPlaybackDiagnostics(),
   // 切歌加载护栏：playTrack 重置时置 true，player 回报 file-loaded（新文件真正加载完成）后置 false。
   // 期间 timeUpdate/durationChange 收到的多为上一首在 loadFile 替换前后的残留回报，一律丢弃，
   // 避免进度条切歌时先跳到旧值再归零。

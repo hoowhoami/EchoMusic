@@ -1,5 +1,12 @@
 import type { AudioEffectValue, AudioQualityValue } from '../../types';
-import type { TrackLoudness } from '@/utils/player';
+import type {
+  PlayerAudioOutputStats,
+  PlayerAudioGraphSnapshot,
+  PlayerCacheStatePayload,
+  PlayerCoreStatePayload,
+  PlayerPacketCacheStats,
+  TrackLoudness,
+} from '@/utils/player';
 
 export type ClimaxMark = { start: number; end: number };
 
@@ -33,6 +40,14 @@ export type EnginePlaybackState = {
   status: EnginePlaybackStatus;
   trackId: string | null;
   updatedAt: number;
+};
+
+export type PlaybackDiagnostics = {
+  core: (PlayerCoreStatePayload & { updatedAt: number }) | null;
+  cache: (PlayerCacheStatePayload & { updatedAt: number }) | null;
+  packetCache: (PlayerPacketCacheStats & { updatedAt: number }) | null;
+  output: (PlayerAudioOutputStats & { updatedAt: number }) | null;
+  graph: (PlayerAudioGraphSnapshot & { updatedAt: number }) | null;
 };
 
 export type PlaybackDisplayState = 'loading' | 'playing' | 'paused' | 'error';

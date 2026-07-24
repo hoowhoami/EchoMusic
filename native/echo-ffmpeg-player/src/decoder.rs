@@ -6,9 +6,19 @@ use crate::shared::{
 use crate::stream::{open_stream, ReadSeek, StreamOptions};
 use ffmpeg_audio::{sys, AudioError, AudioReader, PacketCacheOptions, RawAudioData, SeekMode};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::{sync_channel, Receiver, SyncSender, TryRecvError};
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
+
+pub enum DecodeCommand {
+    Seek {
+        position_secs: f64,
+        generation: u64,
+        reply: SyncSender<Result<(), String>>,
+    },
+    Stop,
+}
 
 pub struct DecoderData {
     reader: AudioReader,
@@ -125,91 +135,6 @@ impl DecoderData {
 
     fn publish_packet_cache_stats(&self, shared: &SharedAudio) {
         shared.update_packet_cache_stats(packet_cache_stats_from_reader(&self.reader));
-    }
-
-    pub fn decode_into(mut self, shared: Arc<SharedAudio>, generation: u64) -> Option<Self> {
-        shared.bind_interrupt(self.interrupt.clone());
-        let mut produced_frames = 0u64;
-        loop {
-            self.publish_packet_cache_stats(&shared);
-            if shared.should_stop_decoding() || !shared.is_decode_generation_current(generation) {
-                return (!shared.stop.load(Ordering::Acquire)).then_some(self);
-            }
-            match self.reader.receive_frame() {
-                Ok(Some(frame)) => match decoded_chunk_from_frame(&frame) {
-                    Ok(chunk) => {
-                        self.publish_packet_cache_stats(&shared);
-                        if !shared.is_decode_generation_current(generation) {
-                            return (!shared.stop.load(Ordering::Acquire)).then_some(self);
-                        }
-                        if let Some(requested_position) = self.pending_playback_restart_position {
-                            if chunk.frames > 0 {
-                                let position = chunk.pts_secs.unwrap_or(requested_position);
-                                shared.mark_playback_restart_ready(position);
-                                self.pending_playback_restart_position = None;
-                            }
-                        }
-                        produced_frames = produced_frames.saturating_add(chunk.frames as u64);
-                        if !shared.is_decode_generation_current(generation)
-                            || !shared.push_decoded_chunk_for_generation(chunk, generation)
-                        {
-                            return (!shared.stop.load(Ordering::Acquire)).then_some(self);
-                        }
-                    }
-                    Err(err) => {
-                        shared.mark_decode_failed();
-                        emit_decode_error(format!(
-                            "failed to materialize decoded audio frame: {err}"
-                        ));
-                        return None;
-                    }
-                },
-                Ok(None) => {
-                    self.publish_packet_cache_stats(&shared);
-                    if !shared.is_decode_generation_current(generation) {
-                        return (!shared.stop.load(Ordering::Acquire)).then_some(self);
-                    }
-                    if !shared.is_decode_generation_current(generation) {
-                        return (!shared.stop.load(Ordering::Acquire)).then_some(self);
-                    }
-                    match crate::try_activate_gapless_next(shared.clone(), generation) {
-                        crate::GaplessDecodeResult::Activated(decoder) => return decoder,
-                        crate::GaplessDecodeResult::NotPrepared => {}
-                    }
-                    shared.mark_decoded_eof();
-                    return Some(self);
-                }
-                Err(err) => {
-                    self.publish_packet_cache_stats(&shared);
-                    if self.interrupt.load(Ordering::Acquire)
-                        || shared.should_stop_decoding()
-                        || !shared.is_decode_generation_current(generation)
-                    {
-                        return (!shared.stop.load(Ordering::Acquire)).then_some(self);
-                    }
-                    if self.is_recoverable_tail_error(&err, produced_frames) {
-                        emit_decode_warning(format!(
-                            "treating trailing decode error as EOF: {err}"
-                        ));
-                        if !shared.is_decode_generation_current(generation) {
-                            return (!shared.stop.load(Ordering::Acquire)).then_some(self);
-                        }
-                        if !shared.is_decode_generation_current(generation) {
-                            return (!shared.stop.load(Ordering::Acquire)).then_some(self);
-                        }
-                        match crate::try_activate_gapless_next(shared.clone(), generation) {
-                            crate::GaplessDecodeResult::Activated(decoder) => return decoder,
-                            crate::GaplessDecodeResult::NotPrepared => {}
-                        }
-                        shared.mark_decoded_eof();
-                        return Some(self);
-                    }
-                    shared.mark_decode_failed();
-                    emit_decode_error(format!("failed to decode audio source: {err}"));
-                    return None;
-                }
-            }
-        }
     }
 
     fn is_recoverable_tail_error(&self, err: &AudioError, produced_frames: u64) -> bool {
@@ -387,15 +312,201 @@ pub fn open_decoder(
     )
 }
 
-pub fn spawn_decode_thread(
+pub fn spawn_decode_worker(
     data: DecoderData,
     shared: Arc<SharedAudio>,
     generation: u64,
-) -> JoinHandle<Option<DecoderData>> {
-    thread::Builder::new()
+) -> (JoinHandle<Option<DecoderData>>, SyncSender<DecodeCommand>) {
+    let (tx, rx) = sync_channel::<DecodeCommand>(8);
+    let handle = thread::Builder::new()
         .name("player-decode".to_string())
-        .spawn(move || data.decode_into(shared, generation))
-        .expect("failed to spawn player decode thread")
+        .spawn(move || decode_worker_loop(data, shared, generation, rx))
+        .expect("failed to spawn player decode worker");
+    (handle, tx)
+}
+
+fn decode_worker_loop(
+    mut data: DecoderData,
+    shared: Arc<SharedAudio>,
+    mut generation: u64,
+    commands: Receiver<DecodeCommand>,
+) -> Option<DecoderData> {
+    shared.bind_interrupt(data.interrupt.clone());
+    let mut produced_frames = 0u64;
+    loop {
+        if let Some(next_generation) = handle_decode_commands(&mut data, &shared, &commands) {
+            generation = next_generation;
+            produced_frames = 0;
+        }
+        data.publish_packet_cache_stats(&shared);
+        if shared.should_stop_decoding() {
+            return (!shared.stop.load(Ordering::Acquire)).then_some(data);
+        }
+        if !shared.is_decode_generation_current(generation) {
+            match wait_for_generation_command(&mut data, &shared, &commands) {
+                Some(next_generation) => {
+                    generation = next_generation;
+                    produced_frames = 0;
+                    continue;
+                }
+                None => return (!shared.stop.load(Ordering::Acquire)).then_some(data),
+            }
+        }
+        match data.reader.receive_frame() {
+            Ok(Some(frame)) => match decoded_chunk_from_frame(&frame) {
+                Ok(chunk) => {
+                    data.publish_packet_cache_stats(&shared);
+                    if !shared.is_decode_generation_current(generation) {
+                        continue;
+                    }
+                    if let Some(requested_position) = data.pending_playback_restart_position {
+                        if chunk.frames > 0 {
+                            let position = chunk.pts_secs.unwrap_or(requested_position);
+                            shared.mark_playback_restart_ready(position);
+                            data.pending_playback_restart_position = None;
+                        }
+                    }
+                    produced_frames = produced_frames.saturating_add(chunk.frames as u64);
+                    if !shared.push_decoded_chunk_for_generation(chunk, generation) {
+                        if shared.should_stop_decoding() {
+                            return (!shared.stop.load(Ordering::Acquire)).then_some(data);
+                        }
+                        continue;
+                    }
+                }
+                Err(err) => {
+                    shared.mark_decode_failed();
+                    emit_decode_error(format!("failed to materialize decoded audio frame: {err}"));
+                    return None;
+                }
+            },
+            Ok(None) => {
+                data.publish_packet_cache_stats(&shared);
+                if !shared.is_decode_generation_current(generation) {
+                    continue;
+                }
+                match crate::activate_gapless_next_decoder(shared.clone(), generation) {
+                    crate::GaplessDecodeResult::Activated(decoder) => {
+                        if let Some(decoder) = decoder {
+                            data = decoder;
+                            data.publish_packet_cache_stats(&shared);
+                            continue;
+                        }
+                        return None;
+                    }
+                    crate::GaplessDecodeResult::NotPrepared => {}
+                }
+                shared.mark_decoded_eof();
+                return Some(data);
+            }
+            Err(err) => {
+                data.publish_packet_cache_stats(&shared);
+                if data.interrupt.load(Ordering::Acquire)
+                    || shared.should_stop_decoding()
+                    || !shared.is_decode_generation_current(generation)
+                {
+                    continue;
+                }
+                if data.is_recoverable_tail_error(&err, produced_frames) {
+                    emit_decode_warning(format!("treating trailing decode error as EOF: {err}"));
+                    if !shared.is_decode_generation_current(generation) {
+                        continue;
+                    }
+                    match crate::activate_gapless_next_decoder(shared.clone(), generation) {
+                        crate::GaplessDecodeResult::Activated(decoder) => {
+                            if let Some(decoder) = decoder {
+                                data = decoder;
+                                continue;
+                            }
+                            return None;
+                        }
+                        crate::GaplessDecodeResult::NotPrepared => {}
+                    }
+                    shared.mark_decoded_eof();
+                    return Some(data);
+                }
+                shared.mark_decode_failed();
+                emit_decode_error(format!("failed to decode audio source: {err}"));
+                return None;
+            }
+        }
+    }
+}
+
+fn wait_for_generation_command(
+    data: &mut DecoderData,
+    shared: &SharedAudio,
+    commands: &Receiver<DecodeCommand>,
+) -> Option<u64> {
+    loop {
+        if shared.should_stop_decoding() {
+            return None;
+        }
+        match commands.recv_timeout(Duration::from_millis(50)) {
+            Ok(command) => match handle_decode_command(data, shared, command) {
+                DecodeCommandResult::Continue(generation) => return Some(generation),
+                DecodeCommandResult::Stop => return None,
+                DecodeCommandResult::Ignored => continue,
+            },
+            Err(_) => {
+                if shared.should_stop_decoding() {
+                    return None;
+                }
+            }
+        }
+    }
+}
+
+fn handle_decode_commands(
+    data: &mut DecoderData,
+    shared: &SharedAudio,
+    commands: &Receiver<DecodeCommand>,
+) -> Option<u64> {
+    let mut next_generation = None;
+    loop {
+        match commands.try_recv() {
+            Ok(command) => match handle_decode_command(data, shared, command) {
+                DecodeCommandResult::Continue(generation) => next_generation = Some(generation),
+                DecodeCommandResult::Stop => return None,
+                DecodeCommandResult::Ignored => {}
+            },
+            Err(TryRecvError::Empty) => return next_generation,
+            Err(TryRecvError::Disconnected) => return next_generation,
+        }
+    }
+}
+
+enum DecodeCommandResult {
+    Continue(u64),
+    Stop,
+    Ignored,
+}
+
+fn handle_decode_command(
+    data: &mut DecoderData,
+    shared: &SharedAudio,
+    command: DecodeCommand,
+) -> DecodeCommandResult {
+    match command {
+        DecodeCommand::Seek {
+            position_secs,
+            generation,
+            reply,
+        } => {
+            if !shared.is_decode_generation_current(generation) {
+                let _ = reply.send(Err("stale seek generation".to_string()));
+                return DecodeCommandResult::Ignored;
+            }
+            let result = data.seek(position_secs);
+            let _ = reply.send(result);
+            if shared.is_decode_generation_current(generation) {
+                DecodeCommandResult::Continue(generation)
+            } else {
+                DecodeCommandResult::Ignored
+            }
+        }
+        DecodeCommand::Stop => DecodeCommandResult::Stop,
+    }
 }
 
 pub fn list_tracks_for_url(url: &str, stream_options: &StreamOptions) -> Vec<TrackInfo> {

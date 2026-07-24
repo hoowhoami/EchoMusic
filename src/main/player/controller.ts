@@ -9,6 +9,11 @@ import { getKvStorage } from '../storage/kv';
 import type { NetworkSettings } from '../../shared/network';
 import type { ImpulseResponsePlaybackOptions } from '../../shared/audio';
 import type { PlayerErrorCode, PlayerErrorPayload } from '../../shared/player-error';
+import type {
+  PlayerAudioGraphParameterPatch,
+  PlayerAudioGraphPlanPatch,
+  PlayerAudioGraphSnapshot,
+} from '../../shared/player-audio-graph';
 
 const PINIA_SETTING_KEY = 'pinia:setting';
 const DEFAULT_AUDIO_CACHE_SECS = 1;
@@ -112,6 +117,7 @@ interface PlayerAddonEvent {
     delaySecs: number;
     underruns: number;
   };
+  audioGraph?: PlayerAudioGraphSnapshot;
 }
 
 export interface PlayerAudioDevice {
@@ -162,7 +168,9 @@ interface PlayerAddon {
   setEqualizer(gains: number[]): Promise<void>;
   setImpulseResponse(payload: string | ImpulseResponsePlaybackOptions): Promise<void>;
   setImpulseResponseMix(mix: number): Promise<void>;
-  getAudioFilter(): string;
+  getAudioGraph(): PlayerAudioGraphSnapshot;
+  setAudioGraphParameter(patch: PlayerAudioGraphParameterPatch): Promise<void>;
+  setAudioGraphPlan(plan: PlayerAudioGraphPlanPatch): Promise<void>;
   setAudioDevice(deviceName: string): Promise<void>;
   getAudioDevices(): Promise<Array<{ name: string; description: string; isDefault?: boolean }>>;
   setNormalizationGain(gainDb: number): Promise<void>;
@@ -345,8 +353,16 @@ export class PlayerController extends EventEmitter {
     await this.getAddonOrThrow().setImpulseResponseMix(mix);
   }
 
-  async getAudioFilter(): Promise<string> {
-    return this.getAddonOrThrow().getAudioFilter();
+  async getAudioGraph(): Promise<PlayerAudioGraphSnapshot> {
+    return this.getAddonOrThrow().getAudioGraph();
+  }
+
+  async setAudioGraphParameter(patch: PlayerAudioGraphParameterPatch): Promise<void> {
+    await this.getAddonOrThrow().setAudioGraphParameter(patch);
+  }
+
+  async setAudioGraphPlan(plan: PlayerAudioGraphPlanPatch): Promise<void> {
+    await this.getAddonOrThrow().setAudioGraphPlan(plan);
   }
 
   setAudioDevice(deviceName: string) {
@@ -572,6 +588,9 @@ export class PlayerController extends EventEmitter {
         break;
       case 'audio-output-stats':
         this.emit('audio-output-stats', event.outputStats);
+        break;
+      case 'audio-graph-change':
+        this.emit('audio-graph-change', event.audioGraph);
         break;
       case 'audio-device-list-changed':
         this.emit('audio-device-list-changed', {

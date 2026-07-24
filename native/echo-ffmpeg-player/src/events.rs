@@ -1,3 +1,4 @@
+use crate::audio_graph::AudioGraphSnapshot;
 use crate::shared::{AudioOutputStats, PacketCacheStats};
 use napi_derive::napi;
 
@@ -82,27 +83,36 @@ pub struct PlayerEvent {
     pub cache_target_secs: Option<f64>,
     pub packet_cache: Option<PacketCacheStats>,
     pub output_stats: Option<AudioOutputStats>,
+    pub audio_graph: Option<AudioGraphSnapshot>,
 }
 
 #[derive(Clone, Copy, Debug)]
 pub enum PlayerErrorCode {
+    Cache,
     Decode,
+    Dsp,
+    Network,
     OutputConfig,
     OutputDeviceUnavailable,
     OutputExclusive,
     OutputRuntime,
     OutputStream,
+    Seek,
 }
 
 impl PlayerErrorCode {
     fn as_str(self) -> &'static str {
         match self {
+            Self::Cache => "cache",
             Self::Decode => "decode",
+            Self::Dsp => "dsp",
+            Self::Network => "network",
             Self::OutputConfig => "output-config",
             Self::OutputDeviceUnavailable => "output-device-unavailable",
             Self::OutputExclusive => "output-exclusive",
             Self::OutputRuntime => "output-runtime",
             Self::OutputStream => "output-stream",
+            Self::Seek => "seek",
         }
     }
 }
@@ -217,6 +227,14 @@ impl PlayerEvent {
         }
     }
 
+    pub fn audio_graph_change(graph: AudioGraphSnapshot) -> Self {
+        Self {
+            event: "audio-graph-change".to_string(),
+            audio_graph: Some(graph),
+            ..Self::empty("audio-graph-change")
+        }
+    }
+
     pub fn seeked(time: f64) -> Self {
         Self {
             event: "seeked".to_string(),
@@ -290,6 +308,7 @@ impl PlayerEvent {
             cache_target_secs: None,
             packet_cache: None,
             output_stats: None,
+            audio_graph: None,
         }
     }
 
@@ -340,5 +359,14 @@ mod tests {
         assert_eq!(event.cache_buffered_secs, Some(0.0));
         assert_eq!(event.cache_target_secs, Some(0.0));
         assert!(event.packet_cache.is_none());
+    }
+
+    #[test]
+    fn audio_graph_event_carries_structured_snapshot() {
+        let event = PlayerEvent::audio_graph_change(AudioGraphSnapshot::default());
+
+        assert_eq!(event.event, "audio-graph-change");
+        assert!(event.audio_graph.is_some());
+        assert!(!event.is_droppable_when_event_queue_is_full());
     }
 }

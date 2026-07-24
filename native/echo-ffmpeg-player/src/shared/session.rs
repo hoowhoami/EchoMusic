@@ -1,4 +1,6 @@
 use super::SharedAudio;
+use crate::decoder::{DecodeCommand, DecoderData};
+use std::sync::mpsc::SyncSender;
 use std::sync::Arc;
 use std::thread::JoinHandle;
 
@@ -6,11 +8,21 @@ pub struct PlaybackSession {
     pub shared: Arc<SharedAudio>,
     pub output_thread: Option<JoinHandle<()>>,
     pub filter_thread: Option<JoinHandle<()>>,
-    pub decode_thread: Option<JoinHandle<Option<crate::decoder::DecoderData>>>,
+    pub decode_thread: Option<JoinHandle<Option<DecoderData>>>,
+    pub decode_commands: Option<SyncSender<DecodeCommand>>,
     pub position_thread: Option<JoinHandle<()>>,
 }
 
 impl PlaybackSession {
+    pub fn stop_decode_background(&mut self, reason: &'static str) {
+        if let Some(sender) = self.decode_commands.take() {
+            let _ = sender.try_send(DecodeCommand::Stop);
+        }
+        if let Some(handle) = self.decode_thread.take() {
+            join_decode_background(handle, reason);
+        }
+    }
+
     pub fn stop_background(self) {
         let _ = std::thread::Builder::new()
             .name("player-session-stop".to_string())
@@ -36,4 +48,11 @@ impl PlaybackSession {
             let _ = handle.join();
         }
     }
+}
+
+pub fn join_decode_background(handle: JoinHandle<Option<DecoderData>>, reason: &'static str) {
+    let name = format!("player-decode-reaper-{reason}");
+    let _ = std::thread::Builder::new().name(name).spawn(move || {
+        let _ = handle.join();
+    });
 }

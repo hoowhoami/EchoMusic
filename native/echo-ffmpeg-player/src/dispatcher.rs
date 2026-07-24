@@ -3,16 +3,19 @@ use crate::{emit_event, with_runtime, PlayerRuntime, RuntimeCommand};
 use napi::threadsafe_function::{ThreadsafeFunction, ThreadsafeFunctionCallMode};
 use std::cell::Cell;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::mpsc::{channel, sync_channel, Sender};
+use std::sync::mpsc::{channel, sync_channel, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::thread::JoinHandle;
+use std::time::Duration;
 
 static EVENT_CALLBACK: Mutex<Option<Arc<Mutex<ThreadsafeFunction<PlayerEvent>>>>> =
     Mutex::new(None);
 static EVENT_DISPATCHER: Mutex<Option<EventDispatcher>> = Mutex::new(None);
 static CORE_DISPATCHER: Mutex<Option<CoreDispatcher>> = Mutex::new(None);
 static NEXT_EVENT_ID: AtomicU64 = AtomicU64::new(0);
+const CORE_LOOP_TICK: Duration = Duration::from_millis(250);
+const CORE_COMMAND_REPLY_TIMEOUT: Duration = Duration::from_secs(2);
 
 thread_local! {
     static CORE_DISPATCH_ACTIVE: Cell<bool> = const { Cell::new(false) };
@@ -131,31 +134,42 @@ pub(crate) fn start_core_dispatcher() -> napi::Result<()> {
     let (sender, receiver) = channel::<CoreDispatcherMessage>();
     let handle = thread::Builder::new()
         .name("player-core-dispatcher".to_string())
-        .spawn(move || {
-            while let Ok(message) = receiver.recv() {
-                match message {
-                    CoreDispatcherMessage::Command { name, command } => {
-                        let result = crate::RUNTIME.lock();
-                        let Ok(mut guard) = result else {
-                            emit_event(PlayerEvent::log(
-                                "error",
-                                format!("core command '{name}' failed: runtime lock poisoned"),
-                            ));
-                            continue;
-                        };
-                        let Some(runtime) = guard.as_mut() else {
-                            emit_event(PlayerEvent::log(
-                                "debug",
-                                format!("core command '{name}' ignored: runtime stopped"),
-                            ));
-                            continue;
-                        };
-                        CORE_DISPATCH_ACTIVE.set(true);
-                        command(runtime);
-                        CORE_DISPATCH_ACTIVE.set(false);
-                    }
-                    CoreDispatcherMessage::Shutdown => break,
+        .spawn(move || loop {
+            match receiver.recv_timeout(CORE_LOOP_TICK) {
+                Ok(CoreDispatcherMessage::Command { name, command }) => {
+                    let result = crate::RUNTIME.lock();
+                    let Ok(mut guard) = result else {
+                        emit_event(PlayerEvent::log(
+                            "error",
+                            format!("core command '{name}' failed: runtime lock poisoned"),
+                        ));
+                        continue;
+                    };
+                    let Some(runtime) = guard.as_mut() else {
+                        emit_event(PlayerEvent::log(
+                            "debug",
+                            format!("core command '{name}' ignored: runtime stopped"),
+                        ));
+                        continue;
+                    };
+                    CORE_DISPATCH_ACTIVE.set(true);
+                    command(runtime);
+                    CORE_DISPATCH_ACTIVE.set(false);
                 }
+                Ok(CoreDispatcherMessage::Shutdown) => break,
+                Err(RecvTimeoutError::Timeout) => {
+                    let result = crate::RUNTIME.lock();
+                    let Ok(mut guard) = result else {
+                        continue;
+                    };
+                    let Some(runtime) = guard.as_mut() else {
+                        continue;
+                    };
+                    CORE_DISPATCH_ACTIVE.set(true);
+                    crate::on_core_loop_tick(runtime);
+                    CORE_DISPATCH_ACTIVE.set(false);
+                }
+                Err(RecvTimeoutError::Disconnected) => break,
             }
         })
         .map_err(|err| {
@@ -222,9 +236,15 @@ pub(crate) fn call_core_command<T: Send + 'static>(
             }),
         })
         .map_err(|_| napi::Error::from_reason(format!("core command '{name}' dispatch failed")))?;
-    reply_rx.recv().map_err(|_| {
-        napi::Error::from_reason(format!("core command '{name}' reply channel closed"))
-    })?
+    reply_rx
+        .recv_timeout(CORE_COMMAND_REPLY_TIMEOUT)
+        .map_err(|err| {
+            let reason = match err {
+                RecvTimeoutError::Timeout => "timed out",
+                RecvTimeoutError::Disconnected => "reply channel closed",
+            };
+            napi::Error::from_reason(format!("core command '{name}' {reason}"))
+        })?
 }
 
 pub(crate) fn send_event(event: PlayerEvent) {

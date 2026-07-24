@@ -24,53 +24,17 @@ use std::thread::JoinHandle;
 use std::time::Duration;
 use std::{mem, ptr};
 
-pub fn spawn_output_thread(
-    device_name: String,
-    exclusive: bool,
-    shared: Arc<SharedAudio>,
-    emit: fn(PlayerEvent),
-) -> JoinHandle<()> {
-    spawn_output_thread_with_start_notify(device_name, exclusive, shared, emit, None)
-}
-
-pub(crate) fn spawn_output_thread_with_start_notify(
+#[cfg(not(target_os = "windows"))]
+pub(crate) fn spawn_shared_output_thread(
     device_name: String,
     exclusive: bool,
     shared: Arc<SharedAudio>,
     emit: fn(PlayerEvent),
     start_notify: Option<OutputStartSender>,
 ) -> JoinHandle<()> {
-    #[cfg(target_os = "windows")]
-    {
-        return super::wasapi::spawn_output_thread(
-            device_name,
-            exclusive,
-            shared,
-            emit,
-            start_notify,
-        );
-    }
     #[cfg(not(target_os = "windows"))]
     {
         let mut start_notify = start_notify;
-        #[cfg(target_os = "linux")]
-        if exclusive {
-            return super::alsa_exclusive::spawn_output_thread(
-                device_name,
-                shared,
-                emit,
-                start_notify,
-            );
-        }
-        #[cfg(target_os = "macos")]
-        if exclusive {
-            return super::coreaudio_exclusive::spawn_output_thread(
-                device_name,
-                shared,
-                emit,
-                start_notify,
-            );
-        }
 
         thread::spawn(move || {
             let device = match select_output_device_checked(&device_name, exclusive) {
