@@ -8,6 +8,8 @@ interface Props {
   class?: string;
   skeletonClass?: string;
   showSkeleton?: boolean;
+  loading?: 'eager' | 'lazy';
+  decoding?: 'async' | 'sync' | 'auto';
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -15,6 +17,8 @@ const props = withDefaults(defineProps<Props>(), {
   alt: '',
   class: 'w-full h-full object-cover',
   showSkeleton: true,
+  loading: 'lazy',
+  decoding: 'async',
 });
 
 const status = ref<'loading' | 'success' | 'error'>('loading');
@@ -45,6 +49,8 @@ const handleError = () => (status.value = 'error');
       v-if="src"
       :src="src"
       :alt="alt"
+      :loading="loading"
+      :decoding="decoding"
       @load="handleLoad"
       @error="handleError"
       :class="[

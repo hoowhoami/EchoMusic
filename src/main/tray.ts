@@ -1,4 +1,5 @@
 import { Menu, Tray, app, nativeImage, type MenuItemConstructorOptions } from 'electron';
+import { statSync } from 'fs';
 import { quitApplication } from './window';
 import { DEFAULT_PLAYER_VOLUME, type PlayMode } from '../shared/playback';
 import type { DesktopLyricSnapshot } from '../shared/desktop-lyric';
@@ -17,6 +18,8 @@ type TrayPlaybackState = Required<TrayPlaybackPayload>;
 
 let appTray: Tray | null = null;
 let trayContext: TrayContext | null = null;
+let cachedTrayImage: { key: string; image: Electron.NativeImage } | null = null;
+let appliedTrayImageKey: string | null = null;
 let playbackState: TrayPlaybackState = {
   isPlaying: false,
   playMode: 'list',
@@ -30,25 +33,55 @@ const playModeLabelMap: Record<PlayMode, string> = {
   single: '单曲循环',
 };
 
-const createTrayImage = () => {
+const getTrayIconCacheKey = (iconPath: string) => {
+  if (!iconPath) return `${process.platform}:empty`;
+  try {
+    const stats = statSync(iconPath);
+    return `${process.platform}:${iconPath}:${stats.size}:${stats.mtimeMs}`;
+  } catch {
+    return `${process.platform}:${iconPath}:missing`;
+  }
+};
+
+const clearTrayImageCache = () => {
+  cachedTrayImage = null;
+  appliedTrayImageKey = null;
+};
+
+const getTrayImage = () => {
   const iconPath = resolveTrayIconPath();
+  const cacheKey = getTrayIconCacheKey(iconPath);
+  if (cachedTrayImage?.key === cacheKey) return cachedTrayImage;
+
   try {
     const image = nativeImage.createFromPath(iconPath);
     if (image.isEmpty()) {
       log.warn('[Tray] Icon image is empty:', iconPath);
-      return nativeImage.createEmpty();
+      cachedTrayImage = { key: cacheKey, image: nativeImage.createEmpty() };
+      return cachedTrayImage;
     }
     if (process.platform === 'darwin') {
       image.setTemplateImage(true);
     } else {
       // Win10/Win11/Linux：resize 到标准尺寸，避免兼容性问题
-      return image.resize({ width: 20, height: 20 });
+      cachedTrayImage = { key: cacheKey, image: image.resize({ width: 20, height: 20 }) };
+      return cachedTrayImage;
     }
-    return image;
+    cachedTrayImage = { key: cacheKey, image };
+    return cachedTrayImage;
   } catch (e) {
     log.error('[Tray] Failed to create tray image:', e);
-    return nativeImage.createEmpty();
+    cachedTrayImage = { key: cacheKey, image: nativeImage.createEmpty() };
+    return cachedTrayImage;
   }
+};
+
+const applyTrayImageIfNeeded = () => {
+  if (!appTray) return;
+  const trayImage = getTrayImage();
+  if (appliedTrayImageKey === trayImage.key) return;
+  appTray.setImage(trayImage.image);
+  appliedTrayImageKey = trayImage.key;
 };
 
 const forwardCommandToRenderer = (command: TrayCommand) => {
@@ -158,7 +191,7 @@ export const createDockMenu = () =>
 
 const rebuildTrayMenu = () => {
   if (appTray) {
-    appTray.setImage(createTrayImage());
+    applyTrayImageIfNeeded();
     appTray.setToolTip('EchoMusic');
     if (process.platform === 'linux') {
       appTray.setContextMenu(createTrayMenu());
@@ -181,8 +214,9 @@ export const initTray = (context: TrayContext) => {
     return appTray;
   }
 
-  const trayImage = createTrayImage();
-  appTray = new Tray(trayImage);
+  const trayImage = getTrayImage();
+  appTray = new Tray(trayImage.image);
+  appliedTrayImageKey = trayImage.key;
   appTray.setToolTip('EchoMusic');
 
   appTray.on('click', () => {
@@ -202,6 +236,7 @@ export const initTray = (context: TrayContext) => {
 
 export const refreshTray = () => {
   if (!trayContext) return null;
+  clearTrayImageCache();
   if (appTray) {
     destroyTray();
   }
@@ -212,6 +247,7 @@ export const destroyTray = () => {
   if (!appTray) return;
   appTray.destroy();
   appTray = null;
+  clearTrayImageCache();
 };
 
 export const updateTrayPlaybackState = (nextState: Partial<TrayPlaybackState>) => {

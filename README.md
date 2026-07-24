@@ -187,6 +187,20 @@ setx LIBCLANG_PATH "C:\Program Files\LLVM\bin"
 
 > 开发模式下会由 Electron 主进程自动拉起本地服务端。
 
+#### 内存诊断
+
+需要观察 Electron 主进程、Renderer、GPU 等进程的内存变化时，可以开启启动阶段内存诊断日志：
+
+```bash
+ECHOMUSIC_MEMORY_DIAGNOSTICS=1 pnpm dev
+```
+
+日志会写入 Electron 日志文件，例如 macOS 下为：
+
+```text
+~/Library/Logs/EchoMusic/echo-music-YYYY-MM-DD.log
+```
+
 ## 插件系统
 
 EchoMusic 支持在线插件源浏览安装与本地插件扩展。插件可以提供高自由度的扩展能力，包括自定义页面、音源解析、歌词解析、音频频谱、插件浮窗、本地 Web 服务，以及由 `ctx.lyricEffects.register()` 提供的页面歌词/桌面歌词动效扩展点。

@@ -178,6 +178,8 @@ export const createDesktopLyricWindow = () => {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
+      spellcheck: false,
+      enableWebSQL: false,
       webSecurity: false,
       allowRunningInsecureContent: true,
       backgroundThrottling: false,

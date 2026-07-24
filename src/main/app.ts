@@ -24,6 +24,7 @@ import { applyDesktopAppIcon, applyTaskbarShortcutIcon, refreshAppIconConfig } f
 import { setupThumbarButtons } from './thumbar';
 import { setupTaskbarThumbnail, destroyTaskbarThumbnail } from './taskbarThumbnail';
 import { configureApplicationMenu, configureWebContentsShortcuts } from './applicationMenu';
+import { logMainMemory } from './memoryDiagnostics';
 import {
   flushPendingShareTargets,
   openShareUrl,
@@ -120,6 +121,7 @@ if (!gotTheLock) {
     configureApplicationMenu({
       openSettings: openSettingsFromNativeShell,
     });
+    await logMainMemory('ready:start');
 
     const trayContext = {
       getMainWindow,
@@ -150,6 +152,7 @@ if (!gotTheLock) {
       platform: process.platform,
       arch: process.arch,
     });
+    await logMainMemory('after core services');
 
     // 初始化原生媒体控制（SMTC / MPNowPlaying / MPRIS）
     initMediaControls(getMainWindow);
@@ -161,7 +164,9 @@ if (!gotTheLock) {
     refreshAppIconConfig();
     applyDesktopAppIcon();
     applyTaskbarShortcutIcon();
+    await logMainMemory('after app icons');
     await createWindow();
+    await logMainMemory('after main window');
     openShareUrlFromArgv(process.argv);
     flushPendingShareTargets();
 
@@ -193,6 +198,7 @@ if (!gotTheLock) {
     } catch (err) {
       log.error('[Main] Failed to init tray:', err);
     }
+    await logMainMemory('after tray');
     installWindowsTrayRecovery();
 
     if (process.platform === 'darwin') {

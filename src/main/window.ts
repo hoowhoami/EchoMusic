@@ -18,6 +18,7 @@ import { getActiveWindowMode, setActiveWindowMode } from './windowMode';
 import { isPluginRendererGoneFailureReason, reportPluginRendererFailure } from './plugins';
 import { ipcRegistry } from './ipc/registry';
 import { applyWindowAppIcon, resolveWindowIconPath } from './appIcons';
+import { logMainMemory } from './memoryDiagnostics';
 
 const minWidth: number = 1100;
 const defaultWidth: number = 1150;
@@ -334,6 +335,7 @@ export function getMainWindow() {
 }
 
 export async function createWindow() {
+  await logMainMemory('createWindow:start');
   const preload = join(__dirname, '../preload/index.js');
   const url = process.env.VITE_DEV_SERVER_URL;
   const indexHtml = join(__dirname, '../../dist/index.html');
@@ -351,8 +353,9 @@ export async function createWindow() {
 
   const initialBounds = buildWindowBounds();
   const initialWindowState = getPersistedWindowState();
-  const windowIconPath = resolveWindowIconPath();
+  const windowIconPath = process.platform === 'darwin' ? '' : resolveWindowIconPath();
   const minHeight = getMinHeight();
+  await logMainMemory('createWindow:before BrowserWindow');
 
   win = new BrowserWindow({
     title: 'EchoMusic',
@@ -372,6 +375,8 @@ export async function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
+      spellcheck: false,
+      enableWebSQL: false,
       webSecurity: false, // 禁用 CORS 限制
       allowRunningInsecureContent: true, // 允许混合内容
       backgroundThrottling: false, // 最小化后不节流，保证播放状态和歌词同步
@@ -379,18 +384,37 @@ export async function createWindow() {
       devTools: devToolsEnabled, // 控制是否允许打开开发者工具
     },
   });
+  await logMainMemory('createWindow:after BrowserWindow');
+
   applyWindowAppIcon(win);
+  await logMainMemory('createWindow:after window icon');
 
   if (rememberWindowSize && initialWindowState.isMaximized) {
     win.maximize();
+    await logMainMemory('createWindow:after maximize');
   }
 
   // 当窗口准备好显示时再展示，优雅解决启动白屏
   // 如果启用了启动时最小化，则不自动显示窗口，由用户通过托盘恢复
   win.once('ready-to-show', () => {
+    void logMainMemory('main window:ready-to-show');
     if (!initialSettings.startMinimized) {
       win?.show();
+      void logMainMemory('main window:after show');
     }
+  });
+
+  win.webContents.once('dom-ready', () => {
+    void logMainMemory('main window:dom-ready');
+  });
+
+  win.webContents.once('did-finish-load', () => {
+    void logMainMemory('main window:did-finish-load');
+    const memoryLogTimer = setTimeout(
+      () => void logMainMemory('main window:did-finish-load +2s'),
+      2000,
+    );
+    if (typeof memoryLogTimer.unref === 'function') memoryLogTimer.unref();
   });
 
   win.webContents.on('render-process-gone', (_event, details) => {
@@ -418,6 +442,7 @@ export async function createWindow() {
   } else {
     win.loadFile(indexHtml);
   }
+  await logMainMemory('createWindow:after load request');
 
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (url.startsWith('https:')) shell.openExternal(url);

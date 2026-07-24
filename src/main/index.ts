@@ -10,6 +10,9 @@ if (process.platform === 'win32') {
 // 初始化系统音频 loopback（必须在 app.ready 之前）
 initAudioLoopback();
 
+// 禁用 Chromium 备用 renderer 预热，减少启动后空闲 renderer 常驻。
+app.commandLine.appendSwitch('disable-features', 'SpareRendererForSitePerProcess');
+
 if (process.platform === 'win32') {
   app.commandLine.appendSwitch('no-sandbox');
 }

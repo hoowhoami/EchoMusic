@@ -13,9 +13,12 @@ interface Props {
   duration?: number;
   publishDate?: string;
   albumAudioId?: string | number;
+  coverSize?: number;
 }
 
-const props = defineProps<Props>();
+const props = withDefaults(defineProps<Props>(), {
+  coverSize: 360,
+});
 const router = useRouter();
 
 const formatDuration = (ms?: number) => {
@@ -48,7 +51,7 @@ const handleClick = () => {
   <div class="mv-card group cursor-pointer" @click="handleClick">
     <div class="card-container">
       <div class="cover-wrapper">
-        <Cover :url="coverUrl" :size="400" class="w-full h-full" />
+        <Cover :url="coverUrl" :size="coverSize" class="w-full h-full" />
         <!-- 播放图标遮罩 -->
         <div class="play-overlay">
           <div class="play-icon-circle">

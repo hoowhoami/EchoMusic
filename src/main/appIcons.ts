@@ -76,6 +76,7 @@ let iconState: AppIconState = {
   taskbarShortcutError: null,
   initialized: false,
 };
+let appliedRuntimeWindowIconPath: string | null = null;
 
 // 上一次「实际应用过」的图标签名（tray/taskbar/desktop 解析路径）。
 // 用于按需刷新：开关插件时若解析结果未变，则跳过昂贵的图标应用步骤。
@@ -374,15 +375,23 @@ export const resolveWindowIconPath = () => {
 };
 
 export const applyWindowAppIcon = (mainWindow: BrowserWindow | null) => {
-  const iconPath = resolveWindowIconPath();
+  ensureAppIconConfigLoaded();
+  const hasCustomWindowIcon = Boolean(iconState.taskbarIconPath);
+  const shouldRestoreDefaultIcon = Boolean(appliedRuntimeWindowIconPath && !hasCustomWindowIcon);
+  if (process.platform === 'darwin' && !hasCustomWindowIcon && !shouldRestoreDefaultIcon) return;
+
+  const iconPath = hasCustomWindowIcon ? iconState.taskbarIconPath! : resolveWindowIconPath();
   if (!iconPath) return;
   try {
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.setIcon(iconPath);
     }
     if (process.platform === 'darwin') {
+      // macOS 下 dock.setIcon 会触发 CoreGraphics 解码/缓存，默认图标交给 .app 元数据；
+      // 这里仅用于插件自定义图标或从插件图标恢复默认图标。
       app.dock?.setIcon(iconPath);
     }
+    appliedRuntimeWindowIconPath = hasCustomWindowIcon ? iconPath : null;
   } catch (error) {
     log.warn('[AppIcons] Failed to apply window icon', { iconPath, error });
   }

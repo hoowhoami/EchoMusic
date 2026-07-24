@@ -10,12 +10,14 @@ interface Props {
   creator?: string;
   songCount?: number;
   layout?: 'grid' | 'list';
+  coverSize?: number;
   coverRadius?: number;
   showShadow?: boolean;
 }
 
 const props = withDefaults(defineProps<Props>(), {
   layout: 'grid',
+  coverSize: 360,
   coverRadius: 14,
   showShadow: true,
 });
@@ -75,7 +77,7 @@ const handleClick = () => {
       >
         <Cover
           :url="coverUrl"
-          :size="400"
+          :size="coverSize"
           :borderRadius="resolvedCoverRadius"
           class="w-full h-full"
         />

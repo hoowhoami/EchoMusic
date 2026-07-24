@@ -12,10 +12,12 @@ interface Props {
   fansCount?: number;
   sourceDesc?: string;
   isSinger?: boolean;
+  coverSize?: number;
 }
 
 const props = withDefaults(defineProps<Props>(), {
   isSinger: true,
+  coverSize: 360,
 });
 const router = useRouter();
 
@@ -46,7 +48,7 @@ const handleClick = () => {
     <div class="card-container flex flex-col">
       <div class="cover-shell">
         <div class="cover-wrapper">
-          <Cover :url="coverUrl" :size="400" :borderRadius="'50%'" class="w-full h-full" />
+          <Cover :url="coverUrl" :size="coverSize" :borderRadius="'50%'" class="w-full h-full" />
         </div>
       </div>
       <div class="info-wrapper w-full">
