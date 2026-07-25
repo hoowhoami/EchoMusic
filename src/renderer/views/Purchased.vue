@@ -49,6 +49,7 @@ const activeSongId = computed(() => playerStore.currentTrackId ?? undefined);
 const sortField = ref<SortField | null>(null);
 const sortOrder = ref<SortOrder>(null);
 const searchQuery = ref('');
+const albumSearchQuery = ref('');
 const showBatchDrawer = ref(false);
 
 const songs = shallowRef<Song[]>([]);
@@ -279,6 +280,16 @@ const albumCards = computed(() =>
   })),
 );
 
+const filteredAlbumCards = computed(() => {
+  const query = albumSearchQuery.value.trim().toLowerCase();
+  if (!query) return albumCards.value;
+  return albumCards.value.filter((card) => {
+    const name = card.name.toLowerCase();
+    const artist = card.artist.toLowerCase();
+    return name.includes(query) || artist.includes(query);
+  });
+});
+
 const handleSongDoubleTapPlay = async (song: Song) => {
   const queueSongs = displayedSongs.value.slice() as Song[];
   if (queueSongs.length === 0) return;
@@ -438,6 +449,20 @@ onMounted(() => {
                         height="14"
                       />
                     </div>
+                    <div v-else-if="activeTab === 'albums'" class="relative">
+                      <input
+                        v-model="albumSearchQuery"
+                        type="text"
+                        placeholder="搜索专辑..."
+                        class="song-search-input w-52 h-9 pl-8 pr-3 rounded-lg text-text-main placeholder:text-text-main/50 outline-none text-[12px] transition-all"
+                      />
+                      <Icon
+                        class="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-main/60"
+                        :icon="iconSearch"
+                        width="14"
+                        height="14"
+                      />
+                    </div>
                     <Button
                       v-if="activeTab === 'songs'"
                       variant="unstyled"
@@ -544,7 +569,7 @@ onMounted(() => {
             </div>
             <VirtualGrid
               v-else
-              :items="albumCards"
+              :items="filteredAlbumCards"
               :loading="albumsLoading"
               :active="activeTab === 'albums'"
               :itemMinWidth="180"
