@@ -46,7 +46,8 @@ export type StoragePlaybackQueueType =
   | 'history'
   | 'cloud'
   | 'fm'
-  | 'manual';
+  | 'manual'
+  | 'purchased';
 
 export interface StoragePlaybackQueueMetaValueMap {
   [key: string]: string | number | boolean | null | undefined;
