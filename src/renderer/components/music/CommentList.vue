@@ -437,6 +437,7 @@ const formatLike = (value: number) => {
   color: var(--color-text-main);
   white-space: pre-wrap;
   word-break: break-word;
+  user-select: text;
 }
 
 .comment-expand-btn {
@@ -558,6 +559,7 @@ const formatLike = (value: number) => {
   color: var(--color-text-main);
   white-space: pre-wrap;
   word-break: break-word;
+  user-select: text;
 }
 
 .comment-floor-loading {

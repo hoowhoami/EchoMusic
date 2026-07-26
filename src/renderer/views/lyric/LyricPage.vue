@@ -2,7 +2,6 @@
 defineOptions({ name: 'lyric-page' });
 
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
-import { useClipboard } from '@vueuse/core';
 import { usePlayerStore } from '@/stores/player';
 import { useSettingStore } from '@/stores/setting';
 import { useLyricStore } from '@/stores/lyric';
@@ -41,7 +40,6 @@ const playerStore = usePlayerStore();
 const settingStore = useSettingStore();
 const lyricStore = useLyricStore();
 const toastStore = useToastStore();
-const { copy } = useClipboard();
 
 const {
   currentTrack,
@@ -217,15 +215,6 @@ const handleKeydown = (event: KeyboardEvent) => {
     }
     closeLyricPage();
     return;
-  }
-  if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'c') {
-    if (lyricStore.lines.length === 0) return;
-    event.preventDefault();
-    const text = lyricStore.copyableText.trim();
-    if (text) {
-      copy(text);
-      toastStore.success('歌词已复制');
-    }
   }
 };
 

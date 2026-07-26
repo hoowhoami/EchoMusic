@@ -481,7 +481,7 @@ const clearContextMenuTarget = () => {
 
 const estimateContextMenuHeight = () => {
   const itemCount =
-    5 + extensionContextMenuItems.value.length + (contextMenuCanRemove.value ? 1 : 0);
+    6 + extensionContextMenuItems.value.length + (contextMenuCanRemove.value ? 1 : 0);
   const separatorCount =
     (extensionContextMenuItems.value.length > 0 ? 1 : 0) + (contextMenuCanRemove.value ? 1 : 0) + 2;
   return 12 + itemCount * 30 + separatorCount * 9 + Math.max(0, itemCount + separatorCount - 1) * 4;
@@ -626,6 +626,28 @@ const ctxShareSong = async () => {
     toastStore.actionCompleted('分享链接已复制');
   } catch {
     toastStore.actionFailed('复制分享链接');
+  }
+};
+
+const formatSongInfo = (song: Song) => {
+  const title = readString(song.title || song.name).trim();
+  const artist = readString(song.artist).trim();
+  return [title, artist].filter(Boolean).join(' - ');
+};
+
+const ctxCopySongInfo = async () => {
+  const song = contextMenuTarget.value;
+  if (!song) return;
+  const text = formatSongInfo(song);
+  if (!text) return;
+  try {
+    const copied = window.electron?.share?.copy
+      ? await window.electron.share.copy(text)
+      : await navigator.clipboard.writeText(text).then(() => true);
+    if (copied) toastStore.actionCompleted('歌曲信息已复制');
+    else toastStore.actionFailed('复制歌曲信息');
+  } catch {
+    toastStore.actionFailed('复制歌曲信息');
   }
 };
 
@@ -933,6 +955,14 @@ defineExpose({ scrollToActive, filteredCount: computed(() => filteredSongsRef.va
         @click="handleContextMenuAction(ctxShareSong)"
       >
         分享
+      </button>
+      <button
+        type="button"
+        class="song-context-item"
+        role="menuitem"
+        @click="handleContextMenuAction(ctxCopySongInfo)"
+      >
+        复制信息
       </button>
     </div>
   </Teleport>
