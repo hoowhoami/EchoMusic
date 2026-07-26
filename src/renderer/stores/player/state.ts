@@ -54,6 +54,7 @@ export const createPlayerState = () => ({
   currentAudioCandidateIndex: -1,
   currentResolvedAudioQuality: null as AudioQualityValue | null,
   currentResolvedAudioEffect: 'none' as AudioEffectValue,
+  nativeTrackSeq: null as number | null,
   audioEffect: 'none' as AudioEffectValue,
   recentSeekIgnoreEnd: false,
   settingsWatcherRegistered: false,

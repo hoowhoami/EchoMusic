@@ -79,14 +79,16 @@ export const getPlaybackTargetTrackId = (state: PlayerState): string | null =>
 export const getPlaybackIsLoading = (state: PlayerState): boolean =>
   state.playbackIntent.phase === 'loading';
 
+export const getPlaybackHasFailed = (state: PlayerState): boolean =>
+  state.playbackIntent.phase === 'failed' || state.enginePlayback.status === 'error';
+
 export const getPlaybackIsPlaying = (state: PlayerState): boolean =>
-  state.playbackIntent.shouldPlay || state.enginePlayback.status === 'playing';
+  !getPlaybackHasFailed(state) &&
+  (state.playbackIntent.shouldPlay || state.enginePlayback.status === 'playing');
 
 export const getPlaybackDisplayState = (state: PlayerState): PlaybackDisplayState => {
   if (getPlaybackIsLoading(state)) return 'loading';
-  if (state.playbackIntent.phase === 'failed' || state.enginePlayback.status === 'error') {
-    return 'error';
-  }
+  if (getPlaybackHasFailed(state)) return 'error';
   if (getPlaybackIsPlaying(state)) return 'playing';
   return 'paused';
 };

@@ -59,6 +59,8 @@ export const createPlaybackManager = (
   const applyFailedPlaybackState = (options?: { keepResolvedSource?: boolean }) => {
     failPlaybackIntent(state);
     setEnginePlaybackStatus(state, 'error');
+    state.nativeTrackSeq = null;
+    engine.reset();
     state.currentTime = 0;
     state.currentTimeUpdatedAt = Date.now();
     state.duration = 0;
@@ -177,6 +179,7 @@ export const createPlaybackManager = (
       state.lastError = null;
 
       const targetPosition = Math.max(0, Number(options?.position) || 0);
+      state.nativeTrackSeq = null;
       if (targetPosition > 0) {
         state.stallRecovering = true;
         state.stallRecoverTarget = targetPosition;
@@ -330,6 +333,7 @@ export const createPlaybackManager = (
       sourceQueueId: state.currentSourceQueueId,
       shouldPlay: true,
     });
+    state.nativeTrackSeq = prepared.nativeSeq;
     state.currentPlaylist = prepared.list;
     state.currentTrackSnapshot = snapshot;
     playlistStore.updateQueueCurrentTrack(
@@ -600,6 +604,7 @@ export const createPlaybackManager = (
     state.currentAudioCandidateIndex = -1;
     state.currentResolvedAudioQuality = null;
     state.currentResolvedAudioEffect = 'none';
+    state.nativeTrackSeq = null;
     state.currentTime = 0;
     state.currentTimeUpdatedAt = Date.now();
     state.duration = 0;
@@ -1096,6 +1101,7 @@ export const createPlaybackManager = (
     state.currentResolvedAudioEffect = 'none';
     state.currentAudioQualityOverride = null;
     state.audioEffect = 'none';
+    state.nativeTrackSeq = null;
     state.playbackRequestSeq += 1;
     state.climaxRequestSeq += 1;
     clearPlaybackIntent(state);

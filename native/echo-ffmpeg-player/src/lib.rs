@@ -1372,18 +1372,40 @@ impl Task for LoadFileTask {
                     }
                     Err(err) => {
                         with_runtime(|runtime| {
-                            if let Some(session) = runtime.session.as_mut() {
-                                if Arc::ptr_eq(&session.shared, &plan.shared) {
-                                    session.shared.paused.store(true, Ordering::Release);
-                                    session.shared.mark_decode_failed();
-                                }
+                            let matches_current_plan = runtime
+                                .session
+                                .as_ref()
+                                .is_some_and(|session| Arc::ptr_eq(&session.shared, &plan.shared));
+                            if !matches_current_plan || runtime.latest_load_seq != plan.request_seq
+                            {
+                                return Ok(());
                             }
+
+                            if let Some(session) = runtime.session.take() {
+                                session.shared.paused.store(true, Ordering::Release);
+                                session.shared.mark_decode_failed();
+                                session.shared.set_track_seq(plan.request_seq);
+                                session.stop_background();
+                            }
+                            runtime.current_url = Some(url.clone());
+                            runtime.current_audio_stream_ordinal = audio_stream;
+                            runtime.current_seq = plan.request_seq;
+                            runtime.latest_load_seq = runtime.latest_load_seq.max(plan.request_seq);
+                            runtime.state.duration = 0.0;
+                            runtime.state.time_pos = 0.0;
                             runtime.state.playing = false;
                             runtime.state.paused = true;
                             set_runtime_core_state(runtime, PlaybackCoreState::Error, "load-error");
                             emit_runtime_event(
                                 runtime,
                                 PlayerEvent::state_change(runtime.state.clone()),
+                            );
+                            emit_runtime_events(
+                                runtime,
+                                vec![
+                                    PlayerEvent::duration_change(0.0),
+                                    PlayerEvent::time_update(0.0),
+                                ],
                             );
                             Ok(())
                         })?;

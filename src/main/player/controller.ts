@@ -202,6 +202,13 @@ export interface PlayerState {
   audioTrackId?: number;
 }
 
+export interface PlayerPlaybackContext {
+  trackSeq?: number;
+  generation?: number;
+}
+
+export type PlayerStateChangePayload = PlayerState & PlayerPlaybackContext;
+
 export class PlayerController extends EventEmitter {
   private addon: PlayerAddon | null = null;
   private commandQueue: Promise<void> = Promise.resolve();
@@ -507,7 +514,11 @@ export class PlayerController extends EventEmitter {
       case 'time-update':
         if (typeof event.time === 'number') {
           this.state.timePos = event.time;
-          this.emit('time-update', event.time);
+          this.emit('time-update', {
+            time: event.time,
+            trackSeq: event.trackSeq,
+            generation: event.generation,
+          });
         }
         break;
       case 'seeked':
@@ -551,7 +562,11 @@ export class PlayerController extends EventEmitter {
         break;
       case 'state-change':
         if (event.state) this.state = { ...this.state, ...event.state };
-        this.emit('state-change', this.currentState);
+        this.emit('state-change', {
+          ...this.currentState,
+          trackSeq: event.trackSeq,
+          generation: event.generation,
+        } satisfies PlayerStateChangePayload);
         break;
       case 'playback-end':
         this.state.playing = false;
@@ -571,6 +586,8 @@ export class PlayerController extends EventEmitter {
         this.emit('core-state-change', {
           state: event.coreState,
           reason: event.reason,
+          trackSeq: event.trackSeq,
+          generation: event.generation,
         });
         break;
       case 'cache-state-change':
@@ -587,6 +604,8 @@ export class PlayerController extends EventEmitter {
           bufferedSecs: event.cacheBufferedSecs,
           targetSecs: event.cacheTargetSecs,
           packetCache: event.packetCache,
+          trackSeq: event.trackSeq,
+          generation: event.generation,
         });
         break;
       case 'packet-cache-stats':

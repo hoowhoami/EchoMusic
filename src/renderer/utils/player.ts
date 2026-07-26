@@ -13,15 +13,15 @@ import { DEFAULT_PLAYER_VOLUME } from '../../shared/playback';
 import type { PlaybackSource } from '@/stores/player/types';
 
 export interface PlayerEngineEvents {
-  timeUpdate?: (currentTime: number) => void;
+  timeUpdate?: (currentTime: number, payload?: PlayerPlaybackContext) => void;
   seeked?: (currentTime: number) => void;
   playbackRestart?: (payload?: { time?: number; reason?: string }) => void;
   durationChange?: (duration: number) => void;
   /** 新文件加载完成（player file-loaded），用于切歌后放行进度回报 */
   fileLoaded?: (payload?: { path?: string; seq?: number }) => void;
   ended?: () => void;
-  play?: () => void;
-  pause?: () => void;
+  play?: (payload?: PlayerPlaybackContext) => void;
+  pause?: (payload?: PlayerPlaybackContext) => void;
   error?: (event: Event) => void;
   /** Native 播放引擎检测到播放卡死，携带卡死时的播放位置（秒） */
   stalled?: (position: number) => void;
@@ -33,6 +33,11 @@ export interface PlayerEngineEvents {
 }
 
 export type { PlayerAudioGraphSnapshot };
+
+export interface PlayerPlaybackContext {
+  trackSeq?: number;
+  generation?: number;
+}
 
 export interface PlayerPacketCacheStats {
   forwardBytes: number;
@@ -58,12 +63,12 @@ export interface PlayerAudioOutputStats {
   underruns: number;
 }
 
-export interface PlayerCoreStatePayload {
+export interface PlayerCoreStatePayload extends PlayerPlaybackContext {
   state?: string;
   reason?: string;
 }
 
-export interface PlayerCacheStatePayload {
+export interface PlayerCacheStatePayload extends PlayerPlaybackContext {
   paused?: boolean;
   bufferingState?: number;
   bufferedSecs?: number;
@@ -160,7 +165,9 @@ export class PlayerEngine {
   // ── player 事件监听 ──
 
   private bindPlayerEvents(): void {
-    const offTime = player.onTimeUpdate((time: number) => {
+    const offTime = player.onTimeUpdate((payload) => {
+      const time = typeof payload === 'number' ? payload : Number(payload?.time);
+      if (!Number.isFinite(time)) return;
       if (this.seekPending) return;
       const previousTime = this.lastTimeValue;
       if (time === previousTime) return;
@@ -170,7 +177,12 @@ export class PlayerEngine {
       this.lastTimeValue = time;
       if (!isPositionJump && now - this.lastTimeUpdateMs < this.TIME_UPDATE_THROTTLE_MS) return;
       this.lastTimeUpdateMs = now;
-      this.events.timeUpdate?.(time);
+      this.events.timeUpdate?.(
+        time,
+        typeof payload === 'number'
+          ? undefined
+          : { trackSeq: payload.trackSeq, generation: payload.generation },
+      );
     });
     this.cleanupFns.push(offTime);
 
@@ -206,11 +218,12 @@ export class PlayerEngine {
     });
     if (offFileLoaded) this.cleanupFns.push(offFileLoaded);
 
-    const offState = player.onStateChange((state: { playing?: boolean; paused?: boolean }) => {
+    const offState = player.onStateChange((state) => {
+      const context = { trackSeq: state.trackSeq, generation: state.generation };
       if (state.playing) {
-        this.events.play?.();
+        this.events.play?.(context);
       } else if (state.paused) {
-        this.events.pause?.();
+        this.events.pause?.(context);
       }
     });
     this.cleanupFns.push(offState);

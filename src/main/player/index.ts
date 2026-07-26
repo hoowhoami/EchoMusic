@@ -31,8 +31,8 @@ export function destroyPlayer(): void {
 }
 
 function registerEventForwarding(controller: PlayerController): void {
-  controller.on('time-update', (time) =>
-    getMainWindow()?.webContents.send('player:time-update', time),
+  controller.on('time-update', (payload) =>
+    getMainWindow()?.webContents.send('player:time-update', payload),
   );
   controller.on('seeked', (time) => getMainWindow()?.webContents.send('player:seeked', time));
   controller.on('playback-restart', (payload) =>

@@ -33,6 +33,7 @@ import {
   beginPlaybackIntent,
   clearPlaybackIntent,
   completePlaybackIntent,
+  getPlaybackHasFailed,
   getPlaybackDisplayState,
   getPlaybackIsLoading,
   getPlaybackIsPlaying,
@@ -165,6 +166,7 @@ export const usePlayerStore = defineStore(
         sourceQueueId: state.currentSourceQueueId,
         shouldPlay: wasPlaying,
       });
+      state.nativeTrackSeq = null;
 
       const resolved = await resolver.resolveAudioUrl(track, { forceReload: true });
       if (requestSeq !== state.playbackRequestSeq) return;
@@ -476,6 +478,7 @@ export const usePlayerStore = defineStore(
       state.currentAudioCandidateUrls = [];
       state.currentAudioCandidateSources = [];
       state.currentAudioCandidateIndex = -1;
+      state.nativeTrackSeq = null;
       state.currentResolvedAudioQuality = null;
       state.currentResolvedAudioEffect = 'none';
       state.currentAudioQualityOverride = null;
@@ -501,6 +504,7 @@ export const usePlayerStore = defineStore(
       state.currentSourceQueueId = activeQueue?.id ?? playlistStore.activeQueueId ?? null;
       state.currentPlaylist = activeSongs.length > 0 ? activeSongs : null;
       state.currentTrackSnapshot = toRawSong(targetTrack);
+      state.nativeTrackSeq = null;
       state.duration = targetTrack.duration || 0;
       state.lastError = null;
       clearPlaybackNotice();
@@ -584,9 +588,15 @@ export const usePlayerStore = defineStore(
       const HISTORY_CHECK_MS = 5000;
       let lastEventTimeUpdate = 0;
       const EVENT_TIMEUPDATE_MS = 1000;
+      const isCurrentNativePlaybackContext = (payload?: { trackSeq?: number }) => {
+        const trackSeq = Number(payload?.trackSeq);
+        if (!Number.isFinite(trackSeq) || trackSeq <= 0) return true;
+        return state.nativeTrackSeq === null || state.nativeTrackSeq === trackSeq;
+      };
 
       const events: PlayerEngineEvents = {
-        timeUpdate: (currentTime) => {
+        timeUpdate: (currentTime, payload) => {
+          if (!isCurrentNativePlaybackContext(payload) || getPlaybackHasFailed(state)) return;
           // 切歌加载护栏：新文件 file-loaded 之前到达的回报多为上一首的残留位置，一律丢弃，
           // 避免进度条切歌瞬间先跳到旧进度再归零
           if (state.awaitingTrackLoad) return;
@@ -637,6 +647,9 @@ export const usePlayerStore = defineStore(
           if (playbackManager.activateGaplessPreparedTransition(payload?.seq)) return;
           // 新文件真正加载完成，解除切歌加载护栏，放行后续进度回报
           if (!state.awaitingTrackLoad) return;
+          if (typeof payload?.seq === 'number' && Number.isFinite(payload.seq) && payload.seq > 0) {
+            state.nativeTrackSeq = payload.seq;
+          }
           state.awaitingTrackLoad = false;
           setEnginePlaybackStatus(state, 'loading');
           // 补回加载窗口内被丢弃的真实时长，避免进度条最大值停留在 0
@@ -653,7 +666,8 @@ export const usePlayerStore = defineStore(
             handlePlaybackEnded();
           } else state.recentSeekIgnoreEnd = false;
         },
-        play: () => {
+        play: (payload) => {
+          if (!isCurrentNativePlaybackContext(payload) || getPlaybackHasFailed(state)) return;
           setEnginePlaybackStatus(state, 'playing');
           if (isPlaybackIntentPhase(state, 'loading')) {
             completePlaybackIntent(state, state.playbackIntent.seq, { isPlaying: true });
@@ -667,8 +681,13 @@ export const usePlayerStore = defineStore(
           // 本地历史记录已在 playback.ts 的 playTrack 中调用
           // 此处不再重复调用，避免同一首歌被记录两次
         },
-        pause: () => {
-          if (shouldIgnoreEnginePause(state)) return;
+        pause: (payload) => {
+          if (
+            !isCurrentNativePlaybackContext(payload) ||
+            shouldIgnoreEnginePause(state) ||
+            getPlaybackHasFailed(state)
+          )
+            return;
           setEnginePlaybackStatus(state, 'paused');
           setPlaybackIntentPlayback(state, false);
           settingStore.syncPreventSleep(false);

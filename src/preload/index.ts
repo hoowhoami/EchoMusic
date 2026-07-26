@@ -464,8 +464,13 @@ contextBridge.exposeInMainWorld('electron', {
     setMediaTitle: (title: string) => ipcRenderer.invoke('player:set-media-title', title),
     setLoopFile: (loop: boolean) => ipcRenderer.invoke('player:set-loop-file', loop),
     setStallTimeout: (seconds: number) => ipcRenderer.invoke('player:set-stall-timeout', seconds),
-    onTimeUpdate: (func: (time: number) => void) => {
-      const listener = (_event: Electron.IpcRendererEvent, time: number) => func(time);
+    onTimeUpdate: (
+      func: (payload: number | { time?: number; trackSeq?: number; generation?: number }) => void,
+    ) => {
+      const listener = (
+        _event: Electron.IpcRendererEvent,
+        payload: number | { time?: number; trackSeq?: number; generation?: number },
+      ) => func(payload);
       ipcRenderer.on('player:time-update', listener);
       return () => ipcRenderer.removeListener('player:time-update', listener);
     },
@@ -495,18 +500,32 @@ contextBridge.exposeInMainWorld('electron', {
       ipcRenderer.on('player:file-loaded', listener);
       return () => ipcRenderer.removeListener('player:file-loaded', listener);
     },
-    onStateChange: (func: (state: { playing?: boolean; paused?: boolean }) => void) => {
+    onStateChange: (
+      func: (state: {
+        playing?: boolean;
+        paused?: boolean;
+        trackSeq?: number;
+        generation?: number;
+      }) => void,
+    ) => {
       const listener = (
         _event: Electron.IpcRendererEvent,
-        state: { playing?: boolean; paused?: boolean },
+        state: { playing?: boolean; paused?: boolean; trackSeq?: number; generation?: number },
       ) => func(state);
       ipcRenderer.on('player:state-change', listener);
       return () => ipcRenderer.removeListener('player:state-change', listener);
     },
-    onCoreStateChange: (func: (payload: { state?: string; reason?: string }) => void) => {
+    onCoreStateChange: (
+      func: (payload: {
+        state?: string;
+        reason?: string;
+        trackSeq?: number;
+        generation?: number;
+      }) => void,
+    ) => {
       const listener = (
         _event: Electron.IpcRendererEvent,
-        payload: { state?: string; reason?: string },
+        payload: { state?: string; reason?: string; trackSeq?: number; generation?: number },
       ) => func(payload);
       ipcRenderer.on('player:core-state-change', listener);
       return () => ipcRenderer.removeListener('player:core-state-change', listener);
@@ -517,6 +536,8 @@ contextBridge.exposeInMainWorld('electron', {
         bufferingState?: number;
         bufferedSecs?: number;
         targetSecs?: number;
+        trackSeq?: number;
+        generation?: number;
         packetCache?: {
           forwardBytes: number;
           backBytes: number;
@@ -537,6 +558,8 @@ contextBridge.exposeInMainWorld('electron', {
           bufferingState?: number;
           bufferedSecs?: number;
           targetSecs?: number;
+          trackSeq?: number;
+          generation?: number;
           packetCache?: {
             forwardBytes: number;
             backBytes: number;

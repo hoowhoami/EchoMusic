@@ -150,7 +150,29 @@ type PlayerCacheState = {
   bufferingState?: number;
   bufferedSecs?: number;
   targetSecs?: number;
+  trackSeq?: number;
+  generation?: number;
   packetCache?: PlayerPacketCacheStats;
+};
+
+type PlayerStateChangePayload = {
+  playing?: boolean;
+  paused?: boolean;
+  trackSeq?: number;
+  generation?: number;
+};
+
+type PlayerTimeUpdatePayload = {
+  time?: number;
+  trackSeq?: number;
+  generation?: number;
+};
+
+type PlayerCoreStateChangePayload = {
+  state?: string;
+  reason?: string;
+  trackSeq?: number;
+  generation?: number;
 };
 
 export interface IElectronAPI {
@@ -578,13 +600,13 @@ export interface IElectronAPI {
     setMediaTitle: (title: string) => Promise<void>;
     setLoopFile: (loop: boolean) => Promise<void>;
     setStallTimeout: (seconds: number) => Promise<void>;
-    onTimeUpdate: (func: (time: number) => void) => () => void;
+    onTimeUpdate: (func: (payload: number | PlayerTimeUpdatePayload) => void) => () => void;
     onSeeked: (func: (time: number) => void) => () => void;
     onPlaybackRestart: (func: (payload?: { time?: number; reason?: string }) => void) => () => void;
     onDurationChange: (func: (duration: number) => void) => () => void;
     onFileLoaded: (func: (payload?: { path?: string; seq?: number }) => void) => () => void;
-    onStateChange: (func: (state: { playing?: boolean; paused?: boolean }) => void) => () => void;
-    onCoreStateChange: (func: (payload: { state?: string; reason?: string }) => void) => () => void;
+    onStateChange: (func: (state: PlayerStateChangePayload) => void) => () => void;
+    onCoreStateChange: (func: (payload: PlayerCoreStateChangePayload) => void) => () => void;
     onCacheStateChange: (func: (payload: PlayerCacheState) => void) => () => void;
     onPlaybackEnd: (func: (reason: string) => void) => () => void;
     onStall: (func: (position: number) => void) => () => void;
