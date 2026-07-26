@@ -226,6 +226,46 @@ const buildFallbackCharacters = (
   });
 };
 
+const compactLyricText = (text: string): string => text.replace(/\s+/g, '');
+
+const stripEmbeddedSecondaryText = (characters: LyricCharacter[], textToStrip: string): boolean => {
+  const suffix = compactLyricText(textToStrip);
+  if (!suffix || characters.length === 0) return false;
+
+  const lineText = compactLyricText(characters.map((char) => char.text).join(''));
+  if (!lineText.endsWith(suffix) || lineText.length <= suffix.length) return false;
+
+  let remaining = suffix.length;
+  while (remaining > 0 && characters.length > 0) {
+    const lastChar = characters[characters.length - 1];
+    if (!lastChar) break;
+    const compactChar = compactLyricText(lastChar.text);
+
+    if (!compactChar) {
+      characters.pop();
+      continue;
+    }
+
+    if (remaining >= compactChar.length) {
+      remaining -= compactChar.length;
+      characters.pop();
+      continue;
+    }
+
+    let keepUntil = lastChar.text.length;
+    let consumed = 0;
+    for (let i = lastChar.text.length - 1; i >= 0 && consumed < remaining; i--) {
+      if (/\s/.test(lastChar.text[i] ?? '')) continue;
+      consumed += 1;
+      keepUntil = i;
+    }
+    lastChar.text = lastChar.text.slice(0, keepUntil);
+    remaining = 0;
+  }
+
+  return true;
+};
+
 const getSecondaryText = (line: LyricLine, mode: LyricsMode): string => {
   const romanized = line.romanized?.trim() ?? '';
   const translated = line.translated?.trim() ?? '';
@@ -372,46 +412,11 @@ const parseLyricDetailPayload = (payload: LyricDetailResponse): ParsedLyricPrevi
     if (translated) hasTranslation = true;
     if (romanized) hasRomanization = true;
 
-    const stripText = (textToStrip: string) => {
-      if (!textToStrip) return;
-      let remaining = textToStrip.replace(/\s+/g, '');
-      const characters = line.characters;
-      while (remaining.length > 0 && characters.length > 0) {
-        const lastChar = characters[characters.length - 1];
-        if (!lastChar) break;
-        const charTextNoSpace = lastChar.text.replace(/\s+/g, '');
-
-        if (charTextNoSpace === '') {
-          characters.pop();
-          continue;
-        }
-
-        if (remaining.endsWith(charTextNoSpace)) {
-          remaining = remaining.slice(0, -charTextNoSpace.length);
-          characters.pop();
-        } else if (charTextNoSpace.endsWith(remaining)) {
-          let charsDeleted = 0;
-          let i = lastChar.text.length - 1;
-          while (i >= 0 && charsDeleted < remaining.length) {
-            if (!/\s/.test(lastChar.text[i] ?? '')) {
-              charsDeleted++;
-            }
-            i--;
-          }
-          lastChar.text = lastChar.text.slice(0, i + 1);
-          remaining = '';
-          break;
-        } else {
-          break;
-        }
-      }
-    };
-
     const origLineStart = line.characters[0]?.startTime ?? 0;
     const origLineEnd = line.characters[line.characters.length - 1]?.endTime ?? origLineStart;
 
-    stripText(translated);
-    stripText(romanized);
+    stripEmbeddedSecondaryText(line.characters, translated);
+    stripEmbeddedSecondaryText(line.characters, romanized);
 
     if (line.characters.length > 0) {
       line.text = line.characters
