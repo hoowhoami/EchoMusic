@@ -1209,7 +1209,7 @@ fn spawn_and_attach_output_thread_confirmed(
 
 #[napi]
 pub fn initialize(config: Option<PlayerConfigOptions>) -> napi::Result<()> {
-    destroy()?;
+    shutdown_runtime(false)?;
     reset_event_ids();
     start_event_dispatcher()?;
     let mut runtime = PlayerRuntime::new(PlayerConfig::from_options(config));
@@ -1223,8 +1223,14 @@ pub fn initialize(config: Option<PlayerConfigOptions>) -> napi::Result<()> {
 
 #[napi]
 pub fn destroy() -> napi::Result<()> {
+    shutdown_runtime(true)
+}
+
+fn shutdown_runtime(clear_callback: bool) -> napi::Result<()> {
     invalidate_seek_requests();
-    clear_event_callback();
+    if clear_callback {
+        clear_event_callback();
+    }
     stop_core_dispatcher();
     let runtime = RUNTIME
         .lock()

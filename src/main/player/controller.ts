@@ -246,20 +246,17 @@ export class PlayerController extends EventEmitter {
       log.debug('[PlayerController] native state unavailable:', error);
     }
     if (!nativeState) return this.currentState;
-    this.state = {
-      ...this.state,
-      ...nativeState,
-      audioDevice: this.state.audioDevice,
-      audioTrackId: this.state.audioTrackId,
-    };
+    this.applyNativePlaybackState(nativeState);
     return this.currentState;
   }
 
   start(): boolean {
     if (!this.available) return false;
+    this.destroy();
     this.addon = this.loadAddon();
     const networkSettings = refreshNetworkSettingsFromStorage();
     const audioConfig = getPersistedNativeAudioConfig();
+    this.addon.registerEventHandler((_err, event) => this.handleAddonEvent(event));
     this.addon.initialize({
       audioBufferSecs: audioConfig.audioBufferSecs,
       audioCacheSecs: audioConfig.audioCacheSecs,
@@ -273,7 +270,6 @@ export class PlayerController extends EventEmitter {
     log.info('[PlayerController]', 'native audio cache configured', {
       ...audioConfig,
     });
-    this.addon.registerEventHandler((_err, event) => this.handleAddonEvent(event));
     return true;
   }
 
@@ -328,17 +324,20 @@ export class PlayerController extends EventEmitter {
   }
 
   async pause(): Promise<void> {
-    this.getAddonOrThrow().pause();
+    await this.enqueue(() => this.getAddonOrThrow().pause());
   }
 
   async stop(): Promise<void> {
-    this.getAddonOrThrow().stop();
+    await this.enqueue(() => this.getAddonOrThrow().stop());
   }
 
   async seek(time: number): Promise<void> {
     const seq = ++this.seekSeq;
     try {
-      await this.getAddonOrThrow().seek(time);
+      await this.enqueue(() => {
+        if (seq !== this.seekSeq) return undefined;
+        return this.getAddonOrThrow().seek(time);
+      });
     } catch (err) {
       if (seq === this.seekSeq) throw err;
     }
@@ -355,15 +354,15 @@ export class PlayerController extends EventEmitter {
   }
 
   async setEq(gains: number[]): Promise<void> {
-    await this.getAddonOrThrow().setEqualizer(gains);
+    await this.enqueue(() => this.getAddonOrThrow().setEqualizer(gains));
   }
 
   async setImpulseResponse(payload: string | ImpulseResponsePlaybackOptions): Promise<void> {
-    return this.getAddonOrThrow().setImpulseResponse(payload);
+    return this.enqueue(() => this.getAddonOrThrow().setImpulseResponse(payload));
   }
 
   async setImpulseResponseMix(mix: number): Promise<void> {
-    await this.getAddonOrThrow().setImpulseResponseMix(mix);
+    await this.enqueue(() => this.getAddonOrThrow().setImpulseResponseMix(mix));
   }
 
   async getAudioGraph(): Promise<PlayerAudioGraphSnapshot> {
@@ -371,11 +370,11 @@ export class PlayerController extends EventEmitter {
   }
 
   async setAudioGraphParameter(patch: PlayerAudioGraphParameterPatch): Promise<void> {
-    await this.getAddonOrThrow().setAudioGraphParameter(patch);
+    await this.enqueue(() => this.getAddonOrThrow().setAudioGraphParameter(patch));
   }
 
   async setAudioGraphPlan(plan: PlayerAudioGraphPlanPatch): Promise<void> {
-    await this.getAddonOrThrow().setAudioGraphPlan(plan);
+    await this.enqueue(() => this.getAddonOrThrow().setAudioGraphPlan(plan));
   }
 
   setAudioDevice(deviceName: string) {
@@ -391,7 +390,7 @@ export class PlayerController extends EventEmitter {
   }
 
   async applyNormalizationGain(gainDb: number): Promise<void> {
-    await this.getAddonOrThrow().setNormalizationGain(gainDb);
+    await this.enqueue(() => this.getAddonOrThrow().setNormalizationGain(gainDb));
   }
 
   fade(from: number, to: number, durationMs: number) {
@@ -464,6 +463,15 @@ export class PlayerController extends EventEmitter {
   private getAddonOrThrow(): PlayerAddon {
     if (!this.addon) throw new Error('player addon not initialized');
     return this.addon;
+  }
+
+  private applyNativePlaybackState(nativeState: Partial<PlayerState>): void {
+    const next = { ...this.state };
+    if (typeof nativeState.timePos === 'number') next.timePos = nativeState.timePos;
+    if (typeof nativeState.playing === 'boolean') next.playing = nativeState.playing;
+    if (typeof nativeState.paused === 'boolean') next.paused = nativeState.paused;
+    if (typeof nativeState.duration === 'number') next.duration = nativeState.duration;
+    this.state = next;
   }
 
   private shouldAcceptAddonEvent(event: PlayerAddonEvent): boolean {
@@ -561,7 +569,7 @@ export class PlayerController extends EventEmitter {
         this.emit('file-loaded', { path: event.path, seq: event.seq });
         break;
       case 'state-change':
-        if (event.state) this.state = { ...this.state, ...event.state };
+        if (event.state) this.applyNativePlaybackState(event.state);
         this.emit('state-change', {
           ...this.currentState,
           trackSeq: event.trackSeq,
