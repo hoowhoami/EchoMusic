@@ -32,7 +32,8 @@ import type {
 } from '../../shared/mini-player';
 import { MINI_PLAYER_DIMENSIONS } from '../../shared/mini-player';
 import { DEFAULT_PLAYER_VOLUME, buildPlaybackClockSnapshot } from '../../shared/playback';
-import { createLyricTimeline } from '@/composables/useLyricTimeline';
+import { createLyricTimeline, findLyricIndexAtTimeMs } from '@/composables/useLyricTimeline';
+import { createStableLyricIndex } from '@/composables/useStableLyricIndex';
 
 // 卡片折叠/展开高度，源自共享尺寸常量，保证与主进程窗口尺寸一致、不漂移
 const cardCollapsedHeight = `${MINI_PLAYER_DIMENSIONS.controlsHeight}px`;
@@ -109,6 +110,7 @@ const lyricArtist = computed(() => playback.value?.artist || 'EchoMusic');
 const lyricLines = computed(() => lyric.value?.lines ?? []);
 const liveLyricIndex = ref(-1);
 const lyricTimeline = createLyricTimeline();
+const stableLyricIndex = createStableLyricIndex();
 
 const getTimelinePlayback = () => {
   const currentPlayback = playback.value;
@@ -124,7 +126,7 @@ const getTimelinePlayback = () => {
   };
 };
 
-const resolveLiveLyricIndex = () => {
+const resolveLiveLyricIndex = (timelineMs: number) => {
   const currentLyric = lyric.value;
   const lines = lyricLines.value;
   if (!currentLyric || lines.length === 0) return -1;
@@ -135,12 +137,7 @@ const resolveLiveLyricIndex = () => {
     Boolean(playbackTrackId) && (!lyricTrackId || lyricTrackId === playbackTrackId);
 
   if (canPredictByPlaybackTime) {
-    const predictedIndex = lyricTimeline.findIndex(
-      lines,
-      getTimelinePlayback(),
-      Number(currentLyric.timeOffset || 0),
-      LYRIC_LOOKAHEAD_MS,
-    );
+    const predictedIndex = findLyricIndexAtTimeMs(lines, timelineMs);
     if (predictedIndex >= 0) return predictedIndex;
   }
 
@@ -149,9 +146,25 @@ const resolveLiveLyricIndex = () => {
   return 0;
 };
 
-const refreshLiveLyricIndex = () => {
-  lyricTimeline.sync(getTimelinePlayback());
-  const nextIndex = resolveLiveLyricIndex();
+const getLyricTimelineMs = () =>
+  lyricTimeline.getTimelineMs(
+    getTimelinePlayback(),
+    Number(lyric.value?.timeOffset || 0),
+    LYRIC_LOOKAHEAD_MS,
+  );
+
+const isRecentLyricSeek = () => {
+  const seekTimestamp = Number(playback.value?.seekTimestamp ?? 0);
+  return seekTimestamp > 0 && Date.now() - seekTimestamp < 800;
+};
+
+const refreshLiveLyricIndex = (options?: { forceSync?: boolean; resetStable?: boolean }) => {
+  lyricTimeline.sync(getTimelinePlayback(), options?.forceSync);
+  const timelineMs = getLyricTimelineMs();
+  const rawIndex = resolveLiveLyricIndex(timelineMs);
+  const nextIndex = options?.resetStable
+    ? stableLyricIndex.reset(rawIndex, timelineMs)
+    : stableLyricIndex.apply(rawIndex, timelineMs);
   if (liveLyricIndex.value !== nextIndex) liveLyricIndex.value = nextIndex;
 };
 
@@ -302,6 +315,9 @@ const applySnapshot = (snapshot: MiniPlayerSnapshot | null | undefined) => {
   const nextLyric = snapshot?.lyric;
   const nextCoverUrl = nextPlayback?.coverUrl ?? '';
   const previousPlaybackTrackId = playback.value?.trackId ?? null;
+  const previousLyricTrackId = lyric.value?.trackId ?? null;
+  const previousLyricLineCount = lyric.value?.lines.length ?? 0;
+  const previousLyricTimeOffset = lyric.value?.timeOffset ?? 0;
   if (nextCoverUrl !== lyricCoverUrl.value) lyricCoverUrl.value = nextCoverUrl;
   if (!nextPlayback) {
     playback.value = null;
@@ -320,7 +336,14 @@ const applySnapshot = (snapshot: MiniPlayerSnapshot | null | undefined) => {
   if (shouldApplyLyricSnapshot(nextLyric, lyric.value)) {
     lyric.value = mergeLyricSnapshot(nextLyric);
   }
-  refreshLiveLyricIndex();
+  refreshLiveLyricIndex({
+    resetStable:
+      nextPlayback?.trackId !== previousPlaybackTrackId ||
+      lyric.value?.trackId !== previousLyricTrackId ||
+      (lyric.value?.lines.length ?? 0) !== previousLyricLineCount ||
+      (lyric.value?.timeOffset ?? 0) !== previousLyricTimeOffset ||
+      isRecentLyricSeek(),
+  });
   syncLyricClockTimer();
   if (appearance.value) {
     document.documentElement.classList.toggle('dark', appearance.value.isDark);
@@ -542,7 +565,7 @@ const handleSeekPointerUp = (event: PointerEvent) => {
         seekTimestamp: now,
         reason: 'seek',
       });
-      refreshLiveLyricIndex();
+      refreshLiveLyricIndex({ forceSync: true, resetStable: true });
     }
     command({ type: 'seek', value: ratio * duration });
   }
@@ -746,8 +769,17 @@ watch(
     lyric.value?.timeOffset ?? 0,
     lyricLines.value.length,
   ],
-  () => {
-    refreshLiveLyricIndex();
+  (next, previous) => {
+    const resetStable =
+      !previous ||
+      next[0] !== previous[0] ||
+      next[3] !== previous[3] ||
+      next[4] === false ||
+      next[6] !== previous[6] ||
+      next[8] !== previous[8] ||
+      next[9] !== previous[9] ||
+      isRecentLyricSeek();
+    refreshLiveLyricIndex({ resetStable });
     syncLyricClockTimer();
   },
   { immediate: true },

@@ -39,7 +39,9 @@ import {
   computeLyricCharBackgroundPosition,
   computeLyricCharProgress,
   createLyricTimeline,
+  findLyricIndexAtTimeMs,
 } from '@/composables/useLyricTimeline';
+import { createStableLyricIndex } from '@/composables/useStableLyricIndex';
 import { findNextVisibleLyricIndex, resolveVisibleLyricIndex } from '@/utils/lyricFilter';
 
 // ── 渲染行类型 ──
@@ -72,6 +74,7 @@ const reducedMotion = ref(false);
 let cachedYrcElements: HTMLElement[] = [];
 let cachedYrcLineKey = '';
 const lyricTimeline = createLyricTimeline();
+const stableLyricIndex = createStableLyricIndex();
 
 const getTimelinePlayback = () => {
   const state = snapshot.value?.playback;
@@ -87,10 +90,19 @@ const getTimelinePlayback = () => {
   };
 };
 
-const refreshTimelineState = () => {
+const isRecentLyricSeek = () => {
+  const seekTimestamp = Number(snapshot.value?.playback?.seekTimestamp ?? 0);
+  return seekTimestamp > 0 && Date.now() - seekTimestamp < 800;
+};
+
+const refreshTimelineState = (options?: { resetStable?: boolean }) => {
   const state = getTimelinePlayback();
   playSeekMsRaw = lyricTimeline.getPlaybackMs(state);
-  const nextIndex = lyricTimeline.findIndex(lyrics.value, state, lyricTimeOffset.value);
+  const timelineMs = Math.round(playSeekMsRaw + lyricTimeOffset.value);
+  const rawIndex = findLyricIndexAtTimeMs(lyrics.value, timelineMs);
+  const nextIndex = options?.resetStable
+    ? stableLyricIndex.reset(rawIndex, timelineMs)
+    : stableLyricIndex.apply(rawIndex, timelineMs);
   if (nextIndex !== activeLineIndex.value) {
     activeLineIndex.value = nextIndex;
   }
@@ -193,9 +205,9 @@ const updateScrollManual = () => {
   });
 };
 
-const syncManualDomAfterRender = () => {
+const syncManualDomAfterRender = (options?: { resetStable?: boolean }) => {
   void nextTick(() => {
-    refreshTimelineState();
+    refreshTimelineState(options);
     updateYrcDomManual();
     updateScrollManual();
     notifyLyricEffectHost();
@@ -565,17 +577,17 @@ watch(renderScopeKey, () => {
   resetLyricDomCache();
   lineRefs.clear();
   contentRefs.clear();
-  refreshTimelineState();
-  syncManualDomAfterRender();
+  refreshTimelineState({ resetStable: true });
+  syncManualDomAfterRender({ resetStable: true });
 });
 
 watch(lyricTimeOffset, () => {
-  refreshTimelineState();
-  syncManualDomAfterRender();
+  refreshTimelineState({ resetStable: true });
+  syncManualDomAfterRender({ resetStable: true });
 });
 
 watch([renderLyricLines, lyricsMode, lyricLayout, isPlaying], () => {
-  syncManualDomAfterRender();
+  syncManualDomAfterRender({ resetStable: !isPlaying.value || isRecentLyricSeek() });
 });
 
 // 拖拽
@@ -854,7 +866,7 @@ const playNext = () => {
 
 const syncAnchor = (force = false) => {
   lyricTimeline.sync(getTimelinePlayback(), force);
-  refreshTimelineState();
+  refreshTimelineState({ resetStable: force || !isPlaying.value || isRecentLyricSeek() });
 };
 
 // ── 生命周期 ──

@@ -22,6 +22,7 @@ const DEFAULT_AUDIO_OUTPUT_BUFFER_SECS = 0.2;
 const DEFAULT_DEMUXER_MAX_MB = 150;
 const DEFAULT_DEMUXER_BACK_MB = 50;
 const DEFAULT_PLAYBACK_STALL_TIMEOUT_SECS = 8;
+const CACHE_STATE_LOG_INTERVAL_MS = 5000;
 const nativeRequire = createRequire(path.join(process.cwd(), 'package.json'));
 
 const readClampedNumber = (value: unknown, fallback: number, min: number, max: number): number => {
@@ -217,6 +218,8 @@ export class PlayerController extends EventEmitter {
   private activeGeneration = 0;
   private seekSeq = 0;
   private pendingLoadSeq: number | null = null;
+  private lastCacheStateLogAt = 0;
+  private lastCacheStateLogKey = '';
   private state: PlayerState = {
     playing: false,
     paused: true,
@@ -276,6 +279,8 @@ export class PlayerController extends EventEmitter {
   destroy(): void {
     this.addon?.destroy();
     this.addon = null;
+    this.lastCacheStateLogAt = 0;
+    this.lastCacheStateLogKey = '';
   }
 
   async loadFile(url: string): Promise<void> {
@@ -587,10 +592,7 @@ export class PlayerController extends EventEmitter {
         }
         break;
       case 'core-state-change':
-        log.info('[PlayerController]', 'core state changed', {
-          state: event.coreState,
-          reason: event.reason,
-        });
+        this.logCoreStateChange(event);
         this.emit('core-state-change', {
           state: event.coreState,
           reason: event.reason,
@@ -599,13 +601,7 @@ export class PlayerController extends EventEmitter {
         });
         break;
       case 'cache-state-change':
-        log.info('[PlayerController]', 'cache state changed', {
-          paused: event.cachePaused,
-          bufferingState: event.cacheBufferingState,
-          bufferedSecs: event.cacheBufferedSecs,
-          targetSecs: event.cacheTargetSecs,
-          packetCache: event.packetCache,
-        });
+        this.logCacheStateChange(event);
         this.emit('cache-state-change', {
           paused: event.cachePaused,
           bufferingState: event.cacheBufferingState,
@@ -642,12 +638,60 @@ export class PlayerController extends EventEmitter {
         } satisfies PlayerErrorPayload);
         break;
       case 'log':
-        log[event.level === 'error' ? 'error' : event.level === 'warn' ? 'warn' : 'info'](
-          '[PlayerController]',
-          event.message || '',
-        );
+        log[
+          event.level === 'error'
+            ? 'error'
+            : event.level === 'warn'
+              ? 'warn'
+              : event.level === 'debug'
+                ? 'debug'
+                : 'info'
+        ]('[PlayerController]', event.message || '');
         break;
     }
+  }
+
+  private logCoreStateChange(event: PlayerAddonEvent): void {
+    const payload = {
+      state: event.coreState,
+      reason: event.reason,
+    };
+    if (event.reason === 'cache-pause' || event.reason === 'cache-resume') {
+      log.debug('[PlayerController]', 'core state changed', payload);
+      return;
+    }
+    log.info('[PlayerController]', 'core state changed', payload);
+  }
+
+  private logCacheStateChange(event: PlayerAddonEvent): void {
+    const packetCache = event.packetCache;
+    const key = [
+      event.trackSeq ?? '',
+      event.generation ?? '',
+      event.cachePaused ? 1 : 0,
+      packetCache?.pendingSeek ? 1 : 0,
+      packetCache?.eof ? 1 : 0,
+      packetCache?.hasError ? 1 : 0,
+    ].join('|');
+    const now = Date.now();
+
+    if (
+      key === this.lastCacheStateLogKey &&
+      now - this.lastCacheStateLogAt < CACHE_STATE_LOG_INTERVAL_MS
+    ) {
+      return;
+    }
+
+    this.lastCacheStateLogKey = key;
+    this.lastCacheStateLogAt = now;
+    const level = packetCache?.hasError ? 'warn' : 'debug';
+    log[level]('[PlayerController]', 'cache state changed', {
+      paused: event.cachePaused,
+      bufferingState: event.cacheBufferingState,
+      bufferedSecs: event.cacheBufferedSecs,
+      targetSecs: event.cacheTargetSecs,
+      packetCache,
+    });
   }
 
   private resolveAddonPath(): string | null {

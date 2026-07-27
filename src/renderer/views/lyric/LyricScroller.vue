@@ -13,6 +13,7 @@ import { usePlayerStore } from '@/stores/player';
 import { useSettingStore } from '@/stores/setting';
 import { useLyricScroll } from './composables/useLyricScroll';
 import { useYrcAnimation } from './composables/useYrcAnimation';
+import { createStableLyricIndex } from '@/composables/useStableLyricIndex';
 import { formatDuration } from '@/utils/format';
 import { buildFilteredLyricEntries, resolveVisibleLyricIndex } from '@/utils/lyricFilter';
 import { iconPlay } from '@/icons';
@@ -56,8 +57,8 @@ const lyricFilterConfig = computed(() => ({
 const resolveVisibleIndex = (idx: number) =>
   resolveVisibleLyricIndex(lyricStore.lines, idx, lyricFilterConfig.value);
 
-const currentIndex = computed(() => resolveVisibleIndex(lyricStore.currentIndex));
-const lyricEffectCurrentIndex = ref(currentIndex.value);
+const rawCurrentIndex = computed(() => resolveVisibleIndex(lyricStore.currentIndex));
+const currentIndex = ref(rawCurrentIndex.value);
 const scrollIndex = computed(() => {
   const index = resolveVisibleIndex(scrollTargetIndex.value);
   return index >= 0 ? index : currentIndex.value;
@@ -69,7 +70,6 @@ const { scrollHighlightIndex, scrollToLine, handleWheel, dispose } = useLyricScr
 );
 
 const {
-  getNowMs,
   getLyricTimelineMs,
   updateYrcDom,
   syncSeekAnchor,
@@ -121,10 +121,13 @@ const handleLineClick = (time: number) => {
   // seek 后立即更新当前行索引并滚动到对应位置
   nextTick(() => {
     lyricStore.updateCurrentIndex(time);
+    resetStableCurrentIndex(Math.round(time * 1000) + lyricStore.currentTimeOffset);
     scrollTargetIndex.value = lyricStore.findIndexAtTimeMs(
       Math.round(time * 1000) + lyricStore.currentTimeOffset + LYRIC_SCROLL_LOOKAHEAD_MS,
     );
     scrollToLine(scrollIndex.value, true);
+    updateYrcDom();
+    notifyLyricEffectHost();
   });
 };
 
@@ -135,7 +138,7 @@ const handleLyricWheel = () => {
 const lyricEntries = computed(() =>
   buildFilteredLyricEntries(lyricStore.lines, lyricFilterConfig.value).map((entry) => {
     const { line, index, filtered } = entry;
-    const distance = lyricEffectCurrentIndex.value >= 0 ? index - lyricEffectCurrentIndex.value : 0;
+    const distance = currentIndex.value >= 0 ? index - currentIndex.value : 0;
     const scrollDistance = scrollIndex.value >= 0 ? index - scrollIndex.value : distance;
     return {
       line,
@@ -154,39 +157,24 @@ const lyricEffectSummary = computed(() => getPluginLyricEffectSummary('page'));
 const getLineStartMs = (line: (typeof lyricStore.lines)[number]) =>
   line.characters?.[0]?.startTime ?? Math.round((Number(line.time) || 0) * 1000);
 
-let lastStableLyricIndex = -1;
-let lastStableLyricTime = 0;
+const stableLyricIndex = createStableLyricIndex();
 
-const resolveLyricEffectCurrentIndex = (timelineMs: number) => {
-  let index = currentIndex.value;
-  const time = timelineMs / 1000;
+const applyStableCurrentIndex = (timelineMs: number) => {
+  const index = stableLyricIndex.apply(rawCurrentIndex.value, timelineMs);
+  if (currentIndex.value !== index) currentIndex.value = index;
 
-  // Filter out playback jitter: if the index jumped backward by <= 2 lines
-  // and time hasn't regressed significantly, keep the previous stable index.
-  // This prevents the lyric effect from briefly highlighting the wrong line.
-  if (
-    lastStableLyricIndex >= 0 &&
-    index >= 0 &&
-    index < lastStableLyricIndex &&
-    lastStableLyricIndex - index <= 2 &&
-    time >= lastStableLyricTime - 0.35
-  ) {
-    index = lastStableLyricIndex;
-  } else {
-    lastStableLyricIndex = index;
-  }
-  lastStableLyricTime = time;
+  return index;
+};
 
-  if (lyricEffectCurrentIndex.value !== index) {
-    lyricEffectCurrentIndex.value = index;
-  }
-
+const resetStableCurrentIndex = (timelineMs: number) => {
+  const index = stableLyricIndex.reset(rawCurrentIndex.value, timelineMs);
+  if (currentIndex.value !== index) currentIndex.value = index;
   return index;
 };
 
 const buildLyricEffectSnapshot = (): PluginLyricEffectSnapshot => {
   const timelineMs = getLyricTimelineMs(0);
-  const index = resolveLyricEffectCurrentIndex(timelineMs);
+  const index = currentIndex.value;
   const time = Math.max(0, (timelineMs - lyricStore.currentTimeOffset) / 1000);
 
   return {
@@ -313,10 +301,19 @@ const updateReducedMotion = () => {
   notifyLyricEffectHost();
 };
 
-const refreshLyricIndexes = () => {
-  lyricStore.updateCurrentIndex(getNowMs() / 1000);
+const isRecentSeek = () =>
+  playerStore.seekTimestamp > 0 && Date.now() - playerStore.seekTimestamp < 800;
+
+const refreshLyricIndexes = (options?: { resetStable?: boolean }) => {
+  const lyricTimelineMs = getLyricTimelineMs(0);
+  lyricStore.updateCurrentIndex((lyricTimelineMs - lyricStore.currentTimeOffset) / 1000);
+  if (options?.resetStable) {
+    resetStableCurrentIndex(lyricTimelineMs);
+  } else {
+    applyStableCurrentIndex(lyricTimelineMs);
+  }
   scrollTargetIndex.value = lyricStore.findIndexAtTimeMs(
-    getLyricTimelineMs(LYRIC_SCROLL_LOOKAHEAD_MS),
+    lyricTimelineMs + LYRIC_SCROLL_LOOKAHEAD_MS,
   );
   notifyLyricEffectHost();
 };
@@ -353,7 +350,8 @@ watch(
   () => playerStore.isPlaying,
   (playing) => {
     syncSeekAnchor();
-    refreshLyricIndexes();
+    refreshLyricIndexes({ resetStable: !playing || isRecentSeek() });
+    updateYrcDom();
     if (playing) startRaf();
     else stopRaf();
   },
@@ -363,18 +361,19 @@ watch(
   () => playerStore.currentTime,
   () => {
     syncSeekAnchor();
-    refreshLyricIndexes();
+    refreshLyricIndexes({ resetStable: isRecentSeek() });
     updateYrcDom();
   },
 );
 
 watch(
-  currentIndex,
-  () => {
+  () => playerStore.seekTimestamp,
+  (next, previous) => {
+    if (!next || next === previous) return;
+    syncSeekAnchor(true);
+    refreshLyricIndexes({ resetStable: true });
     updateYrcDom();
-    notifyLyricEffectHost();
   },
-  { flush: 'sync' },
 );
 
 onMounted(() => {
@@ -382,7 +381,8 @@ onMounted(() => {
   updateReducedMotion();
   reducedMotionQuery?.addEventListener?.('change', updateReducedMotion);
   syncSeekAnchor();
-  refreshLyricIndexes();
+  refreshLyricIndexes({ resetStable: true });
+  updateYrcDom();
   if (playerStore.isPlaying) startRaf();
   nextTick(() => {
     setupLyricEffectHost();
@@ -422,7 +422,7 @@ watch(
 watch(
   () => lyricStore.currentTimeOffset,
   async () => {
-    refreshLyricIndexes();
+    refreshLyricIndexes({ resetStable: true });
     await nextTick();
     updateYrcDom();
     notifyLyricEffectHost();
@@ -434,7 +434,7 @@ watch(
   () => [lyricStore.loadedHash, lyricStore.lines.length],
   async () => {
     resetCharRegistry();
-    refreshLyricIndexes();
+    refreshLyricIndexes({ resetStable: true });
     await nextTick();
     updateYrcDom();
     notifyLyricEffectHost();
@@ -458,7 +458,7 @@ watch(
       :class="{ 'is-collapsed': props.collapsed }"
       :style="{ fontFamily: lyricFontFamily }"
       data-echo-lyric-scroller="page"
-      :data-echo-lyric-current-index="lyricEffectCurrentIndex"
+      :data-echo-lyric-current-index="currentIndex"
       :data-echo-lyric-scroll-index="scrollIndex"
       @wheel.passive="handleLyricWheel"
     >
@@ -477,7 +477,7 @@ watch(
             :data-lyric-index="entry.index"
             data-echo-lyric-row
             :data-echo-lyric-index="entry.index"
-            :data-echo-lyric-current="lyricEffectCurrentIndex === entry.index ? 'true' : 'false'"
+            :data-echo-lyric-current="currentIndex === entry.index ? 'true' : 'false'"
             :data-echo-lyric-filtered="entry.filtered ? 'true' : 'false'"
             :data-echo-lyric-distance="entry.distance"
             :data-echo-lyric-abs-distance="entry.absDistance"
@@ -506,7 +506,7 @@ watch(
               ]"
               data-echo-lyric-line
               :data-echo-lyric-index="entry.index"
-              :data-echo-lyric-current="lyricEffectCurrentIndex === entry.index ? 'true' : 'false'"
+              :data-echo-lyric-current="currentIndex === entry.index ? 'true' : 'false'"
               :data-echo-lyric-scroll-highlight="
                 scrollHighlightIndex === entry.index ? 'true' : 'false'
               "

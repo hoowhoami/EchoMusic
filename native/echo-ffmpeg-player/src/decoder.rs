@@ -103,6 +103,12 @@ impl DecoderData {
     }
 
     pub fn seek(&mut self, position_secs: f64) -> Result<(), String> {
+        let elapsed_ms = self.seek_and_measure(position_secs)?;
+        log_seek_elapsed(position_secs, elapsed_ms);
+        Ok(())
+    }
+
+    fn seek_and_measure(&mut self, position_secs: f64) -> Result<u128, String> {
         let target = Duration::from_secs_f64(position_secs.max(0.0));
         let started = Instant::now();
         self.reader
@@ -118,21 +124,7 @@ impl DecoderData {
                 })
             })?;
         self.pending_playback_restart_position = Some(position_secs.max(0.0));
-        let elapsed_ms = started.elapsed().as_millis();
-        if elapsed_ms >= 250 {
-            emit_decode_warning(format!(
-                "decoder seek completed slowly: target={:.3}s elapsed={}ms",
-                position_secs.max(0.0),
-                elapsed_ms
-            ));
-        } else {
-            emit_decode_debug(format!(
-                "decoder seek completed: target={:.3}s elapsed={}ms",
-                position_secs.max(0.0),
-                elapsed_ms
-            ));
-        }
-        Ok(())
+        Ok(started.elapsed().as_millis())
     }
 
     /// Emit the playback-restart confirmation after the first decoded frame reaches the audio pipeline.
@@ -582,9 +574,15 @@ fn handle_decode_command(
                 return DecodeCommandResult::Ignored;
             }
             data.interrupt.store(false, Ordering::Release);
-            let result = data.seek(position_secs);
-            let _ = reply.send(result);
-            if shared.is_decode_generation_current(generation) {
+            let result = data.seek_and_measure(position_secs);
+            let generation_current = shared.is_decode_generation_current(generation);
+            if let Ok(elapsed_ms) = result.as_ref() {
+                if generation_current {
+                    log_seek_elapsed(position_secs, *elapsed_ms);
+                }
+            }
+            let _ = reply.send(result.map(|_| ()));
+            if generation_current {
                 DecodeCommandResult::Continue(generation)
             } else {
                 DecodeCommandResult::Ignored
@@ -635,4 +633,20 @@ fn emit_decode_warning(message: String) {
 
 fn emit_decode_debug(message: String) {
     crate::emit_event(PlayerEvent::log("debug", message));
+}
+
+fn log_seek_elapsed(position_secs: f64, elapsed_ms: u128) {
+    if elapsed_ms >= 250 {
+        emit_decode_warning(format!(
+            "decoder seek completed slowly: target={:.3}s elapsed={}ms",
+            position_secs.max(0.0),
+            elapsed_ms
+        ));
+    } else {
+        emit_decode_debug(format!(
+            "decoder seek completed: target={:.3}s elapsed={}ms",
+            position_secs.max(0.0),
+            elapsed_ms
+        ));
+    }
 }
