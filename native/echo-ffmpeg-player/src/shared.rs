@@ -18,6 +18,7 @@ use std::sync::mpsc::SyncSender;
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::Duration;
 
+#[cfg(test)]
 const CACHE_PAUSE_WAIT_SECS: f64 = 1.0;
 const CACHE_STATE_INACTIVE_BUCKET: u32 = u32::MAX;
 
@@ -65,12 +66,14 @@ pub struct SharedAudio {
     filter_latency_us: AtomicU64,
     speed_bits: AtomicU32,
     source_sample_format: AtomicU32,
+    decode_throughput_ratio_milli: AtomicU64,
     spectrum_sample_rate: AtomicU32,
     interrupt: Mutex<Option<Arc<AtomicBool>>>,
     signal_tx: Mutex<Option<SyncSender<PlaybackSignal>>>,
 }
 
 impl SharedAudio {
+    #[cfg(test)]
     pub fn new(
         mix_format: MixFormat,
         buffer_secs: f64,
@@ -145,6 +148,7 @@ impl SharedAudio {
             interrupt: Mutex::new(None),
             signal_tx: Mutex::new(None),
             track_seq: AtomicU64::new(0),
+            decode_throughput_ratio_milli: AtomicU64::new(0),
         }
     }
 
@@ -188,6 +192,10 @@ impl SharedAudio {
 
     pub fn mark_output_started(&self) {
         self.output_started.store(true, Ordering::Release);
+    }
+
+    pub fn output_has_started(&self) -> bool {
+        self.output_started.load(Ordering::Acquire)
     }
 
     pub fn request_decode_stop(&self) {
@@ -258,6 +266,13 @@ impl SharedAudio {
             *current = settings.clone();
         }
         self.decoded_queue_changed.notify_all();
+    }
+
+    /// Updates decoded-audio throughput relative to real-time decode requirements.
+    /// `1000` means decoding is keeping pace with real time; `0` means "unknown".
+    pub fn update_decode_throughput_ratio(&self, ratio_milli: u64) {
+        self.decode_throughput_ratio_milli
+            .store(ratio_milli, Ordering::Release);
     }
 
     pub fn is_decode_generation_current(&self, generation: u64) -> bool {
@@ -352,6 +367,8 @@ impl SharedAudio {
         self.output_underruns.store(0, Ordering::Release);
         self.underflow_buffering.store(false, Ordering::Release);
         self.resume_when_buffered.store(false, Ordering::Release);
+        self.decode_throughput_ratio_milli
+            .store(0, Ordering::Release);
         if let Ok(mut current) = self.output_stats.try_lock() {
             if let Some(stats) = current.as_mut() {
                 stats.underruns = 0.0;
@@ -709,20 +726,47 @@ impl SharedAudio {
         let min_buffer_samples = ((self.mix_format.sample_rate as f64 * adaptive_wait_secs)
             as usize)
             .saturating_mul(self.mix_format.channels.max(1));
-        min_buffer_samples
+        let desired = min_buffer_samples
+            .max(requested_samples)
+            .max(self.output_queue_capacity);
+        desired.min(self.max_buffering_resume_samples(requested_samples))
+    }
+
+    fn max_buffering_resume_samples(&self, requested_samples: usize) -> usize {
+        let channels = self.mix_format.channels.max(1);
+        let decoded_capacity_samples = (((self.decoded_queue_capacity_frames * channels) as f64)
+            / self.speed().max(0.001) as f64)
+            .round() as usize;
+        self.output_queue_capacity
+            .saturating_add(decoded_capacity_samples)
             .max(requested_samples)
             .max(self.output_queue_capacity)
     }
 
     fn adaptive_cache_pause_multiplier(&self) -> f64 {
         let underruns = self.output_underruns.load(Ordering::Acquire);
-        if underruns >= 20 {
+        let underrun_scale: f64 = if underruns >= 20 {
             3.0
         } else if underruns >= 5 {
             2.0
         } else {
             1.0
-        }
+        };
+
+        // Proactive throughput scaling: when decode throughput falls behind real time
+        // (network-bound or slow source) we increase the buffer to reduce underrun risk.
+        let ratio_milli = self.decode_throughput_ratio_milli.load(Ordering::Acquire);
+        let throughput_scale: f64 = if ratio_milli == 0 {
+            1.0 // unknown; no penalty
+        } else if ratio_milli < 500 {
+            3.0
+        } else if ratio_milli < 900 {
+            2.0
+        } else {
+            1.0
+        };
+
+        (underrun_scale.max(throughput_scale)).clamp(1.0, 5.0)
     }
 
     fn total_buffered_output_samples(&self, queued_output_samples: usize) -> usize {
@@ -939,7 +983,7 @@ impl SharedAudio {
         generation
     }
 
-    pub fn reset_filter_for_speed_change(&self, dsp_settings: &DspSettings) {
+    pub fn reset_filter_for_dsp_change(&self, dsp_settings: &DspSettings) {
         let _queue = self.output_queue_wait.lock();
         self.realtime_output.clear();
         self.filter_generation.fetch_add(1, Ordering::AcqRel);
@@ -1269,7 +1313,20 @@ mod tests {
     }
 
     #[test]
-    fn speed_filter_reset_keeps_decoded_queue_available() {
+    fn adaptive_resume_threshold_is_capped_by_queue_capacity() {
+        let shared = SharedAudio::new(
+            MixFormat::stereo_f32(100),
+            0.1,
+            1.0,
+            &DspSettings::default(),
+        );
+        shared.update_decode_throughput_ratio(400);
+
+        assert_eq!(shared.buffering_resume_threshold(4), 220);
+    }
+
+    #[test]
+    fn dsp_filter_reset_keeps_decoded_queue_available() {
         let shared = SharedAudio::new(
             MixFormat::stereo_f32(100),
             2.0,
@@ -1290,7 +1347,7 @@ mod tests {
         assert!(shared.push_decoded_chunk_for_generation(chunk.clone(), generation));
         let mut settings = DspSettings::default();
         settings.speed = 2.0;
-        shared.reset_filter_for_speed_change(&settings);
+        shared.reset_filter_for_dsp_change(&settings);
 
         assert_eq!(
             shared.pop_decoded_for_filter(shared.current_filter_generation(),),
@@ -1396,7 +1453,7 @@ mod tests {
         for _ in 0..20 {
             shared.record_output_underrun();
         }
-        assert_eq!(shared.buffering_resume_threshold(4), 600);
+        assert_eq!(shared.buffering_resume_threshold(4), 220);
         assert!(shared.push_samples(&[0.1, 0.2, 0.3, 0.4]));
         shared.mark_gapless_boundary(TrackSwitchInfo {
             url: "next.flac".to_string(),
@@ -1479,12 +1536,12 @@ mod tests {
     fn cache_pause_resume_threshold_adapts_after_output_underruns() {
         let shared = SharedAudio::new(
             MixFormat::stereo_f32(100),
-            0.2,
+            2.0,
             1.0,
             &DspSettings::default(),
         );
 
-        assert_eq!(shared.buffering_resume_threshold(4), 200);
+        assert_eq!(shared.buffering_resume_threshold(4), 400);
         for _ in 0..5 {
             shared.record_output_underrun();
         }
@@ -1506,7 +1563,7 @@ mod tests {
         for _ in 0..20 {
             shared.record_output_underrun();
         }
-        assert_eq!(shared.buffering_resume_threshold(4), 600);
+        assert_eq!(shared.buffering_resume_threshold(4), 240);
 
         shared.reset_for_decode_resume(12.0, &DspSettings::default());
 

@@ -1853,53 +1853,59 @@ fn try_seek_current_decoder(plan: &SeekPlan, position: f64) -> napi::Result<bool
     if !is_seek_plan_current(plan)? {
         return Ok(true);
     }
-    let (reply_tx, reply_rx) = sync_channel(1);
-    match sender.try_send(decoder::DecodeCommand::Seek {
-        position_secs: position,
-        generation: plan.generation,
-        reply: reply_tx,
-    }) {
-        Ok(()) => {
-            plan.shared.request_decode_interrupt();
-            emit_shared_event(
-                &plan.shared,
-                PlayerEvent::log(
-                    "debug",
-                    format!(
-                        "decoder seek command queued: target={:.3}s seq={}",
-                        position, plan.request_seq
-                    ),
-                ),
-            );
-        }
-        Err(TrySendError::Full(_)) => {
-            plan.shared.request_decode_interrupt();
-            if !is_seek_plan_current(plan)? {
-                return Ok(true);
+
+    // Retry loop for transient channel-full conditions.  The decoder drains the command
+    // queue once per decode iteration; a Full error means the decoder is mid-frame but
+    // will clear the backlog in <~20 ms.  Retrying avoids the expensive reopen path
+    // (~50 ms) when the decoder only needs a moment to catch up.
+    const SEEK_COMMAND_RETRIES: u32 = 8;
+    let reply_rx = {
+        let mut retries = 0u32;
+        loop {
+            let (reply_tx, reply_rx) = sync_channel(1);
+            match sender.try_send(decoder::DecodeCommand::Seek {
+                position_secs: position,
+                generation: plan.generation,
+                reply: reply_tx,
+            }) {
+                Ok(()) => break reply_rx,
+                Err(TrySendError::Full(_)) => {
+                    retries += 1;
+                    if retries >= SEEK_COMMAND_RETRIES || !is_seek_plan_current(plan)? {
+                        plan.shared.request_decode_interrupt();
+                        emit_shared_event(
+                            &plan.shared,
+                            PlayerEvent::log(
+                                "warn",
+                                format!(
+                                    "decoder seek command full after {retries} retries; \
+                                     falling back to reopen"
+                                ),
+                            ),
+                        );
+                        return Ok(false);
+                    }
+                    // Brief sleep so the decoder can drain its command queue.
+                    std::thread::sleep(std::time::Duration::from_millis(2));
+                }
+                Err(TrySendError::Disconnected(_)) => {
+                    if !is_seek_plan_current(plan)? {
+                        return Ok(true);
+                    }
+                    emit_shared_event(
+                        &plan.shared,
+                        PlayerEvent::log(
+                            "warn",
+                            "decoder seek command disconnected; falling back to reopen".to_string(),
+                        ),
+                    );
+                    return Ok(false);
+                }
             }
-            emit_shared_event(
-                &plan.shared,
-                PlayerEvent::log(
-                    "warn",
-                    "decoder seek command queue full; falling back to reopen".to_string(),
-                ),
-            );
-            return Ok(false);
         }
-        Err(TrySendError::Disconnected(_)) => {
-            if !is_seek_plan_current(plan)? {
-                return Ok(true);
-            }
-            emit_shared_event(
-                &plan.shared,
-                PlayerEvent::log(
-                    "warn",
-                    "decoder seek command disconnected; falling back to reopen".to_string(),
-                ),
-            );
-            return Ok(false);
-        }
-    }
+    };
+
+    plan.shared.request_decode_interrupt();
 
     match reply_rx.recv_timeout(Duration::from_secs(2)) {
         Ok(Ok(())) => {
@@ -2106,7 +2112,7 @@ impl Task for SetSpeedTask {
             };
             session
                 .shared
-                .reset_filter_for_speed_change(&runtime.dsp_settings);
+                .reset_filter_for_dsp_change(&runtime.dsp_settings);
             let position = session.shared.position_secs();
             update_runtime_audio_graph(runtime);
             emit_runtime_event(runtime, PlayerEvent::time_update(position));
@@ -2293,7 +2299,7 @@ fn reset_current_filter_if_process_format_changed(runtime: &PlayerRuntime) {
     if runtime.dsp_settings.requires_stereo_graph() && session.shared.mix_format.channels != 2 {
         session
             .shared
-            .reset_filter_for_speed_change(&runtime.dsp_settings);
+            .reset_filter_for_dsp_change(&runtime.dsp_settings);
     }
 }
 
@@ -2501,7 +2507,7 @@ fn apply_audio_graph_plan_parts(
         if let Some(session) = runtime.session.as_ref() {
             session
                 .shared
-                .reset_filter_for_speed_change(&runtime.dsp_settings);
+                .reset_filter_for_dsp_change(&runtime.dsp_settings);
             let position = session.shared.position_secs();
             update_runtime_audio_graph(runtime);
             emit_runtime_event(runtime, PlayerEvent::time_update(position));

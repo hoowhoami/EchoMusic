@@ -1,7 +1,7 @@
 mod cpal_shared;
 
 use crate::events::PlayerEvent;
-use crate::shared::SharedAudio;
+use crate::shared::{AudioSampleFormat, SharedAudio};
 use std::sync::mpsc::SyncSender;
 use std::sync::Arc;
 use std::thread::JoinHandle;
@@ -26,12 +26,22 @@ pub struct AudioOutputCapability {
     pub exclusive: bool,
     pub sample_rate: u32,
     pub channels: usize,
+    pub negotiated_format: &'static str,
     pub sample_formats: Vec<&'static str>,
 }
 
 pub trait AudioOutputBackend: Send {
     fn backend_name(&self) -> &'static str;
     fn exclusive(&self) -> bool;
+
+    /// The sample format the backend will use for its audio stream.
+    /// Returns `F32` by default; most backends prefer float internally.
+    /// Override to report a different negotiated format (e.g. when the device
+    /// does not support float).
+    fn negotiated_format(&self, _shared: &SharedAudio) -> AudioSampleFormat {
+        AudioSampleFormat::F32
+    }
+
     fn capability(&self, shared: &SharedAudio) -> AudioOutputCapability;
     fn spawn(
         self: Box<Self>,
@@ -71,6 +81,7 @@ impl AudioOutputBackend for SelectedAudioOutputBackend {
             exclusive: self.exclusive,
             sample_rate: shared.mix_format.sample_rate,
             channels: shared.mix_format.channels,
+            negotiated_format: sample_format_name(self.negotiated_format(shared)),
             sample_formats: shared
                 .source_sample_format()
                 .best_output_formats()
@@ -104,11 +115,12 @@ pub(crate) fn spawn_output_backend(
     emit(PlayerEvent::log(
         "info",
         format!(
-            "audio output backend selected: backend={}, exclusive={}, engine_sample_rate={}, engine_channels={}, sample_formats={}",
+            "audio output backend selected: backend={}, exclusive={}, engine_sample_rate={}, engine_channels={}, negotiated_format={}, sample_formats={}",
             capability.backend,
             selected_exclusive,
             capability.sample_rate,
             capability.channels,
+            capability.negotiated_format,
             capability.sample_formats.join(",")
         ),
     ));
@@ -242,6 +254,7 @@ mod tests {
         assert!(!capability.exclusive);
         assert_eq!(capability.sample_rate, 48_000);
         assert_eq!(capability.channels, 2);
+        assert_eq!(capability.negotiated_format, "f32");
         assert_eq!(capability.sample_formats[0], "s16");
     }
 }

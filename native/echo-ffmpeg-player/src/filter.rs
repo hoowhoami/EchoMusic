@@ -1,4 +1,4 @@
-use crate::audio_graph::AudioFilterGraph;
+use crate::audio_graph::{process_format_for_output, AudioFilterGraph};
 use crate::shared::{FilterInput, SharedAudio};
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
@@ -12,6 +12,7 @@ pub fn spawn_filter_thread(shared: Arc<SharedAudio>) -> JoinHandle<()> {
 
 fn run_filter(shared: Arc<SharedAudio>) {
     let mut generation = shared.current_filter_generation();
+    let mut decode_generation = shared.current_decode_generation();
     let mut graph = match AudioFilterGraph::new(shared.mix_format, &shared.dsp_settings()) {
         Ok(graph) => graph,
         Err(err) => {
@@ -27,13 +28,34 @@ fn run_filter(shared: Arc<SharedAudio>) {
         if shared.stop.load(std::sync::atomic::Ordering::Acquire) {
             return;
         }
-        let current_generation = shared.current_filter_generation();
-        if current_generation != generation {
-            generation = current_generation;
-            if let Err(err) = graph.reset(shared.mix_format, &shared.dsp_settings()) {
-                shared.mark_decode_failed();
-                crate::decoder::emit_decode_error(err);
-                return;
+        let current_filter_gen = shared.current_filter_generation();
+        if current_filter_gen != generation {
+            let current_decode_gen = shared.current_decode_generation();
+            let settings = shared.dsp_settings();
+
+            // A decoder reset (seek / new track) always bumps decode_generation and requires
+            // a full graph rebuild.  For pure filter-only generation bumps we can skip the
+            // rebuild if the internal processing format has not changed.
+            let structural = current_decode_gen != decode_generation
+                || process_format_for_output(shared.mix_format, &settings)
+                    != graph.process_format();
+
+            decode_generation = current_decode_gen;
+            generation = current_filter_gen;
+
+            if structural {
+                if let Err(err) = graph.reset(shared.mix_format, &settings) {
+                    shared.mark_decode_failed();
+                    crate::decoder::emit_decode_error(err);
+                    return;
+                }
+            } else {
+                // Process format unchanged; update runtime DSP settings in place.
+                if let Err(err) = graph.update_settings(&settings) {
+                    shared.mark_decode_failed();
+                    crate::decoder::emit_decode_error(err);
+                    return;
+                }
             }
             shared.set_filter_latency_secs(graph.latency_secs());
             output.clear();

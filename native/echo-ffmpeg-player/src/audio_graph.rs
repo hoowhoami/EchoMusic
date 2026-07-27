@@ -123,10 +123,8 @@ pub struct AudioGraphPlanPatch {
     pub patches: Vec<AudioGraphParameterPatch>,
 }
 
-pub fn snapshot_filter_graph(
-    output_format: MixFormat,
-    settings: &DspSettings,
-) -> AudioGraphSnapshot {
+#[cfg(test)]
+fn snapshot_filter_graph(output_format: MixFormat, settings: &DspSettings) -> AudioGraphSnapshot {
     snapshot_filter_graph_with_device_output(output_format, settings, None)
 }
 
@@ -367,6 +365,15 @@ impl AudioFilterGraph {
         Ok(())
     }
 
+    /// Apply DSP setting changes without rebuilding the graph or sample converter.
+    /// The output ring must already have been cleared by the caller so that source-frame tracking
+    /// remains consistent. Does **not** recreate `SwrMixConverter`, `DspChain`, or internal buffers.
+    pub fn update_settings(&mut self, settings: &DspSettings) -> Result<(), String> {
+        self.tempo.set_speed(settings.speed)?;
+        self.effects.update_settings(settings);
+        Ok(())
+    }
+
     pub fn process_decoded(
         &mut self,
         chunk: &DecodedAudioChunk,
@@ -423,6 +430,13 @@ impl AudioFilterGraph {
         Ok(source_frames)
     }
 
+    /// The internal processing format (sample rate and channel layout) that the graph currently
+    /// operates in.  Used by the filter thread to decide whether a generation bump requires a
+    /// full graph rebuild or can be handled via a lightweight parameter update.
+    pub fn process_format(&self) -> MixFormat {
+        self.process_format
+    }
+
     pub fn latency_secs(&self) -> f64 {
         self.tempo.latency_secs(self.process_format.sample_rate) + self.effects.latency_secs()
     }
@@ -465,7 +479,7 @@ impl AudioFilterGraph {
     }
 }
 
-fn process_format_for_output(output_format: MixFormat, settings: &DspSettings) -> MixFormat {
+pub fn process_format_for_output(output_format: MixFormat, settings: &DspSettings) -> MixFormat {
     if filter_nodes_for_settings(settings)
         .iter()
         .any(|node| node.channels == ChannelRequirement::Stereo)
@@ -914,7 +928,7 @@ mod tests {
         let mut graph =
             AudioFilterGraph::new(MixFormat::stereo_f32(48_000), &DspSettings::default())
                 .expect("graph should initialize");
-        let frames = 1024usize;
+        let frames = 48_000usize;
         let mut samples = Vec::with_capacity(frames * MIX_CHANNELS);
         for frame in 0..frames {
             let value = frame as f32 / frames as f32;
@@ -956,5 +970,98 @@ mod tests {
         assert!(soft_limit_sample(1.5) > 0.95);
         assert!(soft_limit_sample(-1.5) > -1.0);
         assert!(soft_limit_sample(-1.5) < -0.95);
+    }
+
+    #[test]
+    fn update_settings_preserves_process_format_and_changes_tempo() {
+        let mut graph =
+            AudioFilterGraph::new(MixFormat::stereo_f32(48_000), &DspSettings::default())
+                .expect("graph should initialize");
+        let original_format = graph.process_format();
+
+        let mut settings = DspSettings::default();
+        settings.speed = 2.0;
+
+        // update_settings should NOT rebuild the graph; process_format must stay the same.
+        graph
+            .update_settings(&settings)
+            .expect("update_settings should succeed");
+        assert_eq!(
+            graph.process_format(),
+            original_format,
+            "process_format must not change after a lightweight speed update"
+        );
+
+        // After a full reset with the same settings, process_format should match as well.
+        graph
+            .reset(MixFormat::stereo_f32(48_000), &DspSettings::default())
+            .expect("reset should succeed");
+        assert_eq!(
+            graph.process_format(),
+            original_format,
+            "process_format must match after a full reset with identical settings"
+        );
+
+        // Verify that the speed actually took effect by processing audio.
+        let frames = 48_000usize;
+        let mut samples = Vec::with_capacity(frames * MIX_CHANNELS);
+        for frame in 0..frames {
+            let value = frame as f32 / frames as f32;
+            samples.push(value);
+            samples.push(value);
+        }
+        let chunk = DecodedAudioChunk::new(
+            DecodedAudioFormat {
+                sample_rate: 48_000,
+                sample_format: AudioSampleFormat::F32,
+                channels: 2,
+            },
+            frames,
+            None,
+            DecodedAudioData::F32(samples),
+        );
+
+        // Process at 1x speed with fresh graph.
+        let mut graph_1x =
+            AudioFilterGraph::new(MixFormat::stereo_f32(48_000), &DspSettings::default())
+                .expect("graph should initialize");
+        let mut out_1x = Vec::new();
+        graph_1x
+            .process_decoded(&chunk, &DspSettings::default(), &mut out_1x)
+            .expect("1x process should succeed");
+        let mut tail_1x = Vec::new();
+        graph_1x
+            .finish(&DspSettings::default(), &mut tail_1x)
+            .expect("1x finish should succeed");
+        out_1x.extend(tail_1x);
+
+        // Same input, same graph, but update_settings(2.0 speed) before processing.
+        let mut graph_2x =
+            AudioFilterGraph::new(MixFormat::stereo_f32(48_000), &DspSettings::default())
+                .expect("graph should initialize");
+        let mut settings_2x = DspSettings::default();
+        settings_2x.speed = 2.0;
+        graph_2x
+            .update_settings(&settings_2x)
+            .expect("update_settings should succeed");
+        let mut out_2x = Vec::new();
+        graph_2x
+            .process_decoded(&chunk, &settings_2x, &mut out_2x)
+            .expect("2x process should succeed");
+        let mut tail_2x = Vec::new();
+        graph_2x
+            .finish(&settings_2x, &mut tail_2x)
+            .expect("2x finish should succeed");
+        out_2x.extend(tail_2x);
+
+        // 2x speed should produce fewer output frames. The exact byte count depends on
+        // SoundTouch internals, but the key invariant is that update_settings updates tempo
+        // without changing the graph process format.
+        assert!(
+            out_2x.len() < out_1x.len(),
+            "2x speed should produce less output than 1x speed: {} vs {}",
+            out_2x.len(),
+            out_1x.len()
+        );
     }
 }

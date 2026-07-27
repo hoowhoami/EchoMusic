@@ -58,19 +58,36 @@ pub fn spawn_output_thread(
     device_name: String,
     shared: Arc<SharedAudio>,
     emit: fn(PlayerEvent),
-    mut start_notify: Option<OutputStartSender>,
+    start_notify: Option<OutputStartSender>,
 ) -> JoinHandle<()> {
     thread::spawn(move || {
-        if let Err(message) =
-            run_exclusive_output(&device_name, shared.clone(), emit, &mut start_notify)
-        {
-            let startup_failure = report_output_start_failure(&mut start_notify, message.clone());
-            shared.request_output_stop();
-            if !startup_failure {
-                emit(PlayerEvent::error(
-                    PlayerErrorCode::OutputExclusive,
-                    message,
+        let mut start_notify = start_notify;
+        match run_exclusive_output(&device_name, shared.clone(), emit, &mut start_notify) {
+            Ok(()) => {}
+            Err(message) if !shared.output_has_started() => {
+                emit(PlayerEvent::log(
+                    "warn",
+                    format!("CoreAudio exclusive failed: {message}; falling back to CPAL shared"),
                 ));
+                let cpal_handle = super::cpal_shared::spawn_shared_output_thread(
+                    device_name,
+                    false,
+                    shared,
+                    emit,
+                    start_notify,
+                );
+                let _ = cpal_handle.join();
+            }
+            Err(message) => {
+                let startup_failure =
+                    report_output_start_failure(&mut start_notify, message.clone());
+                shared.request_output_stop();
+                if !startup_failure {
+                    emit(PlayerEvent::error(
+                        PlayerErrorCode::OutputExclusive,
+                        message,
+                    ));
+                }
             }
         }
     })

@@ -118,23 +118,52 @@ pub fn spawn_output_thread(
     exclusive: bool,
     shared: Arc<SharedAudio>,
     emit: fn(PlayerEvent),
-    mut start_notify: Option<OutputStartSender>,
+    start_notify: Option<OutputStartSender>,
 ) -> JoinHandle<()> {
     thread::spawn(move || {
-        if let Err(message) = run_wasapi_output(
+        let mut start_notify = start_notify;
+        let requested_mode = WasapiShareMode::from_exclusive(exclusive);
+        match run_wasapi_output(
             &device_name,
-            WasapiShareMode::from_exclusive(exclusive),
+            requested_mode,
             shared.clone(),
             emit,
             &mut start_notify,
         ) {
-            let startup_failure = report_output_start_failure(&mut start_notify, message.clone());
-            shared.request_output_stop();
-            if !startup_failure {
-                emit(PlayerEvent::error(
-                    WasapiShareMode::from_exclusive(exclusive).error_code(),
-                    message,
+            Ok(()) => {}
+            Err(message) if exclusive && !shared.output_has_started() => {
+                emit(PlayerEvent::log(
+                    "warn",
+                    format!("WASAPI exclusive failed: {message}; falling back to WASAPI shared"),
                 ));
+                match run_wasapi_output(
+                    &device_name,
+                    WasapiShareMode::Shared,
+                    shared.clone(),
+                    emit,
+                    &mut start_notify,
+                ) {
+                    Ok(()) => {}
+                    Err(msg) => {
+                        let startup_failure =
+                            report_output_start_failure(&mut start_notify, msg.clone());
+                        shared.request_output_stop();
+                        if !startup_failure {
+                            emit(PlayerEvent::error(
+                                WasapiShareMode::Shared.error_code(),
+                                msg,
+                            ));
+                        }
+                    }
+                }
+            }
+            Err(message) => {
+                let startup_failure =
+                    report_output_start_failure(&mut start_notify, message.clone());
+                shared.request_output_stop();
+                if !startup_failure {
+                    emit(PlayerEvent::error(requested_mode.error_code(), message));
+                }
             }
         }
     })
