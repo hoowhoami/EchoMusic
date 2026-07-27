@@ -92,7 +92,12 @@ export function useVirtualList(options: UseVirtualListOptions) {
     const containerEl = containerRef.value;
 
     if (!scrollContainer || !containerEl) {
-      const fallbackEnd = Math.min(totalCount, overscan.value * 4);
+      const viewportHeight =
+        typeof window !== 'undefined' && Number.isFinite(window.innerHeight)
+          ? Math.max(1, window.innerHeight)
+          : currentItemSize;
+      const estimatedVisible = Math.max(1, Math.ceil(viewportHeight / Math.max(1, stride.value)));
+      const fallbackEnd = Math.min(totalCount, estimatedVisible + overscan.value);
       if (visibleStart.value !== 0) visibleStart.value = 0;
       if (visibleEnd.value !== fallbackEnd) visibleEnd.value = fallbackEnd;
       return;

@@ -197,6 +197,7 @@ onMounted(async () => {
 
   await waitForSqlitePersistHydration();
   settings.ensureShortcutDefaults();
+  await settings.hydrateLogSettings();
   await Promise.all([playlistStore.hydratePlaybackStateFromStorage(), historyStore.hydrate()]);
   player.init();
 

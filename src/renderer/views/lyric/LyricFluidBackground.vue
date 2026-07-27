@@ -15,6 +15,11 @@ const canvas4 = ref<HTMLCanvasElement | null>(null);
 const viewWidth = ref(0);
 const viewHeight = ref(0);
 const fluidSeed = ref(0);
+let pendingRefreshFrame = 0;
+let pendingRefreshTimer: number | null = null;
+let activeImage: HTMLImageElement | null = null;
+let refreshSeq = 0;
+const FLUID_BACKGROUND_SETTLE_MS = 180;
 
 const hashString = (value: string) => {
   let hash = 0;
@@ -46,6 +51,22 @@ const updateCanvasLayout = () => {
   viewHeight.value = window.innerHeight;
 };
 
+const clearCanvases = () => {
+  [canvas1.value, canvas2.value, canvas3.value, canvas4.value].forEach((canvas) => {
+    const context = canvas?.getContext('2d');
+    if (!canvas || !context) return;
+    context.clearRect(0, 0, canvas.width, canvas.height);
+  });
+};
+
+const cancelActiveImageLoad = () => {
+  if (!activeImage) return;
+  activeImage.onload = null;
+  activeImage.onerror = null;
+  activeImage.src = '';
+  activeImage = null;
+};
+
 const drawCanvas = (
   canvas: HTMLCanvasElement | null,
   image: HTMLImageElement,
@@ -64,25 +85,51 @@ const drawCanvas = (
 };
 
 const refreshCanvases = () => {
-  if (!props.enabled || !props.coverUrl) return;
+  const seq = ++refreshSeq;
+  cancelActiveImageLoad();
+  if (!props.enabled || !props.coverUrl) {
+    clearCanvases();
+    return;
+  }
 
   const image = new Image();
+  activeImage = image;
   image.crossOrigin = 'anonymous';
   image.onload = () => {
+    if (seq !== refreshSeq || activeImage !== image) return;
     drawCanvas(canvas1.value, image, 0, 0);
     drawCanvas(canvas2.value, image, image.width / 2, 0);
     drawCanvas(canvas3.value, image, 0, image.height / 2);
     drawCanvas(canvas4.value, image, image.width / 2, image.height / 2);
     fluidSeed.value = hashString(props.coverUrl) % 1000;
+    activeImage = null;
+  };
+  image.onerror = () => {
+    if (activeImage === image) activeImage = null;
   };
   image.src = props.coverUrl;
+};
+
+const scheduleRefreshCanvases = () => {
+  if (pendingRefreshTimer !== null) {
+    window.clearTimeout(pendingRefreshTimer);
+    pendingRefreshTimer = null;
+  }
+  if (pendingRefreshFrame) cancelAnimationFrame(pendingRefreshFrame);
+  pendingRefreshTimer = window.setTimeout(() => {
+    pendingRefreshTimer = null;
+    pendingRefreshFrame = requestAnimationFrame(() => {
+      pendingRefreshFrame = 0;
+      refreshCanvases();
+    });
+  }, FLUID_BACKGROUND_SETTLE_MS);
 };
 
 watch(
   () => [props.enabled, props.coverUrl],
   () => {
     updateCanvasLayout();
-    requestAnimationFrame(refreshCanvases);
+    scheduleRefreshCanvases();
   },
   { immediate: true },
 );
@@ -94,6 +141,17 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
+  refreshSeq += 1;
+  if (pendingRefreshTimer !== null) {
+    window.clearTimeout(pendingRefreshTimer);
+    pendingRefreshTimer = null;
+  }
+  if (pendingRefreshFrame) {
+    cancelAnimationFrame(pendingRefreshFrame);
+    pendingRefreshFrame = 0;
+  }
+  cancelActiveImageLoad();
+  clearCanvases();
   window.removeEventListener('resize', updateCanvasLayout);
 });
 </script>

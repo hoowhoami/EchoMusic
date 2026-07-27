@@ -24,7 +24,7 @@ import { applyDesktopAppIcon, applyTaskbarShortcutIcon, refreshAppIconConfig } f
 import { setupThumbarButtons } from './thumbar';
 import { setupTaskbarThumbnail, destroyTaskbarThumbnail } from './taskbarThumbnail';
 import { configureApplicationMenu, configureWebContentsShortcuts } from './applicationMenu';
-import { logMainMemory } from './memoryDiagnostics';
+import { logMainMemory } from './diagnostics/memory';
 import {
   flushPendingShareTargets,
   openShareUrl,
@@ -232,6 +232,7 @@ if (!gotTheLock) {
     if (isExiting) return;
     isExiting = true;
     event.preventDefault();
+    stopEventLoopMonitor();
     log.info('[Main] before-quit: hiding windows and scheduling cleanup');
 
     // 先在主窗口 HWND 仍有效时关闭 DWM iconic 缩略图，避免任务栏保留等待位图的缓存状态。

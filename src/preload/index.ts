@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer, webUtils } from 'electron';
+import { contextBridge, ipcRenderer, webFrame, webUtils } from 'electron';
 import log from 'electron-log/renderer';
 import type { ApiServerStatus } from '../shared/api-server';
 import type { AppInfoResult, UpdateDownloadResult, UpdateState } from '../shared/app';
@@ -43,6 +43,13 @@ import type {
 } from '../shared/player-audio-graph';
 import type { ResolvePlaylistRequest, ResolvePlaylistResponse } from '../shared/external';
 import type { ShareCaptureRect, ShareTarget } from '../shared/share';
+import type {
+  DiagnosticsAppProcessMetric,
+  DiagnosticsMemorySnapshot,
+  DiagnosticsNodeMemory,
+  DiagnosticsResourceUsage,
+  DiagnosticsResourceUsageEntry,
+} from '../shared/diagnostics';
 import type {
   PluginAssetSourceResult,
   PluginAppIconRefreshResult,
@@ -128,6 +135,9 @@ const ipcListenerMap = new Map<
   string,
   WeakMap<(...args: any[]) => void, (...args: any[]) => void>
 >();
+const RENDERER_CONSOLE_LOG_LEVEL = 'info';
+
+log.transports.console.level = RENDERER_CONSOLE_LOG_LEVEL;
 
 const getWrappedListener = (channel: string, func: (...args: any[]) => void) => {
   let channelMap = ipcListenerMap.get(channel);
@@ -142,6 +152,89 @@ const getWrappedListener = (channel: string, func: (...args: any[]) => void) => 
   const wrapped = (_event: Electron.IpcRendererEvent, ...args: any[]) => func(...args);
   channelMap.set(func, wrapped);
   return wrapped;
+};
+
+const toMbFromKb = (kb: unknown) =>
+  typeof kb === 'number' && Number.isFinite(kb) ? Math.round((kb / 1024) * 10) / 10 : null;
+
+const toMbFromBytes = (bytes: unknown) =>
+  typeof bytes === 'number' && Number.isFinite(bytes)
+    ? Math.round((bytes / 1024 / 1024) * 10) / 10
+    : null;
+
+const getRendererProcessMemory = async () => {
+  try {
+    const info = (await process.getProcessMemoryInfo()) as unknown as Record<
+      string,
+      number | undefined
+    >;
+    const privateMb = toMbFromKb(info.private ?? info.privateBytes);
+    const sharedMb = toMbFromKb(info.shared ?? info.sharedBytes);
+    return {
+      workingSetMb: toMbFromKb(info.workingSetSize),
+      peakWorkingSetMb: toMbFromKb(info.peakWorkingSetSize),
+      privateMb,
+      sharedMb,
+      residentSetMb: toMbFromKb(info.residentSet),
+    };
+  } catch {
+    return null;
+  }
+};
+
+const getPerformanceMemory = () => {
+  const memory = (
+    performance as Performance & {
+      memory?: {
+        usedJSHeapSize?: number;
+        totalJSHeapSize?: number;
+        jsHeapSizeLimit?: number;
+      };
+    }
+  ).memory;
+  if (!memory) return null;
+  return {
+    usedJsHeapMb: toMbFromBytes(memory.usedJSHeapSize),
+    totalJsHeapMb: toMbFromBytes(memory.totalJSHeapSize),
+    jsHeapLimitMb: toMbFromBytes(memory.jsHeapSizeLimit),
+  };
+};
+
+const getRendererNodeMemory = (): DiagnosticsNodeMemory | null => {
+  try {
+    if (typeof process.memoryUsage !== 'function') return null;
+    const usage = process.memoryUsage();
+    return {
+      rssMb: toMbFromBytes(usage.rss),
+      heapTotalMb: toMbFromBytes(usage.heapTotal),
+      heapUsedMb: toMbFromBytes(usage.heapUsed),
+      externalMb: toMbFromBytes(usage.external),
+      arrayBuffersMb: toMbFromBytes(usage.arrayBuffers),
+    };
+  } catch {
+    return null;
+  }
+};
+
+const normalizeResourceUsageEntry = (value: unknown): DiagnosticsResourceUsageEntry => {
+  const record =
+    value && typeof value === 'object' ? (value as Record<string, unknown>) : Object.create(null);
+  return {
+    count: typeof record.count === 'number' ? record.count : null,
+    sizeMb: toMbFromBytes(record.size),
+    liveSizeMb: toMbFromBytes(record.liveSize),
+  };
+};
+
+const getResourceUsage = (): DiagnosticsResourceUsage | null => {
+  try {
+    const usage = webFrame.getResourceUsage() as unknown as Record<string, unknown>;
+    return Object.fromEntries(
+      Object.entries(usage).map(([key, value]) => [key, normalizeResourceUsageEntry(value)]),
+    );
+  } catch {
+    return null;
+  }
 };
 
 const toPlainIpcPayload = <T>(value: T): T => {
@@ -212,6 +305,7 @@ contextBridge.exposeInMainWorld('electron', {
   appInfo: {
     get: () => ipcRenderer.invoke('app:get-info') as Promise<AppInfoResult>,
     getChangelog: () => ipcRenderer.invoke('app:get-changelog') as Promise<string>,
+    relaunch: () => ipcRenderer.invoke('app:relaunch') as Promise<boolean>,
     onOpenSettings: (func: () => void) => {
       const listener = () => func();
       ipcRenderer.on('app:open-settings', listener);
@@ -254,6 +348,20 @@ contextBridge.exposeInMainWorld('electron', {
   apiServer: {
     start: () => ipcRenderer.invoke('api-server:start'),
     status: () => ipcRenderer.invoke('api-server:status') as Promise<ApiServerStatus>,
+  },
+  diagnostics: {
+    getMemory: async (label?: string): Promise<DiagnosticsMemorySnapshot> => ({
+      capturedAt: Date.now(),
+      label,
+      rendererPid: process.pid,
+      renderer: await getRendererProcessMemory(),
+      rendererNode: getRendererNodeMemory(),
+      performance: getPerformanceMemory(),
+      resources: getResourceUsage(),
+      appProcesses: (await ipcRenderer.invoke(
+        'diagnostics:get-app-memory',
+      )) as DiagnosticsAppProcessMetric[],
+    }),
   },
   api: {
     request: (config: {

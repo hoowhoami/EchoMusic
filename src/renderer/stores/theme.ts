@@ -6,6 +6,7 @@ import {
   extractDominantColor,
   getNormalizedAccent,
   hexToRgb,
+  waitForAbortableDelay,
 } from '@/utils/color';
 
 export type AccentMode = 'cover' | 'preset' | 'custom';
@@ -20,6 +21,8 @@ const resolveCoverColorSources = (coverUrl: CoverColorSource): string[] => {
 };
 
 let coverColorRequestSeq = 0;
+let coverColorAbortController: AbortController | null = null;
+const COVER_COLOR_SETTLE_MS = 180;
 
 export const useThemeStore = defineStore('theme', {
   state: () => ({
@@ -106,19 +109,30 @@ export const useThemeStore = defineStore('theme', {
     // 提取当前封面颜色，供歌词页单独使用
     async refreshCoverColor(coverUrl: CoverColorSource): Promise<string | null> {
       const seq = ++coverColorRequestSeq;
+      coverColorAbortController?.abort();
+      const abortController = new AbortController();
+      coverColorAbortController = abortController;
       const urls = resolveCoverColorSources(coverUrl);
       if (urls.length === 0) {
+        if (coverColorAbortController === abortController) coverColorAbortController = null;
         this.coverColor = DEFAULT_ACCENT;
         return this.coverColor;
       }
 
+      const shouldExtract = await waitForAbortableDelay(
+        COVER_COLOR_SETTLE_MS,
+        abortController.signal,
+      );
+      if (!shouldExtract || seq !== coverColorRequestSeq) return null;
+
       let extracted: string | null = null;
       for (const url of urls) {
-        extracted = await extractDominantColor(url);
-        if (seq !== coverColorRequestSeq) return null;
+        extracted = await extractDominantColor(url, { signal: abortController.signal });
+        if (seq !== coverColorRequestSeq || abortController.signal.aborted) return null;
         if (extracted) break;
       }
 
+      if (coverColorAbortController === abortController) coverColorAbortController = null;
       this.coverColor = extracted || DEFAULT_ACCENT;
       return this.coverColor;
     },

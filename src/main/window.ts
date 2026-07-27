@@ -18,7 +18,7 @@ import { getActiveWindowMode, setActiveWindowMode } from './windowMode';
 import { isPluginRendererGoneFailureReason, reportPluginRendererFailure } from './plugins';
 import { ipcRegistry } from './ipc/registry';
 import { applyWindowAppIcon, resolveWindowIconPath } from './appIcons';
-import { logMainMemory } from './memoryDiagnostics';
+import { logMainMemory } from './diagnostics/memory';
 
 const minWidth: number = 1100;
 const defaultWidth: number = 1150;

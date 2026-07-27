@@ -6,6 +6,7 @@ import {
   getEffectiveLogLevel,
   isDiagnosticActive,
   normalizeLogSettings,
+  type AppLogLevel,
   type LogSettings,
 } from '../shared/logging';
 import { getPersistedLogSettings, setPersistedLogSettings } from './storage/settings';
@@ -16,7 +17,43 @@ const MAX_LOG_SIZE = 5 * 1024 * 1024;
 /** 日志保留天数 */
 const LOG_RETENTION_DAYS = 7;
 
-let currentLogSettings = normalizeLogSettings(getPersistedLogSettings());
+const DIAGNOSTICS_ENV = 'ECHOMUSIC_DIAGNOSTICS';
+const LEGACY_MEMORY_DIAGNOSTICS_ENV = 'ECHOMUSIC_MEMORY_DIAGNOSTICS';
+const DIAGNOSTICS_DURATION_ENV = 'ECHOMUSIC_DIAGNOSTICS_MINUTES';
+const DEFAULT_STARTUP_DIAGNOSTIC_MINUTES = 10;
+const DEVELOPMENT_CONSOLE_LOG_LEVEL: AppLogLevel = 'info';
+const PACKAGED_CONSOLE_LOG_LEVEL: AppLogLevel = 'warn';
+
+const isTruthyEnv = (name: string) => {
+  const value = String(process.env[name] ?? '')
+    .trim()
+    .toLowerCase();
+  return value === '1' || value === 'true' || value === 'yes';
+};
+
+const isStartupDiagnosticRequested = () =>
+  isTruthyEnv(DIAGNOSTICS_ENV) ||
+  isTruthyEnv(LEGACY_MEMORY_DIAGNOSTICS_ENV) ||
+  process.argv.includes('--diagnostics');
+
+const getStartupDiagnosticMinutes = () => {
+  const minutes = Number(process.env[DIAGNOSTICS_DURATION_ENV]);
+  return Number.isFinite(minutes) && minutes > 0
+    ? Math.min(24 * 60, minutes)
+    : DEFAULT_STARTUP_DIAGNOSTIC_MINUTES;
+};
+
+const getInitialLogSettings = (): LogSettings => {
+  const settings = normalizeLogSettings(getPersistedLogSettings());
+  if (isDiagnosticActive(settings)) return settings;
+  if (!isStartupDiagnosticRequested()) return settings;
+  return {
+    ...settings,
+    diagnosticUntil: Date.now() + getStartupDiagnosticMinutes() * 60 * 1000,
+  };
+};
+
+let currentLogSettings = getInitialLogSettings();
 let loggerInitialized = false;
 let diagnosticTimer: NodeJS.Timeout | null = null;
 
@@ -114,7 +151,10 @@ export function applyLogSettings(settings?: Partial<LogSettings> | null, persist
 
   const effectiveLevel = getEffectiveLogLevel(currentLogSettings);
   log.transports.file.level = effectiveLevel;
-  log.transports.console.level = app.isPackaged ? 'warn' : effectiveLevel;
+  log.transports.console.level = app.isPackaged
+    ? PACKAGED_CONSOLE_LOG_LEVEL
+    : DEVELOPMENT_CONSOLE_LOG_LEVEL;
+  log.transports.ipc.level = false;
 
   const remainingMs = currentLogSettings.diagnosticUntil - Date.now();
   if (remainingMs > 0) {

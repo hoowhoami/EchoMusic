@@ -33,7 +33,34 @@ let nativeModule: NativeMediaControls | null = null;
 // 封面下载中止控制器
 let coverAbortController: AbortController | null = null;
 let metadataUpdateSeq = 0;
+let lastCoverCache: { url: string; data: Buffer | null } | null = null;
+let activeCoverDownload: { url: string; promise: Promise<Buffer | null> } | null = null;
 const nativeRequire = createRequire(path.join(process.cwd(), 'package.json'));
+const METADATA_COVER_SETTLE_MS = 120;
+
+const isAbortError = (error: unknown) =>
+  error instanceof Error && (error.name === 'AbortError' || error.message === 'AbortError');
+
+const waitForAbortableDelay = (ms: number, signal: AbortSignal) =>
+  new Promise<boolean>((resolve) => {
+    if (signal.aborted) {
+      resolve(false);
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      signal.removeEventListener('abort', handleAbort);
+      resolve(true);
+    }, ms);
+
+    function handleAbort() {
+      clearTimeout(timer);
+      signal.removeEventListener('abort', handleAbort);
+      resolve(false);
+    }
+
+    signal.addEventListener('abort', handleAbort, { once: true });
+  });
 
 /** 加载 native addon */
 function loadNativeModule(): NativeMediaControls | null {
@@ -72,13 +99,12 @@ async function downloadCoverImage(url: string, signal?: AbortSignal): Promise<Bu
   if (!url) return null;
 
   try {
-    log.debug('[MediaControls] Starting cover download', { url });
-
     const controller = new AbortController();
     let timeout: NodeJS.Timeout | null = setTimeout(() => controller.abort(), 5000);
+    const abortDownload = () => controller.abort();
 
     if (signal) {
-      signal.addEventListener('abort', () => controller.abort(), { once: true });
+      signal.addEventListener('abort', abortDownload, { once: true });
     }
 
     try {
@@ -100,18 +126,37 @@ async function downloadCoverImage(url: string, signal?: AbortSignal): Promise<Bu
       const arrayBuffer = await response.arrayBuffer();
       const buffer = Buffer.from(arrayBuffer);
 
-      log.debug('[MediaControls] Cover download completed', { size: buffer.length, url });
       return buffer;
     } finally {
+      signal?.removeEventListener('abort', abortDownload);
       if (timeout) {
         clearTimeout(timeout);
         timeout = null;
       }
     }
   } catch (err) {
+    if (isAbortError(err)) {
+      return null;
+    }
     log.warn('[MediaControls] Cover download exception:', err);
     return null;
   }
+}
+
+async function resolveCoverImage(url: string, signal?: AbortSignal): Promise<Buffer | null> {
+  if (!url) return null;
+  if (lastCoverCache?.url === url) return lastCoverCache.data;
+  if (activeCoverDownload?.url === url) return activeCoverDownload.promise;
+
+  const promise = downloadCoverImage(url, signal).then((data) => {
+    if (activeCoverDownload?.url === url) {
+      activeCoverDownload = null;
+      lastCoverCache = { url, data };
+    }
+    return data;
+  });
+  activeCoverDownload = { url, promise };
+  return promise;
 }
 
 /** 初始化原生媒体控制服务 */
@@ -160,29 +205,34 @@ export function initMediaControls(getMainWindow: () => BrowserWindow | null): vo
       if (!controls) return;
       const requestSeq = ++metadataUpdateSeq;
 
-      log.debug('[MediaControls] Metadata update received', {
-        title: payload.title,
-        artist: payload.artist,
-        hasCoverUrl: !!payload.coverUrl,
-        durationMs: payload.durationMs,
-      });
-
-      // 取消上一次封面下载
-      if (coverAbortController) {
+      // 取消不同封面的上一次下载；相同 URL 的并发请求复用同一个下载结果。
+      if (coverAbortController && activeCoverDownload?.url !== payload.coverUrl) {
         coverAbortController.abort();
+        activeCoverDownload = null;
       }
-      const coverController = new AbortController();
-      coverAbortController = coverController;
+      let coverController: AbortController | null = null;
 
       let coverData: Buffer | null = null;
       if (payload.coverUrl) {
-        log.debug('[MediaControls] Starting cover download', { url: payload.coverUrl });
-        coverData = await downloadCoverImage(payload.coverUrl, coverController.signal);
-        log.debug('[MediaControls] Cover download result', {
-          success: !!coverData,
-          size: coverData?.length ?? 0,
-          url: payload.coverUrl,
-        });
+        if (activeCoverDownload?.url === payload.coverUrl) {
+          coverData = await resolveCoverImage(payload.coverUrl);
+        } else {
+          coverController = new AbortController();
+          coverAbortController = coverController;
+          const shouldDownloadCover = await waitForAbortableDelay(
+            METADATA_COVER_SETTLE_MS,
+            coverController.signal,
+          );
+          if (!shouldDownloadCover || requestSeq !== metadataUpdateSeq) {
+            if (coverAbortController === coverController) coverAbortController = null;
+            return;
+          }
+          coverData = await resolveCoverImage(payload.coverUrl, coverController.signal);
+        }
+      }
+
+      if (coverController && coverAbortController === coverController) {
+        coverAbortController = null;
       }
 
       if (requestSeq !== metadataUpdateSeq) {
@@ -191,9 +241,6 @@ export function initMediaControls(getMainWindow: () => BrowserWindow | null): vo
           url: payload.coverUrl,
         });
         return;
-      }
-      if (coverAbortController === coverController) {
-        coverAbortController = null;
       }
 
       // 任务栏 DWM 缩略图需要及时响应系统请求，不能被 SMTC 的异步元数据更新挡住。
@@ -280,6 +327,8 @@ export function destroyMediaControls(): void {
     coverAbortController.abort();
     coverAbortController = null;
   }
+  activeCoverDownload = null;
+  lastCoverCache = null;
   try {
     nativeModule?.shutdown();
   } catch {

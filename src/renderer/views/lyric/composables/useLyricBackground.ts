@@ -1,5 +1,5 @@
-import { ref, watch, type ComputedRef } from 'vue';
-import { extractDominantColor, getNormalizedAccent } from '@/utils/color';
+import { onScopeDispose, ref, watch, type ComputedRef } from 'vue';
+import { extractDominantColor, getNormalizedAccent, waitForAbortableDelay } from '@/utils/color';
 import { coverFallbackRevision } from '@/plugins/coverFallback';
 import { resolveCoverColorUrls } from '@/utils/cover';
 
@@ -62,25 +62,39 @@ const darkenForBackground = (hex: string): string => {
   return `#${toHex(rr)}${toHex(gg)}${toHex(bb)}`;
 };
 
+const LYRIC_BACKGROUND_COLOR_SETTLE_MS = 180;
+
 export function useLyricBackground(coverUrl: ComputedRef<string | undefined>) {
   const backgroundColor = ref('');
   let requestSeq = 0;
+  let abortController: AbortController | null = null;
 
   const refresh = async (url: string | undefined) => {
     const seq = ++requestSeq;
+    abortController?.abort();
+    const controller = new AbortController();
+    abortController = controller;
     const urls = resolveCoverColorUrls(url, 300, { scope: 'lyric-background' });
     if (urls.length === 0) {
+      if (abortController === controller) abortController = null;
       backgroundColor.value = '';
       return;
     }
 
+    const shouldExtract = await waitForAbortableDelay(
+      LYRIC_BACKGROUND_COLOR_SETTLE_MS,
+      controller.signal,
+    );
+    if (!shouldExtract || seq !== requestSeq) return;
+
     let color: string | null = null;
     for (const candidateUrl of urls) {
-      color = await extractDominantColor(candidateUrl);
-      if (seq !== requestSeq) return;
+      color = await extractDominantColor(candidateUrl, { signal: controller.signal });
+      if (seq !== requestSeq || controller.signal.aborted) return;
       if (color) break;
     }
 
+    if (abortController === controller) abortController = null;
     if (!color) {
       backgroundColor.value = '';
       return;
@@ -92,6 +106,11 @@ export function useLyricBackground(coverUrl: ComputedRef<string | undefined>) {
   };
 
   watch([coverUrl, coverFallbackRevision], ([url]) => void refresh(url), { immediate: true });
+  onScopeDispose(() => {
+    requestSeq += 1;
+    abortController?.abort();
+    abortController = null;
+  });
 
   return {
     backgroundColor,

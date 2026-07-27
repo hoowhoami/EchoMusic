@@ -71,13 +71,35 @@ const blurCoverUrl = computed(() => {
   // 替换尺寸参数为 400（模糊后不需要高分辨率）
   return url.replace(/\{size\}/g, '400').replace(/\/\d+(?=\/\d{8}\/)/, '/400');
 });
+const settledBlurCoverUrl = ref('');
+let blurCoverSettleTimer: number | null = null;
+const BLUR_COVER_SETTLE_MS = 180;
+
+watch(
+  blurCoverUrl,
+  (url) => {
+    if (blurCoverSettleTimer !== null) {
+      window.clearTimeout(blurCoverSettleTimer);
+      blurCoverSettleTimer = null;
+    }
+    if (!url) {
+      settledBlurCoverUrl.value = '';
+      return;
+    }
+    blurCoverSettleTimer = window.setTimeout(() => {
+      blurCoverSettleTimer = null;
+      settledBlurCoverUrl.value = url;
+    }, BLUR_COVER_SETTLE_MS);
+  },
+  { immediate: true },
+);
 
 // 背景律动：流体背景，固定速度且不关联播放状态
 const isBlurBackgroundRhythmEnabled = computed(
   () =>
     settingStore.lyricPageBackgroundBlur &&
     settingStore.lyricPageBackgroundRhythm &&
-    Boolean(blurCoverUrl.value) &&
+    Boolean(settledBlurCoverUrl.value) &&
     viewMode.value !== 'portrait',
 );
 
@@ -85,13 +107,13 @@ const isBlurBackgroundRhythmEnabled = computed(
 const backgroundStyle = computed(() => {
   if (viewMode.value === 'portrait') {
     // 写真模式：模糊背景启用时用黑色底色，否则不设（让写真图片透出）
-    if (settingStore.lyricPageBackgroundBlur && blurCoverUrl.value) {
+    if (settingStore.lyricPageBackgroundBlur && settledBlurCoverUrl.value) {
       return { backgroundColor: '#000000' };
     }
     return {};
   }
   // 启用模糊背景时使用深色底色（图片叠加在上面）
-  if (settingStore.lyricPageBackgroundBlur && blurCoverUrl.value) {
+  if (settingStore.lyricPageBackgroundBlur && settledBlurCoverUrl.value) {
     return { backgroundColor: '#000000' };
   }
   // 封面/歌词模式使用主题色
@@ -234,6 +256,7 @@ onMounted(() => {
 onUnmounted(() => {
   window.removeEventListener('keydown', handleKeydown);
   if (mouseActiveTimer) window.clearTimeout(mouseActiveTimer);
+  if (blurCoverSettleTimer !== null) window.clearTimeout(blurCoverSettleTimer);
 });
 </script>
 
@@ -246,16 +269,19 @@ onUnmounted(() => {
   >
     <!-- 模糊封面背景层 -->
     <div
-      v-if="settingStore.lyricPageBackgroundBlur && blurCoverUrl && viewMode !== 'portrait'"
+      v-if="settingStore.lyricPageBackgroundBlur && settledBlurCoverUrl && viewMode !== 'portrait'"
       class="lyric-blur-bg"
       :class="{ 'lyric-blur-bg--rhythm': isBlurBackgroundRhythmEnabled }"
     >
       <img
-        :src="blurCoverUrl"
+        :src="settledBlurCoverUrl"
         class="lyric-blur-bg-img"
         :class="{ 'lyric-blur-bg-img--rhythm': isBlurBackgroundRhythmEnabled }"
       />
-      <LyricFluidBackground :cover-url="blurCoverUrl" :enabled="isBlurBackgroundRhythmEnabled" />
+      <LyricFluidBackground
+        :cover-url="settledBlurCoverUrl"
+        :enabled="isBlurBackgroundRhythmEnabled"
+      />
       <div class="lyric-blur-bg-overlay"></div>
     </div>
 
