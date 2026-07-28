@@ -623,14 +623,6 @@ export class PlayerEngine {
   updateMediaMetadata(meta: MediaSessionMeta): void {
     const coverUrl = meta.artwork?.[meta.artwork.length - 1]?.src;
 
-    // 调试日志：打印发送给主进程的封面 URL
-    logger.debug('MediaSession', 'updateMediaMetadata:', {
-      title: meta.title,
-      artist: meta.artist,
-      coverUrl,
-      artworkCount: meta.artwork?.length,
-    });
-
     mediaControls?.updateMetadata({
       title: meta.title,
       artist: meta.artist,

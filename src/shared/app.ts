@@ -41,4 +41,5 @@ export type UpdateState = {
 export type AppInfoResult = {
   version: string;
   isPrerelease: boolean;
+  isPackaged: boolean;
 };

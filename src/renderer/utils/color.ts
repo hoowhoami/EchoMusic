@@ -131,34 +131,89 @@ export const normalizeAccent = (hex: string, isDark: boolean): string => {
 
 // ─────────────── 封面取色 ───────────────
 
-// 从图片 URL 中提取主色，失败时返回 null
-export const extractDominantColor = (url: string): Promise<string | null> => {
+export const waitForAbortableDelay = (ms: number, signal?: AbortSignal): Promise<boolean> =>
+  new Promise((resolve) => {
+    if (!signal) {
+      window.setTimeout(() => resolve(true), ms);
+      return;
+    }
+    if (signal.aborted) {
+      resolve(false);
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      signal.removeEventListener('abort', handleAbort);
+      resolve(true);
+    }, ms);
+
+    function handleAbort() {
+      window.clearTimeout(timer);
+      signal?.removeEventListener('abort', handleAbort);
+      resolve(false);
+    }
+
+    signal.addEventListener('abort', handleAbort, { once: true });
+  });
+
+// 从图片 URL 中提取主色，失败或被取消时返回 null
+export const extractDominantColor = (
+  url: string,
+  options: { signal?: AbortSignal } = {},
+): Promise<string | null> => {
   return new Promise((resolve) => {
     if (!url) {
       resolve(null);
       return;
     }
+    if (options.signal?.aborted) {
+      resolve(null);
+      return;
+    }
+
     const img = new Image();
     img.crossOrigin = 'anonymous';
     let done = false;
-    const timeoutId = window.setTimeout(() => {
+    let canvas: HTMLCanvasElement | null = null;
+    let timeoutId: number | null = null;
+
+    const cleanup = () => {
+      options.signal?.removeEventListener('abort', handleAbort);
+      if (timeoutId !== null) {
+        window.clearTimeout(timeoutId);
+        timeoutId = null;
+      }
+      img.onload = null;
+      img.onerror = null;
+      img.src = '';
+      if (canvas) {
+        canvas.width = 0;
+        canvas.height = 0;
+        canvas = null;
+      }
+    };
+
+    const finish = (color: string | null) => {
       if (done) return;
       done = true;
-      resolve(null);
-    }, 5000);
+      cleanup();
+      resolve(color);
+    };
+
+    const handleAbort = () => finish(null);
+
+    options.signal?.addEventListener('abort', handleAbort, { once: true });
+    timeoutId = window.setTimeout(() => finish(null), 5000);
 
     img.onload = () => {
-      if (done) return;
-      done = true;
-      window.clearTimeout(timeoutId);
       try {
         const size = 64;
-        const canvas = document.createElement('canvas');
+        canvas = document.createElement('canvas');
         canvas.width = size;
         canvas.height = size;
         const ctx = canvas.getContext('2d', { willReadFrequently: true });
         if (!ctx) {
-          resolve(null);
+          finish(null);
           return;
         }
         ctx.drawImage(img, 0, 0, size, size);
@@ -204,7 +259,7 @@ export const extractDominantColor = (url: string): Promise<string | null> => {
 
         // 没采到像素，或图片整体太灰，放弃
         if (sampleCount === 0 || totalSat / Math.max(1, sampleCount) < 0.15) {
-          resolve(null);
+          finish(null);
           return;
         }
 
@@ -218,7 +273,7 @@ export const extractDominantColor = (url: string): Promise<string | null> => {
           }
         }
         if (bestIdx < 0 || bestWeight <= 0) {
-          resolve(null);
+          finish(null);
           return;
         }
 
@@ -226,18 +281,13 @@ export const extractDominantColor = (url: string): Promise<string | null> => {
         const r = best.r / best.weight;
         const g = best.g / best.weight;
         const b = best.b / best.weight;
-        resolve(rgbToHex(r, g, b));
+        finish(rgbToHex(r, g, b));
       } catch {
-        resolve(null);
+        finish(null);
       }
     };
 
-    img.onerror = () => {
-      if (done) return;
-      done = true;
-      window.clearTimeout(timeoutId);
-      resolve(null);
-    };
+    img.onerror = () => finish(null);
 
     img.src = url;
   });

@@ -1,4 +1,4 @@
-import { BrowserWindow } from 'electron';
+import { app, BrowserWindow } from 'electron';
 import { ipcRegistry } from './registry';
 import { hideMainWindow, quitApplication, requestMainWindowClose } from '../window';
 import { restoreActiveWindowMode } from '../windowModeController';
@@ -49,6 +49,14 @@ export const registerWindowHandlers = ({ getMainWindow }: IpcContext) => {
 
   ipcRegistry.registerListener('quit-app', () => {
     quitApplication();
+  });
+
+  ipcRegistry.registerHandler('app:relaunch', () => {
+    setImmediate(() => {
+      app.relaunch();
+      quitApplication();
+    });
+    return true;
   });
 
   ipcRegistry.registerHandler(

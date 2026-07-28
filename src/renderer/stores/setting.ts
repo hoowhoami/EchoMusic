@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia';
 import type { CloseBehavior, ThemeMode } from '../../shared/app';
-import type { AppLogLevel, LogSettings } from '../../shared/logging';
+import { normalizeLogSettings, type AppLogLevel, type LogSettings } from '../../shared/logging';
 import type { AudioQualityValue, OutputDeviceOption, OutputDeviceStatus } from '../types';
 import { buildFontFamily } from '../../shared/font';
 import {
@@ -139,6 +139,7 @@ export const useSettingStore = defineStore('setting', {
     githubProxyUrl: '',
     appVersion: '',
     isPrerelease: false,
+    appIsPackaged: false,
     searchHistory: [] as string[],
     userAgreementAccepted: false,
     disableGpuAcceleration: false,
@@ -234,6 +235,7 @@ export const useSettingStore = defineStore('setting', {
         const appInfo = await window.electron.appInfo.get();
         this.appVersion = String(appInfo.version || '').trim();
         this.isPrerelease = Boolean(appInfo.isPrerelease);
+        this.appIsPackaged = Boolean(appInfo.isPackaged);
       } catch {
         // ignore hydration failure and keep current value
       }
@@ -309,6 +311,25 @@ export const useSettingStore = defineStore('setting', {
         apiResponseBody: this.logApiResponseBody,
         diagnosticUntil: this.logDiagnosticUntil,
       };
+    },
+    applyLogSettings(settings?: Partial<LogSettings> | null) {
+      const next = normalizeLogSettings(settings);
+      this.logLevel = next.level;
+      this.logApiResponseBody = next.apiResponseBody;
+      this.logDiagnosticUntil = next.diagnosticUntil;
+      configureRendererLogger(next);
+      return next;
+    },
+    async hydrateLogSettings() {
+      if (!window.electron?.logging) {
+        configureRendererLogger(this.getLogSettings());
+        return;
+      }
+      try {
+        this.applyLogSettings(await window.electron.logging.get());
+      } catch {
+        configureRendererLogger(this.getLogSettings());
+      }
     },
     syncLogSettings() {
       const settings = this.getLogSettings();

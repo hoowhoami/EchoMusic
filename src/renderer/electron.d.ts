@@ -40,6 +40,7 @@ import type {
 } from '../shared/player-audio-graph';
 import type { ResolvePlaylistRequest, ResolvePlaylistResponse } from '../shared/external';
 import type { ShareCaptureRect, ShareTarget } from '../shared/share';
+import type { DiagnosticsMemorySnapshot } from '../shared/diagnostics';
 import type {
   PluginAssetSourceResult,
   PluginAppIconRefreshResult,
@@ -196,6 +197,7 @@ export interface IElectronAPI {
   appInfo: {
     get: () => Promise<AppInfoResult>;
     getChangelog: () => Promise<string>;
+    relaunch: () => Promise<boolean>;
     onOpenSettings: (func: () => void) => () => void;
   };
   share?: {
@@ -221,6 +223,9 @@ export interface IElectronAPI {
   apiServer: {
     start: () => Promise<{ success: boolean; error?: string }>;
     status: () => Promise<ApiServerStatus>;
+  };
+  diagnostics?: {
+    getMemory: (label?: string) => Promise<DiagnosticsMemorySnapshot>;
   };
   api: {
     request: (config: {

@@ -7,6 +7,7 @@ import router from './router';
 import { logger } from '@/utils/logger';
 import { sqlitePersistPlugin } from '@/stores/sqlitePersist';
 import { installPluginRuntime } from '@/plugins/runtime';
+import { startRendererMemoryDiagnostics } from '@/utils/rendererMemoryDiagnostics';
 import './style.css';
 
 const app = createApp(App);
@@ -239,4 +240,5 @@ app.use(pinia);
 app.use(router);
 app.component('Icon', Icon);
 installPluginRuntime({ app, router, pinia });
+startRendererMemoryDiagnostics();
 app.mount('#app');

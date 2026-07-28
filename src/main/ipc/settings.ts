@@ -317,7 +317,7 @@ const importImpulseResponseFile = async (
 
 const getAppInfo = (): AppInfoResult => {
   const version = app.getVersion();
-  return { version, isPrerelease: version.includes('-') };
+  return { version, isPrerelease: version.includes('-'), isPackaged: app.isPackaged };
 };
 
 export const registerSettingsHandlers = ({ getMainWindow, playerRef }: IpcContext) => {

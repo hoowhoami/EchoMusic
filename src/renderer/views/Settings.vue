@@ -120,6 +120,7 @@ const scrollToSection = (id: string) => {
 
 // 初始化
 const initSettings = async () => {
+  await settingStore.hydrateLogSettings();
   settingStore.syncCloseBehavior();
   settingStore.syncTheme();
   settingStore.syncLogSettings();

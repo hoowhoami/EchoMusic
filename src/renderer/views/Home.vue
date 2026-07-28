@@ -52,6 +52,9 @@ const RECOMMEND_PLAYLIST_CATEGORIES = [
   { id: '0', label: '推荐' },
   { id: '11292', label: 'Hi-Res' },
 ] as const;
+const HOME_GRID_VIRTUAL_THRESHOLD = 12;
+const HOME_GRID_OVERSCAN = 1;
+const HOME_PLAYLIST_COVER_SIZE = 240;
 
 const router = useRouter();
 const userStore = useUserStore();
@@ -452,25 +455,35 @@ const handleRejectAgreement = () => {
             {{ styleState.error }}
           </div>
           <div v-else-if="styleSongs.length === 0" class="style-song-placeholder">暂无风格推荐</div>
-          <div v-else class="style-song-grid">
-            <SongCard
-              v-for="song in styleSongs"
-              :key="song.id"
-              :song="song"
-              :active="activeSongId === String(song.id)"
-              :queueContext="styleSongs"
-              :queueOptions="styleQueueOptions"
-              :showAlbum="false"
-              :showDuration="false"
-              :showMore="false"
-              :showCoverPlayButton="true"
-              :enableDefaultDoubleTapPlay="true"
-              :onDoubleTapPlay="
-                settingStore.replacePlaylist ? handleStyleSongDoubleTapPlay : undefined
-              "
-              :onCoverPlay="handleStyleSongCoverPlay"
-            />
-          </div>
+          <VirtualGrid
+            v-else
+            class="style-song-grid"
+            :items="styleSongs"
+            :itemMinWidth="240"
+            :itemHeight="62"
+            :gap="10"
+            :overscan="HOME_GRID_OVERSCAN"
+            :virtualThreshold="18"
+            keyField="id"
+          >
+            <template #default="{ item: song }">
+              <SongCard
+                :song="song"
+                :active="activeSongId === String(song.id)"
+                :queueContext="styleSongs"
+                :queueOptions="styleQueueOptions"
+                :showAlbum="false"
+                :showDuration="false"
+                :showMore="false"
+                :showCoverPlayButton="true"
+                :enableDefaultDoubleTapPlay="true"
+                :onDoubleTapPlay="
+                  settingStore.replacePlaylist ? handleStyleSongDoubleTapPlay : undefined
+                "
+                :onCoverPlay="handleStyleSongCoverPlay"
+              />
+            </template>
+          </VirtualGrid>
         </div>
       </section>
 
@@ -503,11 +516,12 @@ const handleRejectAgreement = () => {
           :itemAspectRatio="1"
           :itemChromeHeight="66"
           :gap="20"
-          :overscan="3"
+          :overscan="HOME_GRID_OVERSCAN"
+          :virtualThreshold="HOME_GRID_VIRTUAL_THRESHOLD"
           keyField="id"
         >
           <template #default="{ item }">
-            <PlaylistCard v-bind="item" layout="grid" />
+            <PlaylistCard v-bind="item" :coverSize="HOME_PLAYLIST_COVER_SIZE" layout="grid" />
           </template>
         </VirtualGrid>
       </section>
@@ -526,11 +540,12 @@ const handleRejectAgreement = () => {
           :itemAspectRatio="1"
           :itemChromeHeight="66"
           :gap="20"
-          :overscan="3"
+          :overscan="HOME_GRID_OVERSCAN"
+          :virtualThreshold="HOME_GRID_VIRTUAL_THRESHOLD"
           keyField="id"
         >
           <template #default="{ item }">
-            <PlaylistCard v-bind="item" layout="grid" />
+            <PlaylistCard v-bind="item" :coverSize="HOME_PLAYLIST_COVER_SIZE" layout="grid" />
           </template>
         </VirtualGrid>
       </section>

@@ -6,6 +6,7 @@ import { useUserStore } from '@/stores/user';
 import { useDeviceStore } from '@/stores/device';
 import { useToastStore } from '@/stores/toast';
 import { buildAuthHeader } from '@/utils/request';
+import { suspendRendererMemoryDiagnosticsForRelaunch } from '@/utils/rendererMemoryDiagnostics';
 import type { AppLogLevel } from '../../../../shared/logging';
 import Switch from '@/components/ui/Switch.vue';
 import Input from '@/components/ui/Input.vue';
@@ -40,6 +41,25 @@ const diagnosticLabel = computed(() => {
   const remaining = Math.max(0, settingStore.logDiagnosticUntil - Date.now());
   return `剩余约 ${Math.ceil(remaining / 60000)} 分钟`;
 });
+
+const diagnosticRestartLabel = computed(() =>
+  settingStore.appIsPackaged ? '诊断并重启' : '开启启动诊断',
+);
+
+const restartWithDiagnostics = async () => {
+  settingStore.enableTemporaryDiagnosticLogging(10);
+  if (!settingStore.appIsPackaged) {
+    toastStore.info('启动诊断已开启，请在终端重新运行 pnpm run dev');
+    return;
+  }
+
+  suspendRendererMemoryDiagnosticsForRelaunch();
+  try {
+    await window.electron?.appInfo?.relaunch?.();
+  } catch {
+    toastStore.warning('诊断日志已开启，请手动重启应用以记录启动阶段');
+  }
+};
 
 const dpiScaleLabel = computed(() => Number(settingStore.dpiScale || 1).toFixed(1));
 
@@ -199,6 +219,9 @@ const setDpiScale = (value: number) => {
           @click="settingStore.enableTemporaryDiagnosticLogging(10)"
         >
           10 分钟
+        </Button>
+        <Button variant="secondary" size="xs" @click="restartWithDiagnostics">
+          {{ diagnosticRestartLabel }}
         </Button>
       </div>
     </div>
