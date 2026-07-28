@@ -39,15 +39,15 @@ let serverReady = false;
 let createRequestFn: ((config: any) => Promise<any>) | null = null;
 
 // server 内部使用的全局标识
+const SERVER_DEV = 'EchoMusic';
 let guid = '';
-let serverDev = '';
 let mid = '';
 let webglHash = '';
 
 export const getDeviceIdentity = () => ({
   guid,
   mac: process.env.KUGOU_API_MAC || '',
-  serverDev,
+  serverDev: SERVER_DEV,
   mid,
 })
 
@@ -172,11 +172,31 @@ export async function initApiServer(): Promise<void> {
   // 应用 CLI 覆盖（设置 platform 等）
   applyCliOverrides(['--platform=lite']);
 
+  // 锁定 KUGOU_API_DEV 为固定值，防止 .env 或 --dev 参数覆盖
+  process.env.KUGOU_API_DEV = SERVER_DEV;
+
   // 生成全局标识（与 server/server.js 一致）
   guid = process.env.KUGOU_API_GUID || cryptoMd5(getGuid());
-  serverDev = 'EchoMusic';
   mid = calculateMid(guid);
   webglHash = process.env.KUGOU_API_WEBGL || generateWebGLHash();
+
+  // 将生成的设备标识回写到 KV，确保后续启动能复用同一身份
+  try {
+    const kv = getKvStorage()
+    const existing = kv.get<Record<string, any>>('pinia:device') || {}
+    kv.set('pinia:device', {
+      ...existing,
+      info: {
+        ...(existing.info || {}),
+        guid,
+        mid,
+        serverDev: SERVER_DEV,
+        mac: (process.env.KUGOU_API_MAC || '02:00:00:00:00:00').toUpperCase(),
+      },
+    })
+  } catch {
+    // 写入失败不影响运行
+  }
 
   createRequestFn = createRequest;
 
@@ -238,7 +258,7 @@ const buildDefaultCookies = (): Record<string, string> => {
     KUGOU_API_PLATFORM: process.env.platform || 'lite',
     KUGOU_API_MID: mid,
     KUGOU_API_GUID: guid,
-    KUGOU_API_DEV: serverDev,
+    KUGOU_API_DEV: SERVER_DEV,
     KUGOU_API_MAC: (process.env.KUGOU_API_MAC || '02:00:00:00:00:00').toUpperCase(),
     KUGOU_API_WEBGL: webglHash,
   };

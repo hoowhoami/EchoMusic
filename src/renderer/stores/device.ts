@@ -7,8 +7,6 @@ export interface DeviceInfo {
   guid?: string;
   serverDev?: string;
   mac?: string;
-  appid?: string;
-  clientver?: string;
 }
 
 export const useDeviceStore = defineStore('device', {

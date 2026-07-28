@@ -29,14 +29,12 @@ export const extractDeviceInfo = (payload: unknown): DeviceInfo | null => {
     serverDev:
       typeof device.serverDev === 'string' ? device.serverDev : deviceStore.info?.serverDev,
     mac: typeof device.mac === 'string' ? device.mac : deviceStore.info?.mac,
-    appid: typeof device.appid === 'string' ? device.appid : deviceStore.info?.appid,
-    clientver:
-      typeof device.clientver === 'string' ? device.clientver : deviceStore.info?.clientver,
   };
 };
 
 /**
  * 确保设备已注册，dfid 不存在时自动调用注册接口
+ * 注册成功后同步服务端生成的设备标识（guid/mid/serverDev/mac）
  * 带 Promise 锁防止并发重复注册
  */
 export const ensureDevice = async () => {
@@ -53,7 +51,23 @@ export const ensureDevice = async () => {
       const response = await registerDevice();
       const info = extractDeviceInfo(response);
       if (info?.dfid) {
+        // 先从 register 响应设置 dfid 等基础信息
         deviceStore.setDeviceInfo(info);
+        // 再同步服务端生成的设备标识（guid/mid/serverDev/mac）
+        try {
+          const identity = await window.electron.apiServer.identity()
+          if (identity?.guid) {
+            deviceStore.setDeviceInfo({
+              ...deviceStore.info,
+              guid: identity.guid,
+              mid: identity.mid || deviceStore.info?.mid,
+              serverDev: identity.serverDev,
+              mac: identity.mac || deviceStore.info?.mac,
+            })
+          }
+        } catch {
+          logger.warn('Device', 'Failed to sync server identity')
+        }
         logger.info('Device', 'Device registered');
       } else {
         logger.warn('Device', 'Device register response invalid');
