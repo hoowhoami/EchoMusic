@@ -44,6 +44,13 @@ let serverDev = '';
 let mid = '';
 let webglHash = '';
 
+export const getDeviceIdentity = () => ({
+  guid,
+  mac: process.env.KUGOU_API_MAC || '',
+  serverDev,
+  mid,
+})
+
 /**
  * 解析 server 目录路径
  */

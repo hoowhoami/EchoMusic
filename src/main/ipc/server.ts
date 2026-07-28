@@ -1,5 +1,5 @@
 import { ipcRegistry } from './registry';
-import { handleApiRequest, isApiServerReady, initApiServer } from '../server';
+import { getDeviceIdentity, handleApiRequest, isApiServerReady, initApiServer } from '../server';
 
 export const registerApiServerHandlers = () => {
   ipcRegistry.registerHandler('api:request', async (_event, request) => {
@@ -11,6 +11,10 @@ export const registerApiServerHandlers = () => {
       state: isApiServerReady() ? 'ready' : 'idle',
       updatedAt: Date.now(),
     };
+  });
+
+  ipcRegistry.registerHandler('device:identity', () => {
+    return getDeviceIdentity();
   });
 
   ipcRegistry.registerHandler('api-server:start', async () => {

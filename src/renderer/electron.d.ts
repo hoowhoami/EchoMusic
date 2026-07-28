@@ -223,6 +223,7 @@ export interface IElectronAPI {
   apiServer: {
     start: () => Promise<{ success: boolean; error?: string }>;
     status: () => Promise<ApiServerStatus>;
+    identity: () => Promise<{ guid: string; mac: string; serverDev: string; mid: string }>;
   };
   diagnostics?: {
     getMemory: (label?: string) => Promise<DiagnosticsMemorySnapshot>;
