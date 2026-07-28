@@ -149,8 +149,6 @@ const confirmLogout = () => {
   userStore.logout();
   // 清除设备信息，下次请求时自动重新注册
   useDeviceStore().clearDeviceInfo();
-  // 清除持久化的设备标识，下次启动使用全新身份
-  window.electron.storage.kv.delete('device-identity');
   router.push('/main/home');
 };
 

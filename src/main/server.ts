@@ -136,13 +136,13 @@ export async function initApiServer(): Promise<void> {
     }
   }
 
-  // 尝试从持久化存储读取设备标识（登录时保存的 GUID/MAC）
+  // 尝试从持久化存储读取设备标识（来自 deviceStore）
   try {
-    const persistedIdentity = getKvStorage().get<{ guid?: string; mac?: string }>('device-identity');
-    if (persistedIdentity) {
-      if (persistedIdentity.guid) process.env.KUGOU_API_GUID = persistedIdentity.guid;
-      if (persistedIdentity.mac) process.env.KUGOU_API_MAC = persistedIdentity.mac;
-      log.info('[IPC-Server] Loaded persisted device identity from KV storage');
+    const deviceStoreData = getKvStorage().get<{ info?: { guid?: string; mac?: string } }>('pinia:device')
+    if (deviceStoreData?.info) {
+      if (deviceStoreData.info.guid) process.env.KUGOU_API_GUID = deviceStoreData.info.guid
+      if (deviceStoreData.info.mac) process.env.KUGOU_API_MAC = deviceStoreData.info.mac
+      log.info('[IPC-Server] Loaded persisted device identity from deviceStore')
     }
   } catch {
     // 持久化读取失败不影响启动
