@@ -32,6 +32,7 @@ import Input from '@/components/ui/Input.vue';
 import Button from '@/components/ui/Button.vue';
 
 import OverlayHeader from '@/layouts/OverlayHeader.vue';
+import Avatar from '@/components/ui/Avatar.vue';
 import Image from '@/components/ui/Image.vue';
 import {
   iconBotMessageSquare,
@@ -156,8 +157,70 @@ const smsData = reactive({
   isSending: false,
   countdown: 0,
   error: '',
+  accountCandidates: [] as SmsAccountCandidate[],
+  pendingUserid: null as number | null,
 });
 let smsTimer: any = null;
+
+interface SmsAccountCandidate {
+  nickname: string;
+  pic: string;
+  userid: number;
+  appid?: number;
+  username?: string;
+}
+
+const getSmsMultiAccountCandidates = (response: unknown): SmsAccountCandidate[] => {
+  const record =
+    response && typeof response === 'object' ? (response as Record<string, any>) : undefined;
+  if (!record || Number(record.error_code) !== 34175) return [];
+
+  const list = record.data?.info_list;
+  if (!Array.isArray(list)) return [];
+
+  return list
+    .map((item): SmsAccountCandidate | null => {
+      const account = item && typeof item === 'object' ? (item as Record<string, any>) : undefined;
+      const userid = Number(account?.userid);
+      if (!Number.isFinite(userid) || userid <= 0) return null;
+      return {
+        userid,
+        nickname: String(account?.nickname || account?.username || userid),
+        username: account?.username ? String(account.username) : undefined,
+        pic: account?.pic ? String(account.pic) : '',
+        appid: Number.isFinite(Number(account?.appid)) ? Number(account?.appid) : undefined,
+      };
+    })
+    .filter((item): item is SmsAccountCandidate => Boolean(item));
+};
+
+const resetSmsAccountCandidates = () => {
+  smsData.accountCandidates = [];
+  smsData.pendingUserid = null;
+};
+
+const resolveSmsLoginResponse = (res: any): boolean => {
+  const candidates = getSmsMultiAccountCandidates(res);
+  if (candidates.length > 0) {
+    smsData.accountCandidates = candidates;
+    smsData.error = '';
+    return false;
+  }
+
+  if (res.status === 1 && res.data?.token) {
+    completeLogin(res.data);
+    return true;
+  }
+
+  smsData.error = res.error || res.message || res.msg || '登录失败，请稍后重试';
+  return false;
+};
+
+const getApiErrorBody = (error: unknown): unknown => {
+  if (!error || typeof error !== 'object') return null;
+  const response = (error as { response?: { body?: unknown } }).response;
+  return response?.body ?? null;
+};
 
 const startCountdown = () => {
   smsData.countdown = 60;
@@ -168,6 +231,7 @@ const startCountdown = () => {
 };
 
 const handleSendCode = async () => {
+  resetSmsAccountCandidates();
   const mobile = smsData.mobile ? smsData.mobile.toString().trim() : '';
   logger.info('Login', 'Attempting to send code to:', `"${mobile}"`, 'Length:', mobile.length);
   if (!/^1\d{10}$/.test(mobile)) {
@@ -194,16 +258,39 @@ const handleSendCode = async () => {
 const handleSmsLogin = async () => {
   const mobile = smsData.mobile.trim();
   if (!mobile || !smsData.code) return;
+  resetSmsAccountCandidates();
   smsData.isSending = true;
   try {
     const res: any = await loginBySms(mobile, smsData.code);
-    if (res.status === 1 && res.data) {
-      completeLogin(res.data);
-    } else {
-      smsData.error = res.error || '登录失败，请稍后重试';
+    resolveSmsLoginResponse(res);
+  } catch (e) {
+    const handled = resolveSmsLoginResponse(getApiErrorBody(e));
+    if (!handled && smsData.accountCandidates.length === 0) {
+      smsData.error = '登录失败，请稍后重试';
     }
-  } catch {
-    smsData.error = '登录失败，请稍后重试';
+  } finally {
+    smsData.isSending = false;
+  }
+};
+
+const handleSmsAccountLogin = async (account: SmsAccountCandidate) => {
+  const mobile = smsData.mobile.trim();
+  if (!mobile || !smsData.code || smsData.isSending) return;
+  smsData.isSending = true;
+  smsData.pendingUserid = account.userid;
+  smsData.error = '';
+  try {
+    const res: any = await loginBySms(mobile, smsData.code, account.userid);
+    const completed = resolveSmsLoginResponse(res);
+    if (!completed) {
+      smsData.pendingUserid = null;
+    }
+  } catch (e) {
+    const handled = resolveSmsLoginResponse(getApiErrorBody(e));
+    if (!handled && smsData.accountCandidates.length === 0) {
+      smsData.error = '登录失败，请稍后重试';
+    }
+    smsData.pendingUserid = null;
   } finally {
     smsData.isSending = false;
   }
@@ -472,7 +559,7 @@ onUnmounted(() => {
                     无需密码，快捷安全
                   </p>
                 </div>
-                <div class="flex flex-col">
+                <div v-if="smsData.accountCandidates.length === 0" class="flex flex-col">
                   <Input v-model="smsData.mobile" type="tel" placeholder="手机号码" class="mb-4" />
                   <div class="flex gap-3 mb-1">
                     <Input
@@ -498,6 +585,50 @@ onUnmounted(() => {
                   <Button class="w-full" :loading="smsData.isSending" @click="handleSmsLogin">
                     立即登录
                   </Button>
+                </div>
+                <div v-else class="flex flex-col">
+                  <div class="mb-3 flex items-center justify-between px-1">
+                    <span class="text-[13px] font-black">选择账号</span>
+                    <button
+                      class="text-[12px] font-bold text-text-secondary hover:text-primary transition-colors"
+                      :disabled="smsData.isSending"
+                      @click="resetSmsAccountCandidates"
+                    >
+                      返回
+                    </button>
+                  </div>
+                  <div class="space-y-2 mb-3 max-h-48 overflow-y-auto pr-1">
+                    <button
+                      v-for="account in smsData.accountCandidates"
+                      :key="account.userid"
+                      class="w-full h-16 rounded-xl border border-[var(--control-border)] bg-[var(--control-bg)] hover:bg-[var(--control-hover-bg)] hover:border-primary/40 transition-all px-3 flex items-center gap-3 text-left disabled:opacity-70"
+                      :disabled="smsData.isSending"
+                      @click="handleSmsAccountLogin(account)"
+                    >
+                      <Avatar
+                        :src="account.pic"
+                        :alt="account.nickname"
+                        class="w-11 h-11 rounded-full"
+                      />
+                      <div class="min-w-0 flex-1">
+                        <div class="text-[13px] font-black truncate">{{ account.nickname }}</div>
+                        <div class="text-[11px] font-bold text-text-secondary truncate">
+                          {{ account.username || account.userid }}
+                        </div>
+                      </div>
+                      <span
+                        v-if="smsData.pendingUserid === account.userid"
+                        class="text-[11px] font-black text-primary"
+                      >
+                        登录中
+                      </span>
+                    </button>
+                  </div>
+                  <div class="h-5 flex items-center px-2 mb-1">
+                    <p v-if="smsData.error" class="text-[11px] text-red-500 font-bold">
+                      {{ smsData.error }}
+                    </p>
+                  </div>
                 </div>
               </TabsContent>
 
