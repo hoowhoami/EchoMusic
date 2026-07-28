@@ -207,14 +207,14 @@ const builtinSidebarSections = [
         builtinIcon: 'clock',
         order: 40,
       },
-      {
-        id: 'purchased',
-        key: 'purchased',
-        title: '已购音乐',
-        path: '/main/purchased',
-        builtinIcon: 'shopping-bag',
-        order: 50,
-      },
+      // {
+      //   id: 'purchased',
+      //   key: 'purchased',
+      //   title: '已购音乐',
+      //   path: '/main/purchased',
+      //   builtinIcon: 'shopping-bag',
+      //   order: 50,
+      // },
     ],
   },
 ] satisfies SidebarSection[];
