@@ -129,6 +129,43 @@ const canStartImport = computed(() => {
   return Boolean(existingListId.value);
 });
 
+// 重名检测
+const showDuplicateWarning = ref(false);
+const duplicateCountdown = ref(5);
+let duplicateTimer: ReturnType<typeof setInterval> | null = null;
+
+const duplicatePlaylists = computed(() => {
+  const name = newPlaylistName.value.trim().toLowerCase();
+  if (!name) return [];
+  return ownedPlaylists.value.filter((p) => p.name?.toLowerCase() === name);
+});
+
+const startDuplicateCountdown = () => {
+  duplicateCountdown.value = 5;
+  if (duplicateTimer) clearInterval(duplicateTimer);
+  duplicateTimer = setInterval(() => {
+    duplicateCountdown.value--;
+    if (duplicateCountdown.value <= 0 && duplicateTimer) {
+      clearInterval(duplicateTimer);
+      duplicateTimer = null;
+    }
+  }, 1000);
+};
+
+const dismissDuplicateWarning = () => {
+  if (duplicateTimer) clearInterval(duplicateTimer);
+  duplicateTimer = null;
+  showDuplicateWarning.value = false;
+  duplicateCountdown.value = 5;
+};
+
+const confirmDuplicateImport = () => {
+  if (duplicateCountdown.value > 0) return;
+  showDuplicateWarning.value = false;
+  duplicateCountdown.value = 5;
+  handleStartImport();
+};
+
 // Step 3
 const progressItems = ref<ImportItemResult[]>([]);
 const progressDone = ref(0);
@@ -157,6 +194,10 @@ const reset = () => {
   summary.value = null;
   kugouPlaylistMeta.value = null;
   isLoadingKugouMeta.value = false;
+  if (duplicateTimer) clearInterval(duplicateTimer);
+  duplicateTimer = null;
+  showDuplicateWarning.value = false;
+  duplicateCountdown.value = 5;
 };
 
 watch(open, (v) => {
@@ -278,6 +319,18 @@ const fetchKugouPlaylistMeta = async (id: string) => {
 
 const handleStartImport = async () => {
   if (!canStartImport.value || isImporting.value) return;
+
+  // 新建歌单时检测重名
+  if (
+    target.value === 'new' &&
+    duplicatePlaylists.value.length > 0 &&
+    !showDuplicateWarning.value
+  ) {
+    showDuplicateWarning.value = true;
+    startDuplicateCountdown();
+    return;
+  }
+
   const tracks = selectedTracks.value;
   let listId: string | number | null = null;
   if (target.value === 'new') {
@@ -663,6 +716,44 @@ const statusLabel = (status: ImportItemResult['status']): string => {
           </Scrollbar>
         </div>
       </div>
+
+      <!-- 重名确认弹窗 -->
+      <Dialog
+        v-model:open="showDuplicateWarning"
+        content-class="duplicate-dialog"
+        overlay-class="duplicate-overlay"
+        :close-on-escape="false"
+        :close-on-interact-outside="false"
+      >
+        <template #title>
+          <div class="flex items-center gap-2">
+            <Icon :icon="iconTriangleAlert" width="18" height="18" class="text-amber-500" />
+            <span>同名歌单已存在</span>
+          </div>
+        </template>
+        <div class="flex flex-col gap-4 py-1">
+          <p class="text-[13px] text-text-secondary leading-relaxed">
+            已存在同名歌单「<strong class="text-text-main">{{
+              duplicatePlaylists[0]?.name
+            }}</strong>」（{{
+              duplicatePlaylists[0]?.count ?? duplicatePlaylists[0]?.songcount ?? 0
+            }} 首），确定继续导入到新建歌单？
+          </p>
+        </div>
+        <template #footer>
+          <Button variant="ghost" size="sm" type="button" @click="dismissDuplicateWarning">
+            取消
+          </Button>
+          <Button
+            variant="primary"
+            size="sm"
+            :disabled="duplicateCountdown > 0"
+            @click="confirmDuplicateImport"
+          >
+            确认导入{{ duplicateCountdown > 0 ? ` (${duplicateCountdown}s)` : '' }}
+          </Button>
+        </template>
+      </Dialog>
     </div>
 
     <!-- Step 3: 进度与结果 -->
@@ -1127,5 +1218,38 @@ const statusLabel = (status: ImportItemResult['status']): string => {
   50% {
     opacity: 1;
   }
+}
+
+:global(.dialog-content.duplicate-dialog) {
+  width: 420px;
+  max-width: calc(100vw - 48px);
+  z-index: 1430;
+}
+
+:global(.dialog-content.duplicate-dialog[data-state='open']) {
+  animation: duplicate-slide-in 1s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+:global(.dialog-content.duplicate-dialog[data-state='closed']) {
+  opacity: 0;
+  transform: translate(-50%, -65%);
+  transition:
+    opacity 0.3s ease-in,
+    transform 0.3s ease-in;
+}
+
+@keyframes duplicate-slide-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -65%);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -50%);
+  }
+}
+
+:global(.dialog-overlay.duplicate-overlay) {
+  z-index: 1420;
 }
 </style>
