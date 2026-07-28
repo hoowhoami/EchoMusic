@@ -24,6 +24,7 @@ import {
   iconPlus,
   iconSearch,
   iconSettings,
+  iconShoppingBag,
   iconSparkles,
   iconTrash,
   iconChevronDown,
@@ -111,6 +112,7 @@ const iconMap = {
   clock: iconClock,
   cloud: iconCloud,
   heart: iconHeart,
+  'shopping-bag': iconShoppingBag,
 } as const;
 
 type BuiltinSidebarIcon = keyof typeof iconMap;
@@ -205,6 +207,14 @@ const builtinSidebarSections = [
         builtinIcon: 'clock',
         order: 40,
       },
+      // {
+      //   id: 'purchased',
+      //   key: 'purchased',
+      //   title: '已购音乐',
+      //   path: '/main/purchased',
+      //   builtinIcon: 'shopping-bag',
+      //   order: 50,
+      // },
     ],
   },
 ] satisfies SidebarSection[];

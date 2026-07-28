@@ -64,10 +64,12 @@ const restartWithDiagnostics = async () => {
 const dpiScaleLabel = computed(() => Number(settingStore.dpiScale || 1).toFixed(1));
 
 const showUserInfo = ref(false);
+const deviceIdentity = ref<{ guid: string; mac: string; serverDev: string; mid: string } | null>(null);
 
 const userInfoEntries = computed(() => {
   const info = userStore.info;
   const device = deviceStore.info;
+  const identity = deviceIdentity.value;
   const entries: { label: string; value: string }[] = [];
   const push = (label: string, value: string | number | undefined | null) => {
     if (value !== undefined && value !== null && String(value).length > 0) {
@@ -81,11 +83,20 @@ const userInfoEntries = computed(() => {
   push('dfid', device?.dfid);
   push('mid', device?.mid);
   push('uuid', device?.uuid);
-  push('guid', device?.guid);
-  push('dev', device?.serverDev);
-  push('mac', device?.mac);
+  push('guid', device?.guid ?? identity?.guid);
+  push('dev', device?.serverDev ?? identity?.serverDev);
+  push('mac', device?.mac ?? identity?.mac);
   return entries;
 });
+
+const showUserInfoDialog = async () => {
+  try {
+    deviceIdentity.value = await window.electron.apiServer.identity()
+  } catch {
+    // IPC 不可用时忽略
+  }
+  showUserInfo.value = true
+};
 
 const copyAuthHeader = async () => {
   const header = buildAuthHeader();
@@ -293,7 +304,7 @@ const setDpiScale = (value: number) => {
         <h3 class="font-semibold">用户信息</h3>
         <p class="text-sm text-text-secondary">查看当前账号与设备信息，可复制鉴权头用于调试接口</p>
       </div>
-      <Button variant="secondary" size="xs" @click="showUserInfo = true">查看</Button>
+      <Button variant="secondary" size="xs" @click="showUserInfoDialog">查看</Button>
     </div>
 
     <Dialog v-model:open="showUserInfo" title="用户信息" showClose contentClass="user-info-dialog">

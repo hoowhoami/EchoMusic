@@ -1,9 +1,11 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 import { app } from 'electron';
 import log from './logger';
 import { applyKugouApiNetworkSettings, refreshNetworkSettingsFromStorage } from './networkSettings';
+import { getKvStorage } from './storage/kv';
 
 // --- 类型定义 ---
 
@@ -37,10 +39,17 @@ let serverReady = false;
 let createRequestFn: ((config: any) => Promise<any>) | null = null;
 
 // server 内部使用的全局标识
+const SERVER_DEV = 'EchoMusic';
 let guid = '';
-let serverDev = '';
 let mid = '';
 let webglHash = '';
+
+export const getDeviceIdentity = () => ({
+  guid,
+  mac: process.env.KUGOU_API_MAC || '',
+  serverDev: SERVER_DEV,
+  mid,
+})
 
 /**
  * 解析 server 目录路径
@@ -94,6 +103,22 @@ const loadModule = (modulePath: string, route: string): ModuleDefinition => {
 };
 
 /**
+ * 获取真实 MAC 地址（优先非内部网卡）
+ */
+const getRealMacAddress = (): string => {
+  const interfaces = os.networkInterfaces()
+  for (const entries of Object.values(interfaces)) {
+    if (!entries) continue
+    for (const entry of entries) {
+      if (!entry.internal && entry.mac && entry.mac !== '00:00:00:00:00:00') {
+        return entry.mac.toUpperCase()
+      }
+    }
+  }
+  return '02:00:00:00:00:00'
+}
+
+/**
  * 初始化 server 环境
  * 复现 server/server.js 中的全局变量初始化和环境变量设置
  */
@@ -118,6 +143,23 @@ export async function initApiServer(): Promise<void> {
     }
   }
 
+  // 尝试从持久化存储读取设备标识（来自 deviceStore）
+  try {
+    const deviceStoreData = getKvStorage().get<{ info?: { guid?: string; mac?: string } }>('pinia:device')
+    if (deviceStoreData?.info) {
+      if (deviceStoreData.info.guid) process.env.KUGOU_API_GUID = deviceStoreData.info.guid
+      if (deviceStoreData.info.mac) process.env.KUGOU_API_MAC = deviceStoreData.info.mac
+      log.info('[IPC-Server] Loaded persisted device identity from deviceStore')
+    }
+  } catch {
+    // 持久化读取失败不影响启动
+  }
+
+  // 没有持久化或 .env 提供 MAC 时，使用真实网卡地址
+  if (!process.env.KUGOU_API_MAC) {
+    process.env.KUGOU_API_MAC = getRealMacAddress()
+  }
+
   // 初始化 server 内部工具
   const utilPath = path.join(serverPath, 'util');
   const { cryptoMd5 } = require(path.join(utilPath, 'crypto'));
@@ -130,11 +172,31 @@ export async function initApiServer(): Promise<void> {
   // 应用 CLI 覆盖（设置 platform 等）
   applyCliOverrides(['--platform=lite']);
 
+  // 锁定 KUGOU_API_DEV 为固定值，防止 .env 或 --dev 参数覆盖
+  process.env.KUGOU_API_DEV = SERVER_DEV;
+
   // 生成全局标识（与 server/server.js 一致）
   guid = process.env.KUGOU_API_GUID || cryptoMd5(getGuid());
-  serverDev = (process.env.KUGOU_API_DEV || randomString(10)).toUpperCase();
   mid = calculateMid(guid);
   webglHash = process.env.KUGOU_API_WEBGL || generateWebGLHash();
+
+  // 将生成的设备标识回写到 KV，确保后续启动能复用同一身份
+  try {
+    const kv = getKvStorage()
+    const existing = kv.get<Record<string, any>>('pinia:device') || {}
+    kv.set('pinia:device', {
+      ...existing,
+      info: {
+        ...(existing.info || {}),
+        guid,
+        mid,
+        serverDev: SERVER_DEV,
+        mac: (process.env.KUGOU_API_MAC || '02:00:00:00:00:00').toUpperCase(),
+      },
+    })
+  } catch {
+    // 写入失败不影响运行
+  }
 
   createRequestFn = createRequest;
 
@@ -196,7 +258,7 @@ const buildDefaultCookies = (): Record<string, string> => {
     KUGOU_API_PLATFORM: process.env.platform || 'lite',
     KUGOU_API_MID: mid,
     KUGOU_API_GUID: guid,
-    KUGOU_API_DEV: serverDev,
+    KUGOU_API_DEV: SERVER_DEV,
     KUGOU_API_MAC: (process.env.KUGOU_API_MAC || '02:00:00:00:00:00').toUpperCase(),
     KUGOU_API_WEBGL: webglHash,
   };

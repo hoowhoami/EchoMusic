@@ -70,6 +70,7 @@ const completeLogin = (data: Record<string, unknown>) => {
   isLoginDone = true;
   userStore.handleLoginSuccess(data);
   completeKugouLoginVerification();
+
   void closeTransientView(router, { query: router.currentRoute.value.query });
 };
 
