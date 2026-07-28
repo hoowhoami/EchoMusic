@@ -3,6 +3,7 @@ defineOptions({ name: 'login-page' });
 import { ref, onMounted, onUnmounted, reactive, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { useUserStore } from '@/stores/user';
+import { useDeviceStore } from '@/stores/device';
 import {
   getLoginQrKey,
   createLoginQr,
@@ -69,6 +70,16 @@ const completeLogin = (data: Record<string, unknown>) => {
   isLoginDone = true;
   userStore.handleLoginSuccess(data);
   completeKugouLoginVerification();
+
+  // 持久化设备标识，确保后续启动复用同一身份
+  const deviceStore = useDeviceStore();
+  if (deviceStore.info?.guid) {
+    window.electron.storage.kv.set('device-identity', {
+      guid: deviceStore.info.guid,
+      mac: deviceStore.info.mac || '02:00:00:00:00:00',
+    });
+  }
+
   void closeTransientView(router, { query: router.currentRoute.value.query });
 };
 

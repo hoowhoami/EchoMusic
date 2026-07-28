@@ -1,9 +1,11 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 import { app } from 'electron';
 import log from './logger';
 import { applyKugouApiNetworkSettings, refreshNetworkSettingsFromStorage } from './networkSettings';
+import { getKvStorage } from './storage/kv';
 
 // --- 类型定义 ---
 
@@ -94,6 +96,22 @@ const loadModule = (modulePath: string, route: string): ModuleDefinition => {
 };
 
 /**
+ * 获取真实 MAC 地址（优先非内部网卡）
+ */
+const getRealMacAddress = (): string => {
+  const interfaces = os.networkInterfaces()
+  for (const entries of Object.values(interfaces)) {
+    if (!entries) continue
+    for (const entry of entries) {
+      if (!entry.internal && entry.mac && entry.mac !== '00:00:00:00:00:00') {
+        return entry.mac.toUpperCase()
+      }
+    }
+  }
+  return '02:00:00:00:00:00'
+}
+
+/**
  * 初始化 server 环境
  * 复现 server/server.js 中的全局变量初始化和环境变量设置
  */
@@ -118,6 +136,23 @@ export async function initApiServer(): Promise<void> {
     }
   }
 
+  // 尝试从持久化存储读取设备标识（登录时保存的 GUID/MAC）
+  try {
+    const persistedIdentity = getKvStorage().get<{ guid?: string; mac?: string }>('device-identity');
+    if (persistedIdentity) {
+      if (persistedIdentity.guid) process.env.KUGOU_API_GUID = persistedIdentity.guid;
+      if (persistedIdentity.mac) process.env.KUGOU_API_MAC = persistedIdentity.mac;
+      log.info('[IPC-Server] Loaded persisted device identity from KV storage');
+    }
+  } catch {
+    // 持久化读取失败不影响启动
+  }
+
+  // 没有持久化或 .env 提供 MAC 时，使用真实网卡地址
+  if (!process.env.KUGOU_API_MAC) {
+    process.env.KUGOU_API_MAC = getRealMacAddress()
+  }
+
   // 初始化 server 内部工具
   const utilPath = path.join(serverPath, 'util');
   const { cryptoMd5 } = require(path.join(utilPath, 'crypto'));
@@ -132,7 +167,7 @@ export async function initApiServer(): Promise<void> {
 
   // 生成全局标识（与 server/server.js 一致）
   guid = process.env.KUGOU_API_GUID || cryptoMd5(getGuid());
-  serverDev = (process.env.KUGOU_API_DEV || randomString(10)).toUpperCase();
+  serverDev = 'EchoMusic';
   mid = calculateMid(guid);
   webglHash = process.env.KUGOU_API_WEBGL || generateWebGLHash();
 
