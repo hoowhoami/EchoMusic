@@ -48,9 +48,13 @@ export function sendSmsCode(mobile: string) {
 /**
  * 手机验证码登录
  */
-export function loginBySms(mobile: string, code: string) {
+export function loginBySms(mobile: string, code: string, userid?: string | number) {
   return request.get('/login/cellphone', {
-    params: { mobile, code },
+    params: {
+      mobile,
+      code,
+      ...(userid ? { userid } : {}),
+    },
   });
 }
 

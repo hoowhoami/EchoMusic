@@ -733,11 +733,10 @@ const statusLabel = (status: ImportItemResult['status']): string => {
         </template>
         <div class="flex flex-col gap-4 py-1">
           <p class="text-[13px] text-text-secondary leading-relaxed">
-            已存在同名歌单「<strong class="text-text-main">{{
-              duplicatePlaylists[0]?.name
-            }}</strong>」（{{
-              duplicatePlaylists[0]?.count ?? duplicatePlaylists[0]?.songcount ?? 0
-            }} 首），确定继续导入到新建歌单？
+            已存在同名歌单「
+            <strong class="text-text-main">{{ duplicatePlaylists[0]?.name }}</strong>
+            」（{{ duplicatePlaylists[0]?.count ?? duplicatePlaylists[0]?.songcount ?? 0 }}
+            首），确定继续导入到新建歌单？
           </p>
         </div>
         <template #footer>
