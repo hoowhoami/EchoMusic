@@ -205,6 +205,12 @@ const resolveSmsLoginResponse = (res: any): boolean => {
   return false;
 };
 
+const getApiErrorBody = (error: unknown): unknown => {
+  if (!error || typeof error !== 'object') return null;
+  const response = (error as { response?: { body?: unknown } }).response;
+  return response?.body ?? null;
+};
+
 const startCountdown = () => {
   smsData.countdown = 60;
   smsTimer = setInterval(() => {
@@ -246,8 +252,11 @@ const handleSmsLogin = async () => {
   try {
     const res: any = await loginBySms(mobile, smsData.code);
     resolveSmsLoginResponse(res);
-  } catch {
-    smsData.error = '登录失败，请稍后重试';
+  } catch (e) {
+    const handled = resolveSmsLoginResponse(getApiErrorBody(e));
+    if (!handled && smsData.accountCandidates.length === 0) {
+      smsData.error = '登录失败，请稍后重试';
+    }
   } finally {
     smsData.isSending = false;
   }
@@ -265,8 +274,11 @@ const handleSmsAccountLogin = async (account: SmsAccountCandidate) => {
     if (!completed) {
       smsData.pendingUserid = null;
     }
-  } catch {
-    smsData.error = '登录失败，请稍后重试';
+  } catch (e) {
+    const handled = resolveSmsLoginResponse(getApiErrorBody(e));
+    if (!handled && smsData.accountCandidates.length === 0) {
+      smsData.error = '登录失败，请稍后重试';
+    }
     smsData.pendingUserid = null;
   } finally {
     smsData.isSending = false;
