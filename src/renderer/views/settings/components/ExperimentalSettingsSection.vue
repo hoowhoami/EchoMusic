@@ -64,7 +64,9 @@ const restartWithDiagnostics = async () => {
 const dpiScaleLabel = computed(() => Number(settingStore.dpiScale || 1).toFixed(1));
 
 const showUserInfo = ref(false);
-const deviceIdentity = ref<{ guid: string; mac: string; serverDev: string; mid: string } | null>(null);
+const deviceIdentity = ref<{ guid: string; mac: string; serverDev: string; mid: string } | null>(
+  null,
+);
 
 const userInfoEntries = computed(() => {
   const info = userStore.info;
@@ -91,11 +93,11 @@ const userInfoEntries = computed(() => {
 
 const showUserInfoDialog = async () => {
   try {
-    deviceIdentity.value = await window.electron.apiServer.identity()
+    deviceIdentity.value = await window.electron.apiServer.identity();
   } catch {
     // IPC 不可用时忽略
   }
-  showUserInfo.value = true
+  showUserInfo.value = true;
 };
 
 const copyAuthHeader = async () => {

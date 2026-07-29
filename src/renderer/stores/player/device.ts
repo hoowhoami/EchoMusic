@@ -21,6 +21,7 @@ type PlayerAudioDeviceListChangedPayload = {
   deviceChangeKind?: string;
   disconnectedDevices?: PlayerAudioDevice[];
 };
+type OutputDevicesRefreshArg = PlayerAudioDevice[] | PlayerAudioDeviceListChangedPayload;
 type PlayerCoreStateChangedPayload = {
   state?: string;
   reason?: string;
@@ -41,10 +42,9 @@ export const createDeviceManager = (
   let applyingOutputDevice = false;
   let applyingOutputDeviceKey: string | null = null;
   let applyingOutputDevicePromise: Promise<boolean> | null = null;
+  let queuedOutputDevicesRefresh: OutputDevicesRefreshArg | true | null = null;
   let nativeOutputReconfigActive = false;
   let outputReconfigSettleUntil = 0;
-  let lastAppliedOutputDeviceKey: string | null = null;
-  let lastAppliedOutputDeviceAt = 0;
   let lastDefaultOutputDeviceId: string | null | undefined;
 
   const resolveDefaultOutputDeviceId = (devices: PlayerAudioDevice[]) =>
@@ -199,23 +199,9 @@ export const createDeviceManager = (
     const player = window.electron?.player;
     const exclusiveChanged = exclusive !== (state._lastAppliedExclusive ?? false);
     const deviceChanged = state.appliedOutputDeviceId !== deviceId;
-    const applyKey = outputDeviceApplyKey(deviceId, exclusive);
     let applied = false;
 
     if (!force && !exclusiveChanged && !deviceChanged) {
-      setReadyOutputDeviceStatus(deviceId);
-      lastAppliedOutputDeviceKey = applyKey;
-      lastAppliedOutputDeviceAt = Date.now();
-      return true;
-    }
-
-    if (
-      force &&
-      !exclusiveChanged &&
-      !deviceChanged &&
-      lastAppliedOutputDeviceKey === applyKey &&
-      Date.now() - lastAppliedOutputDeviceAt < OUTPUT_RECONFIG_SETTLE_MS
-    ) {
       setReadyOutputDeviceStatus(deviceId);
       return true;
     }
@@ -276,8 +262,6 @@ export const createDeviceManager = (
       return fallbackApplied;
     } else {
       setReadyOutputDeviceStatus(deviceId);
-      lastAppliedOutputDeviceKey = applyKey;
-      lastAppliedOutputDeviceAt = Date.now();
       await recoverPlaybackStatusAfterOutputChange();
       return true;
     }
@@ -308,11 +292,7 @@ export const createDeviceManager = (
     }
   };
 
-  const refreshOutputDevices = async (
-    playerDevicesArg?: PlayerAudioDevice[] | PlayerAudioDeviceListChangedPayload,
-  ) => {
-    if (refreshingOutputDevices) return;
-    refreshingOutputDevices = true;
+  const refreshOutputDevicesOnce = async (playerDevicesArg?: OutputDevicesRefreshArg) => {
     const fallbackOptions = [{ label: '系统默认', value: 'default' }];
     try {
       let playerDevices: PlayerAudioDevice[];
@@ -412,6 +392,25 @@ export const createDeviceManager = (
     } catch (error) {
       logger.warn('PlayerDevice', 'Refresh output devices failed:', error);
       settingStore.outputDevices = fallbackOptions;
+    }
+  };
+
+  const refreshOutputDevices = async (playerDevicesArg?: OutputDevicesRefreshArg) => {
+    if (refreshingOutputDevices) {
+      queuedOutputDevicesRefresh = playerDevicesArg ?? true;
+      return;
+    }
+    refreshingOutputDevices = true;
+    try {
+      let nextArg = playerDevicesArg;
+      while (true) {
+        queuedOutputDevicesRefresh = null;
+        await refreshOutputDevicesOnce(nextArg);
+
+        const queuedArg = queuedOutputDevicesRefresh;
+        if (!queuedArg) break;
+        nextArg = queuedArg === true ? undefined : queuedArg;
+      }
     } finally {
       refreshingOutputDevices = false;
     }

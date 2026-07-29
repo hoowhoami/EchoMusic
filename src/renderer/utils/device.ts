@@ -55,7 +55,7 @@ export const ensureDevice = async () => {
         deviceStore.setDeviceInfo(info);
         // 再同步服务端生成的设备标识（guid/mid/serverDev/mac）
         try {
-          const identity = await window.electron.apiServer.identity()
+          const identity = await window.electron.apiServer.identity();
           if (identity?.guid) {
             deviceStore.setDeviceInfo({
               ...deviceStore.info,
@@ -63,10 +63,10 @@ export const ensureDevice = async () => {
               mid: identity.mid || deviceStore.info?.mid,
               serverDev: identity.serverDev,
               mac: identity.mac || deviceStore.info?.mac,
-            })
+            });
           }
         } catch {
-          logger.warn('Device', 'Failed to sync server identity')
+          logger.warn('Device', 'Failed to sync server identity');
         }
         logger.info('Device', 'Device registered');
       } else {

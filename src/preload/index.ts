@@ -348,7 +348,13 @@ contextBridge.exposeInMainWorld('electron', {
   apiServer: {
     start: () => ipcRenderer.invoke('api-server:start'),
     status: () => ipcRenderer.invoke('api-server:status') as Promise<ApiServerStatus>,
-    identity: () => ipcRenderer.invoke('device:identity') as Promise<{ guid: string; mac: string; serverDev: string; mid: string }>,
+    identity: () =>
+      ipcRenderer.invoke('device:identity') as Promise<{
+        guid: string;
+        mac: string;
+        serverDev: string;
+        mid: string;
+      }>,
   },
   diagnostics: {
     getMemory: async (label?: string): Promise<DiagnosticsMemorySnapshot> => ({
