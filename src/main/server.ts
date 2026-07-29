@@ -49,7 +49,7 @@ export const getDeviceIdentity = () => ({
   mac: process.env.KUGOU_API_MAC || '',
   serverDev: SERVER_DEV,
   mid,
-})
+});
 
 /**
  * 解析 server 目录路径
@@ -106,17 +106,17 @@ const loadModule = (modulePath: string, route: string): ModuleDefinition => {
  * 获取真实 MAC 地址（优先非内部网卡）
  */
 const getRealMacAddress = (): string => {
-  const interfaces = os.networkInterfaces()
+  const interfaces = os.networkInterfaces();
   for (const entries of Object.values(interfaces)) {
-    if (!entries) continue
+    if (!entries) continue;
     for (const entry of entries) {
       if (!entry.internal && entry.mac && entry.mac !== '00:00:00:00:00:00') {
-        return entry.mac.toUpperCase()
+        return entry.mac.toUpperCase();
       }
     }
   }
-  return '02:00:00:00:00:00'
-}
+  return '02:00:00:00:00:00';
+};
 
 /**
  * 初始化 server 环境
@@ -145,11 +145,13 @@ export async function initApiServer(): Promise<void> {
 
   // 尝试从持久化存储读取设备标识（来自 deviceStore）
   try {
-    const deviceStoreData = getKvStorage().get<{ info?: { guid?: string; mac?: string } }>('pinia:device')
+    const deviceStoreData = getKvStorage().get<{ info?: { guid?: string; mac?: string } }>(
+      'pinia:device',
+    );
     if (deviceStoreData?.info) {
-      if (deviceStoreData.info.guid) process.env.KUGOU_API_GUID = deviceStoreData.info.guid
-      if (deviceStoreData.info.mac) process.env.KUGOU_API_MAC = deviceStoreData.info.mac
-      log.info('[IPC-Server] Loaded persisted device identity from deviceStore')
+      if (deviceStoreData.info.guid) process.env.KUGOU_API_GUID = deviceStoreData.info.guid;
+      if (deviceStoreData.info.mac) process.env.KUGOU_API_MAC = deviceStoreData.info.mac;
+      log.info('[IPC-Server] Loaded persisted device identity from deviceStore');
     }
   } catch {
     // 持久化读取失败不影响启动
@@ -157,15 +159,13 @@ export async function initApiServer(): Promise<void> {
 
   // 没有持久化或 .env 提供 MAC 时，使用真实网卡地址
   if (!process.env.KUGOU_API_MAC) {
-    process.env.KUGOU_API_MAC = getRealMacAddress()
+    process.env.KUGOU_API_MAC = getRealMacAddress();
   }
 
   // 初始化 server 内部工具
   const utilPath = path.join(serverPath, 'util');
   const { cryptoMd5 } = require(path.join(utilPath, 'crypto'));
-  const { getGuid, randomString, calculateMid, generateWebGLHash } = require(
-    path.join(utilPath, 'util'),
-  );
+  const { getGuid, calculateMid, generateWebGLHash } = require(path.join(utilPath, 'util'));
   const { createRequest } = require(path.join(utilPath, 'request'));
   const { applyCliOverrides } = require(path.join(utilPath, 'runtime'));
 
@@ -182,8 +182,8 @@ export async function initApiServer(): Promise<void> {
 
   // 将生成的设备标识回写到 KV，确保后续启动能复用同一身份
   try {
-    const kv = getKvStorage()
-    const existing = kv.get<Record<string, any>>('pinia:device') || {}
+    const kv = getKvStorage();
+    const existing = kv.get<Record<string, any>>('pinia:device') || {};
     kv.set('pinia:device', {
       ...existing,
       info: {
@@ -193,7 +193,7 @@ export async function initApiServer(): Promise<void> {
         serverDev: SERVER_DEV,
         mac: (process.env.KUGOU_API_MAC || '02:00:00:00:00:00').toUpperCase(),
       },
-    })
+    });
   } catch {
     // 写入失败不影响运行
   }
@@ -296,8 +296,6 @@ export const handleApiRequest = async (request: ApiRequest): Promise<ApiResponse
   const authCookies = parseAuthCookie(
     request.headers?.['Authorization'] || request.headers?.['authorization'],
   );
-  const mergedCookies = { ...defaultCookies, ...authCookies };
-
   // 构建 query 参数（复现 Express 路由处理器的逻辑）
   // Express 中 query params 全部是 string 类型，IPC 传输保留了原始类型（number 等），
   // 部分 server module 依赖 .split() 等字符串方法，需要统一转为 string 以保持兼容
@@ -316,7 +314,7 @@ export const handleApiRequest = async (request: ApiRequest): Promise<ApiResponse
   // 合并 cookie：默认 cookie → param 中的 cookie → auth header 中的 cookie
   const cookieFromParams =
     typeof paramCookie === 'string' ? parseAuthCookie(paramCookie) : paramCookie || {};
-  const finalCookie = { ...mergedCookies, ...cookieFromParams };
+  const finalCookie = { ...defaultCookies, ...cookieFromParams, ...authCookies };
 
   const query: any = {
     cookie: finalCookie,

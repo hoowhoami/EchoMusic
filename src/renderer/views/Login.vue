@@ -190,6 +190,11 @@ const resetSmsAccountCandidates = () => {
 };
 
 const resolveSmsLoginResponse = (res: any): boolean => {
+  if (!res || typeof res !== 'object') {
+    smsData.error = '登录失败，请稍后重试';
+    return false;
+  }
+
   const candidates = getSmsMultiAccountCandidates(res);
   if (candidates.length > 0) {
     smsData.accountCandidates = candidates;

@@ -86,18 +86,29 @@ const coverUrl = computed(() => {
   return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
 });
 
-const parsePurchasedSongList = (payload: unknown): { songs: Song[], total: number } => {
+const parsePurchasedSongList = (payload: unknown): { songs: Song[]; total: number } => {
   const record = payload && typeof payload === 'object' ? (payload as Record<string, unknown>) : {};
-  const data = record.data && typeof record.data === 'object' ? (record.data as Record<string, unknown>) : record;
+  const data =
+    record.data && typeof record.data === 'object'
+      ? (record.data as Record<string, unknown>)
+      : record;
   const total = Number(data.total ?? 0);
   const rawList = Array.isArray(data.goods) ? data.goods : [];
   const songs = rawList
     .filter((item): item is Record<string, unknown> => typeof item === 'object' && item !== null)
     .map((item) => {
-      const audioInfo = item.audio_info && typeof item.audio_info === 'object'
-        ? (item.audio_info as Record<string, unknown>)
-        : {};
-      const hash = String(audioInfo.hash_high || audioInfo.hash_flac || audioInfo.hash_320 || audioInfo.hash_128 || item.hash || '');
+      const audioInfo =
+        item.audio_info && typeof item.audio_info === 'object'
+          ? (item.audio_info as Record<string, unknown>)
+          : {};
+      const hash = String(
+        audioInfo.hash_high ||
+          audioInfo.hash_flac ||
+          audioInfo.hash_320 ||
+          audioInfo.hash_128 ||
+          item.hash ||
+          '',
+      );
       const durationMs = Number(audioInfo.duration || 0);
       const duration = durationMs > 0 ? Math.floor(durationMs / 1000) : 0;
       const artist = String(item.author_name || '');
@@ -122,9 +133,12 @@ const parsePurchasedSongList = (payload: unknown): { songs: Song[], total: numbe
   return { songs, total };
 };
 
-const parsePurchasedAlbumList = (payload: unknown): { albums: AlbumMeta[], total: number } => {
+const parsePurchasedAlbumList = (payload: unknown): { albums: AlbumMeta[]; total: number } => {
   const record = payload && typeof payload === 'object' ? (payload as Record<string, unknown>) : {};
-  const data = record.data && typeof record.data === 'object' ? (record.data as Record<string, unknown>) : record;
+  const data =
+    record.data && typeof record.data === 'object'
+      ? (record.data as Record<string, unknown>)
+      : record;
   const total = Number(data.total ?? 0);
   const rawList = Array.isArray(data.goods) ? data.goods : [];
   const albums = rawList
@@ -388,7 +402,11 @@ onMounted(() => {
           </template>
 
           <template #actions>
-            <ActionRow v-if="activeTab === 'songs'" @play="handlePlayAll" @batch="openBatchDrawer" />
+            <ActionRow
+              v-if="activeTab === 'songs'"
+              @play="handlePlayAll"
+              @batch="openBatchDrawer"
+            />
           </template>
 
           <template #collapsed-actions>
@@ -586,10 +604,7 @@ onMounted(() => {
                 <AlbumCard v-bind="item" />
               </template>
             </VirtualGrid>
-            <div
-              v-if="albumsHasMore && !albumsLoading"
-              class="flex justify-center pt-6 pb-4"
-            >
+            <div v-if="albumsHasMore && !albumsLoading" class="flex justify-center pt-6 pb-4">
               <Button
                 variant="ghost"
                 size="sm"

@@ -163,7 +163,7 @@ const confirmDuplicateImport = () => {
   if (duplicateCountdown.value > 0) return;
   showDuplicateWarning.value = false;
   duplicateCountdown.value = 5;
-  handleStartImport();
+  void handleStartImport(true);
 };
 
 // Step 3
@@ -317,14 +317,15 @@ const fetchKugouPlaylistMeta = async (id: string) => {
   }
 };
 
-const handleStartImport = async () => {
+const handleStartImport = async (duplicateConfirmed = false) => {
   if (!canStartImport.value || isImporting.value) return;
 
   // 新建歌单时检测重名
   if (
     target.value === 'new' &&
     duplicatePlaylists.value.length > 0 &&
-    !showDuplicateWarning.value
+    !showDuplicateWarning.value &&
+    !duplicateConfirmed
   ) {
     showDuplicateWarning.value = true;
     startDuplicateCountdown();
