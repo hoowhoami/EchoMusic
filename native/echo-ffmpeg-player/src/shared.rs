@@ -577,6 +577,28 @@ impl SharedAudio {
     }
 
     pub fn pop_into(&self, output: &mut [f32]) -> usize {
+        let chunk_samples = self.output_pop_chunk_samples();
+        if output.len() > chunk_samples {
+            output.fill(0.0);
+            let mut consumed_frames = 0usize;
+            for chunk in output.chunks_mut(chunk_samples) {
+                let frames = self.pop_chunk_into(chunk);
+                consumed_frames = consumed_frames.saturating_add(frames);
+                if frames == 0 && !self.eof.load(Ordering::Acquire) {
+                    break;
+                }
+            }
+            return consumed_frames;
+        }
+        self.pop_chunk_into(output)
+    }
+
+    fn output_pop_chunk_samples(&self) -> usize {
+        let channels = self.mix_format.channels.max(1);
+        ((self.output_queue_capacity / channels).max(1) * channels).max(1)
+    }
+
+    fn pop_chunk_into(&self, output: &mut [f32]) -> usize {
         output.fill(0.0);
         let queued_samples = self.realtime_output.buffered_samples();
         if self.should_hold_for_buffering(queued_samples, output.len()) {
@@ -1498,6 +1520,38 @@ mod tests {
 
         assert_eq!(shared.output_queue_capacity, 40);
         assert_eq!(shared.decoded_queue_capacity_frames, 100);
+    }
+
+    #[test]
+    fn output_queue_capacity_honors_larger_audio_buffer_setting() {
+        let shared = SharedAudio::new(
+            MixFormat::stereo_f32(100),
+            2.0,
+            8.0,
+            &DspSettings::default(),
+        );
+
+        assert_eq!(shared.output_queue_capacity, 400);
+        assert_eq!(shared.decoded_queue_capacity_frames, 200);
+    }
+
+    #[test]
+    fn oversized_output_request_consumes_software_buffer_before_silence() {
+        let shared = SharedAudio::new(
+            MixFormat::stereo_f32(100),
+            0.2,
+            8.0,
+            &DspSettings::default(),
+        );
+        assert!(shared.push_samples(&vec![0.5; 40]));
+
+        let mut output = [1.0f32; 80];
+        let frames = shared.pop_into(&mut output);
+
+        assert_eq!(frames, 20);
+        assert_eq!(&output[..40], &[0.5; 40]);
+        assert_eq!(&output[40..], &[0.0; 40]);
+        assert_eq!(shared.output_underrun_count(), 1);
     }
 
     #[test]

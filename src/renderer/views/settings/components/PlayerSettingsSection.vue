@@ -40,7 +40,7 @@ const updateAudioDemuxerBackMB = (value: string | number) => {
 };
 
 const updateAudioBufferSecs = (value: string | number) => {
-  settingStore.audioBufferSecs = clampNumber(value, 0.2, 0.05, 1);
+  settingStore.audioBufferSecs = clampNumber(value, 0.2, 0.05, 5);
 };
 
 const updatePlayResumeTimeout = (value: string | number) => {
@@ -168,14 +168,14 @@ const updatePlayerNetworkTimeout = (value: string | number) => {
       <div class="space-y-1">
         <h3 class="font-semibold">音频设备缓冲</h3>
         <p class="text-sm text-text-secondary">
-          输出设备侧的小缓冲，网络波动由预读缓存和暂停恢复策略处理（需重启应用生效）
+          输出设备侧的小缓冲，蓝牙设备可适当调高以减少断续，但会增加响应延迟（需重启应用生效）
         </p>
       </div>
       <InputNumber
         class="w-45"
         :model-value="String(settingStore.audioBufferSecs ?? 0.2)"
         :min="0.05"
-        :max="1"
+        :max="5"
         :step="0.05"
         placeholder="0.2"
         suffix="秒"

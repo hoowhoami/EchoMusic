@@ -6,6 +6,7 @@ use napi_derive::napi;
 use std::time::Duration;
 
 const DEFAULT_BUFFER_SECS: f64 = 0.2;
+const MAX_BUFFER_SECS: f64 = 5.0;
 const DEFAULT_AUDIO_CACHE_SECS: f64 = 1.0;
 const DEFAULT_CACHE_PAUSE_WAIT_SECS: f64 = 1.0;
 const DEFAULT_DEMUXER_MAX_MB: f64 = 150.0;
@@ -61,7 +62,7 @@ impl PlayerConfig {
         let mut config = Self::default();
         if let Some(options) = options {
             if let Some(value) = options.audio_buffer_secs {
-                config.audio_buffer_secs = value.clamp(0.05, 1.0);
+                config.audio_buffer_secs = value.clamp(0.05, MAX_BUFFER_SECS);
             }
             if let Some(value) = options.audio_cache_secs {
                 config.audio_cache_secs = value.clamp(1.0, 120.0);
@@ -163,6 +164,35 @@ mod tests {
         assert_eq!(config.audio_demuxer_max_mb, 8.0);
         assert_eq!(config.audio_demuxer_back_mb, 512.0);
         assert_eq!(config.packet_cache_options().back_bytes, 8 * 1024 * 1024);
+    }
+
+    #[test]
+    fn player_config_allows_larger_output_buffer_for_high_latency_devices() {
+        let config = PlayerConfig::from_options(Some(PlayerConfigOptions {
+            audio_buffer_secs: Some(3.0),
+            audio_cache_secs: None,
+            audio_cache_pause_wait_secs: None,
+            audio_demuxer_max_mb: None,
+            audio_demuxer_back_mb: None,
+            network_timeout_secs: None,
+            playback_stall_timeout_secs: None,
+            http_proxy: None,
+        }));
+
+        assert_eq!(config.audio_buffer_secs, 3.0);
+
+        let clamped = PlayerConfig::from_options(Some(PlayerConfigOptions {
+            audio_buffer_secs: Some(30.0),
+            audio_cache_secs: None,
+            audio_cache_pause_wait_secs: None,
+            audio_demuxer_max_mb: None,
+            audio_demuxer_back_mb: None,
+            network_timeout_secs: None,
+            playback_stall_timeout_secs: None,
+            http_proxy: None,
+        }));
+
+        assert_eq!(clamped.audio_buffer_secs, MAX_BUFFER_SECS);
     }
 }
 

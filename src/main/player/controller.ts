@@ -19,6 +19,7 @@ const PINIA_SETTING_KEY = 'pinia:setting';
 const DEFAULT_AUDIO_CACHE_SECS = 1;
 const DEFAULT_AUDIO_CACHE_PAUSE_WAIT_SECS = 1;
 const DEFAULT_AUDIO_OUTPUT_BUFFER_SECS = 0.2;
+const MAX_AUDIO_OUTPUT_BUFFER_SECS = 5;
 const DEFAULT_DEMUXER_MAX_MB = 150;
 const DEFAULT_DEMUXER_BACK_MB = 50;
 const DEFAULT_PLAYBACK_STALL_TIMEOUT_SECS = 8;
@@ -44,7 +45,7 @@ const getPersistedNativeAudioConfig = () => {
     saved?.audioBufferSecs,
     DEFAULT_AUDIO_OUTPUT_BUFFER_SECS,
     0.05,
-    1,
+    MAX_AUDIO_OUTPUT_BUFFER_SECS,
   );
   const audioDemuxerMaxMB = readClampedNumber(
     saved?.audioDemuxerMaxMB,
