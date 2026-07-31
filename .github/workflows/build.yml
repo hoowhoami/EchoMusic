@@ -127,10 +127,16 @@ jobs:
               npm run build
             fi
           }
-          build_addon echo-media-controls &
-          build_addon echo-ffmpeg-player &
-          build_addon echo-sqlite-store &
-          wait
+          pids=()
+          build_addon echo-media-controls & pids+=("$!")
+          build_addon echo-ffmpeg-player & pids+=("$!")
+          build_addon echo-sqlite-store & pids+=("$!")
+
+          status=0
+          for pid in "${pids[@]}"; do
+            wait "$pid" || status=$?
+          done
+          exit "$status"
 
       - name: Verify macOS ffmpeg player linkage
         if: runner.os == 'macOS'
@@ -170,7 +176,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: server/node_modules
-          key: ${{ runner.os }}-server-nm-${{ hashFiles('server/package-lock.json') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-node20-server-nm-${{ hashFiles('server/package-lock.json') }}
 
       - name: Install server runtime dependencies
         working-directory: server
