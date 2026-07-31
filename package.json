@@ -78,6 +78,7 @@
         "repo": "EchoMusic"
       }
     ],
+    "npmRebuild": false,
     "directories": {
       "output": "release",
       "buildResources": "build"
@@ -237,6 +238,7 @@
       "allowElevation": true,
       "include": "build/installer.nsh",
       "buildUniversalInstaller": false,
+      "differentialPackage": false,
       "artifactName": "${productName}-${version}-Windows-Setup-${arch}.${ext}"
     },
     "dmg": {
