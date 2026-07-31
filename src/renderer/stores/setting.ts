@@ -159,11 +159,14 @@ export const useSettingStore = defineStore('setting', {
     sidebarSectionCollapsed: { discover: false, library: false } as Record<string, boolean>,
     // 歌单排序方式
     playlistSortOrder: 'default' as 'default' | 'time-desc' | 'time-asc' | 'name-asc' | 'name-desc',
-    // 音频缓冲区设置
-    audioCacheSecs: 1,
-    audioCachePauseWaitSecs: 1,
-    audioDemuxerMaxMB: 150,
-    audioDemuxerBackMB: 50,
+    // mpv-style audio buffering settings
+    demuxerReadaheadSecs: 1,
+    cache: 'auto' as 'auto' | 'yes' | 'no',
+    cacheSecs: 3_600_000,
+    cachePause: true,
+    cachePauseWaitSecs: 1,
+    demuxerMaxBytes: 150 * 1024 * 1024,
+    demuxerMaxBackBytes: 50 * 1024 * 1024,
     audioBufferSecs: 0.2,
     kugouApiProxyUrl: DEFAULT_NETWORK_SETTINGS.kugouApiProxyUrl,
     kugouApiTimeoutSecs: DEFAULT_NETWORK_SETTINGS.kugouApiTimeoutSecs,

@@ -31,6 +31,16 @@
   background: transparent;
 }
 
+.settings-notice {
+  @apply rounded-lg border px-3 py-2;
+  background: color-mix(in srgb, var(--color-primary) 12%, transparent);
+  border-color: color-mix(in srgb, var(--color-primary) 35%, transparent);
+}
+
+.settings-notice p {
+  @apply text-[12px] font-semibold text-primary;
+}
+
 .settings-button {
   @apply text-sm font-semibold;
 }

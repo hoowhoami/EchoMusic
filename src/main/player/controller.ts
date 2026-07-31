@@ -16,12 +16,16 @@ import type {
 } from '../../shared/player-audio-graph';
 
 const PINIA_SETTING_KEY = 'pinia:setting';
-const DEFAULT_AUDIO_CACHE_SECS = 1;
-const DEFAULT_AUDIO_CACHE_PAUSE_WAIT_SECS = 1;
 const DEFAULT_AUDIO_OUTPUT_BUFFER_SECS = 0.2;
-const MAX_AUDIO_OUTPUT_BUFFER_SECS = 5;
-const DEFAULT_DEMUXER_MAX_MB = 150;
-const DEFAULT_DEMUXER_BACK_MB = 50;
+const MAX_AUDIO_OUTPUT_BUFFER_SECS = 10;
+const DEFAULT_DEMUXER_READAHEAD_SECS = 1;
+const DEFAULT_CACHE = 'auto' as const;
+const DEFAULT_CACHE_SECS = 3_600_000;
+const DEFAULT_CACHE_PAUSE = true;
+const DEFAULT_CACHE_PAUSE_WAIT_SECS = 1;
+const DEFAULT_DEMUXER_MAX_BYTES = 150 * 1024 * 1024;
+const DEFAULT_DEMUXER_MAX_BACK_BYTES = 50 * 1024 * 1024;
+const MAX_DEMUXER_BYTES = 4 * 1024 * 1024 * 1024;
 const DEFAULT_PLAYBACK_STALL_TIMEOUT_SECS = 8;
 const CACHE_STATE_LOG_INTERVAL_MS = 5000;
 const nativeRequire = createRequire(path.join(process.cwd(), 'package.json'));
@@ -32,32 +36,50 @@ const readClampedNumber = (value: unknown, fallback: number, min: number, max: n
   return Math.min(max, Math.max(min, parsed));
 };
 
+const readCacheMode = (value: unknown): 'auto' | 'yes' | 'no' => {
+  const normalized = String(value ?? DEFAULT_CACHE)
+    .trim()
+    .toLowerCase();
+  return normalized === 'yes' || normalized === 'no' ? normalized : DEFAULT_CACHE;
+};
+
+const readBoolean = (value: unknown, fallback: boolean): boolean =>
+  typeof value === 'boolean' ? value : fallback;
+
 const getPersistedNativeAudioConfig = () => {
   const saved = getKvStorage().get<Record<string, unknown>>(PINIA_SETTING_KEY);
-  const audioCacheSecs = readClampedNumber(saved?.audioCacheSecs, DEFAULT_AUDIO_CACHE_SECS, 1, 120);
-  const audioCachePauseWaitSecs = readClampedNumber(
-    saved?.audioCachePauseWaitSecs,
-    DEFAULT_AUDIO_CACHE_PAUSE_WAIT_SECS,
-    0.1,
-    30,
+  const demuxerReadaheadSecs = readClampedNumber(
+    saved?.demuxerReadaheadSecs,
+    DEFAULT_DEMUXER_READAHEAD_SECS,
+    0,
+    DEFAULT_CACHE_SECS,
+  );
+  const cache = readCacheMode(saved?.cache);
+  const cacheSecs = readClampedNumber(saved?.cacheSecs, DEFAULT_CACHE_SECS, 0, DEFAULT_CACHE_SECS);
+  const cachePause = readBoolean(saved?.cachePause, DEFAULT_CACHE_PAUSE);
+  const cachePauseWaitSecs = readClampedNumber(
+    saved?.cachePauseWaitSecs,
+    DEFAULT_CACHE_PAUSE_WAIT_SECS,
+    0,
+    DEFAULT_CACHE_SECS,
   );
   const audioBufferSecs = readClampedNumber(
     saved?.audioBufferSecs,
     DEFAULT_AUDIO_OUTPUT_BUFFER_SECS,
-    0.05,
+    0,
     MAX_AUDIO_OUTPUT_BUFFER_SECS,
   );
-  const audioDemuxerMaxMB = readClampedNumber(
-    saved?.audioDemuxerMaxMB,
-    DEFAULT_DEMUXER_MAX_MB,
-    8,
-    512,
-  );
-  const audioDemuxerBackMB = readClampedNumber(
-    saved?.audioDemuxerBackMB,
-    DEFAULT_DEMUXER_BACK_MB,
+  const demuxerMaxBytes = readClampedNumber(
+    saved?.demuxerMaxBytes,
+    DEFAULT_DEMUXER_MAX_BYTES,
     0,
-    audioDemuxerMaxMB,
+    MAX_DEMUXER_BYTES,
+  );
+  const demuxerMaxBackBytes = readClampedNumber(
+    saved?.demuxerMaxBackBytes,
+    DEFAULT_DEMUXER_MAX_BACK_BYTES,
+    0,
+    demuxerMaxBytes,
   );
   const playbackStallTimeoutSecs = readClampedNumber(
     saved?.playbackStallTimeout,
@@ -67,10 +89,13 @@ const getPersistedNativeAudioConfig = () => {
   );
   return {
     audioBufferSecs,
-    audioCacheSecs,
-    audioCachePauseWaitSecs,
-    audioDemuxerMaxMB,
-    audioDemuxerBackMB,
+    demuxerReadaheadSecs,
+    cache,
+    cacheSecs,
+    cachePause,
+    cachePauseWaitSecs,
+    demuxerMaxBytes,
+    demuxerMaxBackBytes,
     playbackStallTimeoutSecs,
   };
 };
@@ -137,10 +162,13 @@ export interface PlayerAudioDeviceListChangedPayload {
 interface PlayerAddon {
   initialize(config?: {
     audioBufferSecs?: number;
-    audioCacheSecs?: number;
-    audioCachePauseWaitSecs?: number;
-    audioDemuxerMaxMb?: number;
-    audioDemuxerBackMb?: number;
+    demuxerReadaheadSecs?: number;
+    cache?: string;
+    cacheSecs?: number;
+    cachePause?: boolean;
+    cachePauseWaitSecs?: number;
+    demuxerMaxBytes?: number;
+    demuxerMaxBackBytes?: number;
     networkTimeoutSecs?: number;
     playbackStallTimeoutSecs?: number;
     httpProxy?: string;
@@ -263,10 +291,13 @@ export class PlayerController extends EventEmitter {
     this.addon.registerEventHandler((_err, event) => this.handleAddonEvent(event));
     this.addon.initialize({
       audioBufferSecs: audioConfig.audioBufferSecs,
-      audioCacheSecs: audioConfig.audioCacheSecs,
-      audioCachePauseWaitSecs: audioConfig.audioCachePauseWaitSecs,
-      audioDemuxerMaxMb: audioConfig.audioDemuxerMaxMB,
-      audioDemuxerBackMb: audioConfig.audioDemuxerBackMB,
+      demuxerReadaheadSecs: audioConfig.demuxerReadaheadSecs,
+      cache: audioConfig.cache,
+      cacheSecs: audioConfig.cacheSecs,
+      cachePause: audioConfig.cachePause,
+      cachePauseWaitSecs: audioConfig.cachePauseWaitSecs,
+      demuxerMaxBytes: audioConfig.demuxerMaxBytes,
+      demuxerMaxBackBytes: audioConfig.demuxerMaxBackBytes,
       networkTimeoutSecs: networkSettings.playerNetworkTimeoutSecs,
       playbackStallTimeoutSecs: audioConfig.playbackStallTimeoutSecs,
       httpProxy: networkSettings.playerHttpProxyUrl,

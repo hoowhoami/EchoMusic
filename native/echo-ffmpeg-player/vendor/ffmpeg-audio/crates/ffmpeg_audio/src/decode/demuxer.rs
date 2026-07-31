@@ -34,18 +34,25 @@ unsafe impl Send for Demuxer {}
 #[derive(Clone, Copy, Debug)]
 pub struct PacketCacheOptions {
     pub max_bytes: usize,
-    pub back_bytes: usize,
+    pub max_back_bytes: usize,
     pub max_duration: Duration,
+    pub donate_forward_budget: bool,
 }
 
 impl PacketCacheOptions {
-    pub fn new(max_bytes: usize, back_bytes: usize, max_duration: Duration) -> Self {
+    pub fn new(max_bytes: usize, max_back_bytes: usize, max_duration: Duration) -> Self {
         let max_bytes = max_bytes.max(1);
         Self {
             max_bytes,
-            back_bytes: back_bytes.min(max_bytes),
+            max_back_bytes,
             max_duration,
+            donate_forward_budget: true,
         }
+    }
+
+    pub fn with_donate_forward_budget(mut self, enabled: bool) -> Self {
+        self.donate_forward_budget = enabled;
+        self
     }
 }
 
@@ -606,7 +613,8 @@ fn run_packet_cache_worker(
                     };
                 }
 
-                prune_packet_cache(&mut state, options.back_bytes);
+                let back_bytes = packet_cache_effective_back_bytes(&state, options);
+                prune_packet_cache(&mut state, back_bytes);
                 let forward_bytes = packet_cache_forward_bytes(&state);
                 let forward_duration = packet_cache_forward_duration(&state);
                 let has_duration_budget = forward_duration
@@ -638,7 +646,8 @@ fn run_packet_cache_worker(
                         }
                         state.total_bytes = state.total_bytes.saturating_add(packet.size);
                         state.packets.push(packet);
-                        prune_packet_cache(&mut state, options.back_bytes);
+                        let back_bytes = packet_cache_effective_back_bytes(&state, options);
+                        prune_packet_cache(&mut state, back_bytes);
                         shared.changed.notify_all();
                     }
                 }
@@ -648,10 +657,8 @@ fn run_packet_cache_worker(
                             continue;
                         }
                         state.eof = true;
-                        prune_packet_cache(
-                            &mut state,
-                            options.back_bytes.saturating_add(options.max_bytes),
-                        );
+                        let back_bytes = packet_cache_effective_back_bytes(&state, options);
+                        prune_packet_cache(&mut state, back_bytes);
                         shared.changed.notify_all();
                     }
                 }
@@ -683,6 +690,21 @@ fn packet_cache_back_bytes(state: &PacketCacheState) -> usize {
         .take(read_offset.min(state.packets.len()))
         .map(|packet| packet.size)
         .sum()
+}
+
+fn packet_cache_effective_back_bytes(
+    state: &PacketCacheState,
+    options: PacketCacheOptions,
+) -> usize {
+    if options.max_back_bytes == 0 {
+        return 0;
+    }
+    if !options.donate_forward_budget {
+        return options.max_back_bytes;
+    }
+    options
+        .max_back_bytes
+        .saturating_add(options.max_bytes.saturating_sub(packet_cache_forward_bytes(state)))
 }
 
 fn packet_cache_forward_duration(state: &PacketCacheState) -> Option<Duration> {
@@ -834,6 +856,36 @@ mod tests {
 
         assert_eq!(packet_cache_back_bytes(&state), 200);
         assert_eq!(packet_cache_forward_bytes(&state), 160);
+    }
+
+    #[test]
+    fn packet_cache_back_buffer_can_use_unused_forward_budget() {
+        let state = PacketCacheState {
+            packets: vec![
+                packet_with_time(10, 11, 80),
+                packet_with_time(11, 12, 120),
+                packet_with_time(12, 13, 160),
+            ],
+            base_index: 5,
+            read_index: 7,
+            total_bytes: 360,
+            eof: false,
+            stop: false,
+            pending_seek: None,
+            error: None,
+            epoch: 0,
+        };
+        let options = PacketCacheOptions::new(1_000, 200, Duration::from_secs(1));
+
+        assert_eq!(packet_cache_effective_back_bytes(&state, options), 1_040);
+
+        let no_donation =
+            PacketCacheOptions::new(1_000, 200, Duration::from_secs(1))
+                .with_donate_forward_budget(false);
+        assert_eq!(packet_cache_effective_back_bytes(&state, no_donation), 200);
+
+        let disabled = PacketCacheOptions::new(1_000, 0, Duration::from_secs(1));
+        assert_eq!(packet_cache_effective_back_bytes(&state, disabled), 0);
     }
 
     #[test]

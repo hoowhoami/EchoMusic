@@ -2,11 +2,22 @@
 import { useSettingStore } from '@/stores/setting';
 import Input from '@/components/ui/Input.vue';
 import InputNumber from '@/components/ui/InputNumber.vue';
+import Select from '@/components/ui/Select.vue';
+import Switch from '@/components/ui/Switch.vue';
 import { Icon } from '@iconify/vue';
 import SettingsSectionShell from './SettingsSectionShell.vue';
 import { sectionTitles } from '../constants';
 
 const settingStore = useSettingStore();
+const MIB = 1024 * 1024;
+const MAX_CACHE_SECS = 3_600_000;
+const MAX_DEMUXER_CACHE_MB = 4096;
+const MAX_AUDIO_BUFFER_SECS = 10;
+const cacheOptions = [
+  { label: '自动', value: 'auto' },
+  { label: '开启', value: 'yes' },
+  { label: '关闭', value: 'no' },
+];
 
 const clampNumber = (value: string | number, fallback: number, min: number, max: number) => {
   const rawValue = typeof value === 'string' ? value.trim() : value;
@@ -16,31 +27,39 @@ const clampNumber = (value: string | number, fallback: number, min: number, max:
   return Math.max(min, Math.min(max, parsed));
 };
 
-const updateAudioCacheSecs = (value: string | number) => {
-  settingStore.audioCacheSecs = clampNumber(value, 1, 1, 120);
+const bytesToMib = (value: unknown, fallback: number) =>
+  Math.round((Number(value ?? fallback) / MIB) * 100) / 100;
+
+const updateDemuxerReadaheadSecs = (value: string | number) => {
+  settingStore.demuxerReadaheadSecs = clampNumber(value, 1, 0, MAX_CACHE_SECS);
 };
 
-const updateAudioCachePauseWaitSecs = (value: string | number) => {
-  settingStore.audioCachePauseWaitSecs = clampNumber(value, 1, 0.1, 30);
+const updateCache = (value: string | number | Array<string | number>) => {
+  const next = String(Array.isArray(value) ? value[0] : value);
+  settingStore.cache = next === 'yes' || next === 'no' ? next : 'auto';
 };
 
-const updateAudioDemuxerMaxMB = (value: string | number) => {
-  const maxMB = clampNumber(value, 150, 8, 512);
-  settingStore.audioDemuxerMaxMB = maxMB;
-  settingStore.audioDemuxerBackMB = Math.min(settingStore.audioDemuxerBackMB ?? 50, maxMB);
+const updateCacheSecs = (value: string | number) => {
+  settingStore.cacheSecs = clampNumber(value, MAX_CACHE_SECS, 0, MAX_CACHE_SECS);
 };
 
-const updateAudioDemuxerBackMB = (value: string | number) => {
-  settingStore.audioDemuxerBackMB = clampNumber(
-    value,
-    50,
-    0,
-    settingStore.audioDemuxerMaxMB ?? 150,
+const updateCachePauseWaitSecs = (value: string | number) => {
+  settingStore.cachePauseWaitSecs = clampNumber(value, 1, 0, MAX_CACHE_SECS);
+};
+
+const updateDemuxerMaxBytes = (value: string | number) => {
+  const maxMB = clampNumber(value, 150, 0, MAX_DEMUXER_CACHE_MB);
+  settingStore.demuxerMaxBytes = Math.round(maxMB * MIB);
+};
+
+const updateDemuxerMaxBackBytes = (value: string | number) => {
+  settingStore.demuxerMaxBackBytes = Math.round(
+    clampNumber(value, 50, 0, MAX_DEMUXER_CACHE_MB) * MIB,
   );
 };
 
 const updateAudioBufferSecs = (value: string | number) => {
-  settingStore.audioBufferSecs = clampNumber(value, 0.2, 0.05, 5);
+  settingStore.audioBufferSecs = clampNumber(value, 0.2, 0, MAX_AUDIO_BUFFER_SECS);
 };
 
 const updatePlayResumeTimeout = (value: string | number) => {
@@ -88,79 +107,118 @@ const updatePlayerNetworkTimeout = (value: string | number) => {
       />
     </template>
 
+    <div class="settings-notice">
+      <p>播放器设置修改后重启生效</p>
+    </div>
+    <div class="settings-divider"></div>
+
     <div class="settings-item">
       <div class="space-y-1">
-        <h3 class="font-semibold">音频缓冲时长</h3>
-        <p class="text-sm text-text-secondary">
-          网络音频预读时长，增加可减少网络波动导致的播放中断（需重启应用生效）
-        </p>
+        <h3 class="font-semibold">普通预读时长</h3>
+        <p class="text-sm text-text-secondary">本地播放使用的解复用前读时长</p>
       </div>
       <InputNumber
         class="w-45"
-        :model-value="String(settingStore.audioCacheSecs ?? 1)"
-        :min="1"
-        :max="120"
+        :model-value="String(settingStore.demuxerReadaheadSecs ?? 1)"
+        :min="0"
+        :max="MAX_CACHE_SECS"
         :step="1"
         placeholder="1"
         suffix="秒"
-        @update:model-value="updateAudioCacheSecs"
+        @update:model-value="updateDemuxerReadaheadSecs"
       />
     </div>
     <div class="settings-divider"></div>
     <div class="settings-item">
       <div class="space-y-1">
-        <h3 class="font-semibold">缓冲恢复等待</h3>
+        <h3 class="font-semibold">网络缓存时长上限</h3>
         <p class="text-sm text-text-secondary">
-          缓存耗尽进入缓冲后，恢复播放前需要等待的可播放缓存时长（需重启应用生效）
+          与前向缓存上限共同限制网络预读；默认 3600000 秒表示基本不按时长限制
         </p>
       </div>
       <InputNumber
         class="w-45"
-        :model-value="String(settingStore.audioCachePauseWaitSecs ?? 1)"
-        :min="0.1"
-        :max="30"
+        :model-value="String(settingStore.cacheSecs ?? MAX_CACHE_SECS)"
+        :min="0"
+        :max="MAX_CACHE_SECS"
+        :step="1"
+        placeholder="3600000"
+        suffix="秒"
+        @update:model-value="updateCacheSecs"
+      />
+    </div>
+    <div class="settings-divider"></div>
+    <div class="settings-item">
+      <div class="space-y-1">
+        <h3 class="font-semibold">网络缓存模式</h3>
+        <p class="text-sm text-text-secondary">自动时仅网络音频启用更大的 packet 缓存</p>
+      </div>
+      <Select
+        class="w-45"
+        :model-value="settingStore.cache"
+        :options="cacheOptions"
+        @update:model-value="updateCache"
+      />
+    </div>
+    <div class="settings-divider"></div>
+    <div class="settings-item">
+      <div class="space-y-1">
+        <h3 class="font-semibold">缓存耗尽时暂停</h3>
+        <p class="text-sm text-text-secondary">
+          仅控制网络缓存不足时是否等待；音频输出缓冲由音频设备缓冲控制
+        </p>
+      </div>
+      <Switch v-model="settingStore.cachePause" />
+    </div>
+    <div class="settings-divider"></div>
+    <div class="settings-item">
+      <div class="space-y-1">
+        <h3 class="font-semibold">缓存恢复等待</h3>
+        <p class="text-sm text-text-secondary">进入缓冲后，恢复播放前等待的可播放缓存时长</p>
+      </div>
+      <InputNumber
+        class="w-45"
+        :model-value="String(settingStore.cachePauseWaitSecs ?? 1)"
+        :min="0"
+        :max="MAX_CACHE_SECS"
         :step="0.1"
         placeholder="1"
         suffix="秒"
-        @update:model-value="updateAudioCachePauseWaitSecs"
+        @update:model-value="updateCachePauseWaitSecs"
       />
     </div>
     <div class="settings-divider"></div>
     <div class="settings-item">
       <div class="space-y-1">
-        <h3 class="font-semibold">预读缓存上限</h3>
-        <p class="text-sm text-text-secondary">
-          解复用 packet 前向缓存大小上限，增加可改善网络波动下的连续播放（需重启应用生效）
-        </p>
+        <h3 class="font-semibold">前向缓存上限</h3>
+        <p class="text-sm text-text-secondary">解复用 packet 队列的前向缓存大小上限</p>
       </div>
       <InputNumber
         class="w-45"
-        :model-value="String(settingStore.audioDemuxerMaxMB ?? 150)"
-        :min="8"
-        :max="512"
+        :model-value="String(bytesToMib(settingStore.demuxerMaxBytes, 150 * MIB))"
+        :min="0"
+        :max="MAX_DEMUXER_CACHE_MB"
         :step="8"
         placeholder="150"
         suffix="MB"
-        @update:model-value="updateAudioDemuxerMaxMB"
+        @update:model-value="updateDemuxerMaxBytes"
       />
     </div>
     <div class="settings-divider"></div>
     <div class="settings-item">
       <div class="space-y-1">
         <h3 class="font-semibold">回退缓存上限</h3>
-        <p class="text-sm text-text-secondary">
-          保留已读 packet 的缓存大小，便于短距离回退或精确定位（需重启应用生效）
-        </p>
+        <p class="text-sm text-text-secondary">保留已读 packet 的回退缓存字节上限</p>
       </div>
       <InputNumber
         class="w-45"
-        :model-value="String(settingStore.audioDemuxerBackMB ?? 50)"
+        :model-value="String(bytesToMib(settingStore.demuxerMaxBackBytes, 50 * MIB))"
         :min="0"
-        :max="settingStore.audioDemuxerMaxMB ?? 150"
+        :max="MAX_DEMUXER_CACHE_MB"
         :step="4"
         placeholder="50"
         suffix="MB"
-        @update:model-value="updateAudioDemuxerBackMB"
+        @update:model-value="updateDemuxerMaxBackBytes"
       />
     </div>
     <div class="settings-divider"></div>
@@ -168,14 +226,14 @@ const updatePlayerNetworkTimeout = (value: string | number) => {
       <div class="space-y-1">
         <h3 class="font-semibold">音频设备缓冲</h3>
         <p class="text-sm text-text-secondary">
-          输出设备侧的小缓冲，蓝牙设备可适当调高以减少断续，但会增加响应延迟（需重启应用生效）
+          输出设备侧的小缓冲，蓝牙设备可适当调高以减少断续，但会增加响应延迟
         </p>
       </div>
       <InputNumber
         class="w-45"
         :model-value="String(settingStore.audioBufferSecs ?? 0.2)"
-        :min="0.05"
-        :max="5"
+        :min="0"
+        :max="MAX_AUDIO_BUFFER_SECS"
         :step="0.05"
         placeholder="0.2"
         suffix="秒"

@@ -31,8 +31,12 @@ pub fn open_stream(
     interrupt: Arc<AtomicBool>,
     options: &StreamOptions,
 ) -> Result<Box<dyn ReadSeek>, String> {
-    if http::is_http_url(url) {
+    if is_network_url(url) {
         return http::open(url, interrupt, options);
     }
     file::open(url)
+}
+
+pub fn is_network_url(url: &str) -> bool {
+    http::is_http_url(url)
 }

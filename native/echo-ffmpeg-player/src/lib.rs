@@ -479,7 +479,7 @@ fn prepare_source(
         url.clone(),
         audio_stream_ordinal,
         None,
-        config.packet_cache_options(),
+        config.packet_cache_options_for_url(&url),
         &config.stream_options(),
     )?;
     if start_position > 0.0 {
@@ -511,7 +511,8 @@ fn prepare_source(
     let shared = Arc::new(SharedAudio::with_cache_pause_wait(
         mix_format,
         config.audio_buffer_secs,
-        config.audio_cache_pause_wait_secs,
+        config.cache_pause_for_url(&url),
+        config.cache_pause_wait_secs,
         config.playback_stall_timeout_secs,
         &dsp_settings,
     ));
@@ -1314,7 +1315,7 @@ impl Task for LoadFileTask {
                     url.clone(),
                     audio_stream,
                     Some(plan.shared.mix_format.sample_rate),
-                    plan.config.packet_cache_options(),
+                    plan.config.packet_cache_options_for_url(&url),
                     &plan.config.stream_options(),
                 );
                 match new_decoder {
@@ -1475,7 +1476,7 @@ impl Task for PrepareNextSourceTask {
             self.url.clone(),
             self.audio_stream_ordinal,
             Some(sample_rate),
-            config.packet_cache_options(),
+            config.packet_cache_options_for_url(&self.url),
             &config.stream_options(),
         )
         .map_err(napi::Error::from_reason)?;
@@ -1739,7 +1740,7 @@ fn open_decoder_at_position(plan: &SeekPlan, position: f64) -> napi::Result<deco
             plan.audio_stream_ordinal,
             Some(plan.shared.mix_format.sample_rate),
             interrupt.clone(),
-            plan.config.packet_cache_options(),
+            plan.config.packet_cache_options_for_url(&plan.url),
             &plan.config.stream_options(),
         )
     } else {
@@ -1747,7 +1748,7 @@ fn open_decoder_at_position(plan: &SeekPlan, position: f64) -> napi::Result<deco
             plan.url.clone(),
             plan.audio_stream_ordinal,
             Some(plan.shared.mix_format.sample_rate),
-            plan.config.packet_cache_options(),
+            plan.config.packet_cache_options_for_url(&plan.url),
             &plan.config.stream_options(),
         )
     }
