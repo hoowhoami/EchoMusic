@@ -102,31 +102,35 @@ jobs:
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            native/echo-media-controls
+            native/echo-ffmpeg-player
+            native/echo-sqlite-store
+
       - name: Add Rust cross-compile target
         if: matrix.rust_target != ''
         run: rustup target add ${{ matrix.rust_target }}
 
-      - name: Build native media controls addon
-        working-directory: native/echo-media-controls
+      - name: Build native addons
         shell: bash
         run: |
-          npm install
-          if [ -n "${{ matrix.rust_target }}" ]; then
-            npx napi build --release --no-const-enum --target ${{ matrix.rust_target }}
-          else
-            npm run build
-          fi
-
-      - name: Build native ffmpeg player addon
-        working-directory: native/echo-ffmpeg-player
-        shell: bash
-        run: |
-          npm install
-          if [ -n "${{ matrix.rust_target }}" ]; then
-            npx napi build --release --no-const-enum --target ${{ matrix.rust_target }}
-          else
-            npm run build
-          fi
+          build_addon() {
+            local dir="$1"
+            cd "native/$dir"
+            npm install
+            if [ -n "${{ matrix.rust_target }}" ]; then
+              npx napi build --release --no-const-enum --target ${{ matrix.rust_target }}
+            else
+              npm run build
+            fi
+          }
+          build_addon echo-media-controls &
+          build_addon echo-ffmpeg-player &
+          build_addon echo-sqlite-store &
+          wait
 
       - name: Verify macOS ffmpeg player linkage
         if: runner.os == 'macOS'
@@ -143,17 +147,6 @@ jobs:
           if grep -E 'lib(avcodec|avformat|avutil|swresample|mpv).*\.(dylib|so)' /tmp/echo-ffmpeg-player-otool.txt; then
             echo "ERROR: ffmpeg player addon unexpectedly links to system FFmpeg/mpv libraries"
             exit 1
-          fi
-
-      - name: Build native SQLite store addon
-        working-directory: native/echo-sqlite-store
-        shell: bash
-        run: |
-          npm install
-          if [ -n "${{ matrix.rust_target }}" ]; then
-            npx napi build --release --no-const-enum --target ${{ matrix.rust_target }}
-          else
-            npm run build
           fi
 
       - name: Verify Linux ffmpeg player linkage
@@ -173,6 +166,12 @@ jobs:
             exit 1
           fi
 
+      - name: Cache server node_modules
+        uses: actions/cache@v4
+        with:
+          path: server/node_modules
+          key: ${{ runner.os }}-server-nm-${{ hashFiles('server/package-lock.json') }}
+
       - name: Install server runtime dependencies
         working-directory: server
         shell: bash
@@ -186,6 +185,18 @@ jobs:
         working-directory: server
         shell: bash
         run: find module -name '*.test.js' -delete
+
+      - name: Configure Windows Defender exclusion
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: 'Add-MpPreference -ExclusionPath "$env:RUNNER_WORKSPACE"'
+
+      - name: Cache electron-builder binaries
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/electron-builder
+          key: ${{ runner.os }}-electron-builder-${{ hashFiles('package.json') }}
 
       - name: Build desktop app
         shell: bash
