@@ -5,6 +5,7 @@ import {
 } from '@/plugins/coverFallback';
 
 export { DEFAULT_COVER_URL };
+export { createThemedIconCoverUrl, type ThemedIconCoverIcon } from './themedCover';
 
 export interface CoverDisplayOptions {
   reason?: CoverFallbackReason;

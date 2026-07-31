@@ -1,6 +1,6 @@
 {
   "name": "echo-music",
-  "version": "2.2.9-beta.18",
+  "version": "2.2.9-beta.19",
   "description": "EchoMusic desktop client.",
   "license": "GPL-3.0-only",
   "author": {
@@ -238,7 +238,6 @@
       "allowElevation": true,
       "include": "build/installer.nsh",
       "buildUniversalInstaller": false,
-      "differentialPackage": false,
       "artifactName": "${productName}-${version}-Windows-Setup-${arch}.${ext}"
     },
     "dmg": {

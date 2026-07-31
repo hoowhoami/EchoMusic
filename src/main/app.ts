@@ -31,6 +31,7 @@ import {
   openShareUrlFromArgv,
   registerShareProtocol,
 } from './share';
+import { isUpdateInstallQuitRequested } from './updateInstallQuit';
 import type { PlayerController } from './player/controller';
 
 const WM_TASKBARCREATED = 0x031a;
@@ -233,6 +234,7 @@ if (!gotTheLock) {
     isExiting = true;
     event.preventDefault();
     stopEventLoopMonitor();
+    const skipPlayerCleanup = isUpdateInstallQuitRequested();
     log.info('[Main] before-quit: hiding windows and scheduling cleanup');
 
     // 先在主窗口 HWND 仍有效时关闭 DWM iconic 缩略图，避免任务栏保留等待位图的缓存状态。
@@ -255,7 +257,11 @@ if (!gotTheLock) {
       // 清理 mini 播放器模块的事件监听器和定时器
       cleanupMiniPlayer();
       destroyMediaControls();
-      destroyPlayer();
+      if (skipPlayerCleanup) {
+        log.info('[Main] before-quit: update install requested, skipping native player cleanup');
+      } else {
+        destroyPlayer();
+      }
       // 销毁桌面歌词窗口，确保清理所有定时器
       try {
         destroyDesktopLyricWindow();

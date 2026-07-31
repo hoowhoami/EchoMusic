@@ -26,6 +26,7 @@ import type {
   PluginShowOnTopOptions,
   PluginHostWindowTarget,
 } from '../../shared/plugins';
+import type { IconifyIcon } from '@iconify/types';
 import type { AudioSpectrumFrame, AudioSpectrumOptions } from '../../shared/audio-spectrum';
 import type {
   DesktopLyricSettings,
@@ -41,6 +42,7 @@ import { createFontApi } from '../../shared/font';
 import * as icons from '@/icons';
 import type { Song } from '@/models/song';
 import { hexToRgb } from '@/utils/color';
+import { createThemedIconCoverUrl } from '@/utils/themedCover';
 import { usePlayerStore } from '@/stores/player';
 import type { PlayerEventName, PlayerEventPayload } from '@/stores/player/events';
 import { usePlaylistStore, type SetPlaybackQueueOptions } from '@/stores/playlist';
@@ -169,6 +171,15 @@ export interface PluginThemeApi {
   };
 }
 
+export interface PluginThemedIconCoverOptions {
+  icon: Pick<IconifyIcon, 'body'>;
+  color?: string;
+}
+
+export interface PluginCoverApi {
+  createThemedIconCoverUrl: (options: PluginThemedIconCoverOptions) => string;
+}
+
 export interface PluginScrollContainerState {
   scrollTop: number;
   scrollHeight: number;
@@ -211,6 +222,7 @@ export interface EchoPluginContext {
   theme: PluginThemeApi;
   appearance: ReturnType<typeof createAppearanceApi>;
   fonts: ReturnType<typeof createFontsApi>;
+  cover: PluginCoverApi;
   scroll: ReturnType<typeof createScrollApi>;
   appIcons: {
     refresh: () => Promise<unknown>;
@@ -1229,6 +1241,16 @@ const createAppearanceApi = (
 
 const createFontsApi = () =>
   createFontApi(() => window.electron.fonts?.getAll?.() ?? Promise.resolve([]));
+
+const createCoverApi = (getSourceColor: () => string): PluginCoverApi => ({
+  createThemedIconCoverUrl: (options) => {
+    const iconBody =
+      options?.icon && typeof options.icon.body === 'string'
+        ? options.icon.body
+        : icons.iconMusic.body;
+    return createThemedIconCoverUrl(options?.color || getSourceColor(), { body: iconBody });
+  },
+});
 
 const createPlaylistApi = () => {
   const playlist = usePlaylistStore();
@@ -2347,6 +2369,7 @@ const createPluginContext = (
     theme: createThemeApi(descriptor.id, addDisposable),
     appearance: createAppearanceApi(descriptor.id, addDisposable),
     fonts: createFontsApi(),
+    cover: createCoverApi(() => themeStore.sourceColor),
     scroll: createScrollApi(descriptor.id, addDisposable),
     appIcons: {
       refresh: () => window.electron.plugins?.icons.refresh() ?? Promise.resolve({ ok: false }),

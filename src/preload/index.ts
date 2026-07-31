@@ -336,7 +336,7 @@ contextBridge.exposeInMainWorld('electron', {
   },
   updater: {
     download: () => ipcRenderer.send('update:download'),
-    install: (silent?: boolean) => ipcRenderer.send('update:install', { silent: !!silent }),
+    install: (silent?: boolean) => ipcRenderer.invoke('update:install', { silent: !!silent }),
     getState: () => ipcRenderer.invoke('update:get-state') as Promise<UpdateState>,
     onDownloadStatus: (func: (result: UpdateDownloadResult) => void) => {
       const listener = (_event: Electron.IpcRendererEvent, result: UpdateDownloadResult) =>

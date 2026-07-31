@@ -8,7 +8,7 @@ import { usePlayerStore } from '@/stores/player';
 import { useSettingStore } from '@/stores/setting';
 import { useUserStore } from '@/stores/user';
 import { useThemeStore } from '@/stores/theme';
-import { getAccentGradientPair } from '@/utils/color';
+import { createThemedIconCoverUrl } from '@/utils/cover';
 import type { AlbumMeta } from '@/models/album';
 import SliverHeader from '@/components/music/DetailPageSliverHeader.vue';
 import ActionRow from '@/components/music/DetailPageActionRow.vue';
@@ -65,26 +65,7 @@ const totalAlbums = ref(0);
 const songsLoadingMore = ref(false);
 const albumsLoadingMore = ref(false);
 
-const coverUrl = computed(() => {
-  const { from, to } = getAccentGradientPair(themeStore.sourceColor);
-  const svg = `
-    <svg xmlns="http://www.w3.org/2000/svg" width="400" height="400">
-      <defs>
-        <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0%" stop-color="${from}" />
-          <stop offset="100%" stop-color="${to}" />
-        </linearGradient>
-      </defs>
-      <rect width="400" height="400" rx="60" fill="url(#g)" />
-      <g transform="translate(200 200)">
-        <path d="M-60 30c0-16 13-30 30-30 8 0 16 3 21 9 10-28 36-48 67-48 39 0 70 32 70 70 0 5-1 10-2 15 26 5 44 28 44 54 0 30-26 55-58 55H-30c-22 0-40-18-40-40 0-18 13-34 30-38 0-1 0-3 0-4l0-3z" fill="#FFFFFF" opacity="0.92"/>
-        <line x1="-25" y1="15" x2="-25" y2="45" stroke="${from}" stroke-width="3" stroke-linecap="round"/>
-        <line x1="-10" y1="15" x2="-10" y2="45" stroke="${from}" stroke-width="3" stroke-linecap="round"/>
-      </g>
-    </svg>
-  `;
-  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
-});
+const coverUrl = computed(() => createThemedIconCoverUrl(themeStore.sourceColor, iconShoppingBag));
 
 const parsePurchasedSongList = (payload: unknown): { songs: Song[]; total: number } => {
   const record = payload && typeof payload === 'object' ? (payload as Record<string, unknown>) : {};

@@ -109,16 +109,29 @@ export const useUpdateStore = defineStore('update', {
 
     /** 开始下载。下载中/已下载时忽略，防止重复下载。 */
     download() {
-      if (this.downloadStatus === 'downloading' || this.downloadStatus === 'downloaded') return;
+      if (
+        this.downloadStatus === 'downloading' ||
+        this.downloadStatus === 'downloaded' ||
+        this.downloadStatus === 'installing'
+      ) {
+        return;
+      }
       this.downloadStatus = 'downloading';
       this.downloadPercent = 0;
       this.downloadError = '';
       window.electron?.updater?.download();
     },
 
-    install() {
+    async install() {
+      if (this.downloadStatus !== 'downloaded') return;
       const settingStore = useSettingStore();
-      window.electron?.updater?.install(settingStore.silentUpdate);
+      this.downloadStatus = 'installing';
+      this.downloadError = '';
+      const result = await window.electron?.updater?.install(settingStore.silentUpdate);
+      if (result && !result.ok) {
+        this.downloadStatus = 'error';
+        this.downloadError = result.error || '安装器启动失败';
+      }
     },
 
     openRelease() {

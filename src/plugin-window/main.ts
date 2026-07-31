@@ -19,8 +19,13 @@ import type {
   PluginShowOnTopOptions,
   PluginHostWindowTarget,
 } from '../shared/plugins';
+import type { IconifyIcon } from '@iconify/types';
 import type { AudioSpectrumFrame, AudioSpectrumOptions } from '../shared/audio-spectrum';
 import { createFontApi } from '../shared/font';
+import * as icons from '../renderer/icons';
+import { createThemedIconCoverUrl } from '../renderer/utils/themedCover';
+
+const DEFAULT_PLUGIN_WINDOW_COVER_COLOR = '#0071e3';
 
 type PluginWindowModule =
   | {
@@ -38,6 +43,15 @@ type PluginWindowModuleDefault =
       deactivate?: (ctx: EchoPluginWindowContext) => unknown;
     };
 
+interface PluginWindowThemedIconCoverOptions {
+  icon: Pick<IconifyIcon, 'body'>;
+  color?: string;
+}
+
+interface PluginWindowCoverApi {
+  createThemedIconCoverUrl: (options: PluginWindowThemedIconCoverOptions) => string;
+}
+
 interface EchoPluginWindowContext {
   id: string;
   pluginId: string;
@@ -46,9 +60,11 @@ interface EchoPluginWindowContext {
   descriptor: EchoPluginDescriptor;
   windowDescriptor: PluginWindowDescriptor;
   vue: typeof Vue;
+  icons: typeof icons;
   container: HTMLElement;
   nowPlaying: NonNullable<Window['electron']['nowPlaying']>;
   fonts: ReturnType<typeof createFontsApi>;
+  cover: PluginWindowCoverApi;
   audio: {
     spectrum: {
       getStatus: NonNullable<Window['electron']['audioSpectrum']>['getStatus'];
@@ -226,6 +242,16 @@ const requireAudioSpectrumCapability = (descriptor: EchoPluginDescriptor) => {
 
 const createFontsApi = () =>
   createFontApi(() => window.electron.fonts?.getAll?.() ?? Promise.resolve([]));
+
+const createCoverApi = (getSourceColor: () => string): PluginWindowCoverApi => ({
+  createThemedIconCoverUrl: (options) => {
+    const iconBody =
+      options?.icon && typeof options.icon.body === 'string'
+        ? options.icon.body
+        : icons.iconMusic.body;
+    return createThemedIconCoverUrl(options?.color || getSourceColor(), { body: iconBody });
+  },
+});
 
 const serializeForIpc = (value: unknown): unknown => {
   if (value === null || value === undefined) return value;
@@ -484,9 +510,11 @@ const buildContext = (
   descriptor,
   windowDescriptor,
   vue: Vue,
+  icons,
   container,
   nowPlaying: window.electron.nowPlaying,
   fonts: createFontsApi(),
+  cover: createCoverApi(() => DEFAULT_PLUGIN_WINDOW_COVER_COLOR),
   audio: {
     spectrum: {
       getStatus: () => {

@@ -18,11 +18,18 @@ import type { Song } from '@/models/song';
 import { usePlayerStore } from '@/stores/player';
 import { useSettingStore } from '@/stores/setting';
 import { useThemeStore } from '@/stores/theme';
-import { getAccentGradientPair } from '@/utils/color';
+import { createThemedIconCoverUrl } from '@/utils/cover';
 import { mapRankMeta, mapRankSong } from '@/utils/mappers';
 import type { RankMeta } from '@/models/rank';
 import type { SortField, SortOrder } from '@/components/music/SongListHeader.vue';
-import { iconPlay, iconList, iconChevronDown, iconCurrentLocation, iconSearch } from '@/icons';
+import {
+  iconPlay,
+  iconList,
+  iconChevronDown,
+  iconCurrentLocation,
+  iconSearch,
+  iconTrophy,
+} from '@/icons';
 import { replaceQueueAndPlay } from '@/utils/playback';
 import { useToastStore } from '@/stores/toast';
 import Badge from '@/components/ui/Badge.vue';
@@ -86,25 +93,7 @@ const activeGroupRanks = computed(() => {
   return match ? match[1] : groups[0][1];
 });
 
-const todayRankCover = computed(() => {
-  const dayText = 'TOP';
-  const { from, to } = getAccentGradientPair(themeStore.sourceColor);
-  const svg = `
-    <svg xmlns="http://www.w3.org/2000/svg" width="400" height="400">
-      <defs>
-        <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0%" stop-color="${from}" />
-          <stop offset="100%" stop-color="${to}" />
-        </linearGradient>
-      </defs>
-      <rect width="400" height="400" rx="60" fill="url(#g)" />
-      <text x="50%" y="62%" text-anchor="middle" fill="#FFFFFF" font-size="160" font-weight="700" font-family="SF Pro Display, PingFang SC, Arial">
-        ${dayText}
-      </text>
-    </svg>
-  `;
-  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
-});
+const todayRankCover = computed(() => createThemedIconCoverUrl(themeStore.sourceColor, iconTrophy));
 
 const handleSort = (field: SortField) => {
   if (sortField.value === field) {

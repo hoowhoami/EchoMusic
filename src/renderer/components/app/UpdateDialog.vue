@@ -32,7 +32,10 @@ const open = computed({
 
 // 下载中/已下载时禁止「点击外部」「ESC」关闭，避免误触丢失下载进度视图
 const allowDismiss = computed(
-  () => downloadStatus.value !== 'downloading' && downloadStatus.value !== 'downloaded',
+  () =>
+    downloadStatus.value !== 'downloading' &&
+    downloadStatus.value !== 'downloaded' &&
+    downloadStatus.value !== 'installing',
 );
 
 const title = computed(() => {
@@ -94,17 +97,25 @@ const handleClose = () => updateStore.closeDialog();
       <div
         v-if="
           checkResult?.status === 'available' &&
-          (downloadStatus === 'downloading' || downloadStatus === 'downloaded')
+          (downloadStatus === 'downloading' ||
+            downloadStatus === 'downloaded' ||
+            downloadStatus === 'installing')
         "
         class="flex-1 min-w-0 flex items-center gap-2 mr-3"
       >
         <span class="text-xs text-text-secondary shrink-0">
-          {{ downloadStatus === 'downloaded' ? '下载完成' : `${downloadPercent}%` }}
+          {{
+            downloadStatus === 'installing'
+              ? '正在安装'
+              : downloadStatus === 'downloaded'
+                ? '下载完成'
+                : `${downloadPercent}%`
+          }}
         </span>
         <div class="flex-1 h-1.5 rounded-full bg-[var(--control-hover-bg)] overflow-hidden">
           <div
             class="h-full rounded-full bg-primary transition-all duration-300"
-            :style="{ width: `${downloadPercent}%` }"
+            :style="{ width: `${downloadStatus === 'installing' ? 100 : downloadPercent}%` }"
           ></div>
         </div>
       </div>
@@ -134,6 +145,9 @@ const handleClose = () => updateStore.closeDialog();
           @click="handleInstall"
         >
           立即安装
+        </Button>
+        <Button v-else-if="downloadStatus === 'installing'" variant="secondary" size="sm" disabled>
+          安装中
         </Button>
         <Button
           v-else-if="checkResult?.manualDownload"

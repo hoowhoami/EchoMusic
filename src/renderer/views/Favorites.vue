@@ -11,7 +11,7 @@ import { getUserFollow, getUserVideoCollect } from '@/api/user';
 import { mapArtistMeta } from '@/utils/mappers';
 import type { Song } from '@/models/song';
 import type { ArtistMeta } from '@/models/artist';
-import { getAccentGradientPair } from '@/utils/color';
+import { createThemedIconCoverUrl } from '@/utils/cover';
 import SliverHeader from '@/components/music/DetailPageSliverHeader.vue';
 import Tabs from '@/components/ui/Tabs.vue';
 import TabsList from '@/components/ui/TabsList.vue';
@@ -58,29 +58,9 @@ const sortField = ref<SortField | null>(null);
 const sortOrder = ref<SortOrder>(null);
 const activeSongId = computed(() => playerStore.currentTrackId ?? undefined);
 
-const favoriteCoverUrl = computed(() => {
-  const { from, to } = getAccentGradientPair(themeStore.sourceColor);
-  const svg = `
-    <svg xmlns="http://www.w3.org/2000/svg" width="400" height="400">
-      <defs>
-        <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0%" stop-color="${from}" />
-          <stop offset="100%" stop-color="${to}" />
-        </linearGradient>
-      </defs>
-      <rect width="400" height="400" rx="60" fill="url(#g)" />
-      <circle cx="104" cy="96" r="52" fill="#FFFFFF" opacity="0.14" />
-      <circle cx="308" cy="304" r="72" fill="#FFFFFF" opacity="0.10" />
-      <g transform="translate(200 196)">
-        <rect x="-92" y="-92" width="184" height="184" rx="46" fill="#FFFFFF" opacity="0.18" />
-        <g transform="translate(-84 -84) scale(7)" color="#FFFFFF">
-          ${iconHeart.body}
-        </g>
-      </g>
-    </svg>
-  `;
-  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
-});
+const favoriteCoverUrl = computed(() =>
+  createThemedIconCoverUrl(themeStore.sourceColor, iconHeart),
+);
 
 const sortedSongs = computed(() => {
   return sortSongs(songs.value, sortField.value, sortOrder.value, {

@@ -47,6 +47,7 @@ const todayLabel = computed(() => new Date().getDate().toString());
 
 const recommendCoverUrl = computed(() => {
   const dayText = todayLabel.value;
+  const fontSize = dayText.length > 1 ? 132 : 150;
   const { from, to } = getAccentGradientPair(themeStore.sourceColor);
   const svg = `
     <svg xmlns="http://www.w3.org/2000/svg" width="400" height="400">
@@ -57,9 +58,14 @@ const recommendCoverUrl = computed(() => {
         </linearGradient>
       </defs>
       <rect width="400" height="400" rx="60" fill="url(#g)" />
-      <text x="50%" y="62%" text-anchor="middle" fill="#FFFFFF" font-size="160" font-weight="700" font-family="SF Pro Display, PingFang SC, Arial">
-        ${dayText}
-      </text>
+      <circle cx="104" cy="96" r="52" fill="#FFFFFF" opacity="0.14" />
+      <circle cx="308" cy="304" r="72" fill="#FFFFFF" opacity="0.10" />
+      <g transform="translate(200 200)">
+        <rect x="-92" y="-92" width="184" height="184" rx="46" fill="#FFFFFF" opacity="0.18" />
+        <text x="0" y="10" text-anchor="middle" dominant-baseline="middle" fill="#FFFFFF" opacity="0.94" font-size="${fontSize}" font-weight="800" font-family="SF Pro Display, PingFang SC, Arial" letter-spacing="0">
+          ${dayText}
+        </text>
+      </g>
     </svg>
   `;
   return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;

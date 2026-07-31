@@ -7,7 +7,7 @@ import type { Song } from '@/models/song';
 import { usePlayerStore } from '@/stores/player';
 import { useSettingStore } from '@/stores/setting';
 import { useThemeStore } from '@/stores/theme';
-import { getAccentGradientPair } from '@/utils/color';
+import { createThemedIconCoverUrl } from '@/utils/cover';
 import { useHistoryStore, type LocalHistoryEntry } from '@/stores/historyStore';
 import { registerSongContextMenuExtension } from '@/components/music/songContextMenuExtensions';
 import SliverHeader from '@/components/music/DetailPageSliverHeader.vue';
@@ -337,27 +337,7 @@ const historyStats = computed(() => {
 const songCount = computed(() => songs.value.length);
 const displayedCountLabel = computed(() => `${songCount.value}`);
 
-const historyCoverUrl = computed(() => {
-  const { from, to } = getAccentGradientPair(themeStore.sourceColor);
-  const svg = `
-    <svg xmlns="http://www.w3.org/2000/svg" width="400" height="400">
-      <defs>
-        <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0%" stop-color="${to}" />
-          <stop offset="100%" stop-color="${from}" />
-        </linearGradient>
-      </defs>
-      <rect width="400" height="400" rx="60" fill="url(#g)" />
-      <g transform="translate(200 200)">
-        <circle cx="0" cy="0" r="92" fill="rgba(255,255,255,0.14)" />
-        <circle cx="0" cy="0" r="70" fill="none" stroke="#FFFFFF" stroke-width="18" stroke-linecap="round" />
-        <line x1="0" y1="0" x2="0" y2="-34" stroke="#FFFFFF" stroke-width="14" stroke-linecap="round" />
-        <line x1="0" y1="0" x2="26" y2="16" stroke="#FFFFFF" stroke-width="14" stroke-linecap="round" />
-      </g>
-    </svg>
-  `;
-  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
-});
+const historyCoverUrl = computed(() => createThemedIconCoverUrl(themeStore.sourceColor, iconClock));
 
 const handleSort = (field: SortField) => {
   if (sortField.value === field) {

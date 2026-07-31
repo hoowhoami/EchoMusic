@@ -286,6 +286,51 @@ jobs:
 
           echo "bundled app executable found: $app_exe"
 
+      - name: Verify Windows update metadata
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          set -e
+
+          metadata="release/latest.yml"
+          if [ ! -f "$metadata" ]; then
+            echo "ERROR: Windows update metadata not found: $metadata"
+            find release -maxdepth 2 -type f -print
+            exit 1
+          fi
+
+          node - <<'NODE'
+          const fs = require('fs');
+          const path = require('path');
+          const yaml = require('js-yaml');
+
+          const metadataPath = path.join('release', 'latest.yml');
+          const info = yaml.load(fs.readFileSync(metadataPath, 'utf8'));
+          const file = info && Array.isArray(info.files) ? info.files[0] : null;
+
+          if (!file || typeof file.url !== 'string' || file.url.length === 0) {
+            throw new Error('latest.yml is missing files[0].url');
+          }
+          if (typeof file.sha512 !== 'string' || file.sha512.length === 0) {
+            throw new Error('latest.yml is missing files[0].sha512');
+          }
+          if (!Number.isFinite(file.size) || file.size <= 0) {
+            throw new Error('latest.yml is missing a positive files[0].size');
+          }
+
+          const artifactPath = path.join('release', file.url);
+          if (!fs.existsSync(artifactPath)) {
+            throw new Error(`latest.yml points to a missing installer: ${artifactPath}`);
+          }
+
+          const actualSize = fs.statSync(artifactPath).size;
+          if (actualSize !== file.size) {
+            throw new Error(`latest.yml size mismatch: expected ${file.size}, got ${actualSize}`);
+          }
+
+          console.log(`Windows update metadata verified: ${file.url} (${file.size} bytes)`);
+          NODE
+
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:

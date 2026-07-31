@@ -1,5 +1,12 @@
 import { ipcRegistry } from './registry';
-import { shell, app, session, dialog, type OpenDialogOptions } from 'electron';
+import {
+  shell,
+  app,
+  session,
+  dialog,
+  autoUpdater as electronAutoUpdater,
+  type OpenDialogOptions,
+} from 'electron';
 import log from 'electron-log';
 import fs from 'fs';
 import { execFile } from 'child_process';
@@ -7,7 +14,12 @@ import { dirname, extname, join, resolve, sep, basename } from 'path';
 import { autoUpdater } from 'electron-updater';
 import { getFonts } from 'font-list';
 import { coerce as semverCoerce, gt as semverGt, valid as semverValid } from 'semver';
-import type { AppInfoResult, UpdateCheckResult, UpdateDownloadResult } from '../../shared/app';
+import type {
+  AppInfoResult,
+  UpdateCheckResult,
+  UpdateDownloadResult,
+  UpdateInstallResult,
+} from '../../shared/app';
 import type { NetworkSettings } from '../../shared/network';
 import {
   normalizeImpulseResponseName,
@@ -19,6 +31,10 @@ import { applyLogSettings, getLogSettings } from '../logger';
 import { getPlaybackQueueStorage } from '../storage/playbackQueues';
 import { setMainAppSetting } from '../storage/settings';
 import { updateNetworkSettings } from '../networkSettings';
+import {
+  clearUpdateInstallQuitRequested,
+  markUpdateInstallQuitRequested,
+} from '../updateInstallQuit';
 import type { IpcContext } from './types';
 
 const openLogDirectory = async () => {
@@ -406,7 +422,7 @@ export const registerSettingsHandlers = ({ getMainWindow, playerRef }: IpcContex
     log.error('[Updater] Error:', error);
     const message = error?.message || '更新失败，请稍后重试。';
     // 区分检查阶段与下载阶段的错误，避免下载出错时弹窗被「检查更新失败」覆盖
-    if (downloadState.status === 'downloading') {
+    if (downloadState.status === 'downloading' || downloadState.status === 'installing') {
       downloadState = { status: 'error', error: message };
       sendToRenderer('update-download-status', downloadState);
     } else {
@@ -834,7 +850,11 @@ export const registerSettingsHandlers = ({ getMainWindow, playerRef }: IpcContex
 
   ipcRegistry.registerListener('update:download', () => {
     // 防重入：正在下载或已下载完成时忽略，仅回传当前状态
-    if (downloadState.status === 'downloading' || downloadState.status === 'downloaded') {
+    if (
+      downloadState.status === 'downloading' ||
+      downloadState.status === 'downloaded' ||
+      downloadState.status === 'installing'
+    ) {
       sendToRenderer('update-download-status', downloadState);
       return;
     }
@@ -853,10 +873,64 @@ export const registerSettingsHandlers = ({ getMainWindow, playerRef }: IpcContex
     });
   });
 
-  ipcRegistry.registerListener('update:install', (_event, payload?: { silent?: boolean }) => {
-    const isSilent = payload?.silent ?? false;
-    autoUpdater.quitAndInstall(isSilent, true);
-  });
+  ipcRegistry.registerHandler(
+    'update:install',
+    (_event, payload?: { silent?: boolean }): UpdateInstallResult => {
+      if (downloadState.status !== 'downloaded') {
+        const error = '更新尚未下载完成，请下载完成后再安装。';
+        downloadState = { status: 'error', error };
+        sendToRenderer('update-download-status', downloadState);
+        return { ok: false, error };
+      }
+
+      const isSilent = payload?.silent ?? false;
+      downloadState = { status: 'installing' };
+      sendToRenderer('update-download-status', downloadState);
+      log.info('[Updater] Starting update install', {
+        silent: isSilent,
+        platform: process.platform,
+      });
+      markUpdateInstallQuitRequested();
+
+      try {
+        const updater = autoUpdater as unknown as {
+          install?: (isSilent?: boolean, isForceRunAfter?: boolean) => boolean;
+          autoRunAppAfterInstall?: boolean;
+          quitAndInstall: (isSilent?: boolean, isForceRunAfter?: boolean) => void;
+        };
+
+        if (typeof updater.install === 'function') {
+          const forceRunAfter = isSilent ? true : (updater.autoRunAppAfterInstall ?? true);
+          const started = updater.install(isSilent, forceRunAfter);
+          if (!started) {
+            clearUpdateInstallQuitRequested();
+            const error = '更新安装器未能启动，请重新下载或前往发布页手动安装。';
+            downloadState = { status: 'error', error };
+            sendToRenderer('update-download-status', downloadState);
+            log.error('[Updater] install() returned false');
+            return { ok: false, error };
+          }
+
+          setImmediate(() => {
+            electronAutoUpdater.emit('before-quit-for-update');
+            app.quit();
+          });
+        } else {
+          updater.quitAndInstall(isSilent, true);
+        }
+
+        return { ok: true };
+      } catch (error) {
+        clearUpdateInstallQuitRequested();
+        const message =
+          error instanceof Error ? error.message : '更新安装器启动失败，请前往发布页手动安装。';
+        downloadState = { status: 'error', error: message };
+        sendToRenderer('update-download-status', downloadState);
+        log.error('[Updater] Install failed:', error);
+        return { ok: false, error: message };
+      }
+    },
+  );
 
   ipcRegistry.registerListener('open-external', async (_event, url: string) => {
     if (typeof url !== 'string' || !url.startsWith('http')) return;

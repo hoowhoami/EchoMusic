@@ -8,7 +8,7 @@ import { usePlayerStore } from '@/stores/player';
 import { useSettingStore } from '@/stores/setting';
 import { useUserStore } from '@/stores/user';
 import { useThemeStore } from '@/stores/theme';
-import { getAccentGradientPair } from '@/utils/color';
+import { createThemedIconCoverUrl } from '@/utils/cover';
 import SliverHeader from '@/components/music/DetailPageSliverHeader.vue';
 import ActionRow from '@/components/music/DetailPageActionRow.vue';
 import SongList from '@/components/music/SongList.vue';
@@ -61,24 +61,7 @@ const usageRatio = computed(() => {
   return Math.min(1, usedCapacity.value / cloudCapacity.value);
 });
 
-const cloudCoverUrl = computed(() => {
-  const { from, to } = getAccentGradientPair(themeStore.sourceColor);
-  const svg = `
-    <svg xmlns="http://www.w3.org/2000/svg" width="400" height="400">
-      <defs>
-        <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0%" stop-color="${from}" />
-          <stop offset="100%" stop-color="${to}" />
-        </linearGradient>
-      </defs>
-      <rect width="400" height="400" rx="60" fill="url(#g)" />
-      <g transform="translate(200 200)">
-        <path d="M-78 44c-30 0-54-22-54-50 0-27 22-49 49-50 10-34 42-58 81-58 48 0 88 36 93 81 30 3 53 26 53 54 0 31-28 57-62 57H-78z" fill="#FFFFFF" opacity="0.92"/>
-      </g>
-    </svg>
-  `;
-  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
-});
+const cloudCoverUrl = computed(() => createThemedIconCoverUrl(themeStore.sourceColor, iconCloud));
 
 const formatBytes = (value: number) => {
   if (!Number.isFinite(value) || value <= 0) return '0 B';
