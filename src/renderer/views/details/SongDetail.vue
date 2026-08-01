@@ -27,6 +27,7 @@ import ActionRow from '@/components/music/DetailPageActionRow.vue';
 import AddToPlaylistDialog from '@/components/music/AddToPlaylistDialog.vue';
 import PageScrollContainer from '@/components/ui/PageScrollContainer.vue';
 import Button from '@/components/ui/Button.vue';
+import Skeleton from '@/components/ui/Skeleton.vue';
 import { useStickyTabsLayout } from '@/composables/useStickyTabsLayout';
 import { useToastStore } from '@/stores/toast';
 import { PERSONAL_FM_QUEUE_ID, usePlaylistStore } from '@/stores/playlist';
@@ -1408,8 +1409,21 @@ watch(total, (value) => {
                         />
                       </button>
                       <div v-if="isRankingExpanded(rank, index)" class="ranking-filter-panel">
-                        <div v-if="rankingFilterLoading" class="ranking-filter-empty">
-                          正在加载榜单详情...
+                        <div
+                          v-if="rankingFilterLoading"
+                          class="ranking-filter-skeleton"
+                          aria-busy="true"
+                        >
+                          <div v-for="item in 2" :key="item" class="ranking-filter-skeleton-row">
+                            <div class="ranking-filter-main">
+                              <Skeleton variant="text" width="132px" height="13px" />
+                              <div class="ranking-filter-meta">
+                                <Skeleton variant="text" width="72px" height="11px" />
+                                <Skeleton variant="text" width="86px" height="11px" />
+                              </div>
+                            </div>
+                            <Skeleton variant="text" width="82px" height="12px" />
+                          </div>
                         </div>
                         <template v-else-if="getRankingFilterItems(rank).length">
                           <div
@@ -1972,7 +1986,8 @@ watch(total, (value) => {
   padding: 0 18px 18px;
 }
 
-.ranking-filter-row {
+.ranking-filter-row,
+.ranking-filter-skeleton-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
@@ -1981,6 +1996,12 @@ watch(total, (value) => {
   border-radius: 12px;
   background: color-mix(in srgb, var(--color-text-main) 4%, transparent);
   border: 1px solid color-mix(in srgb, var(--color-text-main) 8%, transparent);
+}
+
+.ranking-filter-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
 .ranking-filter-main {

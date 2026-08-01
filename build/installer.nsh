@@ -4,20 +4,21 @@
   nsExec::ExecToStack 'taskkill /F /IM "${APP_EXECUTABLE_FILENAME}" /T'
   nsExec::ExecToStack 'taskkill /F /IM "Uninstall ${PRODUCT_NAME}.exe" /T'
 
-  ; 等待进程完全退出
-  Sleep 1000
-
-  ; 尝试删除被锁定的卸载程序
-  Delete "$INSTDIR\\Uninstall ${PRODUCT_NAME}.exe"
-
-  ; 如果仍然删除失败，尝试重命名（Windows 允许重命名被锁定的文件）
-  IfFileExists "$INSTDIR\\Uninstall ${PRODUCT_NAME}.exe" 0 +2
-    Rename "$INSTDIR\\Uninstall ${PRODUCT_NAME}.exe" "$INSTDIR\\Uninstall ${PRODUCT_NAME}.exe.old"
+  ; taskkill 返回后文件锁可能仍需一点时间释放，循环删除直到成功或超时。
+  StrCpy $0 0
+  uninstall_wait_loop:
+    Delete "$INSTDIR\Uninstall ${PRODUCT_NAME}.exe"
+    IfFileExists "$INSTDIR\Uninstall ${PRODUCT_NAME}.exe" 0 uninstall_wait_done
+    IntOp $0 $0 + 1
+    IntCmp $0 30 uninstall_wait_done 0 uninstall_wait_done
+    Sleep 500
+    Goto uninstall_wait_loop
+  uninstall_wait_done:
 !macroend
 
 !macro customInstall
-  ; 清理重命名的旧卸载程序
-  Delete "$INSTDIR\\Uninstall ${PRODUCT_NAME}.exe.old"
+  ; 清理历史版本可能遗留的旧卸载程序
+  Delete "$INSTDIR\Uninstall ${PRODUCT_NAME}.exe.old"
 
   ; Electron 43 on Windows can abort before app code starts if the NUL device is
   ; unavailable. Pass --no-stdio-init from shortcuts so startup reaches main.

@@ -5,6 +5,7 @@ import { useRouteId } from '@/composables/useRouteId';
 import { getPlaylistDetail, getPlaylistTracks } from '@/api/playlist';
 import { getPlaylistComments } from '@/api/comment';
 import SliverHeader from '@/components/music/DetailPageSliverHeader.vue';
+import DetailPageSkeleton from '@/components/music/DetailPageSkeleton.vue';
 import ActionRow from '@/components/music/DetailPageActionRow.vue';
 import SongList from '@/components/music/SongList.vue';
 import SongListHeader from '@/components/music/SongListHeader.vue';
@@ -675,11 +676,7 @@ watch(
 <template>
   <PageScrollContainer class="playlist-detail-page">
     <div class="playlist-detail-container bg-bg-main min-h-full">
-      <div v-if="loading && !playlist" class="flex items-center justify-center py-40">
-        <div
-          class="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin"
-        ></div>
-      </div>
+      <DetailPageSkeleton v-if="loading && !playlist" typeLabel="PLAYLIST" :expandedHeight="176" />
 
       <template v-else-if="playlist">
         <!-- 1. Sliver Header -->

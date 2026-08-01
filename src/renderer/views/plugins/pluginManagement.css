@@ -404,6 +404,14 @@
   overflow: hidden;
 }
 
+.plugin-marketplace-skeleton-description {
+  display: flex;
+  min-height: 42px;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
 .plugin-card-meta {
   font-size: 0.75rem;
   color: var(--color-text-secondary);

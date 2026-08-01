@@ -5,6 +5,7 @@ import type { Song } from '@/models/song';
 import type { SetPlaybackQueueOptions } from '@/stores/playlist';
 import { formatDuration } from '@/utils/format';
 import SongCard from './SongCard.vue';
+import SongListSkeletonRows from './SongListSkeletonRows.vue';
 import { iconPlay, iconPause } from '@/icons';
 import { usePlayerStore } from '@/stores/player';
 import { PERSONAL_FM_QUEUE_ID, usePlaylistStore } from '@/stores/playlist';
@@ -52,6 +53,7 @@ interface Props {
   promotedKey?: string | null;
   /** 正在被删除的歌曲 historyKey 集合（播放历史页面删除退场动画） */
   removingKeys?: Set<string>;
+  loadingRowCount?: number;
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -74,6 +76,7 @@ const props = withDefaults(defineProps<Props>(), {
   disableInternalFilter: false,
   promotedKey: null,
   removingKeys: undefined,
+  loadingRowCount: 12,
 });
 
 // const emit = defineEmits<{
@@ -855,12 +858,16 @@ defineExpose({ scrollToActive, filteredCount: computed(() => filteredSongsRef.va
       </div>
     </div>
 
-    <!-- 加载动画 -->
-    <div v-if="props.loading" class="flex items-center justify-center py-20">
-      <div
-        class="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin"
-      ></div>
-    </div>
+    <SongListSkeletonRows
+      v-if="props.loading"
+      :row-count="props.loadingRowCount"
+      :show-index="showIndex"
+      :show-cover="showCover"
+      :show-album="showAlbum"
+      :show-duration="showDuration"
+      :lyric-column="showLyricColumn"
+      :row-padding-class="props.rowPaddingClass"
+    />
 
     <!-- 暂无数据 -->
     <div

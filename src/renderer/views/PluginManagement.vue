@@ -6,6 +6,7 @@ import Button from '@/components/ui/Button.vue';
 import Dialog from '@/components/ui/Dialog.vue';
 import Input from '@/components/ui/Input.vue';
 import Select from '@/components/ui/Select.vue';
+import Skeleton from '@/components/ui/Skeleton.vue';
 import Switch from '@/components/ui/Switch.vue';
 import Scrollbar from '@/components/ui/Scrollbar.vue';
 import InstalledPluginCard from '@/views/plugins/InstalledPluginCard.vue';
@@ -505,14 +506,47 @@ const getPluginFeatureTags = (manifest: EchoPluginManifest) => {
             </span>
           </div>
 
-          <div v-if="isMarketplaceLoading" class="plugin-empty-state">
-            <Icon
-              :icon="iconRefreshCw"
-              width="38"
-              height="38"
-              class="animate-spin text-text-main/20"
-            />
-            <p class="text-text-main/60 mt-4 font-medium">正在加载在线插件</p>
+          <div v-if="isMarketplaceLoading" class="plugin-card-grid" aria-busy="true">
+            <article v-for="item in 6" :key="item" class="plugin-card marketplace-card">
+              <div class="plugin-card-main">
+                <Skeleton width="56px" height="56px" :radius="8" />
+                <div class="plugin-card-summary">
+                  <div class="plugin-card-header">
+                    <Skeleton variant="text" width="58%" height="15px" />
+                    <Skeleton variant="text" width="54px" height="20px" />
+                  </div>
+                  <Skeleton variant="text" width="38%" height="12px" />
+                </div>
+              </div>
+
+              <div class="marketplace-version-row">
+                <Skeleton variant="text" width="86px" height="26px" />
+                <Skeleton variant="text" width="72px" height="26px" />
+              </div>
+
+              <div class="plugin-marketplace-skeleton-description">
+                <Skeleton variant="text" width="94%" height="12px" />
+                <Skeleton variant="text" width="72%" height="12px" />
+              </div>
+
+              <div class="marketplace-tags">
+                <Skeleton v-for="tag in 3" :key="tag" variant="text" width="68px" height="24px" />
+              </div>
+
+              <Skeleton variant="text" width="78%" height="11px" />
+
+              <div class="marketplace-stats">
+                <Skeleton v-for="stat in 3" :key="stat" variant="text" width="100%" height="26px" />
+              </div>
+
+              <div class="plugin-card-actions">
+                <div class="plugin-card-primary-actions">
+                  <Skeleton variant="text" width="62px" height="28px" />
+                  <Skeleton variant="text" width="62px" height="28px" />
+                </div>
+                <Skeleton variant="text" width="78px" height="28px" />
+              </div>
+            </article>
           </div>
 
           <div v-else-if="filteredMarketplacePlugins.length === 0" class="plugin-empty-state">

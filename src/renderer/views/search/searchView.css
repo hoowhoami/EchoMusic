@@ -134,6 +134,24 @@
   color: color-mix(in srgb, var(--color-text-main) 58%, transparent);
 }
 
+.search-suggestions-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 0 10px;
+}
+
+.search-suggestion-skeleton-item {
+  width: calc(100% - 16px);
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+}
+
 .search-suggestion-group + .search-suggestion-group {
   margin-top: 6px;
 }
@@ -331,7 +349,6 @@
   color: #ffffff;
 }
 
-.search-loading-wrap,
 .search-placeholder {
   min-height: 320px;
   display: flex;

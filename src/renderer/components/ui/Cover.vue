@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue';
 import { normalizeCoverUrl, resolveCoverDisplayUrl } from '@/utils/cover';
 import { iconMusic } from '@/icons';
+import Skeleton from './Skeleton.vue';
 
 interface Props {
   url?: string;
@@ -93,6 +94,9 @@ const containerStyle = computed(() => {
       v-if="status === 'loading'"
       class="absolute inset-0 flex items-center justify-center bg-[var(--control-muted-bg)]"
     >
+      <div class="absolute inset-0">
+        <Skeleton width="100%" height="100%" :radius="0" />
+      </div>
       <Icon :icon="iconMusic" width="40%" height="40%" class="opacity-10" />
     </div>
 

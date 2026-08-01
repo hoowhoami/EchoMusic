@@ -14,6 +14,7 @@ import { createThemedIconCoverUrl } from '@/utils/cover';
 import { iconHeartFilled, iconHeartOff, iconPause, iconPlay, iconPulse } from '@/icons';
 import Button from '@/components/ui/Button.vue';
 import Cover from '@/components/ui/Cover.vue';
+import Skeleton from '@/components/ui/Skeleton.vue';
 import SliverHeader from '@/components/music/DetailPageSliverHeader.vue';
 import { getSongQualityTags } from '@/utils/song';
 import type {
@@ -82,6 +83,9 @@ const personalFmNowPlayingTrack = computed(() => {
 });
 const personalFmCurrentDisc = computed(
   () => personalFmNowPlayingTrack.value ?? personalFmCurrentTrack.value,
+);
+const isPersonalFmInitialLoading = computed(
+  () => (personalFmLoading.value || personalFmPreloading.value) && !personalFmCurrentDisc.value,
 );
 const personalFmSideTracks = computed(() => {
   const currentId = String(personalFmCurrentDisc.value?.id ?? '');
@@ -551,23 +555,40 @@ onActivated(() => {
                   </div>
                 </button>
               </div>
+              <div v-else-if="isPersonalFmInitialLoading" class="radio-current-disc">
+                <div class="radio-vinyl radio-vinyl-current radio-vinyl-skeleton">
+                  <Skeleton variant="circle" width="100%" height="100%" />
+                </div>
+              </div>
               <div ref="personalFmVinylsRef" class="radio-vinyls">
-                <button
-                  v-for="(track, index) in personalFmVisibleSideTracks"
-                  :key="`${track.id}:${track.hash ?? ''}:${index}`"
-                  type="button"
-                  class="radio-vinyl"
-                  :class="[`radio-vinyl-${index + 1}`]"
-                  :title="`播放 ${track.name} · ${track.artist}`"
-                  @click="handleSelectPersonalFmTrack(track)"
-                >
-                  <Cover
-                    :url="track.coverUrl"
-                    :size="320"
-                    :borderRadius="'50%'"
-                    class="w-full h-full"
-                  />
-                </button>
+                <template v-if="isPersonalFmInitialLoading">
+                  <div
+                    v-for="index in 2"
+                    :key="index"
+                    class="radio-vinyl radio-vinyl-skeleton"
+                    :class="[`radio-vinyl-${index}`]"
+                  >
+                    <Skeleton variant="circle" width="100%" height="100%" />
+                  </div>
+                </template>
+                <template v-else>
+                  <button
+                    v-for="(track, index) in personalFmVisibleSideTracks"
+                    :key="`${track.id}:${track.hash ?? ''}:${index}`"
+                    type="button"
+                    class="radio-vinyl"
+                    :class="[`radio-vinyl-${index + 1}`]"
+                    :title="`播放 ${track.name} · ${track.artist}`"
+                    @click="handleSelectPersonalFmTrack(track)"
+                  >
+                    <Cover
+                      :url="track.coverUrl"
+                      :size="320"
+                      :borderRadius="'50%'"
+                      class="w-full h-full"
+                    />
+                  </button>
+                </template>
               </div>
             </div>
           </div>
@@ -602,6 +623,26 @@ onActivated(() => {
                   >
                     {{ item }}
                   </span>
+                </div>
+              </div>
+            </div>
+            <div v-else-if="isPersonalFmInitialLoading" class="fm-now-card fm-now-card-skeleton">
+              <Skeleton width="100%" height="auto" :radius="20" class="fm-now-cover-skeleton" />
+              <div class="fm-now-body">
+                <div class="fm-now-heading">
+                  <Skeleton variant="text" width="min(360px, 72%)" height="28px" />
+                  <Skeleton variant="text" width="min(220px, 48%)" height="15px" />
+                </div>
+                <Skeleton variant="text" width="min(300px, 58%)" height="13px" />
+                <Skeleton variant="text" width="min(520px, 86%)" height="13px" />
+                <div class="fm-now-info-chips">
+                  <Skeleton
+                    v-for="item in 4"
+                    :key="item"
+                    variant="text"
+                    width="64px"
+                    height="30px"
+                  />
                 </div>
               </div>
             </div>
@@ -933,6 +974,23 @@ onActivated(() => {
     0 30px 44px rgba(5, 12, 20, 0.38);
 }
 
+.radio-vinyl-skeleton {
+  cursor: default;
+  pointer-events: none;
+}
+
+.radio-vinyl-skeleton:hover {
+  transform: none;
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, #000 34%, transparent),
+    0 26px 40px rgba(5, 12, 20, 0.32);
+}
+
+.radio-vinyl-skeleton :deep(.skeleton) {
+  background: color-mix(in srgb, var(--control-muted-bg) 64%, var(--color-text-main) 8%);
+  box-shadow: inset 0 0 0 12px color-mix(in srgb, #000 22%, transparent);
+}
+
 .radio-vinyl:focus-visible {
   outline: 2px solid var(--color-primary);
   outline-offset: 4px;
@@ -1018,6 +1076,12 @@ onActivated(() => {
   aspect-ratio: 1 / 1;
   border: 1px solid color-mix(in srgb, var(--color-text-main) 7%, transparent);
   box-shadow: 0 18px 34px rgba(15, 23, 42, 0.12);
+}
+
+.fm-now-cover-skeleton {
+  aspect-ratio: 1 / 1;
+  border: 1px solid color-mix(in srgb, var(--color-text-main) 7%, transparent);
+  box-shadow: 0 18px 34px rgba(15, 23, 42, 0.08);
 }
 
 .fm-now-body {

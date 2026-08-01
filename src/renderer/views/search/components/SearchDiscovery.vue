@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { Icon } from '@iconify/vue';
 import Button from '@/components/ui/Button.vue';
+import Skeleton from '@/components/ui/Skeleton.vue';
 import { iconClock, iconTrash, iconX } from '@/icons';
 import type { SearchHotCategory, SearchHotKeyword } from '../types';
 
@@ -22,7 +23,24 @@ const emit = defineEmits<{
 
 <template>
   <div class="px-10 pt-4">
-    <div v-if="isLoadingHot" class="search-placeholder">加载中...</div>
+    <div v-if="isLoadingHot" class="search-discovery-skeleton" aria-busy="true">
+      <div class="search-section">
+        <Skeleton variant="text" width="72px" height="14px" />
+        <div class="search-chip-wrap">
+          <Skeleton v-for="item in 4" :key="item" variant="text" width="96px" height="34px" />
+        </div>
+      </div>
+
+      <div class="search-section">
+        <Skeleton variant="text" width="72px" height="14px" />
+        <div class="search-hot-tabs">
+          <Skeleton v-for="item in 5" :key="item" variant="text" width="64px" height="30px" />
+        </div>
+        <div class="search-chip-wrap mt-5">
+          <Skeleton v-for="item in 12" :key="item" variant="text" width="112px" height="34px" />
+        </div>
+      </div>
+    </div>
     <template v-else>
       <div v-if="searchHistory.length > 0" class="search-section">
         <div class="search-section-header">

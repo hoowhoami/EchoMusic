@@ -2,6 +2,7 @@
 import { computed, type CSSProperties } from 'vue';
 import { AvatarRoot, AvatarImage, AvatarFallback } from 'reka-ui';
 import { iconUser } from '@/icons';
+import Skeleton from './Skeleton.vue';
 
 interface Props {
   src?: string;
@@ -57,11 +58,9 @@ const sizeStyle = computed<CSSProperties | undefined>(() => {
       class="flex h-full w-full items-center justify-center bg-[var(--control-muted-bg)]"
     >
       <!-- 加载中骨架屏 -->
-      <div
-        v-if="showSkeleton"
-        class="absolute inset-0 bg-[var(--control-hover-bg)] animate-pulse z-10"
-        :class="skeletonClass"
-      ></div>
+      <div v-if="showSkeleton" class="absolute inset-0 z-10" :class="skeletonClass">
+        <Skeleton width="100%" height="100%" :radius="0" />
+      </div>
 
       <!-- 失败图标 (用户头像占位) -->
       <Icon

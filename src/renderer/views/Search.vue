@@ -53,6 +53,7 @@ import SearchHeader from './search/components/SearchHeader.vue';
 import SearchDiscovery from './search/components/SearchDiscovery.vue';
 import SearchGridResultsPanel from './search/components/SearchGridResultsPanel.vue';
 import SearchLoadMoreStatus from './search/components/SearchLoadMoreStatus.vue';
+import SearchResultsSkeleton from './search/components/SearchResultsSkeleton.vue';
 import SearchSongResultsPanel from './search/components/SearchSongResultsPanel.vue';
 
 const settingStore = useSettingStore();
@@ -124,6 +125,11 @@ const currentHotKeywords = computed(
 const activeSearchType = computed(() => TAB_SEARCH_TYPES[activeTabIndex.value] ?? 'song');
 const currentSearchSubtitle = computed(() => currentSearchKeyword.value.trim() || '歌曲搜索');
 const activePagination = computed(() => paginationState[activeSearchType.value]);
+const searchSkeletonMode = computed<'song' | 'grid' | 'video'>(() => {
+  if (activeSearchType.value === 'song' || activeSearchType.value === 'lyric') return 'song';
+  if (activeSearchType.value === 'mv') return 'video';
+  return 'grid';
+});
 
 const sortedSongResults = computed(() => {
   return sortSongs(songResults.value, songSortField.value, songSortOrder.value, {
@@ -638,11 +644,11 @@ onUnmounted(() => {
         @update:selected-hot-category-index="selectedHotCategoryIndex = $event"
       />
 
-      <div v-else-if="isLoading" class="search-loading-wrap">
-        <div
-          class="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin"
-        ></div>
-      </div>
+      <SearchResultsSkeleton
+        v-else-if="isLoading"
+        :mode="searchSkeletonMode"
+        :lyric-column="activeSearchType === 'lyric'"
+      />
 
       <div v-else class="px-10 pt-4">
         <div v-if="activeTabIndex === 0">

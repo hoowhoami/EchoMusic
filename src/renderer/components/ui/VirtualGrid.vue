@@ -2,6 +2,7 @@
 import { computed } from 'vue';
 import { useScrollContainer } from '@/composables/usePageScroll';
 import { useVirtualGrid } from '@/composables/useVirtualGrid';
+import Skeleton from './Skeleton.vue';
 
 interface Props {
   items: T[];
@@ -20,6 +21,8 @@ interface Props {
   paddingTop?: number;
   paddingBottom?: number;
   keyField?: Extract<keyof T, string>;
+  loadingItemCount?: number;
+  loadingVariant?: 'card' | 'compact';
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -38,6 +41,8 @@ const props = withDefaults(defineProps<Props>(), {
   paddingTop: 0,
   paddingBottom: 0,
   keyField: 'id' as Extract<keyof T, string>,
+  loadingItemCount: 8,
+  loadingVariant: 'card',
 });
 
 defineSlots<{
@@ -49,6 +54,22 @@ defineSlots<{
 const stateStyle = computed(() => ({
   minHeight: `${props.stateMinHeight}px`,
 }));
+
+const loadingGridStyle = computed(() => ({
+  minHeight: `${props.stateMinHeight}px`,
+  display: 'grid',
+  gridTemplateColumns: `repeat(auto-fill, minmax(${props.itemMinWidth}px, 1fr))`,
+  gap: `${props.gap}px`,
+  paddingBottom: `${props.paddingBottom}px`,
+}));
+
+const loadingCoverStyle = computed(() => ({
+  aspectRatio: `${props.itemAspectRatio}`,
+}));
+
+const loadingItems = computed(() =>
+  Array.from({ length: Math.max(1, props.loadingItemCount) }, (_, index) => index),
+);
 
 const injectedScrollContainer = useScrollContainer();
 const virtualGrid = useVirtualGrid<T>({
@@ -103,9 +124,27 @@ defineExpose({
     </div>
 
     <slot v-else-if="props.loading" name="loading">
-      <div :style="stateStyle" class="virtual-grid-state">
-        <div class="virtual-grid-spinner" aria-hidden="true"></div>
-        <div class="virtual-grid-state-text">{{ props.loadingText }}</div>
+      <div :style="loadingGridStyle" class="virtual-grid-loading" aria-busy="true">
+        <template v-if="props.loadingVariant === 'compact'">
+          <div v-for="item in loadingItems" :key="item" class="virtual-grid-skeleton-compact">
+            <Skeleton width="40px" height="40px" :radius="8" />
+            <div class="virtual-grid-skeleton-compact-text">
+              <Skeleton variant="text" width="68%" height="13px" />
+              <Skeleton variant="text" width="42%" height="11px" />
+            </div>
+          </div>
+        </template>
+        <template v-else>
+          <div v-for="item in loadingItems" :key="item" class="virtual-grid-skeleton-card">
+            <div class="virtual-grid-skeleton-cover" :style="loadingCoverStyle">
+              <Skeleton width="100%" height="100%" :radius="14" />
+            </div>
+            <div v-if="props.itemChromeHeight > 0" class="virtual-grid-skeleton-info">
+              <Skeleton variant="text" width="82%" height="13px" />
+              <Skeleton variant="text" width="54%" height="11px" />
+            </div>
+          </div>
+        </template>
       </div>
     </slot>
     <slot v-else-if="props.items.length === 0" name="empty">
@@ -159,25 +198,56 @@ defineExpose({
   color: color-mix(in srgb, var(--color-text-main) 45%, transparent);
 }
 
-.virtual-grid-spinner {
-  width: 32px;
-  height: 32px;
-  border-radius: 999px;
-  border: 4px solid var(--color-primary);
-  border-top-color: transparent;
-  animation: virtual-grid-spin 0.7s linear infinite;
-}
-
-@keyframes virtual-grid-spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
-}
-
 .will-change-transform {
   will-change: transform;
+}
+
+.virtual-grid-loading {
+  width: 100%;
+  contain: layout style;
+}
+
+.virtual-grid-skeleton-card {
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 20px;
+  background: var(--color-bg-elevated);
+  box-shadow: var(--shadow-card);
+}
+
+.virtual-grid-skeleton-cover {
+  width: 100%;
+  overflow: hidden;
+  border-radius: 14px;
+}
+
+.virtual-grid-skeleton-info {
+  display: flex;
+  min-height: 36px;
+  flex-direction: column;
+  gap: 7px;
+  justify-content: center;
+  margin-top: 8px;
+  padding: 0 2px;
+}
+
+.virtual-grid-skeleton-compact {
+  display: flex;
+  min-width: 0;
+  min-height: 62px;
+  align-items: center;
+  gap: 12px;
+  padding: 8px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--color-text-main) 3%, transparent);
+}
+
+.virtual-grid-skeleton-compact-text {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 8px;
 }
 </style>

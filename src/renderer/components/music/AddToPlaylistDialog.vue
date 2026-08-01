@@ -3,6 +3,7 @@ import { computed } from 'vue';
 import { useVModel } from '@vueuse/core';
 import Dialog from '@/components/ui/Dialog.vue';
 import Button from '@/components/ui/Button.vue';
+import Skeleton from '@/components/ui/Skeleton.vue';
 import { iconList } from '@/icons';
 import type { Playlist } from '@/models/playlist';
 import { sortPlaylists, usePlaylistStore } from '@/stores/playlist';
@@ -98,7 +99,12 @@ const orderedPlaylists = computed(() => {
       <div class="add-to-divider">
         <span>歌单</span>
       </div>
-      <div v-if="loading" class="add-to-status">加载歌单中...</div>
+      <div v-if="loading" class="add-to-skeleton" aria-busy="true">
+        <div v-for="item in 4" :key="item" class="add-to-item">
+          <Skeleton variant="text" width="56%" height="13px" />
+          <Skeleton variant="text" width="42px" height="11px" />
+        </div>
+      </div>
       <div v-else-if="orderedPlaylists.length === 0" class="add-to-status">暂无可用歌单</div>
       <Button
         v-for="entry in orderedPlaylists"
@@ -177,6 +183,12 @@ const orderedPlaylists = computed(() => {
 .add-to-item:hover {
   border-color: var(--color-primary);
   color: var(--color-primary);
+}
+
+.add-to-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
 .add-to-queue {

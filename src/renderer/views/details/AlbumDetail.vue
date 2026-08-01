@@ -12,6 +12,7 @@ import {
 } from '@/api/album';
 import { getAlbumComments } from '@/api/comment';
 import SliverHeader from '@/components/music/DetailPageSliverHeader.vue';
+import DetailPageSkeleton from '@/components/music/DetailPageSkeleton.vue';
 import ActionRow from '@/components/music/DetailPageActionRow.vue';
 import SongList from '@/components/music/SongList.vue';
 import SongListHeader from '@/components/music/SongListHeader.vue';
@@ -557,11 +558,7 @@ const activeSongId = computed(() => playerStore.currentTrackId ?? undefined);
 <template>
   <PageScrollContainer class="album-detail-page">
     <div class="album-detail-container bg-bg-main min-h-full">
-      <div v-if="loading && !album" class="flex items-center justify-center py-40">
-        <div
-          class="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin"
-        ></div>
-      </div>
+      <DetailPageSkeleton v-if="loading && !album" typeLabel="ALBUM" :expandedHeight="196" />
 
       <template v-else-if="album">
         <!-- 1. Sliver Header -->

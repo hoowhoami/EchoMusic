@@ -12,6 +12,7 @@ import {
 } from '@/stores/lyric';
 import { usePlayerStore } from '@/stores/player';
 import { useToastStore } from '@/stores/toast';
+import Skeleton from '@/components/ui/Skeleton.vue';
 import { iconCheckMark, iconRefreshCw, iconSparkles, iconTriangleAlert } from '@/icons';
 
 const props = defineProps<{
@@ -295,7 +296,22 @@ watch(selectedKey, () => {
 
       <div class="source-layout">
         <div class="candidate-list">
-          <div v-if="isLoading && candidates.length === 0" class="empty-state">正在搜索歌词...</div>
+          <div
+            v-if="isLoading && candidates.length === 0"
+            class="lyric-candidate-skeleton"
+            aria-busy="true"
+          >
+            <div v-for="item in 5" :key="item" class="lyric-candidate-skeleton-item">
+              <div class="lyric-candidate-skeleton-head">
+                <Skeleton variant="text" width="58%" height="14px" />
+                <Skeleton variant="text" width="46px" height="20px" />
+              </div>
+              <Skeleton variant="text" width="38%" height="11px" />
+              <div class="candidate-tags">
+                <Skeleton v-for="tag in 3" :key="tag" variant="text" width="52px" height="20px" />
+              </div>
+            </div>
+          </div>
           <div v-else-if="candidates.length === 0" class="empty-state">没有找到可选歌词</div>
           <button
             v-for="candidate in displayedCandidates"
@@ -574,6 +590,29 @@ watch(selectedKey, () => {
 .candidate-item.recommended.active {
   background: color-mix(in srgb, var(--color-primary) 10%, var(--color-bg-elevated));
   border-color: color-mix(in srgb, var(--color-primary) 36%, var(--control-border));
+}
+
+.lyric-candidate-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.lyric-candidate-skeleton-item {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 11px 12px;
+  border: 1px solid var(--control-border);
+  border-radius: 8px;
+  background: var(--control-bg);
+}
+
+.lyric-candidate-skeleton-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
 }
 
 .candidate-main,

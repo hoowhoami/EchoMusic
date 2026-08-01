@@ -3,6 +3,7 @@ defineOptions({ name: 'ranking' });
 import { computed, onMounted, ref, watch } from 'vue';
 import { getRanks, getRankTop, getRankSongs } from '@/api/playlist';
 import SliverHeader from '@/components/music/DetailPageSliverHeader.vue';
+import DetailPageSkeleton from '@/components/music/DetailPageSkeleton.vue';
 import ActionRow from '@/components/music/DetailPageActionRow.vue';
 import SongList from '@/components/music/SongList.vue';
 import SongListHeader from '@/components/music/SongListHeader.vue';
@@ -256,11 +257,7 @@ watch(
 <template>
   <PageScrollContainer class="ranking-view-container">
     <div class="ranking-view bg-bg-main min-h-full">
-      <div v-if="loadingRanks" class="flex items-center justify-center py-24">
-        <div
-          class="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin"
-        ></div>
-      </div>
+      <DetailPageSkeleton v-if="loadingRanks" typeLabel="RANK" :expandedHeight="176" />
 
       <template v-else>
         <SliverHeader
@@ -373,14 +370,9 @@ watch(
           </div>
 
           <div class="px-6 pb-12">
-            <div v-if="loadingSongs" class="flex items-center justify-center py-20">
-              <div
-                class="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin"
-              ></div>
-            </div>
             <SongList
-              v-else
               ref="songListRef"
+              :loading="loadingSongs"
               :songs="displayedSongs"
               :contextSongs="sortedSongs"
               :searchQuery="searchQuery"

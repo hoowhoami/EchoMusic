@@ -3,11 +3,12 @@ import { ref } from 'vue';
 import { Icon } from '@iconify/vue';
 import Button from '@/components/ui/Button.vue';
 import CustomTabBar from '@/components/ui/CustomTabBar.vue';
+import Skeleton from '@/components/ui/Skeleton.vue';
 import Scrollbar from '@/components/ui/Scrollbar.vue';
 import { iconChevronRight, iconSearch, iconX } from '@/icons';
 import type { SearchSuggestionCategory } from '../types';
 
-const props = defineProps<{
+defineProps<{
   activeTabIndex: number;
   defaultKeyword: string;
   hasSearched: boolean;
@@ -87,9 +88,14 @@ defineExpose({ inputRef });
       <div v-if="showSuggestions" class="search-suggestions-panel">
         <div
           v-if="isLoadingSuggestions && suggestionCategories.length === 0"
-          class="search-suggestions-empty"
+          class="search-suggestions-skeleton"
+          aria-busy="true"
         >
-          加载中...
+          <div v-for="item in 5" :key="item" class="search-suggestion-skeleton-item">
+            <Skeleton variant="circle" width="28px" height="28px" />
+            <Skeleton variant="text" width="64%" height="13px" />
+            <Skeleton variant="text" width="13px" height="13px" />
+          </div>
         </div>
         <div v-else-if="suggestionCategories.length === 0" class="search-suggestions-empty">
           暂无建议

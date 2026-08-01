@@ -1,12 +1,5 @@
 import { ipcRegistry } from './registry';
-import {
-  shell,
-  app,
-  session,
-  dialog,
-  autoUpdater as electronAutoUpdater,
-  type OpenDialogOptions,
-} from 'electron';
+import { shell, app, session, dialog, type OpenDialogOptions } from 'electron';
 import log from 'electron-log';
 import fs from 'fs';
 import { execFile } from 'child_process';
@@ -82,6 +75,28 @@ type LinuxDistribution = {
 };
 
 type LinuxPackageType = 'deb' | 'rpm' | 'pacman';
+const UPDATE_INSTALL_EXIT_TIMEOUT_MS = 15000;
+let echoUpdaterSilent = false;
+
+const setEchoSilent = (silent: boolean) => {
+  echoUpdaterSilent = silent;
+};
+
+const getEchoSilent = () => echoUpdaterSilent;
+
+const normalizeOpenExternalUrl = (value: unknown): string | null => {
+  if (typeof value !== 'string') return null;
+  const raw = value.trim();
+  if (!raw) return null;
+
+  try {
+    const url = new URL(raw);
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') return null;
+    return url.toString();
+  } catch {
+    return null;
+  }
+};
 
 const readLinuxDistribution = (): LinuxDistribution | null => {
   if (process.platform !== 'linux') return null;
@@ -346,6 +361,35 @@ export const registerSettingsHandlers = ({ getMainWindow, playerRef }: IpcContex
   // 更新状态的单一可信来源（供渲染层在重新打开弹窗时恢复进度）
   let lastCheckResult: UpdateCheckResult | null = null;
   let downloadState: UpdateDownloadResult = { status: 'idle' };
+  let updateInstallExitTimeout: ReturnType<typeof setTimeout> | null = null;
+
+  const clearUpdateInstallExitTimeout = () => {
+    if (!updateInstallExitTimeout) return;
+    clearTimeout(updateInstallExitTimeout);
+    updateInstallExitTimeout = null;
+  };
+
+  const failUpdateInstall = (error: string, source: string) => {
+    clearUpdateInstallExitTimeout();
+    clearUpdateInstallQuitRequested();
+    downloadState = { status: 'error', error };
+    sendToRenderer('update-download-status', downloadState);
+    log.error(`[Updater] ${source}: ${error}`);
+  };
+
+  const scheduleUpdateInstallExitTimeout = () => {
+    clearUpdateInstallExitTimeout();
+    updateInstallExitTimeout = setTimeout(() => {
+      if (downloadState.status !== 'installing') return;
+      failUpdateInstall(
+        '更新安装器已启动但应用未能退出，请关闭 EchoMusic 后重试。',
+        'Install exit timeout',
+      );
+      log.error('[Updater] Force exiting after install quit timeout');
+      app.exit(1);
+    }, UPDATE_INSTALL_EXIT_TIMEOUT_MS);
+    updateInstallExitTimeout.unref?.();
+  };
 
   const readCurrentVersionChangelog = (): string => {
     const version = app.getVersion();
@@ -378,7 +422,7 @@ export const registerSettingsHandlers = ({ getMainWindow, playerRef }: IpcContex
   // --- autoUpdater 事件 ---
   autoUpdater.on('update-available', (info) => {
     const { version: currentVersion } = getAppInfo();
-    const silent = (autoUpdater as any)._echoSilent ?? false;
+    const silent = getEchoSilent();
 
     // releaseNotes 可能是 string 或 Array<{ version: string; note: string | null }>
     // 只展示最新版本的更新内容
@@ -404,7 +448,7 @@ export const registerSettingsHandlers = ({ getMainWindow, playerRef }: IpcContex
 
   autoUpdater.on('update-not-available', (info) => {
     const { version: currentVersion } = getAppInfo();
-    const silent = (autoUpdater as any)._echoSilent ?? false;
+    const silent = getEchoSilent();
     const result: UpdateCheckResult = {
       status: 'latest',
       currentVersion,
@@ -423,6 +467,10 @@ export const registerSettingsHandlers = ({ getMainWindow, playerRef }: IpcContex
     const message = error?.message || '更新失败，请稍后重试。';
     // 区分检查阶段与下载阶段的错误，避免下载出错时弹窗被「检查更新失败」覆盖
     if (downloadState.status === 'downloading' || downloadState.status === 'installing') {
+      if (downloadState.status === 'installing') {
+        clearUpdateInstallExitTimeout();
+        clearUpdateInstallQuitRequested();
+      }
       downloadState = { status: 'error', error: message };
       sendToRenderer('update-download-status', downloadState);
     } else {
@@ -430,7 +478,7 @@ export const registerSettingsHandlers = ({ getMainWindow, playerRef }: IpcContex
         status: 'error',
         currentVersion: getAppInfo().version,
         message,
-        silent: (autoUpdater as any)._echoSilent ?? false,
+        silent: getEchoSilent(),
       } satisfies UpdateCheckResult);
     }
   });
@@ -684,6 +732,7 @@ export const registerSettingsHandlers = ({ getMainWindow, playerRef }: IpcContex
     'check-for-updates',
     (_event, payload?: { prerelease?: boolean; silent?: boolean; githubProxyUrl?: string }) => {
       const silent = Boolean(payload?.silent);
+      setEchoSilent(silent);
       const prerelease = Boolean(payload?.prerelease);
       const githubProxyUrl = payload?.githubProxyUrl?.trim() || '';
 
@@ -766,7 +815,6 @@ export const registerSettingsHandlers = ({ getMainWindow, playerRef }: IpcContex
                       });
                     }
                     autoUpdater.allowPrerelease = prerelease;
-                    (autoUpdater as any)._echoSilent = silent;
                     autoUpdater.checkForUpdates().catch((error) => {
                       log.error('[Updater] Check failed:', error);
                       sendToRenderer('update-check-result', {
@@ -787,7 +835,6 @@ export const registerSettingsHandlers = ({ getMainWindow, playerRef }: IpcContex
                   repo: 'EchoMusic',
                 });
                 autoUpdater.allowPrerelease = prerelease;
-                (autoUpdater as any)._echoSilent = silent;
                 autoUpdater.checkForUpdates().catch((err) => {
                   log.error('[Updater] Check failed:', err);
                   sendToRenderer('update-check-result', {
@@ -806,7 +853,6 @@ export const registerSettingsHandlers = ({ getMainWindow, playerRef }: IpcContex
                 repo: 'EchoMusic',
               });
               autoUpdater.allowPrerelease = prerelease;
-              (autoUpdater as any)._echoSilent = silent;
               autoUpdater.checkForUpdates();
             });
           return;
@@ -829,7 +875,6 @@ export const registerSettingsHandlers = ({ getMainWindow, playerRef }: IpcContex
       }
 
       autoUpdater.allowPrerelease = prerelease;
-      (autoUpdater as any)._echoSilent = silent;
 
       autoUpdater.checkForUpdates().catch((error) => {
         log.error('[Updater] Check failed:', error);
@@ -891,6 +936,7 @@ export const registerSettingsHandlers = ({ getMainWindow, playerRef }: IpcContex
         platform: process.platform,
       });
       markUpdateInstallQuitRequested();
+      scheduleUpdateInstallExitTimeout();
 
       try {
         const updater = autoUpdater as unknown as {
@@ -903,17 +949,18 @@ export const registerSettingsHandlers = ({ getMainWindow, playerRef }: IpcContex
           const forceRunAfter = isSilent ? true : (updater.autoRunAppAfterInstall ?? true);
           const started = updater.install(isSilent, forceRunAfter);
           if (!started) {
-            clearUpdateInstallQuitRequested();
             const error = '更新安装器未能启动，请重新下载或前往发布页手动安装。';
-            downloadState = { status: 'error', error };
-            sendToRenderer('update-download-status', downloadState);
-            log.error('[Updater] install() returned false');
+            failUpdateInstall(error, 'install() returned false');
             return { ok: false, error };
           }
 
           setImmediate(() => {
-            electronAutoUpdater.emit('before-quit-for-update');
-            app.quit();
+            try {
+              app.quit();
+            } catch (error) {
+              const message = error instanceof Error ? error.message : '更新安装退出失败，请重试。';
+              failUpdateInstall(message, 'Quit after install failed');
+            }
           });
         } else {
           updater.quitAndInstall(isSilent, true);
@@ -921,20 +968,21 @@ export const registerSettingsHandlers = ({ getMainWindow, playerRef }: IpcContex
 
         return { ok: true };
       } catch (error) {
-        clearUpdateInstallQuitRequested();
         const message =
           error instanceof Error ? error.message : '更新安装器启动失败，请前往发布页手动安装。';
-        downloadState = { status: 'error', error: message };
-        sendToRenderer('update-download-status', downloadState);
-        log.error('[Updater] Install failed:', error);
+        failUpdateInstall(message, 'Install failed');
         return { ok: false, error: message };
       }
     },
   );
 
   ipcRegistry.registerListener('open-external', async (_event, url: string) => {
-    if (typeof url !== 'string' || !url.startsWith('http')) return;
-    await shell.openExternal(url);
+    const safeUrl = normalizeOpenExternalUrl(url);
+    if (!safeUrl) {
+      log.warn('[MainIPC] Blocked unsafe external URL:', url);
+      return;
+    }
+    await shell.openExternal(safeUrl);
   });
 
   ipcRegistry.registerListener('open-disclaimer', () => {

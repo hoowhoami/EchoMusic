@@ -450,20 +450,26 @@ const handleRejectAgreement = () => {
             </Button>
           </div>
 
-          <div v-if="styleState.loading" class="style-song-placeholder">加载中...</div>
-          <div v-else-if="styleState.error" class="style-song-placeholder">
+          <div v-if="!styleState.loading && styleState.error" class="style-song-placeholder">
             {{ styleState.error }}
           </div>
-          <div v-else-if="styleSongs.length === 0" class="style-song-placeholder">暂无风格推荐</div>
+          <div
+            v-else-if="!styleState.loading && styleSongs.length === 0"
+            class="style-song-placeholder"
+          >
+            暂无风格推荐
+          </div>
           <VirtualGrid
             v-else
             class="style-song-grid"
             :items="styleSongs"
+            :loading="styleState.loading"
             :itemMinWidth="240"
             :itemHeight="62"
             :gap="10"
             :overscan="HOME_GRID_OVERSCAN"
             :virtualThreshold="18"
+            loadingVariant="compact"
             keyField="id"
           >
             <template #default="{ item: song }">
@@ -504,14 +510,14 @@ const handleRejectAgreement = () => {
             </Button>
           </div>
         </div>
-        <div v-if="recommendState.loading" class="section-placeholder">加载中...</div>
-        <div v-else-if="recommendState.error" class="section-placeholder">
+        <div v-if="!recommendState.loading && recommendState.error" class="section-placeholder">
           {{ recommendState.error }}
         </div>
         <VirtualGrid
           v-else
           class="playlist-grid"
           :items="recommendedPlaylistCards"
+          :loading="recommendState.loading"
           :itemMinWidth="180"
           :itemAspectRatio="1"
           :itemChromeHeight="66"
@@ -530,12 +536,14 @@ const handleRejectAgreement = () => {
         <div class="section-header">
           <div class="section-title">编辑精选</div>
         </div>
-        <div v-if="topIpState.loading" class="section-placeholder">加载中...</div>
-        <div v-else-if="topIpState.error" class="section-placeholder">{{ topIpState.error }}</div>
+        <div v-if="!topIpState.loading && topIpState.error" class="section-placeholder">
+          {{ topIpState.error }}
+        </div>
         <VirtualGrid
           v-else
           class="playlist-grid"
           :items="topIpPlaylistCards"
+          :loading="topIpState.loading"
           :itemMinWidth="180"
           :itemAspectRatio="1"
           :itemChromeHeight="66"

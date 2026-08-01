@@ -702,14 +702,9 @@ const filteredArtistCards = computed(() => {
         </div>
 
         <div class="pb-12">
-          <div v-if="loadingRankSongs" class="flex items-center justify-center py-20">
-            <div
-              class="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin"
-            ></div>
-          </div>
           <SongList
-            v-else
             ref="rankSongListRef"
+            :loading="loadingRankSongs"
             :songs="filteredRankSongs"
             :contextSongs="sortedRankSongs"
             :searchQuery="rankSearchQuery"
@@ -831,14 +826,9 @@ const filteredArtistCards = computed(() => {
         </div>
 
         <div class="pb-12">
-          <div v-if="loadingNewSongs" class="flex items-center justify-center py-20">
-            <div
-              class="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin"
-            ></div>
-          </div>
           <SongList
-            v-else
             ref="newSongListRef"
+            :loading="loadingNewSongs"
             :songs="filteredNewSongs"
             :contextSongs="sortedNewSongs"
             :searchQuery="newSongSearchQuery"
@@ -875,13 +865,7 @@ const filteredArtistCards = computed(() => {
           </div>
         </div>
 
-        <div v-if="loadingArtists" class="flex items-center justify-center py-20">
-          <div
-            class="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin"
-          ></div>
-        </div>
-
-        <template v-else-if="filteredArtistCards.length > 0">
+        <template v-if="!loadingArtists && filteredArtistCards.length > 0">
           <div class="artist-letter-bar">
             <span
               :class="['artist-letter-item', activeArtistLetter === '全部' ? 'is-active' : '']"
@@ -896,25 +880,26 @@ const filteredArtistCards = computed(() => {
               >{{ letter }}</span
             >
           </div>
-
-          <VirtualGrid
-            :items="filteredArtistCards"
-            :loading="false"
-            :active="activeTabIndex === 4"
-            :itemMinWidth="180"
-            :itemAspectRatio="1"
-            :itemChromeHeight="68"
-            :gap="20"
-            :overscan="3"
-            :paddingBottom="20"
-            :stateMinHeight="220"
-            keyField="id"
-          >
-            <template #default="{ item }">
-              <ArtistCard v-bind="item" />
-            </template>
-          </VirtualGrid>
         </template>
+
+        <VirtualGrid
+          v-if="loadingArtists || filteredArtistCards.length > 0"
+          :items="filteredArtistCards"
+          :loading="loadingArtists"
+          :active="activeTabIndex === 4"
+          :itemMinWidth="180"
+          :itemAspectRatio="1"
+          :itemChromeHeight="68"
+          :gap="20"
+          :overscan="3"
+          :paddingBottom="20"
+          :stateMinHeight="220"
+          keyField="id"
+        >
+          <template #default="{ item }">
+            <ArtistCard v-bind="item" />
+          </template>
+        </VirtualGrid>
 
         <div v-else class="py-20 text-center opacity-50 text-[14px] italic">暂无歌手</div>
       </div>

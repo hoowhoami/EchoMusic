@@ -249,30 +249,35 @@ if (!gotTheLock) {
     // 第二步：让主线程完成一轮消息循环（渲染窗口隐藏），再执行阻塞清理
     setImmediate(() => {
       log.info('[Main] before-quit: cleaning up native resources');
-      globalShortcut.unregisterAll();
-      clearPluginRuntimeSession();
-      unregisterAudioSpectrumIpc();
-      // 清理桌面歌词模块的事件监听器和定时器
-      cleanupDesktopLyric();
-      // 清理 mini 播放器模块的事件监听器和定时器
-      cleanupMiniPlayer();
-      destroyMediaControls();
-      if (skipPlayerCleanup) {
-        log.info('[Main] before-quit: update install requested, skipping native player cleanup');
-      } else {
-        destroyPlayer();
-      }
-      // 销毁桌面歌词窗口，确保清理所有定时器
       try {
-        destroyDesktopLyricWindow();
+        globalShortcut.unregisterAll();
+        clearPluginRuntimeSession();
+        unregisterAudioSpectrumIpc();
+        // 清理桌面歌词模块的事件监听器和定时器
+        cleanupDesktopLyric();
+        // 清理 mini 播放器模块的事件监听器和定时器
+        cleanupMiniPlayer();
+        destroyMediaControls();
+        if (skipPlayerCleanup) {
+          log.info('[Main] before-quit: update install requested, skipping native player cleanup');
+        } else {
+          destroyPlayer();
+        }
+        // 销毁桌面歌词窗口，确保清理所有定时器
+        try {
+          destroyDesktopLyricWindow();
+        } catch (err) {
+          log.warn('[Main] Failed to destroy desktop lyric window:', err);
+        }
+        // 销毁所有剩余窗口
+        BrowserWindow.getAllWindows().forEach((w) => {
+          if (!w.isDestroyed()) w.destroy();
+        });
       } catch (err) {
-        log.warn('[Main] Failed to destroy desktop lyric window:', err);
+        log.error('[Main] before-quit cleanup failed:', err);
+      } finally {
+        app.exit(0);
       }
-      // 销毁所有剩余窗口
-      BrowserWindow.getAllWindows().forEach((w) => {
-        if (!w.isDestroyed()) w.destroy();
-      });
-      app.exit(0);
     });
   });
 }

@@ -400,13 +400,8 @@ onMounted(() => {
           </div>
 
           <div class="px-6 pb-12">
-            <div v-if="loading" class="flex items-center justify-center py-20">
-              <div
-                class="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin"
-              ></div>
-            </div>
             <div
-              v-else-if="songs.length === 0"
+              v-if="!loading && songs.length === 0"
               class="cloud-empty flex flex-col items-center justify-center py-24 text-center"
             >
               <div
@@ -422,6 +417,7 @@ onMounted(() => {
             <SongList
               v-else
               ref="songListRef"
+              :loading="loading"
               :songs="displayedSongs"
               :contextSongs="sortedSongs"
               :searchQuery="searchQuery"

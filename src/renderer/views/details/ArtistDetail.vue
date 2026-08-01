@@ -12,6 +12,7 @@ import {
   unfollowArtist,
 } from '@/api/artist';
 import SliverHeader from '@/components/music/DetailPageSliverHeader.vue';
+import DetailPageSkeleton from '@/components/music/DetailPageSkeleton.vue';
 import ActionRow from '@/components/music/DetailPageActionRow.vue';
 import SongList from '@/components/music/SongList.vue';
 import SongListHeader from '@/components/music/SongListHeader.vue';
@@ -639,11 +640,12 @@ onUnmounted(() => {
 <template>
   <PageScrollContainer class="artist-detail-page">
     <div class="artist-detail-container bg-bg-main min-h-full">
-      <div v-if="loading && !artist" class="flex items-center justify-center py-40">
-        <div
-          class="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin"
-        ></div>
-      </div>
+      <DetailPageSkeleton
+        v-if="loading && !artist"
+        typeLabel="ARTIST"
+        cover="round"
+        :expandedHeight="196"
+      />
 
       <template v-else-if="artist">
         <SliverHeader

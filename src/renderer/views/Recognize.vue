@@ -7,6 +7,7 @@ import Button from '@/components/ui/Button.vue';
 import Cover from '@/components/ui/Cover.vue';
 import Dialog from '@/components/ui/Dialog.vue';
 import Popover from '@/components/ui/Popover.vue';
+import Skeleton from '@/components/ui/Skeleton.vue';
 import PageScrollContainer from '@/components/ui/PageScrollContainer.vue';
 import {
   iconMicrophone,
@@ -536,8 +537,11 @@ onUnmounted(() => {
       showClose
     >
       <div class="flex flex-col gap-3">
-        <div v-if="isPlaylistLoading" class="py-6 text-center text-text-secondary text-[12px]">
-          加载歌单中...
+        <div v-if="isPlaylistLoading" class="rec-playlist-skeleton" aria-busy="true">
+          <div v-for="item in 4" :key="item" class="rec-playlist-item">
+            <Skeleton variant="text" width="54%" height="13px" />
+            <Skeleton variant="text" width="42px" height="11px" />
+          </div>
         </div>
         <div
           v-else-if="selectablePlaylists.length === 0"
@@ -1052,6 +1056,12 @@ onUnmounted(() => {
 .rec-playlist-item:hover {
   border-color: var(--color-primary);
   color: var(--color-primary);
+}
+
+.rec-playlist-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
 .rec-retry-center {

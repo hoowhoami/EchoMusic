@@ -4,6 +4,7 @@ import { iconMessageCircle, iconThumbsUp, iconChevronUp } from '@/icons';
 import type { Comment } from '@/models/comment';
 import type { CommentResourceType } from '@/composables/useComments';
 import Button from '@/components/ui/Button.vue';
+import Skeleton from '@/components/ui/Skeleton.vue';
 import { getFloorComments } from '@/api/comment';
 import { mapCommentItem } from '@/utils/mappers';
 import { useToastStore } from '@/stores/toast';
@@ -19,6 +20,7 @@ interface Props {
   resourceType?: CommentResourceType;
   fallbackMixSongId?: string;
   inlineReplies?: boolean;
+  loadingSkeletonCount?: number;
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -28,6 +30,7 @@ const props = withDefaults(defineProps<Props>(), {
   hideEmpty: false,
   resourceType: 'music',
   inlineReplies: true,
+  loadingSkeletonCount: 3,
 });
 
 const toastStore = useToastStore();
@@ -153,9 +156,23 @@ const formatLike = (value: number) => {
 <template>
   <div class="comment-list" :class="{ 'is-compact': compact }">
     <div v-if="loading && comments.length === 0" class="comment-loading">
-      <div
-        class="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin"
-      ></div>
+      <div v-for="index in loadingSkeletonCount" :key="index" class="comment-skeleton-item">
+        <Skeleton variant="circle" width="36px" height="36px" />
+        <div class="comment-skeleton-main">
+          <div class="comment-skeleton-topline">
+            <div class="comment-skeleton-meta">
+              <Skeleton variant="text" width="112px" height="13px" />
+              <Skeleton variant="text" width="72px" height="10px" />
+            </div>
+            <Skeleton variant="text" width="54px" height="24px" />
+          </div>
+          <div class="comment-skeleton-content">
+            <Skeleton variant="text" width="92%" height="13px" />
+            <Skeleton variant="text" width="74%" height="13px" />
+          </div>
+          <Skeleton variant="text" width="86px" height="12px" />
+        </div>
+      </div>
     </div>
 
     <div v-else-if="!hideEmpty && comments.length === 0" class="comment-empty">
@@ -334,6 +351,59 @@ const formatLike = (value: number) => {
   color: var(--color-text-secondary);
   font-size: 13px;
   font-weight: 600;
+}
+
+.comment-loading {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0;
+  min-height: 0;
+  padding: 0;
+}
+
+.comment-skeleton-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin: 0 12px 12px;
+  padding: 20px;
+  border-radius: 20px;
+  background: color-mix(in srgb, var(--color-text-main) 5%, transparent);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.03);
+}
+
+.comment-list.is-compact .comment-skeleton-item {
+  margin-left: 0;
+  margin-right: 0;
+}
+
+.comment-skeleton-main {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+}
+
+.comment-skeleton-topline {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.comment-skeleton-meta {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.comment-skeleton-content {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 14px;
+  margin-bottom: 14px;
 }
 
 .comment-item-wrap {
