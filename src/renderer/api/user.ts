@@ -174,6 +174,54 @@ export function getUserCloud(page = 1, pagesize = 30) {
 }
 
 /**
+ * 上传音乐文件到用户云盘（二进制 body，支持分片上传与秒传）
+ * @param data 文件二进制内容（Uint8Array / ArrayBuffer）
+ * @param options 文件信息
+ */
+export async function uploadToCloud(
+  data: Uint8Array | ArrayBuffer,
+  options: {
+    name: string;
+    extendname?: string;
+    authorName?: string;
+    audioId?: string | number;
+    albumAudioId?: string | number;
+  },
+) {
+  const extendname = options.extendname || options.name.split('.').pop()?.toLowerCase() || 'mp3';
+  const baseName = options.name.replace(/\.[^.]+$/, '');
+  try {
+    const res = await request.post('/user/cloud/upload', data, {
+      params: {
+        extendname,
+        name: baseName,
+        ...(options.authorName ? { author_name: options.authorName } : {}),
+        ...(options.audioId ? { audio_id: options.audioId } : {}),
+        ...(options.albumAudioId ? { album_audio_id: options.albumAudioId } : {}),
+      },
+    });
+    // 上游可能返回 HTTP 200 但业务失败（error_code 非 0 / status 非 1），需主动抛错
+    const body = res as { error_code?: number | string; status?: number; msg?: string } | null;
+    const errorCode = Number(body?.error_code ?? 0);
+    if (body && (errorCode !== 0 || Number(body.status ?? 1) !== 1)) {
+      const err = new Error(body?.msg || `上传失败（error_code=${errorCode}）`);
+      (err as any).response = res;
+      throw err;
+    }
+    return res;
+  } catch (error: any) {
+    // 后端业务失败时 status=500 且 body 携带 msg，转换为可读错误
+    const msg = error?.response?.body?.msg;
+    if (msg) {
+      const err = new Error(String(msg));
+      (err as any).response = error?.response;
+      throw err;
+    }
+    throw error;
+  }
+}
+
+/**
  * 获取用户关注歌手
  */
 export function getUserFollow() {
