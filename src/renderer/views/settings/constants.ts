@@ -33,6 +33,7 @@ export const accentModeOptions: { label: string; value: AccentMode }[] = [
   { label: '跟随封面', value: 'cover' },
   { label: '预设主题', value: 'preset' },
   { label: '自定义', value: 'custom' },
+  { label: '关闭', value: 'off' },
 ];
 
 export const themeOptions: { label: string; value: ThemeMode }[] = [

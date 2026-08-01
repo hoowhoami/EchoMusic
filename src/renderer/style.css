@@ -723,3 +723,7 @@ body.echo-surface-translucent .player-bar {
 body.echo-surface-translucent .layout-accent-gradient {
   opacity: 0;
 }
+
+body.accent-gradient-disabled .layout-accent-gradient {
+  opacity: 0;
+}

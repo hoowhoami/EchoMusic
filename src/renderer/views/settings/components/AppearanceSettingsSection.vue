@@ -45,7 +45,7 @@ const resolvedTitle = computed(() => title.label);
     <div class="settings-item">
       <div class="space-y-1">
         <h3 class="font-semibold">主题色来源</h3>
-        <p class="text-sm text-text-secondary">切歌自动跟随封面，或固定为预设 / 自定义颜色</p>
+        <p class="text-sm text-text-secondary">关闭动态主题色，或固定为封面 / 预设 / 自定义颜色</p>
       </div>
       <Select
         class="w-45"
@@ -90,6 +90,17 @@ const resolvedTitle = computed(() => title.label);
         ></button>
       </div>
     </template>
+    <div class="settings-divider"></div>
+    <div class="settings-item">
+      <div class="space-y-1">
+        <h3 class="font-semibold">顶部渐变色</h3>
+        <p class="text-sm text-text-secondary">在界面顶部显示跟随主题色的渐变氛围层</p>
+      </div>
+      <Switch
+        :model-value="themeStore.accentGradient"
+        @update:model-value="themeStore.setAccentGradient(Boolean($event))"
+      />
+    </div>
     <div class="settings-divider"></div>
     <div class="settings-item">
       <div class="space-y-1">

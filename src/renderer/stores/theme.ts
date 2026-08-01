@@ -9,7 +9,7 @@ import {
   waitForAbortableDelay,
 } from '@/utils/color';
 
-export type AccentMode = 'cover' | 'preset' | 'custom';
+export type AccentMode = 'off' | 'cover' | 'preset' | 'custom';
 type CoverColorSource = string | readonly string[];
 
 // 判断当前是否为深色模式
@@ -34,6 +34,8 @@ export const useThemeStore = defineStore('theme', {
     customColor: DEFAULT_ACCENT,
     // 全局主题色：true 时影响整个 App，false 时仅影响播放相关区域
     globalAccent: true,
+    // 顶部主题色渐变氛围层
+    accentGradient: true,
     // 当前生效的主题色源（未归一化，用于重算）
     sourceColor: DEFAULT_ACCENT,
     // 当前歌曲封面提取色（供歌词页面“跟随封面取色”使用）
@@ -62,19 +64,20 @@ export const useThemeStore = defineStore('theme', {
         source = this.currentPreset.color;
       } else if (this.accentMode === 'custom') {
         source = this.customColor || DEFAULT_ACCENT;
-      } else {
+      } else if (this.accentMode === 'cover') {
         // cover 模式，用保存的 sourceColor；无值时先用默认
         source = this.sourceColor || DEFAULT_ACCENT;
       }
       this.sourceColor = source;
       applyAccentToRoot(source, isDarkMode());
       this.syncGlobalScope();
+      this.syncAccentGradient();
     },
     // 切换模式
     setMode(mode: AccentMode) {
       this.accentMode = mode;
       // 切回封面模式时重置 sourceColor，等待 App 层 watch 根据当前封面重新提取
-      if (mode === 'cover') {
+      if (mode === 'cover' || mode === 'off') {
         this.sourceColor = DEFAULT_ACCENT;
       }
       this.applyCurrent();
@@ -97,6 +100,11 @@ export const useThemeStore = defineStore('theme', {
     setGlobalAccent(enabled: boolean) {
       this.globalAccent = enabled;
       this.syncGlobalScope();
+    },
+    // 切换顶部主题色渐变氛围层
+    setAccentGradient(enabled: boolean) {
+      this.accentGradient = enabled;
+      this.syncAccentGradient();
     },
     // 从封面提取主色（仅在 cover 模式下有效）
     async refreshFromCover(coverUrl: CoverColorSource) {
@@ -152,8 +160,12 @@ export const useThemeStore = defineStore('theme', {
         body.classList.add('accent-scoped');
       }
     },
+    // 同步顶部渐变开关：通过 body 上的 class 控制 CSS 作用域
+    syncAccentGradient() {
+      document.body.classList.toggle('accent-gradient-disabled', !this.accentGradient);
+    },
   },
   persist: {
-    pick: ['accentMode', 'presetId', 'customColor', 'globalAccent'],
+    pick: ['accentMode', 'presetId', 'customColor', 'globalAccent', 'accentGradient'],
   },
 });
