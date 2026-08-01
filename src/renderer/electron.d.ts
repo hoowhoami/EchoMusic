@@ -46,6 +46,7 @@ import type {
 import type { ResolvePlaylistRequest, ResolvePlaylistResponse } from '../shared/external';
 import type { ShareCaptureRect, ShareTarget } from '../shared/share';
 import type { DiagnosticsMemorySnapshot } from '../shared/diagnostics';
+import type { CloudPickMode } from '../shared/cloud';
 import type {
   PluginAssetSourceResult,
   PluginAppIconRefreshResult,
@@ -245,6 +246,21 @@ export interface IElectronAPI {
       body: any;
       cookie?: string[];
       headers?: Record<string, string>;
+    }>;
+  };
+  cloud: {
+    pickUploadFiles: (mode: CloudPickMode) => Promise<{
+      canceled: boolean;
+      files: {
+        name: string;
+        path: string;
+        size: number;
+        data: Uint8Array;
+        title?: string;
+        artist?: string;
+        duration?: number;
+      }[];
+      errors?: string[];
     }>;
   };
   tray: {

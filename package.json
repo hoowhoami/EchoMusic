@@ -1,6 +1,6 @@
 {
   "name": "echo-music",
-  "version": "2.2.9-beta.21",
+  "version": "2.2.9-beta.22",
   "description": "EchoMusic desktop client.",
   "license": "GPL-3.0-only",
   "author": {
@@ -31,6 +31,7 @@
     "electron-updater": "^6.8.9",
     "font-list": "^2.1.0",
     "marked": "^18.0.5",
+    "music-metadata": "^11.14.0",
     "node-stream-zip": "^1.15.0",
     "pinia": "^3.0.4",
     "reka-ui": "^2.9.10",
