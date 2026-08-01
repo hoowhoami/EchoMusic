@@ -14,9 +14,17 @@ import ActionRow from '@/components/music/DetailPageActionRow.vue';
 import SongList from '@/components/music/SongList.vue';
 import SongListHeader from '@/components/music/SongListHeader.vue';
 import BatchActionDrawer from '@/components/music/BatchActionDrawer.vue';
+import CloudUploadDialog from '@/components/music/CloudUploadDialog.vue';
 import { mapCloudSong } from '@/utils/mappers';
 import type { SortField, SortOrder } from '@/components/music/SongListHeader.vue';
-import { iconCloud, iconCurrentLocation, iconList, iconPlay, iconSearch } from '@/icons';
+import {
+  iconCloud,
+  iconCloudUpload,
+  iconCurrentLocation,
+  iconList,
+  iconPlay,
+  iconSearch,
+} from '@/icons';
 import { replaceQueueAndPlay } from '@/utils/playback';
 import Button from '@/components/ui/Button.vue';
 import Badge from '@/components/ui/Badge.vue';
@@ -239,6 +247,18 @@ const openBatchDrawer = () => {
   showBatchDrawer.value = true;
 };
 
+const showUploadDialog = ref(false);
+
+const secondaryActions = computed(() => [
+  {
+    icon: iconCloudUpload,
+    label: '上传',
+    onTap: () => {
+      showUploadDialog.value = true;
+    },
+  },
+]);
+
 const handleLocate = () => songListRef.value?.scrollToActive?.();
 
 watch(
@@ -305,7 +325,11 @@ onMounted(() => {
           </template>
 
           <template #actions>
-            <ActionRow @play="handlePlayAll" @batch="openBatchDrawer" />
+            <ActionRow
+              @play="handlePlayAll"
+              @batch="openBatchDrawer"
+              :secondaryActions="secondaryActions"
+            />
           </template>
 
           <template #collapsed-actions>
@@ -329,6 +353,11 @@ onMounted(() => {
         </SliverHeader>
 
         <BatchActionDrawer v-model:open="showBatchDrawer" :songs="songs" source-id="cloud" />
+
+        <CloudUploadDialog
+          v-model:open="showUploadDialog"
+          @update:open="(value) => !value && void loadCloud()"
+        />
 
         <div class="px-6 pt-2.5 pb-1">
           <div class="cloud-info-card">
@@ -413,6 +442,15 @@ onMounted(() => {
               <div class="mt-2 text-[13px] font-medium text-text-secondary/75">
                 上传后会展示在这里
               </div>
+              <Button
+                variant="primary"
+                size="md"
+                class="mt-5 gap-2"
+                @click="showUploadDialog = true"
+              >
+                <Icon :icon="iconCloudUpload" width="16" height="16" />
+                上传音乐
+              </Button>
             </div>
             <SongList
               v-else

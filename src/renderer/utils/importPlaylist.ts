@@ -104,14 +104,56 @@ const scoreCandidate = (ext: ExternalTrack, song: Song): number => {
 const HIGH_CONFIDENCE = 0.72;
 const ACCEPTABLE = 0.4;
 
+/** 匹配可采用的分数阈值（云盘上传等场景复用） */
+export const MATCH_ACCEPTABLE_SCORE = ACCEPTABLE;
+
 const buildKeyword = (track: ExternalTrack): string => {
   const parts = [track.title, track.artist].filter(Boolean);
   return parts.join(' ').trim();
 };
 
-const findBestMatch = async (
-  track: ExternalTrack,
-): Promise<{ song: Song; score: number } | null> => {
+export interface SearchMatchResult {
+  song: Song;
+  score: number;
+  /** 搜索结果中的歌曲 id（audioid/scid），用于云盘上传关联，缺失时为 undefined */
+  audioId?: string | number;
+  /** 搜索结果中的专辑音频 id（mixsongid），用于云盘上传关联，缺失时为 undefined */
+  albumAudioId?: string | number;
+}
+
+/** 从搜索结果记录中提取 audio_id（歌曲 id，audioid/scid） */
+const extractAudioId = (item: unknown): string | number | undefined => {
+  const record = item as {
+    Auditoid?: unknown;
+    audio_id?: unknown;
+    Scid?: unknown;
+    scid?: unknown;
+  };
+  const raw = record?.Auditoid ?? record?.audio_id ?? record?.Scid ?? record?.scid;
+  return raw !== undefined && raw !== null && raw !== '' ? (raw as string | number) : undefined;
+};
+
+/** 从搜索结果记录中提取 album_audio_id（mixsongid） */
+const extractAlbumAudioId = (item: unknown): string | number | undefined => {
+  const record = item as {
+    album_audio_id?: unknown;
+    mixsongid?: unknown;
+    MixSongID?: unknown;
+    base?: unknown;
+    audio_info?: unknown;
+  };
+  const base = record?.base as { album_audio_id?: unknown } | undefined;
+  const audioInfo = record?.audio_info as { album_audio_id?: unknown } | undefined;
+  const raw =
+    record?.album_audio_id ??
+    record?.mixsongid ??
+    record?.MixSongID ??
+    base?.album_audio_id ??
+    audioInfo?.album_audio_id;
+  return raw !== undefined && raw !== null && raw !== '' ? (raw as string | number) : undefined;
+};
+
+export const findBestMatch = async (track: ExternalTrack): Promise<SearchMatchResult | null> => {
   const keyword = buildKeyword(track);
   if (!keyword) return null;
   let lists: unknown[] = [];
@@ -125,12 +167,19 @@ const findBestMatch = async (
     return null;
   }
   if (lists.length === 0) return null;
-  let best: { song: Song; score: number } | null = null;
+  let best: SearchMatchResult | null = null;
   for (const item of lists) {
     const song = mapSearchSong(item);
     if (!song.hash) continue;
     const score = scoreCandidate(track, song);
-    if (!best || score > best.score) best = { song, score };
+    if (!best || score > best.score) {
+      best = {
+        song,
+        score,
+        audioId: extractAudioId(item),
+        albumAudioId: extractAlbumAudioId(item),
+      };
+    }
   }
   return best;
 };
@@ -146,6 +195,12 @@ const ADD_BATCH_MAX_PARAM_LEN = 4000;
 // 每次 search 后 worker 的思考时间（含随机抖动），降低稳定 QPS 触发风控
 const MATCH_THINK_BASE_MS = 250;
 const MATCH_THINK_JITTER_MS = 250;
+
+/** 搜索匹配请求间隔（毫秒），云盘上传等场景复用 */
+export const matchThinkDelay = (): Promise<void> =>
+  new Promise((resolve) =>
+    setTimeout(resolve, MATCH_THINK_BASE_MS + Math.random() * MATCH_THINK_JITTER_MS),
+  );
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 

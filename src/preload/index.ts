@@ -50,6 +50,7 @@ import type {
   DiagnosticsResourceUsage,
   DiagnosticsResourceUsageEntry,
 } from '../shared/diagnostics';
+import type { CloudPickFilesResult, CloudPickMode } from '../shared/cloud';
 import type {
   PluginAssetSourceResult,
   PluginAppIconRefreshResult,
@@ -395,6 +396,10 @@ contextBridge.exposeInMainWorld('electron', {
       }
       return invokeWithPlainPayload('api:request', config);
     },
+  },
+  cloud: {
+    pickUploadFiles: (mode: CloudPickMode) =>
+      ipcRenderer.invoke('cloud:pick-upload-files', mode) as Promise<CloudPickFilesResult>,
   },
   tray: {
     syncPlayback: (payload: { isPlaying?: boolean; playMode?: PlayMode; volume?: number }) =>

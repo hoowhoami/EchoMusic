@@ -15,6 +15,7 @@ import { registerPluginHandlers } from './plugins';
 import { registerPluginWindowHandlers } from '../pluginWindows';
 import { registerShareHandlers } from './share';
 import { registerDiagnosticsHandlers } from './diagnostics';
+import { registerCloudHandlers } from './cloud';
 import type { IpcContext } from './types';
 
 let registered = false;
@@ -37,6 +38,7 @@ export const registerIpcHandlers = (context: IpcContext) => {
   registerPluginWindowHandlers();
   registerShareHandlers();
   registerDiagnosticsHandlers();
+  registerCloudHandlers(context);
   registered = true;
 };
 

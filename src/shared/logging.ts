@@ -69,6 +69,14 @@ const maskString = (value: string): string => {
   return `${value.slice(0, 4)}...${value.slice(-4)}`;
 };
 
+/** 检测二进制数据（Buffer / TypedArray / ArrayBuffer / DataView）并返回字节数 */
+export const getBinaryByteLength = (value: unknown): number | null => {
+  if (typeof Buffer !== 'undefined' && Buffer.isBuffer(value)) return value.byteLength;
+  if (value instanceof ArrayBuffer) return value.byteLength;
+  if (ArrayBuffer.isView(value)) return value.byteLength;
+  return null;
+};
+
 export const sanitizeForLog = (value: unknown, depth = 0): unknown => {
   if (value == null) return value;
   if (typeof value === 'string') return maskSensitiveText(value);
@@ -94,8 +102,14 @@ export const sanitizeForLog = (value: unknown, depth = 0): unknown => {
 export const stringifyForLog = (value: unknown, maxLength = 1200): string => {
   let text = '';
   try {
+    // 二进制数据（如文件上传、PCM）直接输出大小摘要，避免逐字节序列化刷屏
+    const byteLength = getBinaryByteLength(value);
     text =
-      typeof value === 'string' ? maskSensitiveText(value) : JSON.stringify(sanitizeForLog(value));
+      byteLength !== null
+        ? `[Binary ${byteLength} bytes]`
+        : typeof value === 'string'
+          ? maskSensitiveText(value)
+          : JSON.stringify(sanitizeForLog(value));
   } catch {
     text = String(value);
   }
@@ -107,6 +121,8 @@ export const stringifyForLog = (value: unknown, maxLength = 1200): string => {
 };
 
 export const getPayloadSize = (value: unknown): number => {
+  const byteLength = getBinaryByteLength(value);
+  if (byteLength !== null) return byteLength;
   try {
     return typeof value === 'string' ? value.length : JSON.stringify(value).length;
   } catch {
