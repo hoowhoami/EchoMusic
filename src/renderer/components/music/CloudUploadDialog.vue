@@ -14,7 +14,7 @@ import {
   iconX,
 } from '@/icons';
 import { uploadToCloud } from '@/api/user';
-import { findBestMatch, MATCH_ACCEPTABLE_SCORE, matchThinkDelay } from '@/utils/importPlaylist';
+import { findBestMatch, MATCH_ACCEPTABLE_SCORE, matchThinkDelay } from '@/utils/songMatching';
 import { useToastStore } from '@/stores/toast';
 import { useUserStore } from '@/stores/user';
 import logger from '@/utils/logger';
