@@ -28,6 +28,14 @@ const titleScore = (a: string, b: string): number => {
   return union > 0 ? inter / union : 0;
 };
 
+const titleExtraRatio = (a: string, b: string): number => {
+  const na = normalizeForCompare(a);
+  const nb = normalizeForCompare(b);
+  if (!na || !nb || na === nb) return 0;
+  if (!na.includes(nb) && !nb.includes(na)) return 0;
+  return Math.abs(na.length - nb.length) / Math.max(1, Math.min(na.length, nb.length));
+};
+
 const artistScore = (extArtist: string, candArtist: string): number => {
   const ext = normalizeForCompare(extArtist);
   const cand = normalizeForCompare(candArtist);
@@ -63,6 +71,7 @@ export interface MatchScoreDetails {
   title: number;
   artist: number;
   duration: number;
+  titleExtraRatio: number;
   total: number;
 }
 
@@ -74,6 +83,7 @@ const scoreCandidate = (ext: ExternalTrack, song: Song): MatchScoreDetails => {
     title,
     artist,
     duration,
+    titleExtraRatio: titleExtraRatio(ext.title, song.name ?? song.title ?? ''),
     total: 0.55 * title + 0.3 * artist + 0.15 * duration,
   };
 };
@@ -82,7 +92,8 @@ export const MATCH_HIGH_CONFIDENCE_SCORE = 0.72;
 export const MATCH_ACCEPTABLE_SCORE = 0.4;
 const CLOUD_UPLOAD_ACCEPTABLE_SCORE = 0.65;
 const CLOUD_UPLOAD_TITLE_ACCEPTABLE_SCORE = 0.85;
-const CLOUD_UPLOAD_ARTIST_ACCEPTABLE_SCORE = 0.5;
+const CLOUD_UPLOAD_ARTIST_ACCEPTABLE_SCORE = 0.9;
+const CLOUD_UPLOAD_TITLE_EXTRA_RATIO_LIMIT = 0.5;
 
 const normalizeSearchKeyword = (value: string): string => value.replace(/\s+/g, ' ').trim();
 
@@ -248,11 +259,15 @@ export const findBestMatch = async (track: ExternalTrack): Promise<SearchMatchRe
 };
 
 export const isCloudUploadMatchAcceptable = (match: SearchMatchResult): boolean => {
-  if (match.score >= MATCH_HIGH_CONFIDENCE_SCORE) return true;
+  const hasReliableTitle =
+    match.scoreDetails.title >= CLOUD_UPLOAD_TITLE_ACCEPTABLE_SCORE &&
+    match.scoreDetails.titleExtraRatio <= CLOUD_UPLOAD_TITLE_EXTRA_RATIO_LIMIT;
+  if (match.score >= MATCH_HIGH_CONFIDENCE_SCORE) return hasReliableTitle;
   return (
     match.score >= CLOUD_UPLOAD_ACCEPTABLE_SCORE &&
-    match.scoreDetails.title >= CLOUD_UPLOAD_TITLE_ACCEPTABLE_SCORE &&
-    match.scoreDetails.artist >= CLOUD_UPLOAD_ARTIST_ACCEPTABLE_SCORE
+    hasReliableTitle &&
+    match.scoreDetails.artist >= CLOUD_UPLOAD_ARTIST_ACCEPTABLE_SCORE &&
+    match.scoreDetails.titleExtraRatio <= CLOUD_UPLOAD_TITLE_EXTRA_RATIO_LIMIT
   );
 };
 
@@ -267,6 +282,11 @@ export const explainCloudUploadMatchRejection = (match: SearchMatchResult): stri
   }
   if (details.artist < CLOUD_UPLOAD_ARTIST_ACCEPTABLE_SCORE) {
     reasons.push(`artist ${details.artist.toFixed(3)} < ${CLOUD_UPLOAD_ARTIST_ACCEPTABLE_SCORE}`);
+  }
+  if (details.titleExtraRatio > CLOUD_UPLOAD_TITLE_EXTRA_RATIO_LIMIT) {
+    reasons.push(
+      `titleExtraRatio ${details.titleExtraRatio.toFixed(3)} > ${CLOUD_UPLOAD_TITLE_EXTRA_RATIO_LIMIT}`,
+    );
   }
   return reasons.join(', ') || `score ${match.score.toFixed(3)} < ${MATCH_HIGH_CONFIDENCE_SCORE}`;
 };
