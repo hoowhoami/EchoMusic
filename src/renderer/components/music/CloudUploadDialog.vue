@@ -30,6 +30,7 @@ const userStore = useUserStore();
 const toastStore = useToastStore();
 
 type PickMode = 'file' | 'folder';
+type MatchStatus = 'pending' | 'linked' | 'not_found' | 'low_score' | 'no_cloud_ids' | 'failed';
 
 interface UploadItem {
   name: string;
@@ -48,6 +49,10 @@ interface UploadItem {
   audioId?: string | number;
   /** 匹配到的歌曲 album_audio_id */
   albumAudioId?: string | number;
+  /** 曲库关联匹配状态 */
+  matchStatus: MatchStatus;
+  /** 曲库关联匹配说明，写入日志用于排查 */
+  matchReason?: string;
   /** 秒传（服务端已存在相同 MD5 的文件） */
   isSecondUpload?: boolean;
   error?: string;
@@ -132,8 +137,12 @@ const matchItem = async (item: UploadItem) => {
       duration: item.duration,
     });
     if (!result) {
+      item.matchStatus = 'not_found';
+      item.matchReason = 'search returned no candidates';
       logger.warn('CloudUpload', 'match not found', matchInput);
     } else if (result.score < MATCH_ACCEPTABLE_SCORE) {
+      item.matchStatus = 'low_score';
+      item.matchReason = `score ${result.score.toFixed(3)} < ${MATCH_ACCEPTABLE_SCORE}`;
       logger.warn('CloudUpload', 'match score too low', {
         ...matchInput,
         score: result.score,
@@ -168,12 +177,18 @@ const matchItem = async (item: UploadItem) => {
         },
       };
       if (item.audioId || item.albumAudioId) {
+        item.matchStatus = 'linked';
+        item.matchReason = undefined;
         logger.info('CloudUpload', 'match linked', logPayload);
       } else {
+        item.matchStatus = 'no_cloud_ids';
+        item.matchReason = 'matched candidate has no audio_id or album_audio_id';
         logger.warn('CloudUpload', 'match has no cloud ids', logPayload);
       }
     }
   } catch (error) {
+    item.matchStatus = 'failed';
+    item.matchReason = String(error);
     logger.warn('CloudUpload', 'match failed', {
       file: item.name,
       title,
@@ -226,6 +241,7 @@ const handlePick = async (mode: PickMode) => {
       extension: f.extension,
       modifiedAt: f.modifiedAt,
       status: 'pending' as const,
+      matchStatus: 'pending',
     }));
     step.value = 'uploading';
     canceled.value = false;
@@ -262,6 +278,8 @@ const runUpload = async () => {
         title: item.title || item.name.replace(/\.[^.]+$/, ''),
         artist: item.artist || '',
         secondUpload: item.isSecondUpload,
+        matchStatus: item.matchStatus,
+        matchReason: item.matchReason,
         audioId: item.audioId ?? 0,
         albumAudioId: item.albumAudioId ?? 0,
       });
@@ -272,6 +290,8 @@ const runUpload = async () => {
         file: item.name,
         title: item.title || item.name.replace(/\.[^.]+$/, ''),
         artist: item.artist || '',
+        matchStatus: item.matchStatus,
+        matchReason: item.matchReason,
         audioId: item.audioId ?? 0,
         albumAudioId: item.albumAudioId ?? 0,
         error: item.error,
