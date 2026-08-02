@@ -3,10 +3,12 @@ import type { Song } from '@/models/song';
 import type { ExternalTrack } from '../../shared/external';
 import logger from '@/utils/logger';
 import {
+  explainImportPlaylistMatchRejection,
   findBestMatch,
-  MATCH_ACCEPTABLE_SCORE,
   MATCH_HIGH_CONFIDENCE_SCORE,
+  isImportPlaylistMatchAcceptable,
   matchThinkDelay,
+  type SearchMatchResult,
 } from '@/utils/songMatching';
 
 export type ImportItemStatus =
@@ -52,7 +54,7 @@ const ADD_BATCH_DELAY_MS = 400;
 /** 单批 payload (data 参数) encode 后的字节上限，留出 URL 安全余量 */
 const ADD_BATCH_MAX_PARAM_LEN = 4000;
 
-type MatchResult = { song: Song; score: number } | null;
+type MatchResult = SearchMatchResult | null;
 
 export const runImport = async (
   tracks: ExternalTrack[],
@@ -113,9 +115,9 @@ export const runImport = async (
   const pendingAdd: { index: number; song: Song; score: number }[] = [];
   for (let i = 0; i < total; i++) {
     const m = matched[i];
-    if (!m || m.score < MATCH_ACCEPTABLE_SCORE) {
+    if (!m || !isImportPlaylistMatchAcceptable(m)) {
       items[i].status = 'skipped';
-      items[i].error = m ? `相似度过低 (${m.score.toFixed(2)})` : '未找到候选';
+      items[i].error = m ? explainImportPlaylistMatchRejection(m) : '未找到候选';
       summary.skipped++;
       emit(i);
     } else {

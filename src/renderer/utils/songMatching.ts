@@ -90,10 +90,11 @@ const scoreCandidate = (ext: ExternalTrack, song: Song): MatchScoreDetails => {
 
 export const MATCH_HIGH_CONFIDENCE_SCORE = 0.72;
 export const MATCH_ACCEPTABLE_SCORE = 0.4;
+const IMPORT_PLAYLIST_TITLE_ACCEPTABLE_SCORE = 0.45;
+const MATCH_TITLE_EXTRA_RATIO_LIMIT = 0.5;
 const CLOUD_UPLOAD_ACCEPTABLE_SCORE = 0.65;
 const CLOUD_UPLOAD_TITLE_ACCEPTABLE_SCORE = 0.85;
 const CLOUD_UPLOAD_ARTIST_ACCEPTABLE_SCORE = 0.9;
-const CLOUD_UPLOAD_TITLE_EXTRA_RATIO_LIMIT = 0.5;
 
 const normalizeSearchKeyword = (value: string): string => value.replace(/\s+/g, ' ').trim();
 
@@ -261,14 +262,36 @@ export const findBestMatch = async (track: ExternalTrack): Promise<SearchMatchRe
 export const isCloudUploadMatchAcceptable = (match: SearchMatchResult): boolean => {
   const hasReliableTitle =
     match.scoreDetails.title >= CLOUD_UPLOAD_TITLE_ACCEPTABLE_SCORE &&
-    match.scoreDetails.titleExtraRatio <= CLOUD_UPLOAD_TITLE_EXTRA_RATIO_LIMIT;
+    match.scoreDetails.titleExtraRatio <= MATCH_TITLE_EXTRA_RATIO_LIMIT;
   if (match.score >= MATCH_HIGH_CONFIDENCE_SCORE) return hasReliableTitle;
   return (
     match.score >= CLOUD_UPLOAD_ACCEPTABLE_SCORE &&
     hasReliableTitle &&
-    match.scoreDetails.artist >= CLOUD_UPLOAD_ARTIST_ACCEPTABLE_SCORE &&
-    match.scoreDetails.titleExtraRatio <= CLOUD_UPLOAD_TITLE_EXTRA_RATIO_LIMIT
+    match.scoreDetails.artist >= CLOUD_UPLOAD_ARTIST_ACCEPTABLE_SCORE
   );
+};
+
+export const isImportPlaylistMatchAcceptable = (match: SearchMatchResult): boolean => {
+  return (
+    match.score >= MATCH_ACCEPTABLE_SCORE &&
+    match.scoreDetails.title >= IMPORT_PLAYLIST_TITLE_ACCEPTABLE_SCORE &&
+    match.scoreDetails.titleExtraRatio <= MATCH_TITLE_EXTRA_RATIO_LIMIT
+  );
+};
+
+export const explainImportPlaylistMatchRejection = (match: SearchMatchResult): string => {
+  const details = match.scoreDetails;
+  const reasons: string[] = [];
+  if (match.score < MATCH_ACCEPTABLE_SCORE) {
+    reasons.push(`相似度过低 (${match.score.toFixed(2)})`);
+  }
+  if (details.title < IMPORT_PLAYLIST_TITLE_ACCEPTABLE_SCORE) {
+    reasons.push(`标题相似度过低 (${details.title.toFixed(2)})`);
+  }
+  if (details.titleExtraRatio > MATCH_TITLE_EXTRA_RATIO_LIMIT) {
+    reasons.push('候选标题包含过多额外内容');
+  }
+  return reasons.join('，') || `相似度过低 (${match.score.toFixed(2)})`;
 };
 
 export const explainCloudUploadMatchRejection = (match: SearchMatchResult): string => {
@@ -283,9 +306,9 @@ export const explainCloudUploadMatchRejection = (match: SearchMatchResult): stri
   if (details.artist < CLOUD_UPLOAD_ARTIST_ACCEPTABLE_SCORE) {
     reasons.push(`artist ${details.artist.toFixed(3)} < ${CLOUD_UPLOAD_ARTIST_ACCEPTABLE_SCORE}`);
   }
-  if (details.titleExtraRatio > CLOUD_UPLOAD_TITLE_EXTRA_RATIO_LIMIT) {
+  if (details.titleExtraRatio > MATCH_TITLE_EXTRA_RATIO_LIMIT) {
     reasons.push(
-      `titleExtraRatio ${details.titleExtraRatio.toFixed(3)} > ${CLOUD_UPLOAD_TITLE_EXTRA_RATIO_LIMIT}`,
+      `titleExtraRatio ${details.titleExtraRatio.toFixed(3)} > ${MATCH_TITLE_EXTRA_RATIO_LIMIT}`,
     );
   }
   return reasons.join(', ') || `score ${match.score.toFixed(3)} < ${MATCH_HIGH_CONFIDENCE_SCORE}`;
