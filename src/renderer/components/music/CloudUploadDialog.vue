@@ -14,7 +14,12 @@ import {
   iconX,
 } from '@/icons';
 import { uploadToCloud } from '@/api/user';
-import { findBestMatch, MATCH_ACCEPTABLE_SCORE, matchThinkDelay } from '@/utils/songMatching';
+import {
+  explainCloudUploadMatchRejection,
+  findBestMatch,
+  isCloudUploadMatchAcceptable,
+  matchThinkDelay,
+} from '@/utils/songMatching';
 import { useToastStore } from '@/stores/toast';
 import { useUserStore } from '@/stores/user';
 import logger from '@/utils/logger';
@@ -119,7 +124,7 @@ const normalizeCloudSongId = (value: unknown): string | undefined => {
 
 /**
  * 匹配单个文件：复用导入歌单的搜索机制，获取 audio_id / album_audio_id
- * 分数低于阈值（0.4）或匹配失败时降级为 0（上传照常）
+ * 云盘写入曲库 ID 采用更保守的匹配门槛，误关联比不关联更难清理。
  */
 const matchItem = async (item: UploadItem) => {
   const title = item.title || item.name.replace(/\.[^.]+$/, '');
@@ -140,13 +145,14 @@ const matchItem = async (item: UploadItem) => {
       item.matchStatus = 'not_found';
       item.matchReason = 'search returned no candidates';
       logger.warn('CloudUpload', 'match not found', matchInput);
-    } else if (result.score < MATCH_ACCEPTABLE_SCORE) {
+    } else if (!isCloudUploadMatchAcceptable(result)) {
       item.matchStatus = 'low_score';
-      item.matchReason = `score ${result.score.toFixed(3)} < ${MATCH_ACCEPTABLE_SCORE}`;
+      item.matchReason = explainCloudUploadMatchRejection(result);
       logger.warn('CloudUpload', 'match score too low', {
         ...matchInput,
         score: result.score,
-        keyword: result.keyword,
+        scoreDetails: result.scoreDetails,
+        searchText: result.searchText,
         candidate: {
           name: result.song.name,
           artist: result.song.artist,
@@ -169,7 +175,8 @@ const matchItem = async (item: UploadItem) => {
       const logPayload = {
         ...matchInput,
         score: result.score,
-        keyword: result.keyword,
+        scoreDetails: result.scoreDetails,
+        searchText: result.searchText,
         matched: {
           name: result.song.name,
           artist: result.song.artist,

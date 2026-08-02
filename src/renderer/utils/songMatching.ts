@@ -59,15 +59,30 @@ const durationScore = (a?: number, b?: number): number => {
   return 0;
 };
 
-const scoreCandidate = (ext: ExternalTrack, song: Song): number => {
-  const t = titleScore(ext.title, song.name ?? song.title ?? '');
-  const a = artistScore(ext.artist, song.artist);
-  const d = durationScore(ext.duration, song.duration);
-  return 0.55 * t + 0.3 * a + 0.15 * d;
+export interface MatchScoreDetails {
+  title: number;
+  artist: number;
+  duration: number;
+  total: number;
+}
+
+const scoreCandidate = (ext: ExternalTrack, song: Song): MatchScoreDetails => {
+  const title = titleScore(ext.title, song.name ?? song.title ?? '');
+  const artist = artistScore(ext.artist, song.artist);
+  const duration = durationScore(ext.duration, song.duration);
+  return {
+    title,
+    artist,
+    duration,
+    total: 0.55 * title + 0.3 * artist + 0.15 * duration,
+  };
 };
 
 export const MATCH_HIGH_CONFIDENCE_SCORE = 0.72;
 export const MATCH_ACCEPTABLE_SCORE = 0.4;
+const CLOUD_UPLOAD_ACCEPTABLE_SCORE = 0.65;
+const CLOUD_UPLOAD_TITLE_ACCEPTABLE_SCORE = 0.85;
+const CLOUD_UPLOAD_ARTIST_ACCEPTABLE_SCORE = 0.5;
 
 const normalizeSearchKeyword = (value: string): string => value.replace(/\s+/g, ' ').trim();
 
@@ -99,8 +114,9 @@ const buildKeywords = (track: ExternalTrack): string[] => {
 export interface SearchMatchResult {
   song: Song;
   score: number;
-  /** 产生最佳候选的搜索关键词 */
-  keyword: string;
+  scoreDetails: MatchScoreDetails;
+  /** 产生最佳候选的搜索词 */
+  searchText: string;
   /** 搜索结果中的歌曲 id（audioid/scid），用于云盘上传关联，缺失时为 undefined */
   audioId?: string | number;
   /** 搜索结果中的专辑音频 id（mixsongid），用于云盘上传关联，缺失时为 undefined */
@@ -214,20 +230,45 @@ export const findBestMatch = async (track: ExternalTrack): Promise<SearchMatchRe
     for (const item of lists) {
       const song = mapSearchSong(item);
       if (!song.hash) continue;
-      const score = scoreCandidate(track, song);
-      if (!best || score > best.score) {
+      const scoreDetails = scoreCandidate(track, song);
+      if (!best || scoreDetails.total > best.score) {
         best = {
           song,
-          score,
-          keyword,
+          score: scoreDetails.total,
+          scoreDetails,
+          searchText: keyword,
           audioId: extractAudioId(item),
           albumAudioId: extractAlbumAudioId(item),
         };
-        if (score >= MATCH_HIGH_CONFIDENCE_SCORE) return best;
+        if (scoreDetails.total >= MATCH_HIGH_CONFIDENCE_SCORE) return best;
       }
     }
   }
   return best;
+};
+
+export const isCloudUploadMatchAcceptable = (match: SearchMatchResult): boolean => {
+  if (match.score >= MATCH_HIGH_CONFIDENCE_SCORE) return true;
+  return (
+    match.score >= CLOUD_UPLOAD_ACCEPTABLE_SCORE &&
+    match.scoreDetails.title >= CLOUD_UPLOAD_TITLE_ACCEPTABLE_SCORE &&
+    match.scoreDetails.artist >= CLOUD_UPLOAD_ARTIST_ACCEPTABLE_SCORE
+  );
+};
+
+export const explainCloudUploadMatchRejection = (match: SearchMatchResult): string => {
+  const details = match.scoreDetails;
+  const reasons: string[] = [];
+  if (match.score < CLOUD_UPLOAD_ACCEPTABLE_SCORE) {
+    reasons.push(`score ${match.score.toFixed(3)} < ${CLOUD_UPLOAD_ACCEPTABLE_SCORE}`);
+  }
+  if (details.title < CLOUD_UPLOAD_TITLE_ACCEPTABLE_SCORE) {
+    reasons.push(`title ${details.title.toFixed(3)} < ${CLOUD_UPLOAD_TITLE_ACCEPTABLE_SCORE}`);
+  }
+  if (details.artist < CLOUD_UPLOAD_ARTIST_ACCEPTABLE_SCORE) {
+    reasons.push(`artist ${details.artist.toFixed(3)} < ${CLOUD_UPLOAD_ARTIST_ACCEPTABLE_SCORE}`);
+  }
+  return reasons.join(', ') || `score ${match.score.toFixed(3)} < ${MATCH_HIGH_CONFIDENCE_SCORE}`;
 };
 
 const MATCH_THINK_BASE_MS = 250;
