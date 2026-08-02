@@ -124,7 +124,7 @@ const collectUploadCandidates = async (
           errors.push(`${path.basename(filePath)}: 不是支持的音频文件`);
         }
       } catch (error) {
-        log.warn('[CloudUpload] 读取文件状态失败:', { filePath, error });
+        log.debug('[CloudUpload] 读取文件状态失败:', { filePath, error });
         errors.push(`${path.basename(filePath)}: 文件读取失败`);
       }
     }
@@ -147,7 +147,7 @@ const collectUploadCandidates = async (
         errors.push(`${path.basename(scan.root)}: 文件数量超过扫描上限，已截断`);
       }
     } catch (error) {
-      log.warn('[CloudUpload] 扫描目录失败:', { directoryPath, error });
+      log.debug('[CloudUpload] 扫描目录失败:', { directoryPath, error });
       errors.push(`${path.basename(directoryPath)}: 文件夹读取失败`);
     }
   }
@@ -180,7 +180,7 @@ const readAllowedUploadFileData = async (
       data: data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) as ArrayBuffer,
     };
   } catch (error) {
-    log.warn('[CloudUpload] 读取上传文件失败:', { filePath, error });
+    log.debug('[CloudUpload] 读取上传文件失败:', { filePath, error });
     return { ok: false, error: error instanceof Error ? error.message : '文件读取失败' };
   }
 };
@@ -218,7 +218,7 @@ export const registerCloudHandlers = (context: IpcContext) => {
             errors.push(`${path.basename(filePath.path)}: ${getUploadSizeLimitError()}`);
           }
         } catch (error) {
-          log.warn('[CloudUpload] 读取文件信息失败:', { filePath: filePath.path, error });
+          log.debug('[CloudUpload] 读取文件信息失败:', { filePath: filePath.path, error });
           errors.push(`${path.basename(filePath.path)}: 文件读取失败`);
         }
       }

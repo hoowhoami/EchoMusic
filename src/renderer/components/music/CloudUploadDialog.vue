@@ -147,11 +147,11 @@ const matchItem = async (item: UploadItem) => {
     if (!result) {
       item.matchStatus = 'not_found';
       item.matchReason = 'search returned no candidates';
-      logger.warn('CloudUpload', 'match not found', matchInput);
+      logger.debug('CloudUpload', 'match not found', matchInput);
     } else if (!isCloudUploadMatchAcceptable(result)) {
       item.matchStatus = 'low_score';
       item.matchReason = explainCloudUploadMatchRejection(result);
-      logger.warn('CloudUpload', 'match score too low', {
+      logger.debug('CloudUpload', 'match score too low', {
         ...matchInput,
         score: result.score,
         scoreDetails: result.scoreDetails,
@@ -191,17 +191,17 @@ const matchItem = async (item: UploadItem) => {
       if (item.audioId || item.albumAudioId) {
         item.matchStatus = 'linked';
         item.matchReason = undefined;
-        logger.info('CloudUpload', 'match linked', logPayload);
+        logger.debug('CloudUpload', 'match linked', logPayload);
       } else {
         item.matchStatus = 'no_cloud_ids';
         item.matchReason = 'matched candidate has no audio_id or album_audio_id';
-        logger.warn('CloudUpload', 'match has no cloud ids', logPayload);
+        logger.debug('CloudUpload', 'match has no cloud ids', logPayload);
       }
     }
   } catch (error) {
     item.matchStatus = 'failed';
     item.matchReason = String(error);
-    logger.warn('CloudUpload', 'match failed', {
+    logger.debug('CloudUpload', 'match failed', {
       file: item.name,
       title,
       artist: item.artist || '',
@@ -283,7 +283,7 @@ const uploadSingleItem = async (item: UploadItem) => {
     });
     item.isSecondUpload = !res?.uploadInfo?.upload_id;
     item.status = 'success';
-    logger.info('CloudUpload', 'upload success', {
+    logger.debug('CloudUpload', 'upload success', {
       file: item.name,
       title,
       artist: item.artist || '',
@@ -296,7 +296,7 @@ const uploadSingleItem = async (item: UploadItem) => {
   } catch (error) {
     item.status = 'failed';
     item.error = (error as Error)?.message || String(error);
-    logger.warn('CloudUpload', 'upload failed', {
+    logger.debug('CloudUpload', 'upload failed', {
       file: item.name,
       title,
       artist: item.artist || '',
