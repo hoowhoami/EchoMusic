@@ -89,7 +89,7 @@ const scoreCandidate = (ext: ExternalTrack, song: Song): MatchScoreDetails => {
 };
 
 export const MATCH_HIGH_CONFIDENCE_SCORE = 0.72;
-export const MATCH_ACCEPTABLE_SCORE = 0.4;
+const MATCH_ACCEPTABLE_SCORE = 0.4;
 const IMPORT_PLAYLIST_TITLE_ACCEPTABLE_SCORE = 0.45;
 const MATCH_TITLE_EXTRA_RATIO_LIMIT = 0.5;
 const CLOUD_UPLOAD_ACCEPTABLE_SCORE = 0.65;
@@ -104,6 +104,9 @@ const hasUsableTitle = (match: SearchMatchResult): boolean =>
 const hasReliableCloudTitle = (match: SearchMatchResult): boolean =>
   match.scoreDetails.title >= CLOUD_UPLOAD_TITLE_ACCEPTABLE_SCORE &&
   match.scoreDetails.titleExtraRatio <= MATCH_TITLE_EXTRA_RATIO_LIMIT;
+
+const isDefaultEarlyStopMatch = (match: SearchMatchResult): boolean =>
+  match.score >= MATCH_HIGH_CONFIDENCE_SCORE && hasUsableTitle(match);
 
 const normalizeSearchKeyword = (value: string): string => value.replace(/\s+/g, ' ').trim();
 
@@ -142,6 +145,17 @@ export interface SearchMatchResult {
   audioId?: string | number;
   /** 搜索结果中的专辑音频 id（mixsongid），用于云盘上传关联，缺失时为 undefined */
   albumAudioId?: string | number;
+}
+
+export interface FindBestMatchOptions {
+  /** 每个搜索词请求的候选数 */
+  pageSize?: number;
+  /** 最多尝试的搜索词数量 */
+  maxKeywords?: number;
+  /** 搜索词之间是否插入节流延迟 */
+  delayBetweenSearches?: boolean;
+  /** 命中可接受候选后是否提前停止后续搜索 */
+  shouldStopEarly?: (match: SearchMatchResult) => boolean;
 }
 
 export const normalizePositiveNumericId = (value: unknown): string | undefined => {
@@ -235,14 +249,22 @@ const extractAlbumAudioId = (item: unknown): string | number | undefined => {
   );
 };
 
-export const findBestMatch = async (track: ExternalTrack): Promise<SearchMatchResult | null> => {
-  const keywords = buildKeywords(track);
+export const findBestMatch = async (
+  track: ExternalTrack,
+  options: FindBestMatchOptions = {},
+): Promise<SearchMatchResult | null> => {
+  const keywords =
+    typeof options.maxKeywords === 'number'
+      ? buildKeywords(track).slice(0, Math.max(1, options.maxKeywords))
+      : buildKeywords(track);
   if (keywords.length === 0) return null;
+  const pageSize = Math.max(1, Math.min(options.pageSize ?? 5, 10));
   let best: SearchMatchResult | null = null;
-  for (const keyword of keywords) {
+  for (let i = 0; i < keywords.length; i++) {
+    const keyword = keywords[i];
     let lists: unknown[] = [];
     try {
-      const res = await search(keyword, 'song', 1, 5);
+      const res = await search(keyword, 'song', 1, pageSize);
       const data = (res as { data?: { lists?: unknown; list?: unknown } })?.data ?? {};
       const raw = data.lists ?? data.list;
       lists = Array.isArray(raw) ? raw : [];
@@ -264,8 +286,11 @@ export const findBestMatch = async (track: ExternalTrack): Promise<SearchMatchRe
           audioId: extractAudioId(item),
           albumAudioId: extractAlbumAudioId(item),
         };
-        if (scoreDetails.total >= MATCH_HIGH_CONFIDENCE_SCORE && hasUsableTitle(best)) return best;
+        if (options.shouldStopEarly?.(best) ?? isDefaultEarlyStopMatch(best)) return best;
       }
+    }
+    if (options.delayBetweenSearches && i + 1 < keywords.length) {
+      await matchThinkDelay();
     }
   }
   return best;

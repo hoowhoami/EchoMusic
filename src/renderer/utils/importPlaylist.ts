@@ -93,7 +93,10 @@ export const runImport = async (
       items[i].status = 'matching';
       emit(i);
       try {
-        matched[i] = await findBestMatch(tracks[i]);
+        matched[i] = await findBestMatch(tracks[i], {
+          delayBetweenSearches: true,
+          shouldStopEarly: isImportPlaylistMatchAcceptable,
+        });
       } catch (e) {
         logger.warn('ImportPlaylist', 'match worker error', e);
         matched[i] = null;

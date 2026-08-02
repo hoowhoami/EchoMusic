@@ -131,11 +131,19 @@ const matchItem = async (item: UploadItem) => {
       artist: item.artist || '',
       duration: item.duration,
     };
-    const result = await findBestMatch({
-      title,
-      artist: item.artist || '',
-      duration: item.duration,
-    });
+    const result = await findBestMatch(
+      {
+        title,
+        artist: item.artist || '',
+        duration: item.duration,
+      },
+      {
+        pageSize: 3,
+        maxKeywords: 3,
+        delayBetweenSearches: true,
+        shouldStopEarly: isCloudUploadMatchAcceptable,
+      },
+    );
     if (!result) {
       item.matchStatus = 'not_found';
       item.matchReason = 'search returned no candidates';
@@ -201,7 +209,7 @@ const matchItem = async (item: UploadItem) => {
     });
     // 匹配失败不影响上传，降级为不关联
   }
-  // 每次搜索后按导入歌单节奏抖动，避免稳定 QPS 触发风控
+  // 每个文件匹配后暂停一段抖动时间，避免稳定 QPS 触发风控
   await matchThinkDelay();
   item.status = 'pending';
 };
