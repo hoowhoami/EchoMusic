@@ -9,7 +9,7 @@ import type {
 } from '../shared/mini-player';
 import { MINI_PLAYER_DIMENSIONS } from '../shared/mini-player';
 import { getMainWindow, hideMainWindow, showMainWindow } from './window';
-import { getActiveWindowMode, setActiveWindowMode } from './windowMode';
+import { getActiveWindowMode, setActiveWindowMode } from './window/mode';
 import { getMainAppSettings, setMainAppSetting } from './storage/settings';
 
 const MINI_PLAYER_WIDTH = MINI_PLAYER_DIMENSIONS.width;

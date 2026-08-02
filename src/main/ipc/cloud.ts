@@ -1,109 +1,45 @@
 import fs from 'fs/promises';
 import path from 'path';
 import { dialog, type BrowserWindow, type OpenDialogOptions } from 'electron';
-import { parseBuffer } from 'music-metadata';
 import { ipcRegistry } from './registry';
 import log from '../logger';
 import type { IpcContext } from './types';
-import type { CloudPickFilesResult, CloudUploadFile } from '../../shared/cloud';
+import type {
+  CloudPickFilesResult,
+  CloudReadUploadFileDataResult,
+  CloudUploadFile,
+} from '../../shared/cloud';
 import { CLOUD_UPLOAD_EXTENSIONS, CLOUD_UPLOAD_MAX_SIZE } from '../../shared/cloud';
+import type { LocalAudioMetadata } from '../../shared/local-music';
+import { readAudioMetadata, resolveAudioTitleAndArtist } from '../media/audioMetadata';
+import {
+  normalizeFileExtension,
+  scanLocalFiles,
+  type ScannedLocalFile,
+} from '../media/fileScanner';
 
-const AUDIO_EXT_SET = new Set(CLOUD_UPLOAD_EXTENSIONS.map((ext) => ext.toLowerCase()));
+const UPLOAD_EXTENSION_SET = new Set(CLOUD_UPLOAD_EXTENSIONS.map(normalizeFileExtension));
+const allowedUploadFilePathsByWebContents = new Map<number, Set<string>>();
 
-const isAudioFile = (fileName: string): boolean => {
-  const ext = path.extname(fileName).slice(1).toLowerCase();
-  return AUDIO_EXT_SET.has(ext);
+const getAllowedUploadFilePaths = (webContentsId: number) => {
+  let filePaths = allowedUploadFilePathsByWebContents.get(webContentsId);
+  if (!filePaths) {
+    filePaths = new Set<string>();
+    allowedUploadFilePathsByWebContents.set(webContentsId, filePaths);
+  }
+  return filePaths;
 };
 
-/**
- * 递归收集目录下的所有音频文件（按扩展名过滤）
- */
-const collectAudioFiles = async (dir: string, result: string[] = []): Promise<string[]> => {
-  let entries;
-  try {
-    entries = await fs.readdir(dir, { withFileTypes: true });
-  } catch (error) {
-    log.warn('[CloudUpload] 读取目录失败:', { dir, error });
-    return result;
-  }
-  for (const entry of entries) {
-    const fullPath = path.join(dir, entry.name);
-    if (entry.isDirectory()) {
-      await collectAudioFiles(fullPath, result);
-    } else if (entry.isFile() && isAudioFile(entry.name)) {
-      result.push(fullPath);
-    }
-  }
-  return result;
+const clearAllowedUploadFilePaths = (webContentsId: number) => {
+  allowedUploadFilePathsByWebContents.delete(webContentsId);
 };
 
-/**
- * 解析音乐文件内嵌标签（歌名/歌手），失败静默降级为文件名格式推断
- * 文件名约定："歌手 - 歌名.mp3" 可拆分出歌手
- */
-const resolveTitleAndArtist = (
-  fileName: string,
-  metadata?: { title?: string; artist?: string },
-): { title: string; artist?: string } => {
-  const tagTitle = metadata?.title?.trim();
-  const tagArtist = metadata?.artist?.trim();
-  const baseName = path.basename(fileName, path.extname(fileName)).trim();
+const isUploadAudioExtension = (extension: string): boolean =>
+  UPLOAD_EXTENSION_SET.has(normalizeFileExtension(extension));
 
-  if (tagTitle) {
-    return { title: tagTitle, artist: tagArtist || undefined };
-  }
+const formatUploadMaxSize = () => `${Math.floor(CLOUD_UPLOAD_MAX_SIZE / 1024 / 1024)}MB`;
 
-  // 无内嵌歌名时降级为文件名；若文件名为 "歌手 - 歌名" 格式则拆分
-  if (tagArtist) {
-    return { title: baseName, artist: tagArtist };
-  }
-  const splitIndex = baseName.indexOf(' - ');
-  if (splitIndex > 0 && splitIndex < baseName.length - 3) {
-    return {
-      title: baseName.slice(splitIndex + 3).trim(),
-      artist: baseName.slice(0, splitIndex).trim(),
-    };
-  }
-  return { title: baseName };
-};
-
-/**
- * 读取单个文件为 Buffer，校验大小上限，并解析内嵌标签与时长
- */
-const readUploadFile = async (filePath: string): Promise<CloudUploadFile | null> => {
-  const stat = await fs.stat(filePath);
-  if (stat.size <= 0) return null;
-  if (stat.size > CLOUD_UPLOAD_MAX_SIZE) return null;
-
-  const data = await fs.readFile(filePath);
-
-  // 基于已读 Buffer 解析标签（parseBuffer 无额外磁盘 IO；duration 用于匹配评分）
-  let metadata: { title?: string; artist?: string; duration?: number } | undefined;
-  try {
-    const parsed = await parseBuffer(data, path.extname(filePath).slice(1), {
-      duration: true,
-      skipCovers: true,
-    });
-    metadata = {
-      title: parsed.common.title || undefined,
-      artist: parsed.common.artist || undefined,
-      duration: parsed.format.duration || undefined,
-    };
-  } catch (error) {
-    log.debug('[CloudUpload] 标签解析失败，降级为文件名:', { filePath, error });
-  }
-
-  const { title, artist } = resolveTitleAndArtist(path.basename(filePath), metadata);
-  return {
-    name: path.basename(filePath),
-    path: filePath,
-    size: stat.size,
-    data,
-    title,
-    artist,
-    duration: metadata?.duration,
-  };
-};
+const getUploadSizeLimitError = () => `文件为空或超过 ${formatUploadMaxSize()} 限制`;
 
 const showPickDialog = (
   win: BrowserWindow | null,
@@ -126,6 +62,127 @@ const showPickDialog = (
   return win ? dialog.showOpenDialog(win, options) : dialog.showOpenDialog(options);
 };
 
+const toScannedUploadFile = async (filePath: string): Promise<ScannedLocalFile | null> => {
+  const resolvedPath = await fs.realpath(filePath);
+  const extension = path.extname(resolvedPath).toLowerCase();
+  if (!isUploadAudioExtension(extension)) return null;
+  const stat = await fs.stat(resolvedPath);
+  if (!stat.isFile()) return null;
+  return {
+    name: path.basename(resolvedPath),
+    path: resolvedPath,
+    size: stat.size,
+    modifiedAt: stat.mtimeMs,
+    extension,
+    relativePath: '',
+    kind: 'audio',
+  };
+};
+
+const readUploadFileDescriptor = async (
+  file: ScannedLocalFile,
+): Promise<CloudUploadFile | null> => {
+  if (file.size <= 0 || file.size > CLOUD_UPLOAD_MAX_SIZE) return null;
+
+  let metadata: LocalAudioMetadata | undefined;
+  try {
+    // parseFile 流式解析标签，不做全量 Buffer；每文件 pick/read 两次 IO 是有意换取
+    // “pick 阶段不读文件内容”的内存收益。
+    metadata = await readAudioMetadata(file.path);
+  } catch (error) {
+    log.debug('[CloudUpload] 标签解析失败，降级为文件名:', { filePath: file.path, error });
+  }
+
+  const { title, artist } = resolveAudioTitleAndArtist(file.name, metadata);
+  return {
+    name: file.name,
+    path: file.path,
+    size: file.size,
+    extension: file.extension,
+    modifiedAt: file.modifiedAt,
+    title,
+    artist,
+    duration: metadata?.duration,
+  };
+};
+
+const collectUploadCandidates = async (
+  selectedPaths: string[],
+  mode: 'file' | 'folder',
+  errors: string[],
+): Promise<ScannedLocalFile[]> => {
+  if (mode === 'file') {
+    const files: ScannedLocalFile[] = [];
+    for (const filePath of selectedPaths) {
+      try {
+        const file = await toScannedUploadFile(filePath);
+        if (file) {
+          files.push(file);
+        } else {
+          errors.push(`${path.basename(filePath)}: 不是支持的音频文件`);
+        }
+      } catch (error) {
+        log.warn('[CloudUpload] 读取文件状态失败:', { filePath, error });
+        errors.push(`${path.basename(filePath)}: 文件读取失败`);
+      }
+    }
+    return files;
+  }
+
+  const files: ScannedLocalFile[] = [];
+  for (const directoryPath of selectedPaths) {
+    try {
+      const scan = await scanLocalFiles(directoryPath, {
+        recursive: true,
+        extensions: CLOUD_UPLOAD_EXTENSIONS,
+        // 过滤已由 extensions 完成；这里仅保持 folder 模式与 file 模式的 kind 语义一致。
+        getKind: (extension) => (isUploadAudioExtension(extension) ? 'audio' : 'other'),
+        limit: 10000,
+        onError: (message) => errors.push(message),
+      });
+      files.push(...scan.files);
+      if (scan.limitReached) {
+        errors.push(`${path.basename(scan.root)}: 文件数量超过扫描上限，已截断`);
+      }
+    } catch (error) {
+      log.warn('[CloudUpload] 扫描目录失败:', { directoryPath, error });
+      errors.push(`${path.basename(directoryPath)}: 文件夹读取失败`);
+    }
+  }
+  return files;
+};
+
+const readAllowedUploadFileData = async (
+  webContentsId: number,
+  filePath: string,
+): Promise<CloudReadUploadFileDataResult> => {
+  try {
+    const resolvedPath = await fs.realpath(String(filePath || '').trim());
+    const allowedUploadFilePaths = allowedUploadFilePathsByWebContents.get(webContentsId);
+    if (!allowedUploadFilePaths?.has(resolvedPath)) {
+      return { ok: false, error: '文件不在本次上传选择范围内' };
+    }
+    if (!isUploadAudioExtension(path.extname(resolvedPath))) {
+      return { ok: false, error: '不是支持的音频文件' };
+    }
+    const stat = await fs.stat(resolvedPath);
+    if (!stat.isFile()) return { ok: false, error: '路径不是文件' };
+    if (stat.size <= 0 || stat.size > CLOUD_UPLOAD_MAX_SIZE) {
+      return { ok: false, error: getUploadSizeLimitError() };
+    }
+    const data = await fs.readFile(resolvedPath);
+    return {
+      ok: true,
+      path: resolvedPath,
+      size: stat.size,
+      data: data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) as ArrayBuffer,
+    };
+  } catch (error) {
+    log.warn('[CloudUpload] 读取上传文件失败:', { filePath, error });
+    return { ok: false, error: error instanceof Error ? error.message : '文件读取失败' };
+  }
+};
+
 export const registerCloudHandlers = (context: IpcContext) => {
   ipcRegistry.registerHandler(
     'cloud:pick-upload-files',
@@ -140,33 +197,27 @@ export const registerCloudHandlers = (context: IpcContext) => {
         return { canceled: true, files: [] };
       }
 
-      // 展开路径：单曲模式直接使用所选文件，文件夹模式递归收集音频文件
-      let paths: string[] = [];
-      if (mode === 'folder') {
-        for (const dir of result.filePaths) {
-          paths = paths.concat(await collectAudioFiles(dir));
-        }
-      } else {
-        paths = result.filePaths;
-      }
-
+      const errors: string[] = [];
+      const paths = await collectUploadCandidates(result.filePaths, mode, errors);
       if (paths.length === 0) {
         return { canceled: false, files: [], errors: ['所选位置没有可上传的音频文件'] };
       }
 
       const files: CloudUploadFile[] = [];
-      const errors: string[] = [];
+      const allowedUploadFilePaths = getAllowedUploadFilePaths(_event.sender.id);
+      allowedUploadFilePaths.clear();
       for (const filePath of paths) {
         try {
-          const file = await readUploadFile(filePath);
+          const file = await readUploadFileDescriptor(filePath);
           if (file) {
             files.push(file);
+            allowedUploadFilePaths.add(file.path);
           } else {
-            errors.push(`${path.basename(filePath)}: 文件为空或超过 100MB 限制`);
+            errors.push(`${path.basename(filePath.path)}: ${getUploadSizeLimitError()}`);
           }
         } catch (error) {
-          log.warn('[CloudUpload] 读取文件失败:', { filePath, error });
-          errors.push(`${path.basename(filePath)}: 文件读取失败`);
+          log.warn('[CloudUpload] 读取文件信息失败:', { filePath: filePath.path, error });
+          errors.push(`${path.basename(filePath.path)}: 文件读取失败`);
         }
       }
 
@@ -177,4 +228,13 @@ export const registerCloudHandlers = (context: IpcContext) => {
       };
     },
   );
+
+  ipcRegistry.registerHandler('cloud:read-upload-file-data', (_event, filePath: string) =>
+    readAllowedUploadFileData(_event.sender.id, filePath),
+  );
+
+  ipcRegistry.registerHandler('cloud:clear-upload-files', (_event) => {
+    clearAllowedUploadFilePaths(_event.sender.id);
+    return { ok: true };
+  });
 };

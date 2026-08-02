@@ -1,3 +1,5 @@
+import type { LocalAudioMetadata } from './local-music';
+
 export type PluginWindowType = 'floating';
 export type PluginWindowPosition = 'center' | 'top-center';
 
@@ -233,6 +235,19 @@ export type PluginReadFileBytesResult =
       bytesRead: number;
       truncated: boolean;
     }
+  | {
+      ok: false;
+      error: string;
+    };
+
+export type PluginReadAudioMetadataResult =
+  | ({
+      ok: true;
+      title: string;
+      metadataParsed: boolean;
+      metadataError?: string;
+    } & PluginFileEntry &
+      LocalAudioMetadata)
   | {
       ok: false;
       error: string;

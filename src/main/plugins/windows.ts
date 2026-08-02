@@ -1,4 +1,4 @@
-import { ipcRegistry } from './ipc/registry';
+import { ipcRegistry } from '../ipc/registry';
 import { BrowserWindow, app, screen } from 'electron';
 import { join } from 'path';
 import type {
@@ -7,16 +7,16 @@ import type {
   PluginWindowDescriptor,
   PluginWindowResult,
   PluginWindowShowOptions,
-} from '../shared/plugins';
+} from '../../shared/plugins';
 import {
   getPluginDescriptor,
   getPluginWindowDescriptor,
   isPluginRendererGoneFailureReason,
   normalizePluginId,
   reportPluginFailure,
-} from './plugins';
-import { getKvStorage } from './storage/kv';
-import log from './logger';
+} from '../plugins';
+import { getKvStorage } from '../storage/kv';
+import log from '../logger';
 
 type PluginWindowRecord = {
   pluginId: string;

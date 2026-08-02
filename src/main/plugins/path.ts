@@ -1,6 +1,7 @@
 import { app } from 'electron';
 import { mkdirSync } from 'fs';
 import { isAbsolute, join, normalize, relative, resolve } from 'path';
+export { toPortableRelativePath } from '../media/fileScanner';
 
 export const getPluginRoot = () => join(app.getPath('userData'), 'plugins');
 
@@ -22,6 +23,3 @@ export const resolvePluginFile = (directory: string, fileName: unknown) => {
   if (!isPathInside(resolve(directory), fullPath)) return '';
   return fullPath;
 };
-
-export const toPortableRelativePath = (parent: string, target: string) =>
-  relative(parent, target).replace(/\\/g, '/');

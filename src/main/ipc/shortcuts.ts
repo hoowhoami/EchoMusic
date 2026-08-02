@@ -1,7 +1,7 @@
 import { globalShortcut, BrowserWindow } from 'electron';
 import { ipcRegistry } from './registry';
 import { hideMainWindow, showMainWindow } from '../window';
-import { restoreActiveWindowMode } from '../windowModeController';
+import { restoreActiveWindowMode } from '../window/modeController';
 import { toggleMiniPlayerWindow } from '../miniPlayer';
 import type {
   ShortcutCommand,

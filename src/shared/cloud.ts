@@ -1,5 +1,7 @@
 // 云盘上传相关的 IPC 类型定义（主进程选择文件/文件夹 → 渲染进程上传）
 
+import { LOCAL_AUDIO_EXTENSIONS } from './local-music';
+
 export type CloudPickMode = 'file' | 'folder';
 
 export interface CloudUploadFile {
@@ -9,8 +11,10 @@ export interface CloudUploadFile {
   path: string;
   /** 文件大小（字节） */
   size: number;
-  /** 文件二进制内容（经 IPC 结构化克隆传输为 ArrayBuffer） */
-  data: Buffer;
+  /** 文件扩展名（含点号，小写） */
+  extension: string;
+  /** 文件最后修改时间 */
+  modifiedAt: number;
   /** 内嵌标签解析出的歌名（解析失败时为空，由调用方降级为文件名） */
   title?: string;
   /** 内嵌标签解析出的歌手（解析失败时为空） */
@@ -26,26 +30,28 @@ export interface CloudPickFilesResult {
   errors?: string[];
 }
 
+export type CloudReadUploadFileDataResult =
+  | {
+      ok: true;
+      path: string;
+      size: number;
+      data: ArrayBuffer;
+    }
+  | {
+      ok: false;
+      error: string;
+    };
+
 /** 云盘上传单文件大小上限（与后端 express.raw limit 一致） */
 export const CLOUD_UPLOAD_MAX_SIZE = 100 * 1024 * 1024;
 
-/** 云盘上传支持的音频扩展名 */
+const CLOUD_UPLOAD_EXCLUDED_LOCAL_EXTENSIONS = new Set(['alac', 'webm', 'wv']);
+const CLOUD_UPLOAD_EXTRA_EXTENSIONS = ['amr'];
+
+/** 云盘上传支持的音频扩展名：基于本地播放格式派生，排除云盘业务暂不接收的格式。 */
 export const CLOUD_UPLOAD_EXTENSIONS = [
-  'mp3',
-  'flac',
-  'wav',
-  'wave',
-  'ape',
-  'wma',
-  'm4a',
-  'aac',
-  'ogg',
-  'oga',
-  'opus',
-  'amr',
-  'aif',
-  'aiff',
-  'caf',
-  'dsf',
-  'dff',
+  ...LOCAL_AUDIO_EXTENSIONS.filter(
+    (extension) => !CLOUD_UPLOAD_EXCLUDED_LOCAL_EXTENSIONS.has(extension),
+  ),
+  ...CLOUD_UPLOAD_EXTRA_EXTENSIONS,
 ];

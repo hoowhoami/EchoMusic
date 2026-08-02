@@ -46,7 +46,7 @@ import type {
 import type { ResolvePlaylistRequest, ResolvePlaylistResponse } from '../shared/external';
 import type { ShareCaptureRect, ShareTarget } from '../shared/share';
 import type { DiagnosticsMemorySnapshot } from '../shared/diagnostics';
-import type { CloudPickMode } from '../shared/cloud';
+import type { CloudPickMode, CloudReadUploadFileDataResult } from '../shared/cloud';
 import type {
   PluginAssetSourceResult,
   PluginAppIconRefreshResult,
@@ -73,6 +73,7 @@ import type {
   PluginProcessLaunchOptions,
   PluginProcessLaunchResult,
   PluginProcessTerminateResult,
+  PluginReadAudioMetadataResult,
   PluginReadFileBytesOptions,
   PluginReadFileBytesResult,
   PluginReadTextFileOptions,
@@ -255,13 +256,16 @@ export interface IElectronAPI {
         name: string;
         path: string;
         size: number;
-        data: Uint8Array;
+        extension: string;
+        modifiedAt: number;
         title?: string;
         artist?: string;
         duration?: number;
       }[];
       errors?: string[];
     }>;
+    readUploadFileData: (filePath: string) => Promise<CloudReadUploadFileDataResult>;
+    clearUploadFiles: () => Promise<{ ok: true }>;
   };
   tray: {
     syncPlayback: (payload: { isPlaying?: boolean; playMode?: PlayMode; volume?: number }) => void;
@@ -453,6 +457,10 @@ export interface IElectronAPI {
         filePath: string,
         options?: PluginReadFileBytesOptions,
       ) => Promise<PluginReadFileBytesResult>;
+      readAudioMetadata: (
+        pluginId: string,
+        filePath: string,
+      ) => Promise<PluginReadAudioMetadataResult>;
       writeFile: (
         pluginId: string,
         filePath: string,

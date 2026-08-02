@@ -16,9 +16,9 @@ import type {
   PluginSqliteQueryResult,
   PluginSqliteRunResult,
   PluginSqliteStatement,
-} from '../shared/plugins';
-import { getNativeStorage } from './storage/native';
-import log from './logger';
+} from '../../shared/plugins';
+import { getNativeStorage } from '../storage/native';
+import log from '../logger';
 
 const PLUGIN_SQLITE_ROOT = 'plugin-sqlite';
 const DEFAULT_DATABASE_NAME = 'main';

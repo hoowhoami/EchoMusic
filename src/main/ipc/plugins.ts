@@ -26,6 +26,7 @@ import type {
   PluginProcessLaunchOptions,
   PluginProcessLaunchResult,
   PluginProcessTerminateResult,
+  PluginReadAudioMetadataResult,
   PluginReadFileBytesOptions,
   PluginReadFileBytesResult,
   PluginReadTextFileOptions,
@@ -79,6 +80,7 @@ import {
   openPluginSqliteDatabaseForPlugin,
   openPluginDirectory,
   patchPluginMarketplaceSource,
+  readPluginAudioMetadata,
   readPluginFileBytes,
   readPluginTextAsset,
   readPluginTextFile,
@@ -103,7 +105,7 @@ import {
   writePluginFile,
   allPluginSqliteForPlugin,
 } from '../plugins';
-import { closePluginWindows } from '../pluginWindows';
+import { closePluginWindows } from '../plugins/windows';
 import {
   applyDesktopAppIcon,
   applyTaskbarShortcutIcon,
@@ -266,7 +268,7 @@ export const registerPluginHandlers = (context: IpcContext) => {
       _event,
       directoryPath: string,
       options?: PluginListImageFilesOptions,
-    ): PluginListImageFilesResult => listPluginImageFiles(directoryPath, options),
+    ): Promise<PluginListImageFilesResult> => listPluginImageFiles(directoryPath, options),
   );
   ipcRegistry.registerHandler(
     'plugins:fs:list-files',
@@ -275,11 +277,11 @@ export const registerPluginHandlers = (context: IpcContext) => {
       pluginId: string,
       directoryPath: string,
       options?: PluginListFilesOptions,
-    ): PluginListFilesResult => listPluginFiles(pluginId, directoryPath, options),
+    ): Promise<PluginListFilesResult> => listPluginFiles(pluginId, directoryPath, options),
   );
   ipcRegistry.registerHandler(
     'plugins:fs:get-file-url',
-    (_event, filePath: string): PluginFileUrlResult => getPluginFileUrl(filePath),
+    (_event, filePath: string): Promise<PluginFileUrlResult> => getPluginFileUrl(filePath),
   );
   ipcRegistry.registerHandler(
     'plugins:fs:read-text-file',
@@ -288,7 +290,7 @@ export const registerPluginHandlers = (context: IpcContext) => {
       pluginId: string,
       filePath: string,
       options?: PluginReadTextFileOptions,
-    ): PluginReadTextFileResult => readPluginTextFile(pluginId, filePath, options),
+    ): Promise<PluginReadTextFileResult> => readPluginTextFile(pluginId, filePath, options),
   );
   ipcRegistry.registerHandler(
     'plugins:fs:read-file-bytes',
@@ -297,26 +299,31 @@ export const registerPluginHandlers = (context: IpcContext) => {
       pluginId: string,
       filePath: string,
       options?: PluginReadFileBytesOptions,
-    ): PluginReadFileBytesResult => readPluginFileBytes(pluginId, filePath, options),
+    ): Promise<PluginReadFileBytesResult> => readPluginFileBytes(pluginId, filePath, options),
+  );
+  ipcRegistry.registerHandler(
+    'plugins:fs:read-audio-metadata',
+    (_event, pluginId: string, filePath: string): Promise<PluginReadAudioMetadataResult> =>
+      readPluginAudioMetadata(pluginId, filePath),
   );
   ipcRegistry.registerHandler(
     'plugins:fs:write-file',
-    (
+    async (
       _event,
       pluginId: string,
       filePath: string,
       data: PluginWriteFileData,
       options?: PluginWriteFileOptions,
-    ): PluginWriteFileResult => {
-      const result = writePluginFile(pluginId, filePath, data, options);
+    ): Promise<PluginWriteFileResult> => {
+      const result = await writePluginFile(pluginId, filePath, data, options);
       if (result.ok) refreshPluginAppIcons({ force: true });
       return result;
     },
   );
   ipcRegistry.registerHandler(
     'plugins:fs:delete-file',
-    (_event, pluginId: string, filePath: string): PluginDeleteFileResult => {
-      const result = deletePluginFile(pluginId, filePath);
+    async (_event, pluginId: string, filePath: string): Promise<PluginDeleteFileResult> => {
+      const result = await deletePluginFile(pluginId, filePath);
       if (result.ok) refreshPluginAppIcons({ force: true });
       return result;
     },

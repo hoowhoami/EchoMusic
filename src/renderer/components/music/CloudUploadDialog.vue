@@ -32,6 +32,7 @@ type PickMode = 'file' | 'folder';
 
 interface UploadItem {
   name: string;
+  path: string;
   /** 标签解析出的歌名（用于上传显示名） */
   title?: string;
   /** 标签解析出的歌手 */
@@ -39,7 +40,8 @@ interface UploadItem {
   /** 标签解析出的时长（秒） */
   duration?: number;
   size: number;
-  data: Uint8Array;
+  extension: string;
+  modifiedAt: number;
   status: 'pending' | 'matching' | 'uploading' | 'success' | 'failed';
   /** 匹配到的歌曲 audio_id（未匹配时为 undefined，上游传 0） */
   audioId?: string | number;
@@ -80,6 +82,10 @@ const formatBytes = (value: number) => {
   return `${size.toFixed(digits)} ${units[unitIndex]}`;
 };
 
+const clearPickedUploadFiles = () => {
+  void window.electron.cloud.clearUploadFiles().catch(() => undefined);
+};
+
 const reset = () => {
   step.value = 'pick';
   items.value = [];
@@ -88,7 +94,10 @@ const reset = () => {
 
 const handleClose = (value: boolean) => {
   if (value === false && isUploading.value) return;
-  if (value === false) reset();
+  if (value === false) {
+    clearPickedUploadFiles();
+    reset();
+  }
   open.value = value;
 };
 
@@ -156,11 +165,13 @@ const handlePick = async (mode: PickMode) => {
 
     items.value = result.files.map((f) => ({
       name: f.name,
+      path: f.path,
       title: f.title,
       artist: f.artist,
       duration: f.duration,
       size: f.size,
-      data: f.data,
+      extension: f.extension,
+      modifiedAt: f.modifiedAt,
       status: 'pending' as const,
     }));
     step.value = 'uploading';
@@ -182,9 +193,11 @@ const runUpload = async () => {
     const item = items.value[i];
     item.status = 'uploading';
     try {
-      const res = await uploadToCloud(item.data, {
+      const dataResult = await window.electron.cloud.readUploadFileData(item.path);
+      if (!dataResult.ok) throw new Error(dataResult.error);
+      const res = await uploadToCloud(dataResult.data, {
         name: item.title || item.name.replace(/\.[^.]+$/, ''),
-        extendname: item.name.split('.').pop()?.toLowerCase(),
+        extendname: item.extension.replace(/^\./, ''),
         authorName: item.artist,
         audioId: item.audioId,
         albumAudioId: item.albumAudioId,
@@ -197,6 +210,7 @@ const runUpload = async () => {
     }
   }
   step.value = 'done';
+  clearPickedUploadFiles();
 
   if (canceled.value) {
     toastStore.info('已取消上传');

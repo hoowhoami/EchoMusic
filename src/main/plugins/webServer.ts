@@ -8,8 +8,8 @@ import type {
   PluginWebServerRequest,
   PluginWebServerResponsePayload,
   PluginWebServerStatusResult,
-} from '../shared/plugins';
-import log from './logger';
+} from '../../shared/plugins';
+import log from '../logger';
 
 const DEFAULT_PLUGIN_WEB_SERVER_HOST = '127.0.0.1';
 const MAX_PLUGIN_WEB_SERVER_REQUEST_BYTES = 2 * 1024 * 1024;

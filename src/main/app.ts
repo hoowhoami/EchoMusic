@@ -5,8 +5,8 @@ import { startEventLoopMonitor, stopEventLoopMonitor } from './eventLoopMonitor'
 import { initApiServer } from './server';
 import { registerIpcHandlers } from './ipc';
 import { createWindow, getMainWindow } from './window';
-import { restoreActiveWindowMode } from './windowModeController';
-import { setActiveWindowMode } from './windowMode';
+import { restoreActiveWindowMode } from './window/modeController';
+import { setActiveWindowMode } from './window/mode';
 import { createDockMenu, destroyTray, initTray, refreshTray } from './tray';
 import {
   destroyDesktopLyricWindow,

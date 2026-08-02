@@ -12,7 +12,7 @@ import { registerNowPlayingHandlers } from '../nowPlaying';
 import { registerExternalHandlers } from './external';
 import { registerStorageHandlers } from './storage';
 import { registerPluginHandlers } from './plugins';
-import { registerPluginWindowHandlers } from '../pluginWindows';
+import { registerPluginWindowHandlers } from '../plugins/windows';
 import { registerShareHandlers } from './share';
 import { registerDiagnosticsHandlers } from './diagnostics';
 import { registerCloudHandlers } from './cloud';

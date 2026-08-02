@@ -8,17 +8,17 @@ import {
   type BrowserWindowConstructorOptions,
 } from 'electron';
 import { join } from 'path';
-import type { CloseBehavior, ThemeMode } from '../shared/app';
+import type { CloseBehavior, ThemeMode } from '../../shared/app';
 import {
   getMainAppSettings,
   setMainAppSetting,
   type MainWindowState as WindowState,
-} from './storage/settings';
-import { getActiveWindowMode, setActiveWindowMode } from './windowMode';
-import { isPluginRendererGoneFailureReason, reportPluginRendererFailure } from './plugins';
-import { ipcRegistry } from './ipc/registry';
-import { applyWindowAppIcon, resolveWindowIconPath } from './appIcons';
-import { logMainMemory } from './diagnostics/memory';
+} from '../storage/settings';
+import { getActiveWindowMode, setActiveWindowMode } from './mode';
+import { isPluginRendererGoneFailureReason, reportPluginRendererFailure } from '../plugins';
+import { ipcRegistry } from '../ipc/registry';
+import { applyWindowAppIcon, resolveWindowIconPath } from '../appIcons';
+import { logMainMemory } from '../diagnostics/memory';
 
 const minWidth: number = 1100;
 const defaultWidth: number = 1150;

@@ -1,7 +1,7 @@
 import { app, BrowserWindow } from 'electron';
 import { ipcRegistry } from './registry';
 import { hideMainWindow, quitApplication, requestMainWindowClose } from '../window';
-import { restoreActiveWindowMode } from '../windowModeController';
+import { restoreActiveWindowMode } from '../window/modeController';
 import { showMiniPlayerWindowOnTop } from '../miniPlayer';
 import type {
   PluginHostWindowResult,

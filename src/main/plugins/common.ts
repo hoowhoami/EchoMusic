@@ -1,3 +1,6 @@
+import { LOCAL_AUDIO_EXTENSIONS } from '../../shared/local-music';
+import { normalizeFileExtensions } from '../media/fileScanner';
+
 export const PLUGIN_STATE_KEY = 'plugins:enabled';
 export const PLUGIN_SAFE_MODE_KEY = 'plugins:safe-mode';
 export const PLUGIN_LAST_FAILURE_KEY = 'plugins:last-failure';
@@ -26,25 +29,7 @@ export const PLUGIN_IMAGE_EXTENSIONS = new Set([
   '.svg',
   '.webp',
 ]);
-export const PLUGIN_AUDIO_EXTENSIONS = new Set([
-  '.aac',
-  '.aif',
-  '.aiff',
-  '.alac',
-  '.ape',
-  '.dff',
-  '.dsf',
-  '.flac',
-  '.m4a',
-  '.mp3',
-  '.oga',
-  '.ogg',
-  '.opus',
-  '.wav',
-  '.webm',
-  '.wma',
-  '.wv',
-]);
+export const PLUGIN_AUDIO_EXTENSIONS = normalizeFileExtensions(LOCAL_AUDIO_EXTENSIONS);
 export const PLUGIN_LYRIC_EXTENSIONS = new Set(['.krc', '.lrc', '.qrc', '.srt', '.ttml', '.txt']);
 export const PLUGIN_PLAYLIST_EXTENSIONS = new Set(['.m3u', '.m3u8', '.pls']);
 export const PLUGIN_CUE_EXTENSIONS = new Set(['.cue']);

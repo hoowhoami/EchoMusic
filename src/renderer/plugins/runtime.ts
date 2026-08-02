@@ -1374,6 +1374,8 @@ const createPluginFsApi = (pluginId: string) => {
     ) =>
       getFsApi()?.readFileBytes(pluginId, filePath, serializeForIpc(options) as typeof options) ??
       unavailable(),
+    readAudioMetadata: (filePath: string) =>
+      getFsApi()?.readAudioMetadata(pluginId, filePath) ?? unavailable(),
     writeFile: (
       filePath: string,
       data: Parameters<NonNullable<Window['electron']['plugins']>['fs']['writeFile']>[2],

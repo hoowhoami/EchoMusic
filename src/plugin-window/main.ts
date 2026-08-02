@@ -95,6 +95,9 @@ interface EchoPluginWindowContext {
       filePath: string,
       options?: Parameters<NonNullable<Window['electron']['plugins']>['fs']['readFileBytes']>[2],
     ) => ReturnType<NonNullable<Window['electron']['plugins']>['fs']['readFileBytes']>;
+    readAudioMetadata: (
+      filePath: string,
+    ) => ReturnType<NonNullable<Window['electron']['plugins']>['fs']['readAudioMetadata']>;
   };
   process: {
     launch: (options: PluginProcessLaunchOptions) => Promise<PluginProcessLaunchResult>;
@@ -566,6 +569,9 @@ const buildContext = (
       Promise.resolve({ ok: false, error: '插件文件 API 不可用' }),
     readFileBytes: (filePath, options) =>
       window.electron.plugins?.fs.readFileBytes(descriptor.id, filePath, options) ??
+      Promise.resolve({ ok: false, error: '插件文件 API 不可用' }),
+    readAudioMetadata: (filePath) =>
+      window.electron.plugins?.fs.readAudioMetadata(descriptor.id, filePath) ??
       Promise.resolve({ ok: false, error: '插件文件 API 不可用' }),
   },
   process: {

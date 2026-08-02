@@ -38,7 +38,7 @@ import {
 } from './desktopLyric/window';
 import log from './logger';
 import { showMainWindow, getMainWindow } from './window';
-import { getActiveWindowMode } from './windowMode';
+import { getActiveWindowMode } from './window/mode';
 import { closeMiniPlayerWindow } from './miniPlayer';
 import { ipcRegistry } from './ipc/registry';
 import { refreshTrayMenus } from './tray';

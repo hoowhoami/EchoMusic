@@ -50,7 +50,11 @@ import type {
   DiagnosticsResourceUsage,
   DiagnosticsResourceUsageEntry,
 } from '../shared/diagnostics';
-import type { CloudPickFilesResult, CloudPickMode } from '../shared/cloud';
+import type {
+  CloudPickFilesResult,
+  CloudPickMode,
+  CloudReadUploadFileDataResult,
+} from '../shared/cloud';
 import type {
   PluginAssetSourceResult,
   PluginAppIconRefreshResult,
@@ -77,6 +81,7 @@ import type {
   PluginProcessLaunchOptions,
   PluginProcessLaunchResult,
   PluginProcessTerminateResult,
+  PluginReadAudioMetadataResult,
   PluginReadFileBytesOptions,
   PluginReadFileBytesResult,
   PluginReadTextFileOptions,
@@ -400,6 +405,12 @@ contextBridge.exposeInMainWorld('electron', {
   cloud: {
     pickUploadFiles: (mode: CloudPickMode) =>
       ipcRenderer.invoke('cloud:pick-upload-files', mode) as Promise<CloudPickFilesResult>,
+    readUploadFileData: (filePath: string) =>
+      ipcRenderer.invoke(
+        'cloud:read-upload-file-data',
+        filePath,
+      ) as Promise<CloudReadUploadFileDataResult>,
+    clearUploadFiles: () => ipcRenderer.invoke('cloud:clear-upload-files') as Promise<{ ok: true }>,
   },
   tray: {
     syncPlayback: (payload: { isPlaying?: boolean; playMode?: PlayMode; volume?: number }) =>
@@ -1044,6 +1055,12 @@ contextBridge.exposeInMainWorld('electron', {
           pluginId,
           filePath,
           options,
+        ),
+      readAudioMetadata: (pluginId: string, filePath: string) =>
+        invokeWithPlainPayload<PluginReadAudioMetadataResult>(
+          'plugins:fs:read-audio-metadata',
+          pluginId,
+          filePath,
         ),
       writeFile: (
         pluginId: string,
