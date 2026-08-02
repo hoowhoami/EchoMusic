@@ -603,7 +603,7 @@ export const mapSearchSong = (json: unknown): Song => {
     mvHash: readString(pickValue(record.video_hash, record.mvhash, record.MVHash, ''), ''),
     mixSongId: parseIntSafe(pickValue(record.MixSongID, 0)),
     fileId: parseOptionalInt(
-      pickValue(record.Audioid, record.audio_id, record.fileid, record.file_id),
+      pickValue(record.Auditoid, record.Audioid, record.audio_id, record.fileid, record.file_id),
     ),
     privilege: parseOptionalInt(pickValue(record.AlbumPrivilege, undefined)),
     relateGoods,

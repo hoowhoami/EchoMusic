@@ -144,13 +144,16 @@ export interface SearchMatchResult {
   albumAudioId?: string | number;
 }
 
-const normalizePositiveNumericId = (value: unknown): string | undefined => {
+export const normalizePositiveNumericId = (value: unknown): string | undefined => {
   const text = String(value ?? '').trim();
   if (!/^\d+$/.test(text)) return undefined;
   return /^0+$/.test(text) ? undefined : text;
 };
 
-/** 从搜索结果记录中提取 audio_id（歌曲 id，audioid/scid） */
+/**
+ * 酷狗 v3/search/song 响应中：audio_id 对应 Auditoid，album_audio_id 对应 MixSongID。
+ * 其他接口（歌单/歌手/云盘等）字段常见为小写 audio_id / mixsongid，这里保留拼凑式防御。
+ */
 const extractAudioId = (item: unknown): string | number | undefined => {
   const record = item as {
     Auditoid?: unknown;
@@ -183,14 +186,14 @@ const extractAudioId = (item: unknown): string | number | undefined => {
       }
     | undefined;
   return normalizePositiveNumericId(
-    record?.Audioid ??
+    record?.Auditoid ??
+      record?.Audioid ??
       record?.audioid ??
       record?.audio_id ??
       record?.fileid ??
       record?.file_id ??
       record?.Scid ??
       record?.scid ??
-      record?.Auditoid ??
       base?.audio_id ??
       base?.Audioid ??
       base?.audioid ??
@@ -204,7 +207,7 @@ const extractAudioId = (item: unknown): string | number | undefined => {
   );
 };
 
-/** 从搜索结果记录中提取 album_audio_id（mixsongid） */
+/** 从搜索结果记录中提取 album_audio_id（MixSongID/mixsongid） */
 const extractAlbumAudioId = (item: unknown): string | number | undefined => {
   const record = item as {
     album_audio_id?: unknown;

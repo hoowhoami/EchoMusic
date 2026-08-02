@@ -19,6 +19,7 @@ import {
   findBestMatch,
   isCloudUploadMatchAcceptable,
   matchThinkDelay,
+  normalizePositiveNumericId,
 } from '@/utils/songMatching';
 import { useToastStore } from '@/stores/toast';
 import { useUserStore } from '@/stores/user';
@@ -116,12 +117,6 @@ const closeDialog = () => {
   handleClose(false);
 };
 
-const normalizeCloudSongId = (value: unknown): string | undefined => {
-  const text = String(value ?? '').trim();
-  if (!/^\d+$/.test(text)) return undefined;
-  return /^0+$/.test(text) ? undefined : text;
-};
-
 /**
  * 匹配单个文件：复用导入歌单的搜索机制，获取 audio_id / album_audio_id
  * 云盘写入曲库 ID 采用更保守的匹配门槛，误关联比不关联更难清理。
@@ -162,13 +157,13 @@ const matchItem = async (item: UploadItem) => {
         },
       });
     } else {
-      // audio_id 采用匹配歌曲的 Audioid/audio_id/fileId，album_audio_id 采用 mixsongid。
+      // audio_id 采用匹配歌曲的 Auditoid/audio_id/fileId，album_audio_id 采用 mixsongid。
       // （注意与 song.id 不同：song.id 是 MixSongID，不能用作 audio_id）
-      const audioId = normalizeCloudSongId(result.audioId ?? result.song.fileId);
+      const audioId = normalizePositiveNumericId(result.audioId ?? result.song.fileId);
       if (audioId) {
         item.audioId = audioId;
       }
-      const albumAudioId = normalizeCloudSongId(result.albumAudioId ?? result.song.mixSongId);
+      const albumAudioId = normalizePositiveNumericId(result.albumAudioId ?? result.song.mixSongId);
       if (albumAudioId) {
         item.albumAudioId = albumAudioId;
       }
