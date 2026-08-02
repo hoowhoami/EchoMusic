@@ -582,7 +582,9 @@ export const mapSearchSong = (json: unknown): Song => {
   const cover = formatPic(readString(pickValue(record.Image, ''), ''));
 
   return {
-    id: readString(pickValue(record.MixSongID, record.Audioid, record.FileHash, '')),
+    id: readString(
+      pickValue(record.MixSongID, record.Auditoid, record.Audioid, record.FileHash, ''),
+    ),
     title: readString(pickValue(record.SongName, record.FileName, '未知歌曲')),
     name: processSongTitle(readString(pickValue(record.SongName, record.FileName, '未知歌曲'))),
     artist: normalizeText(
