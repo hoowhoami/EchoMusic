@@ -17,6 +17,7 @@ import { uploadToCloud } from '@/api/user';
 import { findBestMatch, MATCH_ACCEPTABLE_SCORE, matchThinkDelay } from '@/utils/importPlaylist';
 import { useToastStore } from '@/stores/toast';
 import { useUserStore } from '@/stores/user';
+import logger from '@/utils/logger';
 
 interface Props {
   open?: boolean;
@@ -119,12 +120,32 @@ const matchItem = async (item: UploadItem) => {
   const title = item.title || item.name.replace(/\.[^.]+$/, '');
   item.status = 'matching';
   try {
+    const matchInput = {
+      file: item.name,
+      title,
+      artist: item.artist || '',
+      duration: item.duration,
+    };
     const result = await findBestMatch({
       title,
       artist: item.artist || '',
       duration: item.duration,
     });
-    if (result && result.score >= MATCH_ACCEPTABLE_SCORE) {
+    if (!result) {
+      logger.warn('CloudUpload', 'match not found', matchInput);
+    } else if (result.score < MATCH_ACCEPTABLE_SCORE) {
+      logger.warn('CloudUpload', 'match score too low', {
+        ...matchInput,
+        score: result.score,
+        candidate: {
+          name: result.song.name,
+          artist: result.song.artist,
+          album: result.song.albumName || result.song.album,
+          audioId: result.audioId ?? result.song.fileId,
+          albumAudioId: result.albumAudioId ?? result.song.mixSongId,
+        },
+      });
+    } else {
       // audio_id 采用匹配歌曲的 Audioid/audio_id/fileId，album_audio_id 采用 mixsongid。
       // （注意与 song.id 不同：song.id 是 MixSongID，不能用作 audio_id）
       const audioId = normalizeCloudSongId(result.audioId ?? result.song.fileId);
@@ -135,8 +156,30 @@ const matchItem = async (item: UploadItem) => {
       if (albumAudioId) {
         item.albumAudioId = albumAudioId;
       }
+      const logPayload = {
+        ...matchInput,
+        score: result.score,
+        matched: {
+          name: result.song.name,
+          artist: result.song.artist,
+          album: result.song.albumName || result.song.album,
+          audioId: item.audioId,
+          albumAudioId: item.albumAudioId,
+        },
+      };
+      if (item.audioId || item.albumAudioId) {
+        logger.info('CloudUpload', 'match linked', logPayload);
+      } else {
+        logger.warn('CloudUpload', 'match has no cloud ids', logPayload);
+      }
     }
-  } catch {
+  } catch (error) {
+    logger.warn('CloudUpload', 'match failed', {
+      file: item.name,
+      title,
+      artist: item.artist || '',
+      error: String(error),
+    });
     // 匹配失败不影响上传，降级为不关联
   }
   // 每次搜索后按导入歌单节奏抖动，避免稳定 QPS 触发风控
@@ -214,9 +257,25 @@ const runUpload = async () => {
       });
       item.isSecondUpload = !res?.uploadInfo?.upload_id;
       item.status = 'success';
+      logger.info('CloudUpload', 'upload success', {
+        file: item.name,
+        title: item.title || item.name.replace(/\.[^.]+$/, ''),
+        artist: item.artist || '',
+        secondUpload: item.isSecondUpload,
+        audioId: item.audioId ?? 0,
+        albumAudioId: item.albumAudioId ?? 0,
+      });
     } catch (error) {
       item.status = 'failed';
       item.error = (error as Error)?.message || String(error);
+      logger.warn('CloudUpload', 'upload failed', {
+        file: item.name,
+        title: item.title || item.name.replace(/\.[^.]+$/, ''),
+        artist: item.artist || '',
+        audioId: item.audioId ?? 0,
+        albumAudioId: item.albumAudioId ?? 0,
+        error: item.error,
+      });
     }
   }
   step.value = 'done';
