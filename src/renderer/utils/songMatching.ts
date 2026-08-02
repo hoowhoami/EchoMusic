@@ -96,6 +96,15 @@ const CLOUD_UPLOAD_ACCEPTABLE_SCORE = 0.65;
 const CLOUD_UPLOAD_TITLE_ACCEPTABLE_SCORE = 0.85;
 const CLOUD_UPLOAD_ARTIST_ACCEPTABLE_SCORE = 0.9;
 
+// 先过滤明显不像同一首歌的候选，再由导入歌单/云盘上传决定业务阈值。
+const hasUsableTitle = (match: SearchMatchResult): boolean =>
+  match.scoreDetails.title >= IMPORT_PLAYLIST_TITLE_ACCEPTABLE_SCORE &&
+  match.scoreDetails.titleExtraRatio <= MATCH_TITLE_EXTRA_RATIO_LIMIT;
+
+const hasReliableCloudTitle = (match: SearchMatchResult): boolean =>
+  match.scoreDetails.title >= CLOUD_UPLOAD_TITLE_ACCEPTABLE_SCORE &&
+  match.scoreDetails.titleExtraRatio <= MATCH_TITLE_EXTRA_RATIO_LIMIT;
+
 const normalizeSearchKeyword = (value: string): string => value.replace(/\s+/g, ' ').trim();
 
 const addKeyword = (keywords: string[], value: string) => {
@@ -252,7 +261,7 @@ export const findBestMatch = async (track: ExternalTrack): Promise<SearchMatchRe
           audioId: extractAudioId(item),
           albumAudioId: extractAlbumAudioId(item),
         };
-        if (scoreDetails.total >= MATCH_HIGH_CONFIDENCE_SCORE) return best;
+        if (scoreDetails.total >= MATCH_HIGH_CONFIDENCE_SCORE && hasUsableTitle(best)) return best;
       }
     }
   }
@@ -260,23 +269,16 @@ export const findBestMatch = async (track: ExternalTrack): Promise<SearchMatchRe
 };
 
 export const isCloudUploadMatchAcceptable = (match: SearchMatchResult): boolean => {
-  const hasReliableTitle =
-    match.scoreDetails.title >= CLOUD_UPLOAD_TITLE_ACCEPTABLE_SCORE &&
-    match.scoreDetails.titleExtraRatio <= MATCH_TITLE_EXTRA_RATIO_LIMIT;
-  if (match.score >= MATCH_HIGH_CONFIDENCE_SCORE) return hasReliableTitle;
+  if (!hasUsableTitle(match) || !hasReliableCloudTitle(match)) return false;
+  if (match.score >= MATCH_HIGH_CONFIDENCE_SCORE) return true;
   return (
     match.score >= CLOUD_UPLOAD_ACCEPTABLE_SCORE &&
-    hasReliableTitle &&
     match.scoreDetails.artist >= CLOUD_UPLOAD_ARTIST_ACCEPTABLE_SCORE
   );
 };
 
 export const isImportPlaylistMatchAcceptable = (match: SearchMatchResult): boolean => {
-  return (
-    match.score >= MATCH_ACCEPTABLE_SCORE &&
-    match.scoreDetails.title >= IMPORT_PLAYLIST_TITLE_ACCEPTABLE_SCORE &&
-    match.scoreDetails.titleExtraRatio <= MATCH_TITLE_EXTRA_RATIO_LIMIT
-  );
+  return match.score >= MATCH_ACCEPTABLE_SCORE && hasUsableTitle(match);
 };
 
 export const explainImportPlaylistMatchRejection = (match: SearchMatchResult): string => {
