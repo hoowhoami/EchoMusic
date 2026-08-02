@@ -101,6 +101,10 @@ const handleClose = (value: boolean) => {
   open.value = value;
 };
 
+const closeDialog = () => {
+  handleClose(false);
+};
+
 const normalizeCloudSongId = (value: unknown): string | undefined => {
   const text = String(value ?? '').trim();
   if (!/^\d+$/.test(text)) return undefined;
@@ -357,13 +361,13 @@ const statusLabel = (item: UploadItem) => {
 
     <template #footer>
       <template v-if="step === 'pick'">
-        <Button variant="ghost" size="sm" :disabled="picking" @click="open = false">取消</Button>
+        <Button variant="ghost" size="sm" :disabled="picking" @click="closeDialog">取消</Button>
       </template>
       <template v-else-if="isUploading">
         <Button variant="ghost" size="sm" @click="handleCancel">取消上传</Button>
       </template>
       <template v-else>
-        <Button variant="primary" size="sm" @click="open = false">完成</Button>
+        <Button variant="primary" size="sm" @click="closeDialog">完成</Button>
       </template>
     </template>
   </Dialog>
