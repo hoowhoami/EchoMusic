@@ -245,7 +245,11 @@ const handleCancel = () => {
 const statusLabel = (item: UploadItem) => {
   if (item.status === 'matching') return '匹配中';
   if (item.status === 'uploading') return '上传中';
-  if (item.status === 'success') return item.isSecondUpload ? '秒传成功' : '成功';
+  if (item.status === 'success') {
+    const uploadLabel = item.isSecondUpload ? '秒传成功' : '成功';
+    const linkLabel = item.audioId || item.albumAudioId ? '已关联曲库' : '未匹配曲库';
+    return `${uploadLabel} · ${linkLabel}`;
+  }
   if (item.status === 'failed') return '失败';
   return '等待中';
 };
