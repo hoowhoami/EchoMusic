@@ -268,47 +268,51 @@ const handlePick = async (mode: PickMode) => {
   }
 };
 
+const uploadSingleItem = async (item: UploadItem) => {
+  const title = item.title || item.name.replace(/\.[^.]+$/, '');
+  item.status = 'uploading';
+  try {
+    const dataResult = await window.electron.cloud.readUploadFileData(item.path);
+    if (!dataResult.ok) throw new Error(dataResult.error);
+    const res = await uploadToCloud(dataResult.data, {
+      name: title,
+      extendname: item.extension.replace(/^\./, ''),
+      authorName: item.artist,
+      audioId: item.audioId,
+      albumAudioId: item.albumAudioId,
+    });
+    item.isSecondUpload = !res?.uploadInfo?.upload_id;
+    item.status = 'success';
+    logger.info('CloudUpload', 'upload success', {
+      file: item.name,
+      title,
+      artist: item.artist || '',
+      secondUpload: item.isSecondUpload,
+      matchStatus: item.matchStatus,
+      matchReason: item.matchReason,
+      audioId: item.audioId ?? 0,
+      albumAudioId: item.albumAudioId ?? 0,
+    });
+  } catch (error) {
+    item.status = 'failed';
+    item.error = (error as Error)?.message || String(error);
+    logger.warn('CloudUpload', 'upload failed', {
+      file: item.name,
+      title,
+      artist: item.artist || '',
+      matchStatus: item.matchStatus,
+      matchReason: item.matchReason,
+      audioId: item.audioId ?? 0,
+      albumAudioId: item.albumAudioId ?? 0,
+      error: item.error,
+    });
+  }
+};
+
 const runUpload = async () => {
   for (let i = 0; i < items.value.length; i++) {
     if (canceled.value) break;
-    const item = items.value[i];
-    item.status = 'uploading';
-    try {
-      const dataResult = await window.electron.cloud.readUploadFileData(item.path);
-      if (!dataResult.ok) throw new Error(dataResult.error);
-      const res = await uploadToCloud(dataResult.data, {
-        name: item.title || item.name.replace(/\.[^.]+$/, ''),
-        extendname: item.extension.replace(/^\./, ''),
-        authorName: item.artist,
-        audioId: item.audioId,
-        albumAudioId: item.albumAudioId,
-      });
-      item.isSecondUpload = !res?.uploadInfo?.upload_id;
-      item.status = 'success';
-      logger.info('CloudUpload', 'upload success', {
-        file: item.name,
-        title: item.title || item.name.replace(/\.[^.]+$/, ''),
-        artist: item.artist || '',
-        secondUpload: item.isSecondUpload,
-        matchStatus: item.matchStatus,
-        matchReason: item.matchReason,
-        audioId: item.audioId ?? 0,
-        albumAudioId: item.albumAudioId ?? 0,
-      });
-    } catch (error) {
-      item.status = 'failed';
-      item.error = (error as Error)?.message || String(error);
-      logger.warn('CloudUpload', 'upload failed', {
-        file: item.name,
-        title: item.title || item.name.replace(/\.[^.]+$/, ''),
-        artist: item.artist || '',
-        matchStatus: item.matchStatus,
-        matchReason: item.matchReason,
-        audioId: item.audioId ?? 0,
-        albumAudioId: item.albumAudioId ?? 0,
-        error: item.error,
-      });
-    }
+    await uploadSingleItem(items.value[i]);
   }
   step.value = 'done';
   clearPickedUploadFiles();

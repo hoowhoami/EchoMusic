@@ -1,6 +1,6 @@
 import fs from 'fs/promises';
 import path from 'path';
-import { dialog, type BrowserWindow, type OpenDialogOptions } from 'electron';
+import { dialog, type BrowserWindow, type OpenDialogOptions, type WebContents } from 'electron';
 import { ipcRegistry } from './registry';
 import log from '../logger';
 import type { IpcContext } from './types';
@@ -21,11 +21,13 @@ import {
 const UPLOAD_EXTENSION_SET = new Set(CLOUD_UPLOAD_EXTENSIONS.map(normalizeFileExtension));
 const allowedUploadFilePathsByWebContents = new Map<number, Set<string>>();
 
-const getAllowedUploadFilePaths = (webContentsId: number) => {
+const getAllowedUploadFilePaths = (webContents: WebContents) => {
+  const webContentsId = webContents.id;
   let filePaths = allowedUploadFilePathsByWebContents.get(webContentsId);
   if (!filePaths) {
     filePaths = new Set<string>();
     allowedUploadFilePathsByWebContents.set(webContentsId, filePaths);
+    webContents.once('destroyed', () => clearAllowedUploadFilePaths(webContentsId));
   }
   return filePaths;
 };
@@ -204,7 +206,7 @@ export const registerCloudHandlers = (context: IpcContext) => {
       }
 
       const files: CloudUploadFile[] = [];
-      const allowedUploadFilePaths = getAllowedUploadFilePaths(_event.sender.id);
+      const allowedUploadFilePaths = getAllowedUploadFilePaths(_event.sender);
       allowedUploadFilePaths.clear();
       for (const filePath of paths) {
         try {
