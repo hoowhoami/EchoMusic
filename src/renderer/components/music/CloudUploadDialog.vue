@@ -146,6 +146,7 @@ const matchItem = async (item: UploadItem) => {
       logger.warn('CloudUpload', 'match score too low', {
         ...matchInput,
         score: result.score,
+        keyword: result.keyword,
         candidate: {
           name: result.song.name,
           artist: result.song.artist,
@@ -168,6 +169,7 @@ const matchItem = async (item: UploadItem) => {
       const logPayload = {
         ...matchInput,
         score: result.score,
+        keyword: result.keyword,
         matched: {
           name: result.song.name,
           artist: result.song.artist,

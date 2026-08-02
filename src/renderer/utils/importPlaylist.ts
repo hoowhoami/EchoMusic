@@ -137,6 +137,8 @@ const buildKeywords = (track: ExternalTrack): string[] => {
 export interface SearchMatchResult {
   song: Song;
   score: number;
+  /** 产生最佳候选的搜索关键词 */
+  keyword: string;
   /** 搜索结果中的歌曲 id（audioid/scid），用于云盘上传关联，缺失时为 undefined */
   audioId?: string | number;
   /** 搜索结果中的专辑音频 id（mixsongid），用于云盘上传关联，缺失时为 undefined */
@@ -234,31 +236,33 @@ const extractAlbumAudioId = (item: unknown): string | number | undefined => {
 export const findBestMatch = async (track: ExternalTrack): Promise<SearchMatchResult | null> => {
   const keywords = buildKeywords(track);
   if (keywords.length === 0) return null;
-  let lists: unknown[] = [];
+  let best: SearchMatchResult | null = null;
   for (const keyword of keywords) {
+    let lists: unknown[] = [];
     try {
       const res = await search(keyword, 'song', 1, 5);
       const data = (res as { data?: { lists?: unknown; list?: unknown } })?.data ?? {};
       const raw = data.lists ?? data.list;
       lists = Array.isArray(raw) ? raw : [];
-      if (lists.length > 0) break;
     } catch (e) {
       logger.warn('ImportPlaylist', `search failed: ${keyword}`, e);
+      continue;
     }
-  }
-  if (lists.length === 0) return null;
-  let best: SearchMatchResult | null = null;
-  for (const item of lists) {
-    const song = mapSearchSong(item);
-    if (!song.hash) continue;
-    const score = scoreCandidate(track, song);
-    if (!best || score > best.score) {
-      best = {
-        song,
-        score,
-        audioId: extractAudioId(item),
-        albumAudioId: extractAlbumAudioId(item),
-      };
+
+    for (const item of lists) {
+      const song = mapSearchSong(item);
+      if (!song.hash) continue;
+      const score = scoreCandidate(track, song);
+      if (!best || score > best.score) {
+        best = {
+          song,
+          score,
+          keyword,
+          audioId: extractAudioId(item),
+          albumAudioId: extractAlbumAudioId(item),
+        };
+        if (score >= HIGH_CONFIDENCE) return best;
+      }
     }
   }
   return best;
