@@ -107,9 +107,31 @@ const ACCEPTABLE = 0.4;
 /** 匹配可采用的分数阈值（云盘上传等场景复用） */
 export const MATCH_ACCEPTABLE_SCORE = ACCEPTABLE;
 
-const buildKeyword = (track: ExternalTrack): string => {
-  const parts = [track.title, track.artist].filter(Boolean);
-  return parts.join(' ').trim();
+const normalizeSearchKeyword = (value: string): string => value.replace(/\s+/g, ' ').trim();
+
+const addKeyword = (keywords: string[], value: string) => {
+  const keyword = normalizeSearchKeyword(value);
+  if (keyword && !keywords.includes(keyword)) keywords.push(keyword);
+};
+
+const buildKeywords = (track: ExternalTrack): string[] => {
+  const title = normalizeSearchKeyword(track.title);
+  const artist = normalizeSearchKeyword(track.artist);
+  const keywords: string[] = [];
+
+  addKeyword(keywords, [title, artist].filter(Boolean).join(' '));
+  addKeyword(keywords, title);
+  addKeyword(keywords, [artist, title].filter(Boolean).join(' '));
+
+  for (const artistPart of artist
+    .split(/[\/、&,]/)
+    .map(normalizeSearchKeyword)
+    .filter(Boolean)) {
+    addKeyword(keywords, [title, artistPart].filter(Boolean).join(' '));
+    addKeyword(keywords, [artistPart, title].filter(Boolean).join(' '));
+  }
+
+  return keywords;
 };
 
 export interface SearchMatchResult {
@@ -121,16 +143,64 @@ export interface SearchMatchResult {
   albumAudioId?: string | number;
 }
 
+const normalizePositiveNumericId = (value: unknown): string | undefined => {
+  const text = String(value ?? '').trim();
+  if (!/^\d+$/.test(text)) return undefined;
+  return /^0+$/.test(text) ? undefined : text;
+};
+
 /** 从搜索结果记录中提取 audio_id（歌曲 id，audioid/scid） */
 const extractAudioId = (item: unknown): string | number | undefined => {
   const record = item as {
     Auditoid?: unknown;
+    Audioid?: unknown;
+    audioid?: unknown;
     audio_id?: unknown;
+    fileid?: unknown;
+    file_id?: unknown;
     Scid?: unknown;
     scid?: unknown;
+    base?: unknown;
+    audio_info?: unknown;
   };
-  const raw = record?.Auditoid ?? record?.audio_id ?? record?.Scid ?? record?.scid;
-  return raw !== undefined && raw !== null && raw !== '' ? (raw as string | number) : undefined;
+  const base = record?.base as
+    | {
+        audio_id?: unknown;
+        Audioid?: unknown;
+        audioid?: unknown;
+        fileid?: unknown;
+        file_id?: unknown;
+      }
+    | undefined;
+  const audioInfo = record?.audio_info as
+    | {
+        audio_id?: unknown;
+        Audioid?: unknown;
+        audioid?: unknown;
+        fileid?: unknown;
+        file_id?: unknown;
+      }
+    | undefined;
+  return normalizePositiveNumericId(
+    record?.Audioid ??
+      record?.audioid ??
+      record?.audio_id ??
+      record?.fileid ??
+      record?.file_id ??
+      record?.Scid ??
+      record?.scid ??
+      record?.Auditoid ??
+      base?.audio_id ??
+      base?.Audioid ??
+      base?.audioid ??
+      base?.fileid ??
+      base?.file_id ??
+      audioInfo?.audio_id ??
+      audioInfo?.Audioid ??
+      audioInfo?.audioid ??
+      audioInfo?.fileid ??
+      audioInfo?.file_id,
+  );
 };
 
 /** 从搜索结果记录中提取 album_audio_id（mixsongid） */
@@ -142,29 +212,39 @@ const extractAlbumAudioId = (item: unknown): string | number | undefined => {
     base?: unknown;
     audio_info?: unknown;
   };
-  const base = record?.base as { album_audio_id?: unknown } | undefined;
-  const audioInfo = record?.audio_info as { album_audio_id?: unknown } | undefined;
-  const raw =
+  const base = record?.base as
+    | { album_audio_id?: unknown; mixsongid?: unknown; MixSongID?: unknown }
+    | undefined;
+  const audioInfo = record?.audio_info as
+    | { album_audio_id?: unknown; mixsongid?: unknown; MixSongID?: unknown }
+    | undefined;
+  return normalizePositiveNumericId(
     record?.album_audio_id ??
-    record?.mixsongid ??
-    record?.MixSongID ??
-    base?.album_audio_id ??
-    audioInfo?.album_audio_id;
-  return raw !== undefined && raw !== null && raw !== '' ? (raw as string | number) : undefined;
+      record?.mixsongid ??
+      record?.MixSongID ??
+      base?.album_audio_id ??
+      base?.mixsongid ??
+      base?.MixSongID ??
+      audioInfo?.album_audio_id ??
+      audioInfo?.mixsongid ??
+      audioInfo?.MixSongID,
+  );
 };
 
 export const findBestMatch = async (track: ExternalTrack): Promise<SearchMatchResult | null> => {
-  const keyword = buildKeyword(track);
-  if (!keyword) return null;
+  const keywords = buildKeywords(track);
+  if (keywords.length === 0) return null;
   let lists: unknown[] = [];
-  try {
-    const res = await search(keyword, 'song', 1, 5);
-    const data = (res as { data?: { lists?: unknown; list?: unknown } })?.data ?? {};
-    const raw = data.lists ?? data.list;
-    if (Array.isArray(raw)) lists = raw;
-  } catch (e) {
-    logger.warn('ImportPlaylist', 'search failed', e);
-    return null;
+  for (const keyword of keywords) {
+    try {
+      const res = await search(keyword, 'song', 1, 5);
+      const data = (res as { data?: { lists?: unknown; list?: unknown } })?.data ?? {};
+      const raw = data.lists ?? data.list;
+      lists = Array.isArray(raw) ? raw : [];
+      if (lists.length > 0) break;
+    } catch (e) {
+      logger.warn('ImportPlaylist', `search failed: ${keyword}`, e);
+    }
   }
   if (lists.length === 0) return null;
   let best: SearchMatchResult | null = null;

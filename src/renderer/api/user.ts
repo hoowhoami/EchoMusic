@@ -173,6 +173,12 @@ export function getUserCloud(page = 1, pagesize = 30) {
   });
 }
 
+const normalizeCloudUploadSongId = (value: unknown): string | number => {
+  const text = String(value ?? '').trim();
+  if (!/^\d+$/.test(text)) return 0;
+  return /^0+$/.test(text) ? 0 : text;
+};
+
 /**
  * 上传音乐文件到用户云盘（二进制 body，支持分片上传与秒传）
  * @param data 文件二进制内容（Uint8Array / ArrayBuffer）
@@ -190,14 +196,16 @@ export async function uploadToCloud(
 ) {
   const extendname = options.extendname || options.name.split('.').pop()?.toLowerCase() || 'mp3';
   const baseName = options.name.replace(/\.[^.]+$/, '');
+  const audioId = normalizeCloudUploadSongId(options.audioId);
+  const albumAudioId = normalizeCloudUploadSongId(options.albumAudioId);
   try {
     const res = await request.post('/user/cloud/upload', data, {
       params: {
         extendname,
         name: baseName,
         ...(options.authorName ? { author_name: options.authorName } : {}),
-        ...(options.audioId ? { audio_id: options.audioId } : {}),
-        ...(options.albumAudioId ? { album_audio_id: options.albumAudioId } : {}),
+        audio_id: audioId,
+        album_audio_id: albumAudioId,
       },
     });
     // 上游可能返回 HTTP 200 但业务失败（error_code 非 0 / status 非 1），需主动抛错

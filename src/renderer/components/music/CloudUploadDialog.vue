@@ -101,6 +101,12 @@ const handleClose = (value: boolean) => {
   open.value = value;
 };
 
+const normalizeCloudSongId = (value: unknown): string | undefined => {
+  const text = String(value ?? '').trim();
+  if (!/^\d+$/.test(text)) return undefined;
+  return /^0+$/.test(text) ? undefined : text;
+};
+
 /**
  * 匹配单个文件：复用导入歌单的搜索机制，获取 audio_id / album_audio_id
  * 分数低于阈值（0.4）或匹配失败时降级为 0（上传照常）
@@ -115,14 +121,14 @@ const matchItem = async (item: UploadItem) => {
       duration: item.duration,
     });
     if (result && result.score >= MATCH_ACCEPTABLE_SCORE) {
-      // audio_id 采用匹配歌曲的 auditoid/scid，album_audio_id 采用 mixsongid
+      // audio_id 采用匹配歌曲的 Audioid/audio_id/fileId，album_audio_id 采用 mixsongid。
       // （注意与 song.id 不同：song.id 是 MixSongID，不能用作 audio_id）
-      const audioId = result.audioId;
-      if (audioId !== undefined && /^\d+$/.test(String(audioId))) {
+      const audioId = normalizeCloudSongId(result.audioId ?? result.song.fileId);
+      if (audioId) {
         item.audioId = audioId;
       }
-      const albumAudioId = result.albumAudioId ?? result.song.mixSongId;
-      if (albumAudioId !== undefined && albumAudioId !== '' && Number(albumAudioId) > 0) {
+      const albumAudioId = normalizeCloudSongId(result.albumAudioId ?? result.song.mixSongId);
+      if (albumAudioId) {
         item.albumAudioId = albumAudioId;
       }
     }
