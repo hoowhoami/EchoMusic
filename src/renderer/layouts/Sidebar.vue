@@ -194,7 +194,7 @@ const builtinSidebarSections = [
       {
         id: 'cloud',
         key: 'cloud',
-        title: '我的云盘',
+        title: '音乐云盘',
         path: '/main/cloud',
         builtinIcon: 'cloud',
         order: 30,

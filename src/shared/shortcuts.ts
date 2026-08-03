@@ -30,3 +30,33 @@ export interface ShortcutRegistrationResult {
   registered: ShortcutMap;
   failures: ShortcutRegistrationFailure[];
 }
+
+export interface PluginGlobalShortcutRegistrationPayload {
+  pluginId: string;
+  registrationId: string;
+  accelerator: string;
+}
+
+export type PluginGlobalShortcutFailureReason = 'invalid' | 'conflict';
+
+export type PluginGlobalShortcutRegistrationResult =
+  | {
+      ok: true;
+      pluginId: string;
+      registrationId: string;
+      accelerator: string;
+    }
+  | {
+      ok: false;
+      pluginId: string;
+      registrationId: string;
+      accelerator: string;
+      reason: PluginGlobalShortcutFailureReason;
+      message?: string;
+    };
+
+export interface PluginGlobalShortcutTriggerPayload {
+  pluginId: string;
+  registrationId: string;
+  accelerator: string;
+}

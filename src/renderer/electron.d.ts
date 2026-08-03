@@ -6,7 +6,13 @@ import type {
   UpdateState,
 } from '../shared/app';
 import type { PlayMode } from '../shared/playback';
-import type { ShortcutMap, ShortcutRegistrationResult } from '../shared/shortcuts';
+import type {
+  PluginGlobalShortcutRegistrationPayload,
+  PluginGlobalShortcutRegistrationResult,
+  PluginGlobalShortcutTriggerPayload,
+  ShortcutMap,
+  ShortcutRegistrationResult,
+} from '../shared/shortcuts';
 import type {
   DesktopLyricCommand,
   DesktopLyricSettings,
@@ -198,7 +204,16 @@ export interface IElectronAPI {
       shortcutMap: ShortcutMap;
     }) => Promise<ShortcutRegistrationResult>;
     refresh: () => Promise<ShortcutRegistrationResult>;
+    registerPluginGlobal: (
+      payload: PluginGlobalShortcutRegistrationPayload,
+    ) => Promise<PluginGlobalShortcutRegistrationResult>;
+    unregisterPluginGlobal: (
+      payload: Pick<PluginGlobalShortcutRegistrationPayload, 'pluginId' | 'registrationId'>,
+    ) => Promise<boolean>;
     onTrigger: (func: (command: string) => void) => () => void;
+    onPluginGlobalTrigger: (
+      func: (payload: PluginGlobalShortcutTriggerPayload) => void,
+    ) => () => void;
   };
   windowControl: (action: 'minimize' | 'maximize' | 'close' | 'fullscreen') => void;
   appInfo: {
