@@ -125,7 +125,6 @@ export const createPlaybackManager = (
           ),
         )
       : -1;
-    state.currentAudioQualityOverride = null;
     state.currentAudioUrl = primarySource?.url ?? resolved.url;
     state.currentPlaybackSource = primarySource;
     state.currentAudioCandidateUrls = sources.map((source) => source.url);
@@ -135,6 +134,13 @@ export const createPlaybackManager = (
     state.currentResolvedAudioEffect = resolved.effect;
     state.currentResolvedSourceKind = resolved.sourceKind ?? 'catalog';
     track.audioUrl = primarySource?.url ?? resolved.url;
+    if (state.currentTrackSnapshot && String(state.currentTrackSnapshot.id) === String(track.id)) {
+      state.currentTrackSnapshot = {
+        ...state.currentTrackSnapshot,
+        audioUrl: track.audioUrl,
+        ...(track.cloudAudioSource ? { cloudAudioSource: track.cloudAudioSource } : {}),
+      };
+    }
   };
 
   const tryNextAudioCandidate = async (options?: {
@@ -359,6 +365,8 @@ export const createPlaybackManager = (
     clearPlaybackNotice();
     state.climaxMarks = [];
     state.currentAudioQualityOverride = null;
+    state.currentCatalogSourceOverrideTrackId = null;
+    state.currentCloudSourceOverrideTrackId = null;
     engine.applyTrackLoudness(prepared.resolved.loudness);
     engine.setLoopFile(state.playMode === 'single');
 
@@ -557,6 +565,11 @@ export const createPlaybackManager = (
     if (!options?.preserveFailureChain) {
       state.autoNextAttempts = 0;
       state.autoNextSourceTrackId = null;
+    }
+    if (String(state.currentTrackId ?? '') !== resolvedId) {
+      state.currentAudioQualityOverride = null;
+      state.currentCatalogSourceOverrideTrackId = null;
+      state.currentCloudSourceOverrideTrackId = null;
     }
     const track =
       sourceList.find((s) => String(s.id) === resolvedId) ||
@@ -1104,6 +1117,8 @@ export const createPlaybackManager = (
     state.currentResolvedAudioEffect = 'none';
     state.currentResolvedSourceKind = 'catalog';
     state.currentAudioQualityOverride = null;
+    state.currentCatalogSourceOverrideTrackId = null;
+    state.currentCloudSourceOverrideTrackId = null;
     state.audioEffect = 'none';
     state.nativeTrackSeq = null;
     state.playbackRequestSeq += 1;

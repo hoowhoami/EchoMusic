@@ -484,6 +484,8 @@ export const usePlayerStore = defineStore(
       state.currentResolvedAudioEffect = 'none';
       state.currentResolvedSourceKind = 'catalog';
       state.currentAudioQualityOverride = null;
+      state.currentCatalogSourceOverrideTrackId = null;
+      state.currentCloudSourceOverrideTrackId = null;
       state.historyUploadCommitted = false;
       state.historyUploadTrackId = null;
 
@@ -833,6 +835,8 @@ export const usePlayerStore = defineStore(
       setAudioEffect: audioManager.setAudioEffect,
       fadeVolume: audioManager.fadeVolume,
       setCurrentAudioQualityOverride: audioManager.setCurrentAudioQualityOverride,
+      preferCurrentTrackCatalogQuality: audioManager.preferCurrentTrackCatalogQuality,
+      preferCurrentTrackCloudSource: audioManager.preferCurrentTrackCloudSource,
 
       refreshOutputDevices: deviceManager.refreshOutputDevices,
       applyOutputDevice: deviceManager.applyOutputDevice,

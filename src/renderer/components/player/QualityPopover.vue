@@ -13,11 +13,12 @@ const {
   currentTrack,
   effectiveAudioQuality,
   isResolvedCloudSource,
-  isAudioQualitySelectionDisabled,
+  hasCloudAudioSourceOption,
   isAudioQualityDisabled,
   audioQualityButtonBadge,
   getAudioQualityTagColor,
   setAudioQuality,
+  setCloudAudioSource,
 } = usePlayerControls();
 
 interface Props {
@@ -43,16 +44,13 @@ const buttonClass = computed(() => {
       : 'text-text-main/50 hover:text-primary hover:scale-110 active:scale-90';
 
   if (isResolvedCloudSource.value) return activeClass;
-  if (!isAudioQualitySelectionDisabled.value && player.currentAudioQualityOverride !== null) {
-    return activeClass;
-  }
+  if (player.currentAudioQualityOverride !== null) return activeClass;
   return mutedClass;
 });
 </script>
 
 <template>
   <Popover
-    v-if="!isAudioQualitySelectionDisabled || isResolvedCloudSource"
     trigger="hover"
     :side="props.side"
     align="center"
@@ -84,12 +82,24 @@ const buttonClass = computed(() => {
       <div class="pm-title">音质选择</div>
       <div v-if="isResolvedCloudSource" class="pm-hint">当前使用云盘文件播放</div>
       <button
+        v-if="hasCloudAudioSourceOption"
+        type="button"
+        class="pm-item"
+        :class="{ 'is-active': isResolvedCloudSource }"
+        @click="setCloudAudioSource"
+      >
+        <span class="pm-label">云盘文件</span>
+        <Tag class="pm-tag" color="#0EA5E9">CLD</Tag>
+        <span class="pm-check" :class="{ 'is-visible': isResolvedCloudSource }">✓</span>
+      </button>
+      <div v-if="hasCloudAudioSourceOption" class="pm-divider"></div>
+      <button
         v-for="q in ['128', '320', 'flac', 'high', 'super'] as const"
         :key="q"
         type="button"
         class="pm-item"
         :class="{
-          'is-active': effectiveAudioQuality === q,
+          'is-active': !isResolvedCloudSource && effectiveAudioQuality === q,
           'is-disabled': isAudioQualityDisabled(q),
         }"
         :disabled="isAudioQualityDisabled(q)"
@@ -120,7 +130,7 @@ const buttonClass = computed(() => {
         <span
           class="pm-check"
           :class="{
-            'is-visible': effectiveAudioQuality === q,
+            'is-visible': !isResolvedCloudSource && effectiveAudioQuality === q,
           }"
           >✓</span
         >
@@ -150,6 +160,12 @@ const buttonClass = computed(() => {
   font-weight: 500;
   line-height: 1.4;
   color: var(--color-text-secondary);
+}
+
+.pm-divider {
+  height: 1px;
+  margin: 4px 10px;
+  background: var(--border-subtle);
 }
 
 .pm-item {

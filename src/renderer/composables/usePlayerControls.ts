@@ -142,8 +142,11 @@ export function usePlayerControls() {
   const requestedAudioQuality = computed(() => player.getEffectiveAudioQuality());
   const isCurrentTrackCloud = computed(() => currentTrack.value?.source === 'cloud');
   const isResolvedCloudSource = computed(() => player.currentResolvedSourceKind === 'cloud');
-  const isAudioQualitySelectionDisabled = computed(
-    () => isCurrentTrackCloud.value || isResolvedCloudSource.value,
+  const hasCloudAudioSourceOption = computed(
+    () =>
+      isResolvedCloudSource.value ||
+      isCurrentTrackCloud.value ||
+      Boolean(currentTrack.value?.cloudAudioSource?.hash),
   );
   const isAudioEffectPresetSelectionDisabled = computed(
     () => isCurrentTrackCloud.value || isResolvedCloudSource.value,
@@ -159,7 +162,7 @@ export function usePlayerControls() {
   });
 
   const isAudioQualityDisabled = (quality: AudioQualityValue) => {
-    if (isAudioQualitySelectionDisabled.value) return true;
+    if (hasCloudAudioSourceOption.value) return false;
     if (quality === effectiveAudioQuality.value) return false;
     if (!currentTrack.value) return quality !== '128';
     return !hasSongQuality(currentTrack.value, quality);
@@ -167,7 +170,6 @@ export function usePlayerControls() {
 
   const audioQualityButtonBadge = computed(() => {
     if (isResolvedCloudSource.value) return 'CLD';
-    if (isAudioQualitySelectionDisabled.value) return null;
     if (effectiveAudioQuality.value === '128') return 'SD';
     if (effectiveAudioQuality.value === '320') return 'HQ';
     if (effectiveAudioQuality.value === 'flac') return 'SQ';
@@ -197,11 +199,19 @@ export function usePlayerControls() {
   };
 
   const setAudioQuality = (quality: AudioQualityValue) => {
-    if (isAudioQualitySelectionDisabled.value) return;
+    if (hasCloudAudioSourceOption.value) {
+      player.preferCurrentTrackCatalogQuality(quality);
+      return;
+    }
     if (player.currentAudioQualityOverride === null && effectiveAudioQuality.value === quality)
       return;
     if (player.currentAudioQualityOverride === quality) return;
     player.setCurrentAudioQualityOverride(quality);
+  };
+
+  const setCloudAudioSource = () => {
+    if (!hasCloudAudioSourceOption.value) return;
+    player.preferCurrentTrackCloudSource();
   };
 
   const setAudioEffect = (effect: AudioEffectValue) => {
@@ -401,7 +411,7 @@ export function usePlayerControls() {
     // 音质
     effectiveAudioQuality,
     isResolvedCloudSource,
-    isAudioQualitySelectionDisabled,
+    hasCloudAudioSourceOption,
     isAudioEffectPresetSelectionDisabled,
     isAudioQualityDisabled,
     audioQualityButtonBadge,
@@ -409,6 +419,7 @@ export function usePlayerControls() {
     currentAudioQualityBadgeColor,
     getAudioQualityTagColor,
     setAudioQuality,
+    setCloudAudioSource,
     setAudioEffect,
     // 桌面歌词
     toggleDesktopLyric,

@@ -241,6 +241,17 @@ export const createResolver = (
     const audioQuality = getEffectiveAudioQuality();
     const audioEffect = normalizeEffect(state.audioEffect);
     const compatibilityMode = settingStore.compatibilityMode ?? true;
+    const shouldUseCatalogSource =
+      !!state.currentCatalogSourceOverrideTrackId &&
+      String(state.currentCatalogSourceOverrideTrackId) === String(track.id);
+    const shouldUseCloudSource =
+      !shouldUseCatalogSource &&
+      !!state.currentCloudSourceOverrideTrackId &&
+      String(state.currentCloudSourceOverrideTrackId) === String(track.id);
+    const catalogTrack: Song =
+      shouldUseCatalogSource && track.source === 'cloud'
+        ? { ...track, source: undefined, hash: track.cloudAudioSource?.hashStd || track.hash }
+        : track;
 
     const resolveCloudAudioSourceUrl = async (
       source: CloudAudioSource,
@@ -284,18 +295,20 @@ export const createResolver = (
       };
     }
 
-    if (track.source === 'cloud') {
+    if (!shouldUseCatalogSource && (track.source === 'cloud' || shouldUseCloudSource)) {
+      const fallbackCloudAudioSource: CloudAudioSource | null = track.hash
+        ? {
+            cloudFileId: track.cloudFileId,
+            hash: track.hash,
+            audioId: track.fileId,
+            albumAudioId: track.albumAudioId ?? track.mixSongId,
+            name: track.title || track.name,
+          }
+        : null;
       const cloudAudioSource =
-        track.cloudAudioSource ??
-        (track.hash
-          ? {
-              cloudFileId: track.cloudFileId,
-              hash: track.hash,
-              audioId: track.fileId,
-              albumAudioId: track.albumAudioId ?? track.mixSongId,
-              name: track.title || track.name,
-            }
-          : null);
+        track.source === 'cloud'
+          ? (track.cloudAudioSource ?? fallbackCloudAudioSource)
+          : await getCloudAudioSourceForSong(track);
       if (cloudAudioSource) {
         const resolved = await resolveCloudAudioSourceUrl(cloudAudioSource);
         if (resolved) {
@@ -303,10 +316,21 @@ export const createResolver = (
           return resolved;
         }
       }
-      return { url: '', quality: null, effect: 'none', loudness: null };
+      if (track.source === 'cloud') {
+        return {
+          url: '',
+          quality: null,
+          effect: 'none',
+          loudness: null,
+        };
+      }
     }
 
-    if (settingStore.preferCloudFileWhenAvailable && audioEffect === 'none') {
+    if (
+      settingStore.preferCloudFileWhenAvailable &&
+      audioEffect === 'none' &&
+      !shouldUseCatalogSource
+    ) {
       const cloudAudioSource = await getCloudAudioSourceForSong(track);
       if (cloudAudioSource) {
         const resolved = await resolveCloudAudioSourceUrl(cloudAudioSource);
@@ -322,23 +346,23 @@ export const createResolver = (
       }
     }
 
-    if (!track.hash) {
+    if (!catalogTrack.hash) {
       logger.warn(
         'PlayerResolver',
         'Resolve audio url skipped because track hash is missing',
-        summarizeSong(track),
+        summarizeSong(catalogTrack),
       );
       return { url: '', quality: null, effect: 'none', loudness: null };
     }
 
-    const relateGoods = await ensureTrackRelateGoods(track, { forceRefresh: true });
+    const relateGoods = await ensureTrackRelateGoods(catalogTrack, { forceRefresh: true });
 
     if (audioEffect !== 'none') {
       const isVocalEffect = audioEffect === 'vocal' || audioEffect === 'accompaniment';
       const apiEffect = isVocalEffect ? 'acappella' : audioEffect;
 
       const matchedEffect = relateGoods.find((item) => item.quality === apiEffect && item.hash);
-      const effectHashes = [matchedEffect?.hash, track.hash].filter(
+      const effectHashes = [matchedEffect?.hash, catalogTrack.hash].filter(
         (value, index, list): value is string => !!value && list.indexOf(value) === index,
       );
 
@@ -390,13 +414,13 @@ export const createResolver = (
 
     if (compatibilityMode) {
       try {
-        const res = await getSongUrl(track.hash);
+        const res = await getSongUrl(catalogTrack.hash);
         const urls = resolveUrlsFromResponse(res);
         if (urls.length > 0) {
           return {
             url: urls[0],
             urls,
-            quality: getResolvedAudioQuality(track),
+            quality: getResolvedAudioQuality(catalogTrack),
             effect: 'none',
             loudness: resolveTrackLoudness(res),
           };
@@ -407,13 +431,13 @@ export const createResolver = (
     }
 
     try {
-      const res = await getSongUrl(track.hash, '', 356753938);
+      const res = await getSongUrl(catalogTrack.hash, '', 356753938);
       const urls = resolveUrlsFromResponse(res);
       if (urls.length > 0) {
         return {
           url: urls[0],
           urls,
-          quality: getResolvedAudioQuality(track),
+          quality: getResolvedAudioQuality(catalogTrack),
           effect: 'none',
           loudness: resolveTrackLoudness(res),
         };

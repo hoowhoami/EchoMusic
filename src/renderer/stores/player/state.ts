@@ -65,6 +65,8 @@ export const createPlayerState = () => ({
   appliedOutputDeviceId: 'default' as string,
   _lastAppliedExclusive: false,
   currentAudioQualityOverride: null as AudioQualityValue | null,
+  currentCatalogSourceOverrideTrackId: null as string | null,
+  currentCloudSourceOverrideTrackId: null as string | null,
   playbackRequestSeq: 0,
   climaxRequestSeq: 0,
   currentTrackSnapshot: null as Song | null,

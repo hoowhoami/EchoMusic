@@ -120,6 +120,43 @@ export const createAudioManager = (
     void refreshCurrentTrack();
   };
 
+  const preferCurrentTrackCatalogQuality = (quality: AudioQualityValue) => {
+    if (!state.currentTrackId) return;
+    const nextQuality = normalizeQuality(quality);
+    const trackId = String(state.currentTrackId);
+    const changed =
+      state.currentCatalogSourceOverrideTrackId !== trackId ||
+      state.currentAudioQualityOverride !== nextQuality;
+    if (!changed) return;
+    state.currentCatalogSourceOverrideTrackId = trackId;
+    state.currentCloudSourceOverrideTrackId = null;
+    state.currentAudioQualityOverride = nextQuality;
+    if (getPlaybackIsLoading(state) || state.pendingSettingRefresh) {
+      state.pendingSettingRefresh = true;
+      return;
+    }
+    void refreshCurrentTrack();
+  };
+
+  const preferCurrentTrackCloudSource = () => {
+    if (!state.currentTrackId) return;
+    const trackId = String(state.currentTrackId);
+    const changed =
+      state.currentCatalogSourceOverrideTrackId !== null ||
+      state.currentCloudSourceOverrideTrackId !== trackId ||
+      state.currentResolvedSourceKind !== 'cloud' ||
+      state.currentAudioQualityOverride !== null;
+    if (!changed) return;
+    state.currentCatalogSourceOverrideTrackId = null;
+    state.currentCloudSourceOverrideTrackId = trackId;
+    state.currentAudioQualityOverride = null;
+    if (getPlaybackIsLoading(state) || state.pendingSettingRefresh) {
+      state.pendingSettingRefresh = true;
+      return;
+    }
+    void refreshCurrentTrack();
+  };
+
   return {
     setVolume,
     adjustVolume,
@@ -134,5 +171,7 @@ export const createAudioManager = (
     setAudioEffect,
     fadeVolume,
     setCurrentAudioQualityOverride,
+    preferCurrentTrackCatalogQuality,
+    preferCurrentTrackCloudSource,
   };
 };
