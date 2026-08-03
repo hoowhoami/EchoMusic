@@ -725,9 +725,14 @@ export const mapCloudSong = (json: unknown): Song => {
     mixSongId: parseIntSafe(
       pickValue(record.mixsongid, record.album_audio_id, record.audio_id, audioInfo.audio_id, 0),
     ),
+    albumAudioId: readString(
+      pickValue(record.album_audio_id, record.mixsongid, audioInfo.album_audio_id, ''),
+      '',
+    ),
     fileId: parseOptionalInt(
       pickValue(record.fileid, record.file_id, record.Audioid, record.audio_id, audioInfo.audio_id),
     ),
+    cloudFileId: parseOptionalInt(pickValue(record.kv_id, record.kvid, record.cloud_file_id)),
     source: 'cloud',
   };
 };

@@ -173,6 +173,80 @@ export function getUserCloud(page = 1, pagesize = 30) {
   });
 }
 
+const normalizeCloudSongId = (value: unknown): string | null => {
+  const text = String(value ?? '').trim();
+  if (!/^\d+$/.test(text) || /^0+$/.test(text)) return null;
+  return text;
+};
+
+export interface DeleteCloudSongTarget {
+  cloudFileId?: string | number;
+  hash?: string;
+  albumAudioId?: string | number;
+}
+
+const requestDeleteCloudSongs = async (params: Record<string, unknown>) => {
+  try {
+    return await request.get('/user/cloud/del', { params });
+  } catch (error: any) {
+    const msg = error?.response?.body?.msg;
+    if (msg) throw new Error(String(msg));
+    throw error;
+  }
+};
+
+/**
+ * 删除用户云盘歌曲。
+ * 优先传云盘文件 ID（列表接口 kv_id），缺失时回退到 hash。
+ */
+export async function deleteCloudSongs(targets: DeleteCloudSongTarget[]) {
+  const normalizedTargets = targets
+    .map((target) => ({
+      cloudFileId: normalizeCloudSongId(target.cloudFileId),
+      hash: String(target.hash ?? '').trim(),
+      albumAudioId: normalizeCloudSongId(target.albumAudioId),
+    }))
+    .filter((target) => target.cloudFileId || target.hash);
+
+  if (normalizedTargets.length === 0) {
+    throw new Error('缺少可删除的云盘文件标识');
+  }
+
+  const fileTargets = normalizedTargets.filter((target) => target.cloudFileId);
+  const hashTargets = normalizedTargets.filter((target) => !target.cloudFileId && target.hash);
+
+  const responses: unknown[] = [];
+  if (fileTargets.length > 0) {
+    responses.push(
+      await requestDeleteCloudSongs({
+        fileids: fileTargets.map((target) => target.cloudFileId),
+        album_audio_ids: fileTargets.map((target) => target.albumAudioId ?? 0),
+      }),
+    );
+  }
+  if (hashTargets.length > 0) {
+    responses.push(
+      await requestDeleteCloudSongs({
+        hashes: hashTargets.map((target) => target.hash),
+      }),
+    );
+  }
+
+  const failed = responses.find((res) => {
+    const body = res && typeof res === 'object' ? (res as Record<string, unknown>) : null;
+    const status = Number(body?.status ?? 1);
+    const errorCode = Number(body?.error_code ?? 0);
+    return Boolean(body && (status === 0 || errorCode !== 0));
+  });
+  const body = failed && typeof failed === 'object' ? (failed as Record<string, unknown>) : null;
+  const status = Number(body?.status ?? 1);
+  const errorCode = Number(body?.error_code ?? 0);
+  if (body && (status === 0 || errorCode !== 0)) {
+    throw new Error(String(body.msg || `删除失败（error_code=${errorCode}）`));
+  }
+  return responses[responses.length - 1];
+}
+
 const normalizeCloudUploadSongId = (value: unknown): string | number => {
   const text = String(value ?? '').trim();
   if (!/^\d+$/.test(text)) return 0;

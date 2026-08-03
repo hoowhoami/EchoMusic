@@ -342,7 +342,7 @@ const statusLabel = (item: UploadItem) => {
   if (item.status === 'uploading') return '上传中';
   if (item.status === 'success') {
     const uploadLabel = item.isSecondUpload ? '秒传成功' : '成功';
-    const linkLabel = item.audioId || item.albumAudioId ? '已关联曲库' : '未匹配曲库';
+    const linkLabel = item.audioId || item.albumAudioId ? '已关联曲库' : '云端自动匹配';
     return `${uploadLabel} · ${linkLabel}`;
   }
   if (item.status === 'failed') return '失败';

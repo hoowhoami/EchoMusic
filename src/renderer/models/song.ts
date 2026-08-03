@@ -30,6 +30,7 @@ export interface Song {
   albumAudioId?: string | number;
   mixSongId: string | number;
   fileId?: string | number;
+  cloudFileId?: string | number;
   source?: string;
   lyric?: string;
   lyricSnippet?: string;
