@@ -161,7 +161,7 @@ export function usePlayerControls() {
   };
 
   const audioQualityButtonBadge = computed(() => {
-    if (isResolvedCloudSource.value) return '云';
+    if (isResolvedCloudSource.value) return 'CLD';
     if (isAudioQualitySelectionDisabled.value) return null;
     if (effectiveAudioQuality.value === '128') return 'SD';
     if (effectiveAudioQuality.value === '320') return 'HQ';
