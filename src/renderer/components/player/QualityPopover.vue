@@ -81,55 +81,49 @@ const buttonClass = computed(() => {
       </Button>
     </template>
     <div class="space-y-1">
-      <template v-if="isResolvedCloudSource">
-        <div class="pm-title">云盘文件</div>
-        <div class="pm-description">当前正在播放用户云盘中的文件</div>
-      </template>
-      <template v-else>
-        <div class="pm-title">音质选择</div>
-        <button
-          v-for="q in ['128', '320', 'flac', 'high', 'super'] as const"
-          :key="q"
-          type="button"
-          class="pm-item"
+      <div class="pm-title">音质选择</div>
+      <button
+        v-for="q in ['128', '320', 'flac', 'high', 'super'] as const"
+        :key="q"
+        type="button"
+        class="pm-item"
+        :class="{
+          'is-active': effectiveAudioQuality === q,
+          'is-disabled': isAudioQualityDisabled(q),
+        }"
+        :disabled="isAudioQualityDisabled(q)"
+        @click="setAudioQuality(q)"
+      >
+        <span class="pm-label">{{
+          q === '128'
+            ? '标准'
+            : q === '320'
+              ? '高品质'
+              : q === 'flac'
+                ? '无损'
+                : q === 'high'
+                  ? 'Hi-Res'
+                  : '臻品音质'
+        }}</span>
+        <Tag class="pm-tag" :color="getAudioQualityTagColor(q)">{{
+          q === '128'
+            ? 'SD'
+            : q === '320'
+              ? 'HQ'
+              : q === 'flac'
+                ? 'SQ'
+                : q === 'high'
+                  ? 'HR'
+                  : 'DSD'
+        }}</Tag>
+        <span
+          class="pm-check"
           :class="{
-            'is-active': !isAudioQualitySelectionDisabled && effectiveAudioQuality === q,
-            'is-disabled': isAudioQualityDisabled(q),
+            'is-visible': effectiveAudioQuality === q,
           }"
-          :disabled="isAudioQualityDisabled(q)"
-          @click="setAudioQuality(q)"
+          >✓</span
         >
-          <span class="pm-label">{{
-            q === '128'
-              ? '标准'
-              : q === '320'
-                ? '高品质'
-                : q === 'flac'
-                  ? '无损'
-                  : q === 'high'
-                    ? 'Hi-Res'
-                    : '臻品音质'
-          }}</span>
-          <Tag class="pm-tag" :color="getAudioQualityTagColor(q)">{{
-            q === '128'
-              ? 'SD'
-              : q === '320'
-                ? 'HQ'
-                : q === 'flac'
-                  ? 'SQ'
-                  : q === 'high'
-                    ? 'HR'
-                    : 'DSD'
-          }}</Tag>
-          <span
-            class="pm-check"
-            :class="{
-              'is-visible': !isAudioQualitySelectionDisabled && effectiveAudioQuality === q,
-            }"
-            >✓</span
-          >
-        </button>
-      </template>
+      </button>
     </div>
   </Popover>
 </template>
@@ -147,14 +141,6 @@ const buttonClass = computed(() => {
   font-weight: 700;
   opacity: 0.5;
   padding: 0 10px 4px 10px;
-}
-
-.pm-description {
-  padding: 0 10px 2px;
-  font-size: 12px;
-  font-weight: 500;
-  line-height: 1.5;
-  color: var(--color-text-secondary);
 }
 
 .pm-item {

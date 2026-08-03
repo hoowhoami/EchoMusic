@@ -142,7 +142,9 @@ export function usePlayerControls() {
   const requestedAudioQuality = computed(() => player.getEffectiveAudioQuality());
   const isCurrentTrackCloud = computed(() => currentTrack.value?.source === 'cloud');
   const isResolvedCloudSource = computed(() => player.currentResolvedSourceKind === 'cloud');
-  const isAudioQualitySelectionDisabled = computed(() => isCurrentTrackCloud.value);
+  const isAudioQualitySelectionDisabled = computed(
+    () => isCurrentTrackCloud.value || isResolvedCloudSource.value,
+  );
   const effectiveAudioQuality = computed(() => {
     if (player.currentResolvedAudioQuality) return player.currentResolvedAudioQuality;
     if (!currentTrack.value) return requestedAudioQuality.value;
