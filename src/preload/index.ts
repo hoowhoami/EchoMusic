@@ -3,7 +3,13 @@ import log from 'electron-log/renderer';
 import type { ApiServerStatus } from '../shared/api-server';
 import type { AppInfoResult, UpdateDownloadResult, UpdateState } from '../shared/app';
 import type { PlayMode } from '../shared/playback';
-import type { ShortcutMap, ShortcutRegistrationResult } from '../shared/shortcuts';
+import type {
+  PluginGlobalShortcutRegistrationPayload,
+  PluginGlobalShortcutRegistrationResult,
+  PluginGlobalShortcutTriggerPayload,
+  ShortcutMap,
+  ShortcutRegistrationResult,
+} from '../shared/shortcuts';
 import type {
   DesktopLyricCommand,
   DesktopLyricSettings,
@@ -300,10 +306,26 @@ contextBridge.exposeInMainWorld('electron', {
     register: (payload: { enabled: boolean; shortcutMap: ShortcutMap }) =>
       invokeWithPlainPayload<ShortcutRegistrationResult>('shortcuts:register', payload),
     refresh: () => ipcRenderer.invoke('shortcuts:refresh') as Promise<ShortcutRegistrationResult>,
+    registerPluginGlobal: (payload: PluginGlobalShortcutRegistrationPayload) =>
+      invokeWithPlainPayload<PluginGlobalShortcutRegistrationResult>(
+        'shortcuts:register-plugin-global',
+        payload,
+      ),
+    unregisterPluginGlobal: (
+      payload: Pick<PluginGlobalShortcutRegistrationPayload, 'pluginId' | 'registrationId'>,
+    ) => invokeWithPlainPayload<boolean>('shortcuts:unregister-plugin-global', payload),
     onTrigger: (func: (command: string) => void) => {
       const listener = (_event: Electron.IpcRendererEvent, command: string) => func(command);
       ipcRenderer.on('shortcut-trigger', listener);
       return () => ipcRenderer.removeListener('shortcut-trigger', listener);
+    },
+    onPluginGlobalTrigger: (func: (payload: PluginGlobalShortcutTriggerPayload) => void) => {
+      const listener = (
+        _event: Electron.IpcRendererEvent,
+        payload: PluginGlobalShortcutTriggerPayload,
+      ) => func(payload);
+      ipcRenderer.on('plugin-global-shortcut-trigger', listener);
+      return () => ipcRenderer.removeListener('plugin-global-shortcut-trigger', listener);
     },
   },
   windowControl: (action: 'minimize' | 'maximize' | 'close' | 'fullscreen') =>

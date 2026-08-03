@@ -46,6 +46,8 @@ export const shortcutItems: ShortcutItem[] = [
   { command: 'togglePlayback', title: '播放 / 暂停', desc: '切换当前歌曲的播放状态' },
   { command: 'previousTrack', title: '上一首', desc: '跳转到播放列表中的上一首歌曲' },
   { command: 'nextTrack', title: '下一首', desc: '跳转到播放列表中的下一首歌曲' },
+  { command: 'seekBackward', title: '快退', desc: '按设置的快退步长回退当前播放进度' },
+  { command: 'seekForward', title: '快进', desc: '按设置的快进步长前进当前播放进度' },
   { command: 'volumeUp', title: '音量 +', desc: '将播放器音量提高 5%' },
   { command: 'volumeDown', title: '音量 -', desc: '将播放器音量降低 5%' },
   { command: 'toggleMute', title: '静音', desc: '切换播放器静音状态' },
