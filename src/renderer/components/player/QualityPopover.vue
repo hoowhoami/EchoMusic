@@ -82,7 +82,7 @@ const buttonClass = computed(() => {
     </template>
     <div class="space-y-1">
       <div class="pm-title">音质选择</div>
-      <div v-if="isResolvedCloudSource" class="pm-hint">当前使用云盘文件，音质不可切换</div>
+      <div v-if="isResolvedCloudSource" class="pm-hint">当前使用云盘文件播放</div>
       <button
         v-for="q in ['128', '320', 'flac', 'high', 'super'] as const"
         :key="q"
