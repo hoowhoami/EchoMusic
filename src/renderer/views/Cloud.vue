@@ -104,9 +104,27 @@ const handleSort = (field: SortField) => {
   }
 };
 
+const getCloudDefaultOrderValue = (song: Song, index: number) => ({
+  addedAt: Number(song.cloudAddedAt ?? 0) || 0,
+  sortOrder: Number(song.cloudSortOrder ?? song.cloudFileId ?? 0) || 0,
+  index,
+});
+
+const defaultOrderedSongs = computed(() => {
+  return songs.value
+    .map((song, index) => ({ song, order: getCloudDefaultOrderValue(song, index) }))
+    .sort(
+      (left, right) =>
+        right.order.addedAt - left.order.addedAt ||
+        left.order.sortOrder - right.order.sortOrder ||
+        left.order.index - right.order.index,
+    )
+    .map((item) => item.song);
+});
+
 const sortedSongs = computed(() => {
-  return sortSongs(songs.value, sortField.value, sortOrder.value, {
-    indexSource: songs.value,
+  return sortSongs(defaultOrderedSongs.value, sortField.value, sortOrder.value, {
+    indexSource: defaultOrderedSongs.value,
   });
 });
 const displayedSongs = computed(() => filterSongsByQuery(sortedSongs.value, searchQuery.value));

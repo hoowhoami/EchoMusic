@@ -47,6 +47,8 @@ export interface Song {
   mixSongId: string | number;
   fileId?: string | number;
   cloudFileId?: string | number;
+  cloudAddedAt?: number;
+  cloudSortOrder?: number;
   cloudAudioSource?: CloudAudioSource;
   source?: string;
   lyric?: string;

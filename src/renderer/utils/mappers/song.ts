@@ -715,6 +715,8 @@ export const mapCloudSong = (json: unknown): Song => {
     '',
   );
   const cloudFileId = parseOptionalInt(pickValue(record.kv_id, record.kvid, record.cloud_file_id));
+  const cloudAddedAt = parseOptionalInt(pickValue(record.add_time, record.addtime));
+  const cloudSortOrder = parseOptionalInt(pickValue(record.sort_order, record.sortorder));
   const bitrate = parseOptionalInt(pickValue(record.bitrate, audioInfo.bitrate));
   const ext = readString(pickValue(record.ext, record.extendname, audioInfo.ext, ''), '');
 
@@ -754,6 +756,8 @@ export const mapCloudSong = (json: unknown): Song => {
       pickValue(record.fileid, record.file_id, record.Audioid, record.audio_id, audioInfo.audio_id),
     ),
     cloudFileId,
+    ...(cloudAddedAt ? { cloudAddedAt } : {}),
+    ...(cloudSortOrder ? { cloudSortOrder } : {}),
     cloudAudioSource: hash
       ? {
           cloudFileId,
