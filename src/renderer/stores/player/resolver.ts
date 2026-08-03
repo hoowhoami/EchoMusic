@@ -263,6 +263,28 @@ export const createResolver = (
       track.source === 'cloud'
         ? { ...track, source: undefined, hash: track.cloudAudioSource?.hashStd ?? '' }
         : track;
+    let catalogLoudness: ReturnType<typeof resolveTrackLoudness> = null;
+
+    const rememberCatalogTrackLoudness = (payload: unknown) => {
+      const loudness = resolveTrackLoudness(payload);
+      if (loudness) catalogLoudness = loudness;
+      return loudness;
+    };
+
+    const resolveCatalogTrackLoudness = async () => {
+      if (catalogLoudness || !catalogTrack.hash || !settingStore.volumeNormalization) {
+        return catalogLoudness;
+      }
+      try {
+        const res = await getSongUrl(catalogTrack.hash);
+        return rememberCatalogTrackLoudness(res);
+      } catch (error) {
+        logger.debug('PlayerResolver', 'Fetch catalog loudness for cloud source failed:', error, {
+          track: summarizeSong(catalogTrack),
+        });
+        return null;
+      }
+    };
 
     const resolveCloudAudioSourceUrl = async (
       source: CloudAudioSource,
@@ -275,13 +297,15 @@ export const createResolver = (
           name: source.name,
         });
         if (!cloudUrl) return null;
+        const loudness =
+          resolveTrackLoudness(cloudUrl.payload) ?? (await resolveCatalogTrackLoudness());
         return {
           url: cloudUrl.url,
           urls: [cloudUrl.url],
           quality: source.quality ?? null,
           effect: 'none',
           sourceKind: 'cloud',
-          loudness: resolveTrackLoudness(cloudUrl.payload),
+          loudness,
         };
       } catch (error) {
         logger.warn('PlayerResolver', 'Fetch cloud file url failed:', error, {
@@ -385,6 +409,7 @@ export const createResolver = (
       if (!matched?.hash) continue;
       try {
         const res = await getSongUrl(matched.hash, quality);
+        const loudness = rememberCatalogTrackLoudness(res);
         const urls = resolveUrlsFromResponse(res);
         if (urls.length > 0) {
           return {
@@ -392,7 +417,7 @@ export const createResolver = (
             urls,
             quality,
             effect: 'none',
-            loudness: resolveTrackLoudness(res),
+            loudness,
           };
         }
       } catch (error) {
@@ -403,6 +428,7 @@ export const createResolver = (
     if (compatibilityMode) {
       try {
         const res = await getSongUrl(catalogTrack.hash);
+        const loudness = rememberCatalogTrackLoudness(res);
         const urls = resolveUrlsFromResponse(res);
         if (urls.length > 0) {
           return {
@@ -410,7 +436,7 @@ export const createResolver = (
             urls,
             quality: getResolvedAudioQuality(catalogTrack),
             effect: 'none',
-            loudness: resolveTrackLoudness(res),
+            loudness,
           };
         }
       } catch (error) {
@@ -420,6 +446,7 @@ export const createResolver = (
 
     try {
       const res = await getSongUrl(catalogTrack.hash, '', 356753938);
+      const loudness = rememberCatalogTrackLoudness(res);
       const urls = resolveUrlsFromResponse(res);
       if (urls.length > 0) {
         return {
@@ -427,7 +454,7 @@ export const createResolver = (
           urls,
           quality: getResolvedAudioQuality(catalogTrack),
           effect: 'none',
-          loudness: resolveTrackLoudness(res),
+          loudness,
         };
       }
     } catch (error) {
