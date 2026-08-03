@@ -157,6 +157,8 @@ export function usePlayerControls() {
   });
   const hasCatalogAudioSourceOption = computed(() => Boolean(catalogQualityLookupKey.value));
   const isCatalogQualityLoading = ref(false);
+  const catalogQualityLoadingKey = ref('');
+  let catalogQualityFetchSeq = 0;
   const isAudioEffectPresetSelectionDisabled = computed(() => isResolvedCloudSource.value);
   const effectiveAudioQuality = computed(() => {
     if (player.currentResolvedAudioQuality) return player.currentResolvedAudioQuality;
@@ -173,7 +175,13 @@ export function usePlayerControls() {
       const track = currentTrack.value;
       if (!track || !catalogQualityLookupKey.value) return true;
       if (quality === '128') return false;
-      if (isCatalogQualityLoading.value && (track.relateGoods?.length ?? 0) === 0) return true;
+      if (
+        isCatalogQualityLoading.value &&
+        catalogQualityLoadingKey.value === catalogQualityLookupKey.value &&
+        (track.relateGoods?.length ?? 0) === 0
+      ) {
+        return true;
+      }
       return !hasSongQuality(track, quality);
     }
     if (quality === effectiveAudioQuality.value) return false;
@@ -232,7 +240,10 @@ export function usePlayerControls() {
     const track = currentTrack.value;
     const lookupKey = catalogQualityLookupKey.value;
     if (!track || !hasCloudAudioSourceOption.value || !lookupKey) return;
-    if ((track.relateGoods?.length ?? 0) > 0 || isCatalogQualityLoading.value) return;
+    if ((track.relateGoods?.length ?? 0) > 0 || catalogQualityLoadingKey.value === lookupKey)
+      return;
+    const fetchSeq = ++catalogQualityFetchSeq;
+    catalogQualityLoadingKey.value = lookupKey;
     isCatalogQualityLoading.value = true;
     try {
       const catalogHash =
@@ -255,7 +266,8 @@ export function usePlayerControls() {
         };
       }
     } finally {
-      if (catalogQualityLookupKey.value === lookupKey) {
+      if (fetchSeq === catalogQualityFetchSeq) {
+        catalogQualityLoadingKey.value = '';
         isCatalogQualityLoading.value = false;
       }
     }

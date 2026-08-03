@@ -38,7 +38,23 @@ export interface EverydayStyleRecommendParams {
 
 export interface CloudSongUrlResult {
   url: string;
-  payload: unknown;
+  urls: string[];
+  payload: CloudSongUrlResponse;
+}
+
+export interface CloudSongUrlData {
+  url?: string;
+  backup_url?: string | string[];
+  backupUrl?: string | string[];
+  hash?: string;
+  fileSize?: string | number;
+  extName?: string;
+}
+
+export interface CloudSongUrlResponse {
+  status?: number;
+  error_code?: number;
+  data?: CloudSongUrlData;
 }
 
 /**
@@ -84,16 +100,36 @@ export async function getCloudSongUrl(
     },
   });
   if (res && typeof res === 'object') {
-    const record = res as { status?: number; data?: { url?: string } };
+    const record = res as CloudSongUrlResponse;
     if (record.status === 1 && record.data?.url) {
+      const urls = normalizeCloudSongUrls(record.data);
       return {
         url: record.data.url,
-        payload: res,
+        urls,
+        payload: record,
       };
     }
   }
   return null;
 }
+
+const normalizeCloudSongUrls = (data: CloudSongUrlData): string[] => {
+  const urls = new Set<string>();
+  const add = (value: unknown) => {
+    if (typeof value !== 'string') return;
+    const url = value.trim();
+    if (url) urls.add(url);
+  };
+
+  add(data.url);
+  const backups = data.backup_url ?? data.backupUrl;
+  if (Array.isArray(backups)) {
+    backups.forEach(add);
+  } else {
+    add(backups);
+  }
+  return [...urls];
+};
 
 /**
  * 搜索歌词

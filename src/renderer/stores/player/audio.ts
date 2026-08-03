@@ -124,6 +124,7 @@ export const createAudioManager = (
     if (!state.currentTrackId) return;
     const nextQuality = normalizeQuality(quality);
     const trackId = String(state.currentTrackId);
+    // 当前曲目的手动音质覆盖会持续到切歌，用于在云盘/曲库音源间来回切换时保持用户选择。
     const changed =
       state.currentCatalogSourceOverrideTrackId !== trackId ||
       state.currentAudioQualityOverride !== nextQuality;

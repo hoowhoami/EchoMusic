@@ -139,6 +139,7 @@ export const createPlaybackManager = (
         ...state.currentTrackSnapshot,
         audioUrl: track.audioUrl,
         ...(track.cloudAudioSource ? { cloudAudioSource: track.cloudAudioSource } : {}),
+        ...(track.relateGoods?.length ? { relateGoods: track.relateGoods } : {}),
       };
     }
   };

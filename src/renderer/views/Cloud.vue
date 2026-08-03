@@ -106,7 +106,7 @@ const handleSort = (field: SortField) => {
 
 const getCloudDefaultOrderValue = (song: Song, index: number) => ({
   addedAt: Number(song.cloudAddedAt ?? 0) || 0,
-  sortOrder: Number(song.cloudSortOrder ?? song.cloudFileId ?? 0) || 0,
+  sortOrder: Number(song.cloudSortOrder ?? 0) || 0,
   index,
 });
 

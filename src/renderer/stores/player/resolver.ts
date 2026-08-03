@@ -261,9 +261,28 @@ export const createResolver = (
     };
     const catalogTrack: Song =
       track.source === 'cloud'
-        ? { ...track, source: undefined, hash: track.cloudAudioSource?.hashStd ?? '' }
+        ? {
+            ...track,
+            source: undefined,
+            hash: track.cloudAudioSource?.hashStd ?? '',
+            relateGoods: track.relateGoods,
+          }
         : track;
     let catalogLoudness: ReturnType<typeof resolveTrackLoudness> = null;
+
+    const syncTrackRelateGoods = (relateGoods: Song['relateGoods']) => {
+      if (!relateGoods || relateGoods.length === 0) return;
+      track.relateGoods = relateGoods;
+      if (
+        state.currentTrackSnapshot &&
+        String(state.currentTrackSnapshot.id) === String(track.id)
+      ) {
+        state.currentTrackSnapshot = {
+          ...state.currentTrackSnapshot,
+          relateGoods,
+        };
+      }
+    };
 
     const rememberCatalogTrackLoudness = (payload: unknown) => {
       const loudness = resolveTrackLoudness(payload);
@@ -301,7 +320,7 @@ export const createResolver = (
           resolveTrackLoudness(cloudUrl.payload) ?? (await resolveCatalogTrackLoudness());
         return {
           url: cloudUrl.url,
-          urls: [cloudUrl.url],
+          urls: cloudUrl.urls.length ? cloudUrl.urls : [cloudUrl.url],
           quality: source.quality ?? null,
           effect: 'none',
           sourceKind: 'cloud',
@@ -354,7 +373,8 @@ export const createResolver = (
     }
 
     if (!catalogTrack.hash) {
-      const resolved = didTryCloudAudioSource ? null : await tryCloudAudioSource();
+      const resolved =
+        audioEffect === 'none' && !didTryCloudAudioSource ? await tryCloudAudioSource() : null;
       if (resolved) return resolved;
       logger.warn(
         'PlayerResolver',
@@ -364,10 +384,10 @@ export const createResolver = (
       return { url: '', quality: null, effect: 'none', loudness: null };
     }
 
-    const relateGoods = await ensureTrackRelateGoods(catalogTrack, { forceRefresh: true });
-    if (catalogTrack !== track && relateGoods.length > 0) {
-      track.relateGoods = relateGoods;
-    }
+    const relateGoods = await ensureTrackRelateGoods(catalogTrack, {
+      forceRefresh: catalogTrack === track,
+    });
+    if (catalogTrack !== track) syncTrackRelateGoods(relateGoods);
 
     if (audioEffect !== 'none') {
       const isVocalEffect = audioEffect === 'vocal' || audioEffect === 'accompaniment';
@@ -461,11 +481,21 @@ export const createResolver = (
       logger.warn('PlayerResolver', 'Fetch fallback with ppage_id failed:', error);
     }
 
-    const cloudFallback = didTryCloudAudioSource ? null : await tryCloudAudioSource();
+    const cloudFallback =
+      audioEffect === 'none' && !didTryCloudAudioSource ? await tryCloudAudioSource() : null;
     if (cloudFallback) return cloudFallback;
-    logger.debug('PlayerResolver', 'Catalog source unavailable, cloud fallback unavailable', {
-      track: summarizeSong(track),
-    });
+    logger.debug(
+      'PlayerResolver',
+      audioEffect === 'none'
+        ? didTryCloudAudioSource
+          ? 'Requested cloud source and catalog source are unavailable'
+          : 'Catalog source unavailable, cloud fallback unavailable'
+        : 'Catalog source unavailable, cloud fallback skipped while audio effect is active',
+      {
+        track: summarizeSong(track),
+        effect: audioEffect,
+      },
+    );
 
     return { url: '', quality: null, effect: 'none', loudness: null };
   };
