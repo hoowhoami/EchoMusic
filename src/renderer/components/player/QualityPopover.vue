@@ -75,7 +75,7 @@ const buttonClass = computed(() => {
             v-if="currentTrack && settingStore.showAudioQualityBadge && audioQualityButtonBadge"
             :count="audioQualityButtonBadge"
             class="absolute top-2px"
-            :style="{ right: '-12px' }"
+            :style="{ right: '-16px' }"
           />
         </span>
       </Button>
