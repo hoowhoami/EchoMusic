@@ -148,9 +148,7 @@ export function usePlayerControls() {
       isCurrentTrackCloud.value ||
       Boolean(currentTrack.value?.cloudAudioSource?.hash),
   );
-  const isAudioEffectPresetSelectionDisabled = computed(
-    () => isCurrentTrackCloud.value || isResolvedCloudSource.value,
-  );
+  const isAudioEffectPresetSelectionDisabled = computed(() => isResolvedCloudSource.value);
   const effectiveAudioQuality = computed(() => {
     if (player.currentResolvedAudioQuality) return player.currentResolvedAudioQuality;
     if (!currentTrack.value) return requestedAudioQuality.value;

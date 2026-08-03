@@ -281,6 +281,15 @@ export const createResolver = (
         return null;
       }
     };
+    const resolveMatchedCloudAudioSourceUrl = async (): Promise<ResolvedAudioSource | null> => {
+      const cloudAudioSource = await getCloudAudioSourceForSong(track);
+      if (!cloudAudioSource) return null;
+      const resolved = await resolveCloudAudioSourceUrl(cloudAudioSource);
+      if (resolved) {
+        track.cloudAudioSource = cloudAudioSource;
+      }
+      return resolved;
+    };
 
     const pluginResolved = await resolvePluginAudioSource({
       track,
@@ -306,15 +315,16 @@ export const createResolver = (
           }
         : null;
       const cloudAudioSource =
-        track.source === 'cloud'
-          ? (track.cloudAudioSource ?? fallbackCloudAudioSource)
-          : await getCloudAudioSourceForSong(track);
+        track.source === 'cloud' ? (track.cloudAudioSource ?? fallbackCloudAudioSource) : null;
       if (cloudAudioSource) {
         const resolved = await resolveCloudAudioSourceUrl(cloudAudioSource);
         if (resolved) {
           track.cloudAudioSource = cloudAudioSource;
           return resolved;
         }
+      } else if (shouldUseCloudSource) {
+        const resolved = await resolveMatchedCloudAudioSourceUrl();
+        if (resolved) return resolved;
       }
       if (track.source === 'cloud') {
         return {
@@ -326,27 +336,11 @@ export const createResolver = (
       }
     }
 
-    if (
-      settingStore.preferCloudFileWhenAvailable &&
-      audioEffect === 'none' &&
-      !shouldUseCatalogSource
-    ) {
-      const cloudAudioSource = await getCloudAudioSourceForSong(track);
-      if (cloudAudioSource) {
-        const resolved = await resolveCloudAudioSourceUrl(cloudAudioSource);
-        if (resolved) {
-          track.cloudAudioSource = cloudAudioSource;
-          return resolved;
-        }
-        logger.debug('PlayerResolver', 'Preferred cloud file unavailable, fallback to catalog', {
-          track: summarizeSong(track),
-          cloudFileId: cloudAudioSource.cloudFileId,
-          matchBy: cloudAudioSource.matchBy,
-        });
-      }
-    }
-
     if (!catalogTrack.hash) {
+      if (settingStore.fallbackToCloudFileWhenCatalogUnavailable && !shouldUseCatalogSource) {
+        const resolved = await resolveMatchedCloudAudioSourceUrl();
+        if (resolved) return resolved;
+      }
       logger.warn(
         'PlayerResolver',
         'Resolve audio url skipped because track hash is missing',
@@ -444,6 +438,14 @@ export const createResolver = (
       }
     } catch (error) {
       logger.warn('PlayerResolver', 'Fetch fallback with ppage_id failed:', error);
+    }
+
+    if (settingStore.fallbackToCloudFileWhenCatalogUnavailable && !shouldUseCatalogSource) {
+      const resolved = await resolveMatchedCloudAudioSourceUrl();
+      if (resolved) return resolved;
+      logger.debug('PlayerResolver', 'Catalog source unavailable, cloud fallback unavailable', {
+        track: summarizeSong(track),
+      });
     }
 
     return { url: '', quality: null, effect: 'none', loudness: null };
