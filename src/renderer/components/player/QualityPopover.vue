@@ -6,15 +6,13 @@ import Badge from '@/components/ui/Badge.vue';
 import AudioWaveIcon from '@/components/ui/AudioWaveIcon.vue';
 import Button from '@/components/ui/Button.vue';
 import { usePlayerControls } from '@/composables/usePlayerControls';
-import { Icon } from '@iconify/vue';
-import { iconCloud } from '@/icons';
 
 const {
   player,
   settingStore,
   currentTrack,
   effectiveAudioQuality,
-  isPreferredCloudPlaybackActive,
+  isResolvedCloudSource,
   isAudioQualitySelectionDisabled,
   isAudioQualityDisabled,
   audioQualityButtonBadge,
@@ -44,7 +42,7 @@ const buttonClass = computed(() => {
       ? 'text-black/40 dark:text-white/40 hover:scale-110 active:scale-90'
       : 'text-text-main/50 hover:text-primary hover:scale-110 active:scale-90';
 
-  if (isPreferredCloudPlaybackActive.value) return activeClass;
+  if (isResolvedCloudSource.value) return activeClass;
   if (!isAudioQualitySelectionDisabled.value && player.currentAudioQualityOverride !== null) {
     return activeClass;
   }
@@ -54,7 +52,7 @@ const buttonClass = computed(() => {
 
 <template>
   <Popover
-    v-if="!isAudioQualitySelectionDisabled || isPreferredCloudPlaybackActive"
+    v-if="!isAudioQualitySelectionDisabled || isResolvedCloudSource"
     trigger="hover"
     :side="props.side"
     align="center"
@@ -69,17 +67,10 @@ const buttonClass = computed(() => {
         type="button"
         class="p-2 transition-all"
         :class="buttonClass"
-        :title="isPreferredCloudPlaybackActive ? '当前优先使用云盘文件' : '音质'"
+        :title="isResolvedCloudSource ? '当前使用云盘文件' : '音质'"
       >
         <span class="relative inline-flex w-5 h-5 items-center justify-center">
-          <Icon
-            v-if="isPreferredCloudPlaybackActive"
-            :icon="iconCloud"
-            width="20"
-            height="20"
-            style="transform: translateY(3px)"
-          />
-          <AudioWaveIcon v-else class="w-5 h-5" style="transform: translateY(3px)" />
+          <AudioWaveIcon class="w-5 h-5" style="transform: translateY(3px)" />
           <Badge
             v-if="currentTrack && settingStore.showAudioQualityBadge && audioQualityButtonBadge"
             :count="audioQualityButtonBadge"
@@ -90,9 +81,9 @@ const buttonClass = computed(() => {
       </Button>
     </template>
     <div class="space-y-1">
-      <template v-if="isPreferredCloudPlaybackActive">
+      <template v-if="isResolvedCloudSource">
         <div class="pm-title">云盘文件</div>
-        <div class="pm-description">当前优先使用匹配到的云盘文件播放</div>
+        <div class="pm-description">当前正在播放用户云盘中的文件</div>
       </template>
       <template v-else>
         <div class="pm-title">音质选择</div>
