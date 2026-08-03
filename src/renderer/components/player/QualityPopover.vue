@@ -82,6 +82,7 @@ const buttonClass = computed(() => {
     </template>
     <div class="space-y-1">
       <div class="pm-title">音质选择</div>
+      <div v-if="isResolvedCloudSource" class="pm-hint">当前使用云盘文件，音质不可切换</div>
       <button
         v-for="q in ['128', '320', 'flac', 'high', 'super'] as const"
         :key="q"
@@ -141,6 +142,14 @@ const buttonClass = computed(() => {
   font-weight: 700;
   opacity: 0.5;
   padding: 0 10px 4px 10px;
+}
+
+.pm-hint {
+  padding: 0 10px 6px;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.4;
+  color: var(--color-text-secondary);
 }
 
 .pm-item {
