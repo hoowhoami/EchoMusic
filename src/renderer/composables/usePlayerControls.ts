@@ -142,6 +142,13 @@ export function usePlayerControls() {
   const requestedAudioQuality = computed(() => player.getEffectiveAudioQuality());
   const isCurrentTrackCloud = computed(() => currentTrack.value?.source === 'cloud');
   const isResolvedCloudSource = computed(() => player.currentResolvedSourceKind === 'cloud');
+  const isPreferredCloudPlaybackActive = computed(
+    () =>
+      settingStore.preferCloudFileWhenAvailable &&
+      !isCurrentTrackCloud.value &&
+      isResolvedCloudSource.value &&
+      player.currentResolvedAudioEffect === 'none',
+  );
   const isAudioQualitySelectionDisabled = computed(() => isCurrentTrackCloud.value);
   const effectiveAudioQuality = computed(() => {
     if (player.currentResolvedAudioQuality) return player.currentResolvedAudioQuality;
@@ -161,7 +168,7 @@ export function usePlayerControls() {
   };
 
   const audioQualityButtonBadge = computed(() => {
-    if (isResolvedCloudSource.value) return '云';
+    if (isPreferredCloudPlaybackActive.value) return '云';
     if (isAudioQualitySelectionDisabled.value) return null;
     if (effectiveAudioQuality.value === '128') return 'SD';
     if (effectiveAudioQuality.value === '320') return 'HQ';
@@ -179,7 +186,7 @@ export function usePlayerControls() {
   });
 
   const currentAudioQualityBadgeColor = computed(() => {
-    if (isResolvedCloudSource.value) return '#0EA5E9';
+    if (isPreferredCloudPlaybackActive.value) return '#0EA5E9';
     return getAudioQualityTagColor(effectiveAudioQuality.value);
   });
 
@@ -394,7 +401,7 @@ export function usePlayerControls() {
     setPlaybackRate,
     // 音质
     effectiveAudioQuality,
-    isResolvedCloudSource,
+    isPreferredCloudPlaybackActive,
     isAudioQualitySelectionDisabled,
     isAudioQualityDisabled,
     audioQualityButtonBadge,

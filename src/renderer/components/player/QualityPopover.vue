@@ -14,7 +14,7 @@ const {
   settingStore,
   currentTrack,
   effectiveAudioQuality,
-  isResolvedCloudSource,
+  isPreferredCloudPlaybackActive,
   isAudioQualitySelectionDisabled,
   isAudioQualityDisabled,
   audioQualityButtonBadge,
@@ -44,7 +44,7 @@ const buttonClass = computed(() => {
       ? 'text-black/40 dark:text-white/40 hover:scale-110 active:scale-90'
       : 'text-text-main/50 hover:text-primary hover:scale-110 active:scale-90';
 
-  if (isResolvedCloudSource.value) return activeClass;
+  if (isPreferredCloudPlaybackActive.value) return activeClass;
   if (!isAudioQualitySelectionDisabled.value && player.currentAudioQualityOverride !== null) {
     return activeClass;
   }
@@ -54,7 +54,7 @@ const buttonClass = computed(() => {
 
 <template>
   <Popover
-    v-if="!isAudioQualitySelectionDisabled || isResolvedCloudSource"
+    v-if="!isAudioQualitySelectionDisabled || isPreferredCloudPlaybackActive"
     trigger="hover"
     :side="props.side"
     align="center"
@@ -69,11 +69,11 @@ const buttonClass = computed(() => {
         type="button"
         class="p-2 transition-all"
         :class="buttonClass"
-        :title="isResolvedCloudSource ? '当前使用云盘文件' : '音质'"
+        :title="isPreferredCloudPlaybackActive ? '当前优先使用云盘文件' : '音质'"
       >
         <span class="relative inline-flex w-5 h-5 items-center justify-center">
           <Icon
-            v-if="isResolvedCloudSource"
+            v-if="isPreferredCloudPlaybackActive"
             :icon="iconCloud"
             width="20"
             height="20"
@@ -90,9 +90,9 @@ const buttonClass = computed(() => {
       </Button>
     </template>
     <div class="space-y-1">
-      <template v-if="isResolvedCloudSource">
+      <template v-if="isPreferredCloudPlaybackActive">
         <div class="pm-title">云盘文件</div>
-        <div class="pm-description">当前正在播放用户云盘中的文件</div>
+        <div class="pm-description">当前优先使用匹配到的云盘文件播放</div>
       </template>
       <template v-else>
         <div class="pm-title">音质选择</div>
