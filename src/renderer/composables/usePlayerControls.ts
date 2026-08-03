@@ -145,6 +145,9 @@ export function usePlayerControls() {
   const isAudioQualitySelectionDisabled = computed(
     () => isCurrentTrackCloud.value || isResolvedCloudSource.value,
   );
+  const isAudioEffectPresetSelectionDisabled = computed(
+    () => isCurrentTrackCloud.value || isResolvedCloudSource.value,
+  );
   const effectiveAudioQuality = computed(() => {
     if (player.currentResolvedAudioQuality) return player.currentResolvedAudioQuality;
     if (!currentTrack.value) return requestedAudioQuality.value;
@@ -202,6 +205,7 @@ export function usePlayerControls() {
   };
 
   const setAudioEffect = (effect: AudioEffectValue) => {
+    if (isAudioEffectPresetSelectionDisabled.value) return;
     if (player.audioEffect === effect) return;
     player.setAudioEffect(effect);
   };
@@ -398,6 +402,7 @@ export function usePlayerControls() {
     effectiveAudioQuality,
     isResolvedCloudSource,
     isAudioQualitySelectionDisabled,
+    isAudioEffectPresetSelectionDisabled,
     isAudioQualityDisabled,
     audioQualityButtonBadge,
     audioEffectButtonBadge,

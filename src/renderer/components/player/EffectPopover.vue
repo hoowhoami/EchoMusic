@@ -12,8 +12,14 @@ import { usePlayerControls } from '@/composables/usePlayerControls';
 import type { AudioEffectValue } from '@/types';
 import { normalizeImpulseResponseName } from '../../../shared/audio';
 
-const { player, settingStore, currentTrack, audioEffectButtonBadge, setAudioEffect } =
-  usePlayerControls();
+const {
+  player,
+  settingStore,
+  currentTrack,
+  isAudioEffectPresetSelectionDisabled,
+  audioEffectButtonBadge,
+  setAudioEffect,
+} = usePlayerControls();
 
 const activeTab = ref<'effect' | 'eq' | 'irs'>('effect');
 
@@ -56,6 +62,11 @@ const impulseResponseStrengthDraft = ref<number | null>(null);
 const impulseResponseStrength = computed(
   () => impulseResponseStrengthDraft.value ?? impulseResponseStrengthSaved.value,
 );
+const audioEffectPresetActive = computed(
+  () => !isAudioEffectPresetSelectionDisabled.value && player.audioEffect !== 'none',
+);
+const isAudioEffectOptionActive = (effect: AudioEffectValue) =>
+  isAudioEffectPresetSelectionDisabled.value ? effect === 'none' : player.audioEffect === effect;
 
 // 节流 EQ 更新，防止高频 IPC 调用导致音频卡顿
 const throttledSetEq = useThrottleFn((newGains: number[]) => {
@@ -145,9 +156,7 @@ withDefaults(defineProps<Props>(), {
         type="button"
         class="p-2 transition-all hover:scale-110 active:scale-90"
         :class="
-          player.audioEffect !== 'none' ||
-          gains.some((g: number) => g !== 0) ||
-          impulseResponseActive
+          audioEffectPresetActive || gains.some((g: number) => g !== 0) || impulseResponseActive
             ? variant === 'lyric'
               ? 'text-black dark:text-white'
               : 'text-primary'
@@ -207,6 +216,9 @@ withDefaults(defineProps<Props>(), {
           <div class="panel-header">
             <span class="panel-title">音效预设</span>
           </div>
+          <div v-if="isAudioEffectPresetSelectionDisabled" class="panel-hint">
+            当前使用云盘文件播放
+          </div>
           <Scrollbar class="panel-scroll">
             <div class="effect-preset-grid">
               <button
@@ -214,7 +226,11 @@ withDefaults(defineProps<Props>(), {
                 :key="option.value"
                 type="button"
                 class="pm-item w-full! m-0!"
-                :class="{ 'is-active': player.audioEffect === option.value }"
+                :class="{
+                  'is-active': isAudioEffectOptionActive(option.value),
+                  'is-disabled': isAudioEffectPresetSelectionDisabled,
+                }"
+                :disabled="isAudioEffectPresetSelectionDisabled"
                 @click="setAudioEffect(option.value)"
               >
                 <span class="pm-label text-center">{{ option.label }}</span>
@@ -429,6 +445,14 @@ withDefaults(defineProps<Props>(), {
   color: var(--color-text-main);
 }
 
+.panel-hint {
+  margin: -4px 16px 8px;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.4;
+  color: var(--color-text-secondary);
+}
+
 .reset-btn {
   font-size: 12px;
   font-weight: 600;
@@ -494,6 +518,17 @@ withDefaults(defineProps<Props>(), {
   background: color-mix(in srgb, var(--color-primary) 9%, transparent);
   color: var(--color-primary);
   opacity: 1;
+}
+
+.effect-popover .pm-item.is-disabled {
+  cursor: not-allowed;
+  opacity: 0.38;
+}
+
+.effect-popover .pm-item.is-disabled:hover {
+  border-color: var(--control-border);
+  background: var(--control-muted-bg);
+  color: var(--color-text-main);
 }
 
 .effect-popover .pm-item.is-active {
