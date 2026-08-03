@@ -373,8 +373,7 @@ export const createResolver = (
     }
 
     if (!catalogTrack.hash) {
-      const resolved =
-        audioEffect === 'none' && !didTryCloudAudioSource ? await tryCloudAudioSource() : null;
+      const resolved = didTryCloudAudioSource ? null : await tryCloudAudioSource();
       if (resolved) return resolved;
       logger.warn(
         'PlayerResolver',
@@ -481,16 +480,13 @@ export const createResolver = (
       logger.warn('PlayerResolver', 'Fetch fallback with ppage_id failed:', error);
     }
 
-    const cloudFallback =
-      audioEffect === 'none' && !didTryCloudAudioSource ? await tryCloudAudioSource() : null;
+    const cloudFallback = didTryCloudAudioSource ? null : await tryCloudAudioSource();
     if (cloudFallback) return cloudFallback;
     logger.debug(
       'PlayerResolver',
-      audioEffect === 'none'
-        ? didTryCloudAudioSource
-          ? 'Requested cloud source and catalog source are unavailable'
-          : 'Catalog source unavailable, cloud fallback unavailable'
-        : 'Catalog source unavailable, cloud fallback skipped while audio effect is active',
+      didTryCloudAudioSource
+        ? 'Requested cloud source and catalog source are unavailable'
+        : 'Catalog source unavailable, cloud fallback unavailable',
       {
         track: summarizeSong(track),
         effect: audioEffect,
