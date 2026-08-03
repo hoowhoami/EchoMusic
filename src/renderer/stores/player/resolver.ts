@@ -248,9 +248,20 @@ export const createResolver = (
       !shouldUseCatalogSource &&
       !!state.currentCloudSourceOverrideTrackId &&
       String(state.currentCloudSourceOverrideTrackId) === String(track.id);
+    const getTrackCloudAudioSource = (): CloudAudioSource | null => {
+      if (track.cloudAudioSource) return track.cloudAudioSource;
+      if (!track.hash) return null;
+      return {
+        cloudFileId: track.cloudFileId,
+        hash: track.hash,
+        audioId: track.fileId,
+        albumAudioId: track.albumAudioId ?? track.mixSongId,
+        name: track.title || track.name,
+      };
+    };
     const catalogTrack: Song =
-      shouldUseCatalogSource && track.source === 'cloud'
-        ? { ...track, source: undefined, hash: track.cloudAudioSource?.hashStd || track.hash }
+      track.source === 'cloud'
+        ? { ...track, source: undefined, hash: track.cloudAudioSource?.hashStd ?? '' }
         : track;
 
     const resolveCloudAudioSourceUrl = async (
@@ -282,7 +293,10 @@ export const createResolver = (
       }
     };
     const resolveMatchedCloudAudioSourceUrl = async (): Promise<ResolvedAudioSource | null> => {
-      const cloudAudioSource = await getCloudAudioSourceForSong(track);
+      const cloudAudioSource =
+        track.source === 'cloud'
+          ? getTrackCloudAudioSource()
+          : await getCloudAudioSourceForSong(track);
       if (!cloudAudioSource) return null;
       const resolved = await resolveCloudAudioSourceUrl(cloudAudioSource);
       if (resolved) {
@@ -304,40 +318,19 @@ export const createResolver = (
       };
     }
 
-    if (!shouldUseCatalogSource && (track.source === 'cloud' || shouldUseCloudSource)) {
-      const fallbackCloudAudioSource: CloudAudioSource | null = track.hash
-        ? {
-            cloudFileId: track.cloudFileId,
-            hash: track.hash,
-            audioId: track.fileId,
-            albumAudioId: track.albumAudioId ?? track.mixSongId,
-            name: track.title || track.name,
-          }
-        : null;
-      const cloudAudioSource =
-        track.source === 'cloud' ? (track.cloudAudioSource ?? fallbackCloudAudioSource) : null;
-      if (cloudAudioSource) {
-        const resolved = await resolveCloudAudioSourceUrl(cloudAudioSource);
-        if (resolved) {
-          track.cloudAudioSource = cloudAudioSource;
-          return resolved;
-        }
-      } else if (shouldUseCloudSource) {
-        const resolved = await resolveMatchedCloudAudioSourceUrl();
-        if (resolved) return resolved;
-      }
-      if (track.source === 'cloud') {
-        return {
-          url: '',
-          quality: null,
-          effect: 'none',
-          loudness: null,
-        };
-      }
+    let didTryCloudAudioSource = false;
+    const tryCloudAudioSource = async () => {
+      didTryCloudAudioSource = true;
+      return resolveMatchedCloudAudioSourceUrl();
+    };
+
+    if (shouldUseCloudSource) {
+      const resolved = await tryCloudAudioSource();
+      if (resolved) return resolved;
     }
 
     if (!catalogTrack.hash) {
-      const resolved = await resolveMatchedCloudAudioSourceUrl();
+      const resolved = didTryCloudAudioSource ? null : await tryCloudAudioSource();
       if (resolved) return resolved;
       logger.warn(
         'PlayerResolver',
@@ -348,6 +341,9 @@ export const createResolver = (
     }
 
     const relateGoods = await ensureTrackRelateGoods(catalogTrack, { forceRefresh: true });
+    if (catalogTrack !== track && relateGoods.length > 0) {
+      track.relateGoods = relateGoods;
+    }
 
     if (audioEffect !== 'none') {
       const isVocalEffect = audioEffect === 'vocal' || audioEffect === 'accompaniment';
@@ -438,7 +434,7 @@ export const createResolver = (
       logger.warn('PlayerResolver', 'Fetch fallback with ppage_id failed:', error);
     }
 
-    const cloudFallback = await resolveMatchedCloudAudioSourceUrl();
+    const cloudFallback = didTryCloudAudioSource ? null : await tryCloudAudioSource();
     if (cloudFallback) return cloudFallback;
     logger.debug('PlayerResolver', 'Catalog source unavailable, cloud fallback unavailable', {
       track: summarizeSong(track),
