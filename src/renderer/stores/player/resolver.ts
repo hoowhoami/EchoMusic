@@ -337,10 +337,8 @@ export const createResolver = (
     }
 
     if (!catalogTrack.hash) {
-      if (settingStore.fallbackToCloudFileWhenCatalogUnavailable && !shouldUseCatalogSource) {
-        const resolved = await resolveMatchedCloudAudioSourceUrl();
-        if (resolved) return resolved;
-      }
+      const resolved = await resolveMatchedCloudAudioSourceUrl();
+      if (resolved) return resolved;
       logger.warn(
         'PlayerResolver',
         'Resolve audio url skipped because track hash is missing',
@@ -440,13 +438,11 @@ export const createResolver = (
       logger.warn('PlayerResolver', 'Fetch fallback with ppage_id failed:', error);
     }
 
-    if (settingStore.fallbackToCloudFileWhenCatalogUnavailable && !shouldUseCatalogSource) {
-      const resolved = await resolveMatchedCloudAudioSourceUrl();
-      if (resolved) return resolved;
-      logger.debug('PlayerResolver', 'Catalog source unavailable, cloud fallback unavailable', {
-        track: summarizeSong(track),
-      });
-    }
+    const cloudFallback = await resolveMatchedCloudAudioSourceUrl();
+    if (cloudFallback) return cloudFallback;
+    logger.debug('PlayerResolver', 'Catalog source unavailable, cloud fallback unavailable', {
+      track: summarizeSong(track),
+    });
 
     return { url: '', quality: null, effect: 'none', loudness: null };
   };

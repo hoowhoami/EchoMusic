@@ -160,16 +160,6 @@ const handleRemoveImpulseResponse = (id: string) => {
     <div class="settings-divider"></div>
     <div class="settings-item">
       <div class="space-y-1">
-        <h3 class="font-semibold">曲库不可用时尝试云盘文件</h3>
-        <p class="text-sm text-text-secondary">
-          曲库音源无法播放时，尝试匹配并使用当前歌曲的云盘文件
-        </p>
-      </div>
-      <Switch v-model="settingStore.fallbackToCloudFileWhenCatalogUnavailable" />
-    </div>
-    <div class="settings-divider"></div>
-    <div class="settings-item">
-      <div class="space-y-1">
         <h3 class="font-semibold">无缝播放</h3>
         <p class="text-sm text-text-secondary">提前准备下一首，减少歌曲衔接时的停顿</p>
       </div>
