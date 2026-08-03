@@ -466,8 +466,11 @@ export const registerSettingsHandlers = ({ getMainWindow, playerRef }: IpcContex
   autoUpdater.on('error', (error) => {
     log.error('[Updater] Error:', error);
     const message = error?.message || '更新失败，请稍后重试。';
+    // 用户主动取消下载导致的错误，静默忽略（token 已被清空，state 已是 idle）
+    if (!downloadCancellationToken && downloadState.status === 'idle') return;
     // 区分检查阶段与下载阶段的错误，避免下载出错时弹窗被「检查更新失败」覆盖
     if (downloadState.status === 'downloading' || downloadState.status === 'installing') {
+      downloadCancellationToken = null;
       if (downloadState.status === 'installing') {
         clearUpdateInstallExitTimeout();
         clearUpdateInstallQuitRequested();
