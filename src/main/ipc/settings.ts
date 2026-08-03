@@ -4,7 +4,7 @@ import log from 'electron-log';
 import fs from 'fs';
 import { execFile } from 'child_process';
 import { dirname, extname, join, resolve, sep, basename } from 'path';
-import { autoUpdater } from 'electron-updater';
+import { autoUpdater, CancellationToken } from 'electron-updater';
 import { getFonts } from 'font-list';
 import { coerce as semverCoerce, gt as semverGt, valid as semverValid } from 'semver';
 import type {
@@ -361,6 +361,7 @@ export const registerSettingsHandlers = ({ getMainWindow, playerRef }: IpcContex
   // 更新状态的单一可信来源（供渲染层在重新打开弹窗时恢复进度）
   let lastCheckResult: UpdateCheckResult | null = null;
   let downloadState: UpdateDownloadResult = { status: 'idle' };
+  let downloadCancellationToken: CancellationToken | null = null;
   let updateInstallExitTimeout: ReturnType<typeof setTimeout> | null = null;
 
   const clearUpdateInstallExitTimeout = () => {
@@ -497,6 +498,7 @@ export const registerSettingsHandlers = ({ getMainWindow, playerRef }: IpcContex
   });
 
   autoUpdater.on('update-downloaded', () => {
+    downloadCancellationToken = null;
     downloadState = { status: 'downloaded' };
     sendToRenderer('update-download-status', downloadState);
   });
@@ -893,6 +895,15 @@ export const registerSettingsHandlers = ({ getMainWindow, playerRef }: IpcContex
     download: downloadState,
   }));
 
+  ipcRegistry.registerListener('update:cancel-download', () => {
+    if (downloadCancellationToken) {
+      downloadCancellationToken.cancel();
+      downloadCancellationToken = null;
+    }
+    downloadState = { status: 'idle' };
+    sendToRenderer('update-download-status', downloadState);
+  });
+
   ipcRegistry.registerListener('update:download', () => {
     // 防重入：正在下载或已下载完成时忽略，仅回传当前状态
     if (
@@ -908,7 +919,10 @@ export const registerSettingsHandlers = ({ getMainWindow, playerRef }: IpcContex
       progress: { percent: 0, bytesPerSecond: 0, transferred: 0, total: 0 },
     };
     sendToRenderer('update-download-status', downloadState);
-    autoUpdater.downloadUpdate().catch((error) => {
+    downloadCancellationToken = new CancellationToken();
+    autoUpdater.downloadUpdate(downloadCancellationToken).catch((error) => {
+      if (!downloadCancellationToken) return;
+      downloadCancellationToken = null;
       log.error('[Updater] Download failed:', error);
       downloadState = {
         status: 'error',

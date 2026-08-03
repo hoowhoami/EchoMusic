@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router';
 import { getSearchSuggest, getSearchDefault } from '@/api/search';
 import { useSettingStore } from '@/stores/setting';
 import { useUpdateStore } from '@/stores/update';
+import { useImportTaskStore } from '@/stores/importTask';
 import { storeToRefs } from 'pinia';
 import Button from '@/components/ui/Button.vue';
 import Scrollbar from '@/components/ui/Scrollbar.vue';
@@ -22,6 +23,7 @@ import {
   iconPictureInPicture,
   iconClipboardList,
   iconCloudDownload,
+  iconPlaylistAdd,
 } from '@/icons';
 
 const route = useRoute();
@@ -72,15 +74,38 @@ const {
   isChecking,
 } = storeToRefs(updateStore);
 
+// 导入任务
+const importTaskStore = useImportTaskStore();
+
 const hasActiveTask = computed(() => {
   return (
     isChecking.value ||
     downloadStatus.value === 'downloading' ||
     downloadStatus.value === 'downloaded' ||
     downloadStatus.value === 'installing' ||
-    downloadStatus.value === 'error'
+    downloadStatus.value === 'error' ||
+    importTaskStore.isActive ||
+    importTaskStore.status === 'completed'
   );
 });
+
+const handleAbortImport = () => {
+  importTaskStore.requestAbort();
+};
+
+const handleDismissImport = () => {
+  importTaskStore.dismiss();
+};
+
+const handleOpenUpdateDialog = () => {
+  updateStore.dialogOpen = true;
+  taskPanelOpen.value = false;
+};
+
+const handleOpenImportDetail = () => {
+  importTaskStore.requestOpen();
+  taskPanelOpen.value = false;
+};
 
 const handleRetryDownload = () => {
   updateStore.download();
@@ -88,6 +113,10 @@ const handleRetryDownload = () => {
 
 const handleInstallUpdate = () => {
   void updateStore.install();
+};
+
+const handleCancelUpdateDownload = () => {
+  updateStore.cancelDownload();
 };
 
 const updateNavState = () => {
@@ -583,39 +612,89 @@ onUnmounted(() => {
     >
       空空如也~
     </div>
-    <div v-else class="task-item">
-      <div class="task-item-header">
-        <Icon :icon="iconCloudDownload" width="16" height="16" class="task-item-icon" />
-        <span class="task-item-name">更新 EchoMusic</span>
-        <span class="task-item-status">
-          <template v-if="isChecking">检查中…</template>
-          <template v-else-if="downloadStatus === 'downloading'">{{ downloadPercent }}%</template>
-          <template v-else-if="downloadStatus === 'downloaded'">下载完成</template>
-          <template v-else-if="downloadStatus === 'installing'">安装中…</template>
-          <template v-else-if="downloadStatus === 'error'">失败</template>
-        </span>
-      </div>
+    <div v-else class="flex flex-col gap-3">
+      <!-- 更新任务 -->
       <div
-        v-if="downloadStatus === 'downloading' || downloadStatus === 'installing'"
-        class="task-item-progress"
+        v-if="isChecking || downloadStatus === 'downloading' || downloadStatus === 'downloaded' || downloadStatus === 'installing' || downloadStatus === 'error'"
+        class="task-item"
       >
+        <div class="task-item-header">
+          <Icon :icon="iconCloudDownload" width="16" height="16" class="task-item-icon" />
+          <span class="task-item-name">更新 EchoMusic</span>
+          <span class="task-item-status">
+            <template v-if="isChecking">检查中…</template>
+            <template v-else-if="downloadStatus === 'downloading'">{{ downloadPercent }}%</template>
+            <template v-else-if="downloadStatus === 'downloaded'">下载完成</template>
+            <template v-else-if="downloadStatus === 'installing'">安装中…</template>
+            <template v-else-if="downloadStatus === 'error'">失败</template>
+          </span>
+        </div>
         <div
-          class="task-item-progress-bar"
-          :style="{ width: `${downloadStatus === 'installing' ? 100 : downloadPercent}%` }"
-        />
+          v-if="downloadStatus === 'downloading' || downloadStatus === 'installing'"
+          class="task-item-progress"
+        >
+          <div
+            class="task-item-progress-bar"
+            :style="{ width: `${downloadStatus === 'installing' ? 100 : downloadPercent}%` }"
+          />
+        </div>
+        <div
+          v-if="downloadStatus === 'error'"
+          class="task-item-error"
+        >
+          <span class="task-item-error-text">{{ downloadError || '未知错误' }}</span>
+          <Button variant="ghost" size="xs" @click="handleOpenUpdateDialog">详情</Button>
+          <Button variant="ghost" size="xs" @click="handleRetryDownload">重试</Button>
+        </div>
+        <div
+          v-if="downloadStatus === 'downloading'"
+          class="task-item-actions"
+        >
+          <Button variant="ghost" size="xs" @click="handleOpenUpdateDialog">查看详情</Button>
+          <Button variant="ghost" size="xs" @click="handleCancelUpdateDownload">中止</Button>
+        </div>
+        <div
+          v-if="downloadStatus === 'downloaded'"
+          class="task-item-actions"
+        >
+          <Button variant="ghost" size="xs" @click="handleOpenUpdateDialog">查看详情</Button>
+          <Button variant="primary" size="xs" @click="handleInstallUpdate">立即安装</Button>
+        </div>
       </div>
+
+      <!-- 导入歌单任务 -->
       <div
-        v-if="downloadStatus === 'error'"
-        class="task-item-error"
+        v-if="importTaskStore.isActive || importTaskStore.status === 'completed'"
+        class="task-item"
       >
-        <span class="task-item-error-text">{{ downloadError || '未知错误' }}</span>
-        <Button variant="ghost" size="xs" @click="handleRetryDownload">重试</Button>
-      </div>
-      <div
-        v-if="downloadStatus === 'downloaded'"
-        class="task-item-actions"
-      >
-        <Button variant="primary" size="xs" @click="handleInstallUpdate">立即安装</Button>
+        <div class="task-item-header">
+          <Icon :icon="iconPlaylistAdd" width="16" height="16" class="task-item-icon" />
+          <span class="task-item-name">导入歌单 · {{ importTaskStore.playlistName || '未知歌单' }}</span>
+          <span class="task-item-status">{{ importTaskStore.statusLabel }}</span>
+        </div>
+        <div
+          v-if="importTaskStore.isActive"
+          class="task-item-progress"
+        >
+          <div
+            class="task-item-progress-bar"
+            :style="{ width: `${importTaskStore.percent}%` }"
+          />
+        </div>
+        <div
+          v-if="importTaskStore.isActive"
+          class="task-item-actions"
+        >
+          <Button variant="ghost" size="xs" @click="handleOpenImportDetail">查看详情</Button>
+          <Button variant="ghost" size="xs" @click="handleAbortImport">中止</Button>
+        </div>
+        <div
+          v-if="importTaskStore.status === 'completed'"
+          class="task-item-actions"
+        >
+          <Button variant="ghost" size="xs" @click="handleOpenImportDetail">查看结果</Button>
+          <Button variant="ghost" size="xs" @click="handleDismissImport">关闭</Button>
+        </div>
       </div>
     </div>
   </Dialog>
@@ -914,7 +993,7 @@ onUnmounted(() => {
 }
 
 :global(.dialog-content.task-panel-dialog) {
-  width: 340px;
+  width: 420px;
   max-width: calc(100vw - 48px);
 }
 
@@ -923,11 +1002,11 @@ onUnmounted(() => {
 }
 
 :global(.dialog-content.task-panel-dialog[data-state='closed']) {
-  animation: task-panel-slide-out 0.3s cubic-bezier(0.4, 0, 1, 1) forwards;
+  animation: task-panel-slide-out 0.15s cubic-bezier(0.4, 0, 1, 1) forwards;
 }
 
 :global(.dialog-overlay.task-panel-overlay[data-state='closed']) {
-  transition-delay: 0.25s;
+  transition-delay: 0.12s;
 }
 
 @keyframes task-panel-slide-in {

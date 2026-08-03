@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
+import { computed, ref, watch, nextTick } from 'vue';
 import { useRouter } from 'vue-router';
 import { useVModel, useVirtualList } from '@vueuse/core';
 import { Icon } from '@iconify/vue';
@@ -27,6 +27,8 @@ import { mapPlaylistMeta } from '@/utils/mappers';
 import { usePlaylistStore } from '@/stores/playlist';
 import { useUserStore } from '@/stores/user';
 import { useToastStore } from '@/stores/toast';
+import { useImportTaskStore } from '@/stores/importTask';
+import { useSettingStore } from '@/stores/setting';
 import type { ExternalPlaylist, ExternalProviderId } from '../../../shared/external';
 import type { PlaylistMeta } from '@/models/playlist';
 
@@ -40,6 +42,8 @@ const open = useVModel(props, 'open', emit, { defaultValue: false });
 const playlistStore = usePlaylistStore();
 const userStore = useUserStore();
 const toastStore = useToastStore();
+const importTaskStore = useImportTaskStore();
+const settingStore = useSettingStore();
 const router = useRouter();
 
 type Step = 'input' | 'preview' | 'progress' | 'kugou-native';
@@ -174,6 +178,12 @@ const isImporting = ref(false);
 const abortFlag = ref(false);
 const summary = ref<ImportSummary | null>(null);
 
+// 后台导入确认弹窗
+const showBackgroundConfirm = ref(false);
+const neverShowBackgroundConfirm = ref(false);
+// 保存目标歌单名，供转入后台时注册到任务面板
+const backgroundTargetName = ref('');
+
 const reset = () => {
   step.value = 'input';
   inputText.value = '';
@@ -202,9 +212,60 @@ const reset = () => {
 
 watch(open, (v) => {
   if (!v) {
+    // 导入进行中：拦截关闭，弹出后台运行确认（除非已 dismiss）
+    if (step.value === 'progress' && isImporting.value) {
+      if (settingStore.importBackgroundConfirmDismissed) {
+        step.value = 'input';
+        return;
+      }
+      showBackgroundConfirm.value = true;
+      // 同步回弹，Vue 批量更新后不会渲染关闭态
+      open.value = true;
+      return;
+    }
     window.setTimeout(reset, 200);
+  } else {
+    // 重开时若后台有活跃导入任务，跳到进度页
+    if (importTaskStore.status === 'running') {
+      resumeFromStore();
+    }
   }
 });
+
+const resumeFromStore = () => {
+  step.value = 'progress';
+  progressItems.value = importTaskStore.items;
+  progressDone.value = importTaskStore.done;
+  progressTotal.value = importTaskStore.total;
+  isImporting.value = true;
+  abortFlag.value = false;
+  summary.value = null;
+  // 重新桥接，弹窗内点中止可以中断后台导入
+  importTaskStore.onAbort = () => {
+    abortFlag.value = true;
+  };
+};
+
+const enterBackgroundMode = () => {
+  importTaskStore.enterBackground(backgroundTargetName.value, () => {
+    abortFlag.value = true;
+  });
+};
+
+const confirmBackgroundImport = () => {
+  showBackgroundConfirm.value = false;
+  if (neverShowBackgroundConfirm.value) {
+    settingStore.importBackgroundConfirmDismissed = true;
+  }
+  enterBackgroundMode();
+  // 先把 step 切走，避免 watch(open) 再次拦截关闭
+  step.value = 'input';
+  open.value = false;
+};
+
+const cancelBackgroundImport = () => {
+  showBackgroundConfirm.value = false;
+};
 
 const handleResolve = async () => {
   const input = inputText.value.trim();
@@ -358,6 +419,12 @@ const handleStartImport = async (duplicateConfirmed = false) => {
   abortFlag.value = false;
   summary.value = null;
 
+  // 保存目标歌单名，供转入后台时注册到任务面板
+  backgroundTargetName.value =
+    target.value === 'new'
+      ? newPlaylistName.value.trim()
+      : existingPlaylistOptions.value.find((o) => o.value === existingListId.value)?.label || '';
+
   try {
     const result = await runImport(tracks, listId, {
       shouldAbort: () => abortFlag.value,
@@ -366,9 +433,18 @@ const handleStartImport = async (duplicateConfirmed = false) => {
         progressTotal.value = total;
         const idx = progressItems.value.findIndex((it) => it.external === item.external);
         if (idx >= 0) progressItems.value[idx] = { ...item };
+        importTaskStore.updateProgress(done, total, item);
       },
     });
     summary.value = result;
+    // 只有转入后台的任务才更新 store；前台任务弹窗内自己展示结果
+    if (importTaskStore.status === 'running') {
+      if (abortFlag.value) {
+        importTaskStore.dismiss();
+      } else {
+        importTaskStore.complete(result);
+      }
+    }
     if (result.success > 0) {
       toastStore.success(`导入完成：成功 ${result.success} / ${result.total}`);
       await playlistStore.fetchUserPlaylists();
@@ -386,6 +462,12 @@ const handleStartImport = async (duplicateConfirmed = false) => {
 const handleAbort = () => {
   if (!isImporting.value) return;
   abortFlag.value = true;
+};
+
+const handleBackgroundRun = () => {
+  enterBackgroundMode();
+  step.value = 'input';
+  open.value = false;
 };
 
 const handleClose = () => {
@@ -864,10 +946,59 @@ const statusLabel = (status: ImportItemResult['status']): string => {
         <Button v-if="isImporting" variant="secondary" size="sm" type="button" @click="handleAbort">
           中止
         </Button>
+        <Button
+          v-if="isImporting"
+          variant="primary"
+          size="sm"
+          type="button"
+          @click="handleBackgroundRun"
+        >
+          后台运行
+        </Button>
         <Button v-else variant="primary" size="sm" type="button" @click="handleClose">
           完成
         </Button>
       </template>
+    </template>
+  </Dialog>
+
+  <!-- 后台导入确认弹窗 -->
+  <Dialog
+    v-model:open="showBackgroundConfirm"
+    content-class="background-confirm-dialog"
+    overlay-class="background-confirm-overlay"
+    :close-on-escape="false"
+    :close-on-interact-outside="false"
+  >
+    <template #title>
+      <div class="flex items-center gap-2">
+        <Icon :icon="iconPlaylistAdd" width="18" height="18" class="text-primary" />
+        <span>导入将在后台继续</span>
+      </div>
+    </template>
+    <div class="flex flex-col gap-4 py-1">
+      <p class="text-[13px] text-text-secondary leading-relaxed">
+        关闭此弹窗不会中断导入，你可以在标题栏「当前任务」面板中查看进度。
+      </p>
+      <label class="flex items-center gap-2 cursor-pointer select-none">
+        <CheckboxRoot
+          v-model:model-value="neverShowBackgroundConfirm"
+          class="w-4 h-4 rounded border border-[var(--border-main)] flex items-center justify-center data-[state=checked]:bg-[var(--color-primary)] data-[state=checked]:border-[var(--color-primary)]"
+        >
+          <CheckboxIndicator class="text-white">
+            <Icon :icon="iconCheckMark" width="12" height="12" />
+          </CheckboxIndicator>
+        </CheckboxRoot>
+        <span class="text-[12px] text-text-secondary">以后不再提醒</span>
+      </label>
+    </div>
+    <template #footer>
+      <Button variant="ghost" size="sm" type="button" @click="cancelBackgroundImport">
+        留在本页
+      </Button>
+      <Button variant="primary" size="sm" @click="confirmBackgroundImport">
+        我知道了
+      </Button>
     </template>
   </Dialog>
 </template>
@@ -1250,6 +1381,39 @@ const statusLabel = (status: ImportItemResult['status']): string => {
 }
 
 :global(.dialog-overlay.duplicate-overlay) {
+  z-index: 1420;
+}
+
+:global(.dialog-content.background-confirm-dialog) {
+  width: 400px;
+  max-width: calc(100vw - 48px);
+  z-index: 1430;
+}
+
+:global(.dialog-content.background-confirm-dialog[data-state='open']) {
+  animation: background-confirm-slide-in 1s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+:global(.dialog-content.background-confirm-dialog[data-state='closed']) {
+  opacity: 0;
+  transform: translate(-50%, -65%);
+  transition:
+    opacity 0.3s ease-in,
+    transform 0.3s ease-in;
+}
+
+@keyframes background-confirm-slide-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -65%);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -50%);
+  }
+}
+
+:global(.dialog-overlay.background-confirm-overlay) {
   z-index: 1420;
 }
 </style>
