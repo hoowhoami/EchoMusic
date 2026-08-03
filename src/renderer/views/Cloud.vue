@@ -296,6 +296,38 @@ const confirmDeleteCloudSong = async () => {
   }
 };
 
+const handleBatchDeleteCloudSongs = async (
+  selectedSongs: Song[],
+  onProgress?: (done: number, total: number) => void,
+) => {
+  const removableSongs = selectedSongs.filter(canDeleteCloudSong);
+  const skippedCount = selectedSongs.length - removableSongs.length;
+  if (removableSongs.length === 0) {
+    throw new Error('缺少云盘文件标识，无法删除');
+  }
+
+  onProgress?.(0, selectedSongs.length);
+  await deleteCloudSongs(
+    removableSongs.map((song) => ({
+      cloudFileId: song.cloudFileId,
+      hash: song.hash,
+      albumAudioId: song.albumAudioId ?? song.mixSongId,
+    })),
+  );
+  onProgress?.(selectedSongs.length, selectedSongs.length);
+
+  const removedIds = new Set(removableSongs.map((song) => song.id));
+  songs.value = songs.value.filter((item) => !removedIds.has(item.id));
+  totalSongCount.value = Math.max(0, totalSongCount.value - removableSongs.length);
+
+  if (skippedCount > 0) {
+    toastStore.warning(`已从云盘删除 ${removableSongs.length} 首，${skippedCount} 首缺少文件标识`);
+  } else {
+    toastStore.actionCompleted(`已从云盘删除 ${removableSongs.length} 首`);
+  }
+  void loadCloud();
+};
+
 const cloudContextMenuItems = computed(() => [
   {
     id: 'delete-cloud-song',
@@ -409,7 +441,13 @@ onMounted(() => {
           </template>
         </SliverHeader>
 
-        <BatchActionDrawer v-model:open="showBatchDrawer" :songs="songs" source-id="cloud" />
+        <BatchActionDrawer
+          v-model:open="showBatchDrawer"
+          :songs="songs"
+          source-id="cloud"
+          remove-context="cloud"
+          :on-batch-remove="handleBatchDeleteCloudSongs"
+        />
 
         <CloudUploadDialog
           v-model:open="showUploadDialog"
