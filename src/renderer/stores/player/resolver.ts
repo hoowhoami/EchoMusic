@@ -233,6 +233,7 @@ export const createResolver = (
             })),
         quality: state.currentResolvedAudioQuality,
         effect: state.currentResolvedAudioEffect,
+        sourceKind: state.currentResolvedSourceKind,
         loudness: null,
       };
     }
@@ -257,6 +258,7 @@ export const createResolver = (
           urls: [cloudUrl],
           quality: source.quality ?? null,
           effect: 'none',
+          sourceKind: 'cloud',
           loudness: null,
         };
       } catch (error) {
@@ -275,7 +277,12 @@ export const createResolver = (
       effect: audioEffect,
       forceReload: Boolean(options?.forceReload),
     });
-    if (pluginResolved) return pluginResolved;
+    if (pluginResolved) {
+      return {
+        ...pluginResolved,
+        sourceKind: pluginResolved.sourceKind ?? 'plugin',
+      };
+    }
 
     if (track.source === 'cloud') {
       const cloudAudioSource =

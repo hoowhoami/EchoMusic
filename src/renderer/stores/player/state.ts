@@ -7,6 +7,7 @@ import type {
   PlaybackIntent,
   PlaybackNotice,
   PlaybackSource,
+  PlaybackSourceKind,
 } from './types';
 import { DEFAULT_PLAYER_VOLUME } from '../../../shared/playback';
 
@@ -54,6 +55,7 @@ export const createPlayerState = () => ({
   currentAudioCandidateIndex: -1,
   currentResolvedAudioQuality: null as AudioQualityValue | null,
   currentResolvedAudioEffect: 'none' as AudioEffectValue,
+  currentResolvedSourceKind: 'catalog' as PlaybackSourceKind,
   nativeTrackSeq: null as number | null,
   audioEffect: 'none' as AudioEffectValue,
   recentSeekIgnoreEnd: false,

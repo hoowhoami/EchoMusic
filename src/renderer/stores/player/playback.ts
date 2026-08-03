@@ -73,6 +73,7 @@ export const createPlaybackManager = (
       state.currentAudioCandidateIndex = -1;
       state.currentResolvedAudioQuality = null;
       state.currentResolvedAudioEffect = 'none';
+      state.currentResolvedSourceKind = 'catalog';
     }
     engine.updateMediaPlaybackState(buildStoppedPlaybackState(state));
   };
@@ -132,6 +133,7 @@ export const createPlaybackManager = (
     state.currentAudioCandidateIndex = currentIndex;
     state.currentResolvedAudioQuality = resolved.quality;
     state.currentResolvedAudioEffect = resolved.effect;
+    state.currentResolvedSourceKind = resolved.sourceKind ?? 'catalog';
     track.audioUrl = primarySource?.url ?? resolved.url;
   };
 
@@ -604,6 +606,7 @@ export const createPlaybackManager = (
     state.currentAudioCandidateIndex = -1;
     state.currentResolvedAudioQuality = null;
     state.currentResolvedAudioEffect = 'none';
+    state.currentResolvedSourceKind = 'catalog';
     state.nativeTrackSeq = null;
     state.currentTime = 0;
     state.currentTimeUpdatedAt = Date.now();
@@ -1099,6 +1102,7 @@ export const createPlaybackManager = (
     state.currentAudioCandidateIndex = -1;
     state.currentResolvedAudioQuality = null;
     state.currentResolvedAudioEffect = 'none';
+    state.currentResolvedSourceKind = 'catalog';
     state.currentAudioQualityOverride = null;
     state.audioEffect = 'none';
     state.nativeTrackSeq = null;

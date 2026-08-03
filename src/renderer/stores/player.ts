@@ -192,6 +192,7 @@ export const usePlayerStore = defineStore(
       state.currentAudioCandidateIndex = 0;
       state.currentResolvedAudioQuality = resolved.quality;
       state.currentResolvedAudioEffect = resolved.effect;
+      state.currentResolvedSourceKind = resolved.sourceKind ?? 'catalog';
       track.audioUrl = playbackSource.url;
       const savedDuration = state.duration;
       await engine.setSource(playbackSource);
@@ -481,6 +482,7 @@ export const usePlayerStore = defineStore(
       state.nativeTrackSeq = null;
       state.currentResolvedAudioQuality = null;
       state.currentResolvedAudioEffect = 'none';
+      state.currentResolvedSourceKind = 'catalog';
       state.currentAudioQualityOverride = null;
       state.historyUploadCommitted = false;
       state.historyUploadTrackId = null;

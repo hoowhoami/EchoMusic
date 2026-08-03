@@ -1,16 +1,20 @@
 <script setup lang="ts">
+import { computed } from 'vue';
 import Popover from '@/components/ui/Popover.vue';
 import Tag from '@/components/ui/Tag.vue';
 import Badge from '@/components/ui/Badge.vue';
 import AudioWaveIcon from '@/components/ui/AudioWaveIcon.vue';
 import Button from '@/components/ui/Button.vue';
 import { usePlayerControls } from '@/composables/usePlayerControls';
+import { Icon } from '@iconify/vue';
+import { iconCloud } from '@/icons';
 
 const {
   player,
   settingStore,
   currentTrack,
   effectiveAudioQuality,
+  isResolvedCloudSource,
   isAudioQualitySelectionDisabled,
   isAudioQualityDisabled,
   audioQualityButtonBadge,
@@ -25,17 +29,34 @@ interface Props {
   side?: 'top' | 'bottom';
 }
 
-withDefaults(defineProps<Props>(), {
+const props = withDefaults(defineProps<Props>(), {
   variant: 'bar',
   side: 'top',
+});
+
+const buttonClass = computed(() => {
+  const activeClass =
+    props.variant === 'lyric'
+      ? 'text-black dark:text-white hover:scale-110 active:scale-90'
+      : 'text-primary hover:scale-110 active:scale-90';
+  const mutedClass =
+    props.variant === 'lyric'
+      ? 'text-black/40 dark:text-white/40 hover:scale-110 active:scale-90'
+      : 'text-text-main/50 hover:text-primary hover:scale-110 active:scale-90';
+
+  if (isResolvedCloudSource.value) return activeClass;
+  if (!isAudioQualitySelectionDisabled.value && player.currentAudioQualityOverride !== null) {
+    return activeClass;
+  }
+  return mutedClass;
 });
 </script>
 
 <template>
   <Popover
-    v-if="!isAudioQualitySelectionDisabled"
+    v-if="!isAudioQualitySelectionDisabled || isResolvedCloudSource"
     trigger="hover"
-    :side="side"
+    :side="props.side"
     align="center"
     :side-offset="8"
     :show-arrow="true"
@@ -47,19 +68,18 @@ withDefaults(defineProps<Props>(), {
         size="none"
         type="button"
         class="p-2 transition-all"
-        :class="
-          !isAudioQualitySelectionDisabled && player.currentAudioQualityOverride !== null
-            ? variant === 'lyric'
-              ? 'text-black dark:text-white hover:scale-110 active:scale-90'
-              : 'text-primary hover:scale-110 active:scale-90'
-            : variant === 'lyric'
-              ? 'text-black/40 dark:text-white/40 hover:scale-110 active:scale-90'
-              : 'text-text-main/50 hover:text-primary hover:scale-110 active:scale-90'
-        "
-        title="音质"
+        :class="buttonClass"
+        :title="isResolvedCloudSource ? '当前使用云盘文件' : '音质'"
       >
         <span class="relative inline-flex w-5 h-5 items-center justify-center">
-          <AudioWaveIcon class="w-5 h-5" style="transform: translateY(3px)" />
+          <Icon
+            v-if="isResolvedCloudSource"
+            :icon="iconCloud"
+            width="20"
+            height="20"
+            style="transform: translateY(3px)"
+          />
+          <AudioWaveIcon v-else class="w-5 h-5" style="transform: translateY(3px)" />
           <Badge
             v-if="currentTrack && settingStore.showAudioQualityBadge && audioQualityButtonBadge"
             :count="audioQualityButtonBadge"
@@ -70,47 +90,55 @@ withDefaults(defineProps<Props>(), {
       </Button>
     </template>
     <div class="space-y-1">
-      <div class="pm-title">音质选择</div>
-      <button
-        v-for="q in ['128', '320', 'flac', 'high', 'super'] as const"
-        :key="q"
-        type="button"
-        class="pm-item"
-        :class="{
-          'is-active': !isAudioQualitySelectionDisabled && effectiveAudioQuality === q,
-          'is-disabled': isAudioQualityDisabled(q),
-        }"
-        :disabled="isAudioQualityDisabled(q)"
-        @click="setAudioQuality(q)"
-      >
-        <span class="pm-label">{{
-          q === '128'
-            ? '标准'
-            : q === '320'
-              ? '高品质'
-              : q === 'flac'
-                ? '无损'
-                : q === 'high'
-                  ? 'Hi-Res'
-                  : '臻品音质'
-        }}</span>
-        <Tag class="pm-tag" :color="getAudioQualityTagColor(q)">{{
-          q === '128'
-            ? 'SD'
-            : q === '320'
-              ? 'HQ'
-              : q === 'flac'
-                ? 'SQ'
-                : q === 'high'
-                  ? 'HR'
-                  : 'DSD'
-        }}</Tag>
-        <span
-          class="pm-check"
-          :class="{ 'is-visible': !isAudioQualitySelectionDisabled && effectiveAudioQuality === q }"
-          >✓</span
+      <template v-if="isResolvedCloudSource">
+        <div class="pm-title">云盘文件</div>
+        <div class="pm-description">当前正在播放用户云盘中的文件</div>
+      </template>
+      <template v-else>
+        <div class="pm-title">音质选择</div>
+        <button
+          v-for="q in ['128', '320', 'flac', 'high', 'super'] as const"
+          :key="q"
+          type="button"
+          class="pm-item"
+          :class="{
+            'is-active': !isAudioQualitySelectionDisabled && effectiveAudioQuality === q,
+            'is-disabled': isAudioQualityDisabled(q),
+          }"
+          :disabled="isAudioQualityDisabled(q)"
+          @click="setAudioQuality(q)"
         >
-      </button>
+          <span class="pm-label">{{
+            q === '128'
+              ? '标准'
+              : q === '320'
+                ? '高品质'
+                : q === 'flac'
+                  ? '无损'
+                  : q === 'high'
+                    ? 'Hi-Res'
+                    : '臻品音质'
+          }}</span>
+          <Tag class="pm-tag" :color="getAudioQualityTagColor(q)">{{
+            q === '128'
+              ? 'SD'
+              : q === '320'
+                ? 'HQ'
+                : q === 'flac'
+                  ? 'SQ'
+                  : q === 'high'
+                    ? 'HR'
+                    : 'DSD'
+          }}</Tag>
+          <span
+            class="pm-check"
+            :class="{
+              'is-visible': !isAudioQualitySelectionDisabled && effectiveAudioQuality === q,
+            }"
+            >✓</span
+          >
+        </button>
+      </template>
     </div>
   </Popover>
 </template>
@@ -128,6 +156,14 @@ withDefaults(defineProps<Props>(), {
   font-weight: 700;
   opacity: 0.5;
   padding: 0 10px 4px 10px;
+}
+
+.pm-description {
+  padding: 0 10px 2px;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.5;
+  color: var(--color-text-secondary);
 }
 
 .pm-item {
