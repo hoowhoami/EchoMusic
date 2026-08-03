@@ -3,9 +3,12 @@ import { computed, watch, ref, onMounted, onUnmounted, nextTick } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { getSearchSuggest, getSearchDefault } from '@/api/search';
 import { useSettingStore } from '@/stores/setting';
+import { useUpdateStore } from '@/stores/update';
+import { storeToRefs } from 'pinia';
 import Button from '@/components/ui/Button.vue';
 import Scrollbar from '@/components/ui/Scrollbar.vue';
 import RefreshIcon from '@/components/ui/RefreshIcon.vue';
+import Dialog from '@/components/ui/Dialog.vue';
 import {
   iconChevronLeft,
   iconChevronRight,
@@ -17,12 +20,15 @@ import {
   iconFullscreen,
   iconPanelLeft,
   iconPictureInPicture,
+  iconClipboardList,
+  iconCloudDownload,
 } from '@/icons';
 
 const route = useRoute();
 const router = useRouter();
 const isMac = computed(() => window.electron.platform === 'darwin');
 const settingStore = useSettingStore();
+const taskPanelOpen = ref(false);
 const navStartClass = computed(() =>
   isMac.value && !settingStore.sidebarCollapseEnabled ? 'pl-6' : 'pl-4',
 );
@@ -52,6 +58,37 @@ const defaultKeyword = ref('');
 const defaultAds = ref<{ mainTitle: string; subTitle: string; title: string }[]>([]);
 let suggestTimer: number | null = null;
 let collapseTimer: number | null = null;
+
+const toggleTaskPanel = () => {
+  taskPanelOpen.value = !taskPanelOpen.value;
+};
+
+// 更新任务
+const updateStore = useUpdateStore();
+const {
+  downloadStatus,
+  downloadPercent,
+  downloadError,
+  isChecking,
+} = storeToRefs(updateStore);
+
+const hasActiveTask = computed(() => {
+  return (
+    isChecking.value ||
+    downloadStatus.value === 'downloading' ||
+    downloadStatus.value === 'downloaded' ||
+    downloadStatus.value === 'installing' ||
+    downloadStatus.value === 'error'
+  );
+});
+
+const handleRetryDownload = () => {
+  updateStore.download();
+};
+
+const handleInstallUpdate = () => {
+  void updateStore.install();
+};
 
 const updateNavState = () => {
   if (typeof window === 'undefined') return;
@@ -321,6 +358,26 @@ onUnmounted(() => {
         />
       </Button>
 
+      <!-- 当前任务 -->
+      <Button
+        variant="unstyled"
+        size="none"
+        class="nav-btn group relative"
+        title="当前任务"
+        @click="toggleTaskPanel"
+      >
+        <Icon
+          :icon="iconClipboardList"
+          width="18"
+          height="18"
+          class="text-text-main opacity-60 group-hover:opacity-100 transition-opacity"
+        />
+        <span
+          v-if="hasActiveTask"
+          class="task-badge"
+        />
+      </Button>
+
       <!-- 听歌识曲 -->
       <Button
         variant="unstyled"
@@ -511,6 +568,57 @@ onUnmounted(() => {
       </template>
     </div>
   </header>
+
+  <!-- 当前任务弹窗 -->
+  <Dialog
+    v-model:open="taskPanelOpen"
+    content-class="task-panel-dialog"
+    overlay-class="task-panel-overlay"
+    show-close
+  >
+    <template #title>当前任务</template>
+    <div
+      v-if="!hasActiveTask"
+      class="py-2 text-[13px] text-text-secondary text-center"
+    >
+      空空如也~
+    </div>
+    <div v-else class="task-item">
+      <div class="task-item-header">
+        <Icon :icon="iconCloudDownload" width="16" height="16" class="task-item-icon" />
+        <span class="task-item-name">更新 EchoMusic</span>
+        <span class="task-item-status">
+          <template v-if="isChecking">检查中…</template>
+          <template v-else-if="downloadStatus === 'downloading'">{{ downloadPercent }}%</template>
+          <template v-else-if="downloadStatus === 'downloaded'">下载完成</template>
+          <template v-else-if="downloadStatus === 'installing'">安装中…</template>
+          <template v-else-if="downloadStatus === 'error'">失败</template>
+        </span>
+      </div>
+      <div
+        v-if="downloadStatus === 'downloading' || downloadStatus === 'installing'"
+        class="task-item-progress"
+      >
+        <div
+          class="task-item-progress-bar"
+          :style="{ width: `${downloadStatus === 'installing' ? 100 : downloadPercent}%` }"
+        />
+      </div>
+      <div
+        v-if="downloadStatus === 'error'"
+        class="task-item-error"
+      >
+        <span class="task-item-error-text">{{ downloadError || '未知错误' }}</span>
+        <Button variant="ghost" size="xs" @click="handleRetryDownload">重试</Button>
+      </div>
+      <div
+        v-if="downloadStatus === 'downloaded'"
+        class="task-item-actions"
+      >
+        <Button variant="primary" size="xs" @click="handleInstallUpdate">立即安装</Button>
+      </div>
+    </div>
+  </Dialog>
 </template>
 
 <style scoped>
@@ -792,5 +900,125 @@ onUnmounted(() => {
   opacity: 0.45;
   flex-shrink: 1;
   min-width: 0;
+}
+
+.task-badge {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--color-primary);
+  box-shadow: 0 0 4px color-mix(in srgb, var(--color-primary) 60%, transparent);
+}
+
+:global(.dialog-content.task-panel-dialog) {
+  width: 340px;
+  max-width: calc(100vw - 48px);
+}
+
+:global(.dialog-content.task-panel-dialog[data-state='open']) {
+  animation: task-panel-slide-in 1s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+:global(.dialog-content.task-panel-dialog[data-state='closed']) {
+  animation: task-panel-slide-out 0.3s cubic-bezier(0.4, 0, 1, 1) forwards;
+}
+
+:global(.dialog-overlay.task-panel-overlay[data-state='closed']) {
+  transition-delay: 0.25s;
+}
+
+@keyframes task-panel-slide-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -65%);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -50%);
+  }
+}
+
+@keyframes task-panel-slide-out {
+  from {
+    opacity: 1;
+    transform: translate(-50%, -50%);
+  }
+  to {
+    opacity: 0;
+    transform: translate(-50%, -65%);
+  }
+}
+
+/* 任务项 */
+.task-item {
+  padding: 8px 0;
+}
+
+.task-item-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.task-item-icon {
+  flex-shrink: 0;
+  color: var(--color-primary);
+  opacity: 0.8;
+}
+
+.task-item-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-main);
+  flex: 1;
+  min-width: 0;
+}
+
+.task-item-status {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  flex-shrink: 0;
+}
+
+.task-item-progress {
+  margin-top: 8px;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--control-muted-bg);
+  overflow: hidden;
+}
+
+.task-item-progress-bar {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--color-primary);
+  transition: width 0.3s ease;
+}
+
+.task-item-error {
+  margin-top: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.task-item-error-text {
+  font-size: 11px;
+  color: var(--color-danger, #ef4444);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.task-item-actions {
+  margin-top: 8px;
+  display: flex;
+  justify-content: flex-end;
 }
 </style>
