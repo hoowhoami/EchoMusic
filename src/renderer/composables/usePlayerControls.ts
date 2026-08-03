@@ -148,6 +148,15 @@ export function usePlayerControls() {
       isCurrentTrackCloud.value ||
       Boolean(currentTrack.value?.cloudAudioSource?.hash),
   );
+  const catalogQualityLookupKey = computed(() => {
+    const track = currentTrack.value;
+    if (!track) return '';
+    const catalogHash =
+      track.source === 'cloud' ? (track.cloudAudioSource?.hashStd ?? '') : track.hash;
+    return catalogHash ? `${track.id}:${catalogHash}` : '';
+  });
+  const hasCatalogAudioSourceOption = computed(() => Boolean(catalogQualityLookupKey.value));
+  const isCatalogQualityLoading = ref(false);
   const isAudioEffectPresetSelectionDisabled = computed(() => isResolvedCloudSource.value);
   const effectiveAudioQuality = computed(() => {
     if (player.currentResolvedAudioQuality) return player.currentResolvedAudioQuality;
@@ -160,7 +169,13 @@ export function usePlayerControls() {
   });
 
   const isAudioQualityDisabled = (quality: AudioQualityValue) => {
-    if (hasCloudAudioSourceOption.value) return false;
+    if (hasCloudAudioSourceOption.value) {
+      const track = currentTrack.value;
+      if (!track || !catalogQualityLookupKey.value) return true;
+      if (quality === '128') return false;
+      if (isCatalogQualityLoading.value && (track.relateGoods?.length ?? 0) === 0) return true;
+      return !hasSongQuality(track, quality);
+    }
     if (quality === effectiveAudioQuality.value) return false;
     if (!currentTrack.value) return quality !== '128';
     return !hasSongQuality(currentTrack.value, quality);
@@ -197,6 +212,7 @@ export function usePlayerControls() {
   };
 
   const setAudioQuality = (quality: AudioQualityValue) => {
+    if (isAudioQualityDisabled(quality)) return;
     if (hasCloudAudioSourceOption.value) {
       player.preferCurrentTrackCatalogQuality(quality);
       return;
@@ -210,6 +226,39 @@ export function usePlayerControls() {
   const setCloudAudioSource = () => {
     if (!hasCloudAudioSourceOption.value) return;
     player.preferCurrentTrackCloudSource();
+  };
+
+  const ensureCurrentTrackCatalogQualities = async () => {
+    const track = currentTrack.value;
+    const lookupKey = catalogQualityLookupKey.value;
+    if (!track || !hasCloudAudioSourceOption.value || !lookupKey) return;
+    if ((track.relateGoods?.length ?? 0) > 0 || isCatalogQualityLoading.value) return;
+    isCatalogQualityLoading.value = true;
+    try {
+      const catalogHash =
+        track.source === 'cloud' ? (track.cloudAudioSource?.hashStd ?? '') : track.hash;
+      const probeTrack: Song = {
+        ...track,
+        source: undefined,
+        hash: catalogHash,
+      };
+      const relateGoods = await player.ensureTrackRelateGoods(probeTrack);
+      if (catalogQualityLookupKey.value !== lookupKey || relateGoods.length === 0) return;
+      track.relateGoods = relateGoods;
+      if (
+        player.currentTrackSnapshot &&
+        String(player.currentTrackSnapshot.id) === String(track.id)
+      ) {
+        player.currentTrackSnapshot = {
+          ...player.currentTrackSnapshot,
+          relateGoods,
+        };
+      }
+    } finally {
+      if (catalogQualityLookupKey.value === lookupKey) {
+        isCatalogQualityLoading.value = false;
+      }
+    }
   };
 
   const setAudioEffect = (effect: AudioEffectValue) => {
@@ -410,12 +459,15 @@ export function usePlayerControls() {
     effectiveAudioQuality,
     isResolvedCloudSource,
     hasCloudAudioSourceOption,
+    hasCatalogAudioSourceOption,
+    isCatalogQualityLoading,
     isAudioEffectPresetSelectionDisabled,
     isAudioQualityDisabled,
     audioQualityButtonBadge,
     audioEffectButtonBadge,
     currentAudioQualityBadgeColor,
     getAudioQualityTagColor,
+    ensureCurrentTrackCatalogQualities,
     setAudioQuality,
     setCloudAudioSource,
     setAudioEffect,

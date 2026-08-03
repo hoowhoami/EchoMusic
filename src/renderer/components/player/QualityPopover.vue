@@ -14,9 +14,12 @@ const {
   effectiveAudioQuality,
   isResolvedCloudSource,
   hasCloudAudioSourceOption,
+  hasCatalogAudioSourceOption,
+  isCatalogQualityLoading,
   isAudioQualityDisabled,
   audioQualityButtonBadge,
   getAudioQualityTagColor,
+  ensureCurrentTrackCatalogQualities,
   setAudioQuality,
   setCloudAudioSource,
 } = usePlayerControls();
@@ -66,6 +69,8 @@ const buttonClass = computed(() => {
         class="p-2 transition-all"
         :class="buttonClass"
         :title="isResolvedCloudSource ? '当前使用云盘文件' : '音质'"
+        @mouseenter="ensureCurrentTrackCatalogQualities"
+        @focus="ensureCurrentTrackCatalogQualities"
       >
         <span class="relative inline-flex w-5 h-5 items-center justify-center">
           <AudioWaveIcon class="w-5 h-5" style="transform: translateY(3px)" />
@@ -81,6 +86,12 @@ const buttonClass = computed(() => {
     <div class="space-y-1">
       <div class="pm-title">音质选择</div>
       <div v-if="isResolvedCloudSource" class="pm-hint">当前使用云盘文件播放</div>
+      <div v-if="hasCloudAudioSourceOption && isCatalogQualityLoading" class="pm-hint">
+        正在获取曲库音质
+      </div>
+      <div v-else-if="hasCloudAudioSourceOption && !hasCatalogAudioSourceOption" class="pm-hint">
+        暂无可切换的曲库音质
+      </div>
       <button
         v-if="hasCloudAudioSourceOption"
         type="button"
