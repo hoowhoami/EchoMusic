@@ -60,10 +60,22 @@ export function getSongPrivilegeLite(hash: string, albumId?: string | number) {
 /**
  * 获取云盘歌曲播放地址
  */
-export async function getCloudSongUrl(hash: string): Promise<string | null> {
+export async function getCloudSongUrl(
+  hash: string,
+  options?: {
+    cloudFileId?: string | number;
+    albumAudioId?: string | number;
+    audioId?: string | number;
+    name?: string;
+  },
+): Promise<string | null> {
   const res = await request.get('/user/cloud/url', {
     params: {
       hash,
+      ...(options?.cloudFileId ? { fileid: options.cloudFileId, kv_id: options.cloudFileId } : {}),
+      ...(options?.albumAudioId ? { album_audio_id: options.albumAudioId } : {}),
+      ...(options?.audioId ? { audio_id: options.audioId } : {}),
+      ...(options?.name ? { name: options.name } : {}),
     },
   });
   if (res && typeof res === 'object') {

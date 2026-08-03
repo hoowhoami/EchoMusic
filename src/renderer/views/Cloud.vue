@@ -36,6 +36,7 @@ import TabsTrigger from '@/components/ui/TabsTrigger.vue';
 import PageScrollContainer from '@/components/ui/PageScrollContainer.vue';
 import { useStickyTabsLayout } from '@/composables/useStickyTabsLayout';
 import { filterSongsByQuery, sortSongs } from '@/utils/songList';
+import { clearCloudAudioIndex, refreshCloudAudioIndex } from '@/services/cloudAudioIndex';
 
 const PAGE_SIZE = 100;
 
@@ -211,6 +212,7 @@ const loadCloud = async () => {
     if (songs.value.length > 0 && totalSongCount.value > songs.value.length) {
       void resolveAllCloudSongs(totalSongCount.value);
     }
+    void refreshCloudAudioIndex(true);
   } catch {
     songs.value = [];
     totalSongCount.value = 0;
@@ -358,6 +360,7 @@ watch(
       return;
     }
     resetCloudState();
+    clearCloudAudioIndex();
   },
 );
 

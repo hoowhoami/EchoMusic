@@ -160,6 +160,16 @@ const handleRemoveImpulseResponse = (id: string) => {
     <div class="settings-divider"></div>
     <div class="settings-item">
       <div class="space-y-1">
+        <h3 class="font-semibold">优先播放云盘文件</h3>
+        <p class="text-sm text-text-secondary">
+          当前歌曲存在匹配的云盘文件且未启用音效时优先使用云盘文件，不可用时自动回退曲库音源
+        </p>
+      </div>
+      <Switch v-model="settingStore.preferCloudFileWhenAvailable" />
+    </div>
+    <div class="settings-divider"></div>
+    <div class="settings-item">
+      <div class="space-y-1">
         <h3 class="font-semibold">无缝播放</h3>
         <p class="text-sm text-text-secondary">提前准备下一首，减少歌曲衔接时的停顿</p>
       </div>

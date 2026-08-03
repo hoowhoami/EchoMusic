@@ -1,5 +1,5 @@
 import { getCloudSongUrl, getSongClimax, getSongPrivilegeLite, getSongUrl } from '@/api/music';
-import type { Song, SongRelateGood } from '@/models/song';
+import type { CloudAudioSource, Song, SongRelateGood } from '@/models/song';
 import logger from '@/utils/logger';
 import {
   doesRelateGoodMatchQuality,
@@ -7,6 +7,7 @@ import {
   resolveEffectiveSongQuality,
 } from '@/utils/song';
 import { resolvePluginAudioSource } from '@/plugins/audioSource';
+import { getCloudAudioSourceForSong } from '@/services/cloudAudioIndex';
 import type { AudioQualityValue } from '../../types';
 import type { PlayerState } from './state';
 import {
@@ -240,6 +241,34 @@ export const createResolver = (
     const audioEffect = normalizeEffect(state.audioEffect);
     const compatibilityMode = settingStore.compatibilityMode ?? true;
 
+    const resolveCloudAudioSourceUrl = async (
+      source: CloudAudioSource,
+    ): Promise<ResolvedAudioSource | null> => {
+      try {
+        const cloudUrl = await getCloudSongUrl(source.hash, {
+          cloudFileId: source.cloudFileId,
+          albumAudioId: source.albumAudioId,
+          audioId: source.audioId,
+          name: source.name,
+        });
+        if (!cloudUrl) return null;
+        return {
+          url: cloudUrl,
+          urls: [cloudUrl],
+          quality: source.quality ?? null,
+          effect: 'none',
+          loudness: null,
+        };
+      } catch (error) {
+        logger.warn('PlayerResolver', 'Fetch cloud file url failed:', error, {
+          cloudFileId: source.cloudFileId,
+          hash: source.hash,
+          matchBy: source.matchBy,
+        });
+        return null;
+      }
+    };
+
     const pluginResolved = await resolvePluginAudioSource({
       track,
       quality: audioQuality,
@@ -248,6 +277,44 @@ export const createResolver = (
     });
     if (pluginResolved) return pluginResolved;
 
+    if (track.source === 'cloud') {
+      const cloudAudioSource =
+        track.cloudAudioSource ??
+        (track.hash
+          ? {
+              cloudFileId: track.cloudFileId,
+              hash: track.hash,
+              audioId: track.fileId,
+              albumAudioId: track.albumAudioId ?? track.mixSongId,
+              name: track.title || track.name,
+            }
+          : null);
+      if (cloudAudioSource) {
+        const resolved = await resolveCloudAudioSourceUrl(cloudAudioSource);
+        if (resolved) {
+          track.cloudAudioSource = cloudAudioSource;
+          return resolved;
+        }
+      }
+      return { url: '', quality: null, effect: 'none', loudness: null };
+    }
+
+    if (settingStore.preferCloudFileWhenAvailable && audioEffect === 'none') {
+      const cloudAudioSource = await getCloudAudioSourceForSong(track);
+      if (cloudAudioSource) {
+        const resolved = await resolveCloudAudioSourceUrl(cloudAudioSource);
+        if (resolved) {
+          track.cloudAudioSource = cloudAudioSource;
+          return resolved;
+        }
+        logger.debug('PlayerResolver', 'Preferred cloud file unavailable, fallback to catalog', {
+          track: summarizeSong(track),
+          cloudFileId: cloudAudioSource.cloudFileId,
+          matchBy: cloudAudioSource.matchBy,
+        });
+      }
+    }
+
     if (!track.hash) {
       logger.warn(
         'PlayerResolver',
@@ -255,16 +322,6 @@ export const createResolver = (
         summarizeSong(track),
       );
       return { url: '', quality: null, effect: 'none', loudness: null };
-    }
-
-    if (track.source === 'cloud') {
-      let cloudUrl: string | null = null;
-      try {
-        cloudUrl = await getCloudSongUrl(track.hash);
-      } catch (error) {
-        logger.error('PlayerResolver', 'Fetch cloud track audio url error:', error);
-      }
-      return { url: cloudUrl ?? '', quality: null, effect: 'none', loudness: null };
     }
 
     const relateGoods = await ensureTrackRelateGoods(track, { forceRefresh: true });

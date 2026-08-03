@@ -13,7 +13,9 @@ import { useThemeStore } from './stores/theme';
 import { usePlaylistStore } from './stores/playlist';
 import { useHistoryStore } from './stores/historyStore';
 import { useToastStore } from './stores/toast';
+import { useUserStore } from './stores/user';
 import { waitForSqlitePersistHydration } from './stores/sqlitePersist';
+import { clearCloudAudioIndex } from '@/services/cloudAudioIndex';
 import { initShortcutSync, syncGlobalShortcuts } from '@/utils/shortcuts';
 import { initDesktopLyricSync } from '@/desktopLyric/sync';
 import { initMiniPlayerSync } from '@/miniPlayer/sync';
@@ -44,6 +46,7 @@ const themeStore = useThemeStore();
 const playlistStore = usePlaylistStore();
 const historyStore = useHistoryStore();
 const toastStore = useToastStore();
+const userStore = useUserStore();
 let disposeShortcuts: (() => void) | null = null;
 let disposeDesktopLyricSync: (() => void) | null = null;
 let disposeMiniPlayerSync: (() => void) | null = null;
@@ -322,6 +325,12 @@ watch(
     if (isMiniPlayerRoute.value) return;
     settings.syncPreventSleep(isPlaying);
     syncTrayPlayback();
+  },
+);
+watch(
+  () => userStore.isLoggedIn,
+  (loggedIn) => {
+    if (!loggedIn) clearCloudAudioIndex();
   },
 );
 watch(

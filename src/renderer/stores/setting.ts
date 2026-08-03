@@ -110,6 +110,7 @@ export const useSettingStore = defineStore('setting', {
     preventSleep: true,
     defaultAudioQuality: 'high' as AudioQualityValue,
     compatibilityMode: true,
+    preferCloudFileWhenAvailable: false,
     globalShortcutsEnabled: false,
     shortcutBindings: {} as Record<string, string>,
     globalShortcutBindings: {} as Record<string, string>,
