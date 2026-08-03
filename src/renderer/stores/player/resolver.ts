@@ -276,12 +276,12 @@ export const createResolver = (
         });
         if (!cloudUrl) return null;
         return {
-          url: cloudUrl,
-          urls: [cloudUrl],
+          url: cloudUrl.url,
+          urls: [cloudUrl.url],
           quality: source.quality ?? null,
           effect: 'none',
           sourceKind: 'cloud',
-          loudness: null,
+          loudness: resolveTrackLoudness(cloudUrl.payload),
         };
       } catch (error) {
         logger.warn('PlayerResolver', 'Fetch cloud file url failed:', error, {

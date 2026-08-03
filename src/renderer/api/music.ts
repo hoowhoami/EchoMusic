@@ -36,6 +36,11 @@ export interface EverydayStyleRecommendParams {
   tagids?: string;
 }
 
+export interface CloudSongUrlResult {
+  url: string;
+  payload: unknown;
+}
+
 /**
  * 获取歌曲播放地址
  */
@@ -68,7 +73,7 @@ export async function getCloudSongUrl(
     audioId?: string | number;
     name?: string;
   },
-): Promise<string | null> {
+): Promise<CloudSongUrlResult | null> {
   const res = await request.get('/user/cloud/url', {
     params: {
       hash,
@@ -80,7 +85,12 @@ export async function getCloudSongUrl(
   });
   if (res && typeof res === 'object') {
     const record = res as { status?: number; data?: { url?: string } };
-    if (record.status === 1 && record.data?.url) return record.data.url;
+    if (record.status === 1 && record.data?.url) {
+      return {
+        url: record.data.url,
+        payload: res,
+      };
+    }
   }
   return null;
 }
