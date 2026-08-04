@@ -84,6 +84,7 @@ const handleClose = () => updateStore.closeDialog();
     :description="description"
     showClose
     :noScroll="Boolean(bodyHtml)"
+    :flushBody="Boolean(bodyHtml)"
     :close-on-escape="allowDismiss"
     :close-on-interact-outside="allowDismiss"
     :content-style="{ width: '520px' }"

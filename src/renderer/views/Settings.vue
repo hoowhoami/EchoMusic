@@ -784,6 +784,7 @@ const findSectionElement = (id: string) => {
       :title="`更新日志`"
       showClose
       noScroll
+      flushBody
       :content-style="{ width: '520px' }"
     >
       <Scrollbar class="settings-update-changelog" :content-props="{ class: 'px-4 py-3' }">
