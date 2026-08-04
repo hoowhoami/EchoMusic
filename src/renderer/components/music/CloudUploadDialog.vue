@@ -539,10 +539,6 @@ const statusLabel = (item: UploadItem) => {
   min-height: 0;
 }
 
-.cloud-upload-list :deep(.scrollbar) {
-  padding-right: 0;
-}
-
 .cloud-upload-footer-content {
   @apply flex w-full items-center justify-between gap-4;
 }
