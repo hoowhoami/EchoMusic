@@ -15,7 +15,7 @@ import { useHistoryStore } from './stores/historyStore';
 import { useToastStore } from './stores/toast';
 import { useUserStore } from './stores/user';
 import { waitForSqlitePersistHydration } from './stores/sqlitePersist';
-import { clearCloudAudioIndex } from '@/services/cloudAudioIndex';
+import { clearCloudAudioIndex, refreshCloudAudioIndex } from '@/services/cloudAudioIndex';
 import { initShortcutSync, syncGlobalShortcuts } from '@/utils/shortcuts';
 import { initDesktopLyricSync } from '@/desktopLyric/sync';
 import { initMiniPlayerSync } from '@/miniPlayer/sync';
@@ -57,6 +57,7 @@ let disposePluginRuntimeReload: (() => void) | null = null;
 let disposeShareOpen: (() => void) | null = null;
 let silentUpdateCheckTimer: number | null = null;
 let clipboardShareCheckTimer: number | null = null;
+let cloudAudioIndexWarmupTimer: number | null = null;
 let lastHandledClipboardText = '';
 let isCheckingClipboardShare = false;
 let colorSchemeMediaQuery: MediaQueryList | null = null;
@@ -105,6 +106,23 @@ const syncTrayPlayback = () => {
     playMode: player.playMode,
     volume: player.volume,
   });
+};
+
+const clearCloudAudioIndexWarmupTimer = () => {
+  if (cloudAudioIndexWarmupTimer === null) return;
+  window.clearTimeout(cloudAudioIndexWarmupTimer);
+  cloudAudioIndexWarmupTimer = null;
+};
+
+const scheduleCloudAudioIndexWarmup = () => {
+  clearCloudAudioIndexWarmupTimer();
+  if (!userStore.isLoggedIn) return;
+  cloudAudioIndexWarmupTimer = window.setTimeout(() => {
+    cloudAudioIndexWarmupTimer = null;
+    void refreshCloudAudioIndex(false).catch((error) => {
+      logger.debug('App', 'Warm cloud audio index failed:', error);
+    });
+  }, 1500);
 };
 
 const openShareTarget = (target: ShareTarget) => {
@@ -266,6 +284,7 @@ onUnmounted(() => {
     window.clearTimeout(clipboardShareCheckTimer);
     clipboardShareCheckTimer = null;
   }
+  clearCloudAudioIndexWarmupTimer();
   updateStore.dispose();
   disposeShortcuts?.();
   disposeShortcuts = null;
@@ -330,8 +349,14 @@ watch(
 watch(
   () => userStore.isLoggedIn,
   (loggedIn) => {
-    if (!loggedIn) clearCloudAudioIndex();
+    if (loggedIn) {
+      scheduleCloudAudioIndexWarmup();
+    } else {
+      clearCloudAudioIndexWarmupTimer();
+      clearCloudAudioIndex();
+    }
   },
+  { immediate: true },
 );
 watch(
   () => player.playMode,
