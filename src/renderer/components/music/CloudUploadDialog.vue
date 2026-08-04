@@ -393,7 +393,9 @@ const statusLabel = (item: UploadItem) => {
 
     <template v-else>
       <div class="cloud-upload-progress-body">
-        <div class="flex items-center justify-between text-[12px] font-semibold text-text-main">
+        <div
+          class="cloud-upload-progress-meta flex items-center justify-between text-[12px] font-semibold text-text-main"
+        >
           <span>{{ isUploading ? '正在匹配并上传...' : '上传完成' }}</span>
           <span class="text-text-secondary/80">
             {{ doneCount + failedCount }} / {{ items.length }}
@@ -511,8 +513,12 @@ const statusLabel = (item: UploadItem) => {
   @apply flex min-h-0 flex-col gap-3;
 }
 
+.cloud-upload-progress-meta {
+  margin-right: 16px;
+}
+
 .cloud-upload-progress-track {
-  width: 100%;
+  width: calc(100% - 16px);
   height: 6px;
   border-radius: 999px;
   overflow: hidden;
@@ -527,6 +533,7 @@ const statusLabel = (item: UploadItem) => {
 }
 
 .cloud-upload-list {
+  margin-right: -2px;
   height: clamp(180px, calc(100vh - 340px), 320px);
   min-height: 0;
 }
