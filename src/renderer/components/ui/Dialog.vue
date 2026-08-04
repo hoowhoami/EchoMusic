@@ -213,11 +213,11 @@ const handleInteractOutside = (event: Event) => {
 }
 
 .dialog-description {
-  @apply text-sm text-text-secondary whitespace-pre-wrap leading-relaxed pr-4;
+  @apply text-sm text-text-secondary whitespace-pre-wrap leading-relaxed pr-6;
 }
 
 .dialog-body {
-  @apply text-sm text-text-main pr-4;
+  @apply text-sm text-text-main pr-6;
 }
 
 .dialog-body-flush {
