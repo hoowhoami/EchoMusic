@@ -357,6 +357,7 @@ const statusLabel = (item: UploadItem) => {
     :close-on-interact-outside="!isUploading"
     :close-on-escape="!isUploading"
     content-class="cloud-upload-dialog"
+    no-scroll
     @update:open="handleClose"
   >
     <template #title>
@@ -390,7 +391,7 @@ const statusLabel = (item: UploadItem) => {
     </template>
 
     <template v-else>
-      <div class="flex flex-col gap-3">
+      <div class="cloud-upload-progress-body">
         <div class="flex items-center justify-between text-[12px] font-semibold text-text-main">
           <span>{{ isUploading ? '正在匹配并上传...' : '上传完成' }}</span>
           <span class="text-text-secondary/80">
@@ -476,7 +477,7 @@ const statusLabel = (item: UploadItem) => {
 @reference "@/style.css";
 
 .cloud-upload-option {
-  @apply flex items-center gap-3 p-3.5 rounded-xl border transition-all active:scale-[0.98] select-none;
+  @apply flex items-center gap-3 p-3.5 rounded-[10px] border transition-all active:scale-[0.98] select-none;
   border-color: var(--border-subtle);
   background: var(--control-muted-bg);
 }
@@ -492,9 +493,13 @@ const statusLabel = (item: UploadItem) => {
 }
 
 .cloud-upload-option-icon {
-  @apply flex items-center justify-center w-10 h-10 rounded-lg shrink-0;
+  @apply flex items-center justify-center w-10 h-10 rounded-[8px] shrink-0;
   background: color-mix(in srgb, var(--color-primary) 12%, transparent);
   color: var(--color-primary);
+}
+
+.cloud-upload-progress-body {
+  @apply flex min-h-0 flex-col gap-3;
 }
 
 .cloud-upload-progress-track {
@@ -513,11 +518,12 @@ const statusLabel = (item: UploadItem) => {
 }
 
 .cloud-upload-list {
-  max-height: 280px;
+  height: clamp(180px, calc(100vh - 340px), 320px);
+  min-height: 0;
 }
 
 .cloud-upload-row {
-  @apply flex items-center gap-2.5 px-2 py-2 rounded-lg;
+  @apply flex items-center gap-2.5 px-2 py-2 rounded-[8px];
 }
 
 .cloud-upload-row:hover {
@@ -538,7 +544,8 @@ const statusLabel = (item: UploadItem) => {
 }
 
 :global(.dialog-content.cloud-upload-dialog) {
-  width: 440px;
-  max-width: calc(100vw - 48px);
+  width: 460px;
+  max-width: calc(100vw - 32px);
+  max-height: min(560px, calc(100vh - 64px));
 }
 </style>
