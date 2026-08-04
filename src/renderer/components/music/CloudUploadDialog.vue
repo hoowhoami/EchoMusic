@@ -357,7 +357,7 @@ const statusLabel = (item: UploadItem) => {
     :close-on-interact-outside="!isUploading"
     :close-on-escape="!isUploading"
     content-class="cloud-upload-dialog"
-    body-class="cloud-upload-dialog-body"
+    flush-body
     no-scroll
     @update:open="handleClose"
   >
@@ -489,10 +489,6 @@ const statusLabel = (item: UploadItem) => {
   @apply flex items-center gap-3 p-3.5 rounded-[10px] border transition-all active:scale-[0.98] select-none;
   border-color: var(--border-subtle);
   background: var(--control-muted-bg);
-}
-
-:global(.dialog-content.cloud-upload-dialog .cloud-upload-dialog-body) {
-  padding-right: 0 !important;
 }
 
 .cloud-upload-pick-body {
