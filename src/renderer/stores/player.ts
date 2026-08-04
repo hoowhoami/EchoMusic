@@ -178,7 +178,11 @@ export const usePlayerStore = defineStore(
         return;
       }
 
-      clearPlaybackNotice();
+      if (resolved.noticeCode) {
+        showPlaybackNotice(resolved.noticeCode, track);
+      } else {
+        clearPlaybackNotice(state.currentTrackId);
+      }
 
       audioManager.setVolume(state.volume);
       if (requestSeq !== state.playbackRequestSeq) return;

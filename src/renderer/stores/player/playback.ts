@@ -144,6 +144,8 @@ export const createPlaybackManager = (
     }
     if (resolved.noticeCode) {
       showPlaybackNotice(resolved.noticeCode, track);
+    } else {
+      clearPlaybackNotice(track.id);
     }
   };
 
@@ -353,6 +355,7 @@ export const createPlaybackManager = (
       state.currentSourceQueueId ?? playlistStore.activeQueue?.id ?? playlistStore.activeQueueId,
     );
     historyManager.resetHistoryUploadState(targetTrack);
+    clearPlaybackNotice();
     applyResolvedAudioSource(targetTrack, prepared.resolved);
     engine.adoptPreparedSource(state.currentPlaybackSource ?? prepared.resolved.url);
     state.currentTime = 0;
@@ -366,7 +369,6 @@ export const createPlaybackManager = (
     state.autoNextAttempts = 0;
     state.autoNextSourceTrackId = prepared.targetTrackId;
     clearAutoNextTimer();
-    clearPlaybackNotice();
     state.climaxMarks = [];
     state.currentAudioQualityOverride = null;
     state.currentCatalogSourceOverrideTrackId = null;
