@@ -259,6 +259,27 @@ export const createResolver = (
         name: track.title || track.name,
       };
     };
+    const syncTrackCloudAudioSource = (cloudAudioSource: CloudAudioSource | null) => {
+      if (!cloudAudioSource?.hash) return;
+      track.cloudAudioSource = cloudAudioSource;
+      if (
+        state.currentTrackSnapshot &&
+        String(state.currentTrackSnapshot.id) === String(track.id)
+      ) {
+        state.currentTrackSnapshot = {
+          ...state.currentTrackSnapshot,
+          cloudAudioSource,
+        };
+      }
+    };
+    const ensureMatchedCloudAudioSource = async (): Promise<CloudAudioSource | null> => {
+      const cloudAudioSource =
+        track.source === 'cloud'
+          ? getTrackCloudAudioSource()
+          : await getCloudAudioSourceForSong(track);
+      syncTrackCloudAudioSource(cloudAudioSource);
+      return cloudAudioSource;
+    };
     const catalogTrack: Song =
       track.source === 'cloud'
         ? {
@@ -336,15 +357,9 @@ export const createResolver = (
       }
     };
     const resolveMatchedCloudAudioSourceUrl = async (): Promise<ResolvedAudioSource | null> => {
-      const cloudAudioSource =
-        track.source === 'cloud'
-          ? getTrackCloudAudioSource()
-          : await getCloudAudioSourceForSong(track);
+      const cloudAudioSource = await ensureMatchedCloudAudioSource();
       if (!cloudAudioSource) return null;
       const resolved = await resolveCloudAudioSourceUrl(cloudAudioSource);
-      if (resolved) {
-        track.cloudAudioSource = cloudAudioSource;
-      }
       return resolved;
     };
 
@@ -359,6 +374,14 @@ export const createResolver = (
         ...pluginResolved,
         sourceKind: pluginResolved.sourceKind ?? 'plugin',
       };
+    }
+
+    if (!shouldUseCloudSource && track.source !== 'cloud' && !track.cloudAudioSource?.hash) {
+      void ensureMatchedCloudAudioSource().catch((error) => {
+        logger.debug('PlayerResolver', 'Warm cloud audio source failed:', error, {
+          track: summarizeSong(track),
+        });
+      });
     }
 
     let didTryCloudAudioSource = false;

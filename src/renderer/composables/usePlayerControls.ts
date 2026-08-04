@@ -14,6 +14,7 @@ import type { Song } from '@/models/song';
 import type { AudioEffectValue, AudioQualityValue, PlayMode } from '@/types';
 import { hasSongQuality, resolveEffectiveSongQuality } from '@/utils/song';
 import { copyShareTarget, createSongShareTarget, isSongHashId } from '@/utils/share';
+import { getCloudAudioSourceForSong } from '@/services/cloudAudioIndex';
 import {
   iconRepeat,
   iconRepeatOff,
@@ -156,9 +157,16 @@ export function usePlayerControls() {
     return catalogHash ? `${track.id}:${catalogHash}` : '';
   });
   const hasCatalogAudioSourceOption = computed(() => Boolean(catalogQualityLookupKey.value));
+  const cloudAudioSourceLookupKey = computed(() => {
+    const track = currentTrack.value;
+    if (!track || track.source === 'cloud' || track.cloudAudioSource?.hash) return '';
+    return `${track.id}:${track.albumAudioId ?? track.mixSongId ?? ''}:${track.fileId ?? track.songId ?? ''}:${track.hash ?? ''}`;
+  });
   const isCatalogQualityLoading = ref(false);
   const catalogQualityLoadingKey = ref('');
+  const cloudAudioSourceLoadingKey = ref('');
   let catalogQualityFetchSeq = 0;
+  let cloudAudioSourceFetchSeq = 0;
   const isAudioEffectPresetSelectionDisabled = computed(() => isResolvedCloudSource.value);
   const effectiveAudioQuality = computed(() => {
     if (player.currentResolvedAudioQuality) return player.currentResolvedAudioQuality;
@@ -236,7 +244,50 @@ export function usePlayerControls() {
     player.preferCurrentTrackCloudSource();
   };
 
+  const syncCurrentTrackCloudAudioSource = (
+    track: Song,
+    cloudAudioSource: Song['cloudAudioSource'],
+  ) => {
+    if (!cloudAudioSource?.hash) return;
+    track.cloudAudioSource = cloudAudioSource;
+    if (
+      player.currentTrackSnapshot &&
+      String(player.currentTrackSnapshot.id) === String(track.id)
+    ) {
+      player.currentTrackSnapshot = {
+        ...player.currentTrackSnapshot,
+        cloudAudioSource,
+      };
+    }
+  };
+
+  const ensureCurrentTrackCloudAudioSource = async () => {
+    const track = currentTrack.value;
+    const lookupKey = cloudAudioSourceLookupKey.value;
+    if (!track) return false;
+    if (track.source === 'cloud' || track.cloudAudioSource?.hash) return true;
+    if (!lookupKey || cloudAudioSourceLoadingKey.value === lookupKey) return false;
+    const fetchSeq = ++cloudAudioSourceFetchSeq;
+    cloudAudioSourceLoadingKey.value = lookupKey;
+    try {
+      const cloudAudioSource = await getCloudAudioSourceForSong(track);
+      if (cloudAudioSourceLookupKey.value !== lookupKey || !cloudAudioSource?.hash) {
+        return false;
+      }
+      syncCurrentTrackCloudAudioSource(track, cloudAudioSource);
+      return true;
+    } finally {
+      if (fetchSeq === cloudAudioSourceFetchSeq) {
+        cloudAudioSourceLoadingKey.value = '';
+      }
+    }
+  };
+
   const ensureCurrentTrackCatalogQualities = async () => {
+    if (!currentTrack.value) return;
+    if (!hasCloudAudioSourceOption.value) {
+      await ensureCurrentTrackCloudAudioSource();
+    }
     const track = currentTrack.value;
     const lookupKey = catalogQualityLookupKey.value;
     if (!track || !hasCloudAudioSourceOption.value || !lookupKey) return;
