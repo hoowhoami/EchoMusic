@@ -524,7 +524,7 @@ const statusLabel = (item: UploadItem) => {
 }
 
 .cloud-upload-progress-track {
-  width: min(180px, 48%);
+  width: 100%;
   height: 6px;
   border-radius: 999px;
   overflow: hidden;
@@ -553,6 +553,7 @@ const statusLabel = (item: UploadItem) => {
 
 .cloud-upload-footer-progress {
   @apply flex min-w-0 flex-1 items-center gap-3;
+  max-width: 280px;
 }
 
 .cloud-upload-row {
