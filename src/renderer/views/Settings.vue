@@ -784,10 +784,9 @@ const findSectionElement = (id: string) => {
       :title="`更新日志`"
       showClose
       noScroll
-      flushBody
       :content-style="{ width: '520px' }"
     >
-      <Scrollbar class="settings-update-changelog" :content-props="{ class: 'pl-4 pr-7 py-3' }">
+      <Scrollbar class="settings-update-changelog" :content-props="{ class: 'px-4 py-3' }">
         <div class="changelog-content" v-html="changelogHtml"></div>
       </Scrollbar>
       <template #footer>
