@@ -393,19 +393,8 @@ const statusLabel = (item: UploadItem) => {
 
     <template v-else>
       <div class="cloud-upload-progress-body">
-        <div
-          class="cloud-upload-progress-meta flex items-center justify-between text-[12px] font-semibold text-text-main"
-        >
+        <div class="cloud-upload-progress-title text-[12px] font-semibold text-text-main">
           <span>{{ isUploading ? '正在匹配并上传...' : '上传完成' }}</span>
-          <span class="text-text-secondary/80">
-            {{ doneCount + failedCount }} / {{ items.length }}
-          </span>
-        </div>
-        <div class="cloud-upload-progress-track">
-          <div
-            class="cloud-upload-progress-value"
-            :style="{ width: `${progressRatio * 100}%` }"
-          ></div>
         </div>
         <Scrollbar class="cloud-upload-list" :scrollbar-inset="3">
           <div class="flex flex-col">
@@ -459,6 +448,17 @@ const statusLabel = (item: UploadItem) => {
             </div>
           </div>
         </Scrollbar>
+        <div class="cloud-upload-progress-footer">
+          <div class="cloud-upload-progress-track">
+            <div
+              class="cloud-upload-progress-value"
+              :style="{ width: `${progressRatio * 100}%` }"
+            ></div>
+          </div>
+          <span class="text-[11px] font-semibold text-text-secondary/80 shrink-0">
+            {{ doneCount + failedCount }} / {{ items.length }}
+          </span>
+        </div>
       </div>
     </template>
 
@@ -513,12 +513,17 @@ const statusLabel = (item: UploadItem) => {
   @apply flex min-h-0 flex-col gap-3;
 }
 
-.cloud-upload-progress-meta {
+.cloud-upload-progress-title {
+  margin-right: 16px;
+}
+
+.cloud-upload-progress-footer {
+  @apply flex items-center justify-between gap-3;
   margin-right: 16px;
 }
 
 .cloud-upload-progress-track {
-  width: calc(100% - 16px);
+  width: min(180px, 48%);
   height: 6px;
   border-radius: 999px;
   overflow: hidden;
