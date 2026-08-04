@@ -357,6 +357,7 @@ const statusLabel = (item: UploadItem) => {
     :close-on-interact-outside="!isUploading"
     :close-on-escape="!isUploading"
     content-class="cloud-upload-dialog"
+    body-class="cloud-upload-dialog-body"
     no-scroll
     @update:open="handleClose"
   >
@@ -368,7 +369,7 @@ const statusLabel = (item: UploadItem) => {
     </template>
 
     <template v-if="step === 'pick'">
-      <div class="flex flex-col gap-3">
+      <div class="cloud-upload-pick-body">
         <button class="cloud-upload-option" :disabled="picking" @click="handlePick('file')">
           <div class="cloud-upload-option-icon">
             <Icon :icon="iconUpload" width="20" height="20" />
@@ -480,6 +481,14 @@ const statusLabel = (item: UploadItem) => {
   @apply flex items-center gap-3 p-3.5 rounded-[10px] border transition-all active:scale-[0.98] select-none;
   border-color: var(--border-subtle);
   background: var(--control-muted-bg);
+}
+
+:global(.cloud-upload-dialog-body) {
+  padding-right: 2px;
+}
+
+.cloud-upload-pick-body {
+  @apply flex flex-col gap-3 pr-4;
 }
 
 .cloud-upload-option:hover {
