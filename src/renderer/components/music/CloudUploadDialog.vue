@@ -448,17 +448,6 @@ const statusLabel = (item: UploadItem) => {
             </div>
           </div>
         </Scrollbar>
-        <div class="cloud-upload-progress-footer">
-          <div class="cloud-upload-progress-track">
-            <div
-              class="cloud-upload-progress-value"
-              :style="{ width: `${progressRatio * 100}%` }"
-            ></div>
-          </div>
-          <span class="text-[11px] font-semibold text-text-secondary/80 shrink-0">
-            {{ doneCount + failedCount }} / {{ items.length }}
-          </span>
-        </div>
       </div>
     </template>
 
@@ -466,11 +455,24 @@ const statusLabel = (item: UploadItem) => {
       <template v-if="step === 'pick'">
         <Button variant="ghost" size="sm" :disabled="picking" @click="closeDialog">取消</Button>
       </template>
-      <template v-else-if="isUploading">
-        <Button variant="ghost" size="sm" @click="handleCancel">取消上传</Button>
-      </template>
       <template v-else>
-        <Button variant="primary" size="sm" @click="closeDialog">完成</Button>
+        <div class="cloud-upload-footer-content">
+          <div class="cloud-upload-footer-progress">
+            <div class="cloud-upload-progress-track">
+              <div
+                class="cloud-upload-progress-value"
+                :style="{ width: `${progressRatio * 100}%` }"
+              ></div>
+            </div>
+            <span class="text-[11px] font-semibold text-text-secondary/80 shrink-0">
+              {{ doneCount + failedCount }} / {{ items.length }}
+            </span>
+          </div>
+          <Button v-if="isUploading" variant="ghost" size="sm" @click="handleCancel">
+            取消上传
+          </Button>
+          <Button v-else variant="primary" size="sm" @click="closeDialog">完成</Button>
+        </div>
       </template>
     </template>
   </Dialog>
@@ -485,8 +487,8 @@ const statusLabel = (item: UploadItem) => {
   background: var(--control-muted-bg);
 }
 
-:global(.cloud-upload-dialog-body) {
-  padding-right: 2px;
+:global(.dialog-content.cloud-upload-dialog .cloud-upload-dialog-body) {
+  padding-right: 0 !important;
 }
 
 .cloud-upload-pick-body {
@@ -517,11 +519,6 @@ const statusLabel = (item: UploadItem) => {
   margin-right: 16px;
 }
 
-.cloud-upload-progress-footer {
-  @apply flex items-center justify-between gap-3;
-  margin-right: 16px;
-}
-
 .cloud-upload-progress-track {
   width: min(180px, 48%);
   height: 6px;
@@ -538,9 +535,20 @@ const statusLabel = (item: UploadItem) => {
 }
 
 .cloud-upload-list {
-  margin-right: -2px;
   height: clamp(180px, calc(100vh - 340px), 320px);
   min-height: 0;
+}
+
+.cloud-upload-list :deep(.scrollbar) {
+  padding-right: 0;
+}
+
+.cloud-upload-footer-content {
+  @apply flex w-full items-center justify-between gap-4;
+}
+
+.cloud-upload-footer-progress {
+  @apply flex min-w-0 flex-1 items-center gap-3;
 }
 
 .cloud-upload-row {
