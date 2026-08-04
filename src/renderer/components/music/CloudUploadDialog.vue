@@ -396,7 +396,11 @@ const statusLabel = (item: UploadItem) => {
         <div class="cloud-upload-progress-title text-[12px] font-semibold text-text-main">
           <span>{{ isUploading ? '正在匹配并上传...' : '上传完成' }}</span>
         </div>
-        <Scrollbar class="cloud-upload-list" :scrollbar-inset="3">
+        <Scrollbar
+          class="cloud-upload-list"
+          :scrollbar-inset="3"
+          :content-props="{ class: 'cloud-upload-list-content' }"
+        >
           <div class="flex flex-col">
             <div
               v-for="(item, idx) in items"
@@ -537,6 +541,10 @@ const statusLabel = (item: UploadItem) => {
 .cloud-upload-list {
   height: clamp(180px, calc(100vh - 340px), 320px);
   min-height: 0;
+}
+
+:global(.cloud-upload-list-content) {
+  padding-right: 16px;
 }
 
 .cloud-upload-footer-content {
