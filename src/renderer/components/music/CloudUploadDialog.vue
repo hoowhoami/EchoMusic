@@ -492,7 +492,8 @@ const statusLabel = (item: UploadItem) => {
 }
 
 .cloud-upload-pick-body {
-  @apply flex flex-col gap-3 pr-4;
+  @apply flex flex-col gap-3;
+  padding-right: 22px;
 }
 
 .cloud-upload-option:hover {
@@ -516,7 +517,7 @@ const statusLabel = (item: UploadItem) => {
 }
 
 .cloud-upload-progress-title {
-  margin-right: 16px;
+  margin-right: 22px;
 }
 
 .cloud-upload-progress-track {
@@ -540,7 +541,7 @@ const statusLabel = (item: UploadItem) => {
 }
 
 :global(.cloud-upload-list-content) {
-  padding-right: 16px;
+  padding-right: 22px;
 }
 
 .cloud-upload-footer-content {
