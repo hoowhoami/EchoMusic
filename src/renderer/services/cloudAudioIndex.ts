@@ -88,8 +88,8 @@ export const refreshCloudAudioIndex = async (force = false): Promise<void> => {
     return;
   }
 
+  if (pendingRefresh) return pendingRefresh;
   if (!force && indexedUserId === userId) return;
-  if (pendingRefresh && !force) return pendingRefresh;
 
   pendingRefresh = (async () => {
     const nextIndex = createEmptyIndex();
