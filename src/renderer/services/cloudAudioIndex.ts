@@ -4,7 +4,6 @@ import { useUserStore } from '@/stores/user';
 import { mapCloudSong } from '@/utils/mappers';
 import logger from '@/utils/logger';
 
-const CLOUD_AUDIO_INDEX_TTL = 5 * 60 * 1000;
 const CLOUD_AUDIO_INDEX_PAGE_SIZE = 100;
 
 interface CloudAudioIndex {
@@ -22,7 +21,6 @@ const createEmptyIndex = (): CloudAudioIndex => ({
 });
 
 let index = createEmptyIndex();
-let fetchedAt = 0;
 let indexedUserId = '';
 let pendingRefresh: Promise<void> | null = null;
 
@@ -78,7 +76,6 @@ const getCloudPageSongs = (payload: unknown): { songs: Song[]; total: number } =
 
 export const clearCloudAudioIndex = () => {
   index = createEmptyIndex();
-  fetchedAt = 0;
   indexedUserId = '';
   pendingRefresh = null;
 };
@@ -91,8 +88,7 @@ export const refreshCloudAudioIndex = async (force = false): Promise<void> => {
     return;
   }
 
-  const now = Date.now();
-  if (!force && indexedUserId === userId && now - fetchedAt < CLOUD_AUDIO_INDEX_TTL) return;
+  if (!force && indexedUserId === userId) return;
   if (pendingRefresh && !force) return pendingRefresh;
 
   pendingRefresh = (async () => {
@@ -113,12 +109,8 @@ export const refreshCloudAudioIndex = async (force = false): Promise<void> => {
 
       index = nextIndex;
       indexedUserId = userId;
-      fetchedAt = Date.now();
     } catch (error) {
       logger.warn('CloudAudioIndex', 'Refresh cloud audio index failed:', error);
-      if (force) {
-        fetchedAt = 0;
-      }
     } finally {
       pendingRefresh = null;
     }
