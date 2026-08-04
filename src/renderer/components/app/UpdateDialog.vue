@@ -89,7 +89,11 @@ const handleClose = () => updateStore.closeDialog();
     :close-on-interact-outside="allowDismiss"
     :content-style="{ width: '520px' }"
   >
-    <Scrollbar v-if="bodyHtml" class="update-changelog" :content-props="{ class: 'px-4 py-3' }">
+    <Scrollbar
+      v-if="bodyHtml"
+      class="update-changelog"
+      :content-props="{ class: 'pl-4 pr-7 py-3' }"
+    >
       <div class="changelog-content" v-html="bodyHtml"></div>
     </Scrollbar>
 
