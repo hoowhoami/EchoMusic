@@ -142,6 +142,9 @@ export const createPlaybackManager = (
         ...(track.relateGoods?.length ? { relateGoods: track.relateGoods } : {}),
       };
     }
+    if (resolved.noticeCode) {
+      showPlaybackNotice(resolved.noticeCode, track);
+    }
   };
 
   const tryNextAudioCandidate = async (options?: {

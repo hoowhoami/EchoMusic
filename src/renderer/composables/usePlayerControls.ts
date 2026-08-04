@@ -164,10 +164,16 @@ export function usePlayerControls() {
   });
   const isCatalogQualityLoading = ref(false);
   const catalogQualityLoadingKey = ref('');
+  const catalogQualityErrorKey = ref('');
   const cloudAudioSourceLoadingKey = ref('');
   let catalogQualityFetchSeq = 0;
   let cloudAudioSourceFetchSeq = 0;
   const isAudioEffectPresetSelectionDisabled = computed(() => isResolvedCloudSource.value);
+  const hasCatalogQualityError = computed(
+    () =>
+      !!catalogQualityLookupKey.value &&
+      catalogQualityErrorKey.value === catalogQualityLookupKey.value,
+  );
   const effectiveAudioQuality = computed(() => {
     if (player.currentResolvedAudioQuality) return player.currentResolvedAudioQuality;
     if (!currentTrack.value) return requestedAudioQuality.value;
@@ -296,6 +302,7 @@ export function usePlayerControls() {
     const fetchSeq = ++catalogQualityFetchSeq;
     catalogQualityLoadingKey.value = lookupKey;
     isCatalogQualityLoading.value = true;
+    catalogQualityErrorKey.value = '';
     try {
       const catalogHash =
         track.source === 'cloud' ? (track.cloudAudioSource?.hashStd ?? '') : track.hash;
@@ -304,7 +311,7 @@ export function usePlayerControls() {
         source: undefined,
         hash: catalogHash,
       };
-      const relateGoods = await player.ensureTrackRelateGoods(probeTrack);
+      const relateGoods = await player.ensureTrackRelateGoods(probeTrack, { throwOnError: true });
       if (catalogQualityLookupKey.value !== lookupKey || relateGoods.length === 0) return;
       track.relateGoods = relateGoods;
       if (
@@ -315,6 +322,10 @@ export function usePlayerControls() {
           ...player.currentTrackSnapshot,
           relateGoods,
         };
+      }
+    } catch {
+      if (catalogQualityLookupKey.value === lookupKey) {
+        catalogQualityErrorKey.value = lookupKey;
       }
     } finally {
       if (fetchSeq === catalogQualityFetchSeq) {
@@ -524,6 +535,7 @@ export function usePlayerControls() {
     hasCloudAudioSourceOption,
     hasCatalogAudioSourceOption,
     isCatalogQualityLoading,
+    hasCatalogQualityError,
     isAudioEffectPresetSelectionDisabled,
     isAudioQualityDisabled,
     audioQualityButtonBadge,

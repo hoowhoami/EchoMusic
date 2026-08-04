@@ -16,6 +16,7 @@ const {
   hasCloudAudioSourceOption,
   hasCatalogAudioSourceOption,
   isCatalogQualityLoading,
+  hasCatalogQualityError,
   isAudioQualityDisabled,
   audioQualityButtonBadge,
   getAudioQualityTagColor,
@@ -88,6 +89,9 @@ const buttonClass = computed(() => {
       <div v-if="isResolvedCloudSource" class="pm-hint">当前使用云盘文件播放</div>
       <div v-if="hasCloudAudioSourceOption && isCatalogQualityLoading" class="pm-hint">
         正在获取曲库音质
+      </div>
+      <div v-else-if="hasCloudAudioSourceOption && hasCatalogQualityError" class="pm-hint">
+        曲库音质获取失败
       </div>
       <div v-else-if="hasCloudAudioSourceOption && !hasCatalogAudioSourceOption" class="pm-hint">
         暂无可切换的曲库音质

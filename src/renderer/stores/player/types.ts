@@ -64,4 +64,5 @@ export type ResolvedAudioSource = {
   effect: AudioEffectValue;
   loudness: TrackLoudness | null;
   sourceKind?: PlaybackSourceKind;
+  noticeCode?: string;
 };

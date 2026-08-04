@@ -49,6 +49,11 @@ export interface CloudSongUrlData {
   hash?: string;
   fileSize?: string | number;
   extName?: string;
+  volume?: number;
+  volume_gain?: number;
+  volumeGain?: number;
+  volume_peak?: number;
+  volumePeak?: number;
 }
 
 export interface CloudSongUrlResponse {
@@ -56,6 +61,24 @@ export interface CloudSongUrlResponse {
   error_code?: number;
   data?: CloudSongUrlData;
 }
+
+const normalizeCloudSongUrls = (data: CloudSongUrlData): string[] => {
+  const urls = new Set<string>();
+  const add = (value: unknown) => {
+    if (typeof value !== 'string') return;
+    const url = value.trim();
+    if (url) urls.add(url);
+  };
+
+  add(data.url);
+  const backups = data.backup_url ?? data.backupUrl;
+  if (Array.isArray(backups)) {
+    backups.forEach(add);
+  } else {
+    add(backups);
+  }
+  return [...urls];
+};
 
 /**
  * 获取歌曲播放地址
@@ -112,24 +135,6 @@ export async function getCloudSongUrl(
   }
   return null;
 }
-
-const normalizeCloudSongUrls = (data: CloudSongUrlData): string[] => {
-  const urls = new Set<string>();
-  const add = (value: unknown) => {
-    if (typeof value !== 'string') return;
-    const url = value.trim();
-    if (url) urls.add(url);
-  };
-
-  add(data.url);
-  const backups = data.backup_url ?? data.backupUrl;
-  if (Array.isArray(backups)) {
-    backups.forEach(add);
-  } else {
-    add(backups);
-  }
-  return [...urls];
-};
 
 /**
  * 搜索歌词

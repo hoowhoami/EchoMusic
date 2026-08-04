@@ -253,6 +253,16 @@ export const resolvePlaybackNotice = (params: {
     };
   }
 
+  if (params.code === 'audio-effect-cloud-fallback') {
+    return {
+      code: params.code,
+      title: '音效不可用',
+      reason: '已回退云盘文件播放',
+      detail: '当前曲目暂不支持所选音效',
+      trackId,
+    };
+  }
+
   return {
     code: params.code,
     title: '播放失败',

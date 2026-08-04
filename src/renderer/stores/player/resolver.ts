@@ -93,7 +93,7 @@ export const createResolver = (
 
   const ensureTrackRelateGoods = async (
     track: Song,
-    options?: { forceRefresh?: boolean },
+    options?: { forceRefresh?: boolean; throwOnError?: boolean },
   ): Promise<SongRelateGood[]> => {
     const existing = track.relateGoods ?? [];
     if (existing.length > 0 && !options?.forceRefresh) return existing;
@@ -128,6 +128,7 @@ export const createResolver = (
           error,
           summarizeSong(track),
         );
+        if (options?.throwOnError) throw error;
         return existing;
       } finally {
         privilegeLiteRequests.delete(requestKey);
@@ -397,7 +398,11 @@ export const createResolver = (
 
     if (!catalogTrack.hash) {
       const resolved = didTryCloudAudioSource ? null : await tryCloudAudioSource();
-      if (resolved) return resolved;
+      if (resolved) {
+        return audioEffect !== 'none'
+          ? { ...resolved, noticeCode: 'audio-effect-cloud-fallback' }
+          : resolved;
+      }
       logger.warn(
         'PlayerResolver',
         'Resolve audio url skipped because track hash is missing',
@@ -504,7 +509,11 @@ export const createResolver = (
     }
 
     const cloudFallback = didTryCloudAudioSource ? null : await tryCloudAudioSource();
-    if (cloudFallback) return cloudFallback;
+    if (cloudFallback) {
+      return audioEffect !== 'none'
+        ? { ...cloudFallback, noticeCode: 'audio-effect-cloud-fallback' }
+        : cloudFallback;
+    }
     logger.debug(
       'PlayerResolver',
       didTryCloudAudioSource
