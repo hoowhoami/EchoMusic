@@ -100,7 +100,8 @@ export const createResolver = (
     if (!track.hash || track.source === 'cloud') return existing;
 
     const requestKey = `${track.hash}:${track.albumId ?? ''}`;
-    const pending = privilegeLiteRequests.get(requestKey);
+    const shouldShareRequest = !options?.throwOnError;
+    const pending = shouldShareRequest ? privilegeLiteRequests.get(requestKey) : undefined;
     if (pending) return pending;
 
     logger.debug(
@@ -131,11 +132,15 @@ export const createResolver = (
         if (options?.throwOnError) throw error;
         return existing;
       } finally {
-        privilegeLiteRequests.delete(requestKey);
+        if (shouldShareRequest) {
+          privilegeLiteRequests.delete(requestKey);
+        }
       }
     })();
 
-    privilegeLiteRequests.set(requestKey, request);
+    if (shouldShareRequest) {
+      privilegeLiteRequests.set(requestKey, request);
+    }
     return request;
   };
 
@@ -275,7 +280,7 @@ export const createResolver = (
     };
     const ensureMatchedCloudAudioSource = async (): Promise<CloudAudioSource | null> => {
       const cloudAudioSource =
-        track.source === 'cloud'
+        track.cloudAudioSource?.hash || track.source === 'cloud'
           ? getTrackCloudAudioSource()
           : await getCloudAudioSourceForSong(track);
       syncTrackCloudAudioSource(cloudAudioSource);
@@ -411,9 +416,16 @@ export const createResolver = (
       return { url: '', quality: null, effect: 'none', loudness: null };
     }
 
-    const relateGoods = await ensureTrackRelateGoods(catalogTrack, {
-      forceRefresh: catalogTrack === track,
-    });
+    let relateGoods: SongRelateGood[] = [];
+    try {
+      relateGoods = await ensureTrackRelateGoods(catalogTrack, {
+        forceRefresh: catalogTrack === track,
+      });
+    } catch (error) {
+      logger.warn('PlayerResolver', 'Resolve privilege lite failed, continue playback:', error, {
+        track: summarizeSong(catalogTrack),
+      });
+    }
     if (catalogTrack !== track) syncTrackRelateGoods(relateGoods);
 
     if (audioEffect !== 'none') {

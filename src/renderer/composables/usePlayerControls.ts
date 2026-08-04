@@ -233,8 +233,15 @@ export function usePlayerControls() {
     return '#F59E0B';
   };
 
+  const clearCatalogQualityError = () => {
+    if (catalogQualityErrorKey.value === catalogQualityLookupKey.value) {
+      catalogQualityErrorKey.value = '';
+    }
+  };
+
   const setAudioQuality = (quality: AudioQualityValue) => {
     if (isAudioQualityDisabled(quality)) return;
+    clearCatalogQualityError();
     if (hasCloudAudioSourceOption.value) {
       player.preferCurrentTrackCatalogQuality(quality);
       return;
@@ -247,6 +254,7 @@ export function usePlayerControls() {
 
   const setCloudAudioSource = () => {
     if (!hasCloudAudioSourceOption.value) return;
+    clearCatalogQualityError();
     player.preferCurrentTrackCloudSource();
   };
 
@@ -271,7 +279,7 @@ export function usePlayerControls() {
     const track = currentTrack.value;
     const lookupKey = cloudAudioSourceLookupKey.value;
     if (!track) return false;
-    if (track.source === 'cloud' || track.cloudAudioSource?.hash) return true;
+    if (track.source === 'cloud' || track.cloudAudioSource?.hash) return false;
     if (!lookupKey || cloudAudioSourceLoadingKey.value === lookupKey) return false;
     const fetchSeq = ++cloudAudioSourceFetchSeq;
     cloudAudioSourceLoadingKey.value = lookupKey;
