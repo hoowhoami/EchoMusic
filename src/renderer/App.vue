@@ -13,6 +13,7 @@ import { useThemeStore } from './stores/theme';
 import { usePlaylistStore } from './stores/playlist';
 import { useHistoryStore } from './stores/historyStore';
 import { useToastStore } from './stores/toast';
+import { setupTaskBridges } from '@/tasks/taskBridges';
 import { waitForSqlitePersistHydration } from './stores/sqlitePersist';
 import { initShortcutSync, syncGlobalShortcuts } from '@/utils/shortcuts';
 import { initDesktopLyricSync } from '@/desktopLyric/sync';
@@ -51,6 +52,7 @@ let disposeNowPlayingSync: (() => void) | null = null;
 let disposeTrayPlayModeSync: (() => void) | null = null;
 let disposePowerResumeSync: (() => void) | null = null;
 let disposePluginRuntimeReload: (() => void) | null = null;
+let disposeTaskBridges: (() => void) | null = null;
 let disposeShareOpen: (() => void) | null = null;
 let silentUpdateCheckTimer: number | null = null;
 let clipboardShareCheckTimer: number | null = null;
@@ -241,6 +243,7 @@ onMounted(async () => {
     }) ?? null;
   syncTrayPlayback();
   void updateStore.init();
+  disposeTaskBridges = setupTaskBridges();
   if (settings.autoCheckUpdate) {
     silentUpdateCheckTimer = window.setTimeout(() => {
       updateStore.check(true);
@@ -280,6 +283,8 @@ onUnmounted(() => {
   disposePluginRuntimeReload = null;
   disposeShareOpen?.();
   disposeShareOpen = null;
+  disposeTaskBridges?.();
+  disposeTaskBridges = null;
   colorSchemeMediaQuery?.removeEventListener('change', updateTheme);
   colorSchemeMediaQuery = null;
 });

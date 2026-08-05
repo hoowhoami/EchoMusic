@@ -922,9 +922,12 @@ export const registerSettingsHandlers = ({ getMainWindow, playerRef }: IpcContex
       progress: { percent: 0, bytesPerSecond: 0, transferred: 0, total: 0 },
     };
     sendToRenderer('update-download-status', downloadState);
-    downloadCancellationToken = new CancellationToken();
-    autoUpdater.downloadUpdate(downloadCancellationToken).catch((error) => {
-      if (!downloadCancellationToken) return;
+    const token = new CancellationToken();
+    downloadCancellationToken = token;
+    autoUpdater.downloadUpdate(token).catch((error) => {
+      // 中止后立即重下时，旧下载尝试（如取消）的失败回调不能覆盖新下载：
+      // 仅当 token 仍是当前下载的 token 时才更新错误状态。
+      if (downloadCancellationToken !== token) return;
       downloadCancellationToken = null;
       log.error('[Updater] Download failed:', error);
       downloadState = {

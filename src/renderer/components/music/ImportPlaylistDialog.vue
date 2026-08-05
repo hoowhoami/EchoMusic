@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch, nextTick } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { useVModel, useVirtualList } from '@vueuse/core';
 import { Icon } from '@iconify/vue';
@@ -215,6 +215,8 @@ watch(open, (v) => {
     // 导入进行中：拦截关闭，弹出后台运行确认（除非已 dismiss）
     if (step.value === 'progress' && isImporting.value) {
       if (settingStore.importBackgroundConfirmDismissed) {
+        // 跳过确认弹窗时同样转入后台：与确认后行为一致，任务面板可查看/中止
+        enterBackgroundMode();
         step.value = 'input';
         return;
       }
@@ -225,12 +227,27 @@ watch(open, (v) => {
     }
     window.setTimeout(reset, 200);
   } else {
-    // 重开时若后台有活跃导入任务，跳到进度页
+    // 重开时若后台有活跃导入任务，跳到进度页（AC-21）；已完成的结果页由
+    // openRequested 增量触发（任务面板「查看结果」），普通打开不劫持
     if (importTaskStore.status === 'running') {
       resumeFromStore();
     }
   }
 });
+
+// 任务面板「查看结果」触发的重开：仅在 openRequested 增量且已完成时恢复结果页，
+// 普通打开（如侧边栏发起新导入）仍进输入页
+let lastOpenRequested = 0;
+watch(
+  () => importTaskStore.openRequested,
+  (val) => {
+    if (val === lastOpenRequested || val <= 0) return;
+    lastOpenRequested = val;
+    if (importTaskStore.status === 'completed') {
+      resumeFromStoreCompleted();
+    }
+  },
+);
 
 const resumeFromStore = () => {
   step.value = 'progress';
@@ -244,6 +261,16 @@ const resumeFromStore = () => {
   importTaskStore.onAbort = () => {
     abortFlag.value = true;
   };
+};
+
+const resumeFromStoreCompleted = () => {
+  step.value = 'progress';
+  progressItems.value = importTaskStore.items;
+  progressDone.value = importTaskStore.done;
+  progressTotal.value = importTaskStore.total;
+  isImporting.value = false;
+  abortFlag.value = false;
+  summary.value = importTaskStore.summary;
 };
 
 const enterBackgroundMode = () => {
@@ -445,7 +472,7 @@ const handleStartImport = async (duplicateConfirmed = false) => {
         importTaskStore.complete(result);
       }
     }
-    if (result.success > 0) {
+    if (result.success > 0 && !abortFlag.value) {
       toastStore.success(`导入完成：成功 ${result.success} / ${result.total}`);
       await playlistStore.fetchUserPlaylists();
     } else if (!abortFlag.value) {
@@ -996,9 +1023,7 @@ const statusLabel = (status: ImportItemResult['status']): string => {
       <Button variant="ghost" size="sm" type="button" @click="cancelBackgroundImport">
         留在本页
       </Button>
-      <Button variant="primary" size="sm" @click="confirmBackgroundImport">
-        我知道了
-      </Button>
+      <Button variant="primary" size="sm" @click="confirmBackgroundImport"> 我知道了 </Button>
     </template>
   </Dialog>
 </template>
