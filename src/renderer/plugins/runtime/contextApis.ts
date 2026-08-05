@@ -34,6 +34,25 @@ import {
 } from '../audioSource';
 import { registerPluginLyricResolver, type PluginLyricResolverContribution } from '../lyrics';
 import { registerPluginLyricEffect, type PluginLyricEffectContribution } from '../lyricEffects';
+import {
+  registerTask,
+  updateTask,
+  dismissTask,
+  type TaskRegistration,
+} from '../taskPanel';
+
+export interface PluginTaskApi {
+  register: (task: Omit<TaskRegistration, 'pluginId'>) => () => void;
+  update: (id: string, patch: Partial<Omit<TaskRegistration, 'id' | 'pluginId'>>) => void;
+  dismiss: (id: string) => void;
+}
+
+export const createTaskApi = (pluginId: string): PluginTaskApi => ({
+  register: (task) =>
+    registerTask({ ...task, pluginId }),
+  update: updateTask,
+  dismiss: dismissTask,
+});
 
 type PluginCallbackRunner = <T>(
   pluginId: string,
