@@ -1427,8 +1427,6 @@ checksum = "a89322df9ebe1c1578d689c92318e070967d1042b512afbe49518723f4e6d5cd"
 [[package]]
 name = "pipewire"
 version = "0.10.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8585aba8a52ad74ccc633b8e293c1dc4277976bd5d510b925533f34fd6685f38"
 dependencies = [
  "bitflags",
  "libc",

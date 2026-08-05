@@ -47,3 +47,4 @@ napi-build = "2"
 
 [patch.crates-io]
 libspa = { path = "vendor/libspa" }
+pipewire = { path = "vendor/pipewire" }

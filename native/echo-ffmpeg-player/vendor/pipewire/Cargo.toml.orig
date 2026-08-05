@@ -1,0 +1,45 @@
+[package]
+name = "pipewire"
+version.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+edition.workspace = true
+categories.workspace = true
+description = "Rust bindings for PipeWire"
+repository.workspace = true
+license.workspace = true
+readme = "README.md"
+homepage.workspace = true
+documentation = "https://pipewire.pages.freedesktop.org/pipewire-rs/pipewire/"
+keywords = ["pipewire", "multimedia", "audio", "video"]
+
+[dependencies]
+pw_sys.workspace = true
+spa_sys.workspace = true
+spa.workspace = true
+libc.workspace = true
+rustix.workspace = true
+bitflags.workspace = true
+
+[dev-dependencies]
+clap = { workspace = true, features = ["derive"] }
+
+[features]
+v0_3_32 = []
+v0_3_33 = ["spa/v0_3_33", "v0_3_32"]
+v0_3_34 = ["v0_3_33"]
+v0_3_39 = ["v0_3_34"]
+v0_3_40 = ["v0_3_39"]
+v0_3_41 = ["v0_3_40"]
+v0_3_43 = ["v0_3_41"]
+v0_3_44 = ["v0_3_43"]
+v0_3_45 = ["v0_3_44"]
+v0_3_49 = ["v0_3_45"]
+v0_3_50 = ["v0_3_49"]
+v0_3_53 = ["v0_3_50"]
+v0_3_57 = ["v0_3_53"]
+v0_3_64 = ["v0_3_57"]
+v0_3_65 = ["spa/v0_3_65", "v0_3_64"]
+v0_3_77 = ["v0_3_65"]
+v1_0_0 = ["spa/v1_0_0", "v0_3_77"]
+v1_2_0 = ["spa/v1_2_0", "v1_0_0"]
