@@ -116,7 +116,7 @@ fn run_exclusive_output(
         format.sample_rate,
         format.channels,
         format!("{:?}", format.sample_format),
-        output_buffer_mode_for_frames(format.buffer_frames),
+        output_buffer_mode_for_frames(format.buffer_frames.min(u32::MAX as usize) as u32),
         format.buffer_frames as f64,
         device_buffer_secs,
     ));
@@ -218,8 +218,7 @@ fn configure_pcm(
     hwp.set_access(Access::RWInterleaved)
         .map_err(|err| format!("failed to set ALSA interleaved access: {err}"))?;
     let sample_format = choose_sample_format(&hwp, source_format)?;
-    let channels = hwp
-        .set_channels_near(channels.max(1) as u32)
+    hwp.set_channels_near(channels.max(1) as u32)
         .map_err(|err| format!("failed to set ALSA output channels: {err}"))?;
     let actual_rate = hwp
         .set_rate_near(sample_rate, ValueOr::Nearest)

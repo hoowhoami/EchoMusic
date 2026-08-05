@@ -105,7 +105,8 @@ fn device_list_signature(devices: &[crate::events::AudioDevice]) -> Vec<(String,
 impl Drop for DeviceWatcher {
     fn drop(&mut self) {
         #[cfg(not(any(target_os = "windows", target_os = "macos")))]
-        if let DeviceWatcherInner::Generic { stop, thread } = &mut self._inner {
+        {
+            let DeviceWatcherInner::Generic { stop, thread } = &mut self._inner;
             stop.store(true, Ordering::Release);
             if let Some(thread) = thread.take() {
                 let _ = thread.join();
