@@ -2,9 +2,11 @@
 use crate::device::{device_display_name, select_output_device_checked};
 #[cfg(not(target_os = "windows"))]
 use crate::events::PlayerErrorCode;
+#[cfg(not(target_os = "windows"))]
 use crate::events::PlayerEvent;
 #[cfg(not(target_os = "windows"))]
 use crate::exclusive::ExclusiveGuard;
+#[cfg(not(target_os = "windows"))]
 use crate::output::{build_output_stats, output_buffer_mode_for_frames, OutputStartSender};
 #[cfg(not(target_os = "windows"))]
 use crate::output::{report_output_start, report_output_start_failure};
@@ -19,9 +21,11 @@ use cpal::{
 use ffmpeg_audio::{sys, SwrContext};
 use std::collections::VecDeque;
 use std::sync::atomic::Ordering;
+#[cfg(not(target_os = "windows"))]
 use std::sync::Arc;
 #[cfg(not(target_os = "windows"))]
 use std::thread;
+#[cfg(not(target_os = "windows"))]
 use std::thread::JoinHandle;
 #[cfg(not(target_os = "windows"))]
 use std::time::Duration;

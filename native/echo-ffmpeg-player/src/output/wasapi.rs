@@ -16,10 +16,8 @@ use std::slice;
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
-use windows::core::PCSTR;
-use windows::Win32::Foundation::{
-    CloseHandle, HANDLE, HRESULT, WAIT_FAILED, WAIT_OBJECT_0, WAIT_TIMEOUT,
-};
+use windows::core::{HRESULT, PCSTR};
+use windows::Win32::Foundation::{CloseHandle, HANDLE, WAIT_FAILED, WAIT_OBJECT_0, WAIT_TIMEOUT};
 use windows::Win32::Media::Audio;
 use windows::Win32::System::Threading;
 
