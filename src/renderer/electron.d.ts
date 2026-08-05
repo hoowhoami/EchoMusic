@@ -153,8 +153,12 @@ type PlayerAudioOutputStats = {
   engineSampleRate: number;
   channels: number;
   format: string;
+  bufferMode: string;
   bufferFrames: number;
   bufferSecs: number;
+  requestedBufferSecs?: number;
+  deviceBufferSecs?: number;
+  softwareBufferSecs?: number;
   delaySecs: number;
   underruns: number;
 };
@@ -648,6 +652,7 @@ export interface IElectronAPI {
     available: () => Promise<boolean>;
     restart: () => Promise<boolean>;
     setExclusive: (exclusive: boolean) => Promise<boolean>;
+    setPauseOnDeviceDisconnect: (enabled: boolean) => Promise<void>;
     setMediaTitle: (title: string) => Promise<void>;
     setLoopFile: (loop: boolean) => Promise<void>;
     setStallTimeout: (seconds: number) => Promise<void>;

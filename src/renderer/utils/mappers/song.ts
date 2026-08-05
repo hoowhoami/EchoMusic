@@ -1,4 +1,4 @@
-import type { Song, SongRelateGood } from '@/models/song';
+import type { CloudAudioQualityValue, Song, SongRelateGood } from '@/models/song';
 import {
   EMPTY_RECORD,
   buildArtists,
@@ -27,6 +27,15 @@ const cleanupAudioExtension = (value: string): string => {
     }
   }
   return output;
+};
+
+const mapCloudBitrateToQuality = (bitrate?: number): CloudAudioQualityValue | undefined => {
+  if (bitrate === 31) return 'super';
+  if (bitrate === 5) return 'high';
+  if (bitrate === 4) return 'flac';
+  if (bitrate === 3) return '320';
+  if (bitrate === 1 || bitrate === 2) return '128';
+  return undefined;
 };
 
 export const mapTopSong = (json: unknown): Song => {
@@ -693,6 +702,23 @@ export const mapCloudSong = (json: unknown): Song => {
     Object.prototype.hasOwnProperty.call(audioInfo, 'duration_128')
       ? Math.floor(durationRaw / 1000)
       : durationRaw;
+  const hash = readString(pickValue(record.hash, audioInfo.hash, audioInfo.hash_128, ''));
+  const hashStd = readString(
+    pickValue(record.hash_std, record.hashstd, audioInfo.hash_std, audioInfo.hashstd, ''),
+    '',
+  );
+  const audioId = parseOptionalInt(
+    pickValue(record.audio_id, record.audioid, audioInfo.audio_id, audioInfo.audioid),
+  );
+  const albumAudioId = readString(
+    pickValue(record.album_audio_id, record.mixsongid, audioInfo.album_audio_id, ''),
+    '',
+  );
+  const cloudFileId = parseOptionalInt(pickValue(record.kv_id, record.kvid, record.cloud_file_id));
+  const cloudAddedAt = parseOptionalInt(pickValue(record.add_time, record.addtime));
+  const cloudSortOrder = parseOptionalInt(pickValue(record.sort_order, record.sortorder));
+  const bitrate = parseOptionalInt(pickValue(record.bitrate, audioInfo.bitrate));
+  const ext = readString(pickValue(record.ext, record.extendname, audioInfo.ext, ''), '');
 
   return {
     id: readString(
@@ -720,14 +746,31 @@ export const mapCloudSong = (json: unknown): Song => {
     coverUrl: normalizeCoverUrl(cover, 400),
     cover,
     audioUrl: '',
-    hash: readString(pickValue(record.hash, audioInfo.hash, audioInfo.hash_128, '')),
+    hash,
     mvHash: readString(pickValue(record.video_hash, record.mvhash, ''), ''),
     mixSongId: parseIntSafe(
       pickValue(record.mixsongid, record.album_audio_id, record.audio_id, audioInfo.audio_id, 0),
     ),
+    albumAudioId,
     fileId: parseOptionalInt(
       pickValue(record.fileid, record.file_id, record.Audioid, record.audio_id, audioInfo.audio_id),
     ),
+    cloudFileId,
+    ...(cloudAddedAt ? { cloudAddedAt } : {}),
+    ...(cloudSortOrder ? { cloudSortOrder } : {}),
+    cloudAudioSource: hash
+      ? {
+          cloudFileId,
+          hash,
+          ...(hashStd ? { hashStd } : {}),
+          ...(audioId ? { audioId } : {}),
+          ...(albumAudioId ? { albumAudioId } : {}),
+          ...(bitrate ? { bitrate, quality: mapCloudBitrateToQuality(bitrate) } : {}),
+          size: parseOptionalInt(pickValue(record.size, record.filesize, audioInfo.size)),
+          ...(ext ? { ext } : {}),
+          name: rawName,
+        }
+      : undefined,
     source: 'cloud',
   };
 };

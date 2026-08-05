@@ -14,6 +14,7 @@ import type { Song } from '@/models/song';
 import type { AudioEffectValue, AudioQualityValue, PlayMode } from '@/types';
 import { hasSongQuality, resolveEffectiveSongQuality } from '@/utils/song';
 import { copyShareTarget, createSongShareTarget, isSongHashId } from '@/utils/share';
+import { getCloudAudioSourceForSong } from '@/services/cloudAudioIndex';
 import {
   iconRepeat,
   iconRepeatOff,
@@ -141,7 +142,38 @@ export function usePlayerControls() {
   // ── 音质 ──
   const requestedAudioQuality = computed(() => player.getEffectiveAudioQuality());
   const isCurrentTrackCloud = computed(() => currentTrack.value?.source === 'cloud');
-  const isAudioQualitySelectionDisabled = computed(() => isCurrentTrackCloud.value);
+  const isResolvedCloudSource = computed(() => player.currentResolvedSourceKind === 'cloud');
+  const hasCloudAudioSourceOption = computed(
+    () =>
+      isResolvedCloudSource.value ||
+      isCurrentTrackCloud.value ||
+      Boolean(currentTrack.value?.cloudAudioSource?.hash),
+  );
+  const catalogQualityLookupKey = computed(() => {
+    const track = currentTrack.value;
+    if (!track) return '';
+    const catalogHash =
+      track.source === 'cloud' ? (track.cloudAudioSource?.hashStd ?? '') : track.hash;
+    return catalogHash ? `${track.id}:${catalogHash}` : '';
+  });
+  const hasCatalogAudioSourceOption = computed(() => Boolean(catalogQualityLookupKey.value));
+  const cloudAudioSourceLookupKey = computed(() => {
+    const track = currentTrack.value;
+    if (!track || track.source === 'cloud' || track.cloudAudioSource?.hash) return '';
+    return `${track.id}:${track.albumAudioId ?? track.mixSongId ?? ''}:${track.fileId ?? track.songId ?? ''}:${track.hash ?? ''}`;
+  });
+  const isCatalogQualityLoading = ref(false);
+  const catalogQualityLoadingKey = ref('');
+  const catalogQualityErrorKey = ref('');
+  const cloudAudioSourceLoadingKey = ref('');
+  let catalogQualityFetchSeq = 0;
+  let cloudAudioSourceFetchSeq = 0;
+  const isAudioEffectPresetSelectionDisabled = computed(() => isResolvedCloudSource.value);
+  const hasCatalogQualityError = computed(
+    () =>
+      !!catalogQualityLookupKey.value &&
+      catalogQualityErrorKey.value === catalogQualityLookupKey.value,
+  );
   const effectiveAudioQuality = computed(() => {
     if (player.currentResolvedAudioQuality) return player.currentResolvedAudioQuality;
     if (!currentTrack.value) return requestedAudioQuality.value;
@@ -153,14 +185,26 @@ export function usePlayerControls() {
   });
 
   const isAudioQualityDisabled = (quality: AudioQualityValue) => {
-    if (isAudioQualitySelectionDisabled.value) return true;
+    if (hasCloudAudioSourceOption.value) {
+      const track = currentTrack.value;
+      if (!track || !catalogQualityLookupKey.value) return true;
+      if (quality === '128') return false;
+      if (
+        isCatalogQualityLoading.value &&
+        catalogQualityLoadingKey.value === catalogQualityLookupKey.value &&
+        (track.relateGoods?.length ?? 0) === 0
+      ) {
+        return true;
+      }
+      return !hasSongQuality(track, quality);
+    }
     if (quality === effectiveAudioQuality.value) return false;
     if (!currentTrack.value) return quality !== '128';
     return !hasSongQuality(currentTrack.value, quality);
   };
 
   const audioQualityButtonBadge = computed(() => {
-    if (isAudioQualitySelectionDisabled.value) return null;
+    if (isResolvedCloudSource.value) return 'CLD';
     if (effectiveAudioQuality.value === '128') return 'SD';
     if (effectiveAudioQuality.value === '320') return 'HQ';
     if (effectiveAudioQuality.value === 'flac') return 'SQ';
@@ -176,9 +220,10 @@ export function usePlayerControls() {
     return null;
   });
 
-  const currentAudioQualityBadgeColor = computed(() =>
-    getAudioQualityTagColor(effectiveAudioQuality.value),
-  );
+  const currentAudioQualityBadgeColor = computed(() => {
+    if (isResolvedCloudSource.value) return '#0EA5E9';
+    return getAudioQualityTagColor(effectiveAudioQuality.value);
+  });
 
   const getAudioQualityTagColor = (quality: AudioQualityValue) => {
     if (quality === '128') return '#64748B';
@@ -188,15 +233,118 @@ export function usePlayerControls() {
     return '#F59E0B';
   };
 
+  const clearCatalogQualityError = () => {
+    if (catalogQualityErrorKey.value === catalogQualityLookupKey.value) {
+      catalogQualityErrorKey.value = '';
+    }
+  };
+
   const setAudioQuality = (quality: AudioQualityValue) => {
-    if (isAudioQualitySelectionDisabled.value) return;
+    if (isAudioQualityDisabled(quality)) return;
+    clearCatalogQualityError();
+    if (hasCloudAudioSourceOption.value) {
+      player.preferCurrentTrackCatalogQuality(quality);
+      return;
+    }
     if (player.currentAudioQualityOverride === null && effectiveAudioQuality.value === quality)
       return;
     if (player.currentAudioQualityOverride === quality) return;
     player.setCurrentAudioQualityOverride(quality);
   };
 
+  const setCloudAudioSource = () => {
+    if (!hasCloudAudioSourceOption.value) return;
+    clearCatalogQualityError();
+    player.preferCurrentTrackCloudSource();
+  };
+
+  const syncCurrentTrackCloudAudioSource = (
+    track: Song,
+    cloudAudioSource: Song['cloudAudioSource'],
+  ) => {
+    if (!cloudAudioSource?.hash) return;
+    track.cloudAudioSource = cloudAudioSource;
+    if (
+      player.currentTrackSnapshot &&
+      String(player.currentTrackSnapshot.id) === String(track.id)
+    ) {
+      player.currentTrackSnapshot = {
+        ...player.currentTrackSnapshot,
+        cloudAudioSource,
+      };
+    }
+  };
+
+  const ensureCurrentTrackCloudAudioSource = async () => {
+    const track = currentTrack.value;
+    const lookupKey = cloudAudioSourceLookupKey.value;
+    if (!track) return false;
+    if (track.source === 'cloud' || track.cloudAudioSource?.hash) return false;
+    if (!lookupKey || cloudAudioSourceLoadingKey.value === lookupKey) return false;
+    const fetchSeq = ++cloudAudioSourceFetchSeq;
+    cloudAudioSourceLoadingKey.value = lookupKey;
+    try {
+      const cloudAudioSource = await getCloudAudioSourceForSong(track);
+      if (cloudAudioSourceLookupKey.value !== lookupKey || !cloudAudioSource?.hash) {
+        return false;
+      }
+      syncCurrentTrackCloudAudioSource(track, cloudAudioSource);
+      return true;
+    } finally {
+      if (fetchSeq === cloudAudioSourceFetchSeq) {
+        cloudAudioSourceLoadingKey.value = '';
+      }
+    }
+  };
+
+  const ensureCurrentTrackCatalogQualities = async () => {
+    if (!currentTrack.value) return;
+    if (!hasCloudAudioSourceOption.value) {
+      await ensureCurrentTrackCloudAudioSource();
+    }
+    const track = currentTrack.value;
+    const lookupKey = catalogQualityLookupKey.value;
+    if (!track || !hasCloudAudioSourceOption.value || !lookupKey) return;
+    if ((track.relateGoods?.length ?? 0) > 0 || catalogQualityLoadingKey.value === lookupKey)
+      return;
+    const fetchSeq = ++catalogQualityFetchSeq;
+    catalogQualityLoadingKey.value = lookupKey;
+    isCatalogQualityLoading.value = true;
+    catalogQualityErrorKey.value = '';
+    try {
+      const catalogHash =
+        track.source === 'cloud' ? (track.cloudAudioSource?.hashStd ?? '') : track.hash;
+      const probeTrack: Song = {
+        ...track,
+        source: undefined,
+        hash: catalogHash,
+      };
+      const relateGoods = await player.ensureTrackRelateGoods(probeTrack, { throwOnError: true });
+      if (catalogQualityLookupKey.value !== lookupKey || relateGoods.length === 0) return;
+      track.relateGoods = relateGoods;
+      if (
+        player.currentTrackSnapshot &&
+        String(player.currentTrackSnapshot.id) === String(track.id)
+      ) {
+        player.currentTrackSnapshot = {
+          ...player.currentTrackSnapshot,
+          relateGoods,
+        };
+      }
+    } catch {
+      if (catalogQualityLookupKey.value === lookupKey) {
+        catalogQualityErrorKey.value = lookupKey;
+      }
+    } finally {
+      if (fetchSeq === catalogQualityFetchSeq) {
+        catalogQualityLoadingKey.value = '';
+        isCatalogQualityLoading.value = false;
+      }
+    }
+  };
+
   const setAudioEffect = (effect: AudioEffectValue) => {
+    if (isAudioEffectPresetSelectionDisabled.value) return;
     if (player.audioEffect === effect) return;
     player.setAudioEffect(effect);
   };
@@ -391,13 +539,20 @@ export function usePlayerControls() {
     setPlaybackRate,
     // 音质
     effectiveAudioQuality,
-    isAudioQualitySelectionDisabled,
+    isResolvedCloudSource,
+    hasCloudAudioSourceOption,
+    hasCatalogAudioSourceOption,
+    isCatalogQualityLoading,
+    hasCatalogQualityError,
+    isAudioEffectPresetSelectionDisabled,
     isAudioQualityDisabled,
     audioQualityButtonBadge,
     audioEffectButtonBadge,
     currentAudioQualityBadgeColor,
     getAudioQualityTagColor,
+    ensureCurrentTrackCatalogQualities,
     setAudioQuality,
+    setCloudAudioSource,
     setAudioEffect,
     // 桌面歌词
     toggleDesktopLyric,

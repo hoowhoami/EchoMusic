@@ -6,11 +6,24 @@ use cpal::SampleFormat;
 #[cfg(target_os = "linux")]
 use cpal::{Stream, StreamConfig};
 use std::collections::HashMap;
+use std::sync::{Mutex, OnceLock};
 
 const FALLBACK_SAMPLE_RATE: u32 = 48_000;
 pub(crate) const DEVICE_KEY_SEPARATOR: &str = "\u{1f}";
 pub const DEFAULT_DEVICE_NAME: &str = "auto";
 pub const LEGACY_DEFAULT_DEVICE_NAME: &str = "default";
+const WASAPI_DEVICE_NAMESPACE: &str = "wasapi";
+const COREAUDIO_DEVICE_NAMESPACE: &str = "coreaudio";
+const ALSA_DEVICE_NAMESPACE: &str = "alsa";
+const CPAL_DEVICE_NAMESPACE: &str = "cpal";
+const JACK_DEVICE_NAMESPACE: &str = "jack";
+const OPENAL_DEVICE_NAMESPACE: &str = "openal";
+const PIPEWIRE_DEVICE_NAMESPACE: &str = "pipewire";
+const PULSE_DEVICE_NAMESPACE: &str = "pulse";
+const SDL_DEVICE_NAMESPACE: &str = "sdl";
+type SampleRateCacheKey = (String, bool);
+type SampleRateCache = HashMap<SampleRateCacheKey, Option<u32>>;
+static PREFERRED_OUTPUT_SAMPLE_RATE_CACHE: OnceLock<Mutex<SampleRateCache>> = OnceLock::new();
 
 pub fn list_output_devices() -> Vec<AudioDevice> {
     #[cfg(target_os = "macos")]
@@ -29,7 +42,7 @@ pub fn list_output_devices() -> Vec<AudioDevice> {
     let host = cpal::default_host();
     let default_name = host
         .default_output_device()
-        .and_then(|device| device.name().ok());
+        .and_then(|device| device_display_name(&device));
     let names = output_device_names(&host);
     let mut counts = HashMap::<String, usize>::new();
     for name in &names {
@@ -66,35 +79,72 @@ pub fn list_output_devices() -> Vec<AudioDevice> {
     with_default_device(devices)
 }
 
-pub fn resolve_output_sample_rate(device_name: &str, exclusive: bool) -> u32 {
+pub fn preferred_output_sample_rate(device_name: &str, exclusive: bool) -> Option<u32> {
+    let device_name = normalize_device_name(device_name);
+    let cache_key = (device_name.clone(), exclusive);
+    if let Ok(cache) = preferred_sample_rate_cache().lock() {
+        if let Some(cached) = cache.get(&cache_key) {
+            return *cached;
+        }
+    }
+    let resolved = preferred_output_sample_rate_uncached(&device_name, exclusive);
+    if let Ok(mut cache) = preferred_sample_rate_cache().lock() {
+        cache.insert(cache_key, resolved);
+    }
+    resolved
+}
+
+pub fn clear_preferred_output_sample_rate_cache() {
+    if let Ok(mut cache) = preferred_sample_rate_cache().lock() {
+        cache.clear();
+    }
+}
+
+fn preferred_sample_rate_cache() -> &'static Mutex<SampleRateCache> {
+    PREFERRED_OUTPUT_SAMPLE_RATE_CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn preferred_output_sample_rate_uncached(device_name: &str, exclusive: bool) -> Option<u32> {
     #[cfg(target_os = "windows")]
     if exclusive {
-        return crate::device::platform_windows::resolve_wasapi_output_sample_rate(device_name);
+        return Some(
+            crate::device::platform_windows::resolve_wasapi_output_sample_rate(device_name),
+        );
+    }
+    #[cfg(target_os = "windows")]
+    if !exclusive {
+        return crate::device::platform_windows::resolve_wasapi_shared_output_sample_rate(
+            device_name,
+        );
     }
     #[cfg(target_os = "macos")]
     if exclusive {
-        return crate::device::platform_macos::resolve_coreaudio_output_sample_rate(device_name);
+        return Some(
+            crate::device::platform_macos::resolve_coreaudio_output_sample_rate(device_name),
+        );
     }
     #[cfg(target_os = "linux")]
     if exclusive {
         let Ok(device) = select_output_device_checked(device_name, exclusive) else {
-            return FALLBACK_SAMPLE_RATE;
+            return None;
         };
         return device
             .default_output_config()
             .ok()
-            .map(|config| config.sample_rate().0)
-            .unwrap_or(FALLBACK_SAMPLE_RATE);
+            .map(|config| config.sample_rate());
     }
 
     let Ok(device) = select_output_device_checked(device_name, exclusive) else {
-        return FALLBACK_SAMPLE_RATE;
+        return None;
     };
     device
         .default_output_config()
         .ok()
-        .map(|config| config.sample_rate().0)
-        .unwrap_or(FALLBACK_SAMPLE_RATE)
+        .map(|config| config.sample_rate())
+}
+
+pub fn resolve_output_sample_rate(device_name: &str, exclusive: bool) -> u32 {
+    preferred_output_sample_rate(device_name, exclusive).unwrap_or(FALLBACK_SAMPLE_RATE)
 }
 
 pub fn validate_output_device(device_name: &str, exclusive: bool) -> Result<(), String> {
@@ -105,6 +155,11 @@ pub fn validate_output_device(device_name: &str, exclusive: bool) -> Result<(), 
     }
     #[cfg(target_os = "linux")]
     if exclusive {
+        if crate::device::platform_linux::is_sound_server_output_key(device_name) {
+            return Err(crate::device::platform_linux::sound_server_exclusive_error(
+                device_name,
+            ));
+        }
         let sample_rate = resolve_output_sample_rate(device_name, exclusive);
         return crate::device::platform_linux::validate_alsa_exclusive_output(
             device_name,
@@ -121,23 +176,54 @@ pub fn validate_output_device(device_name: &str, exclusive: bool) -> Result<(), 
         device_name,
         exclusive,
         config.sample_format(),
-        config.sample_rate().0,
+        config.sample_rate(),
     )
 }
 
 pub fn select_output_device_checked(name: &str, exclusive: bool) -> Result<cpal::Device, String> {
-    let host = output_host(name, exclusive)?;
-    select_output_device(&host, name, exclusive)
-        .ok_or_else(|| output_device_not_found_message(name, exclusive))
+    #[cfg(target_os = "linux")]
+    {
+        select_linux_output_device_checked(name, exclusive)
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let host = output_host(name, exclusive)?;
+        select_output_device(&host, name, exclusive)
+            .ok_or_else(|| output_device_not_found_message(name, exclusive))
+    }
 }
 
 #[cfg(target_os = "linux")]
-fn output_host(name: &str, exclusive: bool) -> Result<cpal::Host, String> {
-    if exclusive || crate::device::platform_linux::is_alsa_hardware_pcm(name) {
-        cpal::host_from_id(cpal::HostId::Alsa)
-            .map_err(|err| format!("ALSA output host unavailable: {err}"))
+fn select_linux_output_device_checked(name: &str, exclusive: bool) -> Result<cpal::Device, String> {
+    if exclusive && crate::device::platform_linux::is_sound_server_output_key(name) {
+        return Err(crate::device::platform_linux::sound_server_exclusive_error(
+            name,
+        ));
+    }
+    let host_kinds =
+        crate::device::platform_linux::output_host_candidates_for_device_name(name, exclusive);
+    let mut host_errors = Vec::<String>::new();
+    for host_kind in host_kinds {
+        let host = match cpal::host_from_id(host_kind.host_id()) {
+            Ok(host) => host,
+            Err(err) => {
+                host_errors.push(format!("{} unavailable: {err}", host_kind.host_id()));
+                continue;
+            }
+        };
+        if let Some(device) = select_output_device(&host, name, exclusive) {
+            return Ok(device);
+        }
+        host_errors.push(format!("{} has no matching output", host_kind.host_id()));
+    }
+    if host_errors.is_empty() {
+        Err(output_device_not_found_message(name, exclusive))
     } else {
-        Ok(cpal::default_host())
+        Err(format!(
+            "{} ({})",
+            output_device_not_found_message(name, exclusive),
+            host_errors.join("; ")
+        ))
     }
 }
 
@@ -172,17 +258,20 @@ fn select_output_device(host: &cpal::Host, name: &str, _exclusive: bool) -> Opti
         };
         return select_named_output_device(host, &selector);
     }
+    #[cfg(target_os = "linux")]
+    let name = crate::device::platform_linux::linux_device_selector(name);
     let selector = parse_device_key(name);
     select_named_output_device(host, &selector)
 }
 
 #[cfg(target_os = "linux")]
 fn select_alsa_exclusive_output_device(host: &cpal::Host, name: &str) -> Option<cpal::Device> {
+    let name = crate::device::platform_linux::linux_device_selector(name);
     let wants_default = is_default_device_name(name);
     let selector = parse_device_key(name);
     let mut occurrence = 0usize;
     host.output_devices().ok()?.find(|device| {
-        let Ok(device_name) = device.name() else {
+        let Some(device_name) = device_display_name(device) else {
             return false;
         };
         if !crate::device::platform_linux::is_alsa_hardware_pcm(&device_name) {
@@ -224,10 +313,44 @@ pub fn is_default_device_name(name: &str) -> bool {
 }
 
 pub fn normalize_device_name(name: &str) -> String {
+    let name = name.trim();
     if is_default_device_name(name) {
         DEFAULT_DEVICE_NAME.to_string()
+    } else if let Some((namespace, device)) = parse_mpv_device_name(name) {
+        normalize_mpv_device_name(namespace, device).unwrap_or_else(|| name.to_string())
     } else {
         name.to_string()
+    }
+}
+
+fn parse_mpv_device_name(value: &str) -> Option<(&str, &str)> {
+    let (namespace, device) = value.split_once('/')?;
+    let namespace = namespace.trim();
+    let device = device.trim();
+    (!namespace.is_empty() && !device.is_empty()).then_some((namespace, device))
+}
+
+fn normalize_mpv_device_name(namespace: &str, device: &str) -> Option<String> {
+    if is_default_device_name(device) {
+        return Some(DEFAULT_DEVICE_NAME.to_string());
+    }
+    #[cfg(target_os = "linux")]
+    if let Some(normalized) =
+        crate::device::platform_linux::normalize_linux_mpv_device_name(namespace, device)
+    {
+        return Some(normalized);
+    }
+    match namespace.to_ascii_lowercase().as_str() {
+        WASAPI_DEVICE_NAMESPACE => Some(format!("wasapi:{device}")),
+        COREAUDIO_DEVICE_NAMESPACE => Some(format!("coreaudio:{device}")),
+        ALSA_DEVICE_NAMESPACE
+        | CPAL_DEVICE_NAMESPACE
+        | JACK_DEVICE_NAMESPACE
+        | OPENAL_DEVICE_NAMESPACE
+        | PIPEWIRE_DEVICE_NAMESPACE
+        | PULSE_DEVICE_NAMESPACE
+        | SDL_DEVICE_NAMESPACE => Some(device.to_string()),
+        _ => None,
     }
 }
 
@@ -260,7 +383,7 @@ pub(crate) fn select_named_output_device(
 ) -> Option<cpal::Device> {
     let mut occurrence = 0usize;
     host.output_devices().ok()?.find(|device| {
-        let Ok(device_name) = device.name() else {
+        let Some(device_name) = device_display_name(device) else {
             return false;
         };
         if !device_name_matches_key(&device_name, selector) {
@@ -281,9 +404,21 @@ fn output_device_names(host: &cpal::Host) -> Vec<String> {
         .ok()
         .into_iter()
         .flatten()
-        .filter_map(|device| device.name().ok())
+        .filter_map(|device| device_display_name(&device))
         .filter(|name| !is_hidden_output_device_name(name))
         .collect()
+}
+
+pub(crate) fn device_display_name(device: &cpal::Device) -> Option<String> {
+    if let Ok(description) = device.description() {
+        let name = description.name().trim();
+        if !name.is_empty() {
+            return Some(name.to_string());
+        }
+    }
+    let name = device.to_string();
+    let name = name.trim();
+    (!name.is_empty()).then(|| name.to_string())
 }
 
 fn is_hidden_output_device_name(name: &str) -> bool {
@@ -338,6 +473,55 @@ mod tests {
     }
 
     #[test]
+    fn normalizes_mpv_style_device_names_to_player_keys() {
+        assert_eq!(
+            normalize_device_name("wasapi/{0.0.0.00000000}.{endpoint}"),
+            "wasapi:{0.0.0.00000000}.{endpoint}"
+        );
+        assert_eq!(
+            normalize_device_name("coreaudio/BuiltInSpeakerDevice"),
+            "coreaudio:BuiltInSpeakerDevice"
+        );
+        assert_eq!(normalize_device_name("alsa/hw:1,0"), "hw:1,0");
+        assert_eq!(normalize_device_name("cpal/USB DAC"), "USB DAC");
+        #[cfg(target_os = "linux")]
+        assert_eq!(
+            normalize_device_name("pipewire/USB DAC"),
+            "pipewire:USB DAC"
+        );
+        #[cfg(not(target_os = "linux"))]
+        assert_eq!(normalize_device_name("pipewire/USB DAC"), "USB DAC");
+        #[cfg(target_os = "linux")]
+        assert_eq!(
+            normalize_device_name("pulse/alsa_output.pci"),
+            "pulse:alsa_output.pci"
+        );
+        #[cfg(not(target_os = "linux"))]
+        assert_eq!(
+            normalize_device_name("pulse/alsa_output.pci"),
+            "alsa_output.pci"
+        );
+        assert_eq!(normalize_device_name("wasapi/default"), DEFAULT_DEVICE_NAME);
+    }
+
+    #[test]
+    fn preferred_sample_rate_cache_can_be_cleared() {
+        clear_preferred_output_sample_rate_cache();
+        let missing = preferred_output_sample_rate("__missing_echo_music_device__", false);
+        assert_eq!(missing, None);
+        assert!(preferred_sample_rate_cache()
+            .lock()
+            .expect("cache lock should not be poisoned")
+            .contains_key(&("__missing_echo_music_device__".to_string(), false)));
+
+        clear_preferred_output_sample_rate_cache();
+        assert!(preferred_sample_rate_cache()
+            .lock()
+            .expect("cache lock should not be poisoned")
+            .is_empty());
+    }
+
+    #[test]
     fn output_device_list_starts_with_auto_device() {
         let devices = with_default_device(vec![
             AudioDevice {
@@ -382,10 +566,10 @@ fn validate_platform_exclusive_open(
     }
     let config = StreamConfig {
         channels: MIX_CHANNELS as u16,
-        sample_rate: cpal::SampleRate(sample_rate),
+        sample_rate,
         buffer_size: cpal::BufferSize::Default,
     };
-    build_probe_stream(device, sample_format, &config)
+    build_probe_stream(device, sample_format, config)
         .map(|_| ())
         .map_err(|err| format!("failed to open ALSA hardware output for exclusive mode: {err}"))
 }
@@ -421,7 +605,7 @@ fn validate_platform_exclusive_open(
 fn build_probe_stream(
     device: &cpal::Device,
     sample_format: SampleFormat,
-    config: &StreamConfig,
+    config: StreamConfig,
 ) -> Result<Stream, String> {
     let err_fn = |_| {};
     match sample_format {

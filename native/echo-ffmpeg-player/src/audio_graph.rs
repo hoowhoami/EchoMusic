@@ -85,7 +85,11 @@ pub struct AudioGraphNodeSnapshot {
 pub struct AudioGraphDeviceOutputSnapshot {
     pub backend: String,
     pub format: AudioGraphFormatSnapshot,
+    pub buffer_mode: Option<String>,
     pub buffer_secs: f64,
+    pub requested_buffer_secs: Option<f64>,
+    pub device_buffer_secs: Option<f64>,
+    pub software_buffer_secs: Option<f64>,
     pub delay_secs: f64,
     pub underruns: f64,
 }
@@ -168,7 +172,11 @@ fn device_output_snapshot(stats: &AudioOutputStats) -> AudioGraphDeviceOutputSna
             channels: stats.channels,
             sample_format: stats.format.clone(),
         },
+        buffer_mode: Some(stats.buffer_mode.clone()),
         buffer_secs: stats.buffer_secs.max(0.0),
+        requested_buffer_secs: Some(stats.requested_buffer_secs.max(0.0)),
+        device_buffer_secs: Some(stats.device_buffer_secs.max(0.0)),
+        software_buffer_secs: Some(stats.software_buffer_secs.max(0.0)),
         delay_secs: stats.delay_secs.max(0.0),
         underruns: stats.underruns.max(0.0),
     }
@@ -902,8 +910,12 @@ mod tests {
             engine_sample_rate: 48_000.0,
             channels: 2.0,
             format: "f32".to_string(),
+            buffer_mode: "fixed(512)".to_string(),
             buffer_frames: 512.0,
             buffer_secs: 512.0 / 44_100.0,
+            requested_buffer_secs: 0.02,
+            device_buffer_secs: 512.0 / 44_100.0,
+            software_buffer_secs: 0.02 - (512.0 / 44_100.0),
             delay_secs: 0.02,
             underruns: 3.0,
         };
@@ -918,6 +930,7 @@ mod tests {
             .device_output
             .expect("runtime device output should be present");
         assert_eq!(device_output.backend, "cpal");
+        assert_eq!(device_output.buffer_mode.as_deref(), Some("fixed(512)"));
         assert_eq!(device_output.format.sample_rate, 44_100.0);
         assert_eq!(device_output.format.sample_format, "f32");
         assert_eq!(device_output.underruns, 3.0);

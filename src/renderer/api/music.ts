@@ -36,6 +36,50 @@ export interface EverydayStyleRecommendParams {
   tagids?: string;
 }
 
+export interface CloudSongUrlResult {
+  url: string;
+  urls: string[];
+  payload: CloudSongUrlResponse;
+}
+
+export interface CloudSongUrlData {
+  url?: string;
+  backup_url?: string | string[];
+  backupUrl?: string | string[];
+  hash?: string;
+  fileSize?: string | number;
+  extName?: string;
+  volume?: number;
+  volume_gain?: number;
+  volumeGain?: number;
+  volume_peak?: number;
+  volumePeak?: number;
+}
+
+export interface CloudSongUrlResponse {
+  status?: number;
+  error_code?: number;
+  data?: CloudSongUrlData;
+}
+
+const normalizeCloudSongUrls = (data: CloudSongUrlData): string[] => {
+  const urls = new Set<string>();
+  const add = (value: unknown) => {
+    if (typeof value !== 'string') return;
+    const url = value.trim();
+    if (url) urls.add(url);
+  };
+
+  add(data.url);
+  const backups = data.backup_url ?? data.backupUrl;
+  if (Array.isArray(backups)) {
+    backups.forEach(add);
+  } else {
+    add(backups);
+  }
+  return [...urls];
+};
+
 /**
  * 获取歌曲播放地址
  */
@@ -60,15 +104,34 @@ export function getSongPrivilegeLite(hash: string, albumId?: string | number) {
 /**
  * 获取云盘歌曲播放地址
  */
-export async function getCloudSongUrl(hash: string): Promise<string | null> {
+export async function getCloudSongUrl(
+  hash: string,
+  options?: {
+    cloudFileId?: string | number;
+    albumAudioId?: string | number;
+    audioId?: string | number;
+    name?: string;
+  },
+): Promise<CloudSongUrlResult | null> {
   const res = await request.get('/user/cloud/url', {
     params: {
       hash,
+      ...(options?.cloudFileId ? { fileid: options.cloudFileId, kv_id: options.cloudFileId } : {}),
+      ...(options?.albumAudioId ? { album_audio_id: options.albumAudioId } : {}),
+      ...(options?.audioId ? { audio_id: options.audioId } : {}),
+      ...(options?.name ? { name: options.name } : {}),
     },
   });
   if (res && typeof res === 'object') {
-    const record = res as { status?: number; data?: { url?: string } };
-    if (record.status === 1 && record.data?.url) return record.data.url;
+    const record = res as CloudSongUrlResponse;
+    if (record.status === 1 && record.data?.url) {
+      const urls = normalizeCloudSongUrls(record.data);
+      return {
+        url: record.data.url,
+        urls,
+        payload: record,
+      };
+    }
   }
   return null;
 }

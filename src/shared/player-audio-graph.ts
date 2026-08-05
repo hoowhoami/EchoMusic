@@ -26,7 +26,11 @@ export interface PlayerAudioGraphNode {
 export interface PlayerAudioGraphDeviceOutput {
   backend: string;
   format: PlayerAudioGraphFormat;
+  bufferMode?: string;
   bufferSecs: number;
+  requestedBufferSecs?: number;
+  deviceBufferSecs?: number;
+  softwareBufferSecs?: number;
   delaySecs: number;
   underruns: number;
 }

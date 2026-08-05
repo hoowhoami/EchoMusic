@@ -1,6 +1,6 @@
 {
   "name": "echo-music",
-  "version": "2.2.9-beta.25",
+  "version": "2.2.9-beta.29",
   "description": "EchoMusic desktop client.",
   "license": "GPL-3.0-only",
   "author": {
@@ -199,7 +199,9 @@
         "libatspi2.0-0",
         "libuuid1",
         "libsecret-1-0",
-        "libasound2"
+        "libasound2",
+        "libpulse0",
+        "libpipewire-0.3-0"
       ]
     },
     "pacman": {
@@ -217,7 +219,9 @@
         "re2",
         "snappy",
         "libnotify",
-        "libappindicator-gtk3"
+        "libappindicator-gtk3",
+        "libpulse",
+        "pipewire"
       ]
     },
     "rpm": {
@@ -230,7 +234,9 @@
         "xdg-utils",
         "at-spi2-core",
         "(libuuid or libuuid1)",
-        "alsa-lib"
+        "alsa-lib",
+        "libpulse",
+        "pipewire-libs"
       ]
     },
     "nsis": {

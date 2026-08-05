@@ -25,9 +25,12 @@ interface Props {
   songs: Song[];
   sourceId?: string | number;
   /** 自定义批量删除回调。传入后优先使用，代替原有的歌单删除逻辑。 */
-  onBatchRemove?: (songs: Song[]) => void;
+  onBatchRemove?: (
+    songs: Song[],
+    onProgress?: (done: number, total: number) => void,
+  ) => void | Promise<void>;
   /** 删除操作的上下文，用于显示正确的确认对话框文案 */
-  removeContext?: 'playlist' | 'history';
+  removeContext?: 'playlist' | 'history' | 'cloud';
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -201,6 +204,26 @@ const canBatchRemove = computed(() => {
   return canRemoveFromPlaylist.value;
 });
 
+const removeDialogTitle = computed(() => {
+  if (props.removeContext === 'history') return '从播放历史移除';
+  if (props.removeContext === 'cloud') return '删除云盘歌曲';
+  return '从歌单移除';
+});
+
+const removeDialogDescription = computed(() => {
+  if (props.removeContext === 'history') {
+    return `确认从播放历史移除选中的 ${selectedKeys.value.size} 首歌曲？此操作无法撤销。`;
+  }
+  if (props.removeContext === 'cloud') {
+    return `确认从云盘删除选中的 ${selectedKeys.value.size} 首歌曲？此操作无法撤销。`;
+  }
+  return `确认从当前歌单移除选中的 ${selectedKeys.value.size} 首歌曲？此操作无法撤销。`;
+});
+
+const removeConfirmText = computed(() =>
+  props.removeContext === 'cloud' ? '确认删除' : '确认移除',
+);
+
 const handlePlaySelected = async () => {
   if (!canPlaySelected.value) return;
   try {
@@ -294,13 +317,36 @@ const handleRemoveFromPlaylist = () => {
 };
 
 const confirmBatchRemove = async () => {
-  showRemoveConfirm.value = false;
   if (props.onBatchRemove) {
-    props.onBatchRemove([...selectedSongs.value]);
-    open.value = false;
+    await confirmCustomBatchRemove();
     return;
   }
   await confirmRemoveFromPlaylist();
+};
+
+const confirmCustomBatchRemove = async () => {
+  const total = selectedSongs.value.length;
+  if (total === 0) return;
+
+  showRemoveConfirm.value = false;
+  batchOp.value = 'remove';
+  batchProgress.value = { done: 0, total };
+
+  try {
+    await props.onBatchRemove?.([...selectedSongs.value], (done, tot) => {
+      batchProgress.value = { done, total: tot };
+    });
+    if (batchProgress.value.done < batchProgress.value.total) {
+      batchProgress.value = { done: total, total };
+    }
+    open.value = false;
+  } catch (error) {
+    const message = error instanceof Error && error.message ? error.message : '批量删除失败';
+    toastStore.warning(message);
+  } finally {
+    batchOp.value = null;
+    batchProgress.value = { done: 0, total: 0 };
+  }
 };
 
 const confirmRemoveFromPlaylist = async () => {
@@ -487,18 +533,16 @@ const confirmRemoveFromPlaylist = async () => {
 
   <Dialog
     v-model:open="showRemoveConfirm"
-    title="从歌单移除"
-    :description="
-      props.removeContext === 'history'
-        ? `确认从播放历史移除选中的 ${selectedKeys.size} 首歌曲？此操作无法撤销。`
-        : `确认从当前歌单移除选中的 ${selectedKeys.size} 首歌曲？此操作无法撤销。`
-    "
+    :title="removeDialogTitle"
+    :description="removeDialogDescription"
     overlayClass="batch-playlist-overlay"
     contentClass="batch-playlist-dialog max-w-[420px]"
   >
     <template #footer>
       <Button variant="outline" size="sm" @click="showRemoveConfirm = false">取消</Button>
-      <Button variant="danger" size="sm" @click="confirmBatchRemove">确认移除</Button>
+      <Button variant="danger" size="sm" @click="confirmBatchRemove">
+        {{ removeConfirmText }}
+      </Button>
     </template>
   </Dialog>
 </template>

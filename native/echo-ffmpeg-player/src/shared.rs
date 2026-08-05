@@ -35,6 +35,7 @@ pub struct SharedAudio {
     decoded_queue_changed: Condvar,
     output_queue_capacity: usize,
     decoded_queue_capacity_frames: usize,
+    requested_output_buffer_secs: f64,
     cache_pause_wait_secs: f64,
     pub spectrum_ring: Mutex<SampleRing>,
     dsp_settings: Mutex<DspSettings>,
@@ -64,9 +65,13 @@ pub struct SharedAudio {
     last_time_event_samples: AtomicU64,
     stall_timeout_ms: AtomicU64,
     output_delay_us: AtomicU64,
+    live_output_delay_us: AtomicU64,
     filter_latency_us: AtomicU64,
+    output_recovering: AtomicBool,
+    pause_on_device_disconnect: AtomicBool,
     speed_bits: AtomicU32,
     source_sample_format: AtomicU32,
+    preferred_output_sample_format: AtomicU32,
     decode_throughput_ratio_milli: AtomicU64,
     spectrum_sample_rate: AtomicU32,
     interrupt: Mutex<Option<Arc<AtomicBool>>>,
@@ -117,6 +122,7 @@ impl SharedAudio {
             decoded_queue_changed: Condvar::new(),
             output_queue_capacity,
             decoded_queue_capacity_frames,
+            requested_output_buffer_secs: buffer_secs.clamp(0.0, 10.0),
             cache_pause_wait_secs,
             spectrum_ring: Mutex::new(SampleRing::new(mix_sample_rate as usize * mix_channels)),
             dsp_settings: Mutex::new(dsp_settings.clone()),
@@ -145,9 +151,13 @@ impl SharedAudio {
             last_time_event_samples: AtomicU64::new(0),
             stall_timeout_ms: AtomicU64::new(stall_timeout_millis(stall_timeout_secs)),
             output_delay_us: AtomicU64::new(0),
+            live_output_delay_us: AtomicU64::new(0),
             filter_latency_us: AtomicU64::new(0),
+            output_recovering: AtomicBool::new(false),
+            pause_on_device_disconnect: AtomicBool::new(false),
             speed_bits: AtomicU32::new(dsp_settings.speed.to_bits()),
             source_sample_format: AtomicU32::new(AudioSampleFormat::Unknown as u32),
+            preferred_output_sample_format: AtomicU32::new(AudioSampleFormat::Unknown as u32),
             spectrum_sample_rate: AtomicU32::new(mix_sample_rate),
             interrupt: Mutex::new(None),
             signal_tx: Mutex::new(None),
@@ -159,6 +169,7 @@ impl SharedAudio {
     pub fn request_stop(&self) {
         self.stop.store(true, Ordering::Release);
         self.output_stop.store(true, Ordering::Release);
+        self.output_recovering.store(false, Ordering::Release);
         self.decode_stop.store(true, Ordering::Release);
         if let Ok(guard) = self.interrupt.lock() {
             if let Some(interrupt) = guard.as_ref() {
@@ -183,7 +194,25 @@ impl SharedAudio {
         }
         self.output_stop.store(false, Ordering::Release);
         self.output_started.store(false, Ordering::Release);
+        self.live_output_delay_us.store(0, Ordering::Release);
         self.output_queue_changed.notify_all();
+    }
+
+    pub fn try_begin_output_recovery(&self) -> bool {
+        !self.output_recovering.swap(true, Ordering::AcqRel)
+    }
+
+    pub fn finish_output_recovery(&self) {
+        self.output_recovering.store(false, Ordering::Release);
+    }
+
+    pub fn set_pause_on_device_disconnect(&self, enabled: bool) {
+        self.pause_on_device_disconnect
+            .store(enabled, Ordering::Release);
+    }
+
+    pub fn should_pause_on_device_disconnect(&self) -> bool {
+        self.pause_on_device_disconnect.load(Ordering::Acquire)
     }
 
     pub fn should_stop_output(&self) -> bool {
@@ -246,6 +275,22 @@ impl SharedAudio {
 
     pub fn source_sample_format(&self) -> AudioSampleFormat {
         AudioSampleFormat::from_u32(self.source_sample_format.load(Ordering::Acquire))
+    }
+
+    pub fn set_preferred_output_sample_format(&self, format: AudioSampleFormat) {
+        self.preferred_output_sample_format
+            .store(format as u32, Ordering::Release);
+    }
+
+    pub fn preferred_output_sample_format(&self) -> AudioSampleFormat {
+        let preferred = AudioSampleFormat::from_u32(
+            self.preferred_output_sample_format.load(Ordering::Acquire),
+        );
+        if preferred == AudioSampleFormat::Unknown {
+            self.source_sample_format()
+        } else {
+            preferred
+        }
     }
 
     pub fn set_spectrum_sample_rate(&self, sample_rate: u32) {
@@ -337,12 +382,17 @@ impl SharedAudio {
                 (stats.delay_secs.max(0.0) * 1_000_000.0).round() as u64,
                 Ordering::Release,
             );
+            self.live_output_delay_us.store(0, Ordering::Release);
             let changed = current.as_ref() != Some(&stats);
             *current = Some(stats.clone());
             if changed {
                 self.notify_signal(PlaybackSignal::OutputStats(stats));
             }
         }
+    }
+
+    pub fn requested_output_buffer_secs(&self) -> f64 {
+        self.requested_output_buffer_secs
     }
 
     pub fn output_stats(&self) -> Option<AudioOutputStats> {
@@ -904,9 +954,7 @@ impl SharedAudio {
     pub fn position_secs(&self) -> f64 {
         let raw = self.played_samples.load(Ordering::Acquire) as f64
             / self.mix_format.sample_rate.max(1) as f64;
-        let delay = self.output_delay_us.load(Ordering::Acquire) as f64 / 1_000_000.0;
-        let filter_latency = self.filter_latency_us.load(Ordering::Acquire) as f64 / 1_000_000.0;
-        (raw - delay - filter_latency).max(0.0)
+        (raw - self.audible_clock_delay_secs()).max(0.0)
     }
 
     pub fn set_filter_latency_secs(&self, seconds: f64) {
@@ -917,14 +965,39 @@ impl SharedAudio {
     }
 
     pub fn set_position_secs(&self, position_secs: f64) {
-        let delay = self.output_delay_us.load(Ordering::Acquire) as f64 / 1_000_000.0;
-        let filter_latency = self.filter_latency_us.load(Ordering::Acquire) as f64 / 1_000_000.0;
-        let raw_position_secs = position_secs.max(0.0) + delay + filter_latency;
+        let raw_position_secs = position_secs.max(0.0) + self.audible_clock_delay_secs();
         let position_samples = (raw_position_secs * self.mix_format.sample_rate as f64) as u64;
         self.played_samples
             .store(position_samples, Ordering::Release);
         self.last_time_event_samples
             .store(position_samples, Ordering::Release);
+    }
+
+    pub fn update_live_output_delay_secs(&self, delay_secs: f64) {
+        if !delay_secs.is_finite() {
+            return;
+        }
+        let next = (delay_secs.clamp(0.0, 5.0) * 1_000_000.0).round() as u64;
+        let previous = self.live_output_delay_us.load(Ordering::Acquire);
+        let smoothed = if previous == 0 {
+            next
+        } else {
+            ((previous as f64 * 0.8) + (next as f64 * 0.2)).round() as u64
+        };
+        self.live_output_delay_us
+            .store(smoothed.max(1), Ordering::Release);
+    }
+
+    fn audible_clock_delay_secs(&self) -> f64 {
+        let live_delay_us = self.live_output_delay_us.load(Ordering::Acquire);
+        let delay_us = if live_delay_us > 0 {
+            live_delay_us
+        } else {
+            self.output_delay_us.load(Ordering::Acquire)
+        };
+        let delay = delay_us as f64 / 1_000_000.0;
+        let filter_latency = self.filter_latency_us.load(Ordering::Acquire) as f64 / 1_000_000.0;
+        (delay + filter_latency) * f64::from(self.speed().max(0.001))
     }
 
     pub fn played_sample_count(&self) -> u64 {
@@ -1127,8 +1200,12 @@ mod tests {
             engine_sample_rate: 100.0,
             channels: 2.0,
             format: "F32".to_string(),
+            buffer_mode: "fixed(2)".to_string(),
             buffer_frames: 2.0,
             buffer_secs: 0.02,
+            requested_buffer_secs: 0.02,
+            device_buffer_secs: 0.02,
+            software_buffer_secs: 0.0,
             delay_secs: 0.02,
             underruns: 0.0,
         });
@@ -1138,6 +1215,70 @@ mod tests {
         assert_eq!(shared.pop_into(&mut output), 4);
 
         assert!((shared.position_secs() - 0.02).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn position_prefers_live_output_delay_over_static_estimate() {
+        let shared = SharedAudio::new(
+            MixFormat::stereo_f32(100),
+            0.1,
+            8.0,
+            &DspSettings::default(),
+        );
+        shared.update_output_stats(AudioOutputStats {
+            backend: "test".to_string(),
+            sample_rate: 100.0,
+            engine_sample_rate: 100.0,
+            channels: 2.0,
+            format: "F32".to_string(),
+            buffer_mode: "fixed(2)".to_string(),
+            buffer_frames: 2.0,
+            buffer_secs: 0.02,
+            requested_buffer_secs: 0.02,
+            device_buffer_secs: 0.02,
+            software_buffer_secs: 0.0,
+            delay_secs: 0.02,
+            underruns: 0.0,
+        });
+        shared.update_live_output_delay_secs(0.05);
+        assert!(shared.push_samples(&[0.0; 20]));
+
+        let mut output = [0.0f32; 20];
+        assert_eq!(shared.pop_into(&mut output), 10);
+
+        assert!((shared.position_secs() - 0.05).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn position_scales_output_delay_by_speed() {
+        let shared = SharedAudio::new(
+            MixFormat::stereo_f32(100),
+            0.1,
+            8.0,
+            &DspSettings::default(),
+        );
+        shared.set_speed(2.0);
+        shared.update_output_stats(AudioOutputStats {
+            backend: "test".to_string(),
+            sample_rate: 100.0,
+            engine_sample_rate: 100.0,
+            channels: 2.0,
+            format: "F32".to_string(),
+            buffer_mode: "fixed(2)".to_string(),
+            buffer_frames: 2.0,
+            buffer_secs: 0.02,
+            requested_buffer_secs: 0.02,
+            device_buffer_secs: 0.02,
+            software_buffer_secs: 0.0,
+            delay_secs: 0.02,
+            underruns: 0.0,
+        });
+        assert!(shared.push_samples(&[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8]));
+
+        let mut output = [0.0f32; 8];
+        assert_eq!(shared.pop_into(&mut output), 4);
+
+        assert!((shared.position_secs() - 0.04).abs() < f64::EPSILON);
     }
 
     #[test]
@@ -1154,8 +1295,12 @@ mod tests {
             engine_sample_rate: 100.0,
             channels: 2.0,
             format: "F32".to_string(),
+            buffer_mode: "fixed(3)".to_string(),
             buffer_frames: 3.0,
             buffer_secs: 0.03,
+            requested_buffer_secs: 0.03,
+            device_buffer_secs: 0.03,
+            software_buffer_secs: 0.0,
             delay_secs: 0.03,
             underruns: 0.0,
         });
@@ -1165,6 +1310,38 @@ mod tests {
 
         assert!((shared.position_secs() - 1.25).abs() < f64::EPSILON);
         assert_eq!(shared.played_sample_count(), 130);
+    }
+
+    #[test]
+    fn set_position_scales_delay_anchor_by_speed() {
+        let shared = SharedAudio::new(
+            MixFormat::stereo_f32(100),
+            0.1,
+            8.0,
+            &DspSettings::default(),
+        );
+        shared.set_speed(2.0);
+        shared.update_output_stats(AudioOutputStats {
+            backend: "test".to_string(),
+            sample_rate: 100.0,
+            engine_sample_rate: 100.0,
+            channels: 2.0,
+            format: "F32".to_string(),
+            buffer_mode: "fixed(3)".to_string(),
+            buffer_frames: 3.0,
+            buffer_secs: 0.03,
+            requested_buffer_secs: 0.03,
+            device_buffer_secs: 0.03,
+            software_buffer_secs: 0.0,
+            delay_secs: 0.03,
+            underruns: 0.0,
+        });
+        shared.set_filter_latency_secs(0.02);
+
+        shared.set_position_secs(1.25);
+
+        assert!((shared.position_secs() - 1.25).abs() < f64::EPSILON);
+        assert_eq!(shared.played_sample_count(), 135);
     }
 
     #[test]

@@ -13,7 +13,7 @@ mod shared;
 mod stream;
 mod tempo;
 
-use crate::config::{PlayerConfig, PlayerConfigOptions, SpectrumConfig};
+use crate::config::{GaplessAudioPolicy, PlayerConfig, PlayerConfigOptions, SpectrumConfig};
 use crate::decoder::{audio_stream_ordinal_from_track_id, list_tracks_for_url, open_decoder};
 use crate::dispatcher::{
     call_core_command, clear_event_callback, dispatch_core_command, reset_event_ids, send_event,
@@ -77,6 +77,7 @@ struct PlayerRuntime {
     seek_restart_interrupt: Option<Arc<AtomicBool>>,
     seek_request_seq: u64,
     seek_restore_paused: Option<bool>,
+    pause_on_device_disconnect: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -127,6 +128,7 @@ struct PreparedNextSource {
     audio_stream_ordinal: Option<usize>,
     seq: u64,
     duration: f64,
+    preferred_output_sample_format: shared::AudioSampleFormat,
 }
 
 pub(crate) enum GaplessDecodeResult {
@@ -149,6 +151,7 @@ enum LoadPlan {
         dsp_settings: DspSettings,
         spatial_file_path: Option<String>,
         spatial_mix: f32,
+        pause_on_device_disconnect: bool,
     },
     Continuous(ContinuousLoadPlan),
 }
@@ -187,6 +190,7 @@ impl PlayerRuntime {
             seek_restart_interrupt: None,
             seek_request_seq: 0,
             seek_restore_paused: None,
+            pause_on_device_disconnect: false,
         }
     }
 
@@ -474,6 +478,7 @@ fn prepare_source(
     dsp_settings: DspSettings,
     spatial_file_path: Option<String>,
     spatial_mix: f32,
+    pause_on_device_disconnect: bool,
 ) -> Result<PreparedSource, String> {
     let mut decoder = open_decoder(
         url.clone(),
@@ -486,15 +491,33 @@ fn prepare_source(
         decoder.seek(start_position)?;
     }
     let duration = decoder.duration_secs();
-    let mix_sample_rate = decoder.mix_sample_rate();
+    let source_sample_rate = decoder.mix_sample_rate();
+    let output_sample_rate =
+        device::preferred_output_sample_rate(&config.audio_device, config.exclusive_output);
+    let mix_sample_rate =
+        config.resolve_initial_mix_sample_rate(source_sample_rate, output_sample_rate);
     let dsp_settings = prepare_dsp_settings_for_mix_rate(
         dsp_settings,
         spatial_file_path.as_deref(),
         spatial_mix,
         mix_sample_rate,
     )?;
-    let mix_channels = preferred_mix_channels(&dsp_settings, decoder.source_channels());
+    let mix_channels = config.resolve_mix_channels(
+        decoder.source_channels(),
+        dsp_settings.requires_stereo_graph(),
+    );
     let mix_format = MixFormat::f32(mix_sample_rate, mix_channels);
+    if mix_sample_rate != source_sample_rate {
+        emit_event(PlayerEvent::log(
+            "info",
+            format!(
+                "audio samplerate policy selected engine mix rate: source_sample_rate={source_sample_rate}, output_sample_rate={}, mix_sample_rate={mix_sample_rate}",
+                output_sample_rate
+                    .map(|rate| rate.to_string())
+                    .unwrap_or_else(|| "unknown".to_string())
+            ),
+        ));
+    }
     if let Some(spatial) = dsp_settings.spatial.as_ref() {
         emit_event(PlayerEvent::log(
             "info",
@@ -516,7 +539,11 @@ fn prepare_source(
         config.playback_stall_timeout_secs,
         &dsp_settings,
     ));
+    shared.set_pause_on_device_disconnect(pause_on_device_disconnect);
     shared.set_source_sample_format(decoder.source_sample_format());
+    shared.set_preferred_output_sample_format(
+        config.resolve_output_sample_format(decoder.source_sample_format()),
+    );
     shared.set_track_seq(seq);
     shared.set_volume(1.0);
     shared.set_position_secs(start_position);
@@ -798,6 +825,7 @@ fn replace_source_async(
     dsp_settings: DspSettings,
     spatial_file_path: Option<String>,
     spatial_mix: f32,
+    pause_on_device_disconnect: bool,
 ) -> napi::Result<()> {
     let prepared = prepare_source(
         url,
@@ -809,6 +837,7 @@ fn replace_source_async(
         dsp_settings,
         spatial_file_path,
         spatial_mix,
+        pause_on_device_disconnect,
     )
     .map_err(napi::Error::from_reason)?;
     let release = with_runtime(|runtime| Ok(apply_prepared_source(runtime, prepared)))?;
@@ -816,14 +845,6 @@ fn replace_source_async(
         schedule_idle_output_release(shared, release_seq);
     }
     Ok(())
-}
-
-fn preferred_mix_channels(settings: &DspSettings, source_channels: usize) -> usize {
-    if settings.requires_stereo_graph() {
-        2
-    } else {
-        source_channels.max(1)
-    }
 }
 
 fn update_runtime_audio_graph(runtime: &mut PlayerRuntime) {
@@ -884,6 +905,7 @@ pub(crate) fn activate_gapless_next_decoder(
         ),
     );
     shared.set_source_sample_format(next.decoder.source_sample_format());
+    shared.set_preferred_output_sample_format(next.preferred_output_sample_format);
     shared.mark_gapless_boundary(TrackSwitchInfo {
         url: next.url,
         audio_stream_ordinal: next.audio_stream_ordinal,
@@ -979,6 +1001,111 @@ struct OutputRestartPlan {
     previous_config: PlayerConfig,
     next_config: PlayerConfig,
     was_paused: bool,
+}
+
+pub(crate) fn request_output_recovery(
+    shared: Arc<SharedAudio>,
+    reason: &'static str,
+    message: String,
+) {
+    if !shared.try_begin_output_recovery() {
+        emit_shared_event(
+            &shared,
+            PlayerEvent::log(
+                "debug",
+                format!("audio output recovery already running: reason={reason}"),
+            ),
+        );
+        return;
+    }
+
+    let recovery_shared = shared.clone();
+    match thread::Builder::new()
+        .name("player-output-recovery".to_string())
+        .spawn(move || {
+            run_output_recovery(recovery_shared, reason, message);
+        }) {
+        Ok(_) => {}
+        Err(err) => {
+            shared.finish_output_recovery();
+            let message = format!("failed to start audio output recovery: {err}");
+            emit_shared_event(
+                &shared,
+                PlayerEvent::error_with_reason(
+                    events::PlayerErrorCode::OutputRuntime,
+                    message,
+                    reason,
+                ),
+            );
+        }
+    }
+}
+
+fn run_output_recovery(shared: Arc<SharedAudio>, reason: &'static str, message: String) {
+    emit_shared_event(
+        &shared,
+        PlayerEvent::log(
+            "warn",
+            format!("audio output recovery requested: reason={reason}, message={message}"),
+        ),
+    );
+
+    let retry_delays = [
+        Duration::from_millis(0),
+        Duration::from_millis(500),
+        Duration::from_millis(1_000),
+    ];
+    let mut last_error = message;
+    for (attempt, delay) in retry_delays.iter().enumerate() {
+        if shared.stop.load(Ordering::Acquire) {
+            shared.finish_output_recovery();
+            return;
+        }
+        if !delay.is_zero() {
+            thread::sleep(*delay);
+        }
+        let result =
+            with_runtime(|runtime| Ok(runtime.config.clone())).and_then(restart_output_for_config);
+        match result {
+            Ok(()) => {
+                emit_shared_event(
+                    &shared,
+                    PlayerEvent::log(
+                        "info",
+                        format!(
+                            "audio output recovery completed: reason={reason}, attempt={}",
+                            attempt + 1
+                        ),
+                    ),
+                );
+                shared.finish_output_recovery();
+                return;
+            }
+            Err(err) => {
+                last_error = err.to_string();
+                emit_shared_event(
+                    &shared,
+                    PlayerEvent::log(
+                        "warn",
+                        format!(
+                            "audio output recovery failed: reason={reason}, attempt={}, error={last_error}",
+                            attempt + 1
+                        ),
+                    ),
+                );
+            }
+        }
+    }
+
+    shared.finish_output_recovery();
+    emit_shared_event(
+        &shared,
+        PlayerEvent::error_with_reason(
+            events::PlayerErrorCode::OutputRuntime,
+            format!("audio output recovery failed: {last_error}"),
+            reason,
+        ),
+    );
 }
 
 fn restart_output_for_config(config: PlayerConfig) -> napi::Result<()> {
@@ -1271,12 +1398,23 @@ impl Task for LoadFileTask {
             runtime.prepared_next = None;
             runtime.latest_load_seq = seq;
             set_runtime_core_state(runtime, PlaybackCoreState::Loading, "load");
+            if runtime.session.is_some() && runtime.config.gapless_audio == GaplessAudioPolicy::No {
+                runtime.stop_session();
+                return Ok(LoadPlan::Initial {
+                    config: runtime.config.clone(),
+                    dsp_settings: runtime.dsp_settings.clone(),
+                    spatial_file_path: runtime.spatial_file_path.clone(),
+                    spatial_mix: runtime.spatial_mix,
+                    pause_on_device_disconnect: runtime.pause_on_device_disconnect,
+                });
+            }
             let Some(session) = runtime.session.as_mut() else {
                 return Ok(LoadPlan::Initial {
                     config: runtime.config.clone(),
                     dsp_settings: runtime.dsp_settings.clone(),
                     spatial_file_path: runtime.spatial_file_path.clone(),
                     spatial_mix: runtime.spatial_mix,
+                    pause_on_device_disconnect: runtime.pause_on_device_disconnect,
                 });
             };
             let shared = session.shared.clone();
@@ -1299,6 +1437,7 @@ impl Task for LoadFileTask {
                 dsp_settings,
                 spatial_file_path,
                 spatial_mix,
+                pause_on_device_disconnect,
             } => replace_source_async(
                 url,
                 audio_stream,
@@ -1309,6 +1448,7 @@ impl Task for LoadFileTask {
                 dsp_settings,
                 spatial_file_path,
                 spatial_mix,
+                pause_on_device_disconnect,
             ),
             LoadPlan::Continuous(plan) => {
                 let new_decoder = open_decoder(
@@ -1322,6 +1462,9 @@ impl Task for LoadFileTask {
                     Ok(decoder) => {
                         let duration = decoder.duration_secs();
                         let source_sample_format = decoder.source_sample_format();
+                        let preferred_output_sample_format = plan
+                            .config
+                            .resolve_output_sample_format(source_sample_format);
                         let dsp_settings = prepare_dsp_settings_for_mix_rate(
                             plan.dsp_settings,
                             plan.spatial_file_path.as_deref(),
@@ -1343,6 +1486,9 @@ impl Task for LoadFileTask {
                             session
                                 .shared
                                 .set_source_sample_format(source_sample_format);
+                            session
+                                .shared
+                                .set_preferred_output_sample_format(preferred_output_sample_format);
                             session.shared.bind_interrupt(decoder.interrupt_handle());
                             let (decode_thread, decode_commands) = decoder::spawn_decode_worker(
                                 decoder,
@@ -1472,6 +1618,10 @@ impl Task for PrepareNextSourceTask {
         })?
         .ok_or_else(|| napi::Error::from_reason("no active audio session".to_string()))?;
 
+        if config.gapless_audio == GaplessAudioPolicy::No {
+            return Ok(false);
+        }
+
         let mut decoder = open_decoder(
             self.url.clone(),
             self.audio_stream_ordinal,
@@ -1481,6 +1631,8 @@ impl Task for PrepareNextSourceTask {
         )
         .map_err(napi::Error::from_reason)?;
         let duration = decoder.duration_secs();
+        let preferred_output_sample_format =
+            config.resolve_output_sample_format(decoder.source_sample_format());
         let predecoded =
             predecode_gapless_head(&mut decoder, sample_rate).map_err(napi::Error::from_reason)?;
         let mut prepared = Some(PreparedNextSource {
@@ -1490,6 +1642,7 @@ impl Task for PrepareNextSourceTask {
             audio_stream_ordinal: self.audio_stream_ordinal,
             seq: self.seq,
             duration,
+            preferred_output_sample_format,
         });
 
         with_runtime(|runtime| {
@@ -1789,9 +1942,14 @@ fn attach_restarted_decoder(
         let decoder = decoder
             .take()
             .ok_or_else(|| napi::Error::from_reason("decoder already attached".to_string()))?;
+        let source_sample_format = decoder.source_sample_format();
         session
             .shared
-            .set_source_sample_format(decoder.source_sample_format());
+            .set_source_sample_format(source_sample_format);
+        session.shared.set_preferred_output_sample_format(
+            plan.config
+                .resolve_output_sample_format(source_sample_format),
+        );
         session.shared.bind_interrupt(decoder.interrupt_handle());
         let (decode_thread, decode_commands) =
             decoder::spawn_decode_worker(decoder, session.shared.clone(), plan.generation);
@@ -2997,6 +3155,17 @@ pub fn set_stall_timeout(seconds: f64) -> napi::Result<()> {
         runtime.config.playback_stall_timeout_secs = timeout;
         if let Some(session) = runtime.session.as_ref() {
             session.shared.set_stall_timeout(timeout);
+        }
+        Ok(())
+    })
+}
+
+#[napi]
+pub fn set_pause_on_device_disconnect(enabled: bool) -> napi::Result<()> {
+    with_runtime(|runtime| {
+        runtime.pause_on_device_disconnect = enabled;
+        if let Some(session) = runtime.session.as_ref() {
+            session.shared.set_pause_on_device_disconnect(enabled);
         }
         Ok(())
     })

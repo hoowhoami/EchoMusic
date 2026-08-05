@@ -220,6 +220,7 @@ const builtinSettingsSections = computed<SettingsRenderSection[]>(() => [
       '自动播放',
       '默认音质',
       '智能兼容模式',
+      '云盘文件',
       '标准品质',
       'HQ 高品质',
       'SQ 无损品质',

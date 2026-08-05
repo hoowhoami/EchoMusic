@@ -73,6 +73,7 @@ export const createPlaybackManager = (
       state.currentAudioCandidateIndex = -1;
       state.currentResolvedAudioQuality = null;
       state.currentResolvedAudioEffect = 'none';
+      state.currentResolvedSourceKind = 'catalog';
     }
     engine.updateMediaPlaybackState(buildStoppedPlaybackState(state));
   };
@@ -124,7 +125,6 @@ export const createPlaybackManager = (
           ),
         )
       : -1;
-    state.currentAudioQualityOverride = null;
     state.currentAudioUrl = primarySource?.url ?? resolved.url;
     state.currentPlaybackSource = primarySource;
     state.currentAudioCandidateUrls = sources.map((source) => source.url);
@@ -132,7 +132,21 @@ export const createPlaybackManager = (
     state.currentAudioCandidateIndex = currentIndex;
     state.currentResolvedAudioQuality = resolved.quality;
     state.currentResolvedAudioEffect = resolved.effect;
+    state.currentResolvedSourceKind = resolved.sourceKind ?? 'catalog';
     track.audioUrl = primarySource?.url ?? resolved.url;
+    if (state.currentTrackSnapshot && String(state.currentTrackSnapshot.id) === String(track.id)) {
+      state.currentTrackSnapshot = {
+        ...state.currentTrackSnapshot,
+        audioUrl: track.audioUrl,
+        ...(track.cloudAudioSource ? { cloudAudioSource: track.cloudAudioSource } : {}),
+        ...(track.relateGoods?.length ? { relateGoods: track.relateGoods } : {}),
+      };
+    }
+    if (resolved.noticeCode) {
+      showPlaybackNotice(resolved.noticeCode, track);
+    } else {
+      clearPlaybackNotice(track.id);
+    }
   };
 
   const tryNextAudioCandidate = async (options?: {
@@ -341,6 +355,7 @@ export const createPlaybackManager = (
       state.currentSourceQueueId ?? playlistStore.activeQueue?.id ?? playlistStore.activeQueueId,
     );
     historyManager.resetHistoryUploadState(targetTrack);
+    clearPlaybackNotice();
     applyResolvedAudioSource(targetTrack, prepared.resolved);
     engine.adoptPreparedSource(state.currentPlaybackSource ?? prepared.resolved.url);
     state.currentTime = 0;
@@ -354,9 +369,10 @@ export const createPlaybackManager = (
     state.autoNextAttempts = 0;
     state.autoNextSourceTrackId = prepared.targetTrackId;
     clearAutoNextTimer();
-    clearPlaybackNotice();
     state.climaxMarks = [];
     state.currentAudioQualityOverride = null;
+    state.currentCatalogSourceOverrideTrackId = null;
+    state.currentCloudSourceOverrideTrackId = null;
     engine.applyTrackLoudness(prepared.resolved.loudness);
     engine.setLoopFile(state.playMode === 'single');
 
@@ -556,6 +572,11 @@ export const createPlaybackManager = (
       state.autoNextAttempts = 0;
       state.autoNextSourceTrackId = null;
     }
+    if (String(state.currentTrackId ?? '') !== resolvedId) {
+      state.currentAudioQualityOverride = null;
+      state.currentCatalogSourceOverrideTrackId = null;
+      state.currentCloudSourceOverrideTrackId = null;
+    }
     const track =
       sourceList.find((s) => String(s.id) === resolvedId) ||
       playlistStore.favorites.find((s) => String(s.id) === resolvedId);
@@ -604,6 +625,7 @@ export const createPlaybackManager = (
     state.currentAudioCandidateIndex = -1;
     state.currentResolvedAudioQuality = null;
     state.currentResolvedAudioEffect = 'none';
+    state.currentResolvedSourceKind = 'catalog';
     state.nativeTrackSeq = null;
     state.currentTime = 0;
     state.currentTimeUpdatedAt = Date.now();
@@ -1099,7 +1121,10 @@ export const createPlaybackManager = (
     state.currentAudioCandidateIndex = -1;
     state.currentResolvedAudioQuality = null;
     state.currentResolvedAudioEffect = 'none';
+    state.currentResolvedSourceKind = 'catalog';
     state.currentAudioQualityOverride = null;
+    state.currentCatalogSourceOverrideTrackId = null;
+    state.currentCloudSourceOverrideTrackId = null;
     state.audioEffect = 'none';
     state.nativeTrackSeq = null;
     state.playbackRequestSeq += 1;

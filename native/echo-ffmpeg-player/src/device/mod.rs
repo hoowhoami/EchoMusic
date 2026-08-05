@@ -8,12 +8,12 @@ pub mod platform_macos;
 #[cfg(target_os = "windows")]
 pub mod platform_windows;
 
+pub(crate) use selection::device_display_name;
 #[cfg(target_os = "linux")]
 pub use selection::is_default_device_name;
-#[cfg(any(target_os = "linux", target_os = "macos"))]
-pub use selection::resolve_output_sample_rate;
 pub use selection::{
-    list_output_devices, normalize_device_name, select_output_device_checked,
+    clear_preferred_output_sample_rate_cache, list_output_devices, normalize_device_name,
+    preferred_output_sample_rate, resolve_output_sample_rate, select_output_device_checked,
     validate_output_device,
 };
 pub use watcher::DeviceWatcher;

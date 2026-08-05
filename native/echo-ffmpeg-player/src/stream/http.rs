@@ -13,15 +13,16 @@ pub fn open(
     interrupt: Arc<AtomicBool>,
     options: &StreamOptions,
 ) -> Result<Box<dyn ReadSeek>, String> {
-    HttpAudioSource::new_with_options(
+    HttpAudioSource::new_with_options_and_cancel_flag(
         url,
         HttpAudioSourceOptions {
             connect_timeout: connect_timeout(options.network_timeout),
             recv_timeout: options.network_timeout,
             proxy_url: options.http_proxy.clone(),
         },
+        interrupt,
     )
-    .map(|source| Box::new(source.with_cancel_flag(interrupt)) as Box<dyn ReadSeek>)
+    .map(|source| Box::new(source) as Box<dyn ReadSeek>)
     .map_err(|err| format!("failed to open network audio source: {err}"))
 }
 

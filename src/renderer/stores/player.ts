@@ -178,7 +178,11 @@ export const usePlayerStore = defineStore(
         return;
       }
 
-      clearPlaybackNotice();
+      if (resolved.noticeCode) {
+        showPlaybackNotice(resolved.noticeCode, track);
+      } else {
+        clearPlaybackNotice(state.currentTrackId);
+      }
 
       audioManager.setVolume(state.volume);
       if (requestSeq !== state.playbackRequestSeq) return;
@@ -192,6 +196,7 @@ export const usePlayerStore = defineStore(
       state.currentAudioCandidateIndex = 0;
       state.currentResolvedAudioQuality = resolved.quality;
       state.currentResolvedAudioEffect = resolved.effect;
+      state.currentResolvedSourceKind = resolved.sourceKind ?? 'catalog';
       track.audioUrl = playbackSource.url;
       const savedDuration = state.duration;
       await engine.setSource(playbackSource);
@@ -393,7 +398,15 @@ export const usePlayerStore = defineStore(
         impulseResponsePath: getActiveImpulseResponsePath(),
         impulseResponseMix: settingStore.impulseResponseMix,
         playbackStallTimeout: settingStore.playbackStallTimeout,
+        pauseOnOutputDeviceDisconnect: settingStore.pauseOnOutputDeviceDisconnect,
       };
+      const unsubscribePauseOnDeviceDisconnect = watch(
+        () => settingStore.pauseOnOutputDeviceDisconnect,
+        (enabled) => {
+          void window.electron?.player?.setPauseOnDeviceDisconnect(enabled);
+        },
+        { immediate: true },
+      );
       // 保存取消函数，以便在需要时清理订阅
       const unsubscribeSettings = settingStore.$subscribe(() => {
         const shouldRefresh =
@@ -424,6 +437,7 @@ export const usePlayerStore = defineStore(
           impulseResponsePath: nextImpulseResponsePath,
           impulseResponseMix: settingStore.impulseResponseMix,
           playbackStallTimeout: settingStore.playbackStallTimeout,
+          pauseOnOutputDeviceDisconnect: settingStore.pauseOnOutputDeviceDisconnect,
         };
         if (shouldRefresh) {
           if (getPlaybackIsLoading(state) || state.pendingSettingRefresh)
@@ -446,6 +460,7 @@ export const usePlayerStore = defineStore(
       });
       // 返回清理函数
       return () => {
+        unsubscribePauseOnDeviceDisconnect();
         unsubscribeSettings();
       };
     };
@@ -481,7 +496,10 @@ export const usePlayerStore = defineStore(
       state.nativeTrackSeq = null;
       state.currentResolvedAudioQuality = null;
       state.currentResolvedAudioEffect = 'none';
+      state.currentResolvedSourceKind = 'catalog';
       state.currentAudioQualityOverride = null;
+      state.currentCatalogSourceOverrideTrackId = null;
+      state.currentCloudSourceOverrideTrackId = null;
       state.historyUploadCommitted = false;
       state.historyUploadTrackId = null;
 
@@ -831,6 +849,8 @@ export const usePlayerStore = defineStore(
       setAudioEffect: audioManager.setAudioEffect,
       fadeVolume: audioManager.fadeVolume,
       setCurrentAudioQualityOverride: audioManager.setCurrentAudioQualityOverride,
+      preferCurrentTrackCatalogQuality: audioManager.preferCurrentTrackCatalogQuality,
+      preferCurrentTrackCloudSource: audioManager.preferCurrentTrackCloudSource,
 
       refreshOutputDevices: deviceManager.refreshOutputDevices,
       applyOutputDevice: deviceManager.applyOutputDevice,

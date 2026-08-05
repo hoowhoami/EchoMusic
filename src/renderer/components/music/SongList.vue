@@ -54,6 +54,16 @@ interface Props {
   /** 正在被删除的歌曲 historyKey 集合（播放历史页面删除退场动画） */
   removingKeys?: Set<string>;
   loadingRowCount?: number;
+  contextMenuItems?: SongListContextMenuItem[];
+}
+
+interface SongListContextMenuItem {
+  id: string;
+  label: string;
+  danger?: boolean;
+  visible?: (song: Song) => boolean;
+  enabled?: (song: Song) => boolean;
+  onSelect: (song: Song) => void | Promise<void>;
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -77,6 +87,7 @@ const props = withDefaults(defineProps<Props>(), {
   promotedKey: null,
   removingKeys: undefined,
   loadingRowCount: 12,
+  contextMenuItems: undefined,
 });
 
 // const emit = defineEmits<{
@@ -462,7 +473,29 @@ const extensionContextMenuItems = computed(() => {
   });
 });
 
+const pageContextMenuItems = computed(() => {
+  const song = contextMenuTarget.value;
+  if (!song) return [];
+  return (props.contextMenuItems ?? []).filter((item) => {
+    try {
+      return item.visible ? item.visible(song) : true;
+    } catch {
+      return false;
+    }
+  });
+});
+
 const isExtensionContextItemEnabled = (item: (typeof extensionContextMenuItems.value)[number]) => {
+  const song = contextMenuTarget.value;
+  if (!song) return false;
+  try {
+    return item.enabled ? item.enabled(song) : true;
+  } catch {
+    return false;
+  }
+};
+
+const isPageContextItemEnabled = (item: SongListContextMenuItem) => {
   const song = contextMenuTarget.value;
   if (!song) return false;
   try {
@@ -484,9 +517,15 @@ const clearContextMenuTarget = () => {
 
 const estimateContextMenuHeight = () => {
   const itemCount =
-    6 + extensionContextMenuItems.value.length + (contextMenuCanRemove.value ? 1 : 0);
+    6 +
+    extensionContextMenuItems.value.length +
+    pageContextMenuItems.value.length +
+    (contextMenuCanRemove.value ? 1 : 0);
   const separatorCount =
-    (extensionContextMenuItems.value.length > 0 ? 1 : 0) + (contextMenuCanRemove.value ? 1 : 0) + 2;
+    (extensionContextMenuItems.value.length > 0 ? 1 : 0) +
+    (pageContextMenuItems.value.length > 0 ? 1 : 0) +
+    (contextMenuCanRemove.value ? 1 : 0) +
+    2;
   return 12 + itemCount * 30 + separatorCount * 9 + Math.max(0, itemCount + separatorCount - 1) * 4;
 };
 
@@ -700,6 +739,16 @@ const ctxRemoveFromPlaylist = async () => {
 const ctxExtensionAction = async (item: (typeof extensionContextMenuItems.value)[number]) => {
   const song = contextMenuTarget.value;
   if (!song || !isExtensionContextItemEnabled(item)) return;
+  try {
+    await item.onSelect(song);
+  } catch {
+    toastStore.actionFailed(item.label || '歌曲操作');
+  }
+};
+
+const ctxPageContextAction = async (item: SongListContextMenuItem) => {
+  const song = contextMenuTarget.value;
+  if (!song || !isPageContextItemEnabled(item)) return;
   try {
     await item.onSelect(song);
   } catch {
@@ -941,6 +990,19 @@ defineExpose({ scrollToActive, filteredCount: computed(() => filteredSongsRef.va
         :disabled="!isExtensionContextItemEnabled(item)"
         role="menuitem"
         @click="handleContextMenuAction(() => ctxExtensionAction(item))"
+      >
+        {{ item.label }}
+      </button>
+      <div v-if="pageContextMenuItems.length > 0" class="song-context-separator"></div>
+      <button
+        v-for="item in pageContextMenuItems"
+        :key="item.id"
+        type="button"
+        class="song-context-item"
+        :class="{ 'text-red-500': item.danger }"
+        :disabled="!isPageContextItemEnabled(item)"
+        role="menuitem"
+        @click="handleContextMenuAction(() => ctxPageContextAction(item))"
       >
         {{ item.label }}
       </button>

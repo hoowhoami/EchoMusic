@@ -12,7 +12,6 @@ import { usePlayerStore } from '@/stores/player';
 import { useUserStore } from '@/stores/user';
 import { useToastStore } from '@/stores/toast';
 import type { Song } from '@/models/song';
-import { isPlayableSong } from '@/utils/song';
 import {
   iconTrash,
   iconX,
@@ -451,18 +450,28 @@ const handlePointerCaptureLost = (event: PointerEvent) => {
   finishPointerInteraction(event.pointerId);
 };
 
-const isSongPlayable = (song: Song) => isPlayableSong(song);
+const activatePreviewPlaybackQueue = (queue: QueueLike) => {
+  playlistStore.setActiveQueue(queue.id);
+  playerStore.currentSourceQueueId = queue.id;
+};
 
 const handlePlay = async (song: Song) => {
+  const queue = previewQueue.value;
+  if (!queue) return;
   if (isPreviewReadonly.value) {
     await handleResumePreviewQueue(song);
     return;
   }
+  activatePreviewPlaybackQueue(queue);
   if (String(song.id) === String(playerStore.currentTrackId)) {
+    playlistStore.updateQueueCurrentTrack(song.id, queue.id);
+    playerStore.currentPlaylist = queue.songs;
     playerStore.togglePlay();
     return;
   }
-  await playerStore.playTrack(String(song.id), previewQueue.value?.songs ?? []);
+  await playerStore.playTrack(String(song.id), queue.songs, {
+    sourceQueueId: queue.id,
+  });
 };
 
 const handleRemove = async (song: Song) => {
@@ -489,8 +498,10 @@ const handleRemove = async (song: Song) => {
   }
 
   const nextIndex = Math.min(index, nextList.length - 1);
+  activatePreviewPlaybackQueue(queue);
   await playerStore.playTrack(String(nextList[nextIndex].id), nextList, {
     autoPlay: wasPlaying,
+    sourceQueueId: queue.id,
   });
 };
 

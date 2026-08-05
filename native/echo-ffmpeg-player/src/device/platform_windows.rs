@@ -377,7 +377,7 @@ pub(crate) fn resolve_wasapi_output_sample_rate(device_name: &str) -> u32 {
     };
     let preferred_sample_rate = cpal_device
         .and_then(|device| device.default_output_config().ok())
-        .map(|config| config.sample_rate().0)
+        .map(|config| config.sample_rate())
         .unwrap_or(48_000);
 
     let Ok(_com) = ComApartment::init() else {
@@ -392,10 +392,29 @@ pub(crate) fn resolve_wasapi_output_sample_rate(device_name: &str) -> u32 {
     choose_wasapi_output_format(
         &audio_client,
         preferred_sample_rate,
+        crate::shared::MIX_CHANNELS,
         AudioSampleFormat::Unknown,
     )
     .map(|format| format.output.sample_rate)
     .unwrap_or(preferred_sample_rate)
+}
+
+pub(crate) fn resolve_wasapi_shared_output_sample_rate(device_name: &str) -> Option<u32> {
+    let Ok(_com) = ComApartment::init() else {
+        return None;
+    };
+    let Ok(device) = resolve_wasapi_output_device(device_name) else {
+        return None;
+    };
+    let Ok(audio_client) = activate_wasapi_audio_client(&device) else {
+        return None;
+    };
+    let mix_ptr = unsafe { audio_client.GetMixFormat().ok()? };
+    let resolved = unsafe { wasapi_resolved_format_from_wave_format(&*mix_ptr).ok() };
+    unsafe {
+        Com::CoTaskMemFree(Some(mix_ptr as *const c_void));
+    }
+    resolved.map(|format| format.output.sample_rate)
 }
 
 pub(crate) fn resolve_wasapi_output_device(device_name: &str) -> Result<Audio::IMMDevice, String> {
@@ -456,21 +475,25 @@ pub(crate) fn activate_wasapi_audio_client(
 pub(crate) fn choose_wasapi_output_format(
     audio_client: &Audio::IAudioClient,
     preferred_sample_rate: u32,
+    preferred_channels: usize,
     source_format: AudioSampleFormat,
 ) -> Result<WasapiResolvedFormat, String> {
     for sample_rate in wasapi_sample_rate_candidates(preferred_sample_rate) {
-        if let Ok(sample_format) =
-            choose_wasapi_sample_format_at_sample_rate(audio_client, sample_rate, source_format)
-        {
+        if let Ok(sample_format) = choose_wasapi_sample_format_at_sample_rate(
+            audio_client,
+            sample_rate,
+            preferred_channels,
+            source_format,
+        ) {
             return Ok(wasapi_resolved_format(
                 sample_rate,
-                crate::shared::MIX_CHANNELS,
+                preferred_channels,
                 sample_format,
             ));
         }
     }
     Err(format!(
-        "WASAPI exclusive output does not accept stereo PCM near {preferred_sample_rate} Hz"
+        "WASAPI exclusive output does not accept {preferred_channels} channel PCM near {preferred_sample_rate} Hz"
     ))
 }
 
@@ -526,11 +549,11 @@ pub(crate) fn choose_wasapi_shared_output_format(
 pub(crate) fn choose_wasapi_sample_format_at_sample_rate(
     audio_client: &Audio::IAudioClient,
     sample_rate: u32,
+    channels: usize,
     source_format: AudioSampleFormat,
 ) -> Result<WasapiSampleFormat, String> {
     for sample_format in wasapi_sample_format_candidates(source_format) {
-        let wave_format =
-            wasapi_wave_format(sample_rate, crate::shared::MIX_CHANNELS, sample_format);
+        let wave_format = wasapi_wave_format(sample_rate, channels, sample_format);
         let result = unsafe {
             audio_client.IsFormatSupported(
                 Audio::AUDCLNT_SHAREMODE_EXCLUSIVE,
@@ -543,7 +566,7 @@ pub(crate) fn choose_wasapi_sample_format_at_sample_rate(
         }
     }
     Err(format!(
-        "WASAPI exclusive output does not accept stereo PCM at {sample_rate} Hz"
+        "WASAPI exclusive output does not accept {channels} channel PCM at {sample_rate} Hz"
     ))
 }
 

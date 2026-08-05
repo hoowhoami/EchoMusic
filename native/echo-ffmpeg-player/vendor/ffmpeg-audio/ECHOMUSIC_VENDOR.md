@@ -5,8 +5,16 @@ This directory vendors `ffmpeg-audio` as ordinary source files, not as a Git sub
 ## Upstream
 
 - Repository: https://github.com/apoint123/ffmpeg-audio
-- Vendored commit: `ab07670314c5b44a174e71f8bd1ce9a4d4ae2f6f`
+- Vendored commit: `b2d3dfef7fe16e1f294d96204dce04054378562f`
 - License: GPL-3.0-only
+
+## EchoMusic Compatibility Patches
+
+- Keep EchoMusic's packet-cache/multi-audio-stream/raw-frame API surface used by the native player.
+- Keep `HttpAudioSourceOptions` for player network timeout and HTTP proxy settings.
+- Bridge EchoMusic's `Arc<AtomicBool>` decode interrupt flag to upstream's `CancellationToken`.
+- Keep `crates/soundtouch` pointed at the local vendored `soundtouch-rs` path.
+- Pin `futures-util` to `0.3.32` to stay compatible with the current native player lockfile.
 
 ## Local Usage
 
@@ -27,6 +35,6 @@ rsync -a --delete --exclude .git \
   native/echo-ffmpeg-player/vendor/ffmpeg-audio/
 ```
 
-After syncing, update the `Vendored commit` value above, review local diffs, and run the native player checks.
+After syncing, update the `Vendored commit` value above, re-apply the compatibility patches listed above, review local diffs, and run the native player checks.
 
 Do not commit `native/echo-ffmpeg-player/vendor/ffmpeg-audio/.git`; the vendor tree should remain regular files in the EchoMusic repository.

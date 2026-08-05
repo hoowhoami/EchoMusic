@@ -29,6 +29,7 @@ interface Props {
   descriptionClass?: string;
   bodyClass?: string;
   noScroll?: boolean;
+  flushBody?: boolean;
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -38,6 +39,7 @@ const props = withDefaults(defineProps<Props>(), {
   closeOnEscape: true,
   closeOnInteractOutside: true,
   noScroll: false,
+  flushBody: false,
 });
 
 const emit = defineEmits<{
@@ -57,6 +59,7 @@ const contentClass = computed(() => ['dialog-content', props.contentClass]);
 const computedDescriptionClass = computed(() => ['dialog-description', props.descriptionClass]);
 const computedBodyClass = computed(() => [
   'dialog-body',
+  props.flushBody ? 'dialog-body-flush' : null,
   hasDescription.value ? 'mt-2' : null,
   props.bodyClass,
 ]);
@@ -210,11 +213,15 @@ const handleInteractOutside = (event: Event) => {
 }
 
 .dialog-description {
-  @apply text-sm text-text-secondary whitespace-pre-wrap leading-relaxed pr-4;
+  @apply text-sm text-text-secondary whitespace-pre-wrap leading-relaxed pr-6;
 }
 
 .dialog-body {
-  @apply text-sm text-text-main pr-4;
+  @apply text-sm text-text-main pr-6;
+}
+
+.dialog-body-flush {
+  @apply pr-0;
 }
 
 .dialog-footer {

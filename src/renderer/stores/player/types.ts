@@ -23,6 +23,8 @@ export type PlaybackSource = {
   audioTrackId?: number | null;
 };
 
+export type PlaybackSourceKind = 'catalog' | 'cloud' | 'plugin';
+
 export type PlaybackIntentPhase = 'idle' | 'loading' | 'ready' | 'failed';
 
 export type PlaybackIntent = {
@@ -61,4 +63,6 @@ export type ResolvedAudioSource = {
   quality: AudioQualityValue | null;
   effect: AudioEffectValue;
   loudness: TrackLoudness | null;
+  sourceKind?: PlaybackSourceKind;
+  noticeCode?: string;
 };

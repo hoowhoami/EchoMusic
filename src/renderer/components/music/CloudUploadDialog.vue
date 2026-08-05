@@ -342,7 +342,7 @@ const statusLabel = (item: UploadItem) => {
   if (item.status === 'uploading') return '上传中';
   if (item.status === 'success') {
     const uploadLabel = item.isSecondUpload ? '秒传成功' : '成功';
-    const linkLabel = item.audioId || item.albumAudioId ? '已关联曲库' : '未匹配曲库';
+    const linkLabel = item.audioId || item.albumAudioId ? '已关联曲库' : '云端自动匹配';
     return `${uploadLabel} · ${linkLabel}`;
   }
   if (item.status === 'failed') return '失败';
@@ -357,6 +357,8 @@ const statusLabel = (item: UploadItem) => {
     :close-on-interact-outside="!isUploading"
     :close-on-escape="!isUploading"
     content-class="cloud-upload-dialog"
+    flush-body
+    no-scroll
     @update:open="handleClose"
   >
     <template #title>
@@ -367,7 +369,7 @@ const statusLabel = (item: UploadItem) => {
     </template>
 
     <template v-if="step === 'pick'">
-      <div class="flex flex-col gap-3">
+      <div class="cloud-upload-pick-body">
         <button class="cloud-upload-option" :disabled="picking" @click="handlePick('file')">
           <div class="cloud-upload-option-icon">
             <Icon :icon="iconUpload" width="20" height="20" />
@@ -390,20 +392,15 @@ const statusLabel = (item: UploadItem) => {
     </template>
 
     <template v-else>
-      <div class="flex flex-col gap-3">
-        <div class="flex items-center justify-between text-[12px] font-semibold text-text-main">
+      <div class="cloud-upload-progress-body">
+        <div class="cloud-upload-progress-title text-[12px] font-semibold text-text-main">
           <span>{{ isUploading ? '正在匹配并上传...' : '上传完成' }}</span>
-          <span class="text-text-secondary/80">
-            {{ doneCount + failedCount }} / {{ items.length }}
-          </span>
         </div>
-        <div class="cloud-upload-progress-track">
-          <div
-            class="cloud-upload-progress-value"
-            :style="{ width: `${progressRatio * 100}%` }"
-          ></div>
-        </div>
-        <Scrollbar class="cloud-upload-list" :scrollbar-inset="3">
+        <Scrollbar
+          class="cloud-upload-list"
+          :scrollbar-inset="3"
+          :content-props="{ class: 'cloud-upload-list-content' }"
+        >
           <div class="flex flex-col">
             <div
               v-for="(item, idx) in items"
@@ -462,11 +459,24 @@ const statusLabel = (item: UploadItem) => {
       <template v-if="step === 'pick'">
         <Button variant="ghost" size="sm" :disabled="picking" @click="closeDialog">取消</Button>
       </template>
-      <template v-else-if="isUploading">
-        <Button variant="ghost" size="sm" @click="handleCancel">取消上传</Button>
-      </template>
       <template v-else>
-        <Button variant="primary" size="sm" @click="closeDialog">完成</Button>
+        <div class="cloud-upload-footer-content">
+          <div class="cloud-upload-footer-progress">
+            <div class="cloud-upload-progress-track">
+              <div
+                class="cloud-upload-progress-value"
+                :style="{ width: `${progressRatio * 100}%` }"
+              ></div>
+            </div>
+            <span class="text-[11px] font-semibold text-text-secondary/80 shrink-0">
+              {{ doneCount + failedCount }} / {{ items.length }}
+            </span>
+          </div>
+          <Button v-if="isUploading" variant="ghost" size="sm" @click="handleCancel">
+            取消上传
+          </Button>
+          <Button v-else variant="primary" size="sm" @click="closeDialog">完成</Button>
+        </div>
       </template>
     </template>
   </Dialog>
@@ -476,9 +486,14 @@ const statusLabel = (item: UploadItem) => {
 @reference "@/style.css";
 
 .cloud-upload-option {
-  @apply flex items-center gap-3 p-3.5 rounded-xl border transition-all active:scale-[0.98] select-none;
+  @apply flex items-center gap-3 p-3.5 rounded-[10px] border transition-all active:scale-[0.98] select-none;
   border-color: var(--border-subtle);
   background: var(--control-muted-bg);
+}
+
+.cloud-upload-pick-body {
+  @apply flex flex-col gap-3;
+  padding-right: 22px;
 }
 
 .cloud-upload-option:hover {
@@ -492,9 +507,17 @@ const statusLabel = (item: UploadItem) => {
 }
 
 .cloud-upload-option-icon {
-  @apply flex items-center justify-center w-10 h-10 rounded-lg shrink-0;
+  @apply flex items-center justify-center w-10 h-10 rounded-[8px] shrink-0;
   background: color-mix(in srgb, var(--color-primary) 12%, transparent);
   color: var(--color-primary);
+}
+
+.cloud-upload-progress-body {
+  @apply flex min-h-0 flex-col gap-3;
+}
+
+.cloud-upload-progress-title {
+  margin-right: 22px;
 }
 
 .cloud-upload-progress-track {
@@ -513,11 +536,25 @@ const statusLabel = (item: UploadItem) => {
 }
 
 .cloud-upload-list {
-  max-height: 280px;
+  height: clamp(180px, calc(100vh - 340px), 320px);
+  min-height: 0;
+}
+
+:global(.cloud-upload-list-content) {
+  padding-right: 22px;
+}
+
+.cloud-upload-footer-content {
+  @apply flex w-full items-center justify-between gap-4;
+}
+
+.cloud-upload-footer-progress {
+  @apply flex min-w-0 flex-1 items-center gap-3;
+  max-width: 280px;
 }
 
 .cloud-upload-row {
-  @apply flex items-center gap-2.5 px-2 py-2 rounded-lg;
+  @apply flex items-center gap-2.5 px-2 py-2 rounded-[8px];
 }
 
 .cloud-upload-row:hover {
@@ -538,7 +575,8 @@ const statusLabel = (item: UploadItem) => {
 }
 
 :global(.dialog-content.cloud-upload-dialog) {
-  width: 440px;
-  max-width: calc(100vw - 48px);
+  width: 460px;
+  max-width: calc(100vw - 32px);
+  max-height: min(560px, calc(100vh - 64px));
 }
 </style>
