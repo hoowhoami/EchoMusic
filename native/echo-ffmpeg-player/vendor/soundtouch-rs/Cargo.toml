@@ -20,6 +20,10 @@ tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
 name = "soundtouch_bench"
 harness = false
 
+[[bench]]
+name = "bpm_bench"
+harness = false
+
 [profile.bench]
 debug = true
 

@@ -398,7 +398,15 @@ export const usePlayerStore = defineStore(
         impulseResponsePath: getActiveImpulseResponsePath(),
         impulseResponseMix: settingStore.impulseResponseMix,
         playbackStallTimeout: settingStore.playbackStallTimeout,
+        pauseOnOutputDeviceDisconnect: settingStore.pauseOnOutputDeviceDisconnect,
       };
+      const unsubscribePauseOnDeviceDisconnect = watch(
+        () => settingStore.pauseOnOutputDeviceDisconnect,
+        (enabled) => {
+          void window.electron?.player?.setPauseOnDeviceDisconnect(enabled);
+        },
+        { immediate: true },
+      );
       // 保存取消函数，以便在需要时清理订阅
       const unsubscribeSettings = settingStore.$subscribe(() => {
         const shouldRefresh =
@@ -429,6 +437,7 @@ export const usePlayerStore = defineStore(
           impulseResponsePath: nextImpulseResponsePath,
           impulseResponseMix: settingStore.impulseResponseMix,
           playbackStallTimeout: settingStore.playbackStallTimeout,
+          pauseOnOutputDeviceDisconnect: settingStore.pauseOnOutputDeviceDisconnect,
         };
         if (shouldRefresh) {
           if (getPlaybackIsLoading(state) || state.pendingSettingRefresh)
@@ -451,6 +460,7 @@ export const usePlayerStore = defineStore(
       });
       // 返回清理函数
       return () => {
+        unsubscribePauseOnDeviceDisconnect();
         unsubscribeSettings();
       };
     };

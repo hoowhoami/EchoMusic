@@ -152,13 +152,13 @@ impl AaFilter {
             // 4 independent accumulators to break instruction dependency chains
             let mut acc = [f32x8::ZERO; 4];
 
-            let c_chunks = coeffs.chunks_exact(8);
+            let c_chunks = coeffs.as_chunks::<8>().0;
             let s_chunks = src_window.windows(15).step_by(8);
 
-            for (c, s) in c_chunks.zip(s_chunks) {
-                for j in 0..8 {
+            for (c, s) in c_chunks.iter().zip(s_chunks) {
+                for (j, s_arr) in s.array_windows::<8>().enumerate() {
                     let c_val = f32x8::splat(c[j]);
-                    let s_val = f32x8::new(s[j..j + 8].try_into().unwrap());
+                    let s_val = f32x8::new(*s_arr);
 
                     acc[j % 4] = s_val.mul_add(c_val, acc[j % 4]);
                 }
@@ -176,9 +176,12 @@ impl AaFilter {
             let src_window = &src[k..k + coeffs.len()];
             let mut sum_vec = f32x8::ZERO;
 
-            for (s, c) in src_window.chunks_exact(8).zip(coeffs.chunks_exact(8)) {
-                let s_val = f32x8::new(s.try_into().unwrap());
-                let c_val = f32x8::new(c.try_into().unwrap());
+            let s_chunks = src_window.as_chunks::<8>().0;
+            let c_chunks = coeffs.as_chunks::<8>().0;
+
+            for (s, c) in s_chunks.iter().zip(c_chunks.iter()) {
+                let s_val = f32x8::new(*s);
+                let c_val = f32x8::new(*c);
                 sum_vec = s_val.mul_add(c_val, sum_vec);
             }
 

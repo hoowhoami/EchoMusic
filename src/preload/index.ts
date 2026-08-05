@@ -614,6 +614,8 @@ contextBridge.exposeInMainWorld('electron', {
     available: () => ipcRenderer.invoke('player:available') as Promise<boolean>,
     restart: () => ipcRenderer.invoke('player:restart') as Promise<boolean>,
     setExclusive: (exclusive: boolean) => ipcRenderer.invoke('player:set-exclusive', exclusive),
+    setPauseOnDeviceDisconnect: (enabled: boolean) =>
+      ipcRenderer.invoke('player:set-pause-on-device-disconnect', enabled),
     setMediaTitle: (title: string) => ipcRenderer.invoke('player:set-media-title', title),
     setLoopFile: (loop: boolean) => ipcRenderer.invoke('player:set-loop-file', loop),
     setStallTimeout: (seconds: number) => ipcRenderer.invoke('player:set-stall-timeout', seconds),
@@ -810,6 +812,9 @@ contextBridge.exposeInMainWorld('electron', {
         format: string;
         bufferFrames: number;
         bufferSecs: number;
+        requestedBufferSecs?: number;
+        deviceBufferSecs?: number;
+        softwareBufferSecs?: number;
         delaySecs: number;
         underruns: number;
       }) => void,
@@ -824,6 +829,9 @@ contextBridge.exposeInMainWorld('electron', {
           format: string;
           bufferFrames: number;
           bufferSecs: number;
+          requestedBufferSecs?: number;
+          deviceBufferSecs?: number;
+          softwareBufferSecs?: number;
           delaySecs: number;
           underruns: number;
         },

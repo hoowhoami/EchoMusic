@@ -6,7 +6,10 @@ use crate::device::platform_windows::{
     ComApartment, WasapiOutputFormat, WasapiResolvedFormat, WasapiSampleFormat,
 };
 use crate::events::{PlayerErrorCode, PlayerEvent};
-use crate::output::{report_output_start, report_output_start_failure, OutputStartSender};
+use crate::output::{
+    build_output_stats, output_buffer_mode_for_frames, report_output_start,
+    report_output_start_failure, OutputStartSender,
+};
 use crate::shared::SharedAudio;
 use std::ptr;
 use std::slice;
@@ -14,7 +17,9 @@ use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 use windows::core::PCSTR;
-use windows::Win32::Foundation::{CloseHandle, HANDLE, WAIT_FAILED, WAIT_OBJECT_0, WAIT_TIMEOUT};
+use windows::Win32::Foundation::{
+    CloseHandle, HANDLE, HRESULT, WAIT_FAILED, WAIT_OBJECT_0, WAIT_TIMEOUT,
+};
 use windows::Win32::Media::Audio;
 use windows::Win32::System::Threading;
 
@@ -81,6 +86,43 @@ struct WasapiOutput {
     render_client: Audio::IAudioRenderClient,
     buffer_frames: u32,
     buffer_duration: i64,
+    stream_latency_100ns: i64,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum WasapiOutputErrorAction {
+    Ignore { reason: &'static str },
+    Recover { reason: &'static str },
+    Escalate { reason: &'static str },
+}
+
+#[derive(Clone, Debug)]
+struct WasapiOutputFailure {
+    message: String,
+    action: WasapiOutputErrorAction,
+}
+
+impl WasapiOutputFailure {
+    fn backend(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+            action: WasapiOutputErrorAction::Escalate { reason: "backend" },
+        }
+    }
+
+    fn recover(message: impl Into<String>, reason: &'static str) -> Self {
+        Self {
+            message: message.into(),
+            action: WasapiOutputErrorAction::Recover { reason },
+        }
+    }
+
+    fn from_client_error(context: &str, err: &windows::core::Error) -> Self {
+        Self {
+            message: wasapi_client_error_message(context, err),
+            action: classify_wasapi_client_error(err.code()),
+        }
+    }
 }
 
 struct MmcssTask {
@@ -113,6 +155,74 @@ impl Drop for MmcssTask {
     }
 }
 
+fn classify_wasapi_client_error(code: HRESULT) -> WasapiOutputErrorAction {
+    if code == Audio::AUDCLNT_E_DEVICE_INVALIDATED {
+        WasapiOutputErrorAction::Recover {
+            reason: "device-not-available",
+        }
+    } else if code == Audio::AUDCLNT_E_RESOURCES_INVALIDATED
+        || code == Audio::AUDCLNT_E_SERVICE_NOT_RUNNING
+    {
+        WasapiOutputErrorAction::Recover {
+            reason: "stream-invalidated",
+        }
+    } else if code == Audio::AUDCLNT_E_BUFFER_ERROR || code == Audio::AUDCLNT_E_CPUUSAGE_EXCEEDED {
+        WasapiOutputErrorAction::Ignore { reason: "xrun" }
+    } else {
+        WasapiOutputErrorAction::Escalate { reason: "backend" }
+    }
+}
+
+fn handle_wasapi_output_failure(
+    requested_mode: WasapiShareMode,
+    shared: &Arc<SharedAudio>,
+    emit: fn(PlayerEvent),
+    start_notify: &mut Option<OutputStartSender>,
+    failure: WasapiOutputFailure,
+) -> bool {
+    let WasapiOutputFailure { message, action } = failure;
+    let startup_failure = report_output_start_failure(start_notify, message.clone());
+    if startup_failure {
+        shared.request_output_stop();
+        return true;
+    }
+
+    match action {
+        WasapiOutputErrorAction::Ignore { reason } => {
+            emit(PlayerEvent::log(
+                "warn",
+                format!(
+                    "WASAPI {} ignored output error after stream exit: reason={reason}, message={message}",
+                    requested_mode.label()
+                ),
+            ));
+        }
+        WasapiOutputErrorAction::Recover { reason } => {
+            if shared.should_pause_on_device_disconnect()
+                && super::is_disconnect_recovery_reason(reason)
+            {
+                shared.request_output_stop();
+                emit(PlayerEvent::error_with_reason(
+                    PlayerErrorCode::OutputRuntime,
+                    message,
+                    reason,
+                ));
+            } else {
+                crate::request_output_recovery(Arc::clone(shared), reason, message);
+            }
+        }
+        WasapiOutputErrorAction::Escalate { reason } => {
+            shared.request_output_stop();
+            emit(PlayerEvent::error_with_reason(
+                requested_mode.error_code(),
+                message,
+                reason,
+            ));
+        }
+    }
+    false
+}
+
 pub fn spawn_output_thread(
     device_name: String,
     exclusive: bool,
@@ -131,10 +241,13 @@ pub fn spawn_output_thread(
             &mut start_notify,
         ) {
             Ok(()) => {}
-            Err(message) if exclusive && !shared.output_has_started() => {
+            Err(failure) if exclusive && !shared.output_has_started() => {
                 emit(PlayerEvent::log(
                     "warn",
-                    format!("WASAPI exclusive failed: {message}; falling back to WASAPI shared"),
+                    format!(
+                        "WASAPI exclusive failed: {}; falling back to WASAPI shared",
+                        failure.message
+                    ),
                 ));
                 match run_wasapi_output(
                     &device_name,
@@ -144,25 +257,26 @@ pub fn spawn_output_thread(
                     &mut start_notify,
                 ) {
                     Ok(()) => {}
-                    Err(msg) => {
-                        let startup_failure =
-                            report_output_start_failure(&mut start_notify, msg.clone());
-                        shared.request_output_stop();
-                        if !startup_failure {
-                            emit(PlayerEvent::error(
-                                WasapiShareMode::Shared.error_code(),
-                                msg,
-                            ));
-                        }
+                    Err(failure) => {
+                        handle_wasapi_output_failure(
+                            WasapiShareMode::Shared,
+                            &shared,
+                            emit,
+                            &mut start_notify,
+                            failure,
+                        );
                     }
                 }
             }
-            Err(message) => {
-                let startup_failure =
-                    report_output_start_failure(&mut start_notify, message.clone());
-                shared.request_output_stop();
-                if !startup_failure {
-                    emit(PlayerEvent::error(requested_mode.error_code(), message));
+            Err(failure) => {
+                if handle_wasapi_output_failure(
+                    requested_mode,
+                    &shared,
+                    emit,
+                    &mut start_notify,
+                    failure,
+                ) {
+                    return;
                 }
             }
         }
@@ -175,8 +289,8 @@ fn run_wasapi_output(
     shared: Arc<SharedAudio>,
     emit: fn(PlayerEvent),
     start_notify: &mut Option<OutputStartSender>,
-) -> Result<(), String> {
-    let _com = ComApartment::init()?;
+) -> Result<(), WasapiOutputFailure> {
+    let _com = ComApartment::init().map_err(WasapiOutputFailure::backend)?;
     let _mmcss = match MmcssTask::register() {
         Ok(task) => {
             emit(PlayerEvent::log(
@@ -194,45 +308,59 @@ fn run_wasapi_output(
         }
     };
 
-    let device = resolve_wasapi_output_device(device_name)?;
-    let probe_client = activate_wasapi_audio_client(&device)?;
-    let source_format = shared.source_sample_format();
+    let device = resolve_wasapi_output_device(device_name).map_err(WasapiOutputFailure::backend)?;
+    let probe_client =
+        activate_wasapi_audio_client(&device).map_err(WasapiOutputFailure::backend)?;
+    let preferred_output_format = shared.preferred_output_sample_format();
     let resolved_format = match share_mode {
         WasapiShareMode::Shared => {
-            choose_wasapi_shared_output_format(&probe_client, shared.mix_format.channels)?
+            choose_wasapi_shared_output_format(&probe_client, shared.mix_format.channels)
+                .map_err(WasapiOutputFailure::backend)?
         }
         WasapiShareMode::Exclusive => choose_wasapi_output_format(
             &probe_client,
             shared.mix_format.sample_rate,
-            source_format,
-        )?,
+            shared.mix_format.channels,
+            preferred_output_format,
+        )
+        .map_err(WasapiOutputFailure::backend)?,
     };
     let output_format = resolved_format.output;
     let event = EventHandle(
         unsafe { Threading::CreateEventA(None, false, false, windows::core::PCSTR(ptr::null())) }
-            .map_err(|err| format!("failed to create WASAPI output event: {err}"))?,
+            .map_err(|err| {
+            WasapiOutputFailure::backend(format!("failed to create WASAPI output event: {err}"))
+        })?,
     );
-    let output = open_wasapi_output(&device, event.0, resolved_format, share_mode, emit)?;
-    shared.update_output_stats(crate::shared::AudioOutputStats {
-        backend: share_mode.backend().to_string(),
-        sample_rate: f64::from(output_format.sample_rate),
-        engine_sample_rate: f64::from(shared.mix_format.sample_rate),
-        channels: output_format.channels as f64,
-        format: format!("{:?}", output_format.sample_format),
-        buffer_frames: f64::from(output.buffer_frames),
-        buffer_secs: output.buffer_frames as f64 / f64::from(output_format.sample_rate.max(1)),
-        delay_secs: output.buffer_frames as f64 / f64::from(output_format.sample_rate.max(1)),
-        underruns: 0.0,
-    });
+    let output = open_wasapi_output(
+        &device,
+        event.0,
+        resolved_format,
+        share_mode,
+        shared.requested_output_buffer_secs(),
+        emit,
+    )?;
+    let device_buffer_secs =
+        output.buffer_frames as f64 / f64::from(output_format.sample_rate.max(1));
+    shared.update_output_stats(build_output_stats(
+        share_mode.backend(),
+        &shared,
+        output_format.sample_rate,
+        output_format.channels,
+        format!("{:?}", output_format.sample_format),
+        output_buffer_mode_for_frames(output.buffer_frames),
+        f64::from(output.buffer_frames),
+        device_buffer_secs,
+    ));
     emit(PlayerEvent::log(
         "info",
         format!(
-            "WASAPI {} opening: requested='{device_name}', sample_rate={}, engine_sample_rate={}, channels={}, source_format={:?}, format={:?}, buffer_frames={}, buffer_100ns={buffer_duration}",
+            "WASAPI {} opening: requested='{device_name}', sample_rate={}, engine_sample_rate={}, channels={}, preferred_output_format={:?}, format={:?}, buffer_frames={}, buffer_100ns={buffer_duration}",
             share_mode.label(),
             output_format.sample_rate,
             shared.mix_format.sample_rate,
             output_format.channels,
-            source_format,
+            preferred_output_format,
             output_format.sample_format,
             output.buffer_frames,
             buffer_duration = output.buffer_duration
@@ -246,7 +374,8 @@ fn run_wasapi_output(
         output_format.sample_rate,
         shared.mix_format.channels,
         output_format.channels,
-    )?;
+    )
+    .map_err(WasapiOutputFailure::backend)?;
 
     unsafe {
         write_frames(
@@ -259,7 +388,7 @@ fn run_wasapi_output(
             &mut resampler,
         )?;
         output.audio_client.Start().map_err(|err| {
-            wasapi_client_error_message(
+            WasapiOutputFailure::from_client_error(
                 &format!("failed to start WASAPI {} output", share_mode.label()),
                 &err,
             )
@@ -276,42 +405,88 @@ fn run_wasapi_output(
         while !shared.should_stop_output() {
             match Threading::WaitForSingleObject(event.0, WASAPI_EVENT_WAIT_MS) {
                 WAIT_OBJECT_0 => {
-                    let refill = feed_wasapi_output(
+                    let refill = match feed_wasapi_output(
                         &output.audio_client,
                         &output.render_client,
                         output.buffer_frames,
+                        output.stream_latency_100ns,
                         output_format,
                         share_mode,
                         &shared,
                         &mut output_scratch,
                         &mut graph_scratch,
                         &mut resampler,
-                    )?;
-                    if refill
-                        && feed_wasapi_output(
+                    ) {
+                        Ok(refill) => refill,
+                        Err(failure)
+                            if matches!(failure.action, WasapiOutputErrorAction::Ignore { .. }) =>
+                        {
+                            emit(PlayerEvent::log(
+                                "warn",
+                                format!(
+                                    "WASAPI {} transient output error: {}",
+                                    share_mode.label(),
+                                    failure.message
+                                ),
+                            ));
+                            continue;
+                        }
+                        Err(failure) => return Err(failure),
+                    };
+                    if refill {
+                        match feed_wasapi_output(
                             &output.audio_client,
                             &output.render_client,
                             output.buffer_frames,
+                            output.stream_latency_100ns,
                             output_format,
                             share_mode,
                             &shared,
                             &mut output_scratch,
                             &mut graph_scratch,
                             &mut resampler,
-                        )?
-                    {
-                        emit(PlayerEvent::log(
-                            "warn",
-                            format!(
-                                "WASAPI {} output could not refill the device buffer fast enough",
-                                share_mode.label()
-                            ),
-                        ));
+                        ) {
+                            Ok(true) => {
+                                emit(PlayerEvent::log(
+                                    "warn",
+                                    format!(
+                                        "WASAPI {} output could not refill the device buffer fast enough",
+                                        share_mode.label()
+                                    ),
+                                ));
+                            }
+                            Ok(false) => {}
+                            Err(failure)
+                                if matches!(
+                                    failure.action,
+                                    WasapiOutputErrorAction::Ignore { .. }
+                                ) =>
+                            {
+                                emit(PlayerEvent::log(
+                                    "warn",
+                                    format!(
+                                        "WASAPI {} transient output error: {}",
+                                        share_mode.label(),
+                                        failure.message
+                                    ),
+                                ));
+                            }
+                            Err(failure) => return Err(failure),
+                        }
                     }
                 }
                 WAIT_TIMEOUT => {}
-                WAIT_FAILED => return Err("waiting for WASAPI output event failed".to_string()),
-                other => return Err(format!("unexpected WASAPI wait result: {other:?}")),
+                WAIT_FAILED => {
+                    return Err(WasapiOutputFailure::recover(
+                        "waiting for WASAPI output event failed",
+                        "stream-invalidated",
+                    ));
+                }
+                other => {
+                    return Err(WasapiOutputFailure::backend(format!(
+                        "unexpected WASAPI wait result: {other:?}"
+                    )));
+                }
             }
         }
 
@@ -326,20 +501,26 @@ fn open_wasapi_output(
     event: HANDLE,
     resolved_format: WasapiResolvedFormat,
     share_mode: WasapiShareMode,
+    requested_buffer_secs: f64,
     emit: fn(PlayerEvent),
-) -> Result<WasapiOutput, String> {
+) -> Result<WasapiOutput, WasapiOutputFailure> {
     let output_format = resolved_format.output;
     let mut aligned_buffer_frames = None;
     let wait_started_at = Instant::now();
     let mut logged_device_wait = false;
 
     loop {
-        let audio_client = activate_wasapi_audio_client(device)?;
+        let audio_client =
+            activate_wasapi_audio_client(device).map_err(WasapiOutputFailure::backend)?;
         let buffer_duration = aligned_buffer_frames
             .map(|frames| wasapi_duration_from_frames(frames, output_format.sample_rate))
-            .unwrap_or_else(|| match share_mode {
-                WasapiShareMode::Shared => 0,
-                WasapiShareMode::Exclusive => wasapi_exclusive_buffer_duration(&audio_client),
+            .unwrap_or_else(|| {
+                wasapi_buffer_duration(
+                    &audio_client,
+                    share_mode,
+                    output_format.sample_rate,
+                    requested_buffer_secs,
+                )
             });
         let result = unsafe {
             audio_client.Initialize(
@@ -354,20 +535,33 @@ fn open_wasapi_output(
 
         match result {
             Ok(()) => unsafe {
-                audio_client
-                    .SetEventHandle(event)
-                    .map_err(|err| format!("failed to bind WASAPI output event: {err}"))?;
+                audio_client.SetEventHandle(event).map_err(|err| {
+                    WasapiOutputFailure::from_client_error(
+                        "failed to bind WASAPI output event",
+                        &err,
+                    )
+                })?;
                 let render_client = audio_client
                     .GetService::<Audio::IAudioRenderClient>()
-                    .map_err(|err| format!("failed to create WASAPI render client: {err}"))?;
-                let buffer_frames = audio_client
-                    .GetBufferSize()
-                    .map_err(|err| format!("failed to query WASAPI buffer size: {err}"))?;
+                    .map_err(|err| {
+                        WasapiOutputFailure::from_client_error(
+                            "failed to create WASAPI render client",
+                            &err,
+                        )
+                    })?;
+                let buffer_frames = audio_client.GetBufferSize().map_err(|err| {
+                    WasapiOutputFailure::from_client_error(
+                        "failed to query WASAPI buffer size",
+                        &err,
+                    )
+                })?;
+                let stream_latency_100ns = audio_client.GetStreamLatency().unwrap_or(0);
                 return Ok(WasapiOutput {
                     audio_client,
                     render_client,
                     buffer_frames,
                     buffer_duration,
+                    stream_latency_100ns,
                 });
             },
             Err(err)
@@ -375,8 +569,12 @@ fn open_wasapi_output(
                     && is_wasapi_buffer_size_not_aligned(&err)
                     && aligned_buffer_frames.is_none() =>
             {
-                let frames = unsafe { audio_client.GetBufferSize() }
-                    .map_err(|err| format!("failed to read WASAPI aligned buffer size: {err}"))?;
+                let frames = unsafe { audio_client.GetBufferSize() }.map_err(|err| {
+                    WasapiOutputFailure::from_client_error(
+                        "failed to read WASAPI aligned buffer size",
+                        &err,
+                    )
+                })?;
                 aligned_buffer_frames = Some(frames);
             }
             Err(err)
@@ -394,7 +592,7 @@ fn open_wasapi_output(
                 thread::sleep(WASAPI_EXCLUSIVE_DEVICE_RELEASE_RETRY);
             }
             Err(err) => {
-                return Err(wasapi_client_error_message(
+                return Err(WasapiOutputFailure::from_client_error(
                     &format!("failed to open WASAPI {} output", share_mode.label()),
                     &err,
                 ));
@@ -403,28 +601,64 @@ fn open_wasapi_output(
     }
 }
 
+fn wasapi_buffer_duration(
+    audio_client: &Audio::IAudioClient,
+    share_mode: WasapiShareMode,
+    sample_rate: u32,
+    requested_buffer_secs: f64,
+) -> i64 {
+    match share_mode {
+        WasapiShareMode::Shared => 0,
+        WasapiShareMode::Exclusive => wasapi_exclusive_buffer_duration(audio_client)
+            .max(requested_wasapi_buffer_duration(requested_buffer_secs, sample_rate).unwrap_or(0)),
+    }
+}
+
+fn requested_wasapi_buffer_duration(buffer_secs: f64, sample_rate: u32) -> Option<i64> {
+    if buffer_secs <= 0.0 || !buffer_secs.is_finite() {
+        return None;
+    }
+    let frames = (buffer_secs * f64::from(sample_rate.max(1))).round();
+    if frames <= 0.0 || !frames.is_finite() {
+        return None;
+    }
+    Some(wasapi_duration_from_frames(
+        frames.clamp(1.0, u32::MAX as f64) as u32,
+        sample_rate,
+    ))
+}
+
 fn feed_wasapi_output(
     audio_client: &Audio::IAudioClient,
     render_client: &Audio::IAudioRenderClient,
     buffer_frames: u32,
+    stream_latency_100ns: i64,
     output_format: WasapiOutputFormat,
     share_mode: WasapiShareMode,
     shared: &SharedAudio,
     output_scratch: &mut Vec<f32>,
     graph_scratch: &mut Vec<f32>,
     resampler: &mut OutputResampler,
-) -> Result<bool, String> {
+) -> Result<bool, WasapiOutputFailure> {
     if buffer_frames == 0 {
         return Ok(false);
     }
     let padding = unsafe {
         audio_client.GetCurrentPadding().map_err(|err| {
-            wasapi_client_error_message("failed to query WASAPI output padding", &err)
+            WasapiOutputFailure::from_client_error("failed to query WASAPI output padding", &err)
         })?
     };
     let (frames_to_write, refill) = match share_mode {
         WasapiShareMode::Shared => {
             if buffer_frames <= padding {
+                update_wasapi_live_output_delay(
+                    shared,
+                    share_mode,
+                    padding,
+                    buffer_frames,
+                    output_format.sample_rate,
+                    stream_latency_100ns,
+                );
                 return Ok(false);
             }
             (buffer_frames - padding, false)
@@ -445,6 +679,18 @@ fn feed_wasapi_output(
         graph_scratch,
         resampler,
     )?;
+    let queued_frames = match share_mode {
+        WasapiShareMode::Shared => padding.saturating_add(frames_to_write).min(buffer_frames),
+        WasapiShareMode::Exclusive => buffer_frames,
+    };
+    update_wasapi_live_output_delay(
+        shared,
+        share_mode,
+        queued_frames,
+        buffer_frames,
+        output_format.sample_rate,
+        stream_latency_100ns,
+    );
     Ok(refill)
 }
 
@@ -456,10 +702,10 @@ fn write_frames(
     output_scratch: &mut Vec<f32>,
     graph_scratch: &mut Vec<f32>,
     resampler: &mut OutputResampler,
-) -> Result<(), String> {
+) -> Result<(), WasapiOutputFailure> {
     unsafe {
         let buffer = render_client.GetBuffer(frames).map_err(|err| {
-            wasapi_client_error_message("failed to obtain WASAPI output buffer", &err)
+            WasapiOutputFailure::from_client_error("failed to obtain WASAPI output buffer", &err)
         })?;
         let output_channels = output_format.channels.max(1);
         let sample_count = frames as usize * output_channels;
@@ -558,9 +804,42 @@ fn write_frames(
             }
         }
         render_client.ReleaseBuffer(frames, 0).map_err(|err| {
-            wasapi_client_error_message("failed to release WASAPI output buffer", &err)
+            WasapiOutputFailure::from_client_error("failed to release WASAPI output buffer", &err)
         })
     }
+}
+
+fn update_wasapi_live_output_delay(
+    shared: &SharedAudio,
+    share_mode: WasapiShareMode,
+    queued_frames: u32,
+    buffer_frames: u32,
+    sample_rate: u32,
+    stream_latency_100ns: i64,
+) {
+    shared.update_live_output_delay_secs(wasapi_live_output_delay_secs(
+        share_mode,
+        queued_frames,
+        buffer_frames,
+        sample_rate,
+        stream_latency_100ns,
+    ));
+}
+
+fn wasapi_live_output_delay_secs(
+    share_mode: WasapiShareMode,
+    queued_frames: u32,
+    buffer_frames: u32,
+    sample_rate: u32,
+    stream_latency_100ns: i64,
+) -> f64 {
+    let sample_rate = f64::from(sample_rate.max(1));
+    let queued_secs = match share_mode {
+        WasapiShareMode::Shared => f64::from(queued_frames) / sample_rate,
+        WasapiShareMode::Exclusive => f64::from(buffer_frames) / sample_rate,
+    };
+    let stream_latency_secs = (stream_latency_100ns.max(0) as f64) / 10_000_000.0;
+    queued_secs + stream_latency_secs
 }
 
 fn fill_wasapi_output(
@@ -577,5 +856,64 @@ fn fill_wasapi_output(
         fill_output_reusing(output, output_channels, shared, graph_scratch);
     } else {
         resampler.fill_output(output, output_channels, shared);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn wasapi_client_error_classification_marks_disconnects_recoverable() {
+        assert_eq!(
+            classify_wasapi_client_error(Audio::AUDCLNT_E_DEVICE_INVALIDATED),
+            WasapiOutputErrorAction::Recover {
+                reason: "device-not-available"
+            }
+        );
+        assert_eq!(
+            classify_wasapi_client_error(Audio::AUDCLNT_E_RESOURCES_INVALIDATED),
+            WasapiOutputErrorAction::Recover {
+                reason: "stream-invalidated"
+            }
+        );
+        assert_eq!(
+            classify_wasapi_client_error(Audio::AUDCLNT_E_SERVICE_NOT_RUNNING),
+            WasapiOutputErrorAction::Recover {
+                reason: "stream-invalidated"
+            }
+        );
+    }
+
+    #[test]
+    fn wasapi_client_error_classification_keeps_xruns_nonfatal() {
+        assert_eq!(
+            classify_wasapi_client_error(Audio::AUDCLNT_E_BUFFER_ERROR),
+            WasapiOutputErrorAction::Ignore { reason: "xrun" }
+        );
+        assert_eq!(
+            classify_wasapi_client_error(Audio::AUDCLNT_E_CPUUSAGE_EXCEEDED),
+            WasapiOutputErrorAction::Ignore { reason: "xrun" }
+        );
+        assert_eq!(
+            classify_wasapi_client_error(Audio::AUDCLNT_E_UNSUPPORTED_FORMAT),
+            WasapiOutputErrorAction::Escalate { reason: "backend" }
+        );
+    }
+
+    #[test]
+    fn wasapi_live_output_delay_uses_padding_and_stream_latency() {
+        assert!(
+            (wasapi_live_output_delay_secs(WasapiShareMode::Shared, 480, 960, 48_000, 10_000)
+                - 0.011)
+                .abs()
+                < f64::EPSILON
+        );
+        assert!(
+            (wasapi_live_output_delay_secs(WasapiShareMode::Exclusive, 0, 960, 48_000, 10_000)
+                - 0.021)
+                .abs()
+                < f64::EPSILON
+        );
     }
 }

@@ -1,18 +1,21 @@
 #[cfg(not(target_os = "windows"))]
-use crate::device::select_output_device_checked;
+use crate::device::{device_display_name, select_output_device_checked};
 #[cfg(not(target_os = "windows"))]
 use crate::events::PlayerErrorCode;
 use crate::events::PlayerEvent;
 #[cfg(not(target_os = "windows"))]
 use crate::exclusive::ExclusiveGuard;
-use crate::output::OutputStartSender;
+use crate::output::{build_output_stats, output_buffer_mode_for_frames, OutputStartSender};
 #[cfg(not(target_os = "windows"))]
 use crate::output::{report_output_start, report_output_start_failure};
 use crate::shared::SharedAudio;
 #[cfg(not(target_os = "windows"))]
 use cpal::traits::{DeviceTrait, StreamTrait};
 #[cfg(not(target_os = "windows"))]
-use cpal::{BufferSize, SampleFormat, Stream, StreamConfig};
+use cpal::{
+    BufferSize, ErrorKind, OutputCallbackInfo, SampleFormat, Stream, StreamConfig,
+    SupportedBufferSize,
+};
 use ffmpeg_audio::{sys, SwrContext};
 use std::collections::VecDeque;
 use std::sync::atomic::Ordering;
@@ -52,7 +55,8 @@ pub(crate) fn spawn_shared_output_thread(
                     return;
                 }
             };
-            let resolved_device_name = device.name().unwrap_or_else(|_| device_name.clone());
+            let resolved_device_name =
+                device_display_name(&device).unwrap_or_else(|| device_name.clone());
             let supported = match device.default_output_config() {
                 Ok(config) => config,
                 Err(err) => {
@@ -66,31 +70,30 @@ pub(crate) fn spawn_shared_output_thread(
                     return;
                 }
             };
-            let stream_config = supported.config();
+            let base_stream_config = supported.config();
+            let requested_buffer_frames = requested_cpal_buffer_frames(
+                shared.requested_output_buffer_secs(),
+                &base_stream_config,
+            );
+            let stream_config = cpal_stream_config_with_requested_buffer(
+                &device,
+                supported.sample_format(),
+                base_stream_config,
+                shared.requested_output_buffer_secs(),
+            );
+            if let Some(frames) = requested_buffer_frames {
+                if !matches!(stream_config.buffer_size, BufferSize::Fixed(actual) if actual == frames)
+                {
+                    emit(PlayerEvent::log(
+                        "warn",
+                        format!(
+                            "fixed output buffer not supported by device, falling back to default: requested='{device_name}', resolved='{resolved_device_name}', requested_frames={frames}, requested_secs={:.3}",
+                            shared.requested_output_buffer_secs()
+                        ),
+                    ));
+                }
+            }
             let output_channels = usize::from(stream_config.channels.max(1));
-            let buffer_frames = cpal_buffer_frames(&stream_config);
-            let output_stats = crate::shared::AudioOutputStats {
-                backend: "cpal".to_string(),
-                sample_rate: f64::from(stream_config.sample_rate.0),
-                engine_sample_rate: f64::from(shared.mix_format.sample_rate),
-                channels: output_channels as f64,
-                format: format!("{:?}", supported.sample_format()),
-                buffer_frames: buffer_frames as f64,
-                buffer_secs: buffer_frames as f64 / f64::from(stream_config.sample_rate.0.max(1)),
-                delay_secs: buffer_frames as f64 / f64::from(stream_config.sample_rate.0.max(1)),
-                underruns: 0.0,
-            };
-            emit(PlayerEvent::log(
-                "info",
-                format!(
-                    "audio output opening: requested='{device_name}', resolved='{resolved_device_name}', exclusive={exclusive}, sample_rate={}, engine_sample_rate={}, channels={}, format={:?}",
-                    stream_config.sample_rate.0,
-                    shared.mix_format.sample_rate,
-                    output_channels,
-                    supported.sample_format()
-                ),
-            ));
-            shared.update_output_stats(output_stats);
             let exclusive_guard = if exclusive {
                 match ExclusiveGuard::acquire(&device_name) {
                     Ok(guard) => guard,
@@ -113,8 +116,10 @@ pub(crate) fn spawn_shared_output_thread(
             let stream = match build_output_stream(
                 &device,
                 supported.sample_format(),
-                &stream_config,
+                stream_config,
                 output_channels,
+                device_name.clone(),
+                resolved_device_name.clone(),
                 shared.clone(),
                 emit,
             ) {
@@ -129,6 +134,33 @@ pub(crate) fn spawn_shared_output_thread(
                     return;
                 }
             };
+            let buffer_estimate =
+                cpal_buffer_estimate(&stream, &stream_config, supported.buffer_size());
+            let device_buffer_secs =
+                buffer_estimate.frames as f64 / f64::from(stream_config.sample_rate.max(1));
+            let output_stats = build_output_stats(
+                "cpal",
+                &shared,
+                stream_config.sample_rate,
+                output_channels,
+                format!("{:?}", supported.sample_format()),
+                buffer_estimate.mode,
+                buffer_estimate.frames as f64,
+                device_buffer_secs,
+            );
+            emit(PlayerEvent::log(
+                "info",
+                format!(
+                    "audio output opening: requested='{device_name}', resolved='{resolved_device_name}', exclusive={exclusive}, sample_rate={}, engine_sample_rate={}, channels={}, format={:?}, buffer_mode={}, buffer_frames={}",
+                    stream_config.sample_rate,
+                    shared.mix_format.sample_rate,
+                    output_channels,
+                    supported.sample_format(),
+                    output_stats.buffer_mode,
+                    output_stats.buffer_frames
+                ),
+            ));
+            shared.update_output_stats(output_stats);
             if let Err(err) = stream.play() {
                 let message = format!("failed to start audio output: {err}");
                 let startup_failure =
@@ -155,33 +187,230 @@ pub(crate) fn spawn_shared_output_thread(
 }
 
 #[cfg(not(target_os = "windows"))]
-fn cpal_buffer_frames(config: &StreamConfig) -> u32 {
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct CpalBufferEstimate {
+    frames: u32,
+    mode: String,
+}
+
+#[cfg(not(target_os = "windows"))]
+fn cpal_buffer_estimate(
+    stream: &Stream,
+    config: &StreamConfig,
+    supported_buffer_size: &SupportedBufferSize,
+) -> CpalBufferEstimate {
     match config.buffer_size {
-        BufferSize::Fixed(frames) => frames,
-        BufferSize::Default => 0,
+        BufferSize::Fixed(frames) => CpalBufferEstimate {
+            frames,
+            mode: output_buffer_mode_for_frames(frames),
+        },
+        BufferSize::Default => cpal_host_controlled_buffer_estimate(stream, supported_buffer_size),
     }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn cpal_host_controlled_buffer_estimate(
+    stream: &Stream,
+    supported_buffer_size: &SupportedBufferSize,
+) -> CpalBufferEstimate {
+    let frames = stream
+        .buffer_size()
+        .ok()
+        .filter(|frames| *frames > 0)
+        .or_else(|| match supported_buffer_size {
+            SupportedBufferSize::Range { min, .. } => Some(*min),
+            SupportedBufferSize::Unknown => None,
+        })
+        .unwrap_or(0);
+    CpalBufferEstimate {
+        frames,
+        mode: "host_controlled".to_string(),
+    }
+}
+
+#[cfg(all(test, not(target_os = "windows")))]
+fn cpal_host_controlled_buffer_estimate_from_values(
+    runtime_frames: Option<u32>,
+    supported_buffer_size: &SupportedBufferSize,
+) -> CpalBufferEstimate {
+    let frames = runtime_frames
+        .filter(|frames| *frames > 0)
+        .or_else(|| match supported_buffer_size {
+            SupportedBufferSize::Range { min, .. } => Some(*min),
+            SupportedBufferSize::Unknown => None,
+        })
+        .unwrap_or(0);
+    CpalBufferEstimate {
+        frames,
+        mode: "host_controlled".to_string(),
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn cpal_stream_config_with_requested_buffer(
+    device: &cpal::Device,
+    sample_format: SampleFormat,
+    config: StreamConfig,
+    requested_buffer_secs: f64,
+) -> StreamConfig {
+    let Some(frames) = requested_cpal_buffer_frames(requested_buffer_secs, &config) else {
+        return config;
+    };
+    let fixed_supported = cpal_fixed_buffer_supported(device, sample_format, &config, frames);
+    cpal_stream_config_with_fixed_buffer_support(config, frames, fixed_supported)
+}
+
+#[cfg(not(target_os = "windows"))]
+fn cpal_stream_config_with_fixed_buffer_support(
+    mut config: StreamConfig,
+    frames: u32,
+    fixed_supported: bool,
+) -> StreamConfig {
+    if fixed_supported {
+        config.buffer_size = BufferSize::Fixed(frames);
+    }
+    config
+}
+
+#[cfg(not(target_os = "windows"))]
+fn requested_cpal_buffer_frames(buffer_secs: f64, config: &StreamConfig) -> Option<u32> {
+    if buffer_secs <= 0.0 || !buffer_secs.is_finite() {
+        return None;
+    }
+    let frames = (buffer_secs * f64::from(config.sample_rate.max(1))).round();
+    if frames <= 0.0 || !frames.is_finite() {
+        return None;
+    }
+    Some(frames.clamp(1.0, u32::MAX as f64) as u32)
+}
+
+#[cfg(not(target_os = "windows"))]
+fn cpal_fixed_buffer_supported(
+    device: &cpal::Device,
+    sample_format: SampleFormat,
+    config: &StreamConfig,
+    frames: u32,
+) -> bool {
+    let Ok(ranges) = device.supported_output_configs() else {
+        return false;
+    };
+    cpal_fixed_buffer_supported_in_ranges(ranges, sample_format, config, frames)
+}
+
+#[cfg(not(target_os = "windows"))]
+fn cpal_fixed_buffer_supported_in_ranges(
+    ranges: impl IntoIterator<Item = cpal::SupportedStreamConfigRange>,
+    sample_format: SampleFormat,
+    config: &StreamConfig,
+    frames: u32,
+) -> bool {
+    ranges.into_iter().any(|range| {
+        range.sample_format() == sample_format
+            && range.channels() == config.channels
+            && range.min_sample_rate() <= config.sample_rate
+            && range.max_sample_rate() >= config.sample_rate
+            && match range.buffer_size() {
+                SupportedBufferSize::Range { min, max } => frames >= *min && frames <= *max,
+                SupportedBufferSize::Unknown => false,
+            }
+    })
+}
+
+#[cfg(not(target_os = "windows"))]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum CpalOutputErrorAction {
+    Ignore { reason: &'static str },
+    Recover { reason: &'static str },
+    Escalate { reason: &'static str },
+}
+
+#[cfg(not(target_os = "windows"))]
+fn classify_cpal_output_error(
+    kind: ErrorKind,
+    requested_device_name: &str,
+) -> CpalOutputErrorAction {
+    match kind {
+        ErrorKind::Xrun => CpalOutputErrorAction::Ignore { reason: "xrun" },
+        ErrorKind::DeviceChanged => {
+            if crate::device::selection::is_default_device_name(requested_device_name) {
+                CpalOutputErrorAction::Recover {
+                    reason: "device-changed",
+                }
+            } else {
+                CpalOutputErrorAction::Ignore {
+                    reason: "device-changed",
+                }
+            }
+        }
+        ErrorKind::DeviceNotAvailable => CpalOutputErrorAction::Recover {
+            reason: "device-not-available",
+        },
+        ErrorKind::StreamInvalidated => CpalOutputErrorAction::Recover {
+            reason: "stream-invalidated",
+        },
+        _ => CpalOutputErrorAction::Escalate { reason: "backend" },
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn update_live_output_delay(shared: &SharedAudio, info: &OutputCallbackInfo) {
+    let timestamp = info.timestamp();
+    let delay = timestamp.playback.duration_since(timestamp.callback);
+    shared.update_live_output_delay_secs(delay.as_secs_f64());
 }
 
 #[cfg(not(target_os = "windows"))]
 fn build_output_stream(
     device: &cpal::Device,
     sample_format: SampleFormat,
-    config: &StreamConfig,
+    config: StreamConfig,
     output_channels: usize,
+    requested_device_name: String,
+    resolved_device_name: String,
     shared: Arc<SharedAudio>,
     emit: fn(PlayerEvent),
 ) -> Result<Stream, String> {
     let error_shared = shared.clone();
-    let output_sample_rate = config.sample_rate.0.max(1);
-    let err_fn = move |err| {
+    let output_sample_rate = config.sample_rate.max(1);
+    let err_fn = move |err: cpal::Error| {
         if error_shared.should_stop_output() {
             return;
         }
-        error_shared.request_output_stop();
-        emit(PlayerEvent::error(
-            PlayerErrorCode::OutputRuntime,
-            format!("audio output error: {err}"),
-        ));
+        let action = classify_cpal_output_error(err.kind(), &requested_device_name);
+        let message = format!(
+            "audio output error: requested='{requested_device_name}', resolved='{resolved_device_name}', kind={:?}, error={err}",
+            err.kind()
+        );
+        match action {
+            CpalOutputErrorAction::Ignore { reason } => {
+                emit(PlayerEvent::log(
+                    "warn",
+                    format!("{message}, action=ignore, reason={reason}"),
+                ));
+            }
+            CpalOutputErrorAction::Recover { reason } => {
+                if error_shared.should_pause_on_device_disconnect()
+                    && super::is_disconnect_recovery_reason(reason)
+                {
+                    error_shared.request_output_stop();
+                    emit(PlayerEvent::error_with_reason(
+                        PlayerErrorCode::OutputRuntime,
+                        message,
+                        reason,
+                    ));
+                } else {
+                    crate::request_output_recovery(error_shared.clone(), reason, message);
+                }
+            }
+            CpalOutputErrorAction::Escalate { reason } => {
+                error_shared.request_output_stop();
+                emit(PlayerEvent::error_with_reason(
+                    PlayerErrorCode::OutputRuntime,
+                    message,
+                    reason,
+                ));
+            }
+        }
     };
     match sample_format {
         SampleFormat::F32 => {
@@ -195,7 +424,8 @@ fn build_output_stream(
             device
                 .build_output_stream(
                     config,
-                    move |data: &mut [f32], _| {
+                    move |data: &mut [f32], info| {
+                        update_live_output_delay(&shared, info);
                         if can_copy_graph_to_device(&shared, output_sample_rate, output_channels) {
                             fill_output_reusing(data, output_channels, &shared, &mut graph_scratch)
                         } else {
@@ -219,7 +449,8 @@ fn build_output_stream(
             device
                 .build_output_stream(
                     config,
-                    move |data: &mut [i16], _| {
+                    move |data: &mut [i16], info| {
+                        update_live_output_delay(&shared, info);
                         fill_output_converted(
                             data,
                             output_channels,
@@ -246,7 +477,8 @@ fn build_output_stream(
             device
                 .build_output_stream(
                     config,
-                    move |data: &mut [u16], _| {
+                    move |data: &mut [u16], info| {
+                        update_live_output_delay(&shared, info);
                         fill_output_converted(
                             data,
                             output_channels,
@@ -743,5 +975,168 @@ mod tests {
         resampler.fill_output(&mut output, MIX_CHANNELS, &shared);
 
         assert_eq!(shared.output_underrun_count(), 1);
+    }
+
+    #[test]
+    fn requested_cpal_buffer_frames_follow_audio_buffer_secs() {
+        let config = StreamConfig {
+            channels: 2,
+            sample_rate: 48_000,
+            buffer_size: BufferSize::Default,
+        };
+
+        assert_eq!(requested_cpal_buffer_frames(0.2, &config), Some(9_600));
+        assert_eq!(requested_cpal_buffer_frames(0.0, &config), None);
+    }
+
+    #[test]
+    fn cpal_fixed_buffer_supported_checks_range_and_unknown() {
+        let config = StreamConfig {
+            channels: 2,
+            sample_rate: 48_000,
+            buffer_size: BufferSize::Default,
+        };
+        let matching_range = cpal::SupportedStreamConfigRange::new(
+            2,
+            44_100,
+            96_000,
+            SupportedBufferSize::Range {
+                min: 256,
+                max: 9_600,
+            },
+            SampleFormat::F32,
+        );
+        let too_small_range = cpal::SupportedStreamConfigRange::new(
+            2,
+            44_100,
+            96_000,
+            SupportedBufferSize::Range {
+                min: 256,
+                max: 4_800,
+            },
+            SampleFormat::F32,
+        );
+        let unknown_range = cpal::SupportedStreamConfigRange::new(
+            2,
+            44_100,
+            96_000,
+            SupportedBufferSize::Unknown,
+            SampleFormat::F32,
+        );
+
+        assert!(cpal_fixed_buffer_supported_in_ranges(
+            [matching_range],
+            SampleFormat::F32,
+            &config,
+            9_600
+        ));
+        assert!(!cpal_fixed_buffer_supported_in_ranges(
+            [too_small_range],
+            SampleFormat::F32,
+            &config,
+            9_600
+        ));
+        assert!(!cpal_fixed_buffer_supported_in_ranges(
+            [unknown_range],
+            SampleFormat::F32,
+            &config,
+            9_600
+        ));
+    }
+
+    #[test]
+    fn cpal_stream_config_with_requested_buffer_keeps_default_when_fixed_unsupported() {
+        let config = StreamConfig {
+            channels: 2,
+            sample_rate: 48_000,
+            buffer_size: BufferSize::Default,
+        };
+        let stream_config = cpal_stream_config_with_fixed_buffer_support(config, 9_600, false);
+
+        assert_eq!(stream_config.buffer_size, BufferSize::Default);
+
+        let fixed_config = cpal_stream_config_with_fixed_buffer_support(config, 9_600, true);
+        assert_eq!(fixed_config.buffer_size, BufferSize::Fixed(9_600));
+    }
+
+    #[test]
+    fn cpal_output_error_classification_keeps_xrun_nonfatal() {
+        assert_eq!(
+            classify_cpal_output_error(ErrorKind::Xrun, "auto"),
+            CpalOutputErrorAction::Ignore { reason: "xrun" }
+        );
+    }
+
+    #[test]
+    fn cpal_output_error_classification_marks_route_errors_recoverable() {
+        assert_eq!(
+            classify_cpal_output_error(ErrorKind::DeviceChanged, "auto"),
+            CpalOutputErrorAction::Recover {
+                reason: "device-changed"
+            }
+        );
+        assert_eq!(
+            classify_cpal_output_error(ErrorKind::DeviceChanged, "hw:0,0"),
+            CpalOutputErrorAction::Ignore {
+                reason: "device-changed"
+            }
+        );
+        assert_eq!(
+            classify_cpal_output_error(ErrorKind::DeviceNotAvailable, "hw:0,0"),
+            CpalOutputErrorAction::Recover {
+                reason: "device-not-available"
+            }
+        );
+        assert_eq!(
+            classify_cpal_output_error(ErrorKind::StreamInvalidated, "hw:0,0"),
+            CpalOutputErrorAction::Recover {
+                reason: "stream-invalidated"
+            }
+        );
+        assert_eq!(
+            classify_cpal_output_error(ErrorKind::BackendError, "auto"),
+            CpalOutputErrorAction::Escalate { reason: "backend" }
+        );
+    }
+
+    #[test]
+    fn disconnect_recovery_reason_excludes_default_device_changes() {
+        assert!(super::super::is_disconnect_recovery_reason(
+            "device-not-available"
+        ));
+        assert!(super::super::is_disconnect_recovery_reason(
+            "stream-invalidated"
+        ));
+        assert!(!super::super::is_disconnect_recovery_reason(
+            "device-changed"
+        ));
+    }
+
+    #[test]
+    fn cpal_default_buffer_range_uses_min_as_conservative_estimate() {
+        let estimate = cpal_host_controlled_buffer_estimate_from_values(
+            None,
+            &SupportedBufferSize::Range {
+                min: 512,
+                max: 9_600,
+            },
+        );
+
+        assert_eq!(estimate.frames, 512);
+        assert_eq!(estimate.mode, "host_controlled");
+    }
+
+    #[test]
+    fn cpal_runtime_buffer_size_overrides_default_range_estimate() {
+        let estimate = cpal_host_controlled_buffer_estimate_from_values(
+            Some(2_048),
+            &SupportedBufferSize::Range {
+                min: 512,
+                max: 9_600,
+            },
+        );
+
+        assert_eq!(estimate.frames, 2_048);
+        assert_eq!(estimate.mode, "host_controlled");
     }
 }

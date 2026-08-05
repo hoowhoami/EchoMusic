@@ -18,6 +18,30 @@ const cacheOptions = [
   { label: '开启', value: 'yes' },
   { label: '关闭', value: 'no' },
 ];
+const audioSamplerateOptions = [
+  { label: '自动', value: 'auto' },
+  { label: '44.1 kHz', value: '44100' },
+  { label: '48 kHz', value: '48000' },
+  { label: '96 kHz', value: '96000' },
+  { label: '192 kHz', value: '192000' },
+];
+const audioChannelOptions = [
+  { label: '安全自动', value: 'auto-safe' },
+  { label: '自动', value: 'auto' },
+  { label: '立体声', value: 'stereo' },
+  { label: '单声道', value: 'mono' },
+];
+const audioFormatOptions = [
+  { label: '自动', value: 'auto' },
+  { label: '32-bit Float', value: 'float' },
+  { label: '16-bit Integer', value: 's16' },
+  { label: '32-bit Integer', value: 's32' },
+];
+const gaplessAudioOptions = [
+  { label: '弱', value: 'weak' },
+  { label: '开启', value: 'yes' },
+  { label: '关闭', value: 'no' },
+];
 
 const clampNumber = (value: string | number, fallback: number, min: number, max: number) => {
   const rawValue = typeof value === 'string' ? value.trim() : value;
@@ -60,6 +84,32 @@ const updateDemuxerMaxBackBytes = (value: string | number) => {
 
 const updateAudioBufferSecs = (value: string | number) => {
   settingStore.audioBufferSecs = clampNumber(value, 0.2, 0, MAX_AUDIO_BUFFER_SECS);
+};
+
+const updateAudioSamplerate = (value: string | number | Array<string | number>) => {
+  const next = String(Array.isArray(value) ? value[0] : value);
+  settingStore.audioSamplerate = audioSamplerateOptions.some((item) => item.value === next)
+    ? next
+    : 'auto';
+};
+
+const updateAudioChannels = (value: string | number | Array<string | number>) => {
+  const next = String(Array.isArray(value) ? value[0] : value);
+  settingStore.audioChannels = audioChannelOptions.some((item) => item.value === next)
+    ? next
+    : 'auto-safe';
+};
+
+const updateAudioFormat = (value: string | number | Array<string | number>) => {
+  const next = String(Array.isArray(value) ? value[0] : value);
+  settingStore.audioFormat = audioFormatOptions.some((item) => item.value === next) ? next : 'auto';
+};
+
+const updateGaplessAudio = (value: string | number | Array<string | number>) => {
+  const next = String(Array.isArray(value) ? value[0] : value);
+  settingStore.gaplessAudio = gaplessAudioOptions.some((item) => item.value === next)
+    ? next
+    : 'weak';
 };
 
 const updatePlayResumeTimeout = (value: string | number) => {
@@ -238,6 +288,60 @@ const updatePlayerNetworkTimeout = (value: string | number) => {
         placeholder="0.2"
         suffix="秒"
         @update:model-value="updateAudioBufferSecs"
+      />
+    </div>
+    <div class="settings-divider"></div>
+    <div class="settings-item">
+      <div class="space-y-1">
+        <h3 class="font-semibold">音频采样率</h3>
+        <p class="text-sm text-text-secondary">
+          自动时优先对齐输出设备，固定后由引擎重采样到目标采样率
+        </p>
+      </div>
+      <Select
+        class="w-45"
+        :model-value="settingStore.audioSamplerate"
+        :options="audioSamplerateOptions"
+        @update:model-value="updateAudioSamplerate"
+      />
+    </div>
+    <div class="settings-divider"></div>
+    <div class="settings-item">
+      <div class="space-y-1">
+        <h3 class="font-semibold">音频声道</h3>
+        <p class="text-sm text-text-secondary">安全自动会在音效需要立体声时升到双声道</p>
+      </div>
+      <Select
+        class="w-45"
+        :model-value="settingStore.audioChannels"
+        :options="audioChannelOptions"
+        @update:model-value="updateAudioChannels"
+      />
+    </div>
+    <div class="settings-divider"></div>
+    <div class="settings-item">
+      <div class="space-y-1">
+        <h3 class="font-semibold">输出采样格式</h3>
+        <p class="text-sm text-text-secondary">仅独占输出下生效，普通输出使用系统混音格式</p>
+      </div>
+      <Select
+        class="w-45"
+        :model-value="settingStore.audioFormat"
+        :options="audioFormatOptions"
+        @update:model-value="updateAudioFormat"
+      />
+    </div>
+    <div class="settings-divider"></div>
+    <div class="settings-item">
+      <div class="space-y-1">
+        <h3 class="font-semibold">无缝播放</h3>
+        <p class="text-sm text-text-secondary">关闭后每首歌都会重新加载并重新协商输出设备</p>
+      </div>
+      <Select
+        class="w-45"
+        :model-value="settingStore.gaplessAudio"
+        :options="gaplessAudioOptions"
+        @update:model-value="updateGaplessAudio"
       />
     </div>
     <div class="settings-divider"></div>

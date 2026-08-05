@@ -146,6 +146,13 @@ export function registerPlayerIpc(ref: PlayerRef): void {
     return true;
   });
 
+  ipcRegistry.registerHandler(
+    'player:set-pause-on-device-disconnect',
+    async (_e, enabled: boolean) => {
+      await ref.current?.setPauseOnDeviceDisconnect(Boolean(enabled));
+    },
+  );
+
   ipcRegistry.registerHandler('player:set-media-title', async () => {
     // Native media session metadata is handled by media controls.
   });

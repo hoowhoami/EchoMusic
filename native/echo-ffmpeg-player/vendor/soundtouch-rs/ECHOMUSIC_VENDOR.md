@@ -5,8 +5,12 @@ This directory vendors `soundtouch-rs` as ordinary source files, not as a Git su
 ## Upstream
 
 - Repository: https://github.com/apoint123/soundtouch-rs
-- Vendored commit: `0948861b7019bc41efddb28e9b70d6facf7385e6`
+- Vendored commit: `63421a8f58ae3a7d3f55d41e36bca55591574118`
 - License: LGPL-2.1, as declared in the upstream README
+
+## EchoMusic Compatibility Patches
+
+- Keep the dev-only `ffmpeg_audio` dependency pointed at the local vendored path instead of upstream Git.
 
 ## Local Usage
 
@@ -33,6 +37,6 @@ rsync -a --delete --exclude .git \
   native/echo-ffmpeg-player/vendor/soundtouch-rs/
 ```
 
-After syncing, update the `Vendored commit` value above, review local diffs, and run the native player checks.
+After syncing, update the `Vendored commit` value above, re-apply the compatibility patch listed above, review local diffs, and run the native player checks.
 
 Do not commit `native/echo-ffmpeg-player/vendor/soundtouch-rs/.git`; the vendor tree should remain regular files in the EchoMusic repository.

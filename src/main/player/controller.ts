@@ -17,6 +17,10 @@ import type {
 
 const PINIA_SETTING_KEY = 'pinia:setting';
 const DEFAULT_AUDIO_OUTPUT_BUFFER_SECS = 0.2;
+const DEFAULT_AUDIO_SAMPLERATE = 'auto';
+const DEFAULT_AUDIO_CHANNELS = 'auto-safe';
+const DEFAULT_AUDIO_FORMAT = 'auto';
+const DEFAULT_GAPLESS_AUDIO = 'weak';
 const MAX_AUDIO_OUTPUT_BUFFER_SECS = 10;
 const DEFAULT_DEMUXER_READAHEAD_SECS = 1;
 const DEFAULT_CACHE = 'auto' as const;
@@ -46,6 +50,11 @@ const readCacheMode = (value: unknown): 'auto' | 'yes' | 'no' => {
 const readBoolean = (value: unknown, fallback: boolean): boolean =>
   typeof value === 'boolean' ? value : fallback;
 
+const readString = (value: unknown, fallback: string): string => {
+  const normalized = String(value ?? '').trim();
+  return normalized || fallback;
+};
+
 const getPersistedNativeAudioConfig = () => {
   const saved = getKvStorage().get<Record<string, unknown>>(PINIA_SETTING_KEY);
   const demuxerReadaheadSecs = readClampedNumber(
@@ -69,6 +78,10 @@ const getPersistedNativeAudioConfig = () => {
     0,
     MAX_AUDIO_OUTPUT_BUFFER_SECS,
   );
+  const audioSamplerate = readString(saved?.audioSamplerate, DEFAULT_AUDIO_SAMPLERATE);
+  const audioChannels = readString(saved?.audioChannels, DEFAULT_AUDIO_CHANNELS);
+  const audioFormat = readString(saved?.audioFormat, DEFAULT_AUDIO_FORMAT);
+  const gaplessAudio = readString(saved?.gaplessAudio, DEFAULT_GAPLESS_AUDIO);
   const demuxerMaxBytes = readClampedNumber(
     saved?.demuxerMaxBytes,
     DEFAULT_DEMUXER_MAX_BYTES,
@@ -89,6 +102,10 @@ const getPersistedNativeAudioConfig = () => {
   );
   return {
     audioBufferSecs,
+    audioSamplerate,
+    audioChannels,
+    audioFormat,
+    gaplessAudio,
     demuxerReadaheadSecs,
     cache,
     cacheSecs,
@@ -141,6 +158,9 @@ interface PlayerAddonEvent {
     format: string;
     bufferFrames: number;
     bufferSecs: number;
+    requestedBufferSecs?: number;
+    deviceBufferSecs?: number;
+    softwareBufferSecs?: number;
     delaySecs: number;
     underruns: number;
   };
@@ -162,6 +182,10 @@ export interface PlayerAudioDeviceListChangedPayload {
 interface PlayerAddon {
   initialize(config?: {
     audioBufferSecs?: number;
+    audioSamplerate?: string;
+    audioChannels?: string;
+    audioFormat?: string;
+    gaplessAudio?: string;
     demuxerReadaheadSecs?: number;
     cache?: string;
     cacheSecs?: number;
@@ -210,6 +234,7 @@ interface PlayerAddon {
   playWithFade(targetVolume: number, durationMs: number): Promise<void>;
   getState(): PlayerState;
   setExclusiveOutput(exclusive: boolean): Promise<void>;
+  setPauseOnDeviceDisconnect(enabled: boolean): void;
   setLoopFile(loop: boolean): void;
   setStallTimeout(seconds: number): void;
   setNetworkTimeout(seconds: number): void;
@@ -291,6 +316,10 @@ export class PlayerController extends EventEmitter {
     this.addon.registerEventHandler((_err, event) => this.handleAddonEvent(event));
     this.addon.initialize({
       audioBufferSecs: audioConfig.audioBufferSecs,
+      audioSamplerate: audioConfig.audioSamplerate,
+      audioChannels: audioConfig.audioChannels,
+      audioFormat: audioConfig.audioFormat,
+      gaplessAudio: audioConfig.gaplessAudio,
       demuxerReadaheadSecs: audioConfig.demuxerReadaheadSecs,
       cache: audioConfig.cache,
       cacheSecs: audioConfig.cacheSecs,
@@ -460,6 +489,10 @@ export class PlayerController extends EventEmitter {
 
   setExclusive(exclusive: boolean) {
     return this.enqueue(() => this.getAddonOrThrow().setExclusiveOutput(exclusive));
+  }
+
+  setPauseOnDeviceDisconnect(enabled: boolean): void {
+    this.getAddonOrThrow().setPauseOnDeviceDisconnect(Boolean(enabled));
   }
 
   async setLoopFile(loop: boolean): Promise<void> {
@@ -667,6 +700,7 @@ export class PlayerController extends EventEmitter {
         this.emit('error', {
           message: event.message || 'player error',
           errorCode: event.errorCode,
+          reason: event.reason,
         } satisfies PlayerErrorPayload);
         break;
       case 'log':

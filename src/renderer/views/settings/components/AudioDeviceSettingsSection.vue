@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 import { usePlayerStore } from '@/stores/player';
 import { useSettingStore } from '@/stores/setting';
 import Select from '@/components/ui/Select.vue';
@@ -17,6 +17,9 @@ const inputDeviceOptions = ref<{ label: string; value: string }[]>([
 ]);
 
 const outputDeviceOptions = computed(() => settingStore.outputDevices);
+const linuxSoundServerOutputSelected = computed(() =>
+  /^(pipewire|pulse|pulseaudio):/.test(settingStore.outputDevice),
+);
 const currentOutputDeviceLabel = computed(() => {
   const matched = settingStore.outputDevices.find(
     (item) => item.value === playerStore.appliedOutputDeviceId,
@@ -56,6 +59,16 @@ const handleOutputDeviceChange = (value: string | number | boolean | null | unde
   if (nextValue === settingStore.outputDevice) return;
   settingStore.outputDevice = nextValue;
 };
+
+watch(
+  linuxSoundServerOutputSelected,
+  (selected) => {
+    if (selected && settingStore.exclusiveAudioDevice) {
+      settingStore.exclusiveAudioDevice = false;
+    }
+  },
+  { immediate: true },
+);
 
 onMounted(() => {
   void fetchInputDevices();
@@ -106,16 +119,25 @@ onMounted(() => {
       <div class="space-y-1">
         <h3 class="font-semibold">独占音频设备</h3>
         <p class="text-sm text-text-secondary">
-          绕过系统混音器直接输出，可获得更高音质，但开启后其他应用将无法播放声音
+          {{
+            linuxSoundServerOutputSelected
+              ? '当前输出设备通过系统音频服务输出，不支持独占模式'
+              : '绕过系统混音器直接输出，可获得更高音质，但开启后其他应用将无法播放声音'
+          }}
         </p>
       </div>
-      <Switch v-model="settingStore.exclusiveAudioDevice" />
+      <Switch
+        v-model="settingStore.exclusiveAudioDevice"
+        :disabled="linuxSoundServerOutputSelected"
+      />
     </div>
     <div class="settings-divider"></div>
     <div class="settings-item">
       <div class="space-y-1">
         <h3 class="font-semibold">设备断开时暂停</h3>
-        <p class="text-sm text-text-secondary">输出设备断开时自动暂停播放，避免声音切到其他设备</p>
+        <p class="text-sm text-text-secondary">
+          开启后，输出设备断开或不可用时立即暂停播放；关闭时自动重连，失败后切回系统默认设备继续播放。
+        </p>
       </div>
       <Switch v-model="settingStore.pauseOnOutputDeviceDisconnect" />
     </div>
