@@ -7,12 +7,15 @@ use crate::device::platform_macos::{
 use crate::events::{PlayerErrorCode, PlayerEvent};
 use crate::exclusive::ExclusiveGuard;
 use crate::output::{
-    fill_output_reusing, report_output_start, report_output_start_failure, OutputStartSender,
+    build_output_stats, emit_output_runtime_error, fill_output_reusing,
+    output_buffer_mode_for_frames, report_output_start, report_output_start_failure,
+    OutputStartSender,
 };
 use crate::shared::SharedAudio;
 use coreaudio_sys as ca;
 use std::cell::UnsafeCell;
 use std::ffi::c_void;
+use std::mem;
 use std::slice;
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
@@ -81,12 +84,15 @@ pub fn spawn_output_thread(
             Err(message) => {
                 let startup_failure =
                     report_output_start_failure(&mut start_notify, message.clone());
-                shared.request_output_stop();
                 if !startup_failure {
-                    emit(PlayerEvent::error(
+                    emit_output_runtime_error(
+                        &shared,
+                        emit,
                         PlayerErrorCode::OutputExclusive,
                         message,
-                    ));
+                    );
+                } else {
+                    shared.request_output_stop();
                 }
             }
         }
@@ -104,31 +110,33 @@ fn run_exclusive_output(
     let resolved_device_name = coreaudio_device_display_name(device_id);
     let exclusive_guard = ExclusiveGuard::acquire(device_name)?;
     let mixing_guard = try_disable_coreaudio_mixing(device_id);
-    let source_format = shared.source_sample_format();
+    let preferred_output_format = shared.preferred_output_sample_format();
     let (format, physical_format_guard) = prepare_coreaudio_exclusive_format(
         device_id,
         shared.mix_format.sample_rate,
-        source_format,
+        shared.mix_format.channels,
+        preferred_output_format,
     )?;
-    shared.update_output_stats(crate::shared::AudioOutputStats {
-        backend: "coreaudio-exclusive".to_string(),
-        sample_rate: f64::from(format.sample_rate),
-        engine_sample_rate: f64::from(shared.mix_format.sample_rate),
-        channels: format.channels as f64,
-        format: format!("{:?}", format.sample_format),
-        buffer_frames: 0.0,
-        buffer_secs: 0.0,
-        delay_secs: 0.0,
-        underruns: 0.0,
-    });
+    let buffer_frames = coreaudio_device_buffer_frames(device_id).unwrap_or_default();
+    let device_buffer_secs = buffer_frames as f64 / f64::from(format.sample_rate.max(1));
+    shared.update_output_stats(build_output_stats(
+        "coreaudio-exclusive",
+        &shared,
+        format.sample_rate,
+        format.channels,
+        format!("{:?}", format.sample_format),
+        output_buffer_mode_for_frames(buffer_frames),
+        buffer_frames as f64,
+        device_buffer_secs,
+    ));
     emit(PlayerEvent::log(
         "info",
         format!(
-            "CoreAudio exclusive opening: requested='{device_name}', resolved='{resolved_device_name}', sample_rate={}, engine_sample_rate={}, channels={}, source_format={:?}, format={:?}, bytes_per_sample={}, non_interleaved={}, high_aligned={}, big_endian={}, mixing_disabled={}",
+            "CoreAudio exclusive opening: requested='{device_name}', resolved='{resolved_device_name}', sample_rate={}, engine_sample_rate={}, channels={}, preferred_output_format={:?}, format={:?}, bytes_per_sample={}, non_interleaved={}, high_aligned={}, big_endian={}, mixing_disabled={}",
             format.sample_rate,
             shared.mix_format.sample_rate,
             format.channels,
-            source_format,
+            preferred_output_format,
             format.sample_format,
             format.bytes_per_sample(),
             format.non_interleaved,
@@ -201,6 +209,27 @@ fn run_exclusive_output(
 
     drop(output);
     Ok(())
+}
+
+fn coreaudio_device_buffer_frames(device_id: ca::AudioDeviceID) -> Option<u32> {
+    let address = ca::AudioObjectPropertyAddress {
+        mSelector: ca::kAudioDevicePropertyBufferFrameSize,
+        mScope: ca::kAudioObjectPropertyScopeGlobal,
+        mElement: ca::kAudioObjectPropertyElementMain,
+    };
+    let mut frames = 0u32;
+    let mut size = mem::size_of::<u32>() as u32;
+    let status = unsafe {
+        ca::AudioObjectGetPropertyData(
+            device_id,
+            &address,
+            0,
+            std::ptr::null(),
+            &mut size,
+            (&mut frames as *mut u32).cast::<c_void>(),
+        )
+    };
+    (status == 0 && frames > 0).then_some(frames)
 }
 
 impl CoreAudioExclusiveOutput {

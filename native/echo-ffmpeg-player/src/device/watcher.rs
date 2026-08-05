@@ -73,6 +73,7 @@ impl DeviceWatcher {
                         } else {
                             "disconnected"
                         };
+                        crate::device::clear_preferred_output_sample_rate_cache();
                         last_signature = signature;
                         last_devices = devices.clone();
                         emit(PlayerEvent::audio_device_list_changed(
@@ -143,6 +144,7 @@ pub(crate) fn run_debounced_device_events(
         } else {
             "disconnected"
         };
+        crate::device::clear_preferred_output_sample_rate_cache();
         last_devices = devices.clone();
         emit(PlayerEvent::audio_device_list_changed(
             devices,

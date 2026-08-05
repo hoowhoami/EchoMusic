@@ -57,8 +57,12 @@ export interface PlayerAudioOutputStats {
   engineSampleRate: number;
   channels: number;
   format: string;
+  bufferMode: string;
   bufferFrames: number;
   bufferSecs: number;
+  requestedBufferSecs?: number;
+  deviceBufferSecs?: number;
+  softwareBufferSecs?: number;
   delaySecs: number;
   underruns: number;
 }

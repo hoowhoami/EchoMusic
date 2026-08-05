@@ -60,6 +60,14 @@ export const createDeviceManager = (
     'output-runtime',
     'output-stream',
   ]);
+  const deviceRecoveryReasons = new Set([
+    'device-not-available',
+    'device-changed',
+    'stream-invalidated',
+  ]);
+
+  const isDeviceRecoveryReason = (reason?: string) =>
+    reason !== undefined && deviceRecoveryReasons.has(reason);
 
   const isOutputDeviceError = (error: PlayerErrorPayload) => {
     if (error.errorCode && outputDeviceErrorCodes.has(error.errorCode)) return true;
@@ -158,7 +166,13 @@ export const createDeviceManager = (
   const handleOutputDeviceError = async (error: PlayerErrorPayload): Promise<boolean> => {
     if (!isOutputDeviceError(error)) return false;
 
-    if (isIntentionalOutputReconfigActive()) return true;
+    if (isIntentionalOutputReconfigActive()) {
+      const isEscalatedDeviceError =
+        isDeviceRecoveryReason(error.reason) &&
+        !applyingOutputDevice &&
+        !nativeOutputReconfigActive;
+      if (!isEscalatedDeviceError) return true;
+    }
 
     if (isExclusiveOutputError(error) && (await recoverFromExclusiveOutputError())) return true;
 
@@ -363,7 +377,11 @@ export const createDeviceManager = (
         return;
       }
 
-      if (defaultOutputDeviceChanged && currentOutput === 'default') {
+      if (
+        defaultOutputDeviceChanged &&
+        currentOutput === 'default' &&
+        !isIntentionalOutputReconfigActive()
+      ) {
         const applied = await applyOutputDevice('default', {
           persistSelection: false,
           force: true,

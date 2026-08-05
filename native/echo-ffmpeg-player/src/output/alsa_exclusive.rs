@@ -2,7 +2,9 @@ use super::cpal_shared::OutputResampler;
 use crate::device::platform_linux::resolve_alsa_exclusive_device_name;
 use crate::events::{PlayerErrorCode, PlayerEvent};
 use crate::output::{
-    fill_output_reusing, report_output_start, report_output_start_failure, OutputStartSender,
+    build_output_stats, emit_output_runtime_error, fill_output_reusing,
+    output_buffer_mode_for_frames, report_output_start, report_output_start_failure,
+    OutputStartSender,
 };
 use crate::shared::{AudioSampleFormat, SharedAudio, MIX_CHANNELS};
 use alsa::pcm::{Access, Format, HwParams, State, PCM};
@@ -37,7 +39,14 @@ struct AlsaOutputFormat {
 
 pub(crate) fn probe_output(device_name: &str, sample_rate: u32) -> Result<(), String> {
     let pcm = open_pcm(device_name)?;
-    configure_pcm(&pcm, sample_rate, AudioSampleFormat::Unknown).map(|_| ())
+    configure_pcm(
+        &pcm,
+        sample_rate,
+        MIX_CHANNELS,
+        AudioSampleFormat::Unknown,
+        f64::from(ALSA_BUFFER_TIME_US) / 1_000_000.0,
+    )
+    .map(|_| ())
 }
 
 pub fn spawn_output_thread(
@@ -67,12 +76,15 @@ pub fn spawn_output_thread(
             Err(message) => {
                 let startup_failure =
                     report_output_start_failure(&mut start_notify, message.clone());
-                shared.request_output_stop();
                 if !startup_failure {
-                    emit(PlayerEvent::error(
+                    emit_output_runtime_error(
+                        &shared,
+                        emit,
                         PlayerErrorCode::OutputExclusive,
                         message,
-                    ));
+                    );
+                } else {
+                    shared.request_output_stop();
                 }
             }
         }
@@ -89,27 +101,33 @@ fn run_exclusive_output(
         format!("ALSA hardware output is not available for exclusive mode: {device_name}")
     })?;
     let pcm = open_pcm(&resolved)?;
-    let source_format = shared.source_sample_format();
-    let format = configure_pcm(&pcm, shared.mix_format.sample_rate, source_format)?;
-    shared.update_output_stats(crate::shared::AudioOutputStats {
-        backend: "alsa-exclusive".to_string(),
-        sample_rate: f64::from(format.sample_rate),
-        engine_sample_rate: f64::from(shared.mix_format.sample_rate),
-        channels: format.channels as f64,
-        format: format!("{:?}", format.sample_format),
-        buffer_frames: format.buffer_frames as f64,
-        buffer_secs: format.buffer_frames as f64 / f64::from(format.sample_rate.max(1)),
-        delay_secs: format.buffer_frames as f64 / f64::from(format.sample_rate.max(1)),
-        underruns: 0.0,
-    });
+    let preferred_output_format = shared.preferred_output_sample_format();
+    let format = configure_pcm(
+        &pcm,
+        shared.mix_format.sample_rate,
+        shared.mix_format.channels,
+        preferred_output_format,
+        shared.requested_output_buffer_secs(),
+    )?;
+    let device_buffer_secs = format.buffer_frames as f64 / f64::from(format.sample_rate.max(1));
+    shared.update_output_stats(build_output_stats(
+        "alsa-exclusive",
+        &shared,
+        format.sample_rate,
+        format.channels,
+        format!("{:?}", format.sample_format),
+        output_buffer_mode_for_frames(format.buffer_frames),
+        format.buffer_frames as f64,
+        device_buffer_secs,
+    ));
     emit(PlayerEvent::log(
         "info",
         format!(
-            "ALSA exclusive opening: requested='{device_name}', resolved='{resolved}', sample_rate={}, engine_sample_rate={}, channels={}, source_format={:?}, format={:?}, period_frames={}, buffer_frames={}",
+            "ALSA exclusive opening: requested='{device_name}', resolved='{resolved}', sample_rate={}, engine_sample_rate={}, channels={}, preferred_output_format={:?}, format={:?}, period_frames={}, buffer_frames={}",
             format.sample_rate,
             shared.mix_format.sample_rate,
             format.channels,
-            source_format,
+            preferred_output_format,
             format.sample_format,
             format.period_frames,
             format.buffer_frames
@@ -190,7 +208,9 @@ fn open_pcm(device_name: &str) -> Result<PCM, String> {
 fn configure_pcm(
     pcm: &PCM,
     sample_rate: u32,
+    channels: usize,
     source_format: AudioSampleFormat,
+    requested_buffer_secs: f64,
 ) -> Result<AlsaOutputFormat, String> {
     let hwp = HwParams::any(pcm).map_err(|err| format!("failed to query ALSA hw params: {err}"))?;
     hwp.set_rate_resample(false)
@@ -199,12 +219,15 @@ fn configure_pcm(
         .map_err(|err| format!("failed to set ALSA interleaved access: {err}"))?;
     let sample_format = choose_sample_format(&hwp, source_format)?;
     let channels = hwp
-        .set_channels_near(MIX_CHANNELS as u32)
+        .set_channels_near(channels.max(1) as u32)
         .map_err(|err| format!("failed to set ALSA output channels: {err}"))?;
     let actual_rate = hwp
         .set_rate_near(sample_rate, ValueOr::Nearest)
         .map_err(|err| format!("failed to set ALSA output sample rate: {err}"))?;
-    let _ = hwp.set_buffer_time_near(ALSA_BUFFER_TIME_US, ValueOr::Nearest);
+    let _ = hwp.set_buffer_time_near(
+        alsa_requested_buffer_time_us(requested_buffer_secs),
+        ValueOr::Nearest,
+    );
     let _ = hwp.set_periods(ALSA_PERIODS, ValueOr::Nearest);
     pcm.hw_params(&hwp)
         .map_err(|err| format!("failed to apply ALSA hw params: {err}"))?;
@@ -245,6 +268,15 @@ fn configure_pcm(
         buffer_frames,
         can_pause,
     })
+}
+
+fn alsa_requested_buffer_time_us(buffer_secs: f64) -> u32 {
+    if buffer_secs <= 0.0 || !buffer_secs.is_finite() {
+        return ALSA_BUFFER_TIME_US;
+    }
+    (buffer_secs * 1_000_000.0)
+        .round()
+        .clamp(1_000.0, u32::MAX as f64) as u32
 }
 
 fn choose_sample_format(

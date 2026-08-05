@@ -326,27 +326,19 @@ impl TdStretch {
         let mut corr_vec = f32x8::ZERO;
         let mut norm_vec = f32x8::ZERO;
 
-        let m_chunks = m_slice.chunks_exact(8);
-        let c_chunks = c_slice.chunks_exact(8);
+        let m_chunks = m_slice.as_chunks::<8>().0;
+        let c_chunks = c_slice.as_chunks::<8>().0;
 
-        let m_rem = m_chunks.remainder();
-        let c_rem = c_chunks.remainder();
-
-        for (m, c) in m_chunks.zip(c_chunks) {
-            let m_val = f32x8::new(m.try_into().unwrap());
-            let c_val = f32x8::new(c.try_into().unwrap());
+        for (m, c) in m_chunks.iter().zip(c_chunks.iter()) {
+            let m_val = f32x8::new(*m);
+            let c_val = f32x8::new(*c);
 
             corr_vec = m_val.mul_add(c_val, corr_vec);
             norm_vec = m_val.mul_add(m_val, norm_vec);
         }
 
-        let mut corr = corr_vec.reduce_add();
-        let mut norm = norm_vec.reduce_add();
-
-        for i in 0..m_rem.len() {
-            corr = m_rem[i].mul_add(c_rem[i], corr);
-            norm = m_rem[i].mul_add(m_rem[i], norm);
-        }
+        let corr = corr_vec.reduce_add();
+        let norm = norm_vec.reduce_add();
 
         (f64::from(corr), f64::from(norm))
     }

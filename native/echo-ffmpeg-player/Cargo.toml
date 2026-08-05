@@ -10,7 +10,7 @@ crate-type = ["cdylib"]
 napi = { version = "3", features = ["napi9", "serde-json"] }
 napi-derive = "3"
 ffmpeg_audio = { path = "vendor/ffmpeg-audio/crates/ffmpeg_audio", features = ["http"] }
-cpal = "0.16"
+cpal = "0.18"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 rubato = "0.16"
@@ -39,7 +39,8 @@ coreaudio-sys = "0.2"
 objc2-core-audio-types = "0.3"
 
 [target.'cfg(target_os = "linux")'.dependencies]
-alsa = "0.9.1"
+alsa = "0.11"
+cpal = { version = "0.18", features = ["pipewire", "pulseaudio"] }
 
 [build-dependencies]
 napi-build = "2"

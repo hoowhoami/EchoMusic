@@ -13,4 +13,5 @@ export type PlayerErrorCode =
 export interface PlayerErrorPayload {
   message: string;
   errorCode?: PlayerErrorCode;
+  reason?: string;
 }

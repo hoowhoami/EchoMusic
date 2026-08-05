@@ -266,6 +266,13 @@ impl PlayerEvent {
         }
     }
 
+    pub fn error_with_reason(code: PlayerErrorCode, message: String, reason: &str) -> Self {
+        Self {
+            reason: Some(reason.to_string()),
+            ..Self::error(code, message)
+        }
+    }
+
     pub fn log(level: &str, message: String) -> Self {
         Self {
             event: "log".to_string(),

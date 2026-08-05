@@ -1,7 +1,7 @@
 mod cpal_shared;
 
-use crate::events::PlayerEvent;
-use crate::shared::{AudioSampleFormat, SharedAudio};
+use crate::events::{PlayerErrorCode, PlayerEvent};
+use crate::shared::{AudioOutputStats, AudioSampleFormat, SharedAudio};
 use std::sync::mpsc::SyncSender;
 use std::sync::Arc;
 use std::thread::JoinHandle;
@@ -83,7 +83,7 @@ impl AudioOutputBackend for SelectedAudioOutputBackend {
             channels: shared.mix_format.channels,
             negotiated_format: sample_format_name(self.negotiated_format(shared)),
             sample_formats: shared
-                .source_sample_format()
+                .preferred_output_sample_format()
                 .best_output_formats()
                 .into_iter()
                 .map(sample_format_name)
@@ -125,6 +125,66 @@ pub(crate) fn spawn_output_backend(
         ),
     ));
     backend.spawn(shared, emit, start_notify)
+}
+
+pub(crate) fn build_output_stats(
+    backend: &str,
+    shared: &SharedAudio,
+    sample_rate: u32,
+    channels: usize,
+    format: String,
+    buffer_mode: String,
+    buffer_frames: f64,
+    device_buffer_secs: f64,
+) -> AudioOutputStats {
+    let requested_buffer_secs = shared.requested_output_buffer_secs().max(0.0);
+    let device_buffer_secs = device_buffer_secs.max(0.0);
+    let software_buffer_secs = (requested_buffer_secs - device_buffer_secs).max(0.0);
+    AudioOutputStats {
+        backend: backend.to_string(),
+        sample_rate: f64::from(sample_rate.max(1)),
+        engine_sample_rate: f64::from(shared.mix_format.sample_rate),
+        channels: channels.max(1) as f64,
+        format,
+        buffer_mode,
+        buffer_frames,
+        buffer_secs: device_buffer_secs,
+        requested_buffer_secs,
+        device_buffer_secs,
+        software_buffer_secs,
+        delay_secs: device_buffer_secs + software_buffer_secs,
+        underruns: 0.0,
+    }
+}
+
+pub(crate) fn output_buffer_mode_for_frames(frames: u32) -> String {
+    if frames == 0 {
+        "host_controlled".to_string()
+    } else {
+        format!("fixed({frames})")
+    }
+}
+
+pub(crate) fn is_disconnect_recovery_reason(reason: &str) -> bool {
+    reason == "device-not-available" || reason == "stream-invalidated"
+}
+
+pub(crate) fn emit_output_runtime_error(
+    shared: &SharedAudio,
+    emit: fn(PlayerEvent),
+    error_code: PlayerErrorCode,
+    message: String,
+) {
+    shared.request_output_stop();
+    if shared.should_pause_on_device_disconnect() {
+        emit(PlayerEvent::error_with_reason(
+            PlayerErrorCode::OutputRuntime,
+            message,
+            "device-not-available",
+        ));
+    } else {
+        emit(PlayerEvent::error(error_code, message));
+    }
 }
 
 fn selected_backend_name(exclusive: bool) -> &'static str {
@@ -256,5 +316,32 @@ mod tests {
         assert_eq!(capability.channels, 2);
         assert_eq!(capability.negotiated_format, "f32");
         assert_eq!(capability.sample_formats[0], "s16");
+    }
+
+    #[test]
+    fn output_stats_split_device_and_software_buffer_delay() {
+        let shared = Arc::new(SharedAudio::new(
+            MixFormat::stereo_f32(48_000),
+            0.2,
+            1.0,
+            &DspSettings::default(),
+        ));
+
+        let stats = build_output_stats(
+            "test",
+            &shared,
+            48_000,
+            2,
+            "f32".to_string(),
+            "fixed(2400)".to_string(),
+            2400.0,
+            0.05,
+        );
+
+        assert_eq!(stats.requested_buffer_secs, 0.2);
+        assert_eq!(stats.buffer_mode, "fixed(2400)");
+        assert_eq!(stats.device_buffer_secs, 0.05);
+        assert!((stats.software_buffer_secs - 0.15).abs() < f64::EPSILON);
+        assert_eq!(stats.delay_secs, 0.2);
     }
 }

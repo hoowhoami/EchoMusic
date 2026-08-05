@@ -167,8 +167,12 @@ pub(crate) fn validate_coreaudio_exclusive_output(
     let guard = acquire_exclusive(device_name)?;
     let device_id = resolve_coreaudio_device_id(device_name)
         .ok_or_else(|| coreaudio_device_not_found_message(device_name))?;
-    let (_format, format_guard) =
-        prepare_coreaudio_exclusive_format(device_id, sample_rate, AudioSampleFormat::Unknown)?;
+    let (_format, format_guard) = prepare_coreaudio_exclusive_format(
+        device_id,
+        sample_rate,
+        MIX_CHANNELS,
+        AudioSampleFormat::Unknown,
+    )?;
     drop(format_guard);
     drop(guard);
     Ok(())
@@ -191,10 +195,12 @@ pub(crate) fn coreaudio_stream_format(
 pub(crate) fn prepare_coreaudio_exclusive_format(
     device_id: ca::AudioDeviceID,
     sample_rate: u32,
+    channels: usize,
     source_format: AudioSampleFormat,
 ) -> Result<(CoreAudioPcmFormat, Option<CoreAudioPhysicalFormatGuard>), String> {
     let stream_id = coreaudio_output_stream(device_id)?;
-    let target_format = find_best_physical_format(stream_id, sample_rate, source_format).ok();
+    let target_format =
+        find_best_physical_format(stream_id, sample_rate, channels, source_format).ok();
     let original_format = coreaudio_physical_format(stream_id)?;
     let changed = target_format
         .filter(|format| !coreaudio_asbd_equals(&original_format, format))
@@ -557,6 +563,7 @@ fn coreaudio_pcm_format(
 fn find_best_physical_format(
     stream_id: ca::AudioStreamID,
     sample_rate: u32,
+    channels: usize,
     source_format: AudioSampleFormat,
 ) -> Result<ca::AudioStreamBasicDescription, String> {
     let formats = property_data_array::<AudioStreamRangedDescription>(
@@ -577,10 +584,10 @@ fn find_best_physical_format(
             continue;
         };
         let rate_penalty = format.sample_rate.abs_diff(sample_rate) as u64;
-        let channel_penalty = if format.channels >= MIX_CHANNELS {
-            format.channels.saturating_sub(MIX_CHANNELS) as u64
+        let channel_penalty = if format.channels >= channels {
+            format.channels.saturating_sub(channels) as u64
         } else {
-            (MIX_CHANNELS.saturating_sub(format.channels) as u64).saturating_add(16)
+            (channels.saturating_sub(format.channels) as u64).saturating_add(16)
         };
         let sample_penalty = coreaudio_sample_format_penalty(format.sample_format, source_format);
         let interleaved_penalty = u64::from(format.non_interleaved);

@@ -1,5 +1,6 @@
 use crate::device::normalize_device_name;
 use crate::events::SpectrumOptions;
+use crate::shared::AudioSampleFormat;
 use crate::stream::{self, StreamOptions};
 use ffmpeg_audio::PacketCacheOptions;
 use napi_derive::napi;
@@ -17,10 +18,16 @@ const DEFAULT_DEMUXER_MAX_BACK_BYTES: usize = 50 * 1024 * 1024;
 const MAX_DEMUXER_BYTES: usize = 4 * 1024 * 1024 * 1024;
 const DEFAULT_NETWORK_TIMEOUT_SECS: f64 = 60.0;
 const DEFAULT_PLAYBACK_STALL_TIMEOUT_SECS: f64 = 8.0;
+const MIN_AUDIO_SAMPLE_RATE: u32 = 8_000;
+const MAX_AUDIO_SAMPLE_RATE: u32 = 768_000;
 
 #[napi(object)]
 pub struct PlayerConfigOptions {
     pub audio_buffer_secs: Option<f64>,
+    pub audio_samplerate: Option<String>,
+    pub audio_channels: Option<String>,
+    pub audio_format: Option<String>,
+    pub gapless_audio: Option<String>,
     pub demuxer_readahead_secs: Option<f64>,
     pub cache: Option<String>,
     pub cache_secs: Option<f64>,
@@ -50,9 +57,142 @@ impl CacheMode {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AudioSampleratePolicy {
+    Auto,
+    Fixed(u32),
+}
+
+impl AudioSampleratePolicy {
+    fn from_option(value: Option<String>) -> Self {
+        let Some(value) = value else {
+            return Self::Auto;
+        };
+        let normalized = value.trim().to_ascii_lowercase();
+        if normalized.is_empty() || normalized == "auto" {
+            return Self::Auto;
+        }
+        normalized
+            .parse::<u32>()
+            .ok()
+            .filter(|rate| (MIN_AUDIO_SAMPLE_RATE..=MAX_AUDIO_SAMPLE_RATE).contains(rate))
+            .map(Self::Fixed)
+            .unwrap_or(Self::Auto)
+    }
+
+    pub fn resolve(self, source_sample_rate: u32, output_sample_rate: Option<u32>) -> u32 {
+        match self {
+            Self::Auto => output_sample_rate.unwrap_or(source_sample_rate).max(1),
+            Self::Fixed(sample_rate) => sample_rate.max(1),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AudioChannelPolicy {
+    AutoSafe,
+    Auto,
+    Stereo,
+    Mono,
+    Fixed(usize),
+}
+
+impl AudioChannelPolicy {
+    fn from_option(value: Option<String>) -> Self {
+        let Some(value) = value else {
+            return Self::AutoSafe;
+        };
+        let normalized = value.trim().to_ascii_lowercase();
+        match normalized.as_str() {
+            "" | "auto-safe" => Self::AutoSafe,
+            "auto" => Self::Auto,
+            "stereo" | "2" => Self::Stereo,
+            "mono" | "1" => Self::Mono,
+            _ => normalized
+                .parse::<usize>()
+                .ok()
+                .filter(|channels| (1..=8).contains(channels))
+                .map(Self::Fixed)
+                .unwrap_or(Self::AutoSafe),
+        }
+    }
+
+    pub fn resolve_engine_channels(self, source_channels: usize, requires_stereo: bool) -> usize {
+        if requires_stereo {
+            return 2;
+        }
+        match self {
+            Self::AutoSafe => source_channels.max(1).min(2),
+            Self::Auto => source_channels.max(1).min(8),
+            Self::Stereo => 2,
+            Self::Mono => 1,
+            Self::Fixed(channels) => channels.clamp(1, 8),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AudioFormatPolicy {
+    Auto,
+    F32,
+    S16,
+    S32,
+}
+
+impl AudioFormatPolicy {
+    fn from_option(value: Option<String>) -> Self {
+        match value
+            .as_deref()
+            .map(str::trim)
+            .map(str::to_ascii_lowercase)
+            .as_deref()
+        {
+            Some("f32") | Some("float") => Self::F32,
+            Some("s16") | Some("i16") => Self::S16,
+            Some("s32") | Some("i32") => Self::S32,
+            _ => Self::Auto,
+        }
+    }
+
+    pub fn resolve_output_format(self, source_format: AudioSampleFormat) -> AudioSampleFormat {
+        match self {
+            Self::Auto => source_format,
+            Self::F32 => AudioSampleFormat::F32,
+            Self::S16 => AudioSampleFormat::S16,
+            Self::S32 => AudioSampleFormat::S32,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum GaplessAudioPolicy {
+    No,
+    Weak,
+    Yes,
+}
+
+impl GaplessAudioPolicy {
+    fn from_option(value: Option<String>) -> Self {
+        match value
+            .as_deref()
+            .map(str::trim)
+            .map(str::to_ascii_lowercase)
+            .as_deref()
+        {
+            Some("no") | Some("false") | Some("0") => Self::No,
+            Some("yes") | Some("true") | Some("1") => Self::Yes,
+            _ => Self::Weak,
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct PlayerConfig {
     pub audio_buffer_secs: f64,
+    pub audio_samplerate: AudioSampleratePolicy,
+    pub audio_channels: AudioChannelPolicy,
+    pub audio_format: AudioFormatPolicy,
+    pub gapless_audio: GaplessAudioPolicy,
     pub demuxer_readahead_secs: f64,
     pub cache: CacheMode,
     pub cache_secs: f64,
@@ -71,6 +211,10 @@ impl Default for PlayerConfig {
     fn default() -> Self {
         Self {
             audio_buffer_secs: DEFAULT_BUFFER_SECS,
+            audio_samplerate: AudioSampleratePolicy::Auto,
+            audio_channels: AudioChannelPolicy::AutoSafe,
+            audio_format: AudioFormatPolicy::Auto,
+            gapless_audio: GaplessAudioPolicy::Weak,
             demuxer_readahead_secs: DEFAULT_DEMUXER_READAHEAD_SECS,
             cache: CacheMode::Auto,
             cache_secs: DEFAULT_CACHE_SECS,
@@ -94,6 +238,10 @@ impl PlayerConfig {
             if let Some(value) = options.audio_buffer_secs {
                 config.audio_buffer_secs = value.clamp(0.0, MAX_BUFFER_SECS);
             }
+            config.audio_samplerate = AudioSampleratePolicy::from_option(options.audio_samplerate);
+            config.audio_channels = AudioChannelPolicy::from_option(options.audio_channels);
+            config.audio_format = AudioFormatPolicy::from_option(options.audio_format);
+            config.gapless_audio = GaplessAudioPolicy::from_option(options.gapless_audio);
             if let Some(value) = options.demuxer_readahead_secs {
                 config.demuxer_readahead_secs = value.clamp(0.0, MAX_CACHE_SECS);
             }
@@ -137,6 +285,28 @@ impl PlayerConfig {
         self.audio_device = normalize_device_name(value);
     }
 
+    pub fn resolve_initial_mix_sample_rate(
+        &self,
+        source_sample_rate: u32,
+        output_sample_rate: Option<u32>,
+    ) -> u32 {
+        self.audio_samplerate
+            .resolve(source_sample_rate, output_sample_rate)
+    }
+
+    pub fn resolve_mix_channels(&self, source_channels: usize, requires_stereo: bool) -> usize {
+        self.audio_channels
+            .resolve_engine_channels(source_channels, requires_stereo)
+    }
+
+    pub fn resolve_output_sample_format(
+        &self,
+        source_format: AudioSampleFormat,
+    ) -> AudioSampleFormat {
+        self.audio_format.resolve_output_format(source_format)
+    }
+
+    #[cfg(test)]
     pub fn packet_cache_options(&self) -> PacketCacheOptions {
         self.packet_cache_options_for_duration(self.demuxer_readahead_secs, false)
     }
@@ -272,6 +442,10 @@ mod tests {
             cache_secs: None,
             cache_pause: None,
             cache_pause_wait_secs: None,
+            audio_samplerate: None,
+            audio_channels: None,
+            audio_format: None,
+            gapless_audio: None,
             demuxer_max_bytes: None,
             demuxer_max_back_bytes: None,
             network_timeout_secs: None,
@@ -298,6 +472,10 @@ mod tests {
     fn player_config_cache_yes_applies_cache_secs_to_local_sources() {
         let config = PlayerConfig::from_options(Some(PlayerConfigOptions {
             audio_buffer_secs: None,
+            audio_samplerate: None,
+            audio_channels: None,
+            audio_format: None,
+            gapless_audio: None,
             demuxer_readahead_secs: Some(2.0),
             cache: Some("yes".to_string()),
             cache_secs: Some(30.0),
@@ -334,6 +512,10 @@ mod tests {
     fn player_config_accepts_small_output_buffer_and_short_readahead() {
         let config = PlayerConfig::from_options(Some(PlayerConfigOptions {
             audio_buffer_secs: Some(0.01),
+            audio_samplerate: None,
+            audio_channels: None,
+            audio_format: None,
+            gapless_audio: None,
             demuxer_readahead_secs: Some(0.1),
             cache: Some("auto".to_string()),
             cache_secs: Some(0.1),
@@ -360,6 +542,10 @@ mod tests {
     fn player_config_allows_zero_readahead_like_mpv() {
         let config = PlayerConfig::from_options(Some(PlayerConfigOptions {
             audio_buffer_secs: Some(0.0),
+            audio_samplerate: None,
+            audio_channels: None,
+            audio_format: None,
+            gapless_audio: None,
             demuxer_readahead_secs: Some(0.0),
             cache: Some("no".to_string()),
             cache_secs: Some(0.0),
@@ -386,6 +572,10 @@ mod tests {
     fn player_config_allows_larger_output_buffer_for_high_latency_devices() {
         let config = PlayerConfig::from_options(Some(PlayerConfigOptions {
             audio_buffer_secs: Some(3.0),
+            audio_samplerate: None,
+            audio_channels: None,
+            audio_format: None,
+            gapless_audio: None,
             demuxer_readahead_secs: None,
             cache: None,
             cache_secs: None,
@@ -402,6 +592,10 @@ mod tests {
 
         let clamped = PlayerConfig::from_options(Some(PlayerConfigOptions {
             audio_buffer_secs: Some(30.0),
+            audio_samplerate: None,
+            audio_channels: None,
+            audio_format: None,
+            gapless_audio: None,
             demuxer_readahead_secs: None,
             cache: None,
             cache_secs: None,
@@ -415,6 +609,117 @@ mod tests {
         }));
 
         assert_eq!(clamped.audio_buffer_secs, MAX_BUFFER_SECS);
+    }
+
+    #[test]
+    fn audio_samplerate_auto_prefers_output_rate_without_fixed_48000() {
+        let config = PlayerConfig::default();
+
+        assert_eq!(config.audio_samplerate, AudioSampleratePolicy::Auto);
+        assert_eq!(
+            config.resolve_initial_mix_sample_rate(44_100, Some(48_000)),
+            48_000
+        );
+        assert_eq!(config.resolve_initial_mix_sample_rate(96_000, None), 96_000);
+    }
+
+    #[test]
+    fn audio_samplerate_can_be_fixed_explicitly() {
+        let config = PlayerConfig::from_options(Some(PlayerConfigOptions {
+            audio_buffer_secs: None,
+            audio_samplerate: Some("48000".to_string()),
+            audio_channels: None,
+            audio_format: None,
+            gapless_audio: None,
+            demuxer_readahead_secs: None,
+            cache: None,
+            cache_secs: None,
+            cache_pause: None,
+            cache_pause_wait_secs: None,
+            demuxer_max_bytes: None,
+            demuxer_max_back_bytes: None,
+            network_timeout_secs: None,
+            playback_stall_timeout_secs: None,
+            http_proxy: None,
+        }));
+
+        assert_eq!(
+            config.audio_samplerate,
+            AudioSampleratePolicy::Fixed(48_000)
+        );
+        assert_eq!(
+            config.resolve_initial_mix_sample_rate(44_100, Some(96_000)),
+            48_000
+        );
+    }
+
+    #[test]
+    fn audio_channels_default_to_auto_safe_but_stereo_dsp_wins() {
+        let config = PlayerConfig::default();
+
+        assert_eq!(config.audio_channels, AudioChannelPolicy::AutoSafe);
+        assert_eq!(config.resolve_mix_channels(6, false), 2);
+        assert_eq!(config.resolve_mix_channels(1, false), 1);
+        assert_eq!(config.resolve_mix_channels(1, true), 2);
+    }
+
+    #[test]
+    fn audio_format_defaults_to_source_format_but_can_be_fixed() {
+        let default = PlayerConfig::default();
+        assert_eq!(
+            default.resolve_output_sample_format(AudioSampleFormat::S16),
+            AudioSampleFormat::S16
+        );
+
+        let fixed = PlayerConfig::from_options(Some(PlayerConfigOptions {
+            audio_buffer_secs: None,
+            audio_samplerate: None,
+            audio_channels: None,
+            audio_format: Some("f32".to_string()),
+            gapless_audio: None,
+            demuxer_readahead_secs: None,
+            cache: None,
+            cache_secs: None,
+            cache_pause: None,
+            cache_pause_wait_secs: None,
+            demuxer_max_bytes: None,
+            demuxer_max_back_bytes: None,
+            network_timeout_secs: None,
+            playback_stall_timeout_secs: None,
+            http_proxy: None,
+        }));
+        assert_eq!(
+            fixed.resolve_output_sample_format(AudioSampleFormat::S16),
+            AudioSampleFormat::F32
+        );
+    }
+
+    #[test]
+    fn gapless_audio_policy_defaults_to_weak_and_accepts_no() {
+        assert_eq!(
+            PlayerConfig::default().gapless_audio,
+            GaplessAudioPolicy::Weak
+        );
+
+        let disabled = PlayerConfig::from_options(Some(PlayerConfigOptions {
+            audio_buffer_secs: None,
+            audio_samplerate: None,
+            audio_channels: None,
+            audio_format: None,
+            gapless_audio: Some("no".to_string()),
+            demuxer_readahead_secs: None,
+            cache: None,
+            cache_secs: None,
+            cache_pause: None,
+            cache_pause_wait_secs: None,
+            demuxer_max_bytes: None,
+            demuxer_max_back_bytes: None,
+            network_timeout_secs: None,
+            playback_stall_timeout_secs: None,
+            http_proxy: None,
+        }));
+
+        assert_eq!(disabled.gapless_audio, GaplessAudioPolicy::No);
     }
 }
 

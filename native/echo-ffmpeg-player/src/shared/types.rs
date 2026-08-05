@@ -10,8 +10,12 @@ pub struct AudioOutputStats {
     pub engine_sample_rate: f64,
     pub channels: f64,
     pub format: String,
+    pub buffer_mode: String,
     pub buffer_frames: f64,
     pub buffer_secs: f64,
+    pub requested_buffer_secs: f64,
+    pub device_buffer_secs: f64,
+    pub software_buffer_secs: f64,
     pub delay_secs: f64,
     pub underruns: f64,
 }
