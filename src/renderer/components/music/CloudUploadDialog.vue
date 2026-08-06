@@ -299,7 +299,7 @@ const handlePickManual = async () => {
   if (!userStore.isLoggedIn || picking.value) return;
   picking.value = true;
   try {
-    const result = await window.electron.cloud.pickUploadFiles('file');
+    const result = await window.electron.cloud.pickUploadFiles('file', false);
     if (result.canceled) return;
     if (result.files.length === 0) {
       toastStore.warning(result.errors?.[0] || '没有可上传的音频文件');
