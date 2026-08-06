@@ -10,6 +10,9 @@ import type {
 import { DEFAULT_NOW_PLAYING_APPEARANCE, DEFAULT_NOW_PLAYING_LYRIC } from '../shared/now-playing';
 import type { LyricLinePayload } from '../shared/lyrics';
 import type { IpcContext } from './ipc/types';
+import { getMainWindow } from './window';
+import { isCoverPreviewEnabled, setCoverPreviewEnabled } from './taskbarThumbnail';
+import { setMainAppSetting } from './storage/settings';
 
 const NOW_PLAYING_COMMANDS = new Set<NowPlayingCommand>([
   'togglePlayback',
@@ -165,6 +168,36 @@ const sendSnapshot = () => {
 
 export const getNowPlayingSnapshot = () => snapshot;
 
+const DEFAULT_WINDOW_TITLE = 'EchoMusic';
+
+/** 根据当前播放信息更新主窗口标题（任务栏/后台任务窗口显示）：歌手-歌名，无有效信息时回退 EchoMusic */
+const applyWindowTitle = (playback: NowPlayingPlaybackPayload | null | undefined) => {
+  const showTitle = isCoverPreviewEnabled();
+  const artist = showTitle ? String(playback?.artist ?? '').trim() : '';
+  const title = showTitle ? String(playback?.title ?? '').trim() : '';
+  const hasRealInfo = Boolean(
+    artist &&
+      title &&
+      artist !== '未知歌手' &&
+      title !== '未知歌曲' &&
+      artist !== 'Unknown Artist' &&
+      title !== 'Unknown',
+  );
+  const next = hasRealInfo ? `${artist} - ${title}` : DEFAULT_WINDOW_TITLE;
+  for (const win of BrowserWindow.getAllWindows()) {
+    try {
+      if (win.isDestroyed()) continue;
+      // 只更新主窗口（miniPlayer / desktopLyric 等独立窗口保持自己的标题）
+      if (win === getMainWindow()) {
+        if (win.getTitle() !== next) win.setTitle(next);
+        break;
+      }
+    } catch {
+      // ignore windows closing while updating title
+    }
+  }
+};
+
 export const syncNowPlayingSnapshot = (payload: NowPlayingSnapshotPatch) => {
   if (!payload || typeof payload !== 'object') return snapshot;
   snapshot = {
@@ -184,11 +217,19 @@ export const syncNowPlayingSnapshot = (payload: NowPlayingSnapshotPatch) => {
     updatedAt: Date.now(),
   };
   sendSnapshot();
+  applyWindowTitle(snapshot.playback);
   return snapshot;
 };
 
 export const registerNowPlayingHandlers = (context: IpcContext) => {
   ipcRegistry.registerHandler('now-playing:get-snapshot', () => getNowPlayingSnapshot());
+
+  // 任务栏封面预览开关：关闭时标题固定为 EchoMusic，并让任务栏回退到窗口实时画面
+  ipcRegistry.registerListener('update-taskbar-cover-preview', (_event, enabled: boolean) => {
+    setCoverPreviewEnabled(Boolean(enabled));
+    setMainAppSetting('taskbarCoverPreview', Boolean(enabled));
+    applyWindowTitle(snapshot.playback);
+  });
 
   ipcRegistry.registerListener(
     'now-playing:sync-snapshot',

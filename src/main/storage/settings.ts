@@ -33,6 +33,7 @@ export type MainAppSettings = {
   highDpiEnabled: boolean;
   dpiScale: number;
   devToolsEnabled: boolean;
+  taskbarCoverPreview: boolean;
   windowState: MainWindowState;
   miniPlayerWindowState: MiniPlayerWindowState;
 };
@@ -59,6 +60,7 @@ export const DEFAULT_MAIN_APP_SETTINGS: MainAppSettings = {
   highDpiEnabled: false,
   dpiScale: 1,
   devToolsEnabled: false,
+  taskbarCoverPreview: false,
   windowState: {
     width: 1100,
     height: 750,

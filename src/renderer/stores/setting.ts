@@ -127,6 +127,7 @@ export const useSettingStore = defineStore('setting', {
     pauseOnOutputDeviceDisconnect: false,
     showAudioQualityBadge: true,
     showDesktopLyricStatus: true,
+    taskbarCoverPreview: false,
     volumeNormalization: true,
     volumeNormalizationLufs: -14,
     impulseResponseEnabled: false,
@@ -309,6 +310,11 @@ export const useSettingStore = defineStore('setting', {
     syncStartMinimized() {
       if (window.electron?.ipcRenderer) {
         window.electron.ipcRenderer.send('update-start-minimized', this.startMinimized);
+      }
+    },
+    syncTaskbarCoverPreview() {
+      if (window.electron?.ipcRenderer) {
+        window.electron.ipcRenderer.send('update-taskbar-cover-preview', this.taskbarCoverPreview);
       }
     },
     syncDevToolsEnabled() {
