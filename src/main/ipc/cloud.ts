@@ -46,6 +46,7 @@ const getUploadSizeLimitError = () => `文件为空或超过 ${formatUploadMaxSi
 const showPickDialog = (
   win: BrowserWindow | null,
   mode: 'file' | 'folder',
+  multi = true,
 ): Promise<Electron.OpenDialogReturnValue> => {
   const options: OpenDialogOptions =
     mode === 'folder'
@@ -55,7 +56,7 @@ const showPickDialog = (
         }
       : {
           title: '选择要上传的音乐文件',
-          properties: ['openFile', 'multiSelections'],
+          properties: multi ? ['openFile', 'multiSelections'] : ['openFile'],
           filters: [
             { name: '音频文件', extensions: [...CLOUD_UPLOAD_EXTENSIONS] },
             { name: '所有文件', extensions: ['*'] },
@@ -188,13 +189,13 @@ const readAllowedUploadFileData = async (
 export const registerCloudHandlers = (context: IpcContext) => {
   ipcRegistry.registerHandler(
     'cloud:pick-upload-files',
-    async (_event, mode: 'file' | 'folder'): Promise<CloudPickFilesResult> => {
+    async (_event, mode: 'file' | 'folder', multi = true): Promise<CloudPickFilesResult> => {
       if (mode !== 'file' && mode !== 'folder') {
         return { canceled: true, files: [] };
       }
 
       const win = context.getMainWindow();
-      const result = await showPickDialog(win, mode);
+      const result = await showPickDialog(win, mode, multi);
       if (result.canceled || result.filePaths.length === 0) {
         return { canceled: true, files: [] };
       }

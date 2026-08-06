@@ -10,9 +10,11 @@ import {
   iconCloudUpload,
   iconFolderOpen,
   iconLoader2,
+  iconSearch,
   iconUpload,
   iconX,
 } from '@/icons';
+import { search } from '@/api/search';
 import { uploadToCloud } from '@/api/user';
 import {
   explainCloudUploadMatchRejection,
@@ -64,10 +66,28 @@ interface UploadItem {
   error?: string;
 }
 
-const step = ref<'pick' | 'uploading' | 'done'>('pick');
+const step = ref<'pick' | 'manual-search' | 'uploading' | 'done'>('pick');
 const items = ref<UploadItem[]>([]);
 const canceled = ref(false);
 const picking = ref(false);
+
+// 手动匹配状态
+interface ManualSearchResult {
+  raw: unknown;
+  title: string;
+  artist: string;
+  album: string;
+  duration: number;
+  audioId?: string;
+  albumAudioId?: string;
+}
+const manualFile = ref<UploadItem | null>(null);
+const manualSearchTitle = ref('');
+const manualSearchArtist = ref('');
+const manualSearchAlbum = ref('');
+const manualSearching = ref(false);
+const manualResults = ref<ManualSearchResult[]>([]);
+const manualSearchDone = ref(false);
 
 /** 匹配并发数（复用导入歌单防风控节奏） */
 const MATCH_CONCURRENCY = 2;
@@ -102,6 +122,12 @@ const reset = () => {
   step.value = 'pick';
   items.value = [];
   canceled.value = false;
+  manualFile.value = null;
+  manualSearchTitle.value = '';
+  manualSearchArtist.value = '';
+  manualSearchAlbum.value = '';
+  manualResults.value = [];
+  manualSearchDone.value = false;
 };
 
 const handleClose = (value: boolean) => {
@@ -268,6 +294,122 @@ const handlePick = async (mode: PickMode) => {
   }
 };
 
+// --- 手动匹配 ---
+const handlePickManual = async () => {
+  if (!userStore.isLoggedIn || picking.value) return;
+  picking.value = true;
+  try {
+    const result = await window.electron.cloud.pickUploadFiles('file', false);
+    if (result.canceled) return;
+    if (result.files.length === 0) {
+      toastStore.warning(result.errors?.[0] || '没有可上传的音频文件');
+      return;
+    }
+    const f = result.files[0];
+    manualFile.value = {
+      name: f.name,
+      path: f.path,
+      title: f.title || f.name.replace(/\.[^.]+$/, ''),
+      artist: f.artist || '',
+      duration: f.duration || 0,
+      size: f.size,
+      extension: f.extension,
+      modifiedAt: f.modifiedAt,
+      status: 'pending',
+      matchStatus: 'pending',
+    };
+    manualSearchTitle.value = manualFile.value.title;
+    manualSearchArtist.value = manualFile.value.artist;
+    manualSearchAlbum.value = '';
+    manualResults.value = [];
+    manualSearchDone.value = false;
+    step.value = 'manual-search';
+  } catch (error) {
+    toastStore.danger(`选择文件失败：${(error as Error)?.message || String(error)}`);
+  } finally {
+    picking.value = false;
+  }
+};
+
+const handleManualSearch = async () => {
+  const keyword = [manualSearchTitle.value.trim(), manualSearchArtist.value.trim()]
+    .filter(Boolean)
+    .join(' ');
+  if (!keyword) {
+    toastStore.warning('请输入歌名或歌手');
+    return;
+  }
+  manualSearching.value = true;
+  manualSearchDone.value = false;
+  manualResults.value = [];
+  try {
+    const res = await search(keyword, 'song', 1, 30);
+    const data = (res as { data?: { lists?: unknown[] } })?.data ?? {};
+    const lists = Array.isArray(data.lists) ? data.lists : [];
+    manualResults.value = lists.map((item) => {
+      const record = item as Record<string, unknown>;
+      const singers = record.Singers as
+        | { name?: string; AuthorName?: string }[]
+        | undefined;
+      const artistStr =
+        singers?.map((s) => s.name || s.AuthorName || '').filter(Boolean).join(', ') ||
+        (record.SingerName as string) ||
+        '';
+      const duration = Number(record.Duration ?? 0);
+      return {
+        raw: item,
+        title: (record.SongName as string) || (record.FileName as string) || '',
+        artist: artistStr,
+        album: (record.AlbumName as string) || '',
+        duration: duration > 1000 ? Math.round(duration / 1000) : duration,
+        audioId: normalizePositiveNumericId(
+          record.Auditoid ?? record.Audioid ?? record.audio_id ?? record.fileid,
+        ),
+        albumAudioId: normalizePositiveNumericId(
+          record.MixSongID ?? record.mixsongid ?? record.album_audio_id,
+        ),
+      };
+    });
+    manualSearchDone.value = true;
+    scrollResultListToTop();
+    if (manualResults.value.length === 0) {
+      toastStore.warning('未找到匹配的歌曲，请修改搜索条件重试');
+    }
+  } catch (error) {
+    toastStore.danger(`搜索失败：${(error as Error)?.message || String(error)}`);
+  } finally {
+    manualSearching.value = false;
+  }
+};
+
+const manualSearchResultList = ref<InstanceType<typeof Scrollbar> | null>(null);
+
+const scrollResultListToTop = () => {
+  requestAnimationFrame(() => {
+    manualSearchResultList.value?.scrollTo({ top: 0 });
+  });
+};
+
+const handleSelectManualResult = async (result: ManualSearchResult) => {
+  if (!manualFile.value) return;
+  const item = manualFile.value;
+  item.audioId = result.audioId;
+  item.albumAudioId = result.albumAudioId;
+  item.matchStatus = 'linked';
+  item.status = 'uploading';
+  step.value = 'uploading';
+  items.value = [item];
+  canceled.value = false;
+  await runUpload();
+};
+
+const formatDuration = (sec: number) => {
+  if (!sec || !Number.isFinite(sec)) return '';
+  const m = Math.floor(sec / 60);
+  const s = Math.floor(sec % 60);
+  return `${m}:${String(s).padStart(2, '0')}`;
+};
+
 const uploadSingleItem = async (item: UploadItem) => {
   const title = item.title || item.name.replace(/\.[^.]+$/, '');
   item.status = 'uploading';
@@ -346,6 +488,9 @@ const statusLabel = (item: UploadItem) => {
     return `${uploadLabel} · ${linkLabel}`;
   }
   if (item.status === 'failed') return '失败';
+  if (item.matchStatus === 'not_found' || item.matchStatus === 'low_score' || item.matchStatus === 'no_cloud_ids' || item.matchStatus === 'failed') {
+    return '未关联 · 等待上传';
+  }
   return '等待中';
 };
 </script>
@@ -375,8 +520,8 @@ const statusLabel = (item: UploadItem) => {
             <Icon :icon="iconUpload" width="20" height="20" />
           </div>
           <div class="min-w-0 flex-1 text-left">
-            <div class="text-[13px] font-semibold text-text-main">上传单曲</div>
-            <div class="text-[11px] text-text-secondary/75">支持多选，单文件不超过 100MB</div>
+            <div class="text-[13px] font-semibold text-text-main">上传歌曲</div>
+            <div class="text-[11px] text-text-secondary/75">上传时自动匹配歌曲信息，支持多选，单文件不超过 100MB</div>
           </div>
         </button>
         <button class="cloud-upload-option" :disabled="picking" @click="handlePick('folder')">
@@ -385,9 +530,92 @@ const statusLabel = (item: UploadItem) => {
           </div>
           <div class="min-w-0 flex-1 text-left">
             <div class="text-[13px] font-semibold text-text-main">上传文件夹</div>
-            <div class="text-[11px] text-text-secondary/75">自动收集文件夹内所有音频文件</div>
+            <div class="text-[11px] text-text-secondary/75">收集文件夹内所有音频文件后自动匹配上传</div>
           </div>
         </button>
+        <button
+          class="cloud-upload-option"
+          :disabled="picking"
+          @click="handlePickManual"
+        >
+          <div class="cloud-upload-option-icon">
+            <Icon :icon="iconSearch" width="20" height="20" />
+          </div>
+          <div class="min-w-0 flex-1 text-left">
+            <div class="text-[13px] font-semibold text-text-main">匹配上传</div>
+            <div class="text-[11px] text-text-secondary/75">上传时手动匹配歌曲信息，单文件不超过 100MB</div>
+          </div>
+        </button>
+      </div>
+    </template>
+
+    <!-- 手动匹配：搜索表单 -->
+    <template v-else-if="step === 'manual-search'">
+      <div class="cloud-manual-search" @keydown.esc="step = 'pick'; manualFile = null">
+        <div class="cloud-manual-file-info" v-if="manualFile">
+          <span class="text-[12px] text-text-secondary/70 truncate">
+            {{ manualFile.name }}（{{ (manualFile.size / 1024 / 1024).toFixed(1) }} MB）
+          </span>
+        </div>
+        <div class="cloud-manual-form">
+          <input
+            v-model="manualSearchTitle"
+            class="cloud-manual-input"
+            placeholder="歌名（必填）"
+            @input="manualResults = []; manualSearchDone = false"
+            @keydown.enter="handleManualSearch"
+          />
+          <input
+            v-model="manualSearchArtist"
+            class="cloud-manual-input"
+            placeholder="歌手"
+            @input="manualResults = []; manualSearchDone = false"
+            @keydown.enter="handleManualSearch"
+          />
+          <input
+            v-model="manualSearchAlbum"
+            class="cloud-manual-input"
+            placeholder="专辑（可选）"
+            @keydown.enter="handleManualSearch"
+          />
+        </div>
+        <Button
+          variant="primary"
+          size="sm"
+          class="self-end"
+          :disabled="manualSearching || !manualSearchTitle.trim()"
+          @click="handleManualSearch"
+        >
+          <Icon v-if="manualSearching" :icon="iconLoader2" width="14" height="14" class="animate-spin mr-1" />
+          <Icon v-else :icon="iconSearch" width="14" height="14" class="mr-1" />
+          搜索
+        </Button>
+        <div v-if="manualSearchDone" class="cloud-manual-results">
+          <div class="text-[12px] font-semibold text-text-main mb-2">搜索结果（点击选择）</div>
+          <Scrollbar
+            ref="manualSearchResultList"
+            class="cloud-manual-result-list"
+            :scrollbar-inset="3"
+            :content-props="{ class: 'cloud-manual-result-list-content' }"
+          >
+            <div
+              v-for="(item, idx) in manualResults"
+              :key="idx"
+              class="cloud-manual-result-row"
+              @click="handleSelectManualResult(item)"
+            >
+              <div class="min-w-0 flex-1">
+                <div class="text-[13px] font-medium text-text-main truncate">{{ item.title }}</div>
+                <div class="text-[11px] text-text-secondary/70 truncate">
+                  {{ [item.artist, item.album].filter(Boolean).join(' · ') }}
+                </div>
+              </div>
+              <span class="text-[11px] text-text-secondary/60 shrink-0">
+                {{ formatDuration(item.duration) }}
+              </span>
+            </div>
+          </Scrollbar>
+        </div>
       </div>
     </template>
 
@@ -458,6 +686,10 @@ const statusLabel = (item: UploadItem) => {
     <template #footer>
       <template v-if="step === 'pick'">
         <Button variant="ghost" size="sm" :disabled="picking" @click="closeDialog">取消</Button>
+      </template>
+      <template v-else-if="step === 'manual-search'">
+        <Button variant="ghost" size="sm" @click="step = 'pick'; manualFile = null">返回</Button>
+        <Button variant="ghost" size="sm" @click="closeDialog">取消</Button>
       </template>
       <template v-else>
         <div class="cloud-upload-footer-content">
@@ -577,6 +809,62 @@ const statusLabel = (item: UploadItem) => {
 :global(.dialog-content.cloud-upload-dialog) {
   width: 460px;
   max-width: calc(100vw - 32px);
-  max-height: min(560px, calc(100vh - 64px));
+  max-height: min(580px, calc(100vh - 64px));
+}
+
+:global(.dialog-content.cloud-upload-dialog) .dialog-body {
+  @apply flex flex-col min-h-0 overflow-hidden;
+}
+
+.cloud-manual-search {
+  @apply flex flex-col gap-3 min-h-0 flex-1;
+  padding-right: 22px;
+}
+
+.cloud-manual-file-info {
+  @apply px-2 py-1.5 rounded-[6px];
+  background: var(--control-muted-bg);
+}
+
+.cloud-manual-form {
+  @apply flex flex-col gap-2;
+}
+
+.cloud-manual-input {
+  @apply w-full px-3 py-2 text-[13px] rounded-[8px] outline-none transition-colors;
+  background: var(--control-muted-bg);
+  border: 1px solid var(--border-subtle);
+  color: var(--color-text-main);
+}
+
+.cloud-manual-input::placeholder {
+  color: var(--color-text-secondary);
+  opacity: 0.6;
+}
+
+.cloud-manual-input:focus {
+  border-color: var(--color-primary);
+}
+
+.cloud-manual-results {
+  @apply flex flex-col min-h-0 flex-1;
+}
+
+.cloud-manual-result-list {
+  height: clamp(100px, calc(100vh - 500px), 180px);
+  min-height: 0;
+}
+
+:global(.cloud-manual-result-list-content) {
+  padding-right: 22px;
+  padding-bottom: 20px;
+}
+
+.cloud-manual-result-row {
+  @apply flex items-center gap-2.5 px-2 py-2 rounded-[8px] cursor-pointer transition-colors;
+}
+
+.cloud-manual-result-row:hover {
+  background: var(--control-hover-bg);
 }
 </style>
