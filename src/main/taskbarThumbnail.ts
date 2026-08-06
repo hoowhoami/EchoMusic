@@ -231,10 +231,14 @@ export function setupTaskbarThumbnail(win: BrowserWindow): void {
 /** 更新当前封面（原始图片字节）。传 null 表示无可用封面，将回退到应用的兜底封面。 */
 export function setTaskbarCover(cover: Buffer | null): void {
   if (process.platform !== 'win32') return;
-  // 始终记录最新封面；开关关闭时 iconic 不会开启，重新开启后可立即显示当前封面
-  coverBuffer = cover && cover.length > 0 ? cover : null;
+  // coverData 为 null 时不立即清空 coverBuffer，保留上一张封面直至有真实封面替代，
+  // 避免切歌瞬间 coverBuffer=null 且兜底封面尚未就绪导致 DWM 预览黑窗。
+  // 只有传入真实封面时才更新 coverBuffer。
+  if (cover && cover.length > 0) {
+    coverBuffer = cover;
+  }
   if (!currentCover()) {
-    // 没有真实封面可用时确保兜底封面已加载，避免 iconic 无位图而显示黑窗
+    // 没有任何可用封面（首次启动/上一张已清空）时加载兜底封面作为安全网
     loadFallbackCover();
   }
   applyState();
