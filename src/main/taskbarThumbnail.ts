@@ -38,6 +38,8 @@ let fallbackCoverBuffer: Buffer | null = null;
 let fallbackCoverLoading = false;
 let iconicEnabled = false;
 let hooked = false;
+// 已应用的封面引用，用于避免对相同封面重复 invalidate
+let appliedCoverRef: Buffer | null = null;
 // 任务栏封面预览开关：关闭时走 DWM 默认实时窗口画面，不启用 iconic 封面
 let coverPreviewEnabled = false;
 const nativeRequire = createRequire(path.join(process.cwd(), 'package.json'));
@@ -115,22 +117,30 @@ function resolveHwnd(win: BrowserWindow): string | null {
   }
 }
 
-/** 根据「是否有可用封面」决定开启或关闭 iconic 表示（有封面就显示封面，否则窗口实时预览） */
+/** 开关由「任务栏封面预览」控制：开则始终显示封面（真实，缺失时用兜底），关则回落到 DWM 实时窗口画面 */
 function applyState(): void {
   if (!nativeModule || !hwndStr) return;
   const shouldShowCover = coverPreviewEnabled && !!currentCover();
   try {
     if (shouldShowCover) {
-      if (!iconicEnabled) {
+      const needEnable = !iconicEnabled;
+      if (needEnable) {
         nativeModule.taskbarEnableIconic(hwndStr);
         iconicEnabled = true;
       }
-      // 触发系统重新索取缩略图，换上当前封面
-      nativeModule.taskbarInvalidate(hwndStr);
-    } else if (iconicEnabled) {
-      nativeModule.taskbarDisableIconic(hwndStr);
-      iconicEnabled = false;
-      nativeModule.taskbarInvalidate(hwndStr);
+      // 封面已应用过且 iconic 已开启时无需重复触发系统重新索取
+      if (needEnable || appliedCoverRef !== coverBuffer) {
+        appliedCoverRef = coverBuffer;
+        // 触发系统重新索取缩略图，换上当前封面
+        nativeModule.taskbarInvalidate(hwndStr);
+      }
+    } else {
+      appliedCoverRef = null;
+      if (iconicEnabled) {
+        nativeModule.taskbarDisableIconic(hwndStr);
+        iconicEnabled = false;
+        nativeModule.taskbarInvalidate(hwndStr);
+      }
     }
   } catch (err) {
     log.warn('[TaskbarThumbnail] applyState failed:', err);
@@ -221,8 +231,7 @@ export function setupTaskbarThumbnail(win: BrowserWindow): void {
 /** 更新当前封面（原始图片字节）。传 null 表示无可用封面，将回退到应用的兜底封面。 */
 export function setTaskbarCover(cover: Buffer | null): void {
   if (process.platform !== 'win32') return;
-  // 开关关闭时忽略封面更新，任务栏保持窗口实时画面
-  if (!coverPreviewEnabled) return;
+  // 始终记录最新封面；开关关闭时 iconic 不会开启，重新开启后可立即显示当前封面
   coverBuffer = cover && cover.length > 0 ? cover : null;
   if (!currentCover()) {
     // 没有真实封面可用时确保兜底封面已加载，避免 iconic 无位图而显示黑窗
@@ -259,6 +268,7 @@ export function destroyTaskbarThumbnail(): void {
   }
   iconicEnabled = false;
   hooked = false;
+  appliedCoverRef = null;
   coverBuffer = null;
   fallbackCoverBuffer = null;
   hwndStr = null;
