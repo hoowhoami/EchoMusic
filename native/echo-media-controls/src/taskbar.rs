@@ -9,6 +9,7 @@
 //! 窗口消息的钩子在主进程（Electron `hookWindowMessage`）中完成，本模块只负责
 //! 「构建位图 + 调用 DWM API」，与 SMTC 逻辑完全解耦。
 
+use image::GenericImageView;
 use napi::bindgen_prelude::Buffer;
 use napi_derive::napi;
 
@@ -20,9 +21,6 @@ use windows::Win32::Graphics::Dwm::{
 use windows::Win32::Graphics::Gdi::{
     CreateDIBSection, DeleteObject, BITMAPINFO, BITMAPINFOHEADER, DIB_RGB_COLORS, HBITMAP, HGDIOBJ,
 };
-
-/// DwmSetIconicThumbnail / LivePreview 的标志：绘制带边框的窗口帧
-const DWM_SIT_DISPLAYFRAME: u32 = 0x0000_0001;
 
 /// 将 JS 传入的窗口句柄字符串（无符号十进制指针值）解析为 HWND
 fn parse_hwnd(hwnd: &str) -> Option<HWND> {
@@ -67,16 +65,27 @@ unsafe fn create_dib(width: i32, height: i32) -> Result<(HBITMAP, *mut u8), Stri
     Ok((hbmp, bits as *mut u8))
 }
 
-/// 解码图片并等比缩放到 `max_w x max_h` 框内，返回 RGBA 像素与实际尺寸。
+/// 解码图片并等比缩放（保持原始纵横比）后居中放到 `max_w x max_h` 的透明画布上，
+/// 返回 RGBA 像素与实际尺寸（始终为 `max_w x max_h`）。
 fn decode_scaled(data: &[u8], max_w: u32, max_h: u32) -> Result<(Vec<u8>, u32, u32), String> {
     let img = image::load_from_memory(data).map_err(|e| format!("decode image failed: {e}"))?;
     let max_w = max_w.max(1);
     let max_h = max_h.max(1);
-    // resize 等比缩放使图片完整落入框内
-    let scaled = img.resize(max_w, max_h, image::imageops::FilterType::Lanczos3);
-    let rgba = scaled.to_rgba8();
-    let (w, h) = rgba.dimensions();
-    Ok((rgba.into_raw(), w, h))
+    let (src_w, src_h) = img.dimensions();
+    let src_w = src_w.max(1);
+    let src_h = src_h.max(1);
+    // 计算等比缩放到框内（不超出边界）的目标尺寸，避免方形封面被横向拉伸
+    let scale = (max_w as f64 / src_w as f64).min(max_h as f64 / src_h as f64);
+    let out_w = (src_w as f64 * scale).max(1.0).round() as u32;
+    let out_h = (src_h as f64 * scale).max(1.0).round() as u32;
+    // 此时 scale 不改变纵横比，不会产生形变
+    let scaled = img.resize(out_w, out_h, image::imageops::FilterType::Lanczos3);
+    // 建透明画布并居中粘贴，四周留边透明，位图尺寸与 DWM 请求的矩形一致
+    let mut canvas = image::RgbaImage::from_pixel(max_w, max_h, image::Rgba([0, 0, 0, 0]));
+    let ox = (max_w - out_w) / 2;
+    let oy = (max_h - out_h) / 2;
+    image::imageops::overlay(&mut canvas, &scaled, ox as i64, oy as i64);
+    Ok((canvas.into_raw(), max_w, max_h))
 }
 
 /// 将 RGBA 像素写入 DIB（GDI 需要 BGRA 排列）。
@@ -150,7 +159,7 @@ pub fn taskbar_set_thumbnail(
 ) -> napi::Result<()> {
     let hwnd = parse_hwnd(&hwnd).ok_or_else(|| napi::Error::from_reason("invalid hwnd"))?;
     render_and_apply(hwnd, image.as_ref(), max_width, max_height, |hwnd, hbmp| unsafe {
-        DwmSetIconicThumbnail(hwnd, hbmp, DWM_SIT_DISPLAYFRAME)
+        DwmSetIconicThumbnail(hwnd, hbmp, 0)
             .map_err(|e| format!("DwmSetIconicThumbnail failed: {e}"))
     })
     .map_err(napi::Error::from_reason)
@@ -166,7 +175,7 @@ pub fn taskbar_set_live_preview(
 ) -> napi::Result<()> {
     let hwnd = parse_hwnd(&hwnd).ok_or_else(|| napi::Error::from_reason("invalid hwnd"))?;
     render_and_apply(hwnd, image.as_ref(), max_width, max_height, |hwnd, hbmp| unsafe {
-        DwmSetIconicLivePreviewBitmap(hwnd, hbmp, None, DWM_SIT_DISPLAYFRAME)
+        DwmSetIconicLivePreviewBitmap(hwnd, hbmp, None, 0)
             .map_err(|e| format!("DwmSetIconicLivePreviewBitmap failed: {e}"))
     })
     .map_err(napi::Error::from_reason)

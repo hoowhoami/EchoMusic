@@ -139,6 +139,20 @@ const resolvedTitle = computed(() => title.label);
     <div class="settings-divider"></div>
     <div class="settings-item">
       <div class="space-y-1">
+        <h3 class="font-semibold">任务栏封面预览</h3>
+        <p class="text-sm text-text-secondary">在任务栏窗口以及后台窗口显示封面和歌曲标题</p>
+      </div>
+      <Switch
+        :model-value="settingStore.taskbarCoverPreview"
+        @update:model-value="
+          settingStore.taskbarCoverPreview = Boolean($event);
+          settingStore.syncTaskbarCoverPreview();
+        "
+      />
+    </div>
+    <div class="settings-divider"></div>
+    <div class="settings-item">
+      <div class="space-y-1">
         <h3 class="font-semibold">播放列表计数</h3>
         <p class="text-sm text-text-secondary">在播放器播放列表图标上显示计数</p>
       </div>

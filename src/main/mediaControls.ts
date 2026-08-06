@@ -35,8 +35,24 @@ let coverAbortController: AbortController | null = null;
 let metadataUpdateSeq = 0;
 let lastCoverCache: { url: string; data: Buffer | null } | null = null;
 let activeCoverDownload: { url: string; promise: Promise<Buffer | null> } | null = null;
+let fallbackCoverCache: { url: string; data: Buffer | null } | null = null;
 const nativeRequire = createRequire(path.join(process.cwd(), 'package.json'));
 const METADATA_COVER_SETTLE_MS = 120;
+
+// 与渲染端 DEFAULT_COVER_URL 保持一致的应用兜底封面。
+// 当后台任务窗口确实无法得到可用封面时，用它代替 DWM 回退到实时窗口捕获（黑屏）。
+const FALLBACK_COVER_URL = 'https://imge.kugou.com/soft/collection/default.jpg';
+
+/** 加载并缓存应用的兜底封面（只下载一次）。 */
+function ensureFallbackCover(): Promise<Buffer | null> {
+  if (fallbackCoverCache) return Promise.resolve(fallbackCoverCache.data);
+  return resolveCoverImage(FALLBACK_COVER_URL).then((data) => {
+    if (!fallbackCoverCache) {
+      fallbackCoverCache = { url: FALLBACK_COVER_URL, data };
+    }
+    return fallbackCoverCache.data;
+  });
+}
 
 const isAbortError = (error: unknown) =>
   error instanceof Error && (error.name === 'AbortError' || error.message === 'AbortError');
@@ -162,6 +178,10 @@ async function resolveCoverImage(url: string, signal?: AbortSignal): Promise<Buf
 /** 初始化原生媒体控制服务 */
 export function initMediaControls(getMainWindow: () => BrowserWindow | null): void {
   nativeModule = loadNativeModule();
+
+  // 预热兜底封面，保证在真实封面缺失/失败时能立刻回退，避免任务栏黑窗
+  void ensureFallbackCover();
+
   if (!nativeModule) {
     log.warn('[MediaControls] Native addon unavailable, using fallback');
     registerFallbackIpc();
@@ -244,7 +264,15 @@ export function initMediaControls(getMainWindow: () => BrowserWindow | null): vo
       }
 
       // 任务栏 DWM 缩略图需要及时响应系统请求，不能被 SMTC 的异步元数据更新挡住。
-      setTaskbarCover(coverData);
+      // 仅在有可用封面时才更新为真实封面；切歌瞬间若新封面尚未就绪，
+      // 保留上一张封面，避免 DWM 回退到实时窗口捕获而显示黑窗。
+      if (coverData) {
+        setTaskbarCover(coverData);
+      } else {
+        // 当前歌曲确实拿不到封面时，用应用的兜底封面兜底，同样避免黑窗。
+        const fallback = await ensureFallbackCover();
+        if (fallback) setTaskbarCover(fallback);
+      }
 
       try {
         // native addon 期望 coverData 为 number[]（NAPI-RS 的 Vec<u8> 映射）

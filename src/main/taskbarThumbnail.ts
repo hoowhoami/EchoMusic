@@ -3,6 +3,7 @@ import { app } from 'electron';
 import { createRequire } from 'node:module';
 import path from 'path';
 import log from './logger';
+import { getMainAppSettings } from './storage/settings';
 
 /**
  * Windows 任务栏 iconic 缩略图。
@@ -33,9 +34,55 @@ let nativeModule: NativeTaskbar | null = null;
 let targetWindow: BrowserWindow | null = null;
 let hwndStr: string | null = null;
 let coverBuffer: Buffer | null = null;
+let fallbackCoverBuffer: Buffer | null = null;
+let fallbackCoverLoading = false;
 let iconicEnabled = false;
 let hooked = false;
+// 任务栏封面预览开关：关闭时走 DWM 默认实时窗口画面，不启用 iconic 封面
+let coverPreviewEnabled = false;
 const nativeRequire = createRequire(path.join(process.cwd(), 'package.json'));
+
+// 应用兜底封面：FORCE_ICONIC 开启后 DWM 只使用我们提供的位图，
+// 若封面缺失/下载中而不给位图，DWM 会渲染出黑窗。因此始终兜底一张封面。
+const FALLBACK_COVER_URL = 'https://imge.kugou.com/soft/collection/default.jpg';
+
+/** 当前可提供给 DWM 的封面位图：真实封面优先，缺失时用兜底封面 */
+function currentCover(): Buffer | null {
+  if (coverBuffer && coverBuffer.length > 0) return coverBuffer;
+  return fallbackCoverBuffer && fallbackCoverBuffer.length > 0 ? fallbackCoverBuffer : null;
+}
+
+/** 加载应用兜底封面（有在途/已加载则跳过） */
+function loadFallbackCover(): void {
+  if (fallbackCoverBuffer || fallbackCoverLoading) return;
+  fallbackCoverLoading = true;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 8000);
+  fetch(FALLBACK_COVER_URL, {
+    signal: controller.signal,
+    headers: {
+      'User-Agent':
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      Referer: 'https://www.kugou.com/',
+    },
+  })
+    .then((res) => (res.ok ? res.arrayBuffer() : null))
+    .then((buf) => {
+      const data = buf && buf.byteLength > 0 ? Buffer.from(buf) : null;
+      if (data) {
+        fallbackCoverBuffer = data;
+        // 兜底封面就绪后若真实封面仍缺失，刷新一次缩略图
+        if (!coverBuffer) applyState();
+      }
+    })
+    .catch(() => {
+      // 加载失败保持 null，下次 setTaskbarCover 缺失封面时会重试
+    })
+    .finally(() => {
+      clearTimeout(timeout);
+      fallbackCoverLoading = false;
+    });
+}
 
 /** 加载 native addon（与 mediaControls 共用同一个 .node，require 缓存保证单例） */
 function loadNativeModule(): NativeTaskbar | null {
@@ -68,10 +115,10 @@ function resolveHwnd(win: BrowserWindow): string | null {
   }
 }
 
-/** 根据「是否有封面」决定开启或关闭 iconic 表示（有封面就显示封面，否则窗口实时预览） */
+/** 根据「是否有可用封面」决定开启或关闭 iconic 表示（有封面就显示封面，否则窗口实时预览） */
 function applyState(): void {
   if (!nativeModule || !hwndStr) return;
-  const shouldShowCover = !!coverBuffer;
+  const shouldShowCover = coverPreviewEnabled && !!currentCover();
   try {
     if (shouldShowCover) {
       if (!iconicEnabled) {
@@ -90,25 +137,12 @@ function applyState(): void {
   }
 }
 
-function disableIconicFallback(reason: string, err?: unknown): void {
-  if (!nativeModule || !hwndStr || !iconicEnabled) return;
-  try {
-    nativeModule.taskbarDisableIconic(hwndStr);
-    iconicEnabled = false;
-    nativeModule.taskbarInvalidate(hwndStr);
-    log.warn(`[TaskbarThumbnail] Disabled iconic thumbnail fallback: ${reason}`, err);
-  } catch (disableErr) {
-    log.warn('[TaskbarThumbnail] disable iconic fallback failed:', disableErr);
-  }
-}
-
 /** 处理悬停缩略图请求：从 lParam 解析最大尺寸并写入封面 */
 function onThumbnailRequest(lParam: Buffer): void {
   if (!nativeModule || !hwndStr) return;
-  if (!coverBuffer) {
-    disableIconicFallback('thumbnail requested without cover');
-    return;
-  }
+  // 封面暂缺时保留 DWM 已有的缩略图，避免回退到实时窗口捕获而黑屏
+  const cover = currentCover();
+  if (!cover) return;
   let maxWidth = DEFAULT_THUMBNAIL_MAX;
   let maxHeight = DEFAULT_THUMBNAIL_MAX;
   try {
@@ -122,25 +156,23 @@ function onThumbnailRequest(lParam: Buffer): void {
     // 解析失败则使用默认尺寸
   }
   try {
-    nativeModule.taskbarSetThumbnail(hwndStr, coverBuffer, maxWidth, maxHeight);
+    nativeModule.taskbarSetThumbnail(hwndStr, cover, maxWidth, maxHeight);
   } catch (err) {
-    log.warn('[TaskbarThumbnail] setThumbnail failed:', err);
-    disableIconicFallback('setThumbnail failed', err);
+    // 解码失败（不支持格式等）时保留 DWM 已有的缩略图，避免回退到实时窗口捕获而黑屏
+    log.warn('[TaskbarThumbnail] setThumbnail failed, keeping previous thumbnail:', err);
   }
 }
 
 /** 处理 Aero Peek 大预览请求：写入封面 */
 function onLivePreviewRequest(): void {
   if (!nativeModule || !hwndStr) return;
-  if (!coverBuffer) {
-    disableIconicFallback('live preview requested without cover');
-    return;
-  }
+  // 封面暂缺时保留 DWM 已有内容，避免回退到实时窗口捕获而黑屏
+  const cover = currentCover();
+  if (!cover) return;
   try {
-    nativeModule.taskbarSetLivePreview(hwndStr, coverBuffer, LIVE_PREVIEW_MAX, LIVE_PREVIEW_MAX);
+    nativeModule.taskbarSetLivePreview(hwndStr, cover, LIVE_PREVIEW_MAX, LIVE_PREVIEW_MAX);
   } catch (err) {
     log.warn('[TaskbarThumbnail] setLivePreview failed:', err);
-    disableIconicFallback('setLivePreview failed', err);
   }
 }
 
@@ -164,6 +196,12 @@ export function setupTaskbarThumbnail(win: BrowserWindow): void {
     return;
   }
 
+  // 预加载兜底封面，保证任何时刻都能向 DWM 提供位图，避免黑窗
+  loadFallbackCover();
+
+  // 从已持久化的主进程设置初始化任务栏封面预览开关
+  coverPreviewEnabled = Boolean(getMainAppSettings().taskbarCoverPreview);
+
   if (!hooked) {
     win.hookWindowMessage(WM_DWMSENDICONICTHUMBNAIL, (_wParam, lParam) => {
       onThumbnailRequest(lParam);
@@ -180,10 +218,27 @@ export function setupTaskbarThumbnail(win: BrowserWindow): void {
   log.info('[TaskbarThumbnail] Initialized');
 }
 
-/** 更新当前封面（原始图片字节）。传 null 表示无封面。 */
+/** 更新当前封面（原始图片字节）。传 null 表示无可用封面，将回退到应用的兜底封面。 */
 export function setTaskbarCover(cover: Buffer | null): void {
   if (process.platform !== 'win32') return;
+  // 开关关闭时忽略封面更新，任务栏保持窗口实时画面
+  if (!coverPreviewEnabled) return;
   coverBuffer = cover && cover.length > 0 ? cover : null;
+  if (!currentCover()) {
+    // 没有真实封面可用时确保兜底封面已加载，避免 iconic 无位图而显示黑窗
+    loadFallbackCover();
+  }
+  applyState();
+}
+
+/** 任务栏封面预览当前是否开启 */
+export function isCoverPreviewEnabled(): boolean {
+  return coverPreviewEnabled;
+}
+
+/** 设置任务栏封面预览开关（关闭时回退到 DWM 实时窗口画面） */
+export function setCoverPreviewEnabled(enabled: boolean): void {
+  coverPreviewEnabled = enabled;
   applyState();
 }
 
@@ -205,6 +260,7 @@ export function destroyTaskbarThumbnail(): void {
   iconicEnabled = false;
   hooked = false;
   coverBuffer = null;
+  fallbackCoverBuffer = null;
   hwndStr = null;
   targetWindow = null;
 }

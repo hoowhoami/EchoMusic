@@ -247,6 +247,7 @@ onMounted(async () => {
   settings.syncTheme();
   settings.syncCloseBehavior();
   settings.syncRememberWindowSize();
+  settings.syncTaskbarCoverPreview();
   settings.syncPreventSleep(player.isPlaying);
   settings.syncLogSettings();
   disposeShortcuts = initShortcutSync();
