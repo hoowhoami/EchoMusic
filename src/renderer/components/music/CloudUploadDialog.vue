@@ -371,6 +371,7 @@ const handleManualSearch = async () => {
       };
     });
     manualSearchDone.value = true;
+    scrollResultListToTop();
     if (manualResults.value.length === 0) {
       toastStore.warning('未找到匹配的歌曲，请修改搜索条件重试');
     }
@@ -381,12 +382,21 @@ const handleManualSearch = async () => {
   }
 };
 
+const manualSearchResultList = ref<InstanceType<typeof Scrollbar> | null>(null);
+
+const scrollResultListToTop = () => {
+  requestAnimationFrame(() => {
+    manualSearchResultList.value?.scrollTo({ top: 0 });
+  });
+};
+
 const handleSelectManualResult = async (result: ManualSearchResult) => {
   if (!manualFile.value) return;
   const item = manualFile.value;
   item.audioId = result.audioId;
   item.albumAudioId = result.albumAudioId;
   item.matchStatus = 'linked';
+  item.status = 'uploading';
   step.value = 'uploading';
   items.value = [item];
   canceled.value = false;
@@ -478,6 +488,9 @@ const statusLabel = (item: UploadItem) => {
     return `${uploadLabel} · ${linkLabel}`;
   }
   if (item.status === 'failed') return '失败';
+  if (item.matchStatus === 'not_found' || item.matchStatus === 'low_score' || item.matchStatus === 'no_cloud_ids' || item.matchStatus === 'failed') {
+    return '未关联 · 等待上传';
+  }
   return '等待中';
 };
 </script>
@@ -538,7 +551,7 @@ const statusLabel = (item: UploadItem) => {
 
     <!-- 手动匹配：搜索表单 -->
     <template v-else-if="step === 'manual-search'">
-      <div class="cloud-manual-search">
+      <div class="cloud-manual-search" @keydown.esc="step = 'pick'; manualFile = null">
         <div class="cloud-manual-file-info" v-if="manualFile">
           <span class="text-[12px] text-text-secondary/70 truncate">
             {{ manualFile.name }}（{{ (manualFile.size / 1024 / 1024).toFixed(1) }} MB）
@@ -549,18 +562,20 @@ const statusLabel = (item: UploadItem) => {
             v-model="manualSearchTitle"
             class="cloud-manual-input"
             placeholder="歌名（必填）"
+            @input="manualResults = []; manualSearchDone = false"
             @keydown.enter="handleManualSearch"
           />
           <input
             v-model="manualSearchArtist"
             class="cloud-manual-input"
             placeholder="歌手"
+            @input="manualResults = []; manualSearchDone = false"
             @keydown.enter="handleManualSearch"
           />
           <input
             v-model="manualSearchAlbum"
             class="cloud-manual-input"
-            placeholder="专辑（可选，用于辅助筛选）"
+            placeholder="专辑（可选）"
             @keydown.enter="handleManualSearch"
           />
         </div>
@@ -578,6 +593,7 @@ const statusLabel = (item: UploadItem) => {
         <div v-if="manualSearchDone" class="cloud-manual-results">
           <div class="text-[12px] font-semibold text-text-main mb-2">搜索结果（点击选择）</div>
           <Scrollbar
+            ref="manualSearchResultList"
             class="cloud-manual-result-list"
             :scrollbar-inset="3"
             :content-props="{ class: 'cloud-manual-result-list-content' }"
