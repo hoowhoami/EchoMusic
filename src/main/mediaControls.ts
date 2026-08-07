@@ -162,6 +162,7 @@ async function resolveCoverImage(url: string, signal?: AbortSignal): Promise<Buf
 /** 初始化原生媒体控制服务 */
 export function initMediaControls(getMainWindow: () => BrowserWindow | null): void {
   nativeModule = loadNativeModule();
+
   if (!nativeModule) {
     log.warn('[MediaControls] Native addon unavailable, using fallback');
     registerFallbackIpc();
@@ -244,6 +245,9 @@ export function initMediaControls(getMainWindow: () => BrowserWindow | null): vo
       }
 
       // 任务栏 DWM 缩略图需要及时响应系统请求，不能被 SMTC 的异步元数据更新挡住。
+      // 仅在有可用封面时才更新为真实封面；切歌瞬间若新封面尚未就绪，
+      // 保留上一张封面，避免 DWM 回退到实时窗口捕获而显示黑窗。
+      // 无真实封面时传 null，由 taskbarThumbnail 内部兜底封面机制负责回退。
       setTaskbarCover(coverData);
 
       try {
