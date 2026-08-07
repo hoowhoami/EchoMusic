@@ -625,7 +625,7 @@ export const createPlaybackManager = (
     state.currentAudioCandidateIndex = -1;
     state.currentResolvedAudioQuality = null;
     state.currentResolvedAudioEffect = 'none';
-    state.currentResolvedSourceKind = 'catalog';
+    state.currentResolvedSourceKind = track.source === 'cloud' ? 'cloud' : 'catalog';
     state.nativeTrackSeq = null;
     state.currentTime = 0;
     state.currentTimeUpdatedAt = Date.now();
