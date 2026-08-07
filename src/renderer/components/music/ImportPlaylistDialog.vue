@@ -225,6 +225,10 @@ watch(open, (v) => {
       open.value = true;
       return;
     }
+    // 查看结果页关闭（完成/X/遮罩）：同步清理任务中心条目
+    if (step.value === 'progress' && !isImporting.value && importTaskStore.status === 'completed') {
+      importTaskStore.dismiss();
+    }
     window.setTimeout(reset, 200);
   } else {
     // 重开时若后台有活跃导入任务，跳到进度页（AC-21）；已完成的结果页由

@@ -117,6 +117,10 @@ watch(open, (v) => {
     if (cloudUploadStore.status !== 'running') {
       clearPickedUploadFiles();
     }
+    // 查看结果页关闭（完成/X/遮罩）：同步清理任务中心条目
+    if (step.value === 'done' && cloudUploadStore.status === 'completed') {
+      cloudUploadStore.dismiss();
+    }
     window.setTimeout(reset, 200);
   } else {
     // 重开时若后台有活跃上传任务，跳到进度页
@@ -178,6 +182,7 @@ const cancelBackgroundUpload = () => {
 };
 
 const handleBackgroundRun = () => {
+  if (cloudUploadStore.status !== 'running') return;
   enterBackgroundMode();
   step.value = 'pick';
   open.value = false;
@@ -427,7 +432,7 @@ const runUpload = async (list: CloudUploadItem[]) => {
       });
     }
   }
-  if (!canceled.value) emit('completed');
+  if (!canceled.value || list.some((item) => item.status === 'success')) emit('completed');
 };
 
 // --- 手动匹配上传 ---
@@ -478,8 +483,8 @@ const handlePickManual = async () => {
       status: 'pending',
       matchStatus: 'pending',
     };
-    manualSearchTitle.value = manualFile.value.title;
-    manualSearchArtist.value = manualFile.value.artist;
+    manualSearchTitle.value = manualFile.value.title ?? '';
+    manualSearchArtist.value = manualFile.value.artist ?? '';
     manualSearchAlbum.value = '';
     manualResults.value = [];
     manualSearchDone.value = false;
@@ -508,11 +513,12 @@ const handleManualSearch = async () => {
     const lists = Array.isArray(data.lists) ? data.lists : [];
     manualResults.value = lists.map((item) => {
       const record = item as Record<string, unknown>;
-      const singers = record.Singers as
-        | { name?: string; AuthorName?: string }[]
-        | undefined;
+      const singers = record.Singers as { name?: string; AuthorName?: string }[] | undefined;
       const artistStr =
-        singers?.map((s) => s.name || s.AuthorName || '').filter(Boolean).join(', ') ||
+        singers
+          ?.map((s) => s.name || s.AuthorName || '')
+          .filter(Boolean)
+          .join(', ') ||
         (record.SingerName as string) ||
         '';
       const duration = Number(record.Duration ?? 0);
@@ -565,7 +571,6 @@ const formatDuration = (sec: number) => {
   const s = Math.floor(sec % 60);
   return `${m}:${String(s).padStart(2, '0')}`;
 };
-
 
 const handleCancel = () => {
   canceled.value = true;
@@ -630,17 +635,15 @@ const statusLabel = (item: CloudUploadItem) => {
             <div class="text-[11px] text-text-secondary/75">自动收集文件夹内所有音频文件</div>
           </div>
         </button>
-        <button
-          class="cloud-upload-option"
-          :disabled="picking"
-          @click="handlePickManual"
-        >
+        <button class="cloud-upload-option" :disabled="picking" @click="handlePickManual">
           <div class="cloud-upload-option-icon">
             <Icon :icon="iconSearch" width="20" height="20" />
           </div>
           <div class="min-w-0 flex-1 text-left">
             <div class="text-[13px] font-semibold text-text-main">匹配上传</div>
-            <div class="text-[11px] text-text-secondary/75">上传时手动匹配歌曲信息，单文件不超过 100MB</div>
+            <div class="text-[11px] text-text-secondary/75">
+              上传时手动匹配歌曲信息，单文件不超过 100MB
+            </div>
           </div>
         </button>
       </div>
@@ -648,7 +651,13 @@ const statusLabel = (item: CloudUploadItem) => {
 
     <!-- 手动匹配：搜索表单 -->
     <template v-else-if="step === 'manual-search'">
-      <div class="cloud-manual-search" @keydown.esc="step = 'pick'; manualFile = null">
+      <div
+        class="cloud-manual-search"
+        @keydown.esc="
+          step = 'pick';
+          manualFile = null;
+        "
+      >
         <div class="cloud-manual-file-info" v-if="manualFile">
           <span class="text-[12px] text-text-secondary/70 truncate">
             {{ manualFile.name }}（{{ (manualFile.size / 1024 / 1024).toFixed(1) }} MB）
@@ -659,14 +668,20 @@ const statusLabel = (item: CloudUploadItem) => {
             v-model="manualSearchTitle"
             class="cloud-manual-input"
             placeholder="歌名（必填）"
-            @input="manualResults = []; manualSearchDone = false"
+            @input="
+              manualResults = [];
+              manualSearchDone = false;
+            "
             @keydown.enter="handleManualSearch"
           />
           <input
             v-model="manualSearchArtist"
             class="cloud-manual-input"
             placeholder="歌手"
-            @input="manualResults = []; manualSearchDone = false"
+            @input="
+              manualResults = [];
+              manualSearchDone = false;
+            "
             @keydown.enter="handleManualSearch"
           />
           <input
@@ -683,7 +698,13 @@ const statusLabel = (item: CloudUploadItem) => {
           :disabled="manualSearching || !manualSearchTitle.trim()"
           @click="handleManualSearch"
         >
-          <Icon v-if="manualSearching" :icon="iconLoader2" width="14" height="14" class="animate-spin mr-1" />
+          <Icon
+            v-if="manualSearching"
+            :icon="iconLoader2"
+            width="14"
+            height="14"
+            class="animate-spin mr-1"
+          />
           <Icon v-else :icon="iconSearch" width="14" height="14" class="mr-1" />
           搜索
         </Button>
@@ -785,7 +806,15 @@ const statusLabel = (item: CloudUploadItem) => {
         <Button variant="ghost" size="sm" :disabled="picking" @click="closeDialog">取消</Button>
       </template>
       <template v-else-if="step === 'manual-search'">
-        <Button variant="ghost" size="sm" @click="step = 'pick'; manualFile = null">返回</Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          @click="
+            step = 'pick';
+            manualFile = null;
+          "
+          >返回</Button
+        >
         <Button variant="ghost" size="sm" @click="closeDialog">取消</Button>
       </template>
       <template v-else>
@@ -804,7 +833,12 @@ const statusLabel = (item: CloudUploadItem) => {
           <Button v-if="isUploading" variant="ghost" size="sm" @click="handleCancel">
             取消上传
           </Button>
-          <Button v-if="isUploading" variant="primary" size="sm" @click="handleBackgroundRun">
+          <Button
+            v-if="isUploading && cloudUploadStore.status === 'running'"
+            variant="primary"
+            size="sm"
+            @click="handleBackgroundRun"
+          >
             后台运行
           </Button>
           <Button v-else variant="primary" size="sm" @click="closeDialog">完成</Button>
