@@ -139,6 +139,8 @@ export const useSettingStore = defineStore('setting', {
     playResumeTimeout: 5,
     silentUpdate: true,
     autoCheckUpdate: true,
+    importBackgroundConfirmDismissed: false,
+    cloudUploadBackgroundConfirmDismissed: false,
     checkPrerelease: false,
     githubProxyUrl: '',
     appVersion: '',

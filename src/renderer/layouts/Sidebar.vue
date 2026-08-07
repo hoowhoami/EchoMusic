@@ -37,6 +37,7 @@ import type { PlaylistSortOrder } from '@/stores/playlist';
 import { useUserStore } from '@/stores/user';
 import { useToastStore } from '@/stores/toast';
 import { useSettingStore } from '@/stores/setting';
+import { useImportTaskStore } from '@/stores/importTask';
 import PluginIcon from '@/plugins/PluginIcon.vue';
 import { pluginSidebarItems, type PluginIcon as PluginIconValue } from '@/plugins/registry';
 defineOptions({
@@ -54,6 +55,7 @@ const userStore = useUserStore();
 const playlistStore = usePlaylistStore();
 const toastStore = useToastStore();
 const settingStore = useSettingStore();
+const importTaskStore = useImportTaskStore();
 
 const isMac = computed(() => window.electron.platform === 'darwin');
 const isLoggedIn = computed(() => userStore.isLoggedIn);
@@ -680,6 +682,18 @@ watch(
     }
   },
   { immediate: true },
+);
+
+// 任务面板触发重新打开导入弹窗
+let lastOpenRequested = 0;
+watch(
+  () => importTaskStore.openRequested,
+  (val) => {
+    if (val !== lastOpenRequested && val > 0) {
+      lastOpenRequested = val;
+      showImportDialog.value = true;
+    }
+  },
 );
 </script>
 

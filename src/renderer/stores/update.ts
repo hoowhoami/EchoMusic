@@ -122,6 +122,15 @@ export const useUpdateStore = defineStore('update', {
       window.electron?.updater?.download();
     },
 
+    /** 取消下载。仅 downloading 态有效，其他状态忽略。 */
+    cancelDownload() {
+      if (this.downloadStatus !== 'downloading') return;
+      this.downloadStatus = 'idle';
+      this.downloadPercent = 0;
+      this.downloadError = '';
+      window.electron?.updater?.cancelDownload?.();
+    },
+
     async install() {
       if (this.downloadStatus !== 'downloaded') return;
       const settingStore = useSettingStore();

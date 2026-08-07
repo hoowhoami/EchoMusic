@@ -9,6 +9,7 @@ import { useSettingStore } from '@/stores/setting';
 import { useUserStore } from '@/stores/user';
 import { useThemeStore } from '@/stores/theme';
 import { useToastStore } from '@/stores/toast';
+import { useCloudUploadStore } from '@/stores/cloudUpload';
 import { createThemedIconCoverUrl } from '@/utils/cover';
 import SliverHeader from '@/components/music/DetailPageSliverHeader.vue';
 import ActionRow from '@/components/music/DetailPageActionRow.vue';
@@ -44,6 +45,7 @@ const playlistStore = usePlaylistStore();
 const playerStore = usePlayerStore();
 const settingStore = useSettingStore();
 const userStore = useUserStore();
+const cloudUploadStore = useCloudUploadStore();
 const themeStore = useThemeStore();
 const toastStore = useToastStore();
 
@@ -379,6 +381,21 @@ watch(
     }
     resetCloudState();
     clearCloudAudioIndex();
+    // 登出时中止并清理上传任务（requestAbort 触发 onAbort 停止上传，dismiss 立即清理）
+    cloudUploadStore.requestAbort();
+    cloudUploadStore.dismiss();
+  },
+);
+
+// 任务面板「查看详情/查看结果」触发重新打开上传弹窗
+let lastUploadOpenRequested = 0;
+watch(
+  () => cloudUploadStore.openRequested,
+  (val) => {
+    if (val !== lastUploadOpenRequested && val > 0) {
+      lastUploadOpenRequested = val;
+      showUploadDialog.value = true;
+    }
   },
 );
 
@@ -470,10 +487,7 @@ onMounted(() => {
           :on-batch-remove="handleBatchDeleteCloudSongs"
         />
 
-        <CloudUploadDialog
-          v-model:open="showUploadDialog"
-          @update:open="(value) => !value && void loadCloud()"
-        />
+        <CloudUploadDialog v-model:open="showUploadDialog" @completed="loadCloud" />
 
         <div class="px-6 pt-2.5 pb-1">
           <div class="cloud-info-card">

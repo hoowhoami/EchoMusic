@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { Icon } from '@iconify/vue';
 import { useVModel } from '@vueuse/core';
 import Dialog from '@/components/ui/Dialog.vue';
 import Button from '@/components/ui/Button.vue';
 import Scrollbar from '@/components/ui/Scrollbar.vue';
+import { CheckboxIndicator, CheckboxRoot } from 'reka-ui';
 import {
   iconCheckMark,
   iconCloudUpload,
@@ -23,51 +24,32 @@ import {
 } from '@/utils/songMatching';
 import { useToastStore } from '@/stores/toast';
 import { useUserStore } from '@/stores/user';
+import { useSettingStore } from '@/stores/setting';
+import { useCloudUploadStore, type CloudUploadItem } from '@/stores/cloudUpload';
 import logger from '@/utils/logger';
 
 interface Props {
   open?: boolean;
 }
 const props = withDefaults(defineProps<Props>(), { open: false });
-const emit = defineEmits<{ (e: 'update:open', value: boolean): void }>();
+const emit = defineEmits<{ (e: 'update:open', value: boolean): void; (e: 'completed'): void }>();
 const open = useVModel(props, 'open', emit, { defaultValue: false });
 
 const userStore = useUserStore();
 const toastStore = useToastStore();
+const settingStore = useSettingStore();
+const cloudUploadStore = useCloudUploadStore();
 
 type PickMode = 'file' | 'folder';
-type MatchStatus = 'pending' | 'linked' | 'not_found' | 'low_score' | 'no_cloud_ids' | 'failed';
-
-interface UploadItem {
-  name: string;
-  path: string;
-  /** 标签解析出的歌名（用于上传显示名） */
-  title?: string;
-  /** 标签解析出的歌手 */
-  artist?: string;
-  /** 标签解析出的时长（秒） */
-  duration?: number;
-  size: number;
-  extension: string;
-  modifiedAt: number;
-  status: 'pending' | 'matching' | 'uploading' | 'success' | 'failed';
-  /** 匹配到的歌曲 audio_id（未匹配时为 undefined，上游传 0） */
-  audioId?: string | number;
-  /** 匹配到的歌曲 album_audio_id */
-  albumAudioId?: string | number;
-  /** 曲库关联匹配状态 */
-  matchStatus: MatchStatus;
-  /** 曲库关联匹配说明，写入日志用于排查 */
-  matchReason?: string;
-  /** 秒传（服务端已存在相同 MD5 的文件） */
-  isSecondUpload?: boolean;
-  error?: string;
-}
 
 const step = ref<'pick' | 'uploading' | 'done'>('pick');
-const items = ref<UploadItem[]>([]);
+const items = ref<CloudUploadItem[]>([]);
 const canceled = ref(false);
 const picking = ref(false);
+
+/** 后台上传确认弹窗 */
+const showBackgroundConfirm = ref(false);
+const neverShowBackgroundConfirm = ref(false);
 
 /** 匹配并发数（复用导入歌单防风控节奏） */
 const MATCH_CONCURRENCY = 2;
@@ -104,24 +86,100 @@ const reset = () => {
   canceled.value = false;
 };
 
-const handleClose = (value: boolean) => {
-  if (value === false && isUploading.value) return;
-  if (value === false) {
-    clearPickedUploadFiles();
-    reset();
-  }
-  open.value = value;
+const closeDialog = () => {
+  open.value = false;
 };
 
-const closeDialog = () => {
-  handleClose(false);
+watch(open, (v) => {
+  if (!v) {
+    // 上传进行中：拦截关闭，弹出后台运行确认（除非已 dismiss）
+    if (step.value === 'uploading' && cloudUploadStore.status === 'running') {
+      if (settingStore.cloudUploadBackgroundConfirmDismissed) {
+        // 跳过确认弹窗时同样转入后台：与确认后行为一致，任务面板可查看/中止
+        enterBackgroundMode();
+        step.value = 'pick';
+        return;
+      }
+      showBackgroundConfirm.value = true;
+      // 同步回弹，Vue 批量更新后不会渲染关闭态
+      open.value = true;
+      return;
+    }
+    // 非上传中关闭：后台任务运行期间不清 allow-list，避免打断正在进行的读取
+    if (cloudUploadStore.status !== 'running') {
+      clearPickedUploadFiles();
+    }
+    window.setTimeout(reset, 200);
+  } else {
+    // 重开时若后台有活跃上传任务，跳到进度页
+    if (cloudUploadStore.status === 'running') {
+      resumeFromStore();
+    }
+  }
+});
+
+// 任务面板「查看结果」触发的重开：仅在 openRequested 增量且已完成时恢复结果页，
+// 普通打开（如侧边栏发起新上传）仍进选择页
+let lastOpenRequested = 0;
+watch(
+  () => cloudUploadStore.openRequested,
+  (val) => {
+    if (val === lastOpenRequested || val <= 0) return;
+    lastOpenRequested = val;
+    if (cloudUploadStore.status === 'completed') {
+      resumeFromStoreCompleted();
+    }
+  },
+);
+
+const resumeFromStore = () => {
+  step.value = 'uploading';
+  items.value = cloudUploadStore.items;
+  canceled.value = false;
+  // 重新桥接，弹窗内点取消可以中断后台上传
+  cloudUploadStore.onAbort = () => {
+    canceled.value = true;
+  };
+};
+
+const resumeFromStoreCompleted = () => {
+  step.value = 'done';
+  items.value = cloudUploadStore.items;
+  canceled.value = false;
+};
+
+const enterBackgroundMode = () => {
+  cloudUploadStore.enterBackground('', () => {
+    canceled.value = true;
+  });
+};
+
+const confirmBackgroundUpload = () => {
+  showBackgroundConfirm.value = false;
+  if (neverShowBackgroundConfirm.value) {
+    settingStore.cloudUploadBackgroundConfirmDismissed = true;
+  }
+  enterBackgroundMode();
+  // 先把 step 切走，避免 watch(open) 再次拦截关闭
+  step.value = 'pick';
+  open.value = false;
+};
+
+const cancelBackgroundUpload = () => {
+  showBackgroundConfirm.value = false;
+};
+
+const handleBackgroundRun = () => {
+  enterBackgroundMode();
+  step.value = 'pick';
+  open.value = false;
 };
 
 /**
  * 匹配单个文件：复用导入歌单的搜索机制，获取 audio_id / album_audio_id
  * 云盘写入曲库 ID 采用更保守的匹配门槛，误关联比不关联更难清理。
  */
-const matchItem = async (item: UploadItem) => {
+const matchItem = async (item: CloudUploadItem, list: CloudUploadItem[]) => {
   const title = item.title || item.name.replace(/\.[^.]+$/, '');
   item.status = 'matching';
   try {
@@ -212,17 +270,20 @@ const matchItem = async (item: UploadItem) => {
   // 每个文件匹配后暂停一段抖动时间，避免稳定 QPS 触发风控
   await matchThinkDelay();
   item.status = 'pending';
+  const done = list.filter((i) => i.matchStatus !== 'pending').length;
+  cloudUploadStore.updateProgress(done, list.length, { ...item });
 };
 
 /** 阶段一：并发匹配所有文件 */
-const runMatching = async () => {
+const runMatching = async (list: CloudUploadItem[]) => {
+  cloudUploadStore.setPhase('matching');
   let nextIdx = 0;
   const worker = async () => {
     while (true) {
       if (canceled.value) return;
       const i = nextIdx++;
-      if (i >= items.value.length) return;
-      await matchItem(items.value[i]);
+      if (i >= list.length) return;
+      await matchItem(list[i], list);
     }
   };
   await Promise.all(Array.from({ length: MATCH_CONCURRENCY }, () => worker()));
@@ -255,12 +316,18 @@ const handlePick = async (mode: PickMode) => {
       status: 'pending' as const,
       matchStatus: 'pending',
     }));
+    // 注册任务中心任务（name 参数预留，面板标题使用 total 展示）
+    cloudUploadStore.start('', items.value.length, () => {
+      canceled.value = true;
+    });
     step.value = 'uploading';
     canceled.value = false;
+    // 捕获数组引用：转入后台后组件 reset() 不会影响正在运行的上传流程
+    const uploadItems = items.value;
     // 阶段一：并发匹配获取 audio_id / album_audio_id
-    await runMatching();
+    await runMatching(uploadItems);
     // 阶段二：串行上传
-    await runUpload();
+    await runUpload(uploadItems);
   } catch (error) {
     toastStore.danger(`选择文件失败：${(error as Error)?.message || String(error)}`);
   } finally {
@@ -268,7 +335,7 @@ const handlePick = async (mode: PickMode) => {
   }
 };
 
-const uploadSingleItem = async (item: UploadItem) => {
+const uploadSingleItem = async (item: CloudUploadItem, list: CloudUploadItem[]) => {
   const title = item.title || item.name.replace(/\.[^.]+$/, '');
   item.status = 'uploading';
   try {
@@ -307,28 +374,52 @@ const uploadSingleItem = async (item: UploadItem) => {
       error: item.error,
     });
   }
+  const done = list.filter((i) => i.status === 'success' || i.status === 'failed').length;
+  cloudUploadStore.updateProgress(done, list.length, { ...item });
 };
 
-const runUpload = async () => {
-  for (let i = 0; i < items.value.length; i++) {
+const runUpload = async (list: CloudUploadItem[]) => {
+  cloudUploadStore.setPhase('uploading');
+  if (list.length > 0) {
+    cloudUploadStore.updateProgress(0, list.length, { ...list[0] });
+  }
+  for (let i = 0; i < list.length; i++) {
     if (canceled.value) break;
-    await uploadSingleItem(items.value[i]);
+    await uploadSingleItem(list[i], list);
   }
   step.value = 'done';
   clearPickedUploadFiles();
 
   if (canceled.value) {
     toastStore.info('已取消上传');
-  } else if (failedCount.value === 0) {
-    const secondCount = items.value.filter((i) => i.isSecondUpload).length;
+  } else if (list.filter((i) => i.status === 'failed').length === 0) {
+    const successCount = list.filter((i) => i.status === 'success').length;
+    const secondCount = list.filter((i) => i.isSecondUpload).length;
     toastStore.success(
       secondCount > 0
-        ? `上传完成：${doneCount.value} 首（其中 ${secondCount} 首秒传）`
-        : `上传完成：${doneCount.value} 首`,
+        ? `上传完成：${successCount} 首（其中 ${secondCount} 首秒传）`
+        : `上传完成：${successCount} 首`,
     );
   } else {
-    toastStore.warning(`上传完成：成功 ${doneCount.value} 首，失败 ${failedCount.value} 首`);
+    const successCount = list.filter((i) => i.status === 'success').length;
+    const failedCountNow = list.filter((i) => i.status === 'failed').length;
+    toastStore.warning(`上传完成：成功 ${successCount} 首，失败 ${failedCountNow} 首`);
   }
+
+  // 任务中心：完成/中止收敛
+  if (cloudUploadStore.status === 'running') {
+    if (canceled.value) {
+      cloudUploadStore.dismiss();
+    } else {
+      cloudUploadStore.complete({
+        total: list.length,
+        success: list.filter((i) => i.status === 'success').length,
+        failed: list.filter((i) => i.status === 'failed').length,
+        secondUpload: list.filter((i) => i.isSecondUpload).length,
+      });
+    }
+  }
+  if (!canceled.value) emit('completed');
 };
 
 const handleCancel = () => {
@@ -337,7 +428,7 @@ const handleCancel = () => {
   if (uploading) uploading.status = 'pending';
 };
 
-const statusLabel = (item: UploadItem) => {
+const statusLabel = (item: CloudUploadItem) => {
   if (item.status === 'matching') return '匹配中';
   if (item.status === 'uploading') return '上传中';
   if (item.status === 'success') {
@@ -352,14 +443,12 @@ const statusLabel = (item: UploadItem) => {
 
 <template>
   <Dialog
-    :open="open"
+    v-model:open="open"
     title="上传到云盘"
-    :close-on-interact-outside="!isUploading"
-    :close-on-escape="!isUploading"
     content-class="cloud-upload-dialog"
     flush-body
     no-scroll
-    @update:open="handleClose"
+    showClose
   >
     <template #title>
       <span class="flex items-center gap-2">
@@ -475,9 +564,50 @@ const statusLabel = (item: UploadItem) => {
           <Button v-if="isUploading" variant="ghost" size="sm" @click="handleCancel">
             取消上传
           </Button>
+          <Button v-if="isUploading" variant="primary" size="sm" @click="handleBackgroundRun">
+            后台运行
+          </Button>
           <Button v-else variant="primary" size="sm" @click="closeDialog">完成</Button>
         </div>
       </template>
+    </template>
+  </Dialog>
+
+  <!-- 后台上传确认弹窗 -->
+  <Dialog
+    v-model:open="showBackgroundConfirm"
+    content-class="cloud-upload-background-confirm-dialog"
+    overlay-class="cloud-upload-background-confirm-overlay"
+    :close-on-escape="false"
+    :close-on-interact-outside="false"
+  >
+    <template #title>
+      <div class="flex items-center gap-2">
+        <Icon :icon="iconCloudUpload" width="18" height="18" class="text-primary" />
+        <span>上传将在后台继续</span>
+      </div>
+    </template>
+    <div class="flex flex-col gap-4 py-1">
+      <p class="text-[13px] text-text-secondary leading-relaxed">
+        关闭此弹窗不会中断上传，你可以在标题栏「当前任务」面板中查看进度。
+      </p>
+      <label class="flex items-center gap-2 cursor-pointer select-none">
+        <CheckboxRoot
+          v-model:model-value="neverShowBackgroundConfirm"
+          class="w-4 h-4 rounded border border-[var(--border-main)] flex items-center justify-center data-[state=checked]:bg-[var(--color-primary)] data-[state=checked]:border-[var(--color-primary)]"
+        >
+          <CheckboxIndicator class="text-white">
+            <Icon :icon="iconCheckMark" width="12" height="12" />
+          </CheckboxIndicator>
+        </CheckboxRoot>
+        <span class="text-[12px] text-text-secondary">以后不再提醒</span>
+      </label>
+    </div>
+    <template #footer>
+      <Button variant="ghost" size="sm" type="button" @click="cancelBackgroundUpload">
+        留在本页
+      </Button>
+      <Button variant="primary" size="sm" @click="confirmBackgroundUpload">我知道了</Button>
     </template>
   </Dialog>
 </template>
@@ -578,5 +708,15 @@ const statusLabel = (item: UploadItem) => {
   width: 460px;
   max-width: calc(100vw - 32px);
   max-height: min(560px, calc(100vh - 64px));
+}
+
+:global(.dialog-content.cloud-upload-background-confirm-dialog) {
+  width: 400px;
+  max-width: calc(100vw - 48px);
+  z-index: 1430;
+}
+
+:global(.dialog-overlay.cloud-upload-background-confirm-overlay) {
+  z-index: 1420;
 }
 </style>

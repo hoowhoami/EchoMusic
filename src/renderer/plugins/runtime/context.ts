@@ -40,6 +40,7 @@ import {
   createLyricsApi,
   createPlayerApi,
   createPlaylistApi,
+  createTaskApi,
   createToastApi,
   type PluginCoverApi,
 } from './contextApis';
@@ -215,6 +216,7 @@ export interface EchoPluginContext {
     fetch: typeof fetch;
   };
   icons: typeof icons;
+  tasks: ReturnType<typeof createTaskApi>;
   electron: Window['electron'];
   dispose: (dispose: () => void) => () => void;
 }
@@ -411,6 +413,7 @@ export const createPluginContext = (
       fetch: window.fetch.bind(window),
     },
     icons,
+    tasks: createTaskApi(descriptor.id),
     electron: window.electron,
     dispose: addDisposable,
   };

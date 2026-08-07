@@ -242,6 +242,7 @@ export interface IElectronAPI {
   };
   updater: {
     download: () => void;
+    cancelDownload: () => void;
     install: (silent?: boolean) => Promise<UpdateInstallResult>;
     getState: () => Promise<UpdateState>;
     onDownloadStatus: (func: (result: UpdateDownloadResult) => void) => () => void;

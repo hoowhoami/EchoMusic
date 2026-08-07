@@ -4,7 +4,7 @@ import log from 'electron-log';
 import fs from 'fs';
 import { execFile } from 'child_process';
 import { dirname, extname, join, resolve, sep, basename } from 'path';
-import { autoUpdater } from 'electron-updater';
+import { autoUpdater, CancellationToken } from 'electron-updater';
 import { getFonts } from 'font-list';
 import { coerce as semverCoerce, gt as semverGt, valid as semverValid } from 'semver';
 import type {
@@ -361,6 +361,7 @@ export const registerSettingsHandlers = ({ getMainWindow, playerRef }: IpcContex
   // 更新状态的单一可信来源（供渲染层在重新打开弹窗时恢复进度）
   let lastCheckResult: UpdateCheckResult | null = null;
   let downloadState: UpdateDownloadResult = { status: 'idle' };
+  let downloadCancellationToken: CancellationToken | null = null;
   let updateInstallExitTimeout: ReturnType<typeof setTimeout> | null = null;
 
   const clearUpdateInstallExitTimeout = () => {
@@ -465,8 +466,11 @@ export const registerSettingsHandlers = ({ getMainWindow, playerRef }: IpcContex
   autoUpdater.on('error', (error) => {
     log.error('[Updater] Error:', error);
     const message = error?.message || '更新失败，请稍后重试。';
+    // 用户主动取消下载导致的错误，静默忽略（token 已被清空，state 已是 idle）
+    if (!downloadCancellationToken && downloadState.status === 'idle') return;
     // 区分检查阶段与下载阶段的错误，避免下载出错时弹窗被「检查更新失败」覆盖
     if (downloadState.status === 'downloading' || downloadState.status === 'installing') {
+      downloadCancellationToken = null;
       if (downloadState.status === 'installing') {
         clearUpdateInstallExitTimeout();
         clearUpdateInstallQuitRequested();
@@ -497,6 +501,7 @@ export const registerSettingsHandlers = ({ getMainWindow, playerRef }: IpcContex
   });
 
   autoUpdater.on('update-downloaded', () => {
+    downloadCancellationToken = null;
     downloadState = { status: 'downloaded' };
     sendToRenderer('update-download-status', downloadState);
   });
@@ -893,6 +898,15 @@ export const registerSettingsHandlers = ({ getMainWindow, playerRef }: IpcContex
     download: downloadState,
   }));
 
+  ipcRegistry.registerListener('update:cancel-download', () => {
+    if (downloadCancellationToken) {
+      downloadCancellationToken.cancel();
+      downloadCancellationToken = null;
+    }
+    downloadState = { status: 'idle' };
+    sendToRenderer('update-download-status', downloadState);
+  });
+
   ipcRegistry.registerListener('update:download', () => {
     // 防重入：正在下载或已下载完成时忽略，仅回传当前状态
     if (
@@ -908,7 +922,13 @@ export const registerSettingsHandlers = ({ getMainWindow, playerRef }: IpcContex
       progress: { percent: 0, bytesPerSecond: 0, transferred: 0, total: 0 },
     };
     sendToRenderer('update-download-status', downloadState);
-    autoUpdater.downloadUpdate().catch((error) => {
+    const token = new CancellationToken();
+    downloadCancellationToken = token;
+    autoUpdater.downloadUpdate(token).catch((error) => {
+      // 中止后立即重下时，旧下载尝试（如取消）的失败回调不能覆盖新下载：
+      // 仅当 token 仍是当前下载的 token 时才更新错误状态。
+      if (downloadCancellationToken !== token) return;
+      downloadCancellationToken = null;
       log.error('[Updater] Download failed:', error);
       downloadState = {
         status: 'error',

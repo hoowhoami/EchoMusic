@@ -6,6 +6,7 @@ import type {
 } from '../../../shared/plugins';
 import { logger } from '@/utils/logger';
 import { executePluginCommand, removePluginContributions } from '../registry';
+import { dismissTasksByPlugin } from '../taskPanel';
 import { createPluginContext, type EchoPluginContext, type PluginRuntimeHost } from './context';
 import {
   importPluginModule,
@@ -356,6 +357,7 @@ const deactivatePlugin = async (pluginId: string) => {
   });
 
   removePluginContributions(pluginId);
+  dismissTasksByPlugin(pluginId);
 
   // 延迟删除，确保所有异步清理完成
   await new Promise((resolve) => setTimeout(resolve, 50));
