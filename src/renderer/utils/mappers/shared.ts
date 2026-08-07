@@ -84,9 +84,13 @@ export const buildArtists = (record: UnknownRecord, audioInfo: UnknownRecord): S
       ).trim();
       if (!name) continue;
       const id = pickValue(raw.id, raw.AuthorId, raw.author_id, raw.singerid, raw.singer_id);
+      const pic = formatPic(
+        pickValue(raw.sizable_avatar, raw.avatar, raw.pic, raw.img, raw.image, ''),
+      );
       artists.push({
         id: id !== undefined && id !== null ? readString(id) : undefined,
         name,
+        pic: pic || undefined,
       });
     }
   }

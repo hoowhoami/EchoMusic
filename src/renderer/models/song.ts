@@ -23,6 +23,7 @@ export interface CloudAudioSource {
 export interface SongArtist {
   id?: string | number;
   name: string;
+  pic?: string;
 }
 
 export interface Song {
