@@ -369,6 +369,12 @@ export const createResolver = (
       return resolved;
     };
 
+    // 云盘页面播放的歌曲直接使用云盘文件，跳过优先级链（手动选择曲库音质时除外）
+    if (!shouldUseCatalogSource && track.source === 'cloud' && track.cloudAudioSource?.hash) {
+      const resolved = await resolveCloudAudioSourceUrl(track.cloudAudioSource);
+      if (resolved) return resolved;
+    }
+
     const pluginResolved = await resolvePluginAudioSource({
       track,
       quality: audioQuality,
