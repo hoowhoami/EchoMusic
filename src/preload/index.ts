@@ -427,7 +427,11 @@ contextBridge.exposeInMainWorld('electron', {
   },
   cloud: {
     pickUploadFiles: (mode: CloudPickMode, multi?: boolean) =>
-      ipcRenderer.invoke('cloud:pick-upload-files', mode, multi ?? true) as Promise<CloudPickFilesResult>,
+      ipcRenderer.invoke(
+        'cloud:pick-upload-files',
+        mode,
+        multi ?? true,
+      ) as Promise<CloudPickFilesResult>,
     readUploadFileData: (filePath: string) =>
       ipcRenderer.invoke(
         'cloud:read-upload-file-data',

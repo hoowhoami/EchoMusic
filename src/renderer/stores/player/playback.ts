@@ -2,7 +2,7 @@ import logger from '@/utils/logger';
 import type { Song } from '@/models/song';
 import { isPlayableSong } from '@/utils/song';
 import type { PlayerState } from './state';
-import type { PlayerEngine } from '@/utils/player';
+import { normalizePlayerErrorPayload, type PlayerEngine } from '@/utils/player';
 import type { usePlaylistStore } from '../playlist';
 import type { useSettingStore } from '../setting';
 import { PERSONAL_FM_QUEUE_ID, type PlaybackQueueState } from '../playlist';
@@ -52,6 +52,7 @@ export const createPlaybackManager = (
   historyManager: any,
   showPlaybackNotice: (code: string, track?: Song | null) => void,
   clearPlaybackNotice: (trackId?: string | number | null) => void,
+  handleOutputDeviceError?: (error: unknown) => Promise<boolean>,
 ) => {
   let gaplessPreparingKey = '';
   let gaplessPreparedSource: GaplessPreparedSource | null = null;
@@ -732,6 +733,10 @@ export const createPlaybackManager = (
     } catch (error) {
       logger.error('PlayerPlayback', 'Play track failed:', error);
       if (requestSeq !== state.playbackRequestSeq) return;
+      if (await handleOutputDeviceError?.(normalizePlayerErrorPayload(error))) {
+        engine.updateMediaPlaybackState(buildMediaState(state));
+        return;
+      }
       if (await tryNextAudioCandidate({ reason: 'play-track-failed', trackId: resolvedId })) {
         return;
       }
@@ -783,8 +788,12 @@ export const createPlaybackManager = (
       const timeoutMs = (settingStore.playResumeTimeout ?? 5) * 1000;
       await engine.play({ timeoutMs: timeoutMs > 0 ? timeoutMs : undefined });
       setEnginePlaybackStatus(state, 'playing');
-    } catch {
+    } catch (error) {
       setPlaybackIntentPlayback(state, false);
+      if (await handleOutputDeviceError?.(normalizePlayerErrorPayload(error))) {
+        engine.updateMediaPlaybackState(buildMediaState(state));
+        return;
+      }
       try {
         await playTrack(state.currentTrackId);
       } catch {

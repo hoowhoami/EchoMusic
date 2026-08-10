@@ -270,7 +270,10 @@ export interface IElectronAPI {
     }>;
   };
   cloud: {
-    pickUploadFiles: (mode: CloudPickMode, multi?: boolean) => Promise<{
+    pickUploadFiles: (
+      mode: CloudPickMode,
+      multi?: boolean,
+    ) => Promise<{
       canceled: boolean;
       files: {
         name: string;

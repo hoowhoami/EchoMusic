@@ -692,7 +692,17 @@ export const mapCloudSong = (json: unknown): Song => {
     readString(pickValue(record.albumname, record.album_name, albumInfo.album_name, '')),
   );
   let cover = formatPic(
-    pickValue(record.cover, record.pic, record.img, record.album_sizable_cover, audioInfo.img, albumInfo.sizable_cover, transParam.union_cover, albumInfo.cover, ''),
+    pickValue(
+      record.cover,
+      record.pic,
+      record.img,
+      record.album_sizable_cover,
+      audioInfo.img,
+      albumInfo.sizable_cover,
+      transParam.union_cover,
+      albumInfo.cover,
+      '',
+    ),
   );
   if (!cover && parsedSingers.length > 0 && parsedSingers[0].pic) {
     cover = parsedSingers[0].pic;

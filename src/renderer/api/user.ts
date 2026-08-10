@@ -158,10 +158,35 @@ export function uploadPlayHistory(mxid: number | string) {
 }
 
 /**
- * 上报听歌时长（用于等级积分）
+ * 上报听歌时长（用于等级积分，需登录）
+ * 对接上游 GET /user/grade/info 上报模式：
+ *  - d_sec 本地累计听歌秒数（须 ≥ 服务端当前值，manager 内部已查询对账）
+ *  - diff_sec 本次新增秒数（按正常听歌节奏调用，≥60s 才触发上报）
+ *  - protocol 可选，强制协议 v2（lite）/ v4（标准版）；默认跟随服务端 platform
+ * @param options.dSec 本地累计听歌秒数
+ * @param options.diffSec 本次新增秒数
+ * @param options.protocol 可选，强制协议
  */
-export function reportListenTime() {
-  return request.get('/listen/timeadd');
+export function reportListenTime(options: {
+  dSec: number;
+  diffSec: number;
+  protocol?: 'v2' | 'v4';
+}) {
+  return request.get('/user/grade/info', {
+    params: {
+      d_sec: options.dSec,
+      diff_sec: options.diffSec,
+      ...(options.protocol ? { protocol: options.protocol } : {}),
+    },
+  });
+}
+
+/**
+ * 查询听歌等级信息（累计听歌时长/等级/积分，需登录）
+ * 对接上游 GET /user/grade/info 查询模式
+ */
+export function getUserGradeInfo() {
+  return request.get('/user/grade/info');
 }
 
 /**

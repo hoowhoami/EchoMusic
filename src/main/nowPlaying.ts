@@ -177,11 +177,11 @@ const applyWindowTitle = (playback: NowPlayingPlaybackPayload | null | undefined
   const title = showTitle ? String(playback?.title ?? '').trim() : '';
   const hasRealInfo = Boolean(
     artist &&
-      title &&
-      artist !== '未知歌手' &&
-      title !== '未知歌曲' &&
-      artist !== 'Unknown Artist' &&
-      title !== 'Unknown',
+    title &&
+    artist !== '未知歌手' &&
+    title !== '未知歌曲' &&
+    artist !== 'Unknown Artist' &&
+    title !== 'Unknown',
   );
   const next = hasRealInfo ? `${artist} - ${title}` : DEFAULT_WINDOW_TITLE;
   for (const win of BrowserWindow.getAllWindows()) {

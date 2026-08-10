@@ -51,6 +51,7 @@ const { tabsTop, tabsMinHeight } = useStickyTabsLayout(sliverHeaderRef);
 
 // ========== 歌曲 Tab ==========
 const songs = computed(() => playlistStore.favorites);
+const favoritesLoading = computed(() => playlistStore.favoritesLoading);
 const songListRef = ref<{ scrollToActive?: () => void } | null>(null);
 const searchQuery = ref('');
 const showBatchDrawer = ref(false);
@@ -356,13 +357,17 @@ const handleTabChange = (value: string | number) => {
 };
 
 // ========== 生命周期 ==========
-onMounted(async () => {
-  if (isLoggedIn.value) {
-    // 确保收藏歌曲已加载
-    if (playlistStore.favorites.length === 0) {
-      void playlistStore.fetchLikedPlaylistSongs();
-    }
+const refreshFavorites = () => {
+  if (!isLoggedIn.value) return;
+  if (!playlistStore.likedPlaylistQueryId) {
+    void playlistStore.fetchUserPlaylists();
+    return;
   }
+  void playlistStore.fetchLikedPlaylistSongs();
+};
+
+onMounted(async () => {
+  refreshFavorites();
   await nextTick();
   setupLoadMoreObserver();
 });
@@ -374,7 +379,7 @@ onUnmounted(() => {
 
 watch(isLoggedIn, (value) => {
   if (value) {
-    void playlistStore.fetchLikedPlaylistSongs();
+    refreshFavorites();
     followedLoaded.value = false;
     videosLoaded.value = false;
   }
@@ -582,7 +587,7 @@ watch(isLoggedIn, (value) => {
                 ref="songListRef"
                 :songs="displayedSongs"
                 :contextSongs="sortedSongs"
-                :loading="false"
+                :loading="favoritesLoading"
                 :active="activeTab === 'songs'"
                 :searchQuery="searchQuery"
                 :disableInternalFilter="true"

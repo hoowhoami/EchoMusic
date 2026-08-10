@@ -4,8 +4,8 @@ import { useImportTaskStore } from '@/stores/importTask';
 import {
   BUILTIN_PLUGIN_ID,
   createTaskHandle,
-  taskPanelOpen,
-  type TaskAction,
+  createTaskLifecycleActions,
+  type TaskStatus,
 } from '@/plugins/taskPanel';
 
 const TASK_ID = 'echo:import';
@@ -39,7 +39,7 @@ export const setupImportTaskBridge = (): (() => void) => {
         return;
       }
 
-      const taskStatus: 'running' | 'completed' | 'error' | 'aborted' =
+      const taskStatus: TaskStatus =
         importTaskStore.status === 'aborted'
           ? 'aborted'
           : importTaskStore.isActive
@@ -48,55 +48,14 @@ export const setupImportTaskBridge = (): (() => void) => {
 
       const showProgress = importTaskStore.isActive;
 
-      const actions: TaskAction[] = [];
-
-      if (importTaskStore.isActive) {
-        actions.push(
-          {
-            id: 'detail',
-            label: '查看详情',
-            variant: 'ghost',
-            onClick: () => {
-              importTaskStore.requestOpen();
-              taskPanelOpen.value = false;
-            },
-          },
-          {
-            id: 'abort',
-            label: '中止',
-            variant: 'ghost',
-            onClick: () => importTaskStore.requestAbort(),
-          },
-        );
-      } else if (importTaskStore.status === 'completed') {
-        actions.push(
-          {
-            id: 'detail',
-            label: '查看结果',
-            variant: 'ghost',
-            onClick: () => {
-              importTaskStore.requestOpen();
-              taskPanelOpen.value = false;
-            },
-          },
-          {
-            id: 'dismiss',
-            label: '关闭',
-            variant: 'ghost',
-            onClick: () => importTaskStore.dismiss(),
-          },
-        );
-      } else if (importTaskStore.status === 'aborted') {
-        actions.push({
-          id: 'dismiss',
-          label: '关闭',
-          variant: 'ghost',
-          onClick: () => importTaskStore.dismiss(),
-        });
-      }
+      const actions = createTaskLifecycleActions({
+        status: taskStatus,
+        onDetail: () => importTaskStore.requestOpen(),
+        onAbort: () => importTaskStore.requestAbort(),
+        onDismiss: () => importTaskStore.dismiss(),
+      });
 
       handle.set({
-        id: TASK_ID,
         name: `导入歌单 · ${importTaskStore.playlistName || '未知歌单'}`,
         icon: iconPlaylistAdd,
         status: taskStatus,

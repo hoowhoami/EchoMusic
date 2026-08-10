@@ -488,6 +488,7 @@ export const registerSettingsHandlers = ({ getMainWindow, playerRef }: IpcContex
   });
 
   autoUpdater.on('download-progress', (progress) => {
+    if (!downloadCancellationToken || downloadState.status !== 'downloading') return;
     downloadState = {
       status: 'downloading',
       progress: {
@@ -501,6 +502,7 @@ export const registerSettingsHandlers = ({ getMainWindow, playerRef }: IpcContex
   });
 
   autoUpdater.on('update-downloaded', () => {
+    if (!downloadCancellationToken || downloadState.status !== 'downloading') return;
     downloadCancellationToken = null;
     downloadState = { status: 'downloaded' };
     sendToRenderer('update-download-status', downloadState);

@@ -114,6 +114,52 @@ const clamp = (value: number, min: number, max: number): number =>
   Math.min(max, Math.max(min, value));
 
 const DEFAULT_REFERENCE_LUFS = -14.0;
+const NORMALIZATION_GAIN_EPSILON = 0.0005;
+
+const isPlayerErrorPayload = (error: unknown): error is PlayerErrorPayload => {
+  if (!error || typeof error !== 'object') return false;
+  const payload = error as Partial<PlayerErrorPayload>;
+  return typeof payload.message === 'string';
+};
+
+export const normalizePlayerErrorPayload = (error: unknown): PlayerErrorPayload => {
+  if (isPlayerErrorPayload(error)) return error;
+
+  const message =
+    error instanceof Error
+      ? error.message
+      : typeof error === 'string'
+        ? error
+        : String(error || 'player error');
+  const normalized = message.toLowerCase();
+
+  if (
+    normalized.includes('no audio output device available') ||
+    normalized.includes('failed to get default wasapi output device') ||
+    normalized.includes('requested device is no longer available') ||
+    normalized.includes('device is no longer available')
+  ) {
+    return {
+      message,
+      errorCode: 'output-device-unavailable',
+      reason: 'device-not-available',
+    };
+  }
+
+  if (
+    normalized.includes('audio output device') ||
+    normalized.includes('output device') ||
+    normalized.includes('output stream') ||
+    normalized.includes('output config')
+  ) {
+    return {
+      message,
+      errorCode: normalized.includes('stream') ? 'output-stream' : 'output-device-unavailable',
+    };
+  }
+
+  return { message };
+};
 
 // player preload API（类型来自 electron.d.ts）
 const player = window.electron?.player;
@@ -242,8 +288,9 @@ export class PlayerEngine {
     this.cleanupFns.push(offEnd);
 
     const offError = player.onError((payload: PlayerErrorPayload) => {
-      logger.error('PlayerEngine', 'player error', payload);
-      this.events.error?.(new CustomEvent('error', { detail: payload }));
+      const normalized = normalizePlayerErrorPayload(payload);
+      logger.error('PlayerEngine', 'player error', normalized);
+      this.events.error?.(new CustomEvent('error', { detail: normalized }));
     });
     this.cleanupFns.push(offError);
 
@@ -550,13 +597,7 @@ export class PlayerEngine {
   setVolumeNormalization(enabled: boolean): void {
     this.normalizationEnabled = enabled;
     if (!enabled) {
-      const command = player?.setNormalizationGain(0);
-      if (command) {
-        void command.catch((error: unknown) => {
-          logger.warn('PlayerEngine', 'set normalization gain failed', { error: String(error) });
-        });
-      }
-      this.normalizationGain = 1.0;
+      this.resetNormalizationGain();
     } else if (this.lastTrackLoudness) {
       // 开启时用已有的响度数据重新应用增益
       this.applyTrackLoudness(this.lastTrackLoudness);
@@ -567,27 +608,16 @@ export class PlayerEngine {
   applyTrackLoudness(loudness: TrackLoudness | null): void {
     this.lastTrackLoudness = loudness;
     if (!loudness || !this.normalizationEnabled) {
-      this.normalizationGain = 1.0;
-      const command = player?.setNormalizationGain(0);
-      if (command) {
-        void command.catch((error: unknown) => {
-          logger.warn('PlayerEngine', 'set normalization gain failed', { error: String(error) });
-        });
-      }
+      this.resetNormalizationGain();
       return;
     }
     const { lufs } = loudness;
     if (!Number.isFinite(lufs)) {
-      this.normalizationGain = 1.0;
-      const command = player?.setNormalizationGain(0);
-      if (command) {
-        void command.catch((error: unknown) => {
-          logger.warn('PlayerEngine', 'set normalization gain failed', { error: String(error) });
-        });
-      }
+      this.resetNormalizationGain();
       return;
     }
     const gainLinear = this.computeNormalizationGain(loudness);
+    if (Math.abs(this.normalizationGain - gainLinear) < NORMALIZATION_GAIN_EPSILON) return;
     const gainDb = 20 * Math.log10(gainLinear);
     this.normalizationGain = gainLinear;
     const command = player?.setNormalizationGain(gainDb);
@@ -619,6 +649,17 @@ export class PlayerEngine {
       gain = 0.95 / peak;
     }
     return clamp(gain, 0.1, 3.0);
+  }
+
+  private resetNormalizationGain(): void {
+    if (Math.abs(this.normalizationGain - 1.0) < NORMALIZATION_GAIN_EPSILON) return;
+    this.normalizationGain = 1.0;
+    const command = player?.setNormalizationGain(0);
+    if (command) {
+      void command.catch((error: unknown) => {
+        logger.warn('PlayerEngine', 'set normalization gain failed', { error: String(error) });
+      });
+    }
   }
 
   // ── 系统媒体控制（通过主进程 native addon） ──

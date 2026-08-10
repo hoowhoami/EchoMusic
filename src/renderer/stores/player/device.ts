@@ -260,7 +260,7 @@ export const createDeviceManager = (
 
     if (!applied) {
       if (deviceId === 'default') {
-        settingStore.setOutputDeviceStatus('fallback', '切换到系统默认输出设备失败。');
+        settingStore.setOutputDeviceStatus('fallback', '系统默认输出设备不可用。');
         return false;
       }
       const fallbackApplied = await engine.setOutputDevice('auto');
@@ -270,7 +270,7 @@ export const createDeviceManager = (
         'fallback',
         fallbackApplied
           ? '当前设备不支持切换到所选输出，已回退。'
-          : '当前设备不支持切换到所选输出，且回退系统默认失败。',
+          : '所选输出设备不可用，且系统默认输出设备不可用。',
       );
       if (fallbackApplied) await recoverPlaybackStatusAfterOutputChange();
       return fallbackApplied;
@@ -328,7 +328,11 @@ export const createDeviceManager = (
 
       if (!Array.isArray(playerDevices) || playerDevices.length === 0) {
         settingStore.outputDevices = fallbackOptions;
-        settingStore.setOutputDeviceStatus('ready', '当前仅检测到系统默认输出设备。');
+        if (getPlaybackIsPlaying(state) && !isIntentionalOutputReconfigActive()) {
+          pauseForOutputDeviceDisconnect('未检测到可用输出设备，已暂停播放。');
+        } else {
+          settingStore.setOutputDeviceStatus('fallback', '未检测到可用输出设备。');
+        }
         return;
       }
 

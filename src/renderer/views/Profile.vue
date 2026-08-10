@@ -133,6 +133,8 @@ const loadData = async () => {
   isLoading.value = true;
   try {
     await userStore.fetchUserInfo();
+    // 并行刷新听歌等级信息（等级/积分），不阻塞主流程
+    void userStore.fetchGradeInfo();
   } catch (e) {
     logger.error('Profile', 'Load Data Error:', e);
   } finally {

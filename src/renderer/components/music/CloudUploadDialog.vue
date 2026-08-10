@@ -34,7 +34,7 @@ interface Props {
   open?: boolean;
 }
 const props = withDefaults(defineProps<Props>(), { open: false });
-const emit = defineEmits<{ (e: 'update:open', value: boolean): void; (e: 'completed'): void }>();
+const emit = defineEmits<{ (e: 'update:open', value: boolean): void }>();
 const open = useVModel(props, 'open', emit, { defaultValue: false });
 
 const userStore = useUserStore();
@@ -64,6 +64,7 @@ const progressRatio = computed(() => {
   return done / items.value.length;
 });
 const isUploading = computed(() => step.value === 'uploading');
+const shouldAbort = () => canceled.value || cloudUploadStore.abortRequested;
 
 const formatBytes = (value: number) => {
   if (!Number.isFinite(value) || value <= 0) return '0 B';
@@ -92,6 +93,13 @@ const reset = () => {
   manualSearchAlbum.value = '';
   manualResults.value = [];
   manualSearchDone.value = false;
+};
+
+const resetForNewUpload = () => {
+  if (cloudUploadStore.status === 'completed') {
+    cloudUploadStore.dismiss();
+  }
+  reset();
 };
 
 const closeDialog = () => {
@@ -123,9 +131,15 @@ watch(open, (v) => {
     }
     window.setTimeout(reset, 200);
   } else {
-    // 重开时若后台有活跃上传任务，跳到进度页
     if (cloudUploadStore.status === 'running') {
       resumeFromStore();
+    } else if (
+      cloudUploadStore.status === 'completed' &&
+      cloudUploadStore.openRequestMode === 'detail'
+    ) {
+      resumeFromStoreCompleted();
+    } else {
+      resetForNewUpload();
     }
   }
 });
@@ -138,7 +152,11 @@ watch(
   (val) => {
     if (val === lastOpenRequested || val <= 0) return;
     lastOpenRequested = val;
-    if (cloudUploadStore.status === 'completed') {
+    if (cloudUploadStore.openRequestMode === 'start' && open.value) {
+      if (cloudUploadStore.status !== 'running') resetForNewUpload();
+      return;
+    }
+    if (cloudUploadStore.status === 'completed' && cloudUploadStore.openRequestMode === 'detail') {
       resumeFromStoreCompleted();
     }
   },
@@ -148,10 +166,6 @@ const resumeFromStore = () => {
   step.value = 'uploading';
   items.value = cloudUploadStore.items;
   canceled.value = false;
-  // 重新桥接，弹窗内点取消可以中断后台上传
-  cloudUploadStore.onAbort = () => {
-    canceled.value = true;
-  };
 };
 
 const resumeFromStoreCompleted = () => {
@@ -293,7 +307,7 @@ const runMatching = async (list: CloudUploadItem[]) => {
   let nextIdx = 0;
   const worker = async () => {
     while (true) {
-      if (canceled.value) return;
+      if (shouldAbort()) return;
       const i = nextIdx++;
       if (i >= list.length) return;
       await matchItem(list[i], list);
@@ -397,42 +411,44 @@ const runUpload = async (list: CloudUploadItem[]) => {
     cloudUploadStore.updateProgress(0, list.length, { ...list[0] });
   }
   for (let i = 0; i < list.length; i++) {
-    if (canceled.value) break;
+    if (shouldAbort()) break;
     await uploadSingleItem(list[i], list);
   }
-  step.value = 'done';
+  if (open.value) step.value = 'done';
   clearPickedUploadFiles();
 
-  if (canceled.value) {
+  const aborted = shouldAbort();
+  const successCount = list.filter((i) => i.status === 'success').length;
+  const failedCountNow = list.filter((i) => i.status === 'failed').length;
+  const secondCount = list.filter((i) => i.isSecondUpload).length;
+
+  if (successCount > 0) cloudUploadStore.markChanged();
+
+  if (aborted) {
     toastStore.info('已取消上传');
-  } else if (list.filter((i) => i.status === 'failed').length === 0) {
-    const successCount = list.filter((i) => i.status === 'success').length;
-    const secondCount = list.filter((i) => i.isSecondUpload).length;
+  } else if (failedCountNow === 0) {
     toastStore.success(
       secondCount > 0
         ? `上传完成：${successCount} 首（其中 ${secondCount} 首秒传）`
         : `上传完成：${successCount} 首`,
     );
   } else {
-    const successCount = list.filter((i) => i.status === 'success').length;
-    const failedCountNow = list.filter((i) => i.status === 'failed').length;
     toastStore.warning(`上传完成：成功 ${successCount} 首，失败 ${failedCountNow} 首`);
   }
 
   // 任务中心：完成/中止收敛
   if (cloudUploadStore.status === 'running') {
-    if (canceled.value) {
+    if (aborted) {
       cloudUploadStore.dismiss();
     } else {
       cloudUploadStore.complete({
         total: list.length,
-        success: list.filter((i) => i.status === 'success').length,
-        failed: list.filter((i) => i.status === 'failed').length,
-        secondUpload: list.filter((i) => i.isSecondUpload).length,
+        success: successCount,
+        failed: failedCountNow,
+        secondUpload: secondCount,
       });
     }
   }
-  if (!canceled.value || list.some((item) => item.status === 'success')) emit('completed');
 };
 
 // --- 手动匹配上传 ---
@@ -574,6 +590,7 @@ const formatDuration = (sec: number) => {
 
 const handleCancel = () => {
   canceled.value = true;
+  cloudUploadStore.requestAbort({ feedback: false });
   const uploading = items.value.find((i) => i.status === 'uploading' || i.status === 'matching');
   if (uploading) uploading.status = 'pending';
 };
@@ -622,8 +639,10 @@ const statusLabel = (item: CloudUploadItem) => {
             <Icon :icon="iconUpload" width="20" height="20" />
           </div>
           <div class="min-w-0 flex-1 text-left">
-            <div class="text-[13px] font-semibold text-text-main">上传单曲</div>
-            <div class="text-[11px] text-text-secondary/75">支持多选，单文件不超过 100MB</div>
+            <div class="text-[13px] font-semibold text-text-main">上传歌曲</div>
+            <div class="text-[11px] text-text-secondary/75">
+              上传时自动匹配歌曲信息，支持多选，单文件不超过 100MB
+            </div>
           </div>
         </button>
         <button class="cloud-upload-option" :disabled="picking" @click="handlePick('folder')">
@@ -632,7 +651,9 @@ const statusLabel = (item: CloudUploadItem) => {
           </div>
           <div class="min-w-0 flex-1 text-left">
             <div class="text-[13px] font-semibold text-text-main">上传文件夹</div>
-            <div class="text-[11px] text-text-secondary/75">自动收集文件夹内所有音频文件</div>
+            <div class="text-[11px] text-text-secondary/75">
+              收集文件夹内所有音频文件后自动匹配上传
+            </div>
           </div>
         </button>
         <button class="cloud-upload-option" :disabled="picking" @click="handlePickManual">

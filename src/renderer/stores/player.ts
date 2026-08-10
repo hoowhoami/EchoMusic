@@ -6,7 +6,7 @@ import { useSettingStore } from './setting';
 import { useToastStore } from './toast';
 import { useUserStore } from './user';
 import logger from '@/utils/logger';
-import { PlayerEngine, type PlayerEngineEvents } from '@/utils/player';
+import { normalizePlayerErrorPayload, PlayerEngine, type PlayerEngineEvents } from '@/utils/player';
 import type { Song } from '@/models/song';
 import type { PlayerErrorPayload } from '../../shared/player-error';
 
@@ -15,6 +15,7 @@ import { createPlaybackManager } from './player/playback';
 import { createAudioManager } from './player/audio';
 import { createResolver } from './player/resolver';
 import { createHistoryManager } from './player/history';
+import { createListeningTimeManager } from './player/listeningTime';
 import { createDeviceManager } from './player/device';
 import {
   createPlayerEventBus,
@@ -57,6 +58,7 @@ export const usePlayerStore = defineStore(
 
     const resolver = createResolver(state, playlistStore, settingStore);
     const historyManager = createHistoryManager(state);
+    const listeningTimeManager = createListeningTimeManager(state);
 
     // 播放生命周期事件总线：随 store 单例创建，全程存活，供插件等订阅方感知播放事件
     const playerEvents = createPlayerEventBus();
@@ -327,6 +329,7 @@ export const usePlayerStore = defineStore(
       historyManager,
       showPlaybackNotice,
       clearPlaybackNotice,
+      (error) => deviceManager.handleOutputDeviceError(normalizePlayerErrorPayload(error)),
     );
     let impulseResponseFailureListenerRegistered = false;
     let audioDeviceListListenerRegistered = false;
@@ -639,6 +642,7 @@ export const usePlayerStore = defineStore(
           if (now - lastHistoryCheck >= HISTORY_CHECK_MS) {
             lastHistoryCheck = now;
             void historyManager.commitListeningHistory();
+            void listeningTimeManager.tick();
           }
           if (now - lastMediaSessionSync >= MEDIA_SESSION_SYNC_MS) {
             lastMediaSessionSync = now;
@@ -679,6 +683,7 @@ export const usePlayerStore = defineStore(
         ended: () => {
           if (state.awaitingTrackLoad) return;
           setEnginePlaybackStatus(state, 'stopped');
+          void listeningTimeManager.flush();
           if (!state.recentSeekIgnoreEnd) {
             emitPlayerEvent('ended');
             handlePlaybackEnded();
@@ -708,6 +713,7 @@ export const usePlayerStore = defineStore(
             return;
           setEnginePlaybackStatus(state, 'paused');
           setPlaybackIntentPlayback(state, false);
+          void listeningTimeManager.flush();
           settingStore.syncPreventSleep(false);
           engine.updateMediaPlaybackState(buildMediaState(state));
           emitPlayerEvent('pause');
@@ -791,6 +797,7 @@ export const usePlayerStore = defineStore(
           state.seekTargetTime = null;
           state.currentTime = currentTime;
           state.currentTimeUpdatedAt = Date.now();
+          listeningTimeManager.resetPosition();
           engine.updateMediaPlaybackState(buildMediaState(state));
         },
       };
@@ -836,6 +843,7 @@ export const usePlayerStore = defineStore(
 
       resetHistoryUploadState: historyManager.resetHistoryUploadState,
       commitListeningHistory: historyManager.commitListeningHistory,
+      flushListeningTime: listeningTimeManager.flush,
 
       setVolume: audioManager.setVolume,
       adjustVolume: audioManager.adjustVolume,

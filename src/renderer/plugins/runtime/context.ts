@@ -413,7 +413,7 @@ export const createPluginContext = (
       fetch: window.fetch.bind(window),
     },
     icons,
-    tasks: createTaskApi(descriptor.id),
+    tasks: createTaskApi(descriptor.id, apiDeps),
     electron: window.electron,
     dispose: addDisposable,
   };

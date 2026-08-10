@@ -1,20 +1,28 @@
 import { defineStore } from 'pinia';
 import logger from '@/utils/logger';
+import {
+  activateTaskControl,
+  clearTaskControl,
+  consumeTaskOpen,
+  createTaskAbortTimer,
+  createTaskControlState,
+  finishTaskControl,
+  requestTaskAbort,
+  requestTaskOpen,
+} from '@/tasks/taskControl';
 
-/** 面板中止后 aborted 状态的保留时长，到期自动转 idle（dismiss）。 */
-const ABORT_TASK_KEEP_MS = 3000;
-let abortClearTimer: ReturnType<typeof setTimeout> | null = null;
-const clearAbortClearTimer = () => {
-  if (abortClearTimer !== null) {
-    clearTimeout(abortClearTimer);
-    abortClearTimer = null;
-  }
-};
+const abortTimer = createTaskAbortTimer();
 
 export type CloudUploadStatus = 'idle' | 'running' | 'completed' | 'aborted';
 export type CloudUploadPhase = 'matching' | 'uploading';
+export type CloudUploadOpenMode = 'start' | 'detail';
 export type CloudUploadMatchStatus =
-  'pending' | 'linked' | 'not_found' | 'low_score' | 'no_cloud_ids' | 'failed';
+  | 'pending'
+  | 'linked'
+  | 'not_found'
+  | 'low_score'
+  | 'no_cloud_ids'
+  | 'failed';
 
 export interface CloudUploadItem {
   name: string;
@@ -49,6 +57,10 @@ export interface CloudUploadSummary {
   secondUpload: number;
 }
 
+export interface CloudUploadAbortOptions {
+  feedback?: boolean;
+}
+
 /**
  * 云盘上传任务的全局状态，供「上传弹窗」和「任务中心面板」共享。
  *
@@ -57,6 +69,7 @@ export interface CloudUploadSummary {
  */
 export const useCloudUploadStore = defineStore('cloudUpload', {
   state: () => ({
+    ...createTaskControlState<CloudUploadOpenMode>('start'),
     status: 'idle' as CloudUploadStatus,
     /** 当前阶段：匹配 / 上传，供面板区分「匹配中 x/y」「上传中 x/y」 */
     phase: 'matching' as CloudUploadPhase,
@@ -64,10 +77,8 @@ export const useCloudUploadStore = defineStore('cloudUpload', {
     total: 0,
     summary: null as CloudUploadSummary | null,
     items: [] as CloudUploadItem[],
-    /** 由外部调用方（Dialog）注入；任务面板点中止时触发 */
-    onAbort: null as (() => void) | null,
-    /** 任务面板触发重新打开上传弹窗的计数器 */
-    openRequested: 0,
+    /** 云盘内容变更计数器，供云盘页面刷新列表。 */
+    changedRevision: 0,
   }),
 
   getters: {
@@ -98,21 +109,21 @@ export const useCloudUploadStore = defineStore('cloudUpload', {
 
   actions: {
     start(name: string, count: number, abortHandler: () => void) {
-      clearAbortClearTimer();
+      abortTimer.clear();
       this.status = 'running';
       this.phase = 'matching';
       this.done = 0;
       this.total = count;
       this.summary = null;
       this.items = [];
-      this.onAbort = abortHandler;
+      activateTaskControl(this, abortHandler);
     },
 
     /** 转入后台运行（弹窗关闭但上传不中断时调用） */
     enterBackground(name: string, abortHandler: () => void) {
-      clearAbortClearTimer();
+      abortTimer.clear();
       this.status = 'running';
-      this.onAbort = abortHandler;
+      activateTaskControl(this, abortHandler);
       // done/total/items 已在进度回调中实时更新，直接复用
     },
 
@@ -132,40 +143,46 @@ export const useCloudUploadStore = defineStore('cloudUpload', {
     },
 
     complete(summary: CloudUploadSummary) {
-      clearAbortClearTimer();
+      finishTaskControl(this, abortTimer);
       this.status = 'completed';
       this.summary = summary;
-      this.onAbort = null;
     },
 
     /** 任务面板手动中止 */
-    requestAbort() {
-      if (this.status === 'running') {
-        clearAbortClearTimer();
+    requestAbort(options: CloudUploadAbortOptions = {}) {
+      requestTaskAbort(this, abortTimer, {
+        canAbort: () => this.status === 'running',
+        feedback: options.feedback,
         // 立即收敛为 aborted，避免中止流程卡住时任务一直 running
-        this.status = 'aborted';
-        logger.info('CloudUpload', '后台上传中止请求', { done: this.done, total: this.total });
-        this.onAbort?.();
-        // 中止反馈保留 ABORT_TASK_KEEP_MS 后自动关闭；面板可提前点「关闭」
-        abortClearTimer = setTimeout(() => {
-          abortClearTimer = null;
-          // 重新获取 store 实例，避免闭包绑定旧实例（HMR/重建边界更稳）
-          useCloudUploadStore().dismiss();
-        }, ABORT_TASK_KEEP_MS);
-      }
+        markAborted: () => {
+          this.status = 'aborted';
+        },
+        onRequested: () => {
+          logger.info('CloudUpload', '后台上传中止请求', { done: this.done, total: this.total });
+        },
+        // 重新获取 store 实例，避免闭包绑定旧实例（HMR/重建边界更稳）
+        onTimeoutDismiss: () => useCloudUploadStore().dismiss(),
+      });
     },
 
-    /** 任务面板触发重新打开上传弹窗 */
-    requestOpen() {
-      this.openRequested++;
+    /** 触发打开全局上传弹窗 */
+    requestOpen(mode: CloudUploadOpenMode = 'detail') {
+      requestTaskOpen(this, mode);
+    },
+
+    consumeOpenRequest() {
+      return consumeTaskOpen(this);
+    },
+
+    markChanged() {
+      this.changedRevision++;
     },
 
     dismiss() {
-      clearAbortClearTimer();
+      clearTaskControl(this, abortTimer);
       this.status = 'idle';
       this.summary = null;
       this.items = [];
-      this.onAbort = null;
       // 任务结束即清理主进程 allow-list（转后台/重开期间不清）
       void window.electron?.cloud?.clearUploadFiles()?.catch(() => undefined);
     },

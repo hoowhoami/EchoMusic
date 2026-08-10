@@ -37,6 +37,15 @@ export type {
   PluginPlayTrackOptions,
   PluginThemedIconCoverOptions,
 } from './contextApis';
+export type {
+  PluginTaskApi,
+  PluginTaskPatch,
+  PluginTaskRegistration,
+  TaskAction,
+  TaskActionVariant,
+  TaskProgress,
+  TaskStatus,
+} from '../../../shared/tasks';
 
 export interface PluginRuntimeRecord {
   descriptor: EchoPluginDescriptor;

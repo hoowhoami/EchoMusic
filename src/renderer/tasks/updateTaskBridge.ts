@@ -4,8 +4,9 @@ import { iconCloudDownload } from '@/icons';
 import { useUpdateStore } from '@/stores/update';
 import {
   BUILTIN_PLUGIN_ID,
+  createTaskAbortAction,
+  createTaskDetailAction,
   createTaskHandle,
-  taskPanelOpen,
   type TaskAction,
 } from '@/plugins/taskPanel';
 
@@ -65,33 +66,16 @@ export const setupUpdateTaskBridge = (): (() => void) => {
 
       if (status === 'downloading') {
         actions.push(
-          {
-            id: 'detail',
-            label: '查看详情',
-            variant: 'ghost',
-            onClick: () => {
-              updateStore.dialogOpen = true;
-              taskPanelOpen.value = false;
-            },
-          },
-          {
-            id: 'cancel',
-            label: '中止',
-            variant: 'ghost',
-            onClick: () => updateStore.cancelDownload(),
-          },
+          createTaskDetailAction(() => {
+            updateStore.dialogOpen = true;
+          }),
+          createTaskAbortAction(() => updateStore.cancelDownload(), 'cancel'),
         );
       } else if (status === 'downloaded') {
         actions.push(
-          {
-            id: 'detail',
-            label: '查看详情',
-            variant: 'ghost',
-            onClick: () => {
-              updateStore.dialogOpen = true;
-              taskPanelOpen.value = false;
-            },
-          },
+          createTaskDetailAction(() => {
+            updateStore.dialogOpen = true;
+          }),
           {
             id: 'install',
             label: '立即安装',
@@ -103,21 +87,14 @@ export const setupUpdateTaskBridge = (): (() => void) => {
         );
       } else if (status === 'error') {
         actions.push(
-          {
-            id: 'detail',
-            label: '详情',
-            variant: 'ghost',
-            onClick: () => {
-              updateStore.dialogOpen = true;
-              taskPanelOpen.value = false;
-            },
-          },
+          createTaskDetailAction(() => {
+            updateStore.dialogOpen = true;
+          }, '详情'),
           { id: 'retry', label: '重试', variant: 'ghost', onClick: () => updateStore.download() },
         );
       }
 
       handle.set({
-        id: TASK_ID,
         name: '更新 EchoMusic',
         icon: iconCloudDownload,
         status: taskStatus,

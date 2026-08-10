@@ -365,12 +365,17 @@ const secondaryActions = computed(() => [
     icon: iconCloudUpload,
     label: '上传',
     onTap: () => {
-      showUploadDialog.value = true;
+      cloudUploadStore.requestOpen('start');
     },
   },
 ]);
 
 const handleLocate = () => songListRef.value?.scrollToActive?.();
+
+const handleUploadOpenRequest = () => {
+  if (!cloudUploadStore.consumeOpenRequest()) return;
+  showUploadDialog.value = true;
+};
 
 watch(
   () => isLoggedIn.value,
@@ -387,15 +392,21 @@ watch(
   },
 );
 
-// 任务面板「查看详情/查看结果」触发重新打开上传弹窗
-let lastUploadOpenRequested = 0;
+let lastUploadOpenRequested = cloudUploadStore.openRequested;
 watch(
   () => cloudUploadStore.openRequested,
   (val) => {
     if (val !== lastUploadOpenRequested && val > 0) {
       lastUploadOpenRequested = val;
-      showUploadDialog.value = true;
+      handleUploadOpenRequest();
     }
+  },
+);
+
+watch(
+  () => cloudUploadStore.changedRevision,
+  () => {
+    if (isLoggedIn.value) void loadCloud();
   },
 );
 
@@ -403,6 +414,7 @@ onMounted(() => {
   if (isLoggedIn.value) {
     void loadCloud();
   }
+  handleUploadOpenRequest();
 });
 </script>
 
@@ -487,7 +499,7 @@ onMounted(() => {
           :on-batch-remove="handleBatchDeleteCloudSongs"
         />
 
-        <CloudUploadDialog v-model:open="showUploadDialog" @completed="loadCloud" />
+        <CloudUploadDialog v-model:open="showUploadDialog" />
 
         <div class="px-6 pt-2.5 pb-1">
           <div class="cloud-info-card">
@@ -576,7 +588,7 @@ onMounted(() => {
                 variant="primary"
                 size="md"
                 class="mt-5 gap-2"
-                @click="showUploadDialog = true"
+                @click="cloudUploadStore.requestOpen('start')"
               >
                 <Icon :icon="iconCloudUpload" width="16" height="16" />
                 上传音乐

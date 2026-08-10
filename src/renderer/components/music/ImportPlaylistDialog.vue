@@ -177,6 +177,7 @@ const progressTotal = ref(0);
 const isImporting = ref(false);
 const abortFlag = ref(false);
 const summary = ref<ImportSummary | null>(null);
+const shouldAbort = () => abortFlag.value || importTaskStore.abortRequested;
 
 // 后台导入确认弹窗
 const showBackgroundConfirm = ref(false);
@@ -261,10 +262,6 @@ const resumeFromStore = () => {
   isImporting.value = true;
   abortFlag.value = false;
   summary.value = null;
-  // 重新桥接，弹窗内点中止可以中断后台导入
-  importTaskStore.onAbort = () => {
-    abortFlag.value = true;
-  };
 };
 
 const resumeFromStoreCompleted = () => {
@@ -458,7 +455,7 @@ const handleStartImport = async (duplicateConfirmed = false) => {
 
   try {
     const result = await runImport(tracks, listId, {
-      shouldAbort: () => abortFlag.value,
+      shouldAbort,
       onProgress: (done, total, item) => {
         progressDone.value = done;
         progressTotal.value = total;
@@ -470,16 +467,18 @@ const handleStartImport = async (duplicateConfirmed = false) => {
     summary.value = result;
     // 只有转入后台的任务才更新 store；前台任务弹窗内自己展示结果
     if (importTaskStore.status === 'running') {
-      if (abortFlag.value) {
+      if (shouldAbort()) {
         importTaskStore.dismiss();
       } else {
         importTaskStore.complete(result);
       }
     }
-    if (result.success > 0 && !abortFlag.value) {
-      toastStore.success(`导入完成：成功 ${result.success} / ${result.total}`);
+    if (result.success > 0) {
+      if (!shouldAbort()) {
+        toastStore.success(`导入完成：成功 ${result.success} / ${result.total}`);
+      }
       await playlistStore.fetchUserPlaylists();
-    } else if (!abortFlag.value) {
+    } else if (!shouldAbort()) {
       toastStore.warning('未能匹配到任何歌曲');
     }
   } catch (e: unknown) {
@@ -493,6 +492,10 @@ const handleStartImport = async (duplicateConfirmed = false) => {
 const handleAbort = () => {
   if (!isImporting.value) return;
   abortFlag.value = true;
+  if (importTaskStore.status === 'running') {
+    importTaskStore.requestAbort({ feedback: false });
+    return;
+  }
 };
 
 const handleBackgroundRun = () => {
@@ -504,6 +507,10 @@ const handleBackgroundRun = () => {
 const handleClose = () => {
   if (isImporting.value) {
     abortFlag.value = true;
+    if (importTaskStore.status === 'running') {
+      importTaskStore.requestAbort({ feedback: false });
+      return;
+    }
     return;
   }
   open.value = false;

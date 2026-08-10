@@ -1,11 +1,12 @@
 import { watch } from 'vue';
 import { iconCloudUpload } from '@/icons';
 import { useCloudUploadStore } from '@/stores/cloudUpload';
+import router from '@/router';
 import {
   BUILTIN_PLUGIN_ID,
   createTaskHandle,
-  taskPanelOpen,
-  type TaskAction,
+  createTaskLifecycleActions,
+  type TaskStatus,
 } from '@/plugins/taskPanel';
 
 const TASK_ID = 'echo:cloud-upload';
@@ -17,6 +18,12 @@ const TASK_ID = 'echo:cloud-upload';
 export const setupCloudTaskBridge = (): (() => void) => {
   const cloudUploadStore = useCloudUploadStore();
   const handle = createTaskHandle(TASK_ID, BUILTIN_PLUGIN_ID);
+  const openCloudUploadDetail = async () => {
+    if (router.currentRoute.value.name !== 'cloud') {
+      await router.push({ name: 'cloud' });
+    }
+    cloudUploadStore.requestOpen('detail');
+  };
 
   const stop = watch(
     () =>
@@ -39,7 +46,7 @@ export const setupCloudTaskBridge = (): (() => void) => {
         return;
       }
 
-      const taskStatus: 'running' | 'completed' | 'error' | 'aborted' =
+      const taskStatus: TaskStatus =
         cloudUploadStore.status === 'aborted'
           ? 'aborted'
           : cloudUploadStore.isActive
@@ -48,55 +55,14 @@ export const setupCloudTaskBridge = (): (() => void) => {
 
       const showProgress = cloudUploadStore.isActive;
 
-      const actions: TaskAction[] = [];
-
-      if (cloudUploadStore.isActive) {
-        actions.push(
-          {
-            id: 'detail',
-            label: '查看详情',
-            variant: 'ghost',
-            onClick: () => {
-              cloudUploadStore.requestOpen();
-              taskPanelOpen.value = false;
-            },
-          },
-          {
-            id: 'abort',
-            label: '中止',
-            variant: 'ghost',
-            onClick: () => cloudUploadStore.requestAbort(),
-          },
-        );
-      } else if (cloudUploadStore.status === 'completed') {
-        actions.push(
-          {
-            id: 'detail',
-            label: '查看结果',
-            variant: 'ghost',
-            onClick: () => {
-              cloudUploadStore.requestOpen();
-              taskPanelOpen.value = false;
-            },
-          },
-          {
-            id: 'dismiss',
-            label: '关闭',
-            variant: 'ghost',
-            onClick: () => cloudUploadStore.dismiss(),
-          },
-        );
-      } else if (cloudUploadStore.status === 'aborted') {
-        actions.push({
-          id: 'dismiss',
-          label: '关闭',
-          variant: 'ghost',
-          onClick: () => cloudUploadStore.dismiss(),
-        });
-      }
+      const actions = createTaskLifecycleActions({
+        status: taskStatus,
+        onDetail: openCloudUploadDetail,
+        onAbort: () => cloudUploadStore.requestAbort(),
+        onDismiss: () => cloudUploadStore.dismiss(),
+      });
 
       handle.set({
-        id: TASK_ID,
         name: `上传到云盘 · ${cloudUploadStore.total || '未知'} 首`,
         icon: iconCloudUpload,
         status: taskStatus,
