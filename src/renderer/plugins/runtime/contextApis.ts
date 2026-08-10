@@ -34,6 +34,51 @@ import {
 } from '../audioSource';
 import { registerPluginLyricResolver, type PluginLyricResolverContribution } from '../lyrics';
 import { registerPluginLyricEffect, type PluginLyricEffectContribution } from '../lyricEffects';
+import {
+  registerTask,
+  updateTask,
+  dismissTask,
+  taskPanelState,
+  type TaskRegistration,
+} from '../taskPanel';
+import logger from '@/utils/logger';
+
+export interface PluginTaskApi {
+  register: (task: Omit<TaskRegistration, 'pluginId'>) => () => void;
+  update: (id: string, patch: Partial<Omit<TaskRegistration, 'id' | 'pluginId'>>) => void;
+  dismiss: (id: string) => void;
+}
+
+export const createTaskApi = (pluginId: string): PluginTaskApi => ({
+  register: (task) => {
+    // 内置保留命名空间：echo: 前缀的任务 id 不允许插件注册（即使内置任务处于非活动空窗期）
+    if (task.id.startsWith('echo:')) {
+      logger.warn('PluginTask', '拒绝注册保留任务 id（echo: 前缀）', { pluginId, taskId: task.id });
+      return () => {};
+    }
+    // 归属保护：任务 id 已被其他插件或内置任务占用时不覆盖，仅本插件可重注册同 id
+    const existing = taskPanelState.entries[task.id];
+    if (existing && existing.pluginId !== pluginId) {
+      logger.warn('PluginTask', '拒绝覆盖其他插件或内置任务', {
+        pluginId,
+        taskId: task.id,
+        owner: existing.pluginId,
+      });
+      return () => {};
+    }
+    return registerTask({ ...task, pluginId });
+  },
+  update: (id, patch) => {
+    // 作用域隔离：只能更新本插件注册的任务，避免影响其他插件或内置任务
+    const entry = taskPanelState.entries[id];
+    if (entry && entry.pluginId === pluginId) updateTask(id, patch);
+  },
+  dismiss: (id) => {
+    // 作用域隔离：只能移除本插件注册的任务
+    const entry = taskPanelState.entries[id];
+    if (entry && entry.pluginId === pluginId) dismissTask(id);
+  },
+});
 
 type PluginCallbackRunner = <T>(
   pluginId: string,
