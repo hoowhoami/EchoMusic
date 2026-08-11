@@ -245,7 +245,9 @@ const scheduleDesktopLyricBoundsReconcile = () => {
 
 const setDesktopLyricForward = (enableForward: boolean) => {
   if (!snapshot.settings.locked) return;
-  applyDesktopLyricIgnoreMouseEvents(true, { forward: enableForward });
+  applyDesktopLyricIgnoreMouseEvents(true, {
+    forward: snapshot.settings.showUnlockButton && enableForward,
+  });
 };
 
 const sendDesktopLyricHover = (hovered: boolean) => {
@@ -306,8 +308,16 @@ const applyDesktopLyricInteractionState = () => {
   const win = getDesktopLyricWindow();
   if (!win || win.isDestroyed()) return;
   if (desktopLyricIsLocked) {
-    applyDesktopLyricIgnoreMouseEvents(true, { forward: true, force: true });
-    startDesktopLyricHoverPolling();
+    applyDesktopLyricIgnoreMouseEvents(true, {
+      forward: snapshot.settings.showUnlockButton,
+      force: true,
+    });
+    if (snapshot.settings.showUnlockButton) {
+      startDesktopLyricHoverPolling();
+    } else {
+      stopDesktopLyricHoverPolling();
+      sendDesktopLyricHover(false);
+    }
   } else {
     applyDesktopLyricIgnoreMouseEvents(false, { force: true });
     stopDesktopLyricHoverPolling();
@@ -714,6 +724,10 @@ export const registerDesktopLyricHandlers = () => {
   ipcRegistry.registerListener(
     'desktop-lyric:set-ignore-mouse-events',
     (_event, ignore: boolean) => {
+      if (snapshot.settings.locked && !snapshot.settings.showUnlockButton) {
+        applyDesktopLyricIgnoreMouseEvents(true, { force: true });
+        return;
+      }
       if (ignore) {
         applyDesktopLyricIgnoreMouseEvents(true, { forward: true });
       } else {

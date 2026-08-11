@@ -36,6 +36,10 @@ export function getDesktopLyricSettings(): DesktopLyricSettings {
   return {
     enabled: Boolean(raw.enabled),
     locked: Boolean(raw.locked),
+    showUnlockButton:
+      typeof raw.showUnlockButton === 'boolean'
+        ? raw.showUnlockButton
+        : DEFAULT_DESKTOP_LYRIC_PERSISTED_SETTINGS.showUnlockButton,
     autoShow: Boolean(raw.autoShow),
     alwaysOnTop: Boolean(raw.alwaysOnTop),
     wantTranslation: Boolean(raw.wantTranslation),
@@ -107,6 +111,10 @@ export function sanitizeDesktopLyricSettings(
   return {
     enabled: Boolean(mergedBase.enabled),
     locked: Boolean(mergedBase.locked),
+    showUnlockButton:
+      typeof mergedBase.showUnlockButton === 'boolean'
+        ? mergedBase.showUnlockButton
+        : current.showUnlockButton,
     autoShow: Boolean(mergedBase.autoShow),
     alwaysOnTop: Boolean(mergedBase.alwaysOnTop),
     wantTranslation: Boolean(mergedBase.wantTranslation),
@@ -152,6 +160,7 @@ export function persistDesktopLyricSettings(nextSettings: DesktopLyricSettings) 
   patchDesktopLyricPersistedSettings({
     enabled: nextSettings.enabled,
     locked: nextSettings.locked,
+    showUnlockButton: nextSettings.showUnlockButton,
     autoShow: nextSettings.autoShow,
     alwaysOnTop: nextSettings.alwaysOnTop,
     wantTranslation: nextSettings.wantTranslation,

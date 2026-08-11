@@ -53,6 +53,7 @@ const buildSettingsSignature = (settings: DesktopLyricSettings) =>
   [
     boolKey(settings.enabled),
     boolKey(settings.locked),
+    boolKey(settings.showUnlockButton),
     boolKey(settings.autoShow),
     boolKey(settings.alwaysOnTop),
     boolKey(settings.wantTranslation),

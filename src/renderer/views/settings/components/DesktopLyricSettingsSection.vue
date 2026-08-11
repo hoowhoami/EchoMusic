@@ -88,6 +88,17 @@ const applyDesktopLyricColor = async (value: string) => {
     <div class="settings-divider"></div>
     <div class="settings-item">
       <div class="space-y-1">
+        <h3 class="font-semibold">锁定时显示解锁按钮</h3>
+        <p class="text-sm text-text-secondary">关闭后需通过托盘菜单解锁桌面歌词</p>
+      </div>
+      <Switch
+        :model-value="desktopLyricStore.settings.showUnlockButton"
+        @update:model-value="commitDesktopLyricSettings({ showUnlockButton: Boolean($event) })"
+      />
+    </div>
+    <div class="settings-divider"></div>
+    <div class="settings-item">
+      <div class="space-y-1">
         <h3 class="font-semibold">显示布局</h3>
         <p class="text-sm text-text-secondary">切换桌面歌词的横排或竖排显示</p>
       </div>

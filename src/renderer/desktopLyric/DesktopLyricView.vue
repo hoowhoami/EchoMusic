@@ -238,6 +238,7 @@ const lyrics = computed(() => {
   return snapshot.value.lyrics ?? [];
 });
 const isLocked = computed(() => settings.value?.locked ?? false);
+const showUnlockButton = computed(() => settings.value?.showUnlockButton ?? true);
 const hasLyrics = computed(() => lyrics.value.length > 0);
 const lyricTimeOffset = computed(() => snapshot.value?.lyricTimeOffset ?? 0);
 const offsetStepLabel = computed(() => `${Number(settings.value?.offsetStep ?? 0.5).toFixed(1)}s`);
@@ -327,6 +328,11 @@ const handleMouseMove = (event: MouseEvent) => {
   const target = event.target as HTMLElement | null;
 
   if (isLocked.value) {
+    if (!showUnlockButton.value) {
+      isHovered.value = false;
+      setDesktopLyricIgnoreMouseEvents(true);
+      return;
+    }
     // forward 穿透模式下能收到 mousemove 即说明鼠标在窗口内，立即显示解锁按钮；
     // 鼠标离开由主进程光标轮询兜底重置（规避 forward 模式下 mouseleave 不可靠）
     isHovered.value = true;
@@ -908,7 +914,7 @@ onMounted(async () => {
   disposeHoverListener =
     window.electron?.desktopLyric?.onHover((hovered) => {
       if (!isLocked.value) return;
-      isHovered.value = hovered;
+      isHovered.value = showUnlockButton.value && hovered;
     }) ?? null;
 
   // 启动 RAF
@@ -1030,7 +1036,11 @@ onBeforeUnmount(() => {
             音
           </button>
         </div>
-        <button class="menu-btn lock-btn" @click.stop="toggleLyricLock">
+        <button
+          v-if="!isLocked || showUnlockButton"
+          class="menu-btn lock-btn"
+          @click.stop="toggleLyricLock"
+        >
           <Icon :icon="isLocked ? iconLockOpen : iconLock" width="20" height="20" />
         </button>
         <button class="menu-btn" @click.stop="closeWindow">

@@ -34,6 +34,7 @@ export type DesktopLyricWindowBoundsUpdate = {
 export type DesktopLyricSettings = {
   enabled: boolean;
   locked: boolean;
+  showUnlockButton: boolean;
   autoShow: boolean;
   alwaysOnTop: boolean;
   wantTranslation: boolean;
@@ -65,6 +66,7 @@ export type DesktopLyricSettings = {
 export const DEFAULT_DESKTOP_LYRIC_SETTINGS: DesktopLyricSettings = {
   enabled: false,
   locked: false,
+  showUnlockButton: true,
   autoShow: true,
   alwaysOnTop: true,
   wantTranslation: false,
