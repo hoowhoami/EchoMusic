@@ -45,6 +45,36 @@ export interface ResolvedPlayableQueue {
   sourceCount: number;
 }
 
+const pendingReplaceQueueRequests = new Map<string, Promise<boolean>>();
+
+const hashPlaybackQueueIds = (songs: Song[]) => {
+  let hash = 5381;
+  for (const song of songs) {
+    const id = String(song.id ?? '');
+    for (let index = 0; index < id.length; index += 1) {
+      hash = ((hash << 5) + hash + id.charCodeAt(index)) >>> 0;
+    }
+    hash = ((hash << 5) + hash + 31) >>> 0;
+  }
+  return hash.toString(36);
+};
+
+const buildReplaceQueueRequestKey = (
+  resolved: ResolvedPlayableQueue,
+  requestedSong: Song | undefined,
+  options: SetPlaybackQueueOptions | undefined,
+  playMode: PlayMode | undefined,
+) =>
+  [
+    options?.queueId ? String(options.queueId) : '',
+    requestedSong ? String(requestedSong.id) : '',
+    String(resolved.firstPlayable?.id ?? ''),
+    playMode ?? '',
+    resolved.queue.length,
+    resolved.filteredInvalidCount,
+    hashPlaybackQueueIds(resolved.queue),
+  ].join('\u001f');
+
 export const resolvePlayableSongForRequest = (
   requestedSong: Song,
   playlist: Song[] = [],
@@ -91,27 +121,49 @@ export const replaceQueueAndPlay = async (
   options?: SetPlaybackQueueOptions,
 ): Promise<boolean> => {
   const resolved = resolvePlayableQueue(songs, filteredInvalidCount, requestedSong);
-  if (!resolved.firstPlayable) return false;
-  if (playlistStore.setPlaybackQueueWithOptions) {
-    playlistStore.setPlaybackQueueWithOptions(
-      resolved.queue,
-      resolved.filteredInvalidCount,
-      options,
-    );
-  } else {
-    playlistStore.setPlaybackQueue(resolved.queue, resolved.filteredInvalidCount);
-  }
+  const firstPlayable = resolved.firstPlayable;
+  if (!firstPlayable) return false;
 
-  let songToPlay = resolved.firstPlayable;
-  if (playerStore.playMode === 'random' && !requestedSong && resolved.queue.length > 0) {
-    const randomIndex = Math.floor(Math.random() * resolved.queue.length);
-    songToPlay = resolved.queue[randomIndex];
-  }
+  const requestKey = buildReplaceQueueRequestKey(
+    resolved,
+    requestedSong,
+    options,
+    playerStore.playMode,
+  );
+  const pendingRequest = pendingReplaceQueueRequests.get(requestKey);
+  if (pendingRequest) return pendingRequest;
 
-  await playerStore.playTrack(String(songToPlay.id), resolved.queue, {
-    sourceQueueId: options?.queueId ? String(options.queueId) : null,
-  });
-  return true;
+  const request = (async () => {
+    if (playlistStore.setPlaybackQueueWithOptions) {
+      playlistStore.setPlaybackQueueWithOptions(
+        resolved.queue,
+        resolved.filteredInvalidCount,
+        options,
+      );
+    } else {
+      playlistStore.setPlaybackQueue(resolved.queue, resolved.filteredInvalidCount);
+    }
+
+    let songToPlay = firstPlayable;
+    if (playerStore.playMode === 'random' && !requestedSong && resolved.queue.length > 0) {
+      const randomIndex = Math.floor(Math.random() * resolved.queue.length);
+      songToPlay = resolved.queue[randomIndex] ?? firstPlayable;
+    }
+
+    await playerStore.playTrack(String(songToPlay.id), resolved.queue, {
+      sourceQueueId: options?.queueId ? String(options.queueId) : null,
+    });
+    return true;
+  })();
+
+  pendingReplaceQueueRequests.set(requestKey, request);
+  try {
+    return await request;
+  } finally {
+    if (pendingReplaceQueueRequests.get(requestKey) === request) {
+      pendingReplaceQueueRequests.delete(requestKey);
+    }
+  }
 };
 
 export const playSongInContext = async (

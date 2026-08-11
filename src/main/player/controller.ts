@@ -350,7 +350,10 @@ export class PlayerController extends EventEmitter {
     this.state.idle = false;
     this.pendingLoadSeq = seq;
     try {
-      await this.enqueue(() => this.getAddonOrThrow().loadFile(url, seq));
+      await this.enqueue(() => {
+        if (this.pendingLoadSeq !== seq) return undefined;
+        return this.getAddonOrThrow().loadFile(url, seq);
+      });
     } catch (err) {
       if (this.pendingLoadSeq === seq) this.pendingLoadSeq = null;
       throw err;
@@ -364,7 +367,10 @@ export class PlayerController extends EventEmitter {
     this.state.idle = false;
     this.pendingLoadSeq = seq;
     try {
-      await this.enqueue(() => this.getAddonOrThrow().loadMkvTrack(url, trackId, seq));
+      await this.enqueue(() => {
+        if (this.pendingLoadSeq !== seq) return undefined;
+        return this.getAddonOrThrow().loadMkvTrack(url, trackId, seq);
+      });
     } catch (err) {
       if (this.pendingLoadSeq === seq) this.pendingLoadSeq = null;
       throw err;

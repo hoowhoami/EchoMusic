@@ -201,7 +201,8 @@ export const usePlayerStore = defineStore(
       state.currentResolvedSourceKind = resolved.sourceKind ?? 'catalog';
       track.audioUrl = playbackSource.url;
       const savedDuration = state.duration;
-      await engine.setSource(playbackSource);
+      await engine.setSource(playbackSource, { force: true });
+      if (requestSeq !== state.playbackRequestSeq) return;
       if (!state.duration && !engine.duration && savedDuration) state.duration = savedDuration;
       engine.applyTrackLoudness(resolved.loudness);
       engine.setPlaybackRate(state.playbackRate);
@@ -216,10 +217,12 @@ export const usePlayerStore = defineStore(
         if (actualDuration <= 0) {
           for (let i = 0; i < 10; i++) {
             await new Promise((r) => window.setTimeout(r, 50));
+            if (requestSeq !== state.playbackRequestSeq) return;
             actualDuration = engine.duration;
             if (actualDuration > 0) break;
           }
         }
+        if (requestSeq !== state.playbackRequestSeq) return;
         let safeTime = previousTime;
         if (actualDuration > 0 && previousTime >= actualDuration - 0.5) safeTime = 0;
         engine.seek(safeTime);
@@ -374,10 +377,20 @@ export const usePlayerStore = defineStore(
         }
         if (state.playMode === 'single') {
           if (state.currentPlaybackSource || state.currentAudioUrl) {
-            void engine
-              .setSource(state.currentPlaybackSource ?? state.currentAudioUrl)
-              .then(() => engine.play())
-              .catch((error) => logger.warn('PlayerStore', 'Loop restart failed:', error));
+            const restartTrackId = state.currentTrackId;
+            const restartSeq = state.playbackRequestSeq;
+            void (async () => {
+              await engine.setSource(state.currentPlaybackSource ?? state.currentAudioUrl, {
+                force: true,
+              });
+              if (
+                restartSeq !== state.playbackRequestSeq ||
+                String(state.currentTrackId ?? '') !== String(restartTrackId ?? '')
+              ) {
+                return;
+              }
+              await engine.play();
+            })().catch((error) => logger.warn('PlayerStore', 'Loop restart failed:', error));
           }
           return;
         }

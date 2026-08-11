@@ -212,6 +212,7 @@ export const createPlaybackManager = (
 
       try {
         await engine.reloadSource(nextSource);
+        if (String(state.currentTrackId ?? '') !== trackId) return false;
         await engine.play();
         if (String(state.currentTrackId ?? '') !== trackId) return false;
         if (targetPosition > 0) engine.seek(targetPosition);
@@ -699,7 +700,8 @@ export const createPlaybackManager = (
     applyResolvedAudioSource(track, resolved);
 
     try {
-      await engine.setSource(state.currentPlaybackSource ?? resolved.url);
+      await engine.setSource(state.currentPlaybackSource ?? resolved.url, { force: true });
+      if (requestSeq !== state.playbackRequestSeq) return;
       engine.applyTrackLoudness(resolved.loudness);
       engine.setLoopFile(state.playMode === 'single');
       if (autoPlay) {
@@ -786,7 +788,15 @@ export const createPlaybackManager = (
 
     try {
       const timeoutMs = (settingStore.playResumeTimeout ?? 5) * 1000;
+      const resumeSeq = state.playbackRequestSeq;
+      const resumeTrackId = state.currentTrackId;
       await engine.play({ timeoutMs: timeoutMs > 0 ? timeoutMs : undefined });
+      if (
+        resumeSeq !== state.playbackRequestSeq ||
+        String(state.currentTrackId ?? '') !== String(resumeTrackId ?? '')
+      ) {
+        return;
+      }
       setEnginePlaybackStatus(state, 'playing');
     } catch (error) {
       setPlaybackIntentPlayback(state, false);
@@ -1220,6 +1230,10 @@ export const createPlaybackManager = (
       }
       applyResolvedAudioSource(track, resolved);
       await engine.reloadSource(state.currentPlaybackSource ?? resolved.url);
+      if (String(state.currentTrackId) !== trackId) {
+        state.stallRecovering = false;
+        return;
+      }
       engine.applyTrackLoudness(resolved.loudness);
       await engine.play();
       if (String(state.currentTrackId) !== trackId) {
