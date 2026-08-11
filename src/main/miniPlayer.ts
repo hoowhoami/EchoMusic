@@ -4,10 +4,21 @@ import { join } from 'path';
 import type {
   MiniPlayerCommand,
   MiniPlayerExpandDirection,
+  MiniPlayerPlaybackPayload,
   MiniPlayerSnapshot,
   MiniPlayerSnapshotPatch,
 } from '../shared/mini-player';
 import { MINI_PLAYER_DIMENSIONS } from '../shared/mini-player';
+import {
+  acceptPlaybackBridgeRendererPayload,
+  beginPlaybackBridgeTransition,
+  createPlaybackBridgeState,
+  isSamePlaybackSnapshot,
+  patchPlaybackSnapshot,
+  shouldAcceptPlaybackSnapshot,
+  shouldApplyPlaybackBridgePatch,
+  type PlaybackSnapshotPatch,
+} from '../shared/playback';
 import { getMainWindow, hideMainWindow, showMainWindow } from './window';
 import { getActiveWindowMode, setActiveWindowMode } from './window/mode';
 import { getMainAppSettings, setMainAppSetting } from './storage/settings';
@@ -34,6 +45,7 @@ let suppressNextMiniPlayerReadyToShow = false;
 let collapseTimer: ReturnType<typeof setTimeout> | null = null;
 let miniPlayerRestackTimers: ReturnType<typeof setTimeout>[] = [];
 let miniPlayerDockTimers: ReturnType<typeof setTimeout>[] = [];
+const miniPlayerPlaybackBridge = createPlaybackBridgeState();
 
 let snapshot: MiniPlayerSnapshot = {
   playback: null,
@@ -66,6 +78,45 @@ const sendSnapshot = () => {
   } catch {
     // ignore if window destroyed during send
   }
+};
+
+const shouldAcceptPlaybackPayload = (
+  next: MiniPlayerPlaybackPayload | null,
+  current: MiniPlayerPlaybackPayload | null,
+) => shouldAcceptPlaybackSnapshot(next, current);
+
+const acceptRendererPlaybackPayload = (playback: MiniPlayerPlaybackPayload | null) =>
+  acceptPlaybackBridgeRendererPayload(miniPlayerPlaybackBridge, playback);
+
+const mergeNonTimingPlaybackFields = (
+  current: MiniPlayerPlaybackPayload,
+  next: MiniPlayerPlaybackPayload,
+): MiniPlayerPlaybackPayload => ({
+  ...next,
+  currentTime: current.currentTime,
+  duration: current.duration,
+  playbackRate: current.playbackRate,
+  isPlaying: current.isPlaying,
+  updatedAt: current.updatedAt,
+  seekTimestamp: current.seekTimestamp,
+  clock: current.clock,
+});
+
+export const beginMiniPlayerPlaybackBridgeTransition = (trackSeq?: number) => {
+  beginPlaybackBridgeTransition(miniPlayerPlaybackBridge, trackSeq);
+};
+
+export const patchMiniPlayerPlaybackFromPlayer = (patch: PlaybackSnapshotPatch) => {
+  const current = snapshot.playback;
+  if (!current || !canUseWindow(miniPlayerWindow)) return;
+  if (!shouldApplyPlaybackBridgePatch(miniPlayerPlaybackBridge, current, patch)) return;
+
+  const nextPlayback = patchPlaybackSnapshot(current, patch);
+  snapshot = {
+    ...snapshot,
+    playback: nextPlayback,
+  };
+  sendSnapshot();
 };
 
 const updateWindowSnapshot = (send = false) => {
@@ -670,10 +721,26 @@ export const registerMiniPlayerHandlers = () => {
       if (win && !win.isDestroyed() && event.sender === win.webContents) return;
       if (!payload) return;
       if (payload.playback !== undefined) {
-        snapshot = {
-          ...snapshot,
-          playback: payload.playback,
-        };
+        const currentPlayback = snapshot.playback;
+        const shouldAcceptPlayback =
+          shouldAcceptPlaybackPayload(payload.playback, currentPlayback) &&
+          acceptRendererPlaybackPayload(payload.playback);
+        if (shouldAcceptPlayback) {
+          miniPlayerPlaybackBridge.awaitingRenderer = false;
+          snapshot = {
+            ...snapshot,
+            playback: payload.playback,
+          };
+        } else if (
+          payload.playback &&
+          currentPlayback &&
+          isSamePlaybackSnapshot(payload.playback, currentPlayback)
+        ) {
+          snapshot = {
+            ...snapshot,
+            playback: mergeNonTimingPlaybackFields(currentPlayback, payload.playback),
+          };
+        }
       }
       if (payload.appearance !== undefined) {
         snapshot = {

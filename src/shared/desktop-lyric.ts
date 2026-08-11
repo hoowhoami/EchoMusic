@@ -5,6 +5,7 @@ export type { LyricCharacterPayload, LyricLinePayload } from './lyrics';
 
 export type DesktopLyricPlaybackPayload = {
   trackId: string;
+  trackSeq?: number;
   lyricHash: string;
   title: string;
   artist: string;

@@ -321,7 +321,7 @@ export interface IElectronAPI {
     command: (command: NowPlayingCommand) => void;
     onCommand: (func: (command: NowPlayingCommand) => void) => () => void;
   };
-  miniPlayer?: {
+  miniPlayer: {
     getSnapshot: () => Promise<MiniPlayerSnapshot>;
     show: () => Promise<MiniPlayerSnapshot>;
     hide: () => Promise<MiniPlayerSnapshot>;

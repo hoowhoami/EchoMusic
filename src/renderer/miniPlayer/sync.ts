@@ -129,6 +129,7 @@ const buildPlaybackPayload = (): MiniPlayerPlaybackPayload | null => {
   if (!track || !playerStore.currentTrackId) return null;
 
   const trackId = String(playerStore.currentTrackId);
+  const trackSeq = Number(playerStore.nativeTrackSeq || 0);
   const duration = Number(playerStore.duration || track.duration || 0);
   const currentTime = Number(playerStore.currentTime || 0);
   const playbackRate = Number(playerStore.playbackRate || 1);
@@ -138,6 +139,7 @@ const buildPlaybackPayload = (): MiniPlayerPlaybackPayload | null => {
 
   return {
     trackId,
+    ...(trackSeq > 0 ? { trackSeq } : {}),
     title: String(track.name || track.title || '未知歌曲'),
     artist: resolveSongArtist(track),
     album: String(track.album ?? track.albumName ?? ''),
@@ -313,6 +315,7 @@ export const initMiniPlayerSync = async () => {
     playbackRate,
     currentTrackId,
     currentTrackSnapshot,
+    nativeTrackSeq,
     volume,
     currentSourceQueueId,
     seekTimestamp,
@@ -442,6 +445,7 @@ export const initMiniPlayerSync = async () => {
         playbackRate,
         currentTrackId,
         currentTrackSnapshot,
+        nativeTrackSeq,
         volume,
         seekTimestamp,
         favorites,

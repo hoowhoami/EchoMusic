@@ -33,6 +33,7 @@ export type MiniPlayerCommand =
 
 export interface MiniPlayerPlaybackPayload {
   trackId: string;
+  trackSeq?: number;
   title: string;
   artist: string;
   album?: string;

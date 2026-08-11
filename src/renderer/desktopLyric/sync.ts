@@ -88,6 +88,7 @@ const buildPlaybackSignature = (
 ) =>
   [
     playback?.trackId ?? '',
+    stableNumberKey(playback?.trackSeq ?? 0),
     playback?.lyricHash ?? '',
     playback?.title ?? '',
     playback?.artist ?? '',
@@ -139,6 +140,7 @@ const buildPlaybackPayload = (): DesktopLyricPlaybackPayload | null => {
   if (!track || !playerStore.currentTrackId) return null;
   const lyricHash = String(track.hash ?? track.id ?? playerStore.currentTrackId ?? '').trim();
   const trackId = String(playerStore.currentTrackId);
+  const trackSeq = Number(playerStore.nativeTrackSeq || 0);
   const duration = Number(playerStore.duration || track.duration || 0);
   const currentTime = Number(playerStore.currentTime || 0);
   const isPlaying = Boolean(playerStore.isPlaying);
@@ -148,6 +150,7 @@ const buildPlaybackPayload = (): DesktopLyricPlaybackPayload | null => {
 
   return {
     trackId,
+    ...(trackSeq > 0 ? { trackSeq } : {}),
     lyricHash,
     title: String(track.name || '未知歌曲'),
     artist: String(
@@ -195,6 +198,7 @@ export const initDesktopLyricSync = async () => {
     playbackRate,
     currentTrackId,
     currentTrackSnapshot,
+    nativeTrackSeq,
     seekTimestamp,
   } = storeToRefs(playerStore);
   const { lines, currentIndex, wantTranslation, wantRomanization, loadedHash, currentTimeOffset } =
@@ -350,6 +354,7 @@ export const initDesktopLyricSync = async () => {
         playbackRate,
         currentTrackId,
         currentTrackSnapshot,
+        nativeTrackSeq,
         currentTimeOffset,
         seekTimestamp,
       ],
@@ -366,7 +371,7 @@ export const initDesktopLyricSync = async () => {
 
   stops.push(
     watch(
-      [lines, loadedHash, currentTrackId, currentTrackSnapshot],
+      [lines, loadedHash, currentTrackId, currentTrackSnapshot, nativeTrackSeq],
       () => {
         void syncLyricsSnapshot();
       },

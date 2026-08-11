@@ -4,9 +4,12 @@ import type { PluginTaskApi } from '../../../shared/tasks';
 import { createFontApi } from '../../../shared/font';
 import type { AudioSpectrumFrame, AudioSpectrumOptions } from '../../../shared/audio-spectrum';
 import type {
+  DesktopLyricCommand,
   DesktopLyricSettings,
+  DesktopLyricSnapshotMessage,
   DesktopLyricWindowBoundsUpdate,
 } from '../../../shared/desktop-lyric';
+import type { MiniPlayerCommand, MiniPlayerSnapshot } from '../../../shared/mini-player';
 import type {
   NowPlayingAppearancePayload,
   NowPlayingCommand,
@@ -418,16 +421,50 @@ export const createLyricEffectsApi = (descriptor: EchoPluginDescriptor, deps: Ru
   },
 });
 
-export const createDesktopLyricApi = () => ({
+export const createDesktopLyricApi = (descriptor: EchoPluginDescriptor, deps: RuntimeApiDeps) => ({
   getSnapshot: () => window.electron.desktopLyric.getSnapshot(),
   getWindow: () => window.electron.desktopLyric.getWindow(),
   show: () => window.electron.desktopLyric.show(),
   hide: () => window.electron.desktopLyric.hide(),
+  toggleLock: () => window.electron.desktopLyric.toggleLock(),
   updateSettings: (payload: Partial<DesktopLyricSettings>) =>
     window.electron.desktopLyric.updateSettings(payload),
   updateWindow: (payload: DesktopLyricWindowBoundsUpdate) =>
     window.electron.desktopLyric.updateWindow(payload),
+  onSnapshot: (handler: (message: DesktopLyricSnapshotMessage) => void) => {
+    const dispose = window.electron.desktopLyric.onSnapshot((message) =>
+      deps.runPluginCallback(descriptor.id, '桌面歌词快照事件', () => handler(message), undefined),
+    );
+    return deps.addDisposable(dispose);
+  },
+  command: (command: DesktopLyricCommand) => window.electron.desktopLyric.command(command),
 });
+
+export const createMiniPlayerApi = (descriptor: EchoPluginDescriptor, deps: RuntimeApiDeps) => {
+  const miniPlayer = window.electron.miniPlayer;
+
+  return {
+    getSnapshot: () => miniPlayer.getSnapshot(),
+    show: () => miniPlayer.show(),
+    hide: () => miniPlayer.hide(),
+    toggle: () => miniPlayer.toggle(),
+    setExpanded: (expanded: boolean) => miniPlayer.setExpanded(expanded),
+    setAlwaysOnTop: (alwaysOnTop: boolean) => miniPlayer.setAlwaysOnTop(alwaysOnTop),
+    getBounds: () => miniPlayer.getBounds(),
+    onSnapshot: (handler: (snapshot: MiniPlayerSnapshot) => void) => {
+      const dispose = miniPlayer.onSnapshot((snapshot) =>
+        deps.runPluginCallback(
+          descriptor.id,
+          'Mini 播放器快照事件',
+          () => handler(snapshot),
+          undefined,
+        ),
+      );
+      return deps.addDisposable(dispose);
+    },
+    command: (command: MiniPlayerCommand) => miniPlayer.command(command),
+  };
+};
 
 export const createAppearanceApi = (pluginId: string, deps: RuntimeApiDeps) => ({
   getSnapshot: async () => (await getNowPlayingSnapshot()).appearance,

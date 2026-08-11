@@ -2,12 +2,23 @@ import { BrowserWindow, app, nativeTheme, screen } from 'electron';
 import type {
   DesktopLyricCommand,
   DesktopLyricLockPhase,
+  DesktopLyricPlaybackPayload,
   DesktopLyricSettings,
   DesktopLyricSnapshot,
   DesktopLyricSnapshotMessage,
   DesktopLyricSnapshotPatch,
   DesktopLyricWindowBoundsUpdate,
 } from '../shared/desktop-lyric';
+import {
+  acceptPlaybackBridgeRendererPayload,
+  beginPlaybackBridgeTransition,
+  createPlaybackBridgeState,
+  isSamePlaybackSnapshot,
+  shouldAcceptPlaybackSnapshot,
+  patchPlaybackSnapshot,
+  shouldApplyPlaybackBridgePatch,
+  type PlaybackSnapshotPatch,
+} from '../shared/playback';
 import {
   constrainBoundsToDisplay,
   getDesktopLyricSettings,
@@ -60,6 +71,7 @@ let desktopLyricIgnoreMouseEventsKey: string | null = null;
 let desktopLyricHoverPollTimer: NodeJS.Timeout | null = null;
 let desktopLyricCursorInside = false;
 const DESKTOP_LYRIC_HOVER_POLL_INTERVAL_MS = 150;
+const desktopLyricPlaybackBridge = createPlaybackBridgeState();
 
 app.on('before-quit', () => {
   desktopLyricAppIsQuitting = true;
@@ -593,6 +605,51 @@ export const toggleDesktopLyricLock = async () => {
 
 export const getDesktopLyricSnapshot = () => snapshot;
 
+const shouldAcceptPlaybackPayload = (
+  next: DesktopLyricPlaybackPayload | null,
+  current: DesktopLyricPlaybackPayload | null,
+) =>
+  shouldAcceptPlaybackSnapshot(next, current, {
+    isSamePlayback: isSameDesktopLyricPlayback,
+  });
+
+const isSameDesktopLyricPlayback = (
+  next: DesktopLyricPlaybackPayload | null,
+  current: DesktopLyricPlaybackPayload | null,
+) =>
+  isSamePlaybackSnapshot(
+    next,
+    current,
+    (nextPlayback, currentPlayback) =>
+      nextPlayback.trackId === currentPlayback.trackId &&
+      nextPlayback.lyricHash === currentPlayback.lyricHash,
+  );
+
+const acceptRendererPlaybackPayload = (playback: DesktopLyricPlaybackPayload | null) =>
+  acceptPlaybackBridgeRendererPayload(desktopLyricPlaybackBridge, playback);
+
+const isUsableDesktopLyricWindow = () => {
+  const win = getDesktopLyricWindow();
+  return Boolean(win && !win.isDestroyed() && !win.webContents.isDestroyed());
+};
+
+export const beginDesktopLyricPlaybackBridgeTransition = (trackSeq?: number) => {
+  beginPlaybackBridgeTransition(desktopLyricPlaybackBridge, trackSeq);
+};
+
+export const patchDesktopLyricPlaybackFromPlayer = (patch: PlaybackSnapshotPatch) => {
+  const current = snapshot.playback;
+  if (!current || !isUsableDesktopLyricWindow()) return;
+  if (!shouldApplyPlaybackBridgePatch(desktopLyricPlaybackBridge, current, patch)) return;
+
+  const nextPlayback = patchPlaybackSnapshot(current, patch);
+  snapshot = {
+    ...snapshot,
+    playback: nextPlayback,
+  };
+  sendSnapshot('desktop', { playback: nextPlayback });
+};
+
 export const registerDesktopLyricHandlers = () => {
   ipcRegistry.registerHandler('desktop-lyric:get-snapshot', () => getDesktopLyricSnapshot());
 
@@ -635,7 +692,12 @@ export const registerDesktopLyricHandlers = () => {
       if (!payload) return;
       let shouldRefreshMenus = false;
       let desktopPatch: DesktopLyricSnapshotPatch = {};
-      if (payload.playback !== undefined) {
+      if (
+        payload.playback !== undefined &&
+        shouldAcceptPlaybackPayload(payload.playback, snapshot.playback) &&
+        acceptRendererPlaybackPayload(payload.playback)
+      ) {
+        desktopLyricPlaybackBridge.awaitingRenderer = false;
         const nextLyricsTrackId = payload.playback?.lyricHash || payload.playback?.trackId || null;
         const trackChanged = nextLyricsTrackId !== snapshot.lyricsTrackId;
         snapshot = {

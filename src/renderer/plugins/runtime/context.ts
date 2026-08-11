@@ -16,10 +16,6 @@ import type {
   PluginShowOnTopOptions,
   PluginHostWindowTarget,
 } from '../../../shared/plugins';
-import type {
-  DesktopLyricSettings,
-  DesktopLyricWindowBoundsUpdate,
-} from '../../../shared/desktop-lyric';
 import * as icons from '@/icons';
 import { usePlayerStore } from '@/stores/player';
 import type { PlayerEventName, PlayerEventPayload } from '@/stores/player/events';
@@ -38,6 +34,7 @@ import {
   createKugouVerificationApi,
   createLyricEffectsApi,
   createLyricsApi,
+  createMiniPlayerApi,
   createPlayerApi,
   createPlaylistApi,
   createTaskApi,
@@ -119,18 +116,8 @@ export interface EchoPluginContext {
     restoreDefaultWindowIcon: () => Promise<unknown>;
   };
   nowPlaying: Window['electron']['nowPlaying'];
-  desktopLyric: {
-    getSnapshot: () => ReturnType<Window['electron']['desktopLyric']['getSnapshot']>;
-    getWindow: () => ReturnType<Window['electron']['desktopLyric']['getWindow']>;
-    show: () => ReturnType<Window['electron']['desktopLyric']['show']>;
-    hide: () => ReturnType<Window['electron']['desktopLyric']['hide']>;
-    updateSettings: (
-      payload: Partial<DesktopLyricSettings>,
-    ) => ReturnType<Window['electron']['desktopLyric']['updateSettings']>;
-    updateWindow: (
-      payload: DesktopLyricWindowBoundsUpdate,
-    ) => ReturnType<Window['electron']['desktopLyric']['updateWindow']>;
-  };
+  desktopLyric: ReturnType<typeof createDesktopLyricApi>;
+  miniPlayer: ReturnType<typeof createMiniPlayerApi>;
   windows: {
     show: (windowId: string, options?: PluginWindowShowOptions) => Promise<unknown>;
     hide: (windowId: string) => Promise<unknown>;
@@ -304,7 +291,8 @@ export const createPluginContext = (
         Promise.resolve({ ok: false, error: '图标 API 不可用' }),
     },
     nowPlaying: window.electron.nowPlaying,
-    desktopLyric: createDesktopLyricApi(),
+    desktopLyric: createDesktopLyricApi(descriptor, apiDeps),
+    miniPlayer: createMiniPlayerApi(descriptor, apiDeps),
     windows: createPluginWindowsApi(descriptor.id),
     host: createPluginHostApi(),
     toast: createToastApi(),
