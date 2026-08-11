@@ -45,6 +45,9 @@ const toastStore = useToastStore();
 const themeStore = useThemeStore();
 
 const isLoggedIn = computed(() => userStore.isLoggedIn);
+const currentUserKey = computed(() =>
+  String(userStore.info?.userid ?? userStore.info?.userId ?? ''),
+);
 const activeTab = ref('songs');
 const sliverHeaderRef = ref<InstanceType<typeof SliverHeader> | null>(null);
 const { tabsTop, tabsMinHeight } = useStickyTabsLayout(sliverHeaderRef);
@@ -132,6 +135,11 @@ const followedSingers = shallowRef<ArtistMeta[]>([]);
 const followedUsers = shallowRef<ArtistMeta[]>([]);
 const followedLoading = ref(false);
 const followedLoaded = ref(false);
+let favoritesLoadedUserKey = '';
+let accountGeneration = 0;
+
+const isCurrentAccountRequest = (generation: number, userKey: string) =>
+  generation === accountGeneration && userKey === currentUserKey.value && isLoggedIn.value;
 
 const filteredSingers = computed(() => {
   const query = singerSearchQuery.value.trim().toLowerCase();
@@ -169,10 +177,15 @@ const userCards = computed(() =>
 );
 
 const fetchFollowed = async () => {
+  if (!isLoggedIn.value) return;
+  if (!currentUserKey.value) return;
   if (followedLoaded.value || followedLoading.value) return;
+  const requestGeneration = accountGeneration;
+  const requestUserKey = currentUserKey.value;
   followedLoading.value = true;
   try {
     const res = await getUserFollow();
+    if (!isCurrentAccountRequest(requestGeneration, requestUserKey)) return;
     if (res && typeof res === 'object' && 'data' in res) {
       const data = (res as { data?: { lists?: unknown[] } }).data;
       const lists = Array.isArray(data?.lists) ? data.lists : [];
@@ -206,11 +219,22 @@ const fetchFollowed = async () => {
     }
     followedLoaded.value = true;
   } catch {
+    if (!isCurrentAccountRequest(requestGeneration, requestUserKey)) return;
     toastStore.loadFailed('关注列表');
   } finally {
+    if (!isCurrentAccountRequest(requestGeneration, requestUserKey)) return;
     followedLoading.value = false;
   }
 };
+
+const resetFollowed = () => {
+  followedSingers.value = [];
+  followedUsers.value = [];
+  followedLoaded.value = false;
+  followedLoading.value = false;
+  singerSearchQuery.value = '';
+};
+
 // ========== 专辑 Tab ==========
 const albumSearchQuery = ref('');
 
@@ -256,15 +280,21 @@ const videosHasMore = ref(true);
 const VIDEOS_PAGE_SIZE = 30;
 
 const fetchVideos = async (reset = false) => {
+  if (!isLoggedIn.value) return;
+  if (!currentUserKey.value) return;
   if (videosLoading.value) return;
   if (!reset && !videosHasMore.value) return;
+  const requestGeneration = accountGeneration;
+  const requestUserKey = currentUserKey.value;
+  const requestPage = reset ? 1 : videosPage.value;
   if (reset) {
     videosPage.value = 1;
     videosHasMore.value = true;
   }
   videosLoading.value = true;
   try {
-    const res = await getUserVideoCollect(videosPage.value, VIDEOS_PAGE_SIZE);
+    const res = await getUserVideoCollect(requestPage, VIDEOS_PAGE_SIZE);
+    if (!isCurrentAccountRequest(requestGeneration, requestUserKey)) return;
     if (res && typeof res === 'object' && 'data' in res) {
       const data = (res as { data?: { info?: unknown[]; ctotal?: number } }).data;
       const info = Array.isArray(data?.info) ? data.info : [];
@@ -293,15 +323,25 @@ const fetchVideos = async (reset = false) => {
         videos.value = [...videos.value, ...mapped];
       }
       videosHasMore.value = mapped.length >= VIDEOS_PAGE_SIZE;
-      videosPage.value += 1;
+      videosPage.value = requestPage + 1;
       videosLoaded.value = true;
     }
   } catch {
+    if (!isCurrentAccountRequest(requestGeneration, requestUserKey)) return;
     toastStore.loadFailed('收藏视频');
     videosHasMore.value = false;
   } finally {
+    if (!isCurrentAccountRequest(requestGeneration, requestUserKey)) return;
     videosLoading.value = false;
   }
+};
+
+const resetVideos = () => {
+  videos.value = [];
+  videosLoading.value = false;
+  videosLoaded.value = false;
+  videosPage.value = 1;
+  videosHasMore.value = true;
 };
 
 // ========== 滚动加载 ==========
@@ -348,10 +388,10 @@ watch(scrollContainerRef, () => {
 // ========== Tab 切换懒加载 ==========
 const handleTabChange = (value: string | number) => {
   activeTab.value = String(value);
-  if ((value === 'singers' || value === 'users') && !followedLoaded.value) {
+  if ((activeTab.value === 'singers' || activeTab.value === 'users') && !followedLoaded.value) {
     void fetchFollowed();
   }
-  if (value === 'videos' && !videosLoaded.value) {
+  if (activeTab.value === 'videos' && !videosLoaded.value) {
     void fetchVideos(true);
   }
 };
@@ -359,6 +399,12 @@ const handleTabChange = (value: string | number) => {
 // ========== 生命周期 ==========
 const refreshFavorites = () => {
   if (!isLoggedIn.value) return;
+  if (!currentUserKey.value) return;
+  if (favoritesLoadedUserKey !== currentUserKey.value) {
+    favoritesLoadedUserKey = currentUserKey.value;
+    void playlistStore.fetchUserPlaylists();
+    return;
+  }
   if (!playlistStore.likedPlaylistQueryId) {
     void playlistStore.fetchUserPlaylists();
     return;
@@ -366,10 +412,22 @@ const refreshFavorites = () => {
   void playlistStore.fetchLikedPlaylistSongs();
 };
 
+const loadActiveTabData = () => {
+  if (!isLoggedIn.value) return;
+  if (!currentUserKey.value) return;
+  if ((activeTab.value === 'singers' || activeTab.value === 'users') && !followedLoaded.value) {
+    void fetchFollowed();
+  }
+  if (activeTab.value === 'videos' && !videosLoaded.value) {
+    void fetchVideos(true);
+  }
+};
+
 onMounted(async () => {
   refreshFavorites();
   await nextTick();
   setupLoadMoreObserver();
+  loadActiveTabData();
 });
 
 onUnmounted(() => {
@@ -377,13 +435,23 @@ onUnmounted(() => {
   loadMoreObserver = null;
 });
 
-watch(isLoggedIn, (value) => {
-  if (value) {
+watch(
+  () => [isLoggedIn.value, currentUserKey.value] as const,
+  ([loggedIn]) => {
+    accountGeneration += 1;
+    if (!loggedIn) {
+      favoritesLoadedUserKey = '';
+      resetFollowed();
+      resetVideos();
+      return;
+    }
+
+    resetFollowed();
+    resetVideos();
     refreshFavorites();
-    followedLoaded.value = false;
-    videosLoaded.value = false;
-  }
-});
+    loadActiveTabData();
+  },
+);
 </script>
 
 <template>
