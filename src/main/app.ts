@@ -23,6 +23,7 @@ import { clearPluginRuntimeSession, setPluginSafeMode } from './plugins';
 import { applyDesktopAppIcon, applyTaskbarShortcutIcon, refreshAppIconConfig } from './appIcons';
 import { setupThumbarButtons } from './thumbar';
 import { setupTaskbarThumbnail, destroyTaskbarThumbnail } from './taskbarThumbnail';
+import { refreshTaskbarProgress } from './taskbarProgress';
 import { configureApplicationMenu, configureWebContentsShortcuts } from './applicationMenu';
 import { logMainMemory } from './diagnostics/memory';
 import {
@@ -71,6 +72,7 @@ const installWindowsTrayRecovery = () => {
 
   mainWindow.hookWindowMessage(WM_TASKBARCREATED, () => {
     refreshTray();
+    refreshTaskbarProgress();
     // Windows 资源管理器重启后需要重新设置 thumbar 按钮
     try {
       setupThumbarButtons(mainWindow);
