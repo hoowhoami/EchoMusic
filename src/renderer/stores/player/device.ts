@@ -53,6 +53,20 @@ export const createDeviceManager = (
   const isConcreteOutputDevice = (device: PlayerAudioDevice) =>
     Boolean(device.name && device.name !== 'auto' && device.name !== 'null');
 
+  const isConcreteOutputDeviceId = (deviceId: string) =>
+    Boolean(deviceId && deviceId !== 'default' && deviceId !== 'auto' && deviceId !== 'null');
+
+  const getOutputDeviceLabel = (deviceId: string) =>
+    settingStore.outputDevices.find((item) => item.value === deviceId)?.label || deviceId;
+
+  const getConcreteFallbackOutputDeviceId = (unavailableDeviceId: string) =>
+    settingStore.outputDevices.find(
+      (item) =>
+        !item.disabled &&
+        isConcreteOutputDeviceId(item.value) &&
+        item.value !== unavailableDeviceId,
+    )?.value ?? null;
+
   const outputDeviceErrorCodes = new Set<PlayerErrorCode>([
     'output-config',
     'output-device-unavailable',
@@ -80,8 +94,18 @@ export const createDeviceManager = (
       normalized.includes('output stream') ||
       normalized.includes('output config') ||
       normalized.includes('exclusive output') ||
+      normalized.includes('no audio output device available') ||
+      normalized.includes('failed to get default wasapi output device') ||
       normalized.includes('requested device is no longer available') ||
       normalized.includes('device is no longer available')
+    );
+  };
+
+  const isNoOutputDeviceAvailableError = (error: PlayerErrorPayload) => {
+    const normalized = (error.message || '').toLowerCase();
+    return (
+      normalized.includes('no audio output device available') ||
+      normalized.includes('failed to get default wasapi output device')
     );
   };
 
@@ -136,7 +160,16 @@ export const createDeviceManager = (
 
   const pauseForOutputDeviceDisconnect = (message: string) => {
     if (getPlaybackIsPlaying(state)) void engine.pause();
+    state.lastError = 'output-device-unavailable';
+    state.playbackNotice = {
+      code: 'output-device-unavailable',
+      title: '输出设备不可用',
+      reason: message.replace(/，?已暂停播放。?$/, ''),
+      detail: '连接或启用音频输出设备后重试',
+      trackId: state.currentTrackId ? String(state.currentTrackId) : null,
+    };
     state.awaitingTrackLoad = false;
+    state.stallRecovering = false;
     setPlaybackIntentPlayback(state, false);
     setEnginePlaybackStatus(state, 'paused');
     settingStore.syncPreventSleep(false);
@@ -171,7 +204,7 @@ export const createDeviceManager = (
         isDeviceRecoveryReason(error.reason) &&
         !applyingOutputDevice &&
         !nativeOutputReconfigActive;
-      if (!isEscalatedDeviceError) return true;
+      if (!isEscalatedDeviceError && !isNoOutputDeviceAvailableError(error)) return true;
     }
 
     if (isExclusiveOutputError(error) && (await recoverFromExclusiveOutputError())) return true;
@@ -263,13 +296,26 @@ export const createDeviceManager = (
         settingStore.setOutputDeviceStatus('fallback', '系统默认输出设备不可用。');
         return false;
       }
-      const fallbackApplied = await engine.setOutputDevice('auto');
-      if (fallbackApplied) state.appliedOutputDeviceId = 'default';
-      if (persistSelection && fallbackApplied) settingStore.outputDevice = 'default';
+      let fallbackDeviceId = 'default';
+      let fallbackApplied = await engine.setOutputDevice('auto');
+      if (!fallbackApplied) {
+        const concreteFallbackDeviceId = getConcreteFallbackOutputDeviceId(deviceId);
+        if (concreteFallbackDeviceId) {
+          const concreteFallbackApplied = await engine.setOutputDevice(concreteFallbackDeviceId);
+          if (concreteFallbackApplied) {
+            fallbackDeviceId = concreteFallbackDeviceId;
+            fallbackApplied = true;
+          }
+        }
+      }
+      if (fallbackApplied) state.appliedOutputDeviceId = fallbackDeviceId;
+      if (persistSelection && fallbackApplied) settingStore.outputDevice = fallbackDeviceId;
       settingStore.setOutputDeviceStatus(
         'fallback',
         fallbackApplied
-          ? '当前设备不支持切换到所选输出，已回退。'
+          ? fallbackDeviceId === 'default'
+            ? '当前设备不支持切换到所选输出，已回退。'
+            : `当前设备不支持切换到所选输出，已临时切换到 ${getOutputDeviceLabel(fallbackDeviceId)}。`
           : '所选输出设备不可用，且系统默认输出设备不可用。',
       );
       if (fallbackApplied) await recoverPlaybackStatusAfterOutputChange();
@@ -328,7 +374,7 @@ export const createDeviceManager = (
 
       if (!Array.isArray(playerDevices) || playerDevices.length === 0) {
         settingStore.outputDevices = fallbackOptions;
-        if (getPlaybackIsPlaying(state) && !isIntentionalOutputReconfigActive()) {
+        if (getPlaybackIsPlaying(state) || state.playbackIntent.phase === 'loading') {
           pauseForOutputDeviceDisconnect('未检测到可用输出设备，已暂停播放。');
         } else {
           settingStore.setOutputDeviceStatus('fallback', '未检测到可用输出设备。');
