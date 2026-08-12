@@ -20,6 +20,7 @@ const accentPresetValues = ACCENT_PRESETS.map((item) => item.color);
 const title = sectionTitles.appearance;
 const accentPresets = ACCENT_PRESETS;
 const resolvedTitle = computed(() => title.label);
+const isWindows = computed(() => window.electron?.platform === 'win32');
 </script>
 
 <template>
@@ -136,34 +137,36 @@ const resolvedTitle = computed(() => title.label);
       <Switch v-model="settingStore.showDesktopLyricStatus" />
     </div>
     <div class="settings-divider"></div>
-    <div class="settings-item">
-      <div class="space-y-1">
-        <h3 class="font-semibold">任务栏封面预览</h3>
-        <p class="text-sm text-text-secondary">在任务栏窗口以及后台窗口显示封面和歌曲标题</p>
+    <template v-if="isWindows">
+      <div class="settings-item">
+        <div class="space-y-1">
+          <h3 class="font-semibold">任务栏封面预览</h3>
+          <p class="text-sm text-text-secondary">在任务栏窗口以及后台窗口显示封面和歌曲标题</p>
+        </div>
+        <Switch
+          :model-value="settingStore.taskbarCoverPreview"
+          @update:model-value="
+            settingStore.taskbarCoverPreview = Boolean($event);
+            settingStore.syncTaskbarCoverPreview();
+          "
+        />
       </div>
-      <Switch
-        :model-value="settingStore.taskbarCoverPreview"
-        @update:model-value="
-          settingStore.taskbarCoverPreview = Boolean($event);
-          settingStore.syncTaskbarCoverPreview();
-        "
-      />
-    </div>
-    <div class="settings-divider"></div>
-    <div class="settings-item">
-      <div class="space-y-1">
-        <h3 class="font-semibold">任务栏播放进度条</h3>
-        <p class="text-sm text-text-secondary">在任务栏显示播放进度</p>
+      <div class="settings-divider"></div>
+      <div class="settings-item">
+        <div class="space-y-1">
+          <h3 class="font-semibold">任务栏播放进度条</h3>
+          <p class="text-sm text-text-secondary">在任务栏显示播放进度</p>
+        </div>
+        <Switch
+          :model-value="settingStore.taskbarProgress"
+          @update:model-value="
+            settingStore.taskbarProgress = Boolean($event);
+            settingStore.syncTaskbarProgress();
+          "
+        />
       </div>
-      <Switch
-        :model-value="settingStore.taskbarProgress"
-        @update:model-value="
-          settingStore.taskbarProgress = Boolean($event);
-          settingStore.syncTaskbarProgress();
-        "
-      />
-    </div>
-    <div class="settings-divider"></div>
+      <div class="settings-divider"></div>
+    </template>
     <div class="settings-item">
       <div class="space-y-1">
         <h3 class="font-semibold">播放列表计数</h3>
