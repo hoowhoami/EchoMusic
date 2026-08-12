@@ -21,6 +21,14 @@ use std::time::Duration;
 #[cfg(test)]
 const CACHE_PAUSE_WAIT_SECS: f64 = 1.0;
 const CACHE_STATE_INACTIVE_BUCKET: u32 = u32::MAX;
+// Upper bound for the adaptive multiplier applied on top of cache_pause_wait_secs
+// when paused for buffering. Must stay <= CACHE_PAUSE_DECODED_READAHEAD_MULTIPLIER
+// so the resulting resume threshold always fits inside the decoded queue.
+const MAX_ADAPTIVE_CACHE_PAUSE_MULTIPLIER: f64 = 5.0;
+// Fixed readahead scale applied to the decoded queue capacity in cache_pause mode.
+// Must stay >= MAX_ADAPTIVE_CACHE_PAUSE_MULTIPLIER so max_buffering_resume_samples
+// can cover the adaptive resume target.
+const CACHE_PAUSE_DECODED_READAHEAD_MULTIPLIER: f64 = 5.0;
 
 struct GaplessBoundary {
     remaining_samples: usize,
@@ -108,8 +116,15 @@ impl SharedAudio {
         let mix_sample_rate = mix_format.sample_rate.max(1);
         let mix_channels = mix_format.channels.max(1);
         let cache_pause_wait_secs = cache_pause_wait_secs.clamp(0.0, 3_600_000.0);
+        // Capacity headroom only: initial resume still uses the adaptive
+        // threshold, normally 1x cache_pause_wait_secs until underruns/slow decode.
+        let decoded_readahead_secs = if cache_pause {
+            cache_pause_wait_secs * CACHE_PAUSE_DECODED_READAHEAD_MULTIPLIER
+        } else {
+            cache_pause_wait_secs
+        };
         let decoded_queue_capacity_frames = ((mix_sample_rate as f64 * buffer_secs) as usize)
-            .max((mix_sample_rate as f64 * cache_pause_wait_secs) as usize);
+            .max((mix_sample_rate as f64 * decoded_readahead_secs) as usize);
         let output_queue_capacity_frames =
             ((mix_sample_rate as f64 * buffer_secs) as usize).max(mix_sample_rate as usize / 20);
         let output_queue_capacity = output_queue_capacity_frames
@@ -648,6 +663,10 @@ impl SharedAudio {
         let chunk_samples = self.output_pop_chunk_samples();
         if output.len() > chunk_samples {
             output.fill(0.0);
+            let queued_samples = self.realtime_output.buffered_samples();
+            if self.should_hold_for_buffering(queued_samples, output.len()) {
+                return 0;
+            }
             let mut consumed_frames = 0usize;
             for chunk in output.chunks_mut(chunk_samples) {
                 let frames = self.pop_chunk_into(chunk);
@@ -823,6 +842,9 @@ impl SharedAudio {
     }
 
     fn output_underrun_resume_threshold(&self, requested_samples: usize) -> usize {
+        if self.cache_pause {
+            return self.cache_pause_resume_threshold(requested_samples);
+        }
         requested_samples.max(self.output_queue_capacity)
     }
 
@@ -860,7 +882,7 @@ impl SharedAudio {
             1.0
         };
 
-        (underrun_scale.max(throughput_scale)).clamp(1.0, 5.0)
+        (underrun_scale.max(throughput_scale)).clamp(1.0, MAX_ADAPTIVE_CACHE_PAUSE_MULTIPLIER)
     }
 
     fn total_buffered_output_samples(&self, queued_output_samples: usize) -> usize {
@@ -1589,7 +1611,7 @@ mod tests {
     }
 
     #[test]
-    fn adaptive_resume_threshold_is_capped_by_queue_capacity() {
+    fn adaptive_resume_threshold_uses_decoded_readahead_capacity() {
         let shared = SharedAudio::new(
             MixFormat::stereo_f32(100),
             0.1,
@@ -1598,7 +1620,7 @@ mod tests {
         );
         shared.update_decode_throughput_ratio(400);
 
-        assert_eq!(shared.cache_pause_resume_threshold(4), 220);
+        assert_eq!(shared.cache_pause_resume_threshold(4), 600);
     }
 
     #[test]
@@ -1729,7 +1751,7 @@ mod tests {
         for _ in 0..20 {
             shared.record_output_underrun();
         }
-        assert_eq!(shared.cache_pause_resume_threshold(4), 220);
+        assert_eq!(shared.cache_pause_resume_threshold(4), 600);
         assert!(shared.push_samples(&[0.1, 0.2, 0.3, 0.4]));
         shared.mark_gapless_boundary(TrackSwitchInfo {
             url: "next.flac".to_string(),
@@ -1773,7 +1795,7 @@ mod tests {
         );
 
         assert_eq!(shared.output_queue_capacity, 40);
-        assert_eq!(shared.decoded_queue_capacity_frames, 100);
+        assert_eq!(shared.decoded_queue_capacity_frames, 500);
     }
 
     #[test]
@@ -1786,11 +1808,11 @@ mod tests {
         );
 
         assert_eq!(shared.output_queue_capacity, 400);
-        assert_eq!(shared.decoded_queue_capacity_frames, 200);
+        assert_eq!(shared.decoded_queue_capacity_frames, 500);
     }
 
     #[test]
-    fn oversized_output_request_consumes_software_buffer_before_silence() {
+    fn oversized_output_request_waits_instead_of_partial_silence() {
         let shared = SharedAudio::new(
             MixFormat::stereo_f32(100),
             0.2,
@@ -1802,10 +1824,30 @@ mod tests {
         let mut output = [1.0f32; 80];
         let frames = shared.pop_into(&mut output);
 
+        assert_eq!(frames, 0);
+        assert_eq!(output, [0.0; 80]);
+        assert_eq!(shared.output_underrun_count(), 1);
+        assert!(shared.underflow_buffering.load(Ordering::Acquire));
+    }
+
+    #[test]
+    fn oversized_output_request_can_drain_at_eof() {
+        let shared = SharedAudio::new(
+            MixFormat::stereo_f32(100),
+            0.2,
+            8.0,
+            &DspSettings::default(),
+        );
+        assert!(shared.push_samples(&vec![0.5; 40]));
+        shared.mark_eof();
+
+        let mut output = [1.0f32; 80];
+        let frames = shared.pop_into(&mut output);
+
         assert_eq!(frames, 20);
         assert_eq!(&output[..40], &[0.5; 40]);
         assert_eq!(&output[40..], &[0.0; 40]);
-        assert_eq!(shared.output_underrun_count(), 1);
+        assert_eq!(shared.output_underrun_count(), 0);
     }
 
     #[test]
@@ -1871,7 +1913,7 @@ mod tests {
         for _ in 0..20 {
             shared.record_output_underrun();
         }
-        assert_eq!(shared.cache_pause_resume_threshold(4), 240);
+        assert_eq!(shared.cache_pause_resume_threshold(4), 600);
 
         shared.reset_for_decode_resume(12.0, &DspSettings::default());
 
