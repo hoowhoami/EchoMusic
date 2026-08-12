@@ -77,9 +77,12 @@ const location = computed(() => {
 // 格式化逻辑
 const formatLeLing = (rtime: any) => {
   if (!rtime) return '未知';
-  const start = new Date(parseInt(rtime) * 1000);
+  const timestamp = Number.parseInt(String(rtime), 10);
+  if (!Number.isFinite(timestamp) || timestamp <= 0) return '未知';
+  const start = new Date(timestamp * 1000);
   const diff = Date.now() - start.getTime();
-  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  if (diff < 0) return '未知';
+  const days = Math.max(1, Math.floor(diff / (1000 * 60 * 60 * 24)));
   if (days > 365) return `${Math.floor(days / 365)} 年`;
   if (days > 30) return `${Math.floor(days / 30)} 个月`;
   return `${days} 天`;

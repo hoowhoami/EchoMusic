@@ -1,3 +1,4 @@
+use crate::audio_graph::soft_limit_sample;
 #[cfg(not(target_os = "windows"))]
 use crate::device::{device_display_name, select_output_device_checked};
 #[cfg(not(target_os = "windows"))]
@@ -788,8 +789,9 @@ fn process_output_signal(
     volume: f32,
     shared: &SharedAudio,
 ) {
+    let effective_volume = volume * shared.normalization_gain();
     for sample in output.iter_mut() {
-        *sample = (*sample * volume).clamp(-1.0, 1.0);
+        *sample = soft_limit_sample(*sample * effective_volume);
     }
     shared.set_spectrum_sample_rate(sample_rate);
     if let Ok(mut ring) = shared.spectrum_ring.try_lock() {
@@ -1069,6 +1071,53 @@ mod tests {
             classify_cpal_output_error(ErrorKind::Xrun, "auto"),
             CpalOutputErrorAction::Ignore { reason: "xrun" }
         );
+    }
+
+    #[test]
+    fn output_signal_applies_latest_normalization_gain() {
+        let mix_format = MixFormat::stereo_f32(48_000);
+        let mut settings = DspSettings::default();
+        let shared = SharedAudio::new(mix_format, 0.2, 8.0, &settings);
+        let mut output = [0.25, -0.25];
+
+        settings.normalization_gain_db = 6.0;
+        shared.update_dsp_settings(&settings);
+        process_output_signal(&mut output, 2, 48_000, 0.5, &shared);
+
+        let expected = 0.25 * 0.5 * settings.normalization_gain_linear();
+        assert!((output[0] - expected).abs() < 0.00001);
+        assert!((output[1] + expected).abs() < 0.00001);
+    }
+
+    #[test]
+    fn output_signal_soft_limits_normalization_gain_overload() {
+        let mix_format = MixFormat::stereo_f32(48_000);
+        let mut settings = DspSettings::default();
+        let shared = SharedAudio::new(mix_format, 0.2, 8.0, &settings);
+        let mut output = [0.9, -0.9];
+
+        settings.normalization_gain_db = 3.0;
+        shared.update_dsp_settings(&settings);
+        process_output_signal(&mut output, 2, 48_000, 1.0, &shared);
+
+        assert!(output[0] < 1.0);
+        assert!(output[0] > 0.95);
+        assert!(output[1] > -1.0);
+        assert!(output[1] < -0.95);
+    }
+
+    #[test]
+    fn output_signal_ignores_non_finite_normalization_gain() {
+        let mix_format = MixFormat::stereo_f32(48_000);
+        let mut settings = DspSettings::default();
+        let shared = SharedAudio::new(mix_format, 0.2, 8.0, &settings);
+        let mut output = [0.25, -0.25];
+
+        settings.normalization_gain_db = f32::NAN;
+        shared.update_dsp_settings(&settings);
+        process_output_signal(&mut output, 2, 48_000, 0.5, &shared);
+
+        assert_eq!(output, [0.125, -0.125]);
     }
 
     #[test]

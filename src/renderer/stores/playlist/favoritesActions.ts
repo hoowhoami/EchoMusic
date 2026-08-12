@@ -82,10 +82,22 @@ type FavoritesStoreShape = {
     action: 'add' | 'remove' | 'refresh',
     songs?: readonly Song[],
   ) => void;
+  userCollectionsGeneration: number;
   userPlaylists: PlaylistMeta[];
 };
 
 export const favoritesActions = {
+  resetUserCollections(this: FavoritesStoreShape) {
+    this.userCollectionsGeneration += 1;
+    favoritesLoader?.abort();
+    favoritesLoader = null;
+    localPlaylistSongsCache.clear();
+    localPlaylistSongsComplete.clear();
+    this.favorites = [];
+    this.favoritesLoaded = false;
+    this.favoritesLoading = false;
+    this.userPlaylists = [];
+  },
   async ensureLikedPlaylistReady(this: FavoritesStoreShape) {
     if (this.likedPlaylistQueryId || this.likedPlaylistListId) {
       return {
@@ -170,18 +182,10 @@ export const favoritesActions = {
       favoritesLoader.abort();
     }
 
+    const requestGeneration = this.userCollectionsGeneration;
     const queryId = String(likedQueryId);
     this.favoritesLoaded = false;
     this.favoritesLoading = true;
-
-    const updateFavorites = (items: readonly Song[], loaded = false) => {
-      this.favorites = dedupeSongs(items.slice());
-      if (loaded) {
-        this.favoritesLoaded = true;
-        this.favoritesLoading = false;
-      }
-    };
-
     const loader = new PagedSongLoader<Song>(
       async (page, pageSize) => {
         const response = await getPlaylistTracks(queryId, page, pageSize);
@@ -199,6 +203,18 @@ export const favoritesActions = {
         onComplete: (allItems) => updateFavorites(allItems, true),
       },
     );
+
+    const isCurrentLoader = () =>
+      favoritesLoader === loader && this.userCollectionsGeneration === requestGeneration;
+
+    const updateFavorites = (items: readonly Song[], loaded = false) => {
+      if (!isCurrentLoader()) return;
+      this.favorites = dedupeSongs(items.slice());
+      if (loaded) {
+        this.favoritesLoaded = true;
+        this.favoritesLoading = false;
+      }
+    };
 
     favoritesLoader = loader;
 

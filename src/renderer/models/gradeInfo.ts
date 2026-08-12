@@ -3,7 +3,7 @@
  *
  * 服务端 user_grade_info.js 支持两种模式：
  *  - 查询（默认）：返回以下字段，用于刷新等级/积分展示
- *  - 上报：传入 d_sec + diff_sec，同步本地累计听歌时长（仅 lite/v2 协议记账）
+ *  - 上报：传入 d_sec + diff_sec，同步本地新增听歌时长（lite/v2 支持更新服务端累计值）
  */
 export interface GradeInfoData {
   /** 服务端累计听歌秒数 */

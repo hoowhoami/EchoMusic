@@ -59,6 +59,7 @@ pub struct SharedAudio {
     output_stats: Mutex<Option<AudioOutputStats>>,
     gapless_boundary: Mutex<Option<GaplessBoundary>>,
     volume_bits: AtomicU32,
+    normalization_gain_bits: AtomicU32,
     pub mix_format: MixFormat,
     track_seq: AtomicU64,
     pub played_samples: AtomicU64,
@@ -146,6 +147,9 @@ impl SharedAudio {
             output_stats: Mutex::new(None),
             gapless_boundary: Mutex::new(None),
             volume_bits: AtomicU32::new(1.0f32.to_bits()),
+            normalization_gain_bits: AtomicU32::new(
+                dsp_settings.normalization_gain_linear().to_bits(),
+            ),
             mix_format,
             played_samples: AtomicU64::new(0),
             last_time_event_samples: AtomicU64::new(0),
@@ -311,6 +315,16 @@ impl SharedAudio {
 
     pub fn update_dsp_settings(&self, settings: &DspSettings) {
         self.set_speed(settings.speed);
+        let normalization_gain = settings.normalization_gain_linear();
+        self.normalization_gain_bits.store(
+            if normalization_gain.is_finite() {
+                normalization_gain.clamp(0.0, 16.0)
+            } else {
+                1.0
+            }
+            .to_bits(),
+            Ordering::Release,
+        );
         if let Ok(mut current) = self.dsp_settings.lock() {
             *current = settings.clone();
         }
@@ -1030,6 +1044,15 @@ impl SharedAudio {
 
     pub fn volume(&self) -> f32 {
         f32::from_bits(self.volume_bits.load(Ordering::Acquire)).clamp(0.0, 1.5)
+    }
+
+    pub fn normalization_gain(&self) -> f32 {
+        let gain = f32::from_bits(self.normalization_gain_bits.load(Ordering::Acquire));
+        if gain.is_finite() {
+            gain.clamp(0.0, 16.0)
+        } else {
+            1.0
+        }
     }
 
     pub fn stall_timeout(&self) -> Duration {

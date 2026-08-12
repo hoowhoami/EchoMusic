@@ -9,6 +9,7 @@ type UserActionsStoreShape = {
   fetchUserPlaylists: () => Promise<void>;
   findPlaylistByIdentity: (id: string | number | null | undefined) => PlaylistMeta | undefined;
   resolveNumericListId: (id: string | number | null | undefined) => string | number | null;
+  userCollectionsGeneration: number;
   userPlaylists: PlaylistMeta[];
 };
 
@@ -52,11 +53,13 @@ export const userActions = {
   },
   async fetchUserPlaylists(this: UserActionsStoreShape) {
     try {
+      const requestGeneration = this.userCollectionsGeneration;
       const PAGE_SIZE = 30;
       let page = 1;
       let allPlaylists: PlaylistMeta[] = [];
       while (true) {
         const res = await getUserPlaylists(page, PAGE_SIZE);
+        if (requestGeneration !== this.userCollectionsGeneration) return;
         if (!res || typeof res !== 'object' || !('status' in res) || res.status !== 1) break;
         const data = 'data' in res ? (res as { data?: { info?: unknown } }).data : undefined;
         const info = 'info' in res ? (res as { info?: unknown }).info : undefined;
@@ -66,6 +69,7 @@ export const userActions = {
         if (raw.length < PAGE_SIZE) break;
         page++;
       }
+      if (requestGeneration !== this.userCollectionsGeneration) return;
       this.userPlaylists = allPlaylists;
       await this.fetchLikedPlaylistSongs();
     } catch (e) {

@@ -89,6 +89,10 @@ const rootPageTransitionKey = computed(() => route.matched[0]?.path ?? route.ful
 const currentCoverColorUrls = computed(() =>
   resolveCoverColorUrls(player.currentTrackSnapshot?.coverUrl, 300, { scope: 'theme' }),
 );
+const currentUserKey = computed(() =>
+  String(userStore.info?.userid ?? userStore.info?.userId ?? ''),
+);
+let loadedCloudUserKey = '';
 
 const updateTheme = () => {
   const isDark =
@@ -354,11 +358,19 @@ watch(
   },
 );
 watch(
-  () => userStore.isLoggedIn,
-  (loggedIn) => {
+  () => [userStore.isLoggedIn, currentUserKey.value] as const,
+  ([loggedIn, userKey]) => {
     if (loggedIn) {
+      if (userKey && loadedCloudUserKey && loadedCloudUserKey !== userKey) {
+        playlistStore.resetUserCollections();
+      }
+      if (userKey) {
+        loadedCloudUserKey = userKey;
+      }
       scheduleCloudAudioIndexWarmup();
     } else {
+      loadedCloudUserKey = '';
+      playlistStore.resetUserCollections();
       clearCloudAudioIndexWarmupTimer();
       clearCloudAudioIndex();
     }

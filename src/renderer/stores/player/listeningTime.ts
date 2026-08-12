@@ -6,30 +6,26 @@ import type { PlayerState } from './state';
 import { getPlaybackIsLoading, getPlaybackIsPlaying } from './stateMachine';
 import { resolveTrackMxid } from './utils';
 
-// 累计达到该秒数才触发上报，避免碎时间片高频请求
+// 待上报增量达到该阈值后才尝试同步。
 const MIN_REPORT_DIFF_SEC = 60;
-// 距上次上报尝试至少间隔该时长（成功/失败均退避，上游按 diff_sec 记账且受距上次上报时间约束）
+// 上报尝试的最小间隔，成功和失败都共用同一退避窗口。
 const MIN_REPORT_INTERVAL_MS = 5 * 60 * 1000;
-// 单次 tick 累计上限，防御 seek 大跳/异常进度回报导致的虚增
+// 单次 tick 的累计上限，避免 seek 或异常进度回报导致时长虚增。
 const MAX_TICK_DELTA_SEC = 30;
 
 /**
- * 听歌时长累计与上报管理器（对接 GET /user/grade/info）
+ * 听歌时长累计与上报管理器。
  *
- * 关键约束：d_sec / diff_sec 必须为**整数秒**。tick 内 currentTime 差值为浮点，
- * 直接上送会导致酷狗服务端 md5 签名校验失败（error_code=20006），上报前必须取整。
- *
- * 上报节奏：pendingDiff ≥ 60s 且距上次上报尝试 ≥ 5 分钟；失败保留增量下次合并，
- * 成功/失败均更新退避时间，杜绝高频重试风暴。
- * 上报前先查询对账，取 max(本地累计, 服务端值) 作为 d_sec，避免多设备登录时
- * 本地值小于服务端而被拒记。
+ * 上报参数使用整数秒。播放进度是浮点秒，提交前需要取整以匹配服务端签名规则。
+ * 上报前会先查询服务端累计值，并以服务端值作为基准，避免多端使用时本地累计落后。
+ * 失败时保留待上报增量，下次达到退避间隔后合并重试。
  */
 export const createListeningTimeManager = (state: PlayerState) => {
   // 上次累计基准点（运行时状态，不持久化；seek/切歌/首帧时重置）
   let lastPosition = 0;
   // 并发互斥：同时仅允许一个上报在途，防止同一增量重复上报
   let flushing = false;
-  // 上次上报尝试时间（成功/失败均更新）：失败也退避，杜绝 5s 级别的重试风暴
+  // 上次上报尝试时间，成功和失败都会更新。
   let lastAttemptAt = 0;
 
   const currentUid = () => useUserStore().info?.userid;
@@ -58,7 +54,7 @@ export const createListeningTimeManager = (state: PlayerState) => {
     if (report.pendingDiff >= MIN_REPORT_DIFF_SEC) void flush();
   };
 
-  // 上报：受 5 分钟退避约束，可安全在暂停/切歌/结束时调用（未达条件直接返回）
+  // 上报入口。未满足阈值、退避或登录条件时会直接返回。
   const flush = async () => {
     if (flushing) return;
     const report = useListenReportStore();
@@ -70,13 +66,12 @@ export const createListeningTimeManager = (state: PlayerState) => {
     flushing = true;
     try {
       const uid = userStore.info?.userid;
-      // ★ 关键修复：diff_sec 取整，浮点会导致上游 md5 校验失败（20006）
+      // diff_sec 必须为整数秒，否则服务端签名校验会失败。
       const reportedDiff = Math.floor(report.pendingDiff);
       if (reportedDiff <= 0) return;
 
-      // ① 查询对账：以服务端为基准强制对齐。
-      // 酷狗 v2 记账要求 d_sec - diff_sec 落在服务端当前基准上（即 d_sec == 服务端值 + diff_sec）；
-      // 若本地累计因历史失败上报偏离服务端（幽灵增量），上报会被静默忽略（error_code=0 但不记账）。
+      // 查询服务端累计值，用它作为本次上报的基准。
+      // 本地累计可能因上次失败或多端播放落后于服务端，因此不直接信任本地值。
       let serverDSec = 0;
       try {
         const gradeRes = await getUserGradeInfo();
@@ -86,19 +81,18 @@ export const createListeningTimeManager = (state: PlayerState) => {
       } catch {
         // 对账失败不阻断上报
       }
-      // 查询成功时以服务端为基准（丢弃幽灵增量，保证记账）；查询失败时回退本地累计兜底
+      // 查询成功时以服务端为基准；查询失败时回退到本地累计。
       const base = serverDSec > 0 ? serverDSec : Math.floor(report.dSec);
 
-      // ② 上报
       try {
         const res = await reportListenTime({ dSec: base, diffSec: reportedDiff });
         const body = res as { status?: number | string; error_code?: number | string } | null;
         if (body && (Number(body.status ?? 1) !== 1 || Number(body.error_code ?? 0) !== 0)) {
-          // 上游业务失败（含 20006），按普通失败处理，退避后重试
+          // 业务失败按普通失败处理，保留增量等待下次重试。
           throw new Error(`report rejected error_code=${body.error_code}`);
         }
 
-        // ③ logout/切号竞态：账号已变化则放弃写入，避免串号污染
+        // 请求期间账号可能变化，写入前再确认一次。
         if (currentUid() !== uid) return;
         // 只扣减本次已上报的快照值，不清零请求期间新累计的增量
         report.dSec = base + reportedDiff;

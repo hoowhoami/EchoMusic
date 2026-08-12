@@ -98,12 +98,20 @@ export const useUserStore = defineStore('user', {
   }),
   actions: {
     setUserInfo(info: UserInfo) {
+      const previousUserKey = String(this.info?.userid ?? this.info?.userId ?? '');
       const nextInfo = normalizeUserInfo(info);
+      const nextUserKey = String(nextInfo.userid ?? nextInfo.userId ?? '');
       this.$patch((state) => {
+        if (previousUserKey && nextUserKey && previousUserKey !== nextUserKey) {
+          state.followedArtistIds = new Set();
+          state.hasFetchedFollowedArtists = false;
+        }
         state.info = nextInfo;
         state.isLoggedIn = !!nextInfo.token;
         if (!nextInfo.token) {
           state.hasFetchedUserInfo = false;
+          state.followedArtistIds = new Set();
+          state.hasFetchedFollowedArtists = false;
         }
       });
     },
