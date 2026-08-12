@@ -3,7 +3,7 @@ defineOptions({ name: 'profile' });
 import { computed, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { useUserStore } from '@/stores/user';
-import { useDeviceStore } from '@/stores/device';
+import { useLoginDeviceStore, type LoginDeviceSession } from '@/stores/loginDevices';
 import Button from '@/components/ui/Button.vue';
 import Dialog from '@/components/ui/Dialog.vue';
 import Popover from '@/components/ui/Popover.vue';
@@ -11,7 +11,18 @@ import Popover from '@/components/ui/Popover.vue';
 import Avatar from '@/components/ui/Avatar.vue';
 
 import logger from '@/utils/logger';
-import { iconLogOut, iconUser, iconGift, iconHome, iconScan, iconCheck, iconInfo } from '@/icons';
+import {
+  iconCheck,
+  iconGift,
+  iconHome,
+  iconInfo,
+  iconLogOut,
+  iconRefreshCw,
+  iconScan,
+  iconSmartphone,
+  iconTrash,
+  iconUser,
+} from '@/icons';
 import PageScrollContainer from '@/components/ui/PageScrollContainer.vue';
 
 interface VipLevelInfo {
@@ -33,9 +44,13 @@ interface DetailState {
 
 const router = useRouter();
 const userStore = useUserStore();
+const loginDeviceStore = useLoginDeviceStore();
 const userInfo = computed(() => userStore.info);
 
 const isLoading = ref(false);
+const showDeviceManager = ref(false);
+const showKickConfirm = ref(false);
+const pendingKickDevice = ref<LoginDeviceSession | null>(null);
 
 // 提取详细信息
 const detail = computed<DetailState>(
@@ -131,6 +146,66 @@ const formatVipDate = (value?: string | number) => {
   }
 };
 
+const joinDeviceParts = (...parts: Array<string | number | undefined | null>) =>
+  parts
+    .map((part) => String(part ?? '').trim())
+    .filter(Boolean)
+    .join(', ');
+
+const formatDeviceLoginType = (value?: string | number) => {
+  const text = String(value ?? '').trim();
+  if (text === '0') return '账号密码登录';
+  if (text === '1') return '手机登录';
+  if (text === '2') return '微信登录';
+  if (text === '3') return 'QQ登录';
+  if (text === '4') return '苹果登录';
+  if (text === '5') return '微博登录';
+  if (text === '6') return '扫码登录';
+  return text ? `登录类型 ${text}` : '';
+};
+
+const formatDeviceLocation = (value?: string | number) => {
+  const parts = String(value ?? '')
+    .split(/[\s,，/]+/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+  return parts.at(-1) || '';
+};
+
+const formatDeviceTime = (value?: string | number) => {
+  const text = String(value ?? '').trim();
+  if (!text || text === '0') return '';
+
+  const numeric = Number(text);
+  const date =
+    Number.isFinite(numeric) && /^\d+$/.test(text)
+      ? new Date(text.length <= 10 ? numeric * 1000 : numeric)
+      : new Date(text);
+  if (Number.isNaN(date.getTime())) return text;
+
+  const pad = (n: number) => n.toString().padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(
+    date.getHours(),
+  )}:${pad(date.getMinutes())}`;
+};
+
+const formatDeviceDetailLine = (device: LoginDeviceSession) =>
+  joinDeviceParts(formatDeviceLoginType(device.loginType), device.platform);
+
+const formatDeviceActivityLine = (device: LoginDeviceSession) => {
+  const time = formatDeviceTime(device.activeTime || device.loginTime);
+  const location = formatDeviceLocation(device.location);
+  return joinDeviceParts(time ? `${time}` : '', location);
+};
+
+const loginDevices = computed(() => loginDeviceStore.devices);
+const loginDeviceSummary = computed(() => {
+  if (loginDeviceStore.loading && !loginDeviceStore.loaded) return '正在同步登录设备';
+  if (loginDeviceStore.error && loginDevices.value.length === 0) return loginDeviceStore.error;
+  if (loginDevices.value.length === 0) return '暂无登录设备记录';
+  return `当前账号已登录 ${loginDevices.value.length} 台设备`;
+});
+
 const loadData = async () => {
   if (!userStore.isLoggedIn) return;
   isLoading.value = true;
@@ -138,6 +213,7 @@ const loadData = async () => {
     await userStore.fetchUserInfo();
     // 并行刷新听歌等级信息（等级/积分），不阻塞主流程
     void userStore.fetchGradeInfo();
+    void loginDeviceStore.fetchDevices();
   } catch (e) {
     logger.error('Profile', 'Load Data Error:', e);
   } finally {
@@ -151,10 +227,36 @@ const handleLogout = () => {
 
 const confirmLogout = () => {
   showLogoutConfirm.value = false;
+  loginDeviceStore.reset();
   userStore.logout();
-  // 清除设备信息，下次请求时自动重新注册
-  useDeviceStore().clearDeviceInfo();
   router.push('/main/home');
+};
+
+const openDeviceManager = async () => {
+  showDeviceManager.value = true;
+  if (!loginDeviceStore.loaded && !loginDeviceStore.loading) {
+    await loginDeviceStore.fetchDevices();
+  }
+};
+
+const refreshLoginDevices = async () => {
+  await loginDeviceStore.fetchDevices();
+};
+
+const requestKickDevice = (device: LoginDeviceSession) => {
+  if (!device.canKick) return;
+  pendingKickDevice.value = device;
+  showKickConfirm.value = true;
+};
+
+const confirmKickDevice = async () => {
+  const device = pendingKickDevice.value;
+  if (!device) return;
+  const ok = await loginDeviceStore.kickDevice(device);
+  if (ok) {
+    showKickConfirm.value = false;
+    pendingKickDevice.value = null;
+  }
 };
 
 const showLogoutConfirm = ref(false);
@@ -171,15 +273,28 @@ onMounted(() => loadData());
             <!-- 1. Header -->
             <header class="flex items-center justify-between mb-6">
               <h1 class="text-[22px] font-black tracking-tight">个人中心</h1>
-              <Button
-                variant="unstyled"
-                size="none"
-                @click="handleLogout"
-                class="w-10 h-10 flex items-center justify-center rounded-full border border-[var(--control-border)] hover:bg-red-500/10 hover:text-red-500 transition-all active:scale-90"
-                title="退出登录"
-              >
-                <Icon :icon="iconLogOut" width="20" height="20" />
-              </Button>
+              <div class="flex items-center gap-2">
+                <Button
+                  variant="unstyled"
+                  size="none"
+                  @click="openDeviceManager"
+                  class="w-10 h-10 flex items-center justify-center rounded-full border border-[var(--control-border)] text-text-main/70 hover:bg-[var(--control-hover-bg)] hover:text-text-main transition-all active:scale-90"
+                  title="登录设备"
+                  aria-label="登录设备"
+                >
+                  <Icon :icon="iconSmartphone" width="20" height="20" />
+                </Button>
+                <Button
+                  variant="unstyled"
+                  size="none"
+                  @click="handleLogout"
+                  class="w-10 h-10 flex items-center justify-center rounded-full border border-[var(--control-border)] hover:bg-red-500/10 hover:text-red-500 transition-all active:scale-90"
+                  title="退出登录"
+                  aria-label="退出登录"
+                >
+                  <Icon :icon="iconLogOut" width="20" height="20" />
+                </Button>
+              </div>
             </header>
 
             <!-- 2. User Profile Card -->
@@ -252,9 +367,9 @@ onMounted(() => loadData());
               ></div>
             </div>
 
-            <div class="grid grid-cols-1 md:grid-cols-5 gap-6">
+            <div class="profile-info-grid grid gap-6">
               <!-- 3. Account Archives -->
-              <div class="md:col-span-3">
+              <div class="min-w-0">
                 <div class="flex items-center gap-2 mb-4">
                   <Icon :icon="iconUser" width="16" height="16" class="text-primary" />
                   <h3 class="text-[16px] font-black">账号档案</h3>
@@ -288,7 +403,7 @@ onMounted(() => loadData());
               </div>
 
               <!-- 4. Membership Status -->
-              <div class="md:col-span-2">
+              <div class="min-w-0">
                 <div class="flex items-center gap-2 mb-4">
                   <Icon :icon="iconGift" width="16" height="16" class="text-primary" />
                   <h3 class="text-[16px] font-black">会员状态</h3>
@@ -442,6 +557,128 @@ onMounted(() => loadData());
         <Button variant="danger" size="sm" @click="confirmLogout">确认退出</Button>
       </template>
     </Dialog>
+
+    <Dialog
+      v-model:open="showDeviceManager"
+      title="登录设备管理"
+      contentClass="login-device-dialog"
+      :showClose="true"
+    >
+      <div class="space-y-4">
+        <div class="flex items-center justify-between gap-3">
+          <div>
+            <p class="text-[13px] font-bold text-text-main">{{ loginDeviceSummary }}</p>
+          </div>
+          <Button
+            variant="unstyled"
+            size="none"
+            class="w-8 h-8 rounded-full flex items-center justify-center text-text-main/70 hover:bg-[var(--control-hover-bg)] hover:text-text-main"
+            title="刷新登录设备"
+            aria-label="刷新登录设备"
+            :disabled="loginDeviceStore.loading"
+            @click="refreshLoginDevices"
+          >
+            <Icon
+              :icon="iconRefreshCw"
+              width="15"
+              height="15"
+              :class="loginDeviceStore.loading ? 'animate-spin' : ''"
+            />
+          </Button>
+        </div>
+
+        <div v-if="loginDeviceStore.error" class="text-[12px] font-bold text-red-500">
+          {{ loginDeviceStore.error }}
+        </div>
+
+        <div
+          v-if="loginDeviceStore.loading && loginDevices.length === 0"
+          class="py-10 text-center text-[13px] opacity-50 font-bold"
+        >
+          正在获取登录设备
+        </div>
+        <div
+          v-else-if="loginDevices.length === 0"
+          class="py-10 text-center text-[13px] opacity-50 font-bold"
+        >
+          暂无登录设备记录
+        </div>
+        <div v-else class="space-y-2">
+          <div
+            v-for="device in loginDevices"
+            :key="device.id"
+            class="login-device-row flex items-center gap-3 p-3 rounded-2xl border border-[var(--border-subtle)] bg-[var(--control-muted-bg)]"
+          >
+            <div
+              :class="[
+                'w-10 h-10 rounded-xl flex items-center justify-center shrink-0',
+                device.isCurrent ? 'bg-primary/15 text-primary' : 'bg-[var(--control-hover-bg)]',
+              ]"
+            >
+              <Icon :icon="iconSmartphone" width="20" height="20" />
+            </div>
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center gap-2 min-w-0">
+                <span class="text-[13px] font-black truncate">{{ device.title }}</span>
+                <span
+                  v-if="device.isCurrent"
+                  class="px-1.5 py-0.5 rounded-md bg-primary/12 text-primary text-[10px] font-black shrink-0"
+                  >本机</span
+                >
+                <span
+                  v-if="device.isNew && !device.isCurrent"
+                  class="px-1.5 py-0.5 rounded-md bg-green-500/12 text-green-500 text-[10px] font-black shrink-0"
+                  >新设备</span
+                >
+              </div>
+              <p class="text-[11px] opacity-60 font-bold truncate">
+                {{ formatDeviceDetailLine(device) }}
+              </p>
+              <p class="text-[11px] opacity-45 font-bold truncate">
+                {{ formatDeviceActivityLine(device) }}
+              </p>
+            </div>
+            <Button
+              v-if="!device.isCurrent"
+              variant="danger"
+              size="xs"
+              :disabled="!device.canKick"
+              :loading="loginDeviceStore.kickingId === device.id"
+              class="shrink-0"
+              @click="requestKickDevice(device)"
+            >
+              <Icon
+                v-if="loginDeviceStore.kickingId !== device.id"
+                :icon="iconTrash"
+                width="13"
+                height="13"
+              />
+              <span class="ml-1">移除</span>
+            </Button>
+          </div>
+        </div>
+      </div>
+    </Dialog>
+
+    <Dialog
+      v-model:open="showKickConfirm"
+      title="移除登录设备"
+      :description="`移除“${pendingKickDevice?.title || '该设备'}”后，该设备需要重新登录。`"
+    >
+      <template #footer>
+        <Button variant="outline" size="sm" @click="showKickConfirm = false">取消</Button>
+        <Button
+          variant="danger"
+          size="sm"
+          :loading="
+            Boolean(pendingKickDevice && loginDeviceStore.kickingId === pendingKickDevice.id)
+          "
+          @click="confirmKickDevice"
+        >
+          确认移除
+        </Button>
+      </template>
+    </Dialog>
   </PageScrollContainer>
 </template>
 
@@ -455,6 +692,22 @@ onMounted(() => loadData());
   border-color: var(--border-subtle) !important;
   box-shadow: var(--shadow-elevated) !important;
 }
+
+.login-device-row {
+  min-height: 76px;
+}
+
+.profile-info-grid {
+  display: grid;
+  gap: 24px;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+@media (min-width: 768px) {
+  .profile-info-grid {
+    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  }
+}
 </style>
 
 <style>
@@ -463,5 +716,10 @@ onMounted(() => loadData());
   border-radius: 14px;
   background: var(--color-bg-elevated);
   border-color: var(--border-subtle);
+}
+
+.dialog-content.login-device-dialog {
+  width: min(560px, 92vw);
+  max-height: min(720px, calc(100vh - 140px));
 }
 </style>

@@ -5,6 +5,21 @@ import { logger } from './logger';
 // 并发锁，防止多个请求同时触发注册
 let registerPromise: Promise<void> | null = null;
 
+const syncServerDeviceIdentity = async () => {
+  const deviceStore = useDeviceStore();
+  const identity = await window.electron.apiServer.identity();
+  if (!identity?.guid) return false;
+
+  deviceStore.setDeviceInfo({
+    ...deviceStore.info,
+    guid: identity.guid,
+    mid: identity.mid || deviceStore.info?.mid,
+    serverDev: identity.serverDev,
+    mac: identity.mac || deviceStore.info?.mac,
+  });
+  return true;
+};
+
 /**
  * 从注册接口响应中提取设备信息
  */
@@ -39,7 +54,14 @@ export const extractDeviceInfo = (payload: unknown): DeviceInfo | null => {
  */
 export const ensureDevice = async () => {
   const deviceStore = useDeviceStore();
-  if (deviceStore.info?.dfid) return;
+  if (deviceStore.info?.dfid) {
+    try {
+      await syncServerDeviceIdentity();
+    } catch {
+      logger.warn('Device', 'Failed to sync server identity');
+    }
+    return;
+  }
 
   if (registerPromise) {
     await registerPromise;
@@ -55,16 +77,7 @@ export const ensureDevice = async () => {
         deviceStore.setDeviceInfo(info);
         // 再同步服务端生成的设备标识（guid/mid/serverDev/mac）
         try {
-          const identity = await window.electron.apiServer.identity();
-          if (identity?.guid) {
-            deviceStore.setDeviceInfo({
-              ...deviceStore.info,
-              guid: identity.guid,
-              mid: identity.mid || deviceStore.info?.mid,
-              serverDev: identity.serverDev,
-              mac: identity.mac || deviceStore.info?.mac,
-            });
-          }
+          await syncServerDeviceIdentity();
         } catch {
           logger.warn('Device', 'Failed to sync server identity');
         }

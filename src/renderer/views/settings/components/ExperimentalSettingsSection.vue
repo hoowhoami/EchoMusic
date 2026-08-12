@@ -64,6 +64,7 @@ const restartWithDiagnostics = async () => {
 const dpiScaleLabel = computed(() => Number(settingStore.dpiScale || 1).toFixed(1));
 
 const showUserInfo = ref(false);
+const showResetDeviceIdentityConfirm = ref(false);
 const deviceIdentity = ref<{ guid: string; mac: string; serverDev: string; mid: string } | null>(
   null,
 );
@@ -122,6 +123,29 @@ const setHighDpiEnabled = (enabled: boolean) => {
 const setDpiScale = (value: number) => {
   settingStore.dpiScale = Math.round((Number(value) || 1) * 10) / 10;
   settingStore.syncHighDpiSettings();
+};
+
+const confirmResetDeviceIdentity = async () => {
+  showResetDeviceIdentityConfirm.value = false;
+  deviceStore.clearDeviceInfo();
+  userStore.logout();
+  deviceIdentity.value = null;
+  try {
+    await window.electron?.storage?.deleteKv('pinia:device');
+  } catch {
+    toastStore.warning('设备身份已清除，但持久化数据删除可能未完成');
+  }
+
+  if (!settingStore.appIsPackaged) {
+    toastStore.warning('设备身份已清除，请重新启动开发服务后再登录');
+    return;
+  }
+
+  try {
+    await window.electron?.appInfo?.relaunch?.();
+  } catch {
+    toastStore.warning('设备身份已清除，请手动重启应用后再登录');
+  }
 };
 </script>
 
@@ -308,6 +332,18 @@ const setDpiScale = (value: number) => {
       </div>
       <Button variant="secondary" size="xs" @click="showUserInfoDialog">查看</Button>
     </div>
+    <div class="settings-divider"></div>
+    <div class="settings-item">
+      <div class="space-y-1">
+        <h3 class="font-semibold">重置设备身份</h3>
+        <p class="text-sm text-text-secondary">
+          清除本机 guid、mid、dfid，并在重启后重新生成设备身份
+        </p>
+      </div>
+      <Button variant="danger" size="xs" @click="showResetDeviceIdentityConfirm = true">
+        重置
+      </Button>
+    </div>
 
     <Dialog v-model:open="showUserInfo" title="用户信息" showClose contentClass="user-info-dialog">
       <div class="user-info-list">
@@ -319,6 +355,19 @@ const setDpiScale = (value: number) => {
       </div>
       <template #footer>
         <Button variant="primary" size="sm" @click="copyAuthHeader">复制鉴权头</Button>
+      </template>
+    </Dialog>
+
+    <Dialog
+      v-model:open="showResetDeviceIdentityConfirm"
+      title="重置设备身份"
+      description="这会清除本机设备标识并退出当前账号。重启后会生成新的设备身份，酷狗可能会把它视为一台新设备。"
+    >
+      <template #footer>
+        <Button variant="outline" size="sm" @click="showResetDeviceIdentityConfirm = false">
+          取消
+        </Button>
+        <Button variant="danger" size="sm" @click="confirmResetDeviceIdentity"> 确认重置 </Button>
       </template>
     </Dialog>
   </SettingsSectionShell>

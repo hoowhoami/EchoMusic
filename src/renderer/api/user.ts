@@ -99,6 +99,34 @@ export function getUserDetail() {
   return request.get('/user/detail');
 }
 
+export interface LoginDeviceKickTarget {
+  t_mid?: string | number;
+  t?: string | number;
+  t_appid?: string | number;
+  t_clientver?: string | number;
+  mid?: string | number;
+  dfid?: string | number;
+  uuid?: string | number;
+}
+
+/**
+ * 获取当前账号登录设备列表
+ */
+export function getLoginDevices() {
+  return request.get('/login/device');
+}
+
+/**
+ * 移除指定登录设备
+ */
+export function kickLoginDevice(target: LoginDeviceKickTarget) {
+  return request.get('/login/device/kick', {
+    params: {
+      ...target,
+    },
+  });
+}
+
 /**
  * 获取用户 VIP 信息
  */

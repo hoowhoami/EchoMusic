@@ -33,12 +33,12 @@ const allowForceEnter = (hint: string) => {
 };
 
 const ensureDeviceReady = async () => {
-  if (deviceStore.info?.dfid || isDeviceReady.value) {
+  if (isDeviceReady.value) {
     isDeviceReady.value = true;
     return true;
   }
 
-  statusMessage.value = '正在注册设备信息...';
+  statusMessage.value = deviceStore.info?.dfid ? '正在同步设备信息...' : '正在注册设备信息...';
 
   try {
     await ensureDevice();
