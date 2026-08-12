@@ -742,7 +742,7 @@ fn soft_limit_interleaved(samples: &mut [f32]) {
     }
 }
 
-fn soft_limit_sample(sample: f32) -> f32 {
+pub(crate) fn soft_limit_sample(sample: f32) -> f32 {
     const KNEE: f32 = 0.95;
     const RANGE: f32 = 1.0 - KNEE;
     if !sample.is_finite() {

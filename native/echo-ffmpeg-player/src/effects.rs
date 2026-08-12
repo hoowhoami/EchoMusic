@@ -37,6 +37,10 @@ impl DspSettings {
     pub fn requires_stereo_graph(&self) -> bool {
         self.spatial.is_some()
     }
+
+    pub fn normalization_gain_linear(&self) -> f32 {
+        db_to_gain(self.normalization_gain_db)
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -58,7 +62,6 @@ struct PreparedImpulseChannel {
 pub struct DspChain {
     settings: DspSettings,
     channels: usize,
-    gain_linear: f32,
     eq_headroom_linear: f32,
     eq: MultichannelEqualizer,
     spatial: Option<SpatialEffect>,
@@ -70,7 +73,6 @@ impl DspChain {
         Self {
             settings: settings.clone(),
             channels,
-            gain_linear: db_to_gain(settings.normalization_gain_db),
             eq_headroom_linear: eq_headroom_gain(&settings.equalizer),
             eq: MultichannelEqualizer::new(sample_rate, channels, &settings.equalizer),
             spatial: settings
@@ -88,7 +90,6 @@ impl DspChain {
             != spatial_resource_identity(&settings.spatial);
 
         self.settings = settings.clone();
-        self.gain_linear = db_to_gain(settings.normalization_gain_db);
         if eq_changed {
             self.eq_headroom_linear = eq_headroom_gain(&settings.equalizer);
             self.eq = MultichannelEqualizer::new(sample_rate, self.channels, &settings.equalizer);
@@ -116,11 +117,6 @@ impl DspChain {
         if self.channels == 2 {
             if let Some(spatial) = self.spatial.as_mut() {
                 spatial.process_interleaved(samples);
-            }
-        }
-        for sample in samples {
-            if (self.gain_linear - 1.0).abs() >= f32::EPSILON {
-                *sample *= self.gain_linear;
             }
         }
     }
