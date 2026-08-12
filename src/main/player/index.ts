@@ -10,6 +10,7 @@ import {
   beginMiniPlayerPlaybackBridgeTransition,
   patchMiniPlayerPlaybackFromPlayer,
 } from '../miniPlayer';
+import { destroyTaskbarProgress, setupTaskbarProgress } from '../taskbarProgress';
 
 let playerController: PlayerController | null = null;
 let cachedGetMainWindow: (() => Electron.BrowserWindow | null) | null = null;
@@ -22,6 +23,7 @@ export async function initPlayer(getWindow: () => Electron.BrowserWindow | null)
     return null;
   }
   registerEventForwarding(controller);
+  setupTaskbarProgress(controller);
   if (!controller.start()) return null;
   playerController = controller;
   log.info('[Main] player engine started successfully');
@@ -35,6 +37,7 @@ export async function restartPlayer() {
 
 export function destroyPlayer(): void {
   playerController?.destroy();
+  destroyTaskbarProgress();
   playerController = null;
 }
 

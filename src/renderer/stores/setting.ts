@@ -128,6 +128,7 @@ export const useSettingStore = defineStore('setting', {
     showAudioQualityBadge: true,
     showDesktopLyricStatus: true,
     taskbarCoverPreview: false,
+    taskbarProgress: true,
     volumeNormalization: true,
     volumeNormalizationLufs: -14,
     impulseResponseEnabled: false,
@@ -317,6 +318,11 @@ export const useSettingStore = defineStore('setting', {
     syncTaskbarCoverPreview() {
       if (window.electron?.ipcRenderer) {
         window.electron.ipcRenderer.send('update-taskbar-cover-preview', this.taskbarCoverPreview);
+      }
+    },
+    syncTaskbarProgress() {
+      if (window.electron?.ipcRenderer) {
+        window.electron.ipcRenderer.send('update-taskbar-progress', this.taskbarProgress);
       }
     },
     syncDevToolsEnabled() {
