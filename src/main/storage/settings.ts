@@ -34,6 +34,7 @@ export type MainAppSettings = {
   dpiScale: number;
   devToolsEnabled: boolean;
   taskbarCoverPreview: boolean;
+  taskbarProgress: boolean;
   windowState: MainWindowState;
   miniPlayerWindowState: MiniPlayerWindowState;
 };
@@ -61,6 +62,7 @@ export const DEFAULT_MAIN_APP_SETTINGS: MainAppSettings = {
   dpiScale: 1,
   devToolsEnabled: false,
   taskbarCoverPreview: false,
+  taskbarProgress: true,
   windowState: {
     width: 1100,
     height: 750,

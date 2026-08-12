@@ -12,6 +12,7 @@ import type { LyricLinePayload } from '../shared/lyrics';
 import type { IpcContext } from './ipc/types';
 import { getMainWindow } from './window';
 import { isCoverPreviewEnabled, setCoverPreviewEnabled } from './taskbarThumbnail';
+import { setTaskbarProgressEnabled } from './taskbarProgress';
 import { setMainAppSetting } from './storage/settings';
 
 const NOW_PLAYING_COMMANDS = new Set<NowPlayingCommand>([
@@ -229,6 +230,12 @@ export const registerNowPlayingHandlers = (context: IpcContext) => {
     setCoverPreviewEnabled(Boolean(enabled));
     setMainAppSetting('taskbarCoverPreview', Boolean(enabled));
     applyWindowTitle(snapshot.playback);
+  });
+
+  // 任务栏播放进度条开关：关闭时立即移除，开启时按当前播放状态重放
+  ipcRegistry.registerListener('update-taskbar-progress', (_event, enabled: boolean) => {
+    setTaskbarProgressEnabled(Boolean(enabled));
+    setMainAppSetting('taskbarProgress', Boolean(enabled));
   });
 
   ipcRegistry.registerListener(
