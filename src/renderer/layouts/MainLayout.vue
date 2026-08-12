@@ -2,7 +2,7 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import { useSettingStore } from '@/stores/setting';
-import { pageTransitionState } from '@/plugins/runtime';
+import { pageTransitionState } from '@/plugins/runtime/theme';
 import { YzsKeepAlive } from 'yzs-keep-alive-v3';
 import Sidebar from './Sidebar.vue';
 import TitleBar from './TitleBar.vue';

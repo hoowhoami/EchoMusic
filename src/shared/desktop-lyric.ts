@@ -50,7 +50,7 @@ export type DesktopLyricSettings = {
   secondaryFontSize: number;
   lineGap: number;
   alignment: DesktopLyricAlign;
-  doubleLine: boolean;
+  showNextLinePreview: boolean;
   playedColor: string;
   unplayedColor: string;
   strokeColor: string;
@@ -81,7 +81,7 @@ export const DEFAULT_DESKTOP_LYRIC_SETTINGS: DesktopLyricSettings = {
   secondaryFontSize: 18,
   lineGap: 14,
   alignment: 'both',
-  doubleLine: true,
+  showNextLinePreview: true,
   playedColor: '#31cfa1',
   unplayedColor: '#7a7a7a',
   strokeColor: '#f1b8b3',

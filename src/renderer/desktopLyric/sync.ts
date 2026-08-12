@@ -68,7 +68,7 @@ const buildSettingsSignature = (settings: DesktopLyricSettings) =>
     settings.secondaryFontSize,
     settings.lineGap,
     settings.alignment,
-    boolKey(settings.doubleLine),
+    boolKey(settings.showNextLinePreview),
     settings.playedColor,
     settings.unplayedColor,
     settings.strokeColor,

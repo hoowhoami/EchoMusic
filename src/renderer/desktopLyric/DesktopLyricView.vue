@@ -51,6 +51,7 @@ interface RenderLine {
   index: number;
   key: string;
   active: boolean;
+  kind: 'placeholder' | 'primary' | 'secondary' | 'next';
 }
 
 // ── 状态 ──
@@ -249,7 +250,7 @@ const isPlaying = computed(() => playback.value?.isPlaying ?? false);
 const songName = computed(() => playback.value?.title || 'EchoMusic');
 const artistName = computed(() => playback.value?.artist || '');
 const alignment = computed(() => settings.value?.alignment ?? 'center');
-const doubleLine = computed(() => settings.value?.doubleLine ?? true);
+const showNextLinePreview = computed(() => settings.value?.showNextLinePreview ?? true);
 const lyricLayout = computed(() => settings.value?.layout ?? 'horizontal');
 const isVerticalLayout = computed(() => lyricLayout.value === 'vertical');
 const lyricSyncWarning = computed(() => snapshot.value?.lyricSyncWarning ?? false);
@@ -379,6 +380,7 @@ const placeholder = (word: string): RenderLine[] => [
     index: -1,
     key: `${renderScopeKey.value}:placeholder`,
     active: true,
+    kind: 'placeholder',
   },
 ];
 
@@ -445,6 +447,7 @@ const renderLyricLines = computed<RenderLine[]>(() => {
           index: idx,
           key: `${renderScopeKey.value}:${idx}-orig`,
           active: true,
+          kind: 'primary',
         },
         {
           line: {
@@ -461,14 +464,21 @@ const renderLyricLines = computed<RenderLine[]>(() => {
           index: idx,
           key: `${renderScopeKey.value}:${idx}-secondary`,
           active: false,
+          kind: 'secondary',
         },
       ];
     }
   }
-  // 双行模式：当前 + 下一句
-  if (doubleLine.value) {
+  // 没有副歌词可显示时，下一行预览才占用第二行。
+  if (showNextLinePreview.value) {
     const result: RenderLine[] = [
-      { line: current, index: idx, key: `${renderScopeKey.value}:${idx}-orig`, active: true },
+      {
+        line: current,
+        index: idx,
+        key: `${renderScopeKey.value}:${idx}-orig`,
+        active: true,
+        kind: 'primary',
+      },
     ];
     if (next) {
       result.push({
@@ -476,13 +486,20 @@ const renderLyricLines = computed<RenderLine[]>(() => {
         index: nextIndex,
         key: `${renderScopeKey.value}:${nextIndex}-orig`,
         active: false,
+        kind: 'next',
       });
     }
     return result;
   }
-  // 单行模式：也预渲染下一句（视觉隐藏），切换时走 move 动画而非 enter/leave
+  // 下一行预览关闭时，也预渲染下一行（视觉隐藏），切换时走 move 动画而非 enter/leave
   const result: RenderLine[] = [
-    { line: current, index: idx, key: `${renderScopeKey.value}:${idx}-orig`, active: true },
+    {
+      line: current,
+      index: idx,
+      key: `${renderScopeKey.value}:${idx}-orig`,
+      active: true,
+      kind: 'primary',
+    },
   ];
   if (next) {
     result.push({
@@ -490,6 +507,7 @@ const renderLyricLines = computed<RenderLine[]>(() => {
       index: nextIndex,
       key: `${renderScopeKey.value}:${nextIndex}-orig`,
       active: false,
+      kind: 'next',
     });
   }
   return result;
@@ -1073,8 +1091,8 @@ onBeforeUnmount(() => {
           {
             active: line.active,
             'is-yrc': line.active && isYrcLine(line.line),
-            'is-next': !line.active && doubleLine,
-            'is-hidden-next': !line.active && !doubleLine,
+            'is-next': line.kind === 'next' && showNextLinePreview,
+            'is-hidden-next': line.kind === 'next' && !showNextLinePreview,
             'align-left': alignment === 'both' && line.index % 2 === 0,
             'align-right': alignment === 'both' && line.index % 2 !== 0,
           },
@@ -1485,7 +1503,7 @@ onBeforeUnmount(() => {
   transform-origin: center top;
 }
 
-/* 单行模式：隐藏预渲染的下一句，不占视觉空间 */
+/* 单行模式：隐藏预渲染的下一行，不占视觉空间 */
 .lyric-line.is-hidden-next {
   opacity: 0 !important;
   height: 0 !important;

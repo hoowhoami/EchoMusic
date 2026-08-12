@@ -117,7 +117,7 @@ const applyDesktopLyricColor = async (value: string) => {
     <div class="settings-item">
       <div class="space-y-1">
         <h3 class="font-semibold">显示翻译</h3>
-        <p class="text-sm text-text-secondary">有翻译时在桌面歌词中显示翻译行</p>
+        <p class="text-sm text-text-secondary">当前歌词有翻译时显示翻译内容</p>
       </div>
       <Switch
         :model-value="desktopLyricStore.settings.wantTranslation"
@@ -128,11 +128,22 @@ const applyDesktopLyricColor = async (value: string) => {
     <div class="settings-item">
       <div class="space-y-1">
         <h3 class="font-semibold">显示音译</h3>
-        <p class="text-sm text-text-secondary">有音译时在桌面歌词中显示音译行</p>
+        <p class="text-sm text-text-secondary">当前歌词有音译时显示音译内容</p>
       </div>
       <Switch
         :model-value="desktopLyricStore.settings.wantRomanization"
         @update:model-value="commitDesktopLyricSettings({ wantRomanization: Boolean($event) })"
+      />
+    </div>
+    <div class="settings-divider"></div>
+    <div class="settings-item">
+      <div class="space-y-1">
+        <h3 class="font-semibold">下一行预览</h3>
+        <p class="text-sm text-text-secondary">没有显示翻译或音译时，显示下一行歌词</p>
+      </div>
+      <Switch
+        :model-value="desktopLyricStore.settings.showNextLinePreview"
+        @update:model-value="commitDesktopLyricSettings({ showNextLinePreview: Boolean($event) })"
       />
     </div>
     <div class="settings-divider"></div>

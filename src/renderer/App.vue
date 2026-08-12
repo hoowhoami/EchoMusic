@@ -1,31 +1,29 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
+import {
+  computed,
+  defineAsyncComponent,
+  onMounted,
+  onUnmounted,
+  ref,
+  shallowRef,
+  watch,
+} from 'vue';
 import { RouterView, useRoute, useRouter } from 'vue-router';
 import AuthExpiredDialog from '@/components/app/AuthExpiredDialog.vue';
 import KugouVerificationFlow from '@/components/app/KugouVerificationFlow.vue';
 import ToastViewport from '@/components/app/ToastViewport.vue';
 import UpdateDialog from '@/components/app/UpdateDialog.vue';
 import RouteErrorBoundary from '@/components/app/RouteErrorBoundary.vue';
-import { usePlayerStore } from './stores/player';
 import { useSettingStore } from './stores/setting';
 import { useUpdateStore } from './stores/update';
 import { useThemeStore } from './stores/theme';
 import { usePlaylistStore } from './stores/playlist';
 import { useHistoryStore } from './stores/historyStore';
 import { useToastStore } from './stores/toast';
-import { setupTaskBridges } from '@/tasks/taskBridges';
 import { useUserStore } from './stores/user';
 import { waitForSqlitePersistHydration } from './stores/sqlitePersist';
 import { clearCloudAudioIndex, refreshCloudAudioIndex } from '@/services/cloudAudioIndex';
-import { initShortcutSync, syncGlobalShortcuts } from '@/utils/shortcuts';
-import { initDesktopLyricSync } from '@/desktopLyric/sync';
-import { initMiniPlayerSync } from '@/miniPlayer/sync';
-import { initNowPlayingSync } from '@/nowPlaying/sync';
-import {
-  onPluginRuntimeReloadRequested,
-  pageTransitionState,
-  refreshPlugins,
-} from '@/plugins/runtime';
+import { pageTransitionState } from '@/plugins/runtime/theme';
 import { coverFallbackRevision } from '@/plugins/coverFallback';
 import { resolveCoverColorUrls } from '@/utils/cover';
 import { logger } from '@/utils/logger';
@@ -36,11 +34,14 @@ import {
   type ShareCopiedEventDetail,
 } from '@/utils/share';
 import { extractShareTarget, getShareResourceLabel, type ShareTarget } from '../shared/share';
-import LyricView from '@/views/lyric/LyricPage.vue';
 
+type PlayerStore = ReturnType<(typeof import('./stores/player'))['usePlayerStore']>;
+type SyncGlobalShortcuts = (typeof import('@/utils/shortcuts'))['syncGlobalShortcuts'];
+
+const LyricView = defineAsyncComponent(() => import('@/views/lyric/LyricPage.vue'));
 const route = useRoute();
 const router = useRouter();
-const player = usePlayerStore();
+const player = shallowRef<PlayerStore | null>(null);
 const settings = useSettingStore();
 const updateStore = useUpdateStore();
 const themeStore = useThemeStore();
@@ -57,6 +58,7 @@ let disposePowerResumeSync: (() => void) | null = null;
 let disposePluginRuntimeReload: (() => void) | null = null;
 let disposeTaskBridges: (() => void) | null = null;
 let disposeShareOpen: (() => void) | null = null;
+let syncGlobalShortcutsFn: SyncGlobalShortcuts | null = null;
 let silentUpdateCheckTimer: number | null = null;
 let clipboardShareCheckTimer: number | null = null;
 let cloudAudioIndexWarmupTimer: number | null = null;
@@ -64,7 +66,13 @@ let lastHandledClipboardText = '';
 let isCheckingClipboardShare = false;
 let colorSchemeMediaQuery: MediaQueryList | null = null;
 
-const isMiniPlayerRoute = computed(() => route.name === 'mini-player');
+const isMiniPlayerWindow = () => {
+  const hashPath = window.location.hash.replace(/^#/, '').split(/[?#]/)[0];
+  return (
+    route.name === 'mini-player' || route.path === '/mini-player' || hashPath === '/mini-player'
+  );
+};
+const isMiniPlayerRoute = computed(isMiniPlayerWindow);
 // 首屏从 loading 切到主界面时跳过根级过渡，避免 out-in "先淡出旧页 → 空档" 造成的白屏
 const suppressRootTransition = ref(false);
 const pendingShareTarget = ref<ShareTarget | null>(null);
@@ -87,7 +95,7 @@ const rootPageTransitionAppear = computed(
 );
 const rootPageTransitionKey = computed(() => route.matched[0]?.path ?? route.fullPath);
 const currentCoverColorUrls = computed(() =>
-  resolveCoverColorUrls(player.currentTrackSnapshot?.coverUrl, 300, { scope: 'theme' }),
+  resolveCoverColorUrls(player.value?.currentTrackSnapshot?.coverUrl, 300, { scope: 'theme' }),
 );
 const currentUserKey = computed(() =>
   String(userStore.info?.userid ?? userStore.info?.userId ?? ''),
@@ -107,10 +115,12 @@ const applyGlobalFont = () => {
 };
 
 const syncTrayPlayback = () => {
+  const activePlayer = player.value;
+  if (!activePlayer) return;
   window.electron?.tray?.syncPlayback({
-    isPlaying: player.isPlaying,
-    playMode: player.playMode,
-    volume: player.volume,
+    isPlaying: activePlayer.isPlaying,
+    playMode: activePlayer.playMode,
+    volume: activePlayer.volume,
   });
 };
 
@@ -207,9 +217,13 @@ const flushPendingShareTarget = () => {
 };
 
 onMounted(async () => {
+  await router.isReady();
+
   disposeShareOpen = window.electron?.share?.onOpen(openShareTarget) ?? null;
   window.addEventListener('focus', scheduleClipboardShareCheck);
   window.addEventListener(SHARE_COPIED_EVENT, handleShareCopied);
+
+  const { onPluginRuntimeReloadRequested, refreshPlugins } = await import('@/plugins/runtime');
 
   disposePluginRuntimeReload = onPluginRuntimeReloadRequested(() => {
     void refreshPlugins(
@@ -222,18 +236,37 @@ onMounted(async () => {
     return;
   }
 
+  const [
+    { usePlayerStore },
+    { initShortcutSync, syncGlobalShortcuts },
+    { initDesktopLyricSync },
+    { initMiniPlayerSync },
+    { initNowPlayingSync },
+    { setupTaskBridges },
+  ] = await Promise.all([
+    import('./stores/player'),
+    import('@/utils/shortcuts'),
+    import('@/desktopLyric/sync'),
+    import('@/miniPlayer/sync'),
+    import('@/nowPlaying/sync'),
+    import('@/tasks/taskBridges'),
+  ]);
+  const activePlayer = usePlayerStore();
+  player.value = activePlayer;
+  syncGlobalShortcutsFn = syncGlobalShortcuts;
+
   await waitForSqlitePersistHydration();
   settings.ensureShortcutDefaults();
   await settings.hydrateLogSettings();
   await Promise.all([playlistStore.hydratePlaybackStateFromStorage(), historyStore.hydrate()]);
-  player.init();
+  activePlayer.init();
 
   // 启动时自动播放：如果开启了设置且有恢复的曲目
-  if (settings.autoPlayOnLaunch && player.currentTrackId && !player.isPlaying) {
+  if (settings.autoPlayOnLaunch && activePlayer.currentTrackId && !activePlayer.isPlaying) {
     // 延迟启动播放，确保所有初始化完成
     window.setTimeout(() => {
-      if (player.currentTrackId && !player.isPlaying) {
-        void player.togglePlay();
+      if (activePlayer.currentTrackId && !activePlayer.isPlaying) {
+        void activePlayer.togglePlay();
       }
     }, 300);
   }
@@ -255,18 +288,18 @@ onMounted(async () => {
   settings.syncRememberWindowSize();
   settings.syncTaskbarCoverPreview();
   settings.syncTaskbarProgress();
-  settings.syncPreventSleep(player.isPlaying);
+  settings.syncPreventSleep(activePlayer.isPlaying);
   settings.syncLogSettings();
   disposeShortcuts = initShortcutSync();
   disposeTrayPlayModeSync =
     window.electron?.tray?.onSetPlayMode((playMode) => {
-      player.setPlayMode(playMode);
+      activePlayer.setPlayMode(playMode);
     }) ?? null;
   // 系统唤醒后重新枚举输出设备（睡眠期间设备可能变化，如耳机被拔）。
   // 引擎级恢复（暂停/重建音频/恢复播放）已在主进程 powerMonitor 完成。
   disposePowerResumeSync =
     window.electron?.power?.onResume(() => {
-      void player.refreshOutputDevices();
+      void activePlayer.refreshOutputDevices();
     }) ?? null;
   syncTrayPlayback();
   void updateStore.init();
@@ -346,11 +379,11 @@ watch(
 watch(
   () => settings.preventSleep,
   () => {
-    if (!isMiniPlayerRoute.value) settings.syncPreventSleep(player.isPlaying);
+    if (!isMiniPlayerRoute.value) settings.syncPreventSleep(player.value?.isPlaying ?? false);
   },
 );
 watch(
-  () => player.isPlaying,
+  () => player.value?.isPlaying ?? false,
   (isPlaying) => {
     if (isMiniPlayerRoute.value) return;
     settings.syncPreventSleep(isPlaying);
@@ -378,13 +411,13 @@ watch(
   { immediate: true },
 );
 watch(
-  () => player.playMode,
+  () => player.value?.playMode,
   () => {
     if (!isMiniPlayerRoute.value) syncTrayPlayback();
   },
 );
 watch(
-  () => player.volume,
+  () => player.value?.volume,
   () => {
     if (!isMiniPlayerRoute.value) syncTrayPlayback();
   },
@@ -392,14 +425,14 @@ watch(
 watch(
   () => [settings.globalShortcutsEnabled, settings.globalShortcutBindings],
   () => {
-    if (!isMiniPlayerRoute.value) void syncGlobalShortcuts();
+    if (!isMiniPlayerRoute.value) void syncGlobalShortcutsFn?.();
   },
   { deep: true },
 );
 
 // 切歌时，cover 模式下自动提取封面主色
 watch(
-  () => [player.currentTrackSnapshot?.coverUrl, coverFallbackRevision.value],
+  () => [player.value?.currentTrackSnapshot?.coverUrl, coverFallbackRevision.value],
   () => {
     if (isMiniPlayerRoute.value) return;
     const coverColorUrls = currentCoverColorUrls.value;
@@ -435,15 +468,15 @@ watch(
       </RouteErrorBoundary>
     </Transition>
   </RouterView>
-  <Teleport v-if="route.name !== 'mini-player'" to="body">
+  <Teleport v-if="!isMiniPlayerRoute" to="body">
     <Transition name="lyric-overlay">
-      <LyricView v-if="player.isLyricViewOpen" />
+      <LyricView v-if="player?.isLyricViewOpen" />
     </Transition>
   </Teleport>
-  <AuthExpiredDialog v-if="route.name !== 'mini-player'" />
-  <KugouVerificationFlow v-if="route.name !== 'mini-player'" />
-  <ToastViewport v-if="route.name !== 'mini-player'" />
-  <UpdateDialog v-if="route.name !== 'mini-player'" dismiss-label="稍后" />
+  <AuthExpiredDialog v-if="!isMiniPlayerRoute" />
+  <KugouVerificationFlow v-if="!isMiniPlayerRoute" />
+  <ToastViewport v-if="!isMiniPlayerRoute" />
+  <UpdateDialog v-if="!isMiniPlayerRoute" dismiss-label="稍后" />
 </template>
 
 <style>

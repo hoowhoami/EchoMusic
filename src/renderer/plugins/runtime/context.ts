@@ -219,24 +219,35 @@ export const createPluginContext = (
     disposables.push(dispose);
     return dispose;
   };
-  const playerStore = usePlayerStore();
+  let playerStore: ReturnType<typeof usePlayerStore> | null = null;
+  let playlistStore: ReturnType<typeof usePlaylistStore> | null = null;
+
+  const getPlayerStore = () => {
+    playerStore ??= usePlayerStore(host.pinia);
+    return playerStore;
+  };
+
+  const getPlaylistStore = () => {
+    playlistStore ??= usePlaylistStore(host.pinia);
+    return playlistStore;
+  };
 
   const registerPlayerEvent = (
     event: PlayerEventName,
     handler: (payload: PlayerEventPayload) => void,
     options?: { immediate?: boolean },
   ) => {
+    const activePlayerStore = getPlayerStore();
     const wrapped = (payload: PlayerEventPayload) =>
       runPluginCallback(descriptor.id, `播放事件: ${event}`, () => handler(payload), undefined);
-    const off = playerStore.onPlayerEvent(event, wrapped);
+    const off = activePlayerStore.onPlayerEvent(event, wrapped);
     addDisposable(off);
     // immediate：订阅时若当前已处于该状态，立即用当前状态回调一次（仅对 play 有意义）
-    if (options?.immediate && event === 'play' && playerStore.isPlaying) {
-      wrapped(playerStore.getPlayerEventPayload('play'));
+    if (options?.immediate && event === 'play' && activePlayerStore.isPlaying) {
+      wrapped(activePlayerStore.getPlayerEventPayload('play'));
     }
     return off;
   };
-  const playlistStore = usePlaylistStore();
   const lyricStore = useLyricStore();
   const settingStore = useSettingStore();
   const themeStore = useThemeStore();
@@ -255,15 +266,19 @@ export const createPluginContext = (
     router: host.router,
     pinia: host.pinia,
     stores: {
-      player: playerStore,
-      playlist: playlistStore,
+      get player() {
+        return getPlayerStore();
+      },
+      get playlist() {
+        return getPlaylistStore();
+      },
       lyric: lyricStore,
       settings: settingStore,
       theme: themeStore,
     },
-    player: createPlayerApi(descriptor, apiDeps),
+    player: createPlayerApi(descriptor, apiDeps, host.pinia),
     audio: createAudioApi(descriptor, apiDeps),
-    playlist: createPlaylistApi(),
+    playlist: createPlaylistApi(host.pinia),
     lyric: lyricStore,
     lyrics: createLyricsApi(descriptor, apiDeps),
     lyricEffects: createLyricEffectsApi(descriptor, apiDeps),
@@ -356,7 +371,7 @@ export const createPluginContext = (
       onTrackChange: (handler) =>
         addDisposable(
           watch(
-            () => playerStore.currentTrackSnapshot,
+            () => getPlayerStore().currentTrackSnapshot,
             (track) =>
               runPluginCallback(descriptor.id, '播放曲目变化事件', () => handler(track), undefined),
             { deep: true },
@@ -365,7 +380,7 @@ export const createPluginContext = (
       onPlaybackChange: (handler) =>
         addDisposable(
           watch(
-            () => playerStore.isPlaying,
+            () => getPlayerStore().isPlaying,
             (isPlaying) =>
               runPluginCallback(
                 descriptor.id,
@@ -378,7 +393,7 @@ export const createPluginContext = (
       onPlaybackStateChange: (handler) =>
         addDisposable(
           watch(
-            () => playerStore.playbackDisplayState,
+            () => getPlayerStore().playbackDisplayState,
             (state) =>
               runPluginCallback(
                 descriptor.id,

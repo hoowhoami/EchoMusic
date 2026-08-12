@@ -1,4 +1,5 @@
 import { computed } from 'vue';
+import type { Pinia } from 'pinia';
 import type { EchoPluginDescriptor } from '../../../shared/plugins';
 import type { PluginTaskApi } from '../../../shared/tasks';
 import { createFontApi } from '../../../shared/font';
@@ -205,32 +206,48 @@ const getNowPlayingSnapshot = () =>
   window.electron.nowPlaying?.getSnapshot?.() ??
   Promise.resolve(createFallbackNowPlayingSnapshot());
 
-export const createPlayerApi = (descriptor: EchoPluginDescriptor, deps: RuntimeApiDeps) => {
-  const player = usePlayerStore();
-  const playlist = usePlaylistStore();
+export const createPlayerApi = (
+  descriptor: EchoPluginDescriptor,
+  deps: RuntimeApiDeps,
+  pinia?: Pinia,
+) => {
+  let playerStore: ReturnType<typeof usePlayerStore> | null = null;
+  let playlistStore: ReturnType<typeof usePlaylistStore> | null = null;
+  const getPlayer = () => {
+    playerStore ??= usePlayerStore(pinia);
+    return playerStore;
+  };
+  const getPlaylist = () => {
+    playlistStore ??= usePlaylistStore(pinia);
+    return playlistStore;
+  };
+
   return {
-    store: player,
-    currentTrack: computed(() => player.currentTrackSnapshot),
-    currentTrackId: computed(() => player.currentTrackId),
-    currentTime: computed(() => player.currentTime),
-    duration: computed(() => player.duration),
-    isPlaying: computed(() => player.isPlaying),
-    isLoading: computed(() => player.isLoading),
-    playbackState: computed(() => player.playbackDisplayState),
-    playbackTargetTrackId: computed(() => player.playbackTargetTrackId),
-    playbackRate: computed(() => player.playbackRate),
-    volume: computed(() => player.volume),
-    playMode: computed(() => player.playMode),
+    get store() {
+      return getPlayer();
+    },
+    currentTrack: computed(() => getPlayer().currentTrackSnapshot),
+    currentTrackId: computed(() => getPlayer().currentTrackId),
+    currentTime: computed(() => getPlayer().currentTime),
+    duration: computed(() => getPlayer().duration),
+    isPlaying: computed(() => getPlayer().isPlaying),
+    isLoading: computed(() => getPlayer().isLoading),
+    playbackState: computed(() => getPlayer().playbackDisplayState),
+    playbackTargetTrackId: computed(() => getPlayer().playbackTargetTrackId),
+    playbackRate: computed(() => getPlayer().playbackRate),
+    volume: computed(() => getPlayer().volume),
+    playMode: computed(() => getPlayer().playMode),
     audioQuality: computed(() => ({
-      effective: player.getEffectiveAudioQuality(),
-      resolved: player.currentResolvedAudioQuality,
-      override: player.currentAudioQualityOverride,
+      effective: getPlayer().getEffectiveAudioQuality(),
+      resolved: getPlayer().currentResolvedAudioQuality,
+      override: getPlayer().currentAudioQualityOverride,
     })),
     audioEffect: computed(() => ({
-      current: player.audioEffect,
-      resolved: player.currentResolvedAudioEffect,
+      current: getPlayer().audioEffect,
+      resolved: getPlayer().currentResolvedAudioEffect,
     })),
     play: (trackId?: string | number, options?: PluginPlayTrackOptions) => {
+      const player = getPlayer();
       const resolvedTrackId = String(trackId ?? '').trim();
       if (resolvedTrackId) {
         return player.playTrack(resolvedTrackId, options?.playlist, {
@@ -242,41 +259,42 @@ export const createPlayerApi = (descriptor: EchoPluginDescriptor, deps: RuntimeA
       return undefined;
     },
     pause: () => {
+      const player = getPlayer();
       if (player.isPlaying) void player.togglePlay();
     },
-    toggle: () => player.togglePlay(),
-    stop: () => player.stop(),
+    toggle: () => getPlayer().togglePlay(),
+    stop: () => getPlayer().stop(),
     playTrack: (trackId: string | number, options?: PluginPlayTrackOptions) =>
-      player.playTrack(String(trackId), options?.playlist, {
+      getPlayer().playTrack(String(trackId), options?.playlist, {
         autoPlay: options?.autoPlay,
         sourceQueueId: options?.sourceQueueId,
       }),
     playSong: (song: Song, options?: SetPlaybackQueueOptions) =>
-      queueAndPlaySong(playlist, player, song, options),
+      queueAndPlaySong(getPlaylist(), getPlayer(), song, options),
     playNext: (song: Song, options?: SetPlaybackQueueOptions) =>
-      addSongToPlayNext(playlist, player, song, options),
+      addSongToPlayNext(getPlaylist(), getPlayer(), song, options),
     playLast: (song: Song, options?: SetPlaybackQueueOptions) =>
-      addSongToPlayLast(playlist, player, song, options),
+      addSongToPlayLast(getPlaylist(), getPlayer(), song, options),
     replaceQueueAndPlay: (songs: Song[], options: PluginPlaybackQueueOptions = {}) =>
       replaceQueueAndPlay(
-        playlist,
-        player,
+        getPlaylist(),
+        getPlayer(),
         songs,
         options.filteredInvalidCount,
         options.requestedSong,
         options,
       ),
-    next: () => player.next(),
-    prev: () => player.prev(),
-    dislikePersonalFm: () => player.dislikePersonalFm(),
-    seek: (time: number) => player.seek(time),
-    setVolume: (volume: number) => player.setVolume(volume),
-    setPlaybackRate: (rate: number) => player.setPlaybackRate(rate),
-    setPlayMode: (mode: PlayMode) => player.setPlayMode(mode),
+    next: () => getPlayer().next(),
+    prev: () => getPlayer().prev(),
+    dislikePersonalFm: () => getPlayer().dislikePersonalFm(),
+    seek: (time: number) => getPlayer().seek(time),
+    setVolume: (volume: number) => getPlayer().setVolume(volume),
+    setPlaybackRate: (rate: number) => getPlayer().setPlaybackRate(rate),
+    setPlayMode: (mode: PlayMode) => getPlayer().setPlayMode(mode),
     setAudioQuality: (quality: AudioQualityValue | null, options?: { refresh?: boolean }) =>
-      player.setCurrentAudioQualityOverride(quality, options),
-    setAudioEffect: (effect: AudioEffectValue) => player.setAudioEffect(effect),
-    toggleLyricView: (open?: boolean) => player.toggleLyricView(open),
+      getPlayer().setCurrentAudioQualityOverride(quality, options),
+    setAudioEffect: (effect: AudioEffectValue) => getPlayer().setAudioEffect(effect),
+    toggleLyricView: (open?: boolean) => getPlayer().toggleLyricView(open),
     audioSource: {
       register: (contribution: PluginAudioSourceResolverContribution) => {
         if (descriptor.manifest.capabilities?.audioSource !== true) {
@@ -497,56 +515,67 @@ export const createCoverApi = (getSourceColor: () => string): PluginCoverApi => 
   },
 });
 
-export const createPlaylistApi = () => {
-  const playlist = usePlaylistStore();
-  const player = usePlayerStore();
+export const createPlaylistApi = (pinia?: Pinia) => {
+  let playlistStore: ReturnType<typeof usePlaylistStore> | null = null;
+  let playerStore: ReturnType<typeof usePlayerStore> | null = null;
+  const getPlaylist = () => {
+    playlistStore ??= usePlaylistStore(pinia);
+    return playlistStore;
+  };
+  const getPlayer = () => {
+    playerStore ??= usePlayerStore(pinia);
+    return playerStore;
+  };
+
   return {
-    store: playlist,
-    activeQueue: computed(() => clonePlaybackQueue(playlist.activeQueue)),
-    queues: computed(() => playlist.playbackQueueList.map(clonePlaybackQueue).filter(Boolean)),
-    getActiveQueue: () => clonePlaybackQueue(playlist.activeQueue),
-    getQueue: (queueId: string | number) => clonePlaybackQueue(playlist.getQueueById(queueId)),
+    get store() {
+      return getPlaylist();
+    },
+    activeQueue: computed(() => clonePlaybackQueue(getPlaylist().activeQueue)),
+    queues: computed(() => getPlaylist().playbackQueueList.map(clonePlaybackQueue).filter(Boolean)),
+    getActiveQueue: () => clonePlaybackQueue(getPlaylist().activeQueue),
+    getQueue: (queueId: string | number) => clonePlaybackQueue(getPlaylist().getQueueById(queueId)),
     getQueueSongs: (queueId?: string | number | null) =>
       queueId === undefined || queueId === null
-        ? (playlist.activeQueue?.songs ?? playlist.defaultList).slice()
-        : playlist.getPlaybackQueueSongs(queueId),
-    setActiveQueue: (queueId: string | number) => playlist.setActiveQueue(queueId),
+        ? (getPlaylist().activeQueue?.songs ?? getPlaylist().defaultList).slice()
+        : getPlaylist().getPlaybackQueueSongs(queueId),
+    setActiveQueue: (queueId: string | number) => getPlaylist().setActiveQueue(queueId),
     setPlaybackQueue: (songs: Song[], filteredInvalidCount = 0) =>
-      playlist.setPlaybackQueue(songs, filteredInvalidCount),
+      getPlaylist().setPlaybackQueue(songs, filteredInvalidCount),
     setPlaybackQueueWithOptions: (
       songs: Song[],
       filteredInvalidCount = 0,
       options?: SetPlaybackQueueOptions,
-    ) => playlist.setPlaybackQueueWithOptions(songs, filteredInvalidCount, options),
+    ) => getPlaylist().setPlaybackQueueWithOptions(songs, filteredInvalidCount, options),
     replace: (songs: Song[], options: PluginPlaybackQueueOptions = {}) =>
-      playlist.setPlaybackQueueWithOptions(songs, options.filteredInvalidCount, options),
+      getPlaylist().setPlaybackQueueWithOptions(songs, options.filteredInvalidCount, options),
     replaceAndPlay: (songs: Song[], options: PluginPlaybackQueueOptions = {}) =>
       replaceQueueAndPlay(
-        playlist,
-        player,
+        getPlaylist(),
+        getPlayer(),
         songs,
         options.filteredInvalidCount,
         options.requestedSong,
         options,
       ),
     append: (songs: Song[], options?: SetPlaybackQueueOptions) =>
-      playlist.appendToPlaybackQueue(songs, options),
+      getPlaylist().appendToPlaybackQueue(songs, options),
     appendToPlaybackQueue: (songs: Song[], options?: SetPlaybackQueueOptions) =>
-      playlist.appendToPlaybackQueue(songs, options),
+      getPlaylist().appendToPlaybackQueue(songs, options),
     playSong: (song: Song, options?: SetPlaybackQueueOptions) =>
-      queueAndPlaySong(playlist, player, song, options),
+      queueAndPlaySong(getPlaylist(), getPlayer(), song, options),
     playNext: (song: Song, options?: SetPlaybackQueueOptions) =>
-      addSongToPlayNext(playlist, player, song, options),
+      addSongToPlayNext(getPlaylist(), getPlayer(), song, options),
     playLast: (song: Song, options?: SetPlaybackQueueOptions) =>
-      addSongToPlayLast(playlist, player, song, options),
-    enqueuePlayNext: (songId: string | number) => playlist.enqueuePlayNext(songId),
+      addSongToPlayLast(getPlaylist(), getPlayer(), song, options),
+    enqueuePlayNext: (songId: string | number) => getPlaylist().enqueuePlayNext(songId),
     enqueuePlayNextSequential: (songId: string | number) =>
-      playlist.enqueuePlayNextSequential(songId),
-    clear: (queueId?: string | number) => playlist.clearPlaybackQueue(queueId),
+      getPlaylist().enqueuePlayNextSequential(songId),
+    clear: (queueId?: string | number) => getPlaylist().clearPlaybackQueue(queueId),
     remove: (songId: string | number, queueId?: string | number) =>
-      playlist.removeFromQueue(songId, queueId),
+      getPlaylist().removeFromQueue(songId, queueId),
     reorder: (fromIndex: number, toIndex: number, queueId?: string | number) =>
-      playlist.reorderPlaybackQueue(fromIndex, toIndex, queueId),
+      getPlaylist().reorderPlaybackQueue(fromIndex, toIndex, queueId),
   };
 };
 

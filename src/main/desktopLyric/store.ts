@@ -79,7 +79,10 @@ export function getDesktopLyricSettings(): DesktopLyricSettings {
       28,
     ),
     alignment: raw.alignment ?? 'both',
-    doubleLine: typeof raw.doubleLine === 'boolean' ? raw.doubleLine : true,
+    showNextLinePreview:
+      typeof raw.showNextLinePreview === 'boolean'
+        ? raw.showNextLinePreview
+        : DEFAULT_DESKTOP_LYRIC_PERSISTED_SETTINGS.showNextLinePreview,
     playedColor: String(raw.playedColor || '#31cfa1'),
     unplayedColor: String(raw.unplayedColor || '#7a7a7a'),
     strokeColor: String(raw.strokeColor || '#f1b8b3'),
@@ -140,7 +143,7 @@ export function sanitizeDesktopLyricSettings(
     ),
     lineGap: clamp(Math.round(Number(mergedBase.lineGap) || current.lineGap), 4, 28),
     alignment: mergedBase.alignment ?? current.alignment,
-    doubleLine: Boolean(mergedBase.doubleLine),
+    showNextLinePreview: Boolean(mergedBase.showNextLinePreview),
     playedColor: String(mergedBase.playedColor || current.playedColor),
     unplayedColor: String(mergedBase.unplayedColor || current.unplayedColor),
     strokeColor: String(mergedBase.strokeColor || current.strokeColor),
@@ -174,7 +177,7 @@ export function persistDesktopLyricSettings(nextSettings: DesktopLyricSettings) 
     secondaryFontSize: nextSettings.secondaryFontSize,
     lineGap: nextSettings.lineGap,
     alignment: nextSettings.alignment,
-    doubleLine: nextSettings.doubleLine,
+    showNextLinePreview: nextSettings.showNextLinePreview,
     playedColor: nextSettings.playedColor,
     unplayedColor: nextSettings.unplayedColor,
     strokeColor: nextSettings.strokeColor,

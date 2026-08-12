@@ -45,11 +45,10 @@ import {
   shouldIgnoreEnginePause,
 } from './player/stateMachine';
 
-const engine = new PlayerEngine();
-
 export const usePlayerStore = defineStore(
   'player',
   () => {
+    const engine = new PlayerEngine();
     const state = reactive(createPlayerState());
     const playlistStore = usePlaylistStore();
     const settingStore = useSettingStore();
