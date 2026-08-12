@@ -5,6 +5,9 @@ use crate::device::selection::{
 use crate::events::AudioDevice;
 use cpal::traits::{DeviceTrait, HostTrait};
 use std::collections::{HashMap, HashSet};
+use std::panic::{catch_unwind, resume_unwind, AssertUnwindSafe};
+use std::sync::{Condvar, Mutex, MutexGuard, OnceLock};
+use std::thread::{self, ThreadId};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum LinuxOutputHost {
@@ -17,6 +20,24 @@ const PIPEWIRE_KEY_PREFIX: &str = "pipewire:";
 const PULSE_KEY_PREFIX: &str = "pulse:";
 const PULSEAUDIO_KEY_PREFIX: &str = "pulseaudio:";
 const ALSA_KEY_PREFIX: &str = "alsa:";
+static PULSE_AUDIO_HOST: OnceLock<PulseAudioHostCache> = OnceLock::new();
+
+// Keep one PulseAudio host per process so cpal does not create a new
+// cpal-pulseaudio-<pid> client during every device watcher poll. The host is
+// moved out of the cache while in use, so no cpal calls run while holding the
+// cache mutex. A same-thread nested access returns Err instead of deadlocking;
+// a panic while using the host clears the cache before resuming the unwind; and
+// callers reset stale hosts only on concrete PulseAudio query failures.
+struct PulseAudioHostCache {
+    state: Mutex<PulseAudioHostState>,
+    available: Condvar,
+}
+
+enum PulseAudioHostState {
+    Empty,
+    Ready(cpal::Host),
+    Busy { owner: ThreadId },
+}
 
 pub(crate) fn list_output_devices() -> Option<Vec<AudioDevice>> {
     let mut devices = Vec::new();
@@ -28,21 +49,27 @@ pub(crate) fn list_output_devices() -> Option<Vec<AudioDevice>> {
         .into_iter()
         .chain([LinuxOutputHost::Alsa])
     {
-        let Ok(host) = cpal::host_from_id(host_kind.host_id()) else {
-            continue;
+        let mut list_host = || {
+            with_output_host(host_kind, |host| {
+                let default_name = host
+                    .default_output_device()
+                    .and_then(|device| device_display_name(&device));
+                append_host_devices(
+                    host,
+                    host_kind,
+                    default_name.as_deref(),
+                    &mut devices,
+                    &mut seen_keys,
+                    &mut seen_sound_server_names,
+                    &mut occurrences,
+                )
+            })
         };
-        let default_name = host
-            .default_output_device()
-            .and_then(|device| device_display_name(&device));
-        append_host_devices(
-            &host,
-            host_kind,
-            default_name.as_deref(),
-            &mut devices,
-            &mut seen_keys,
-            &mut seen_sound_server_names,
-            &mut occurrences,
-        );
+        let listed = list_host();
+        if host_kind == LinuxOutputHost::PulseAudio && matches!(listed, Ok(Err(()))) {
+            reset_pulse_audio_host();
+            let _ = list_host();
+        }
     }
 
     (!devices.is_empty()).then_some(devices)
@@ -145,6 +172,119 @@ pub(crate) fn validate_alsa_exclusive_output(
     crate::output::alsa_exclusive::probe_output(&resolved, sample_rate)
 }
 
+pub(crate) fn with_output_host<R>(
+    host_kind: LinuxOutputHost,
+    f: impl FnOnce(&cpal::Host) -> R,
+) -> Result<R, String> {
+    if host_kind == LinuxOutputHost::PulseAudio {
+        return with_pulse_audio_host(f);
+    }
+
+    let host = create_output_host(host_kind)?;
+    Ok(f(&host))
+}
+
+fn create_output_host(host_kind: LinuxOutputHost) -> Result<cpal::Host, String> {
+    cpal::host_from_id(host_kind.host_id())
+        .map_err(|err| format!("{} unavailable: {err}", host_kind.host_id()))
+}
+
+fn with_pulse_audio_host<R>(f: impl FnOnce(&cpal::Host) -> R) -> Result<R, String> {
+    let cache = pulse_audio_host();
+    let owner = thread::current().id();
+    let host = take_pulse_audio_host(cache, owner)?;
+    let outcome = catch_unwind(AssertUnwindSafe(|| f(&host)));
+
+    let mut state = lock_pulse_audio_host(cache);
+    match outcome {
+        Ok(result) => {
+            *state = PulseAudioHostState::Ready(host);
+            cache.available.notify_all();
+            Ok(result)
+        }
+        Err(payload) => {
+            *state = PulseAudioHostState::Empty;
+            cache.available.notify_all();
+            drop(state);
+            resume_unwind(payload);
+        }
+    }
+}
+
+fn take_pulse_audio_host(
+    cache: &PulseAudioHostCache,
+    owner: ThreadId,
+) -> Result<cpal::Host, String> {
+    loop {
+        let mut state = lock_pulse_audio_host(cache);
+        match &*state {
+            PulseAudioHostState::Ready(_) => {
+                let PulseAudioHostState::Ready(host) =
+                    std::mem::replace(&mut *state, PulseAudioHostState::Busy { owner })
+                else {
+                    return Err("PulseAudio host cache changed while locked".to_string());
+                };
+                return Ok(host);
+            }
+            PulseAudioHostState::Empty => {
+                *state = PulseAudioHostState::Busy { owner };
+                drop(state);
+                match create_output_host(LinuxOutputHost::PulseAudio) {
+                    Ok(host) => return Ok(host),
+                    Err(err) => {
+                        let mut state = lock_pulse_audio_host(cache);
+                        if matches!(*state, PulseAudioHostState::Busy { owner: busy_owner } if busy_owner == owner)
+                        {
+                            *state = PulseAudioHostState::Empty;
+                        }
+                        cache.available.notify_all();
+                        return Err(err);
+                    }
+                }
+            }
+            PulseAudioHostState::Busy { owner: busy_owner } if *busy_owner == owner => {
+                return Err("reentrant PulseAudio host access is not supported".to_string());
+            }
+            PulseAudioHostState::Busy { .. } => {
+                drop(wait_pulse_audio_host(cache, state));
+            }
+        }
+    }
+}
+
+pub(crate) fn reset_pulse_audio_host() {
+    let cache = pulse_audio_host();
+    let mut state = lock_pulse_audio_host(cache);
+    if !matches!(*state, PulseAudioHostState::Busy { .. }) {
+        *state = PulseAudioHostState::Empty;
+    }
+    cache.available.notify_all();
+}
+
+fn pulse_audio_host() -> &'static PulseAudioHostCache {
+    PULSE_AUDIO_HOST.get_or_init(|| PulseAudioHostCache {
+        state: Mutex::new(PulseAudioHostState::Empty),
+        available: Condvar::new(),
+    })
+}
+
+fn lock_pulse_audio_host(cache: &PulseAudioHostCache) -> MutexGuard<'_, PulseAudioHostState> {
+    cache
+        .state
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+fn wait_pulse_audio_host<'a>(
+    cache: &PulseAudioHostCache,
+    state: MutexGuard<'a, PulseAudioHostState>,
+) -> MutexGuard<'a, PulseAudioHostState> {
+    cache
+        .available
+        .wait(state)
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
 fn append_host_devices(
     host: &cpal::Host,
     host_kind: LinuxOutputHost,
@@ -153,9 +293,9 @@ fn append_host_devices(
     seen_keys: &mut HashSet<String>,
     seen_sound_server_names: &mut HashMap<String, LinuxOutputHost>,
     occurrences: &mut HashMap<String, usize>,
-) {
+) -> Result<(), ()> {
     let Ok(output_devices) = host.output_devices() else {
-        return;
+        return Err(());
     };
     for device in output_devices {
         let Some(raw_name) = device_display_name(&device) else {
@@ -189,6 +329,7 @@ fn append_host_devices(
             ),
         });
     }
+    Ok(())
 }
 
 fn should_skip_sound_server_duplicate(
@@ -298,15 +439,25 @@ fn shared_host_order() -> [LinuxOutputHost; 2] {
 }
 
 fn output_host_has_output_device(host_kind: LinuxOutputHost) -> bool {
-    let Ok(host) = cpal::host_from_id(host_kind.host_id()) else {
-        return false;
+    let has_device = || {
+        with_output_host(host_kind, |host| {
+            if host.default_output_device().is_some() {
+                return Ok(true);
+            }
+            host.output_devices()
+                .map(|mut devices| devices.next().is_some())
+                .map_err(|_| ())
+        })
     };
-    host.default_output_device().is_some()
-        || host
-            .output_devices()
-            .ok()
-            .and_then(|mut devices| devices.next())
-            .is_some()
+
+    match has_device() {
+        Ok(Ok(true)) => true,
+        Ok(Ok(false) | Err(())) if host_kind == LinuxOutputHost::PulseAudio => {
+            reset_pulse_audio_host();
+            has_device().ok().and_then(Result::ok).unwrap_or(false)
+        }
+        _ => false,
+    }
 }
 
 impl LinuxOutputHost {

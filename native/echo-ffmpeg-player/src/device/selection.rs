@@ -204,14 +204,16 @@ fn select_linux_output_device_checked(name: &str, exclusive: bool) -> Result<cpa
         crate::device::platform_linux::output_host_candidates_for_device_name(name, exclusive);
     let mut host_errors = Vec::<String>::new();
     for host_kind in host_kinds {
-        let host = match cpal::host_from_id(host_kind.host_id()) {
-            Ok(host) => host,
+        let selected = match crate::device::platform_linux::with_output_host(host_kind, |host| {
+            select_output_device(host, name, exclusive)
+        }) {
+            Ok(device) => device,
             Err(err) => {
-                host_errors.push(format!("{} unavailable: {err}", host_kind.host_id()));
+                host_errors.push(err);
                 continue;
             }
         };
-        if let Some(device) = select_output_device(&host, name, exclusive) {
+        if let Some(device) = selected {
             return Ok(device);
         }
         host_errors.push(format!("{} has no matching output", host_kind.host_id()));
