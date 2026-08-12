@@ -7,7 +7,6 @@ import type { AccentMode } from '@/stores/theme';
 import Select from '@/components/ui/Select.vue';
 import Switch from '@/components/ui/Switch.vue';
 import ColorPickerDialog from '@/components/ui/ColorPickerDialog.vue';
-import FontIcon from '@/components/ui/FontIcon.vue';
 import { ACCENT_PRESETS } from '@/utils/color';
 import { iconPalette } from '@/icons';
 import { Icon } from '@iconify/vue';
@@ -147,6 +146,20 @@ const resolvedTitle = computed(() => title.label);
         @update:model-value="
           settingStore.taskbarCoverPreview = Boolean($event);
           settingStore.syncTaskbarCoverPreview();
+        "
+      />
+    </div>
+    <div class="settings-divider"></div>
+    <div class="settings-item">
+      <div class="space-y-1">
+        <h3 class="font-semibold">任务栏播放进度条</h3>
+        <p class="text-sm text-text-secondary">在任务栏显示播放进度</p>
+      </div>
+      <Switch
+        :model-value="settingStore.taskbarProgress"
+        @update:model-value="
+          settingStore.taskbarProgress = Boolean($event);
+          settingStore.syncTaskbarProgress();
         "
       />
     </div>

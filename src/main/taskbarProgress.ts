@@ -1,23 +1,27 @@
 import type { BrowserWindow } from 'electron';
 import { getMainWindow } from './window';
 import log from './logger';
+import { getMainAppSettings } from './storage/settings';
 import type { PlayerController } from './player/controller';
 
 /**
  * Windows 任务栏播放进度条。
  *
- * 常驻启用（无设置开关）：播放时在主窗口的任务栏按钮上显示绿色进度条，
- * 暂停时变为黄色暂停态（同浏览器下载），时长未知时显示不定进度条，
- * 无曲目或播放结束时移除进度条。仅 Windows 生效。
+ * 播放时在主窗口的任务栏按钮上显示进度条，暂停时变为黄色暂停态，
+ * 时长未知时显示不定进度条，无曲目或播放结束时移除进度条。仅 Windows 生效。
+ * 开关由设置「外观-任务栏播放进度条」控制（默认开启）。
  */
 
 // 节流：原生 time-update 事件高频触发，避免无意义的重复 native 调用
 const THROTTLE_MS = 200;
 // ratio 变化小于该阈值且 mode 未变时，视为无明显变化，可跳过应用
 const RATIO_EPSILON = 0.001;
+// Windows 上进度值为 0 的暂停条可能被渲染为无状态，暂停时强制保底一段可见进度
+const PAUSED_MIN_VALUE = 0.01;
 
 type ProgressMode = 'normal' | 'paused' | 'indeterminate' | 'none';
 
+let enabled = true;
 let time = 0;
 let duration = 0;
 let isPlaying = false;
@@ -50,6 +54,21 @@ const applyToTaskbar = (): void => {
   const win = getTaskbarWindow();
   if (!win) return;
 
+  // 开关关闭时移除进度条
+  if (!enabled) {
+    if (lastMode !== 'none') {
+      try {
+        win.setProgressBar(-1);
+      } catch (err) {
+        log.warn('[TaskbarProgress] Failed to remove progress bar:', err);
+      }
+      lastMode = 'none';
+      lastRatio = -1;
+      lastApplyAt = Date.now();
+    }
+    return;
+  }
+
   const mode = resolveMode();
   const now = Date.now();
 
@@ -69,8 +88,11 @@ const applyToTaskbar = (): void => {
   }
 
   const ratio = mode === 'indeterminate' ? 1 : resolveRatio();
+  // 暂停态保底可见进度，避免 Windows 将 0 值暂停条渲染为空状态
+  const value =
+    mode === 'paused' ? Math.max(PAUSED_MIN_VALUE, ratio) : mode === 'indeterminate' ? 1 : ratio;
   const modeChanged = mode !== lastMode;
-  const ratioChanged = Math.abs(ratio - lastRatio) >= RATIO_EPSILON;
+  const ratioChanged = Math.abs(value - lastRatio) >= RATIO_EPSILON;
 
   // mode 或 ratio 有明显变化时立即应用；否则按节流窗口跳过
   if (!modeChanged && !ratioChanged) {
@@ -78,10 +100,9 @@ const applyToTaskbar = (): void => {
   }
 
   try {
-    const value = mode === 'indeterminate' ? 1 : ratio;
     win.setProgressBar(value, { mode });
     lastMode = mode;
-    lastRatio = ratio;
+    lastRatio = value;
     lastApplyAt = now;
   } catch (err) {
     log.warn('[TaskbarProgress] Failed to set progress bar:', err);
@@ -101,6 +122,8 @@ const resetState = (): void => {
  */
 export const setupTaskbarProgress = (controller: PlayerController): void => {
   if (process.platform !== 'win32') return;
+  enabled = Boolean(getMainAppSettings().taskbarProgress);
+  log.info('[TaskbarProgress] initialized', { enabled });
 
   controller.on('time-update', (payload: { time?: number }) => {
     if (typeof payload?.time === 'number') {
@@ -132,14 +155,18 @@ export const setupTaskbarProgress = (controller: PlayerController): void => {
 
   controller.on(
     'state-change',
-    (payload: { timePos?: number; duration?: number; playing?: boolean; paused?: boolean }) => {
-      if (typeof payload?.timePos === 'number') time = payload.timePos;
+    (payload: { duration?: number; playing?: boolean; paused?: boolean }) => {
+      // 注意：state-change 的 timePos 只在加载/seek 时更新，播放中不随播放推进，
+      // 若用它覆盖 time 会导致暂停时进度条回到歌曲开头或上次 seek 位置。
+      // time 只由 time-update / seeked / playback-restart 维护实时位置。
       if (typeof payload?.duration === 'number') duration = payload.duration;
       // 暂停/播放切换必须立即体现为颜色变化
       const nextIsPlaying = Boolean(payload?.playing);
       if (nextIsPlaying !== isPlaying) {
         isPlaying = nextIsPlaying;
-        hasTrack = true;
+        if (nextIsPlaying) {
+          hasTrack = true;
+        }
         applyToTaskbar();
       } else {
         applyToTaskbar();
@@ -154,8 +181,16 @@ export const setupTaskbarProgress = (controller: PlayerController): void => {
   controller.on('playback-end', () => {
     resetState();
   });
+};
 
-  log.info('[TaskbarProgress] Initialized');
+/**
+ * 设置任务栏进度条开关。关闭时立即移除进度条，开启时按当前播放状态重放。
+ */
+export const setTaskbarProgressEnabled = (next: boolean): void => {
+  if (process.platform !== 'win32') return;
+  if (enabled === Boolean(next)) return;
+  enabled = Boolean(next);
+  applyToTaskbar();
 };
 
 /**
