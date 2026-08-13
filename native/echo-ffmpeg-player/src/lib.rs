@@ -15,17 +15,19 @@ mod stream;
 mod tempo;
 
 use control::{
-    attach_restarted_decoder, mark_seek_plan_failed, open_decoder_at_position,
-    prepare_dsp_settings_for_mix_rate, SeekPlan,
+    attach_restarted_decoder, handle_output_device_list_change,
+    handle_playback_output_device_event, mark_seek_plan_failed, open_decoder_at_position,
+    prepare_dsp_settings_for_mix_rate, request_output_recovery, restart_output_for_runtime,
+    schedule_idle_output_release_for_runtime, SeekPlan,
 };
 pub use control::{
     cancel_fade, configure_spectrum, fade, get_audio_devices, get_audio_graph,
-    get_spectrum_snapshot, get_spectrum_status, pause_with_fade, play_with_fade, set_audio_device,
-    set_audio_graph_parameter, set_audio_graph_plan, set_equalizer, set_exclusive_output,
+    get_spectrum_snapshot, get_spectrum_status, pause_with_fade, play_with_fade,
+    set_audio_graph_parameter, set_audio_graph_plan, set_audio_output, set_equalizer,
     set_http_proxy, set_impulse_response, set_impulse_response_mix, set_network_timeout,
     set_normalization_gain, set_pause_on_device_disconnect, set_speed, set_stall_timeout, FadeTask,
-    GetAudioDevicesTask, GetSpectrumSnapshotTask, SetAudioDeviceTask, SetAudioGraphParameterTask,
-    SetAudioGraphPlanTask, SetEqualizerTask, SetExclusiveTask, SetImpulseResponseMixTask,
+    GetAudioDevicesTask, GetSpectrumSnapshotTask, SetAudioGraphParameterTask,
+    SetAudioGraphPlanTask, SetAudioOutputTask, SetEqualizerTask, SetImpulseResponseMixTask,
     SetImpulseResponseTask, SetNormalizationGainTask, SetSpeedTask,
 };
 pub use control::{seek, SeekTask};
@@ -36,9 +38,9 @@ use crate::decoder::{
     open_decoder_with_interrupt,
 };
 use crate::dispatcher::{
-    call_core_command, clear_event_callback, dispatch_core_command, reset_event_ids, send_event,
-    send_events, set_event_callback, start_core_dispatcher, start_event_dispatcher,
-    stop_core_dispatcher, stop_event_dispatcher,
+    call_core_command, call_core_command_blocking, clear_event_callback, dispatch_core_command,
+    reset_event_ids, send_event, send_events, set_event_callback, start_core_dispatcher,
+    start_event_dispatcher, stop_core_dispatcher, stop_event_dispatcher,
 };
 use crate::effects::{
     clamp_spatial_mix, prepare_spatial_effect, DspSettings, PreparedSpatialEffect,
@@ -56,12 +58,13 @@ use napi::{Env, Task};
 use napi_derive::napi;
 use std::sync::atomic::AtomicU64;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::{sync_channel, RecvTimeoutError, SyncSender, TrySendError};
+use std::sync::mpsc::{
+    channel, sync_channel, RecvTimeoutError, SyncSender, TryRecvError, TrySendError,
+};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
-const IDLE_OUTPUT_RELEASE_DELAY_SECS: u64 = 3;
 const GAPLESS_PREDECODE_SECS: f64 = 0.5;
 
 static RUNTIME: Mutex<Option<PlayerRuntime>> = Mutex::new(None);
@@ -127,6 +130,10 @@ impl PlaybackCoreState {
             Self::DeviceLost => "device-lost",
             Self::OutputReconfig => "output-reconfig",
         }
+    }
+
+    const fn allows_idle_output_release(self) -> bool {
+        matches!(self, Self::Paused | Self::Draining | Self::Error)
     }
 }
 
@@ -219,7 +226,7 @@ impl PlayerRuntime {
     }
 
     fn next_idle_output_release_seq(&mut self) -> u64 {
-        self.idle_output_release_seq = self.idle_output_release_seq.wrapping_add(1);
+        self.cancel_idle_output_release();
         self.idle_output_release_seq
     }
 
@@ -385,7 +392,7 @@ pub(crate) fn on_core_loop_tick(runtime: &mut PlayerRuntime) {
     }
 }
 
-fn emit_shared_event(shared: &SharedAudio, event: PlayerEvent) {
+pub(crate) fn emit_shared_event(shared: &SharedAudio, event: PlayerEvent) {
     emit_event(contextualize_shared_event(shared, event));
 }
 
@@ -408,77 +415,16 @@ fn with_runtime<T>(f: impl FnOnce(&mut PlayerRuntime) -> napi::Result<T>) -> nap
     f(runtime)
 }
 
-fn schedule_idle_output_release(shared: Arc<SharedAudio>, release_seq: u64) {
-    let _ = thread::Builder::new()
-        .name("player-output-idle-release".to_string())
-        .spawn(move || {
-            thread::sleep(Duration::from_secs(IDLE_OUTPUT_RELEASE_DELAY_SECS));
-            let output_thread = with_runtime(|runtime| {
-                if runtime.idle_output_release_seq != release_seq {
-                    return Ok(None);
-                }
-                if runtime.state.playing || !runtime.state.paused {
-                    return Ok(None);
-                }
-                let Some(session) = runtime.session.as_mut() else {
-                    return Ok(None);
-                };
-                if !Arc::ptr_eq(&session.shared, &shared) || session.shared.output_is_stopped() {
-                    return Ok(None);
-                }
-                session.shared.request_output_stop();
-                let output_thread = session.output_thread.take();
-                let event = PlayerEvent::log(
-                    "info",
-                    format!(
-                        "audio output idle release after {}s pause",
-                        IDLE_OUTPUT_RELEASE_DELAY_SECS
-                    ),
-                );
-                emit_runtime_event(runtime, event);
-                Ok(output_thread)
-            })
-            .ok()
-            .flatten();
-
-            if let Some(handle) = output_thread {
-                let _ = handle.join();
-            }
-        });
-}
-
-fn schedule_idle_output_release_for_current_session() -> napi::Result<()> {
-    let release = with_runtime(|runtime| {
-        let Some(session) = runtime.session.as_ref() else {
-            return Ok(None);
-        };
-        if session.shared.output_is_stopped() {
-            return Ok(None);
-        }
-        let shared = session.shared.clone();
-        let release_seq = runtime.next_idle_output_release_seq();
-        Ok(Some((shared, release_seq)))
-    })?;
-
-    if let Some((shared, release_seq)) = release {
-        schedule_idle_output_release(shared, release_seq);
-    }
-    Ok(())
-}
-
 fn mark_playback_idle_after_end(shared: Arc<SharedAudio>) {
     dispatch_core_command(
         "playback-end",
         Box::new(move |runtime| {
-            let release_shared = {
-                let Some(session) = runtime.session.as_ref() else {
-                    return;
-                };
-                if !Arc::ptr_eq(&session.shared, &shared) {
-                    return;
-                }
-                (!session.shared.output_is_stopped()).then(|| session.shared.clone())
+            let Some(session) = runtime.session.as_ref() else {
+                return;
             };
+            if !Arc::ptr_eq(&session.shared, &shared) {
+                return;
+            }
             runtime.state.playing = false;
             runtime.state.paused = true;
             set_runtime_core_state(runtime, PlaybackCoreState::Draining, "playback-end");
@@ -489,11 +435,7 @@ fn mark_playback_idle_after_end(shared: Arc<SharedAudio>) {
                     PlayerEvent::playback_end("eof"),
                 ],
             );
-            let Some(shared) = release_shared else {
-                return;
-            };
-            let release_seq = runtime.next_idle_output_release_seq();
-            schedule_idle_output_release(shared, release_seq);
+            schedule_idle_output_release_for_runtime(runtime);
         }),
     );
 }
@@ -580,9 +522,10 @@ fn prepare_source(
     let interrupt = decoder.interrupt_handle();
     shared.bind_interrupt(interrupt);
 
-    let (signal_tx, signal_rx) = sync_channel::<PlaybackSignal>(32);
+    let (control_signal_tx, control_signal_rx) = channel::<PlaybackSignal>();
+    let (telemetry_signal_tx, telemetry_signal_rx) = sync_channel::<PlaybackSignal>(32);
     shared
-        .bind_signal_sender(signal_tx)
+        .bind_signal_senders(control_signal_tx, telemetry_signal_tx)
         .map_err(str::to_string)?;
     let signal_shared = shared.clone();
     let signal_url = url.clone();
@@ -591,19 +534,23 @@ fn prepare_source(
         .name("player-signal".to_string())
         .spawn(move || {
             let tick = Duration::from_millis(250);
+            let mut last_clock_samples = signal_shared.played_sample_count();
+            let mut last_clock_track_seq = signal_shared.current_track_seq();
+            let mut last_clock_at = Instant::now();
             let mut last_progress_samples = signal_shared.played_sample_count();
             let mut last_progress_at = Instant::now();
             let mut stall_reported = false;
-
             loop {
-                match signal_rx.recv_timeout(tick) {
-                    Ok(signal) => match signal {
-                        PlaybackSignal::TimeUpdate => {
-                            emit_shared_event(
-                                &signal_shared,
-                                PlayerEvent::time_update(signal_shared.position_secs()),
-                            );
-                        }
+                let signal = match control_signal_rx.recv_timeout(tick) {
+                    Ok(signal) => Some(signal),
+                    Err(RecvTimeoutError::Timeout) => match telemetry_signal_rx.try_recv() {
+                        Ok(signal) => Some(signal),
+                        Err(TryRecvError::Empty | TryRecvError::Disconnected) => None,
+                    },
+                    Err(RecvTimeoutError::Disconnected) => break,
+                };
+                if let Some(signal) = signal {
+                    match signal {
                         PlaybackSignal::PlaybackRestart(position) => {
                             emit_shared_events(
                                 &signal_shared,
@@ -613,6 +560,9 @@ fn prepare_source(
                                     PlayerEvent::time_update(position),
                                 ],
                             );
+                            last_clock_samples = signal_shared.played_sample_count();
+                            last_clock_track_seq = signal_shared.current_track_seq();
+                            last_clock_at = Instant::now();
                         }
                         PlaybackSignal::AoState {
                             paused,
@@ -691,15 +641,30 @@ fn prepare_source(
                             }
                         }
                         PlaybackSignal::Stop => break,
-                    },
-                    Err(RecvTimeoutError::Timeout) => {}
-                    Err(RecvTimeoutError::Disconnected) => break,
+                    }
                 }
                 signal_shared.refresh_output_stats();
                 if signal_shared.stop.load(Ordering::Acquire) {
                     break;
                 }
                 let current_samples = signal_shared.played_sample_count();
+                let current_track_seq = signal_shared.current_track_seq();
+                let now = Instant::now();
+                if current_track_seq != last_clock_track_seq || current_samples < last_clock_samples
+                {
+                    last_clock_samples = current_samples;
+                    last_clock_track_seq = current_track_seq;
+                    last_clock_at = now;
+                } else if current_samples != last_clock_samples
+                    && now.duration_since(last_clock_at) >= tick
+                {
+                    emit_shared_event(
+                        &signal_shared,
+                        PlayerEvent::time_update(signal_shared.position_secs()),
+                    );
+                    last_clock_samples = current_samples;
+                    last_clock_at = now;
+                }
                 if current_samples != last_progress_samples
                     || !signal_shared.should_watch_for_stall()
                 {
@@ -754,10 +719,7 @@ fn prepare_source(
     })
 }
 
-fn apply_prepared_source(
-    runtime: &mut PlayerRuntime,
-    prepared: PreparedSource,
-) -> Option<(Arc<SharedAudio>, u64)> {
+fn apply_prepared_source(runtime: &mut PlayerRuntime, prepared: PreparedSource) {
     let PreparedSource {
         session,
         url,
@@ -769,7 +731,6 @@ fn apply_prepared_source(
     } = prepared;
     runtime.cancel_idle_output_release();
     runtime.cancel_pending_gapless_prepare();
-    let should_release_when_idle = !autostart;
     runtime.prepared_next = None;
     runtime.seek_restore_paused = None;
     if let Some(previous) = runtime.session.replace(session) {
@@ -805,16 +766,9 @@ fn apply_prepared_source(
         }
         events
     });
-
-    if !should_release_when_idle {
-        return None;
+    if !autostart {
+        schedule_idle_output_release_for_runtime(runtime);
     }
-    let shared = runtime.session.as_ref()?.shared.clone();
-    if shared.output_is_stopped() {
-        return None;
-    }
-    let release_seq = runtime.next_idle_output_release_seq();
-    Some((shared, release_seq))
 }
 
 fn apply_track_switch(info: TrackSwitchInfo, shared: Arc<SharedAudio>) {
@@ -837,7 +791,6 @@ fn apply_track_switch(info: TrackSwitchInfo, shared: Arc<SharedAudio>) {
             runtime.state.playing = true;
             runtime.state.paused = false;
             set_runtime_core_state(runtime, PlaybackCoreState::Playing, "gapless-track-switch");
-            shared.set_track_seq(info.seq);
             emit_runtime_events(
                 runtime,
                 vec![
@@ -877,11 +830,10 @@ fn replace_source_async(
         pause_on_device_disconnect,
     )
     .map_err(napi::Error::from_reason)?;
-    let release = with_runtime(|runtime| Ok(apply_prepared_source(runtime, prepared)))?;
-    if let Some((shared, release_seq)) = release {
-        schedule_idle_output_release(shared, release_seq);
-    }
-    Ok(())
+    with_runtime(|runtime| {
+        apply_prepared_source(runtime, prepared);
+        Ok(())
+    })
 }
 
 fn update_runtime_audio_graph(runtime: &mut PlayerRuntime) {
@@ -1032,353 +984,18 @@ fn restart_loop_if_enabled(shared: Arc<SharedAudio>) -> bool {
     true
 }
 
-struct OutputRestartPlan {
-    shared: Option<Arc<SharedAudio>>,
-    output_thread: Option<thread::JoinHandle<()>>,
-    previous_config: PlayerConfig,
-    next_config: PlayerConfig,
-    was_paused: bool,
-}
-
-pub(crate) fn request_output_recovery(
-    shared: Arc<SharedAudio>,
-    reason: &'static str,
-    message: String,
-) {
-    if !shared.try_begin_output_recovery() {
-        emit_shared_event(
-            &shared,
-            PlayerEvent::log(
-                "debug",
-                format!("audio output recovery already running: reason={reason}"),
-            ),
-        );
-        return;
-    }
-
-    let recovery_shared = shared.clone();
-    match thread::Builder::new()
-        .name("player-output-recovery".to_string())
-        .spawn(move || {
-            run_output_recovery(recovery_shared, reason, message);
-        }) {
-        Ok(_) => {}
-        Err(err) => {
-            shared.finish_output_recovery();
-            let message = format!("failed to start audio output recovery: {err}");
-            emit_shared_event(
-                &shared,
-                PlayerEvent::error_with_reason(
-                    events::PlayerErrorCode::OutputRuntime,
-                    message,
-                    reason,
-                ),
-            );
-        }
-    }
-}
-
-fn run_output_recovery(shared: Arc<SharedAudio>, reason: &'static str, message: String) {
-    emit_shared_event(
-        &shared,
-        PlayerEvent::log(
-            "warn",
-            format!("audio output recovery requested: reason={reason}, message={message}"),
-        ),
-    );
-
-    let retry_delays = [
-        Duration::from_millis(0),
-        Duration::from_millis(500),
-        Duration::from_millis(1_000),
-    ];
-    let mut last_error = message;
-    for (attempt, delay) in retry_delays.iter().enumerate() {
-        if shared.stop.load(Ordering::Acquire) {
-            shared.finish_output_recovery();
-            return;
-        }
-        if !delay.is_zero() {
-            thread::sleep(*delay);
-        }
-        let result =
-            with_runtime(|runtime| Ok(runtime.config.clone())).and_then(restart_output_for_config);
-        match result {
-            Ok(()) => {
-                emit_shared_event(
-                    &shared,
-                    PlayerEvent::log(
-                        "info",
-                        format!(
-                            "audio output recovery completed: reason={reason}, attempt={}",
-                            attempt + 1
-                        ),
-                    ),
-                );
-                shared.finish_output_recovery();
-                return;
-            }
-            Err(err) => {
-                last_error = err.to_string();
-                emit_shared_event(
-                    &shared,
-                    PlayerEvent::log(
-                        "warn",
-                        format!(
-                            "audio output recovery failed: reason={reason}, attempt={}, error={last_error}",
-                            attempt + 1
-                        ),
-                    ),
-                );
-            }
-        }
-    }
-
-    shared.finish_output_recovery();
-    emit_shared_event(
-        &shared,
-        PlayerEvent::error_with_reason(
-            events::PlayerErrorCode::OutputRuntime,
-            format!("audio output recovery failed: {last_error}"),
-            reason,
-        ),
-    );
-}
-
-fn restart_output_for_config(config: PlayerConfig) -> napi::Result<()> {
-    let plan = with_runtime(|runtime| {
-        runtime.cancel_idle_output_release();
-        set_runtime_core_state(runtime, PlaybackCoreState::OutputReconfig, "output-restart");
-        let previous_config = runtime.config.clone();
-        let Some(session) = runtime.session.as_mut() else {
-            return Ok(OutputRestartPlan {
-                shared: None,
-                output_thread: None,
-                previous_config,
-                next_config: config,
-                was_paused: true,
-            });
-        };
-        let was_paused = session.shared.paused.load(Ordering::Acquire);
-        Ok(OutputRestartPlan {
-            shared: Some(session.shared.clone()),
-            output_thread: session.output_thread.take(),
-            previous_config,
-            next_config: config,
-            was_paused,
-        })
-    })?;
-
-    let Some(shared) = plan.shared else {
-        validate_output_restart_config(&plan.next_config, None)
-            .map_err(napi::Error::from_reason)?;
-        return with_runtime(|runtime| {
-            runtime.config = plan.next_config;
-            Ok(())
-        });
-    };
-
-    shared.request_output_stop();
-    if let Some(handle) = plan.output_thread {
-        let _ = handle.join();
-    }
-
-    if let Err(err) = validate_output_restart_config(&plan.next_config, Some(&shared)) {
-        emit_shared_event(
-            &shared,
-            PlayerEvent::log(
-                "warn",
-                format!("audio output restart validation failed, restoring previous output: {err}"),
-            ),
-        );
-        shared.prepare_output_restart();
-        let _ = spawn_and_attach_output_thread(shared.clone(), plan.previous_config);
-        restore_output_restart_playback_state(shared, plan.was_paused);
-        return Err(napi::Error::from_reason(err));
-    }
-
-    shared.prepare_output_restart();
-    match spawn_and_attach_output_thread_confirmed(shared.clone(), plan.next_config) {
-        Ok(()) => {
-            restore_output_restart_playback_state(shared, plan.was_paused);
-            Ok(())
-        }
-        Err(err) => {
-            emit_shared_event(
-                &shared,
-                PlayerEvent::log(
-                    "warn",
-                    format!("audio output restart failed, restoring previous output: {err}"),
-                ),
-            );
-            shared.prepare_output_restart();
-            let _ = spawn_and_attach_output_thread(shared.clone(), plan.previous_config);
-            restore_output_restart_playback_state(shared, plan.was_paused);
-            Err(napi::Error::from_reason(err))
-        }
-    }
-}
-
-fn restore_output_restart_playback_state(shared: Arc<SharedAudio>, was_paused: bool) {
-    shared.paused.store(was_paused, Ordering::Release);
-    let _ = with_runtime(|runtime| {
-        let Some(session) = runtime.session.as_ref() else {
-            return Ok(());
-        };
-        if !Arc::ptr_eq(&session.shared, &shared) {
-            return Ok(());
-        }
-        runtime.state.playing = !was_paused;
-        runtime.state.paused = was_paused;
-        set_runtime_core_state(
-            runtime,
-            if was_paused {
-                PlaybackCoreState::Paused
-            } else {
-                PlaybackCoreState::Playing
-            },
-            "output-restart-restored",
-        );
-        emit_runtime_event(runtime, PlayerEvent::state_change(runtime.state.clone()));
-        Ok(())
-    });
-}
-
-fn validate_output_restart_config(
-    config: &PlayerConfig,
-    shared: Option<&SharedAudio>,
-) -> Result<(), String> {
-    #[cfg(target_os = "windows")]
-    if config.exclusive_output {
-        let _ = shared;
-        return Ok(());
-    }
-    #[cfg(target_os = "macos")]
-    if config.exclusive_output {
-        let sample_rate = shared
-            .map(|shared| shared.mix_format.sample_rate)
-            .unwrap_or_else(|| {
-                device::resolve_output_sample_rate(&config.audio_device, config.exclusive_output)
-            });
-        return device::platform_macos::validate_coreaudio_exclusive_output(
-            &config.audio_device,
-            sample_rate,
-        );
-    }
-    #[cfg(target_os = "linux")]
-    if config.exclusive_output {
-        let sample_rate = shared
-            .map(|shared| shared.mix_format.sample_rate)
-            .unwrap_or_else(|| {
-                device::resolve_output_sample_rate(&config.audio_device, config.exclusive_output)
-            });
-        return device::platform_linux::validate_alsa_exclusive_output(
-            &config.audio_device,
-            sample_rate,
-        );
-    }
-
-    let _ = shared;
-    device::validate_output_device(&config.audio_device, config.exclusive_output)
-}
-
-fn spawn_and_attach_output_thread(
-    shared: Arc<SharedAudio>,
-    config: PlayerConfig,
-) -> napi::Result<()> {
-    let output_thread = output::spawn_output_backend(
-        config.audio_device.clone(),
-        config.exclusive_output,
-        shared.clone(),
-        emit_event,
-        None,
-    );
-    let mut output_thread = Some(output_thread);
-    let attached = with_runtime(|runtime| {
-        let Some(session) = runtime.session.as_mut() else {
-            return Ok(false);
-        };
-        if !Arc::ptr_eq(&session.shared, &shared) {
-            return Ok(false);
-        }
-        runtime.config = config;
-        session.output_thread = output_thread.take();
-        Ok(true)
-    })?;
-
-    if !attached {
-        shared.request_output_stop();
-        if let Some(handle) = output_thread {
-            let _ = handle.join();
-        }
-    }
-
-    Ok(())
-}
-
-fn spawn_and_attach_output_thread_confirmed(
-    shared: Arc<SharedAudio>,
-    config: PlayerConfig,
-) -> Result<(), String> {
-    let (start_tx, start_rx) = sync_channel(1);
-    let output_thread = output::spawn_output_backend(
-        config.audio_device.clone(),
-        config.exclusive_output,
-        shared.clone(),
-        emit_event,
-        Some(start_tx),
-    );
-
-    match start_rx.recv_timeout(Duration::from_secs(3)) {
-        Ok(Ok(())) => {}
-        Ok(Err(err)) => {
-            shared.request_output_stop();
-            let _ = output_thread.join();
-            return Err(err);
-        }
-        Err(RecvTimeoutError::Timeout) => {
-            shared.request_output_stop();
-            drop(output_thread);
-            return Err("audio output did not start within 3 seconds".to_string());
-        }
-        Err(RecvTimeoutError::Disconnected) => {
-            shared.request_output_stop();
-            let _ = output_thread.join();
-            return Err("audio output exited before startup completed".to_string());
-        }
-    }
-
-    let mut output_thread = Some(output_thread);
-    let attached = with_runtime(|runtime| {
-        let Some(session) = runtime.session.as_mut() else {
-            return Ok(false);
-        };
-        if !Arc::ptr_eq(&session.shared, &shared) {
-            return Ok(false);
-        }
-        runtime.config = config;
-        session.output_thread = output_thread.take();
-        Ok(true)
-    })
-    .map_err(|err| err.to_string())?;
-
-    if !attached {
-        shared.request_output_stop();
-        if let Some(handle) = output_thread {
-            let _ = handle.join();
-        }
-    }
-
-    Ok(())
-}
-
 #[napi]
 pub fn initialize(config: Option<PlayerConfigOptions>) -> napi::Result<()> {
     shutdown_runtime(false)?;
     reset_event_ids();
     start_event_dispatcher()?;
     let mut runtime = PlayerRuntime::new(PlayerConfig::from_options(config));
-    runtime.device_watcher = device::DeviceWatcher::start(emit_event).unwrap_or(None);
+    runtime.device_watcher = device::DeviceWatcher::start(
+        emit_event,
+        handle_playback_output_device_event,
+        handle_output_device_list_change,
+    )
+    .unwrap_or(None);
     *RUNTIME.lock().map_err(|err| {
         napi::Error::from_reason(format!("failed to lock player runtime: {err}"))
     })? = Some(runtime);
@@ -1528,6 +1145,7 @@ impl Task for LoadFileTask {
                                 .shared
                                 .set_preferred_output_sample_format(preferred_output_sample_format);
                             session.shared.bind_interrupt(decoder.interrupt_handle());
+                            session.shared.set_track_seq(seq);
                             let (decode_thread, decode_commands) = decoder::spawn_decode_worker(
                                 decoder,
                                 session.shared.clone(),
@@ -1539,7 +1157,6 @@ impl Task for LoadFileTask {
                             runtime.current_url = Some(url.clone());
                             runtime.current_audio_stream_ordinal = audio_stream;
                             runtime.current_seq = seq;
-                            session.shared.set_track_seq(seq);
                             runtime.state.duration = duration;
                             runtime.state.time_pos = 0.0;
                             runtime.state.playing = false;
@@ -1558,6 +1175,7 @@ impl Task for LoadFileTask {
                                     PlayerEvent::state_change(runtime.state.clone()),
                                 ],
                             );
+                            schedule_idle_output_release_for_runtime(runtime);
                             Ok(())
                         })
                     }
@@ -1897,26 +1515,26 @@ impl Task for PlayTask {
     type JsValue = ();
 
     fn compute(&mut self) -> napi::Result<Self::Output> {
-        let restart_config = with_runtime(|runtime| {
+        call_core_command_blocking("play", |runtime| {
             runtime.cancel_idle_output_release();
             let Some(session) = runtime.session.as_ref() else {
                 return Err(napi::Error::from_reason(
                     "no audio source loaded".to_string(),
                 ));
             };
-            Ok(session
-                .shared
-                .output_is_stopped()
-                .then(|| runtime.config.clone()))
-        })?;
-        if let Some(config) = restart_config {
-            restart_output_for_config(config)?;
-        }
-
-        with_runtime(|runtime| {
+            let output_needs_restart = session
+                .output_thread
+                .as_ref()
+                .is_none_or(output::AudioOutputHandle::has_exited)
+                || !session.shared.output_has_started();
+            if output_needs_restart {
+                let config = runtime.config.clone();
+                restart_output_for_runtime(runtime, config, false)?;
+                runtime.cancel_idle_output_release();
+            }
             let Some(session) = runtime.session.as_ref() else {
                 return Err(napi::Error::from_reason(
-                    "no audio source loaded".to_string(),
+                    "audio session ended while resuming output".to_string(),
                 ));
             };
             session.shared.paused.store(false, Ordering::Release);
@@ -1940,7 +1558,7 @@ pub fn play() -> AsyncTask<PlayTask> {
 
 #[napi]
 pub fn pause() -> napi::Result<()> {
-    with_runtime(|runtime| {
+    call_core_command("pause", |runtime| {
         if let Some(session) = runtime.session.as_ref() {
             session.shared.paused.store(true, Ordering::Release);
         }
@@ -1948,9 +1566,9 @@ pub fn pause() -> napi::Result<()> {
         runtime.state.paused = true;
         set_runtime_core_state(runtime, PlaybackCoreState::Paused, "pause");
         emit_runtime_event(runtime, PlayerEvent::state_change(runtime.state.clone()));
+        schedule_idle_output_release_for_runtime(runtime);
         Ok(())
-    })?;
-    schedule_idle_output_release_for_current_session()
+    })
 }
 
 #[napi]

@@ -104,6 +104,25 @@ pub(crate) fn shared_output_host_order() -> Vec<LinuxOutputHost> {
         .collect()
 }
 
+pub(crate) fn pulse_default_output_id() -> Option<String> {
+    let query = || {
+        with_output_host(LinuxOutputHost::PulseAudio, |host| {
+            host.default_output_device()?
+                .id()
+                .ok()
+                .map(|id| id.id().to_string())
+        })
+        .ok()
+        .flatten()
+    };
+    let current = query();
+    if current.is_none() {
+        reset_pulse_audio_host();
+        return query();
+    }
+    current
+}
+
 pub(crate) fn normalize_linux_namespaced_device(namespace: &str, device: &str) -> Option<String> {
     match namespace.to_ascii_lowercase().as_str() {
         "pipewire" => Some(format!("{PIPEWIRE_KEY_PREFIX}{device}")),

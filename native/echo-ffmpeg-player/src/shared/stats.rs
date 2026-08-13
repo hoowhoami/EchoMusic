@@ -1,17 +1,25 @@
 use super::*;
 
 impl SharedAudio {
-    pub fn bind_signal_sender(
+    pub fn bind_signal_senders(
         &self,
-        sender: SyncSender<PlaybackSignal>,
+        control_sender: Sender<PlaybackSignal>,
+        telemetry_sender: SyncSender<PlaybackSignal>,
     ) -> Result<(), &'static str> {
-        self.signal_tx
-            .set(sender)
+        self.control_signal_tx
+            .set(control_sender)
+            .map_err(|_| "playback signal sender is already bound")?;
+        self.telemetry_signal_tx
+            .set(telemetry_sender)
             .map_err(|_| "playback signal sender is already bound")
     }
 
     pub fn notify_signal(&self, signal: PlaybackSignal) {
-        if let Some(sender) = self.signal_tx.get() {
+        if signal.is_control() {
+            if let Some(sender) = self.control_signal_tx.get() {
+                let _ = sender.send(signal);
+            }
+        } else if let Some(sender) = self.telemetry_signal_tx.get() {
             let _ = sender.try_send(signal);
         }
     }

@@ -57,6 +57,7 @@ export const createPlayerState = () => ({
   currentResolvedAudioEffect: 'none' as AudioEffectValue,
   currentResolvedSourceKind: 'catalog' as PlaybackSourceKind,
   nativeTrackSeq: null as number | null,
+  supersededNativeTrackSeq: null as number | null,
   audioEffect: 'none' as AudioEffectValue,
   recentSeekIgnoreEnd: false,
   settingsWatcherRegistered: false,
@@ -87,7 +88,7 @@ export const createPlayerState = () => ({
   playbackIntent: createPlaybackIntent(),
   enginePlayback: createEnginePlaybackState(),
   playbackDiagnostics: createPlaybackDiagnostics(),
-  // 切歌加载护栏：playTrack 重置时置 true，player 回报 file-loaded（新文件真正加载完成）后置 false。
+  // 原生换源护栏：开始加载时置 true，player 回报 file-loaded（新文件真正加载完成）后置 false。
   // 期间 timeUpdate/durationChange 收到的多为上一首在 loadFile 替换前后的残留回报，一律丢弃，
   // 避免进度条切歌时先跳到旧值再归零。
   awaitingTrackLoad: false,

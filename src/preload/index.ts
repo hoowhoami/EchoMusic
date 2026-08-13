@@ -18,6 +18,7 @@ import type {
   DesktopLyricSnapshotPatch,
   DesktopLyricWindowBoundsUpdate,
 } from '../shared/desktop-lyric';
+import { isWaylandWindowingBackend } from '../shared/windowing';
 import type {
   NowPlayingCommand,
   NowPlayingSnapshot,
@@ -275,15 +276,7 @@ const sendWithPlainPayload = (channel: string, ...args: unknown[]) => {
   ipcRenderer.send(channel, ...args.map(toPlainIpcPayload));
 };
 
-const windowingBackend = process.env.ECHOMUSIC_WINDOWING_BACKEND?.toLowerCase();
-const isWayland =
-  process.platform === 'linux' &&
-  (windowingBackend === 'wayland' ||
-    (!windowingBackend &&
-      (process.env.OZONE_PLATFORM === 'wayland' ||
-        process.argv.some(
-          (arg) => arg === '--ozone-platform=wayland' || arg === '--ozone-platform-hint=wayland',
-        ))));
+const isWayland = isWaylandWindowingBackend();
 
 contextBridge.exposeInMainWorld('electron', {
   platform: process.platform,
@@ -470,6 +463,7 @@ contextBridge.exposeInMainWorld('electron', {
         width: number;
         height: number;
       }>,
+    getHover: () => ipcRenderer.invoke('desktop-lyric:get-hover') as Promise<boolean>,
     show: () => ipcRenderer.invoke('desktop-lyric:show') as Promise<DesktopLyricSnapshot>,
     hide: () => ipcRenderer.invoke('desktop-lyric:hide') as Promise<DesktopLyricSnapshot>,
     toggleLock: () =>
@@ -481,6 +475,14 @@ contextBridge.exposeInMainWorld('electron', {
         'desktop-lyric:update-window',
         payload,
       ),
+    move: (x: number, y: number) => ipcRenderer.send('desktop-lyric:move', x, y),
+    endDrag: () =>
+      ipcRenderer.invoke('desktop-lyric:end-drag') as Promise<{
+        x: number;
+        y: number;
+        width: number;
+        height: number;
+      }>,
     syncSnapshot: (payload: DesktopLyricSnapshotPatch) =>
       sendWithPlainPayload('desktop-lyric:sync-snapshot', payload),
     onSnapshot: (func: (snapshot: DesktopLyricSnapshotMessage) => void) => {
@@ -603,8 +605,8 @@ contextBridge.exposeInMainWorld('electron', {
       invokeWithPlainPayload('player:set-audio-graph-parameter', patch),
     setAudioGraphPlan: (plan: PlayerAudioGraphPlanPatch) =>
       invokeWithPlainPayload('player:set-audio-graph-plan', plan),
-    setAudioDevice: (deviceName: string) =>
-      ipcRenderer.invoke('player:set-audio-device', deviceName),
+    setAudioOutput: (deviceName: string, exclusive: boolean) =>
+      ipcRenderer.invoke('player:set-audio-output', deviceName, exclusive),
     getAudioDevices: () =>
       ipcRenderer.invoke('player:get-audio-devices') as Promise<
         Array<{ name: string; description: string; isDefault?: boolean }>
@@ -621,7 +623,6 @@ contextBridge.exposeInMainWorld('electron', {
     getState: () => ipcRenderer.invoke('player:get-state'),
     available: () => ipcRenderer.invoke('player:available') as Promise<boolean>,
     restart: () => ipcRenderer.invoke('player:restart') as Promise<boolean>,
-    setExclusive: (exclusive: boolean) => ipcRenderer.invoke('player:set-exclusive', exclusive),
     setPauseOnDeviceDisconnect: (enabled: boolean) =>
       ipcRenderer.invoke('player:set-pause-on-device-disconnect', enabled),
     setMediaTitle: (title: string) => ipcRenderer.invoke('player:set-media-title', title),

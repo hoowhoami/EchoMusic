@@ -7,8 +7,8 @@ use crate::device::platform_windows::{
 };
 use crate::events::{PlayerErrorCode, PlayerEvent};
 use crate::output::{
-    build_output_stats, output_buffer_mode_for_frames, report_output_start,
-    report_output_start_failure, OutputStartSender,
+    build_output_stats, output_buffer_mode_for_frames, output_start_was_cancelled,
+    report_output_start, report_output_start_failure, OutputStartSender, OutputStopToken,
 };
 use crate::shared::SharedAudio;
 use std::ptr;
@@ -174,6 +174,7 @@ fn classify_wasapi_client_error(code: HRESULT) -> WasapiOutputErrorAction {
 fn handle_wasapi_output_failure(
     requested_mode: WasapiShareMode,
     shared: &Arc<SharedAudio>,
+    stop: &OutputStopToken,
     emit: fn(PlayerEvent),
     start_notify: &mut Option<OutputStartSender>,
     failure: WasapiOutputFailure,
@@ -181,7 +182,7 @@ fn handle_wasapi_output_failure(
     let WasapiOutputFailure { message, action } = failure;
     let startup_failure = report_output_start_failure(start_notify, message.clone());
     if startup_failure {
-        shared.request_output_stop();
+        stop.request_stop();
         return true;
     }
 
@@ -199,7 +200,7 @@ fn handle_wasapi_output_failure(
             if shared.should_pause_on_device_disconnect()
                 && super::is_disconnect_recovery_reason(reason)
             {
-                shared.request_output_stop();
+                stop.request_stop();
                 emit(PlayerEvent::error_with_reason(
                     PlayerErrorCode::OutputRuntime,
                     message,
@@ -210,7 +211,7 @@ fn handle_wasapi_output_failure(
             }
         }
         WasapiOutputErrorAction::Escalate { reason } => {
-            shared.request_output_stop();
+            stop.request_stop();
             emit(PlayerEvent::error_with_reason(
                 requested_mode.error_code(),
                 message,
@@ -225,6 +226,7 @@ pub fn spawn_output_thread(
     device_name: String,
     exclusive: bool,
     shared: Arc<SharedAudio>,
+    stop: OutputStopToken,
     emit: fn(PlayerEvent),
     start_notify: Option<OutputStartSender>,
 ) -> JoinHandle<()> {
@@ -235,41 +237,16 @@ pub fn spawn_output_thread(
             &device_name,
             requested_mode,
             shared.clone(),
+            stop.clone(),
             emit,
             &mut start_notify,
         ) {
             Ok(()) => {}
-            Err(failure) if exclusive && !shared.output_has_started() => {
-                emit(PlayerEvent::log(
-                    "warn",
-                    format!(
-                        "WASAPI exclusive failed: {}; falling back to WASAPI shared",
-                        failure.message
-                    ),
-                ));
-                match run_wasapi_output(
-                    &device_name,
-                    WasapiShareMode::Shared,
-                    shared.clone(),
-                    emit,
-                    &mut start_notify,
-                ) {
-                    Ok(()) => {}
-                    Err(failure) => {
-                        handle_wasapi_output_failure(
-                            WasapiShareMode::Shared,
-                            &shared,
-                            emit,
-                            &mut start_notify,
-                            failure,
-                        );
-                    }
-                }
-            }
             Err(failure) => {
                 if handle_wasapi_output_failure(
                     requested_mode,
                     &shared,
+                    &stop,
                     emit,
                     &mut start_notify,
                     failure,
@@ -285,6 +262,7 @@ fn run_wasapi_output(
     device_name: &str,
     share_mode: WasapiShareMode,
     shared: Arc<SharedAudio>,
+    stop: OutputStopToken,
     emit: fn(PlayerEvent),
     start_notify: &mut Option<OutputStartSender>,
 ) -> Result<(), WasapiOutputFailure> {
@@ -376,6 +354,9 @@ fn run_wasapi_output(
     .map_err(WasapiOutputFailure::backend)?;
 
     unsafe {
+        if output_start_was_cancelled(&stop, &shared, start_notify) {
+            return Ok(());
+        }
         write_frames(
             &output.render_client,
             output.buffer_frames,
@@ -400,7 +381,7 @@ fn run_wasapi_output(
                 share_mode.label(), output_format.sample_rate, shared.mix_format.sample_rate
             ),
         ));
-        while !shared.should_stop_output() {
+        while !stop.should_stop(&shared) {
             match Threading::WaitForSingleObject(event.0, WASAPI_EVENT_WAIT_MS) {
                 WAIT_OBJECT_0 => {
                     let refill = match feed_wasapi_output(

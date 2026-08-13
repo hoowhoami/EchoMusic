@@ -2,6 +2,7 @@ mod cpal_shared;
 
 use crate::events::{PlayerErrorCode, PlayerEvent};
 use crate::shared::{AudioOutputStats, AudioSampleFormat, SharedAudio};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::SyncSender;
 use std::sync::Arc;
 use std::thread::JoinHandle;
@@ -19,6 +20,78 @@ mod wasapi;
 pub(crate) use cpal_shared::fill_output_reusing;
 
 pub(crate) type OutputStartSender = SyncSender<Result<(), String>>;
+
+#[derive(Clone, Debug)]
+pub(crate) struct OutputStopToken {
+    stopped: Arc<AtomicBool>,
+}
+
+impl OutputStopToken {
+    fn new() -> Self {
+        Self {
+            stopped: Arc::new(AtomicBool::new(false)),
+        }
+    }
+
+    pub(crate) fn request_stop(&self) {
+        self.stopped.store(true, Ordering::Release);
+    }
+
+    pub(crate) fn should_stop(&self, shared: &SharedAudio) -> bool {
+        self.stopped.load(Ordering::Acquire) || shared.stop.load(Ordering::Acquire)
+    }
+}
+
+pub(crate) struct AudioOutputHandle {
+    stop: OutputStopToken,
+    thread: Option<JoinHandle<()>>,
+}
+
+impl AudioOutputHandle {
+    fn new(stop: OutputStopToken, thread: JoinHandle<()>) -> Self {
+        Self {
+            stop,
+            thread: Some(thread),
+        }
+    }
+
+    pub(crate) fn shutdown(mut self) {
+        self.stop.request_stop();
+        if let Some(thread) = self.thread.take() {
+            let _ = thread.join();
+        }
+    }
+
+    pub(crate) fn has_exited(&self) -> bool {
+        self.thread
+            .as_ref()
+            .is_none_or(std::thread::JoinHandle::is_finished)
+    }
+
+    /// Stops an output that never confirmed startup without blocking the core dispatcher on a
+    /// backend call that may itself be stuck. Successfully started outputs must still use
+    /// `shutdown()` so AO generations cannot overlap.
+    pub(crate) fn shutdown_in_background(mut self, reason: &'static str) {
+        self.stop.request_stop();
+        let Some(thread) = self.thread.take() else {
+            return;
+        };
+        let _ = std::thread::Builder::new()
+            .name(format!("player-output-reaper-{reason}"))
+            .spawn(move || {
+                let _ = thread.join();
+            });
+    }
+}
+
+impl Drop for AudioOutputHandle {
+    fn drop(&mut self) {
+        self.stop.request_stop();
+        if let Some(thread) = self.thread.take() {
+            let _ = thread.join();
+        }
+    }
+}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AudioOutputCapability {
@@ -46,6 +119,7 @@ pub trait AudioOutputBackend: Send {
     fn spawn(
         self: Box<Self>,
         shared: Arc<SharedAudio>,
+        stop: OutputStopToken,
         emit: fn(PlayerEvent),
         start_notify: Option<OutputStartSender>,
     ) -> JoinHandle<()>;
@@ -94,10 +168,18 @@ impl AudioOutputBackend for SelectedAudioOutputBackend {
     fn spawn(
         self: Box<Self>,
         shared: Arc<SharedAudio>,
+        stop: OutputStopToken,
         emit: fn(PlayerEvent),
         start_notify: Option<OutputStartSender>,
     ) -> JoinHandle<()> {
-        spawn_selected_backend(self.device_name, self.exclusive, shared, emit, start_notify)
+        spawn_selected_backend(
+            self.device_name,
+            self.exclusive,
+            shared,
+            stop,
+            emit,
+            start_notify,
+        )
     }
 }
 
@@ -107,7 +189,7 @@ pub(crate) fn spawn_output_backend(
     shared: Arc<SharedAudio>,
     emit: fn(PlayerEvent),
     start_notify: Option<OutputStartSender>,
-) -> JoinHandle<()> {
+) -> AudioOutputHandle {
     let backend: Box<dyn AudioOutputBackend> =
         Box::new(SelectedAudioOutputBackend::new(device_name, exclusive));
     let selected_exclusive = backend.exclusive();
@@ -124,7 +206,9 @@ pub(crate) fn spawn_output_backend(
             capability.sample_formats.join(",")
         ),
     ));
-    backend.spawn(shared, emit, start_notify)
+    let stop = OutputStopToken::new();
+    let thread = backend.spawn(shared, stop.clone(), emit, start_notify);
+    AudioOutputHandle::new(stop, thread)
 }
 
 pub(crate) fn build_output_stats(
@@ -176,11 +260,12 @@ pub(crate) fn is_disconnect_recovery_reason(reason: &str) -> bool {
 
 pub(crate) fn emit_output_runtime_error(
     shared: &SharedAudio,
+    stop: &OutputStopToken,
     emit: fn(PlayerEvent),
     error_code: PlayerErrorCode,
     message: String,
 ) {
-    shared.request_output_stop();
+    stop.request_stop();
     if shared.should_pause_on_device_disconnect() {
         emit(PlayerEvent::error_with_reason(
             PlayerErrorCode::OutputRuntime,
@@ -236,47 +321,54 @@ fn spawn_selected_backend(
     device_name: String,
     exclusive: bool,
     shared: Arc<SharedAudio>,
+    stop: OutputStopToken,
     emit: fn(PlayerEvent),
     start_notify: Option<OutputStartSender>,
 ) -> JoinHandle<()> {
     #[cfg(target_os = "windows")]
     {
-        return wasapi::spawn_output_thread(device_name, exclusive, shared, emit, start_notify);
+        wasapi::spawn_output_thread(device_name, exclusive, shared, stop, emit, start_notify)
     }
     #[cfg(target_os = "linux")]
     {
         if exclusive {
-            return alsa_exclusive::spawn_output_thread(device_name, shared, emit, start_notify);
+            alsa_exclusive::spawn_output_thread(device_name, shared, stop, emit, start_notify)
+        } else {
+            cpal_shared::spawn_shared_output_thread(
+                device_name,
+                exclusive,
+                shared,
+                stop,
+                emit,
+                start_notify,
+            )
         }
-        return cpal_shared::spawn_shared_output_thread(
-            device_name,
-            exclusive,
-            shared,
-            emit,
-            start_notify,
-        );
     }
     #[cfg(target_os = "macos")]
     {
         if exclusive {
-            return coreaudio_exclusive::spawn_output_thread(
+            coreaudio_exclusive::spawn_output_thread(device_name, shared, stop, emit, start_notify)
+        } else {
+            cpal_shared::spawn_shared_output_thread(
                 device_name,
+                exclusive,
                 shared,
+                stop,
                 emit,
                 start_notify,
-            );
+            )
         }
-        return cpal_shared::spawn_shared_output_thread(
-            device_name,
-            exclusive,
-            shared,
-            emit,
-            start_notify,
-        );
     }
     #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
     {
-        cpal_shared::spawn_shared_output_thread(device_name, exclusive, shared, emit, start_notify)
+        cpal_shared::spawn_shared_output_thread(
+            device_name,
+            exclusive,
+            shared,
+            stop,
+            emit,
+            start_notify,
+        )
     }
 }
 
@@ -296,6 +388,21 @@ pub(crate) fn report_output_start_failure(
     let was_starting = start_notify.is_some();
     report_output_start(start_notify, Err(message));
     was_starting
+}
+
+pub(crate) fn output_start_was_cancelled(
+    stop: &OutputStopToken,
+    shared: &SharedAudio,
+    start_notify: &mut Option<OutputStartSender>,
+) -> bool {
+    if !stop.should_stop(shared) {
+        return false;
+    }
+    report_output_start(
+        start_notify,
+        Err("audio output startup was cancelled".to_string()),
+    );
+    true
 }
 
 #[cfg(test)]
@@ -348,5 +455,64 @@ mod tests {
         assert_eq!(stats.device_buffer_secs, 0.05);
         assert!((stats.software_buffer_secs - 0.15).abs() < f64::EPSILON);
         assert_eq!(stats.delay_secs, 0.2);
+    }
+
+    #[test]
+    fn output_stop_tokens_are_isolated_between_ao_instances() {
+        let shared = SharedAudio::new(
+            MixFormat::stereo_f32(48_000),
+            0.2,
+            1.0,
+            &DspSettings::default(),
+        );
+        let old = OutputStopToken::new();
+        let next = OutputStopToken::new();
+
+        old.request_stop();
+        shared.prepare_output_start();
+
+        assert!(old.should_stop(&shared));
+        assert!(!next.should_stop(&shared));
+    }
+
+    #[test]
+    fn output_handle_shutdown_waits_for_owner_thread() {
+        let shared = Arc::new(SharedAudio::new(
+            MixFormat::stereo_f32(48_000),
+            0.2,
+            1.0,
+            &DspSettings::default(),
+        ));
+        let stop = OutputStopToken::new();
+        let thread_stop = stop.clone();
+        let thread_shared = shared.clone();
+        let (done_tx, done_rx) = std::sync::mpsc::sync_channel(1);
+        let thread = std::thread::spawn(move || {
+            while !thread_stop.should_stop(&thread_shared) {
+                std::thread::yield_now();
+            }
+            let _ = done_tx.send(());
+        });
+
+        AudioOutputHandle::new(stop, thread).shutdown();
+
+        assert_eq!(done_rx.try_recv(), Ok(()));
+    }
+
+    #[test]
+    fn output_handle_reports_when_owner_thread_has_exited() {
+        let stop = OutputStopToken::new();
+        let thread = std::thread::spawn(|| {});
+        let handle = AudioOutputHandle::new(stop, thread);
+
+        for _ in 0..100 {
+            if handle.has_exited() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        }
+
+        assert!(handle.has_exited());
+        handle.shutdown();
     }
 }

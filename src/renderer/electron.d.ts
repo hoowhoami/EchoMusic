@@ -303,6 +303,7 @@ export interface IElectronAPI {
   desktopLyric: {
     getSnapshot: () => Promise<DesktopLyricSnapshot>;
     getWindow: () => Promise<{ x: number; y: number; width: number; height: number }>;
+    getHover: () => Promise<boolean>;
     show: () => Promise<DesktopLyricSnapshot>;
     hide: () => Promise<DesktopLyricSnapshot>;
     toggleLock: () => Promise<DesktopLyricSnapshot>;
@@ -310,6 +311,8 @@ export interface IElectronAPI {
     updateWindow: (
       payload: DesktopLyricWindowBoundsUpdate,
     ) => Promise<{ x: number; y: number; width: number; height: number }>;
+    move: (x: number, y: number) => void;
+    endDrag: () => Promise<{ x: number; y: number; width: number; height: number }>;
     syncSnapshot: (payload: DesktopLyricSnapshotPatch) => void;
     onSnapshot: (func: (snapshot: DesktopLyricSnapshotMessage) => void) => () => void;
     setIgnoreMouseEvents: (ignore: boolean) => void;
@@ -640,7 +643,7 @@ export interface IElectronAPI {
     getAudioGraph: () => Promise<PlayerAudioGraphSnapshot | null>;
     setAudioGraphParameter: (patch: PlayerAudioGraphParameterPatch) => Promise<void>;
     setAudioGraphPlan: (plan: PlayerAudioGraphPlanPatch) => Promise<void>;
-    setAudioDevice: (deviceName: string) => Promise<void>;
+    setAudioOutput: (deviceName: string, exclusive: boolean) => Promise<void>;
     getAudioDevices: () => Promise<
       Array<{ name: string; description: string; isDefault?: boolean }>
     >;
@@ -662,7 +665,6 @@ export interface IElectronAPI {
     } | null>;
     available: () => Promise<boolean>;
     restart: () => Promise<boolean>;
-    setExclusive: (exclusive: boolean) => Promise<boolean>;
     setPauseOnDeviceDisconnect: (enabled: boolean) => Promise<void>;
     setMediaTitle: (title: string) => Promise<void>;
     setLoopFile: (loop: boolean) => Promise<void>;

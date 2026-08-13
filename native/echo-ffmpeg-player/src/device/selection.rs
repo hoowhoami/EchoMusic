@@ -418,8 +418,8 @@ pub(crate) fn device_display_name(device: &cpal::Device) -> Option<String> {
             return Some(name.to_string());
         }
     }
-    let name = device.to_string();
-    let name = name.trim();
+    let id = device.id().ok()?;
+    let name = id.id().trim();
     (!name.is_empty()).then(|| name.to_string())
 }
 

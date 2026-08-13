@@ -236,7 +236,7 @@ interface PlayerAddon {
   getAudioGraph(): PlayerAudioGraphSnapshot;
   setAudioGraphParameter(patch: PlayerAudioGraphParameterPatch): Promise<void>;
   setAudioGraphPlan(plan: PlayerAudioGraphPlanPatch): Promise<void>;
-  setAudioDevice(deviceName: string): Promise<void>;
+  setAudioOutput(deviceName: string, exclusive: boolean): Promise<void>;
   getAudioDevices(): Promise<Array<{ name: string; description: string; isDefault?: boolean }>>;
   setNormalizationGain(gainDb: number): Promise<void>;
   fade(from: number, to: number, durationMs: number): Promise<void>;
@@ -244,7 +244,6 @@ interface PlayerAddon {
   pauseWithFade(savedVolume: number, durationMs: number): Promise<void>;
   playWithFade(targetVolume: number, durationMs: number): Promise<void>;
   getState(): PlayerState;
-  setExclusiveOutput(exclusive: boolean): Promise<void>;
   setPauseOnDeviceDisconnect(enabled: boolean): void;
   setLoopFile(loop: boolean): void;
   setStallTimeout(seconds: number): void;
@@ -265,6 +264,7 @@ export interface PlayerState {
   idle?: boolean;
   path?: string;
   audioDevice?: string;
+  exclusiveOutput?: boolean;
   audioTrackId?: number;
 }
 
@@ -296,6 +296,7 @@ export class PlayerController extends EventEmitter {
     idle: true,
     path: '',
     audioDevice: 'auto',
+    exclusiveOutput: false,
     audioTrackId: 0,
   };
 
@@ -480,11 +481,13 @@ export class PlayerController extends EventEmitter {
     await this.enqueue(() => this.getAddonOrThrow().setAudioGraphPlan(plan));
   }
 
-  setAudioDevice(deviceName: string) {
+  setAudioOutput(deviceName: string, exclusive: boolean) {
     const nextDevice = deviceName || 'auto';
     return this.enqueue(async () => {
-      await this.getAddonOrThrow().setAudioDevice(nextDevice);
+      const nextExclusive = Boolean(exclusive);
+      await this.getAddonOrThrow().setAudioOutput(nextDevice, nextExclusive);
       this.state.audioDevice = nextDevice;
+      this.state.exclusiveOutput = nextExclusive;
     });
   }
 
@@ -522,10 +525,6 @@ export class PlayerController extends EventEmitter {
         log.warn('[PlayerController] play fade failed:', error);
       });
     });
-  }
-
-  setExclusive(exclusive: boolean) {
-    return this.enqueue(() => this.getAddonOrThrow().setExclusiveOutput(exclusive));
   }
 
   setPauseOnDeviceDisconnect(enabled: boolean): void {
@@ -744,6 +743,8 @@ export class PlayerController extends EventEmitter {
           message: event.message || 'player error',
           errorCode: event.errorCode,
           reason: event.reason,
+          trackSeq: event.trackSeq,
+          generation: event.generation,
         } satisfies PlayerErrorPayload);
         break;
       case 'log':

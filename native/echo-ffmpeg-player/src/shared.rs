@@ -22,7 +22,7 @@ pub use types::{
 
 use clock::stall_timeout_millis;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicUsize, Ordering};
-use std::sync::mpsc::SyncSender;
+use std::sync::mpsc::{Sender, SyncSender};
 use std::sync::{Arc, Condvar, Mutex, OnceLock};
 
 const AO_RING_HEADROOM_SECS: f64 = 2.0;
@@ -45,7 +45,6 @@ pub struct SharedAudio {
     dsp_settings: Mutex<DspSettings>,
     pub paused: AtomicBool,
     pub stop: AtomicBool,
-    output_stop: AtomicBool,
     output_started: AtomicBool,
     output_underruns: AtomicU64,
     decode_stop: AtomicBool,
@@ -65,7 +64,6 @@ pub struct SharedAudio {
     pub mix_format: MixFormat,
     track_seq: AtomicU64,
     pub played_samples: AtomicU64,
-    last_time_event_samples: AtomicU64,
     stall_timeout_ms: AtomicU64,
     output_delay_us: AtomicU64,
     live_output_delay_us: AtomicU64,
@@ -77,7 +75,8 @@ pub struct SharedAudio {
     preferred_output_sample_format: AtomicU32,
     spectrum_sample_rate: AtomicU32,
     interrupt: Mutex<Option<Arc<AtomicBool>>>,
-    signal_tx: OnceLock<SyncSender<PlaybackSignal>>,
+    control_signal_tx: OnceLock<Sender<PlaybackSignal>>,
+    telemetry_signal_tx: OnceLock<SyncSender<PlaybackSignal>>,
 }
 
 impl SharedAudio {
@@ -130,7 +129,6 @@ impl SharedAudio {
             dsp_settings: Mutex::new(dsp_settings.clone()),
             paused: AtomicBool::new(true),
             stop: AtomicBool::new(false),
-            output_stop: AtomicBool::new(false),
             output_started: AtomicBool::new(false),
             output_underruns: AtomicU64::new(0),
             decode_stop: AtomicBool::new(false),
@@ -151,7 +149,6 @@ impl SharedAudio {
             ),
             mix_format,
             played_samples: AtomicU64::new(0),
-            last_time_event_samples: AtomicU64::new(0),
             stall_timeout_ms: AtomicU64::new(stall_timeout_millis(stall_timeout_secs)),
             output_delay_us: AtomicU64::new(0),
             live_output_delay_us: AtomicU64::new(0),
@@ -163,14 +160,14 @@ impl SharedAudio {
             preferred_output_sample_format: AtomicU32::new(AudioSampleFormat::Unknown as u32),
             spectrum_sample_rate: AtomicU32::new(mix_sample_rate),
             interrupt: Mutex::new(None),
-            signal_tx: OnceLock::new(),
+            control_signal_tx: OnceLock::new(),
+            telemetry_signal_tx: OnceLock::new(),
             track_seq: AtomicU64::new(0),
         }
     }
 
     pub fn request_stop(&self) {
         self.stop.store(true, Ordering::Release);
-        self.output_stop.store(true, Ordering::Release);
         self.output_recovering.store(false, Ordering::Release);
         self.decode_stop.store(true, Ordering::Release);
         if let Ok(guard) = self.interrupt.lock() {
@@ -184,19 +181,10 @@ impl SharedAudio {
         self.gapless_prepare_changed.notify_all();
     }
 
-    pub fn request_output_stop(&self) {
-        self.output_stop.store(true, Ordering::Release);
-        self.output_started.store(false, Ordering::Release);
-        self.output_queue_changed.notify_all();
-        self.decoded_queue_changed.notify_all();
-        self.gapless_prepare_changed.notify_all();
-    }
-
-    pub fn prepare_output_restart(&self) {
+    pub fn prepare_output_start(&self) {
         if self.stop.load(Ordering::Acquire) {
             return;
         }
-        self.output_stop.store(false, Ordering::Release);
         self.output_started.store(false, Ordering::Release);
         self.live_output_delay_us.store(0, Ordering::Release);
         self.output_queue_changed.notify_all();
@@ -220,24 +208,20 @@ impl SharedAudio {
     }
 
     pub fn should_stop_output(&self) -> bool {
-        self.stop.load(Ordering::Acquire) || self.output_stop.load(Ordering::Acquire)
-    }
-
-    pub fn output_is_stopped(&self) -> bool {
-        self.output_stop.load(Ordering::Acquire)
+        self.stop.load(Ordering::Acquire)
     }
 
     pub fn mark_output_started(&self) {
         self.output_started.store(true, Ordering::Release);
     }
 
+    pub fn output_has_started(&self) -> bool {
+        self.output_started.load(Ordering::Acquire)
+    }
+
     pub fn begin_output_preroll(&self) {
         self.ao_state.begin_preroll();
         self.output_queue_changed.notify_all();
-    }
-
-    pub fn output_has_started(&self) -> bool {
-        self.output_started.load(Ordering::Acquire)
     }
 
     pub fn request_decode_stop(&self) {
@@ -630,19 +614,15 @@ impl SharedAudio {
                 let post_boundary_frames = self.source_frames_for_output(post_boundary_samples);
                 self.played_samples
                     .store(post_boundary_frames, Ordering::Release);
-                self.last_time_event_samples
-                    .store(post_boundary_frames, Ordering::Release);
+                self.set_track_seq(info.seq);
                 if let Ok(mut ring) = self.spectrum_ring.try_lock() {
                     ring.clear();
                 }
                 self.reset_output_buffering_state();
                 self.notify_signal(PlaybackSignal::TrackSwitch(info));
             } else {
-                let previous = self
-                    .played_samples
+                self.played_samples
                     .fetch_add(consumed_source_frames, Ordering::AcqRel);
-                let current = previous.saturating_add(consumed_source_frames);
-                self.notify_time_update_if_due(current);
             }
             consumed_frames
         } else {

@@ -1,15 +1,16 @@
 use super::cpal_shared::OutputResampler;
 use crate::device::platform_macos::{
-    coreaudio_device_display_name, coreaudio_status_message, prepare_coreaudio_exclusive_format,
-    resolve_coreaudio_device_id, try_disable_coreaudio_mixing, CoreAudioMixingGuard,
-    CoreAudioPcmFormat, CoreAudioPcmSampleFormat, CoreAudioPhysicalFormatGuard,
+    coreaudio_device_display_name, coreaudio_status_message, monitor_coreaudio_exclusive_changes,
+    prepare_coreaudio_exclusive_format, resolve_coreaudio_device_id, try_disable_coreaudio_mixing,
+    CoreAudioExclusiveChangeMonitor, CoreAudioMixingGuard, CoreAudioPcmFormat,
+    CoreAudioPcmSampleFormat, CoreAudioPhysicalFormatGuard,
 };
 use crate::events::{PlayerErrorCode, PlayerEvent};
 use crate::exclusive::ExclusiveGuard;
 use crate::output::{
     build_output_stats, emit_output_runtime_error, fill_output_reusing,
-    output_buffer_mode_for_frames, report_output_start, report_output_start_failure,
-    OutputStartSender,
+    output_buffer_mode_for_frames, output_start_was_cancelled, report_output_start,
+    report_output_start_failure, OutputStartSender, OutputStopToken,
 };
 use crate::shared::SharedAudio;
 use coreaudio_sys as ca;
@@ -36,6 +37,7 @@ struct CoreAudioExclusiveOutput {
     io_proc_id: ca::AudioDeviceIOProcID,
     context: *mut CoreAudioOutputContext,
     started: bool,
+    change_monitor: Option<CoreAudioExclusiveChangeMonitor>,
     physical_format_guard: Option<CoreAudioPhysicalFormatGuard>,
     _mixing_guard: Option<CoreAudioMixingGuard>,
     _exclusive_guard: Option<ExclusiveGuard>,
@@ -43,6 +45,7 @@ struct CoreAudioExclusiveOutput {
 
 impl Drop for CoreAudioExclusiveOutput {
     fn drop(&mut self) {
+        drop(self.change_monitor.take());
         unsafe {
             if self.started {
                 let _ = ca::AudioDeviceStop(self.device_id, self.io_proc_id);
@@ -60,39 +63,33 @@ impl Drop for CoreAudioExclusiveOutput {
 pub fn spawn_output_thread(
     device_name: String,
     shared: Arc<SharedAudio>,
+    stop: OutputStopToken,
     emit: fn(PlayerEvent),
     start_notify: Option<OutputStartSender>,
 ) -> JoinHandle<()> {
     thread::spawn(move || {
         let mut start_notify = start_notify;
-        match run_exclusive_output(&device_name, shared.clone(), emit, &mut start_notify) {
+        match run_exclusive_output(
+            &device_name,
+            shared.clone(),
+            stop.clone(),
+            emit,
+            &mut start_notify,
+        ) {
             Ok(()) => {}
-            Err(message) if !shared.output_has_started() => {
-                emit(PlayerEvent::log(
-                    "warn",
-                    format!("CoreAudio exclusive failed: {message}; falling back to CPAL shared"),
-                ));
-                let cpal_handle = super::cpal_shared::spawn_shared_output_thread(
-                    device_name,
-                    false,
-                    shared,
-                    emit,
-                    start_notify,
-                );
-                let _ = cpal_handle.join();
-            }
             Err(message) => {
                 let startup_failure =
                     report_output_start_failure(&mut start_notify, message.clone());
                 if !startup_failure {
                     emit_output_runtime_error(
                         &shared,
+                        &stop,
                         emit,
                         PlayerErrorCode::OutputExclusive,
                         message,
                     );
                 } else {
-                    shared.request_output_stop();
+                    stop.request_stop();
                 }
             }
         }
@@ -102,6 +99,7 @@ pub fn spawn_output_thread(
 fn run_exclusive_output(
     device_name: &str,
     shared: Arc<SharedAudio>,
+    stop: OutputStopToken,
     emit: fn(PlayerEvent),
     start_notify: &mut Option<OutputStartSender>,
 ) -> Result<(), String> {
@@ -182,11 +180,21 @@ fn run_exclusive_output(
         io_proc_id,
         context,
         started: false,
+        change_monitor: None,
         physical_format_guard,
         _mixing_guard: mixing_guard,
         _exclusive_guard: exclusive_guard,
     };
 
+    output.change_monitor = Some(monitor_coreaudio_exclusive_changes(
+        device_id,
+        format,
+        output.context_ref().shared.clone(),
+    )?);
+
+    if output_start_was_cancelled(&stop, &output.context_ref().shared, start_notify) {
+        return Ok(());
+    }
     let start_status = unsafe { ca::AudioDeviceStart(device_id, io_proc_id) };
     if start_status != 0 {
         return Err(coreaudio_status_message(
@@ -203,7 +211,7 @@ fn run_exclusive_output(
         format!("CoreAudio exclusive output started: resolved='{resolved_device_name}'"),
     ));
 
-    while !output.context_ref().shared.should_stop_output() {
+    while !stop.should_stop(&output.context_ref().shared) {
         thread::sleep(Duration::from_millis(50));
     }
 

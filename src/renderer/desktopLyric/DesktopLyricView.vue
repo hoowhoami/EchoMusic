@@ -9,7 +9,7 @@ import {
   watch,
   type ComponentPublicInstance,
 } from 'vue';
-import { useRafFn, useThrottleFn, useWindowSize, useDebounceFn } from '@vueuse/core';
+import { useRafFn, useWindowSize, useDebounceFn } from '@vueuse/core';
 import {
   iconLock,
   iconLockOpen,
@@ -342,27 +342,13 @@ const handleMouseMove = (event: MouseEvent) => {
     return;
   }
 
-  // 非锁定状态：检测鼠标是否在歌词内容或工具栏区域
-  const isOnContent = target?.closest('.lyric-container') !== null;
-  const isOnHeader = target?.closest('.header') !== null;
-
-  if (isOnContent || isOnHeader) {
-    isHovered.value = true;
-  }
-
-  // 检测鼠标是否完全离开窗口容器
-  const container = document.querySelector('.desktop-lyric');
-  if (container) {
-    const rect = container.getBoundingClientRect();
-    const isInContainer =
-      event.clientX >= rect.left &&
-      event.clientX <= rect.right &&
-      event.clientY >= rect.top &&
-      event.clientY <= rect.bottom;
-    if (!isInContainer) {
-      isHovered.value = false;
-    }
-  }
+  // 桌面歌词页面本身就是窗口内容；窗口内任意位置移动都应显示背景和工具栏。
+  // pointer capture 等情况下事件可能带着窗外坐标抵达，保留 rect 语义兜底。
+  isHovered.value =
+    event.clientX >= 0 &&
+    event.clientX <= window.innerWidth &&
+    event.clientY >= 0 &&
+    event.clientY <= window.innerHeight;
 };
 
 const handleMouseLeave = () => {
@@ -370,6 +356,10 @@ const handleMouseLeave = () => {
   if (isLocked.value) {
     setDesktopLyricIgnoreMouseEvents(true);
   }
+};
+
+const handleWindowBlur = () => {
+  if (!isLocked.value) isHovered.value = false;
 };
 
 // ── 占位行 ──
@@ -620,139 +610,176 @@ const sendToMain = (channel: string, ...args: any[]) => {
   window.electron?.ipcRenderer?.send(channel, ...args);
 };
 
-// 缓存窗口和屏幕边界
-const cachedBounds = reactive({
-  x: 0,
-  y: 0,
-  width: 800,
-  height: 180,
-  screenMinX: -99999,
-  screenMinY: -99999,
-  screenMaxX: 99999,
-  screenMaxY: 99999,
-});
+type DesktopLyricDragSession = {
+  pointerId: number;
+  captureTarget: HTMLElement;
+  startScreenX: number;
+  startScreenY: number;
+  latestScreenX: number;
+  latestScreenY: number;
+  startWindowX: number;
+  startWindowY: number;
+};
 
-const updateCachedBounds = async () => {
-  try {
-    const [winBounds, screenBounds] = await Promise.all([
-      window.electron.ipcRenderer.invoke('desktop-lyric:get-bounds'),
-      window.electron.ipcRenderer.invoke('desktop-lyric:get-virtual-screen-bounds'),
-    ]);
-    cachedBounds.x = winBounds?.x ?? 0;
-    cachedBounds.y = winBounds?.y ?? 0;
-    cachedBounds.width = winBounds?.width ?? 800;
-    cachedBounds.height = winBounds?.height ?? 180;
-    cachedBounds.screenMinX = screenBounds?.minX ?? -99999;
-    cachedBounds.screenMinY = screenBounds?.minY ?? -99999;
-    cachedBounds.screenMaxX = screenBounds?.maxX ?? 99999;
-    cachedBounds.screenMaxY = screenBounds?.maxY ?? 99999;
-  } catch (e) {
-    console.warn('Failed to update cached bounds:', e);
-  }
+type DesktopLyricWindowBounds = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
 };
 
 const dragState = reactive({
   isDragging: false,
   hasMoved: false,
-  startX: 0,
-  startY: 0,
-  startWinX: 0,
-  startWinY: 0,
-  winWidth: 0,
-  winHeight: 0,
 });
+let dragSession: DesktopLyricDragSession | null = null;
+let dragAnimationFrame = 0;
+let cachedWindowBounds: DesktopLyricWindowBounds | null = null;
 
-const isResizing = ref(false);
+const cacheWindowBounds = (bounds: DesktopLyricWindowBounds | null | undefined) => {
+  if (
+    !bounds ||
+    !Number.isFinite(bounds.x) ||
+    !Number.isFinite(bounds.y) ||
+    !Number.isFinite(bounds.width) ||
+    !Number.isFinite(bounds.height)
+  )
+    return;
+  cachedWindowBounds = {
+    x: Math.round(bounds.x),
+    y: Math.round(bounds.y),
+    width: Math.round(bounds.width),
+    height: Math.round(bounds.height),
+  };
+};
 
-const onDocPointerDown = async (event: PointerEvent) => {
-  if (isWayland) return;
-  if (isLocked.value || event.button !== 0) return;
-  const target = event.target as HTMLElement | null;
-  if (target?.closest('.menu-btn')) return;
+const cancelDragAnimationFrame = () => {
+  if (!dragAnimationFrame) return;
+  cancelAnimationFrame(dragAnimationFrame);
+  dragAnimationFrame = 0;
+};
 
-  // 同步获取最新窗口位置，避免缓存过时导致瞬移
+const flushWindowDragPosition = () => {
+  dragAnimationFrame = 0;
+  const session = dragSession;
+  if (!session || !dragState.hasMoved) return;
+  const x = Math.round(session.startWindowX + (session.latestScreenX - session.startScreenX));
+  const y = Math.round(session.startWindowY + (session.latestScreenY - session.startScreenY));
+  cacheWindowBounds({
+    x,
+    y,
+    width: cachedWindowBounds?.width ?? window.innerWidth,
+    height: cachedWindowBounds?.height ?? window.innerHeight,
+  });
+  window.electron?.desktopLyric?.move(x, y);
+};
+
+const scheduleWindowDragPosition = () => {
+  if (dragAnimationFrame) return;
+  dragAnimationFrame = requestAnimationFrame(flushWindowDragPosition);
+};
+
+const updateWindowDragPointer = (event: PointerEvent) => {
+  const session = dragSession;
+  if (!session || event.pointerId !== session.pointerId) return false;
+  session.latestScreenX = event.screenX;
+  session.latestScreenY = event.screenY;
+  if (
+    !dragState.hasMoved &&
+    (Math.abs(session.latestScreenX - session.startScreenX) > 3 ||
+      Math.abs(session.latestScreenY - session.startScreenY) > 3)
+  ) {
+    dragState.hasMoved = true;
+  }
+  return true;
+};
+
+const removeWindowDragListeners = () => {
+  document.removeEventListener('pointermove', onDocPointerMove);
+  document.removeEventListener('pointerup', onDocPointerUp);
+  document.removeEventListener('pointercancel', onDocPointerCancel);
+  window.removeEventListener('blur', onWindowBlur);
+};
+
+const finishWindowDrag = (event?: PointerEvent, commitPosition = true) => {
+  const session = dragSession;
+  if (!session || (event && event.pointerId !== session.pointerId)) return;
+  if (event) updateWindowDragPointer(event);
+  cancelDragAnimationFrame();
+  if (commitPosition) flushWindowDragPosition();
+
+  const didMove = dragState.hasMoved;
+  dragSession = null;
+  dragState.isDragging = false;
+  dragState.hasMoved = false;
+  removeWindowDragListeners();
   try {
-    const winBounds = await window.electron.ipcRenderer.invoke('desktop-lyric:get-bounds');
-    if (winBounds) {
-      cachedBounds.x = winBounds.x;
-      cachedBounds.y = winBounds.y;
-      cachedBounds.width = winBounds.width;
-      cachedBounds.height = winBounds.height;
+    if (session.captureTarget.hasPointerCapture(session.pointerId)) {
+      session.captureTarget.releasePointerCapture(session.pointerId);
     }
   } catch {
-    // 获取失败时使用缓存值
+    // pointer 可能已被系统取消或释放
   }
+  if (didMove && commitPosition) {
+    const endDragPromise = window.electron?.desktopLyric?.endDrag();
+    if (endDragPromise) void endDragPromise.then(cacheWindowBounds).catch(() => undefined);
+  }
+};
 
-  const safeWidth = cachedBounds.width > 0 ? cachedBounds.width : 800;
-  const safeHeight = cachedBounds.height > 0 ? cachedBounds.height : 180;
+function onDocPointerMove(event: PointerEvent) {
+  if (!updateWindowDragPointer(event)) return;
+  if (dragState.hasMoved) scheduleWindowDragPosition();
+  event.preventDefault();
+}
+
+function onDocPointerUp(event: PointerEvent) {
+  finishWindowDrag(event);
+}
+
+function onDocPointerCancel(event: PointerEvent) {
+  finishWindowDrag(event);
+}
+
+function onWindowBlur() {
+  finishWindowDrag();
+}
+
+const onDocPointerDown = (event: PointerEvent) => {
+  if (isWayland || isLocked.value || event.button !== 0 || dragSession) return;
+  const target = event.target as HTMLElement | null;
+  if (!target || target.closest('.header, .menu-btn')) return;
+
+  // 初始化阶段会预取真实窗口位置。极端情况下预取失败，screen/client 坐标差仍能
+  // 同步得到当前无边框窗口的左上角，保证快速点拖不依赖 IPC 往返。
+  const startWindowX = cachedWindowBounds?.x ?? Math.round(event.screenX - event.clientX);
+  const startWindowY = cachedWindowBounds?.y ?? Math.round(event.screenY - event.clientY);
+
+  const session: DesktopLyricDragSession = {
+    pointerId: event.pointerId,
+    captureTarget: target,
+    startScreenX: event.screenX,
+    startScreenY: event.screenY,
+    latestScreenX: event.screenX,
+    latestScreenY: event.screenY,
+    startWindowX,
+    startWindowY,
+  };
+  dragSession = session;
   dragState.isDragging = true;
   dragState.hasMoved = false;
-  dragState.startX = event.screenX;
-  dragState.startY = event.screenY;
-  dragState.startWinX = cachedBounds.x;
-  dragState.startWinY = cachedBounds.y;
-  dragState.winWidth = safeWidth;
-  dragState.winHeight = safeHeight;
-  // 捕获 pointer，确保触摸拖拽时手指移出窗口边界后仍能收到事件
-  (event.target as HTMLElement)?.setPointerCapture?.(event.pointerId);
-  document.addEventListener('pointermove', onDocPointerMove);
+  document.addEventListener('pointermove', onDocPointerMove, { passive: false });
   document.addEventListener('pointerup', onDocPointerUp);
-  document.addEventListener('pointercancel', onDocPointerUp);
+  document.addEventListener('pointercancel', onDocPointerCancel);
+  window.addEventListener('blur', onWindowBlur);
+  try {
+    target.setPointerCapture(event.pointerId);
+  } catch {
+    // capture 失败时 document 监听器仍可完成同一窗口内的拖动
+  }
   event.preventDefault();
 };
 
-const onDocPointerMove = useThrottleFn(
-  (event: PointerEvent) => {
-    if (!dragState.isDragging || isLocked.value) return;
-    const deltaX = event.screenX - dragState.startX;
-    const deltaY = event.screenY - dragState.startY;
-    // 判断是否真正移动（超过 3px 阈值）
-    if (!dragState.hasMoved && (Math.abs(deltaX) > 3 || Math.abs(deltaY) > 3)) {
-      dragState.hasMoved = true;
-      // 只有真正开始拖动时才固定尺寸
-      sendToMain('desktop-lyric:toggle-fixed-size', {
-        width: dragState.winWidth,
-        height: dragState.winHeight,
-        fixed: true,
-      });
-    }
-    if (dragState.hasMoved) {
-      const newX = Math.round(dragState.startWinX + deltaX);
-      const newY = Math.round(dragState.startWinY + deltaY);
-      sendToMain('desktop-lyric:move', newX, newY, dragState.winWidth, dragState.winHeight);
-    }
-  },
-  16,
-  true,
-  false,
-);
-
-const onDocPointerUp = (event?: PointerEvent | Event) => {
-  if (!dragState.isDragging) return;
-  const wasDragging = dragState.hasMoved;
-  dragState.isDragging = false;
-  dragState.hasMoved = false;
-  // 释放 pointer capture
-  if (event && 'pointerId' in event) {
-    (event.target as HTMLElement)?.releasePointerCapture?.((event as PointerEvent).pointerId);
-  }
-  document.removeEventListener('pointermove', onDocPointerMove);
-  document.removeEventListener('pointerup', onDocPointerUp);
-  document.removeEventListener('pointercancel', onDocPointerUp);
-
-  // 只有真正拖动过才需要恢复尺寸限制
-  if (wasDragging) {
-    requestAnimationFrame(() => {
-      // 恢复窗口最大尺寸限制（取消 fixed 状态）
-      sendToMain('desktop-lyric:toggle-fixed-size', {
-        width: dragState.winWidth,
-        height: dragState.winHeight,
-        fixed: false,
-      });
-      updateCachedBounds();
-    });
-  }
-};
+const isResizing = ref(false);
 
 // 字体大小随窗口变化
 
@@ -761,18 +788,15 @@ const { height: winHeight, width: winWidth } = useWindowSize();
 // 检测窗口大小变化（调整大小）
 let resizeTimer: ReturnType<typeof setTimeout> | null = null;
 watch([winWidth, winHeight], ([w, h], [oldW, oldH]) => {
-  if (!dragState.isDragging) {
-    cachedBounds.width = w;
-    cachedBounds.height = h;
-
-    // 检测是否在调整大小
-    if (oldW !== undefined && oldH !== undefined && (w !== oldW || h !== oldH)) {
-      isResizing.value = true;
-      if (resizeTimer) clearTimeout(resizeTimer);
-      resizeTimer = setTimeout(() => {
-        isResizing.value = false;
-      }, 300);
-    }
+  if (dragState.isDragging) return;
+  // 检测是否在调整大小
+  if (oldW !== undefined && oldH !== undefined && (w !== oldW || h !== oldH)) {
+    isResizing.value = true;
+    if (resizeTimer) clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => {
+      resizeTimer = null;
+      isResizing.value = false;
+    }, 300);
   }
 });
 
@@ -781,7 +805,7 @@ const localFontSize = ref(30);
 
 const computedFontSize = computed(() => {
   if (isVerticalLayout.value) {
-    const w = dragState.isDragging ? dragState.winWidth : Math.round(Number(winWidth.value ?? 0));
+    const w = Math.round(Number(winWidth.value ?? 0));
     const minW = 120;
     const maxW = 520;
     const minF = 20;
@@ -790,7 +814,7 @@ const computedFontSize = computed(() => {
     if (w >= maxW) return maxF;
     return Math.round(minF + ((w - minW) / (maxW - minW)) * (maxF - minF));
   }
-  const h = dragState.isDragging ? dragState.winHeight : Math.round(Number(winHeight.value ?? 0));
+  const h = Math.round(Number(winHeight.value ?? 0));
   const minH = 140;
   const maxH = 360;
   const minF = 20;
@@ -821,6 +845,7 @@ const pushWindowHeight = (nextHeight: number) => {
 };
 
 let initialized = false;
+let initializedTimer: ReturnType<typeof setTimeout> | null = null;
 
 // 窗口高度变 → 计算字体大小 → 更新本地变量 + 防抖保存
 watch(computedFontSize, (size) => {
@@ -900,7 +925,10 @@ onMounted(async () => {
   document.body.classList.add('desktop-lyric-window');
   document.getElementById('app')?.classList.add('desktop-lyric-window');
 
-  snapshot.value = (await window.electron?.desktopLyric?.getSnapshot()) ?? null;
+  const desktopLyricApi = window.electron?.desktopLyric;
+  const initialBoundsPromise = desktopLyricApi?.getWindow().catch(() => null);
+  snapshot.value = (await desktopLyricApi?.getSnapshot()) ?? null;
+  cacheWindowBounds(await initialBoundsPromise);
   syncAnchor(true);
   // 从窗口高度计算初始字体大小
   localFontSize.value = computedFontSize.value;
@@ -926,14 +954,29 @@ onMounted(async () => {
       notifyLyricEffectHost();
     }) ?? null;
 
-  await updateCachedBounds();
+  const applyHoverState = (hovered: boolean) => {
+    if (!isLocked.value) {
+      isHovered.value = hovered;
+      return;
+    }
+    isHovered.value = showUnlockButton.value && hovered;
+  };
 
-  // 锁定状态下，由主进程光标轮询驱动解锁按钮的显隐（可靠跨平台）
+  // 先订阅增量变化，再查询一次当前状态；轮询无需在状态未变化时重复发 IPC。
+  let hoverEventRevision = 0;
   disposeHoverListener =
-    window.electron?.desktopLyric?.onHover((hovered) => {
-      if (!isLocked.value) return;
-      isHovered.value = showUnlockButton.value && hovered;
+    desktopLyricApi?.onHover((hovered) => {
+      hoverEventRevision += 1;
+      applyHoverState(hovered);
     }) ?? null;
+  const initialHoverRevision = hoverEventRevision;
+  void desktopLyricApi
+    ?.getHover()
+    .then((hovered) => {
+      // 查询响应在后续 hover 事件之后到达时，不用旧快照覆盖新状态。
+      if (hoverEventRevision === initialHoverRevision) applyHoverState(hovered);
+    })
+    .catch(() => undefined);
 
   // 启动 RAF
   if (isPlaying.value) {
@@ -945,23 +988,36 @@ onMounted(async () => {
   document.addEventListener('pointerdown', onDocPointerDown);
   document.addEventListener('mousemove', handleMouseMove);
   document.addEventListener('mouseleave', handleMouseLeave);
+  window.addEventListener('blur', handleWindowBlur);
 
   // 延迟标记初始化完成
-  setTimeout(() => {
+  initializedTimer = setTimeout(() => {
+    initializedTimer = null;
     initialized = true;
   }, 2000);
 });
 
 onBeforeUnmount(() => {
   pauseSeek();
+  if (resizeTimer) {
+    clearTimeout(resizeTimer);
+    resizeTimer = null;
+  }
+  if (initializedTimer) {
+    clearTimeout(initializedTimer);
+    initializedTimer = null;
+  }
+  initialized = false;
+  isResizing.value = false;
   document.removeEventListener('pointerdown', onDocPointerDown);
   document.removeEventListener('mousemove', handleMouseMove);
   document.removeEventListener('mouseleave', handleMouseLeave);
+  window.removeEventListener('blur', handleWindowBlur);
   reducedMotionQuery?.removeEventListener?.('change', updateReducedMotion);
   reducedMotionQuery = null;
   lyricEffectHostRegistration?.dispose();
   lyricEffectHostRegistration = null;
-  if (dragState.isDragging) onDocPointerUp();
+  finishWindowDrag(undefined, false);
   document.documentElement.classList.remove('desktop-lyric-window');
   document.body.classList.remove('desktop-lyric-window');
   document.getElementById('app')?.classList.remove('desktop-lyric-window');
@@ -1458,11 +1514,13 @@ onBeforeUnmount(() => {
 }
 
 .desktop-lyric.is-wayland:not(.locked) .lyric-container {
+  app-region: drag;
   -webkit-app-region: drag;
 }
 
 .desktop-lyric.is-wayland .header,
 .desktop-lyric.is-wayland .menu-btn {
+  app-region: no-drag;
   -webkit-app-region: no-drag;
 }
 
@@ -1690,6 +1748,10 @@ onBeforeUnmount(() => {
 .desktop-lyric.locked .menu-btn,
 .desktop-lyric.locked .lyric-container {
   pointer-events: none;
+}
+.desktop-lyric.locked .lyric-container {
+  app-region: no-drag;
+  -webkit-app-region: no-drag;
 }
 .desktop-lyric.locked .menu-btn.lock-btn {
   pointer-events: auto;

@@ -310,14 +310,3 @@ export function persistDesktopLyricWindowState(bounds: DesktopLyricWindowState) 
     },
   });
 }
-
-export function getDesktopLyricVirtualScreenBounds() {
-  const displays = screen.getAllDisplays();
-  const bounds = displays.map((display) => display.workArea);
-  return {
-    minX: Math.min(...bounds.map((bound) => bound.x)),
-    minY: Math.min(...bounds.map((bound) => bound.y)),
-    maxX: Math.max(...bounds.map((bound) => bound.x + bound.width)),
-    maxY: Math.max(...bounds.map((bound) => bound.y + bound.height)),
-  };
-}

@@ -14,4 +14,6 @@ export interface PlayerErrorPayload {
   message: string;
   errorCode?: PlayerErrorCode;
   reason?: string;
+  trackSeq?: number;
+  generation?: number;
 }

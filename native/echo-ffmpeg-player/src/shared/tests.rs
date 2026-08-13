@@ -1,5 +1,17 @@
 use super::*;
+use std::sync::mpsc::{channel, sync_channel, Receiver};
 use std::time::Duration;
+
+fn bind_test_signal_senders(
+    shared: &SharedAudio,
+) -> (Receiver<PlaybackSignal>, Receiver<PlaybackSignal>) {
+    let (control_tx, control_rx) = channel();
+    let (telemetry_tx, telemetry_rx) = sync_channel(16);
+    shared
+        .bind_signal_senders(control_tx, telemetry_tx)
+        .expect("signal senders should bind once");
+    (control_rx, telemetry_rx)
+}
 
 #[test]
 fn audio_sample_format_candidates_prefer_lossless_conversions() {
@@ -242,10 +254,7 @@ fn playback_restart_is_emitted_when_restart_audio_is_ready() {
         8.0,
         &DspSettings::default(),
     );
-    let (tx, rx) = std::sync::mpsc::sync_channel(4);
-    shared
-        .bind_signal_sender(tx)
-        .expect("signal sender should bind once");
+    let (rx, _telemetry_rx) = bind_test_signal_senders(&shared);
     shared.mark_playback_restart_ready(1.0);
 
     assert!(matches!(
@@ -438,10 +447,7 @@ fn reset_for_decode_resume_publishes_buffering_progress_when_audio_arrives() {
         8.0,
         &DspSettings::default(),
     );
-    let (tx, rx) = std::sync::mpsc::sync_channel(4);
-    shared
-        .bind_signal_sender(tx)
-        .expect("signal sender should bind once");
+    let (_control_rx, rx) = bind_test_signal_senders(&shared);
     shared.reset_for_decode_resume(1.0, &DspSettings::default());
 
     let mut output = [1.0f32; 4];
@@ -466,14 +472,47 @@ fn signal_sender_rejects_duplicate_binding() {
         8.0,
         &DspSettings::default(),
     );
-    let (first, _first_rx) = std::sync::mpsc::sync_channel(1);
-    let (second, _second_rx) = std::sync::mpsc::sync_channel(1);
+    let (first_control, _first_control_rx) = channel();
+    let (first_telemetry, _first_telemetry_rx) = sync_channel(1);
+    let (second_control, _second_control_rx) = channel();
+    let (second_telemetry, _second_telemetry_rx) = sync_channel(1);
 
-    assert!(shared.bind_signal_sender(first).is_ok());
+    assert!(shared
+        .bind_signal_senders(first_control, first_telemetry)
+        .is_ok());
     assert_eq!(
-        shared.bind_signal_sender(second),
+        shared.bind_signal_senders(second_control, second_telemetry),
         Err("playback signal sender is already bound"),
     );
+}
+
+#[test]
+fn control_signal_is_not_blocked_by_full_telemetry_queue() {
+    let shared = SharedAudio::new(
+        MixFormat::stereo_f32(100),
+        0.2,
+        8.0,
+        &DspSettings::default(),
+    );
+    let (control_tx, control_rx) = channel();
+    let (telemetry_tx, _telemetry_rx) = sync_channel(1);
+    shared
+        .bind_signal_senders(control_tx, telemetry_tx)
+        .expect("signal senders should bind once");
+
+    shared.notify_signal(PlaybackSignal::PacketCacheStats(PacketCacheStats::default()));
+    shared.notify_signal(PlaybackSignal::PacketCacheStats(PacketCacheStats::default()));
+    shared.notify_signal(PlaybackSignal::TrackSwitch(TrackSwitchInfo {
+        url: "next.flac".to_string(),
+        audio_stream_ordinal: None,
+        seq: 9,
+        duration: 2.0,
+    }));
+
+    assert!(matches!(
+        control_rx.try_recv(),
+        Ok(PlaybackSignal::TrackSwitch(TrackSwitchInfo { seq: 9, .. }))
+    ));
 }
 
 #[test]
@@ -586,10 +625,7 @@ fn gapless_boundary_resets_position_after_crossing_track_switch() {
         8.0,
         &DspSettings::default(),
     );
-    let (tx, rx) = std::sync::mpsc::sync_channel(4);
-    shared
-        .bind_signal_sender(tx)
-        .expect("signal sender should bind once");
+    let (rx, _telemetry_rx) = bind_test_signal_senders(&shared);
     assert!(shared.push_samples(&[0.1, 0.2, 0.3, 0.4]));
     shared.mark_gapless_boundary(TrackSwitchInfo {
         url: "next.flac".to_string(),
@@ -612,6 +648,35 @@ fn gapless_boundary_resets_position_after_crossing_track_switch() {
         }
         other => panic!("expected track switch signal, got {other:?}"),
     }
+}
+
+#[test]
+fn gapless_boundary_keeps_advancing_the_ao_clock() {
+    let shared = SharedAudio::new(
+        MixFormat::stereo_f32(100),
+        0.1,
+        8.0,
+        &DspSettings::default(),
+    );
+    let (_control_rx, _telemetry_rx) = bind_test_signal_senders(&shared);
+    assert!(shared.push_samples(&[0.1; 4]));
+    shared.mark_gapless_boundary(TrackSwitchInfo {
+        url: "next.flac".to_string(),
+        audio_stream_ordinal: None,
+        seq: 7,
+        duration: 3.0,
+    });
+    assert!(shared.push_samples(&[0.2; 4]));
+
+    let mut boundary_output = [0.0f32; 8];
+    assert_eq!(shared.pop_into(&mut boundary_output), 4);
+    let boundary_position = shared.position_secs();
+    assert_eq!(shared.current_track_seq(), 7);
+
+    assert!(shared.push_samples(&[0.3; 20]));
+    let mut next_output = [0.0f32; 20];
+    assert_eq!(shared.pop_into(&mut next_output), 10);
+    assert!(shared.position_secs() > boundary_position);
 }
 
 #[test]

@@ -3,8 +3,8 @@ use crate::device::platform_linux::resolve_alsa_exclusive_device_name;
 use crate::events::{PlayerErrorCode, PlayerEvent};
 use crate::output::{
     build_output_stats, emit_output_runtime_error, fill_output_reusing,
-    output_buffer_mode_for_frames, report_output_start, report_output_start_failure,
-    OutputStartSender,
+    output_buffer_mode_for_frames, output_start_was_cancelled, report_output_start,
+    report_output_start_failure, OutputStartSender, OutputStopToken,
 };
 use crate::shared::{AudioSampleFormat, SharedAudio, MIX_CHANNELS};
 use alsa::pcm::{Access, Format, HwParams, State, PCM};
@@ -52,39 +52,33 @@ pub(crate) fn probe_output(device_name: &str, sample_rate: u32) -> Result<(), St
 pub fn spawn_output_thread(
     device_name: String,
     shared: Arc<SharedAudio>,
+    stop: OutputStopToken,
     emit: fn(PlayerEvent),
     start_notify: Option<OutputStartSender>,
 ) -> JoinHandle<()> {
     thread::spawn(move || {
         let mut start_notify = start_notify;
-        match run_exclusive_output(&device_name, shared.clone(), emit, &mut start_notify) {
+        match run_exclusive_output(
+            &device_name,
+            shared.clone(),
+            stop.clone(),
+            emit,
+            &mut start_notify,
+        ) {
             Ok(()) => {}
-            Err(message) if !shared.output_has_started() => {
-                emit(PlayerEvent::log(
-                    "warn",
-                    format!("ALSA exclusive failed: {message}; falling back to CPAL shared"),
-                ));
-                let cpal_handle = super::cpal_shared::spawn_shared_output_thread(
-                    device_name,
-                    false,
-                    shared,
-                    emit,
-                    start_notify,
-                );
-                let _ = cpal_handle.join();
-            }
             Err(message) => {
                 let startup_failure =
                     report_output_start_failure(&mut start_notify, message.clone());
                 if !startup_failure {
                     emit_output_runtime_error(
                         &shared,
+                        &stop,
                         emit,
                         PlayerErrorCode::OutputExclusive,
                         message,
                     );
                 } else {
-                    shared.request_output_stop();
+                    stop.request_stop();
                 }
             }
         }
@@ -94,6 +88,7 @@ pub fn spawn_output_thread(
 fn run_exclusive_output(
     device_name: &str,
     shared: Arc<SharedAudio>,
+    stop: OutputStopToken,
     emit: fn(PlayerEvent),
     start_notify: &mut Option<OutputStartSender>,
 ) -> Result<(), String> {
@@ -133,6 +128,9 @@ fn run_exclusive_output(
             format.buffer_frames
         ),
     ));
+    if output_start_was_cancelled(&stop, &shared, start_notify) {
+        return Ok(());
+    }
     shared.mark_output_started();
     report_output_start(start_notify, Ok(()));
 
@@ -151,7 +149,7 @@ fn run_exclusive_output(
     )?;
     let mut paused = false;
 
-    while !shared.should_stop_output() {
+    while !stop.should_stop(&shared) {
         if shared.paused.load(std::sync::atomic::Ordering::Acquire) {
             if !paused {
                 pause_pcm(&pcm, &format);
@@ -190,7 +188,12 @@ fn run_exclusive_output(
             &mut converted_i24,
             &mut converted_u8,
             &mut converted_f64,
+            &stop,
+            &shared,
         )?;
+        if stop.should_stop(&shared) {
+            break;
+        }
         if pcm.state() != State::Running {
             let _ = pcm.start();
         }
@@ -201,7 +204,7 @@ fn run_exclusive_output(
 }
 
 fn open_pcm(device_name: &str) -> Result<PCM, String> {
-    PCM::new(device_name, Direction::Playback, false)
+    PCM::new(device_name, Direction::Playback, true)
         .map_err(|err| format!("failed to open ALSA exclusive output '{device_name}': {err}"))
 }
 
@@ -355,29 +358,31 @@ fn write_frames(
     converted_i24: &mut Vec<u8>,
     converted_u8: &mut Vec<u8>,
     converted_f64: &mut Vec<f64>,
+    stop: &OutputStopToken,
+    shared: &SharedAudio,
 ) -> Result<(), String> {
     match format.sample_format {
-        AlsaSampleFormat::F32 => write_typed_frames(pcm, format.channels, samples),
+        AlsaSampleFormat::F32 => write_typed_frames(pcm, format.channels, samples, stop, shared),
         AlsaSampleFormat::F64 => {
             converted_f64.resize(samples.len(), 0.0);
             for (target, sample) in converted_f64.iter_mut().zip(samples.iter().copied()) {
                 *target = sample as f64;
             }
-            write_typed_frames(pcm, format.channels, converted_f64)
+            write_typed_frames(pcm, format.channels, converted_f64, stop, shared)
         }
         AlsaSampleFormat::I16 => {
             converted_i16.resize(samples.len(), 0);
             for (target, sample) in converted_i16.iter_mut().zip(samples.iter().copied()) {
                 *target = (sample.clamp(-1.0, 1.0) * i16::MAX as f32).round() as i16;
             }
-            write_typed_frames(pcm, format.channels, converted_i16)
+            write_typed_frames(pcm, format.channels, converted_i16, stop, shared)
         }
         AlsaSampleFormat::I32 => {
             converted_i32.resize(samples.len(), 0);
             for (target, sample) in converted_i32.iter_mut().zip(samples.iter().copied()) {
                 *target = (sample.clamp(-1.0, 1.0) * i32::MAX as f32).round() as i32;
             }
-            write_typed_frames(pcm, format.channels, converted_i32)
+            write_typed_frames(pcm, format.channels, converted_i32, stop, shared)
         }
         AlsaSampleFormat::I24In32 => {
             converted_i32.resize(samples.len(), 0);
@@ -385,7 +390,7 @@ fn write_frames(
                 let value = (sample.clamp(-1.0, 1.0) * 8_388_607.0).round() as i32;
                 *target = value << 8;
             }
-            write_i24_in_32_frames(pcm, format.channels, converted_i32)
+            write_i24_in_32_frames(pcm, format.channels, converted_i32, stop, shared)
         }
         AlsaSampleFormat::I24 => {
             converted_i24.resize(samples.len() * 3, 0);
@@ -395,32 +400,49 @@ fn write_frames(
             {
                 write_i24_packed_sample(target, sample);
             }
-            write_i24_packed_frames(pcm, converted_i24)
+            write_i24_packed_frames(pcm, converted_i24, stop, shared)
         }
         AlsaSampleFormat::U8 => {
             converted_u8.resize(samples.len(), 0);
             for (target, sample) in converted_u8.iter_mut().zip(samples.iter().copied()) {
                 *target = ((sample.clamp(-1.0, 1.0) + 1.0) * 127.5).round() as u8;
             }
-            write_typed_frames(pcm, format.channels, converted_u8)
+            write_typed_frames(pcm, format.channels, converted_u8, stop, shared)
         }
     }
 }
 
-fn write_i24_in_32_frames(pcm: &PCM, channels: usize, samples: &[i32]) -> Result<(), String> {
+fn write_i24_in_32_frames(
+    pcm: &PCM,
+    channels: usize,
+    samples: &[i32],
+    stop: &OutputStopToken,
+    shared: &SharedAudio,
+) -> Result<(), String> {
     let io = unsafe { pcm.io_unchecked::<i32>() };
-    write_frames_with_io(pcm, &io, channels, samples)
+    write_frames_with_io(pcm, &io, channels, samples, stop, shared)
 }
 
-fn write_i24_packed_frames(pcm: &PCM, samples: &[u8]) -> Result<(), String> {
+fn write_i24_packed_frames(
+    pcm: &PCM,
+    samples: &[u8],
+    stop: &OutputStopToken,
+    shared: &SharedAudio,
+) -> Result<(), String> {
     let io = pcm.io_bytes();
     let mut offset = 0usize;
     while offset < samples.len() {
+        if stop.should_stop(shared) {
+            return Ok(());
+        }
         match io.writei(&samples[offset..]) {
             Ok(0) => return Err("ALSA output wrote zero frames".to_string()),
             Ok(frames) => {
                 let bytes = pcm.frames_to_bytes(frames as i64).max(0) as usize;
                 offset = offset.saturating_add(bytes);
+            }
+            Err(err) if err.errno() == libc::EAGAIN => {
+                let _ = pcm.wait(Some(20));
             }
             Err(err) => recover_write_error(pcm, err)?,
         }
@@ -449,14 +471,20 @@ fn write_i24_ne_bytes(target: &mut [u8], value: i32) {
     target[2] = bytes[3];
 }
 
-fn write_typed_frames<T>(pcm: &PCM, channels: usize, samples: &[T]) -> Result<(), String>
+fn write_typed_frames<T>(
+    pcm: &PCM,
+    channels: usize,
+    samples: &[T],
+    stop: &OutputStopToken,
+    shared: &SharedAudio,
+) -> Result<(), String>
 where
     T: Copy + alsa::pcm::IoFormat,
 {
     let io = pcm
         .io_checked::<T>()
         .map_err(|err| format!("failed to create ALSA output writer: {err}"))?;
-    write_frames_with_io(pcm, &io, channels, samples)
+    write_frames_with_io(pcm, &io, channels, samples, stop, shared)
 }
 
 fn write_frames_with_io<T>(
@@ -464,6 +492,8 @@ fn write_frames_with_io<T>(
     io: &alsa::pcm::IO<'_, T>,
     channels: usize,
     samples: &[T],
+    stop: &OutputStopToken,
+    shared: &SharedAudio,
 ) -> Result<(), String>
 where
     T: Copy + alsa::pcm::IoFormat,
@@ -471,10 +501,16 @@ where
     let mut offset_frames = 0usize;
     let total_frames = samples.len() / channels.max(1);
     while offset_frames < total_frames {
+        if stop.should_stop(shared) {
+            return Ok(());
+        }
         let offset = offset_frames * channels;
         match io.writei(&samples[offset..]) {
             Ok(0) => return Err("ALSA output wrote zero frames".to_string()),
             Ok(frames) => offset_frames = offset_frames.saturating_add(frames),
+            Err(err) if err.errno() == libc::EAGAIN => {
+                let _ = pcm.wait(Some(20));
+            }
             Err(err) => recover_write_error(pcm, err)?,
         }
     }

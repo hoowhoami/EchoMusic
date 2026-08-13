@@ -8,7 +8,10 @@ use crate::events::PlayerEvent;
 #[cfg(not(target_os = "windows"))]
 use crate::exclusive::ExclusiveGuard;
 #[cfg(not(target_os = "windows"))]
-use crate::output::{build_output_stats, output_buffer_mode_for_frames, OutputStartSender};
+use crate::output::{
+    build_output_stats, output_buffer_mode_for_frames, output_start_was_cancelled,
+    OutputStartSender, OutputStopToken,
+};
 #[cfg(not(target_os = "windows"))]
 use crate::output::{report_output_start, report_output_start_failure};
 use crate::shared::SharedAudio;
@@ -37,6 +40,7 @@ pub(crate) fn spawn_shared_output_thread(
     device_name: String,
     exclusive: bool,
     shared: Arc<SharedAudio>,
+    stop: OutputStopToken,
     emit: fn(PlayerEvent),
     start_notify: Option<OutputStartSender>,
 ) -> JoinHandle<()> {
@@ -50,7 +54,7 @@ pub(crate) fn spawn_shared_output_thread(
                 Err(message) => {
                     let startup_failure =
                         report_output_start_failure(&mut start_notify, message.clone());
-                    shared.request_output_stop();
+                    stop.request_stop();
                     if !startup_failure {
                         emit(PlayerEvent::error(
                             PlayerErrorCode::OutputDeviceUnavailable,
@@ -62,13 +66,14 @@ pub(crate) fn spawn_shared_output_thread(
             };
             let resolved_device_name =
                 device_display_name(&device).unwrap_or_else(|| device_name.clone());
+            let backend_name = cpal_backend_name(&device);
             let supported = match device.default_output_config() {
                 Ok(config) => config,
                 Err(err) => {
                     let message = format!("failed to get default output config: {err}");
                     let startup_failure =
                         report_output_start_failure(&mut start_notify, message.clone());
-                    shared.request_output_stop();
+                    stop.request_stop();
                     if !startup_failure {
                         emit(PlayerEvent::error(PlayerErrorCode::OutputConfig, message));
                     }
@@ -105,7 +110,7 @@ pub(crate) fn spawn_shared_output_thread(
                     Err(message) => {
                         let startup_failure =
                             report_output_start_failure(&mut start_notify, message.clone());
-                        shared.request_output_stop();
+                        stop.request_stop();
                         if !startup_failure {
                             emit(PlayerEvent::error(
                                 PlayerErrorCode::OutputExclusive,
@@ -126,13 +131,14 @@ pub(crate) fn spawn_shared_output_thread(
                 device_name.clone(),
                 resolved_device_name.clone(),
                 shared.clone(),
+                stop.clone(),
                 emit,
             ) {
                 Ok(stream) => stream,
                 Err(message) => {
                     let startup_failure =
                         report_output_start_failure(&mut start_notify, message.clone());
-                    shared.request_output_stop();
+                    stop.request_stop();
                     if !startup_failure {
                         emit(PlayerEvent::error(PlayerErrorCode::OutputStream, message));
                     }
@@ -144,7 +150,7 @@ pub(crate) fn spawn_shared_output_thread(
             let device_buffer_secs =
                 buffer_estimate.frames as f64 / f64::from(stream_config.sample_rate.max(1));
             let output_stats = build_output_stats(
-                "cpal",
+                backend_name,
                 &shared,
                 stream_config.sample_rate,
                 output_channels,
@@ -156,7 +162,7 @@ pub(crate) fn spawn_shared_output_thread(
             emit(PlayerEvent::log(
                 "info",
                 format!(
-                    "audio output opening: requested='{device_name}', resolved='{resolved_device_name}', exclusive={exclusive}, sample_rate={}, engine_sample_rate={}, channels={}, format={:?}, buffer_mode={}, buffer_frames={}",
+                    "audio output opening: backend={backend_name}, requested='{device_name}', resolved='{resolved_device_name}', exclusive={exclusive}, sample_rate={}, engine_sample_rate={}, channels={}, format={:?}, buffer_mode={}, buffer_frames={}",
                     stream_config.sample_rate,
                     shared.mix_format.sample_rate,
                     output_channels,
@@ -165,12 +171,15 @@ pub(crate) fn spawn_shared_output_thread(
                     output_stats.buffer_frames
                 ),
             ));
+            if output_start_was_cancelled(&stop, &shared, &mut start_notify) {
+                return;
+            }
             shared.update_output_stats(output_stats);
             if let Err(err) = stream.play() {
                 let message = format!("failed to start audio output: {err}");
                 let startup_failure =
                     report_output_start_failure(&mut start_notify, message.clone());
-                shared.request_output_stop();
+                stop.request_stop();
                 if !startup_failure {
                     emit(PlayerEvent::error(PlayerErrorCode::OutputStream, message));
                 }
@@ -182,12 +191,35 @@ pub(crate) fn spawn_shared_output_thread(
                 "info",
                 format!("audio output started: resolved='{resolved_device_name}'"),
             ));
-            while !shared.should_stop_output() {
+            while !stop.should_stop(&shared) {
                 thread::sleep(Duration::from_millis(50));
             }
             drop(stream);
             drop(exclusive_guard);
         })
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn cpal_backend_name(device: &cpal::Device) -> &'static str {
+    #[cfg(target_os = "linux")]
+    {
+        return match device.id().ok().map(|id| id.host()) {
+            Some(cpal::HostId::PipeWire) => "pipewire",
+            Some(cpal::HostId::PulseAudio) => "pulseaudio",
+            Some(cpal::HostId::Alsa) => "alsa-shared",
+            _ => "cpal",
+        };
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let _ = device;
+        "coreaudio-shared"
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+    {
+        let _ = device;
+        "cpal"
     }
 }
 
@@ -332,21 +364,16 @@ enum CpalOutputErrorAction {
 #[cfg(not(target_os = "windows"))]
 fn classify_cpal_output_error(
     kind: ErrorKind,
-    requested_device_name: &str,
+    _requested_device_name: &str,
 ) -> CpalOutputErrorAction {
     match kind {
         ErrorKind::Xrun => CpalOutputErrorAction::Ignore { reason: "xrun" },
-        ErrorKind::DeviceChanged => {
-            if crate::device::selection::is_default_device_name(requested_device_name) {
-                CpalOutputErrorAction::Recover {
-                    reason: "device-changed",
-                }
-            } else {
-                CpalOutputErrorAction::Ignore {
-                    reason: "device-changed",
-                }
-            }
-        }
+        // CPAL's CoreAudio DefaultOutput AudioUnit and PipeWire default node reroute the live
+        // stream themselves. Rebuilding here would duplicate that transition; backends that lose
+        // the route report DeviceNotAvailable/StreamInvalidated instead.
+        ErrorKind::DeviceChanged => CpalOutputErrorAction::Ignore {
+            reason: "device-changed",
+        },
         ErrorKind::DeviceNotAvailable => CpalOutputErrorAction::Recover {
             reason: "device-not-available",
         },
@@ -373,12 +400,14 @@ fn build_output_stream(
     requested_device_name: String,
     resolved_device_name: String,
     shared: Arc<SharedAudio>,
+    stop: OutputStopToken,
     emit: fn(PlayerEvent),
 ) -> Result<Stream, String> {
     let error_shared = shared.clone();
+    let error_stop = stop.clone();
     let output_sample_rate = config.sample_rate.max(1);
     let err_fn = move |err: cpal::Error| {
-        if error_shared.should_stop_output() {
+        if error_stop.should_stop(&error_shared) {
             return;
         }
         let action = classify_cpal_output_error(err.kind(), &requested_device_name);
@@ -397,7 +426,7 @@ fn build_output_stream(
                 if error_shared.should_pause_on_device_disconnect()
                     && super::is_disconnect_recovery_reason(reason)
                 {
-                    error_shared.request_output_stop();
+                    error_stop.request_stop();
                     emit(PlayerEvent::error_with_reason(
                         PlayerErrorCode::OutputRuntime,
                         message,
@@ -408,7 +437,7 @@ fn build_output_stream(
                 }
             }
             CpalOutputErrorAction::Escalate { reason } => {
-                error_shared.request_output_stop();
+                error_stop.request_stop();
                 emit(PlayerEvent::error_with_reason(
                     PlayerErrorCode::OutputRuntime,
                     message,
@@ -419,6 +448,7 @@ fn build_output_stream(
     };
     match sample_format {
         SampleFormat::F32 => {
+            let callback_stop = stop.clone();
             let mut graph_scratch = Vec::<f32>::new();
             let mut resampler = OutputResampler::new(
                 shared.mix_format.sample_rate,
@@ -431,6 +461,10 @@ fn build_output_stream(
                     config,
                     move |data: &mut [f32], info| {
                         update_live_output_delay(&shared, info);
+                        if callback_stop.should_stop(&shared) {
+                            data.fill(0.0);
+                            return;
+                        }
                         if can_copy_graph_to_device(&shared, output_sample_rate, output_channels) {
                             fill_output_reusing(data, output_channels, &shared, &mut graph_scratch)
                         } else {
@@ -443,6 +477,7 @@ fn build_output_stream(
                 .map_err(|err| format!("failed to build f32 output stream: {err}"))
         }
         SampleFormat::I16 => {
+            let callback_stop = stop.clone();
             let mut output_scratch = Vec::<f32>::new();
             let mut graph_scratch = Vec::<f32>::new();
             let mut resampler = OutputResampler::new(
@@ -456,6 +491,10 @@ fn build_output_stream(
                     config,
                     move |data: &mut [i16], info| {
                         update_live_output_delay(&shared, info);
+                        if callback_stop.should_stop(&shared) {
+                            data.fill(0);
+                            return;
+                        }
                         fill_output_converted(
                             data,
                             output_channels,
@@ -471,6 +510,7 @@ fn build_output_stream(
                 .map_err(|err| format!("failed to build i16 output stream: {err}"))
         }
         SampleFormat::U16 => {
+            let callback_stop = stop;
             let mut output_scratch = Vec::<f32>::new();
             let mut graph_scratch = Vec::<f32>::new();
             let mut resampler = OutputResampler::new(
@@ -484,6 +524,10 @@ fn build_output_stream(
                     config,
                     move |data: &mut [u16], info| {
                         update_live_output_delay(&shared, info);
+                        if callback_stop.should_stop(&shared) {
+                            data.fill(0);
+                            return;
+                        }
                         fill_output_converted(
                             data,
                             output_channels,
@@ -1124,7 +1168,7 @@ mod tests {
     fn cpal_output_error_classification_marks_route_errors_recoverable() {
         assert_eq!(
             classify_cpal_output_error(ErrorKind::DeviceChanged, "auto"),
-            CpalOutputErrorAction::Recover {
+            CpalOutputErrorAction::Ignore {
                 reason: "device-changed"
             }
         );

@@ -98,8 +98,12 @@ async function recoverAudio(
   try {
     const currentDevice = String(controller.currentState.audioDevice ?? 'auto');
     if (currentDevice) {
-      await controller.setAudioDevice(currentDevice);
-      log.info('[PowerMonitor] Audio device reinitialized', { device: currentDevice });
+      const exclusive = Boolean(controller.currentState.exclusiveOutput);
+      await controller.setAudioOutput(currentDevice, exclusive);
+      log.info('[PowerMonitor] Audio output reinitialized', {
+        device: currentDevice,
+        exclusive,
+      });
     }
   } catch (err) {
     log.warn('[PowerMonitor] Audio device reinit failed:', err);

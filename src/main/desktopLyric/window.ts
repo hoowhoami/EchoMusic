@@ -264,17 +264,3 @@ export const applyWindowSizeLimits = () => {
   desktopLyricWindow.setMinimumSize(limits.minWidth, limits.minHeight);
   desktopLyricWindow.setMaximumSize(limits.maxWidth, limits.maxHeight);
 };
-
-export const setDesktopLyricFixedSize = (options: {
-  width: number;
-  height: number;
-  fixed: boolean;
-}) => {
-  if (!desktopLyricWindow || desktopLyricWindow.isDestroyed()) return;
-  if (options.fixed) {
-    desktopLyricWindow.setMaximumSize(options.width, options.height);
-  } else {
-    const limits = getDesktopLyricWindowLimits();
-    desktopLyricWindow.setMaximumSize(limits.maxWidth, limits.maxHeight);
-  }
-};

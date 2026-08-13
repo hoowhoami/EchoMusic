@@ -2,28 +2,6 @@ use super::*;
 use std::time::Duration;
 
 impl SharedAudio {
-    pub(super) fn notify_time_update_if_due(&self, current_samples: u64) {
-        let interval = (self.mix_format.sample_rate as u64 / 5).max(1);
-        let mut last = self.last_time_event_samples.load(Ordering::Acquire);
-        loop {
-            if current_samples.saturating_sub(last) < interval {
-                return;
-            }
-            match self.last_time_event_samples.compare_exchange(
-                last,
-                current_samples,
-                Ordering::AcqRel,
-                Ordering::Acquire,
-            ) {
-                Ok(_) => {
-                    self.notify_signal(PlaybackSignal::TimeUpdate);
-                    return;
-                }
-                Err(actual) => last = actual,
-            }
-        }
-    }
-
     pub fn position_secs(&self) -> f64 {
         let raw = self.played_samples.load(Ordering::Acquire) as f64
             / self.mix_format.sample_rate.max(1) as f64;
@@ -41,8 +19,6 @@ impl SharedAudio {
         let raw_position_secs = position_secs.max(0.0) + self.audible_clock_delay_secs();
         let position_samples = (raw_position_secs * self.mix_format.sample_rate as f64) as u64;
         self.played_samples
-            .store(position_samples, Ordering::Release);
-        self.last_time_event_samples
             .store(position_samples, Ordering::Release);
     }
 
@@ -119,7 +95,7 @@ impl SharedAudio {
     }
 
     pub fn should_watch_for_stall(&self) -> bool {
-        self.output_started.load(Ordering::Acquire)
+        self.output_has_started()
             && !self.paused.load(Ordering::Acquire)
             && !self.stop.load(Ordering::Acquire)
             && !self.eof.load(Ordering::Acquire)

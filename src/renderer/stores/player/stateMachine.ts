@@ -21,6 +21,33 @@ export const beginPlaybackIntent = (
   state.enginePlayback.updatedAt = Date.now();
 };
 
+export const beginNativeTrackLoad = (state: PlayerState) => {
+  // Nested source attempts belong to one transition. Keep the sequence captured by
+  // the first begin so abort can restore the track that was active before it started.
+  if (!state.awaitingTrackLoad) {
+    state.supersededNativeTrackSeq = state.nativeTrackSeq;
+  }
+  state.nativeTrackSeq = null;
+  state.awaitingTrackLoad = true;
+};
+
+export const bindNativeTrackLoad = (state: PlayerState, trackSeq?: number): boolean => {
+  if (!state.awaitingTrackLoad || !Number.isFinite(trackSeq) || Number(trackSeq) <= 0) {
+    return false;
+  }
+  state.nativeTrackSeq = Number(trackSeq);
+  state.supersededNativeTrackSeq = null;
+  state.awaitingTrackLoad = false;
+  return true;
+};
+
+export const abortNativeTrackLoad = (state: PlayerState) => {
+  if (!state.awaitingTrackLoad) return;
+  state.nativeTrackSeq = state.supersededNativeTrackSeq;
+  state.supersededNativeTrackSeq = null;
+  state.awaitingTrackLoad = false;
+};
+
 export const completePlaybackIntent = (
   state: PlayerState,
   seq: number,

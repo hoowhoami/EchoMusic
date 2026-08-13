@@ -1,7 +1,9 @@
 use crate::device::selection::{
     device_name_matches_key, is_default_device_name, parse_device_key, select_named_output_device,
 };
-use crate::device::watcher::run_debounced_device_events;
+use crate::device::watcher::{
+    run_debounced_device_events, run_debounced_playback_output_events, PlaybackOutputDeviceEvent,
+};
 use crate::events::{AudioDevice, PlayerEvent};
 use crate::shared::AudioSampleFormat;
 use cpal::traits::{DeviceTrait, HostTrait};
@@ -11,8 +13,8 @@ use std::os::windows::ffi::OsStringExt;
 use std::ptr;
 use std::slice;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::{sync_channel, SyncSender, TrySendError};
-use std::sync::Arc;
+use std::sync::mpsc::{channel, sync_channel, Sender, SyncSender, TrySendError};
+use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 use windows::core::{implement, PCWSTR, PWSTR};
 use windows::Win32::Devices::Properties;
@@ -104,16 +106,35 @@ impl Drop for ComApartment {
 pub struct DeviceWatcher {
     stop: Arc<AtomicBool>,
     sender: SyncSender<()>,
+    playback_sender: Sender<PlaybackOutputDeviceEvent>,
     thread: Option<JoinHandle<()>>,
+    playback_thread: Option<JoinHandle<()>>,
 }
 
 impl DeviceWatcher {
-    pub fn start(emit: fn(PlayerEvent)) -> Result<Option<Self>, String> {
+    pub fn start(
+        emit: fn(PlayerEvent),
+        playback_output_changed: fn(PlaybackOutputDeviceEvent),
+        output_devices_changed: fn(Vec<AudioDevice>),
+    ) -> Result<Option<Self>, String> {
         let (tx, rx) = sync_channel::<()>(8);
+        let (playback_tx, playback_rx) = channel::<PlaybackOutputDeviceEvent>();
         let stop = Arc::new(AtomicBool::new(false));
+        let playback_thread_stop = stop.clone();
+        let playback_thread = thread::Builder::new()
+            .name("player-output-device-events".to_string())
+            .spawn(move || {
+                run_debounced_playback_output_events(
+                    playback_rx,
+                    playback_thread_stop,
+                    playback_output_changed,
+                )
+            })
+            .map_err(|err| format!("failed to spawn output device event thread: {err}"))?;
         let thread_stop = stop.clone();
         let thread_tx = tx.clone();
-        let thread = thread::Builder::new()
+        let thread_playback_tx = playback_tx.clone();
+        let thread = match thread::Builder::new()
             .name("player-device-watcher".to_string())
             .spawn(move || {
                 if unsafe { Com::CoInitializeEx(None, COINIT_MULTITHREADED) }.is_err() {
@@ -130,8 +151,11 @@ impl DeviceWatcher {
                     unsafe { Com::CoUninitialize() };
                     return;
                 };
-                let client =
-                    IMMNotificationClient::from(DeviceNotificationClient { sender: thread_tx });
+                let client = IMMNotificationClient::from(DeviceNotificationClient {
+                    sender: thread_tx,
+                    playback_sender: thread_playback_tx,
+                    last_default_endpoint: Mutex::new(default_render_endpoint_id(&enumerator)),
+                });
                 if unsafe { enumerator.RegisterEndpointNotificationCallback(Some(&client)) }
                     .is_err()
                 {
@@ -139,16 +163,25 @@ impl DeviceWatcher {
                     return;
                 }
 
-                run_debounced_device_events(rx, thread_stop, emit);
+                run_debounced_device_events(rx, thread_stop, emit, output_devices_changed);
 
                 let _ = unsafe { enumerator.UnregisterEndpointNotificationCallback(Some(&client)) };
                 unsafe { Com::CoUninitialize() };
-            })
-            .map_err(|err| format!("failed to spawn device watcher thread: {err}"))?;
+            }) {
+            Ok(thread) => thread,
+            Err(err) => {
+                stop.store(true, Ordering::Release);
+                let _ = playback_tx.send(PlaybackOutputDeviceEvent::DefaultRouteChanged);
+                let _ = playback_thread.join();
+                return Err(format!("failed to spawn device watcher thread: {err}"));
+            }
+        };
         Ok(Some(Self {
             stop,
             sender: tx,
+            playback_sender: playback_tx,
             thread: Some(thread),
+            playback_thread: Some(playback_thread),
         }))
     }
 }
@@ -157,7 +190,13 @@ impl Drop for DeviceWatcher {
     fn drop(&mut self) {
         self.stop.store(true, Ordering::Release);
         let _ = self.sender.try_send(());
+        let _ = self
+            .playback_sender
+            .send(PlaybackOutputDeviceEvent::DefaultRouteChanged);
         if let Some(thread) = self.thread.take() {
+            let _ = thread.join();
+        }
+        if let Some(thread) = self.playback_thread.take() {
             let _ = thread.join();
         }
     }
@@ -166,16 +205,24 @@ impl Drop for DeviceWatcher {
 #[implement(IMMNotificationClient)]
 struct DeviceNotificationClient {
     sender: SyncSender<()>,
+    playback_sender: Sender<PlaybackOutputDeviceEvent>,
+    last_default_endpoint: Mutex<Option<String>>,
 }
 
 #[allow(non_snake_case)]
 impl IMMNotificationClient_Impl for DeviceNotificationClient_Impl {
     fn OnDeviceStateChanged(
         &self,
-        _pwstrdeviceid: &PCWSTR,
-        _dwnewstate: DEVICE_STATE,
+        pwstrdeviceid: &PCWSTR,
+        dwnewstate: DEVICE_STATE,
     ) -> windows::core::Result<()> {
         self.notify();
+        if dwnewstate != Audio::DEVICE_STATE_ACTIVE {
+            self.notify_bound_device(
+                pwstrdeviceid,
+                PlaybackOutputDeviceEvent::BoundDeviceUnavailable,
+            );
+        }
         Ok(())
     }
 
@@ -184,29 +231,39 @@ impl IMMNotificationClient_Impl for DeviceNotificationClient_Impl {
         Ok(())
     }
 
-    fn OnDeviceRemoved(&self, _pwstrdeviceid: &PCWSTR) -> windows::core::Result<()> {
+    fn OnDeviceRemoved(&self, pwstrdeviceid: &PCWSTR) -> windows::core::Result<()> {
         self.notify();
+        self.notify_bound_device(
+            pwstrdeviceid,
+            PlaybackOutputDeviceEvent::BoundDeviceUnavailable,
+        );
         Ok(())
     }
 
     fn OnDefaultDeviceChanged(
         &self,
         flow: EDataFlow,
-        _role: ERole,
-        _pwstrdefaultdeviceid: &PCWSTR,
+        role: ERole,
+        pwstrdefaultdeviceid: &PCWSTR,
     ) -> windows::core::Result<()> {
-        if flow == eRender {
-            self.notify();
+        if flow == eRender
+            && role == Audio::eMultimedia
+            && self.default_output_did_change(pwstrdefaultdeviceid)
+        {
+            self.notify_default_output_changed();
         }
         Ok(())
     }
 
     fn OnPropertyValueChanged(
         &self,
-        _pwstrdeviceid: &PCWSTR,
-        _key: &windows::Win32::UI::Shell::PropertiesSystem::PROPERTYKEY,
+        pwstrdeviceid: &PCWSTR,
+        key: &windows::Win32::UI::Shell::PropertiesSystem::PROPERTYKEY,
     ) -> windows::core::Result<()> {
         self.notify();
+        if *key == Audio::PKEY_AudioEngine_DeviceFormat {
+            self.notify_bound_device(pwstrdeviceid, PlaybackOutputDeviceEvent::BoundDeviceChanged);
+        }
         Ok(())
     }
 }
@@ -218,11 +275,59 @@ impl DeviceNotificationClient {
             Err(TrySendError::Disconnected(())) => {}
         }
     }
+
+    fn notify_default_output_changed(&self) {
+        self.notify();
+        self.notify_playback_output_changed(PlaybackOutputDeviceEvent::DefaultRouteChanged);
+    }
+
+    fn notify_bound_device(
+        &self,
+        endpoint_id: &PCWSTR,
+        event: fn(String) -> PlaybackOutputDeviceEvent,
+    ) {
+        if endpoint_id.is_null() {
+            return;
+        }
+        if let Ok(endpoint_id) = unsafe { endpoint_id.to_string() } {
+            self.notify_playback_output_changed(event(format!(
+                "{WASAPI_DEVICE_KEY_PREFIX}{endpoint_id}"
+            )));
+        }
+    }
+
+    fn notify_playback_output_changed(&self, event: PlaybackOutputDeviceEvent) {
+        let _ = self.playback_sender.send(event);
+    }
+
+    fn default_output_did_change(&self, endpoint_id: &PCWSTR) -> bool {
+        let next = if endpoint_id.is_null() {
+            None
+        } else {
+            unsafe { endpoint_id.to_string().ok() }
+        };
+        let Ok(mut previous) = self.last_default_endpoint.lock() else {
+            return true;
+        };
+        if *previous == next {
+            return false;
+        }
+        *previous = next;
+        true
+    }
 }
 
 impl DeviceNotificationClient_Impl {
     fn notify(&self) {
         self.this.notify();
+    }
+
+    fn notify_default_output_changed(&self) {
+        self.this.notify_default_output_changed();
+    }
+
+    fn default_output_did_change(&self, endpoint_id: &PCWSTR) -> bool {
+        self.this.default_output_did_change(endpoint_id)
     }
 }
 
@@ -279,6 +384,28 @@ pub(crate) fn list_output_devices() -> Option<Vec<AudioDevice>> {
         })
         .collect::<Vec<_>>();
     (!devices.is_empty()).then_some(devices)
+}
+
+pub(crate) fn output_device_event_matches_config(
+    configured_device: &str,
+    event_device: &str,
+) -> bool {
+    let Some(event_endpoint_id) = event_device.strip_prefix(WASAPI_DEVICE_KEY_PREFIX) else {
+        return false;
+    };
+    if is_default_device_name(configured_device) {
+        let Ok(_com) = ComApartment::init() else {
+            return false;
+        };
+        let Ok(enumerator) = device_enumerator() else {
+            return false;
+        };
+        return default_render_endpoint_id(&enumerator).as_deref() == Some(event_endpoint_id);
+    }
+    if let Some(configured_endpoint_id) = configured_device.strip_prefix(WASAPI_DEVICE_KEY_PREFIX) {
+        return configured_endpoint_id == event_endpoint_id;
+    }
+    endpoint_id_for_friendly_name(configured_device).as_deref() == Some(event_endpoint_id)
 }
 
 fn is_hidden_output_device_name(name: &str) -> bool {

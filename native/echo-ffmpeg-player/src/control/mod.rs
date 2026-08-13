@@ -4,6 +4,7 @@ mod dsp;
 mod fade;
 mod graph;
 mod output;
+mod output_lifecycle;
 mod seek;
 mod spectrum;
 
@@ -19,9 +20,12 @@ pub use graph::{
     SetAudioGraphPlanTask,
 };
 pub use output::{
-    get_audio_devices, set_audio_device, set_exclusive_output, set_http_proxy, set_network_timeout,
-    set_pause_on_device_disconnect, set_stall_timeout, GetAudioDevicesTask, SetAudioDeviceTask,
-    SetExclusiveTask,
+    get_audio_devices, set_audio_output, set_http_proxy, set_network_timeout,
+    set_pause_on_device_disconnect, set_stall_timeout, GetAudioDevicesTask, SetAudioOutputTask,
+};
+pub(crate) use output_lifecycle::{
+    handle_output_device_list_change, handle_playback_output_device_event, request_output_recovery,
+    restart_output_for_runtime, schedule_idle_output_release_for_runtime,
 };
 pub(crate) use seek::{
     attach_restarted_decoder, mark_seek_plan_failed, open_decoder_at_position, SeekPlan,

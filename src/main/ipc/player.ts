@@ -100,9 +100,12 @@ export function registerPlayerIpc(ref: PlayerRef): void {
     },
   );
 
-  ipcRegistry.registerHandler('player:set-audio-device', async (_e, deviceName: string) => {
-    await ref.current?.setAudioDevice(deviceName || 'auto');
-  });
+  ipcRegistry.registerHandler(
+    'player:set-audio-output',
+    async (_e, deviceName: string, exclusive: boolean) => {
+      await ref.current?.setAudioOutput(deviceName || 'auto', Boolean(exclusive));
+    },
+  );
 
   ipcRegistry.registerHandler('player:get-audio-devices', async () => {
     return (await ref.current?.getAudioDevices()) ?? [];
@@ -149,11 +152,6 @@ export function registerPlayerIpc(ref: PlayerRef): void {
     const instance = await restartPlayer();
     ref.current = instance;
     return !!instance;
-  });
-
-  ipcRegistry.registerHandler('player:set-exclusive', async (_e, exclusive: boolean) => {
-    await ref.current?.setExclusive(Boolean(exclusive));
-    return true;
   });
 
   ipcRegistry.registerHandler(

@@ -1,7 +1,8 @@
 use crate::device::watcher::run_debounced_device_events;
+use crate::device::watcher::PlaybackOutputDeviceEvent;
 use crate::events::{AudioDevice, PlayerEvent};
 use crate::exclusive::ExclusiveGuard;
-use crate::shared::{AudioSampleFormat, MIX_CHANNELS};
+use crate::shared::{AudioSampleFormat, SharedAudio, MIX_CHANNELS};
 use coreaudio_sys as ca;
 use objc2_core_audio_types::{AudioBufferList, AudioValueRange};
 use std::ffi::{c_char, c_void, CStr};
@@ -76,6 +77,97 @@ impl Drop for CoreAudioPhysicalFormatGuard {
 pub(crate) struct CoreAudioMixingGuard {
     device_id: ca::AudioDeviceID,
     original_value: Option<u32>,
+}
+
+pub(crate) struct CoreAudioExclusiveChangeMonitor {
+    registrations: Vec<CoreAudioExclusiveChangeRegistration>,
+}
+
+struct CoreAudioExclusiveChangeRegistration {
+    object_id: ca::AudioObjectID,
+    address: ca::AudioObjectPropertyAddress,
+    context: *mut CoreAudioExclusiveChangeContext,
+}
+
+struct CoreAudioExclusiveChangeContext {
+    device_id: ca::AudioDeviceID,
+    expected_format: CoreAudioPcmFormat,
+    shared: Arc<SharedAudio>,
+}
+
+unsafe impl Send for CoreAudioExclusiveChangeRegistration {}
+
+impl Drop for CoreAudioExclusiveChangeRegistration {
+    fn drop(&mut self) {
+        unsafe {
+            ca::AudioObjectRemovePropertyListener(
+                self.object_id,
+                &self.address,
+                Some(coreaudio_exclusive_change_listener),
+                self.context.cast(),
+            );
+            drop(Box::from_raw(self.context));
+        }
+    }
+}
+
+impl Drop for CoreAudioExclusiveChangeMonitor {
+    fn drop(&mut self) {
+        self.registrations.clear();
+    }
+}
+
+pub(crate) fn monitor_coreaudio_exclusive_changes(
+    device_id: ca::AudioDeviceID,
+    expected_format: CoreAudioPcmFormat,
+    shared: Arc<SharedAudio>,
+) -> Result<CoreAudioExclusiveChangeMonitor, String> {
+    let targets = [
+        (
+            device_id,
+            ca::kAudioDevicePropertyDeviceHasChanged,
+            ca::kAudioObjectPropertyScopeGlobal,
+        ),
+        (
+            ca::kAudioObjectSystemObject,
+            ca::kAudioHardwarePropertyDevices,
+            ca::kAudioObjectPropertyScopeGlobal,
+        ),
+    ];
+    let mut registrations = Vec::with_capacity(targets.len());
+    for (object_id, selector, scope) in targets {
+        let address = ca::AudioObjectPropertyAddress {
+            mSelector: selector,
+            mScope: scope,
+            mElement: ca::kAudioObjectPropertyElementMain,
+        };
+        let context = Box::into_raw(Box::new(CoreAudioExclusiveChangeContext {
+            device_id,
+            expected_format,
+            shared: shared.clone(),
+        }));
+        let status = unsafe {
+            ca::AudioObjectAddPropertyListener(
+                object_id,
+                &address,
+                Some(coreaudio_exclusive_change_listener),
+                context.cast(),
+            )
+        };
+        if status != 0 {
+            unsafe { drop(Box::from_raw(context)) };
+            return Err(coreaudio_status_message(
+                "failed to monitor CoreAudio exclusive output changes",
+                status,
+            ));
+        }
+        registrations.push(CoreAudioExclusiveChangeRegistration {
+            object_id,
+            address,
+            context,
+        });
+    }
+    Ok(CoreAudioExclusiveChangeMonitor { registrations })
 }
 
 impl Drop for CoreAudioMixingGuard {
@@ -288,14 +380,23 @@ pub struct DeviceWatcher {
 }
 
 impl DeviceWatcher {
-    pub fn start(emit: fn(PlayerEvent)) -> Result<Option<Self>, String> {
+    pub fn start(
+        emit: fn(PlayerEvent),
+        playback_output_changed: fn(PlaybackOutputDeviceEvent),
+        output_devices_changed: fn(Vec<AudioDevice>),
+    ) -> Result<Option<Self>, String> {
+        // Shared "auto" output uses CPAL's DefaultOutput AudioUnit, which follows the system
+        // route without rebuilding. Explicit exclusive output has its own format/device monitor.
+        let _ = playback_output_changed;
         let (tx, rx) = sync_channel::<()>(8);
         let stop = Arc::new(AtomicBool::new(false));
         let thread_stop = stop.clone();
         let listeners = register_coreaudio_device_listeners(tx.clone())?;
         let thread = thread::Builder::new()
             .name("player-device-watcher".to_string())
-            .spawn(move || run_debounced_device_events(rx, thread_stop, emit))
+            .spawn(move || {
+                run_debounced_device_events(rx, thread_stop, emit, output_devices_changed)
+            })
             .map_err(|err| format!("failed to spawn CoreAudio device watcher: {err}"))?;
         Ok(Some(Self {
             stop,
@@ -320,7 +421,11 @@ impl Drop for DeviceWatcher {
 struct CoreAudioPropertyListener {
     object_id: ca::AudioObjectID,
     address: ca::AudioObjectPropertyAddress,
-    context: *mut SyncSender<()>,
+    context: *mut CoreAudioListenerContext,
+}
+
+struct CoreAudioListenerContext {
+    sender: SyncSender<()>,
 }
 
 unsafe impl Send for CoreAudioPropertyListener {}
@@ -369,7 +474,7 @@ fn register_coreaudio_object_listener(
         mScope: ca::kAudioObjectPropertyScopeGlobal,
         mElement: ca::kAudioObjectPropertyElementMain,
     };
-    let context = Box::into_raw(Box::new(sender));
+    let context = Box::into_raw(Box::new(CoreAudioListenerContext { sender }));
     let status = unsafe {
         ca::AudioObjectAddPropertyListener(
             object_id,
@@ -902,8 +1007,31 @@ extern "C" fn coreaudio_device_listener(
     if context.is_null() {
         return 0;
     }
-    let sender = unsafe { &*(context as *const SyncSender<()>) };
-    let _ = sender.try_send(());
+    let context = unsafe { &*(context as *const CoreAudioListenerContext) };
+    let _ = context.sender.try_send(());
+    0
+}
+
+extern "C" fn coreaudio_exclusive_change_listener(
+    _object_id: ca::AudioObjectID,
+    _number_addresses: u32,
+    _addresses: *const ca::AudioObjectPropertyAddress,
+    context: *mut c_void,
+) -> i32 {
+    if context.is_null() {
+        return 0;
+    }
+    let context = unsafe { &*(context as *const CoreAudioExclusiveChangeContext) };
+    let should_reload = coreaudio_stream_format(context.device_id)
+        .map(|format| format != context.expected_format)
+        .unwrap_or(true);
+    if should_reload {
+        crate::request_output_recovery(
+            context.shared.clone(),
+            "device-changed",
+            "CoreAudio exclusive device or stream format changed".to_string(),
+        );
+    }
     0
 }
 

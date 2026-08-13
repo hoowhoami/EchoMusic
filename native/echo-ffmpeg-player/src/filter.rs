@@ -17,7 +17,7 @@ fn run_filter(shared: Arc<SharedAudio>) {
         Ok(graph) => graph,
         Err(err) => {
             shared.mark_decode_failed();
-            crate::decoder::emit_decode_error(err);
+            crate::decoder::emit_decode_error(&shared, err);
             return;
         }
     };
@@ -46,14 +46,14 @@ fn run_filter(shared: Arc<SharedAudio>) {
             if structural {
                 if let Err(err) = graph.reset(shared.mix_format, &settings) {
                     shared.mark_decode_failed();
-                    crate::decoder::emit_decode_error(err);
+                    crate::decoder::emit_decode_error(&shared, err);
                     return;
                 }
             } else {
                 // Process format unchanged; update runtime DSP settings in place.
                 if let Err(err) = graph.update_settings(&settings) {
                     shared.mark_decode_failed();
-                    crate::decoder::emit_decode_error(err);
+                    crate::decoder::emit_decode_error(&shared, err);
                     return;
                 }
             }
@@ -68,7 +68,7 @@ fn run_filter(shared: Arc<SharedAudio>) {
                     Ok(source_frames) => source_frames,
                     Err(err) => {
                         shared.mark_decode_failed();
-                        crate::decoder::emit_decode_error(err);
+                        crate::decoder::emit_decode_error(&shared, err);
                         return;
                     }
                 };
@@ -78,7 +78,7 @@ fn run_filter(shared: Arc<SharedAudio>) {
             FilterInput::Boundary => {
                 if let Err(err) = graph.reset(shared.mix_format, &shared.dsp_settings()) {
                     shared.mark_decode_failed();
-                    crate::decoder::emit_decode_error(err);
+                    crate::decoder::emit_decode_error(&shared, err);
                     return;
                 }
                 shared.set_filter_latency_secs(graph.latency_secs());
@@ -90,7 +90,7 @@ fn run_filter(shared: Arc<SharedAudio>) {
                     Ok(source_frames) => source_frames,
                     Err(err) => {
                         shared.mark_decode_failed();
-                        crate::decoder::emit_decode_error(err);
+                        crate::decoder::emit_decode_error(&shared, err);
                         return;
                     }
                 };

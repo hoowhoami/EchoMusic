@@ -492,7 +492,10 @@ fn decode_worker_loop(
                 }
                 Err(err) => {
                     shared.mark_decode_failed();
-                    emit_decode_error(format!("failed to materialize decoded audio frame: {err}"));
+                    emit_decode_error(
+                        &shared,
+                        format!("failed to materialize decoded audio frame: {err}"),
+                    );
                     return None;
                 }
             },
@@ -558,7 +561,7 @@ fn decode_worker_loop(
                     return Some(data);
                 }
                 shared.mark_decode_failed();
-                emit_decode_error(format!("failed to decode audio source: {err}"));
+                emit_decode_error(&shared, format!("failed to decode audio source: {err}"));
                 return None;
             }
         }
@@ -828,8 +831,8 @@ mod tests {
     }
 }
 
-pub(crate) fn emit_decode_error(message: String) {
-    crate::emit_event(PlayerEvent::error(PlayerErrorCode::Decode, message));
+pub(crate) fn emit_decode_error(shared: &SharedAudio, message: String) {
+    crate::emit_shared_event(shared, PlayerEvent::error(PlayerErrorCode::Decode, message));
 }
 
 fn emit_decode_warning(message: String) {

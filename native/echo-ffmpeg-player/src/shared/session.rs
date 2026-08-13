@@ -1,12 +1,13 @@
 use super::SharedAudio;
 use crate::decoder::{DecodeCommand, DecoderData};
+use crate::output::AudioOutputHandle;
 use std::sync::mpsc::SyncSender;
 use std::sync::Arc;
 use std::thread::JoinHandle;
 
 pub struct PlaybackSession {
     pub shared: Arc<SharedAudio>,
-    pub output_thread: Option<JoinHandle<()>>,
+    pub output_thread: Option<AudioOutputHandle>,
     pub filter_thread: Option<JoinHandle<()>>,
     pub decode_thread: Option<JoinHandle<Option<DecoderData>>>,
     pub decode_commands: Option<SyncSender<DecodeCommand>>,
@@ -42,7 +43,7 @@ impl PlaybackSession {
             let _ = handle.join();
         }
         if let Some(handle) = output_thread {
-            let _ = handle.join();
+            handle.shutdown();
         }
         if let Some(handle) = position_thread {
             let _ = handle.join();

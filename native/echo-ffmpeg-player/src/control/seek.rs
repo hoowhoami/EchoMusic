@@ -51,6 +51,7 @@ pub(crate) fn mark_seek_plan_failed(plan: &SeekPlan) -> napi::Result<()> {
         runtime.state.paused = true;
         set_runtime_core_state(runtime, PlaybackCoreState::Error, "seek-error");
         emit_runtime_event(runtime, PlayerEvent::state_change(runtime.state.clone()));
+        schedule_idle_output_release_for_runtime(runtime);
         Ok(())
     })
 }

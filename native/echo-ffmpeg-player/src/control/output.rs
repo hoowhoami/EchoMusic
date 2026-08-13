@@ -3,21 +3,24 @@ use napi::bindgen_prelude::AsyncTask;
 use napi::{Env, Task};
 use napi_derive::napi;
 
-pub struct SetAudioDeviceTask {
+pub struct SetAudioOutputTask {
     device_name: String,
+    exclusive: bool,
 }
 
-impl Task for SetAudioDeviceTask {
+impl Task for SetAudioOutputTask {
     type Output = ();
     type JsValue = ();
 
     fn compute(&mut self) -> napi::Result<Self::Output> {
-        let config = with_runtime(|runtime| {
+        let device_name = self.device_name.clone();
+        let exclusive = self.exclusive;
+        call_core_command_blocking("set-audio-output", move |runtime| {
             let mut config = runtime.config.clone();
-            config.set_audio_device(&self.device_name);
-            Ok(config)
-        })?;
-        restart_output_for_config(config)
+            config.set_audio_device(&device_name);
+            config.exclusive_output = exclusive;
+            restart_output_for_runtime(runtime, config, true)
+        })
     }
 
     fn resolve(&mut self, _env: Env, _output: Self::Output) -> napi::Result<Self::JsValue> {
@@ -26,8 +29,11 @@ impl Task for SetAudioDeviceTask {
 }
 
 #[napi]
-pub fn set_audio_device(device_name: String) -> AsyncTask<SetAudioDeviceTask> {
-    AsyncTask::new(SetAudioDeviceTask { device_name })
+pub fn set_audio_output(device_name: String, exclusive: bool) -> AsyncTask<SetAudioOutputTask> {
+    AsyncTask::new(SetAudioOutputTask {
+        device_name,
+        exclusive,
+    })
 }
 
 pub struct GetAudioDevicesTask;
@@ -48,33 +54,6 @@ impl Task for GetAudioDevicesTask {
 #[napi]
 pub fn get_audio_devices() -> AsyncTask<GetAudioDevicesTask> {
     AsyncTask::new(GetAudioDevicesTask)
-}
-
-pub struct SetExclusiveTask {
-    exclusive: bool,
-}
-
-impl Task for SetExclusiveTask {
-    type Output = ();
-    type JsValue = ();
-
-    fn compute(&mut self) -> napi::Result<Self::Output> {
-        let config = with_runtime(|runtime| {
-            let mut config = runtime.config.clone();
-            config.exclusive_output = self.exclusive;
-            Ok(config)
-        })?;
-        restart_output_for_config(config)
-    }
-
-    fn resolve(&mut self, _env: Env, _output: Self::Output) -> napi::Result<Self::JsValue> {
-        Ok(())
-    }
-}
-
-#[napi]
-pub fn set_exclusive_output(exclusive: bool) -> AsyncTask<SetExclusiveTask> {
-    AsyncTask::new(SetExclusiveTask { exclusive })
 }
 
 #[napi]

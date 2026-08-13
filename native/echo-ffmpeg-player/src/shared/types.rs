@@ -53,7 +53,6 @@ pub struct TrackSwitchInfo {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum PlaybackSignal {
-    TimeUpdate,
     PlaybackRestart(f64),
     AoState {
         paused: bool,
@@ -67,6 +66,15 @@ pub enum PlaybackSignal {
     TrackSwitch(TrackSwitchInfo),
     PlaybackEnd,
     Stop,
+}
+
+impl PlaybackSignal {
+    pub(super) fn is_control(&self) -> bool {
+        matches!(
+            self,
+            Self::PlaybackRestart(_) | Self::TrackSwitch(_) | Self::PlaybackEnd | Self::Stop
+        )
+    }
 }
 
 #[derive(Debug, PartialEq)]

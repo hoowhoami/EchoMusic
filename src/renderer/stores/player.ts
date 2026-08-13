@@ -31,7 +31,10 @@ import {
 } from './player/utils';
 import { toRawSong } from './playlist/helpers';
 import {
+  abortNativeTrackLoad,
+  beginNativeTrackLoad,
   beginPlaybackIntent,
+  bindNativeTrackLoad,
   clearPlaybackIntent,
   completePlaybackIntent,
   getPlaybackHasFailed,
@@ -167,11 +170,24 @@ export const usePlayerStore = defineStore(
         sourceQueueId: state.currentSourceQueueId,
         shouldPlay: wasPlaying,
       });
-      state.nativeTrackSeq = null;
+      beginNativeTrackLoad(state);
 
-      const resolved = await resolver.resolveAudioUrl(track, { forceReload: true });
+      let resolved: ResolvedAudioSource;
+      try {
+        resolved = await resolver.resolveAudioUrl(track, { forceReload: true });
+      } catch (error) {
+        if (requestSeq !== state.playbackRequestSeq) return;
+        abortNativeTrackLoad(state);
+        completePlaybackIntent(state, requestSeq, { isPlaying: false });
+        setEnginePlaybackStatus(state, 'error');
+        state.lastError = 'audio-url-unavailable';
+        showPlaybackNotice('audio-url-unavailable', track);
+        logger.error('PlayerStore', 'Refresh track source resolution failed:', error);
+        return;
+      }
       if (requestSeq !== state.playbackRequestSeq) return;
       if (!resolved.url) {
+        abortNativeTrackLoad(state);
         completePlaybackIntent(state, requestSeq, { isPlaying: false });
         setEnginePlaybackStatus(state, 'error');
         state.lastError = 'audio-url-unavailable';
@@ -200,7 +216,19 @@ export const usePlayerStore = defineStore(
       state.currentResolvedSourceKind = resolved.sourceKind ?? 'catalog';
       track.audioUrl = playbackSource.url;
       const savedDuration = state.duration;
-      await engine.setSource(playbackSource, { force: true });
+      try {
+        await engine.setSource(playbackSource, { force: true });
+      } catch (error) {
+        if (requestSeq === state.playbackRequestSeq) {
+          abortNativeTrackLoad(state);
+          completePlaybackIntent(state, requestSeq, { isPlaying: false });
+          setEnginePlaybackStatus(state, 'error');
+          state.lastError = 'playback-failed';
+          showPlaybackNotice('playback-failed', track);
+        }
+        logger.error('PlayerStore', 'Refresh track reload failed:', error);
+        return;
+      }
       if (requestSeq !== state.playbackRequestSeq) return;
       if (!state.duration && !engine.duration && savedDuration) state.duration = savedDuration;
       engine.applyTrackLoudness(resolved.loudness);
@@ -240,6 +268,7 @@ export const usePlayerStore = defineStore(
           resumed = false;
         }
       }
+      if (requestSeq !== state.playbackRequestSeq) return;
       if (!state.duration && !engine.duration && track.duration) state.duration = track.duration;
       if (wasPlaying && resumed) engine.setVolume(state.volume);
       completePlaybackIntent(state, requestSeq, { isPlaying: wasPlaying && resumed });
@@ -301,6 +330,7 @@ export const usePlayerStore = defineStore(
 
       state.lastError = null;
       state.awaitingTrackLoad = false;
+      state.supersededNativeTrackSeq = null;
       clearPlaybackNotice(state.currentTrackId);
 
       if (typeof playerState.duration === 'number' && playerState.duration > 0) {
@@ -378,10 +408,13 @@ export const usePlayerStore = defineStore(
           if (state.currentPlaybackSource || state.currentAudioUrl) {
             const restartTrackId = state.currentTrackId;
             const restartSeq = state.playbackRequestSeq;
+            beginNativeTrackLoad(state);
+            let nativeLoadCompleted = false;
             void (async () => {
               await engine.setSource(state.currentPlaybackSource ?? state.currentAudioUrl, {
                 force: true,
               });
+              nativeLoadCompleted = true;
               if (
                 restartSeq !== state.playbackRequestSeq ||
                 String(state.currentTrackId ?? '') !== String(restartTrackId ?? '')
@@ -389,7 +422,16 @@ export const usePlayerStore = defineStore(
                 return;
               }
               await engine.play();
-            })().catch((error) => logger.warn('PlayerStore', 'Loop restart failed:', error));
+            })().catch((error) => {
+              if (
+                restartSeq === state.playbackRequestSeq &&
+                String(state.currentTrackId ?? '') === String(restartTrackId ?? '') &&
+                !nativeLoadCompleted
+              ) {
+                abortNativeTrackLoad(state);
+              }
+              logger.warn('PlayerStore', 'Loop restart failed:', error);
+            });
           }
           return;
         }
@@ -509,6 +551,7 @@ export const usePlayerStore = defineStore(
       state.currentAudioCandidateSources = [];
       state.currentAudioCandidateIndex = -1;
       state.nativeTrackSeq = null;
+      state.supersededNativeTrackSeq = null;
       state.currentResolvedAudioQuality = null;
       state.currentResolvedAudioEffect = 'none';
       state.currentResolvedSourceKind = 'catalog';
@@ -538,6 +581,7 @@ export const usePlayerStore = defineStore(
       state.currentPlaylist = activeSongs.length > 0 ? activeSongs : null;
       state.currentTrackSnapshot = toRawSong(targetTrack);
       state.nativeTrackSeq = null;
+      state.supersededNativeTrackSeq = null;
       state.duration = targetTrack.duration || 0;
       state.lastError = null;
       clearPlaybackNotice();
@@ -630,18 +674,9 @@ export const usePlayerStore = defineStore(
       const events: PlayerEngineEvents = {
         timeUpdate: (currentTime, payload) => {
           if (!isCurrentNativePlaybackContext(payload) || getPlaybackHasFailed(state)) return;
-          // 切歌加载护栏：新文件 file-loaded 之前到达的回报多为上一首的残留位置，一律丢弃，
-          // 避免进度条切歌瞬间先跳到旧进度再归零
-          if (state.awaitingTrackLoad) {
-            const trackSeq = Number(payload?.trackSeq);
-            if (!Number.isFinite(trackSeq) || trackSeq <= 0) return;
-            state.nativeTrackSeq = trackSeq;
-            state.awaitingTrackLoad = false;
-            if (engine.duration > 0) {
-              state.duration = engine.duration;
-              engine.updateMediaPlaybackState(buildMediaState(state));
-            }
-          }
+          // Only file-loaded may bind the native sequence for a new track. While an
+          // async source is resolving, these ticks can still belong to the old track.
+          if (state.awaitingTrackLoad) return;
           // 卡死恢复护栏：reload 期间还没追回断点的回报值（含归零）一律忽略，UI 停在断点不跳动；
           // 追回到断点附近或超时兜底后解除护栏。
           if (state.stallRecovering) {
@@ -696,12 +731,18 @@ export const usePlayerStore = defineStore(
                 ? payload.trackSeq
                 : undefined;
           if (playbackManager.activateGaplessPreparedTransition(payloadSeq)) return;
-          // 新文件真正加载完成，解除切歌加载护栏，放行后续进度回报
-          if (!state.awaitingTrackLoad) return;
-          if (typeof payloadSeq === 'number') {
-            state.nativeTrackSeq = payloadSeq;
+          const expectedPath =
+            state.currentPlaybackSource?.url ?? state.currentAudioUrl ?? undefined;
+          if (
+            state.awaitingTrackLoad &&
+            payload?.path &&
+            expectedPath &&
+            payload.path !== expectedPath
+          ) {
+            return;
           }
-          state.awaitingTrackLoad = false;
+          // 新文件真正加载完成，解除切歌加载护栏，放行后续进度回报
+          if (!bindNativeTrackLoad(state, payloadSeq)) return;
           setEnginePlaybackStatus(state, 'loading');
           // 补回加载窗口内被丢弃的真实时长，避免进度条最大值停留在 0
           if (engine.duration > 0) {
@@ -719,6 +760,7 @@ export const usePlayerStore = defineStore(
           } else state.recentSeekIgnoreEnd = false;
         },
         play: (payload) => {
+          if (state.awaitingTrackLoad) return;
           if (!isCurrentNativePlaybackContext(payload) || getPlaybackHasFailed(state)) return;
           setEnginePlaybackStatus(state, 'playing');
           if (isPlaybackIntentPhase(state, 'loading')) {
@@ -749,15 +791,36 @@ export const usePlayerStore = defineStore(
         },
         error: (event) => {
           if (event && !event.isTrusted && !(event as any)?.detail) return;
+          const detail = (event as CustomEvent<PlayerErrorPayload> | undefined)?.detail;
+          const errorTrackSeq = Number(detail?.trackSeq);
+          const isOutputError = Boolean(detail?.errorCode?.startsWith('output-'));
+          if (
+            (!isOutputError &&
+              state.awaitingTrackLoad &&
+              (!Number.isFinite(errorTrackSeq) ||
+                errorTrackSeq <= 0 ||
+                errorTrackSeq === state.supersededNativeTrackSeq)) ||
+            (!isOutputError && !isCurrentNativePlaybackContext(detail))
+          ) {
+            return;
+          }
+          const requestSeq = state.playbackRequestSeq;
+          const trackId = String(state.currentTrackId ?? '');
+          const isCurrentRequest = () =>
+            requestSeq === state.playbackRequestSeq &&
+            String(state.currentTrackId ?? '') === trackId;
           void (async () => {
-            const detail = (event as CustomEvent<PlayerErrorPayload> | undefined)?.detail;
             const wasPlayingBeforeOutputError = getPlaybackIsPlaying(state);
-            if (detail?.message && (await deviceManager.handleOutputDeviceError(detail))) {
-              engine.updateMediaPlaybackState(buildMediaState(state));
-              if (wasPlayingBeforeOutputError && !getPlaybackIsPlaying(state)) {
-                emitPlayerEvent('pause');
+            if (detail?.message) {
+              const handledOutputError = await deviceManager.handleOutputDeviceError(detail);
+              if (!isCurrentRequest()) return;
+              if (handledOutputError) {
+                engine.updateMediaPlaybackState(buildMediaState(state));
+                if (wasPlayingBeforeOutputError && !getPlaybackIsPlaying(state)) {
+                  emitPlayerEvent('pause');
+                }
+                return;
               }
-              return;
             }
 
             const triedFallback = await playbackManager.tryNextAudioCandidate({
@@ -765,6 +828,7 @@ export const usePlayerStore = defineStore(
               position: state.currentTime,
             });
             if (triedFallback) return;
+            if (!isCurrentRequest()) return;
 
             state.lastError = (event as any)?.type ?? 'playback-error';
             setEnginePlaybackStatus(state, 'error');
@@ -778,6 +842,7 @@ export const usePlayerStore = defineStore(
           })();
         },
         stalled: (position) => {
+          if (state.awaitingTrackLoad) return;
           void playbackManager.recoverFromStall(position);
         },
         coreStateChange: (payload) => {
@@ -818,6 +883,7 @@ export const usePlayerStore = defineStore(
         },
         seeked: (currentTime) => {
           state.seekTargetTime = null;
+          if (state.awaitingTrackLoad) return;
           state.currentTime = currentTime;
           state.currentTimeUpdatedAt = Date.now();
           listeningTimeManager.resetPosition();

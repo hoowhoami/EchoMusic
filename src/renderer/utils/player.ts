@@ -583,17 +583,6 @@ export class PlayerEngine {
     return next;
   }
 
-  async setOutputDevice(deviceId: string): Promise<boolean> {
-    try {
-      // default 映射为 player 的 auto
-      const playerDevice = !deviceId || deviceId === 'default' ? 'auto' : deviceId;
-      await player?.setAudioDevice(playerDevice);
-      return true;
-    } catch {
-      return false;
-    }
-  }
-
   reset(): void {
     this.clearSeekPending();
     void player?.stop()?.catch((error: unknown) => {

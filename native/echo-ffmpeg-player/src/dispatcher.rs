@@ -2,7 +2,7 @@ use crate::events::PlayerEvent;
 use crate::{emit_event, with_runtime, PlayerRuntime, RuntimeCommand};
 use napi::threadsafe_function::{ThreadsafeFunction, ThreadsafeFunctionCallMode};
 use std::cell::Cell;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{channel, sync_channel, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -16,6 +16,7 @@ static CORE_DISPATCHER: Mutex<Option<CoreDispatcher>> = Mutex::new(None);
 static NEXT_EVENT_ID: AtomicU64 = AtomicU64::new(0);
 const CORE_LOOP_TICK: Duration = Duration::from_millis(250);
 const CORE_COMMAND_REPLY_TIMEOUT: Duration = Duration::from_secs(2);
+const CORE_BLOCKING_COMMAND_REPLY_TIMEOUT: Duration = Duration::from_secs(5);
 
 thread_local! {
     static CORE_DISPATCH_ACTIVE: Cell<bool> = const { Cell::new(false) };
@@ -228,23 +229,73 @@ pub(crate) fn call_core_command<T: Send + 'static>(
         return with_runtime(command);
     };
     let (reply_tx, reply_rx) = sync_channel(1);
+    let cancelled = Arc::new(AtomicBool::new(false));
+    let command_cancelled = cancelled.clone();
     sender
         .send(CoreDispatcherMessage::Command {
             name,
             command: Box::new(move |runtime| {
+                if command_cancelled.load(Ordering::Acquire) {
+                    return;
+                }
                 let _ = reply_tx.send(command(runtime));
             }),
         })
         .map_err(|_| napi::Error::from_reason(format!("core command '{name}' dispatch failed")))?;
-    reply_rx
-        .recv_timeout(CORE_COMMAND_REPLY_TIMEOUT)
-        .map_err(|err| {
+    match reply_rx.recv_timeout(CORE_COMMAND_REPLY_TIMEOUT) {
+        Ok(result) => result,
+        Err(err) => {
+            cancelled.store(true, Ordering::Release);
             let reason = match err {
                 RecvTimeoutError::Timeout => "timed out",
                 RecvTimeoutError::Disconnected => "reply channel closed",
             };
-            napi::Error::from_reason(format!("core command '{name}' {reason}"))
-        })?
+            Err(napi::Error::from_reason(format!(
+                "core command '{name}' {reason}"
+            )))
+        }
+    }
+}
+
+pub(crate) fn call_core_command_blocking<T: Send + 'static>(
+    name: &'static str,
+    command: impl FnOnce(&mut PlayerRuntime) -> napi::Result<T> + Send + 'static,
+) -> napi::Result<T> {
+    if CORE_DISPATCH_ACTIVE.get() {
+        return Err(napi::Error::from_reason(format!(
+            "core command '{name}' cannot synchronously dispatch from core dispatcher"
+        )));
+    }
+    let Some(sender) = core_sender() else {
+        return with_runtime(command);
+    };
+    let (reply_tx, reply_rx) = sync_channel(1);
+    let cancelled = Arc::new(AtomicBool::new(false));
+    let command_cancelled = cancelled.clone();
+    sender
+        .send(CoreDispatcherMessage::Command {
+            name,
+            command: Box::new(move |runtime| {
+                if command_cancelled.load(Ordering::Acquire) {
+                    return;
+                }
+                let _ = reply_tx.send(command(runtime));
+            }),
+        })
+        .map_err(|_| napi::Error::from_reason(format!("core command '{name}' dispatch failed")))?;
+    match reply_rx.recv_timeout(CORE_BLOCKING_COMMAND_REPLY_TIMEOUT) {
+        Ok(result) => result,
+        Err(err) => {
+            cancelled.store(true, Ordering::Release);
+            let reason = match err {
+                RecvTimeoutError::Timeout => "timed out",
+                RecvTimeoutError::Disconnected => "reply channel closed",
+            };
+            Err(napi::Error::from_reason(format!(
+                "core command '{name}' {reason}"
+            )))
+        }
+    }
 }
 
 pub(crate) fn send_event(event: PlayerEvent) {

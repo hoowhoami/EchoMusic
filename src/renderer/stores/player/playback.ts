@@ -18,6 +18,8 @@ import {
 } from './utils';
 import type { PlaybackSource, ResolvedAudioSource } from './types';
 import {
+  abortNativeTrackLoad,
+  beginNativeTrackLoad,
   beginPlaybackIntent,
   clearPlaybackIntent,
   completePlaybackIntent,
@@ -65,6 +67,7 @@ export const createPlaybackManager = (
     failPlaybackIntent(state);
     setEnginePlaybackStatus(state, 'error');
     state.nativeTrackSeq = null;
+    state.supersededNativeTrackSeq = null;
     engine.reset();
     state.currentTime = 0;
     state.currentTimeUpdatedAt = Date.now();
@@ -162,6 +165,9 @@ export const createPlaybackManager = (
   }): Promise<boolean> => {
     const trackId = String(options?.trackId ?? state.currentTrackId ?? '');
     if (!trackId) return false;
+    const requestSeq = state.playbackRequestSeq;
+    const isCurrentRequest = () =>
+      requestSeq === state.playbackRequestSeq && String(state.currentTrackId ?? '') === trackId;
     const candidates = state.currentAudioCandidateSources.length
       ? state.currentAudioCandidateSources
       : state.currentAudioCandidateUrls
@@ -175,6 +181,7 @@ export const createPlaybackManager = (
 
     let nextIndex = state.currentAudioCandidateIndex + 1;
     while (nextIndex >= 0 && nextIndex < candidates.length) {
+      if (!isCurrentRequest()) return false;
       const nextSource = candidates[nextIndex];
       if (
         !nextSource ||
@@ -189,16 +196,15 @@ export const createPlaybackManager = (
       state.currentPlaybackSource = nextSource;
       track.audioUrl = nextSource.url;
       beginPlaybackIntent(state, {
-        seq: state.playbackRequestSeq,
+        seq: requestSeq,
         trackId,
         sourceQueueId: state.currentSourceQueueId,
         shouldPlay: true,
       });
-      state.awaitingTrackLoad = true;
+      beginNativeTrackLoad(state);
       state.lastError = null;
 
       const targetPosition = Math.max(0, Number(options?.position) || 0);
-      state.nativeTrackSeq = null;
       if (targetPosition > 0) {
         state.stallRecovering = true;
         state.stallRecoverTarget = targetPosition;
@@ -216,14 +222,15 @@ export const createPlaybackManager = (
 
       try {
         await engine.reloadSource(nextSource);
-        if (String(state.currentTrackId ?? '') !== trackId) return false;
+        if (!isCurrentRequest()) return false;
         await engine.play();
-        if (String(state.currentTrackId ?? '') !== trackId) return false;
+        if (!isCurrentRequest()) return false;
         if (targetPosition > 0) engine.seek(targetPosition);
-        completePlaybackIntent(state, state.playbackRequestSeq, { isPlaying: true });
+        completePlaybackIntent(state, requestSeq, { isPlaying: true });
         setEnginePlaybackStatus(state, 'playing', trackId);
         return true;
       } catch (error) {
+        if (!isCurrentRequest()) return false;
         logger.warn('PlayerPlayback', 'Fallback audio url failed:', error);
         nextIndex += 1;
       }
@@ -358,6 +365,7 @@ export const createPlaybackManager = (
       shouldPlay: true,
     });
     state.nativeTrackSeq = prepared.nativeSeq;
+    state.supersededNativeTrackSeq = null;
     state.currentPlaylist = prepared.list;
     state.currentTrackSnapshot = snapshot;
     playlistStore.updateQueueCurrentTrack(
@@ -694,7 +702,6 @@ export const createPlaybackManager = (
     state.currentResolvedAudioQuality = null;
     state.currentResolvedAudioEffect = 'none';
     state.currentResolvedSourceKind = track.source === 'cloud' ? 'cloud' : 'catalog';
-    state.nativeTrackSeq = null;
     state.currentTime = 0;
     state.currentTimeUpdatedAt = Date.now();
     state.duration = 0;
@@ -707,7 +714,7 @@ export const createPlaybackManager = (
     state.lastError = null;
     state.stallRecovering = false;
     // 开启切歌加载护栏：在新文件 file-loaded 之前丢弃上一首的残留进度回报
-    state.awaitingTrackLoad = true;
+    beginNativeTrackLoad(state);
     clearPlaybackNotice();
     state.climaxMarks = [];
 
@@ -746,7 +753,21 @@ export const createPlaybackManager = (
 
     if (requestSeq !== state.playbackRequestSeq) return;
 
-    const resolved = options?.preResolved ?? (await resolver.resolveAudioUrl(track));
+    let resolved: ResolvedAudioSource;
+    try {
+      resolved = options?.preResolved ?? (await resolver.resolveAudioUrl(track));
+    } catch (error) {
+      logger.error('PlayerPlayback', 'Resolve track source failed:', error);
+      if (requestSeq !== state.playbackRequestSeq) return;
+      state.lastError = 'audio-url-unavailable';
+      showPlaybackNotice('audio-url-unavailable', track);
+      applyFailedPlaybackState();
+      if (settingStore.autoNext && sourceList.length > 0) {
+        state.autoNextSourceTrackId = resolvedId;
+        scheduleAutoNext();
+      }
+      return;
+    }
     if (requestSeq !== state.playbackRequestSeq) return;
 
     if (!resolved.url) {
@@ -801,13 +822,18 @@ export const createPlaybackManager = (
     } catch (error) {
       logger.error('PlayerPlayback', 'Play track failed:', error);
       if (requestSeq !== state.playbackRequestSeq) return;
-      if (await handleOutputDeviceError?.(normalizePlayerErrorPayload(error))) {
+      const handledOutputError = await handleOutputDeviceError?.(
+        normalizePlayerErrorPayload(error),
+      );
+      if (requestSeq !== state.playbackRequestSeq) return;
+      if (handledOutputError) {
         engine.updateMediaPlaybackState(buildMediaState(state));
         return;
       }
       if (await tryNextAudioCandidate({ reason: 'play-track-failed', trackId: resolvedId })) {
         return;
       }
+      if (requestSeq !== state.playbackRequestSeq) return;
       state.lastError = 'playback-failed';
       showPlaybackNotice('playback-failed', track);
       applyFailedPlaybackState({ keepResolvedSource: true });
@@ -851,22 +877,25 @@ export const createPlaybackManager = (
     setPlaybackIntentPlayback(state, true);
     settingStore.syncPreventSleep(true);
     engine.updateMediaPlaybackState(buildMediaState(state));
+    const resumeSeq = state.playbackRequestSeq;
+    const resumeTrackId = state.currentTrackId;
+    const isCurrentResume = () =>
+      resumeSeq === state.playbackRequestSeq &&
+      String(state.currentTrackId ?? '') === String(resumeTrackId ?? '');
 
     try {
       const timeoutMs = (settingStore.playResumeTimeout ?? 5) * 1000;
-      const resumeSeq = state.playbackRequestSeq;
-      const resumeTrackId = state.currentTrackId;
       await engine.play({ timeoutMs: timeoutMs > 0 ? timeoutMs : undefined });
-      if (
-        resumeSeq !== state.playbackRequestSeq ||
-        String(state.currentTrackId ?? '') !== String(resumeTrackId ?? '')
-      ) {
-        return;
-      }
+      if (!isCurrentResume()) return;
       setEnginePlaybackStatus(state, 'playing');
     } catch (error) {
+      if (!isCurrentResume()) return;
       setPlaybackIntentPlayback(state, false);
-      if (await handleOutputDeviceError?.(normalizePlayerErrorPayload(error))) {
+      const handledOutputError = await handleOutputDeviceError?.(
+        normalizePlayerErrorPayload(error),
+      );
+      if (!isCurrentResume()) return;
+      if (handledOutputError) {
         engine.updateMediaPlaybackState(buildMediaState(state));
         return;
       }
@@ -1215,6 +1244,7 @@ export const createPlaybackManager = (
     state.duration = 0;
     state.stallRecovering = false;
     state.awaitingTrackLoad = false;
+    state.supersededNativeTrackSeq = null;
     state.stallRecoverTrackId = null;
     state.stallRecoverAttempts = 0;
     state.currentTrackId = null;
@@ -1249,6 +1279,9 @@ export const createPlaybackManager = (
       return;
 
     const trackId = String(state.currentTrackId);
+    const requestSeq = state.playbackRequestSeq;
+    const isCurrentRequest = () =>
+      requestSeq === state.playbackRequestSeq && String(state.currentTrackId ?? '') === trackId;
     const track =
       findTrackById(state.currentTrackId, state.currentPlaylist, playlistStore) ||
       state.currentTrackSnapshot;
@@ -1277,6 +1310,7 @@ export const createPlaybackManager = (
     state.stallRecoverAttempts += 1;
 
     const targetPosition = Math.max(0, Number(position) || state.currentTime || 0);
+    let nativeLoadCompleted = false;
 
     // 开启进度防跳护栏：UI 停在断点位置
     state.stallRecovering = true;
@@ -1298,13 +1332,14 @@ export const createPlaybackManager = (
         trackId,
       });
       if (triedCandidate) return;
+      if (!isCurrentRequest()) return;
 
       const resolved = await resolver.resolveAudioUrl(track, { forceReload: true });
-      if (String(state.currentTrackId) !== trackId) {
-        state.stallRecovering = false;
+      if (!isCurrentRequest()) {
         return;
       }
       if (!resolved.url) {
+        abortNativeTrackLoad(state);
         state.stallRecovering = false;
         state.lastError = 'audio-url-unavailable';
         showPlaybackNotice('audio-url-unavailable', track);
@@ -1315,21 +1350,26 @@ export const createPlaybackManager = (
         return;
       }
       applyResolvedAudioSource(track, resolved);
+      beginNativeTrackLoad(state);
       await engine.reloadSource(state.currentPlaybackSource ?? resolved.url);
-      if (String(state.currentTrackId) !== trackId) {
-        state.stallRecovering = false;
+      nativeLoadCompleted = true;
+      if (!isCurrentRequest()) {
         return;
       }
       engine.applyTrackLoudness(resolved.loudness);
       await engine.play();
-      if (String(state.currentTrackId) !== trackId) {
-        state.stallRecovering = false;
+      if (!isCurrentRequest()) {
         return;
       }
       if (targetPosition > 0) engine.seek(targetPosition);
     } catch (error) {
       logger.error('PlayerPlayback', 'Recover from stall failed:', error);
-      state.stallRecovering = false;
+      if (isCurrentRequest()) {
+        if (!nativeLoadCompleted) {
+          abortNativeTrackLoad(state);
+        }
+        state.stallRecovering = false;
+      }
     }
   };
 
