@@ -103,8 +103,8 @@ function registerEventForwarding(controller: PlayerController): void {
   controller.on('core-state-change', (payload) =>
     getMainWindow()?.webContents.send('player:core-state-change', payload),
   );
-  controller.on('cache-state-change', (payload) =>
-    getMainWindow()?.webContents.send('player:cache-state-change', payload),
+  controller.on('ao-state-change', (payload) =>
+    getMainWindow()?.webContents.send('player:ao-state-change', payload),
   );
   controller.on('playback-end', (reason) => {
     getMainWindow()?.webContents.send('player:playback-end', reason);

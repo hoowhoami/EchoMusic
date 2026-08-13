@@ -10,7 +10,9 @@ const EQ_FREQUENCIES: [f32; 10] = [
 pub const EQ_BAND_COUNT: usize = EQ_FREQUENCIES.len();
 pub const DEFAULT_SPATIAL_MIX: f32 = 0.15;
 const EQ_Q: f32 = 1.414;
-const CONVOLUTION_BLOCK_SIZE: usize = 1024;
+const EARLY_CONVOLUTION_BLOCK_SIZE: usize = 256;
+const LATE_CONVOLUTION_BLOCK_SIZE: usize = 1024;
+const EARLY_CONVOLUTION_FRAMES: usize = 4096;
 const MAX_IR_SECONDS: f32 = 8.0;
 const IR_TRIM_THRESHOLD: f32 = 0.00003;
 
@@ -54,9 +56,16 @@ pub struct PreparedSpatialEffect {
 
 #[derive(Debug)]
 struct PreparedImpulseChannel {
+    segments: Vec<Arc<PreparedImpulseSegment>>,
+    latency_frames: usize,
+}
+
+#[derive(Debug)]
+struct PreparedImpulseSegment {
     partitions: Vec<Vec<Complex32>>,
     block_size: usize,
     fft_size: usize,
+    output_delay_frames: usize,
 }
 
 pub struct DspChain {
@@ -377,51 +386,64 @@ struct SpatialEffect {
     mix: f32,
     channels: usize,
     convolvers: Vec<PartitionedConvolver>,
+    dry_delay: StereoDelayLine,
 }
 
 impl SpatialEffect {
     fn new(prepared: &PreparedSpatialEffect) -> Self {
+        let convolvers = prepared
+            .responses
+            .iter()
+            .cloned()
+            .map(PartitionedConvolver::new)
+            .collect::<Vec<_>>();
+        let delay_frames = convolvers
+            .iter()
+            .map(PartitionedConvolver::latency_frames)
+            .max()
+            .unwrap_or_default();
         Self {
             mix: prepared.mix,
             channels: prepared.channels,
-            convolvers: prepared
-                .responses
-                .iter()
-                .cloned()
-                .map(PartitionedConvolver::new)
-                .collect(),
+            convolvers,
+            dry_delay: StereoDelayLine::new(delay_frames),
         }
     }
 
     fn process_interleaved(&mut self, samples: &mut [f32]) {
-        if self.mix <= 0.0 {
-            return;
-        }
-        let wet = self.mix;
-        let dry = 1.0 - wet;
         for frame in samples.chunks_exact_mut(2) {
             let left = frame[0];
             let right = frame[1];
-            let (wet_left, wet_right) = if self.channels >= 4 && self.convolvers.len() >= 4 {
-                (
-                    self.convolvers[0].process_sample(left)
-                        + self.convolvers[2].process_sample(right),
-                    self.convolvers[1].process_sample(left)
-                        + self.convolvers[3].process_sample(right),
-                )
-            } else if self.convolvers.len() >= 2 {
-                (
-                    self.convolvers[0].process_sample(left),
-                    self.convolvers[1].process_sample(right),
-                )
-            } else if let Some(convolver) = self.convolvers.first_mut() {
-                let wet_left = convolver.process_sample(left);
-                (wet_left, wet_left)
-            } else {
-                (left, right)
-            };
-            frame[0] = left * dry + wet_left * wet;
-            frame[1] = right * dry + wet_right * wet;
+            let (dry_left, dry_right) = self.dry_delay.process(left, right);
+            let (wet_left, wet_right) = self.process_wet_frame(left, right);
+            let wet = self.mix;
+            if wet <= 0.0 {
+                frame[0] = left;
+                frame[1] = right;
+                continue;
+            }
+            let dry = 1.0 - wet;
+            frame[0] = dry_left * dry + wet_left * wet;
+            frame[1] = dry_right * dry + wet_right * wet;
+        }
+    }
+
+    fn process_wet_frame(&mut self, left: f32, right: f32) -> (f32, f32) {
+        if self.channels >= 4 && self.convolvers.len() >= 4 {
+            (
+                self.convolvers[0].process_sample(left) + self.convolvers[2].process_sample(right),
+                self.convolvers[1].process_sample(left) + self.convolvers[3].process_sample(right),
+            )
+        } else if self.convolvers.len() >= 2 {
+            (
+                self.convolvers[0].process_sample(left),
+                self.convolvers[1].process_sample(right),
+            )
+        } else if let Some(convolver) = self.convolvers.first_mut() {
+            let wet_left = convolver.process_sample(left);
+            (wet_left, wet_left)
+        } else {
+            (left, right)
         }
     }
 
@@ -442,8 +464,55 @@ impl SpatialEffect {
     }
 }
 
+struct StereoDelayLine {
+    delayed: VecDeque<(f32, f32)>,
+}
+
+impl StereoDelayLine {
+    fn new(delay_frames: usize) -> Self {
+        Self {
+            delayed: VecDeque::from(vec![(0.0, 0.0); delay_frames]),
+        }
+    }
+
+    fn process(&mut self, left: f32, right: f32) -> (f32, f32) {
+        self.delayed.push_back((left, right));
+        self.delayed.pop_front().unwrap_or((left, right))
+    }
+}
+
 struct PartitionedConvolver {
-    prepared: Arc<PreparedImpulseChannel>,
+    segments: Vec<SegmentConvolver>,
+    latency_frames: usize,
+}
+
+impl PartitionedConvolver {
+    fn new(prepared: Arc<PreparedImpulseChannel>) -> Self {
+        Self {
+            segments: prepared
+                .segments
+                .iter()
+                .cloned()
+                .map(SegmentConvolver::new)
+                .collect(),
+            latency_frames: prepared.latency_frames,
+        }
+    }
+
+    fn process_sample(&mut self, sample: f32) -> f32 {
+        self.segments
+            .iter_mut()
+            .map(|segment| segment.process_sample(sample))
+            .sum()
+    }
+
+    fn latency_frames(&self) -> usize {
+        self.latency_frames
+    }
+}
+
+struct SegmentConvolver {
+    prepared: Arc<PreparedImpulseSegment>,
     forward: Arc<dyn Fft<f32>>,
     inverse: Arc<dyn Fft<f32>>,
     input_spectra: Vec<Vec<Complex32>>,
@@ -455,8 +524,8 @@ struct PartitionedConvolver {
     write_pos: usize,
 }
 
-impl PartitionedConvolver {
-    fn new(prepared: Arc<PreparedImpulseChannel>) -> Self {
+impl SegmentConvolver {
+    fn new(prepared: Arc<PreparedImpulseSegment>) -> Self {
         let mut planner = FftPlanner::<f32>::new();
         let forward = planner.plan_fft_forward(prepared.fft_size);
         let inverse = planner.plan_fft_inverse(prepared.fft_size);
@@ -467,7 +536,7 @@ impl PartitionedConvolver {
             input_block: Vec::with_capacity(prepared.block_size),
             overlap: vec![0.0; prepared.block_size],
             scratch: vec![Complex32::ZERO; prepared.fft_size],
-            output: VecDeque::with_capacity(prepared.block_size * 2),
+            output: VecDeque::from(vec![0.0; prepared.output_delay_frames]),
             write_pos: 0,
             prepared,
             forward,
@@ -482,14 +551,6 @@ impl PartitionedConvolver {
             self.input_block.clear();
         }
         self.output.pop_front().unwrap_or(0.0)
-    }
-
-    fn latency_frames(&self) -> usize {
-        if self.prepared.partitions.is_empty() {
-            0
-        } else {
-            self.prepared.block_size
-        }
     }
 
     fn process_block(&mut self) {
@@ -540,7 +601,44 @@ impl PartitionedConvolver {
 
 impl PreparedImpulseChannel {
     fn new(samples: &[f32]) -> Self {
-        let block_size = CONVOLUTION_BLOCK_SIZE;
+        let mut segments = Vec::new();
+        let latency_frames = EARLY_CONVOLUTION_BLOCK_SIZE.saturating_sub(1);
+        let early_len = samples.len().min(EARLY_CONVOLUTION_FRAMES);
+        if early_len > 0 {
+            segments.push(Arc::new(PreparedImpulseSegment::new(
+                &samples[..early_len],
+                0,
+                EARLY_CONVOLUTION_BLOCK_SIZE,
+                latency_frames,
+            )));
+        }
+        if samples.len() > early_len {
+            segments.push(Arc::new(PreparedImpulseSegment::new(
+                &samples[early_len..],
+                early_len,
+                LATE_CONVOLUTION_BLOCK_SIZE,
+                latency_frames,
+            )));
+        }
+        Self {
+            segments,
+            latency_frames: if samples.is_empty() {
+                0
+            } else {
+                latency_frames
+            },
+        }
+    }
+}
+
+impl PreparedImpulseSegment {
+    fn new(
+        samples: &[f32],
+        impulse_offset: usize,
+        block_size: usize,
+        target_latency_frames: usize,
+    ) -> Self {
+        let block_size = block_size.max(1);
         let fft_size = block_size * 2;
         let mut planner = FftPlanner::<f32>::new();
         let fft = planner.plan_fft_forward(fft_size);
@@ -559,6 +657,7 @@ impl PreparedImpulseChannel {
             partitions,
             block_size,
             fft_size,
+            output_delay_frames: impulse_offset.saturating_add(target_latency_frames),
         }
     }
 }
@@ -617,31 +716,110 @@ mod tests {
     }
 
     #[test]
-    fn spatial_impulse_response_adds_wet_signal() {
-        let prepared = prepared_spatial(2, &[&[1.0], &[1.0]]);
+    fn spatial_impulse_response_aligns_dry_and_wet_signal() {
+        let mut prepared = prepared_spatial(2, &[&[1.0], &[1.0]]);
+        prepared.mix = 0.5;
         let mut spatial = SpatialEffect::new(&prepared);
-        let mut samples = vec![0.0f32; CONVOLUTION_BLOCK_SIZE * 2];
+        let mut samples = vec![0.0f32; EARLY_CONVOLUTION_BLOCK_SIZE * 2];
         samples[0] = 0.5;
         samples[1] = -0.25;
 
         spatial.process_interleaved(&mut samples);
 
-        let delayed_frame = (CONVOLUTION_BLOCK_SIZE - 1) * 2;
+        let delayed_frame = (EARLY_CONVOLUTION_BLOCK_SIZE - 1) * 2;
+        assert!(samples[0].abs() < 0.00001);
+        assert!(samples[1].abs() < 0.00001);
         assert!((samples[delayed_frame] - 0.5).abs() < 0.00001);
         assert!((samples[delayed_frame + 1] + 0.25).abs() < 0.00001);
+    }
+
+    #[test]
+    fn spatial_impulse_response_does_not_replay_stale_wet_signal_after_zero_mix() {
+        let mut prepared = prepared_spatial(2, &[&[1.0], &[1.0]]);
+        prepared.mix = 0.0;
+        let mut spatial = SpatialEffect::new(&prepared);
+        let mut samples = vec![0.0f32; EARLY_CONVOLUTION_BLOCK_SIZE * 2];
+        samples[0] = 0.5;
+        samples[1] = -0.25;
+
+        spatial.process_interleaved(&mut samples);
+        spatial.set_mix(1.0);
+        samples.fill(0.0);
+        spatial.process_interleaved(&mut samples);
+
+        assert!(samples.iter().all(|sample| sample.abs() < 0.00001));
+    }
+
+    #[test]
+    fn spatial_impulse_response_keeps_late_segment_timing() {
+        let mut left_ir = vec![0.0f32; EARLY_CONVOLUTION_FRAMES + 1];
+        let mut right_ir = vec![0.0f32; EARLY_CONVOLUTION_FRAMES + 1];
+        left_ir[EARLY_CONVOLUTION_FRAMES] = 0.75;
+        right_ir[EARLY_CONVOLUTION_FRAMES] = -0.5;
+        let prepared = prepared_spatial(2, &[&left_ir, &right_ir]);
+        let mut spatial = SpatialEffect::new(&prepared);
+        let frames = EARLY_CONVOLUTION_FRAMES + EARLY_CONVOLUTION_BLOCK_SIZE;
+        let mut samples = vec![0.0f32; frames * 2];
+        samples[0] = 1.0;
+        samples[1] = 1.0;
+
+        spatial.process_interleaved(&mut samples);
+
+        let expected_frame = EARLY_CONVOLUTION_FRAMES + EARLY_CONVOLUTION_BLOCK_SIZE - 1;
+        assert!(samples[..expected_frame * 2]
+            .iter()
+            .all(|sample| sample.abs() < 0.00001));
+        assert!((samples[expected_frame * 2] - 0.75).abs() < 0.00001);
+        assert!((samples[expected_frame * 2 + 1] + 0.5).abs() < 0.00001);
+    }
+
+    #[test]
+    fn partitioned_convolution_matches_direct_convolution_across_segments() {
+        let mut impulse = vec![0.0f32; EARLY_CONVOLUTION_FRAMES + 513];
+        impulse[0] = 0.5;
+        impulse[255] = -0.2;
+        impulse[EARLY_CONVOLUTION_FRAMES - 1] = 0.125;
+        impulse[EARLY_CONVOLUTION_FRAMES] = -0.375;
+        impulse[EARLY_CONVOLUTION_FRAMES + 512] = 0.25;
+        let input = (0..700)
+            .map(|index| ((index * 17 % 101) as f32 - 50.0) / 100.0)
+            .collect::<Vec<_>>();
+        let prepared = Arc::new(PreparedImpulseChannel::new(&impulse));
+        let latency_frames = prepared.latency_frames;
+        let mut convolver = PartitionedConvolver::new(prepared);
+        let output_frames = latency_frames + input.len() + impulse.len() - 1;
+        let mut actual = Vec::with_capacity(output_frames);
+
+        for frame in 0..output_frames {
+            actual.push(convolver.process_sample(input.get(frame).copied().unwrap_or(0.0)));
+        }
+
+        let mut expected = vec![0.0f32; output_frames];
+        for (input_index, input_sample) in input.iter().copied().enumerate() {
+            for (impulse_index, impulse_sample) in impulse.iter().copied().enumerate() {
+                expected[latency_frames + input_index + impulse_index] +=
+                    input_sample * impulse_sample;
+            }
+        }
+        for (frame, (actual, expected)) in actual.iter().zip(expected.iter()).enumerate() {
+            assert!(
+                (actual - expected).abs() < 0.0001,
+                "convolution mismatch at frame {frame}: actual={actual}, expected={expected}"
+            );
+        }
     }
 
     #[test]
     fn true_stereo_impulse_response_routes_cross_channels() {
         let prepared = prepared_spatial(4, &[&[1.0], &[0.25], &[0.5], &[1.0]]);
         let mut spatial = SpatialEffect::new(&prepared);
-        let mut samples = vec![0.0f32; CONVOLUTION_BLOCK_SIZE * 2];
+        let mut samples = vec![0.0f32; EARLY_CONVOLUTION_BLOCK_SIZE * 2];
         samples[0] = 0.4;
         samples[1] = 0.2;
 
         spatial.process_interleaved(&mut samples);
 
-        let delayed_frame = (CONVOLUTION_BLOCK_SIZE - 1) * 2;
+        let delayed_frame = (EARLY_CONVOLUTION_BLOCK_SIZE - 1) * 2;
         assert!((samples[delayed_frame] - 0.5).abs() < 0.00001);
         assert!((samples[delayed_frame + 1] - 0.3).abs() < 0.00001);
     }

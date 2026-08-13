@@ -36,6 +36,11 @@ impl SampleRing {
         }
     }
 
+    pub fn clear(&mut self) {
+        self.cursor = 0;
+        self.filled = false;
+    }
+
     pub fn latest(&self, count: usize) -> Vec<f32> {
         let available = if self.filled {
             self.samples.len()

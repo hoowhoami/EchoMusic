@@ -13,6 +13,7 @@ This directory vendors `ffmpeg-audio` as ordinary source files, not as a Git sub
 - Keep EchoMusic's packet-cache/multi-audio-stream/raw-frame API surface used by the native player.
 - Keep `HttpAudioSourceOptions` for player network timeout and HTTP proxy settings.
 - Bridge EchoMusic's `Arc<AtomicBool>` decode interrupt flag to upstream's `HttpCancelHandle`.
+- Keep packet-cache pause-wait support for demux underrun recovery.
 - Keep `crates/soundtouch` pointed at the local vendored `soundtouch-rs` path.
 - Pin `futures-util` to `0.3.32` to stay compatible with the current native player lockfile.
 

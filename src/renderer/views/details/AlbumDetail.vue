@@ -421,7 +421,7 @@ const fetchData = async () => {
     .then(() => {
       loadingSongs.value = false;
       // 首页加载完后，只要还有更多数据就继续加载剩余页
-      if (!songLoader!.fullyLoaded) {
+      if (!songLoader!.fullyLoaded && !songLoader!.failed) {
         void songLoader!.loadRemaining();
       }
     })
@@ -531,7 +531,7 @@ const handlePlayAll = async () => {
   };
   await replaceQueueAndPlay(playlistStore, playerStore, queueSongs, 0, undefined, queueOpts);
   // 后台等待全部加载完，静默更新播放队列
-  if (songLoader && !songLoader.fullyLoaded) {
+  if (songLoader && !songLoader.fullyLoaded && !songLoader.failed) {
     const allSongs = Array.from(await songLoader.waitForAll()) as Song[];
     const sortedAllSongs = sortSongs(allSongs, sortField.value, sortOrder.value, {
       indexSource: allSongs,

@@ -398,7 +398,7 @@ const fetchData = async () => {
 
     // 后台加载剩余页
     const targetTotal = playlistMeta?.count ?? 0;
-    if (!songLoader.fullyLoaded && targetTotal > songLoader.count) {
+    if (!songLoader.fullyLoaded && !songLoader.failed && targetTotal > songLoader.count) {
       void songLoader.loadRemaining();
     }
   } catch (e) {
@@ -631,7 +631,7 @@ const handlePlayAll = async () => {
     queueOpts,
   );
   // 后台等待全部加载完，静默更新播放队列
-  if (songLoader && !songLoader.fullyLoaded) {
+  if (songLoader && !songLoader.fullyLoaded && !songLoader.failed) {
     const allSongs = Array.from(await songLoader.waitForAll()) as Song[];
     const sortedAllSongs = sortSongs(allSongs, sortField.value, sortOrder.value, {
       indexSource: allSongs,

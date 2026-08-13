@@ -13,6 +13,7 @@ pub struct PacketCacheOptions {
     pub max_back_bytes: usize,
     pub max_duration: Duration,
     pub donate_forward_budget: bool,
+    pub pause_wait: Option<Duration>,
 }
 
 impl PacketCacheOptions {
@@ -23,11 +24,17 @@ impl PacketCacheOptions {
             max_back_bytes,
             max_duration,
             donate_forward_budget: true,
+            pause_wait: None,
         }
     }
 
     pub fn with_donate_forward_budget(mut self, enabled: bool) -> Self {
         self.donate_forward_budget = enabled;
+        self
+    }
+
+    pub fn with_pause_wait(mut self, pause_wait: Option<Duration>) -> Self {
+        self.pause_wait = pause_wait;
         self
     }
 }
@@ -138,6 +145,7 @@ struct SharedPacketCache {
 pub(crate) struct PacketCache {
     shared: Arc<SharedPacketCache>,
     options: PacketCacheOptions,
+    has_returned_packet: bool,
     _worker: thread::JoinHandle<()>,
 }
 
@@ -168,6 +176,7 @@ impl PacketCache {
         Self {
             shared,
             options,
+            has_returned_packet: false,
             _worker: worker,
         }
     }
@@ -178,6 +187,7 @@ impl PacketCache {
             .state
             .lock()
             .map_err(|_| AudioError::InvalidData("packet cache lock poisoned".to_string()))?;
+        let mut buffering = false;
         loop {
             if state.stop {
                 return Ok(None);
@@ -189,14 +199,23 @@ impl PacketCache {
                 ));
             }
 
-            let range = &mut state.ranges[current_range];
+            let range = &state.ranges[current_range];
             let offset = (range.read_index - range.base_index) as usize;
-            if let Some(packet) = range.packets.get(offset) {
+            if offset < range.packets.len() {
+                if buffering && !packet_cache_pause_ready(&state, current_range, self.options) {
+                    state = self.shared.changed.wait(state).map_err(|_| {
+                        AudioError::InvalidData("packet cache lock poisoned".to_string())
+                    })?;
+                    continue;
+                }
+                let range = &mut state.ranges[current_range];
+                let packet = &range.packets[offset];
                 let cloned = packet.clone_packet()?;
                 range.read_index = range.read_index.saturating_add(1);
                 touch_current_range(&mut state);
                 prune_packet_cache(&mut state, self.options);
                 self.shared.changed.notify_all();
+                self.has_returned_packet = true;
                 return Ok(Some(cloned));
             }
 
@@ -207,6 +226,8 @@ impl PacketCache {
                 return Err(error);
             }
 
+            buffering = self.options.pause_wait.is_some() && self.has_returned_packet;
+
             state =
                 self.shared.changed.wait(state).map_err(|_| {
                     AudioError::InvalidData("packet cache lock poisoned".to_string())
@@ -215,6 +236,7 @@ impl PacketCache {
     }
 
     pub(crate) fn seek_to(&mut self, target: Duration) -> Result<()> {
+        self.has_returned_packet = false;
         if self.try_seek_cached(target) {
             return Ok(());
         }
@@ -287,6 +309,35 @@ impl PacketCache {
         self.shared.changed.notify_all();
         true
     }
+}
+
+fn packet_cache_pause_ready(
+    state: &PacketCacheState,
+    range_index: usize,
+    options: PacketCacheOptions,
+) -> bool {
+    let Some(pause_wait) = options.pause_wait else {
+        return true;
+    };
+    let range = &state.ranges[range_index];
+    if pause_wait.is_zero()
+        || options.max_duration.is_zero()
+        || range.eof
+        || state.error.is_some()
+        || state.read_hysteresis
+    {
+        return true;
+    }
+    let Some(forward_duration) = packet_cache_forward_duration(range) else {
+        // Timestamp-less streams cannot satisfy a duration-based pause target.
+        // Resume as soon as a packet is available instead of waiting for the
+        // entire byte budget or EOF.
+        return true;
+    };
+    let forward_bytes = packet_cache_forward_bytes(range);
+    forward_bytes >= options.max_bytes
+        || forward_duration >= pause_wait
+        || forward_duration >= options.max_duration
 }
 
 impl Drop for PacketCache {
@@ -732,6 +783,15 @@ mod tests {
         }
     }
 
+    fn packet_without_time(size: usize) -> CachedPacket {
+        CachedPacket {
+            packet: ptr::null_mut(),
+            pts: None,
+            end: None,
+            size,
+        }
+    }
+
     fn single_range_state(
         packets: Vec<CachedPacket>,
         base_index: u64,
@@ -791,6 +851,49 @@ mod tests {
 
         assert_eq!(packet_cache_back_bytes(&state.ranges[0]), 200);
         assert_eq!(packet_cache_forward_bytes(&state.ranges[0]), 160);
+    }
+
+    #[test]
+    fn packet_cache_pause_waits_for_forward_duration_after_underrun() {
+        let mut state = single_range_state(vec![packet_with_time(0, 1, 100)], 0, 0);
+        let options = PacketCacheOptions::new(1_000, 0, Duration::from_secs(10))
+            .with_pause_wait(Some(Duration::from_secs(2)));
+
+        assert!(!packet_cache_pause_ready(&state, 0, options));
+        state.ranges[0].packets.push(packet_with_time(1, 2, 100));
+        assert!(packet_cache_pause_ready(&state, 0, options));
+    }
+
+    #[test]
+    fn packet_cache_pause_resumes_early_at_eof() {
+        let mut state = single_range_state(vec![packet_with_time(0, 1, 100)], 0, 0);
+        state.ranges[0].eof = true;
+        let options = PacketCacheOptions::new(1_000, 0, Duration::from_secs(10))
+            .with_pause_wait(Some(Duration::from_secs(2)));
+
+        assert!(packet_cache_pause_ready(&state, 0, options));
+    }
+
+    #[test]
+    fn packet_cache_pause_skips_duration_wait_without_timestamps() {
+        let state = single_range_state(vec![packet_without_time(100)], 0, 0);
+        let options = PacketCacheOptions::new(150 * 1024 * 1024, 0, Duration::from_secs(10))
+            .with_pause_wait(Some(Duration::from_secs(2)));
+
+        assert!(packet_cache_pause_ready(&state, 0, options));
+    }
+
+    #[test]
+    fn packet_cache_pause_skips_duration_wait_when_forward_start_has_no_timestamp() {
+        let state = single_range_state(
+            vec![packet_without_time(100), packet_with_time(1, 2, 100)],
+            0,
+            0,
+        );
+        let options = PacketCacheOptions::new(150 * 1024 * 1024, 0, Duration::from_secs(10))
+            .with_pause_wait(Some(Duration::from_secs(2)));
+
+        assert!(packet_cache_pause_ready(&state, 0, options));
     }
 
     #[test]

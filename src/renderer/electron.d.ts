@@ -158,18 +158,21 @@ type PlayerAudioOutputStats = {
   requestedBufferSecs?: number;
   deviceBufferSecs?: number;
   softwareBufferSecs?: number;
+  aoBufferTargetSecs?: number;
+  aoBufferCapacitySecs?: number;
+  aoRequestFrames?: number;
   delaySecs: number;
   underruns: number;
 };
 
-type PlayerCacheState = {
+type PlayerAoState = {
   paused?: boolean;
+  reason?: string;
   bufferingState?: number;
   bufferedSecs?: number;
   targetSecs?: number;
   trackSeq?: number;
   generation?: number;
-  packetCache?: PlayerPacketCacheStats;
 };
 
 type PlayerStateChangePayload = {
@@ -668,10 +671,17 @@ export interface IElectronAPI {
     onSeeked: (func: (time: number) => void) => () => void;
     onPlaybackRestart: (func: (payload?: { time?: number; reason?: string }) => void) => () => void;
     onDurationChange: (func: (duration: number) => void) => () => void;
-    onFileLoaded: (func: (payload?: { path?: string; seq?: number }) => void) => () => void;
+    onFileLoaded: (
+      func: (payload?: {
+        path?: string;
+        seq?: number;
+        trackSeq?: number;
+        generation?: number;
+      }) => void,
+    ) => () => void;
     onStateChange: (func: (state: PlayerStateChangePayload) => void) => () => void;
     onCoreStateChange: (func: (payload: PlayerCoreStateChangePayload) => void) => () => void;
-    onCacheStateChange: (func: (payload: PlayerCacheState) => void) => () => void;
+    onAoStateChange: (func: (payload: PlayerAoState) => void) => () => void;
     onPlaybackEnd: (func: (reason: string) => void) => () => void;
     onStall: (func: (position: number) => void) => () => void;
     onError: (func: (payload: PlayerErrorPayload) => void) => () => void;

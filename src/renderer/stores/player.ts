@@ -632,7 +632,16 @@ export const usePlayerStore = defineStore(
           if (!isCurrentNativePlaybackContext(payload) || getPlaybackHasFailed(state)) return;
           // 切歌加载护栏：新文件 file-loaded 之前到达的回报多为上一首的残留位置，一律丢弃，
           // 避免进度条切歌瞬间先跳到旧进度再归零
-          if (state.awaitingTrackLoad) return;
+          if (state.awaitingTrackLoad) {
+            const trackSeq = Number(payload?.trackSeq);
+            if (!Number.isFinite(trackSeq) || trackSeq <= 0) return;
+            state.nativeTrackSeq = trackSeq;
+            state.awaitingTrackLoad = false;
+            if (engine.duration > 0) {
+              state.duration = engine.duration;
+              engine.updateMediaPlaybackState(buildMediaState(state));
+            }
+          }
           // 卡死恢复护栏：reload 期间还没追回断点的回报值（含归零）一律忽略，UI 停在断点不跳动；
           // 追回到断点附近或超时兜底后解除护栏。
           if (state.stallRecovering) {
@@ -678,11 +687,19 @@ export const usePlayerStore = defineStore(
           }
         },
         fileLoaded: (payload) => {
-          if (playbackManager.activateGaplessPreparedTransition(payload?.seq)) return;
+          const payloadSeq =
+            typeof payload?.seq === 'number' && Number.isFinite(payload.seq) && payload.seq > 0
+              ? payload.seq
+              : typeof payload?.trackSeq === 'number' &&
+                  Number.isFinite(payload.trackSeq) &&
+                  payload.trackSeq > 0
+                ? payload.trackSeq
+                : undefined;
+          if (playbackManager.activateGaplessPreparedTransition(payloadSeq)) return;
           // 新文件真正加载完成，解除切歌加载护栏，放行后续进度回报
           if (!state.awaitingTrackLoad) return;
-          if (typeof payload?.seq === 'number' && Number.isFinite(payload.seq) && payload.seq > 0) {
-            state.nativeTrackSeq = payload.seq;
+          if (typeof payloadSeq === 'number') {
+            state.nativeTrackSeq = payloadSeq;
           }
           state.awaitingTrackLoad = false;
           setEnginePlaybackStatus(state, 'loading');
@@ -769,17 +786,11 @@ export const usePlayerStore = defineStore(
             updatedAt: Date.now(),
           };
         },
-        cacheStateChange: (payload) => {
-          state.playbackDiagnostics.cache = {
+        aoStateChange: (payload) => {
+          state.playbackDiagnostics.ao = {
             ...payload,
             updatedAt: Date.now(),
           };
-          if (payload.packetCache) {
-            state.playbackDiagnostics.packetCache = {
-              ...payload.packetCache,
-              updatedAt: Date.now(),
-            };
-          }
         },
         packetCacheStats: (payload) => {
           state.playbackDiagnostics.packetCache = payload

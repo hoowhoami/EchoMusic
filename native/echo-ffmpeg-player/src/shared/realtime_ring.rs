@@ -38,13 +38,20 @@ impl RealtimeAudioRing {
         self.buffered_samples() == 0
     }
 
-    pub(super) fn push(&self, samples: &[f32], source_frames: u64) -> (usize, u64) {
+    pub(super) fn push_limited(
+        &self,
+        samples: &[f32],
+        source_frames: u64,
+        buffer_limit: usize,
+    ) -> (usize, u64) {
         if samples.is_empty() {
             return (0, 0);
         }
         let read = self.read.load(Ordering::Acquire);
         let write = self.write.load(Ordering::Relaxed);
-        let available = self.capacity.saturating_sub(write.saturating_sub(read));
+        let available = buffer_limit
+            .min(self.capacity)
+            .saturating_sub(write.saturating_sub(read));
         let take = available.min(samples.len());
         if take == 0 {
             return (0, 0);

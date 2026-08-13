@@ -561,15 +561,14 @@ fn prepare_source(
             ),
         ));
     }
-    let shared = Arc::new(SharedAudio::with_cache_pause_wait(
+    let shared = Arc::new(SharedAudio::with_output_buffer(
         mix_format,
         config.audio_buffer_secs,
-        config.cache_pause_for_url(&url),
-        config.cache_pause_wait_secs,
         config.playback_stall_timeout_secs,
         &dsp_settings,
     ));
     shared.set_pause_on_device_disconnect(pause_on_device_disconnect);
+    shared.begin_output_preroll();
     shared.set_source_sample_format(decoder.source_sample_format());
     shared.set_preferred_output_sample_format(
         config.resolve_output_sample_format(decoder.source_sample_format()),
@@ -582,7 +581,9 @@ fn prepare_source(
     shared.bind_interrupt(interrupt);
 
     let (signal_tx, signal_rx) = sync_channel::<PlaybackSignal>(32);
-    shared.bind_signal_sender(signal_tx);
+    shared
+        .bind_signal_sender(signal_tx)
+        .map_err(str::to_string)?;
     let signal_shared = shared.clone();
     let signal_url = url.clone();
     let signal_seq = seq;
@@ -613,44 +614,48 @@ fn prepare_source(
                                 ],
                             );
                         }
-                        PlaybackSignal::CacheState {
+                        PlaybackSignal::AoState {
                             paused,
+                            reason,
                             buffering_state,
                             buffered_secs,
                             target_secs,
-                            packet_cache,
                         } => {
                             emit_shared_event(
                                 &signal_shared,
-                                PlayerEvent::cache_state_change(
+                                PlayerEvent::ao_state_change(
                                     paused,
+                                    reason,
                                     buffering_state,
                                     buffered_secs,
                                     target_secs,
-                                    packet_cache,
                                 ),
                             );
-                            let cache_shared = signal_shared.clone();
+                            let ao_shared = signal_shared.clone();
                             dispatch_core_command(
-                                "cache-state",
+                                "ao-state",
                                 Box::new(move |runtime| {
                                     let Some(session) = runtime.session.as_ref() else {
                                         return;
                                     };
-                                    if !Arc::ptr_eq(&session.shared, &cache_shared) {
+                                    if !Arc::ptr_eq(&session.shared, &ao_shared) {
                                         return;
                                     }
                                     if paused {
                                         set_runtime_core_state(
                                             runtime,
                                             PlaybackCoreState::Buffering,
-                                            "cache-pause",
+                                            if reason == "underrun" {
+                                                "ao-underrun"
+                                            } else {
+                                                "ao-preroll"
+                                            },
                                         );
                                     } else if runtime.state.playing && !runtime.state.paused {
                                         set_runtime_core_state(
                                             runtime,
                                             PlaybackCoreState::Playing,
-                                            "cache-resume",
+                                            "ao-resume",
                                         );
                                     }
                                 }),
@@ -690,6 +695,7 @@ fn prepare_source(
                     Err(RecvTimeoutError::Timeout) => {}
                     Err(RecvTimeoutError::Disconnected) => break,
                 }
+                signal_shared.refresh_output_stats();
                 if signal_shared.stop.load(Ordering::Acquire) {
                     break;
                 }

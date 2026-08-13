@@ -137,9 +137,11 @@ pub(crate) fn build_output_stats(
     buffer_frames: f64,
     device_buffer_secs: f64,
 ) -> AudioOutputStats {
+    shared.register_output_device_buffer(buffer_frames.max(0.0).round() as u32, sample_rate);
     let requested_buffer_secs = shared.requested_output_buffer_secs().max(0.0);
     let device_buffer_secs = device_buffer_secs.max(0.0);
-    let software_buffer_secs = (requested_buffer_secs - device_buffer_secs).max(0.0);
+    let ao_buffer_target_secs = shared.output_buffer_target_secs();
+    let software_buffer_secs = (ao_buffer_target_secs - device_buffer_secs).max(0.0);
     AudioOutputStats {
         backend: backend.to_string(),
         sample_rate: f64::from(sample_rate.max(1)),
@@ -152,7 +154,10 @@ pub(crate) fn build_output_stats(
         requested_buffer_secs,
         device_buffer_secs,
         software_buffer_secs,
-        delay_secs: device_buffer_secs + software_buffer_secs,
+        ao_buffer_target_secs,
+        ao_buffer_capacity_secs: shared.output_ring_capacity_secs(),
+        ao_request_frames: shared.max_output_request_frames() as f64,
+        delay_secs: ao_buffer_target_secs.max(device_buffer_secs),
         underruns: 0.0,
     }
 }

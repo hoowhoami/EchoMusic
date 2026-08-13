@@ -316,10 +316,6 @@ impl PlayerConfig {
         self.packet_cache_options_for_duration(self.readahead_secs_for_url(url), cache_enabled)
     }
 
-    pub fn cache_pause_for_url(&self, url: &str) -> bool {
-        self.cache_pause && self.cache_enabled_for_url(url)
-    }
-
     fn readahead_secs_for_url(&self, url: &str) -> f64 {
         if self.cache_enabled_for_url(url) {
             self.cache_secs.max(self.demuxer_readahead_secs)
@@ -352,6 +348,10 @@ impl PlayerConfig {
             Duration::from_secs_f64(cache_secs.max(0.0)),
         )
         .with_donate_forward_budget(cache_enabled)
+        .with_pause_wait(
+            (cache_enabled && self.cache_pause)
+                .then(|| Duration::from_secs_f64(self.cache_pause_wait_secs.max(0.0))),
+        )
     }
 
     pub fn stream_options(&self) -> StreamOptions {
@@ -434,6 +434,18 @@ mod tests {
                 .packet_cache_options_for_url("https://example.test/music.flac")
                 .donate_forward_budget
         );
+        assert_eq!(
+            config
+                .packet_cache_options_for_url("https://example.test/music.flac")
+                .pause_wait,
+            Some(Duration::from_secs(1)),
+        );
+        assert_eq!(
+            config
+                .packet_cache_options_for_url("file:///tmp/music.flac")
+                .pause_wait,
+            None,
+        );
 
         let disabled = PlayerConfig::from_options(Some(PlayerConfigOptions {
             audio_buffer_secs: None,
@@ -465,7 +477,12 @@ mod tests {
                 .max_back_bytes,
             0,
         );
-        assert!(!disabled.cache_pause_for_url("https://example.test/music.flac"));
+        assert_eq!(
+            disabled
+                .packet_cache_options_for_url("https://example.test/music.flac")
+                .pause_wait,
+            None,
+        );
     }
 
     #[test]
@@ -505,7 +522,12 @@ mod tests {
                 .packet_cache_options_for_url("file:///tmp/music.flac")
                 .donate_forward_budget
         );
-        assert!(config.cache_pause_for_url("file:///tmp/music.flac"));
+        assert_eq!(
+            config
+                .packet_cache_options_for_url("file:///tmp/music.flac")
+                .pause_wait,
+            Some(Duration::from_secs(1)),
+        );
     }
 
     #[test]
@@ -536,6 +558,12 @@ mod tests {
         assert_eq!(config.demuxer_max_bytes, 2);
         assert_eq!(config.demuxer_max_back_bytes, 999);
         assert_eq!(config.packet_cache_options().max_back_bytes, 0);
+        assert_eq!(
+            config
+                .packet_cache_options_for_url("https://example.test/music.flac")
+                .pause_wait,
+            None,
+        );
     }
 
     #[test]

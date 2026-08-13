@@ -1,6 +1,7 @@
 <script setup lang="ts">
 defineOptions({ name: 'favorites' });
 import { computed, nextTick, onMounted, onUnmounted, ref, shallowRef, watch } from 'vue';
+import { useRoute } from 'vue-router';
 import { usePlaylistStore } from '@/stores/playlist';
 import { usePlayerStore } from '@/stores/player';
 import { useSettingStore } from '@/stores/setting';
@@ -43,6 +44,7 @@ const settingStore = useSettingStore();
 const userStore = useUserStore();
 const toastStore = useToastStore();
 const themeStore = useThemeStore();
+const route = useRoute();
 
 const isLoggedIn = computed(() => userStore.isLoggedIn);
 const currentUserKey = computed(() =>
@@ -55,6 +57,8 @@ const { tabsTop, tabsMinHeight } = useStickyTabsLayout(sliverHeaderRef);
 // ========== 歌曲 Tab ==========
 const songs = computed(() => playlistStore.favorites);
 const favoritesLoading = computed(() => playlistStore.favoritesLoading);
+const routeRefreshLoading = ref(route.query._t !== undefined);
+const songListLoading = computed(() => favoritesLoading.value || routeRefreshLoading.value);
 const songListRef = ref<{ scrollToActive?: () => void } | null>(null);
 const searchQuery = ref('');
 const showBatchDrawer = ref(false);
@@ -135,7 +139,6 @@ const followedSingers = shallowRef<ArtistMeta[]>([]);
 const followedUsers = shallowRef<ArtistMeta[]>([]);
 const followedLoading = ref(false);
 const followedLoaded = ref(false);
-let favoritesLoadedUserKey = '';
 let accountGeneration = 0;
 
 const isCurrentAccountRequest = (generation: number, userKey: string) =>
@@ -397,19 +400,20 @@ const handleTabChange = (value: string | number) => {
 };
 
 // ========== 生命周期 ==========
-const refreshFavorites = () => {
-  if (!isLoggedIn.value) return;
-  if (!currentUserKey.value) return;
-  if (favoritesLoadedUserKey !== currentUserKey.value) {
-    favoritesLoadedUserKey = currentUserKey.value;
-    void playlistStore.fetchUserPlaylists();
+const refreshFavorites = async () => {
+  if (!isLoggedIn.value || !currentUserKey.value) {
+    routeRefreshLoading.value = false;
     return;
   }
-  if (!playlistStore.likedPlaylistQueryId) {
-    void playlistStore.fetchUserPlaylists();
-    return;
+  try {
+    if (!playlistStore.likedPlaylistQueryId && !playlistStore.likedPlaylistListId) {
+      await playlistStore.fetchUserPlaylists();
+      return;
+    }
+    await playlistStore.fetchLikedPlaylistSongs();
+  } finally {
+    routeRefreshLoading.value = false;
   }
-  void playlistStore.fetchLikedPlaylistSongs();
 };
 
 const loadActiveTabData = () => {
@@ -424,7 +428,7 @@ const loadActiveTabData = () => {
 };
 
 onMounted(async () => {
-  refreshFavorites();
+  void refreshFavorites();
   await nextTick();
   setupLoadMoreObserver();
   loadActiveTabData();
@@ -440,7 +444,6 @@ watch(
   ([loggedIn]) => {
     accountGeneration += 1;
     if (!loggedIn) {
-      favoritesLoadedUserKey = '';
       resetFollowed();
       resetVideos();
       return;
@@ -448,7 +451,7 @@ watch(
 
     resetFollowed();
     resetVideos();
-    refreshFavorites();
+    void refreshFavorites();
     loadActiveTabData();
   },
 );
@@ -655,7 +658,7 @@ watch(
                 ref="songListRef"
                 :songs="displayedSongs"
                 :contextSongs="sortedSongs"
-                :loading="favoritesLoading"
+                :loading="songListLoading"
                 :active="activeTab === 'songs'"
                 :searchQuery="searchQuery"
                 :disableInternalFilter="true"

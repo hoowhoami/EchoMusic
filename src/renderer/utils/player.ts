@@ -18,7 +18,7 @@ export interface PlayerEngineEvents {
   playbackRestart?: (payload?: { time?: number; reason?: string }) => void;
   durationChange?: (duration: number) => void;
   /** 新文件加载完成（player file-loaded），用于切歌后放行进度回报 */
-  fileLoaded?: (payload?: { path?: string; seq?: number }) => void;
+  fileLoaded?: (payload?: { path?: string; seq?: number } & PlayerPlaybackContext) => void;
   ended?: () => void;
   play?: (payload?: PlayerPlaybackContext) => void;
   pause?: (payload?: PlayerPlaybackContext) => void;
@@ -26,7 +26,7 @@ export interface PlayerEngineEvents {
   /** Native 播放引擎检测到播放卡死，携带卡死时的播放位置（秒） */
   stalled?: (position: number) => void;
   coreStateChange?: (payload: PlayerCoreStatePayload) => void;
-  cacheStateChange?: (payload: PlayerCacheStatePayload) => void;
+  aoStateChange?: (payload: PlayerAoStatePayload) => void;
   packetCacheStats?: (payload?: PlayerPacketCacheStats) => void;
   audioOutputStats?: (payload?: PlayerAudioOutputStats) => void;
   audioGraphChange?: (payload: PlayerAudioGraphSnapshot | null) => void;
@@ -62,6 +62,9 @@ export interface PlayerAudioOutputStats {
   requestedBufferSecs?: number;
   deviceBufferSecs?: number;
   softwareBufferSecs?: number;
+  aoBufferTargetSecs?: number;
+  aoBufferCapacitySecs?: number;
+  aoRequestFrames?: number;
   delaySecs: number;
   underruns: number;
 }
@@ -71,12 +74,12 @@ export interface PlayerCoreStatePayload extends PlayerPlaybackContext {
   reason?: string;
 }
 
-export interface PlayerCacheStatePayload extends PlayerPlaybackContext {
+export interface PlayerAoStatePayload extends PlayerPlaybackContext {
   paused?: boolean;
+  reason?: string;
   bufferingState?: number;
   bufferedSecs?: number;
   targetSecs?: number;
-  packetCache?: PlayerPacketCacheStats;
 }
 
 export interface MediaSessionMeta {
@@ -261,10 +264,12 @@ export class PlayerEngine {
     });
     this.cleanupFns.push(offDuration);
 
-    const offFileLoaded = player.onFileLoaded?.((payload?: { path?: string; seq?: number }) => {
-      this.clearSeekPending();
-      this.events.fileLoaded?.(payload);
-    });
+    const offFileLoaded = player.onFileLoaded?.(
+      (payload?: { path?: string; seq?: number } & PlayerPlaybackContext) => {
+        this.clearSeekPending();
+        this.events.fileLoaded?.(payload);
+      },
+    );
     if (offFileLoaded) this.cleanupFns.push(offFileLoaded);
 
     const offState = player.onStateChange((state) => {
@@ -303,10 +308,10 @@ export class PlayerEngine {
     });
     if (offCoreState) this.cleanupFns.push(offCoreState);
 
-    const offCacheState = player.onCacheStateChange?.((payload) => {
-      this.events.cacheStateChange?.(payload);
+    const offAoState = player.onAoStateChange?.((payload) => {
+      this.events.aoStateChange?.(payload);
     });
-    if (offCacheState) this.cleanupFns.push(offCacheState);
+    if (offAoState) this.cleanupFns.push(offAoState);
 
     const offPacketCache = player.onPacketCacheStats?.((payload) => {
       this.events.packetCacheStats?.(payload);

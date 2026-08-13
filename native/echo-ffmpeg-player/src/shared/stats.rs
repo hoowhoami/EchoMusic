@@ -1,17 +1,18 @@
 use super::*;
 
 impl SharedAudio {
-    pub fn bind_signal_sender(&self, sender: SyncSender<PlaybackSignal>) {
-        if let Ok(mut guard) = self.signal_tx.lock() {
-            *guard = Some(sender);
-        }
+    pub fn bind_signal_sender(
+        &self,
+        sender: SyncSender<PlaybackSignal>,
+    ) -> Result<(), &'static str> {
+        self.signal_tx
+            .set(sender)
+            .map_err(|_| "playback signal sender is already bound")
     }
 
     pub fn notify_signal(&self, signal: PlaybackSignal) {
-        if let Ok(guard) = self.signal_tx.lock() {
-            if let Some(sender) = guard.as_ref() {
-                let _ = sender.try_send(signal);
-            }
+        if let Some(sender) = self.signal_tx.get() {
+            let _ = sender.try_send(signal);
         }
     }
 
@@ -23,13 +24,6 @@ impl SharedAudio {
                 self.notify_signal(PlaybackSignal::PacketCacheStats(stats));
             }
         }
-    }
-
-    pub fn packet_cache_stats(&self) -> Option<PacketCacheStats> {
-        self.packet_cache_stats
-            .try_lock()
-            .ok()
-            .and_then(|stats| stats.clone())
     }
 
     pub fn update_output_stats(&self, stats: AudioOutputStats) {
@@ -60,6 +54,31 @@ impl SharedAudio {
             .and_then(|stats| stats.clone())
     }
 
+    pub fn refresh_output_stats(&self) {
+        let Ok(mut current) = self.output_stats.try_lock() else {
+            return;
+        };
+        let Some(stats) = current.as_mut() else {
+            return;
+        };
+        let target_secs = self.output_buffer_target_secs();
+        let ao_request_frames = self.max_output_request_frames() as f64;
+        if stats.ao_buffer_target_secs == target_secs
+            && stats.ao_request_frames == ao_request_frames
+        {
+            return;
+        }
+        stats.ao_buffer_target_secs = target_secs;
+        stats.ao_request_frames = ao_request_frames;
+        stats.software_buffer_secs = (target_secs - stats.device_buffer_secs).max(0.0);
+        stats.delay_secs = target_secs.max(stats.device_buffer_secs);
+        self.output_delay_us.store(
+            (stats.delay_secs * 1_000_000.0).round() as u64,
+            Ordering::Release,
+        );
+        self.notify_signal(PlaybackSignal::OutputStats(stats.clone()));
+    }
+
     #[cfg(test)]
     pub fn output_underrun_count(&self) -> u64 {
         self.output_underruns.load(Ordering::Acquire)
@@ -75,11 +94,9 @@ impl SharedAudio {
         }
     }
 
-    pub(super) fn reset_adaptive_buffering(&self) {
+    pub(super) fn reset_output_buffering_state(&self) {
         self.output_underruns.store(0, Ordering::Release);
         self.ao_state.reset();
-        self.decode_throughput_ratio_milli
-            .store(0, Ordering::Release);
         if let Ok(mut current) = self.output_stats.try_lock() {
             if let Some(stats) = current.as_mut() {
                 stats.underruns = 0.0;

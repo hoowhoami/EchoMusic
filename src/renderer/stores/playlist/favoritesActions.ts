@@ -24,6 +24,14 @@ export type AddToPlaylistResult = 'added' | 'exists' | 'failed';
 const DUPLICATE_CHECK_PAGE_SIZE = 200;
 const DUPLICATE_CHECK_MAX_PAGES = 50;
 
+const waitForStableFavorites = async (
+  loader: PagedSongLoader<Song>,
+  fallback: () => readonly Song[],
+): Promise<readonly Song[]> => {
+  const loadedSongs = await loader.waitForAll();
+  return loader.failed ? fallback() : loadedSongs;
+};
+
 const loadPlaylistSongsForDuplicateCheck = async (targetId: string): Promise<Song[] | null> => {
   const songs: Song[] = [];
   try {
@@ -169,6 +177,10 @@ export const favoritesActions = {
     this.favoritesLoading = false;
   },
   async fetchLikedPlaylistSongs(this: FavoritesStoreShape) {
+    if (this.favoritesLoading && favoritesLoader) {
+      return (await waitForStableFavorites(favoritesLoader, () => this.favorites)).length > 0;
+    }
+
     const likedPlaylist = this.likedPlaylist;
     const likedQueryId = this.likedPlaylistQueryId;
     if (!likedPlaylist || !likedQueryId) {
@@ -184,6 +196,8 @@ export const favoritesActions = {
 
     const requestGeneration = this.userCollectionsGeneration;
     const queryId = String(likedQueryId);
+    const previousFavorites = this.favorites.slice();
+    const previousFavoritesLoaded = this.favoritesLoaded;
     this.favoritesLoaded = false;
     this.favoritesLoading = true;
     const loader = new PagedSongLoader<Song>(
@@ -201,6 +215,12 @@ export const favoritesActions = {
         maxPages: 50,
         onPageLoaded: (allItems) => updateFavorites(allItems),
         onComplete: (allItems) => updateFavorites(allItems, true),
+        onError: () => {
+          if (!isCurrentLoader()) return;
+          this.favorites = previousFavorites;
+          this.favoritesLoaded = previousFavoritesLoaded || previousFavorites.length > 0;
+          this.favoritesLoading = false;
+        },
       },
     );
 
@@ -219,7 +239,7 @@ export const favoritesActions = {
     favoritesLoader = loader;
 
     await loader.loadFirstPage();
-    if (!loader.fullyLoaded) {
+    if (!loader.fullyLoaded && !loader.failed) {
       void loader.loadRemaining();
     }
 
@@ -227,7 +247,7 @@ export const favoritesActions = {
   },
   async waitForFavoritesLoaded(this: FavoritesStoreShape): Promise<readonly Song[]> {
     if (favoritesLoader) {
-      return favoritesLoader.waitForAll();
+      return waitForStableFavorites(favoritesLoader, () => this.favorites);
     }
     return this.favorites;
   },

@@ -1,4 +1,4 @@
-import { computed, ref } from 'vue';
+import { computed, onScopeDispose, ref } from 'vue';
 
 interface DeferredSeekOptions {
   getCurrentTime: () => number;
@@ -11,6 +11,7 @@ interface DeferredSeekOptions {
 export function useDeferredSeek(options: DeferredSeekOptions) {
   const pendingSeekTime = ref<number | null>(null);
   const isDragging = ref(false);
+  let globalReleaseListenersAttached = false;
 
   const progressValue = computed(() => [
     isDragging.value && pendingSeekTime.value !== null
@@ -18,14 +19,38 @@ export function useDeferredSeek(options: DeferredSeekOptions) {
       : options.getCurrentTime(),
   ]);
 
+  const removeGlobalReleaseListeners = () => {
+    if (!globalReleaseListenersAttached) return;
+    globalReleaseListenersAttached = false;
+    window.removeEventListener('pointerup', handleGlobalRelease);
+    window.removeEventListener('pointercancel', handleGlobalRelease);
+    window.removeEventListener('blur', handleGlobalRelease);
+  };
+
   const reset = () => {
     pendingSeekTime.value = null;
     isDragging.value = false;
+    removeGlobalReleaseListeners();
+  };
+
+  function handleGlobalRelease() {
+    queueMicrotask(() => {
+      if (isDragging.value) reset();
+    });
+  }
+
+  const addGlobalReleaseListeners = () => {
+    if (globalReleaseListenersAttached) return;
+    globalReleaseListenersAttached = true;
+    window.addEventListener('pointerup', handleGlobalRelease);
+    window.addEventListener('pointercancel', handleGlobalRelease);
+    window.addEventListener('blur', handleGlobalRelease);
   };
 
   const handleStart = () => {
     isDragging.value = true;
     pendingSeekTime.value = options.getCurrentTime();
+    addGlobalReleaseListeners();
   };
 
   const handleValueUpdate = (value: number[] | undefined) => {
@@ -50,6 +75,8 @@ export function useDeferredSeek(options: DeferredSeekOptions) {
   const handleCancel = () => {
     reset();
   };
+
+  onScopeDispose(removeGlobalReleaseListeners);
 
   return {
     pendingSeekTime,

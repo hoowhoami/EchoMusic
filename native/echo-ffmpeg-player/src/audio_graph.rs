@@ -916,6 +916,9 @@ mod tests {
             requested_buffer_secs: 0.02,
             device_buffer_secs: 512.0 / 44_100.0,
             software_buffer_secs: 0.02 - (512.0 / 44_100.0),
+            ao_buffer_target_secs: 0.02,
+            ao_buffer_capacity_secs: 2.0,
+            ao_request_frames: 0.0,
             delay_secs: 0.02,
             underruns: 3.0,
         };

@@ -144,7 +144,7 @@ mod tests {
         shared.paused.store(false, Ordering::Release);
         let handle = spawn_filter_thread(shared.clone());
         let generation = shared.current_decode_generation();
-        let samples = vec![0.1f32; 200];
+        let samples = vec![0.1f32; 204];
         let chunk = DecodedAudioChunk::new(
             DecodedAudioFormat {
                 sample_rate: shared.mix_format.sample_rate,

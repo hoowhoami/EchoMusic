@@ -31,7 +31,7 @@ const DEFAULT_DEMUXER_MAX_BYTES = 150 * 1024 * 1024;
 const DEFAULT_DEMUXER_MAX_BACK_BYTES = 50 * 1024 * 1024;
 const MAX_DEMUXER_BYTES = 4 * 1024 * 1024 * 1024;
 const DEFAULT_PLAYBACK_STALL_TIMEOUT_SECS = 8;
-const CACHE_STATE_LOG_INTERVAL_MS = 5000;
+const AO_STATE_LOG_INTERVAL_MS = 5000;
 const nativeRequire = createRequire(path.join(process.cwd(), 'package.json'));
 
 const readClampedNumber = (value: unknown, fallback: number, min: number, max: number): number => {
@@ -135,10 +135,11 @@ interface PlayerAddonEvent {
   path?: string;
   seq?: number;
   coreState?: string;
-  cachePaused?: boolean;
-  cacheBufferingState?: number;
-  cacheBufferedSecs?: number;
-  cacheTargetSecs?: number;
+  aoPaused?: boolean;
+  aoReason?: string;
+  aoBufferingState?: number;
+  aoBufferedSecs?: number;
+  aoTargetSecs?: number;
   packetCache?: {
     forwardBytes: number;
     backBytes: number;
@@ -155,11 +156,15 @@ interface PlayerAddonEvent {
     engineSampleRate: number;
     channels: number;
     format: string;
+    bufferMode: string;
     bufferFrames: number;
     bufferSecs: number;
     requestedBufferSecs?: number;
     deviceBufferSecs?: number;
     softwareBufferSecs?: number;
+    aoBufferTargetSecs?: number;
+    aoBufferCapacitySecs?: number;
+    aoRequestFrames?: number;
     delaySecs: number;
     underruns: number;
   };
@@ -278,8 +283,9 @@ export class PlayerController extends EventEmitter {
   private activeGeneration = 0;
   private seekSeq = 0;
   private pendingLoadSeq: number | null = null;
-  private lastCacheStateLogAt = 0;
-  private lastCacheStateLogKey = '';
+  private lastAoStateLogAt = 0;
+  private lastAoStateLogKey = '';
+  private lastOutputBufferLogKey = '';
   private state: PlayerState = {
     playing: false,
     paused: true,
@@ -346,8 +352,9 @@ export class PlayerController extends EventEmitter {
   destroy(): void {
     this.addon?.destroy();
     this.addon = null;
-    this.lastCacheStateLogAt = 0;
-    this.lastCacheStateLogKey = '';
+    this.lastAoStateLogAt = 0;
+    this.lastAoStateLogKey = '';
+    this.lastOutputBufferLogKey = '';
   }
 
   async loadFile(url: string): Promise<void> {
@@ -666,7 +673,12 @@ export class PlayerController extends EventEmitter {
           this.activeTrackSeq = event.trackSeq;
           if (this.pendingLoadSeq === event.trackSeq) this.pendingLoadSeq = null;
         }
-        this.emit('file-loaded', { path: event.path, seq: event.seq });
+        this.emit('file-loaded', {
+          path: event.path,
+          seq: event.seq,
+          trackSeq: event.trackSeq,
+          generation: event.generation,
+        });
         break;
       case 'state-change':
         if (event.state) this.applyNativePlaybackState(event.state);
@@ -695,14 +707,14 @@ export class PlayerController extends EventEmitter {
           generation: event.generation,
         });
         break;
-      case 'cache-state-change':
-        this.logCacheStateChange(event);
-        this.emit('cache-state-change', {
-          paused: event.cachePaused,
-          bufferingState: event.cacheBufferingState,
-          bufferedSecs: event.cacheBufferedSecs,
-          targetSecs: event.cacheTargetSecs,
-          packetCache: event.packetCache,
+      case 'ao-state-change':
+        this.logAoStateChange(event);
+        this.emit('ao-state-change', {
+          paused: event.aoPaused,
+          reason: event.aoReason,
+          bufferingState: event.aoBufferingState,
+          bufferedSecs: event.aoBufferedSecs,
+          targetSecs: event.aoTargetSecs,
           trackSeq: event.trackSeq,
           generation: event.generation,
         });
@@ -711,6 +723,7 @@ export class PlayerController extends EventEmitter {
         this.emit('packet-cache-stats', event.packetCache);
         break;
       case 'audio-output-stats':
+        this.logAudioOutputStats(event);
         this.emit('audio-output-stats', event.outputStats);
         break;
       case 'audio-graph-change':
@@ -752,42 +765,50 @@ export class PlayerController extends EventEmitter {
       state: event.coreState,
       reason: event.reason,
     };
-    if (event.reason === 'cache-pause' || event.reason === 'cache-resume') {
+    if (event.reason?.startsWith('ao-')) {
       log.debug('[PlayerController]', 'core state changed', payload);
       return;
     }
     log.info('[PlayerController]', 'core state changed', payload);
   }
 
-  private logCacheStateChange(event: PlayerAddonEvent): void {
-    const packetCache = event.packetCache;
+  private logAoStateChange(event: PlayerAddonEvent): void {
     const key = [
       event.trackSeq ?? '',
       event.generation ?? '',
-      event.cachePaused ? 1 : 0,
-      packetCache?.pendingSeek ? 1 : 0,
-      packetCache?.eof ? 1 : 0,
-      packetCache?.hasError ? 1 : 0,
+      event.aoPaused ? 1 : 0,
+      event.aoReason ?? '',
     ].join('|');
     const now = Date.now();
 
-    if (
-      key === this.lastCacheStateLogKey &&
-      now - this.lastCacheStateLogAt < CACHE_STATE_LOG_INTERVAL_MS
-    ) {
+    if (key === this.lastAoStateLogKey && now - this.lastAoStateLogAt < AO_STATE_LOG_INTERVAL_MS) {
       return;
     }
 
-    this.lastCacheStateLogKey = key;
-    this.lastCacheStateLogAt = now;
-    const level = packetCache?.hasError ? 'warn' : 'debug';
-    log[level]('[PlayerController]', 'cache state changed', {
-      paused: event.cachePaused,
-      bufferingState: event.cacheBufferingState,
-      bufferedSecs: event.cacheBufferedSecs,
-      targetSecs: event.cacheTargetSecs,
-      packetCache,
+    this.lastAoStateLogKey = key;
+    this.lastAoStateLogAt = now;
+    log.debug('[PlayerController]', 'AO state changed', {
+      paused: event.aoPaused,
+      reason: event.aoReason,
+      bufferingState: event.aoBufferingState,
+      bufferedSecs: event.aoBufferedSecs,
+      targetSecs: event.aoTargetSecs,
     });
+  }
+
+  private logAudioOutputStats(event: PlayerAddonEvent): void {
+    const stats = event.outputStats;
+    if (!stats) return;
+    const key = [
+      stats.backend,
+      stats.bufferMode,
+      stats.bufferFrames,
+      stats.aoBufferTargetSecs,
+      stats.aoRequestFrames,
+    ].join('|');
+    if (key === this.lastOutputBufferLogKey) return;
+    this.lastOutputBufferLogKey = key;
+    log.debug('[PlayerController]', 'audio output buffer changed', stats);
   }
 
   private resolveAddonPath(): string | null {

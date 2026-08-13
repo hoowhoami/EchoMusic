@@ -28,7 +28,7 @@ const createEnginePlaybackState = (): EnginePlaybackState => ({
 
 const createPlaybackDiagnostics = (): PlaybackDiagnostics => ({
   core: null,
-  cache: null,
+  ao: null,
   packetCache: null,
   output: null,
   graph: null,

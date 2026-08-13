@@ -655,10 +655,17 @@ contextBridge.exposeInMainWorld('electron', {
       ipcRenderer.on('player:duration-change', listener);
       return () => ipcRenderer.removeListener('player:duration-change', listener);
     },
-    onFileLoaded: (func: (payload?: { path?: string; seq?: number }) => void) => {
+    onFileLoaded: (
+      func: (payload?: {
+        path?: string;
+        seq?: number;
+        trackSeq?: number;
+        generation?: number;
+      }) => void,
+    ) => {
       const listener = (
         _event: Electron.IpcRendererEvent,
-        payload?: { path?: string; seq?: number },
+        payload?: { path?: string; seq?: number; trackSeq?: number; generation?: number },
       ) => func(payload);
       ipcRenderer.on('player:file-loaded', listener);
       return () => ipcRenderer.removeListener('player:file-loaded', listener);
@@ -693,49 +700,31 @@ contextBridge.exposeInMainWorld('electron', {
       ipcRenderer.on('player:core-state-change', listener);
       return () => ipcRenderer.removeListener('player:core-state-change', listener);
     },
-    onCacheStateChange: (
+    onAoStateChange: (
       func: (payload: {
         paused?: boolean;
+        reason?: string;
         bufferingState?: number;
         bufferedSecs?: number;
         targetSecs?: number;
         trackSeq?: number;
         generation?: number;
-        packetCache?: {
-          forwardBytes: number;
-          backBytes: number;
-          totalBytes: number;
-          forwardSecs?: number;
-          seekableRanges: Array<{ startSecs: number; endSecs: number }>;
-          eof: boolean;
-          pendingSeek: boolean;
-          hasError: boolean;
-        };
       }) => void,
     ) => {
       const listener = (
         _event: Electron.IpcRendererEvent,
         payload: {
           paused?: boolean;
+          reason?: string;
           bufferingState?: number;
           bufferedSecs?: number;
           targetSecs?: number;
           trackSeq?: number;
           generation?: number;
-          packetCache?: {
-            forwardBytes: number;
-            backBytes: number;
-            totalBytes: number;
-            forwardSecs?: number;
-            seekableRanges: Array<{ startSecs: number; endSecs: number }>;
-            eof: boolean;
-            pendingSeek: boolean;
-            hasError: boolean;
-          };
         },
       ) => func(payload);
-      ipcRenderer.on('player:cache-state-change', listener);
-      return () => ipcRenderer.removeListener('player:cache-state-change', listener);
+      ipcRenderer.on('player:ao-state-change', listener);
+      return () => ipcRenderer.removeListener('player:ao-state-change', listener);
     },
     onPlaybackEnd: (func: (reason: string) => void) => {
       const listener = (_event: Electron.IpcRendererEvent, reason: string) => func(reason);

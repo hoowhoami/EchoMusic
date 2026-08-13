@@ -293,30 +293,6 @@ fn decoded_chunk_from_frame(
     Ok(DecodedAudioChunk::new(format, frames, pts_secs, data))
 }
 
-/// Total byte size of the raw sample data in a decoded chunk, used for throughput estimation.
-fn decoded_chunk_byte_size(chunk: &DecodedAudioChunk) -> u64 {
-    (chunk.frames as u64)
-        .saturating_mul(chunk.format.channels as u64)
-        .saturating_mul(decoded_sample_byte_size(chunk.format.sample_format))
-}
-
-fn decoded_sample_byte_size(format: AudioSampleFormat) -> u64 {
-    match format {
-        AudioSampleFormat::U8 => 1,
-        AudioSampleFormat::S16 => 2,
-        AudioSampleFormat::S32 => 4,
-        AudioSampleFormat::F32 => 4,
-        AudioSampleFormat::F64 => 8,
-        AudioSampleFormat::Unknown => 0,
-    }
-}
-
-fn decoded_chunk_realtime_byte_rate(chunk: &DecodedAudioChunk) -> u64 {
-    (chunk.format.sample_rate as u64)
-        .saturating_mul(chunk.format.channels as u64)
-        .saturating_mul(decoded_sample_byte_size(chunk.format.sample_format))
-}
-
 fn frame_sample_format(format: sys::AVSampleFormat) -> Option<AudioSampleFormat> {
     match format {
         sys::AVSampleFormat_AV_SAMPLE_FMT_U8 | sys::AVSampleFormat_AV_SAMPLE_FMT_U8P => {
@@ -467,23 +443,10 @@ fn decode_worker_loop(
     shared.bind_interrupt(data.interrupt.clone());
     let mut produced_frames = 0u64;
 
-    // Throughput estimation: track decoded audio bytes and wall-clock time.
-    let mut throughput_start = Instant::now();
-    let mut throughput_bytes: u64 = 0;
-    let mut throughput_required_bps_acc: f64 = 0.0;
-    let mut throughput_chunks: u64 = 0;
-    const THROUGHPUT_REPORT_INTERVAL: Duration = Duration::from_secs(2);
-
     loop {
         if let Some(next_generation) = handle_decode_commands(&mut data, &shared, &commands) {
             generation = next_generation;
             produced_frames = 0;
-            // Reset throughput estimation window after seek/generation change so the
-            // post-seek decode speed is measured from scratch rather than including stale data.
-            throughput_bytes = 0;
-            throughput_required_bps_acc = 0.0;
-            throughput_chunks = 0;
-            throughput_start = Instant::now();
         }
         data.publish_packet_cache_stats(&shared);
         if shared.should_stop_decoding() {
@@ -519,32 +482,6 @@ fn decode_worker_loop(
                         }
                     }
                     produced_frames = produced_frames.saturating_add(chunk.frames as u64);
-
-                    // Update throughput estimate (decoded audio bytes per second).
-                    throughput_bytes =
-                        throughput_bytes.saturating_add(decoded_chunk_byte_size(&chunk));
-                    let required_bps = decoded_chunk_realtime_byte_rate(&chunk);
-                    if required_bps > 0 {
-                        throughput_required_bps_acc += required_bps as f64;
-                        throughput_chunks = throughput_chunks.saturating_add(1);
-                    }
-                    let elapsed = throughput_start.elapsed();
-                    if elapsed >= THROUGHPUT_REPORT_INTERVAL && elapsed.as_secs_f64() > 0.0 {
-                        let bps = (throughput_bytes as f64 / elapsed.as_secs_f64()) as u64;
-                        let ratio_milli = if throughput_chunks == 0 {
-                            0
-                        } else {
-                            let required_bps =
-                                throughput_required_bps_acc / throughput_chunks as f64;
-                            ((bps as f64 / required_bps.max(1.0)) * 1000.0) as u64
-                        };
-                        shared.update_decode_throughput_ratio(ratio_milli);
-                        // Reset for next window.
-                        throughput_bytes = 0;
-                        throughput_required_bps_acc = 0.0;
-                        throughput_chunks = 0;
-                        throughput_start = Instant::now();
-                    }
 
                     if !shared.push_decoded_chunk_for_generation(chunk, generation) {
                         if shared.should_stop_decoding() {

@@ -2,7 +2,7 @@ import type { AudioEffectValue, AudioQualityValue } from '../../types';
 import type {
   PlayerAudioOutputStats,
   PlayerAudioGraphSnapshot,
-  PlayerCacheStatePayload,
+  PlayerAoStatePayload,
   PlayerCoreStatePayload,
   PlayerPacketCacheStats,
   TrackLoudness,
@@ -46,7 +46,7 @@ export type EnginePlaybackState = {
 
 export type PlaybackDiagnostics = {
   core: (PlayerCoreStatePayload & { updatedAt: number }) | null;
-  cache: (PlayerCacheStatePayload & { updatedAt: number }) | null;
+  ao: (PlayerAoStatePayload & { updatedAt: number }) | null;
   packetCache: (PlayerPacketCacheStats & { updatedAt: number }) | null;
   output: (PlayerAudioOutputStats & { updatedAt: number }) | null;
   graph: (PlayerAudioGraphSnapshot & { updatedAt: number }) | null;

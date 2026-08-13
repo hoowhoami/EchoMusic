@@ -81,6 +81,9 @@ fn position_reports_audible_clock_after_output_delay() {
         requested_buffer_secs: 0.02,
         device_buffer_secs: 0.02,
         software_buffer_secs: 0.0,
+        ao_buffer_target_secs: 0.02,
+        ao_buffer_capacity_secs: 2.0,
+        ao_request_frames: 0.0,
         delay_secs: 0.02,
         underruns: 0.0,
     });
@@ -112,6 +115,9 @@ fn position_prefers_live_output_delay_over_static_estimate() {
         requested_buffer_secs: 0.02,
         device_buffer_secs: 0.02,
         software_buffer_secs: 0.0,
+        ao_buffer_target_secs: 0.02,
+        ao_buffer_capacity_secs: 2.0,
+        ao_request_frames: 0.0,
         delay_secs: 0.02,
         underruns: 0.0,
     });
@@ -145,6 +151,9 @@ fn position_scales_output_delay_by_speed() {
         requested_buffer_secs: 0.02,
         device_buffer_secs: 0.02,
         software_buffer_secs: 0.0,
+        ao_buffer_target_secs: 0.02,
+        ao_buffer_capacity_secs: 2.0,
+        ao_request_frames: 0.0,
         delay_secs: 0.02,
         underruns: 0.0,
     });
@@ -176,6 +185,9 @@ fn set_position_anchors_audible_clock_after_delay_and_filter_latency() {
         requested_buffer_secs: 0.03,
         device_buffer_secs: 0.03,
         software_buffer_secs: 0.0,
+        ao_buffer_target_secs: 0.03,
+        ao_buffer_capacity_secs: 2.0,
+        ao_request_frames: 0.0,
         delay_secs: 0.03,
         underruns: 0.0,
     });
@@ -208,6 +220,9 @@ fn set_position_scales_delay_anchor_by_speed() {
         requested_buffer_secs: 0.03,
         device_buffer_secs: 0.03,
         software_buffer_secs: 0.0,
+        ao_buffer_target_secs: 0.03,
+        ao_buffer_capacity_secs: 2.0,
+        ao_request_frames: 0.0,
         delay_secs: 0.03,
         underruns: 0.0,
     });
@@ -228,7 +243,9 @@ fn playback_restart_is_emitted_when_restart_audio_is_ready() {
         &DspSettings::default(),
     );
     let (tx, rx) = std::sync::mpsc::sync_channel(4);
-    shared.bind_signal_sender(tx);
+    shared
+        .bind_signal_sender(tx)
+        .expect("signal sender should bind once");
     shared.mark_playback_restart_ready(1.0);
 
     assert!(matches!(
@@ -354,14 +371,7 @@ fn reset_for_decode_resume_waits_for_resume_threshold() {
 #[test]
 fn decoded_eof_drains_output_below_resume_threshold() {
     let settings = DspSettings::default();
-    let shared = SharedAudio::with_cache_pause_wait(
-        MixFormat::stereo_f32(100),
-        0.2,
-        true,
-        1.0,
-        8.0,
-        &settings,
-    );
+    let shared = SharedAudio::with_output_buffer(MixFormat::stereo_f32(100), 0.2, 8.0, &settings);
     shared.reset_for_decode_resume(10.0, &settings);
     assert!(shared.push_samples(&[0.25; 8]));
 
@@ -378,12 +388,10 @@ fn decoded_eof_drains_output_below_resume_threshold() {
 }
 
 #[test]
-fn cache_pause_disabled_skips_decode_resume_threshold() {
-    let shared = SharedAudio::with_cache_pause_wait(
+fn ao_preroll_waits_for_realtime_queue() {
+    let shared = SharedAudio::with_output_buffer(
         MixFormat::stereo_f32(100),
         0.1,
-        false,
-        1.0,
         8.0,
         &DspSettings::default(),
     );
@@ -393,21 +401,20 @@ fn cache_pause_disabled_skips_decode_resume_threshold() {
     let mut output = [1.0f32; 8];
     let frames = shared.pop_into(&mut output);
 
-    assert_eq!(frames, 4);
-    assert_eq!(output, [0.25; 8]);
-    assert!(!shared.ao_state.resume_when_buffered());
+    assert_eq!(frames, 0);
+    assert_eq!(output, [0.0; 8]);
+    assert!(shared.ao_state.is_buffering());
 }
 
 #[test]
-fn output_underrun_buffering_survives_cache_pause_disabled() {
-    let shared = SharedAudio::with_cache_pause_wait(
+fn output_underrun_recovery_uses_observed_demand_target() {
+    let shared = SharedAudio::with_output_buffer(
         MixFormat::stereo_f32(100),
         0.1,
-        false,
-        1.0,
         8.0,
         &DspSettings::default(),
     );
+    shared.ao_state.reset();
     assert!(shared.push_samples(&[0.25; 4]));
 
     let mut output = [1.0f32; 8];
@@ -417,6 +424,7 @@ fn output_underrun_buffering_survives_cache_pause_disabled() {
     assert_eq!(output, [0.25, 0.25, 0.25, 0.25, 0.0, 0.0, 0.0, 0.0]);
     assert!(shared.ao_state.ao_underrun());
 
+    assert_eq!(shared.output_buffer_target_samples(), 20);
     assert!(shared.push_samples(&[0.25; 20]));
     assert_eq!(shared.pop_into(&mut output), 4);
     assert_eq!(output, [0.25; 8]);
@@ -431,25 +439,45 @@ fn reset_for_decode_resume_publishes_buffering_progress_when_audio_arrives() {
         &DspSettings::default(),
     );
     let (tx, rx) = std::sync::mpsc::sync_channel(4);
-    shared.bind_signal_sender(tx);
+    shared
+        .bind_signal_sender(tx)
+        .expect("signal sender should bind once");
     shared.reset_for_decode_resume(1.0, &DspSettings::default());
 
     let mut output = [1.0f32; 4];
     assert_eq!(shared.pop_into(&mut output), 0);
     assert!(matches!(
         rx.try_recv(),
-        Ok(PlaybackSignal::CacheState { paused: true, .. })
+        Ok(PlaybackSignal::AoState { paused: true, .. })
     ));
 
     assert!(shared.push_samples(&[0.1; 20]));
     assert!(matches!(
         rx.try_recv(),
-        Ok(PlaybackSignal::CacheState { paused: true, .. })
+        Ok(PlaybackSignal::AoState { paused: true, .. })
     ));
 }
 
 #[test]
-fn resume_buffering_wait_does_not_escalate_adaptive_threshold() {
+fn signal_sender_rejects_duplicate_binding() {
+    let shared = SharedAudio::new(
+        MixFormat::stereo_f32(100),
+        0.2,
+        8.0,
+        &DspSettings::default(),
+    );
+    let (first, _first_rx) = std::sync::mpsc::sync_channel(1);
+    let (second, _second_rx) = std::sync::mpsc::sync_channel(1);
+
+    assert!(shared.bind_signal_sender(first).is_ok());
+    assert_eq!(
+        shared.bind_signal_sender(second),
+        Err("playback signal sender is already bound"),
+    );
+}
+
+#[test]
+fn repeated_preroll_callbacks_do_not_count_as_underruns() {
     let shared = SharedAudio::new(
         MixFormat::stereo_f32(100),
         0.1,
@@ -464,20 +492,7 @@ fn resume_buffering_wait_does_not_escalate_adaptive_threshold() {
     }
 
     assert_eq!(shared.output_underrun_count(), 0);
-    assert_eq!(shared.cache_pause_resume_threshold(4), 200);
-}
-
-#[test]
-fn adaptive_resume_threshold_is_capped_by_decoded_readahead_capacity() {
-    let shared = SharedAudio::new(
-        MixFormat::stereo_f32(100),
-        0.1,
-        1.0,
-        &DspSettings::default(),
-    );
-    shared.update_decode_throughput_ratio(400);
-
-    assert_eq!(shared.cache_pause_resume_threshold(4), 220);
+    assert_eq!(shared.output_buffer_target_samples(), 20);
 }
 
 #[test]
@@ -572,7 +587,9 @@ fn gapless_boundary_resets_position_after_crossing_track_switch() {
         &DspSettings::default(),
     );
     let (tx, rx) = std::sync::mpsc::sync_channel(4);
-    shared.bind_signal_sender(tx);
+    shared
+        .bind_signal_sender(tx)
+        .expect("signal sender should bind once");
     assert!(shared.push_samples(&[0.1, 0.2, 0.3, 0.4]));
     shared.mark_gapless_boundary(TrackSwitchInfo {
         url: "next.flac".to_string(),
@@ -598,7 +615,7 @@ fn gapless_boundary_resets_position_after_crossing_track_switch() {
 }
 
 #[test]
-fn gapless_boundary_resets_adaptive_cache_pause_threshold() {
+fn gapless_boundary_resets_underrun_counter() {
     let shared = SharedAudio::new(
         MixFormat::stereo_f32(100),
         0.1,
@@ -608,7 +625,6 @@ fn gapless_boundary_resets_adaptive_cache_pause_threshold() {
     for _ in 0..20 {
         shared.record_output_underrun();
     }
-    assert_eq!(shared.cache_pause_resume_threshold(4), 220);
     assert!(shared.push_samples(&[0.1, 0.2, 0.3, 0.4]));
     shared.mark_gapless_boundary(TrackSwitchInfo {
         url: "next.flac".to_string(),
@@ -622,7 +638,6 @@ fn gapless_boundary_resets_adaptive_cache_pause_threshold() {
     assert_eq!(shared.pop_into(&mut output), 4);
 
     assert_eq!(shared.output_underrun_count(), 0);
-    assert_eq!(shared.cache_pause_resume_threshold(4), 200);
 }
 
 #[test]
@@ -643,7 +658,7 @@ fn stall_timeout_can_be_disabled_and_clamped() {
 }
 
 #[test]
-fn output_queue_capacity_uses_configured_audio_buffer() {
+fn output_ring_keeps_headroom_separate_from_configured_target() {
     let shared = SharedAudio::new(
         MixFormat::stereo_f32(100),
         0.2,
@@ -651,8 +666,10 @@ fn output_queue_capacity_uses_configured_audio_buffer() {
         &DspSettings::default(),
     );
 
-    assert_eq!(shared.output_queue_capacity, 40);
-    assert_eq!(shared.decoded_queue_capacity_frames, 100);
+    assert_eq!(shared.configured_output_buffer_samples, 40);
+    assert_eq!(shared.output_buffer_target_samples(), 40);
+    assert_eq!(shared.output_ring_capacity, 400);
+    assert_eq!(shared.decoded_queue_capacity_frames, 20);
 }
 
 #[test]
@@ -694,7 +711,7 @@ fn gapless_prepare_request_suspends_stall_watch_until_completed() {
 }
 
 #[test]
-fn output_queue_capacity_honors_larger_audio_buffer_setting() {
+fn output_ring_honors_larger_audio_buffer_setting() {
     let shared = SharedAudio::new(
         MixFormat::stereo_f32(100),
         2.0,
@@ -702,28 +719,34 @@ fn output_queue_capacity_honors_larger_audio_buffer_setting() {
         &DspSettings::default(),
     );
 
-    assert_eq!(shared.output_queue_capacity, 400);
+    assert_eq!(shared.configured_output_buffer_samples, 400);
+    assert_eq!(shared.output_buffer_target_samples(), 400);
+    assert_eq!(shared.output_ring_capacity, 400);
     assert_eq!(shared.decoded_queue_capacity_frames, 200);
 }
 
 #[test]
-fn oversized_output_request_consumes_software_buffer_before_underrun() {
+fn oversized_output_request_grows_target_before_consuming_audio() {
     let shared = SharedAudio::new(
         MixFormat::stereo_f32(100),
         0.2,
         8.0,
         &DspSettings::default(),
     );
+    shared.begin_output_preroll();
     assert!(shared.push_samples(&vec![0.5; 40]));
 
     let mut output = [1.0f32; 80];
-    let frames = shared.pop_into(&mut output);
+    assert_eq!(shared.pop_into(&mut output), 0);
+    assert_eq!(output, [0.0; 80]);
+    assert_eq!(shared.output_buffer_target_samples(), 80);
+    assert_eq!(shared.max_output_request_frames(), 40);
 
-    assert_eq!(frames, 20);
-    assert_eq!(&output[..40], &[0.5; 40]);
-    assert_eq!(&output[40..], &[0.0; 40]);
-    assert_eq!(shared.output_underrun_count(), 1);
-    assert!(shared.ao_state.ao_underrun());
+    assert!(shared.push_samples(&vec![0.5; 40]));
+    assert_eq!(shared.pop_into(&mut output), 40);
+    assert_eq!(output, [0.5; 80]);
+    assert_eq!(shared.output_underrun_count(), 0);
+    assert!(!shared.ao_state.ao_underrun());
 }
 
 #[test]
@@ -747,7 +770,7 @@ fn oversized_output_request_can_drain_at_eof() {
 }
 
 #[test]
-fn cache_pause_resume_counts_decoded_readahead_but_waits_for_output_ready() {
+fn ao_resume_ignores_decoded_readahead() {
     let shared = SharedAudio::new(
         MixFormat::stereo_f32(100),
         0.2,
@@ -816,7 +839,30 @@ fn output_underrun_waits_for_realtime_output_even_with_decoded_readahead() {
 }
 
 #[test]
-fn cache_pause_resume_threshold_adapts_after_output_underruns() {
+fn output_underrun_adds_callback_burst_headroom() {
+    let shared = SharedAudio::new(
+        MixFormat::stereo_f32(100),
+        0.2,
+        8.0,
+        &DspSettings::default(),
+    );
+    assert!(shared.push_samples(&[0.1; 20]));
+
+    let mut output = [0.0f32; 40];
+    assert_eq!(shared.pop_into(&mut output), 10);
+    assert!(shared.ao_state.ao_underrun());
+    assert_eq!(shared.output_buffer_target_samples(), 80);
+
+    assert!(shared.push_samples(&[0.1; 80]));
+    assert_eq!(shared.pop_into(&mut output), 20);
+    assert_eq!(shared.pop_into(&mut output), 20);
+    assert!(shared.push_samples(&[0.1; 20]));
+    assert_eq!(shared.pop_into(&mut output), 10);
+    assert_eq!(shared.output_buffer_target_samples(), 80);
+}
+
+#[test]
+fn underrun_counter_alone_does_not_change_ao_target() {
     let shared = SharedAudio::new(
         MixFormat::stereo_f32(100),
         2.0,
@@ -824,32 +870,30 @@ fn cache_pause_resume_threshold_adapts_after_output_underruns() {
         &DspSettings::default(),
     );
 
-    assert_eq!(shared.cache_pause_resume_threshold(4), 400);
+    assert_eq!(shared.output_buffer_target_samples(), 400);
     for _ in 0..5 {
         shared.record_output_underrun();
     }
-    assert_eq!(shared.cache_pause_resume_threshold(4), 400);
+    assert_eq!(shared.output_buffer_target_samples(), 400);
     for _ in 5..20 {
         shared.record_output_underrun();
     }
-    assert_eq!(shared.cache_pause_resume_threshold(4), 600);
+    assert_eq!(shared.output_buffer_target_samples(), 400);
 }
 
 #[test]
-fn decode_resume_resets_adaptive_cache_pause_threshold() {
+fn decode_resume_keeps_observed_callback_target() {
     let shared = SharedAudio::new(
         MixFormat::stereo_f32(100),
         0.2,
         1.0,
         &DspSettings::default(),
     );
-    for _ in 0..20 {
-        shared.record_output_underrun();
-    }
-    assert_eq!(shared.cache_pause_resume_threshold(4), 240);
+    shared.observe_output_request(240);
+    assert_eq!(shared.output_buffer_target_samples(), 240);
 
     shared.reset_for_decode_resume(12.0, &DspSettings::default());
 
     assert_eq!(shared.output_underrun_count(), 0);
-    assert_eq!(shared.cache_pause_resume_threshold(4), 200);
+    assert_eq!(shared.output_buffer_target_samples(), 240);
 }

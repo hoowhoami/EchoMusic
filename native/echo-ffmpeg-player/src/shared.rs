@@ -9,7 +9,7 @@ mod session;
 mod stats;
 mod types;
 
-use ao_state::{AoBufferingMetrics, AoBufferingState, AoCacheState};
+use ao_state::{AoBufferState, AoBufferingMetrics, AoBufferingState};
 use decoded_queue::{DecodedAudioQueue, DecodedQueueItem};
 use gapless::{GaplessBoundary, GaplessPrepareState};
 use realtime_ring::RealtimeAudioRing;
@@ -21,12 +21,11 @@ pub use types::{
 };
 
 use clock::stall_timeout_millis;
-use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicUsize, Ordering};
 use std::sync::mpsc::SyncSender;
-use std::sync::{Arc, Condvar, Mutex};
+use std::sync::{Arc, Condvar, Mutex, OnceLock};
 
-#[cfg(test)]
-const CACHE_PAUSE_WAIT_SECS: f64 = 1.0;
+const AO_RING_HEADROOM_SECS: f64 = 2.0;
 
 pub struct SharedAudio {
     output_queue_wait: Mutex<()>,
@@ -34,7 +33,11 @@ pub struct SharedAudio {
     decoded_queue: Mutex<DecodedAudioQueue>,
     output_queue_changed: Condvar,
     decoded_queue_changed: Condvar,
-    output_queue_capacity: usize,
+    output_ring_capacity: usize,
+    configured_output_buffer_samples: usize,
+    output_buffer_target_samples: AtomicUsize,
+    max_output_request_samples: AtomicUsize,
+    output_demand_since_producer_progress: AtomicUsize,
     decoded_queue_capacity_frames: usize,
     requested_output_buffer_secs: f64,
     ao_state: AoBufferingState,
@@ -72,10 +75,9 @@ pub struct SharedAudio {
     speed_bits: AtomicU32,
     source_sample_format: AtomicU32,
     preferred_output_sample_format: AtomicU32,
-    decode_throughput_ratio_milli: AtomicU64,
     spectrum_sample_rate: AtomicU32,
     interrupt: Mutex<Option<Arc<AtomicBool>>>,
-    signal_tx: Mutex<Option<SyncSender<PlaybackSignal>>>,
+    signal_tx: OnceLock<SyncSender<PlaybackSignal>>,
 }
 
 impl SharedAudio {
@@ -86,44 +88,44 @@ impl SharedAudio {
         stall_timeout_secs: f64,
         dsp_settings: &DspSettings,
     ) -> Self {
-        Self::with_cache_pause_wait(
-            mix_format,
-            buffer_secs,
-            true,
-            CACHE_PAUSE_WAIT_SECS,
-            stall_timeout_secs,
-            dsp_settings,
-        )
+        Self::with_output_buffer(mix_format, buffer_secs, stall_timeout_secs, dsp_settings)
     }
 
-    pub fn with_cache_pause_wait(
+    pub fn with_output_buffer(
         mix_format: MixFormat,
         buffer_secs: f64,
-        cache_pause: bool,
-        cache_pause_wait_secs: f64,
         stall_timeout_secs: f64,
         dsp_settings: &DspSettings,
     ) -> Self {
         let mix_sample_rate = mix_format.sample_rate.max(1);
         let mix_channels = mix_format.channels.max(1);
-        let cache_pause_wait_secs = cache_pause_wait_secs.clamp(0.0, 3_600_000.0);
-        let decoded_queue_capacity_frames = ((mix_sample_rate as f64 * buffer_secs) as usize)
-            .max((mix_sample_rate as f64 * cache_pause_wait_secs) as usize);
-        let output_queue_capacity_frames =
+        let configured_output_buffer_frames =
             ((mix_sample_rate as f64 * buffer_secs) as usize).max(mix_sample_rate as usize / 20);
-        let output_queue_capacity = output_queue_capacity_frames
+        let decoded_queue_capacity_frames = configured_output_buffer_frames;
+        let configured_output_buffer_samples = configured_output_buffer_frames
             .saturating_mul(mix_channels)
             .max(mix_sample_rate as usize / 20);
+        // The ring is preallocated for callback headroom, but producers only fill
+        // to output_buffer_target_samples. Capacity therefore does not add latency.
+        let output_ring_capacity_frames = configured_output_buffer_frames
+            .max((mix_sample_rate as f64 * AO_RING_HEADROOM_SECS).round() as usize);
+        let output_ring_capacity = output_ring_capacity_frames
+            .saturating_mul(mix_channels)
+            .max(configured_output_buffer_samples);
         Self {
             output_queue_wait: Mutex::new(()),
-            realtime_output: RealtimeAudioRing::new(output_queue_capacity),
+            realtime_output: RealtimeAudioRing::new(output_ring_capacity),
             decoded_queue: Mutex::new(DecodedAudioQueue::default()),
             output_queue_changed: Condvar::new(),
             decoded_queue_changed: Condvar::new(),
-            output_queue_capacity,
+            output_ring_capacity,
+            configured_output_buffer_samples,
+            output_buffer_target_samples: AtomicUsize::new(configured_output_buffer_samples),
+            max_output_request_samples: AtomicUsize::new(0),
+            output_demand_since_producer_progress: AtomicUsize::new(0),
             decoded_queue_capacity_frames,
             requested_output_buffer_secs: buffer_secs.clamp(0.0, 10.0),
-            ao_state: AoBufferingState::new(cache_pause, cache_pause_wait_secs),
+            ao_state: AoBufferingState::new(),
             spectrum_ring: Mutex::new(SampleRing::new(mix_sample_rate as usize * mix_channels)),
             dsp_settings: Mutex::new(dsp_settings.clone()),
             paused: AtomicBool::new(true),
@@ -161,9 +163,8 @@ impl SharedAudio {
             preferred_output_sample_format: AtomicU32::new(AudioSampleFormat::Unknown as u32),
             spectrum_sample_rate: AtomicU32::new(mix_sample_rate),
             interrupt: Mutex::new(None),
-            signal_tx: Mutex::new(None),
+            signal_tx: OnceLock::new(),
             track_seq: AtomicU64::new(0),
-            decode_throughput_ratio_milli: AtomicU64::new(0),
         }
     }
 
@@ -228,6 +229,11 @@ impl SharedAudio {
 
     pub fn mark_output_started(&self) {
         self.output_started.store(true, Ordering::Release);
+    }
+
+    pub fn begin_output_preroll(&self) {
+        self.ao_state.begin_preroll();
+        self.output_queue_changed.notify_all();
     }
 
     pub fn output_has_started(&self) -> bool {
@@ -332,13 +338,6 @@ impl SharedAudio {
         self.decoded_queue_changed.notify_all();
     }
 
-    /// Updates decoded-audio throughput relative to real-time decode requirements.
-    /// `1000` means decoding is keeping pace with real time; `0` means "unknown".
-    pub fn update_decode_throughput_ratio(&self, ratio_milli: u64) {
-        self.decode_throughput_ratio_milli
-            .store(ratio_milli, Ordering::Release);
-    }
-
     pub fn is_decode_generation_current(&self, generation: u64) -> bool {
         self.decode_generation.load(Ordering::Acquire) == generation
     }
@@ -397,7 +396,7 @@ impl SharedAudio {
     ) -> bool {
         self.push_queue_samples_with_source_frames_checked(
             &self.output_queue_wait,
-            self.output_queue_capacity,
+            self.output_buffer_target_samples(),
             samples,
             source_frames,
             generation,
@@ -436,7 +435,7 @@ impl SharedAudio {
     fn push_queue_samples_with_source_frames_checked(
         &self,
         _queue_lock: &Mutex<()>,
-        queue_capacity: usize,
+        _queue_capacity: usize,
         samples: &[f32],
         source_frames: u64,
         generation: Option<u64>,
@@ -452,10 +451,15 @@ impl SharedAudio {
             {
                 return false;
             }
-            let (pushed_samples, pushed_source_frames) = self
-                .realtime_output
-                .push(&samples[offset..], source_frames_remaining);
+            let target_samples = self.output_buffer_target_samples();
+            let (pushed_samples, pushed_source_frames) = self.realtime_output.push_limited(
+                &samples[offset..],
+                source_frames_remaining,
+                target_samples,
+            );
             if pushed_samples > 0 {
+                self.output_demand_since_producer_progress
+                    .store(0, Ordering::Release);
                 offset = offset.saturating_add(pushed_samples);
                 source_frames_remaining =
                     source_frames_remaining.saturating_sub(pushed_source_frames);
@@ -467,7 +471,7 @@ impl SharedAudio {
                 Ok(queue) => queue,
                 Err(_) => return false,
             };
-            while self.realtime_output.buffered_samples() >= queue_capacity
+            while self.realtime_output.buffered_samples() >= self.output_buffer_target_samples()
                 && !self.should_stop_decoding()
                 && !generation.is_some_and(|value| !self.is_filter_generation_current(value))
             {
@@ -487,15 +491,21 @@ impl SharedAudio {
     }
 
     fn publish_restart_buffering_progress(&self, pushed_samples: usize) {
-        if !self.ao_state.cache_pause_enabled() || !self.ao_state.resume_when_buffered() {
+        if !self.ao_state.is_buffering() {
             return;
         }
         let requested_samples = pushed_samples.max(1);
-        let resume_threshold = self.cache_pause_resume_threshold(requested_samples);
-        let buffered_samples = self.total_buffered_output_samples(
-            self.realtime_output.buffered_samples().max(pushed_samples),
-        );
-        self.publish_cache_state(true, buffered_samples, resume_threshold, requested_samples);
+        let buffered_samples = self.realtime_output.buffered_samples().max(pushed_samples);
+        let metrics = self.ao_buffering_metrics(buffered_samples, requested_samples);
+        let reason = if self.ao_state.ao_underrun() {
+            ao_state::AoBufferingReason::Underrun
+        } else {
+            ao_state::AoBufferingReason::Preroll
+        };
+        let state = self
+            .ao_state
+            .state(true, reason, buffered_samples, &metrics);
+        self.emit_ao_state(state);
     }
 
     pub fn pop_decoded_for_filter(&self, generation: u64) -> FilterInput {
@@ -558,6 +568,9 @@ impl SharedAudio {
     }
 
     pub fn pop_into(&self, output: &mut [f32]) -> usize {
+        self.output_demand_since_producer_progress
+            .fetch_add(output.len(), Ordering::AcqRel);
+        self.observe_output_request(output.len());
         let chunk_samples = self.output_pop_chunk_samples();
         if output.len() > chunk_samples {
             output.fill(0.0);
@@ -576,7 +589,7 @@ impl SharedAudio {
 
     fn output_pop_chunk_samples(&self) -> usize {
         let channels = self.mix_format.channels.max(1);
-        ((self.output_queue_capacity / channels).max(1) * channels).max(1)
+        ((self.output_ring_capacity / channels).max(1) * channels).max(1)
     }
 
     fn pop_chunk_into(&self, output: &mut [f32]) -> usize {
@@ -620,11 +633,9 @@ impl SharedAudio {
                 self.last_time_event_samples
                     .store(post_boundary_frames, Ordering::Release);
                 if let Ok(mut ring) = self.spectrum_ring.try_lock() {
-                    *ring = SampleRing::new(
-                        self.mix_format.sample_rate as usize * self.mix_format.channels.max(1),
-                    );
+                    ring.clear();
                 }
-                self.reset_adaptive_buffering();
+                self.reset_output_buffering_state();
                 self.notify_signal(PlaybackSignal::TrackSwitch(info));
             } else {
                 let previous = self
@@ -654,56 +665,91 @@ impl SharedAudio {
         let decision = self.ao_state.should_hold_for_buffering(
             self.ao_buffering_metrics(queued_samples, requested_samples),
         );
-        self.emit_cache_state(decision.cache_state);
+        self.emit_ao_state(decision.state);
         decision.hold
     }
 
     fn enter_output_underrun(&self, buffered_samples: usize, requested_samples: usize) {
-        let state = self.ao_state.enter_output_underrun(
-            buffered_samples,
-            requested_samples,
-            self.output_queue_capacity,
-            self.mix_format.channels.max(1),
-            self.mix_format.sample_rate,
-        );
-        self.emit_cache_state(state);
+        let observed_burst = self
+            .output_demand_since_producer_progress
+            .load(Ordering::Acquire);
+        let observed_demand = observed_burst.saturating_add(requested_samples);
+        self.raise_output_buffer_target(observed_demand);
+        let metrics = self.ao_buffering_metrics(buffered_samples, requested_samples);
+        let state = self
+            .ao_state
+            .enter_output_underrun(buffered_samples, &metrics);
+        self.emit_ao_state(state);
         self.record_output_underrun();
     }
 
-    fn publish_cache_state(
-        &self,
-        paused: bool,
-        buffered_samples: usize,
-        target_samples: usize,
-        requested_samples: usize,
-    ) {
-        let state = self.ao_state.cache_state(
-            paused,
-            buffered_samples,
-            target_samples,
-            requested_samples,
-            self.mix_format.channels.max(1),
-            self.mix_format.sample_rate,
-        );
-        self.emit_cache_state(state);
-    }
-
-    fn emit_cache_state(&self, state: Option<AoCacheState>) {
+    fn emit_ao_state(&self, state: Option<AoBufferState>) {
         let Some(state) = state else {
             return;
         };
-        self.notify_signal(PlaybackSignal::CacheState {
+        self.notify_signal(PlaybackSignal::AoState {
             paused: state.paused,
+            reason: state.reason.as_str(),
             buffering_state: state.buffering_state,
             buffered_secs: state.buffered_secs,
             target_secs: state.target_secs,
-            packet_cache: self.packet_cache_stats(),
         });
     }
 
-    fn cache_pause_resume_threshold(&self, requested_samples: usize) -> usize {
-        self.ao_state
-            .cache_pause_resume_threshold(&self.ao_buffering_metrics(0, requested_samples))
+    fn observe_output_request(&self, requested_samples: usize) {
+        if requested_samples == 0 {
+            return;
+        }
+        self.max_output_request_samples
+            .fetch_max(requested_samples, Ordering::AcqRel);
+        self.raise_output_buffer_target(requested_samples);
+    }
+
+    pub fn register_output_device_buffer(&self, device_frames: u32, device_sample_rate: u32) {
+        if device_frames == 0 {
+            return;
+        }
+        let engine_frames = ((u64::from(device_frames)
+            * u64::from(self.mix_format.sample_rate.max(1)))
+        .div_ceil(u64::from(device_sample_rate.max(1)))) as usize;
+        self.raise_output_buffer_target(
+            engine_frames.saturating_mul(self.mix_format.channels.max(1)),
+        );
+    }
+
+    fn raise_output_buffer_target(&self, required_samples: usize) {
+        let target = self
+            .configured_output_buffer_samples
+            .max(required_samples.min(self.output_ring_capacity));
+        let previous = self
+            .output_buffer_target_samples
+            .fetch_max(target, Ordering::AcqRel);
+        if target > previous {
+            self.output_queue_changed.notify_all();
+        }
+    }
+
+    fn output_buffer_target_samples(&self) -> usize {
+        self.output_buffer_target_samples
+            .load(Ordering::Acquire)
+            .min(self.output_ring_capacity)
+            .max(1)
+    }
+
+    pub(super) fn output_buffer_target_secs(&self) -> f64 {
+        self.output_buffer_target_samples() as f64
+            / self.mix_format.channels.max(1) as f64
+            / self.mix_format.sample_rate.max(1) as f64
+    }
+
+    pub(super) fn output_ring_capacity_secs(&self) -> f64 {
+        self.output_ring_capacity as f64
+            / self.mix_format.channels.max(1) as f64
+            / self.mix_format.sample_rate.max(1) as f64
+    }
+
+    pub(super) fn max_output_request_frames(&self) -> usize {
+        self.max_output_request_samples.load(Ordering::Acquire) / self.mix_format.channels.max(1)
     }
 
     fn ao_buffering_metrics(
@@ -714,39 +760,16 @@ impl SharedAudio {
         let channels = self.mix_format.channels.max(1);
         AoBufferingMetrics {
             queued_samples,
-            decoded_samples: self.decoded_buffered_samples(),
             requested_samples,
-            output_queue_capacity: self.output_queue_capacity,
-            decoded_queue_capacity_frames: self.decoded_queue_capacity_frames,
+            target_samples: self.output_buffer_target_samples(),
             channels,
             sample_rate: self.mix_format.sample_rate,
-            speed: self.speed(),
-            output_underruns: self.output_underruns.load(Ordering::Acquire),
-            decode_throughput_ratio_milli: self
-                .decode_throughput_ratio_milli
-                .load(Ordering::Acquire),
         }
-    }
-
-    fn total_buffered_output_samples(&self, queued_output_samples: usize) -> usize {
-        queued_output_samples.saturating_add(self.decoded_buffered_samples())
-    }
-
-    fn decoded_buffered_samples(&self) -> usize {
-        self.decoded_queue
-            .try_lock()
-            .map(|queue| {
-                (((queue.estimated_mix_frames * self.mix_format.channels.max(1)) as f64)
-                    / self.speed().max(0.001) as f64)
-                    .round() as usize
-            })
-            .unwrap_or_default()
     }
 
     pub fn mark_eof(&self) {
         self.eof.store(true, Ordering::Release);
         self.ao_state.reset();
-        self.publish_cache_state(false, 0, 1, 1);
         self.output_queue_changed.notify_all();
     }
 
@@ -781,15 +804,10 @@ impl SharedAudio {
     }
 
     pub fn reset_for_decode_resume(&self, position_secs: f64, dsp_settings: &DspSettings) -> u64 {
-        self.reset_decode_pipeline(position_secs, dsp_settings, true)
+        self.reset_decode_pipeline(position_secs, dsp_settings)
     }
 
-    fn reset_decode_pipeline(
-        &self,
-        position_secs: f64,
-        dsp_settings: &DspSettings,
-        resume_when_buffered: bool,
-    ) -> u64 {
+    fn reset_decode_pipeline(&self, position_secs: f64, dsp_settings: &DspSettings) -> u64 {
         let _queue = self.output_queue_wait.lock();
         self.realtime_output.clear();
         if let Ok(mut queue) = self.decoded_queue.lock() {
@@ -802,10 +820,8 @@ impl SharedAudio {
         self.eof.store(false, Ordering::Release);
         self.decode_failed.store(false, Ordering::Release);
         self.end_reported.store(false, Ordering::Release);
-        self.reset_adaptive_buffering();
-        self.ao_state
-            .begin_resume_when_buffered(resume_when_buffered);
-        self.publish_cache_state(false, 0, 1, 1);
+        self.reset_output_buffering_state();
+        self.ao_state.begin_preroll();
         if let Ok(mut boundary) = self.gapless_boundary.lock() {
             *boundary = None;
         }
@@ -829,9 +845,8 @@ impl SharedAudio {
         self.filter_generation.fetch_add(1, Ordering::AcqRel);
         self.eof.store(false, Ordering::Release);
         self.end_reported.store(false, Ordering::Release);
-        self.reset_adaptive_buffering();
-        self.ao_state.begin_filter_resume();
-        self.publish_cache_state(false, 0, 1, 1);
+        self.reset_output_buffering_state();
+        self.ao_state.begin_preroll();
         self.set_speed(dsp_settings.speed);
         if let Ok(mut ring) = self.spectrum_ring.lock() {
             *ring = SampleRing::new(

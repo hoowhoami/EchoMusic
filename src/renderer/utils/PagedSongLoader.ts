@@ -40,6 +40,7 @@ export class PagedSongLoader<T> {
   private _items: T[] = [];
   private _loading = false;
   private _fullyLoaded = false;
+  private _failed = false;
   private _aborted = false;
   private _loadedPages = 0;
   private _seenKeys = new Set<string>();
@@ -84,6 +85,11 @@ export class PagedSongLoader<T> {
     return this._fullyLoaded;
   }
 
+  /** 是否因错误终止 */
+  get failed(): boolean {
+    return this._failed;
+  }
+
   /** 已加载数量 */
   get count(): number {
     return this._items.length;
@@ -104,7 +110,7 @@ export class PagedSongLoader<T> {
    * 快速返回第一页结果，供 UI 立即渲染
    */
   async loadFirstPage(): Promise<readonly T[]> {
-    if (this._aborted) return this._items;
+    if (this._aborted || this._failed) return this._items;
     this._loading = true;
     this._startedAt = this._startedAt || performance.now();
 
@@ -133,7 +139,7 @@ export class PagedSongLoader<T> {
       if (!this._aborted) {
         logger.warn(this.logTag, 'First page load failed:', error);
         this.onError?.(error);
-        this.markComplete();
+        this.markFailed();
       }
       return this._items;
     }
@@ -144,14 +150,15 @@ export class PagedSongLoader<T> {
    * 使用有限并发控制，保持页序正确
    */
   async loadRemaining(): Promise<readonly T[]> {
-    if (this._fullyLoaded || this._aborted) return this._items;
+    if (this._fullyLoaded || this._aborted || this._failed) return this._items;
     if (this._loadedPages === 0) {
       await this.loadFirstPage();
-      if (this._fullyLoaded || this._aborted) return this._items;
+      if (this._fullyLoaded || this._aborted || this._failed) return this._items;
     }
 
     this._loading = true;
     let nextPage = this._loadedPages + 1;
+    let failed = false;
 
     try {
       let keepGoing = true;
@@ -177,6 +184,8 @@ export class PagedSongLoader<T> {
 
           if (result.status === 'rejected') {
             logger.warn(this.logTag, `第 ${page} 页加载失败:`, result.reason);
+            this.onError?.(result.reason);
+            failed = true;
             keepGoing = false;
             break;
           }
@@ -209,6 +218,17 @@ export class PagedSongLoader<T> {
         logger.warn(this.logTag, '后台加载失败:', error);
         this.onError?.(error);
       }
+      failed = true;
+    }
+
+    if (this._aborted) {
+      this.settleCompletion();
+      return this._items;
+    }
+
+    if (failed) {
+      this.markFailed();
+      return this._items;
     }
 
     this.markComplete();
@@ -221,7 +241,7 @@ export class PagedSongLoader<T> {
    */
   async loadAll(): Promise<readonly T[]> {
     await this.loadFirstPage();
-    if (!this._fullyLoaded && !this._aborted) {
+    if (!this._fullyLoaded && !this._aborted && !this._failed) {
       await this.loadRemaining();
     }
     return this._items;
@@ -232,7 +252,7 @@ export class PagedSongLoader<T> {
    * 如果已经加载完，立即返回；否则等待后台加载结束
    */
   waitForAll(): Promise<readonly T[]> {
-    if (this._fullyLoaded) return Promise.resolve(this._items);
+    if (this._fullyLoaded || this._failed || this._aborted) return Promise.resolve(this._items);
 
     if (!this._completionPromise) {
       this._completionPromise = new Promise<readonly T[]>((resolve) => {
@@ -254,6 +274,7 @@ export class PagedSongLoader<T> {
     this._items = [];
     this._loading = false;
     this._fullyLoaded = false;
+    this._failed = false;
     this._loadedPages = 0;
     this._seenKeys.clear();
     this._completionPromise = null;
@@ -286,6 +307,7 @@ export class PagedSongLoader<T> {
   private markComplete(): void {
     this._loading = false;
     this._fullyLoaded = true;
+    this._failed = false;
     this.onComplete?.(this._items);
     this.settleCompletion();
     logger.info(this.logTag, `load completed`, {
@@ -298,10 +320,20 @@ export class PagedSongLoader<T> {
   /** 结束等待者。中止请求时不触发 onComplete，避免把半成品/空数据写回 UI。 */
   private settleCompletion(): void {
     this._loading = false;
-    this._fullyLoaded = true;
     if (this._completionResolve) {
       this._completionResolve(this._items);
       this._completionResolve = null;
     }
+  }
+
+  /** 标记失败结束。失败不是“完整加载完成”，不能触发 onComplete 覆盖调用方数据。 */
+  private markFailed(): void {
+    this._failed = true;
+    this.settleCompletion();
+    logger.info(this.logTag, `load failed`, {
+      total: this._items.length,
+      pages: this._loadedPages,
+      durationMs: this._startedAt ? Math.round(performance.now() - this._startedAt) : 0,
+    });
   }
 }

@@ -167,7 +167,7 @@ const songSortLabel = computed(
 let songLoader: PagedSongLoader<Song> | null = null;
 
 const fetchAllArtistSongs = (totalCount: number) => {
-  if (!songLoader || songLoader.fullyLoaded) return;
+  if (!songLoader || songLoader.fullyLoaded || songLoader.failed) return;
   if (songLoader.count >= totalCount) return;
   void songLoader.loadRemaining();
 };
@@ -412,7 +412,7 @@ const handlePlayAll = async () => {
   };
   await replaceQueueAndPlay(playlistStore, playerStore, queueSongs, 0, undefined, queueOpts);
   // 后台等待全部加载完，静默更新播放队列
-  if (songLoader && !songLoader.fullyLoaded) {
+  if (songLoader && !songLoader.fullyLoaded && !songLoader.failed) {
     const allSongs = Array.from(await songLoader.waitForAll()) as Song[];
     const sortedAllSongs = sortSongs(allSongs, sortField.value, sortOrder.value, {
       indexSource: allSongs,

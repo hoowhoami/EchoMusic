@@ -16,6 +16,9 @@ pub struct AudioOutputStats {
     pub requested_buffer_secs: f64,
     pub device_buffer_secs: f64,
     pub software_buffer_secs: f64,
+    pub ao_buffer_target_secs: f64,
+    pub ao_buffer_capacity_secs: f64,
+    pub ao_request_frames: f64,
     pub delay_secs: f64,
     pub underruns: f64,
 }
@@ -52,12 +55,12 @@ pub struct TrackSwitchInfo {
 pub enum PlaybackSignal {
     TimeUpdate,
     PlaybackRestart(f64),
-    CacheState {
+    AoState {
         paused: bool,
+        reason: &'static str,
         buffering_state: f64,
         buffered_secs: f64,
         target_secs: f64,
-        packet_cache: Option<PacketCacheStats>,
     },
     PacketCacheStats(PacketCacheStats),
     OutputStats(AudioOutputStats),
