@@ -1,16 +1,6 @@
-use std::{
-    marker::PhantomData,
-    ptr::NonNull,
-    time::Duration,
-};
+use std::{marker::PhantomData, ptr::NonNull, time::Duration};
 
-use crate::{
-    AudioError,
-    AudioSample,
-    Result,
-    TimeBase,
-    sys,
-};
+use crate::{AudioError, AudioSample, Result, TimeBase, sys};
 
 /// A safe enum representing the memory layout of underlying FFmpeg PCM data.
 #[derive(Debug, Clone)]
@@ -236,10 +226,7 @@ impl<'a> AudioFrame<'a> {
 
 #[cfg(test)]
 mod tests {
-    use std::{
-        mem,
-        time::Duration,
-    };
+    use std::{mem, time::Duration};
 
     use ffmpeg_audio_sys::MICROSECONDS_Q;
 

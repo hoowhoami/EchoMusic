@@ -1,10 +1,7 @@
 use std::f64::consts::LN_2;
 
 use crate::{
-    error::{
-        Result,
-        SoundTouchError,
-    },
+    error::{Result, SoundTouchError},
     fifo::FifoSampleBuffer,
     interpolate::InterpolationAlgorithm,
     rate_transposer::RateTransposer,

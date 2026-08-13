@@ -5,14 +5,14 @@ This directory vendors `ffmpeg-audio` as ordinary source files, not as a Git sub
 ## Upstream
 
 - Repository: https://github.com/apoint123/ffmpeg-audio
-- Vendored commit: `b2d3dfef7fe16e1f294d96204dce04054378562f`
+- Vendored commit: `d997800046723f22f823ddbcf45ea2e00601ef66`
 - License: GPL-3.0-only
 
 ## EchoMusic Compatibility Patches
 
 - Keep EchoMusic's packet-cache/multi-audio-stream/raw-frame API surface used by the native player.
 - Keep `HttpAudioSourceOptions` for player network timeout and HTTP proxy settings.
-- Bridge EchoMusic's `Arc<AtomicBool>` decode interrupt flag to upstream's `CancellationToken`.
+- Bridge EchoMusic's `Arc<AtomicBool>` decode interrupt flag to upstream's `HttpCancelHandle`.
 - Keep `crates/soundtouch` pointed at the local vendored `soundtouch-rs` path.
 - Pin `futures-util` to `0.3.32` to stay compatible with the current native player lockfile.
 

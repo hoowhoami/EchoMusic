@@ -1,8 +1,5 @@
 use crate::{
-    error::{
-        Result,
-        SoundTouchError,
-    },
+    error::{Result, SoundTouchError},
     fifo::FifoSampleBuffer,
     peak_finder::PeakFinder,
 };

@@ -1,9 +1,6 @@
 use wide::f32x8;
 
-use crate::{
-    error::Result,
-    fifo::FifoSampleBuffer,
-};
+use crate::{error::Result, fifo::FifoSampleBuffer};
 
 const DEFAULT_SEQUENCE_MS: usize = 0;
 const DEFAULT_SEEKWINDOW_MS: usize = 0;

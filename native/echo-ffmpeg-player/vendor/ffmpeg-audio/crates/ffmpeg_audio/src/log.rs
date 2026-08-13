@@ -36,10 +36,7 @@ unsafe extern "C" fn ffmpeg_log_callback(
     fmt: *const std::os::raw::c_char,
     vl: sys::VaList,
 ) {
-    use std::ffi::{
-        CStr,
-        c_int,
-    };
+    use std::ffi::{CStr, c_int};
 
     let mut buf = [0u8; 1024];
     let mut print_prefix: c_int = 1;

@@ -1,8 +1,4 @@
-use super::{
-    AV_TIME_BASE,
-    AVRational,
-    averror,
-};
+use super::{AV_TIME_BASE, AVRational, averror};
 
 #[must_use]
 pub const fn fferr(tag: &[u8; 4]) -> i32 {
@@ -17,6 +13,9 @@ pub const fn fferr_f8(tag: &[u8; 3]) -> i32 {
 
 /// End of file
 pub const AVERROR_EOF: i32 = fferr(b"EOF ");
+
+/// Immediate exit was requested
+pub const AVERROR_EXIT: i32 = fferr(b"EXIT");
 
 /// Invalid data found when processing input
 pub const AVERROR_INVALIDDATA: i32 = fferr(b"INDA");

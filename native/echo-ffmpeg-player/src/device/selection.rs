@@ -318,27 +318,27 @@ pub fn normalize_device_name(name: &str) -> String {
     let name = name.trim();
     if is_default_device_name(name) {
         DEFAULT_DEVICE_NAME.to_string()
-    } else if let Some((namespace, device)) = parse_mpv_device_name(name) {
-        normalize_mpv_device_name(namespace, device).unwrap_or_else(|| name.to_string())
+    } else if let Some((namespace, device)) = parse_namespaced_device(name) {
+        normalize_namespaced_device(namespace, device).unwrap_or_else(|| name.to_string())
     } else {
         name.to_string()
     }
 }
 
-fn parse_mpv_device_name(value: &str) -> Option<(&str, &str)> {
+fn parse_namespaced_device(value: &str) -> Option<(&str, &str)> {
     let (namespace, device) = value.split_once('/')?;
     let namespace = namespace.trim();
     let device = device.trim();
     (!namespace.is_empty() && !device.is_empty()).then_some((namespace, device))
 }
 
-fn normalize_mpv_device_name(namespace: &str, device: &str) -> Option<String> {
+fn normalize_namespaced_device(namespace: &str, device: &str) -> Option<String> {
     if is_default_device_name(device) {
         return Some(DEFAULT_DEVICE_NAME.to_string());
     }
     #[cfg(target_os = "linux")]
     if let Some(normalized) =
-        crate::device::platform_linux::normalize_linux_mpv_device_name(namespace, device)
+        crate::device::platform_linux::normalize_linux_namespaced_device(namespace, device)
     {
         return Some(normalized);
     }
@@ -475,7 +475,7 @@ mod tests {
     }
 
     #[test]
-    fn normalizes_mpv_style_device_names_to_player_keys() {
+    fn normalizes_namespaced_device_names_to_player_keys() {
         assert_eq!(
             normalize_device_name("wasapi/{0.0.0.00000000}.{endpoint}"),
             "wasapi:{0.0.0.00000000}.{endpoint}"

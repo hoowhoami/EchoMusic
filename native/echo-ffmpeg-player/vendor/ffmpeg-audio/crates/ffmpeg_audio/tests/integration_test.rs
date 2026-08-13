@@ -1,14 +1,6 @@
-use std::{
-    io::Cursor,
-    time::Duration,
-};
+use std::{io::Cursor, time::Duration};
 
-use ffmpeg_audio::{
-    AudioReader,
-    RawAudioData,
-    ResampleOptions,
-    SeekMode,
-};
+use ffmpeg_audio::{AudioReader, RawAudioData, ResampleOptions, SeekMode};
 
 fn generate_sine_wav(duration_secs: f32) -> Vec<u8> {
     let sample_rate: u32 = 44100;

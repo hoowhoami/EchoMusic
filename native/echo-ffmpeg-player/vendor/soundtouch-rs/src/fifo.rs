@@ -1,7 +1,4 @@
-use crate::error::{
-    Result,
-    SoundTouchError,
-};
+use crate::error::{Result, SoundTouchError};
 
 /// Initial capacity (in frames) allocated per channel.
 const INITIAL_CAPACITY: usize = 32;

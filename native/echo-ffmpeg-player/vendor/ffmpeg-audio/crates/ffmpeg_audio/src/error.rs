@@ -1,9 +1,6 @@
 use std::{
     ffi::CStr,
-    io::{
-        Error as IoError,
-        ErrorKind as IoErrorKind,
-    },
+    io::{Error as IoError, ErrorKind as IoErrorKind},
     os::raw::c_int,
 };
 
@@ -16,8 +13,8 @@ pub enum HttpError {
     #[error("Server does not support Range requests")]
     UnsupportedRange,
 
-    #[error("Unknown stream length (no valid Content-Range or Content-Length found)")]
-    UnknownLength,
+    #[error("Invalid Content-Range: {0}")]
+    InvalidContentRange(String),
 
     #[error("HTTP error status: {0}")]
     Status(u16),

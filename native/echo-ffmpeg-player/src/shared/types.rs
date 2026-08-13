@@ -22,13 +22,19 @@ pub struct AudioOutputStats {
 
 #[napi(object)]
 #[derive(Clone, Debug, Default, PartialEq)]
+pub struct PacketCacheSeekableRange {
+    pub start_secs: f64,
+    pub end_secs: f64,
+}
+
+#[napi(object)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct PacketCacheStats {
     pub forward_bytes: f64,
     pub back_bytes: f64,
     pub total_bytes: f64,
     pub forward_secs: Option<f64>,
-    pub seekable_start_secs: Option<f64>,
-    pub seekable_end_secs: Option<f64>,
+    pub seekable_ranges: Vec<PacketCacheSeekableRange>,
     pub eof: bool,
     pub pending_seek: bool,
     pub has_error: bool,

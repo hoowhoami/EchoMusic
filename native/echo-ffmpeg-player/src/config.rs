@@ -374,7 +374,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn player_config_defaults_follow_mpv_cache_shape() {
+    fn player_config_uses_expected_audio_and_cache_defaults() {
         let config = PlayerConfig::default();
         let packet_cache = config.packet_cache_options();
 
@@ -539,7 +539,7 @@ mod tests {
     }
 
     #[test]
-    fn player_config_allows_zero_readahead_like_mpv() {
+    fn player_config_allows_zero_audio_buffer_and_readahead() {
         let config = PlayerConfig::from_options(Some(PlayerConfigOptions {
             audio_buffer_secs: Some(0.0),
             audio_samplerate: None,

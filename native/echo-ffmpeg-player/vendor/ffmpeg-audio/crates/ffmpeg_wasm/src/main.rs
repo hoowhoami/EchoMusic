@@ -2,23 +2,13 @@ mod io;
 
 use std::{
     cell::RefCell,
-    ffi::{
-        CString,
-        c_char,
-    },
+    ffi::{CString, c_char},
     io::BufReader,
     ptr,
     time::Duration,
 };
 
-use ffmpeg_audio::{
-    AudioError,
-    AudioReader,
-    ResampleOptions,
-    ResampledReader,
-    Result,
-    SeekMode,
-};
+use ffmpeg_audio::{AudioError, AudioReader, ResampleOptions, ResampledReader, Result, SeekMode};
 use io::JsFileAccess;
 
 thread_local! {
@@ -184,16 +174,8 @@ pub extern "C" fn wasm_get_last_error() -> *const c_char {
 
 mod inner {
     use super::{
-        AudioError,
-        AudioReader,
-        BufReader,
-        CString,
-        DecoderContext,
-        Duration,
-        JsFileAccess,
-        ResampleOptions,
-        Result,
-        SeekMode,
+        AudioError, AudioReader, BufReader, CString, DecoderContext, Duration, JsFileAccess,
+        ResampleOptions, Result, SeekMode,
     };
 
     pub fn decoder_create(

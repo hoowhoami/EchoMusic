@@ -1,18 +1,7 @@
-use std::{
-    f32::consts::PI,
-    hint::black_box,
-};
+use std::{f32::consts::PI, hint::black_box};
 
-use criterion::{
-    Criterion,
-    Throughput,
-    criterion_group,
-    criterion_main,
-};
-use soundtouch_rs::{
-    InterpolationAlgorithm,
-    SoundTouch,
-};
+use criterion::{Criterion, Throughput, criterion_group, criterion_main};
+use soundtouch_rs::{InterpolationAlgorithm, SoundTouch};
 
 fn criterion_benchmark(c: &mut Criterion) {
     let channels = 2;

@@ -29,6 +29,7 @@ import {
 } from './stateMachine';
 
 const GAPLESS_PREFETCH_WINDOW_SECS = 30;
+const GAPLESS_SEEK_REGISTRATION_WINDOW_SECS = 2;
 
 type GaplessPreparedSource = {
   key: string;
@@ -55,7 +56,10 @@ export const createPlaybackManager = (
   handleOutputDeviceError?: (error: unknown) => Promise<boolean>,
 ) => {
   let gaplessPreparingKey = '';
+  let gaplessPreparingRequestId: number | null = null;
+  let gaplessPreparingRegistration: Promise<void> | null = null;
   let gaplessPreparedSource: GaplessPreparedSource | null = null;
+  let seekDispatchSeq = 0;
 
   const applyFailedPlaybackState = (options?: { keepResolvedSource?: boolean }) => {
     failPlaybackIntent(state);
@@ -251,8 +255,12 @@ export const createPlaybackManager = (
     ].join('|');
 
   const clearGaplessPreparedSource = () => {
+    const requestId = gaplessPreparingRequestId;
     gaplessPreparingKey = '';
+    gaplessPreparingRequestId = null;
+    gaplessPreparingRegistration = null;
     gaplessPreparedSource = null;
+    if (requestId) engine.cancelNextSourcePreparation(requestId);
     engine.clearPreparedNextSource();
   };
 
@@ -408,27 +416,39 @@ export const createPlaybackManager = (
     return true;
   };
 
-  const prepareGaplessNext = () => {
+  const prepareGaplessNext = (options?: {
+    position?: number;
+    allowAtEnd?: boolean;
+    requirePlaying?: boolean;
+  }): Promise<void> => {
     if (
       !settingStore.gaplessPlayback ||
-      !getPlaybackIsPlaying(state) ||
+      ((options?.requirePlaying ?? true) && !getPlaybackIsPlaying(state)) ||
       getPlaybackIsLoading(state)
     )
-      return;
-    if (state.awaitingTrackLoad || state.stallRecovering) return;
-    if (state.duration <= 0 || state.currentTime <= 0) return;
-    const remaining = state.duration - state.currentTime;
-    if (remaining > GAPLESS_PREFETCH_WINDOW_SECS || remaining < 0.2) return;
+      return Promise.resolve();
+    if (state.awaitingTrackLoad || state.stallRecovering) return Promise.resolve();
+    const position = options?.position ?? state.currentTime;
+    if (state.duration <= 0 || position <= 0) return Promise.resolve();
+    const remaining = state.duration - position;
+    if (remaining > GAPLESS_PREFETCH_WINDOW_SECS || (!options?.allowAtEnd && remaining < 0.2))
+      return Promise.resolve();
 
     const next = peekNextPlayableTrack();
     if (!next) {
       clearGaplessPreparedSource();
-      return;
+      return Promise.resolve();
     }
 
     const targetTrackId = String(next.track.id);
     const key = getGaplessPrepareKey(targetTrackId, next.sourceQueueId);
-    if (gaplessPreparedSource?.key === key || gaplessPreparingKey === key) return;
+    if (gaplessPreparedSource?.key === key) return Promise.resolve();
+    if (gaplessPreparingKey === key) {
+      return gaplessPreparingRegistration ?? Promise.resolve();
+    }
+    if (gaplessPreparingKey || gaplessPreparedSource) {
+      clearGaplessPreparedSource();
+    }
 
     logger.info('PlayerPlayback', 'Gapless prepare requested', {
       currentTrackId: state.currentTrackId,
@@ -436,10 +456,45 @@ export const createPlaybackManager = (
       remaining: Number(remaining.toFixed(2)),
     });
     gaplessPreparingKey = key;
-    void resolver
-      .resolveAudioUrl(next.track)
-      .then(async (resolved: ResolvedAudioSource) => {
-        if (gaplessPreparingKey !== key) return;
+    let registrationSettled = false;
+    let settleRegistration = () => {};
+    const registration = new Promise<void>((resolve) => {
+      settleRegistration = () => {
+        if (registrationSettled) return;
+        registrationSettled = true;
+        resolve();
+      };
+    });
+    gaplessPreparingRegistration = registration;
+    void (async () => {
+      let requestId: number | null = null;
+      let nativePrepared = false;
+      let preparedCommitted = false;
+      let preparationTimeout: number | null = null;
+      try {
+        requestId = await engine.beginNextSourcePreparation();
+        if (!requestId) return;
+        if (gaplessPreparingKey !== key) {
+          engine.cancelNextSourcePreparation(requestId);
+          return;
+        }
+        gaplessPreparingRequestId = requestId;
+        settleRegistration();
+
+        const timeoutSecs = Number(settingStore.playbackStallTimeout ?? 8);
+        if (Number.isFinite(timeoutSecs) && timeoutSecs > 0) {
+          preparationTimeout = window.setTimeout(() => {
+            if (gaplessPreparingKey !== key || gaplessPreparingRequestId !== requestId) return;
+            logger.warn('PlayerPlayback', 'Gapless prepare timed out', {
+              targetTrackId,
+              timeoutSecs,
+            });
+            clearGaplessPreparedSource();
+          }, timeoutSecs * 1000);
+        }
+
+        const resolved: ResolvedAudioSource = await resolver.resolveAudioUrl(next.track);
+        if (gaplessPreparingKey !== key || gaplessPreparingRequestId !== requestId) return;
         if (!resolved.url) {
           logger.warn('PlayerPlayback', 'Gapless prepare skipped: empty resolved url', {
             targetTrackId,
@@ -449,13 +504,13 @@ export const createPlaybackManager = (
         const sources = getAudioCandidateSources(resolved);
         const primarySource = sources[0] ?? normalizePlaybackSource(resolved.url);
         const nativeSeq = primarySource
-          ? await engine.prepareNextSource(primarySource).catch((error: unknown) => {
+          ? await engine.prepareNextSource(primarySource, requestId).catch((error: unknown) => {
               logger.warn('PlayerPlayback', 'Native gapless prepare failed:', error);
               return null;
             })
           : null;
-        if (gaplessPreparingKey !== key) {
-          if (nativeSeq) engine.clearPreparedNextSource();
+        nativePrepared = nativeSeq !== null;
+        if (gaplessPreparingKey !== key || gaplessPreparingRequestId !== requestId) {
           return;
         }
         logger.info('PlayerPlayback', 'Gapless prepare completed', {
@@ -473,13 +528,24 @@ export const createPlaybackManager = (
           resolved,
           nativeSeq,
         };
-      })
-      .catch((error: unknown) => {
+        preparedCommitted = true;
+      } catch (error) {
         logger.warn('PlayerPlayback', 'Prepare gapless next source failed:', error);
-      })
-      .finally(() => {
-        if (gaplessPreparingKey === key) gaplessPreparingKey = '';
-      });
+      } finally {
+        if (preparationTimeout !== null) window.clearTimeout(preparationTimeout);
+        settleRegistration();
+        if (requestId && !preparedCommitted) {
+          if (nativePrepared) engine.clearPreparedNextSource();
+          else engine.cancelNextSourcePreparation(requestId);
+        }
+        if (gaplessPreparingKey === key && gaplessPreparingRequestId === requestId) {
+          gaplessPreparingKey = '';
+          gaplessPreparingRequestId = null;
+          gaplessPreparingRegistration = null;
+        }
+      }
+    })();
+    return registration;
   };
 
   const skipToNextAfterFailure = async () => {
@@ -817,20 +883,40 @@ export const createPlaybackManager = (
   const seek = (time: number) => {
     const effectiveDuration = engine.duration > 0 ? engine.duration : state.duration;
     const targetTime = Math.max(0, Math.min(effectiveDuration, time));
+    const dispatchSeq = ++seekDispatchSeq;
     state.seekTargetTime = targetTime;
     state.seekTimestamp = Date.now();
-    engine.seek(targetTime);
     state.currentTime = targetTime;
     state.currentTimeUpdatedAt = state.seekTimestamp;
+    engine.beginSeek();
 
     // 当 seek 目标接近结尾时（距结尾 < 2 秒），不忽略 EOF 事件，
     // 否则播放完毕后不会自动切下一首
-    const nearEnd = effectiveDuration > 0 && effectiveDuration - targetTime < 2;
+    const remaining = effectiveDuration - targetTime;
+    const nearEnd = effectiveDuration > 0 && remaining < GAPLESS_SEEK_REGISTRATION_WINDOW_SECS;
     if (!nearEnd) {
       state.recentSeekIgnoreEnd = true;
       window.setTimeout(() => {
         state.recentSeekIgnoreEnd = false;
       }, 800);
+    }
+
+    const prepareForTarget = () =>
+      prepareGaplessNext({
+        position: targetTime,
+        allowAtEnd: true,
+        requirePlaying: false,
+      });
+
+    if (!nearEnd) {
+      engine.seek(targetTime);
+      void prepareForTarget();
+    } else {
+      void (async () => {
+        await prepareForTarget();
+        if (dispatchSeq !== seekDispatchSeq) return;
+        engine.seek(targetTime);
+      })();
     }
 
     engine.updateMediaPlaybackState(buildMediaState(state));

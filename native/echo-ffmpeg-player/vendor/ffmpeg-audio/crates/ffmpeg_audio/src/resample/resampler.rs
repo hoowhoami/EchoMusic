@@ -1,21 +1,12 @@
 use std::{
-    mem::{
-        self,
-        MaybeUninit,
-    },
+    mem::{self, MaybeUninit},
     ptr,
 };
 
 use crate::{
     AudioFrame,
-    core::{
-        format::AudioSample,
-        layout::ChannelLayout,
-    },
-    error::{
-        AudioError,
-        Result,
-    },
+    core::{format::AudioSample, layout::ChannelLayout},
+    error::{AudioError, Result},
     resample::SwrContext,
     sys,
 };

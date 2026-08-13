@@ -140,8 +140,7 @@ type PlayerPacketCacheStats = {
   backBytes: number;
   totalBytes: number;
   forwardSecs?: number;
-  seekableStartSecs?: number;
-  seekableEndSecs?: number;
+  seekableRanges: Array<{ startSecs: number; endSecs: number }>;
   eof: boolean;
   pendingSeek: boolean;
   hasError: boolean;
@@ -608,7 +607,13 @@ export interface IElectronAPI {
   player: {
     load: (url: string) => Promise<void>;
     loadMkvTrack: (url: string, trackId: number) => Promise<void>;
-    prepareNextSource: (url: string, trackId?: number | null) => Promise<number | null>;
+    beginNextSourcePreparation: () => Promise<number | null>;
+    cancelNextSourcePreparation: (requestId: number) => Promise<boolean>;
+    prepareNextSource: (
+      url: string,
+      requestId: number,
+      trackId?: number | null,
+    ) => Promise<number | null>;
     clearPreparedNextSource: () => Promise<void>;
     getTrackList: (url?: string) => Promise<
       Array<{

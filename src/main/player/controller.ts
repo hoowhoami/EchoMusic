@@ -144,8 +144,7 @@ interface PlayerAddonEvent {
     backBytes: number;
     totalBytes: number;
     forwardSecs?: number;
-    seekableStartSecs?: number;
-    seekableEndSecs?: number;
+    seekableRanges: Array<{ startSecs: number; endSecs: number }>;
     eof: boolean;
     pendingSeek: boolean;
     hasError: boolean;
@@ -201,7 +200,14 @@ interface PlayerAddon {
   registerEventHandler(callback: (err: Error | null, event: PlayerAddonEvent) => void): void;
   loadFile(url: string, seq?: number): Promise<void>;
   loadMkvTrack(url: string, trackId: number, seq?: number): Promise<void>;
-  prepareNextSource(url: string, trackId?: number | null, seq?: number): Promise<boolean>;
+  beginNextSourcePreparation(): number;
+  cancelNextSourcePreparation(requestId: number): boolean;
+  prepareNextSource(
+    url: string,
+    trackId: number | null,
+    seq: number,
+    requestId: number,
+  ): Promise<boolean>;
   clearPreparedNextSource(): void;
   getTrackList(url?: string): Promise<
     Array<{
@@ -377,9 +383,27 @@ export class PlayerController extends EventEmitter {
     }
   }
 
-  async prepareNextSource(url: string, trackId?: number | null): Promise<number | null> {
+  beginNextSourcePreparation(): number | null {
+    const requestId = this.getAddonOrThrow().beginNextSourcePreparation();
+    return requestId > 0 ? requestId : null;
+  }
+
+  cancelNextSourcePreparation(requestId: number): boolean {
+    return this.getAddonOrThrow().cancelNextSourcePreparation(requestId);
+  }
+
+  async prepareNextSource(
+    url: string,
+    requestId: number,
+    trackId?: number | null,
+  ): Promise<number | null> {
     const seq = ++this.loadSeq;
-    const prepared = await this.getAddonOrThrow().prepareNextSource(url, trackId ?? null, seq);
+    const prepared = await this.getAddonOrThrow().prepareNextSource(
+      url,
+      trackId ?? null,
+      seq,
+      requestId,
+    );
     return prepared ? seq : null;
   }
 

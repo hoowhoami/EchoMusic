@@ -1,14 +1,7 @@
-use std::{
-    env,
-    fs::File,
-    time::Instant,
-};
+use std::{env, fs::File, time::Instant};
 
 use anyhow::Result;
-use ffmpeg_audio::{
-    AudioReader,
-    ResampleOptions,
-};
+use ffmpeg_audio::{AudioReader, ResampleOptions};
 use soundtouch_rs::bpm_detect::BpmDetect;
 
 fn main() -> Result<()> {

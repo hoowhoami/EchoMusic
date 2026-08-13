@@ -579,8 +579,11 @@ contextBridge.exposeInMainWorld('electron', {
     load: (url: string) => ipcRenderer.invoke('player:load', url),
     loadMkvTrack: (url: string, trackId: number) =>
       ipcRenderer.invoke('player:load-mkv-track', url, trackId),
-    prepareNextSource: (url: string, trackId?: number | null) =>
-      ipcRenderer.invoke('player:prepare-next-source', url, trackId),
+    beginNextSourcePreparation: () => ipcRenderer.invoke('player:begin-next-source-preparation'),
+    cancelNextSourcePreparation: (requestId: number) =>
+      ipcRenderer.invoke('player:cancel-next-source-preparation', requestId),
+    prepareNextSource: (url: string, requestId: number, trackId?: number | null) =>
+      ipcRenderer.invoke('player:prepare-next-source', url, requestId, trackId),
     clearPreparedNextSource: () => ipcRenderer.invoke('player:clear-prepared-next-source'),
     getTrackList: (url?: string) => ipcRenderer.invoke('player:get-track-list', url),
     play: () => ipcRenderer.invoke('player:play'),
@@ -703,8 +706,7 @@ contextBridge.exposeInMainWorld('electron', {
           backBytes: number;
           totalBytes: number;
           forwardSecs?: number;
-          seekableStartSecs?: number;
-          seekableEndSecs?: number;
+          seekableRanges: Array<{ startSecs: number; endSecs: number }>;
           eof: boolean;
           pendingSeek: boolean;
           hasError: boolean;
@@ -725,8 +727,7 @@ contextBridge.exposeInMainWorld('electron', {
             backBytes: number;
             totalBytes: number;
             forwardSecs?: number;
-            seekableStartSecs?: number;
-            seekableEndSecs?: number;
+            seekableRanges: Array<{ startSecs: number; endSecs: number }>;
             eof: boolean;
             pendingSeek: boolean;
             hasError: boolean;
@@ -784,8 +785,7 @@ contextBridge.exposeInMainWorld('electron', {
         backBytes: number;
         totalBytes: number;
         forwardSecs?: number;
-        seekableStartSecs?: number;
-        seekableEndSecs?: number;
+        seekableRanges: Array<{ startSecs: number; endSecs: number }>;
         eof: boolean;
         pendingSeek: boolean;
         hasError: boolean;
@@ -798,8 +798,7 @@ contextBridge.exposeInMainWorld('electron', {
           backBytes: number;
           totalBytes: number;
           forwardSecs?: number;
-          seekableStartSecs?: number;
-          seekableEndSecs?: number;
+          seekableRanges: Array<{ startSecs: number; endSecs: number }>;
           eof: boolean;
           pendingSeek: boolean;
           hasError: boolean;

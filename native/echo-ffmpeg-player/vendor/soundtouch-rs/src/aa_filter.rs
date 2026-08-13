@@ -2,10 +2,7 @@ use std::f64::consts::PI;
 
 use wide::f32x8;
 
-use crate::error::{
-    Result,
-    SoundTouchError,
-};
+use crate::error::{Result, SoundTouchError};
 
 /// Anti-aliasing low-pass filter (FIR Filter).
 ///

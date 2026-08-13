@@ -8,16 +8,7 @@ mod rate_transposer;
 mod soundtouch;
 mod td_stretch;
 
-pub use bpm_detect::{
-    Beat,
-    BpmDetect,
-};
-pub use error::{
-    Result,
-    SoundTouchError,
-};
+pub use bpm_detect::{Beat, BpmDetect};
+pub use error::{Result, SoundTouchError};
 pub use interpolate::InterpolationAlgorithm;
-pub use soundtouch::{
-    SoundTouch,
-    SoundTouchPreset,
-};
+pub use soundtouch::{SoundTouch, SoundTouchPreset};

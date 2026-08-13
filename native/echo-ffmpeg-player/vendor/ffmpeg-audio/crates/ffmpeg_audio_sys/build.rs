@@ -1,15 +1,9 @@
-use std::{
-    env,
-    path::PathBuf,
-};
+use std::{env, path::PathBuf};
 
 mod utils {
     use std::{
-        env,
-        fs,
-        io::{
-            self,
-        },
+        env, fs,
+        io::{self},
         path::Path,
     };
 
@@ -145,12 +139,8 @@ mod utils {
 mod bundled {
     use std::{
         collections::BTreeSet,
-        env,
-        fs,
-        path::{
-            Path,
-            PathBuf,
-        },
+        env, fs,
+        path::{Path, PathBuf},
     };
 
     use crate::utils;
@@ -402,10 +392,7 @@ mod bundled {
 }
 
 mod system {
-    use std::path::{
-        Path,
-        PathBuf,
-    };
+    use std::path::{Path, PathBuf};
 
     use crate::utils;
 

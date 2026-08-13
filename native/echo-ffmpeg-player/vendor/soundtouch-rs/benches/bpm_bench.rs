@@ -1,9 +1,4 @@
-use criterion::{
-    Criterion,
-    Throughput,
-    criterion_group,
-    criterion_main,
-};
+use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use soundtouch_rs::bpm_detect::BpmDetect;
 
 fn generate_synth_signal(sample_rate: usize, duration_secs: usize) -> Vec<Vec<f32>> {

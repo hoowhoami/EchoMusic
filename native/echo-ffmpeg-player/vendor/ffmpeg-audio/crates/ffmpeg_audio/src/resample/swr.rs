@@ -1,14 +1,7 @@
-use std::{
-    mem::MaybeUninit,
-    ptr,
-};
+use std::{mem::MaybeUninit, ptr};
 
 use crate::{
-    error::{
-        AudioError,
-        FfErrorExt as _,
-        Result,
-    },
+    error::{AudioError, FfErrorExt as _, Result},
     sys,
 };
 

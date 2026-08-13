@@ -2,11 +2,7 @@ use crate::{
     aa_filter::AaFilter,
     error::Result,
     fifo::FifoSampleBuffer,
-    interpolate::{
-        InterpolationAlgorithm,
-        Interpolator,
-        InterpolatorState,
-    },
+    interpolate::{InterpolationAlgorithm, Interpolator, InterpolatorState},
 };
 
 /// Pitch-shifting resampler node in the DSP pipeline.

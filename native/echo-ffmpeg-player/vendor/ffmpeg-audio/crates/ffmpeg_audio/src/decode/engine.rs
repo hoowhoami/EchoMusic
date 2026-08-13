@@ -1,15 +1,9 @@
 use std::time::Duration;
 
 use crate::{
-    AudioError,
-    AudioFrame,
-    Decoder,
-    Demuxer,
-    PacketCacheOptions,
-    PacketCacheStats,
-    Result,
+    AudioError, AudioFrame, Decoder, Demuxer, PacketCacheOptions, PacketCacheStats, Result,
     TimeBase,
-    decode::{PacketCache, SeekMode},
+    decode::{PacketCache, SeekMode, packet_cache::CachedPacket},
     sys,
 };
 
@@ -190,7 +184,7 @@ impl DecodeEngine {
     pub fn seek(&mut self, target: Duration, mode: SeekMode) -> Result<()> {
         self.debug_verify();
 
-        self.packet_cache.seek_to(target);
+        self.packet_cache.seek_to(target)?;
         self.decoder.flush();
 
         self.is_exhausted = false;
@@ -389,7 +383,7 @@ impl DecodeEngine {
         self.packet_cache.stats()
     }
 
-    fn read_packet(&mut self) -> Result<Option<crate::decode::demuxer::CachedPacket>> {
+    fn read_packet(&mut self) -> Result<Option<CachedPacket>> {
         self.packet_cache.read_packet()
     }
 }

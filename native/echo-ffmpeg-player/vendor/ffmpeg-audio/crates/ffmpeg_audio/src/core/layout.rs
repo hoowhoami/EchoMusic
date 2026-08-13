@@ -1,10 +1,7 @@
 use std::mem;
 
 use crate::{
-    error::{
-        FfErrorExt,
-        Result,
-    },
+    error::{FfErrorExt, Result},
     sys,
 };
 

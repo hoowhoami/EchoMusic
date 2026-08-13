@@ -6,7 +6,7 @@ repository = "https://github.com/apoint123/ffmpeg-audio"
 readme = "../../README.md"
 keywords = ["ffmpeg", "audio", "resample", "decode", "media"]
 categories = ["multimedia::audio"]
-version = "0.2.0"
+version = "0.3.1"
 edition = "2024"
 
 [features]
@@ -43,4 +43,5 @@ cast_possible_truncation = "allow"
 cast_precision_loss = "allow"
 
 missing_errors_doc = "allow"
+missing_panics_doc = "allow"
 doc_markdown = "allow"

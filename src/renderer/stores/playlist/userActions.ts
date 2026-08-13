@@ -4,6 +4,8 @@ import logger from '@/utils/logger';
 import { mapPlaylistMeta } from '@/utils/mappers';
 import { includesPlaylistIdentity } from './helpers';
 
+const userPlaylistsRequests = new WeakMap<object, { generation: number; request: Promise<void> }>();
+
 type UserActionsStoreShape = {
   fetchLikedPlaylistSongs: () => Promise<boolean>;
   fetchUserPlaylists: () => Promise<void>;
@@ -52,8 +54,13 @@ export const userActions = {
     return matched.listid || matched.id || id;
   },
   async fetchUserPlaylists(this: UserActionsStoreShape) {
-    try {
-      const requestGeneration = this.userCollectionsGeneration;
+    const requestGeneration = this.userCollectionsGeneration;
+    const activeRequest = userPlaylistsRequests.get(this);
+    if (activeRequest?.generation === requestGeneration) {
+      return activeRequest.request.catch(() => undefined);
+    }
+
+    const request = (async () => {
       const PAGE_SIZE = 30;
       let page = 1;
       let allPlaylists: PlaylistMeta[] = [];
@@ -72,8 +79,17 @@ export const userActions = {
       if (requestGeneration !== this.userCollectionsGeneration) return;
       this.userPlaylists = allPlaylists;
       await this.fetchLikedPlaylistSongs();
+    })();
+    userPlaylistsRequests.set(this, { generation: requestGeneration, request });
+
+    try {
+      await request;
     } catch (e) {
       logger.error('PlaylistStore', 'Fetch user playlists error:', e);
+    } finally {
+      if (userPlaylistsRequests.get(this)?.request === request) {
+        userPlaylistsRequests.delete(this);
+      }
     }
   },
   async createPlaylist(

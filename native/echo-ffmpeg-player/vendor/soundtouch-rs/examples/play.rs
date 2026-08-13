@@ -1,39 +1,17 @@
 #[cfg(not(target_arch = "wasm32"))]
 #[allow(clippy::too_many_lines)]
 fn main() -> anyhow::Result<()> {
-    use std::{
-        env,
-        fs::File,
-        thread,
-        time::Duration,
-    };
+    use std::{env, fs::File, thread, time::Duration};
 
     use anyhow::Context;
-    use cpal::traits::{
-        DeviceTrait as _,
-        HostTrait as _,
-        StreamTrait as _,
-    };
-    use ffmpeg_audio::{
-        AudioReader,
-        ResampleOptions,
-        ScanMode,
-        log::init_ffmpeg_logging,
-    };
+    use cpal::traits::{DeviceTrait as _, HostTrait as _, StreamTrait as _};
+    use ffmpeg_audio::{AudioReader, ResampleOptions, ScanMode, log::init_ffmpeg_logging};
     use ringbuf::{
         HeapRb,
-        traits::{
-            Consumer as _,
-            Observer as _,
-            Producer as _,
-            Split as _,
-        },
+        traits::{Consumer as _, Observer as _, Producer as _, Split as _},
     };
     use soundtouch_rs::SoundTouch;
-    use tracing_subscriber::{
-        EnvFilter,
-        fmt,
-    };
+    use tracing_subscriber::{EnvFilter, fmt};
 
     fmt()
         .with_env_filter(

@@ -1,0 +1,855 @@
+use super::*;
+use std::time::Duration;
+
+#[test]
+fn audio_sample_format_candidates_prefer_lossless_conversions() {
+    assert_eq!(
+        AudioSampleFormat::F32.best_output_formats(),
+        vec![
+            AudioSampleFormat::F32,
+            AudioSampleFormat::F64,
+            AudioSampleFormat::S32,
+            AudioSampleFormat::S16,
+            AudioSampleFormat::U8,
+        ]
+    );
+    assert_eq!(
+        AudioSampleFormat::Unknown.best_output_formats(),
+        vec![
+            AudioSampleFormat::S16,
+            AudioSampleFormat::S32,
+            AudioSampleFormat::F32,
+            AudioSampleFormat::F64,
+            AudioSampleFormat::U8,
+        ]
+    );
+}
+
+#[test]
+fn pop_into_advances_position_by_consumed_frames() {
+    let shared = SharedAudio::new(
+        MixFormat::stereo_f32(100),
+        0.1,
+        8.0,
+        &DspSettings::default(),
+    );
+    assert!(shared.push_samples(&[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8]));
+
+    let mut output = [1.0f32; 8];
+    let frames = shared.pop_into(&mut output);
+
+    assert_eq!(frames, 4);
+    assert_eq!(output, [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8]);
+    assert!((shared.position_secs() - 0.04).abs() < f64::EPSILON);
+}
+
+#[test]
+fn queued_audio_keeps_source_clock_when_speed_changes() {
+    let shared = SharedAudio::new(
+        MixFormat::stereo_f32(100),
+        0.1,
+        8.0,
+        &DspSettings::default(),
+    );
+    assert!(shared.push_samples_with_source_frames(&[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8], 4,));
+    shared.set_speed(2.0);
+
+    let mut output = [0.0f32; 8];
+    let frames = shared.pop_into(&mut output);
+
+    assert_eq!(frames, 4);
+    assert!((shared.position_secs() - 0.04).abs() < f64::EPSILON);
+}
+
+#[test]
+fn position_reports_audible_clock_after_output_delay() {
+    let shared = SharedAudio::new(
+        MixFormat::stereo_f32(100),
+        0.1,
+        8.0,
+        &DspSettings::default(),
+    );
+    shared.update_output_stats(AudioOutputStats {
+        backend: "test".to_string(),
+        sample_rate: 100.0,
+        engine_sample_rate: 100.0,
+        channels: 2.0,
+        format: "F32".to_string(),
+        buffer_mode: "fixed(2)".to_string(),
+        buffer_frames: 2.0,
+        buffer_secs: 0.02,
+        requested_buffer_secs: 0.02,
+        device_buffer_secs: 0.02,
+        software_buffer_secs: 0.0,
+        delay_secs: 0.02,
+        underruns: 0.0,
+    });
+    assert!(shared.push_samples(&[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8]));
+
+    let mut output = [0.0f32; 8];
+    assert_eq!(shared.pop_into(&mut output), 4);
+
+    assert!((shared.position_secs() - 0.02).abs() < f64::EPSILON);
+}
+
+#[test]
+fn position_prefers_live_output_delay_over_static_estimate() {
+    let shared = SharedAudio::new(
+        MixFormat::stereo_f32(100),
+        0.1,
+        8.0,
+        &DspSettings::default(),
+    );
+    shared.update_output_stats(AudioOutputStats {
+        backend: "test".to_string(),
+        sample_rate: 100.0,
+        engine_sample_rate: 100.0,
+        channels: 2.0,
+        format: "F32".to_string(),
+        buffer_mode: "fixed(2)".to_string(),
+        buffer_frames: 2.0,
+        buffer_secs: 0.02,
+        requested_buffer_secs: 0.02,
+        device_buffer_secs: 0.02,
+        software_buffer_secs: 0.0,
+        delay_secs: 0.02,
+        underruns: 0.0,
+    });
+    shared.update_live_output_delay_secs(0.05);
+    assert!(shared.push_samples(&[0.0; 20]));
+
+    let mut output = [0.0f32; 20];
+    assert_eq!(shared.pop_into(&mut output), 10);
+
+    assert!((shared.position_secs() - 0.05).abs() < f64::EPSILON);
+}
+
+#[test]
+fn position_scales_output_delay_by_speed() {
+    let shared = SharedAudio::new(
+        MixFormat::stereo_f32(100),
+        0.1,
+        8.0,
+        &DspSettings::default(),
+    );
+    shared.set_speed(2.0);
+    shared.update_output_stats(AudioOutputStats {
+        backend: "test".to_string(),
+        sample_rate: 100.0,
+        engine_sample_rate: 100.0,
+        channels: 2.0,
+        format: "F32".to_string(),
+        buffer_mode: "fixed(2)".to_string(),
+        buffer_frames: 2.0,
+        buffer_secs: 0.02,
+        requested_buffer_secs: 0.02,
+        device_buffer_secs: 0.02,
+        software_buffer_secs: 0.0,
+        delay_secs: 0.02,
+        underruns: 0.0,
+    });
+    assert!(shared.push_samples(&[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8]));
+
+    let mut output = [0.0f32; 8];
+    assert_eq!(shared.pop_into(&mut output), 4);
+
+    assert!((shared.position_secs() - 0.04).abs() < f64::EPSILON);
+}
+
+#[test]
+fn set_position_anchors_audible_clock_after_delay_and_filter_latency() {
+    let shared = SharedAudio::new(
+        MixFormat::stereo_f32(100),
+        0.1,
+        8.0,
+        &DspSettings::default(),
+    );
+    shared.update_output_stats(AudioOutputStats {
+        backend: "test".to_string(),
+        sample_rate: 100.0,
+        engine_sample_rate: 100.0,
+        channels: 2.0,
+        format: "F32".to_string(),
+        buffer_mode: "fixed(3)".to_string(),
+        buffer_frames: 3.0,
+        buffer_secs: 0.03,
+        requested_buffer_secs: 0.03,
+        device_buffer_secs: 0.03,
+        software_buffer_secs: 0.0,
+        delay_secs: 0.03,
+        underruns: 0.0,
+    });
+    shared.set_filter_latency_secs(0.02);
+
+    shared.set_position_secs(1.25);
+
+    assert!((shared.position_secs() - 1.25).abs() < f64::EPSILON);
+    assert_eq!(shared.played_sample_count(), 130);
+}
+
+#[test]
+fn set_position_scales_delay_anchor_by_speed() {
+    let shared = SharedAudio::new(
+        MixFormat::stereo_f32(100),
+        0.1,
+        8.0,
+        &DspSettings::default(),
+    );
+    shared.set_speed(2.0);
+    shared.update_output_stats(AudioOutputStats {
+        backend: "test".to_string(),
+        sample_rate: 100.0,
+        engine_sample_rate: 100.0,
+        channels: 2.0,
+        format: "F32".to_string(),
+        buffer_mode: "fixed(3)".to_string(),
+        buffer_frames: 3.0,
+        buffer_secs: 0.03,
+        requested_buffer_secs: 0.03,
+        device_buffer_secs: 0.03,
+        software_buffer_secs: 0.0,
+        delay_secs: 0.03,
+        underruns: 0.0,
+    });
+    shared.set_filter_latency_secs(0.02);
+
+    shared.set_position_secs(1.25);
+
+    assert!((shared.position_secs() - 1.25).abs() < f64::EPSILON);
+    assert_eq!(shared.played_sample_count(), 135);
+}
+
+#[test]
+fn playback_restart_is_emitted_when_restart_audio_is_ready() {
+    let shared = SharedAudio::new(
+        MixFormat::stereo_f32(100),
+        0.1,
+        8.0,
+        &DspSettings::default(),
+    );
+    let (tx, rx) = std::sync::mpsc::sync_channel(4);
+    shared.bind_signal_sender(tx);
+    shared.mark_playback_restart_ready(1.0);
+
+    assert!(matches!(
+        rx.try_recv(),
+        Ok(PlaybackSignal::PlaybackRestart(position)) if (position - 1.0).abs() < f64::EPSILON
+    ));
+    assert!(shared.push_samples(&[0.1, 0.2, 0.3, 0.4]));
+    let mut output = [0.0f32; 4];
+    assert_eq!(shared.pop_into(&mut output), 2);
+}
+
+#[test]
+fn pop_into_short_non_eof_buffer_enters_output_underrun() {
+    let shared = SharedAudio::new(
+        MixFormat::stereo_f32(100),
+        0.1,
+        8.0,
+        &DspSettings::default(),
+    );
+    assert!(shared.push_samples(&[0.1, 0.2, 0.3, 0.4]));
+
+    let mut output = [1.0f32; 8];
+    let frames = shared.pop_into(&mut output);
+
+    assert_eq!(frames, 2);
+    assert_eq!(output, [0.1, 0.2, 0.3, 0.4, 0.0, 0.0, 0.0, 0.0]);
+    assert!((shared.position_secs() - 0.02).abs() < f64::EPSILON);
+    assert!(shared.ao_state.ao_underrun());
+}
+
+#[test]
+fn pop_into_does_not_touch_wait_queue_lock() {
+    let shared = SharedAudio::new(
+        MixFormat::stereo_f32(100),
+        0.1,
+        8.0,
+        &DspSettings::default(),
+    );
+    assert!(shared.push_samples(&[0.1, 0.2, 0.3, 0.4]));
+    let _queue = shared.output_queue_wait.lock().expect("queue lock");
+
+    let mut output = [1.0f32; 4];
+    assert_eq!(shared.pop_into(&mut output), 2);
+    assert_eq!(output, [0.1, 0.2, 0.3, 0.4]);
+    assert!((shared.position_secs() - 0.02).abs() < f64::EPSILON);
+}
+
+#[test]
+fn eof_is_reported_only_after_buffer_is_drained() {
+    let shared = SharedAudio::new(
+        MixFormat::stereo_f32(100),
+        0.1,
+        8.0,
+        &DspSettings::default(),
+    );
+    assert!(shared.push_samples(&[0.1, 0.2]));
+
+    shared.mark_eof();
+    assert!(!shared.is_drained());
+
+    let mut output = [0.0f32; 2];
+    shared.pop_into(&mut output);
+
+    assert!(shared.is_drained());
+    assert!(shared.mark_end_reported());
+    assert!(!shared.mark_end_reported());
+}
+
+#[test]
+fn output_drain_check_does_not_touch_wait_queue_lock() {
+    let shared = SharedAudio::new(
+        MixFormat::stereo_f32(100),
+        0.1,
+        8.0,
+        &DspSettings::default(),
+    );
+    shared.mark_eof();
+    let _queue = shared.output_queue_wait.lock().expect("queue lock");
+
+    assert!(shared.is_drained_for_output());
+}
+
+#[test]
+fn reset_for_decode_resume_clears_buffer_and_sets_position() {
+    let shared = SharedAudio::new(
+        MixFormat::stereo_f32(100),
+        0.1,
+        8.0,
+        &DspSettings::default(),
+    );
+    assert!(shared.push_samples(&[0.1, 0.2, 0.3, 0.4]));
+    shared.mark_eof();
+
+    shared.reset_for_decode_resume(1.25, &DspSettings::default());
+
+    let mut output = [1.0f32; 4];
+    assert_eq!(shared.pop_into(&mut output), 0);
+    assert_eq!(output, [0.0; 4]);
+    assert!((shared.position_secs() - 1.25).abs() < f64::EPSILON);
+    assert!(!shared.is_drained());
+    assert!(shared.mark_end_reported());
+}
+
+#[test]
+fn reset_for_decode_resume_waits_for_resume_threshold() {
+    let shared = SharedAudio::new(
+        MixFormat::stereo_f32(100),
+        2.0,
+        8.0,
+        &DspSettings::default(),
+    );
+    shared.reset_for_decode_resume(1.0, &DspSettings::default());
+    assert!(shared.push_samples(&[0.1, 0.2, 0.3, 0.4]));
+
+    let mut output = [1.0f32; 8];
+    let frames = shared.pop_into(&mut output);
+
+    assert_eq!(frames, 0);
+    assert_eq!(output, [0.0; 8]);
+    assert!((shared.position_secs() - 1.0).abs() < f64::EPSILON);
+}
+
+#[test]
+fn decoded_eof_drains_output_below_resume_threshold() {
+    let settings = DspSettings::default();
+    let shared = SharedAudio::with_cache_pause_wait(
+        MixFormat::stereo_f32(100),
+        0.2,
+        true,
+        1.0,
+        8.0,
+        &settings,
+    );
+    shared.reset_for_decode_resume(10.0, &settings);
+    assert!(shared.push_samples(&[0.25; 8]));
+
+    let mut held = [1.0; 8];
+    assert_eq!(shared.pop_into(&mut held), 0);
+    assert_eq!(held, [0.0; 8]);
+
+    shared.mark_decoded_eof();
+    let mut drained = [0.0; 16];
+    assert_eq!(shared.pop_into(&mut drained), 4);
+    assert_eq!(&drained[..8], &[0.25; 8]);
+    assert_eq!(&drained[8..], &[0.0; 8]);
+    assert_eq!(shared.output_underrun_count(), 0);
+}
+
+#[test]
+fn cache_pause_disabled_skips_decode_resume_threshold() {
+    let shared = SharedAudio::with_cache_pause_wait(
+        MixFormat::stereo_f32(100),
+        0.1,
+        false,
+        1.0,
+        8.0,
+        &DspSettings::default(),
+    );
+    shared.reset_for_decode_resume(1.0, &DspSettings::default());
+    assert!(shared.push_samples(&[0.25; 8]));
+
+    let mut output = [1.0f32; 8];
+    let frames = shared.pop_into(&mut output);
+
+    assert_eq!(frames, 4);
+    assert_eq!(output, [0.25; 8]);
+    assert!(!shared.ao_state.resume_when_buffered());
+}
+
+#[test]
+fn output_underrun_buffering_survives_cache_pause_disabled() {
+    let shared = SharedAudio::with_cache_pause_wait(
+        MixFormat::stereo_f32(100),
+        0.1,
+        false,
+        1.0,
+        8.0,
+        &DspSettings::default(),
+    );
+    assert!(shared.push_samples(&[0.25; 4]));
+
+    let mut output = [1.0f32; 8];
+    let frames = shared.pop_into(&mut output);
+
+    assert_eq!(frames, 2);
+    assert_eq!(output, [0.25, 0.25, 0.25, 0.25, 0.0, 0.0, 0.0, 0.0]);
+    assert!(shared.ao_state.ao_underrun());
+
+    assert!(shared.push_samples(&[0.25; 20]));
+    assert_eq!(shared.pop_into(&mut output), 4);
+    assert_eq!(output, [0.25; 8]);
+}
+
+#[test]
+fn reset_for_decode_resume_publishes_buffering_progress_when_audio_arrives() {
+    let shared = SharedAudio::new(
+        MixFormat::stereo_f32(100),
+        2.0,
+        8.0,
+        &DspSettings::default(),
+    );
+    let (tx, rx) = std::sync::mpsc::sync_channel(4);
+    shared.bind_signal_sender(tx);
+    shared.reset_for_decode_resume(1.0, &DspSettings::default());
+
+    let mut output = [1.0f32; 4];
+    assert_eq!(shared.pop_into(&mut output), 0);
+    assert!(matches!(
+        rx.try_recv(),
+        Ok(PlaybackSignal::CacheState { paused: true, .. })
+    ));
+
+    assert!(shared.push_samples(&[0.1; 20]));
+    assert!(matches!(
+        rx.try_recv(),
+        Ok(PlaybackSignal::CacheState { paused: true, .. })
+    ));
+}
+
+#[test]
+fn resume_buffering_wait_does_not_escalate_adaptive_threshold() {
+    let shared = SharedAudio::new(
+        MixFormat::stereo_f32(100),
+        0.1,
+        1.0,
+        &DspSettings::default(),
+    );
+    shared.reset_for_decode_resume(1.0, &DspSettings::default());
+
+    let mut output = [1.0f32; 4];
+    for _ in 0..20 {
+        assert_eq!(shared.pop_into(&mut output), 0);
+    }
+
+    assert_eq!(shared.output_underrun_count(), 0);
+    assert_eq!(shared.cache_pause_resume_threshold(4), 200);
+}
+
+#[test]
+fn adaptive_resume_threshold_is_capped_by_decoded_readahead_capacity() {
+    let shared = SharedAudio::new(
+        MixFormat::stereo_f32(100),
+        0.1,
+        1.0,
+        &DspSettings::default(),
+    );
+    shared.update_decode_throughput_ratio(400);
+
+    assert_eq!(shared.cache_pause_resume_threshold(4), 220);
+}
+
+#[test]
+fn dsp_filter_reset_keeps_decoded_queue_available() {
+    let shared = SharedAudio::new(
+        MixFormat::stereo_f32(100),
+        2.0,
+        8.0,
+        &DspSettings::default(),
+    );
+    let generation = shared.current_decode_generation();
+    let chunk = DecodedAudioChunk::new(
+        DecodedAudioFormat {
+            sample_rate: shared.mix_format.sample_rate,
+            sample_format: AudioSampleFormat::F32,
+            channels: MIX_CHANNELS,
+        },
+        2,
+        None,
+        DecodedAudioData::F32(vec![0.1, 0.2, 0.3, 0.4]),
+    );
+    assert!(shared.push_decoded_chunk_for_generation(chunk.clone(), generation));
+    let mut settings = DspSettings::default();
+    settings.speed = 2.0;
+    shared.reset_filter_for_dsp_change(&settings);
+
+    assert_eq!(
+        shared.pop_decoded_for_filter(shared.current_filter_generation(),),
+        FilterInput::Frame(chunk)
+    );
+}
+
+#[test]
+fn gapless_filter_boundary_keeps_decoded_order() {
+    let shared = SharedAudio::new(
+        MixFormat::stereo_f32(100),
+        2.0,
+        8.0,
+        &DspSettings::default(),
+    );
+    let generation = shared.current_decode_generation();
+    let first = DecodedAudioChunk::new(
+        DecodedAudioFormat {
+            sample_rate: 100,
+            sample_format: AudioSampleFormat::F32,
+            channels: MIX_CHANNELS,
+        },
+        1,
+        None,
+        DecodedAudioData::F32(vec![0.1, 0.2]),
+    );
+    let second = DecodedAudioChunk::new(
+        DecodedAudioFormat {
+            sample_rate: 100,
+            sample_format: AudioSampleFormat::F32,
+            channels: MIX_CHANNELS,
+        },
+        1,
+        None,
+        DecodedAudioData::F32(vec![0.3, 0.4]),
+    );
+
+    assert!(shared.push_decoded_chunk_for_generation(first.clone(), generation));
+    shared.mark_gapless_boundary(TrackSwitchInfo {
+        url: "next.flac".to_string(),
+        audio_stream_ordinal: None,
+        seq: 8,
+        duration: 2.0,
+    });
+    assert!(shared.push_decoded_chunk_for_generation(second.clone(), generation));
+
+    assert_eq!(
+        shared.pop_decoded_for_filter(shared.current_filter_generation()),
+        FilterInput::Frame(first)
+    );
+    assert_eq!(
+        shared.pop_decoded_for_filter(shared.current_filter_generation()),
+        FilterInput::Boundary
+    );
+    assert_eq!(
+        shared.pop_decoded_for_filter(shared.current_filter_generation()),
+        FilterInput::Frame(second)
+    );
+}
+
+#[test]
+fn gapless_boundary_resets_position_after_crossing_track_switch() {
+    let shared = SharedAudio::new(
+        MixFormat::stereo_f32(100),
+        0.1,
+        8.0,
+        &DspSettings::default(),
+    );
+    let (tx, rx) = std::sync::mpsc::sync_channel(4);
+    shared.bind_signal_sender(tx);
+    assert!(shared.push_samples(&[0.1, 0.2, 0.3, 0.4]));
+    shared.mark_gapless_boundary(TrackSwitchInfo {
+        url: "next.flac".to_string(),
+        audio_stream_ordinal: None,
+        seq: 7,
+        duration: 3.0,
+    });
+    assert!(shared.push_samples(&[0.5, 0.6, 0.7, 0.8]));
+
+    let mut output = [0.0f32; 8];
+    assert_eq!(shared.pop_into(&mut output), 4);
+    assert_eq!(output, [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8]);
+    assert!((shared.position_secs() - 0.02).abs() < f64::EPSILON);
+    assert_eq!(shared.output_underrun_count(), 0);
+
+    match rx.try_recv() {
+        Ok(PlaybackSignal::TrackSwitch(info)) => {
+            assert_eq!(info.url, "next.flac");
+            assert_eq!(info.seq, 7);
+        }
+        other => panic!("expected track switch signal, got {other:?}"),
+    }
+}
+
+#[test]
+fn gapless_boundary_resets_adaptive_cache_pause_threshold() {
+    let shared = SharedAudio::new(
+        MixFormat::stereo_f32(100),
+        0.1,
+        1.0,
+        &DspSettings::default(),
+    );
+    for _ in 0..20 {
+        shared.record_output_underrun();
+    }
+    assert_eq!(shared.cache_pause_resume_threshold(4), 220);
+    assert!(shared.push_samples(&[0.1, 0.2, 0.3, 0.4]));
+    shared.mark_gapless_boundary(TrackSwitchInfo {
+        url: "next.flac".to_string(),
+        audio_stream_ordinal: None,
+        seq: 7,
+        duration: 3.0,
+    });
+    assert!(shared.push_samples(&[0.5, 0.6, 0.7, 0.8]));
+
+    let mut output = [0.0f32; 8];
+    assert_eq!(shared.pop_into(&mut output), 4);
+
+    assert_eq!(shared.output_underrun_count(), 0);
+    assert_eq!(shared.cache_pause_resume_threshold(4), 200);
+}
+
+#[test]
+fn stall_timeout_can_be_disabled_and_clamped() {
+    let shared = SharedAudio::new(
+        MixFormat::stereo_f32(100),
+        0.1,
+        8.0,
+        &DspSettings::default(),
+    );
+    assert_eq!(shared.stall_timeout(), Duration::from_secs(8));
+
+    shared.set_stall_timeout(0.0);
+    assert_eq!(shared.stall_timeout(), Duration::ZERO);
+
+    shared.set_stall_timeout(120.0);
+    assert_eq!(shared.stall_timeout(), Duration::from_secs(60));
+}
+
+#[test]
+fn output_queue_capacity_uses_configured_audio_buffer() {
+    let shared = SharedAudio::new(
+        MixFormat::stereo_f32(100),
+        0.2,
+        8.0,
+        &DspSettings::default(),
+    );
+
+    assert_eq!(shared.output_queue_capacity, 40);
+    assert_eq!(shared.decoded_queue_capacity_frames, 100);
+}
+
+#[test]
+fn stale_gapless_prepare_completion_does_not_clear_new_request() {
+    let shared = SharedAudio::new(
+        MixFormat::stereo_f32(100),
+        0.2,
+        8.0,
+        &DspSettings::default(),
+    );
+    let stale_epoch = shared.begin_gapless_prepare();
+    shared.clear_gapless_prepares();
+    let current_epoch = shared.begin_gapless_prepare();
+
+    shared.finish_gapless_prepare(stale_epoch);
+    assert!(shared.gapless_prepare_is_pending());
+
+    shared.finish_gapless_prepare(current_epoch);
+    assert!(!shared.gapless_prepare_is_pending());
+}
+
+#[test]
+fn gapless_prepare_request_suspends_stall_watch_until_completed() {
+    let shared = SharedAudio::new(
+        MixFormat::stereo_f32(100),
+        0.2,
+        8.0,
+        &DspSettings::default(),
+    );
+    shared.mark_output_started();
+    shared.paused.store(false, Ordering::Release);
+    assert!(shared.should_watch_for_stall());
+
+    let request_id = shared.begin_gapless_prepare();
+    assert!(!shared.should_watch_for_stall());
+    assert!(!shared.cancel_gapless_prepare(request_id.wrapping_add(1)));
+    assert!(shared.cancel_gapless_prepare(request_id));
+    assert!(shared.should_watch_for_stall());
+}
+
+#[test]
+fn output_queue_capacity_honors_larger_audio_buffer_setting() {
+    let shared = SharedAudio::new(
+        MixFormat::stereo_f32(100),
+        2.0,
+        8.0,
+        &DspSettings::default(),
+    );
+
+    assert_eq!(shared.output_queue_capacity, 400);
+    assert_eq!(shared.decoded_queue_capacity_frames, 200);
+}
+
+#[test]
+fn oversized_output_request_consumes_software_buffer_before_underrun() {
+    let shared = SharedAudio::new(
+        MixFormat::stereo_f32(100),
+        0.2,
+        8.0,
+        &DspSettings::default(),
+    );
+    assert!(shared.push_samples(&vec![0.5; 40]));
+
+    let mut output = [1.0f32; 80];
+    let frames = shared.pop_into(&mut output);
+
+    assert_eq!(frames, 20);
+    assert_eq!(&output[..40], &[0.5; 40]);
+    assert_eq!(&output[40..], &[0.0; 40]);
+    assert_eq!(shared.output_underrun_count(), 1);
+    assert!(shared.ao_state.ao_underrun());
+}
+
+#[test]
+fn oversized_output_request_can_drain_at_eof() {
+    let shared = SharedAudio::new(
+        MixFormat::stereo_f32(100),
+        0.2,
+        8.0,
+        &DspSettings::default(),
+    );
+    assert!(shared.push_samples(&vec![0.5; 40]));
+    shared.mark_eof();
+
+    let mut output = [1.0f32; 80];
+    let frames = shared.pop_into(&mut output);
+
+    assert_eq!(frames, 20);
+    assert_eq!(&output[..40], &[0.5; 40]);
+    assert_eq!(&output[40..], &[0.0; 40]);
+    assert_eq!(shared.output_underrun_count(), 0);
+}
+
+#[test]
+fn cache_pause_resume_counts_decoded_readahead_but_waits_for_output_ready() {
+    let shared = SharedAudio::new(
+        MixFormat::stereo_f32(100),
+        0.2,
+        8.0,
+        &DspSettings::default(),
+    );
+    assert!(shared.push_samples(&vec![0.1; 40]));
+    assert!(shared.push_decoded_chunk_for_generation(
+        DecodedAudioChunk::new(
+            DecodedAudioFormat {
+                sample_rate: 100,
+                sample_format: AudioSampleFormat::F32,
+                channels: MIX_CHANNELS,
+            },
+            80,
+            None,
+            DecodedAudioData::F32(vec![0.2; 160]),
+        ),
+        shared.current_decode_generation(),
+    ));
+    shared.ao_state.set_ao_underrun(true);
+
+    let mut output = [0.0f32; 4];
+    assert_eq!(shared.pop_into(&mut output), 2);
+    assert_eq!(output, [0.1; 4]);
+    assert!(!shared.ao_state.ao_underrun());
+}
+
+#[test]
+fn output_underrun_waits_for_realtime_output_even_with_decoded_readahead() {
+    let shared = SharedAudio::new(
+        MixFormat::stereo_f32(100),
+        0.2,
+        8.0,
+        &DspSettings::default(),
+    );
+    assert!(shared.push_decoded_chunk_for_generation(
+        DecodedAudioChunk::new(
+            DecodedAudioFormat {
+                sample_rate: 100,
+                sample_format: AudioSampleFormat::F32,
+                channels: MIX_CHANNELS,
+            },
+            100,
+            None,
+            DecodedAudioData::F32(vec![0.2; 200]),
+        ),
+        shared.current_decode_generation(),
+    ));
+    shared.ao_state.set_ao_underrun(true);
+
+    let mut output = [0.0f32; 4];
+    assert_eq!(shared.pop_into(&mut output), 0);
+    assert_eq!(output, [0.0; 4]);
+    assert!(shared.ao_state.ao_underrun());
+
+    assert!(shared.push_samples(&[0.1; 4]));
+    assert_eq!(shared.pop_into(&mut output), 0);
+    assert_eq!(output, [0.0; 4]);
+    assert!(shared.ao_state.ao_underrun());
+
+    assert!(shared.push_samples(&[0.1; 36]));
+    assert_eq!(shared.pop_into(&mut output), 2);
+    assert_eq!(output, [0.1; 4]);
+    assert!(!shared.ao_state.ao_underrun());
+}
+
+#[test]
+fn cache_pause_resume_threshold_adapts_after_output_underruns() {
+    let shared = SharedAudio::new(
+        MixFormat::stereo_f32(100),
+        2.0,
+        1.0,
+        &DspSettings::default(),
+    );
+
+    assert_eq!(shared.cache_pause_resume_threshold(4), 400);
+    for _ in 0..5 {
+        shared.record_output_underrun();
+    }
+    assert_eq!(shared.cache_pause_resume_threshold(4), 400);
+    for _ in 5..20 {
+        shared.record_output_underrun();
+    }
+    assert_eq!(shared.cache_pause_resume_threshold(4), 600);
+}
+
+#[test]
+fn decode_resume_resets_adaptive_cache_pause_threshold() {
+    let shared = SharedAudio::new(
+        MixFormat::stereo_f32(100),
+        0.2,
+        1.0,
+        &DspSettings::default(),
+    );
+    for _ in 0..20 {
+        shared.record_output_underrun();
+    }
+    assert_eq!(shared.cache_pause_resume_threshold(4), 240);
+
+    shared.reset_for_decode_resume(12.0, &DspSettings::default());
+
+    assert_eq!(shared.output_underrun_count(), 0);
+    assert_eq!(shared.cache_pause_resume_threshold(4), 200);
+}

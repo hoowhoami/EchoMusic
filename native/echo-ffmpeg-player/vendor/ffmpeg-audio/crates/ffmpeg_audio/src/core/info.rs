@@ -1,10 +1,7 @@
 use std::ffi::CStr;
 
 use crate::{
-    decode::{
-        Decoder,
-        Demuxer,
-    },
+    decode::{Decoder, Demuxer},
     sys,
 };
 

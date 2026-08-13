@@ -44,8 +44,7 @@ export interface PlayerPacketCacheStats {
   backBytes: number;
   totalBytes: number;
   forwardSecs?: number;
-  seekableStartSecs?: number;
-  seekableEndSecs?: number;
+  seekableRanges: Array<{ startSecs: number; endSecs: number }>;
   eof: boolean;
   pendingSeek: boolean;
   hasError: boolean;
@@ -385,12 +384,25 @@ export class PlayerEngine {
     }
   }
 
-  async prepareNextSource(source: PlaybackSource): Promise<number | null> {
+  async beginNextSourcePreparation(): Promise<number | null> {
+    return (await player?.beginNextSourcePreparation?.()) ?? null;
+  }
+
+  cancelNextSourcePreparation(requestId: number): void {
+    void player?.cancelNextSourcePreparation?.(requestId).catch((error: unknown) => {
+      logger.warn('PlayerEngine', 'cancel next source preparation failed', {
+        error: String(error),
+      });
+    });
+  }
+
+  async prepareNextSource(source: PlaybackSource, requestId: number): Promise<number | null> {
     const playbackSource = normalizePlaybackSource(source);
     if (!playbackSource.url) return null;
     return (
       (await player?.prepareNextSource?.(
         playbackSource.url,
+        requestId,
         playbackSource.audioTrackId ?? null,
       )) ?? null
     );
@@ -454,13 +466,17 @@ export class PlayerEngine {
   }
 
   seek(time: number): void {
-    this.seekPending = true;
+    this.beginSeek();
     player?.seek(time)?.catch((err: unknown) => {
       this.clearSeekPending();
       logger.warn('PlayerEngine', 'seek failed', { time, error: String(err) });
     });
     this.lastTimeValue = -1;
     this.lastTimeUpdateMs = 0;
+  }
+
+  beginSeek(): void {
+    this.seekPending = true;
   }
 
   setEqualizer(gains: number[]): void {

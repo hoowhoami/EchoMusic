@@ -1,8 +1,4 @@
-use std::{
-    env,
-    fs::File,
-    path::Path,
-};
+use std::{env, fs::File, path::Path};
 
 use anyhow::Context;
 use ffmpeg_audio::AudioReader;

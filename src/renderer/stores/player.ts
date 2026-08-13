@@ -645,7 +645,7 @@ export const usePlayerStore = defineStore(
           }
           state.currentTime = currentTime;
           state.currentTimeUpdatedAt = Date.now();
-          playbackManager.prepareGaplessNext();
+          void playbackManager.prepareGaplessNext();
           const now = Date.now();
           if (now - lastEventTimeUpdate >= EVENT_TIMEUPDATE_MS) {
             lastEventTimeUpdate = now;

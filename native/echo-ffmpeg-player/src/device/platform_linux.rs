@@ -104,7 +104,7 @@ pub(crate) fn shared_output_host_order() -> Vec<LinuxOutputHost> {
         .collect()
 }
 
-pub(crate) fn normalize_linux_mpv_device_name(namespace: &str, device: &str) -> Option<String> {
+pub(crate) fn normalize_linux_namespaced_device(namespace: &str, device: &str) -> Option<String> {
     match namespace.to_ascii_lowercase().as_str() {
         "pipewire" => Some(format!("{PIPEWIRE_KEY_PREFIX}{device}")),
         "pulse" | "pulseaudio" => Some(format!("{PULSE_KEY_PREFIX}{device}")),

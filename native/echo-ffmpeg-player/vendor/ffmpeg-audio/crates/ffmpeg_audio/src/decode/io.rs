@@ -1,20 +1,9 @@
 use std::{
-    io::{
-        Read,
-        Seek,
-        SeekFrom,
-    },
-    os::raw::{
-        c_int,
-        c_void,
-    },
+    io::{ErrorKind, Read, Seek, SeekFrom},
+    os::raw::{c_int, c_void},
 };
 
-use crate::{
-    AudioError,
-    Result,
-    sys,
-};
+use crate::{AudioError, Result, sys};
 
 pub trait ReadSeek: Read + Seek + Send {}
 impl<T: Read + Seek + Send> ReadSeek for T {}
@@ -61,6 +50,15 @@ impl IoContext {
         }
     }
 
+    pub(crate) fn clear_read_error(&mut self) {
+        unsafe {
+            if !self.ctx.is_null() {
+                (*self.ctx).error = 0;
+                (*self.ctx).eof_reached = 0;
+            }
+        }
+    }
+
     extern "C" fn read_packet(opaque: *mut c_void, buf: *mut u8, buf_size: c_int) -> c_int {
         if opaque.is_null() || buf.is_null() || buf_size <= 0 {
             return sys::AVERROR_EOF;
@@ -72,6 +70,7 @@ impl IoContext {
         match source.read(slice) {
             Ok(0) => sys::AVERROR_EOF,
             Ok(n) => n as c_int,
+            Err(err) if err.kind() == ErrorKind::Interrupted => sys::AVERROR_EXIT,
             Err(_) => sys::averror(libc::EIO),
         }
     }
@@ -127,6 +126,28 @@ impl Drop for IoContext {
             if !self.opaque_ptr.is_null() {
                 let _ = Box::from_raw(self.opaque_ptr);
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Cursor;
+
+    #[test]
+    fn clear_read_error_resets_ffmpeg_avio_state() {
+        let mut io = IoContext::new(Cursor::new(vec![0u8; 16])).unwrap();
+        unsafe {
+            (*io.ctx).error = sys::AVERROR_EXIT;
+            (*io.ctx).eof_reached = 1;
+        }
+
+        io.clear_read_error();
+
+        unsafe {
+            assert_eq!((*io.ctx).error, 0);
+            assert_eq!((*io.ctx).eof_reached, 0);
         }
     }
 }

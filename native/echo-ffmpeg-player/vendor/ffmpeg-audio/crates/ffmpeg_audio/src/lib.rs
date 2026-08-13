@@ -5,53 +5,28 @@ pub mod log;
 pub mod resample;
 
 #[cfg(feature = "http")]
-pub use core::http::{HttpAudioSource, HttpAudioSourceOptions};
+pub use core::http::{HttpAudioSource, HttpAudioSourceOptions, HttpCancelHandle};
 pub use core::{
     format::AudioSample,
-    frame::{
-        AudioFrame,
-        RawAudioData,
-    },
-    info::{
-        AudioStreamInfo,
-        SourceAudioInfo,
-    },
+    frame::{AudioFrame, RawAudioData},
+    info::{AudioStreamInfo, SourceAudioInfo},
     time::TimeBase,
 };
 use std::{
     collections::HashMap,
-    io::{
-        Read,
-        Seek,
-    },
+    io::{Read, Seek},
     time::Duration,
 };
 
 pub use decode::{
-    PacketCacheOptions,
-    PacketCacheStats,
-    ScanMode,
-    SeekMode,
+    PacketCacheOptions, PacketCacheSeekableRange, PacketCacheStats, ScanMode, SeekMode,
 };
-pub use error::{
-    AudioError,
-    FfErrorExt,
-    Result,
-};
+pub use error::{AudioError, FfErrorExt, Result};
 pub use ffmpeg_audio_sys as sys;
-pub use resample::{
-    ResampleOptions,
-    Resampler,
-    SwrContext,
-};
+pub use resample::{ResampleOptions, Resampler, SwrContext};
 
 use crate::{
-    decode::{
-        DecodeEngine,
-        Decoder,
-        Demuxer,
-        io::IoContext,
-    },
+    decode::{DecodeEngine, Decoder, Demuxer, io::IoContext},
     log::init_ffmpeg_logging,
 };
 
@@ -81,10 +56,7 @@ impl AudioReader {
         Self::new_with_audio_stream(source, None)
     }
 
-    pub fn new_with_audio_stream<T>(
-        source: T,
-        audio_stream_ordinal: Option<usize>,
-    ) -> Result<Self>
+    pub fn new_with_audio_stream<T>(source: T, audio_stream_ordinal: Option<usize>) -> Result<Self>
     where
         T: Read + Seek + Send + 'static,
     {

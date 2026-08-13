@@ -19,9 +19,19 @@ export function registerPlayerIpc(ref: PlayerRef): void {
   });
 
   ipcRegistry.registerHandler(
+    'player:begin-next-source-preparation',
+    async () => ref.current?.beginNextSourcePreparation() ?? null,
+  );
+
+  ipcRegistry.registerHandler(
+    'player:cancel-next-source-preparation',
+    async (_e, requestId: number) => ref.current?.cancelNextSourcePreparation(requestId) ?? false,
+  );
+
+  ipcRegistry.registerHandler(
     'player:prepare-next-source',
-    async (_e, url: string, trackId?: number | null) => {
-      return (await ref.current?.prepareNextSource(url, trackId)) ?? null;
+    async (_e, url: string, requestId: number, trackId?: number | null) => {
+      return (await ref.current?.prepareNextSource(url, requestId, trackId)) ?? null;
     },
   );
 

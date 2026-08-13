@@ -402,6 +402,7 @@ dependencies = [
  "coreaudio-sys",
  "cpal",
  "ffmpeg_audio",
+ "libc",
  "napi",
  "napi-build",
  "napi-derive",
@@ -459,7 +460,7 @@ dependencies = [
 
 [[package]]
 name = "ffmpeg_audio"
-version = "0.2.0"
+version = "0.3.1"
 dependencies = [
  "ffmpeg_audio_sys",
  "futures-util",

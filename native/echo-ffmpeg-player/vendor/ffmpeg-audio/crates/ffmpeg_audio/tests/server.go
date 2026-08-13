@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"sync"
 	"time"
 )
@@ -23,9 +24,20 @@ func main() {
 	)
 
 	http.HandleFunc("/test.mp3", func(w http.ResponseWriter, r *http.Request) {
-		log.Printf("[Normal Access] Range: %s", r.Header.Get("Range"))
+		log.Printf("[Mock Access] Range: %s", r.Header.Get("Range"))
 		reader := bytes.NewReader(mockData)
 		http.ServeContent(w, r, "test.mp3", time.Now(), reader)
+	})
+
+	http.HandleFunc("/seek_test.aac", func(w http.ResponseWriter, r *http.Request) {
+		data, err := os.ReadFile("assets/seek_test.aac")
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		log.Printf("[Audio Access] Range: %s", r.Header.Get("Range"))
+		http.ServeContent(w, r, "seek_test.aac", time.Now(), bytes.NewReader(data))
 	})
 
 	http.HandleFunc("/chaos.mp3", func(w http.ResponseWriter, r *http.Request) {
@@ -54,7 +66,8 @@ func main() {
 
 	port := ":8000"
 	fmt.Printf("[i] Mock Server started\n")
-	fmt.Printf(" -> Normal URL: http://localhost%s/test.mp3\n", port)
+	fmt.Printf(" -> Mock URL: http://localhost%s/test.mp3\n", port)
+	fmt.Printf(" -> Audio URL: http://localhost%s/seek_test.aac\n", port)
 	fmt.Printf(" -> Chaos URL: http://localhost%s/chaos.mp3\n", port)
 	log.Fatal(http.ListenAndServe(port, nil))
 }

@@ -245,7 +245,7 @@ export class PagedSongLoader<T> {
   /** 中止加载 */
   abort(): void {
     this._aborted = true;
-    this.markComplete();
+    this.settleCompletion();
   }
 
   /** 重置状态 */
@@ -287,14 +287,21 @@ export class PagedSongLoader<T> {
     this._loading = false;
     this._fullyLoaded = true;
     this.onComplete?.(this._items);
-    if (this._completionResolve) {
-      this._completionResolve(this._items);
-      this._completionResolve = null;
-    }
+    this.settleCompletion();
     logger.info(this.logTag, `load completed`, {
       total: this._items.length,
       pages: this._loadedPages,
       durationMs: this._startedAt ? Math.round(performance.now() - this._startedAt) : 0,
     });
+  }
+
+  /** 结束等待者。中止请求时不触发 onComplete，避免把半成品/空数据写回 UI。 */
+  private settleCompletion(): void {
+    this._loading = false;
+    this._fullyLoaded = true;
+    if (this._completionResolve) {
+      this._completionResolve(this._items);
+      this._completionResolve = null;
+    }
   }
 }

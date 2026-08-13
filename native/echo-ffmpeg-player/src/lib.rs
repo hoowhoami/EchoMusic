@@ -1,5 +1,6 @@
 mod audio_graph;
 mod config;
+mod control;
 mod decoder;
 mod device;
 mod dispatcher;
@@ -13,8 +14,27 @@ mod shared;
 mod stream;
 mod tempo;
 
+use control::{
+    attach_restarted_decoder, mark_seek_plan_failed, open_decoder_at_position,
+    prepare_dsp_settings_for_mix_rate, SeekPlan,
+};
+pub use control::{
+    cancel_fade, configure_spectrum, fade, get_audio_devices, get_audio_graph,
+    get_spectrum_snapshot, get_spectrum_status, pause_with_fade, play_with_fade, set_audio_device,
+    set_audio_graph_parameter, set_audio_graph_plan, set_equalizer, set_exclusive_output,
+    set_http_proxy, set_impulse_response, set_impulse_response_mix, set_network_timeout,
+    set_normalization_gain, set_pause_on_device_disconnect, set_speed, set_stall_timeout, FadeTask,
+    GetAudioDevicesTask, GetSpectrumSnapshotTask, SetAudioDeviceTask, SetAudioGraphParameterTask,
+    SetAudioGraphPlanTask, SetEqualizerTask, SetExclusiveTask, SetImpulseResponseMixTask,
+    SetImpulseResponseTask, SetNormalizationGainTask, SetSpeedTask,
+};
+pub use control::{seek, SeekTask};
+
 use crate::config::{GaplessAudioPolicy, PlayerConfig, PlayerConfigOptions, SpectrumConfig};
-use crate::decoder::{audio_stream_ordinal_from_track_id, list_tracks_for_url, open_decoder};
+use crate::decoder::{
+    audio_stream_ordinal_from_track_id, list_tracks_for_url, open_decoder,
+    open_decoder_with_interrupt,
+};
 use crate::dispatcher::{
     call_core_command, clear_event_callback, dispatch_core_command, reset_event_ids, send_event,
     send_events, set_event_callback, start_core_dispatcher, start_event_dispatcher,
@@ -29,9 +49,7 @@ use crate::events::{
     TrackInfo,
 };
 use crate::shared::{MixFormat, PlaybackSession, PlaybackSignal, SharedAudio, TrackSwitchInfo};
-use audio_graph::{
-    AudioGraphNodePlanPatch, AudioGraphParameterPatch, AudioGraphPlanPatch, AudioGraphSnapshot,
-};
+use audio_graph::AudioGraphSnapshot;
 use napi::bindgen_prelude::AsyncTask;
 use napi::threadsafe_function::ThreadsafeFunction;
 use napi::{Env, Task};
@@ -74,6 +92,7 @@ struct PlayerRuntime {
     spatial_mix: f32,
     spatial_file_path: Option<String>,
     prepared_next: Option<PreparedNextSource>,
+    gapless_prepare_interrupt: Option<(u64, Arc<AtomicBool>)>,
     seek_restart_interrupt: Option<Arc<AtomicBool>>,
     seek_request_seq: u64,
     seek_restore_paused: Option<bool>,
@@ -187,6 +206,7 @@ impl PlayerRuntime {
             spatial_mix: DEFAULT_SPATIAL_MIX,
             spatial_file_path: None,
             prepared_next: None,
+            gapless_prepare_interrupt: None,
             seek_restart_interrupt: None,
             seek_request_seq: 0,
             seek_restore_paused: None,
@@ -206,6 +226,7 @@ impl PlayerRuntime {
     fn stop_session(&mut self) {
         self.cancel_idle_output_release();
         self.cancel_pending_seek_restart();
+        self.cancel_pending_gapless_prepare();
         self.seek_restore_paused = None;
         self.prepared_next = None;
         if let Some(session) = self.session.take() {
@@ -219,6 +240,15 @@ impl PlayerRuntime {
     fn cancel_pending_seek_restart(&mut self) {
         if let Some(interrupt) = self.seek_restart_interrupt.take() {
             interrupt.store(true, Ordering::Release);
+        }
+    }
+
+    fn cancel_pending_gapless_prepare(&mut self) {
+        if let Some((_, interrupt)) = self.gapless_prepare_interrupt.take() {
+            interrupt.store(true, Ordering::Release);
+        }
+        if let Some(session) = self.session.as_ref() {
+            session.shared.clear_gapless_prepares();
         }
     }
 
@@ -732,6 +762,7 @@ fn apply_prepared_source(
         autostart,
     } = prepared;
     runtime.cancel_idle_output_release();
+    runtime.cancel_pending_gapless_prepare();
     let should_release_when_idle = !autostart;
     runtime.prepared_next = None;
     runtime.seek_restore_paused = None;
@@ -1394,6 +1425,7 @@ impl Task for LoadFileTask {
         let plan = with_runtime(|runtime| {
             runtime.cancel_idle_output_release();
             runtime.cancel_pending_seek_restart();
+            runtime.cancel_pending_gapless_prepare();
             runtime.seek_restore_paused = None;
             runtime.prepared_next = None;
             runtime.latest_load_seq = seq;
@@ -1598,6 +1630,27 @@ pub struct PrepareNextSourceTask {
     url: String,
     seq: u64,
     audio_stream_ordinal: Option<usize>,
+    pending_prepare: Option<(Arc<SharedAudio>, u64)>,
+    interrupt: Arc<AtomicBool>,
+}
+
+struct GaplessPrepareGuard {
+    shared: Arc<SharedAudio>,
+    epoch: u64,
+}
+
+impl Drop for GaplessPrepareGuard {
+    fn drop(&mut self) {
+        self.shared.finish_gapless_prepare(self.epoch);
+    }
+}
+
+impl Drop for PrepareNextSourceTask {
+    fn drop(&mut self) {
+        if let Some((shared, epoch)) = self.pending_prepare.take() {
+            shared.finish_gapless_prepare(epoch);
+        }
+    }
 }
 
 impl Task for PrepareNextSourceTask {
@@ -1605,6 +1658,16 @@ impl Task for PrepareNextSourceTask {
     type JsValue = bool;
 
     fn compute(&mut self) -> napi::Result<Self::Output> {
+        let Some((pending_shared, request_id)) = self.pending_prepare.take() else {
+            return Ok(false);
+        };
+        let _pending = GaplessPrepareGuard {
+            shared: pending_shared.clone(),
+            epoch: request_id,
+        };
+        if !pending_shared.gapless_prepare_request_is_current(request_id) {
+            return Ok(false);
+        }
         let (sample_rate, current_seq, shared, config) = with_runtime(|runtime| {
             let Some(session) = runtime.session.as_ref() else {
                 return Ok(None);
@@ -1622,10 +1685,11 @@ impl Task for PrepareNextSourceTask {
             return Ok(false);
         }
 
-        let mut decoder = open_decoder(
+        let mut decoder = open_decoder_with_interrupt(
             self.url.clone(),
             self.audio_stream_ordinal,
             Some(sample_rate),
+            self.interrupt.clone(),
             config.packet_cache_options_for_url(&self.url),
             &config.stream_options(),
         )
@@ -1649,10 +1713,16 @@ impl Task for PrepareNextSourceTask {
             let Some(session) = runtime.session.as_ref() else {
                 return Ok(false);
             };
-            if !Arc::ptr_eq(&session.shared, &shared) || runtime.current_seq != current_seq {
+            if !Arc::ptr_eq(&session.shared, &shared)
+                || runtime.current_seq != current_seq
+                || !session
+                    .shared
+                    .gapless_prepare_request_is_current(request_id)
+            {
                 return Ok(false);
             }
             runtime.prepared_next = prepared.take();
+            runtime.gapless_prepare_interrupt = None;
             emit_runtime_event(
                 runtime,
                 PlayerEvent::log(
@@ -1695,21 +1765,80 @@ fn predecode_gapless_head(
 }
 
 #[napi]
+pub fn begin_next_source_preparation() -> napi::Result<f64> {
+    with_runtime(|runtime| {
+        runtime.cancel_pending_gapless_prepare();
+        runtime.prepared_next = None;
+        let Some(session) = runtime.session.as_ref() else {
+            return Ok(0.0);
+        };
+        Ok(session.shared.begin_gapless_prepare() as f64)
+    })
+}
+
+#[napi]
+pub fn cancel_next_source_preparation(request_id: f64) -> napi::Result<bool> {
+    let request_id = request_id.max(0.0) as u64;
+    with_runtime(|runtime| {
+        if runtime
+            .gapless_prepare_interrupt
+            .as_ref()
+            .is_some_and(|(epoch, _)| *epoch == request_id)
+        {
+            if let Some((_, interrupt)) = runtime.gapless_prepare_interrupt.take() {
+                interrupt.store(true, Ordering::Release);
+            }
+        }
+        let Some(session) = runtime.session.as_ref() else {
+            return Ok(false);
+        };
+        let cancelled = session.shared.cancel_gapless_prepare(request_id);
+        if cancelled {
+            runtime.prepared_next = None;
+        }
+        Ok(cancelled)
+    })
+}
+
+#[napi]
 pub fn prepare_next_source(
     url: String,
     track_id: Option<i64>,
     seq: Option<f64>,
+    request_id: f64,
 ) -> AsyncTask<PrepareNextSourceTask> {
+    let request_id = request_id.max(0.0) as u64;
+    let interrupt = Arc::new(AtomicBool::new(false));
+    let pending_prepare = with_runtime(|runtime| {
+        let pending = runtime
+            .session
+            .as_ref()
+            .filter(|session| {
+                session
+                    .shared
+                    .gapless_prepare_request_is_current(request_id)
+            })
+            .map(|session| (session.shared.clone(), request_id));
+        if pending.is_some() {
+            runtime.gapless_prepare_interrupt = Some((request_id, interrupt.clone()));
+        }
+        Ok(pending)
+    })
+    .ok()
+    .flatten();
     AsyncTask::new(PrepareNextSourceTask {
         url,
         seq: seq.unwrap_or(0.0).max(0.0) as u64,
         audio_stream_ordinal: track_id.and_then(audio_stream_ordinal_from_track_id),
+        pending_prepare,
+        interrupt,
     })
 }
 
 #[napi]
 pub fn clear_prepared_next_source() -> napi::Result<()> {
     with_runtime(|runtime| {
+        runtime.cancel_pending_gapless_prepare();
         runtime.prepared_next = None;
         Ok(())
     })
@@ -1831,421 +1960,6 @@ pub fn stop() -> napi::Result<()> {
     })
 }
 
-pub struct SeekTask {
-    position: f64,
-    request_seq: u64,
-}
-
-struct SeekPlan {
-    shared: Arc<SharedAudio>,
-    was_paused: bool,
-    url: String,
-    audio_stream_ordinal: Option<usize>,
-    generation: u64,
-    request_seq: u64,
-    config: PlayerConfig,
-    interrupt: Option<Arc<AtomicBool>>,
-    decode_commands: Option<SyncSender<decoder::DecodeCommand>>,
-}
-
-fn is_seek_plan_current(plan: &SeekPlan) -> napi::Result<bool> {
-    with_runtime(|runtime| {
-        let Some(session) = runtime.session.as_ref() else {
-            return Ok(false);
-        };
-        Ok(Arc::ptr_eq(&session.shared, &plan.shared)
-            && session.shared.is_decode_generation_current(plan.generation)
-            && runtime.is_seek_request_current(plan.request_seq))
-    })
-}
-
-fn mark_seek_plan_failed(plan: &SeekPlan) -> napi::Result<()> {
-    with_runtime(|runtime| {
-        runtime.clear_pending_seek_restart(plan.interrupt.as_ref());
-        if !runtime.is_seek_request_current(plan.request_seq) {
-            return Ok(());
-        }
-        let matches_plan = runtime.session.as_ref().is_some_and(|session| {
-            Arc::ptr_eq(&session.shared, &plan.shared)
-                && session.shared.is_decode_generation_current(plan.generation)
-        });
-        if !matches_plan {
-            return Ok(());
-        }
-        runtime.clear_seek_restore_paused_if_current(plan.request_seq);
-        let Some(session) = runtime.session.as_mut() else {
-            return Ok(());
-        };
-        session.shared.mark_decode_failed();
-        session.shared.paused.store(true, Ordering::Release);
-        runtime.state.playing = false;
-        runtime.state.paused = true;
-        set_runtime_core_state(runtime, PlaybackCoreState::Error, "seek-error");
-        emit_runtime_event(runtime, PlayerEvent::state_change(runtime.state.clone()));
-        Ok(())
-    })
-}
-
-fn open_decoder_at_position(plan: &SeekPlan, position: f64) -> napi::Result<decoder::DecoderData> {
-    let mut decoder = if let Some(interrupt) = plan.interrupt.as_ref() {
-        decoder::DecoderData::open(
-            plan.url.clone(),
-            plan.audio_stream_ordinal,
-            Some(plan.shared.mix_format.sample_rate),
-            interrupt.clone(),
-            plan.config.packet_cache_options_for_url(&plan.url),
-            &plan.config.stream_options(),
-        )
-    } else {
-        open_decoder(
-            plan.url.clone(),
-            plan.audio_stream_ordinal,
-            Some(plan.shared.mix_format.sample_rate),
-            plan.config.packet_cache_options_for_url(&plan.url),
-            &plan.config.stream_options(),
-        )
-    }
-    .map_err(napi::Error::from_reason)?;
-
-    if position > 0.0 {
-        decoder.seek(position).map_err(napi::Error::from_reason)?;
-    } else {
-        decoder.confirm_playback_restart_when_audio_ready(position);
-    }
-
-    Ok(decoder)
-}
-
-fn attach_restarted_decoder(
-    plan: &SeekPlan,
-    decoder: decoder::DecoderData,
-    position: f64,
-    defer_restart_events_until_audio_ready: bool,
-) -> napi::Result<()> {
-    let mut decoder = Some(decoder);
-    with_runtime(|runtime| {
-        runtime.clear_pending_seek_restart(plan.interrupt.as_ref());
-        if !runtime.is_seek_request_current(plan.request_seq) {
-            return Ok(());
-        }
-        let matches_plan = runtime.session.as_ref().is_some_and(|session| {
-            Arc::ptr_eq(&session.shared, &plan.shared)
-                && session.shared.is_decode_generation_current(plan.generation)
-        });
-        if !matches_plan {
-            return Ok(());
-        }
-        runtime.clear_seek_restore_paused_if_current(plan.request_seq);
-        let Some(session) = runtime.session.as_mut() else {
-            return Ok(());
-        };
-        let decoder = decoder
-            .take()
-            .ok_or_else(|| napi::Error::from_reason("decoder already attached".to_string()))?;
-        let source_sample_format = decoder.source_sample_format();
-        session
-            .shared
-            .set_source_sample_format(source_sample_format);
-        session.shared.set_preferred_output_sample_format(
-            plan.config
-                .resolve_output_sample_format(source_sample_format),
-        );
-        session.shared.bind_interrupt(decoder.interrupt_handle());
-        let (decode_thread, decode_commands) =
-            decoder::spawn_decode_worker(decoder, session.shared.clone(), plan.generation);
-        session.decode_thread = Some(decode_thread);
-        session.decode_commands = Some(decode_commands);
-        session
-            .shared
-            .paused
-            .store(plan.was_paused, Ordering::Release);
-        runtime.state.time_pos = position;
-        runtime.state.playing = !plan.was_paused;
-        runtime.state.paused = plan.was_paused;
-        set_runtime_core_state(
-            runtime,
-            if plan.was_paused {
-                PlaybackCoreState::Paused
-            } else {
-                PlaybackCoreState::Playing
-            },
-            "seek-complete",
-        );
-        if !defer_restart_events_until_audio_ready {
-            emit_runtime_event(runtime, PlayerEvent::time_update(position));
-        }
-        Ok(())
-    })
-}
-
-fn restore_seek_playback_state(
-    plan: &SeekPlan,
-    position: f64,
-    reason: &'static str,
-) -> napi::Result<()> {
-    with_runtime(|runtime| {
-        let Some(shared) = runtime.session.as_ref().and_then(|session| {
-            (Arc::ptr_eq(&session.shared, &plan.shared)
-                && session.shared.is_decode_generation_current(plan.generation)
-                && runtime.is_seek_request_current(plan.request_seq))
-            .then(|| session.shared.clone())
-        }) else {
-            return Ok(());
-        };
-        runtime.clear_seek_restore_paused_if_current(plan.request_seq);
-        shared.paused.store(plan.was_paused, Ordering::Release);
-        runtime.state.time_pos = position;
-        runtime.state.playing = !plan.was_paused;
-        runtime.state.paused = plan.was_paused;
-        set_runtime_core_state(
-            runtime,
-            if plan.was_paused {
-                PlaybackCoreState::Paused
-            } else {
-                PlaybackCoreState::Playing
-            },
-            reason,
-        );
-        emit_runtime_event(runtime, PlayerEvent::state_change(runtime.state.clone()));
-        Ok(())
-    })
-}
-
-fn try_seek_current_decoder(plan: &SeekPlan, position: f64) -> napi::Result<bool> {
-    let Some(sender) = plan.decode_commands.as_ref() else {
-        return Ok(false);
-    };
-    if !is_seek_plan_current(plan)? {
-        return Ok(true);
-    }
-
-    // Retry loop for transient channel-full conditions.  The decoder drains the command
-    // queue once per decode iteration; a Full error means the decoder is mid-frame but
-    // will clear the backlog in <~20 ms.  Retrying avoids the expensive reopen path
-    // (~50 ms) when the decoder only needs a moment to catch up.
-    const SEEK_COMMAND_RETRIES: u32 = 8;
-    let reply_rx = {
-        let mut retries = 0u32;
-        loop {
-            let (reply_tx, reply_rx) = sync_channel(1);
-            match sender.try_send(decoder::DecodeCommand::Seek {
-                position_secs: position,
-                generation: plan.generation,
-                reply: reply_tx,
-            }) {
-                Ok(()) => break reply_rx,
-                Err(TrySendError::Full(_)) => {
-                    retries += 1;
-                    if retries >= SEEK_COMMAND_RETRIES || !is_seek_plan_current(plan)? {
-                        plan.shared.request_decode_interrupt();
-                        emit_shared_event(
-                            &plan.shared,
-                            PlayerEvent::log(
-                                "warn",
-                                format!(
-                                    "decoder seek command full after {retries} retries; \
-                                     falling back to reopen"
-                                ),
-                            ),
-                        );
-                        return Ok(false);
-                    }
-                    // Brief sleep so the decoder can drain its command queue.
-                    std::thread::sleep(std::time::Duration::from_millis(2));
-                }
-                Err(TrySendError::Disconnected(_)) => {
-                    if !is_seek_plan_current(plan)? {
-                        return Ok(true);
-                    }
-                    emit_shared_event(
-                        &plan.shared,
-                        PlayerEvent::log(
-                            "warn",
-                            "decoder seek command disconnected; falling back to reopen".to_string(),
-                        ),
-                    );
-                    return Ok(false);
-                }
-            }
-        }
-    };
-
-    plan.shared.request_decode_interrupt();
-
-    match reply_rx.recv_timeout(Duration::from_secs(2)) {
-        Ok(Ok(())) => {
-            restore_seek_playback_state(plan, position, "seek-command")?;
-            Ok(true)
-        }
-        Ok(Err(err)) => {
-            if !is_seek_plan_current(plan)? {
-                return Ok(true);
-            }
-            emit_shared_event(
-                &plan.shared,
-                PlayerEvent::log(
-                    "warn",
-                    format!("decoder seek command failed; falling back to reopen: {err}"),
-                ),
-            );
-            Ok(false)
-        }
-        Err(RecvTimeoutError::Timeout) => {
-            if !is_seek_plan_current(plan)? {
-                return Ok(true);
-            }
-            emit_shared_event(
-                &plan.shared,
-                PlayerEvent::log(
-                    "warn",
-                    "decoder seek command timed out; falling back to reopen".to_string(),
-                ),
-            );
-            Ok(false)
-        }
-        Err(RecvTimeoutError::Disconnected) => {
-            if !is_seek_plan_current(plan)? {
-                return Ok(true);
-            }
-            emit_shared_event(
-                &plan.shared,
-                PlayerEvent::log(
-                    "warn",
-                    "decoder seek command disconnected; falling back to reopen".to_string(),
-                ),
-            );
-            Ok(false)
-        }
-    }
-}
-
-fn prepare_reopen_seek_plan(previous: &SeekPlan, position: f64) -> napi::Result<Option<SeekPlan>> {
-    let interrupt = Arc::new(AtomicBool::new(false));
-    with_runtime(|runtime| {
-        if !runtime.is_seek_request_current(previous.request_seq) {
-            return Ok(None);
-        }
-        let Some(session) = runtime.session.as_mut() else {
-            return Ok(None);
-        };
-        if !Arc::ptr_eq(&session.shared, &previous.shared)
-            || !session
-                .shared
-                .is_decode_generation_current(previous.generation)
-        {
-            return Ok(None);
-        }
-        runtime.seek_restart_interrupt = Some(interrupt.clone());
-        session.shared.paused.store(true, Ordering::Release);
-        session.shared.request_decode_stop();
-        session.stop_decode_background("seek-fallback");
-        let generation = session
-            .shared
-            .reset_for_decode_resume(position, &runtime.dsp_settings);
-        runtime.state.time_pos = position;
-        runtime.state.playing = false;
-        runtime.state.paused = true;
-        Ok(runtime.current_url.clone().map(|url| SeekPlan {
-            shared: session.shared.clone(),
-            was_paused: previous.was_paused,
-            url,
-            audio_stream_ordinal: runtime.current_audio_stream_ordinal,
-            generation,
-            request_seq: previous.request_seq,
-            config: runtime.config.clone(),
-            interrupt: Some(interrupt),
-            decode_commands: None,
-        }))
-    })
-}
-
-impl Task for SeekTask {
-    type Output = ();
-    type JsValue = ();
-
-    fn compute(&mut self) -> napi::Result<Self::Output> {
-        let position = self.position.max(0.0);
-        let request_seq = self.request_seq;
-        if !is_latest_seek_request_seq(request_seq) {
-            return Ok(());
-        }
-        let plan = with_runtime(|runtime| {
-            if !runtime.accept_seek_request_seq(request_seq) {
-                return Ok(None);
-            }
-            let Some((shared, decode_commands)) = runtime
-                .session
-                .as_ref()
-                .map(|session| (session.shared.clone(), session.decode_commands.clone()))
-            else {
-                return Ok(None);
-            };
-            let was_paused = runtime.begin_seek_restore_paused();
-            set_runtime_core_state(runtime, PlaybackCoreState::Seeking, "seek");
-            runtime.cancel_pending_seek_restart();
-            shared.paused.store(true, Ordering::Release);
-            runtime.prepared_next = None;
-            let generation = shared.reset_for_decode_resume(position, &runtime.dsp_settings);
-            runtime.state.time_pos = position;
-            runtime.state.playing = false;
-            runtime.state.paused = true;
-            emit_runtime_event(runtime, PlayerEvent::seek(position));
-            Ok(runtime.current_url.clone().map(|url| SeekPlan {
-                shared,
-                was_paused,
-                url,
-                audio_stream_ordinal: runtime.current_audio_stream_ordinal,
-                generation,
-                request_seq,
-                config: runtime.config.clone(),
-                interrupt: None,
-                decode_commands,
-            }))
-        })?;
-
-        let Some(plan) = plan else {
-            return Ok(());
-        };
-
-        if try_seek_current_decoder(&plan, position)? {
-            return Ok(());
-        }
-
-        let Some(plan) = prepare_reopen_seek_plan(&plan, position)? else {
-            return Ok(());
-        };
-
-        match open_decoder_at_position(&plan, position)
-            .and_then(|decoder| attach_restarted_decoder(&plan, decoder, position, true))
-        {
-            Ok(()) => Ok(()),
-            Err(err) => {
-                mark_seek_plan_failed(&plan)?;
-                emit_event(
-                    PlayerEvent::error(
-                        events::PlayerErrorCode::Seek,
-                        format!("failed to seek playback: {err}"),
-                    )
-                    .with_playback_context(plan.shared.current_track_seq(), plan.generation),
-                );
-                Err(err)
-            }
-        }
-    }
-
-    fn resolve(&mut self, _env: Env, _output: Self::Output) -> napi::Result<Self::JsValue> {
-        Ok(())
-    }
-}
-
-#[napi]
-pub fn seek(time: f64) -> AsyncTask<SeekTask> {
-    AsyncTask::new(SeekTask {
-        position: time,
-        request_seq: next_seek_request_seq(),
-    })
-}
-
 #[napi]
 pub fn set_volume(volume: f64) -> napi::Result<()> {
     with_runtime(|runtime| {
@@ -2254,848 +1968,6 @@ pub fn set_volume(volume: f64) -> napi::Result<()> {
             session.shared.set_volume(normalized);
         }
         Ok(())
-    })
-}
-
-pub struct SetSpeedTask {
-    speed: f64,
-}
-
-impl Task for SetSpeedTask {
-    type Output = ();
-    type JsValue = ();
-
-    fn compute(&mut self) -> napi::Result<Self::Output> {
-        let speed = tempo::normalize_speed(self.speed);
-        with_runtime(|runtime| {
-            if (runtime.dsp_settings.speed - speed).abs() < f32::EPSILON {
-                return Ok(());
-            }
-            runtime.dsp_settings.speed = speed;
-            let Some(session) = runtime.session.as_ref() else {
-                return Ok(());
-            };
-            session
-                .shared
-                .reset_filter_for_dsp_change(&runtime.dsp_settings);
-            let position = session.shared.position_secs();
-            update_runtime_audio_graph(runtime);
-            emit_runtime_event(runtime, PlayerEvent::time_update(position));
-            Ok(())
-        })
-    }
-
-    fn resolve(&mut self, _env: Env, _output: Self::Output) -> napi::Result<Self::JsValue> {
-        Ok(())
-    }
-}
-
-#[napi]
-pub fn set_speed(speed: f64) -> AsyncTask<SetSpeedTask> {
-    AsyncTask::new(SetSpeedTask { speed })
-}
-
-pub struct SetEqualizerTask {
-    gains: Vec<f64>,
-}
-
-impl Task for SetEqualizerTask {
-    type Output = ();
-    type JsValue = ();
-
-    fn compute(&mut self) -> napi::Result<Self::Output> {
-        with_runtime(|runtime| {
-            let mut next = [0.0f32; EQ_BAND_COUNT];
-            for (index, value) in self.gains.iter().take(EQ_BAND_COUNT).enumerate() {
-                next[index] = value.clamp(-12.0, 12.0) as f32;
-            }
-            runtime.dsp_settings.equalizer = next;
-            sync_current_session_dsp_settings(runtime);
-            update_runtime_audio_graph(runtime);
-            Ok(())
-        })
-    }
-
-    fn resolve(&mut self, _env: Env, _output: Self::Output) -> napi::Result<Self::JsValue> {
-        Ok(())
-    }
-}
-
-#[napi]
-pub fn set_equalizer(gains: Vec<f64>) -> AsyncTask<SetEqualizerTask> {
-    AsyncTask::new(SetEqualizerTask { gains })
-}
-
-pub struct SetImpulseResponseTask {
-    payload: serde_json::Value,
-}
-
-impl Task for SetImpulseResponseTask {
-    type Output = ();
-    type JsValue = ();
-
-    fn compute(&mut self) -> napi::Result<Self::Output> {
-        let Some((file_path, mix)) =
-            parse_impulse_response_payload(&self.payload).map_err(napi::Error::from_reason)?
-        else {
-            with_runtime(|runtime| {
-                runtime.spatial_request_seq = runtime.spatial_request_seq.wrapping_add(1);
-                runtime.spatial_file_path = None;
-                runtime.dsp_settings.spatial = None;
-                sync_current_session_dsp_settings(runtime);
-                update_runtime_audio_graph(runtime);
-                emit_runtime_event(
-                    runtime,
-                    PlayerEvent::log("info", "impulse response disabled".to_string()),
-                );
-                Ok(())
-            })?;
-            return Ok(());
-        };
-
-        let prepare = with_runtime(|runtime| {
-            runtime.spatial_request_seq = runtime.spatial_request_seq.wrapping_add(1);
-            runtime.spatial_mix = clamp_spatial_mix(mix);
-            runtime.spatial_file_path = Some(file_path.clone());
-            let Some(session) = runtime.session.as_ref() else {
-                runtime.dsp_settings.spatial = None;
-                emit_runtime_event(
-                    runtime,
-                    PlayerEvent::log(
-                        "info",
-                        format!(
-                            "impulse response pending: path='{file_path}', mix={:.2}",
-                            runtime.spatial_mix
-                        ),
-                    ),
-                );
-                return Ok(None);
-            };
-            let sample_rate = session.shared.mix_format.sample_rate;
-
-            let can_reuse_current = runtime
-                .dsp_settings
-                .spatial
-                .as_ref()
-                .is_some_and(|spatial| {
-                    spatial.file_path == file_path && spatial.sample_rate() == sample_rate
-                });
-            if can_reuse_current {
-                update_spatial_mix(runtime, mix);
-                return Ok(None);
-            }
-
-            Ok(Some((sample_rate, runtime.spatial_request_seq)))
-        })?;
-
-        let Some((sample_rate, request_seq)) = prepare else {
-            return Ok(());
-        };
-
-        let spatial = match prepare_spatial_effect(&file_path, mix, sample_rate) {
-            Ok(spatial) => spatial,
-            Err(err) => {
-                emit_event(PlayerEvent::impulse_response_disabled(err.clone()));
-                with_runtime(|runtime| {
-                    if runtime.spatial_request_seq == request_seq {
-                        runtime.spatial_file_path = None;
-                        runtime.dsp_settings.spatial = None;
-                        sync_current_session_dsp_settings(runtime);
-                        update_runtime_audio_graph(runtime);
-                    }
-                    Ok(())
-                })?;
-                return Err(napi::Error::from_reason(err));
-            }
-        };
-
-        with_runtime(|runtime| {
-            if runtime.spatial_request_seq != request_seq {
-                emit_runtime_event(
-                    runtime,
-                    PlayerEvent::log("debug", "stale impulse response load ignored".to_string()),
-                );
-                return Ok(());
-            }
-            let mut spatial = spatial;
-            spatial.mix = runtime.spatial_mix;
-            let spatial_path = spatial.file_path.clone();
-            let spatial_mix = spatial.mix;
-            let spatial_sample_rate = spatial.sample_rate();
-            let spatial_channels = spatial.channels();
-            let spatial_mode = spatial.mode();
-            apply_prepared_spatial_effect(runtime, spatial);
-            emit_runtime_event(
-                runtime,
-                PlayerEvent::log(
-                    "info",
-                    format!(
-                        "impulse response enabled: path='{spatial_path}', mix={spatial_mix:.2}, mix_sample_rate={spatial_sample_rate}, ir_channels={spatial_channels}, mode={spatial_mode}"
-                    ),
-                ),
-            );
-            Ok(())
-        })?;
-        Ok(())
-    }
-
-    fn resolve(&mut self, _env: Env, _output: Self::Output) -> napi::Result<Self::JsValue> {
-        Ok(())
-    }
-}
-
-fn apply_prepared_spatial_effect(runtime: &mut PlayerRuntime, spatial: PreparedSpatialEffect) {
-    runtime.dsp_settings.spatial = Some(spatial);
-    sync_current_session_dsp_settings(runtime);
-    reset_current_filter_if_process_format_changed(runtime);
-    update_runtime_audio_graph(runtime);
-}
-
-fn sync_current_session_dsp_settings(runtime: &PlayerRuntime) {
-    if let Some(session) = runtime.session.as_ref() {
-        session.shared.update_dsp_settings(&runtime.dsp_settings);
-    }
-}
-
-fn reset_current_filter_if_process_format_changed(runtime: &PlayerRuntime) {
-    let Some(session) = runtime.session.as_ref() else {
-        return;
-    };
-    if runtime.dsp_settings.requires_stereo_graph() && session.shared.mix_format.channels != 2 {
-        session
-            .shared
-            .reset_filter_for_dsp_change(&runtime.dsp_settings);
-    }
-}
-
-fn prepare_dsp_settings_for_mix_rate(
-    mut settings: DspSettings,
-    spatial_file_path: Option<&str>,
-    spatial_mix: f32,
-    mix_sample_rate: u32,
-) -> Result<DspSettings, String> {
-    let Some(file_path) = spatial_file_path else {
-        settings.spatial = None;
-        return Ok(settings);
-    };
-
-    let mix = clamp_spatial_mix(spatial_mix);
-    let can_reuse = settings.spatial.as_ref().is_some_and(|spatial| {
-        spatial.file_path == file_path && spatial.sample_rate() == mix_sample_rate
-    });
-    if can_reuse {
-        if let Some(spatial) = settings.spatial.as_mut() {
-            spatial.mix = mix;
-        }
-        return Ok(settings);
-    }
-
-    settings.spatial = Some(prepare_spatial_effect(file_path, mix, mix_sample_rate)?);
-    Ok(settings)
-}
-
-fn update_spatial_mix(runtime: &mut PlayerRuntime, mix: f32) {
-    let mix = clamp_spatial_mix(mix);
-    runtime.spatial_mix = mix;
-    if let Some(spatial) = runtime.dsp_settings.spatial.as_mut() {
-        spatial.mix = mix;
-    }
-    sync_current_session_dsp_settings(runtime);
-    update_runtime_audio_graph(runtime);
-}
-
-fn parse_impulse_response_payload(
-    payload: &serde_json::Value,
-) -> Result<Option<(String, f32)>, String> {
-    match payload {
-        serde_json::Value::Null => Ok(None),
-        serde_json::Value::String(path) => {
-            let path = path.trim();
-            if path.is_empty() {
-                Ok(None)
-            } else {
-                Ok(Some((path.to_string(), DEFAULT_SPATIAL_MIX)))
-            }
-        }
-        serde_json::Value::Object(object) => {
-            let path = object
-                .get("filePath")
-                .and_then(serde_json::Value::as_str)
-                .unwrap_or("")
-                .trim();
-            if path.is_empty() {
-                return Ok(None);
-            }
-            let mix = object
-                .get("mix")
-                .and_then(serde_json::Value::as_f64)
-                .unwrap_or(DEFAULT_SPATIAL_MIX as f64)
-                .clamp(0.0, 1.0) as f32;
-            Ok(Some((path.to_string(), mix)))
-        }
-        _ => Err("invalid impulse response payload".to_string()),
-    }
-}
-
-#[napi]
-pub fn set_impulse_response(payload: serde_json::Value) -> AsyncTask<SetImpulseResponseTask> {
-    AsyncTask::new(SetImpulseResponseTask { payload })
-}
-
-pub struct SetImpulseResponseMixTask {
-    mix: f64,
-}
-
-impl Task for SetImpulseResponseMixTask {
-    type Output = ();
-    type JsValue = ();
-
-    fn compute(&mut self) -> napi::Result<Self::Output> {
-        with_runtime(|runtime| {
-            update_spatial_mix(runtime, self.mix as f32);
-            Ok(())
-        })
-    }
-
-    fn resolve(&mut self, _env: Env, _output: Self::Output) -> napi::Result<Self::JsValue> {
-        Ok(())
-    }
-}
-
-#[napi]
-pub fn set_impulse_response_mix(mix: f64) -> AsyncTask<SetImpulseResponseMixTask> {
-    AsyncTask::new(SetImpulseResponseMixTask { mix })
-}
-
-#[napi]
-pub fn get_audio_graph() -> napi::Result<AudioGraphSnapshot> {
-    with_runtime(|runtime| Ok(runtime.audio_graph.clone()))
-}
-
-pub struct SetAudioGraphParameterTask {
-    patch: AudioGraphParameterPatch,
-}
-
-pub struct SetAudioGraphPlanTask {
-    plan: AudioGraphPlanPatch,
-}
-
-impl Task for SetAudioGraphParameterTask {
-    type Output = ();
-    type JsValue = ();
-
-    fn compute(&mut self) -> napi::Result<Self::Output> {
-        with_runtime(|runtime| apply_audio_graph_parameter_patches(runtime, &[self.patch.clone()]))
-    }
-
-    fn resolve(&mut self, _env: Env, _output: Self::Output) -> napi::Result<Self::JsValue> {
-        Ok(())
-    }
-}
-
-impl Task for SetAudioGraphPlanTask {
-    type Output = ();
-    type JsValue = ();
-
-    fn compute(&mut self) -> napi::Result<Self::Output> {
-        with_runtime(|runtime| apply_audio_graph_plan_patch(runtime, &self.plan))
-    }
-
-    fn resolve(&mut self, _env: Env, _output: Self::Output) -> napi::Result<Self::JsValue> {
-        Ok(())
-    }
-}
-
-struct GraphPatchEffects {
-    changed: bool,
-    tempo_changed: bool,
-    spatial_resource_changed: bool,
-}
-
-#[derive(Clone)]
-struct GraphPlanDraft {
-    dsp_settings: DspSettings,
-    spatial_mix: f32,
-    spatial_file_path: Option<String>,
-}
-
-fn apply_audio_graph_parameter_patches(
-    runtime: &mut PlayerRuntime,
-    patches: &[AudioGraphParameterPatch],
-) -> napi::Result<()> {
-    apply_audio_graph_plan_parts(runtime, None, patches)
-}
-
-fn apply_audio_graph_plan_patch(
-    runtime: &mut PlayerRuntime,
-    plan: &AudioGraphPlanPatch,
-) -> napi::Result<()> {
-    apply_audio_graph_plan_parts(runtime, plan.nodes.as_deref(), &plan.patches)
-}
-
-fn apply_audio_graph_plan_parts(
-    runtime: &mut PlayerRuntime,
-    nodes: Option<&[AudioGraphNodePlanPatch]>,
-    patches: &[AudioGraphParameterPatch],
-) -> napi::Result<()> {
-    if nodes.is_none_or(|nodes| nodes.is_empty()) && patches.is_empty() {
-        return Ok(());
-    }
-    let mut effects = GraphPatchEffects {
-        changed: false,
-        tempo_changed: false,
-        spatial_resource_changed: false,
-    };
-    let mut draft = GraphPlanDraft {
-        dsp_settings: runtime.dsp_settings.clone(),
-        spatial_mix: runtime.spatial_mix,
-        spatial_file_path: runtime.spatial_file_path.clone(),
-    };
-    if let Some(nodes) = nodes {
-        for node in nodes {
-            apply_audio_graph_node_patch_to_draft(&mut draft, node, &mut effects)?;
-        }
-    }
-    for patch in patches {
-        apply_audio_graph_parameter_patch_to_draft(&mut draft, patch, &mut effects)?;
-    }
-    if !effects.changed {
-        return Ok(());
-    }
-    runtime.dsp_settings = draft.dsp_settings;
-    runtime.spatial_mix = draft.spatial_mix;
-    runtime.spatial_file_path = draft.spatial_file_path;
-    if effects.spatial_resource_changed {
-        runtime.spatial_request_seq = runtime.spatial_request_seq.wrapping_add(1);
-    }
-    if effects.tempo_changed {
-        if let Some(session) = runtime.session.as_ref() {
-            session
-                .shared
-                .reset_filter_for_dsp_change(&runtime.dsp_settings);
-            let position = session.shared.position_secs();
-            update_runtime_audio_graph(runtime);
-            emit_runtime_event(runtime, PlayerEvent::time_update(position));
-        } else {
-            update_runtime_audio_graph(runtime);
-        }
-    } else {
-        sync_current_session_dsp_settings(runtime);
-        update_runtime_audio_graph(runtime);
-    }
-    Ok(())
-}
-
-fn apply_audio_graph_node_patch_to_draft(
-    draft: &mut GraphPlanDraft,
-    node: &AudioGraphNodePlanPatch,
-    effects: &mut GraphPatchEffects,
-) -> napi::Result<()> {
-    let Some(enabled) = node.enabled else {
-        return Ok(());
-    };
-    match node.kind.trim() {
-        "equalizer" => {
-            if !enabled
-                && draft
-                    .dsp_settings
-                    .equalizer
-                    .iter()
-                    .any(|gain| gain.abs() >= 0.05)
-            {
-                draft.dsp_settings.equalizer = [0.0; EQ_BAND_COUNT];
-                effects.changed = true;
-            }
-            Ok(())
-        }
-        "normalization" => {
-            if !enabled && draft.dsp_settings.normalization_gain_db.abs() >= 0.01 {
-                draft.dsp_settings.normalization_gain_db = 0.0;
-                effects.changed = true;
-            }
-            Ok(())
-        }
-        "spatial" => {
-            if enabled {
-                if draft.dsp_settings.spatial.is_none() {
-                    return Err(napi::Error::from_reason(
-                        "spatial node requires an impulse response resource".to_string(),
-                    ));
-                }
-                return Ok(());
-            }
-            if draft.dsp_settings.spatial.is_some() || draft.spatial_file_path.is_some() {
-                draft.spatial_file_path = None;
-                draft.dsp_settings.spatial = None;
-                effects.changed = true;
-                effects.spatial_resource_changed = true;
-            }
-            Ok(())
-        }
-        "tempo" => {
-            if !enabled && (draft.dsp_settings.speed - 1.0).abs() >= f32::EPSILON {
-                draft.dsp_settings.speed = 1.0;
-                effects.changed = true;
-                effects.tempo_changed = true;
-            }
-            Ok(())
-        }
-        "format-convert" | "limiter" => {
-            if enabled {
-                return Ok(());
-            }
-            Err(napi::Error::from_reason(format!(
-                "audio graph node '{}' cannot be disabled",
-                node.kind
-            )))
-        }
-        _ => Err(napi::Error::from_reason(format!(
-            "unsupported audio graph node '{}'",
-            node.kind
-        ))),
-    }
-}
-
-fn apply_audio_graph_parameter_patch_to_draft(
-    draft: &mut GraphPlanDraft,
-    patch: &AudioGraphParameterPatch,
-    effects: &mut GraphPatchEffects,
-) -> napi::Result<()> {
-    let kind = patch.kind.trim();
-    let name = patch.name.trim();
-    match kind {
-        "tempo" if name == "speed" => {
-            let speed = tempo::normalize_speed(patch.value);
-            if (draft.dsp_settings.speed - speed).abs() < f32::EPSILON {
-                return Ok(());
-            }
-            draft.dsp_settings.speed = speed;
-            effects.changed = true;
-            effects.tempo_changed = true;
-            Ok(())
-        }
-        "equalizer" => {
-            let index = parse_equalizer_band_name(name)?;
-            let value = patch.value.clamp(-12.0, 12.0) as f32;
-            if (draft.dsp_settings.equalizer[index] - value).abs() < f32::EPSILON {
-                return Ok(());
-            }
-            draft.dsp_settings.equalizer[index] = value;
-            effects.changed = true;
-            Ok(())
-        }
-        "normalization" if name == "gain" => {
-            let value = patch.value.clamp(-24.0, 24.0) as f32;
-            if (draft.dsp_settings.normalization_gain_db - value).abs() < f32::EPSILON {
-                return Ok(());
-            }
-            draft.dsp_settings.normalization_gain_db = value;
-            effects.changed = true;
-            Ok(())
-        }
-        "spatial" if name == "mix" => {
-            let mix = clamp_spatial_mix(patch.value as f32);
-            if (draft.spatial_mix - mix).abs() < f32::EPSILON
-                && draft
-                    .dsp_settings
-                    .spatial
-                    .as_ref()
-                    .is_none_or(|spatial| (spatial.mix - mix).abs() < f32::EPSILON)
-            {
-                return Ok(());
-            }
-            draft.spatial_mix = mix;
-            if let Some(spatial) = draft.dsp_settings.spatial.as_mut() {
-                spatial.mix = mix;
-            }
-            effects.changed = true;
-            Ok(())
-        }
-        _ => Err(napi::Error::from_reason(format!(
-            "unsupported audio graph parameter '{}.{}'",
-            patch.kind, patch.name
-        ))),
-    }
-}
-
-fn parse_equalizer_band_name(name: &str) -> napi::Result<usize> {
-    let Some(suffix) = name.strip_prefix("band") else {
-        return Err(napi::Error::from_reason(format!(
-            "unsupported equalizer parameter '{name}'"
-        )));
-    };
-    let index = suffix
-        .parse::<usize>()
-        .map_err(|_| napi::Error::from_reason(format!("invalid equalizer band '{name}'")))?;
-    if index >= EQ_BAND_COUNT {
-        return Err(napi::Error::from_reason(format!(
-            "equalizer band index out of range: {index}"
-        )));
-    }
-    Ok(index)
-}
-
-#[cfg(test)]
-mod graph_plan_tests {
-    use super::*;
-
-    #[test]
-    fn audio_graph_plan_is_transactional_when_validation_fails() {
-        let mut runtime = PlayerRuntime::new(PlayerConfig::default());
-        runtime.dsp_settings.equalizer[0] = 3.0;
-        runtime.dsp_settings.normalization_gain_db = -4.0;
-        let before_settings = runtime.dsp_settings.clone();
-
-        let plan = AudioGraphPlanPatch {
-            nodes: Some(vec![AudioGraphNodePlanPatch {
-                kind: "equalizer".to_string(),
-                enabled: Some(false),
-            }]),
-            patches: vec![AudioGraphParameterPatch {
-                kind: "equalizer".to_string(),
-                name: "band99".to_string(),
-                value: 6.0,
-            }],
-        };
-
-        let err = apply_audio_graph_plan_patch(&mut runtime, &plan)
-            .expect_err("invalid patch should reject the whole plan");
-
-        assert!(err.reason.contains("equalizer band index out of range"));
-        assert_eq!(runtime.dsp_settings.equalizer, before_settings.equalizer);
-        assert_eq!(
-            runtime.dsp_settings.normalization_gain_db,
-            before_settings.normalization_gain_db
-        );
-        assert_eq!(runtime.audio_graph_revision, 0);
-    }
-
-    #[test]
-    fn audio_graph_plan_commits_nodes_and_parameters_together() {
-        let mut runtime = PlayerRuntime::new(PlayerConfig::default());
-        runtime.dsp_settings.equalizer[0] = 3.0;
-        runtime.dsp_settings.normalization_gain_db = -4.0;
-        runtime.dsp_settings.speed = 1.5;
-        runtime.spatial_file_path = Some("room.wav".to_string());
-        runtime.spatial_request_seq = 7;
-
-        let plan = AudioGraphPlanPatch {
-            nodes: Some(vec![
-                AudioGraphNodePlanPatch {
-                    kind: "equalizer".to_string(),
-                    enabled: Some(false),
-                },
-                AudioGraphNodePlanPatch {
-                    kind: "tempo".to_string(),
-                    enabled: Some(false),
-                },
-                AudioGraphNodePlanPatch {
-                    kind: "spatial".to_string(),
-                    enabled: Some(false),
-                },
-            ]),
-            patches: vec![AudioGraphParameterPatch {
-                kind: "normalization".to_string(),
-                name: "gain".to_string(),
-                value: 2.5,
-            }],
-        };
-
-        apply_audio_graph_plan_patch(&mut runtime, &plan).expect("valid plan should commit");
-
-        assert_eq!(runtime.dsp_settings.equalizer, [0.0; EQ_BAND_COUNT]);
-        assert_eq!(runtime.dsp_settings.speed, 1.0);
-        assert_eq!(runtime.dsp_settings.normalization_gain_db, 2.5);
-        assert!(runtime.spatial_file_path.is_none());
-        assert_eq!(runtime.spatial_request_seq, 8);
-        assert_eq!(runtime.audio_graph_revision, 0);
-    }
-}
-
-#[napi]
-pub fn set_audio_graph_parameter(
-    patch: AudioGraphParameterPatch,
-) -> AsyncTask<SetAudioGraphParameterTask> {
-    AsyncTask::new(SetAudioGraphParameterTask { patch })
-}
-
-#[napi]
-pub fn set_audio_graph_plan(plan: AudioGraphPlanPatch) -> AsyncTask<SetAudioGraphPlanTask> {
-    AsyncTask::new(SetAudioGraphPlanTask { plan })
-}
-
-pub struct SetAudioDeviceTask {
-    device_name: String,
-}
-
-impl Task for SetAudioDeviceTask {
-    type Output = ();
-    type JsValue = ();
-
-    fn compute(&mut self) -> napi::Result<Self::Output> {
-        let config = with_runtime(|runtime| {
-            let mut config = runtime.config.clone();
-            config.set_audio_device(&self.device_name);
-            Ok(config)
-        })?;
-        restart_output_for_config(config)
-    }
-
-    fn resolve(&mut self, _env: Env, _output: Self::Output) -> napi::Result<Self::JsValue> {
-        Ok(())
-    }
-}
-
-#[napi]
-pub fn set_audio_device(device_name: String) -> AsyncTask<SetAudioDeviceTask> {
-    AsyncTask::new(SetAudioDeviceTask { device_name })
-}
-
-pub struct GetAudioDevicesTask;
-
-impl Task for GetAudioDevicesTask {
-    type Output = Vec<AudioDevice>;
-    type JsValue = Vec<AudioDevice>;
-
-    fn compute(&mut self) -> napi::Result<Self::Output> {
-        Ok(device::list_output_devices())
-    }
-
-    fn resolve(&mut self, _env: Env, output: Self::Output) -> napi::Result<Self::JsValue> {
-        Ok(output)
-    }
-}
-
-#[napi]
-pub fn get_audio_devices() -> AsyncTask<GetAudioDevicesTask> {
-    AsyncTask::new(GetAudioDevicesTask)
-}
-
-pub struct SetNormalizationGainTask {
-    gain_db: f64,
-}
-
-impl Task for SetNormalizationGainTask {
-    type Output = ();
-    type JsValue = ();
-
-    fn compute(&mut self) -> napi::Result<Self::Output> {
-        with_runtime(|runtime| {
-            runtime.dsp_settings.normalization_gain_db = self.gain_db.clamp(-24.0, 24.0) as f32;
-            sync_current_session_dsp_settings(runtime);
-            update_runtime_audio_graph(runtime);
-            Ok(())
-        })
-    }
-
-    fn resolve(&mut self, _env: Env, _output: Self::Output) -> napi::Result<Self::JsValue> {
-        Ok(())
-    }
-}
-
-#[napi]
-pub fn set_normalization_gain(gain_db: f64) -> AsyncTask<SetNormalizationGainTask> {
-    AsyncTask::new(SetNormalizationGainTask { gain_db })
-}
-
-pub struct FadeTask {
-    from: f64,
-    to: f64,
-    duration_ms: f64,
-    start_playback: bool,
-    fade_stop: Arc<AtomicBool>,
-}
-
-impl Task for FadeTask {
-    type Output = ();
-    type JsValue = ();
-
-    fn compute(&mut self) -> napi::Result<Self::Output> {
-        let steps = (self.duration_ms / 16.0).ceil().max(1.0) as u32;
-        self.fade_stop.store(false, Ordering::Release);
-        if self.start_playback {
-            set_volume(self.from)?;
-            with_runtime(|runtime| {
-                if let Some(session) = runtime.session.as_ref() {
-                    session.shared.paused.store(false, Ordering::Release);
-                }
-                runtime.state.playing = true;
-                runtime.state.paused = false;
-                emit_runtime_event(runtime, PlayerEvent::state_change(runtime.state.clone()));
-                Ok(())
-            })?;
-        }
-        let first_step = if self.start_playback { 1 } else { 0 };
-        for step in first_step..=steps {
-            if self.fade_stop.load(Ordering::Acquire) {
-                break;
-            }
-            let t = step as f64 / steps as f64;
-            let value = self.from + (self.to - self.from) * t;
-            set_volume(value)?;
-            thread::sleep(Duration::from_millis(16));
-        }
-        Ok(())
-    }
-
-    fn resolve(&mut self, _env: Env, _output: Self::Output) -> napi::Result<Self::JsValue> {
-        Ok(())
-    }
-}
-
-#[napi]
-pub fn fade(from: f64, to: f64, duration_ms: f64) -> AsyncTask<FadeTask> {
-    let fade_stop = RUNTIME
-        .lock()
-        .ok()
-        .and_then(|runtime| runtime.as_ref().map(|runtime| runtime.fade_stop.clone()))
-        .unwrap_or_else(|| Arc::new(AtomicBool::new(false)));
-    AsyncTask::new(FadeTask {
-        from,
-        to,
-        duration_ms,
-        start_playback: false,
-        fade_stop,
-    })
-}
-
-#[napi]
-pub fn cancel_fade() -> napi::Result<()> {
-    with_runtime(|runtime| {
-        runtime.fade_stop.store(true, Ordering::Release);
-        Ok(())
-    })
-}
-
-#[napi]
-pub fn pause_with_fade(saved_volume: f64, duration_ms: f64) -> AsyncTask<FadeTask> {
-    let fade_stop = RUNTIME
-        .lock()
-        .ok()
-        .and_then(|runtime| runtime.as_ref().map(|runtime| runtime.fade_stop.clone()))
-        .unwrap_or_else(|| Arc::new(AtomicBool::new(false)));
-    AsyncTask::new(FadeTask {
-        from: saved_volume,
-        to: 0.0,
-        duration_ms,
-        start_playback: false,
-        fade_stop,
-    })
-}
-
-#[napi]
-pub fn play_with_fade(target_volume: f64, duration_ms: f64) -> AsyncTask<FadeTask> {
-    let fade_stop = RUNTIME
-        .lock()
-        .ok()
-        .and_then(|runtime| runtime.as_ref().map(|runtime| runtime.fade_stop.clone()))
-        .unwrap_or_else(|| Arc::new(AtomicBool::new(false)));
-    AsyncTask::new(FadeTask {
-        from: 0.0,
-        to: target_volume,
-        duration_ms,
-        start_playback: true,
-        fade_stop,
     })
 }
 
@@ -3109,158 +1981,10 @@ pub fn get_state() -> napi::Result<PlayerState> {
     })
 }
 
-pub struct SetExclusiveTask {
-    exclusive: bool,
-}
-
-impl Task for SetExclusiveTask {
-    type Output = ();
-    type JsValue = ();
-
-    fn compute(&mut self) -> napi::Result<Self::Output> {
-        let config = with_runtime(|runtime| {
-            let mut config = runtime.config.clone();
-            config.exclusive_output = self.exclusive;
-            Ok(config)
-        })?;
-        restart_output_for_config(config)
-    }
-
-    fn resolve(&mut self, _env: Env, _output: Self::Output) -> napi::Result<Self::JsValue> {
-        Ok(())
-    }
-}
-
-#[napi]
-pub fn set_exclusive_output(exclusive: bool) -> AsyncTask<SetExclusiveTask> {
-    AsyncTask::new(SetExclusiveTask { exclusive })
-}
-
 #[napi]
 pub fn set_loop_file(loop_file: bool) -> napi::Result<()> {
     with_runtime(|runtime| {
         runtime.loop_file = loop_file;
         Ok(())
     })
-}
-
-#[napi]
-pub fn set_stall_timeout(seconds: f64) -> napi::Result<()> {
-    with_runtime(|runtime| {
-        let timeout = if seconds <= 0.0 {
-            0.0
-        } else {
-            seconds.clamp(1.0, 60.0)
-        };
-        runtime.config.playback_stall_timeout_secs = timeout;
-        if let Some(session) = runtime.session.as_ref() {
-            session.shared.set_stall_timeout(timeout);
-        }
-        Ok(())
-    })
-}
-
-#[napi]
-pub fn set_pause_on_device_disconnect(enabled: bool) -> napi::Result<()> {
-    with_runtime(|runtime| {
-        runtime.pause_on_device_disconnect = enabled;
-        if let Some(session) = runtime.session.as_ref() {
-            session.shared.set_pause_on_device_disconnect(enabled);
-        }
-        Ok(())
-    })
-}
-
-#[napi]
-pub fn set_network_timeout(seconds: f64) -> napi::Result<()> {
-    with_runtime(|runtime| {
-        runtime.config.network_timeout_secs = seconds.clamp(1.0, 300.0);
-        Ok(())
-    })
-}
-
-#[napi]
-pub fn set_http_proxy(proxy: String) -> napi::Result<()> {
-    with_runtime(|runtime| {
-        let trimmed = proxy.trim();
-        runtime.config.http_proxy = (!trimmed.is_empty()).then(|| trimmed.to_string());
-        Ok(())
-    })
-}
-
-#[napi]
-pub fn configure_spectrum(options: Option<SpectrumOptions>) -> napi::Result<SpectrumStatus> {
-    with_runtime(|runtime| {
-        runtime.spectrum_config = SpectrumConfig::from_options(options);
-        runtime.spectrum_analyzer = dsp::SpectrumAnalyzer::new(runtime.spectrum_config.clone());
-        runtime.spectrum_signal_logged = false;
-        Ok(SpectrumStatus {
-            available: true,
-            running: true,
-            reason: None,
-        })
-    })
-}
-
-#[napi]
-pub fn get_spectrum_status() -> napi::Result<SpectrumStatus> {
-    with_runtime(|_| {
-        Ok(SpectrumStatus {
-            available: true,
-            running: true,
-            reason: None,
-        })
-    })
-}
-
-pub struct GetSpectrumSnapshotTask;
-
-impl Task for GetSpectrumSnapshotTask {
-    type Output = Option<SpectrumFrame>;
-    type JsValue = Option<SpectrumFrame>;
-
-    fn compute(&mut self) -> napi::Result<Self::Output> {
-        with_runtime(|runtime| {
-            let Some(session) = runtime.session.as_ref() else {
-                return Ok(None);
-            };
-            let frame = session
-                .shared
-                .spectrum_ring
-                .lock()
-                .map(|ring| {
-                    runtime
-                        .spectrum_analyzer
-                        .analyze(&ring, session.shared.spectrum_sample_rate())
-                })
-                .ok();
-            if let Some(frame) = frame.as_ref() {
-                if !runtime.spectrum_signal_logged && (frame.peak > 0.0 || frame.rms > 0.0) {
-                    runtime.spectrum_signal_logged = true;
-                    emit_runtime_event(
-                        runtime,
-                        PlayerEvent::log(
-                            "info",
-                            format!(
-                                "spectrum signal detected: peak={:.4}, rms={:.4}, bins={}",
-                                frame.peak,
-                                frame.rms,
-                                frame.bins.len()
-                            ),
-                        ),
-                    );
-                }
-            }
-            Ok(frame)
-        })
-    }
-
-    fn resolve(&mut self, _env: Env, output: Self::Output) -> napi::Result<Self::JsValue> {
-        Ok(output)
-    }
-}
-
-#[napi]
-pub fn get_spectrum_snapshot() -> AsyncTask<GetSpectrumSnapshotTask> {
-    AsyncTask::new(GetSpectrumSnapshotTask)
 }

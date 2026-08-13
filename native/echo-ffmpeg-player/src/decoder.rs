@@ -1,7 +1,7 @@
 use crate::events::{PlayerErrorCode, PlayerEvent, TrackInfo};
 use crate::shared::{
-    AudioSampleFormat, DecodedAudioChunk, DecodedAudioData, DecodedAudioFormat, PacketCacheStats,
-    SharedAudio,
+    AudioSampleFormat, DecodedAudioChunk, DecodedAudioData, DecodedAudioFormat,
+    PacketCacheSeekableRange, PacketCacheStats, SharedAudio,
 };
 use crate::stream::{open_stream, ReadSeek, StreamOptions};
 use ffmpeg_audio::{sys, AudioError, AudioReader, PacketCacheOptions, RawAudioData, SeekMode};
@@ -25,6 +25,7 @@ pub struct DecoderData {
     interrupt: Arc<AtomicBool>,
     duration: Option<Duration>,
     pending_playback_restart_position: Option<f64>,
+    seeked_to_end: bool,
     mix_sample_rate: u32,
     source_channels: usize,
     source_sample_format: AudioSampleFormat,
@@ -74,6 +75,7 @@ impl DecoderData {
             interrupt,
             duration,
             pending_playback_restart_position: None,
+            seeked_to_end: false,
             mix_sample_rate,
             source_channels,
             source_sample_format,
@@ -109,8 +111,19 @@ impl DecoderData {
     }
 
     fn seek_and_measure(&mut self, position_secs: f64) -> Result<u128, String> {
-        let target = Duration::from_secs_f64(position_secs.max(0.0));
+        let position_secs = normalize_seek_position(position_secs);
+        let target = Duration::from_secs_f64(position_secs);
         let started = Instant::now();
+        if self
+            .duration
+            .is_some_and(|duration| seek_position_is_at_end(target, duration))
+        {
+            self.seeked_to_end = true;
+            self.pending_playback_restart_position = None;
+            return Ok(started.elapsed().as_millis());
+        }
+
+        self.seeked_to_end = false;
         self.reader
             .seek(target, SeekMode::Accurate)
             .or_else(|accurate_err| {
@@ -123,7 +136,7 @@ impl DecoderData {
                     )
                 })
             })?;
-        self.pending_playback_restart_position = Some(position_secs.max(0.0));
+        self.pending_playback_restart_position = Some(position_secs);
         Ok(started.elapsed().as_millis())
     }
 
@@ -145,21 +158,86 @@ impl DecoderData {
     }
 
     fn is_recoverable_tail_error(&self, err: &AudioError, produced_frames: u64) -> bool {
-        if produced_frames == 0 {
-            return false;
-        }
-        if !matches!(err, AudioError::FFmpeg(code, _) if *code == sys::AVERROR_INVALIDDATA) {
+        let is_invalid_data =
+            matches!(err, AudioError::FFmpeg(code, _) if *code == sys::AVERROR_INVALIDDATA);
+        let is_io_error =
+            matches!(err, AudioError::FFmpeg(code, _) if *code == sys::averror(libc::EIO));
+        if !is_invalid_data && !is_io_error {
             return false;
         }
         let Some(duration) = self.duration else {
             return false;
         };
+        if self
+            .pending_playback_restart_position
+            .is_some_and(|position| seek_position_is_near_end(position, duration))
+        {
+            return true;
+        }
+        if produced_frames == 0 || !is_invalid_data {
+            return false;
+        }
         let Some(position) = self.reader.stream_position() else {
             return false;
         };
         let tail_tolerance = Duration::from_secs_f64(duration.as_secs_f64().mul_add(0.02, 1.0));
         position.saturating_add(tail_tolerance) >= duration
     }
+}
+
+const TERMINAL_SEEK_TOLERANCE: Duration = Duration::from_millis(50);
+const TAIL_SEEK_ERROR_TOLERANCE: Duration = Duration::from_millis(250);
+fn normalize_seek_position(position_secs: f64) -> f64 {
+    if position_secs.is_finite() {
+        position_secs.max(0.0)
+    } else {
+        0.0
+    }
+}
+
+fn seek_position_is_at_end(target: Duration, duration: Duration) -> bool {
+    !duration.is_zero() && target.saturating_add(TERMINAL_SEEK_TOLERANCE) >= duration
+}
+
+fn seek_position_is_near_end(position_secs: f64, duration: Duration) -> bool {
+    if duration.is_zero() {
+        return false;
+    }
+    let target = Duration::from_secs_f64(normalize_seek_position(position_secs));
+    target.saturating_add(TAIL_SEEK_ERROR_TOLERANCE) >= duration
+}
+
+fn await_gapless_decoder<F>(
+    shared: &Arc<SharedAudio>,
+    generation: u64,
+    mut activate: F,
+) -> crate::GaplessDecodeResult
+where
+    F: FnMut() -> crate::GaplessDecodeResult,
+{
+    loop {
+        match activate() {
+            result @ crate::GaplessDecodeResult::Activated(_) => return result,
+            crate::GaplessDecodeResult::NotPrepared => {}
+        }
+        if shared.should_stop_decoding() || !shared.is_decode_generation_current(generation) {
+            return crate::GaplessDecodeResult::NotPrepared;
+        }
+
+        let Some(request_id) = shared.pending_gapless_prepare_request() else {
+            return crate::GaplessDecodeResult::NotPrepared;
+        };
+        shared.wait_for_gapless_prepare_change(request_id);
+    }
+}
+
+fn activate_gapless_at_eof(
+    shared: &Arc<SharedAudio>,
+    generation: u64,
+) -> crate::GaplessDecodeResult {
+    await_gapless_decoder(shared, generation, || {
+        crate::activate_gapless_next_decoder(shared.clone(), generation)
+    })
 }
 
 fn source_sample_format(info: &ffmpeg_audio::SourceAudioInfo) -> AudioSampleFormat {
@@ -318,8 +396,14 @@ fn packet_cache_stats_from_reader(reader: &AudioReader) -> PacketCacheStats {
         forward_secs: stats
             .forward_duration
             .map(|duration| duration.as_secs_f64()),
-        seekable_start_secs: stats.seekable_start.map(|duration| duration.as_secs_f64()),
-        seekable_end_secs: stats.seekable_end.map(|duration| duration.as_secs_f64()),
+        seekable_ranges: stats
+            .seekable_ranges
+            .into_iter()
+            .map(|range| PacketCacheSeekableRange {
+                start_secs: range.start.as_secs_f64(),
+                end_secs: range.end.as_secs_f64(),
+            })
+            .collect(),
         eof: stats.eof,
         pending_seek: stats.pending_seek,
         has_error: stats.has_error,
@@ -333,11 +417,29 @@ pub fn open_decoder(
     packet_cache: PacketCacheOptions,
     stream_options: &StreamOptions,
 ) -> Result<DecoderData, String> {
-    DecoderData::open(
+    open_decoder_with_interrupt(
         url,
         audio_stream_ordinal,
         mix_sample_rate,
         Arc::new(AtomicBool::new(false)),
+        packet_cache,
+        stream_options,
+    )
+}
+
+pub fn open_decoder_with_interrupt(
+    url: String,
+    audio_stream_ordinal: Option<usize>,
+    mix_sample_rate: Option<u32>,
+    interrupt: Arc<AtomicBool>,
+    packet_cache: PacketCacheOptions,
+    stream_options: &StreamOptions,
+) -> Result<DecoderData, String> {
+    DecoderData::open(
+        url,
+        audio_stream_ordinal,
+        mix_sample_rate,
+        interrupt,
         packet_cache,
         stream_options,
     )
@@ -397,7 +499,12 @@ fn decode_worker_loop(
                 None => return (!shared.stop.load(Ordering::Acquire)).then_some(data),
             }
         }
-        match data.reader.receive_frame() {
+        let decode_result = if data.seeked_to_end {
+            Ok(None)
+        } else {
+            data.reader.receive_frame()
+        };
+        match decode_result {
             Ok(Some(frame)) => match decoded_chunk_from_frame(&frame) {
                 Ok(chunk) => {
                     data.publish_packet_cache_stats(&shared);
@@ -457,7 +564,7 @@ fn decode_worker_loop(
                 if !shared.is_decode_generation_current(generation) {
                     continue;
                 }
-                match crate::activate_gapless_next_decoder(shared.clone(), generation) {
+                match activate_gapless_at_eof(&shared, generation) {
                     crate::GaplessDecodeResult::Activated(decoder) => {
                         if let Some(decoder) = decoder {
                             data = decoder;
@@ -466,8 +573,16 @@ fn decode_worker_loop(
                         }
                         return None;
                     }
-                    crate::GaplessDecodeResult::NotPrepared => {}
+                    crate::GaplessDecodeResult::NotPrepared => {
+                        if shared.should_stop_decoding() {
+                            return (!shared.stop.load(Ordering::Acquire)).then_some(data);
+                        }
+                        if !shared.is_decode_generation_current(generation) {
+                            continue;
+                        }
+                    }
                 }
+                data.pending_playback_restart_position = None;
                 shared.mark_decoded_eof();
                 return Some(data);
             }
@@ -484,7 +599,7 @@ fn decode_worker_loop(
                     if !shared.is_decode_generation_current(generation) {
                         continue;
                     }
-                    match crate::activate_gapless_next_decoder(shared.clone(), generation) {
+                    match activate_gapless_at_eof(&shared, generation) {
                         crate::GaplessDecodeResult::Activated(decoder) => {
                             if let Some(decoder) = decoder {
                                 data = decoder;
@@ -492,8 +607,16 @@ fn decode_worker_loop(
                             }
                             return None;
                         }
-                        crate::GaplessDecodeResult::NotPrepared => {}
+                        crate::GaplessDecodeResult::NotPrepared => {
+                            if shared.should_stop_decoding() {
+                                return (!shared.stop.load(Ordering::Acquire)).then_some(data);
+                            }
+                            if !shared.is_decode_generation_current(generation) {
+                                continue;
+                            }
+                        }
                     }
+                    data.pending_playback_restart_position = None;
                     shared.mark_decoded_eof();
                     return Some(data);
                 }
@@ -576,13 +699,14 @@ fn handle_decode_command(
             data.interrupt.store(false, Ordering::Release);
             let result = data.seek_and_measure(position_secs);
             let generation_current = shared.is_decode_generation_current(generation);
+            let seek_succeeded = result.is_ok();
             if let Ok(elapsed_ms) = result.as_ref() {
                 if generation_current {
                     log_seek_elapsed(position_secs, *elapsed_ms);
                 }
             }
             let _ = reply.send(result.map(|_| ()));
-            if generation_current {
+            if generation_current && seek_succeeded {
                 DecodeCommandResult::Continue(generation)
             } else {
                 DecodeCommandResult::Ignored
@@ -620,6 +744,150 @@ pub fn audio_stream_ordinal_from_track_id(track_id: i64) -> Option<usize> {
         None
     } else {
         Some((track_id - 1) as usize)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn seek_target_at_duration_is_terminal() {
+        let duration = Duration::from_secs(180);
+
+        assert!(seek_position_is_at_end(duration, duration));
+        assert!(seek_position_is_at_end(
+            duration - Duration::from_millis(25),
+            duration
+        ));
+        assert!(!seek_position_is_at_end(
+            duration - Duration::from_millis(100),
+            duration
+        ));
+        assert!(!seek_position_is_at_end(Duration::ZERO, Duration::ZERO));
+    }
+
+    #[test]
+    fn seek_tail_error_tolerance_is_narrower_than_normal_playback_tail() {
+        let duration = Duration::from_secs(180);
+
+        assert!(seek_position_is_near_end(179.8, duration));
+        assert!(!seek_position_is_near_end(179.0, duration));
+    }
+
+    #[test]
+    fn non_finite_seek_positions_normalize_to_start() {
+        assert_eq!(normalize_seek_position(f64::NAN), 0.0);
+        assert_eq!(normalize_seek_position(f64::INFINITY), 0.0);
+        assert_eq!(normalize_seek_position(-1.0), 0.0);
+    }
+
+    #[test]
+    fn decoder_seek_to_known_duration_enters_terminal_state_without_demux_seek() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("vendor/ffmpeg-audio/crates/ffmpeg_audio/tests/assets/seek_test.aac");
+        let mut decoder = DecoderData::open(
+            path.to_string_lossy().into_owned(),
+            None,
+            None,
+            Arc::new(AtomicBool::new(false)),
+            PacketCacheOptions::default(),
+            &StreamOptions::default(),
+        )
+        .expect("fixture decoder should open");
+        let duration = decoder.duration_secs();
+        assert!(duration > 0.0);
+
+        decoder
+            .seek(duration)
+            .expect("terminal seek should not reach the demuxer EOF");
+
+        assert!(decoder.seeked_to_end);
+        assert!(decoder.pending_playback_restart_position.is_none());
+    }
+
+    #[test]
+    fn eof_waits_for_registered_gapless_prepare_completion() {
+        let shared = Arc::new(SharedAudio::new(
+            crate::shared::MixFormat::stereo_f32(48_000),
+            0.2,
+            8.0,
+            &crate::effects::DspSettings::default(),
+        ));
+        let ready = Arc::new(AtomicBool::new(false));
+        let request_id = shared.begin_gapless_prepare();
+        let waiter_shared = shared.clone();
+        let waiter_ready = ready.clone();
+        let (waiting_tx, waiting_rx) = sync_channel(1);
+        let waiter = thread::spawn(move || {
+            let mut reported_wait = false;
+            await_gapless_decoder(&waiter_shared, 0, || {
+                if waiter_ready.load(Ordering::Acquire) {
+                    crate::GaplessDecodeResult::Activated(None)
+                } else {
+                    if !reported_wait {
+                        reported_wait = true;
+                        let _ = waiting_tx.send(());
+                    }
+                    crate::GaplessDecodeResult::NotPrepared
+                }
+            })
+        });
+
+        waiting_rx.recv().unwrap();
+        ready.store(true, Ordering::Release);
+        shared.finish_gapless_prepare(request_id);
+        let result = waiter.join().unwrap();
+        assert!(matches!(
+            result,
+            crate::GaplessDecodeResult::Activated(None)
+        ));
+    }
+
+    #[test]
+    fn eof_does_not_wait_without_registered_gapless_prepare() {
+        let shared = Arc::new(SharedAudio::new(
+            crate::shared::MixFormat::stereo_f32(48_000),
+            0.2,
+            8.0,
+            &crate::effects::DspSettings::default(),
+        ));
+        let result = await_gapless_decoder(&shared, 0, || crate::GaplessDecodeResult::NotPrepared);
+
+        assert!(matches!(result, crate::GaplessDecodeResult::NotPrepared));
+    }
+
+    #[test]
+    fn eof_gapless_wait_stops_when_decode_generation_changes() {
+        let settings = crate::effects::DspSettings::default();
+        let shared = Arc::new(SharedAudio::new(
+            crate::shared::MixFormat::stereo_f32(48_000),
+            0.2,
+            8.0,
+            &settings,
+        ));
+        let epoch = shared.begin_gapless_prepare();
+        let reset_shared = shared.clone();
+        let reset_settings = settings.clone();
+        let (waiting_tx, waiting_rx) = sync_channel(1);
+        let waiter_shared = shared.clone();
+        let waiter = thread::spawn(move || {
+            let mut reported_wait = false;
+            await_gapless_decoder(&waiter_shared, 0, || {
+                if !reported_wait {
+                    reported_wait = true;
+                    let _ = waiting_tx.send(());
+                }
+                crate::GaplessDecodeResult::NotPrepared
+            })
+        });
+
+        waiting_rx.recv().unwrap();
+        reset_shared.reset_for_decode_resume(1.0, &reset_settings);
+        let result = waiter.join().unwrap();
+        shared.finish_gapless_prepare(epoch);
+        assert!(matches!(result, crate::GaplessDecodeResult::NotPrepared));
+        assert_eq!(shared.current_decode_generation(), 1);
     }
 }
 

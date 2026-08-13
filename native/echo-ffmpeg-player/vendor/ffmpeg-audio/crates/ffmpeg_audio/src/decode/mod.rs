@@ -2,15 +2,14 @@ mod decoder;
 mod demuxer;
 mod engine;
 pub mod io;
+mod packet_cache;
 
 pub(crate) use decoder::Decoder;
-pub(crate) use demuxer::{
-    Demuxer,
-    PacketCache,
-};
-pub use demuxer::{PacketCacheOptions, PacketCacheStats};
+pub(crate) use demuxer::Demuxer;
 pub(crate) use engine::DecodeEngine;
 pub use engine::ScanMode;
+pub(crate) use packet_cache::PacketCache;
+pub use packet_cache::{PacketCacheOptions, PacketCacheSeekableRange, PacketCacheStats};
 
 /// Specifies the precision mode used during stream seeking operations.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]

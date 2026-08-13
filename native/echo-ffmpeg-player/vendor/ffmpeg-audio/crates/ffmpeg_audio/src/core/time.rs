@@ -1,8 +1,4 @@
-use crate::{
-    AudioError,
-    Result,
-    sys,
-};
+use crate::{AudioError, Result, sys};
 
 /// The time base of an audio stream.
 ///

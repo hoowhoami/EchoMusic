@@ -1,11 +1,6 @@
 use std::ptr;
 
-use crate::{
-    AudioError,
-    FfErrorExt as _,
-    Result,
-    sys,
-};
+use crate::{AudioError, FfErrorExt as _, Result, sys};
 
 pub struct Decoder {
     ctx: *mut sys::AVCodecContext,

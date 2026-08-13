@@ -1,9 +1,4 @@
-use std::io::{
-    self,
-    Read,
-    Seek,
-    SeekFrom,
-};
+use std::io::{self, Read, Seek, SeekFrom};
 
 unsafe extern "C" {
     /// Read data from a local file
