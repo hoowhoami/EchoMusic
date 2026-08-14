@@ -100,6 +100,8 @@ import cloudDownload from '@iconify/icons-tabler/cloud-download';
 import loader2 from '@iconify/icons-tabler/loader-2';
 import share from '@iconify/icons-tabler/share';
 import shoppingBag from '@iconify/icons-tabler/shopping-bag';
+import brandQq from '@iconify/icons-tabler/brand-qq';
+import brandWechat from '@iconify/icons-tabler/brand-wechat';
 
 export const iconChevronDown = chevronDown as IconifyIcon;
 export const iconChevronUp = chevronUp as IconifyIcon;
@@ -185,6 +187,8 @@ export const iconLock = lock as IconifyIcon;
 export const iconLockOpen = lockOpen as IconifyIcon;
 export const iconPlaylistAdd = textPlus as IconifyIcon;
 export const iconMicrophone = microphone as IconifyIcon;
+export const iconBrandQq = brandQq as IconifyIcon;
+export const iconBrandWechat = brandWechat as IconifyIcon;
 export const iconPanelLeft = layoutSidebarLeftCollapse as IconifyIcon;
 export const iconArrowBarToDown = arrowBarToDown as IconifyIcon;
 export const iconArrowBarDown = arrowBarDown as IconifyIcon;

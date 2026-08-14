@@ -5,7 +5,7 @@ import { createRequire } from 'node:module';
 import path from 'path';
 import log from '../logger';
 import { refreshNetworkSettingsFromStorage } from '../networkSettings';
-import { getKvStorage } from '../storage/kv';
+import { getPersistedRendererSettings } from '../storage/persistedStores';
 import type { NetworkSettings } from '../../shared/network';
 import type { ImpulseResponsePlaybackOptions } from '../../shared/audio';
 import type { PlayerErrorCode, PlayerErrorPayload } from '../../shared/player-error';
@@ -15,7 +15,6 @@ import type {
   PlayerAudioGraphSnapshot,
 } from '../../shared/player-audio-graph';
 
-const PINIA_SETTING_KEY = 'pinia:setting';
 const DEFAULT_AUDIO_OUTPUT_BUFFER_SECS = 0.2;
 const DEFAULT_AUDIO_SAMPLERATE = 'auto';
 const DEFAULT_AUDIO_CHANNELS = 'auto-safe';
@@ -56,7 +55,7 @@ const readString = (value: unknown, fallback: string): string => {
 };
 
 const getPersistedNativeAudioConfig = () => {
-  const saved = getKvStorage().get<Record<string, unknown>>(PINIA_SETTING_KEY);
+  const saved = getPersistedRendererSettings();
   const demuxerReadaheadSecs = readClampedNumber(
     saved?.demuxerReadaheadSecs,
     DEFAULT_DEMUXER_READAHEAD_SECS,

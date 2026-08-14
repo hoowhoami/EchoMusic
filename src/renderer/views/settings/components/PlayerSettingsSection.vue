@@ -408,7 +408,7 @@ const updatePlayerNetworkTimeout = (value: string | number) => {
       <div class="space-y-1">
         <h3 class="font-semibold">酷狗 API 代理</h3>
         <p class="text-sm text-text-secondary">
-          用于歌曲地址、歌词和推荐等接口，支持 HTTP/HTTPS 代理
+          用于歌曲地址、歌词和推荐等接口，支持 HTTP/HTTPS 代理；留空时跟随系统代理
         </p>
       </div>
       <Input

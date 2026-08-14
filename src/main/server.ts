@@ -5,7 +5,7 @@ import path from 'path';
 import { app } from 'electron';
 import log from './logger';
 import { applyKugouApiNetworkSettings, refreshNetworkSettingsFromStorage } from './networkSettings';
-import { getKvStorage } from './storage/kv';
+import { getPersistedDeviceInfo, mergePersistedDeviceInfo } from './storage/persistedStores';
 
 // --- 类型定义 ---
 
@@ -145,12 +145,10 @@ export async function initApiServer(): Promise<void> {
 
   // 尝试从持久化存储读取设备标识（来自 deviceStore）
   try {
-    const deviceStoreData = getKvStorage().get<{ info?: { guid?: string; mac?: string } }>(
-      'pinia:device',
-    );
-    if (deviceStoreData?.info) {
-      if (deviceStoreData.info.guid) process.env.KUGOU_API_GUID = deviceStoreData.info.guid;
-      if (deviceStoreData.info.mac) process.env.KUGOU_API_MAC = deviceStoreData.info.mac;
+    const deviceInfo = getPersistedDeviceInfo();
+    if (deviceInfo) {
+      if (deviceInfo.guid) process.env.KUGOU_API_GUID = deviceInfo.guid;
+      if (deviceInfo.mac) process.env.KUGOU_API_MAC = deviceInfo.mac;
       log.info('[IPC-Server] Loaded persisted device identity from deviceStore');
     }
   } catch {
@@ -182,17 +180,11 @@ export async function initApiServer(): Promise<void> {
 
   // 将生成的设备标识回写到 KV，确保后续启动能复用同一身份
   try {
-    const kv = getKvStorage();
-    const existing = kv.get<Record<string, any>>('pinia:device') || {};
-    kv.set('pinia:device', {
-      ...existing,
-      info: {
-        ...(existing.info || {}),
-        guid,
-        mid,
-        serverDev: SERVER_DEV,
-        mac: (process.env.KUGOU_API_MAC || '02:00:00:00:00:00').toUpperCase(),
-      },
+    mergePersistedDeviceInfo({
+      guid,
+      mid,
+      serverDev: SERVER_DEV,
+      mac: (process.env.KUGOU_API_MAC || '02:00:00:00:00:00').toUpperCase(),
     });
   } catch {
     // 写入失败不影响运行
@@ -277,6 +269,40 @@ const toBufferIfBinary = (data: any): any => {
   return data;
 };
 
+const serializeModuleErrorBody = (body: any): any => {
+  if (!body || typeof body !== 'object' || Array.isArray(body) || Buffer.isBuffer(body))
+    return body;
+
+  const record = body as Record<string, unknown>;
+  let serialized: Record<string, unknown> | null = null;
+  let networkErrorCode: unknown;
+  for (const key of ['msg', 'error'] as const) {
+    const value = record[key];
+    if (!value || typeof value !== 'object') continue;
+
+    const error = value as {
+      name?: unknown;
+      message?: unknown;
+      code?: unknown;
+      cause?: { message?: unknown; code?: unknown };
+    };
+    const messageParts = [error.message, error.cause?.message]
+      .filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+      .filter((item, index, items) => items.indexOf(item) === index);
+    if (messageParts.length === 0) continue;
+
+    serialized ??= { ...record };
+    serialized[key] = messageParts.join(': ');
+    networkErrorCode ??= error.code ?? error.cause?.code;
+  }
+
+  if (!serialized) return body;
+  if (networkErrorCode != null && !('network_error_code' in record)) {
+    serialized.network_error_code = String(networkErrorCode);
+  }
+  return serialized;
+};
+
 /**
  * 处理 API 请求（核心路由分发逻辑）
  * 复现 server/server.js 中 Express 路由处理器的逻辑
@@ -359,7 +385,7 @@ export const handleApiRequest = async (request: ApiRequest): Promise<ApiResponse
 
     return {
       status: moduleResponse.status || 502,
-      body: moduleResponse.body,
+      body: serializeModuleErrorBody(moduleResponse.body),
       cookie: moduleResponse.cookie,
       headers: moduleResponse.headers,
     };

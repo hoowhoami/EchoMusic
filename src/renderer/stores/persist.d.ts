@@ -9,4 +9,8 @@ declare module 'pinia' {
           omit?: string[];
         };
   }
+
+  export interface PiniaCustomProperties {
+    $clearPersistedState: () => Promise<void>;
+  }
 }

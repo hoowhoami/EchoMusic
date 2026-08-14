@@ -13,6 +13,9 @@ import {
   createWxLogin,
   checkWxLogin,
   loginByOpenPlat,
+  createQqLoginQr,
+  checkQqLoginQr,
+  type QqLoginQrSession,
 } from '@/api/user';
 import {
   cancelKugouVerification,
@@ -34,7 +37,8 @@ import OverlayHeader from '@/layouts/OverlayHeader.vue';
 import Avatar from '@/components/ui/Avatar.vue';
 import Image from '@/components/ui/Image.vue';
 import {
-  iconBotMessageSquare,
+  iconBrandQq,
+  iconBrandWechat,
   iconCheck,
   iconChevronLeft,
   iconInfo,
@@ -47,8 +51,30 @@ import {
 const router = useRouter();
 const userStore = useUserStore();
 
-// 当前选中的 Tab (0: 扫码, 1: 验证码, 2: 微信, 3: 账号)
-const activeTab = ref('0');
+type LoginMethod = 'kugou' | 'sms' | 'account' | 'qq' | 'wechat';
+
+const activeMethod = ref<LoginMethod>('kugou');
+
+const loginMethods = [
+  { value: 'kugou', label: '酷狗', icon: iconQrCode, tone: 'primary' },
+  { value: 'sms', label: '验证码', icon: iconSmartphone, tone: 'primary' },
+  { value: 'account', label: '账号', icon: iconUser, tone: 'primary' },
+  { value: 'qq', label: 'QQ', icon: iconBrandQq, tone: 'qq' },
+  { value: 'wechat', label: '微信', icon: iconBrandWechat, tone: 'wechat' },
+] as const satisfies ReadonlyArray<{
+  value: LoginMethod;
+  label: string;
+  icon: typeof iconQrCode;
+  tone: 'primary' | 'qq' | 'wechat';
+}>;
+
+let qrSessionVersion = 0;
+let isLoginDone = userStore.isLoggedIn;
+
+const invalidateQrSession = () => ++qrSessionVersion;
+const isQrSessionActive = (version: number, method: LoginMethod) =>
+  !isLoginDone && version === qrSessionVersion && activeMethod.value === method;
+const waitForNextPoll = () => new Promise<void>((resolve) => window.setTimeout(resolve, 3000));
 
 const closeLoginPage = async () => {
   if (kugouVerificationState.status === 'awaiting-login') {
@@ -57,17 +83,30 @@ const closeLoginPage = async () => {
   await closeTransientView(router, { query: router.currentRoute.value.query });
 };
 
+const getApiErrorBody = (error: unknown): unknown => {
+  if (!error || typeof error !== 'object') return null;
+  const response = (error as { response?: { body?: unknown } }).response;
+  return response?.body ?? null;
+};
+
+const getApiErrorMessage = (error: unknown, fallback: string): string => {
+  const body = getApiErrorBody(error);
+  if (!body || typeof body !== 'object') return fallback;
+  const record = body as Record<string, unknown>;
+  const message = record.error || record.message || record.msg;
+  return typeof message === 'string' && message.trim() ? message : fallback;
+};
+
 // --- 酷狗扫码逻辑 ---
 const qrKey = ref<string | undefined>(undefined);
 const qrUrl = ref<string | undefined>(undefined);
 const qrStatus = ref(1);
 const isLoadingQr = ref(false);
 const qrError = ref('');
-let isPollingQr = false;
-let isLoginDone = false;
 
 const completeLogin = (data: Record<string, unknown>) => {
   isLoginDone = true;
+  invalidateQrSession();
   userStore.handleLoginSuccess(data);
   completeKugouLoginVerification();
 
@@ -75,68 +114,71 @@ const completeLogin = (data: Record<string, unknown>) => {
 };
 
 const loadQrCode = async () => {
-  if (activeTab.value !== '0' || isLoginDone) return;
+  if (activeMethod.value !== 'kugou' || isLoginDone) return;
+  const sessionVersion = invalidateQrSession();
   isLoadingQr.value = true;
   qrUrl.value = undefined;
+  qrKey.value = undefined;
+  qrStatus.value = 1;
   qrError.value = '';
-  isPollingQr = false;
   try {
     const keyRes: any = await getLoginQrKey();
+    if (!isQrSessionActive(sessionVersion, 'kugou')) return;
     const currentKey = keyRes?.data?.qrcode || keyRes?.data?.key;
     if (keyRes?.status === 1 && currentKey) {
       qrKey.value = currentKey;
-      qrStatus.value = 1;
       if (keyRes.data.qrcode_img) {
         qrUrl.value = keyRes.data.qrcode_img;
-        startCheckStatus();
       } else {
         const createRes: any = await createLoginQr(qrKey.value!);
+        if (!isQrSessionActive(sessionVersion, 'kugou')) return;
         if (createRes?.status === 1 && createRes?.data?.qrcode_img) {
           qrUrl.value = createRes.data.qrcode_img;
-          startCheckStatus();
         }
       }
     }
+    if (!qrKey.value || !qrUrl.value) {
+      throw new Error('Kugou QR response is incomplete');
+    }
+    void startCheckStatus(sessionVersion);
   } catch (e) {
+    if (!isQrSessionActive(sessionVersion, 'kugou')) return;
     logger.error('Login', 'Load QR Error:', e);
-    qrError.value = '二维码加载失败，请稍后重试';
+    qrError.value = getApiErrorMessage(e, '二维码加载失败，请稍后重试');
     qrStatus.value = 0;
   } finally {
-    isLoadingQr.value = false;
+    if (sessionVersion === qrSessionVersion) isLoadingQr.value = false;
   }
 };
 
-const startCheckStatus = async () => {
-  if (isPollingQr || isLoginDone || activeTab.value !== '0') return;
-  isPollingQr = true;
+const startCheckStatus = async (sessionVersion: number) => {
+  if (!qrKey.value || !isQrSessionActive(sessionVersion, 'kugou')) return;
   logger.info('Login', 'Starting Kugou QR polling...');
 
-  while (isPollingQr && qrKey.value && activeTab.value === '0') {
+  while (qrKey.value && isQrSessionActive(sessionVersion, 'kugou')) {
     try {
       const res: any = await checkLoginQr(qrKey.value);
-      if (!isPollingQr || activeTab.value !== '0') break;
+      if (!isQrSessionActive(sessionVersion, 'kugou')) break;
 
       if (res) {
         const status = res.data?.status ?? res.status;
         qrStatus.value = status;
         if (status === 4 && res.data) {
-          isPollingQr = false;
           completeLogin(res.data);
           break;
         } else if (status === 0) {
-          isPollingQr = false;
           break;
         }
       }
     } catch (e) {
+      if (!isQrSessionActive(sessionVersion, 'kugou')) break;
       logger.error('Login', 'Check QR Status Error:', e);
-      qrError.value = '扫码状态检查失败，请稍后重试';
+      qrError.value = getApiErrorMessage(e, '扫码状态检查失败，请稍后重试');
       qrStatus.value = 0;
       break;
     }
-    await new Promise((resolve) => setTimeout(resolve, 3000));
+    await waitForNextPoll();
   }
-  isPollingQr = false;
   logger.info('Login', 'Kugou QR polling stopped.');
 };
 
@@ -209,12 +251,6 @@ const resolveSmsLoginResponse = (res: any): boolean => {
 
   smsData.error = res.error || res.message || res.msg || '登录失败，请稍后重试';
   return false;
-};
-
-const getApiErrorBody = (error: unknown): unknown => {
-  if (!error || typeof error !== 'object') return null;
-  const response = (error as { response?: { body?: unknown } }).response;
-  return response?.body ?? null;
 };
 
 const startCountdown = () => {
@@ -336,6 +372,122 @@ const handleAccountLogin = async () => {
   }
 };
 
+// --- QQ 扫码逻辑 ---
+type QqQrStatus = 'idle' | 'waiting' | 'scanned' | 'expired' | 'error';
+
+const qqQr = reactive({
+  url: '',
+  session: null as QqLoginQrSession | null,
+  status: 'idle' as QqQrStatus,
+  message: '',
+  isLoading: false,
+  error: '',
+});
+
+const parseQqQrSession = (response: unknown): QqLoginQrSession | null => {
+  if (!response || typeof response !== 'object') return null;
+  const record = response as Record<string, unknown>;
+  const stringFields = [
+    'cookie',
+    'qrsig',
+    'pt_login_sig',
+    'pt_openlogin_data',
+    'xlogin_url',
+  ] as const;
+  if (stringFields.some((field) => typeof record[field] !== 'string' || !record[field]))
+    return null;
+  if (
+    (typeof record.ptqrtoken !== 'string' && typeof record.ptqrtoken !== 'number') ||
+    !String(record.ptqrtoken)
+  ) {
+    return null;
+  }
+  return {
+    cookie: record.cookie as string,
+    qrsig: record.qrsig as string,
+    ptqrtoken: record.ptqrtoken as string | number,
+    pt_login_sig: record.pt_login_sig as string,
+    pt_openlogin_data: record.pt_openlogin_data as string,
+    xlogin_url: record.xlogin_url as string,
+  };
+};
+
+const loadQqQr = async () => {
+  if (activeMethod.value !== 'qq' || isLoginDone) return;
+  const sessionVersion = invalidateQrSession();
+  qqQr.isLoading = true;
+  qqQr.url = '';
+  qqQr.session = null;
+  qqQr.status = 'idle';
+  qqQr.message = '';
+  qqQr.error = '';
+
+  try {
+    const response: any = await createQqLoginQr();
+    if (!isQrSessionActive(sessionVersion, 'qq')) return;
+    const session = parseQqQrSession(response);
+    const qrcode = typeof response?.qrcode === 'string' ? response.qrcode : '';
+    if (!session || !qrcode) throw new Error('QQ QR response is incomplete');
+
+    qqQr.session = session;
+    qqQr.url = qrcode.startsWith('data:') ? qrcode : `data:image/png;base64,${qrcode}`;
+    qqQr.status = 'waiting';
+    qqQr.message = '等待 QQ 扫码';
+    void startCheckQqStatus(sessionVersion);
+  } catch (e) {
+    if (!isQrSessionActive(sessionVersion, 'qq')) return;
+    logger.error('Login', 'Load QQ QR Error:', e);
+    qqQr.error = getApiErrorMessage(e, 'QQ 二维码加载失败，请稍后重试');
+    qqQr.status = 'error';
+  } finally {
+    if (sessionVersion === qrSessionVersion) qqQr.isLoading = false;
+  }
+};
+
+const startCheckQqStatus = async (sessionVersion: number) => {
+  const session = qqQr.session;
+  if (!session || !isQrSessionActive(sessionVersion, 'qq')) return;
+  logger.info('Login', 'Starting QQ QR polling...');
+
+  while (isQrSessionActive(sessionVersion, 'qq')) {
+    try {
+      const response: any = await checkQqLoginQr(session);
+      if (!isQrSessionActive(sessionVersion, 'qq')) break;
+
+      if (Number(response?.status) === 1 && response?.data?.token) {
+        completeLogin(response.data);
+        break;
+      }
+
+      const status = String(response?.status ?? '');
+      const message = typeof response?.msg === 'string' ? response.msg : '';
+      if (status === 'wait' || status === '66') {
+        qqQr.status = 'waiting';
+        qqQr.message = message || '等待 QQ 扫码';
+      } else if (status === '67') {
+        qqQr.status = 'scanned';
+        qqQr.message = message || '已扫码，请在 QQ 中确认';
+      } else if (status === 'expired' || status === '65') {
+        qqQr.status = 'expired';
+        qqQr.message = message || '二维码已过期';
+        break;
+      } else {
+        qqQr.status = 'error';
+        qqQr.error = message || 'QQ 扫码状态异常，请重新加载';
+        break;
+      }
+    } catch (e) {
+      if (!isQrSessionActive(sessionVersion, 'qq')) break;
+      logger.error('Login', 'Check QQ QR Status Error:', e);
+      qqQr.error = getApiErrorMessage(e, 'QQ 登录状态检查失败，请稍后重试');
+      qqQr.status = 'error';
+      break;
+    }
+    await waitForNextPoll();
+  }
+  logger.info('Login', 'QQ QR polling stopped.');
+};
+
 // --- 微信扫码逻辑 ---
 const wxQr = reactive({
   url: '',
@@ -344,17 +496,18 @@ const wxQr = reactive({
   isLoading: false,
   error: '',
 });
-let isPollingWx = false;
 
 const loadWxQr = async () => {
-  if (activeTab.value !== '2' || isLoginDone) return;
+  if (activeMethod.value !== 'wechat' || isLoginDone) return;
+  const sessionVersion = invalidateQrSession();
   wxQr.isLoading = true;
   wxQr.url = '';
+  wxQr.uuid = '';
   wxQr.status = 0;
   wxQr.error = '';
-  isPollingWx = false;
   try {
     const res: any = await createWxLogin();
+    if (!isQrSessionActive(sessionVersion, 'wechat')) return;
     if (res?.uuid) {
       wxQr.uuid = res.uuid;
       const base64 = res.qrcode?.qrcodebase64;
@@ -363,79 +516,107 @@ const loadWxQr = async () => {
       } else {
         wxQr.url = res.qrcode?.qrcodeurl || '';
       }
-      startCheckWxStatus();
     }
+    if (!wxQr.uuid || !wxQr.url) throw new Error('WeChat QR response is incomplete');
+    void startCheckWxStatus(sessionVersion);
   } catch (e) {
+    if (!isQrSessionActive(sessionVersion, 'wechat')) return;
     logger.error('Login', 'Load Wx QR Error:', e);
-    wxQr.error = '微信二维码加载失败，请稍后重试';
+    wxQr.error = getApiErrorMessage(e, '微信二维码加载失败，请稍后重试');
     wxQr.status = 3;
   } finally {
-    wxQr.isLoading = false;
+    if (sessionVersion === qrSessionVersion) wxQr.isLoading = false;
   }
 };
 
-const startCheckWxStatus = async () => {
-  if (isPollingWx || isLoginDone || activeTab.value !== '2') return;
-  isPollingWx = true;
+const startCheckWxStatus = async (sessionVersion: number) => {
+  if (!wxQr.uuid || !isQrSessionActive(sessionVersion, 'wechat')) return;
   logger.info('Login', 'Starting WeChat polling...');
 
-  while (isPollingWx && wxQr.uuid && activeTab.value === '2') {
+  while (wxQr.uuid && isQrSessionActive(sessionVersion, 'wechat')) {
     try {
-      // 这里的 checkWxLogin 内部可能需要针对长轮询调大 axios 的 timeout
       const res: any = await checkWxLogin(wxQr.uuid, Date.now());
-      if (!isPollingWx || activeTab.value !== '2') break;
+      if (!isQrSessionActive(sessionVersion, 'wechat')) break;
       if (res) {
         const code = res.wx_errcode || res.status;
         if (code === 405) {
-          isPollingWx = false;
           const wxCode = res.wx_code;
           if (wxCode) {
             const loginRes: any = await loginByOpenPlat(wxCode);
+            if (!isQrSessionActive(sessionVersion, 'wechat')) break;
             if (loginRes?.status === 1 || loginRes?.code === 200) {
               completeLogin(loginRes.data || loginRes.body?.data || loginRes);
+            } else {
+              wxQr.error = loginRes?.msg || loginRes?.message || '微信登录失败，请重试';
+              wxQr.status = 3;
             }
+          } else {
+            wxQr.error = '微信授权信息缺失，请重试';
+            wxQr.status = 3;
           }
           break;
         } else if (code === 404) {
           wxQr.status = 1;
         } else if (code === 403 || code === 402) {
           wxQr.status = 3;
-          isPollingWx = false;
           break;
         } else if (code === 408) {
           wxQr.status = 0;
         }
       }
     } catch (e) {
+      if (!isQrSessionActive(sessionVersion, 'wechat')) break;
       logger.error('Login', 'Check Wx Status Error:', e);
-      wxQr.error = '微信登录状态检查失败，请稍后重试';
+      wxQr.error = getApiErrorMessage(e, '微信登录状态检查失败，请稍后重试');
       wxQr.status = 3;
       break;
     }
-    // 如果发生异常或请求结束，等待 3 秒再次尝试
-    await new Promise((resolve) => setTimeout(resolve, 3000));
+    await waitForNextPoll();
   }
-  isPollingWx = false;
   logger.info('Login', 'WeChat polling stopped.');
 };
 
-const stopCheckStatus = () => {
-  isPollingQr = false;
-  isPollingWx = false;
+const activateLoginMethod = (method: LoginMethod) => {
+  if (isLoginDone) return;
+  const sessionVersion = invalidateQrSession();
+  logger.info('Login', 'Login method changed to:', method);
+
+  if (method === 'kugou') {
+    if (qrKey.value && qrUrl.value && qrStatus.value !== 0) {
+      void startCheckStatus(sessionVersion);
+    } else {
+      void loadQrCode();
+    }
+  } else if (method === 'qq') {
+    if (qqQr.session && qqQr.url && ['waiting', 'scanned'].includes(qqQr.status)) {
+      void startCheckQqStatus(sessionVersion);
+    } else {
+      void loadQqQr();
+    }
+  } else if (method === 'wechat') {
+    if (wxQr.uuid && wxQr.url && wxQr.status !== 3) {
+      void startCheckWxStatus(sessionVersion);
+    } else {
+      void loadWxQr();
+    }
+  }
 };
 
-// 监听 Tab 切换，触发对应逻辑
-watch(activeTab, (newTab) => {
-  if (isLoginDone) return;
-  logger.info('Login', 'Tab changed to:', newTab);
-  stopCheckStatus();
-  if (newTab === '0') loadQrCode();
-  else if (newTab === '2') loadWxQr();
-});
+watch(activeMethod, activateLoginMethod);
+watch(
+  () => userStore.isLoggedIn,
+  (loggedIn) => {
+    isLoginDone = loggedIn;
+    if (loggedIn) invalidateQrSession();
+  },
+);
 
-onMounted(() => loadQrCode());
+onMounted(() => {
+  isLoginDone = userStore.isLoggedIn;
+  if (!isLoginDone) activateLoginMethod(activeMethod.value);
+});
 onUnmounted(() => {
-  stopCheckStatus();
+  invalidateQrSession();
   if (smsTimer) clearInterval(smsTimer);
 });
 </script>
@@ -490,11 +671,11 @@ onUnmounted(() => {
           </p>
         </div>
 
-        <Tabs v-model="activeTab" activationMode="manual" class="w-full">
+        <Tabs v-model="activeMethod" activationMode="manual" class="w-full">
           <div class="login-panel-card">
             <div class="px-10 pt-8 flex-1 flex flex-col items-center justify-center">
               <!-- 1. 扫码登录 -->
-              <TabsContent value="0" class="w-full animate-fade-in flex flex-col items-center">
+              <TabsContent value="kugou" class="w-full animate-fade-in flex flex-col items-center">
                 <div class="text-center mb-4">
                   <h1 class="text-[26px] font-black tracking-tight leading-tight mb-1">扫码登录</h1>
                   <p class="text-[13px] opacity-60 font-bold uppercase tracking-[1.5px]">
@@ -505,6 +686,17 @@ onUnmounted(() => {
                   class="relative w-48 h-48 bg-white p-3.5 rounded-[28px] shadow-[0_12px_40px_rgba(0,0,0,0.06)] border border-black/2"
                 >
                   <Image :src="qrUrl" class="w-full h-full rounded-xl" />
+                  <div
+                    v-if="isLoadingQr"
+                    class="absolute inset-0 bg-white rounded-2xl flex items-center justify-center z-30"
+                  >
+                    <Icon
+                      :icon="iconRefreshCw"
+                      width="24"
+                      height="24"
+                      class="animate-spin text-primary"
+                    />
+                  </div>
                   <div
                     v-if="qrStatus === 0"
                     class="absolute inset-0 bg-white/95 rounded-2xl flex flex-col items-center justify-center space-y-4 z-30"
@@ -534,7 +726,13 @@ onUnmounted(() => {
                 </div>
                 <div class="mt-6 w-full relative flex items-center justify-center">
                   <span class="text-[11px] font-black opacity-40 uppercase tracking-[3px]">
-                    等待扫码中
+                    {{
+                      isLoadingQr
+                        ? '正在生成二维码'
+                        : qrStatus === 2
+                          ? '已扫码，等待确认'
+                          : '等待酷狗扫码'
+                    }}
                   </span>
                   <button
                     class="absolute right-0 w-7 h-7 rounded-full flex items-center justify-center text-text-main/40 hover:text-primary hover:bg-primary/10 transition-all active:scale-90"
@@ -547,7 +745,7 @@ onUnmounted(() => {
               </TabsContent>
 
               <!-- 2. 验证码登录 -->
-              <TabsContent value="1" class="w-full animate-fade-in pb-2">
+              <TabsContent value="sms" class="w-full animate-fade-in pb-2">
                 <div class="text-center mb-4">
                   <h1 class="text-[26px] font-black mb-1">验证码登录</h1>
                   <p class="text-[13px] opacity-60 font-bold uppercase tracking-[1.5px]">
@@ -628,7 +826,7 @@ onUnmounted(() => {
               </TabsContent>
 
               <!-- 3. 账号登录 -->
-              <TabsContent value="3" class="w-full animate-fade-in pb-2">
+              <TabsContent value="account" class="w-full animate-fade-in pb-2">
                 <div class="text-center mb-4">
                   <h1 class="text-[26px] font-black mb-1">账号登录</h1>
                   <p class="text-[13px] opacity-60 font-bold uppercase tracking-[1.5px]">
@@ -666,8 +864,74 @@ onUnmounted(() => {
                 </div>
               </TabsContent>
 
-              <!-- 4. 微信扫码 -->
-              <TabsContent value="2" class="w-full animate-fade-in flex flex-col items-center">
+              <!-- 4. QQ 扫码 -->
+              <TabsContent value="qq" class="w-full animate-fade-in flex flex-col items-center">
+                <div class="text-center mb-4">
+                  <h1 class="text-[26px] font-black mb-1">QQ 登录</h1>
+                  <p class="text-[13px] opacity-60 font-bold uppercase tracking-[1.5px]">
+                    请使用 QQ 扫描二维码
+                  </p>
+                </div>
+                <div
+                  class="relative w-48 h-48 bg-white p-3.5 rounded-[28px] shadow-[0_12px_40px_rgba(0,0,0,0.06)] border border-black/2"
+                >
+                  <Image :src="qqQr.url" class="w-full h-full rounded-xl" />
+                  <div
+                    v-if="qqQr.isLoading"
+                    class="absolute inset-0 bg-white rounded-2xl flex items-center justify-center z-30"
+                  >
+                    <Icon
+                      :icon="iconRefreshCw"
+                      width="24"
+                      height="24"
+                      class="animate-spin text-[#12B7F5]"
+                    />
+                  </div>
+                  <div
+                    v-else-if="qqQr.status === 'expired' || qqQr.status === 'error'"
+                    class="absolute inset-0 bg-white/95 rounded-2xl flex flex-col items-center justify-center space-y-4 z-30 px-5 text-center"
+                  >
+                    <span class="text-[13px] font-black text-black/60">
+                      {{ qqQr.error || qqQr.message || '二维码已过期' }}
+                    </span>
+                    <Button
+                      @click="loadQqQr"
+                      variant="ghost"
+                      size="xs"
+                      class="text-[13px] text-[#12B7F5] font-black hover:opacity-80"
+                      >重新加载</Button
+                    >
+                  </div>
+                  <div
+                    v-else-if="qqQr.status === 'scanned'"
+                    class="absolute inset-0 bg-white/98 rounded-2xl flex flex-col items-center justify-center space-y-5 z-30"
+                  >
+                    <div
+                      class="w-14 h-14 bg-[#12B7F5] rounded-full flex items-center justify-center text-white"
+                    >
+                      <Icon :icon="iconCheck" width="32" height="32" />
+                    </div>
+                    <p class="text-[14px] font-black text-black/80">请在 QQ 中确认</p>
+                  </div>
+                </div>
+                <div class="mt-6 w-full relative flex items-center justify-center">
+                  <span class="text-[11px] font-black opacity-40 uppercase tracking-[3px]">
+                    {{ qqQr.isLoading ? '正在生成二维码' : qqQr.message || '等待 QQ 扫码' }}
+                  </span>
+                  <button
+                    class="absolute right-0 w-7 h-7 rounded-full flex items-center justify-center text-text-main/40 hover:text-[#12B7F5] hover:bg-[#12B7F5]/10 transition-all active:scale-90 disabled:opacity-40"
+                    :disabled="qqQr.isLoading"
+                    title="刷新 QQ 二维码"
+                    aria-label="刷新 QQ 二维码"
+                    @click="loadQqQr"
+                  >
+                    <Icon :icon="iconRefreshCw" width="14" height="14" />
+                  </button>
+                </div>
+              </TabsContent>
+
+              <!-- 5. 微信扫码 -->
+              <TabsContent value="wechat" class="w-full animate-fade-in flex flex-col items-center">
                 <div class="text-center mb-4">
                   <h1 class="text-[26px] font-black mb-1">微信登录</h1>
                   <p class="text-[13px] opacity-60 font-bold uppercase tracking-[1.5px]">
@@ -679,7 +943,18 @@ onUnmounted(() => {
                 >
                   <Image :src="wxQr.url" class="w-full h-full rounded-xl" />
                   <div
-                    v-if="wxQr.status === 3"
+                    v-if="wxQr.isLoading"
+                    class="absolute inset-0 bg-white rounded-2xl flex items-center justify-center z-30"
+                  >
+                    <Icon
+                      :icon="iconRefreshCw"
+                      width="24"
+                      height="24"
+                      class="animate-spin text-[#07C160]"
+                    />
+                  </div>
+                  <div
+                    v-else-if="wxQr.status === 3"
                     class="absolute inset-0 bg-white/95 rounded-2xl flex flex-col items-center justify-center space-y-4 z-30"
                   >
                     <span class="text-[13px] font-black opacity-60">{{
@@ -707,7 +982,13 @@ onUnmounted(() => {
                 </div>
                 <div class="mt-6 w-full relative flex items-center justify-center">
                   <span class="text-[11px] font-black opacity-40 uppercase tracking-[3px]">
-                    等待微信扫码
+                    {{
+                      wxQr.isLoading
+                        ? '正在生成二维码'
+                        : wxQr.status === 1
+                          ? '已扫码，等待确认'
+                          : '等待微信扫码'
+                    }}
                   </span>
                   <button
                     class="absolute right-0 w-7 h-7 rounded-full flex items-center justify-center text-text-main/40 hover:text-[#07C160] hover:bg-[#07C160]/10 transition-all active:scale-90"
@@ -720,54 +1001,28 @@ onUnmounted(() => {
               </TabsContent>
             </div>
 
-            <!-- 底部：其他方式 -->
-            <div class="px-10 pb-8">
+            <!-- 底部：登录方式选择 -->
+            <div class="px-8 pb-7">
               <div
-                class="pt-6 border-t border-[var(--border-subtle)] flex flex-col items-center space-y-4"
+                class="pt-5 border-t border-[var(--border-subtle)] flex flex-col items-center space-y-3"
               >
-                <span class="text-[12px] font-black opacity-50 uppercase tracking-[4px]"
-                  >其他登录方式</span
+                <span class="text-[11px] font-black opacity-45 uppercase tracking-[3px]"
+                  >选择登录方式</span
                 >
-                <TabsList class="gap-10 h-auto! items-center">
+                <TabsList
+                  class="login-method-list grid! grid-cols-5 gap-2 h-auto! w-full items-stretch"
+                >
                   <TabsTrigger
-                    value="0"
-                    class="group h-auto! pb-0! items-center data-[state=active]:hidden [&_.active-line]:hidden"
+                    v-for="method in loginMethods"
+                    :key="method.value"
+                    :value="method.value"
+                    :data-tone="method.tone"
+                    :title="`${method.label}登录`"
+                    :aria-label="`${method.label}登录`"
+                    class="login-method-trigger group h-14! pb-0! flex-col! items-center! justify-center! gap-1 rounded-2xl border border-transparent opacity-65! hover:opacity-100! data-[state=active]:opacity-100! [&_.active-line]:hidden"
                   >
-                    <div
-                      class="w-14 h-14 rounded-full border border-[var(--control-border)] flex items-center justify-center text-primary/60 group-hover:text-primary transition-all group-active:scale-90 group-hover:bg-primary/5"
-                    >
-                      <Icon :icon="iconQrCode" width="22" height="22" />
-                    </div>
-                  </TabsTrigger>
-                  <TabsTrigger
-                    value="1"
-                    class="group h-auto! pb-0! items-center data-[state=active]:hidden [&_.active-line]:hidden"
-                  >
-                    <div
-                      class="w-14 h-14 rounded-full border border-[var(--control-border)] flex items-center justify-center text-text-main/50 group-hover:text-primary transition-all group-active:scale-90 group-hover:bg-primary/5"
-                    >
-                      <Icon :icon="iconSmartphone" width="22" height="22" />
-                    </div>
-                  </TabsTrigger>
-                  <TabsTrigger
-                    value="3"
-                    class="group h-auto! pb-0! items-center data-[state=active]:hidden [&_.active-line]:hidden"
-                  >
-                    <div
-                      class="w-14 h-14 rounded-full border border-[var(--control-border)] flex items-center justify-center text-text-main/50 group-hover:text-primary transition-all group-active:scale-90 group-hover:bg-primary/5"
-                    >
-                      <Icon :icon="iconUser" width="22" height="22" />
-                    </div>
-                  </TabsTrigger>
-                  <TabsTrigger
-                    value="2"
-                    class="group h-auto! pb-0! items-center data-[state=active]:hidden [&_.active-line]:hidden"
-                  >
-                    <div
-                      class="w-14 h-14 rounded-full border border-[var(--control-border)] flex items-center justify-center text-[#07C160]/60 group-hover:text-[#07C160] transition-all group-active:scale-90 group-hover:bg-[#07C160]/5"
-                    >
-                      <Icon :icon="iconBotMessageSquare" width="26" height="26" />
-                    </div>
+                    <Icon :icon="method.icon" width="20" height="20" />
+                    <span class="text-[10px] leading-none font-black">{{ method.label }}</span>
                   </TabsTrigger>
                 </TabsList>
               </div>
@@ -797,6 +1052,40 @@ onUnmounted(() => {
 .animate-fade-in {
   animation: fade-in 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
 }
+
+:deep(.login-method-trigger) {
+  color: var(--color-text-secondary);
+  transition:
+    color 180ms ease,
+    background-color 180ms ease,
+    border-color 180ms ease,
+    transform 180ms ease;
+}
+
+:deep(.login-method-trigger:hover) {
+  color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 7%, transparent);
+}
+
+:deep(.login-method-trigger[data-state='active']) {
+  color: var(--color-primary);
+  border-color: color-mix(in srgb, var(--color-primary) 28%, transparent);
+  background: color-mix(in srgb, var(--color-primary) 11%, transparent);
+  transform: translateY(-1px);
+}
+
+:deep(.login-method-trigger[data-tone='qq'][data-state='active']) {
+  color: #12b7f5;
+  border-color: rgb(18 183 245 / 28%);
+  background: rgb(18 183 245 / 10%);
+}
+
+:deep(.login-method-trigger[data-tone='wechat'][data-state='active']) {
+  color: #07c160;
+  border-color: rgb(7 193 96 / 28%);
+  background: rgb(7 193 96 / 10%);
+}
+
 @keyframes fade-in {
   from {
     opacity: 0;

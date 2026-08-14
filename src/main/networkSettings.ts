@@ -1,6 +1,6 @@
 import path from 'path';
 import log from './logger';
-import { getKvStorage } from './storage/kv';
+import { getPersistedRendererSettings } from './storage/persistedStores';
 import {
   DEFAULT_NETWORK_SETTINGS,
   normalizeNetworkSettings,
@@ -8,14 +8,11 @@ import {
 } from '../shared/network';
 import { createElectronAxiosAdapter } from './electronAxiosAdapter';
 
-const PINIA_SETTING_KEY = 'pinia:setting';
-
 let currentNetworkSettings = DEFAULT_NETWORK_SETTINGS;
 let apiServerPath: string | undefined;
 
 const loadPersistedNetworkSettings = (): NetworkSettings => {
-  const saved = getKvStorage().get<Record<string, unknown>>(PINIA_SETTING_KEY);
-  return normalizeNetworkSettings(saved);
+  return normalizeNetworkSettings(getPersistedRendererSettings());
 };
 
 export const getNetworkSettings = (): NetworkSettings => currentNetworkSettings;

@@ -131,7 +131,7 @@ const confirmResetDeviceIdentity = async () => {
   userStore.logout();
   deviceIdentity.value = null;
   try {
-    await window.electron?.storage?.deleteKv('pinia:device');
+    await deviceStore.$clearPersistedState();
   } catch {
     toastStore.warning('设备身份已清除，但持久化数据删除可能未完成');
   }

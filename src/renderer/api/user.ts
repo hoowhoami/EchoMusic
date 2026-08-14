@@ -36,6 +36,34 @@ export function checkLoginQr(key: string) {
   });
 }
 
+export interface QqLoginQrSession {
+  cookie: string;
+  qrsig: string;
+  ptqrtoken: string | number;
+  pt_login_sig: string;
+  pt_openlogin_data: string;
+  xlogin_url: string;
+}
+
+/**
+ * 创建 QQ 登录二维码及轮询会话
+ */
+export function createQqLoginQr() {
+  return request.get('/login/qq/qr/create');
+}
+
+/**
+ * 检查 QQ 扫码状态，成功后直接返回酷狗登录态
+ */
+export function checkQqLoginQr(session: QqLoginQrSession) {
+  return request.get('/login/qq/qr/check', {
+    params: {
+      ...session,
+      timestamp: Date.now(),
+    },
+  });
+}
+
 /**
  * 发送手机验证码
  */

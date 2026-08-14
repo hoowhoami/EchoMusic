@@ -23,10 +23,10 @@ const LEVEL_PRIORITY: Record<AppLogLevel, number> = {
 const LOG_LEVELS = new Set<AppLogLevel>(['error', 'warn', 'info', 'debug', 'verbose']);
 
 const SENSITIVE_KEY_PATTERN =
-  /token|cookie|authorization|accesskey|dfid|mid|uuid|guid|dev|mac|password|pwd|secret|key|verifycode|^(sid|edt)$/i;
+  /token|cookie|authorization|accesskey|dfid|mid|uuid|guid|dev|mac|password|pwd|secret|key|verifycode|qrcode|qrsig|pt_login_sig|pt_openlogin_data|xlogin_url|h5sig|login_sig|^(sid|edt)$/i;
 
 const SENSITIVE_PAIR_PATTERN =
-  /\b(token|accesskey|dfid|mid|KUGOU_API_MID|uuid|KUGOU_API_GUID|guid|KUGOU_API_DEV|KUGOU_API_MAC|Authorization|cookie|password|pwd|verifycode|sid|edt)=([^;&\s]+)/gi;
+  /\b(token|accesskey|dfid|mid|KUGOU_API_MID|uuid|KUGOU_API_GUID|guid|KUGOU_API_DEV|KUGOU_API_MAC|Authorization|cookie|password|pwd|verifycode|qrcode|qrsig|ptqrtoken|pt_login_sig|pt_openlogin_data|xlogin_url|h5sig|login_sig|sid|edt)=([^;&\s]+)/gi;
 
 export const normalizeLogSettings = (settings?: Partial<LogSettings> | null): LogSettings => {
   const level = LOG_LEVELS.has(settings?.level as AppLogLevel)

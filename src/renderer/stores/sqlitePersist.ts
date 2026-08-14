@@ -1,4 +1,5 @@
 import type { PiniaPluginContext, StateTree } from 'pinia';
+import { getStorePersistenceKey } from '../../shared/storePersistence';
 
 type PersistOptions =
   | boolean
@@ -87,11 +88,14 @@ const pickDeclaredState = (saved: StateTree, current: StateTree): StateTree => {
 };
 
 export const sqlitePersistPlugin = ({ store, options }: PiniaPluginContext) => {
-  if (store.$id === 'playlist') return;
   const persist = getPersistOptions(options);
-  if (!persist || !window.electron?.storage) return;
+  if (store.$id === 'playlist' || !persist || !window.electron?.storage) {
+    return {
+      $clearPersistedState: async () => {},
+    };
+  }
 
-  const storageKey = `pinia:${store.$id}`;
+  const storageKey = getStorePersistenceKey(store.$id);
   let hydrated = false;
   let pendingSave = 0;
   let lastPersistedState: StateTree | null = null;
@@ -109,6 +113,16 @@ export const sqlitePersistPlugin = ({ store, options }: PiniaPluginContext) => {
       hydrationPromises.delete(hydration);
     });
   hydrationPromises.add(hydration);
+
+  const clearPersistedState = async () => {
+    await hydration;
+    if (pendingSave) {
+      window.clearTimeout(pendingSave);
+      pendingSave = 0;
+    }
+    lastPersistedState = null;
+    await window.electron?.storage?.deleteKv(storageKey);
+  };
 
   store.$subscribe(
     (_mutation, state) => {
@@ -128,4 +142,8 @@ export const sqlitePersistPlugin = ({ store, options }: PiniaPluginContext) => {
     // 组件卸载时订阅会被一并摘除，导致此后静默不再存盘。
     { detached: true },
   );
+
+  return {
+    $clearPersistedState: clearPersistedState,
+  };
 };
