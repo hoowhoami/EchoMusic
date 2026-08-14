@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { computed, useSlots } from 'vue';
+import type { StyleValue } from 'vue';
 import Button from '@/components/ui/Button.vue';
 import Scrollbar from '@/components/ui/Scrollbar.vue';
+import { useDialogStack } from '@/components/ui/dialogStack';
 import { useVModel } from '@vueuse/core';
 import { iconX } from '@/icons';
 import {
@@ -25,6 +27,7 @@ interface Props {
   closeOnInteractOutside?: boolean;
   overlayClass?: string;
   contentClass?: string;
+  /** 内容样式；zIndex 由全局弹窗栈统一管理，传入该属性不会覆盖层级。 */
   contentStyle?: Record<string, string | number>;
   descriptionClass?: string;
   bodyClass?: string;
@@ -48,6 +51,15 @@ const emit = defineEmits<{
 
 const open = useVModel(props, 'open', emit, { defaultValue: false });
 const slots = useSlots();
+const {
+  activationKey,
+  presenceElement,
+  isTop,
+  isInteractive,
+  overlayZIndex,
+  contentZIndex,
+  finishClose,
+} = useDialogStack(open);
 
 const hasTitle = computed(() => Boolean(props.title) || Boolean(slots.title));
 const hasDescription = computed(() => Boolean(props.description) || Boolean(slots.description));
@@ -63,15 +75,20 @@ const computedBodyClass = computed(() => [
   hasDescription.value ? 'mt-2' : null,
   props.bodyClass,
 ]);
+const overlayStyle = computed<StyleValue>(() => ({ zIndex: overlayZIndex.value }));
+const contentStyle = computed<StyleValue>(() => [
+  props.contentStyle,
+  { zIndex: contentZIndex.value },
+]);
 
 const handleEscapeKeyDown = (event: Event) => {
-  if (!props.closeOnEscape) {
+  if (!isInteractive.value || !props.closeOnEscape) {
     event.preventDefault();
   }
 };
 
 const handleInteractOutside = (event: Event) => {
-  if (!props.closeOnInteractOutside) {
+  if (!isInteractive.value || !props.closeOnInteractOutside) {
     event.preventDefault();
   }
 };
@@ -81,15 +98,36 @@ const handleInteractOutside = (event: Event) => {
   <DialogRoot v-model:open="open" :modal="props.modal">
     <DialogPortal>
       <DialogOverlay as-child>
-        <div :class="overlayClass" />
+        <div
+          :class="overlayClass"
+          :style="overlayStyle"
+          :data-dialog-stack-top="isTop ? '' : undefined"
+          :data-dialog-stack-interactive="isInteractive ? 'true' : 'false'"
+        />
       </DialogOverlay>
 
       <DialogContent
+        :key="activationKey"
         as-child
         @escape-key-down="handleEscapeKeyDown"
         @interact-outside="handleInteractOutside"
       >
-        <div :class="contentClass" :style="props.contentStyle">
+        <div
+          :class="contentClass"
+          :style="contentStyle"
+          :aria-hidden="isInteractive ? undefined : 'true'"
+          :inert="isInteractive ? undefined : true"
+          :data-dialog-stack-top="isTop ? '' : undefined"
+          :data-dialog-stack-interactive="isInteractive ? 'true' : 'false'"
+          @after-leave="finishClose"
+        >
+          <!--
+            Reka as-child 会接管外层节点的 ref；内部哨兵用于跟踪 Presence 实际挂载状态。
+            动画中重开会因 activationKey 销毁旧节点，可能不触发 after-leave，哨兵 ref
+            的卸载回调是这种情况以及父级直接卸载时的必要兜底。
+          -->
+          <span ref="presenceElement" hidden aria-hidden="true" />
+
           <!-- 关闭按钮 -->
           <DialogClose v-if="props.showClose" as-child>
             <Button class="dialog-close" variant="ghost" size="xs" type="button" aria-label="关闭">
@@ -155,23 +193,24 @@ const handleInteractOutside = (event: Event) => {
 @reference "@/style.css";
 
 :global(.dialog-overlay) {
-  @apply fixed inset-0 z-1400;
+  @apply fixed inset-0;
   background: var(--surface-overlay-bg);
   opacity: 0;
-  transition: opacity 0.16s ease-out;
 }
 
 :global(.dialog-overlay[data-state='open']) {
   opacity: 1;
+  animation: dialog-overlay-in 160ms ease-out both;
   -webkit-app-region: no-drag;
 }
 
 :global(.dialog-overlay[data-state='closed']) {
   opacity: 0;
+  animation: dialog-overlay-out 140ms ease-in both;
 }
 
 :global(.dialog-content) {
-  @apply fixed left-1/2 top-[46%] z-1410 w-[420px] max-w-[92vw] rounded-2xl border flex flex-col select-none;
+  @apply fixed left-1/2 top-[46%] w-[420px] max-w-[92vw] rounded-2xl border flex flex-col select-none;
   @apply max-h-[calc(100vh-240px)];
   background: var(--color-bg-dialog);
   border-color: var(--border-subtle);
@@ -180,26 +219,77 @@ const handleInteractOutside = (event: Event) => {
   padding: 24px 2px 24px 24px;
   opacity: 0;
   transform: translate(-50%, -50%) scale(0.98);
-  transition:
-    opacity 0.18s ease-out,
-    transform 0.18s ease-out;
   will-change: transform, opacity;
+}
+
+:global(.dialog-overlay[data-dialog-stack-interactive='false']),
+:global(.dialog-content[data-dialog-stack-interactive='false']) {
+  pointer-events: none !important;
 }
 
 :global(.dialog-content[data-state='open']) {
   opacity: 1;
   transform: translate(-50%, -50%) scale(1);
+  animation: dialog-content-in 180ms cubic-bezier(0.16, 1, 0.3, 1) both;
   -webkit-app-region: no-drag;
 }
 
 :global(.dialog-content[data-state='closed']) {
   opacity: 0;
   transform: translate(-50%, -50%) scale(0.98);
+  animation: dialog-content-out 140ms cubic-bezier(0.4, 0, 1, 1) both;
+}
+
+@keyframes dialog-overlay-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes dialog-overlay-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes dialog-content-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+}
+
+@keyframes dialog-content-out {
+  from {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.98);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :global(.dialog-overlay[data-state]),
+  :global(.dialog-content[data-state]) {
+    animation: none;
+  }
 }
 
 :global(.dialog-content.detail-intro-dialog) {
-  /* 与普通弹框一致的屏幕居中（继承基类 left/top + translate(-50%,-50%)），仅放大宽度 */
-  width: min(720px, 92vw);
+  /* 简介以舒适阅读行长为主，避免大屏下文本横向铺得过宽。 */
+  width: min(560px, 92vw);
   max-width: 92vw;
   max-height: min(760px, calc(100vh - 160px));
 }

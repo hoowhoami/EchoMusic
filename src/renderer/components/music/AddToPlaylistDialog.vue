@@ -31,7 +31,7 @@ const props = withDefaults(defineProps<Props>(), {
   loading: false,
   disabled: false,
   showPlaybackQueues: true,
-  overlayClass: 'add-to-overlay',
+  overlayClass: '',
   contentClass: '',
 });
 
@@ -46,7 +46,7 @@ const playlistStore = usePlaylistStore();
 const settingStore = useSettingStore();
 
 const contentClass = computed(() =>
-  ['add-to-dialog max-w-[420px]', props.contentClass].filter(Boolean).join(' '),
+  ['max-w-[420px]', props.contentClass].filter(Boolean).join(' '),
 );
 
 const isPinnedPlaylist = (playlist: Playlist) => {
@@ -154,14 +154,6 @@ const orderedPlaylists = computed(() => {
   flex: 0 0 auto;
   font-size: 11px;
   color: var(--color-text-secondary);
-}
-
-:global(.add-to-overlay) {
-  z-index: 1600 !important;
-}
-
-:global(.add-to-dialog) {
-  z-index: 1610 !important;
 }
 
 .add-to-item {

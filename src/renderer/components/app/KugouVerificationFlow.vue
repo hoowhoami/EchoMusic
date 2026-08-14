@@ -207,6 +207,7 @@ const positionTencentCaptchaPanels = () => {
     setImportantStyle(panel, 'margin', '0');
     setImportantStyle(panel, 'transform', 'none');
     setImportantStyle(panel, 'z-index', '2147482000');
+    setImportantStyle(panel, 'pointer-events', 'auto');
     setImportantStyle(panel, 'overflow', 'hidden');
     setImportantStyle(panel, 'border-radius', '18px');
     setImportantStyle(panel, 'background', captchaSurfaceBackground);
@@ -452,17 +453,33 @@ onBeforeUnmount(resetTencentCaptcha);
 
 <template>
   <Dialog
-    v-if="!captchaPanelOpen"
     :open="isOpen"
-    :title="title"
-    :description="description"
+    :title="captchaPanelOpen ? undefined : title"
+    :description="captchaPanelOpen ? undefined : description"
     :show-close="false"
+    :modal="!captchaPanelOpen"
     :close-on-escape="false"
     :close-on-interact-outside="false"
-    content-class="kugou-verification-dialog"
+    :no-scroll="captchaPanelOpen"
+    :flush-body="captchaPanelOpen"
+    :content-class="
+      captchaPanelOpen ? 'kugou-captcha-fullscreen-dialog' : 'kugou-verification-dialog'
+    "
     @update:open="(value) => !value && cancelKugouVerification()"
   >
-    <div class="verification-shell">
+    <div v-if="captchaPanelOpen" class="kugou-captcha-fullscreen-cover">
+      <div class="kugou-captcha-fullscreen-header">
+        <h3 class="kugou-captcha-fullscreen-title">安全验证</h3>
+        <Button variant="secondary" :disabled="isVerifying" @click="cancelCurrentVerification">
+          退出验证
+        </Button>
+      </div>
+      <div v-if="captchaLoading" class="kugou-captcha-fullscreen-loading">
+        <div class="verification-spinner"></div>
+      </div>
+    </div>
+
+    <div v-else class="verification-shell">
       <div
         class="verification-icon"
         :class="{ 'is-sms': isSmsCaptcha, 'is-login': isLoginVerification }"
@@ -522,6 +539,7 @@ onBeforeUnmount(resetTencentCaptcha);
 
     <template #footer>
       <Button
+        v-if="!captchaPanelOpen"
         variant="ghost"
         class="w-full"
         :disabled="isVerifying"
@@ -531,23 +549,6 @@ onBeforeUnmount(resetTencentCaptcha);
       </Button>
     </template>
   </Dialog>
-
-  <Teleport to="body">
-    <div
-      v-if="isOpen && isTencentCaptcha && captchaPanelOpen"
-      class="kugou-captcha-fullscreen-cover"
-    >
-      <div class="kugou-captcha-fullscreen-header">
-        <h3 class="kugou-captcha-fullscreen-title">安全验证</h3>
-        <Button variant="secondary" :disabled="isVerifying" @click="cancelCurrentVerification">
-          退出验证
-        </Button>
-      </div>
-      <div v-if="captchaLoading" class="kugou-captcha-fullscreen-loading">
-        <div class="verification-spinner"></div>
-      </div>
-    </div>
-  </Teleport>
 </template>
 
 <style scoped>
@@ -606,9 +607,9 @@ onBeforeUnmount(resetTencentCaptcha);
 }
 
 .kugou-captcha-fullscreen-cover {
-  position: fixed;
-  inset: 0;
-  z-index: 1400;
+  position: relative;
+  width: 100%;
+  height: 100%;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
@@ -616,7 +617,7 @@ onBeforeUnmount(resetTencentCaptcha);
   background: color-mix(in srgb, var(--color-bg-main) 94%, var(--color-text-main) 6%);
   backdrop-filter: blur(8px);
   box-shadow: inset 0 1px 0 color-mix(in srgb, var(--color-bg-elevated) 68%, transparent);
-  pointer-events: none;
+  pointer-events: auto;
   -webkit-app-region: no-drag;
 }
 
@@ -659,6 +660,29 @@ onBeforeUnmount(resetTencentCaptcha);
 
 :global(.dialog-content.kugou-verification-dialog .dialog-body) {
   padding-right: 1.5rem;
+}
+
+:global(.dialog-content.kugou-captcha-fullscreen-dialog) {
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  max-width: none;
+  max-height: none;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  transform: none;
+  animation: none;
+  will-change: auto;
+}
+
+:global(.dialog-content.kugou-captcha-fullscreen-dialog .dialog-body) {
+  width: 100%;
+  height: 100%;
+}
+
+:global(.dialog-content.kugou-captcha-fullscreen-dialog .dialog-footer) {
+  display: none;
 }
 
 @keyframes verification-spin {

@@ -43,6 +43,7 @@ const activeTab = ref<EffectTab>('effect');
 const activeImpulseResponseLibraryTab = ref<ImpulseResponseLibraryTab>('mine');
 const COMMUNITY_PAGE_SIZE = 20;
 const COMMUNITY_AUTO_SCAN_PAGE_LIMIT = 5;
+const COMMUNITY_COMPATIBLE_BATCH_SIZE = 6;
 const communitySortOptions: readonly { value: CommunityAudioEffectSort; label: string }[] = [
   { value: 2, label: '默认' },
   { value: 3, label: '最热' },
@@ -196,6 +197,9 @@ const loadCommunityEffects = async (reset = false) => {
   communityError.value = '';
   let nextPage = reset ? 1 : communityPage.value + 1;
   let scannedPages = 0;
+  let foundUndownloadedCompatibleEffect = false;
+  const compatibleEffectTarget =
+    (reset ? 0 : compatibleCommunityEffects.value.length) + COMMUNITY_COMPATIBLE_BATCH_SIZE;
   try {
     if (reset) {
       communityEffects.value = [];
@@ -214,12 +218,14 @@ const loadCommunityEffects = async (reset = false) => {
       communityTotal.value = result.total;
       communityPage.value = result.page;
       scannedPages += 1;
-
-      const foundActionableEffect = newItems.some(
+      foundUndownloadedCompatibleEffect ||= newItems.some(
         (effect) => getCommunityImpulseResponseUrl(effect) && !getDownloadedCommunityEffect(effect),
       );
+
+      // 上游分页混有 VPF 和已下载项；补足一批 WAV 后，至少找到一个新音效再停止。
       if (
-        foundActionableEffect ||
+        (compatibleCommunityEffects.value.length >= compatibleEffectTarget &&
+          foundUndownloadedCompatibleEffect) ||
         communityEffects.value.length >= communityTotal.value ||
         result.items.length === 0
       ) {

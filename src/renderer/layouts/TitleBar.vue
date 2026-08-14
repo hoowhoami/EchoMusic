@@ -543,12 +543,7 @@ onUnmounted(() => {
   </header>
 
   <!-- 任务中心弹窗 -->
-  <Dialog
-    v-model:open="taskPanelOpen"
-    content-class="task-panel-dialog"
-    overlay-class="task-panel-overlay"
-    show-close
-  >
+  <Dialog v-model:open="taskPanelOpen" content-class="task-panel-dialog" show-close>
     <template #title>任务中心</template>
     <div
       v-if="taskPanelEntries.length === 0"
@@ -885,40 +880,6 @@ onUnmounted(() => {
 :global(.dialog-content.task-panel-dialog) {
   width: 420px;
   max-width: calc(100vw - 48px);
-}
-
-:global(.dialog-content.task-panel-dialog[data-state='open']) {
-  animation: task-panel-slide-in 1s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-}
-
-:global(.dialog-content.task-panel-dialog[data-state='closed']) {
-  animation: task-panel-slide-out 0.15s cubic-bezier(0.4, 0, 1, 1) forwards;
-}
-
-:global(.dialog-overlay.task-panel-overlay[data-state='closed']) {
-  transition-delay: 0.12s;
-}
-
-@keyframes task-panel-slide-in {
-  from {
-    opacity: 0;
-    transform: translate(-50%, -65%);
-  }
-  to {
-    opacity: 1;
-    transform: translate(-50%, -50%);
-  }
-}
-
-@keyframes task-panel-slide-out {
-  from {
-    opacity: 1;
-    transform: translate(-50%, -50%);
-  }
-  to {
-    opacity: 0;
-    transform: translate(-50%, -65%);
-  }
 }
 
 /* 任务项 */

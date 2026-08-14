@@ -842,7 +842,6 @@ const statusLabel = (status: ImportItemResult['status']): string => {
       <Dialog
         v-model:open="showDuplicateWarning"
         content-class="duplicate-dialog"
-        overlay-class="duplicate-overlay"
         :close-on-escape="false"
         :close-on-interact-outside="false"
       >
@@ -1004,7 +1003,6 @@ const statusLabel = (status: ImportItemResult['status']): string => {
   <Dialog
     v-model:open="showBackgroundConfirm"
     content-class="background-confirm-dialog"
-    overlay-class="background-confirm-overlay"
     :close-on-escape="false"
     :close-on-interact-outside="false"
   >
@@ -1390,66 +1388,10 @@ const statusLabel = (status: ImportItemResult['status']): string => {
 :global(.dialog-content.duplicate-dialog) {
   width: 420px;
   max-width: calc(100vw - 48px);
-  z-index: 1430;
-}
-
-:global(.dialog-content.duplicate-dialog[data-state='open']) {
-  animation: duplicate-slide-in 1s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-}
-
-:global(.dialog-content.duplicate-dialog[data-state='closed']) {
-  opacity: 0;
-  transform: translate(-50%, -65%);
-  transition:
-    opacity 0.3s ease-in,
-    transform 0.3s ease-in;
-}
-
-@keyframes duplicate-slide-in {
-  from {
-    opacity: 0;
-    transform: translate(-50%, -65%);
-  }
-  to {
-    opacity: 1;
-    transform: translate(-50%, -50%);
-  }
-}
-
-:global(.dialog-overlay.duplicate-overlay) {
-  z-index: 1420;
 }
 
 :global(.dialog-content.background-confirm-dialog) {
   width: 400px;
   max-width: calc(100vw - 48px);
-  z-index: 1430;
-}
-
-:global(.dialog-content.background-confirm-dialog[data-state='open']) {
-  animation: background-confirm-slide-in 1s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-}
-
-:global(.dialog-content.background-confirm-dialog[data-state='closed']) {
-  opacity: 0;
-  transform: translate(-50%, -65%);
-  transition:
-    opacity 0.3s ease-in,
-    transform 0.3s ease-in;
-}
-
-@keyframes background-confirm-slide-in {
-  from {
-    opacity: 0;
-    transform: translate(-50%, -65%);
-  }
-  to {
-    opacity: 1;
-    transform: translate(-50%, -50%);
-  }
-}
-
-:global(.dialog-overlay.background-confirm-overlay) {
-  z-index: 1420;
 }
 </style>

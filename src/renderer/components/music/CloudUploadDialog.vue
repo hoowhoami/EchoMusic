@@ -872,7 +872,6 @@ const statusLabel = (item: CloudUploadItem) => {
   <Dialog
     v-model:open="showBackgroundConfirm"
     content-class="cloud-upload-background-confirm-dialog"
-    overlay-class="cloud-upload-background-confirm-overlay"
     :close-on-escape="false"
     :close-on-interact-outside="false"
   >
@@ -1064,10 +1063,5 @@ const statusLabel = (item: CloudUploadItem) => {
 :global(.dialog-content.cloud-upload-background-confirm-dialog) {
   width: 400px;
   max-width: calc(100vw - 48px);
-  z-index: 1430;
-}
-
-:global(.dialog-overlay.cloud-upload-background-confirm-overlay) {
-  z-index: 1420;
 }
 </style>

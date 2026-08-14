@@ -76,6 +76,7 @@ onUnmounted(() => {
   position: fixed;
   inset: 0;
   background: var(--surface-scrim-bg);
+  /* Drawer 属于非模态辅助层；模态 Dialog（从 1600 起）始终保持在其上方。 */
   z-index: 1400;
   opacity: 0;
   pointer-events: none;

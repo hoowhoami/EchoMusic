@@ -535,8 +535,7 @@ const confirmRemoveFromPlaylist = async () => {
     v-model:open="showRemoveConfirm"
     :title="removeDialogTitle"
     :description="removeDialogDescription"
-    overlayClass="batch-playlist-overlay"
-    contentClass="batch-playlist-dialog max-w-[420px]"
+    contentClass="max-w-[420px]"
   >
     <template #footer>
       <Button variant="outline" size="sm" @click="showRemoveConfirm = false">取消</Button>
@@ -828,13 +827,5 @@ const confirmRemoveFromPlaylist = async () => {
     bottom: 0;
     width: 94vw;
   }
-}
-
-:global(.batch-playlist-overlay) {
-  z-index: 1600 !important;
-}
-
-:global(.batch-playlist-dialog) {
-  z-index: 1610 !important;
 }
 </style>
