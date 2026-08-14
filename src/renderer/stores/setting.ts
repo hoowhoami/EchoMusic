@@ -399,12 +399,15 @@ export const useSettingStore = defineStore('setting', {
       this.outputDeviceStatus = status;
       this.outputDeviceStatusMessage = message;
     },
-    addImpulseResponseFile(file: ImpulseResponseFile) {
-      this.addImpulseResponseFiles([file]);
+    addImpulseResponseFile(file: ImpulseResponseFile, options?: { select?: boolean }) {
+      this.addImpulseResponseFiles([file], options);
     },
-    addImpulseResponseFiles(files: ImpulseResponseFile[]) {
+    addImpulseResponseFiles(files: ImpulseResponseFile[], options?: { select?: boolean }) {
       const normalizedFiles: ImpulseResponseFile[] = [];
-      let names = this.impulseResponseFiles.map((item) => item.name);
+      const incomingIds = new Set(files.map((item) => item.id));
+      let names = this.impulseResponseFiles
+        .filter((item) => !incomingIds.has(item.id))
+        .map((item) => item.name);
       for (const file of files) {
         const normalizedFile = {
           ...file,
@@ -423,7 +426,7 @@ export const useSettingStore = defineStore('setting', {
           (item) => !normalizedFiles.some((file) => file.id === item.id),
         ),
       ];
-      this.selectedImpulseResponseId = normalizedFile.id;
+      if (options?.select !== false) this.selectedImpulseResponseId = normalizedFile.id;
     },
     async reconcileImpulseResponseFiles() {
       if (!window.electron?.audioEffects?.reconcileImpulseResponses) return;

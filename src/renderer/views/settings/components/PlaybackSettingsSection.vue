@@ -23,8 +23,21 @@ const isImportingImpulseResponse = ref(false);
 const showImpulseResponseDialog = ref(false);
 const editingImpulseResponseId = ref('');
 const impulseResponseNameDraft = ref('');
+type ImpulseResponseSourceTab = 'local' | 'community';
+const activeImpulseResponseSourceTab = ref<ImpulseResponseSourceTab>('local');
 
 const selectedImpulseResponse = computed(() => settingStore.getSelectedImpulseResponse());
+const communityImpulseResponseFiles = computed(() =>
+  settingStore.impulseResponseFiles.filter((file) => file.id.startsWith('kugou-community-')),
+);
+const localImpulseResponseFiles = computed(() =>
+  settingStore.impulseResponseFiles.filter((file) => !file.id.startsWith('kugou-community-')),
+);
+const activeImpulseResponseFiles = computed(() =>
+  activeImpulseResponseSourceTab.value === 'community'
+    ? communityImpulseResponseFiles.value
+    : localImpulseResponseFiles.value,
+);
 
 const autoNextDelayInput = computed({
   get: () => String(settingStore.autoNextDelaySeconds ?? 0),
@@ -57,6 +70,23 @@ const handleReferenceLufsSlider = (value: number) => {
 };
 
 const getImpulseResponseDisplayName = (name: string) => normalizeImpulseResponseName(name);
+
+const openImpulseResponseDialog = () => {
+  if (
+    activeImpulseResponseSourceTab.value === 'local' &&
+    localImpulseResponseFiles.value.length === 0 &&
+    communityImpulseResponseFiles.value.length > 0
+  ) {
+    activeImpulseResponseSourceTab.value = 'community';
+  } else if (
+    activeImpulseResponseSourceTab.value === 'community' &&
+    communityImpulseResponseFiles.value.length === 0 &&
+    localImpulseResponseFiles.value.length > 0
+  ) {
+    activeImpulseResponseSourceTab.value = 'local';
+  }
+  showImpulseResponseDialog.value = true;
+};
 
 const beginRenameImpulseResponse = (file: ImpulseResponseFile) => {
   editingImpulseResponseId.value = file.id;
@@ -228,10 +258,10 @@ const handleRemoveImpulseResponse = (id: string) => {
     <div class="settings-item">
       <div class="space-y-1">
         <h3 class="font-semibold">空间音效</h3>
-        <p class="text-sm text-text-secondary">导入本地音频文件，用作播放时的空间音效</p>
+        <p class="text-sm text-text-secondary">管理本地导入和社区下载的空间音效文件</p>
       </div>
       <div class="irs-actions">
-        <Button variant="outline" size="xs" type="button" @click="showImpulseResponseDialog = true">
+        <Button variant="outline" size="xs" type="button" @click="openImpulseResponseDialog">
           <Icon :icon="iconPlus" width="14" height="14" class="mr-1" />
           添加
         </Button>
@@ -249,9 +279,32 @@ const handleRemoveImpulseResponse = (id: string) => {
       showClose
       :content-style="{ width: '420px' }"
     >
-      <div v-if="settingStore.impulseResponseFiles.length > 0" class="irs-list">
+      <div class="irs-source-tabs" role="tablist" aria-label="空间音效文件来源">
+        <button
+          type="button"
+          role="tab"
+          :aria-selected="activeImpulseResponseSourceTab === 'local'"
+          :class="{ 'is-active': activeImpulseResponseSourceTab === 'local' }"
+          @click="activeImpulseResponseSourceTab = 'local'"
+        >
+          <span>本地导入</span>
+          <span class="irs-source-count">{{ localImpulseResponseFiles.length }}</span>
+        </button>
+        <button
+          type="button"
+          role="tab"
+          :aria-selected="activeImpulseResponseSourceTab === 'community'"
+          :class="{ 'is-active': activeImpulseResponseSourceTab === 'community' }"
+          @click="activeImpulseResponseSourceTab = 'community'"
+        >
+          <span>社区下载</span>
+          <span class="irs-source-count">{{ communityImpulseResponseFiles.length }}</span>
+        </button>
+      </div>
+
+      <div v-if="activeImpulseResponseFiles.length > 0" class="irs-list">
         <div
-          v-for="file in settingStore.impulseResponseFiles"
+          v-for="file in activeImpulseResponseFiles"
           :key="file.id"
           class="irs-file-row"
           :class="{ 'is-active': file.id === settingStore.selectedImpulseResponseId }"
@@ -305,10 +358,13 @@ const handleRemoveImpulseResponse = (id: string) => {
           </button>
         </div>
       </div>
-      <div v-else class="irs-empty">暂无音效文件</div>
+      <div v-else class="irs-empty">
+        {{ activeImpulseResponseSourceTab === 'local' ? '暂无本地导入音效' : '暂无社区下载音效' }}
+      </div>
 
       <template #footer>
         <Button
+          v-if="activeImpulseResponseSourceTab === 'local'"
           variant="outline"
           size="sm"
           type="button"
@@ -318,6 +374,7 @@ const handleRemoveImpulseResponse = (id: string) => {
           <Icon :icon="iconPlus" width="14" height="14" class="mr-1" />
           导入音效文件
         </Button>
+        <span v-else class="irs-community-hint">请在播放器的「音效社区」中下载新音效</span>
       </template>
     </Dialog>
 
@@ -395,10 +452,63 @@ const handleRemoveImpulseResponse = (id: string) => {
   overflow: auto;
 }
 
+.irs-source-tabs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 3px;
+  margin-bottom: 14px;
+  padding: 3px;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--color-text-main) 6%, transparent);
+}
+
+.irs-source-tabs button {
+  display: flex;
+  height: 32px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.irs-source-tabs button:hover {
+  color: var(--color-text-main);
+}
+
+.irs-source-tabs button.is-active {
+  background: var(--color-bg-elevated);
+  color: var(--color-primary);
+  box-shadow: var(--shadow-control);
+}
+
+.irs-source-count {
+  display: inline-flex;
+  min-width: 18px;
+  height: 18px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: color-mix(in srgb, currentColor 10%, transparent);
+  font-size: 10px;
+}
+
+.irs-community-hint {
+  color: var(--color-text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+}
+
 .irs-file-row {
   min-width: 0;
   width: 100%;
-  height: 48px;
+  min-height: 52px;
   border: 1px solid color-mix(in srgb, var(--color-text-main) 10%, transparent);
   background: color-mix(in srgb, var(--color-text-main) 3%, transparent);
   border-radius: 8px;

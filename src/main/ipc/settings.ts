@@ -1,5 +1,15 @@
 import { ipcRegistry } from './registry';
-import { shell, app, session, dialog, type OpenDialogOptions } from 'electron';
+import {
+  shell,
+  app,
+  net,
+  session,
+  dialog,
+  type ClientRequest,
+  type IncomingMessage,
+  type OpenDialogOptions,
+  type Session,
+} from 'electron';
 import log from 'electron-log';
 import fs from 'fs';
 import { execFile } from 'child_process';
@@ -15,7 +25,10 @@ import type {
 } from '../../shared/app';
 import type { NetworkSettings } from '../../shared/network';
 import {
+  normalizeCommunityImpulseResponseUrl,
   normalizeImpulseResponseName,
+  type DownloadCommunityImpulseResponseRequest,
+  type DownloadCommunityImpulseResponseResult,
   type ImportImpulseResponseResult,
   type ImpulseResponseFile,
 } from '../../shared/audio';
@@ -23,7 +36,7 @@ import type { LogSettings } from '../../shared/logging';
 import { applyLogSettings, getLogSettings } from '../logger';
 import { getPlaybackQueueStorage } from '../storage/playbackQueues';
 import { setMainAppSetting } from '../storage/settings';
-import { updateNetworkSettings } from '../networkSettings';
+import { getNetworkSettings, updateNetworkSettings } from '../networkSettings';
 import {
   clearUpdateInstallQuitRequested,
   markUpdateInstallQuitRequested,
@@ -54,6 +67,19 @@ const SUPPORTED_IMPULSE_RESPONSE_EXTENSIONS = new Set([
   '.aac',
   '.opus',
 ]);
+const MAX_COMMUNITY_IMPULSE_RESPONSE_BYTES = 32 * 1024 * 1024;
+const MAX_COMMUNITY_IMPULSE_RESPONSE_PENDING_WRITE_BYTES = 4 * 1024 * 1024;
+const COMMUNITY_IMPULSE_RESPONSE_TIMEOUT_MS = 30_000;
+const MAX_COMMUNITY_IMPULSE_RESPONSE_REDIRECTS = 5;
+const COMMUNITY_REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
+const COMMUNITY_AUDIO_SESSION_PARTITION = 'echo-community-audio';
+const COMMUNITY_PROXY_AUTH_REQUIRED_ERROR = 'community proxy authentication required';
+const communityImpulseResponseDownloads = new Map<
+  string,
+  Promise<DownloadCommunityImpulseResponseResult>
+>();
+let appliedCommunityAudioProxyKey: string | null = null;
+let communityAudioProxyQueue = Promise.resolve();
 
 type GithubReleaseAsset = {
   name?: unknown;
@@ -344,6 +370,332 @@ const importImpulseResponseFile = async (
       format: targetExtension.slice(1),
     },
   };
+};
+
+interface CommunityImpulseResponse {
+  request: ClientRequest;
+  response: IncomingMessage;
+}
+
+interface CommunityAudioNetworkContext {
+  networkSession: Session;
+  proxyCredentials?: { username: string; password: string };
+}
+
+const decodeProxyCredential = (value: string): string => {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+};
+
+const getCommunityAudioNetworkContext = async (): Promise<CommunityAudioNetworkContext> => {
+  const networkSession = session.fromPartition(COMMUNITY_AUDIO_SESSION_PARTITION);
+  const proxyUrl = getNetworkSettings().playerHttpProxyUrl;
+  const parsed = proxyUrl ? new URL(proxyUrl) : null;
+  const proxyCredentials =
+    parsed && (parsed.username || parsed.password)
+      ? {
+          username: decodeProxyCredential(parsed.username),
+          password: decodeProxyCredential(parsed.password),
+        }
+      : undefined;
+  const proxyRules = parsed ? `${parsed.protocol}//${parsed.host}` : '';
+  const proxyKey = parsed
+    ? `fixed:${proxyRules}\0${proxyCredentials?.username || ''}\0${proxyCredentials?.password || ''}`
+    : 'system';
+  const proxyConfig: Electron.ProxyConfig = parsed
+    ? { mode: 'fixed_servers', proxyRules }
+    : { mode: 'system' };
+
+  const applyTask = communityAudioProxyQueue.then(async () => {
+    if (appliedCommunityAudioProxyKey === proxyKey) return;
+    const hadPreviousConfiguration = appliedCommunityAudioProxyKey !== null;
+    await networkSession.setProxy(proxyConfig);
+    if (hadPreviousConfiguration) await networkSession.closeAllConnections();
+    appliedCommunityAudioProxyKey = proxyKey;
+  });
+  communityAudioProxyQueue = applyTask.catch(() => undefined);
+  await applyTask;
+  return { networkSession, proxyCredentials };
+};
+
+const requestCommunityImpulseResponse = (
+  sourceUrl: URL,
+  signal: AbortSignal,
+  { networkSession, proxyCredentials }: CommunityAudioNetworkContext,
+): Promise<CommunityImpulseResponse> =>
+  new Promise((resolve, reject) => {
+    let settled = false;
+    let redirectCount = 0;
+    const request = net.request({
+      url: sourceUrl.toString(),
+      method: 'GET',
+      session: networkSession,
+      redirect: 'manual',
+    });
+
+    const rejectOnce = (error: unknown) => {
+      if (settled) return;
+      settled = true;
+      reject(error);
+    };
+    signal.addEventListener(
+      'abort',
+      () => {
+        request.abort();
+        rejectOnce(new Error('download timed out'));
+      },
+      { once: true },
+    );
+    request.on('redirect', (statusCode, _method, redirectUrl) => {
+      if (!COMMUNITY_REDIRECT_STATUSES.has(statusCode)) {
+        rejectOnce(new Error(`unsupported redirect status ${statusCode}`));
+        request.abort();
+        return;
+      }
+      redirectCount += 1;
+      if (redirectCount > MAX_COMMUNITY_IMPULSE_RESPONSE_REDIRECTS) {
+        rejectOnce(new Error('too many redirects'));
+        request.abort();
+        return;
+      }
+      if (!normalizeCommunityImpulseResponseUrl(redirectUrl, false)) {
+        rejectOnce(new Error('redirected to an unsupported host'));
+        request.abort();
+        return;
+      }
+      // Electron 要求在 redirect 回调内同步调用，否则会取消请求。
+      request.followRedirect();
+    });
+    request.on('response', (response) => {
+      if (settled) return;
+      settled = true;
+      resolve({ request, response });
+    });
+    request.on('error', rejectOnce);
+    request.on('abort', () => rejectOnce(new Error('request aborted')));
+    request.on('login', (authInfo, callback) => {
+      if (authInfo.isProxy) {
+        if (proxyCredentials) {
+          callback(proxyCredentials.username, proxyCredentials.password);
+          return;
+        }
+        rejectOnce(new Error(COMMUNITY_PROXY_AUTH_REQUIRED_ERROR));
+        callback();
+        request.abort();
+        return;
+      }
+      callback();
+    });
+    request.end();
+  });
+
+const getCommunityResponseHeader = (response: IncomingMessage, name: string): string => {
+  const value = response.headers[name.toLowerCase()];
+  return Array.isArray(value) ? value[0] || '' : value || '';
+};
+
+const writeCommunityImpulseResponse = (
+  request: ClientRequest,
+  response: IncomingMessage,
+  handle: fs.promises.FileHandle,
+): Promise<number> =>
+  new Promise((resolve, reject) => {
+    let size = 0;
+    let failed = false;
+    let pendingWriteBytes = 0;
+    let writeQueue = Promise.resolve();
+    const rejectOnce = (error: unknown) => {
+      if (failed) return;
+      failed = true;
+      request.abort();
+      reject(error);
+    };
+
+    response.on('end', () => {
+      writeQueue.then(() => resolve(size), rejectOnce);
+    });
+    response.on('error', rejectOnce);
+    response.on('aborted', () => rejectOnce(new Error('response aborted')));
+    response.on('data', (chunk) => {
+      if (failed) return;
+      const chunkSize = chunk.byteLength;
+      size += chunkSize;
+      if (size > MAX_COMMUNITY_IMPULSE_RESPONSE_BYTES) {
+        rejectOnce(new Error('file is too large'));
+        return;
+      }
+      if (pendingWriteBytes + chunkSize > MAX_COMMUNITY_IMPULSE_RESPONSE_PENDING_WRITE_BYTES) {
+        rejectOnce(new Error('disk write backlog is too large'));
+        return;
+      }
+      pendingWriteBytes += chunkSize;
+      writeQueue = writeQueue.then(async () => {
+        try {
+          await handle.writeFile(chunk);
+        } finally {
+          pendingWriteBytes -= chunkSize;
+        }
+      });
+      writeQueue.catch(rejectOnce);
+    });
+  });
+
+const downloadCommunityImpulseResponseCandidate = async (
+  sourceUrl: URL,
+  targetPath: string,
+  id: string,
+): Promise<number> => {
+  const irsDir = getImpulseResponseDir();
+  const temporaryPath = join(
+    irsDir,
+    `.${id}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}.download`,
+  );
+  const abortController = new AbortController();
+  const timeout = setTimeout(() => abortController.abort(), COMMUNITY_IMPULSE_RESPONSE_TIMEOUT_MS);
+  let handle: fs.promises.FileHandle | null = null;
+
+  try {
+    const networkContext = await getCommunityAudioNetworkContext();
+    const { request, response } = await requestCommunityImpulseResponse(
+      sourceUrl,
+      abortController.signal,
+      networkContext,
+    );
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      request.abort();
+      throw new Error(`HTTP ${response.statusCode}`);
+    }
+
+    const contentLength = Number(getCommunityResponseHeader(response, 'content-length') || 0);
+    if (contentLength > MAX_COMMUNITY_IMPULSE_RESPONSE_BYTES) {
+      request.abort();
+      throw new Error('file is too large');
+    }
+
+    handle = await fs.promises.open(temporaryPath, 'wx');
+    const size = await writeCommunityImpulseResponse(request, response, handle);
+    await handle.close();
+    handle = null;
+
+    if (size === 0 || !(await isSupportedImpulseResponseAudio(temporaryPath))) {
+      throw new Error('downloaded file is not supported audio');
+    }
+    await fs.promises.rename(temporaryPath, targetPath);
+    return size;
+  } catch (error) {
+    if (abortController.signal.aborted) throw new Error('download timed out');
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+    if (handle) await handle.close().catch(() => undefined);
+    await fs.promises.unlink(temporaryPath).catch(() => undefined);
+  }
+};
+
+const performCommunityImpulseResponseDownload = async (
+  payload: DownloadCommunityImpulseResponseRequest,
+  modelId: string,
+): Promise<DownloadCommunityImpulseResponseResult> => {
+  const sourceUrls = [
+    ...new Map(
+      (Array.isArray(payload?.urls) ? payload.urls : [])
+        .map((value) => normalizeCommunityImpulseResponseUrl(value))
+        .filter((url): url is URL => url !== null)
+        .map((url) => [url.toString(), url] as const),
+    ).values(),
+  ];
+  if (sourceUrls.length === 0) {
+    return { error: '社区音效地址无效。' };
+  }
+
+  const id = `kugou-community-${modelId}`;
+  const name = normalizeImpulseResponseName(String(payload?.name ?? '')).slice(0, 120);
+  const irsDir = getImpulseResponseDir();
+  const targetPath = join(irsDir, `${id}.wav`);
+  await fs.promises.mkdir(irsDir, { recursive: true });
+
+  try {
+    const stat = await fs.promises.stat(targetPath);
+    if (
+      stat.isFile() &&
+      stat.size > 0 &&
+      stat.size <= MAX_COMMUNITY_IMPULSE_RESPONSE_BYTES &&
+      (await isSupportedImpulseResponseAudio(targetPath))
+    ) {
+      return {
+        file: {
+          id,
+          name,
+          path: targetPath,
+          size: stat.size,
+          importedAt: stat.birthtimeMs || stat.mtimeMs || Date.now(),
+          format: 'wav',
+        },
+      };
+    }
+    await fs.promises.unlink(targetPath).catch(() => undefined);
+  } catch {
+    // 首次下载或旧缓存已被移除。
+  }
+
+  let lastError: unknown;
+  for (const sourceUrl of sourceUrls) {
+    try {
+      const size = await downloadCommunityImpulseResponseCandidate(sourceUrl, targetPath, id);
+      return {
+        file: {
+          id,
+          name,
+          path: targetPath,
+          size,
+          importedAt: Date.now(),
+          format: 'wav',
+        },
+      };
+    } catch (error) {
+      lastError = error;
+      log.warn('[Audio] Download community impulse response candidate failed:', {
+        modelId,
+        hostname: sourceUrl.hostname,
+        error,
+      });
+    }
+  }
+
+  const lastErrorMessage = lastError instanceof Error ? lastError.message : '';
+  if (lastErrorMessage === 'download timed out') {
+    return { error: '社区音效下载超时。' };
+  }
+  if (lastErrorMessage === COMMUNITY_PROXY_AUTH_REQUIRED_ERROR) {
+    return { error: '播放器代理需要身份验证，请在代理地址中填写用户名和密码。' };
+  }
+  return { error: '社区音效下载或校验失败。' };
+};
+
+const downloadCommunityImpulseResponse = async (
+  payload: DownloadCommunityImpulseResponseRequest,
+): Promise<DownloadCommunityImpulseResponseResult> => {
+  const modelId = String(payload?.modelId ?? '').trim();
+  if (!/^\d{1,20}$/.test(modelId)) return { error: '社区音效地址无效。' };
+
+  const inFlight = communityImpulseResponseDownloads.get(modelId);
+  if (inFlight) return inFlight;
+
+  const task = performCommunityImpulseResponseDownload(payload, modelId).catch((error) => {
+    log.warn('[Audio] Download community impulse response failed:', { modelId, error });
+    return { error: '社区音效下载或校验失败。' };
+  });
+  communityImpulseResponseDownloads.set(modelId, task);
+  try {
+    return await task;
+  } finally {
+    if (communityImpulseResponseDownloads.get(modelId) === task) {
+      communityImpulseResponseDownloads.delete(modelId);
+    }
+  }
 };
 
 const getAppInfo = (): AppInfoResult => {
@@ -659,6 +1011,14 @@ export const registerSettingsHandlers = ({ getMainWindow, playerRef }: IpcContex
         errors,
       };
     },
+  );
+
+  ipcRegistry.registerHandler(
+    'audio:download-community-impulse-response',
+    async (
+      _event,
+      payload: DownloadCommunityImpulseResponseRequest,
+    ): Promise<DownloadCommunityImpulseResponseResult> => downloadCommunityImpulseResponse(payload),
   );
 
   ipcRegistry.registerHandler('audio:delete-impulse-response', async (_event, filePath: string) => {

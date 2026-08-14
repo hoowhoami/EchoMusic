@@ -30,6 +30,8 @@ import type {
   MiniPlayerSnapshotPatch,
 } from '../shared/mini-player';
 import type {
+  DownloadCommunityImpulseResponseRequest,
+  DownloadCommunityImpulseResponseResult,
   ImportImpulseResponseResult,
   ImpulseResponseFile,
   ImpulseResponsePlaybackOptions,
@@ -350,6 +352,11 @@ contextBridge.exposeInMainWorld('electron', {
   audioEffects: {
     importImpulseResponse: () =>
       ipcRenderer.invoke('audio:import-impulse-response') as Promise<ImportImpulseResponseResult>,
+    downloadCommunityImpulseResponse: (payload: DownloadCommunityImpulseResponseRequest) =>
+      invokeWithPlainPayload<DownloadCommunityImpulseResponseResult>(
+        'audio:download-community-impulse-response',
+        payload,
+      ),
     deleteImpulseResponse: (filePath: string) =>
       ipcRenderer.invoke('audio:delete-impulse-response', filePath) as Promise<boolean>,
     reconcileImpulseResponses: (files: ImpulseResponseFile[]) =>

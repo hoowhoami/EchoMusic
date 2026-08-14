@@ -32,6 +32,8 @@ import type {
   MiniPlayerSnapshotPatch,
 } from '../shared/mini-player';
 import type {
+  DownloadCommunityImpulseResponseRequest,
+  DownloadCommunityImpulseResponseResult,
   ImportImpulseResponseResult,
   ImpulseResponseFile,
   ImpulseResponsePlaybackOptions,
@@ -239,6 +241,9 @@ export interface IElectronAPI {
   };
   audioEffects: {
     importImpulseResponse: () => Promise<ImportImpulseResponseResult>;
+    downloadCommunityImpulseResponse: (
+      payload: DownloadCommunityImpulseResponseRequest,
+    ) => Promise<DownloadCommunityImpulseResponseResult>;
     deleteImpulseResponse: (filePath: string) => Promise<boolean>;
     reconcileImpulseResponses: (files: ImpulseResponseFile[]) => Promise<ImpulseResponseFile[]>;
   };

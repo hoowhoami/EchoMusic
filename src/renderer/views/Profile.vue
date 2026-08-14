@@ -161,7 +161,7 @@ const formatDeviceLoginType = (value?: string | number) => {
   if (text === '4') return '苹果登录';
   if (text === '5') return '微博登录';
   if (text === '6') return '扫码登录';
-  return text ? `登录类型 ${text}` : '';
+  return text ? `未知(${text})` : '未知';
 };
 
 const formatDeviceLocation = (value?: string | number) => {
@@ -719,7 +719,7 @@ onMounted(() => loadData());
 }
 
 .dialog-content.login-device-dialog {
-  width: min(560px, 92vw);
+  width: min(480px, 92vw);
   max-height: min(720px, calc(100vh - 140px));
 }
 </style>
