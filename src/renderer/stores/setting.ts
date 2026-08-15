@@ -432,7 +432,9 @@ export const useSettingStore = defineStore('setting', {
       const nextIds = new Set(nextFiles.map((item) => item.id));
       this.impulseResponseFiles = nextFiles;
       if (this.selectedImpulseResponseId && !nextIds.has(this.selectedImpulseResponseId)) {
-        this.selectedImpulseResponseId = nextFiles[0]?.id ?? '';
+        // The selected resource no longer exists. Clear the selection instead of silently
+        // switching to another effect so playback and UI both return to the original sound.
+        this.selectedImpulseResponseId = '';
         this.impulseResponseEnabled = false;
       }
       if (nextFiles.length === 0) {
@@ -444,8 +446,9 @@ export const useSettingStore = defineStore('setting', {
       const target = this.impulseResponseFiles.find((item) => item.id === id);
       this.impulseResponseFiles = this.impulseResponseFiles.filter((item) => item.id !== id);
       if (this.selectedImpulseResponseId === id) {
-        const next = this.impulseResponseFiles[0] ?? null;
-        this.selectedImpulseResponseId = next?.id ?? '';
+        // Deleting the selected effect means returning to the original sound. Do not select
+        // the next list item implicitly; the player subscription will unload the active DSP.
+        this.selectedImpulseResponseId = '';
         this.impulseResponseEnabled = false;
       }
       const resourcePath = target?.impulseResponsePath ?? target?.vpfPath;

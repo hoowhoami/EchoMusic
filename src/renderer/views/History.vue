@@ -1013,12 +1013,11 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   gap: 16px;
-  max-width: 1180px;
+  width: 100%;
   padding-bottom: 16px;
 }
 
 .history-stats.is-share-capture {
-  max-width: none;
   padding-bottom: 0;
 }
 
