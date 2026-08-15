@@ -945,7 +945,7 @@ withDefaults(defineProps<Props>(), {
 .irs-library-tabs button.is-active {
   background: var(--color-bg-elevated);
   color: var(--color-primary);
-  box-shadow: var(--shadow-control);
+  box-shadow: inset 0 0 0 1px var(--control-border);
 }
 
 .community-library-tools {
@@ -991,7 +991,7 @@ withDefaults(defineProps<Props>(), {
 .community-sort-tabs button.is-active {
   background: var(--color-bg-elevated);
   color: var(--color-primary);
-  box-shadow: var(--shadow-control);
+  box-shadow: inset 0 0 0 1px var(--control-border);
 }
 
 .community-sort-tabs button:disabled {

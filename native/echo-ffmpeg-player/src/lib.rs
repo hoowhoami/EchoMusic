@@ -13,6 +13,7 @@ mod output;
 mod shared;
 mod stream;
 mod tempo;
+mod vhe;
 mod vpf;
 
 use control::{

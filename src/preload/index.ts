@@ -449,11 +449,6 @@ contextBridge.exposeInMainWorld('electron', {
     },
   },
   power: {
-    onSuspend: (func: () => void) => {
-      const listener = () => func();
-      ipcRenderer.on('power:suspend', listener);
-      return () => ipcRenderer.removeListener('power:suspend', listener);
-    },
     onResume: (func: () => void) => {
       const listener = () => func();
       ipcRenderer.on('power:resume', listener);

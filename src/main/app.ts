@@ -37,6 +37,7 @@ import type { PlayerController } from './player/controller';
 
 const WM_TASKBARCREATED = 0x031a;
 const playerRef: { current: PlayerController | null } = { current: null };
+let disposePowerMonitor: (() => void) | null = null;
 
 // --- 初始化日志 ---
 initLogger();
@@ -161,7 +162,10 @@ if (!gotTheLock) {
     initMediaControls(getMainWindow);
 
     // 注册系统挂起/唤醒处理：盒盖睡眠后暂停并释放 blocker，唤醒后重建音频并恢复播放
-    initPowerMonitor({ getMainWindow, getController: () => playerRef.current });
+    disposePowerMonitor = initPowerMonitor({
+      getMainWindow,
+      getController: () => playerRef.current,
+    });
 
     // --- 创建主窗口 ---
     refreshAppIconConfig();
@@ -236,6 +240,8 @@ if (!gotTheLock) {
     isExiting = true;
     event.preventDefault();
     stopEventLoopMonitor();
+    disposePowerMonitor?.();
+    disposePowerMonitor = null;
     const skipPlayerCleanup = isUpdateInstallQuitRequested();
     log.info('[Main] before-quit: hiding windows and scheduling cleanup');
 

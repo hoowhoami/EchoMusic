@@ -302,7 +302,6 @@ export interface IElectronAPI {
     onSetPlayMode: (func: (playMode: PlayMode) => void) => () => void;
   };
   power: {
-    onSuspend: (func: () => void) => () => void;
     onResume: (func: () => void) => () => void;
   };
   desktopLyric: {
