@@ -38,6 +38,7 @@ enum AudioFilterNodeKind {
     Tempo,
     Equalizer,
     Spatial,
+    Vpf,
     Normalization,
     Limiter,
 }
@@ -215,6 +216,7 @@ impl AudioFilterNodeKind {
             Self::Tempo => "tempo",
             Self::Equalizer => "equalizer",
             Self::Spatial => "spatial",
+            Self::Vpf => "vpf",
             Self::Normalization => "normalization",
             Self::Limiter => "limiter",
         }
@@ -252,7 +254,13 @@ fn graph_node_snapshot(
             process_format.channels,
             settings,
         )
-        .latency_secs(),
+        .spatial_latency_secs(),
+        AudioFilterNodeKind::Vpf => DspChain::new(
+            process_format.sample_rate,
+            process_format.channels,
+            settings,
+        )
+        .vpf_latency_secs(),
         _ => 0.0,
     };
     let parameters = graph_node_parameters(node.kind, settings);
@@ -290,24 +298,27 @@ fn graph_node_parameters(
             let Some(spatial) = settings.spatial.as_ref() else {
                 return Vec::new();
             };
-            vec![
-                AudioGraphNodeParameterSnapshot {
-                    name: "mix".to_string(),
-                    value: format!("{:.3}", spatial.mix),
-                    unit: None,
-                    min: Some(0.0),
-                    max: Some(1.0),
-                    runtime_editable: true,
-                },
-                AudioGraphNodeParameterSnapshot {
-                    name: "mode".to_string(),
-                    value: spatial.mode().to_string(),
-                    unit: None,
-                    min: None,
-                    max: None,
-                    runtime_editable: false,
-                },
-            ]
+            vec![AudioGraphNodeParameterSnapshot {
+                name: "mode".to_string(),
+                value: spatial.mode().to_string(),
+                unit: None,
+                min: None,
+                max: None,
+                runtime_editable: false,
+            }]
+        }
+        AudioFilterNodeKind::Vpf => {
+            let Some(vpf) = settings.vpf.as_ref() else {
+                return Vec::new();
+            };
+            vec![AudioGraphNodeParameterSnapshot {
+                name: "source".to_string(),
+                value: vpf.file_path.clone(),
+                unit: None,
+                min: None,
+                max: None,
+                runtime_editable: false,
+            }]
         }
         AudioFilterNodeKind::Normalization => vec![AudioGraphNodeParameterSnapshot {
             name: "gain".to_string(),
@@ -505,7 +516,7 @@ fn filter_nodes_for_settings(settings: &DspSettings) -> Vec<AudioFilterNode> {
         channels: ChannelRequirement::Preserve,
         flush: FilterFlushMode::Drain,
     });
-    if settings.equalizer.iter().any(|gain| gain.abs() >= 0.05) {
+    if settings.vpf.is_none() && settings.equalizer.iter().any(|gain| gain.abs() >= 0.05) {
         nodes.push(AudioFilterNode {
             kind: AudioFilterNodeKind::Equalizer,
             channels: ChannelRequirement::Preserve,
@@ -515,6 +526,13 @@ fn filter_nodes_for_settings(settings: &DspSettings) -> Vec<AudioFilterNode> {
     if settings.spatial.is_some() {
         nodes.push(AudioFilterNode {
             kind: AudioFilterNodeKind::Spatial,
+            channels: ChannelRequirement::Stereo,
+            flush: FilterFlushMode::Reset,
+        });
+    }
+    if settings.vpf.is_some() {
+        nodes.push(AudioFilterNode {
+            kind: AudioFilterNodeKind::Vpf,
             channels: ChannelRequirement::Stereo,
             flush: FilterFlushMode::Reset,
         });

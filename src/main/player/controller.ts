@@ -7,7 +7,7 @@ import log from '../logger';
 import { refreshNetworkSettingsFromStorage } from '../networkSettings';
 import { getPersistedRendererSettings } from '../storage/persistedStores';
 import type { NetworkSettings } from '../../shared/network';
-import type { ImpulseResponsePlaybackOptions } from '../../shared/audio';
+import type { AudioEffectPlaybackOptions } from '../../shared/audio';
 import type { PlayerErrorCode, PlayerErrorPayload } from '../../shared/player-error';
 import type {
   PlayerAudioGraphParameterPatch,
@@ -32,6 +32,64 @@ const MAX_DEMUXER_BYTES = 4 * 1024 * 1024 * 1024;
 const DEFAULT_PLAYBACK_STALL_TIMEOUT_SECS = 8;
 const AO_STATE_LOG_INTERVAL_MS = 5000;
 const nativeRequire = createRequire(path.join(process.cwd(), 'package.json'));
+
+type AudioEffectFileKind = 'impulse-response' | 'vpf';
+
+const resolveTrustedAudioEffectFile = async (
+  value: unknown,
+  kind: AudioEffectFileKind,
+): Promise<string | undefined> => {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value !== 'string' || !value.trim()) throw new Error('音效文件路径无效');
+
+  const targetPath = await fs.promises.realpath(value.trim());
+  const stat = await fs.promises.stat(targetPath);
+  if (!stat.isFile()) throw new Error('音效文件路径无效');
+
+  const userData = app.getPath('userData');
+  const importedRoot = await fs.promises.realpath(path.join(userData, 'irs')).catch(() => null);
+  if (kind === 'impulse-response' && importedRoot) {
+    const relative = path.relative(importedRoot, targetPath);
+    if (relative && !relative.startsWith('..') && !path.isAbsolute(relative)) {
+      const segments = relative.split(path.sep);
+      if (segments.length === 1) return targetPath;
+    }
+  }
+
+  const communityRoot = await fs.promises
+    .realpath(path.join(userData, 'audio-effects'))
+    .catch(() => null);
+  if (communityRoot) {
+    const relative = path.relative(communityRoot, targetPath);
+    const segments = relative.split(path.sep);
+    const expectedName = kind === 'vpf' ? 'effect.vpf' : 'impulse-response.wav';
+    if (
+      relative &&
+      !relative.startsWith('..') &&
+      !path.isAbsolute(relative) &&
+      segments.length === 2 &&
+      /^community-effect-\d{1,20}$/.test(segments[0]) &&
+      segments[1] === expectedName
+    ) {
+      return targetPath;
+    }
+  }
+
+  throw new Error('音效文件不在受信任的存储目录中');
+};
+
+const normalizeAudioEffectPlaybackOptions = async (
+  options: AudioEffectPlaybackOptions | null,
+): Promise<AudioEffectPlaybackOptions | null> => {
+  if (options === null) return null;
+  if (!options || typeof options !== 'object') throw new Error('音效参数无效');
+  const [vpfPath, impulseResponsePath] = await Promise.all([
+    resolveTrustedAudioEffectFile(options.vpfPath, 'vpf'),
+    resolveTrustedAudioEffectFile(options.impulseResponsePath, 'impulse-response'),
+  ]);
+  if (!vpfPath && !impulseResponsePath) return null;
+  return { vpfPath, impulseResponsePath };
+};
 
 const readClampedNumber = (value: unknown, fallback: number, min: number, max: number): number => {
   const parsed = Number(value);
@@ -230,8 +288,7 @@ interface PlayerAddon {
   setVolume(volume: number): void;
   setSpeed(speed: number): Promise<void>;
   setEqualizer(gains: number[]): Promise<void>;
-  setImpulseResponse(payload: string | ImpulseResponsePlaybackOptions): Promise<void>;
-  setImpulseResponseMix(mix: number): Promise<void>;
+  setAudioEffect(options: AudioEffectPlaybackOptions | null): Promise<void>;
   getAudioGraph(): PlayerAudioGraphSnapshot;
   setAudioGraphParameter(patch: PlayerAudioGraphParameterPatch): Promise<void>;
   setAudioGraphPlan(plan: PlayerAudioGraphPlanPatch): Promise<void>;
@@ -460,12 +517,9 @@ export class PlayerController extends EventEmitter {
     await this.enqueue(() => this.getAddonOrThrow().setEqualizer(gains));
   }
 
-  async setImpulseResponse(payload: string | ImpulseResponsePlaybackOptions): Promise<void> {
-    return this.enqueue(() => this.getAddonOrThrow().setImpulseResponse(payload));
-  }
-
-  async setImpulseResponseMix(mix: number): Promise<void> {
-    await this.enqueue(() => this.getAddonOrThrow().setImpulseResponseMix(mix));
+  async setAudioEffect(options: AudioEffectPlaybackOptions | null): Promise<void> {
+    const trustedOptions = await normalizeAudioEffectPlaybackOptions(options);
+    return this.enqueue(() => this.getAddonOrThrow().setAudioEffect(trustedOptions));
   }
 
   async getAudioGraph(): Promise<PlayerAudioGraphSnapshot> {
@@ -733,9 +787,6 @@ export class PlayerController extends EventEmitter {
           deviceChangeKind: event.deviceChangeKind,
           disconnectedDevices: event.disconnectedDevices || [],
         });
-        break;
-      case 'impulse-response-disabled':
-        this.emit('impulse-response-disabled', { reason: event.reason || event.message });
         break;
       case 'error':
         this.emit('error', {

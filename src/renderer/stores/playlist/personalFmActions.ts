@@ -38,6 +38,7 @@ type PersonalFmStoreShape = {
   personalFmMode: PersonalFmMode;
   personalFmSongPoolId: PersonalFmSongPoolId;
   playbackQueues: PlaybackQueueState[];
+  persistPersonalFmPreferences: () => void;
   persistQueueAppendToStorage: (queue: PlaybackQueueState, songs: Song[]) => void;
   removePersonalFmQueue: (options?: { preserveBuffer?: boolean }) => void;
   syncLegacyPlaybackState: () => void;
@@ -136,6 +137,7 @@ export const personalFmActions = {
   updatePersonalFmMode(this: PersonalFmStoreShape, mode: PersonalFmMode) {
     const presentation = getPersonalFmModePresentation(mode);
     this.personalFmMode = presentation.mode;
+    this.persistPersonalFmPreferences();
     const queue = this.playbackQueues.find((item) => item.id === PERSONAL_FM_QUEUE_ID);
     if (queue) {
       queue.title = presentation.title;
@@ -150,6 +152,7 @@ export const personalFmActions = {
   updatePersonalFmSongPool(this: PersonalFmStoreShape, songPoolId?: PersonalFmSongPoolId | number) {
     const presentation = getPersonalFmSongPoolPresentation(songPoolId);
     this.personalFmSongPoolId = presentation.songPoolId;
+    this.persistPersonalFmPreferences();
     const queue = this.playbackQueues.find((item) => item.id === PERSONAL_FM_QUEUE_ID);
     if (queue) {
       queue.meta = {
@@ -178,6 +181,7 @@ export const personalFmActions = {
     );
     this.personalFmMode = presentation.mode;
     this.personalFmSongPoolId = songPoolPresentation.songPoolId;
+    this.persistPersonalFmPreferences();
 
     const queue = this.playbackQueues.find((item) => item.id === PERSONAL_FM_QUEUE_ID) ?? null;
     if (queue && !options?.preserveQueue) {

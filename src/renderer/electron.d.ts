@@ -32,11 +32,11 @@ import type {
   MiniPlayerSnapshotPatch,
 } from '../shared/mini-player';
 import type {
-  DownloadCommunityImpulseResponseRequest,
-  DownloadCommunityImpulseResponseResult,
+  AudioEffectPlaybackOptions,
+  DownloadCommunityAudioEffectRequest,
+  DownloadCommunityAudioEffectResult,
   ImportImpulseResponseResult,
-  ImpulseResponseFile,
-  ImpulseResponsePlaybackOptions,
+  SpatialAudioEffectEntry,
 } from '../shared/audio';
 import type {
   AudioSpectrumFrame,
@@ -241,11 +241,11 @@ export interface IElectronAPI {
   };
   audioEffects: {
     importImpulseResponse: () => Promise<ImportImpulseResponseResult>;
-    downloadCommunityImpulseResponse: (
-      payload: DownloadCommunityImpulseResponseRequest,
-    ) => Promise<DownloadCommunityImpulseResponseResult>;
-    deleteImpulseResponse: (filePath: string) => Promise<boolean>;
-    reconcileImpulseResponses: (files: ImpulseResponseFile[]) => Promise<ImpulseResponseFile[]>;
+    downloadCommunityAudioEffect: (
+      payload: DownloadCommunityAudioEffectRequest,
+    ) => Promise<DownloadCommunityAudioEffectResult>;
+    deleteAudioEffect: (filePath: string) => Promise<boolean>;
+    reconcileAudioEffects: (files: SpatialAudioEffectEntry[]) => Promise<SpatialAudioEffectEntry[]>;
   };
   updater: {
     download: () => void;
@@ -643,8 +643,7 @@ export interface IElectronAPI {
     setVolume: (volume: number) => Promise<void>;
     setSpeed: (speed: number) => Promise<void>;
     setEqualizer: (gains: number[]) => Promise<void>;
-    setImpulseResponse: (payload: string | ImpulseResponsePlaybackOptions) => Promise<void>;
-    setImpulseResponseMix: (mix: number) => Promise<void>;
+    setAudioEffect: (options: AudioEffectPlaybackOptions | null) => Promise<void>;
     getAudioGraph: () => Promise<PlayerAudioGraphSnapshot | null>;
     setAudioGraphParameter: (patch: PlayerAudioGraphParameterPatch) => Promise<void>;
     setAudioGraphPlan: (plan: PlayerAudioGraphPlanPatch) => Promise<void>;
@@ -692,9 +691,6 @@ export interface IElectronAPI {
     onPlaybackEnd: (func: (reason: string) => void) => () => void;
     onStall: (func: (position: number) => void) => () => void;
     onError: (func: (payload: PlayerErrorPayload) => void) => () => void;
-    onImpulseResponseDisabled: (
-      func: (payload: { path?: string; reason?: string }) => void,
-    ) => () => void;
     onAudioDeviceListChanged: (
       func: (payload: {
         devices: Array<{ name: string; description: string; isDefault?: boolean }>;

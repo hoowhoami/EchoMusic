@@ -1,8 +1,5 @@
 import logger from './logger';
-import {
-  DEFAULT_IMPULSE_RESPONSE_MIX,
-  type ImpulseResponsePlaybackOptions,
-} from '../../shared/audio';
+import type { AudioEffectPlaybackOptions } from '../../shared/audio';
 import type { PlayerErrorPayload } from '../../shared/player-error';
 import type {
   PlayerAudioGraphParameterPatch,
@@ -492,31 +489,15 @@ export class PlayerEngine {
     });
   }
 
-  setImpulseResponse(filePath: string | null, mix = DEFAULT_IMPULSE_RESPONSE_MIX): void {
-    const payload: ImpulseResponsePlaybackOptions = {
-      filePath: filePath || '',
-      mix: clamp(Number(mix) || DEFAULT_IMPULSE_RESPONSE_MIX, 0, 1),
-    };
-    const command = player?.setImpulseResponse(payload);
+  async setSpatialAudioEffect(options: AudioEffectPlaybackOptions | null): Promise<void> {
+    const command = player?.setAudioEffect(options);
     if (!command) return;
-    void command.catch((error: unknown) => {
-      logger.warn('PlayerEngine', 'set impulse response failed', {
-        filePath: payload.filePath,
-        error: String(error),
-      });
-    });
-  }
-
-  setImpulseResponseMix(mix: number): void {
-    const nextMix = clamp(Number(mix) || DEFAULT_IMPULSE_RESPONSE_MIX, 0, 1);
-    const command = player?.setImpulseResponseMix(nextMix);
-    if (!command) return;
-    void command.catch((error: unknown) => {
-      logger.warn('PlayerEngine', 'set impulse response mix failed', {
-        mix: nextMix,
-        error: String(error),
-      });
-    });
+    try {
+      await command;
+    } catch (error: unknown) {
+      logger.warn('PlayerEngine', 'set audio effect failed', { error: String(error) });
+      throw error;
+    }
   }
 
   async getAudioGraph(): Promise<PlayerAudioGraphSnapshot | null> {

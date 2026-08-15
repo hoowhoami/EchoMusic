@@ -1,6 +1,6 @@
 import { ipcRegistry } from './registry';
 import type { PlayerController } from '../player/controller';
-import type { ImpulseResponsePlaybackOptions } from '../../shared/audio';
+import type { AudioEffectPlaybackOptions } from '../../shared/audio';
 import type {
   PlayerAudioGraphParameterPatch,
   PlayerAudioGraphPlanPatch,
@@ -21,6 +21,13 @@ export function registerPlayerIpc(ref: PlayerRef): void {
   ipcRegistry.registerHandler(
     'player:begin-next-source-preparation',
     async () => ref.current?.beginNextSourcePreparation() ?? null,
+  );
+
+  ipcRegistry.registerHandler(
+    'player:set-audio-effect',
+    async (_e, options: AudioEffectPlaybackOptions | null) => {
+      await ref.current?.setAudioEffect(options);
+    },
   );
 
   ipcRegistry.registerHandler(
@@ -69,17 +76,6 @@ export function registerPlayerIpc(ref: PlayerRef): void {
 
   ipcRegistry.registerHandler('player:set-equalizer', async (_e, gains: number[]) => {
     await ref.current?.setEq(gains);
-  });
-
-  ipcRegistry.registerHandler(
-    'player:set-impulse-response',
-    async (_e, payload: string | ImpulseResponsePlaybackOptions) => {
-      await ref.current?.setImpulseResponse(payload);
-    },
-  );
-
-  ipcRegistry.registerHandler('player:set-impulse-response-mix', async (_e, mix: number) => {
-    await ref.current?.setImpulseResponseMix(mix);
   });
 
   ipcRegistry.registerHandler('player:get-audio-graph', async () => {

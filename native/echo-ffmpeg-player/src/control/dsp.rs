@@ -1,4 +1,5 @@
 use super::*;
+use crate::vpf::load_vpf;
 use napi::bindgen_prelude::AsyncTask;
 use napi::{Env, Task};
 use napi_derive::napi;
@@ -50,9 +51,19 @@ impl Task for SetEqualizerTask {
     type JsValue = ();
 
     fn compute(&mut self) -> napi::Result<Self::Output> {
+        if self.gains.len() != EQ_BAND_COUNT {
+            return Err(napi::Error::from_reason(format!(
+                "equalizer requires exactly {EQ_BAND_COUNT} gains"
+            )));
+        }
+        if self.gains.iter().any(|value| !value.is_finite()) {
+            return Err(napi::Error::from_reason(
+                "equalizer gains must be finite".to_string(),
+            ));
+        }
         with_runtime(|runtime| {
             let mut next = [0.0f32; EQ_BAND_COUNT];
-            for (index, value) in self.gains.iter().take(EQ_BAND_COUNT).enumerate() {
+            for (index, value) in self.gains.iter().enumerate() {
                 next[index] = value.clamp(-12.0, 12.0) as f32;
             }
             runtime.dsp_settings.equalizer = next;
@@ -70,131 +81,6 @@ impl Task for SetEqualizerTask {
 #[napi]
 pub fn set_equalizer(gains: Vec<f64>) -> AsyncTask<SetEqualizerTask> {
     AsyncTask::new(SetEqualizerTask { gains })
-}
-
-pub struct SetImpulseResponseTask {
-    payload: serde_json::Value,
-}
-
-impl Task for SetImpulseResponseTask {
-    type Output = ();
-    type JsValue = ();
-
-    fn compute(&mut self) -> napi::Result<Self::Output> {
-        let Some((file_path, mix)) =
-            parse_impulse_response_payload(&self.payload).map_err(napi::Error::from_reason)?
-        else {
-            with_runtime(|runtime| {
-                runtime.spatial_request_seq = runtime.spatial_request_seq.wrapping_add(1);
-                runtime.spatial_file_path = None;
-                runtime.dsp_settings.spatial = None;
-                sync_current_session_dsp_settings(runtime);
-                update_runtime_audio_graph(runtime);
-                emit_runtime_event(
-                    runtime,
-                    PlayerEvent::log("info", "impulse response disabled".to_string()),
-                );
-                Ok(())
-            })?;
-            return Ok(());
-        };
-
-        let prepare = with_runtime(|runtime| {
-            runtime.spatial_request_seq = runtime.spatial_request_seq.wrapping_add(1);
-            runtime.spatial_mix = clamp_spatial_mix(mix);
-            runtime.spatial_file_path = Some(file_path.clone());
-            let Some(session) = runtime.session.as_ref() else {
-                runtime.dsp_settings.spatial = None;
-                emit_runtime_event(
-                    runtime,
-                    PlayerEvent::log(
-                        "info",
-                        format!(
-                            "impulse response pending: path='{file_path}', mix={:.2}",
-                            runtime.spatial_mix
-                        ),
-                    ),
-                );
-                return Ok(None);
-            };
-            let sample_rate = session.shared.mix_format.sample_rate;
-
-            let can_reuse_current = runtime
-                .dsp_settings
-                .spatial
-                .as_ref()
-                .is_some_and(|spatial| {
-                    spatial.file_path == file_path && spatial.sample_rate() == sample_rate
-                });
-            if can_reuse_current {
-                update_spatial_mix(runtime, mix);
-                return Ok(None);
-            }
-
-            Ok(Some((sample_rate, runtime.spatial_request_seq)))
-        })?;
-
-        let Some((sample_rate, request_seq)) = prepare else {
-            return Ok(());
-        };
-
-        let spatial = match prepare_spatial_effect(&file_path, mix, sample_rate) {
-            Ok(spatial) => spatial,
-            Err(err) => {
-                emit_event(PlayerEvent::impulse_response_disabled(err.clone()));
-                with_runtime(|runtime| {
-                    if runtime.spatial_request_seq == request_seq {
-                        runtime.spatial_file_path = None;
-                        runtime.dsp_settings.spatial = None;
-                        sync_current_session_dsp_settings(runtime);
-                        update_runtime_audio_graph(runtime);
-                    }
-                    Ok(())
-                })?;
-                return Err(napi::Error::from_reason(err));
-            }
-        };
-
-        with_runtime(|runtime| {
-            if runtime.spatial_request_seq != request_seq {
-                emit_runtime_event(
-                    runtime,
-                    PlayerEvent::log("debug", "stale impulse response load ignored".to_string()),
-                );
-                return Ok(());
-            }
-            let mut spatial = spatial;
-            spatial.mix = runtime.spatial_mix;
-            let spatial_path = spatial.file_path.clone();
-            let spatial_mix = spatial.mix;
-            let spatial_sample_rate = spatial.sample_rate();
-            let spatial_channels = spatial.channels();
-            let spatial_mode = spatial.mode();
-            apply_prepared_spatial_effect(runtime, spatial);
-            emit_runtime_event(
-                runtime,
-                PlayerEvent::log(
-                    "info",
-                    format!(
-                        "impulse response enabled: path='{spatial_path}', mix={spatial_mix:.2}, mix_sample_rate={spatial_sample_rate}, ir_channels={spatial_channels}, mode={spatial_mode}"
-                    ),
-                ),
-            );
-            Ok(())
-        })?;
-        Ok(())
-    }
-
-    fn resolve(&mut self, _env: Env, _output: Self::Output) -> napi::Result<Self::JsValue> {
-        Ok(())
-    }
-}
-
-fn apply_prepared_spatial_effect(runtime: &mut PlayerRuntime, spatial: PreparedSpatialEffect) {
-    runtime.dsp_settings.spatial = Some(spatial);
-    sync_current_session_dsp_settings(runtime);
-    reset_current_filter_if_process_format_changed(runtime);
-    update_runtime_audio_graph(runtime);
 }
 
 pub(crate) fn sync_current_session_dsp_settings(runtime: &PlayerRuntime) {
@@ -217,7 +103,6 @@ fn reset_current_filter_if_process_format_changed(runtime: &PlayerRuntime) {
 pub(crate) fn prepare_dsp_settings_for_mix_rate(
     mut settings: DspSettings,
     spatial_file_path: Option<&str>,
-    spatial_mix: f32,
     mix_sample_rate: u32,
 ) -> Result<DspSettings, String> {
     let Some(file_path) = spatial_file_path else {
@@ -225,80 +110,76 @@ pub(crate) fn prepare_dsp_settings_for_mix_rate(
         return Ok(settings);
     };
 
-    let mix = clamp_spatial_mix(spatial_mix);
     let can_reuse = settings.spatial.as_ref().is_some_and(|spatial| {
         spatial.file_path == file_path && spatial.sample_rate() == mix_sample_rate
     });
     if can_reuse {
-        if let Some(spatial) = settings.spatial.as_mut() {
-            spatial.mix = mix;
-        }
         return Ok(settings);
     }
 
-    settings.spatial = Some(prepare_spatial_effect(file_path, mix, mix_sample_rate)?);
+    settings.spatial = Some(prepare_spatial_effect(file_path, mix_sample_rate)?);
     Ok(settings)
 }
 
-fn update_spatial_mix(runtime: &mut PlayerRuntime, mix: f32) {
-    let mix = clamp_spatial_mix(mix);
-    runtime.spatial_mix = mix;
-    if let Some(spatial) = runtime.dsp_settings.spatial.as_mut() {
-        spatial.mix = mix;
-    }
-    sync_current_session_dsp_settings(runtime);
-    update_runtime_audio_graph(runtime);
+pub struct SetAudioEffectTask {
+    payload: serde_json::Value,
 }
 
-fn parse_impulse_response_payload(
-    payload: &serde_json::Value,
-) -> Result<Option<(String, f32)>, String> {
-    match payload {
-        serde_json::Value::Null => Ok(None),
-        serde_json::Value::String(path) => {
-            let path = path.trim();
-            if path.is_empty() {
-                Ok(None)
-            } else {
-                Ok(Some((path.to_string(), DEFAULT_SPATIAL_MIX)))
-            }
-        }
-        serde_json::Value::Object(object) => {
-            let path = object
-                .get("filePath")
-                .and_then(serde_json::Value::as_str)
-                .unwrap_or("")
-                .trim();
-            if path.is_empty() {
-                return Ok(None);
-            }
-            let mix = object
-                .get("mix")
-                .and_then(serde_json::Value::as_f64)
-                .unwrap_or(DEFAULT_SPATIAL_MIX as f64)
-                .clamp(0.0, 1.0) as f32;
-            Ok(Some((path.to_string(), mix)))
-        }
-        _ => Err("invalid impulse response payload".to_string()),
-    }
-}
-
-#[napi]
-pub fn set_impulse_response(payload: serde_json::Value) -> AsyncTask<SetImpulseResponseTask> {
-    AsyncTask::new(SetImpulseResponseTask { payload })
-}
-
-pub struct SetImpulseResponseMixTask {
-    mix: f64,
-}
-
-impl Task for SetImpulseResponseMixTask {
+impl Task for SetAudioEffectTask {
     type Output = ();
     type JsValue = ();
 
     fn compute(&mut self) -> napi::Result<Self::Output> {
+        let (vpf_path, impulse_response_path) =
+            parse_audio_effect_payload(&self.payload).map_err(napi::Error::from_reason)?;
+        let (sample_rate, request_seq) = with_runtime(|runtime| {
+            runtime.spatial_request_seq = runtime.spatial_request_seq.wrapping_add(1);
+            Ok((
+                runtime
+                    .session
+                    .as_ref()
+                    .map(|session| session.shared.mix_format.sample_rate),
+                runtime.spatial_request_seq,
+            ))
+        })?;
+
+        let vpf = vpf_path
+            .as_deref()
+            .map(load_vpf)
+            .transpose()
+            .map_err(napi::Error::from_reason)?;
+        let spatial = match (impulse_response_path.as_deref(), sample_rate) {
+            (Some(path), Some(rate)) => {
+                Some(prepare_spatial_effect(path, rate).map_err(napi::Error::from_reason)?)
+            }
+            _ => None,
+        };
+
         with_runtime(|runtime| {
-            update_spatial_mix(runtime, self.mix as f32);
+            if runtime.spatial_request_seq != request_seq {
+                emit_runtime_event(
+                    runtime,
+                    PlayerEvent::log("debug", "stale audio effect load ignored".to_string()),
+                );
+                return Ok(());
+            }
+            runtime.spatial_file_path = impulse_response_path;
+            runtime.dsp_settings.spatial = spatial;
+            runtime.dsp_settings.vpf = vpf;
+            sync_current_session_dsp_settings(runtime);
+            reset_current_filter_if_process_format_changed(runtime);
+            update_runtime_audio_graph(runtime);
+            emit_runtime_event(
+                runtime,
+                PlayerEvent::log(
+                    "info",
+                    format!(
+                        "audio effect applied: vpf={}, impulse_response={}",
+                        vpf_path.is_some(),
+                        runtime.spatial_file_path.is_some()
+                    ),
+                ),
+            );
             Ok(())
         })
     }
@@ -308,9 +189,31 @@ impl Task for SetImpulseResponseMixTask {
     }
 }
 
+fn parse_audio_effect_payload(
+    payload: &serde_json::Value,
+) -> Result<(Option<String>, Option<String>), String> {
+    if payload.is_null() {
+        return Ok((None, None));
+    }
+    let object = payload
+        .as_object()
+        .ok_or_else(|| "invalid audio effect payload".to_string())?;
+    let path = |name: &str| -> Result<Option<String>, String> {
+        match object.get(name) {
+            None | Some(serde_json::Value::Null) => Ok(None),
+            Some(serde_json::Value::String(value)) => {
+                let value = value.trim();
+                Ok((!value.is_empty()).then(|| value.to_string()))
+            }
+            _ => Err(format!("invalid audio effect path: {name}")),
+        }
+    };
+    Ok((path("vpfPath")?, path("impulseResponsePath")?))
+}
+
 #[napi]
-pub fn set_impulse_response_mix(mix: f64) -> AsyncTask<SetImpulseResponseMixTask> {
-    AsyncTask::new(SetImpulseResponseMixTask { mix })
+pub fn set_audio_effect(payload: serde_json::Value) -> AsyncTask<SetAudioEffectTask> {
+    AsyncTask::new(SetAudioEffectTask { payload })
 }
 
 pub struct SetNormalizationGainTask {

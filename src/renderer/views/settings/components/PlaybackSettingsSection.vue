@@ -14,7 +14,7 @@ import { Icon } from '@iconify/vue';
 import { iconCheckMark, iconPencil, iconPlayerPlay, iconPlus, iconTrash, iconX } from '@/icons';
 import SettingsSectionShell from './SettingsSectionShell.vue';
 import { audioQualityOptions, sectionTitles } from '../constants';
-import { normalizeImpulseResponseName, type ImpulseResponseFile } from '../../../../shared/audio';
+import { normalizeAudioEffectName, type SpatialAudioEffectEntry } from '../../../../shared/audio';
 
 const settingStore = useSettingStore();
 const playerStore = usePlayerStore();
@@ -27,15 +27,19 @@ type ImpulseResponseSourceTab = 'local' | 'community';
 const activeImpulseResponseSourceTab = ref<ImpulseResponseSourceTab>('local');
 
 const selectedImpulseResponse = computed(() => settingStore.getSelectedImpulseResponse());
-const communityImpulseResponseFiles = computed(() =>
-  settingStore.impulseResponseFiles.filter((file) => file.id.startsWith('kugou-community-')),
+const isCommunityAudioEffect = (file: SpatialAudioEffectEntry) =>
+  file.kind === 'community-ir' ||
+  file.kind === 'community-vpf' ||
+  file.kind === 'community-combined';
+const communityAudioEffects = computed(() =>
+  settingStore.impulseResponseFiles.filter(isCommunityAudioEffect),
 );
 const localImpulseResponseFiles = computed(() =>
-  settingStore.impulseResponseFiles.filter((file) => !file.id.startsWith('kugou-community-')),
+  settingStore.impulseResponseFiles.filter((file) => file.kind === 'imported-ir'),
 );
 const activeImpulseResponseFiles = computed(() =>
   activeImpulseResponseSourceTab.value === 'community'
-    ? communityImpulseResponseFiles.value
+    ? communityAudioEffects.value
     : localImpulseResponseFiles.value,
 );
 
@@ -69,18 +73,18 @@ const handleReferenceLufsSlider = (value: number) => {
   playerStore.setReferenceLufs(value);
 };
 
-const getImpulseResponseDisplayName = (name: string) => normalizeImpulseResponseName(name);
+const getImpulseResponseDisplayName = (name: string) => normalizeAudioEffectName(name);
 
 const openImpulseResponseDialog = () => {
   if (
     activeImpulseResponseSourceTab.value === 'local' &&
     localImpulseResponseFiles.value.length === 0 &&
-    communityImpulseResponseFiles.value.length > 0
+    communityAudioEffects.value.length > 0
   ) {
     activeImpulseResponseSourceTab.value = 'community';
   } else if (
     activeImpulseResponseSourceTab.value === 'community' &&
-    communityImpulseResponseFiles.value.length === 0 &&
+    communityAudioEffects.value.length === 0 &&
     localImpulseResponseFiles.value.length > 0
   ) {
     activeImpulseResponseSourceTab.value = 'local';
@@ -88,7 +92,7 @@ const openImpulseResponseDialog = () => {
   showImpulseResponseDialog.value = true;
 };
 
-const beginRenameImpulseResponse = (file: ImpulseResponseFile) => {
+const beginRenameImpulseResponse = (file: SpatialAudioEffectEntry) => {
   editingImpulseResponseId.value = file.id;
   impulseResponseNameDraft.value = getImpulseResponseDisplayName(file.name);
 };
@@ -287,7 +291,7 @@ const handleRemoveImpulseResponse = (id: string) => {
           :class="{ 'is-active': activeImpulseResponseSourceTab === 'local' }"
           @click="activeImpulseResponseSourceTab = 'local'"
         >
-          <span>本地导入</span>
+          <span>用户导入</span>
           <span class="irs-source-count">{{ localImpulseResponseFiles.length }}</span>
         </button>
         <button
@@ -298,7 +302,7 @@ const handleRemoveImpulseResponse = (id: string) => {
           @click="activeImpulseResponseSourceTab = 'community'"
         >
           <span>社区下载</span>
-          <span class="irs-source-count">{{ communityImpulseResponseFiles.length }}</span>
+          <span class="irs-source-count">{{ communityAudioEffects.length }}</span>
         </button>
       </div>
 

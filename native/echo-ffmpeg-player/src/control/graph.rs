@@ -54,7 +54,6 @@ struct GraphPatchEffects {
 #[derive(Clone)]
 struct GraphPlanDraft {
     dsp_settings: DspSettings,
-    spatial_mix: f32,
     spatial_file_path: Option<String>,
 }
 
@@ -87,7 +86,6 @@ fn apply_audio_graph_plan_parts(
     };
     let mut draft = GraphPlanDraft {
         dsp_settings: runtime.dsp_settings.clone(),
-        spatial_mix: runtime.spatial_mix,
         spatial_file_path: runtime.spatial_file_path.clone(),
     };
     if let Some(nodes) = nodes {
@@ -102,7 +100,6 @@ fn apply_audio_graph_plan_parts(
         return Ok(());
     }
     runtime.dsp_settings = draft.dsp_settings;
-    runtime.spatial_mix = draft.spatial_mix;
     runtime.spatial_file_path = draft.spatial_file_path;
     if effects.spatial_resource_changed {
         runtime.spatial_request_seq = runtime.spatial_request_seq.wrapping_add(1);
@@ -171,6 +168,20 @@ fn apply_audio_graph_node_patch_to_draft(
             }
             Ok(())
         }
+        "vpf" => {
+            if enabled {
+                if draft.dsp_settings.vpf.is_none() {
+                    return Err(napi::Error::from_reason(
+                        "vpf node requires a VPF resource".to_string(),
+                    ));
+                }
+                return Ok(());
+            }
+            if draft.dsp_settings.vpf.take().is_some() {
+                effects.changed = true;
+            }
+            Ok(())
+        }
         "tempo" => {
             if !enabled && (draft.dsp_settings.speed - 1.0).abs() >= f32::EPSILON {
                 draft.dsp_settings.speed = 1.0;
@@ -229,24 +240,6 @@ fn apply_audio_graph_parameter_patch_to_draft(
                 return Ok(());
             }
             draft.dsp_settings.normalization_gain_db = value;
-            effects.changed = true;
-            Ok(())
-        }
-        "spatial" if name == "mix" => {
-            let mix = clamp_spatial_mix(patch.value as f32);
-            if (draft.spatial_mix - mix).abs() < f32::EPSILON
-                && draft
-                    .dsp_settings
-                    .spatial
-                    .as_ref()
-                    .is_none_or(|spatial| (spatial.mix - mix).abs() < f32::EPSILON)
-            {
-                return Ok(());
-            }
-            draft.spatial_mix = mix;
-            if let Some(spatial) = draft.dsp_settings.spatial.as_mut() {
-                spatial.mix = mix;
-            }
             effects.changed = true;
             Ok(())
         }

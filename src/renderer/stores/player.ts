@@ -9,6 +9,7 @@ import logger from '@/utils/logger';
 import { normalizePlayerErrorPayload, PlayerEngine, type PlayerEngineEvents } from '@/utils/player';
 import type { Song } from '@/models/song';
 import type { PlayerErrorPayload } from '../../shared/player-error';
+import type { AudioEffectPlaybackOptions } from '../../shared/audio';
 
 import { createPlayerState } from './player/state';
 import { createPlaybackManager } from './player/playback';
@@ -280,9 +281,27 @@ export const usePlayerStore = defineStore(
     };
 
     const audioManager = createAudioManager(state, engine, refreshCurrentTrack);
-    const getActiveImpulseResponsePath = () => {
+    const getActiveSpatialAudioEffect = (): AudioEffectPlaybackOptions | null => {
       if (!settingStore.impulseResponseEnabled) return null;
-      return settingStore.getSelectedImpulseResponse()?.path ?? null;
+      const effect = settingStore.getSelectedImpulseResponse();
+      if (!effect) return null;
+      if (effect.kind === 'imported-ir' || effect.kind === 'community-ir') {
+        return effect.impulseResponsePath
+          ? { impulseResponsePath: effect.impulseResponsePath }
+          : null;
+      }
+      if (effect.kind === 'community-vpf') {
+        return effect.vpfPath ? { vpfPath: effect.vpfPath } : null;
+      }
+      if (effect.kind === 'community-combined') {
+        return effect.vpfPath && effect.impulseResponsePath
+          ? {
+              vpfPath: effect.vpfPath,
+              impulseResponsePath: effect.impulseResponsePath,
+            }
+          : null;
+      }
+      return null;
     };
     const showPlaybackNotice = (code: string, track?: Song | null) => {
       const userStore = useUserStore();
@@ -363,7 +382,6 @@ export const usePlayerStore = defineStore(
       clearPlaybackNotice,
       (error) => deviceManager.handleOutputDeviceError(normalizePlayerErrorPayload(error)),
     );
-    let impulseResponseFailureListenerRegistered = false;
     let audioDeviceListListenerRegistered = false;
 
     const toggleLyricView = (open?: boolean) => {
@@ -452,8 +470,7 @@ export const usePlayerStore = defineStore(
         gaplessPlayback: settingStore.gaplessPlayback,
         outputDevice: settingStore.outputDevice,
         exclusiveAudioDevice: settingStore.exclusiveAudioDevice,
-        impulseResponsePath: getActiveImpulseResponsePath(),
-        impulseResponseMix: settingStore.impulseResponseMix,
+        spatialAudioEffect: getActiveSpatialAudioEffect(),
         playbackStallTimeout: settingStore.playbackStallTimeout,
         pauseOnOutputDeviceDisconnect: settingStore.pauseOnOutputDeviceDisconnect,
       };
@@ -477,10 +494,11 @@ export const usePlayerStore = defineStore(
         const shouldUpdateOutputDevice =
           settingStore.outputDevice !== snapshot.outputDevice ||
           settingStore.exclusiveAudioDevice !== snapshot.exclusiveAudioDevice;
-        const nextImpulseResponsePath = getActiveImpulseResponsePath();
-        const shouldLoadImpulseResponse = nextImpulseResponsePath !== snapshot.impulseResponsePath;
-        const shouldUpdateImpulseResponseMix =
-          settingStore.impulseResponseMix !== snapshot.impulseResponseMix;
+        const nextSpatialAudioEffect = getActiveSpatialAudioEffect();
+        const shouldLoadSpatialAudioEffect =
+          nextSpatialAudioEffect?.vpfPath !== snapshot.spatialAudioEffect?.vpfPath ||
+          nextSpatialAudioEffect?.impulseResponsePath !==
+            snapshot.spatialAudioEffect?.impulseResponsePath;
         const shouldUpdateStallTimeout =
           settingStore.playbackStallTimeout !== snapshot.playbackStallTimeout;
         snapshot = {
@@ -491,8 +509,7 @@ export const usePlayerStore = defineStore(
           gaplessPlayback: settingStore.gaplessPlayback,
           outputDevice: settingStore.outputDevice,
           exclusiveAudioDevice: settingStore.exclusiveAudioDevice,
-          impulseResponsePath: nextImpulseResponsePath,
-          impulseResponseMix: settingStore.impulseResponseMix,
+          spatialAudioEffect: nextSpatialAudioEffect,
           playbackStallTimeout: settingStore.playbackStallTimeout,
           pauseOnOutputDeviceDisconnect: settingStore.pauseOnOutputDeviceDisconnect,
         };
@@ -508,10 +525,11 @@ export const usePlayerStore = defineStore(
           playbackManager.clearGaplessPreparedSource();
         if (shouldUpdateOutputDevice)
           void deviceManager.applyOutputDevice(settingStore.outputDevice);
-        if (shouldLoadImpulseResponse)
-          audioManager.setImpulseResponse(nextImpulseResponsePath, settingStore.impulseResponseMix);
-        else if (shouldUpdateImpulseResponseMix)
-          audioManager.setImpulseResponseMix(settingStore.impulseResponseMix);
+        if (shouldLoadSpatialAudioEffect) {
+          void engine
+            .setSpatialAudioEffect(nextSpatialAudioEffect)
+            .catch(() => disableActiveSpatialAudioEffect(nextSpatialAudioEffect));
+        }
         if (shouldUpdateStallTimeout)
           engine.setStallTimeout(settingStore.playbackStallTimeout ?? 8);
       });
@@ -522,12 +540,19 @@ export const usePlayerStore = defineStore(
       };
     };
 
-    const disableActiveImpulseResponse = (failedPath?: string) => {
-      const active = settingStore.getSelectedImpulseResponse();
-      if (failedPath && active?.path && active.path !== failedPath) return;
+    const disableActiveSpatialAudioEffect = (failedEffect?: AudioEffectPlaybackOptions | null) => {
+      if (failedEffect) {
+        const current = getActiveSpatialAudioEffect();
+        if (
+          current?.vpfPath !== failedEffect.vpfPath ||
+          current?.impulseResponsePath !== failedEffect.impulseResponsePath
+        ) {
+          return;
+        }
+      }
       if (!settingStore.impulseResponseEnabled) return;
       settingStore.impulseResponseEnabled = false;
-      audioManager.setImpulseResponse(null, settingStore.impulseResponseMix);
+      void engine.setSpatialAudioEffect(null);
       toastStore.warning('空间音效加载失败，已自动关闭', 4200);
     };
 
@@ -625,29 +650,20 @@ export const usePlayerStore = defineStore(
       audioManager.setVolume(state.volume);
       engine.setPlaybackRate(state.playbackRate);
       engine.setEqualizer(state.equalizerGains);
-      if (!settingStore.impulseResponseSafetyMigrationDone) {
-        settingStore.impulseResponseEnabled = false;
-        settingStore.impulseResponseSafetyMigrationDone = true;
-      }
       void settingStore
-        .reconcileImpulseResponseFiles()
-        .finally(() =>
-          engine.setImpulseResponse(
-            getActiveImpulseResponsePath(),
-            settingStore.impulseResponseMix,
-          ),
-        );
+        .reconcileSpatialAudioEffects()
+        .then(() => {
+          const effect = getActiveSpatialAudioEffect();
+          return engine
+            .setSpatialAudioEffect(effect)
+            .catch(() => disableActiveSpatialAudioEffect(effect));
+        })
+        .catch(() => disableActiveSpatialAudioEffect());
       engine.setVolumeNormalization(settingStore.volumeNormalization);
       engine.setReferenceLufs(settingStore.volumeNormalizationLufs);
       engine.setLoopFile(state.playMode === 'single');
       engine.setStallTimeout(settingStore.playbackStallTimeout ?? 8);
       registerSettingWatchers();
-      if (!impulseResponseFailureListenerRegistered) {
-        impulseResponseFailureListenerRegistered = true;
-        window.electron?.player?.onImpulseResponseDisabled?.((payload) => {
-          disableActiveImpulseResponse(payload?.path);
-        });
-      }
       if (!audioDeviceListListenerRegistered) {
         audioDeviceListListenerRegistered = true;
         window.electron?.player?.onAudioDeviceListChanged?.((payload) => {
@@ -942,7 +958,6 @@ export const usePlayerStore = defineStore(
       setVolumeNormalization: audioManager.setVolumeNormalization,
       setReferenceLufs: audioManager.setReferenceLufs,
       setEq: audioManager.setEq,
-      setImpulseResponse: audioManager.setImpulseResponse,
       setAudioEffect: audioManager.setAudioEffect,
       fadeVolume: audioManager.fadeVolume,
       setCurrentAudioQualityOverride: audioManager.setCurrentAudioQualityOverride,

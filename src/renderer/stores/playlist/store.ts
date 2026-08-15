@@ -10,6 +10,8 @@ import {
 } from './constants';
 import {
   findLikedPlaylist,
+  getPersonalFmModePresentation,
+  getPersonalFmSongPoolPresentation,
   getPlaylistIdentityValues,
   normalizePlaybackQueueRuntime,
   normalizePlaybackQueuesRuntime,
@@ -23,6 +25,7 @@ import { userActions } from './userActions';
 import type { PersonalFmMode, PersonalFmSongPoolId, PlaybackQueueState } from './types';
 
 const toPlain = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
+const PERSONAL_FM_PREFERENCES_STORAGE_KEY = 'personal-fm:preferences';
 
 const toStorageQueueMeta = (queue: PlaybackQueueState): Omit<PlaybackQueueState, 'songs'> => ({
   id: queue.id,
@@ -86,6 +89,7 @@ export const usePlaylistStore = defineStore('playlist', {
     >,
     personalFmMode: PERSONAL_FM_MODE as PersonalFmMode,
     personalFmSongPoolId: 0 as PersonalFmSongPoolId,
+    personalFmPreferencesReady: false,
     personalFmBuffer: toRawSongList([]),
   }),
   getters: {
@@ -207,6 +211,33 @@ export const usePlaylistStore = defineStore('playlist', {
       if (this.playbackQueues.some((queue) => queue.id === PERSONAL_FM_QUEUE_ID)) {
         this.removePersonalFmQueue();
       }
+    },
+    async hydratePersonalFmPreferences() {
+      const storage = window.electron?.storage;
+      if (!storage) {
+        this.personalFmPreferencesReady = true;
+        return;
+      }
+
+      const preferences = await storage.getKv<{
+        mode?: PersonalFmMode;
+        songPoolId?: PersonalFmSongPoolId;
+      }>(PERSONAL_FM_PREFERENCES_STORAGE_KEY);
+
+      if (preferences && typeof preferences === 'object') {
+        this.personalFmMode = getPersonalFmModePresentation(preferences.mode).mode;
+        this.personalFmSongPoolId = getPersonalFmSongPoolPresentation(
+          preferences.songPoolId,
+        ).songPoolId;
+      }
+      this.personalFmPreferencesReady = true;
+    },
+    persistPersonalFmPreferences() {
+      if (!this.personalFmPreferencesReady || !window.electron?.storage) return;
+      void window.electron.storage.setKv(PERSONAL_FM_PREFERENCES_STORAGE_KEY, {
+        mode: this.personalFmMode,
+        songPoolId: this.personalFmSongPoolId,
+      });
     },
     persistQueueToStorage(queue: PlaybackQueueState) {
       if (!this.playbackStorageReady || !window.electron?.storage) return;

@@ -283,14 +283,6 @@ impl PlayerEvent {
         }
     }
 
-    pub fn impulse_response_disabled(reason: String) -> Self {
-        Self {
-            event: "impulse-response-disabled".to_string(),
-            reason: Some(reason),
-            ..Self::empty("impulse-response-disabled")
-        }
-    }
-
     fn empty(event: &str) -> Self {
         Self {
             event: event.to_string(),

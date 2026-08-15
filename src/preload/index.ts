@@ -30,11 +30,11 @@ import type {
   MiniPlayerSnapshotPatch,
 } from '../shared/mini-player';
 import type {
-  DownloadCommunityImpulseResponseRequest,
-  DownloadCommunityImpulseResponseResult,
+  AudioEffectPlaybackOptions,
+  DownloadCommunityAudioEffectRequest,
+  DownloadCommunityAudioEffectResult,
   ImportImpulseResponseResult,
-  ImpulseResponseFile,
-  ImpulseResponsePlaybackOptions,
+  SpatialAudioEffectEntry,
 } from '../shared/audio';
 import type {
   AudioSpectrumFrame,
@@ -352,15 +352,15 @@ contextBridge.exposeInMainWorld('electron', {
   audioEffects: {
     importImpulseResponse: () =>
       ipcRenderer.invoke('audio:import-impulse-response') as Promise<ImportImpulseResponseResult>,
-    downloadCommunityImpulseResponse: (payload: DownloadCommunityImpulseResponseRequest) =>
-      invokeWithPlainPayload<DownloadCommunityImpulseResponseResult>(
-        'audio:download-community-impulse-response',
+    downloadCommunityAudioEffect: (payload: DownloadCommunityAudioEffectRequest) =>
+      invokeWithPlainPayload<DownloadCommunityAudioEffectResult>(
+        'audio:download-community-audio-effect',
         payload,
       ),
-    deleteImpulseResponse: (filePath: string) =>
-      ipcRenderer.invoke('audio:delete-impulse-response', filePath) as Promise<boolean>,
-    reconcileImpulseResponses: (files: ImpulseResponseFile[]) =>
-      invokeWithPlainPayload<ImpulseResponseFile[]>('audio:reconcile-impulse-responses', files),
+    deleteAudioEffect: (filePath: string) =>
+      ipcRenderer.invoke('audio:delete-audio-effect', filePath) as Promise<boolean>,
+    reconcileAudioEffects: (files: SpatialAudioEffectEntry[]) =>
+      invokeWithPlainPayload<SpatialAudioEffectEntry[]>('audio:reconcile-audio-effects', files),
   },
   updater: {
     download: () => ipcRenderer.send('update:download'),
@@ -602,10 +602,8 @@ contextBridge.exposeInMainWorld('electron', {
     setVolume: (volume: number) => ipcRenderer.invoke('player:set-volume', volume),
     setSpeed: (speed: number) => ipcRenderer.invoke('player:set-speed', speed),
     setEqualizer: (gains: number[]) => invokeWithPlainPayload('player:set-equalizer', gains),
-    setImpulseResponse: (payload: string | ImpulseResponsePlaybackOptions) =>
-      invokeWithPlainPayload('player:set-impulse-response', payload),
-    setImpulseResponseMix: (mix: number) =>
-      invokeWithPlainPayload('player:set-impulse-response-mix', mix),
+    setAudioEffect: (options: AudioEffectPlaybackOptions | null) =>
+      invokeWithPlainPayload('player:set-audio-effect', options),
     getAudioGraph: () =>
       ipcRenderer.invoke('player:get-audio-graph') as Promise<PlayerAudioGraphSnapshot | null>,
     setAudioGraphParameter: (patch: PlayerAudioGraphParameterPatch) =>
@@ -749,14 +747,6 @@ contextBridge.exposeInMainWorld('electron', {
         func(payload);
       ipcRenderer.on('player:error', listener);
       return () => ipcRenderer.removeListener('player:error', listener);
-    },
-    onImpulseResponseDisabled: (func: (payload: { path?: string; reason?: string }) => void) => {
-      const listener = (
-        _event: Electron.IpcRendererEvent,
-        payload: { path?: string; reason?: string },
-      ) => func(payload);
-      ipcRenderer.on('player:impulse-response-disabled', listener);
-      return () => ipcRenderer.removeListener('player:impulse-response-disabled', listener);
     },
     onAudioDeviceListChanged: (
       func: (payload: {

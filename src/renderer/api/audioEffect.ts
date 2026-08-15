@@ -1,5 +1,5 @@
 import request from '@/utils/request';
-import { normalizeCommunityImpulseResponseUrl } from '../../shared/audio';
+import { normalizeCommunityImpulseResponseUrl, normalizeCommunityVpfUrl } from '../../shared/audio';
 
 export interface CommunityAudioEffect {
   id: number;
@@ -92,6 +92,15 @@ export const getCommunityImpulseResponseUrls = (effect: CommunityAudioEffect): s
 export const getCommunityImpulseResponseUrl = (effect: CommunityAudioEffect): string | null =>
   getCommunityImpulseResponseUrls(effect)[0] ?? null;
 
+export const getCommunityVpfUrls = (effect: CommunityAudioEffect): string[] => {
+  const urls = new Set<string>();
+  for (const value of effect.vpfUrls) {
+    const normalized = normalizeCommunityVpfUrl(value);
+    if (normalized) urls.add(normalized.toString());
+  }
+  return [...urls];
+};
+
 export const getCommunityAudioEffects = async (
   page = 1,
   pageSize = 30,
@@ -118,7 +127,7 @@ export const getCommunityAudioEffects = async (
   };
 };
 
-// 详情接口当前对部分新音效返回 null，保留 null 语义供后续 VPF/DSP 扩展。
+// 详情接口当前对部分新音效返回 null，调用方保留空结果语义。
 export const getCommunityAudioEffectDetail = async (
   modelId: string | number,
 ): Promise<UnknownRecord | null> => {

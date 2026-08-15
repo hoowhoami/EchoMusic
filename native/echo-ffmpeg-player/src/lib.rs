@@ -13,6 +13,7 @@ mod output;
 mod shared;
 mod stream;
 mod tempo;
+mod vpf;
 
 use control::{
     attach_restarted_decoder, handle_output_device_list_change,
@@ -22,13 +23,12 @@ use control::{
 };
 pub use control::{
     cancel_fade, configure_spectrum, fade, get_audio_devices, get_audio_graph,
-    get_spectrum_snapshot, get_spectrum_status, pause_with_fade, play_with_fade,
+    get_spectrum_snapshot, get_spectrum_status, pause_with_fade, play_with_fade, set_audio_effect,
     set_audio_graph_parameter, set_audio_graph_plan, set_audio_output, set_equalizer,
-    set_http_proxy, set_impulse_response, set_impulse_response_mix, set_network_timeout,
-    set_normalization_gain, set_pause_on_device_disconnect, set_speed, set_stall_timeout, FadeTask,
-    GetAudioDevicesTask, GetSpectrumSnapshotTask, SetAudioGraphParameterTask,
-    SetAudioGraphPlanTask, SetAudioOutputTask, SetEqualizerTask, SetImpulseResponseMixTask,
-    SetImpulseResponseTask, SetNormalizationGainTask, SetSpeedTask,
+    set_http_proxy, set_network_timeout, set_normalization_gain, set_pause_on_device_disconnect,
+    set_speed, set_stall_timeout, FadeTask, GetAudioDevicesTask, GetSpectrumSnapshotTask,
+    SetAudioEffectTask, SetAudioGraphParameterTask, SetAudioGraphPlanTask, SetAudioOutputTask,
+    SetEqualizerTask, SetNormalizationGainTask, SetSpeedTask,
 };
 pub use control::{seek, SeekTask};
 
@@ -42,10 +42,7 @@ use crate::dispatcher::{
     reset_event_ids, send_event, send_events, set_event_callback, start_core_dispatcher,
     start_event_dispatcher, stop_core_dispatcher, stop_event_dispatcher,
 };
-use crate::effects::{
-    clamp_spatial_mix, prepare_spatial_effect, DspSettings, PreparedSpatialEffect,
-    DEFAULT_SPATIAL_MIX, EQ_BAND_COUNT,
-};
+use crate::effects::{prepare_spatial_effect, DspSettings, EQ_BAND_COUNT};
 use crate::events::{
     AudioDevice, PlayerEvent, PlayerState, SpectrumFrame, SpectrumOptions, SpectrumStatus,
     TrackInfo,
@@ -92,7 +89,6 @@ struct PlayerRuntime {
     spectrum_signal_logged: bool,
     spatial_request_seq: u64,
     idle_output_release_seq: u64,
-    spatial_mix: f32,
     spatial_file_path: Option<String>,
     prepared_next: Option<PreparedNextSource>,
     gapless_prepare_interrupt: Option<(u64, Arc<AtomicBool>)>,
@@ -168,7 +164,6 @@ struct ContinuousLoadPlan {
     config: PlayerConfig,
     dsp_settings: DspSettings,
     spatial_file_path: Option<String>,
-    spatial_mix: f32,
 }
 
 enum LoadPlan {
@@ -176,7 +171,6 @@ enum LoadPlan {
         config: PlayerConfig,
         dsp_settings: DspSettings,
         spatial_file_path: Option<String>,
-        spatial_mix: f32,
         pause_on_device_disconnect: bool,
     },
     Continuous(ContinuousLoadPlan),
@@ -210,7 +204,6 @@ impl PlayerRuntime {
             spectrum_signal_logged: false,
             spatial_request_seq: 0,
             idle_output_release_seq: 0,
-            spatial_mix: DEFAULT_SPATIAL_MIX,
             spatial_file_path: None,
             prepared_next: None,
             gapless_prepare_interrupt: None,
@@ -449,7 +442,6 @@ fn prepare_source(
     config: PlayerConfig,
     dsp_settings: DspSettings,
     spatial_file_path: Option<String>,
-    spatial_mix: f32,
     pause_on_device_disconnect: bool,
 ) -> Result<PreparedSource, String> {
     let mut decoder = open_decoder(
@@ -471,7 +463,6 @@ fn prepare_source(
     let dsp_settings = prepare_dsp_settings_for_mix_rate(
         dsp_settings,
         spatial_file_path.as_deref(),
-        spatial_mix,
         mix_sample_rate,
     )?;
     let mix_channels = config.resolve_mix_channels(
@@ -494,9 +485,8 @@ fn prepare_source(
         emit_event(PlayerEvent::log(
             "info",
             format!(
-                "impulse response enabled: path='{}', mix={:.2}, mix_sample_rate={}, ir_channels={}, mode={}",
+                "impulse response enabled: path='{}', mix_sample_rate={}, ir_channels={}, mode={}",
                 spatial.file_path,
-                spatial.mix,
                 mix_sample_rate,
                 spatial.channels(),
                 spatial.mode()
@@ -814,7 +804,6 @@ fn replace_source_async(
     config: PlayerConfig,
     dsp_settings: DspSettings,
     spatial_file_path: Option<String>,
-    spatial_mix: f32,
     pause_on_device_disconnect: bool,
 ) -> napi::Result<()> {
     let prepared = prepare_source(
@@ -826,7 +815,6 @@ fn replace_source_async(
         config,
         dsp_settings,
         spatial_file_path,
-        spatial_mix,
         pause_on_device_disconnect,
     )
     .map_err(napi::Error::from_reason)?;
@@ -934,15 +922,16 @@ fn restart_loop_if_enabled(shared: Arc<SharedAudio>) -> bool {
             .iter()
             .any(|gain| gain.abs() >= 0.01);
         let spatial = runtime.dsp_settings.spatial.as_ref();
+        let vpf = runtime.dsp_settings.vpf.as_ref();
         emit_runtime_event(runtime, PlayerEvent::log(
             "info",
             format!(
-                "loop restart reusing audio filter chain: speed={:.2}x, normalization_gain_db={:.2} dB, eq_active={}, spatial_enabled={}, spatial_mix={:.2}",
+                "loop restart reusing audio filter chain: speed={:.2}x, normalization_gain_db={:.2} dB, eq_active={}, spatial_enabled={}, vpf_enabled={}",
                 runtime.dsp_settings.speed,
                 runtime.dsp_settings.normalization_gain_db,
                 eq_active,
                 spatial.is_some(),
-                spatial.map(|effect| effect.mix).unwrap_or_default()
+                vpf.is_some()
             ),
         ));
         runtime.state.time_pos = 0.0;
@@ -1059,7 +1048,6 @@ impl Task for LoadFileTask {
                     config: runtime.config.clone(),
                     dsp_settings: runtime.dsp_settings.clone(),
                     spatial_file_path: runtime.spatial_file_path.clone(),
-                    spatial_mix: runtime.spatial_mix,
                     pause_on_device_disconnect: runtime.pause_on_device_disconnect,
                 });
             }
@@ -1068,7 +1056,6 @@ impl Task for LoadFileTask {
                     config: runtime.config.clone(),
                     dsp_settings: runtime.dsp_settings.clone(),
                     spatial_file_path: runtime.spatial_file_path.clone(),
-                    spatial_mix: runtime.spatial_mix,
                     pause_on_device_disconnect: runtime.pause_on_device_disconnect,
                 });
             };
@@ -1082,7 +1069,6 @@ impl Task for LoadFileTask {
                 config: runtime.config.clone(),
                 dsp_settings: runtime.dsp_settings.clone(),
                 spatial_file_path: runtime.spatial_file_path.clone(),
-                spatial_mix: runtime.spatial_mix,
             }))
         })?;
 
@@ -1091,7 +1077,6 @@ impl Task for LoadFileTask {
                 config,
                 dsp_settings,
                 spatial_file_path,
-                spatial_mix,
                 pause_on_device_disconnect,
             } => replace_source_async(
                 url,
@@ -1102,7 +1087,6 @@ impl Task for LoadFileTask {
                 config,
                 dsp_settings,
                 spatial_file_path,
-                spatial_mix,
                 pause_on_device_disconnect,
             ),
             LoadPlan::Continuous(plan) => {
@@ -1123,7 +1107,6 @@ impl Task for LoadFileTask {
                         let dsp_settings = prepare_dsp_settings_for_mix_rate(
                             plan.dsp_settings,
                             plan.spatial_file_path.as_deref(),
-                            plan.spatial_mix,
                             plan.shared.mix_format.sample_rate,
                         )
                         .map_err(napi::Error::from_reason)?;

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
-import { useDebounceFn, useThrottleFn } from '@vueuse/core';
+import { useThrottleFn } from '@vueuse/core';
 import { SliderRoot, SliderTrack, SliderRange, SliderThumb } from 'reka-ui';
 import { Icon } from '@iconify/vue';
 import Popover from '@/components/ui/Popover.vue';
@@ -18,13 +18,13 @@ import { usePlayerControls } from '@/composables/usePlayerControls';
 import { useToastStore } from '@/stores/toast';
 import {
   getCommunityAudioEffects,
-  getCommunityImpulseResponseUrl,
+  getCommunityVpfUrls,
   getCommunityImpulseResponseUrls,
   type CommunityAudioEffect,
   type CommunityAudioEffectSort,
 } from '@/api/audioEffect';
 import type { AudioEffectValue } from '@/types';
-import { normalizeImpulseResponseName } from '../../../shared/audio';
+import { normalizeAudioEffectName } from '../../../shared/audio';
 
 const {
   player,
@@ -42,8 +42,6 @@ type ImpulseResponseLibraryTab = 'mine' | 'community';
 const activeTab = ref<EffectTab>('effect');
 const activeImpulseResponseLibraryTab = ref<ImpulseResponseLibraryTab>('mine');
 const COMMUNITY_PAGE_SIZE = 20;
-const COMMUNITY_AUTO_SCAN_PAGE_LIMIT = 5;
-const COMMUNITY_COMPATIBLE_BATCH_SIZE = 6;
 const communitySortOptions: readonly { value: CommunityAudioEffectSort; label: string }[] = [
   { value: 2, label: '默认' },
   { value: 3, label: '最热' },
@@ -72,30 +70,26 @@ const audioEffectOptions: readonly { value: AudioEffectValue; label: string }[] 
   { value: 'viper_clear', label: '蝰蛇超清' },
 ];
 
+// 内置曲线已按对数频率重采样到当前标准 10 段，运行时不做旧频点迁移。
 const eqPresets = [
   { name: '默认', gains: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0] },
-  { name: '流行', gains: [3, 2, 0, -2, -4, -4, -2, 0, 2, 3] },
-  { name: '摇滚', gains: [5, 4, 3, 0, -1, -1, 0, 3, 4, 5] },
-  { name: '古典', gains: [4, 3, 2, 1, 0, 0, 1, 2, 3, 4] },
-  { name: '爵士', gains: [3, 2, 1, 2, -1, -1, 0, 1, 2, 3] },
-  { name: '电子', gains: [6, 5, 0, -2, -4, 0, 2, 4, 5, 6] },
-  { name: '重金属', gains: [4, 6, 4, 0, -2, 0, 2, 5, 7, 4] },
-  { name: '民谣', gains: [2, 1, 0, 1, 2, 2, 1, 0, 1, 2] },
+  { name: '流行', gains: [3, 3, 2.3, 0.7, -1.4, -4, -4, -3.2, -1.2, 3] },
+  { name: '摇滚', gains: [5, 5, 4.3, 3.4, 0.8, -1, -1, -0.6, 1.2, 5] },
+  { name: '古典', gains: [4, 4, 3.3, 2.4, 1.3, 0, 0, 0.4, 1.4, 4] },
+  { name: '爵士', gains: [3, 3, 2.3, 1.4, 1.7, -1, -1, -0.6, 0.4, 3] },
+  { name: '电子', gains: [6, 6, 5.3, 1.8, -1.4, -4, -1.5, 0.8, 2.8, 6] },
+  { name: '重金属', gains: [4, 4.1, 5.4, 4.7, 1.1, -2, -0.7, 0.8, 3.2, 4] },
+  { name: '民谣', gains: [2, 2, 1.3, 0.4, 0.7, 2, 2, 1.6, 0.6, 2] },
 ];
 
-const frequencies = ['60', '170', '310', '600', '1k', '3k', '6k', '12k', '14k', '16k'];
+const frequencies = ['31', '62', '125', '250', '500', '1k', '2k', '4k', '8k', '16k'];
 const gains = computed(() => player.equalizerGains);
 const selectedImpulseResponse = computed(() => settingStore.getSelectedImpulseResponse());
 const impulseResponseActive = computed(
   () => settingStore.impulseResponseEnabled && !!selectedImpulseResponse.value,
 );
-const impulseResponseStrengthSaved = computed(() =>
-  Math.round(settingStore.impulseResponseMix * 100),
-);
-// 拖动时保留本地草稿，避免持久化状态的显示延迟；null = 未在拖动，用已保存值。
-const impulseResponseStrengthDraft = ref<number | null>(null);
-const impulseResponseStrength = computed(
-  () => impulseResponseStrengthDraft.value ?? impulseResponseStrengthSaved.value,
+const vpfAudioEffectActive = computed(
+  () => impulseResponseActive.value && !!selectedImpulseResponse.value?.vpfPath,
 );
 const audioEffectPresetActive = computed(
   () => !isAudioEffectPresetSelectionDisabled.value && player.audioEffect !== 'none',
@@ -109,7 +103,7 @@ const throttledSetEq = useThrottleFn((newGains: number[]) => {
 }, 100);
 
 const updateGain = (index: number, value: number[] | undefined) => {
-  if (!value) return;
+  if (!value || vpfAudioEffectActive.value) return;
   const newGains = [...gains.value];
   newGains[index] = value[0];
   // 立即更新 UI 状态
@@ -119,6 +113,7 @@ const updateGain = (index: number, value: number[] | undefined) => {
 };
 
 const applyEqPreset = (presetGains: number[]) => {
+  if (vpfAudioEffectActive.value) return;
   player.setEq([...presetGains]);
 };
 
@@ -127,6 +122,7 @@ const isPresetActive = (presetGains: number[]) => {
 };
 
 const resetGains = () => {
+  if (vpfAudioEffectActive.value) return;
   player.setEq([0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
 };
 
@@ -138,37 +134,10 @@ const selectImpulseResponse = (id: string) => {
   settingStore.setSelectedImpulseResponse(id);
 };
 
-// 强度变化走原生轻量 mix 更新，不重载 IR 文件；节流限制 IPC 频率，松手再 commit 最终值兜底。
-const throttledCommitImpulseResponseStrength = useThrottleFn((percent: number) => {
-  settingStore.setImpulseResponseMix(percent / 100);
-}, 50);
-
-// 松手后应用最终强度并清除本地草稿。debounce 兜底合并按住键盘方向键的连续 commit。
-const commitImpulseResponseStrength = useDebounceFn((percent: number) => {
-  settingStore.setImpulseResponseMix(percent / 100);
-  impulseResponseStrengthDraft.value = null;
-}, 80);
-
-const updateImpulseResponseStrength = (value: number[] | undefined) => {
-  if (!value?.length) return;
-  // 拖动中：更新本地显示并节流实时下发到后端
-  impulseResponseStrengthDraft.value = value[0];
-  throttledCommitImpulseResponseStrength(value[0]);
-};
-
-const commitImpulseResponseStrengthFromSlider = (value: number[] | undefined) => {
-  if (!value?.length) return;
-  commitImpulseResponseStrength(value[0]);
-};
-
-const getImpulseResponseDisplayName = (name: string) => normalizeImpulseResponseName(name);
+const getImpulseResponseDisplayName = (name: string) => normalizeAudioEffectName(name);
 
 const hasMoreCommunityEffects = computed(
   () => communityEffects.value.length < communityTotal.value,
-);
-// 当前仅展示可由卷积引擎直接使用的 WAV；VPF 为 ViPER 私有预设，暂不支持。
-const compatibleCommunityEffects = computed(() =>
-  communityEffects.value.filter((effect) => getCommunityImpulseResponseUrl(effect)),
 );
 const selectTab = (tab: EffectTab) => {
   activeTab.value = tab;
@@ -195,44 +164,23 @@ const loadCommunityEffects = async (reset = false) => {
   if (communityLoading.value) return;
   communityLoading.value = true;
   communityError.value = '';
-  let nextPage = reset ? 1 : communityPage.value + 1;
-  let scannedPages = 0;
-  let foundUndownloadedCompatibleEffect = false;
-  const compatibleEffectTarget =
-    (reset ? 0 : compatibleCommunityEffects.value.length) + COMMUNITY_COMPATIBLE_BATCH_SIZE;
+  const nextPage = reset ? 1 : communityPage.value + 1;
   try {
     if (reset) {
       communityEffects.value = [];
       communityScrollbarRef.value?.setScrollTop(0);
     }
-    while (scannedPages < COMMUNITY_AUTO_SCAN_PAGE_LIMIT) {
-      const result = await getCommunityAudioEffects(
-        nextPage,
-        COMMUNITY_PAGE_SIZE,
-        communitySort.value,
-      );
-      const newItems = result.items.filter(
-        (item) => !communityEffects.value.some((current) => current.id === item.id),
-      );
-      communityEffects.value = [...communityEffects.value, ...newItems];
-      communityTotal.value = result.total;
-      communityPage.value = result.page;
-      scannedPages += 1;
-      foundUndownloadedCompatibleEffect ||= newItems.some(
-        (effect) => getCommunityImpulseResponseUrl(effect) && !getDownloadedCommunityEffect(effect),
-      );
-
-      // 上游分页混有 VPF 和已下载项；补足一批 WAV 后，至少找到一个新音效再停止。
-      if (
-        (compatibleCommunityEffects.value.length >= compatibleEffectTarget &&
-          foundUndownloadedCompatibleEffect) ||
-        communityEffects.value.length >= communityTotal.value ||
-        result.items.length === 0
-      ) {
-        break;
-      }
-      nextPage = result.page + 1;
-    }
+    const result = await getCommunityAudioEffects(
+      nextPage,
+      COMMUNITY_PAGE_SIZE,
+      communitySort.value,
+    );
+    const newItems = result.items.filter(
+      (item) => !communityEffects.value.some((current) => current.id === item.id),
+    );
+    communityEffects.value = [...communityEffects.value, ...newItems];
+    communityTotal.value = result.total;
+    communityPage.value = result.page;
   } catch (error) {
     communityError.value = error instanceof Error ? error.message : '社区音效加载失败';
     if (communityEffects.value.length > 0) toastStore.warning(communityError.value);
@@ -243,10 +191,10 @@ const loadCommunityEffects = async (reset = false) => {
 
 const isCommunityEffectActive = (effect: CommunityAudioEffect) =>
   settingStore.impulseResponseEnabled &&
-  settingStore.selectedImpulseResponseId === `kugou-community-${effect.id}`;
+  settingStore.selectedImpulseResponseId === `community-effect-${effect.id}`;
 
 const getDownloadedCommunityEffect = (effect: CommunityAudioEffect) =>
-  settingStore.impulseResponseFiles.find((file) => file.id === `kugou-community-${effect.id}`) ??
+  settingStore.impulseResponseFiles.find((file) => file.id === `community-effect-${effect.id}`) ??
   null;
 
 const formatCommunityUserCount = (count: number) => {
@@ -254,9 +202,20 @@ const formatCommunityUserCount = (count: number) => {
   return `${count} 人使用`;
 };
 
+const getCommunityEffectTypeLabel = (effect: CommunityAudioEffect) => {
+  const hasVpf = effect.vpfUrls.length > 0;
+  const hasImpulseResponse = effect.soundUrls.length > 0;
+  if (hasVpf && hasImpulseResponse) return '组合音效';
+  if (hasVpf) return '参数音效';
+  if (hasImpulseResponse) return '卷积音效';
+  return '暂无资源';
+};
+
+const isCommunityEffectDownloadable = (effect: CommunityAudioEffect) =>
+  getCommunityImpulseResponseUrls(effect).length > 0 || getCommunityVpfUrls(effect).length > 0;
+
 const handleCommunityEffectAction = async (effect: CommunityAudioEffect) => {
-  const urls = getCommunityImpulseResponseUrls(effect);
-  if (urls.length === 0 || downloadingCommunityEffectId.value !== null) return;
+  if (downloadingCommunityEffectId.value !== null) return;
   const downloaded = getDownloadedCommunityEffect(effect);
   if (downloaded) {
     if (isCommunityEffectActive(effect)) return;
@@ -265,12 +224,17 @@ const handleCommunityEffectAction = async (effect: CommunityAudioEffect) => {
     return;
   }
 
+  const impulseResponseUrls = getCommunityImpulseResponseUrls(effect);
+  const vpfUrls = getCommunityVpfUrls(effect);
+  if (impulseResponseUrls.length === 0 && vpfUrls.length === 0) return;
+
   downloadingCommunityEffectId.value = effect.id;
   try {
-    const result = await window.electron.audioEffects.downloadCommunityImpulseResponse({
+    const result = await window.electron.audioEffects.downloadCommunityAudioEffect({
       modelId: effect.id,
       name: effect.name,
-      urls,
+      impulseResponseUrls,
+      vpfUrls,
     });
     if (!result.file) throw new Error(result.error || '音效文件下载失败');
     settingStore.addImpulseResponseFile(result.file, { select: false });
@@ -405,10 +369,16 @@ withDefaults(defineProps<Props>(), {
         <div v-if="activeTab === 'eq'" class="panel-content">
           <div class="panel-header">
             <span class="panel-title">自定义调节</span>
-            <button class="reset-btn" @click="resetGains">重置</button>
+            <button class="reset-btn" :disabled="vpfAudioEffectActive" @click="resetGains">
+              重置
+            </button>
           </div>
 
-          <div class="eq-container">
+          <div v-if="vpfAudioEffectActive" class="panel-hint eq-bypass-hint">
+            当前音效已包含 EQ 设置，EQ 均衡器暂不可调节
+          </div>
+
+          <div class="eq-container" :class="{ 'is-disabled': vpfAudioEffectActive }">
             <div class="eq-bands">
               <div v-for="(gain, index) in gains" :key="index" class="eq-band">
                 <SliderRoot
@@ -416,6 +386,7 @@ withDefaults(defineProps<Props>(), {
                   :min="-12"
                   :max="12"
                   :step="0.1"
+                  :disabled="vpfAudioEffectActive"
                   orientation="vertical"
                   class="eq-slider"
                   @update:model-value="(val) => updateGain(index, val)"
@@ -437,6 +408,7 @@ withDefaults(defineProps<Props>(), {
                 :key="preset.name"
                 class="preset-chip"
                 :class="{ 'is-active': isPresetActive(preset.gains) }"
+                :disabled="vpfAudioEffectActive"
                 @click="applyEqPreset(preset.gains)"
               >
                 {{ preset.name }}
@@ -449,24 +421,6 @@ withDefaults(defineProps<Props>(), {
         <div v-if="activeTab === 'irs'" class="panel-content irs-panel-content">
           <div class="panel-header irs-panel-header">
             <span class="panel-title">空间音效</span>
-            <div v-if="impulseResponseActive" class="irs-strength-inline">
-              <span class="irs-strength-inline-label">强度</span>
-              <SliderRoot
-                :model-value="[impulseResponseStrength]"
-                :min="10"
-                :max="100"
-                :step="5"
-                class="irs-strength-slider"
-                @update:model-value="updateImpulseResponseStrength"
-                @value-commit="commitImpulseResponseStrengthFromSlider"
-              >
-                <SliderTrack class="irs-strength-track">
-                  <SliderRange class="irs-strength-range" />
-                </SliderTrack>
-                <SliderThumb class="irs-strength-thumb" />
-              </SliderRoot>
-              <span class="irs-strength-inline-value">{{ impulseResponseStrength }}%</span>
-            </div>
           </div>
 
           <div class="irs-library-nav">
@@ -562,9 +516,9 @@ withDefaults(defineProps<Props>(), {
             class="panel-scroll community-panel-scroll"
             :content-props="{ class: 'community-scroll-wrap' }"
           >
-            <div v-if="compatibleCommunityEffects.length > 0" class="community-effect-list">
+            <div v-if="communityEffects.length > 0" class="community-effect-list">
               <div
-                v-for="effect in compatibleCommunityEffects"
+                v-for="effect in communityEffects"
                 :key="effect.id"
                 class="community-effect-item"
                 :class="{
@@ -575,7 +529,7 @@ withDefaults(defineProps<Props>(), {
                 <span class="community-effect-copy">
                   <span class="community-effect-name">{{ effect.name }}</span>
                   <span class="community-effect-meta">
-                    {{ effect.author || '匿名创作者' }}
+                    {{ getCommunityEffectTypeLabel(effect) }} · {{ effect.author || '匿名创作者' }}
                     <template v-if="effect.tagName"> · {{ effect.tagName }}</template>
                     <template v-if="effect.userCount">
                       · {{ formatCommunityUserCount(effect.userCount) }}
@@ -587,9 +541,16 @@ withDefaults(defineProps<Props>(), {
                   class="community-effect-action"
                   :class="{ 'is-active': isCommunityEffectActive(effect) }"
                   :disabled="
+                    (!getDownloadedCommunityEffect(effect) &&
+                      !isCommunityEffectDownloadable(effect)) ||
                     isCommunityEffectActive(effect) ||
                     (downloadingCommunityEffectId !== null &&
                       downloadingCommunityEffectId !== effect.id)
+                  "
+                  :title="
+                    getDownloadedCommunityEffect(effect) || isCommunityEffectDownloadable(effect)
+                      ? undefined
+                      : '暂无可下载的音效资源'
                   "
                   @click.stop="handleCommunityEffectAction(effect)"
                 >
@@ -619,7 +580,9 @@ withDefaults(defineProps<Props>(), {
                         ? '使用中'
                         : getDownloadedCommunityEffect(effect)
                           ? '使用'
-                          : '下载'
+                          : isCommunityEffectDownloadable(effect)
+                            ? '下载'
+                            : '不可用'
                   }}</span>
                 </button>
               </div>
@@ -644,14 +607,7 @@ withDefaults(defineProps<Props>(), {
               <button type="button" @click="loadCommunityEffects(true)">重试</button>
             </div>
             <div v-else class="community-panel-state">
-              <span>{{ hasMoreCommunityEffects ? '暂未找到可用音效' : '暂无可用音效' }}</span>
-              <button
-                v-if="hasMoreCommunityEffects"
-                type="button"
-                @click="loadCommunityEffects(false)"
-              >
-                继续查找
-              </button>
+              <span>暂无社区音效</span>
             </div>
           </Scrollbar>
         </div>
@@ -778,6 +734,11 @@ withDefaults(defineProps<Props>(), {
   opacity: 1;
 }
 
+.reset-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.35;
+}
+
 .panel-scroll {
   flex: 1;
   width: 100%;
@@ -877,6 +838,20 @@ withDefaults(defineProps<Props>(), {
   flex-direction: column;
 }
 
+.eq-container.is-disabled {
+  opacity: 0.42;
+}
+
+.eq-bypass-hint {
+  margin-top: -8px;
+  color: var(--color-primary);
+}
+
+.eq-container.is-disabled .eq-slider,
+.eq-container.is-disabled .preset-chip {
+  cursor: not-allowed;
+}
+
 .eq-bands {
   display: flex;
   justify-content: space-between;
@@ -885,71 +860,6 @@ withDefaults(defineProps<Props>(), {
 
 .irs-panel-header {
   gap: 16px;
-}
-
-.irs-strength-inline {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  gap: 8px;
-}
-
-.irs-strength-inline-label,
-.irs-strength-inline-value {
-  flex: 0 0 auto;
-  color: var(--color-text-secondary);
-  font-size: 10px;
-  font-weight: 700;
-  white-space: nowrap;
-}
-
-.irs-strength-inline-value {
-  width: 32px;
-  text-align: right;
-}
-
-.irs-strength-slider {
-  position: relative;
-  display: flex;
-  align-items: center;
-  width: 132px;
-  min-width: 0;
-  flex: 0 0 132px;
-  height: 18px;
-  user-select: none;
-  touch-action: none;
-  cursor: pointer;
-  box-sizing: border-box;
-}
-
-.irs-strength-track {
-  position: relative;
-  flex: 1;
-  width: 100%;
-  min-width: 0;
-  height: 4px;
-  border-radius: 9999px;
-  background: var(--control-track-bg);
-  cursor: pointer;
-}
-
-.irs-strength-range {
-  position: absolute;
-  height: 100%;
-  border-radius: 9999px;
-  background: var(--color-primary);
-}
-
-.irs-strength-thumb {
-  display: block;
-  width: 14px;
-  height: 14px;
-  background: var(--control-thumb-bg);
-  border: 1px solid var(--control-border);
-  border-radius: 9999px;
-  box-shadow: var(--shadow-control);
-  outline: none;
-  cursor: pointer;
 }
 
 .irs-preset-item {
@@ -1012,13 +922,19 @@ withDefaults(defineProps<Props>(), {
 }
 
 .irs-library-tabs button {
+  display: flex;
   height: 26px;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  padding: 0 8px;
   border: 0;
   border-radius: 6px;
   background: transparent;
   color: var(--color-text-secondary);
   font-size: 11px;
   font-weight: 700;
+  line-height: 1;
   cursor: pointer;
 }
 
@@ -1051,8 +967,12 @@ withDefaults(defineProps<Props>(), {
 }
 
 .community-sort-tabs button {
+  display: flex;
   min-width: 48px;
   height: 24px;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
   padding: 0 8px;
   border: 0;
   border-radius: 5px;
@@ -1060,6 +980,7 @@ withDefaults(defineProps<Props>(), {
   color: var(--color-text-secondary);
   font-size: 10px;
   font-weight: 700;
+  line-height: 1;
   cursor: pointer;
 }
 

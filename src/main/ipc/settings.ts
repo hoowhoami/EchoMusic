@@ -25,12 +25,15 @@ import type {
 } from '../../shared/app';
 import type { NetworkSettings } from '../../shared/network';
 import {
+  normalizeCommunityAudioResourceUrl,
   normalizeCommunityImpulseResponseUrl,
-  normalizeImpulseResponseName,
-  type DownloadCommunityImpulseResponseRequest,
-  type DownloadCommunityImpulseResponseResult,
+  normalizeCommunityVpfUrl,
+  normalizeAudioEffectName,
+  type CommunityAudioResourceKind,
+  type DownloadCommunityAudioEffectRequest,
+  type DownloadCommunityAudioEffectResult,
   type ImportImpulseResponseResult,
-  type ImpulseResponseFile,
+  type SpatialAudioEffectEntry,
 } from '../../shared/audio';
 import type { LogSettings } from '../../shared/logging';
 import { applyLogSettings, getLogSettings } from '../logger';
@@ -68,15 +71,19 @@ const SUPPORTED_IMPULSE_RESPONSE_EXTENSIONS = new Set([
   '.opus',
 ]);
 const MAX_COMMUNITY_IMPULSE_RESPONSE_BYTES = 32 * 1024 * 1024;
-const MAX_COMMUNITY_IMPULSE_RESPONSE_PENDING_WRITE_BYTES = 4 * 1024 * 1024;
-const COMMUNITY_IMPULSE_RESPONSE_TIMEOUT_MS = 30_000;
-const MAX_COMMUNITY_IMPULSE_RESPONSE_REDIRECTS = 5;
+const MAX_COMMUNITY_VPF_BYTES = 1024 * 1024;
+const VPF_MAGIC = Buffer.from('ViPER4WindowsX', 'ascii');
+// Keep in sync with SECTION_SIZES in native/echo-ffmpeg-player/src/vpf.rs.
+const VPF_SECTION_SIZES = [0x170, 0x2e4, 0x2e8, 0x31c] as const;
+const MAX_COMMUNITY_AUDIO_PENDING_WRITE_BYTES = 4 * 1024 * 1024;
+const COMMUNITY_AUDIO_DOWNLOAD_TIMEOUT_MS = 30_000;
+const MAX_COMMUNITY_AUDIO_REDIRECTS = 5;
 const COMMUNITY_REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 const COMMUNITY_AUDIO_SESSION_PARTITION = 'echo-community-audio';
 const COMMUNITY_PROXY_AUTH_REQUIRED_ERROR = 'community proxy authentication required';
-const communityImpulseResponseDownloads = new Map<
+const communityAudioEffectDownloads = new Map<
   string,
-  Promise<DownloadCommunityImpulseResponseResult>
+  Promise<DownloadCommunityAudioEffectResult>
 >();
 let appliedCommunityAudioProxyKey: string | null = null;
 let communityAudioProxyQueue = Promise.resolve();
@@ -327,6 +334,29 @@ const isSupportedImpulseResponseAudio = async (filePath: string): Promise<boolea
   }
 };
 
+const isSupportedVpf = async (filePath: string): Promise<boolean> => {
+  const stat = await fs.promises.stat(filePath);
+  if (!stat.isFile() || stat.size < VPF_MAGIC.length + VPF_SECTION_SIZES.length) return false;
+  if (stat.size > MAX_COMMUNITY_VPF_BYTES) return false;
+  const handle = await fs.promises.open(filePath, 'r');
+  try {
+    const header = Buffer.alloc(VPF_MAGIC.length + VPF_SECTION_SIZES.length);
+    const { bytesRead } = await handle.read(header, 0, header.length, 0);
+    if (bytesRead !== header.length) return false;
+    if (!header.subarray(0, VPF_MAGIC.length).equals(VPF_MAGIC)) return false;
+    const flags = header.subarray(VPF_MAGIC.length);
+    if (!flags.every((value) => value <= 1) || flags[3] !== 1) return false;
+    const expectedSize =
+      header.length +
+      VPF_SECTION_SIZES.reduce((size, sectionSize, index) => {
+        return size + (flags[index] === 1 ? sectionSize : 0);
+      }, 0);
+    return stat.size === expectedSize;
+  } finally {
+    await handle.close();
+  }
+};
+
 const isPathInside = (targetPath: string, parentPath: string): boolean => {
   const normalizedParent = resolve(parentPath);
   const normalizedTarget = resolve(targetPath);
@@ -338,7 +368,7 @@ const isPathInside = (targetPath: string, parentPath: string): boolean => {
 
 const importImpulseResponseFile = async (
   sourcePath: string,
-): Promise<{ file?: ImpulseResponseFile; error?: string }> => {
+): Promise<{ file?: SpatialAudioEffectEntry; error?: string }> => {
   const extension = extname(sourcePath).toLowerCase();
   const sourceName = basename(sourcePath);
   const targetExtension = SUPPORTED_IMPULSE_RESPONSE_EXTENSIONS.has(extension)
@@ -363,16 +393,17 @@ const importImpulseResponseFile = async (
   return {
     file: {
       id,
-      name: normalizeImpulseResponseName(sourceName),
-      path: targetPath,
+      name: normalizeAudioEffectName(sourceName),
       size: stat.size,
       importedAt: Date.now(),
       format: targetExtension.slice(1),
+      kind: 'imported-ir',
+      impulseResponsePath: targetPath,
     },
   };
 };
 
-interface CommunityImpulseResponse {
+interface CommunityAudioDownloadResponse {
   request: ClientRequest;
   response: IncomingMessage;
 }
@@ -421,11 +452,11 @@ const getCommunityAudioNetworkContext = async (): Promise<CommunityAudioNetworkC
   return { networkSession, proxyCredentials };
 };
 
-const requestCommunityImpulseResponse = (
+const requestCommunityAudioResource = (
   sourceUrl: URL,
   signal: AbortSignal,
   { networkSession, proxyCredentials }: CommunityAudioNetworkContext,
-): Promise<CommunityImpulseResponse> =>
+): Promise<CommunityAudioDownloadResponse> =>
   new Promise((resolve, reject) => {
     let settled = false;
     let redirectCount = 0;
@@ -456,12 +487,12 @@ const requestCommunityImpulseResponse = (
         return;
       }
       redirectCount += 1;
-      if (redirectCount > MAX_COMMUNITY_IMPULSE_RESPONSE_REDIRECTS) {
+      if (redirectCount > MAX_COMMUNITY_AUDIO_REDIRECTS) {
         rejectOnce(new Error('too many redirects'));
         request.abort();
         return;
       }
-      if (!normalizeCommunityImpulseResponseUrl(redirectUrl, false)) {
+      if (!normalizeCommunityAudioResourceUrl(redirectUrl, null, false)) {
         rejectOnce(new Error('redirected to an unsupported host'));
         request.abort();
         return;
@@ -497,10 +528,11 @@ const getCommunityResponseHeader = (response: IncomingMessage, name: string): st
   return Array.isArray(value) ? value[0] || '' : value || '';
 };
 
-const writeCommunityImpulseResponse = (
+const writeCommunityAudioResource = (
   request: ClientRequest,
   response: IncomingMessage,
   handle: fs.promises.FileHandle,
+  sizeLimit: number,
 ): Promise<number> =>
   new Promise((resolve, reject) => {
     let size = 0;
@@ -523,11 +555,11 @@ const writeCommunityImpulseResponse = (
       if (failed) return;
       const chunkSize = chunk.byteLength;
       size += chunkSize;
-      if (size > MAX_COMMUNITY_IMPULSE_RESPONSE_BYTES) {
+      if (size > sizeLimit) {
         rejectOnce(new Error('file is too large'));
         return;
       }
-      if (pendingWriteBytes + chunkSize > MAX_COMMUNITY_IMPULSE_RESPONSE_PENDING_WRITE_BYTES) {
+      if (pendingWriteBytes + chunkSize > MAX_COMMUNITY_AUDIO_PENDING_WRITE_BYTES) {
         rejectOnce(new Error('disk write backlog is too large'));
         return;
       }
@@ -543,23 +575,26 @@ const writeCommunityImpulseResponse = (
     });
   });
 
-const downloadCommunityImpulseResponseCandidate = async (
+const downloadCommunityAudioResourceCandidate = async (
   sourceUrl: URL,
   targetPath: string,
   id: string,
+  kind: CommunityAudioResourceKind,
+  sizeLimit: number,
 ): Promise<number> => {
-  const irsDir = getImpulseResponseDir();
+  const targetDir = dirname(targetPath);
+  await fs.promises.mkdir(targetDir, { recursive: true });
   const temporaryPath = join(
-    irsDir,
+    targetDir,
     `.${id}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}.download`,
   );
   const abortController = new AbortController();
-  const timeout = setTimeout(() => abortController.abort(), COMMUNITY_IMPULSE_RESPONSE_TIMEOUT_MS);
+  const timeout = setTimeout(() => abortController.abort(), COMMUNITY_AUDIO_DOWNLOAD_TIMEOUT_MS);
   let handle: fs.promises.FileHandle | null = null;
 
   try {
     const networkContext = await getCommunityAudioNetworkContext();
-    const { request, response } = await requestCommunityImpulseResponse(
+    const { request, response } = await requestCommunityAudioResource(
       sourceUrl,
       abortController.signal,
       networkContext,
@@ -570,18 +605,22 @@ const downloadCommunityImpulseResponseCandidate = async (
     }
 
     const contentLength = Number(getCommunityResponseHeader(response, 'content-length') || 0);
-    if (contentLength > MAX_COMMUNITY_IMPULSE_RESPONSE_BYTES) {
+    if (contentLength > sizeLimit) {
       request.abort();
       throw new Error('file is too large');
     }
 
     handle = await fs.promises.open(temporaryPath, 'wx');
-    const size = await writeCommunityImpulseResponse(request, response, handle);
+    const size = await writeCommunityAudioResource(request, response, handle, sizeLimit);
     await handle.close();
     handle = null;
 
-    if (size === 0 || !(await isSupportedImpulseResponseAudio(temporaryPath))) {
-      throw new Error('downloaded file is not supported audio');
+    const valid =
+      kind === 'vpf'
+        ? await isSupportedVpf(temporaryPath)
+        : await isSupportedImpulseResponseAudio(temporaryPath);
+    if (size === 0 || !valid) {
+      throw new Error('downloaded file is not a supported audio effect resource');
     }
     await fs.promises.rename(temporaryPath, targetPath);
     return size;
@@ -595,105 +634,155 @@ const downloadCommunityImpulseResponseCandidate = async (
   }
 };
 
-const performCommunityImpulseResponseDownload = async (
-  payload: DownloadCommunityImpulseResponseRequest,
+const uniqueCommunityUrls = (values: unknown, kind: CommunityAudioResourceKind): URL[] => [
+  ...new Map(
+    (Array.isArray(values) ? values : [])
+      .map((value) =>
+        kind === 'vpf'
+          ? normalizeCommunityVpfUrl(value)
+          : normalizeCommunityImpulseResponseUrl(value),
+      )
+      .filter((url): url is URL => url !== null)
+      .map((url) => [url.toString(), url] as const),
+  ).values(),
+];
+
+const downloadCommunityResource = async (
+  sourceUrls: URL[],
+  targetPath: string,
+  id: string,
   modelId: string,
-): Promise<DownloadCommunityImpulseResponseResult> => {
-  const sourceUrls = [
-    ...new Map(
-      (Array.isArray(payload?.urls) ? payload.urls : [])
-        .map((value) => normalizeCommunityImpulseResponseUrl(value))
-        .filter((url): url is URL => url !== null)
-        .map((url) => [url.toString(), url] as const),
-    ).values(),
-  ];
-  if (sourceUrls.length === 0) {
-    return { error: '社区音效地址无效。' };
-  }
-
-  const id = `kugou-community-${modelId}`;
-  const name = normalizeImpulseResponseName(String(payload?.name ?? '')).slice(0, 120);
-  const irsDir = getImpulseResponseDir();
-  const targetPath = join(irsDir, `${id}.wav`);
-  await fs.promises.mkdir(irsDir, { recursive: true });
-
-  try {
-    const stat = await fs.promises.stat(targetPath);
-    if (
-      stat.isFile() &&
-      stat.size > 0 &&
-      stat.size <= MAX_COMMUNITY_IMPULSE_RESPONSE_BYTES &&
-      (await isSupportedImpulseResponseAudio(targetPath))
-    ) {
-      return {
-        file: {
-          id,
-          name,
-          path: targetPath,
-          size: stat.size,
-          importedAt: stat.birthtimeMs || stat.mtimeMs || Date.now(),
-          format: 'wav',
-        },
-      };
-    }
-    await fs.promises.unlink(targetPath).catch(() => undefined);
-  } catch {
-    // 首次下载或旧缓存已被移除。
-  }
-
+  kind: CommunityAudioResourceKind,
+): Promise<number> => {
+  const sizeLimit = kind === 'vpf' ? MAX_COMMUNITY_VPF_BYTES : MAX_COMMUNITY_IMPULSE_RESPONSE_BYTES;
   let lastError: unknown;
   for (const sourceUrl of sourceUrls) {
     try {
-      const size = await downloadCommunityImpulseResponseCandidate(sourceUrl, targetPath, id);
-      return {
-        file: {
-          id,
-          name,
-          path: targetPath,
-          size,
-          importedAt: Date.now(),
-          format: 'wav',
-        },
-      };
+      return await downloadCommunityAudioResourceCandidate(
+        sourceUrl,
+        targetPath,
+        id,
+        kind,
+        sizeLimit,
+      );
     } catch (error) {
       lastError = error;
-      log.warn('[Audio] Download community impulse response candidate failed:', {
+      log.warn('[Audio] Download community audio effect candidate failed:', {
         modelId,
+        resourceKind: kind,
         hostname: sourceUrl.hostname,
         error,
       });
     }
   }
-
-  const lastErrorMessage = lastError instanceof Error ? lastError.message : '';
-  if (lastErrorMessage === 'download timed out') {
-    return { error: '社区音效下载超时。' };
-  }
-  if (lastErrorMessage === COMMUNITY_PROXY_AUTH_REQUIRED_ERROR) {
-    return { error: '播放器代理需要身份验证，请在代理地址中填写用户名和密码。' };
-  }
-  return { error: '社区音效下载或校验失败。' };
+  throw lastError ?? new Error('no valid resource candidate');
 };
 
-const downloadCommunityImpulseResponse = async (
-  payload: DownloadCommunityImpulseResponseRequest,
-): Promise<DownloadCommunityImpulseResponseResult> => {
+const performCommunityAudioEffectDownload = async (
+  payload: DownloadCommunityAudioEffectRequest,
+  modelId: string,
+): Promise<DownloadCommunityAudioEffectResult> => {
+  const impulseResponseUrls = uniqueCommunityUrls(payload?.impulseResponseUrls, 'impulse-response');
+  const vpfUrls = uniqueCommunityUrls(payload?.vpfUrls, 'vpf');
+  if (impulseResponseUrls.length === 0 && vpfUrls.length === 0) {
+    return { error: '社区音效地址无效。' };
+  }
+
+  const id = `community-effect-${modelId}`;
+  const name = normalizeAudioEffectName(String(payload?.name ?? '')).slice(0, 120);
+  const communityDir = join(app.getPath('userData'), 'audio-effects');
+  const targetDir = join(communityDir, id);
+  const transactionId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+  const stagingDir = join(communityDir, `.${id}-${transactionId}.download`);
+  const backupDir = join(communityDir, `.${id}-${transactionId}.backup`);
+  const impulseResponsePath =
+    impulseResponseUrls.length > 0 ? join(targetDir, 'impulse-response.wav') : undefined;
+  const vpfPath = vpfUrls.length > 0 ? join(targetDir, 'effect.vpf') : undefined;
+  const stagingImpulseResponsePath = impulseResponsePath
+    ? join(stagingDir, 'impulse-response.wav')
+    : undefined;
+  const stagingVpfPath = vpfPath ? join(stagingDir, 'effect.vpf') : undefined;
+  await fs.promises.mkdir(communityDir, { recursive: true });
+  await fs.promises.mkdir(stagingDir, { recursive: true });
+
+  try {
+    const impulseResponseSize = stagingImpulseResponsePath
+      ? await downloadCommunityResource(
+          impulseResponseUrls,
+          stagingImpulseResponsePath,
+          id,
+          modelId,
+          'impulse-response',
+        )
+      : 0;
+    const vpfSize = stagingVpfPath
+      ? await downloadCommunityResource(vpfUrls, stagingVpfPath, id, modelId, 'vpf')
+      : 0;
+    let previousPackageMoved = false;
+    try {
+      await fs.promises.rename(targetDir, backupDir);
+      previousPackageMoved = true;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    }
+    try {
+      await fs.promises.rename(stagingDir, targetDir);
+    } catch (error) {
+      if (previousPackageMoved) {
+        await fs.promises.rename(backupDir, targetDir);
+      }
+      throw error;
+    }
+    if (previousPackageMoved) {
+      await fs.promises.rm(backupDir, { recursive: true, force: true }).catch(() => undefined);
+    }
+    const kind = vpfPath
+      ? impulseResponsePath
+        ? 'community-combined'
+        : 'community-vpf'
+      : 'community-ir';
+    return {
+      file: {
+        id,
+        name,
+        size: impulseResponseSize + vpfSize,
+        importedAt: Date.now(),
+        format: vpfPath && !impulseResponsePath ? 'vpf' : 'wav',
+        kind,
+        impulseResponsePath,
+        vpfPath,
+      },
+    };
+  } catch (error) {
+    await fs.promises.rm(stagingDir, { recursive: true, force: true }).catch(() => undefined);
+    const message = error instanceof Error ? error.message : '';
+    if (message === 'download timed out') return { error: '社区音效下载超时。' };
+    if (message === COMMUNITY_PROXY_AUTH_REQUIRED_ERROR) {
+      return { error: '播放器代理需要身份验证，请在代理地址中填写用户名和密码。' };
+    }
+    return { error: '社区音效下载或校验失败。' };
+  }
+};
+
+const downloadCommunityAudioEffect = async (
+  payload: DownloadCommunityAudioEffectRequest,
+): Promise<DownloadCommunityAudioEffectResult> => {
   const modelId = String(payload?.modelId ?? '').trim();
   if (!/^\d{1,20}$/.test(modelId)) return { error: '社区音效地址无效。' };
 
-  const inFlight = communityImpulseResponseDownloads.get(modelId);
+  const inFlight = communityAudioEffectDownloads.get(modelId);
   if (inFlight) return inFlight;
 
-  const task = performCommunityImpulseResponseDownload(payload, modelId).catch((error) => {
-    log.warn('[Audio] Download community impulse response failed:', { modelId, error });
+  const task = performCommunityAudioEffectDownload(payload, modelId).catch((error) => {
+    log.warn('[Audio] Download community audio effect failed:', { modelId, error });
     return { error: '社区音效下载或校验失败。' };
   });
-  communityImpulseResponseDownloads.set(modelId, task);
+  communityAudioEffectDownloads.set(modelId, task);
   try {
     return await task;
   } finally {
-    if (communityImpulseResponseDownloads.get(modelId) === task) {
-      communityImpulseResponseDownloads.delete(modelId);
+    if (communityAudioEffectDownloads.get(modelId) === task) {
+      communityAudioEffectDownloads.delete(modelId);
     }
   }
 };
@@ -989,7 +1078,7 @@ export const registerSettingsHandlers = ({ getMainWindow, playerRef }: IpcContex
         return { canceled: true };
       }
 
-      const files: ImpulseResponseFile[] = [];
+      const files: SpatialAudioEffectEntry[] = [];
       const errors: string[] = [];
 
       for (const sourcePath of result.filePaths) {
@@ -1014,16 +1103,24 @@ export const registerSettingsHandlers = ({ getMainWindow, playerRef }: IpcContex
   );
 
   ipcRegistry.registerHandler(
-    'audio:download-community-impulse-response',
+    'audio:download-community-audio-effect',
     async (
       _event,
-      payload: DownloadCommunityImpulseResponseRequest,
-    ): Promise<DownloadCommunityImpulseResponseResult> => downloadCommunityImpulseResponse(payload),
+      payload: DownloadCommunityAudioEffectRequest,
+    ): Promise<DownloadCommunityAudioEffectResult> => downloadCommunityAudioEffect(payload),
   );
 
-  ipcRegistry.registerHandler('audio:delete-impulse-response', async (_event, filePath: string) => {
+  ipcRegistry.registerHandler('audio:delete-audio-effect', async (_event, filePath: string) => {
     if (typeof filePath !== 'string' || !filePath) return false;
     const irsDir = getImpulseResponseDir();
+    const communityDir = join(app.getPath('userData'), 'audio-effects');
+    if (isPathInside(filePath, communityDir)) {
+      const relative = filePath.slice(resolve(communityDir).length + 1).split(sep);
+      const id = relative[0] || '';
+      if (!/^community-effect-\d{1,20}$/.test(id)) return false;
+      await fs.promises.rm(join(communityDir, id), { recursive: true, force: true });
+      return true;
+    }
     if (!isPathInside(filePath, irsDir)) return false;
     try {
       await fs.promises.unlink(filePath);
@@ -1035,19 +1132,71 @@ export const registerSettingsHandlers = ({ getMainWindow, playerRef }: IpcContex
   });
 
   ipcRegistry.registerHandler(
-    'audio:reconcile-impulse-responses',
-    async (_event, files: ImpulseResponseFile[] = []) => {
+    'audio:reconcile-audio-effects',
+    async (_event, files: SpatialAudioEffectEntry[] = []) => {
       if (!Array.isArray(files)) return [];
       const irsDir = getImpulseResponseDir();
-      const next: ImpulseResponseFile[] = [];
+      const communityDir = join(app.getPath('userData'), 'audio-effects');
+      const next: SpatialAudioEffectEntry[] = [];
 
       for (const file of files) {
-        if (!file?.path || !isPathInside(file.path, irsDir)) continue;
+        if (!file) continue;
         try {
-          const stat = await fs.promises.stat(file.path);
+          if (
+            file.kind === 'community-ir' ||
+            file.kind === 'community-vpf' ||
+            file.kind === 'community-combined'
+          ) {
+            if (!/^community-effect-\d{1,20}$/.test(file.id)) continue;
+            const targetDir = join(communityDir, file.id);
+            const impulseResponsePath = file.impulseResponsePath;
+            const vpfPath = file.vpfPath;
+            if (file.kind === 'community-ir' && (!impulseResponsePath || vpfPath)) continue;
+            if (file.kind === 'community-vpf' && (impulseResponsePath || !vpfPath)) continue;
+            if (file.kind === 'community-combined' && (!impulseResponsePath || !vpfPath)) continue;
+            let size = 0;
+            if (impulseResponsePath) {
+              if (
+                resolve(impulseResponsePath) !== resolve(join(targetDir, 'impulse-response.wav'))
+              ) {
+                continue;
+              }
+              const stat = await fs.promises.stat(impulseResponsePath);
+              if (
+                !stat.isFile() ||
+                stat.size === 0 ||
+                stat.size > MAX_COMMUNITY_IMPULSE_RESPONSE_BYTES ||
+                !(await isSupportedImpulseResponseAudio(impulseResponsePath))
+              ) {
+                continue;
+              }
+              size += stat.size;
+            }
+            if (vpfPath) {
+              if (resolve(vpfPath) !== resolve(join(targetDir, 'effect.vpf'))) continue;
+              const stat = await fs.promises.stat(vpfPath);
+              if (
+                !stat.isFile() ||
+                stat.size === 0 ||
+                stat.size > MAX_COMMUNITY_VPF_BYTES ||
+                !(await isSupportedVpf(vpfPath))
+              ) {
+                continue;
+              }
+              size += stat.size;
+            }
+            if (!impulseResponsePath && !vpfPath) continue;
+            next.push({ ...file, size });
+            continue;
+          }
+          if (file.kind !== 'imported-ir') continue;
+          const impulseResponsePath = file.impulseResponsePath;
+          if (!impulseResponsePath || file.vpfPath) continue;
+          if (!isPathInside(impulseResponsePath, irsDir)) continue;
+          const stat = await fs.promises.stat(impulseResponsePath);
           if (!stat.isFile()) continue;
-          if (!(await isSupportedImpulseResponseAudio(file.path))) continue;
-          const format = file.format || extname(file.path).replace(/^\./, '');
+          if (!(await isSupportedImpulseResponseAudio(impulseResponsePath))) continue;
+          const format = file.format || extname(impulseResponsePath).replace(/^\./, '');
           next.push({
             ...file,
             size: stat.size,

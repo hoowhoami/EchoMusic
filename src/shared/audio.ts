@@ -1,45 +1,50 @@
-export interface ImpulseResponseFile {
+export interface SpatialAudioEffectEntry {
   id: string;
   name: string;
-  path: string;
   size: number;
   importedAt: number;
   format?: string;
+  kind: 'imported-ir' | 'community-ir' | 'community-vpf' | 'community-combined';
+  impulseResponsePath?: string;
+  vpfPath?: string;
 }
 
 export interface ImportImpulseResponseResult {
   canceled: boolean;
-  file?: ImpulseResponseFile;
-  files?: ImpulseResponseFile[];
+  file?: SpatialAudioEffectEntry;
+  files?: SpatialAudioEffectEntry[];
   error?: string;
   errors?: string[];
 }
 
-export interface DownloadCommunityImpulseResponseRequest {
+export interface DownloadCommunityAudioEffectRequest {
   modelId: string | number;
   name: string;
-  urls: string[];
+  impulseResponseUrls: string[];
+  vpfUrls: string[];
 }
 
-export interface DownloadCommunityImpulseResponseResult {
-  file?: ImpulseResponseFile;
+export interface DownloadCommunityAudioEffectResult {
+  file?: SpatialAudioEffectEntry;
   error?: string;
 }
 
-export interface ImpulseResponsePlaybackOptions {
-  filePath: string;
-  mix: number;
+export interface AudioEffectPlaybackOptions {
+  vpfPath?: string | null;
+  impulseResponsePath?: string | null;
 }
 
-export const DEFAULT_IMPULSE_RESPONSE_MIX = 0.15;
+const AUDIO_EFFECT_DISPLAY_EXTENSION =
+  /\.(irs|wav|wave|flac|aif|aiff|caf|ogg|oga|mp3|m4a|aac|opus|vpf)$/i;
+const COMMUNITY_IMPULSE_RESPONSE_EXTENSION = /\.(irs|wav|wave)$/i;
+const COMMUNITY_VPF_EXTENSION = /\.vpf$/i;
 
-const IMPULSE_RESPONSE_DISPLAY_EXTENSION =
-  /\.(irs|wav|wave|flac|aif|aiff|caf|ogg|oga|mp3|m4a|aac|opus)$/i;
-const COMMUNITY_IMPULSE_RESPONSE_EXTENSION = /\.(wav|wave)$/i;
+export type CommunityAudioResourceKind = 'impulse-response' | 'vpf';
 
-export const normalizeCommunityImpulseResponseUrl = (
+export const normalizeCommunityAudioResourceUrl = (
   value: unknown,
-  requireAudioExtension = true,
+  kind: CommunityAudioResourceKind | null,
+  requireExtension = true,
 ): URL | null => {
   if (typeof value !== 'string') return null;
   try {
@@ -48,19 +53,28 @@ export const normalizeCommunityImpulseResponseUrl = (
     if (url.protocol !== 'https:') return null;
     if (url.username || url.password || (url.port && url.port !== '443')) return null;
     if (hostname !== 'kugou.com' && !hostname.endsWith('.kugou.com')) return null;
-    if (requireAudioExtension && !COMMUNITY_IMPULSE_RESPONSE_EXTENSION.test(url.pathname)) {
-      return null;
-    }
-    return url;
+    if (!requireExtension || kind === null) return url;
+    const extension =
+      kind === 'vpf' ? COMMUNITY_VPF_EXTENSION : COMMUNITY_IMPULSE_RESPONSE_EXTENSION;
+    return extension.test(url.pathname) ? url : null;
   } catch {
     return null;
   }
 };
 
-export const normalizeImpulseResponseName = (name: string): string => {
+export const normalizeCommunityImpulseResponseUrl = (
+  value: unknown,
+  requireAudioExtension = true,
+): URL | null =>
+  normalizeCommunityAudioResourceUrl(value, 'impulse-response', requireAudioExtension);
+
+export const normalizeCommunityVpfUrl = (value: unknown): URL | null =>
+  normalizeCommunityAudioResourceUrl(value, 'vpf');
+
+export const normalizeAudioEffectName = (name: string): string => {
   const normalized = String(name ?? '')
     .trim()
-    .replace(IMPULSE_RESPONSE_DISPLAY_EXTENSION, '')
+    .replace(AUDIO_EFFECT_DISPLAY_EXTENSION, '')
     .trim();
   return normalized || '未命名音效';
 };

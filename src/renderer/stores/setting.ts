@@ -3,11 +3,7 @@ import type { CloseBehavior, ThemeMode } from '../../shared/app';
 import { normalizeLogSettings, type AppLogLevel, type LogSettings } from '../../shared/logging';
 import type { AudioQualityValue, OutputDeviceOption, OutputDeviceStatus } from '../types';
 import { buildFontFamily } from '../../shared/font';
-import {
-  DEFAULT_IMPULSE_RESPONSE_MIX,
-  normalizeImpulseResponseName,
-  type ImpulseResponseFile,
-} from '../../shared/audio';
+import { normalizeAudioEffectName, type SpatialAudioEffectEntry } from '../../shared/audio';
 import {
   DEFAULT_NETWORK_SETTINGS,
   normalizeNetworkSettings,
@@ -52,9 +48,9 @@ export const DEFAULT_GLOBAL_SHORTCUT_LABELS: Record<string, string> = {
 };
 
 const getUniqueImpulseResponseName = (name: string, existingNames: string[]): string => {
-  const baseName = normalizeImpulseResponseName(name);
+  const baseName = normalizeAudioEffectName(name);
   const usedNames = new Set(
-    existingNames.map((item) => normalizeImpulseResponseName(item).toLocaleLowerCase()),
+    existingNames.map((item) => normalizeAudioEffectName(item).toLocaleLowerCase()),
   );
   if (!usedNames.has(baseName.toLocaleLowerCase())) return baseName;
 
@@ -66,13 +62,15 @@ const getUniqueImpulseResponseName = (name: string, existingNames: string[]): st
   }
 };
 
-const toImpulseResponseFilePayload = (file: ImpulseResponseFile): ImpulseResponseFile => ({
+const toImpulseResponseFilePayload = (file: SpatialAudioEffectEntry): SpatialAudioEffectEntry => ({
   id: String(file.id || ''),
   name: String(file.name || ''),
-  path: String(file.path || ''),
   size: Number(file.size) || 0,
   importedAt: Number(file.importedAt) || 0,
   format: file.format ? String(file.format) : undefined,
+  kind: file.kind,
+  impulseResponsePath: file.impulseResponsePath,
+  vpfPath: file.vpfPath,
 });
 
 export const useSettingStore = defineStore('setting', {
@@ -133,9 +131,7 @@ export const useSettingStore = defineStore('setting', {
     volumeNormalizationLufs: -14,
     impulseResponseEnabled: false,
     selectedImpulseResponseId: '',
-    impulseResponseMix: DEFAULT_IMPULSE_RESPONSE_MIX,
-    impulseResponseFiles: [] as ImpulseResponseFile[],
-    impulseResponseSafetyMigrationDone: false,
+    impulseResponseFiles: [] as SpatialAudioEffectEntry[],
     keepAliveEnabled: true,
     keepAliveMax: 20,
     playResumeTimeout: 5,
@@ -399,11 +395,11 @@ export const useSettingStore = defineStore('setting', {
       this.outputDeviceStatus = status;
       this.outputDeviceStatusMessage = message;
     },
-    addImpulseResponseFile(file: ImpulseResponseFile, options?: { select?: boolean }) {
+    addImpulseResponseFile(file: SpatialAudioEffectEntry, options?: { select?: boolean }) {
       this.addImpulseResponseFiles([file], options);
     },
-    addImpulseResponseFiles(files: ImpulseResponseFile[], options?: { select?: boolean }) {
-      const normalizedFiles: ImpulseResponseFile[] = [];
+    addImpulseResponseFiles(files: SpatialAudioEffectEntry[], options?: { select?: boolean }) {
+      const normalizedFiles: SpatialAudioEffectEntry[] = [];
       const incomingIds = new Set(files.map((item) => item.id));
       let names = this.impulseResponseFiles
         .filter((item) => !incomingIds.has(item.id))
@@ -428,9 +424,9 @@ export const useSettingStore = defineStore('setting', {
       ];
       if (options?.select !== false) this.selectedImpulseResponseId = normalizedFile.id;
     },
-    async reconcileImpulseResponseFiles() {
-      if (!window.electron?.audioEffects?.reconcileImpulseResponses) return;
-      const nextFiles = await window.electron.audioEffects.reconcileImpulseResponses(
+    async reconcileSpatialAudioEffects() {
+      if (!window.electron?.audioEffects?.reconcileAudioEffects) return;
+      const nextFiles = await window.electron.audioEffects.reconcileAudioEffects(
         this.impulseResponseFiles.map(toImpulseResponseFilePayload),
       );
       const nextIds = new Set(nextFiles.map((item) => item.id));
@@ -452,8 +448,9 @@ export const useSettingStore = defineStore('setting', {
         this.selectedImpulseResponseId = next?.id ?? '';
         this.impulseResponseEnabled = false;
       }
-      if (target?.path && window.electron?.audioEffects) {
-        void window.electron.audioEffects.deleteImpulseResponse(target.path);
+      const resourcePath = target?.impulseResponsePath ?? target?.vpfPath;
+      if (resourcePath && window.electron?.audioEffects) {
+        void window.electron.audioEffects.deleteAudioEffect(resourcePath);
       }
     },
     setSelectedImpulseResponse(id: string) {
@@ -470,13 +467,7 @@ export const useSettingStore = defineStore('setting', {
         item.id === id ? { ...item, name: normalizedName } : item,
       );
     },
-    setImpulseResponseMix(value: number) {
-      this.impulseResponseMix = Math.min(
-        1,
-        Math.max(0.1, Number(value) || DEFAULT_IMPULSE_RESPONSE_MIX),
-      );
-    },
-    getSelectedImpulseResponse(): ImpulseResponseFile | null {
+    getSelectedImpulseResponse(): SpatialAudioEffectEntry | null {
       if (!this.selectedImpulseResponseId) return null;
       return (
         this.impulseResponseFiles.find((item) => item.id === this.selectedImpulseResponseId) ?? null

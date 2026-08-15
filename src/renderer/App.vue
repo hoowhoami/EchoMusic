@@ -258,7 +258,11 @@ onMounted(async () => {
   await waitForSqlitePersistHydration();
   settings.ensureShortcutDefaults();
   await settings.hydrateLogSettings();
-  await Promise.all([playlistStore.hydratePlaybackStateFromStorage(), historyStore.hydrate()]);
+  await Promise.all([
+    playlistStore.hydratePlaybackStateFromStorage(),
+    playlistStore.hydratePersonalFmPreferences(),
+    historyStore.hydrate(),
+  ]);
   activePlayer.init();
 
   // 启动时自动播放：如果开启了设置且有恢复的曲目
