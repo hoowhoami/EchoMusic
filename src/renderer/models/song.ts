@@ -4,7 +4,7 @@ export interface SongRelateGood {
   level?: number;
 }
 
-export type CloudAudioQualityValue = '128' | '320' | 'flac' | 'high' | 'super';
+export type CloudAudioQualityValue = '128' | '320' | 'flac' | 'high';
 
 export interface CloudAudioSource {
   cloudFileId?: string | number;

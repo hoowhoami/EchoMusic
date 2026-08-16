@@ -109,7 +109,7 @@ const buttonClass = computed(() => {
       </button>
       <div v-if="hasCloudAudioSourceOption" class="pm-divider"></div>
       <button
-        v-for="q in ['128', '320', 'flac', 'high', 'super'] as const"
+        v-for="q in ['128', '320', 'flac', 'high', 'viper_tape'] as const"
         :key="q"
         type="button"
         class="pm-item"
@@ -129,7 +129,7 @@ const buttonClass = computed(() => {
                 ? '无损'
                 : q === 'high'
                   ? 'Hi-Res'
-                  : '臻品音质'
+                  : '蝰蛇母带'
         }}</span>
         <Tag class="pm-tag" :color="getAudioQualityTagColor(q)">{{
           q === '128'
@@ -140,7 +140,7 @@ const buttonClass = computed(() => {
                 ? 'SQ'
                 : q === 'high'
                   ? 'HR'
-                  : 'DSD'
+                  : 'VPR'
         }}</Tag>
         <span
           class="pm-check"

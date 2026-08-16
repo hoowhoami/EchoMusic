@@ -65,7 +65,6 @@ const audioEffectOptions: readonly { value: AudioEffectValue; label: string }[] 
   { value: 'ancient', label: '尤克里里' },
   { value: 'surnay', label: '唢呐' },
   { value: 'dj', label: 'DJ' },
-  { value: 'viper_tape', label: '蝰蛇母带' },
   { value: 'viper_atmos', label: '蝰蛇全景声' },
   { value: 'viper_clear', label: '蝰蛇超清' },
 ];

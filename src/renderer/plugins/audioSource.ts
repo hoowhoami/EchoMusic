@@ -38,7 +38,11 @@ interface RegisteredPluginAudioSourceResolver {
 const audioSourceResolvers: RegisteredPluginAudioSourceResolver[] = [];
 
 const normalizeAudioQuality = (value: unknown): AudioQualityValue | null =>
-  value === '128' || value === '320' || value === 'flac' || value === 'high' || value === 'super'
+  value === '128' ||
+  value === '320' ||
+  value === 'flac' ||
+  value === 'high' ||
+  value === 'viper_tape'
     ? value
     : null;
 
@@ -52,7 +56,6 @@ const normalizeAudioEffect = (value: unknown): AudioEffectValue => {
     'ancient',
     'surnay',
     'dj',
-    'viper_tape',
     'viper_atmos',
     'viper_clear',
   ];

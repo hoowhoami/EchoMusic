@@ -56,7 +56,7 @@ export const normalizeQuality = (value: string | undefined): AudioQualityValue =
     value === '320' ||
     value === 'flac' ||
     value === 'high' ||
-    value === 'super'
+    value === 'viper_tape'
   )
     return value;
   return 'high';
@@ -72,7 +72,6 @@ export const normalizeEffect = (value: string | undefined): AudioEffectValue => 
     'ancient',
     'surnay',
     'dj',
-    'viper_tape',
     'viper_atmos',
     'viper_clear',
   ];

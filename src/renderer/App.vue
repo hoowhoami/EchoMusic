@@ -22,6 +22,7 @@ import { useHistoryStore } from './stores/historyStore';
 import { useToastStore } from './stores/toast';
 import { useUserStore } from './stores/user';
 import { waitForSqlitePersistHydration } from './stores/sqlitePersist';
+import { normalizeQuality } from './stores/player/utils';
 import { clearCloudAudioIndex, refreshCloudAudioIndex } from '@/services/cloudAudioIndex';
 import { pageTransitionState } from '@/plugins/runtime/theme';
 import { coverFallbackRevision } from '@/plugins/coverFallback';
@@ -256,6 +257,7 @@ onMounted(async () => {
   syncGlobalShortcutsFn = syncGlobalShortcuts;
 
   await waitForSqlitePersistHydration();
+  settings.defaultAudioQuality = normalizeQuality(settings.defaultAudioQuality);
   settings.ensureShortcutDefaults();
   await settings.hydrateLogSettings();
   await Promise.all([

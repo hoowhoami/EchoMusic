@@ -28,6 +28,7 @@ import {
   buildMediaMeta,
   buildMediaState,
   findTrackById,
+  normalizeEffect,
   resolvePlaybackNotice,
 } from './player/utils';
 import { toRawSong } from './playlist/helpers';
@@ -622,6 +623,7 @@ export const usePlayerStore = defineStore(
     };
 
     const init = () => {
+      state.audioEffect = normalizeEffect(state.audioEffect);
       // 提前注册 MediaSession handlers，避免启动时丢失系统媒体控制事件
       engine.setMediaSessionHandlers({
         play: () => {

@@ -1,4 +1,5 @@
 import type { Song, SongRelateGood } from '@/models/song';
+import type { AudioQualityValue } from '@/types';
 
 export interface SongPrivilegeTag {
   label: string;
@@ -19,7 +20,7 @@ export interface SongDerivedState {
 }
 
 const QUALITY_LABEL_MAP: Record<string, string> = {
-  super: 'DSD',
+  viper_tape: '母带',
   high: 'Hi-Res',
   flac: 'SQ',
   '320': 'HQ',
@@ -33,18 +34,11 @@ const EFFECT_QUALITIES = new Set([
   'ancient',
   'surnay',
   'dj',
-  'viper_tape',
   'viper_atmos',
   'viper_clear',
 ]);
 
-const AUDIO_QUALITY_ORDER: Array<'128' | '320' | 'flac' | 'high' | 'super'> = [
-  '128',
-  '320',
-  'flac',
-  'high',
-  'super',
-];
+const AUDIO_QUALITY_ORDER: AudioQualityValue[] = ['128', '320', 'flac', 'high', 'viper_tape'];
 
 export const isVipSong = (song: Song): boolean => song.privilege === 10 && song.payType === 3;
 
@@ -115,7 +109,7 @@ export const getSongQualityTag = (song: Pick<Song, 'relateGoods'>): string => {
   const hasQuality = (quality: string, level: number) =>
     goods.some((item: SongRelateGood) => item.quality === quality || item.level === level);
 
-  if (hasQuality('super', 7)) return 'DSD';
+  if (hasQuality('viper_tape', 101)) return '母带';
   if (hasQuality('high', 6)) return 'Hi-Res';
   if (hasQuality('flac', 5)) return 'SQ';
   if (hasQuality('320', 4)) return 'HQ';
@@ -151,7 +145,7 @@ export const getSongEffectTags = (relateGoods: SongRelateGood[] | undefined): st
 
 export const doesRelateGoodMatchQuality = (
   item: SongRelateGood,
-  quality: '128' | '320' | 'flac' | 'high' | 'super',
+  quality: AudioQualityValue,
 ): boolean => {
   if (quality === '128') return true;
 
@@ -178,47 +172,42 @@ export const doesRelateGoodMatchQuality = (
     );
   }
 
-  // super (DSD)
-  return normalizedQuality === 'super' || normalizedQuality === 'dsd' || level === 7;
+  return normalizedQuality === 'viper_tape' || level === 101;
 };
 
 export const hasSongQuality = (
   song: Pick<Song, 'relateGoods'>,
-  quality: '128' | '320' | 'flac' | 'high' | 'super',
+  quality: AudioQualityValue,
 ): boolean => {
   if (quality === '128') return true;
   const goods = song.relateGoods ?? [];
   return goods.some((item: SongRelateGood) => doesRelateGoodMatchQuality(item, quality));
 };
 
-export const getAvailableSongQualities = (
-  song: Pick<Song, 'relateGoods'>,
-): Array<'128' | '320' | 'flac' | 'high' | 'super'> => {
-  const result: Array<'128' | '320' | 'flac' | 'high' | 'super'> = ['128'];
+export const getAvailableSongQualities = (song: Pick<Song, 'relateGoods'>): AudioQualityValue[] => {
+  const result: AudioQualityValue[] = ['128'];
   if (hasSongQuality(song, '320')) result.push('320');
   if (hasSongQuality(song, 'flac')) result.push('flac');
   if (hasSongQuality(song, 'high')) result.push('high');
-  if (hasSongQuality(song, 'super')) result.push('super');
+  if (hasSongQuality(song, 'viper_tape')) result.push('viper_tape');
   return result;
 };
 
 export const getSongQualityCandidates = (
-  preferred: '128' | '320' | 'flac' | 'high' | 'super',
+  preferred: AudioQualityValue,
   compatibilityMode = true,
-): Array<'128' | '320' | 'flac' | 'high' | 'super'> => {
+): AudioQualityValue[] => {
   const normalized = AUDIO_QUALITY_ORDER.includes(preferred) ? preferred : '128';
   const index = AUDIO_QUALITY_ORDER.indexOf(normalized);
   if (!compatibilityMode) return [normalized];
-  return AUDIO_QUALITY_ORDER.slice(0, index + 1).reverse() as Array<
-    '128' | '320' | 'flac' | 'high' | 'super'
-  >;
+  return AUDIO_QUALITY_ORDER.slice(0, index + 1).reverse();
 };
 
 export const resolveEffectiveSongQuality = (
   song: Pick<Song, 'relateGoods'>,
-  preferred: '128' | '320' | 'flac' | 'high' | 'super',
+  preferred: AudioQualityValue,
   compatibilityMode = true,
-): '128' | '320' | 'flac' | 'high' | 'super' => {
+): AudioQualityValue => {
   const goods = song.relateGoods ?? [];
   if (goods.length === 0) return preferred;
 

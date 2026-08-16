@@ -88,7 +88,7 @@ export const audioQualityOptions: { label: string; value: AudioQualityValue }[] 
   { label: 'HQ 高品质', value: '320' },
   { label: 'SQ 无损品质', value: 'flac' },
   { label: 'Hi-Res 品质', value: 'high' },
-  { label: 'DSD 臻品音质', value: 'super' },
+  { label: '蝰蛇母带', value: 'viper_tape' },
 ];
 
 export const closeBehaviorOptions: { label: string; value: CloseBehavior }[] = [

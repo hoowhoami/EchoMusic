@@ -30,7 +30,6 @@ const cleanupAudioExtension = (value: string): string => {
 };
 
 const mapCloudBitrateToQuality = (bitrate?: number): CloudAudioQualityValue | undefined => {
-  if (bitrate === 31) return 'super';
   if (bitrate === 5) return 'high';
   if (bitrate === 4) return 'flac';
   if (bitrate === 3) return '320';
