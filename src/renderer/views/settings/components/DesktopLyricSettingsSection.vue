@@ -23,6 +23,7 @@ import {
 const settingStore = useSettingStore();
 const desktopLyricStore = useDesktopLyricStore();
 const isLinux = computed(() => window.electron?.platform === 'linux');
+const isWayland = computed(() => window.electron?.isWayland ?? false);
 const activeDesktopLyricColorField = ref<'playedColor' | 'unplayedColor' | null>(null);
 
 const hasCustomDesktopLyricColors = computed(
@@ -89,10 +90,17 @@ const applyDesktopLyricColor = async (value: string) => {
     <div class="settings-item">
       <div class="space-y-1">
         <h3 class="font-semibold">锁定时显示解锁按钮</h3>
-        <p class="text-sm text-text-secondary">关闭后需通过托盘菜单解锁桌面歌词</p>
+        <p class="text-sm text-text-secondary">
+          {{
+            isWayland
+              ? '原生 Wayland 下锁定后需通过托盘菜单解锁'
+              : '关闭后需通过托盘菜单解锁桌面歌词'
+          }}
+        </p>
       </div>
       <Switch
-        :model-value="desktopLyricStore.settings.showUnlockButton"
+        :model-value="isWayland ? false : desktopLyricStore.settings.showUnlockButton"
+        :disabled="isWayland"
         @update:model-value="commitDesktopLyricSettings({ showUnlockButton: Boolean($event) })"
       />
     </div>

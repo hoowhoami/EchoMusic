@@ -5,17 +5,22 @@ import { useLyricStore } from '@/stores/lyric';
 import { useSettingStore } from '@/stores/setting';
 import { useToastStore } from '@/stores/toast';
 import { useDesktopLyricStore } from './store';
-import { mergeDesktopLyricSnapshotMessage } from '../../shared/desktop-lyric';
+import {
+  DEFAULT_DESKTOP_LYRIC_OFFSET_STEP_SECONDS,
+  isDesktopLyricFullSnapshot,
+  mergeDesktopLyricSnapshotMessage,
+} from '../../shared/desktop-lyric';
 import { buildPlaybackClockSnapshot } from '../../shared/playback';
 import type {
   DesktopLyricCommand,
   DesktopLyricPlaybackPayload,
   DesktopLyricSettings,
+  DesktopLyricSnapshot,
   LyricLinePayload,
 } from '../../shared/desktop-lyric';
 
 const DESKTOP_LYRIC_PROGRESS_SYNC_INTERVAL_MS = 80;
-const DEFAULT_DESKTOP_LYRIC_OFFSET_STEP_MS = 500;
+const DEFAULT_DESKTOP_LYRIC_OFFSET_STEP_MS = DEFAULT_DESKTOP_LYRIC_OFFSET_STEP_SECONDS * 1000;
 const DESKTOP_LYRIC_COMMANDS = new Set<DesktopLyricCommand>([
   'togglePlayback',
   'previousTrack',
@@ -75,6 +80,7 @@ const buildSettingsSignature = (settings: DesktopLyricSettings) =>
     boolKey(settings.strokeEnabled),
     settings.shadowStrength,
     boolKey(settings.bold),
+    settings.layout,
     boolKey(settings.filterEnabled),
     settings.filterPattern,
     stableNumberKey(settings.offsetStep, 1000),
@@ -104,7 +110,15 @@ const buildPlaybackSignature = (
     boolKey(lyricSyncWarning),
   ].join('\u001f');
 
-const buildLyricsSignature = (lyricsTrackId: string | null, lyrics: LyricLinePayload[]) => {
+type LyricSignatureLine = Pick<
+  LyricLinePayload,
+  'time' | 'text' | 'translated' | 'romanized' | 'characters'
+>;
+
+const buildLyricsSignature = (
+  lyricsTrackId: string | null,
+  lyrics: readonly LyricSignatureLine[],
+) => {
   let hash = hashText(lyricsTrackId ?? '');
   let characterCount = 0;
   for (const line of lyrics) {
@@ -183,11 +197,11 @@ export const initDesktopLyricSync = async () => {
   const toastStore = useToastStore();
   if (!window.electron?.desktopLyric) return () => {};
 
-  await desktopLyricStore.hydrate();
+  let latestDesktopLyricSnapshot: DesktopLyricSnapshot | null = await desktopLyricStore.hydrate();
 
   if (desktopLyricStore.settings.enabled) {
-    const snapshot = await window.electron.desktopLyric.show();
-    desktopLyricStore.setLocal(snapshot.settings);
+    latestDesktopLyricSnapshot = await window.electron.desktopLyric.show();
+    desktopLyricStore.setLocal(latestDesktopLyricSnapshot.settings);
   }
 
   const stops: WatchStopHandle[] = [];
@@ -217,9 +231,32 @@ export const initDesktopLyricSync = async () => {
     };
   };
 
+  const buildRendererOwnedSettingsPatch = () => ({
+    resolvedFontFamily:
+      desktopLyricStore.settings.fontFamily === 'follow'
+        ? settingStore.globalFont
+        : desktopLyricStore.settings.resolvedFontFamily,
+    wantTranslation: wantTranslation.value,
+    wantRomanization: wantRomanization.value,
+    filterEnabled: settingStore.desktopLyricFilterEnabled,
+    filterPattern: settingStore.desktopLyricFilterPattern,
+  });
+
   let lastSyncedSettingsKey = buildSettingsSignature(buildSyncedSettings());
-  let lastSyncedLyricsKey = '';
-  let lastSyncedPlaybackKey = '';
+  let lastSyncedLyricsKey = latestDesktopLyricSnapshot
+    ? buildLyricsSignature(
+        latestDesktopLyricSnapshot.lyricsTrackId,
+        latestDesktopLyricSnapshot.lyrics,
+      )
+    : '';
+  let lastSyncedPlaybackKey = latestDesktopLyricSnapshot
+    ? buildPlaybackSignature(
+        latestDesktopLyricSnapshot.playback,
+        latestDesktopLyricSnapshot.currentIndex,
+        latestDesktopLyricSnapshot.lyricTimeOffset,
+        latestDesktopLyricSnapshot.lyricSyncWarning,
+      )
+    : '';
   let progressSyncTimer: ReturnType<typeof setTimeout> | null = null;
   let progressSyncQueued = false;
 
@@ -249,9 +286,10 @@ export const initDesktopLyricSync = async () => {
   const syncLyricsSnapshot = async () => {
     const playback = buildPlaybackPayload();
     const lyricsTrackId = playback?.lyricHash || playback?.trackId || null;
-    const lyrics = lyricStore.loadedHash === (lyricsTrackId ?? '') ? buildLyricsPayload() : [];
-    const nextLyricsKey = buildLyricsSignature(lyricsTrackId, lyrics);
+    const sourceLines = lyricStore.loadedHash === (lyricsTrackId ?? '') ? lines.value : [];
+    const nextLyricsKey = buildLyricsSignature(lyricsTrackId, sourceLines);
     if (nextLyricsKey === lastSyncedLyricsKey) return;
+    const lyrics = sourceLines.length > 0 ? buildLyricsPayload() : [];
 
     window.electron.desktopLyric.syncSnapshot({
       playback,
@@ -279,23 +317,44 @@ export const initDesktopLyricSync = async () => {
     if (nextSettingsKey === lastSyncedSettingsKey) return;
 
     window.electron.desktopLyric.syncSnapshot({
-      settings: nextSettings,
+      // enabled/locked/layout 等窗口权威状态只能经 updateSettings 修改；同步通道
+      // 仅提交由主渲染器持有的数据，避免陈旧全量设置回写主进程。
+      settings: buildRendererOwnedSettingsPatch(),
     });
     lastSyncedSettingsKey = nextSettingsKey;
   };
 
   const disposeSnapshotListener = window.electron.desktopLyric.onSnapshot((message) => {
-    const nextSnapshot = mergeDesktopLyricSnapshotMessage(null, message);
+    const nextSnapshot = mergeDesktopLyricSnapshotMessage(latestDesktopLyricSnapshot, message);
     if (!nextSnapshot) return;
-    desktopLyricStore.setLocal(nextSnapshot.settings);
-    lastSyncedSettingsKey = buildSettingsSignature(buildSyncedSettings(nextSnapshot.settings));
-    lastSyncedPlaybackKey = buildPlaybackSignature(
-      nextSnapshot.playback,
-      nextSnapshot.currentIndex,
-      nextSnapshot.lyricTimeOffset,
-      nextSnapshot.lyricSyncWarning,
-    );
-    lastSyncedLyricsKey = buildLyricsSignature(nextSnapshot.lyricsTrackId, nextSnapshot.lyrics);
+    latestDesktopLyricSnapshot = nextSnapshot;
+    const fullSnapshot = isDesktopLyricFullSnapshot(message);
+    if (fullSnapshot || message.settings !== undefined) {
+      desktopLyricStore.setLocal(nextSnapshot.settings);
+      lastSyncedSettingsKey = buildSettingsSignature(buildSyncedSettings(nextSnapshot.settings));
+    }
+    if (
+      fullSnapshot ||
+      message.playback !== undefined ||
+      message.currentIndex !== undefined ||
+      message.lyricTimeOffset !== undefined ||
+      message.lyricSyncWarning !== undefined
+    ) {
+      lastSyncedPlaybackKey = buildPlaybackSignature(
+        nextSnapshot.playback,
+        nextSnapshot.currentIndex,
+        nextSnapshot.lyricTimeOffset,
+        nextSnapshot.lyricSyncWarning,
+      );
+    }
+    if (
+      fullSnapshot ||
+      message.lyricsTrackId !== undefined ||
+      message.lyricsRevision !== undefined ||
+      message.lyrics !== undefined
+    ) {
+      lastSyncedLyricsKey = buildLyricsSignature(nextSnapshot.lyricsTrackId, nextSnapshot.lyrics);
+    }
   });
 
   const handleDesktopLyricCommand = (command: DesktopLyricCommand) => {

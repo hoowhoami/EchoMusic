@@ -21,7 +21,7 @@ export interface LyricTimelineOptions {
 }
 
 const DEFAULT_CLOCK_SYNC_TOLERANCE_MS = 300;
-const DEFAULT_RECENT_SEEK_WINDOW_MS = 800;
+export const DEFAULT_LYRIC_RECENT_SEEK_WINDOW_MS = 800;
 const DEFAULT_PLAYBACK_STALE_THRESHOLD_MS = 1800;
 const DEFAULT_BACKWARD_RESYNC_THRESHOLD_MS = 1500;
 const DEFAULT_SNAPSHOT_DELAY_COMPENSATION_MS = 1000;
@@ -78,7 +78,7 @@ export const computeLyricCharBackgroundPosition = (
 // engine samples so lyric animation can stay smooth without drifting through stalls.
 export function createLyricTimeline(options: LyricTimelineOptions = {}) {
   const clockSyncToleranceMs = options.clockSyncToleranceMs ?? DEFAULT_CLOCK_SYNC_TOLERANCE_MS;
-  const recentSeekWindowMs = options.recentSeekWindowMs ?? DEFAULT_RECENT_SEEK_WINDOW_MS;
+  const recentSeekWindowMs = options.recentSeekWindowMs ?? DEFAULT_LYRIC_RECENT_SEEK_WINDOW_MS;
   const playbackStaleThresholdMs =
     options.playbackStaleThresholdMs ?? DEFAULT_PLAYBACK_STALE_THRESHOLD_MS;
   const backwardResyncThresholdMs =

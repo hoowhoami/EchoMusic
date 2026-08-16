@@ -12,6 +12,7 @@ import type {
 } from '../shared/shortcuts';
 import type {
   DesktopLyricCommand,
+  DesktopLyricClientRect,
   DesktopLyricSettings,
   DesktopLyricSnapshot,
   DesktopLyricSnapshotMessage,
@@ -477,7 +478,10 @@ contextBridge.exposeInMainWorld('electron', {
         'desktop-lyric:update-window',
         payload,
       ),
-    move: (x: number, y: number) => ipcRenderer.send('desktop-lyric:move', x, y),
+    move: (x: number, y: number, width: number, height: number) =>
+      ipcRenderer.send('desktop-lyric:move', x, y, width, height),
+    resize: (payload: Required<DesktopLyricWindowBoundsUpdate>) =>
+      sendWithPlainPayload('desktop-lyric:resize', payload),
     endDrag: () =>
       ipcRenderer.invoke('desktop-lyric:end-drag') as Promise<{
         x: number;
@@ -497,6 +501,8 @@ contextBridge.exposeInMainWorld('electron', {
     },
     setIgnoreMouseEvents: (ignore: boolean) =>
       ipcRenderer.send('desktop-lyric:set-ignore-mouse-events', ignore),
+    setUnlockButtonBounds: (payload: DesktopLyricClientRect | null) =>
+      sendWithPlainPayload('desktop-lyric:set-unlock-button-bounds', payload),
     onHover: (func: (hovered: boolean) => void) => {
       const listener = (_event: Electron.IpcRendererEvent, hovered: boolean) => func(hovered);
       ipcRenderer.on('desktop-lyric:hover', listener);

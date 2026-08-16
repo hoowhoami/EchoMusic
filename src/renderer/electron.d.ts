@@ -15,6 +15,7 @@ import type {
 } from '../shared/shortcuts';
 import type {
   DesktopLyricCommand,
+  DesktopLyricClientRect,
   DesktopLyricSettings,
   DesktopLyricSnapshot,
   DesktopLyricSnapshotMessage,
@@ -315,11 +316,13 @@ export interface IElectronAPI {
     updateWindow: (
       payload: DesktopLyricWindowBoundsUpdate,
     ) => Promise<{ x: number; y: number; width: number; height: number }>;
-    move: (x: number, y: number) => void;
+    move: (x: number, y: number, width: number, height: number) => void;
+    resize: (payload: Required<DesktopLyricWindowBoundsUpdate>) => void;
     endDrag: () => Promise<{ x: number; y: number; width: number; height: number }>;
     syncSnapshot: (payload: DesktopLyricSnapshotPatch) => void;
     onSnapshot: (func: (snapshot: DesktopLyricSnapshotMessage) => void) => () => void;
     setIgnoreMouseEvents: (ignore: boolean) => void;
+    setUnlockButtonBounds: (payload: DesktopLyricClientRect | null) => void;
     onHover: (func: (hovered: boolean) => void) => () => void;
     command: (command: DesktopLyricCommand) => void;
   };

@@ -339,6 +339,11 @@ impl VpfProcessor {
     }
 
     pub fn process_interleaved(&mut self, samples: &mut [f32]) {
+        // Every VPF stage is stereo. Do not let an incomplete final frame pass through only some
+        // of the chain while the complete frames are processed.
+        if !samples.chunks_exact(2).remainder().is_empty() {
+            return;
+        }
         if self.params.headphone.enabled {
             self.headphone.process(samples);
         }
@@ -397,9 +402,14 @@ impl VpfProcessor {
     }
 
     pub fn latency_frames(&self) -> usize {
-        // VHE emits the current convolution frame and reverb does not hold the complete dry
-        // signal. The limiter always contributes its lookahead; PureBassPlus also delays dry.
-        SoftwareLimiter::LOOKAHEAD + self.bass.latency_frames()
+        // The limiter always contributes its lookahead; VHE waits for its first convolution
+        // block when enabled, and PureBassPlus delays the complete dry signal as well.
+        let headphone_latency = if self.params.headphone.enabled {
+            self.headphone.latency_frames()
+        } else {
+            0
+        };
+        headphone_latency + SoftwareLimiter::LOOKAHEAD + self.bass.latency_frames()
     }
 }
 
@@ -1744,16 +1754,16 @@ mod tests {
                 [
                     [0.0, 0.0],
                     [0.0, 0.0],
-                    [0.588673711, -0.517092228],
-                    [0.140551507, -0.479580879],
-                    [0.204024240, -0.171421081],
-                    [0.262450755, -0.190534294],
-                    [0.221729055, 0.222816154],
-                    [-0.238076314, 0.263244092],
-                    [0.060260493, -0.115876161],
-                    [0.051529616, -0.157121986],
-                    [-0.349612713, -0.449660331],
-                    [-0.245654896, -0.305769712],
+                    [0.588673174, -0.517092407],
+                    [0.140529424, -0.479137391],
+                    [0.204651743, -0.170495048],
+                    [0.263076097, -0.189611062],
+                    [0.220530644, 0.221644536],
+                    [-0.237385303, 0.262817889],
+                    [0.059777547, -0.115812957],
+                    [0.051049173, -0.157054737],
+                    [-0.348934323, -0.448485821],
+                    [-0.245927230, -0.305782735],
                 ],
             ),
             (
@@ -1761,16 +1771,16 @@ mod tests {
                 [
                     [0.0, 0.0],
                     [0.0, 0.0],
-                    [0.639892638, -0.551861405],
-                    [0.116732776, -0.549417615],
-                    [0.274289638, -0.150597528],
-                    [0.285640687, -0.137714505],
-                    [0.416750938, 0.477235645],
-                    [0.077342518, -0.151645139],
-                    [0.017300231, -0.215590507],
-                    [0.039719235, -0.222876832],
-                    [0.119516827, -0.457220584],
-                    [-0.444896847, -0.426050246],
+                    [0.639893711, -0.551862895],
+                    [0.116651721, -0.549077690],
+                    [0.273148656, -0.150442317],
+                    [0.284442991, -0.137584224],
+                    [0.138398439, 0.056078549],
+                    [0.197744995, -0.229053214],
+                    [0.007288610, -0.224112034],
+                    [0.035977274, -0.231461480],
+                    [-0.213901654, -0.579743564],
+                    [-0.010367581, -0.041763972],
                 ],
             ),
         ];
@@ -1808,18 +1818,26 @@ mod tests {
                 });
             }
             let mut processor = VpfProcessor::new(48_000, &vpf);
-            for block in samples.chunks_exact_mut(512) {
+            let vhe_latency = if vpf.params.headphone.enabled {
+                processor.headphone.latency_frames()
+            } else {
+                0
+            };
+            samples.resize(samples.len() + vhe_latency * 2, 0.0);
+            for block in samples.chunks_mut(512) {
                 processor.process_interleaved(block);
             }
 
             for (position, frame) in SELECTED.iter().copied().enumerate() {
                 for channel in 0..2 {
                     assert!(
-                        (samples[frame * 2 + channel] - expected[position][channel]).abs()
+                        (samples[(frame + vhe_latency) * 2 + channel]
+                            - expected[position][channel])
+                            .abs()
                             <= 3.0e-5,
                         "{file_name}, frame {frame}, channel {channel}: expected {}, got {}",
                         expected[position][channel],
-                        samples[frame * 2 + channel]
+                        samples[(frame + vhe_latency) * 2 + channel]
                     );
                 }
             }
@@ -2043,6 +2061,22 @@ mod tests {
     }
 
     #[test]
+    fn malformed_stereo_buffer_bypasses_complete_vpf_chain() {
+        let params = parse_vpf(&synthetic_vpf()).expect("VPF should parse");
+        let vpf = PreparedVpf {
+            file_path: "malformed-buffer.vpf".to_string(),
+            params,
+        };
+        let mut processor = VpfProcessor::new(48_000, &vpf);
+        let mut samples = vec![0.25, -0.5, 0.75];
+        let original = samples.clone();
+
+        processor.process_interleaved(&mut samples);
+
+        assert_eq!(samples, original);
+    }
+
+    #[test]
     fn zero_db_equalizer_keeps_reference_filter_bank() {
         let params = parse_vpf(&synthetic_vpf()).expect("VPF should parse");
         let vpf = PreparedVpf {
@@ -2066,6 +2100,21 @@ mod tests {
         assert_eq!(
             processor.latency_frames(),
             SoftwareLimiter::LOOKAHEAD + BassProcessor::PURE_LATENCY
+        );
+    }
+
+    #[test]
+    fn enabled_vhe_latency_is_included() {
+        let mut params = parse_vpf(&synthetic_vpf()).expect("VPF should parse");
+        params.headphone.enabled = true;
+        let vpf = PreparedVpf {
+            file_path: "vhe-latency.vpf".to_string(),
+            params,
+        };
+        let processor = VpfProcessor::new(48_000, &vpf);
+        assert_eq!(
+            processor.latency_frames(),
+            SoftwareLimiter::LOOKAHEAD + processor.headphone.latency_frames()
         );
     }
 
@@ -2820,21 +2869,21 @@ mod tests {
         const EXPECTED: [(usize, [f32; 2]); 17] = [
             (0, [0.0, 0.0]),
             (255, [0.0, 0.0]),
-            (256, [0.248168737, -0.120341316]),
-            (257, [0.509144545, -0.283444494]),
-            (511, [-0.320365548, -0.254972875]),
-            (767, [-0.163390204, -0.015507185]),
-            (1023, [-0.099904217, 0.186727315]),
-            (1279, [0.140162915, 0.251517028]),
-            (2047, [0.163892522, -0.089999311]),
-            (3071, [-0.102659762, -0.120769545]),
-            (4095, [0.263737470, 0.358793586]),
-            (4999, [-0.293432027, -0.153313771]),
-            (5000, [-0.307153761, -0.155306309]),
-            (5119, [-0.015256066, -0.359419137]),
-            (5500, [0.324332982, 0.136135474]),
-            (6000, [0.081471376, 0.234905511]),
-            (6143, [-0.146816954, 0.062395908]),
+            (256, [0.264506906, -0.128264010]),
+            (257, [0.542654395, -0.302098244]),
+            (511, [-0.340677738, -0.271056890]),
+            (767, [-0.172951952, -0.016276276]),
+            (1023, [-0.105966754, 0.197133675]),
+            (1279, [0.148025304, 0.265053540]),
+            (2047, [0.169652805, -0.093788616]),
+            (3071, [-0.102346338, -0.119229205]),
+            (4095, [0.260560602, 0.350935638]),
+            (4999, [-0.286753118, -0.148429424]),
+            (5000, [-0.300107539, -0.150291249]),
+            (5119, [-0.037132129, -0.406524122]),
+            (5500, [0.324452966, 0.136582717]),
+            (6000, [0.081026375, 0.231278956]),
+            (6143, [-0.145980820, 0.060403403]),
         ];
         let vpf = PreparedVpf {
             file_path: "full-chain.vpf".to_string(),
@@ -2919,17 +2968,20 @@ mod tests {
             });
         }
         let mut processor = VpfProcessor::new(48_000, &vpf);
-        for block in samples.chunks_exact_mut(512) {
+        let vhe_latency = processor.headphone.latency_frames();
+        samples.resize(samples.len() + vhe_latency * 2, 0.0);
+        for block in samples.chunks_mut(512) {
             processor.process_interleaved(block);
         }
 
         for (frame, expected) in EXPECTED {
             for channel in 0..2 {
                 assert!(
-                    (samples[frame * 2 + channel] - expected[channel]).abs() <= 3.0e-5,
+                    (samples[(frame + vhe_latency) * 2 + channel] - expected[channel]).abs()
+                        <= 3.0e-5,
                     "frame {frame}, channel {channel}: expected {}, got {}",
                     expected[channel],
-                    samples[frame * 2 + channel]
+                    samples[(frame + vhe_latency) * 2 + channel]
                 );
             }
         }

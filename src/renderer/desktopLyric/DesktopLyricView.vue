@@ -9,7 +9,7 @@ import {
   watch,
   type ComponentPublicInstance,
 } from 'vue';
-import { useRafFn, useWindowSize, useDebounceFn } from '@vueuse/core';
+import { useRafFn, useWindowSize } from '@vueuse/core';
 import {
   iconLock,
   iconLockOpen,
@@ -24,6 +24,8 @@ import {
   iconX,
 } from '@/icons';
 import {
+  DEFAULT_DESKTOP_LYRIC_OFFSET_STEP_SECONDS,
+  isDesktopLyricFullSnapshot,
   mergeDesktopLyricSnapshotMessage,
   type DesktopLyricSnapshot,
   type LyricLinePayload,
@@ -39,6 +41,7 @@ import {
   computeLyricCharBackgroundPosition,
   computeLyricCharProgress,
   createLyricTimeline,
+  DEFAULT_LYRIC_RECENT_SEEK_WINDOW_MS,
   findLyricIndexAtTimeMs,
 } from '@/composables/useLyricTimeline';
 import { createStableLyricIndex } from '@/composables/useStableLyricIndex';
@@ -69,6 +72,7 @@ const activeLineIndex = ref(-1);
 const lyricEffectRootRef = ref<HTMLElement | null>(null);
 const lyricEffectScrollerRef = ref<HTMLElement | null>(null);
 const lyricEffectOverlayRef = ref<HTMLElement | null>(null);
+const lockButtonRef = ref<HTMLButtonElement | null>(null);
 const reducedMotion = ref(false);
 
 // 缓存 DOM 引用
@@ -77,23 +81,11 @@ let cachedYrcLineKey = '';
 const lyricTimeline = createLyricTimeline();
 const stableLyricIndex = createStableLyricIndex();
 
-const getTimelinePlayback = () => {
-  const state = snapshot.value?.playback;
-  if (!state) return null;
-  return {
-    currentTime: state.currentTime,
-    duration: state.duration,
-    isPlaying: state.isPlaying,
-    playbackRate: state.playbackRate,
-    updatedAt: state.updatedAt,
-    seekTimestamp: state.seekTimestamp,
-    clock: state.clock,
-  };
-};
+const getTimelinePlayback = () => snapshot.value?.playback ?? null;
 
 const isRecentLyricSeek = () => {
   const seekTimestamp = Number(snapshot.value?.playback?.seekTimestamp ?? 0);
-  return seekTimestamp > 0 && Date.now() - seekTimestamp < 800;
+  return seekTimestamp > 0 && Date.now() - seekTimestamp < DEFAULT_LYRIC_RECENT_SEEK_WINDOW_MS;
 };
 
 const refreshTimelineState = (options?: { resetStable?: boolean }) => {
@@ -107,17 +99,18 @@ const refreshTimelineState = (options?: { resetStable?: boolean }) => {
   if (nextIndex !== activeLineIndex.value) {
     activeLineIndex.value = nextIndex;
   }
+  return timelineMs;
 };
 
 // 每帧推进播放游标
 const { pause: pauseSeek, resume: resumeSeek } = useRafFn(() => {
-  refreshTimelineState();
-  updateYrcDomManual();
-  updateScrollManual();
+  const timelineMs = refreshTimelineState();
+  updateYrcDomManual(timelineMs);
+  updateScrollManual(timelineMs);
   notifyLyricEffectHost();
 });
 
-const updateYrcDomManual = () => {
+const updateYrcDomManual = (timelineMs: number) => {
   const renderLines = renderLyricLines.value;
   // 查找当前活跃的渲染行（逐字层）
   const activeRenderLine = renderLines.find((line) => line.active);
@@ -143,11 +136,7 @@ const updateYrcDomManual = () => {
 
   if (cachedYrcElements.length === 0) return;
 
-  const seekMs = lyricTimeline.getTimelineMs(
-    getTimelinePlayback(),
-    lyricTimeOffset.value,
-    LYRIC_LOOKAHEAD,
-  );
+  const seekMs = timelineMs + LYRIC_LOOKAHEAD;
   const characters = activeRenderLine.line.characters;
   const vertical = lyricLayout.value === 'vertical';
 
@@ -171,7 +160,7 @@ const updateYrcDomManual = () => {
   }
 };
 
-const updateScrollManual = () => {
+const updateScrollManual = (timelineMs: number) => {
   const vertical = lyricLayout.value === 'vertical';
   renderLyricLines.value.forEach((line) => {
     const container = lineRefs.get(line.key);
@@ -186,7 +175,6 @@ const updateScrollManual = () => {
       return;
     }
 
-    const seekMs = lyricTimeline.getTimelineMs(getTimelinePlayback(), lyricTimeOffset.value);
     const chars = line.line.characters;
     if (!chars?.length) return;
 
@@ -195,7 +183,7 @@ const updateScrollManual = () => {
     if (!endRaw || endRaw <= start) return;
 
     const end = Math.max(start + 0.001, endRaw - 2000);
-    const progress = computeLyricCharProgress(start, end, seekMs);
+    const progress = computeLyricCharProgress(start, end, timelineMs);
 
     let tx = 0;
     if (progress > 0.3) {
@@ -208,9 +196,9 @@ const updateScrollManual = () => {
 
 const syncManualDomAfterRender = (options?: { resetStable?: boolean }) => {
   void nextTick(() => {
-    refreshTimelineState(options);
-    updateYrcDomManual();
-    updateScrollManual();
+    const timelineMs = refreshTimelineState(options);
+    updateYrcDomManual(timelineMs);
+    updateScrollManual(timelineMs);
     notifyLyricEffectHost();
   });
 };
@@ -240,9 +228,16 @@ const lyrics = computed(() => {
 });
 const isLocked = computed(() => settings.value?.locked ?? false);
 const showUnlockButton = computed(() => settings.value?.showUnlockButton ?? true);
+// Wayland 不支持全局光标坐标与鼠标事件转发，锁定后只能通过托盘菜单解锁。
+const canShowUnlockButton = computed(() => showUnlockButton.value && !isWayland);
 const hasLyrics = computed(() => lyrics.value.length > 0);
 const lyricTimeOffset = computed(() => snapshot.value?.lyricTimeOffset ?? 0);
-const offsetStepLabel = computed(() => `${Number(settings.value?.offsetStep ?? 0.5).toFixed(1)}s`);
+const offsetStepLabel = computed(() => {
+  const step = Number(settings.value?.offsetStep);
+  const safeStep =
+    Number.isFinite(step) && step > 0 ? step : DEFAULT_DESKTOP_LYRIC_OFFSET_STEP_SECONDS;
+  return `${safeStep.toFixed(1)}s`;
+});
 
 // 本地计算 currentIndex，不再依赖主窗口传来的值
 const currentIndex = computed(() => activeLineIndex.value);
@@ -329,7 +324,7 @@ const handleMouseMove = (event: MouseEvent) => {
   const target = event.target as HTMLElement | null;
 
   if (isLocked.value) {
-    if (!showUnlockButton.value) {
+    if (!canShowUnlockButton.value) {
       isHovered.value = false;
       setDesktopLyricIgnoreMouseEvents(true);
       return;
@@ -534,9 +529,18 @@ const buildLyricEffectSnapshot = (): PluginLyricEffectSnapshot => {
   };
 };
 
+let lastLyricEffectHostDomKey = '';
 const notifyLyricEffectHost = () => {
   const root = lyricEffectRootRef.value;
-  if (root) {
+  const domKey = [
+    currentIndex.value,
+    visibleCurrentIndex.value,
+    isPlaying.value ? 1 : 0,
+    reducedMotion.value ? 1 : 0,
+    lyricLayout.value,
+  ].join(':');
+  if (root && domKey !== lastLyricEffectHostDomKey) {
+    lastLyricEffectHostDomKey = domKey;
     root.style.setProperty('--echo-lyric-current-index', String(currentIndex.value));
     root.style.setProperty('--echo-lyric-scroll-index', String(visibleCurrentIndex.value));
     root.dataset.echoLyricPlaying = isPlaying.value ? 'true' : 'false';
@@ -569,7 +573,7 @@ const updateReducedMotion = () => {
   notifyLyricEffectHost();
 };
 // 判断行是否有逐字数据
-const isYrcLine = (line: LyricLinePayload) => (line.characters?.length ?? 0) > 1;
+const isYrcLine = (line: LyricLinePayload) => (line.characters?.length ?? 0) > 0;
 
 // 歌词行引用管理 (用于手动 DOM 补丁)
 const lineRefs = new Map<string, HTMLElement>();
@@ -605,11 +609,6 @@ watch([renderLyricLines, lyricsMode, lyricLayout, isPlaying], () => {
 });
 
 // 拖拽
-// EchoMusic 的 preload send 只接受 (channel, data)，多参数包装成数组
-const sendToMain = (channel: string, ...args: any[]) => {
-  window.electron?.ipcRenderer?.send(channel, ...args);
-};
-
 type DesktopLyricDragSession = {
   pointerId: number;
   captureTarget: HTMLElement;
@@ -671,7 +670,9 @@ const flushWindowDragPosition = () => {
     width: cachedWindowBounds?.width ?? window.innerWidth,
     height: cachedWindowBounds?.height ?? window.innerHeight,
   });
-  window.electron?.desktopLyric?.move(x, y);
+  const width = cachedWindowBounds?.width ?? window.innerWidth;
+  const height = cachedWindowBounds?.height ?? window.innerHeight;
+  window.electron?.desktopLyric?.move(x, y, width, height);
 };
 
 const scheduleWindowDragPosition = () => {
@@ -745,9 +746,9 @@ function onWindowBlur() {
 }
 
 const onDocPointerDown = (event: PointerEvent) => {
-  if (isWayland || isLocked.value || event.button !== 0 || dragSession) return;
+  if (isWayland || isLocked.value || event.button !== 0 || dragSession || resizeSession) return;
   const target = event.target as HTMLElement | null;
-  if (!target || target.closest('.header, .menu-btn')) return;
+  if (!target || target.closest('.header, .menu-btn, .resize-handle')) return;
 
   // 初始化阶段会预取真实窗口位置。极端情况下预取失败，screen/client 坐标差仍能
   // 同步得到当前无边框窗口的左上角，保证快速点拖不依赖 IPC 往返。
@@ -780,15 +781,223 @@ const onDocPointerDown = (event: PointerEvent) => {
 };
 
 const isResizing = ref(false);
+let resizeTimer: ReturnType<typeof setTimeout> | null = null;
+type DesktopLyricResizeDirection = 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w' | 'nw';
+
+type DesktopLyricResizeSession = {
+  pointerId: number;
+  captureTarget: HTMLElement;
+  direction: DesktopLyricResizeDirection;
+  startScreenX: number;
+  startScreenY: number;
+  latestScreenX: number;
+  latestScreenY: number;
+  startBounds: DesktopLyricWindowBounds;
+};
+
+const DESKTOP_LYRIC_MIN_WIDTH = 80;
+const DESKTOP_LYRIC_MIN_HEIGHT = 80;
+const resizeDirections: DesktopLyricResizeDirection[] = [
+  'n',
+  'ne',
+  'e',
+  'se',
+  's',
+  'sw',
+  'w',
+  'nw',
+];
+let resizeSession: DesktopLyricResizeSession | null = null;
+let resizeAnimationFrame = 0;
+
+const getResizedWindowBounds = (session: DesktopLyricResizeSession) => {
+  const dx = session.latestScreenX - session.startScreenX;
+  const dy = session.latestScreenY - session.startScreenY;
+  const resizeWest = session.direction.includes('w');
+  const resizeEast = session.direction.includes('e');
+  const resizeNorth = session.direction.includes('n');
+  const resizeSouth = session.direction.includes('s');
+  let { x, y, width, height } = session.startBounds;
+
+  if (resizeWest) {
+    width = Math.max(DESKTOP_LYRIC_MIN_WIDTH, session.startBounds.width - dx);
+    x = session.startBounds.x + session.startBounds.width - width;
+  } else if (resizeEast) {
+    width = Math.max(DESKTOP_LYRIC_MIN_WIDTH, session.startBounds.width + dx);
+  }
+  if (resizeNorth) {
+    height = Math.max(DESKTOP_LYRIC_MIN_HEIGHT, session.startBounds.height - dy);
+    y = session.startBounds.y + session.startBounds.height - height;
+  } else if (resizeSouth) {
+    height = Math.max(DESKTOP_LYRIC_MIN_HEIGHT, session.startBounds.height + dy);
+  }
+
+  return {
+    x: Math.round(x),
+    y: Math.round(y),
+    width: Math.round(width),
+    height: Math.round(height),
+  };
+};
+
+const flushWindowResize = () => {
+  resizeAnimationFrame = 0;
+  if (!resizeSession) return;
+  const bounds = getResizedWindowBounds(resizeSession);
+  cacheWindowBounds(bounds);
+  window.electron?.desktopLyric?.resize(bounds);
+};
+
+const scheduleWindowResize = () => {
+  if (resizeAnimationFrame) return;
+  resizeAnimationFrame = requestAnimationFrame(flushWindowResize);
+};
+
+const updateWindowResizePointer = (event: PointerEvent) => {
+  if (!resizeSession || event.pointerId !== resizeSession.pointerId) return false;
+  resizeSession.latestScreenX = event.screenX;
+  resizeSession.latestScreenY = event.screenY;
+  return true;
+};
+
+const removeWindowResizeListeners = () => {
+  document.removeEventListener('pointermove', onResizePointerMove);
+  document.removeEventListener('pointerup', onResizePointerUp);
+  document.removeEventListener('pointercancel', onResizePointerCancel);
+  window.removeEventListener('blur', onResizeWindowBlur);
+};
+
+const finishWindowResize = (event?: PointerEvent, commitBounds = true) => {
+  const session = resizeSession;
+  if (!session || (event && event.pointerId !== session.pointerId)) return;
+  if (event) updateWindowResizePointer(event);
+  if (resizeAnimationFrame) {
+    cancelAnimationFrame(resizeAnimationFrame);
+    resizeAnimationFrame = 0;
+  }
+  if (commitBounds) flushWindowResize();
+  resizeSession = null;
+  isResizing.value = false;
+  removeWindowResizeListeners();
+  try {
+    if (session.captureTarget.hasPointerCapture(session.pointerId)) {
+      session.captureTarget.releasePointerCapture(session.pointerId);
+    }
+  } catch {
+    // pointer 可能已被系统取消或释放
+  }
+  if (commitBounds) {
+    const endResizePromise = window.electron?.desktopLyric?.endDrag();
+    if (endResizePromise) void endResizePromise.then(cacheWindowBounds).catch(() => undefined);
+  }
+};
+
+function onResizePointerMove(event: PointerEvent) {
+  if (!updateWindowResizePointer(event)) return;
+  scheduleWindowResize();
+  event.preventDefault();
+}
+
+function onResizePointerUp(event: PointerEvent) {
+  finishWindowResize(event);
+}
+
+function onResizePointerCancel(event: PointerEvent) {
+  finishWindowResize(event);
+}
+
+function onResizeWindowBlur() {
+  finishWindowResize();
+}
+
+const onResizePointerDown = (event: PointerEvent, direction: DesktopLyricResizeDirection) => {
+  if (isWayland || isLocked.value || event.button !== 0 || resizeSession || dragSession) return;
+  const target = event.currentTarget as HTMLElement | null;
+  if (!target) return;
+  if (resizeTimer) {
+    clearTimeout(resizeTimer);
+    resizeTimer = null;
+  }
+
+  resizeSession = {
+    pointerId: event.pointerId,
+    captureTarget: target,
+    direction,
+    startScreenX: event.screenX,
+    startScreenY: event.screenY,
+    latestScreenX: event.screenX,
+    latestScreenY: event.screenY,
+    startBounds: {
+      x: Math.round(event.screenX - event.clientX),
+      y: Math.round(event.screenY - event.clientY),
+      width: Math.round(window.innerWidth),
+      height: Math.round(window.innerHeight),
+    },
+  };
+  isResizing.value = true;
+  isHovered.value = true;
+  document.addEventListener('pointermove', onResizePointerMove, { passive: false });
+  document.addEventListener('pointerup', onResizePointerUp);
+  document.addEventListener('pointercancel', onResizePointerCancel);
+  window.addEventListener('blur', onResizeWindowBlur);
+  try {
+    target.setPointerCapture(event.pointerId);
+  } catch {
+    // capture 失败时 document 监听器仍可完成缩放
+  }
+  event.preventDefault();
+};
 
 // 字体大小随窗口变化
 
 const { height: winHeight, width: winWidth } = useWindowSize();
 
+let lastUnlockButtonBoundsKey: string | null = null;
+const syncUnlockButtonBounds = () => {
+  void nextTick(() => {
+    const element = lockButtonRef.value;
+    if (isWayland || !showUnlockButton.value || !element) {
+      if (lastUnlockButtonBoundsKey !== null) {
+        lastUnlockButtonBoundsKey = null;
+        window.electron?.desktopLyric?.setUnlockButtonBounds(null);
+      }
+      return;
+    }
+    const rect = element.getBoundingClientRect();
+    const bounds = {
+      x: Math.round(rect.x),
+      y: Math.round(rect.y),
+      width: Math.round(rect.width),
+      height: Math.round(rect.height),
+    };
+    const key = `${bounds.x}:${bounds.y}:${bounds.width}:${bounds.height}`;
+    if (key === lastUnlockButtonBoundsKey) return;
+    lastUnlockButtonBoundsKey = key;
+    window.electron?.desktopLyric?.setUnlockButtonBounds(bounds);
+  });
+};
+
+watch([winWidth, winHeight, showUnlockButton, isLocked, lyricLayout], syncUnlockButtonBounds, {
+  flush: 'post',
+});
+
 // 检测窗口大小变化（调整大小）
-let resizeTimer: ReturnType<typeof setTimeout> | null = null;
 watch([winWidth, winHeight], ([w, h], [oldW, oldH]) => {
+  if (
+    !dragState.isDragging &&
+    !resizeSession &&
+    cachedWindowBounds &&
+    Number.isFinite(w) &&
+    Number.isFinite(h)
+  ) {
+    cachedWindowBounds = {
+      ...cachedWindowBounds,
+      width: Math.round(w),
+      height: Math.round(h),
+    };
+  }
   if (dragState.isDragging) return;
+  if (resizeSession) return;
   // 检测是否在调整大小
   if (oldW !== undefined && oldH !== undefined && (w !== oldW || h !== oldH)) {
     isResizing.value = true;
@@ -824,35 +1033,12 @@ const computedFontSize = computed(() => {
   return Math.round(minF + ((h - minH) / (maxH - minH)) * (maxF - minF));
 });
 
-const debouncedSaveConfig = useDebounceFn((size: number) => {
-  const nextHeight = fontSizeToHeight(size);
-  if (nextHeight) pushWindowHeight(nextHeight);
-}, 500);
-
-const fontSizeToHeight = (size: number) => {
-  const minH = 140;
-  const maxH = 360;
-  const minF = 20;
-  const maxF = 96;
-  const s = Math.min(Math.max(Math.round(size), minF), maxF);
-  return Math.round(minH + ((s - minF) / (maxF - minF)) * (maxH - minH));
-};
-
-const pushWindowHeight = (nextHeight: number) => {
-  if (!Number.isFinite(nextHeight) || dragState.isDragging || lyricLayout.value !== 'horizontal')
-    return;
-  sendToMain('desktop-lyric:set-height', nextHeight);
-};
-
-let initialized = false;
-let initializedTimer: ReturnType<typeof setTimeout> | null = null;
-
-// 窗口高度变 → 计算字体大小 → 更新本地变量 + 防抖保存
+// 窗口尺寸单向决定字体大小。不要再把字体大小反写为窗口高度，否则 Windows
+// DPI 舍入会形成“高度 → 字号 → 高度”的反馈环，拖动时窗口会缓慢变大。
 watch(computedFontSize, (size) => {
-  if (!Number.isFinite(size) || dragState.isDragging || !initialized) return;
+  if (!Number.isFinite(size) || dragState.isDragging) return;
   if (Math.abs(localFontSize.value - size) > 1) {
     localFontSize.value = size;
-    if (!isVerticalLayout.value) debouncedSaveConfig(size);
   }
 });
 
@@ -928,6 +1114,7 @@ onMounted(async () => {
   const desktopLyricApi = window.electron?.desktopLyric;
   const initialBoundsPromise = desktopLyricApi?.getWindow().catch(() => null);
   snapshot.value = (await desktopLyricApi?.getSnapshot()) ?? null;
+  syncUnlockButtonBounds();
   cacheWindowBounds(await initialBoundsPromise);
   syncAnchor(true);
   // 从窗口高度计算初始字体大小
@@ -944,12 +1131,15 @@ onMounted(async () => {
       snapshot.value = next;
       // 每次收到 snapshot 都同步锚点，保持时间精度
       syncAnchor();
-      // 按播放状态节能
-      if (next.playback?.isPlaying) {
-        resumeSeek();
-      } else {
-        pauseSeek();
-        syncManualDomAfterRender();
+      // settings/lyrics-only patch 不改变播放循环状态；只有全量快照或明确的
+      // playback patch 才切换 RAF。
+      if (isDesktopLyricFullSnapshot(message) || message.playback !== undefined) {
+        if (next.playback?.isPlaying) {
+          resumeSeek();
+        } else {
+          pauseSeek();
+          syncManualDomAfterRender();
+        }
       }
       notifyLyricEffectHost();
     }) ?? null;
@@ -959,7 +1149,7 @@ onMounted(async () => {
       isHovered.value = hovered;
       return;
     }
-    isHovered.value = showUnlockButton.value && hovered;
+    isHovered.value = canShowUnlockButton.value && hovered;
   };
 
   // 先订阅增量变化，再查询一次当前状态；轮询无需在状态未变化时重复发 IPC。
@@ -989,12 +1179,6 @@ onMounted(async () => {
   document.addEventListener('mousemove', handleMouseMove);
   document.addEventListener('mouseleave', handleMouseLeave);
   window.addEventListener('blur', handleWindowBlur);
-
-  // 延迟标记初始化完成
-  initializedTimer = setTimeout(() => {
-    initializedTimer = null;
-    initialized = true;
-  }, 2000);
 });
 
 onBeforeUnmount(() => {
@@ -1003,11 +1187,6 @@ onBeforeUnmount(() => {
     clearTimeout(resizeTimer);
     resizeTimer = null;
   }
-  if (initializedTimer) {
-    clearTimeout(initializedTimer);
-    initializedTimer = null;
-  }
-  initialized = false;
   isResizing.value = false;
   document.removeEventListener('pointerdown', onDocPointerDown);
   document.removeEventListener('mousemove', handleMouseMove);
@@ -1017,12 +1196,15 @@ onBeforeUnmount(() => {
   reducedMotionQuery = null;
   lyricEffectHostRegistration?.dispose();
   lyricEffectHostRegistration = null;
+  lastLyricEffectHostDomKey = '';
   finishWindowDrag(undefined, false);
+  finishWindowResize(undefined, false);
   document.documentElement.classList.remove('desktop-lyric-window');
   document.body.classList.remove('desktop-lyric-window');
   document.getElementById('app')?.classList.remove('desktop-lyric-window');
   disposeSnapshotListener?.();
   disposeHoverListener?.();
+  window.electron?.desktopLyric?.setUnlockButtonBounds(null);
 });
 </script>
 
@@ -1046,6 +1228,17 @@ onBeforeUnmount(() => {
     :data-echo-lyric-effect-count="lyricEffectSummary.count"
     :data-echo-lyric-effect-decorator="lyricEffectSummary.hasDecorator ? 'true' : 'false'"
   >
+    <template v-if="!isWayland && !isLocked">
+      <div
+        v-for="direction in resizeDirections"
+        :key="direction"
+        class="resize-handle"
+        :data-direction="direction"
+        aria-hidden="true"
+        @pointerdown.stop="onResizePointerDown($event, direction)"
+      ></div>
+    </template>
+
     <!-- 顶部工具栏 -->
     <div class="header">
       <div class="header-left" @pointerdown.stop>
@@ -1111,7 +1304,8 @@ onBeforeUnmount(() => {
           </button>
         </div>
         <button
-          v-if="!isLocked || showUnlockButton"
+          v-if="!isLocked || canShowUnlockButton"
+          ref="lockButtonRef"
           class="menu-btn lock-btn"
           @click.stop="toggleLyricLock"
         >
@@ -1265,6 +1459,77 @@ onBeforeUnmount(() => {
   z-index: 2;
   overflow: hidden;
   pointer-events: none;
+}
+
+/* 透明无边框窗口使用内侧缩放热区，鼠标无需移出窗口。 */
+.resize-handle {
+  position: absolute;
+  z-index: 10;
+  touch-action: none;
+}
+
+.resize-handle[data-direction='n'],
+.resize-handle[data-direction='s'] {
+  right: 12px;
+  left: 12px;
+  height: 8px;
+  cursor: ns-resize;
+}
+
+.resize-handle[data-direction='n'] {
+  top: 0;
+}
+
+.resize-handle[data-direction='s'] {
+  bottom: 0;
+}
+
+.resize-handle[data-direction='e'],
+.resize-handle[data-direction='w'] {
+  top: 12px;
+  bottom: 12px;
+  width: 8px;
+  cursor: ew-resize;
+}
+
+.resize-handle[data-direction='e'] {
+  right: 0;
+}
+
+.resize-handle[data-direction='w'] {
+  left: 0;
+}
+
+.resize-handle[data-direction='ne'],
+.resize-handle[data-direction='se'],
+.resize-handle[data-direction='sw'],
+.resize-handle[data-direction='nw'] {
+  width: 14px;
+  height: 14px;
+}
+
+.resize-handle[data-direction='ne'] {
+  top: 0;
+  right: 0;
+  cursor: nesw-resize;
+}
+
+.resize-handle[data-direction='se'] {
+  right: 0;
+  bottom: 0;
+  cursor: nwse-resize;
+}
+
+.resize-handle[data-direction='sw'] {
+  bottom: 0;
+  left: 0;
+  cursor: nesw-resize;
+}
+
+.resize-handle[data-direction='nw'] {
+  top: 0;
+  left: 0;
+  cursor: nwse-resize;
 }
 
 .desktop-lyric[data-echo-lyric-layout='vertical'] {

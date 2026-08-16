@@ -139,19 +139,21 @@ pub fn snapshot_filter_graph_with_device_output(
     device_output: Option<&AudioOutputStats>,
 ) -> AudioGraphSnapshot {
     let process_format = process_format_for_output(output_format, settings);
-    let latency_secs = TempoProcessor::new(
+    let tempo_latency_secs = TempoProcessor::new(
         settings.speed,
         process_format.sample_rate,
         process_format.channels,
     )
     .map(|tempo| tempo.latency_secs(process_format.sample_rate))
-    .unwrap_or_default()
-        + DspChain::new(
-            process_format.sample_rate,
-            process_format.channels,
-            settings,
-        )
-        .latency_secs();
+    .unwrap_or_default();
+    // Preparing VHE and spatial convolution plans is comparatively expensive. Reuse one chain
+    // for the total and per-node latency snapshots instead of rebuilding it for every node.
+    let effects = DspChain::new(
+        process_format.sample_rate,
+        process_format.channels,
+        settings,
+    );
+    let latency_secs = tempo_latency_secs + effects.latency_secs();
     AudioGraphSnapshot {
         revision: 0.0,
         process_format: format_snapshot(process_format),
@@ -160,7 +162,7 @@ pub fn snapshot_filter_graph_with_device_output(
         latency_secs,
         nodes: filter_nodes_for_settings(settings)
             .into_iter()
-            .map(|node| graph_node_snapshot(node, process_format, settings))
+            .map(|node| graph_node_snapshot(node, settings, tempo_latency_secs, &effects))
             .collect(),
     }
 }
@@ -238,29 +240,14 @@ impl AudioSampleFormat {
 
 fn graph_node_snapshot(
     node: AudioFilterNode,
-    process_format: MixFormat,
     settings: &DspSettings,
+    tempo_latency_secs: f64,
+    effects: &DspChain,
 ) -> AudioGraphNodeSnapshot {
     let latency_secs = match node.kind {
-        AudioFilterNodeKind::Tempo => TempoProcessor::new(
-            settings.speed,
-            process_format.sample_rate,
-            process_format.channels,
-        )
-        .map(|tempo| tempo.latency_secs(process_format.sample_rate))
-        .unwrap_or_default(),
-        AudioFilterNodeKind::Spatial => DspChain::new(
-            process_format.sample_rate,
-            process_format.channels,
-            settings,
-        )
-        .spatial_latency_secs(),
-        AudioFilterNodeKind::Vpf => DspChain::new(
-            process_format.sample_rate,
-            process_format.channels,
-            settings,
-        )
-        .vpf_latency_secs(),
+        AudioFilterNodeKind::Tempo => tempo_latency_secs,
+        AudioFilterNodeKind::Spatial => effects.spatial_latency_secs(),
+        AudioFilterNodeKind::Vpf => effects.vpf_latency_secs(),
         _ => 0.0,
     };
     let parameters = graph_node_parameters(node.kind, settings);

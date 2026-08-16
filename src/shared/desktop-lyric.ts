@@ -24,12 +24,20 @@ export type DesktopLyricThemeMode = 'light' | 'dark' | 'system';
 export type DesktopLyricAlign = 'left' | 'center' | 'right' | 'both';
 export type DesktopLyricShadowStrength = 'none' | 'soft' | 'normal' | 'strong';
 export type DesktopLyricLayout = 'horizontal' | 'vertical';
+export const DEFAULT_DESKTOP_LYRIC_OFFSET_STEP_SECONDS = 0.1;
 
 export type DesktopLyricWindowBoundsUpdate = {
   x?: number;
   y?: number;
   width?: number;
   height?: number;
+};
+
+export type DesktopLyricClientRect = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
 };
 
 export type DesktopLyricSettings = {
@@ -91,7 +99,7 @@ export const DEFAULT_DESKTOP_LYRIC_SETTINGS: DesktopLyricSettings = {
   layout: 'horizontal',
   filterEnabled: false,
   filterPattern: '',
-  offsetStep: 0.1,
+  offsetStep: DEFAULT_DESKTOP_LYRIC_OFFSET_STEP_SECONDS,
 };
 
 export type DesktopLyricLockPhase = 'idle' | 'locking' | 'unlocking';

@@ -16,13 +16,15 @@ export const useDesktopLyricStore = defineStore('desktopLyric', {
   }),
   actions: {
     async hydrate() {
-      if (!window.electron?.desktopLyric) return;
+      if (!window.electron?.desktopLyric) return null;
       const toastStore = useToastStore();
       try {
         const snapshot = await window.electron.desktopLyric.getSnapshot();
         this.settings = mergeSettings(snapshot.settings);
+        return snapshot;
       } catch {
         toastStore.actionFailed('同步桌面歌词状态');
+        return null;
       }
     },
     async syncSettings(partial?: Partial<DesktopLyricSettings>) {
@@ -36,11 +38,15 @@ export const useDesktopLyricStore = defineStore('desktopLyric', {
       }
     },
     async setEnabled(enabled: boolean) {
+      const previousEnabled = this.settings.enabled;
       this.settings = {
         ...this.settings,
         enabled,
       };
-      if (!window.electron?.desktopLyric) return;
+      if (!window.electron?.desktopLyric) {
+        this.settings = { ...this.settings, enabled: previousEnabled };
+        return;
+      }
       const toastStore = useToastStore();
       try {
         const snapshot = enabled
@@ -48,6 +54,9 @@ export const useDesktopLyricStore = defineStore('desktopLyric', {
           : await window.electron.desktopLyric.hide();
         this.settings = mergeSettings(snapshot.settings);
       } catch {
+        if (this.settings.enabled === enabled) {
+          this.settings = { ...this.settings, enabled: previousEnabled };
+        }
         toastStore.actionFailed(enabled ? '开启桌面歌词' : '关闭桌面歌词');
       }
     },

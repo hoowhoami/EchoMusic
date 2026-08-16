@@ -1,11 +1,19 @@
 use rustfft::{num_complex::Complex32, Fft, FftPlanner};
+use std::collections::VecDeque;
 use std::sync::Arc;
 
-const SEGMENT_SIZE: usize = 4096;
-const FFT_SIZE: usize = SEGMENT_SIZE * 2;
+const KERNEL_TAPS: usize = 4096;
 const LEVEL_COUNT: usize = 5;
 const CHANNEL_COUNT: usize = 2;
 const REFERENCE_SAMPLE_RATES: [u32; 2] = [44_100, 48_000];
+const SAMPLE_RATE_FAMILY_STEP: u32 = 11_025;
+const EARLY_BLOCK_SIZE: usize = 256;
+const EARLY_TAPS: usize = 1024;
+const LATE_BLOCK_SIZE: usize = 1024;
+const VHE_LATENCY_FRAMES: usize = EARLY_BLOCK_SIZE - 1;
+const IR_TRIM_THRESHOLD: f32 = 0.00003;
+// A 32-sample Hann-windowed sinc is a deliberate quality/initialization-cost trade-off. Even
+// for the supported 48 -> 8 kHz extreme downsample it spans several transition-band lobes.
 const SINC_RADIUS: isize = 32;
 // Fixed layout: [sample rate: 44.1k/48k][level: 0..4][channel: L/R][4096 f32-le].
 // The shorter level-1 responses are zero-padded so selection never needs a variable offset. At
@@ -18,6 +26,7 @@ pub(crate) struct VheProcessor {
 
 impl VheProcessor {
     pub(crate) fn new(sample_rate: u32, level: i32) -> Self {
+        debug_assert!((0..LEVEL_COUNT as i32).contains(&level));
         let sample_rate = sample_rate.max(8_000);
         let rate_index = reference_rate_index(sample_rate);
         let level = usize::try_from(level)
@@ -39,6 +48,11 @@ impl VheProcessor {
     }
 
     pub(crate) fn process(&mut self, samples: &mut [f32]) {
+        // A trailing partial stereo frame would leave its final sample unconvolved. Bypass the
+        // whole malformed buffer so it cannot contain a mixture of processed and raw samples.
+        if !samples.chunks_exact(CHANNEL_COUNT).remainder().is_empty() {
+            return;
+        }
         let Some(convolvers) = &mut self.convolvers else {
             return;
         };
@@ -46,17 +60,24 @@ impl VheProcessor {
             convolver.process_interleaved(samples, channel);
         }
     }
+
+    pub(crate) fn latency_frames(&self) -> usize {
+        self.convolvers
+            .as_ref()
+            .map(|convolvers| convolvers[0].latency_frames())
+            .unwrap_or_default()
+    }
 }
 
 fn reference_rate_index(sample_rate: u32) -> usize {
     // Preserve the native 44.1 kHz family for its integer multiples/divisors. Device-oriented
     // rates such as 8/16/24/32/48/96/192 kHz use the 48 kHz reference response.
-    usize::from(!sample_rate.is_multiple_of(11_025))
+    usize::from(!sample_rate.is_multiple_of(SAMPLE_RATE_FAMILY_STEP))
 }
 
 fn load_kernel(rate_index: usize, level: usize, channel: usize) -> Vec<f32> {
-    let first = ((rate_index * LEVEL_COUNT + level) * CHANNEL_COUNT + channel) * SEGMENT_SIZE;
-    (0..SEGMENT_SIZE)
+    let first = ((rate_index * LEVEL_COUNT + level) * CHANNEL_COUNT + channel) * KERNEL_TAPS;
+    (0..KERNEL_TAPS)
         .map(|index| {
             let byte_index = (first + index) * 4;
             f32::from_le_bytes(
@@ -111,132 +132,103 @@ fn resample_impulse_response(input: &[f32], source_rate: u32, target_rate: u32) 
         output.push((value * impulse_gain_correction) as f32);
     }
 
-    while output.len() > 1 && output.last() == Some(&0.0) {
-        output.pop();
-    }
+    let last_active = output
+        .iter()
+        .rposition(|sample| sample.abs() >= IR_TRIM_THRESHOLD)
+        .unwrap_or_default();
+    output.truncate((last_active + 1).max(1));
     output
 }
 
-enum VheConvolver {
-    Single(VheSingleConvolver),
-    Partitioned(VhePartitionedConvolver),
+// Non-uniform partitioning keeps the first response taps at low latency and moves the long tail
+// to larger, cheaper blocks. FFT work happens only when a block is complete, so host callback
+// slicing cannot multiply the amount of frequency-domain work.
+struct VheConvolver {
+    segments: Vec<VheSegmentConvolver>,
+    latency_frames: usize,
 }
 
 impl VheConvolver {
     fn new(kernel: Vec<f32>) -> Self {
-        if kernel.len() <= SEGMENT_SIZE {
-            Self::Single(VheSingleConvolver::new(kernel))
-        } else {
-            Self::Partitioned(VhePartitionedConvolver::new(kernel))
+        let mut segments = Vec::new();
+        let early_len = kernel.len().min(EARLY_TAPS);
+        if early_len > 0 {
+            segments.push(VheSegmentConvolver::new(
+                &kernel[..early_len],
+                0,
+                EARLY_BLOCK_SIZE,
+            ));
         }
-    }
-
-    fn process_interleaved(&mut self, samples: &mut [f32], channel: usize) {
-        match self {
-            Self::Single(convolver) => convolver.process_interleaved(samples, channel),
-            Self::Partitioned(convolver) => convolver.process_interleaved(samples, channel),
+        if kernel.len() > early_len {
+            segments.push(VheSegmentConvolver::new(
+                &kernel[early_len..],
+                early_len,
+                LATE_BLOCK_SIZE,
+            ));
         }
-    }
-}
-
-struct VheSingleConvolver {
-    forward: Arc<dyn Fft<f32>>,
-    inverse: Arc<dyn Fft<f32>>,
-    kernel_spectrum: Vec<Complex32>,
-    transform: Vec<Complex32>,
-    previous: Vec<f32>,
-    current: Vec<f32>,
-    input_fill: usize,
-}
-
-impl VheSingleConvolver {
-    fn new(kernel: Vec<f32>) -> Self {
-        let mut planner = FftPlanner::<f32>::new();
-        let forward = planner.plan_fft_forward(FFT_SIZE);
-        let inverse = planner.plan_fft_inverse(FFT_SIZE);
-        let mut kernel_spectrum = vec![Complex32::ZERO; FFT_SIZE];
-        for (target, sample) in kernel_spectrum.iter_mut().zip(kernel) {
-            target.re = sample;
-        }
-        forward.process(&mut kernel_spectrum);
         Self {
-            forward,
-            inverse,
-            kernel_spectrum,
-            transform: vec![Complex32::ZERO; FFT_SIZE],
-            previous: vec![0.0; SEGMENT_SIZE],
-            current: vec![0.0; SEGMENT_SIZE],
-            input_fill: 0,
+            latency_frames: if segments.is_empty() {
+                0
+            } else {
+                VHE_LATENCY_FRAMES
+            },
+            segments,
         }
     }
 
     fn process_interleaved(&mut self, samples: &mut [f32], channel: usize) {
-        let frames = samples.len() / CHANNEL_COUNT;
-        let mut offset = 0;
-        while offset < frames {
-            let count = (frames - offset).min(SEGMENT_SIZE - self.input_fill);
-            for index in 0..count {
-                self.current[self.input_fill + index] =
-                    samples[(offset + index) * CHANNEL_COUNT + channel];
-            }
-
-            // Rebuild the active overlap-save window so the current host block can be emitted
-            // immediately, including when calls do not align to the 4096-frame segment size.
-            self.transform.fill(Complex32::ZERO);
-            for (target, sample) in self.transform.iter_mut().zip(self.previous.iter().copied()) {
-                target.re = sample;
-            }
-            for (target, sample) in self.transform[SEGMENT_SIZE..]
-                .iter_mut()
-                .zip(self.current[..self.input_fill + count].iter().copied())
-            {
-                target.re = sample;
-            }
-            self.forward.process(&mut self.transform);
-            for (sample, kernel) in self.transform.iter_mut().zip(&self.kernel_spectrum) {
-                *sample *= *kernel;
-            }
-            self.inverse.process(&mut self.transform);
-
-            let scale = 1.0 / FFT_SIZE as f32;
-            for index in 0..count {
-                samples[(offset + index) * CHANNEL_COUNT + channel] =
-                    self.transform[SEGMENT_SIZE + self.input_fill + index].re * scale;
-            }
-
-            self.input_fill += count;
-            if self.input_fill == SEGMENT_SIZE {
-                self.previous.copy_from_slice(&self.current);
-                self.current.fill(0.0);
-                self.input_fill = 0;
-            }
-            offset += count;
+        if self.segments.is_empty() {
+            return;
         }
+        for frame in samples.chunks_exact_mut(CHANNEL_COUNT) {
+            let input = frame[channel];
+            frame[channel] = self
+                .segments
+                .iter_mut()
+                .map(|segment| segment.process_sample(input))
+                .sum();
+        }
+    }
+
+    fn latency_frames(&self) -> usize {
+        self.latency_frames
+    }
+
+    #[cfg(test)]
+    fn processed_blocks(&self) -> usize {
+        self.segments
+            .iter()
+            .map(|segment| segment.processed_blocks)
+            .sum()
     }
 }
 
-struct VhePartitionedConvolver {
+struct VheSegmentConvolver {
     forward: Arc<dyn Fft<f32>>,
     inverse: Arc<dyn Fft<f32>>,
     kernel_spectra: Vec<Vec<Complex32>>,
     input_spectra: Vec<Vec<Complex32>>,
-    current_spectrum: Vec<Complex32>,
-    accumulator: Vec<Complex32>,
-    current: Vec<f32>,
+    input_fft: Vec<Complex32>,
+    input_block: Vec<f32>,
     overlap: Vec<f32>,
-    input_fill: usize,
+    scratch: Vec<Complex32>,
+    output: VecDeque<f32>,
+    block_size: usize,
     write_pos: usize,
+    #[cfg(test)]
+    processed_blocks: usize,
 }
 
-impl VhePartitionedConvolver {
-    fn new(kernel: Vec<f32>) -> Self {
+impl VheSegmentConvolver {
+    fn new(kernel: &[f32], impulse_offset: usize, block_size: usize) -> Self {
+        let fft_size = block_size * 2;
         let mut planner = FftPlanner::<f32>::new();
-        let forward = planner.plan_fft_forward(FFT_SIZE);
-        let inverse = planner.plan_fft_inverse(FFT_SIZE);
+        let forward = planner.plan_fft_forward(fft_size);
+        let inverse = planner.plan_fft_inverse(fft_size);
         let kernel_spectra = kernel
-            .chunks(SEGMENT_SIZE)
+            .chunks(block_size)
             .map(|chunk| {
-                let mut spectrum = vec![Complex32::ZERO; FFT_SIZE];
+                let mut spectrum = vec![Complex32::ZERO; fft_size];
                 for (target, sample) in spectrum.iter_mut().zip(chunk.iter().copied()) {
                     target.re = sample;
                 }
@@ -249,82 +241,67 @@ impl VhePartitionedConvolver {
             forward,
             inverse,
             kernel_spectra,
-            input_spectra: vec![vec![Complex32::ZERO; FFT_SIZE]; partition_count],
-            current_spectrum: vec![Complex32::ZERO; FFT_SIZE],
-            accumulator: vec![Complex32::ZERO; FFT_SIZE],
-            current: vec![0.0; SEGMENT_SIZE],
-            overlap: vec![0.0; SEGMENT_SIZE],
-            input_fill: 0,
+            input_spectra: vec![vec![Complex32::ZERO; fft_size]; partition_count],
+            input_fft: vec![Complex32::ZERO; fft_size],
+            input_block: Vec::with_capacity(block_size),
+            overlap: vec![0.0; block_size],
+            scratch: vec![Complex32::ZERO; fft_size],
+            output: VecDeque::from(vec![0.0; impulse_offset + VHE_LATENCY_FRAMES]),
+            block_size,
             write_pos: 0,
+            #[cfg(test)]
+            processed_blocks: 0,
         }
     }
 
-    fn process_interleaved(&mut self, samples: &mut [f32], channel: usize) {
-        let frames = samples.len() / CHANNEL_COUNT;
-        let mut offset = 0;
-        while offset < frames {
-            let count = (frames - offset).min(SEGMENT_SIZE - self.input_fill);
-            for index in 0..count {
-                self.current[self.input_fill + index] =
-                    samples[(offset + index) * CHANNEL_COUNT + channel];
-            }
-
-            let previous_fill = self.input_fill;
-            self.input_fill += count;
-            self.render_current_partition();
-            let scale = 1.0 / FFT_SIZE as f32;
-            for index in 0..count {
-                let partition_index = previous_fill + index;
-                samples[(offset + index) * CHANNEL_COUNT + channel] =
-                    self.accumulator[partition_index].re * scale + self.overlap[partition_index];
-            }
-
-            if self.input_fill == SEGMENT_SIZE {
-                self.input_spectra[self.write_pos].copy_from_slice(&self.current_spectrum);
-                self.write_pos = (self.write_pos + 1) % self.input_spectra.len();
-                for index in 0..SEGMENT_SIZE {
-                    self.overlap[index] = self.accumulator[index + SEGMENT_SIZE].re * scale;
-                }
-                self.current.fill(0.0);
-                self.input_fill = 0;
-            }
-            offset += count;
+    fn process_sample(&mut self, sample: f32) -> f32 {
+        self.input_block.push(sample);
+        if self.input_block.len() == self.block_size {
+            self.process_block();
+            self.input_block.clear();
         }
+        self.output.pop_front().unwrap_or(0.0)
     }
 
-    fn render_current_partition(&mut self) {
-        self.current_spectrum.fill(Complex32::ZERO);
+    fn process_block(&mut self) {
+        let fft_size = self.block_size * 2;
+        self.input_fft.fill(Complex32::ZERO);
         for (target, sample) in self
-            .current_spectrum
+            .input_fft
             .iter_mut()
-            .zip(self.current[..self.input_fill].iter().copied())
+            .zip(self.input_block.iter().copied())
         {
             target.re = sample;
         }
-        self.forward.process(&mut self.current_spectrum);
+        self.forward.process(&mut self.input_fft);
+        std::mem::swap(&mut self.input_spectra[self.write_pos], &mut self.input_fft);
 
-        self.accumulator.fill(Complex32::ZERO);
-        for ((target, input), kernel) in self
-            .accumulator
-            .iter_mut()
-            .zip(self.current_spectrum.iter())
-            .zip(self.kernel_spectra[0].iter())
-        {
-            *target = *input * *kernel;
-        }
-        for partition_index in 1..self.kernel_spectra.len() {
+        self.scratch.fill(Complex32::ZERO);
+        for (partition_index, kernel) in self.kernel_spectra.iter().enumerate() {
             let input_index = (self.write_pos + self.input_spectra.len() - partition_index)
                 % self.input_spectra.len();
-            for ((target, input), kernel) in self
-                .accumulator
+            for ((accumulator, input), impulse) in self
+                .scratch
                 .iter_mut()
                 .zip(self.input_spectra[input_index].iter())
-                .zip(self.kernel_spectra[partition_index].iter())
+                .zip(kernel.iter())
             {
-                *target += *input * *kernel;
+                *accumulator += *input * *impulse;
             }
         }
-        self.inverse.process(&mut self.accumulator);
+        self.inverse.process(&mut self.scratch);
+
+        let scale = 1.0 / fft_size as f32;
+        for index in 0..self.block_size {
+            self.output
+                .push_back(self.scratch[index].re * scale + self.overlap[index]);
+            self.overlap[index] = self.scratch[index + self.block_size].re * scale;
+        }
+        self.write_pos = (self.write_pos + 1) % self.input_spectra.len();
+        #[cfg(test)]
+        {
+            self.processed_blocks += 1;
+        }
     }
 }
 
@@ -348,6 +325,29 @@ mod tests {
             );
             assert!(samples.iter().any(|sample| sample.abs() > 1.0e-6));
         }
+    }
+
+    #[test]
+    fn malformed_stereo_buffer_is_bypassed() {
+        let mut processor = VheProcessor::new(48_000, 2);
+        let mut samples = vec![0.25, -0.5, 0.75];
+        let original = samples.clone();
+
+        processor.process(&mut samples);
+
+        assert_eq!(samples, original);
+    }
+
+    #[test]
+    fn empty_kernel_is_zero_latency_passthrough() {
+        let mut convolver = VheConvolver::new(Vec::new());
+        let mut samples = vec![0.25, -0.5, 0.75, -1.0];
+        let original = samples.clone();
+
+        convolver.process_interleaved(&mut samples, 0);
+
+        assert_eq!(convolver.latency_frames(), 0);
+        assert_eq!(samples, original);
     }
 
     #[test]
@@ -375,8 +375,8 @@ mod tests {
     }
 
     #[test]
-    fn long_partitioned_kernel_matches_direct_convolution_without_block_delay() {
-        let kernel = (0..SEGMENT_SIZE + 907)
+    fn tiered_convolver_matches_direct_convolution_with_reported_delay() {
+        let kernel = (0..KERNEL_TAPS + 907)
             .map(|index| {
                 let time = index as f32;
                 0.002 * (-time / 1600.0).exp() * (time * 0.037).cos()
@@ -389,12 +389,15 @@ mod tests {
             .iter()
             .flat_map(|sample| [*sample, 0.0])
             .collect::<Vec<_>>();
+        interleaved.resize(interleaved.len() + VHE_LATENCY_FRAMES * CHANNEL_COUNT, 0.0);
         let mut convolver = VheConvolver::new(kernel.clone());
+        assert_eq!(convolver.latency_frames(), VHE_LATENCY_FRAMES);
         let block_sizes = [17, 63, 128, 251, 41];
         let mut frame = 0;
         let mut block_index = 0;
-        while frame < input.len() {
-            let count = block_sizes[block_index % block_sizes.len()].min(input.len() - frame);
+        let output_frames = interleaved.len() / CHANNEL_COUNT;
+        while frame < output_frames {
+            let count = block_sizes[block_index % block_sizes.len()].min(output_frames - frame);
             convolver.process_interleaved(
                 &mut interleaved[frame * CHANNEL_COUNT..(frame + count) * CHANNEL_COUNT],
                 0,
@@ -408,11 +411,86 @@ mod tests {
             let expected = (first_input..=frame)
                 .map(|input_index| input[input_index] * kernel[frame - input_index])
                 .sum::<f32>();
-            let actual = interleaved[frame * CHANNEL_COUNT];
+            let actual = interleaved[(frame + VHE_LATENCY_FRAMES) * CHANNEL_COUNT];
             assert!(
                 (actual - expected).abs() <= 2.0e-5,
                 "partitioned convolution mismatch at frame {frame}: expected={expected}, actual={actual}"
             );
+        }
+    }
+
+    #[test]
+    fn partial_callbacks_only_transform_completed_blocks() {
+        let frames = 8192;
+        let kernel = vec![0.25; KERNEL_TAPS * 4];
+        let mut convolver = VheConvolver::new(kernel);
+        let mut samples = vec![0.1; frames * CHANNEL_COUNT];
+
+        for block in samples.chunks_mut(34) {
+            convolver.process_interleaved(block, 0);
+        }
+
+        assert_eq!(
+            convolver.processed_blocks(),
+            frames / EARLY_BLOCK_SIZE + frames / LATE_BLOCK_SIZE
+        );
+    }
+
+    #[test]
+    fn resampling_trims_zero_padded_kernel_tail() {
+        let kernel = load_kernel(1, 1, 0);
+        let resampled = resample_impulse_response(&kernel, 48_000, 192_000);
+
+        assert!(resampled.len() < KERNEL_TAPS * 3);
+        assert!(resampled
+            .last()
+            .is_some_and(|sample| sample.abs() >= IR_TRIM_THRESHOLD));
+    }
+
+    #[test]
+    fn resampled_real_kernels_match_direct_convolution() {
+        const INPUT_FRAMES: usize = 1600;
+        const SELECTED: [usize; 8] = [0, 1, 31, 255, 1023, 1024, 1279, 1599];
+
+        for sample_rate in [96_000, 192_000] {
+            let rate_index = reference_rate_index(sample_rate);
+            let reference_rate = REFERENCE_SAMPLE_RATES[rate_index];
+            for level in 0..LEVEL_COUNT {
+                let mut input = Vec::with_capacity(INPUT_FRAMES * CHANNEL_COUNT);
+                for frame in 0..INPUT_FRAMES {
+                    let time = frame as f32;
+                    input.push(0.31 * (time * 0.037).sin() + 0.11 * (time * 0.013).cos());
+                    input.push(-0.27 * (time * 0.029).cos() + 0.09 * (time * 0.017).sin());
+                }
+                let mut actual = input.clone();
+                actual.resize(actual.len() + VHE_LATENCY_FRAMES * CHANNEL_COUNT, 0.0);
+                let mut processor = VheProcessor::new(sample_rate, level as i32);
+                for block in actual.chunks_mut(514) {
+                    processor.process(block);
+                }
+
+                for channel in 0..CHANNEL_COUNT {
+                    let kernel = resample_impulse_response(
+                        &load_kernel(rate_index, level, channel),
+                        reference_rate,
+                        sample_rate,
+                    );
+                    for frame in SELECTED {
+                        let expected = (0..=frame)
+                            .map(|input_frame| {
+                                input[input_frame * CHANNEL_COUNT + channel]
+                                    * kernel[frame - input_frame]
+                            })
+                            .sum::<f32>();
+                        let output_frame = frame + VHE_LATENCY_FRAMES;
+                        let value = actual[output_frame * CHANNEL_COUNT + channel];
+                        assert!(
+                            (value - expected).abs() <= 3.0e-5,
+                            "{sample_rate} Hz level {level}, frame {frame}, channel {channel}: expected {expected}, got {value}"
+                        );
+                    }
+                }
+            }
         }
     }
 
@@ -517,19 +595,22 @@ mod tests {
                     -0.19 * (time * 0.053).cos() + 0.05 * (time * 0.019).sin()
                 });
             }
+            samples.resize(samples.len() + VHE_LATENCY_FRAMES * CHANNEL_COUNT, 0.0);
             let mut processor = VheProcessor::new(48_000, level as i32);
-            for block in samples.chunks_exact_mut(512) {
+            for block in samples.chunks_mut(512) {
                 processor.process(block);
             }
 
             for (position, frame) in SELECTED.iter().copied().enumerate() {
                 for channel in 0..2 {
                     assert!(
-                        (samples[frame * 2 + channel] - EXPECTED[level][position][channel]).abs()
+                        (samples[(frame + VHE_LATENCY_FRAMES) * 2 + channel]
+                            - EXPECTED[level][position][channel])
+                            .abs()
                             <= 2.0e-5,
                         "level {level}, frame {frame}, channel {channel}: expected {}, got {}",
                         EXPECTED[level][position][channel],
-                        samples[frame * 2 + channel]
+                        samples[(frame + VHE_LATENCY_FRAMES) * 2 + channel]
                     );
                 }
             }
@@ -607,16 +688,19 @@ mod tests {
                     -0.19 * (time * 0.053).cos() + 0.05 * (time * 0.019).sin()
                 });
             }
+            samples.resize(samples.len() + VHE_LATENCY_FRAMES * CHANNEL_COUNT, 0.0);
             let mut processor = VheProcessor::new(44_100, level as i32);
             processor.process(&mut samples);
             for (position, frame) in SELECTED.iter().copied().enumerate() {
                 for channel in 0..2 {
                     assert!(
-                        (samples[frame * 2 + channel] - EXPECTED[level][position][channel]).abs()
+                        (samples[(frame + VHE_LATENCY_FRAMES) * 2 + channel]
+                            - EXPECTED[level][position][channel])
+                            .abs()
                             <= 2.0e-5,
                         "level {level}, frame {frame}, channel {channel}: expected {}, got {}",
                         EXPECTED[level][position][channel],
-                        samples[frame * 2 + channel]
+                        samples[(frame + VHE_LATENCY_FRAMES) * 2 + channel]
                     );
                 }
             }
