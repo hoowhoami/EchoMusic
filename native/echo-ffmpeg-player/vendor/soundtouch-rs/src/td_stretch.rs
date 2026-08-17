@@ -193,8 +193,8 @@ impl TdStretch {
             let seq_at_min = 90.0;
             let seq_at_max = 40.0;
             let k = (seq_at_max - seq_at_min) / (tempo_top - tempo_low);
-            let c = seq_at_min - k * tempo_low;
-            let mut seq = c + k * self.tempo;
+            let c = f64::mul_add(k, -tempo_low, seq_at_min);
+            let mut seq = f64::mul_add(k, self.tempo, c);
             seq = seq.clamp(seq_at_max, seq_at_min);
             self.sequence_ms = (seq + 0.5) as usize;
         }
@@ -203,8 +203,8 @@ impl TdStretch {
             let seek_at_min = 20.0;
             let seek_at_max = 15.0;
             let k = (seek_at_max - seek_at_min) / (tempo_top - tempo_low);
-            let c = seek_at_min - k * tempo_low;
-            let mut seek = c + k * self.tempo;
+            let c = f64::mul_add(k, -tempo_low, seek_at_min);
+            let mut seek = f64::mul_add(k, self.tempo, c);
             seek = seek.clamp(seek_at_max, seek_at_min);
             self.seek_window_ms = (seek + 0.5) as usize;
         }

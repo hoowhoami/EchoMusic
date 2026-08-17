@@ -12,13 +12,24 @@ A pure Rust implementation of the [SoundTouch](https://www.surina.net/soundtouch
 - **Anti-aliasing filter** — Configurable low-pass FIR filter for pitch shifting quality
 - **Multi-channel support** — Mono, stereo, and beyond
 - **SIMD acceleration** — Uses the `wide` crate for vectorized sample processing
+- **Spectral stretch algorithm (`spectral` feature)** — High quality phase vocoder time-stretching and pitch shifting with STFT
 
 ## Installation
 
 ```toml
 [dependencies]
+# Default includes the `spectral` feature
 soundtouch-rs = "0.1.0"
+
+# Or disable default features for a lightweight build (WSOLA only, without realfft):
+# soundtouch-rs = { version = "0.1.0", default-features = false }
 ```
+
+## Cargo Features
+
+| Feature    | Default | Description                                                                     |
+| ---------- | ------- | ------------------------------------------------------------------------------- |
+| `spectral` | Yes     | Enables `SpectralStretch` phase-vocoder processing and the `realfft` dependency |
 
 ## Quick Start
 

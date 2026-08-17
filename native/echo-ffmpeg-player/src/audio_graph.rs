@@ -400,7 +400,7 @@ impl AudioFilterGraph {
         self.effects.process_interleaved(&mut self.converted_output);
         output.extend_from_slice(&self.converted_output);
 
-        self.process_graph_output(settings, output)
+        self.process_graph_output(output)
     }
 
     pub fn finish(&mut self, settings: &DspSettings, output: &mut Vec<f32>) -> Result<u64, String> {
@@ -412,8 +412,7 @@ impl AudioFilterGraph {
             self.effects.update_settings(settings);
             self.effects.process_interleaved(&mut self.converted_output);
             output.extend_from_slice(&self.converted_output);
-            source_frames =
-                source_frames.saturating_add(self.process_graph_output(settings, output)?);
+            source_frames = source_frames.saturating_add(self.process_graph_output(output)?);
         }
 
         self.processed_output.clear();
@@ -447,11 +446,7 @@ impl AudioFilterGraph {
         self.tempo.latency_secs(self.process_format.sample_rate) + self.effects.latency_secs()
     }
 
-    fn process_graph_output(
-        &mut self,
-        settings: &DspSettings,
-        output: &mut Vec<f32>,
-    ) -> Result<u64, String> {
+    fn process_graph_output(&mut self, output: &mut Vec<f32>) -> Result<u64, String> {
         if output.is_empty() {
             return Ok(0);
         }
@@ -462,11 +457,10 @@ impl AudioFilterGraph {
                 .any(|node| node.channels == ChannelRequirement::Stereo)
                 || self.process_format.channels == 2
         );
-        let speed = settings.speed.clamp(MIN_SPEED, MAX_SPEED);
+        let speed = self.tempo.speed();
         self.processed_output.clear();
         self.tempo
-            .set_speed(speed)
-            .and_then(|_| self.tempo.process_into(output, &mut self.processed_output))?;
+            .process_into(output, &mut self.processed_output)?;
         soft_limit_interleaved(&mut self.processed_output);
         let source_frames = tempo_source_frames(
             self.processed_output.len(),
@@ -1000,8 +994,10 @@ mod tests {
                 .expect("graph should initialize");
         let original_format = graph.process_format();
 
-        let mut settings = DspSettings::default();
-        settings.speed = 2.0;
+        let settings = DspSettings {
+            speed: 2.0,
+            ..DspSettings::default()
+        };
 
         // update_settings should NOT rebuild the graph; process_format must stay the same.
         graph
@@ -1060,8 +1056,10 @@ mod tests {
         let mut graph_2x =
             AudioFilterGraph::new(MixFormat::stereo_f32(48_000), &DspSettings::default())
                 .expect("graph should initialize");
-        let mut settings_2x = DspSettings::default();
-        settings_2x.speed = 2.0;
+        let settings_2x = DspSettings {
+            speed: 2.0,
+            ..DspSettings::default()
+        };
         graph_2x
             .update_settings(&settings_2x)
             .expect("update_settings should succeed");

@@ -6,6 +6,11 @@ edition = "2024"
 [dependencies]
 thiserror = "2.0.18"
 wide = "1.5.0"
+realfft = { version = "3.4.0", optional = true }
+
+[features]
+default = ["spectral"]
+spectral = ["dep:realfft"]
 
 [dev-dependencies]
 anyhow = "1.0.102"
@@ -16,6 +21,9 @@ ringbuf = "0.5.0"
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
 
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+signalsmith-stretch = "0.1.3"
+
 [[bench]]
 name = "soundtouch_bench"
 harness = false
@@ -23,6 +31,11 @@ harness = false
 [[bench]]
 name = "bpm_bench"
 harness = false
+
+[[bench]]
+name = "spectral_bench"
+harness = false
+required-features = ["spectral"]
 
 [profile.bench]
 debug = true

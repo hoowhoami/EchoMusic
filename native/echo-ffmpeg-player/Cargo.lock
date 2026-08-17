@@ -2035,6 +2035,7 @@ dependencies = [
 name = "soundtouch-rs"
 version = "0.1.0"
 dependencies = [
+ "realfft",
  "thiserror 2.0.18",
  "wide",
 ]
