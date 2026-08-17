@@ -24,6 +24,7 @@ import type { AudioSpectrumFrame, AudioSpectrumOptions } from '../shared/audio-s
 import { createFontApi } from '../shared/font';
 import * as icons from '../renderer/icons';
 import { createThemedIconCoverUrl } from '../renderer/utils/themedCover';
+import { installInputBehaviorGuard } from '../renderer/utils/inputBehaviorGuard';
 
 const DEFAULT_PLUGIN_WINDOW_COVER_COLOR = '#0071e3';
 
@@ -148,6 +149,8 @@ const blobUrls: string[] = [];
 
 document.documentElement.classList.add('plugin-window');
 document.body.classList.add('plugin-window');
+
+installInputBehaviorGuard();
 
 const setStatus = (message: string) => {
   if (!root) return;

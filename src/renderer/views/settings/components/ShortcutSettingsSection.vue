@@ -106,6 +106,16 @@ const handleResetBoth = (command: ShortcutCommand) => {
     <div class="settings-divider"></div>
     <div class="settings-item">
       <div class="space-y-1">
+        <h3 class="font-semibold">屏蔽浏览器默认按键行为</h3>
+        <p class="text-sm text-text-secondary">
+          关闭后空格、方向键、翻页键等恢复浏览器默认的滚动与激活行为
+        </p>
+      </div>
+      <Switch v-model="settingStore.suppressDefaultKeyBehaviors" />
+    </div>
+    <div class="settings-divider"></div>
+    <div class="settings-item">
+      <div class="space-y-1">
         <h3 class="font-semibold">恢复默认</h3>
         <p class="text-sm text-text-secondary">恢复所有快捷键为默认</p>
       </div>

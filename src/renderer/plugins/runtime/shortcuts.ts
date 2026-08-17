@@ -1,3 +1,5 @@
+import { isInEditableContext } from '@/utils/inputBehaviorGuard';
+
 type PluginCallbackRunner = <T>(
   pluginId: string,
   source: string,
@@ -80,6 +82,8 @@ export const createShortcutsApi = (
 
       const keydownHandler = (event: KeyboardEvent) => {
         if (event.repeat) return;
+        const hasModifier = event.metaKey || event.ctrlKey || event.altKey || event.shiftKey;
+        if (!hasModifier && isInEditableContext(event.target)) return;
         const pressed = buildShortcut(event);
         if (targetKeys.includes(pressed)) {
           event.preventDefault();

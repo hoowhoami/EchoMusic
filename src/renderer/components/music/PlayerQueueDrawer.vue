@@ -11,6 +11,7 @@ import { usePlaylistStore } from '@/stores/playlist';
 import { usePlayerStore } from '@/stores/player';
 import { useUserStore } from '@/stores/user';
 import { useToastStore } from '@/stores/toast';
+import { isInEditableContext } from '@/utils/inputBehaviorGuard';
 import type { Song } from '@/models/song';
 import {
   iconTrash,
@@ -356,8 +357,27 @@ const handleSwitchQueueByDirection = (direction: -1 | 1, animate = false) => {
 const handleQueueNavKeydown = (event: KeyboardEvent) => {
   if (queueOptions.value.length <= 1) return;
   if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+  if (event.metaKey || event.ctrlKey || event.altKey) return;
+  if (isInEditableContext(event.target)) return;
+  if (event.target instanceof HTMLElement) {
+    const dialog = event.target.closest('[role="dialog"]');
+    if (dialog && !dialog.classList.contains('queue-drawer')) return;
+  }
   event.preventDefault();
   handleSwitchQueueByDirection(event.key === 'ArrowRight' ? 1 : -1, false);
+};
+
+let queueNavKeydownDisposer: (() => void) | null = null;
+
+const bindQueueNavKeydown = () => {
+  if (queueNavKeydownDisposer) return;
+  window.addEventListener('keydown', handleQueueNavKeydown);
+  queueNavKeydownDisposer = () => window.removeEventListener('keydown', handleQueueNavKeydown);
+};
+
+const unbindQueueNavKeydown = () => {
+  queueNavKeydownDisposer?.();
+  queueNavKeydownDisposer = null;
 };
 
 const handlePointerDown = (event: PointerEvent) => {
@@ -598,11 +618,13 @@ watch(
   () => open.value,
   async (isOpen) => {
     if (!isOpen) {
+      unbindQueueNavKeydown();
       sortableInitToken += 1;
       destroySortable();
       return;
     }
 
+    bindQueueNavKeydown();
     previewQueueId.value = currentPlaybackQueue.value?.id ?? queueOptions.value[0]?.id ?? null;
     if (previewQueue.value?.songs.length === 0 && getQueueCount(previewQueue.value) > 0) {
       await playlistStore.loadPlaybackQueueFromStorage(previewQueue.value.id);
@@ -670,6 +692,7 @@ onMounted(() => {
   canSwipeQueues.value =
     window.matchMedia('(any-pointer: coarse)').matches || navigator.maxTouchPoints > 0;
   if (open.value) {
+    bindQueueNavKeydown();
     previewQueueId.value = currentPlaybackQueue.value?.id ?? queueOptions.value[0]?.id ?? null;
     void nextTick(async () => {
       await initSortable();
@@ -678,6 +701,7 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
+  unbindQueueNavKeydown();
   sortableInitToken += 1;
   destroySortable();
   if (playingStateTimer) clearTimeout(playingStateTimer);
@@ -708,8 +732,6 @@ onBeforeUnmount(() => {
             v-if="queueOptions.length > 1"
             role="group"
             aria-label="队列切换"
-            tabindex="0"
-            @keydown="handleQueueNavKeydown"
           >
             <button
               type="button"

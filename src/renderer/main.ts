@@ -6,7 +6,9 @@ import App from './App.vue';
 import router from './router';
 import { logger } from '@/utils/logger';
 import { sqlitePersistPlugin } from '@/stores/sqlitePersist';
+import { useSettingStore } from '@/stores/setting';
 import { installPluginRuntime } from '@/plugins/runtime';
+import { installInputBehaviorGuard } from '@/utils/inputBehaviorGuard';
 import { startRendererMemoryDiagnostics } from '@/utils/rendererMemoryDiagnostics';
 import './style.css';
 
@@ -241,4 +243,7 @@ app.use(router);
 app.component('Icon', Icon);
 installPluginRuntime({ app, router, pinia });
 startRendererMemoryDiagnostics();
+installInputBehaviorGuard({
+  isEnabled: () => useSettingStore().suppressDefaultKeyBehaviors,
+});
 app.mount('#app');

@@ -4,6 +4,7 @@ import { useSettingStore } from '@/stores/setting';
 import { useDesktopLyricStore } from '@/desktopLyric/store';
 import { useLyricStore } from '@/stores/lyric';
 import { useToastStore } from '@/stores/toast';
+import { isInEditableContext } from '@/utils/inputBehaviorGuard';
 import type {
   ShortcutCommand,
   ShortcutMap,
@@ -528,6 +529,8 @@ export const registerLocalShortcuts = () => {
   const handler = (event: KeyboardEvent) => {
     if (!settingStore.shortcutEnabled) return;
     if (event.repeat) return;
+    const hasModifier = event.metaKey || event.ctrlKey || event.altKey || event.shiftKey;
+    if (!hasModifier && isInEditableContext(event.target)) return;
     const shortcutMap = resolveShortcutMap('local');
     const pressed = buildShortcut(event);
     const matched = (Object.entries(shortcutMap) as Array<[ShortcutCommand, string]>).find(

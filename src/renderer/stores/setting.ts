@@ -78,6 +78,7 @@ export const useSettingStore = defineStore('setting', {
     theme: 'system' as ThemeMode,
     language: 'zh-CN',
     shortcutEnabled: true,
+    suppressDefaultKeyBehaviors: true,
     autoPlay: true,
     rememberWindowSize: true,
     showPlaylistCount: true,
