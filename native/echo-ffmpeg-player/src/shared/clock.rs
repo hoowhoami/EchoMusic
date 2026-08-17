@@ -81,6 +81,26 @@ impl SharedAudio {
         f32::from_bits(self.volume_bits.load(Ordering::Acquire)).clamp(0.0, 1.5)
     }
 
+    /// Gain applied at the end of the previous output buffer, or `None` before the
+    /// first processed buffer (and after `reset_applied_output_gain`).
+    pub fn applied_output_gain(&self) -> Option<f32> {
+        let gain = f32::from_bits(self.applied_output_gain_bits.load(Ordering::Acquire));
+        gain.is_finite().then_some(gain.max(0.0))
+    }
+
+    pub fn store_applied_output_gain(&self, gain: f32) {
+        let gain = if gain.is_finite() { gain.max(0.0) } else { 0.0 };
+        self.applied_output_gain_bits
+            .store(gain.to_bits(), Ordering::Release);
+    }
+
+    /// Forget the ramp history so the next output buffer applies its target gain
+    /// directly instead of ramping from a stale value.
+    pub fn reset_applied_output_gain(&self) {
+        self.applied_output_gain_bits
+            .store(f32::NAN.to_bits(), Ordering::Release);
+    }
+
     pub fn normalization_gain(&self) -> f32 {
         let gain = f32::from_bits(self.normalization_gain_bits.load(Ordering::Acquire));
         if gain.is_finite() {

@@ -833,13 +833,36 @@ fn process_output_signal(
     volume: f32,
     shared: &SharedAudio,
 ) {
-    let effective_volume = volume * shared.normalization_gain();
-    for sample in output.iter_mut() {
-        *sample = soft_limit_sample(*sample * effective_volume);
+    let channels = channels.max(1);
+    let target_gain = volume * shared.normalization_gain();
+    // Ramp from the gain applied at the end of the previous buffer to the current
+    // target across this buffer, so fades and volume changes stay zipper-free even
+    // though the control side only updates the target every ~16 ms.
+    let start_gain = shared.applied_output_gain().unwrap_or(target_gain);
+    let frames = output.len() / channels;
+    if frames == 0 || (start_gain - target_gain).abs() <= f32::EPSILON {
+        for sample in output.iter_mut() {
+            *sample = soft_limit_sample(*sample * target_gain);
+        }
+    } else {
+        let step = (target_gain - start_gain) / frames as f32;
+        let mut chunks = output.chunks_exact_mut(channels);
+        for (frame_index, frame) in chunks.by_ref().enumerate() {
+            let gain = start_gain + step * (frame_index + 1) as f32;
+            for sample in frame.iter_mut() {
+                *sample = soft_limit_sample(*sample * gain);
+            }
+        }
+        // A trailing partial frame (malformed buffer) still gets the target gain
+        // so no sample is ever emitted unscaled.
+        for sample in chunks.into_remainder() {
+            *sample = soft_limit_sample(*sample * target_gain);
+        }
     }
+    shared.store_applied_output_gain(target_gain);
     shared.set_spectrum_sample_rate(sample_rate);
     if let Ok(mut ring) = shared.spectrum_ring.try_lock() {
-        ring.push_interleaved(output, channels.max(1));
+        ring.push_interleaved(output, channels);
     }
 }
 
@@ -1115,6 +1138,57 @@ mod tests {
             classify_cpal_output_error(ErrorKind::Xrun, "auto"),
             CpalOutputErrorAction::Ignore { reason: "xrun" }
         );
+    }
+
+    #[test]
+    fn output_signal_ramps_between_buffer_gains_without_steps() {
+        let mix_format = MixFormat::stereo_f32(48_000);
+        let settings = DspSettings::default();
+        let shared = SharedAudio::new(mix_format, 0.2, 8.0, &settings);
+
+        // First buffer establishes the applied gain (no history -> direct apply).
+        let mut first = [1.0f32; 8];
+        process_output_signal(&mut first, 2, 48_000, 0.2, &shared);
+        assert!(first.iter().all(|sample| (sample - 0.2).abs() < 0.0001));
+
+        // Second buffer targets a higher gain and must ramp per frame from the
+        // previously applied value instead of jumping.
+        let mut second = [1.0f32; 8];
+        process_output_signal(&mut second, 2, 48_000, 0.6, &shared);
+        // 4 frames ramping 0.2 -> 0.6 in equal steps of 0.1, ending exactly on target.
+        let expected = [0.3f32, 0.3, 0.4, 0.4, 0.5, 0.5, 0.6, 0.6];
+        for (sample, expected) in second.iter().zip(expected) {
+            assert!(
+                (sample - expected).abs() < 0.0001,
+                "ramped sample {sample} != expected {expected}"
+            );
+        }
+        // Both channels of one frame share the same gain.
+        assert_eq!(second[0], second[1]);
+
+        // A steady third buffer applies the target uniformly again.
+        let mut third = [1.0f32; 4];
+        process_output_signal(&mut third, 2, 48_000, 0.6, &shared);
+        assert!(third.iter().all(|sample| (sample - 0.6).abs() < 0.0001));
+    }
+
+    #[test]
+    fn output_signal_ramp_history_resets_with_output_start() {
+        let mix_format = MixFormat::stereo_f32(48_000);
+        let settings = DspSettings::default();
+        let shared = SharedAudio::new(mix_format, 0.2, 8.0, &settings);
+
+        let mut first = [1.0f32; 4];
+        process_output_signal(&mut first, 2, 48_000, 1.0, &shared);
+        assert_eq!(shared.applied_output_gain(), Some(1.0));
+
+        shared.prepare_output_start();
+        assert_eq!(shared.applied_output_gain(), None);
+
+        // After a stream restart the new target applies directly, no ramp from 1.0.
+        let mut second = [1.0f32; 4];
+        process_output_signal(&mut second, 2, 48_000, 0.25, &shared);
+        assert!(second.iter().all(|sample| (sample - 0.25).abs() < 0.0001));
     }
 
     #[test]

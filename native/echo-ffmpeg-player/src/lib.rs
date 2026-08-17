@@ -66,9 +66,30 @@ use std::time::{Duration, Instant};
 const GAPLESS_PREDECODE_SECS: f64 = 0.5;
 
 static RUNTIME: Mutex<Option<PlayerRuntime>> = Mutex::new(None);
+/// Mirrors `RUNTIME.is_some()` for lock-free readiness checks on hot control
+/// paths. All authoritative writes happen while holding the RUNTIME guard
+/// (initialize sets true, shutdown sets false before take()), so ready==true
+/// always implies RUNTIME is populated. Shutdown additionally flips it false
+/// before acquiring the lock so in-flight fades fail fast.
+static RUNTIME_READY: AtomicBool = AtomicBool::new(false);
+/// Cache of the active session's SharedAudio for hot control paths (volume/fades).
+/// Guarded by its own tiny mutex so a 16 ms fade tick never contends with load/seek
+/// work that can hold RUNTIME for long stretches. Updated wherever runtime.session
+/// changes: apply_prepared_source, stop_session, and the load-failure teardown.
+static CURRENT_SHARED: Mutex<Option<Arc<SharedAudio>>> = Mutex::new(None);
 static NEXT_SEEK_REQUEST_SEQ: AtomicU64 = AtomicU64::new(0);
 static LATEST_SEEK_REQUEST_SEQ: AtomicU64 = AtomicU64::new(0);
 type RuntimeCommand = Box<dyn FnOnce(&mut PlayerRuntime) + Send + 'static>;
+
+fn set_current_shared(shared: Option<Arc<SharedAudio>>) {
+    if let Ok(mut guard) = CURRENT_SHARED.lock() {
+        *guard = shared;
+    }
+}
+
+pub(crate) fn current_shared() -> Option<Arc<SharedAudio>> {
+    CURRENT_SHARED.lock().ok().and_then(|guard| guard.clone())
+}
 
 struct PlayerRuntime {
     config: PlayerConfig,
@@ -231,6 +252,7 @@ impl PlayerRuntime {
         self.seek_restore_paused = None;
         self.prepared_next = None;
         if let Some(session) = self.session.take() {
+            set_current_shared(None);
             session.stop_background();
         }
         self.state.playing = false;
@@ -724,6 +746,7 @@ fn apply_prepared_source(runtime: &mut PlayerRuntime, prepared: PreparedSource) 
     runtime.cancel_pending_gapless_prepare();
     runtime.prepared_next = None;
     runtime.seek_restore_paused = None;
+    set_current_shared(Some(session.shared.clone()));
     if let Some(previous) = runtime.session.replace(session) {
         previous.stop_background();
     }
@@ -986,9 +1009,17 @@ pub fn initialize(config: Option<PlayerConfigOptions>) -> napi::Result<()> {
         handle_output_device_list_change,
     )
     .unwrap_or(None);
-    *RUNTIME.lock().map_err(|err| {
-        napi::Error::from_reason(format!("failed to lock player runtime: {err}"))
-    })? = Some(runtime);
+    {
+        let mut guard = RUNTIME.lock().map_err(|err| {
+            napi::Error::from_reason(format!("failed to lock player runtime: {err}"))
+        })?;
+        *guard = Some(runtime);
+        // Publish readiness while still holding the RUNTIME guard so it cannot
+        // interleave with a concurrent shutdown_runtime: shutdown writes false
+        // under the same guard before taking the runtime, so ready==true always
+        // implies RUNTIME is populated.
+        RUNTIME_READY.store(true, Ordering::Release);
+    }
     start_core_dispatcher()?;
     Ok(())
 }
@@ -999,18 +1030,30 @@ pub fn destroy() -> napi::Result<()> {
 }
 
 fn shutdown_runtime(clear_callback: bool) -> napi::Result<()> {
+    // Early best-effort flip so lock-free control paths (set_volume from an
+    // in-flight fade) start failing as soon as possible. The authoritative
+    // write happens below under the RUNTIME guard.
+    RUNTIME_READY.store(false, Ordering::Release);
     invalidate_seek_requests();
     if clear_callback {
         clear_event_callback();
     }
     stop_core_dispatcher();
-    let runtime = RUNTIME
-        .lock()
-        .map_err(|err| napi::Error::from_reason(format!("failed to lock player runtime: {err}")))?
-        .take();
+    let runtime = {
+        let mut guard = RUNTIME.lock().map_err(|err| {
+            napi::Error::from_reason(format!("failed to lock player runtime: {err}"))
+        })?;
+        // Authoritative write under the same guard initialize() uses, so a
+        // concurrent initialize cannot leave ready==true with RUNTIME=None.
+        RUNTIME_READY.store(false, Ordering::Release);
+        guard.take()
+    };
     if let Some(mut runtime) = runtime {
         runtime.stop_session();
     }
+    // stop_session already clears this, but clear again in case shutdown raced a
+    // runtime that was never fully initialized.
+    set_current_shared(None);
     stop_event_dispatcher();
     Ok(())
 }
@@ -1175,6 +1218,7 @@ impl Task for LoadFileTask {
                             }
 
                             if let Some(session) = runtime.session.take() {
+                                set_current_shared(None);
                                 session.shared.paused.store(true, Ordering::Release);
                                 session.shared.mark_decode_failed();
                                 session.shared.set_track_seq(plan.request_seq);
@@ -1570,13 +1614,22 @@ pub fn stop() -> napi::Result<()> {
 
 #[napi]
 pub fn set_volume(volume: f64) -> napi::Result<()> {
-    with_runtime(|runtime| {
-        let normalized = (volume / 100.0).clamp(0.0, 1.5) as f32;
-        if let Some(session) = runtime.session.as_ref() {
-            session.shared.set_volume(normalized);
-        }
-        Ok(())
-    })
+    // Hot path for fades: apply straight to the active session's shared state
+    // without touching the RUNTIME mutex, which load/seek tasks can hold for
+    // long stretches. Volume is not part of PlayerRuntime state, so nothing
+    // else needs the big lock. The readiness flag preserves with_runtime's
+    // "player addon not initialized" contract for uninitialized/destroyed
+    // runtimes; an initialized runtime without a session stays a silent no-op.
+    if !RUNTIME_READY.load(Ordering::Acquire) {
+        return Err(napi::Error::from_reason(
+            "player addon not initialized".to_string(),
+        ));
+    }
+    let normalized = (volume / 100.0).clamp(0.0, 1.5) as f32;
+    if let Some(shared) = current_shared() {
+        shared.set_volume(normalized);
+    }
+    Ok(())
 }
 
 #[napi]

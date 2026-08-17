@@ -61,6 +61,10 @@ pub struct SharedAudio {
     gapless_prepare_changed: Condvar,
     volume_bits: AtomicU32,
     normalization_gain_bits: AtomicU32,
+    /// Gain actually applied at the end of the previous output callback buffer.
+    /// Stored as f32 bits; NaN means "unset" (first buffer applies the target directly).
+    /// Written only by the single active output callback, so no producer contention.
+    applied_output_gain_bits: AtomicU32,
     pub mix_format: MixFormat,
     track_seq: AtomicU64,
     pub played_samples: AtomicU64,
@@ -147,6 +151,7 @@ impl SharedAudio {
             normalization_gain_bits: AtomicU32::new(
                 dsp_settings.normalization_gain_linear().to_bits(),
             ),
+            applied_output_gain_bits: AtomicU32::new(f32::NAN.to_bits()),
             mix_format,
             played_samples: AtomicU64::new(0),
             stall_timeout_ms: AtomicU64::new(stall_timeout_millis(stall_timeout_secs)),
@@ -187,6 +192,9 @@ impl SharedAudio {
         }
         self.output_started.store(false, Ordering::Release);
         self.live_output_delay_us.store(0, Ordering::Release);
+        // A fresh output stream should apply the current target gain directly
+        // rather than ramping from whatever the previous stream last applied.
+        self.reset_applied_output_gain();
         self.output_queue_changed.notify_all();
     }
 
