@@ -27,6 +27,8 @@ export interface ListenTogetherMemberPreview {
   nickname: string;
   avatarUrl: string;
   studyStatus?: number;
+  /** 推荐/详情接口只公开了头像，未公开用户身份。 */
+  anonymous?: boolean;
 }
 
 export interface ListenTogetherRoom {

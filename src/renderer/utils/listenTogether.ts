@@ -172,9 +172,47 @@ const mapMemberPreview = (value: unknown): ListenTogetherMemberPreview | null =>
     userId,
     nickname:
       readString(record, 'nick_name', 'nickname', 'username', 'user_name', 'name') || '房间成员',
-    avatarUrl: readString(record, 'user_pic', 'avatar', 'headimg', 'head_img', 'img', 'pic'),
+    avatarUrl: normalizeCoverUrl(
+      readString(record, 'user_pic', 'avatar', 'headimg', 'head_img', 'img', 'pic'),
+      120,
+    ),
     studyStatus: readNumber(record, 'study_status'),
   };
+};
+
+const mapAvatarOnlyPreview = (
+  value: unknown,
+  index: number,
+): ListenTogetherMemberPreview | null => {
+  const avatarUrl = normalizeCoverUrl(
+    typeof value === 'string'
+      ? value
+      : readString(asListenTogetherRecord(value) ?? {}, 'url', 'avatar', 'user_pic', 'pic'),
+    120,
+  );
+  if (!avatarUrl) return null;
+  return {
+    userId: `avatar:${index}:${avatarUrl}`,
+    nickname: '在线听众',
+    avatarUrl,
+    studyStatus: 1,
+    anonymous: true,
+  };
+};
+
+const mergeMemberPreviews = (
+  ...groups: ReadonlyArray<ReadonlyArray<ListenTogetherMemberPreview>>
+) => {
+  const result: ListenTogetherMemberPreview[] = [];
+  for (const member of groups.flat()) {
+    const sameUser = result.some(
+      (item) => !item.anonymous && !member.anonymous && item.userId === member.userId,
+    );
+    const sameAvatar =
+      member.avatarUrl && result.some((item) => item.avatarUrl === member.avatarUrl);
+    if (!sameUser && !sameAvatar) result.push(member);
+  }
+  return result;
 };
 
 export const mapListenTogetherRoom = (
@@ -204,10 +242,20 @@ export const mapListenTogetherRoom = (
     record.members,
     record.user_list,
     record.online_user_list,
-  ].find(Array.isArray);
-  const memberPreviews = (rawMemberPreviews ?? [])
+  ].flatMap((items) => (Array.isArray(items) ? items : []));
+  const structuredMemberPreviews = rawMemberPreviews
     .map(mapMemberPreview)
     .filter((item): item is ListenTogetherMemberPreview => Boolean(item));
+  // 概念版众乐房列表/详情的 cover_urls 只公开在线听众头像，不包含 userid。
+  // 它不是麦位成员接口的数据，但仍应作为可见成员预览保留下来。
+  const avatarOnlyPreviews = (Array.isArray(record.cover_urls) ? record.cover_urls : [])
+    .map(mapAvatarOnlyPreview)
+    .filter((item): item is ListenTogetherMemberPreview => Boolean(item));
+  const memberPreviews = mergeMemberPreviews(
+    structuredMemberPreviews,
+    avatarOnlyPreviews,
+    base?.memberPreviews ?? [],
+  );
   const rawAudios = Array.isArray(record.audios) ? record.audios : [];
   const currentAudio = mapAudioRef({ ...record, ...songRecord });
   const audios = [...rawAudios, ...(currentAudio ? [currentAudio] : [])]
@@ -321,7 +369,7 @@ export const mapListenTogetherRoom = (
       : detailMusicStyleTags.length
         ? detailMusicStyleTags
         : (base?.musicStyles ?? []),
-    memberPreviews: memberPreviews.length ? memberPreviews : (base?.memberPreviews ?? []),
+    memberPreviews,
     audios: audios.length ? audios : (base?.audios ?? []),
   };
 };

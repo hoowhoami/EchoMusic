@@ -172,24 +172,69 @@ const orderSongSearchKeyword = ref('');
 const orderSongSearchResults = ref<Song[]>([]);
 const searchingOrderSongs = ref(false);
 
-const activeMembers = computed<ListenTogetherMember[]>(() => {
-  const next = new Map(members.value.map((member) => [String(member.userId), member]));
-  const currentUserId = String(userStore.info?.userid ?? userStore.info?.userId ?? '').trim();
-  if (joined.value && currentUserId && !next.has(currentUserId)) {
-    next.set(currentUserId, {
-      userId: currentUserId,
-      nickname: userStore.info?.nickname || '我',
-      avatarUrl: userStore.info?.pic || '',
+const mergeVisibleMembers = (
+  room: ListenTogetherRoom | null,
+  remoteMembers: ListenTogetherMember[],
+  includeCurrentUser: boolean,
+) => {
+  const result: ListenTogetherMember[] = [];
+  const add = (member: ListenTogetherMember) => {
+    const sameUserIndex = result.findIndex(
+      (item) => !item.anonymous && !member.anonymous && item.userId === member.userId,
+    );
+    const sameAvatarIndex = member.avatarUrl
+      ? result.findIndex((item) => item.avatarUrl && item.avatarUrl === member.avatarUrl)
+      : -1;
+    const existingIndex = sameUserIndex >= 0 ? sameUserIndex : sameAvatarIndex;
+    if (existingIndex < 0) {
+      result.push(member);
+      return;
+    }
+    // 真实成员资料优先于 cover_urls 产生的匿名头像预览。
+    if (result[existingIndex].anonymous && !member.anonymous) result[existingIndex] = member;
+  };
+
+  if (room && (room.ownerId || room.ownerAvatarUrl)) {
+    add({
+      userId: room.ownerId || `owner:${room.id}`,
+      nickname: room.ownerName || '房主',
+      avatarUrl: room.ownerAvatarUrl,
       studyStatus: 1,
       studyTime: 0,
     });
   }
-  return Array.from(next.values());
+  remoteMembers.forEach(add);
+
+  if (includeCurrentUser) {
+    const currentUserId = String(userStore.info?.userid ?? userStore.info?.userId ?? '').trim();
+    if (currentUserId) {
+      add({
+        userId: currentUserId,
+        nickname: userStore.info?.nickname || '我',
+        avatarUrl: userStore.info?.pic || '',
+        studyStatus: 1,
+        studyTime: 0,
+      });
+    }
+  }
+
+  (room?.memberPreviews ?? []).forEach((member) => add({ ...member, studyTime: 0 }));
+  return result;
+};
+
+const activeMembers = computed<ListenTogetherMember[]>(() => {
+  return mergeVisibleMembers(activeRoom.value, members.value, joined.value);
 });
 const onlineMemberCount = computed(() =>
   joined.value
     ? Math.max(1, activeMembers.value.length, Number(activeRoom.value?.memberCount || 0))
     : 0,
+);
+const unlistedOnlineMemberCount = computed(() =>
+  Math.max(0, onlineMemberCount.value - activeMembers.value.length),
+);
+const visiblePreviewMembers = computed(() =>
+  mergeVisibleMembers(previewRoom.value, previewMembers.value, false),
 );
 
 const isCurrentSessionRoom = (room: ListenTogetherRoom | null | undefined) =>
@@ -1473,6 +1518,15 @@ onMounted(() => {
                     </span>
                     <i :class="`status-${member.studyStatus || 1}`"></i>
                   </div>
+                  <div v-if="unlistedOnlineMemberCount" class="listen-member-item is-unlisted">
+                    <span class="listen-member-avatar listen-member-avatar-placeholder">
+                      <Icon :icon="iconUsers" width="15" height="15" />
+                    </span>
+                    <span class="listen-member-copy">
+                      <strong>另有 {{ unlistedOnlineMemberCount }} 位听众</strong>
+                      <small>在线身份未公开</small>
+                    </span>
+                  </div>
                 </div>
                 <div v-else class="listen-members-empty">
                   <Icon :icon="iconUsers" width="16" height="16" />
@@ -1586,9 +1640,9 @@ onMounted(() => {
             >{{ tag.name }}</span
           >
         </div>
-        <div v-if="previewMembers.length" class="listen-preview-members">
+        <div v-if="visiblePreviewMembers.length" class="listen-preview-members">
           <Avatar
-            v-for="member in previewMembers.slice(0, 8)"
+            v-for="member in visiblePreviewMembers.slice(0, 8)"
             :key="member.userId"
             :src="member.avatarUrl"
             :alt="member.nickname"

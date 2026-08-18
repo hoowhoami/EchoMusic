@@ -983,6 +983,21 @@
   border-radius: 999px;
 }
 
+.listen-member-avatar-placeholder {
+  display: grid;
+  place-items: center;
+  color: color-mix(in srgb, var(--color-text-main) 48%, transparent);
+  background: var(--control-muted-bg);
+}
+
+.listen-member-item.is-unlisted:hover {
+  background: transparent;
+}
+
+.listen-member-item.is-unlisted > i {
+  display: none;
+}
+
 .listen-member-copy {
   flex: 1;
   min-width: 0;

@@ -192,6 +192,7 @@ export const useListenTogetherStore = defineStore(
     let ownerAutoSwitchUntil = 0;
     let ownerControlGraceUntil = 0;
     let ownerControlRevision = 0;
+    let lastForcedLyricMetadataKey = '';
     const metadataLookupAttempted = new Set<string>();
 
     const joined = computed(() => phase.value === 'joined' && Boolean(activeRoomId.value));
@@ -593,12 +594,20 @@ export const useListenTogetherStore = defineStore(
               // 首次播放时若只有 hash，歌词查询可能已经以不完整参数失败；
               // 元数据补齐后带 duration / album_audio_id 强制重新匹配一次。
               if (enrichedCurrent.hash) {
-                void lyricStore.fetchLyrics(enrichedCurrent.hash, {
-                  force: true,
-                  duration: enrichedCurrent.duration ? enrichedCurrent.duration * 1000 : 0,
-                  albumAudioId: enrichedCurrent.albumAudioId ?? enrichedCurrent.mixSongId,
-                  track: enrichedCurrent,
-                });
+                const lyricMetadataKey = [
+                  enrichedCurrent.hash.toLowerCase(),
+                  enrichedCurrent.duration || 0,
+                  enrichedCurrent.albumAudioId ?? enrichedCurrent.mixSongId ?? '',
+                ].join(':');
+                if (lyricMetadataKey !== lastForcedLyricMetadataKey) {
+                  lastForcedLyricMetadataKey = lyricMetadataKey;
+                  void lyricStore.fetchLyrics(enrichedCurrent.hash, {
+                    force: true,
+                    duration: enrichedCurrent.duration ? enrichedCurrent.duration * 1000 : 0,
+                    albumAudioId: enrichedCurrent.albumAudioId ?? enrichedCurrent.mixSongId,
+                    track: enrichedCurrent,
+                  });
+                }
               }
             }
           }
@@ -642,6 +651,7 @@ export const useListenTogetherStore = defineStore(
       sendingMessage.value = false;
       requestingSongHash.value = '';
       metadataLookupAttempted.clear();
+      lastForcedLyricMetadataKey = '';
       roomSongsRetryAfter = 0;
       phase.value = 'idle';
     };
@@ -1329,6 +1339,10 @@ export const useListenTogetherStore = defineStore(
       }
       if (!song) return;
 
+      // 可能有多个首次同步调用同时在等待歌单；等待结束后必须再次检查，避免它们
+      // 同时进入 playTrack，反复替换同一个原生音源。
+      if (applyingPlayback) return;
+
       applyingPlayback = true;
       try {
         syncListenTogetherQueue();
@@ -1336,10 +1350,11 @@ export const useListenTogetherStore = defineStore(
         playerStore.currentSourceQueueId = LISTEN_TOGETHER_QUEUE_ID;
         playerStore.currentPlaylist = roomSongs.value;
         const currentHash = String(playerStore.currentTrackSnapshot?.hash ?? '').toLowerCase();
+        const currentTrackMatches =
+          currentHash === song.hash.toLowerCase() &&
+          String(playerStore.currentTrackId ?? '') === String(song.id);
         const trackChanged =
-          currentHash !== song.hash.toLowerCase() ||
-          String(playerStore.currentTrackId ?? '') !== String(song.id) ||
-          !playerStore.currentAudioUrl;
+          !currentTrackMatches || (!playerStore.currentAudioUrl && !playerStore.isLoading);
         const useRemotePosition = isRemotePositionForSong(remote, song);
         const expectedPosition = Math.max(
           0,
@@ -1357,7 +1372,10 @@ export const useListenTogetherStore = defineStore(
         }
 
         const drift = Math.abs(Number(playerStore.currentTime || 0) - expectedPosition);
-        if ((force || drift > 3) && !playerStore.isLoading && expectedPosition > 0) {
+        // force 表示使用更严格的容差，而不是无条件 seek。无条件 seek 会触发播放器
+        // 的 seek 事件，访客恢复逻辑收到该事件后再次 force seek，形成响应式死循环。
+        const driftTolerance = force ? 0.75 : 3;
+        if (drift > driftTolerance && !playerStore.isLoading && expectedPosition > 0) {
           playerStore.seek(expectedPosition);
         }
         if (!playerStore.isLoading && remote.playing !== playerStore.isPlaying) {
@@ -1775,7 +1793,9 @@ export const useListenTogetherStore = defineStore(
       ) {
         return;
       }
-      void applyRemotePlayback(true);
+      // 这是本地播放器事件的回正路径，不能强制无条件校准；否则远端 seek
+      // 触发的本地 seek 事件会再次进入这里，造成递归更新。
+      void applyRemotePlayback(false);
     };
 
     const publishOwnerSongSwitch = (song: Song | null, isAuto: boolean) => {
