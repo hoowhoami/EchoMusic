@@ -41,6 +41,7 @@ const errorMessageByCode = (code: number) => {
   if (code === 20003) return '房间音乐配置不完整';
   if (code === 20006) return '账号当前已有未结束的众乐房会话';
   if (code === 55004) return '已达到房间创建上限，请先管理已有房间';
+  if (code === 55006) return '房间不存在或已解散';
   return code ? `一起听服务暂不可用（${code}）` : '一起听服务暂不可用';
 };
 
@@ -205,7 +206,8 @@ export const heartbeatListenTogetherRoom = (roomId: string, roomType: ListenToge
     biz: getListenTogetherRoomBiz(roomType),
   });
 
-export const getListenTogetherStatus = (roomType: ListenTogetherRoomType, roomId = '') =>
+// get_status 只能校验一个已知 groupid，不能用来发现当前账号的众乐房。
+export const getListenTogetherStatus = (roomType: ListenTogetherRoomType, roomId: string) =>
   callListenTogetherEndpoint(routes.room, 'status', {
     room_id: roomId,
     biz: getListenTogetherRoomBiz(roomType),

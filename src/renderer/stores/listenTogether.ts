@@ -17,7 +17,6 @@ import {
   getListenTogetherRoomDetail,
   getListenTogetherRoomState,
   getListenTogetherRooms,
-  getListenTogetherStatus,
   getListenTogetherSongOrders,
   heartbeatListenTogetherRoom,
   initializeListenTogetherMusicRoom,
@@ -79,7 +78,11 @@ const isMissingRoomMessage = (message: string) => /(?:群组|房间)(?:不存在
 const getErrorMessage = (error: unknown) => {
   if (error instanceof ListenTogetherApiError) {
     if (error.code === 51002) return '请先登录后再使用一起听';
-    if (error.code === 20005 || (error.code === 20002 && isMissingRoomMessage(error.message)))
+    if (
+      error.code === 55006 ||
+      error.code === 20005 ||
+      (error.code === 20002 && isMissingRoomMessage(error.message))
+    )
       return '房间不存在或已解散，无法加入';
     if (error.code === 20003) return '房间频道或歌曲配置不完整';
     if (error.code === 20006) return '账号当前已有未结束的众乐房会话';
@@ -90,7 +93,9 @@ const getErrorMessage = (error: unknown) => {
 
 const isDissolvedRoomError = (error: unknown) =>
   error instanceof ListenTogetherApiError &&
-  (error.code === 20005 || (error.code === 20002 && isMissingRoomMessage(error.message)));
+  (error.code === 55006 ||
+    error.code === 20005 ||
+    (error.code === 20002 && isMissingRoomMessage(error.message)));
 
 const readNestedFlag = (payload: unknown, key: string, depth = 0): boolean => {
   if (depth > 6 || !payload || typeof payload !== 'object') return false;
@@ -1745,34 +1750,9 @@ export const useListenTogetherStore = defineStore(
         name: input.name.trim(),
         notice: input.notice.trim(),
       } as ListenTogetherCreateInput;
-      const recoverExistingMusicRoom = async (statusPayload: unknown) => {
-        const existingRoomId = extractListenTogetherRoomId(statusPayload);
-        if (!existingRoomId) return '';
-        const owner = readNestedFlag(statusPayload, 'is_owner');
-        const base = mapListenTogetherRoom({
-          room_id: existingRoomId,
-          room_name: '已有众乐房',
-          room_type: 0,
-          userid: owner ? currentUserId.value : '',
-          nick_name: owner ? userStore.info?.nickname : '',
-          user_pic: owner ? userStore.info?.pic : '',
-        });
-        roomSongs.value = [];
-        await hydrateSession(existingRoomId, base);
-        if (owner && activeRoom.value) upsertOwnedRoom(activeRoom.value);
-        toastStore.info(
-          owner
-            ? '检测到你已有未结束的众乐房，已恢复到房间'
-            : '检测到未结束的一起听会话，已恢复到房间',
-        );
-        return existingRoomId;
-      };
       try {
         if (normalizedInput.roomType === 1) {
           await checkListenTogetherMinor();
-        } else {
-          const recoveredRoomId = await recoverExistingMusicRoom(await getListenTogetherStatus(0));
-          if (recoveredRoomId) return recoveredRoomId;
         }
         const createPayload = await createListenTogetherGroup(normalizedInput);
         createdRoomId = extractListenTogetherRoomId(createPayload);
@@ -1816,16 +1796,6 @@ export const useListenTogetherStore = defineStore(
         toastStore.success(`「${normalizedInput.name}」已创建`);
         return createdRoomId;
       } catch (error) {
-        if (
-          normalizedInput.roomType === 0 &&
-          error instanceof ListenTogetherApiError &&
-          error.code === 20006
-        ) {
-          const recoveredRoomId = await getListenTogetherStatus(0)
-            .then(recoverExistingMusicRoom)
-            .catch(() => '');
-          if (recoveredRoomId) return recoveredRoomId;
-        }
         if (createdRoomId) {
           await dismissListenTogetherRoom(createdRoomId, normalizedInput.roomType).catch(
             (cleanupError) => {

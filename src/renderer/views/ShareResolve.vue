@@ -331,7 +331,8 @@ const resolveListenTogether = async (id: string) => {
 
 const isMissingListenTogetherRoom = (error: unknown) =>
   error instanceof ListenTogetherApiError &&
-  (error.code === 20005 ||
+  (error.code === 55006 ||
+    error.code === 20005 ||
     (error.code === 20002 && /(?:群组|房间)(?:不存在|已解散)/.test(error.message)));
 
 const fail = (nextReason: FailureReason) => {
