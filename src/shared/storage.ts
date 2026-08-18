@@ -46,6 +46,7 @@ export type StoragePlaybackQueueType =
   | 'history'
   | 'cloud'
   | 'fm'
+  | 'listen-together'
   | 'manual'
   | 'purchased';
 

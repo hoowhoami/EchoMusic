@@ -52,7 +52,7 @@ const summarizeApiBody = (body: unknown): Record<string, unknown> => {
 
   return {
     status: record.status ?? dataRecord?.status,
-    errorCode: record.error_code ?? dataRecord?.error_code,
+    errorCode: record.error_code ?? record.errcode ?? dataRecord?.error_code ?? dataRecord?.errcode,
     count: dataRecord?.count ?? record.count,
     songs: songs?.length,
     candidates: candidates?.length,
@@ -271,11 +271,14 @@ const ipcRequest = async (
   // 处理错误状态
   if (response.status >= 400) {
     // 502 在本项目内是 server/util/request.js 的统一错误包装：
-    // - 上游业务错误（body 含 error_code）：仅记录业务错误码
+    // - 上游业务错误（body 含 error_code/errcode）：仅记录业务错误码
     // - 真实网关/网络失败（body 为 {status:0, msg:Error} 或 null）：保留网关告警
     if (response.status === 502) {
-      const body = response.body as { error_code?: number | string } | null;
-      const code = body?.error_code;
+      const body = response.body as {
+        error_code?: number | string;
+        errcode?: number | string;
+      } | null;
+      const code = body?.error_code ?? body?.errcode;
       if (code != null && Number(code) !== 0) {
         logger.warn('API', `Upstream business error (error_code=${code})`);
       } else {

@@ -200,6 +200,7 @@ const resolveQueueTypeLabel = (
 ) => {
   if (!queue) return '播放列表';
   if (queue.type === 'fm') return queue.title || '私人 FM';
+  if (queue.type === 'listen-together') return queue.title || '一起听';
   if (queue.type === 'manual') return queue.title || '我的队列';
   if (queue.type === 'daily-recommend') return '每日推荐';
   if (queue.type === 'style-recommend') return queue.title || '风格推荐';

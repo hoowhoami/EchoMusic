@@ -1,7 +1,13 @@
 export const SHARE_SCHEME = 'echomusic';
 export const SHARE_WEB_BASE_URL = 'https://hoowhoami.github.io/EchoMusic/share/';
 
-export type ShareResourceType = 'song' | 'playlist' | 'artist' | 'album' | 'plugin';
+export type ShareResourceType =
+  | 'song'
+  | 'playlist'
+  | 'artist'
+  | 'album'
+  | 'plugin'
+  | 'listen-together';
 export type ShareTargetQuery = Record<string, string>;
 
 export interface ShareTarget {
@@ -25,6 +31,7 @@ const SHARE_TYPE_LABELS: Record<ShareResourceType, string> = {
   artist: '歌手',
   album: '专辑',
   plugin: '插件',
+  'listen-together': '一起听房间',
 };
 
 const SHARE_WEB_ORIGIN = new URL(SHARE_WEB_BASE_URL).origin;
@@ -35,7 +42,8 @@ const isShareResourceType = (value: string): value is ShareResourceType =>
   value === 'playlist' ||
   value === 'artist' ||
   value === 'album' ||
-  value === 'plugin';
+  value === 'plugin' ||
+  value === 'listen-together';
 
 const readText = (value: unknown): string => {
   if (value === undefined || value === null) return '';

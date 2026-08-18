@@ -3,6 +3,7 @@ import { useRouter, useRoute } from 'vue-router';
 import { usePlayerStore } from '@/stores/player';
 import {
   usePlaylistStore,
+  LISTEN_TOGETHER_QUEUE_ID,
   PERSONAL_FM_QUEUE_ID,
   MANUAL_PLAYBACK_QUEUE_ID,
 } from '@/stores/playlist';
@@ -461,7 +462,9 @@ export function usePlayerControls() {
   const addToPlaybackQueues = computed(() =>
     playlist.playbackQueueList.filter(
       (queue) =>
-        queue.id !== PERSONAL_FM_QUEUE_ID && Math.max(0, queue.songCount ?? queue.songs.length) > 0,
+        queue.id !== PERSONAL_FM_QUEUE_ID &&
+        queue.id !== LISTEN_TOGETHER_QUEUE_ID &&
+        Math.max(0, queue.songCount ?? queue.songs.length) > 0,
     ),
   );
 

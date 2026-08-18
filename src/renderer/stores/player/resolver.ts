@@ -1,6 +1,7 @@
 import { getCloudSongUrl, getSongClimax, getSongPrivilegeLite, getSongUrl } from '@/api/music';
 import type { CloudAudioSource, Song, SongRelateGood } from '@/models/song';
 import logger from '@/utils/logger';
+import { normalizeCoverUrl } from '@/utils/cover';
 import {
   doesRelateGoodMatchQuality,
   getSongQualityCandidates,
@@ -22,6 +23,71 @@ import type { usePlaylistStore } from '../playlist';
 import type { useSettingStore } from '../setting';
 
 const privilegeLiteRequests = new Map<string, Promise<SongRelateGood[]>>();
+
+const getPrivilegeTrackRecord = (payload: unknown): Record<string, unknown> | null => {
+  if (!payload || typeof payload !== 'object') return null;
+  const source =
+    'data' in (payload as Record<string, unknown>) ? (payload as { data?: unknown }).data : payload;
+  if (!Array.isArray(source)) return null;
+  const first = source[0];
+  return first && typeof first === 'object' ? (first as Record<string, unknown>) : null;
+};
+
+const getRecord = (value: unknown): Record<string, unknown> =>
+  value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+
+const readMetadataString = (...values: unknown[]) => {
+  for (const value of values) {
+    if (typeof value !== 'string' && typeof value !== 'number') continue;
+    const normalized = String(value).trim();
+    if (normalized) return normalized;
+  }
+  return '';
+};
+
+export const parseTrackMetadataFromPrivilege = (payload: unknown): Partial<Song> => {
+  const record = getPrivilegeTrackRecord(payload);
+  if (!record) return {};
+  const info = getRecord(record.info);
+  const transParam = getRecord(record.trans_param ?? record.transParam);
+  const albumAudioId = readMetadataString(
+    record.album_audio_id,
+    record.albumAudioId,
+    record.mixsongid,
+  );
+  const coverUrl = normalizeCoverUrl(
+    readMetadataString(
+      info.image,
+      info.img,
+      record.album_sizable_cover,
+      record.sizable_cover,
+      transParam.union_cover,
+    ),
+    400,
+  );
+  const durationMs = Number(info.duration ?? record.timelength ?? 0);
+  const albumId = readMetadataString(record.album_id, record.albumId);
+
+  return {
+    ...(albumAudioId ? { albumAudioId, mixSongId: albumAudioId } : {}),
+    ...(coverUrl ? { coverUrl, cover: coverUrl } : {}),
+    ...(Number.isFinite(durationMs) && durationMs > 0
+      ? { duration: durationMs > 10_000 ? durationMs / 1000 : durationMs }
+      : {}),
+    ...(albumId && albumId !== '0' ? { albumId } : {}),
+    ...(readMetadataString(record.albumname, record.album_name)
+      ? {
+          albumName: readMetadataString(record.albumname, record.album_name),
+          album: readMetadataString(record.albumname, record.album_name),
+        }
+      : {}),
+    ...(readMetadataString(record.id, record.audio_id)
+      ? { songId: readMetadataString(record.id, record.audio_id) }
+      : {}),
+  };
+};
 
 type PlayerTrackInfo = {
   id: number;
@@ -57,11 +123,7 @@ const getMkvFallbackTrackId = (tracks: PlayerTrackInfo[], effect: string): numbe
 };
 
 export const parseRelateGoodsFromPrivilege = (payload: unknown): SongRelateGood[] => {
-  if (!payload || typeof payload !== 'object') return [];
-  const source =
-    'data' in (payload as Record<string, unknown>) ? (payload as { data?: unknown }).data : payload;
-  const list = Array.isArray(source) ? source : [];
-  const first = list[0] as Record<string, unknown> | undefined;
+  const first = getPrivilegeTrackRecord(payload);
   const goods = (first?.relate_goods ?? first?.relateGoods ?? []) as unknown;
   if (!Array.isArray(goods)) return [];
   return goods
@@ -115,7 +177,18 @@ export const createResolver = (
       try {
         const privilegeRes = await getSongPrivilegeLite(track.hash, track.albumId);
         const relateGoods = parseRelateGoodsFromPrivilege(privilegeRes);
-        track.relateGoods = relateGoods;
+        const metadata = parseTrackMetadataFromPrivilege(privilegeRes);
+        Object.assign(track, metadata, { relateGoods });
+        if (
+          state.currentTrackSnapshot &&
+          String(state.currentTrackSnapshot.id) === String(track.id)
+        ) {
+          state.currentTrackSnapshot = {
+            ...state.currentTrackSnapshot,
+            ...metadata,
+            relateGoods,
+          };
+        }
         logger.debug('PlayerResolver', 'Preloaded privilege lite relateGoods', {
           track: summarizeSong(track),
           count: relateGoods.length,

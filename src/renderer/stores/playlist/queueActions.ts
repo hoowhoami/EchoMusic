@@ -2,6 +2,7 @@ import type { Song } from '@/models/song';
 import { isSameSong } from '@/utils/song';
 import {
   DEFAULT_PLAYBACK_QUEUE_ID,
+  LISTEN_TOGETHER_QUEUE_ID,
   MANUAL_PLAYBACK_QUEUE_ID,
   MAX_PLAYBACK_QUEUE_COUNT,
   PERSONAL_FM_QUEUE_ID,
@@ -13,6 +14,7 @@ type QueueStoreShape = {
   activeQueueId: string;
   defaultList: Song[];
   ensurePlaybackQueue: (queueId?: string, options?: SetPlaybackQueueOptions) => PlaybackQueueState;
+  getPreferredManualQueueOptions: (options?: SetPlaybackQueueOptions) => SetPlaybackQueueOptions;
   hydratePlaybackQueues: () => void;
   lastNonFmQueueId: string;
   markLastNonFmQueue: (queueId: string | number | null | undefined) => void;
@@ -38,6 +40,11 @@ type QueueStoreShape = {
   trimPlaybackQueues: (limit?: number) => void;
 };
 
+const isTransientPlaybackQueue = (queueId: string | number | null | undefined) => {
+  const resolvedId = String(queueId ?? '');
+  return resolvedId === PERSONAL_FM_QUEUE_ID || resolvedId === LISTEN_TOGETHER_QUEUE_ID;
+};
+
 export const queueActions = {
   getPreferredManualQueueOptions(this: QueueStoreShape, options: SetPlaybackQueueOptions = {}) {
     if (options.queueId) return { ...options };
@@ -47,14 +54,14 @@ export const queueActions = {
       this.playbackQueues.find((queue) => queue.id === this.activeQueueId) ??
       null;
 
-    if (activeQueue && activeQueue.id !== PERSONAL_FM_QUEUE_ID) {
+    if (activeQueue && !isTransientPlaybackQueue(activeQueue.id)) {
       this.markLastNonFmQueue(activeQueue.id);
       return { ...options, queueId: activeQueue.id };
     }
 
     const fallbackQueue =
       this.playbackQueues.find((queue) => queue.id === this.lastNonFmQueueId) ??
-      this.playbackQueues.find((queue) => queue.id !== PERSONAL_FM_QUEUE_ID) ??
+      this.playbackQueues.find((queue) => !isTransientPlaybackQueue(queue.id)) ??
       null;
 
     if (!fallbackQueue) {
@@ -320,24 +327,30 @@ export const queueActions = {
   ) {
     if (songs.length === 0) return 0;
     const previousActiveQueueId = this.activeQueueId;
-    const targetQueue = this.ensurePlaybackQueue(options.queueId, options);
+    const resolvedOptions =
+      !options.queueId && isTransientPlaybackQueue(previousActiveQueueId)
+        ? this.getPreferredManualQueueOptions(options)
+        : options;
+    const targetQueue = this.ensurePlaybackQueue(resolvedOptions.queueId, resolvedOptions);
     const shouldActivate =
-      options.activate !== false &&
-      (options.activate === true ||
-        previousActiveQueueId !== PERSONAL_FM_QUEUE_ID ||
-        targetQueue.id === PERSONAL_FM_QUEUE_ID);
+      resolvedOptions.activate !== false &&
+      (resolvedOptions.activate === true ||
+        !isTransientPlaybackQueue(previousActiveQueueId) ||
+        isTransientPlaybackQueue(targetQueue.id));
     if (targetQueue.songs.length === 0 && (targetQueue.songCount ?? 0) > 0) {
       const incoming = songs.filter(
         (song, index, list) => list.findIndex((item) => isSameSong(item, song)) === index,
       );
       if (incoming.length === 0) return 0;
       targetQueue.songCount = Math.max(0, targetQueue.songCount ?? 0) + incoming.length;
-      targetQueue.title = options.title?.trim() || targetQueue.title || '播放列表';
-      targetQueue.subtitle = options.subtitle?.trim() ?? targetQueue.subtitle;
-      targetQueue.coverUrl = options.coverUrl?.trim() ?? targetQueue.coverUrl;
-      targetQueue.type = options.type ?? targetQueue.type;
-      targetQueue.dynamic = options.dynamic ?? targetQueue.dynamic;
-      targetQueue.meta = options.meta ? { ...targetQueue.meta, ...options.meta } : targetQueue.meta;
+      targetQueue.title = resolvedOptions.title?.trim() || targetQueue.title || '播放列表';
+      targetQueue.subtitle = resolvedOptions.subtitle?.trim() ?? targetQueue.subtitle;
+      targetQueue.coverUrl = resolvedOptions.coverUrl?.trim() ?? targetQueue.coverUrl;
+      targetQueue.type = resolvedOptions.type ?? targetQueue.type;
+      targetQueue.dynamic = resolvedOptions.dynamic ?? targetQueue.dynamic;
+      targetQueue.meta = resolvedOptions.meta
+        ? { ...targetQueue.meta, ...resolvedOptions.meta }
+        : targetQueue.meta;
       targetQueue.updatedAt = Date.now();
       if (shouldActivate) {
         this.activeQueueId = targetQueue.id;
@@ -369,12 +382,14 @@ export const queueActions = {
     if (addedCount === 0) return 0;
     targetQueue.songs = toRawSongList(nextList);
     targetQueue.songCount = nextList.length;
-    targetQueue.title = options.title?.trim() || targetQueue.title || '播放列表';
-    targetQueue.subtitle = options.subtitle?.trim() ?? targetQueue.subtitle;
-    targetQueue.coverUrl = options.coverUrl?.trim() ?? targetQueue.coverUrl;
-    targetQueue.type = options.type ?? targetQueue.type;
-    targetQueue.dynamic = options.dynamic ?? targetQueue.dynamic;
-    targetQueue.meta = options.meta ? { ...targetQueue.meta, ...options.meta } : targetQueue.meta;
+    targetQueue.title = resolvedOptions.title?.trim() || targetQueue.title || '播放列表';
+    targetQueue.subtitle = resolvedOptions.subtitle?.trim() ?? targetQueue.subtitle;
+    targetQueue.coverUrl = resolvedOptions.coverUrl?.trim() ?? targetQueue.coverUrl;
+    targetQueue.type = resolvedOptions.type ?? targetQueue.type;
+    targetQueue.dynamic = resolvedOptions.dynamic ?? targetQueue.dynamic;
+    targetQueue.meta = resolvedOptions.meta
+      ? { ...targetQueue.meta, ...resolvedOptions.meta }
+      : targetQueue.meta;
     targetQueue.updatedAt = Date.now();
     if (shouldActivate) {
       this.activeQueueId = targetQueue.id;
@@ -404,7 +419,7 @@ export const queueActions = {
       this.activeQueueId = nextQueues[0]?.id ?? DEFAULT_PLAYBACK_QUEUE_ID;
     }
     if (this.lastNonFmQueueId === targetId) {
-      const fallbackQueue = nextQueues.find((queue) => queue.id !== PERSONAL_FM_QUEUE_ID);
+      const fallbackQueue = nextQueues.find((queue) => !isTransientPlaybackQueue(queue.id));
       this.lastNonFmQueueId = fallbackQueue?.id ?? DEFAULT_PLAYBACK_QUEUE_ID;
     }
     this.syncLegacyPlaybackState();

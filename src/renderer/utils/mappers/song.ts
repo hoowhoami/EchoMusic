@@ -247,6 +247,7 @@ export const mapPlaylistSong = (json: unknown): Song => {
       record.filename,
       record.name,
       record.audio_name,
+      record.ori_audio_name,
       audioInfo.songname,
       audioInfo.filename,
       audioInfo.name,
@@ -291,7 +292,15 @@ export const mapPlaylistSong = (json: unknown): Song => {
   );
 
   const durationRaw = parseIntSafe(
-    pickValue(record.timelen, audioInfo.duration_128, audioInfo.duration, 0),
+    pickValue(
+      record.timelen,
+      record.timelength,
+      audioInfo.timelength_128,
+      audioInfo.timelength,
+      audioInfo.duration_128,
+      audioInfo.duration,
+      0,
+    ),
   );
 
   const relateGoods = buildRelateGoods(record, audioInfo);
@@ -345,7 +354,10 @@ export const mapPlaylistSong = (json: unknown): Song => {
     cover,
     audioUrl: '',
     hash,
-    mvHash: readString(pickValue(record.video_hash, record.mvhash, ''), ''),
+    mvHash: readString(
+      pickValue(record.video_hash, record.mvhash, record.sd_hash, record.qhd_hash, ''),
+      '',
+    ),
     mixSongId: parseIntSafe(
       pickValue(record.mixsongid, record.album_audio_id, record.audio_id, audioInfo.audio_id, 0),
     ),

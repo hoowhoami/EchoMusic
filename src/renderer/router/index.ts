@@ -51,6 +51,12 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/views/Explore.vue'),
       },
       {
+        path: 'listen-together',
+        name: 'listen-together',
+        component: () => import('@/views/ListenTogether.vue'),
+        meta: { title: '一起听' },
+      },
+      {
         path: 'search',
         name: 'search',
         component: () => import('@/views/Search.vue'),

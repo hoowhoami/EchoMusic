@@ -722,6 +722,7 @@ export const createPlaybackManager = (
     playlistStore.syncQueuedNextTrackIds();
 
     const lyricHash = String(track.hash ?? track.id ?? '');
+    const initialLyricAlbumAudioId = String(track.albumAudioId ?? track.mixSongId ?? '');
     if (track.lyric) {
       lyricStore.setLyric(track.lyric, lyricHash);
     } else if (lyricHash) {
@@ -769,6 +770,26 @@ export const createPlaybackManager = (
       return;
     }
     if (requestSeq !== state.playbackRequestSeq) return;
+
+    const resolvedLyricAlbumAudioId = String(track.albumAudioId ?? track.mixSongId ?? '');
+    if (lyricHash && resolvedLyricAlbumAudioId !== initialLyricAlbumAudioId) {
+      void lyricStore.fetchLyrics(lyricHash, {
+        force: true,
+        duration: track.duration ? track.duration * 1000 : 0,
+        albumAudioId: track.albumAudioId ?? track.mixSongId,
+        track,
+      });
+    }
+
+    // privilege/lite 比 /audio 多返回封面和标准 album_audio_id。
+    // 音源解析完成后刷新一次媒体元数据，播放器封面无需等到下次切歌。
+    const resolvedMediaMeta = buildMediaMeta(track);
+    if (resolvedMediaMeta) {
+      engine.updateMediaMetadata({
+        ...resolvedMediaMeta,
+        durationMs: (track.duration || 0) * 1000,
+      });
+    }
 
     if (!resolved.url) {
       state.lastError = 'audio-url-unavailable';

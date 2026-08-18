@@ -43,8 +43,11 @@ export interface Song {
   cover?: string;
   audioUrl: string;
   hash: string;
+  /** 房间歌单用于翻页和同步定位的原始版权 hash。 */
+  originalHash?: string;
   mvHash?: string;
   albumAudioId?: string | number;
+  originalAlbumAudioId?: string | number;
   mixSongId: string | number;
   fileId?: string | number;
   cloudFileId?: string | number;
