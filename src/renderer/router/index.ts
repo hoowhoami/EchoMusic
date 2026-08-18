@@ -53,7 +53,7 @@ const routes: RouteRecordRaw[] = [
       {
         path: 'listen-together',
         name: 'listen-together',
-        component: () => import('@/views/ListenTogether.vue'),
+        component: () => import('@/views/listenTogether/index.vue'),
         meta: { title: '一起听' },
       },
       {
