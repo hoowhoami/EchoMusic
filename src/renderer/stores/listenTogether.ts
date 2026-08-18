@@ -184,7 +184,7 @@ export const useListenTogetherStore = defineStore(
     let fastPollInFlight = false;
     let slowPollInFlight = false;
     let applyingPlayback = false;
-    let roomSongsLoadInFlight: Promise<void> | null = null;
+    let roomSongsLoadInFlight: { roomKey: string; promise: Promise<void> } | null = null;
     let roomSongsRetryAfter = 0;
     let heartbeatFailureCount = 0;
     let previousPlaybackQueueId: string | null = null;
@@ -193,6 +193,9 @@ export const useListenTogetherStore = defineStore(
     let ownerControlGraceUntil = 0;
     let ownerControlRevision = 0;
     let lastForcedLyricMetadataKey = '';
+    let suppressAppliedPlayerEventsUntil = 0;
+    let lastAppliedRemoteSeekKey = '';
+    let lastAppliedRemoteSeekAt = 0;
     const metadataLookupAttempted = new Set<string>();
 
     const joined = computed(() => phase.value === 'joined' && Boolean(activeRoomId.value));
@@ -652,6 +655,11 @@ export const useListenTogetherStore = defineStore(
       requestingSongHash.value = '';
       metadataLookupAttempted.clear();
       lastForcedLyricMetadataKey = '';
+      suppressAppliedPlayerEventsUntil = 0;
+      lastAppliedRemoteSeekKey = '';
+      lastAppliedRemoteSeekAt = 0;
+      // 请求本身无法取消，但不能让离开的房间占用下一次入房的首次歌单加载。
+      roomSongsLoadInFlight = null;
       roomSongsRetryAfter = 0;
       phase.value = 'idle';
     };
@@ -1050,8 +1058,7 @@ export const useListenTogetherStore = defineStore(
         .slice(-200);
     };
 
-    const loadRoomSongsInternal = async () => {
-      const roomId = activeRoomId.value;
+    const loadRoomSongsInternal = async (roomId: string, roomType: ListenTogetherRoomType) => {
       if (!roomId || Date.now() < roomSongsRetryAfter) return;
       const fallbackAudios = roomSongs.value.length
         ? roomSongs.value
@@ -1087,7 +1094,8 @@ export const useListenTogetherStore = defineStore(
         }
       };
       try {
-        const firstPayload = await getListenTogetherPlaylist(roomId, activeRoomType.value);
+        const firstPayload = await getListenTogetherPlaylist(roomId, roomType);
+        if (activeRoomId.value !== roomId || activeRoomType.value !== roomType) return;
         const previousListVersion = roomListVersion.value;
         const nextListVersion = readNestedString(firstPayload, 'list_version');
         const quantity = readNestedNumber(firstPayload, 'quantity');
@@ -1100,17 +1108,13 @@ export const useListenTogetherStore = defineStore(
         // 上游经常不返回 quantity；版本未变且本地已有队列时也应直接复用，
         // 否则每次慢轮询都会重新遍历整个循环歌单。
         const hasCompleteCurrentList =
-          activeRoomType.value === 0 &&
+          roomType === 0 &&
           Boolean(nextListVersion) &&
           nextListVersion === previousListVersion &&
           roomSongs.value.length > 0 &&
           (!quantity || roomSongs.value.length >= quantity);
 
-        if (
-          activeRoomType.value === 0 &&
-          !hasCompleteCurrentList &&
-          songs.length >= ROOM_PLAYLIST_PAGE_SIZE
-        ) {
+        if (roomType === 0 && !hasCompleteCurrentList && songs.length >= ROOM_PLAYLIST_PAGE_SIZE) {
           const seen = new Set(songs.map((song) => song.hash.toLowerCase()));
           const seenCursors = new Set<string>();
           let cursor = songs.at(-1);
@@ -1129,7 +1133,7 @@ export const useListenTogetherStore = defineStore(
             seenCursors.add(cursorKey);
             let payload: unknown;
             try {
-              payload = await getListenTogetherPlaylist(roomId, activeRoomType.value, cursorAudio);
+              payload = await getListenTogetherPlaylist(roomId, roomType, cursorAudio);
             } catch (error) {
               // music_fetch_list 会用 30009 表示当前游标已不可继续，APP 到这里即停止翻页。
               // 已拉取的页面仍然有效，不能清空版本后从头无限重试。
@@ -1163,11 +1167,17 @@ export const useListenTogetherStore = defineStore(
         }
 
         if (songs.length) {
+          // fetch_list 返回后先发布真实房间列表；封面、专辑等元数据随后补全。
+          // 之前这里等待整批 /audio 请求完成，页面会长时间停留在详情/本地回退数据。
+          if (activeRoomId.value !== roomId || activeRoomType.value !== roomType) return;
+          roomSongs.value = mergeRoomSongList(songs);
+          syncListenTogetherQueue();
           const enrichedSongs = await enrichSongs(songs);
-          if (activeRoomId.value !== roomId) return;
+          if (activeRoomId.value !== roomId || activeRoomType.value !== roomType) return;
           roomSongs.value = mergeRoomSongList(enrichedSongs);
         }
       } catch (error) {
+        if (activeRoomId.value !== roomId || activeRoomType.value !== roomType) return;
         if (error instanceof ListenTogetherApiError && error.code === 30009) {
           roomSongsRetryAfter = Date.now() + 60_000;
           logger.warn('ListenTogether', 'Room playlist temporarily rejected, backing off', error);
@@ -1179,7 +1189,7 @@ export const useListenTogetherStore = defineStore(
         const fallbackSongs = mapListenTogetherSongList(null, fallbackAudios);
         if (!fallbackSongs.length) throw error;
         const enrichedSongs = await enrichSongs(fallbackSongs);
-        if (activeRoomId.value !== roomId) return;
+        if (activeRoomId.value !== roomId || activeRoomType.value !== roomType) return;
         roomSongs.value = mergeRoomSongList(enrichedSongs);
         logger.warn('ListenTogether', 'Using room detail audio fallback', error);
       }
@@ -1187,18 +1197,27 @@ export const useListenTogetherStore = defineStore(
     };
 
     const loadRoomSongs = async () => {
-      if (roomSongsLoadInFlight) return roomSongsLoadInFlight;
-      roomSongsLoadInFlight = loadRoomSongsInternal();
+      const roomId = activeRoomId.value;
+      const roomType = activeRoomType.value;
+      if (!roomId) return;
+      const roomKey = `${roomType}:${roomId}`;
+      if (roomSongsLoadInFlight?.roomKey === roomKey) return roomSongsLoadInFlight.promise;
+      const request = {
+        roomKey,
+        promise: loadRoomSongsInternal(roomId, roomType),
+      };
+      roomSongsLoadInFlight = request;
       try {
-        await roomSongsLoadInFlight;
+        await request.promise;
       } finally {
-        roomSongsLoadInFlight = null;
+        if (roomSongsLoadInFlight === request) roomSongsLoadInFlight = null;
       }
     };
 
     const refreshRoomSongs = async () => {
-      if (roomSongsLoadInFlight) {
-        await roomSongsLoadInFlight;
+      const roomKey = `${activeRoomType.value}:${activeRoomId.value}`;
+      if (roomSongsLoadInFlight?.roomKey === roomKey) {
+        await roomSongsLoadInFlight.promise;
         // 已有请求就是最新一轮刷新，不再紧接着重复请求一次。
         return;
       }
@@ -1345,6 +1364,30 @@ export const useListenTogetherStore = defineStore(
 
       applyingPlayback = true;
       try {
+        const suppressAppliedPlayerEvents = () => {
+          // playerStore 的生命周期事件由 Vue watcher 延迟派发，届时 applyingPlayback
+          // 可能已经复位。单独标记远端产生的事件，避免被当成本地控制再次回正/上报。
+          suppressAppliedPlayerEventsUntil = Date.now() + 1_000;
+        };
+        const seekToRemotePosition = (position: number) => {
+          const seekKey = [
+            activeRoomId.value,
+            remote.hash.toLowerCase(),
+            remote.updatedAt,
+            position.toFixed(3),
+          ].join(':');
+          const now = Date.now();
+          // 同一份远端快照可能被 seek 事件回调再次应用；原生播放器尚未回报新进度时
+          // drift 仍会很大，必须在调用 seek 之前登记，保证这条命令是幂等的。
+          if (seekKey === lastAppliedRemoteSeekKey && now - lastAppliedRemoteSeekAt < 2_000) {
+            return;
+          }
+          lastAppliedRemoteSeekKey = seekKey;
+          lastAppliedRemoteSeekAt = now;
+          suppressAppliedPlayerEvents();
+          playerStore.seek(position);
+        };
+
         syncListenTogetherQueue();
         playlistStore.updateQueueCurrentTrack(song.id, LISTEN_TOGETHER_QUEUE_ID);
         playerStore.currentSourceQueueId = LISTEN_TOGETHER_QUEUE_ID;
@@ -1363,11 +1406,12 @@ export const useListenTogetherStore = defineStore(
             : 0,
         );
         if (trackChanged) {
+          suppressAppliedPlayerEvents();
           await playerStore.playTrack(song.id, roomSongs.value, {
             autoPlay: remote.playing,
             sourceQueueId: LISTEN_TOGETHER_QUEUE_ID,
           });
-          if (expectedPosition > 1) playerStore.seek(expectedPosition);
+          if (expectedPosition > 1) seekToRemotePosition(expectedPosition);
           return;
         }
 
@@ -1376,9 +1420,10 @@ export const useListenTogetherStore = defineStore(
         // 的 seek 事件，访客恢复逻辑收到该事件后再次 force seek，形成响应式死循环。
         const driftTolerance = force ? 0.75 : 3;
         if (drift > driftTolerance && !playerStore.isLoading && expectedPosition > 0) {
-          playerStore.seek(expectedPosition);
+          seekToRemotePosition(expectedPosition);
         }
         if (!playerStore.isLoading && remote.playing !== playerStore.isPlaying) {
+          suppressAppliedPlayerEvents();
           await playerStore.togglePlay();
         }
       } finally {
@@ -1863,6 +1908,7 @@ export const useListenTogetherStore = defineStore(
     });
     playerStore.onPlayerEvent('trackchange', (payload) => {
       if (!joined.value || activeRoomType.value !== 0 || applyingPlayback) return;
+      if (Date.now() < suppressAppliedPlayerEventsUntil) return;
       if (!isOwner.value) {
         restoreGuestPlayback();
         return;
@@ -1871,14 +1917,35 @@ export const useListenTogetherStore = defineStore(
       ownerAutoSwitchUntil = 0;
     });
     playerStore.onPlayerEvent('play', () => {
+      if (
+        !joined.value ||
+        activeRoomType.value !== 0 ||
+        applyingPlayback ||
+        Date.now() < suppressAppliedPlayerEventsUntil
+      )
+        return;
       if (!isOwner.value) restoreGuestPlayback();
       else publishOwnerPlayerOperation({ action: 3, playing: true });
     });
     playerStore.onPlayerEvent('pause', () => {
+      if (
+        !joined.value ||
+        activeRoomType.value !== 0 ||
+        applyingPlayback ||
+        Date.now() < suppressAppliedPlayerEventsUntil
+      )
+        return;
       if (!isOwner.value) restoreGuestPlayback();
       else publishOwnerPlayerOperation({ action: 3, playing: false });
     });
     playerStore.onPlayerEvent('seek', (payload) => {
+      if (
+        !joined.value ||
+        activeRoomType.value !== 0 ||
+        applyingPlayback ||
+        Date.now() < suppressAppliedPlayerEventsUntil
+      )
+        return;
       if (!isOwner.value) restoreGuestPlayback();
       else
         publishOwnerPlayerOperation({
