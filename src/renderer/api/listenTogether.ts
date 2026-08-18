@@ -295,6 +295,12 @@ export const getListenTogetherPlaylist = (
     audio: cursor,
   });
 
+// 概念版听众端不会翻完整房主歌单，而是直接取服务端维护的近期播放队列。
+export const getListenTogetherRecentPlaylist = (roomId: string) =>
+  callListenTogetherEndpoint(routes.music, 'recent_playlist', {
+    room_id: roomId,
+  });
+
 export const requestListenTogetherSong = (roomId: string, audio: ListenTogetherAudioRef) =>
   callListenTogetherEndpoint(routes.music, 'order_song', {
     room_id: roomId,

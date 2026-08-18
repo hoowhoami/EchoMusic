@@ -1387,9 +1387,11 @@ onMounted(() => {
                     你可以控制房间播放，操作会同步到其他设备和成员。
                   </template>
                   <template v-else-if="activeRoom?.roomType === 0">
-                    播放由房主控制，本地操作会自动恢复为房间进度。
+                    播放由房主控制；可仅在本机暂停，再次播放会追上房间进度。
                   </template>
-                  <template v-else>播放进度由自习室自动校准。</template>
+                  <template v-else>
+                    播放进度由自习室校准；可仅在本机暂停，再次播放会追上当前进度。
+                  </template>
                 </div>
               </div>
             </section>
