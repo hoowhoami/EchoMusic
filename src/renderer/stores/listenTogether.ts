@@ -14,6 +14,7 @@ import {
   getListenTogetherRoomState,
   getListenTogetherRooms,
   getListenTogetherSongOrders,
+  getListenTogetherStatus,
   heartbeatListenTogetherRoom,
   initializeListenTogetherMusicRoom,
   joinListenTogetherRoom,
@@ -760,6 +761,52 @@ export const useListenTogetherStore = defineStore(
       };
     };
 
+    const resolveCurrentMusicRoomSession = async () => {
+      const statusPayload = await getListenTogetherStatus(0);
+      const roomId = extractListenTogetherRoomId(statusPayload);
+      if (!roomId) return null;
+
+      const statusSaysOwner = readNestedFlag(statusPayload, 'is_owner');
+      const fallback = mapListenTogetherRoom(
+        {
+          room_id: roomId,
+          room_name: '当前众乐房',
+          room_type: 0,
+          userid: statusSaysOwner ? currentUserId.value : '',
+          nick_name: statusSaysOwner ? userStore.info?.nickname : '',
+          user_pic: statusSaysOwner ? userStore.info?.pic : '',
+        },
+        undefined,
+        0,
+      );
+      let room = fallback;
+      try {
+        const detailPayload = await getListenTogetherRoomDetail(roomId, 0);
+        room = mapListenTogetherRoom(
+          (detailPayload as { data?: unknown })?.data ?? detailPayload,
+          fallback,
+          0,
+        );
+      } catch (error) {
+        // get_status 是账号会话的权威来源。刚创建的房间详情可能短暂未就绪，
+        // 仍先用会话信息恢复入房，后续慢轮询会补齐详情。
+        logger.warn('ListenTogether', 'Failed to load current music room detail', error);
+      }
+
+      const isOwner =
+        statusSaysOwner ||
+        Boolean(currentUserId.value && String(room.ownerId) === String(currentUserId.value));
+      if (isOwner && !room.ownerId) {
+        room = {
+          ...room,
+          ownerId: currentUserId.value,
+          ownerName: userStore.info?.nickname || room.ownerName || '我',
+          ownerAvatarUrl: userStore.info?.pic || room.ownerAvatarUrl,
+        };
+      }
+      return { room, isOwner };
+    };
+
     const upsertOwnedRoom = (room: ListenTogetherRoom) => {
       const normalized = normalizeOwnedRoom(room);
       const key = `${normalized.ownerId}:${normalized.roomType}:${normalized.id}`;
@@ -786,7 +833,14 @@ export const useListenTogetherStore = defineStore(
       loadingOwnedRooms.value = true;
       try {
         const userId = currentUserId.value;
-        const historyPayload = await getListenTogetherMusicRoomHistory();
+        const [historyResult, currentSessionResult] = await Promise.allSettled([
+          getListenTogetherMusicRoomHistory(),
+          resolveCurrentMusicRoomSession(),
+        ]);
+        if (historyResult.status === 'rejected' && currentSessionResult.status === 'rejected') {
+          throw historyResult.reason;
+        }
+        const historyPayload = historyResult.status === 'fulfilled' ? historyResult.value : null;
         const historyRooms = Array.from(
           new Map(
             mapListenTogetherRoomList(historyPayload, 0)
@@ -805,7 +859,7 @@ export const useListenTogetherStore = defineStore(
             );
           }),
         );
-        const remoteRooms = historyRooms
+        const historyOwnedRooms = historyRooms
           .flatMap((historyRoom, index) => {
             const result = detailResults[index];
             if (result?.status === 'fulfilled') {
@@ -823,6 +877,16 @@ export const useListenTogetherStore = defineStore(
           })
           .filter((room) => room.ownerId === userId)
           .map(normalizeOwnedRoom);
+        const currentSession =
+          currentSessionResult.status === 'fulfilled' ? currentSessionResult.value : null;
+        const remoteRooms = Array.from(
+          new Map(
+            [
+              ...(currentSession?.isOwner ? [normalizeOwnedRoom(currentSession.room)] : []),
+              ...historyOwnedRooms,
+            ].map((room) => [room.id, room]),
+          ).values(),
+        );
 
         // 刷新“我的房间”时远端结果是权威快照。本地索引只额外保留当前仍在进行的会话，
         // 不再把已经从远端消失的历史房间重新回填到页面。
@@ -1563,6 +1627,17 @@ export const useListenTogetherStore = defineStore(
       }
     };
 
+    const recoverCurrentMusicRoomSession = async () => {
+      const currentSession = await resolveCurrentMusicRoomSession();
+      if (!currentSession) return '';
+      const { room, isOwner: sessionIsOwner } = currentSession;
+      forgetDissolvedRoom(room);
+      if (sessionIsOwner) upsertOwnedRoom(room);
+      await hydrateSession(room.id, room);
+      toastStore.info(sessionIsOwner ? `已恢复「${room.name}」` : `已回到「${room.name}」`);
+      return room.id;
+    };
+
     const joinRoom = async (room: ListenTogetherRoom) => {
       requireLogin();
       if (room.roomType !== 0) throw new ListenTogetherApiError('自习室已下线，目前仅支持众乐房');
@@ -1646,6 +1721,14 @@ export const useListenTogetherStore = defineStore(
         notice: input.notice.trim(),
       };
       try {
+        // 与概念版一致：创建前先用空 groupid 恢复账号的 biz=1009 会话。
+        // 这样应用重启后不会因本地丢失 roomId 而反复触发 20006。
+        const recoveredRoomId = await recoverCurrentMusicRoomSession().catch((error) => {
+          logger.warn('ListenTogether', 'Music room preflight recovery failed', error);
+          return '';
+        });
+        if (recoveredRoomId) return recoveredRoomId;
+
         const createPayload = await createListenTogetherGroup(normalizedInput);
         createdRoomId = extractListenTogetherRoomId(createPayload);
         if (!createdRoomId) throw new ListenTogetherApiError('服务端未返回新房间 ID');
@@ -1681,6 +1764,15 @@ export const useListenTogetherStore = defineStore(
         toastStore.success(`「${normalizedInput.name}」已创建`);
         return createdRoomId;
       } catch (error) {
+        if (!createdRoomId && error instanceof ListenTogetherApiError && error.code === 20006) {
+          // 预检与 create 之间仍可能有其他设备建立会话，收到 20006 后
+          // 再查一次服务端状态，能定位时直接恢复而不显示假失败。
+          const recoveredRoomId = await recoverCurrentMusicRoomSession().catch((recoveryError) => {
+            logger.warn('ListenTogether', 'Music room conflict recovery failed', recoveryError);
+            return '';
+          });
+          if (recoveredRoomId) return recoveredRoomId;
+        }
         if (createdRoomId) {
           await dismissListenTogetherRoom(createdRoomId, normalizedInput.roomType).catch(
             (cleanupError) => {

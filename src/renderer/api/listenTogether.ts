@@ -206,8 +206,9 @@ export const heartbeatListenTogetherRoom = (roomId: string, roomType: ListenToge
     biz: getListenTogetherRoomBiz(roomType),
   });
 
-// get_status 只能校验一个已知 groupid，不能用来发现当前账号的众乐房。
-export const getListenTogetherStatus = (roomType: ListenTogetherRoomType, roomId: string) =>
+// 概念版进入众乐房创建流程前会用空 groupid 查询账号当前会话。
+// 已知 roomId 时同一接口也可用来校验指定房间的会话状态。
+export const getListenTogetherStatus = (roomType: ListenTogetherRoomType, roomId = '') =>
   callListenTogetherEndpoint(routes.room, 'status', {
     room_id: roomId,
     biz: getListenTogetherRoomBiz(roomType),
