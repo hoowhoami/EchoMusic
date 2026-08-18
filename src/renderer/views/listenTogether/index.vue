@@ -1357,7 +1357,10 @@ onMounted(() => {
           </div>
         </header>
 
-        <div class="listen-session-grid" :class="{ 'is-loading': loadingRoom }">
+        <div
+          class="listen-session-grid"
+          :class="{ 'is-loading': loadingRoom && roomSongs.length === 0 }"
+        >
           <div class="listen-session-main">
             <section class="listen-now-playing">
               <div class="listen-now-cover-wrap">

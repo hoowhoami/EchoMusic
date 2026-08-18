@@ -190,6 +190,7 @@ export const useListenTogetherStore = defineStore(
     let slowPollInFlight = false;
     let applyingPlayback = false;
     let roomSongsLoadInFlight: { roomKey: string; promise: Promise<void> } | null = null;
+    let roomSongsLoadRevision = 0;
     let roomSongsRetryAfter = 0;
     let heartbeatFailureCount = 0;
     let previousPlaybackQueueId: string | null = null;
@@ -668,6 +669,7 @@ export const useListenTogetherStore = defineStore(
       lastMissingRemoteSongKey = '';
       guestLocallyPaused = false;
       // 请求本身无法取消，但不能让离开的房间占用下一次入房的首次歌单加载。
+      roomSongsLoadRevision += 1;
       roomSongsLoadInFlight = null;
       roomSongsRetryAfter = 0;
       phase.value = 'idle';
@@ -1085,6 +1087,11 @@ export const useListenTogetherStore = defineStore(
       force = false,
     ) => {
       if (!roomId || Date.now() < roomSongsRetryAfter) return;
+      const loadRevision = ++roomSongsLoadRevision;
+      const isCurrentLoad = () =>
+        activeRoomId.value === roomId &&
+        activeRoomType.value === roomType &&
+        roomSongsLoadRevision === loadRevision;
       const fallbackAudios = roomSongs.value.length
         ? roomSongs.value
         : (activeRoom.value?.audios ?? []);
@@ -1118,12 +1125,28 @@ export const useListenTogetherStore = defineStore(
           return songs;
         }
       };
+      const publishSongs = (songs: Song[]) => {
+        if (!songs.length || !isCurrentLoad()) return false;
+        roomSongs.value = mergeRoomSongList(songs);
+        syncListenTogetherQueue();
+        return true;
+      };
+      const enrichSongsInBackground = (songs: Song[]) => {
+        const snapshot = songs.slice();
+        void enrichSongs(snapshot)
+          .then((enrichedSongs) => {
+            publishSongs(enrichedSongs);
+          })
+          .catch((error) => {
+            logger.warn('ListenTogether', 'Background room song enrichment failed', error);
+          });
+      };
       try {
         const useMusicRoomRecentList = roomType === 0 && !isOwner.value;
         const firstPayload = useMusicRoomRecentList
           ? await getListenTogetherRecentPlaylist(roomId)
           : await getListenTogetherPlaylist(roomId, roomType);
-        if (activeRoomId.value !== roomId || activeRoomType.value !== roomType) return;
+        if (!isCurrentLoad()) return;
         const previousListVersion = roomListVersion.value;
         const nextListVersion = readNestedString(firstPayload, 'list_version');
         const quantity = readNestedNumber(firstPayload, 'quantity');
@@ -1142,6 +1165,14 @@ export const useListenTogetherStore = defineStore(
           nextListVersion === previousListVersion &&
           roomSongs.value.length > 0 &&
           (!quantity || roomSongs.value.length === quantity);
+
+        if (hasCompleteCurrentList) {
+          songs = roomSongs.value;
+        } else {
+          // 首个权威响应就是首屏可播放数据。不能等游标分页和 /audio 元数据补全
+          // 全部结束后才发布，否则入房后会先看到空列表，播放器也无法立即起播。
+          publishSongs(songs);
+        }
 
         if (
           roomType === 0 &&
@@ -1186,6 +1217,7 @@ export const useListenTogetherStore = defineStore(
               songs.push(song);
               appended += 1;
             });
+            if (appended > 0) publishSongs(songs);
             const lastSong = pageSongs.at(-1);
             if (
               !lastSong ||
@@ -1196,8 +1228,6 @@ export const useListenTogetherStore = defineStore(
               break;
             cursor = lastSong;
           }
-        } else if (hasCompleteCurrentList) {
-          songs = roomSongs.value;
         }
 
         // quantity 是服务端歌单的唯一权威数量。游标边界偶尔可能返回重叠项，
@@ -1207,17 +1237,13 @@ export const useListenTogetherStore = defineStore(
         }
 
         if (songs.length) {
-          // fetch_list 返回后先发布真实房间列表；封面、专辑等元数据随后补全。
-          // 之前这里等待整批 /audio 请求完成，页面会长时间停留在详情/本地回退数据。
-          if (activeRoomId.value !== roomId || activeRoomType.value !== roomType) return;
-          roomSongs.value = mergeRoomSongList(songs);
-          syncListenTogetherQueue();
-          const enrichedSongs = await enrichSongs(songs);
-          if (activeRoomId.value !== roomId || activeRoomType.value !== roomType) return;
-          roomSongs.value = mergeRoomSongList(enrichedSongs);
+          publishSongs(songs);
+          // 封面、专辑、歌词定位所需的元数据只增强列表，不决定列表是否可见。
+          // 用加载修订号隔离后台结果，避免离房或下一轮刷新后旧请求覆盖新队列。
+          enrichSongsInBackground(songs);
         }
       } catch (error) {
-        if (activeRoomId.value !== roomId || activeRoomType.value !== roomType) return;
+        if (!isCurrentLoad()) return;
         if (error instanceof ListenTogetherApiError && error.code === 30009) {
           roomSongsRetryAfter = Date.now() + 60_000;
           logger.warn('ListenTogether', 'Room playlist temporarily rejected, backing off', error);
@@ -1228,12 +1254,10 @@ export const useListenTogetherStore = defineStore(
         }
         const fallbackSongs = mapListenTogetherSongList(null, fallbackAudios);
         if (!fallbackSongs.length) throw error;
-        const enrichedSongs = await enrichSongs(fallbackSongs);
-        if (activeRoomId.value !== roomId || activeRoomType.value !== roomType) return;
-        roomSongs.value = mergeRoomSongList(enrichedSongs);
+        publishSongs(fallbackSongs);
+        enrichSongsInBackground(fallbackSongs);
         logger.warn('ListenTogether', 'Using room detail audio fallback', error);
       }
-      syncListenTogetherQueue();
     };
 
     const loadRoomSongs = async (force = false) => {
@@ -1450,10 +1474,23 @@ export const useListenTogetherStore = defineStore(
           return;
         }
 
-        const drift = Math.abs(Number(playerStore.currentTime || 0) - expectedPosition);
+        const now = Date.now();
+        const localPositionUpdatedAt = Number(playerStore.currentTimeUpdatedAt || now);
+        // 原生 seek 后的首个 time-update 可能晚于下一轮房间同步。用本地播放时钟
+        // 对最近位置做短时投影，避免服务端每增加 5 秒就再次 seek，导致解码器反复重启。
+        const localClockProjection =
+          shouldPlayLocally && playerStore.isPlaying
+            ? Math.min(
+                Math.max(0, (now - localPositionUpdatedAt) / 1000),
+                FAST_POLL_INTERVAL / 1000 + 1,
+              )
+            : 0;
+        const projectedLocalPosition = Number(playerStore.currentTime || 0) + localClockProjection;
+        const drift = Math.abs(projectedLocalPosition - expectedPosition);
         // force 表示使用更严格的容差，而不是无条件 seek。无条件 seek 会触发播放器
         // 的 seek 事件，访客恢复逻辑收到该事件后再次 force seek，形成响应式死循环。
-        const driftTolerance = force ? 0.75 : 3;
+        // 正常播放允许一个轮询周期以上的抖动；暂停态仍按较小误差校准。
+        const driftTolerance = force ? 0.75 : shouldPlayLocally ? 8 : 1.5;
         if (
           !preserveGuestPause &&
           drift > driftTolerance &&
@@ -1505,7 +1542,10 @@ export const useListenTogetherStore = defineStore(
         await loadRoomSongs(true);
         if (activeRoomId.value !== roomId) return;
       }
-      if (mapped) remotePlayback.value = mapped;
+      if (mapped && (!remotePlayback.value || mapped.updatedAt >= remotePlayback.value.updatedAt)) {
+        // 手动同步、定时轮询和入房初始化可能并发返回；旧快照不能覆盖新状态。
+        remotePlayback.value = mapped;
+      }
       if (!remotePlayback.value) return;
       await applyRemotePlayback(force);
     };
@@ -1575,18 +1615,15 @@ export const useListenTogetherStore = defineStore(
       try {
         // 播放状态和歌单是进入房间后的核心数据，立即并行请求；成员、聊天和点歌
         // 在后台补齐，不能阻塞播放器首次同步。
-        const coreHydration = Promise.allSettled([
-          loadActiveRoomDetail(),
-          loadRoomSongs(),
-          syncPlayback(true),
-        ]);
+        const coreHydration = Promise.allSettled([loadRoomSongs(), syncPlayback(true)]);
         const peripheralHydration = Promise.allSettled([
+          loadActiveRoomDetail(),
           loadMembers(),
           loadMessages(),
           loadSongOrders(),
         ]);
         const coreResults = await coreHydration;
-        const initialSyncResult = coreResults[2];
+        const initialSyncResult = coreResults[1];
         if (initialSyncResult?.status === 'rejected') {
           logger.warn('ListenTogether', 'Initial playback sync failed', initialSyncResult.reason);
         }

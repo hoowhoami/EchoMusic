@@ -886,6 +886,24 @@ export const mapListenTogetherRemotePlayback = (
   const state = readString(record, 'play_status', 'playstate', 'state', 'status').toLowerCase();
   const paused = state === 'pause' || state === 'paused' || state === '0';
   const pauseCode = readOptionalNumber(record, 'pause');
+  const receivedAt = Date.now();
+  const rawSnapshotTimestamp = readNumber(
+    record,
+    'timestamp',
+    'server_timestamp',
+    'server_time',
+    'update_time',
+  );
+  const normalizedSnapshotTimestamp =
+    rawSnapshotTimestamp > 0 && rawSnapshotTimestamp < 10_000_000_000
+      ? rawSnapshotTimestamp * 1000
+      : rawSnapshotTimestamp;
+  // 上游时间戳是房间进度快照的基准时间。只接受与本机相差不超过一分钟的值，
+  // 防止某些接口把歌曲发布时间等同名字段误识别成播放时钟。
+  const snapshotAt =
+    normalizedSnapshotTimestamp > 0 && Math.abs(receivedAt - normalizedSnapshotTimestamp) <= 60_000
+      ? normalizedSnapshotTimestamp
+      : receivedAt;
   return {
     hash,
     mixSongId: readString(record, 'mixsongid', 'mix_song_id', 'album_audio_id', 'audio_id'),
@@ -894,7 +912,7 @@ export const mapListenTogetherRemotePlayback = (
       pauseCode !== undefined
         ? pauseCode === 1
         : !paused && readBoolean(record, true, 'is_playing', 'isplay', 'playing'),
-    updatedAt: Date.now(),
+    updatedAt: snapshotAt,
   };
 };
 
