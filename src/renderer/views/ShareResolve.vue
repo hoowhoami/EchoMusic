@@ -5,6 +5,11 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { getAlbumDetail } from '@/api/album';
 import { getArtistDetail } from '@/api/artist';
+import {
+  getListenTogetherRoomDetail,
+  getListenTogetherRoomState,
+  ListenTogetherApiError,
+} from '@/api/listenTogether';
 import { getSongPrivilegeLite } from '@/api/music';
 import { getPlaylistDetail } from '@/api/playlist';
 import Button from '@/components/ui/Button.vue';
@@ -12,6 +17,7 @@ import { iconArrowLeft, iconHome, iconRefreshCw, iconShare, iconTriangleAlert } 
 import { extractFirstObject } from '@/utils/extractors';
 import { mapAlbumDetailMeta, mapArtistDetailMeta, mapPlaylistMeta } from '@/utils/mappers';
 import { isSongHashId, readShareDetailQuery } from '@/utils/share';
+import { mapListenTogetherRoom } from '@/utils/listenTogether';
 import { logger } from '@/utils/logger';
 import { getShareResourceLabel, type ShareResourceType } from '../../shared/share';
 import { isRecord } from '../../shared/object';
@@ -55,7 +61,11 @@ const readText = (value: unknown) => {
 };
 
 const isShareResourceType = (value: string): value is ShareResourceType =>
-  value === 'song' || value === 'playlist' || value === 'artist' || value === 'album';
+  value === 'song' ||
+  value === 'playlist' ||
+  value === 'artist' ||
+  value === 'album' ||
+  value === 'listen-together';
 
 const targetType = computed(() => {
   const value = readText(route.query.type);
@@ -280,6 +290,50 @@ const resolveAlbum = async (id: string) => {
   return true;
 };
 
+const readRoomState = (payload: unknown, depth = 0): number | undefined => {
+  if (depth > 6 || !isRecord(payload)) return undefined;
+  if ('room_state' in payload) {
+    const state = Number(payload.room_state);
+    return Number.isFinite(state) ? state : undefined;
+  }
+  for (const value of Object.values(payload)) {
+    const nested = readRoomState(value, depth + 1);
+    if (nested !== undefined) return nested;
+  }
+  return undefined;
+};
+
+const resolveListenTogether = async (id: string) => {
+  const query = detailQuery.value;
+  const roomType = query.roomType === '0' ? 0 : 1;
+  const [statePayload, detailPayload] = await Promise.all([
+    getListenTogetherRoomState(id, roomType),
+    getListenTogetherRoomDetail(id, roomType),
+  ]);
+  if (readRoomState(statePayload) !== 1) return false;
+
+  const room = mapListenTogetherRoom(
+    (detailPayload as { data?: unknown })?.data ?? detailPayload,
+    null,
+    roomType,
+  );
+  if (!room.id || room.closed) return false;
+  router.replace({
+    name: 'listen-together',
+    query: {
+      roomId: room.id,
+      roomType: String(roomType),
+      roomName: room.name || query.roomName || targetTitle.value || '一起听房间',
+    },
+  });
+  return true;
+};
+
+const isMissingListenTogetherRoom = (error: unknown) =>
+  error instanceof ListenTogetherApiError &&
+  (error.code === 20005 ||
+    (error.code === 20002 && /(?:群组|房间)(?:不存在|已解散)/.test(error.message)));
+
 const fail = (nextReason: FailureReason) => {
   stopLoadingSpinner();
   reason.value = nextReason;
@@ -312,11 +366,17 @@ const resolveShare = async () => {
           ? await resolvePlaylist(id)
           : type === 'artist'
             ? await resolveArtist(id)
-            : await resolveAlbum(id);
+            : type === 'album'
+              ? await resolveAlbum(id)
+              : await resolveListenTogether(id);
     if (token !== resolveToken) return;
     if (!ok) fail('not-found');
   } catch (error) {
     if (token !== resolveToken) return;
+    if (type === 'listen-together' && isMissingListenTogetherRoom(error)) {
+      fail('not-found');
+      return;
+    }
     logger.warn('ShareResolve', 'Failed to resolve share target', { type, id, error });
     fail('load-failed');
   } finally {

@@ -36,7 +36,8 @@ const asRecord = (value: unknown): Record<string, unknown> | null =>
     : null;
 
 const errorMessageByCode = (code: number) => {
-  if (code === 51002 || code === 20002) return '请先登录后再使用一起听';
+  // 20002 在房间域表示“群组不存在”，并不是通用鉴权错误；鉴权失败使用 51002。
+  if (code === 51002) return '请先登录后再使用一起听';
   if (code === 20003) return '房间音乐配置不完整';
   if (code === 20006) return '账号当前已有未结束的众乐房会话';
   if (code === 55004) return '已达到房间创建上限，请先管理已有房间';

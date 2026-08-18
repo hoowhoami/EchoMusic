@@ -509,6 +509,7 @@ const openRoomPreview = async (room: ListenTogetherRoom) => {
   try {
     await listenStore.inspectRoom(room);
   } catch {
+    previewOpen.value = false;
     showStoreError('房间详情加载失败');
   }
 };
@@ -553,6 +554,7 @@ const joinPreviewRoom = async () => {
     sessionMinimized.value = false;
     previewOpen.value = false;
   } catch {
+    if (!previewRoom.value) previewOpen.value = false;
     showStoreError('加入房间失败');
   }
 };
@@ -1053,6 +1055,7 @@ watch(
     previewOpen.value = true;
     void loadRooms(true, roomType);
     void listenStore.inspectRoomById(roomId, roomType, roomName).catch(() => {
+      previewOpen.value = false;
       showStoreError('分享的房间暂时无法打开');
     });
   },

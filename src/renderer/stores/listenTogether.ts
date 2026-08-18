@@ -73,11 +73,14 @@ const HEARTBEAT_INTERVAL = 55_000;
 const ROOM_PAGE_SIZE = 20;
 const ROOM_PLAYLIST_PAGE_SIZE = 50;
 
+const isMissingRoomMessage = (message: string) => /(?:群组|房间)(?:不存在|已解散)/.test(message);
+
 const getErrorMessage = (error: unknown) => {
   if (error instanceof ListenTogetherApiError) {
-    if (error.code === 51002 || error.code === 20002) return '请先登录后再使用一起听';
+    if (error.code === 51002) return '请先登录后再使用一起听';
+    if (error.code === 20005 || (error.code === 20002 && isMissingRoomMessage(error.message)))
+      return '房间不存在或已解散，无法加入';
     if (error.code === 20003) return '房间频道或歌曲配置不完整';
-    if (error.code === 20005) return '房间已解散，无法再加入';
     if (error.code === 20006) return '账号当前已有未结束的众乐房会话';
     return error.message;
   }
@@ -85,7 +88,8 @@ const getErrorMessage = (error: unknown) => {
 };
 
 const isDissolvedRoomError = (error: unknown) =>
-  error instanceof ListenTogetherApiError && error.code === 20005;
+  error instanceof ListenTogetherApiError &&
+  (error.code === 20005 || (error.code === 20002 && isMissingRoomMessage(error.message)));
 
 const readNestedFlag = (payload: unknown, key: string, depth = 0): boolean => {
   if (depth > 6 || !payload || typeof payload !== 'object') return false;
@@ -938,7 +942,9 @@ export const useListenTogetherStore = defineStore(
 
     const inspectRoom = async (room: ListenTogetherRoom) => {
       loadingPreview.value = true;
-      previewRoom.value = room;
+      lastError.value = '';
+      // 分享参数和列表卡片只用于定位房间，不能在状态校验前当作有效详情展示。
+      previewRoom.value = null;
       previewMembers.value = [];
       try {
         const [stateResult, detailResult, memberResult] = await Promise.allSettled([
@@ -968,6 +974,8 @@ export const useListenTogetherStore = defineStore(
           closePreview();
           lastError.value = '房间已解散，已从列表移除';
           throw stateResult.reason;
+        } else {
+          throw stateResult.reason;
         }
         if (detailResult.status === 'fulfilled') {
           const detailRoom = mapListenTogetherRoom(
@@ -994,10 +1002,18 @@ export const useListenTogetherStore = defineStore(
           closePreview();
           lastError.value = '房间已解散，已从列表移除';
           throw detailResult.reason;
+        } else {
+          throw detailResult.reason;
         }
         if (memberResult.status === 'fulfilled') {
           previewMembers.value = memberResult.value;
         }
+        lastError.value = '';
+      } catch (error) {
+        previewRoom.value = null;
+        previewMembers.value = [];
+        if (!lastError.value) lastError.value = getErrorMessage(error);
+        throw error;
       } finally {
         loadingPreview.value = false;
       }
@@ -1597,7 +1613,7 @@ export const useListenTogetherStore = defineStore(
         restorePreviousPlaybackQueue();
         activeRoomId.value = '';
         activeRoom.value = null;
-        if (error instanceof ListenTogetherApiError && error.code === 20005) {
+        if (isDissolvedRoomError(error)) {
           rememberDissolvedRoom(room);
           rooms.value = rooms.value.filter(
             (item) => !(item.id === room.id && item.roomType === room.roomType),

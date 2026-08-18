@@ -151,19 +151,6 @@ export const buildShareResolveRoute = (target: ShareTarget) => {
   if (target.type === 'plugin' && !isPluginIdShareable(id)) return null;
 
   const title = cleanId(target.title);
-  if (target.type === 'listen-together') {
-    const targetQuery = normalizeShareQuery(target.query);
-    const roomType = targetQuery.roomType === '0' ? '0' : '1';
-    const roomName = cleanId(targetQuery.roomName) || title;
-    return {
-      name: 'listen-together',
-      query: {
-        roomId: id,
-        roomType,
-        ...(roomName ? { roomName } : {}),
-      },
-    };
-  }
   if (target.type === 'plugin') {
     const pluginQuery: Record<string, string> = {
       pluginId: id,
