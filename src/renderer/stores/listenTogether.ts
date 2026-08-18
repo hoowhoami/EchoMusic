@@ -3,12 +3,8 @@ import { defineStore } from 'pinia';
 import {
   ListenTogetherApiError,
   addListenTogetherMusicRoomSongs,
-  checkListenTogetherMinor,
-  configureListenTogetherRoom,
   createListenTogetherGroup,
-  deleteCreatedListenTogetherStudyRoom,
   dismissListenTogetherRoom,
-  getCreatedListenTogetherStudyRooms,
   getListenTogetherMusicRoomHistory,
   getListenTogetherMembers,
   getListenTogetherMessages,
@@ -24,7 +20,6 @@ import {
   leaveListenTogetherRoom,
   requestListenTogetherSong,
   removeListenTogetherSongOrder,
-  searchListenTogetherChannels,
   sendListenTogetherMessage,
   switchListenTogetherMusicRoomSong,
   syncListenTogetherPlayer,
@@ -32,10 +27,10 @@ import {
 } from '@/api/listenTogether';
 import { getAudioMetadata } from '@/api/music';
 import type {
-  ListenTogetherChannel,
   ListenTogetherCreateInput,
   ListenTogetherMember,
   ListenTogetherMessage,
+  ListenTogetherMusicRoomCreateInput,
   ListenTogetherRemotePlayback,
   ListenTogetherRoom,
   ListenTogetherSongOrder,
@@ -46,7 +41,6 @@ import type { Song } from '@/models/song';
 import {
   extractListenTogetherRoomId,
   getListenTogetherRoomPageInfo,
-  mapListenTogetherChannelList,
   mapListenTogetherMemberList,
   mapListenTogetherMessageList,
   mapListenTogetherRemotePlayback,
@@ -157,7 +151,7 @@ export const useListenTogetherStore = defineStore(
     const roomsEnded = ref(false);
     const roomsNotice = ref('');
     const activeTagId = ref('');
-    const roomListType = ref<ListenTogetherRoomType>(1);
+    const roomListType = ref<ListenTogetherRoomType>(0);
     const loadingRooms = ref(false);
     const ownedRooms = ref<ListenTogetherRoom[]>([]);
     const ownedRoomIndex = ref<ListenTogetherRoom[]>([]);
@@ -183,13 +177,10 @@ export const useListenTogetherStore = defineStore(
     const loadingRoom = ref(false);
     const sendingMessage = ref(false);
     const requestingSongHash = ref('');
-    const channelResults = ref<ListenTogetherChannel[]>([]);
-    const searchingChannels = ref(false);
 
     let heartbeatTimer: number | null = null;
     let fastPollTimer: number | null = null;
     let slowPollTimer: number | null = null;
-    let initialRoomStateVerifyTimer: number | null = null;
     let heartbeatInFlight = false;
     let fastPollInFlight = false;
     let slowPollInFlight = false;
@@ -212,7 +203,7 @@ export const useListenTogetherStore = defineStore(
     const metadataLookupAttempted = new Set<string>();
 
     const joined = computed(() => phase.value === 'joined' && Boolean(activeRoomId.value));
-    const activeRoomType = computed<ListenTogetherRoomType>(() => activeRoom.value?.roomType ?? 1);
+    const activeRoomType = computed<ListenTogetherRoomType>(() => activeRoom.value?.roomType ?? 0);
     const currentUserId = computed(() =>
       String(userStore.info?.userid ?? userStore.info?.userId ?? ''),
     );
@@ -399,10 +390,22 @@ export const useListenTogetherStore = defineStore(
           cachedSongs.push(current);
         }
       }
-      return incomingSongs.map((incoming) => {
+      const mergedSongs: Song[] = [];
+      incomingSongs.forEach((incoming) => {
         const cached = cachedSongs.find((song) => isSameRoomSong(song, incoming));
-        return cached ? mergeRoomSongMetadata(cached, incoming) : incoming;
+        const merged = cached ? mergeRoomSongMetadata(cached, incoming) : incoming;
+        const existingIndex = mergedSongs.findIndex((song) => isSameRoomSong(song, merged));
+        if (existingIndex < 0) {
+          mergedSongs.push(merged);
+          return;
+        }
+
+        // music_recent_list 在切歌边界可能同时返回房间 hash 与版权 hash 两种记录。
+        // 暂停的听众会在这时刷新队列；若只按最终 hash 去重，同一首歌会显示两次。
+        // 保持第一条记录的队列 id 稳定，同时合并后一条较完整的封面、专辑等信息。
+        mergedSongs[existingIndex] = mergeRoomSongMetadata(mergedSongs[existingIndex], merged);
       });
+      return mergedSongs;
     };
 
     const findRemoteRoomSong = (remote: ListenTogetherRemotePlayback | null) => {
@@ -472,11 +475,9 @@ export const useListenTogetherStore = defineStore(
       if (heartbeatTimer !== null) window.clearInterval(heartbeatTimer);
       if (fastPollTimer !== null) window.clearInterval(fastPollTimer);
       if (slowPollTimer !== null) window.clearInterval(slowPollTimer);
-      if (initialRoomStateVerifyTimer !== null) window.clearTimeout(initialRoomStateVerifyTimer);
       heartbeatTimer = null;
       fastPollTimer = null;
       slowPollTimer = null;
-      initialRoomStateVerifyTimer = null;
       heartbeatInFlight = false;
       fastPollInFlight = false;
       slowPollInFlight = false;
@@ -486,7 +487,7 @@ export const useListenTogetherStore = defineStore(
     const getListenTogetherQueueOptions = (): SetPlaybackQueueOptions => ({
       queueId: LISTEN_TOGETHER_QUEUE_ID,
       title: activeRoom.value?.name || '一起听',
-      subtitle: activeRoomType.value === 1 ? '自习室 · 房间同步' : '众乐房 · 房间同步',
+      subtitle: '众乐房 · 房间同步',
       coverUrl:
         currentRoomSong.value?.coverUrl ||
         (playerStore.currentSourceQueueId === LISTEN_TOGETHER_QUEUE_ID
@@ -686,6 +687,7 @@ export const useListenTogetherStore = defineStore(
       if (loadingRooms.value) return;
       const nextTag = options.tagId ?? activeTagId.value;
       const nextRoomType = options.roomType ?? roomListType.value;
+      if (nextRoomType !== 0) throw new ListenTogetherApiError('自习室已下线，目前仅支持众乐房');
       const shouldReset =
         options.reset === true ||
         nextTag !== activeTagId.value ||
@@ -749,7 +751,6 @@ export const useListenTogetherStore = defineStore(
         ownerId,
         ownerName,
         ownerAvatarUrl,
-        studyRoomKind: room.roomType === 1 ? 'community' : undefined,
         memberCount: isActive
           ? Math.max(1, room.memberCount, activeRoom.value?.memberCount ?? 0, members.value.length)
           : room.memberCount,
@@ -780,83 +781,48 @@ export const useListenTogetherStore = defineStore(
 
     const loadOwnedRooms = async (roomType: ListenTogetherRoomType) => {
       requireLogin();
+      if (roomType !== 0) throw new ListenTogetherApiError('自习室已下线，目前仅支持众乐房');
       if (loadingOwnedRooms.value) return;
       loadingOwnedRooms.value = true;
       try {
         const userId = currentUserId.value;
-        let remoteRooms: ListenTogetherRoom[] = [];
-        if (roomType === 1) {
-          const payload = await getCreatedListenTogetherStudyRooms();
-          const listedRooms = mapListenTogetherRoomList(payload, 1).filter(
-            (room) => !isKnownDissolvedRoom(room),
-          );
-          const detailResults = await Promise.allSettled(
-            listedRooms.map(async (room) => {
-              assertRoomIsLive(await getListenTogetherRoomState(room.id, 1));
-              return getListenTogetherRoomDetail(room.id, 1);
-            }),
-          );
-          remoteRooms = listedRooms
-            .flatMap((listedRoom, index) => {
-              const result = detailResults[index];
-              if (result?.status === 'fulfilled') {
-                const detailRoom = mapListenTogetherRoom(
-                  (result.value as { data?: unknown })?.data ?? result.value,
-                  listedRoom,
-                  1,
-                );
-                if (detailRoom.closed) {
-                  rememberDissolvedRoom(listedRoom);
-                  return [];
-                }
-                return [detailRoom];
-              }
-              if (result?.status === 'rejected' && isDissolvedRoomError(result.reason)) {
-                rememberDissolvedRoom(listedRoom);
-                return [];
-              }
-              return [listedRoom];
-            })
-            .map(normalizeOwnedRoom);
-        } else {
-          const historyPayload = await getListenTogetherMusicRoomHistory();
-          const historyRooms = Array.from(
-            new Map(
-              mapListenTogetherRoomList(historyPayload, 0)
-                .filter((room) => !isKnownDissolvedRoom(room))
-                .map((room) => [room.id, room]),
-            ).values(),
-          ).slice(0, 20);
-          const detailResults = await Promise.allSettled(
-            historyRooms.map(async (historyRoom) => {
-              assertRoomIsLive(await getListenTogetherRoomState(historyRoom.id, 0));
-              const detailPayload = await getListenTogetherRoomDetail(historyRoom.id, 0);
-              return mapListenTogetherRoom(
-                (detailPayload as { data?: unknown })?.data ?? detailPayload,
-                historyRoom,
-                0,
-              );
-            }),
-          );
-          remoteRooms = historyRooms
-            .flatMap((historyRoom, index) => {
-              const result = detailResults[index];
-              if (result?.status === 'fulfilled') {
-                if (result.value.closed) {
-                  rememberDissolvedRoom(historyRoom);
-                  return [];
-                }
-                return [result.value];
-              }
-              if (result?.status === 'rejected' && isDissolvedRoomError(result.reason)) {
+        const historyPayload = await getListenTogetherMusicRoomHistory();
+        const historyRooms = Array.from(
+          new Map(
+            mapListenTogetherRoomList(historyPayload, 0)
+              .filter((room) => !isKnownDissolvedRoom(room))
+              .map((room) => [room.id, room]),
+          ).values(),
+        ).slice(0, 20);
+        const detailResults = await Promise.allSettled(
+          historyRooms.map(async (historyRoom) => {
+            assertRoomIsLive(await getListenTogetherRoomState(historyRoom.id, 0));
+            const detailPayload = await getListenTogetherRoomDetail(historyRoom.id, 0);
+            return mapListenTogetherRoom(
+              (detailPayload as { data?: unknown })?.data ?? detailPayload,
+              historyRoom,
+              0,
+            );
+          }),
+        );
+        const remoteRooms = historyRooms
+          .flatMap((historyRoom, index) => {
+            const result = detailResults[index];
+            if (result?.status === 'fulfilled') {
+              if (result.value.closed) {
                 rememberDissolvedRoom(historyRoom);
                 return [];
               }
-              return [historyRoom];
-            })
-            .filter((room) => room.ownerId === userId)
-            .map(normalizeOwnedRoom);
-        }
+              return [result.value];
+            }
+            if (result?.status === 'rejected' && isDissolvedRoomError(result.reason)) {
+              rememberDissolvedRoom(historyRoom);
+              return [];
+            }
+            return [historyRoom];
+          })
+          .filter((room) => room.ownerId === userId)
+          .map(normalizeOwnedRoom);
 
         // 刷新“我的房间”时远端结果是权威快照。本地索引只额外保留当前仍在进行的会话，
         // 不再把已经从远端消失的历史房间重新回填到页面。
@@ -904,11 +870,8 @@ export const useListenTogetherStore = defineStore(
 
     const dismissOwnedRoom = async (room: ListenTogetherRoom) => {
       requireLogin();
-      if (room.roomType === 1) {
-        await deleteCreatedListenTogetherStudyRoom(room.id, room.channelId);
-      } else {
-        await dismissListenTogetherRoom(room.id, room.roomType);
-      }
+      if (room.roomType !== 0) throw new ListenTogetherApiError('自习室已下线，目前仅支持众乐房');
+      await dismissListenTogetherRoom(room.id, room.roomType);
       rememberDissolvedRoom(room);
       removeOwnedRoom(room);
       toastStore.success(`已解散「${room.name}」`);
@@ -918,41 +881,11 @@ export const useListenTogetherStore = defineStore(
       roomId: string,
       roomType: ListenTogetherRoomType,
       pageSize = 100,
-    ): Promise<ListenTogetherMember[]> => {
-      if (roomType === 0) {
-        return mapListenTogetherMemberList(
-          await getListenTogetherMembers(roomId, roomType, pageSize),
-        );
-      }
-
-      const results = await Promise.allSettled([
-        getListenTogetherMembers(roomId, roomType, pageSize, 1),
-        getListenTogetherMembers(roomId, roomType, pageSize, 2),
-      ]);
-      const onlineMembers = new Map<string, ListenTogetherMember>();
-      const lookerResult = results[1];
-      if (lookerResult?.status === 'fulfilled') {
-        mapListenTogetherMemberList(lookerResult.value, 2).forEach((member) => {
-          onlineMembers.set(member.userId, member);
-        });
-      }
-      const studyResult = results[0];
-      if (studyResult?.status === 'fulfilled') {
-        // 同一用户可能恰逢状态切换而同时出现在两份快照中，学习中状态优先。
-        mapListenTogetherMemberList(studyResult.value, 1).forEach((member) => {
-          onlineMembers.set(member.userId, member);
-        });
-      }
-      if (!onlineMembers.size && results.every((result) => result.status === 'rejected')) {
-        const rejected = results.find(
-          (result): result is PromiseRejectedResult => result.status === 'rejected',
-        );
-        throw rejected?.reason;
-      }
-      return Array.from(onlineMembers.values());
-    };
+    ): Promise<ListenTogetherMember[]> =>
+      mapListenTogetherMemberList(await getListenTogetherMembers(roomId, roomType, pageSize));
 
     const inspectRoom = async (room: ListenTogetherRoom) => {
+      if (room.roomType !== 0) throw new ListenTogetherApiError('自习室已下线，目前仅支持众乐房');
       loadingPreview.value = true;
       lastError.value = '';
       // 分享参数和列表卡片只用于定位房间，不能在状态校验前当作有效详情展示。
@@ -1036,7 +969,7 @@ export const useListenTogetherStore = defineStore(
       roomType: ListenTogetherRoomType,
       roomName = '一起听房间',
     ) => {
-      // 这里的 roomType 是 EchoMusic 的房间大类，不能写进上游自习室内部的 room_type。
+      if (roomType !== 0) throw new ListenTogetherApiError('自习室已下线，目前仅支持众乐房');
       const room = mapListenTogetherRoom(
         {
           room_id: roomId,
@@ -1454,9 +1387,8 @@ export const useListenTogetherStore = defineStore(
         playlistStore.updateQueueCurrentTrack(song.id, LISTEN_TOGETHER_QUEUE_ID);
         playerStore.currentSourceQueueId = LISTEN_TOGETHER_QUEUE_ID;
         playerStore.currentPlaylist = roomSongs.value;
-        const currentHash = String(playerStore.currentTrackSnapshot?.hash ?? '').toLowerCase();
         const currentTrackMatches =
-          currentHash === song.hash.toLowerCase() &&
+          isSameRoomSong(playerStore.currentTrackSnapshot, song) &&
           String(playerStore.currentTrackId ?? '') === String(song.id);
         const trackChanged =
           !currentTrackMatches || (!playerStore.currentAudioUrl && !playerStore.isLoading);
@@ -1569,14 +1501,7 @@ export const useListenTogetherStore = defineStore(
       if (!joined.value || slowPollInFlight) return;
       slowPollInFlight = true;
       try {
-        await Promise.allSettled([
-          loadActiveRoomDetail(),
-          loadMembers(),
-          // 自习室的 sync_player 不提供众乐房那套 list_version 变更通知，
-          // 因此仍需定期获取权威歌单；众乐房只在版本变化时刷新。
-          ...(activeRoomType.value === 1 ? [loadRoomSongs()] : []),
-          loadSongOrders(),
-        ]);
+        await Promise.allSettled([loadActiveRoomDetail(), loadMembers(), loadSongOrders()]);
       } finally {
         slowPollInFlight = false;
       }
@@ -1606,11 +1531,7 @@ export const useListenTogetherStore = defineStore(
       slowPollTimer = window.setInterval(() => void slowPoll(), SLOW_POLL_INTERVAL);
     };
 
-    const hydrateSession = async (
-      roomId: string,
-      base?: ListenTogetherRoom | null,
-      options: { verifyInitialRoomState?: boolean } = {},
-    ) => {
+    const hydrateSession = async (roomId: string, base?: ListenTogetherRoom | null) => {
       capturePreviousPlaybackQueue();
       activeRoomId.value = roomId;
       activeRoom.value = base ?? rooms.value.find((room) => room.id === roomId) ?? null;
@@ -1634,32 +1555,7 @@ export const useListenTogetherStore = defineStore(
         }
         if (activeRoomId.value !== roomId) return;
         syncListenTogetherQueue();
-        if (!remotePlayback.value && activeRoomType.value === 1 && roomSongs.value[0]) {
-          const firstSong = roomSongs.value[0];
-          remotePlayback.value = {
-            hash: firstSong.hash,
-            mixSongId: firstSong.mixSongId ?? firstSong.albumAudioId ?? '',
-            position: 0,
-            playing: true,
-            updatedAt: Date.now(),
-          };
-        }
         await applyRemotePlayback(true);
-        if (options.verifyInitialRoomState && activeRoomType.value === 1) {
-          initialRoomStateVerifyTimer = window.setTimeout(() => {
-            initialRoomStateVerifyTimer = null;
-            if (activeRoomId.value !== roomId || !joined.value) return;
-            void (async () => {
-              // make_room 的歌单写入与播放器状态可能短暂晚于创建响应，二者一起复核，
-              // 避免首次 fetch_list 读到旧快照后等待 15 秒慢轮询。
-              await loadRoomSongs();
-              if (activeRoomId.value !== roomId) return;
-              await syncPlayback(true);
-            })().catch((error) => {
-              logger.warn('ListenTogether', 'Initial study room state verification failed', error);
-            });
-          }, 600);
-        }
         void peripheralHydration;
         lastError.value = '';
       } finally {
@@ -1669,6 +1565,7 @@ export const useListenTogetherStore = defineStore(
 
     const joinRoom = async (room: ListenTogetherRoom) => {
       requireLogin();
+      if (room.roomType !== 0) throw new ListenTogetherApiError('自习室已下线，目前仅支持众乐房');
       if (joined.value && activeRoomId.value === room.id) return;
       if (activeRoomId.value) await leaveRoom({ silent: true });
       phase.value = 'joining';
@@ -1735,42 +1632,32 @@ export const useListenTogetherStore = defineStore(
 
     const createRoom = async (input: ListenTogetherCreateInput, initialSongs: Song[] = []) => {
       requireLogin();
+      if (input.roomType !== 0) throw new ListenTogetherApiError('自习室已下线，目前仅支持众乐房');
       if (!input.name.trim() || input.audios.length === 0) {
         throw new ListenTogetherApiError('请填写房间名并准备至少一首歌');
-      }
-      if (input.roomType === 1 && !input.channelId) {
-        throw new ListenTogetherApiError('创建自习室前请选择音乐频道');
       }
       if (activeRoomId.value) await leaveRoom({ silent: true });
       phase.value = 'creating';
       lastError.value = '';
       let createdRoomId = '';
-      const normalizedInput = {
+      const normalizedInput: ListenTogetherMusicRoomCreateInput = {
         ...input,
         name: input.name.trim(),
         notice: input.notice.trim(),
-      } as ListenTogetherCreateInput;
+      };
       try {
-        if (normalizedInput.roomType === 1) {
-          await checkListenTogetherMinor();
-        }
         const createPayload = await createListenTogetherGroup(normalizedInput);
         createdRoomId = extractListenTogetherRoomId(createPayload);
         if (!createdRoomId) throw new ListenTogetherApiError('服务端未返回新房间 ID');
         forgetDissolvedRoom({ id: createdRoomId, roomType: normalizedInput.roomType });
-        if (normalizedInput.roomType === 1) {
-          await configureListenTogetherRoom(createdRoomId, normalizedInput);
-        } else {
-          await initializeListenTogetherMusicRoom(createdRoomId, normalizedInput);
-        }
+        await initializeListenTogetherMusicRoom(createdRoomId, normalizedInput);
         const base = mapListenTogetherRoom({
           room_id: createdRoomId,
           room_name: normalizedInput.name,
           room_notice: normalizedInput.notice,
           room_type: normalizedInput.roomType,
-          study_room_kind: normalizedInput.roomType === 1 ? 'community' : undefined,
-          global_collection_id: normalizedInput.roomType === 1 ? normalizedInput.channelId : '',
-          allow_chat: normalizedInput.roomType === 1 ? (normalizedInput.allowChat ? 1 : 0) : 1,
+          global_collection_id: '',
+          allow_chat: 1,
           userid: currentUserId.value,
           nick_name: userStore.info?.nickname,
           user_pic: userStore.info?.pic,
@@ -1790,9 +1677,7 @@ export const useListenTogetherStore = defineStore(
         roomSongs.value = normalizedInput.audios
           .map((audio) => localSongsByHash.get(audio.hash.toLowerCase()))
           .filter((song): song is Song => Boolean(song));
-        await hydrateSession(createdRoomId, base, {
-          verifyInitialRoomState: normalizedInput.roomType === 1,
-        });
+        await hydrateSession(createdRoomId, base);
         toastStore.success(`「${normalizedInput.name}」已创建`);
         return createdRoomId;
       } catch (error) {
@@ -1812,19 +1697,6 @@ export const useListenTogetherStore = defineStore(
         phase.value = 'error';
         lastError.value = getErrorMessage(error);
         throw error;
-      }
-    };
-
-    const searchChannels = async (keyword: string) => {
-      const normalized = keyword.trim();
-      if (!normalized || searchingChannels.value) return;
-      searchingChannels.value = true;
-      try {
-        channelResults.value = mapListenTogetherChannelList(
-          await searchListenTogetherChannels(normalized),
-        );
-      } finally {
-        searchingChannels.value = false;
       }
     };
 
@@ -2097,8 +1969,6 @@ export const useListenTogetherStore = defineStore(
       loadingRoom,
       sendingMessage,
       requestingSongHash,
-      channelResults,
-      searchingChannels,
       loadRooms,
       loadOwnedRooms,
       dismissOwnedRoom,
@@ -2108,7 +1978,6 @@ export const useListenTogetherStore = defineStore(
       joinRoom,
       leaveRoom,
       createRoom,
-      searchChannels,
       sendMessage,
       requestSong,
       playRoomSong,

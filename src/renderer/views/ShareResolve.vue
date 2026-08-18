@@ -305,7 +305,8 @@ const readRoomState = (payload: unknown, depth = 0): number | undefined => {
 
 const resolveListenTogether = async (id: string) => {
   const query = detailQuery.value;
-  const roomType = query.roomType === '0' ? 0 : 1;
+  if (query.roomType && query.roomType !== '0') return false;
+  const roomType = 0;
   const [statePayload, detailPayload] = await Promise.all([
     getListenTogetherRoomState(id, roomType),
     getListenTogetherRoomDetail(id, roomType),

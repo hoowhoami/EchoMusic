@@ -3,7 +3,6 @@ defineOptions({ name: 'listen-together' });
 
 import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import { storeToRefs } from 'pinia';
-import { CheckboxIndicator, CheckboxRoot } from 'reka-ui';
 import { useRoute, useRouter } from 'vue-router';
 import Avatar from '@/components/ui/Avatar.vue';
 import Button from '@/components/ui/Button.vue';
@@ -12,9 +11,6 @@ import Dialog from '@/components/ui/Dialog.vue';
 import Input from '@/components/ui/Input.vue';
 import Scrollbar from '@/components/ui/Scrollbar.vue';
 import Skeleton from '@/components/ui/Skeleton.vue';
-import Switch from '@/components/ui/Switch.vue';
-import Textarea from '@/components/ui/Textarea.vue';
-import { getChannelSongs } from '@/api/channel';
 import { ListenTogetherApiError } from '@/api/listenTogether';
 import { search } from '@/api/search';
 import type {
@@ -32,25 +28,20 @@ import { usePlaylistStore } from '@/stores/playlist';
 import { useToastStore } from '@/stores/toast';
 import { useUserStore } from '@/stores/user';
 import { toListenTogetherAudioRefs } from '@/utils/listenTogether';
-import { mapSearchSong, parsePlaylistTracks } from '@/utils/mappers';
+import { mapSearchSong } from '@/utils/mappers';
 import { copyShareTarget, createShareTarget } from '@/utils/share';
-import { extractSearchLists, extractSearchTotal, toRecord } from '@/views/search/searchHelpers';
+import { extractSearchLists } from '@/views/search/searchHelpers';
 import {
   iconBroadcast,
   iconDoorExit,
   iconHeadphones,
   iconMusic,
-  iconMusicShare,
   iconPlayerPlay,
   iconPlus,
   iconRefreshCw,
   iconSearch,
   iconSend,
   iconShare,
-  iconChevronDown,
-  iconChevronLeft,
-  iconChevronRight,
-  iconChevronUp,
   iconUsers,
 } from '@/icons';
 import './listenTogether.css';
@@ -88,40 +79,14 @@ const {
   loadingRoom,
   sendingMessage,
   requestingSongHash,
-  channelResults,
-  searchingChannels,
 } = storeToRefs(listenStore);
 
-const roomTypes = [
-  {
-    id: 1 as const,
-    name: '自习室',
-    description: '专注学习、工作与陪伴',
-    icon: iconHeadphones,
-  },
-  {
-    id: 0 as const,
-    name: '众乐房',
-    description: '同步听歌、聊天与点歌',
-    icon: iconMusicShare,
-  },
-];
-const musicStyles = [
-  { id: '10', name: '轻音乐' },
-  { id: '29', name: '治愈' },
-  { id: '32', name: '安静' },
-  { id: '37', name: '元气' },
-  { id: '5', name: '杂食' },
-];
-
 const roomSearch = ref('');
-const selectedRoomType = ref<ListenTogetherRoomType>(1);
+const selectedRoomType = ref<ListenTogetherRoomType>(0);
 const roomScope = ref<'discover' | 'mine'>('discover');
-const selectedStudyKind = ref<'all' | 'official' | 'community'>('all');
 const selectedTagKey = ref('');
 const previewOpen = ref(false);
 const createOpen = ref(false);
-const songPickerOpen = ref(false);
 const leaveOpen = ref(false);
 const sessionMinimized = ref(false);
 const orderSongPickerOpen = ref(false);
@@ -133,34 +98,8 @@ const messageText = ref('');
 const messagesScroll = ref<InstanceType<typeof Scrollbar> | null>(null);
 
 const createName = ref('');
-const createNotice = ref('');
-const createRoomType = ref<ListenTogetherRoomType>(1);
+const createRoomType = ref<ListenTogetherRoomType>(0);
 const createPrivacy = ref<ListenTogetherRoomPrivacy>(1);
-const createAllowChat = ref(true);
-const createMusicStyles = ref<string[]>([]);
-const channelKeyword = ref('轻音乐');
-const selectedChannelId = ref('');
-const selectedCreateSongs = ref<Song[]>([]);
-const draftCreateSongs = ref<Song[]>([]);
-type SongPickerTab = 'mine' | 'channel' | 'search' | 'selected';
-const SONG_PICKER_PAGE_SIZE = 20;
-const songPickerTab = ref<SongPickerTab>('mine');
-const songPickerPages = ref<Record<SongPickerTab, number>>({
-  mine: 1,
-  channel: 1,
-  search: 1,
-  selected: 1,
-});
-const songSearchKeyword = ref('');
-const activeSongSearchKeyword = ref('');
-const songSearchResults = ref<Song[]>([]);
-const songSearchTotal = ref(0);
-const songSearchEnded = ref(true);
-const searchingSongs = ref(false);
-const channelSongs = ref<Song[]>([]);
-const channelSongTotal = ref(0);
-const channelSongsEnded = ref(true);
-const loadingChannelSongs = ref(false);
 type OrderSongSource = 'recent' | 'mine' | 'search';
 const orderSongSources: { id: OrderSongSource; name: string }[] = [
   { id: 'recent', name: '最近播放' },
@@ -199,7 +138,6 @@ const mergeVisibleMembers = (
       userId: room.ownerId || `owner:${room.id}`,
       nickname: room.ownerName || '房主',
       avatarUrl: room.ownerAvatarUrl,
-      studyStatus: 1,
       studyTime: 0,
     });
   }
@@ -212,7 +150,6 @@ const mergeVisibleMembers = (
         userId: currentUserId,
         nickname: userStore.info?.nickname || '我',
         avatarUrl: userStore.info?.pic || '',
-        studyStatus: 1,
         studyTime: 0,
       });
     }
@@ -262,12 +199,6 @@ const filteredRooms = computed(() => {
   const query = roomSearch.value.trim().toLowerCase();
   return sourceRooms.value
     .filter((room) => room.roomType === selectedRoomType.value)
-    .filter(
-      (room) =>
-        selectedRoomType.value !== 1 ||
-        selectedStudyKind.value === 'all' ||
-        room.studyRoomKind === selectedStudyKind.value,
-    )
     .filter((room) => {
       if (!selectedTagKey.value) return true;
       return [...room.tags, ...room.musicStyles].some(
@@ -291,19 +222,6 @@ const filteredRooms = computed(() => {
 const typedRooms = computed(() =>
   sourceRooms.value.filter((room) => room.roomType === selectedRoomType.value),
 );
-const studyKindOptions = computed(() => [
-  { id: 'all' as const, name: '全部自习室', count: typedRooms.value.length },
-  {
-    id: 'official' as const,
-    name: '官方',
-    count: typedRooms.value.filter((room) => room.studyRoomKind === 'official').length,
-  },
-  {
-    id: 'community' as const,
-    name: '主题',
-    count: typedRooms.value.filter((room) => room.studyRoomKind === 'community').length,
-  },
-]);
 const roomTags = computed(() => {
   const tagMap = new Map<string, { key: string; name: string; count: number }>();
   typedRooms.value.forEach((room) => {
@@ -317,17 +235,9 @@ const roomTags = computed(() => {
     (left, right) => right.count - left.count || left.name.localeCompare(right.name, 'zh-CN'),
   );
 });
-const selectedRoomTypeName = computed(
-  () => roomTypes.find((type) => type.id === selectedRoomType.value)?.name ?? '房间',
-);
-const createRoomTypeName = computed(
-  () => roomTypes.find((type) => type.id === createRoomType.value)?.name ?? '房间',
-);
-const createDescription = computed(() =>
-  createRoomType.value === 1
-    ? '选择音乐风格和自定义曲目，确认后创建自习室。'
-    : '设置房间名称与权限，创建时会沿用当前播放器队列。',
-);
+const selectedRoomTypeName = computed(() => '众乐房');
+const createRoomTypeName = computed(() => '众乐房');
+const createDescription = computed(() => '设置房间名称与权限，创建时会沿用当前播放器队列。');
 
 const activePlaylistSongs = computed<Song[]>(() => {
   const list = (playerStore.currentPlaylist ?? []) as Song[];
@@ -348,13 +258,7 @@ const musicRoomQueueSongs = computed(() => {
   if (currentIndex + 5 > songs.length) return songs.slice(-10);
   return songs.slice(currentIndex - 5, currentIndex + 5);
 });
-const createSongLimit = computed(() => 500);
-const createAudios = computed(() =>
-  toListenTogetherAudioRefs(
-    createRoomType.value === 0 ? musicRoomQueueSongs.value : selectedCreateSongs.value,
-    createRoomType.value === 0 ? 50 : createSongLimit.value,
-  ),
-);
+const createAudios = computed(() => toListenTogetherAudioRefs(musicRoomQueueSongs.value, 50));
 const musicRoomProgressInfo = computed(() => {
   const current = playerStore.currentTrackSnapshot;
   if (!current?.hash) return undefined;
@@ -375,69 +279,9 @@ const musicRoomProgressInfo = computed(() => {
 const mineSongs = computed(() =>
   (playlistStore.favorites as Song[]).filter((song) => Boolean(String(song.hash ?? '').trim())),
 );
-const draftSongHashes = computed(
-  () => new Set(draftCreateSongs.value.map((song) => song.hash.trim().toLowerCase())),
-);
-const currentPickerPage = computed(() => songPickerPages.value[songPickerTab.value]);
-const pickerStartIndex = computed(() => (currentPickerPage.value - 1) * SONG_PICKER_PAGE_SIZE);
-const visiblePickerSongs = computed(() => {
-  if (songPickerTab.value === 'channel') return channelSongs.value;
-  if (songPickerTab.value === 'search') return songSearchResults.value;
-  const source = songPickerTab.value === 'selected' ? draftCreateSongs.value : mineSongs.value;
-  return source.slice(pickerStartIndex.value, pickerStartIndex.value + SONG_PICKER_PAGE_SIZE);
-});
-const pickerTotal = computed(() => {
-  if (songPickerTab.value === 'mine') return mineSongs.value.length;
-  if (songPickerTab.value === 'selected') return draftCreateSongs.value.length;
-  if (songPickerTab.value === 'channel') return channelSongTotal.value;
-  return songSearchTotal.value;
-});
-const pickerHasPrevious = computed(() => currentPickerPage.value > 1);
-const pickerHasNext = computed(() => {
-  if (songPickerTab.value === 'channel') return !channelSongsEnded.value;
-  if (songPickerTab.value === 'search') return !songSearchEnded.value;
-  return pickerStartIndex.value + visiblePickerSongs.value.length < pickerTotal.value;
-});
-const pickerPageCount = computed(() => {
-  const knownPages =
-    pickerTotal.value > 0 ? Math.ceil(pickerTotal.value / SONG_PICKER_PAGE_SIZE) : 1;
-  return Math.max(knownPages, currentPickerPage.value + (pickerHasNext.value ? 1 : 0));
-});
-const selectedVisibleSongCount = computed(
-  () =>
-    visiblePickerSongs.value.filter((song) => draftSongHashes.value.has(song.hash.toLowerCase()))
-      .length,
-);
-type CheckboxState = boolean | 'indeterminate';
-const visiblePickerSelectionState = computed<CheckboxState>(() => {
-  if (!visiblePickerSongs.value.length || selectedVisibleSongCount.value === 0) return false;
-  if (selectedVisibleSongCount.value === visiblePickerSongs.value.length) return true;
-  return 'indeterminate';
-});
-const pickerEmptyCopy = computed(() => {
-  if (songPickerTab.value === 'mine') return '你还没有收藏过歌曲，快去收藏一首吧';
-  if (songPickerTab.value === 'channel') {
-    return selectedChannelId.value ? '这个频道暂时没有可选歌曲' : '请先在创建页选择音乐频道';
-  }
-  if (songPickerTab.value === 'search') return '输入歌名或歌手搜索歌曲';
-  return '还没有选择歌曲';
-});
-const songPickerTabs = computed<{ id: SongPickerTab; name: string }[]>(() => [
-  { id: 'mine', name: '我的' },
-  { id: 'channel', name: '频道' },
-  { id: 'search', name: '搜索' },
-  { id: 'selected', name: `已选 ${draftCreateSongs.value.length}` },
-]);
-const selectedChannel = computed(
-  () => channelResults.value.find((channel) => channel.id === selectedChannelId.value) ?? null,
-);
 const canCreate = computed(
   () =>
-    Boolean(createName.value.trim()) &&
-    (createRoomType.value === 0 || Boolean(selectedChannelId.value)) &&
-    (createRoomType.value === 0 || createMusicStyles.value.length > 0) &&
-    createAudios.value.length > 0 &&
-    phase.value !== 'creating',
+    Boolean(createName.value.trim()) && createAudios.value.length > 0 && phase.value !== 'creating',
 );
 const roomCountLabel = computed(() => {
   const loaded = typedRooms.value.length;
@@ -447,8 +291,7 @@ const roomCountLabel = computed(() => {
 });
 
 const roomTypeName = (room: ListenTogetherRoom | null | undefined) => {
-  if (room?.roomType === 0) return '众乐房';
-  return room?.studyRoomKind === 'official' ? '官方' : '主题';
+  return room ? '众乐房' : '房间';
 };
 
 const promptLogin = (action: string) => {
@@ -485,7 +328,6 @@ const selectRoomScope = (scope: 'discover' | 'mine') => {
     return;
   }
   roomScope.value = scope;
-  selectedStudyKind.value = 'all';
   selectedTagKey.value = '';
   roomSearch.value = '';
   void loadRooms(true);
@@ -493,15 +335,6 @@ const selectRoomScope = (scope: 'discover' | 'mine') => {
 
 const selectTag = (tagKey: string) => {
   selectedTagKey.value = selectedTagKey.value === tagKey ? '' : tagKey;
-};
-
-const selectRoomType = (roomType: ListenTogetherRoomType) => {
-  if (selectedRoomType.value === roomType) return;
-  selectedRoomType.value = roomType;
-  selectedStudyKind.value = 'all';
-  selectedTagKey.value = '';
-  roomSearch.value = '';
-  void loadRooms(true, roomType);
 };
 
 const openRoomPreview = async (room: ListenTogetherRoom) => {
@@ -571,56 +404,7 @@ const openCreateRoom = () => {
   createRoomType.value = selectedRoomType.value;
   createPrivacy.value = 1;
   createName.value = `${userStore.info?.nickname || '我'}的${selectedRoomTypeName.value}`;
-  createNotice.value = selectedRoomType.value === 1 ? '欢迎来一起听歌、专注学习。' : '';
-  createAllowChat.value = true;
-  createMusicStyles.value = [];
-  selectedChannelId.value = '';
-  selectedCreateSongs.value = [];
   createOpen.value = true;
-  if (createRoomType.value === 1 && !channelResults.value.length) void searchChannels();
-};
-
-const selectCreateRoomType = (roomType: ListenTogetherRoomType) => {
-  if (createRoomType.value === roomType) return;
-  createRoomType.value = roomType;
-  const typeName = roomTypes.find((type) => type.id === roomType)?.name ?? '房间';
-  createName.value = `${userStore.info?.nickname || '我'}的${typeName}`;
-  createNotice.value = roomType === 1 ? '欢迎来一起听歌、专注学习。' : '';
-  selectedCreateSongs.value = [];
-  if (roomType === 1 && !channelResults.value.length) void searchChannels();
-};
-
-const searchChannels = async () => {
-  try {
-    await listenStore.searchChannels(channelKeyword.value);
-    if (!selectedChannelId.value && channelResults.value[0]) {
-      selectedChannelId.value = channelResults.value[0].id;
-    }
-  } catch {
-    toastStore.warning('频道搜索失败，请稍后重试');
-  }
-};
-
-const selectCreateChannel = (channelId: string) => {
-  if (selectedChannelId.value === channelId) return;
-  selectedChannelId.value = channelId;
-  channelSongs.value = [];
-  channelSongTotal.value = 0;
-  channelSongsEnded.value = true;
-  songPickerPages.value.channel = 1;
-};
-
-const toggleMusicStyle = (styleId: string) => {
-  const selected = createMusicStyles.value;
-  if (selected.includes(styleId)) {
-    if (selected.length > 1) createMusicStyles.value = selected.filter((id) => id !== styleId);
-    return;
-  }
-  if (selected.length >= 3) {
-    toastStore.info('最多选择 3 种音乐风格');
-    return;
-  }
-  createMusicStyles.value = [...selected, styleId];
 };
 
 const songHashKey = (song: Song) => song.hash.trim().toLowerCase();
@@ -656,209 +440,27 @@ const orderSongEmptyCopy = computed(() => {
   return orderSongSearchKeyword.value.trim() ? '没有找到匹配歌曲' : '输入歌名或歌手搜索';
 });
 
-const readNumericField = (...values: unknown[]) => {
-  for (const value of values) {
-    if (value === undefined || value === null || value === '') continue;
-    const parsed = Number(value);
-    if (Number.isFinite(parsed)) return parsed;
-  }
-  return 0;
-};
-
-const loadSelectedChannelSongs = async (page = songPickerPages.value.channel) => {
-  if (!selectedChannelId.value || loadingChannelSongs.value) return;
-  loadingChannelSongs.value = true;
-  try {
-    const payload = await getChannelSongs(selectedChannelId.value, page, SONG_PICKER_PAGE_SIZE);
-    const songs = dedupeSongs(parsePlaylistTracks(payload).songs);
-    const record = toRecord(payload);
-    const data = toRecord(record?.data);
-    const total = readNumericField(
-      data?.song_count,
-      data?.total,
-      data?.list_count,
-      record?.song_count,
-      record?.total,
-    );
-    const isEndValue = data?.is_end ?? record?.is_end;
-    channelSongs.value = songs;
-    channelSongTotal.value = total || (page - 1) * SONG_PICKER_PAGE_SIZE + songs.length;
-    channelSongsEnded.value =
-      isEndValue !== undefined ? Number(isEndValue) === 1 : songs.length < SONG_PICKER_PAGE_SIZE;
-    songPickerPages.value.channel = page;
-  } catch {
-    toastStore.warning('频道歌曲加载失败，请稍后重试');
-  } finally {
-    loadingChannelSongs.value = false;
-  }
-};
-
-const searchCreateSongs = async (page = 1) => {
-  const keyword =
-    page === 1 ? songSearchKeyword.value.trim() : activeSongSearchKeyword.value.trim();
-  if (!keyword || searchingSongs.value) return;
-  searchingSongs.value = true;
-  try {
-    const payload = await search(keyword, 'song', page, SONG_PICKER_PAGE_SIZE);
-    const songs = dedupeSongs(extractSearchLists(payload).map(mapSearchSong));
-    const total = extractSearchTotal(payload);
-    activeSongSearchKeyword.value = keyword;
-    songSearchResults.value = songs;
-    songSearchTotal.value = total ?? (page - 1) * SONG_PICKER_PAGE_SIZE + songs.length;
-    songSearchEnded.value =
-      total !== null ? page * SONG_PICKER_PAGE_SIZE >= total : songs.length < SONG_PICKER_PAGE_SIZE;
-    songPickerPages.value.search = page;
-  } catch {
-    toastStore.warning('歌曲搜索失败，请稍后重试');
-  } finally {
-    searchingSongs.value = false;
-  }
-};
-
-const openSongPicker = () => {
-  draftCreateSongs.value = [...selectedCreateSongs.value];
-  songPickerTab.value = 'mine';
-  songPickerPages.value = { mine: 1, channel: 1, search: 1, selected: 1 };
-  songPickerOpen.value = true;
-  if (!playlistStore.favoritesLoaded && !playlistStore.favoritesLoading) {
-    void playlistStore.fetchLikedPlaylistSongs();
-  }
-};
-
-const selectSongPickerTab = (tab: SongPickerTab) => {
-  songPickerTab.value = tab;
-  if (tab === 'selected') {
-    const lastPage = Math.max(1, Math.ceil(draftCreateSongs.value.length / SONG_PICKER_PAGE_SIZE));
-    songPickerPages.value.selected = Math.min(songPickerPages.value.selected, lastPage);
-  }
-  if (tab === 'channel' && !channelSongs.value.length) void loadSelectedChannelSongs(1);
-};
-
-const updatePickerPage = async (offset: -1 | 1) => {
-  const nextPage = currentPickerPage.value + offset;
-  if (nextPage < 1) return;
-  if (offset === 1 && !pickerHasNext.value) return;
-  if (songPickerTab.value === 'channel') {
-    await loadSelectedChannelSongs(nextPage);
-    return;
-  }
-  if (songPickerTab.value === 'search') {
-    await searchCreateSongs(nextPage);
-    return;
-  }
-  songPickerPages.value[songPickerTab.value] = nextPage;
-};
-
-const selectVisibleSongs = () => {
-  const next = new Map(draftCreateSongs.value.map((song) => [songHashKey(song), song] as const));
-  let limitReached = false;
-  visiblePickerSongs.value.forEach((song) => {
-    const hash = songHashKey(song);
-    if (!hash || next.has(hash)) return;
-    if (next.size >= createSongLimit.value) {
-      limitReached = true;
-      return;
-    }
-    next.set(hash, song);
-  });
-  draftCreateSongs.value = Array.from(next.values());
-  if (limitReached) toastStore.info(`最多选择 ${createSongLimit.value} 首歌曲`);
-};
-
-const clampSelectedPickerPage = () => {
-  const lastPage = Math.max(1, Math.ceil(draftCreateSongs.value.length / SONG_PICKER_PAGE_SIZE));
-  songPickerPages.value.selected = Math.min(songPickerPages.value.selected, lastPage);
-};
-
-const removeDraftSong = (song: Song) => {
-  const hash = songHashKey(song);
-  draftCreateSongs.value = draftCreateSongs.value.filter(
-    (candidate) => songHashKey(candidate) !== hash,
-  );
-  clampSelectedPickerPage();
-};
-
-const toggleDraftSong = (song: Song) => {
-  const hash = songHashKey(song);
-  if (!hash) return;
-  if (draftSongHashes.value.has(hash)) return removeDraftSong(song);
-  if (draftCreateSongs.value.length >= createSongLimit.value) {
-    toastStore.info(`最多选择 ${createSongLimit.value} 首歌曲`);
-    return;
-  }
-  draftCreateSongs.value = [...draftCreateSongs.value, song];
-};
-
-const setVisibleSongsChecked = (checked: CheckboxState) => {
-  if (checked === true) {
-    selectVisibleSongs();
-    return;
-  }
-  const visibleHashes = new Set(visiblePickerSongs.value.map(songHashKey));
-  draftCreateSongs.value = draftCreateSongs.value.filter(
-    (song) => !visibleHashes.has(songHashKey(song)),
-  );
-  clampSelectedPickerPage();
-};
-
-const setDraftSongChecked = (song: Song, checked: CheckboxState) => {
-  const selected = draftSongHashes.value.has(songHashKey(song));
-  if ((checked === true) !== selected) toggleDraftSong(song);
-};
-
-const moveDraftSong = (index: number, offset: -1 | 1) => {
-  const target = index + offset;
-  if (target < 0 || target >= draftCreateSongs.value.length) return;
-  const next = [...draftCreateSongs.value];
-  const [song] = next.splice(index, 1);
-  if (!song) return;
-  next.splice(target, 0, song);
-  draftCreateSongs.value = next;
-};
-
-const confirmSongPicker = () => {
-  selectedCreateSongs.value = [...draftCreateSongs.value];
-  songPickerOpen.value = false;
-};
-
 const submitCreateRoom = async () => {
   if (!canCreate.value) return;
   try {
-    if (createRoomType.value === 1) {
-      await listenStore.createRoom(
-        {
-          roomType: 1,
-          name: createName.value,
-          notice: createNotice.value,
-          channelId: selectedChannelId.value,
-          musicStyles: createMusicStyles.value,
-          audios: createAudios.value,
-          allowChat: createAllowChat.value,
-          roomTag: createAllowChat.value ? '13,14' : '13',
-        },
-        selectedCreateSongs.value,
-      );
-    } else {
-      await listenStore.createRoom(
-        {
-          roomType: 0,
-          name: createName.value,
-          notice: '',
-          audios: createAudios.value,
-          privacy: createPrivacy.value,
-          capacity: 5,
-          progressInfo: musicRoomProgressInfo.value,
-        },
-        musicRoomQueueSongs.value,
-      );
-    }
+    await listenStore.createRoom(
+      {
+        roomType: 0,
+        name: createName.value,
+        notice: '',
+        audios: createAudios.value,
+        privacy: createPrivacy.value,
+        capacity: 5,
+        progressInfo: musicRoomProgressInfo.value,
+      },
+      musicRoomQueueSongs.value,
+    );
     createOpen.value = false;
   } catch (error) {
     if (error instanceof ListenTogetherApiError && error.code === 55004) {
       createOpen.value = false;
       selectedRoomType.value = createRoomType.value;
       roomScope.value = 'mine';
-      selectedStudyKind.value = 'all';
       selectedTagKey.value = '';
       roomSearch.value = '';
       await loadRooms(true, createRoomType.value);
@@ -1009,13 +611,6 @@ const playRoomSong = async (song: Song) => {
   }
 };
 
-const formatStudyTime = (seconds: number) => {
-  if (!seconds) return '刚刚加入';
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `专注 ${Math.max(1, minutes)} 分钟`;
-  return `专注 ${Math.floor(minutes / 60)} 小时 ${minutes % 60} 分`;
-};
-
 const formatMessageTime = (timestamp: number) => {
   if (!timestamp) return '';
   return new Intl.DateTimeFormat('zh-CN', {
@@ -1045,11 +640,15 @@ watch(
   () => {
     const roomId = String(route.query.roomId ?? '').trim();
     if (!roomId || route.name !== 'listen-together') return;
-    const roomType: ListenTogetherRoomType = String(route.query.roomType) === '0' ? 0 : 1;
+    if (String(route.query.roomType ?? '0') !== '0') {
+      toastStore.warning('自习室已下线，一起听目前仅支持众乐房');
+      void router.replace({ name: 'listen-together' });
+      return;
+    }
+    const roomType: ListenTogetherRoomType = 0;
     const roomName = String(route.query.roomName ?? '').trim() || '一起听房间';
     selectedRoomType.value = roomType;
     roomScope.value = 'discover';
-    selectedStudyKind.value = 'all';
     selectedTagKey.value = '';
     roomSearch.value = '';
     previewOpen.value = true;
@@ -1083,7 +682,7 @@ onMounted(() => {
               <div class="listen-hero-actions">
                 <Button size="sm" @click="openCreateRoom">
                   <Icon :icon="iconPlus" width="16" height="16" />
-                  创建{{ selectedRoomTypeName }}
+                  创建众乐房
                 </Button>
                 <span class="listen-room-count">
                   <span class="listen-live-dot"></span>
@@ -1111,23 +710,6 @@ onMounted(() => {
 
           <section class="listen-browser-panel">
             <div class="listen-browser-topbar">
-              <div class="listen-room-type-tabs" aria-label="房间类型">
-                <button
-                  v-for="type in roomTypes"
-                  :key="type.id"
-                  type="button"
-                  :class="{ 'is-active': selectedRoomType === type.id }"
-                  @click="selectRoomType(type.id)"
-                >
-                  <span class="listen-room-type-icon">
-                    <Icon :icon="type.icon" width="18" height="18" />
-                  </span>
-                  <span>
-                    <strong>{{ type.name }}</strong>
-                    <small>{{ type.description }}</small>
-                  </span>
-                </button>
-              </div>
               <div class="listen-scope-tabs" aria-label="房间范围">
                 <button
                   type="button"
@@ -1172,27 +754,7 @@ onMounted(() => {
               </Button>
             </div>
 
-            <div
-              v-if="roomScope === 'discover' && (selectedRoomType === 1 || roomTags.length)"
-              class="listen-filter-strip"
-            >
-              <div v-if="selectedRoomType === 1" class="listen-tag-row" aria-label="自习室类型">
-                <button
-                  v-for="option in studyKindOptions"
-                  :key="option.id"
-                  type="button"
-                  class="listen-tag-button"
-                  :class="{ 'is-active': selectedStudyKind === option.id }"
-                  @click="selectedStudyKind = option.id"
-                >
-                  {{ option.name }}
-                  <small>{{ option.count }}</small>
-                </button>
-              </div>
-              <span
-                v-if="selectedRoomType === 1 && roomTags.length"
-                class="listen-filter-divider"
-              ></span>
+            <div v-if="roomScope === 'discover' && roomTags.length" class="listen-filter-strip">
               <div v-if="roomTags.length" class="listen-tag-row" aria-label="房间内容标签">
                 <button
                   type="button"
@@ -1224,9 +786,7 @@ onMounted(() => {
               </h2>
               <p>
                 {{ filteredRooms.length }} 个结果
-                <template v-if="roomSearch || selectedTagKey || selectedStudyKind !== 'all'">
-                  · 已应用筛选
-                </template>
+                <template v-if="roomSearch || selectedTagKey"> · 已应用筛选 </template>
               </p>
             </div>
           </div>
@@ -1315,9 +875,7 @@ onMounted(() => {
             <p>
               {{
                 roomScope === 'mine'
-                  ? selectedRoomType === 0
-                    ? '近期创建且仍有效的众乐房会显示在这里。'
-                    : `可以先创建一间${selectedRoomTypeName}。`
+                  ? '近期创建且仍有效的众乐房会显示在这里。'
                   : '试试清除房间来源、内容标签或搜索条件。'
               }}
             </p>
@@ -1386,14 +944,11 @@ onMounted(() => {
                 </h2>
                 <p>{{ currentRoomSong?.artist || activeRoom?.currentArtistName || '一起听' }}</p>
                 <div class="listen-now-sync-note">
-                  <template v-if="activeRoom?.roomType === 0 && isOwner">
+                  <template v-if="isOwner">
                     你可以控制房间播放，操作会同步到其他设备和成员。
                   </template>
-                  <template v-else-if="activeRoom?.roomType === 0">
-                    播放由房主控制；可仅在本机暂停，再次播放会追上房间进度。
-                  </template>
                   <template v-else>
-                    播放进度由自习室校准；可仅在本机暂停，再次播放会追上当前进度。
+                    播放由房主控制；可仅在本机暂停，再次播放会追上房间进度。
                   </template>
                 </div>
               </div>
@@ -1406,20 +961,10 @@ onMounted(() => {
                   <h2>{{ roomSongs.length }} 首歌曲</h2>
                 </div>
                 <div class="listen-queue-header-actions">
-                  <Button
-                    v-if="activeRoom?.roomType === 0 && isOwner"
-                    variant="ghost"
-                    size="xs"
-                    @click="openSongOrders"
-                  >
+                  <Button v-if="isOwner" variant="ghost" size="xs" @click="openSongOrders">
                     点播列表<span v-if="songOrders.length"> {{ songOrders.length }}</span>
                   </Button>
-                  <Button
-                    v-if="activeRoom?.roomType === 0"
-                    variant="secondary"
-                    size="xs"
-                    @click="openOrderSongPicker"
-                  >
+                  <Button variant="secondary" size="xs" @click="openOrderSongPicker">
                     <Icon :icon="iconPlus" width="14" height="14" />
                     {{ isOwner ? '添加歌曲' : '点歌' }}
                   </Button>
@@ -1443,11 +988,11 @@ onMounted(() => {
                     class="listen-queue-item"
                     :class="{
                       'is-current': currentRoomSong?.hash === song.hash,
-                      'is-readonly': activeRoom?.roomType !== 0 || !isOwner,
-                      'is-controllable': activeRoom?.roomType === 0 && isOwner,
+                      'is-readonly': !isOwner,
+                      'is-controllable': isOwner,
                     }"
-                    :role="activeRoom?.roomType === 0 && isOwner ? 'button' : undefined"
-                    :tabindex="activeRoom?.roomType === 0 && isOwner ? 0 : undefined"
+                    :role="isOwner ? 'button' : undefined"
+                    :tabindex="isOwner ? 0 : undefined"
                     @click="playRoomSong(song)"
                     @keydown.enter.prevent="playRoomSong(song)"
                   >
@@ -1474,11 +1019,7 @@ onMounted(() => {
                     </span>
                     <span class="listen-request-label">
                       {{
-                        currentRoomSong?.hash === song.hash
-                          ? '播放中'
-                          : activeRoom?.roomType === 0 && isOwner
-                            ? '点击播放'
-                            : ''
+                        currentRoomSong?.hash === song.hash ? '播放中' : isOwner ? '点击播放' : ''
                       }}
                     </span>
                   </div>
@@ -1516,15 +1057,9 @@ onMounted(() => {
                     />
                     <span class="listen-member-copy">
                       <strong>{{ member.nickname }}</strong>
-                      <small>{{
-                        activeRoom?.roomType === 1
-                          ? member.memberType === 2
-                            ? '围观中'
-                            : formatStudyTime(member.studyTime)
-                          : '在线'
-                      }}</small>
+                      <small>在线</small>
                     </span>
-                    <i :class="`status-${member.studyStatus || 1}`"></i>
+                    <i class="status-1"></i>
                   </div>
                   <div v-if="unlistedOnlineMemberCount" class="listen-member-item is-unlisted">
                     <span class="listen-member-avatar listen-member-avatar-placeholder">
@@ -1714,89 +1249,11 @@ onMounted(() => {
       :close-on-interact-outside="phase !== 'creating'"
     >
       <div class="listen-create-form">
-        <div class="listen-create-field">
-          <span>房间类型</span>
-          <div class="listen-create-type-options">
-            <button
-              v-for="type in roomTypes"
-              :key="type.id"
-              type="button"
-              :class="{ 'is-selected': createRoomType === type.id }"
-              @click="selectCreateRoomType(type.id)"
-            >
-              <strong>{{ type.name }}</strong>
-              <small>{{ type.description }}</small>
-            </button>
-          </div>
-        </div>
         <label>
           <span>房间名称</span>
           <Input v-model="createName" :show-clear="false" placeholder="给房间起个名字" />
         </label>
-        <label v-if="createRoomType === 1">
-          <span>房间公告</span>
-          <Textarea v-model="createNotice" :rows="3" placeholder="告诉大家这里适合听什么" />
-        </label>
-        <div v-if="createRoomType === 1" class="listen-create-field">
-          <span>音乐频道</span>
-          <div class="listen-channel-search">
-            <Input
-              v-model="channelKeyword"
-              :show-clear="false"
-              placeholder="搜索频道"
-              @keyup.enter="searchChannels"
-            />
-            <Button
-              size="sm"
-              variant="secondary"
-              :loading="searchingChannels"
-              @click="searchChannels"
-            >
-              <Icon :icon="iconSearch" width="16" height="16" />
-              搜索
-            </Button>
-          </div>
-          <div v-if="channelResults.length" class="listen-channel-results">
-            <button
-              v-for="channel in channelResults.slice(0, 8)"
-              :key="channel.id"
-              type="button"
-              :class="{ 'is-selected': selectedChannelId === channel.id }"
-              @click="selectCreateChannel(channel.id)"
-            >
-              <Cover
-                :url="channel.coverUrl"
-                :alt="channel.name"
-                :width="42"
-                :height="42"
-                :border-radius="10"
-              />
-              <span
-                ><strong>{{ channel.name }}</strong
-                ><small>{{ channel.songCount }} 首歌</small></span
-              >
-            </button>
-          </div>
-          <p v-if="selectedChannel" class="listen-selected-channel">
-            <Icon :icon="iconMusicShare" width="15" height="15" />
-            已选择：{{ selectedChannel.name }}
-          </p>
-        </div>
-        <div v-if="createRoomType === 1" class="listen-create-field">
-          <span>音乐风格（最多 3 项）</span>
-          <div class="listen-style-options">
-            <button
-              v-for="style in musicStyles"
-              :key="style.id"
-              type="button"
-              :class="{ 'is-selected': createMusicStyles.includes(style.id) }"
-              @click="toggleMusicStyle(style.id)"
-            >
-              {{ style.name }}
-            </button>
-          </div>
-        </div>
-        <div v-else class="listen-create-field">
+        <div class="listen-create-field">
           <span>房间权限</span>
           <div class="listen-privacy-options">
             <button
@@ -1817,36 +1274,7 @@ onMounted(() => {
             </button>
           </div>
         </div>
-        <div v-if="createRoomType === 1" class="listen-create-field">
-          <span>自定义曲目</span>
-          <button type="button" class="listen-create-playlist" @click="openSongPicker">
-            <span class="listen-create-playlist-icon">
-              <Icon :icon="iconMusic" width="19" height="19" />
-            </span>
-            <span class="listen-create-playlist-copy">
-              <strong>
-                {{
-                  selectedCreateSongs.length ? `${selectedCreateSongs.length} 首歌曲` : '选择歌曲'
-                }}
-              </strong>
-              <small v-if="selectedCreateSongs.length">
-                {{
-                  selectedCreateSongs
-                    .slice(0, 3)
-                    .map((song) => song.title)
-                    .join('、')
-                }}
-              </small>
-              <small v-else>
-                从我的歌曲、音乐频道或搜索中添加，最多 {{ createSongLimit }} 首
-              </small>
-            </span>
-            <span class="listen-create-playlist-action">
-              {{ selectedCreateSongs.length ? '调整' : '去选择' }}
-            </span>
-          </button>
-        </div>
-        <div v-else class="listen-create-field">
+        <div class="listen-create-field">
           <span>播放队列</span>
           <div class="listen-create-playlist is-readonly">
             <span class="listen-create-playlist-icon">
@@ -1867,11 +1295,7 @@ onMounted(() => {
           </div>
         </div>
         <div class="listen-create-summary">
-          <template v-if="createRoomType === 1">
-            <label> <span>允许聊天</span><Switch v-model="createAllowChat" /> </label>
-            <small>创建前可再次确认歌曲及顺序</small>
-          </template>
-          <small v-else>众乐房支持聊天与点歌，创建后可继续添加歌曲。</small>
+          <small>众乐房支持聊天与点歌，创建后可继续添加歌曲。</small>
         </div>
       </div>
       <template #footer>
@@ -1889,199 +1313,6 @@ onMounted(() => {
           @click="submitCreateRoom"
         >
           创建{{ createRoomTypeName }}并进入
-        </Button>
-      </template>
-    </Dialog>
-
-    <Dialog
-      v-model:open="songPickerOpen"
-      title="选择背景音乐"
-      :description="`已选 ${draftCreateSongs.length} 首，最多 ${createSongLimit} 首`"
-      show-close
-      content-class="listen-song-picker-dialog"
-    >
-      <div class="listen-song-picker">
-        <div class="listen-song-picker-tabs">
-          <button
-            v-for="tab in songPickerTabs"
-            :key="tab.id"
-            type="button"
-            :class="{ 'is-active': songPickerTab === tab.id }"
-            @click="selectSongPickerTab(tab.id)"
-          >
-            {{ tab.name }}
-          </button>
-        </div>
-
-        <div v-if="songPickerTab === 'search'" class="listen-song-picker-search">
-          <Input
-            v-model="songSearchKeyword"
-            :show-clear="false"
-            placeholder="搜索歌名或歌手"
-            @keyup.enter="searchCreateSongs(1)"
-          />
-          <Button
-            size="sm"
-            variant="secondary"
-            :loading="searchingSongs"
-            @click="searchCreateSongs(1)"
-          >
-            <Icon :icon="iconSearch" width="16" height="16" />
-            搜索
-          </Button>
-        </div>
-
-        <div v-else-if="songPickerTab === 'mine'" class="listen-song-picker-source">
-          <span>我收藏的歌曲</span>
-          <span v-if="playlistStore.favoritesLoading">正在同步…</span>
-        </div>
-
-        <div v-else-if="songPickerTab === 'channel'" class="listen-song-picker-source">
-          <span>{{ selectedChannel?.name || '尚未选择音乐频道' }}</span>
-          <Button
-            v-if="selectedChannelId"
-            class="listen-song-picker-refresh"
-            size="xs"
-            variant="ghost"
-            :loading="loadingChannelSongs"
-            title="刷新频道歌曲"
-            aria-label="刷新频道歌曲"
-            @click="loadSelectedChannelSongs(currentPickerPage)"
-          >
-            <Icon :icon="iconRefreshCw" width="14" height="14" />
-          </Button>
-        </div>
-
-        <div class="listen-song-picker-toolbar">
-          <div v-if="songPickerTab !== 'selected'" class="listen-song-picker-bulk-actions">
-            <CheckboxRoot
-              class="listen-song-picker-select-all"
-              :model-value="visiblePickerSelectionState"
-              :disabled="!visiblePickerSongs.length"
-              @update:model-value="setVisibleSongsChecked"
-            >
-              <span class="listen-song-picker-checkbox" aria-hidden="true">
-                <CheckboxIndicator as-child>
-                  <span class="listen-song-picker-checkbox-indicator" />
-                </CheckboxIndicator>
-              </span>
-              <span>选择本页</span>
-            </CheckboxRoot>
-            <span>本页已选 {{ selectedVisibleSongCount }}/{{ visiblePickerSongs.length }}</span>
-          </div>
-          <span v-else class="listen-song-picker-selected-total">
-            共 {{ draftCreateSongs.length }} 首
-          </span>
-
-          <div class="listen-song-picker-pagination">
-            <button
-              type="button"
-              aria-label="上一页"
-              :disabled="!pickerHasPrevious || searchingSongs || loadingChannelSongs"
-              @click="updatePickerPage(-1)"
-            >
-              <Icon :icon="iconChevronLeft" width="15" height="15" />
-            </button>
-            <span>{{ currentPickerPage }} / {{ pickerPageCount }}</span>
-            <button
-              type="button"
-              aria-label="下一页"
-              :disabled="!pickerHasNext || searchingSongs || loadingChannelSongs"
-              @click="updatePickerPage(1)"
-            >
-              <Icon :icon="iconChevronRight" width="15" height="15" />
-            </button>
-          </div>
-        </div>
-
-        <div class="listen-song-picker-list">
-          <div
-            v-for="(song, index) in visiblePickerSongs"
-            :key="`${songHashKey(song)}:${index}`"
-            class="listen-song-picker-row"
-            :class="{ 'is-selected': draftSongHashes.has(songHashKey(song)) }"
-            @click="toggleDraftSong(song)"
-          >
-            <CheckboxRoot
-              class="listen-song-picker-checkbox"
-              :model-value="draftSongHashes.has(songHashKey(song))"
-              :aria-label="`选择 ${song.title || '歌曲'}`"
-              @click.stop
-              @update:model-value="setDraftSongChecked(song, $event)"
-            >
-              <CheckboxIndicator as-child>
-                <span class="listen-song-picker-checkbox-indicator" />
-              </CheckboxIndicator>
-            </CheckboxRoot>
-            <span class="listen-song-picker-index">{{ pickerStartIndex + index + 1 }}</span>
-            <Cover
-              :url="song.coverUrl"
-              :alt="song.title"
-              :width="42"
-              :height="42"
-              :border-radius="9"
-            />
-            <div
-              class="listen-song-picker-song"
-              :class="{ 'is-confirming': songPickerTab === 'selected' }"
-            >
-              <span>
-                <strong>{{ song.title || '歌曲信息同步中' }}</strong>
-                <small>{{ song.artist || '未知歌手' }}</small>
-              </span>
-              <div
-                v-if="songPickerTab === 'selected'"
-                class="listen-song-picker-controls"
-                @click.stop
-              >
-                <button
-                  type="button"
-                  aria-label="上移"
-                  :disabled="pickerStartIndex + index === 0"
-                  @click="moveDraftSong(pickerStartIndex + index, -1)"
-                >
-                  <Icon :icon="iconChevronUp" width="15" height="15" />
-                </button>
-                <button
-                  type="button"
-                  aria-label="下移"
-                  :disabled="pickerStartIndex + index === draftCreateSongs.length - 1"
-                  @click="moveDraftSong(pickerStartIndex + index, 1)"
-                >
-                  <Icon :icon="iconChevronDown" width="15" height="15" />
-                </button>
-              </div>
-            </div>
-          </div>
-
-          <div
-            v-if="
-              !visiblePickerSongs.length &&
-              !searchingSongs &&
-              !(songPickerTab === 'channel' && loadingChannelSongs) &&
-              !(songPickerTab === 'mine' && playlistStore.favoritesLoading)
-            "
-            class="listen-song-picker-empty"
-          >
-            <Icon :icon="iconMusic" width="28" height="28" />
-            <span>{{ pickerEmptyCopy }}</span>
-          </div>
-          <div
-            v-else-if="
-              searchingSongs ||
-              (songPickerTab === 'channel' && loadingChannelSongs) ||
-              (songPickerTab === 'mine' && playlistStore.favoritesLoading)
-            "
-            class="listen-song-picker-empty"
-          >
-            <span>正在加载歌曲…</span>
-          </div>
-        </div>
-      </div>
-      <template #footer>
-        <Button variant="secondary" size="sm" @click="songPickerOpen = false">取消</Button>
-        <Button size="sm" :disabled="draftCreateSongs.length === 0" @click="confirmSongPicker">
-          完成（{{ draftCreateSongs.length }} 首）
         </Button>
       </template>
     </Dialog>
