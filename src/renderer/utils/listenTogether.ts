@@ -221,7 +221,7 @@ export const mapListenTogetherRoom = (
   forcedRoomType?: ListenTogetherRoomType,
 ): ListenTogetherRoom => {
   const source = asListenTogetherRecord(value) ?? {};
-  const extraRoomRecord = asListenTogetherRecord(source.extra_room_info) ?? {};
+  const extraRoomRecord = asListenTogetherRecord(parseJsonValue(source.extra_room_info)) ?? {};
   const ownerRecord = {
     ...(asListenTogetherRecord(source.user_info) ?? {}),
     ...(asListenTogetherRecord(source.owner_info) ?? {}),
@@ -237,6 +237,8 @@ export const mapListenTogetherRoom = (
     ...(asListenTogetherRecord(source.base_info) ?? {}),
     ...source,
   };
+  const switchRecord = asListenTogetherRecord(parseJsonValue(record.switch)) ?? {};
+  const chatSwitch = readOptionalNumber(switchRecord, 'chat');
   const rawMemberPreviews = [
     record.member_list,
     record.members,
@@ -341,7 +343,10 @@ export const mapListenTogetherRoom = (
     memberCount: memberCount ?? (memberPreviews.length || base?.memberCount || 0),
     memberLimit: memberLimit ?? base?.memberLimit,
     studyCount: studyCount ?? base?.studyCount ?? 0,
-    allowChat: readBoolean(record, base?.allowChat ?? true, 'allow_chat'),
+    allowChat:
+      chatSwitch !== undefined
+        ? chatSwitch === 1
+        : readBoolean(record, base?.allowChat ?? true, 'allow_chat'),
     channelId: readString(record, 'global_collection_id', 'channel_id') || base?.channelId || '',
     channelName: readString(record, 'channel_name') || base?.channelName || '',
     currentSongName:
@@ -444,8 +449,13 @@ const getSystemMessageText = (message: Record<string, unknown>, type: number) =>
       return action === 2 ? `${nickname} 离开了房间` : `${nickname} 进入了房间`;
     case 820:
       return '房主已结束一起听';
-    case 821:
+    case 821: {
+      const roomSwitch = asListenTogetherRecord(parseJsonValue(message.switch));
+      const chat = roomSwitch ? readOptionalNumber(roomSwitch, 'chat') : undefined;
+      if (chat === 1) return '已开启聊天';
+      if (chat === 2) return '已关闭聊天';
       return '房间信息已更新';
+    }
     case 830:
       return `${nickname} 更新了房间成员设置`;
     case 3001:
@@ -459,7 +469,7 @@ const getSystemMessageText = (message: Record<string, unknown>, type: number) =>
     case 3005:
       return '房间播放状态已更新';
     case 4001:
-      return `${nickname} 开始一起听`;
+      return `${nickname}已加入一起听`;
     case 4002:
       return `${nickname} 离开了房间`;
     case 4003:
@@ -704,6 +714,8 @@ export const mapListenTogetherSong = (value: unknown): Song | null => {
       upstreamOriginalMixSongId && upstreamOriginalMixSongId !== mixSongId
         ? upstreamOriginalMixSongId
         : preservedAlternateMixSongId,
+    listenTogetherCanPlay: readOptionalNumber(record, 'canplay'),
+    listenTogetherGenting: readOptionalNumber(record, 'genting'),
     source: 'listen-together',
   };
 };

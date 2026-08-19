@@ -24,6 +24,8 @@ import { useUserStore } from './stores/user';
 import { waitForSqlitePersistHydration } from './stores/sqlitePersist';
 import { normalizeQuality } from './stores/player/utils';
 import { clearCloudAudioIndex, refreshCloudAudioIndex } from '@/services/cloudAudioIndex';
+import { registerContentBlacklistIntegration } from '@/services/contentBlacklistIntegration';
+import { useContentBlacklistStore } from './stores/contentBlacklist';
 import { pageTransitionState } from '@/plugins/runtime/theme';
 import { coverFallbackRevision } from '@/plugins/coverFallback';
 import { resolveCoverColorUrls } from '@/utils/cover';
@@ -50,6 +52,7 @@ const playlistStore = usePlaylistStore();
 const historyStore = useHistoryStore();
 const toastStore = useToastStore();
 const userStore = useUserStore();
+const contentBlacklistStore = useContentBlacklistStore();
 let disposeShortcuts: (() => void) | null = null;
 let disposeDesktopLyricSync: (() => void) | null = null;
 let disposeMiniPlayerSync: (() => void) | null = null;
@@ -59,6 +62,7 @@ let disposePowerResumeSync: (() => void) | null = null;
 let disposePluginRuntimeReload: (() => void) | null = null;
 let disposeTaskBridges: (() => void) | null = null;
 let disposeShareOpen: (() => void) | null = null;
+let disposeContentBlacklistIntegration: (() => void) | null = null;
 let syncGlobalShortcutsFn: SyncGlobalShortcuts | null = null;
 let silentUpdateCheckTimer: number | null = null;
 let clipboardShareCheckTimer: number | null = null;
@@ -237,6 +241,8 @@ onMounted(async () => {
     return;
   }
 
+  disposeContentBlacklistIntegration = registerContentBlacklistIntegration();
+
   const [
     { usePlayerStore },
     { initShortcutSync, syncGlobalShortcuts },
@@ -350,6 +356,8 @@ onUnmounted(() => {
   disposePluginRuntimeReload = null;
   disposeShareOpen?.();
   disposeShareOpen = null;
+  disposeContentBlacklistIntegration?.();
+  disposeContentBlacklistIntegration = null;
   disposeTaskBridges?.();
   disposeTaskBridges = null;
   colorSchemeMediaQuery?.removeEventListener('change', updateTheme);
@@ -399,6 +407,7 @@ watch(
 watch(
   () => [userStore.isLoggedIn, currentUserKey.value] as const,
   ([loggedIn, userKey]) => {
+    contentBlacklistStore.reset();
     if (loggedIn) {
       if (userKey && loadedCloudUserKey && loadedCloudUserKey !== userKey) {
         playlistStore.resetUserCollections();

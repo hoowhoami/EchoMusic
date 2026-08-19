@@ -78,6 +78,7 @@ const {
   lastError,
   loadingRoom,
   sendingMessage,
+  updatingChat,
   requestingSongHash,
 } = storeToRefs(listenStore);
 
@@ -519,6 +520,15 @@ const sendMessage = async () => {
     messageText.value = '';
   } catch (error) {
     toastStore.warning(error instanceof Error ? error.message : '消息发送失败');
+  }
+};
+
+const toggleChat = async () => {
+  if (!activeRoom.value || !isOwner.value || updatingChat.value) return;
+  try {
+    await listenStore.setChatEnabled(!activeRoom.value.allowChat);
+  } catch (error) {
+    toastStore.danger(error instanceof Error ? error.message : '聊天设置更新失败');
   }
 };
 
@@ -1084,6 +1094,15 @@ onMounted(() => {
                   <span class="listen-panel-kicker">房间聊天</span>
                   <h2>{{ activeRoom?.allowChat ? '和大家打个招呼' : '房主已关闭聊天' }}</h2>
                 </div>
+                <Button
+                  v-if="isOwner"
+                  variant="ghost"
+                  size="xs"
+                  :disabled="updatingChat"
+                  @click="toggleChat"
+                >
+                  {{ activeRoom?.allowChat ? '关闭聊天' : '开启聊天' }}
+                </Button>
               </div>
               <Scrollbar ref="messagesScroll" class="listen-chat-scroll">
                 <div class="listen-message-list">

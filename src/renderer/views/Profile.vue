@@ -7,6 +7,7 @@ import { useLoginDeviceStore, type LoginDeviceSession } from '@/stores/loginDevi
 import Button from '@/components/ui/Button.vue';
 import Dialog from '@/components/ui/Dialog.vue';
 import Popover from '@/components/ui/Popover.vue';
+import ContentBlacklistDialog from '@/components/profile/ContentBlacklistDialog.vue';
 
 import Avatar from '@/components/ui/Avatar.vue';
 
@@ -19,6 +20,7 @@ import {
   iconLogOut,
   iconRefreshCw,
   iconScan,
+  iconShield,
   iconSmartphone,
   iconTrash,
   iconUser,
@@ -48,6 +50,7 @@ const loginDeviceStore = useLoginDeviceStore();
 const userInfo = computed(() => userStore.info);
 
 const isLoading = ref(false);
+const showContentBlacklist = ref(false);
 const showDeviceManager = ref(false);
 const showKickConfirm = ref(false);
 const pendingKickDevice = ref<LoginDeviceSession | null>(null);
@@ -274,6 +277,16 @@ onMounted(() => loadData());
             <header class="flex items-center justify-between mb-6">
               <h1 class="text-[22px] font-black tracking-tight">个人中心</h1>
               <div class="flex items-center gap-2">
+                <Button
+                  variant="unstyled"
+                  size="none"
+                  @click="showContentBlacklist = true"
+                  class="w-10 h-10 flex items-center justify-center rounded-full border border-[var(--control-border)] text-text-main/70 hover:bg-[var(--control-hover-bg)] hover:text-text-main transition-all active:scale-90"
+                  title="黑名单管理"
+                  aria-label="打开黑名单管理"
+                >
+                  <Icon :icon="iconShield" width="20" height="20" />
+                </Button>
                 <Button
                   variant="unstyled"
                   size="none"
@@ -557,6 +570,8 @@ onMounted(() => loadData());
         <Button variant="danger" size="sm" @click="confirmLogout">确认退出</Button>
       </template>
     </Dialog>
+
+    <ContentBlacklistDialog v-model:open="showContentBlacklist" />
 
     <Dialog
       v-model:open="showDeviceManager"

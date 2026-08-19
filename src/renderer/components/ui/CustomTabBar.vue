@@ -6,6 +6,9 @@ interface Props {
   tabs: string[];
   modelValue?: number;
   class?: string;
+  ariaLabel?: string;
+  tabIds?: string[];
+  panelIds?: string[];
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -30,21 +33,47 @@ const handleSelect = (index: number) => {
   if (index === props.modelValue) return;
   emit('update:modelValue', index);
 };
+
+const handleKeydown = (event: KeyboardEvent, index: number) => {
+  let nextIndex = index;
+  if (event.key === 'ArrowRight') {
+    nextIndex = (index + 1) % tabCount.value;
+  } else if (event.key === 'ArrowLeft') {
+    nextIndex = (index - 1 + tabCount.value) % tabCount.value;
+  } else if (event.key === 'Home') {
+    nextIndex = 0;
+  } else if (event.key === 'End') {
+    nextIndex = tabCount.value - 1;
+  } else {
+    return;
+  }
+
+  event.preventDefault();
+  handleSelect(nextIndex);
+  const tablist = (event.currentTarget as HTMLElement).closest<HTMLElement>('[role="tablist"]');
+  tablist?.querySelectorAll<HTMLElement>('[role="tab"]')[nextIndex]?.focus();
+};
 </script>
 
 <template>
   <div class="custom-tab-root" :class="props.class">
-    <div class="custom-tab-track">
-      <div class="custom-tab-slider" :style="sliderStyle"></div>
+    <div class="custom-tab-track" role="tablist" :aria-label="props.ariaLabel">
+      <div class="custom-tab-slider" :style="sliderStyle" aria-hidden="true"></div>
       <Button
         variant="unstyled"
         size="none"
         v-for="(label, index) in props.tabs"
-        :key="label + index"
+        :key="index"
         type="button"
         class="custom-tab-item"
         :class="{ active: isSelected(index) }"
+        role="tab"
+        :id="props.tabIds?.[index]"
+        :aria-controls="props.panelIds?.[index]"
+        :aria-selected="isSelected(index)"
+        :tabindex="isSelected(index) ? 0 : -1"
         @click="handleSelect(index)"
+        @keydown="handleKeydown($event, index)"
       >
         {{ label }}
       </Button>

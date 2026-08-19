@@ -48,6 +48,10 @@ export interface Song {
   mvHash?: string;
   albumAudioId?: string | number;
   originalAlbumAudioId?: string | number;
+  /** 众乐房授权：0=不可播，1=完整播放，2=仅片段。 */
+  listenTogetherCanPlay?: number;
+  /** 众乐房计费类型：1=免费，2/3=VIP，4/5/6=单曲或专辑付费。 */
+  listenTogetherGenting?: number;
   mixSongId: string | number;
   fileId?: string | number;
   cloudFileId?: string | number;

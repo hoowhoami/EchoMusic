@@ -172,7 +172,10 @@ const handleInteractOutside = (event: Event) => {
           <!-- noScroll 模式：不包裹 Scrollbar，由内容自行管理滚动 -->
           <template v-else>
             <VisuallyHidden>
-              <DialogDescription>对话框内容</DialogDescription>
+              <DialogDescription>
+                <slot v-if="hasDescription" name="description">{{ props.description }}</slot>
+                <template v-else>对话框内容</template>
+              </DialogDescription>
             </VisuallyHidden>
             <div v-if="hasBody" :class="[computedBodyClass, 'flex-1 min-h-0']">
               <slot />

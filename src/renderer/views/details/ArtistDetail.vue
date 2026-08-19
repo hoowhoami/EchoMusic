@@ -37,6 +37,7 @@ import { usePlayerStore } from '@/stores/player';
 import { useSettingStore } from '@/stores/setting';
 import { useUserStore } from '@/stores/user';
 import { useToastStore } from '@/stores/toast';
+import { useContentBlacklistStore } from '@/stores/contentBlacklist';
 import { PagedSongLoader } from '@/utils/PagedSongLoader';
 import type { SortField, SortOrder } from '@/components/music/SongListHeader.vue';
 import {
@@ -50,6 +51,7 @@ import {
   iconCheckMark,
   iconChevronDown,
   iconShare,
+  iconEyeOff,
 } from '@/icons';
 import { replaceQueueAndPlay } from '@/utils/playback';
 import { copyShareTarget, createShareTarget } from '@/utils/share';
@@ -84,6 +86,7 @@ const playerStore = usePlayerStore();
 const settingStore = useSettingStore();
 const userStore = useUserStore();
 const toastStore = useToastStore();
+const contentBlacklistStore = useContentBlacklistStore();
 
 const router = useRouter();
 const { id: currentId, onIdChange } = useRouteId();
@@ -125,6 +128,7 @@ const loadedSongCount = ref(0);
 const showBatchDrawer = ref(false);
 const showIntroDialog = ref(false);
 const togglingFollow = ref(false);
+const togglingBlacklist = ref(false);
 
 const searchQuery = ref('');
 const songListRef = ref<{ scrollToActive?: () => void } | null>(null);
@@ -355,11 +359,77 @@ const handleShareArtist = async () => {
   }
 };
 
+const blacklistArtistId = computed(() => {
+  const meta = artist.value;
+  const id = meta?.singerid ?? meta?.author_id ?? meta?.id;
+  const normalized = String(id ?? '').trim();
+  return /^\d+$/.test(normalized) && !/^0+$/.test(normalized) ? normalized : '';
+});
+
+const blacklistArtistName = computed(() => {
+  const meta = artist.value;
+  return String(meta?.singername ?? meta?.author_name ?? meta?.name ?? '').trim();
+});
+
+const artistBlacklistStatus = computed(() =>
+  contentBlacklistStore.status('singer', blacklistArtistId.value),
+);
+
+const toggleArtistBlacklist = async () => {
+  const singerId = blacklistArtistId.value;
+  const name = blacklistArtistName.value;
+  if (!userStore.isLoggedIn || !singerId || !name || togglingBlacklist.value) return;
+
+  togglingBlacklist.value = true;
+  try {
+    let currentStatus = artistBlacklistStatus.value;
+    if (currentStatus === 'unknown') {
+      const loaded = await contentBlacklistStore.ensureFullyLoaded('singer');
+      if (!loaded) {
+        toastStore.warning(contentBlacklistStore.singer.error || '已屏蔽歌手加载失败，请稍后重试');
+        return;
+      }
+      if (blacklistArtistId.value !== singerId) return;
+      currentStatus = contentBlacklistStore.status('singer', singerId);
+    }
+
+    const entry =
+      currentStatus === 'present'
+        ? contentBlacklistStore.singer.entries.find(
+            (item) => item.label === 'singer' && item.key === singerId,
+          )
+        : undefined;
+    const success = entry
+      ? await contentBlacklistStore.remove(entry)
+      : await contentBlacklistStore.addSinger({ singerId, name });
+    if (success) {
+      toastStore.actionCompleted(entry ? '已取消屏蔽' : '已屏蔽歌手');
+    } else {
+      toastStore.warning(
+        contentBlacklistStore.singer.error || `${entry ? '取消屏蔽' : '屏蔽歌手'}失败，请稍后重试`,
+      );
+    }
+  } finally {
+    togglingBlacklist.value = false;
+  }
+};
+
+watch(
+  [() => userStore.isLoggedIn, blacklistArtistId],
+  ([isLoggedIn, singerId]) => {
+    if (isLoggedIn && singerId && contentBlacklistStore.status('singer', singerId) === 'unknown') {
+      void contentBlacklistStore.ensureFullyLoaded('singer');
+    }
+  },
+  { immediate: true },
+);
+
 const secondaryActions = computed(() => {
   if (!artist.value) return [];
   const actions = [] as {
     icon: typeof iconHeart;
     label: string;
+    disabled?: boolean;
     emphasized?: boolean;
     tone?: 'default' | 'favorite';
     onTap: () => void | Promise<void>;
@@ -379,6 +449,22 @@ const secondaryActions = computed(() => {
       tone: 'favorite' as const,
       onTap: toggleArtistFollow,
     });
+
+    if (blacklistArtistId.value && blacklistArtistName.value) {
+      actions.push({
+        icon: iconEyeOff,
+        label: togglingBlacklist.value
+          ? artistBlacklistStatus.value === 'present'
+            ? '取消中...'
+            : '屏蔽中...'
+          : artistBlacklistStatus.value === 'present'
+            ? '取消屏蔽'
+            : '屏蔽歌手',
+        emphasized: artistBlacklistStatus.value === 'present',
+        disabled: togglingBlacklist.value,
+        onTap: toggleArtistBlacklist,
+      });
+    }
   }
 
   actions.push({
@@ -711,6 +797,18 @@ onUnmounted(() => {
               class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] text-red-500"
             >
               <Icon :icon="isFollowed ? iconHeartFilled : iconHeart" width="18" height="18" />
+            </Button>
+            <Button
+              v-if="userStore.isLoggedIn && blacklistArtistId && blacklistArtistName"
+              variant="unstyled"
+              size="none"
+              :disabled="togglingBlacklist"
+              :title="artistBlacklistStatus === 'present' ? '取消屏蔽' : '屏蔽歌手'"
+              :aria-label="artistBlacklistStatus === 'present' ? '取消屏蔽' : '屏蔽歌手'"
+              @click="toggleArtistBlacklist"
+              class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] text-text-main opacity-60"
+            >
+              <Icon :icon="iconEyeOff" width="18" height="18" />
             </Button>
             <Button
               variant="unstyled"

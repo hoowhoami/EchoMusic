@@ -206,6 +206,12 @@ export const heartbeatListenTogetherRoom = (roomId: string, roomType: ListenToge
     biz: getListenTogetherRoomBiz(roomType),
   });
 
+export const updateListenTogetherChat = (roomId: string, enabled: boolean) =>
+  callListenTogetherEndpoint(routes.room, 'update_chat', {
+    room_id: roomId,
+    chat: enabled ? 1 : 2,
+  });
+
 // 概念版进入众乐房创建流程前会用空 groupid 查询账号当前会话。
 // 已知 roomId 时同一接口也可用来校验指定房间的会话状态。
 export const getListenTogetherStatus = (roomType: ListenTogetherRoomType, roomId = '') =>
@@ -256,6 +262,13 @@ export const getListenTogetherMessages = (
 export const syncListenTogetherPlayer = (roomId: string, roomType: ListenTogetherRoomType) =>
   callListenTogetherEndpoint(roomType === 0 ? routes.music : routes.study, 'sync_player', {
     room_id: roomId,
+  });
+
+export const getListenTogetherPlaybackUrl = (roomId: string, audio: ListenTogetherAudioRef) =>
+  callListenTogetherEndpoint(routes.music, 'playback_url', {
+    room_id: roomId,
+    hash: audio.hash,
+    mixsongid: audio.mixSongId,
   });
 
 export const switchListenTogetherMusicRoomSong = (
