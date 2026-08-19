@@ -438,7 +438,12 @@ watch(
   },
 );
 watch(
-  () => [settings.globalShortcutsEnabled, settings.globalShortcutBindings],
+  () => [
+    settings.globalShortcutsEnabled,
+    settings.globalShortcutBindings,
+    settings.shortcutEnabled,
+    settings.shortcutBindings,
+  ],
   () => {
     if (!isMiniPlayerRoute.value) void syncGlobalShortcutsFn?.();
   },

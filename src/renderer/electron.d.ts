@@ -10,7 +10,7 @@ import type {
   PluginGlobalShortcutRegistrationPayload,
   PluginGlobalShortcutRegistrationResult,
   PluginGlobalShortcutTriggerPayload,
-  ShortcutMap,
+  ShortcutRegistrationRequest,
   ShortcutRegistrationResult,
 } from '../shared/shortcuts';
 import type {
@@ -208,11 +208,9 @@ export interface IElectronAPI {
     off: (channel: string, func: (...args: unknown[]) => void) => void;
   };
   shortcuts: {
-    register: (payload: {
-      enabled: boolean;
-      shortcutMap: ShortcutMap;
-    }) => Promise<ShortcutRegistrationResult>;
+    register: (payload: ShortcutRegistrationRequest) => Promise<ShortcutRegistrationResult>;
     refresh: () => Promise<ShortcutRegistrationResult>;
+    setLocalEditableActive: (active: boolean) => Promise<void>;
     registerPluginGlobal: (
       payload: PluginGlobalShortcutRegistrationPayload,
     ) => Promise<PluginGlobalShortcutRegistrationResult>;
