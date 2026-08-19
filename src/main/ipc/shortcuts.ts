@@ -104,36 +104,44 @@ const forwardToRenderer = (command: ShortcutCommand, getMainWindow: () => Browse
   win.webContents.send('shortcut-trigger', command);
 };
 
-const registerShortcuts = (
-  shortcutMap: ShortcutMap,
+const handleShortcutTrigger = (
+  command: ShortcutCommand,
   getMainWindow: () => BrowserWindow | null,
+  isEligible: (win: BrowserWindow | null) => boolean,
+) => {
+  if (!isEligible(getMainWindow())) return;
+  if (command === 'toggleWindow') {
+    const win = getMainWindow();
+    if (!win) return;
+    if (win.isVisible()) hideMainWindow();
+    else void restoreActiveWindowMode();
+    return;
+  }
+  if (command === 'toggleMiniPlayer') {
+    void toggleMiniPlayerWindow();
+    return;
+  }
+  forwardToRenderer(command, getMainWindow);
+};
+
+const registerAcceleratorMap = (
+  shortcutMap: ShortcutMap,
+  registeredSet: Set<string>,
+  handleTrigger: (command: ShortcutCommand) => void,
+  shouldRegister?: (accelerator: string) => boolean,
 ): ShortcutRegistrationResult => {
-  unregisterAppShortcuts();
   const registered = {} as ShortcutMap;
   const failures: ShortcutRegistrationFailure[] = [];
-  requestedShortcuts = shortcutMap;
 
   (Object.entries(shortcutMap) as Array<[ShortcutCommand, string]>).forEach(
     ([command, accelerator]) => {
       if (!accelerator) return;
+      if (shouldRegister && !shouldRegister(accelerator)) return;
       try {
-        const didRegister = globalShortcut.register(accelerator, () => {
-          if (command === 'toggleWindow') {
-            const win = getMainWindow();
-            if (!win) return;
-            if (win.isVisible()) hideMainWindow();
-            else void restoreActiveWindowMode();
-            return;
-          }
-          if (command === 'toggleMiniPlayer') {
-            void toggleMiniPlayerWindow();
-            return;
-          }
-          forwardToRenderer(command, getMainWindow);
-        });
+        const didRegister = globalShortcut.register(accelerator, () => handleTrigger(command));
         if (didRegister && globalShortcut.isRegistered(accelerator)) {
           registered[command] = accelerator;
-          appRegisteredAccelerators.add(accelerator);
+          registeredSet.add(accelerator);
         } else {
           failures.push({ command, accelerator, reason: 'conflict' });
         }
@@ -145,6 +153,17 @@ const registerShortcuts = (
   return { registered, failures };
 };
 
+const registerShortcuts = (
+  shortcutMap: ShortcutMap,
+  getMainWindow: () => BrowserWindow | null,
+): ShortcutRegistrationResult => {
+  unregisterAppShortcuts();
+  requestedShortcuts = shortcutMap;
+  return registerAcceleratorMap(shortcutMap, appRegisteredAccelerators, (command) =>
+    handleShortcutTrigger(command, getMainWindow, () => true),
+  );
+};
+
 // 无修饰键的独立按键（如 F5、Space）保留渲染层 keydown 处理，保留输入框守卫
 const MODIFIER_ACCELERATOR_PATTERN = /CmdOrCtrl|Ctrl|Shift|Alt|Meta/i;
 
@@ -153,41 +172,15 @@ const registerLocalShortcuts = (
   getMainWindow: () => BrowserWindow | null,
 ): ShortcutRegistrationResult => {
   unregisterLocalShortcuts();
-  const registered = {} as ShortcutMap;
-  const failures: ShortcutRegistrationFailure[] = [];
-
-  (Object.entries(shortcutMap) as Array<[ShortcutCommand, string]>).forEach(
-    ([command, accelerator]) => {
-      if (!accelerator) return;
-      if (!MODIFIER_ACCELERATOR_PATTERN.test(accelerator)) return;
-      try {
-        const didRegister = globalShortcut.register(accelerator, () => {
-          const win = getMainWindow();
-          // 本地快捷键仅在应用窗口聚焦时生效，避免在后台/全局触发
-          if (!win || win.isDestroyed() || !win.isFocused()) return;
-          if (command === 'toggleWindow') {
-            if (win.isVisible()) hideMainWindow();
-            else void restoreActiveWindowMode();
-            return;
-          }
-          if (command === 'toggleMiniPlayer') {
-            void toggleMiniPlayerWindow();
-            return;
-          }
-          forwardToRenderer(command, getMainWindow);
-        });
-        if (didRegister && globalShortcut.isRegistered(accelerator)) {
-          registered[command] = accelerator;
-          appRegisteredLocalAccelerators.add(accelerator);
-        } else {
-          failures.push({ command, accelerator, reason: 'conflict' });
-        }
-      } catch {
-        failures.push({ command, accelerator, reason: 'invalid' });
-      }
-    },
+  return registerAcceleratorMap(
+    shortcutMap,
+    appRegisteredLocalAccelerators,
+    (command) =>
+      handleShortcutTrigger(command, getMainWindow, (win) =>
+        Boolean(win && !win.isDestroyed() && win.isFocused()),
+      ),
+    (accelerator) => MODIFIER_ACCELERATOR_PATTERN.test(accelerator),
   );
-  return { registered, failures };
 };
 
 const syncLocalShortcuts = (

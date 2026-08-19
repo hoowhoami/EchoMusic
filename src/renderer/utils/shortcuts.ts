@@ -434,7 +434,7 @@ const showGlobalShortcutFailures = (result: ShortcutRegistrationResult | null | 
       return `${label} (${displayAccelerator}) ${suffix}`;
     })
     .join('；');
-  toastStore.warning(`以下全局快捷键未生效：${message}`, 4200);
+  toastStore.warning(`以下快捷键未生效：${message}`, 4200);
 };
 
 export const executeShortcutCommand = (command: ShortcutCommand) => {
@@ -552,13 +552,14 @@ export const syncGlobalShortcuts = async () => {
   const settingStore = useSettingStore();
   const shortcutMap = resolveShortcutMap('global');
   const enabled = settingStore.globalShortcutsEnabled;
+  // Windows 下输入法会抢占 Ctrl+Space 等组合键，需系统级注册本地快捷键以绕过；
+  // 仅主窗口聚焦时生效，其他平台维持渲染层 keydown 监听
+  const localEnabled = window.electron?.platform === 'win32' && settingStore.shortcutEnabled;
   const result = await window.electron?.shortcuts?.register({
     enabled,
     shortcutMap,
-    // Windows 下输入法会抢占 Ctrl+Space 等组合键，需系统级注册本地快捷键以绕过；
-    // 仅主窗口聚焦时生效，其他平台维持渲染层 keydown 监听
-    localEnabled: window.electron?.platform === 'win32' && settingStore.shortcutEnabled,
-    localShortcutMap: resolveShortcutMap('local'),
+    localEnabled,
+    localShortcutMap: localEnabled ? resolveShortcutMap('local') : undefined,
   });
   showGlobalShortcutFailures(result);
 };
@@ -580,9 +581,12 @@ export const initShortcutSync = () => {
 
 // 输入框等可编辑上下文激活时，暂停本地系统级快捷键，让出输入法对 Ctrl+Space 等组合键的占用
 const watchEditableContext = () => {
+  let lastEditable: boolean | null = null;
   const sync = () => {
     const activeElement = document.activeElement;
     const editable = activeElement instanceof HTMLElement && isInEditableContext(activeElement);
+    if (editable === lastEditable) return;
+    lastEditable = editable;
     void window.electron?.shortcuts?.setLocalEditableActive(editable);
   };
 
