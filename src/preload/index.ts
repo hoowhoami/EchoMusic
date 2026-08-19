@@ -7,7 +7,7 @@ import type {
   PluginGlobalShortcutRegistrationPayload,
   PluginGlobalShortcutRegistrationResult,
   PluginGlobalShortcutTriggerPayload,
-  ShortcutMap,
+  ShortcutRegistrationRequest,
   ShortcutRegistrationResult,
 } from '../shared/shortcuts';
 import type {
@@ -299,9 +299,11 @@ contextBridge.exposeInMainWorld('electron', {
     },
   },
   shortcuts: {
-    register: (payload: { enabled: boolean; shortcutMap: ShortcutMap }) =>
+    register: (payload: ShortcutRegistrationRequest) =>
       invokeWithPlainPayload<ShortcutRegistrationResult>('shortcuts:register', payload),
     refresh: () => ipcRenderer.invoke('shortcuts:refresh') as Promise<ShortcutRegistrationResult>,
+    setLocalEditableActive: (active: boolean) =>
+      ipcRenderer.invoke('shortcuts:set-local-editable-active', active),
     registerPluginGlobal: (payload: PluginGlobalShortcutRegistrationPayload) =>
       invokeWithPlainPayload<PluginGlobalShortcutRegistrationResult>(
         'shortcuts:register-plugin-global',

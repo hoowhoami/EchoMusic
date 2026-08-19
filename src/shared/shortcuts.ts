@@ -31,6 +31,13 @@ export interface ShortcutRegistrationResult {
   failures: ShortcutRegistrationFailure[];
 }
 
+export interface ShortcutRegistrationRequest {
+  enabled: boolean;
+  shortcutMap: ShortcutMap;
+  localEnabled?: boolean;
+  localShortcutMap?: ShortcutMap;
+}
+
 export interface PluginGlobalShortcutRegistrationPayload {
   pluginId: string;
   registrationId: string;

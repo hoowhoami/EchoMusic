@@ -10,12 +10,19 @@ import type {
   ShortcutCommand,
   ShortcutMap,
   ShortcutRegistrationFailure,
+  ShortcutRegistrationRequest,
   ShortcutRegistrationResult,
 } from '../../shared/shortcuts';
 import type { IpcContext } from './types';
 
 let requestedShortcuts: ShortcutMap | null = null;
 const appRegisteredAccelerators = new Set<string>();
+
+let requestedLocalShortcuts: ShortcutMap | null = null;
+let localShortcutsEnabled = false;
+let localEditableSuspend = false;
+const appRegisteredLocalAccelerators = new Set<string>();
+let localShortcutFocusBound = false;
 
 type PluginGlobalShortcutRecord = {
   pluginId: string;
@@ -40,6 +47,13 @@ const unregisterAppShortcuts = () => {
     globalShortcut.unregister(accelerator);
   }
   appRegisteredAccelerators.clear();
+};
+
+const unregisterLocalShortcuts = () => {
+  for (const accelerator of appRegisteredLocalAccelerators) {
+    globalShortcut.unregister(accelerator);
+  }
+  appRegisteredLocalAccelerators.clear();
 };
 
 const unregisterPluginGlobalShortcutByKey = (key: string) => {
@@ -131,6 +145,76 @@ const registerShortcuts = (
   return { registered, failures };
 };
 
+// 无修饰键的独立按键（如 F5、Space）保留渲染层 keydown 处理，保留输入框守卫
+const MODIFIER_ACCELERATOR_PATTERN = /CmdOrCtrl|Ctrl|Shift|Alt|Meta/i;
+
+const registerLocalShortcuts = (
+  shortcutMap: ShortcutMap,
+  getMainWindow: () => BrowserWindow | null,
+): ShortcutRegistrationResult => {
+  unregisterLocalShortcuts();
+  const registered = {} as ShortcutMap;
+  const failures: ShortcutRegistrationFailure[] = [];
+
+  (Object.entries(shortcutMap) as Array<[ShortcutCommand, string]>).forEach(
+    ([command, accelerator]) => {
+      if (!accelerator) return;
+      if (!MODIFIER_ACCELERATOR_PATTERN.test(accelerator)) return;
+      try {
+        const didRegister = globalShortcut.register(accelerator, () => {
+          const win = getMainWindow();
+          // 本地快捷键仅在应用窗口聚焦时生效，避免在后台/全局触发
+          if (!win || win.isDestroyed() || !win.isFocused()) return;
+          if (command === 'toggleWindow') {
+            if (win.isVisible()) hideMainWindow();
+            else void restoreActiveWindowMode();
+            return;
+          }
+          if (command === 'toggleMiniPlayer') {
+            void toggleMiniPlayerWindow();
+            return;
+          }
+          forwardToRenderer(command, getMainWindow);
+        });
+        if (didRegister && globalShortcut.isRegistered(accelerator)) {
+          registered[command] = accelerator;
+          appRegisteredLocalAccelerators.add(accelerator);
+        } else {
+          failures.push({ command, accelerator, reason: 'conflict' });
+        }
+      } catch {
+        failures.push({ command, accelerator, reason: 'invalid' });
+      }
+    },
+  );
+  return { registered, failures };
+};
+
+const syncLocalShortcuts = (
+  getMainWindow: () => BrowserWindow | null,
+): ShortcutRegistrationResult | null => {
+  if (!localShortcutsEnabled || !requestedLocalShortcuts) {
+    unregisterLocalShortcuts();
+    return null;
+  }
+  const win = getMainWindow();
+  if (!win || win.isDestroyed()) {
+    unregisterLocalShortcuts();
+    return null;
+  }
+  // 输入框等可编辑上下文激活时暂停，让出输入法对 Ctrl+Space 等组合键的占用
+  if (localEditableSuspend) {
+    unregisterLocalShortcuts();
+    return null;
+  }
+  // 仅主窗口聚焦时注册本地快捷键，失焦即注销，保证其他应用不被抢占
+  if (win.isFocused()) {
+    return registerLocalShortcuts(requestedLocalShortcuts, getMainWindow);
+  }
+  unregisterLocalShortcuts();
+  return null;
+};
+
 const registerPluginGlobalShortcut = (
   webContents: WebContents,
   payload: PluginGlobalShortcutRegistrationPayload,
@@ -185,13 +269,36 @@ const registerPluginGlobalShortcut = (
 export const registerShortcutHandlers = ({ getMainWindow }: IpcContext) => {
   ipcRegistry.registerHandler(
     'shortcuts:register',
-    (_event, payload: { enabled: boolean; shortcutMap: ShortcutMap }) => {
+    (_event, payload: ShortcutRegistrationRequest) => {
+      let result: ShortcutRegistrationResult;
       if (!payload?.enabled) {
         unregisterAppShortcuts();
         requestedShortcuts = null;
-        return { registered: {} as ShortcutMap, failures: [] };
+        result = { registered: {} as ShortcutMap, failures: [] };
+      } else {
+        result = registerShortcuts(payload.shortcutMap, getMainWindow);
       }
-      return registerShortcuts(payload.shortcutMap, getMainWindow);
+
+      // 本地快捷键：Windows 下系统级注册以绕过输入法对 Ctrl+Space 等组合键的抢占，仅聚焦时生效
+      requestedLocalShortcuts = payload.localShortcutMap ?? null;
+      localShortcutsEnabled = Boolean(payload.localEnabled);
+      const win = getMainWindow();
+      if (win && !win.isDestroyed() && !localShortcutFocusBound) {
+        localShortcutFocusBound = true;
+        win.on('focus', () => syncLocalShortcuts(getMainWindow));
+        win.on('blur', () => syncLocalShortcuts(getMainWindow));
+        win.once('closed', () => {
+          localShortcutFocusBound = false;
+          unregisterLocalShortcuts();
+        });
+      }
+      const localResult = syncLocalShortcuts(getMainWindow);
+      if (localResult) {
+        for (const failure of localResult.failures) {
+          result.failures.push(failure);
+        }
+      }
+      return result;
     },
   );
 
@@ -199,7 +306,14 @@ export const registerShortcutHandlers = ({ getMainWindow }: IpcContext) => {
     if (!requestedShortcuts) {
       return { registered: {} as ShortcutMap, failures: [] };
     }
-    return registerShortcuts(requestedShortcuts, getMainWindow);
+    const result = registerShortcuts(requestedShortcuts, getMainWindow);
+    syncLocalShortcuts(getMainWindow);
+    return result;
+  });
+
+  ipcRegistry.registerHandler('shortcuts:set-local-editable-active', (_event, active: boolean) => {
+    localEditableSuspend = Boolean(active);
+    syncLocalShortcuts(getMainWindow);
   });
 
   ipcRegistry.registerHandler(

@@ -552,19 +552,46 @@ export const syncGlobalShortcuts = async () => {
   const settingStore = useSettingStore();
   const shortcutMap = resolveShortcutMap('global');
   const enabled = settingStore.globalShortcutsEnabled;
-  const result = await window.electron?.shortcuts?.register({ enabled, shortcutMap });
+  const result = await window.electron?.shortcuts?.register({
+    enabled,
+    shortcutMap,
+    // Windows 下输入法会抢占 Ctrl+Space 等组合键，需系统级注册本地快捷键以绕过；
+    // 仅主窗口聚焦时生效，其他平台维持渲染层 keydown 监听
+    localEnabled: window.electron?.platform === 'win32' && settingStore.shortcutEnabled,
+    localShortcutMap: resolveShortcutMap('local'),
+  });
   showGlobalShortcutFailures(result);
 };
 
 export const initShortcutSync = () => {
   const removeLocal = registerLocalShortcuts();
   void syncGlobalShortcuts();
+  const removeEditableWatch = watchEditableContext();
   const removeGlobal = window.electron?.shortcuts?.onTrigger((command) => {
     if (!command) return;
     executeShortcutCommand(command as ShortcutCommand);
   });
   return () => {
     removeLocal();
+    removeEditableWatch();
     if (typeof removeGlobal === 'function') removeGlobal();
+  };
+};
+
+// 输入框等可编辑上下文激活时，暂停本地系统级快捷键，让出输入法对 Ctrl+Space 等组合键的占用
+const watchEditableContext = () => {
+  const sync = () => {
+    const activeElement = document.activeElement;
+    const editable = activeElement instanceof HTMLElement && isInEditableContext(activeElement);
+    void window.electron?.shortcuts?.setLocalEditableActive(editable);
+  };
+
+  window.addEventListener('focusin', sync);
+  window.addEventListener('focusout', sync);
+  sync();
+
+  return () => {
+    window.removeEventListener('focusin', sync);
+    window.removeEventListener('focusout', sync);
   };
 };
