@@ -16,7 +16,7 @@ import type {
   NowPlayingPlaybackPayload,
   NowPlayingSnapshotPatch,
 } from '../../shared/now-playing';
-import type { LyricLinePayload } from '../../shared/lyrics';
+import { normalizeLyricLinePayload } from '../../shared/lyrics';
 import type { ShortcutCommand } from '../../shared/shortcuts';
 
 const NOW_PLAYING_PROGRESS_SYNC_INTERVAL_MS = 120;
@@ -60,19 +60,7 @@ const NOW_PLAYING_COMMANDS = new Set<NowPlayingCommand>([
 const isNowPlayingCommand = (value: unknown): value is NowPlayingCommand =>
   typeof value === 'string' && NOW_PLAYING_COMMANDS.has(value as NowPlayingCommand);
 
-const normalizeLinePayload = (
-  line: ReturnType<typeof useLyricStore>['lines'][number],
-): LyricLinePayload => ({
-  time: Number(line.time) || 0,
-  text: String(line.text ?? ''),
-  translated: line.translated ? String(line.translated) : undefined,
-  romanized: line.romanized ? String(line.romanized) : undefined,
-  characters: (line.characters ?? []).map((char) => ({
-    text: String(char.text ?? ''),
-    startTime: Number(char.startTime) || 0,
-    endTime: Number(char.endTime) || Number(char.startTime) || 0,
-  })),
-});
+const normalizeLinePayload = normalizeLyricLinePayload;
 
 const resolveCurrentPlaybackQueue = () => {
   const playerStore = usePlayerStore();

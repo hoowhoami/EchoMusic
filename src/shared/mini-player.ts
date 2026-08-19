@@ -9,6 +9,8 @@ export type MiniPlayerSimpleCommand =
   | 'nextTrack'
   | 'toggleFavorite'
   | 'toggleLyricsMode'
+  | 'toggleRomanization'
+  | 'toggleRomanizationAsRuby'
   | 'toggleDesktopLyric'
   | 'toggleMute'
   | 'showMainWindow'
@@ -98,6 +100,8 @@ export interface MiniPlayerLyricPayload {
   timeOffset?: number;
   wantTranslation: boolean;
   wantRomanization: boolean;
+  /** 音译是否使用"逐字标注在原词上方"的注音模式渲染 */
+  showRomanizationAsRuby: boolean;
   hasTranslation: boolean;
   hasRomanization: boolean;
   desktopLyricEnabled: boolean;

@@ -45,6 +45,19 @@ const hasCustomLyricColors = computed(() =>
     <div class="settings-divider"></div>
     <div class="settings-item">
       <div class="space-y-1">
+        <h3 class="font-semibold">音译注音</h3>
+        <p class="text-sm text-text-secondary">
+          将音译标注在原词上方，关闭时音译作为独立副行显示（需开启音译）
+        </p>
+      </div>
+      <Switch
+        v-model="lyricStore.showRomanizationAsRuby"
+        :disabled="!lyricStore.wantRomanization"
+      />
+    </div>
+    <div class="settings-divider"></div>
+    <div class="settings-item">
+      <div class="space-y-1">
         <h3 class="font-semibold">字体大小</h3>
         <p class="text-sm text-text-secondary">调整歌词页面的文字大小</p>
       </div>

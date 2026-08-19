@@ -109,6 +109,7 @@ const lyricTitle = computed(() => playback.value?.title || '未在播放');
 const lyricArtist = computed(() => playback.value?.artist || 'EchoMusic');
 const lyricLines = computed(() => lyric.value?.lines ?? []);
 const liveLyricIndex = ref(-1);
+const liveLyricTimelineMs = ref(0);
 const lyricTimeline = createLyricTimeline();
 const stableLyricIndex = createStableLyricIndex();
 
@@ -161,6 +162,7 @@ const isRecentLyricSeek = () => {
 const refreshLiveLyricIndex = (options?: { forceSync?: boolean; resetStable?: boolean }) => {
   lyricTimeline.sync(getTimelinePlayback(), options?.forceSync);
   const timelineMs = getLyricTimelineMs();
+  liveLyricTimelineMs.value = timelineMs;
   const rawIndex = resolveLiveLyricIndex(timelineMs);
   const nextIndex = options?.resetStable
     ? stableLyricIndex.reset(rawIndex, timelineMs)
@@ -299,6 +301,7 @@ const shouldApplyLyricSnapshot = (
   if (isTransientEmptySameTrack) return false;
   if (nextLyric.wantTranslation !== currentLyric.wantTranslation) return true;
   if (nextLyric.wantRomanization !== currentLyric.wantRomanization) return true;
+  if (nextLyric.showRomanizationAsRuby !== currentLyric.showRomanizationAsRuby) return true;
   if (nextLyric.hasTranslation !== currentLyric.hasTranslation) return true;
   if (nextLyric.hasRomanization !== currentLyric.hasRomanization) return true;
   if (nextLyric.isLoading !== currentLyric.isLoading) return true;
@@ -1020,6 +1023,7 @@ onUnmounted(() => {
         :visible="isLyricOpen"
         :is-dark="appearance?.isDark ?? false"
         :expand-direction="expandDirection"
+        :timeline-ms="liveLyricTimelineMs"
         :aria-hidden="!isLyricOpen"
       />
 

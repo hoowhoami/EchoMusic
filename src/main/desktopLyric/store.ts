@@ -44,6 +44,7 @@ export function getDesktopLyricSettings(): DesktopLyricSettings {
     alwaysOnTop: Boolean(raw.alwaysOnTop),
     wantTranslation: Boolean(raw.wantTranslation),
     wantRomanization: Boolean(raw.wantRomanization),
+    showRomanizationAsRuby: Boolean(raw.showRomanizationAsRuby),
     theme: raw.theme ?? 'system',
     opacity: clamp(
       Number(raw.opacity) || DEFAULT_DESKTOP_LYRIC_PERSISTED_SETTINGS.opacity,
@@ -122,6 +123,7 @@ export function sanitizeDesktopLyricSettings(
     alwaysOnTop: Boolean(mergedBase.alwaysOnTop),
     wantTranslation: Boolean(mergedBase.wantTranslation),
     wantRomanization: Boolean(mergedBase.wantRomanization),
+    showRomanizationAsRuby: Boolean(mergedBase.showRomanizationAsRuby),
     theme: mergedBase.theme ?? current.theme,
     opacity: clamp(Number(mergedBase.opacity) || current.opacity, 0.25, 1),
     scale: clamp(Number(mergedBase.scale) || current.scale, 0.75, 1.5),

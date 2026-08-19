@@ -978,13 +978,8 @@ export const registerDesktopLyricHandlers = () => {
   });
 
   ipcRegistry.registerListener('desktop-lyric:command', (_event, command: DesktopLyricCommand) => {
-    const lyricWin = getDesktopLyricWindow();
-    const focusedMainWindow = BrowserWindow.getAllWindows().find(
-      (win) => win !== lyricWin && !win.isDestroyed(),
-    );
-    if (!focusedMainWindow) return;
+    const mainWin = getMainWindow();
     if (DESKTOP_LYRIC_RENDERER_COMMANDS.has(command)) {
-      const mainWin = getMainWindow();
       if (!mainWin || mainWin.isDestroyed()) return;
       mainWin.webContents.send('desktop-lyric:command', command);
       return;
@@ -994,7 +989,6 @@ export const registerDesktopLyricHandlers = () => {
         closeMiniPlayerWindow();
       }
       showMainWindow();
-      const mainWin = getMainWindow();
       if (!mainWin || mainWin.isDestroyed()) return;
       setTimeout(() => {
         if (!mainWin.isDestroyed()) {
@@ -1003,7 +997,9 @@ export const registerDesktopLyricHandlers = () => {
       }, 300);
       return;
     }
-    focusedMainWindow.webContents.send('shortcut-trigger', command);
+    // 播放/模式等命令统一由主窗口渲染进程执行；mini 模式下不得转发到迷你窗口
+    if (!mainWin || mainWin.isDestroyed()) return;
+    mainWin.webContents.send('shortcut-trigger', command);
   });
 };
 

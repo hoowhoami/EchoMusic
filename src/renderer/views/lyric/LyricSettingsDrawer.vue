@@ -56,6 +56,10 @@ const handleRomanizationToggle = (enabled: boolean) => {
   lyricStore.wantRomanization = enabled;
 };
 
+const handleRomanizationAsRubyToggle = (enabled: boolean) => {
+  lyricStore.showRomanizationAsRuby = enabled;
+};
+
 const modeOptions: { value: LyricViewMode; label: string }[] = [
   { value: 'cover', label: '封面' },
   { value: 'portrait', label: '写真' },
@@ -248,6 +252,17 @@ const close = () => {
               :model-value="lyricStore.wantRomanization"
               :disabled="!lyricStore.hasRomanization"
               @update:model-value="handleRomanizationToggle"
+            />
+          </div>
+          <div class="setting-row">
+            <div class="setting-text">
+              <span class="setting-label">音译注音</span>
+              <span class="setting-hint">将音译标注在原词上方</span>
+            </div>
+            <Switch
+              :model-value="lyricStore.showRomanizationAsRuby"
+              :disabled="!lyricStore.wantRomanization || !lyricStore.hasRomanization"
+              @update:model-value="handleRomanizationAsRubyToggle"
             />
           </div>
         </div>

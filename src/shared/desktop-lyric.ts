@@ -48,6 +48,8 @@ export type DesktopLyricSettings = {
   alwaysOnTop: boolean;
   wantTranslation: boolean;
   wantRomanization: boolean;
+  /** 音译是否使用"逐字标注在原词上方"的注音模式（主窗口歌词设置同步） */
+  showRomanizationAsRuby: boolean;
   theme: DesktopLyricThemeMode;
   opacity: number;
   scale: number;
@@ -80,6 +82,7 @@ export const DEFAULT_DESKTOP_LYRIC_SETTINGS: DesktopLyricSettings = {
   alwaysOnTop: true,
   wantTranslation: false,
   wantRomanization: false,
+  showRomanizationAsRuby: false,
   theme: 'system',
   opacity: 0.92,
   scale: 1,

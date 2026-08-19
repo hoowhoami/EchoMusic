@@ -63,6 +63,7 @@ const buildSettingsSignature = (settings: DesktopLyricSettings) =>
     boolKey(settings.alwaysOnTop),
     boolKey(settings.wantTranslation),
     boolKey(settings.wantRomanization),
+    boolKey(settings.showRomanizationAsRuby),
     settings.theme,
     stableNumberKey(settings.opacity, 1000),
     stableNumberKey(settings.scale, 1000),
@@ -146,6 +147,40 @@ const normalizeLinePayload = (
     startTime: Number(char.startTime) || 0,
     endTime: Number(char.endTime) || Number(char.startTime) || 0,
   })),
+  ...(line.translatedCharacters?.length
+    ? {
+        translatedCharacters: line.translatedCharacters.map((char) => ({
+          text: String(char.text ?? ''),
+          startTime: Number(char.startTime) || 0,
+          endTime: Number(char.endTime) || Number(char.startTime) || 0,
+        })),
+      }
+    : {}),
+  ...(line.romanizedCharacters?.length
+    ? {
+        romanizedCharacters: line.romanizedCharacters.map((char) => ({
+          text: String(char.text ?? ''),
+          startTime: Number(char.startTime) || 0,
+          endTime: Number(char.endTime) || Number(char.startTime) || 0,
+        })),
+      }
+    : {}),
+  ...(line.rubyUnits?.length
+    ? {
+        rubyUnits: line.rubyUnits.map((unit) => ({
+          text: String(unit.text ?? ''),
+          ruby: String(unit.ruby ?? ''),
+          startTime: Number(unit.startTime) || 0,
+          endTime: Number(unit.endTime) || Number(unit.startTime) || 0,
+          charStart: Number(unit.charStart) || 0,
+          chars: (unit.chars ?? []).map((char) => ({
+            text: String(char.text ?? ''),
+            startTime: Number(char.startTime) || 0,
+            endTime: Number(char.endTime) || Number(char.startTime) || 0,
+          })),
+        })),
+      }
+    : {}),
 });
 
 const buildPlaybackPayload = (): DesktopLyricPlaybackPayload | null => {
@@ -215,8 +250,15 @@ export const initDesktopLyricSync = async () => {
     nativeTrackSeq,
     seekTimestamp,
   } = storeToRefs(playerStore);
-  const { lines, currentIndex, wantTranslation, wantRomanization, loadedHash, currentTimeOffset } =
-    storeToRefs(lyricStore);
+  const {
+    lines,
+    currentIndex,
+    wantTranslation,
+    wantRomanization,
+    showRomanizationAsRuby,
+    loadedHash,
+    currentTimeOffset,
+  } = storeToRefs(lyricStore);
   const settingStore = useSettingStore();
 
   const buildSyncedSettings = (settings = desktopLyricStore.settings) => {
@@ -226,6 +268,7 @@ export const initDesktopLyricSync = async () => {
         settings.fontFamily === 'follow' ? settingStore.globalFont : settings.resolvedFontFamily,
       wantTranslation: wantTranslation.value,
       wantRomanization: wantRomanization.value,
+      showRomanizationAsRuby: showRomanizationAsRuby.value,
       filterEnabled: settingStore.desktopLyricFilterEnabled,
       filterPattern: settingStore.desktopLyricFilterPattern,
     };
@@ -238,6 +281,7 @@ export const initDesktopLyricSync = async () => {
         : desktopLyricStore.settings.resolvedFontFamily,
     wantTranslation: wantTranslation.value,
     wantRomanization: wantRomanization.value,
+    showRomanizationAsRuby: showRomanizationAsRuby.value,
     filterEnabled: settingStore.desktopLyricFilterEnabled,
     filterPattern: settingStore.desktopLyricFilterPattern,
   });
@@ -465,6 +509,7 @@ export const initDesktopLyricSync = async () => {
         () => settingStore.globalFont,
         wantTranslation,
         wantRomanization,
+        showRomanizationAsRuby,
         () => settingStore.desktopLyricFilterEnabled,
         () => settingStore.desktopLyricFilterPattern,
       ],

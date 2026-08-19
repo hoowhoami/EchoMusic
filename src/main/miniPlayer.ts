@@ -769,6 +769,7 @@ export const registerMiniPlayerHandlers = () => {
           timeOffset: 0,
           wantTranslation: false,
           wantRomanization: false,
+          showRomanizationAsRuby: false,
           hasTranslation: false,
           hasRomanization: false,
           desktopLyricEnabled: false,

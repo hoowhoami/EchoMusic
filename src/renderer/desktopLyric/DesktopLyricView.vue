@@ -28,6 +28,7 @@ import {
   isDesktopLyricFullSnapshot,
   mergeDesktopLyricSnapshotMessage,
   type DesktopLyricSnapshot,
+  type LyricCharacterPayload,
   type LyricLinePayload,
 } from '../../shared/desktop-lyric';
 import { buildFontFamily } from '../../shared/font';
@@ -55,6 +56,8 @@ interface RenderLine {
   key: string;
   active: boolean;
   kind: 'placeholder' | 'primary' | 'secondary' | 'next';
+  // 该行需逐字卡拉OK（当前行翻译，且提供逐字数据时）
+  karaoke?: boolean;
 }
 
 // ── 状态 ──
@@ -77,6 +80,7 @@ const reducedMotion = ref(false);
 
 // 缓存 DOM 引用
 let cachedYrcElements: HTMLElement[] = [];
+let cachedRubyElements: HTMLElement[] = [];
 let cachedYrcLineKey = '';
 const lyricTimeline = createLyricTimeline();
 const stableLyricIndex = createStableLyricIndex();
@@ -114,48 +118,98 @@ const updateYrcDomManual = (timelineMs: number) => {
   const renderLines = renderLyricLines.value;
   // 查找当前活跃的渲染行（逐字层）
   const activeRenderLine = renderLines.find((line) => line.active);
-
-  if (!activeRenderLine || !isYrcLine(activeRenderLine.line)) {
-    cachedYrcElements = [];
-    cachedYrcLineKey = '';
-    return;
-  }
-
-  const key = activeRenderLine.key;
-  if (key !== cachedYrcLineKey) {
-    // 重新查找 DOM
-    const container = lineRefs.get(key);
-    if (container) {
-      cachedYrcElements = Array.from(container.querySelectorAll('.word'));
-      cachedYrcLineKey = key;
-    } else {
-      cachedYrcElements = [];
-      cachedYrcLineKey = '';
-    }
-  }
-
-  if (cachedYrcElements.length === 0) return;
-
   const seekMs = timelineMs + LYRIC_LOOKAHEAD;
-  const characters = activeRenderLine.line.characters;
   const vertical = lyricLayout.value === 'vertical';
 
-  for (let i = 0; i < cachedYrcElements.length; i++) {
-    const char = characters[i];
-    const el = cachedYrcElements[i];
-    if (!char || !el) continue;
+  // 主行逐字填充（仅当主行有逐字数据）
+  if (activeRenderLine && isYrcLine(activeRenderLine.line)) {
+    const key = activeRenderLine.key;
+    if (key !== cachedYrcLineKey) {
+      // 重新查找 DOM
+      const container = lineRefs.get(key);
+      if (container) {
+        cachedYrcElements = Array.from(container.querySelectorAll('.word'));
+        cachedRubyElements = Array.from(container.querySelectorAll('.ruby-word'));
+        cachedYrcLineKey = key;
+      } else {
+        cachedYrcElements = [];
+        cachedRubyElements = [];
+        cachedYrcLineKey = '';
+      }
+    }
 
-    const position = computeLyricCharBackgroundPosition(
-      char.startTime || 0,
-      char.endTime || 0,
-      seekMs,
-    );
-    if (vertical) {
-      el.style.backgroundPositionX = '0%';
-      el.style.backgroundPositionY = position;
-    } else {
-      el.style.backgroundPositionX = position;
-      el.style.backgroundPositionY = '0%';
+    if (cachedYrcElements.length > 0 || cachedRubyElements.length > 0) {
+      const characters = activeRenderLine.line.characters;
+
+      for (let i = 0; i < cachedYrcElements.length; i++) {
+        const char = characters[i];
+        const el = cachedYrcElements[i];
+        if (!char || !el) continue;
+
+        const position = computeLyricCharBackgroundPosition(
+          char.startTime || 0,
+          char.endTime || 0,
+          seekMs,
+        );
+        if (vertical) {
+          el.style.backgroundPositionX = '0%';
+          el.style.backgroundPositionY = position;
+        } else {
+          el.style.backgroundPositionX = position;
+          el.style.backgroundPositionY = '0%';
+        }
+      }
+
+      // 注音模式的读音逐字填充：按注音单元自身时间轴与主歌词同步着色
+      const rubyUnits = activeRenderLine.line.rubyUnits;
+      for (let i = 0; i < cachedRubyElements.length; i++) {
+        const unit = rubyUnits?.[i];
+        const el = cachedRubyElements[i];
+        if (!unit || !el) continue;
+
+        const position = computeLyricCharBackgroundPosition(
+          unit.startTime || 0,
+          unit.endTime || 0,
+          seekMs,
+        );
+        if (vertical) {
+          el.style.backgroundPositionX = '0%';
+          el.style.backgroundPositionY = position;
+        } else {
+          el.style.backgroundPositionX = position;
+          el.style.backgroundPositionY = '0%';
+        }
+      }
+    }
+  } else {
+    cachedYrcElements = [];
+    cachedRubyElements = [];
+    cachedYrcLineKey = '';
+  }
+
+  // 当前行副歌词逐字填充（翻译/音译，与页面歌词一致）——不依赖主行是否有逐字数据
+  const secondaryLines = renderLines.filter((line) => line.kind === 'secondary' && line.karaoke);
+  for (const secondaryLine of secondaryLines) {
+    const secondaryContainer = lineRefs.get(secondaryLine.key);
+    if (!secondaryContainer) continue;
+    const secondaryWords = secondaryContainer.querySelectorAll<HTMLElement>('.word');
+    const transChars = secondaryLine.line.characters;
+    for (let i = 0; i < secondaryWords.length; i++) {
+      const char = transChars[i];
+      const el = secondaryWords[i];
+      if (!char || !el) continue;
+      const position = computeLyricCharBackgroundPosition(
+        char.startTime || 0,
+        char.endTime || 0,
+        seekMs,
+      );
+      if (vertical) {
+        el.style.backgroundPositionX = '0%';
+        el.style.backgroundPositionY = position;
+      } else {
+        el.style.backgroundPositionX = position;
+        el.style.backgroundPositionY = '0%';
+      }
     }
   }
 };
@@ -379,12 +433,42 @@ const transitionName = computed(() =>
 
 const getLineTop = (index: number) => {
   if (index === 0) return '0px';
-  return `${localFontSize.value * 1.9}px`;
+  const lines = renderLyricLines.value;
+  const current = lines[0];
+  const rubyActive = Boolean(current?.active && isRubyLine(current.line));
+  // 逐行堆叠：主行按自身字号占位，副歌词行以副行字号（0.72em）紧凑堆叠
+  let top = 0;
+  for (let i = 0; i < index && i < lines.length; i++) {
+    const line = lines[i];
+    if (!line) break;
+    if (i === 0) {
+      top += localFontSize.value * (rubyActive ? 2.6 : 1.9);
+    } else if (line.kind === 'secondary') {
+      top += localFontSize.value * 0.72 * 1.5;
+    } else {
+      top += localFontSize.value * 1.9;
+    }
+  }
+  return `${top}px`;
 };
 
 const getLineInlineOffset = (index: number) => {
   if (index === 0) return '0px';
-  return `${localFontSize.value * 1.35}px`;
+  const lines = renderLyricLines.value;
+  // 竖排布局：主行靠右，副歌词行以副行字号紧凑向左堆叠
+  let offset = 0;
+  for (let i = 0; i < index && i < lines.length; i++) {
+    const line = lines[i];
+    if (!line) break;
+    if (i === 0) {
+      offset += localFontSize.value * 1.35;
+    } else if (line.kind === 'secondary') {
+      offset += localFontSize.value * 0.72 * 1.35;
+    } else {
+      offset += localFontSize.value * 1.35;
+    }
+  }
+  return `${offset}px`;
 };
 
 const renderLyricLines = computed<RenderLine[]>(() => {
@@ -415,43 +499,81 @@ const renderLyricLines = computed<RenderLine[]>(() => {
     const tran = current.translated?.trim() ?? '';
     const roman = current.romanized?.trim() ?? '';
     const mode = lyricsMode.value;
+    // 注音行：音译已标注在每个字上方，副歌词只保留翻译
+    const romanShownAsRuby = isRubyLine(current);
+
+    const makeSecondary = (
+      key: string,
+      text: string,
+      chars: LyricCharacterPayload[] | undefined,
+    ): RenderLine => {
+      const karaoke = Boolean(chars?.length);
+      return {
+        line: {
+          time: current.time,
+          text,
+          characters: karaoke
+            ? chars!.map((c) => ({ ...c }))
+            : [
+                {
+                  text,
+                  startTime: current.characters?.[0]?.startTime ?? 0,
+                  endTime: safeEnd,
+                },
+              ],
+        },
+        index: idx,
+        key,
+        active: false,
+        kind: 'secondary',
+        karaoke,
+      };
+    };
+
+    const result: RenderLine[] = [
+      {
+        line: { ...current, characters: current.characters.map((c) => ({ ...c })) },
+        index: idx,
+        key: `${renderScopeKey.value}:${idx}-orig`,
+        active: true,
+        kind: 'primary',
+      },
+    ];
+
+    // 译+音：音译与翻译各占一行（与页面歌词一致），均支持逐字卡拉OK
+    if (mode === 'both' && !romanShownAsRuby && roman && tran) {
+      result.push(
+        makeSecondary(`${renderScopeKey.value}:${idx}-roman`, roman, current.romanizedCharacters),
+      );
+      result.push(
+        makeSecondary(`${renderScopeKey.value}:${idx}-tran`, tran, current.translatedCharacters),
+      );
+      return result;
+    }
+
     let secondaryText = '';
     if (mode === 'both') {
-      secondaryText = [roman, tran].filter(Boolean).join(' / ');
+      secondaryText = romanShownAsRuby ? tran : roman || tran;
     } else if (mode === 'translation') {
       secondaryText = tran;
     } else if (mode === 'romanization') {
-      secondaryText = roman;
+      secondaryText = romanShownAsRuby ? '' : roman;
     } else {
-      secondaryText = [roman, tran].filter(Boolean).join(' / ');
+      secondaryText = roman || tran;
     }
     if (secondaryText) {
-      return [
-        {
-          line: { ...current, characters: current.characters.map((c) => ({ ...c })) },
-          index: idx,
-          key: `${renderScopeKey.value}:${idx}-orig`,
-          active: true,
-          kind: 'primary',
-        },
-        {
-          line: {
-            time: current.time,
-            text: secondaryText,
-            characters: [
-              {
-                text: secondaryText,
-                startTime: current.characters?.[0]?.startTime ?? 0,
-                endTime: safeEnd,
-              },
-            ],
-          },
-          index: idx,
-          key: `${renderScopeKey.value}:${idx}-secondary`,
-          active: false,
-          kind: 'secondary',
-        },
-      ];
+      // 纯翻译 / 纯音译副歌词支持逐字卡拉OK（与页面歌词一致）；
+      // 「音译/翻译」混排时无法在单行内同时逐字，退回整行着色
+      const isPureTranslation =
+        Boolean(tran) && (mode === 'translation' || !roman || romanShownAsRuby);
+      const isPureRomanization = Boolean(roman) && (mode === 'romanization' || !tran);
+      const chars = isPureRomanization
+        ? current.romanizedCharacters
+        : isPureTranslation
+          ? current.translatedCharacters
+          : undefined;
+      result.push(makeSecondary(`${renderScopeKey.value}:${idx}-secondary`, secondaryText, chars));
+      return result;
     }
   }
   // 没有副歌词可显示时，下一行预览才占用第二行。
@@ -574,12 +696,24 @@ const updateReducedMotion = () => {
 };
 // 判断行是否有逐字数据
 const isYrcLine = (line: LyricLinePayload) => (line.characters?.length ?? 0) > 0;
+// 注音模式：音译逐字标注在主歌词每个字上方（需开启音译、开启注音模式且该行有注音配对时）
+// 竖排布局下注音列无法正确排列，回退到普通副歌词行
+const isRubyLine = (line: LyricLinePayload) => {
+  if (isVerticalLayout.value) return false;
+  const mode = lyricsMode.value;
+  return (
+    (mode === 'both' || mode === 'romanization') &&
+    Boolean(settings.value?.showRomanizationAsRuby) &&
+    (line.rubyUnits?.length ?? 0) > 0
+  );
+};
 
 // 歌词行引用管理 (用于手动 DOM 补丁)
 const lineRefs = new Map<string, HTMLElement>();
 const contentRefs = new Map<string, HTMLElement>();
 const resetLyricDomCache = () => {
   cachedYrcElements = [];
+  cachedRubyElements = [];
   cachedYrcLineKey = '';
 };
 const setLineRef = (el: Element | ComponentPublicInstance | null, key: string) => {
@@ -605,6 +739,9 @@ watch(lyricTimeOffset, () => {
 });
 
 watch([renderLyricLines, lyricsMode, lyricLayout, isPlaying], () => {
+  // 渲染行结构变化（注音/普通副歌词/逐字数据就绪等）时丢弃旧 DOM 缓存，
+  // 避免同 key 行切换渲染分支后逐字填充作用在已脱离文档的旧节点上
+  resetLyricDomCache();
   syncManualDomAfterRender({ resetStable: !isPlaying.value || isRecentLyricSeek() });
 });
 
@@ -1013,24 +1150,37 @@ watch([winWidth, winHeight], ([w, h], [oldW, oldH]) => {
 const localFontSize = ref(30);
 
 const computedFontSize = computed(() => {
-  if (isVerticalLayout.value) {
-    const w = Math.round(Number(winWidth.value ?? 0));
-    const minW = 120;
-    const maxW = 520;
+  const vertical = isVerticalLayout.value;
+  const base = (() => {
+    if (vertical) {
+      const w = Math.round(Number(winWidth.value ?? 0));
+      const minW = 120;
+      const maxW = 520;
+      const minF = 20;
+      const maxF = 64;
+      if (!Number.isFinite(w) || w <= minW) return minF;
+      if (w >= maxW) return maxF;
+      return Math.round(minF + ((w - minW) / (maxW - minW)) * (maxF - minF));
+    }
+    const h = Math.round(Number(winHeight.value ?? 0));
+    const minH = 140;
+    const maxH = 360;
     const minF = 20;
-    const maxF = 64;
-    if (!Number.isFinite(w) || w <= minW) return minF;
-    if (w >= maxW) return maxF;
-    return Math.round(minF + ((w - minW) / (maxW - minW)) * (maxF - minF));
+    const maxF = 96;
+    if (!Number.isFinite(h) || h <= minH) return minF;
+    if (h >= maxH) return maxF;
+    return Math.round(minF + ((h - minH) / (maxH - minH)) * (maxF - minF));
+  })();
+  // 内容实际占用的视觉行数：主行 1 行 + 每条副歌词 1 行 + 注音模式主行额外占 1 行（读音+原词）
+  if (!vertical) {
+    const lines = renderLyricLines.value;
+    const secondaryCount = lines.filter((line) => line.kind === 'secondary').length;
+    const rubyActive = Boolean(lines[0]?.active && isRubyLine(lines[0].line));
+    if (1 + secondaryCount + (rubyActive ? 1 : 0) >= 3) {
+      return Math.max(16, Math.round(base * 0.7));
+    }
   }
-  const h = Math.round(Number(winHeight.value ?? 0));
-  const minH = 140;
-  const maxH = 360;
-  const minF = 20;
-  const maxF = 96;
-  if (!Number.isFinite(h) || h <= minH) return minF;
-  if (h >= maxH) return maxF;
-  return Math.round(minF + ((h - minH) / (maxH - minH)) * (maxF - minF));
+  return base;
 });
 
 // 窗口尺寸单向决定字体大小。不要再把字体大小反写为窗口高度，否则 Windows
@@ -1340,7 +1490,7 @@ onBeforeUnmount(() => {
           'lyric-line',
           {
             active: line.active,
-            'is-yrc': line.active && isYrcLine(line.line),
+            'is-yrc': (line.active || line.karaoke) && isYrcLine(line.line),
             'is-next': line.kind === 'next' && showNextLinePreview,
             'is-hidden-next': line.kind === 'next' && !showNextLinePreview,
             'align-left': alignment === 'both' && line.index % 2 === 0,
@@ -1354,7 +1504,7 @@ onBeforeUnmount(() => {
             ? `calc(${getLineInlineOffset(index)} + var(--desktop-lyric-vertical-safe-inline))`
             : undefined,
           left: isVerticalLayout ? 'auto' : undefined,
-          fontSize: index > 0 ? '0.8em' : '1em',
+          fontSize: line.kind === 'secondary' ? '0.72em' : index > 0 ? '0.8em' : '1em',
         }"
         data-echo-lyric-row
         :data-echo-lyric-index="line.index"
@@ -1366,8 +1516,65 @@ onBeforeUnmount(() => {
         "
         :ref="(el) => setLineRef(el, line.key)"
       >
+        <!-- 注音模式：音译逐字标注在每个字上方（仅当前行，卡拉OK 填充按注音单元时间轴） -->
+        <template v-if="line.active && isRubyLine(line.line)">
+          <span class="scroll-content" :ref="(el) => setContentRef(el, line.key)">
+            <span
+              class="content"
+              data-echo-lyric-line
+              data-echo-lyric-primary
+              :data-echo-lyric-current="line.active ? 'true' : 'false'"
+            >
+              <span
+                v-for="(unit, ui) in line.line.rubyUnits"
+                :key="ui"
+                class="ruby-unit"
+                data-echo-lyric-ruby-unit
+              >
+                <span class="ruby-text" data-echo-lyric-secondary-kind="romanized">
+                  <span
+                    v-if="unit.ruby"
+                    class="ruby-word"
+                    data-echo-lyric-char
+                    :data-echo-lyric-char-index="ui"
+                    :style="{
+                      backgroundImage: `linear-gradient(${isVerticalLayout ? 'to bottom' : 'to right'}, ${playedColor} 50%, ${unplayedColor} 50%)`,
+                      backgroundSize: isVerticalLayout ? '100% 200%' : '200% 100%',
+                      textShadow: 'none',
+                      filter: lyricDropShadow,
+                    }"
+                    >{{ unit.ruby }}</span
+                  >
+                </span>
+                <span class="ruby-base">
+                  <span
+                    v-for="(char, ci) in unit.chars"
+                    :key="ci"
+                    :class="{
+                      'content-text': true,
+                      'end-with-space': char.text.endsWith(' ') || char.startTime === 0,
+                    }"
+                  >
+                    <span
+                      class="word"
+                      data-echo-lyric-char
+                      :data-echo-lyric-char-index="unit.charStart + ci"
+                      :style="{
+                        backgroundImage: `linear-gradient(${isVerticalLayout ? 'to bottom' : 'to right'}, ${playedColor} 50%, ${unplayedColor} 50%)`,
+                        backgroundSize: isVerticalLayout ? '100% 200%' : '200% 100%',
+                        textShadow: 'none',
+                        filter: lyricDropShadow,
+                      }"
+                      >{{ char.text }}</span
+                    >
+                  </span>
+                </span>
+              </span>
+            </span>
+          </span>
+        </template>
         <!-- 逐字歌词 (如果存在逐字数据则始终渲染 YRC 结构，以便手动补丁 DOM) -->
-        <template v-if="isYrcLine(line.line)">
+        <template v-else-if="isYrcLine(line.line)">
           <span class="scroll-content" :ref="(el) => setContentRef(el, line.key)">
             <span
               class="content"
@@ -1387,7 +1594,7 @@ onBeforeUnmount(() => {
                   class="word"
                   data-echo-lyric-char
                   :style="
-                    line.active
+                    line.active || line.karaoke
                       ? {
                           backgroundImage: `linear-gradient(${isVerticalLayout ? 'to bottom' : 'to right'}, ${playedColor} 50%, ${unplayedColor} 50%)`,
                           backgroundSize: isVerticalLayout ? '100% 200%' : '200% 100%',
@@ -1889,6 +2096,42 @@ onBeforeUnmount(() => {
 }
 .lyric-line.is-yrc .content-text.end-with-space:last-child {
   margin-inline-end: 0;
+}
+
+/* 注音标注（音译显示在每个字上方，类似汉字注音 / 日文振假名） */
+.lyric-line.is-yrc .ruby-unit {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  white-space: nowrap;
+}
+.lyric-line.is-yrc .ruby-text {
+  display: block;
+  line-height: 1.1;
+  padding: 0 0.06em;
+  font-size: 0.68em;
+  opacity: 0.72;
+  /* 即使该单元没有读音也占位，保证同一行内基线对齐 */
+  min-height: 1.1em;
+  /* 保留读音内部的音节空格 */
+  white-space: pre;
+}
+.lyric-line.is-yrc .ruby-base {
+  display: block;
+  line-height: 1.24;
+  /* 保留原词中的空格（flex 列内单独的空格会被折叠） */
+  white-space: pre;
+}
+.lyric-line.is-yrc .ruby-unit .ruby-word {
+  display: inline-block;
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+  background-size: 200% 100%;
+  background-repeat: no-repeat;
+  background-position-x: 100%;
+  will-change: background-position-x;
 }
 
 /* 对齐方式 */

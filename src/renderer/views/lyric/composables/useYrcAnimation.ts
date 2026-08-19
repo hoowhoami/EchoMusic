@@ -160,8 +160,8 @@ export function useYrcAnimation(activeIndex?: Ref<number>) {
       lastActiveLineIndex = lineIndex;
     }
 
-    // 主歌词逐字（仅当字符数 > 1 时才有逐字结构）
-    if (line.characters.length > 1) {
+    // 主歌词逐字（未注册字符元素的普通行会自然跳过）
+    if (line.characters.length > 0) {
       const overlays = mainCharEls.get(lineIndex);
       if (overlays) applyCharsProgress(overlays, line.characters, seekMs);
     }
@@ -177,12 +177,18 @@ export function useYrcAnimation(activeIndex?: Ref<number>) {
     seekMs: number,
   ) => {
     const mode = lyricStore.lyricsMode;
+    const rubyUnits = line.rubyUnits;
     const romanChars = line.romanizedCharacters;
     const transChars = line.translatedCharacters;
 
-    if ((mode === 'both' || mode === 'romanization') && romanChars && romanChars.length > 1) {
+    if (mode === 'both' || mode === 'romanization') {
       const els = subCharEls.get(subKey(lineIndex, 'romanized'));
-      if (els) applyCharsProgress(els, romanChars, seekMs);
+      if (els) {
+        // 注音模式下副字符按「注音单元」注册，时间轴取自 rubyUnits；
+        // 否则回退到整行音译逐字数组。
+        const chars = rubyUnits?.length ? rubyUnits : romanChars;
+        if (chars && chars.length > 0) applyCharsProgress(els, chars, seekMs);
+      }
     }
 
     if ((mode === 'both' || mode === 'translation') && transChars && transChars.length > 1) {

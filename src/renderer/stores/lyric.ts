@@ -13,6 +13,23 @@ export interface LyricCharacter {
   highlighted: boolean;
 }
 
+/**
+ * 注音配对单元：一个主歌词片段 + 标注在其正上方的音译文本。
+ * 类似日文振假名 / 汉字拼音，用于「音译显示在每个字上方」的渲染模式。
+ */
+export interface LyricRubyUnit {
+  /** 底部主歌词文本（可能是 1 个字，也可能是按比例合并后的若干字） */
+  text: string;
+  /** 顶部注音文本，为空表示该片段无对应读音（如标点、空格） */
+  ruby: string;
+  startTime: number;
+  endTime: number;
+  /** 该单元对应主歌词 characters 中的起始下标（含），用于换算全局字符下标 */
+  charStart: number;
+  /** 该单元覆盖的主歌词字符（引用自 characters，便于模板直接迭代） */
+  chars: LyricCharacter[];
+}
+
 export interface LyricLine {
   time: number;
   text: string;
@@ -23,6 +40,8 @@ export interface LyricLine {
   romanizedCharacters?: LyricCharacter[];
   // 翻译逐字字符（按字符比例均分时间）
   translatedCharacters?: LyricCharacter[];
+  // 注音配对：音译标注在主歌词每个字上方时使用
+  rubyUnits?: LyricRubyUnit[];
 }
 
 export type LyricsMode = 'none' | 'translation' | 'romanization' | 'both';
@@ -266,6 +285,82 @@ const stripEmbeddedSecondaryText = (characters: LyricCharacter[], textToStrip: s
   return true;
 };
 
+/**
+ * 从歌词行提取音译分词。
+ * 优先使用已解析的逐字音译数组（此时每个分词就是一个字的读音，合并时不加空格）；
+ * 只有整句音译字符串时按空白切分兜底（此时分词是单词，合并时需保留空格）。
+ */
+const resolveRomanTokens = (line: {
+  romanizedCharacters?: LyricCharacter[];
+  romanized?: string;
+}): { tokens: string[]; joiner: string } => {
+  const fromChars = line.romanizedCharacters;
+  if (Array.isArray(fromChars) && fromChars.length > 0) {
+    return { tokens: fromChars.map((c) => String(c?.text ?? '').trim()), joiner: '' };
+  }
+  const raw = line.romanized?.trim() ?? '';
+  if (!raw) return { tokens: [], joiner: ' ' };
+  return { tokens: raw.split(/\s+/).filter(Boolean), joiner: ' ' };
+};
+
+/**
+ * 构建注音配对：把音译分词按比例映射到主歌词字符上方。
+ *
+ * - 分词数与字数相等时严格一一对应（KRC 音译的常见情况，对齐最准）。
+ * - 分词数多于字数时，多个读音合并标注到同一个字上方。
+ * - 分词数少于字数时，若干个字合并为一个单元共享一个读音（如英文单词、连读）。
+ *
+ * 时间轴一律取自主歌词字符本身，保证注音的卡拉OK着色与主歌词严格同步。
+ */
+const buildRubyUnits = (
+  characters: LyricCharacter[],
+  romanTokens: string[],
+  joiner = '',
+): LyricRubyUnit[] | undefined => {
+  const charCount = characters.length;
+  const tokenCount = romanTokens.length;
+  if (charCount === 0 || tokenCount === 0) return undefined;
+
+  const makeUnit = (charStart: number, charEnd: number, ruby: string): LyricRubyUnit => {
+    const slice = characters.slice(charStart, charEnd);
+    const startTime = slice[0]?.startTime ?? 0;
+    const endTime = slice[slice.length - 1]?.endTime ?? startTime;
+    return {
+      text: slice.map((c) => c.text).join(''),
+      ruby: ruby.trim(),
+      startTime,
+      endTime: Math.max(endTime, startTime + 1),
+      charStart,
+      chars: slice,
+    };
+  };
+
+  const units: LyricRubyUnit[] = [];
+
+  if (tokenCount >= charCount) {
+    // 每个字一个单元，读音按比例合并
+    for (let i = 0; i < charCount; i++) {
+      const from = Math.round((i * tokenCount) / charCount);
+      const to = Math.round(((i + 1) * tokenCount) / charCount);
+      const ruby = romanTokens
+        .slice(from, Math.max(to, from + 1))
+        .filter(Boolean)
+        .join(joiner);
+      units.push(makeUnit(i, i + 1, ruby));
+    }
+  } else {
+    // 每个读音一个单元，主歌词字符按比例合并
+    for (let j = 0; j < tokenCount; j++) {
+      const from = Math.round((j * charCount) / tokenCount);
+      const to = Math.round(((j + 1) * charCount) / tokenCount);
+      if (from >= charCount) break;
+      units.push(makeUnit(from, Math.min(Math.max(to, from + 1), charCount), romanTokens[j] ?? ''));
+    }
+  }
+
+  return units.length > 0 ? units : undefined;
+};
+
 const getSecondaryText = (line: LyricLine, mode: LyricsMode): string => {
   const romanized = line.romanized?.trim() ?? '';
   const translated = line.translated?.trim() ?? '';
@@ -479,6 +574,8 @@ const parseLyricDetailPayload = (payload: LyricDetailResponse): ParsedLyricPrevi
       });
     }
 
+    const romanTokens = resolveRomanTokens({ romanizedCharacters, romanized });
+
     return {
       time: line.time,
       text: line.text,
@@ -487,6 +584,7 @@ const parseLyricDetailPayload = (payload: LyricDetailResponse): ParsedLyricPrevi
       romanized: romanized || undefined,
       romanizedCharacters,
       translatedCharacters,
+      rubyUnits: buildRubyUnits(line.characters, romanTokens.tokens, romanTokens.joiner),
     };
   });
 
@@ -560,6 +658,8 @@ export const useLyricStore = defineStore('lyric', {
     // 用户意图：是否想看翻译/音译（持久化，切歌不重置）
     wantTranslation: false,
     wantRomanization: false,
+    // 音译是否用"逐字标注在原词上方"的注音模式渲染（默认关闭，关闭时音译作为独立副行显示）
+    showRomanizationAsRuby: false,
     // 当前歌曲数据可用性（每首歌重新检测）
     hasTranslation: false,
     hasRomanization: false,
@@ -1106,6 +1206,7 @@ export const useLyricStore = defineStore('lyric', {
     pick: [
       'wantTranslation',
       'wantRomanization',
+      'showRomanizationAsRuby',
       'fontScale',
       'fontWeightIndex',
       'playedColor',

@@ -17,7 +17,7 @@ import type {
   MiniPlayerPlaybackPayload,
   MiniPlayerQueuePayload,
 } from '../../shared/mini-player';
-import type { LyricLinePayload } from '../../shared/desktop-lyric';
+import { normalizeLyricLinePayload as normalizeSharedLyricLinePayload } from '../../shared/lyrics';
 
 const MINI_PLAYER_PROGRESS_SYNC_INTERVAL_MS = 120;
 // 歌词面板未展开时使用较低的同步频率，减少 IPC 开销
@@ -32,19 +32,7 @@ const favoriteStateOverrides = new Map<string, boolean>();
 const resolveSongArtist = (song: Song): string =>
   String(song.artist || song.artists?.map((item) => item.name).join(' / ') || '未知歌手');
 
-const normalizeLyricLinePayload = (
-  line: ReturnType<typeof useLyricStore>['lines'][number],
-): LyricLinePayload => ({
-  time: Number(line.time) || 0,
-  text: String(line.text ?? ''),
-  translated: line.translated ? String(line.translated) : undefined,
-  romanized: line.romanized ? String(line.romanized) : undefined,
-  characters: (line.characters ?? []).map((char) => ({
-    text: String(char.text ?? ''),
-    startTime: Number(char.startTime) || 0,
-    endTime: Number(char.endTime) || Number(char.startTime) || 0,
-  })),
-});
+const normalizeLyricLinePayload = normalizeSharedLyricLinePayload;
 
 const resolveCurrentPlaybackQueue = () => {
   const playerStore = usePlayerStore();
@@ -197,6 +185,7 @@ const buildLyricPayload = (): MiniPlayerLyricPayload => {
     timeOffset: lyricStore.currentTimeOffset,
     wantTranslation: lyricStore.wantTranslation,
     wantRomanization: lyricStore.wantRomanization,
+    showRomanizationAsRuby: lyricStore.showRomanizationAsRuby,
     hasTranslation: lyricStore.hasTranslation,
     hasRomanization: lyricStore.hasRomanization,
     desktopLyricEnabled: desktopLyricStore.settings.enabled,
@@ -220,6 +209,7 @@ const lyricLinesPayloadKey = (payload: MiniPlayerLyricPayload): string =>
     lines: payload.lines,
     wantTranslation: payload.wantTranslation,
     wantRomanization: payload.wantRomanization,
+    showRomanizationAsRuby: payload.showRomanizationAsRuby,
     hasTranslation: payload.hasTranslation,
     hasRomanization: payload.hasRomanization,
     isLoading: payload.isLoading,
@@ -268,6 +258,14 @@ const executeMiniPlayerCommand = (command: MiniPlayerCommand) => {
       command === 'toggleMute'
     ) {
       executeShortcutCommand(command);
+    }
+    if (command === 'toggleRomanization') {
+      const lyricStore = useLyricStore();
+      lyricStore.wantRomanization = !lyricStore.wantRomanization;
+    }
+    if (command === 'toggleRomanizationAsRuby') {
+      const lyricStore = useLyricStore();
+      lyricStore.showRomanizationAsRuby = !lyricStore.showRomanizationAsRuby;
     }
     return;
   }

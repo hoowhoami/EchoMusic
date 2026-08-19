@@ -8,7 +8,7 @@ import {
   onUnmounted,
   type ComponentPublicInstance,
 } from 'vue';
-import { useLyricStore } from '@/stores/lyric';
+import { useLyricStore, type LyricLine } from '@/stores/lyric';
 import { usePlayerStore } from '@/stores/player';
 import { useSettingStore } from '@/stores/setting';
 import { useLyricScroll } from './composables/useLyricScroll';
@@ -112,6 +112,14 @@ const activeYrcBgStyle = computed(
 );
 
 const isYrcLine = (line: { characters: unknown[] }) => (line.characters?.length ?? 0) > 1;
+
+// 注音标注（音译显示在每个字上方）所需的字号：比主歌词小一档
+const rubyFontSize = computed(() => `${0.62 * 1.5 * lyricStore.fontScale}rem`);
+// 是否以注音方式渲染该行的音译（需开启注音模式，否则音译作为独立副行显示）
+const isRubyLine = (line: LyricLine) =>
+  lyricStore.showRomanization &&
+  lyricStore.showRomanizationAsRuby &&
+  (line.rubyUnits?.length ?? 0) > 0;
 
 const handleLineClick = (time: number) => {
   playerStore.seek(time);
@@ -521,8 +529,54 @@ watch(
                   fontWeight: String(lyricStore.fontWeightValue),
                 }"
               >
+                <!-- 注音模式：音译逐字标注在每个字上方 -->
+                <template v-if="isRubyLine(entry.line)">
+                  <span class="lyric-ruby-wrap" data-echo-lyric-ruby-line>
+                    <span
+                      v-for="(unit, ui) in entry.line.rubyUnits"
+                      :key="ui"
+                      class="lyric-ruby-unit"
+                      data-echo-lyric-ruby-unit
+                    >
+                      <span
+                        class="lyric-ruby-text"
+                        data-echo-lyric-secondary
+                        data-echo-lyric-secondary-kind="romanized"
+                        :style="{
+                          fontSize: rubyFontSize,
+                          fontWeight: secondaryFontWeight,
+                        }"
+                      >
+                        <span
+                          v-if="unit.ruby"
+                          :ref="(el) => registerSubChar(entry.index, 'romanized', ui, toHtmlEl(el))"
+                          class="lyric-yrc-char lyric-ruby-char"
+                          data-echo-lyric-char
+                          :data-echo-lyric-char-index="ui"
+                          data-echo-lyric-secondary-kind="romanized"
+                          :style="{ backgroundImage: activeYrcBgStyle }"
+                          >{{ unit.ruby }}</span
+                        >
+                      </span>
+                      <span class="lyric-ruby-base">
+                        <span
+                          v-for="(char, ci) in unit.chars"
+                          :key="ci"
+                          :ref="
+                            (el) => registerMainChar(entry.index, unit.charStart + ci, toHtmlEl(el))
+                          "
+                          class="lyric-yrc-char"
+                          data-echo-lyric-char
+                          :data-echo-lyric-char-index="unit.charStart + ci"
+                          :style="{ backgroundImage: activeYrcBgStyle }"
+                          >{{ char.text }}</span
+                        >
+                      </span>
+                    </span>
+                  </span>
+                </template>
                 <!-- 逐字歌词 -->
-                <template v-if="isYrcLine(entry.line)">
+                <template v-else-if="isYrcLine(entry.line)">
                   <span class="lyric-yrc-line-wrap">
                     <span
                       v-for="(char, ci) in entry.line.characters"
@@ -555,7 +609,7 @@ watch(
               <!-- 音译/翻译 -->
               <template v-if="lyricStore.lyricsMode === 'both' && lyricStore.secondaryEnabled">
                 <span
-                  v-if="entry.line.romanized?.trim()"
+                  v-if="entry.line.romanized?.trim() && !isRubyLine(entry.line)"
                   class="lyric-subline mt-1 block max-w-full truncate"
                   data-echo-lyric-secondary
                   data-echo-lyric-secondary-kind="romanized"
@@ -643,7 +697,7 @@ watch(
               </template>
               <template v-else>
                 <span
-                  v-if="lyricStore.lineSecondaryText(entry.line)"
+                  v-if="lyricStore.lineSecondaryText(entry.line) && !isRubyLine(entry.line)"
                   class="lyric-subline mt-1 block max-w-full truncate"
                   data-echo-lyric-secondary
                   :data-echo-lyric-secondary-kind="lyricStore.lyricsMode"
@@ -918,6 +972,51 @@ watch(
 
 .lyric-line.is-current .lyric-subline {
   opacity: 0.75;
+}
+
+/* ── 注音标注（音译显示在每个字上方，类似汉字注音 / 日文振假名） ── */
+.lyric-ruby-wrap {
+  display: inline;
+  contain: layout paint;
+  isolation: isolate;
+}
+
+/* 每个注音单元是一个纵向的「读音在上、原词在下」的小列 */
+.lyric-ruby-unit {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  vertical-align: baseline;
+  /* 避免单元内部换行，换行发生在单元之间 */
+  white-space: nowrap;
+}
+
+.lyric-ruby-text {
+  display: block;
+  line-height: 1.1;
+  /* 读音比原词窄时不撑开列宽，靠 padding 留出与原词的呼吸空间 */
+  padding: 0 0.06em;
+  opacity: 0.75;
+  /* 即使该单元没有读音也占位，保证同一行内基线对齐 */
+  min-height: 1.1em;
+  /* 保留读音内部的音节空格 */
+  white-space: pre;
+}
+
+.lyric-line.is-current .lyric-ruby-text {
+  opacity: 0.9;
+}
+
+.lyric-ruby-char {
+  display: inline;
+}
+
+.lyric-ruby-base {
+  display: block;
+  line-height: 1.24;
+  /* 保留原词中的空格（flex 列内单独的空格会被折叠） */
+  white-space: pre;
 }
 
 .static-lyric-list {

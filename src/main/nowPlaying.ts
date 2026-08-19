@@ -64,23 +64,72 @@ const toOptionalString = (value: unknown) => {
 const sanitizeLyricLine = (line: unknown): LyricLinePayload | null => {
   if (!isPlainRecord(line)) return null;
   const text = String(line.text ?? '');
+  const characters = Array.isArray(line.characters)
+    ? line.characters
+        .map((char) => {
+          if (!isPlainRecord(char)) return null;
+          return {
+            text: String(char.text ?? ''),
+            startTime: toFiniteNumber(char.startTime),
+            endTime: toFiniteNumber(char.endTime, toFiniteNumber(char.startTime)),
+          };
+        })
+        .filter((char): char is LyricLinePayload['characters'][number] => Boolean(char))
+    : [{ text, startTime: Math.round(toFiniteNumber(line.time) * 1000), endTime: 0 }];
+  const rubyUnits = Array.isArray(line.rubyUnits)
+    ? line.rubyUnits
+        .map((unit) => {
+          if (!isPlainRecord(unit)) return null;
+          const chars = Array.isArray(unit.chars)
+            ? unit.chars
+                .map((char) => {
+                  if (!isPlainRecord(char)) return null;
+                  return {
+                    text: String(char.text ?? ''),
+                    startTime: toFiniteNumber(char.startTime),
+                    endTime: toFiniteNumber(char.endTime, toFiniteNumber(char.startTime)),
+                  };
+                })
+                .filter(
+                  (
+                    char,
+                  ): char is NonNullable<LyricLinePayload['rubyUnits']>[number]['chars'][number] =>
+                    Boolean(char),
+                )
+            : [];
+          return {
+            text: String(unit.text ?? ''),
+            ruby: String(unit.ruby ?? ''),
+            startTime: toFiniteNumber(unit.startTime),
+            endTime: toFiniteNumber(unit.endTime, toFiniteNumber(unit.startTime)),
+            charStart: Math.round(toFiniteNumber(unit.charStart)),
+            chars,
+          };
+        })
+        .filter((unit): unit is NonNullable<LyricLinePayload['rubyUnits']>[number] => Boolean(unit))
+    : undefined;
+  const translatedCharacters = Array.isArray(line.translatedCharacters)
+    ? line.translatedCharacters
+        .map((char) => {
+          if (!isPlainRecord(char)) return null;
+          return {
+            text: String(char.text ?? ''),
+            startTime: toFiniteNumber(char.startTime),
+            endTime: toFiniteNumber(char.endTime, toFiniteNumber(char.startTime)),
+          };
+        })
+        .filter((char): char is NonNullable<LyricLinePayload['translatedCharacters']>[number] =>
+          Boolean(char),
+        )
+    : undefined;
   return {
     time: toFiniteNumber(line.time),
     text,
     translated: toOptionalString(line.translated),
     romanized: toOptionalString(line.romanized),
-    characters: Array.isArray(line.characters)
-      ? line.characters
-          .map((char) => {
-            if (!isPlainRecord(char)) return null;
-            return {
-              text: String(char.text ?? ''),
-              startTime: toFiniteNumber(char.startTime),
-              endTime: toFiniteNumber(char.endTime, toFiniteNumber(char.startTime)),
-            };
-          })
-          .filter((char): char is LyricLinePayload['characters'][number] => Boolean(char))
-      : [{ text, startTime: Math.round(toFiniteNumber(line.time) * 1000), endTime: 0 }],
+    characters,
+    ...(translatedCharacters?.length ? { translatedCharacters } : {}),
+    ...(rubyUnits?.length ? { rubyUnits } : {}),
   };
 };
 
