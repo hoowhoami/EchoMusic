@@ -1,40 +1,46 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
-import { useRouter } from 'vue-router';
-import { useVModel, useVirtualList } from '@vueuse/core';
+import { useVModel } from '@vueuse/core';
 import { Icon } from '@iconify/vue';
 import { CheckboxIndicator, CheckboxRoot } from 'reka-ui';
 import Dialog from '@/components/ui/Dialog.vue';
 import Button from '@/components/ui/Button.vue';
 import Input from '@/components/ui/Input.vue';
-import Switch from '@/components/ui/Switch.vue';
 import Select from '@/components/ui/Select.vue';
 import Scrollbar from '@/components/ui/Scrollbar.vue';
-import Cover from '@/components/ui/Cover.vue';
 import {
   iconCheckMark,
-  iconChevronLeft,
   iconExternalLink,
-  iconList,
   iconPlaylistAdd,
   iconRefreshCw,
   iconTriangleAlert,
 } from '@/icons';
+import {
+  createLinkImportTask,
+  createScreenshotImportTask,
+  submitImportScreenshot,
+  type NativeImportTask,
+} from '@/api/importPlaylist';
 import { resolveExternalPlaylist } from '@/api/external';
+import { NativeImportUnsupportedError, waitForNativeImport } from '@/utils/nativeImportPlaylist';
 import { runImport, type ImportItemResult, type ImportSummary } from '@/utils/importPlaylist';
-import { getPlaylistDetail } from '@/api/playlist';
-import { mapPlaylistMeta } from '@/utils/mappers';
 import { usePlaylistStore } from '@/stores/playlist';
 import { useUserStore } from '@/stores/user';
 import { useToastStore } from '@/stores/toast';
 import { useImportTaskStore } from '@/stores/importTask';
 import { useSettingStore } from '@/stores/setting';
-import type { ExternalPlaylist, ExternalProviderId } from '../../../shared/external';
 import type { PlaylistMeta } from '@/models/playlist';
+import type { ExternalTrack } from '../../../shared/external';
 
 interface Props {
   open?: boolean;
 }
+
+type ImportMode = 'link' | 'screenshot';
+type Step = 'input' | 'progress';
+
+const PLATFORM_HINTS = ['网易云', 'QQ 音乐', '酷我', '酷狗', '汽水', 'Spotify', 'Apple Music'];
+
 const props = withDefaults(defineProps<Props>(), { open: false });
 const emit = defineEmits<{ (e: 'update:open', value: boolean): void }>();
 const open = useVModel(props, 'open', emit, { defaultValue: false });
@@ -44,849 +50,558 @@ const userStore = useUserStore();
 const toastStore = useToastStore();
 const importTaskStore = useImportTaskStore();
 const settingStore = useSettingStore();
-const router = useRouter();
 
-type Step = 'input' | 'preview' | 'progress' | 'kugou-native';
 const step = ref<Step>('input');
-
-// Step 1
+const mode = ref<ImportMode>('link');
 const inputText = ref('');
-const provider = ref<ExternalProviderId>('auto');
-const isResolving = ref(false);
-const resolveError = ref('');
-const PROVIDERS: { id: ExternalProviderId; label: string }[] = [
-  { id: 'auto', label: '自动识别' },
-  { id: 'netease', label: '网易云' },
-  { id: 'qqmusic', label: 'QQ 音乐' },
-  { id: 'kuwo', label: '酷我' },
-  { id: 'kugou', label: '酷狗' },
-  { id: 'qishui', label: '汽水' },
-  { id: 'spotify', label: 'Spotify' },
-  { id: 'apple', label: 'Apple Music' },
-  { id: 'text', label: '纯文本' },
-];
-
-const STEPS: { key: Step; label: string }[] = [
-  { key: 'input', label: '粘贴' },
-  { key: 'preview', label: '预览' },
-  { key: 'progress', label: '导入' },
-];
-const stepIndex = computed(() => STEPS.findIndex((s) => s.key === step.value));
-
-const formatDuration = (sec?: number): string => {
-  if (!sec || sec <= 0) return '';
-  const m = Math.floor(sec / 60);
-  const s = Math.floor(sec % 60);
-  return `${m}:${s.toString().padStart(2, '0')}`;
-};
-
-const totalDurationLabel = computed(() => {
-  if (!resolved.value) return '';
-  const total = resolved.value.tracks.reduce((acc, t) => acc + (t.duration || 0), 0);
-  if (total <= 0) return '';
-  const h = Math.floor(total / 3600);
-  const m = Math.floor((total % 3600) / 60);
-  return h > 0 ? `${h} 小时 ${m} 分` : `${m} 分钟`;
-});
-
-// 酷狗分享链接只包含部分歌曲
-const isKugouPartial = computed(
-  () => resolved.value?.provider === 'kugou' && !resolved.value?.externalId,
-);
-
-// Step 2
-const resolved = ref<ExternalPlaylist | null>(null);
-const selectedSet = ref<Set<number>>(new Set());
-const target = ref<'new' | 'existing'>('new');
-const newPlaylistName = ref('');
-const newPlaylistIsPrivate = ref(false);
+const selectedFiles = ref<File[]>([]);
 const existingListId = ref<string | number | null>(null);
+const screenshotTarget = ref<'existing' | 'new'>('existing');
+const newScreenshotPlaylistName = ref('截图导入的歌单');
+const isStarting = ref(false);
+const isImporting = ref(false);
+const abortFlag = ref(false);
+const errorMessage = ref('');
+const progressDone = ref(0);
+const progressTotal = ref(1);
+const progressItems = ref<ImportItemResult[]>([]);
+const summary = ref<ImportSummary | null>(null);
+const backgroundTargetName = ref('外部歌单导入');
+const showBackgroundConfirm = ref(false);
+const neverShowBackgroundConfirm = ref(false);
+const isLocalFallback = ref(false);
 
 const currentUserId = computed<number | undefined>(() => {
-  const v = userStore.info?.userid ?? userStore.info?.userId;
-  return typeof v === 'number' && v > 0 ? v : undefined;
+  const value = userStore.info?.userid ?? userStore.info?.userId;
+  return typeof value === 'number' && value > 0 ? value : undefined;
 });
 
 const ownedPlaylists = computed<PlaylistMeta[]>(() => {
-  const uid = currentUserId.value;
-  if (!uid) return [];
+  const userid = currentUserId.value;
+  if (!userid) return [];
   return playlistStore.userPlaylists.filter(
-    (p) => p.source !== 2 && p.listCreateUserid === uid && !p.isDefault,
+    (playlist) =>
+      playlist.source !== 2 &&
+      (playlist.listCreateUserid === userid ||
+        playlist.isDefault === true ||
+        playlist.name === '默认收藏' ||
+        playlist.name === '我喜欢的音乐'),
   );
 });
 
 const existingPlaylistOptions = computed(() =>
-  ownedPlaylists.value.map((p) => ({
-    label: `${p.name}（${p.count || p.songcount || 0} 首）`,
-    value: (p.listid || p.id) as string | number,
+  ownedPlaylists.value.map((playlist) => ({
+    label: `${playlist.name}（${playlist.count || playlist.songcount || 0} 首）`,
+    value: (playlist.listid || playlist.id) as string | number,
   })),
 );
 
-const selectedTracks = computed(() => {
-  if (!resolved.value) return [];
-  return resolved.value.tracks.filter((_, idx) => selectedSet.value.has(idx));
+const selectedPlaylist = computed(() =>
+  ownedPlaylists.value.find(
+    (playlist) => String(playlist.listid || playlist.id) === String(existingListId.value || ''),
+  ),
+);
+
+const canStart = computed(() => {
+  if (isStarting.value || isImporting.value) return false;
+  if (mode.value === 'link') return /^https?:\/\//i.test(inputText.value.trim());
+  return (
+    selectedFiles.value.length > 0 &&
+    (screenshotTarget.value === 'new'
+      ? Boolean(newScreenshotPlaylistName.value.trim() && currentUserId.value)
+      : Boolean(existingListId.value))
+  );
 });
 
-const canStartImport = computed(() => {
-  if (!resolved.value || selectedTracks.value.length === 0) return false;
-  if (target.value === 'new') return Boolean(newPlaylistName.value.trim() && currentUserId.value);
-  return Boolean(existingListId.value);
+const rootTrack: ExternalTrack = { title: '准备导入', artist: '正在准备' };
+const nativeStageTracks: Record<'submitted' | 'parsing' | 'playlist' | 'importing', ExternalTrack> =
+  {
+    submitted: { title: '提交导入任务', artist: '等待提交' },
+    parsing: { title: '读取歌单信息', artist: '等待读取' },
+    playlist: { title: '创建新歌单', artist: '等待创建' },
+    importing: { title: '添加歌曲', artist: '等待添加' },
+  };
+
+const activeProgressItem = computed(() => {
+  return (
+    progressItems.value.find((item) => item.status === 'matching' || item.status === 'adding') ||
+    progressItems.value.find((item) => item.status === 'pending')
+  );
 });
-
-// 重名检测
-const showDuplicateWarning = ref(false);
-const duplicateCountdown = ref(5);
-let duplicateTimer: ReturnType<typeof setInterval> | null = null;
-
-const duplicatePlaylists = computed(() => {
-  const name = newPlaylistName.value.trim().toLowerCase();
-  if (!name) return [];
-  return ownedPlaylists.value.filter((p) => p.name?.toLowerCase() === name);
-});
-
-const startDuplicateCountdown = () => {
-  duplicateCountdown.value = 5;
-  if (duplicateTimer) clearInterval(duplicateTimer);
-  duplicateTimer = setInterval(() => {
-    duplicateCountdown.value--;
-    if (duplicateCountdown.value <= 0 && duplicateTimer) {
-      clearInterval(duplicateTimer);
-      duplicateTimer = null;
-    }
-  }, 1000);
-};
-
-const dismissDuplicateWarning = () => {
-  if (duplicateTimer) clearInterval(duplicateTimer);
-  duplicateTimer = null;
-  showDuplicateWarning.value = false;
-  duplicateCountdown.value = 5;
-};
-
-const confirmDuplicateImport = () => {
-  if (duplicateCountdown.value > 0) return;
-  showDuplicateWarning.value = false;
-  duplicateCountdown.value = 5;
-  void handleStartImport(true);
-};
-
-// Step 3
-const progressItems = ref<ImportItemResult[]>([]);
-const progressDone = ref(0);
-const progressTotal = ref(0);
-const isImporting = ref(false);
-const abortFlag = ref(false);
-const summary = ref<ImportSummary | null>(null);
-const shouldAbort = () => abortFlag.value || importTaskStore.abortRequested;
-
-// 后台导入确认弹窗
-const showBackgroundConfirm = ref(false);
-const neverShowBackgroundConfirm = ref(false);
-// 保存目标歌单名，供转入后台时注册到任务面板
-const backgroundTargetName = ref('');
 
 const reset = () => {
   step.value = 'input';
+  mode.value = 'link';
   inputText.value = '';
-  provider.value = 'auto';
-  isResolving.value = false;
-  resolveError.value = '';
-  resolved.value = null;
-  selectedSet.value = new Set();
-  target.value = 'new';
-  newPlaylistName.value = '';
-  newPlaylistIsPrivate.value = false;
+  selectedFiles.value = [];
   existingListId.value = null;
-  progressItems.value = [];
-  progressDone.value = 0;
-  progressTotal.value = 0;
+  screenshotTarget.value = 'existing';
+  newScreenshotPlaylistName.value = '截图导入的歌单';
+  isStarting.value = false;
   isImporting.value = false;
   abortFlag.value = false;
+  errorMessage.value = '';
+  progressDone.value = 0;
+  progressTotal.value = 1;
+  progressItems.value = [];
   summary.value = null;
-  kugouPlaylistMeta.value = null;
-  isLoadingKugouMeta.value = false;
-  if (duplicateTimer) clearInterval(duplicateTimer);
-  duplicateTimer = null;
-  showDuplicateWarning.value = false;
-  duplicateCountdown.value = 5;
+  isLocalFallback.value = false;
+  rootTrack.title = '准备导入';
+  rootTrack.artist = '正在准备';
 };
 
-watch(open, (v) => {
-  if (!v) {
-    // 导入进行中：拦截关闭，弹出后台运行确认（除非已 dismiss）
+const resumeFromStore = (completed = false) => {
+  step.value = 'progress';
+  progressItems.value = importTaskStore.items;
+  progressDone.value = importTaskStore.done;
+  progressTotal.value = importTaskStore.total || 1;
+  isImporting.value = !completed;
+  summary.value = completed ? importTaskStore.summary : null;
+};
+
+watch(open, (value) => {
+  if (!value) {
     if (step.value === 'progress' && isImporting.value) {
       if (settingStore.importBackgroundConfirmDismissed) {
-        // 跳过确认弹窗时同样转入后台：与确认后行为一致，任务面板可查看/中止
-        enterBackgroundMode();
+        importTaskStore.enterBackground(backgroundTargetName.value, () => {
+          abortFlag.value = true;
+        });
         step.value = 'input';
         return;
       }
       showBackgroundConfirm.value = true;
-      // 同步回弹，Vue 批量更新后不会渲染关闭态
       open.value = true;
       return;
     }
-    // 查看结果页关闭（完成/X/遮罩）：同步清理任务中心条目
-    if (step.value === 'progress' && !isImporting.value && importTaskStore.status === 'completed') {
+    if (step.value === 'progress' && importTaskStore.status === 'completed') {
       importTaskStore.dismiss();
     }
     window.setTimeout(reset, 200);
-  } else {
-    // 重开时若后台有活跃导入任务，跳到进度页（AC-21）；已完成的结果页由
-    // openRequested 增量触发（任务面板「查看结果」），普通打开不劫持
-    if (importTaskStore.status === 'running') {
-      resumeFromStore();
-    }
+    return;
   }
+  if (importTaskStore.status === 'running') resumeFromStore();
+  if (value && currentUserId.value) void playlistStore.fetchUserPlaylists();
 });
 
-// 任务面板「查看结果」触发的重开：仅在 openRequested 增量且已完成时恢复结果页，
-// 普通打开（如侧边栏发起新导入）仍进输入页
+watch(currentUserId, (userid) => {
+  if (open.value && userid) void playlistStore.fetchUserPlaylists();
+});
+
 let lastOpenRequested = 0;
 watch(
   () => importTaskStore.openRequested,
-  (val) => {
-    if (val === lastOpenRequested || val <= 0) return;
-    lastOpenRequested = val;
-    if (importTaskStore.status === 'completed') {
-      resumeFromStoreCompleted();
-    }
+  (value) => {
+    if (value === lastOpenRequested || value <= 0) return;
+    lastOpenRequested = value;
+    if (importTaskStore.status === 'completed') resumeFromStore(true);
   },
 );
 
-const resumeFromStore = () => {
-  step.value = 'progress';
-  progressItems.value = importTaskStore.items;
-  progressDone.value = importTaskStore.done;
-  progressTotal.value = importTaskStore.total;
-  isImporting.value = true;
-  abortFlag.value = false;
-  summary.value = null;
+const responseTaskId = (response: unknown): string | number => {
+  if (!response || typeof response !== 'object') throw new Error('创建导入任务失败');
+  const data = (response as { data?: { id?: string | number } }).data;
+  if (!data?.id) throw new Error('创建导入任务未返回任务编号');
+  return data.id;
 };
 
-const resumeFromStoreCompleted = () => {
-  step.value = 'progress';
-  progressItems.value = importTaskStore.items;
-  progressDone.value = importTaskStore.done;
-  progressTotal.value = importTaskStore.total;
-  isImporting.value = false;
-  abortFlag.value = false;
-  summary.value = importTaskStore.summary;
+const updateNativeProgress = (task: NativeImportTask) => {
+  const status = Number(task.status);
+  const songs = Number(task.songs_num || 0);
+  const imported = Number(task.imported_num || 0);
+  const missed = Number(task.missed_num || 0);
+  const hasPlaylist = Number(task.listid || 0) > 0;
+  const total = Math.max(1, songs, imported + missed);
+
+  nativeStageTracks.submitted.artist = '已提交';
+  nativeStageTracks.parsing.artist =
+    status === 3 || songs > 0 ? `${task.name || '歌单'} · ${songs} 首` : '正在读取歌单信息';
+  nativeStageTracks.playlist.artist = hasPlaylist ? '歌单已创建' : '等待创建歌单';
+  nativeStageTracks.importing.artist = songs > 0 ? `已导入 ${imported} / ${songs}` : '等待歌曲信息';
+
+  const items: ImportItemResult[] = [
+    { external: nativeStageTracks.submitted, status: 'success' },
+    {
+      external: nativeStageTracks.parsing,
+      status: status === 3 || songs > 0 ? 'success' : 'matching',
+    },
+    {
+      external: nativeStageTracks.playlist,
+      status: hasPlaylist || status === 3 ? 'success' : 'pending',
+    },
+    {
+      external: nativeStageTracks.importing,
+      status: status === 3 ? 'success' : hasPlaylist || songs > 0 ? 'adding' : 'pending',
+    },
+  ];
+  const progressTotalValue = songs > 0 ? total : 4;
+  const done = status === 3 ? progressTotalValue : songs > 0 ? Math.min(total - 1, imported) : 1;
+  progressDone.value = Math.max(0, done);
+  progressTotal.value = progressTotalValue;
+  progressItems.value = items;
+  items.forEach((item) =>
+    importTaskStore.updateProgress(progressDone.value, progressTotalValue, item),
+  );
 };
 
-const enterBackgroundMode = () => {
-  importTaskStore.enterBackground(backgroundTargetName.value, () => {
-    abortFlag.value = true;
-  });
-};
+const runLocalFallback = async (url: string) => {
+  isLocalFallback.value = true;
+  rootTrack.title = '正在换一种方式继续导入';
+  rootTrack.artist = '正在读取歌单信息';
+  progressItems.value = [{ external: rootTrack, status: 'matching' }];
+  progressDone.value = 0;
+  progressTotal.value = 1;
 
-const confirmBackgroundImport = () => {
-  showBackgroundConfirm.value = false;
-  if (neverShowBackgroundConfirm.value) {
-    settingStore.importBackgroundConfirmDismissed = true;
-  }
-  enterBackgroundMode();
-  // 先把 step 切走，避免 watch(open) 再次拦截关闭
-  step.value = 'input';
-  open.value = false;
-};
+  const resolved = await resolveExternalPlaylist({ input: url, provider: 'auto' });
+  if (!resolved.ok) throw new Error(resolved.error);
+  if (!resolved.playlist.tracks.length) throw new Error('外部歌单没有可导入歌曲');
+  if (!currentUserId.value) throw new Error('请先登录');
 
-const cancelBackgroundImport = () => {
-  showBackgroundConfirm.value = false;
-};
+  const playlistName = resolved.playlist.name || '导入的歌单';
+  backgroundTargetName.value = `${playlistName} · 自动导入`;
+  const listId = await playlistStore.createPlaylistAndReturnId(
+    playlistName,
+    false,
+    currentUserId.value,
+  );
+  if (!listId) throw new Error('创建歌单失败');
 
-const handleResolve = async () => {
-  const input = inputText.value.trim();
-  if (!input || isResolving.value) return;
-  isResolving.value = true;
-  resolveError.value = '';
-  try {
-    const res = await resolveExternalPlaylist({ input, provider: provider.value });
-    if (!res.ok) {
-      resolveError.value = res.error;
-      return;
-    }
-    resolved.value = res.playlist;
-
-    // 酷狗原生歌单：进入提示页面，让用户选择
-    if (res.playlist.provider === 'kugou' && res.playlist.externalId) {
-      step.value = 'kugou-native';
-      fetchKugouPlaylistMeta(res.playlist.externalId);
-      return;
-    }
-
-    selectedSet.value = new Set(res.playlist.tracks.map((_, idx) => idx));
-    newPlaylistName.value = res.playlist.name || '导入的歌单';
-    step.value = 'preview';
-  } catch (e: unknown) {
-    resolveError.value = e instanceof Error ? e.message : '解析失败';
-  } finally {
-    isResolving.value = false;
-  }
-};
-
-const toggleTrack = (idx: number) => {
-  const next = new Set(selectedSet.value);
-  if (next.has(idx)) next.delete(idx);
-  else next.add(idx);
-  selectedSet.value = next;
-};
-
-const selectAll = () => {
-  if (!resolved.value) return;
-  selectedSet.value = new Set(resolved.value.tracks.map((_, idx) => idx));
-};
-const selectNone = () => {
-  selectedSet.value = new Set();
-};
-
-type CheckboxState = boolean | 'indeterminate';
-
-const allSelected = computed(
-  () =>
-    !!resolved.value &&
-    resolved.value.tracks.length > 0 &&
-    selectedSet.value.size === resolved.value.tracks.length,
-);
-const someSelected = computed(() => selectedSet.value.size > 0 && !allSelected.value);
-const selectAllState = computed<CheckboxState>(() => {
-  if (allSelected.value) return true;
-  if (someSelected.value) return 'indeterminate';
-  return false;
-});
-const setSelectAllChecked = (value: CheckboxState) => {
-  if (value === true) selectAll();
-  else selectNone();
-};
-const setTrackChecked = (idx: number, value: CheckboxState) => {
-  const next = new Set(selectedSet.value);
-  if (value === true) next.add(idx);
-  else next.delete(idx);
-  selectedSet.value = next;
-};
-
-const previewTracks = computed(() => resolved.value?.tracks ?? []);
-const PREVIEW_ITEM_HEIGHT = 56;
-const {
-  list: virtualPreviewList,
-  containerProps: previewContainerProps,
-  wrapperProps: previewWrapperProps,
-} = useVirtualList(previewTracks, {
-  itemHeight: PREVIEW_ITEM_HEIGHT,
-  overscan: 8,
-});
-
-const goBackToInput = () => {
-  if (isResolving.value) return;
-  step.value = 'input';
-};
-
-const openKugouPlaylist = () => {
-  if (!resolved.value?.externalId) return;
-  open.value = false;
-  router.push(`/main/playlist/${resolved.value.externalId}`);
-};
-
-// 酷狗歌单详情
-const kugouPlaylistMeta = ref<PlaylistMeta | null>(null);
-const isLoadingKugouMeta = ref(false);
-
-const fetchKugouPlaylistMeta = async (id: string) => {
-  isLoadingKugouMeta.value = true;
-  kugouPlaylistMeta.value = null;
-  try {
-    const res = await getPlaylistDetail(id);
-    if (res?.status === 1 && res?.data?.[0]) {
-      kugouPlaylistMeta.value = mapPlaylistMeta(res.data[0]);
-    }
-  } catch {
-    // 拉取失败不影响跳转
-  } finally {
-    isLoadingKugouMeta.value = false;
-  }
-};
-
-const handleStartImport = async (duplicateConfirmed = false) => {
-  if (!canStartImport.value || isImporting.value) return;
-
-  // 新建歌单时检测重名
-  if (
-    target.value === 'new' &&
-    duplicatePlaylists.value.length > 0 &&
-    !showDuplicateWarning.value &&
-    !duplicateConfirmed
-  ) {
-    showDuplicateWarning.value = true;
-    startDuplicateCountdown();
-    return;
-  }
-
-  const tracks = selectedTracks.value;
-  let listId: string | number | null = null;
-  if (target.value === 'new') {
-    const id = await playlistStore.createPlaylistAndReturnId(
-      newPlaylistName.value.trim(),
-      newPlaylistIsPrivate.value,
-      currentUserId.value,
-    );
-    if (!id) {
-      toastStore.actionFailed('创建歌单');
-      return;
-    }
-    listId = id;
-  } else {
-    listId = existingListId.value;
-  }
-  if (!listId) return;
-
-  step.value = 'progress';
-  progressItems.value = tracks.map((t) => ({ external: t, status: 'pending' }));
+  const tracks = resolved.playlist.tracks;
+  progressItems.value = tracks.map((track) => ({ external: track, status: 'pending' }));
   progressDone.value = 0;
   progressTotal.value = tracks.length;
-  isImporting.value = true;
-  abortFlag.value = false;
-  summary.value = null;
+  const result = await runImport(tracks, listId, {
+    shouldAbort: () => abortFlag.value || importTaskStore.abortRequested,
+    onProgress: (done, total, item) => {
+      progressDone.value = done;
+      progressTotal.value = total;
+      const index = progressItems.value.findIndex(
+        (progressItem) => progressItem.external === item.external,
+      );
+      if (index >= 0) progressItems.value[index] = { ...item };
+      importTaskStore.updateProgress(done, total, item);
+    },
+  });
+  summary.value = result;
+  if (importTaskStore.status === 'running') importTaskStore.complete(result);
+  if (!abortFlag.value && !importTaskStore.abortRequested) {
+    toastStore.success(`导入完成：成功 ${result.success} / ${result.total}`);
+  }
+  await playlistStore.fetchUserPlaylists();
+};
 
-  // 保存目标歌单名，供转入后台时注册到任务面板
-  backgroundTargetName.value =
-    target.value === 'new'
-      ? newPlaylistName.value.trim()
-      : existingPlaylistOptions.value.find((o) => o.value === existingListId.value)?.label || '';
+const monitorTask = async (taskId: string | number, fallbackUrl = '') => {
+  isStarting.value = false;
+  isImporting.value = true;
+  step.value = 'progress';
+  updateNativeProgress({ id: taskId, status: 0 });
 
   try {
-    const result = await runImport(tracks, listId, {
-      shouldAbort,
-      onProgress: (done, total, item) => {
-        progressDone.value = done;
-        progressTotal.value = total;
-        const idx = progressItems.value.findIndex((it) => it.external === item.external);
-        if (idx >= 0) progressItems.value[idx] = { ...item };
-        importTaskStore.updateProgress(done, total, item);
-      },
+    const result = await waitForNativeImport(taskId, {
+      shouldStop: () => abortFlag.value || importTaskStore.abortRequested,
+      onProgress: updateNativeProgress,
     });
-    summary.value = result;
-    // 只有转入后台的任务才更新 store；前台任务弹窗内自己展示结果
-    if (importTaskStore.status === 'running') {
-      if (shouldAbort()) {
-        importTaskStore.dismiss();
-      } else {
-        importTaskStore.complete(result);
-      }
+    if (!result) {
+      toastStore.warning('已停止查看进度，导入任务仍会继续处理');
+      return;
     }
-    if (result.success > 0) {
-      if (!shouldAbort()) {
-        toastStore.success(`导入完成：成功 ${result.success} / ${result.total}`);
-      }
-      await playlistStore.fetchUserPlaylists();
-    } else if (!shouldAbort()) {
-      toastStore.warning('未能匹配到任何歌曲');
+
+    const total = Math.max(
+      1,
+      Number(result.task.songs_num || 0),
+      Number(result.task.imported_num || 0) + Number(result.task.missed_num || 0),
+    );
+    const success = Number(result.task.imported_num || 0);
+    const skipped = Number(result.task.missed_num || 0);
+    const missedItems: ImportItemResult[] = result.missed.map((track) => ({
+      external: {
+        title: track.audio_name || '未识别歌曲',
+        artist: track.author_name || '未知歌手',
+        album: track.album_name || '',
+      },
+      status: 'skipped',
+      error: track.reason || '未匹配',
+    }));
+    updateNativeProgress(result.task);
+    progressItems.value = [...progressItems.value, ...missedItems];
+    progressDone.value = total;
+    progressTotal.value = total;
+    summary.value = { total, success, low: 0, skipped, failed: 0 };
+    missedItems.forEach((item) => importTaskStore.updateProgress(total, total, item));
+
+    if (importTaskStore.status === 'running') importTaskStore.complete(summary.value);
+    toastStore.success(`导入完成：成功 ${success} / ${total}`);
+    await playlistStore.fetchUserPlaylists();
+  } catch (error: unknown) {
+    if (error instanceof NativeImportUnsupportedError && fallbackUrl) {
+      toastStore.warning('正在换一种方式继续导入');
+      await runLocalFallback(fallbackUrl);
+      return;
     }
-  } catch (e: unknown) {
+    rootTrack.title = '导入失败';
+    const item: ImportItemResult = {
+      external: rootTrack,
+      status: 'failed',
+      error: error instanceof Error ? error.message : '导入失败',
+    };
+    progressItems.value = [item];
+    summary.value = { total: 1, success: 0, low: 0, skipped: 0, failed: 1 };
+    importTaskStore.updateProgress(1, 1, item);
+    if (importTaskStore.status === 'running') importTaskStore.complete(summary.value);
     toastStore.actionFailed('导入');
-    resolveError.value = e instanceof Error ? e.message : '导入失败';
   } finally {
     isImporting.value = false;
   }
 };
 
-const handleAbort = () => {
-  if (!isImporting.value) return;
-  abortFlag.value = true;
-  if (importTaskStore.status === 'running') {
-    importTaskStore.requestAbort({ feedback: false });
+const fileToBase64 = (file: File): Promise<string> =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onerror = () => reject(reader.error || new Error(`读取图片失败：${file.name}`));
+    reader.readAsDataURL(file);
+  });
+
+const handleFiles = (event: Event) => {
+  const input = event.target as HTMLInputElement;
+  const files = Array.from(input.files || []);
+  errorMessage.value = '';
+  if (files.length > 9) {
+    errorMessage.value = '一次最多选择 9 张截图';
+    selectedFiles.value = files.slice(0, 9);
     return;
+  }
+  const oversized = files.find((file) => file.size > 10 * 1024 * 1024);
+  if (oversized) {
+    errorMessage.value = `${oversized.name} 超过 10 MB`;
+    selectedFiles.value = [];
+    return;
+  }
+  selectedFiles.value = files;
+};
+
+const setExistingListId = (value: unknown) => {
+  existingListId.value = typeof value === 'string' || typeof value === 'number' ? value : null;
+};
+
+const startImport = async () => {
+  if (!canStart.value) return;
+  importTaskStore.dismiss();
+  isStarting.value = true;
+  abortFlag.value = false;
+  errorMessage.value = '';
+  summary.value = null;
+  progressItems.value = [{ external: rootTrack, status: 'pending' }];
+
+  try {
+    if (mode.value === 'link') {
+      backgroundTargetName.value = '外部歌单导入';
+      const url = inputText.value.trim();
+      const response = await createLinkImportTask(url);
+      await monitorTask(responseTaskId(response), url);
+      return;
+    }
+
+    if (!currentUserId.value) throw new Error('请先登录');
+    const playlistName =
+      screenshotTarget.value === 'new'
+        ? newScreenshotPlaylistName.value.trim()
+        : selectedPlaylist.value?.name || '';
+    let listId = existingListId.value;
+    if (screenshotTarget.value === 'new') {
+      listId = await playlistStore.createPlaylistAndReturnId(
+        playlistName,
+        false,
+        currentUserId.value,
+      );
+    }
+    if (!listId || !playlistName) throw new Error('请选择或创建目标歌单');
+    backgroundTargetName.value = playlistName;
+    const taskSn = `${currentUserId.value}${Date.now()}`;
+    for (let index = 0; index < selectedFiles.value.length; index++) {
+      rootTrack.title = `正在上传截图 ${index + 1} / ${selectedFiles.value.length}`;
+      progressDone.value = index;
+      progressTotal.value = selectedFiles.value.length + 1;
+      step.value = 'progress';
+      const item: ImportItemResult = { external: rootTrack, status: 'adding' };
+      progressItems.value = [item];
+      importTaskStore.updateProgress(index, progressTotal.value, item);
+      await submitImportScreenshot(taskSn, await fileToBase64(selectedFiles.value[index]));
+    }
+    const response = await createScreenshotImportTask(taskSn, listId, playlistName);
+    rootTrack.title = playlistName;
+    await monitorTask(responseTaskId(response));
+  } catch (error: unknown) {
+    isStarting.value = false;
+    isImporting.value = false;
+    errorMessage.value = error instanceof Error ? error.message : '创建导入任务失败';
+    step.value = 'input';
+    toastStore.actionFailed('创建导入任务');
   }
 };
 
-const handleBackgroundRun = () => {
-  enterBackgroundMode();
+const stopMonitoring = () => {
+  abortFlag.value = true;
+  if (importTaskStore.status === 'running') importTaskStore.requestAbort({ feedback: false });
+};
+
+const runInBackground = () => {
+  importTaskStore.enterBackground(backgroundTargetName.value, () => {
+    abortFlag.value = true;
+  });
   step.value = 'input';
   open.value = false;
 };
 
-const handleClose = () => {
-  if (isImporting.value) {
-    abortFlag.value = true;
-    if (importTaskStore.status === 'running') {
-      importTaskStore.requestAbort({ feedback: false });
-      return;
-    }
-    return;
-  }
+const confirmBackgroundImport = () => {
+  showBackgroundConfirm.value = false;
+  if (neverShowBackgroundConfirm.value) settingStore.importBackgroundConfirmDismissed = true;
+  runInBackground();
+};
+
+const closeResult = () => {
+  if (importTaskStore.status === 'completed') importTaskStore.dismiss();
   open.value = false;
 };
 
-const statusLabel = (status: ImportItemResult['status']): string => {
-  switch (status) {
-    case 'pending':
-      return '等待';
-    case 'matching':
-      return '匹配中';
-    case 'adding':
-      return '添加中';
-    case 'success':
-      return '成功';
-    case 'low':
-      return '低相似';
-    case 'skipped':
-      return '已跳过';
-    case 'failed':
-      return '失败';
-    default:
-      return '';
-  }
+const itemStatusLabel = (status: ImportItemResult['status']) => {
+  if (status === 'success') return '完成';
+  if (status === 'failed') return '失败';
+  if (status === 'skipped') return '未匹配';
+  if (status === 'matching') return '解析中';
+  if (status === 'adding') return '导入中';
+  return '等待';
 };
 </script>
 
 <template>
   <Dialog
     v-model:open="open"
-    contentClass="import-playlist-dialog"
-    showClose
+    content-class="import-playlist-dialog"
+    show-close
     no-scroll
-    :close-on-interact-outside="!isImporting && !isResolving"
-    :close-on-escape="!isImporting && !isResolving"
+    :close-on-interact-outside="!isStarting && !isImporting"
+    :close-on-escape="!isStarting && !isImporting"
   >
     <template #title>
       <div class="flex items-center justify-between gap-3 w-full pr-8">
         <div class="flex items-center gap-2 min-w-0">
           <Icon :icon="iconExternalLink" width="18" height="18" class="text-primary shrink-0" />
-          <span class="truncate">从链接导入歌单</span>
+          <span class="truncate">导入外部歌单</span>
         </div>
-        <div class="import-stepper shrink-0">
-          <template v-for="(s, i) in STEPS" :key="s.key">
-            <span
-              class="import-step-pill"
-              :class="{
-                'is-active': stepIndex === i,
-                'is-done': stepIndex > i,
-              }"
-            >
-              <span class="import-step-num">{{ i + 1 }}</span>
-              <span class="import-step-label">{{ s.label }}</span>
-            </span>
-            <span v-if="i < STEPS.length - 1" class="import-step-sep" />
-          </template>
+        <div class="import-stepper">
+          <span class="import-step-pill" :class="{ 'is-active': step === 'input' }">1 输入</span>
+          <span class="import-step-sep" />
+          <span class="import-step-pill" :class="{ 'is-active': step === 'progress' }">2 导入</span>
         </div>
       </div>
     </template>
 
-    <!-- Step 1: 输入 -->
     <div v-if="step === 'input'" class="flex flex-col gap-4 pt-1">
-      <div class="flex flex-wrap gap-1.5">
-        <Button
-          v-for="opt in PROVIDERS"
-          :key="opt.id"
-          variant="unstyled"
-          size="none"
+      <div class="import-mode-grid">
+        <button
           type="button"
-          :class="['import-chip', provider === opt.id ? 'is-active' : '']"
-          @click="provider = opt.id"
+          class="import-mode-card"
+          :class="{ 'is-active': mode === 'link' }"
+          @click="mode = 'link'"
         >
-          {{ opt.label }}
-        </Button>
-      </div>
-      <textarea
-        v-model="inputText"
-        class="import-textarea"
-        rows="5"
-        placeholder="粘贴歌单链接，或粘贴“歌名 - 歌手”格式的多行文本"
-        :disabled="isResolving"
-      />
-      <div v-if="resolveError" class="import-alert">
-        <Icon :icon="iconTriangleAlert" width="14" height="14" />
-        <span>{{ resolveError }}</span>
-      </div>
-      <p class="text-[12px] text-text-secondary/80 leading-relaxed">
-        解析仅读取歌名、歌手等元数据，不会直接下载音频。导入时会用酷狗搜索匹配本地可播放版本，匹配置信度低的会单独标记。
-      </p>
-    </div>
-
-    <!-- 酷狗原生歌单提示 -->
-    <div v-else-if="step === 'kugou-native'" class="flex flex-col items-center gap-5 py-6">
-      <div v-if="isLoadingKugouMeta" class="flex items-center justify-center py-8">
-        <div
-          class="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin"
-        ></div>
-      </div>
-      <template v-else>
-        <div class="flex items-center gap-4 w-full px-2">
-          <Cover
-            :url="kugouPlaylistMeta?.pic || ''"
-            :size="200"
-            :width="80"
-            :height="80"
-            :borderRadius="16"
-            class="shrink-0"
-          />
-          <div class="min-w-0 flex-1">
-            <div class="text-[15px] font-bold text-text-main truncate">
-              {{ kugouPlaylistMeta?.name || '酷狗歌单' }}
-            </div>
-            <div class="text-[12px] text-text-secondary/80 truncate mt-1">
-              <span>{{ kugouPlaylistMeta?.nickname || '未知创建者' }}</span>
-              <template v-if="kugouPlaylistMeta?.count">
-                <span class="mx-1.5">·</span>
-                <span>{{ kugouPlaylistMeta.count }} 首</span>
-              </template>
-            </div>
-            <div
-              v-if="kugouPlaylistMeta?.intro"
-              class="text-[11px] text-text-secondary/60 truncate mt-1"
-            >
-              {{ kugouPlaylistMeta.intro }}
-            </div>
-          </div>
-        </div>
-
-        <div
-          class="w-full rounded-xl px-4 py-3 text-[13px] text-text-secondary leading-relaxed"
-          style="background: color-mix(in srgb, var(--color-primary) 6%, transparent)"
+          <Icon :icon="iconExternalLink" width="19" height="19" />
+          <span><strong>链接导入</strong><small>粘贴歌单链接，自动完成导入</small></span>
+        </button>
+        <button
+          type="button"
+          class="import-mode-card"
+          :class="{ 'is-active': mode === 'screenshot' }"
+          @click="mode = 'screenshot'"
         >
-          该链接指向酷狗歌单，可以直接在应用内打开，享受完整的歌单体验。
+          <Icon :icon="iconPlaylistAdd" width="19" height="19" />
+          <span><strong>截图导入</strong><small>上传截图，自动识别其中的歌曲</small></span>
+        </button>
+      </div>
+
+      <template v-if="mode === 'link'">
+        <textarea
+          v-model="inputText"
+          class="import-textarea"
+          rows="4"
+          placeholder="粘贴外部平台的歌单链接"
+          :disabled="isStarting"
+        />
+        <div class="import-platforms">
+          <span class="import-platforms-label">支持平台</span>
+          <span v-for="platform in PLATFORM_HINTS" :key="platform" class="import-platform-chip">
+            {{ platform }}
+          </span>
         </div>
+        <p class="import-hint">
+          粘贴歌单链接后即可开始。如果直接导入失败，会自动切换其他方式，无需手动操作。
+        </p>
       </template>
 
-      <div class="flex gap-3 w-full pt-1">
-        <Button variant="secondary" class="flex-1" @click="goBackToInput"> 返回 </Button>
-        <Button
-          variant="primary"
-          class="flex-1"
-          :disabled="isLoadingKugouMeta"
-          @click="openKugouPlaylist"
-        >
-          打开歌单
-        </Button>
-      </div>
-    </div>
-
-    <!-- Step 2: 预览 + 目标 -->
-    <div v-else-if="step === 'preview' && resolved" class="import-preview-wrap">
-      <div class="flex items-center gap-3.5 shrink-0">
-        <Cover
-          :url="resolved.coverUrl || ''"
-          :size="200"
-          :width="64"
-          :height="64"
-          :borderRadius="12"
-          class="shrink-0"
+      <template v-else>
+        <label class="import-dropzone">
+          <input type="file" accept="image/jpeg,image/png" multiple hidden @change="handleFiles" />
+          <Icon :icon="iconPlaylistAdd" width="24" height="24" />
+          <strong>{{
+            selectedFiles.length ? `已选择 ${selectedFiles.length} 张截图` : '选择歌单截图'
+          }}</strong>
+          <span>JPEG / PNG，最多 9 张，单张不超过 10 MB</span>
+        </label>
+        <div v-if="selectedFiles.length" class="import-file-list">
+          <span v-for="file in selectedFiles" :key="`${file.name}-${file.size}`">{{
+            file.name
+          }}</span>
+        </div>
+        <div class="import-target-tabs">
+          <button
+            type="button"
+            :class="{ 'is-active': screenshotTarget === 'existing' }"
+            @click="screenshotTarget = 'existing'"
+          >
+            选择歌单
+          </button>
+          <button
+            type="button"
+            :class="{ 'is-active': screenshotTarget === 'new' }"
+            @click="screenshotTarget = 'new'"
+          >
+            新建歌单
+          </button>
+        </div>
+        <Select
+          v-if="screenshotTarget === 'existing'"
+          :model-value="existingListId ?? ''"
+          :options="existingPlaylistOptions"
+          placeholder="选择要写入的歌单"
+          :filterable="ownedPlaylists.length > 8"
+          class="w-full"
+          @update:model-value="setExistingListId"
         />
-        <div class="min-w-0 flex-1">
-          <div class="text-[14px] font-semibold text-text-main truncate">
-            {{ resolved.name }}
-          </div>
-          <div class="text-[12px] text-text-secondary/80 truncate">
-            <span>{{ resolved.creator || '未知创建者' }}</span>
-            <span class="mx-1.5">·</span>
-            <span>共 {{ resolved.tracks.length }} 首</span>
-            <template v-if="totalDurationLabel">
-              <span class="mx-1.5">·</span>
-              <span>{{ totalDurationLabel }}</span>
-            </template>
-            <span class="mx-1.5">·</span>
-            <span class="uppercase tracking-wider">{{ resolved.provider }}</span>
-          </div>
-        </div>
-      </div>
+        <Input
+          v-else
+          v-model="newScreenshotPlaylistName"
+          placeholder="请输入新歌单名称"
+          input-class="h-10 rounded-xl px-3 text-[13px]"
+        />
+        <p class="import-hint">识别结果会添加到所选歌单，或写入新建歌单。</p>
+      </template>
 
-      <div
-        v-if="isKugouPartial"
-        class="import-alert"
-        style="background: color-mix(in srgb, #f59e0b 12%, transparent); color: #b45309"
-      >
+      <div v-if="errorMessage" class="import-alert">
         <Icon :icon="iconTriangleAlert" width="14" height="14" />
-        <span
-          >该分享链接仅包含部分歌曲（{{
-            resolved.tracks.length
-          }}
-          首），完整歌单可能有更多。建议在应用内搜索歌单名称或使用歌单完整链接。</span
-        >
+        <span>{{ errorMessage }}</span>
       </div>
-
-      <div class="import-preview-grid">
-        <!-- Left: target panel -->
-        <div class="import-target-pane">
-          <div class="import-section-title">导入到</div>
-          <div class="import-target-options">
-            <button
-              type="button"
-              class="import-target-card"
-              :class="{ 'is-active': target === 'new' }"
-              @click="target = 'new'"
-            >
-              <span class="import-target-icon">
-                <Icon :icon="iconPlaylistAdd" width="18" height="18" />
-              </span>
-              <span class="import-target-text">
-                <span class="import-target-title">新建歌单</span>
-                <span class="import-target-desc">为这次导入创建一个新歌单</span>
-              </span>
-              <span class="import-target-radio" aria-hidden="true">
-                <span class="import-target-radio-dot" />
-              </span>
-            </button>
-
-            <button
-              type="button"
-              class="import-target-card"
-              :class="{
-                'is-active': target === 'existing',
-                'is-disabled': ownedPlaylists.length === 0,
-              }"
-              :disabled="ownedPlaylists.length === 0"
-              @click="target = 'existing'"
-            >
-              <span class="import-target-icon">
-                <Icon :icon="iconList" width="18" height="18" />
-              </span>
-              <span class="import-target-text">
-                <span class="import-target-title">追加到已有歌单</span>
-                <span class="import-target-desc">
-                  {{ ownedPlaylists.length === 0 ? '暂无自建歌单' : '将曲目追加到一个已有的歌单' }}
-                </span>
-              </span>
-              <span class="import-target-radio" aria-hidden="true">
-                <span class="import-target-radio-dot" />
-              </span>
-            </button>
-          </div>
-
-          <div v-if="target === 'new'" class="import-target-detail">
-            <Input
-              v-model="newPlaylistName"
-              placeholder="请输入歌单名称"
-              input-class="h-10 rounded-xl px-3 pr-9 text-[13px]"
-            />
-            <label class="flex items-center justify-between text-[12px] text-text-secondary/90">
-              <span>设为隐私歌单</span>
-              <Switch v-model="newPlaylistIsPrivate" />
-            </label>
-          </div>
-          <div v-else-if="target === 'existing'" class="import-target-detail">
-            <Select
-              :model-value="existingListId ?? ''"
-              :options="existingPlaylistOptions"
-              placeholder="请选择歌单"
-              :filterable="ownedPlaylists.length > 8"
-              class="w-full"
-              @update:model-value="
-                (v) => (existingListId = v === '' ? null : (v as string | number))
-              "
-            />
-          </div>
-        </div>
-
-        <!-- Right: tracks (virtual scroll) -->
-        <div class="import-tracks-pane">
-          <div class="import-tracks-header">
-            <CheckboxRoot
-              class="import-select-all"
-              :model-value="selectAllState"
-              @update:model-value="setSelectAllChecked"
-            >
-              <span class="import-checkbox" aria-hidden="true">
-                <CheckboxIndicator as-child>
-                  <span class="import-checkbox-indicator" />
-                </CheckboxIndicator>
-              </span>
-              <span>全选</span>
-            </CheckboxRoot>
-            <span class="text-text-secondary/70 text-[12px]">
-              已选 {{ selectedTracks.length }} / {{ resolved.tracks.length }}
-            </span>
-          </div>
-          <Scrollbar
-            class="import-track-list"
-            :scrollbar-inset="3"
-            :content-props="previewContainerProps"
-          >
-            <div v-bind="previewWrapperProps">
-              <div
-                v-for="entry in virtualPreviewList"
-                :key="entry.index"
-                class="import-track-row"
-                :class="{ 'is-selected': selectedSet.has(entry.index) }"
-                :style="{ height: PREVIEW_ITEM_HEIGHT + 'px' }"
-                @click="toggleTrack(entry.index)"
-              >
-                <div class="import-track-leading" @click.stop>
-                  <CheckboxRoot
-                    class="import-checkbox"
-                    :model-value="selectedSet.has(entry.index)"
-                    @update:model-value="setTrackChecked(entry.index, $event)"
-                  >
-                    <CheckboxIndicator as-child>
-                      <span class="import-checkbox-indicator" />
-                    </CheckboxIndicator>
-                  </CheckboxRoot>
-                </div>
-                <span class="import-track-index">{{ entry.index + 1 }}</span>
-                <div class="min-w-0 flex-1">
-                  <div class="text-[13px] font-medium text-text-main truncate">
-                    {{ entry.data.title }}
-                  </div>
-                  <div class="text-[11px] text-text-secondary/80 truncate">
-                    {{ entry.data.artist || '未知' }}
-                  </div>
-                </div>
-                <span v-if="entry.data.duration" class="import-track-duration">
-                  {{ formatDuration(entry.data.duration) }}
-                </span>
-              </div>
-            </div>
-          </Scrollbar>
-        </div>
-      </div>
-
-      <!-- 重名确认弹窗 -->
-      <Dialog
-        v-model:open="showDuplicateWarning"
-        content-class="duplicate-dialog"
-        :close-on-escape="false"
-        :close-on-interact-outside="false"
-      >
-        <template #title>
-          <div class="flex items-center gap-2">
-            <Icon :icon="iconTriangleAlert" width="18" height="18" class="text-amber-500" />
-            <span>同名歌单已存在</span>
-          </div>
-        </template>
-        <div class="flex flex-col gap-4 py-1">
-          <p class="text-[13px] text-text-secondary leading-relaxed">
-            已存在同名歌单「
-            <strong class="text-text-main">{{ duplicatePlaylists[0]?.name }}</strong>
-            」（{{ duplicatePlaylists[0]?.count ?? duplicatePlaylists[0]?.songcount ?? 0 }}
-            首），确定继续导入到新建歌单？
-          </p>
-        </div>
-        <template #footer>
-          <Button variant="ghost" size="sm" type="button" @click="dismissDuplicateWarning">
-            取消
-          </Button>
-          <Button
-            variant="primary"
-            size="sm"
-            :disabled="duplicateCountdown > 0"
-            @click="confirmDuplicateImport"
-          >
-            确认导入{{ duplicateCountdown > 0 ? ` (${duplicateCountdown}s)` : '' }}
-          </Button>
-        </template>
-      </Dialog>
     </div>
 
-    <!-- Step 3: 进度与结果 -->
-    <div v-else-if="step === 'progress'" class="flex flex-col gap-3 pt-1">
+    <div v-else class="flex flex-col gap-3 pt-1">
       <div class="flex items-center justify-between text-[12px]">
         <span class="text-text-main font-medium">
           {{
             summary
-              ? `已处理 ${summary.total} / ${summary.total}`
-              : `正在导入 · ${progressDone} / ${progressTotal}`
+              ? `已处理 ${summary.total} 首`
+              : `${isLocalFallback ? '正在匹配歌曲' : '正在导入'} · ${progressDone} / ${progressTotal}`
           }}
         </span>
         <Icon
-          v-if="!summary"
+          v-if="!summary && isImporting"
           :icon="iconRefreshCw"
           width="14"
           height="14"
@@ -897,62 +612,60 @@ const statusLabel = (status: ImportItemResult['status']): string => {
         <div
           class="import-progress-fill"
           :class="{ 'is-done': !!summary }"
-          :style="{
-            width: progressTotal > 0 ? `${(progressDone / progressTotal) * 100}%` : '0%',
-          }"
+          :style="{ width: `${Math.min(100, (progressDone / Math.max(1, progressTotal)) * 100)}%` }"
         />
       </div>
-      <Scrollbar class="import-track-list" :scrollbar-inset="3">
-        <div class="flex flex-col">
-          <div
-            v-for="(item, idx) in progressItems"
-            :key="idx"
-            class="import-track-row is-static"
-            :class="['status-' + item.status]"
-          >
-            <span class="import-status-dot" />
-            <div class="min-w-0 flex-1">
-              <div class="text-[13px] font-medium text-text-main truncate">
-                {{ item.external.title }}
-              </div>
-              <div class="text-[11px] text-text-secondary/80 truncate">
-                {{ item.external.artist || '未知' }}
-                <template v-if="item.matched">
-                  → {{ item.matched.title }} - {{ item.matched.artist }}
-                </template>
-                <template v-if="item.error"> · {{ item.error }}</template>
-              </div>
-            </div>
-            <span class="text-[11px] text-text-secondary/80 shrink-0">
-              {{ statusLabel(item.status) }}
-            </span>
+      <div
+        v-if="isImporting && activeProgressItem"
+        :key="activeProgressItem.external.title"
+        class="import-current-card"
+      >
+        <span class="import-current-wave" aria-hidden="true"><i /><i /><i /><i /></span>
+        <div class="min-w-0 flex-1">
+          <div class="import-current-label">正在处理</div>
+          <div class="import-current-title truncate">{{ activeProgressItem.external.title }}</div>
+          <div class="import-current-artist truncate">
+            {{ activeProgressItem.external.artist || '请稍候' }}
           </div>
         </div>
+      </div>
+      <Scrollbar class="import-track-list" :scrollbar-inset="3">
+        <div
+          v-for="(item, index) in progressItems"
+          :key="index"
+          class="import-track-row"
+          :class="`status-${item.status}`"
+        >
+          <span class="import-status-dot" />
+          <div class="min-w-0 flex-1">
+            <div class="text-[13px] font-medium text-text-main truncate">
+              {{ item.external.title }}
+            </div>
+            <div class="text-[11px] text-text-secondary/80 truncate">
+              {{ item.external.artist || '未知歌手' }}
+              <template v-if="item.error"> · {{ item.error }}</template>
+            </div>
+          </div>
+          <span class="text-[11px] text-text-secondary/80 shrink-0">
+            {{ itemStatusLabel(item.status) }}
+          </span>
+        </div>
       </Scrollbar>
+      <p v-if="isImporting" class="import-hint">
+        停止查看不会取消当前任务，稍后仍可在歌单列表中查看导入结果。
+      </p>
     </div>
 
     <template #footer>
       <template v-if="step === 'input'">
-        <Button variant="ghost" size="sm" :disabled="isResolving" @click="open = false">
-          取消
-        </Button>
+        <Button variant="ghost" size="sm" :disabled="isStarting" @click="open = false">取消</Button>
         <Button
           variant="primary"
           size="sm"
-          :loading="isResolving"
-          :disabled="!inputText.trim()"
-          @click="handleResolve"
+          :loading="isStarting"
+          :disabled="!canStart"
+          @click="startImport"
         >
-          解析
-        </Button>
-      </template>
-      <template v-else-if="step === 'kugou-native'" />
-      <template v-else-if="step === 'preview'">
-        <Button variant="ghost" size="sm" type="button" @click="goBackToInput">
-          <Icon :icon="iconChevronLeft" width="14" height="14" />
-          返回
-        </Button>
-        <Button variant="primary" size="sm" :disabled="!canStartImport" @click="handleStartImport">
           <Icon :icon="iconPlaylistAdd" width="14" height="14" />
           开始导入
         </Button>
@@ -960,61 +673,40 @@ const statusLabel = (status: ImportItemResult['status']): string => {
       <template v-else>
         <div
           v-if="summary"
-          class="import-summary-inline mr-auto"
+          class="import-summary mr-auto"
           :class="{ 'is-warn': summary.success === 0 }"
         >
-          <span class="import-summary-icon-sm">
-            <Icon
-              :icon="summary.success === 0 ? iconTriangleAlert : iconCheckMark"
-              width="14"
-              height="14"
-            />
-          </span>
-          <div class="min-w-0 flex-1">
-            <div class="import-summary-title">
-              {{ summary.success === 0 ? '导入未完成' : '导入完成' }}
-            </div>
-            <div class="import-summary-meta">
-              成功 {{ summary.success }} · 低相似 {{ summary.low }} · 跳过 {{ summary.skipped }} ·
-              失败 {{ summary.failed }} / 共 {{ summary.total }}
-            </div>
-          </div>
+          <Icon
+            :icon="summary.success ? iconCheckMark : iconTriangleAlert"
+            width="15"
+            height="15"
+          />
+          <span
+            >成功 {{ summary.success }} · 未匹配 {{ summary.skipped }} · 失败
+            {{ summary.failed }}</span
+          >
         </div>
-        <Button v-if="isImporting" variant="secondary" size="sm" type="button" @click="handleAbort">
-          中止
-        </Button>
-        <Button
-          v-if="isImporting"
-          variant="primary"
-          size="sm"
-          type="button"
-          @click="handleBackgroundRun"
+        <Button v-if="isImporting" variant="secondary" size="sm" @click="stopMonitoring"
+          >停止查看</Button
         >
-          后台运行
-        </Button>
-        <Button v-else variant="primary" size="sm" type="button" @click="handleClose">
-          完成
-        </Button>
+        <Button v-if="isImporting" variant="primary" size="sm" @click="runInBackground"
+          >后台运行</Button
+        >
+        <Button v-else variant="primary" size="sm" @click="closeResult">完成</Button>
       </template>
     </template>
   </Dialog>
 
-  <!-- 后台导入确认弹窗 -->
   <Dialog
     v-model:open="showBackgroundConfirm"
     content-class="background-confirm-dialog"
     :close-on-escape="false"
     :close-on-interact-outside="false"
   >
-    <template #title>
-      <div class="flex items-center gap-2">
-        <Icon :icon="iconPlaylistAdd" width="18" height="18" class="text-primary" />
-        <span>导入将在后台继续</span>
-      </div>
-    </template>
+    <template #title>导入将在后台继续</template>
     <div class="flex flex-col gap-4 py-1">
       <p class="text-[13px] text-text-secondary leading-relaxed">
-        关闭此弹窗不会中断导入，你可以在标题栏「任务中心」面板中查看进度。
+        关闭弹窗不会中断查询，你可以在标题栏任务中心查看进度。
       </p>
       <label class="flex items-center gap-2 cursor-pointer select-none">
         <CheckboxRoot
@@ -1029,10 +721,8 @@ const statusLabel = (status: ImportItemResult['status']): string => {
       </label>
     </div>
     <template #footer>
-      <Button variant="ghost" size="sm" type="button" @click="cancelBackgroundImport">
-        留在本页
-      </Button>
-      <Button variant="primary" size="sm" @click="confirmBackgroundImport"> 我知道了 </Button>
+      <Button variant="ghost" size="sm" @click="showBackgroundConfirm = false">留在本页</Button>
+      <Button variant="primary" size="sm" @click="confirmBackgroundImport">我知道了</Button>
     </template>
   </Dialog>
 </template>
@@ -1041,357 +731,286 @@ const statusLabel = (status: ImportItemResult['status']): string => {
 @reference "@/style.css";
 
 :global(.dialog-content.import-playlist-dialog) {
-  width: 720px;
+  width: 680px;
   max-width: calc(100vw - 32px);
-  max-height: min(640px, calc(100vh - 64px));
+  max-height: min(620px, calc(100vh - 64px));
 }
 
-.import-preview-wrap {
-  @apply flex flex-col gap-4 pt-1;
+.import-mode-grid {
+  @apply grid grid-cols-2 gap-3;
 }
-.import-preview-grid {
-  @apply grid gap-4 items-start;
-  grid-template-columns: minmax(260px, 1fr) minmax(340px, 1.35fr);
-}
-.import-target-pane {
-  @apply flex flex-col gap-3 rounded-[14px] px-4 py-3.5;
+
+.import-mode-card {
+  @apply flex items-center gap-3 rounded-[14px] px-4 py-3 text-left transition-all;
+  color: var(--color-text-secondary);
   background: var(--control-muted-bg);
-}
-.import-target-options {
-  @apply flex flex-col gap-2;
-}
-.import-target-card {
-  @apply flex items-center gap-3 w-full rounded-xl px-3 py-2.5 text-left transition-all cursor-pointer;
-  background: var(--control-bg);
   border: 1px solid var(--control-border);
 }
-.import-target-card:hover {
-  background: var(--control-hover-bg);
-  border-color: color-mix(in srgb, var(--color-primary) 30%, var(--control-border));
-}
-.import-target-card.is-active {
-  background: color-mix(in srgb, var(--color-primary) 10%, transparent);
-  border-color: color-mix(in srgb, var(--color-primary) 55%, var(--control-border));
-}
-.import-target-card.is-disabled {
-  @apply cursor-not-allowed opacity-55;
-}
-.import-target-card.is-disabled:hover {
-  background: var(--control-bg);
-  border-color: var(--control-border);
-}
-.import-target-icon {
-  @apply flex items-center justify-center w-8 h-8 rounded-[10px] shrink-0 text-text-secondary;
-  background: var(--control-muted-bg);
-}
-.import-target-card.is-active .import-target-icon {
-  background: color-mix(in srgb, var(--color-primary) 18%, transparent);
+
+.import-mode-card:hover,
+.import-mode-card.is-active {
   color: var(--color-primary);
+  border-color: color-mix(in srgb, var(--color-primary) 50%, var(--control-border));
+  background: color-mix(in srgb, var(--color-primary) 9%, transparent);
 }
-.import-target-text {
-  @apply flex-1 min-w-0 flex flex-col gap-0.5;
+
+.import-mode-card span {
+  @apply flex flex-col gap-0.5 min-w-0;
 }
-.import-target-title {
-  @apply text-[13px] font-semibold text-text-main truncate;
+
+.import-mode-card strong {
+  @apply text-[13px] text-text-main;
 }
-.import-target-desc {
+
+.import-mode-card small {
   @apply text-[11px] text-text-secondary/80 truncate;
-}
-.import-target-radio {
-  @apply flex items-center justify-center w-4 h-4 rounded-full shrink-0 transition-colors;
-  border: 1.5px solid color-mix(in srgb, var(--color-text-main) 30%, transparent);
-}
-.import-target-card.is-active .import-target-radio {
-  border-color: var(--color-primary);
-}
-.import-target-radio-dot {
-  @apply w-2 h-2 rounded-full transition-all scale-0;
-  background: var(--color-primary);
-}
-.import-target-card.is-active .import-target-radio-dot {
-  @apply scale-100;
-}
-.import-target-detail {
-  @apply flex flex-col gap-2 pt-0.5;
-}
-.import-tracks-pane {
-  --import-track-inline-padding: 16px;
-
-  @apply flex flex-col rounded-[14px] overflow-hidden;
-  background: var(--control-muted-bg);
-  height: 280px;
-}
-.import-tracks-header {
-  @apply flex items-center justify-between py-2.5 shrink-0;
-  padding-inline: var(--import-track-inline-padding);
-  border-bottom: 1px solid var(--border-subtle);
-}
-
-.import-chip {
-  @apply inline-flex items-center justify-center px-3 h-7 rounded-full text-[12px] font-medium transition-colors;
-  background: var(--control-muted-bg);
-  color: var(--color-text-main);
-  opacity: 0.75;
-}
-.import-chip:hover {
-  opacity: 1;
-}
-.import-chip.is-active {
-  background: color-mix(in srgb, var(--color-primary) 18%, transparent);
-  color: var(--color-primary);
-  opacity: 1;
 }
 
 .import-textarea {
   @apply w-full rounded-[14px] px-4 py-3 text-[13px] leading-relaxed font-medium resize-y;
+  min-height: 112px;
+  color: var(--color-text-main);
   background: var(--control-bg);
   border: 1px solid var(--control-border);
-  color: var(--color-text-main);
   outline: none;
-  min-height: 120px;
 }
+
 .import-textarea:focus {
   border-color: color-mix(in srgb, var(--color-primary) 50%, var(--control-border));
-  background: var(--control-hover-bg);
 }
-.import-textarea:disabled {
-  opacity: 0.6;
+
+.import-dropzone {
+  @apply flex flex-col items-center justify-center gap-1.5 rounded-[14px] px-4 py-7 cursor-pointer transition-colors;
+  color: var(--color-text-secondary);
+  background: var(--control-muted-bg);
+  border: 1px dashed color-mix(in srgb, var(--color-primary) 38%, var(--control-border));
+}
+
+.import-dropzone:hover {
+  color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 7%, transparent);
+}
+
+.import-dropzone strong {
+  @apply text-[13px] text-text-main;
+}
+
+.import-dropzone span {
+  @apply text-[11px] text-text-secondary/75;
+}
+
+.import-file-list {
+  @apply flex flex-wrap gap-1.5;
+}
+
+.import-file-list span {
+  @apply rounded-full px-2.5 py-1 text-[11px] text-text-secondary max-w-[200px] truncate;
+  background: var(--control-muted-bg);
+}
+
+.import-target-tabs {
+  @apply flex gap-1 rounded-xl p-1;
+  background: var(--control-muted-bg);
+}
+
+.import-target-tabs button {
+  @apply flex-1 rounded-lg py-2 text-[12px] text-text-secondary transition-colors;
+}
+
+.import-target-tabs button.is-active {
+  color: var(--color-primary);
+  background: var(--control-bg);
+  box-shadow: 0 1px 3px color-mix(in srgb, var(--color-text-main) 10%, transparent);
+}
+
+.import-hint {
+  @apply text-[12px] text-text-secondary/80 leading-relaxed;
+}
+
+.import-platforms {
+  @apply flex flex-wrap items-center gap-1.5;
+}
+
+.import-platforms-label {
+  @apply text-[11px] text-text-secondary/70 mr-0.5;
+}
+
+.import-platform-chip {
+  @apply inline-flex items-center rounded-full px-2.5 py-1 text-[11px] text-text-secondary;
+  background: var(--control-muted-bg);
+  border: 1px solid var(--control-border);
 }
 
 .import-alert {
   @apply flex items-center gap-2 rounded-[10px] px-3 py-2 text-[12px];
-  background: color-mix(in srgb, var(--color-danger, #ef4444) 12%, transparent);
   color: var(--color-danger, #ef4444);
-}
-
-.import-section {
-  @apply flex flex-col gap-2.5 rounded-[14px] px-4 py-3.5;
-  background: var(--control-muted-bg);
-}
-.import-section-title {
-  @apply text-[12px] font-semibold text-text-secondary;
-}
-
-.import-track-list {
-  max-height: 320px;
-  border-radius: 12px;
-  background: var(--control-muted-bg);
-}
-.import-tracks-pane .import-track-list {
-  flex: 1;
-  min-height: 0;
-  max-height: none;
-  border-radius: 0;
-  background: transparent;
-}
-
-.import-track-index {
-  @apply shrink-0 text-[11px] text-text-secondary/60 font-mono tabular-nums;
-  width: 22px;
-  text-align: right;
-}
-.import-track-duration {
-  @apply shrink-0 text-[11px] text-text-secondary/70 font-mono tabular-nums ml-2;
+  background: color-mix(in srgb, var(--color-danger, #ef4444) 12%, transparent);
 }
 
 .import-stepper {
-  @apply flex items-center gap-1.5;
+  @apply flex items-center gap-1.5 shrink-0;
 }
+
 .import-step-pill {
-  @apply inline-flex items-center gap-1.5 px-2 h-6 rounded-full text-[11px] font-medium transition-colors;
-  background: var(--control-muted-bg);
+  @apply inline-flex items-center px-2.5 h-6 rounded-full text-[11px] font-medium;
   color: color-mix(in srgb, var(--color-text-main) 55%, transparent);
+  background: var(--control-muted-bg);
 }
+
 .import-step-pill.is-active {
+  color: var(--color-primary);
   background: color-mix(in srgb, var(--color-primary) 16%, transparent);
-  color: var(--color-primary);
 }
-.import-step-pill.is-done {
-  color: color-mix(in srgb, var(--color-text-main) 80%, transparent);
-}
-.import-step-num {
-  @apply inline-flex items-center justify-center w-4 h-4 rounded-full text-[10px] font-semibold;
-  background: color-mix(in srgb, var(--color-text-main) 12%, transparent);
-}
-.import-step-pill.is-active .import-step-num {
-  background: var(--color-primary);
-  color: #fff;
-}
-.import-step-pill.is-done .import-step-num {
-  background: color-mix(in srgb, var(--color-primary) 30%, transparent);
-  color: var(--color-primary);
-}
+
 .import-step-sep {
-  @apply w-2 h-px;
+  @apply w-3 h-px;
   background: color-mix(in srgb, var(--color-text-main) 18%, transparent);
-}
-
-.import-summary-inline {
-  @apply flex items-center gap-2.5 rounded-[10px] px-2.5 py-1.5 min-w-0;
-  max-width: 480px;
-  background: color-mix(in srgb, var(--color-primary) 10%, transparent);
-}
-.import-summary-inline.is-warn {
-  background: color-mix(in srgb, var(--color-danger, #ef4444) 10%, transparent);
-}
-.import-summary-icon-sm {
-  @apply inline-flex items-center justify-center w-7 h-7 rounded-full shrink-0 text-white;
-  background: var(--color-primary);
-}
-.import-summary-inline.is-warn .import-summary-icon-sm {
-  background: var(--color-danger, #ef4444);
-}
-.import-summary-title {
-  @apply text-[12.5px] font-semibold text-text-main truncate leading-tight;
-}
-.import-summary-meta {
-  @apply text-[11px] text-text-secondary/85 truncate;
-}
-.import-progress-fill.is-done {
-  background: color-mix(in srgb, var(--color-primary) 70%, transparent);
-}
-
-.import-track-row {
-  @apply flex items-center gap-3 py-2.5 cursor-pointer transition-colors;
-  padding-inline: var(--import-track-inline-padding);
-  border-bottom: 1px solid var(--border-subtle);
-}
-.import-track-row:last-child {
-  border-bottom: none;
-}
-.import-track-row:not(.is-static):hover {
-  background: color-mix(in srgb, var(--color-primary) 6%, transparent);
-}
-.import-track-row.is-selected {
-  background: color-mix(in srgb, var(--color-primary) 8%, transparent);
-}
-.import-track-leading {
-  @apply flex items-center justify-center shrink-0;
-}
-
-.import-checkbox {
-  @apply inline-flex items-center justify-center shrink-0 transition-colors;
-  width: 16px;
-  height: 16px;
-  border-radius: 4px;
-  border: 1.5px solid var(--control-checkbox-border);
-  background: var(--control-checkbox-bg);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--surface-card-base) 36%, transparent);
-}
-.import-track-row:not(.is-static):hover .import-checkbox,
-.import-select-all:hover .import-checkbox {
-  border-color: var(--control-checkbox-border-hover);
-  background: color-mix(in srgb, var(--color-primary) 8%, var(--control-checkbox-bg));
-}
-.import-checkbox:focus-visible {
-  outline: none;
-  border-color: var(--control-checkbox-border-hover);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 18%, transparent);
-}
-.import-checkbox[data-state='checked'],
-.import-checkbox[data-state='indeterminate'],
-.import-select-all[data-state='checked'] .import-checkbox,
-.import-select-all[data-state='indeterminate'] .import-checkbox {
-  background: var(--color-primary);
-  border-color: var(--color-primary);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-primary) 14%, transparent);
-}
-.import-checkbox-indicator {
-  @apply relative flex items-center justify-center;
-  width: 10px;
-  height: 10px;
-}
-.import-checkbox[data-state='checked'] .import-checkbox-indicator::after,
-.import-select-all[data-state='checked'] .import-checkbox-indicator::after {
-  content: '';
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  width: 4px;
-  height: 8px;
-  border: 2px solid var(--control-checkbox-indicator);
-  border-top: none;
-  border-left: none;
-  transform: translate(-50%, -60%) rotate(45deg);
-}
-.import-checkbox[data-state='indeterminate'] .import-checkbox-indicator::after,
-.import-select-all[data-state='indeterminate'] .import-checkbox-indicator::after {
-  content: '';
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  width: 8px;
-  height: 2px;
-  background: var(--control-checkbox-indicator);
-  border-radius: 999px;
-  transform: translate(-50%, -50%);
-}
-
-.import-select-all {
-  @apply inline-flex items-center gap-2 cursor-pointer text-[13px] text-text-main/85 transition-colors;
-  padding: 0;
-  border: 0;
-  background: transparent;
-}
-.import-select-all:hover {
-  color: var(--color-text-main);
-}
-.import-select-all:focus-visible {
-  outline: none;
-}
-.import-select-all:focus-visible .import-checkbox {
-  border-color: var(--control-checkbox-border-hover);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 18%, transparent);
 }
 
 .import-progress-bar {
   @apply w-full h-1.5 rounded-full overflow-hidden;
   background: var(--control-track-bg);
 }
+
 .import-progress-fill {
   @apply h-full rounded-full transition-all;
   background: var(--color-primary);
 }
 
+.import-progress-fill.is-done {
+  background: #10b981;
+}
+
+.import-current-card {
+  @apply flex items-center gap-3 rounded-[14px] px-4 py-3;
+  background: color-mix(in srgb, var(--color-primary) 8%, var(--control-muted-bg));
+  border: 1px solid color-mix(in srgb, var(--color-primary) 22%, var(--control-border));
+  animation: import-current-in 220ms ease-out;
+}
+
+.import-current-label {
+  @apply text-[10px] text-text-secondary/75;
+}
+
+.import-current-title {
+  @apply text-[13px] font-semibold text-text-main;
+}
+
+.import-current-artist {
+  @apply text-[11px] text-text-secondary/75;
+}
+
+.import-current-wave {
+  @apply flex items-center justify-center gap-0.5 w-8 h-8 rounded-full shrink-0;
+  background: color-mix(in srgb, var(--color-primary) 16%, transparent);
+}
+
+.import-current-wave i {
+  @apply w-0.5 rounded-full;
+  height: 9px;
+  background: var(--color-primary);
+  animation: import-wave 900ms ease-in-out infinite;
+}
+
+.import-current-wave i:nth-child(2) {
+  animation-delay: 120ms;
+}
+
+.import-current-wave i:nth-child(3) {
+  animation-delay: 240ms;
+}
+
+.import-current-wave i:nth-child(4) {
+  animation-delay: 360ms;
+}
+
+.import-track-list {
+  max-height: 320px;
+  min-height: 92px;
+  border-radius: 12px;
+  background: var(--control-muted-bg);
+}
+
+.import-track-row {
+  @apply flex items-center gap-3 px-4 py-3;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.import-track-row:last-child {
+  border-bottom: none;
+}
+
 .import-status-dot {
   @apply w-1.5 h-1.5 rounded-full shrink-0;
-  background: color-mix(in srgb, var(--color-text-main) 30%, transparent);
-}
-.import-track-row.status-matching .import-status-dot,
-.import-track-row.status-adding .import-status-dot {
   background: var(--color-primary);
   animation: import-pulse 1.2s ease-in-out infinite;
 }
-.import-track-row.status-success .import-status-dot {
+
+.status-success .import-status-dot {
   background: #10b981;
+  animation: none;
 }
-.import-track-row.status-low .import-status-dot {
+
+.status-skipped .import-status-dot {
   background: #f59e0b;
+  animation: none;
 }
-.import-track-row.status-skipped .import-status-dot {
-  background: color-mix(in srgb, var(--color-text-main) 25%, transparent);
-}
-.import-track-row.status-failed .import-status-dot {
+
+.status-failed .import-status-dot {
   background: var(--color-danger, #ef4444);
+  animation: none;
+}
+
+.import-summary {
+  @apply flex items-center gap-2 rounded-[10px] px-3 py-2 text-[12px] text-text-main;
+  background: color-mix(in srgb, #10b981 10%, transparent);
+}
+
+.import-summary.is-warn {
+  background: color-mix(in srgb, var(--color-danger, #ef4444) 10%, transparent);
 }
 
 @keyframes import-pulse {
   0%,
   100% {
-    opacity: 0.4;
+    opacity: 0.35;
   }
   50% {
     opacity: 1;
   }
 }
 
-:global(.dialog-content.duplicate-dialog) {
-  width: 420px;
-  max-width: calc(100vw - 48px);
+@keyframes import-wave {
+  0%,
+  100% {
+    height: 7px;
+    opacity: 0.55;
+  }
+  50% {
+    height: 18px;
+    opacity: 1;
+  }
+}
+
+@keyframes import-current-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 :global(.dialog-content.background-confirm-dialog) {
   width: 400px;
   max-width: calc(100vw - 48px);
+}
+
+@media (max-width: 640px) {
+  .import-mode-grid {
+    @apply grid-cols-1;
+  }
 }
 </style>

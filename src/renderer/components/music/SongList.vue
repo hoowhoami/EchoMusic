@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch, shallowRef } from 'vue';
-import { useRoute, useRouter } from 'vue-router';
+import { useRouter } from 'vue-router';
 import type { Song } from '@/models/song';
 import type { SetPlaybackQueueOptions } from '@/stores/playlist';
 import { formatDuration } from '@/utils/format';
@@ -102,7 +102,6 @@ const playerStore = usePlayerStore();
 const playlistStore = usePlaylistStore();
 const toastStore = useToastStore();
 const router = useRouter();
-const route = useRoute();
 
 const readString = (value: unknown, fallback = ''): string => {
   if (value === undefined || value === null) return fallback;
@@ -261,20 +260,14 @@ const resolveNumericId = (value: unknown) => {
   return parsed;
 };
 
-const isSameRoute = (name: string, targetId: string | number) => {
-  const routeId = Array.isArray(route.params.id) ? route.params.id[0] : route.params.id;
-  return route.name === name && String(routeId) === String(targetId);
-};
-
 const isAlbumClickable = (song: Song) => {
   const albumId = resolveNumericId(song.albumId);
-  if (!albumId || !(song.album ?? '').trim()) return false;
-  return !isSameRoute('album-detail', albumId);
+  return Boolean(albumId && (song.album ?? '').trim());
 };
 
 const openAlbumDetail = (song: Song) => {
   const albumId = resolveNumericId(song.albumId);
-  if (!albumId || !isAlbumClickable(song)) return;
+  if (!albumId) return;
   router.push({
     name: 'album-detail',
     params: { id: String(albumId) },

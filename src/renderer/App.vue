@@ -263,6 +263,11 @@ onMounted(async () => {
   syncGlobalShortcutsFn = syncGlobalShortcuts;
 
   await waitForSqlitePersistHydration();
+  // 用户信息须在持久化恢复后再拉取，否则 hydrate 未完成时 isLoggedIn 仍为 false，
+  // Home 挂载阶段的 fetchUserInfoOnce 会被跳过，导致启动后头像/昵称不更新。
+  if (userStore.isLoggedIn) {
+    void userStore.fetchUserInfoOnce();
+  }
   settings.defaultAudioQuality = normalizeQuality(settings.defaultAudioQuality);
   settings.ensureShortcutDefaults();
   await settings.hydrateLogSettings();

@@ -94,19 +94,12 @@ const navigateToLyric = () => {
 };
 
 const isArtistClickable = (artist: SongArtist) => {
-  const artistId = resolveNumericId(artist.id);
-  if (!artistId) return false;
-  const routeId = Array.isArray(router.currentRoute.value.params.id)
-    ? router.currentRoute.value.params.id[0]
-    : router.currentRoute.value.params.id;
-  return !(
-    router.currentRoute.value.name === 'artist-detail' && String(routeId) === String(artistId)
-  );
+  return resolveNumericId(artist.id) !== null;
 };
 
 const goToArtist = (artist: SongArtist) => {
   const artistId = resolveNumericId(artist.id);
-  if (!artistId || !isArtistClickable(artist)) return;
+  if (!artistId) return;
   router.push({ name: 'artist-detail', params: { id: String(artistId) } });
 };
 
@@ -118,21 +111,12 @@ const currentAlbumId = computed(() => resolveNumericId(currentTrack.value?.album
 
 const isCurrentAlbumClickable = computed(() => {
   const albumId = currentAlbumId.value;
-  if (!albumId || !currentAlbumName.value) return false;
-  const routeId = Array.isArray(router.currentRoute.value.params.id)
-    ? router.currentRoute.value.params.id[0]
-    : router.currentRoute.value.params.id;
-  return !(
-    router.currentRoute.value.name === 'album-detail' && String(routeId) === String(albumId)
-  );
+  return Boolean(albumId && currentAlbumName.value);
 });
 
 const goToCurrentAlbum = () => {
   const albumId = currentAlbumId.value;
-  if (!albumId || !isCurrentAlbumClickable.value) {
-    navigateToLyric();
-    return;
-  }
+  if (!albumId) return;
   router.push({ name: 'album-detail', params: { id: String(albumId) } });
 };
 
@@ -285,7 +269,7 @@ onUnmounted(() => {
               <span
                 class="text-[14px] font-bold text-primary cursor-pointer transition-colors"
                 :class="{ 'hover:text-primary/80': isCurrentAlbumClickable }"
-                :title="isCurrentAlbumClickable ? '查看专辑' : '打开歌词'"
+                :title="isCurrentAlbumClickable ? '查看专辑' : ''"
                 @click="goToCurrentAlbum"
               >
                 {{ currentTrack ? currentTrack.name : '未在播放' }}

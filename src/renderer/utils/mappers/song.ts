@@ -1,4 +1,4 @@
-import type { CloudAudioQualityValue, Song, SongRelateGood } from '@/models/song';
+import type { CloudAudioQualityValue, Song, SongArtist, SongRelateGood } from '@/models/song';
 import {
   EMPTY_RECORD,
   buildArtists,
@@ -416,6 +416,70 @@ export const mapArtistSong = (artistId: string | number, json: unknown): Song =>
     relateGoods: buildRelateGoods(record, audioInfo),
     oldCpy: parseOptionalInt(pickValue(record.old_cpy, record.media_old_cpy)),
     payType: parseOptionalInt(pickValue(record.pay_type, record.PayType, record.payType)),
+  };
+};
+
+export const mapArtistSongV2 = (json: unknown): Song => {
+  const record = toRecord(json);
+  const audioInfo = getRecord(record, 'audio_info') ?? EMPTY_RECORD;
+  const albumInfo = getRecord(record, 'album_info') ?? EMPTY_RECORD;
+  const copyright = getRecord(record, 'copyright') ?? EMPTY_RECORD;
+  const transParam = getRecord(copyright, 'trans_param_departed') ?? EMPTY_RECORD;
+  const privilegeDownload = getRecord(record, 'privilege_download') ?? EMPTY_RECORD;
+  const goodsInfo = getRecord(record, 'goods_info') ?? EMPTY_RECORD;
+  const hash = readString(audioInfo.hash, '');
+  const fallbackArtistName = normalizeText(readString(record.author_name, '未知歌手'));
+
+  const rawAuthors = getArray(record.authors);
+  const artists: SongArtist[] = [];
+  for (const raw of rawAuthors ?? []) {
+    if (!isRecord(raw)) continue;
+    const base = getRecord(raw, 'base') ?? raw;
+    const name = normalizeText(readString(base.author_name, ''));
+    if (!name) continue;
+    const id = pickValue(base.author_id, raw.author_id);
+    const pic = formatPic(pickValue(base.avatar, raw.avatar, ''));
+    artists.push({
+      id: id !== undefined && id !== null ? readString(id) : undefined,
+      name,
+      pic: pic || undefined,
+    });
+  }
+  const singers =
+    artists.length > 0
+      ? artists
+      : [
+          {
+            id: readString(pickValue(record.author_id, '')) || undefined,
+            name: fallbackArtistName || '未知歌手',
+          },
+        ];
+  const cover = formatPic(pickValue(transParam.union_cover, albumInfo.cover, ''));
+
+  return {
+    id: readString(pickValue(record.album_audio_id, hash)),
+    songId: readString(pickValue(record.audio_group_id, record.audio_id, '')),
+    title: readString(record.audio_name, '未知歌曲'),
+    name: processSongTitle(readString(record.audio_name, '未知歌曲')),
+    artist: fallbackArtistName || '未知歌手',
+    artists: singers,
+    singers,
+    album: readString(albumInfo.album_name, ''),
+    albumName: readString(albumInfo.album_name, ''),
+    albumId: readString(pickValue(record.album_id, '')),
+    duration: Math.floor(parseIntSafe(pickValue(audioInfo.timelength, 0)) / 1000),
+    coverUrl: normalizeCoverUrl(cover, 400),
+    cover,
+    audioUrl: '',
+    hash,
+    mixSongId: parseIntSafe(pickValue(record.album_audio_id, 0)),
+    fileId: parseOptionalInt(pickValue(record.audio_id, undefined)),
+    privilege: parseOptionalInt(
+      pickValue(privilegeDownload.privilege, privilegeDownload.privilege_128, undefined),
+    ),
+    relateGoods: buildRelateGoods(record, audioInfo),
+    oldCpy: parseOptionalInt(pickValue(copyright.old_cpy, undefined)),
+    payType: parseOptionalInt(pickValue(goodsInfo.audio_pay_type, record.pay_type, undefined)),
   };
 };
 

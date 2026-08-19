@@ -48,7 +48,7 @@ export const useImportTaskStore = defineStore('importTask', {
         case 'completed': {
           if (!state.summary) return '';
           const { success, low, skipped, failed } = state.summary;
-          const parts = [`成功 ${success + low}`];
+          const parts = [`成功 ${success}`];
           if (skipped > 0) parts.push(`跳过 ${skipped}`);
           if (failed > 0) parts.push(`失败 ${failed}`);
           return parts.join(' · ');

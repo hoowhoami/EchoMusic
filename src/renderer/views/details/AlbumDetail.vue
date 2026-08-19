@@ -2,7 +2,7 @@
 defineOptions({ name: 'album-detail' });
 import { ref, shallowRef, onMounted, onBeforeUnmount, computed, watch } from 'vue';
 import { extractFirstObject, extractList } from '@/utils/extractors';
-import { useRoute, useRouter } from 'vue-router';
+import { useRouter } from 'vue-router';
 import { useRouteId } from '@/composables/useRouteId';
 import {
   getAlbumDetail,
@@ -61,15 +61,9 @@ const parseIntSafe = (value: unknown): number => {
   return Number.isNaN(parsed) ? 0 : parsed;
 };
 
-const route = useRoute();
 const router = useRouter();
 const { id: currentId, onIdChange } = useRouteId();
 const getAlbumId = () => currentId.value;
-
-const isSameRoute = (name: string, targetId: string | number) => {
-  const routeId = Array.isArray(route.params.id) ? route.params.id[0] : route.params.id;
-  return route.name === name && String(routeId) === String(targetId);
-};
 
 const loading = ref(true);
 const album = ref<AlbumMeta | null>(null);
@@ -128,13 +122,10 @@ const parseAlbumArtists = (payload: unknown): SongArtist[] => {
   ];
 };
 
-const isAlbumArtistClickable = (artist: SongArtist) => {
-  if (!artist.id) return false;
-  return !isSameRoute('artist-detail', artist.id);
-};
+const isAlbumArtistClickable = (artist: SongArtist) => Boolean(artist.id);
 
 const openAlbumArtist = (artist: SongArtist) => {
-  if (!artist.id || !isAlbumArtistClickable(artist)) return;
+  if (!artist.id) return;
   router.push({
     name: 'artist-detail',
     params: { id: String(artist.id) },

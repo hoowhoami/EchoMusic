@@ -934,7 +934,7 @@ watch(
                   }
                 "
               >
-                从链接导入
+                导入外部歌单
               </button>
               <div class="sidebar-sort-menu-divider"></div>
               <button
@@ -1307,8 +1307,8 @@ watch(
                       <Icon :icon="iconExternalLink" width="16" height="16" />
                     </span>
                     <div class="min-w-0 flex-1 text-left">
-                      <div class="sidebar-create-menu-title-row">从链接导入</div>
-                      <div class="sidebar-create-menu-desc">外部平台 / 文本</div>
+                      <div class="sidebar-create-menu-title-row">导入外部歌单</div>
+                      <div class="sidebar-create-menu-desc">链接 / 截图</div>
                     </div>
                   </button>
                 </div>

@@ -364,11 +364,6 @@ const getValidMixSongId = () => {
   return value !== null ? String(value) : '';
 };
 
-const isSameRoute = (name: string, targetId: string | number) => {
-  const routeId = Array.isArray(route.params.id) ? route.params.id[0] : route.params.id;
-  return route.name === name && String(routeId) === String(targetId);
-};
-
 const singerInfo = computed<Record<string, unknown> | null>(() => {
   if (!privilegeData.value) return null;
   const singerRaw =
@@ -392,15 +387,10 @@ const songArtistId = computed(() => {
   return resolveNumericId(raw);
 });
 
-const canOpenArtist = computed(
-  () =>
-    isMusicType.value &&
-    songArtistId.value !== null &&
-    !isSameRoute('artist-detail', songArtistId.value),
-);
+const canOpenArtist = computed(() => isMusicType.value && songArtistId.value !== null);
 const canOpenAlbum = computed(() => {
   const albumId = resolveNumericId(songAlbumId.value);
-  return isMusicType.value && albumId !== null && !isSameRoute('album-detail', albumId);
+  return isMusicType.value && albumId !== null;
 });
 
 const openArtistDetail = () => {

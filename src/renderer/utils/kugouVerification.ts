@@ -28,6 +28,7 @@ export type KugouCaptchaProvider =
   | 'YD'
   | 'SMS'
   | 'LOGIN'
+  | 'BIND_PHONE'
   | 'UNKNOWN';
 
 export const KUGOU_CAPTCHA_PROVIDER_NAMES: Record<KugouCaptchaProvider, string> = {
@@ -39,6 +40,7 @@ export const KUGOU_CAPTCHA_PROVIDER_NAMES: Record<KugouCaptchaProvider, string> 
   YD: '网易易盾',
   SMS: '手机验证码',
   LOGIN: '登录确认',
+  BIND_PHONE: '绑定手机号',
   UNKNOWN: '未知验证',
 };
 
@@ -77,6 +79,7 @@ export const getKugouCaptchaProvider = (
 ): KugouCaptchaProvider => {
   const verifyType = Number(verifyInfo?.v_type || 0);
   if (verifyType === 32) return 'SMS';
+  if (verifyType === 36) return 'BIND_PHONE';
   if (verifyType === 38) return 'LOGIN';
 
   const url = String(verifyInfo?.url || '').trim();
@@ -227,6 +230,10 @@ export const submitKugouVerification = async (verifyCode: string): Promise<boole
 
   const verifyInfo = kugouVerificationState.verifyInfo;
   const verifyType = Number(verifyInfo?.v_type || 23);
+  if (verifyType === 36) {
+    kugouVerificationState.error = '当前账号需绑定手机号后才能继续操作';
+    return false;
+  }
   if (verifyType === 38) {
     kugouVerificationState.error = '请先完成登录确认';
     return false;

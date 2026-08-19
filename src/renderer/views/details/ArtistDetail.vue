@@ -5,7 +5,7 @@ import { useRouter } from 'vue-router';
 import { useRouteId } from '@/composables/useRouteId';
 import {
   getArtistDetail,
-  getArtistSongs,
+  getArtistSongsV2,
   getArtistAlbums,
   getArtistVideos,
   followArtist,
@@ -30,7 +30,7 @@ import BatchActionDrawer from '@/components/music/BatchActionDrawer.vue';
 import PageScrollContainer from '@/components/ui/PageScrollContainer.vue';
 import { usePlaylistStore } from '@/stores/playlist';
 import type { Song } from '@/models/song';
-import { mapAlbumMeta, mapArtistDetailMeta, mapArtistSong } from '@/utils/mappers';
+import { mapAlbumMeta, mapArtistDetailMeta, mapArtistSongV2 } from '@/utils/mappers';
 import { useScrollContainer } from '@/composables/usePageScroll';
 import { useStickyTabsLayout } from '@/composables/useStickyTabsLayout';
 import { usePlayerStore } from '@/stores/player';
@@ -200,12 +200,12 @@ const loadArtistSongs = async (artistId = getArtistId()) => {
 
   songLoader = new PagedSongLoader<Song>(
     async (page, pageSize) => {
-      const res = await getArtistSongs(artistId, page, pageSize, requestSort);
-      const items = extractList(res).map((item) => mapArtistSong(artistId, item));
+      const res = await getArtistSongsV2(artistId, page, pageSize, requestSort);
+      const items = extractList(res).map((item) => mapArtistSongV2(item));
       return { items, hasMore: items.length >= pageSize };
     },
     {
-      pageSize: 200,
+      pageSize: 100,
       concurrency: 3,
       dedupeKey: (song) => String(song.id),
       logTag: 'ArtistSongsLoader',

@@ -53,19 +53,23 @@ const isVerifying = computed(() => kugouVerificationState.status === 'verifying'
 const isTencentCaptcha = computed(() => provider.value === 'TX');
 const isSmsCaptcha = computed(() => provider.value === 'SMS');
 const isLoginVerification = computed(() => provider.value === 'LOGIN');
+const isBindPhone = computed(() => provider.value === 'BIND_PHONE');
 const isUnsupported = computed(
   () =>
     Boolean(kugouVerificationState.verifyInfo) &&
     !isTencentCaptcha.value &&
     !isSmsCaptcha.value &&
-    !isLoginVerification.value,
+    !isLoginVerification.value &&
+    !isBindPhone.value,
 );
 const loginMessage = computed(() =>
   String(kugouVerificationState.verifyInfo?.show?.msg || '').trim(),
 );
+const bindPhoneMessage = computed(() => loginMessage.value);
 const title = computed(() => {
   if (isSmsCaptcha.value) return '短信安全验证';
   if (isLoginVerification.value) return '登录确认';
+  if (isBindPhone.value) return '需要绑定手机号';
   return '安全验证';
 });
 const tencentActionText = computed(() => (kugouVerificationState.error ? '重新验证' : '开始验证'));
@@ -73,6 +77,10 @@ const description = computed(() => {
   if (isLoading.value) return '正在准备验证';
   if (isSmsCaptcha.value) return '请输入酷狗下发的验证码';
   if (isLoginVerification.value) return loginMessage.value || '请登录账号以确认身份';
+  if (isBindPhone.value)
+    return (
+      bindPhoneMessage.value || '当前账号需绑定手机号后才能继续操作，请前往酷狗客户端完成绑定后重试'
+    );
   if (isTencentCaptcha.value) return '完成验证后将继续刚才的操作';
   return `当前需要${providerName.value}，暂不支持自动处理`;
 });
@@ -482,10 +490,20 @@ onBeforeUnmount(resetTencentCaptcha);
     <div v-else class="verification-shell">
       <div
         class="verification-icon"
-        :class="{ 'is-sms': isSmsCaptcha, 'is-login': isLoginVerification }"
+        :class="{
+          'is-sms': isSmsCaptcha,
+          'is-login': isLoginVerification,
+          'is-bind-phone': isBindPhone,
+        }"
       >
         <Icon
-          :icon="isSmsCaptcha ? iconSmartphone : isLoginVerification ? iconUser : iconShield"
+          :icon="
+            isSmsCaptcha || isBindPhone
+              ? iconSmartphone
+              : isLoginVerification
+                ? iconUser
+                : iconShield
+          "
           width="26"
           height="26"
         />
@@ -527,6 +545,14 @@ onBeforeUnmount(resetTencentCaptcha);
 
       <template v-else-if="isLoginVerification">
         <Button class="w-full" @click="startLoginVerification"> 去登录确认 </Button>
+      </template>
+
+      <template v-else-if="isBindPhone">
+        <p class="verification-note">
+          {{
+            bindPhoneMessage || '当前账号需绑定手机号后才能继续操作，请前往酷狗客户端完成绑定后重试'
+          }}
+        </p>
       </template>
 
       <p v-if="kugouVerificationState.error" class="verification-error">
@@ -579,6 +605,20 @@ onBeforeUnmount(resetTencentCaptcha);
 .verification-icon.is-login {
   color: var(--color-text-main);
   background: color-mix(in srgb, var(--color-text-main) 10%, transparent);
+}
+
+.verification-icon.is-bind-phone {
+  color: #f59e0b;
+  background: color-mix(in srgb, #f59e0b 12%, transparent);
+}
+
+.verification-note {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.6;
+  color: var(--color-text-secondary);
+  text-align: center;
 }
 
 .verification-loading {

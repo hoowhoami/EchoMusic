@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue';
-import { useRoute, useRouter } from 'vue-router';
+import { useRouter } from 'vue-router';
 import Cover from '@/components/ui/Cover.vue';
 import Tag from '@/components/ui/Tag.vue';
 import { formatDuration } from '@/utils/format';
@@ -54,7 +54,6 @@ const props = withDefaults(defineProps<Props>(), {
 });
 
 const router = useRouter();
-const route = useRoute();
 const playlistStore = usePlaylistStore();
 const playerStore = usePlayerStore();
 // const settingStore = useSettingStore();
@@ -129,18 +128,11 @@ const artistList = computed(() => {
   return names.map((name) => ({ name }));
 });
 
-const resolveRouteId = (value: unknown) => (Array.isArray(value) ? value[0] : value);
-
 const resolveNumericId = (value?: string | number) => {
   if (value === undefined || value === null) return null;
   const parsed = Number.parseInt(String(value), 10);
   if (Number.isNaN(parsed) || parsed <= 0) return null;
   return parsed;
-};
-
-const isSameRoute = (name: string, id: string | number) => {
-  const routeId = resolveRouteId(route.params.id);
-  return route.name === name && String(routeId) === String(id);
 };
 
 const albumDetailId = computed(() => resolveNumericId(songAlbumId.value));
@@ -151,21 +143,18 @@ const hasAlbumDetail = computed(() => {
 
 const isArtistClickable = (artist: SongArtist) => {
   if (props.disableLinks) return false;
-  const artistId = resolveNumericId(artist.id);
-  if (!artistId) return false;
-  return !isSameRoute('artist-detail', artistId);
+  return resolveNumericId(artist.id) !== null;
 };
 
 const isAlbumClickable = computed(() => {
   if (props.disableLinks) return false;
   const albumId = albumDetailId.value;
-  if (!albumId || !hasAlbumDetail.value) return false;
-  return !isSameRoute('album-detail', albumId);
+  return Boolean(albumId && hasAlbumDetail.value);
 });
 
 const goToArtist = (artist: SongArtist) => {
   const artistId = resolveNumericId(artist.id);
-  if (!artistId || isSameRoute('artist-detail', artistId)) return;
+  if (!artistId) return;
   router.push({
     name: 'artist-detail',
     params: { id: String(artistId) },
@@ -174,7 +163,7 @@ const goToArtist = (artist: SongArtist) => {
 
 const goToAlbum = () => {
   const albumId = albumDetailId.value;
-  if (!albumId || !hasAlbumDetail.value || isSameRoute('album-detail', albumId)) return;
+  if (!albumId || !hasAlbumDetail.value) return;
   router.push({
     name: 'album-detail',
     params: { id: String(albumId) },

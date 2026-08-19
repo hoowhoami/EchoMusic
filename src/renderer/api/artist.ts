@@ -20,6 +20,20 @@ export function getArtistSongs(
 }
 
 /**
+ * 获取歌手单曲（新版接口，每条歌曲带作者列表，支持多歌手）
+ */
+export function getArtistSongsV2(
+  id: string | number,
+  page = 1,
+  pagesize = 100,
+  sort: 'hot' | 'new' = 'new',
+) {
+  return request.get('/artist/audios/new', {
+    params: { id, page, pagesize: Math.min(pagesize, 100), sort },
+  });
+}
+
+/**
  * 获取歌手专辑
  */
 export function getArtistAlbums(
