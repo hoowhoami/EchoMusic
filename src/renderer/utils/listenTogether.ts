@@ -565,6 +565,7 @@ const findSongArray = (value: unknown, depth = 0): unknown[] => {
     'songs',
     'audios',
     'playlist',
+    'song_info',
     'songs_info',
     'audio_list',
     'music_list',

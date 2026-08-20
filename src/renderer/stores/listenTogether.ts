@@ -1635,6 +1635,8 @@ export const useListenTogetherStore = defineStore(
       const requestedRevision = ownerControlRevision;
       const payload = await syncListenTogetherPlayer(roomId, activeRoomType.value);
       const mapped = mapListenTogetherRemotePlayback(payload);
+      const syncedRoomSongs =
+        activeRoomType.value === 0 ? mapListenTogetherSongList(payload, roomSongs.value) : [];
       if (activeRoomId.value !== roomId) return;
       if (
         !force &&
@@ -1652,6 +1654,19 @@ export const useListenTogetherStore = defineStore(
       ) {
         await loadRoomSongs(true);
         if (activeRoomId.value !== roomId) return;
+      }
+      if (syncedRoomSongs.length) {
+        // music_sync_player 的 song_info 才携带 canplay/genting 等房间授权字段；
+        // music_recent_list 返回的可见队列不保证包含它们。首次入房两者并发时先等
+        // 权威队列就绪，再只合并已有歌曲，避免把三首同步窗口误当成完整歌单。
+        if (!roomSongs.value.length) await loadRoomSongs();
+        if (activeRoomId.value !== roomId) return;
+        roomSongs.value = roomSongs.value.map((roomSong) => {
+          const syncedSong = syncedRoomSongs.find((candidate) =>
+            isSameRoomSong(candidate, roomSong),
+          );
+          return syncedSong ? mergeRoomSongMetadata(roomSong, syncedSong) : roomSong;
+        });
       }
       if (mapped && (!remotePlayback.value || mapped.updatedAt >= remotePlayback.value.updatedAt)) {
         // 手动同步、定时轮询和入房初始化可能并发返回；旧快照不能覆盖新状态。
