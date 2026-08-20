@@ -186,7 +186,10 @@ export function useYrcAnimation(activeIndex?: Ref<number>) {
       if (els) {
         // 注音模式下副字符按「注音单元」注册，时间轴取自 rubyUnits；
         // 否则回退到整行音译逐字数组。
-        const chars = rubyUnits?.length ? rubyUnits : romanChars;
+        const chars =
+          lyricStore.showRomanization && lyricStore.showRomanizationAsRuby && rubyUnits?.length
+            ? rubyUnits
+            : romanChars;
         if (chars && chars.length > 0) applyCharsProgress(els, chars, seekMs);
       }
     }

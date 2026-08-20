@@ -431,23 +431,44 @@ const transitionName = computed(() =>
 
 // ── 行高计算 ──
 
+const LYRIC_BASE_LINE_HEIGHT = 1.24;
+const LYRIC_SECONDARY_FONT_SCALE = 0.72;
+const LYRIC_NEXT_LINE_FONT_SCALE = 0.8;
+const LYRIC_RUBY_FONT_SCALE = 0.68;
+const LYRIC_RUBY_LINE_HEIGHT = 1.1;
+const LYRIC_LINE_VERTICAL_PADDING_PX = 8;
+
+const getHorizontalLineGap = () => Math.min(8, Math.max(3, Math.round(localFontSize.value * 0.1)));
+
+const getHorizontalLineBlockHeight = (line: RenderLine, index: number, rubyActive: boolean) => {
+  if (index === 0 && rubyActive) {
+    return (
+      localFontSize.value *
+        (LYRIC_BASE_LINE_HEIGHT + LYRIC_RUBY_FONT_SCALE * LYRIC_RUBY_LINE_HEIGHT) +
+      LYRIC_LINE_VERTICAL_PADDING_PX
+    );
+  }
+
+  const fontScale =
+    line.kind === 'secondary'
+      ? LYRIC_SECONDARY_FONT_SCALE
+      : index > 0
+        ? LYRIC_NEXT_LINE_FONT_SCALE
+        : 1;
+  return localFontSize.value * fontScale * LYRIC_BASE_LINE_HEIGHT + LYRIC_LINE_VERTICAL_PADDING_PX;
+};
+
 const getLineTop = (index: number) => {
   if (index === 0) return '0px';
   const lines = renderLyricLines.value;
   const current = lines[0];
   const rubyActive = Boolean(current?.active && isRubyLine(current.line));
-  // 逐行堆叠：主行按自身字号占位，副歌词行以副行字号（0.72em）紧凑堆叠
+  // 按每行的实际视觉高度堆叠，并为普通/注音布局使用一致的行间留白。
   let top = 0;
   for (let i = 0; i < index && i < lines.length; i++) {
     const line = lines[i];
     if (!line) break;
-    if (i === 0) {
-      top += localFontSize.value * (rubyActive ? 2.6 : 1.9);
-    } else if (line.kind === 'secondary') {
-      top += localFontSize.value * 0.72 * 1.5;
-    } else {
-      top += localFontSize.value * 1.9;
-    }
+    top += getHorizontalLineBlockHeight(line, i, rubyActive) + getHorizontalLineGap();
   }
   return `${top}px`;
 };
@@ -2000,7 +2021,7 @@ onBeforeUnmount(() => {
   position: absolute;
   width: 100%;
   left: 0;
-  line-height: normal;
+  line-height: 1.24;
   padding: 4px;
   overflow: hidden;
   text-overflow: ellipsis;

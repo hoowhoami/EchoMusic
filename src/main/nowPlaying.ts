@@ -122,6 +122,20 @@ const sanitizeLyricLine = (line: unknown): LyricLinePayload | null => {
           Boolean(char),
         )
     : undefined;
+  const romanizedCharacters = Array.isArray(line.romanizedCharacters)
+    ? line.romanizedCharacters
+        .map((char) => {
+          if (!isPlainRecord(char)) return null;
+          return {
+            text: String(char.text ?? ''),
+            startTime: toFiniteNumber(char.startTime),
+            endTime: toFiniteNumber(char.endTime, toFiniteNumber(char.startTime)),
+          };
+        })
+        .filter((char): char is NonNullable<LyricLinePayload['romanizedCharacters']>[number] =>
+          Boolean(char),
+        )
+    : undefined;
   return {
     time: toFiniteNumber(line.time),
     text,
@@ -129,6 +143,7 @@ const sanitizeLyricLine = (line: unknown): LyricLinePayload | null => {
     romanized: toOptionalString(line.romanized),
     characters,
     ...(translatedCharacters?.length ? { translatedCharacters } : {}),
+    ...(romanizedCharacters?.length ? { romanizedCharacters } : {}),
     ...(rubyUnits?.length ? { rubyUnits } : {}),
   };
 };
