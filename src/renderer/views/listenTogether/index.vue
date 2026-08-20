@@ -28,6 +28,7 @@ import { usePlaylistStore } from '@/stores/playlist';
 import { useToastStore } from '@/stores/toast';
 import { useUserStore } from '@/stores/user';
 import { toListenTogetherAudioRefs } from '@/utils/listenTogether';
+import logger from '@/utils/logger';
 import { mapSearchSong } from '@/utils/mappers';
 import { copyShareTarget, createShareTarget } from '@/utils/share';
 import { extractSearchLists } from '@/views/search/searchHelpers';
@@ -672,7 +673,20 @@ watch(
 );
 
 onMounted(() => {
-  void loadRooms(true);
+  void (async () => {
+    // 分享链接由上面的路由 watcher 打开预览；普通入口则优先恢复服务端仍有效的
+    // 众乐房会话，避免应用重启后对同一个房间重复执行 join。
+    if (String(route.query.roomId ?? '').trim()) return;
+    if (userStore.isLoggedIn) {
+      try {
+        const restoredRoomId = await listenStore.recoverCurrentMusicRoomSession();
+        if (restoredRoomId) return;
+      } catch (error) {
+        logger.warn('ListenTogether', 'Failed to restore current room on mount', error);
+      }
+    }
+    await loadRooms(true);
+  })();
 });
 </script>
 

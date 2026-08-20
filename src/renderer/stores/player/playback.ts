@@ -1,5 +1,6 @@
 import logger from '@/utils/logger';
 import type { Song } from '@/models/song';
+import type { PluginAudioSourceTransformStage } from '@/plugins/audioSource';
 import { isPlayableSong } from '@/utils/song';
 import type { PlayerState } from './state';
 import { normalizePlayerErrorPayload, type PlayerEngine } from '@/utils/player';
@@ -629,6 +630,8 @@ export const createPlaybackManager = (
       autoPlay?: boolean;
       sourceQueueId?: string | null;
       preResolved?: ResolvedAudioSource;
+      /** 省略表示该预解析结果已经经过 transform（例如无缝播放预加载）。 */
+      preResolvedStage?: PluginAudioSourceTransformStage;
     },
   ) => {
     const requestSeq = ++state.playbackRequestSeq;
@@ -756,7 +759,16 @@ export const createPlaybackManager = (
 
     let resolved: ResolvedAudioSource;
     try {
-      resolved = options?.preResolved ?? (await resolver.resolveAudioUrl(track));
+      if (options?.preResolved && options.preResolvedStage) {
+        resolved =
+          (await resolver.transformAudioSource(
+            track,
+            options.preResolved,
+            options.preResolvedStage,
+          )) ?? (await resolver.resolveAudioUrl(track));
+      } else {
+        resolved = options?.preResolved ?? (await resolver.resolveAudioUrl(track));
+      }
     } catch (error) {
       logger.error('PlayerPlayback', 'Resolve track source failed:', error);
       if (requestSeq !== state.playbackRequestSeq) return;

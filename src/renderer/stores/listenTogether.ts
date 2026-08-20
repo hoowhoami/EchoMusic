@@ -113,6 +113,15 @@ const readNestedString = (payload: unknown, key: string, depth = 0): string => {
       const normalized = String(value).trim();
       if (normalized) return normalized;
     }
+    // music_reqcmd 与普通歌曲地址接口结构不同，播放地址位于 data.url 数组。
+    // 这里取第一个非空标量，让通用递归读取同时兼容字符串和字符串数组。
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        if (typeof item !== 'string' && typeof item !== 'number') continue;
+        const normalized = String(item).trim();
+        if (normalized) return normalized;
+      }
+    }
   }
   for (const value of Object.values(payload)) {
     const nested = readNestedString(value, key, depth + 1);
@@ -204,6 +213,8 @@ export const useListenTogetherStore = defineStore(
     let lastAppliedRemoteSeekKey = '';
     let lastAppliedRemoteSeekAt = 0;
     let lastMissingRemoteSongKey = '';
+    const unsupportedRoomPlaybackSources = new Set<string>();
+    const roomPlaybackRetryAfter = new Map<string, number>();
     let guestLocallyPaused = false;
     let memberSnapshotRoomId = '';
     let memberSnapshot = new Map<string, ListenTogetherMember>();
@@ -661,6 +672,8 @@ export const useListenTogetherStore = defineStore(
 
     const resetSessionState = () => {
       clearSessionTimers();
+      // 先结束会话态，再停止一起听播放器，避免 stop/pause 事件被误判为房主操作上报。
+      phase.value = 'idle';
       restorePreviousPlaybackQueue();
       activeRoomId.value = '';
       activeRoom.value = null;
@@ -683,6 +696,8 @@ export const useListenTogetherStore = defineStore(
       lastAppliedRemoteSeekKey = '';
       lastAppliedRemoteSeekAt = 0;
       lastMissingRemoteSongKey = '';
+      unsupportedRoomPlaybackSources.clear();
+      roomPlaybackRetryAfter.clear();
       guestLocallyPaused = false;
       memberSnapshotRoomId = '';
       memberSnapshot.clear();
@@ -691,7 +706,36 @@ export const useListenTogetherStore = defineStore(
       roomSongsLoadRevision += 1;
       roomSongsLoadInFlight = null;
       roomSongsRetryAfter = 0;
-      phase.value = 'idle';
+    };
+
+    const handleDissolvedSessionError = (error: unknown, expectedRoomId: string) => {
+      if (
+        !isDissolvedRoomError(error) ||
+        !joined.value ||
+        !expectedRoomId ||
+        activeRoomId.value !== expectedRoomId
+      ) {
+        return false;
+      }
+
+      const roomType = activeRoomType.value;
+      const roomName = activeRoom.value?.name || '一起听房间';
+      const roomRef = { id: expectedRoomId, roomType };
+      logger.info('ListenTogether', 'Room was dissolved remotely, ending local session', {
+        roomId: expectedRoomId,
+        roomType,
+        error,
+      });
+      rememberDissolvedRoom(roomRef);
+      rooms.value = rooms.value.filter(
+        (room) => !(room.id === expectedRoomId && room.roomType === roomType),
+      );
+      removeOwnedRoom(roomRef);
+      if (previewRoom.value?.id === expectedRoomId) closePreview();
+      resetSessionState();
+      lastError.value = `「${roomName}」已解散，已退出一起听`;
+      toastStore.warning(lastError.value);
+      return true;
     };
 
     const loadRooms = async (
@@ -1066,7 +1110,13 @@ export const useListenTogetherStore = defineStore(
     const loadActiveRoomDetail = async () => {
       const roomId = activeRoomId.value;
       if (!roomId) return;
-      const payload = await getListenTogetherRoomDetail(roomId, activeRoomType.value);
+      let payload: unknown;
+      try {
+        payload = await getListenTogetherRoomDetail(roomId, activeRoomType.value);
+      } catch (error) {
+        if (handleDissolvedSessionError(error, roomId)) return;
+        throw error;
+      }
       if (activeRoomId.value !== roomId) return;
       const base = activeRoom.value ?? rooms.value.find((room) => room.id === roomId) ?? null;
       activeRoom.value = mapListenTogetherRoom(
@@ -1101,7 +1151,13 @@ export const useListenTogetherStore = defineStore(
       const roomId = activeRoomId.value;
       if (!roomId) return;
       const loadRevision = ++memberLoadRevision;
-      const nextMembers = await loadRoomMemberList(roomId, activeRoomType.value);
+      let nextMembers: ListenTogetherMember[];
+      try {
+        nextMembers = await loadRoomMemberList(roomId, activeRoomType.value);
+      } catch (error) {
+        if (handleDissolvedSessionError(error, roomId)) return;
+        throw error;
+      }
       if (activeRoomId.value !== roomId || memberLoadRevision !== loadRevision) return;
 
       const nextSnapshot = new Map(nextMembers.map((member) => [member.userId, member]));
@@ -1147,9 +1203,14 @@ export const useListenTogetherStore = defineStore(
     const loadMessages = async () => {
       const roomId = activeRoomId.value;
       if (!roomId) return;
-      const nextMessages = mapListenTogetherMessageList(
-        await getListenTogetherMessages(roomId, activeRoomType.value),
-      );
+      let payload: unknown;
+      try {
+        payload = await getListenTogetherMessages(roomId, activeRoomType.value);
+      } catch (error) {
+        if (handleDissolvedSessionError(error, roomId)) return;
+        throw error;
+      }
+      const nextMessages = mapListenTogetherMessageList(payload);
       if (activeRoomId.value !== roomId) return;
       mergeMessages(nextMessages);
     };
@@ -1317,6 +1378,7 @@ export const useListenTogetherStore = defineStore(
         }
       } catch (error) {
         if (!isCurrentLoad()) return;
+        if (isDissolvedRoomError(error)) throw error;
         if (error instanceof ListenTogetherApiError && error.code === 30009) {
           roomSongsRetryAfter = Date.now() + 60_000;
           logger.warn('ListenTogether', 'Room playlist temporarily rejected, backing off', error);
@@ -1341,7 +1403,10 @@ export const useListenTogetherStore = defineStore(
       if (roomSongsLoadInFlight?.roomKey === roomKey) return roomSongsLoadInFlight.promise;
       const request = {
         roomKey,
-        promise: loadRoomSongsInternal(roomId, roomType, force),
+        promise: loadRoomSongsInternal(roomId, roomType, force).catch((error) => {
+          if (handleDissolvedSessionError(error, roomId)) return;
+          throw error;
+        }),
       };
       roomSongsLoadInFlight = request;
       try {
@@ -1371,7 +1436,12 @@ export const useListenTogetherStore = defineStore(
         return;
       loadingSongOrders.value = true;
       try {
-        songOrders.value = mapListenTogetherSongOrders(await getListenTogetherSongOrders(roomId));
+        const payload = await getListenTogetherSongOrders(roomId);
+        if (activeRoomId.value !== roomId) return;
+        songOrders.value = mapListenTogetherSongOrders(payload);
+      } catch (error) {
+        if (handleDissolvedSessionError(error, roomId)) return;
+        throw error;
       } finally {
         loadingSongOrders.value = false;
       }
@@ -1403,10 +1473,11 @@ export const useListenTogetherStore = defineStore(
       ) {
         return;
       }
+      const roomId = activeRoomId.value;
       requestingSongHash.value = song.hash;
       try {
         const payload = await addListenTogetherMusicRoomSongs(
-          activeRoomId.value,
+          roomId,
           [{ hash: song.hash, mixSongId: song.mixSongId ?? song.albumAudioId ?? '' }],
           {
             action: requesterId ? 4 : 1,
@@ -1418,7 +1489,11 @@ export const useListenTogetherStore = defineStore(
         const nextListVersion = readNestedString(payload, 'list_version');
         if (nextListVersion) roomListVersion.value = nextListVersion;
         await Promise.allSettled([loadRoomSongs(true), loadSongOrders()]);
+        if (activeRoomId.value !== roomId) return;
         toastStore.success(`已将「${song.title}」加入房间歌单`);
+      } catch (error) {
+        if (handleDissolvedSessionError(error, roomId)) return;
+        throw error;
       } finally {
         requestingSongHash.value = '';
       }
@@ -1445,18 +1520,23 @@ export const useListenTogetherStore = defineStore(
       ) {
         return;
       }
+      const roomId = activeRoomId.value;
       handlingSongOrderId.value = order.id;
       try {
         await removeListenTogetherSongOrder(
-          activeRoomId.value,
+          roomId,
           {
             hash: order.song.hash,
             mixSongId: order.song.mixSongId ?? order.song.albumAudioId ?? '',
           },
           order.requesterId,
         );
+        if (activeRoomId.value !== roomId) return;
         songOrders.value = songOrders.value.filter((item) => item.id !== order.id);
         toastStore.info('已忽略这条点歌请求');
+      } catch (error) {
+        if (handleDissolvedSessionError(error, roomId)) return;
+        throw error;
       } finally {
         handlingSongOrderId.value = '';
       }
@@ -1525,8 +1605,19 @@ export const useListenTogetherStore = defineStore(
         const currentTrackMatches =
           isSameRoomSong(playerStore.currentTrackSnapshot, song) &&
           String(playerStore.currentTrackId ?? '') === String(song.id);
+        const roomPlaybackKey = [
+          activeRoomId.value,
+          String(song.originalHash || song.hash || '').toLowerCase(),
+          String(song.mixSongId || song.albumAudioId || ''),
+        ].join(':');
+        const retryDeferred =
+          currentTrackMatches &&
+          !playerStore.currentAudioUrl &&
+          !playerStore.isLoading &&
+          (roomPlaybackRetryAfter.get(roomPlaybackKey) ?? 0) > Date.now();
         const trackChanged =
-          !currentTrackMatches || (!playerStore.currentAudioUrl && !playerStore.isLoading);
+          !currentTrackMatches ||
+          (!retryDeferred && !playerStore.currentAudioUrl && !playerStore.isLoading);
         const useRemotePosition = isRemotePositionForSong(remote, song);
         const expectedPosition = Math.max(
           0,
@@ -1544,7 +1635,10 @@ export const useListenTogetherStore = defineStore(
             song.listenTogetherCanPlay === 1 &&
             Number(song.listenTogetherGenting || 0) >= 2 &&
             Number(song.listenTogetherGenting || 0) <= 6;
-          if (needsRoomPlaybackAuthorization) {
+          if (
+            needsRoomPlaybackAuthorization &&
+            !unsupportedRoomPlaybackSources.has(roomPlaybackKey)
+          ) {
             const playbackRoomId = activeRoomId.value;
             try {
               const playbackPayload = await getListenTogetherPlaybackUrl(playbackRoomId, {
@@ -1556,7 +1650,15 @@ export const useListenTogetherStore = defineStore(
                 readNestedString(playbackPayload, 'url') ||
                 readNestedString(playbackPayload, 'play_url') ||
                 readNestedString(playbackPayload, 'playurl');
-              if (roomUrl) {
+              if (/\.kgs(?:[?#]|$)/i.test(roomUrl)) {
+                // 概念版通过酷狗私有数据源还原 KGS，FFmpeg 不能直接解码其 HTTP
+                // 响应。不要把它当成已解析音源，继续走 song/url、云盘和插件兜底。
+                unsupportedRoomPlaybackSources.add(roomPlaybackKey);
+                logger.info('ListenTogether', 'KGS room source is unsupported, using fallback', {
+                  roomId: playbackRoomId,
+                  hash: song.hash,
+                });
+              } else if (roomUrl) {
                 roomResolvedSource = {
                   url: roomUrl,
                   urls: [roomUrl],
@@ -1580,10 +1682,22 @@ export const useListenTogetherStore = defineStore(
             autoPlay: shouldPlayLocally,
             sourceQueueId: LISTEN_TOGETHER_QUEUE_ID,
             preResolved: roomResolvedSource,
+            preResolvedStage: roomResolvedSource ? 'catalog' : undefined,
           });
+          if (playerStore.currentAudioUrl) {
+            roomPlaybackRetryAfter.delete(roomPlaybackKey);
+          } else {
+            // 房间每 5 秒同步一次；普通音源也不可用时不要跟随轮询持续打
+            // playback_url/song_url，保留低频重试以覆盖临时网络或权限变化。
+            roomPlaybackRetryAfter.set(roomPlaybackKey, Date.now() + 30_000);
+          }
           if (expectedPosition > 1) seekToRemotePosition(expectedPosition);
           return;
         }
+
+        // 当前歌曲的所有可用解析链刚刚都失败时，只保留房间状态轮询；不要对一个
+        // 没有音源的播放器继续 seek/toggle。到达重试时间后 trackChanged 会重新解析。
+        if (retryDeferred) return;
 
         const now = Date.now();
         const localPositionUpdatedAt = Number(playerStore.currentTimeUpdatedAt || now);
@@ -1633,7 +1747,13 @@ export const useListenTogetherStore = defineStore(
         return;
       }
       const requestedRevision = ownerControlRevision;
-      const payload = await syncListenTogetherPlayer(roomId, activeRoomType.value);
+      let payload: unknown;
+      try {
+        payload = await syncListenTogetherPlayer(roomId, activeRoomType.value);
+      } catch (error) {
+        if (handleDissolvedSessionError(error, roomId)) return;
+        throw error;
+      }
       const mapped = mapListenTogetherRemotePlayback(payload);
       const syncedRoomSongs =
         activeRoomType.value === 0 ? mapListenTogetherSongList(payload, roomSongs.value) : [];
@@ -1698,11 +1818,14 @@ export const useListenTogetherStore = defineStore(
 
     const heartbeat = async () => {
       if (!joined.value || heartbeatInFlight) return;
+      const roomId = activeRoomId.value;
+      const roomType = activeRoomType.value;
       heartbeatInFlight = true;
       try {
-        await heartbeatListenTogetherRoom(activeRoomId.value, activeRoomType.value);
+        await heartbeatListenTogetherRoom(roomId, roomType);
         heartbeatFailureCount = 0;
       } catch (error) {
+        if (handleDissolvedSessionError(error, roomId)) return;
         heartbeatFailureCount += 1;
         logger.warn('ListenTogether', 'Heartbeat failed', error);
         if (heartbeatFailureCount >= 3) {
@@ -1753,6 +1876,7 @@ export const useListenTogetherStore = defineStore(
     };
 
     const recoverCurrentMusicRoomSession = async () => {
+      if (joined.value && activeRoomId.value) return activeRoomId.value;
       const currentSession = await resolveCurrentMusicRoomSession();
       if (!currentSession) return '';
       const { room, isOwner: sessionIsOwner } = currentSession;
@@ -1771,6 +1895,21 @@ export const useListenTogetherStore = defineStore(
       phase.value = 'joining';
       lastError.value = '';
       try {
+        // 应用重启后本地 roomId 会丢失，但服务端仍保留账号正在参与的会话。
+        // 目标就是该房间时直接恢复，不能再次 join，否则上游会以已有会话拒绝。
+        const currentSession = await resolveCurrentMusicRoomSession().catch((error) => {
+          logger.warn('ListenTogether', 'Join session preflight failed', error);
+          return null;
+        });
+        if (currentSession?.room.id === room.id) {
+          const recoveredRoom = currentSession.room;
+          forgetDissolvedRoom(recoveredRoom);
+          if (currentSession.isOwner) upsertOwnedRoom(recoveredRoom);
+          await hydrateSession(recoveredRoom.id, recoveredRoom);
+          closePreview();
+          toastStore.info(`已回到「${recoveredRoom.name}」`);
+          return;
+        }
         await joinListenTogetherRoom(room.id, room.roomType);
         forgetDissolvedRoom(room);
         // 服务端确认入房后立即进入会话，详情、歌单和播放状态在房间页后台补齐。
@@ -1783,6 +1922,23 @@ export const useListenTogetherStore = defineStore(
         });
       } catch (error) {
         clearSessionTimers();
+        if (error instanceof ListenTogetherApiError && error.code === 20006) {
+          // 预检与 join 之间可能被另一台设备恢复会话。若服务端最终指向的仍是
+          // 用户点击的房间，就以 get_status 为准恢复，不把竞态暴露成入房失败。
+          const currentSession = await resolveCurrentMusicRoomSession().catch((recoveryError) => {
+            logger.warn('ListenTogether', 'Join conflict recovery failed', recoveryError);
+            return null;
+          });
+          if (currentSession?.room.id === room.id) {
+            const recoveredRoom = currentSession.room;
+            forgetDissolvedRoom(recoveredRoom);
+            if (currentSession.isOwner) upsertOwnedRoom(recoveredRoom);
+            await hydrateSession(recoveredRoom.id, recoveredRoom);
+            closePreview();
+            toastStore.info(`已回到「${recoveredRoom.name}」`);
+            return;
+          }
+        }
         restorePreviousPlaybackQueue();
         activeRoomId.value = '';
         activeRoom.value = null;
@@ -1924,18 +2080,17 @@ export const useListenTogetherStore = defineStore(
       if (!activeRoom.value?.allowChat) {
         throw new ListenTogetherApiError('当前房间已关闭聊天');
       }
+      const roomId = activeRoomId.value;
       sendingMessage.value = true;
       try {
-        await sendListenTogetherMessage(
-          activeRoomId.value,
-          activeRoomType.value,
-          normalized.slice(0, 200),
-          {
-            nickname: userStore.info?.nickname,
-            avatarUrl: userStore.info?.pic,
-          },
-        );
+        await sendListenTogetherMessage(roomId, activeRoomType.value, normalized.slice(0, 200), {
+          nickname: userStore.info?.nickname,
+          avatarUrl: userStore.info?.pic,
+        });
         await loadMessages();
+      } catch (error) {
+        if (handleDissolvedSessionError(error, roomId)) return;
+        throw error;
       } finally {
         sendingMessage.value = false;
       }
@@ -1969,6 +2124,9 @@ export const useListenTogetherStore = defineStore(
           },
         ]);
         toastStore.info(enabled ? '已开启聊天' : '已关闭聊天');
+      } catch (error) {
+        if (handleDissolvedSessionError(error, roomId)) return;
+        throw error;
       } finally {
         updatingChat.value = false;
       }
@@ -1978,13 +2136,18 @@ export const useListenTogetherStore = defineStore(
       if (activeRoomType.value !== 0) return;
       requireLogin();
       if (!joined.value || !activeRoomId.value || !song.hash || requestingSongHash.value) return;
+      const roomId = activeRoomId.value;
       requestingSongHash.value = song.hash;
       try {
-        await requestListenTogetherSong(activeRoomId.value, {
+        await requestListenTogetherSong(roomId, {
           hash: song.hash,
           mixSongId: song.mixSongId ?? song.albumAudioId ?? '',
         });
+        if (activeRoomId.value !== roomId) return;
         toastStore.success(`已点播「${song.title}」，等待房主允许加歌`);
+      } catch (error) {
+        if (handleDissolvedSessionError(error, roomId)) return;
+        throw error;
       } finally {
         requestingSongHash.value = '';
       }
@@ -2030,11 +2193,18 @@ export const useListenTogetherStore = defineStore(
       };
       enqueueOwnerCommand(async () => {
         if (activeRoomId.value !== roomId || !isOwner.value) return;
-        const payload = await switchListenTogetherMusicRoomSong(
-          roomId,
-          { hash: song.hash, mixSongId: song.mixSongId ?? song.albumAudioId ?? '' },
-          { listVersion: roomListVersion.value, isAuto },
-        );
+        let payload: unknown;
+        try {
+          payload = await switchListenTogetherMusicRoomSong(
+            roomId,
+            { hash: song.hash, mixSongId: song.mixSongId ?? song.albumAudioId ?? '' },
+            { listVersion: roomListVersion.value, isAuto },
+          );
+        } catch (error) {
+          if (handleDissolvedSessionError(error, roomId)) return;
+          throw error;
+        }
+        if (activeRoomId.value !== roomId) return;
         const nextListVersion = readNestedString(payload, 'list_version');
         if (nextListVersion) roomListVersion.value = nextListVersion;
         lastError.value = '';
@@ -2057,7 +2227,14 @@ export const useListenTogetherStore = defineStore(
       ownerControlGraceUntil = Date.now() + 3_000;
       enqueueOwnerCommand(async () => {
         if (activeRoomId.value !== roomId || !isOwner.value) return;
-        const payload = await updateListenTogetherMusicRoomPlayer(roomId, operation);
+        let payload: unknown;
+        try {
+          payload = await updateListenTogetherMusicRoomPlayer(roomId, operation);
+        } catch (error) {
+          if (handleDissolvedSessionError(error, roomId)) return;
+          throw error;
+        }
+        if (activeRoomId.value !== roomId) return;
         const nextListVersion = readNestedString(payload, 'list_version');
         if (nextListVersion) roomListVersion.value = nextListVersion;
         lastError.value = '';
@@ -2242,6 +2419,7 @@ export const useListenTogetherStore = defineStore(
       loadRoomSongs,
       refreshRoomSongs,
       syncPlayback,
+      recoverCurrentMusicRoomSession,
       resetSessionState,
     };
   },
