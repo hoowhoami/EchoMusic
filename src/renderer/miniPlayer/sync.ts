@@ -183,9 +183,9 @@ const buildLyricPayload = (): MiniPlayerLyricPayload => {
     lines: lyricStore.lines.map(normalizeLyricLinePayload),
     currentIndex: lyricStore.currentIndex,
     timeOffset: lyricStore.currentTimeOffset,
-    wantTranslation: lyricStore.wantTranslation,
-    wantRomanization: lyricStore.wantRomanization,
-    showRomanizationAsRuby: lyricStore.showRomanizationAsRuby,
+    wantTranslation: lyricStore.miniPlayerWantTranslation,
+    wantRomanization: lyricStore.miniPlayerWantRomanization,
+    showRomanizationAsRuby: lyricStore.miniPlayerShowRomanizationAsRuby,
     hasTranslation: lyricStore.hasTranslation,
     hasRomanization: lyricStore.hasRomanization,
     desktopLyricEnabled: desktopLyricStore.settings.enabled,
@@ -254,18 +254,21 @@ const executeMiniPlayerCommand = (command: MiniPlayerCommand) => {
       command === 'previousTrack' ||
       command === 'nextTrack' ||
       command === 'toggleDesktopLyric' ||
-      command === 'toggleLyricsMode' ||
       command === 'toggleMute'
     ) {
       executeShortcutCommand(command);
     }
+    if (command === 'toggleTranslation') {
+      const lyricStore = useLyricStore();
+      lyricStore.miniPlayerWantTranslation = !lyricStore.miniPlayerWantTranslation;
+    }
     if (command === 'toggleRomanization') {
       const lyricStore = useLyricStore();
-      lyricStore.wantRomanization = !lyricStore.wantRomanization;
+      lyricStore.miniPlayerWantRomanization = !lyricStore.miniPlayerWantRomanization;
     }
     if (command === 'toggleRomanizationAsRuby') {
       const lyricStore = useLyricStore();
-      lyricStore.showRomanizationAsRuby = !lyricStore.showRomanizationAsRuby;
+      lyricStore.miniPlayerShowRomanizationAsRuby = !lyricStore.miniPlayerShowRomanizationAsRuby;
     }
     return;
   }
@@ -321,8 +324,9 @@ export const initMiniPlayerSync = async () => {
   const { favorites, favoritesLoaded } = storeToRefs(playlistStore);
   const {
     lines,
-    wantTranslation,
-    wantRomanization,
+    miniPlayerWantTranslation,
+    miniPlayerWantRomanization,
+    miniPlayerShowRomanizationAsRuby,
     hasTranslation,
     hasRomanization,
     tips,
@@ -460,8 +464,9 @@ export const initMiniPlayerSync = async () => {
     watch(
       [
         lines,
-        wantTranslation,
-        wantRomanization,
+        miniPlayerWantTranslation,
+        miniPlayerWantRomanization,
+        miniPlayerShowRomanizationAsRuby,
         hasTranslation,
         hasRomanization,
         currentTimeOffset,

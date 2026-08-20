@@ -5,6 +5,7 @@ import { DEFAULT_LYRIC_FILTER_PATTERN, useLyricStore } from '@/stores/lyric';
 import { useLyricColorPicker } from '@/composables/useLyricColorPicker';
 import Switch from '@/components/ui/Switch.vue';
 import Slider from '@/components/ui/Slider.vue';
+import Select from '@/components/ui/Select.vue';
 import ColorPickerDialog from '@/components/ui/ColorPickerDialog.vue';
 import PageLyricIcon from '@/components/ui/PageLyricIcon.vue';
 import SettingsSectionShell from './SettingsSectionShell.vue';
@@ -19,6 +20,17 @@ const lyricFontWeightLabel = computed(() => `W${lyricStore.fontWeightValue}`);
 const hasCustomLyricColors = computed(() =>
   Boolean(lyricStore.playedColor || lyricStore.unplayedColor),
 );
+type RomanizationStyle = 'separate-line' | 'ruby';
+const romanizationStyleOptions = [
+  { label: '独立一行', value: 'separate-line' },
+  { label: '注音', value: 'ruby' },
+];
+const romanizationStyle = computed<RomanizationStyle>({
+  get: () => (lyricStore.showRomanizationAsRuby ? 'ruby' : 'separate-line'),
+  set: (value) => {
+    lyricStore.showRomanizationAsRuby = value === 'ruby';
+  },
+});
 </script>
 
 <template>
@@ -45,14 +57,14 @@ const hasCustomLyricColors = computed(() =>
     <div class="settings-divider"></div>
     <div class="settings-item">
       <div class="space-y-1">
-        <h3 class="font-semibold">音译注音</h3>
-        <p class="text-sm text-text-secondary">
-          将音译标注在原词上方，关闭时音译作为独立副行显示（需开启音译）
-        </p>
+        <h3 class="font-semibold">音译样式</h3>
+        <p class="text-sm text-text-secondary">选择页面歌词中音译的显示方式</p>
       </div>
-      <Switch
-        v-model="lyricStore.showRomanizationAsRuby"
-        :disabled="!lyricStore.wantRomanization"
+      <Select
+        class="w-40"
+        :model-value="romanizationStyle"
+        :options="romanizationStyleOptions"
+        @update:model-value="romanizationStyle = $event as RomanizationStyle"
       />
     </div>
     <div class="settings-divider"></div>

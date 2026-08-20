@@ -12,6 +12,7 @@ import { SliderRoot, SliderTrack, SliderRange, SliderThumb } from 'reka-ui';
 import Switch from '@/components/ui/Switch.vue';
 import Button from '@/components/ui/Button.vue';
 import InputNumber from '@/components/ui/InputNumber.vue';
+import Select from '@/components/ui/Select.vue';
 import ColorPickerDialog from '@/components/ui/ColorPickerDialog.vue';
 import { iconX } from '@/icons';
 
@@ -44,6 +45,17 @@ const carouselIntervalLabel = computed(() => `${settingStore.lyricCarouselInterv
 const hasCustomLyricColors = computed(() =>
   Boolean(lyricStore.playedColor || lyricStore.unplayedColor),
 );
+type RomanizationStyle = 'separate-line' | 'ruby';
+const romanizationStyleOptions = [
+  { label: '独立一行', value: 'separate-line' },
+  { label: '注音', value: 'ruby' },
+];
+const romanizationStyle = computed<RomanizationStyle>({
+  get: () => (lyricStore.showRomanizationAsRuby ? 'ruby' : 'separate-line'),
+  set: (value) => {
+    lyricStore.showRomanizationAsRuby = value === 'ruby';
+  },
+});
 
 const effectivePlayedColor = computed(() => lyricStore.effectivePlayedColor);
 const effectiveUnplayedColor = computed(() => lyricStore.effectiveUnplayedColor);
@@ -54,10 +66,6 @@ const handleTranslationToggle = (enabled: boolean) => {
 
 const handleRomanizationToggle = (enabled: boolean) => {
   lyricStore.wantRomanization = enabled;
-};
-
-const handleRomanizationAsRubyToggle = (enabled: boolean) => {
-  lyricStore.showRomanizationAsRuby = enabled;
 };
 
 const modeOptions: { value: LyricViewMode; label: string }[] = [
@@ -254,15 +262,16 @@ const close = () => {
               @update:model-value="handleRomanizationToggle"
             />
           </div>
-          <div class="setting-row">
+          <div v-if="lyricStore.wantRomanization" class="setting-row">
             <div class="setting-text">
-              <span class="setting-label">音译注音</span>
-              <span class="setting-hint">将音译标注在原词上方</span>
+              <span class="setting-label">音译样式</span>
+              <span class="setting-hint">选择当前页面中音译的显示方式</span>
             </div>
-            <Switch
-              :model-value="lyricStore.showRomanizationAsRuby"
-              :disabled="!lyricStore.wantRomanization || !lyricStore.hasRomanization"
-              @update:model-value="handleRomanizationAsRubyToggle"
+            <Select
+              class="w-36"
+              :model-value="romanizationStyle"
+              :options="romanizationStyleOptions"
+              @update:model-value="romanizationStyle = $event as RomanizationStyle"
             />
           </div>
         </div>

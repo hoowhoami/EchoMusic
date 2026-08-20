@@ -2,7 +2,7 @@
 import { computed, ref } from 'vue';
 import { useDesktopLyricStore } from '@/desktopLyric/store';
 import { useSettingStore } from '@/stores/setting';
-import { useLyricStore, DEFAULT_LYRIC_FILTER_PATTERN } from '@/stores/lyric';
+import { DEFAULT_LYRIC_FILTER_PATTERN } from '@/stores/lyric';
 import type { DesktopLyricSettings } from '../../../../shared/desktop-lyric';
 import { DEFAULT_DESKTOP_LYRIC_SETTINGS } from '../../../../shared/desktop-lyric';
 import Select from '@/components/ui/Select.vue';
@@ -22,10 +22,17 @@ import {
 
 const settingStore = useSettingStore();
 const desktopLyricStore = useDesktopLyricStore();
-const lyricStore = useLyricStore();
 const isLinux = computed(() => window.electron?.platform === 'linux');
 const isWayland = computed(() => window.electron?.isWayland ?? false);
 const activeDesktopLyricColorField = ref<'playedColor' | 'unplayedColor' | null>(null);
+type RomanizationStyle = 'separate-line' | 'ruby';
+const romanizationStyleOptions = [
+  { label: '独立一行', value: 'separate-line' },
+  { label: '注音', value: 'ruby' },
+];
+const desktopRomanizationStyle = computed<RomanizationStyle>(() =>
+  desktopLyricStore.settings.showRomanizationAsRuby ? 'ruby' : 'separate-line',
+);
 
 const hasCustomDesktopLyricColors = computed(
   () =>
@@ -56,6 +63,10 @@ const applyDesktopLyricColor = async (value: string) => {
     [activeDesktopLyricColorField.value]: value,
   });
   closeDesktopLyricColorPicker();
+};
+
+const updateDesktopRomanizationStyle = (value: string | number | (string | number)[]) => {
+  void commitDesktopLyricSettings({ showRomanizationAsRuby: value === 'ruby' });
 };
 </script>
 
@@ -147,15 +158,14 @@ const applyDesktopLyricColor = async (value: string) => {
     <div class="settings-divider"></div>
     <div class="settings-item">
       <div class="space-y-1">
-        <h3 class="font-semibold">音译注音</h3>
-        <p class="text-sm text-text-secondary">
-          将音译标注在原词上方，关闭时音译作为独立副行显示（页面歌词与迷你歌词共用此设置）
-        </p>
+        <h3 class="font-semibold">音译样式</h3>
+        <p class="text-sm text-text-secondary">选择桌面歌词中音译的显示方式</p>
       </div>
-      <Switch
-        :model-value="lyricStore.showRomanizationAsRuby"
-        :disabled="!lyricStore.wantRomanization"
-        @update:model-value="lyricStore.showRomanizationAsRuby = Boolean($event)"
+      <Select
+        class="w-40"
+        :model-value="desktopRomanizationStyle"
+        :options="romanizationStyleOptions"
+        @update:model-value="updateDesktopRomanizationStyle"
       />
     </div>
     <div class="settings-divider"></div>

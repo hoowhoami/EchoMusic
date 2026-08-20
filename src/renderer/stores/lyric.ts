@@ -660,6 +660,11 @@ export const useLyricStore = defineStore('lyric', {
     wantRomanization: false,
     // 音译是否用"逐字标注在原词上方"的注音模式渲染（默认关闭，关闭时音译作为独立副行显示）
     showRomanizationAsRuby: false,
+    // 迷你歌词独立的音译显示样式，不跟随页面歌词设置
+    miniPlayerShowRomanizationAsRuby: false,
+    // 迷你歌词独立的翻译/音译显示偏好
+    miniPlayerWantTranslation: false,
+    miniPlayerWantRomanization: false,
     // 当前歌曲数据可用性（每首歌重新检测）
     hasTranslation: false,
     hasRomanization: false,
@@ -1207,6 +1212,9 @@ export const useLyricStore = defineStore('lyric', {
       'wantTranslation',
       'wantRomanization',
       'showRomanizationAsRuby',
+      'miniPlayerShowRomanizationAsRuby',
+      'miniPlayerWantTranslation',
+      'miniPlayerWantRomanization',
       'fontScale',
       'fontWeightIndex',
       'playedColor',

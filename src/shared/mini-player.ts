@@ -8,7 +8,7 @@ export type MiniPlayerSimpleCommand =
   | 'previousTrack'
   | 'nextTrack'
   | 'toggleFavorite'
-  | 'toggleLyricsMode'
+  | 'toggleTranslation'
   | 'toggleRomanization'
   | 'toggleRomanizationAsRuby'
   | 'toggleDesktopLyric'

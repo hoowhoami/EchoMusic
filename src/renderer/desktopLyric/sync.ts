@@ -250,15 +250,7 @@ export const initDesktopLyricSync = async () => {
     nativeTrackSeq,
     seekTimestamp,
   } = storeToRefs(playerStore);
-  const {
-    lines,
-    currentIndex,
-    wantTranslation,
-    wantRomanization,
-    showRomanizationAsRuby,
-    loadedHash,
-    currentTimeOffset,
-  } = storeToRefs(lyricStore);
+  const { lines, currentIndex, loadedHash, currentTimeOffset } = storeToRefs(lyricStore);
   const settingStore = useSettingStore();
 
   const buildSyncedSettings = (settings = desktopLyricStore.settings) => {
@@ -266,9 +258,6 @@ export const initDesktopLyricSync = async () => {
       ...settings,
       resolvedFontFamily:
         settings.fontFamily === 'follow' ? settingStore.globalFont : settings.resolvedFontFamily,
-      wantTranslation: wantTranslation.value,
-      wantRomanization: wantRomanization.value,
-      showRomanizationAsRuby: showRomanizationAsRuby.value,
       filterEnabled: settingStore.desktopLyricFilterEnabled,
       filterPattern: settingStore.desktopLyricFilterPattern,
     };
@@ -279,9 +268,6 @@ export const initDesktopLyricSync = async () => {
       desktopLyricStore.settings.fontFamily === 'follow'
         ? settingStore.globalFont
         : desktopLyricStore.settings.resolvedFontFamily,
-    wantTranslation: wantTranslation.value,
-    wantRomanization: wantRomanization.value,
-    showRomanizationAsRuby: showRomanizationAsRuby.value,
     filterEnabled: settingStore.desktopLyricFilterEnabled,
     filterPattern: settingStore.desktopLyricFilterPattern,
   });
@@ -409,13 +395,15 @@ export const initDesktopLyricSync = async () => {
         : DEFAULT_DESKTOP_LYRIC_OFFSET_STEP_MS;
     };
     if (command === 'toggleTranslation') {
-      lyricStore.wantTranslation = !lyricStore.wantTranslation;
-      void syncSettingsSnapshot();
+      void desktopLyricStore.syncSettings({
+        wantTranslation: !desktopLyricStore.settings.wantTranslation,
+      });
       return;
     }
     if (command === 'toggleRomanization') {
-      lyricStore.wantRomanization = !lyricStore.wantRomanization;
-      void syncSettingsSnapshot();
+      void desktopLyricStore.syncSettings({
+        wantRomanization: !desktopLyricStore.settings.wantRomanization,
+      });
       return;
     }
     if (command === 'lyricOffsetBackward') {
@@ -507,9 +495,6 @@ export const initDesktopLyricSync = async () => {
       [
         () => desktopLyricStore.settings,
         () => settingStore.globalFont,
-        wantTranslation,
-        wantRomanization,
-        showRomanizationAsRuby,
         () => settingStore.desktopLyricFilterEnabled,
         () => settingStore.desktopLyricFilterPattern,
       ],

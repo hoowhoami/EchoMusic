@@ -51,7 +51,7 @@ const canShowRubyToggle = computed(
 );
 
 const handleToggleTranslation = () => {
-  window.electron?.miniPlayer?.command('toggleLyricsMode');
+  window.electron?.miniPlayer?.command('toggleTranslation');
 };
 
 const handleToggleRomanization = () => {
@@ -358,8 +358,8 @@ onBeforeUnmount(() => {
                   class="ruby-unit"
                   data-echo-lyric-ruby-unit
                 >
-                  <span v-if="unit.ruby" class="ruby-text">
-                    <span class="mini-karaoke-ruby">{{ unit.ruby }}</span>
+                  <span class="ruby-text">
+                    <span v-if="unit.ruby" class="mini-karaoke-ruby">{{ unit.ruby }}</span>
                   </span>
                   <span class="ruby-base">
                     <span v-for="(char, ci) in unit.chars" :key="ci" class="mini-karaoke-word">{{
@@ -617,7 +617,7 @@ onBeforeUnmount(() => {
   padding: 0 0.06em;
   font-size: 0.72em;
   opacity: 0.72;
-  /* 即使该单元没有读音也占位，保证同一行内基线对齐 */
+  /* 无读音的单元也必须占位，避免原歌词字符上移到注音行 */
   min-height: 1.1em;
   /* 保留读音内部的音节空格 */
   white-space: pre;
