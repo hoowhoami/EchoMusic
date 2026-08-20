@@ -33,6 +33,13 @@ const STABLE_EXCLUSIVE_BUFFER_100NS: i64 = 500_000;
 const WASAPI_DEVICE_KEY_PREFIX: &str = "wasapi:";
 const DEVICE_KEY_SEPARATOR: &str = "\u{1f}";
 
+fn playback_default_role() -> ERole {
+    // The default-device selector used by both shared and exclusive WASAPI
+    // output and the notification filter must use the same role. eConsole is
+    // the role used for general interactive playback on Windows.
+    Audio::eConsole
+}
+
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum WasapiSampleFormat {
     F32,
@@ -246,12 +253,7 @@ impl IMMNotificationClient_Impl for DeviceNotificationClient_Impl {
         role: ERole,
         pwstrdefaultdeviceid: &PCWSTR,
     ) -> windows::core::Result<()> {
-        if flow == eRender
-            && role == Audio::eMultimedia
-            && self.default_output_did_change(pwstrdefaultdeviceid)
-        {
-            self.notify_default_output_changed();
-        }
+        self.handle_default_device_changed(flow, role, pwstrdefaultdeviceid);
         Ok(())
     }
 
@@ -269,6 +271,15 @@ impl IMMNotificationClient_Impl for DeviceNotificationClient_Impl {
 }
 
 impl DeviceNotificationClient {
+    fn handle_default_device_changed(&self, flow: EDataFlow, role: ERole, endpoint_id: &PCWSTR) {
+        if flow == eRender
+            && role == playback_default_role()
+            && self.default_output_did_change(endpoint_id)
+        {
+            self.notify_default_output_changed();
+        }
+    }
+
     fn notify(&self) {
         match self.sender.try_send(()) {
             Ok(()) | Err(TrySendError::Full(())) => {}
@@ -318,16 +329,13 @@ impl DeviceNotificationClient {
 }
 
 impl DeviceNotificationClient_Impl {
+    fn handle_default_device_changed(&self, flow: EDataFlow, role: ERole, endpoint_id: &PCWSTR) {
+        self.this
+            .handle_default_device_changed(flow, role, endpoint_id);
+    }
+
     fn notify(&self) {
         self.this.notify();
-    }
-
-    fn notify_default_output_changed(&self) {
-        self.this.notify_default_output_changed();
-    }
-
-    fn default_output_did_change(&self, endpoint_id: &PCWSTR) -> bool {
-        self.this.default_output_did_change(endpoint_id)
     }
 }
 
@@ -549,7 +557,7 @@ pub(crate) fn resolve_wasapi_output_device(device_name: &str) -> Result<Audio::I
     if is_default_device_name(device_name) {
         return unsafe {
             enumerator
-                .GetDefaultAudioEndpoint(Audio::eRender, Audio::eConsole)
+                .GetDefaultAudioEndpoint(Audio::eRender, playback_default_role())
                 .map_err(|err| format!("failed to get default WASAPI output device: {err}"))
         };
     }
@@ -967,10 +975,51 @@ fn device_enumerator() -> Result<Audio::IMMDeviceEnumerator, String> {
 fn default_render_endpoint_id(enumerator: &Audio::IMMDeviceEnumerator) -> Option<String> {
     let device = unsafe {
         enumerator
-            .GetDefaultAudioEndpoint(Audio::eRender, Audio::eConsole)
+            .GetDefaultAudioEndpoint(Audio::eRender, playback_default_role())
             .ok()?
     };
     endpoint_id(&device).ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_device_callback_notifies_only_for_the_playback_role() {
+        let (device_tx, _device_rx) = sync_channel(8);
+        let (playback_tx, playback_rx) = channel();
+        let client = IMMNotificationClient::from(DeviceNotificationClient {
+            sender: device_tx,
+            playback_sender: playback_tx,
+            last_default_endpoint: Mutex::new(Some("old-endpoint".to_string())),
+        });
+        let endpoint_id = "new-endpoint"
+            .encode_utf16()
+            .chain(std::iter::once(0))
+            .collect::<Vec<_>>();
+        let endpoint_id = PCWSTR(endpoint_id.as_ptr());
+
+        unsafe {
+            client
+                .OnDefaultDeviceChanged(Audio::eRender, Audio::eMultimedia, endpoint_id)
+                .expect("eMultimedia callback should succeed");
+        }
+        assert_eq!(
+            playback_rx.try_recv(),
+            Err(std::sync::mpsc::TryRecvError::Empty)
+        );
+
+        unsafe {
+            client
+                .OnDefaultDeviceChanged(Audio::eRender, Audio::eConsole, endpoint_id)
+                .expect("eConsole callback should succeed");
+        }
+        assert_eq!(
+            playback_rx.try_recv(),
+            Ok(PlaybackOutputDeviceEvent::DefaultRouteChanged)
+        );
+    }
 }
 
 fn friendly_name(device: &Audio::IMMDevice) -> Result<String, String> {
