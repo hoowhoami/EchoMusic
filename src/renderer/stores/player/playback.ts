@@ -46,6 +46,14 @@ type GaplessPreparedSource = {
   nativeSeq: number | null;
 };
 
+/** 预解析候选全部失效后，供原生异步错误路径消费的一次性完整解析任务。 */
+type DeferredPreResolvedFallback = {
+  requestSeq: number;
+  trackId: string;
+  onFailure?: (reason: string) => void;
+  consumed: boolean;
+};
+
 export const createPlaybackManager = (
   state: PlayerState,
   engine: PlayerEngine,
@@ -62,6 +70,7 @@ export const createPlaybackManager = (
   let gaplessPreparingRequestId: number | null = null;
   let gaplessPreparingRegistration: Promise<void> | null = null;
   let gaplessPreparedSource: GaplessPreparedSource | null = null;
+  let deferredPreResolvedFallback: DeferredPreResolvedFallback | null = null;
   let seekDispatchSeq = 0;
 
   const applyFailedPlaybackState = (options?: { keepResolvedSource?: boolean }) => {
@@ -82,6 +91,7 @@ export const createPlaybackManager = (
       state.currentAudioCandidateIndex = -1;
       state.currentResolvedAudioQuality = null;
       state.currentResolvedAudioEffect = 'none';
+      state.currentResolvedAudioLoudness = null;
       state.currentResolvedSourceKind = 'catalog';
     }
     engine.updateMediaPlaybackState(buildStoppedPlaybackState(state));
@@ -141,6 +151,7 @@ export const createPlaybackManager = (
     state.currentAudioCandidateIndex = currentIndex;
     state.currentResolvedAudioQuality = resolved.quality;
     state.currentResolvedAudioEffect = resolved.effect;
+    state.currentResolvedAudioLoudness = resolved.loudness;
     state.currentResolvedSourceKind = resolved.sourceKind ?? 'catalog';
     track.audioUrl = primarySource?.url ?? resolved.url;
     if (state.currentTrackSnapshot && String(state.currentTrackSnapshot.id) === String(track.id)) {
@@ -169,12 +180,13 @@ export const createPlaybackManager = (
     const requestSeq = state.playbackRequestSeq;
     const isCurrentRequest = () =>
       requestSeq === state.playbackRequestSeq && String(state.currentTrackId ?? '') === trackId;
+    const shouldAutoPlay = options?.autoPlay ?? state.playbackIntent.shouldPlay;
     const candidates = state.currentAudioCandidateSources.length
       ? state.currentAudioCandidateSources
       : state.currentAudioCandidateUrls
           .map((url) => normalizePlaybackSource(url, state.currentPlaybackSource?.audioTrackId))
           .filter((source): source is PlaybackSource => !!source);
-    if (candidates.length <= 1) return false;
+    // 单候选源仍可能配置了延迟的 preResolved 完整解析兜底，不能在这里提前返回。
 
     const track =
       findTrackById(trackId, state.currentPlaylist, playlistStore) || state.currentTrackSnapshot;
@@ -200,7 +212,7 @@ export const createPlaybackManager = (
         seq: requestSeq,
         trackId,
         sourceQueueId: state.currentSourceQueueId,
-        shouldPlay: true,
+        shouldPlay: shouldAutoPlay,
       });
       beginNativeTrackLoad(state);
       state.lastError = null;
@@ -214,7 +226,7 @@ export const createPlaybackManager = (
         state.currentTimeUpdatedAt = Date.now();
       }
 
-      logger.warn('PlayerPlayback', 'Trying fallback audio url', {
+      logger.info('PlayerPlayback', 'Trying fallback audio url', {
         trackId,
         reason: options?.reason ?? 'playback-error',
         candidate: nextIndex + 1,
@@ -224,17 +236,100 @@ export const createPlaybackManager = (
       try {
         await engine.reloadSource(nextSource);
         if (!isCurrentRequest()) return false;
-        await engine.play();
-        if (!isCurrentRequest()) return false;
+        engine.applyTrackLoudness(state.currentResolvedAudioLoudness);
+        if (shouldAutoPlay) {
+          await engine.play();
+          if (!isCurrentRequest()) return false;
+        }
         if (targetPosition > 0) engine.seek(targetPosition);
-        completePlaybackIntent(state, requestSeq, { isPlaying: true });
-        setEnginePlaybackStatus(state, 'playing', trackId);
+        completePlaybackIntent(state, requestSeq, { isPlaying: shouldAutoPlay });
+        setEnginePlaybackStatus(state, shouldAutoPlay ? 'playing' : 'paused', trackId);
         return true;
       } catch (error) {
         if (!isCurrentRequest()) return false;
         logger.warn('PlayerPlayback', 'Fallback audio url failed:', error);
         nextIndex += 1;
       }
+    }
+
+    const deferred = deferredPreResolvedFallback;
+    if (
+      !deferred ||
+      deferred.consumed ||
+      deferred.requestSeq !== requestSeq ||
+      deferred.trackId !== trackId
+    ) {
+      return false;
+    }
+
+    // 房间授权源等预解析地址可能在 setSource 成功后才由原生播放器报告解码错误。
+    // 候选耗尽时只重新执行一次完整解析链，并排除已经失败的预解析地址。
+    // 此处到首次 await 之前同步完成“取值 → 标记 → 清空”；JS 同线程内不会被另一
+    // 次事件回调穿插，因此并发 error/stalled 事件只能有一个消费这次 fallback。
+    deferred.consumed = true;
+    deferredPreResolvedFallback = null;
+    const reason = options?.reason ?? 'pre-resolved-candidate-exhausted';
+    try {
+      deferred.onFailure?.(reason);
+    } catch (error) {
+      logger.warn('PlayerPlayback', 'Pre-resolved failure callback failed:', error);
+    }
+
+    try {
+      const fallbackResolved = await resolver.resolveAudioUrl(track, { forceReload: true });
+      if (!isCurrentRequest()) return false;
+
+      const rejectedKeys = new Set(candidates.map((source) => playbackSourceKey(source)));
+      const fallbackSources = getAudioCandidateSources(fallbackResolved).filter(
+        (source) => !rejectedKeys.has(playbackSourceKey(source)),
+      );
+      const primary = fallbackSources[0];
+      if (!primary) {
+        logger.warn('PlayerPlayback', 'Pre-resolved fallback returned no new audio source', {
+          trackId,
+          reason,
+        });
+        return false;
+      }
+
+      const normalizedFallback: ResolvedAudioSource = {
+        ...fallbackResolved,
+        url: primary.url,
+        urls: fallbackSources.map((source) => source.url),
+        audioTrackId: primary.audioTrackId ?? fallbackResolved.audioTrackId ?? null,
+        source: primary,
+        sources: fallbackSources,
+      };
+      applyResolvedAudioSource(track, normalizedFallback);
+      beginPlaybackIntent(state, {
+        seq: requestSeq,
+        trackId,
+        sourceQueueId: state.currentSourceQueueId,
+        shouldPlay: shouldAutoPlay,
+      });
+      beginNativeTrackLoad(state);
+      state.lastError = null;
+
+      const targetPosition = Math.max(0, Number(options?.position) || 0);
+      logger.info('PlayerPlayback', 'Retrying with fully resolved audio source', {
+        trackId,
+        reason,
+        sourceKind: normalizedFallback.sourceKind ?? 'catalog',
+      });
+      await engine.reloadSource(primary);
+      if (!isCurrentRequest()) return false;
+      engine.applyTrackLoudness(normalizedFallback.loudness);
+      if (shouldAutoPlay) {
+        await engine.play();
+        if (!isCurrentRequest()) return false;
+      }
+      if (targetPosition > 0) engine.seek(targetPosition);
+      completePlaybackIntent(state, requestSeq, { isPlaying: shouldAutoPlay });
+      setEnginePlaybackStatus(state, shouldAutoPlay ? 'playing' : 'paused', trackId);
+      return true;
+    } catch (error) {
+      if (!isCurrentRequest()) return false;
+      logger.warn('PlayerPlayback', 'Fully resolved audio fallback failed:', error);
     }
 
     return false;
@@ -643,9 +738,13 @@ export const createPlaybackManager = (
       preResolved?: ResolvedAudioSource;
       /** 省略表示该预解析结果已经经过 transform（例如无缝播放预加载）。 */
       preResolvedStage?: PluginAudioSourceTransformStage;
+      /** 预解析地址加载失败后，重新执行一次完整音源解析链。 */
+      fallbackOnPreResolvedFailure?: boolean;
+      onPreResolvedFailure?: (reason: string) => void;
     },
   ) => {
     const requestSeq = ++state.playbackRequestSeq;
+    deferredPreResolvedFallback = null;
     state.historyLocalRecorded = false;
     const recordLocalHistoryOnce = (song: Song) => {
       if (requestSeq !== state.playbackRequestSeq) return;
@@ -715,6 +814,7 @@ export const createPlaybackManager = (
     state.currentAudioCandidateIndex = -1;
     state.currentResolvedAudioQuality = null;
     state.currentResolvedAudioEffect = 'none';
+    state.currentResolvedAudioLoudness = null;
     state.currentResolvedSourceKind = track.source === 'cloud' ? 'cloud' : 'catalog';
     state.currentTime = 0;
     state.currentTimeUpdatedAt = Date.now();
@@ -769,16 +869,25 @@ export const createPlaybackManager = (
     if (requestSeq !== state.playbackRequestSeq) return;
 
     let resolved: ResolvedAudioSource;
+    let usedPreResolvedSource = false;
     try {
       if (options?.preResolved && options.preResolvedStage) {
-        resolved =
-          (await resolver.transformAudioSource(
-            track,
-            options.preResolved,
-            options.preResolvedStage,
-          )) ?? (await resolver.resolveAudioUrl(track));
+        const transformed = await resolver.transformAudioSource(
+          track,
+          options.preResolved,
+          options.preResolvedStage,
+        );
+        if (transformed) {
+          resolved = transformed;
+          usedPreResolvedSource = true;
+        } else {
+          // transform 主动拒绝后得到的是正常 resolver 结果，不再属于预解析源，
+          // 因而不注册“预解析失败后再解析一次”的重复兜底。
+          resolved = await resolver.resolveAudioUrl(track);
+        }
       } else {
         resolved = options?.preResolved ?? (await resolver.resolveAudioUrl(track));
+        usedPreResolvedSource = Boolean(options?.preResolved);
       }
     } catch (error) {
       logger.error('PlayerPlayback', 'Resolve track source failed:', error);
@@ -829,6 +938,14 @@ export const createPlaybackManager = (
     }
 
     applyResolvedAudioSource(track, resolved);
+    if (usedPreResolvedSource && options?.fallbackOnPreResolvedFailure) {
+      deferredPreResolvedFallback = {
+        requestSeq,
+        trackId: resolvedId,
+        onFailure: options.onPreResolvedFailure,
+        consumed: false,
+      };
+    }
 
     try {
       await engine.setSource(state.currentPlaybackSource ?? resolved.url, { force: true });
@@ -874,7 +991,13 @@ export const createPlaybackManager = (
         engine.updateMediaPlaybackState(buildMediaState(state));
         return;
       }
-      if (await tryNextAudioCandidate({ reason: 'play-track-failed', trackId: resolvedId })) {
+      if (
+        await tryNextAudioCandidate({
+          reason: 'play-track-failed',
+          trackId: resolvedId,
+          autoPlay,
+        })
+      ) {
         return;
       }
       if (requestSeq !== state.playbackRequestSeq) return;
@@ -1300,6 +1423,7 @@ export const createPlaybackManager = (
     state.currentAudioCandidateIndex = -1;
     state.currentResolvedAudioQuality = null;
     state.currentResolvedAudioEffect = 'none';
+    state.currentResolvedAudioLoudness = null;
     state.currentResolvedSourceKind = 'catalog';
     state.currentAudioQualityOverride = null;
     state.currentCatalogSourceOverrideTrackId = null;

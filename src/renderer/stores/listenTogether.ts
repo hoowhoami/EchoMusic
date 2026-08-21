@@ -70,6 +70,20 @@ const SLOW_POLL_INTERVAL = 15_000;
 const HEARTBEAT_INTERVAL = 55_000;
 const ROOM_PAGE_SIZE = 20;
 const ROOM_PLAYLIST_PAGE_SIZE = 50;
+const KUGOU_PRIVATE_AUDIO_EXTENSION = /\.(?:kgs|kgm|kgma|kgg|vpr)(?=$|[/?#&])/i;
+
+const isKugouPrivateAudioUrl = (url: string) => {
+  const normalized = String(url || '').trim();
+  if (!normalized) return false;
+  // 先匹配普通路径，再解码后匹配签名 URL 查询参数中的 `%2Ekgs` 等文件名。
+  // decodeURIComponent 可能因上游不完整的 `%` 转义抛错，因此保留防御性捕获。
+  if (KUGOU_PRIVATE_AUDIO_EXTENSION.test(normalized)) return true;
+  try {
+    return KUGOU_PRIVATE_AUDIO_EXTENSION.test(decodeURIComponent(normalized));
+  } catch {
+    return false;
+  }
+};
 
 const isMissingRoomMessage = (message: string) => /(?:群组|房间)(?:不存在|已解散)/.test(message);
 
@@ -1610,14 +1624,16 @@ export const useListenTogetherStore = defineStore(
           String(song.originalHash || song.hash || '').toLowerCase(),
           String(song.mixSongId || song.albumAudioId || ''),
         ].join(':');
+        const playbackUnavailable =
+          !playerStore.isLoading &&
+          (!playerStore.currentAudioUrl || playerStore.playbackDisplayState === 'error');
         const retryDeferred =
           currentTrackMatches &&
-          !playerStore.currentAudioUrl &&
-          !playerStore.isLoading &&
+          playbackUnavailable &&
           (roomPlaybackRetryAfter.get(roomPlaybackKey) ?? 0) > Date.now();
-        const trackChanged =
-          !currentTrackMatches ||
-          (!retryDeferred && !playerStore.currentAudioUrl && !playerStore.isLoading);
+        // 曲目变化立即加载；当前曲目只有在明确不可用且退避结束后才重新解析。
+        // loading 与 error 即使短暂交错，也由 isLoading 优先阻止重复 playTrack。
+        const trackChanged = !currentTrackMatches || (playbackUnavailable && !retryDeferred);
         const useRemotePosition = isRemotePositionForSong(remote, song);
         const expectedPosition = Math.max(
           0,
@@ -1629,6 +1645,7 @@ export const useListenTogetherStore = defineStore(
         const shouldPlayLocally = remote.playing && !preserveGuestPause;
         if (trackChanged) {
           let roomResolvedSource: ResolvedAudioSource | undefined;
+          let roomResolvedSourceRoomId = '';
           const needsRoomPlaybackAuthorization =
             activeRoomType.value === 0 &&
             song.source === 'listen-together' &&
@@ -1650,15 +1667,20 @@ export const useListenTogetherStore = defineStore(
                 readNestedString(playbackPayload, 'url') ||
                 readNestedString(playbackPayload, 'play_url') ||
                 readNestedString(playbackPayload, 'playurl');
-              if (/\.kgs(?:[?#]|$)/i.test(roomUrl)) {
-                // 概念版通过酷狗私有数据源还原 KGS，FFmpeg 不能直接解码其 HTTP
-                // 响应。不要把它当成已解析音源，继续走 song/url、云盘和插件兜底。
+              if (isKugouPrivateAudioUrl(roomUrl)) {
+                // 概念版通过酷狗私有数据源还原 KGS/KGM/KGMA/KGG/VPR，FFmpeg 不能直接
+                // 解码其 HTTP 响应。不要把它当成已解析音源，继续走完整解析链。
                 unsupportedRoomPlaybackSources.add(roomPlaybackKey);
-                logger.info('ListenTogether', 'KGS room source is unsupported, using fallback', {
-                  roomId: playbackRoomId,
-                  hash: song.hash,
-                });
+                logger.info(
+                  'ListenTogether',
+                  'Private room source is unsupported, using fallback',
+                  {
+                    roomId: playbackRoomId,
+                    hash: song.hash,
+                  },
+                );
               } else if (roomUrl) {
+                roomResolvedSourceRoomId = playbackRoomId;
                 roomResolvedSource = {
                   url: roomUrl,
                   urls: [roomUrl],
@@ -1683,8 +1705,24 @@ export const useListenTogetherStore = defineStore(
             sourceQueueId: LISTEN_TOGETHER_QUEUE_ID,
             preResolved: roomResolvedSource,
             preResolvedStage: roomResolvedSource ? 'catalog' : undefined,
+            fallbackOnPreResolvedFailure: Boolean(roomResolvedSource),
+            onPreResolvedFailure: roomResolvedSource
+              ? (reason) => {
+                  if (activeRoomId.value !== roomResolvedSourceRoomId) return;
+                  unsupportedRoomPlaybackSources.add(roomPlaybackKey);
+                  logger.info(
+                    'ListenTogether',
+                    'Room-authorized source failed, using full resolver fallback',
+                    {
+                      roomId: roomResolvedSourceRoomId,
+                      hash: song.hash,
+                      reason,
+                    },
+                  );
+                }
+              : undefined,
           });
-          if (playerStore.currentAudioUrl) {
+          if (playerStore.currentAudioUrl && playerStore.playbackDisplayState !== 'error') {
             roomPlaybackRetryAfter.delete(roomPlaybackKey);
           } else {
             // 房间每 5 秒同步一次；普通音源也不可用时不要跟随轮询持续打

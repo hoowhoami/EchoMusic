@@ -1,4 +1,5 @@
 import type { Song } from '@/models/song';
+import type { TrackLoudness } from '@/utils/player';
 import type { AudioEffectValue, AudioQualityValue, PlayMode } from '../../types';
 import type {
   ClimaxMark,
@@ -55,6 +56,7 @@ export const createPlayerState = () => ({
   currentAudioCandidateIndex: -1,
   currentResolvedAudioQuality: null as AudioQualityValue | null,
   currentResolvedAudioEffect: 'none' as AudioEffectValue,
+  currentResolvedAudioLoudness: null as TrackLoudness | null,
   currentResolvedSourceKind: 'catalog' as PlaybackSourceKind,
   nativeTrackSeq: null as number | null,
   supersededNativeTrackSeq: null as number | null,

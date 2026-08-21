@@ -341,7 +341,7 @@ export const createResolver = (
         quality: state.currentResolvedAudioQuality,
         effect: state.currentResolvedAudioEffect,
         sourceKind: state.currentResolvedSourceKind,
-        loudness: null,
+        loudness: state.currentResolvedAudioLoudness,
       };
     }
 
