@@ -19,7 +19,7 @@ impl Task for FadeTask {
         let steps = (self.duration_ms / 16.0).ceil().max(1.0) as u32;
         self.fade_stop.store(false, Ordering::Release);
         if self.start_playback {
-            set_volume(self.from)?;
+            set_session_volume(self.from)?;
             with_runtime(|runtime| {
                 if let Some(session) = runtime.session.as_ref() {
                     session.shared.paused.store(false, Ordering::Release);
@@ -37,7 +37,7 @@ impl Task for FadeTask {
             }
             let t = step as f64 / steps as f64;
             let value = self.from + (self.to - self.from) * t;
-            set_volume(value)?;
+            set_session_volume(value)?;
             thread::sleep(Duration::from_millis(16));
         }
         Ok(())
@@ -88,6 +88,8 @@ pub fn pause_with_fade(saved_volume: f64, duration_ms: f64) -> AsyncTask<FadeTas
 
 #[napi]
 pub fn play_with_fade(target_volume: f64, duration_ms: f64) -> AsyncTask<FadeTask> {
+    let normalized = (target_volume / 100.0).clamp(0.0, 1.5) as f32;
+    USER_VOLUME_BITS.store(normalized.to_bits(), Ordering::Release);
     AsyncTask::new(FadeTask {
         from: 0.0,
         to: target_volume,

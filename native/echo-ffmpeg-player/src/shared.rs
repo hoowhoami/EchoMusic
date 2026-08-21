@@ -330,6 +330,21 @@ impl SharedAudio {
         self.decoded_queue_changed.notify_all();
     }
 
+    pub fn set_normalization_gain_db(&self, gain_db: f32) {
+        let gain_db = if gain_db.is_finite() {
+            gain_db.clamp(-24.0, 24.0)
+        } else {
+            0.0
+        };
+        let gain = 10.0f32.powf(gain_db / 20.0).clamp(0.0, 16.0);
+        self.normalization_gain_bits
+            .store(gain.to_bits(), Ordering::Release);
+        if let Ok(mut settings) = self.dsp_settings.lock() {
+            settings.normalization_gain_db = gain_db;
+        }
+        self.decoded_queue_changed.notify_all();
+    }
+
     pub fn is_decode_generation_current(&self, generation: u64) -> bool {
         self.decode_generation.load(Ordering::Acquire) == generation
     }

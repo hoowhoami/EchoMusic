@@ -37,8 +37,16 @@ export function registerPlayerIpc(ref: PlayerRef): void {
 
   ipcRegistry.registerHandler(
     'player:prepare-next-source',
-    async (_e, url: string, requestId: number, trackId?: number | null) => {
-      return (await ref.current?.prepareNextSource(url, requestId, trackId)) ?? null;
+    async (
+      _e,
+      url: string,
+      requestId: number,
+      trackId?: number | null,
+      normalizationGainDb?: number,
+    ) => {
+      return (
+        (await ref.current?.prepareNextSource(url, requestId, trackId, normalizationGainDb)) ?? null
+      );
     },
   );
 

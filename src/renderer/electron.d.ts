@@ -624,6 +624,7 @@ export interface IElectronAPI {
       url: string,
       requestId: number,
       trackId?: number | null,
+      normalizationGainDb?: number,
     ) => Promise<number | null>;
     clearPreparedNextSource: () => Promise<void>;
     getTrackList: (url?: string) => Promise<

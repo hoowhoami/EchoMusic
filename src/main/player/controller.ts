@@ -269,6 +269,7 @@ interface PlayerAddon {
     trackId: number | null,
     seq: number,
     requestId: number,
+    normalizationGainDb?: number,
   ): Promise<boolean>;
   clearPreparedNextSource(): void;
   getTrackList(url?: string): Promise<
@@ -460,6 +461,7 @@ export class PlayerController extends EventEmitter {
     url: string,
     requestId: number,
     trackId?: number | null,
+    normalizationGainDb?: number,
   ): Promise<number | null> {
     const seq = ++this.loadSeq;
     const prepared = await this.getAddonOrThrow().prepareNextSource(
@@ -467,6 +469,7 @@ export class PlayerController extends EventEmitter {
       trackId ?? null,
       seq,
       requestId,
+      normalizationGainDb ?? 0,
     );
     return prepared ? seq : null;
   }
@@ -505,7 +508,9 @@ export class PlayerController extends EventEmitter {
 
   async setVolume(volume: number): Promise<void> {
     this.state.volume = volume;
-    this.getAddonOrThrow().setVolume(volume);
+    const addon = this.getAddonOrThrow();
+    // Native owns the user-volume target and cancels any superseded fade.
+    addon.setVolume(volume);
   }
 
   setSpeed(speed: number) {
@@ -572,7 +577,6 @@ export class PlayerController extends EventEmitter {
     return this.enqueue(async () => {
       const addon = this.getAddonOrThrow();
       addon.cancelFade();
-      addon.setVolume(0);
       await addon.play();
       void addon.playWithFade(targetVolume, durationMs).catch((error: unknown) => {
         log.warn('[PlayerController] play fade failed:', error);

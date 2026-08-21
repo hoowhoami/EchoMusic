@@ -392,7 +392,10 @@ export const createPlaybackManager = (
     state.currentAudioQualityOverride = null;
     state.currentCatalogSourceOverrideTrackId = null;
     state.currentCloudSourceOverrideTrackId = null;
-    engine.applyTrackLoudness(prepared.resolved.loudness);
+    const isSameTrack = prepared.targetTrackId === prepared.currentTrackId;
+    if (prepared.resolved.loudness || !isSameTrack) {
+      engine.applyTrackLoudness(prepared.resolved.loudness);
+    }
     engine.setLoopFile(state.playMode === 'single');
 
     const lyricHash = String(targetTrack.hash ?? targetTrack.id ?? '');
@@ -512,11 +515,19 @@ export const createPlaybackManager = (
         }
         const sources = getAudioCandidateSources(resolved);
         const primarySource = sources[0] ?? normalizePlaybackSource(resolved.url);
+        const sameTrack = String(next.track.id) === String(state.currentTrackId);
+        const normalizationGainDb = resolved.loudness
+          ? engine.getTrackLoudnessGainDb(resolved.loudness)
+          : sameTrack
+            ? engine.normalizationGainDb
+            : 0;
         const nativeSeq = primarySource
-          ? await engine.prepareNextSource(primarySource, requestId).catch((error: unknown) => {
-              logger.warn('PlayerPlayback', 'Native gapless prepare failed:', error);
-              return null;
-            })
+          ? await engine
+              .prepareNextSource(primarySource, requestId, normalizationGainDb)
+              .catch((error: unknown) => {
+                logger.warn('PlayerPlayback', 'Native gapless prepare failed:', error);
+                return null;
+              })
           : null;
         nativePrepared = nativeSeq !== null;
         if (gaplessPreparingKey !== key || gaplessPreparingRequestId !== requestId) {

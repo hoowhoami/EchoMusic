@@ -55,7 +55,7 @@ use napi::threadsafe_function::ThreadsafeFunction;
 use napi::{Env, Task};
 use napi_derive::napi;
 use std::sync::atomic::AtomicU64;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::mpsc::{
     channel, sync_channel, RecvTimeoutError, SyncSender, TryRecvError, TrySendError,
 };
@@ -77,6 +77,9 @@ static RUNTIME_READY: AtomicBool = AtomicBool::new(false);
 /// work that can hold RUNTIME for long stretches. Updated wherever runtime.session
 /// changes: apply_prepared_source, stop_session, and the load-failure teardown.
 static CURRENT_SHARED: Mutex<Option<Arc<SharedAudio>>> = Mutex::new(None);
+/// User volume survives audio-session replacement. New sessions must not
+/// fall back to SharedAudio's default volume while a track is being replaced.
+static USER_VOLUME_BITS: AtomicU32 = AtomicU32::new(1.0f32.to_bits());
 static NEXT_SEEK_REQUEST_SEQ: AtomicU64 = AtomicU64::new(0);
 static LATEST_SEEK_REQUEST_SEQ: AtomicU64 = AtomicU64::new(0);
 type RuntimeCommand = Box<dyn FnOnce(&mut PlayerRuntime) + Send + 'static>;
@@ -89,6 +92,31 @@ fn set_current_shared(shared: Option<Arc<SharedAudio>>) {
 
 pub(crate) fn current_shared() -> Option<Arc<SharedAudio>> {
     CURRENT_SHARED.lock().ok().and_then(|guard| guard.clone())
+}
+
+pub(crate) fn user_volume() -> f32 {
+    f32::from_bits(USER_VOLUME_BITS.load(Ordering::Acquire)).clamp(0.0, 1.5)
+}
+
+pub(crate) fn set_session_volume(volume: f64) -> napi::Result<()> {
+    if !RUNTIME_READY.load(Ordering::Acquire) {
+        return Err(napi::Error::from_reason(
+            "player addon not initialized".to_string(),
+        ));
+    }
+    let normalized = (volume / 100.0).clamp(0.0, 1.5) as f32;
+    if let Some(shared) = current_shared() {
+        shared.set_volume(normalized);
+    }
+    Ok(())
+}
+
+fn cancel_runtime_fade() {
+    if let Ok(guard) = RUNTIME.lock() {
+        if let Some(runtime) = guard.as_ref() {
+            runtime.fade_stop.store(true, Ordering::Release);
+        }
+    }
 }
 
 struct PlayerRuntime {
@@ -173,6 +201,7 @@ struct PreparedNextSource {
     seq: u64,
     duration: f64,
     preferred_output_sample_format: shared::AudioSampleFormat,
+    normalization_gain_db: f32,
 }
 
 pub(crate) enum GaplessDecodeResult {
@@ -529,7 +558,7 @@ fn prepare_source(
         config.resolve_output_sample_format(decoder.source_sample_format()),
     );
     shared.set_track_seq(seq);
-    shared.set_volume(1.0);
+    shared.set_volume(user_volume());
     shared.set_position_secs(start_position);
     shared.paused.store(!autostart, Ordering::Release);
     let interrupt = decoder.interrupt_handle();
@@ -907,6 +936,9 @@ pub(crate) fn activate_gapless_next_decoder(
     );
     shared.set_source_sample_format(next.decoder.source_sample_format());
     shared.set_preferred_output_sample_format(next.preferred_output_sample_format);
+    // Apply the target track's loudness before any predecoded samples cross the
+    // boundary; waiting for the renderer restart event is too late.
+    shared.set_normalization_gain_db(next.normalization_gain_db);
     shared.mark_gapless_boundary(TrackSwitchInfo {
         url: next.url,
         audio_stream_ordinal: next.audio_stream_ordinal,
@@ -1284,6 +1316,7 @@ pub struct PrepareNextSourceTask {
     audio_stream_ordinal: Option<usize>,
     pending_prepare: Option<(Arc<SharedAudio>, u64)>,
     interrupt: Arc<AtomicBool>,
+    normalization_gain_db: f32,
 }
 
 struct GaplessPrepareGuard {
@@ -1359,6 +1392,7 @@ impl Task for PrepareNextSourceTask {
             seq: self.seq,
             duration,
             preferred_output_sample_format,
+            normalization_gain_db: self.normalization_gain_db,
         });
 
         with_runtime(|runtime| {
@@ -1458,6 +1492,7 @@ pub fn prepare_next_source(
     track_id: Option<i64>,
     seq: Option<f64>,
     request_id: f64,
+    normalization_gain_db: Option<f64>,
 ) -> AsyncTask<PrepareNextSourceTask> {
     let request_id = request_id.max(0.0) as u64;
     let interrupt = Arc::new(AtomicBool::new(false));
@@ -1484,6 +1519,7 @@ pub fn prepare_next_source(
         audio_stream_ordinal: track_id.and_then(audio_stream_ordinal_from_track_id),
         pending_prepare,
         interrupt,
+        normalization_gain_db: normalization_gain_db.unwrap_or(0.0) as f32,
     })
 }
 
@@ -1626,10 +1662,9 @@ pub fn set_volume(volume: f64) -> napi::Result<()> {
         ));
     }
     let normalized = (volume / 100.0).clamp(0.0, 1.5) as f32;
-    if let Some(shared) = current_shared() {
-        shared.set_volume(normalized);
-    }
-    Ok(())
+    cancel_runtime_fade();
+    USER_VOLUME_BITS.store(normalized.to_bits(), Ordering::Release);
+    set_session_volume(volume)
 }
 
 #[napi]

@@ -594,8 +594,19 @@ contextBridge.exposeInMainWorld('electron', {
     beginNextSourcePreparation: () => ipcRenderer.invoke('player:begin-next-source-preparation'),
     cancelNextSourcePreparation: (requestId: number) =>
       ipcRenderer.invoke('player:cancel-next-source-preparation', requestId),
-    prepareNextSource: (url: string, requestId: number, trackId?: number | null) =>
-      ipcRenderer.invoke('player:prepare-next-source', url, requestId, trackId),
+    prepareNextSource: (
+      url: string,
+      requestId: number,
+      trackId?: number | null,
+      normalizationGainDb?: number,
+    ) =>
+      ipcRenderer.invoke(
+        'player:prepare-next-source',
+        url,
+        requestId,
+        trackId,
+        normalizationGainDb,
+      ),
     clearPreparedNextSource: () => ipcRenderer.invoke('player:clear-prepared-next-source'),
     getTrackList: (url?: string) => ipcRenderer.invoke('player:get-track-list', url),
     play: () => ipcRenderer.invoke('player:play'),

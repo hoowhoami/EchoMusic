@@ -398,7 +398,11 @@ export class PlayerEngine {
     });
   }
 
-  async prepareNextSource(source: PlaybackSource, requestId: number): Promise<number | null> {
+  async prepareNextSource(
+    source: PlaybackSource,
+    requestId: number,
+    normalizationGainDb = 0,
+  ): Promise<number | null> {
     const playbackSource = normalizePlaybackSource(source);
     if (!playbackSource.url) return null;
     return (
@@ -406,6 +410,7 @@ export class PlayerEngine {
         playbackSource.url,
         requestId,
         playbackSource.audioTrackId ?? null,
+        normalizationGainDb,
       )) ?? null
     );
   }
@@ -621,6 +626,15 @@ export class PlayerEngine {
       lufs,
       gainDb: gainDb.toFixed(2) + ' dB',
     });
+  }
+
+  getTrackLoudnessGainDb(loudness: TrackLoudness | null): number {
+    if (!loudness || !this.normalizationEnabled || !Number.isFinite(loudness.lufs)) return 0;
+    return 20 * Math.log10(this.computeNormalizationGain(loudness));
+  }
+
+  get normalizationGainDb(): number {
+    return this.normalizationEnabled ? 20 * Math.log10(this.normalizationGain) : 0;
   }
 
   setReferenceLufs(lufs: number): void {
