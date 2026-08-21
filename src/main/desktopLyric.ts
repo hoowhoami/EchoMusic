@@ -41,6 +41,7 @@ import {
   getDesktopLyricWindow,
   loadDesktopLyricWindow,
   schedulePersistWindowBounds,
+  flushPersistWindowBounds,
   scheduleWindowInteractionSync,
   scheduleWindowPresentationSync,
   syncWindowPresentation,
@@ -53,6 +54,7 @@ import { getActiveWindowMode } from './window/mode';
 import { closeMiniPlayerWindow } from './miniPlayer';
 import { ipcRegistry } from './ipc/registry';
 import { refreshTrayMenus } from './tray';
+import { WindowDragController } from './windowDrag';
 
 export { getDesktopLyricWindow } from './desktopLyric/window';
 
@@ -75,6 +77,32 @@ let desktopLyricHoverPollTimer: NodeJS.Timeout | null = null;
 let desktopLyricCursorInside = false;
 let desktopLyricCursorOverUnlockButton = false;
 let desktopLyricUnlockButtonBounds: DesktopLyricClientRect | null = null;
+const desktopLyricDragController = new WindowDragController({
+  getWindow: getDesktopLyricWindow,
+  getTargetWebContents: () => getDesktopLyricWindow()?.webContents ?? null,
+  isAvailable: () => !desktopLyricUsesWayland,
+  canStart: () => !snapshot.settings.locked,
+  transformBounds: (bounds) => {
+    const limits = getDesktopLyricWindowLimits();
+    return {
+      ...bounds,
+      width: Math.min(limits.maxWidth, Math.max(limits.minWidth, bounds.width)),
+      height: Math.min(limits.maxHeight, Math.max(limits.minHeight, bounds.height)),
+    };
+  },
+  persist: schedulePersistWindowBounds,
+  rollback: (origin) => {
+    applyWindowBounds(origin);
+    flushPersistWindowBounds();
+  },
+});
+const cancelDesktopLyricSessions = () => {
+  const cancelled = desktopLyricDragController.cancelAll();
+  return {
+    drag: cancelled.kind === 'drag' ? cancelled.bounds : null,
+    resize: cancelled.kind === 'resize' ? cancelled.bounds : null,
+  };
+};
 const DESKTOP_LYRIC_HOVER_POLL_INTERVAL_MS = 150;
 const desktopLyricPlaybackBridge = createPlaybackBridgeState();
 
@@ -510,6 +538,11 @@ export const ensureDesktopLyricWindow = async () => {
     clearWindowPresentationTimers();
     stopDesktopLyricHoverPolling();
     unbindMainWindowEvents();
+    const cancelled = cancelDesktopLyricSessions();
+    if (!win.webContents.isDestroyed()) {
+      if (cancelled.drag) win.webContents.send('desktop-lyric:cancel-drag', cancelled.drag);
+      if (cancelled.resize) win.webContents.send('desktop-lyric:cancel-resize', cancelled.resize);
+    }
     setDesktopLyricLockPhase('idle');
   });
 
@@ -522,6 +555,7 @@ export const ensureDesktopLyricWindow = async () => {
     unbindMainWindowEvents();
     resetDesktopLyricIgnoreMouseEventsCache();
     desktopLyricUnlockButtonBounds = null;
+    desktopLyricDragController.dispose();
     withDesktopLyricWindow(null);
     desktopLyricClosingFromFailure = false;
 
@@ -590,6 +624,7 @@ export const closeDesktopLyricWindow = () => {
 };
 
 export const destroyDesktopLyricWindow = () => {
+  desktopLyricDragController.dispose();
   const win = getDesktopLyricWindow();
   if (!win || win.isDestroyed()) return;
   clearDesktopLyricDisplayMetricsTimer();
@@ -615,6 +650,15 @@ export const updateDesktopLyricSettings = async (partial: Partial<DesktopLyricSe
     ...snapshot,
     settings: nextSettings,
   };
+
+  if (!current.locked && nextSettings.locked) {
+    const cancelled = cancelDesktopLyricSessions();
+    const win = getDesktopLyricWindow();
+    if (win && !win.isDestroyed()) {
+      win.webContents.send('desktop-lyric:cancel-drag', cancelled.drag);
+      win.webContents.send('desktop-lyric:cancel-resize', cancelled.resize);
+    }
+  }
 
   persistDesktopLyricSettings(nextSettings);
 
@@ -661,6 +705,14 @@ export const updateDesktopLyricSettings = async (partial: Partial<DesktopLyricSe
 export const toggleDesktopLyricLock = async () => {
   const nextLocked = !snapshot.settings.locked;
   snapshot = { ...snapshot, settings: { ...snapshot.settings, locked: nextLocked } };
+  if (nextLocked) {
+    const cancelled = cancelDesktopLyricSessions();
+    const win = getDesktopLyricWindow();
+    if (win && !win.isDestroyed()) {
+      win.webContents.send('desktop-lyric:cancel-drag', cancelled.drag);
+      win.webContents.send('desktop-lyric:cancel-resize', cancelled.resize);
+    }
+  }
   setDesktopLyricLockPhase(nextLocked ? 'locking' : 'unlocking', true);
 
   refreshDesktopLyricInteraction(true);
@@ -722,6 +774,9 @@ export const patchDesktopLyricPlaybackFromPlayer = (patch: PlaybackSnapshotPatch
 
 export const registerDesktopLyricHandlers = () => {
   ipcRegistry.registerHandler('desktop-lyric:get-snapshot', () => getDesktopLyricSnapshot());
+  ipcRegistry.registerHandler('desktop-lyric:get-session-nonce', (event) => {
+    return desktopLyricDragController.getSessionNonce(event.sender);
+  });
 
   ipcRegistry.registerHandler('desktop-lyric:get-window', () => {
     const win = getDesktopLyricWindow();
@@ -855,6 +910,14 @@ export const registerDesktopLyricHandlers = () => {
           currentSettings.locked !== nextSettings.locked;
         snapshot = { ...snapshot, settings: nextSettings };
         persistDesktopLyricSettings(nextSettings);
+        if (!currentSettings.locked && nextSettings.locked) {
+          const cancelled = cancelDesktopLyricSessions();
+          const lyricWin = getDesktopLyricWindow();
+          if (lyricWin && !lyricWin.isDestroyed()) {
+            lyricWin.webContents.send('desktop-lyric:cancel-drag', cancelled.drag);
+            lyricWin.webContents.send('desktop-lyric:cancel-resize', cancelled.resize);
+          }
+        }
         if (interactionChanged) refreshDesktopLyricInteraction(true);
         if (presentationChanged) refreshDesktopLyricPresentation();
       }
@@ -913,68 +976,44 @@ export const registerDesktopLyricHandlers = () => {
     },
   );
 
+  ipcRegistry.registerHandler('desktop-lyric:start-drag', (event, sessionId: string) => {
+    return desktopLyricDragController.start(sessionId, event.sender);
+  });
+
   ipcRegistry.registerListener(
     'desktop-lyric:move',
-    (_event, x: number, y: number, width: number, height: number) => {
-      const win = getDesktopLyricWindow();
-      if (
-        desktopLyricUsesWayland ||
-        !win ||
-        win.isDestroyed() ||
-        snapshot.settings.locked ||
-        !Number.isFinite(x) ||
-        !Number.isFinite(y) ||
-        !Number.isFinite(width) ||
-        !Number.isFinite(height)
-      )
-        return;
-      const limits = getDesktopLyricWindowLimits();
-      const safeWidth = Math.min(limits.maxWidth, Math.max(limits.minWidth, Math.round(width)));
-      const safeHeight = Math.min(limits.maxHeight, Math.max(limits.minHeight, Math.round(height)));
-      // 跨 DPI 区域移动透明窗口时，单独 setPosition 可能让内容尺寸发生舍入
-      // 漂移；每帧同时固定起始尺寸，避免拖动过程中窗口缓慢变大。
-      win.setBounds({
-        x: Math.round(x),
-        y: Math.round(y),
-        width: safeWidth,
-        height: safeHeight,
-      });
-      schedulePersistWindowBounds();
+    (event, sessionId: string, x: number, y: number) => {
+      desktopLyricDragController.move(sessionId, event.sender, x, y);
     },
   );
+
+  ipcRegistry.registerHandler('desktop-lyric:start-resize', (event, sessionId: string) => {
+    return desktopLyricDragController.start(sessionId, event.sender, 'resize');
+  });
 
   ipcRegistry.registerListener(
     'desktop-lyric:resize',
-    (_event, payload: Required<DesktopLyricWindowBoundsUpdate>) => {
-      const win = getDesktopLyricWindow();
-      if (
-        desktopLyricUsesWayland ||
-        !win ||
-        win.isDestroyed() ||
-        snapshot.settings.locked ||
-        !payload
-      )
-        return;
-      const { x, y, width, height } = payload;
-      if (
-        !Number.isFinite(x) ||
-        !Number.isFinite(y) ||
-        !Number.isFinite(width) ||
-        !Number.isFinite(height)
-      )
-        return;
-      const limits = getDesktopLyricWindowLimits();
-      applyWindowBounds({
-        x,
-        y,
-        width: Math.min(limits.maxWidth, Math.max(limits.minWidth, Math.round(width))),
-        height: Math.min(limits.maxHeight, Math.max(limits.minHeight, Math.round(height))),
-      });
+    (event, sessionId: string, payload: Required<DesktopLyricWindowBoundsUpdate>) => {
+      desktopLyricDragController.resize(sessionId, event.sender, payload);
     },
   );
 
-  ipcRegistry.registerHandler('desktop-lyric:end-drag', () => {
+  ipcRegistry.registerHandler('desktop-lyric:end-drag', (event, sessionId: string) => {
+    if (!desktopLyricDragController.end(sessionId, event.sender)) return null;
     return reconcileDesktopLyricBounds() ?? constrainBoundsToDisplay(getDesktopLyricWindowState());
+  });
+
+  ipcRegistry.registerHandler('desktop-lyric:end-resize', (event, sessionId: string) => {
+    if (!desktopLyricDragController.end(sessionId, event.sender, 'resize')) return null;
+    return reconcileDesktopLyricBounds() ?? constrainBoundsToDisplay(getDesktopLyricWindowState());
+  });
+
+  ipcRegistry.registerHandler('desktop-lyric:cancel-resize', (event, sessionId: string) => {
+    return desktopLyricDragController.cancel(sessionId, event.sender, 'resize');
+  });
+
+  ipcRegistry.registerHandler('desktop-lyric:cancel-drag', (event, sessionId: string) => {
+    return desktopLyricDragController.cancel(sessionId, event.sender);
   });
 
   ipcRegistry.registerListener('desktop-lyric:command', (_event, command: DesktopLyricCommand) => {
@@ -1048,6 +1087,7 @@ export const cleanupDesktopLyric = () => {
     desktopLyricForwardRestoreTimer = null;
   }
   unbindMainWindowEvents();
+  desktopLyricDragController.dispose();
 };
 
 if (app.isReady()) {

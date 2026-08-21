@@ -17,6 +17,7 @@ import {
 } from '../plugins';
 import { getKvStorage } from '../storage/kv';
 import log from '../logger';
+import { WindowDragController } from '../windowDrag';
 
 type PluginWindowRecord = {
   pluginId: string;
@@ -25,6 +26,7 @@ type PluginWindowRecord = {
   window: BrowserWindow;
   persistTimer: ReturnType<typeof setTimeout> | null;
   usesPanel: boolean;
+  dragController: WindowDragController;
 };
 
 const pluginWindowUrl = process.env.VITE_DEV_SERVER_URL;
@@ -49,6 +51,27 @@ const clamp = (value: number, min: number, max: number) => Math.min(max, Math.ma
 
 const canUseWindow = (win: BrowserWindow | null | undefined): win is BrowserWindow =>
   Boolean(win && !win.isDestroyed());
+
+const cancelPluginWindowInteraction = (record: PluginWindowRecord) => {
+  const cancelled = record.dragController.cancelAll();
+  let bounds = cancelled.bounds;
+  if (!bounds && canUseWindow(record.window)) {
+    try {
+      bounds = record.window.getBounds();
+    } catch {
+      bounds = null;
+    }
+  }
+  try {
+    if (!record.window.webContents.isDestroyed()) {
+      if (bounds) record.window.webContents.send('plugins:window:cancel-interaction', bounds);
+      else record.window.webContents.send('plugins:window:cancel-interaction');
+    }
+  } catch {
+    // The renderer may have gone away while the window was being closed.
+  }
+  return bounds;
+};
 
 const clearDockRestoreTimers = () => {
   if (!pluginWindowDockTimers.length) return;
@@ -254,7 +277,18 @@ const createPluginWindow = async (
     window: win,
     persistTimer: null,
     usesPanel,
+    dragController: null as unknown as WindowDragController,
   };
+  record.dragController = new WindowDragController({
+    getWindow: () => record.window,
+    getTargetWebContents: () => record.window.webContents,
+    canStart: (kind) =>
+      kind === 'resize'
+        ? record.descriptor.resizable !== false
+        : record.descriptor.movable !== false,
+    transformBounds: (bounds) => constrainBounds(record.descriptor, bounds),
+    persist: () => schedulePersistBounds(record),
+  });
   pluginWindows.set(getWindowKey(descriptor.pluginId, descriptor.id), record);
 
   win.once('ready-to-show', () => {
@@ -266,6 +300,8 @@ const createPluginWindow = async (
   win.on('move', () => schedulePersistBounds(record));
   win.on('resize', () => schedulePersistBounds(record));
   win.on('closed', () => {
+    cancelPluginWindowInteraction(record);
+    record.dragController.dispose();
     if (record.persistTimer) clearTimeout(record.persistTimer);
     const key = getWindowKey(descriptor.pluginId, descriptor.id);
     if (pluginWindows.get(key) === record) pluginWindows.delete(key);
@@ -274,6 +310,8 @@ const createPluginWindow = async (
     win.removeAllListeners();
   });
   win.webContents.on('render-process-gone', (_event, details) => {
+    cancelPluginWindowInteraction(record);
+    record.dragController.dispose();
     if (!isPluginRendererGoneFailureReason(details.reason)) return;
 
     log.warn('[PluginWindow] renderer process gone', {
@@ -399,6 +437,7 @@ export const showPluginWindow = async (
 export const hidePluginWindow = (pluginId: string, windowId: string): PluginWindowResult => {
   const record = getRecord(pluginId, windowId);
   if (!record || !canUseWindow(record.window)) return { ok: false, error: '插件窗口未打开' };
+  cancelPluginWindowInteraction(record);
   record.window.hide();
   return { ok: true, window: record.descriptor, bounds: record.window.getBounds() };
 };
@@ -499,6 +538,89 @@ export const getPluginWindowContext = (pluginId: string, windowId: string) => {
 };
 
 export const registerPluginWindowHandlers = () => {
+  const isMovable = (record: PluginWindowRecord) => record.descriptor.movable !== false;
+  const isResizable = (record: PluginWindowRecord) => record.descriptor.resizable !== false;
+
+  ipcRegistry.registerHandler(
+    'plugins:window:start-drag',
+    (event, pluginId: string, windowId: string, sessionId: string) => {
+      const record = getRecord(pluginId, windowId);
+      if (!record || !canUseWindow(record.window)) return false;
+      if (!isMovable(record)) {
+        record.dragController.clearSession(sessionId, event.sender);
+        return false;
+      }
+      return record.dragController.start(sessionId, event.sender);
+    },
+  );
+  ipcRegistry.registerListener(
+    'plugins:window:drag-move',
+    (event, pluginId: string, windowId: string, sessionId: string, x: number, y: number) => {
+      const record = getRecord(pluginId, windowId);
+      if (!record || !canUseWindow(record.window)) return;
+      if (!isMovable(record)) {
+        record.dragController.clearSession(sessionId, event.sender);
+        return;
+      }
+      record.dragController.move(sessionId, event.sender, x, y);
+    },
+  );
+  ipcRegistry.registerHandler(
+    'plugins:window:end-drag',
+    (event, pluginId: string, windowId: string, sessionId: string) => {
+      const record = getRecord(pluginId, windowId);
+      if (!record || !canUseWindow(record.window)) return null;
+      if (!isMovable(record)) {
+        record.dragController.clearSession(sessionId, event.sender);
+        return null;
+      }
+      return record.dragController.end(sessionId, event.sender) ?? null;
+    },
+  );
+  ipcRegistry.registerHandler(
+    'plugins:window:cancel-drag',
+    (event, pluginId: string, windowId: string, sessionId: string) => {
+      const record = getRecord(pluginId, windowId);
+      if (!record || !canUseWindow(record.window)) return null;
+      if (!isMovable(record)) {
+        record.dragController.clearSession(sessionId, event.sender);
+        return null;
+      }
+      return record.dragController.cancel(sessionId, event.sender) ?? null;
+    },
+  );
+  ipcRegistry.registerHandler(
+    'plugins:window:start-resize',
+    (event, pluginId: string, windowId: string, sessionId: string) => {
+      const record = getRecord(pluginId, windowId);
+      if (!record || !canUseWindow(record.window) || !isResizable(record)) return false;
+      return record.dragController.start(sessionId, event.sender, 'resize');
+    },
+  );
+  ipcRegistry.registerListener(
+    'plugins:window:resize',
+    (event, pluginId: string, windowId: string, sessionId: string, bounds: PluginWindowBounds) => {
+      const record = getRecord(pluginId, windowId);
+      if (!record || !canUseWindow(record.window) || !isResizable(record)) return;
+      record.dragController.resize(sessionId, event.sender, bounds);
+    },
+  );
+  ipcRegistry.registerHandler(
+    'plugins:window:end-resize',
+    (event, pluginId: string, windowId: string, sessionId: string) => {
+      const record = getRecord(pluginId, windowId);
+      if (!record || !canUseWindow(record.window) || !isResizable(record)) return null;
+      return record.dragController.end(sessionId, event.sender, 'resize') ?? null;
+    },
+  );
+  ipcRegistry.registerHandler(
+    'plugins:window:cancel-resize',
+    (event, pluginId: string, windowId: string, sessionId: string) => {
+      const record = getRecord(pluginId, windowId);
+      if (!record || !canUseWindow(record.window) || !isResizable(record)) return null;
+      return record.dragController.cancel(sessionId, event.sender, 'resize') ?? null;
+    },
+  );
   ipcRegistry.registerHandler(
     'plugins:window:show',
     (_event, pluginId: string, windowId: string, options) =>

@@ -15,6 +15,7 @@ import type {
   PluginWindowShowOptions,
   PluginShowOnTopOptions,
   PluginHostWindowTarget,
+  PluginWindowResizeOptions,
 } from '../../../shared/plugins';
 import * as icons from '@/icons';
 import { usePlayerStore } from '@/stores/player';
@@ -123,6 +124,24 @@ export interface EchoPluginContext {
     hide: (windowId: string) => Promise<unknown>;
     close: (windowId: string) => Promise<unknown>;
     move: (windowId: string, bounds: Partial<PluginWindowBounds>) => Promise<unknown>;
+    drag: {
+      start: (windowId: string, sessionId: string) => Promise<boolean>;
+      move: (windowId: string, sessionId: string, x: number, y: number) => void;
+      end: (windowId: string, sessionId: string) => Promise<unknown>;
+      cancel: (windowId: string, sessionId: string) => Promise<unknown>;
+      bind: (windowId: string, element: HTMLElement) => () => void;
+    };
+    resize: {
+      start: (windowId: string, sessionId: string) => Promise<boolean>;
+      resize: (windowId: string, sessionId: string, bounds: PluginWindowBounds) => void;
+      end: (windowId: string, sessionId: string) => Promise<unknown>;
+      cancel: (windowId: string, sessionId: string) => Promise<unknown>;
+      bind: (
+        windowId: string,
+        element: HTMLElement,
+        options?: PluginWindowResizeOptions,
+      ) => () => void;
+    };
     getBounds: (windowId: string) => Promise<unknown>;
     setIgnoreMouseEvents: (windowId: string, ignore: boolean) => Promise<unknown>;
     showOnTop: (windowId: string, options?: PluginShowOnTopOptions) => Promise<unknown>;

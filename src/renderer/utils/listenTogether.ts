@@ -931,15 +931,20 @@ export const mapListenTogetherRemotePlayback = (
 
 export const extractListenTogetherRoomId = (payload: unknown, depth = 0): string => {
   if (depth > 6) return '';
-  if (typeof payload === 'string' || typeof payload === 'number') {
-    const candidate = String(payload).trim();
-    return /^\d{6,}$/.test(candidate) ? candidate : '';
+  // Some endpoint variants return the room ID directly instead of wrapping it
+  // in an object. Only allow this at the top level; nested numeric fields may
+  // be timestamps such as join_time.
+  if (depth === 0 && (typeof payload === 'string' || typeof payload === 'number')) {
+    return String(payload).trim();
   }
   const record = asListenTogetherRecord(payload);
   if (!record) return '';
   const direct = readString(record, 'groupid', 'group_id', 'room_id', 'roomid');
   if (direct) return direct;
+  // Only recurse into nested records. Numeric fields such as join_time are
+  // timestamps, not room IDs, and must never be treated as a fallback ID.
   for (const value of Object.values(record)) {
+    if (!value || typeof value !== 'object') continue;
     const nested = extractListenTogetherRoomId(value, depth + 1);
     if (nested) return nested;
   }

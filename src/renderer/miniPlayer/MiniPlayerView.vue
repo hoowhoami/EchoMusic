@@ -34,6 +34,7 @@ import { MINI_PLAYER_DIMENSIONS } from '../../shared/mini-player';
 import { DEFAULT_PLAYER_VOLUME, buildPlaybackClockSnapshot } from '../../shared/playback';
 import { createLyricTimeline, findLyricIndexAtTimeMs } from '@/composables/useLyricTimeline';
 import { createStableLyricIndex } from '@/composables/useStableLyricIndex';
+import { useWindowDrag } from '@/composables/useWindowDrag';
 
 // 卡片折叠/展开高度，源自共享尺寸常量，保证与主进程窗口尺寸一致、不漂移
 const cardCollapsedHeight = `${MINI_PLAYER_DIMENSIONS.controlsHeight}px`;
@@ -366,47 +367,27 @@ const handlePointerLeave = () => {
   isHovered.value = false;
 };
 
-// 自定义窗口拖动：用屏幕坐标增量驱动，替代 -webkit-app-region: drag（后者会吞掉拖拽区
-// pointer 事件导致 hover 闪烁）。在卡片空白处按下即可拖动；按钮/进度条/音量等交互元素不触发。
-let dragStartScreenX = 0;
-let dragStartScreenY = 0;
-let dragStartWinX = 0;
-let dragStartWinY = 0;
-let isDraggingWindow = false;
-
-const handleDragPointerDown = async (event: PointerEvent) => {
-  if (isWayland) return;
-  // 只响应鼠标左键；交互元素（带 .no-drag）不触发拖动
-  if (event.button !== 0) return;
-  if ((event.target as HTMLElement)?.closest('.no-drag')) return;
-  // currentTarget 在 await 之后会被置空，需在同步阶段先取出元素与坐标
-  const el = event.currentTarget as HTMLElement;
-  const pointerId = event.pointerId;
-  const startScreenX = event.screenX;
-  const startScreenY = event.screenY;
-  const bounds = await window.electron?.miniPlayer?.getBounds?.();
-  if (!bounds) return;
-  dragStartScreenX = startScreenX;
-  dragStartScreenY = startScreenY;
-  dragStartWinX = bounds.x;
-  dragStartWinY = bounds.y;
-  isDraggingWindow = true;
-  el.setPointerCapture(pointerId);
-};
-
-const handleDragPointerMove = (event: PointerEvent) => {
-  if (!isDraggingWindow) return;
-  const nextX = dragStartWinX + (event.screenX - dragStartScreenX);
-  const nextY = dragStartWinY + (event.screenY - dragStartScreenY);
-  window.electron?.miniPlayer?.move(nextX, nextY);
-};
-
-const handleDragPointerUp = (event: PointerEvent) => {
-  if (!isDraggingWindow) return;
-  isDraggingWindow = false;
-  const el = event.currentTarget as HTMLElement;
-  if (el.hasPointerCapture(event.pointerId)) el.releasePointerCapture(event.pointerId);
-};
+// 在卡片空白处按下即可拖动；按钮/进度条/音量等交互元素不触发。
+const {
+  onPointerDown: handleDragPointerDown,
+  onPointerMove: handleDragPointerMove,
+  onPointerUp: handleDragPointerUp,
+  onPointerCancel: handleDragPointerCancel,
+  onPointerLeave: handleDragPointerLeave,
+} = useWindowDrag({
+  adapter: {
+    start: (sessionId) =>
+      window.electron?.miniPlayer?.startDrag(sessionId) ?? Promise.resolve(false),
+    move: (sessionId, event) =>
+      window.electron?.miniPlayer?.move(sessionId, event.screenX, event.screenY),
+    end: (sessionId) => window.electron?.miniPlayer?.endDrag(sessionId) ?? Promise.resolve(null),
+    cancel: (sessionId) =>
+      window.electron?.miniPlayer?.cancelDrag(sessionId) ?? Promise.resolve(null),
+  },
+  sessionPrefix: 'mini-player',
+  disabled: () => isWayland,
+  isTargetDraggable: (target) => !(target as HTMLElement | null)?.closest('.no-drag'),
+});
 
 // 音量：点击图标=静音切换；悬停展开竖向滑块，可拖动或滚轮微调。
 const clearVolumeCloseTimer = () => {
@@ -843,7 +824,8 @@ onUnmounted(() => {
       @pointerdown="handleDragPointerDown"
       @pointermove="handleDragPointerMove"
       @pointerup="handleDragPointerUp"
-      @pointercancel="handleDragPointerUp"
+      @pointercancel="handleDragPointerCancel"
+      @pointerleave="handleDragPointerLeave"
     >
       <div class="mini-controls">
         <div class="mini-left-actions">

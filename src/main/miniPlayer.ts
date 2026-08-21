@@ -22,6 +22,7 @@ import {
 import { getMainWindow, hideMainWindow, showMainWindow } from './window';
 import { getActiveWindowMode, setActiveWindowMode } from './window/mode';
 import { getMainAppSettings, setMainAppSetting } from './storage/settings';
+import { WindowDragController } from './windowDrag';
 
 const MINI_PLAYER_WIDTH = MINI_PLAYER_DIMENSIONS.width;
 const MINI_PLAYER_HEIGHT = MINI_PLAYER_DIMENSIONS.collapsedHeight;
@@ -61,6 +62,17 @@ const canUseWindow = (win: BrowserWindow | null): win is BrowserWindow =>
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 
 export const getMiniPlayerWindow = () => miniPlayerWindow;
+
+const miniPlayerDragController = new WindowDragController({
+  getWindow: getMiniPlayerWindow,
+  getTargetWebContents: () => getMiniPlayerWindow()?.webContents ?? null,
+  transformBounds: (bounds) => ({
+    ...bounds,
+    width: MINI_PLAYER_WIDTH,
+    height: miniPlayerExpanded ? MINI_PLAYER_EXPANDED_HEIGHT : MINI_PLAYER_HEIGHT,
+  }),
+  persist: () => persistMiniPlayerBounds(),
+});
 
 const shouldUseMiniPlayerPanel = () => process.platform === 'darwin' && miniPlayerAlwaysOnTop;
 
@@ -571,6 +583,11 @@ export const ensureMiniPlayerWindow = async () => {
     sendSnapshot();
   });
 
+  win.webContents.on('render-process-gone', () => {
+    miniPlayerDragController.dispose();
+    miniPlayerDragController.clear();
+  });
+
   win.once('ready-to-show', () => {
     syncMiniPlayerPresentation();
     scheduleMiniPlayerPresentationSync();
@@ -590,6 +607,7 @@ export const ensureMiniPlayerWindow = async () => {
     clearMiniPlayerPresentationTimers();
     clearMiniPlayerDockRestoreTimers();
     clearCollapseTimer();
+    miniPlayerDragController.dispose();
     if (persistBoundsTimer) {
       clearTimeout(persistBoundsTimer);
       persistBoundsTimer = null;
@@ -665,6 +683,7 @@ export const toggleMiniPlayerWindow = async () => {
 };
 
 export const destroyMiniPlayerWindow = () => {
+  miniPlayerDragController.dispose();
   const win = getMiniPlayerWindow();
   if (!win || win.isDestroyed()) return;
   clearMiniPlayerPresentationTimers();
@@ -816,23 +835,20 @@ export const registerMiniPlayerHandlers = () => {
     return snapshot;
   });
 
-  // 自定义拖动：渲染层用 pointer 事件计算新坐标后下发（取代 -webkit-app-region: drag，
-  // 后者会吞掉拖拽区的 pointer 事件导致 hover 闪烁）
-  ipcRegistry.registerListener('mini-player:move', (_event, x: number, y: number) => {
-    const win = getMiniPlayerWindow();
-    if (!win || win.isDestroyed()) return;
-    // 使用固定宽高避免 Windows DPI 缩放导致的尺寸舍入累积
-    const height = miniPlayerExpanded ? MINI_PLAYER_EXPANDED_HEIGHT : MINI_PLAYER_HEIGHT;
-    win.setBounds(
-      {
-        x: Math.round(x),
-        y: Math.round(y),
-        width: MINI_PLAYER_WIDTH,
-        height,
-      },
-      false,
-    );
-    persistMiniPlayerBounds();
+  ipcRegistry.registerHandler('mini-player:start-drag', (event, sessionId: string) => {
+    return miniPlayerDragController.start(sessionId, event.sender);
+  });
+  ipcRegistry.registerListener(
+    'mini-player:move',
+    (event, sessionId: string, x: number, y: number) => {
+      miniPlayerDragController.move(sessionId, event.sender, x, y);
+    },
+  );
+  ipcRegistry.registerHandler('mini-player:end-drag', (event, sessionId: string) => {
+    return miniPlayerDragController.end(sessionId, event.sender);
+  });
+  ipcRegistry.registerHandler('mini-player:cancel-drag', (event, sessionId: string) => {
+    return miniPlayerDragController.cancel(sessionId, event.sender);
   });
 
   ipcRegistry.registerListener('mini-player:command', (_event, command: MiniPlayerCommand) => {

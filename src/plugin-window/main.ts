@@ -18,6 +18,8 @@ import type {
   PluginWindowDescriptor,
   PluginShowOnTopOptions,
   PluginHostWindowTarget,
+  PluginWindowBounds,
+  PluginWindowResizeOptions,
 } from '../shared/plugins';
 import type { IconifyIcon } from '@iconify/types';
 import type { AudioSpectrumFrame, AudioSpectrumOptions } from '../shared/audio-spectrum';
@@ -25,6 +27,10 @@ import { createFontApi } from '../shared/font';
 import * as icons from '../renderer/icons';
 import { createThemedIconCoverUrl } from '../renderer/utils/themedCover';
 import { installInputBehaviorGuard } from '../renderer/utils/inputBehaviorGuard';
+import {
+  createWindowDragHandlers,
+  createWindowResizeHandlers,
+} from '../renderer/plugins/runtime/hostApis';
 
 const DEFAULT_PLUGIN_WINDOW_COVER_COLOR = '#0071e3';
 
@@ -124,6 +130,24 @@ interface EchoPluginWindowContext {
     move: (
       bounds: Partial<{ x: number; y: number; width: number; height: number }>,
     ) => Promise<unknown>;
+    drag: {
+      start: (sessionId: string) => Promise<boolean>;
+      move: (sessionId: string, x: number, y: number) => void;
+      end: (sessionId: string) => Promise<unknown>;
+      cancel: (sessionId: string) => Promise<unknown>;
+      bind: (element: HTMLElement) => () => void;
+    };
+    resize: {
+      start: (sessionId: string) => Promise<boolean>;
+      resize: (
+        sessionId: string,
+        bounds: { x: number; y: number; width: number; height: number },
+      ) => void;
+      end: (sessionId: string) => Promise<unknown>;
+      cancel: (sessionId: string) => Promise<unknown>;
+      bind: (element: HTMLElement, options?: PluginWindowResizeOptions) => () => void;
+    };
+    onCancelInteraction: (listener: (bounds?: PluginWindowBounds) => void) => () => void;
     hide: () => Promise<unknown>;
     close: () => Promise<unknown>;
     setIgnoreMouseEvents: (ignore: boolean) => Promise<unknown>;
@@ -504,6 +528,9 @@ const createPluginSqliteApi = (descriptor: EchoPluginDescriptor) => {
   };
 };
 
+const onPluginWindowInteractionCancel = (listener: (bounds?: PluginWindowBounds) => void) =>
+  window.electron.plugins?.windows.onCancelInteraction(listener) ?? (() => undefined);
+
 const buildContext = (
   descriptor: EchoPluginDescriptor,
   windowDescriptor: PluginWindowDescriptor,
@@ -602,6 +629,130 @@ const buildContext = (
     move: (bounds) =>
       window.electron.plugins?.windows.move(descriptor.id, windowDescriptor.id, bounds) ??
       Promise.resolve(null),
+    onCancelInteraction: onPluginWindowInteractionCancel,
+    drag: {
+      start: (sessionId) =>
+        window.electron.plugins?.windows.startDrag(descriptor.id, windowDescriptor.id, sessionId) ??
+        Promise.resolve(false),
+      move: (sessionId, x, y) =>
+        window.electron.plugins?.windows.dragMove(
+          descriptor.id,
+          windowDescriptor.id,
+          sessionId,
+          x,
+          y,
+        ),
+      end: (sessionId) =>
+        window.electron.plugins?.windows.endDrag(descriptor.id, windowDescriptor.id, sessionId) ??
+        Promise.resolve(null),
+      cancel: (sessionId) =>
+        window.electron.plugins?.windows.cancelDrag(
+          descriptor.id,
+          windowDescriptor.id,
+          sessionId,
+        ) ?? Promise.resolve(null),
+      bind: (element: HTMLElement) =>
+        createWindowDragHandlers(
+          {
+            start: (sessionId) =>
+              window.electron.plugins?.windows.startDrag(
+                descriptor.id,
+                windowDescriptor.id,
+                sessionId,
+              ) ?? Promise.resolve(false),
+            move: (sessionId, event) =>
+              window.electron.plugins?.windows.dragMove(
+                descriptor.id,
+                windowDescriptor.id,
+                sessionId,
+                event.screenX,
+                event.screenY,
+              ),
+            end: (sessionId) =>
+              window.electron.plugins?.windows.endDrag(
+                descriptor.id,
+                windowDescriptor.id,
+                sessionId,
+              ) ?? Promise.resolve(null),
+            cancel: (sessionId) =>
+              window.electron.plugins?.windows.cancelDrag(
+                descriptor.id,
+                windowDescriptor.id,
+                sessionId,
+              ) ?? Promise.resolve(null),
+          },
+          `plugin-window:${windowDescriptor.id}`,
+          (cancel) =>
+            onPluginWindowInteractionCancel(() => {
+              // Main already rolled the native window back; only clear renderer state here.
+              cancel();
+            }),
+        )(element),
+    },
+    resize: {
+      start: (sessionId) =>
+        window.electron.plugins?.windows.startResize(
+          descriptor.id,
+          windowDescriptor.id,
+          sessionId,
+        ) ?? Promise.resolve(false),
+      resize: (sessionId, bounds) =>
+        window.electron.plugins?.windows.resize(
+          descriptor.id,
+          windowDescriptor.id,
+          sessionId,
+          bounds,
+        ),
+      end: (sessionId) =>
+        window.electron.plugins?.windows.endResize(descriptor.id, windowDescriptor.id, sessionId) ??
+        Promise.resolve(null),
+      cancel: (sessionId) =>
+        window.electron.plugins?.windows.cancelResize(
+          descriptor.id,
+          windowDescriptor.id,
+          sessionId,
+        ) ?? Promise.resolve(null),
+      bind: (element, options) =>
+        createWindowResizeHandlers(
+          {
+            getBounds: async () => {
+              const result = await window.electron.plugins?.windows.getBounds(
+                descriptor.id,
+                windowDescriptor.id,
+              );
+              return result?.ok ? (result.bounds ?? null) : null;
+            },
+            start: (sessionId) =>
+              window.electron.plugins?.windows.startResize(
+                descriptor.id,
+                windowDescriptor.id,
+                sessionId,
+              ) ?? Promise.resolve(false),
+            resize: (sessionId, bounds) =>
+              window.electron.plugins?.windows.resize(
+                descriptor.id,
+                windowDescriptor.id,
+                sessionId,
+                bounds,
+              ),
+            end: (sessionId) =>
+              window.electron.plugins?.windows.endResize(
+                descriptor.id,
+                windowDescriptor.id,
+                sessionId,
+              ) ?? Promise.resolve(null),
+            cancel: (sessionId) =>
+              window.electron.plugins?.windows.cancelResize(
+                descriptor.id,
+                windowDescriptor.id,
+                sessionId,
+              ) ?? Promise.resolve(null),
+          },
+          `plugin-window-resize:${windowDescriptor.id}`,
+          options,
+          (cancel) => onPluginWindowInteractionCancel(() => cancel()),
+        )(element),
+    },
     hide: () =>
       window.electron.plugins?.windows.hide(descriptor.id, windowDescriptor.id) ??
       Promise.resolve(null),

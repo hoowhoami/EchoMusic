@@ -2,6 +2,7 @@ import type { LocalAudioMetadata } from './local-music';
 
 export type PluginWindowType = 'floating';
 export type PluginWindowPosition = 'center' | 'top-center';
+export type PluginWindowResizeDirection = 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w' | 'nw';
 
 export interface PluginWindowManifest {
   id: string;
@@ -61,6 +62,15 @@ export interface PluginWindowBounds {
   y: number;
   width: number;
   height: number;
+}
+
+/** Options for binding a plugin window resize handle to an element. */
+export interface PluginWindowResizeOptions {
+  direction?: PluginWindowResizeDirection;
+  minWidth?: number;
+  minHeight?: number;
+  maxWidth?: number;
+  maxHeight?: number;
 }
 
 export interface PluginWindowShowOptions {

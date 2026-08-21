@@ -305,6 +305,7 @@ export interface IElectronAPI {
   };
   desktopLyric: {
     getSnapshot: () => Promise<DesktopLyricSnapshot>;
+    getSessionNonce: () => Promise<string | null>;
     getWindow: () => Promise<{ x: number; y: number; width: number; height: number }>;
     getHover: () => Promise<boolean>;
     show: () => Promise<DesktopLyricSnapshot>;
@@ -314,9 +315,28 @@ export interface IElectronAPI {
     updateWindow: (
       payload: DesktopLyricWindowBoundsUpdate,
     ) => Promise<{ x: number; y: number; width: number; height: number }>;
-    move: (x: number, y: number, width: number, height: number) => void;
-    resize: (payload: Required<DesktopLyricWindowBoundsUpdate>) => void;
-    endDrag: () => Promise<{ x: number; y: number; width: number; height: number }>;
+    startDrag: (sessionId: string) => Promise<boolean>;
+    move: (sessionId: string, x: number, y: number) => void;
+    startResize: (sessionId: string) => Promise<boolean>;
+    resize: (sessionId: string, payload: Required<DesktopLyricWindowBoundsUpdate>) => void;
+    endDrag: (
+      sessionId: string,
+    ) => Promise<{ x: number; y: number; width: number; height: number } | null>;
+    endResize: (
+      sessionId: string,
+    ) => Promise<{ x: number; y: number; width: number; height: number } | null>;
+    cancelResize: (
+      sessionId: string,
+    ) => Promise<{ x: number; y: number; width: number; height: number } | null>;
+    cancelDrag: (
+      sessionId: string,
+    ) => Promise<{ x: number; y: number; width: number; height: number } | null>;
+    onCancelDrag: (
+      func: (bounds: { x: number; y: number; width: number; height: number } | null) => void,
+    ) => () => void;
+    onCancelResize: (
+      func: (bounds: { x: number; y: number; width: number; height: number } | null) => void,
+    ) => () => void;
     syncSnapshot: (payload: DesktopLyricSnapshotPatch) => void;
     onSnapshot: (func: (snapshot: DesktopLyricSnapshotMessage) => void) => () => void;
     setIgnoreMouseEvents: (ignore: boolean) => void;
@@ -340,7 +360,14 @@ export interface IElectronAPI {
     setExpanded: (expanded: boolean) => Promise<MiniPlayerSnapshot>;
     setAlwaysOnTop: (alwaysOnTop: boolean) => Promise<MiniPlayerSnapshot>;
     getBounds: () => Promise<{ x: number; y: number; width: number; height: number }>;
-    move: (x: number, y: number) => void;
+    startDrag: (sessionId: string) => Promise<boolean>;
+    move: (sessionId: string, x: number, y: number) => void;
+    endDrag: (
+      sessionId: string,
+    ) => Promise<{ x: number; y: number; width: number; height: number } | null>;
+    cancelDrag: (
+      sessionId: string,
+    ) => Promise<{ x: number; y: number; width: number; height: number } | null>;
     applyExpandBounds: () => Promise<MiniPlayerSnapshot>;
     onSnapshot: (func: (snapshot: MiniPlayerSnapshot) => void) => () => void;
     command: (command: MiniPlayerCommand) => void;
@@ -441,6 +468,26 @@ export interface IElectronAPI {
         windowId: string,
         bounds: Partial<PluginWindowBounds>,
       ) => Promise<PluginWindowResult>;
+      startDrag: (pluginId: string, windowId: string, sessionId: string) => Promise<boolean>;
+      dragMove: (
+        pluginId: string,
+        windowId: string,
+        sessionId: string,
+        x: number,
+        y: number,
+      ) => void;
+      endDrag: (pluginId: string, windowId: string, sessionId: string) => Promise<unknown>;
+      cancelDrag: (pluginId: string, windowId: string, sessionId: string) => Promise<unknown>;
+      startResize: (pluginId: string, windowId: string, sessionId: string) => Promise<boolean>;
+      resize: (
+        pluginId: string,
+        windowId: string,
+        sessionId: string,
+        bounds: PluginWindowBounds,
+      ) => void;
+      endResize: (pluginId: string, windowId: string, sessionId: string) => Promise<unknown>;
+      cancelResize: (pluginId: string, windowId: string, sessionId: string) => Promise<unknown>;
+      onCancelInteraction: (listener: (bounds?: PluginWindowBounds) => void) => () => void;
       getBounds: (pluginId: string, windowId: string) => Promise<PluginWindowResult>;
       setIgnoreMouseEvents: (
         pluginId: string,

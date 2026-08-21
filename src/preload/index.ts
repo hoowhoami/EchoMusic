@@ -461,6 +461,8 @@ contextBridge.exposeInMainWorld('electron', {
   desktopLyric: {
     getSnapshot: () =>
       ipcRenderer.invoke('desktop-lyric:get-snapshot') as Promise<DesktopLyricSnapshot>,
+    getSessionNonce: () =>
+      ipcRenderer.invoke('desktop-lyric:get-session-nonce') as Promise<string | null>,
     getWindow: () =>
       ipcRenderer.invoke('desktop-lyric:get-window') as Promise<{
         x: number;
@@ -480,17 +482,58 @@ contextBridge.exposeInMainWorld('electron', {
         'desktop-lyric:update-window',
         payload,
       ),
-    move: (x: number, y: number, width: number, height: number) =>
-      ipcRenderer.send('desktop-lyric:move', x, y, width, height),
-    resize: (payload: Required<DesktopLyricWindowBoundsUpdate>) =>
-      sendWithPlainPayload('desktop-lyric:resize', payload),
-    endDrag: () =>
-      ipcRenderer.invoke('desktop-lyric:end-drag') as Promise<{
+    startDrag: (sessionId: string) =>
+      ipcRenderer.invoke('desktop-lyric:start-drag', sessionId) as Promise<boolean>,
+    move: (sessionId: string, x: number, y: number) =>
+      ipcRenderer.send('desktop-lyric:move', sessionId, x, y),
+    startResize: (sessionId: string) =>
+      ipcRenderer.invoke('desktop-lyric:start-resize', sessionId) as Promise<boolean>,
+    resize: (sessionId: string, payload: Required<DesktopLyricWindowBoundsUpdate>) =>
+      sendWithPlainPayload('desktop-lyric:resize', sessionId, payload),
+    endDrag: (sessionId: string) =>
+      ipcRenderer.invoke('desktop-lyric:end-drag', sessionId) as Promise<{
         x: number;
         y: number;
         width: number;
         height: number;
       }>,
+    endResize: (sessionId: string) =>
+      ipcRenderer.invoke('desktop-lyric:end-resize', sessionId) as Promise<{
+        x: number;
+        y: number;
+        width: number;
+        height: number;
+      }>,
+    cancelResize: (sessionId: string) =>
+      ipcRenderer.invoke('desktop-lyric:cancel-resize', sessionId) as Promise<{
+        x: number;
+        y: number;
+        width: number;
+        height: number;
+      } | null>,
+    cancelDrag: (sessionId: string) =>
+      ipcRenderer.invoke('desktop-lyric:cancel-drag', sessionId) as Promise<{
+        x: number;
+        y: number;
+        width: number;
+        height: number;
+      } | null>,
+    onCancelDrag: (
+      func: (bounds: { x: number; y: number; width: number; height: number } | null) => void,
+    ) => {
+      const listener = (_event: Electron.IpcRendererEvent, bounds: unknown) =>
+        func(bounds as { x: number; y: number; width: number; height: number } | null);
+      ipcRenderer.on('desktop-lyric:cancel-drag', listener);
+      return () => ipcRenderer.removeListener('desktop-lyric:cancel-drag', listener);
+    },
+    onCancelResize: (
+      func: (bounds: { x: number; y: number; width: number; height: number } | null) => void,
+    ) => {
+      const listener = (_event: Electron.IpcRendererEvent, bounds: unknown) =>
+        func(bounds as { x: number; y: number; width: number; height: number } | null);
+      ipcRenderer.on('desktop-lyric:cancel-resize', listener);
+      return () => ipcRenderer.removeListener('desktop-lyric:cancel-resize', listener);
+    },
     syncSnapshot: (payload: DesktopLyricSnapshotPatch) =>
       sendWithPlainPayload('desktop-lyric:sync-snapshot', payload),
     onSnapshot: (func: (snapshot: DesktopLyricSnapshotMessage) => void) => {
@@ -553,7 +596,24 @@ contextBridge.exposeInMainWorld('electron', {
         width: number;
         height: number;
       }>,
-    move: (x: number, y: number) => ipcRenderer.send('mini-player:move', x, y),
+    startDrag: (sessionId: string) =>
+      ipcRenderer.invoke('mini-player:start-drag', sessionId) as Promise<boolean>,
+    move: (sessionId: string, x: number, y: number) =>
+      ipcRenderer.send('mini-player:move', sessionId, x, y),
+    endDrag: (sessionId: string) =>
+      ipcRenderer.invoke('mini-player:end-drag', sessionId) as Promise<{
+        x: number;
+        y: number;
+        width: number;
+        height: number;
+      } | null>,
+    cancelDrag: (sessionId: string) =>
+      ipcRenderer.invoke('mini-player:cancel-drag', sessionId) as Promise<{
+        x: number;
+        y: number;
+        width: number;
+        height: number;
+      } | null>,
     applyExpandBounds: () =>
       ipcRenderer.invoke('mini-player:apply-expand-bounds') as Promise<MiniPlayerSnapshot>,
     onSnapshot: (func: (snapshot: MiniPlayerSnapshot) => void) => {
@@ -1013,6 +1073,37 @@ contextBridge.exposeInMainWorld('electron', {
           windowId,
           bounds,
         ),
+      startDrag: (pluginId: string, windowId: string, sessionId: string) =>
+        ipcRenderer.invoke(
+          'plugins:window:start-drag',
+          pluginId,
+          windowId,
+          sessionId,
+        ) as Promise<boolean>,
+      dragMove: (pluginId: string, windowId: string, sessionId: string, x: number, y: number) =>
+        ipcRenderer.send('plugins:window:drag-move', pluginId, windowId, sessionId, x, y),
+      endDrag: (pluginId: string, windowId: string, sessionId: string) =>
+        ipcRenderer.invoke('plugins:window:end-drag', pluginId, windowId, sessionId),
+      cancelDrag: (pluginId: string, windowId: string, sessionId: string) =>
+        ipcRenderer.invoke('plugins:window:cancel-drag', pluginId, windowId, sessionId),
+      startResize: (pluginId: string, windowId: string, sessionId: string) =>
+        ipcRenderer.invoke(
+          'plugins:window:start-resize',
+          pluginId,
+          windowId,
+          sessionId,
+        ) as Promise<boolean>,
+      resize: (pluginId: string, windowId: string, sessionId: string, bounds: PluginWindowBounds) =>
+        sendWithPlainPayload('plugins:window:resize', pluginId, windowId, sessionId, bounds),
+      endResize: (pluginId: string, windowId: string, sessionId: string) =>
+        ipcRenderer.invoke('plugins:window:end-resize', pluginId, windowId, sessionId),
+      cancelResize: (pluginId: string, windowId: string, sessionId: string) =>
+        ipcRenderer.invoke('plugins:window:cancel-resize', pluginId, windowId, sessionId),
+      onCancelInteraction: (listener: (bounds?: PluginWindowBounds) => void) => {
+        const wrapped = (_event: unknown, bounds?: PluginWindowBounds) => listener(bounds);
+        ipcRenderer.on('plugins:window:cancel-interaction', wrapped);
+        return () => ipcRenderer.removeListener('plugins:window:cancel-interaction', wrapped);
+      },
       getBounds: (pluginId: string, windowId: string) =>
         ipcRenderer.invoke(
           'plugins:window:get-bounds',
