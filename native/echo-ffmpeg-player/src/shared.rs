@@ -332,7 +332,7 @@ impl SharedAudio {
 
     pub fn set_normalization_gain_db(&self, gain_db: f32) {
         let gain_db = if gain_db.is_finite() {
-            gain_db.clamp(-24.0, 24.0)
+            gain_db.clamp(-40.0, 24.0)
         } else {
             0.0
         };

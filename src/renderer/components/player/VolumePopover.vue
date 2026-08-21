@@ -31,7 +31,7 @@ const handleWheel = (e: WheelEvent) => {
   e.stopPropagation();
 
   const normalized = Math.sign(e.deltaY) * Math.min(Math.abs(e.deltaY), 120);
-  const step = (normalized / 120) * 0.05;
+  const step = (normalized / 120) * 5;
   const direction = isMac ? 1 : -1;
   player.adjustVolume(step * direction);
 
@@ -69,13 +69,13 @@ const handleWheel = (e: WheelEvent) => {
           @click.stop="toggleMute"
         >
           <Icon v-if="player.volume === 0" :icon="iconVolume3" width="22" height="22" />
-          <Icon v-else-if="player.volume <= 0.5" :icon="iconVolume1" width="22" height="22" />
+          <Icon v-else-if="player.volume <= 50" :icon="iconVolume1" width="22" height="22" />
           <Icon v-else :icon="iconVolume2" width="22" height="22" />
         </Button>
       </template>
       <div class="vol-body">
         <SliderRoot
-          :model-value="[player.volume * 100]"
+          :model-value="[player.volume]"
           :max="100"
           orientation="vertical"
           class="vol-slider"
@@ -86,7 +86,7 @@ const handleWheel = (e: WheelEvent) => {
           </SliderTrack>
           <SliderThumb class="vol-thumb" />
         </SliderRoot>
-        <span class="vol-value">{{ Math.round(player.volume * 100) }}</span>
+        <span class="vol-value">{{ Math.round(player.volume) }}</span>
       </div>
     </Popover>
   </div>

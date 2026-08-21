@@ -226,7 +226,7 @@ impl Task for SetNormalizationGainTask {
 
     fn compute(&mut self) -> napi::Result<Self::Output> {
         with_runtime(|runtime| {
-            runtime.dsp_settings.normalization_gain_db = self.gain_db.clamp(-24.0, 24.0) as f32;
+            runtime.dsp_settings.normalization_gain_db = self.gain_db.clamp(-40.0, 24.0) as f32;
             sync_current_session_dsp_settings(runtime);
             update_runtime_audio_graph(runtime);
             Ok(())

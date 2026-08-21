@@ -532,7 +532,7 @@ export class PlayerEngine {
   }
 
   setVolume(value: number): number {
-    const next = clamp(value, 0, 1);
+    const next = clamp(value, 0, 100);
     this.volumeValue = next;
     void player?.setVolume(next)?.catch((error: unknown) => {
       logger.warn('PlayerEngine', 'set volume failed', { error: String(error) });
@@ -541,7 +541,7 @@ export class PlayerEngine {
   }
 
   fadeTo(value: number, durationMs = 0): Promise<void> {
-    const to = clamp(value, 0, 1);
+    const to = clamp(value, 0, 100);
     const from = this.volumeValue;
     this.volumeValue = to;
     if (durationMs <= 0) {
@@ -653,7 +653,7 @@ export class PlayerEngine {
     if (peak > 0 && peak * gain > 0.95) {
       gain = 0.95 / peak;
     }
-    return clamp(gain, 0.1, 3.0);
+    return clamp(gain, 0.01, 3.0);
   }
 
   private resetNormalizationGain(): void {

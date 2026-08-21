@@ -12,7 +12,7 @@ export const createAudioManager = (
 ) => {
   const normalizeVolume = (value: number, fallback = DEFAULT_PLAYER_VOLUME) => {
     const candidate = Number.isFinite(value) ? value : fallback;
-    return clampNumber(Number.isFinite(candidate) ? candidate : DEFAULT_PLAYER_VOLUME, 0, 1);
+    return clampNumber(Number.isFinite(candidate) ? candidate : DEFAULT_PLAYER_VOLUME, 0, 100);
   };
 
   const rememberVolume = (value = state.volume) => {

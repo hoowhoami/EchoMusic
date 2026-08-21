@@ -1,6 +1,7 @@
 export type PlayMode = 'sequential' | 'list' | 'random' | 'single';
 
-export const DEFAULT_PLAYER_VOLUME = 0.5;
+/** User volume percentage. 100 is the source level; values above 100 are not used by the UI. */
+export const DEFAULT_PLAYER_VOLUME = 50;
 
 export type PlaybackClockReason =
   | 'tick'

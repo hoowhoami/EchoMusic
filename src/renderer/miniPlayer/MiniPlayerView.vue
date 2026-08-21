@@ -77,7 +77,7 @@ const activeShellDirection = computed(() => {
 });
 
 const volumePercent = computed(() =>
-  Math.round(Math.min(1, Math.max(0, playback.value?.volume ?? 0)) * 100),
+  Math.round(Math.min(100, Math.max(0, playback.value?.volume ?? 0))),
 );
 
 const progressPercent = computed(() => {
@@ -487,7 +487,7 @@ const setVolumeFromEvent = (event: PointerEvent, sliderEl: HTMLElement) => {
   const rect = (track ?? sliderEl).getBoundingClientRect();
   if (rect.width <= 0) return;
   const ratio = Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width));
-  setVolume(ratio);
+  setVolume(ratio * 100);
 };
 
 const handleVolumePointerDown = (event: PointerEvent) => {
@@ -518,7 +518,7 @@ const handleVolumeWheel = (event: WheelEvent) => {
   clearVolumeCloseTimer();
   openVolume();
   const normalized = Math.sign(event.deltaY) * Math.min(Math.abs(event.deltaY), 120);
-  const step = (normalized / 120) * 0.05;
+  const step = (normalized / 120) * 5;
   const direction = isMac ? 1 : -1;
   adjustVolume(step * direction);
   scheduleVolumeClose(1200);

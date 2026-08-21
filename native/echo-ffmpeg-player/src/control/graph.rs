@@ -235,7 +235,7 @@ fn apply_audio_graph_parameter_patch_to_draft(
             Ok(())
         }
         "normalization" if name == "gain" => {
-            let value = patch.value.clamp(-24.0, 24.0) as f32;
+            let value = patch.value.clamp(-40.0, 24.0) as f32;
             if (draft.dsp_settings.normalization_gain_db - value).abs() < f32::EPSILON {
                 return Ok(());
             }

@@ -482,9 +482,9 @@ export const executeShortcutCommand = (command: ShortcutCommand) => {
     playerStore.toggleLyricView(true);
     lyricStore.sourceDialogOpen = true;
   } else if (command === 'volumeUp') {
-    playerStore.adjustVolume(0.05);
+    playerStore.adjustVolume(5);
   } else if (command === 'volumeDown') {
-    playerStore.adjustVolume(-0.05);
+    playerStore.adjustVolume(-5);
   } else if (command === 'toggleMute') {
     playerStore.toggleMute();
   } else if (command === 'toggleFavorite') {

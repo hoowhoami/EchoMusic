@@ -75,7 +75,7 @@ export function registerPlayerIpc(ref: PlayerRef): void {
   });
 
   ipcRegistry.registerHandler('player:set-volume', async (_e, volume: number) => {
-    await ref.current?.setVolume(Math.max(0, volume) * 100);
+    await ref.current?.setVolume(Math.max(0, Math.min(100, volume)));
   });
 
   ipcRegistry.registerHandler('player:set-speed', async (_e, speed: number) => {
@@ -122,7 +122,7 @@ export function registerPlayerIpc(ref: PlayerRef): void {
   ipcRegistry.registerHandler(
     'player:fade',
     async (_e, from: number, to: number, durationMs: number) => {
-      await ref.current?.fade(Math.max(0, from) * 100, Math.max(0, to) * 100, durationMs);
+      await ref.current?.fade(from, to, durationMs);
     },
   );
 
@@ -133,14 +133,14 @@ export function registerPlayerIpc(ref: PlayerRef): void {
   ipcRegistry.registerHandler(
     'player:pause-with-fade',
     async (_e, savedVolume: number, durationMs: number) => {
-      await ref.current?.pauseWithFade(Math.max(0, savedVolume) * 100, durationMs);
+      await ref.current?.pauseWithFade(savedVolume, durationMs);
     },
   );
 
   ipcRegistry.registerHandler(
     'player:play-with-fade',
     async (_e, targetVolume: number, durationMs: number) => {
-      await ref.current?.playWithFade(Math.max(0, targetVolume) * 100, durationMs);
+      await ref.current?.playWithFade(targetVolume, durationMs);
     },
   );
 

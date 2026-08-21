@@ -311,7 +311,7 @@ fn graph_node_parameters(
             name: "gain".to_string(),
             value: format!("{:.2}", settings.normalization_gain_db),
             unit: Some("dB".to_string()),
-            min: Some(-24.0),
+            min: Some(-40.0),
             max: Some(24.0),
             runtime_editable: true,
         }],

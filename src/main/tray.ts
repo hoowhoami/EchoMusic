@@ -133,7 +133,7 @@ const createPlaybackMenuItems = (): MenuItemConstructorOptions[] => [
   },
   { type: 'separator' },
   {
-    label: `音量 ${Math.round(playbackState.volume * 100)}%`,
+    label: `音量 ${Math.round(playbackState.volume)}%`,
     enabled: false,
   },
   {

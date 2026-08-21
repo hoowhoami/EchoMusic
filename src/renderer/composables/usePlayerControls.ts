@@ -104,14 +104,14 @@ export function usePlayerControls() {
 
   // ── 音量 ──
   const volumeIcon = computed(() => {
-    if (player.volume > 0.5) return iconVolume2;
+    if (player.volume > 50) return iconVolume2;
     if (player.volume > 0) return iconVolume1;
     return iconVolumeX;
   });
 
   const handleVolumeChange = (value: number[] | undefined) => {
     if (!value?.length) return;
-    player.setVolume(value[0] / 100);
+    player.setVolume(value[0]);
   };
 
   const toggleMute = () => {
