@@ -237,6 +237,12 @@ const validateManifestCapabilities = (manifest: EchoPluginManifest) => {
   if (capabilities.sqlite !== undefined && typeof capabilities.sqlite !== 'boolean') {
     return 'manifest.capabilities.sqlite 必须是布尔值';
   }
+  if (
+    capabilities.unrestrictedNetwork !== undefined &&
+    typeof capabilities.unrestrictedNetwork !== 'boolean'
+  ) {
+    return 'manifest.capabilities.unrestrictedNetwork 必须是布尔值';
+  }
   if (capabilities.webServer !== undefined && typeof capabilities.webServer !== 'boolean') {
     return 'manifest.capabilities.webServer 必须是布尔值';
   }

@@ -78,6 +78,8 @@ import type {
   PluginMarketplaceSourceListResult,
   PluginMarketplaceSourceMutationResult,
   PluginMarketplaceSourcePatch,
+  PluginNetworkRequestOptions,
+  PluginNetworkResponse,
   PluginOpenDialogOptions,
   PluginProcessLaunchOptions,
   PluginProcessLaunchResult,
@@ -555,6 +557,14 @@ export interface IElectronAPI {
         options: PluginProcessLaunchOptions,
       ) => Promise<PluginProcessLaunchResult>;
       terminate: (pluginId: string, pid: number) => Promise<PluginProcessTerminateResult>;
+    };
+    net: {
+      request: (
+        pluginId: string,
+        requestId: string,
+        options: PluginNetworkRequestOptions,
+      ) => Promise<PluginNetworkResponse>;
+      cancel: (pluginId: string, requestId: string) => Promise<boolean>;
     };
     webServer: {
       listen: (

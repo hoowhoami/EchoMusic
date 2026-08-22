@@ -87,6 +87,8 @@ import type {
   PluginMarketplaceSourceListResult,
   PluginMarketplaceSourceMutationResult,
   PluginMarketplaceSourcePatch,
+  PluginNetworkRequestOptions,
+  PluginNetworkResponse,
   PluginOpenDialogOptions,
   PluginProcessLaunchOptions,
   PluginProcessLaunchResult,
@@ -1221,6 +1223,22 @@ contextBridge.exposeInMainWorld('electron', {
           pluginId,
           pid,
         ) as Promise<PluginProcessTerminateResult>,
+    },
+    net: {
+      request: (pluginId: string, requestId: string, options: PluginNetworkRequestOptions) => {
+        const { body, ...requestOptions } = options;
+        const requestBody =
+          body instanceof ArrayBuffer || ArrayBuffer.isView(body) ? body : toPlainIpcPayload(body);
+        return ipcRenderer.invoke(
+          'plugins:net:request',
+          pluginId,
+          requestId,
+          toPlainIpcPayload(requestOptions),
+          requestBody,
+        ) as Promise<PluginNetworkResponse>;
+      },
+      cancel: (pluginId: string, requestId: string) =>
+        ipcRenderer.invoke('plugins:net:cancel', pluginId, requestId) as Promise<boolean>,
     },
     webServer: {
       listen: (pluginId: string, options?: PluginWebServerListenOptions) =>

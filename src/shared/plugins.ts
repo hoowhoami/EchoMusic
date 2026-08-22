@@ -348,6 +348,68 @@ export type PluginProcessTerminateResult =
       error: string;
     };
 
+export type PluginNetworkHeader = [name: string, value: string];
+
+export type PluginNetworkHeaders = PluginNetworkHeader[] | Record<string, string | string[]>;
+
+export type PluginNetworkJsonValue =
+  | null
+  | string
+  | number
+  | boolean
+  | PluginNetworkJsonValue[]
+  | { [key: string]: PluginNetworkJsonValue };
+
+export type PluginNetworkRequestBody =
+  | string
+  | PluginNetworkJsonValue[]
+  | { [key: string]: PluginNetworkJsonValue }
+  | ArrayBuffer
+  | ArrayBufferView
+  | {
+      type: 'base64';
+      data: string;
+    };
+
+export type PluginNetworkResponseType = 'json' | 'text' | 'arrayBuffer';
+
+export interface PluginNetworkTlsOptions {
+  /** Defaults to true, matching Node's TLS behavior. */
+  rejectUnauthorized?: boolean;
+  /** Overrides the TLS SNI server name without changing the HTTP Host header. */
+  servername?: string;
+}
+
+/** Main-process request options backed by Axios' Node.js adapter. */
+export interface PluginNetworkRequestOptions {
+  url: string;
+  method?: string;
+  headers?: PluginNetworkHeaders;
+  body?: PluginNetworkRequestBody;
+  /** Response decoding mode. Defaults to json. */
+  responseType?: PluginNetworkResponseType;
+  /** Request timeout. Defaults to 30 seconds; 0 disables it. */
+  timeoutMs?: number;
+  /** Maximum buffered response size. Defaults to 32 MiB; 0 disables the limit. */
+  maxResponseBytes?: number;
+  /** Maximum redirects to follow. Defaults to 5; 0 disables redirects. */
+  maxRedirects?: number;
+  /** Whether to decompress gzip/deflate/br responses. Defaults to true. */
+  decompress?: boolean;
+  tls?: PluginNetworkTlsOptions;
+}
+
+export type PluginNetworkResponseData = PluginNetworkJsonValue | string | ArrayBuffer;
+
+export interface PluginNetworkResponse<T = PluginNetworkResponseData> {
+  url: string;
+  status: number;
+  statusText: string;
+  /** Axios-normalized response headers. Header names are lowercase. */
+  headers: Record<string, string | string[]>;
+  data: T;
+}
+
 export interface PluginWebServerListenOptions {
   port?: number;
   host?: '127.0.0.1' | 'localhost';
@@ -575,6 +637,7 @@ export interface EchoPluginManifest {
     lyrics?: boolean;
     process?: boolean;
     sqlite?: boolean;
+    unrestrictedNetwork?: boolean;
     webServer?: boolean;
   };
   contributes?: {

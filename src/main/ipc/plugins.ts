@@ -1,5 +1,5 @@
 import { ipcRegistry } from './registry';
-import { BrowserWindow, dialog, type OpenDialogOptions } from 'electron';
+import { BrowserWindow, dialog, type OpenDialogOptions, type WebContents } from 'electron';
 import type {
   PluginAssetSourceResult,
   PluginAppIconRefreshResult,
@@ -22,6 +22,9 @@ import type {
   PluginMarketplaceSourceListResult,
   PluginMarketplaceSourceMutationResult,
   PluginMarketplaceSourcePatch,
+  PluginNetworkRequestBody,
+  PluginNetworkRequestOptions,
+  PluginNetworkResponse,
   PluginOpenDialogOptions,
   PluginProcessLaunchOptions,
   PluginProcessLaunchResult,
@@ -77,6 +80,7 @@ import {
   listPlugins,
   launchPluginProcess,
   markPluginStartup,
+  normalizePluginId,
   openPluginSqliteDatabaseForPlugin,
   openPluginDirectory,
   patchPluginMarketplaceSource,
@@ -87,6 +91,7 @@ import {
   readPluginWindowTextAsset,
   removePluginMarketplaceSource,
   reportPluginFailure,
+  requestPluginNetworkForPlugin,
   respondPluginWebServerRequestForPlugin,
   setPluginData,
   setPluginActiveSession,
@@ -123,6 +128,45 @@ import {
 import { refreshTray } from '../tray';
 import log from '../logger';
 import type { IpcContext } from './types';
+
+interface ActivePluginNetworkRequest {
+  ownerId: number;
+  pluginId: string;
+  controller: AbortController;
+}
+
+const activePluginNetworkRequests = new Map<string, ActivePluginNetworkRequest>();
+const activePluginNetworkRequestCounts = new Map<string, number>();
+const trackedPluginNetworkOwners = new WeakSet<WebContents>();
+const MAX_CONCURRENT_PLUGIN_NETWORK_REQUESTS = 64;
+
+const getPluginNetworkRequestKey = (ownerId: number, pluginId: string, requestId: string) =>
+  JSON.stringify([ownerId, pluginId, requestId]);
+
+const releasePluginNetworkRequest = (key: string, expectedRequest: ActivePluginNetworkRequest) => {
+  if (activePluginNetworkRequests.get(key) !== expectedRequest) return false;
+  activePluginNetworkRequests.delete(key);
+  const activeRequestCount = activePluginNetworkRequestCounts.get(expectedRequest.pluginId) ?? 0;
+  if (activeRequestCount <= 1) {
+    activePluginNetworkRequestCounts.delete(expectedRequest.pluginId);
+  } else {
+    activePluginNetworkRequestCounts.set(expectedRequest.pluginId, activeRequestCount - 1);
+  }
+  return true;
+};
+
+const trackPluginNetworkOwner = (webContents: WebContents) => {
+  if (trackedPluginNetworkOwners.has(webContents)) return;
+  trackedPluginNetworkOwners.add(webContents);
+  const ownerId = webContents.id;
+  webContents.once('destroyed', () => {
+    for (const [key, request] of activePluginNetworkRequests) {
+      if (request.ownerId !== ownerId) continue;
+      request.controller.abort();
+      releasePluginNetworkRequest(key, request);
+    }
+  });
+};
 
 const sanitizeDialogOptions = (
   options: PluginOpenDialogOptions | undefined,
@@ -345,6 +389,62 @@ export const registerPluginHandlers = (context: IpcContext) => {
     'plugins:process:terminate',
     (_event, pluginId: string, pid: number): PluginProcessTerminateResult =>
       terminatePluginProcess(pluginId, pid),
+  );
+  ipcRegistry.registerHandler(
+    'plugins:net:request',
+    async (
+      event,
+      pluginId: string,
+      requestId: string,
+      options: Omit<PluginNetworkRequestOptions, 'body'>,
+      body?: PluginNetworkRequestBody,
+    ): Promise<PluginNetworkResponse> => {
+      const normalizedRequestId = String(requestId || '').trim();
+      if (!normalizedRequestId || normalizedRequestId.length > 256) {
+        throw new Error('网络请求 ID 无效');
+      }
+
+      const normalizedPluginId = normalizePluginId(pluginId);
+      const ownerId = event.sender.id;
+      const key = getPluginNetworkRequestKey(ownerId, normalizedPluginId, normalizedRequestId);
+      if (activePluginNetworkRequests.has(key)) throw new Error('网络请求 ID 重复');
+      const activeRequestCount = activePluginNetworkRequestCounts.get(normalizedPluginId) ?? 0;
+      if (activeRequestCount >= MAX_CONCURRENT_PLUGIN_NETWORK_REQUESTS) {
+        throw new Error(
+          `插件原生网络并发请求不能超过 ${MAX_CONCURRENT_PLUGIN_NETWORK_REQUESTS} 个`,
+        );
+      }
+
+      const controller = new AbortController();
+      const activeRequest = { ownerId, pluginId: normalizedPluginId, controller };
+      activePluginNetworkRequests.set(key, activeRequest);
+      activePluginNetworkRequestCounts.set(normalizedPluginId, activeRequestCount + 1);
+      trackPluginNetworkOwner(event.sender);
+      try {
+        return await requestPluginNetworkForPlugin(
+          normalizedPluginId,
+          { ...options, body },
+          controller.signal,
+        );
+      } finally {
+        releasePluginNetworkRequest(key, activeRequest);
+      }
+    },
+  );
+  ipcRegistry.registerHandler(
+    'plugins:net:cancel',
+    (event, pluginId: string, requestId: string): boolean => {
+      const key = getPluginNetworkRequestKey(
+        event.sender.id,
+        normalizePluginId(pluginId),
+        String(requestId || '').trim(),
+      );
+      const request = activePluginNetworkRequests.get(key);
+      if (!request) return false;
+      request.controller.abort();
+      releasePluginNetworkRequest(key, request);
+      return true;
+    },
   );
   ipcRegistry.registerHandler(
     'plugins:web-server:listen',

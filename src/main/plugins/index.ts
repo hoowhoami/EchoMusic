@@ -22,6 +22,8 @@ import type {
   PluginMarketplaceSourceMutationResult,
   PluginMarketplaceSourcePatch,
   PluginMarketplaceStats,
+  PluginNetworkRequestOptions,
+  PluginNetworkResponse,
   PluginReportFailureResult,
   PluginSetSafeModeResult,
   PluginSetEnabledResult,
@@ -78,6 +80,7 @@ import { ensurePluginRoot, isPathInside } from './path';
 import { createPluginFileApi } from './fs';
 import { createPluginProcessApi } from './process';
 import { createPluginInstaller } from './installer';
+import { requestPluginNetwork } from './network';
 import {
   closePluginWebServer,
   closePluginWebServers,
@@ -506,6 +509,26 @@ export const {
 });
 
 export const getPluginDescriptor = (pluginId: string) => findPlugin(pluginId);
+
+export const requestPluginNetworkForPlugin = (
+  pluginId: string,
+  options: PluginNetworkRequestOptions,
+  signal?: AbortSignal,
+): Promise<PluginNetworkResponse> => {
+  if (getPluginSafeMode()) return Promise.reject(new Error('插件安全模式已开启'));
+
+  const plugin = findPlugin(pluginId);
+  if (!plugin) return Promise.reject(new Error('插件不存在'));
+  if (plugin.invalid) return Promise.reject(new Error(plugin.error || '插件无效'));
+  const compatibilityError = getPluginCompatibilityError(plugin);
+  if (compatibilityError) return Promise.reject(new Error(compatibilityError));
+  if (!plugin.enabled) return Promise.reject(new Error('插件未启用'));
+  if (plugin.manifest.capabilities?.unrestrictedNetwork !== true) {
+    return Promise.reject(new Error('插件未声明不受限网络能力'));
+  }
+
+  return requestPluginNetwork(options, signal);
+};
 
 const getPluginWebServerAccessError = (plugin: EchoPluginDescriptor) => {
   if (plugin.invalid) return plugin.error || '插件无效';

@@ -54,6 +54,7 @@ import { createDomApi, createRuntimeUiApi, createScrollApi } from './runtimeUi';
 import { createShortcutsApi } from './shortcuts';
 import { createStyleDisposer } from './styles';
 import { createThemeApi, type PluginThemeApi } from './theme';
+import { createPluginNetworkApi } from './network';
 
 type PluginCallbackRunner = <T>(
   pluginId: string,
@@ -218,9 +219,7 @@ export interface EchoPluginContext {
       options?: { root?: Element | Document; once?: boolean },
     ) => () => void;
   };
-  net: {
-    fetch: typeof fetch;
-  };
+  net: ReturnType<typeof createPluginNetworkApi>;
   icons: typeof icons;
   tasks: ReturnType<typeof createTaskApi>;
   electron: Window['electron'];
@@ -431,9 +430,7 @@ export const createPluginContext = (
       on: (event, handler) => registerPlayerEvent(event, handler),
     },
     dom: createDomApi(descriptor.id, addDisposable, runPluginCallback),
-    net: {
-      fetch: window.fetch.bind(window),
-    },
+    net: createPluginNetworkApi(descriptor, addDisposable),
     icons,
     tasks: createTaskApi(descriptor.id, apiDeps),
     electron: window.electron,

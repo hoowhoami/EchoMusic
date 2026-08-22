@@ -31,6 +31,7 @@ import {
   createWindowDragHandlers,
   createWindowResizeHandlers,
 } from '../renderer/plugins/runtime/hostApis';
+import { createPluginNetworkApi } from '../renderer/plugins/runtime/network';
 
 const DEFAULT_PLUGIN_WINDOW_COVER_COLOR = '#0071e3';
 
@@ -110,6 +111,7 @@ interface EchoPluginWindowContext {
     launch: (options: PluginProcessLaunchOptions) => Promise<PluginProcessLaunchResult>;
     terminate: (pid: number) => Promise<PluginProcessTerminateResult>;
   };
+  net: ReturnType<typeof createPluginNetworkApi>;
   webServer: {
     listen: (
       handler: (request: PluginWebServerRequest) => PluginWebServerHandlerResult,
@@ -612,6 +614,7 @@ const buildContext = (
       window.electron.plugins?.process.terminate(descriptor.id, pid) ??
       Promise.resolve({ ok: false, error: '插件进程 API 不可用' }),
   },
+  net: createPluginNetworkApi(descriptor, addDisposable),
   webServer: createPluginWebServerApi(descriptor),
   sqlite: createPluginSqliteApi(descriptor),
   css: {
