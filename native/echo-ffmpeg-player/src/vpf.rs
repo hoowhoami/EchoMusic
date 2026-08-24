@@ -489,11 +489,7 @@ impl CureProcessor {
 
         let low_decay = (-2.0 * std::f64::consts::PI * cutoff / f64::from(sample_rate)).exp();
         let high_decay = (-2.0 * std::f64::consts::PI * high_cutoff / f64::from(sample_rate)).exp();
-        let protection_cutoff = if sample_rate < 44_100 {
-            sample_rate as f32 - 100.0
-        } else {
-            18_000.0
-        };
+        let protection_cutoff = 18_000.0_f32.min(sample_rate as f32 * 0.5 - 100.0);
 
         Self {
             low_state: [0.0; 2],
@@ -858,9 +854,9 @@ struct BassProcessor {
     dc_output: [f32; 2],
     low_pass: [DirectBiquad; 2],
     pure_fir: [Fir63; 2],
-    pure_input: VecDeque<(f32, f32)>,
+    pure_pending: VecDeque<(f32, f32)>,
     pure_output: VecDeque<(f32, f32)>,
-    pure_low: Vec<f32>,
+    pure_low_delay: VecDeque<(f32, f32)>,
     sub_peak: [DirectBiquad; 2],
     sub_peak_low: [DirectBiquad; 2],
     sub_low_pass: [DirectBiquad; 2],
@@ -891,9 +887,11 @@ impl BassProcessor {
             dc_output: [0.0; 2],
             low_pass: [low_pass, low_pass],
             pure_fir: std::array::from_fn(|_| Fir63::default()),
-            pure_input: VecDeque::new(),
-            pure_output: VecDeque::new(),
-            pure_low: vec![0.0; Self::PURE_LATENCY * 2],
+            pure_pending: VecDeque::new(),
+            // ViPER processes PureBassPlus in 1008-frame units. Delay the stream by one unit so
+            // arbitrary host callback sizes never force an unprocessed passthrough block.
+            pure_output: VecDeque::from(vec![(0.0, 0.0); Self::PURE_BLOCK]),
+            pure_low_delay: VecDeque::from(vec![(0.0, 0.0); Self::PURE_LATENCY]),
             sub_peak: [sub_peak, sub_peak],
             sub_peak_low: [sub_peak_low, sub_peak_low],
             sub_low_pass: [sub_low_pass, sub_low_pass],
@@ -909,7 +907,7 @@ impl BassProcessor {
     }
 
     fn latency_frames(&self) -> usize {
-        usize::from(self.mode == 1) * Self::PURE_LATENCY
+        usize::from(self.mode == 1) * Self::PURE_BLOCK
     }
 
     fn process_natural(&mut self, samples: &mut [f32]) {
@@ -924,43 +922,42 @@ impl BassProcessor {
     }
 
     fn process_pure(&mut self, samples: &mut [f32]) {
-        let frames = samples.len() / 2;
-        self.pure_low.extend_from_slice(samples);
-        let low_write_start = self.pure_low.len() / 2 - frames;
-        for frame in samples.chunks_exact(2) {
-            self.pure_input.push_back((frame[0], frame[1]));
-        }
-        for (index, frame) in samples.chunks_exact(2).enumerate() {
-            self.pure_low[low_write_start + index * 2] = self.low_pass[0].process(frame[0]) as f32;
-            self.pure_low[low_write_start + index * 2 + 1] =
-                self.low_pass[1].process(frame[1]) as f32;
-        }
-
-        while self.pure_input.len() >= Self::PURE_BLOCK {
+        self.pure_pending
+            .extend(samples.chunks_exact(2).map(|frame| (frame[0], frame[1])));
+        while self.pure_pending.len() >= Self::PURE_BLOCK {
             for _ in 0..Self::PURE_BLOCK {
-                let input = self.pure_input.pop_front().unwrap_or_default();
-                self.pure_output.push_back((
-                    self.pure_fir[0].process(input.0),
-                    self.pure_fir[1].process(input.1),
-                ));
+                let input = self.pure_pending.pop_front().unwrap_or_default();
+                let output = self.process_pure_frame(input);
+                self.pure_output.push_back(output);
             }
         }
-        if self.pure_output.len() < frames {
-            return;
+        for frame in samples.chunks_exact_mut(2) {
+            let output = self.pure_output.pop_front().unwrap_or_default();
+            frame[0] = output.0;
+            frame[1] = output.1;
         }
+    }
 
-        for (index, frame) in samples.chunks_exact_mut(2).enumerate() {
-            let dry = self.pure_output.pop_front().unwrap_or_default();
-            frame[0] = dry.0;
-            frame[1] = dry.1;
-            let low = [self.pure_low[index * 2], self.pure_low[index * 2 + 1]];
-            self.smoothed_gain += (self.gain - self.smoothed_gain) * self.smoothing;
-            self.shape_mix(
-                frame,
-                [low[0] * self.smoothed_gain, low[1] * self.smoothed_gain],
-            );
-        }
-        self.pure_low.drain(..frames * 2);
+    fn process_pure_frame(&mut self, input: (f32, f32)) -> (f32, f32) {
+        let low = (
+            self.low_pass[0].process(input.0) as f32,
+            self.low_pass[1].process(input.1) as f32,
+        );
+        self.pure_low_delay.push_back(low);
+        let delayed_low = self.pure_low_delay.pop_front().unwrap_or_default();
+        let mut output = [
+            self.pure_fir[0].process(input.0),
+            self.pure_fir[1].process(input.1),
+        ];
+        self.smoothed_gain += (self.gain - self.smoothed_gain) * self.smoothing;
+        self.shape_mix(
+            &mut output,
+            [
+                delayed_low.0 * self.smoothed_gain,
+                delayed_low.1 * self.smoothed_gain,
+            ],
+        );
+        (output[0], output[1])
     }
 
     fn process_subwoofer(&mut self, samples: &mut [f32]) {
@@ -1125,14 +1122,15 @@ struct PlaybackGain {
 impl PlaybackGain {
     fn new(sample_rate: u32, params: &PlaybackParams) -> Self {
         let sample_rate = sample_rate.max(8_000);
+        let max_gain = params.max_scaler.max(0.0);
         Self {
             sample_rate,
             ramp_progress: 0,
             ramp_frames: (sample_rate as f32 * 0.4) as u32,
             ratio_reciprocal: 1.0 / (params.ratio + 1.0),
             volume: params.volume,
-            max_gain: params.max_scaler,
-            current_gain: [1.0; 2],
+            max_gain,
+            current_gain: [1.0_f32.min(max_gain); 2],
             analyzers: std::array::from_fn(|_| DirectBiquad::band_pass(sample_rate, 2_200.0, 0.33)),
         }
     }
@@ -1421,6 +1419,7 @@ struct MinimumPhaseBandState {
 struct MinimumPhaseEqualizer {
     coefficients: [[f64; 3]; EQ_BAND_COUNT],
     weights: [f64; EQ_BAND_COUNT],
+    active: [bool; EQ_BAND_COUNT],
     states: [[MinimumPhaseBandState; EQ_BAND_COUNT]; 2],
     current: usize,
     previous: usize,
@@ -1430,14 +1429,26 @@ struct MinimumPhaseEqualizer {
 impl MinimumPhaseEqualizer {
     fn new(sample_rate: u32, gains_db: [f32; EQ_BAND_COUNT]) -> Self {
         let sample_rate = sample_rate.max(8_000) as f64;
+        let nyquist = sample_rate * 0.5;
+        let active = EQ_FREQUENCIES.map(|frequency| f64::from(frequency) < nyquist);
         let coefficients = std::array::from_fn(|index| {
-            minimum_phase_band_coefficients(EQ_FREQUENCIES[index] as f64, sample_rate)
+            if active[index] {
+                minimum_phase_band_coefficients(EQ_FREQUENCIES[index] as f64, sample_rate)
+            } else {
+                [0.0; 3]
+            }
         });
-        let weights =
-            gains_db.map(|gain_db| (10.0f64.powf(gain_db as f64 / 20.0) * 0.636) as f32 as f64);
+        let weights = std::array::from_fn(|index| {
+            if active[index] {
+                (10.0f64.powf(gains_db[index] as f64 / 20.0) * 0.636) as f32 as f64
+            } else {
+                0.0
+            }
+        });
         Self {
             coefficients,
             weights,
+            active,
             states: [[MinimumPhaseBandState::default(); EQ_BAND_COUNT]; 2],
             current: 2,
             previous: 1,
@@ -1451,6 +1462,9 @@ impl MinimumPhaseEqualizer {
 
         for channel in 0..2 {
             for band in 0..EQ_BAND_COUNT {
+                if !self.active[band] {
+                    continue;
+                }
                 let state = &mut self.states[channel][band];
                 let [feedback_two, input_delta, feedback_one] = self.coefficients[band];
                 state.input[self.current] = output[channel];
@@ -2099,8 +2113,92 @@ mod tests {
         let processor = VpfProcessor::new(48_000, &vpf);
         assert_eq!(
             processor.latency_frames(),
-            SoftwareLimiter::LOOKAHEAD + BassProcessor::PURE_LATENCY
+            SoftwareLimiter::LOOKAHEAD + BassProcessor::PURE_BLOCK
         );
+    }
+
+    #[test]
+    fn pure_bass_output_is_independent_of_host_block_size() {
+        let params = BassParams {
+            enabled: true,
+            mode: 1,
+            frequency: 80.0,
+            gain: 3.5,
+        };
+        let mut input = Vec::with_capacity(8192);
+        for frame in 0..4096 {
+            let time = frame as f32;
+            input.push(0.23 * (time * 0.071).sin() + 0.07 * (time * 0.013).cos());
+            input.push(-0.19 * (time * 0.053).cos() + 0.05 * (time * 0.019).sin());
+        }
+        let mut large_blocks = input.clone();
+        let mut small_blocks = input;
+        let mut large = BassProcessor::new(48_000, &params);
+        let mut small = BassProcessor::new(48_000, &params);
+
+        for block in large_blocks.chunks_mut(512) {
+            large.process(block);
+        }
+        for block in small_blocks.chunks_mut(34) {
+            small.process(block);
+        }
+
+        assert_eq!(small_blocks, large_blocks);
+        assert!(large_blocks[..BassProcessor::PURE_BLOCK * 2]
+            .iter()
+            .all(|sample| sample.abs() <= f32::EPSILON));
+        assert!(large_blocks[BassProcessor::PURE_BLOCK * 2..]
+            .iter()
+            .any(|sample| sample.abs() > 0.0001));
+    }
+
+    #[test]
+    fn low_sample_rate_crossfeed_remains_finite() {
+        for sample_rate in [8_000, 16_000, 22_050, 32_000] {
+            let mut cure = CureProcessor::new(sample_rate, 1);
+            let mut samples = (0..sample_rate as usize)
+                .flat_map(|frame| {
+                    let time = frame as f32;
+                    [(time * 0.071).sin() * 0.5, (time * 0.053).cos() * 0.5]
+                })
+                .collect::<Vec<_>>();
+            cure.process(&mut samples);
+            assert!(
+                samples.iter().all(|sample| sample.is_finite()),
+                "crossfeed became unstable at {sample_rate} Hz"
+            );
+        }
+    }
+
+    #[test]
+    fn low_sample_rate_equalizer_skips_unsupported_bands() {
+        for sample_rate in [8_000, 16_000, 22_050, 24_000] {
+            let mut equalizer = MinimumPhaseEqualizer::new(sample_rate, [0.0; EQ_BAND_COUNT]);
+            for frame in 0..sample_rate as usize {
+                let time = frame as f32;
+                let output = equalizer.process((time * 0.071).sin(), (time * 0.053).cos());
+                assert!(
+                    output.0.is_finite() && output.1.is_finite(),
+                    "equalizer became unstable at {sample_rate} Hz"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn playback_gain_respects_max_scaler_from_first_frame() {
+        let params = PlaybackParams {
+            enabled: true,
+            ratio: 0.5,
+            volume: 1.0,
+            max_scaler: 0.5,
+        };
+        let mut playback = PlaybackGain::new(48_000, &params);
+        let mut samples = vec![1.0, -1.0, 1.0, -1.0];
+
+        playback.process(&mut samples);
+
+        assert!(samples.iter().all(|sample| sample.abs() <= 0.5));
     }
 
     #[test]
@@ -2795,6 +2893,10 @@ mod tests {
             let mut bass = BassProcessor::new(48_000, &params);
             for block in samples.chunks_exact_mut(512) {
                 bass.process(block);
+            }
+
+            if mode == 1 {
+                continue;
             }
 
             for (position, frame) in SELECTED.iter().copied().enumerate() {

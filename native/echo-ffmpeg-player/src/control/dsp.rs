@@ -89,15 +89,13 @@ pub(crate) fn sync_current_session_dsp_settings(runtime: &PlayerRuntime) {
     }
 }
 
-fn reset_current_filter_if_process_format_changed(runtime: &PlayerRuntime) {
+fn reset_current_filter_for_audio_effect_change(runtime: &PlayerRuntime) {
     let Some(session) = runtime.session.as_ref() else {
         return;
     };
-    if runtime.dsp_settings.requires_stereo_graph() && session.shared.mix_format.channels != 2 {
-        session
-            .shared
-            .reset_filter_for_dsp_change(&runtime.dsp_settings);
-    }
+    session
+        .shared
+        .reset_filter_for_dsp_change(&runtime.dsp_settings);
 }
 
 pub(crate) fn prepare_dsp_settings_for_mix_rate(
@@ -166,8 +164,7 @@ impl Task for SetAudioEffectTask {
             runtime.spatial_file_path = impulse_response_path;
             runtime.dsp_settings.spatial = spatial;
             runtime.dsp_settings.vpf = vpf;
-            sync_current_session_dsp_settings(runtime);
-            reset_current_filter_if_process_format_changed(runtime);
+            reset_current_filter_for_audio_effect_change(runtime);
             update_runtime_audio_graph(runtime);
             emit_runtime_event(
                 runtime,

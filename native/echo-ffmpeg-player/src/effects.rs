@@ -231,7 +231,6 @@ pub fn prepare_spatial_effect(
     }
 
     trim_impulse_response(&mut interleaved, ir_channels);
-    normalize_impulse_response(&mut interleaved, ir_channels);
 
     let responses = split_impulse_channels(&interleaved, ir_channels)
         .into_iter()
@@ -270,27 +269,6 @@ fn trim_impulse_response(samples: &mut Vec<f32>, channels: usize) {
     }
     let keep_frames = (last_active + 1).max(1);
     samples.truncate(keep_frames * channels);
-}
-
-fn normalize_impulse_response(samples: &mut [f32], channels: usize) {
-    let channels = channels.max(1);
-    let mut channel_energy = vec![0.0f32; channels];
-    for frame in samples.chunks_exact(channels) {
-        for (channel, sample) in frame.iter().copied().enumerate() {
-            channel_energy[channel] += sample * sample;
-        }
-    }
-    let energy = channel_energy
-        .into_iter()
-        .map(f32::sqrt)
-        .fold(0.0f32, f32::max);
-    if energy <= f32::EPSILON {
-        return;
-    }
-    let gain = (1.0 / energy).min(8.0);
-    for sample in samples {
-        *sample *= gain;
-    }
 }
 
 fn split_impulse_channels(samples: &[f32], channels: usize) -> Vec<Vec<f32>> {
