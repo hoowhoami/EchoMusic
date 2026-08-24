@@ -134,8 +134,9 @@ setx LIBCLANG_PATH "C:\Program Files\LLVM\bin"
 
    ```bash
    pnpm install
-   cd server && npm install && cd ..
    ```
+
+   > `server` 子模块已作为 pnpm workspace 成员管理，上述命令会自动一并安装其运行依赖，无需再单独进入 `server` 目录执行 `npm install`。
 
    在Linux下，可能会出现如下报错:
 

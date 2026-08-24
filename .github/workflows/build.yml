@@ -185,6 +185,9 @@ jobs:
           # server 是外部子模块，其 package-lock.json 常与 package.json 不同步，
           # 且 devDependencies(tsdown) 与 typescript@4.x 存在 peer 冲突。
           # 运行时只需 --omit=dev 的依赖，故统一用 npm install + --legacy-peer-deps。
+          # 上一步的 pnpm install 会以 workspace 成员身份在 server 内建立符号链接结构，
+          # 必须先清除，保证 electron-builder 打包的是纯 npm 扁平结构。
+          rm -rf node_modules
           npm install --omit=dev --no-audit --no-fund --legacy-peer-deps
 
       - name: Remove server test files
