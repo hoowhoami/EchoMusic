@@ -1,4 +1,5 @@
 use std::{
+    collections::VecDeque,
     sync::{Arc, Condvar, Mutex},
     thread,
     time::Duration,
@@ -104,9 +105,14 @@ impl Drop for CachedPacket {
 }
 
 struct PacketCacheRange {
-    packets: Vec<CachedPacket>,
+    packets: VecDeque<CachedPacket>,
     base_index: u64,
     read_index: u64,
+    cached_bytes: usize,
+    read_bytes: usize,
+    first_time: Option<Duration>,
+    last_time: Option<Duration>,
+    forward_start_time: Option<Duration>,
     eof: bool,
     last_used: u64,
 }
@@ -114,9 +120,14 @@ struct PacketCacheRange {
 impl PacketCacheRange {
     const fn new(base_index: u64, last_used: u64) -> Self {
         Self {
-            packets: Vec::new(),
+            packets: VecDeque::new(),
             base_index,
             read_index: base_index,
+            cached_bytes: 0,
+            read_bytes: 0,
+            first_time: None,
+            last_time: None,
+            forward_start_time: None,
             eof: false,
             last_used,
         }
@@ -211,7 +222,13 @@ impl PacketCache {
                 let range = &mut state.ranges[current_range];
                 let packet = &range.packets[offset];
                 let cloned = packet.clone_packet()?;
+                let packet_size = packet.size;
                 range.read_index = range.read_index.saturating_add(1);
+                range.read_bytes = range.read_bytes.saturating_add(packet_size);
+                range.forward_start_time = range
+                    .packets
+                    .get(offset + 1)
+                    .and_then(|packet| packet.pts.or(packet.end));
                 touch_current_range(&mut state);
                 prune_packet_cache(&mut state, self.options);
                 self.shared.changed.notify_all();
@@ -301,7 +318,7 @@ impl PacketCache {
         };
         state.current_range = range_index;
         let range = &mut state.ranges[range_index];
-        range.read_index = range.base_index.saturating_add(offset as u64);
+        set_packet_cache_read_offset(range, offset);
         touch_current_range(&mut state);
         state.error = None;
         state.pending_seek = None;
@@ -435,7 +452,7 @@ fn run_packet_cache_worker(
                         let current_range = state.current_range;
                         state.total_bytes = state.total_bytes.saturating_add(packet.size);
                         state.next_packet_index = state.next_packet_index.saturating_add(1);
-                        state.ranges[current_range].packets.push(packet);
+                        push_packet_cache_packet(&mut state.ranges[current_range], packet);
                         touch_current_range(&mut state);
                         prune_packet_cache(&mut state, options);
                         shared.changed.notify_all();
@@ -526,23 +543,12 @@ fn scale_duration(duration: Duration, numerator: u32, denominator: u32) -> Durat
     Duration::from_micros(micros.min(u64::MAX as u128) as u64)
 }
 
-fn packet_cache_forward_bytes(range: &PacketCacheRange) -> usize {
-    range
-        .packets
-        .iter()
-        .skip(range.read_index.saturating_sub(range.base_index) as usize)
-        .map(|packet| packet.size)
-        .sum()
+const fn packet_cache_forward_bytes(range: &PacketCacheRange) -> usize {
+    range.cached_bytes.saturating_sub(range.read_bytes)
 }
 
-fn packet_cache_back_bytes(range: &PacketCacheRange) -> usize {
-    let read_offset = range.read_index.saturating_sub(range.base_index) as usize;
-    range
-        .packets
-        .iter()
-        .take(read_offset.min(range.packets.len()))
-        .map(|packet| packet.size)
-        .sum()
+const fn packet_cache_back_bytes(range: &PacketCacheRange) -> usize {
+    range.read_bytes
 }
 
 fn packet_cache_effective_back_bytes(
@@ -563,15 +569,7 @@ fn packet_cache_effective_back_bytes(
 }
 
 fn packet_cache_forward_duration(range: &PacketCacheRange) -> Option<Duration> {
-    let read_offset = range.read_index.saturating_sub(range.base_index) as usize;
-    let mut iter = range.packets.iter().skip(read_offset);
-    let first = iter.next().and_then(|packet| packet.pts.or(packet.end))?;
-    let last = range
-        .packets
-        .iter()
-        .rev()
-        .find_map(|packet| packet.end.or(packet.pts))?;
-    last.checked_sub(first)
+    range.last_time?.checked_sub(range.forward_start_time?)
 }
 
 fn packet_cache_seekable_ranges(state: &PacketCacheState) -> Vec<PacketCacheSeekableRange> {
@@ -579,15 +577,8 @@ fn packet_cache_seekable_ranges(state: &PacketCacheState) -> Vec<PacketCacheSeek
         .ranges
         .iter()
         .filter_map(|range| {
-            let start = range
-                .packets
-                .iter()
-                .find_map(|packet| packet.pts.or(packet.end))?;
-            let end = range
-                .packets
-                .iter()
-                .rev()
-                .find_map(|packet| packet.end.or(packet.pts))?;
+            let start = range.first_time?;
+            let end = range.last_time?;
             (end >= start).then_some(PacketCacheSeekableRange { start, end })
         })
         .collect::<Vec<_>>();
@@ -673,27 +664,28 @@ fn prune_packet_cache_range_back(
     back_bytes: usize,
 ) {
     let range = &mut state.ranges[range_index];
-    let read_offset = range.read_index.saturating_sub(range.base_index) as usize;
-    let mut retained_back = 0usize;
-    let mut keep_from = read_offset.min(range.packets.len());
-
-    while keep_from > 0 {
-        let packet_size = range.packets[keep_from - 1].size;
-        if retained_back.saturating_add(packet_size) > back_bytes {
+    let mut removed_bytes = 0usize;
+    let mut removed_first_time = false;
+    while range.base_index < range.read_index && range.read_bytes > back_bytes {
+        let Some(packet) = range.packets.pop_front() else {
             break;
-        }
-        retained_back = retained_back.saturating_add(packet_size);
-        keep_from -= 1;
+        };
+        removed_first_time |=
+            range.first_time.is_some() && packet.pts.or(packet.end) == range.first_time;
+        removed_bytes = removed_bytes.saturating_add(packet.size);
+        range.cached_bytes = range.cached_bytes.saturating_sub(packet.size);
+        range.read_bytes = range.read_bytes.saturating_sub(packet.size);
+        range.base_index = range.base_index.saturating_add(1);
     }
 
-    if keep_from > 0 {
-        let removed_bytes: usize = range
-            .packets
-            .drain(..keep_from)
-            .map(|packet| packet.size)
-            .sum();
+    if removed_bytes > 0 {
         state.total_bytes = state.total_bytes.saturating_sub(removed_bytes);
-        range.base_index = range.base_index.saturating_add(keep_from as u64);
+    }
+    if removed_first_time {
+        range.first_time = range
+            .packets
+            .iter()
+            .find_map(|packet| packet.pts.or(packet.end));
     }
 }
 
@@ -709,11 +701,7 @@ fn prune_empty_non_current_ranges(state: &mut PacketCacheState) {
 }
 
 fn remove_range(state: &mut PacketCacheState, index: usize) {
-    let removed_bytes: usize = state.ranges[index]
-        .packets
-        .iter()
-        .map(|packet| packet.size)
-        .sum();
+    let removed_bytes = state.ranges[index].cached_bytes;
     state.total_bytes = state.total_bytes.saturating_sub(removed_bytes);
     state.ranges.remove(index);
     if state.current_range > index {
@@ -729,6 +717,38 @@ fn remove_range(state: &mut PacketCacheState, index: usize) {
             .push(PacketCacheRange::new(state.next_packet_index, 0));
         state.current_range = 0;
     }
+}
+
+fn push_packet_cache_packet(range: &mut PacketCacheRange, packet: CachedPacket) {
+    let had_forward_packets = range.read_index < range.base_index + range.packets.len() as u64;
+    let start = packet.pts.or(packet.end);
+    let end = packet.end.or(packet.pts);
+    range.cached_bytes = range.cached_bytes.saturating_add(packet.size);
+    if range.first_time.is_none() {
+        range.first_time = start;
+    }
+    if let Some(end) = end {
+        range.last_time = Some(end);
+    }
+    if !had_forward_packets {
+        range.forward_start_time = start;
+    }
+    range.packets.push_back(packet);
+}
+
+fn set_packet_cache_read_offset(range: &mut PacketCacheRange, offset: usize) {
+    let offset = offset.min(range.packets.len());
+    range.read_index = range.base_index.saturating_add(offset as u64);
+    range.read_bytes = range
+        .packets
+        .iter()
+        .take(offset)
+        .map(|packet| packet.size)
+        .sum();
+    range.forward_start_time = range
+        .packets
+        .get(offset)
+        .and_then(|packet| packet.pts.or(packet.end));
 }
 
 fn set_packet_cache_error(shared: &SharedPacketCache, epoch: u64, error: AudioError) {
@@ -798,14 +818,9 @@ mod tests {
         read_index: u64,
     ) -> PacketCacheState {
         let total_bytes = packets.iter().map(|packet| packet.size).sum();
+        let range = test_range(packets, base_index, read_index, 0);
         PacketCacheState {
-            ranges: vec![PacketCacheRange {
-                packets,
-                base_index,
-                read_index,
-                eof: false,
-                last_used: 0,
-            }],
+            ranges: vec![range],
             current_range: 0,
             next_packet_index: read_index,
             total_bytes,
@@ -817,6 +832,20 @@ mod tests {
             access_clock: 0,
             read_hysteresis: false,
         }
+    }
+
+    fn test_range(
+        packets: Vec<CachedPacket>,
+        base_index: u64,
+        read_index: u64,
+        last_used: u64,
+    ) -> PacketCacheRange {
+        let mut range = PacketCacheRange::new(base_index, last_used);
+        for packet in packets {
+            push_packet_cache_packet(&mut range, packet);
+        }
+        set_packet_cache_read_offset(&mut range, read_index.saturating_sub(base_index) as usize);
+        range
     }
 
     #[test]
@@ -860,7 +889,7 @@ mod tests {
             .with_pause_wait(Some(Duration::from_secs(2)));
 
         assert!(!packet_cache_pause_ready(&state, 0, options));
-        state.ranges[0].packets.push(packet_with_time(1, 2, 100));
+        push_packet_cache_packet(&mut state.ranges[0], packet_with_time(1, 2, 100));
         assert!(packet_cache_pause_ready(&state, 0, options));
     }
 
@@ -929,6 +958,52 @@ mod tests {
     }
 
     #[test]
+    fn packet_cache_back_pruning_updates_incremental_stats() {
+        let mut state = single_range_state(
+            vec![
+                packet_with_time(10, 11, 80),
+                packet_with_time(11, 12, 120),
+                packet_with_time(12, 13, 160),
+            ],
+            5,
+            7,
+        );
+
+        prune_packet_cache_range_back(&mut state, 0, 100);
+
+        let range = &state.ranges[0];
+        assert_eq!(range.base_index, 7);
+        assert_eq!(range.read_index, 7);
+        assert_eq!(packet_cache_back_bytes(range), 0);
+        assert_eq!(packet_cache_forward_bytes(range), 160);
+        assert_eq!(state.total_bytes, 160);
+        assert_eq!(range.first_time, Some(Duration::from_secs(12)));
+        assert_eq!(range.last_time, Some(Duration::from_secs(13)));
+        assert_eq!(range.forward_start_time, Some(Duration::from_secs(12)));
+    }
+
+    #[test]
+    fn packet_cache_back_pruning_preserves_first_time_after_timestamp_less_prefix() {
+        let mut state = single_range_state(
+            vec![
+                packet_without_time(80),
+                packet_with_time(10, 11, 120),
+                packet_with_time(11, 12, 160),
+            ],
+            5,
+            6,
+        );
+
+        prune_packet_cache_range_back(&mut state, 0, 0);
+
+        let range = &state.ranges[0];
+        assert_eq!(range.base_index, 6);
+        assert_eq!(range.first_time, Some(Duration::from_secs(10)));
+        assert_eq!(range.last_time, Some(Duration::from_secs(12)));
+        assert_eq!(state.total_bytes, 280);
+    }
+
+    #[test]
     fn packet_cache_seek_rejects_target_before_retained_window() {
         let state = single_range_state(
             vec![
@@ -971,13 +1046,12 @@ mod tests {
             0,
             2,
         );
-        state.ranges.push(PacketCacheRange {
-            packets: vec![packet_with_time(90, 91, 100), packet_with_time(91, 92, 100)],
-            base_index: 2,
-            read_index: 2,
-            eof: false,
-            last_used: 1,
-        });
+        state.ranges.push(test_range(
+            vec![packet_with_time(90, 91, 100), packet_with_time(91, 92, 100)],
+            2,
+            2,
+            1,
+        ));
         state.current_range = 1;
         state.total_bytes = 400;
 
@@ -995,13 +1069,12 @@ mod tests {
             2,
         );
         state.ranges[0].last_used = 1;
-        state.ranges.push(PacketCacheRange {
-            packets: vec![packet_with_time(90, 91, 100), packet_with_time(91, 92, 100)],
-            base_index: 2,
-            read_index: 2,
-            eof: false,
-            last_used: 2,
-        });
+        state.ranges.push(test_range(
+            vec![packet_with_time(90, 91, 100), packet_with_time(91, 92, 100)],
+            2,
+            2,
+            2,
+        ));
         state.current_range = 1;
         state.total_bytes = 400;
 
@@ -1028,13 +1101,12 @@ mod tests {
             0,
             2,
         );
-        state.ranges.push(PacketCacheRange {
-            packets: vec![packet_with_time(90, 91, 100), packet_with_time(91, 92, 100)],
-            base_index: 2,
-            read_index: 2,
-            eof: false,
-            last_used: 1,
-        });
+        state.ranges.push(test_range(
+            vec![packet_with_time(90, 91, 100), packet_with_time(91, 92, 100)],
+            2,
+            2,
+            1,
+        ));
 
         let ranges = packet_cache_seekable_ranges(&state);
         assert_eq!(
@@ -1063,13 +1135,12 @@ mod tests {
             0,
             2,
         );
-        state.ranges.push(PacketCacheRange {
-            packets: vec![packet_with_time(12, 14, 100), packet_with_time(14, 15, 100)],
-            base_index: 2,
-            read_index: 2,
-            eof: false,
-            last_used: 1,
-        });
+        state.ranges.push(test_range(
+            vec![packet_with_time(12, 14, 100), packet_with_time(14, 15, 100)],
+            2,
+            2,
+            1,
+        ));
 
         let ranges = packet_cache_seekable_ranges(&state);
         assert_eq!(

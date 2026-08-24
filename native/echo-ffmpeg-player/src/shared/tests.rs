@@ -690,6 +690,8 @@ fn gapless_boundary_resets_underrun_counter() {
     for _ in 0..20 {
         shared.record_output_underrun();
     }
+    shared.observe_output_request(240);
+    assert_eq!(shared.output_buffer_target_samples(), 240);
     assert!(shared.push_samples(&[0.1, 0.2, 0.3, 0.4]));
     shared.mark_gapless_boundary(TrackSwitchInfo {
         url: "next.flac".to_string(),
@@ -703,6 +705,34 @@ fn gapless_boundary_resets_underrun_counter() {
     assert_eq!(shared.pop_into(&mut output), 4);
 
     assert_eq!(shared.output_underrun_count(), 0);
+    assert_eq!(shared.output_buffer_target_samples(), 20);
+    assert_eq!(shared.max_output_request_frames(), 0);
+}
+
+#[test]
+fn gapless_boundary_short_read_keeps_new_track_in_underrun_hold() {
+    let shared = SharedAudio::new(
+        MixFormat::stereo_f32(100),
+        0.1,
+        1.0,
+        &DspSettings::default(),
+    );
+    assert!(shared.push_samples(&[0.1, 0.2, 0.3, 0.4]));
+    shared.mark_gapless_boundary(TrackSwitchInfo {
+        url: "next.flac".to_string(),
+        audio_stream_ordinal: None,
+        seq: 7,
+        duration: 3.0,
+    });
+    assert!(shared.push_samples(&[0.5, 0.6]));
+
+    let mut output = [0.0f32; 40];
+    assert_eq!(shared.pop_into(&mut output), 3);
+
+    assert_eq!(shared.current_track_seq(), 7);
+    assert_eq!(shared.output_underrun_count(), 1);
+    assert!(shared.ao_state.ao_underrun());
+    assert_eq!(shared.output_buffer_target_samples(), 40);
 }
 
 #[test]
@@ -947,18 +977,86 @@ fn underrun_counter_alone_does_not_change_ao_target() {
 }
 
 #[test]
-fn decode_resume_keeps_observed_callback_target() {
+fn decode_resume_resets_adaptive_callback_target() {
     let shared = SharedAudio::new(
         MixFormat::stereo_f32(100),
         0.2,
         1.0,
         &DspSettings::default(),
     );
+    let mut output = vec![0.0; 240];
+    assert_eq!(shared.pop_into(&mut output), 0);
+    assert_eq!(shared.output_buffer_target_samples(), 400);
+    assert_eq!(shared.output_underrun_count(), 1);
+
+    shared.reset_for_decode_resume(12.0, &DspSettings::default());
+
+    assert_eq!(shared.output_underrun_count(), 0);
+    assert_eq!(shared.output_buffer_target_samples(), 40);
+    assert_eq!(shared.max_output_request_frames(), 0);
+}
+
+#[test]
+fn decode_resume_keeps_current_device_buffer_as_target_floor() {
+    let shared = SharedAudio::new(
+        MixFormat::stereo_f32(100),
+        0.2,
+        1.0,
+        &DspSettings::default(),
+    );
+    shared.register_output_device_buffer(30, 100);
+    assert_eq!(shared.output_buffer_target_samples(), 60);
     shared.observe_output_request(240);
     assert_eq!(shared.output_buffer_target_samples(), 240);
 
     shared.reset_for_decode_resume(12.0, &DspSettings::default());
 
-    assert_eq!(shared.output_underrun_count(), 0);
+    assert_eq!(shared.output_buffer_target_samples(), 60);
+    assert_eq!(shared.max_output_request_frames(), 0);
+}
+
+#[test]
+fn output_restart_discards_previous_device_and_adaptive_targets() {
+    let shared = SharedAudio::new(
+        MixFormat::stereo_f32(100),
+        0.2,
+        1.0,
+        &DspSettings::default(),
+    );
+    shared.register_output_device_buffer(80, 100);
+    shared.observe_output_request(240);
     assert_eq!(shared.output_buffer_target_samples(), 240);
+
+    shared.prepare_output_start();
+
+    assert_eq!(shared.output_buffer_target_samples(), 40);
+    assert_eq!(shared.max_output_request_frames(), 0);
+
+    shared.register_output_device_buffer(30, 100);
+    assert_eq!(shared.output_buffer_target_samples(), 60);
+}
+
+#[test]
+fn output_restart_prerolls_when_new_device_has_a_larger_buffer() {
+    let shared = SharedAudio::new(
+        MixFormat::stereo_f32(100),
+        0.2,
+        1.0,
+        &DspSettings::default(),
+    );
+    assert!(shared.push_samples(&vec![0.5; 40]));
+
+    shared.prepare_output_start();
+    shared.register_output_device_buffer(30, 100);
+    assert_eq!(shared.output_buffer_target_samples(), 60);
+
+    let mut output = [1.0f32; 8];
+    assert_eq!(shared.pop_into(&mut output), 0);
+    assert_eq!(output, [0.0; 8]);
+    assert!(shared.ao_state.is_buffering());
+
+    assert!(shared.push_samples(&vec![0.5; 20]));
+    assert_eq!(shared.pop_into(&mut output), 4);
+    assert_eq!(output, [0.5; 8]);
+    assert!(!shared.ao_state.is_buffering());
 }

@@ -103,11 +103,21 @@ impl SharedAudio {
     }
 
     pub(super) fn reset_output_buffering_state(&self) {
+        self.reset_adaptive_output_buffer_target();
         self.output_underruns.store(0, Ordering::Release);
         self.ao_state.reset();
+        let target_secs = self.output_buffer_target_secs();
         if let Ok(mut current) = self.output_stats.try_lock() {
             if let Some(stats) = current.as_mut() {
                 stats.underruns = 0.0;
+                stats.ao_buffer_target_secs = target_secs;
+                stats.ao_request_frames = 0.0;
+                stats.software_buffer_secs = (target_secs - stats.device_buffer_secs).max(0.0);
+                stats.delay_secs = target_secs.max(stats.device_buffer_secs);
+                self.output_delay_us.store(
+                    (stats.delay_secs * 1_000_000.0).round() as u64,
+                    Ordering::Release,
+                );
                 self.notify_signal(PlaybackSignal::OutputStats(stats.clone()));
             }
         }

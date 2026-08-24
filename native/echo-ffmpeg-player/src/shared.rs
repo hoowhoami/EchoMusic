@@ -35,6 +35,7 @@ pub struct SharedAudio {
     decoded_queue_changed: Condvar,
     output_ring_capacity: usize,
     configured_output_buffer_samples: usize,
+    output_device_buffer_samples: AtomicUsize,
     output_buffer_target_samples: AtomicUsize,
     max_output_request_samples: AtomicUsize,
     output_demand_since_producer_progress: AtomicUsize,
@@ -123,6 +124,7 @@ impl SharedAudio {
             decoded_queue_changed: Condvar::new(),
             output_ring_capacity,
             configured_output_buffer_samples,
+            output_device_buffer_samples: AtomicUsize::new(0),
             output_buffer_target_samples: AtomicUsize::new(configured_output_buffer_samples),
             max_output_request_samples: AtomicUsize::new(0),
             output_demand_since_producer_progress: AtomicUsize::new(0),
@@ -192,6 +194,13 @@ impl SharedAudio {
         }
         self.output_started.store(false, Ordering::Release);
         self.live_output_delay_us.store(0, Ordering::Release);
+        // Device restarts may change the callback and hardware-buffer geometry.
+        // Drop both the previous device floor and any adaptive underrun growth;
+        // the new backend registers its actual buffer before it starts rendering.
+        self.output_device_buffer_samples
+            .store(0, Ordering::Release);
+        self.reset_output_buffering_state();
+        self.ao_state.begin_preroll();
         // A fresh output stream should apply the current target gain directly
         // rather than ramping from whatever the previous stream last applied.
         self.reset_applied_output_gain();
@@ -608,12 +617,9 @@ impl SharedAudio {
         let (consumed_samples, consumed_source_frames) = self.realtime_output.pop_into(output);
         if consumed_samples > 0 {
             self.output_queue_changed.notify_all();
-            if consumed_samples < output.len()
+            let underrun = consumed_samples < output.len()
                 && !self.decoded_eof.load(Ordering::Acquire)
-                && !self.eof.load(Ordering::Acquire)
-            {
-                self.enter_output_underrun(self.realtime_output.buffered_samples(), output.len());
-            }
+                && !self.eof.load(Ordering::Acquire);
             let consumed_frames = consumed_samples / self.mix_format.channels.max(1);
             let mut boundary_signal = None;
             let post_boundary_samples = if let Ok(mut boundary) = self.gapless_boundary.lock() {
@@ -646,6 +652,11 @@ impl SharedAudio {
             } else {
                 self.played_samples
                     .fetch_add(consumed_source_frames, Ordering::AcqRel);
+            }
+            // Handle a short read after a possible gapless-boundary reset so the
+            // new track keeps its underrun hold instead of immediately clearing it.
+            if underrun {
+                self.enter_output_underrun(self.realtime_output.buffered_samples(), output.len());
             }
             consumed_frames
         } else {
@@ -715,9 +726,51 @@ impl SharedAudio {
         let engine_frames = ((u64::from(device_frames)
             * u64::from(self.mix_format.sample_rate.max(1)))
         .div_ceil(u64::from(device_sample_rate.max(1)))) as usize;
-        self.raise_output_buffer_target(
-            engine_frames.saturating_mul(self.mix_format.channels.max(1)),
-        );
+        let device_samples = engine_frames
+            .saturating_mul(self.mix_format.channels.max(1))
+            .min(self.output_ring_capacity);
+        self.output_device_buffer_samples
+            .store(device_samples, Ordering::Release);
+        self.raise_output_buffer_target(device_samples);
+    }
+
+    pub(super) fn reset_adaptive_output_buffer_target(&self) {
+        let device_samples = self.output_device_buffer_samples.load(Ordering::Acquire);
+        let target = self
+            .configured_output_buffer_samples
+            .max(device_samples)
+            .min(self.output_ring_capacity)
+            .max(1);
+        let current = self.output_buffer_target_samples.load(Ordering::Acquire);
+        if current < target {
+            self.output_buffer_target_samples
+                .fetch_max(target, Ordering::AcqRel);
+        } else if current > target {
+            // Lower only the value this reset observed. If a realtime callback
+            // concurrently raises the target, preserve that newer requirement.
+            let _ = self.output_buffer_target_samples.compare_exchange(
+                current,
+                target,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            );
+        }
+        // The device may have registered a new floor after `target` was
+        // calculated but before the CAS above. Re-read it and restore the floor
+        // with a monotonic update so reset can never leave the target below the
+        // latest device requirement.
+        let latest_device_samples = self.output_device_buffer_samples.load(Ordering::Acquire);
+        let latest_floor = self
+            .configured_output_buffer_samples
+            .max(latest_device_samples)
+            .min(self.output_ring_capacity)
+            .max(1);
+        self.output_buffer_target_samples
+            .fetch_max(latest_floor, Ordering::AcqRel);
+        self.max_output_request_samples.store(0, Ordering::Release);
+        self.output_demand_since_producer_progress
+            .store(0, Ordering::Release);
+        self.output_queue_changed.notify_all();
     }
 
     fn raise_output_buffer_target(&self, required_samples: usize) {
