@@ -1,17 +1,25 @@
 import { defineStore } from 'pinia';
 import logger from '@/utils/logger';
+import router from '@/router';
+import { iconCloudUpload } from '@/icons';
+import {
+  BUILTIN_PLUGIN_ID,
+  createTaskLifecycleActions,
+  createTaskOwner,
+  registerTask,
+} from '@/plugins/taskPanel';
 import {
   activateTaskControl,
   clearTaskControl,
   consumeTaskOpen,
-  createTaskAbortTimer,
   createTaskControlState,
   finishTaskControl,
   requestTaskAbort,
   requestTaskOpen,
 } from '@/tasks/taskControl';
 
-const abortTimer = createTaskAbortTimer();
+const TASK_ID = 'echo:cloud-upload';
+const taskOwner = createTaskOwner(BUILTIN_PLUGIN_ID);
 
 export type CloudUploadStatus = 'idle' | 'running' | 'completed' | 'aborted';
 export type CloudUploadPhase = 'matching' | 'uploading';
@@ -27,25 +35,17 @@ export type CloudUploadMatchStatus =
 export interface CloudUploadItem {
   name: string;
   path: string;
-  /** 标签解析出的歌名（用于上传显示名） */
   title?: string;
-  /** 标签解析出的歌手 */
   artist?: string;
-  /** 标签解析出的时长（秒） */
   duration?: number;
   size: number;
   extension: string;
   modifiedAt: number;
   status: 'pending' | 'matching' | 'uploading' | 'success' | 'failed';
-  /** 匹配到的歌曲 audio_id（未匹配时为 undefined，上游传 0） */
   audioId?: string | number;
-  /** 匹配到的歌曲 album_audio_id */
   albumAudioId?: string | number;
-  /** 曲库关联匹配状态 */
   matchStatus: CloudUploadMatchStatus;
-  /** 曲库关联匹配说明，写入日志用于排查 */
   matchReason?: string;
-  /** 秒传（服务端已存在相同 MD5 的文件） */
   isSecondUpload?: boolean;
   error?: string;
 }
@@ -61,23 +61,29 @@ export interface CloudUploadAbortOptions {
   feedback?: boolean;
 }
 
-/**
- * 云盘上传任务的全局状态，供「上传弹窗」和「任务中心面板」共享。
- *
- * 上传弹窗关闭后任务继续运行，进度在任务面板中实时展示。
- * 完成后停留至手动关闭；面板中止时进入 aborted 反馈 3 秒后自动关闭。
- */
+export interface CloudUploadRun {
+  readonly active: boolean;
+  readonly signal: AbortSignal;
+  updateProgress: (done: number, total: number, item: CloudUploadItem) => boolean;
+  setPhase: (phase: CloudUploadPhase) => boolean;
+  complete: (summary: CloudUploadSummary) => boolean;
+  enterBackground: (abortHandler: () => void) => boolean;
+  abort: (options?: CloudUploadAbortOptions) => boolean;
+  dismiss: () => boolean;
+}
+
+let currentRun: CloudUploadRun | null = null;
+
+/** 云盘上传业务状态。任务展示和运行世代由 CloudUploadRun 统一管理。 */
 export const useCloudUploadStore = defineStore('cloudUpload', {
   state: () => ({
     ...createTaskControlState<CloudUploadOpenMode>('start'),
     status: 'idle' as CloudUploadStatus,
-    /** 当前阶段：匹配 / 上传，供面板区分「匹配中 x/y」「上传中 x/y」 */
     phase: 'matching' as CloudUploadPhase,
     done: 0,
     total: 0,
     summary: null as CloudUploadSummary | null,
     items: [] as CloudUploadItem[],
-    /** 云盘内容变更计数器，供云盘页面刷新列表。 */
     changedRevision: 0,
   }),
 
@@ -108,64 +114,150 @@ export const useCloudUploadStore = defineStore('cloudUpload', {
   },
 
   actions: {
-    start(name: string, count: number, abortHandler: () => void) {
-      abortTimer.clear();
-      this.status = 'running';
-      this.phase = 'matching';
-      this.done = 0;
-      this.total = count;
-      this.summary = null;
-      this.items = [];
-      activateTaskControl(this, abortHandler);
-    },
+    start(count: number, abortHandler: () => void): CloudUploadRun {
+      currentRun?.dismiss();
+      // The returned run methods must retain this Pinia instance.
+      // eslint-disable-next-line @typescript-eslint/no-this-alias
+      const store = this;
+      store.status = 'running';
+      store.phase = 'matching';
+      store.done = 0;
+      store.total = count;
+      store.summary = null;
+      store.items = [];
+      activateTaskControl(store, abortHandler);
 
-    /** 转入后台运行（弹窗关闭但上传不中断时调用） */
-    enterBackground(name: string, abortHandler: () => void) {
-      abortTimer.clear();
-      this.status = 'running';
-      activateTaskControl(this, abortHandler);
-      // done/total/items 已在进度回调中实时更新，直接复用
-    },
-
-    updateProgress(done: number, total: number, item: CloudUploadItem) {
-      this.done = done;
-      this.total = total;
-      const idx = this.items.findIndex((it) => it.path === item.path);
-      if (idx >= 0) {
-        this.items[idx] = { ...item };
-      } else {
-        this.items.push({ ...item });
-      }
-    },
-
-    setPhase(phase: CloudUploadPhase) {
-      this.phase = phase;
-    },
-
-    complete(summary: CloudUploadSummary) {
-      finishTaskControl(this, abortTimer);
-      this.status = 'completed';
-      this.summary = summary;
-    },
-
-    /** 任务面板手动中止 */
-    requestAbort(options: CloudUploadAbortOptions = {}) {
-      requestTaskAbort(this, abortTimer, {
-        canAbort: () => this.status === 'running',
-        feedback: options.feedback,
-        // 立即收敛为 aborted，避免中止流程卡住时任务一直 running
-        markAborted: () => {
-          this.status = 'aborted';
-        },
-        onRequested: () => {
-          logger.info('CloudUpload', '后台上传中止请求', { done: this.done, total: this.total });
-        },
-        // 重新获取 store 实例，避免闭包绑定旧实例（HMR/重建边界更稳）
-        onTimeoutDismiss: () => useCloudUploadStore().dismiss(),
+      const openDetail = async () => {
+        if (router.currentRoute.value.name !== 'cloud') await router.push({ name: 'cloud' });
+        store.requestOpen('detail');
+      };
+      const task = registerTask(taskOwner, {
+        id: TASK_ID,
+        name: `上传到云盘 · ${count || '未知'} 首`,
+        icon: iconCloudUpload,
+        status: 'running',
+        retention: 'transient',
+        progress: { done: 0, total: count, percent: 0, label: store.statusLabel },
+        actions: createTaskLifecycleActions({
+          status: 'running',
+          onDetail: openDetail,
+          onAbort: () => {
+            run.abort();
+          },
+        }),
       });
+
+      const ownsRun = () => currentRun === run;
+      const isRunning = () =>
+        ownsRun() && task.active && !task.signal.aborted && store.status === 'running';
+      const clearState = () => {
+        clearTaskControl(store);
+        store.status = 'idle';
+        store.summary = null;
+        store.items = [];
+      };
+
+      const run: CloudUploadRun = {
+        get active() {
+          return ownsRun() && task.active;
+        },
+        signal: task.signal,
+        updateProgress: (done, total, item) => {
+          if (!isRunning()) return false;
+          store.done = done;
+          store.total = total;
+          const index = store.items.findIndex((candidate) => candidate.path === item.path);
+          if (index >= 0) store.items[index] = { ...item };
+          else store.items.push({ ...item });
+          return task.update({
+            progress: {
+              done,
+              total,
+              percent: store.percent,
+              label: store.statusLabel,
+            },
+          });
+        },
+        setPhase: (phase) => {
+          if (!isRunning()) return false;
+          store.phase = phase;
+          return task.update({
+            progress: {
+              done: store.done,
+              total: store.total,
+              percent: store.percent,
+              label: store.statusLabel,
+            },
+          });
+        },
+        complete: (summary) => {
+          if (!isRunning()) return false;
+          const labels = [`成功 ${summary.success}`];
+          if (summary.failed > 0) labels.push(`失败 ${summary.failed}`);
+          if (summary.secondUpload > 0) labels.push(`秒传 ${summary.secondUpload}`);
+          if (
+            !task.finish('completed', {
+              progress: { label: labels.join(' · ') },
+              actions: createTaskLifecycleActions({
+                status: 'completed',
+                onDetail: openDetail,
+              }),
+            })
+          ) {
+            return false;
+          }
+          finishTaskControl(store);
+          store.status = 'completed';
+          store.summary = summary;
+          return true;
+        },
+        enterBackground: (nextAbortHandler) => {
+          if (!isRunning()) return false;
+          activateTaskControl(store, nextAbortHandler);
+          return true;
+        },
+        abort: (options = {}) => {
+          const requested = requestTaskAbort(store, {
+            canAbort: isRunning,
+            feedback: options.feedback,
+            markAborted: () => {
+              if (!task.finish('aborted', { progress: { label: '已中止' }, actions: [] })) return;
+              store.status = 'aborted';
+            },
+            onRequested: () => {
+              logger.info('CloudUpload', '后台上传中止请求', {
+                done: store.done,
+                total: store.total,
+              });
+            },
+          });
+          if (requested) {
+            task.cancel();
+            if (options.feedback === false) run.dismiss();
+          }
+          return requested;
+        },
+        dismiss: () => {
+          if (!ownsRun()) return false;
+          task.dismiss();
+          clearState();
+          currentRun = null;
+          return true;
+        },
+      };
+
+      currentRun = run;
+      return run;
     },
 
-    /** 触发打开全局上传弹窗 */
+    enterBackground(abortHandler: () => void): boolean {
+      return currentRun?.enterBackground(abortHandler) ?? false;
+    },
+
+    requestAbort(options: CloudUploadAbortOptions = {}): boolean {
+      return currentRun?.abort(options) ?? false;
+    },
+
     requestOpen(mode: CloudUploadOpenMode = 'detail') {
       requestTaskOpen(this, mode);
     },
@@ -178,13 +270,8 @@ export const useCloudUploadStore = defineStore('cloudUpload', {
       this.changedRevision++;
     },
 
-    dismiss() {
-      clearTaskControl(this, abortTimer);
-      this.status = 'idle';
-      this.summary = null;
-      this.items = [];
-      // 任务结束即清理主进程 allow-list（转后台/重开期间不清）
-      void window.electron?.cloud?.clearUploadFiles()?.catch(() => undefined);
+    dismiss(): boolean {
+      return currentRun?.dismiss() ?? false;
     },
   },
 });

@@ -3,12 +3,11 @@ import { storeToRefs } from 'pinia';
 import { iconCloudDownload } from '@/icons';
 import { useUpdateStore } from '@/stores/update';
 import {
-  BUILTIN_PLUGIN_ID,
   createTaskAbortAction,
   createTaskDetailAction,
-  createTaskHandle,
   type TaskAction,
 } from '@/plugins/taskPanel';
+import { createTaskBridge } from './taskBridge';
 
 const TASK_ID = 'echo:update';
 
@@ -19,7 +18,7 @@ const TASK_ID = 'echo:update';
 export const setupUpdateTaskBridge = (): (() => void) => {
   const updateStore = useUpdateStore();
   const { downloadStatus, downloadPercent, downloadError, isChecking } = storeToRefs(updateStore);
-  const handle = createTaskHandle(TASK_ID, BUILTIN_PLUGIN_ID);
+  const task = createTaskBridge(TASK_ID, 'action-required');
 
   const stop = watch(
     [isChecking, downloadStatus, downloadPercent, downloadError],
@@ -33,7 +32,7 @@ export const setupUpdateTaskBridge = (): (() => void) => {
         status === 'error';
 
       if (!active) {
-        handle.dismiss();
+        task.dismiss();
         return;
       }
 
@@ -94,7 +93,7 @@ export const setupUpdateTaskBridge = (): (() => void) => {
         );
       }
 
-      handle.set({
+      task.set({
         name: '更新 EchoMusic',
         icon: iconCloudDownload,
         status: taskStatus,
@@ -106,5 +105,8 @@ export const setupUpdateTaskBridge = (): (() => void) => {
     { immediate: true },
   );
 
-  return stop;
+  return () => {
+    stop();
+    task.dispose();
+  };
 };

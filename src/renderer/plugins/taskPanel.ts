@@ -1,20 +1,28 @@
-import { reactive, computed, ref } from 'vue';
+import { computed, reactive, ref } from 'vue';
 import type {
-  PluginTaskPatch,
+  PluginTaskHandle,
   PluginTaskRegistration,
   TaskAction,
+  TaskRetentionPolicy,
   TaskStatus,
+  TaskTerminalPolicy,
+  TerminalTaskStatus,
 } from '../../shared/tasks';
 import logger from '@/utils/logger';
 
 export type {
   PluginTaskApi,
+  PluginTaskHandle,
   PluginTaskPatch,
   PluginTaskRegistration,
   TaskAction,
   TaskActionVariant,
   TaskProgress,
+  TaskRetention,
+  TaskRetentionPolicy,
   TaskStatus,
+  TaskTerminalPolicy,
+  TerminalTaskStatus,
 } from '../../shared/tasks';
 
 const TASK_STATUS_LABELS: Record<TaskStatus, string> = {
@@ -22,6 +30,18 @@ const TASK_STATUS_LABELS: Record<TaskStatus, string> = {
   completed: '已完成',
   error: '失败',
   aborted: '已中止',
+};
+
+const TRANSIENT_TASK_POLICY: TaskTerminalPolicy = {
+  completed: { mode: 'auto', delayMs: 5000 },
+  error: { mode: 'manual' },
+  aborted: { mode: 'auto', delayMs: 3000 },
+};
+
+const ACTION_REQUIRED_TASK_POLICY: TaskTerminalPolicy = {
+  completed: { mode: 'manual' },
+  error: { mode: 'manual' },
+  aborted: { mode: 'auto', delayMs: 3000 },
 };
 
 export const getTaskStatusLabel = (status: TaskStatus): string =>
@@ -48,25 +68,16 @@ export const createTaskAbortAction = (
   onClick,
 });
 
-export const createTaskDismissAction = (onClick: TaskAction['onClick']): TaskAction => ({
-  id: 'dismiss',
-  label: '关闭',
-  variant: 'ghost',
-  onClick,
-});
-
 export interface TaskLifecycleActionOptions {
   status: TaskStatus;
   onDetail?: TaskAction['onClick'];
   onAbort?: TaskAction['onClick'];
-  onDismiss?: TaskAction['onClick'];
 }
 
 export const createTaskLifecycleActions = ({
   status,
   onDetail,
   onAbort,
-  onDismiss,
 }: TaskLifecycleActionOptions): TaskAction[] => {
   if (status === 'running') {
     return [
@@ -74,44 +85,42 @@ export const createTaskLifecycleActions = ({
       ...(onAbort ? [createTaskAbortAction(onAbort)] : []),
     ];
   }
-  if (status === 'completed') {
-    return [
-      ...(onDetail ? [createTaskDetailAction(onDetail, '查看结果')] : []),
-      ...(onDismiss ? [createTaskDismissAction(onDismiss)] : []),
-    ];
-  }
-  if (status === 'aborted') {
-    return onDismiss ? [createTaskDismissAction(onDismiss)] : [];
+  if (status === 'completed' && onDetail) {
+    return [createTaskDetailAction(onDetail, '查看结果')];
   }
   return [];
 };
 
-export interface TaskEntry extends PluginTaskRegistration {
-  pluginId: string;
-  createdAt: number;
+export interface TaskOwner {
+  id: string;
+  session: symbol;
+  active: boolean;
 }
 
-export type TaskRegistration = PluginTaskRegistration & { pluginId: string };
+export interface TaskEntry extends Omit<PluginTaskRegistration, 'retention'> {
+  terminalPolicy: TaskTerminalPolicy;
+  ownerId: string;
+  ownerSession: symbol;
+  generation: symbol;
+  createdAt: number;
+  terminalEnteredAt?: number;
+  expiresAt?: number;
+}
 
 export interface TaskActionRuntime {
   runAction?: (action: TaskAction, invoke: () => void | Promise<void>) => void | Promise<void>;
 }
 
-/** Plugin id used by built-in tasks (update / import). */
 export const BUILTIN_PLUGIN_ID = 'echo:main';
 
-/**
- * Shared task-panel open state: TitleBar renders the dialog and toggles it,
- * task actions can close it by setting closePanel.
- */
 export const taskPanelOpen = ref(false);
 
-/** Master reactive registry of all task panel entries. Any consumer can push / patch / remove. */
 export const taskPanelState = reactive<{ entries: Record<string, TaskEntry> }>({
   entries: {},
 });
 
-const taskRegistrationTokens = new Map<string, symbol>();
+const taskExpiryTimers = new Map<string, ReturnType<typeof setTimeout>>();
+const taskAbortControllers = new Map<string, { generation: symbol; controller: AbortController }>();
 
 const isPromiseLike = (value: unknown): value is Promise<unknown> =>
   Boolean(value && typeof (value as Promise<unknown>).then === 'function');
@@ -136,9 +145,7 @@ const runTaskAction = (action: TaskAction, runtime?: TaskActionRuntime): void =>
       error,
     });
   } finally {
-    if (action.closePanel) {
-      taskPanelOpen.value = false;
-    }
+    if (action.closePanel) taskPanelOpen.value = false;
   }
 };
 
@@ -151,100 +158,177 @@ const normalizeTaskActions = (
     onClick: () => runTaskAction(action, runtime),
   }));
 
-const normalizeTaskRegistration = <T extends { actions?: TaskAction[] }>(
-  task: T,
+const normalizeTaskData = <T extends { actions?: TaskAction[] }>(
+  data: T,
   runtime?: TaskActionRuntime,
 ): T => ({
-  ...task,
-  ...('actions' in task ? { actions: normalizeTaskActions(task.actions, runtime) } : {}),
+  ...data,
+  ...('actions' in data ? { actions: normalizeTaskActions(data.actions, runtime) } : {}),
 });
 
-/**
- * Panel entries sorted by priority (higher first), then by creation time
- * descending so newer tasks appear on top.
- */
+const clearTaskExpiry = (id: string): void => {
+  const timer = taskExpiryTimers.get(id);
+  if (timer === undefined) return;
+  clearTimeout(timer);
+  taskExpiryTimers.delete(id);
+};
+
+const normalizeTerminalPolicy = (policy: TaskRetentionPolicy): TaskTerminalPolicy => {
+  if (policy === 'transient') return structuredClone(TRANSIENT_TASK_POLICY);
+  if (policy === 'action-required') return structuredClone(ACTION_REQUIRED_TASK_POLICY);
+  const normalizeRetention = (
+    status: TerminalTaskStatus,
+  ): TaskTerminalPolicy[TerminalTaskStatus] => {
+    const retention = policy?.[status];
+    if (retention?.mode === 'manual') return { mode: 'manual' };
+    if (
+      retention?.mode !== 'auto' ||
+      !Number.isFinite(retention.delayMs) ||
+      retention.delayMs < 0 ||
+      retention.delayMs > 2_147_483_647
+    ) {
+      throw new TypeError(`任务 ${status} 保留策略无效`);
+    }
+    return { mode: 'auto', delayMs: retention.delayMs };
+  };
+
+  return {
+    completed: normalizeRetention('completed'),
+    error: normalizeRetention('error'),
+    aborted: normalizeRetention('aborted'),
+  };
+};
+
+const removeTask = (id: string, generation?: symbol): boolean => {
+  const entry = taskPanelState.entries[id];
+  if (!entry || (generation && entry.generation !== generation)) return false;
+  clearTaskExpiry(id);
+  const abortState = taskAbortControllers.get(id);
+  if (abortState?.generation === entry.generation) {
+    abortState.controller.abort();
+    taskAbortControllers.delete(id);
+  }
+  delete taskPanelState.entries[id];
+  return true;
+};
+
+const scheduleTaskExpiry = (entry: TaskEntry): void => {
+  clearTaskExpiry(entry.id);
+  if (entry.status === 'running') return;
+  const retention = entry.terminalPolicy[entry.status];
+  if (retention.mode === 'manual') return;
+
+  const now = Date.now();
+  entry.expiresAt ??= now + Math.max(0, retention.delayMs);
+  const generation = entry.generation;
+  const expiresAt = entry.expiresAt;
+  const timer = setTimeout(
+    () => {
+      taskExpiryTimers.delete(entry.id);
+      const current = taskPanelState.entries[entry.id];
+      if (current?.generation === generation && current.expiresAt === expiresAt) {
+        removeTask(entry.id, generation);
+      }
+    },
+    Math.max(0, expiresAt - now),
+  );
+  taskExpiryTimers.set(entry.id, timer);
+};
+
+const getCurrentEntry = (owner: TaskOwner, id: string, generation: symbol): TaskEntry | null => {
+  if (!owner.active) return null;
+  const entry = taskPanelState.entries[id];
+  if (!entry || entry.ownerSession !== owner.session || entry.generation !== generation) {
+    return null;
+  }
+  return entry;
+};
+
 export const taskPanelEntries = computed(() =>
   Object.values(taskPanelState.entries).sort(
     (a, b) => (b.priority ?? 0) - (a.priority ?? 0) || b.createdAt - a.createdAt,
   ),
 );
 
-/**
- * Upsert a task entry. When the id already exists the existing reactive entry is
- * merged in-place (createdAt is preserved).  Returns a disposer.
- */
-export const registerTask = (task: TaskRegistration, runtime?: TaskActionRuntime): (() => void) => {
+export const createTaskOwner = (id: string): TaskOwner => ({
+  id,
+  session: Symbol(id),
+  active: true,
+});
+
+export const registerTask = (
+  owner: TaskOwner,
+  task: PluginTaskRegistration,
+  runtime?: TaskActionRuntime,
+): PluginTaskHandle => {
+  if (!owner.active) throw new Error(`任务所有者已失效: ${owner.id}`);
   const existing = taskPanelState.entries[task.id];
-  const normalizedTask = normalizeTaskRegistration(task, runtime);
-  const registrationToken = Symbol(task.id);
-  taskRegistrationTokens.set(task.id, registrationToken);
-  if (existing) {
-    Object.assign(existing, normalizedTask, { createdAt: existing.createdAt });
-  } else {
-    taskPanelState.entries[task.id] = { ...normalizedTask, createdAt: Date.now() };
+  if (existing && existing.ownerSession !== owner.session) {
+    throw new Error(`任务 ID 已被占用: ${task.id}`);
   }
-  return () => {
-    if (taskRegistrationTokens.get(task.id) === registrationToken) {
-      dismissTask(task.id);
-    }
+
+  const { retention, ...taskData } = task;
+  const normalizedTask = normalizeTaskData(taskData, runtime);
+  const terminalPolicy = normalizeTerminalPolicy(retention);
+  removeTask(task.id);
+  const generation = Symbol(task.id);
+  const abortController = new AbortController();
+  const now = Date.now();
+  const entry: TaskEntry = {
+    ...normalizedTask,
+    terminalPolicy,
+    ownerId: owner.id,
+    ownerSession: owner.session,
+    generation,
+    createdAt: now,
+    ...(task.status === 'running' ? {} : { terminalEnteredAt: now }),
+  };
+  taskPanelState.entries[task.id] = entry;
+  taskAbortControllers.set(task.id, { generation, controller: abortController });
+  scheduleTaskExpiry(entry);
+
+  return {
+    get active() {
+      return getCurrentEntry(owner, task.id, generation) !== null;
+    },
+    signal: abortController.signal,
+    cancel: () => {
+      if (!getCurrentEntry(owner, task.id, generation)) return false;
+      abortController.abort();
+      return true;
+    },
+    update: (patch) => {
+      const current = getCurrentEntry(owner, task.id, generation);
+      if (!current) return false;
+      Object.assign(current, normalizeTaskData(patch, runtime));
+      return true;
+    },
+    finish: (status, patch = {}) => {
+      const current = getCurrentEntry(owner, task.id, generation);
+      if (!current || current.status !== 'running') return false;
+      Object.assign(current, normalizeTaskData(patch, runtime), {
+        status,
+        terminalEnteredAt: Date.now(),
+        expiresAt: undefined,
+      });
+      if (status === 'aborted') abortController.abort();
+      scheduleTaskExpiry(current);
+      return true;
+    },
+    dismiss: () => removeTask(task.id, generation),
   };
 };
 
-/**
- * Partial update – only the supplied fields are touched.
- */
-export const updateTask = (
-  id: string,
-  patch: PluginTaskPatch,
-  runtime?: TaskActionRuntime,
-): void => {
-  const entry = taskPanelState.entries[id];
-  if (!entry) return;
-  Object.assign(entry, normalizeTaskRegistration(patch, runtime));
-};
-
-/** Remove a single task entry. */
-export const dismissTask = (id: string): void => {
-  taskRegistrationTokens.delete(id);
-  delete taskPanelState.entries[id];
-};
-
-/** Bulk-dismiss all entries belonging to a plugin (called on plugin deactivation). */
-export const dismissTasksByPlugin = (pluginId: string): void => {
-  for (const id of Object.keys(taskPanelState.entries)) {
-    if (taskPanelState.entries[id].pluginId === pluginId) {
-      dismissTask(id);
-    }
+export const invalidateTaskOwner = (owner: TaskOwner): void => {
+  if (!owner.active) return;
+  owner.active = false;
+  for (const entry of Object.values(taskPanelState.entries)) {
+    if (entry.ownerSession === owner.session) removeTask(entry.id, entry.generation);
   }
 };
 
-/**
- * Per-task handle so feature modules can self-register without touching the panel UI.
- * set() upserts via registerTask (preserving createdAt); update()/dismiss() delegate to
- * updateTask/dismissTask. The handle owns the entry id and pluginId.
- *
- * Intended for built-in feature modules only (used solely by the self-registration
- * bridges); plugins cannot access this module. Callers are responsible for keeping
- * the id/pluginId namespace safe.
- */
-export interface TaskHandle {
-  set: (registration: Omit<PluginTaskRegistration, 'id'>) => void;
-  update: (patch: PluginTaskPatch) => void;
-  dismiss: () => void;
-}
+export const dismissTaskEntry = (id: string, generation: symbol): boolean =>
+  removeTask(id, generation);
 
-export const createTaskHandle = (
-  id: string,
-  pluginId: string,
-  runtime?: TaskActionRuntime,
-): TaskHandle => ({
-  set: (registration) => {
-    registerTask({ ...registration, id, pluginId }, runtime);
-  },
-  update: (patch) => {
-    updateTask(id, patch, runtime);
-  },
-  dismiss: () => {
-    dismissTask(id);
-  },
-});
+export const isManuallyDismissibleTask = (entry: TaskEntry): boolean =>
+  entry.status !== 'running' && entry.terminalPolicy[entry.status].mode === 'manual';

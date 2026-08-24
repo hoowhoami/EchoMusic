@@ -149,20 +149,8 @@ window.addEventListener('error', (event) => {
   const filename = event.filename ?? '';
   const pluginSource = getPluginErrorSource(event.error, event.message, filename);
   if (pluginSource) {
-    logger.warn(
-      'App',
-      pluginSource.kind === 'plugin-window'
-        ? 'Plugin window error skipped by app boundary'
-        : 'Plugin runtime error skipped by app boundary',
-      {
-        ...pluginSource,
-        message: errorMessage,
-        filename,
-        lineno: event.lineno,
-        colno: event.colno,
-        stack: event.error instanceof Error ? event.error.stack : '',
-      },
-    );
+    // Plugin runtime owns reporting and persistence for plugin errors.
+    event.preventDefault();
     return;
   }
 
@@ -196,17 +184,8 @@ window.addEventListener('error', (event) => {
 window.addEventListener('unhandledrejection', (event) => {
   const pluginSource = getPluginErrorSource(event.reason);
   if (pluginSource) {
-    logger.warn(
-      'App',
-      pluginSource.kind === 'plugin-window'
-        ? 'Plugin window promise rejection skipped by app boundary'
-        : 'Plugin promise rejection skipped by app boundary',
-      {
-        ...pluginSource,
-        message: getErrorMessage(event.reason),
-        stack: event.reason instanceof Error ? event.reason.stack : '',
-      },
-    );
+    // Plugin runtime owns reporting and persistence for plugin errors.
+    event.preventDefault();
     return;
   }
   logger.error('App', 'Unhandled promise rejection', event.reason);

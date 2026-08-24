@@ -127,6 +127,7 @@ import {
 } from '../appIcons';
 import { refreshTray } from '../tray';
 import log from '../logger';
+import { isPluginNetworkRequestError } from '../plugins/network';
 import type { IpcContext } from './types';
 
 interface ActivePluginNetworkRequest {
@@ -430,6 +431,7 @@ export const registerPluginHandlers = (context: IpcContext) => {
         releasePluginNetworkRequest(key, activeRequest);
       }
     },
+    { isExpectedError: isPluginNetworkRequestError },
   );
   ipcRegistry.registerHandler(
     'plugins:net:cancel',

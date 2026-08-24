@@ -4,6 +4,11 @@ import log, { isDiagnosticModeActive } from '../logger';
 type IpcHandler = (event: IpcMainInvokeEvent, ...args: any[]) => Promise<any> | any;
 type IpcListener = (event: IpcMainEvent, ...args: any[]) => void;
 
+interface IpcHandlerOptions {
+  /** Expected rejections are returned to the caller without noisy production logs. */
+  isExpectedError?: (error: unknown) => boolean;
+}
+
 // IPC 同步占用计时阈值：handler/listener 占用主线程同步执行超过此值即告警，
 // 用于定位是哪个通道在阻塞主进程（如切歌时的地址解析、媒体控制等）。
 const IPC_SYNC_WARN_MS = 50;
@@ -12,7 +17,7 @@ class IpcRegistry {
   private handlers = new Map<string, IpcHandler>();
   private listeners = new Map<string, IpcListener[]>();
 
-  registerHandler(channel: string, handler: IpcHandler): void {
+  registerHandler(channel: string, handler: IpcHandler, options?: IpcHandlerOptions): void {
     if (this.handlers.has(channel)) {
       console.warn(`[IPC] Handler for channel "${channel}" already registered, replacing`);
       ipcMain.removeHandler(channel);
@@ -34,11 +39,18 @@ class IpcRegistry {
         }
         return await result;
       } catch (error) {
-        log.error('[IPC] Handler failed', {
-          channel,
-          error: error instanceof Error ? error.message : String(error),
-          stack: error instanceof Error ? error.stack : '',
-        });
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        if (options?.isExpectedError?.(error)) {
+          if (isDiagnosticModeActive()) {
+            log.debug('[IPC] Handler rejected', { channel, error: errorMessage });
+          }
+        } else {
+          log.error('[IPC] Handler failed', {
+            channel,
+            error: errorMessage,
+            stack: error instanceof Error ? error.stack : '',
+          });
+        }
         throw error;
       }
     });

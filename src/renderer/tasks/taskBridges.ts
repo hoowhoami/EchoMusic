@@ -1,8 +1,6 @@
 import { setupUpdateTaskBridge } from './updateTaskBridge';
-import { setupImportTaskBridge } from './importTaskBridge';
-import { setupCloudTaskBridge } from './cloudTaskBridge';
 
-let installed = false;
+let activeInstallation: symbol | null = null;
 
 /**
  * 一次性安装所有内置任务面板自注册桥接（更新 / 导入 / 云盘上传）。
@@ -10,15 +8,13 @@ let installed = false;
  * 返回合并的 dispose；dispose 后可再次 setup。
  */
 export const setupTaskBridges = (): (() => void) => {
-  if (installed) return () => {};
-  installed = true;
-  const disposers: Array<() => void> = [
-    setupUpdateTaskBridge(),
-    setupImportTaskBridge(),
-    setupCloudTaskBridge(),
-  ];
+  if (activeInstallation) return () => {};
+  const installation = Symbol('task-bridges');
+  activeInstallation = installation;
+  const disposers: Array<() => void> = [setupUpdateTaskBridge()];
   return () => {
+    if (activeInstallation !== installation) return;
+    activeInstallation = null;
     for (const dispose of disposers) dispose();
-    installed = false;
   };
 };

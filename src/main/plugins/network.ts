@@ -14,6 +14,26 @@ const DEFAULT_MAX_REDIRECTS = 5;
 
 type NormalizedHeaders = Record<string, string | string[]>;
 
+export class PluginNetworkRequestError extends Error {
+  readonly code?: string;
+
+  constructor(message: string, code?: string, cause?: unknown) {
+    super(message, { cause });
+    this.name = 'PluginNetworkRequestError';
+    this.code = code;
+  }
+}
+
+export const isPluginNetworkRequestError = (error: unknown): error is PluginNetworkRequestError =>
+  error instanceof PluginNetworkRequestError;
+
+const normalizeAxiosError = (error: unknown): PluginNetworkRequestError | null => {
+  if (!axios.isAxiosError(error)) return null;
+  const code = typeof error.code === 'string' && error.code ? error.code : undefined;
+  const message = String(error.message || '网络请求失败').trim() || '网络请求失败';
+  return new PluginNetworkRequestError(code ? `${message} (${code})` : message, code, error);
+};
+
 const normalizeHeaders = (headers?: PluginNetworkHeaders): NormalizedHeaders | undefined => {
   if (!headers) return undefined;
 
@@ -218,6 +238,8 @@ export const requestPluginNetwork = async (
       headers: normalizeResponseHeaders(response),
       data: responseType === 'arrayBuffer' ? toArrayBuffer(response.data) : response.data,
     };
+  } catch (error) {
+    throw normalizeAxiosError(error) ?? error;
   } finally {
     httpsAgent?.destroy();
   }

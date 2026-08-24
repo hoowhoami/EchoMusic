@@ -27,7 +27,11 @@ import {
 import { useToastStore } from '@/stores/toast';
 import { useUserStore } from '@/stores/user';
 import { useSettingStore } from '@/stores/setting';
-import { useCloudUploadStore, type CloudUploadItem } from '@/stores/cloudUpload';
+import {
+  useCloudUploadStore,
+  type CloudUploadItem,
+  type CloudUploadRun,
+} from '@/stores/cloudUpload';
 import logger from '@/utils/logger';
 
 interface Props {
@@ -64,7 +68,8 @@ const progressRatio = computed(() => {
   return done / items.value.length;
 });
 const isUploading = computed(() => step.value === 'uploading');
-const shouldAbort = () => canceled.value || cloudUploadStore.abortRequested;
+const shouldAbort = (run: CloudUploadRun) =>
+  run.signal.aborted || canceled.value || cloudUploadStore.abortRequested;
 
 const formatBytes = (value: number) => {
   if (!Number.isFinite(value) || value <= 0) return '0 B';
@@ -175,8 +180,9 @@ const resumeFromStoreCompleted = () => {
 };
 
 const enterBackgroundMode = () => {
-  cloudUploadStore.enterBackground('', () => {
+  cloudUploadStore.enterBackground(() => {
     canceled.value = true;
+    clearPickedUploadFiles();
   });
 };
 
@@ -206,7 +212,7 @@ const handleBackgroundRun = () => {
  * 匹配单个文件：复用导入歌单的搜索机制，获取 audio_id / album_audio_id
  * 云盘写入曲库 ID 采用更保守的匹配门槛，误关联比不关联更难清理。
  */
-const matchItem = async (item: CloudUploadItem, list: CloudUploadItem[]) => {
+const matchItem = async (item: CloudUploadItem, list: CloudUploadItem[], run: CloudUploadRun) => {
   const title = item.title || item.name.replace(/\.[^.]+$/, '');
   item.status = 'matching';
   try {
@@ -298,19 +304,19 @@ const matchItem = async (item: CloudUploadItem, list: CloudUploadItem[]) => {
   await matchThinkDelay();
   item.status = 'pending';
   const done = list.filter((i) => i.matchStatus !== 'pending').length;
-  cloudUploadStore.updateProgress(done, list.length, { ...item });
+  run.updateProgress(done, list.length, { ...item });
 };
 
 /** 阶段一：并发匹配所有文件 */
-const runMatching = async (list: CloudUploadItem[]) => {
-  cloudUploadStore.setPhase('matching');
+const runMatching = async (list: CloudUploadItem[], run: CloudUploadRun) => {
+  run.setPhase('matching');
   let nextIdx = 0;
   const worker = async () => {
     while (true) {
-      if (shouldAbort()) return;
+      if (shouldAbort(run)) return;
       const i = nextIdx++;
       if (i >= list.length) return;
-      await matchItem(list[i], list);
+      await matchItem(list[i], list, run);
     }
   };
   await Promise.all(Array.from({ length: MATCH_CONCURRENCY }, () => worker()));
@@ -344,17 +350,18 @@ const handlePick = async (mode: PickMode) => {
       matchStatus: 'pending',
     }));
     // 注册任务中心任务（name 参数预留，面板标题使用 total 展示）
-    cloudUploadStore.start('', items.value.length, () => {
+    const run = cloudUploadStore.start(items.value.length, () => {
       canceled.value = true;
+      clearPickedUploadFiles();
     });
     step.value = 'uploading';
     canceled.value = false;
     // 捕获数组引用：转入后台后组件 reset() 不会影响正在运行的上传流程
     const uploadItems = items.value;
     // 阶段一：并发匹配获取 audio_id / album_audio_id
-    await runMatching(uploadItems);
+    await runMatching(uploadItems, run);
     // 阶段二：串行上传
-    await runUpload(uploadItems);
+    await runUpload(uploadItems, run);
   } catch (error) {
     toastStore.danger(`选择文件失败：${(error as Error)?.message || String(error)}`);
   } finally {
@@ -362,12 +369,17 @@ const handlePick = async (mode: PickMode) => {
   }
 };
 
-const uploadSingleItem = async (item: CloudUploadItem, list: CloudUploadItem[]) => {
+const uploadSingleItem = async (
+  item: CloudUploadItem,
+  list: CloudUploadItem[],
+  run: CloudUploadRun,
+) => {
   const title = item.title || item.name.replace(/\.[^.]+$/, '');
   item.status = 'uploading';
   try {
     const dataResult = await window.electron.cloud.readUploadFileData(item.path);
     if (!dataResult.ok) throw new Error(dataResult.error);
+    if (shouldAbort(run)) return;
     const res = await uploadToCloud(dataResult.data, {
       name: title,
       extendname: item.extension.replace(/^\./, ''),
@@ -375,6 +387,7 @@ const uploadSingleItem = async (item: CloudUploadItem, list: CloudUploadItem[]) 
       audioId: item.audioId,
       albumAudioId: item.albumAudioId,
     });
+    if (shouldAbort(run)) return;
     item.isSecondUpload = !res?.uploadInfo?.upload_id;
     item.status = 'success';
     logger.debug('CloudUpload', 'upload success', {
@@ -402,22 +415,23 @@ const uploadSingleItem = async (item: CloudUploadItem, list: CloudUploadItem[]) 
     });
   }
   const done = list.filter((i) => i.status === 'success' || i.status === 'failed').length;
-  cloudUploadStore.updateProgress(done, list.length, { ...item });
+  run.updateProgress(done, list.length, { ...item });
 };
 
-const runUpload = async (list: CloudUploadItem[]) => {
-  cloudUploadStore.setPhase('uploading');
+const runUpload = async (list: CloudUploadItem[], run: CloudUploadRun) => {
+  run.setPhase('uploading');
   if (list.length > 0) {
-    cloudUploadStore.updateProgress(0, list.length, { ...list[0] });
+    run.updateProgress(0, list.length, { ...list[0] });
   }
   for (let i = 0; i < list.length; i++) {
-    if (shouldAbort()) break;
-    await uploadSingleItem(list[i], list);
+    if (shouldAbort(run)) break;
+    await uploadSingleItem(list[i], list, run);
   }
+  if (!run.active) return;
   if (open.value) step.value = 'done';
   clearPickedUploadFiles();
 
-  const aborted = shouldAbort();
+  const aborted = shouldAbort(run);
   const successCount = list.filter((i) => i.status === 'success').length;
   const failedCountNow = list.filter((i) => i.status === 'failed').length;
   const secondCount = list.filter((i) => i.isSecondUpload).length;
@@ -439,9 +453,9 @@ const runUpload = async (list: CloudUploadItem[]) => {
   // 任务中心：完成/中止收敛
   if (cloudUploadStore.status === 'running') {
     if (aborted) {
-      cloudUploadStore.dismiss();
+      run.dismiss();
     } else {
-      cloudUploadStore.complete({
+      run.complete({
         total: list.length,
         success: successCount,
         failed: failedCountNow,
@@ -572,13 +586,14 @@ const handleSelectManualResult = async (result: ManualSearchResult) => {
   item.matchStatus = 'linked';
   item.status = 'uploading';
   // 接入任务中心：手动匹配上传同样注册任务、上报进度
-  cloudUploadStore.start('', 1, () => {
+  const run = cloudUploadStore.start(1, () => {
     canceled.value = true;
+    clearPickedUploadFiles();
   });
   items.value = [item];
   canceled.value = false;
   step.value = 'uploading';
-  await runUpload(items.value);
+  await runUpload(items.value, run);
 };
 
 const formatDuration = (sec: number) => {

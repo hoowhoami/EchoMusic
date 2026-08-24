@@ -3,7 +3,13 @@ import { computed, watch, ref, onMounted, onUnmounted, nextTick } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { getSearchSuggest, getSearchDefault } from '@/api/search';
 import { useSettingStore } from '@/stores/setting';
-import { taskPanelEntries, taskPanelOpen, getTaskStatusLabel } from '@/plugins/taskPanel';
+import {
+  dismissTaskEntry,
+  getTaskStatusLabel,
+  isManuallyDismissibleTask,
+  taskPanelEntries,
+  taskPanelOpen,
+} from '@/plugins/taskPanel';
 import Button from '@/components/ui/Button.vue';
 import Scrollbar from '@/components/ui/Scrollbar.vue';
 import RefreshIcon from '@/components/ui/RefreshIcon.vue';
@@ -569,7 +575,10 @@ onUnmounted(() => {
         <div v-if="task.error" class="task-item-error">
           <span class="task-item-error-text">{{ task.error }}</span>
         </div>
-        <div v-if="task.actions && task.actions.length" class="task-item-actions">
+        <div
+          v-if="(task.actions && task.actions.length) || isManuallyDismissibleTask(task)"
+          class="task-item-actions"
+        >
           <Button
             v-for="action in task.actions"
             :key="action.id"
@@ -578,6 +587,14 @@ onUnmounted(() => {
             @click="action.onClick()"
           >
             {{ action.label }}
+          </Button>
+          <Button
+            v-if="isManuallyDismissibleTask(task)"
+            variant="ghost"
+            size="xs"
+            @click="dismissTaskEntry(task.id, task.generation)"
+          >
+            关闭
           </Button>
         </div>
       </div>

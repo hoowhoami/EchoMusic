@@ -40,15 +40,24 @@ import {
 import { registerPluginLyricResolver, type PluginLyricResolverContribution } from '../lyrics';
 import { registerPluginLyricEffect, type PluginLyricEffectContribution } from '../lyricEffects';
 import {
+  createTaskOwner,
+  invalidateTaskOwner,
   registerTask,
-  updateTask,
-  dismissTask,
-  taskPanelState,
   type TaskActionRuntime,
+  type TaskOwner,
 } from '../taskPanel';
-import logger from '@/utils/logger';
+
+const taskApiOwners = new WeakMap<PluginTaskApi, TaskOwner>();
+
+export const deactivateTaskApi = (api: PluginTaskApi): void => {
+  const owner = taskApiOwners.get(api);
+  if (!owner) return;
+  invalidateTaskOwner(owner);
+  taskApiOwners.delete(api);
+};
 
 export const createTaskApi = (pluginId: string, deps: RuntimeApiDeps): PluginTaskApi => {
+  const owner = createTaskOwner(pluginId);
   const taskActionRuntime: TaskActionRuntime = {
     runAction: (action, invoke) =>
       deps.runPluginCallback(
@@ -59,41 +68,16 @@ export const createTaskApi = (pluginId: string, deps: RuntimeApiDeps): PluginTas
       ),
   };
 
-  return {
+  const api: PluginTaskApi = {
     register: (task) => {
-      // 内置保留命名空间：echo: 前缀的任务 id 不允许插件注册（即使内置任务处于非活动空窗期）
       if (task.id.startsWith('echo:')) {
-        logger.warn('PluginTask', '拒绝注册保留任务 id（echo: 前缀）', {
-          pluginId,
-          taskId: task.id,
-        });
-        return () => {};
+        throw new Error(`插件不能注册保留任务 ID: ${task.id}`);
       }
-      // 归属保护：任务 id 已被其他插件或内置任务占用时不覆盖，仅本插件可重注册同 id
-      const existing = taskPanelState.entries[task.id];
-      if (existing && existing.pluginId !== pluginId) {
-        logger.warn('PluginTask', '拒绝覆盖其他插件或内置任务', {
-          pluginId,
-          taskId: task.id,
-          owner: existing.pluginId,
-        });
-        return () => {};
-      }
-      return registerTask({ ...task, pluginId }, taskActionRuntime);
-    },
-    update: (id, patch) => {
-      // 作用域隔离：只能更新本插件注册的任务，避免影响其他插件或内置任务
-      const entry = taskPanelState.entries[id];
-      if (entry && entry.pluginId === pluginId) {
-        updateTask(id, patch, taskActionRuntime);
-      }
-    },
-    dismiss: (id) => {
-      // 作用域隔离：只能移除本插件注册的任务
-      const entry = taskPanelState.entries[id];
-      if (entry && entry.pluginId === pluginId) dismissTask(id);
+      return registerTask(owner, task, taskActionRuntime);
     },
   };
+  taskApiOwners.set(api, owner);
+  return api;
 };
 
 type PluginCallbackRunner = <T>(

@@ -6,8 +6,8 @@ import type {
 } from '../../../shared/plugins';
 import { logger } from '@/utils/logger';
 import { executePluginCommand, removePluginContributions } from '../registry';
-import { dismissTasksByPlugin } from '../taskPanel';
 import { createPluginContext, type EchoPluginContext, type PluginRuntimeHost } from './context';
+import { deactivateTaskApi } from './contextApis';
 import {
   importPluginModule,
   resolvePluginActivator,
@@ -39,12 +39,16 @@ export type {
 } from './contextApis';
 export type {
   PluginTaskApi,
+  PluginTaskHandle,
   PluginTaskPatch,
   PluginTaskRegistration,
   TaskAction,
   TaskActionVariant,
   TaskProgress,
+  TaskRetention,
   TaskStatus,
+  TaskTerminalPolicy,
+  TerminalTaskStatus,
 } from '../../../shared/tasks';
 
 export interface PluginRuntimeRecord {
@@ -284,6 +288,7 @@ const installPluginRuntimeErrorHandlers = () => {
   window.addEventListener('error', (event) => {
     const pluginId = extractPluginIdFromErrorSource(event.error, event.message, event.filename);
     if (!pluginId) return;
+    event.preventDefault();
     void reportPluginRuntimeError(
       pluginId,
       event.error ?? event.message,
@@ -295,6 +300,7 @@ const installPluginRuntimeErrorHandlers = () => {
   window.addEventListener('unhandledrejection', (event) => {
     const pluginId = extractPluginIdFromErrorSource(event.reason);
     if (!pluginId) return;
+    event.preventDefault();
     void reportPluginRuntimeError(
       pluginId,
       event.reason,
@@ -307,6 +313,9 @@ const installPluginRuntimeErrorHandlers = () => {
 const deactivatePlugin = async (pluginId: string) => {
   const active = activePlugins.get(pluginId);
   if (!active) return;
+
+  // 先使任务会话失效，阻止停用期间的操作和迟到异步回调重新创建任务。
+  deactivateTaskApi(active.context.tasks);
 
   // 收集失败的清理函数，稍后重试
   const failedDisposables: Array<() => void> = [];
@@ -366,7 +375,6 @@ const deactivatePlugin = async (pluginId: string) => {
   });
 
   removePluginContributions(pluginId);
-  dismissTasksByPlugin(pluginId);
 
   // 延迟删除，确保所有异步清理完成
   await new Promise((resolve) => setTimeout(resolve, 50));
@@ -415,7 +423,6 @@ const activatePlugin = async (descriptor: EchoPluginDescriptor, host: PluginRunt
   } catch (error) {
     await deactivatePlugin(descriptor.id);
     const message = getErrorMessage(error, '插件加载失败');
-    logger.error('PluginRuntime', 'Plugin activate failed', { pluginId: descriptor.id, error });
     updateRecord(descriptor, 'error', message);
     await reportPluginActivationFailure(descriptor.id, error, '插件启动');
   }

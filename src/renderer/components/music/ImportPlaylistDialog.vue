@@ -27,7 +27,7 @@ import { runImport, type ImportItemResult, type ImportSummary } from '@/utils/im
 import { usePlaylistStore } from '@/stores/playlist';
 import { useUserStore } from '@/stores/user';
 import { useToastStore } from '@/stores/toast';
-import { useImportTaskStore } from '@/stores/importTask';
+import { useImportTaskStore, type ImportTaskRun } from '@/stores/importTask';
 import { useSettingStore } from '@/stores/setting';
 import type { PlaylistMeta } from '@/models/playlist';
 import type { ExternalTrack } from '../../../shared/external';
@@ -49,6 +49,8 @@ const playlistStore = usePlaylistStore();
 const userStore = useUserStore();
 const toastStore = useToastStore();
 const importTaskStore = useImportTaskStore();
+let currentDialogRun: ImportTaskRun | null = null;
+const canContinueTask = (run: ImportTaskRun) => run.active && !run.signal.aborted;
 const settingStore = useSettingStore();
 
 const step = ref<Step>('input');
@@ -204,7 +206,8 @@ const responseTaskId = (response: unknown): string | number => {
   return data.id;
 };
 
-const updateNativeProgress = (task: NativeImportTask) => {
+const updateNativeProgress = (run: ImportTaskRun, task: NativeImportTask) => {
+  if (!canContinueTask(run)) return;
   const status = Number(task.status);
   const songs = Number(task.songs_num || 0);
   const imported = Number(task.imported_num || 0);
@@ -238,12 +241,10 @@ const updateNativeProgress = (task: NativeImportTask) => {
   progressDone.value = Math.max(0, done);
   progressTotal.value = progressTotalValue;
   progressItems.value = items;
-  items.forEach((item) =>
-    importTaskStore.updateProgress(progressDone.value, progressTotalValue, item),
-  );
+  items.forEach((item) => run.updateProgress(progressDone.value, progressTotalValue, item));
 };
 
-const runLocalFallback = async (url: string) => {
+const runLocalFallback = async (url: string, run: ImportTaskRun) => {
   isLocalFallback.value = true;
   rootTrack.title = '正在换一种方式继续导入';
   rootTrack.artist = '正在读取歌单信息';
@@ -252,6 +253,7 @@ const runLocalFallback = async (url: string) => {
   progressTotal.value = 1;
 
   const resolved = await resolveExternalPlaylist({ input: url, provider: 'auto' });
+  if (!canContinueTask(run)) return;
   if (!resolved.ok) throw new Error(resolved.error);
   if (!resolved.playlist.tracks.length) throw new Error('外部歌单没有可导入歌曲');
   if (!currentUserId.value) throw new Error('请先登录');
@@ -263,6 +265,7 @@ const runLocalFallback = async (url: string) => {
     false,
     currentUserId.value,
   );
+  if (!canContinueTask(run)) return;
   if (!listId) throw new Error('创建歌单失败');
 
   const tracks = resolved.playlist.tracks;
@@ -270,38 +273,44 @@ const runLocalFallback = async (url: string) => {
   progressDone.value = 0;
   progressTotal.value = tracks.length;
   const result = await runImport(tracks, listId, {
-    shouldAbort: () => abortFlag.value || importTaskStore.abortRequested,
+    shouldAbort: () => run.signal.aborted || abortFlag.value || importTaskStore.abortRequested,
     onProgress: (done, total, item) => {
+      if (!canContinueTask(run)) return;
       progressDone.value = done;
       progressTotal.value = total;
       const index = progressItems.value.findIndex(
         (progressItem) => progressItem.external === item.external,
       );
       if (index >= 0) progressItems.value[index] = { ...item };
-      importTaskStore.updateProgress(done, total, item);
+      run.updateProgress(done, total, item);
     },
   });
+  if (!canContinueTask(run)) return;
   summary.value = result;
-  if (importTaskStore.status === 'running') importTaskStore.complete(result);
+  run.complete(result);
   if (!abortFlag.value && !importTaskStore.abortRequested) {
     toastStore.success(`导入完成：成功 ${result.success} / ${result.total}`);
   }
   await playlistStore.fetchUserPlaylists();
 };
 
-const monitorTask = async (taskId: string | number, fallbackUrl = '') => {
+const monitorTask = async (taskId: string | number, fallbackUrl: string, run: ImportTaskRun) => {
   isStarting.value = false;
   isImporting.value = true;
   step.value = 'progress';
-  updateNativeProgress({ id: taskId, status: 0 });
+  updateNativeProgress(run, { id: taskId, status: 0 });
 
   try {
     const result = await waitForNativeImport(taskId, {
-      shouldStop: () => abortFlag.value || importTaskStore.abortRequested,
-      onProgress: updateNativeProgress,
+      shouldStop: () => run.signal.aborted || abortFlag.value || importTaskStore.abortRequested,
+      onProgress: (task) => updateNativeProgress(run, task),
     });
+    if (!canContinueTask(run)) return;
     if (!result) {
-      toastStore.warning('已停止查看进度，导入任务仍会继续处理');
+      if (importTaskStore.status === 'running') {
+        run.dismiss();
+        toastStore.warning('已停止查看进度，导入任务仍会继续处理');
+      }
       return;
     }
 
@@ -321,20 +330,22 @@ const monitorTask = async (taskId: string | number, fallbackUrl = '') => {
       status: 'skipped',
       error: track.reason || '未匹配',
     }));
-    updateNativeProgress(result.task);
+    if (!canContinueTask(run)) return;
+    updateNativeProgress(run, result.task);
     progressItems.value = [...progressItems.value, ...missedItems];
     progressDone.value = total;
     progressTotal.value = total;
     summary.value = { total, success, low: 0, skipped, failed: 0 };
-    missedItems.forEach((item) => importTaskStore.updateProgress(total, total, item));
+    missedItems.forEach((item) => run.updateProgress(total, total, item));
 
-    if (importTaskStore.status === 'running') importTaskStore.complete(summary.value);
+    run.complete(summary.value);
     toastStore.success(`导入完成：成功 ${success} / ${total}`);
     await playlistStore.fetchUserPlaylists();
   } catch (error: unknown) {
+    if (!canContinueTask(run)) return;
     if (error instanceof NativeImportUnsupportedError && fallbackUrl) {
       toastStore.warning('正在换一种方式继续导入');
-      await runLocalFallback(fallbackUrl);
+      await runLocalFallback(fallbackUrl, run);
       return;
     }
     rootTrack.title = '导入失败';
@@ -345,11 +356,11 @@ const monitorTask = async (taskId: string | number, fallbackUrl = '') => {
     };
     progressItems.value = [item];
     summary.value = { total: 1, success: 0, low: 0, skipped: 0, failed: 1 };
-    importTaskStore.updateProgress(1, 1, item);
-    if (importTaskStore.status === 'running') importTaskStore.complete(summary.value);
+    run.updateProgress(1, 1, item);
+    run.complete(summary.value);
     toastStore.actionFailed('导入');
   } finally {
-    isImporting.value = false;
+    if (currentDialogRun === run) isImporting.value = false;
   }
 };
 
@@ -385,9 +396,12 @@ const setExistingListId = (value: unknown) => {
 
 const startImport = async () => {
   if (!canStart.value) return;
-  importTaskStore.dismiss();
-  isStarting.value = true;
   abortFlag.value = false;
+  const run = importTaskStore.start('歌单导入', () => {
+    abortFlag.value = true;
+  });
+  currentDialogRun = run;
+  isStarting.value = true;
   errorMessage.value = '';
   summary.value = null;
   progressItems.value = [{ external: rootTrack, status: 'pending' }];
@@ -397,7 +411,8 @@ const startImport = async () => {
       backgroundTargetName.value = '外部歌单导入';
       const url = inputText.value.trim();
       const response = await createLinkImportTask(url);
-      await monitorTask(responseTaskId(response), url);
+      if (!canContinueTask(run)) return;
+      await monitorTask(responseTaskId(response), url, run);
       return;
     }
 
@@ -413,24 +428,32 @@ const startImport = async () => {
         false,
         currentUserId.value,
       );
+      if (!canContinueTask(run)) return;
     }
     if (!listId || !playlistName) throw new Error('请选择或创建目标歌单');
     backgroundTargetName.value = playlistName;
     const taskSn = `${currentUserId.value}${Date.now()}`;
     for (let index = 0; index < selectedFiles.value.length; index++) {
+      if (!canContinueTask(run)) return;
       rootTrack.title = `正在上传截图 ${index + 1} / ${selectedFiles.value.length}`;
       progressDone.value = index;
       progressTotal.value = selectedFiles.value.length + 1;
       step.value = 'progress';
       const item: ImportItemResult = { external: rootTrack, status: 'adding' };
       progressItems.value = [item];
-      importTaskStore.updateProgress(index, progressTotal.value, item);
-      await submitImportScreenshot(taskSn, await fileToBase64(selectedFiles.value[index]));
+      run.updateProgress(index, progressTotal.value, item);
+      const imageBase64 = await fileToBase64(selectedFiles.value[index]);
+      if (!canContinueTask(run)) return;
+      await submitImportScreenshot(taskSn, imageBase64);
+      if (!canContinueTask(run)) return;
     }
     const response = await createScreenshotImportTask(taskSn, listId, playlistName);
+    if (!canContinueTask(run)) return;
     rootTrack.title = playlistName;
-    await monitorTask(responseTaskId(response));
+    await monitorTask(responseTaskId(response), '', run);
   } catch (error: unknown) {
+    if (!canContinueTask(run)) return;
+    run.dismiss();
     isStarting.value = false;
     isImporting.value = false;
     errorMessage.value = error instanceof Error ? error.message : '创建导入任务失败';
@@ -441,7 +464,9 @@ const startImport = async () => {
 
 const stopMonitoring = () => {
   abortFlag.value = true;
-  if (importTaskStore.status === 'running') importTaskStore.requestAbort({ feedback: false });
+  if (importTaskStore.status === 'running') {
+    importTaskStore.requestAbort({ feedback: false });
+  }
 };
 
 const runInBackground = () => {
