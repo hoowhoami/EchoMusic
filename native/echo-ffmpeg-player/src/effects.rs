@@ -1,4 +1,5 @@
-use crate::vpf::{PreparedVpf, VpfProcessor};
+use crate::builtin_effects::{BuiltinEffect, BuiltinEffectProcessor};
+use crate::vpf::{PreparedVpf, SoftwareLimiter, VpfProcessor};
 use ffmpeg_audio::{AudioReader, ResampleOptions};
 use rustfft::{num_complex::Complex32, Fft, FftPlanner};
 use std::collections::VecDeque;
@@ -21,6 +22,7 @@ pub struct DspSettings {
     pub equalizer: [f32; EQ_BAND_COUNT],
     pub normalization_gain_db: f32,
     pub speed: f32,
+    pub builtin: BuiltinEffect,
     pub spatial: Option<PreparedSpatialEffect>,
     pub vpf: Option<PreparedVpf>,
 }
@@ -31,6 +33,7 @@ impl Default for DspSettings {
             equalizer: [0.0; EQ_BAND_COUNT],
             normalization_gain_db: 0.0,
             speed: 1.0,
+            builtin: BuiltinEffect::None,
             spatial: None,
             vpf: None,
         }
@@ -39,7 +42,7 @@ impl Default for DspSettings {
 
 impl DspSettings {
     pub fn requires_stereo_graph(&self) -> bool {
-        self.spatial.is_some() || self.vpf.is_some()
+        self.builtin.enabled() || self.spatial.is_some() || self.vpf.is_some()
     }
 
     pub fn normalization_gain_linear(&self) -> f32 {
@@ -76,6 +79,8 @@ pub struct DspChain {
     eq: MultichannelEqualizer,
     spatial: Option<SpatialEffect>,
     vpf: Option<VpfProcessor>,
+    builtin: Option<BuiltinEffectProcessor>,
+    spatial_limiters: Option<[SoftwareLimiter; 2]>,
 }
 
 impl DspChain {
@@ -96,6 +101,12 @@ impl DspChain {
                 .as_ref()
                 .filter(|_| channels == 2)
                 .map(|vpf| VpfProcessor::new(sample_rate, vpf)),
+            builtin: (settings.builtin.enabled() && channels == 2)
+                .then(|| BuiltinEffectProcessor::new(sample_rate, settings.builtin)),
+            spatial_limiters: (settings.spatial.is_some()
+                && settings.vpf.is_none()
+                && channels == 2)
+                .then(|| std::array::from_fn(|_| SoftwareLimiter::new())),
         }
     }
 
@@ -105,6 +116,7 @@ impl DspChain {
         let spatial_changed = spatial_resource_identity(&self.settings.spatial)
             != spatial_resource_identity(&settings.spatial);
         let vpf_changed = self.settings.vpf != settings.vpf;
+        let builtin_changed = self.settings.builtin != settings.builtin;
 
         self.settings = settings.clone();
         if eq_changed {
@@ -125,6 +137,15 @@ impl DspChain {
                 .filter(|_| self.channels == 2)
                 .map(|vpf| VpfProcessor::new(sample_rate, vpf));
         }
+        if builtin_changed {
+            self.builtin = (settings.builtin.enabled() && self.channels == 2)
+                .then(|| BuiltinEffectProcessor::new(sample_rate, settings.builtin));
+        }
+        if spatial_changed || vpf_changed {
+            self.spatial_limiters =
+                (settings.spatial.is_some() && settings.vpf.is_none() && self.channels == 2)
+                    .then(|| std::array::from_fn(|_| SoftwareLimiter::new()));
+        }
     }
 
     pub fn process_interleaved(&mut self, samples: &mut [f32]) {
@@ -137,24 +158,50 @@ impl DspChain {
             }
         }
         if self.channels == 2 {
+            if let Some(builtin) = self.builtin.as_mut() {
+                builtin.process_interleaved(samples);
+            }
             if let Some(spatial) = self.spatial.as_mut() {
                 spatial.process_interleaved(samples);
             }
             if let Some(vpf) = self.vpf.as_mut() {
                 vpf.process_interleaved(samples);
+            } else if let Some(limiters) = self.spatial_limiters.as_mut() {
+                for frame in samples.chunks_exact_mut(2) {
+                    frame[0] = limiters[0].process(frame[0]);
+                    frame[1] = limiters[1].process(frame[1]);
+                }
             }
         }
     }
 
+    pub fn owns_output_limiter(&self) -> bool {
+        self.builtin.is_some() || self.vpf.is_some() || self.spatial_limiters.is_some()
+    }
+
     pub fn latency_secs(&self) -> f64 {
-        self.spatial_latency_secs() + self.vpf_latency_secs()
+        self.builtin_latency_secs() + self.spatial_latency_secs() + self.vpf_latency_secs()
+    }
+
+    pub fn builtin_latency_secs(&self) -> f64 {
+        self.builtin
+            .as_ref()
+            .map(|builtin| builtin.latency_frames() as f64 / f64::from(self.eq.sample_rate.max(1)))
+            .unwrap_or_default()
     }
 
     pub fn spatial_latency_secs(&self) -> f64 {
-        self.spatial
+        let convolution = self
+            .spatial
             .as_ref()
             .map(|spatial| spatial.latency_frames() as f64 / f64::from(self.eq.sample_rate.max(1)))
-            .unwrap_or_default()
+            .unwrap_or_default();
+        let limiter = if self.spatial_limiters.is_some() {
+            SoftwareLimiter::LOOKAHEAD as f64 / f64::from(self.eq.sample_rate.max(1))
+        } else {
+            0.0
+        };
+        convolution + limiter
     }
 
     pub fn vpf_latency_secs(&self) -> f64 {
@@ -682,6 +729,26 @@ mod tests {
         assert!(samples[1].abs() < 0.00001);
         assert!((samples[delayed_frame] - 0.5).abs() < 0.00001);
         assert!((samples[delayed_frame + 1] + 0.25).abs() < 0.00001);
+    }
+
+    #[test]
+    fn standalone_spatial_effect_uses_process_unit_limiter() {
+        let mut settings = DspSettings::default();
+        settings.spatial = Some(prepared_spatial(2, &[&[1.0], &[1.0]]));
+        let mut chain = DspChain::new(48_000, 2, &settings);
+        let output_frame = EARLY_CONVOLUTION_BLOCK_SIZE - 1 + SoftwareLimiter::LOOKAHEAD;
+        let mut samples = vec![0.0f32; (output_frame + 1) * 2];
+        samples[0] = 0.5;
+        samples[1] = -0.25;
+
+        chain.process_interleaved(&mut samples);
+
+        assert!(chain.owns_output_limiter());
+        assert!(samples[..output_frame * 2]
+            .iter()
+            .all(|sample| sample.abs() < 0.00001));
+        assert!((samples[output_frame * 2] - 0.5).abs() < 0.00001);
+        assert!((samples[output_frame * 2 + 1] + 0.25).abs() < 0.00001);
     }
 
     #[test]

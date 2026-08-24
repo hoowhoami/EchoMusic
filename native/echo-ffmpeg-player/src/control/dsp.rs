@@ -1,4 +1,5 @@
 use super::*;
+use crate::builtin_effects::BuiltinEffect;
 use crate::vpf::load_vpf;
 use napi::bindgen_prelude::AsyncTask;
 use napi::{Env, Task};
@@ -128,7 +129,7 @@ impl Task for SetAudioEffectTask {
     type JsValue = ();
 
     fn compute(&mut self) -> napi::Result<Self::Output> {
-        let (vpf_path, impulse_response_path) =
+        let (vpf_path, impulse_response_path, builtin) =
             parse_audio_effect_payload(&self.payload).map_err(napi::Error::from_reason)?;
         let (sample_rate, request_seq) = with_runtime(|runtime| {
             runtime.spatial_request_seq = runtime.spatial_request_seq.wrapping_add(1);
@@ -162,6 +163,7 @@ impl Task for SetAudioEffectTask {
                 return Ok(());
             }
             runtime.spatial_file_path = impulse_response_path;
+            runtime.dsp_settings.builtin = builtin;
             runtime.dsp_settings.spatial = spatial;
             runtime.dsp_settings.vpf = vpf;
             reset_current_filter_for_audio_effect_change(runtime);
@@ -171,7 +173,8 @@ impl Task for SetAudioEffectTask {
                 PlayerEvent::log(
                     "info",
                     format!(
-                        "audio effect applied: vpf={}, impulse_response={}",
+                        "audio effect applied: builtin={:?}, vpf={}, impulse_response={}",
+                        builtin,
                         vpf_path.is_some(),
                         runtime.spatial_file_path.is_some()
                     ),
@@ -188,9 +191,9 @@ impl Task for SetAudioEffectTask {
 
 fn parse_audio_effect_payload(
     payload: &serde_json::Value,
-) -> Result<(Option<String>, Option<String>), String> {
+) -> Result<(Option<String>, Option<String>, BuiltinEffect), String> {
     if payload.is_null() {
-        return Ok((None, None));
+        return Ok((None, None, BuiltinEffect::None));
     }
     let object = payload
         .as_object()
@@ -205,7 +208,18 @@ fn parse_audio_effect_payload(
             _ => Err(format!("invalid audio effect path: {name}")),
         }
     };
-    Ok((path("vpfPath")?, path("impulseResponsePath")?))
+    let vpf_path = path("vpfPath")?;
+    let impulse_response_path = path("impulseResponsePath")?;
+    let builtin = match object.get("builtinEffect") {
+        None | Some(serde_json::Value::Null) => BuiltinEffect::None,
+        Some(serde_json::Value::String(value)) => BuiltinEffect::parse(value.trim())
+            .ok_or_else(|| "invalid builtin audio effect".to_string())?,
+        _ => return Err("invalid builtin audio effect".to_string()),
+    };
+    if builtin.enabled() && (vpf_path.is_some() || impulse_response_path.is_some()) {
+        return Err("builtin effect cannot be combined with VPF or impulse response".to_string());
+    }
+    Ok((vpf_path, impulse_response_path, builtin))
 }
 
 #[napi]

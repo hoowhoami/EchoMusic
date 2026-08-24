@@ -24,7 +24,7 @@ import {
   type CommunityAudioEffectSort,
 } from '@/api/audioEffect';
 import type { AudioEffectValue } from '@/types';
-import { normalizeAudioEffectName } from '../../../shared/audio';
+import { normalizeAudioEffectName, type BuiltinAudioEffect } from '../../../shared/audio';
 
 const {
   player,
@@ -83,9 +83,16 @@ const eqPresets = [
 
 const frequencies = ['31', '62', '125', '250', '500', '1k', '2k', '4k', '8k', '16k'];
 const gains = computed(() => player.equalizerGains);
+const builtinAudioEffects: readonly { value: BuiltinAudioEffect; label: string }[] = [
+  { value: '3d-beauty', label: '3D丽音' },
+  { value: 'dynamic-bass', label: '超重低音' },
+  { value: 'clear-voice', label: '纯净人声' },
+];
 const selectedImpulseResponse = computed(() => settingStore.getSelectedImpulseResponse());
 const impulseResponseActive = computed(
-  () => settingStore.impulseResponseEnabled && !!selectedImpulseResponse.value,
+  () =>
+    settingStore.impulseResponseEnabled &&
+    (!!settingStore.builtinAudioEffect || !!selectedImpulseResponse.value),
 );
 const vpfAudioEffectActive = computed(
   () => impulseResponseActive.value && !!selectedImpulseResponse.value?.vpfPath,
@@ -126,7 +133,11 @@ const resetGains = () => {
 };
 
 const resetImpulseResponse = () => {
-  settingStore.impulseResponseEnabled = false;
+  settingStore.setBuiltinAudioEffect(null);
+};
+
+const selectBuiltinAudioEffect = (effect: BuiltinAudioEffect) => {
+  settingStore.setBuiltinAudioEffect(effect);
 };
 
 const selectImpulseResponse = (id: string) => {
@@ -477,7 +488,7 @@ withDefaults(defineProps<Props>(), {
             class="panel-scroll irs-panel-scroll"
             :content-props="{ class: 'irs-scroll-wrap' }"
           >
-            <div v-if="settingStore.impulseResponseFiles.length > 0" class="effect-preset-grid">
+            <div class="effect-preset-grid">
               <button
                 type="button"
                 class="pm-item w-full! m-0!"
@@ -485,6 +496,17 @@ withDefaults(defineProps<Props>(), {
                 @click="resetImpulseResponse"
               >
                 <span class="pm-label text-center">原声</span>
+              </button>
+              <button
+                v-for="effect in builtinAudioEffects"
+                :key="effect.value"
+                type="button"
+                class="pm-item builtin-effect-item w-full! m-0!"
+                :class="{ 'is-active': settingStore.builtinAudioEffect === effect.value }"
+                @click="selectBuiltinAudioEffect(effect.value)"
+              >
+                <span class="pm-label text-center">{{ effect.label }}</span>
+                <span class="builtin-effect-badge" aria-label="精选音效" title="精选音效"> ★ </span>
               </button>
               <button
                 v-for="file in settingStore.impulseResponseFiles"
@@ -502,10 +524,6 @@ withDefaults(defineProps<Props>(), {
                   {{ getImpulseResponseDisplayName(file.name) }}
                 </span>
               </button>
-            </div>
-            <div v-else class="irs-panel-empty">
-              <span>暂无音效文件</span>
-              <small>可前往设置导入，或从音效社区下载</small>
             </div>
           </Scrollbar>
 
@@ -813,6 +831,26 @@ withDefaults(defineProps<Props>(), {
   min-width: 0;
   flex: 1;
   text-align: center;
+}
+
+.builtin-effect-item {
+  position: relative;
+}
+
+.builtin-effect-badge {
+  position: absolute;
+  top: 3px;
+  right: 4px;
+  color: #f59e0b;
+  font-size: 7px;
+  line-height: 1;
+  opacity: 0.9;
+  pointer-events: none;
+}
+
+.effect-popover .pm-item.is-active .builtin-effect-badge {
+  color: #fde68a;
+  opacity: 1;
 }
 
 .effect-preset-grid {

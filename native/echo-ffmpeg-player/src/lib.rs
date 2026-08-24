@@ -1,4 +1,5 @@
 mod audio_graph;
+mod builtin_effects;
 mod config;
 mod control;
 mod decoder;

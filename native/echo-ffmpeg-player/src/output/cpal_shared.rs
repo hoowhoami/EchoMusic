@@ -839,10 +839,17 @@ fn process_output_signal(
     // target across this buffer, so fades and volume changes stay zipper-free even
     // though the control side only updates the target every ~16 ms.
     let start_gain = shared.applied_output_gain().unwrap_or(target_gain);
+    let preserve_effect_limiter =
+        shared.effect_limiter_active() && start_gain.max(target_gain) <= 1.0;
     let frames = output.len() / channels;
     if frames == 0 || (start_gain - target_gain).abs() <= f32::EPSILON {
         for sample in output.iter_mut() {
-            *sample = soft_limit_sample(*sample * target_gain);
+            let scaled = *sample * target_gain;
+            *sample = if preserve_effect_limiter {
+                scaled
+            } else {
+                soft_limit_sample(scaled)
+            };
         }
     } else {
         let step = (target_gain - start_gain) / frames as f32;
@@ -850,13 +857,23 @@ fn process_output_signal(
         for (frame_index, frame) in chunks.by_ref().enumerate() {
             let gain = start_gain + step * (frame_index + 1) as f32;
             for sample in frame.iter_mut() {
-                *sample = soft_limit_sample(*sample * gain);
+                let scaled = *sample * gain;
+                *sample = if preserve_effect_limiter {
+                    scaled
+                } else {
+                    soft_limit_sample(scaled)
+                };
             }
         }
         // A trailing partial frame (malformed buffer) still gets the target gain
         // so no sample is ever emitted unscaled.
         for sample in chunks.into_remainder() {
-            *sample = soft_limit_sample(*sample * target_gain);
+            let scaled = *sample * target_gain;
+            *sample = if preserve_effect_limiter {
+                scaled
+            } else {
+                soft_limit_sample(scaled)
+            };
         }
     }
     shared.store_applied_output_gain(target_gain);
@@ -1222,6 +1239,19 @@ mod tests {
         assert!(output[0] > 0.95);
         assert!(output[1] > -1.0);
         assert!(output[1] < -0.95);
+    }
+
+    #[test]
+    fn output_signal_preserves_process_unit_limiter_below_unity_gain() {
+        let mix_format = MixFormat::stereo_f32(48_000);
+        let settings = DspSettings::default();
+        let shared = SharedAudio::new(mix_format, 0.2, 8.0, &settings);
+        shared.set_effect_limiter_active_for_test(true);
+        let mut output = [0.98, -0.98];
+
+        process_output_signal(&mut output, 2, 48_000, 1.0, &shared);
+
+        assert_eq!(output, [0.98, -0.98]);
     }
 
     #[test]

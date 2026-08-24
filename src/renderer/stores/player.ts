@@ -285,6 +285,9 @@ export const usePlayerStore = defineStore(
     const audioManager = createAudioManager(state, engine, refreshCurrentTrack);
     const getActiveSpatialAudioEffect = (): AudioEffectPlaybackOptions | null => {
       if (!settingStore.impulseResponseEnabled) return null;
+      if (settingStore.builtinAudioEffect) {
+        return { builtinEffect: settingStore.builtinAudioEffect };
+      }
       const effect = settingStore.getSelectedImpulseResponse();
       if (!effect) return null;
       if (effect.kind === 'imported-ir' || effect.kind === 'community-ir') {
@@ -498,6 +501,7 @@ export const usePlayerStore = defineStore(
           settingStore.exclusiveAudioDevice !== snapshot.exclusiveAudioDevice;
         const nextSpatialAudioEffect = getActiveSpatialAudioEffect();
         const shouldLoadSpatialAudioEffect =
+          nextSpatialAudioEffect?.builtinEffect !== snapshot.spatialAudioEffect?.builtinEffect ||
           nextSpatialAudioEffect?.vpfPath !== snapshot.spatialAudioEffect?.vpfPath ||
           nextSpatialAudioEffect?.impulseResponsePath !==
             snapshot.spatialAudioEffect?.impulseResponsePath;

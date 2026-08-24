@@ -29,7 +29,10 @@ export interface DownloadCommunityAudioEffectResult {
   error?: string;
 }
 
+export type BuiltinAudioEffect = 'dynamic-bass' | 'clear-voice' | '3d-beauty';
+
 export interface AudioEffectPlaybackOptions {
+  builtinEffect?: BuiltinAudioEffect | null;
   vpfPath?: string | null;
   impulseResponsePath?: string | null;
 }

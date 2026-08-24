@@ -3,7 +3,11 @@ import type { CloseBehavior, ThemeMode } from '../../shared/app';
 import { normalizeLogSettings, type AppLogLevel, type LogSettings } from '../../shared/logging';
 import type { AudioQualityValue, OutputDeviceOption, OutputDeviceStatus } from '../types';
 import { buildFontFamily } from '../../shared/font';
-import { normalizeAudioEffectName, type SpatialAudioEffectEntry } from '../../shared/audio';
+import {
+  normalizeAudioEffectName,
+  type BuiltinAudioEffect,
+  type SpatialAudioEffectEntry,
+} from '../../shared/audio';
 import {
   DEFAULT_NETWORK_SETTINGS,
   normalizeNetworkSettings,
@@ -131,6 +135,7 @@ export const useSettingStore = defineStore('setting', {
     volumeNormalization: true,
     volumeNormalizationLufs: -14,
     impulseResponseEnabled: false,
+    builtinAudioEffect: null as BuiltinAudioEffect | null,
     selectedImpulseResponseId: '',
     impulseResponseFiles: [] as SpatialAudioEffectEntry[],
     keepAliveEnabled: true,
@@ -438,7 +443,7 @@ export const useSettingStore = defineStore('setting', {
         this.selectedImpulseResponseId = '';
         this.impulseResponseEnabled = false;
       }
-      if (nextFiles.length === 0) {
+      if (nextFiles.length === 0 && !this.builtinAudioEffect) {
         this.selectedImpulseResponseId = '';
         this.impulseResponseEnabled = false;
       }
@@ -459,8 +464,14 @@ export const useSettingStore = defineStore('setting', {
     },
     setSelectedImpulseResponse(id: string) {
       if (!this.impulseResponseFiles.some((item) => item.id === id)) return;
+      this.builtinAudioEffect = null;
       this.selectedImpulseResponseId = id;
       this.impulseResponseEnabled = true;
+    },
+    setBuiltinAudioEffect(effect: BuiltinAudioEffect | null) {
+      this.builtinAudioEffect = effect;
+      this.selectedImpulseResponseId = '';
+      this.impulseResponseEnabled = effect !== null;
     },
     renameImpulseResponseFile(id: string, name: string) {
       const normalizedName = getUniqueImpulseResponseName(

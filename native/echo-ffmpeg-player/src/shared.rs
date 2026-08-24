@@ -62,6 +62,7 @@ pub struct SharedAudio {
     gapless_prepare_changed: Condvar,
     volume_bits: AtomicU32,
     normalization_gain_bits: AtomicU32,
+    effect_limiter_active: AtomicBool,
     /// Gain actually applied at the end of the previous output callback buffer.
     /// Stored as f32 bits; NaN means "unset" (first buffer applies the target directly).
     /// Written only by the single active output callback, so no producer contention.
@@ -152,6 +153,11 @@ impl SharedAudio {
             volume_bits: AtomicU32::new(1.0f32.to_bits()),
             normalization_gain_bits: AtomicU32::new(
                 dsp_settings.normalization_gain_linear().to_bits(),
+            ),
+            effect_limiter_active: AtomicBool::new(
+                dsp_settings.builtin.enabled()
+                    || dsp_settings.spatial.is_some()
+                    || dsp_settings.vpf.is_some(),
             ),
             applied_output_gain_bits: AtomicU32::new(f32::NAN.to_bits()),
             mix_format,
@@ -333,10 +339,23 @@ impl SharedAudio {
             .to_bits(),
             Ordering::Release,
         );
+        self.effect_limiter_active.store(
+            settings.builtin.enabled() || settings.spatial.is_some() || settings.vpf.is_some(),
+            Ordering::Release,
+        );
         if let Ok(mut current) = self.dsp_settings.lock() {
             *current = settings.clone();
         }
         self.decoded_queue_changed.notify_all();
+    }
+
+    pub fn effect_limiter_active(&self) -> bool {
+        self.effect_limiter_active.load(Ordering::Acquire)
+    }
+
+    #[cfg(test)]
+    pub fn set_effect_limiter_active_for_test(&self, active: bool) {
+        self.effect_limiter_active.store(active, Ordering::Release);
     }
 
     pub fn set_normalization_gain_db(&self, gain_db: f32) {

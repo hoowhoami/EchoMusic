@@ -37,6 +37,7 @@ enum AudioFilterNodeKind {
     FormatConvert,
     Tempo,
     Equalizer,
+    Builtin,
     Spatial,
     Vpf,
     Normalization,
@@ -217,6 +218,7 @@ impl AudioFilterNodeKind {
             Self::FormatConvert => "format-convert",
             Self::Tempo => "tempo",
             Self::Equalizer => "equalizer",
+            Self::Builtin => "builtin",
             Self::Spatial => "spatial",
             Self::Vpf => "vpf",
             Self::Normalization => "normalization",
@@ -247,6 +249,7 @@ fn graph_node_snapshot(
     let latency_secs = match node.kind {
         AudioFilterNodeKind::Tempo => tempo_latency_secs,
         AudioFilterNodeKind::Spatial => effects.spatial_latency_secs(),
+        AudioFilterNodeKind::Builtin => effects.builtin_latency_secs(),
         AudioFilterNodeKind::Vpf => effects.vpf_latency_secs(),
         _ => 0.0,
     };
@@ -294,6 +297,14 @@ fn graph_node_parameters(
                 runtime_editable: false,
             }]
         }
+        AudioFilterNodeKind::Builtin => vec![AudioGraphNodeParameterSnapshot {
+            name: "effect".to_string(),
+            value: settings.builtin.as_str().to_string(),
+            unit: None,
+            min: None,
+            max: None,
+            runtime_editable: false,
+        }],
         AudioFilterNodeKind::Vpf => {
             let Some(vpf) = settings.vpf.as_ref() else {
                 return Vec::new();
@@ -418,7 +429,9 @@ impl AudioFilterGraph {
         self.processed_output.clear();
         self.tempo.finish_into(&mut self.processed_output)?;
         if !self.processed_output.is_empty() {
-            soft_limit_interleaved(&mut self.processed_output);
+            if !self.effects.owns_output_limiter() {
+                soft_limit_interleaved(&mut self.processed_output);
+            }
             source_frames = source_frames.saturating_add(tempo_source_frames(
                 self.processed_output.len(),
                 self.tempo.speed(),
@@ -461,7 +474,9 @@ impl AudioFilterGraph {
         self.processed_output.clear();
         self.tempo
             .process_into(output, &mut self.processed_output)?;
-        soft_limit_interleaved(&mut self.processed_output);
+        if !self.effects.owns_output_limiter() {
+            soft_limit_interleaved(&mut self.processed_output);
+        }
         let source_frames = tempo_source_frames(
             self.processed_output.len(),
             speed,
@@ -501,6 +516,13 @@ fn filter_nodes_for_settings(settings: &DspSettings) -> Vec<AudioFilterNode> {
         nodes.push(AudioFilterNode {
             kind: AudioFilterNodeKind::Equalizer,
             channels: ChannelRequirement::Preserve,
+            flush: FilterFlushMode::Reset,
+        });
+    }
+    if settings.builtin.enabled() {
+        nodes.push(AudioFilterNode {
+            kind: AudioFilterNodeKind::Builtin,
+            channels: ChannelRequirement::Stereo,
             flush: FilterFlushMode::Reset,
         });
     }

@@ -83,10 +83,21 @@ const normalizeAudioEffectPlaybackOptions = async (
 ): Promise<AudioEffectPlaybackOptions | null> => {
   if (options === null) return null;
   if (!options || typeof options !== 'object') throw new Error('音效参数无效');
+  const builtinEffect =
+    options.builtinEffect === 'dynamic-bass' ||
+    options.builtinEffect === 'clear-voice' ||
+    options.builtinEffect === '3d-beauty'
+      ? options.builtinEffect
+      : null;
+  if (options.builtinEffect != null && !builtinEffect) throw new Error('内置音效参数无效');
   const [vpfPath, impulseResponsePath] = await Promise.all([
     resolveTrustedAudioEffectFile(options.vpfPath, 'vpf'),
     resolveTrustedAudioEffectFile(options.impulseResponsePath, 'impulse-response'),
   ]);
+  if (builtinEffect && (vpfPath || impulseResponsePath)) {
+    throw new Error('内置音效不能与 VPF 或脉冲响应同时使用');
+  }
+  if (builtinEffect) return { builtinEffect };
   if (!vpfPath && !impulseResponsePath) return null;
   return { vpfPath, impulseResponsePath };
 };
