@@ -52,6 +52,7 @@ import type {
   PlayerAudioGraphPlanPatch,
   PlayerAudioGraphSnapshot,
 } from '../shared/player-audio-graph';
+import type { DspProviderInspection } from '../shared/audio';
 import type { ResolvePlaylistRequest, ResolvePlaylistResponse } from '../shared/external';
 import type { ShareCaptureRect, ShareTarget } from '../shared/share';
 import type { DiagnosticsMemorySnapshot } from '../shared/diagnostics';
@@ -702,6 +703,10 @@ export interface IElectronAPI {
     setSpeed: (speed: number) => Promise<void>;
     setEqualizer: (gains: number[]) => Promise<void>;
     setAudioEffect: (options: AudioEffectPlaybackOptions | null) => Promise<void>;
+    selectDspProvider: () => Promise<string | null>;
+    listDspProviders: () => Promise<string[]>;
+    inspectDspProvider: (path: string) => Promise<DspProviderInspection>;
+    deleteDspProvider: (path: string) => Promise<void>;
     getAudioGraph: () => Promise<PlayerAudioGraphSnapshot | null>;
     setAudioGraphParameter: (patch: PlayerAudioGraphParameterPatch) => Promise<void>;
     setAudioGraphPlan: (plan: PlayerAudioGraphPlanPatch) => Promise<void>;

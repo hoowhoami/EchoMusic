@@ -1,6 +1,4 @@
 use super::*;
-use crate::builtin_effects::BuiltinEffect;
-use crate::vpf::load_vpf;
 use napi::bindgen_prelude::AsyncTask;
 use napi::{Env, Task};
 use napi_derive::napi;
@@ -129,8 +127,28 @@ impl Task for SetAudioEffectTask {
     type JsValue = ();
 
     fn compute(&mut self) -> napi::Result<Self::Output> {
-        let (vpf_path, impulse_response_path, builtin) =
-            parse_audio_effect_payload(&self.payload).map_err(napi::Error::from_reason)?;
+        let (
+            impulse_response_path,
+            provider_path,
+            provider_preset_json,
+            provider_resource_json,
+            provider_mode,
+        ) = parse_audio_effect_payload(&self.payload).map_err(napi::Error::from_reason)?;
+        let has_provider_resources = provider_resource_json.is_some();
+        let provider_resource_json = provider_path.as_ref().map(|_| {
+            let mut resources = provider_resource_json
+                .as_deref()
+                .and_then(|value| serde_json::from_str::<serde_json::Value>(value).ok())
+                .and_then(|value| value.as_array().cloned())
+                .unwrap_or_default();
+            if let Some(path) = impulse_response_path.as_deref() {
+                resources.push(serde_json::json!({
+                    "kind": "impulse-response",
+                    "path": path,
+                }));
+            }
+            serde_json::Value::Array(resources).to_string()
+        });
         let (sample_rate, request_seq) = with_runtime(|runtime| {
             runtime.spatial_request_seq = runtime.spatial_request_seq.wrapping_add(1);
             Ok((
@@ -142,13 +160,17 @@ impl Task for SetAudioEffectTask {
             ))
         })?;
 
-        let vpf = vpf_path
-            .as_deref()
-            .map(load_vpf)
-            .transpose()
-            .map_err(napi::Error::from_reason)?;
-        let spatial = match (impulse_response_path.as_deref(), sample_rate) {
-            (Some(path), Some(rate)) => {
+        if has_provider_resources && provider_path.is_none() {
+            return Err(napi::Error::from_reason(
+                "该音效资源需要外部 Provider，当前 Basic DSP 不支持".to_string(),
+            ));
+        }
+        let spatial = match (
+            provider_path.is_none(),
+            impulse_response_path.as_deref(),
+            sample_rate,
+        ) {
+            (true, Some(path), Some(rate)) => {
                 Some(prepare_spatial_effect(path, rate).map_err(napi::Error::from_reason)?)
             }
             _ => None,
@@ -163,9 +185,11 @@ impl Task for SetAudioEffectTask {
                 return Ok(());
             }
             runtime.spatial_file_path = impulse_response_path;
-            runtime.dsp_settings.builtin = builtin;
+            runtime.dsp_settings.provider_path = provider_path;
+            runtime.dsp_settings.provider_preset_json = provider_preset_json;
+            runtime.dsp_settings.provider_resource_json = provider_resource_json;
+            runtime.dsp_settings.provider_mode = provider_mode;
             runtime.dsp_settings.spatial = spatial;
-            runtime.dsp_settings.vpf = vpf;
             reset_current_filter_for_audio_effect_change(runtime);
             update_runtime_audio_graph(runtime);
             emit_runtime_event(
@@ -173,9 +197,8 @@ impl Task for SetAudioEffectTask {
                 PlayerEvent::log(
                     "info",
                     format!(
-                        "audio effect applied: builtin={:?}, vpf={}, impulse_response={}",
-                        builtin,
-                        vpf_path.is_some(),
+                        "audio effect applied: provider={}, impulse_response={}",
+                        runtime.dsp_settings.provider_path.is_some(),
                         runtime.spatial_file_path.is_some()
                     ),
                 ),
@@ -191,9 +214,18 @@ impl Task for SetAudioEffectTask {
 
 fn parse_audio_effect_payload(
     payload: &serde_json::Value,
-) -> Result<(Option<String>, Option<String>, BuiltinEffect), String> {
+) -> Result<
+    (
+        Option<String>,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+        u32,
+    ),
+    String,
+> {
     if payload.is_null() {
-        return Ok((None, None, BuiltinEffect::None));
+        return Ok((None, None, None, None, 0));
     }
     let object = payload
         .as_object()
@@ -208,18 +240,30 @@ fn parse_audio_effect_payload(
             _ => Err(format!("invalid audio effect path: {name}")),
         }
     };
-    let vpf_path = path("vpfPath")?;
     let impulse_response_path = path("impulseResponsePath")?;
-    let builtin = match object.get("builtinEffect") {
-        None | Some(serde_json::Value::Null) => BuiltinEffect::None,
-        Some(serde_json::Value::String(value)) => BuiltinEffect::parse(value.trim())
-            .ok_or_else(|| "invalid builtin audio effect".to_string())?,
-        _ => return Err("invalid builtin audio effect".to_string()),
+    let provider_path = path("providerPath")?;
+    let provider_preset_json = match object.get("providerPresetJson") {
+        None | Some(serde_json::Value::Null) => None,
+        Some(serde_json::Value::String(value)) => Some(value.clone()),
+        _ => return Err("invalid provider preset".to_string()),
     };
-    if builtin.enabled() && (vpf_path.is_some() || impulse_response_path.is_some()) {
-        return Err("builtin effect cannot be combined with VPF or impulse response".to_string());
-    }
-    Ok((vpf_path, impulse_response_path, builtin))
+    let provider_resource_json = object
+        .get("providerResources")
+        .filter(|value| !value.is_null())
+        .map(serde_json::Value::to_string);
+    let provider_mode = match object.get("providerMode") {
+        None | Some(serde_json::Value::Null) => 1,
+        Some(serde_json::Value::String(value)) if value == "speaker" => 1,
+        Some(serde_json::Value::String(value)) if value == "headphone" => 0,
+        _ => return Err("invalid provider mode".to_string()),
+    };
+    Ok((
+        impulse_response_path,
+        provider_path,
+        provider_preset_json,
+        provider_resource_json,
+        provider_mode,
+    ))
 }
 
 #[napi]

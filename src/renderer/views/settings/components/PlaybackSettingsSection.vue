@@ -258,129 +258,133 @@ const handleRemoveImpulseResponse = (id: string) => {
         />
       </div>
     </template>
-    <div class="settings-divider"></div>
-    <div class="settings-item">
-      <div class="space-y-1">
-        <h3 class="font-semibold">空间音效</h3>
-        <p class="text-sm text-text-secondary">管理本地导入和社区下载的空间音效文件</p>
-      </div>
-      <div class="irs-actions">
-        <Button variant="outline" size="xs" type="button" @click="openImpulseResponseDialog">
-          <Icon :icon="iconPlus" width="14" height="14" class="mr-1" />
-          添加
-        </Button>
-        <Switch
-          :model-value="settingStore.impulseResponseEnabled"
-          :disabled="settingStore.impulseResponseFiles.length === 0"
-          @update:model-value="handleImpulseResponseEnabledChange"
-        />
-      </div>
-    </div>
-
-    <Dialog
-      v-model:open="showImpulseResponseDialog"
-      title="空间音效"
-      showClose
-      :content-style="{ width: '420px' }"
-    >
-      <div class="irs-source-tabs" role="tablist" aria-label="空间音效文件来源">
-        <button
-          type="button"
-          role="tab"
-          :aria-selected="activeImpulseResponseSourceTab === 'local'"
-          :class="{ 'is-active': activeImpulseResponseSourceTab === 'local' }"
-          @click="activeImpulseResponseSourceTab = 'local'"
-        >
-          <span>用户导入</span>
-          <span class="irs-source-count">{{ localImpulseResponseFiles.length }}</span>
-        </button>
-        <button
-          type="button"
-          role="tab"
-          :aria-selected="activeImpulseResponseSourceTab === 'community'"
-          :class="{ 'is-active': activeImpulseResponseSourceTab === 'community' }"
-          @click="activeImpulseResponseSourceTab = 'community'"
-        >
-          <span>社区下载</span>
-          <span class="irs-source-count">{{ communityAudioEffects.length }}</span>
-        </button>
-      </div>
-
-      <div v-if="activeImpulseResponseFiles.length > 0" class="irs-list">
-        <div
-          v-for="file in activeImpulseResponseFiles"
-          :key="file.id"
-          class="irs-file-row"
-          :class="{ 'is-active': file.id === settingStore.selectedImpulseResponseId }"
-        >
-          <span class="irs-file-main">
-            <input
-              v-if="editingImpulseResponseId === file.id"
-              v-model="impulseResponseNameDraft"
-              class="irs-rename-input"
-              type="text"
-              maxlength="40"
-              @keydown.enter.prevent="commitRenameImpulseResponse(file.id)"
-              @keydown.esc.prevent="cancelRenameImpulseResponse"
-            />
-            <span v-else class="irs-file-name">{{ getImpulseResponseDisplayName(file.name) }}</span>
-          </span>
-          <button
-            v-if="editingImpulseResponseId === file.id"
-            type="button"
-            class="irs-row-btn"
-            title="保存名称"
-            @click.stop="commitRenameImpulseResponse(file.id)"
-          >
-            <Icon :icon="iconCheckMark" width="14" height="14" />
-          </button>
-          <button
-            v-if="editingImpulseResponseId === file.id"
-            type="button"
-            class="irs-row-btn"
-            title="取消重命名"
-            @click.stop="cancelRenameImpulseResponse"
-          >
-            <Icon :icon="iconX" width="14" height="14" />
-          </button>
-          <button
-            v-else
-            type="button"
-            class="irs-row-btn"
-            title="重命名"
-            @click.stop="beginRenameImpulseResponse(file)"
-          >
-            <Icon :icon="iconPencil" width="14" height="14" />
-          </button>
-          <button
-            type="button"
-            class="irs-row-btn is-danger"
-            title="移除音效文件"
-            @click.stop="handleRemoveImpulseResponse(file.id)"
-          >
-            <Icon :icon="iconTrash" width="14" height="14" />
-          </button>
+    <template v-if="false">
+      <div class="settings-divider"></div>
+      <div class="settings-item">
+        <div class="space-y-1">
+          <h3 class="font-semibold">空间音效</h3>
+          <p class="text-sm text-text-secondary">管理本地导入和社区下载的空间音效文件</p>
+        </div>
+        <div class="irs-actions">
+          <Button variant="outline" size="xs" type="button" @click="openImpulseResponseDialog">
+            <Icon :icon="iconPlus" width="14" height="14" class="mr-1" />
+            添加
+          </Button>
+          <Switch
+            :model-value="settingStore.impulseResponseEnabled"
+            :disabled="settingStore.impulseResponseFiles.length === 0"
+            @update:model-value="handleImpulseResponseEnabledChange"
+          />
         </div>
       </div>
-      <div v-else class="irs-empty">
-        {{ activeImpulseResponseSourceTab === 'local' ? '暂无本地导入音效' : '暂无社区下载音效' }}
-      </div>
 
-      <template #footer>
-        <Button
-          v-if="activeImpulseResponseSourceTab === 'local'"
-          variant="outline"
-          size="sm"
-          type="button"
-          :loading="isImportingImpulseResponse"
-          @click="handleImportImpulseResponse"
-        >
-          <Icon :icon="iconPlus" width="14" height="14" class="mr-1" />
-          导入音效文件
-        </Button>
-        <span v-else class="irs-community-hint">请在播放器的「音效社区」中下载新音效</span>
-      </template>
-    </Dialog>
+      <Dialog
+        v-model:open="showImpulseResponseDialog"
+        title="空间音效"
+        showClose
+        :content-style="{ width: '420px' }"
+      >
+        <div class="irs-source-tabs" role="tablist" aria-label="空间音效文件来源">
+          <button
+            type="button"
+            role="tab"
+            :aria-selected="activeImpulseResponseSourceTab === 'local'"
+            :class="{ 'is-active': activeImpulseResponseSourceTab === 'local' }"
+            @click="activeImpulseResponseSourceTab = 'local'"
+          >
+            <span>用户导入</span>
+            <span class="irs-source-count">{{ localImpulseResponseFiles.length }}</span>
+          </button>
+          <button
+            type="button"
+            role="tab"
+            :aria-selected="activeImpulseResponseSourceTab === 'community'"
+            :class="{ 'is-active': activeImpulseResponseSourceTab === 'community' }"
+            @click="activeImpulseResponseSourceTab = 'community'"
+          >
+            <span>社区下载</span>
+            <span class="irs-source-count">{{ communityAudioEffects.length }}</span>
+          </button>
+        </div>
+
+        <div v-if="activeImpulseResponseFiles.length > 0" class="irs-list">
+          <div
+            v-for="file in activeImpulseResponseFiles"
+            :key="file.id"
+            class="irs-file-row"
+            :class="{ 'is-active': file.id === settingStore.selectedImpulseResponseId }"
+          >
+            <span class="irs-file-main">
+              <input
+                v-if="editingImpulseResponseId === file.id"
+                v-model="impulseResponseNameDraft"
+                class="irs-rename-input"
+                type="text"
+                maxlength="40"
+                @keydown.enter.prevent="commitRenameImpulseResponse(file.id)"
+                @keydown.esc.prevent="cancelRenameImpulseResponse"
+              />
+              <span v-else class="irs-file-name">{{
+                getImpulseResponseDisplayName(file.name)
+              }}</span>
+            </span>
+            <button
+              v-if="editingImpulseResponseId === file.id"
+              type="button"
+              class="irs-row-btn"
+              title="保存名称"
+              @click.stop="commitRenameImpulseResponse(file.id)"
+            >
+              <Icon :icon="iconCheckMark" width="14" height="14" />
+            </button>
+            <button
+              v-if="editingImpulseResponseId === file.id"
+              type="button"
+              class="irs-row-btn"
+              title="取消重命名"
+              @click.stop="cancelRenameImpulseResponse"
+            >
+              <Icon :icon="iconX" width="14" height="14" />
+            </button>
+            <button
+              v-else
+              type="button"
+              class="irs-row-btn"
+              title="重命名"
+              @click.stop="beginRenameImpulseResponse(file)"
+            >
+              <Icon :icon="iconPencil" width="14" height="14" />
+            </button>
+            <button
+              type="button"
+              class="irs-row-btn is-danger"
+              title="移除音效文件"
+              @click.stop="handleRemoveImpulseResponse(file.id)"
+            >
+              <Icon :icon="iconTrash" width="14" height="14" />
+            </button>
+          </div>
+        </div>
+        <div v-else class="irs-empty">
+          {{ activeImpulseResponseSourceTab === 'local' ? '暂无本地导入音效' : '暂无社区下载音效' }}
+        </div>
+
+        <template #footer>
+          <Button
+            v-if="activeImpulseResponseSourceTab === 'local'"
+            variant="outline"
+            size="sm"
+            type="button"
+            :loading="isImportingImpulseResponse"
+            @click="handleImportImpulseResponse"
+          >
+            <Icon :icon="iconPlus" width="14" height="14" class="mr-1" />
+            导入音效文件
+          </Button>
+          <span v-else class="irs-community-hint">请在播放器的「音效社区」中下载新音效</span>
+        </template>
+      </Dialog>
+    </template>
 
     <div class="settings-divider"></div>
     <div class="settings-item">

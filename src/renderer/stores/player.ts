@@ -283,30 +283,70 @@ export const usePlayerStore = defineStore(
     };
 
     const audioManager = createAudioManager(state, engine, refreshCurrentTrack);
+    const configuredProviderPath = () =>
+      settingStore.dspProviderEnabled
+        ? settingStore.dspProviderPath.trim() || undefined
+        : undefined;
+    const configuredProviderMode = (): 'headphone' | 'speaker' =>
+      settingStore.dspProviderMode === 'headphone' ? 'headphone' : 'speaker';
+    const configuredProviderPreset = () => settingStore.dspProviderPresetJson.trim() || undefined;
+    const ensureConfiguredProviderPath = async () => {
+      if (!settingStore.dspProviderEnabled) return undefined;
+      const savedPath = configuredProviderPath();
+      if (savedPath) return savedPath;
+      const providers = await window.electron.player.listDspProviders();
+      if (providers.length !== 1) return undefined;
+      settingStore.configureDspProvider(providers[0], settingStore.dspProviderMode);
+      return providers[0];
+    };
+    const refreshAudioGraphSnapshot = async () => {
+      const graph = await engine.getAudioGraph();
+      state.playbackDiagnostics.graph = graph
+        ? {
+            ...graph,
+            updatedAt: Date.now(),
+          }
+        : null;
+    };
     const getActiveSpatialAudioEffect = (): AudioEffectPlaybackOptions | null => {
-      if (!settingStore.impulseResponseEnabled) return null;
-      if (settingStore.builtinAudioEffect) {
-        return { builtinEffect: settingStore.builtinAudioEffect };
-      }
+      const providerPath = configuredProviderPath();
+      const providerMode = configuredProviderMode();
+      const providerOnlyEffect = providerPath
+        ? {
+            providerPath,
+            providerMode,
+            providerPresetJson: configuredProviderPreset(),
+          }
+        : null;
+      if (!settingStore.impulseResponseEnabled) return providerOnlyEffect;
       const effect = settingStore.getSelectedImpulseResponse();
-      if (!effect) return null;
+      if (!effect) return providerOnlyEffect;
+      const providerResource = (kind: string, resourcePath?: string) =>
+        providerPath && resourcePath ? [{ kind, path: resourcePath }] : undefined;
       if (effect.kind === 'imported-ir' || effect.kind === 'community-ir') {
         return effect.impulseResponsePath
-          ? { impulseResponsePath: effect.impulseResponsePath }
-          : null;
-      }
-      if (effect.kind === 'community-vpf') {
-        return effect.vpfPath ? { vpfPath: effect.vpfPath } : null;
-      }
-      if (effect.kind === 'community-combined') {
-        return effect.vpfPath && effect.impulseResponsePath
           ? {
-              vpfPath: effect.vpfPath,
               impulseResponsePath: effect.impulseResponsePath,
+              providerPath,
+              providerMode,
+              providerResources: providerResource('impulse-response', effect.impulseResponsePath),
             }
           : null;
       }
-      return null;
+      if (effect.vpfPath && providerPath) {
+        return {
+          providerPath,
+          providerMode,
+          impulseResponsePath: effect.impulseResponsePath,
+          providerResources: [
+            { kind: 'vpf', path: effect.vpfPath },
+            ...(effect.impulseResponsePath
+              ? [{ kind: 'impulse-response', path: effect.impulseResponsePath }]
+              : []),
+          ],
+        };
+      }
+      return providerOnlyEffect;
     };
     const showPlaybackNotice = (code: string, track?: Song | null) => {
       const userStore = useUserStore();
@@ -501,8 +541,12 @@ export const usePlayerStore = defineStore(
           settingStore.exclusiveAudioDevice !== snapshot.exclusiveAudioDevice;
         const nextSpatialAudioEffect = getActiveSpatialAudioEffect();
         const shouldLoadSpatialAudioEffect =
-          nextSpatialAudioEffect?.builtinEffect !== snapshot.spatialAudioEffect?.builtinEffect ||
-          nextSpatialAudioEffect?.vpfPath !== snapshot.spatialAudioEffect?.vpfPath ||
+          nextSpatialAudioEffect?.providerPath !== snapshot.spatialAudioEffect?.providerPath ||
+          nextSpatialAudioEffect?.providerMode !== snapshot.spatialAudioEffect?.providerMode ||
+          nextSpatialAudioEffect?.providerPresetJson !==
+            snapshot.spatialAudioEffect?.providerPresetJson ||
+          JSON.stringify(nextSpatialAudioEffect?.providerResources ?? []) !==
+            JSON.stringify(snapshot.spatialAudioEffect?.providerResources ?? []) ||
           nextSpatialAudioEffect?.impulseResponsePath !==
             snapshot.spatialAudioEffect?.impulseResponsePath;
         const shouldUpdateStallTimeout =
@@ -534,6 +578,7 @@ export const usePlayerStore = defineStore(
         if (shouldLoadSpatialAudioEffect) {
           void engine
             .setSpatialAudioEffect(nextSpatialAudioEffect)
+            .then(refreshAudioGraphSnapshot)
             .catch(() => disableActiveSpatialAudioEffect(nextSpatialAudioEffect));
         }
         if (shouldUpdateStallTimeout)
@@ -547,12 +592,25 @@ export const usePlayerStore = defineStore(
     };
 
     const disableActiveSpatialAudioEffect = (failedEffect?: AudioEffectPlaybackOptions | null) => {
+      if (failedEffect?.providerPath) {
+        if (configuredProviderPath() !== failedEffect.providerPath) return;
+        settingStore.disableDspProvider();
+        const builtinEffect = getActiveSpatialAudioEffect();
+        void engine
+          .setSpatialAudioEffect(builtinEffect)
+          .then(refreshAudioGraphSnapshot)
+          .catch(() => disableActiveSpatialAudioEffect(builtinEffect));
+        toastStore.warning(
+          builtinEffect
+            ? '第三方音效引擎加载失败，已改用内置音效处理'
+            : '第三方音效引擎加载失败，已自动停用',
+          4200,
+        );
+        return;
+      }
       if (failedEffect) {
         const current = getActiveSpatialAudioEffect();
-        if (
-          current?.vpfPath !== failedEffect.vpfPath ||
-          current?.impulseResponsePath !== failedEffect.impulseResponsePath
-        ) {
+        if (current?.impulseResponsePath !== failedEffect.impulseResponsePath) {
           return;
         }
       }
@@ -658,15 +716,17 @@ export const usePlayerStore = defineStore(
       audioManager.setVolume(state.volume);
       engine.setPlaybackRate(state.playbackRate);
       engine.setEqualizer(state.equalizerGains);
-      void settingStore
-        .reconcileSpatialAudioEffects()
-        .then(() => {
+      void (async () => {
+        try {
+          await ensureConfiguredProviderPath();
+          await settingStore.reconcileSpatialAudioEffects();
           const effect = getActiveSpatialAudioEffect();
-          return engine
-            .setSpatialAudioEffect(effect)
-            .catch(() => disableActiveSpatialAudioEffect(effect));
-        })
-        .catch(() => disableActiveSpatialAudioEffect());
+          await engine.setSpatialAudioEffect(effect);
+          await refreshAudioGraphSnapshot();
+        } catch {
+          disableActiveSpatialAudioEffect(getActiveSpatialAudioEffect());
+        }
+      })();
       engine.setVolumeNormalization(settingStore.volumeNormalization);
       engine.setReferenceLufs(settingStore.volumeNormalizationLufs);
       engine.setLoopFile(state.playMode === 'single');

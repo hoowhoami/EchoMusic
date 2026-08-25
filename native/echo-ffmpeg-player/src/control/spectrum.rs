@@ -8,7 +8,7 @@ pub fn configure_spectrum(options: Option<SpectrumOptions>) -> napi::Result<Spec
     with_runtime(|runtime| {
         runtime.spectrum_config = SpectrumConfig::from_options(options);
         runtime.spectrum_analyzer =
-            crate::dsp::SpectrumAnalyzer::new(runtime.spectrum_config.clone());
+            crate::spectrum::SpectrumAnalyzer::new(runtime.spectrum_config.clone());
         runtime.spectrum_signal_logged = false;
         Ok(SpectrumStatus {
             available: true,

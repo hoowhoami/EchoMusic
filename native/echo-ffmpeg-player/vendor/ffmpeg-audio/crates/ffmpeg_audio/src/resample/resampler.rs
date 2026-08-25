@@ -20,6 +20,7 @@ pub struct ResampleOptions {
     pub target_sample_rate: i32,
     pub target_channels: i32,
     pub target_sample_fmt: sys::AVSampleFormat,
+    pub preserve_input_channel_layout: bool,
 }
 
 impl Default for ResampleOptions {
@@ -28,6 +29,7 @@ impl Default for ResampleOptions {
             target_sample_rate: 44100,
             target_channels: 2,
             target_sample_fmt: sys::AVSampleFormat_AV_SAMPLE_FMT_FLT,
+            preserve_input_channel_layout: false,
         }
     }
 }
@@ -68,6 +70,18 @@ impl ResampleOptions {
     #[must_use]
     pub const fn channels(mut self, channels: i32) -> Self {
         self.target_channels = channels;
+        self
+    }
+
+    /// Preserves the input channel layout when the input and target channel counts match.
+    ///
+    /// This is useful for discrete multichannel data such as true-stereo impulse responses,
+    /// where each encoded channel has matrix semantics and must not be remixed into FFmpeg's
+    /// default speaker layout. If the channel counts differ, the regular default output layout
+    /// is used so normal upmix/downmix behavior remains available.
+    #[must_use]
+    pub const fn preserve_channel_layout(mut self) -> Self {
+        self.preserve_input_channel_layout = true;
         self
     }
 
@@ -130,8 +144,8 @@ impl Resampler {
     ) -> Result<Self> {
         options.validate()?;
 
-        let out_layout = ChannelLayout::from_default(options.target_channels);
         let in_layout = ChannelLayout::from_existing(in_layout_ptr)?;
+        let out_layout = Self::output_layout(&options, &in_layout)?;
 
         let swr = SwrContext::new(
             out_layout.as_layout(),
@@ -168,6 +182,19 @@ impl Resampler {
         self.actual_samples_per_channel = 0;
         self.stride_samples_per_channel = 0;
         self.swr.flush()
+    }
+
+    fn output_layout(
+        options: &ResampleOptions,
+        in_layout: &ChannelLayout,
+    ) -> Result<ChannelLayout> {
+        if options.preserve_input_channel_layout
+            && in_layout.channels() == options.target_channels as usize
+        {
+            ChannelLayout::from_existing(in_layout.as_ptr())
+        } else {
+            Ok(ChannelLayout::from_default(options.target_channels))
+        }
     }
 
     /// Processes a single raw audio frame and writes the converted samples
@@ -271,8 +298,8 @@ impl Resampler {
             #[cfg(feature = "tracing")]
             tracing::info!("Audio format changed mid-stream. Rebuilding resampler pipeline.");
 
-            let out_layout = ChannelLayout::from_default(self.options.target_channels);
             let temp_in_layout = ChannelLayout::from_existing(frame_layout_ptr)?;
+            let out_layout = Self::output_layout(&self.options, &temp_in_layout)?;
 
             let new_swr = SwrContext::new(
                 out_layout.as_layout(),

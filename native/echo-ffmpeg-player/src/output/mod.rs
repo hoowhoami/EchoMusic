@@ -408,7 +408,7 @@ pub(crate) fn output_start_was_cancelled(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::effects::DspSettings;
+    use crate::dsp::DspSettings;
     use crate::shared::MixFormat;
 
     #[test]

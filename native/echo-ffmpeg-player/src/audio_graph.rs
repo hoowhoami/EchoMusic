@@ -1,4 +1,4 @@
-use crate::effects::{DspChain, DspSettings};
+use crate::dsp::{DspChain, DspSettings};
 use crate::shared::{
     AudioOutputStats, AudioSampleFormat, DecodedAudioChunk, DecodedAudioData, DecodedAudioFormat,
     MixFormat,
@@ -37,9 +37,7 @@ enum AudioFilterNodeKind {
     FormatConvert,
     Tempo,
     Equalizer,
-    Builtin,
     Spatial,
-    Vpf,
     Normalization,
     Limiter,
 }
@@ -105,6 +103,16 @@ pub struct AudioGraphSnapshot {
     pub device_output: Option<AudioGraphDeviceOutputSnapshot>,
     pub latency_secs: f64,
     pub nodes: Vec<AudioGraphNodeSnapshot>,
+    pub provider_id: Option<String>,
+    pub provider_version: Option<String>,
+    pub provider_path: Option<String>,
+    pub provider_mode: Option<String>,
+    pub provider_resource_json: Option<String>,
+    pub provider_preset_json: Option<String>,
+    pub provider_latency_frames: Option<f64>,
+    pub provider_preferred_block_frames: Option<f64>,
+    pub provider_manifest_json: Option<String>,
+    pub provider_state_json: Option<String>,
 }
 
 #[napi(object)]
@@ -153,7 +161,8 @@ pub fn snapshot_filter_graph_with_device_output(
         process_format.sample_rate,
         process_format.channels,
         settings,
-    );
+    )
+    .expect("audio graph DSP provider should initialize");
     let latency_secs = tempo_latency_secs + effects.latency_secs();
     AudioGraphSnapshot {
         revision: 0.0,
@@ -165,6 +174,40 @@ pub fn snapshot_filter_graph_with_device_output(
             .into_iter()
             .map(|node| graph_node_snapshot(node, settings, tempo_latency_secs, &effects))
             .collect(),
+        provider_id: effects
+            .provider_descriptor()
+            .as_ref()
+            .map(|info| info.id.clone()),
+        provider_version: effects
+            .provider_descriptor()
+            .as_ref()
+            .map(|info| info.version.clone()),
+        provider_path: effects.provider_identity().map(str::to_string),
+        provider_mode: effects.provider_identity().map(|_| {
+            if settings.provider_mode == 1 {
+                "speaker".to_string()
+            } else {
+                "headphone".to_string()
+            }
+        }),
+        provider_resource_json: settings.provider_resource_json.clone(),
+        provider_preset_json: settings.provider_preset_json.clone(),
+        provider_latency_frames: effects
+            .provider_descriptor()
+            .as_ref()
+            .map(|info| f64::from(info.latency_frames)),
+        provider_preferred_block_frames: effects
+            .provider_descriptor()
+            .as_ref()
+            .map(|info| f64::from(info.preferred_block_frames)),
+        provider_manifest_json: effects
+            .provider_descriptor()
+            .as_ref()
+            .map(|info| info.manifest_json.clone()),
+        provider_state_json: effects
+            .provider_descriptor()
+            .as_ref()
+            .map(|info| info.state_json.clone()),
     }
 }
 
@@ -218,9 +261,7 @@ impl AudioFilterNodeKind {
             Self::FormatConvert => "format-convert",
             Self::Tempo => "tempo",
             Self::Equalizer => "equalizer",
-            Self::Builtin => "builtin",
             Self::Spatial => "spatial",
-            Self::Vpf => "vpf",
             Self::Normalization => "normalization",
             Self::Limiter => "limiter",
         }
@@ -249,8 +290,6 @@ fn graph_node_snapshot(
     let latency_secs = match node.kind {
         AudioFilterNodeKind::Tempo => tempo_latency_secs,
         AudioFilterNodeKind::Spatial => effects.spatial_latency_secs(),
-        AudioFilterNodeKind::Builtin => effects.builtin_latency_secs(),
-        AudioFilterNodeKind::Vpf => effects.vpf_latency_secs(),
         _ => 0.0,
     };
     let parameters = graph_node_parameters(node.kind, settings);
@@ -288,35 +327,40 @@ fn graph_node_parameters(
             let Some(spatial) = settings.spatial.as_ref() else {
                 return Vec::new();
             };
-            vec![AudioGraphNodeParameterSnapshot {
-                name: "mode".to_string(),
-                value: spatial.mode().to_string(),
-                unit: None,
-                min: None,
-                max: None,
-                runtime_editable: false,
-            }]
-        }
-        AudioFilterNodeKind::Builtin => vec![AudioGraphNodeParameterSnapshot {
-            name: "effect".to_string(),
-            value: settings.builtin.as_str().to_string(),
-            unit: None,
-            min: None,
-            max: None,
-            runtime_editable: false,
-        }],
-        AudioFilterNodeKind::Vpf => {
-            let Some(vpf) = settings.vpf.as_ref() else {
-                return Vec::new();
-            };
-            vec![AudioGraphNodeParameterSnapshot {
-                name: "source".to_string(),
-                value: vpf.file_path.clone(),
-                unit: None,
-                min: None,
-                max: None,
-                runtime_editable: false,
-            }]
+            vec![
+                AudioGraphNodeParameterSnapshot {
+                    name: "mode".to_string(),
+                    value: spatial.mode().to_string(),
+                    unit: None,
+                    min: None,
+                    max: None,
+                    runtime_editable: false,
+                },
+                AudioGraphNodeParameterSnapshot {
+                    name: "peak-response".to_string(),
+                    value: format!("{:.2}", spatial.peak_response_db()),
+                    unit: Some("dB".to_string()),
+                    min: None,
+                    max: None,
+                    runtime_editable: false,
+                },
+                AudioGraphNodeParameterSnapshot {
+                    name: "auto-headroom".to_string(),
+                    value: format!("{:.2}", spatial.output_gain_db()),
+                    unit: Some("dB".to_string()),
+                    min: None,
+                    max: Some(0.0),
+                    runtime_editable: false,
+                },
+                AudioGraphNodeParameterSnapshot {
+                    name: "duration".to_string(),
+                    value: format!("{:.2}", spatial.duration_secs() * 1_000.0),
+                    unit: Some("ms".to_string()),
+                    min: Some(0.0),
+                    max: None,
+                    runtime_editable: false,
+                },
+            ]
         }
         AudioFilterNodeKind::Normalization => vec![AudioGraphNodeParameterSnapshot {
             name: "gain".to_string(),
@@ -366,7 +410,7 @@ impl AudioFilterGraph {
                 process_format.sample_rate,
                 process_format.channels,
                 settings,
-            ),
+            )?,
             converted_output: Vec::new(),
             processed_output: Vec::new(),
             mapped_output: Vec::new(),
@@ -387,7 +431,7 @@ impl AudioFilterGraph {
     /// remains consistent. Does **not** recreate `SwrMixConverter`, `DspChain`, or internal buffers.
     pub fn update_settings(&mut self, settings: &DspSettings) -> Result<(), String> {
         self.tempo.set_speed(settings.speed)?;
-        self.effects.update_settings(settings);
+        self.effects.update_settings(settings)?;
         Ok(())
     }
 
@@ -407,8 +451,9 @@ impl AudioFilterGraph {
         if self.converted_output.is_empty() {
             return Ok(0);
         }
-        self.effects.update_settings(settings);
-        self.effects.process_interleaved(&mut self.converted_output);
+        self.effects.update_settings(settings)?;
+        self.effects
+            .process_interleaved(&mut self.converted_output)?;
         output.extend_from_slice(&self.converted_output);
 
         self.process_graph_output(output)
@@ -420,18 +465,27 @@ impl AudioFilterGraph {
         self.converted_output.clear();
         self.converter.finish(&mut self.converted_output)?;
         if !self.converted_output.is_empty() {
-            self.effects.update_settings(settings);
-            self.effects.process_interleaved(&mut self.converted_output);
+            self.effects.update_settings(settings)?;
+            self.effects
+                .process_interleaved(&mut self.converted_output)?;
             output.extend_from_slice(&self.converted_output);
             source_frames = source_frames.saturating_add(self.process_graph_output(output)?);
+        }
+
+        self.converted_output.clear();
+        self.effects.drain(&mut self.converted_output)?;
+        if !self.converted_output.is_empty() {
+            let mut effect_tail = std::mem::take(&mut self.converted_output);
+            // A drained tail has no new source frames, but it must still pass through tempo and
+            // final peak protection before it reaches the output queue.
+            self.process_graph_output(&mut effect_tail)?;
+            output.extend_from_slice(&effect_tail);
         }
 
         self.processed_output.clear();
         self.tempo.finish_into(&mut self.processed_output)?;
         if !self.processed_output.is_empty() {
-            if !self.effects.owns_output_limiter() {
-                soft_limit_interleaved(&mut self.processed_output);
-            }
+            soft_limit_interleaved(&mut self.processed_output);
             source_frames = source_frames.saturating_add(tempo_source_frames(
                 self.processed_output.len(),
                 self.tempo.speed(),
@@ -455,6 +509,18 @@ impl AudioFilterGraph {
         self.process_format
     }
 
+    pub fn provider_identity(&self) -> Option<&str> {
+        self.effects.provider_identity()
+    }
+
+    pub fn provider_mode(&self) -> u32 {
+        self.effects.provider_mode()
+    }
+
+    pub fn provider_resource_identity(&self) -> Option<&str> {
+        self.effects.provider_resource_identity()
+    }
+
     pub fn latency_secs(&self) -> f64 {
         self.tempo.latency_secs(self.process_format.sample_rate) + self.effects.latency_secs()
     }
@@ -474,9 +540,7 @@ impl AudioFilterGraph {
         self.processed_output.clear();
         self.tempo
             .process_into(output, &mut self.processed_output)?;
-        if !self.effects.owns_output_limiter() {
-            soft_limit_interleaved(&mut self.processed_output);
-        }
+        soft_limit_interleaved(&mut self.processed_output);
         let source_frames = tempo_source_frames(
             self.processed_output.len(),
             speed,
@@ -512,17 +576,10 @@ fn filter_nodes_for_settings(settings: &DspSettings) -> Vec<AudioFilterNode> {
         channels: ChannelRequirement::Preserve,
         flush: FilterFlushMode::Drain,
     });
-    if settings.vpf.is_none() && settings.equalizer.iter().any(|gain| gain.abs() >= 0.05) {
+    if settings.equalizer.iter().any(|gain| gain.abs() >= 0.05) {
         nodes.push(AudioFilterNode {
             kind: AudioFilterNodeKind::Equalizer,
             channels: ChannelRequirement::Preserve,
-            flush: FilterFlushMode::Reset,
-        });
-    }
-    if settings.builtin.enabled() {
-        nodes.push(AudioFilterNode {
-            kind: AudioFilterNodeKind::Builtin,
-            channels: ChannelRequirement::Stereo,
             flush: FilterFlushMode::Reset,
         });
     }
@@ -530,14 +587,7 @@ fn filter_nodes_for_settings(settings: &DspSettings) -> Vec<AudioFilterNode> {
         nodes.push(AudioFilterNode {
             kind: AudioFilterNodeKind::Spatial,
             channels: ChannelRequirement::Stereo,
-            flush: FilterFlushMode::Reset,
-        });
-    }
-    if settings.vpf.is_some() {
-        nodes.push(AudioFilterNode {
-            kind: AudioFilterNodeKind::Vpf,
-            channels: ChannelRequirement::Stereo,
-            flush: FilterFlushMode::Reset,
+            flush: FilterFlushMode::Drain,
         });
     }
     if settings.normalization_gain_db.abs() >= 0.01 {
@@ -813,6 +863,7 @@ fn map_channels(input: &[f32], input_channels: usize, output: &mut [f32], output
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::dsp::basic::prepared_spatial_effect_for_test;
     use crate::shared::{AudioSampleFormat, MIX_CHANNELS};
 
     #[test]
@@ -924,6 +975,33 @@ mod tests {
     }
 
     #[test]
+    fn graph_snapshot_exposes_basic_spatial_safety_metadata() {
+        let settings = DspSettings {
+            spatial: Some(prepared_spatial_effect_for_test(
+                2,
+                &[&[1.0, 0.5], &[1.0, 0.5]],
+            )),
+            ..DspSettings::default()
+        };
+
+        let snapshot = snapshot_filter_graph(MixFormat::stereo_f32(48_000), &settings);
+        let spatial = snapshot
+            .nodes
+            .iter()
+            .find(|node| node.kind == "spatial")
+            .expect("spatial node should be present");
+        assert_eq!(spatial.flush_mode, "drain");
+        assert_eq!(
+            spatial
+                .parameters
+                .iter()
+                .map(|parameter| parameter.name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["mode", "peak-response", "auto-headroom", "duration"]
+        );
+    }
+
+    #[test]
     fn graph_snapshot_includes_runtime_device_output_when_available() {
         let stats = AudioOutputStats {
             backend: "cpal".to_string(),
@@ -997,6 +1075,52 @@ mod tests {
         assert!(total_output.len() >= frames * MIX_CHANNELS);
         assert_eq!(total_output[0], 0.0);
         assert_eq!(total_output[1], 0.0);
+    }
+
+    #[test]
+    fn graph_finish_drains_complete_basic_spatial_tail() {
+        let settings = DspSettings {
+            spatial: Some(prepared_spatial_effect_for_test(
+                2,
+                &[&[0.5, 0.25], &[0.5, 0.25]],
+            )),
+            ..DspSettings::default()
+        };
+        let mut graph = AudioFilterGraph::new(MixFormat::stereo_f32(48_000), &settings)
+            .expect("graph should initialize");
+        let first_tail_frame = (graph.latency_secs() * 48_000.0).round() as usize - 1;
+        let chunk = DecodedAudioChunk::new(
+            DecodedAudioFormat {
+                sample_rate: 48_000,
+                sample_format: AudioSampleFormat::F32,
+                channels: 2,
+            },
+            1,
+            None,
+            DecodedAudioData::F32(vec![0.4, -0.2]),
+        );
+        let mut output = Vec::new();
+
+        graph
+            .process_decoded(&chunk, &settings, &mut output)
+            .expect("graph should process");
+        assert_eq!(output, vec![0.0, 0.0]);
+
+        let source_frames = graph
+            .finish(&settings, &mut output)
+            .expect("graph should drain");
+        assert_eq!(source_frames, 0);
+        assert_eq!(output.len() / 2, first_tail_frame + 2);
+        assert!((output[first_tail_frame * 2] - 0.2).abs() < 0.00001);
+        assert!((output[first_tail_frame * 2 + 1] + 0.1).abs() < 0.00001);
+        assert!((output[(first_tail_frame + 1) * 2] - 0.1).abs() < 0.00001);
+        assert!((output[(first_tail_frame + 1) * 2 + 1] + 0.05).abs() < 0.00001);
+
+        let spatial = filter_nodes_for_settings(&settings)
+            .into_iter()
+            .find(|node| node.kind == AudioFilterNodeKind::Spatial)
+            .expect("spatial node should be present");
+        assert_eq!(spatial.flush, FilterFlushMode::Drain);
     }
 
     #[test]

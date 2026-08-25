@@ -3,11 +3,7 @@ import type { CloseBehavior, ThemeMode } from '../../shared/app';
 import { normalizeLogSettings, type AppLogLevel, type LogSettings } from '../../shared/logging';
 import type { AudioQualityValue, OutputDeviceOption, OutputDeviceStatus } from '../types';
 import { buildFontFamily } from '../../shared/font';
-import {
-  normalizeAudioEffectName,
-  type BuiltinAudioEffect,
-  type SpatialAudioEffectEntry,
-} from '../../shared/audio';
+import { normalizeAudioEffectName, type SpatialAudioEffectEntry } from '../../shared/audio';
 import {
   DEFAULT_NETWORK_SETTINGS,
   normalizeNetworkSettings,
@@ -135,9 +131,12 @@ export const useSettingStore = defineStore('setting', {
     volumeNormalization: true,
     volumeNormalizationLufs: -14,
     impulseResponseEnabled: false,
-    builtinAudioEffect: null as BuiltinAudioEffect | null,
     selectedImpulseResponseId: '',
     impulseResponseFiles: [] as SpatialAudioEffectEntry[],
+    dspProviderEnabled: true,
+    dspProviderPath: '',
+    dspProviderMode: 'speaker' as 'headphone' | 'speaker',
+    dspProviderPresetJson: '',
     keepAliveEnabled: true,
     keepAliveMax: 20,
     playResumeTimeout: 5,
@@ -199,6 +198,35 @@ export const useSettingStore = defineStore('setting', {
     devToolsEnabled: false,
   }),
   actions: {
+    configureDspProvider(path: string, mode: 'headphone' | 'speaker' = 'speaker') {
+      this.dspProviderEnabled = true;
+      this.dspProviderPath = path.trim();
+      this.dspProviderMode = mode;
+      this.dspProviderPresetJson = '';
+    },
+    disableDspProvider() {
+      this.dspProviderEnabled = false;
+      this.dspProviderPath = '';
+      this.dspProviderPresetJson = '';
+    },
+    setDspProviderMode(mode: 'headphone' | 'speaker') {
+      this.dspProviderMode = mode;
+    },
+    setDspProviderPreset(presetJson: string) {
+      this.dspProviderPresetJson = presetJson.trim();
+    },
+    selectDspProviderPreset(presetJson: string) {
+      this.$patch({
+        dspProviderPresetJson: presetJson.trim(),
+        impulseResponseEnabled: false,
+      });
+    },
+    selectOriginalSpatialAudio() {
+      this.$patch({
+        dspProviderPresetJson: '',
+        impulseResponseEnabled: false,
+      });
+    },
     setTheme(theme: ThemeMode) {
       this.theme = theme;
       this.syncTheme();
@@ -443,7 +471,7 @@ export const useSettingStore = defineStore('setting', {
         this.selectedImpulseResponseId = '';
         this.impulseResponseEnabled = false;
       }
-      if (nextFiles.length === 0 && !this.builtinAudioEffect) {
+      if (nextFiles.length === 0) {
         this.selectedImpulseResponseId = '';
         this.impulseResponseEnabled = false;
       }
@@ -464,14 +492,11 @@ export const useSettingStore = defineStore('setting', {
     },
     setSelectedImpulseResponse(id: string) {
       if (!this.impulseResponseFiles.some((item) => item.id === id)) return;
-      this.builtinAudioEffect = null;
-      this.selectedImpulseResponseId = id;
-      this.impulseResponseEnabled = true;
-    },
-    setBuiltinAudioEffect(effect: BuiltinAudioEffect | null) {
-      this.builtinAudioEffect = effect;
-      this.selectedImpulseResponseId = '';
-      this.impulseResponseEnabled = effect !== null;
+      this.$patch({
+        dspProviderPresetJson: '',
+        selectedImpulseResponseId: id,
+        impulseResponseEnabled: true,
+      });
     },
     renameImpulseResponseFile(id: string, name: string) {
       const normalizedName = getUniqueImpulseResponseName(

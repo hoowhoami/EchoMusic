@@ -33,7 +33,7 @@ const DEFAULT_PLAYBACK_STALL_TIMEOUT_SECS = 8;
 const AO_STATE_LOG_INTERVAL_MS = 5000;
 const nativeRequire = createRequire(path.join(process.cwd(), 'package.json'));
 
-type AudioEffectFileKind = 'impulse-response' | 'vpf';
+type AudioEffectFileKind = string;
 
 const resolveTrustedAudioEffectFile = async (
   value: unknown,
@@ -62,14 +62,15 @@ const resolveTrustedAudioEffectFile = async (
   if (communityRoot) {
     const relative = path.relative(communityRoot, targetPath);
     const segments = relative.split(path.sep);
-    const expectedName = kind === 'vpf' ? 'effect.vpf' : 'impulse-response.wav';
+    const expectedName =
+      kind === 'vpf' ? 'effect.vpf' : kind === 'impulse-response' ? 'impulse-response.wav' : null;
     if (
       relative &&
       !relative.startsWith('..') &&
       !path.isAbsolute(relative) &&
       segments.length === 2 &&
       /^community-effect-\d{1,20}$/.test(segments[0]) &&
-      segments[1] === expectedName
+      (expectedName === null || segments[1] === expectedName)
     ) {
       return targetPath;
     }
@@ -83,23 +84,53 @@ const normalizeAudioEffectPlaybackOptions = async (
 ): Promise<AudioEffectPlaybackOptions | null> => {
   if (options === null) return null;
   if (!options || typeof options !== 'object') throw new Error('音效参数无效');
-  const builtinEffect =
-    options.builtinEffect === 'dynamic-bass' ||
-    options.builtinEffect === 'clear-voice' ||
-    options.builtinEffect === '3d-beauty'
-      ? options.builtinEffect
-      : null;
-  if (options.builtinEffect != null && !builtinEffect) throw new Error('内置音效参数无效');
-  const [vpfPath, impulseResponsePath] = await Promise.all([
-    resolveTrustedAudioEffectFile(options.vpfPath, 'vpf'),
-    resolveTrustedAudioEffectFile(options.impulseResponsePath, 'impulse-response'),
-  ]);
-  if (builtinEffect && (vpfPath || impulseResponsePath)) {
-    throw new Error('内置音效不能与 VPF 或脉冲响应同时使用');
+  const providerPath = await resolveNativeProviderPath(options.providerPath);
+  const providerResources = await Promise.all(
+    (options.providerResources ?? []).map(async (resource) => {
+      if (!resource || typeof resource.kind !== 'string') throw new Error('Provider resource 无效');
+      const kind = resource.kind as AudioEffectFileKind;
+      if (!kind.trim() || kind.length > 64) throw new Error('Provider resource 类型无效');
+      const resolvedPath = await resolveTrustedAudioEffectFile(resource.path, kind);
+      if (!resolvedPath) throw new Error('Provider resource 路径无效');
+      return { kind, path: resolvedPath };
+    }),
+  );
+  if (providerResources.some((resource) => resource.kind !== 'impulse-response') && !providerPath) {
+    throw new Error('该音效资源需要外部 Provider');
   }
-  if (builtinEffect) return { builtinEffect };
-  if (!vpfPath && !impulseResponsePath) return null;
-  return { vpfPath, impulseResponsePath };
+  const providerPresetJson =
+    options.providerPresetJson == null ? undefined : String(options.providerPresetJson);
+  const impulseResponsePath = await resolveTrustedAudioEffectFile(
+    options.impulseResponsePath,
+    'impulse-response',
+  );
+  if (providerPath)
+    return {
+      providerPath,
+      providerPresetJson,
+      providerResources,
+      providerMode: options.providerMode === 'headphone' ? 'headphone' : 'speaker',
+      impulseResponsePath,
+    };
+  if (!impulseResponsePath) return null;
+  return { impulseResponsePath };
+};
+
+const resolveNativeProviderPath = async (value: unknown): Promise<string | undefined> => {
+  if (value == null || value === '') return undefined;
+  if (typeof value !== 'string' || !value.trim()) throw new Error('Provider 路径无效');
+  const targetPath = await fs.promises.realpath(value.trim());
+  const stat = await fs.promises.stat(targetPath);
+  if (!stat.isFile()) throw new Error('Provider 路径无效');
+  const providerRoot = await fs.promises
+    .realpath(path.join(app.getPath('userData'), 'dsp-providers'))
+    .catch(() => null);
+  if (!providerRoot) throw new Error('Provider 不在受信任的目录中');
+  const relative = path.relative(providerRoot, targetPath);
+  if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) {
+    throw new Error('Provider 不在受信任的目录中');
+  }
+  return targetPath;
 };
 
 const readClampedNumber = (value: unknown, fallback: number, min: number, max: number): number => {
@@ -302,6 +333,8 @@ interface PlayerAddon {
   setEqualizer(gains: number[]): Promise<void>;
   setAudioEffect(options: AudioEffectPlaybackOptions | null): Promise<void>;
   getAudioGraph(): PlayerAudioGraphSnapshot;
+  inspectDspProvider(path: string): Promise<unknown>;
+  deleteDspProvider(path: string): Promise<void>;
   setAudioGraphParameter(patch: PlayerAudioGraphParameterPatch): Promise<void>;
   setAudioGraphPlan(plan: PlayerAudioGraphPlanPatch): Promise<void>;
   setAudioOutput(deviceName: string, exclusive: boolean): Promise<void>;
@@ -540,6 +573,20 @@ export class PlayerController extends EventEmitter {
 
   async getAudioGraph(): Promise<PlayerAudioGraphSnapshot> {
     return this.getAddonOrThrow().getAudioGraph();
+  }
+
+  async inspectDspProvider(providerPath: string): Promise<unknown> {
+    const trustedPath = await resolveNativeProviderPath(providerPath);
+    if (!trustedPath) throw new Error('Provider 路径无效');
+    return this.getAddonOrThrow().inspectDspProvider(trustedPath);
+  }
+
+  async deleteDspProvider(providerPath: string): Promise<void> {
+    const trustedPath = await resolveNativeProviderPath(providerPath);
+    if (!trustedPath) throw new Error('Provider 路径无效');
+    const graph = await this.getAudioGraph();
+    if (graph.providerPath === trustedPath) await this.setAudioEffect(null);
+    await fs.promises.unlink(trustedPath);
   }
 
   async setAudioGraphParameter(patch: PlayerAudioGraphParameterPatch): Promise<void> {

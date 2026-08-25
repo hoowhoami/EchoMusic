@@ -215,11 +215,7 @@ export function usePlayerControls() {
 
   const audioEffectButtonBadge = computed(() => {
     if (player.currentResolvedAudioEffect !== 'none') return 'FX';
-    if (settingStore.impulseResponseEnabled && settingStore.builtinAudioEffect) {
-      if (settingStore.builtinAudioEffect === 'dynamic-bass') return 'DB';
-      if (settingStore.builtinAudioEffect === 'clear-voice') return 'CV';
-      return '3D';
-    }
+    if (player.playbackDiagnostics.graph?.providerPresetJson) return 'FX';
     if (settingStore.impulseResponseEnabled && settingStore.getSelectedImpulseResponse())
       return 'IR';
     if (player.equalizerGains.some((g) => g !== 0)) return 'EQ';

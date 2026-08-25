@@ -752,7 +752,7 @@ mod tests {
             crate::shared::MixFormat::stereo_f32(48_000),
             0.2,
             8.0,
-            &crate::effects::DspSettings::default(),
+            &crate::dsp::DspSettings::default(),
         ));
         let ready = Arc::new(AtomicBool::new(false));
         let request_id = shared.begin_gapless_prepare();
@@ -790,7 +790,7 @@ mod tests {
             crate::shared::MixFormat::stereo_f32(48_000),
             0.2,
             8.0,
-            &crate::effects::DspSettings::default(),
+            &crate::dsp::DspSettings::default(),
         ));
         let result = await_gapless_decoder(&shared, 0, || crate::GaplessDecodeResult::NotPrepared);
 
@@ -799,7 +799,7 @@ mod tests {
 
     #[test]
     fn eof_gapless_wait_stops_when_decode_generation_changes() {
-        let settings = crate::effects::DspSettings::default();
+        let settings = crate::dsp::DspSettings::default();
         let shared = Arc::new(SharedAudio::new(
             crate::shared::MixFormat::stereo_f32(48_000),
             0.2,

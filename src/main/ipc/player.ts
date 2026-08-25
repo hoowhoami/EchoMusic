@@ -1,4 +1,7 @@
 import { ipcRegistry } from './registry';
+import { app, dialog } from 'electron';
+import fs from 'fs';
+import path from 'path';
 import type { PlayerController } from '../player/controller';
 import type { AudioEffectPlaybackOptions } from '../../shared/audio';
 import type {
@@ -29,6 +32,34 @@ export function registerPlayerIpc(ref: PlayerRef): void {
       await ref.current?.setAudioEffect(options);
     },
   );
+
+  ipcRegistry.registerHandler('player:select-dsp-provider', async () => {
+    const result = await dialog.showOpenDialog({
+      properties: ['openFile'],
+      filters: [{ name: 'EchoMusic 音效引擎', extensions: ['dll', 'dylib', 'so'] }],
+    });
+    if (result.canceled || !result.filePaths[0]) return null;
+    const sourcePath = await fs.promises.realpath(result.filePaths[0]);
+    const providerDirectory = path.join(app.getPath('userData'), 'dsp-providers');
+    await fs.promises.mkdir(providerDirectory, { recursive: true });
+    const targetPath = path.join(providerDirectory, path.basename(sourcePath));
+    if (sourcePath !== targetPath) await fs.promises.copyFile(sourcePath, targetPath);
+    return targetPath;
+  });
+
+  ipcRegistry.registerHandler('player:list-dsp-providers', async () => {
+    const directory = path.join(app.getPath('userData'), 'dsp-providers');
+    const entries = await fs.promises.readdir(directory, { withFileTypes: true }).catch(() => []);
+    return entries
+      .filter((entry) => entry.isFile() && /\.(dll|dylib|so)$/i.test(entry.name))
+      .map((entry) => path.join(directory, entry.name));
+  });
+  ipcRegistry.registerHandler('player:inspect-dsp-provider', async (_e, providerPath: string) => {
+    return (await ref.current?.inspectDspProvider(providerPath)) ?? null;
+  });
+  ipcRegistry.registerHandler('player:delete-dsp-provider', async (_e, providerPath: string) => {
+    await ref.current?.deleteDspProvider(providerPath);
+  });
 
   ipcRegistry.registerHandler(
     'player:cancel-next-source-preparation',

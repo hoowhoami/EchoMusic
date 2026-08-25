@@ -680,6 +680,11 @@ contextBridge.exposeInMainWorld('electron', {
     setEqualizer: (gains: number[]) => invokeWithPlainPayload('player:set-equalizer', gains),
     setAudioEffect: (options: AudioEffectPlaybackOptions | null) =>
       invokeWithPlainPayload('player:set-audio-effect', options),
+    selectDspProvider: () =>
+      ipcRenderer.invoke('player:select-dsp-provider') as Promise<string | null>,
+    listDspProviders: () => ipcRenderer.invoke('player:list-dsp-providers') as Promise<string[]>,
+    inspectDspProvider: (path: string) => ipcRenderer.invoke('player:inspect-dsp-provider', path),
+    deleteDspProvider: (path: string) => ipcRenderer.invoke('player:delete-dsp-provider', path),
     getAudioGraph: () =>
       ipcRenderer.invoke('player:get-audio-graph') as Promise<PlayerAudioGraphSnapshot | null>,
     setAudioGraphParameter: (patch: PlayerAudioGraphParameterPatch) =>

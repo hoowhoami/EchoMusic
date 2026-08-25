@@ -937,7 +937,7 @@ fn map_channels_to_output(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::effects::DspSettings;
+    use crate::dsp::DspSettings;
     use crate::shared::{MixFormat, MIX_CHANNELS};
 
     #[test]

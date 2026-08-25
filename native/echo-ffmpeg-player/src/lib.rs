@@ -1,21 +1,18 @@
 mod audio_graph;
-mod builtin_effects;
 mod config;
 mod control;
 mod decoder;
 mod device;
 mod dispatcher;
 mod dsp;
-mod effects;
 mod events;
 mod exclusive;
 mod filter;
 mod output;
 mod shared;
+mod spectrum;
 mod stream;
 mod tempo;
-mod vhe;
-mod vpf;
 
 use control::{
     attach_restarted_decoder, handle_output_device_list_change,
@@ -25,12 +22,12 @@ use control::{
 };
 pub use control::{
     cancel_fade, configure_spectrum, fade, get_audio_devices, get_audio_graph,
-    get_spectrum_snapshot, get_spectrum_status, pause_with_fade, play_with_fade, set_audio_effect,
-    set_audio_graph_parameter, set_audio_graph_plan, set_audio_output, set_equalizer,
-    set_http_proxy, set_network_timeout, set_normalization_gain, set_pause_on_device_disconnect,
-    set_speed, set_stall_timeout, FadeTask, GetAudioDevicesTask, GetSpectrumSnapshotTask,
-    SetAudioEffectTask, SetAudioGraphParameterTask, SetAudioGraphPlanTask, SetAudioOutputTask,
-    SetEqualizerTask, SetNormalizationGainTask, SetSpeedTask,
+    get_spectrum_snapshot, get_spectrum_status, inspect_dsp_provider, pause_with_fade,
+    play_with_fade, set_audio_effect, set_audio_graph_parameter, set_audio_graph_plan,
+    set_audio_output, set_equalizer, set_http_proxy, set_network_timeout, set_normalization_gain,
+    set_pause_on_device_disconnect, set_speed, set_stall_timeout, FadeTask, GetAudioDevicesTask,
+    GetSpectrumSnapshotTask, SetAudioEffectTask, SetAudioGraphParameterTask, SetAudioGraphPlanTask,
+    SetAudioOutputTask, SetEqualizerTask, SetNormalizationGainTask, SetSpeedTask,
 };
 pub use control::{seek, SeekTask};
 
@@ -44,7 +41,7 @@ use crate::dispatcher::{
     reset_event_ids, send_event, send_events, set_event_callback, start_core_dispatcher,
     start_event_dispatcher, stop_core_dispatcher, stop_event_dispatcher,
 };
-use crate::effects::{prepare_spatial_effect, DspSettings, EQ_BAND_COUNT};
+use crate::dsp::{prepare_spatial_effect, DspSettings, EQ_BAND_COUNT};
 use crate::events::{
     AudioDevice, PlayerEvent, PlayerState, SpectrumFrame, SpectrumOptions, SpectrumStatus,
     TrackInfo,
@@ -131,7 +128,7 @@ struct PlayerRuntime {
     latest_load_seq: u64,
     dsp_settings: DspSettings,
     spectrum_config: SpectrumConfig,
-    spectrum_analyzer: dsp::SpectrumAnalyzer,
+    spectrum_analyzer: spectrum::SpectrumAnalyzer,
     device_watcher: Option<device::DeviceWatcher>,
     fade_stop: Arc<AtomicBool>,
     loop_file: bool,
@@ -246,7 +243,7 @@ impl PlayerRuntime {
             current_seq: 0,
             latest_load_seq: 0,
             dsp_settings: DspSettings::default(),
-            spectrum_analyzer: dsp::SpectrumAnalyzer::new(spectrum_config.clone()),
+            spectrum_analyzer: spectrum::SpectrumAnalyzer::new(spectrum_config.clone()),
             spectrum_config,
             device_watcher: None,
             fade_stop: Arc::new(AtomicBool::new(false)),
@@ -538,11 +535,14 @@ fn prepare_source(
         emit_event(PlayerEvent::log(
             "info",
             format!(
-                "impulse response enabled: path='{}', mix_sample_rate={}, ir_channels={}, mode={}",
+                "impulse response enabled: path='{}', mix_sample_rate={}, ir_channels={}, mode={}, duration_ms={:.2}, peak_response_db={:.2}, auto_headroom_db={:.2}",
                 spatial.file_path,
                 mix_sample_rate,
                 spatial.channels(),
-                spatial.mode()
+                spatial.mode(),
+                spatial.duration_secs() * 1_000.0,
+                spatial.peak_response_db(),
+                spatial.output_gain_db(),
             ),
         ));
     }
@@ -888,7 +888,15 @@ fn update_runtime_audio_graph(runtime: &mut PlayerRuntime) {
             output_stats.as_ref(),
         )
     } else {
-        AudioGraphSnapshot::default()
+        if runtime.dsp_settings.provider_path.is_some() {
+            audio_graph::snapshot_filter_graph_with_device_output(
+                MixFormat::stereo_f32(48_000),
+                &runtime.dsp_settings,
+                None,
+            )
+        } else {
+            AudioGraphSnapshot::default()
+        }
     };
     next.revision = previous.revision;
     if next != previous {
@@ -979,16 +987,15 @@ fn restart_loop_if_enabled(shared: Arc<SharedAudio>) -> bool {
             .iter()
             .any(|gain| gain.abs() >= 0.01);
         let spatial = runtime.dsp_settings.spatial.as_ref();
-        let vpf = runtime.dsp_settings.vpf.as_ref();
         emit_runtime_event(runtime, PlayerEvent::log(
             "info",
             format!(
-                "loop restart reusing audio filter chain: speed={:.2}x, normalization_gain_db={:.2} dB, eq_active={}, spatial_enabled={}, vpf_enabled={}",
+                "loop restart reusing audio filter chain: speed={:.2}x, normalization_gain_db={:.2} dB, eq_active={}, spatial_enabled={}, provider_enabled={}",
                 runtime.dsp_settings.speed,
                 runtime.dsp_settings.normalization_gain_db,
                 eq_active,
                 spatial.is_some(),
-                vpf.is_some()
+                runtime.dsp_settings.provider_path.is_some()
             ),
         ));
         runtime.state.time_pos = 0.0;

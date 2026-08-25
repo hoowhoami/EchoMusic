@@ -38,7 +38,10 @@ fn run_filter(shared: Arc<SharedAudio>) {
             // rebuild if the internal processing format has not changed.
             let structural = current_decode_gen != decode_generation
                 || process_format_for_output(shared.mix_format, &settings)
-                    != graph.process_format();
+                    != graph.process_format()
+                || graph.provider_identity() != settings.provider_path.as_deref()
+                || graph.provider_mode() != settings.provider_mode
+                || graph.provider_resource_identity() != settings.provider_resource_json.as_deref();
 
             decode_generation = current_decode_gen;
             generation = current_filter_gen;
@@ -125,7 +128,7 @@ fn push_filter_output(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::effects::DspSettings;
+    use crate::dsp::DspSettings;
     use crate::shared::{
         AudioSampleFormat, DecodedAudioChunk, DecodedAudioData, DecodedAudioFormat, MixFormat,
         MIX_CHANNELS,

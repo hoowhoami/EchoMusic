@@ -1,5 +1,5 @@
-use crate::dsp::SampleRing;
-use crate::effects::DspSettings;
+use crate::dsp::DspSettings;
+use crate::spectrum::SampleRing;
 mod ao_state;
 mod clock;
 mod decoded_queue;
@@ -155,9 +155,7 @@ impl SharedAudio {
                 dsp_settings.normalization_gain_linear().to_bits(),
             ),
             effect_limiter_active: AtomicBool::new(
-                dsp_settings.builtin.enabled()
-                    || dsp_settings.spatial.is_some()
-                    || dsp_settings.vpf.is_some(),
+                dsp_settings.provider_path.is_some() || dsp_settings.spatial.is_some(),
             ),
             applied_output_gain_bits: AtomicU32::new(f32::NAN.to_bits()),
             mix_format,
@@ -340,7 +338,7 @@ impl SharedAudio {
             Ordering::Release,
         );
         self.effect_limiter_active.store(
-            settings.builtin.enabled() || settings.spatial.is_some() || settings.vpf.is_some(),
+            settings.provider_path.is_some() || settings.spatial.is_some(),
             Ordering::Release,
         );
         if let Ok(mut current) = self.dsp_settings.lock() {

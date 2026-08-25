@@ -29,12 +29,22 @@ export interface DownloadCommunityAudioEffectResult {
   error?: string;
 }
 
-export type BuiltinAudioEffect = 'dynamic-bass' | 'clear-voice' | '3d-beauty';
-
 export interface AudioEffectPlaybackOptions {
-  builtinEffect?: BuiltinAudioEffect | null;
-  vpfPath?: string | null;
+  providerPath?: string | null;
+  providerPresetJson?: string | null;
+  providerResources?: Array<{ kind: string; path: string }>;
+  providerMode?: 'headphone' | 'speaker';
   impulseResponsePath?: string | null;
+}
+
+export interface DspProviderInspection {
+  providerId: string;
+  providerVersion: string;
+  latencyFrames: number;
+  preferredBlockFrames: number;
+  maxChannels: number;
+  manifestJson: string;
+  stateJson: string;
 }
 
 const AUDIO_EFFECT_DISPLAY_EXTENSION =

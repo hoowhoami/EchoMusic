@@ -168,20 +168,9 @@ fn apply_audio_graph_node_patch_to_draft(
             }
             Ok(())
         }
-        "vpf" => {
-            if enabled {
-                if draft.dsp_settings.vpf.is_none() {
-                    return Err(napi::Error::from_reason(
-                        "vpf node requires a VPF resource".to_string(),
-                    ));
-                }
-                return Ok(());
-            }
-            if draft.dsp_settings.vpf.take().is_some() {
-                effects.changed = true;
-            }
-            Ok(())
-        }
+        "vpf" => Err(napi::Error::from_reason(
+            "VPF requires an external DSP Provider".to_string(),
+        )),
         "tempo" => {
             if !enabled && (draft.dsp_settings.speed - 1.0).abs() >= f32::EPSILON {
                 draft.dsp_settings.speed = 1.0;

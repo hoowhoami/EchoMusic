@@ -15,6 +15,7 @@ import { sanitizeHtml } from '@/utils/sanitize';
 import AppearanceSettingsSection from './settings/components/AppearanceSettingsSection.vue';
 import FontSettingsSection from './settings/components/FontSettingsSection.vue';
 import PlaybackSettingsSection from './settings/components/PlaybackSettingsSection.vue';
+import SpatialAudioSettingsSection from './settings/components/SpatialAudioSettingsSection.vue';
 import PlayerSettingsSection from './settings/components/PlayerSettingsSection.vue';
 import PageLyricSettingsSection from './settings/components/PageLyricSettingsSection.vue';
 import DesktopLyricSettingsSection from './settings/components/DesktopLyricSettingsSection.vue';
@@ -244,6 +245,13 @@ const builtinSettingsSections = computed<SettingsRenderSection[]>(() => [
       '最大自动切换次数',
       '防止系统休眠',
     ],
+  },
+  {
+    id: 'spatialAudio',
+    label: '空间音效',
+    order: 350,
+    component: SpatialAudioSettingsSection,
+    searchKeywords: ['空间音效', '音效引擎', 'IRS', 'WAV', 'VPF', 'Provider', '卷积', '脉冲响应'],
   },
   {
     id: 'player',

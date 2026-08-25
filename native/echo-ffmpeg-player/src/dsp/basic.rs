@@ -1,5 +1,5 @@
-use crate::builtin_effects::{BuiltinEffect, BuiltinEffectProcessor};
-use crate::vpf::{PreparedVpf, SoftwareLimiter, VpfProcessor};
+use super::limiter::LinkedLimiter;
+use super::provider::{NativeDspProvider, ProviderDescriptor, PROVIDER_MODE_SPEAKER};
 use ffmpeg_audio::{AudioReader, ResampleOptions};
 use rustfft::{num_complex::Complex32, Fft, FftPlanner};
 use std::collections::VecDeque;
@@ -16,15 +16,18 @@ const LATE_CONVOLUTION_BLOCK_SIZE: usize = 1024;
 const EARLY_CONVOLUTION_FRAMES: usize = 4096;
 const MAX_IR_SECONDS: f32 = 8.0;
 const IR_TRIM_THRESHOLD: f32 = 0.00003;
+const IR_ANALYSIS_OVERSAMPLING: usize = 4;
 
 #[derive(Clone, Debug)]
 pub struct DspSettings {
     pub equalizer: [f32; EQ_BAND_COUNT],
     pub normalization_gain_db: f32,
     pub speed: f32,
-    pub builtin: BuiltinEffect,
+    pub provider_path: Option<String>,
+    pub provider_preset_json: Option<String>,
+    pub provider_resource_json: Option<String>,
+    pub provider_mode: u32,
     pub spatial: Option<PreparedSpatialEffect>,
-    pub vpf: Option<PreparedVpf>,
 }
 
 impl Default for DspSettings {
@@ -33,16 +36,18 @@ impl Default for DspSettings {
             equalizer: [0.0; EQ_BAND_COUNT],
             normalization_gain_db: 0.0,
             speed: 1.0,
-            builtin: BuiltinEffect::None,
+            provider_path: None,
+            provider_preset_json: None,
+            provider_resource_json: None,
+            provider_mode: PROVIDER_MODE_SPEAKER,
             spatial: None,
-            vpf: None,
         }
     }
 }
 
 impl DspSettings {
     pub fn requires_stereo_graph(&self) -> bool {
-        self.builtin.enabled() || self.spatial.is_some() || self.vpf.is_some()
+        self.provider_path.is_some() || self.spatial.is_some()
     }
 
     pub fn normalization_gain_linear(&self) -> f32 {
@@ -55,6 +60,10 @@ pub struct PreparedSpatialEffect {
     pub file_path: String,
     sample_rate: u32,
     channels: usize,
+    frames: usize,
+    peak_response_db: f32,
+    output_gain_linear: f32,
+    content_fingerprint: u64,
     responses: Vec<Arc<PreparedImpulseChannel>>,
 }
 
@@ -62,6 +71,7 @@ pub struct PreparedSpatialEffect {
 struct PreparedImpulseChannel {
     segments: Vec<Arc<PreparedImpulseSegment>>,
     latency_frames: usize,
+    impulse_frames: usize,
 }
 
 #[derive(Debug)]
@@ -78,15 +88,34 @@ pub struct DspChain {
     eq_headroom_linear: f32,
     eq: MultichannelEqualizer,
     spatial: Option<SpatialEffect>,
-    vpf: Option<VpfProcessor>,
-    builtin: Option<BuiltinEffectProcessor>,
-    spatial_limiters: Option<[SoftwareLimiter; 2]>,
+    provider: Option<NativeDspProvider>,
+    spatial_limiter: Option<LinkedLimiter>,
 }
 
 impl DspChain {
-    pub fn new(sample_rate: u32, channels: usize, settings: &DspSettings) -> Self {
+    pub fn new(sample_rate: u32, channels: usize, settings: &DspSettings) -> Result<Self, String> {
         let channels = channels.max(1);
-        Self {
+        let provider = settings
+            .provider_path
+            .as_deref()
+            .map(|path| {
+                NativeDspProvider::load(
+                    std::path::Path::new(path),
+                    sample_rate,
+                    channels as u32,
+                    settings.provider_mode,
+                    settings.provider_preset_json.as_deref(),
+                    settings.provider_resource_json.as_deref(),
+                )
+            })
+            .transpose()?;
+        if let Some(provider) = provider.as_ref() {
+            ensure_provider_accepts_resources(
+                provider,
+                settings.provider_resource_json.as_deref(),
+            )?;
+        }
+        Ok(Self {
             settings: settings.clone(),
             channels,
             eq_headroom_linear: eq_headroom_gain(&settings.equalizer),
@@ -96,32 +125,29 @@ impl DspChain {
                 .as_ref()
                 .filter(|spatial| channels == 2 && spatial.sample_rate == sample_rate)
                 .map(SpatialEffect::new),
-            vpf: settings
-                .vpf
-                .as_ref()
-                .filter(|_| channels == 2)
-                .map(|vpf| VpfProcessor::new(sample_rate, vpf)),
-            builtin: (settings.builtin.enabled() && channels == 2)
-                .then(|| BuiltinEffectProcessor::new(sample_rate, settings.builtin)),
-            spatial_limiters: (settings.spatial.is_some()
-                && settings.vpf.is_none()
+            provider,
+            spatial_limiter: (settings.spatial.is_some()
+                && settings.provider_path.is_none()
                 && channels == 2)
-                .then(|| std::array::from_fn(|_| SoftwareLimiter::new())),
-        }
+                .then(|| LinkedLimiter::new(sample_rate, channels)),
+        })
     }
 
-    pub fn update_settings(&mut self, settings: &DspSettings) {
+    pub fn update_settings(&mut self, settings: &DspSettings) -> Result<(), String> {
         let sample_rate = self.eq.sample_rate;
         let eq_changed = self.settings.equalizer != settings.equalizer;
         let spatial_changed = spatial_resource_identity(&self.settings.spatial)
             != spatial_resource_identity(&settings.spatial);
-        let vpf_changed = self.settings.vpf != settings.vpf;
-        let builtin_changed = self.settings.builtin != settings.builtin;
+        let provider_preset_changed =
+            self.settings.provider_preset_json != settings.provider_preset_json;
 
-        self.settings = settings.clone();
+        if !eq_changed && !spatial_changed && !provider_preset_changed {
+            return Ok(());
+        }
         if eq_changed {
             self.eq_headroom_linear = eq_headroom_gain(&settings.equalizer);
             self.eq = MultichannelEqualizer::new(sample_rate, self.channels, &settings.equalizer);
+            self.settings.equalizer = settings.equalizer;
         }
         if spatial_changed {
             self.spatial = settings
@@ -129,65 +155,88 @@ impl DspChain {
                 .as_ref()
                 .filter(|spatial| self.channels == 2 && spatial.sample_rate == sample_rate)
                 .map(SpatialEffect::new);
+            self.spatial_limiter =
+                (self.spatial.is_some() && settings.provider_path.is_none() && self.channels == 2)
+                    .then(|| LinkedLimiter::new(sample_rate, self.channels));
+            self.settings.spatial = settings.spatial.clone();
         }
-        if vpf_changed {
-            self.vpf = settings
-                .vpf
-                .as_ref()
-                .filter(|_| self.channels == 2)
-                .map(|vpf| VpfProcessor::new(sample_rate, vpf));
+        if provider_preset_changed {
+            if let Some(preset_json) = settings.provider_preset_json.as_deref() {
+                if let Some(provider) = self.provider.as_mut() {
+                    provider.configure(preset_json)?;
+                }
+            }
+            self.settings.provider_preset_json = settings.provider_preset_json.clone();
         }
-        if builtin_changed {
-            self.builtin = (settings.builtin.enabled() && self.channels == 2)
-                .then(|| BuiltinEffectProcessor::new(sample_rate, settings.builtin));
-        }
-        if spatial_changed || vpf_changed {
-            self.spatial_limiters =
-                (settings.spatial.is_some() && settings.vpf.is_none() && self.channels == 2)
-                    .then(|| std::array::from_fn(|_| SoftwareLimiter::new()));
-        }
+        Ok(())
     }
 
-    pub fn process_interleaved(&mut self, samples: &mut [f32]) {
-        if self.vpf.is_none() {
-            self.eq.process_interleaved(samples);
-            if (self.eq_headroom_linear - 1.0).abs() >= f32::EPSILON {
-                for sample in samples.iter_mut() {
-                    *sample *= self.eq_headroom_linear;
-                }
+    pub fn provider_identity(&self) -> Option<&str> {
+        self.settings.provider_path.as_deref()
+    }
+
+    pub fn provider_mode(&self) -> u32 {
+        self.settings.provider_mode
+    }
+
+    pub fn provider_resource_identity(&self) -> Option<&str> {
+        self.settings.provider_resource_json.as_deref()
+    }
+
+    pub fn provider_descriptor(&self) -> Option<ProviderDescriptor> {
+        self.provider.as_ref().map(NativeDspProvider::descriptor)
+    }
+
+    pub fn drain(&mut self, output: &mut Vec<f32>) -> Result<(), String> {
+        if let Some(provider) = self.provider.as_mut() {
+            provider.drain(output, self.channels)?;
+            return Ok(());
+        }
+        let Some(spatial) = self.spatial.as_mut() else {
+            return Ok(());
+        };
+        let tail_start = output.len();
+        if !spatial.drain_interleaved(output) {
+            return Ok(());
+        }
+        if let Some(limiter) = self.spatial_limiter.as_mut() {
+            limiter.process_interleaved(&mut output[tail_start..]);
+            limiter.drain_interleaved(output);
+        }
+        Ok(())
+    }
+
+    pub fn process_interleaved(&mut self, samples: &mut [f32]) -> Result<(), String> {
+        if let Some(provider) = self.provider.as_mut() {
+            provider.process(samples, self.channels)?;
+            return Ok(());
+        }
+        self.eq.process_interleaved(samples);
+        if (self.eq_headroom_linear - 1.0).abs() >= f32::EPSILON {
+            for sample in samples.iter_mut() {
+                *sample *= self.eq_headroom_linear;
             }
         }
         if self.channels == 2 {
-            if let Some(builtin) = self.builtin.as_mut() {
-                builtin.process_interleaved(samples);
-            }
             if let Some(spatial) = self.spatial.as_mut() {
                 spatial.process_interleaved(samples);
             }
-            if let Some(vpf) = self.vpf.as_mut() {
-                vpf.process_interleaved(samples);
-            } else if let Some(limiters) = self.spatial_limiters.as_mut() {
-                for frame in samples.chunks_exact_mut(2) {
-                    frame[0] = limiters[0].process(frame[0]);
-                    frame[1] = limiters[1].process(frame[1]);
-                }
+            if let Some(limiter) = self.spatial_limiter.as_mut() {
+                limiter.process_interleaved(samples);
             }
         }
-    }
-
-    pub fn owns_output_limiter(&self) -> bool {
-        self.builtin.is_some() || self.vpf.is_some() || self.spatial_limiters.is_some()
+        Ok(())
     }
 
     pub fn latency_secs(&self) -> f64 {
-        self.builtin_latency_secs() + self.spatial_latency_secs() + self.vpf_latency_secs()
-    }
-
-    pub fn builtin_latency_secs(&self) -> f64 {
-        self.builtin
+        let provider_latency = self
+            .provider
             .as_ref()
-            .map(|builtin| builtin.latency_frames() as f64 / f64::from(self.eq.sample_rate.max(1)))
-            .unwrap_or_default()
+            .map(|provider| {
+                f64::from(provider.info().latency_frames) / f64::from(self.eq.sample_rate.max(1))
+            })
+            .unwrap_or_default();
+        provider_latency.max(self.spatial_latency_secs())
     }
 
     pub fn spatial_latency_secs(&self) -> f64 {
@@ -196,20 +245,68 @@ impl DspChain {
             .as_ref()
             .map(|spatial| spatial.latency_frames() as f64 / f64::from(self.eq.sample_rate.max(1)))
             .unwrap_or_default();
-        let limiter = if self.spatial_limiters.is_some() {
-            SoftwareLimiter::LOOKAHEAD as f64 / f64::from(self.eq.sample_rate.max(1))
+        let limiter = if self.spatial_limiter.is_some() {
+            LinkedLimiter::LOOKAHEAD as f64 / f64::from(self.eq.sample_rate.max(1))
         } else {
             0.0
         };
         convolution + limiter
     }
+}
 
-    pub fn vpf_latency_secs(&self) -> f64 {
-        self.vpf
-            .as_ref()
-            .map(|vpf| vpf.latency_frames() as f64 / f64::from(self.eq.sample_rate.max(1)))
-            .unwrap_or_default()
+fn ensure_provider_accepts_resources(
+    provider: &NativeDspProvider,
+    resource_json: Option<&str>,
+) -> Result<(), String> {
+    let Some(resource_json) = resource_json else {
+        return Ok(());
+    };
+    let resources: Vec<serde_json::Value> = serde_json::from_str(resource_json)
+        .map_err(|error| format!("invalid Provider resource JSON: {error}"))?;
+    if resources.is_empty() {
+        return Ok(());
     }
+    let descriptor = provider.descriptor();
+    let manifest: serde_json::Value = serde_json::from_str(&descriptor.manifest_json)
+        .map_err(|error| format!("invalid Provider manifest JSON: {error}"))?;
+    let accepted = manifest
+        .get("resources")
+        .and_then(serde_json::Value::as_array)
+        .ok_or_else(|| "Provider manifest does not declare resources".to_string())?;
+    for resource in resources {
+        let kind = resource
+            .get("kind")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_default();
+        let extension = resource
+            .get("path")
+            .and_then(serde_json::Value::as_str)
+            .and_then(|path| std::path::Path::new(path).extension())
+            .and_then(|extension| extension.to_str())
+            .map(|extension| format!(".{extension}"));
+        let supported = accepted.iter().any(|entry| {
+            entry.get("kind").and_then(serde_json::Value::as_str) == Some(kind)
+                || extension.as_deref().is_some_and(|extension| {
+                    entry
+                        .get("extensions")
+                        .and_then(serde_json::Value::as_array)
+                        .is_some_and(|extensions| {
+                            extensions.iter().any(|value| {
+                                value
+                                    .as_str()
+                                    .is_some_and(|value| value.eq_ignore_ascii_case(extension))
+                            })
+                        })
+                })
+        });
+        if !supported {
+            return Err(format!(
+                "Provider {} does not support resource kind {kind}",
+                descriptor.id
+            ));
+        }
+    }
+    Ok(())
 }
 
 impl PreparedSpatialEffect {
@@ -227,6 +324,18 @@ impl PreparedSpatialEffect {
         } else {
             "stereo"
         }
+    }
+
+    pub fn duration_secs(&self) -> f64 {
+        self.frames as f64 / f64::from(self.sample_rate.max(1))
+    }
+
+    pub fn peak_response_db(&self) -> f32 {
+        self.peak_response_db
+    }
+
+    pub fn output_gain_db(&self) -> f32 {
+        gain_to_db(self.output_gain_linear)
     }
 }
 
@@ -248,6 +357,7 @@ pub fn prepare_spatial_effect(
             ResampleOptions::new()
                 .sample_rate(sample_rate as i32)
                 .channels(ir_channels as i32)
+                .preserve_channel_layout()
                 .format::<f32>(),
         )
         .map_err(|err| format!("failed to create impulse response resampler: {err}"))?;
@@ -276,10 +386,30 @@ pub fn prepare_spatial_effect(
     if interleaved.is_empty() {
         return Err("impulse response file did not contain audio samples".to_string());
     }
+    for sample in &mut interleaved {
+        if !sample.is_finite() {
+            *sample = 0.0;
+        }
+    }
 
-    trim_impulse_response(&mut interleaved, ir_channels);
+    if !trim_impulse_response(&mut interleaved, ir_channels) {
+        return Err("impulse response file is silent".to_string());
+    }
 
-    let responses = split_impulse_channels(&interleaved, ir_channels)
+    let response_samples = split_impulse_channels(&interleaved, ir_channels);
+    let frames = response_samples
+        .iter()
+        .map(Vec::len)
+        .max()
+        .unwrap_or_default();
+    let peak_response_linear = impulse_matrix_peak_gain(&response_samples, ir_channels);
+    if !peak_response_linear.is_finite() || peak_response_linear <= 0.0 {
+        return Err("impulse response has an invalid frequency response".to_string());
+    }
+    let peak_response_db = gain_to_db(peak_response_linear);
+    let output_gain_linear = automatic_ir_output_gain(peak_response_linear);
+    let content_fingerprint = impulse_content_fingerprint(&interleaved, ir_channels, sample_rate);
+    let responses = response_samples
         .into_iter()
         .map(|channel| Arc::new(PreparedImpulseChannel::new(&channel)))
         .collect();
@@ -287,17 +417,25 @@ pub fn prepare_spatial_effect(
         file_path: file_path.to_string(),
         sample_rate,
         channels: ir_channels,
+        frames,
+        peak_response_db,
+        output_gain_linear,
+        content_fingerprint,
         responses,
     })
 }
 
-fn spatial_resource_identity(spatial: &Option<PreparedSpatialEffect>) -> Option<(&str, u32)> {
-    spatial
-        .as_ref()
-        .map(|spatial| (spatial.file_path.as_str(), spatial.sample_rate))
+fn spatial_resource_identity(spatial: &Option<PreparedSpatialEffect>) -> Option<(&str, u32, u64)> {
+    spatial.as_ref().map(|spatial| {
+        (
+            spatial.file_path.as_str(),
+            spatial.sample_rate,
+            spatial.content_fingerprint,
+        )
+    })
 }
 
-fn trim_impulse_response(samples: &mut Vec<f32>, channels: usize) {
+fn trim_impulse_response(samples: &mut Vec<f32>, channels: usize) -> bool {
     let channels = channels.max(1);
     let frames = samples.len() / channels;
     let mut last_active = 0usize;
@@ -314,8 +452,15 @@ fn trim_impulse_response(samples: &mut Vec<f32>, channels: usize) {
             last_active = frame;
         }
     }
-    let keep_frames = (last_active + 1).max(1);
+    if samples
+        .iter()
+        .all(|sample| !sample.is_finite() || sample.abs() < IR_TRIM_THRESHOLD)
+    {
+        return false;
+    }
+    let keep_frames = last_active + 1;
     samples.truncate(keep_frames * channels);
+    true
 }
 
 fn split_impulse_channels(samples: &[f32], channels: usize) -> Vec<Vec<f32>> {
@@ -329,6 +474,118 @@ fn split_impulse_channels(samples: &[f32], channels: usize) -> Vec<Vec<f32>> {
         }
     }
     output
+}
+
+fn impulse_matrix_peak_gain(responses: &[Vec<f32>], channels: usize) -> f32 {
+    let max_frames = responses.iter().map(Vec::len).max().unwrap_or_default();
+    if max_frames == 0 {
+        return 0.0;
+    }
+    let analysis_frames = max_frames
+        .saturating_mul(IR_ANALYSIS_OVERSAMPLING)
+        .max(2)
+        .next_power_of_two();
+    let magnitudes = responses
+        .iter()
+        .map(|response| impulse_frequency_magnitudes(response, analysis_frames))
+        .collect::<Vec<_>>();
+
+    if channels >= 4 && magnitudes.len() >= 4 {
+        let mut peak = 0.0f32;
+        for (((left_direct, right_cross), left_cross), right_direct) in magnitudes[0]
+            .iter()
+            .zip(&magnitudes[1])
+            .zip(&magnitudes[2])
+            .zip(&magnitudes[3])
+        {
+            let left = left_direct + left_cross;
+            let right = right_cross + right_direct;
+            peak = peak.max(left).max(right);
+        }
+        peak
+    } else {
+        magnitudes
+            .iter()
+            .flat_map(|response| response.iter().copied())
+            .fold(0.0, f32::max)
+    }
+}
+
+fn impulse_frequency_magnitudes(samples: &[f32], fft_size: usize) -> Vec<f32> {
+    let mut spectrum = vec![Complex32::ZERO; fft_size];
+    for (target, sample) in spectrum.iter_mut().zip(samples.iter().copied()) {
+        target.re = if sample.is_finite() { sample } else { 0.0 };
+    }
+    let mut planner = FftPlanner::<f32>::new();
+    planner.plan_fft_forward(fft_size).process(&mut spectrum);
+    spectrum
+        .into_iter()
+        .take(fft_size / 2 + 1)
+        .map(|value| value.norm())
+        .collect()
+}
+
+fn automatic_ir_output_gain(peak_response_linear: f32) -> f32 {
+    if peak_response_linear <= 1.0 {
+        return 1.0;
+    }
+    peak_response_linear.recip().clamp(0.0, 1.0)
+}
+
+fn impulse_content_fingerprint(samples: &[f32], channels: usize, sample_rate: u32) -> u64 {
+    const FNV_OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
+    const FNV_PRIME: u64 = 0x0000_0100_0000_01b3;
+    let mut hash = FNV_OFFSET;
+    for byte in (channels as u64)
+        .to_le_bytes()
+        .into_iter()
+        .chain(sample_rate.to_le_bytes())
+        .chain(
+            samples
+                .iter()
+                .flat_map(|sample| sample.to_bits().to_le_bytes()),
+        )
+    {
+        hash ^= u64::from(byte);
+        hash = hash.wrapping_mul(FNV_PRIME);
+    }
+    hash
+}
+
+#[cfg(test)]
+pub(crate) fn prepared_spatial_effect_for_test(
+    channels: usize,
+    responses: &[&[f32]],
+) -> PreparedSpatialEffect {
+    let response_samples = responses
+        .iter()
+        .map(|response| response.to_vec())
+        .collect::<Vec<_>>();
+    let frames = response_samples
+        .iter()
+        .map(Vec::len)
+        .max()
+        .unwrap_or_default();
+    let peak_response_db = gain_to_db(impulse_matrix_peak_gain(&response_samples, channels));
+    let content_fingerprint = response_samples
+        .iter()
+        .flatten()
+        .fold(0xcbf2_9ce4_8422_2325u64, |hash, sample| {
+            (hash ^ u64::from(sample.to_bits())).wrapping_mul(0x0000_0100_0000_01b3)
+        });
+    PreparedSpatialEffect {
+        file_path: "test.irs".to_string(),
+        sample_rate: 48_000,
+        channels,
+        frames,
+        peak_response_db,
+        output_gain_linear: 1.0,
+        content_fingerprint,
+        responses: response_samples
+            .iter()
+            .map(|response| Arc::new(PreparedImpulseChannel::new(response)))
+            .collect(),
+    }
 }
 
 struct MultichannelEqualizer {
@@ -426,6 +683,9 @@ impl Biquad {
 
 struct SpatialEffect {
     channels: usize,
+    output_gain_linear: f32,
+    tail_frames: usize,
+    has_input: bool,
     convolvers: Vec<PartitionedConvolver>,
 }
 
@@ -439,18 +699,53 @@ impl SpatialEffect {
             .collect::<Vec<_>>();
         Self {
             channels: prepared.channels,
+            output_gain_linear: prepared.output_gain_linear,
+            tail_frames: prepared
+                .responses
+                .iter()
+                .map(|response| {
+                    response
+                        .impulse_frames
+                        .saturating_sub(1)
+                        .saturating_add(response.latency_frames)
+                })
+                .max()
+                .unwrap_or_default(),
+            has_input: false,
             convolvers,
         }
     }
 
     fn process_interleaved(&mut self, samples: &mut [f32]) {
+        self.has_input |= !samples.is_empty();
         for frame in samples.chunks_exact_mut(2) {
             let left = frame[0];
             let right = frame[1];
             let (wet_left, wet_right) = self.process_wet_frame(left, right);
-            frame[0] = wet_left;
-            frame[1] = wet_right;
+            frame[0] = wet_left * self.output_gain_linear;
+            frame[1] = wet_right * self.output_gain_linear;
         }
+    }
+
+    fn drain_interleaved(&mut self, output: &mut Vec<f32>) -> bool {
+        if !self.has_input {
+            return false;
+        }
+        output.reserve(self.tail_frames.saturating_mul(2));
+        for _ in 0..self.tail_frames {
+            let (left, right) = self.process_wet_frame(0.0, 0.0);
+            output.push(left * self.output_gain_linear);
+            output.push(right * self.output_gain_linear);
+        }
+        self.reset();
+        true
+    }
+
+    fn reset(&mut self) {
+        for convolver in &mut self.convolvers {
+            convolver.reset();
+        }
+        self.has_input = false;
     }
 
     fn process_wet_frame(&mut self, left: f32, right: f32) -> (f32, f32) {
@@ -508,6 +803,12 @@ impl PartitionedConvolver {
 
     fn latency_frames(&self) -> usize {
         self.latency_frames
+    }
+
+    fn reset(&mut self) {
+        for segment in &mut self.segments {
+            segment.reset();
+        }
     }
 }
 
@@ -597,6 +898,20 @@ impl SegmentConvolver {
         }
         self.write_pos = (self.write_pos + 1) % self.input_spectra.len();
     }
+
+    fn reset(&mut self) {
+        for spectrum in &mut self.input_spectra {
+            spectrum.fill(Complex32::ZERO);
+        }
+        self.input_fft.fill(Complex32::ZERO);
+        self.input_block.clear();
+        self.overlap.fill(0.0);
+        self.scratch.fill(Complex32::ZERO);
+        self.output.clear();
+        self.output
+            .extend(std::iter::repeat_n(0.0, self.prepared.output_delay_frames));
+        self.write_pos = 0;
+    }
 }
 
 impl PreparedImpulseChannel {
@@ -627,6 +942,7 @@ impl PreparedImpulseChannel {
             } else {
                 latency_frames
             },
+            impulse_frames: samples.len(),
         }
     }
 }
@@ -663,7 +979,11 @@ impl PreparedImpulseSegment {
 }
 
 fn db_to_gain(db: f32) -> f32 {
-    10.0f32.powf(db / 20.0)
+    fundsp::prelude32::db_amp(db)
+}
+
+fn gain_to_db(gain: f32) -> f32 {
+    20.0 * gain.max(f32::MIN_POSITIVE).log10()
 }
 
 fn eq_headroom_gain(gains: &[f32; EQ_BAND_COUNT]) -> f32 {
@@ -674,17 +994,63 @@ fn eq_headroom_gain(gains: &[f32; EQ_BAND_COUNT]) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::{
+        path::PathBuf,
+        sync::atomic::{AtomicU64, Ordering},
+    };
+
+    static TEST_FILE_ID: AtomicU64 = AtomicU64::new(0);
+
+    struct TestWav(PathBuf);
+
+    impl TestWav {
+        fn extensible_quad_impulse() -> Self {
+            let mut wav = Vec::new();
+            wav.extend_from_slice(b"RIFF");
+            wav.extend_from_slice(&76u32.to_le_bytes());
+            wav.extend_from_slice(b"WAVEfmt ");
+            wav.extend_from_slice(&40u32.to_le_bytes());
+            wav.extend_from_slice(&0xfffeu16.to_le_bytes());
+            wav.extend_from_slice(&4u16.to_le_bytes());
+            wav.extend_from_slice(&48_000u32.to_le_bytes());
+            wav.extend_from_slice(&(48_000u32 * 16).to_le_bytes());
+            wav.extend_from_slice(&16u16.to_le_bytes());
+            wav.extend_from_slice(&32u16.to_le_bytes());
+            wav.extend_from_slice(&22u16.to_le_bytes());
+            wav.extend_from_slice(&32u16.to_le_bytes());
+            wav.extend_from_slice(&0x33u32.to_le_bytes()); // FL, FR, BL, BR (quad)
+            wav.extend_from_slice(&[
+                0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0x00, 0x80, 0x00, 0x00, 0xaa, 0x00, 0x38,
+                0x9b, 0x71,
+            ]);
+            wav.extend_from_slice(b"data");
+            wav.extend_from_slice(&16u32.to_le_bytes());
+            for sample in [0.1f32, 0.2, 0.3, 0.4] {
+                wav.extend_from_slice(&sample.to_le_bytes());
+            }
+
+            let path = std::env::temp_dir().join(format!(
+                "echo-basic-quad-{}-{}.wav",
+                std::process::id(),
+                TEST_FILE_ID.fetch_add(1, Ordering::Relaxed)
+            ));
+            std::fs::write(&path, wav).expect("write quad WAV fixture");
+            Self(path)
+        }
+
+        fn path(&self) -> &std::path::Path {
+            &self.0
+        }
+    }
+
+    impl Drop for TestWav {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_file(&self.0);
+        }
+    }
 
     fn prepared_spatial(channels: usize, responses: &[&[f32]]) -> PreparedSpatialEffect {
-        PreparedSpatialEffect {
-            file_path: "test.irs".to_string(),
-            sample_rate: 48_000,
-            channels,
-            responses: responses
-                .iter()
-                .map(|response| Arc::new(PreparedImpulseChannel::new(response)))
-                .collect(),
-        }
+        prepared_spatial_effect_for_test(channels, responses)
     }
 
     fn rms(samples: &[f32]) -> f32 {
@@ -697,7 +1063,7 @@ mod tests {
         let sample_rate = 48_000;
         let mut settings = DspSettings::default();
         settings.equalizer[4] = -12.0;
-        let mut chain = DspChain::new(sample_rate, 2, &settings);
+        let mut chain = DspChain::new(sample_rate, 2, &settings).expect("chain should initialize");
         let frames = sample_rate as usize / 20;
         let mut samples = Vec::with_capacity(frames * 2);
         for frame in 0..frames {
@@ -709,7 +1075,9 @@ mod tests {
         }
         let before = rms(&samples);
 
-        chain.process_interleaved(&mut samples);
+        chain
+            .process_interleaved(&mut samples)
+            .expect("basic DSP should process");
 
         assert!(rms(&samples) < before * 0.75);
     }
@@ -732,18 +1100,21 @@ mod tests {
     }
 
     #[test]
-    fn standalone_spatial_effect_uses_process_unit_limiter() {
-        let mut settings = DspSettings::default();
-        settings.spatial = Some(prepared_spatial(2, &[&[1.0], &[1.0]]));
-        let mut chain = DspChain::new(48_000, 2, &settings);
-        let output_frame = EARLY_CONVOLUTION_BLOCK_SIZE - 1 + SoftwareLimiter::LOOKAHEAD;
+    fn standalone_spatial_effect_uses_linked_lookahead_limiter() {
+        let settings = DspSettings {
+            spatial: Some(prepared_spatial(2, &[&[1.0], &[1.0]])),
+            ..DspSettings::default()
+        };
+        let mut chain = DspChain::new(48_000, 2, &settings).expect("chain should initialize");
+        let output_frame = EARLY_CONVOLUTION_BLOCK_SIZE - 1 + LinkedLimiter::LOOKAHEAD;
         let mut samples = vec![0.0f32; (output_frame + 1) * 2];
         samples[0] = 0.5;
         samples[1] = -0.25;
 
-        chain.process_interleaved(&mut samples);
+        chain
+            .process_interleaved(&mut samples)
+            .expect("basic DSP should process");
 
-        assert!(chain.owns_output_limiter());
         assert!(samples[..output_frame * 2]
             .iter()
             .all(|sample| sample.abs() < 0.00001));
@@ -823,5 +1194,116 @@ mod tests {
         let delayed_frame = (EARLY_CONVOLUTION_BLOCK_SIZE - 1) * 2;
         assert!((samples[delayed_frame] - 0.5).abs() < 0.00001);
         assert!((samples[delayed_frame + 1] - 0.3).abs() < 0.00001);
+    }
+
+    #[test]
+    fn extensible_quad_impulse_preserves_true_stereo_channel_matrix() {
+        let fixture = TestWav::extensible_quad_impulse();
+        let prepared = prepare_spatial_effect(
+            fixture
+                .path()
+                .to_str()
+                .expect("fixture path should be UTF-8"),
+            48_000,
+        )
+        .expect("quad impulse should prepare");
+        assert_eq!(prepared.channels(), 4);
+        assert_eq!(prepared.mode(), "true-stereo");
+
+        let delayed_frame = (EARLY_CONVOLUTION_BLOCK_SIZE - 1) * 2;
+        let mut left_input = vec![0.0f32; EARLY_CONVOLUTION_BLOCK_SIZE * 2];
+        left_input[0] = 1.0;
+        SpatialEffect::new(&prepared).process_interleaved(&mut left_input);
+        assert!((left_input[delayed_frame] - 0.1).abs() < 0.00001);
+        assert!((left_input[delayed_frame + 1] - 0.2).abs() < 0.00001);
+
+        let mut right_input = vec![0.0f32; EARLY_CONVOLUTION_BLOCK_SIZE * 2];
+        right_input[1] = 1.0;
+        SpatialEffect::new(&prepared).process_interleaved(&mut right_input);
+        assert!((right_input[delayed_frame] - 0.3).abs() < 0.00001);
+        assert!((right_input[delayed_frame + 1] - 0.4).abs() < 0.00001);
+    }
+
+    #[test]
+    fn automatic_ir_headroom_caps_high_gain_response_and_preserves_unity() {
+        let unity = vec![vec![1.0], vec![1.0]];
+        let unity_peak = impulse_matrix_peak_gain(&unity, 2);
+        assert!((unity_peak - 1.0).abs() < 0.00001);
+        assert_eq!(automatic_ir_output_gain(unity_peak), 1.0);
+
+        let boosted = vec![vec![1.0, 1.0], vec![1.0, 1.0]];
+        let boosted_peak = impulse_matrix_peak_gain(&boosted, 2);
+        let output_gain = automatic_ir_output_gain(boosted_peak);
+        assert!((boosted_peak - 2.0).abs() < 0.00001);
+        assert!((output_gain - 0.5).abs() < 0.00001);
+        assert!(boosted_peak * output_gain <= 1.0 + 0.00001);
+    }
+
+    #[test]
+    fn spatial_drain_emits_complete_tail_and_resets_for_reuse() {
+        let settings = DspSettings {
+            spatial: Some(prepared_spatial(2, &[&[0.5, 0.25], &[0.5, 0.25]])),
+            ..DspSettings::default()
+        };
+        let mut chain = DspChain::new(48_000, 2, &settings).expect("chain should initialize");
+
+        let mut first = vec![0.4, -0.2];
+        chain
+            .process_interleaved(&mut first)
+            .expect("basic DSP should process");
+        let mut tail = Vec::new();
+        chain.drain(&mut tail).expect("basic DSP should drain");
+        first.extend_from_slice(&tail);
+
+        let first_output_frame = EARLY_CONVOLUTION_BLOCK_SIZE - 1 + LinkedLimiter::LOOKAHEAD;
+        assert_eq!(first.len() / 2, first_output_frame + 2);
+        assert!((first[first_output_frame * 2] - 0.2).abs() < 0.00001);
+        assert!((first[first_output_frame * 2 + 1] + 0.1).abs() < 0.00001);
+        assert!((first[(first_output_frame + 1) * 2] - 0.1).abs() < 0.00001);
+        assert!((first[(first_output_frame + 1) * 2 + 1] + 0.05).abs() < 0.00001);
+
+        let mut second = vec![0.4, -0.2];
+        chain
+            .process_interleaved(&mut second)
+            .expect("reused chain should process");
+        let mut second_tail = Vec::new();
+        chain
+            .drain(&mut second_tail)
+            .expect("reused chain should drain");
+        second.extend_from_slice(&second_tail);
+        assert_eq!(second, first);
+    }
+
+    #[test]
+    fn spatial_drain_flushes_partial_late_partition() {
+        let late_index = EARLY_CONVOLUTION_FRAMES + 512;
+        let mut impulse = vec![0.0; late_index + 1];
+        impulse[late_index] = 0.25;
+        let settings = DspSettings {
+            spatial: Some(prepared_spatial(2, &[&impulse, &impulse])),
+            ..DspSettings::default()
+        };
+        let mut chain = DspChain::new(48_000, 2, &settings).expect("chain should initialize");
+        let mut output = vec![0.4, -0.2];
+        chain
+            .process_interleaved(&mut output)
+            .expect("basic DSP should process");
+        let mut tail = Vec::new();
+        chain.drain(&mut tail).expect("basic DSP should drain");
+        output.extend_from_slice(&tail);
+
+        let expected_frame =
+            late_index + EARLY_CONVOLUTION_BLOCK_SIZE - 1 + LinkedLimiter::LOOKAHEAD;
+        assert_eq!(output.len() / 2, expected_frame + 1);
+        assert!((output[expected_frame * 2] - 0.1).abs() < 0.00001);
+        assert!((output[expected_frame * 2 + 1] + 0.05).abs() < 0.00001);
+    }
+
+    #[test]
+    fn spatial_identity_changes_when_same_path_content_changes() {
+        let first = prepared_spatial(2, &[&[1.0], &[1.0]]);
+        let second = prepared_spatial(2, &[&[0.5], &[0.5]]);
+        assert_eq!(first.file_path, second.file_path);
+        assert_ne!(first.content_fingerprint, second.content_fingerprint);
     }
 }

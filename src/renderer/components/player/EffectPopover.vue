@@ -24,7 +24,13 @@ import {
   type CommunityAudioEffectSort,
 } from '@/api/audioEffect';
 import type { AudioEffectValue } from '@/types';
-import { normalizeAudioEffectName, type BuiltinAudioEffect } from '../../../shared/audio';
+import { normalizeAudioEffectName } from '../../../shared/audio';
+import type {
+  DspJsonValue,
+  DspProviderControl,
+  DspProviderManifest,
+  DspProviderRuntimeState,
+} from '../../../shared/player-audio-graph';
 
 const {
   player,
@@ -37,10 +43,12 @@ const {
 const toastStore = useToastStore();
 
 type EffectTab = 'effect' | 'eq' | 'irs';
-type ImpulseResponseLibraryTab = 'mine' | 'community';
+type ImpulseResponseLibraryTab = 'mine' | 'community' | 'engine';
 
 const activeTab = ref<EffectTab>('effect');
-const activeImpulseResponseLibraryTab = ref<ImpulseResponseLibraryTab>('mine');
+const activeImpulseResponseLibraryTab = ref<ImpulseResponseLibraryTab>(
+  settingStore.dspProviderEnabled && settingStore.dspProviderPath ? 'engine' : 'mine',
+);
 const COMMUNITY_PAGE_SIZE = 20;
 const communitySortOptions: readonly { value: CommunityAudioEffectSort; label: string }[] = [
   { value: 2, label: '默认' },
@@ -83,20 +91,117 @@ const eqPresets = [
 
 const frequencies = ['31', '62', '125', '250', '500', '1k', '2k', '4k', '8k', '16k'];
 const gains = computed(() => player.equalizerGains);
-const builtinAudioEffects: readonly { value: BuiltinAudioEffect; label: string }[] = [
-  { value: '3d-beauty', label: '3D丽音' },
-  { value: 'dynamic-bass', label: '超重低音' },
-  { value: 'clear-voice', label: '纯净人声' },
-];
 const selectedImpulseResponse = computed(() => settingStore.getSelectedImpulseResponse());
 const impulseResponseActive = computed(
+  () => settingStore.impulseResponseEnabled && !!selectedImpulseResponse.value,
+);
+const providerRuntimeState = computed<DspProviderRuntimeState | null>(() => {
+  const value = player.playbackDiagnostics.graph?.providerStateJson;
+  if (!value) return null;
+  try {
+    return JSON.parse(value) as DspProviderRuntimeState;
+  } catch {
+    return null;
+  }
+});
+const providerManifest = computed<DspProviderManifest | null>(() => {
+  const value = player.playbackDiagnostics.graph?.providerManifestJson;
+  if (!value) return null;
+  try {
+    const manifest = JSON.parse(value) as DspProviderManifest;
+    return typeof manifest === 'object' && manifest !== null ? manifest : null;
+  } catch {
+    return null;
+  }
+});
+const providerControls = computed<DspProviderControl[]>(
+  () => providerManifest.value?.controls ?? [],
+);
+const providerPresets = computed(() => providerManifest.value?.presets ?? []);
+const providerDisplayName = computed(
   () =>
-    settingStore.impulseResponseEnabled &&
-    (!!settingStore.builtinAudioEffect || !!selectedImpulseResponse.value),
+    providerManifest.value?.displayName?.trim() ||
+    player.playbackDiagnostics.graph?.providerId ||
+    '第三方音效引擎',
 );
-const vpfAudioEffectActive = computed(
-  () => impulseResponseActive.value && !!selectedImpulseResponse.value?.vpfPath,
+const activeProviderMode = computed(() => settingStore.dspProviderMode);
+const providerVpfSupport = computed<'supported' | 'unsupported' | 'unknown'>(() => {
+  const resources = providerManifest.value?.resources;
+  if (!resources) return 'unknown';
+  return resources.some(
+    (resource) =>
+      resource.kind.toLowerCase() === 'vpf' ||
+      resource.extensions?.some((extension) => extension.toLowerCase() === '.vpf'),
+  )
+    ? 'supported'
+    : 'unsupported';
+});
+const providerResourceSummary = computed(() => {
+  const resources = providerManifest.value?.resources;
+  if (!resources) return [];
+  return resources.map((resource) => ({
+    kind: resource.kind,
+    extensions: resource.extensions?.join(', ') || '任意扩展名',
+  }));
+});
+const providerControlsState = computed<Record<string, { value?: DspJsonValue }>>(() => {
+  const controls = providerRuntimeState.value?.controls;
+  return controls ?? {};
+});
+const effectiveProviderPresetJson = computed(() => settingStore.dspProviderPresetJson.trim());
+const activeProviderPresetId = computed(() => {
+  const value = effectiveProviderPresetJson.value;
+  if (!value) return '';
+  try {
+    const preset = JSON.parse(value) as { presetId?: unknown };
+    return typeof preset.presetId === 'string' ? preset.presetId : '';
+  } catch {
+    return '';
+  }
+});
+const providerEffectActive = computed(
+  () =>
+    activeProviderPresetId.value.length > 0 || effectiveProviderPresetJson.value.trim().length > 0,
 );
+const providerControlValue = (control: DspProviderControl): DspJsonValue =>
+  providerControlsState.value[control.id]?.value ??
+  control.value ??
+  control.options?.[0]?.value ??
+  (control.type === 'boolean' ? false : '');
+const providerControlDisabled = (control: DspProviderControl) =>
+  providerRuntimeState.value?.controls?.[control.id]?.ownership === 'disabled' ||
+  control.ownership === 'disabled';
+const setProviderMode = (mode: 'headphone' | 'speaker') => {
+  if (!player.playbackDiagnostics.graph?.providerPath || activeProviderMode.value === mode) return;
+  settingStore.setDspProviderMode(mode);
+};
+const setProviderControl = (control: DspProviderControl, value: DspJsonValue) => {
+  if (
+    providerControlDisabled(control) ||
+    !player.playbackDiagnostics.graph?.providerPath ||
+    JSON.stringify(providerControlValue(control)) === JSON.stringify(value)
+  ) {
+    return;
+  }
+  const controls = { ...providerControlsState.value, [control.id]: { value } };
+  const presetJson = JSON.stringify({ controls });
+  settingStore.setDspProviderPreset(presetJson);
+};
+const setProviderPreset = (presetId: string) => {
+  if (!player.playbackDiagnostics.graph?.providerPath) return;
+  if (
+    !impulseResponseActive.value &&
+    providerEffectActive.value &&
+    activeProviderPresetId.value === presetId
+  ) {
+    return;
+  }
+  settingStore.selectDspProviderPreset(JSON.stringify({ presetId }));
+};
+const providerEqLocked = computed(() => {
+  const ownership = providerRuntimeState.value?.controlPolicy?.eq;
+  return ownership === 'provider' || ownership === 'disabled';
+});
 const audioEffectPresetActive = computed(
   () => !isAudioEffectPresetSelectionDisabled.value && player.audioEffect !== 'none',
 );
@@ -109,7 +214,7 @@ const throttledSetEq = useThrottleFn((newGains: number[]) => {
 }, 100);
 
 const updateGain = (index: number, value: number[] | undefined) => {
-  if (!value || vpfAudioEffectActive.value) return;
+  if (!value || providerEqLocked.value) return;
   const newGains = [...gains.value];
   newGains[index] = value[0];
   // 立即更新 UI 状态
@@ -119,7 +224,7 @@ const updateGain = (index: number, value: number[] | undefined) => {
 };
 
 const applyEqPreset = (presetGains: number[]) => {
-  if (vpfAudioEffectActive.value) return;
+  if (providerEqLocked.value) return;
   player.setEq([...presetGains]);
 };
 
@@ -128,21 +233,62 @@ const isPresetActive = (presetGains: number[]) => {
 };
 
 const resetGains = () => {
-  if (vpfAudioEffectActive.value) return;
+  if (providerEqLocked.value) return;
   player.setEq([0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
 };
 
 const resetImpulseResponse = () => {
-  settingStore.setBuiltinAudioEffect(null);
-};
-
-const selectBuiltinAudioEffect = (effect: BuiltinAudioEffect) => {
-  settingStore.setBuiltinAudioEffect(effect);
+  if (!impulseResponseActive.value && !providerEffectActive.value) return;
+  settingStore.selectOriginalSpatialAudio();
 };
 
 const selectImpulseResponse = (id: string) => {
   settingStore.setSelectedImpulseResponse(id);
 };
+
+const currentSpatialAudioSelection = computed(() => {
+  if (impulseResponseActive.value && selectedImpulseResponse.value) {
+    const effect = selectedImpulseResponse.value;
+    const type = effect.kind === 'imported-ir' ? '本地卷积音效' : '社区音效';
+    return {
+      active: true,
+      name: getImpulseResponseDisplayName(effect.name),
+      type,
+      detail: player.playbackDiagnostics.graph?.providerId
+        ? `由 ${providerDisplayName.value} 处理`
+        : '由内置音效引擎处理',
+    };
+  }
+
+  const presetId = activeProviderPresetId.value;
+  const preset = providerPresets.value.find((item) => item.id === presetId);
+  if (presetId && preset) {
+    return {
+      active: true,
+      name: preset.label,
+      type: '引擎预设',
+      detail: providerDisplayName.value,
+    };
+  }
+
+  if (providerEffectActive.value) {
+    return {
+      active: true,
+      name: '自定义调节',
+      type: '引擎音效',
+      detail: providerDisplayName.value,
+    };
+  }
+
+  return {
+    active: false,
+    name: '原声',
+    type: '原声',
+    detail: player.playbackDiagnostics.graph?.providerId
+      ? `${providerDisplayName.value} 已就绪`
+      : '未启用第三方音效引擎',
+  };
+});
 
 const getImpulseResponseDisplayName = (name: string) => normalizeAudioEffectName(name);
 
@@ -215,27 +361,45 @@ const formatCommunityUserCount = (count: number) => {
 const getCommunityEffectTypeLabel = (effect: CommunityAudioEffect) => {
   const hasVpf = effect.vpfUrls.length > 0;
   const hasImpulseResponse = effect.soundUrls.length > 0;
-  if (hasVpf && hasImpulseResponse) return '组合音效';
-  if (hasVpf) return '参数音效';
+  if (hasVpf && hasImpulseResponse) {
+    if (providerVpfSupport.value === 'supported') return '组合音效';
+    if (providerVpfSupport.value === 'unsupported') return '组合音效，当前引擎不支持';
+    return '组合音效，需要兼容的音效引擎';
+  }
+  if (hasVpf) {
+    if (providerVpfSupport.value === 'supported') return 'VPF，当前引擎支持';
+    if (providerVpfSupport.value === 'unsupported') return 'VPF，当前引擎不支持';
+    return 'VPF，需要支持该格式的音效引擎';
+  }
   if (hasImpulseResponse) return '卷积音效';
   return '暂无资源';
 };
 
 const isCommunityEffectDownloadable = (effect: CommunityAudioEffect) =>
-  getCommunityImpulseResponseUrls(effect).length > 0 || getCommunityVpfUrls(effect).length > 0;
+  (getCommunityImpulseResponseUrls(effect).length > 0 || effect.vpfUrls.length > 0) &&
+  (effect.vpfUrls.length === 0 || providerVpfSupport.value === 'supported');
+
+const getCommunityEffectUnavailableReason = (effect: CommunityAudioEffect) =>
+  effect.vpfUrls.length > 0 && providerVpfSupport.value !== 'supported'
+    ? '需要启用支持 VPF 的音效引擎'
+    : '暂无可下载的音效资源';
 
 const handleCommunityEffectAction = async (effect: CommunityAudioEffect) => {
   if (downloadingCommunityEffectId.value !== null) return;
   const downloaded = getDownloadedCommunityEffect(effect);
   if (downloaded) {
     if (isCommunityEffectActive(effect)) return;
-    settingStore.setSelectedImpulseResponse(downloaded.id);
+    selectImpulseResponse(downloaded.id);
     toastStore.success(`已使用“${effect.name}”`);
     return;
   }
 
   const impulseResponseUrls = getCommunityImpulseResponseUrls(effect);
   const vpfUrls = getCommunityVpfUrls(effect);
+  if (vpfUrls.length > 0 && providerVpfSupport.value !== 'supported') {
+    toastStore.warning('当前音效引擎不支持此音效');
+    return;
+  }
   if (impulseResponseUrls.length === 0 && vpfUrls.length === 0) return;
 
   downloadingCommunityEffectId.value = effect.id;
@@ -253,7 +417,7 @@ const handleCommunityEffectAction = async (effect: CommunityAudioEffect) => {
       `已下载“${effect.name}”`,
       {
         label: '立即使用',
-        handler: () => settingStore.setSelectedImpulseResponse(downloadedFile.id),
+        handler: () => selectImpulseResponse(downloadedFile.id),
       },
       'success',
       6000,
@@ -379,16 +543,14 @@ withDefaults(defineProps<Props>(), {
         <div v-if="activeTab === 'eq'" class="panel-content">
           <div class="panel-header">
             <span class="panel-title">自定义调节</span>
-            <button class="reset-btn" :disabled="vpfAudioEffectActive" @click="resetGains">
-              重置
-            </button>
+            <button class="reset-btn" :disabled="providerEqLocked" @click="resetGains">重置</button>
           </div>
 
-          <div v-if="vpfAudioEffectActive" class="panel-hint eq-bypass-hint">
+          <div v-if="providerEqLocked" class="panel-hint eq-bypass-hint">
             当前音效已包含 EQ 设置，EQ 均衡器暂不可调节
           </div>
 
-          <div class="eq-container" :class="{ 'is-disabled': vpfAudioEffectActive }">
+          <div class="eq-container" :class="{ 'is-disabled': providerEqLocked }">
             <div class="eq-bands">
               <div v-for="(gain, index) in gains" :key="index" class="eq-band">
                 <SliderRoot
@@ -396,7 +558,7 @@ withDefaults(defineProps<Props>(), {
                   :min="-12"
                   :max="12"
                   :step="0.1"
-                  :disabled="vpfAudioEffectActive"
+                  :disabled="providerEqLocked"
                   orientation="vertical"
                   class="eq-slider"
                   @update:model-value="(val) => updateGain(index, val)"
@@ -418,7 +580,7 @@ withDefaults(defineProps<Props>(), {
                 :key="preset.name"
                 class="preset-chip"
                 :class="{ 'is-active': isPresetActive(preset.gains) }"
-                :disabled="vpfAudioEffectActive"
+                :disabled="providerEqLocked"
                 @click="applyEqPreset(preset.gains)"
               >
                 {{ preset.name }}
@@ -433,8 +595,29 @@ withDefaults(defineProps<Props>(), {
             <span class="panel-title">空间音效</span>
           </div>
 
+          <div
+            class="current-spatial-effect"
+            :class="{ 'is-active': currentSpatialAudioSelection.active }"
+          >
+            <div class="current-spatial-effect-copy">
+              <span class="current-spatial-effect-eyebrow">当前音效</span>
+              <strong>{{ currentSpatialAudioSelection.name }}</strong>
+              <small>{{ currentSpatialAudioSelection.detail }}</small>
+            </div>
+            <span class="current-spatial-effect-type">
+              {{ currentSpatialAudioSelection.type }}
+            </span>
+          </div>
+
           <div class="irs-library-nav">
             <div class="irs-library-tabs">
+              <button
+                type="button"
+                :class="{ 'is-active': activeImpulseResponseLibraryTab === 'engine' }"
+                @click="selectImpulseResponseLibraryTab('engine')"
+              >
+                引擎预设
+              </button>
               <button
                 type="button"
                 :class="{ 'is-active': activeImpulseResponseLibraryTab === 'mine' }"
@@ -492,21 +675,12 @@ withDefaults(defineProps<Props>(), {
               <button
                 type="button"
                 class="pm-item w-full! m-0!"
-                :class="{ 'is-active': !impulseResponseActive }"
+                :class="{
+                  'is-active': !impulseResponseActive && !providerEffectActive,
+                }"
                 @click="resetImpulseResponse"
               >
                 <span class="pm-label text-center">原声</span>
-              </button>
-              <button
-                v-for="effect in builtinAudioEffects"
-                :key="effect.value"
-                type="button"
-                class="pm-item builtin-effect-item w-full! m-0!"
-                :class="{ 'is-active': settingStore.builtinAudioEffect === effect.value }"
-                @click="selectBuiltinAudioEffect(effect.value)"
-              >
-                <span class="pm-label text-center">{{ effect.label }}</span>
-                <span class="builtin-effect-badge" aria-label="精选音效" title="精选音效"> ★ </span>
               </button>
               <button
                 v-for="file in settingStore.impulseResponseFiles"
@@ -528,7 +702,7 @@ withDefaults(defineProps<Props>(), {
           </Scrollbar>
 
           <Scrollbar
-            v-else
+            v-else-if="activeImpulseResponseLibraryTab === 'community'"
             ref="communityScrollbarRef"
             class="panel-scroll community-panel-scroll"
             :content-props="{ class: 'community-scroll-wrap' }"
@@ -567,7 +741,7 @@ withDefaults(defineProps<Props>(), {
                   :title="
                     getDownloadedCommunityEffect(effect) || isCommunityEffectDownloadable(effect)
                       ? undefined
-                      : '暂无可下载的音效资源'
+                      : getCommunityEffectUnavailableReason(effect)
                   "
                   @click.stop="handleCommunityEffectAction(effect)"
                 >
@@ -627,6 +801,189 @@ withDefaults(defineProps<Props>(), {
               <span>暂无社区音效</span>
             </div>
           </Scrollbar>
+
+          <Scrollbar
+            v-else
+            class="panel-scroll provider-panel-scroll"
+            :content-props="{ class: 'provider-scroll-wrap' }"
+          >
+            <div v-if="player.playbackDiagnostics.graph?.providerId" class="provider-panel-body">
+              <section class="spatial-provider-card">
+                <div class="provider-card-heading">
+                  <span class="provider-card-copy">
+                    <strong>{{ providerDisplayName }}</strong>
+                    <small v-if="player.playbackDiagnostics.graph.providerVersion">
+                      v{{ player.playbackDiagnostics.graph.providerVersion }}
+                    </small>
+                  </span>
+                  <span class="provider-status-dot">运行中</span>
+                </div>
+
+                <div class="provider-mode-row">
+                  <span>输出设备</span>
+                  <div class="spatial-provider-mode-tabs">
+                    <button
+                      type="button"
+                      :class="{ 'is-active': activeProviderMode === 'speaker' }"
+                      @click="setProviderMode('speaker')"
+                    >
+                      扬声器
+                    </button>
+                    <button
+                      type="button"
+                      :class="{ 'is-active': activeProviderMode === 'headphone' }"
+                      @click="setProviderMode('headphone')"
+                    >
+                      耳机
+                    </button>
+                  </div>
+                </div>
+
+                <div class="provider-capabilities">
+                  <span
+                    class="provider-capability"
+                    :class="{ 'is-supported': providerVpfSupport === 'supported' }"
+                  >
+                    VPF
+                    {{
+                      providerVpfSupport === 'supported'
+                        ? '支持'
+                        : providerVpfSupport === 'unsupported'
+                          ? '不支持'
+                          : '未声明'
+                    }}
+                  </span>
+                  <span
+                    v-for="resource in providerResourceSummary"
+                    :key="resource.kind"
+                    class="provider-capability"
+                    :title="resource.extensions"
+                  >
+                    {{ resource.kind }}
+                  </span>
+                </div>
+              </section>
+
+              <section class="provider-section">
+                <div class="provider-section-heading">
+                  <strong>引擎预设</strong>
+                  <span>由当前音效引擎提供</span>
+                </div>
+                <div class="provider-preset-grid">
+                  <button
+                    type="button"
+                    class="provider-preset-button"
+                    :class="{
+                      'is-active': !impulseResponseActive && !providerEffectActive,
+                    }"
+                    :aria-pressed="!impulseResponseActive && !providerEffectActive"
+                    @click="resetImpulseResponse"
+                  >
+                    <span>原声</span>
+                    <small>original</small>
+                  </button>
+                  <button
+                    v-for="preset in providerPresets"
+                    :key="preset.id"
+                    type="button"
+                    class="provider-preset-button"
+                    :class="{ 'is-active': activeProviderPresetId === preset.id }"
+                    :aria-pressed="activeProviderPresetId === preset.id"
+                    :title="preset.description"
+                    @click="setProviderPreset(preset.id)"
+                  >
+                    <span>{{ preset.label }}</span>
+                    <small v-if="preset.modules?.length">{{ preset.modules.join(' · ') }}</small>
+                  </button>
+                </div>
+              </section>
+
+              <section v-if="providerControls.length > 0" class="provider-section">
+                <div class="provider-section-heading">
+                  <strong>参数调节</strong>
+                  <span>由当前音效引擎提供</span>
+                </div>
+                <div class="provider-controls">
+                  <div
+                    v-for="control in providerControls"
+                    :key="control.id"
+                    class="provider-control"
+                    :class="{ 'is-disabled': providerControlDisabled(control) }"
+                  >
+                    <label class="provider-control-label">
+                      <span>{{ control.label || control.id }}</span>
+                      <span class="provider-control-value">
+                        {{ providerControlValue(control) }}{{ control.unit || '' }}
+                      </span>
+                    </label>
+                    <SliderRoot
+                      v-if="
+                        control.type === 'number' &&
+                        typeof providerControlValue(control) === 'number'
+                      "
+                      :model-value="[providerControlValue(control) as number]"
+                      :min="control.range?.min ?? 0"
+                      :max="control.range?.max ?? 1"
+                      :step="control.range?.step ?? 0.01"
+                      :disabled="providerControlDisabled(control)"
+                      class="provider-slider"
+                      @update:model-value="(value) => setProviderControl(control, value?.[0] ?? 0)"
+                    >
+                      <SliderTrack class="provider-slider-track">
+                        <SliderRange class="provider-slider-range" />
+                      </SliderTrack>
+                      <SliderThumb class="provider-slider-thumb" />
+                    </SliderRoot>
+                    <label v-else-if="control.type === 'boolean'" class="provider-checkbox">
+                      <input
+                        type="checkbox"
+                        :checked="providerControlValue(control) === true"
+                        :disabled="providerControlDisabled(control)"
+                        @change="
+                          setProviderControl(control, ($event.target as HTMLInputElement).checked)
+                        "
+                      />
+                      <span>{{ providerControlValue(control) ? '开启' : '关闭' }}</span>
+                    </label>
+                    <select
+                      v-else-if="control.type === 'select'"
+                      :value="JSON.stringify(providerControlValue(control))"
+                      :disabled="providerControlDisabled(control)"
+                      class="provider-select"
+                      @change="
+                        setProviderControl(
+                          control,
+                          JSON.parse(($event.target as HTMLSelectElement).value),
+                        )
+                      "
+                    >
+                      <option
+                        v-for="option in control.options ?? []"
+                        :key="JSON.stringify(option.value)"
+                        :value="JSON.stringify(option.value)"
+                      >
+                        {{ option.label }}
+                      </option>
+                    </select>
+                    <span v-else class="provider-value">
+                      {{ JSON.stringify(providerControlValue(control)) }}
+                    </span>
+                  </div>
+                </div>
+              </section>
+
+              <div
+                v-if="providerPresets.length === 0 && providerControls.length === 0"
+                class="provider-empty-note"
+              >
+                当前引擎没有声明额外预设或参数。
+              </div>
+            </div>
+            <div v-else class="provider-panel-empty">
+              <strong>尚未启用音效引擎</strong>
+              <span>请前往“设置 → 空间音效”导入第三方音效引擎</span>
+            </div>
+          </Scrollbar>
         </div>
       </div>
     </div>
@@ -642,6 +999,133 @@ withDefaults(defineProps<Props>(), {
   background: var(--color-bg-elevated);
   border-color: var(--border-subtle);
   display: flex;
+}
+
+.spatial-provider-card {
+  padding: 12px;
+  border: 1px solid color-mix(in srgb, var(--color-primary) 24%, transparent);
+  border-radius: 12px;
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--color-primary) 11%, var(--color-bg-elevated)),
+    color-mix(in srgb, var(--color-primary) 3%, var(--color-bg-elevated))
+  );
+}
+
+.provider-card-heading,
+.provider-mode-row,
+.provider-section-heading,
+.provider-control-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.provider-card-heading {
+  margin-bottom: 12px;
+}
+
+.provider-card-copy {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.provider-card-copy strong {
+  overflow: hidden;
+  color: var(--color-text-main);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.provider-card-copy small,
+.provider-section-heading span {
+  color: var(--color-text-secondary);
+  font-size: 9px;
+  font-weight: 600;
+}
+
+.provider-status-dot {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 5px;
+  color: #22a06b;
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.provider-status-dot::before {
+  width: 6px;
+  height: 6px;
+  border-radius: 9999px;
+  background: currentColor;
+  box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 14%, transparent);
+  content: '';
+}
+
+.provider-mode-row {
+  color: var(--color-text-secondary);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.spatial-provider-mode-tabs {
+  display: grid;
+  width: 142px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px;
+  padding: 3px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--color-text-main) 6%, transparent);
+}
+
+.spatial-provider-mode-tabs button {
+  height: 24px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.spatial-provider-mode-tabs button:hover,
+.spatial-provider-mode-tabs button.is-active {
+  color: var(--color-primary);
+  background: var(--color-bg-elevated);
+}
+
+.provider-capabilities {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 10px;
+}
+
+.provider-capability {
+  max-width: 100%;
+  overflow: hidden;
+  padding: 3px 7px;
+  border: 1px solid var(--control-border);
+  border-radius: 9999px;
+  background: color-mix(in srgb, var(--color-bg-elevated) 72%, transparent);
+  color: var(--color-text-secondary);
+  font-size: 8px;
+  font-weight: 700;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.provider-capability.is-supported {
+  border-color: color-mix(in srgb, #22a06b 35%, transparent);
+  color: #22a06b;
 }
 
 .effect-popover.echo-popover-content > div:first-child {
@@ -660,6 +1144,8 @@ withDefaults(defineProps<Props>(), {
 /* 侧边栏 */
 .effect-sidebar {
   width: 80px;
+  box-sizing: border-box;
+  flex: 0 0 80px;
   background: var(--control-muted-bg);
   display: flex;
   flex-direction: column;
@@ -700,7 +1186,7 @@ withDefaults(defineProps<Props>(), {
   flex: 1;
   display: flex;
   flex-direction: column;
-  width: 100%;
+  width: auto;
   min-width: 0;
   align-self: stretch;
 }
@@ -764,7 +1250,6 @@ withDefaults(defineProps<Props>(), {
 }
 
 .irs-panel-content,
-.irs-panel-content > *,
 .irs-panel-scroll,
 .effect-popover .irs-scroll-wrap,
 .effect-popover .irs-scroll-wrap > .scrollbar-view {
@@ -833,26 +1318,6 @@ withDefaults(defineProps<Props>(), {
   text-align: center;
 }
 
-.builtin-effect-item {
-  position: relative;
-}
-
-.builtin-effect-badge {
-  position: absolute;
-  top: 3px;
-  right: 4px;
-  color: #f59e0b;
-  font-size: 7px;
-  line-height: 1;
-  opacity: 0.9;
-  pointer-events: none;
-}
-
-.effect-popover .pm-item.is-active .builtin-effect-badge {
-  color: #fde68a;
-  opacity: 1;
-}
-
 .effect-preset-grid {
   display: grid;
   width: 100%;
@@ -897,6 +1362,79 @@ withDefaults(defineProps<Props>(), {
 
 .irs-panel-header {
   gap: 16px;
+}
+
+.current-spatial-effect {
+  display: flex;
+  width: auto;
+  max-width: calc(100% - 20px);
+  box-sizing: border-box;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: -2px 10px 8px;
+  padding: 9px 10px;
+  border: 1px solid var(--control-border);
+  border-radius: 10px;
+  background: var(--control-muted-bg);
+}
+
+.current-spatial-effect.is-active {
+  border-color: color-mix(in srgb, var(--color-primary) 40%, transparent);
+  background: color-mix(in srgb, var(--color-primary) 7%, var(--color-bg-elevated));
+}
+
+.current-spatial-effect-copy {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: baseline;
+  gap: 2px 7px;
+}
+
+.current-spatial-effect-eyebrow {
+  color: var(--color-text-secondary);
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.current-spatial-effect-copy strong {
+  overflow: hidden;
+  color: var(--color-text-main);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.current-spatial-effect-copy small {
+  grid-column: 1 / -1;
+  overflow: hidden;
+  color: var(--color-text-secondary);
+  font-size: 9px;
+  font-weight: 550;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.current-spatial-effect-type {
+  flex: 0 0 auto;
+  max-width: 108px;
+  overflow: hidden;
+  padding: 3px 7px;
+  border-radius: 9999px;
+  background: var(--color-bg-elevated);
+  color: var(--color-text-secondary);
+  font-size: 8px;
+  font-weight: 700;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.current-spatial-effect.is-active .current-spatial-effect-type {
+  background: var(--color-primary);
+  color: white;
 }
 
 .irs-preset-item {
@@ -952,7 +1490,7 @@ withDefaults(defineProps<Props>(), {
   display: grid;
   min-width: 0;
   flex: 1;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   padding: 3px;
   border-radius: 8px;
   background: var(--control-muted-bg);
@@ -1072,6 +1610,232 @@ withDefaults(defineProps<Props>(), {
   min-width: 0 !important;
   align-self: stretch !important;
   box-sizing: border-box;
+}
+
+.provider-panel-scroll,
+.effect-popover .provider-scroll-wrap,
+.effect-popover .provider-scroll-wrap > .scrollbar-view {
+  width: 100% !important;
+  min-width: 0 !important;
+  align-self: stretch !important;
+  box-sizing: border-box;
+}
+
+.provider-panel-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 0 10px 12px;
+}
+
+.provider-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.provider-section-heading {
+  padding: 0 2px;
+}
+
+.provider-section-heading strong {
+  color: var(--color-text-main);
+  font-size: 11px;
+}
+
+.provider-preset-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.provider-preset-button {
+  display: flex;
+  min-width: 0;
+  min-height: 42px;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 3px;
+  padding: 7px 9px;
+  border: 1px solid var(--control-border);
+  border-radius: 9px;
+  background: var(--control-muted-bg);
+  color: var(--color-text-main);
+  text-align: left;
+  cursor: pointer;
+}
+
+.provider-preset-button:hover {
+  border-color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 9%, transparent);
+  color: var(--color-primary);
+}
+
+.provider-preset-button.is-active {
+  border-color: var(--color-primary);
+  background: var(--color-primary);
+  color: white;
+}
+
+.provider-preset-button.is-active:hover {
+  background: var(--color-primary);
+  color: white;
+}
+
+.provider-preset-button span,
+.provider-preset-button small {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.provider-preset-button span {
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.provider-preset-button small {
+  color: var(--color-text-secondary);
+  font-size: 8px;
+  font-weight: 600;
+}
+
+.provider-preset-button.is-active small {
+  color: white;
+  opacity: 0.74;
+}
+
+.provider-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.provider-control {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 9px 10px;
+  border: 1px solid var(--control-border);
+  border-radius: 9px;
+  background: var(--control-muted-bg);
+}
+
+.provider-control.is-disabled {
+  opacity: 0.42;
+}
+
+.provider-control-label {
+  color: var(--color-text-main);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.provider-control-value {
+  color: var(--color-text-secondary);
+  font-size: 9px;
+  font-variant-numeric: tabular-nums;
+}
+
+.provider-slider {
+  position: relative;
+  display: flex;
+  width: 100%;
+  height: 14px;
+  align-items: center;
+  user-select: none;
+  touch-action: none;
+}
+
+.provider-slider-track {
+  position: relative;
+  height: 4px;
+  flex: 1;
+  overflow: hidden;
+  border-radius: 9999px;
+  background: var(--control-track-bg);
+}
+
+.provider-slider-range {
+  position: absolute;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--color-primary);
+}
+
+.provider-slider-thumb {
+  display: block;
+  width: 12px;
+  height: 12px;
+  border: 1px solid var(--control-border);
+  border-radius: 9999px;
+  background: var(--control-thumb-bg);
+  box-shadow: var(--shadow-control);
+  outline: none;
+}
+
+.provider-checkbox {
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  gap: 6px;
+  color: var(--color-text-secondary);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.provider-checkbox input {
+  accent-color: var(--color-primary);
+}
+
+.provider-select,
+.provider-value {
+  min-height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--control-border);
+  border-radius: 7px;
+  background: var(--color-bg-elevated);
+  color: var(--color-text-main);
+  font-size: 10px;
+}
+
+.provider-value {
+  display: flex;
+  align-items: center;
+  overflow-wrap: anywhere;
+}
+
+.provider-panel-empty {
+  display: flex;
+  min-height: 190px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 16px;
+  color: var(--color-text-secondary);
+  text-align: center;
+}
+
+.provider-panel-empty strong {
+  color: var(--color-text-main);
+  font-size: 12px;
+}
+
+.provider-panel-empty span,
+.provider-empty-note {
+  color: var(--color-text-secondary);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.provider-empty-note {
+  padding: 12px;
+  border: 1px dashed var(--control-border);
+  border-radius: 9px;
+  text-align: center;
 }
 
 .community-effect-list {
