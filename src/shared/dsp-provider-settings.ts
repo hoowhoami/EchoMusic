@@ -33,6 +33,32 @@ export function dspPresetBankKey(engineId: string, mode: string, presetId: strin
   return JSON.stringify([engineId, mode, presetId]);
 }
 
+// Editing a preset is not selecting it: only the active preset can update playback.
+export function dspPresetSettingsPatch(
+  state: {
+    dspProviderPresetJson: string;
+    dspProviderPresetBank: DspPresetBank;
+    dspProviderMode: string;
+    impulseResponseEnabled: boolean;
+  },
+  engineId: string,
+  presetJson: string,
+): { dspProviderPresetBank?: DspPresetBank; dspProviderPresetJson?: string } {
+  const json = presetJson.trim();
+  const { presetId } = parseDspPreset(json);
+  if (!engineId || !presetId) return {};
+  return {
+    dspProviderPresetBank: {
+      ...state.dspProviderPresetBank,
+      [dspPresetBankKey(engineId, state.dspProviderMode, presetId)]: json,
+    },
+    ...(!state.impulseResponseEnabled &&
+    parseDspPreset(state.dspProviderPresetJson).presetId === presetId
+      ? { dspProviderPresetJson: json }
+      : {}),
+  };
+}
+
 export function presetControls(
   manifest: DspProviderManifest | null,
   presetId: string,

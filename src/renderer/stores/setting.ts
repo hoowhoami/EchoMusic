@@ -12,6 +12,7 @@ import {
 import { configureRendererLogger } from '@/utils/logger';
 import {
   dspPresetBankKey,
+  dspPresetSettingsPatch,
   parseDspPreset,
   type DspPresetBank,
 } from '../../shared/dsp-provider-settings';
@@ -241,6 +242,9 @@ export const useSettingStore = defineStore('setting', {
         this.setDspProviderPreset(presetJson, engineId);
         this.impulseResponseEnabled = false;
       });
+    },
+    saveDspProviderPresetSettings(presetJson: string, engineId: string) {
+      this.$patch(dspPresetSettingsPatch(this, engineId, presetJson));
     },
     getDspProviderPreset(engineId: string, presetId: string) {
       const saved =

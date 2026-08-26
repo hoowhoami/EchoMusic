@@ -13,10 +13,11 @@ import {
 } from 'reka-ui';
 import { Icon } from '@iconify/vue';
 import Popover from '@/components/ui/Popover.vue';
+import Dialog from '@/components/ui/Dialog.vue';
 import Scrollbar from '@/components/ui/Scrollbar.vue';
 import Button from '@/components/ui/Button.vue';
 import Badge from '@/components/ui/Badge.vue';
-import { iconSlidersHorizontal } from '@/icons';
+import { iconSettings, iconSlidersHorizontal } from '@/icons';
 import { usePlayerControls } from '@/composables/usePlayerControls';
 import EffectPlaza from './EffectPlaza.vue';
 import { useAudioEffectPlaza } from '@/composables/useAudioEffectPlaza';
@@ -55,6 +56,9 @@ type EffectTab = 'effect' | 'eq' | 'irs' | 'plaza';
 type ImpulseResponseLibraryTab = 'mine' | 'engine';
 
 const activeTab = ref<EffectTab>('effect');
+const effectPopoverOpen = ref(false);
+const providerSettingsOpen = ref(false);
+const editingProviderPresetId = ref('');
 const activeImpulseResponseLibraryTab = ref<ImpulseResponseLibraryTab>(
   settingStore.dspProviderEnabled && settingStore.dspProviderPath ? 'engine' : 'mine',
 );
@@ -109,7 +113,7 @@ const providerManifest = computed<DspProviderManifest | null>(() => {
   }
 });
 const providerControls = computed<DspProviderControl[]>(() =>
-  configurablePresetControls(providerManifest.value, activeProviderPresetId.value),
+  configurablePresetControls(providerManifest.value, editingProviderPresetId.value),
 );
 const providerPresets = computed(() => providerManifest.value?.presets ?? []);
 const providerPresetAvailable = (preset: DspProviderPreset) => {
@@ -150,14 +154,27 @@ const effectiveProviderPresetJson = computed(() => settingStore.dspProviderPrese
 const activeProviderPresetId = computed(
   () => parseDspPreset(effectiveProviderPresetJson.value).presetId,
 );
-const activeProviderPreset = computed(() =>
-  providerPresets.value.find((p) => p.id === activeProviderPresetId.value),
+const editingProviderPreset = computed(() =>
+  providerPresets.value.find((p) => p.id === editingProviderPresetId.value),
 );
 const providerEngineId = computed(() => player.playbackDiagnostics.graph?.providerId ?? '');
+const editingProviderPresetActive = computed(
+  () =>
+    !impulseResponseActive.value &&
+    !!editingProviderPresetId.value &&
+    editingProviderPresetId.value === activeProviderPresetId.value,
+);
+const editingProviderPresetJson = computed(() =>
+  editingProviderPresetActive.value
+    ? effectiveProviderPresetJson.value
+    : settingStore.getDspProviderPreset(providerEngineId.value, editingProviderPresetId.value),
+);
 const providerValues = ref<DspControlValues>({});
 watch(
   [
-    effectiveProviderPresetJson,
+    editingProviderPresetJson,
+    editingProviderPresetId,
+    providerSettingsOpen,
     () => JSON.stringify(providerControls.value),
     providerEngineId,
     activeProviderMode,
@@ -165,14 +182,15 @@ watch(
   () => {
     providerValues.value = presetControlValues(
       providerControls.value,
-      effectiveProviderPresetJson.value,
+      editingProviderPresetJson.value,
     );
   },
   { immediate: true },
 );
 const providerRuntimeCurrent = computed(
   () =>
-    runtimeMatchesPreset(providerRuntimeState.value, activeProviderPresetId.value) &&
+    editingProviderPresetActive.value &&
+    runtimeMatchesPreset(providerRuntimeState.value, editingProviderPresetId.value) &&
     player.playbackDiagnostics.graph?.providerPath === settingStore.dspProviderPath &&
     player.playbackDiagnostics.graph?.providerMode === activeProviderMode.value &&
     player.playbackDiagnostics.graph?.providerPresetJson === effectiveProviderPresetJson.value,
@@ -205,7 +223,7 @@ const providerEffectActive = computed(
 const providerControlValue = (control: DspProviderControl): DspJsonValue =>
   providerValues.value[control.id]?.value ?? controlDefault(control);
 const providerControlDisabled = (control: DspProviderControl) =>
-  impulseResponseActive.value ||
+  !providerSettingsOpen.value ||
   control.ownership === 'disabled' ||
   control.ownership === 'host' ||
   (providerRuntimeCurrent.value &&
@@ -222,7 +240,7 @@ const setProviderMode = (mode: 'headphone' | 'speaker') => {
       settingStore.setDspProviderPreset(
         makeDspPresetJson(
           id,
-          providerControls.value,
+          presetControls(providerManifest.value, id),
           settingStore.getDspProviderPreset(providerEngineId.value, id),
         ),
         providerEngineId.value,
@@ -238,27 +256,49 @@ const setProviderControl = (control: DspProviderControl, value: DspJsonValue) =>
   if (
     providerControlDisabled(control) ||
     !player.playbackDiagnostics.graph?.providerPath ||
-    !activeProviderPresetId.value ||
+    !editingProviderPresetId.value ||
     !validControlValue(control, value)
   ) {
     return;
   }
   previewProviderControl(control, value);
   const presetJson = makeDspPresetJson(
-    activeProviderPresetId.value,
-    providerControls.value,
-    JSON.stringify({ presetId: activeProviderPresetId.value, controls: providerValues.value }),
+    editingProviderPresetId.value,
+    presetControls(providerManifest.value, editingProviderPresetId.value),
+    JSON.stringify({
+      presetId: editingProviderPresetId.value,
+      controls: {
+        ...parseDspPreset(editingProviderPresetJson.value).controls,
+        ...providerValues.value,
+      },
+    }),
   );
-  if (presetJson !== effectiveProviderPresetJson.value)
-    settingStore.setDspProviderPreset(presetJson, providerEngineId.value);
+  if (presetJson !== editingProviderPresetJson.value)
+    settingStore.saveDspProviderPresetSettings(presetJson, providerEngineId.value);
 };
 const resetProviderControls = () => {
-  if (!activeProviderPresetId.value || impulseResponseActive.value) return;
-  const json = makeDspPresetJson(activeProviderPresetId.value, providerControls.value);
+  if (!editingProviderPresetId.value || !providerSettingsOpen.value) return;
+  const json = makeDspPresetJson(
+    editingProviderPresetId.value,
+    presetControls(providerManifest.value, editingProviderPresetId.value),
+  );
   providerValues.value = presetControlValues(providerControls.value, json);
-  if (json !== effectiveProviderPresetJson.value)
-    settingStore.setDspProviderPreset(json, providerEngineId.value);
+  if (json !== editingProviderPresetJson.value)
+    settingStore.saveDspProviderPresetSettings(json, providerEngineId.value);
 };
+const openProviderSettings = (presetId: string) => {
+  if (!configurablePresetControls(providerManifest.value, presetId).length) return;
+  editingProviderPresetId.value = presetId;
+  effectPopoverOpen.value = false;
+  providerSettingsOpen.value = true;
+};
+// An open editor must never write into a newly loaded engine or output-mode bank.
+watch([providerEngineId, () => settingStore.dspProviderPath, activeProviderMode], () => {
+  providerSettingsOpen.value = false;
+});
+watch(providerControls, (controls) => {
+  if (!controls.length) providerSettingsOpen.value = false;
+});
 const setProviderPreset = (presetId: string) => {
   if (!player.playbackDiagnostics.graph?.providerPath) return;
   const preset = providerPresets.value.find((item) => item.id === presetId);
@@ -424,6 +464,8 @@ withDefaults(defineProps<Props>(), {
 
 <template>
   <Popover
+    v-model:open="effectPopoverOpen"
+    :disabled="providerSettingsOpen"
     trigger="hover"
     :side="side"
     align="end"
@@ -755,125 +797,41 @@ withDefaults(defineProps<Props>(), {
                   <span>由当前音效引擎提供</span>
                 </div>
                 <div class="provider-preset-grid">
-                  <button
+                  <div
                     v-for="preset in providerPresets"
                     :key="preset.id"
-                    type="button"
-                    class="provider-preset-button"
-                    :class="{ 'is-active': activeProviderPresetId === preset.id }"
-                    :aria-pressed="activeProviderPresetId === preset.id"
-                    :title="providerPresetDescription(preset)"
-                    :disabled="!providerPresetAvailable(preset)"
-                    @click="setProviderPreset(preset.id)"
+                    class="provider-preset-option"
+                    :class="{
+                      'is-active': !impulseResponseActive && activeProviderPresetId === preset.id,
+                    }"
                   >
-                    <span>{{ preset.label }}</span>
-                    <small>{{
-                      configurablePresetControls(providerManifest, preset.id).length
-                        ? '可配置'
-                        : '无配置'
-                    }}</small>
-                  </button>
-                </div>
-              </section>
-
-              <section v-if="providerControls.length > 0" class="provider-section">
-                <div class="provider-section-heading">
-                  <strong>{{ activeProviderPreset?.label || '当前音效' }}设置</strong>
-                  <button
-                    type="button"
-                    class="provider-reset"
-                    :disabled="impulseResponseActive"
-                    @click="resetProviderControls"
-                  >
-                    恢复默认
-                  </button>
-                </div>
-                <p class="provider-settings-note" role="status">
-                  {{ providerSettingsApplied ? '已应用' : '等待应用' }} ·
-                  滑杆松手后应用，各预设独立保存
-                </p>
-                <div class="provider-controls">
-                  <div
-                    v-for="control in visibleProviderControls"
-                    :key="control.id"
-                    class="provider-control"
-                    :class="{ 'is-disabled': providerControlDisabled(control) }"
-                  >
-                    <label class="provider-control-label">
-                      <span>{{ control.label || control.id }}</span>
-                      <span class="provider-control-value">
-                        {{ providerControlLabel(control) }}{{ control.unit || '' }}
-                      </span>
-                    </label>
-                    <SliderRoot
-                      v-if="
-                        control.type === 'number' &&
-                        typeof providerControlValue(control) === 'number'
-                      "
-                      :model-value="[providerControlValue(control) as number]"
-                      :min="control.range?.min ?? 0"
-                      :max="control.range?.max ?? 1"
-                      :step="control.range?.step ?? 0.01"
-                      :disabled="providerControlDisabled(control)"
-                      class="provider-slider"
-                      :aria-label="control.label || control.id"
-                      @update:model-value="
-                        (value) => previewProviderControl(control, value?.[0] ?? 0)
-                      "
-                      @value-commit="(value) => setProviderControl(control, value?.[0] ?? 0)"
+                    <button
+                      type="button"
+                      class="provider-preset-button"
+                      :aria-pressed="!impulseResponseActive && activeProviderPresetId === preset.id"
+                      :title="providerPresetDescription(preset)"
+                      :disabled="!providerPresetAvailable(preset)"
+                      @click="setProviderPreset(preset.id)"
                     >
-                      <SliderTrack class="provider-slider-track">
-                        <SliderRange class="provider-slider-range" />
-                      </SliderTrack>
-                      <SliderThumb class="provider-slider-thumb" />
-                    </SliderRoot>
-                    <label v-else-if="control.type === 'boolean'" class="provider-checkbox">
-                      <input
-                        type="checkbox"
-                        :checked="providerControlValue(control) === true"
-                        :disabled="providerControlDisabled(control)"
-                        @change="
-                          setProviderControl(control, ($event.target as HTMLInputElement).checked)
-                        "
-                      />
-                      <span>{{ providerControlValue(control) ? '开启' : '关闭' }}</span>
-                    </label>
-                    <select
-                      v-else-if="control.type === 'select'"
-                      :value="JSON.stringify(providerControlValue(control))"
-                      :disabled="providerControlDisabled(control)"
-                      class="provider-select"
-                      :aria-label="control.label || control.id"
-                      @change="
-                        setProviderControl(
-                          control,
-                          JSON.parse(($event.target as HTMLSelectElement).value),
-                        )
-                      "
+                      <span>{{ preset.label }}</span>
+                    </button>
+                    <button
+                      v-if="configurablePresetControls(providerManifest, preset.id).length"
+                      type="button"
+                      class="provider-preset-settings"
+                      :aria-label="`${preset.label}设置`"
+                      :title="`${preset.label}设置`"
+                      aria-haspopup="dialog"
+                      @click.stop="openProviderSettings(preset.id)"
                     >
-                      <option
-                        v-for="option in control.options ?? []"
-                        :key="JSON.stringify(option.value)"
-                        :value="JSON.stringify(option.value)"
-                      >
-                        {{ option.label }}
-                      </option>
-                    </select>
-                    <span v-else class="provider-value">
-                      {{ JSON.stringify(providerControlValue(control)) }}
-                    </span>
-                    <small v-if="control.description" class="provider-settings-note">{{
-                      control.description
-                    }}</small>
+                      <Icon :icon="iconSettings" width="15" height="15" aria-hidden="true" />
+                    </button>
                   </div>
                 </div>
               </section>
 
-              <div
-                v-if="providerPresets.length === 0 && providerControls.length === 0"
-                class="provider-empty-note"
-              >
-                当前引擎没有声明额外预设或参数。
+              <div v-if="providerPresets.length === 0" class="provider-empty-note">
+                当前引擎没有声明额外预设。
               </div>
             </div>
             <div v-else class="provider-panel-empty">
@@ -885,6 +843,93 @@ withDefaults(defineProps<Props>(), {
       </div>
     </div>
   </Popover>
+  <Dialog
+    v-model:open="providerSettingsOpen"
+    :title="`${editingProviderPreset?.label || '音效'}设置`"
+    :description="`${providerDisplayName} · ${activeProviderMode === 'headphone' ? '耳机' : '扬声器'}`"
+    show-close
+  >
+    <section class="provider-settings-panel">
+      <p class="provider-settings-note" role="status">
+        {{
+          editingProviderPresetActive
+            ? providerSettingsApplied
+              ? '已应用 · 滑杆松手后生效'
+              : '等待应用 · 滑杆松手后生效'
+            : '参数自动保存，选用此音效时生效'
+        }}
+      </p>
+      <div class="provider-controls">
+        <div
+          v-for="control in visibleProviderControls"
+          :key="control.id"
+          class="provider-control"
+          :class="{ 'is-disabled': providerControlDisabled(control) }"
+        >
+          <label class="provider-control-label">
+            <span>{{ control.label || control.id }}</span>
+            <span class="provider-control-value">
+              {{ providerControlLabel(control) }}{{ control.unit || '' }}
+            </span>
+          </label>
+          <SliderRoot
+            v-if="control.type === 'number' && typeof providerControlValue(control) === 'number'"
+            :model-value="[providerControlValue(control) as number]"
+            :min="control.range?.min ?? 0"
+            :max="control.range?.max ?? 1"
+            :step="control.range?.step ?? 0.01"
+            :disabled="providerControlDisabled(control)"
+            class="provider-slider"
+            :aria-label="control.label || control.id"
+            @update:model-value="(value) => previewProviderControl(control, value?.[0] ?? 0)"
+            @value-commit="(value) => setProviderControl(control, value?.[0] ?? 0)"
+          >
+            <SliderTrack class="provider-slider-track">
+              <SliderRange class="provider-slider-range" />
+            </SliderTrack>
+            <SliderThumb class="provider-slider-thumb" />
+          </SliderRoot>
+          <label v-else-if="control.type === 'boolean'" class="provider-checkbox">
+            <input
+              type="checkbox"
+              :checked="providerControlValue(control) === true"
+              :disabled="providerControlDisabled(control)"
+              @change="setProviderControl(control, ($event.target as HTMLInputElement).checked)"
+            />
+            <span>{{ providerControlValue(control) ? '开启' : '关闭' }}</span>
+          </label>
+          <select
+            v-else-if="control.type === 'select'"
+            :value="JSON.stringify(providerControlValue(control))"
+            :disabled="providerControlDisabled(control)"
+            class="provider-select"
+            :aria-label="control.label || control.id"
+            @change="
+              setProviderControl(control, JSON.parse(($event.target as HTMLSelectElement).value))
+            "
+          >
+            <option
+              v-for="option in control.options ?? []"
+              :key="JSON.stringify(option.value)"
+              :value="JSON.stringify(option.value)"
+            >
+              {{ option.label }}
+            </option>
+          </select>
+          <span v-else class="provider-value">
+            {{ JSON.stringify(providerControlValue(control)) }}
+          </span>
+          <small v-if="control.description" class="provider-settings-note">{{
+            control.description
+          }}</small>
+        </div>
+      </div>
+    </section>
+    <template #footer>
+      <Button variant="ghost" size="sm" @click="resetProviderControls">恢复默认</Button>
+      <Button size="sm" @click="providerSettingsOpen = false">完成</Button>
+    </template>
+  </Dialog>
 </template>
 
 <style>
@@ -896,15 +941,10 @@ withDefaults(defineProps<Props>(), {
   line-height: 1.5;
   overflow-wrap: anywhere;
 }
-.provider-reset {
-  flex: 0 0 auto;
-  color: var(--color-primary);
-  font-size: 11px;
-  cursor: pointer;
-}
-.provider-reset:disabled {
-  opacity: 0.5;
-  cursor: default;
+.provider-settings-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 .effect-popover.echo-popover-content {
   width: min(540px, calc(100vw - 24px));
@@ -1591,19 +1631,27 @@ withDefaults(defineProps<Props>(), {
   gap: 7px;
 }
 
-.provider-preset-button {
+.provider-preset-option {
   display: flex;
   min-width: 0;
-  min-height: 42px;
-  flex-direction: column;
-  align-items: flex-start;
-  justify-content: center;
-  gap: 3px;
-  padding: 7px 9px;
+  align-items: center;
   border: 1px solid var(--control-border);
   border-radius: 9px;
   background: var(--control-muted-bg);
   color: var(--color-text-main);
+}
+
+.provider-preset-button {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 38px;
+  align-items: center;
+  padding: 7px 9px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
   text-align: left;
   cursor: pointer;
 }
@@ -1613,25 +1661,24 @@ withDefaults(defineProps<Props>(), {
   cursor: not-allowed;
 }
 
-.provider-preset-button:hover:not(:disabled) {
+.provider-preset-option:has(.provider-preset-button:hover:not(:disabled)) {
   border-color: var(--color-primary);
   background: color-mix(in srgb, var(--color-primary) 9%, transparent);
   color: var(--color-primary);
 }
 
-.provider-preset-button.is-active {
+.provider-preset-option.is-active {
   border-color: var(--color-primary);
   background: var(--color-primary);
   color: white;
 }
 
-.provider-preset-button.is-active:hover {
+.provider-preset-option.is-active:has(.provider-preset-button:hover) {
   background: var(--color-primary);
   color: white;
 }
 
-.provider-preset-button span,
-.provider-preset-button small {
+.provider-preset-button span {
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1643,15 +1690,44 @@ withDefaults(defineProps<Props>(), {
   font-weight: 700;
 }
 
-.provider-preset-button small {
-  color: var(--color-text-secondary);
-  font-size: 8px;
-  font-weight: 600;
+.provider-preset-settings {
+  display: inline-flex;
+  flex: 0 0 28px;
+  width: 28px;
+  height: 28px;
+  margin-right: 4px;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
 }
 
-.provider-preset-button.is-active small {
-  color: white;
-  opacity: 0.74;
+.provider-preset-settings:hover {
+  background: color-mix(in srgb, currentColor 12%, transparent);
+}
+
+.provider-preset-button:focus-visible,
+.provider-preset-settings:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: -3px;
+}
+
+.provider-settings-panel .provider-control {
+  padding: 12px;
+  gap: 12px;
+}
+
+.provider-settings-panel .provider-control-label {
+  font-size: 13px;
+}
+
+.provider-settings-panel .provider-control-value,
+.provider-settings-panel .provider-checkbox,
+.provider-settings-panel .provider-select {
+  font-size: 12px;
 }
 
 .provider-controls {

@@ -4,6 +4,7 @@ import {
   configurablePresetControls,
   controlVisible,
   dspPresetBankKey,
+  dspPresetSettingsPatch,
   makeDspPresetJson,
   parseDspPreset,
   presetControls,
@@ -26,6 +27,65 @@ const controls: DspProviderControl[] = [
   },
   { id: 'enabled', type: 'boolean', defaultValue: true },
 ];
+
+test('editing inactive presets saves settings without selecting or changing playback', () => {
+  const oldJson = makeDspPresetJson('rotate', controls);
+  const state = {
+    dspProviderPresetJson: oldJson,
+    dspProviderPresetBank: { [dspPresetBankKey('engine', 'speaker', 'rotate')]: oldJson },
+    dspProviderMode: 'headphone',
+    impulseResponseEnabled: false,
+  };
+  const json = makeDspPresetJson('record', controls);
+  const patch = dspPresetSettingsPatch(state, 'engine', json);
+  assert.equal(Object.hasOwn(patch, 'dspProviderPresetJson'), false);
+  assert.equal(
+    patch.dspProviderPresetBank?.[dspPresetBankKey('engine', 'headphone', 'record')],
+    json,
+  );
+  assert.equal(
+    patch.dspProviderPresetBank?.[dspPresetBankKey('engine', 'speaker', 'rotate')],
+    oldJson,
+  );
+  assert.equal(state.dspProviderPresetJson, oldJson);
+  assert.equal(Object.keys(state.dspProviderPresetBank).length, 1);
+  for (const inactive of [
+    { ...state, dspProviderPresetJson: '' },
+    { ...state, dspProviderPresetJson: json, impulseResponseEnabled: true },
+  ]) {
+    assert.equal(
+      Object.hasOwn(dspPresetSettingsPatch(inactive, 'engine', json), 'dspProviderPresetJson'),
+      false,
+    );
+  }
+});
+
+test('editing the active preset applies and saves; reset and invalid identity are safe', () => {
+  const defaults = makeDspPresetJson('rotate', controls);
+  const state = {
+    dspProviderPresetJson: defaults,
+    dspProviderPresetBank: {},
+    dspProviderMode: 'speaker',
+    impulseResponseEnabled: false,
+  };
+  const changed = makeDspPresetJson(
+    'rotate',
+    controls,
+    '{"presetId":"rotate","controls":{"speed":{"value":20}}}',
+  );
+  const patch = dspPresetSettingsPatch(state, 'engine', changed);
+  assert.equal(patch.dspProviderPresetJson, changed);
+  assert.equal(
+    patch.dspProviderPresetBank?.[dspPresetBankKey('engine', 'speaker', 'rotate')],
+    changed,
+  );
+  assert.equal(
+    dspPresetSettingsPatch({ ...state, ...patch }, 'engine', defaults).dspProviderPresetJson,
+    defaults,
+  );
+  assert.deepEqual(dspPresetSettingsPatch(state, '', changed), {});
+  assert.deepEqual(dspPresetSettingsPatch(state, 'engine', '{}'), {});
+});
 
 test('per-preset controls override global controls, including an explicit empty list', () => {
   const manifest: DspProviderManifest = {

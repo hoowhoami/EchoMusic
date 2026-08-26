@@ -139,6 +139,15 @@ watch(
   },
 );
 
+watch(
+  () => props.disabled,
+  (disabled) => {
+    if (!disabled) return;
+    clearTimers();
+    setOpen(false);
+  },
+);
+
 onMounted(() => {
   document.addEventListener('mousedown', handleDocumentMousedown, true);
 });
