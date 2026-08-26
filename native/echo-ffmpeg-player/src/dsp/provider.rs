@@ -421,4 +421,61 @@ mod tests {
             assert_eq!(provider.info().latency_frames, 256);
         }
     }
+
+    #[test]
+    #[ignore = "requires ECHO_TEST_DSP_PROVIDER pointing to EchoMusicViper 0.11.0+ with ViPERDSP"]
+    fn runtime_preset_isolate_controls_and_latency() {
+        let path = std::env::var_os("ECHO_TEST_DSP_PROVIDER").expect("provider library path");
+        for rate in [44100, 48000, 96000] {
+            let mut provider = NativeDspProvider::load(
+                Path::new(&path),
+                rate,
+                2,
+                PROVIDER_MODE_HEADPHONE,
+                Some(r#"{"presetId":"kugou-ancient-vocal"}"#),
+                None,
+            )
+            .expect("load reference engine");
+            assert_eq!(provider.info().latency_frames, 8447);
+            let manifest: serde_json::Value =
+                serde_json::from_str(&provider.descriptor().manifest_json).unwrap();
+            let preset = manifest["presets"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|p| p["id"] == "kugou-ancient-vocal")
+                .unwrap();
+            assert_eq!(preset["controls"].as_array().unwrap().len(), 1);
+            assert_eq!(preset["controls"][0]["id"], "balance");
+            assert_eq!(preset["controls"][0]["defaultValue"], 25);
+            for balance in [0, 25, 37, 100] {
+                provider.configure(&format!(r#"{{"presetId":"kugou-ancient-vocal","controls":{{"balance":{{"value":{balance}}}}}}}"#)).unwrap();
+                let state: serde_json::Value =
+                    serde_json::from_str(&provider.descriptor().state_json).unwrap();
+                assert_eq!(state["effect"]["id"], "kugou-ancient-vocal");
+                assert_eq!(state["controls"]["balance"]["value"], balance);
+                assert_eq!(provider.descriptor().latency_frames, 8447);
+                assert!(provider
+                    .configure(
+                        r#"{"presetId":"kugou-ancient-vocal","controls":{"balance":{"value":101}}}"#
+                    )
+                    .is_err());
+                provider.refresh_state().unwrap();
+                assert_eq!(
+                    state,
+                    serde_json::from_str::<serde_json::Value>(&provider.descriptor().state_json)
+                        .unwrap()
+                );
+            }
+            provider.configure(r#"{"presetId":"kugou-vinyl"}"#).unwrap();
+            assert_eq!(provider.info().latency_frames, 256);
+            provider
+                .configure(r#"{"presetId":"kugou-ancient-vocal"}"#)
+                .unwrap();
+            assert_eq!(provider.info().latency_frames, 8447);
+            let state: serde_json::Value =
+                serde_json::from_str(&provider.descriptor().state_json).unwrap();
+            assert_eq!(state["controls"]["balance"]["value"], 25);
+        }
+    }
 }
