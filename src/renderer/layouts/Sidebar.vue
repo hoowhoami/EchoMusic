@@ -30,7 +30,6 @@ import {
   iconChevronDown,
   iconArrowsSort,
   iconDotsVertical,
-  iconHeadphones,
 } from '@/icons';
 import type { PlaylistMeta } from '@/models/playlist';
 import { usePlaylistStore, sortPlaylists } from '@/stores/playlist';
@@ -116,7 +115,6 @@ const iconMap = {
   cloud: iconCloud,
   heart: iconHeart,
   'shopping-bag': iconShoppingBag,
-  headphones: iconHeadphones,
 } as const;
 
 type BuiltinSidebarIcon = keyof typeof iconMap;
@@ -170,14 +168,6 @@ const builtinSidebarSections = [
         path: '/main/explore',
         builtinIcon: 'compass',
         order: 20,
-      },
-      {
-        id: 'listen-together',
-        key: 'listen-together',
-        title: '一起听',
-        path: '/main/listen-together',
-        builtinIcon: 'headphones',
-        order: 30,
       },
     ],
   },

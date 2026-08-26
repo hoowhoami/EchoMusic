@@ -1,7 +1,7 @@
 <script setup lang="ts">
 defineOptions({ name: 'listen-together' });
 
-import { computed, nextTick, onMounted, ref, watch } from 'vue';
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import { storeToRefs } from 'pinia';
 import { useRoute, useRouter } from 'vue-router';
 import Avatar from '@/components/ui/Avatar.vue';
@@ -97,7 +97,12 @@ const dismissOwnedOpen = ref(false);
 const ownedRoomToDismiss = ref<ListenTogetherRoom | null>(null);
 const dismissingOwnedRoom = ref(false);
 const messageText = ref('');
+const chatCooldown = ref(false);
 const messagesScroll = ref<InstanceType<typeof Scrollbar> | null>(null);
+
+const CHAT_MESSAGE_MAX_LENGTH = 200;
+const CHAT_SEND_COOLDOWN_MS = 1500;
+let chatCooldownTimer: number | null = null;
 
 const createName = ref('');
 const createRoomType = ref<ListenTogetherRoomType>(0);
@@ -514,11 +519,22 @@ const confirmLeave = async (dismiss = false) => {
 };
 
 const sendMessage = async () => {
+  if (chatCooldown.value) return;
   const text = messageText.value.trim();
   if (!text) return;
+  if (text.length > CHAT_MESSAGE_MAX_LENGTH) {
+    toastStore.warning(`消息不能超过 ${CHAT_MESSAGE_MAX_LENGTH} 个字`);
+    return;
+  }
   try {
     await listenStore.sendMessage(text);
     messageText.value = '';
+    chatCooldown.value = true;
+    if (chatCooldownTimer !== null) window.clearTimeout(chatCooldownTimer);
+    chatCooldownTimer = window.setTimeout(() => {
+      chatCooldown.value = false;
+      chatCooldownTimer = null;
+    }, CHAT_SEND_COOLDOWN_MS);
   } catch (error) {
     toastStore.warning(error instanceof Error ? error.message : '消息发送失败');
   }
@@ -687,6 +703,10 @@ onMounted(() => {
     }
     await loadRooms(true);
   })();
+});
+
+onUnmounted(() => {
+  if (chatCooldownTimer !== null) window.clearTimeout(chatCooldownTimer);
 });
 </script>
 
@@ -1157,14 +1177,16 @@ onMounted(() => {
                   :placeholder="
                     activeRoom?.allowChat ? '输入消息，Enter 发送' : '当前房间不允许聊天'
                   "
-                  maxlength="200"
+                  :maxlength="CHAT_MESSAGE_MAX_LENGTH"
                   rows="1"
                   @keydown="handleMessageKeydown"
                 ></textarea>
                 <button
                   type="button"
-                  :disabled="!messageText.trim() || !activeRoom?.allowChat || sendingMessage"
-                  title="发送消息"
+                  :disabled="
+                    !messageText.trim() || !activeRoom?.allowChat || sendingMessage || chatCooldown
+                  "
+                  :title="chatCooldown ? '发送过于频繁，请稍候' : '发送消息'"
                   @click="sendMessage"
                 >
                   <Icon :icon="iconSend" width="17" height="17" />

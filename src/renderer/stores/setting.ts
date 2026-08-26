@@ -91,6 +91,7 @@ export const useSettingStore = defineStore('setting', {
     volumeFadeTime: 1000,
     lyricViewMode: 'cover' as 'cover' | 'portrait' | 'lyric',
     lyricArtistBackdrop: true,
+    lyricPortraitFallbackCover: false,
     lyricBackdropOpacity: 50,
     lyricCarouselEnabled: true,
     lyricCarouselInterval: 15,

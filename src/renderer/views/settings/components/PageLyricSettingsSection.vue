@@ -224,6 +224,14 @@ const romanizationStyle = computed<RomanizationStyle>({
       </div>
       <Switch v-model="settingStore.lyricCarouselEnabled" />
     </div>
+    <div class="settings-divider"></div>
+    <div class="settings-item">
+      <div class="space-y-1">
+        <h3 class="font-semibold">无写真时展示封面</h3>
+        <p class="text-sm text-text-secondary">没有写真图片时使用歌曲封面填充背景</p>
+      </div>
+      <Switch v-model="settingStore.lyricPortraitFallbackCover" />
+    </div>
     <template v-if="settingStore.lyricCarouselEnabled">
       <div class="settings-divider"></div>
       <div class="settings-item">

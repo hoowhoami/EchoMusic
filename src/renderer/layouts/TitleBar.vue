@@ -26,6 +26,7 @@ import {
   iconPanelLeft,
   iconPictureInPicture,
   iconClipboardList,
+  iconHeadphones,
 } from '@/icons';
 
 const route = useRoute();
@@ -371,6 +372,22 @@ onUnmounted(() => {
           height="16"
           style="stroke-width: 3"
           class="text-text-main opacity-60 group-hover:opacity-100 transition-opacity tb-icon-bold"
+        />
+      </Button>
+
+      <!-- 一起听 -->
+      <Button
+        variant="unstyled"
+        size="none"
+        class="nav-btn group"
+        title="一起听"
+        @click="router.push({ name: 'listen-together' })"
+      >
+        <Icon
+          :icon="iconHeadphones"
+          width="18"
+          height="18"
+          class="text-text-main opacity-60 group-hover:opacity-100 transition-opacity"
         />
       </Button>
 

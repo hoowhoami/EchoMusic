@@ -558,7 +558,7 @@ const itemStatusLabel = (status: ImportItemResult['status']) => {
           </span>
         </div>
         <p class="import-hint">
-          粘贴歌单链接后即可开始。如果直接导入失败，会自动切换其他方式，无需手动操作。
+          粘贴链接后点击“开始导入”。如果链接导入失败，系统会自动尝试其他方式。
         </p>
       </template>
 

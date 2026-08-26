@@ -7,6 +7,7 @@ import { useLyricPortrait } from '@/composables/useLyricPortrait';
 import { useLyricBackground } from './composables/useLyricBackground';
 import { coverFallbackRevision } from '@/plugins/coverFallback';
 import { resolveCoverDisplayUrl } from '@/utils/cover';
+import Cover from '@/components/ui/Cover.vue';
 import LyricScroller from './LyricScroller.vue';
 
 const { currentTrack } = usePlayerControls();
@@ -49,6 +50,9 @@ const portraitLayers = ref<[string, string]>(['', '']);
 const visiblePortraitLayer = ref<0 | 1>(0);
 const hasVisiblePortrait = computed(() =>
   Boolean(portraitLayers.value[0] || portraitLayers.value[1]),
+);
+const showCoverFallback = computed(
+  () => settingStore.lyricPortraitFallbackCover && !hasVisiblePortrait.value,
 );
 const blurLayers = ref<[string, string]>(['', '']);
 const visibleBlurLayer = ref<0 | 1>(0);
@@ -317,6 +321,14 @@ defineExpose({
         <div v-if="hasVisibleBlur" class="portrait-blur-overlay"></div>
       </div>
       <div class="portrait-media-stack">
+        <Cover
+          v-if="showCoverFallback"
+          :url="coverUrl"
+          :size="800"
+          :border-radius="0"
+          alt="歌曲封面"
+          class="portrait-cover-fallback"
+        />
         <img
           v-for="(_, layerIndex) in portraitLayers"
           v-show="portraitLayers[layerIndex]"
@@ -329,9 +341,9 @@ defineExpose({
       </div>
     </div>
 
-    <!-- 遮罩层（仅有写真时需要压暗，透明度由设置控制） -->
+    <!-- 遮罩层（有写真或启用封面兜底时压暗，透明度由设置控制） -->
     <div
-      v-if="hasVisiblePortrait"
+      v-if="hasVisiblePortrait || showCoverFallback"
       class="portrait-overlay"
       :style="{ opacity: 1 - settingStore.lyricBackdropOpacity / 100 }"
     ></div>
@@ -366,6 +378,13 @@ defineExpose({
 .portrait-media-stack {
   position: absolute;
   inset: 0;
+}
+
+.portrait-cover-fallback {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
 }
 
 .portrait-blur-stack {

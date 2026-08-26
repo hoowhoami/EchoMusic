@@ -333,6 +333,13 @@ const close = () => {
               </div>
               <Switch v-model="settingStore.lyricCarouselEnabled" />
             </div>
+            <div class="setting-row">
+              <div class="setting-text">
+                <span class="setting-label">无写真时展示封面</span>
+                <span class="setting-hint">没有写真图片时使用歌曲封面填充背景</span>
+              </div>
+              <Switch v-model="settingStore.lyricPortraitFallbackCover" />
+            </div>
             <template v-if="settingStore.lyricCarouselEnabled">
               <div class="setting-row setting-row-compact">
                 <span class="setting-label">轮播间隔</span>
