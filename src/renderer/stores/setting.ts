@@ -10,6 +10,11 @@ import {
   type NetworkSettings,
 } from '../../shared/network';
 import { configureRendererLogger } from '@/utils/logger';
+import {
+  dspPresetBankKey,
+  parseDspPreset,
+  type DspPresetBank,
+} from '../../shared/dsp-provider-settings';
 
 export const DEFAULT_SHORTCUT_LABELS: Record<string, string> = {
   togglePlayback: '⌘Space',
@@ -139,6 +144,8 @@ export const useSettingStore = defineStore('setting', {
     dspProviderPath: '',
     dspProviderMode: 'speaker' as 'headphone' | 'speaker',
     dspProviderPresetJson: '',
+    // Persisted by the existing SQLite store, independently per engine/device/preset.
+    dspProviderPresetBank: {} as DspPresetBank,
     keepAliveEnabled: true,
     keepAliveMax: 20,
     playResumeTimeout: 5,
@@ -214,14 +221,39 @@ export const useSettingStore = defineStore('setting', {
     setDspProviderMode(mode: 'headphone' | 'speaker') {
       this.dspProviderMode = mode;
     },
-    setDspProviderPreset(presetJson: string) {
-      this.dspProviderPresetJson = presetJson.trim();
-    },
-    selectDspProviderPreset(presetJson: string) {
+    setDspProviderPreset(presetJson: string, engineId?: string) {
+      const json = presetJson.trim();
+      const { presetId } = parseDspPreset(json);
       this.$patch({
-        dspProviderPresetJson: presetJson.trim(),
-        impulseResponseEnabled: false,
+        dspProviderPresetJson: json,
+        ...(engineId && presetId
+          ? {
+              dspProviderPresetBank: {
+                ...this.dspProviderPresetBank,
+                [dspPresetBankKey(engineId, this.dspProviderMode, presetId)]: json,
+              },
+            }
+          : {}),
       });
+    },
+    selectDspProviderPreset(presetJson: string, engineId?: string) {
+      this.$patch(() => {
+        this.setDspProviderPreset(presetJson, engineId);
+        this.impulseResponseEnabled = false;
+      });
+    },
+    getDspProviderPreset(engineId: string, presetId: string) {
+      const saved =
+        this.dspProviderPresetBank?.[dspPresetBankKey(engineId, this.dspProviderMode, presetId)];
+      return typeof saved === 'string' ? saved : '';
+    },
+    rememberDspProviderPreset(engineId: string) {
+      const { presetId } = parseDspPreset(this.dspProviderPresetJson);
+      if (engineId && presetId)
+        this.dspProviderPresetBank = {
+          ...this.dspProviderPresetBank,
+          [dspPresetBankKey(engineId, this.dspProviderMode, presetId)]: this.dspProviderPresetJson,
+        };
     },
     selectOriginalSpatialAudio() {
       this.$patch({

@@ -10,6 +10,7 @@ import { normalizePlayerErrorPayload, PlayerEngine, type PlayerEngineEvents } fr
 import type { Song } from '@/models/song';
 import type { PlayerErrorPayload } from '../../shared/player-error';
 import type { AudioEffectPlaybackOptions } from '../../shared/audio';
+import { createLatestRequestQueue } from '../../shared/latest-request-queue';
 
 import { createPlayerState } from './player/state';
 import { createPlaybackManager } from './player/playback';
@@ -576,10 +577,7 @@ export const usePlayerStore = defineStore(
         if (shouldUpdateOutputDevice)
           void deviceManager.applyOutputDevice(settingStore.outputDevice);
         if (shouldLoadSpatialAudioEffect) {
-          void engine
-            .setSpatialAudioEffect(nextSpatialAudioEffect)
-            .then(refreshAudioGraphSnapshot)
-            .catch(() => disableActiveSpatialAudioEffect(nextSpatialAudioEffect));
+          spatialAudioEffectQueue.enqueue(nextSpatialAudioEffect);
         }
         if (shouldUpdateStallTimeout)
           engine.setStallTimeout(settingStore.playbackStallTimeout ?? 8);
@@ -592,14 +590,16 @@ export const usePlayerStore = defineStore(
     };
 
     const disableActiveSpatialAudioEffect = (failedEffect?: AudioEffectPlaybackOptions | null) => {
+      if (
+        failedEffect &&
+        JSON.stringify(getActiveSpatialAudioEffect()) !== JSON.stringify(failedEffect)
+      )
+        return;
       if (failedEffect?.providerPath) {
         if (configuredProviderPath() !== failedEffect.providerPath) return;
         settingStore.disableDspProvider();
         const builtinEffect = getActiveSpatialAudioEffect();
-        void engine
-          .setSpatialAudioEffect(builtinEffect)
-          .then(refreshAudioGraphSnapshot)
-          .catch(() => disableActiveSpatialAudioEffect(builtinEffect));
+        spatialAudioEffectQueue.enqueue(builtinEffect);
         toastStore.warning(
           builtinEffect
             ? '第三方音效引擎加载失败，已改用内置音效处理'
@@ -616,9 +616,15 @@ export const usePlayerStore = defineStore(
       }
       if (!settingStore.impulseResponseEnabled) return;
       settingStore.impulseResponseEnabled = false;
-      void engine.setSpatialAudioEffect(null);
+      spatialAudioEffectQueue.enqueue(null);
       toastStore.warning('音效加载失败，已自动关闭', 4200);
     };
+    const spatialAudioEffectQueue = createLatestRequestQueue<AudioEffectPlaybackOptions | null>({
+      apply: (effect) => engine.setSpatialAudioEffect(effect),
+      applied: refreshAudioGraphSnapshot,
+      failed: (effect) => disableActiveSpatialAudioEffect(effect),
+      report: (error) => logger.warn('音效状态刷新失败', error),
+    });
 
     const restorePlaybackSessionFromQueue = () => {
       const activeQueue = playlistStore.activeQueue;
@@ -720,11 +726,9 @@ export const usePlayerStore = defineStore(
         try {
           await ensureConfiguredProviderPath();
           await settingStore.reconcileSpatialAudioEffects();
-          const effect = getActiveSpatialAudioEffect();
-          await engine.setSpatialAudioEffect(effect);
-          await refreshAudioGraphSnapshot();
-        } catch {
-          disableActiveSpatialAudioEffect(getActiveSpatialAudioEffect());
+          spatialAudioEffectQueue.enqueue(getActiveSpatialAudioEffect());
+        } catch (error) {
+          logger.warn('音效设置恢复失败', error);
         }
       })();
       engine.setVolumeNormalization(settingStore.volumeNormalization);

@@ -15,6 +15,9 @@ FFmpeg decode -> format conversion -> DspHost -> tempo -> output gain -> device 
 
 The native provider is always loaded in the player process. There is no sidecar protocol or PCM IPC.
 
+Per-preset controls, persistence, runtime acknowledgement and the current EchoMusicViper
+integration are described in [Provider settings UI](dsp-provider-settings.md).
+
 ## Responsibilities
 
 ### Player Core

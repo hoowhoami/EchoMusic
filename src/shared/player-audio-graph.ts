@@ -73,6 +73,10 @@ export interface DspProviderControl {
   type: 'number' | 'boolean' | 'string' | 'select' | 'json';
   label?: string;
   value?: DspJsonValue;
+  defaultValue?: DspJsonValue;
+  description?: string;
+  group?: string;
+  visibleWhen?: { controlId: string; value: DspJsonValue };
   unit?: string;
   range?: { min?: number; max?: number; step?: number };
   options?: Array<{ value: DspJsonValue; label: string }>;
@@ -94,9 +98,13 @@ export interface DspProviderPreset {
   label: string;
   description?: string;
   modules?: string[];
+  // Present (including []) overrides legacy engine-wide controls.
+  controls?: DspProviderControl[];
+  supportedSampleRates?: number[];
 }
 
 export interface DspProviderRuntimeState {
+  effect?: { id?: string; name?: string };
   currentEffect?: string;
   presetId?: string;
   controlPolicy?: DspControlPolicy;

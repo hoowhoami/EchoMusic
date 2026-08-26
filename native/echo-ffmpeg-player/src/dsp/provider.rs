@@ -341,4 +341,44 @@ mod tests {
             .is_err());
         assert_eq!(provider.info().latency_frames, 256);
     }
+
+    #[test]
+    #[ignore = "requires ECHO_TEST_DSP_PROVIDER pointing to EchoMusicViper 0.9.0+ with ViPERDSP"]
+    fn runtime_preset_controls_round_trip() {
+        let path = std::env::var_os("ECHO_TEST_DSP_PROVIDER").expect("provider library path");
+        let mut provider = NativeDspProvider::load(
+            Path::new(&path),
+            48000,
+            2,
+            PROVIDER_MODE_HEADPHONE,
+            Some(r#"{"presetId":"kugou-vinyl"}"#),
+            None,
+        )
+        .expect("load reference engine");
+        let manifest: serde_json::Value =
+            serde_json::from_str(&provider.descriptor().manifest_json).unwrap();
+        let lp = manifest["presets"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|preset| preset["id"] == "kugou-vinyl")
+            .unwrap();
+        assert_eq!(lp["controls"].as_array().unwrap().len(), 2);
+        for (year, aging) in [(1900, 37), (1930, 100), (1960, 50), (1980, 1), (2010, 0)] {
+            provider.configure(&format!(r#"{{"presetId":"kugou-vinyl","controls":{{"year":{{"value":{year}}},"aging":{{"value":{aging}}}}}}}"#)).unwrap();
+            let state: serde_json::Value =
+                serde_json::from_str(&provider.descriptor().state_json).unwrap();
+            assert_eq!(state["effect"]["id"], "kugou-vinyl");
+            assert_eq!(state["controls"]["year"]["value"], year);
+            assert_eq!(state["controls"]["aging"]["value"], aging);
+            assert_eq!(provider.info().latency_frames, 256);
+            assert!(provider
+                .configure(r#"{"presetId":"kugou-vinyl","controls":{"aging":{"value":101}}}"#)
+                .is_err());
+            provider.refresh_state().unwrap();
+            let after: serde_json::Value =
+                serde_json::from_str(&provider.descriptor().state_json).unwrap();
+            assert_eq!(state, after);
+        }
+    }
 }
