@@ -405,11 +405,98 @@ pub(crate) fn output_start_was_cancelled(
     true
 }
 
+/// Service exactly one signalled WASAPI buffer. Exclusive event streams hand
+/// over a whole packet per event; padding is only meaningful for shared streams.
+/// Keep this protocol independent of COM so it can be tested on every platform.
+#[cfg(any(target_os = "windows", test))]
+fn service_wasapi_event<E>(
+    exclusive: bool,
+    buffer_frames: u32,
+    query_padding: impl FnOnce() -> Result<u32, E>,
+    write: impl FnOnce(u32) -> Result<(), E>,
+) -> Result<u32, E> {
+    if buffer_frames == 0 {
+        return Ok(0);
+    }
+    let padding = if exclusive {
+        0
+    } else {
+        query_padding()?.min(buffer_frames)
+    };
+    let frames = buffer_frames - padding;
+    if frames > 0 {
+        write(frames)?;
+    }
+    Ok(buffer_frames)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::dsp::DspSettings;
     use crate::shared::MixFormat;
+
+    #[test]
+    fn exclusive_events_consume_one_packet_without_querying_padding() {
+        let mut consumed_frames = 0;
+        for event in 1..=20 {
+            let queued = service_wasapi_event(
+                true,
+                2400,
+                || -> Result<u32, &str> { panic!("exclusive events must not query padding") },
+                |frames| {
+                    consumed_frames += frames;
+                    Ok(())
+                },
+            )
+            .unwrap();
+            assert_eq!(queued, 2400);
+            assert_eq!(consumed_frames, event * 2400);
+        }
+        // Twenty 50 ms events at 48 kHz consume one second, not two.
+        assert_eq!(consumed_frames, 48_000);
+    }
+
+    #[test]
+    fn shared_events_only_write_available_space() {
+        for (padding, expected) in [(0, 960), (480, 480), (960, 0), (1920, 0)] {
+            let mut written = 0;
+            service_wasapi_event::<()>(
+                false,
+                960,
+                || Ok(padding),
+                |frames| {
+                    written += frames;
+                    Ok(())
+                },
+            )
+            .unwrap();
+            assert_eq!(written, expected);
+        }
+        let result = service_wasapi_event(
+            false,
+            960,
+            || Err("device lost"),
+            |_| panic!("failed padding queries must not consume audio"),
+        );
+        assert_eq!(result, Err("device lost"));
+    }
+
+    #[test]
+    fn failed_exclusive_write_waits_for_another_event() {
+        let mut writes = 0;
+        let result = service_wasapi_event(
+            true,
+            960,
+            || Ok(0),
+            |_| {
+                writes += 1;
+                Err("buffer unavailable")
+            },
+        );
+        assert_eq!(result, Err("buffer unavailable"));
+        assert_eq!(writes, 1);
+    }
 
     #[test]
     fn selected_backend_reports_engine_capability_through_trait() {

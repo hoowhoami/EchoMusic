@@ -610,6 +610,43 @@ mod tests {
     }
 
     #[test]
+    fn state_events_use_live_progress_after_pause_and_output_restart() {
+        let shared = Arc::new(SharedAudio::new(
+            MixFormat::stereo_f32(48_000),
+            0.2,
+            1.0,
+            &DspSettings::default(),
+        ));
+        let mut runtime = PlayerRuntime::new(PlayerConfig::default());
+        runtime.current_seq = 7;
+        shared.set_track_seq(7);
+        runtime.session = Some(PlaybackSession {
+            shared: shared.clone(),
+            output_thread: None,
+            filter_thread: None,
+            decode_thread: None,
+            decode_commands: None,
+            position_thread: None,
+        });
+
+        for (cached, live, paused) in [(0.0, 12.0, false), (12.0, 37.0, true), (37.0, 45.0, false)]
+        {
+            runtime.state.time_pos = cached;
+            runtime.state.playing = !paused;
+            runtime.state.paused = paused;
+            shared.set_position_secs(live);
+            let event = contextualize_runtime_event(
+                &runtime,
+                PlayerEvent::state_change(runtime.state.clone()),
+            );
+            let state = event.state.unwrap();
+            assert_eq!(state.time_pos, live);
+            assert_eq!(state.paused, paused);
+            assert_eq!(event.track_seq, Some(7.0));
+        }
+    }
+
+    #[test]
     fn idle_output_release_only_allows_stable_non_playing_states() {
         for state in [
             PlaybackCoreState::Paused,

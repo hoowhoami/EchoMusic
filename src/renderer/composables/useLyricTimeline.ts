@@ -174,9 +174,15 @@ export function createLyricTimeline(options: LyricTimelineOptions = {}) {
   const getPlaybackMs = (playback: LyricTimelinePlayback | null | undefined) => {
     if (!playback) return 0;
     const now = performance.now();
-    const fresh = now - lastPlaybackUpdateTick <= playbackStaleThresholdMs;
     const isPlaying = playback.clock?.isPlaying ?? playback.isPlaying;
-    const value = isPlaying && fresh ? baseMs + (now - anchorTick) * getRate(playback) : baseMs;
+    // When engine samples stop, freeze at the end of the interpolation window.
+    // Returning baseMs here rewinds lyrics to the last load/play/pause anchor.
+    // The freshness deadline follows samples even when sync keeps the old anchor
+    // because their drift was within tolerance.
+    const projectionTick = Math.min(now, lastPlaybackUpdateTick + playbackStaleThresholdMs);
+    const value = isPlaying
+      ? baseMs + Math.max(0, projectionTick - anchorTick) * getRate(playback)
+      : baseMs;
     const durationMs = playback.clock
       ? Math.max(0, Number(playback.clock.durationMs || 0))
       : Math.max(0, Number(playback.duration || 0) * 1000);

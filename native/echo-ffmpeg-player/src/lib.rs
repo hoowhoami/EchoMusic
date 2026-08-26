@@ -379,7 +379,15 @@ fn emit_events(events: Vec<PlayerEvent>) {
     send_events(events);
 }
 
-fn contextualize_runtime_event(runtime: &PlayerRuntime, event: PlayerEvent) -> PlayerEvent {
+fn contextualize_runtime_event(runtime: &PlayerRuntime, mut event: PlayerEvent) -> PlayerEvent {
+    // Periodic audio ticks advance SharedAudio, not runtime.state.time_pos.
+    // State changes (pause/resume/output restart) must not send an old position
+    // back into the desktop lyric and mini-player clocks.
+    if let (Some(state), Some(session)) = (event.state.as_mut(), runtime.session.as_ref()) {
+        if session.shared.current_track_seq() == runtime.current_seq {
+            state.time_pos = session.shared.position_secs();
+        }
+    }
     let generation = runtime
         .session
         .as_ref()
