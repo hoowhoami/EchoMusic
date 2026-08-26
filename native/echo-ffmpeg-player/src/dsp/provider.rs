@@ -381,4 +381,44 @@ mod tests {
             assert_eq!(state, after);
         }
     }
+
+    #[test]
+    #[ignore = "requires ECHO_TEST_DSP_PROVIDER pointing to EchoMusicViper 0.10.0+ with ViPERDSP"]
+    fn runtime_preset_rotation_controls_and_latency() {
+        let path = std::env::var_os("ECHO_TEST_DSP_PROVIDER").expect("provider library path");
+        for (rate, latency) in [(44100, 383), (48000, 857), (96000, 1169)] {
+            let mut provider = NativeDspProvider::load(
+                Path::new(&path),
+                rate,
+                2,
+                PROVIDER_MODE_HEADPHONE,
+                Some(r#"{"presetId":"kugou-vinyl"}"#),
+                None,
+            )
+            .expect("load reference engine");
+            assert_eq!(provider.info().latency_frames, 256);
+            for speed in [0, 1, 10, 11, 20] {
+                provider.configure(&format!(r#"{{"presetId":"kugou-3d-rotation","controls":{{"speed":{{"value":{speed}}}}}}}"#)).unwrap();
+                let state: serde_json::Value =
+                    serde_json::from_str(&provider.descriptor().state_json).unwrap();
+                assert_eq!(state["effect"]["id"], "kugou-3d-rotation");
+                assert_eq!(state["controls"]["speed"]["value"], speed);
+                assert_eq!(provider.info().latency_frames, latency);
+                assert_eq!(provider.descriptor().latency_frames, latency);
+                assert!(provider
+                    .configure(
+                        r#"{"presetId":"kugou-3d-rotation","controls":{"speed":{"value":21}}}"#
+                    )
+                    .is_err());
+                provider.refresh_state().unwrap();
+                assert_eq!(
+                    state,
+                    serde_json::from_str::<serde_json::Value>(&provider.descriptor().state_json)
+                        .unwrap()
+                );
+            }
+            provider.configure(r#"{"presetId":"kugou-vinyl"}"#).unwrap();
+            assert_eq!(provider.info().latency_frames, 256);
+        }
+    }
 }

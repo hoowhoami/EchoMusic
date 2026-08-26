@@ -78,11 +78,13 @@ UI 同时核对预设 ID、引擎路径、设备模式、已送达 JSON 和实�
 
 ## EchoMusicViper 当前接入
 
-0.9.0 的黑胶唱片声明五个年代和 0–100% 老化程度，参数由跨平台内核实际处理。
+0.10.0 保留黑胶唱片的五个年代和 0–100% 老化程度，新增 3D旋转的速度滑杆
+（0–20 整数，默认10；0为极慢速），均支持44.1/48/96kHz。速度由引擎实际处理，
+UI 无需添加酷狗专属代码；旋转的低音/声场增强尚未声明为可用设置。
 其他尚未实现参数处理的预设不声明控件；通用 UI 已可接收它们后续的能力声明，
 这不代表它们的 macOS 算法已经完成。
 
-重新构建并导入引擎后，可在“引擎预设 → 黑胶唱片”下调整。播放器原生模块应至少
+重新构建并导入引擎后，可在“引擎预设 → 黑胶唱片 / 3D旋转”下调整。播放器原生模块应至少
 包含运行时 `latencyFrames` 刷新支持。引擎更新不自动替换已运行进程中的动态库。
 
 验证命令：
@@ -90,4 +92,10 @@ UI 同时核对预设 ID、引擎路径、设备模式、已送达 JSON 和实�
 ```sh
 node --experimental-strip-types --test tests/dsp-provider-settings.test.ts tests/latest-request-queue.test.ts
 pnpm exec vue-tsc --noEmit
+ECHO_TEST_DSP_PROVIDER=/absolute/path/to/libEchoMusicViper.dylib \
+  cargo test --manifest-path native/echo-ffmpeg-player/Cargo.toml \
+  dsp::provider::tests::runtime_preset_ -- --ignored --nocapture
 ```
+
+上述真实库测试要求0.10.0+。旋转在44.1/48/96kHz分别回报383/857/1169帧延迟，
+切换回黑胶应恢复256帧；播放器不可缓存首次创建实例时的延迟。
