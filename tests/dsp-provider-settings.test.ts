@@ -185,3 +185,47 @@ test('provider-owned controls only; saved __proto__ is data and cannot change pr
   assert.equal(Object.getPrototypeOf(parsed.controls), Object.prototype);
   assert.equal(Object.hasOwn(parsed.controls, '__proto__'), true);
 });
+
+test('rotation engine upgrade adds bass and field defaults without losing saved speed', () => {
+  const id = 'kugou-3d-rotation';
+  const rotation: DspProviderControl[] = [
+    controls[0],
+    { id: 'bass', type: 'number', defaultValue: 0, range: { min: 0, max: 400, step: 1 } },
+    { id: 'field', type: 'number', defaultValue: 0, range: { min: 0, max: 4, step: 1 } },
+  ];
+  const legacy = JSON.stringify({ presetId: id, controls: { speed: { value: 16 } } });
+  const upgraded = makeDspPresetJson(id, rotation, legacy);
+  assert.deepEqual(parseDspPreset(upgraded).controls, {
+    speed: { value: 16 },
+    bass: { value: 0 },
+    field: { value: 0 },
+  });
+  const changed = makeDspPresetJson(
+    id,
+    rotation,
+    JSON.stringify({
+      presetId: id,
+      controls: { speed: { value: 16 }, bass: { value: 200 }, field: { value: 3 } },
+    }),
+  );
+  const state = {
+    dspProviderPresetJson: upgraded,
+    dspProviderPresetBank: {},
+    dspProviderMode: 'headphone',
+    impulseResponseEnabled: false,
+  };
+  const patch = dspPresetSettingsPatch(state, 'engine', changed);
+  const key = dspPresetBankKey('engine', 'headphone', id);
+  assert.equal(patch.dspProviderPresetJson, changed);
+  assert.equal(makeDspPresetJson(id, rotation, patch.dspProviderPresetBank?.[key]), changed);
+  const defaults = makeDspPresetJson(id, rotation);
+  const reset = dspPresetSettingsPatch({ ...state, ...patch }, 'engine', defaults);
+  assert.deepEqual(parseDspPreset(reset.dspProviderPresetJson!).controls, {
+    speed: { value: 10 },
+    bass: { value: 0 },
+    field: { value: 0 },
+  });
+  assert.equal(validControlValue(rotation[1], 401), false);
+  assert.equal(validControlValue(rotation[2], 5), false);
+  assert.equal(validControlValue(rotation[2], 1.5), false);
+});

@@ -395,7 +395,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires ECHO_TEST_DSP_PROVIDER pointing to EchoMusicViper 0.10.0+ with ViPERDSP"]
+    #[ignore = "requires ECHO_TEST_DSP_PROVIDER pointing to EchoMusicViper 0.12.0+ with ViPERDSP"]
     fn runtime_preset_rotation_controls_and_latency() {
         let path = std::env::var_os("ECHO_TEST_DSP_PROVIDER").expect("provider library path");
         for (rate, latency) in [(44100, 383), (48000, 857), (96000, 1169)] {
@@ -409,12 +409,34 @@ mod tests {
             )
             .expect("load reference engine");
             assert_eq!(provider.info().latency_frames, 256);
+            let manifest: serde_json::Value =
+                serde_json::from_str(&provider.descriptor().manifest_json).unwrap();
+            let rotation = manifest["presets"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|p| p["id"] == "kugou-3d-rotation")
+                .unwrap();
+            assert_eq!(rotation["controls"].as_array().unwrap().len(), 3);
+            for (index, id, label, default, max) in [
+                (0, "speed", "旋转速度", 10, 20),
+                (1, "bass", "超重低音", 0, 400),
+                (2, "field", "声场大小", 0, 4),
+            ] {
+                let control = &rotation["controls"][index];
+                assert_eq!(control["id"], id);
+                assert_eq!(control["label"], label);
+                assert_eq!(control["defaultValue"], default);
+                assert_eq!(control["range"]["max"], max);
+            }
             for speed in [0, 1, 10, 11, 20] {
                 provider.configure(&format!(r#"{{"presetId":"kugou-3d-rotation","controls":{{"speed":{{"value":{speed}}}}}}}"#)).unwrap();
                 let state: serde_json::Value =
                     serde_json::from_str(&provider.descriptor().state_json).unwrap();
                 assert_eq!(state["effect"]["id"], "kugou-3d-rotation");
                 assert_eq!(state["controls"]["speed"]["value"], speed);
+                assert_eq!(state["controls"]["bass"]["value"], 0);
+                assert_eq!(state["controls"]["field"]["value"], 0);
                 assert_eq!(provider.info().latency_frames, latency);
                 assert_eq!(provider.descriptor().latency_frames, latency);
                 assert!(provider
@@ -428,6 +450,45 @@ mod tests {
                     serde_json::from_str::<serde_json::Value>(&provider.descriptor().state_json)
                         .unwrap()
                 );
+            }
+            for (bass, field) in [(0, 1), (400, 0), (200, 2), (400, 4), (0, 0)] {
+                provider.configure(&format!(r#"{{"presetId":"kugou-3d-rotation","controls":{{"speed":{{"value":10}},"bass":{{"value":{bass}}},"field":{{"value":{field}}}}}}}"#)).unwrap();
+                let state: serde_json::Value =
+                    serde_json::from_str(&provider.descriptor().state_json).unwrap();
+                let active = bass != 0 || field != 0;
+                assert_eq!(state["controls"]["bass"]["value"], bass);
+                assert_eq!(state["controls"]["field"]["value"], field);
+                assert_eq!(
+                    state["opaque"]["rotationReference"]["optionalBassFieldEnabled"],
+                    active
+                );
+                let expected = latency
+                    + if active {
+                        if rate == 96000 {
+                            9054
+                        } else {
+                            4351
+                        }
+                    } else {
+                        0
+                    };
+                assert_eq!(provider.info().latency_frames, expected);
+                assert_eq!(provider.descriptor().latency_frames, expected);
+                for bad in [
+                    r#"{"presetId":"kugou-3d-rotation","controls":{"bass":{"value":401}}}"#,
+                    r#"{"presetId":"kugou-3d-rotation","controls":{"field":{"value":5}}}"#,
+                ] {
+                    assert!(provider.configure(bad).is_err());
+                    provider.refresh_state().unwrap();
+                    assert_eq!(
+                        state,
+                        serde_json::from_str::<serde_json::Value>(
+                            &provider.descriptor().state_json
+                        )
+                        .unwrap()
+                    );
+                    assert_eq!(provider.info().latency_frames, expected);
+                }
             }
             provider.configure(r#"{"presetId":"kugou-vinyl"}"#).unwrap();
             assert_eq!(provider.info().latency_frames, 256);
