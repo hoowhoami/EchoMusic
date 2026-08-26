@@ -637,18 +637,23 @@ withDefaults(defineProps<Props>(), {
               </div>
             </div>
 
-            <div class="h-px bg-current opacity-5 my-3"></div>
+            <div class="h-px shrink-0 bg-current opacity-5 my-3"></div>
 
-            <div class="preset-chips">
+            <div class="effect-preset-grid eq-preset-grid">
               <button
                 v-for="preset in eqPresets"
                 :key="preset.name"
-                class="preset-chip"
-                :class="{ 'is-active': isPresetActive(preset.gains) }"
+                type="button"
+                class="pm-item w-full! m-0!"
+                :class="{
+                  'is-active': isPresetActive(preset.gains),
+                  'is-disabled': providerEqLocked,
+                }"
+                :aria-pressed="isPresetActive(preset.gains)"
                 :disabled="providerEqLocked"
                 @click="applyEqPreset(preset.gains)"
               >
-                {{ preset.name }}
+                <span class="pm-label text-center">{{ preset.name }}</span>
               </button>
             </div>
           </div>
@@ -1415,12 +1420,14 @@ withDefaults(defineProps<Props>(), {
 
 /* 均衡器特定样式 */
 .eq-container {
-  padding: 0 16px 16px 16px;
+  flex: 1;
+  min-height: 0;
+  padding: 8px 16px 16px;
   display: flex;
   flex-direction: column;
 }
 
-.eq-container.is-disabled {
+.eq-container.is-disabled .eq-bands {
   opacity: 0.42;
 }
 
@@ -1429,15 +1436,20 @@ withDefaults(defineProps<Props>(), {
   color: var(--color-primary);
 }
 
-.eq-container.is-disabled .eq-slider,
-.eq-container.is-disabled .preset-chip {
+.eq-container.is-disabled .eq-slider {
   cursor: not-allowed;
 }
 
 .eq-bands {
   display: flex;
   justify-content: space-between;
-  height: 150px;
+  flex: 1;
+  min-height: 0;
+}
+
+.eq-preset-grid {
+  flex-shrink: 0;
+  padding: 0;
 }
 
 .irs-panel-header {
@@ -2001,6 +2013,7 @@ withDefaults(defineProps<Props>(), {
   display: flex;
   flex-direction: column;
   align-items: center;
+  min-height: 0;
   gap: 8px;
   width: 28px;
 }
@@ -2015,6 +2028,7 @@ withDefaults(defineProps<Props>(), {
   cursor: pointer;
   width: 100%;
   flex: 1;
+  min-height: 0;
 }
 
 .eq-track {
@@ -2046,43 +2060,10 @@ withDefaults(defineProps<Props>(), {
 }
 
 .eq-freq {
+  flex-shrink: 0;
   font-size: 10px;
   font-weight: 700;
   color: var(--color-text-main);
   opacity: 0.4;
-}
-
-/* 预设芯片 */
-.preset-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.preset-chip {
-  padding: 4px 10px;
-  background: var(--control-muted-bg);
-  border: 1px solid var(--control-border);
-  border-radius: 9999px;
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--color-text-main);
-  opacity: 0.8;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.preset-chip:hover {
-  opacity: 1;
-  background: var(--control-hover-bg);
-  border-color: var(--color-primary);
-  color: var(--color-primary);
-}
-
-.preset-chip.is-active {
-  opacity: 1;
-  background: var(--color-primary);
-  border-color: var(--color-primary);
-  color: white;
 }
 </style>
