@@ -42,8 +42,10 @@ ABI 仍是 v2，以下只是 JSON 的兼容扩展。
 - `ownership: host/disabled`、只读类型、空选项列表不计入可配置能力。
 - `supportedSampleRates` 可选；当前处理采样率不支持时禁用预设选择并给出原因。
 - 预设只显示音效名称；声明可编辑参数的预设在名称右侧显示设置图标，不显示配置能力文字或实现进度。
-- 点击名称选择音效，点击设置图标打开独立设置弹窗，不切换音效、不重复应用；按钮支持键盘访问。
-- 弹窗显示目标音效、引擎名称及耳机／扬声器模式，沿用通用 Dialog 的关闭与滚动交互。
+- 点击名称选择音效，点击设置图标在原音效浮层内进入二级设置面板，不切换音效、不重复应用；不使用 Dialog。
+- 面板显示目标音效、引擎名称及耳机／扬声器模式；返回箭头或 Esc 回到预设列表，保留列表滚动位置，焦点回到设置图标。
+- 调节时固定浮层，不因鼠标移出而关闭；点击外部关闭整个浮层，下次打开回到列表。切换左侧栏目也会退出设置。
+- 标题和恢复默认固定顶部，参数内容使用单个通用 Scrollbar。
 
 ## 应用与回显
 
@@ -68,7 +70,7 @@ ABI 仍是 v2，以下只是 JSON 的兼容扩展。
 UI 同时核对预设 ID、引擎路径、设备模式、已送达 JSON 和实际参数，才显示“已应用”。
 不会用上一个音效的运行时值填充新音效。正在使用的预设：滑杆拖动只预览，松手或键盘提交才应用。
 其他预设（包括原声或音效文件正在使用时）：参数只自动保存，选择该预设后才生效。
-打开、关闭设置弹窗不会发送音效应用请求；引擎或输出模式改变时关闭旧设置面板。
+进入、退出设置面板不会发送音效应用请求；引擎或输出模式改变时关闭旧设置面板。
 播放设置请求串行执行，只保留最新待处理请求；过期请求的错误不能停用新选择。
 诊断快照读取失败也不能被当作音效处理失败。
 
@@ -81,7 +83,7 @@ UI 同时核对预设 ID、引擎路径、设备模式、已送达 JSON 和实�
 - 切换预设或输出模式时保存当前值，并读取目标组合自己的设置。
 - 相同选中预设再次点击不重复应用。
 - 原声取消当前音效，但不删除参数库。
-- 恢复默认只重置弹窗中的预设、当前输出模式；非当前音效不会因此被启用。
+- 恢复默认只重置面板中的预设、当前输出模式；非当前音效不会因此被启用。
 - 升级引擎后，恢复时丢弃已删除的参数，并校验新范围、步进及选项；无效值回到默认。
 
 ## EchoMusicViper 当前接入
@@ -98,7 +100,7 @@ UI 无需添加酷狗专属代码；旋转的低音/声场增强尚未声明为�
 验证命令：
 
 ```sh
-node --experimental-strip-types --test tests/dsp-provider-settings.test.ts tests/latest-request-queue.test.ts
+node --experimental-strip-types --test tests/dsp-provider-settings.test.ts tests/latest-request-queue.test.ts tests/effect-settings-navigation.test.mjs
 pnpm exec vue-tsc --noEmit
 ECHO_TEST_DSP_PROVIDER=/absolute/path/to/libEchoMusicViper.dylib \
   cargo test --manifest-path native/echo-ffmpeg-player/Cargo.toml \

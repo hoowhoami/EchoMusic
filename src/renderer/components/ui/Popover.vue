@@ -148,6 +148,10 @@ watch(
   },
 );
 
+// A hover popover may become click-dismissed while editing inside it.
+// A pending mouseleave timeout must not close that editing session.
+watch(() => props.trigger, clearTimers);
+
 onMounted(() => {
   document.addEventListener('mousedown', handleDocumentMousedown, true);
 });
