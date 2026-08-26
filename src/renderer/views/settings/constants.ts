@@ -18,7 +18,7 @@ export const sectionTitles = {
   appearance: { label: '外观与界面', icon: iconPalette },
   font: { label: '字体设置', icon: null },
   playback: { label: '播放体验', icon: iconPlayerPlay },
-  spatialAudio: { label: '空间音效', icon: iconSlidersHorizontal },
+  spatialAudio: { label: '音效管理', icon: iconSlidersHorizontal },
   player: { label: '播放器设置', icon: iconSlidersHorizontal },
   pageLyric: { label: '页面歌词', icon: null },
   desktopLyric: { label: '桌面歌词', icon: iconTypography },

@@ -1,30 +1,27 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import { useThrottleFn } from '@vueuse/core';
-import { SliderRoot, SliderTrack, SliderRange, SliderThumb } from 'reka-ui';
+import {
+  SliderRoot,
+  SliderTrack,
+  SliderRange,
+  SliderThumb,
+  TabsRoot,
+  TabsList,
+  TabsTrigger,
+  TabsContent,
+} from 'reka-ui';
 import { Icon } from '@iconify/vue';
 import Popover from '@/components/ui/Popover.vue';
 import Scrollbar from '@/components/ui/Scrollbar.vue';
 import Button from '@/components/ui/Button.vue';
 import Badge from '@/components/ui/Badge.vue';
-import {
-  iconCheckMark,
-  iconCloudDownload,
-  iconLoader2,
-  iconRefreshCw,
-  iconSlidersHorizontal,
-} from '@/icons';
+import { iconSlidersHorizontal } from '@/icons';
 import { usePlayerControls } from '@/composables/usePlayerControls';
-import { useToastStore } from '@/stores/toast';
-import {
-  getCommunityAudioEffects,
-  getCommunityVpfUrls,
-  getCommunityImpulseResponseUrls,
-  type CommunityAudioEffect,
-  type CommunityAudioEffectSort,
-} from '@/api/audioEffect';
+import EffectPlaza from './EffectPlaza.vue';
+import { useAudioEffectPlaza } from '@/composables/useAudioEffectPlaza';
 import type { AudioEffectValue } from '@/types';
-import { normalizeAudioEffectName } from '../../../shared/audio';
+import { normalizeAudioEffectName, type SpatialAudioEffectEntry } from '../../../shared/audio';
 import type {
   DspJsonValue,
   DspProviderControl,
@@ -40,30 +37,14 @@ const {
   audioEffectButtonBadge,
   setAudioEffect,
 } = usePlayerControls();
-const toastStore = useToastStore();
 
-type EffectTab = 'effect' | 'eq' | 'irs';
-type ImpulseResponseLibraryTab = 'mine' | 'community' | 'engine';
+type EffectTab = 'effect' | 'eq' | 'irs' | 'plaza';
+type ImpulseResponseLibraryTab = 'mine' | 'engine';
 
 const activeTab = ref<EffectTab>('effect');
 const activeImpulseResponseLibraryTab = ref<ImpulseResponseLibraryTab>(
   settingStore.dspProviderEnabled && settingStore.dspProviderPath ? 'engine' : 'mine',
 );
-const COMMUNITY_PAGE_SIZE = 20;
-const communitySortOptions: readonly { value: CommunityAudioEffectSort; label: string }[] = [
-  { value: 2, label: '默认' },
-  { value: 3, label: '最热' },
-  { value: 4, label: '最新' },
-];
-const communitySort = ref<CommunityAudioEffectSort>(2);
-const communityEffects = ref<CommunityAudioEffect[]>([]);
-const communityTotal = ref(0);
-const communityPage = ref(0);
-const communityLoading = ref(false);
-const communityError = ref('');
-const communityScrollbarRef = ref<InstanceType<typeof Scrollbar> | null>(null);
-const downloadingCommunityEffectId = ref<number | null>(null);
-
 const audioEffectOptions: readonly { value: AudioEffectValue; label: string }[] = [
   { value: 'none', label: '原声' },
   { value: 'piano', label: '钢琴' },
@@ -246,10 +227,10 @@ const selectImpulseResponse = (id: string) => {
   settingStore.setSelectedImpulseResponse(id);
 };
 
-const currentSpatialAudioSelection = computed(() => {
+const currentPlaybackEffectSelection = computed(() => {
   if (impulseResponseActive.value && selectedImpulseResponse.value) {
     const effect = selectedImpulseResponse.value;
-    const type = effect.kind === 'imported-ir' ? '本地卷积音效' : '社区音效';
+    const type = effect.kind === 'imported-ir' ? '本地卷积音效' : '在线音效';
     return {
       active: true,
       name: getImpulseResponseDisplayName(effect.name),
@@ -292,141 +273,40 @@ const currentSpatialAudioSelection = computed(() => {
 
 const getImpulseResponseDisplayName = (name: string) => normalizeAudioEffectName(name);
 
-const hasMoreCommunityEffects = computed(
-  () => communityEffects.value.length < communityTotal.value,
+const myEffectSources = [
+  { id: 'local', label: '本地导入' },
+  { id: 'artist', label: '歌手音效' },
+  { id: 'headphone', label: '耳机音效' },
+  { id: 'market', label: '音效市场' },
+] as const;
+type MyEffectSource = (typeof myEffectSources)[number]['id'];
+const getMyEffectSource = (file: SpatialAudioEffectEntry): MyEffectSource => {
+  if (file.kind === 'imported-ir') return 'local';
+  return file.source === 'artist' || file.source === 'headphone' ? file.source : 'market';
+};
+const initialSelectedEffect = settingStore.getSelectedImpulseResponse();
+const activeMyEffectSource = ref<string>(
+  initialSelectedEffect ? getMyEffectSource(initialSelectedEffect) : 'local',
 );
+const myEffectGroups = computed(() =>
+  myEffectSources.map((group) => ({
+    ...group,
+    files: settingStore.impulseResponseFiles.filter((file) => getMyEffectSource(file) === group.id),
+  })),
+);
+
+const plaza = useAudioEffectPlaza(providerVpfSupport);
 const selectTab = (tab: EffectTab) => {
   activeTab.value = tab;
+  if (tab === 'plaza') plaza.ensureLoaded();
 };
-
 const selectImpulseResponseLibraryTab = (tab: ImpulseResponseLibraryTab) => {
   activeImpulseResponseLibraryTab.value = tab;
-  if (tab === 'community' && communityEffects.value.length === 0 && !communityLoading.value) {
-    void loadCommunityEffects(true);
-  }
 };
-
-const selectCommunitySort = (sort: CommunityAudioEffectSort) => {
-  if (communityLoading.value || communitySort.value === sort) return;
-  communitySort.value = sort;
-  void loadCommunityEffects(true);
-};
-
-const refreshCommunityEffects = () => {
-  void loadCommunityEffects(true);
-};
-
-const loadCommunityEffects = async (reset = false) => {
-  if (communityLoading.value) return;
-  communityLoading.value = true;
-  communityError.value = '';
-  const nextPage = reset ? 1 : communityPage.value + 1;
-  try {
-    if (reset) {
-      communityEffects.value = [];
-      communityScrollbarRef.value?.setScrollTop(0);
-    }
-    const result = await getCommunityAudioEffects(
-      nextPage,
-      COMMUNITY_PAGE_SIZE,
-      communitySort.value,
-    );
-    const newItems = result.items.filter(
-      (item) => !communityEffects.value.some((current) => current.id === item.id),
-    );
-    communityEffects.value = [...communityEffects.value, ...newItems];
-    communityTotal.value = result.total;
-    communityPage.value = result.page;
-  } catch (error) {
-    communityError.value = error instanceof Error ? error.message : '社区音效加载失败';
-    if (communityEffects.value.length > 0) toastStore.warning(communityError.value);
-  } finally {
-    communityLoading.value = false;
-  }
-};
-
-const isCommunityEffectActive = (effect: CommunityAudioEffect) =>
-  settingStore.impulseResponseEnabled &&
-  settingStore.selectedImpulseResponseId === `community-effect-${effect.id}`;
-
-const getDownloadedCommunityEffect = (effect: CommunityAudioEffect) =>
-  settingStore.impulseResponseFiles.find((file) => file.id === `community-effect-${effect.id}`) ??
-  null;
-
-const formatCommunityUserCount = (count: number) => {
-  if (count >= 10_000) return `${(count / 10_000).toFixed(count >= 100_000 ? 0 : 1)} 万人使用`;
-  return `${count} 人使用`;
-};
-
-const getCommunityEffectTypeLabel = (effect: CommunityAudioEffect) => {
-  const hasVpf = effect.vpfUrls.length > 0;
-  const hasImpulseResponse = effect.soundUrls.length > 0;
-  if (hasVpf && hasImpulseResponse) {
-    if (providerVpfSupport.value === 'supported') return '组合音效';
-    if (providerVpfSupport.value === 'unsupported') return '组合音效，当前引擎不支持';
-    return '组合音效，需要兼容的音效引擎';
-  }
-  if (hasVpf) {
-    if (providerVpfSupport.value === 'supported') return 'VPF，当前引擎支持';
-    if (providerVpfSupport.value === 'unsupported') return 'VPF，当前引擎不支持';
-    return 'VPF，需要支持该格式的音效引擎';
-  }
-  if (hasImpulseResponse) return '卷积音效';
-  return '暂无资源';
-};
-
-const isCommunityEffectDownloadable = (effect: CommunityAudioEffect) =>
-  (getCommunityImpulseResponseUrls(effect).length > 0 || effect.vpfUrls.length > 0) &&
-  (effect.vpfUrls.length === 0 || providerVpfSupport.value === 'supported');
-
-const getCommunityEffectUnavailableReason = (effect: CommunityAudioEffect) =>
-  effect.vpfUrls.length > 0 && providerVpfSupport.value !== 'supported'
-    ? '需要启用支持 VPF 的音效引擎'
-    : '暂无可下载的音效资源';
-
-const handleCommunityEffectAction = async (effect: CommunityAudioEffect) => {
-  if (downloadingCommunityEffectId.value !== null) return;
-  const downloaded = getDownloadedCommunityEffect(effect);
-  if (downloaded) {
-    if (isCommunityEffectActive(effect)) return;
-    selectImpulseResponse(downloaded.id);
-    toastStore.success(`已使用“${effect.name}”`);
-    return;
-  }
-
-  const impulseResponseUrls = getCommunityImpulseResponseUrls(effect);
-  const vpfUrls = getCommunityVpfUrls(effect);
-  if (vpfUrls.length > 0 && providerVpfSupport.value !== 'supported') {
-    toastStore.warning('当前音效引擎不支持此音效');
-    return;
-  }
-  if (impulseResponseUrls.length === 0 && vpfUrls.length === 0) return;
-
-  downloadingCommunityEffectId.value = effect.id;
-  try {
-    const result = await window.electron.audioEffects.downloadCommunityAudioEffect({
-      modelId: effect.id,
-      name: effect.name,
-      impulseResponseUrls,
-      vpfUrls,
-    });
-    if (!result.file) throw new Error(result.error || '音效文件下载失败');
-    settingStore.addImpulseResponseFile(result.file, { select: false });
-    const downloadedFile = result.file;
-    toastStore.showAction(
-      `已下载“${effect.name}”`,
-      {
-        label: '立即使用',
-        handler: () => selectImpulseResponse(downloadedFile.id),
-      },
-      'success',
-      6000,
-    );
-  } catch (error) {
-    toastStore.warning(error instanceof Error ? error.message : '社区音效下载失败');
-  } finally {
-    downloadingCommunityEffectId.value = null;
-  }
+const openMyEffectPlaza = (source: MyEffectSource) => {
+  if (source === 'local') return;
+  plaza.selectCategory(source);
+  selectTab('plaza');
 };
 
 interface Props {
@@ -491,7 +371,7 @@ withDefaults(defineProps<Props>(), {
           :class="{ 'is-active': activeTab === 'effect' }"
           @click="selectTab('effect')"
         >
-          预设音效
+          歌曲音效
         </button>
         <button
           class="sidebar-item"
@@ -505,16 +385,25 @@ withDefaults(defineProps<Props>(), {
           :class="{ 'is-active': activeTab === 'irs' }"
           @click="selectTab('irs')"
         >
-          空间音效
+          音效
+        </button>
+        <button
+          type="button"
+          class="sidebar-item"
+          :class="{ 'is-active': activeTab === 'plaza' }"
+          @click="selectTab('plaza')"
+        >
+          音效广场
         </button>
       </div>
 
       <!-- 右侧主内容 -->
       <div class="effect-main">
+        <EffectPlaza v-if="activeTab === 'plaza'" :plaza="plaza" />
         <!-- 音效面板 -->
         <div v-if="activeTab === 'effect'" class="panel-content">
           <div class="panel-header">
-            <span class="panel-title">预设音效</span>
+            <span class="panel-title">歌曲音效</span>
           </div>
           <div v-if="isAudioEffectPresetSelectionDisabled" class="panel-hint">
             当前使用云盘文件播放
@@ -592,20 +481,30 @@ withDefaults(defineProps<Props>(), {
         <!-- IR 面板 -->
         <div v-if="activeTab === 'irs'" class="panel-content irs-panel-content">
           <div class="panel-header irs-panel-header">
-            <span class="panel-title">空间音效</span>
+            <span class="panel-title">音效</span>
+            <button
+              type="button"
+              class="original-effect-button"
+              :class="{ 'is-active': !impulseResponseActive && !providerEffectActive }"
+              :aria-pressed="!impulseResponseActive && !providerEffectActive"
+              title="关闭音效文件和引擎预设，保留均衡器设置"
+              @click="resetImpulseResponse"
+            >
+              原声
+            </button>
           </div>
 
           <div
             class="current-spatial-effect"
-            :class="{ 'is-active': currentSpatialAudioSelection.active }"
+            :class="{ 'is-active': currentPlaybackEffectSelection.active }"
           >
             <div class="current-spatial-effect-copy">
               <span class="current-spatial-effect-eyebrow">当前音效</span>
-              <strong>{{ currentSpatialAudioSelection.name }}</strong>
-              <small>{{ currentSpatialAudioSelection.detail }}</small>
+              <strong>{{ currentPlaybackEffectSelection.name }}</strong>
+              <small>{{ currentPlaybackEffectSelection.detail }}</small>
             </div>
             <span class="current-spatial-effect-type">
-              {{ currentSpatialAudioSelection.type }}
+              {{ currentPlaybackEffectSelection.type }}
             </span>
           </div>
 
@@ -625,182 +524,66 @@ withDefaults(defineProps<Props>(), {
               >
                 我的音效
               </button>
-              <button
-                type="button"
-                :class="{ 'is-active': activeImpulseResponseLibraryTab === 'community' }"
-                @click="selectImpulseResponseLibraryTab('community')"
-              >
-                音效社区
-              </button>
             </div>
           </div>
 
-          <div
-            v-if="activeImpulseResponseLibraryTab === 'community'"
-            class="community-library-tools"
-          >
-            <div class="community-sort-tabs" role="tablist" aria-label="社区音效排序">
-              <button
-                v-for="option in communitySortOptions"
-                :key="option.value"
-                type="button"
-                role="tab"
-                :aria-selected="communitySort === option.value"
-                :class="{ 'is-active': communitySort === option.value }"
-                :disabled="communityLoading"
-                @click="selectCommunitySort(option.value)"
-              >
-                {{ option.label }}
-              </button>
-            </div>
-            <button
-              type="button"
-              class="community-refresh-button"
-              :class="{ 'is-loading': communityLoading }"
-              title="刷新音效社区"
-              aria-label="刷新音效社区"
-              :disabled="communityLoading"
-              @click="refreshCommunityEffects"
-            >
-              <Icon :icon="iconRefreshCw" width="14" height="14" />
-            </button>
-          </div>
-
-          <Scrollbar
+          <TabsRoot
             v-if="activeImpulseResponseLibraryTab === 'mine'"
-            class="panel-scroll irs-panel-scroll"
-            :content-props="{ class: 'irs-scroll-wrap' }"
+            v-model="activeMyEffectSource"
+            class="my-effect-library"
           >
-            <div class="effect-preset-grid">
-              <button
-                type="button"
-                class="pm-item w-full! m-0!"
-                :class="{
-                  'is-active': !impulseResponseActive && !providerEffectActive,
-                }"
-                @click="resetImpulseResponse"
+            <TabsList class="my-effect-source-tabs" aria-label="我的音效分类">
+              <TabsTrigger
+                v-for="group in myEffectGroups"
+                :key="group.id"
+                :value="group.id"
+                class="my-effect-source-tab"
               >
-                <span class="pm-label text-center">原声</span>
-              </button>
-              <button
-                v-for="file in settingStore.impulseResponseFiles"
-                :key="file.id"
-                type="button"
-                class="pm-item irs-preset-item w-full! m-0!"
-                :class="{
-                  'is-active':
-                    file.id === settingStore.selectedImpulseResponseId && impulseResponseActive,
-                }"
-                :title="getImpulseResponseDisplayName(file.name)"
-                @click="selectImpulseResponse(file.id)"
+                <span>{{ group.label }}</span>
+                <small>{{ group.files.length }}</small>
+              </TabsTrigger>
+            </TabsList>
+            <TabsContent
+              v-for="group in myEffectGroups"
+              :key="group.id"
+              :value="group.id"
+              class="my-effect-tab-panel"
+            >
+              <Scrollbar
+                class="panel-scroll irs-panel-scroll"
+                :content-props="{ class: 'irs-scroll-wrap' }"
               >
-                <span class="pm-label text-center irs-preset-label">
-                  {{ getImpulseResponseDisplayName(file.name) }}
-                </span>
-              </button>
-            </div>
-          </Scrollbar>
-
-          <Scrollbar
-            v-else-if="activeImpulseResponseLibraryTab === 'community'"
-            ref="communityScrollbarRef"
-            class="panel-scroll community-panel-scroll"
-            :content-props="{ class: 'community-scroll-wrap' }"
-          >
-            <div v-if="communityEffects.length > 0" class="community-effect-list">
-              <div
-                v-for="effect in communityEffects"
-                :key="effect.id"
-                class="community-effect-item"
-                :class="{
-                  'is-active': isCommunityEffectActive(effect),
-                }"
-                :title="effect.intro || effect.name"
-              >
-                <span class="community-effect-copy">
-                  <span class="community-effect-name">{{ effect.name }}</span>
-                  <span class="community-effect-meta">
-                    {{ getCommunityEffectTypeLabel(effect) }} · {{ effect.author || '匿名创作者' }}
-                    <template v-if="effect.tagName"> · {{ effect.tagName }}</template>
-                    <template v-if="effect.userCount">
-                      · {{ formatCommunityUserCount(effect.userCount) }}
-                    </template>
-                  </span>
-                </span>
-                <button
-                  type="button"
-                  class="community-effect-action"
-                  :class="{ 'is-active': isCommunityEffectActive(effect) }"
-                  :disabled="
-                    (!getDownloadedCommunityEffect(effect) &&
-                      !isCommunityEffectDownloadable(effect)) ||
-                    isCommunityEffectActive(effect) ||
-                    (downloadingCommunityEffectId !== null &&
-                      downloadingCommunityEffectId !== effect.id)
-                  "
-                  :title="
-                    getDownloadedCommunityEffect(effect) || isCommunityEffectDownloadable(effect)
-                      ? undefined
-                      : getCommunityEffectUnavailableReason(effect)
-                  "
-                  @click.stop="handleCommunityEffectAction(effect)"
-                >
-                  <Icon
-                    v-if="downloadingCommunityEffectId === effect.id"
-                    :icon="iconLoader2"
-                    width="14"
-                    height="14"
-                    class="community-spin"
-                  />
-                  <Icon
-                    v-else-if="isCommunityEffectActive(effect)"
-                    :icon="iconCheckMark"
-                    width="14"
-                    height="14"
-                  />
-                  <Icon
-                    v-else-if="!getDownloadedCommunityEffect(effect)"
-                    :icon="iconCloudDownload"
-                    width="14"
-                    height="14"
-                  />
+                <div v-if="group.files.length" class="effect-preset-grid">
+                  <button
+                    v-for="file in group.files"
+                    :key="file.id"
+                    type="button"
+                    class="pm-item irs-preset-item w-full! m-0!"
+                    :class="{
+                      'is-active':
+                        file.id === settingStore.selectedImpulseResponseId && impulseResponseActive,
+                    }"
+                    :title="getImpulseResponseDisplayName(file.name)"
+                    @click="selectImpulseResponse(file.id)"
+                  >
+                    <span class="pm-label text-center irs-preset-label">
+                      {{ getImpulseResponseDisplayName(file.name) }}
+                    </span>
+                  </button>
+                </div>
+                <div v-else class="my-effect-empty">
                   <span>{{
-                    downloadingCommunityEffectId === effect.id
-                      ? '下载中'
-                      : isCommunityEffectActive(effect)
-                        ? '使用中'
-                        : getDownloadedCommunityEffect(effect)
-                          ? '使用'
-                          : isCommunityEffectDownloadable(effect)
-                            ? '下载'
-                            : '不可用'
+                    group.id === 'local' ? '暂无本地导入音效' : '此分类暂无已下载音效'
                   }}</span>
-                </button>
-              </div>
-
-              <button
-                v-if="hasMoreCommunityEffects"
-                type="button"
-                class="community-load-more"
-                :disabled="communityLoading"
-                @click="loadCommunityEffects(false)"
-              >
-                {{ communityLoading ? '加载中…' : '加载更多' }}
-              </button>
-            </div>
-
-            <div v-else-if="communityLoading" class="community-panel-state">
-              <Icon :icon="iconLoader2" width="18" height="18" class="community-spin" />
-              <span>正在加载社区音效…</span>
-            </div>
-            <div v-else-if="communityError" class="community-panel-state">
-              <span>{{ communityError }}</span>
-              <button type="button" @click="loadCommunityEffects(true)">重试</button>
-            </div>
-            <div v-else class="community-panel-state">
-              <span>暂无社区音效</span>
-            </div>
-          </Scrollbar>
+                  <small v-if="group.id === 'local'">在「设置 → 音效管理」中导入音效文件</small>
+                  <template v-else>
+                    <small>前往音效广场，找到喜欢的音效</small>
+                    <button type="button" @click="openMyEffectPlaza(group.id)">去音效广场</button>
+                  </template>
+                </div>
+              </Scrollbar>
+            </TabsContent>
+          </TabsRoot>
 
           <Scrollbar
             v-else
@@ -864,24 +647,12 @@ withDefaults(defineProps<Props>(), {
                 </div>
               </section>
 
-              <section class="provider-section">
+              <section v-if="providerPresets.length > 0" class="provider-section">
                 <div class="provider-section-heading">
                   <strong>引擎预设</strong>
                   <span>由当前音效引擎提供</span>
                 </div>
                 <div class="provider-preset-grid">
-                  <button
-                    type="button"
-                    class="provider-preset-button"
-                    :class="{
-                      'is-active': !impulseResponseActive && !providerEffectActive,
-                    }"
-                    :aria-pressed="!impulseResponseActive && !providerEffectActive"
-                    @click="resetImpulseResponse"
-                  >
-                    <span>原声</span>
-                    <small>original</small>
-                  </button>
                   <button
                     v-for="preset in providerPresets"
                     :key="preset.id"
@@ -981,7 +752,7 @@ withDefaults(defineProps<Props>(), {
             </div>
             <div v-else class="provider-panel-empty">
               <strong>尚未启用音效引擎</strong>
-              <span>请前往“设置 → 空间音效”导入第三方音效引擎</span>
+              <span>请前往“设置 → 音效管理”导入第三方音效引擎</span>
             </div>
           </Scrollbar>
         </div>
@@ -992,8 +763,8 @@ withDefaults(defineProps<Props>(), {
 
 <style>
 .effect-popover.echo-popover-content {
-  width: 480px;
-  height: 380px;
+  width: min(540px, calc(100vw - 24px));
+  height: min(460px, calc(100vh - 100px));
   padding: 0;
   overflow: hidden;
   background: var(--color-bg-elevated);
@@ -1143,9 +914,9 @@ withDefaults(defineProps<Props>(), {
 
 /* 侧边栏 */
 .effect-sidebar {
-  width: 80px;
+  width: 88px;
   box-sizing: border-box;
-  flex: 0 0 80px;
+  flex: 0 0 88px;
   background: var(--control-muted-bg);
   display: flex;
   flex-direction: column;
@@ -1192,6 +963,7 @@ withDefaults(defineProps<Props>(), {
 }
 
 .panel-content {
+  min-height: 0;
   display: flex;
   flex-direction: column;
   width: 100%;
@@ -1364,6 +1136,31 @@ withDefaults(defineProps<Props>(), {
   gap: 16px;
 }
 
+.original-effect-button {
+  flex: 0 0 auto;
+  height: 28px;
+  padding: 0 12px;
+  border: 1px solid var(--control-border);
+  border-radius: 7px;
+  background: var(--control-muted-bg);
+  color: var(--color-text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.original-effect-button:hover,
+.original-effect-button.is-active {
+  border-color: color-mix(in srgb, var(--color-primary) 35%, transparent);
+  background: color-mix(in srgb, var(--color-primary) 9%, transparent);
+  color: var(--color-primary);
+}
+
+.original-effect-button:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
 .current-spatial-effect {
   display: flex;
   width: auto;
@@ -1444,6 +1241,96 @@ withDefaults(defineProps<Props>(), {
   min-height: 42px;
 }
 
+.my-effect-library,
+.my-effect-tab-panel {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.my-effect-tab-panel[data-state='inactive'] {
+  display: none;
+}
+
+.my-effect-source-tabs {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  flex: 0 0 auto;
+  gap: 4px;
+  margin: 0 10px 3px;
+  border-bottom: 1px solid var(--control-border);
+}
+
+.my-effect-source-tab {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-width: 0;
+  height: 34px;
+  padding: 0 2px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.my-effect-source-tab:hover,
+.my-effect-source-tab[data-state='active'] {
+  color: var(--color-primary);
+}
+
+.my-effect-source-tab[data-state='active'] {
+  border-bottom-color: var(--color-primary);
+}
+
+.my-effect-source-tab small {
+  font-size: 9px;
+  font-weight: 500;
+  opacity: 0.7;
+}
+
+.my-effect-source-tab:focus-visible,
+.my-effect-empty button:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: -2px;
+  border-radius: 4px;
+}
+
+.my-effect-empty {
+  display: flex;
+  min-height: 140px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 16px;
+  color: var(--color-text-secondary);
+  text-align: center;
+  font-size: 12px;
+}
+
+.my-effect-empty small {
+  font-size: 10px;
+}
+
+.my-effect-empty button {
+  margin-top: 3px;
+  padding: 5px 10px;
+  border: 1px solid var(--control-border);
+  border-radius: 6px;
+  background: var(--control-muted-bg);
+  color: var(--color-primary);
+  font-size: 11px;
+  cursor: pointer;
+}
+
 .irs-preset-label {
   display: -webkit-box;
   flex: 0 1 100%;
@@ -1490,7 +1377,7 @@ withDefaults(defineProps<Props>(), {
   display: grid;
   min-width: 0;
   flex: 1;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   padding: 3px;
   border-radius: 8px;
   background: var(--control-muted-bg);
@@ -1521,95 +1408,6 @@ withDefaults(defineProps<Props>(), {
   background: var(--color-bg-elevated);
   color: var(--color-primary);
   box-shadow: inset 0 0 0 1px var(--control-border);
-}
-
-.community-library-tools {
-  display: flex;
-  width: 100%;
-  flex: 0 0 auto;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 10px 8px;
-  box-sizing: border-box;
-}
-
-.community-sort-tabs {
-  display: flex;
-  align-items: center;
-  padding: 2px;
-  border-radius: 7px;
-  background: var(--control-muted-bg);
-}
-
-.community-sort-tabs button {
-  display: flex;
-  min-width: 48px;
-  height: 24px;
-  align-items: center;
-  justify-content: center;
-  box-sizing: border-box;
-  padding: 0 8px;
-  border: 0;
-  border-radius: 5px;
-  background: transparent;
-  color: var(--color-text-secondary);
-  font-size: 10px;
-  font-weight: 700;
-  line-height: 1;
-  cursor: pointer;
-}
-
-.community-sort-tabs button:hover:not(:disabled) {
-  color: var(--color-primary);
-}
-
-.community-sort-tabs button.is-active {
-  background: var(--color-bg-elevated);
-  color: var(--color-primary);
-  box-shadow: inset 0 0 0 1px var(--control-border);
-}
-
-.community-sort-tabs button:disabled {
-  cursor: wait;
-  opacity: 0.58;
-}
-
-.community-refresh-button {
-  display: inline-flex;
-  width: 24px;
-  height: 24px;
-  flex: 0 0 24px;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--color-text-secondary);
-  cursor: pointer;
-}
-
-.community-refresh-button:hover:not(:disabled) {
-  background: var(--control-hover-bg);
-  color: var(--color-primary);
-}
-
-.community-refresh-button:disabled {
-  cursor: wait;
-  opacity: 0.5;
-}
-
-.community-refresh-button.is-loading svg {
-  animation: community-effect-spin 0.8s linear infinite;
-}
-
-.community-panel-scroll,
-.effect-popover .community-scroll-wrap,
-.effect-popover .community-scroll-wrap > .scrollbar-view {
-  width: 100% !important;
-  min-width: 0 !important;
-  align-self: stretch !important;
-  box-sizing: border-box;
 }
 
 .provider-panel-scroll,
@@ -1836,149 +1634,6 @@ withDefaults(defineProps<Props>(), {
   border: 1px dashed var(--control-border);
   border-radius: 9px;
   text-align: center;
-}
-
-.community-effect-list {
-  display: flex;
-  flex-direction: column;
-  gap: 7px;
-  padding: 0 10px 10px;
-}
-
-.community-effect-item {
-  display: flex;
-  width: 100%;
-  min-width: 0;
-  min-height: 52px;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 10px;
-  border: 1px solid var(--control-border);
-  border-radius: 9px;
-  background: var(--control-muted-bg);
-  color: var(--color-text-main);
-  text-align: left;
-}
-
-.community-effect-item:hover,
-.community-effect-item.is-active {
-  border-color: var(--color-primary);
-  background: color-mix(in srgb, var(--color-primary) 9%, transparent);
-}
-
-.community-effect-item.is-active .community-effect-name,
-.community-effect-item:hover .community-effect-action:not(.is-active) {
-  color: var(--color-primary);
-}
-
-.community-effect-copy {
-  display: flex;
-  min-width: 0;
-  flex: 1;
-  flex-direction: column;
-  gap: 3px;
-}
-
-.community-effect-name {
-  overflow: hidden;
-  font-size: 12px;
-  font-weight: 700;
-  line-height: 1.3;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.community-effect-meta {
-  overflow: hidden;
-  color: var(--color-text-secondary);
-  font-size: 10px;
-  line-height: 1.25;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.community-effect-action {
-  display: inline-flex;
-  flex: 0 0 auto;
-  min-width: 62px;
-  height: 28px;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  padding: 0 8px;
-  border: 1px solid var(--control-border);
-  border-radius: 7px;
-  background: var(--color-bg-elevated);
-  color: var(--color-text-secondary);
-  font-size: 10px;
-  font-weight: 700;
-  cursor: pointer;
-}
-
-.community-effect-action:hover:not(:disabled) {
-  border-color: var(--color-primary);
-  color: var(--color-primary);
-}
-
-.community-effect-action.is-active {
-  border-color: var(--color-primary);
-  background: var(--color-primary);
-  color: white;
-}
-
-.community-effect-action:disabled {
-  cursor: default;
-  opacity: 0.72;
-}
-
-.community-load-more {
-  height: 30px;
-  border: 0;
-  border-radius: 8px;
-  background: transparent;
-  color: var(--color-primary);
-  font-size: 11px;
-  font-weight: 700;
-  cursor: pointer;
-}
-
-.community-load-more:hover:not(:disabled) {
-  background: var(--control-hover-bg);
-}
-
-.community-load-more:disabled {
-  cursor: wait;
-  opacity: 0.55;
-}
-
-.community-panel-state {
-  display: flex;
-  min-height: 150px;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  color: var(--color-text-secondary);
-  font-size: 11px;
-  font-weight: 600;
-}
-
-.community-panel-state button {
-  border: 0;
-  background: transparent;
-  color: var(--color-primary);
-  cursor: pointer;
-  font-weight: 700;
-}
-
-.community-spin {
-  animation: community-effect-spin 0.8s linear infinite;
-}
-
-@keyframes community-effect-spin {
-  to {
-    transform: rotate(360deg);
-  }
 }
 
 .eq-band {

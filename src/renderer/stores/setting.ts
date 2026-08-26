@@ -69,6 +69,7 @@ const toImpulseResponseFilePayload = (file: SpatialAudioEffectEntry): SpatialAud
   importedAt: Number(file.importedAt) || 0,
   format: file.format ? String(file.format) : undefined,
   kind: file.kind,
+  source: file.source,
   impulseResponsePath: file.impulseResponsePath,
   vpfPath: file.vpfPath,
 });

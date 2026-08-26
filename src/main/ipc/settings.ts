@@ -1046,7 +1046,7 @@ export const registerSettingsHandlers = ({ getMainWindow, playerRef }: IpcContex
     async (): Promise<ImportImpulseResponseResult> => {
       const win = getMainWindow();
       const options: OpenDialogOptions = {
-        title: '导入空间音效文件',
+        title: '导入音效文件',
         properties: ['openFile', 'multiSelections'],
         filters: [
           {

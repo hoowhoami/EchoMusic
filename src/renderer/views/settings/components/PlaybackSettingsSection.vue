@@ -109,7 +109,7 @@ const commitRenameImpulseResponse = (id: string) => {
 
 const handleImpulseResponseEnabledChange = (enabled: boolean) => {
   if (enabled && !selectedImpulseResponse.value) {
-    toastStore.warning('请先导入空间音效文件');
+    toastStore.warning('请先导入音效文件');
     return;
   }
   settingStore.impulseResponseEnabled = enabled;
@@ -123,7 +123,7 @@ const handleImportImpulseResponse = async () => {
     if (result.canceled) return;
     const files = result.files?.length ? result.files : result.file ? [result.file] : [];
     if (files.length === 0) {
-      toastStore.warning(result.error || '空间音效文件导入失败');
+      toastStore.warning(result.error || '音效文件导入失败');
       return;
     }
     settingStore.addImpulseResponseFiles(files);
@@ -131,11 +131,11 @@ const handleImportImpulseResponse = async () => {
       toastStore.warning(`已导入 ${files.length} 个音效文件，${result.errors.length} 个失败`, 4200);
     } else {
       toastStore.success(
-        files.length === 1 ? '空间音效文件已导入' : `已导入 ${files.length} 个音效文件`,
+        files.length === 1 ? '音效文件已导入' : `已导入 ${files.length} 个音效文件`,
       );
     }
   } catch {
-    toastStore.actionFailed('导入空间音效文件');
+    toastStore.actionFailed('导入音效文件');
   } finally {
     isImportingImpulseResponse.value = false;
   }
@@ -262,8 +262,8 @@ const handleRemoveImpulseResponse = (id: string) => {
       <div class="settings-divider"></div>
       <div class="settings-item">
         <div class="space-y-1">
-          <h3 class="font-semibold">空间音效</h3>
-          <p class="text-sm text-text-secondary">管理本地导入和社区下载的空间音效文件</p>
+          <h3 class="font-semibold">音效管理</h3>
+          <p class="text-sm text-text-secondary">管理本地导入和在线下载的音效文件</p>
         </div>
         <div class="irs-actions">
           <Button variant="outline" size="xs" type="button" @click="openImpulseResponseDialog">
@@ -280,11 +280,11 @@ const handleRemoveImpulseResponse = (id: string) => {
 
       <Dialog
         v-model:open="showImpulseResponseDialog"
-        title="空间音效"
+        title="音效管理"
         showClose
         :content-style="{ width: '420px' }"
       >
-        <div class="irs-source-tabs" role="tablist" aria-label="空间音效文件来源">
+        <div class="irs-source-tabs" role="tablist" aria-label="音效文件来源">
           <button
             type="button"
             role="tab"
@@ -302,7 +302,7 @@ const handleRemoveImpulseResponse = (id: string) => {
             :class="{ 'is-active': activeImpulseResponseSourceTab === 'community' }"
             @click="activeImpulseResponseSourceTab = 'community'"
           >
-            <span>社区下载</span>
+            <span>在线下载</span>
             <span class="irs-source-count">{{ communityAudioEffects.length }}</span>
           </button>
         </div>
@@ -366,7 +366,7 @@ const handleRemoveImpulseResponse = (id: string) => {
           </div>
         </div>
         <div v-else class="irs-empty">
-          {{ activeImpulseResponseSourceTab === 'local' ? '暂无本地导入音效' : '暂无社区下载音效' }}
+          {{ activeImpulseResponseSourceTab === 'local' ? '暂无本地导入音效' : '暂无在线下载音效' }}
         </div>
 
         <template #footer>
@@ -381,7 +381,9 @@ const handleRemoveImpulseResponse = (id: string) => {
             <Icon :icon="iconPlus" width="14" height="14" class="mr-1" />
             导入音效文件
           </Button>
-          <span v-else class="irs-community-hint">请在播放器的「音效社区」中下载新音效</span>
+          <span v-else class="irs-community-hint"
+            >请在播放器的「音效广场 → 音效市场」中下载新音效</span
+          >
         </template>
       </Dialog>
     </template>

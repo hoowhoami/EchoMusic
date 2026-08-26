@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
+import { TabsRoot, TabsList, TabsTrigger, TabsContent } from 'reka-ui';
 import { useSettingStore } from '@/stores/setting';
 import { usePlayerStore } from '@/stores/player';
 import { useToastStore } from '@/stores/toast';
@@ -19,16 +20,31 @@ const toastStore = useToastStore();
 const importing = ref(false);
 const showFileDialog = ref(false);
 const showProviderDialog = ref(false);
-const activeFileTab = ref<'local' | 'community'>('local');
+const activeFileTab = ref<string>('local');
 const providerFiles = ref<string[]>([]);
 const providerInspections = ref<Record<string, DspProviderInspection | null>>({});
 const editingFileId = ref('');
 const fileNameDraft = ref('');
 const files = computed(() => settingStore.impulseResponseFiles);
-const communityFiles = computed(() => files.value.filter((file) => file.kind !== 'imported-ir'));
-const localFiles = computed(() => files.value.filter((file) => file.kind === 'imported-ir'));
-const visibleFiles = computed(() =>
-  activeFileTab.value === 'local' ? localFiles.value : communityFiles.value,
+const fileCategories = [
+  { id: 'local', label: '本地导入' },
+  { id: 'artist', label: '歌手音效' },
+  { id: 'headphone', label: '耳机音效' },
+  { id: 'market', label: '音效市场' },
+] as const;
+const fileGroups = computed(() =>
+  fileCategories.map((group) => ({
+    ...group,
+    files: files.value.filter((file) => {
+      const source =
+        file.kind === 'imported-ir'
+          ? 'local'
+          : file.source === 'artist' || file.source === 'headphone'
+            ? file.source
+            : 'market';
+      return source === group.id;
+    }),
+  })),
 );
 const providerGraph = computed(() => playerStore.playbackDiagnostics.graph);
 const currentProviderPath = computed(
@@ -117,11 +133,12 @@ const importFiles = async () => {
     const result = await window.electron.audioEffects.importImpulseResponse();
     if (result.canceled) return;
     const imported = result.files?.length ? result.files : result.file ? [result.file] : [];
-    if (!imported.length) throw new Error(result.error || '空间音效文件导入失败');
+    if (!imported.length) throw new Error(result.error || '音效文件导入失败');
     settingStore.addImpulseResponseFiles(imported);
-    toastStore.success(`已导入 ${imported.length} 个空间音效文件`);
+    activeFileTab.value = 'local';
+    toastStore.success(`已导入 ${imported.length} 个音效文件`);
   } catch (error) {
-    toastStore.warning(error instanceof Error ? error.message : '空间音效文件导入失败');
+    toastStore.warning(error instanceof Error ? error.message : '音效文件导入失败');
   } finally {
     importing.value = false;
   }
@@ -198,7 +215,7 @@ const removeProvider = async (providerPath: string) => {
 
 const removeFile = (id: string) => {
   settingStore.removeImpulseResponseFile(id);
-  toastStore.success('已移除空间音效');
+  toastStore.success('已移除音效');
 };
 
 const beginRename = (id: string, name: string) => {
@@ -228,7 +245,7 @@ const commitRename = (id: string) => {
       <div class="space-y-1">
         <h3 class="font-semibold">音效文件</h3>
         <p class="text-sm text-text-secondary">
-          {{ files.length }} 个文件，分本地导入和社区下载管理
+          {{ files.length }} 个文件，按本地导入、歌手音效、耳机音效和音效市场分类管理
         </p>
       </div>
       <Button variant="outline" size="xs" type="button" @click="showFileDialog = true"
@@ -257,78 +274,88 @@ const commitRename = (id: string) => {
       v-model:open="showFileDialog"
       title="音效文件"
       showClose
-      :content-style="{ width: '420px' }"
+      :content-style="{ width: '520px', maxWidth: 'calc(100vw - 32px)' }"
     >
-      <div class="file-tabs">
-        <button
-          type="button"
-          :class="{ 'is-active': activeFileTab === 'local' }"
-          @click="activeFileTab = 'local'"
-        >
-          本地导入（{{ localFiles.length }}）
-        </button>
-        <button
-          type="button"
-          :class="{ 'is-active': activeFileTab === 'community' }"
-          @click="activeFileTab = 'community'"
-        >
-          社区下载（{{ communityFiles.length }}）
-        </button>
-      </div>
-      <div class="spatial-file-list space-y-2">
-        <div v-for="file in visibleFiles" :key="file.id" class="spatial-file-row">
-          <input
-            v-if="editingFileId === file.id"
-            v-model="fileNameDraft"
-            class="spatial-file-name-input"
-            type="text"
-            maxlength="80"
-            @keydown.enter.prevent="commitRename(file.id)"
-            @keydown.esc.prevent="cancelRename"
-          />
-          <span v-else class="spatial-file-select">{{ normalizeAudioEffectName(file.name) }}</span>
-          <button
-            v-if="editingFileId === file.id"
-            type="button"
-            class="spatial-file-action"
-            title="保存名称"
-            @click="commitRename(file.id)"
+      <TabsRoot v-model="activeFileTab" @update:model-value="cancelRename">
+        <TabsList class="file-tabs" aria-label="音效文件分类">
+          <TabsTrigger
+            v-for="group in fileGroups"
+            :key="group.id"
+            :value="group.id"
+            class="file-tab"
           >
-            <Icon :icon="iconCheckMark" width="14" height="14" />
-          </button>
-          <button
-            v-if="editingFileId === file.id"
-            type="button"
-            class="spatial-file-action"
-            title="取消"
-            @click="cancelRename"
-          >
-            <Icon :icon="iconX" width="14" height="14" />
-          </button>
-          <button
-            v-else
-            type="button"
-            class="spatial-file-action"
-            title="重命名"
-            @click="beginRename(file.id, file.name)"
-          >
-            <Icon :icon="iconPencil" width="14" height="14" />
-          </button>
-          <button
-            type="button"
-            class="spatial-file-delete"
-            title="移除"
-            @click="removeFile(file.id)"
-          >
-            <Icon :icon="iconTrash" width="14" height="14" />
-          </button>
-        </div>
-        <div v-if="visibleFiles.length === 0" class="spatial-empty">暂无文件</div>
-      </div>
+            <span>{{ group.label }}</span>
+            <small>{{ group.files.length }}</small>
+          </TabsTrigger>
+        </TabsList>
+        <TabsContent v-for="group in fileGroups" :key="group.id" :value="group.id">
+          <div class="spatial-file-list space-y-2">
+            <div v-for="file in group.files" :key="file.id" class="spatial-file-row">
+              <input
+                v-if="editingFileId === file.id"
+                v-model="fileNameDraft"
+                class="spatial-file-name-input"
+                type="text"
+                maxlength="80"
+                @keydown.enter.prevent="commitRename(file.id)"
+                @keydown.esc.prevent="cancelRename"
+              />
+              <span v-else class="spatial-file-select">{{
+                normalizeAudioEffectName(file.name)
+              }}</span>
+              <button
+                v-if="editingFileId === file.id"
+                type="button"
+                class="spatial-file-action"
+                title="保存名称"
+                @click="commitRename(file.id)"
+              >
+                <Icon :icon="iconCheckMark" width="14" height="14" />
+              </button>
+              <button
+                v-if="editingFileId === file.id"
+                type="button"
+                class="spatial-file-action"
+                title="取消"
+                @click="cancelRename"
+              >
+                <Icon :icon="iconX" width="14" height="14" />
+              </button>
+              <button
+                v-else
+                type="button"
+                class="spatial-file-action"
+                title="重命名"
+                @click="beginRename(file.id, file.name)"
+              >
+                <Icon :icon="iconPencil" width="14" height="14" />
+              </button>
+              <button
+                type="button"
+                class="spatial-file-delete"
+                title="移除"
+                @click="removeFile(file.id)"
+              >
+                <Icon :icon="iconTrash" width="14" height="14" />
+              </button>
+            </div>
+            <div v-if="group.files.length === 0" class="spatial-empty">
+              {{ group.id === 'local' ? '暂无本地导入音效' : '此分类暂无已下载音效' }}
+            </div>
+          </div>
+        </TabsContent>
+      </TabsRoot>
       <template #footer>
-        <Button variant="outline" size="sm" type="button" :loading="importing" @click="importFiles"
+        <Button
+          v-if="activeFileTab === 'local'"
+          variant="outline"
+          size="sm"
+          type="button"
+          :loading="importing"
+          @click="importFiles"
           ><Icon :icon="iconPlus" width="14" height="14" class="mr-1" />导入本地文件</Button
         >
+        <span v-else class="file-download-hint">请在播放器的「音效广场」中下载对应分类的音效</span>
       </template>
     </Dialog>
 
@@ -421,6 +448,8 @@ const commitRename = (id: string) => {
   border-radius: 8px;
 }
 .spatial-file-list {
+  max-height: min(360px, 50vh);
+  overflow-y: auto;
   padding-right: 4px;
 }
 .spatial-file-row {
@@ -479,24 +508,49 @@ const commitRename = (id: string) => {
 }
 .file-tabs {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 4px;
   margin-bottom: 14px;
-  padding: 3px;
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--color-text-main) 6%, transparent);
+  border-bottom: 1px solid var(--control-border);
 }
-.file-tabs button {
+.file-tab {
+  display: flex;
+  min-width: 0;
+  height: 36px;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
   border: 0;
-  border-radius: 6px;
-  padding: 7px 10px;
+  border-bottom: 2px solid transparent;
+  padding: 0 2px;
+  background: transparent;
   color: var(--color-text-secondary);
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 650;
+  white-space: nowrap;
+  cursor: pointer;
 }
-.file-tabs button.is-active {
+.file-tab:hover,
+.file-tab[data-state='active'] {
   color: var(--color-primary);
-  background: var(--color-bg-elevated);
+}
+.file-tab[data-state='active'] {
+  border-bottom-color: var(--color-primary);
+}
+.file-tab small {
+  font-size: 10px;
+  font-weight: 500;
+  opacity: 0.7;
+}
+.file-tab:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: -2px;
+  border-radius: 4px;
+}
+.file-download-hint {
+  color: var(--color-text-secondary);
+  font-size: 11px;
+  line-height: 1.5;
 }
 
 .engine-card-list {

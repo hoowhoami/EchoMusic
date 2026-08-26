@@ -1,3 +1,5 @@
+export type OnlineAudioEffectSource = 'artist' | 'headphone' | 'market';
+
 export interface SpatialAudioEffectEntry {
   id: string;
   name: string;
@@ -7,6 +9,7 @@ export interface SpatialAudioEffectEntry {
   kind: 'imported-ir' | 'community-ir' | 'community-vpf' | 'community-combined';
   impulseResponsePath?: string;
   vpfPath?: string;
+  source?: OnlineAudioEffectSource;
 }
 
 export interface ImportImpulseResponseResult {

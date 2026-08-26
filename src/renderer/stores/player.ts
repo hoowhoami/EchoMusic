@@ -617,7 +617,7 @@ export const usePlayerStore = defineStore(
       if (!settingStore.impulseResponseEnabled) return;
       settingStore.impulseResponseEnabled = false;
       void engine.setSpatialAudioEffect(null);
-      toastStore.warning('空间音效加载失败，已自动关闭', 4200);
+      toastStore.warning('音效加载失败，已自动关闭', 4200);
     };
 
     const restorePlaybackSessionFromQueue = () => {
