@@ -9,6 +9,8 @@ defineOptions({
 interface Props {
   hideScrollbar?: boolean;
   scrollbarInset?: number;
+  /** 滑块距离滚动区域右边缘的间距（px）。 */
+  scrollbarRightInset?: number;
   contentProps?: Record<string, unknown> | null;
 }
 
@@ -21,6 +23,7 @@ type ContentRefTarget =
 const props = withDefaults(defineProps<Props>(), {
   hideScrollbar: false,
   scrollbarInset: 6,
+  scrollbarRightInset: 2,
   contentProps: null,
 });
 const emit = defineEmits<{
@@ -48,6 +51,7 @@ let resizeObserver: ResizeObserver | null = null;
 let observedChild: Element | null = null;
 
 const effectiveScrollbarInset = computed(() => Math.max(0, props.scrollbarInset));
+const effectiveScrollbarRightInset = computed(() => Math.max(0, props.scrollbarRightInset));
 
 const showScrollbar = computed(() => {
   if (props.hideScrollbar) return false;
@@ -411,6 +415,7 @@ watch(
   width: 12px;
   height: 100%;
   padding: v-bind('`${effectiveScrollbarInset}px 2px`');
+  padding-right: v-bind('`${effectiveScrollbarRightInset}px`');
   box-sizing: border-box;
   z-index: 160;
   pointer-events: auto;

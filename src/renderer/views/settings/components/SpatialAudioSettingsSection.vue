@@ -363,7 +363,7 @@ const commitRename = (id: string) => {
       v-model:open="showProviderDialog"
       title="音效引擎"
       showClose
-      :content-style="{ width: '520px' }"
+      :content-style="{ width: '520px', maxWidth: 'calc(100vw - 32px)' }"
     >
       <div class="engine-card-list">
         <article
@@ -448,8 +448,6 @@ const commitRename = (id: string) => {
   border-radius: 8px;
 }
 .spatial-file-list {
-  max-height: min(360px, 50vh);
-  overflow-y: auto;
   padding-right: 4px;
 }
 .spatial-file-row {
@@ -555,10 +553,8 @@ const commitRename = (id: string) => {
 
 .engine-card-list {
   display: flex;
-  max-height: 480px;
   flex-direction: column;
   gap: 10px;
-  overflow-y: auto;
   padding: 2px 4px 2px 2px;
 }
 

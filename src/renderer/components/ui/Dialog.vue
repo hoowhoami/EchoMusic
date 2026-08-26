@@ -151,6 +151,7 @@ const handleInteractOutside = (event: Event) => {
           <Scrollbar
             v-if="!props.noScroll"
             class="flex-1 min-h-0 mt-2"
+            :scrollbar-right-inset="1"
             :content-props="{ class: 'dialog-scroll-area' }"
           >
             <template v-if="hasDescription">
@@ -218,8 +219,8 @@ const handleInteractOutside = (event: Event) => {
   background: var(--color-bg-dialog);
   border-color: var(--border-subtle);
   box-shadow: var(--shadow-dialog);
-  /* 将右侧内边距设为 2px，使滚动条紧贴边缘 */
-  padding: 24px 2px 24px 24px;
+  /* 右侧留白由标题、正文和页脚承担；滚动区延伸到边缘，滑块右侧间距统一由 Scrollbar 控制。 */
+  padding: 24px 0 24px 24px;
   opacity: 0;
   transform: translate(-50%, -50%) scale(0.98);
   will-change: transform, opacity;
@@ -298,7 +299,7 @@ const handleInteractOutside = (event: Event) => {
 }
 
 .dialog-header {
-  @apply pb-2 pr-6; /* pr-6 补偿 content 的 24px 边距 */
+  @apply pb-2 pr-6; /* 标题与正文、页脚统一保留 24px 右侧留白。 */
 }
 
 .dialog-title {
