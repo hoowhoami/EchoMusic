@@ -190,7 +190,6 @@ const deactivateProvider = async (providerPath: string) => {
   try {
     await window.electron.player.setAudioEffect(fallbackEffect);
     settingStore.disableDspProvider();
-    if (requiresEngine) settingStore.impulseResponseEnabled = false;
     const graph = await window.electron.player.getAudioGraph();
     playerStore.playbackDiagnostics.graph = graph ? { ...graph, updatedAt: Date.now() } : null;
     toastStore.success(`已停用“${providerDisplayName(providerPath)}”`);

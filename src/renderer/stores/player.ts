@@ -9,8 +9,9 @@ import logger from '@/utils/logger';
 import { normalizePlayerErrorPayload, PlayerEngine, type PlayerEngineEvents } from '@/utils/player';
 import type { Song } from '@/models/song';
 import type { PlayerErrorPayload } from '../../shared/player-error';
-import type { AudioEffectPlaybackOptions } from '../../shared/audio';
+import type { AudioEffectPlaybackOptions, SpatialAudioEffectEntry } from '../../shared/audio';
 import { createLatestRequestQueue } from '../../shared/latest-request-queue';
+import { spatialAudioEffectOptions } from '../../shared/audio-effect-support';
 
 import { createPlayerState } from './player/state';
 import { createPlaybackManager } from './player/playback';
@@ -19,6 +20,7 @@ import { createResolver } from './player/resolver';
 import { createHistoryManager } from './player/history';
 import { createListeningTimeManager } from './player/listeningTime';
 import { createDeviceManager } from './player/device';
+import { createSpatialAudioSupport } from './player/spatialAudioSupport';
 import {
   createPlayerEventBus,
   type PlayerEventName,
@@ -296,6 +298,8 @@ export const usePlayerStore = defineStore(
       const savedPath = configuredProviderPath();
       if (savedPath) return savedPath;
       const providers = await window.electron.player.listDspProviders();
+      if (!settingStore.dspProviderEnabled) return undefined;
+      if (configuredProviderPath()) return configuredProviderPath();
       if (providers.length !== 1) return undefined;
       settingStore.configureDspProvider(providers[0], settingStore.dspProviderMode);
       return providers[0];
@@ -309,45 +313,43 @@ export const usePlayerStore = defineStore(
           }
         : null;
     };
+    const spatialAudioSupport = createSpatialAudioSupport({
+      providerPath: configuredProviderPath,
+      providerMode: configuredProviderMode,
+      graph: () => state.playbackDiagnostics.graph,
+      selected: () => settingStore.getSelectedImpulseResponse(),
+      enabled: () => settingStore.impulseResponseEnabled,
+      inspect: (path) => window.electron.player.inspectDspProvider(path),
+      unsupported: (file, reason) => {
+        settingStore.selectOriginalSpatialAudio();
+        toastStore.warning(`“${file.name}”暂不可用：${reason}，已切换为原声，文件仍保留`, 5000);
+      },
+    });
+    const getSpatialAudioEffectSupport = (file: SpatialAudioEffectEntry) =>
+      spatialAudioSupport.support(file);
+    const selectSpatialAudioEffect = (id: string): boolean => {
+      const file = settingStore.impulseResponseFiles.find((item) => item.id === id);
+      if (!file) return false;
+      const support = getSpatialAudioEffectSupport(file);
+      if (support.status !== 'supported') {
+        toastStore.warning(support.reason);
+        return false;
+      }
+      if (settingStore.impulseResponseEnabled && settingStore.selectedImpulseResponseId === id)
+        return true;
+      settingStore.setSelectedImpulseResponse(id);
+      return true;
+    };
     const getActiveSpatialAudioEffect = (): AudioEffectPlaybackOptions | null => {
-      const providerPath = configuredProviderPath();
-      const providerMode = configuredProviderMode();
-      const providerOnlyEffect = providerPath
-        ? {
-            providerPath,
-            providerMode,
-            providerPresetJson: configuredProviderPreset(),
-          }
-        : null;
-      if (!settingStore.impulseResponseEnabled) return providerOnlyEffect;
-      const effect = settingStore.getSelectedImpulseResponse();
-      if (!effect) return providerOnlyEffect;
-      const providerResource = (kind: string, resourcePath?: string) =>
-        providerPath && resourcePath ? [{ kind, path: resourcePath }] : undefined;
-      if (effect.kind === 'imported-ir' || effect.kind === 'community-ir') {
-        return effect.impulseResponsePath
-          ? {
-              impulseResponsePath: effect.impulseResponsePath,
-              providerPath,
-              providerMode,
-              providerResources: providerResource('impulse-response', effect.impulseResponsePath),
-            }
-          : null;
-      }
-      if (effect.vpfPath && providerPath) {
-        return {
-          providerPath,
-          providerMode,
-          impulseResponsePath: effect.impulseResponsePath,
-          providerResources: [
-            { kind: 'vpf', path: effect.vpfPath },
-            ...(effect.impulseResponsePath
-              ? [{ kind: 'impulse-response', path: effect.impulseResponsePath }]
-              : []),
-          ],
-        };
-      }
-      return providerOnlyEffect;
+      const file = settingStore.getSelectedImpulseResponse();
+      return spatialAudioEffectOptions({
+        providerPath: configuredProviderPath(),
+        providerMode: configuredProviderMode(),
+        providerPresetJson: configuredProviderPreset(),
+        enabled: settingStore.impulseResponseEnabled,
+        file,
+        support: file ? getSpatialAudioEffectSupport(file) : undefined,
+      });
     };
     const showPlaybackNotice = (code: string, track?: Song | null) => {
       const userStore = useUserStore();
@@ -516,7 +518,6 @@ export const usePlayerStore = defineStore(
         gaplessPlayback: settingStore.gaplessPlayback,
         outputDevice: settingStore.outputDevice,
         exclusiveAudioDevice: settingStore.exclusiveAudioDevice,
-        spatialAudioEffect: getActiveSpatialAudioEffect(),
         playbackStallTimeout: settingStore.playbackStallTimeout,
         pauseOnOutputDeviceDisconnect: settingStore.pauseOnOutputDeviceDisconnect,
       };
@@ -526,6 +527,12 @@ export const usePlayerStore = defineStore(
           void window.electron?.player?.setPauseOnDeviceDisconnect(enabled);
         },
         { immediate: true },
+      );
+      // Capabilities can resolve without a settings mutation. Watch both the
+      // persisted selection and runtime support through the effective command.
+      const unsubscribeSpatialAudio = watch(
+        () => JSON.stringify(getActiveSpatialAudioEffect()),
+        () => spatialAudioEffectQueue.enqueue(getActiveSpatialAudioEffect()),
       );
       // 保存取消函数，以便在需要时清理订阅
       const unsubscribeSettings = settingStore.$subscribe(() => {
@@ -540,16 +547,6 @@ export const usePlayerStore = defineStore(
         const shouldUpdateOutputDevice =
           settingStore.outputDevice !== snapshot.outputDevice ||
           settingStore.exclusiveAudioDevice !== snapshot.exclusiveAudioDevice;
-        const nextSpatialAudioEffect = getActiveSpatialAudioEffect();
-        const shouldLoadSpatialAudioEffect =
-          nextSpatialAudioEffect?.providerPath !== snapshot.spatialAudioEffect?.providerPath ||
-          nextSpatialAudioEffect?.providerMode !== snapshot.spatialAudioEffect?.providerMode ||
-          nextSpatialAudioEffect?.providerPresetJson !==
-            snapshot.spatialAudioEffect?.providerPresetJson ||
-          JSON.stringify(nextSpatialAudioEffect?.providerResources ?? []) !==
-            JSON.stringify(snapshot.spatialAudioEffect?.providerResources ?? []) ||
-          nextSpatialAudioEffect?.impulseResponsePath !==
-            snapshot.spatialAudioEffect?.impulseResponsePath;
         const shouldUpdateStallTimeout =
           settingStore.playbackStallTimeout !== snapshot.playbackStallTimeout;
         snapshot = {
@@ -560,7 +557,6 @@ export const usePlayerStore = defineStore(
           gaplessPlayback: settingStore.gaplessPlayback,
           outputDevice: settingStore.outputDevice,
           exclusiveAudioDevice: settingStore.exclusiveAudioDevice,
-          spatialAudioEffect: nextSpatialAudioEffect,
           playbackStallTimeout: settingStore.playbackStallTimeout,
           pauseOnOutputDeviceDisconnect: settingStore.pauseOnOutputDeviceDisconnect,
         };
@@ -576,15 +572,13 @@ export const usePlayerStore = defineStore(
           playbackManager.clearGaplessPreparedSource();
         if (shouldUpdateOutputDevice)
           void deviceManager.applyOutputDevice(settingStore.outputDevice);
-        if (shouldLoadSpatialAudioEffect) {
-          spatialAudioEffectQueue.enqueue(nextSpatialAudioEffect);
-        }
         if (shouldUpdateStallTimeout)
           engine.setStallTimeout(settingStore.playbackStallTimeout ?? 8);
       });
       // 返回清理函数
       return () => {
         unsubscribePauseOnDeviceDisconnect();
+        unsubscribeSpatialAudio();
         unsubscribeSettings();
       };
     };
@@ -597,6 +591,14 @@ export const usePlayerStore = defineStore(
         return;
       if (failedEffect?.providerPath) {
         if (configuredProviderPath() !== failedEffect.providerPath) return;
+        if (failedEffect.providerResources?.length) {
+          // A rejected file is not proof the engine itself cannot run. Unload
+          // all of the file's resources, keep the engine and preserve downloads.
+          settingStore.selectOriginalSpatialAudio();
+          spatialAudioEffectQueue.enqueue(getActiveSpatialAudioEffect());
+          toastStore.warning('音效应用失败，已切换为原声，文件仍保留', 4200);
+          return;
+        }
         settingStore.disableDspProvider();
         const builtinEffect = getActiveSpatialAudioEffect();
         spatialAudioEffectQueue.enqueue(builtinEffect);
@@ -726,9 +728,16 @@ export const usePlayerStore = defineStore(
         try {
           await ensureConfiguredProviderPath();
           await settingStore.reconcileSpatialAudioEffects();
-          spatialAudioEffectQueue.enqueue(getActiveSpatialAudioEffect());
         } catch (error) {
           logger.warn('音效设置恢复失败', error);
+        }
+        // Even a failed file reconciliation must not leave every library item
+        // stuck in the initial capability-checking state.
+        try {
+          await spatialAudioSupport.start();
+          spatialAudioEffectQueue.enqueue(getActiveSpatialAudioEffect());
+        } catch (error) {
+          logger.warn('音效能力检查失败', error);
         }
       })();
       engine.setVolumeNormalization(settingStore.volumeNormalization);
@@ -1011,6 +1020,8 @@ export const usePlayerStore = defineStore(
       playbackTargetTrackId,
       playbackIsLoading,
       playbackDisplayState,
+      getSpatialAudioEffectSupport,
+      selectSpatialAudioEffect,
       // State-like (actually actions but Pinia treats them as actions)
       getEffectiveAudioQuality: resolver.getEffectiveAudioQuality,
       getResolvedAudioQuality: resolver.getResolvedAudioQuality,

@@ -87,6 +87,33 @@ UI 同时核对预设 ID、引擎路径、设备模式、已送达 JSON 和实�
 
 ## 保存、切换、恢复默认
 
+### 已下载／导入音效的能力检查
+
+「我的音效」、广场内已下载项及下载提示里的「立即使用」共用播放器的资源能力检查，
+不因文件已经下载就允许应用。当前引擎必须声明对应 `resources.kind`，若声明
+`extensions` 还须包含文件扩展名；组合音效必须同时支持 VPF 和卷积资源，不能只播放其中一部分。
+未声明资源能力或声明不匹配时禁选，鼠标悬停显示原因。无第三方引擎时，内置引擎仍可
+处理纯卷积音效，但不支持 VPF／组合音效。
+
+检查由播放器 Store 管理，关闭音效弹窗也有效：
+
+- 启动或切换引擎时先等待能力确认；检查期间禁选，不提交资源，但不提前删除保存的选择。
+- 优先使用与设置中的引擎路径、模式匹配的运行图清单，否则通过现有引擎检查接口读取。
+  旧引擎快照、过期异步检查结果不能覆盖新选择。
+- 确认已选文件不支持后，自动切换到「原声」并提示；只取消启用，保留文件和记录，
+  不停用仍可工作的引擎，也不改动均衡器或歌曲音效。
+- 恢复支持后不会自动重新启用，需要用户手动选择。重启仍保持原声状态，沿用现有
+  SQLite 设置持久化，不新增 localStorage 或持久化能力缓存。
+- 资源实际应用失败时也先卸载该音效回原声；只有引擎本身无法加载时才走引擎停用逻辑。
+
+定向回归：
+
+```sh
+node --experimental-strip-types --test tests/audio-effect-support.test.mjs tests/effect-settings-navigation.test.mjs tests/dsp-provider-settings.test.ts tests/latest-request-queue.test.ts
+```
+
+### 引擎预设参数保存
+
 `setting.dspProviderPresetBank` 按 `[provider_id, headphone/speaker, presetId]` 保存 JSON，
 通过现有 SQLite 持久化机制写入，不使用 localStorage。当前选择仍由
 `dspProviderPresetJson` 表示，以兼容现有播放和重启恢复路径。

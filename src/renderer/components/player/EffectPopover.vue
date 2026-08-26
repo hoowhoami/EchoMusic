@@ -94,7 +94,10 @@ const frequencies = ['31', '62', '125', '250', '500', '1k', '2k', '4k', '8k', '1
 const gains = computed(() => player.equalizerGains);
 const selectedImpulseResponse = computed(() => settingStore.getSelectedImpulseResponse());
 const impulseResponseActive = computed(
-  () => settingStore.impulseResponseEnabled && !!selectedImpulseResponse.value,
+  () =>
+    settingStore.impulseResponseEnabled &&
+    !!selectedImpulseResponse.value &&
+    player.getSpatialAudioEffectSupport(selectedImpulseResponse.value).status === 'supported',
 );
 const providerRuntimeState = computed<DspProviderRuntimeState | null>(() => {
   const value = player.playbackDiagnostics.graph?.providerStateJson;
@@ -385,14 +388,18 @@ const resetGains = () => {
 };
 
 const resetImpulseResponse = () => {
-  if (!impulseResponseActive.value && !providerEffectActive.value) return;
+  // A pending saved selection can also be canceled before capability discovery
+  // completes; checking must not make the original-sound button a no-op.
+  if (!settingStore.impulseResponseEnabled && !providerEffectActive.value) return;
   settingStore.rememberDspProviderPreset(providerEngineId.value);
   settingStore.selectOriginalSpatialAudio();
 };
 
 const selectImpulseResponse = (id: string) => {
-  settingStore.setSelectedImpulseResponse(id);
+  player.selectSpatialAudioEffect(id);
 };
+const impulseResponseSupport = (file: SpatialAudioEffectEntry) =>
+  player.getSpatialAudioEffectSupport(file);
 
 const currentPlaybackEffectSelection = computed(() => {
   if (impulseResponseActive.value && selectedImpulseResponse.value) {
@@ -462,7 +469,7 @@ const myEffectGroups = computed(() =>
   })),
 );
 
-const plaza = useAudioEffectPlaza(providerVpfSupport);
+const plaza = useAudioEffectPlaza();
 const selectTab = (tab: EffectTab) => {
   providerSettingsOpen.value = false;
   activeTab.value = tab;
@@ -729,10 +736,15 @@ withDefaults(defineProps<Props>(), {
                     type="button"
                     class="pm-item irs-preset-item w-full! m-0!"
                     :class="{
+                      'is-disabled': impulseResponseSupport(file).status !== 'supported',
                       'is-active':
                         file.id === settingStore.selectedImpulseResponseId && impulseResponseActive,
                     }"
-                    :title="getImpulseResponseDisplayName(file.name)"
+                    :title="
+                      impulseResponseSupport(file).reason ||
+                      getImpulseResponseDisplayName(file.name)
+                    "
+                    :disabled="impulseResponseSupport(file).status !== 'supported'"
                     @click="selectImpulseResponse(file.id)"
                   >
                     <span class="pm-label text-center irs-preset-label">

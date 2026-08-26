@@ -112,6 +112,10 @@ const handleImpulseResponseEnabledChange = (enabled: boolean) => {
     toastStore.warning('请先导入音效文件');
     return;
   }
+  if (enabled && selectedImpulseResponse.value) {
+    playerStore.selectSpatialAudioEffect(selectedImpulseResponse.value.id);
+    return;
+  }
   settingStore.impulseResponseEnabled = enabled;
 };
 

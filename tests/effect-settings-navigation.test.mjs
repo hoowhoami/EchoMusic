@@ -5,6 +5,7 @@ import { transformSync } from 'esbuild';
 import * as vue from 'vue';
 import { compileScript, parse } from 'vue/compiler-sfc';
 import * as settings from '../src/shared/dsp-provider-settings.ts';
+import * as audioSupport from '../src/shared/audio-effect-support.ts';
 
 // Exercise the actual SFC setup/watchers without Electron, DOM, or audio playback.
 function setupComponent(t, file, props, imports = {}) {
@@ -42,6 +43,70 @@ function setupComponent(t, file, props, imports = {}) {
   );
   return { api, events, descriptor };
 }
+
+test('my-effects buttons disable unsupported downloads and use the guarded player action', (t) => {
+  const file = {
+    id: 'combined',
+    name: '组合',
+    kind: 'community-combined',
+    impulseResponsePath: '/a.wav',
+    vpfPath: '/a.vpf',
+  };
+  const state = vue.reactive({ engine: { kind: 'builtin' } });
+  const selected = [];
+  const store = vue.reactive({
+    dspProviderEnabled: false,
+    dspProviderPath: '',
+    dspProviderMode: 'speaker',
+    dspProviderPresetJson: '',
+    impulseResponseEnabled: true,
+    selectedImpulseResponseId: file.id,
+    impulseResponseFiles: [file],
+    getSelectedImpulseResponse: () => file,
+    getDspProviderPreset: () => '',
+    rememberDspProviderPreset() {},
+    selectOriginalSpatialAudio() {
+      this.impulseResponseEnabled = false;
+    },
+  });
+  const player = vue.reactive({
+    playbackDiagnostics: { graph: null },
+    getSpatialAudioEffectSupport: (file) => audioSupport.audioEffectSupport(file, state.engine),
+    selectSpatialAudioEffect: (id) => {
+      if (audioSupport.audioEffectSupport(file, state.engine).status === 'supported')
+        selected.push(id);
+    },
+  });
+  const { api, descriptor } = setupComponent(
+    t,
+    '../src/renderer/components/player/EffectPopover.vue',
+    {},
+    {
+      '@/composables/usePlayerControls': {
+        usePlayerControls: () => ({ player, settingStore: store }),
+      },
+      '@/composables/useAudioEffectPlaza': { useAudioEffectPlaza: () => ({}) },
+    },
+  );
+  assert.equal(api.impulseResponseActive.value, false);
+  assert.equal(api.impulseResponseSupport(file).status, 'unsupported');
+  api.selectImpulseResponse(file.id);
+  assert.equal(selected.length, 0);
+  assert.match(
+    descriptor.template.content,
+    /:disabled="impulseResponseSupport\(file\)\.status !== 'supported'"/,
+  );
+  state.engine = {
+    kind: 'provider',
+    manifest: { resources: [{ kind: 'vpf' }, { kind: 'impulse-response' }] },
+  };
+  assert.equal(api.impulseResponseSupport(file).status, 'supported');
+  api.selectImpulseResponse(file.id);
+  assert.deepEqual(selected, [file.id]);
+  state.engine = { kind: 'checking' };
+  api.resetImpulseResponse();
+  assert.equal(store.impulseResponseEnabled, false, 'original cancels a pending saved selection');
+});
 
 test('settings remain inside the effect popover; back does not close or reapply effects', async (t) => {
   const store = vue.reactive({
