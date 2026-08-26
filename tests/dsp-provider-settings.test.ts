@@ -229,3 +229,66 @@ test('rotation engine upgrade adds bass and field defaults without losing saved 
   assert.equal(validControlValue(rotation[2], 5), false);
   assert.equal(validControlValue(rotation[2], 1.5), false);
 });
+
+test('surround mode switches visible controls without dropping the other mode settings', () => {
+  const id = 'kugou-3d-surround';
+  const choice = (id: string, values: number[], defaultValue: number): DspProviderControl => ({
+    id,
+    type: 'select',
+    defaultValue,
+    ownership: 'provider',
+    options: values.map((value) => ({ value, label: String(value) })),
+  });
+  const surround: DspProviderControl[] = [
+    choice('mode', [0, 1], 0),
+    { ...choice('speed', [0, 1, 2, 3, 4], 2), visibleWhen: { controlId: 'mode', value: 0 } },
+    { ...choice('level', [0, 1, 2, 3, 4], 2), visibleWhen: { controlId: 'mode', value: 1 } },
+  ];
+  const manifest: DspProviderManifest = {
+    schemaVersion: 1,
+    presets: [{ id, label: '3D环绕', controls: surround }],
+  };
+  assert.equal(configurablePresetControls(manifest, id).length, 3);
+  const upgraded = makeDspPresetJson(id, surround, JSON.stringify({ presetId: id }));
+  assert.deepEqual(parseDspPreset(upgraded).controls, {
+    mode: { value: 0 },
+    speed: { value: 2 },
+    level: { value: 2 },
+  });
+  let current = makeDspPresetJson(
+    id,
+    surround,
+    JSON.stringify({
+      presetId: id,
+      controls: { mode: { value: 0 }, speed: { value: 4 }, level: { value: 1 } },
+    }),
+  );
+  for (const mode of [0, 1, 0]) {
+    const command = parseDspPreset(current);
+    command.controls.mode.value = mode;
+    current = makeDspPresetJson(id, surround, JSON.stringify(command));
+    const state = {
+      dspProviderPresetJson: current,
+      dspProviderPresetBank: {},
+      dspProviderMode: 'headphone',
+      impulseResponseEnabled: false,
+    };
+    const saved = dspPresetSettingsPatch(state, 'echomusic-viper', current);
+    current = makeDspPresetJson(
+      id,
+      surround,
+      saved.dspProviderPresetBank![dspPresetBankKey('echomusic-viper', 'headphone', id)],
+    );
+    const values = presetControlValues(surround, current);
+    assert.deepEqual(
+      surround.filter((c) => controlVisible(c, values)).map((c) => c.id),
+      ['mode', mode === 0 ? 'speed' : 'level'],
+    );
+    assert.equal(values.speed.value, 4);
+    assert.equal(values.level.value, 1);
+    assert.equal(saved.dspProviderPresetJson, current);
+  }
+  assert.equal(makeDspPresetJson(id, surround), upgraded);
+  for (const value of [-1, 5, 1.5, '2', true, null])
+    assert.equal(validControlValue(surround[1], value), false);
+});

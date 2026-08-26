@@ -551,4 +551,84 @@ mod tests {
             assert_eq!(state["controls"]["balance"]["value"], 25);
         }
     }
+
+    #[test]
+    #[ignore = "requires ECHO_TEST_DSP_PROVIDER pointing to EchoMusicViper 0.13.0+ with ViPERDSP"]
+    fn runtime_preset_surround_controls_and_latency() {
+        let path = std::env::var_os("ECHO_TEST_DSP_PROVIDER").expect("provider library path");
+        for rate in [44100, 48000, 96000] {
+            let mut provider = NativeDspProvider::load(
+                Path::new(&path),
+                rate,
+                2,
+                PROVIDER_MODE_HEADPHONE,
+                Some(r#"{"presetId":"kugou-3d-surround"}"#),
+                None,
+            )
+            .expect("load reference engine");
+            let expected_latency = if rate == 96000 { 4734 } else { 2303 };
+            assert_eq!(provider.info().latency_frames, expected_latency);
+            let manifest: serde_json::Value =
+                serde_json::from_str(&provider.descriptor().manifest_json).unwrap();
+            let preset = manifest["presets"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|p| p["id"] == "kugou-3d-surround")
+                .unwrap();
+            assert_eq!(preset["controls"].as_array().unwrap().len(), 3);
+            assert_eq!(
+                preset["supportedSampleRates"],
+                serde_json::json!([44100, 48000, 96000])
+            );
+            for (i, id, default) in [(0, "mode", 0), (1, "speed", 2), (2, "level", 2)] {
+                assert_eq!(preset["controls"][i]["id"], id);
+                assert_eq!(preset["controls"][i]["type"], "select");
+                assert_eq!(preset["controls"][i]["defaultValue"], default);
+            }
+            assert_eq!(
+                preset["controls"][1]["visibleWhen"],
+                serde_json::json!({"controlId":"mode","value":0})
+            );
+            assert_eq!(
+                preset["controls"][2]["visibleWhen"],
+                serde_json::json!({"controlId":"mode","value":1})
+            );
+            for mode in [0, 1] {
+                for value in 0..=4 {
+                    let command=serde_json::json!({"presetId":"kugou-3d-surround","controls":{"mode":{"value":mode},"speed":{"value":value},"level":{"value":value}}}).to_string();
+                    provider.configure(&command).unwrap();
+                    let state: serde_json::Value =
+                        serde_json::from_str(&provider.descriptor().state_json).unwrap();
+                    assert_eq!(state["controls"]["mode"]["value"], mode);
+                    assert_eq!(state["controls"]["speed"]["value"], value);
+                    assert_eq!(state["controls"]["level"]["value"], value);
+                    assert_eq!(
+                        state["opaque"]["surroundReference"]["configuration"],
+                        if mode == 0 { 4 - value } else { 5 + value }
+                    );
+                    assert_eq!(provider.descriptor().latency_frames, expected_latency);
+                    assert!(provider
+                        .configure(
+                            r#"{"presetId":"kugou-3d-surround","controls":{"mode":{"value":2}}}"#
+                        )
+                        .is_err());
+                    provider.refresh_state().unwrap();
+                    assert_eq!(
+                        state,
+                        serde_json::from_str::<serde_json::Value>(
+                            &provider.descriptor().state_json
+                        )
+                        .unwrap()
+                    );
+                }
+            }
+            provider.configure(r#"{"presetId":"kugou-vinyl"}"#).unwrap();
+            assert_eq!(provider.info().latency_frames, 256);
+            provider
+                .configure(r#"{"presetId":"kugou-3d-surround"}"#)
+                .unwrap();
+            assert_eq!(provider.info().latency_frames, expected_latency);
+        }
+    }
 }
