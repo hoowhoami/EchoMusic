@@ -6,6 +6,11 @@ import type { CommunityAudioEffect } from '@/api/audioEffect';
 import type { AudioEffectPlazaState } from '@/composables/useAudioEffectPlaza';
 
 const props = defineProps<{ effect: CommunityAudioEffect; plaza: AudioEffectPlazaState }>();
+const support = computed(() => props.plaza.getEffectSupport(props.effect));
+const unavailable = computed(() => support.value.status !== 'supported');
+const unavailableReason = computed(() =>
+  unavailable.value ? support.value.reason || '当前音效暂不可用' : '',
+);
 // 原平台的歌手自动匹配说明不适用于手动应用，避免在悬浮提示中承诺错误的生效范围。
 const description = computed(() =>
   props.effect.artistName
@@ -47,19 +52,15 @@ const userCount = (count: number) =>
         >{{ effect.artistName || effect.brandName || effect.author || '音效创作者' }} ·
         {{ plaza.typeLabel(effect) }}</span
       >
-      <small v-if="plaza.unavailableReason(effect)" class="effect-requirement">{{
-        plaza.unavailableReason(effect)
-      }}</small>
+      <small v-if="unavailable" class="effect-requirement">{{ unavailableReason }}</small>
       <small v-else-if="effect.userCount">{{ userCount(effect.userCount) }}</small>
     </div>
     <button
       type="button"
       class="effect-action"
       :class="{ 'is-active': plaza.isActive(effect) }"
-      :disabled="
-        !!plaza.unavailableReason(effect) || plaza.isActive(effect) || plaza.downloadingId !== null
-      "
-      :title="plaza.unavailableReason(effect) || undefined"
+      :disabled="unavailable || plaza.isActive(effect) || plaza.downloadingId !== null"
+      :title="unavailableReason || undefined"
       :aria-label="`${plaza.downloadedEffect(effect) ? '使用' : '下载'}${effect.name}`"
       @click="plaza.actOnEffect(effect)"
     >
@@ -71,7 +72,7 @@ const userCount = (count: number) =>
       />
       <Icon v-else-if="plaza.isActive(effect)" :icon="iconCheckMark" width="13" />
       <Icon
-        v-else-if="!plaza.downloadedEffect(effect) && !plaza.unavailableReason(effect)"
+        v-else-if="!plaza.downloadedEffect(effect) && !unavailable"
         :icon="iconCloudDownload"
         width="13"
       />
@@ -80,8 +81,10 @@ const userCount = (count: number) =>
           ? '下载中'
           : plaza.isActive(effect)
             ? '使用中'
-            : plaza.unavailableReason(effect)
-              ? '不可用'
+            : unavailable
+              ? support.status === 'checking'
+                ? '检查中'
+                : '不可用'
               : plaza.downloadedEffect(effect)
                 ? '使用'
                 : '下载'

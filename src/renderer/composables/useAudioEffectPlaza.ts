@@ -2,6 +2,7 @@ import { computed, reactive, ref, watch } from 'vue';
 import { useSettingStore } from '@/stores/setting';
 import { usePlayerStore } from '@/stores/player';
 import { useToastStore } from '@/stores/toast';
+import type { AudioEffectSupport } from '../../shared/audio-effect-support';
 import {
   getArtistAudioEffects,
   getAudioEffectBrands,
@@ -165,19 +166,27 @@ export const useAudioEffectPlaza = () => {
     settings.impulseResponseEnabled &&
     settings.selectedImpulseResponseId === `community-effect-${effect.id}` &&
     !!downloadedEffect(effect) &&
-    player.getSpatialAudioEffectSupport(downloadedEffect(effect)!).status === 'supported';
-  const unavailableReason = (effect: CommunityAudioEffect) => {
+    getEffectSupport(effect).status === 'supported';
+  const getEffectSupport = (effect: CommunityAudioEffect): AudioEffectSupport => {
+    const unsupported = (reason: string): AudioEffectSupport => ({ status: 'unsupported', reason });
+    if (effect.unavailableReason) return unsupported(effect.unavailableReason);
     const downloaded = downloadedEffect(effect);
-    if (downloaded) return player.getSpatialAudioEffectSupport(downloaded).reason;
-    if (effect.unavailableReason) return effect.unavailableReason;
-    if (effect.vpfUrls.length > 0 && !getCommunityVpfUrls(effect).length) {
-      return '音效参数资源无效，暂不支持下载';
-    }
-    if (!getCommunityImpulseResponseUrls(effect).length && !getCommunityVpfUrls(effect).length) {
-      return '暂无可下载的音效资源';
-    }
+    const localSupport = downloaded && player.getSpatialAudioEffectSupport(downloaded);
+    if (localSupport && localSupport.status !== 'supported') return localSupport;
     const ir = getCommunityImpulseResponseUrls(effect)[0];
     const vpf = getCommunityVpfUrls(effect)[0];
+    if (effect.vpfUrls.length > 0 && !vpf) {
+      return unsupported('音效参数资源无效，暂不支持使用');
+    }
+    if (downloaded && localSupport) {
+      // A cached IR-only record is not a usable copy of an online IR + VPF effect.
+      // Check all currently advertised resources, but do not require download URLs
+      // to remain available for an otherwise complete, supported local file.
+      if ((ir && !downloaded.impulseResponsePath) || (vpf && !downloaded.vpfPath))
+        return unsupported('已下载的音效资源不完整，请删除后重新下载');
+      return localSupport;
+    }
+    if (!ir && !vpf) return unsupported('暂无可下载的音效资源');
     return player.getSpatialAudioEffectSupport({
       id: `community-effect-${effect.id}`,
       name: effect.name,
@@ -187,24 +196,38 @@ export const useAudioEffectPlaza = () => {
       // The downloader stores these canonical filenames regardless of URL suffix.
       impulseResponsePath: ir ? 'impulse-response.wav' : undefined,
       vpfPath: vpf ? 'effect.vpf' : undefined,
-    }).reason;
+    });
   };
+  const unavailableReason = (effect: CommunityAudioEffect) => getEffectSupport(effect).reason;
   const typeLabel = (effect: CommunityAudioEffect) => {
     const ir = getCommunityImpulseResponseUrls(effect).length > 0;
     const vpf = getCommunityVpfUrls(effect).length > 0;
     return ir && vpf ? '组合音效' : vpf ? 'VPF 音效' : ir ? '卷积音效' : '暂无资源';
   };
-  const applyEffect = (id: string) => player.selectSpatialAudioEffect(id);
-  const actOnEffect = async (effect: CommunityAudioEffect) => {
-    if (downloadingId.value !== null || isActive(effect)) return;
-    const reason = unavailableReason(effect);
-    if (reason) {
-      toast.warning(reason);
-      return;
+  const applyEffect = (effect: CommunityAudioEffect) => {
+    // Re-evaluate at click time, including actions retained in download toasts.
+    const support = getEffectSupport(effect);
+    if (support.status !== 'supported') {
+      toast.warning(support.reason || '当前音效暂不可用');
+      return false;
     }
     const downloaded = downloadedEffect(effect);
+    if (!downloaded) {
+      toast.warning('音效文件已移除，请重新下载');
+      return false;
+    }
+    return player.selectSpatialAudioEffect(downloaded.id);
+  };
+  const actOnEffect = async (effect: CommunityAudioEffect) => {
+    if (downloadingId.value !== null || isActive(effect)) return;
+    const downloaded = downloadedEffect(effect);
     if (downloaded) {
-      if (applyEffect(downloaded.id)) toast.success(`已使用“${effect.name}”`);
+      if (applyEffect(effect)) toast.success(`已使用“${effect.name}”`);
+      return;
+    }
+    const support = getEffectSupport(effect);
+    if (support.status !== 'supported') {
+      toast.warning(support.reason || '当前音效暂不可用');
       return;
     }
     downloadingId.value = effect.id;
@@ -223,12 +246,7 @@ export const useAudioEffectPlaza = () => {
         {
           label: '立即使用',
           handler: () => {
-            const reason = unavailableReason(effect);
-            if (reason) {
-              toast.warning(reason);
-              return;
-            }
-            applyEffect(file.id);
+            applyEffect(effect);
           },
         },
         'success',
@@ -265,6 +283,7 @@ export const useAudioEffectPlaza = () => {
     loadCommon,
     downloadedEffect,
     isActive,
+    getEffectSupport,
     unavailableReason,
     typeLabel,
     actOnEffect,

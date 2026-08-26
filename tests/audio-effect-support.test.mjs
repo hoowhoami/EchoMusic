@@ -333,6 +333,8 @@ function plazaFixture(t, downloaded = []) {
       const file = state.impulseResponseFiles.find((f) => f.id === id);
       if (!file || player.getSpatialAudioEffectSupport(file).status !== 'supported') return false;
       selected.push(id);
+      state.selectedImpulseResponseId = id;
+      state.impulseResponseEnabled = true;
       return true;
     },
   };
@@ -390,8 +392,64 @@ test('downloaded plaza effects use the same guard and cannot remain visually act
   await f.plaza.actOnEffect(online);
   assert.deepEqual(f.selected, ['community-effect-1']);
 });
+test('downloaded records cannot bypass an unavailable online entry', async (t) => {
+  const f = plazaFixture(t, [{ ...combined, id: 'community-effect-1' }]);
+  const blocked = { ...online, unavailableReason: '此音效暂不可用' };
+  assert.equal(f.plaza.unavailableReason(blocked), blocked.unavailableReason);
+  await f.plaza.actOnEffect(blocked);
+  assert.deepEqual(f.selected, []);
+  assert.equal(f.state.impulseResponseEnabled, false);
+  assert.equal(f.state.impulseResponseFiles.length, 1);
+  f.state.selectedImpulseResponseId = 'community-effect-1';
+  f.state.impulseResponseEnabled = true;
+  assert.equal(f.plaza.isActive(blocked), false);
+});
+test('an old partial download cannot enable a combined online effect', async (t) => {
+  for (const file of [ir, vpf]) {
+    const f = plazaFixture(t, [{ ...file, id: 'community-effect-1' }]);
+    for (const engine of [{ kind: 'builtin' }, provider]) {
+      f.state.engine = engine;
+      assert.notEqual(f.plaza.unavailableReason(online), '');
+      await f.plaza.actOnEffect(online);
+      assert.deepEqual(f.selected, []);
+      assert.equal(f.state.impulseResponseEnabled, false);
+      assert.equal(f.state.impulseResponseFiles.length, 1);
+    }
+  }
+});
+test('a valid downloaded IR remains usable without an engine or online URLs and is not reapplied', async (t) => {
+  const f = plazaFixture(t, [{ ...ir, id: 'community-effect-1' }]);
+  f.state.engine = { kind: 'builtin' };
+  const cached = { ...online, impulseResponseUrls: [], vpfUrls: [] };
+  assert.equal(f.plaza.unavailableReason(cached), '');
+  await f.plaza.actOnEffect(cached);
+  assert.equal(f.plaza.isActive(cached), true);
+  await f.plaza.actOnEffect(cached);
+  assert.deepEqual(f.selected, ['community-effect-1']);
+});
+test('all plaza categories block checking and unsupported engines without replacing another selection', async (t) => {
+  const f = plazaFixture(t, [{ ...combined, id: 'community-effect-1' }, ir]);
+  f.state.selectedImpulseResponseId = ir.id;
+  f.state.impulseResponseEnabled = true;
+  for (const source of ['artist', 'headphone', 'market']) {
+    const effect = { ...online, source };
+    for (const engine of [
+      { kind: 'checking' },
+      { kind: 'builtin' },
+      { kind: 'provider', manifest: { resources: [] } },
+    ]) {
+      f.state.engine = engine;
+      assert.notEqual(f.plaza.getEffectSupport(effect).status, 'supported');
+      await f.plaza.actOnEffect(effect);
+      assert.deepEqual(f.selected, []);
+      assert.equal(f.state.selectedImpulseResponseId, ir.id);
+      assert.equal(f.state.impulseResponseEnabled, true);
+    }
+  }
+});
 test('download action rechecks capability after an engine change and retains downloaded files', async (t) => {
   const f = plazaFixture(t);
+  const effect = { ...online };
   // Only WAV is advertised; the source URL is IRS, but the real downloader
   // canonicalizes the local filename to impulse-response.wav.
   f.state.engine = {
@@ -414,7 +472,7 @@ test('download action rechecks capability after an engine change and retains dow
     if (previousWindow === undefined) delete globalThis.window;
     else globalThis.window = previousWindow;
   });
-  await f.plaza.actOnEffect(online);
+  await f.plaza.actOnEffect(effect);
   assert.equal(f.actions.length, 1);
   assert.equal(f.state.impulseResponseFiles.length, 1);
   f.state.engine = { kind: 'builtin' };
@@ -422,4 +480,14 @@ test('download action rechecks capability after an engine change and retains dow
   assert.equal(f.selected.length, 0);
   assert.equal(f.warnings.length, 1);
   assert.equal(f.state.impulseResponseFiles.length, 1);
+  f.state.engine = provider;
+  effect.unavailableReason = '此音效暂不可用';
+  f.actions[0].handler();
+  assert.equal(f.selected.length, 0, 'delayed action also checks online availability');
+  assert.equal(f.warnings.at(-1), effect.unavailableReason);
+  delete effect.unavailableReason;
+  f.state.impulseResponseFiles = [];
+  f.actions[0].handler();
+  assert.equal(f.selected.length, 0, 'a stale toast cannot select a removed download');
+  assert.match(f.warnings.at(-1), /已移除/);
 });

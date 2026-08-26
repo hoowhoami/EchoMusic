@@ -108,6 +108,31 @@ test('my-effects buttons disable unsupported downloads and use the guarded playe
   assert.equal(store.impulseResponseEnabled, false, 'original cancels a pending saved selection');
 });
 
+test('download cards disable by capability status, even if an unavailable reason is empty', (t) => {
+  const state = vue.reactive({ support: { status: 'supported', reason: '' } });
+  const { api, descriptor } = setupComponent(
+    t,
+    '../src/renderer/components/player/OnlineAudioEffectCard.vue',
+    {
+      effect: { name: '已下载音效' },
+      plaza: { getEffectSupport: () => state.support },
+    },
+  );
+  assert.equal(api.unavailable.value, false);
+  for (const status of ['checking', 'unsupported']) {
+    state.support = { status, reason: '' };
+    assert.equal(api.unavailable.value, true);
+    assert.equal(api.unavailableReason.value, '当前音效暂不可用');
+  }
+  state.support = { status: 'unsupported', reason: '当前引擎不支持此 VPF 音效' };
+  assert.equal(api.unavailableReason.value, state.support.reason);
+  state.support = { status: 'supported', reason: '' };
+  assert.equal(api.unavailable.value, false);
+  assert.equal(api.unavailableReason.value, '');
+  assert.match(descriptor.template.content, /:disabled="unavailable \|\|/);
+  assert.match(descriptor.template.content, /@click="plaza.actOnEffect\(effect\)"/);
+});
+
 test('settings remain inside the effect popover; back does not close or reapply effects', async (t) => {
   const store = vue.reactive({
     dspProviderEnabled: true,
