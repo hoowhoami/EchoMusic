@@ -14,7 +14,14 @@ function setupComponent(t, file, props, imports = {}) {
   const { code } = transformSync(script.content, { loader: 'ts', format: 'cjs' });
   const module = { exports: {} };
   const modules = {
-    vue: { ...vue, useId: () => 'settings-panel', onMounted() {}, onUnmounted() {} },
+    vue: {
+      ...vue,
+      useId: () => 'settings-panel',
+      onMounted() {},
+      onUnmounted() {},
+      inject: () => null,
+      provide() {},
+    },
     '@vueuse/core': { useThrottleFn: (fn) => fn },
     '../../../shared/dsp-provider-settings': settings,
     ...imports,
@@ -129,4 +136,129 @@ test('editing cancels pending hover-close and keeps outside-click dismissal', as
   assert.equal(api.isOpen.value, true);
   api.handleDocumentMousedown({ target: {} });
   assert.equal(api.isOpen.value, false);
+});
+
+test('portalled select descendants do not dismiss the outer popover; siblings still do', (t) => {
+  const props = () => vue.reactive({ trigger: 'click', disabled: false });
+  const parent = setupComponent(t, '../src/renderer/components/ui/Popover.vue', props()).api;
+  const child = setupComponent(t, '../src/renderer/components/ui/Popover.vue', props()).api;
+  const grandchild = setupComponent(t, '../src/renderer/components/ui/Popover.vue', props()).api;
+  const inside = {},
+    nested = {},
+    sibling = {};
+  child.contentWrapRef.value = { contains: (target) => target === inside };
+  grandchild.contentWrapRef.value = { contains: (target) => target === nested };
+  const unregister = parent.registerPopoverBranch(child.containsPopoverTarget);
+  child.registerPopoverBranch(grandchild.containsPopoverTarget);
+  parent.handleTriggerClick();
+  parent.handleDocumentMousedown({ target: inside });
+  parent.handleDocumentMousedown({ target: nested });
+  assert.equal(parent.isOpen.value, true);
+  parent.handleDocumentMousedown({ target: sibling });
+  assert.equal(parent.isOpen.value, false);
+  parent.handleTriggerClick();
+  unregister();
+  parent.handleDocumentMousedown({ target: inside });
+  assert.equal(parent.isOpen.value, false);
+});
+
+test('provider select uses project Select and retains numeric/JSON option types', async (t) => {
+  const year = {
+    id: 'year',
+    type: 'select',
+    defaultValue: 2010,
+    options: [
+      { value: 1930, label: '1930年' },
+      { value: 2010, label: '2010年' },
+    ],
+  };
+  const aging = {
+    id: 'aging',
+    type: 'number',
+    defaultValue: 0,
+    range: { min: 0, max: 100, step: 1, minLabel: '全新', maxLabel: '老化', inverted: true },
+  };
+  const writes = [];
+  const store = vue.reactive({
+    dspProviderEnabled: true,
+    dspProviderPath: '/engine',
+    dspProviderMode: 'speaker',
+    dspProviderPresetJson: '{"presetId":"record"}',
+    impulseResponseEnabled: false,
+    getSelectedImpulseResponse: () => null,
+    getDspProviderPreset: () => '',
+    saveDspProviderPresetSettings: (json) => writes.push(JSON.parse(json)),
+  });
+  const player = vue.reactive({
+    playbackDiagnostics: {
+      graph: {
+        providerId: 'engine',
+        providerPath: '/engine',
+        providerManifestJson: JSON.stringify({
+          presets: [{ id: 'record', label: '唱片', controls: [year, aging] }],
+        }),
+      },
+    },
+  });
+  const { api, descriptor } = setupComponent(
+    t,
+    '../src/renderer/components/player/EffectPopover.vue',
+    {},
+    {
+      '@/composables/usePlayerControls': {
+        usePlayerControls: () => ({ player, settingStore: store }),
+      },
+      '@/composables/useAudioEffectPlaza': { useAudioEffectPlaza: () => ({}) },
+    },
+  );
+  await api.openProviderSettings('record', { currentTarget: null });
+  assert.deepEqual(api.providerSelectOptions(year), [
+    { value: '1930', label: '1930年' },
+    { value: '2010', label: '2010年' },
+  ]);
+  api.setProviderSelect(year, '1930');
+  assert.equal(writes.at(-1).controls.year.value, 1930);
+  api.setProviderSelect(year, 'invalid');
+  api.setProviderSelect(year, ['2010']);
+  assert.equal(writes.length, 1);
+  const structured = {
+    id: 'scene',
+    type: 'select',
+    options: [{ value: { layout: 2 }, label: '双声道' }],
+  };
+  assert.equal(api.providerSelectOptions(structured)[0].value, '{"layout":2}');
+  api.previewProviderControl(aging, 100);
+  assert.equal(api.providerControlValue(aging), 100);
+  assert.equal(writes.length, 1, 'drag preview does not send a command');
+  api.setProviderControl(aging, 100);
+  assert.equal(writes.at(-1).controls.aging.value, 100, 'left endpoint keeps API aging=100');
+  api.setProviderControl(aging, 0);
+  assert.equal(writes.at(-1).controls.aging.value, 0, 'right endpoint keeps API aging=0');
+  assert.match(descriptor.template.content, /<Select\s/);
+  assert.doesNotMatch(descriptor.template.content, /<select\s/);
+  assert.match(descriptor.template.content, /:inverted="control.range\?\.inverted \?\? false"/);
+  assert.match(
+    descriptor.template.content,
+    /control.range.inverted \? control.range.maxLabel : control.range.minLabel/,
+  );
+});
+
+test('project Select respects disabled state and keeps numeric values', (t) => {
+  const props = vue.reactive({
+    options: [{ value: 1930, label: '1930年' }],
+    modelValue: 1930,
+    disabled: true,
+    multiple: false,
+    filterable: false,
+    clearable: false,
+    maxTagCount: 1,
+    virtualThreshold: 50,
+  });
+  const { api, events } = setupComponent(t, '../src/renderer/components/ui/Select.vue', props);
+  api.handleSelect(props.options[0]);
+  api.handleClear({ stopPropagation() {} });
+  assert.deepEqual(events, []);
+  props.disabled = false;
+  api.handleSelect(props.options[0]);
+  assert.deepEqual(events, [['update:modelValue', 1930]]);
 });

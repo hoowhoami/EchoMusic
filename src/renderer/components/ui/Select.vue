@@ -16,6 +16,8 @@ interface Props {
   options: SelectOption[];
   placeholder?: string;
   class?: string;
+  disabled?: boolean;
+  ariaLabel?: string;
   /** 是否可搜索 */
   filterable?: boolean;
   /** 是否可清空 */
@@ -31,6 +33,7 @@ interface Props {
 const props = withDefaults(defineProps<Props>(), {
   options: () => [],
   placeholder: '请选择',
+  disabled: false,
   filterable: false,
   clearable: false,
   multiple: false,
@@ -112,7 +115,7 @@ const isSelected = (value: SelectValueType) => {
 };
 
 const handleSelect = (option: SelectOption) => {
-  if (option.disabled) return;
+  if (props.disabled || option.disabled) return;
   if (props.multiple) {
     const current = [...multiValue.value];
     const idx = current.indexOf(option.value);
@@ -128,6 +131,7 @@ const handleSelect = (option: SelectOption) => {
 
 const handleClear = (e: Event) => {
   e.stopPropagation();
+  if (props.disabled) return;
   if (props.multiple) emit('update:modelValue', []);
   else emit('update:modelValue', '' as SelectValueType);
   searchTerm.value = '';
@@ -135,6 +139,7 @@ const handleClear = (e: Event) => {
 
 const removeTag = (value: SelectValueType, e: Event) => {
   e.stopPropagation();
+  if (props.disabled) return;
   emit(
     'update:modelValue',
     multiValue.value.filter((v) => v !== value),
@@ -160,12 +165,21 @@ watch(open, (val) => {
     align="start"
     :side-offset="6"
     :show-arrow="false"
+    :disabled="props.disabled"
     content-class="echo-select-content"
   >
     <template #trigger>
       <div
-        :class="['echo-select-trigger', props.class]"
+        :class="['echo-select-trigger', props.class, { 'is-disabled': props.disabled }]"
         :data-state="open ? 'open' : 'closed'"
+        role="combobox"
+        :tabindex="props.disabled ? -1 : 0"
+        :aria-label="props.ariaLabel"
+        :aria-expanded="open"
+        :aria-disabled="props.disabled"
+        @keydown.enter.self.prevent="!props.disabled && (open = !open)"
+        @keydown.space.self.prevent="!props.disabled && (open = !open)"
+        @keydown.esc.stop.prevent="open = false"
         @mouseenter="isHovered = true"
         @mouseleave="isHovered = false"
       >
@@ -185,6 +199,7 @@ watch(open, (val) => {
             ref="inputRef"
             v-model="searchTerm"
             class="echo-select-input"
+            :disabled="props.disabled"
             :placeholder="selectedTags.length === 0 ? props.placeholder : ''"
             @keydown.stop
           />
@@ -199,6 +214,7 @@ watch(open, (val) => {
             ref="inputRef"
             v-model="searchTerm"
             class="echo-select-input"
+            :disabled="props.disabled"
             :placeholder="selectedLabel || props.placeholder"
             @keydown.stop
           />
@@ -217,7 +233,12 @@ watch(open, (val) => {
     </template>
 
     <div v-if="filteredOptions.length === 0" class="echo-select-empty">无匹配项</div>
-    <div v-else class="echo-select-list" @scroll.passive="handleScroll">
+    <div
+      v-else
+      class="echo-select-list"
+      @scroll.passive="handleScroll"
+      @keydown.esc.stop.prevent="open = false"
+    >
       <div :style="useVirtual ? { height: totalHeight + 'px', position: 'relative' } : {}">
         <div :style="useVirtual ? { transform: `translateY(${offsetY}px)` } : {}">
           <button
@@ -230,7 +251,7 @@ watch(open, (val) => {
               'is-disabled': option.disabled,
             }"
             :style="useVirtual ? { height: ITEM_HEIGHT + 'px' } : {}"
-            :disabled="option.disabled"
+            :disabled="props.disabled || option.disabled"
             @click="handleSelect(option)"
           >
             <span class="echo-select-item-text">{{ option.label }}</span>
@@ -259,6 +280,16 @@ watch(open, (val) => {
 .echo-select-trigger[data-state='open'] {
   background: var(--control-active-bg);
   border-color: color-mix(in srgb, var(--color-primary) 42%, var(--control-border));
+}
+
+.echo-select-trigger.is-disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.echo-select-trigger:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
 }
 
 .echo-select-tags {

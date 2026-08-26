@@ -78,7 +78,15 @@ export interface DspProviderControl {
   group?: string;
   visibleWhen?: { controlId: string; value: DspJsonValue };
   unit?: string;
-  range?: { min?: number; max?: number; step?: number };
+  range?: {
+    min?: number;
+    max?: number;
+    step?: number;
+    minLabel?: string;
+    maxLabel?: string;
+    /** Reverse the visual axis without changing persisted/provider values. */
+    inverted?: boolean;
+  };
   options?: Array<{ value: DspJsonValue; label: string }>;
   ownership?: DspControlOwnership;
 }

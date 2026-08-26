@@ -25,7 +25,14 @@ ABI 仍是 v2，以下只是 JSON 的兼容扩展。
           "label": "老化程度",
           "defaultValue": 0,
           "unit": "%",
-          "range": { "min": 0, "max": 100, "step": 1 },
+          "range": {
+            "min": 0,
+            "max": 100,
+            "step": 1,
+            "minLabel": "全新",
+            "maxLabel": "老化",
+            "inverted": true
+          },
           "ownership": "provider"
         }
       ]
@@ -39,6 +46,10 @@ ABI 仍是 v2，以下只是 JSON 的兼容扩展。
 - `select.options` 的 `value` 保留原 JSON 类型，数字选项不会被转换成字符串。
 - 默认值优先采用 `defaultValue`，兼容旧字段 `value`。
 - `description` 提供控件说明；`visibleWhen: {controlId, value}` 控制关联项显隐。
+- 数值控件可通过 `range.minLabel/maxLabel` 描述两端、`range.inverted` 反转视觉方向；
+  标签随方向交换，保存和下发的数值不变。黑胶为左侧老化100%、右侧全新0%。
+  老引擎未声明这些字段时保持原有呈现，不根据预设名字猜测方向。
+- 选项复用项目 `Select`，选项值经可逆编码保留原JSON类型；嵌套菜单不关闭外层音效面板。
 - `ownership: host/disabled`、只读类型、空选项列表不计入可配置能力。
 - `supportedSampleRates` 可选；当前处理采样率不支持时禁用预设选择并给出原因。
 - 预设只显示音效名称；声明可编辑参数的预设在名称右侧显示设置图标，不显示配置能力文字或实现进度。
@@ -92,6 +103,7 @@ UI 同时核对预设 ID、引擎路径、设备模式、已送达 JSON 和实�
 （0–20 整数，默认10；0为极慢速），以及声乐古风的人声／乐器平衡
 （0–100% 整数，默认25%；左侧人声、右侧乐器），均支持44.1/48/96kHz。
 这些参数由引擎实际处理，UI 无需添加酷狗专属代码；旋转的低音/声场增强尚未声明为可用设置。
+0.11.1 增加黑胶老化滑杆的端点文字和方向描述；需重新导入新引擎，DSP数值及已有保存设置不变。
 其他尚未实现参数处理的预设不声明控件；通用 UI 已可接收它们后续的能力声明，
 这不代表它们的 macOS 算法已经完成。
 
@@ -108,5 +120,5 @@ ECHO_TEST_DSP_PROVIDER=/absolute/path/to/libEchoMusicViper.dylib \
   dsp::provider::tests::runtime_preset_ -- --ignored --nocapture
 ```
 
-上述四项真实库测试要求0.11.0+。旋转在44.1/48/96kHz分别回报383/857/1169帧延迟，
+上述四项真实库测试要求0.11.1+。旋转在44.1/48/96kHz分别回报383/857/1169帧延迟，
 声乐古风为8447帧；切换回黑胶应恢复256帧。播放器不可缓存首次创建实例时的延迟。

@@ -16,6 +16,7 @@ import Popover from '@/components/ui/Popover.vue';
 import Scrollbar from '@/components/ui/Scrollbar.vue';
 import Button from '@/components/ui/Button.vue';
 import Badge from '@/components/ui/Badge.vue';
+import Select from '@/components/ui/Select.vue';
 import { iconArrowLeft, iconSettings, iconSlidersHorizontal } from '@/icons';
 import { usePlayerControls } from '@/composables/usePlayerControls';
 import EffectPlaza from './EffectPlaza.vue';
@@ -277,6 +278,18 @@ const setProviderControl = (control: DspProviderControl, value: DspJsonValue) =>
   );
   if (presetJson !== editingProviderPresetJson.value)
     settingStore.saveDspProviderPresetSettings(presetJson, providerEngineId.value);
+};
+const providerSelectOptions = (control: DspProviderControl) =>
+  (control.options ?? []).map((option) => ({
+    label: option.label,
+    value: JSON.stringify(option.value),
+  }));
+const setProviderSelect = (
+  control: DspProviderControl,
+  value: string | number | (string | number)[],
+) => {
+  const option = control.options?.find((item) => JSON.stringify(item.value) === value);
+  if (option) setProviderControl(control, option.value);
 };
 const resetProviderControls = () => {
   if (!editingProviderPresetId.value || !providerSettingsOpen.value) return;
@@ -906,25 +919,44 @@ withDefaults(defineProps<Props>(), {
                     {{ providerControlLabel(control) }}{{ control.unit || '' }}
                   </span>
                 </label>
-                <SliderRoot
+                <div
                   v-if="
                     control.type === 'number' && typeof providerControlValue(control) === 'number'
                   "
-                  :model-value="[providerControlValue(control) as number]"
-                  :min="control.range?.min ?? 0"
-                  :max="control.range?.max ?? 1"
-                  :step="control.range?.step ?? 0.01"
-                  :disabled="providerControlDisabled(control)"
-                  class="provider-slider"
-                  :aria-label="control.label || control.id"
-                  @update:model-value="(value) => previewProviderControl(control, value?.[0] ?? 0)"
-                  @value-commit="(value) => setProviderControl(control, value?.[0] ?? 0)"
+                  class="provider-number-control"
                 >
-                  <SliderTrack class="provider-slider-track">
-                    <SliderRange class="provider-slider-range" />
-                  </SliderTrack>
-                  <SliderThumb class="provider-slider-thumb" />
-                </SliderRoot>
+                  <SliderRoot
+                    :model-value="[providerControlValue(control) as number]"
+                    :min="control.range?.min ?? 0"
+                    :max="control.range?.max ?? 1"
+                    :step="control.range?.step ?? 0.01"
+                    :inverted="control.range?.inverted ?? false"
+                    :disabled="providerControlDisabled(control)"
+                    class="provider-slider"
+                    :aria-label="control.label || control.id"
+                    @update:model-value="
+                      (value) => previewProviderControl(control, value?.[0] ?? 0)
+                    "
+                    @value-commit="(value) => setProviderControl(control, value?.[0] ?? 0)"
+                  >
+                    <SliderTrack class="provider-slider-track">
+                      <SliderRange class="provider-slider-range" />
+                    </SliderTrack>
+                    <SliderThumb class="provider-slider-thumb" />
+                  </SliderRoot>
+                  <div
+                    v-if="control.range?.minLabel || control.range?.maxLabel"
+                    class="provider-slider-labels"
+                    aria-hidden="true"
+                  >
+                    <span>{{
+                      control.range.inverted ? control.range.maxLabel : control.range.minLabel
+                    }}</span>
+                    <span>{{
+                      control.range.inverted ? control.range.minLabel : control.range.maxLabel
+                    }}</span>
+                  </div>
+                </div>
                 <label v-else-if="control.type === 'boolean'" class="provider-checkbox">
                   <input
                     type="checkbox"
@@ -936,27 +968,15 @@ withDefaults(defineProps<Props>(), {
                   />
                   <span>{{ providerControlValue(control) ? '开启' : '关闭' }}</span>
                 </label>
-                <select
+                <Select
                   v-else-if="control.type === 'select'"
-                  :value="JSON.stringify(providerControlValue(control))"
+                  :model-value="JSON.stringify(providerControlValue(control))"
+                  :options="providerSelectOptions(control)"
                   :disabled="providerControlDisabled(control)"
                   class="provider-select"
                   :aria-label="control.label || control.id"
-                  @change="
-                    setProviderControl(
-                      control,
-                      JSON.parse(($event.target as HTMLSelectElement).value),
-                    )
-                  "
-                >
-                  <option
-                    v-for="option in control.options ?? []"
-                    :key="JSON.stringify(option.value)"
-                    :value="JSON.stringify(option.value)"
-                  >
-                    {{ option.label }}
-                  </option>
-                </select>
+                  @update:model-value="(value) => setProviderSelect(control, value)"
+                />
                 <span v-else class="provider-value">
                   {{ JSON.stringify(providerControlValue(control)) }}
                 </span>
@@ -1864,6 +1884,14 @@ withDefaults(defineProps<Props>(), {
   touch-action: none;
 }
 
+.provider-slider-labels {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--color-text-secondary);
+  font-size: 11px;
+}
+
 .provider-slider-track {
   position: relative;
   height: 4px;
@@ -1905,7 +1933,11 @@ withDefaults(defineProps<Props>(), {
   accent-color: var(--color-primary);
 }
 
-.provider-select,
+.provider-select {
+  width: 100%;
+  min-width: 0;
+}
+
 .provider-value {
   min-height: 28px;
   padding: 0 8px;

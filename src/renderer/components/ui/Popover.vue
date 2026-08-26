@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
+import { ref, computed, watch, onMounted, onUnmounted, inject, provide } from 'vue';
 import { PopoverRoot, PopoverTrigger, PopoverPortal, PopoverContent, PopoverArrow } from 'reka-ui';
 
 type TriggerMode = 'hover' | 'click' | 'focus' | 'manual';
@@ -40,6 +40,24 @@ const internalOpen = ref(false);
 // 真实 DOM 引用，用于点击外部判断
 const triggerWrapRef = ref<HTMLElement | null>(null);
 const contentWrapRef = ref<HTMLElement | null>(null);
+// Portalled descendants are outside our DOM subtree but inside this interaction.
+// Register only actual Vue descendants, not every open popover on the page.
+type PopoverBranch = (target: Node) => boolean;
+type RegisterPopoverBranch = (branch: PopoverBranch) => () => void;
+const parentRegisterBranch = inject<RegisterPopoverBranch | null>('echo-popover-branch', null);
+const childBranches = new Set<PopoverBranch>();
+const containsPopoverTarget: PopoverBranch = (target) =>
+  !!triggerWrapRef.value?.contains(target) ||
+  !!contentWrapRef.value?.contains(target) ||
+  [...childBranches].some((contains) => contains(target));
+const registerPopoverBranch: RegisterPopoverBranch = (branch) => {
+  childBranches.add(branch);
+  return () => {
+    childBranches.delete(branch);
+  };
+};
+provide('echo-popover-branch', registerPopoverBranch);
+const unregisterParentBranch = parentRegisterBranch?.(containsPopoverTarget);
 let showTimer: ReturnType<typeof setTimeout> | null = null;
 let hideTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -116,10 +134,7 @@ const handleTriggerClick = () => {
 const handleDocumentMousedown = (e: MouseEvent) => {
   if (props.trigger !== 'click' || !internalOpen.value) return;
   const target = e.target as Node;
-  // 点击在触发器内 → 不处理，让 handleTriggerClick 管
-  if (triggerWrapRef.value?.contains(target)) return;
-  // 点击在内容区内 → 不关闭
-  if (contentWrapRef.value?.contains(target)) return;
+  if (containsPopoverTarget(target)) return;
   doHide();
 };
 
@@ -157,6 +172,7 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
+  unregisterParentBranch?.();
   clearTimers();
   document.removeEventListener('mousedown', handleDocumentMousedown, true);
 });

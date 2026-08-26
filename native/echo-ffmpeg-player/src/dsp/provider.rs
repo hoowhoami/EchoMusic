@@ -343,7 +343,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires ECHO_TEST_DSP_PROVIDER pointing to EchoMusicViper 0.9.0+ with ViPERDSP"]
+    #[ignore = "requires ECHO_TEST_DSP_PROVIDER pointing to EchoMusicViper 0.11.1+ with ViPERDSP"]
     fn runtime_preset_controls_round_trip() {
         let path = std::env::var_os("ECHO_TEST_DSP_PROVIDER").expect("provider library path");
         let mut provider = NativeDspProvider::load(
@@ -364,6 +364,18 @@ mod tests {
             .find(|preset| preset["id"] == "kugou-vinyl")
             .unwrap();
         assert_eq!(lp["controls"].as_array().unwrap().len(), 2);
+        let aging = lp["controls"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|control| control["id"] == "aging")
+            .unwrap();
+        assert_eq!(aging["defaultValue"], 0);
+        assert_eq!(aging["range"]["min"], 0);
+        assert_eq!(aging["range"]["max"], 100);
+        assert_eq!(aging["range"]["minLabel"], "全新");
+        assert_eq!(aging["range"]["maxLabel"], "老化");
+        assert_eq!(aging["range"]["inverted"], true);
         for (year, aging) in [(1900, 37), (1930, 100), (1960, 50), (1980, 1), (2010, 0)] {
             provider.configure(&format!(r#"{{"presetId":"kugou-vinyl","controls":{{"year":{{"value":{year}}},"aging":{{"value":{aging}}}}}}}"#)).unwrap();
             let state: serde_json::Value =
