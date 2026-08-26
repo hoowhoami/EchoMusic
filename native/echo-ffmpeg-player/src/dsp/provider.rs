@@ -211,6 +211,16 @@ impl NativeDspProvider {
             return Err("DSP provider returned a null state JSON".to_string());
         }
         self.info.state_json = state;
+        // ABI v2's create-time info is a snapshot. Presets can change the
+        // processing delay without recreating the instance; newer engines
+        // publish their current delay in state JSON. Older engines retain
+        // their existing info value when this optional field is absent.
+        if let Some(latency) = provider_string(state)
+            .as_deref()
+            .and_then(state_latency_frames)
+        {
+            self.info.latency_frames = latency;
+        }
         Ok(())
     }
 
@@ -264,6 +274,11 @@ fn optional_ptr(value: Option<&CString>) -> *const c_char {
     value.map_or(std::ptr::null(), |value| value.as_ptr())
 }
 
+fn state_latency_frames(state: &str) -> Option<u32> {
+    let value: serde_json::Value = serde_json::from_str(state).ok()?;
+    u32::try_from(value.get("latencyFrames")?.as_u64()?).ok()
+}
+
 #[allow(dead_code)]
 fn provider_string(value: *const c_char) -> Option<String> {
     (!value.is_null()).then(|| {
@@ -271,4 +286,59 @@ fn provider_string(value: *const c_char) -> Option<String> {
             .to_string_lossy()
             .into_owned()
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn state_latency_is_optional_nonnegative_integer() {
+        assert_eq!(state_latency_frames(r#"{"latencyFrames":256}"#), Some(256));
+        assert_eq!(state_latency_frames(r#"{"latencyFrames":0}"#), Some(0));
+        for state in [
+            "{}",
+            "not JSON",
+            r#"{"opaque":{"latencyFrames":256}}"#,
+            r#"{"latencyFrames":null}"#,
+            r#"{"latencyFrames":"256"}"#,
+            r#"{"latencyFrames":-1}"#,
+            r#"{"latencyFrames":1.5}"#,
+            r#"{"latencyFrames":4294967296}"#,
+        ] {
+            assert_eq!(state_latency_frames(state), None, "{state}");
+        }
+    }
+
+    #[test]
+    #[ignore = "requires ECHO_TEST_DSP_PROVIDER pointing to EchoMusicViper 0.8.1+ with ViPERDSP"]
+    fn runtime_preset_latency_refreshes() {
+        let path = std::env::var_os("ECHO_TEST_DSP_PROVIDER").expect("provider library path");
+        let mut provider = NativeDspProvider::load(
+            Path::new(&path),
+            48000,
+            2,
+            PROVIDER_MODE_HEADPHONE,
+            Some(r#"{"presetId":"kugou-hifi-live"}"#),
+            None,
+        )
+        .expect("load reference engine");
+        assert_eq!(provider.info().latency_frames, 4863);
+        for (id, latency) in [
+            ("kugou-vinyl", 256),
+            ("kugou-clear-vocal", 0),
+            ("kugou-hifi-live", 4863),
+            ("kugou-vinyl", 256),
+        ] {
+            provider
+                .configure(&format!(r#"{{"presetId":"{id}"}}"#))
+                .unwrap();
+            assert_eq!(provider.info().latency_frames, latency);
+            assert_eq!(provider.descriptor().latency_frames, latency);
+        }
+        assert!(provider
+            .configure(r#"{"presetId":"kugou-vinyl","controls":{"aging":50}}"#)
+            .is_err());
+        assert_eq!(provider.info().latency_frames, 256);
+    }
 }

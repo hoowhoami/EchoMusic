@@ -116,6 +116,13 @@ of frames. Providers with internal buffering report their fixed latency and use 
 atomically from the audio thread's point of view. `get_state_json` returns a borrowed UTF-8 string
 whose lifetime lasts until the next Provider call.
 
+`EchoDspInfo.latency_frames` is the initial delay, not a writable host-owned pointer.
+If `configure` changes the processing delay, the engine should publish the current frame count as
+the optional top-level `state_json.latencyFrames` (integer, 0 through `UINT32_MAX`). After a
+successful configuration, the Host refreshes this value for both graph delay compensation and
+the descriptor. Missing/invalid values retain the previous delay for backward compatibility;
+zero is a valid update. This JSON extension does not change the ABI v2 structure layout.
+
 ## Loading Rules
 
 - Load only an explicit user-selected native provider path.
@@ -166,6 +173,7 @@ falls back to `provider_id` for compatibility.
 {
   "schemaVersion": 1,
   "effect": {"id": "preset-8061", "name": "Example"},
+  "latencyFrames": 256,
   "controls": {
     "band.0.gain": {"type": "number", "value": 4.5, "unit": "dB", "ownership": "provider"},
     "room.enabled": {"type": "boolean", "value": true, "ownership": "provider"}
