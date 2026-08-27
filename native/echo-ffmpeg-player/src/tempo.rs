@@ -20,7 +20,11 @@ const WSOLA_LOWER_BOUND: f32 = 0.7;
 const WSOLA_UPPER_BOUND: f32 = 1.5;
 
 pub fn normalize_speed(value: f64) -> f32 {
-    value.clamp(MIN_SPEED as f64, MAX_SPEED as f64) as f32
+    if value.is_finite() {
+        value.clamp(MIN_SPEED as f64, MAX_SPEED as f64) as f32
+    } else {
+        1.0
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -406,6 +410,8 @@ mod tests {
         assert_eq!(normalize_speed(0.1), MIN_SPEED);
         assert_eq!(normalize_speed(5.0), MAX_SPEED);
         assert_eq!(normalize_speed(8.0), MAX_SPEED);
+        assert_eq!(normalize_speed(f64::NAN), 1.0);
+        assert_eq!(normalize_speed(f64::INFINITY), 1.0);
 
         let low = TempoProcessor::new(0.01, 48_000, TEST_CHANNELS).expect("tempo processor");
         assert!((low.speed() - MIN_SPEED).abs() < f32::EPSILON);

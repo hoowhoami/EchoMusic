@@ -30,7 +30,7 @@ Per-preset controls, persistence and runtime acknowledgement are described in
 
 ### Builtin Basic DSP
 
-- 10-band parametric EQ with deterministic headroom
+- 10-band parametric EQ with measured cascade headroom and click-free updates
 - generic mono, stereo and true-stereo convolution
 - automatic IRS frequency-response headroom and stereo-linked peak protection
 - deterministic latency reporting, EOF tail draining and boundary reset
@@ -54,18 +54,27 @@ specific vendor. IRS files are decoded and prepared off the streaming path; stea
 convolution and limiting do not allocate. The convolver applies the complete impulse response at
 100% wet because the direct component, when present, is already part of the IRS.
 
-Two-channel IRS files are routed as `L→L, R→R`. Four-channel true-stereo files use the encoded
+Mono IRS files are expanded to stereo. Two-channel IRS files are routed as `L→L, R→R`.
+Four-channel true-stereo files use the encoded
 channel order `[L→L, L→R, R→L, R→R]` (`[LL, LR, RL, RR]`). When decoding a multichannel IRS, the
 Host preserves the input channel layout whenever the channel count is unchanged. This prevents
 FFmpeg from treating a discrete true-stereo matrix as a default surround-speaker layout and
 remixing or dropping channels. Files using a different four-channel convention must be converted
-to `[LL, LR, RL, RR]` before import.
+to `[LL, LR, RL, RR]` before import. Basic DSP accepts only mono, stereo and four-channel
+true-stereo IRS files; ambiguous 3-channel and surround layouts are rejected instead of being
+silently remixed. IRS content longer than eight seconds is also rejected rather than truncated.
 
-Before partitioning, the Host measures the oversampled frequency response. Responses above unity
-receive automatic pre-limiter headroom up to a 0 dB linear peak; unity and quieter responses are
-left unchanged. The linked limiter and final soft limiter handle residual numeric and reconstruction
-peaks. The measured peak, applied headroom and IRS duration are exposed in the audio graph snapshot
-and playback log.
+Before partitioning, the Host measures the oversampled frequency response. For true-stereo input,
+the per-output matrix row sum provides a worst-case peak bound when both input channels can reach
+full scale. Responses above unity receive automatic pre-limiter headroom up to a 0 dB linear peak;
+unity and quieter responses are left unchanged. The linked limiter and final soft limiter handle
+residual numeric and reconstruction peaks. The measured peak, applied headroom and IRS duration are
+exposed in the audio graph snapshot and playback log.
+
+The EQ measures the complete biquad cascade and applies its headroom before filtering. Live EQ
+changes crossfade the old and new filter states over 15 ms. IRS changes use the same transition
+window after the new convolution and limiter latency, avoiding an abrupt non-zero onset after the
+output queue is re-primed.
 
 At a real EOF, Basic DSP zero-pads partial convolution blocks, emits the complete IRS decay and
 drains its lookahead limiter before the tempo engine is finalized. A gapless track boundary resets

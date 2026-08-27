@@ -15,8 +15,11 @@ const EARLY_CONVOLUTION_BLOCK_SIZE: usize = 256;
 const LATE_CONVOLUTION_BLOCK_SIZE: usize = 1024;
 const EARLY_CONVOLUTION_FRAMES: usize = 4096;
 const MAX_IR_SECONDS: f32 = 8.0;
-const IR_TRIM_THRESHOLD: f32 = 0.00003;
+const IR_SILENCE_THRESHOLD: f32 = 0.00000001;
+const IR_TRIM_RELATIVE_THRESHOLD: f32 = 0.00001;
 const IR_ANALYSIS_OVERSAMPLING: usize = 4;
+const EQ_RESPONSE_BINS: usize = 32768;
+const DSP_TRANSITION_FADE_SECONDS: f32 = 0.015;
 
 #[derive(Clone, Debug)]
 pub struct DspSettings {
@@ -87,9 +90,12 @@ pub struct DspChain {
     channels: usize,
     eq_headroom_linear: f32,
     eq: MultichannelEqualizer,
+    eq_transition: Option<EqualizerTransition>,
+    eq_transition_buffer: Vec<f32>,
     spatial: Option<SpatialEffect>,
     provider: Option<NativeDspProvider>,
     spatial_limiter: Option<LinkedLimiter>,
+    spatial_transition: Option<OutputFadeIn>,
 }
 
 impl DspChain {
@@ -115,21 +121,25 @@ impl DspChain {
                 settings.provider_resource_json.as_deref(),
             )?;
         }
+        let spatial = settings
+            .spatial
+            .as_ref()
+            .filter(|spatial| channels == 2 && spatial.sample_rate == sample_rate)
+            .map(SpatialEffect::new);
+        let spatial_limiter =
+            (spatial.is_some() && settings.provider_path.is_none() && channels == 2)
+                .then(|| LinkedLimiter::new(sample_rate, channels));
         Ok(Self {
             settings: settings.clone(),
             channels,
-            eq_headroom_linear: eq_headroom_gain(&settings.equalizer),
+            eq_headroom_linear: eq_headroom_gain(sample_rate, &settings.equalizer),
             eq: MultichannelEqualizer::new(sample_rate, channels, &settings.equalizer),
-            spatial: settings
-                .spatial
-                .as_ref()
-                .filter(|spatial| channels == 2 && spatial.sample_rate == sample_rate)
-                .map(SpatialEffect::new),
+            eq_transition: None,
+            eq_transition_buffer: Vec::new(),
+            spatial,
             provider,
-            spatial_limiter: (settings.spatial.is_some()
-                && settings.provider_path.is_none()
-                && channels == 2)
-                .then(|| LinkedLimiter::new(sample_rate, channels)),
+            spatial_limiter,
+            spatial_transition: None,
         })
     }
 
@@ -145,8 +155,15 @@ impl DspChain {
             return Ok(());
         }
         if eq_changed {
-            self.eq_headroom_linear = eq_headroom_gain(&settings.equalizer);
-            self.eq = MultichannelEqualizer::new(sample_rate, self.channels, &settings.equalizer);
+            let next_headroom = eq_headroom_gain(sample_rate, &settings.equalizer);
+            let next_eq =
+                MultichannelEqualizer::new(sample_rate, self.channels, &settings.equalizer);
+            let previous_headroom = std::mem::replace(&mut self.eq_headroom_linear, next_headroom);
+            let previous = std::mem::replace(&mut self.eq, next_eq);
+            self.eq_transition = self
+                .provider
+                .is_none()
+                .then(|| EqualizerTransition::new(sample_rate, previous, previous_headroom));
             self.settings.equalizer = settings.equalizer;
         }
         if spatial_changed {
@@ -159,6 +176,12 @@ impl DspChain {
                 (self.spatial.is_some() && settings.provider_path.is_none() && self.channels == 2)
                     .then(|| LinkedLimiter::new(sample_rate, self.channels));
             self.settings.spatial = settings.spatial.clone();
+        }
+        if spatial_changed {
+            self.spatial_transition = Some(OutputFadeIn::new(
+                sample_rate,
+                self.spatial_latency_frames(),
+            ));
         }
         if provider_preset_changed {
             if let Some(preset_json) = settings.provider_preset_json.as_deref() {
@@ -203,6 +226,12 @@ impl DspChain {
             limiter.process_interleaved(&mut output[tail_start..]);
             limiter.drain_interleaved(output);
         }
+        if let Some(transition) = self.spatial_transition.as_mut() {
+            transition.apply_interleaved(&mut output[tail_start..], self.channels);
+            if transition.is_complete() {
+                self.spatial_transition = None;
+            }
+        }
         Ok(())
     }
 
@@ -211,11 +240,21 @@ impl DspChain {
             provider.process(samples, self.channels)?;
             return Ok(());
         }
-        self.eq.process_interleaved(samples);
-        if (self.eq_headroom_linear - 1.0).abs() >= f32::EPSILON {
-            for sample in samples.iter_mut() {
-                *sample *= self.eq_headroom_linear;
+        if let Some(transition) = self.eq_transition.as_mut() {
+            self.eq_transition_buffer.clear();
+            self.eq_transition_buffer.extend_from_slice(samples);
+            process_equalizer(
+                &mut transition.previous,
+                transition.previous_headroom_linear,
+                &mut self.eq_transition_buffer,
+            );
+            process_equalizer(&mut self.eq, self.eq_headroom_linear, samples);
+            transition.mix_interleaved(&self.eq_transition_buffer, samples, self.channels);
+            if transition.is_complete() {
+                self.eq_transition = None;
             }
+        } else {
+            process_equalizer(&mut self.eq, self.eq_headroom_linear, samples);
         }
         if self.channels == 2 {
             if let Some(spatial) = self.spatial.as_mut() {
@@ -223,6 +262,12 @@ impl DspChain {
             }
             if let Some(limiter) = self.spatial_limiter.as_mut() {
                 limiter.process_interleaved(samples);
+            }
+        }
+        if let Some(transition) = self.spatial_transition.as_mut() {
+            transition.apply_interleaved(samples, self.channels);
+            if transition.is_complete() {
+                self.spatial_transition = None;
             }
         }
         Ok(())
@@ -240,18 +285,115 @@ impl DspChain {
     }
 
     pub fn spatial_latency_secs(&self) -> f64 {
-        let convolution = self
-            .spatial
-            .as_ref()
-            .map(|spatial| spatial.latency_frames() as f64 / f64::from(self.eq.sample_rate.max(1)))
-            .unwrap_or_default();
-        let limiter = if self.spatial_limiter.is_some() {
-            LinkedLimiter::LOOKAHEAD as f64 / f64::from(self.eq.sample_rate.max(1))
-        } else {
-            0.0
-        };
-        convolution + limiter
+        self.spatial_latency_frames() as f64 / f64::from(self.eq.sample_rate.max(1))
     }
+
+    fn spatial_latency_frames(&self) -> usize {
+        let limiter_latency = if self.spatial_limiter.is_some() {
+            LinkedLimiter::LOOKAHEAD
+        } else {
+            0
+        };
+        self.spatial
+            .as_ref()
+            .map(SpatialEffect::latency_frames)
+            .unwrap_or_default()
+            .saturating_add(limiter_latency)
+    }
+}
+
+fn process_equalizer(
+    equalizer: &mut MultichannelEqualizer,
+    headroom_linear: f32,
+    samples: &mut [f32],
+) {
+    if (headroom_linear - 1.0).abs() >= f32::EPSILON {
+        for sample in samples.iter_mut() {
+            *sample *= headroom_linear;
+        }
+    }
+    equalizer.process_interleaved(samples);
+}
+
+struct EqualizerTransition {
+    previous: MultichannelEqualizer,
+    previous_headroom_linear: f32,
+    fade_frames: usize,
+    elapsed_frames: usize,
+}
+
+impl EqualizerTransition {
+    fn new(
+        sample_rate: u32,
+        previous: MultichannelEqualizer,
+        previous_headroom_linear: f32,
+    ) -> Self {
+        Self {
+            previous,
+            previous_headroom_linear,
+            fade_frames: transition_fade_frames(sample_rate),
+            elapsed_frames: 0,
+        }
+    }
+
+    fn mix_interleaved(&mut self, previous: &[f32], next: &mut [f32], channels: usize) {
+        for (previous_frame, next_frame) in previous
+            .chunks_exact(channels.max(1))
+            .zip(next.chunks_exact_mut(channels.max(1)))
+        {
+            let next_gain = ((self.elapsed_frames + 1) as f32 / self.fade_frames as f32).min(1.0);
+            let previous_gain = 1.0 - next_gain;
+            for (previous, next) in previous_frame.iter().zip(next_frame) {
+                *next = *previous * previous_gain + *next * next_gain;
+            }
+            self.elapsed_frames = self.elapsed_frames.saturating_add(1);
+        }
+    }
+
+    fn is_complete(&self) -> bool {
+        self.elapsed_frames >= self.fade_frames
+    }
+}
+
+struct OutputFadeIn {
+    delay_frames: usize,
+    fade_frames: usize,
+    elapsed_frames: usize,
+}
+
+impl OutputFadeIn {
+    fn new(sample_rate: u32, delay_frames: usize) -> Self {
+        Self {
+            delay_frames,
+            fade_frames: transition_fade_frames(sample_rate),
+            elapsed_frames: 0,
+        }
+    }
+
+    fn apply_interleaved(&mut self, samples: &mut [f32], channels: usize) {
+        for frame in samples.chunks_exact_mut(channels.max(1)) {
+            let gain = if self.elapsed_frames < self.delay_frames {
+                0.0
+            } else {
+                let fade_index = self.elapsed_frames - self.delay_frames;
+                ((fade_index + 1) as f32 / self.fade_frames as f32).min(1.0)
+            };
+            for sample in frame {
+                *sample *= gain;
+            }
+            self.elapsed_frames = self.elapsed_frames.saturating_add(1);
+        }
+    }
+
+    fn is_complete(&self) -> bool {
+        self.elapsed_frames >= self.delay_frames.saturating_add(self.fade_frames)
+    }
+}
+
+fn transition_fade_frames(sample_rate: u32) -> usize {
+    (sample_rate as f32 * DSP_TRANSITION_FADE_SECONDS)
+        .round()
+        .max(1.0) as usize
 }
 
 fn ensure_provider_accepts_resources(
@@ -350,8 +492,8 @@ pub fn prepare_spatial_effect(
     let source_channels = usize::try_from(reader.source_info().channels)
         .ok()
         .filter(|channels| *channels > 0)
-        .unwrap_or(2);
-    let ir_channels = if source_channels >= 4 { 4 } else { 2 };
+        .ok_or_else(|| "impulse response has an invalid channel count".to_string())?;
+    let ir_channels = impulse_output_channels(source_channels)?;
     let mut resampler = reader
         .build_resampler(
             ResampleOptions::new()
@@ -372,11 +514,7 @@ pub fn prepare_spatial_effect(
             .process::<f32>(frame.as_ref())
             .map_err(|err| format!("failed to resample impulse response frame: {err}"))?;
         if has_output {
-            interleaved.extend_from_slice(resampler.output_as::<f32>());
-            if interleaved.len() >= max_samples {
-                interleaved.truncate(max_samples);
-                break;
-            }
+            append_impulse_samples(&mut interleaved, resampler.output_as::<f32>(), max_samples)?;
         }
         if frame.is_none() {
             break;
@@ -425,6 +563,30 @@ pub fn prepare_spatial_effect(
     })
 }
 
+fn impulse_output_channels(source_channels: usize) -> Result<usize, String> {
+    match source_channels {
+        1 | 2 => Ok(2),
+        4 => Ok(4),
+        _ => Err(format!(
+            "unsupported impulse response channel count: {source_channels}; expected mono, stereo, or 4-channel true-stereo"
+        )),
+    }
+}
+
+fn append_impulse_samples(
+    target: &mut Vec<f32>,
+    decoded: &[f32],
+    max_samples: usize,
+) -> Result<(), String> {
+    if decoded.len() > max_samples.saturating_sub(target.len()) {
+        return Err(format!(
+            "impulse response exceeds the {MAX_IR_SECONDS:.0}-second limit"
+        ));
+    }
+    target.extend_from_slice(decoded);
+    Ok(())
+}
+
 fn spatial_resource_identity(spatial: &Option<PreparedSpatialEffect>) -> Option<(&str, u32, u64)> {
     spatial.as_ref().map(|spatial| {
         (
@@ -438,6 +600,16 @@ fn spatial_resource_identity(spatial: &Option<PreparedSpatialEffect>) -> Option<
 fn trim_impulse_response(samples: &mut Vec<f32>, channels: usize) -> bool {
     let channels = channels.max(1);
     let frames = samples.len() / channels;
+    let overall_peak = samples
+        .iter()
+        .copied()
+        .filter(|sample| sample.is_finite())
+        .map(f32::abs)
+        .fold(0.0, f32::max);
+    if overall_peak < IR_SILENCE_THRESHOLD {
+        return false;
+    }
+    let trim_threshold = (overall_peak * IR_TRIM_RELATIVE_THRESHOLD).max(IR_SILENCE_THRESHOLD);
     let mut last_active = 0usize;
     for frame in 0..frames {
         let frame_start = frame * channels;
@@ -448,15 +620,9 @@ fn trim_impulse_response(samples: &mut Vec<f32>, channels: usize) -> bool {
             .copied()
             .map(f32::abs)
             .fold(0.0, f32::max);
-        if peak >= IR_TRIM_THRESHOLD {
+        if peak >= trim_threshold {
             last_active = frame;
         }
-    }
-    if samples
-        .iter()
-        .all(|sample| !sample.is_finite() || sample.abs() < IR_TRIM_THRESHOLD)
-    {
-        return false;
     }
     let keep_frames = last_active + 1;
     samples.truncate(keep_frames * channels);
@@ -674,10 +840,28 @@ impl Biquad {
     }
 
     fn process(&mut self, sample: f32) -> f32 {
+        let sample = if sample.is_finite() { sample } else { 0.0 };
         let out = self.b0 * sample + self.z1;
+        if !out.is_finite() {
+            self.z1 = 0.0;
+            self.z2 = 0.0;
+            return 0.0;
+        }
         self.z1 = self.b1 * sample - self.a1 * out + self.z2;
         self.z2 = self.b2 * sample - self.a2 * out;
-        out.clamp(-4.0, 4.0)
+        if !self.z1.is_finite() || !self.z2.is_finite() {
+            self.z1 = 0.0;
+            self.z2 = 0.0;
+        }
+        out
+    }
+
+    fn frequency_response(&self, omega: f32) -> Complex32 {
+        let z1 = Complex32::new(omega.cos(), -omega.sin());
+        let z2 = z1 * z1;
+        let numerator = self.b0 + self.b1 * z1 + self.b2 * z2;
+        let denominator = 1.0 + self.a1 * z1 + self.a2 * z2;
+        numerator / denominator
     }
 }
 
@@ -831,13 +1015,19 @@ impl SegmentConvolver {
         let forward = planner.plan_fft_forward(prepared.fft_size);
         let inverse = planner.plan_fft_inverse(prepared.fft_size);
         let partitions = prepared.partitions.len().max(1);
+        let mut output = VecDeque::with_capacity(
+            prepared
+                .output_delay_frames
+                .saturating_add(prepared.block_size),
+        );
+        output.extend(std::iter::repeat_n(0.0, prepared.output_delay_frames));
         Self {
             input_spectra: vec![vec![Complex32::ZERO; prepared.fft_size]; partitions],
             input_fft: vec![Complex32::ZERO; prepared.fft_size],
             input_block: Vec::with_capacity(prepared.block_size),
             overlap: vec![0.0; prepared.block_size],
             scratch: vec![Complex32::ZERO; prepared.fft_size],
-            output: VecDeque::from(vec![0.0; prepared.output_delay_frames]),
+            output,
             write_pos: 0,
             prepared,
             forward,
@@ -986,9 +1176,24 @@ fn gain_to_db(gain: f32) -> f32 {
     20.0 * gain.max(f32::MIN_POSITIVE).log10()
 }
 
-fn eq_headroom_gain(gains: &[f32; EQ_BAND_COUNT]) -> f32 {
-    let max_boost = gains.iter().copied().fold(0.0f32, f32::max);
-    db_to_gain(-max_boost.max(0.0))
+fn eq_headroom_gain(sample_rate: u32, gains: &[f32; EQ_BAND_COUNT]) -> f32 {
+    let filters = make_eq_filters(sample_rate, gains);
+    if filters.is_empty() {
+        return 1.0;
+    }
+    let peak = (0..=EQ_RESPONSE_BINS)
+        .map(|index| std::f32::consts::PI * index as f32 / EQ_RESPONSE_BINS as f32)
+        .map(|omega| {
+            filters
+                .iter()
+                .fold(Complex32::new(1.0, 0.0), |response, filter| {
+                    response * filter.frequency_response(omega)
+                })
+                .norm()
+        })
+        .filter(|gain| gain.is_finite())
+        .fold(1.0f32, f32::max);
+    automatic_ir_output_gain(peak)
 }
 
 #[cfg(test)]
@@ -1080,6 +1285,100 @@ mod tests {
             .expect("basic DSP should process");
 
         assert!(rms(&samples) < before * 0.75);
+    }
+
+    #[test]
+    fn equalizer_headroom_uses_the_combined_filter_response() {
+        let mut gains = [0.0; EQ_BAND_COUNT];
+        gains[3] = 12.0;
+        gains[4] = 12.0;
+
+        let headroom = eq_headroom_gain(48_000, &gains);
+        let single_band_headroom = db_to_gain(-12.0);
+
+        assert!(headroom.is_finite());
+        assert!(headroom > 0.0);
+        assert!(headroom < single_band_headroom);
+        assert_eq!(eq_headroom_gain(48_000, &[0.0; EQ_BAND_COUNT]), 1.0);
+    }
+
+    #[test]
+    fn boosted_equalizer_stays_finite_without_internal_hard_clipping() {
+        let settings = DspSettings {
+            equalizer: [12.0; EQ_BAND_COUNT],
+            ..DspSettings::default()
+        };
+        let mut chain = DspChain::new(48_000, 2, &settings).expect("chain should initialize");
+        let mut samples = (0..48_000)
+            .flat_map(|frame| {
+                let value = (2.0 * std::f32::consts::PI * 997.0 * frame as f32 / 48_000.0).sin();
+                [value, value]
+            })
+            .collect::<Vec<_>>();
+
+        chain
+            .process_interleaved(&mut samples)
+            .expect("boosted equalizer should process");
+
+        assert!(samples.iter().all(|sample| sample.is_finite()));
+        assert!(samples.iter().all(|sample| sample.abs() <= 1.05));
+    }
+
+    #[test]
+    fn equalizer_updates_crossfade_from_the_previous_filter_state() {
+        let mut chain =
+            DspChain::new(48_000, 2, &DspSettings::default()).expect("chain should initialize");
+        let mut next = DspSettings::default();
+        next.equalizer[5] = 12.0;
+        chain.update_settings(&next).expect("EQ should update");
+        let mut first = vec![0.5; 64 * 2];
+
+        chain
+            .process_interleaved(&mut first)
+            .expect("transition should process");
+
+        assert!(
+            first[0] > 0.45,
+            "first EQ transition frame must stay continuous"
+        );
+        assert!(chain.eq_transition.is_some());
+
+        let mut remainder = vec![0.5; transition_fade_frames(48_000) * 2];
+        chain
+            .process_interleaved(&mut remainder)
+            .expect("transition should finish");
+        assert!(chain.eq_transition.is_none());
+    }
+
+    #[test]
+    fn impulse_channel_contract_rejects_ambiguous_surround_layouts() {
+        assert_eq!(impulse_output_channels(1).expect("mono"), 2);
+        assert_eq!(impulse_output_channels(2).expect("stereo"), 2);
+        assert_eq!(impulse_output_channels(4).expect("true stereo"), 4);
+        for channels in [0, 3, 5, 6, 8] {
+            assert!(impulse_output_channels(channels).is_err());
+        }
+    }
+
+    #[test]
+    fn impulse_sample_budget_rejects_instead_of_truncating() {
+        let mut samples = vec![0.25, -0.25];
+        let before = samples.clone();
+        let err = append_impulse_samples(&mut samples, &[0.5, -0.5], 3)
+            .expect_err("oversized impulse should be rejected");
+
+        assert!(err.contains("8-second limit"));
+        assert_eq!(samples, before);
+    }
+
+    #[test]
+    fn impulse_trim_preserves_quiet_tail_relative_to_peak() {
+        let mut samples = vec![1.0, 0.00002, 0.0, 0.0];
+        assert!(trim_impulse_response(&mut samples, 1));
+        assert_eq!(samples, vec![1.0, 0.00002]);
+
+        let mut silent = vec![IR_SILENCE_THRESHOLD * 0.5; 8];
+        assert!(!trim_impulse_response(&mut silent, 1));
     }
 
     #[test]
@@ -1237,6 +1536,38 @@ mod tests {
         assert!((boosted_peak - 2.0).abs() < 0.00001);
         assert!((output_gain - 0.5).abs() < 0.00001);
         assert!(boosted_peak * output_gain <= 1.0 + 0.00001);
+    }
+
+    #[test]
+    fn output_transition_honors_latency_then_fades_per_frame() {
+        let mut transition = OutputFadeIn {
+            delay_frames: 2,
+            fade_frames: 4,
+            elapsed_frames: 0,
+        };
+        let mut samples = vec![1.0; 6 * 2];
+
+        transition.apply_interleaved(&mut samples, 2);
+
+        let expected = [0.0, 0.0, 0.25, 0.5, 0.75, 1.0];
+        for (frame, expected) in samples.chunks_exact(2).zip(expected) {
+            assert!((frame[0] - expected).abs() < f32::EPSILON);
+            assert!((frame[1] - expected).abs() < f32::EPSILON);
+        }
+        assert!(transition.is_complete());
+    }
+
+    #[test]
+    fn mismatched_spatial_plan_does_not_enable_a_dry_signal_limiter() {
+        let settings = DspSettings {
+            spatial: Some(prepared_spatial(2, &[&[1.0], &[1.0]])),
+            ..DspSettings::default()
+        };
+        let chain = DspChain::new(44_100, 2, &settings).expect("chain should initialize");
+
+        assert!(chain.spatial.is_none());
+        assert!(chain.spatial_limiter.is_none());
+        assert_eq!(chain.spatial_latency_secs(), 0.0);
     }
 
     #[test]

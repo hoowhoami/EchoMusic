@@ -9,6 +9,16 @@ mod provider;
 mod seek;
 mod spectrum;
 
+fn ensure_finite_parameter(value: f64, name: &str) -> napi::Result<()> {
+    if value.is_finite() {
+        Ok(())
+    } else {
+        Err(napi::Error::from_reason(format!(
+            "{name} must be a finite number"
+        )))
+    }
+}
+
 pub(crate) use dsp::{prepare_dsp_settings_for_mix_rate, sync_current_session_dsp_settings};
 pub use dsp::{
     set_audio_effect, set_equalizer, set_normalization_gain, set_speed, SetAudioEffectTask,

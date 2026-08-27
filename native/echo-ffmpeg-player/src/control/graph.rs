@@ -202,6 +202,10 @@ fn apply_audio_graph_parameter_patch_to_draft(
 ) -> napi::Result<()> {
     let kind = patch.kind.trim();
     let name = patch.name.trim();
+    ensure_finite_parameter(
+        patch.value,
+        &format!("audio graph parameter '{kind}.{name}'"),
+    )?;
     match kind {
         "tempo" if name == "speed" => {
             let speed = tempo::normalize_speed(patch.value);
@@ -342,5 +346,32 @@ mod tests {
         assert!(runtime.spatial_file_path.is_none());
         assert_eq!(runtime.spatial_request_seq, 8);
         assert_eq!(runtime.audio_graph_revision, 0);
+    }
+
+    #[test]
+    fn audio_graph_plan_rejects_non_finite_parameters_transactionally() {
+        for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            let mut runtime = PlayerRuntime::new(PlayerConfig::default());
+            runtime.dsp_settings.equalizer[0] = 3.0;
+            let before_settings = runtime.dsp_settings.clone();
+            let plan = AudioGraphPlanPatch {
+                nodes: Some(vec![AudioGraphNodePlanPatch {
+                    kind: "equalizer".to_string(),
+                    enabled: Some(false),
+                }]),
+                patches: vec![AudioGraphParameterPatch {
+                    kind: "normalization".to_string(),
+                    name: "gain".to_string(),
+                    value,
+                }],
+            };
+
+            let err = apply_audio_graph_plan_patch(&mut runtime, &plan)
+                .expect_err("non-finite patch should reject the whole plan");
+
+            assert!(err.reason.contains("must be a finite number"));
+            assert_eq!(runtime.dsp_settings.equalizer, before_settings.equalizer);
+            assert_eq!(runtime.audio_graph_revision, 0);
+        }
     }
 }

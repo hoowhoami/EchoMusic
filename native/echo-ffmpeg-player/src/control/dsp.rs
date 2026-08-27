@@ -12,6 +12,7 @@ impl Task for SetSpeedTask {
     type JsValue = ();
 
     fn compute(&mut self) -> napi::Result<Self::Output> {
+        ensure_finite_parameter(self.speed, "playback speed")?;
         let speed = tempo::normalize_speed(self.speed);
         with_runtime(|runtime| {
             if (runtime.dsp_settings.speed - speed).abs() < f32::EPSILON {
@@ -280,6 +281,7 @@ impl Task for SetNormalizationGainTask {
     type JsValue = ();
 
     fn compute(&mut self) -> napi::Result<Self::Output> {
+        ensure_finite_parameter(self.gain_db, "normalization gain")?;
         with_runtime(|runtime| {
             runtime.dsp_settings.normalization_gain_db = self.gain_db.clamp(-40.0, 24.0) as f32;
             sync_current_session_dsp_settings(runtime);
