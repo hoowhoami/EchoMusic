@@ -49,6 +49,8 @@
 
 - 主程序支持自定义音效引擎，管理自定义音效引擎。
 - 用户可以根据喜好定制符合自己音乐风格的音效引擎。
+- 开发自定义引擎请参阅 [音效引擎 Provider 架构](docs/dsp-provider-architecture.md)；
+  manifest、预设参数和通用设置面板协议见 [Provider 设置 UI](docs/dsp-provider-settings.md)。
 
 ## 🛠️ 技术栈
 
