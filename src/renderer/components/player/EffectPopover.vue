@@ -452,7 +452,7 @@ const impulseResponseSupport = (file: SpatialAudioEffectEntry) =>
 const currentPlaybackEffectSelection = computed(() => {
   if (impulseResponseActive.value && selectedImpulseResponse.value) {
     const effect = selectedImpulseResponse.value;
-    const type = effect.kind === 'imported-ir' ? '空间音效' : '在线音效';
+    const type = effect.kind === 'imported-ir' ? '本地音效' : '在线音效';
     return {
       active: true,
       name: getImpulseResponseDisplayName(effect.name),

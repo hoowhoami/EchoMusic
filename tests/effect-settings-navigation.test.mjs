@@ -5,6 +5,7 @@ import { transformSync } from 'esbuild';
 import * as vue from 'vue';
 import { compileScript, parse } from 'vue/compiler-sfc';
 import * as settings from '../src/shared/dsp-provider-settings.ts';
+import * as audio from '../src/shared/audio.ts';
 import * as audioSupport from '../src/shared/audio-effect-support.ts';
 
 // Exercise the actual SFC setup/watchers without Electron, DOM, or audio playback.
@@ -25,6 +26,7 @@ function setupComponent(t, file, props, imports = {}) {
     },
     '@vueuse/core': { useThrottleFn: (fn) => fn },
     '../../../shared/dsp-provider-settings': settings,
+    '../../../shared/audio': audio,
     ...imports,
   };
   new Function('require', 'module', 'exports', code)(
@@ -149,6 +151,7 @@ test('Basic DSP convolution exposes a per-effect mix and providers hide the host
 
   assert.equal(api.basicDspConvolutionActive.value, true);
   assert.equal(api.builtinAudioEngineActive.value, true);
+  assert.equal(api.currentPlaybackEffectSelection.value.type, '本地音效');
   assert.equal(api.convolutionMixPercent.value, 50);
   api.previewConvolutionMix(73);
   assert.equal(api.convolutionMixPercent.value, 73);
