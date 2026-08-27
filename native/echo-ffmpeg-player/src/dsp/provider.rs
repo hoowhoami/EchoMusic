@@ -311,7 +311,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires ECHO_TEST_DSP_PROVIDER pointing to EchoMusicViper 0.8.1+ with ViPERDSP"]
+    #[ignore = "requires ECHO_TEST_DSP_PROVIDER pointing to EchoMusicViper 0.30.0+ with ViPERDSP"]
     fn runtime_preset_latency_refreshes() {
         let path = std::env::var_os("ECHO_TEST_DSP_PROVIDER").expect("provider library path");
         let mut provider = NativeDspProvider::load(
@@ -323,11 +323,11 @@ mod tests {
             None,
         )
         .expect("load reference engine");
-        assert_eq!(provider.info().latency_frames, 4863);
+        assert_eq!(provider.info().latency_frames, 4478);
         for (id, latency) in [
             ("kugou-vinyl", 256),
-            ("kugou-clear-vocal", 0),
-            ("kugou-hifi-live", 4863),
+            ("kugou-clear-vocal", 255),
+            ("kugou-hifi-live", 4478),
             ("kugou-vinyl", 256),
         ] {
             provider
@@ -629,6 +629,111 @@ mod tests {
                 .configure(r#"{"presetId":"kugou-3d-surround"}"#)
                 .unwrap();
             assert_eq!(provider.info().latency_frames, expected_latency);
+        }
+    }
+
+    #[test]
+    #[ignore = "requires ECHO_TEST_DSP_PROVIDER pointing to EchoMusicViper 0.30.0+ with ViPERDSP"]
+    fn runtime_preset_viperar_and_atoms_controls() {
+        let path = std::env::var_os("ECHO_TEST_DSP_PROVIDER").expect("provider library path");
+        for rate in [44100, 48000, 96000] {
+            let mut provider = NativeDspProvider::load(
+                Path::new(&path),
+                rate,
+                2,
+                PROVIDER_MODE_HEADPHONE,
+                Some(r#"{"presetId":"kugou-concert"}"#),
+                None,
+            )
+            .expect("load reference engine");
+            assert_eq!(provider.info().latency_frames, 255);
+
+            let manifest: serde_json::Value =
+                serde_json::from_str(&provider.descriptor().manifest_json).unwrap();
+            for (id, controls) in [
+                ("kugou-concert", 2),
+                ("kugou-spatial", 2),
+                ("kugou-panorama-51", 12),
+            ] {
+                let preset = manifest["presets"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .find(|preset| preset["id"] == id)
+                    .unwrap();
+                assert_eq!(preset["controls"].as_array().unwrap().len(), controls);
+                assert_eq!(
+                    preset["supportedSampleRates"],
+                    serde_json::json!([44100, 48000, 96000])
+                );
+            }
+
+            provider
+                .configure(
+                    r#"{"presetId":"kugou-concert","controls":{"scene":{"value":2},"seat":{"value":12}}}"#,
+                )
+                .unwrap();
+            let concert: serde_json::Value =
+                serde_json::from_str(&provider.descriptor().state_json).unwrap();
+            assert_eq!(concert["effect"]["id"], "kugou-concert");
+            assert_eq!(concert["controls"]["scene"]["value"], 2);
+            assert_eq!(concert["controls"]["seat"]["value"], 12);
+            assert_eq!(concert["opaque"]["viperArReference"]["sampleRate"], rate);
+            assert_eq!(provider.info().latency_frames, 255);
+
+            provider
+                .configure(
+                    r#"{"presetId":"kugou-spatial","controls":{"mode":{"value":true},"angle":{"value":359}}}"#,
+                )
+                .unwrap();
+            let spatial: serde_json::Value =
+                serde_json::from_str(&provider.descriptor().state_json).unwrap();
+            assert_eq!(spatial["effect"]["id"], "kugou-spatial");
+            assert_eq!(spatial["controls"]["mode"]["value"], true);
+            assert_eq!(spatial["controls"]["angle"]["value"], 359);
+            assert_eq!(
+                spatial["opaque"]["viperArSpaceReference"]["sampleRate"],
+                rate
+            );
+            let rejected = provider
+                .configure(r#"{"presetId":"kugou-spatial","controls":{"mode":{"value":false}}}"#);
+            assert!(rejected.is_err());
+            provider.refresh_state().unwrap();
+            assert_eq!(
+                spatial,
+                serde_json::from_str::<serde_json::Value>(&provider.descriptor().state_json)
+                    .unwrap()
+            );
+
+            provider
+                .configure(
+                    r#"{"presetId":"kugou-panorama-51","controls":{"frontLeftEnabled":{"value":false},"rearRightVolume":{"value":100}}}"#,
+                )
+                .unwrap();
+            let atoms: serde_json::Value =
+                serde_json::from_str(&provider.descriptor().state_json).unwrap();
+            assert_eq!(atoms["effect"]["id"], "kugou-panorama-51");
+            assert_eq!(atoms["controls"]["frontLeftEnabled"]["value"], false);
+            assert_eq!(atoms["controls"]["rearRightVolume"]["value"], 100);
+            assert_eq!(
+                atoms["opaque"]["atomsReference"]["referenceSampleRate"],
+                rate
+            );
+            assert_eq!(provider.info().latency_frames, 255);
+            assert!(provider
+                .configure(
+                    r#"{"presetId":"kugou-panorama-51","controls":{"frontLeftEnabled":{"value":1}}}"#,
+                )
+                .is_err());
+            provider.refresh_state().unwrap();
+            assert_eq!(
+                atoms,
+                serde_json::from_str::<serde_json::Value>(&provider.descriptor().state_json)
+                    .unwrap()
+            );
+
+            provider.configure(r#"{"presetId":"kugou-vinyl"}"#).unwrap();
+            assert_eq!(provider.info().latency_frames, 256);
         }
     }
 }
