@@ -1,3 +1,4 @@
+use crate::dsp::provider::ProviderDescriptor;
 use crate::dsp::DspSettings;
 use crate::spectrum::SampleRing;
 mod ao_state;
@@ -44,6 +45,7 @@ pub struct SharedAudio {
     ao_state: AoBufferingState,
     pub spectrum_ring: Mutex<SampleRing>,
     dsp_settings: Mutex<DspSettings>,
+    provider_descriptor: Mutex<Option<ProviderDescriptor>>,
     pub paused: AtomicBool,
     pub stop: AtomicBool,
     output_started: AtomicBool,
@@ -134,6 +136,7 @@ impl SharedAudio {
             ao_state: AoBufferingState::new(),
             spectrum_ring: Mutex::new(SampleRing::new(mix_sample_rate as usize * mix_channels)),
             dsp_settings: Mutex::new(dsp_settings.clone()),
+            provider_descriptor: Mutex::new(None),
             paused: AtomicBool::new(true),
             stop: AtomicBool::new(false),
             output_started: AtomicBool::new(false),
@@ -325,6 +328,19 @@ impl SharedAudio {
             .unwrap_or_default()
     }
 
+    pub fn provider_descriptor(&self) -> Option<ProviderDescriptor> {
+        self.provider_descriptor
+            .lock()
+            .ok()
+            .and_then(|descriptor| descriptor.clone())
+    }
+
+    pub fn set_provider_descriptor(&self, descriptor: Option<ProviderDescriptor>) {
+        if let Ok(mut current) = self.provider_descriptor.lock() {
+            *current = descriptor;
+        }
+    }
+
     pub fn update_dsp_settings(&self, settings: &DspSettings) {
         self.set_speed(settings.speed);
         let normalization_gain = settings.normalization_gain_linear();
@@ -342,7 +358,14 @@ impl SharedAudio {
             Ordering::Release,
         );
         if let Ok(mut current) = self.dsp_settings.lock() {
+            let provider_changed = current.provider_path != settings.provider_path
+                || current.provider_mode != settings.provider_mode
+                || current.provider_resource_json != settings.provider_resource_json
+                || current.provider_preset_json != settings.provider_preset_json;
             *current = settings.clone();
+            if provider_changed {
+                self.set_provider_descriptor(None);
+            }
         }
         self.decoded_queue_changed.notify_all();
     }

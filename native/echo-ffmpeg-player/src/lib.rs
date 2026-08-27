@@ -890,16 +890,19 @@ fn update_runtime_audio_graph(runtime: &mut PlayerRuntime) {
     let previous = runtime.audio_graph.clone();
     let mut next = if let Some(session) = runtime.session.as_ref() {
         let output_stats = session.shared.output_stats();
+        let provider_descriptor = session.shared.provider_descriptor();
         audio_graph::snapshot_filter_graph_with_device_output(
             session.shared.mix_format,
             &runtime.dsp_settings,
             output_stats.as_ref(),
+            provider_descriptor.as_ref(),
         )
     } else {
         if runtime.dsp_settings.provider_path.is_some() {
             audio_graph::snapshot_filter_graph_with_device_output(
                 MixFormat::stereo_f32(48_000),
                 &runtime.dsp_settings,
+                None,
                 None,
             )
         } else {

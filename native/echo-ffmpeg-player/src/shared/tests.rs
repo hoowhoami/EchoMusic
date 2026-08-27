@@ -38,6 +38,33 @@ fn audio_sample_format_candidates_prefer_lossless_conversions() {
 }
 
 #[test]
+fn provider_descriptor_cache_survives_runtime_gain_but_invalidates_provider_changes() {
+    let settings = DspSettings {
+        provider_path: Some("provider.dylib".to_string()),
+        provider_preset_json: Some(r#"{"presetId":"one"}"#.to_string()),
+        ..DspSettings::default()
+    };
+    let shared = SharedAudio::new(MixFormat::stereo_f32(48_000), 0.1, 8.0, &settings);
+    shared.set_provider_descriptor(Some(ProviderDescriptor {
+        id: "provider".to_string(),
+        ..ProviderDescriptor::default()
+    }));
+
+    let mut gain_update = settings.clone();
+    gain_update.normalization_gain_db = -6.0;
+    shared.update_dsp_settings(&gain_update);
+    assert_eq!(
+        shared.provider_descriptor().map(|descriptor| descriptor.id),
+        Some("provider".to_string())
+    );
+
+    let mut preset_update = gain_update;
+    preset_update.provider_preset_json = Some(r#"{"presetId":"two"}"#.to_string());
+    shared.update_dsp_settings(&preset_update);
+    assert!(shared.provider_descriptor().is_none());
+}
+
+#[test]
 fn pop_into_advances_position_by_consumed_frames() {
     let shared = SharedAudio::new(
         MixFormat::stereo_f32(100),

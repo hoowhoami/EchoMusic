@@ -8,7 +8,10 @@ use napi_derive::napi;
 
 #[napi]
 pub fn get_audio_graph() -> napi::Result<AudioGraphSnapshot> {
-    with_runtime(|runtime| Ok(runtime.audio_graph.clone()))
+    with_runtime(|runtime| {
+        update_runtime_audio_graph(runtime);
+        Ok(runtime.audio_graph.clone())
+    })
 }
 
 pub struct SetAudioGraphParameterTask {

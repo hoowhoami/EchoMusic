@@ -21,6 +21,7 @@ fn run_filter(shared: Arc<SharedAudio>) {
             return;
         }
     };
+    shared.set_provider_descriptor(graph.provider_descriptor());
     shared.set_filter_latency_secs(graph.latency_secs());
     let mut output = Vec::<f32>::new();
 
@@ -60,6 +61,7 @@ fn run_filter(shared: Arc<SharedAudio>) {
                     return;
                 }
             }
+            shared.set_provider_descriptor(graph.provider_descriptor());
             shared.set_filter_latency_secs(graph.latency_secs());
             output.clear();
         }
@@ -84,6 +86,7 @@ fn run_filter(shared: Arc<SharedAudio>) {
                     crate::decoder::emit_decode_error(&shared, err);
                     return;
                 }
+                shared.set_provider_descriptor(graph.provider_descriptor());
                 shared.set_filter_latency_secs(graph.latency_secs());
                 output.clear();
             }

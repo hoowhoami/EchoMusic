@@ -1,3 +1,4 @@
+use crate::dsp::provider::ProviderDescriptor;
 use crate::dsp::{DspChain, DspSettings};
 use crate::shared::{
     AudioOutputStats, AudioSampleFormat, DecodedAudioChunk, DecodedAudioData, DecodedAudioFormat,
@@ -139,13 +140,14 @@ pub struct AudioGraphPlanPatch {
 
 #[cfg(test)]
 fn snapshot_filter_graph(output_format: MixFormat, settings: &DspSettings) -> AudioGraphSnapshot {
-    snapshot_filter_graph_with_device_output(output_format, settings, None)
+    snapshot_filter_graph_with_device_output(output_format, settings, None, None)
 }
 
 pub fn snapshot_filter_graph_with_device_output(
     output_format: MixFormat,
     settings: &DspSettings,
     device_output: Option<&AudioOutputStats>,
+    running_provider: Option<&ProviderDescriptor>,
 ) -> AudioGraphSnapshot {
     let process_format = process_format_for_output(output_format, settings);
     let tempo_latency_secs = TempoProcessor::new(
@@ -155,15 +157,27 @@ pub fn snapshot_filter_graph_with_device_output(
     )
     .map(|tempo| tempo.latency_secs(process_format.sample_rate))
     .unwrap_or_default();
-    // Preparing VHE and spatial convolution plans is comparatively expensive. Reuse one chain
-    // for the total and per-node latency snapshots instead of rebuilding it for every node.
-    let effects = DspChain::new(
-        process_format.sample_rate,
-        process_format.channels,
-        settings,
-    )
-    .expect("audio graph DSP provider should initialize");
-    let latency_secs = tempo_latency_secs + effects.latency_secs();
+    // A diagnostic snapshot must not instantiate a Provider: creation can load resources and
+    // initialize a full DSP engine. Provider metadata comes from the active filter graph instead.
+    let builtin_effects = settings.provider_path.is_none().then(|| {
+        DspChain::new(
+            process_format.sample_rate,
+            process_format.channels,
+            settings,
+        )
+        .expect("builtin audio graph should initialize")
+    });
+    let effect_latency_secs = running_provider
+        .map(|provider| {
+            f64::from(provider.latency_frames) / f64::from(process_format.sample_rate.max(1))
+        })
+        .or_else(|| builtin_effects.as_ref().map(DspChain::latency_secs))
+        .unwrap_or_default();
+    let spatial_latency_secs = builtin_effects
+        .as_ref()
+        .map(DspChain::spatial_latency_secs)
+        .unwrap_or_default();
+    let latency_secs = tempo_latency_secs + effect_latency_secs;
     AudioGraphSnapshot {
         revision: 0.0,
         process_format: format_snapshot(process_format),
@@ -172,18 +186,14 @@ pub fn snapshot_filter_graph_with_device_output(
         latency_secs,
         nodes: filter_nodes_for_settings(settings)
             .into_iter()
-            .map(|node| graph_node_snapshot(node, settings, tempo_latency_secs, &effects))
+            .map(|node| {
+                graph_node_snapshot(node, settings, tempo_latency_secs, spatial_latency_secs)
+            })
             .collect(),
-        provider_id: effects
-            .provider_descriptor()
-            .as_ref()
-            .map(|info| info.id.clone()),
-        provider_version: effects
-            .provider_descriptor()
-            .as_ref()
-            .map(|info| info.version.clone()),
-        provider_path: effects.provider_identity().map(str::to_string),
-        provider_mode: effects.provider_identity().map(|_| {
+        provider_id: running_provider.map(|info| info.id.clone()),
+        provider_version: running_provider.map(|info| info.version.clone()),
+        provider_path: settings.provider_path.clone(),
+        provider_mode: settings.provider_path.as_ref().map(|_| {
             if settings.provider_mode == 1 {
                 "speaker".to_string()
             } else {
@@ -192,22 +202,11 @@ pub fn snapshot_filter_graph_with_device_output(
         }),
         provider_resource_json: settings.provider_resource_json.clone(),
         provider_preset_json: settings.provider_preset_json.clone(),
-        provider_latency_frames: effects
-            .provider_descriptor()
-            .as_ref()
-            .map(|info| f64::from(info.latency_frames)),
-        provider_preferred_block_frames: effects
-            .provider_descriptor()
-            .as_ref()
+        provider_latency_frames: running_provider.map(|info| f64::from(info.latency_frames)),
+        provider_preferred_block_frames: running_provider
             .map(|info| f64::from(info.preferred_block_frames)),
-        provider_manifest_json: effects
-            .provider_descriptor()
-            .as_ref()
-            .map(|info| info.manifest_json.clone()),
-        provider_state_json: effects
-            .provider_descriptor()
-            .as_ref()
-            .map(|info| info.state_json.clone()),
+        provider_manifest_json: running_provider.map(|info| info.manifest_json.clone()),
+        provider_state_json: running_provider.map(|info| info.state_json.clone()),
     }
 }
 
@@ -285,11 +284,11 @@ fn graph_node_snapshot(
     node: AudioFilterNode,
     settings: &DspSettings,
     tempo_latency_secs: f64,
-    effects: &DspChain,
+    spatial_latency_secs: f64,
 ) -> AudioGraphNodeSnapshot {
     let latency_secs = match node.kind {
         AudioFilterNodeKind::Tempo => tempo_latency_secs,
-        AudioFilterNodeKind::Spatial => effects.spatial_latency_secs(),
+        AudioFilterNodeKind::Spatial => spatial_latency_secs,
         _ => 0.0,
     };
     let parameters = graph_node_parameters(node.kind, settings);
@@ -527,6 +526,10 @@ impl AudioFilterGraph {
 
     pub fn provider_resource_identity(&self) -> Option<&str> {
         self.effects.provider_resource_identity()
+    }
+
+    pub fn provider_descriptor(&self) -> Option<ProviderDescriptor> {
+        self.effects.provider_descriptor()
     }
 
     pub fn latency_secs(&self) -> f64 {
@@ -1041,6 +1044,7 @@ mod tests {
             MixFormat::stereo_f32(48_000),
             &DspSettings::default(),
             Some(&stats),
+            None,
         );
 
         let device_output = snapshot
@@ -1051,6 +1055,56 @@ mod tests {
         assert_eq!(device_output.format.sample_rate, 44_100.0);
         assert_eq!(device_output.format.sample_format, "f32");
         assert_eq!(device_output.underruns, 3.0);
+    }
+
+    #[test]
+    fn provider_snapshot_uses_running_descriptor_without_loading_provider_path() {
+        let settings = DspSettings {
+            provider_path: Some("/definitely/not/a/provider.dylib".to_string()),
+            provider_preset_json: Some(r#"{"presetId":"test"}"#.to_string()),
+            provider_resource_json: Some(r#"[{"kind":"impulse-response"}]"#.to_string()),
+            ..DspSettings::default()
+        };
+        let descriptor = ProviderDescriptor {
+            id: "running-provider".to_string(),
+            version: "1.2.3".to_string(),
+            latency_frames: 480,
+            preferred_block_frames: 512,
+            manifest_json: "{}".to_string(),
+            state_json: r#"{"latencyFrames":480}"#.to_string(),
+            ..ProviderDescriptor::default()
+        };
+
+        let snapshot = snapshot_filter_graph_with_device_output(
+            MixFormat::stereo_f32(48_000),
+            &settings,
+            None,
+            Some(&descriptor),
+        );
+
+        assert_eq!(snapshot.provider_id.as_deref(), Some("running-provider"));
+        assert_eq!(snapshot.provider_path, settings.provider_path);
+        assert_eq!(snapshot.provider_latency_frames, Some(480.0));
+        assert_eq!(snapshot.latency_secs, 0.01);
+    }
+
+    #[test]
+    fn idle_provider_snapshot_has_no_provider_creation_side_effects() {
+        let settings = DspSettings {
+            provider_path: Some("/definitely/not/a/provider.dylib".to_string()),
+            ..DspSettings::default()
+        };
+
+        let snapshot = snapshot_filter_graph_with_device_output(
+            MixFormat::stereo_f32(48_000),
+            &settings,
+            None,
+            None,
+        );
+
+        assert_eq!(snapshot.provider_path, settings.provider_path);
+        assert_eq!(snapshot.provider_id, None);
+        assert_eq!(snapshot.provider_latency_frames, None);
     }
 
     #[test]
