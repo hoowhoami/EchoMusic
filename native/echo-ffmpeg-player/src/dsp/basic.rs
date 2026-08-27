@@ -31,6 +31,7 @@ pub struct DspSettings {
     pub provider_resource_json: Option<String>,
     pub provider_mode: u32,
     pub spatial: Option<PreparedSpatialEffect>,
+    pub spatial_mix: f32,
 }
 
 impl Default for DspSettings {
@@ -44,6 +45,7 @@ impl Default for DspSettings {
             provider_resource_json: None,
             provider_mode: PROVIDER_MODE_SPEAKER,
             spatial: None,
+            spatial_mix: 0.5,
         }
     }
 }
@@ -125,7 +127,7 @@ impl DspChain {
             .spatial
             .as_ref()
             .filter(|spatial| channels == 2 && spatial.sample_rate == sample_rate)
-            .map(SpatialEffect::new);
+            .map(|spatial| SpatialEffect::new(spatial, settings.spatial_mix));
         let spatial_limiter =
             (spatial.is_some() && settings.provider_path.is_none() && channels == 2)
                 .then(|| LinkedLimiter::new(sample_rate, channels));
@@ -150,8 +152,10 @@ impl DspChain {
             != spatial_resource_identity(&settings.spatial);
         let provider_preset_changed =
             self.settings.provider_preset_json != settings.provider_preset_json;
+        let spatial_mix_changed =
+            (self.settings.spatial_mix - settings.spatial_mix).abs() >= f32::EPSILON;
 
-        if !eq_changed && !spatial_changed && !provider_preset_changed {
+        if !eq_changed && !spatial_changed && !provider_preset_changed && !spatial_mix_changed {
             return Ok(());
         }
         if eq_changed {
@@ -171,11 +175,19 @@ impl DspChain {
                 .spatial
                 .as_ref()
                 .filter(|spatial| self.channels == 2 && spatial.sample_rate == sample_rate)
-                .map(SpatialEffect::new);
+                .map(|spatial| SpatialEffect::new(spatial, settings.spatial_mix));
             self.spatial_limiter =
                 (self.spatial.is_some() && settings.provider_path.is_none() && self.channels == 2)
                     .then(|| LinkedLimiter::new(sample_rate, self.channels));
             self.settings.spatial = settings.spatial.clone();
+        }
+        if spatial_mix_changed {
+            if !spatial_changed {
+                if let Some(spatial) = self.spatial.as_mut() {
+                    spatial.set_mix(settings.spatial_mix);
+                }
+            }
+            self.settings.spatial_mix = settings.spatial_mix;
         }
         if spatial_changed {
             self.spatial_transition = Some(OutputFadeIn::new(
@@ -868,22 +880,35 @@ impl Biquad {
 struct SpatialEffect {
     channels: usize,
     output_gain_linear: f32,
+    mix: f32,
+    dry_delay_frames: usize,
+    dry_delay: VecDeque<[f32; 2]>,
     tail_frames: usize,
     has_input: bool,
     convolvers: Vec<PartitionedConvolver>,
 }
 
 impl SpatialEffect {
-    fn new(prepared: &PreparedSpatialEffect) -> Self {
+    fn new(prepared: &PreparedSpatialEffect, mix: f32) -> Self {
         let convolvers = prepared
             .responses
             .iter()
             .cloned()
             .map(PartitionedConvolver::new)
             .collect::<Vec<_>>();
+        let dry_delay_frames = convolvers
+            .iter()
+            .map(PartitionedConvolver::latency_frames)
+            .max()
+            .unwrap_or_default();
         Self {
             channels: prepared.channels,
             output_gain_linear: prepared.output_gain_linear,
+            mix: mix.clamp(0.0, 1.0),
+            dry_delay_frames,
+            dry_delay: std::iter::repeat([0.0, 0.0])
+                .take(dry_delay_frames)
+                .collect(),
             tail_frames: prepared
                 .responses
                 .iter()
@@ -905,9 +930,11 @@ impl SpatialEffect {
         for frame in samples.chunks_exact_mut(2) {
             let left = frame[0];
             let right = frame[1];
+            let [dry_left, dry_right] = self.delay_dry_frame(left, right);
             let (wet_left, wet_right) = self.process_wet_frame(left, right);
-            frame[0] = wet_left * self.output_gain_linear;
-            frame[1] = wet_right * self.output_gain_linear;
+            let dry_mix = 1.0 - self.mix;
+            frame[0] = dry_left * dry_mix + wet_left * self.output_gain_linear * self.mix;
+            frame[1] = dry_right * dry_mix + wet_right * self.output_gain_linear * self.mix;
         }
     }
 
@@ -917,9 +944,11 @@ impl SpatialEffect {
         }
         output.reserve(self.tail_frames.saturating_mul(2));
         for _ in 0..self.tail_frames {
+            let [dry_left, dry_right] = self.delay_dry_frame(0.0, 0.0);
             let (left, right) = self.process_wet_frame(0.0, 0.0);
-            output.push(left * self.output_gain_linear);
-            output.push(right * self.output_gain_linear);
+            let dry_mix = 1.0 - self.mix;
+            output.push(dry_left * dry_mix + left * self.output_gain_linear * self.mix);
+            output.push(dry_right * dry_mix + right * self.output_gain_linear * self.mix);
         }
         self.reset();
         true
@@ -929,7 +958,23 @@ impl SpatialEffect {
         for convolver in &mut self.convolvers {
             convolver.reset();
         }
+        self.dry_delay.clear();
+        self.dry_delay
+            .extend(std::iter::repeat([0.0, 0.0]).take(self.dry_delay_frames));
         self.has_input = false;
+    }
+
+    fn set_mix(&mut self, mix: f32) {
+        self.mix = mix.clamp(0.0, 1.0);
+    }
+
+    fn delay_dry_frame(&mut self, left: f32, right: f32) -> [f32; 2] {
+        if self.dry_delay_frames == 0 {
+            return [left, right];
+        }
+        let delayed = self.dry_delay.pop_front().unwrap_or([0.0, 0.0]);
+        self.dry_delay.push_back([left, right]);
+        delayed
     }
 
     fn process_wet_frame(&mut self, left: f32, right: f32) -> (f32, f32) {
@@ -1384,7 +1429,7 @@ mod tests {
     #[test]
     fn spatial_impulse_response_applies_full_convolution() {
         let prepared = prepared_spatial(2, &[&[1.0], &[1.0]]);
-        let mut spatial = SpatialEffect::new(&prepared);
+        let mut spatial = SpatialEffect::new(&prepared, 1.0);
         let mut samples = vec![0.0f32; EARLY_CONVOLUTION_BLOCK_SIZE * 2];
         samples[0] = 0.5;
         samples[1] = -0.25;
@@ -1399,9 +1444,44 @@ mod tests {
     }
 
     #[test]
+    fn spatial_mix_delays_dry_signal_to_match_convolution() {
+        let prepared = prepared_spatial(2, &[&[0.5], &[0.5]]);
+        let mut spatial = SpatialEffect::new(&prepared, 0.5);
+        let mut samples = vec![0.0f32; EARLY_CONVOLUTION_BLOCK_SIZE * 2];
+        samples[0] = 0.4;
+        samples[1] = -0.2;
+
+        spatial.process_interleaved(&mut samples);
+
+        let delayed_frame = (EARLY_CONVOLUTION_BLOCK_SIZE - 1) * 2;
+        assert!(samples[..delayed_frame]
+            .iter()
+            .all(|sample| sample.abs() < 0.00001));
+        assert!((samples[delayed_frame] - 0.3).abs() < 0.00001);
+        assert!((samples[delayed_frame + 1] + 0.15).abs() < 0.00001);
+    }
+
+    #[test]
+    fn spatial_mix_updates_without_resetting_dry_delay() {
+        let prepared = prepared_spatial(2, &[&[1.0], &[1.0]]);
+        let mut spatial = SpatialEffect::new(&prepared, 1.0);
+        let mut first = vec![0.4, -0.2];
+        spatial.process_interleaved(&mut first);
+        spatial.set_mix(0.0);
+
+        let mut remainder = vec![0.0; (EARLY_CONVOLUTION_BLOCK_SIZE - 1) * 2];
+        spatial.process_interleaved(&mut remainder);
+
+        let last = remainder.len() - 2;
+        assert!((remainder[last] - 0.4).abs() < 0.00001);
+        assert!((remainder[last + 1] + 0.2).abs() < 0.00001);
+    }
+
+    #[test]
     fn standalone_spatial_effect_uses_linked_lookahead_limiter() {
         let settings = DspSettings {
             spatial: Some(prepared_spatial(2, &[&[1.0], &[1.0]])),
+            spatial_mix: 1.0,
             ..DspSettings::default()
         };
         let mut chain = DspChain::new(48_000, 2, &settings).expect("chain should initialize");
@@ -1428,7 +1508,7 @@ mod tests {
         left_ir[EARLY_CONVOLUTION_FRAMES] = 0.75;
         right_ir[EARLY_CONVOLUTION_FRAMES] = -0.5;
         let prepared = prepared_spatial(2, &[&left_ir, &right_ir]);
-        let mut spatial = SpatialEffect::new(&prepared);
+        let mut spatial = SpatialEffect::new(&prepared, 1.0);
         let frames = EARLY_CONVOLUTION_FRAMES + EARLY_CONVOLUTION_BLOCK_SIZE;
         let mut samples = vec![0.0f32; frames * 2];
         samples[0] = 1.0;
@@ -1483,7 +1563,7 @@ mod tests {
     #[test]
     fn true_stereo_impulse_response_routes_cross_channels() {
         let prepared = prepared_spatial(4, &[&[1.0], &[0.25], &[0.5], &[1.0]]);
-        let mut spatial = SpatialEffect::new(&prepared);
+        let mut spatial = SpatialEffect::new(&prepared, 1.0);
         let mut samples = vec![0.0f32; EARLY_CONVOLUTION_BLOCK_SIZE * 2];
         samples[0] = 0.4;
         samples[1] = 0.2;
@@ -1512,13 +1592,13 @@ mod tests {
         let delayed_frame = (EARLY_CONVOLUTION_BLOCK_SIZE - 1) * 2;
         let mut left_input = vec![0.0f32; EARLY_CONVOLUTION_BLOCK_SIZE * 2];
         left_input[0] = 1.0;
-        SpatialEffect::new(&prepared).process_interleaved(&mut left_input);
+        SpatialEffect::new(&prepared, 1.0).process_interleaved(&mut left_input);
         assert!((left_input[delayed_frame] - 0.1).abs() < 0.00001);
         assert!((left_input[delayed_frame + 1] - 0.2).abs() < 0.00001);
 
         let mut right_input = vec![0.0f32; EARLY_CONVOLUTION_BLOCK_SIZE * 2];
         right_input[1] = 1.0;
-        SpatialEffect::new(&prepared).process_interleaved(&mut right_input);
+        SpatialEffect::new(&prepared, 1.0).process_interleaved(&mut right_input);
         assert!((right_input[delayed_frame] - 0.3).abs() < 0.00001);
         assert!((right_input[delayed_frame + 1] - 0.4).abs() < 0.00001);
     }
@@ -1574,6 +1654,7 @@ mod tests {
     fn spatial_drain_emits_complete_tail_and_resets_for_reuse() {
         let settings = DspSettings {
             spatial: Some(prepared_spatial(2, &[&[0.5, 0.25], &[0.5, 0.25]])),
+            spatial_mix: 1.0,
             ..DspSettings::default()
         };
         let mut chain = DspChain::new(48_000, 2, &settings).expect("chain should initialize");
@@ -1612,6 +1693,7 @@ mod tests {
         impulse[late_index] = 0.25;
         let settings = DspSettings {
             spatial: Some(prepared_spatial(2, &[&impulse, &impulse])),
+            spatial_mix: 1.0,
             ..DspSettings::default()
         };
         let mut chain = DspChain::new(48_000, 2, &settings).expect("chain should initialize");

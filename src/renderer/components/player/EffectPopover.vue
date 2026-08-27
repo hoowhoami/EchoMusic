@@ -18,6 +18,7 @@ import Button from '@/components/ui/Button.vue';
 import Badge from '@/components/ui/Badge.vue';
 import Select from '@/components/ui/Select.vue';
 import Switch from '@/components/ui/Switch.vue';
+import Slider from '@/components/ui/Slider.vue';
 import { iconArrowLeft, iconSettings, iconSlidersHorizontal } from '@/icons';
 import { usePlayerControls } from '@/composables/usePlayerControls';
 import EffectPlaza from './EffectPlaza.vue';
@@ -100,6 +101,36 @@ const impulseResponseActive = computed(
     !!selectedImpulseResponse.value &&
     player.getSpatialAudioEffectSupport(selectedImpulseResponse.value).status === 'supported',
 );
+const basicDspConvolutionActive = computed(() => {
+  const file = selectedImpulseResponse.value;
+  if (!impulseResponseActive.value || !file?.impulseResponsePath) return false;
+  const providerConfigured =
+    settingStore.dspProviderEnabled && !!settingStore.dspProviderPath.trim();
+  return !providerConfigured && !player.playbackDiagnostics.graph?.providerPath;
+});
+const convolutionMixPreview = ref<number | null>(null);
+const convolutionMixPercent = computed(() => {
+  const file = selectedImpulseResponse.value;
+  if (!file) return 50;
+  return (
+    convolutionMixPreview.value ?? Math.round(settingStore.getImpulseResponseMix(file.id) * 100)
+  );
+});
+watch(
+  () => selectedImpulseResponse.value?.id,
+  () => {
+    convolutionMixPreview.value = null;
+  },
+);
+const previewConvolutionMix = (value: number) => {
+  convolutionMixPreview.value = Math.min(100, Math.max(0, value));
+};
+const commitConvolutionMix = (value: number) => {
+  const file = selectedImpulseResponse.value;
+  if (!file || !basicDspConvolutionActive.value) return;
+  settingStore.setImpulseResponseMix(file.id, value / 100);
+  convolutionMixPreview.value = null;
+};
 const providerRuntimeState = computed<DspProviderRuntimeState | null>(() => {
   const value = player.playbackDiagnostics.graph?.providerStateJson;
   if (!value) return null;
@@ -701,6 +732,31 @@ withDefaults(defineProps<Props>(), {
               {{ currentPlaybackEffectSelection.type }}
             </span>
           </div>
+
+          <section v-if="basicDspConvolutionActive" class="basic-dsp-mix-control">
+            <div class="basic-dsp-mix-heading">
+              <span>
+                <strong>卷积效果强度</strong>
+                <small>原声与当前卷积音效的混合比例</small>
+              </span>
+            </div>
+            <Slider
+              class="basic-dsp-mix-slider"
+              :model-value="convolutionMixPercent"
+              :min="0"
+              :max="100"
+              :step="1"
+              show-value
+              value-suffix="%"
+              aria-label="卷积效果强度"
+              @update:model-value="previewConvolutionMix"
+              @value-commit="commitConvolutionMix"
+            />
+            <div class="basic-dsp-mix-labels" aria-hidden="true">
+              <span>原声</span>
+              <span>完整效果</span>
+            </div>
+          </section>
 
           <div class="irs-library-nav">
             <div class="irs-library-tabs">
@@ -1569,6 +1625,49 @@ withDefaults(defineProps<Props>(), {
 .current-spatial-effect.is-active .current-spatial-effect-type {
   background: var(--color-primary);
   color: white;
+}
+
+.basic-dsp-mix-control {
+  display: flex;
+  width: auto;
+  max-width: calc(100% - 20px);
+  box-sizing: border-box;
+  flex: 0 0 auto;
+  flex-direction: column;
+  gap: 5px;
+  margin: 0 10px 8px;
+  padding: 9px 10px 8px;
+  border: 1px solid var(--control-border);
+  border-radius: 10px;
+  background: var(--control-muted-bg);
+}
+
+.basic-dsp-mix-heading > span {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.basic-dsp-mix-heading strong {
+  color: var(--color-text-main);
+  font-size: 11px;
+}
+
+.basic-dsp-mix-heading small,
+.basic-dsp-mix-labels {
+  color: var(--color-text-secondary);
+  font-size: 9px;
+}
+
+.basic-dsp-mix-slider {
+  width: 100%;
+}
+
+.basic-dsp-mix-labels {
+  display: flex;
+  justify-content: space-between;
+  font-weight: 600;
 }
 
 .irs-preset-item {

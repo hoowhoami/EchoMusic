@@ -4,6 +4,7 @@ import { normalizeLogSettings, type AppLogLevel, type LogSettings } from '../../
 import type { AudioQualityValue, OutputDeviceOption, OutputDeviceStatus } from '../types';
 import { buildFontFamily } from '../../shared/font';
 import { normalizeAudioEffectName, type SpatialAudioEffectEntry } from '../../shared/audio';
+import { normalizeConvolutionMix } from '../../shared/audio-effect-support';
 import {
   DEFAULT_NETWORK_SETTINGS,
   normalizeNetworkSettings,
@@ -78,6 +79,10 @@ const toImpulseResponseFilePayload = (file: SpatialAudioEffectEntry): SpatialAud
   source: file.source,
   impulseResponsePath: file.impulseResponsePath,
   vpfPath: file.vpfPath,
+  recommendedConvolutionMix:
+    file.recommendedConvolutionMix === undefined
+      ? undefined
+      : normalizeConvolutionMix(file.recommendedConvolutionMix),
 });
 
 export const useSettingStore = defineStore('setting', {
@@ -141,6 +146,7 @@ export const useSettingStore = defineStore('setting', {
     impulseResponseEnabled: false,
     selectedImpulseResponseId: '',
     impulseResponseFiles: [] as SpatialAudioEffectEntry[],
+    impulseResponseMixById: {} as Record<string, number>,
     dspProviderEnabled: true,
     dspProviderPath: '',
     dspProviderMode: 'speaker' as 'headphone' | 'speaker',
@@ -498,16 +504,49 @@ export const useSettingStore = defineStore('setting', {
     },
     async reconcileSpatialAudioEffects() {
       if (!window.electron?.audioEffects?.reconcileAudioEffects) return;
+      const previousFiles = this.impulseResponseFiles;
+      const previousSelected = previousFiles.find(
+        (item) => item.id === this.selectedImpulseResponseId,
+      );
       const nextFiles = await window.electron.audioEffects.reconcileAudioEffects(
-        this.impulseResponseFiles.map(toImpulseResponseFilePayload),
+        previousFiles.map(toImpulseResponseFilePayload),
       );
       const nextIds = new Set(nextFiles.map((item) => item.id));
+      const previousByResource = new Map(
+        previousFiles.map((item) => [
+          `${item.kind}\0${item.impulseResponsePath ?? ''}\0${item.vpfPath ?? ''}`,
+          item,
+        ]),
+      );
+      const nextMixById: Record<string, number> = {};
+      for (const file of nextFiles) {
+        const previous = previousByResource.get(
+          `${file.kind}\0${file.impulseResponsePath ?? ''}\0${file.vpfPath ?? ''}`,
+        );
+        const saved =
+          this.impulseResponseMixById?.[file.id] ??
+          (previous ? this.impulseResponseMixById?.[previous.id] : undefined);
+        if (Number.isFinite(saved)) nextMixById[file.id] = normalizeConvolutionMix(saved);
+      }
       this.impulseResponseFiles = nextFiles;
+      this.impulseResponseMixById = nextMixById;
       if (this.selectedImpulseResponseId && !nextIds.has(this.selectedImpulseResponseId)) {
-        // The selected resource no longer exists. Clear the selection instead of silently
-        // switching to another effect so playback and UI both return to the original sound.
-        this.selectedImpulseResponseId = '';
-        this.impulseResponseEnabled = false;
+        const migratedSelection = previousSelected
+          ? nextFiles.find(
+              (item) =>
+                item.kind === previousSelected.kind &&
+                item.impulseResponsePath === previousSelected.impulseResponsePath &&
+                item.vpfPath === previousSelected.vpfPath,
+            )
+          : undefined;
+        if (migratedSelection) {
+          this.selectedImpulseResponseId = migratedSelection.id;
+        } else {
+          // The selected resource no longer exists. Clear the selection instead of silently
+          // switching to another effect so playback and UI both return to the original sound.
+          this.selectedImpulseResponseId = '';
+          this.impulseResponseEnabled = false;
+        }
       }
       if (nextFiles.length === 0) {
         this.selectedImpulseResponseId = '';
@@ -517,6 +556,11 @@ export const useSettingStore = defineStore('setting', {
     removeImpulseResponseFile(id: string) {
       const target = this.impulseResponseFiles.find((item) => item.id === id);
       this.impulseResponseFiles = this.impulseResponseFiles.filter((item) => item.id !== id);
+      if (Object.prototype.hasOwnProperty.call(this.impulseResponseMixById, id)) {
+        const remaining = { ...this.impulseResponseMixById };
+        delete remaining[id];
+        this.impulseResponseMixById = remaining;
+      }
       if (this.selectedImpulseResponseId === id) {
         // Deleting the selected effect means returning to the original sound. Do not select
         // the next list item implicitly; the player subscription will unload the active DSP.
@@ -550,6 +594,21 @@ export const useSettingStore = defineStore('setting', {
       return (
         this.impulseResponseFiles.find((item) => item.id === this.selectedImpulseResponseId) ?? null
       );
+    },
+    getImpulseResponseMix(id: string): number {
+      const saved = this.impulseResponseMixById?.[id];
+      if (Number.isFinite(saved)) return normalizeConvolutionMix(saved);
+      const recommended = this.impulseResponseFiles.find(
+        (item) => item.id === id,
+      )?.recommendedConvolutionMix;
+      return normalizeConvolutionMix(recommended);
+    },
+    setImpulseResponseMix(id: string, value: number) {
+      if (!this.impulseResponseFiles.some((item) => item.id === id)) return;
+      this.impulseResponseMixById = {
+        ...this.impulseResponseMixById,
+        [id]: normalizeConvolutionMix(value),
+      };
     },
     addToSearchHistory(keyword: string) {
       const normalized = keyword.trim();

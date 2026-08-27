@@ -1,6 +1,16 @@
 import type { AudioEffectPlaybackOptions, SpatialAudioEffectEntry } from './audio';
 import type { DspProviderManifest } from './player-audio-graph';
 
+export const DEFAULT_BASIC_DSP_CONVOLUTION_MIX = 0.5;
+
+export const normalizeConvolutionMix = (
+  value: unknown,
+  fallback = DEFAULT_BASIC_DSP_CONVOLUTION_MIX,
+): number => {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? Math.min(1, Math.max(0, numeric)) : fallback;
+};
+
 export interface AudioEffectSupport {
   status: 'supported' | 'checking' | 'unsupported';
   reason: string;
@@ -17,6 +27,7 @@ export function spatialAudioEffectOptions(options: {
   enabled: boolean;
   file: SpatialAudioEffectEntry | null;
   support?: AudioEffectSupport;
+  impulseResponseMix?: number;
 }): AudioEffectPlaybackOptions | null {
   const { providerPath, providerMode, providerPresetJson, file } = options;
   if (!options.enabled || !file)
@@ -29,6 +40,10 @@ export function spatialAudioEffectOptions(options: {
     providerPath,
     providerMode,
     impulseResponsePath: file.impulseResponsePath,
+    impulseResponseMix:
+      !providerPath && file.impulseResponsePath
+        ? normalizeConvolutionMix(options.impulseResponseMix)
+        : undefined,
     providerResources: providerPath
       ? [
           ...(file.vpfPath ? [{ kind: 'vpf', path: file.vpfPath }] : []),

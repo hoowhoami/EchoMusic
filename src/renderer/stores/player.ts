@@ -349,6 +349,7 @@ export const usePlayerStore = defineStore(
         enabled: settingStore.impulseResponseEnabled,
         file,
         support: file ? getSpatialAudioEffectSupport(file) : undefined,
+        impulseResponseMix: file ? settingStore.getImpulseResponseMix(file.id) : undefined,
       });
     };
     const showPlaybackNotice = (code: string, track?: Song | null) => {
@@ -621,8 +622,38 @@ export const usePlayerStore = defineStore(
       spatialAudioEffectQueue.enqueue(null);
       toastStore.warning('音效加载失败，已自动关闭', 4200);
     };
+    let appliedSpatialAudioEffect: AudioEffectPlaybackOptions | null | undefined;
+    const canPatchBasicDspMix = (
+      previous: AudioEffectPlaybackOptions | null | undefined,
+      next: AudioEffectPlaybackOptions | null,
+    ) =>
+      !!previous &&
+      !!next &&
+      !previous.providerPath &&
+      !next.providerPath &&
+      !!previous.impulseResponsePath &&
+      previous.impulseResponsePath === next.impulseResponsePath &&
+      previous.impulseResponseMix !== next.impulseResponseMix;
+    const applySpatialAudioEffect = async (effect: AudioEffectPlaybackOptions | null) => {
+      if (canPatchBasicDspMix(appliedSpatialAudioEffect, effect)) {
+        try {
+          await engine.setAudioGraphParameter({
+            kind: 'spatial',
+            name: 'mix',
+            value: effect?.impulseResponseMix ?? 0.5,
+          });
+        } catch {
+          // A stale native build may not expose spatial.mix yet. Reloading preserves
+          // correctness and keeps the setting usable while the addon is being updated.
+          await engine.setSpatialAudioEffect(effect);
+        }
+      } else {
+        await engine.setSpatialAudioEffect(effect);
+      }
+      appliedSpatialAudioEffect = effect ? { ...effect } : null;
+    };
     const spatialAudioEffectQueue = createLatestRequestQueue<AudioEffectPlaybackOptions | null>({
-      apply: (effect) => engine.setSpatialAudioEffect(effect),
+      apply: applySpatialAudioEffect,
       applied: refreshAudioGraphSnapshot,
       failed: (effect) => disableActiveSpatialAudioEffect(effect),
       report: (error) => logger.warn('音效状态刷新失败', error),

@@ -108,6 +108,58 @@ test('my-effects buttons disable unsupported downloads and use the guarded playe
   assert.equal(store.impulseResponseEnabled, false, 'original cancels a pending saved selection');
 });
 
+test('Basic DSP convolution exposes a per-effect mix and providers hide the host control', (t) => {
+  const file = {
+    id: 'local-ir-sha256',
+    name: '空间卷积',
+    kind: 'imported-ir',
+    impulseResponsePath: '/a.wav',
+  };
+  const mixes = {};
+  const store = vue.reactive({
+    dspProviderEnabled: false,
+    dspProviderPath: '',
+    dspProviderMode: 'speaker',
+    dspProviderPresetJson: '',
+    impulseResponseEnabled: true,
+    selectedImpulseResponseId: file.id,
+    impulseResponseFiles: [file],
+    getSelectedImpulseResponse: () => file,
+    getDspProviderPreset: () => '',
+    getImpulseResponseMix: (id) => mixes[id] ?? 0.5,
+    setImpulseResponseMix: (id, value) => {
+      mixes[id] = value;
+    },
+  });
+  const player = vue.reactive({
+    playbackDiagnostics: { graph: null },
+    getSpatialAudioEffectSupport: () => ({ status: 'supported', reason: '' }),
+  });
+  const { api, descriptor } = setupComponent(
+    t,
+    '../src/renderer/components/player/EffectPopover.vue',
+    {},
+    {
+      '@/composables/usePlayerControls': {
+        usePlayerControls: () => ({ player, settingStore: store }),
+      },
+      '@/composables/useAudioEffectPlaza': { useAudioEffectPlaza: () => ({}) },
+    },
+  );
+
+  assert.equal(api.basicDspConvolutionActive.value, true);
+  assert.equal(api.convolutionMixPercent.value, 50);
+  api.previewConvolutionMix(73);
+  assert.equal(api.convolutionMixPercent.value, 73);
+  api.commitConvolutionMix(73);
+  assert.equal(mixes[file.id], 0.73);
+  assert.match(descriptor.template.content, /v-if="basicDspConvolutionActive"/);
+
+  store.dspProviderEnabled = true;
+  store.dspProviderPath = '/provider';
+  assert.equal(api.basicDspConvolutionActive.value, false);
+});
+
 test('download cards disable by capability status, even if an unavailable reason is empty', (t) => {
   const state = vue.reactive({ support: { status: 'supported', reason: '' } });
   const { api, descriptor } = setupComponent(

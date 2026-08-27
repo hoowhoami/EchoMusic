@@ -132,6 +132,35 @@ test('builtin accepts IR but never VPF or half of a combined effect', () => {
     );
   }
 });
+test('Basic DSP carries a normalized convolution mix while providers own their mix', () => {
+  const builtin = support.spatialAudioEffectOptions({
+    file: ir,
+    enabled: true,
+    providerMode: 'speaker',
+    impulseResponseMix: 0.72,
+    support: support.audioEffectSupport(ir, { kind: 'builtin' }),
+  });
+  assert.equal(builtin.impulseResponseMix, 0.72);
+  assert.equal(
+    support.spatialAudioEffectOptions({
+      file: ir,
+      enabled: true,
+      providerMode: 'speaker',
+      impulseResponseMix: 4,
+      support: support.audioEffectSupport(ir, { kind: 'builtin' }),
+    }).impulseResponseMix,
+    1,
+  );
+  const providerCommand = support.spatialAudioEffectOptions({
+    file: ir,
+    enabled: true,
+    providerPath: '/A',
+    providerMode: 'speaker',
+    impulseResponseMix: 0.1,
+    support: support.audioEffectSupport(ir, provider),
+  });
+  assert.equal(providerCommand.impulseResponseMix, undefined);
+});
 test('each required kind AND extension must be supported; combined resources are atomic', () => {
   for (const file of [ir, vpf, combined])
     assert.equal(support.audioEffectSupport(file, provider).status, 'supported');
@@ -260,6 +289,7 @@ test('disabled engine restores pure IR through builtin, but clears a selected co
   await plain.manager.start();
   assert.equal(plain.state.enabled, true);
   assert.equal(plain.command().impulseResponsePath, '/ir.wav');
+  assert.equal(plain.command().impulseResponseMix, 0.5);
 });
 test('engine switch ignores previous runtime manifest and late inspection result', async (t) => {
   const f = fixture(t);

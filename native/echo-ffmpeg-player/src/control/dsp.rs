@@ -134,6 +134,7 @@ impl Task for SetAudioEffectTask {
             provider_preset_json,
             provider_resource_json,
             provider_mode,
+            impulse_response_mix,
         ) = parse_audio_effect_payload(&self.payload).map_err(napi::Error::from_reason)?;
         let has_provider_resources = provider_resource_json.is_some();
         let provider_resource_json = provider_path.as_ref().map(|_| {
@@ -191,6 +192,7 @@ impl Task for SetAudioEffectTask {
             runtime.dsp_settings.provider_resource_json = provider_resource_json;
             runtime.dsp_settings.provider_mode = provider_mode;
             runtime.dsp_settings.spatial = spatial;
+            runtime.dsp_settings.spatial_mix = impulse_response_mix;
             reset_current_filter_for_audio_effect_change(runtime);
             update_runtime_audio_graph(runtime);
             emit_runtime_event(
@@ -222,11 +224,12 @@ fn parse_audio_effect_payload(
         Option<String>,
         Option<String>,
         u32,
+        f32,
     ),
     String,
 > {
     if payload.is_null() {
-        return Ok((None, None, None, None, 0));
+        return Ok((None, None, None, None, 0, 0.5));
     }
     let object = payload
         .as_object()
@@ -258,12 +261,22 @@ fn parse_audio_effect_payload(
         Some(serde_json::Value::String(value)) if value == "headphone" => 0,
         _ => return Err("invalid provider mode".to_string()),
     };
+    let impulse_response_mix = match object.get("impulseResponseMix") {
+        None | Some(serde_json::Value::Null) => 0.5,
+        Some(serde_json::Value::Number(value)) => value
+            .as_f64()
+            .filter(|value| value.is_finite())
+            .ok_or_else(|| "invalid impulse response mix".to_string())?
+            .clamp(0.0, 1.0) as f32,
+        _ => return Err("invalid impulse response mix".to_string()),
+    };
     Ok((
         impulse_response_path,
         provider_path,
         provider_preset_json,
         provider_resource_json,
         provider_mode,
+        impulse_response_mix,
     ))
 }
 
@@ -298,4 +311,34 @@ impl Task for SetNormalizationGainTask {
 #[napi]
 pub fn set_normalization_gain(gain_db: f64) -> AsyncTask<SetNormalizationGainTask> {
     AsyncTask::new(SetNormalizationGainTask { gain_db })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn audio_effect_payload_normalizes_basic_dsp_mix() {
+        let payload = serde_json::json!({
+            "impulseResponsePath": "/tmp/test.wav",
+            "impulseResponseMix": 1.5,
+        });
+        let parsed = parse_audio_effect_payload(&payload).expect("payload should parse");
+        assert_eq!(parsed.5, 1.0);
+
+        let defaulted = parse_audio_effect_payload(&serde_json::json!({
+            "impulseResponsePath": "/tmp/test.wav"
+        }))
+        .expect("payload should default");
+        assert_eq!(defaulted.5, 0.5);
+    }
+
+    #[test]
+    fn audio_effect_payload_rejects_non_numeric_mix() {
+        let payload = serde_json::json!({
+            "impulseResponsePath": "/tmp/test.wav",
+            "impulseResponseMix": "50%",
+        });
+        assert!(parse_audio_effect_payload(&payload).is_err());
+    }
 }

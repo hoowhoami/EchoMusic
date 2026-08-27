@@ -329,6 +329,14 @@ fn graph_node_parameters(
             };
             vec![
                 AudioGraphNodeParameterSnapshot {
+                    name: "mix".to_string(),
+                    value: format!("{:.3}", settings.spatial_mix),
+                    unit: None,
+                    min: Some(0.0),
+                    max: Some(1.0),
+                    runtime_editable: true,
+                },
+                AudioGraphNodeParameterSnapshot {
                     name: "mode".to_string(),
                     value: spatial.mode().to_string(),
                     unit: None,
@@ -997,8 +1005,15 @@ mod tests {
                 .iter()
                 .map(|parameter| parameter.name.as_str())
                 .collect::<Vec<_>>(),
-            vec!["mode", "peak-response", "auto-headroom", "duration"]
+            vec!["mix", "mode", "peak-response", "auto-headroom", "duration"]
         );
+        let mix = spatial
+            .parameters
+            .iter()
+            .find(|parameter| parameter.name == "mix")
+            .expect("mix parameter should be present");
+        assert_eq!(mix.value, "0.500");
+        assert!(mix.runtime_editable);
     }
 
     #[test]
@@ -1084,6 +1099,7 @@ mod tests {
                 2,
                 &[&[0.5, 0.25], &[0.5, 0.25]],
             )),
+            spatial_mix: 1.0,
             ..DspSettings::default()
         };
         let mut graph = AudioFilterGraph::new(MixFormat::stereo_f32(48_000), &settings)

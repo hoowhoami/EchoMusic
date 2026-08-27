@@ -8,6 +8,7 @@ import { refreshNetworkSettingsFromStorage } from '../networkSettings';
 import { getPersistedRendererSettings } from '../storage/persistedStores';
 import type { NetworkSettings } from '../../shared/network';
 import type { AudioEffectPlaybackOptions } from '../../shared/audio';
+import { normalizeConvolutionMix } from '../../shared/audio-effect-support';
 import type { PlayerErrorCode, PlayerErrorPayload } from '../../shared/player-error';
 import type {
   PlayerAudioGraphParameterPatch,
@@ -113,7 +114,10 @@ const normalizeAudioEffectPlaybackOptions = async (
       impulseResponsePath,
     };
   if (!impulseResponsePath) return null;
-  return { impulseResponsePath };
+  return {
+    impulseResponsePath,
+    impulseResponseMix: normalizeConvolutionMix(options.impulseResponseMix),
+  };
 };
 
 const resolveNativeProviderPath = async (value: unknown): Promise<string | undefined> => {

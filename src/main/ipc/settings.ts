@@ -45,6 +45,7 @@ import {
   markUpdateInstallQuitRequested,
 } from '../updateInstallQuit';
 import type { IpcContext } from './types';
+import { createImportedAudioEffectId } from '../audioEffectFiles';
 
 const openLogDirectory = async () => {
   const logFile = log.transports.file.getFile();
@@ -383,12 +384,14 @@ const importImpulseResponseFile = async (
     return { error: `${sourceName}: 该文件不是可识别的音频文件。` };
   }
 
-  const id = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+  const id = await createImportedAudioEffectId(sourcePath);
   const irsDir = getImpulseResponseDir();
   await fs.promises.mkdir(irsDir, { recursive: true });
 
   const targetPath = join(irsDir, `${id}${targetExtension}`);
-  await fs.promises.copyFile(sourcePath, targetPath);
+  if (resolve(sourcePath) !== resolve(targetPath)) {
+    await fs.promises.copyFile(sourcePath, targetPath);
+  }
 
   return {
     file: {
@@ -1138,6 +1141,7 @@ export const registerSettingsHandlers = ({ getMainWindow, playerRef }: IpcContex
       const irsDir = getImpulseResponseDir();
       const communityDir = join(app.getPath('userData'), 'audio-effects');
       const next: SpatialAudioEffectEntry[] = [];
+      const importedIds = new Set<string>();
 
       for (const file of files) {
         if (!file) continue;
@@ -1196,9 +1200,13 @@ export const registerSettingsHandlers = ({ getMainWindow, playerRef }: IpcContex
           const stat = await fs.promises.stat(impulseResponsePath);
           if (!stat.isFile()) continue;
           if (!(await isSupportedImpulseResponseAudio(impulseResponsePath))) continue;
+          const id = await createImportedAudioEffectId(impulseResponsePath);
+          if (importedIds.has(id)) continue;
+          importedIds.add(id);
           const format = file.format || extname(impulseResponsePath).replace(/^\./, '');
           next.push({
             ...file,
+            id,
             size: stat.size,
             format: format || undefined,
           });

@@ -31,7 +31,7 @@ Per-preset controls, persistence and runtime acknowledgement are described in
 ### Builtin Basic DSP
 
 - 10-band parametric EQ with measured cascade headroom and click-free updates
-- generic mono, stereo and true-stereo convolution
+- generic mono, stereo and true-stereo convolution with latency-aligned dry/wet mixing
 - automatic IRS frequency-response headroom and stereo-linked peak protection
 - deterministic latency reporting, EOF tail draining and boundary reset
 - stable cross-platform effects that do not depend on a proprietary preset format
@@ -51,8 +51,12 @@ the resource through without understanding its binary format.
 
 Basic DSP is the reliable fallback and generic processing path, not a compatibility layer for a
 specific vendor. IRS files are decoded and prepared off the streaming path; steady-state EQ,
-convolution and limiting do not allocate. The convolver applies the complete impulse response at
-100% wet because the direct component, when present, is already part of the IRS.
+convolution and limiting do not allocate. Its convolution mix is adjustable from 0% (latency-aligned
+dry signal) to 100% (complete convolution output), with a 50% fallback for resources that do not
+declare a recommendation. Downloaded resources keep settings under their stable effect ID; newly
+imported local resources use a SHA-256 content ID, so the user override survives restarts and
+re-imports without modifying the audio file. Provider resources do not use this Host mix because
+their mixing semantics belong to the Provider.
 
 Mono IRS files are expanded to stereo. Two-channel IRS files are routed as `L→L, R→R`.
 Four-channel true-stereo files use the encoded
@@ -68,8 +72,9 @@ Before partitioning, the Host measures the oversampled frequency response. For t
 the per-output matrix row sum provides a worst-case peak bound when both input channels can reach
 full scale. Responses above unity receive automatic pre-limiter headroom up to a 0 dB linear peak;
 unity and quieter responses are left unchanged. The linked limiter and final soft limiter handle
-residual numeric and reconstruction peaks. The measured peak, applied headroom and IRS duration are
-exposed in the audio graph snapshot and playback log.
+residual numeric and reconstruction peaks. The mix, measured peak, applied headroom and IRS
+duration are exposed in the audio graph snapshot; preparation details are also written to the
+playback log.
 
 The EQ measures the complete biquad cascade and applies its headroom before filtering. Live EQ
 changes crossfade the old and new filter states over 15 ms. IRS changes use the same transition
@@ -175,8 +180,8 @@ falls back to `provider_id` for compatibility.
   "displayName": "Example Spatial Audio",
   "description": "Headphone and speaker spatial processing",
   "vendor": "Example Audio",
-  "resources": [{"kind": "impulse-response", "extensions": [".wav", ".irs"]}],
-  "presets": [{"id": "wide", "label": "Wide", "recommendedDevice": "headphone"}],
+  "resources": [{ "kind": "impulse-response", "extensions": [".wav", ".irs"] }],
+  "presets": [{ "id": "wide", "label": "Wide", "recommendedDevice": "headphone" }],
   "controls": []
 }
 ```
@@ -189,13 +194,13 @@ compatibility.
 ```json
 {
   "schemaVersion": 1,
-  "effect": {"id": "preset-8061", "name": "Example"},
+  "effect": { "id": "preset-8061", "name": "Example" },
   "latencyFrames": 256,
   "controls": {
-    "band.0.gain": {"type": "number", "value": 4.5, "unit": "dB", "ownership": "provider"},
-    "room.enabled": {"type": "boolean", "value": true, "ownership": "provider"}
+    "band.0.gain": { "type": "number", "value": 4.5, "unit": "dB", "ownership": "provider" },
+    "room.enabled": { "type": "boolean", "value": true, "ownership": "provider" }
   },
-  "opaque": {"providerSpecific": true},
+  "opaque": { "providerSpecific": true },
   "controlPolicy": {
     "outputGain": "host"
   }
@@ -209,21 +214,28 @@ documents so the renderer never has to infer provider behavior from file extensi
 ## IPC Compatibility
 
 The `setAudioEffect` IPC keeps its existing optional fields. A request without `providerPath` still
-selects Builtin Basic DSP, so existing Basic DSP selections continue to work. Provider-specific
-fields are optional additions:
+selects Builtin Basic DSP, so existing Basic DSP selections continue to work. A Basic DSP request
+can include its normalized mix:
+
+```json
+{
+  "impulseResponsePath": "...",
+  "impulseResponseMix": 0.5
+}
+```
+
+Provider requests use their own preset and resource contract:
 
 ```json
 {
   "providerPath": ".../audio-provider.dll",
   "providerPresetJson": "...",
   "providerMode": "headphone",
-  "providerResources": [
-    {"kind": "vpf", "path": ".../effect.vpf"}
-  ],
-  "impulseResponsePath": "..."
+  "providerResources": [{ "kind": "vpf", "path": ".../effect.vpf" }]
 }
 ```
 
-`providerMode` is optional and defaults to `speaker` on desktop. This IPC compatibility statement does not
-mean that an ABI v1 native Provider can load under ABI v2; native Providers must implement the
-ABI version advertised by `EchoDspApi`.
+`impulseResponseMix` is a Basic DSP value normalized to `0..1`; it is ignored when a Provider owns
+the effect graph. `providerMode` is optional and defaults to `speaker` on desktop. This IPC
+compatibility statement does not mean that an ABI v1 native Provider can load under ABI v2; native
+Providers must implement the ABI version advertised by `EchoDspApi`.

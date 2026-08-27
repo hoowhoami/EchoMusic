@@ -509,15 +509,18 @@ export class PlayerEngine {
     return (await player?.getAudioGraph?.()) ?? null;
   }
 
-  setAudioGraphParameter(patch: PlayerAudioGraphParameterPatch): void {
+  async setAudioGraphParameter(patch: PlayerAudioGraphParameterPatch): Promise<void> {
     const command = player?.setAudioGraphParameter?.(patch);
     if (!command) return;
-    void command.catch((error: unknown) => {
+    try {
+      await command;
+    } catch (error: unknown) {
       logger.warn('PlayerEngine', 'set audio graph parameter failed', {
         patch,
         error: String(error),
       });
-    });
+      throw error;
+    }
   }
 
   setAudioGraphPlan(plan: PlayerAudioGraphPlanPatch): void {

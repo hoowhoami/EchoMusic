@@ -17,6 +17,7 @@ interface Props {
   trackClass?: string;
   rangeClass?: string;
   thumbClass?: string;
+  ariaLabel?: string;
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -76,6 +77,7 @@ const valueLabel = computed(() =>
       :step="props.step"
       :disabled="props.disabled"
       :orientation="props.orientation"
+      :aria-label="props.ariaLabel"
       :class="rootClass"
       @update:model-value="handleUpdate"
       @value-commit="handleCommit"

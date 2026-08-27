@@ -236,6 +236,20 @@ fn apply_audio_graph_parameter_patch_to_draft(
             effects.changed = true;
             Ok(())
         }
+        "spatial" if name == "mix" => {
+            if draft.dsp_settings.spatial.is_none() {
+                return Err(napi::Error::from_reason(
+                    "spatial mix requires an impulse response resource".to_string(),
+                ));
+            }
+            let value = patch.value.clamp(0.0, 1.0) as f32;
+            if (draft.dsp_settings.spatial_mix - value).abs() < f32::EPSILON {
+                return Ok(());
+            }
+            draft.dsp_settings.spatial_mix = value;
+            effects.changed = true;
+            Ok(())
+        }
         _ => Err(napi::Error::from_reason(format!(
             "unsupported audio graph parameter '{}.{}'",
             patch.kind, patch.name

@@ -10,6 +10,8 @@ export interface SpatialAudioEffectEntry {
   impulseResponsePath?: string;
   vpfPath?: string;
   source?: OnlineAudioEffectSource;
+  /** Optional author recommendation for Basic DSP dry/wet mixing, normalized to 0..1. */
+  recommendedConvolutionMix?: number;
 }
 
 export interface ImportImpulseResponseResult {
@@ -38,6 +40,8 @@ export interface AudioEffectPlaybackOptions {
   providerResources?: Array<{ kind: string; path: string }>;
   providerMode?: 'headphone' | 'speaker';
   impulseResponsePath?: string | null;
+  /** Basic DSP only. Providers own their own mixing semantics. */
+  impulseResponseMix?: number;
 }
 
 export interface DspProviderInspection {
