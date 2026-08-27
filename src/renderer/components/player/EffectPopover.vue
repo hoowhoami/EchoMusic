@@ -286,12 +286,15 @@ const providerSelectOptions = (control: DspProviderControl) =>
   (control.options ?? []).map((option) => ({
     label: option.label,
     value: JSON.stringify(option.value),
+    ...(option.disabled ? { disabled: true } : {}),
   }));
 const setProviderSelect = (
   control: DspProviderControl,
   value: string | number | (string | number)[],
 ) => {
-  const option = control.options?.find((item) => JSON.stringify(item.value) === value);
+  const option = control.options?.find(
+    (item) => !item.disabled && JSON.stringify(item.value) === value,
+  );
   if (option) setProviderControl(control, option.value);
 };
 const resetProviderControls = () => {

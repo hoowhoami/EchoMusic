@@ -87,7 +87,7 @@ export interface DspProviderControl {
     /** Reverse the visual axis without changing persisted/provider values. */
     inverted?: boolean;
   };
-  options?: Array<{ value: DspJsonValue; label: string }>;
+  options?: Array<{ value: DspJsonValue; label: string; disabled?: boolean }>;
   ownership?: DspControlOwnership;
 }
 

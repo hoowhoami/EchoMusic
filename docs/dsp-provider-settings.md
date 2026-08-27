@@ -45,6 +45,8 @@ ABI 仍是 v2，以下只是 JSON 的兼容扩展。
 
 - 设置面板支持 `number`（滑杆）、`boolean`（开关）、`select`（选项）。
 - `select.options` 的 `value` 保留原 JSON 类型，数字选项不会被转换成字符串。
+- `select.options[].disabled: true` 表示能力已声明但当前不可选；播放器使用项目统一
+  `Select` 组件展示禁用态，且不会保存或下发该值。
 - 默认值优先采用 `defaultValue`，兼容旧字段 `value`。
 - `description` 提供控件说明；`visibleWhen: {controlId, value}` 控制关联项显隐。
 - 数值控件可通过 `range.minLabel/maxLabel` 描述两端、`range.inverted` 反转视觉方向；

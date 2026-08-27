@@ -262,6 +262,7 @@ test('provider select uses project Select and retains numeric/JSON option types'
     options: [
       { value: 1930, label: '1930年' },
       { value: 2010, label: '2010年' },
+      { value: 'sensor', label: '自动（需方向传感器）', disabled: true },
     ],
   };
   const aging = {
@@ -307,10 +308,12 @@ test('provider select uses project Select and retains numeric/JSON option types'
   assert.deepEqual(api.providerSelectOptions(year), [
     { value: '1930', label: '1930年' },
     { value: '2010', label: '2010年' },
+    { value: '"sensor"', label: '自动（需方向传感器）', disabled: true },
   ]);
   api.setProviderSelect(year, '1930');
   assert.equal(writes.at(-1).controls.year.value, 1930);
   api.setProviderSelect(year, 'invalid');
+  api.setProviderSelect(year, '"sensor"');
   api.setProviderSelect(year, ['2010']);
   assert.equal(writes.length, 1);
   const structured = {

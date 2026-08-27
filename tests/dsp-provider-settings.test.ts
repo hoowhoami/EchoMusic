@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
   configurablePresetControls,
+  controlDefault,
   controlVisible,
   dspPresetBankKey,
   dspPresetSettingsPatch,
@@ -120,6 +121,31 @@ test('commands retain preset identity and only valid applicable parameter values
     10,
   );
   assert.equal(makeDspPresetJson('fixed', []), '{"presetId":"fixed"}');
+});
+
+test('disabled select options are visible capabilities but never valid saved values', () => {
+  const mode: DspProviderControl = {
+    id: 'mode',
+    type: 'select',
+    defaultValue: 'manual',
+    options: [
+      { value: 'auto', label: '自动（需方向传感器）', disabled: true },
+      { value: 'manual', label: '手动' },
+    ],
+  };
+  assert.equal(validControlValue(mode, 'auto'), false);
+  assert.equal(validControlValue(mode, 'manual'), true);
+  assert.equal(
+    parseDspPreset(
+      makeDspPresetJson(
+        'space',
+        [mode],
+        '{"presetId":"space","controls":{"mode":{"value":"auto"}}}',
+      ),
+    ).controls.mode.value,
+    'manual',
+  );
+  assert.equal(controlDefault({ ...mode, defaultValue: 'auto' }), 'manual');
 });
 
 test('configuration availability follows editable capabilities, never development status', () => {

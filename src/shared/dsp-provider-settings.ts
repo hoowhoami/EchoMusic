@@ -84,10 +84,16 @@ export function configurablePresetControls(
 }
 
 export function controlDefault(control: DspProviderControl): DspJsonValue {
+  const declared = control.defaultValue ?? control.value;
+  if (control.type === 'select') {
+    const declaredOption = control.options?.find(
+      (option) => JSON.stringify(option.value) === JSON.stringify(declared),
+    );
+    if (declaredOption && !declaredOption.disabled) return declaredOption.value;
+    return control.options?.find((option) => !option.disabled)?.value ?? '';
+  }
   return (
-    control.defaultValue ??
-    control.value ??
-    control.options?.[0]?.value ??
+    declared ??
     (control.type === 'boolean'
       ? false
       : control.type === 'number'
@@ -110,7 +116,10 @@ export function validControlValue(control: DspProviderControl, value: DspJsonVal
   if (control.type === 'boolean') return typeof value === 'boolean';
   if (control.type === 'select') {
     return (
-      control.options?.some((option) => JSON.stringify(option.value) === JSON.stringify(value)) ??
+      control.options?.some(
+        (option) =>
+          !option.disabled && JSON.stringify(option.value) === JSON.stringify(value),
+      ) ??
       false
     );
   }
