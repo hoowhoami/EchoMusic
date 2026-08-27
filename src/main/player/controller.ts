@@ -336,7 +336,7 @@ interface PlayerAddon {
   setSpeed(speed: number): Promise<void>;
   setEqualizer(gains: number[]): Promise<void>;
   setAudioEffect(options: AudioEffectPlaybackOptions | null): Promise<void>;
-  getAudioGraph(): PlayerAudioGraphSnapshot;
+  getAudioGraph(): Promise<PlayerAudioGraphSnapshot>;
   inspectDspProvider(path: string): Promise<unknown>;
   deleteDspProvider(path: string): Promise<void>;
   setAudioGraphParameter(patch: PlayerAudioGraphParameterPatch): Promise<void>;
@@ -576,13 +576,13 @@ export class PlayerController extends EventEmitter {
   }
 
   async getAudioGraph(): Promise<PlayerAudioGraphSnapshot> {
-    return this.getAddonOrThrow().getAudioGraph();
+    return await this.getAddonOrThrow().getAudioGraph();
   }
 
   async inspectDspProvider(providerPath: string): Promise<unknown> {
     const trustedPath = await resolveNativeProviderPath(providerPath);
     if (!trustedPath) throw new Error('Provider 路径无效');
-    return this.getAddonOrThrow().inspectDspProvider(trustedPath);
+    return await this.getAddonOrThrow().inspectDspProvider(trustedPath);
   }
 
   async deleteDspProvider(providerPath: string): Promise<void> {

@@ -6,12 +6,27 @@ use napi::bindgen_prelude::AsyncTask;
 use napi::{Env, Task};
 use napi_derive::napi;
 
+pub struct GetAudioGraphTask;
+
+impl Task for GetAudioGraphTask {
+    type Output = AudioGraphSnapshot;
+    type JsValue = AudioGraphSnapshot;
+
+    fn compute(&mut self) -> napi::Result<Self::Output> {
+        with_runtime(|runtime| {
+            update_runtime_audio_graph(runtime);
+            Ok(runtime.audio_graph.clone())
+        })
+    }
+
+    fn resolve(&mut self, _env: Env, output: Self::Output) -> napi::Result<Self::JsValue> {
+        Ok(output)
+    }
+}
+
 #[napi]
-pub fn get_audio_graph() -> napi::Result<AudioGraphSnapshot> {
-    with_runtime(|runtime| {
-        update_runtime_audio_graph(runtime);
-        Ok(runtime.audio_graph.clone())
-    })
+pub fn get_audio_graph() -> AsyncTask<GetAudioGraphTask> {
+    AsyncTask::new(GetAudioGraphTask)
 }
 
 pub struct SetAudioGraphParameterTask {
