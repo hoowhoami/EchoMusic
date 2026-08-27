@@ -1064,6 +1064,7 @@ export const usePlayerStore = defineStore(
       playbackIsLoading,
       playbackDisplayState,
       getSpatialAudioEffectSupport,
+      dspProviderInspection: spatialAudioSupport.providerInspection,
       selectSpatialAudioEffect,
       // State-like (actually actions but Pinia treats them as actions)
       getEffectiveAudioQuality: resolver.getEffectiveAudioQuality,

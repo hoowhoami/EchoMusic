@@ -19,7 +19,12 @@ export function createSpatialAudioSupport(options: {
   unsupported: (file: SpatialAudioEffectEntry, reason: string) => void;
 }) {
   const started = ref(false);
-  const inspection = ref<{ path: string; mode: string; manifestJson: string } | null>(null);
+  const inspection = ref<{
+    path: string;
+    mode: string;
+    status: 'ready' | 'failed';
+    info: DspProviderInspection | null;
+  } | null>(null);
   let revision = 0;
   const refresh = async () => {
     const request = ++revision;
@@ -27,15 +32,22 @@ export function createSpatialAudioSupport(options: {
     const path = options.providerPath();
     const mode = options.providerMode();
     if (!started.value || !path) return;
-    let manifestJson = '';
+    let info: DspProviderInspection | null = null;
     try {
-      manifestJson = (await options.inspect(path))?.manifestJson ?? '';
+      info = await options.inspect(path);
     } catch {
       // Completed inspection failure is not an indefinitely pending capability.
     }
     if (request === revision && path === options.providerPath() && mode === options.providerMode())
-      inspection.value = { path, mode, manifestJson };
+      inspection.value = { path, mode, status: info ? 'ready' : 'failed', info };
   };
+  const providerInspection = computed(() => {
+    const result = inspection.value;
+    if (!result) return null;
+    return result.path === options.providerPath() && result.mode === options.providerMode()
+      ? result
+      : null;
+  });
   const engineSupport = computed<AudioEffectEngineSupport>(() => {
     if (!started.value) return { kind: 'checking' };
     const path = options.providerPath();
@@ -47,9 +59,12 @@ export function createSpatialAudioSupport(options: {
       graph.providerId
     )
       return { kind: 'provider', manifest: parseAudioEffectManifest(graph.providerManifestJson) };
-    const result = inspection.value;
-    if (result?.path === path && result.mode === options.providerMode())
-      return { kind: 'provider', manifest: parseAudioEffectManifest(result.manifestJson) };
+    const result = providerInspection.value;
+    if (result)
+      return {
+        kind: 'provider',
+        manifest: parseAudioEffectManifest(result.info?.manifestJson),
+      };
     return { kind: 'checking' };
   });
   const support = (file: SpatialAudioEffectEntry) => audioEffectSupport(file, engineSupport.value);
@@ -68,6 +83,7 @@ export function createSpatialAudioSupport(options: {
   return {
     support,
     engineSupport,
+    providerInspection,
     async start() {
       started.value = true;
       await refresh();

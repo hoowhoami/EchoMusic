@@ -171,6 +171,61 @@ test('Basic DSP convolution exposes a per-effect mix and providers hide the host
   assert.equal(api.builtinAudioEngineActive.value, false);
 });
 
+test('configured provider shows a loading state instead of flashing the not-imported state', (t) => {
+  const store = vue.reactive({
+    dspProviderEnabled: true,
+    dspProviderPath: '/provider',
+    dspProviderMode: 'speaker',
+    dspProviderPresetJson: '',
+    impulseResponseEnabled: false,
+    selectedImpulseResponseId: '',
+    impulseResponseFiles: [],
+    getSelectedImpulseResponse: () => null,
+    getDspProviderPreset: () => '',
+    getImpulseResponseMix: () => 0.5,
+  });
+  const player = vue.reactive({
+    playbackDiagnostics: { graph: null },
+    dspProviderInspection: null,
+    getSpatialAudioEffectSupport: () => ({ status: 'supported', reason: '' }),
+  });
+  const { api, descriptor } = setupComponent(
+    t,
+    '../src/renderer/components/player/EffectPopover.vue',
+    {},
+    {
+      '@/composables/usePlayerControls': {
+        usePlayerControls: () => ({ player, settingStore: store }),
+      },
+      '@/composables/useAudioEffectPlaza': { useAudioEffectPlaza: () => ({}) },
+    },
+  );
+
+  assert.equal(api.providerConfigured.value, true);
+  assert.equal(api.providerChecking.value, true);
+  assert.equal(api.providerInspectionFailed.value, false);
+  assert.match(descriptor.template.content, /v-if="providerChecking"/);
+  assert.match(descriptor.template.content, /v-else-if="providerConfigured"/);
+
+  player.dspProviderInspection = {
+    path: '/provider',
+    mode: 'speaker',
+    status: 'ready',
+    info: {
+      providerId: 'provider-id',
+      providerVersion: '1.0.0',
+      manifestJson: JSON.stringify({
+        displayName: '测试引擎',
+        presets: [{ id: 'preset', label: '测试预设' }],
+      }),
+    },
+  };
+  assert.equal(api.providerChecking.value, false);
+  assert.equal(api.providerDisplayName.value, '测试引擎');
+  assert.equal(api.providerVersion.value, '1.0.0');
+  assert.equal(api.providerPresets.value.length, 1);
+});
+
 test('download cards disable by capability status, even if an unavailable reason is empty', (t) => {
   const state = vue.reactive({ support: { status: 'supported', reason: '' } });
   const { api, descriptor } = setupComponent(

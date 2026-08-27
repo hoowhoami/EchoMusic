@@ -236,11 +236,14 @@ test('startup does not clear a saved selection before capabilities resolve', asy
   const f = fixture(t);
   const saved = f.state.file;
   assert.equal(f.manager.support(combined).status, 'checking');
+  assert.equal(f.manager.providerInspection.value, null);
   const started = f.manager.start();
   assert.equal(f.state.enabled, true);
   assert.equal(f.command().providerResources, undefined);
   f.requests[0].resolve(inspection());
   await started;
+  assert.equal(f.manager.providerInspection.value.status, 'ready');
+  assert.equal(f.manager.providerInspection.value.info.manifestJson, JSON.stringify(manifest));
   assert.equal(f.state.enabled, true);
   assert.equal(f.state.file, saved);
   assert.equal(f.command().providerResources.length, 2);
@@ -332,6 +335,8 @@ test('inspection failure settles unavailable instead of leaving resources pendin
   const started = f.manager.start();
   f.requests[0].reject(new Error('not loadable'));
   await started;
+  assert.equal(f.manager.providerInspection.value.status, 'failed');
+  assert.equal(f.manager.providerInspection.value.info, null);
   assert.equal(f.manager.support(combined).status, 'unsupported');
   assert.equal(f.state.enabled, false);
   assert.equal(f.warnings.length, 1);

@@ -144,8 +144,7 @@ const providerRuntimeState = computed<DspProviderRuntimeState | null>(() => {
     return null;
   }
 });
-const providerManifest = computed<DspProviderManifest | null>(() => {
-  const value = player.playbackDiagnostics.graph?.providerManifestJson;
+const parseProviderManifestJson = (value?: string | null): DspProviderManifest | null => {
   if (!value) return null;
   try {
     const manifest = JSON.parse(value) as DspProviderManifest;
@@ -153,6 +152,12 @@ const providerManifest = computed<DspProviderManifest | null>(() => {
   } catch {
     return null;
   }
+};
+const providerManifest = computed<DspProviderManifest | null>(() => {
+  return (
+    parseProviderManifestJson(player.playbackDiagnostics.graph?.providerManifestJson) ??
+    parseProviderManifestJson(player.dspProviderInspection?.info?.manifestJson)
+  );
 });
 const providerControls = computed<DspProviderControl[]>(() =>
   configurablePresetControls(providerManifest.value, editingProviderPresetId.value),
@@ -170,7 +175,26 @@ const providerDisplayName = computed(
   () =>
     providerManifest.value?.displayName?.trim() ||
     player.playbackDiagnostics.graph?.providerId ||
+    player.dspProviderInspection?.info?.providerId ||
     '第三方音效引擎',
+);
+const providerVersion = computed(
+  () =>
+    player.playbackDiagnostics.graph?.providerVersion ||
+    player.dspProviderInspection?.info?.providerVersion ||
+    '',
+);
+const providerChecking = computed(
+  () =>
+    providerConfigured.value &&
+    !player.playbackDiagnostics.graph?.providerId &&
+    !player.dspProviderInspection,
+);
+const providerInspectionFailed = computed(
+  () =>
+    providerConfigured.value &&
+    !player.playbackDiagnostics.graph?.providerId &&
+    player.dspProviderInspection?.status === 'failed',
 );
 const activeProviderMode = computed(() => settingStore.dspProviderMode);
 const providerVpfSupport = computed<'supported' | 'unsupported' | 'unknown'>(() => {
@@ -199,7 +223,12 @@ const activeProviderPresetId = computed(
 const editingProviderPreset = computed(() =>
   providerPresets.value.find((p) => p.id === editingProviderPresetId.value),
 );
-const providerEngineId = computed(() => player.playbackDiagnostics.graph?.providerId ?? '');
+const providerEngineId = computed(
+  () =>
+    player.playbackDiagnostics.graph?.providerId ??
+    player.dspProviderInspection?.info?.providerId ??
+    '',
+);
 const editingProviderPresetActive = computed(
   () =>
     !impulseResponseActive.value &&
@@ -852,16 +881,24 @@ withDefaults(defineProps<Props>(), {
             class="panel-scroll provider-panel-scroll"
             :content-props="{ class: 'provider-scroll-wrap' }"
           >
-            <div v-if="player.playbackDiagnostics.graph?.providerId" class="provider-panel-body">
+            <div v-if="providerChecking" class="provider-panel-empty">
+              <strong>正在加载音效引擎</strong>
+              <span>正在读取引擎能力和预设，请稍候</span>
+            </div>
+            <div v-else-if="providerInspectionFailed" class="provider-panel-empty">
+              <strong>音效引擎信息读取失败</strong>
+              <span>请前往“设置 → 音效管理”检查或重新导入引擎</span>
+            </div>
+            <div v-else-if="providerConfigured" class="provider-panel-body">
               <section class="spatial-provider-card">
                 <div class="provider-card-heading">
                   <span class="provider-card-copy">
                     <strong>{{ providerDisplayName }}</strong>
-                    <small v-if="player.playbackDiagnostics.graph.providerVersion">
-                      v{{ player.playbackDiagnostics.graph.providerVersion }}
-                    </small>
+                    <small v-if="providerVersion"> v{{ providerVersion }} </small>
                   </span>
-                  <span class="provider-status-dot">运行中</span>
+                  <span class="provider-status-dot">
+                    {{ player.playbackDiagnostics.graph?.providerId ? '运行中' : '已就绪' }}
+                  </span>
                 </div>
 
                 <div class="provider-mode-row">
