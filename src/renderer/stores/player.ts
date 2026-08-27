@@ -521,6 +521,8 @@ export const usePlayerStore = defineStore(
         exclusiveAudioDevice: settingStore.exclusiveAudioDevice,
         playbackStallTimeout: settingStore.playbackStallTimeout,
         pauseOnOutputDeviceDisconnect: settingStore.pauseOnOutputDeviceDisconnect,
+        volumeNormalization: settingStore.volumeNormalization,
+        volumeNormalizationLufs: settingStore.volumeNormalizationLufs,
       };
       const unsubscribePauseOnDeviceDisconnect = watch(
         () => settingStore.pauseOnOutputDeviceDisconnect,
@@ -550,6 +552,10 @@ export const usePlayerStore = defineStore(
           settingStore.exclusiveAudioDevice !== snapshot.exclusiveAudioDevice;
         const shouldUpdateStallTimeout =
           settingStore.playbackStallTimeout !== snapshot.playbackStallTimeout;
+        const shouldUpdateVolumeNormalization =
+          settingStore.volumeNormalization !== snapshot.volumeNormalization;
+        const shouldUpdateReferenceLufs =
+          settingStore.volumeNormalizationLufs !== snapshot.volumeNormalizationLufs;
         snapshot = {
           defaultAudioQuality: settingStore.defaultAudioQuality,
           compatibilityMode: settingStore.compatibilityMode,
@@ -560,6 +566,8 @@ export const usePlayerStore = defineStore(
           exclusiveAudioDevice: settingStore.exclusiveAudioDevice,
           playbackStallTimeout: settingStore.playbackStallTimeout,
           pauseOnOutputDeviceDisconnect: settingStore.pauseOnOutputDeviceDisconnect,
+          volumeNormalization: settingStore.volumeNormalization,
+          volumeNormalizationLufs: settingStore.volumeNormalizationLufs,
         };
         if (shouldRefresh) {
           if (getPlaybackIsLoading(state) || state.pendingSettingRefresh)
@@ -575,6 +583,10 @@ export const usePlayerStore = defineStore(
           void deviceManager.applyOutputDevice(settingStore.outputDevice);
         if (shouldUpdateStallTimeout)
           engine.setStallTimeout(settingStore.playbackStallTimeout ?? 8);
+        if (shouldUpdateVolumeNormalization)
+          audioManager.setVolumeNormalization(settingStore.volumeNormalization);
+        if (shouldUpdateReferenceLufs)
+          audioManager.setReferenceLufs(settingStore.volumeNormalizationLufs);
       });
       // 返回清理函数
       return () => {

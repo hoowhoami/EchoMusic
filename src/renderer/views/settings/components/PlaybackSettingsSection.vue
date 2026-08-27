@@ -15,6 +15,7 @@ import { iconCheckMark, iconPencil, iconPlayerPlay, iconPlus, iconTrash, iconX }
 import SettingsSectionShell from './SettingsSectionShell.vue';
 import { audioQualityOptions, sectionTitles } from '../constants';
 import { normalizeAudioEffectName, type SpatialAudioEffectEntry } from '../../../../shared/audio';
+import { calculateNormalizationGainDb } from '../../../../shared/loudness';
 
 const settingStore = useSettingStore();
 const playerStore = usePlayerStore();
@@ -65,13 +66,21 @@ const autoNextMaxAttemptsInput = computed({
 
 const handleVolumeNormalizationChange = (enabled: boolean) => {
   settingStore.volumeNormalization = enabled;
-  playerStore.setVolumeNormalization(enabled);
 };
 
 const handleReferenceLufsSlider = (value: number) => {
   settingStore.volumeNormalizationLufs = value;
-  playerStore.setReferenceLufs(value);
 };
+
+const volumeNormalizationStatus = computed(() => {
+  const loudness = playerStore.currentResolvedAudioLoudness;
+  if (!loudness) return '当前歌曲暂无响度信息，不会自动调整';
+  const gainDb = calculateNormalizationGainDb(loudness, settingStore.volumeNormalizationLufs);
+  if (Math.abs(gainDb) < 0.05) {
+    return `当前歌曲 ${loudness.lufs.toFixed(1)} LUFS，无需调整`;
+  }
+  return `当前歌曲 ${loudness.lufs.toFixed(1)} LUFS，将${gainDb > 0 ? '提高' : '降低'} ${Math.abs(gainDb).toFixed(1)} dB`;
+});
 
 const getImpulseResponseDisplayName = (name: string) => normalizeAudioEffectName(name);
 
@@ -247,7 +256,8 @@ const handleRemoveImpulseResponse = (id: string) => {
       <div class="settings-item">
         <div class="space-y-1">
           <h3 class="font-semibold">参考响度</h3>
-          <p class="text-sm text-text-secondary">数值越高整体音量越大，越低越安静</p>
+          <p class="text-sm text-text-secondary">设定歌曲的目标响度；仅对带有响度信息的音源生效</p>
+          <p class="text-xs text-text-secondary/70">{{ volumeNormalizationStatus }}</p>
         </div>
         <Slider
           class="w-48"

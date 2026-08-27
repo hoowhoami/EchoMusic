@@ -202,7 +202,7 @@ export const useAudioEffectPlaza = () => {
   const typeLabel = (effect: CommunityAudioEffect) => {
     const ir = getCommunityImpulseResponseUrls(effect).length > 0;
     const vpf = getCommunityVpfUrls(effect).length > 0;
-    return ir && vpf ? '组合音效' : vpf ? 'VPF 音效' : ir ? '卷积音效' : '暂无资源';
+    return ir && vpf ? '组合音效' : vpf ? 'VPF 音效' : ir ? '空间音效' : '暂无资源';
   };
   const applyEffect = (effect: CommunityAudioEffect) => {
     // Re-evaluate at click time, including actions retained in download toasts.

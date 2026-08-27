@@ -6,6 +6,12 @@ import type {
   PlayerAudioGraphPlanPatch,
   PlayerAudioGraphSnapshot,
 } from '../../shared/player-audio-graph';
+import {
+  calculateNormalizationGainDb,
+  DEFAULT_REFERENCE_LUFS,
+  type TrackLoudness,
+} from '../../shared/loudness';
+export type { TrackLoudness } from '../../shared/loudness';
 import { DEFAULT_PLAYER_VOLUME } from '../../shared/playback';
 import type { PlaybackSource } from '@/stores/player/types';
 
@@ -100,19 +106,9 @@ export interface MediaSessionSkipIntervals {
   backwardOffset: number;
 }
 
-export interface TrackLoudness {
-  /** 曲目集成响度（LUFS） */
-  lufs: number;
-  /** 服务端建议的增益补偿（dB） */
-  gain: number;
-  /** 采样峰值（0 ~ 1） */
-  peak: number;
-}
-
 const clamp = (value: number, min: number, max: number): number =>
   Math.min(max, Math.max(min, value));
 
-const DEFAULT_REFERENCE_LUFS = -14.0;
 const NORMALIZATION_GAIN_EPSILON = 0.0005;
 
 const isPlayerErrorPayload = (error: unknown): error is PlayerErrorPayload => {
@@ -615,9 +611,9 @@ export class PlayerEngine {
       this.resetNormalizationGain();
       return;
     }
-    const gainLinear = this.computeNormalizationGain(loudness);
+    const gainDb = calculateNormalizationGainDb(loudness, this.referenceLufs);
+    const gainLinear = Math.pow(10, gainDb / 20);
     if (Math.abs(this.normalizationGain - gainLinear) < NORMALIZATION_GAIN_EPSILON) return;
-    const gainDb = 20 * Math.log10(gainLinear);
     this.normalizationGain = gainLinear;
     const command = player?.setNormalizationGain(gainDb);
     if (command) {
@@ -627,13 +623,16 @@ export class PlayerEngine {
     }
     logger.info('PlayerEngine', 'Track loudness applied', {
       lufs,
+      referenceLufs: this.referenceLufs,
+      peakDb: loudness.peak,
+      upstreamGainDb: loudness.gain,
       gainDb: gainDb.toFixed(2) + ' dB',
     });
   }
 
   getTrackLoudnessGainDb(loudness: TrackLoudness | null): number {
     if (!loudness || !this.normalizationEnabled || !Number.isFinite(loudness.lufs)) return 0;
-    return 20 * Math.log10(this.computeNormalizationGain(loudness));
+    return calculateNormalizationGainDb(loudness, this.referenceLufs);
   }
 
   get normalizationGainDb(): number {
@@ -645,18 +644,10 @@ export class PlayerEngine {
     if (this.normalizationEnabled && this.lastTrackLoudness) {
       this.applyTrackLoudness(this.lastTrackLoudness);
     }
-  }
-
-  private computeNormalizationGain(loudness: TrackLoudness): number {
-    const { lufs, gain: suggestedGain, peak } = loudness;
-    let gain = Math.pow(10, (this.referenceLufs - lufs) / 20);
-    if (suggestedGain !== 0) {
-      gain *= Math.pow(10, suggestedGain / 20);
-    }
-    if (peak > 0 && peak * gain > 0.95) {
-      gain = 0.95 / peak;
-    }
-    return clamp(gain, 0.01, 3.0);
+    logger.info('PlayerEngine', 'Reference loudness updated', {
+      referenceLufs: this.referenceLufs,
+      currentGainDb: this.normalizationGainDb.toFixed(2) + ' dB',
+    });
   }
 
   private resetNormalizationGain(): void {

@@ -2,7 +2,7 @@ import type { Song } from '@/models/song';
 import { isPlayableSong, isPaidSong, isVipSong } from '@/utils/song';
 import type { usePlaylistStore } from '../playlist';
 import type { AudioEffectValue, AudioQualityValue } from '../../types';
-import type { TrackLoudness } from '@/utils/player';
+export { resolveTrackLoudness } from '../../../shared/loudness';
 import type { PlaybackNotice } from './types';
 
 import { resolveCoverDisplayUrl } from '@/utils/cover';
@@ -139,43 +139,6 @@ export const resolveUrlsFromResponse = (payload: unknown): string[] => {
     if ('info' in record) return resolveUrlsFromResponse(record.info);
   }
   return [];
-};
-
-const MIN_TRACK_LUFS = -70;
-const MAX_TRACK_LUFS = 0;
-const MIN_TRACK_GAIN_DB = -24;
-const MAX_TRACK_GAIN_DB = 24;
-const MAX_TRACK_PEAK = 4;
-
-const isFiniteNumber = (value: unknown): value is number =>
-  typeof value === 'number' && Number.isFinite(value);
-
-/** 从 API 响应中提取曲目响度信息 */
-export const resolveTrackLoudness = (payload: unknown): TrackLoudness | null => {
-  if (!payload || typeof payload !== 'object') return null;
-  const record = payload as Record<string, unknown>;
-  const source = isFiniteNumber(record.volume)
-    ? record
-    : typeof record.data === 'object' && record.data !== null
-      ? (record.data as Record<string, unknown>)
-      : null;
-  if (!source || !isFiniteNumber(source.volume)) return null;
-  const lufs = source.volume;
-  const gain = isFiniteNumber(source.volume_gain)
-    ? source.volume_gain
-    : isFiniteNumber(source.volumeGain)
-      ? source.volumeGain
-      : 0;
-  const peak = isFiniteNumber(source.volume_peak)
-    ? source.volume_peak
-    : isFiniteNumber(source.volumePeak)
-      ? source.volumePeak
-      : 0;
-  if (lufs <= MIN_TRACK_LUFS || lufs >= MAX_TRACK_LUFS) return null;
-  if (gain < MIN_TRACK_GAIN_DB || gain > MAX_TRACK_GAIN_DB) return null;
-  if (peak < 0 || peak > MAX_TRACK_PEAK) return null;
-  if (lufs === 0 && gain === 0) return null;
-  return { lufs, gain, peak: Math.max(0, peak) };
 };
 
 export const findTrackById = (

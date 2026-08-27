@@ -171,16 +171,18 @@ const normalizeResolvedAudioSource = (
   });
 
   const loudness = value.loudness;
+  const loudnessPeak = loudness && typeof loudness === 'object' ? loudness.peak : undefined;
   const normalizedLoudness: TrackLoudness | null =
-    loudness &&
-    typeof loudness === 'object' &&
-    Number.isFinite(Number(loudness.lufs)) &&
-    Number.isFinite(Number(loudness.gain)) &&
-    Number.isFinite(Number(loudness.peak))
+    loudness && typeof loudness === 'object' && Number.isFinite(Number(loudness.lufs))
       ? {
           lufs: Number(loudness.lufs),
-          gain: Number(loudness.gain),
-          peak: Number(loudness.peak),
+          gain: Number.isFinite(Number(loudness.gain)) ? Number(loudness.gain) : 0,
+          peak:
+            loudnessPeak === null || loudnessPeak === undefined
+              ? null
+              : Number.isFinite(Number(loudnessPeak))
+                ? Number(loudnessPeak)
+                : null,
         }
       : null;
 

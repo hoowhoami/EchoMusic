@@ -452,7 +452,7 @@ const impulseResponseSupport = (file: SpatialAudioEffectEntry) =>
 const currentPlaybackEffectSelection = computed(() => {
   if (impulseResponseActive.value && selectedImpulseResponse.value) {
     const effect = selectedImpulseResponse.value;
-    const type = effect.kind === 'imported-ir' ? '本地卷积音效' : '在线音效';
+    const type = effect.kind === 'imported-ir' ? '空间音效' : '在线音效';
     return {
       active: true,
       name: getImpulseResponseDisplayName(effect.name),
@@ -740,11 +740,9 @@ withDefaults(defineProps<Props>(), {
           <section v-if="builtinAudioEngineActive" class="basic-dsp-mix-control">
             <div class="basic-dsp-mix-heading">
               <span>
-                <strong>卷积效果强度</strong>
+                <strong>音效强度</strong>
                 <small>{{
-                  basicDspConvolutionActive
-                    ? '原声与当前卷积音效的混合比例'
-                    : '启用卷积音效后可调节'
+                  basicDspConvolutionActive ? '原声与当前音效的混合比例' : '启用空间音效后可调节'
                 }}</small>
               </span>
             </div>
@@ -757,13 +755,13 @@ withDefaults(defineProps<Props>(), {
               show-value
               value-suffix="%"
               :disabled="!basicDspConvolutionActive"
-              aria-label="卷积效果强度"
+              aria-label="音效强度"
               @update:model-value="previewConvolutionMix"
               @value-commit="commitConvolutionMix"
             />
             <div class="basic-dsp-mix-labels" aria-hidden="true">
               <span>原声</span>
-              <span>完整效果</span>
+              <span>完整音效</span>
             </div>
           </section>
 
