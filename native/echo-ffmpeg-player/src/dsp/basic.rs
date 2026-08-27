@@ -1152,6 +1152,9 @@ impl SegmentConvolver {
 impl PreparedImpulseChannel {
     fn new(samples: &[f32]) -> Self {
         let mut segments = Vec::new();
+        // The sample-at-a-time API cannot emit the first FFT result until the 256-frame
+        // early block is complete. Frame zero therefore emerges at frame 255. All later
+        // partitions and the dry mix path align to this reported algorithmic latency.
         let latency_frames = EARLY_CONVOLUTION_BLOCK_SIZE.saturating_sub(1);
         let early_len = samples.len().min(EARLY_CONVOLUTION_FRAMES);
         if early_len > 0 {

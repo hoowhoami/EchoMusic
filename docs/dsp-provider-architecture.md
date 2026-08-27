@@ -52,11 +52,16 @@ the resource through without understanding its binary format.
 Basic DSP is the reliable fallback and generic processing path, not a compatibility layer for a
 specific vendor. IRS files are decoded and prepared off the streaming path; steady-state EQ,
 convolution and limiting do not allocate. Its convolution mix is adjustable from 0% (latency-aligned
-dry signal) to 100% (complete convolution output), with a 50% fallback for resources that do not
-declare a recommendation. Downloaded resources keep settings under their stable effect ID; newly
+dry signal) to 100% (complete convolution output), with a product default of 50%. Downloaded
+resources keep settings under their stable effect ID; newly
 imported local resources use a SHA-256 content ID, so the user override survives restarts and
 re-imports without modifying the audio file. Provider resources do not use this Host mix because
 their mixing semantics belong to the Provider.
+
+The partitioned convolver uses a 256-frame early FFT block, so it has an algorithmic latency of
+255 frames (about 5.3 ms at 48 kHz). This is not an arbitrary delay: the dry path is delayed by the
+latency reported by the active convolver before dry/wet mixing. Removing that compensation would
+mix time-shifted copies and create comb filtering at intermediate strengths.
 
 Mono IRS files are expanded to stereo. Two-channel IRS files are routed as `L→L, R→R`.
 Four-channel true-stereo files use the encoded

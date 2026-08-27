@@ -19,7 +19,6 @@ export interface CommunityAudioEffect {
   artistName?: string;
   brandName?: string;
   unavailableReason?: string;
-  recommendedConvolutionMix?: number;
 }
 
 export interface CommunityAudioEffectPage {
@@ -55,11 +54,6 @@ const asString = (value: unknown): string => (typeof value === 'string' ? value.
 const asNumber = (value: unknown): number => {
   const normalized = Number(value);
   return Number.isFinite(normalized) ? normalized : 0;
-};
-
-const asOptionalUnitInterval = (value: unknown): number | undefined => {
-  const normalized = Number(value);
-  return Number.isFinite(normalized) && normalized >= 0 && normalized <= 1 ? normalized : undefined;
 };
 
 const asStringArray = (value: unknown): string[] =>
@@ -117,7 +111,6 @@ const normalizeCommunityAudioEffect = (
     soundUrls: uniqueResourceUrls(record.sound_bk, record.sound),
     vpfUrls: uniqueResourceUrls(record.vpf_bk, record.vpf),
     fileSize: Math.max(0, Math.trunc(asNumber(record.filesize))),
-    recommendedConvolutionMix: asOptionalUnitInterval(record.recommended_mix),
     artistName: asString(record.singername),
     unavailableReason:
       asNumber(record.privilege) > 0 || asNumber(record.singer_privilege) > 0

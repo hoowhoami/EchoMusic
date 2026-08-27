@@ -101,12 +101,16 @@ const impulseResponseActive = computed(
     !!selectedImpulseResponse.value &&
     player.getSpatialAudioEffectSupport(selectedImpulseResponse.value).status === 'supported',
 );
+const providerConfigured = computed(
+  () => settingStore.dspProviderEnabled && !!settingStore.dspProviderPath.trim(),
+);
+const builtinAudioEngineActive = computed(
+  () => !providerConfigured.value && !player.playbackDiagnostics.graph?.providerPath,
+);
 const basicDspConvolutionActive = computed(() => {
   const file = selectedImpulseResponse.value;
   if (!impulseResponseActive.value || !file?.impulseResponsePath) return false;
-  const providerConfigured =
-    settingStore.dspProviderEnabled && !!settingStore.dspProviderPath.trim();
-  return !providerConfigured && !player.playbackDiagnostics.graph?.providerPath;
+  return builtinAudioEngineActive.value;
 });
 const convolutionMixPreview = ref<number | null>(null);
 const convolutionMixPercent = computed(() => {
@@ -485,7 +489,7 @@ const currentPlaybackEffectSelection = computed(() => {
     type: '原声',
     detail: player.playbackDiagnostics.graph?.providerId
       ? `${providerDisplayName.value} 已就绪`
-      : '未启用第三方音效引擎',
+      : '内置音效引擎',
   };
 });
 
@@ -733,11 +737,15 @@ withDefaults(defineProps<Props>(), {
             </span>
           </div>
 
-          <section v-if="basicDspConvolutionActive" class="basic-dsp-mix-control">
+          <section v-if="builtinAudioEngineActive" class="basic-dsp-mix-control">
             <div class="basic-dsp-mix-heading">
               <span>
                 <strong>卷积效果强度</strong>
-                <small>原声与当前卷积音效的混合比例</small>
+                <small>{{
+                  basicDspConvolutionActive
+                    ? '原声与当前卷积音效的混合比例'
+                    : '启用卷积音效后可调节'
+                }}</small>
               </span>
             </div>
             <Slider
@@ -748,6 +756,7 @@ withDefaults(defineProps<Props>(), {
               :step="1"
               show-value
               value-suffix="%"
+              :disabled="!basicDspConvolutionActive"
               aria-label="卷积效果强度"
               @update:model-value="previewConvolutionMix"
               @value-commit="commitConvolutionMix"

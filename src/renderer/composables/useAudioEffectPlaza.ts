@@ -239,11 +239,7 @@ export const useAudioEffectPlaza = () => {
         vpfUrls: getCommunityVpfUrls(effect),
       });
       if (!result.file) throw new Error(result.error || '音效文件下载失败');
-      const file = {
-        ...result.file,
-        source: effect.source,
-        recommendedConvolutionMix: effect.recommendedConvolutionMix,
-      };
+      const file = { ...result.file, source: effect.source };
       settings.addImpulseResponseFile(file, { select: false });
       toast.showAction(
         `已下载“${effect.name}”`,

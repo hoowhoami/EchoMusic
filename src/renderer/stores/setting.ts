@@ -79,10 +79,6 @@ const toImpulseResponseFilePayload = (file: SpatialAudioEffectEntry): SpatialAud
   source: file.source,
   impulseResponsePath: file.impulseResponsePath,
   vpfPath: file.vpfPath,
-  recommendedConvolutionMix:
-    file.recommendedConvolutionMix === undefined
-      ? undefined
-      : normalizeConvolutionMix(file.recommendedConvolutionMix),
 });
 
 export const useSettingStore = defineStore('setting', {
@@ -598,10 +594,7 @@ export const useSettingStore = defineStore('setting', {
     getImpulseResponseMix(id: string): number {
       const saved = this.impulseResponseMixById?.[id];
       if (Number.isFinite(saved)) return normalizeConvolutionMix(saved);
-      const recommended = this.impulseResponseFiles.find(
-        (item) => item.id === id,
-      )?.recommendedConvolutionMix;
-      return normalizeConvolutionMix(recommended);
+      return normalizeConvolutionMix(undefined);
     },
     setImpulseResponseMix(id: string, value: number) {
       if (!this.impulseResponseFiles.some((item) => item.id === id)) return;

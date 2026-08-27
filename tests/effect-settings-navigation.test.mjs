@@ -148,16 +148,24 @@ test('Basic DSP convolution exposes a per-effect mix and providers hide the host
   );
 
   assert.equal(api.basicDspConvolutionActive.value, true);
+  assert.equal(api.builtinAudioEngineActive.value, true);
   assert.equal(api.convolutionMixPercent.value, 50);
   api.previewConvolutionMix(73);
   assert.equal(api.convolutionMixPercent.value, 73);
   api.commitConvolutionMix(73);
   assert.equal(mixes[file.id], 0.73);
-  assert.match(descriptor.template.content, /v-if="basicDspConvolutionActive"/);
+  assert.match(descriptor.template.content, /v-if="builtinAudioEngineActive"/);
+  assert.match(descriptor.template.content, /:disabled="!basicDspConvolutionActive"/);
 
+  store.impulseResponseEnabled = false;
+  assert.equal(api.basicDspConvolutionActive.value, false);
+  assert.equal(api.builtinAudioEngineActive.value, true);
+
+  store.impulseResponseEnabled = true;
   store.dspProviderEnabled = true;
   store.dspProviderPath = '/provider';
   assert.equal(api.basicDspConvolutionActive.value, false);
+  assert.equal(api.builtinAudioEngineActive.value, false);
 });
 
 test('download cards disable by capability status, even if an unavailable reason is empty', (t) => {

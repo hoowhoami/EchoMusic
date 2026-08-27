@@ -10,8 +10,6 @@ export interface SpatialAudioEffectEntry {
   impulseResponsePath?: string;
   vpfPath?: string;
   source?: OnlineAudioEffectSource;
-  /** Optional author recommendation for Basic DSP dry/wet mixing, normalized to 0..1. */
-  recommendedConvolutionMix?: number;
 }
 
 export interface ImportImpulseResponseResult {
