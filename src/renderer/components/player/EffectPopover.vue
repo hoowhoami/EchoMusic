@@ -17,6 +17,7 @@ import Scrollbar from '@/components/ui/Scrollbar.vue';
 import Button from '@/components/ui/Button.vue';
 import Badge from '@/components/ui/Badge.vue';
 import Select from '@/components/ui/Select.vue';
+import Switch from '@/components/ui/Switch.vue';
 import { iconArrowLeft, iconSettings, iconSlidersHorizontal } from '@/icons';
 import { usePlayerControls } from '@/composables/usePlayerControls';
 import EffectPlaza from './EffectPlaza.vue';
@@ -236,6 +237,15 @@ const providerControlDisabled = (control: DspProviderControl) =>
     ['disabled', 'host'].includes(
       providerRuntimeState.value?.controls?.[control.id]?.ownership ?? '',
     ));
+const providerBooleanLabel = (control: DspProviderControl, value: boolean) =>
+  control.options?.find((option) => option.value === value)?.label ?? (value ? '开启' : '关闭');
+const providerBooleanDisabled = (control: DspProviderControl) => {
+  if (providerControlDisabled(control)) return true;
+  const target = providerControlValue(control) !== true;
+  if (!control.options?.length) return false;
+  const targetOption = control.options.find((option) => option.value === target);
+  return !targetOption || targetOption.disabled === true;
+};
 const setProviderMode = (mode: 'headphone' | 'speaker') => {
   if (!player.playbackDiagnostics.graph?.providerPath || activeProviderMode.value === mode) return;
   const id = activeProviderPresetId.value;
@@ -982,17 +992,16 @@ withDefaults(defineProps<Props>(), {
                     }}</span>
                   </div>
                 </div>
-                <label v-else-if="control.type === 'boolean'" class="provider-checkbox">
-                  <input
-                    type="checkbox"
-                    :checked="providerControlValue(control) === true"
-                    :disabled="providerControlDisabled(control)"
-                    @change="
-                      setProviderControl(control, ($event.target as HTMLInputElement).checked)
-                    "
+                <div v-else-if="control.type === 'boolean'" class="provider-switch-control">
+                  <span>{{ providerBooleanLabel(control, false) }}</span>
+                  <Switch
+                    :model-value="providerControlValue(control) === true"
+                    :disabled="providerBooleanDisabled(control)"
+                    :aria-label="control.label || control.id"
+                    @update:model-value="(value) => setProviderControl(control, value)"
                   />
-                  <span>{{ providerControlValue(control) ? '开启' : '关闭' }}</span>
-                </label>
+                  <span>{{ providerBooleanLabel(control, true) }}</span>
+                </div>
                 <Select
                   v-else-if="control.type === 'select'"
                   :model-value="JSON.stringify(providerControlValue(control))"
@@ -1889,7 +1898,7 @@ withDefaults(defineProps<Props>(), {
 }
 
 .provider-settings-panel .provider-control-value,
-.provider-settings-panel .provider-checkbox,
+.provider-settings-panel .provider-switch-control,
 .provider-settings-panel .provider-select {
   font-size: 12px;
 }
@@ -1971,18 +1980,14 @@ withDefaults(defineProps<Props>(), {
   outline: none;
 }
 
-.provider-checkbox {
+.provider-switch-control {
   display: inline-flex;
   width: fit-content;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   color: var(--color-text-secondary);
   font-size: 10px;
   font-weight: 600;
-}
-
-.provider-checkbox input {
-  accent-color: var(--color-primary);
 }
 
 .provider-select {

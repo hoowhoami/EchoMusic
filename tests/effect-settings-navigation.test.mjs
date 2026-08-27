@@ -271,6 +271,15 @@ test('provider select uses project Select and retains numeric/JSON option types'
     defaultValue: 0,
     range: { min: 0, max: 100, step: 1, minLabel: '全新', maxLabel: '老化', inverted: true },
   };
+  const mode = {
+    id: 'mode',
+    type: 'boolean',
+    defaultValue: true,
+    options: [
+      { value: false, label: '自动', disabled: true },
+      { value: true, label: '手动' },
+    ],
+  };
   const writes = [];
   const store = vue.reactive({
     dspProviderEnabled: true,
@@ -288,7 +297,7 @@ test('provider select uses project Select and retains numeric/JSON option types'
         providerId: 'engine',
         providerPath: '/engine',
         providerManifestJson: JSON.stringify({
-          presets: [{ id: 'record', label: '唱片', controls: [year, aging] }],
+          presets: [{ id: 'record', label: '唱片', controls: [year, aging, mode] }],
         }),
       },
     },
@@ -316,6 +325,11 @@ test('provider select uses project Select and retains numeric/JSON option types'
   api.setProviderSelect(year, '"sensor"');
   api.setProviderSelect(year, ['2010']);
   assert.equal(writes.length, 1);
+  assert.equal(api.providerBooleanLabel(mode, false), '自动');
+  assert.equal(api.providerBooleanLabel(mode, true), '手动');
+  assert.equal(api.providerBooleanDisabled(mode), true);
+  api.setProviderControl(mode, false);
+  assert.equal(writes.length, 1);
   const structured = {
     id: 'scene',
     type: 'select',
@@ -330,7 +344,9 @@ test('provider select uses project Select and retains numeric/JSON option types'
   api.setProviderControl(aging, 0);
   assert.equal(writes.at(-1).controls.aging.value, 0, 'right endpoint keeps API aging=0');
   assert.match(descriptor.template.content, /<Select\s/);
+  assert.match(descriptor.template.content, /<Switch\s/);
   assert.doesNotMatch(descriptor.template.content, /<select\s/);
+  assert.doesNotMatch(descriptor.template.content, /type="checkbox"/);
   assert.match(descriptor.template.content, /:inverted="control.range\?\.inverted \?\? false"/);
   assert.match(
     descriptor.template.content,

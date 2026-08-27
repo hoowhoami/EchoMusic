@@ -148,6 +148,21 @@ test('disabled select options are visible capabilities but never valid saved val
   assert.equal(controlDefault({ ...mode, defaultValue: 'auto' }), 'manual');
 });
 
+test('boolean controls can label switch sides and disable an unavailable state', () => {
+  const mode: DspProviderControl = {
+    id: 'mode',
+    type: 'boolean',
+    defaultValue: true,
+    options: [
+      { value: false, label: '自动', disabled: true },
+      { value: true, label: '手动' },
+    ],
+  };
+  assert.equal(validControlValue(mode, false), false);
+  assert.equal(validControlValue(mode, true), true);
+  assert.equal(controlDefault({ ...mode, defaultValue: false }), true);
+});
+
 test('configuration availability follows editable capabilities, never development status', () => {
   const manifest: DspProviderManifest = {
     schemaVersion: 1,
