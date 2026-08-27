@@ -16,36 +16,36 @@ import {
 import type { DspProviderControl, DspProviderManifest } from '../src/shared/player-audio-graph.ts';
 
 const controls: DspProviderControl[] = [
-  { id: 'speed', type: 'number', defaultValue: 10, range: { min: 0, max: 20, step: 1 } },
+  { id: 'amount', type: 'number', defaultValue: 10, range: { min: 0, max: 20, step: 1 } },
   {
-    id: 'scene',
+    id: 'variant',
     type: 'select',
-    defaultValue: 'loop',
+    defaultValue: 'a',
     options: [
-      { value: 'loop', label: '旋转' },
-      { value: 'star', label: '星空' },
+      { value: 'a', label: '方案 A' },
+      { value: 'b', label: '方案 B' },
     ],
   },
   { id: 'enabled', type: 'boolean', defaultValue: true },
 ];
 
 test('editing inactive presets saves settings without selecting or changing playback', () => {
-  const oldJson = makeDspPresetJson('rotate', controls);
+  const oldJson = makeDspPresetJson('preset-a', controls);
   const state = {
     dspProviderPresetJson: oldJson,
-    dspProviderPresetBank: { [dspPresetBankKey('engine', 'speaker', 'rotate')]: oldJson },
+    dspProviderPresetBank: { [dspPresetBankKey('engine', 'speaker', 'preset-a')]: oldJson },
     dspProviderMode: 'headphone',
     impulseResponseEnabled: false,
   };
-  const json = makeDspPresetJson('record', controls);
+  const json = makeDspPresetJson('preset-b', controls);
   const patch = dspPresetSettingsPatch(state, 'engine', json);
   assert.equal(Object.hasOwn(patch, 'dspProviderPresetJson'), false);
   assert.equal(
-    patch.dspProviderPresetBank?.[dspPresetBankKey('engine', 'headphone', 'record')],
+    patch.dspProviderPresetBank?.[dspPresetBankKey('engine', 'headphone', 'preset-b')],
     json,
   );
   assert.equal(
-    patch.dspProviderPresetBank?.[dspPresetBankKey('engine', 'speaker', 'rotate')],
+    patch.dspProviderPresetBank?.[dspPresetBankKey('engine', 'speaker', 'preset-a')],
     oldJson,
   );
   assert.equal(state.dspProviderPresetJson, oldJson);
@@ -62,7 +62,7 @@ test('editing inactive presets saves settings without selecting or changing play
 });
 
 test('editing the active preset applies and saves; reset and invalid identity are safe', () => {
-  const defaults = makeDspPresetJson('rotate', controls);
+  const defaults = makeDspPresetJson('preset-a', controls);
   const state = {
     dspProviderPresetJson: defaults,
     dspProviderPresetBank: {},
@@ -70,14 +70,14 @@ test('editing the active preset applies and saves; reset and invalid identity ar
     impulseResponseEnabled: false,
   };
   const changed = makeDspPresetJson(
-    'rotate',
+    'preset-a',
     controls,
-    '{"presetId":"rotate","controls":{"speed":{"value":20}}}',
+    '{"presetId":"preset-a","controls":{"amount":{"value":20}}}',
   );
   const patch = dspPresetSettingsPatch(state, 'engine', changed);
   assert.equal(patch.dspProviderPresetJson, changed);
   assert.equal(
-    patch.dspProviderPresetBank?.[dspPresetBankKey('engine', 'speaker', 'rotate')],
+    patch.dspProviderPresetBank?.[dspPresetBankKey('engine', 'speaker', 'preset-a')],
     changed,
   );
   assert.equal(
@@ -106,18 +106,18 @@ test('per-preset controls override global controls, including an explicit empty 
 
 test('commands retain preset identity and only valid applicable parameter values', () => {
   const saved = JSON.stringify({
-    presetId: 'rotate',
-    controls: { speed: { value: 5 }, obsolete: { value: 99 } },
+    presetId: 'preset-a',
+    controls: { amount: { value: 5 }, obsolete: { value: 99 } },
   });
-  const result = parseDspPreset(makeDspPresetJson('rotate', controls, saved));
-  assert.equal(result.presetId, 'rotate');
+  const result = parseDspPreset(makeDspPresetJson('preset-a', controls, saved));
+  assert.equal(result.presetId, 'preset-a');
   assert.deepEqual(result.controls, {
-    speed: { value: 5 },
-    scene: { value: 'loop' },
+    amount: { value: 5 },
+    variant: { value: 'a' },
     enabled: { value: true },
   });
   assert.equal(
-    parseDspPreset(makeDspPresetJson('another', controls, saved)).controls.speed.value,
+    parseDspPreset(makeDspPresetJson('another', controls, saved)).controls.amount.value,
     10,
   );
   assert.equal(makeDspPresetJson('fixed', []), '{"presetId":"fixed"}');
@@ -194,7 +194,7 @@ test('wrong types, invalid ranges, fractional steps and invalid enum values are 
   assert.equal(validControlValue(controls[1], 'unknown'), false);
   assert.equal(validControlValue(controls[2], 0), false);
   assert.equal(
-    presetControlValues(controls, '{"presetId":"x","controls":{"speed":{"value":999}}}').speed
+    presetControlValues(controls, '{"presetId":"x","controls":{"amount":{"value":999}}}').amount
       .value,
     10,
   );
@@ -203,7 +203,7 @@ test('wrong types, invalid ranges, fractional steps and invalid enum values are 
 test('defaults, visibility and engine/device/preset storage remain independent', () => {
   const values = presetControlValues(controls, '');
   assert.equal(
-    controlVisible({ ...controls[0], visibleWhen: { controlId: 'scene', value: 'star' } }, values),
+    controlVisible({ ...controls[0], visibleWhen: { controlId: 'variant', value: 'b' } }, values),
     false,
   );
   const keys = [
@@ -227,26 +227,26 @@ test('provider-owned controls only; saved __proto__ is data and cannot change pr
   assert.equal(Object.hasOwn(parsed.controls, '__proto__'), true);
 });
 
-test('rotation engine upgrade adds bass and field defaults without losing saved speed', () => {
-  const id = 'kugou-3d-rotation';
-  const rotation: DspProviderControl[] = [
+test('control schema upgrades add defaults without losing saved values', () => {
+  const id = 'adjustable';
+  const upgradedControls: DspProviderControl[] = [
     controls[0],
-    { id: 'bass', type: 'number', defaultValue: 0, range: { min: 0, max: 400, step: 1 } },
-    { id: 'field', type: 'number', defaultValue: 0, range: { min: 0, max: 4, step: 1 } },
+    { id: 'depth', type: 'number', defaultValue: 0, range: { min: 0, max: 400, step: 1 } },
+    { id: 'width', type: 'number', defaultValue: 0, range: { min: 0, max: 4, step: 1 } },
   ];
-  const legacy = JSON.stringify({ presetId: id, controls: { speed: { value: 16 } } });
-  const upgraded = makeDspPresetJson(id, rotation, legacy);
+  const legacy = JSON.stringify({ presetId: id, controls: { amount: { value: 16 } } });
+  const upgraded = makeDspPresetJson(id, upgradedControls, legacy);
   assert.deepEqual(parseDspPreset(upgraded).controls, {
-    speed: { value: 16 },
-    bass: { value: 0 },
-    field: { value: 0 },
+    amount: { value: 16 },
+    depth: { value: 0 },
+    width: { value: 0 },
   });
   const changed = makeDspPresetJson(
     id,
-    rotation,
+    upgradedControls,
     JSON.stringify({
       presetId: id,
-      controls: { speed: { value: 16 }, bass: { value: 200 }, field: { value: 3 } },
+      controls: { amount: { value: 16 }, depth: { value: 200 }, width: { value: 3 } },
     }),
   );
   const state = {
@@ -258,21 +258,21 @@ test('rotation engine upgrade adds bass and field defaults without losing saved 
   const patch = dspPresetSettingsPatch(state, 'engine', changed);
   const key = dspPresetBankKey('engine', 'headphone', id);
   assert.equal(patch.dspProviderPresetJson, changed);
-  assert.equal(makeDspPresetJson(id, rotation, patch.dspProviderPresetBank?.[key]), changed);
-  const defaults = makeDspPresetJson(id, rotation);
+  assert.equal(makeDspPresetJson(id, upgradedControls, patch.dspProviderPresetBank?.[key]), changed);
+  const defaults = makeDspPresetJson(id, upgradedControls);
   const reset = dspPresetSettingsPatch({ ...state, ...patch }, 'engine', defaults);
   assert.deepEqual(parseDspPreset(reset.dspProviderPresetJson!).controls, {
-    speed: { value: 10 },
-    bass: { value: 0 },
-    field: { value: 0 },
+    amount: { value: 10 },
+    depth: { value: 0 },
+    width: { value: 0 },
   });
-  assert.equal(validControlValue(rotation[1], 401), false);
-  assert.equal(validControlValue(rotation[2], 5), false);
-  assert.equal(validControlValue(rotation[2], 1.5), false);
+  assert.equal(validControlValue(upgradedControls[1], 401), false);
+  assert.equal(validControlValue(upgradedControls[2], 5), false);
+  assert.equal(validControlValue(upgradedControls[2], 1.5), false);
 });
 
-test('surround mode switches visible controls without dropping the other mode settings', () => {
-  const id = 'kugou-3d-surround';
+test('conditional controls switch visibility without dropping hidden settings', () => {
+  const id = 'conditional';
   const choice = (id: string, values: number[], defaultValue: number): DspProviderControl => ({
     id,
     type: 'select',
@@ -280,56 +280,56 @@ test('surround mode switches visible controls without dropping the other mode se
     ownership: 'provider',
     options: values.map((value) => ({ value, label: String(value) })),
   });
-  const surround: DspProviderControl[] = [
+  const conditional: DspProviderControl[] = [
     choice('mode', [0, 1], 0),
-    { ...choice('speed', [0, 1, 2, 3, 4], 2), visibleWhen: { controlId: 'mode', value: 0 } },
+    { ...choice('amount', [0, 1, 2, 3, 4], 2), visibleWhen: { controlId: 'mode', value: 0 } },
     { ...choice('level', [0, 1, 2, 3, 4], 2), visibleWhen: { controlId: 'mode', value: 1 } },
   ];
   const manifest: DspProviderManifest = {
     schemaVersion: 1,
-    presets: [{ id, label: '3D环绕', controls: surround }],
+    presets: [{ id, label: '条件音效', controls: conditional }],
   };
   assert.equal(configurablePresetControls(manifest, id).length, 3);
-  const upgraded = makeDspPresetJson(id, surround, JSON.stringify({ presetId: id }));
+  const upgraded = makeDspPresetJson(id, conditional, JSON.stringify({ presetId: id }));
   assert.deepEqual(parseDspPreset(upgraded).controls, {
     mode: { value: 0 },
-    speed: { value: 2 },
+    amount: { value: 2 },
     level: { value: 2 },
   });
   let current = makeDspPresetJson(
     id,
-    surround,
+    conditional,
     JSON.stringify({
       presetId: id,
-      controls: { mode: { value: 0 }, speed: { value: 4 }, level: { value: 1 } },
+      controls: { mode: { value: 0 }, amount: { value: 4 }, level: { value: 1 } },
     }),
   );
   for (const mode of [0, 1, 0]) {
     const command = parseDspPreset(current);
     command.controls.mode.value = mode;
-    current = makeDspPresetJson(id, surround, JSON.stringify(command));
+    current = makeDspPresetJson(id, conditional, JSON.stringify(command));
     const state = {
       dspProviderPresetJson: current,
       dspProviderPresetBank: {},
       dspProviderMode: 'headphone',
       impulseResponseEnabled: false,
     };
-    const saved = dspPresetSettingsPatch(state, 'echomusic-viper', current);
+    const saved = dspPresetSettingsPatch(state, 'example-provider', current);
     current = makeDspPresetJson(
       id,
-      surround,
-      saved.dspProviderPresetBank![dspPresetBankKey('echomusic-viper', 'headphone', id)],
+      conditional,
+      saved.dspProviderPresetBank![dspPresetBankKey('example-provider', 'headphone', id)],
     );
-    const values = presetControlValues(surround, current);
+    const values = presetControlValues(conditional, current);
     assert.deepEqual(
-      surround.filter((c) => controlVisible(c, values)).map((c) => c.id),
-      ['mode', mode === 0 ? 'speed' : 'level'],
+      conditional.filter((c) => controlVisible(c, values)).map((c) => c.id),
+      ['mode', mode === 0 ? 'amount' : 'level'],
     );
-    assert.equal(values.speed.value, 4);
+    assert.equal(values.amount.value, 4);
     assert.equal(values.level.value, 1);
     assert.equal(saved.dspProviderPresetJson, current);
   }
-  assert.equal(makeDspPresetJson(id, surround), upgraded);
+  assert.equal(makeDspPresetJson(id, conditional), upgraded);
   for (const value of [-1, 5, 1.5, '2', true, null])
-    assert.equal(validControlValue(surround[1], value), false);
+    assert.equal(validControlValue(conditional[1], value), false);
 });

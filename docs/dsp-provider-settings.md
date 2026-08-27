@@ -1,6 +1,6 @@
 # 音效引擎与设置 UI
 
-EchoMusic 根据引擎 manifest 生成设置，不内置酷狗音效名称或专属参数逻辑。
+EchoMusic 根据引擎 manifest 生成设置，不内置任何 Provider 的音效名称或专属参数逻辑。
 引擎负责算法、默认值、参数校验和实际值回显；播放器负责展示、保存和调用。
 ABI 仍是 v2，以下只是 JSON 的兼容扩展。
 
@@ -52,8 +52,8 @@ ABI 仍是 v2，以下只是 JSON 的兼容扩展。
 - 默认值优先采用 `defaultValue`，兼容旧字段 `value`。
 - `description` 提供控件说明；`visibleWhen: {controlId, value}` 控制关联项显隐。
 - 数值控件可通过 `range.minLabel/maxLabel` 描述两端、`range.inverted` 反转视觉方向；
-  标签随方向交换，保存和下发的数值不变。黑胶为左侧老化100%、右侧全新0%。
-  老引擎未声明这些字段时保持原有呈现，不根据预设名字猜测方向。
+  标签随方向交换，保存和下发的数值不变。老引擎未声明这些字段时保持原有呈现，
+  不根据预设名字猜测方向。
 - 选项复用项目 `Select`，选项值经可逆编码保留原JSON类型；嵌套菜单不关闭外层音效面板。
 - `ownership: host/disabled`、只读类型、空选项列表不计入可配置能力。
 - `supportedSampleRates` 可选；当前处理采样率不支持时禁用预设选择并给出原因。
@@ -138,41 +138,13 @@ node --experimental-strip-types --test tests/audio-effect-support.test.mjs tests
 - 恢复默认只重置面板中的预设、当前输出模式；非当前音效不会因此被启用。
 - 升级引擎后，恢复时丢弃已删除的参数，并校验新范围、步进及选项；无效值回到默认。
 
-## EchoMusicViper 当前接入
+## 验证
 
-0.13.0 新增3D环绕：`mode` 为循环0／声场1；循环时显示 `speed` 的15/12/10/8/5秒
-五档（值0–4，默认2），声场时显示 `level` 的小/较小/中/较大/大五档
-（值0–4，默认2）。`visibleWhen` 只控制显隐，保存和发送仍包含完整的三项参数。
-默认模式为循环；原来没有参数的已选3D环绕在升级后补齐0/2/2。
-设置入口、Select、浮层内二级面板和SQLite存储均复用现有逻辑，不添加音效专用UI。
-同档和隐藏项变更不重启轨迹，有效图切换由引擎清理旧排队声音并加载目标图。
-
-当前0.30.0引擎支持黑胶唱片的五个年代和 0–100% 老化程度、3D旋转的三条滑杆
-（旋转速度0–20／默认10、超重低音0–400／默认0、声场大小0–4／默认0，均为整数；速度0为极慢速），以及声乐古风的人声／乐器平衡
-（0–100% 整数，默认25%；左侧人声、右侧乐器），均支持44.1/48/96kHz。
-这些参数由引擎实际处理，UI 无需添加酷狗专属代码；旋转低音/声场均为0时完全绕过新增增强链。
-新引擎通过每预设 `controls` 声明三项设置，现有弹出层内设置面板按声明顺序自动展示。
-旧参数库只有速度时，保留原速度并补齐低音0／声场0；不清空SQLite、不迁移到localStorage。
-点击重置恢复10／0／0，切换音效和重启仍通过原参数库恢复。
-保留0.11.1黑胶老化滑杆的端点文字和方向描述；已有DSP数值及保存含义不变。
-3D环绕、空间音效、演唱会和5.1全景也均通过每预设 `controls` 声明设置；其中空间音效
-自动模式与当前macOS原版一致保持禁用，5.1全景的六路声道开关使用项目 `Switch`。
-不带 `controls` 的预设不显示设置图标。
-
-重新构建并导入引擎后，点击可配置预设右侧的设置图标即可调整。播放器原生模块应至少
-包含运行时 `latencyFrames` 刷新支持。引擎更新不自动替换已运行进程中的动态库。
-
-验证命令：
+EchoMusic 的测试只验证通用 manifest、设置持久化、资源能力和 ABI 宿主行为。
+具体 Provider 的预设、参数映射、算法输出、采样率及延迟应在对应 Provider 仓库验证。
 
 ```sh
-node --experimental-strip-types --test tests/dsp-provider-settings.test.ts tests/latest-request-queue.test.ts tests/effect-settings-navigation.test.mjs
+node --experimental-strip-types --test tests/audio-effect-support.test.mjs tests/dsp-provider-settings.test.ts tests/latest-request-queue.test.ts tests/effect-settings-navigation.test.mjs
 pnpm exec vue-tsc --noEmit
-ECHO_TEST_DSP_PROVIDER=/absolute/path/to/libEchoMusicViper.dylib \
-  cargo test --manifest-path native/echo-ffmpeg-player/Cargo.toml \
-  dsp::provider::tests::runtime_preset_ -- --ignored --nocapture
+cargo test --manifest-path native/echo-ffmpeg-player/Cargo.toml
 ```
-
-上述六项真实库测试要求0.30.0+。3D环绕在44.1/48/96kHz分别回报2303/2303/4734帧延迟。
-旋转默认在44.1/48/96kHz分别回报383/857/1169帧延迟，
-开启低音或声场后分别为4734/5208/10223帧；两项均归零即恢复默认延迟。
-声乐古风为8447帧；切换回黑胶应恢复256帧。播放器不可缓存首次创建实例时的延迟。

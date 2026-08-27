@@ -3,7 +3,7 @@
 ## Goal
 
 Keep playback reliability in EchoMusic and make complex effects replaceable without putting a
-partial ViPER implementation in the player core.
+provider-specific implementation in the player core.
 
 ```text
 FFmpeg decode -> format conversion -> DspHost -> tempo -> output gain -> device output
@@ -15,8 +15,8 @@ FFmpeg decode -> format conversion -> DspHost -> tempo -> output gain -> device 
 
 The native provider is always loaded in the player process. There is no sidecar protocol or PCM IPC.
 
-Per-preset controls, persistence, runtime acknowledgement and the current EchoMusicViper
-integration are described in [Provider settings UI](dsp-provider-settings.md).
+Per-preset controls, persistence and runtime acknowledgement are described in
+[Provider settings UI](dsp-provider-settings.md).
 
 ## Responsibilities
 
@@ -147,8 +147,8 @@ Provider + non-VPF audio resource -> selected Provider
   VPF resource without Provider     -> explicit unsupported error
 ```
 
-The UI consumes provider capabilities and does not render VDDC, VSE, or other provider-specific
-controls when the active provider does not advertise them.
+The UI consumes provider capabilities and does not render provider-specific controls when the
+active provider does not advertise them.
 
 `manifest_json` describes the modules and controls the Provider can implement. `state_json`
 describes the current preset and its control policy. Neither document has fixed EchoMusic effect
@@ -205,7 +205,7 @@ fields are optional additions:
 
 ```json
 {
-  "providerPath": ".../viper-provider.dll",
+  "providerPath": ".../audio-provider.dll",
   "providerPresetJson": "...",
   "providerMode": "headphone",
   "providerResources": [
