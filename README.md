@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Electron-42.3.1-blue?logo=electron" alt="Electron">
+  <img src="https://img.shields.io/badge/Electron-43.4.1-blue?logo=electron" alt="Electron">
   <img src="https://img.shields.io/badge/Vue-3.5-brightgreen?logo=vue.js" alt="Vue 3">
   <img src="https://img.shields.io/badge/TypeScript-5.9-blue?logo=typescript" alt="TypeScript">
   <img src="https://img.shields.io/badge/Rust-napi--rs-orange?logo=rust" alt="Rust">
@@ -22,7 +22,7 @@
 ## ✨ 核心特性
 
 - **极致美学**：精心适配桌面端布局，支持深浅色模式与主题色自定义，完美兼顾信息密度、个性表达与沉浸式体验。
-- **数据安全**：官方服务器直连，数据不经过第三方服务器，保证用户数据安全。
+- **数据路径透明**：核心音乐请求由本地服务直接访问对应平台；项目不提供音频中转或云端账号托管。第三方插件具备独立网络能力，安装前请确认来源可信。
 - **音乐推荐**：支持歌曲、歌单、歌手、专辑、排行榜等内容推荐。
 - **多维探索**：支持歌曲、歌手、专辑、歌单、歌词、MV 全方位搜索，快速发现心仪旋律。
 - **外部歌单导入**：支持网易云、QQ 音乐、酷我、酷狗、汽水、Spotify、Apple Music 导入。
@@ -31,10 +31,10 @@
 - **音乐云盘**：支持本地音频和跨平台文件导入，快速将专属音乐同步至云端存储。
 - **听歌识曲**：支持麦克风和系统音频捕获，快速识别正在播放的歌曲。
 - **歌曲详情**：支持查看歌曲档案及播放详情。
-- **分享功能**: 支持将你喜欢的歌曲、歌单、专辑、歌手、插件一键分享给好友或社交平台。
+- **分享功能**：支持将你喜欢的歌曲、歌单、专辑、歌手、插件一键分享给好友或社交平台。
 - **歌曲评论**：支持查看歌曲评论与评论楼层跳转。
 - **歌词显示**：支持 LRC/YRC 逐字歌词解析、歌词选择、歌词翻译、正则过滤、滚动同步、全屏歌词、写真模式、桌面歌词。
-- **音频增强**：支持 10 段参数化 EQ 均衡器（带自动增益补偿）、音量均衡（基于 LUFS 响度标准化）、导入式空间音效（高效 IR 卷积）与多种音效模式，支持音效社区在线获取参数音效、卷积音效与组合音效。
+- **音频增强**：内置 Basic DSP，支持 10 段均衡器（按完整频响自动前级补偿）、LUFS 响度标准化与高效 IR 卷积；还可安装独立 Provider 扩展参数音效和组合音效。
 - **实时频谱分析**：直接从播放引擎提取音频数据，使用 FFT 进行实时频谱分析，为插件提供低延迟、高精度的频谱帧。
 - **系统媒体控制**：原生集成 macOS MPNowPlayingInfoCenter、Windows SMTC、Linux MPRIS，支持系统媒体按键和进度同步。
 - **系统集成**：支持窗口控制、系统托盘、托盘快捷控制、全局快捷键、开机自启动、启动时最小化和 mini 模式。
@@ -47,17 +47,17 @@
 
 ## 热插拔式音效引擎
 
-- 主程序支持自定义音效引擎，管理自定义音效引擎。
-- 用户可以根据喜好定制符合自己音乐风格的音效引擎。
-- 开发自定义引擎请参阅 [音效引擎 Provider 架构](docs/dsp-provider-architecture.md)；
+- 无外部引擎时由跨平台 Basic DSP 提供均衡器、响度标准化和通用 IRS 卷积。
+- 可安装、启用和切换独立 DSP Provider；主程序只消费标准能力与设置描述，不绑定具体引擎实现。
+- 开发 Provider 请参阅 [音效引擎 Provider 架构](docs/dsp-provider-architecture.md)；
   manifest、预设参数和通用设置面板协议见 [Provider 设置 UI](docs/dsp-provider-settings.md)。
 
 ## 🛠️ 技术栈
 
-- **Desktop Shell**: [Electron](https://www.electronjs.org/) 42.3
+- **Desktop Shell**: [Electron](https://www.electronjs.org/) 43.4
 - **Frontend**: [Vue 3.5](https://vuejs.org/) + [TypeScript 5.9](https://www.typescriptlang.org/)
-- **Build Tool**: [Vite](https://vitejs.dev/) 8
-- **State Management**: [Pinia](https://pinia.vuejs.org/) + [pinia-plugin-persistedstate](https://prazdevs.github.io/pinia-plugin-persistedstate/)
+- **Build Tool**: [Vite](https://vite.dev/) 8
+- **State Management**: [Pinia](https://pinia.vuejs.org/) + 原生 SQLite 持久化
 - **UI Primitives**: [Reka UI](https://reka-ui.com/)
 - **CSS**: [Tailwind CSS](https://tailwindcss.com/) v4.3
 - **Routing**: [Vue Router](https://router.vuejs.org/)
@@ -102,7 +102,7 @@
 
 ### 前置要求
 
-- [Node.js](https://nodejs.org/) 18+
+- [Node.js](https://nodejs.org/) 22.12+
 - [pnpm](https://pnpm.io/) 9+
 - [Rust](https://www.rust-lang.org/)（编译原生模块需要）
 - FFmpeg 开发库（编译播放引擎原生模块需要；运行时不依赖外部 `ffmpeg` 可执行文件）
@@ -144,9 +144,9 @@ setx LIBCLANG_PATH "C:\Program Files\LLVM\bin"
    需手动下载并解压Electron到对应目录：
 
    ```bash
-   cd node_modules/.pnpm/electron@42.3.1/node_modules/electron/
+   cd node_modules/.pnpm/electron@43.4.1/node_modules/electron/
    mkdir -p dist
-   curl -L -o /tmp/electron.zip "https://npmmirror.com/mirrors/electron/v42.3.1/electron-v42.3.1-linux-x64.zip"
+   curl -L -o /tmp/electron.zip "https://npmmirror.com/mirrors/electron/v43.4.1/electron-v43.4.1-linux-x64.zip"
    unzip -o /tmp/electron.zip -d dist/
    printf '%s' './electron' > path.txt
    ```
@@ -202,9 +202,11 @@ ECHOMUSIC_MEMORY_DIAGNOSTICS=1 pnpm dev
 
 ## 插件系统
 
-EchoMusic 支持在线插件源浏览安装与本地插件扩展。插件可以提供高自由度的扩展能力，包括自定义页面、音源解析、歌词解析、音频频谱、插件浮窗、本地 Web 服务，以及由 `ctx.lyricEffects.register()` 提供的页面歌词/桌面歌词动效扩展点。
+EchoMusic 支持在线插件源和本地插件，可以扩展页面、音源、歌词、播放器交互、后台任务、独立浮窗与本地服务。插件运行在受信任的本地扩展环境中，并非浏览器扩展沙盒；请只安装来源可信的插件。
 
-👉 **[插件开发文档](https://github.com/hoowhoami/EchoMusicPlugins)**
+- [插件系统说明](docs/plugin-system.md)
+- [完整插件开发指南](https://github.com/hoowhoami/EchoMusicPlugins/blob/main/docs/plugin-development.md)
+- [官方插件源与示例](https://github.com/hoowhoami/EchoMusicPlugins)
 
 ## 🏗️ 编译发布
 
