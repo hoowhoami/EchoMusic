@@ -34,7 +34,7 @@
 - **分享功能**：支持将你喜欢的歌曲、歌单、专辑、歌手、插件一键分享给好友或社交平台。
 - **歌曲评论**：支持查看歌曲评论与评论楼层跳转。
 - **歌词显示**：支持 LRC/YRC 逐字歌词解析、歌词选择、歌词翻译、正则过滤、滚动同步、全屏歌词、写真模式、桌面歌词。
-- **音频增强**：内置 Basic DSP，支持 10 段均衡器（按完整频响自动前级补偿）、LUFS 响度标准化与高效 IR 卷积；还可安装独立 Provider 扩展参数音效和组合音效。
+- **音频增强**：内置跨平台音效引擎，支持 10 段均衡器（按完整频响自动前级补偿）、LUFS 响度标准化和 WAV/IRS 空间音效；也可导入兼容音效引擎，扩展更多预设、可调参数与组合音效。
 - **实时频谱分析**：直接从播放引擎提取音频数据，使用 FFT 进行实时频谱分析，为插件提供低延迟、高精度的频谱帧。
 - **系统媒体控制**：原生集成 macOS MPNowPlayingInfoCenter、Windows SMTC、Linux MPRIS，支持系统媒体按键和进度同步。
 - **系统集成**：支持窗口控制、系统托盘、托盘快捷控制、全局快捷键、开机自启动、启动时最小化和 mini 模式。
@@ -44,13 +44,6 @@
 - **跨平台支持**：完整适配 macOS、Windows 与 Linux 系统。
 - **自动更新**：内置应用更新检测与下载，支持静默更新。
 - **持续集成**：完善的 GitHub Actions 配置，支持多平台自动构建与 Release 发布。
-
-## 热插拔式音效引擎
-
-- 无外部引擎时由跨平台 Basic DSP 提供均衡器、响度标准化和通用 IRS 卷积。
-- 可安装、启用和切换独立 DSP Provider；主程序只消费标准能力与设置描述，不绑定具体引擎实现。
-- 开发 Provider 请参阅 [音效引擎 Provider 架构](docs/dsp-provider-architecture.md)；
-  manifest、预设参数和通用设置面板协议见 [Provider 设置 UI](docs/dsp-provider-settings.md)。
 
 ## 🛠️ 技术栈
 
@@ -200,7 +193,16 @@ ECHOMUSIC_MEMORY_DIAGNOSTICS=1 pnpm dev
 ~/Library/Logs/EchoMusic/echo-music-YYYY-MM-DD.log
 ```
 
-## 插件系统
+## 扩展开发
+
+### 音效引擎扩展
+
+EchoMusic 无需导入外部引擎即可使用内置音效能力。兼容的 DSP Provider 可以在“设置 → 音效管理”中导入、启用和切换，为播放器增加独立预设、参数设置及组合音效支持。播放器根据 Provider 声明的能力生成界面和应用音效，不依赖某个特定引擎的实现。
+
+- [DSP Provider 架构与接入协议](docs/dsp-provider-architecture.md)
+- [预设、参数与设置界面协议](docs/dsp-provider-settings.md)
+
+### 插件系统
 
 EchoMusic 支持在线插件源和本地插件，可以扩展页面、音源、歌词、播放器交互、后台任务、独立浮窗与本地服务。插件运行在受信任的本地扩展环境中，并非浏览器扩展沙盒；请只安装来源可信的插件。
 
