@@ -855,7 +855,12 @@ withDefaults(defineProps<Props>(), {
                       :disabled="!providerPresetAvailable(preset)"
                       @click="setProviderPreset(preset.id)"
                     >
-                      <span>{{ preset.label }}</span>
+                      <span class="provider-preset-label">{{ preset.label }}</span>
+                      <small
+                        v-if="preset.recommendedDevice === 'headphone'"
+                        class="provider-preset-device-tag"
+                        >耳机</small
+                      >
                     </button>
                     <button
                       v-if="configurablePresetControls(providerManifest, preset.id).length"
@@ -1783,6 +1788,7 @@ withDefaults(defineProps<Props>(), {
   min-width: 0;
   min-height: 38px;
   align-items: center;
+  gap: 6px;
   padding: 7px 9px;
   border: 0;
   border-radius: 8px;
@@ -1814,16 +1820,35 @@ withDefaults(defineProps<Props>(), {
   color: white;
 }
 
-.provider-preset-button span {
+.provider-preset-label {
+  flex: 1;
+  min-width: 0;
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.provider-preset-button span {
   font-size: 11px;
   font-weight: 700;
+}
+
+.provider-preset-device-tag {
+  display: inline-flex;
+  flex: 0 0 auto;
+  height: 17px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--color-primary) 16%, transparent);
+  color: var(--color-primary);
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.provider-preset-option.is-active .provider-preset-device-tag {
+  background: color-mix(in srgb, white 22%, transparent);
+  color: white;
 }
 
 .provider-preset-settings {

@@ -105,6 +105,8 @@ export interface DspProviderPreset {
   id: string;
   label: string;
   description?: string;
+  /** Optional presentation hint; it does not restrict provider modes. */
+  recommendedDevice?: 'headphone';
   modules?: string[];
   // Present (including []) overrides legacy engine-wide controls.
   controls?: DspProviderControl[];

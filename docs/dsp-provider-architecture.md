@@ -167,10 +167,15 @@ falls back to `provider_id` for compatibility.
   "description": "Headphone and speaker spatial processing",
   "vendor": "Example Audio",
   "resources": [{"kind": "impulse-response", "extensions": [".wav", ".irs"]}],
-  "presets": [{"id": "wide", "label": "Wide"}],
+  "presets": [{"id": "wide", "label": "Wide", "recommendedDevice": "headphone"}],
   "controls": []
 }
 ```
+
+Preset `recommendedDevice` is optional presentation metadata. `headphone` asks
+the Host to show a headphone recommendation label; it does not disable speaker
+mode or change DSP configuration. Unknown values are ignored for forward
+compatibility.
 
 ```json
 {

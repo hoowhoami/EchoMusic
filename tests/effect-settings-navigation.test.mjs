@@ -151,7 +151,7 @@ test('settings remain inside the effect popover; back does not close or reapply 
         providerPath: '/engine',
         providerManifestJson: JSON.stringify({
           presets: [
-            { id: 'editable', label: '旋转', controls },
+            { id: 'editable', label: '旋转', recommendedDevice: 'headphone', controls },
             { id: 'fixed', label: '固定', controls: [] },
           ],
         }),
@@ -179,6 +179,8 @@ test('settings remain inside the effect popover; back does not close or reapply 
     }
   }
   assert.ok(ancestorsOfPanel(descriptor.template.ast).includes('Popover'));
+  assert.match(descriptor.template.content, /preset\.recommendedDevice === 'headphone'/);
+  assert.match(descriptor.template.content, />耳机<\/small/);
 
   let focusCount = 0;
   const event = { currentTarget: { focus: () => focusCount++ } };
