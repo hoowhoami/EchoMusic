@@ -98,9 +98,8 @@ export function controlDefault(control: DspProviderControl): DspJsonValue {
     );
     if (declaredOption && !declaredOption.disabled) return declaredOption.value;
     return (
-      control.options.find(
-        (option) => typeof option.value === 'boolean' && !option.disabled,
-      )?.value ?? false
+      control.options.find((option) => typeof option.value === 'boolean' && !option.disabled)
+        ?.value ?? false
     );
   }
   return (
@@ -132,10 +131,8 @@ export function validControlValue(control: DspProviderControl, value: DspJsonVal
   if (control.type === 'select') {
     return (
       control.options?.some(
-        (option) =>
-          !option.disabled && JSON.stringify(option.value) === JSON.stringify(value),
-      ) ??
-      false
+        (option) => !option.disabled && JSON.stringify(option.value) === JSON.stringify(value),
+      ) ?? false
     );
   }
   return control.type === 'string' ? typeof value === 'string' : control.type === 'json';
