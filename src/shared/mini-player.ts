@@ -44,6 +44,7 @@ export interface MiniPlayerPlaybackPayload {
   currentTime: number;
   playbackRate?: number;
   isPlaying: boolean;
+  isProgressBusy?: boolean;
   isFavorite: boolean;
   lyricsLabel?: string;
   volume?: number;

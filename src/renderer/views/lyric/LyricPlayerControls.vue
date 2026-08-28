@@ -19,6 +19,7 @@ import SpeedPopover from '@/components/player/SpeedPopover.vue';
 import QualityPopover from '@/components/player/QualityPopover.vue';
 import EffectPopover from '@/components/player/EffectPopover.vue';
 import VolumePopover from '@/components/player/VolumePopover.vue';
+import ProgressBusyOverlay from '@/components/player/ProgressBusyOverlay.vue';
 import {
   iconPause,
   iconPlay,
@@ -118,6 +119,7 @@ const handleCopySongInfo = async () => {
         :model-value="progressValue"
         :max="playerStore.duration || 100"
         :step="0.1"
+        :aria-busy="playerStore.playbackProgressIsBusy"
         class="bar-slider-top group/progress"
         @update:model-value="handleSeek"
         @pointerdown.capture="handleSeekStart"
@@ -145,6 +147,7 @@ const handleCopySongInfo = async () => {
             </template>
           </div>
           <SliderRange class="bar-slider-range-top" />
+          <ProgressBusyOverlay v-if="playerStore.playbackProgressIsBusy" />
         </SliderTrack>
         <SliderThumb
           class="bar-slider-thumb-top"

@@ -122,6 +122,7 @@ const buildPlaybackPayload = (): MiniPlayerPlaybackPayload | null => {
   const currentTime = Number(playerStore.currentTime || 0);
   const playbackRate = Number(playerStore.playbackRate || 1);
   const isPlaying = Boolean(playerStore.isPlaying);
+  const isProgressBusy = Boolean(playerStore.playbackProgressIsBusy);
   const updatedAt = Number(playerStore.currentTimeUpdatedAt || Date.now());
   const seekTimestamp = Number(playerStore.seekTimestamp || 0);
 
@@ -136,6 +137,7 @@ const buildPlaybackPayload = (): MiniPlayerPlaybackPayload | null => {
     currentTime,
     playbackRate,
     isPlaying,
+    isProgressBusy,
     isFavorite: resolveFavoriteState(track),
     lyricsLabel: lyricStore.currentDisplayLabel,
     volume: Number(playerStore.volume || 0),
@@ -320,6 +322,7 @@ export const initMiniPlayerSync = async () => {
     volume,
     currentSourceQueueId,
     seekTimestamp,
+    playbackProgressIsBusy,
   } = storeToRefs(playerStore);
   const { favorites, favoritesLoaded } = storeToRefs(playlistStore);
   const {
@@ -450,6 +453,7 @@ export const initMiniPlayerSync = async () => {
         nativeTrackSeq,
         volume,
         seekTimestamp,
+        playbackProgressIsBusy,
         favorites,
         favoritesLoaded,
         // 启动恢复后快照可能为空，需在队列歌曲加载完成时按 id 重新解析当前曲

@@ -7,6 +7,7 @@ import SpeedPopover from '@/components/player/SpeedPopover.vue';
 import QualityPopover from '@/components/player/QualityPopover.vue';
 import EffectPopover from '@/components/player/EffectPopover.vue';
 import VolumePopover from '@/components/player/VolumePopover.vue';
+import ProgressBusyOverlay from '@/components/player/ProgressBusyOverlay.vue';
 import Cover from '@/components/ui/Cover.vue';
 import Badge from '@/components/ui/Badge.vue';
 import Button from '@/components/ui/Button.vue';
@@ -488,6 +489,7 @@ onUnmounted(() => {
             :model-value="progressValue"
             :max="player.duration || 100"
             :step="0.1"
+            :aria-busy="player.playbackProgressIsBusy"
             class="relative flex items-center select-none touch-none flex-1 min-w-0 h-4 cursor-pointer group/progress"
             @update:model-value="handleSeek"
             @pointerdown.capture="handleSeekStart"
@@ -515,6 +517,7 @@ onUnmounted(() => {
                 </template>
               </div>
               <SliderRange class="absolute bg-primary rounded-full h-full" />
+              <ProgressBusyOverlay v-if="player.playbackProgressIsBusy" />
             </SliderTrack>
             <SliderThumb
               class="player-progress-thumb block w-2.5 h-2.5 border rounded-full shadow-md focus-visible:outline-none transition-[opacity,transform] duration-200"

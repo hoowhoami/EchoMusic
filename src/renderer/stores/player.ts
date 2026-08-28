@@ -89,6 +89,20 @@ export const usePlayerStore = defineStore(
     const isLoading = computed(() => getPlaybackIsLoading(state));
     const isPlaying = computed(() => getPlaybackIsPlaying(state));
     const playbackDisplayState = computed(() => getPlaybackDisplayState(state));
+    const playbackProgressIsBusy = computed(() => {
+      if (!state.currentTrackId) return false;
+      const coreState = String(state.playbackDiagnostics.core?.state ?? '').toLowerCase();
+      return (
+        state.seekTargetTime !== null ||
+        state.awaitingTrackLoad ||
+        state.stallRecovering ||
+        getPlaybackIsLoading(state) ||
+        coreState === 'seeking' ||
+        coreState === 'buffering' ||
+        state.playbackDiagnostics.ao?.paused === true ||
+        state.playbackDiagnostics.packetCache?.pendingSeek === true
+      );
+    });
 
     const getResolvedPlaybackSources = (resolved: ResolvedAudioSource): PlaybackSource[] => {
       const fallbackTrackId = resolved.source?.audioTrackId ?? resolved.audioTrackId ?? null;
@@ -1119,6 +1133,7 @@ export const usePlayerStore = defineStore(
       isLoading,
       playbackTargetTrackId,
       playbackIsLoading,
+      playbackProgressIsBusy,
       playbackDisplayState,
       getSpatialAudioEffectSupport,
       dspProviderInspection: spatialAudioSupport.providerInspection,
