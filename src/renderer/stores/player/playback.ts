@@ -1084,7 +1084,6 @@ export const createPlaybackManager = (
     state.seekTimestamp = Date.now();
     state.currentTime = targetTime;
     state.currentTimeUpdatedAt = state.seekTimestamp;
-    engine.beginSeek();
 
     // 当 seek 目标接近结尾时（距结尾 < 2 秒），不忽略 EOF 事件，
     // 否则播放完毕后不会自动切下一首
@@ -1118,9 +1117,13 @@ export const createPlaybackManager = (
 
     engine.updateMediaPlaybackState(buildMediaState(state));
     return seekPromise.finally(() => {
-      // 原生 seeked 事件在换源、回退重开或命令被后续 seek 覆盖时不一定抵达当前会话。
-      // Promise 完成是 UI 忙碌态的可靠兜底；序号校验避免旧请求清掉新请求的状态。
-      if (dispatchSeq === seekDispatchSeq) state.seekTargetTime = null;
+      // 只有最新 seek 命令的完成才能结束 UI 生命周期；被覆盖的旧请求不得
+      // 清理新目标。这里依赖命令完成事件，不依赖超时。
+      if (dispatchSeq === seekDispatchSeq) {
+        state.seekTargetTime = null;
+        state.nativeSeekActive = false;
+        state.nativeSeekGeneration = null;
+      }
     });
   };
 

@@ -556,10 +556,10 @@ export class PlayerController extends EventEmitter {
   async seek(time: number): Promise<void> {
     const seq = ++this.seekSeq;
     try {
-      await this.enqueue(() => {
-        if (seq !== this.seekSeq) return undefined;
-        return this.getAddonOrThrow().seek(time);
-      });
+      // SeekTask has its own latest-request sequence and cancellation checkpoints.
+      // Serializing it with ordinary player commands prevents a newer seek from
+      // superseding a slow in-flight seek, allowing the obsolete target to surface.
+      await this.getAddonOrThrow().seek(time);
     } catch (err) {
       if (seq === this.seekSeq) throw err;
     }

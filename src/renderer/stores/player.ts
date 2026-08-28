@@ -9,7 +9,7 @@ import logger from '@/utils/logger';
 import { normalizePlayerErrorPayload, PlayerEngine, type PlayerEngineEvents } from '@/utils/player';
 import type { Song } from '@/models/song';
 import type { PlayerErrorPayload } from '../../shared/player-error';
-import type { PlaybackProgressBusyReason } from '../../shared/playback';
+import { matchesPendingSeekTarget, type PlaybackProgressBusyReason } from '../../shared/playback';
 import type { AudioEffectPlaybackOptions, SpatialAudioEffectEntry } from '../../shared/audio';
 import { createLatestRequestQueue } from '../../shared/latest-request-queue';
 import { spatialAudioEffectOptions } from '../../shared/audio-effect-support';
@@ -897,6 +897,7 @@ export const usePlayerStore = defineStore(
               return;
             state.stallRecovering = false;
           }
+          if (!matchesPendingSeekTarget(state.seekTargetTime, currentTime)) return;
           const previousTime = state.currentTime;
           const now = Date.now();
           const contextualTrackSeq = Number(payload?.trackSeq);
@@ -945,6 +946,7 @@ export const usePlayerStore = defineStore(
         },
         seekStateChange: (payload) => {
           if (!isCurrentNativePlaybackContext(payload)) return;
+          if (!matchesPendingSeekTarget(state.seekTargetTime, payload.time)) return;
           const generation = Number(payload.generation);
           if (payload.active) {
             state.nativeSeekActive = true;
@@ -1091,14 +1093,6 @@ export const usePlayerStore = defineStore(
           void playbackManager.recoverFromStall(position);
         },
         coreStateChange: (payload) => {
-          const coreState = String(payload.state ?? '').toLowerCase();
-          if (state.nativeSeekActive && coreState && coreState !== 'seeking') {
-            // native 的核心状态已经离开 seeking 时，seek 生命周期必然结束。
-            // fallback reopen 可能替换 seeked 事件，但仍会发布后续 core state。
-            state.nativeSeekActive = false;
-            state.nativeSeekGeneration = null;
-            state.seekTargetTime = null;
-          }
           state.nativePlaybackEventRevision += 1;
           state.playbackDiagnostics.core = {
             ...payload,
@@ -1139,6 +1133,7 @@ export const usePlayerStore = defineStore(
             : null;
         },
         seeked: (currentTime) => {
+          if (!matchesPendingSeekTarget(state.seekTargetTime, currentTime)) return;
           state.seekTargetTime = null;
           if (state.awaitingTrackLoad) return;
           state.currentTime = currentTime;

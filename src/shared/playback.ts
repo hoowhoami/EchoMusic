@@ -5,6 +5,23 @@ export type PlaybackProgressBusyReason = 'seek' | 'buffering' | null;
 /** User volume percentage. 100 is the source level; values above 100 are not used by the UI. */
 export const DEFAULT_PLAYER_VOLUME = 50;
 
+const SEEK_TARGET_MATCH_TOLERANCE_SECS = 0.75;
+
+/** Whether a native position belongs to the latest optimistic seek intent. */
+export const matchesPendingSeekTarget = (
+  pendingTarget: number | null | undefined,
+  nativePosition: number | null | undefined,
+) => {
+  if (pendingTarget === null || pendingTarget === undefined) return true;
+  const target = Number(pendingTarget);
+  const position = Number(nativePosition);
+  return (
+    Number.isFinite(target) &&
+    Number.isFinite(position) &&
+    Math.abs(position - target) <= SEEK_TARGET_MATCH_TOLERANCE_SECS
+  );
+};
+
 export type PlaybackClockReason =
   | 'tick'
   | 'seek'
