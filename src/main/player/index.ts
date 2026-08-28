@@ -63,6 +63,9 @@ function registerEventForwarding(controller: PlayerController): void {
     patchDesktopLyricPlaybackFromPlayer({ currentTime: time, seekTimestamp, reason: 'seek' });
     patchMiniPlayerPlaybackFromPlayer({ currentTime: time, seekTimestamp, reason: 'seek' });
   });
+  controller.on('seek-state-change', (payload) => {
+    getMainWindow()?.webContents.send('player:seek-state-change', payload);
+  });
   controller.on('playback-restart', (payload) => {
     getMainWindow()?.webContents.send('player:playback-restart', payload);
     if (typeof payload?.time === 'number') {

@@ -194,6 +194,13 @@ type PlayerTimeUpdatePayload = {
   generation?: number;
 };
 
+type PlayerSeekStatePayload = {
+  active: boolean;
+  time?: number;
+  trackSeq?: number;
+  generation?: number;
+};
+
 type PlayerCoreStateChangePayload = {
   state?: string;
   reason?: string;
@@ -739,6 +746,7 @@ export interface IElectronAPI {
     setStallTimeout: (seconds: number) => Promise<void>;
     onTimeUpdate: (func: (payload: number | PlayerTimeUpdatePayload) => void) => () => void;
     onSeeked: (func: (time: number) => void) => () => void;
+    onSeekStateChange: (func: (payload: PlayerSeekStatePayload) => void) => () => void;
     onPlaybackRestart: (func: (payload?: { time?: number; reason?: string }) => void) => () => void;
     onDurationChange: (func: (duration: number) => void) => () => void;
     onFileLoaded: (

@@ -18,6 +18,7 @@ import type { PlaybackSource } from '@/stores/player/types';
 export interface PlayerEngineEvents {
   timeUpdate?: (currentTime: number, payload?: PlayerPlaybackContext) => void;
   seeked?: (currentTime: number) => void;
+  seekStateChange?: (payload: PlayerSeekStatePayload) => void;
   playbackRestart?: (payload?: { time?: number; reason?: string }) => void;
   durationChange?: (duration: number) => void;
   /** 新文件加载完成（player file-loaded），用于切歌后放行进度回报 */
@@ -40,6 +41,11 @@ export type { PlayerAudioGraphSnapshot };
 export interface PlayerPlaybackContext {
   trackSeq?: number;
   generation?: number;
+}
+
+export interface PlayerSeekStatePayload extends PlayerPlaybackContext {
+  active: boolean;
+  time?: number;
 }
 
 export interface PlayerPacketCacheStats {
@@ -239,6 +245,11 @@ export class PlayerEngine {
       this.events.timeUpdate?.(time);
     });
     if (offSeeked) this.cleanupFns.push(offSeeked);
+
+    const offSeekState = player.onSeekStateChange?.((payload) => {
+      this.events.seekStateChange?.(payload);
+    });
+    if (offSeekState) this.cleanupFns.push(offSeekState);
 
     const offPlaybackRestart = player.onPlaybackRestart?.((payload) => {
       this.clearSeekPending();

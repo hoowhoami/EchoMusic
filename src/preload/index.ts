@@ -731,6 +731,21 @@ contextBridge.exposeInMainWorld('electron', {
       ipcRenderer.on('player:seeked', listener);
       return () => ipcRenderer.removeListener('player:seeked', listener);
     },
+    onSeekStateChange: (
+      func: (payload: {
+        active: boolean;
+        time?: number;
+        trackSeq?: number;
+        generation?: number;
+      }) => void,
+    ) => {
+      const listener = (
+        _event: Electron.IpcRendererEvent,
+        payload: { active: boolean; time?: number; trackSeq?: number; generation?: number },
+      ) => func(payload);
+      ipcRenderer.on('player:seek-state-change', listener);
+      return () => ipcRenderer.removeListener('player:seek-state-change', listener);
+    },
     onPlaybackRestart: (func: (payload?: { time?: number; reason?: string }) => void) => {
       const listener = (
         _event: Electron.IpcRendererEvent,

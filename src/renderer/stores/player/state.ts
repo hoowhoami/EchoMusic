@@ -87,6 +87,8 @@ export const createPlayerState = () => ({
   shufflePlayed: new Set<number>(),
   shuffleHistory: [] as string[],
   seekTargetTime: null as number | null,
+  nativeSeekActive: false,
+  nativeSeekGeneration: null as number | null,
   seekTimestamp: 0,
   isResuming: false,
   playbackIntent: createPlaybackIntent(),

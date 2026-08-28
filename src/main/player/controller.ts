@@ -765,11 +765,25 @@ export class PlayerController extends EventEmitter {
           });
         }
         break;
+      case 'seek':
+        this.emit('seek-state-change', {
+          active: true,
+          time: event.time,
+          trackSeq: event.trackSeq,
+          generation: event.generation,
+        });
+        break;
       case 'seeked':
         if (typeof event.time === 'number') {
           this.state.timePos = event.time;
           this.emit('seeked', event.time);
         }
+        this.emit('seek-state-change', {
+          active: false,
+          time: event.time,
+          trackSeq: event.trackSeq,
+          generation: event.generation,
+        });
         break;
       case 'playback-restart':
         if (typeof event.time === 'number') {
@@ -783,6 +797,14 @@ export class PlayerController extends EventEmitter {
           time: event.time,
           reason: event.reason,
         });
+        if (event.reason === 'seek') {
+          this.emit('seek-state-change', {
+            active: false,
+            time: event.time,
+            trackSeq: event.trackSeq,
+            generation: event.generation,
+          });
+        }
         break;
       case 'duration-change':
         if (typeof event.duration === 'number') {
@@ -791,6 +813,11 @@ export class PlayerController extends EventEmitter {
         }
         break;
       case 'file-loaded':
+        this.emit('seek-state-change', {
+          active: false,
+          trackSeq: event.trackSeq,
+          generation: event.generation,
+        });
         if (typeof event.seq === 'number' && Number.isFinite(event.seq) && event.seq > 0) {
           this.activeTrackSeq = event.seq;
           if (this.pendingLoadSeq === event.seq) this.pendingLoadSeq = null;
@@ -866,6 +893,13 @@ export class PlayerController extends EventEmitter {
         });
         break;
       case 'error':
+        if (event.errorCode === 'seek') {
+          this.emit('seek-state-change', {
+            active: false,
+            trackSeq: event.trackSeq,
+            generation: event.generation,
+          });
+        }
         this.emit('error', {
           message: event.message || 'player error',
           errorCode: event.errorCode,

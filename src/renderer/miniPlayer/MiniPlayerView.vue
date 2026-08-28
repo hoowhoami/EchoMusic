@@ -540,7 +540,6 @@ const handleSeekPointerUp = (event: PointerEvent) => {
       playback.value.currentTime = ratio * duration;
       playback.value.updatedAt = now;
       playback.value.seekTimestamp = now;
-      playback.value.isProgressBusy = true;
       playback.value.clock = buildPlaybackClockSnapshot({
         trackId: playback.value.trackId,
         currentTime: playback.value.currentTime,
