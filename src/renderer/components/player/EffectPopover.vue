@@ -432,8 +432,10 @@ const setProviderPreset = (presetId: string) => {
   );
 };
 const providerEqLocked = computed(() => {
-  const ownership = providerRuntimeState.value?.controlPolicy?.eq;
-  return ownership === 'provider' || ownership === 'disabled';
+  // A Provider owns the complete DSP graph. The Host keeps the user's EQ
+  // values for later, but DspChain deliberately bypasses Host EQ while the
+  // Provider is active so preset-owned EQ is never applied twice.
+  return providerConfigured.value || !!player.playbackDiagnostics.graph?.providerPath;
 });
 const audioEffectPresetActive = computed(
   () => !isAudioEffectPresetSelectionDisabled.value && player.audioEffect !== 'none',
@@ -745,7 +747,7 @@ withDefaults(defineProps<Props>(), {
           </div>
 
           <div v-if="providerEqLocked" class="panel-hint eq-bypass-hint">
-            当前音效已包含 EQ 设置，EQ 均衡器暂不可调节
+            当前由音效引擎完整处理；已保存的 EQ 设置会保留，但不会叠加
           </div>
 
           <div class="eq-container" :class="{ 'is-disabled': providerEqLocked }">
@@ -879,10 +881,12 @@ withDefaults(defineProps<Props>(), {
                 @click="selectImpulseResponseLibraryTab('engine')"
               >
                 <span>引擎预设</span>
-                <span v-if="engineLibraryContainsActive" class="library-current-indicator">
-                  <Icon :icon="iconCheckMark" width="10" height="10" aria-hidden="true" />
-                  使用中
-                </span>
+                <span
+                  v-if="engineLibraryContainsActive"
+                  class="library-current-dot"
+                  role="img"
+                  aria-label="当前音效位于引擎预设"
+                ></span>
               </button>
               <button
                 type="button"
@@ -893,10 +897,12 @@ withDefaults(defineProps<Props>(), {
                 @click="selectImpulseResponseLibraryTab('mine')"
               >
                 <span>我的音效</span>
-                <span v-if="myEffectLibraryContainsActive" class="library-current-indicator">
-                  <Icon :icon="iconCheckMark" width="10" height="10" aria-hidden="true" />
-                  使用中
-                </span>
+                <span
+                  v-if="myEffectLibraryContainsActive"
+                  class="library-current-dot"
+                  role="img"
+                  aria-label="当前音效位于我的音效"
+                ></span>
               </button>
             </div>
           </div>
@@ -914,14 +920,12 @@ withDefaults(defineProps<Props>(), {
                 class="my-effect-source-tab"
                 :class="{ 'contains-active': isMyEffectSourceActive(group.id) }"
               >
-                <Icon
+                <span
                   v-if="isMyEffectSourceActive(group.id)"
-                  :icon="iconCheckMark"
-                  width="10"
-                  height="10"
                   class="my-effect-source-current"
-                  aria-hidden="true"
-                />
+                  role="img"
+                  :aria-label="`当前音效位于${group.label}`"
+                ></span>
                 <span>{{ group.label }}</span>
                 <small>{{ group.files.length }}</small>
               </TabsTrigger>
@@ -1925,9 +1929,14 @@ withDefaults(defineProps<Props>(), {
   opacity: 0.7;
 }
 
-.my-effect-source-current {
+.my-effect-source-current,
+.library-current-dot {
   flex: 0 0 auto;
-  color: var(--color-primary);
+  width: 5px;
+  height: 5px;
+  border-radius: 9999px;
+  background: var(--color-primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 14%, transparent);
 }
 
 .my-effect-source-tab:focus-visible,
@@ -2047,16 +2056,6 @@ withDefaults(defineProps<Props>(), {
 
 .irs-library-tabs button.contains-active:not(.is-active) {
   color: var(--color-primary);
-}
-
-.library-current-indicator {
-  display: inline-flex;
-  flex: 0 0 auto;
-  align-items: center;
-  gap: 2px;
-  color: var(--color-primary);
-  font-size: 8px;
-  font-weight: 700;
 }
 
 .provider-panel-scroll,

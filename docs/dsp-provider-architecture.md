@@ -47,6 +47,11 @@ Provider-specific behavior belongs to a provider. EchoMusic Basic DSP never inte
 external provider may opt into VPF by declaring the resource kind in its manifest; the Host passes
 the resource through without understanding its binary format.
 
+The Provider owns the complete DSP graph while it is active. Host EQ values remain persisted, but
+the Host equalizer is bypassed and is not layered before or after Provider processing. A Provider
+that implements its own EQ therefore cannot be equalized twice accidentally; the saved Host EQ is
+restored when playback returns to Builtin DSP.
+
 ## Builtin DSP Contract
 
 Basic DSP is the reliable fallback and generic processing path, not a compatibility layer for a

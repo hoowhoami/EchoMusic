@@ -252,10 +252,12 @@ test('the current spatial effect is locatable without locking manual tab browsin
   assert.equal(api.activeImpulseResponseLibraryTab.value, 'engine');
   assert.equal(api.engineLibraryContainsActive.value, true);
   assert.equal(api.currentPlaybackEffectSelection.value.name, '现场');
+  assert.equal(api.providerEqLocked.value, true);
 
   assert.match(descriptor.template.content, /class="current-spatial-effect-actions"/);
-  assert.match(descriptor.template.content, /class="library-current-indicator"/);
+  assert.match(descriptor.template.content, /class="library-current-dot"/);
   assert.match(descriptor.template.content, /class="my-effect-source-current"/);
+  assert.doesNotMatch(descriptor.template.content, />\s*使用中\s*</);
 });
 
 test('configured provider shows a loading state instead of flashing the not-imported state', (t) => {
