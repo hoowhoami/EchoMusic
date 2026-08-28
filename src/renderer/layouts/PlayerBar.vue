@@ -516,8 +516,9 @@ onUnmounted(() => {
                   ></span>
                 </template>
               </div>
-              <SliderRange class="absolute bg-primary rounded-full h-full" />
-              <ProgressBusyOverlay v-if="player.playbackProgressIsBusy" />
+              <SliderRange class="absolute bg-primary rounded-full h-full">
+                <ProgressBusyOverlay v-if="player.playbackProgressIsBusy" />
+              </SliderRange>
             </SliderTrack>
             <SliderThumb
               class="player-progress-thumb block w-2.5 h-2.5 border rounded-full shadow-md focus-visible:outline-none transition-[opacity,transform] duration-200"

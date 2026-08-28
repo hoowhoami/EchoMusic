@@ -146,8 +146,9 @@ const handleCopySongInfo = async () => {
               ></span>
             </template>
           </div>
-          <SliderRange class="bar-slider-range-top" />
-          <ProgressBusyOverlay v-if="playerStore.playbackProgressIsBusy" />
+          <SliderRange class="bar-slider-range-top">
+            <ProgressBusyOverlay v-if="playerStore.playbackProgressIsBusy" />
+          </SliderRange>
         </SliderTrack>
         <SliderThumb
           class="bar-slider-thumb-top"

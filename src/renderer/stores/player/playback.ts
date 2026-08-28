@@ -1076,7 +1076,7 @@ export const createPlaybackManager = (
     }
   };
 
-  const seek = (time: number) => {
+  const seek = (time: number): Promise<void> => {
     const effectiveDuration = engine.duration > 0 ? engine.duration : state.duration;
     const targetTime = Math.max(0, Math.min(effectiveDuration, time));
     const dispatchSeq = ++seekDispatchSeq;
@@ -1104,18 +1104,24 @@ export const createPlaybackManager = (
         requirePlaying: false,
       });
 
+    let seekPromise: Promise<void>;
     if (!nearEnd) {
-      engine.seek(targetTime);
+      seekPromise = engine.seek(targetTime);
       void prepareForTarget();
     } else {
-      void (async () => {
+      seekPromise = (async () => {
         await prepareForTarget();
         if (dispatchSeq !== seekDispatchSeq) return;
-        engine.seek(targetTime);
+        await engine.seek(targetTime);
       })();
     }
 
     engine.updateMediaPlaybackState(buildMediaState(state));
+    return seekPromise.finally(() => {
+      // 原生 seeked 事件在换源、回退重开或命令被后续 seek 覆盖时不一定抵达当前会话。
+      // Promise 完成是 UI 忙碌态的可靠兜底；序号校验避免旧请求清掉新请求的状态。
+      if (dispatchSeq === seekDispatchSeq) state.seekTargetTime = null;
+    });
   };
 
   const pushShuffleHistory = (trackId: string | null) => {

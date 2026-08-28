@@ -97,10 +97,7 @@ export const usePlayerStore = defineStore(
         state.awaitingTrackLoad ||
         state.stallRecovering ||
         getPlaybackIsLoading(state) ||
-        coreState === 'seeking' ||
-        coreState === 'buffering' ||
-        state.playbackDiagnostics.ao?.paused === true ||
-        state.playbackDiagnostics.packetCache?.pendingSeek === true
+        coreState === 'buffering'
       );
     });
 

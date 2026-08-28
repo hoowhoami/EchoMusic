@@ -477,14 +477,14 @@ export class PlayerEngine {
     }
   }
 
-  seek(time: number): void {
+  seek(time: number): Promise<void> {
     this.beginSeek();
-    player?.seek(time)?.catch((err: unknown) => {
+    this.lastTimeValue = -1;
+    this.lastTimeUpdateMs = 0;
+    return (player?.seek(time) ?? Promise.resolve()).catch((err: unknown) => {
       this.clearSeekPending();
       logger.warn('PlayerEngine', 'seek failed', { time, error: String(err) });
     });
-    this.lastTimeValue = -1;
-    this.lastTimeUpdateMs = 0;
   }
 
   beginSeek(): void {

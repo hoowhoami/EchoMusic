@@ -995,8 +995,9 @@ onUnmounted(() => {
           @pointerup="handleSeekPointerUp"
           @pointercancel="handleSeekPointerUp"
         >
-          <div class="mini-progress-value" :style="{ width: `${displayPercent}%` }"></div>
-          <ProgressBusyOverlay v-if="playback?.isProgressBusy" class="mini-progress-busy" />
+          <div class="mini-progress-value" :style="{ width: `${displayPercent}%` }">
+            <ProgressBusyOverlay v-if="playback?.isProgressBusy" />
+          </div>
         </div>
       </div>
 
@@ -1499,13 +1500,6 @@ button:disabled {
   min-width: 0;
   transform: translateY(-50%);
   transition: width 0.12s linear;
-}
-
-.mini-progress-busy {
-  top: 50%;
-  bottom: auto;
-  height: 3px;
-  transform: translateY(-50%);
 }
 
 .mini-progress::before {
