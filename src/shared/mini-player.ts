@@ -1,5 +1,5 @@
 import type { LyricLinePayload } from './lyrics';
-import type { PlaybackClockSnapshot } from './playback';
+import type { PlaybackClockSnapshot, PlaybackProgressBusyReason } from './playback';
 
 export type MiniPlayerExpandDirection = 'down' | 'up';
 
@@ -45,6 +45,7 @@ export interface MiniPlayerPlaybackPayload {
   playbackRate?: number;
   isPlaying: boolean;
   isProgressBusy?: boolean;
+  progressBusyReason?: PlaybackProgressBusyReason;
   isFavorite: boolean;
   lyricsLabel?: string;
   volume?: number;

@@ -8,6 +8,7 @@ import { computed, ref } from 'vue';
 import { SliderRoot, SliderTrack, SliderRange, SliderThumb } from 'reka-ui';
 import { usePlayerControls } from '@/composables/usePlayerControls';
 import { useDeferredSeek } from '@/composables/useDeferredSeek';
+import { usePlaybackProgressStatus } from '@/composables/usePlaybackProgressStatus';
 import { useSettingStore } from '@/stores/setting';
 import { useDesktopLyricStore } from '@/desktopLyric/store';
 import { useToastStore } from '@/stores/toast';
@@ -65,6 +66,8 @@ const {
 
 const isHoveringProgress = ref(false);
 const isPlaybackLoading = computed(() => playerStore.playbackIsLoading);
+const { isBusy: isProgressBusy, ariaLabel: progressAriaLabel } =
+  usePlaybackProgressStatus(() => playerStore.playbackProgressBusyReason);
 const {
   pendingSeekTime,
   isDragging: isDraggingSeek,
@@ -119,14 +122,8 @@ const handleCopySongInfo = async () => {
         :model-value="progressValue"
         :max="playerStore.duration || 100"
         :step="0.1"
-        :aria-busy="playerStore.playbackProgressIsBusy"
-        :aria-label="
-          playerStore.playbackProgressBusyReason === 'seek'
-            ? '播放进度，定位中'
-            : playerStore.playbackProgressBusyReason === 'buffering'
-              ? '播放进度，缓冲中'
-              : '播放进度'
-        "
+        :aria-busy="isProgressBusy"
+        :aria-label="progressAriaLabel"
         class="bar-slider-top group/progress"
         @update:model-value="handleSeek"
         @pointerdown.capture="handleSeekStart"
@@ -154,7 +151,7 @@ const handleCopySongInfo = async () => {
             </template>
           </div>
           <SliderRange class="bar-slider-range-top">
-            <ProgressBusyOverlay v-if="playerStore.playbackProgressIsBusy" />
+            <ProgressBusyOverlay v-if="isProgressBusy" />
           </SliderRange>
         </SliderTrack>
         <SliderThumb

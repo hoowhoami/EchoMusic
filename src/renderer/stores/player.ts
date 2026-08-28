@@ -9,6 +9,7 @@ import logger from '@/utils/logger';
 import { normalizePlayerErrorPayload, PlayerEngine, type PlayerEngineEvents } from '@/utils/player';
 import type { Song } from '@/models/song';
 import type { PlayerErrorPayload } from '../../shared/player-error';
+import type { PlaybackProgressBusyReason } from '../../shared/playback';
 import type { AudioEffectPlaybackOptions, SpatialAudioEffectEntry } from '../../shared/audio';
 import { createLatestRequestQueue } from '../../shared/latest-request-queue';
 import { spatialAudioEffectOptions } from '../../shared/audio-effect-support';
@@ -89,7 +90,7 @@ export const usePlayerStore = defineStore(
     const isLoading = computed(() => getPlaybackIsLoading(state));
     const isPlaying = computed(() => getPlaybackIsPlaying(state));
     const playbackDisplayState = computed(() => getPlaybackDisplayState(state));
-    const playbackProgressBusyReason = computed<'seek' | 'buffering' | null>(() => {
+    const playbackProgressBusyReason = computed<PlaybackProgressBusyReason>(() => {
       if (!state.currentTrackId) return null;
       const core = state.playbackDiagnostics.core;
       const ao = state.playbackDiagnostics.ao;

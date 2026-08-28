@@ -1,5 +1,7 @@
 export type PlayMode = 'sequential' | 'list' | 'random' | 'single';
 
+export type PlaybackProgressBusyReason = 'seek' | 'buffering' | null;
+
 /** User volume percentage. 100 is the source level; values above 100 are not used by the UI. */
 export const DEFAULT_PLAYER_VOLUME = 50;
 

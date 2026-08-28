@@ -13,6 +13,7 @@ import Badge from '@/components/ui/Badge.vue';
 import Button from '@/components/ui/Button.vue';
 import Tooltip from '@/components/ui/Tooltip.vue';
 import { useDeferredSeek } from '@/composables/useDeferredSeek';
+import { usePlaybackProgressStatus } from '@/composables/usePlaybackProgressStatus';
 import Popover from '@/components/ui/Popover.vue';
 import MvIcon from '@/components/ui/MvIcon.vue';
 import PlayerQueueDrawer from '@/components/music/PlayerQueueDrawer.vue';
@@ -70,6 +71,8 @@ const {
 
 const playbackNotice = computed(() => player.playbackNotice);
 const isPlaybackLoading = computed(() => player.playbackIsLoading);
+const { isBusy: isProgressBusy, ariaLabel: progressAriaLabel } =
+  usePlaybackProgressStatus(() => player.playbackProgressBusyReason);
 
 const artistList = computed(() => {
   if (!currentTrack.value) return [];
@@ -489,14 +492,8 @@ onUnmounted(() => {
             :model-value="progressValue"
             :max="player.duration || 100"
             :step="0.1"
-            :aria-busy="player.playbackProgressIsBusy"
-            :aria-label="
-              player.playbackProgressBusyReason === 'seek'
-                ? '播放进度，定位中'
-                : player.playbackProgressBusyReason === 'buffering'
-                  ? '播放进度，缓冲中'
-                  : '播放进度'
-            "
+            :aria-busy="isProgressBusy"
+            :aria-label="progressAriaLabel"
             class="relative flex items-center select-none touch-none flex-1 min-w-0 h-4 cursor-pointer group/progress"
             @update:model-value="handleSeek"
             @pointerdown.capture="handleSeekStart"
@@ -524,7 +521,7 @@ onUnmounted(() => {
                 </template>
               </div>
               <SliderRange class="absolute bg-primary rounded-full h-full">
-                <ProgressBusyOverlay v-if="player.playbackProgressIsBusy" />
+                <ProgressBusyOverlay v-if="isProgressBusy" />
               </SliderRange>
             </SliderTrack>
             <SliderThumb

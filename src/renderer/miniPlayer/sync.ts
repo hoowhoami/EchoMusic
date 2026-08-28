@@ -123,6 +123,7 @@ const buildPlaybackPayload = (): MiniPlayerPlaybackPayload | null => {
   const playbackRate = Number(playerStore.playbackRate || 1);
   const isPlaying = Boolean(playerStore.isPlaying);
   const isProgressBusy = Boolean(playerStore.playbackProgressIsBusy);
+  const progressBusyReason = playerStore.playbackProgressBusyReason;
   const updatedAt = Number(playerStore.currentTimeUpdatedAt || Date.now());
   const seekTimestamp = Number(playerStore.seekTimestamp || 0);
 
@@ -138,6 +139,7 @@ const buildPlaybackPayload = (): MiniPlayerPlaybackPayload | null => {
     playbackRate,
     isPlaying,
     isProgressBusy,
+    progressBusyReason,
     isFavorite: resolveFavoriteState(track),
     lyricsLabel: lyricStore.currentDisplayLabel,
     volume: Number(playerStore.volume || 0),
@@ -322,6 +324,7 @@ export const initMiniPlayerSync = async () => {
     volume,
     currentSourceQueueId,
     seekTimestamp,
+    playbackProgressBusyReason,
     playbackProgressIsBusy,
   } = storeToRefs(playerStore);
   const { favorites, favoritesLoaded } = storeToRefs(playlistStore);
@@ -453,6 +456,7 @@ export const initMiniPlayerSync = async () => {
         nativeTrackSeq,
         volume,
         seekTimestamp,
+        playbackProgressBusyReason,
         playbackProgressIsBusy,
         favorites,
         favoritesLoaded,

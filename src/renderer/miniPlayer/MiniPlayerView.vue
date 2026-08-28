@@ -4,6 +4,7 @@ import Cover from '@/components/ui/Cover.vue';
 import ProgressBusyOverlay from '@/components/player/ProgressBusyOverlay.vue';
 import MiniLyricPanel from './MiniLyricPanel.vue';
 import { useVirtualList } from '@/composables/useVirtualList';
+import { usePlaybackProgressStatus } from '@/composables/usePlaybackProgressStatus';
 import {
   iconHeart,
   iconHeartFilled,
@@ -49,6 +50,12 @@ const isMac = navigator.platform.toLowerCase().includes('mac');
 const isWayland = window.electron?.isWayland ?? false;
 
 const playback = ref<MiniPlayerPlaybackPayload | null>(null);
+const { isBusy: isProgressBusy, ariaLabel: progressAriaLabel } =
+  usePlaybackProgressStatus(
+    () =>
+      playback.value?.progressBusyReason ??
+      (playback.value?.isProgressBusy === true ? 'buffering' : null),
+  );
 const appearance = ref<MiniPlayerAppearancePayload | null>(null);
 const queue = ref<MiniPlayerQueuePayload | null>(null);
 const lyric = ref<MiniPlayerLyricPayload | null>(null);
@@ -988,14 +995,15 @@ onUnmounted(() => {
 
         <div
           class="mini-progress no-drag"
-          :aria-busy="playback?.isProgressBusy === true"
+          :aria-busy="isProgressBusy"
+          :aria-label="progressAriaLabel"
           @pointerdown="handleSeekPointerDown"
           @pointermove="handleSeekPointerMove"
           @pointerup="handleSeekPointerUp"
           @pointercancel="handleSeekPointerUp"
         >
           <div class="mini-progress-value" :style="{ width: `${displayPercent}%` }">
-            <ProgressBusyOverlay v-if="playback?.isProgressBusy" />
+            <ProgressBusyOverlay v-if="isProgressBusy" />
           </div>
         </div>
       </div>
