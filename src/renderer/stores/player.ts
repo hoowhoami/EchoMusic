@@ -1068,6 +1068,14 @@ export const usePlayerStore = defineStore(
           void playbackManager.recoverFromStall(position);
         },
         coreStateChange: (payload) => {
+          const coreState = String(payload.state ?? '').toLowerCase();
+          if (state.nativeSeekActive && coreState && coreState !== 'seeking') {
+            // native 的核心状态已经离开 seeking 时，seek 生命周期必然结束。
+            // fallback reopen 可能替换 seeked 事件，但仍会发布后续 core state。
+            state.nativeSeekActive = false;
+            state.nativeSeekGeneration = null;
+            state.seekTargetTime = null;
+          }
           state.playbackDiagnostics.core = {
             ...payload,
             updatedAt: Date.now(),
