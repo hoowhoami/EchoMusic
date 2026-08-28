@@ -933,8 +933,10 @@ export const usePlayerStore = defineStore(
             state.nativeSeekGeneration !== null &&
             Number.isFinite(generation) &&
             generation > 0 &&
-            generation !== state.nativeSeekGeneration
+            generation < state.nativeSeekGeneration
           ) {
+            // 只忽略真正早于当前 seek 的完成事件。seek 命令超时并回退到重开
+            // 解码器时，native 会递增 generation；该较新的完成事件仍应结束动画。
             return;
           }
           state.nativeSeekActive = false;

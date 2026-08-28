@@ -490,6 +490,7 @@ onUnmounted(() => {
             :max="player.duration || 100"
             :step="0.1"
             :aria-busy="player.playbackProgressIsBusy"
+            :aria-label="player.playbackProgressIsBusy ? '播放进度，定位或缓冲中' : '播放进度'"
             class="relative flex items-center select-none touch-none flex-1 min-w-0 h-4 cursor-pointer group/progress"
             @update:model-value="handleSeek"
             @pointerdown.capture="handleSeekStart"
