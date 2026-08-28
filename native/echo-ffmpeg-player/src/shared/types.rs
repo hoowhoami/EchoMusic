@@ -224,6 +224,38 @@ impl DecodedAudioChunk {
         }
         ((self.frames as u128 * mix_sample_rate as u128) / self.format.sample_rate as u128) as usize
     }
+
+    /// Remove whole interleaved frames from the beginning of this chunk.
+    ///
+    /// Source-quality switches use this once at the hand-off boundary to align
+    /// two independently encoded versions of the same track. Keeping it on the
+    /// decoded chunk avoids format-specific byte arithmetic in the decoder.
+    pub(crate) fn trim_start_frames(&mut self, frames: usize) {
+        let frames = frames.min(self.frames);
+        if frames == 0 {
+            return;
+        }
+        let samples = frames.saturating_mul(self.format.channels.max(1));
+        match &mut self.data {
+            DecodedAudioData::U8(data) => trim_samples(data, samples),
+            DecodedAudioData::I16(data) => trim_samples(data, samples),
+            DecodedAudioData::I32(data) => trim_samples(data, samples),
+            DecodedAudioData::F32(data) => trim_samples(data, samples),
+            DecodedAudioData::F64(data) => trim_samples(data, samples),
+        }
+        self.frames -= frames;
+        if let Some(pts_secs) = &mut self.pts_secs {
+            *pts_secs += frames as f64 / f64::from(self.format.sample_rate.max(1));
+        }
+    }
+}
+
+fn trim_samples<T>(data: &mut Vec<T>, samples: usize) {
+    if samples >= data.len() {
+        data.clear();
+    } else {
+        *data = data.split_off(samples);
+    }
 }
 
 impl MixFormat {

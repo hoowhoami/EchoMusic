@@ -19,6 +19,8 @@ pub enum DecodeCommand {
     },
     SwitchSource {
         decoder: Box<DecoderData>,
+        predecoded: Vec<DecodedAudioChunk>,
+        switch_at_secs: f64,
         generation: u64,
         reply: SyncSender<Result<f64, String>>,
     },
@@ -34,6 +36,7 @@ pub struct DecoderData {
     mix_sample_rate: u32,
     source_channels: usize,
     source_sample_format: AudioSampleFormat,
+    discard_before_secs: Option<f64>,
 }
 
 impl DecoderData {
@@ -84,6 +87,7 @@ impl DecoderData {
             mix_sample_rate,
             source_channels,
             source_sample_format,
+            discard_before_secs: None,
         })
     }
 
@@ -115,8 +119,8 @@ impl DecoderData {
         Ok(())
     }
 
-    pub fn prepare_seamless_seek(&mut self, position_secs: f64) -> Result<(), String> {
-        self.seek_and_measure(position_secs, false).map(|_| ())
+    pub fn prepare_seamless_seek(&mut self, position_secs: f64) -> Result<u128, String> {
+        self.seek_and_measure(position_secs, false)
     }
 
     fn seek_and_measure(
@@ -164,6 +168,19 @@ impl DecoderData {
             .map_err(|err| format!("failed to decode audio source: {err}"))?
             .map(|frame| decoded_chunk_from_frame(&frame))
             .transpose()
+    }
+
+    pub fn predecode_chunks(&mut self, seconds: f64) -> Result<Vec<DecodedAudioChunk>, String> {
+        let mut chunks = Vec::new();
+        let mut decoded_secs = 0.0;
+        while decoded_secs < seconds.max(0.0) && !self.seeked_to_end {
+            let Some(chunk) = self.decode_next_chunk()? else {
+                break;
+            };
+            decoded_secs += chunk.frames as f64 / f64::from(chunk.format.sample_rate.max(1));
+            chunks.push(chunk);
+        }
+        Ok(chunks)
     }
 
     fn publish_packet_cache_stats(&self, shared: &SharedAudio) {
@@ -456,12 +473,25 @@ fn decode_worker_loop(
     shared.bind_interrupt(data.interrupt.clone());
     let mut produced_frames = 0u64;
     let mut decoded_position_secs = shared.position_secs();
+    let mut pending_source_switch = None;
 
     loop {
-        if let Some(next_generation) =
-            handle_decode_commands(&mut data, &shared, &commands, &mut decoded_position_secs)
-        {
+        if let Some(next_generation) = handle_decode_commands(
+            &mut data,
+            &shared,
+            &commands,
+            &mut decoded_position_secs,
+            &mut pending_source_switch,
+        ) {
             generation = next_generation;
+            produced_frames = 0;
+        }
+        if activate_pending_source_switch(
+            &mut data,
+            &shared,
+            &mut decoded_position_secs,
+            &mut pending_source_switch,
+        ) {
             produced_frames = 0;
         }
         data.publish_packet_cache_stats(&shared);
@@ -474,6 +504,7 @@ fn decode_worker_loop(
                 &shared,
                 &commands,
                 &mut decoded_position_secs,
+                &mut pending_source_switch,
             ) {
                 Some(next_generation) => {
                     generation = next_generation;
@@ -490,7 +521,10 @@ fn decode_worker_loop(
         };
         match decode_result {
             Ok(Some(frame)) => match decoded_chunk_from_frame(&frame) {
-                Ok(chunk) => {
+                Ok(mut chunk) => {
+                    if !align_switched_chunk(&mut chunk, &mut data.discard_before_secs) {
+                        continue;
+                    }
                     data.publish_packet_cache_stats(&shared);
                     if !shared.is_decode_generation_current(generation) {
                         continue;
@@ -603,6 +637,7 @@ fn wait_for_generation_command(
     shared: &SharedAudio,
     commands: &Receiver<DecodeCommand>,
     decoded_position_secs: &mut f64,
+    pending_source_switch: &mut Option<PendingSourceSwitch>,
 ) -> Option<u64> {
     loop {
         if shared.should_stop_decoding() {
@@ -610,7 +645,13 @@ fn wait_for_generation_command(
         }
         match commands.recv_timeout(Duration::from_millis(50)) {
             Ok(command) => {
-                match handle_decode_command(data, shared, command, decoded_position_secs) {
+                match handle_decode_command(
+                    data,
+                    shared,
+                    command,
+                    decoded_position_secs,
+                    pending_source_switch,
+                ) {
                     DecodeCommandResult::Continue(generation) => return Some(generation),
                     DecodeCommandResult::Stop => return None,
                     DecodeCommandResult::Ignored => continue,
@@ -630,12 +671,19 @@ fn handle_decode_commands(
     shared: &SharedAudio,
     commands: &Receiver<DecodeCommand>,
     decoded_position_secs: &mut f64,
+    pending_source_switch: &mut Option<PendingSourceSwitch>,
 ) -> Option<u64> {
     let mut next_generation = None;
     loop {
         match commands.try_recv() {
             Ok(command) => {
-                match handle_decode_command(data, shared, command, decoded_position_secs) {
+                match handle_decode_command(
+                    data,
+                    shared,
+                    command,
+                    decoded_position_secs,
+                    pending_source_switch,
+                ) {
                     DecodeCommandResult::Continue(generation) => next_generation = Some(generation),
                     DecodeCommandResult::Stop => return None,
                     DecodeCommandResult::Ignored => {}
@@ -658,6 +706,7 @@ fn handle_decode_command(
     shared: &SharedAudio,
     command: DecodeCommand,
     decoded_position_secs: &mut f64,
+    pending_source_switch: &mut Option<PendingSourceSwitch>,
 ) -> DecodeCommandResult {
     match command {
         DecodeCommand::Seek {
@@ -665,6 +714,7 @@ fn handle_decode_command(
             generation,
             reply,
         } => {
+            pending_source_switch.take();
             if shared.should_stop_decoding() {
                 let _ = reply.send(Err("decoder stopping".to_string()));
                 return DecodeCommandResult::Stop;
@@ -691,7 +741,9 @@ fn handle_decode_command(
             }
         }
         DecodeCommand::SwitchSource {
-            mut decoder,
+            decoder,
+            predecoded,
+            switch_at_secs,
             generation,
             reply,
         } => {
@@ -703,24 +755,130 @@ fn handle_decode_command(
                 let _ = reply.send(Err("stale source switch generation".to_string()));
                 return DecodeCommandResult::Ignored;
             }
-            let position_secs = decoded_position_secs.max(0.0);
-            decoder.interrupt.store(false, Ordering::Release);
-            let result = decoder
-                .seek_and_measure(position_secs, false)
-                .map(|_| position_secs);
-            if result.is_ok() && shared.is_decode_generation_current(generation) {
-                shared.set_source_sample_format(decoder.source_sample_format());
-                shared.bind_interrupt(decoder.interrupt.clone());
-                *data = *decoder;
-                let _ = reply.send(result);
+            pending_source_switch.take();
+            *pending_source_switch = Some(PendingSourceSwitch {
+                decoder: Some(decoder),
+                predecoded,
+                switch_at_secs: switch_at_secs.max(0.0),
+                generation,
+                reply: Some(reply),
+            });
+            if activate_pending_source_switch(
+                data,
+                shared,
+                decoded_position_secs,
+                pending_source_switch,
+            ) {
                 DecodeCommandResult::Continue(generation)
             } else {
-                let _ = reply.send(result);
                 DecodeCommandResult::Ignored
             }
         }
-        DecodeCommand::Stop => DecodeCommandResult::Stop,
+        DecodeCommand::Stop => {
+            pending_source_switch.take();
+            DecodeCommandResult::Stop
+        }
     }
+}
+
+struct PendingSourceSwitch {
+    decoder: Option<Box<DecoderData>>,
+    predecoded: Vec<DecodedAudioChunk>,
+    switch_at_secs: f64,
+    generation: u64,
+    reply: Option<SyncSender<Result<f64, String>>>,
+}
+
+impl Drop for PendingSourceSwitch {
+    fn drop(&mut self) {
+        if let Some(reply) = self.reply.take() {
+            let _ = reply.send(Err("source switch cancelled".to_string()));
+        }
+    }
+}
+
+fn activate_pending_source_switch(
+    data: &mut DecoderData,
+    shared: &SharedAudio,
+    decoded_position_secs: &mut f64,
+    pending_source_switch: &mut Option<PendingSourceSwitch>,
+) -> bool {
+    let Some(pending) = pending_source_switch.as_ref() else {
+        return false;
+    };
+    if !shared.is_decode_generation_current(pending.generation) {
+        pending_source_switch.take();
+        return false;
+    }
+    if *decoded_position_secs + f64::EPSILON < pending.switch_at_secs {
+        return false;
+    }
+
+    let mut pending = pending_source_switch
+        .take()
+        .expect("pending source switch checked above");
+    let handoff_position = decoded_position_secs.max(0.0);
+    let mut decoder = pending
+        .decoder
+        .take()
+        .expect("pending source switch decoder is available");
+    decoder.interrupt.store(false, Ordering::Release);
+    decoder.discard_before_secs = Some(handoff_position);
+    shared.set_source_sample_format(decoder.source_sample_format());
+    shared.bind_interrupt(decoder.interrupt.clone());
+    *data = *decoder;
+    for mut chunk in pending.predecoded.drain(..) {
+        if !align_switched_chunk(&mut chunk, &mut data.discard_before_secs) {
+            continue;
+        }
+        *decoded_position_secs = chunk
+            .pts_secs
+            .map(|pts| pts + chunk.frames as f64 / f64::from(chunk.format.sample_rate.max(1)))
+            .unwrap_or_else(|| {
+                *decoded_position_secs
+                    + chunk.frames as f64 / f64::from(chunk.format.sample_rate.max(1))
+            });
+        if !shared.push_decoded_chunk_for_generation(chunk, pending.generation) {
+            if let Some(reply) = pending.reply.take() {
+                let _ = reply.send(Err("source switch stopped while queuing audio".to_string()));
+            }
+            return false;
+        }
+    }
+    if let Some(reply) = pending.reply.take() {
+        let _ = reply.send(Ok(handoff_position));
+    }
+    true
+}
+
+/// Align the first frame from the replacement source to the exact end of the
+/// old source. Accurate seeks can still return a codec frame beginning a few
+/// milliseconds before that point; replaying those samples sounds like a short
+/// hitch even when the output device never underruns.
+fn align_switched_chunk(
+    chunk: &mut DecodedAudioChunk,
+    discard_before_secs: &mut Option<f64>,
+) -> bool {
+    let Some(target) = *discard_before_secs else {
+        return chunk.frames > 0;
+    };
+    let Some(start) = chunk.pts_secs else {
+        *discard_before_secs = None;
+        return chunk.frames > 0;
+    };
+    let sample_rate = f64::from(chunk.format.sample_rate.max(1));
+    let end = start + chunk.frames as f64 / sample_rate;
+    if end <= target {
+        return false;
+    }
+    if start < target {
+        // Subtract a tiny fraction before ceil so a timestamp that is exactly
+        // on a sample boundary is not rounded up by binary floating-point noise.
+        let trim_frames = (((target - start) * sample_rate) - 1.0e-7).ceil() as usize;
+        chunk.trim_start_frames(trim_frames);
+    }
+    *discard_before_secs = None;
+    chunk.frames > 0
 }
 
 pub fn list_tracks_for_url(url: &str, stream_options: &StreamOptions) -> Vec<TrackInfo> {
@@ -811,6 +969,55 @@ mod tests {
 
         assert!(decoder.seeked_to_end);
         assert!(decoder.pending_playback_restart_position.is_none());
+    }
+
+    #[test]
+    fn switched_source_drops_frames_before_handoff_and_trims_crossing_frame() {
+        let format = DecodedAudioFormat {
+            sample_rate: 100,
+            sample_format: AudioSampleFormat::F32,
+            channels: 2,
+        };
+        let mut discard_before = Some(1.05);
+        let mut old_frame =
+            DecodedAudioChunk::new(format, 5, Some(1.0), DecodedAudioData::F32(vec![0.0; 10]));
+        assert!(!align_switched_chunk(&mut old_frame, &mut discard_before));
+        assert_eq!(discard_before, Some(1.05));
+
+        let samples = (0..20).map(|sample| sample as f32).collect::<Vec<_>>();
+        let mut crossing_frame =
+            DecodedAudioChunk::new(format, 10, Some(1.0), DecodedAudioData::F32(samples));
+        assert!(align_switched_chunk(
+            &mut crossing_frame,
+            &mut discard_before
+        ));
+        assert_eq!(discard_before, None);
+        assert_eq!(crossing_frame.frames, 5);
+        assert_eq!(crossing_frame.pts_secs, Some(1.05));
+        assert_eq!(
+            crossing_frame.data,
+            DecodedAudioData::F32((10..20).map(|sample| sample as f32).collect())
+        );
+    }
+
+    #[test]
+    fn switched_source_keeps_first_frame_when_pts_is_already_aligned() {
+        let mut discard_before = Some(2.0);
+        let mut chunk = DecodedAudioChunk::new(
+            DecodedAudioFormat {
+                sample_rate: 48_000,
+                sample_format: AudioSampleFormat::S16,
+                channels: 1,
+            },
+            2,
+            Some(2.0),
+            DecodedAudioData::I16(vec![1, 2]),
+        );
+
+        assert!(align_switched_chunk(&mut chunk, &mut discard_before));
+        assert_eq!(discard_before, None);
+        assert_eq!(chunk.frames, 2);
+        assert_eq!(chunk.data, DecodedAudioData::I16(vec![1, 2]));
     }
 
     #[test]

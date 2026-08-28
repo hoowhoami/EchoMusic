@@ -62,6 +62,10 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 const GAPLESS_PREDECODE_SECS: f64 = 0.5;
+const SOURCE_SWITCH_BASE_LEAD_SECS: f64 = 1.0;
+const SOURCE_SWITCH_MIN_READY_SECS: f64 = 0.35;
+const SOURCE_SWITCH_MAX_LEAD_SECS: f64 = 8.0;
+const SOURCE_SWITCH_PREDECODE_SECS: f64 = 0.5;
 
 static RUNTIME: Mutex<Option<PlayerRuntime>> = Mutex::new(None);
 /// Mirrors `RUNTIME.is_some()` for lock-free readiness checks on hot control
@@ -1164,17 +1168,43 @@ impl Task for SwitchSourceTask {
         .map_err(napi::Error::from_reason)?;
         let duration = decoder.duration_secs();
 
-        // Prime the new stream near the current timeline while the old decoder
-        // and output keep running.  The decode worker performs one final exact
-        // seek at the hand-off boundary, normally against this warmed cache.
-        decoder
-            .prepare_seamless_seek(shared.position_secs() + 0.5)
-            .map_err(napi::Error::from_reason)?;
+        // Seek the replacement stream to a future hand-off point while the old
+        // source keeps decoding and playing. If a remote seek consumes the
+        // initial lead, retry farther ahead based on the measured latency. The
+        // decode worker can then swap readers without performing network I/O.
+        let mut lead_secs = SOURCE_SWITCH_BASE_LEAD_SECS;
+        let mut switch_at_secs = shared.position_secs() + lead_secs;
+        let mut prepare_elapsed_ms = 0u128;
+        let mut predecoded = Vec::new();
+        for _ in 0..3 {
+            switch_at_secs = shared.position_secs() + lead_secs;
+            if duration > 0.0 {
+                switch_at_secs = switch_at_secs.min((duration - 0.05).max(0.0));
+            }
+            let prepare_started = Instant::now();
+            decoder
+                .prepare_seamless_seek(switch_at_secs)
+                .map_err(napi::Error::from_reason)?;
+            predecoded = decoder
+                .predecode_chunks(SOURCE_SWITCH_PREDECODE_SECS)
+                .map_err(napi::Error::from_reason)?;
+            prepare_elapsed_ms = prepare_started.elapsed().as_millis();
+            let ready_secs = switch_at_secs - shared.position_secs();
+            if ready_secs >= SOURCE_SWITCH_MIN_READY_SECS
+                || (duration > 0.0 && duration <= shared.position_secs() + 0.1)
+            {
+                break;
+            }
+            lead_secs = ((prepare_elapsed_ms as f64 / 1000.0) * 1.5 + 0.5)
+                .clamp(SOURCE_SWITCH_BASE_LEAD_SECS, SOURCE_SWITCH_MAX_LEAD_SECS);
+        }
 
         let (reply_tx, reply_rx) = sync_channel(1);
         commands
             .send(decoder::DecodeCommand::SwitchSource {
                 decoder: Box::new(decoder),
+                predecoded,
+                switch_at_secs,
                 generation,
                 reply: reply_tx,
             })
@@ -1211,7 +1241,7 @@ impl Task for SwitchSourceTask {
                     PlayerEvent::log(
                         "info",
                         format!(
-                            "source switched without output restart: position={switch_position:.3}, url='{url}'"
+                            "source switched without output restart: position={switch_position:.3}, scheduled={switch_at_secs:.3}, prepare_ms={prepare_elapsed_ms}, url='{url}'"
                         ),
                     ),
                 ],
