@@ -10,7 +10,9 @@
   overflow: hidden;
   border-radius: inherit;
   pointer-events: none;
-  background: color-mix(in srgb, var(--color-primary) 12%, transparent);
+  /* 忙碌时覆盖普通已播填充，确保动画优先于静态进度色显示。 */
+  background: var(--control-track-bg);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-primary) 18%, transparent);
 }
 
 .player-progress-busy::before {
@@ -18,14 +20,17 @@
   position: absolute;
   inset-block: 0;
   left: -42%;
-  width: 42%;
+  width: 46%;
   border-radius: inherit;
   background: linear-gradient(
     90deg,
     transparent,
-    color-mix(in srgb, var(--color-primary) 78%, white 22%),
+    var(--color-primary) 36%,
+    color-mix(in srgb, var(--color-primary) 36%, white 64%) 50%,
+    var(--color-primary) 64%,
     transparent
   );
+  box-shadow: 0 0 5px color-mix(in srgb, var(--color-primary) 72%, transparent);
   animation: player-progress-buffering 1.1s ease-in-out infinite;
 }
 
