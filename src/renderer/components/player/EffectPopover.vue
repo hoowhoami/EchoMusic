@@ -747,7 +747,7 @@ withDefaults(defineProps<Props>(), {
           </div>
 
           <div v-if="providerEqLocked" class="panel-hint eq-bypass-hint">
-            当前由音效引擎完整处理；已保存的 EQ 设置会保留，但不会叠加
+            当前由音效引擎自动处理
           </div>
 
           <div class="eq-container" :class="{ 'is-disabled': providerEqLocked }">
@@ -805,13 +805,6 @@ withDefaults(defineProps<Props>(), {
             :class="{ 'is-active': currentPlaybackEffectSelection.active }"
           >
             <div class="current-spatial-effect-copy">
-              <span class="current-spatial-effect-eyebrow">
-                当前音效 · {{ currentPlaybackEffectSelection.type }}
-              </span>
-              <strong>{{ currentPlaybackEffectSelection.name }}</strong>
-              <small>{{ currentPlaybackEffectSelection.detail }}</small>
-            </div>
-            <div class="current-spatial-effect-actions">
               <button
                 v-if="currentPlaybackEffectSelection.active"
                 type="button"
@@ -819,9 +812,13 @@ withDefaults(defineProps<Props>(), {
                 :title="`定位到${currentPlaybackEffectSelection.location}`"
                 @click="showCurrentSpatialEffect"
               >
-                <span>{{ currentPlaybackEffectSelection.location }}</span>
-                <Icon :icon="iconArrowRight" width="11" height="11" aria-hidden="true" />
+                <span>{{ currentPlaybackEffectSelection.name }}</span>
+                <Icon :icon="iconArrowRight" width="12" height="12" aria-hidden="true" />
               </button>
+              <strong v-else>{{ currentPlaybackEffectSelection.name }}</strong>
+              <small>{{ currentPlaybackEffectSelection.detail }}</small>
+            </div>
+            <div class="current-spatial-effect-actions">
               <button
                 type="button"
                 class="original-effect-button"
@@ -1749,18 +1746,12 @@ withDefaults(defineProps<Props>(), {
 }
 
 .current-spatial-effect-copy {
-  display: grid;
+  display: flex;
   min-width: 0;
-  grid-template-columns: auto minmax(0, 1fr);
-  align-items: baseline;
-  gap: 2px 7px;
-}
-
-.current-spatial-effect-eyebrow {
-  color: var(--color-text-secondary);
-  font-size: 8px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
+  flex: 1;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
 }
 
 .current-spatial-effect-copy strong {
@@ -1772,7 +1763,7 @@ withDefaults(defineProps<Props>(), {
 }
 
 .current-spatial-effect-copy small {
-  grid-column: 1 / -1;
+  max-width: 100%;
   overflow: hidden;
   color: var(--color-text-secondary);
   font-size: 9px;
@@ -1790,16 +1781,16 @@ withDefaults(defineProps<Props>(), {
 
 .current-effect-location {
   display: inline-flex;
-  max-width: 145px;
+  max-width: 100%;
   height: 26px;
   align-items: center;
   gap: 3px;
-  padding: 0 7px 0 9px;
+  padding: 0 6px 0 0;
   border: 0;
   border-radius: 6px;
-  background: color-mix(in srgb, var(--color-primary) 10%, transparent);
+  background: transparent;
   color: var(--color-primary);
-  font-size: 9px;
+  font-size: 12px;
   font-weight: 700;
   cursor: pointer;
 }
@@ -1811,7 +1802,7 @@ withDefaults(defineProps<Props>(), {
 }
 
 .current-effect-location:hover {
-  background: color-mix(in srgb, var(--color-primary) 17%, transparent);
+  color: color-mix(in srgb, var(--color-primary) 78%, var(--color-text-main));
 }
 
 .current-effect-location:focus-visible,

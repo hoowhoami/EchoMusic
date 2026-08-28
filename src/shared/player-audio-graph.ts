@@ -56,8 +56,6 @@ export interface PlayerAudioGraphSnapshot {
 
 export type DspControlOwnership = 'host' | 'provider' | 'disabled';
 
-export type DspControlPolicy = Record<string, DspControlOwnership>;
-
 export type DspJsonValue =
   | null
   | boolean
@@ -117,7 +115,6 @@ export interface DspProviderRuntimeState {
   effect?: { id?: string; name?: string };
   currentEffect?: string;
   presetId?: string;
-  controlPolicy?: DspControlPolicy;
   activeModules?: string[];
   controls?: Record<string, { value?: DspJsonValue; ownership?: DspControlOwnership }>;
 }

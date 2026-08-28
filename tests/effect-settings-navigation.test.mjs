@@ -152,6 +152,7 @@ test('Basic DSP convolution exposes a per-effect mix and providers hide the host
   assert.equal(api.basicDspConvolutionActive.value, true);
   assert.equal(api.builtinAudioEngineActive.value, true);
   assert.equal(api.currentPlaybackEffectSelection.value.type, '本地音效');
+  assert.equal(api.currentPlaybackEffectSelection.value.name, '空间卷积');
   assert.equal(api.convolutionMixPercent.value, 50);
   api.previewConvolutionMix(73);
   assert.equal(api.convolutionMixPercent.value, 73);
@@ -255,6 +256,13 @@ test('the current spatial effect is locatable without locking manual tab browsin
   assert.equal(api.providerEqLocked.value, true);
 
   assert.match(descriptor.template.content, /class="current-spatial-effect-actions"/);
+  assert.doesNotMatch(descriptor.template.content, /当前音效\s*·/);
+  assert.match(
+    descriptor.template.content,
+    /class="current-effect-location"[\s\S]*currentPlaybackEffectSelection\.name/,
+  );
+  assert.match(descriptor.template.content, /当前由音效引擎自动处理/);
+  assert.doesNotMatch(descriptor.template.content, /已保存的 EQ 设置/);
   assert.match(descriptor.template.content, /class="library-current-dot"/);
   assert.match(descriptor.template.content, /class="my-effect-source-current"/);
   assert.doesNotMatch(descriptor.template.content, />\s*使用中\s*</);

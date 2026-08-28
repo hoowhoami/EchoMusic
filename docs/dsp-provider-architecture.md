@@ -210,16 +210,18 @@ compatibility.
     "band.0.gain": { "type": "number", "value": 4.5, "unit": "dB", "ownership": "provider" },
     "room.enabled": { "type": "boolean", "value": true, "ownership": "provider" }
   },
-  "opaque": { "providerSpecific": true },
-  "controlPolicy": {
-    "outputGain": "host"
-  }
+  "opaque": { "providerSpecific": true }
 }
 ```
 
 `ownership` is one of the few Host-level concepts: `provider`, `host`, or `disabled`. Provider
 control IDs and values are otherwise arbitrary JSON values. The graph snapshot exposes the
 documents so the renderer never has to infer provider behavior from file extensions.
+
+`ownership` applies to individual Provider settings only. Host EQ bypass and final output gain are
+fixed graph semantics rather than runtime-negotiated policies: while a Provider is active it owns
+the complete DSP graph, the Host preserves but does not apply its EQ values, and final user volume
+remains in the Host output stage.
 
 ## IPC Compatibility
 
