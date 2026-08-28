@@ -100,6 +100,7 @@ export const usePlayerStore = defineStore(
       const aoTrackSeq = Number(ao?.trackSeq);
       const coreGeneration = Number(core?.generation);
       const aoGeneration = Number(ao?.generation);
+      const aoBufferingState = Number(ao?.bufferingState);
       const sameTrack =
         !Number.isFinite(coreTrackSeq) ||
         !Number.isFinite(aoTrackSeq) ||
@@ -113,6 +114,8 @@ export const usePlayerStore = defineStore(
       // 两者一致且属于同一播放上下文时，才表示输出确实仍被缓冲门控。
       return coreState === 'buffering' &&
         ao?.paused === true &&
+        Number.isFinite(aoBufferingState) &&
+        aoBufferingState < 100 &&
         sameTrack &&
         sameGeneration
         ? 'buffering'

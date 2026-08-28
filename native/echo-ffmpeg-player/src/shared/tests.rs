@@ -543,6 +543,41 @@ fn control_signal_is_not_blocked_by_full_telemetry_queue() {
 }
 
 #[test]
+fn ao_resume_is_not_dropped_by_full_telemetry_queue() {
+    let shared = SharedAudio::new(
+        MixFormat::stereo_f32(100),
+        0.2,
+        8.0,
+        &DspSettings::default(),
+    );
+    let (control_tx, control_rx) = channel();
+    let (telemetry_tx, _telemetry_rx) = sync_channel(1);
+    shared
+        .bind_signal_senders(control_tx, telemetry_tx)
+        .expect("signal senders should bind once");
+
+    shared.notify_signal(PlaybackSignal::AoState {
+        paused: true,
+        reason: "preroll",
+        buffering_state: 95.0,
+        buffered_secs: 0.19,
+        target_secs: 0.2,
+    });
+    shared.notify_signal(PlaybackSignal::AoState {
+        paused: false,
+        reason: "preroll",
+        buffering_state: 100.0,
+        buffered_secs: 0.2,
+        target_secs: 0.2,
+    });
+
+    assert!(matches!(
+        control_rx.try_recv(),
+        Ok(PlaybackSignal::AoState { paused: false, .. })
+    ));
+}
+
+#[test]
 fn repeated_preroll_callbacks_do_not_count_as_underruns() {
     let shared = SharedAudio::new(
         MixFormat::stereo_f32(100),

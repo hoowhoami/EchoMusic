@@ -72,7 +72,11 @@ impl PlaybackSignal {
     pub(super) fn is_control(&self) -> bool {
         matches!(
             self,
-            Self::PlaybackRestart(_) | Self::TrackSwitch(_) | Self::PlaybackEnd | Self::Stop
+            Self::PlaybackRestart(_)
+                | Self::AoState { paused: false, .. }
+                | Self::TrackSwitch(_)
+                | Self::PlaybackEnd
+                | Self::Stop
         )
     }
 }
