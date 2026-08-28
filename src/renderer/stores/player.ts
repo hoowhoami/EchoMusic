@@ -89,13 +89,36 @@ export const usePlayerStore = defineStore(
     const isLoading = computed(() => getPlaybackIsLoading(state));
     const isPlaying = computed(() => getPlaybackIsPlaying(state));
     const playbackDisplayState = computed(() => getPlaybackDisplayState(state));
-    const playbackProgressIsBusy = computed(() => {
-      if (!state.currentTrackId) return false;
-      const coreState = String(state.playbackDiagnostics.core?.state ?? '').toLowerCase();
-      // 进度条只表达 native 明确报告的 seek / buffering 生命周期。
-      // 换源、恢复和播放意图有各自的 UI，混入这里会因异步状态交叉造成动画残留。
-      return state.nativeSeekActive || coreState === 'buffering';
+    const playbackProgressBusyReason = computed<'seek' | 'buffering' | null>(() => {
+      if (!state.currentTrackId) return null;
+      const core = state.playbackDiagnostics.core;
+      const ao = state.playbackDiagnostics.ao;
+      const coreState = String(core?.state ?? '').toLowerCase();
+      if (state.nativeSeekActive || coreState === 'seeking') return 'seek';
+
+      const coreTrackSeq = Number(core?.trackSeq);
+      const aoTrackSeq = Number(ao?.trackSeq);
+      const coreGeneration = Number(core?.generation);
+      const aoGeneration = Number(ao?.generation);
+      const sameTrack =
+        !Number.isFinite(coreTrackSeq) ||
+        !Number.isFinite(aoTrackSeq) ||
+        coreTrackSeq === aoTrackSeq;
+      const sameGeneration =
+        !Number.isFinite(coreGeneration) ||
+        !Number.isFinite(aoGeneration) ||
+        coreGeneration === aoGeneration;
+
+      // core 与 AO 分属两个异步事件流，任一状态都可能在输出恢复后短暂滞留。
+      // 两者一致且属于同一播放上下文时，才表示输出确实仍被缓冲门控。
+      return coreState === 'buffering' &&
+        ao?.paused === true &&
+        sameTrack &&
+        sameGeneration
+        ? 'buffering'
+        : null;
     });
+    const playbackProgressIsBusy = computed(() => playbackProgressBusyReason.value !== null);
 
     const getResolvedPlaybackSources = (resolved: ResolvedAudioSource): PlaybackSource[] => {
       const fallbackTrackId = resolved.source?.audioTrackId ?? resolved.audioTrackId ?? null;
@@ -1157,6 +1180,7 @@ export const usePlayerStore = defineStore(
       isLoading,
       playbackTargetTrackId,
       playbackIsLoading,
+      playbackProgressBusyReason,
       playbackProgressIsBusy,
       playbackDisplayState,
       getSpatialAudioEffectSupport,

@@ -120,7 +120,13 @@ const handleCopySongInfo = async () => {
         :max="playerStore.duration || 100"
         :step="0.1"
         :aria-busy="playerStore.playbackProgressIsBusy"
-        :aria-label="playerStore.playbackProgressIsBusy ? '播放进度，定位或缓冲中' : '播放进度'"
+        :aria-label="
+          playerStore.playbackProgressBusyReason === 'seek'
+            ? '播放进度，定位中'
+            : playerStore.playbackProgressBusyReason === 'buffering'
+              ? '播放进度，缓冲中'
+              : '播放进度'
+        "
         class="bar-slider-top group/progress"
         @update:model-value="handleSeek"
         @pointerdown.capture="handleSeekStart"
