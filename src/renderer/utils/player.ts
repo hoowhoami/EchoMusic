@@ -361,6 +361,15 @@ export class PlayerEngine {
     }
   }
 
+  async switchSource(source: string | PlaybackSource): Promise<void> {
+    const playbackSource = normalizePlaybackSource(source);
+    if (!playbackSource.url) return;
+    await player?.switchSource?.(playbackSource.url, playbackSource.audioTrackId ?? null);
+    this.clearSeekPending();
+    this.sourceUrl = getPlaybackSourceKey(playbackSource);
+    this.lastTimeValue = -1;
+  }
+
   /** 加载 MKV 并选择指定音轨 */
   setMkvSource(url: string, audioTrackId: number): Promise<void> {
     return this.setSource({ url, audioTrackId }, { force: true });

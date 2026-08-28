@@ -22,6 +22,12 @@ export function registerPlayerIpc(ref: PlayerRef): void {
   });
 
   ipcRegistry.registerHandler(
+    'player:switch-source',
+    async (_e, url: string, trackId?: number | null) =>
+      (await ref.current?.switchSource(url, trackId)) ?? null,
+  );
+
+  ipcRegistry.registerHandler(
     'player:begin-next-source-preparation',
     async () => ref.current?.beginNextSourcePreparation() ?? null,
   );

@@ -17,6 +17,11 @@ pub enum DecodeCommand {
         generation: u64,
         reply: SyncSender<Result<(), String>>,
     },
+    SwitchSource {
+        decoder: Box<DecoderData>,
+        generation: u64,
+        reply: SyncSender<Result<f64, String>>,
+    },
     Stop,
 }
 
@@ -105,12 +110,20 @@ impl DecoderData {
     }
 
     pub fn seek(&mut self, position_secs: f64) -> Result<(), String> {
-        let elapsed_ms = self.seek_and_measure(position_secs)?;
+        let elapsed_ms = self.seek_and_measure(position_secs, true)?;
         log_seek_elapsed(position_secs, elapsed_ms);
         Ok(())
     }
 
-    fn seek_and_measure(&mut self, position_secs: f64) -> Result<u128, String> {
+    pub fn prepare_seamless_seek(&mut self, position_secs: f64) -> Result<(), String> {
+        self.seek_and_measure(position_secs, false).map(|_| ())
+    }
+
+    fn seek_and_measure(
+        &mut self,
+        position_secs: f64,
+        announce_restart: bool,
+    ) -> Result<u128, String> {
         let position_secs = normalize_seek_position(position_secs);
         let target = Duration::from_secs_f64(position_secs);
         let started = Instant::now();
@@ -136,7 +149,7 @@ impl DecoderData {
                     )
                 })
             })?;
-        self.pending_playback_restart_position = Some(position_secs);
+        self.pending_playback_restart_position = announce_restart.then_some(position_secs);
         Ok(started.elapsed().as_millis())
     }
 
@@ -442,9 +455,12 @@ fn decode_worker_loop(
 ) -> Option<DecoderData> {
     shared.bind_interrupt(data.interrupt.clone());
     let mut produced_frames = 0u64;
+    let mut decoded_position_secs = shared.position_secs();
 
     loop {
-        if let Some(next_generation) = handle_decode_commands(&mut data, &shared, &commands) {
+        if let Some(next_generation) =
+            handle_decode_commands(&mut data, &shared, &commands, &mut decoded_position_secs)
+        {
             generation = next_generation;
             produced_frames = 0;
         }
@@ -453,7 +469,12 @@ fn decode_worker_loop(
             return (!shared.stop.load(Ordering::Acquire)).then_some(data);
         }
         if !shared.is_decode_generation_current(generation) {
-            match wait_for_generation_command(&mut data, &shared, &commands) {
+            match wait_for_generation_command(
+                &mut data,
+                &shared,
+                &commands,
+                &mut decoded_position_secs,
+            ) {
                 Some(next_generation) => {
                     generation = next_generation;
                     produced_frames = 0;
@@ -482,6 +503,15 @@ fn decode_worker_loop(
                         }
                     }
                     produced_frames = produced_frames.saturating_add(chunk.frames as u64);
+                    decoded_position_secs = chunk
+                        .pts_secs
+                        .map(|pts| {
+                            pts + chunk.frames as f64 / f64::from(chunk.format.sample_rate.max(1))
+                        })
+                        .unwrap_or_else(|| {
+                            decoded_position_secs
+                                + chunk.frames as f64 / f64::from(chunk.format.sample_rate.max(1))
+                        });
 
                     if !shared.push_decoded_chunk_for_generation(chunk, generation) {
                         if shared.should_stop_decoding() {
@@ -572,17 +602,20 @@ fn wait_for_generation_command(
     data: &mut DecoderData,
     shared: &SharedAudio,
     commands: &Receiver<DecodeCommand>,
+    decoded_position_secs: &mut f64,
 ) -> Option<u64> {
     loop {
         if shared.should_stop_decoding() {
             return None;
         }
         match commands.recv_timeout(Duration::from_millis(50)) {
-            Ok(command) => match handle_decode_command(data, shared, command) {
-                DecodeCommandResult::Continue(generation) => return Some(generation),
-                DecodeCommandResult::Stop => return None,
-                DecodeCommandResult::Ignored => continue,
-            },
+            Ok(command) => {
+                match handle_decode_command(data, shared, command, decoded_position_secs) {
+                    DecodeCommandResult::Continue(generation) => return Some(generation),
+                    DecodeCommandResult::Stop => return None,
+                    DecodeCommandResult::Ignored => continue,
+                }
+            }
             Err(_) => {
                 if shared.should_stop_decoding() {
                     return None;
@@ -596,15 +629,18 @@ fn handle_decode_commands(
     data: &mut DecoderData,
     shared: &SharedAudio,
     commands: &Receiver<DecodeCommand>,
+    decoded_position_secs: &mut f64,
 ) -> Option<u64> {
     let mut next_generation = None;
     loop {
         match commands.try_recv() {
-            Ok(command) => match handle_decode_command(data, shared, command) {
-                DecodeCommandResult::Continue(generation) => next_generation = Some(generation),
-                DecodeCommandResult::Stop => return None,
-                DecodeCommandResult::Ignored => {}
-            },
+            Ok(command) => {
+                match handle_decode_command(data, shared, command, decoded_position_secs) {
+                    DecodeCommandResult::Continue(generation) => next_generation = Some(generation),
+                    DecodeCommandResult::Stop => return None,
+                    DecodeCommandResult::Ignored => {}
+                }
+            }
             Err(TryRecvError::Empty) => return next_generation,
             Err(TryRecvError::Disconnected) => return next_generation,
         }
@@ -621,6 +657,7 @@ fn handle_decode_command(
     data: &mut DecoderData,
     shared: &SharedAudio,
     command: DecodeCommand,
+    decoded_position_secs: &mut f64,
 ) -> DecodeCommandResult {
     match command {
         DecodeCommand::Seek {
@@ -637,7 +674,7 @@ fn handle_decode_command(
                 return DecodeCommandResult::Ignored;
             }
             data.interrupt.store(false, Ordering::Release);
-            let result = data.seek_and_measure(position_secs);
+            let result = data.seek_and_measure(position_secs, true);
             let generation_current = shared.is_decode_generation_current(generation);
             let seek_succeeded = result.is_ok();
             if let Ok(elapsed_ms) = result.as_ref() {
@@ -647,8 +684,38 @@ fn handle_decode_command(
             }
             let _ = reply.send(result.map(|_| ()));
             if generation_current && seek_succeeded {
+                *decoded_position_secs = position_secs;
                 DecodeCommandResult::Continue(generation)
             } else {
+                DecodeCommandResult::Ignored
+            }
+        }
+        DecodeCommand::SwitchSource {
+            mut decoder,
+            generation,
+            reply,
+        } => {
+            if shared.should_stop_decoding() {
+                let _ = reply.send(Err("decoder stopping".to_string()));
+                return DecodeCommandResult::Stop;
+            }
+            if !shared.is_decode_generation_current(generation) {
+                let _ = reply.send(Err("stale source switch generation".to_string()));
+                return DecodeCommandResult::Ignored;
+            }
+            let position_secs = decoded_position_secs.max(0.0);
+            decoder.interrupt.store(false, Ordering::Release);
+            let result = decoder
+                .seek_and_measure(position_secs, false)
+                .map(|_| position_secs);
+            if result.is_ok() && shared.is_decode_generation_current(generation) {
+                shared.set_source_sample_format(decoder.source_sample_format());
+                shared.bind_interrupt(decoder.interrupt.clone());
+                *data = *decoder;
+                let _ = reply.send(result);
+                DecodeCommandResult::Continue(generation)
+            } else {
+                let _ = reply.send(result);
                 DecodeCommandResult::Ignored
             }
         }

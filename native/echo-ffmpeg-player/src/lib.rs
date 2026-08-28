@@ -1121,6 +1121,111 @@ pub struct LoadFileTask {
     audio_stream_ordinal: Option<usize>,
 }
 
+pub struct SwitchSourceTask {
+    url: String,
+    seq: u64,
+    audio_stream_ordinal: Option<usize>,
+}
+
+impl Task for SwitchSourceTask {
+    type Output = (f64, f64);
+    type JsValue = (f64, f64);
+
+    fn compute(&mut self) -> napi::Result<Self::Output> {
+        let url = self.url.clone();
+        let _seq = self.seq;
+        let audio_stream = self.audio_stream_ordinal;
+        let (shared, current_seq, generation, commands, config) = with_runtime(|runtime| {
+            runtime.cancel_pending_gapless_prepare();
+            runtime.prepared_next = None;
+            let session = runtime
+                .session
+                .as_ref()
+                .ok_or_else(|| napi::Error::from_reason("no active audio session".to_string()))?;
+            let commands = session.decode_commands.as_ref().cloned().ok_or_else(|| {
+                napi::Error::from_reason("active decoder is not available".to_string())
+            })?;
+            Ok((
+                session.shared.clone(),
+                runtime.current_seq,
+                session.shared.current_decode_generation(),
+                commands,
+                runtime.config.clone(),
+            ))
+        })?;
+
+        let mut decoder = open_decoder(
+            url.clone(),
+            audio_stream,
+            Some(shared.mix_format.sample_rate),
+            config.packet_cache_options_for_url(&url),
+            &config.stream_options(),
+        )
+        .map_err(napi::Error::from_reason)?;
+        let duration = decoder.duration_secs();
+
+        // Prime the new stream near the current timeline while the old decoder
+        // and output keep running.  The decode worker performs one final exact
+        // seek at the hand-off boundary, normally against this warmed cache.
+        decoder
+            .prepare_seamless_seek(shared.position_secs() + 0.5)
+            .map_err(napi::Error::from_reason)?;
+
+        let (reply_tx, reply_rx) = sync_channel(1);
+        commands
+            .send(decoder::DecodeCommand::SwitchSource {
+                decoder: Box::new(decoder),
+                generation,
+                reply: reply_tx,
+            })
+            .map_err(|_| napi::Error::from_reason("active decoder stopped".to_string()))?;
+        let switch_position = reply_rx
+            .recv_timeout(Duration::from_secs(15))
+            .map_err(|_| napi::Error::from_reason("source switch timed out".to_string()))?
+            .map_err(napi::Error::from_reason)?;
+
+        with_runtime(|runtime| {
+            let Some(session_shared) = runtime
+                .session
+                .as_ref()
+                .map(|session| session.shared.clone())
+            else {
+                return Err(napi::Error::from_reason(
+                    "audio session changed during source switch".to_string(),
+                ));
+            };
+            if !Arc::ptr_eq(&session_shared, &shared) || runtime.current_seq != current_seq {
+                return Err(napi::Error::from_reason(
+                    "stale source switch ignored".to_string(),
+                ));
+            }
+            runtime.cancel_pending_gapless_prepare();
+            runtime.prepared_next = None;
+            runtime.current_url = Some(url.clone());
+            runtime.current_audio_stream_ordinal = audio_stream;
+            runtime.state.duration = duration;
+            emit_runtime_events(
+                runtime,
+                vec![
+                    PlayerEvent::duration_change(duration),
+                    PlayerEvent::log(
+                        "info",
+                        format!(
+                            "source switched without output restart: position={switch_position:.3}, url='{url}'"
+                        ),
+                    ),
+                ],
+            );
+            Ok(())
+        })?;
+        Ok((switch_position, duration))
+    }
+
+    fn resolve(&mut self, _env: Env, output: Self::Output) -> napi::Result<Self::JsValue> {
+        Ok(output)
+    }
+}
+
 impl Task for LoadFileTask {
     type Output = ();
     type JsValue = ();
@@ -1326,6 +1431,19 @@ pub fn load_mkv_track(url: String, track_id: i64, seq: Option<f64>) -> AsyncTask
         url,
         seq: seq.unwrap_or(0.0).max(0.0) as u64,
         audio_stream_ordinal: audio_stream_ordinal_from_track_id(track_id),
+    })
+}
+
+#[napi]
+pub fn switch_source(
+    url: String,
+    track_id: Option<i64>,
+    seq: Option<f64>,
+) -> AsyncTask<SwitchSourceTask> {
+    AsyncTask::new(SwitchSourceTask {
+        url,
+        seq: seq.unwrap_or(0.0).max(0.0) as u64,
+        audio_stream_ordinal: track_id.and_then(audio_stream_ordinal_from_track_id),
     })
 }
 

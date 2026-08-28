@@ -8,7 +8,7 @@ import { getPlaybackIsLoading } from './stateMachine';
 export const createAudioManager = (
   state: PlayerState,
   engine: PlayerEngine,
-  refreshCurrentTrack: () => Promise<void>,
+  refreshCurrentTrack: (options?: { seamless?: boolean }) => Promise<void>,
 ) => {
   const normalizeVolume = (value: number, fallback = DEFAULT_PLAYER_VOLUME) => {
     const candidate = Number.isFinite(value) ? value : fallback;
@@ -77,7 +77,7 @@ export const createAudioManager = (
       state.pendingSettingRefresh = true;
       return;
     }
-    void refreshCurrentTrack();
+    void refreshCurrentTrack({ seamless: true });
   };
 
   const fadeVolume = (
@@ -108,7 +108,7 @@ export const createAudioManager = (
       state.pendingSettingRefresh = true;
       return;
     }
-    void refreshCurrentTrack();
+    void refreshCurrentTrack({ seamless: true });
   };
 
   const preferCurrentTrackCatalogQuality = (quality: AudioQualityValue) => {
@@ -127,7 +127,7 @@ export const createAudioManager = (
       state.pendingSettingRefresh = true;
       return;
     }
-    void refreshCurrentTrack();
+    void refreshCurrentTrack({ seamless: true });
   };
 
   const preferCurrentTrackCloudSource = () => {
@@ -146,7 +146,7 @@ export const createAudioManager = (
       state.pendingSettingRefresh = true;
       return;
     }
-    void refreshCurrentTrack();
+    void refreshCurrentTrack({ seamless: true });
   };
 
   return {

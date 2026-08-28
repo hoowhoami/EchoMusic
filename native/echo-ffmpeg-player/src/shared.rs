@@ -1,3 +1,4 @@
+use crate::audio_graph::AudioFilterGraph;
 use crate::dsp::provider::ProviderDescriptor;
 use crate::dsp::DspSettings;
 use crate::spectrum::SampleRing;
@@ -45,6 +46,7 @@ pub struct SharedAudio {
     ao_state: AoBufferingState,
     pub spectrum_ring: Mutex<SampleRing>,
     dsp_settings: Mutex<DspSettings>,
+    staged_filter_graph: Mutex<Option<(u64, AudioFilterGraph)>>,
     provider_descriptor: Mutex<Option<ProviderDescriptor>>,
     pub paused: AtomicBool,
     pub stop: AtomicBool,
@@ -136,6 +138,7 @@ impl SharedAudio {
             ao_state: AoBufferingState::new(),
             spectrum_ring: Mutex::new(SampleRing::new(mix_sample_rate as usize * mix_channels)),
             dsp_settings: Mutex::new(dsp_settings.clone()),
+            staged_filter_graph: Mutex::new(None),
             provider_descriptor: Mutex::new(None),
             paused: AtomicBool::new(true),
             stop: AtomicBool::new(false),
@@ -952,6 +955,37 @@ impl SharedAudio {
         self.update_dsp_settings(dsp_settings);
         self.output_queue_changed.notify_all();
         self.decoded_queue_changed.notify_all();
+    }
+
+    pub fn stage_audio_effect_graph(&self, dsp_settings: &DspSettings, graph: AudioFilterGraph) {
+        let _queue = self.output_queue_wait.lock();
+        let generation = self
+            .filter_generation
+            .load(Ordering::Acquire)
+            .wrapping_add(1);
+        if let Ok(mut staged) = self.staged_filter_graph.lock() {
+            *staged = Some((generation, graph));
+        }
+        // Keep already processed audio in the output ring. It forms a natural
+        // hand-off tail while the filter thread adopts the prepared graph.
+        self.filter_generation.store(generation, Ordering::Release);
+        self.eof.store(false, Ordering::Release);
+        self.end_reported.store(false, Ordering::Release);
+        self.set_speed(dsp_settings.speed);
+        self.update_dsp_settings(dsp_settings);
+        self.output_queue_changed.notify_all();
+        self.decoded_queue_changed.notify_all();
+    }
+
+    pub fn take_staged_filter_graph(&self, generation: u64) -> Option<AudioFilterGraph> {
+        let mut staged = self.staged_filter_graph.lock().ok()?;
+        if staged
+            .as_ref()
+            .is_some_and(|(value, _)| *value == generation)
+        {
+            return staged.take().map(|(_, graph)| graph);
+        }
+        None
     }
 }
 

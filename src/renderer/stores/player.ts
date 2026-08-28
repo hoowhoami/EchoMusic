@@ -156,7 +156,7 @@ export const usePlayerStore = defineStore(
       { immediate: true },
     );
 
-    const refreshCurrentTrack = async () => {
+    const refreshCurrentTrack = async (options?: { seamless?: boolean }) => {
       if (!state.currentTrackId) return;
       if (getPlaybackIsLoading(state)) {
         state.pendingSettingRefresh = true;
@@ -168,20 +168,28 @@ export const usePlayerStore = defineStore(
 
       state.pendingSettingRefresh = false;
       const wasPlaying = getPlaybackIsPlaying(state);
+      const seamless = options?.seamless === true && wasPlaying && !!state.currentAudioUrl;
       const previousTime = state.currentTime;
-      beginPlaybackIntent(state, {
-        seq: requestSeq,
-        trackId: String(state.currentTrackId),
-        sourceQueueId: state.currentSourceQueueId,
-        shouldPlay: wasPlaying,
-      });
-      beginNativeTrackLoad(state);
+      if (!seamless) {
+        beginPlaybackIntent(state, {
+          seq: requestSeq,
+          trackId: String(state.currentTrackId),
+          sourceQueueId: state.currentSourceQueueId,
+          shouldPlay: wasPlaying,
+        });
+        beginNativeTrackLoad(state);
+      }
 
       let resolved: ResolvedAudioSource;
       try {
         resolved = await resolver.resolveAudioUrl(track, { forceReload: true });
       } catch (error) {
         if (requestSeq !== state.playbackRequestSeq) return;
+        if (seamless) {
+          showPlaybackNotice('audio-url-unavailable', track);
+          logger.error('PlayerStore', 'Seamless source resolution failed; old source kept:', error);
+          return;
+        }
         abortNativeTrackLoad(state);
         completePlaybackIntent(state, requestSeq, { isPlaying: false });
         setEnginePlaybackStatus(state, 'error');
@@ -192,6 +200,10 @@ export const usePlayerStore = defineStore(
       }
       if (requestSeq !== state.playbackRequestSeq) return;
       if (!resolved.url) {
+        if (seamless) {
+          showPlaybackNotice('audio-url-unavailable', track);
+          return;
+        }
         abortNativeTrackLoad(state);
         completePlaybackIntent(state, requestSeq, { isPlaying: false });
         setEnginePlaybackStatus(state, 'error');
@@ -210,38 +222,71 @@ export const usePlayerStore = defineStore(
       if (requestSeq !== state.playbackRequestSeq) return;
 
       const playbackSources = getResolvedPlaybackSources(resolved);
-      const playbackSource = playbackSources[0] ?? { url: resolved.url };
+      let playbackSource = playbackSources[0] ?? { url: resolved.url };
+      let playbackSourceIndex = 0;
+      const savedDuration = state.duration;
+      try {
+        if (seamless) {
+          let switched = false;
+          let lastError: unknown;
+          const candidates = playbackSources.length ? playbackSources : [playbackSource];
+          for (const [index, candidate] of candidates.entries()) {
+            try {
+              await engine.switchSource(candidate);
+              playbackSource = candidate;
+              playbackSourceIndex = index;
+              switched = true;
+              break;
+            } catch (error) {
+              lastError = error;
+              logger.warn('PlayerStore', 'Seamless source candidate failed', {
+                index,
+                error: String(error),
+              });
+            }
+          }
+          if (!switched) throw lastError ?? new Error('No playable source candidate');
+        } else {
+          await engine.setSource(playbackSource, { force: true });
+        }
+      } catch (error) {
+        if (requestSeq === state.playbackRequestSeq) {
+          if (seamless) {
+            showPlaybackNotice('playback-failed', track);
+          } else {
+            abortNativeTrackLoad(state);
+            completePlaybackIntent(state, requestSeq, { isPlaying: false });
+            setEnginePlaybackStatus(state, 'error');
+            state.lastError = 'playback-failed';
+            showPlaybackNotice('playback-failed', track);
+          }
+        }
+        logger.error(
+          'PlayerStore',
+          seamless
+            ? 'Seamless source switch failed; old source kept:'
+            : 'Refresh track reload failed:',
+          error,
+        );
+        return;
+      }
+      if (requestSeq !== state.playbackRequestSeq) return;
       state.currentAudioUrl = playbackSource.url;
       state.currentPlaybackSource = playbackSource;
       state.currentAudioCandidateUrls = playbackSources.map((source) => source.url);
       state.currentAudioCandidateSources = playbackSources;
-      state.currentAudioCandidateIndex = 0;
+      state.currentAudioCandidateIndex = playbackSourceIndex;
       state.currentResolvedAudioQuality = resolved.quality;
       state.currentResolvedAudioEffect = resolved.effect;
       state.currentResolvedAudioLoudness = resolved.loudness;
       state.currentResolvedSourceKind = resolved.sourceKind ?? 'catalog';
       track.audioUrl = playbackSource.url;
-      const savedDuration = state.duration;
-      try {
-        await engine.setSource(playbackSource, { force: true });
-      } catch (error) {
-        if (requestSeq === state.playbackRequestSeq) {
-          abortNativeTrackLoad(state);
-          completePlaybackIntent(state, requestSeq, { isPlaying: false });
-          setEnginePlaybackStatus(state, 'error');
-          state.lastError = 'playback-failed';
-          showPlaybackNotice('playback-failed', track);
-        }
-        logger.error('PlayerStore', 'Refresh track reload failed:', error);
-        return;
-      }
-      if (requestSeq !== state.playbackRequestSeq) return;
       if (!state.duration && !engine.duration && savedDuration) state.duration = savedDuration;
       engine.applyTrackLoudness(resolved.loudness);
       engine.setPlaybackRate(state.playbackRate);
       void resolver.fetchClimaxMarks(track);
 
-      if (previousTime > 0) {
+      if (!seamless && previousTime > 0) {
         state.recentSeekIgnoreEnd = true;
         window.setTimeout(() => {
           state.recentSeekIgnoreEnd = false;
@@ -263,8 +308,8 @@ export const usePlayerStore = defineStore(
         state.currentTimeUpdatedAt = Date.now();
       }
 
-      let resumed = !wasPlaying;
-      if (wasPlaying) {
+      let resumed = seamless || !wasPlaying;
+      if (!seamless && wasPlaying) {
         try {
           await engine.play();
           if (requestSeq !== state.playbackRequestSeq) return;
@@ -277,8 +322,10 @@ export const usePlayerStore = defineStore(
       if (requestSeq !== state.playbackRequestSeq) return;
       if (!state.duration && !engine.duration && track.duration) state.duration = track.duration;
       if (wasPlaying && resumed) engine.setVolume(state.volume);
-      completePlaybackIntent(state, requestSeq, { isPlaying: wasPlaying && resumed });
-      setEnginePlaybackStatus(state, wasPlaying && resumed ? 'playing' : 'paused');
+      if (!seamless) {
+        completePlaybackIntent(state, requestSeq, { isPlaying: wasPlaying && resumed });
+        setEnginePlaybackStatus(state, wasPlaying && resumed ? 'playing' : 'paused');
+      }
       if (state.pendingSettingRefresh) {
         state.pendingSettingRefresh = false;
         void refreshCurrentTrack();

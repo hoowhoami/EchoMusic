@@ -653,6 +653,8 @@ contextBridge.exposeInMainWorld('electron', {
     load: (url: string) => ipcRenderer.invoke('player:load', url),
     loadMkvTrack: (url: string, trackId: number) =>
       ipcRenderer.invoke('player:load-mkv-track', url, trackId),
+    switchSource: (url: string, trackId?: number | null) =>
+      ipcRenderer.invoke('player:switch-source', url, trackId),
     beginNextSourcePreparation: () => ipcRenderer.invoke('player:begin-next-source-preparation'),
     cancelNextSourcePreparation: (requestId: number) =>
       ipcRenderer.invoke('player:cancel-next-source-preparation', requestId),

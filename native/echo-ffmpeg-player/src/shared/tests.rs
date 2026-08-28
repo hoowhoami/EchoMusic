@@ -592,6 +592,24 @@ fn dsp_filter_reset_keeps_decoded_queue_available() {
 }
 
 #[test]
+fn staged_audio_effect_graph_keeps_ready_output_available() {
+    let settings = DspSettings::default();
+    let shared = SharedAudio::new(MixFormat::stereo_f32(100), 0.1, 8.0, &settings);
+    assert!(shared.push_samples(&[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8]));
+    let graph = crate::audio_graph::AudioFilterGraph::new(shared.mix_format, &settings)
+        .expect("default graph should initialize");
+
+    shared.stage_audio_effect_graph(&settings, graph);
+
+    assert!(shared
+        .take_staged_filter_graph(shared.current_filter_generation())
+        .is_some());
+    let mut output = [0.0f32; 8];
+    assert_eq!(shared.pop_into(&mut output), 4);
+    assert_eq!(output, [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8]);
+}
+
+#[test]
 fn gapless_filter_boundary_keeps_decoded_order() {
     let shared = SharedAudio::new(
         MixFormat::stereo_f32(100),

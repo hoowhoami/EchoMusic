@@ -308,6 +308,7 @@ interface PlayerAddon {
   registerEventHandler(callback: (err: Error | null, event: PlayerAddonEvent) => void): void;
   loadFile(url: string, seq?: number): Promise<void>;
   loadMkvTrack(url: string, trackId: number, seq?: number): Promise<void>;
+  switchSource(url: string, trackId: number | null, seq?: number): Promise<[number, number]>;
   beginNextSourcePreparation(): number;
   cancelNextSourcePreparation(requestId: number): boolean;
   prepareNextSource(
@@ -494,6 +495,16 @@ export class PlayerController extends EventEmitter {
       if (this.pendingLoadSeq === seq) this.pendingLoadSeq = null;
       throw err;
     }
+  }
+
+  async switchSource(url: string, trackId?: number | null): Promise<[number, number]> {
+    const seq = ++this.loadSeq;
+    const result = await this.getAddonOrThrow().switchSource(url, trackId ?? null, seq);
+    this.state.path = url;
+    this.state.audioTrackId = trackId ?? undefined;
+    this.state.idle = false;
+    this.pendingLoadSeq = null;
+    return result;
   }
 
   beginNextSourcePreparation(): number | null {

@@ -1,4 +1,5 @@
 use super::*;
+use crate::audio_graph::AudioFilterGraph;
 use napi::bindgen_prelude::AsyncTask;
 use napi::{Env, Task};
 use napi_derive::napi;
@@ -89,15 +90,6 @@ pub(crate) fn sync_current_session_dsp_settings(runtime: &PlayerRuntime) {
     }
 }
 
-fn reset_current_filter_for_audio_effect_change(runtime: &PlayerRuntime) {
-    let Some(session) = runtime.session.as_ref() else {
-        return;
-    };
-    session
-        .shared
-        .reset_filter_for_dsp_change(&runtime.dsp_settings);
-}
-
 pub(crate) fn prepare_dsp_settings_for_mix_rate(
     mut settings: DspSettings,
     spatial_file_path: Option<&str>,
@@ -151,14 +143,20 @@ impl Task for SetAudioEffectTask {
             }
             serde_json::Value::Array(resources).to_string()
         });
-        let (sample_rate, request_seq) = with_runtime(|runtime| {
+        let (mix_format, request_seq, base_settings, session_shared) = with_runtime(|runtime| {
             runtime.spatial_request_seq = runtime.spatial_request_seq.wrapping_add(1);
             Ok((
                 runtime
                     .session
                     .as_ref()
-                    .map(|session| session.shared.mix_format.sample_rate),
+                    .map(|session| session.shared.mix_format)
+                    .unwrap_or_else(|| MixFormat::stereo_f32(48_000)),
                 runtime.spatial_request_seq,
+                runtime.dsp_settings.clone(),
+                runtime
+                    .session
+                    .as_ref()
+                    .map(|session| session.shared.clone()),
             ))
         })?;
 
@@ -170,13 +168,26 @@ impl Task for SetAudioEffectTask {
         let spatial = match (
             provider_path.is_none(),
             impulse_response_path.as_deref(),
-            sample_rate,
+            Some(mix_format.sample_rate),
         ) {
             (true, Some(path), Some(rate)) => {
                 Some(prepare_spatial_effect(path, rate).map_err(napi::Error::from_reason)?)
             }
             _ => None,
         };
+
+        // Provider creation happens on the filter thread. Validate the complete
+        // candidate graph first so a bad VPF/IRS is rejected by this command
+        // while the currently playing graph remains untouched.
+        let mut candidate = base_settings;
+        candidate.provider_path = provider_path.clone();
+        candidate.provider_preset_json = provider_preset_json.clone();
+        candidate.provider_resource_json = provider_resource_json.clone();
+        candidate.provider_mode = provider_mode;
+        candidate.spatial = spatial.clone();
+        candidate.spatial_mix = impulse_response_mix;
+        let mut prepared_graph =
+            Some(AudioFilterGraph::new(mix_format, &candidate).map_err(napi::Error::from_reason)?);
 
         with_runtime(|runtime| {
             if runtime.spatial_request_seq != request_seq {
@@ -186,6 +197,20 @@ impl Task for SetAudioEffectTask {
                 );
                 return Ok(());
             }
+            let current_shared = runtime
+                .session
+                .as_ref()
+                .map(|session| session.shared.clone());
+            if session_shared
+                .as_ref()
+                .zip(current_shared.as_ref())
+                .is_some_and(|(before, current)| !Arc::ptr_eq(before, current))
+                || session_shared.is_some() != current_shared.is_some()
+            {
+                return Err(napi::Error::from_reason(
+                    "audio session changed while preparing effect".to_string(),
+                ));
+            }
             runtime.spatial_file_path = impulse_response_path;
             runtime.dsp_settings.provider_path = provider_path;
             runtime.dsp_settings.provider_preset_json = provider_preset_json;
@@ -193,7 +218,14 @@ impl Task for SetAudioEffectTask {
             runtime.dsp_settings.provider_mode = provider_mode;
             runtime.dsp_settings.spatial = spatial;
             runtime.dsp_settings.spatial_mix = impulse_response_mix;
-            reset_current_filter_for_audio_effect_change(runtime);
+            if let Some(shared) = current_shared {
+                shared.stage_audio_effect_graph(
+                    &runtime.dsp_settings,
+                    prepared_graph
+                        .take()
+                        .expect("prepared graph is consumed exactly once"),
+                );
+            }
             update_runtime_audio_graph(runtime);
             emit_runtime_event(
                 runtime,

@@ -405,7 +405,10 @@ watch(providerControls, (controls) => {
   if (!controls.length) providerSettingsOpen.value = false;
 });
 const setProviderPreset = (presetId: string) => {
-  if (!player.playbackDiagnostics.graph?.providerPath) return;
+  // A rejected downloaded resource can temporarily leave the runtime graph
+  // without a Provider descriptor. The configured and inspected engine is
+  // still a valid target and must remain selectable for recovery.
+  if (!providerConfigured.value || providerInspectionFailed.value) return;
   const preset = providerPresets.value.find((item) => item.id === presetId);
   if (!preset || !providerPresetAvailable(preset)) return;
   if (

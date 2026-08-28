@@ -47,11 +47,22 @@ fn run_filter(shared: Arc<SharedAudio>) {
             decode_generation = current_decode_gen;
             generation = current_filter_gen;
 
-            if structural {
+            if let Some(prepared) = shared.take_staged_filter_graph(current_filter_gen) {
+                graph = prepared;
+            } else if structural {
                 if let Err(err) = graph.reset(shared.mix_format, &settings) {
-                    shared.mark_decode_failed();
-                    crate::decoder::emit_decode_error(&shared, err);
-                    return;
+                    crate::emit_shared_event(
+                        &shared,
+                        crate::events::PlayerEvent::log(
+                            "error",
+                            format!(
+                                "audio effect graph reset failed; keeping previous graph: {err}"
+                            ),
+                        ),
+                    );
+                    shared.set_provider_descriptor(graph.provider_descriptor());
+                    shared.set_filter_latency_secs(graph.latency_secs());
+                    continue;
                 }
             } else {
                 // Process format unchanged; update runtime DSP settings in place.
