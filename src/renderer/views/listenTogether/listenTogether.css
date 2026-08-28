@@ -1150,6 +1150,7 @@
   border: 1px solid var(--border-subtle);
   border-radius: 13px;
   background: var(--control-muted-bg);
+  cursor: text;
 }
 
 .listen-chat-composer:focus-within {
@@ -1163,7 +1164,10 @@
 .listen-chat-composer textarea {
   flex: 1;
   min-width: 0;
+  min-height: 30px;
   max-height: 72px;
+  box-sizing: border-box;
+  padding: 7px 0;
   resize: none;
   border: 0;
   outline: 0;

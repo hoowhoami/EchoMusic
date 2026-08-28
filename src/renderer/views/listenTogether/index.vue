@@ -565,6 +565,8 @@ const resizeMessageTextarea = () => {
   textarea.style.overflowY = textarea.scrollHeight > CHAT_TEXTAREA_MAX_HEIGHT ? 'auto' : 'hidden';
 };
 
+const focusMessageTextarea = () => messageTextarea.value?.focus();
+
 const openOrderSongPicker = () => {
   orderSongSource.value = 'recent';
   orderSongSearchKeyword.value = '';
@@ -1182,7 +1184,11 @@ onUnmounted(() => {
                   </div>
                 </div>
               </Scrollbar>
-              <div class="listen-chat-composer" :class="{ 'is-disabled': !activeRoom?.allowChat }">
+              <div
+                class="listen-chat-composer"
+                :class="{ 'is-disabled': !activeRoom?.allowChat }"
+                @click.self="focusMessageTextarea"
+              >
                 <textarea
                   ref="messageTextarea"
                   v-model="messageText"
