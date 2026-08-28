@@ -908,14 +908,16 @@ withDefaults(defineProps<Props>(), {
                 class="my-effect-source-tab"
                 :class="{ 'contains-active': isMyEffectSourceActive(group.id) }"
               >
-                <span
-                  v-if="isMyEffectSourceActive(group.id)"
-                  class="my-effect-source-current"
-                  role="img"
-                  :aria-label="`当前音效位于${group.label}`"
-                ></span>
-                <span>{{ group.label }}</span>
-                <small>{{ group.files.length }}</small>
+                <span class="my-effect-source-label">
+                  <span>{{ group.label }}</span>
+                  <span
+                    v-if="isMyEffectSourceActive(group.id)"
+                    class="my-effect-source-current"
+                    role="img"
+                    :aria-label="`当前音效位于${group.label}`"
+                  ></span>
+                  <small class="my-effect-source-count">{{ group.files.length }}</small>
+                </span>
               </TabsTrigger>
             </TabsList>
             <TabsContent
@@ -1922,10 +1924,36 @@ withDefaults(defineProps<Props>(), {
   border-bottom-color: var(--color-primary);
 }
 
-.my-effect-source-tab small {
-  font-size: 9px;
-  font-weight: 500;
-  opacity: 0.7;
+.my-effect-source-label {
+  position: relative;
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+}
+
+.my-effect-source-count {
+  position: absolute;
+  top: -7px;
+  left: calc(100% + 2px);
+  display: inline-flex;
+  min-width: 13px;
+  height: 13px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 3px;
+  border-radius: 9999px;
+  background: var(--control-muted-bg);
+  color: var(--color-text-secondary);
+  font-size: 8px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.my-effect-source-tab[data-state='active'] .my-effect-source-count,
+.my-effect-source-tab.contains-active .my-effect-source-count {
+  background: color-mix(in srgb, var(--color-primary) 10%, var(--color-bg-elevated));
+  color: var(--color-primary);
 }
 
 .my-effect-source-current,
