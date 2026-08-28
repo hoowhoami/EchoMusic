@@ -71,8 +71,9 @@ const {
 
 const playbackNotice = computed(() => player.playbackNotice);
 const isPlaybackLoading = computed(() => player.playbackIsLoading);
-const { isBusy: isProgressBusy, ariaLabel: progressAriaLabel } =
-  usePlaybackProgressStatus(() => player.playbackProgressBusyReason);
+const { isBusy: isProgressBusy, ariaLabel: progressAriaLabel } = usePlaybackProgressStatus(
+  () => player.playbackProgressBusyReason,
+);
 
 const artistList = computed(() => {
   if (!currentTrack.value) return [];

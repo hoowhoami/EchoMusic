@@ -66,8 +66,9 @@ const {
 
 const isHoveringProgress = ref(false);
 const isPlaybackLoading = computed(() => playerStore.playbackIsLoading);
-const { isBusy: isProgressBusy, ariaLabel: progressAriaLabel } =
-  usePlaybackProgressStatus(() => playerStore.playbackProgressBusyReason);
+const { isBusy: isProgressBusy, ariaLabel: progressAriaLabel } = usePlaybackProgressStatus(
+  () => playerStore.playbackProgressBusyReason,
+);
 const {
   pendingSeekTime,
   isDragging: isDraggingSeek,

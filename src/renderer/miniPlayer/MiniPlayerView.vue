@@ -50,12 +50,11 @@ const isMac = navigator.platform.toLowerCase().includes('mac');
 const isWayland = window.electron?.isWayland ?? false;
 
 const playback = ref<MiniPlayerPlaybackPayload | null>(null);
-const { isBusy: isProgressBusy, ariaLabel: progressAriaLabel } =
-  usePlaybackProgressStatus(
-    () =>
-      playback.value?.progressBusyReason ??
-      (playback.value?.isProgressBusy === true ? 'buffering' : null),
-  );
+const { isBusy: isProgressBusy, ariaLabel: progressAriaLabel } = usePlaybackProgressStatus(
+  () =>
+    playback.value?.progressBusyReason ??
+    (playback.value?.isProgressBusy === true ? 'buffering' : null),
+);
 const appearance = ref<MiniPlayerAppearancePayload | null>(null);
 const queue = ref<MiniPlayerQueuePayload | null>(null);
 const lyric = ref<MiniPlayerLyricPayload | null>(null);
