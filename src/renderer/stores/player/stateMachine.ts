@@ -22,6 +22,8 @@ export const beginPlaybackIntent = (
 };
 
 export const beginNativeTrackLoad = (state: PlayerState) => {
+  // 换源会取代当前 seek；后续加载状态由 awaitingTrackLoad 单独驱动。
+  state.seekTargetTime = null;
   // Nested source attempts belong to one transition. Keep the sequence captured by
   // the first begin so abort can restore the track that was active before it started.
   if (!state.awaitingTrackLoad) {

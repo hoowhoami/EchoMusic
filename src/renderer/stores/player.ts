@@ -890,6 +890,9 @@ export const usePlayerStore = defineStore(
               return;
             state.stallRecovering = false;
           }
+          // PlayerEngine 会在 seek 期间过滤旧时钟；能抵达这里的首个 time update
+          // 说明新解码时钟已经恢复，是结束 seek 动画的可靠信号。
+          state.seekTargetTime = null;
           state.currentTime = currentTime;
           state.currentTimeUpdatedAt = Date.now();
           void playbackManager.prepareGaplessNext();
@@ -924,6 +927,11 @@ export const usePlayerStore = defineStore(
             lyricStore.lyricSyncWarning = false;
           }
         },
+        playbackRestart: () => {
+          // 当前原生实现的 seek 恢复路径稳定发出 playback-restart；部分回退重开路径
+          // 可能不再额外发 seeked，因此不能只依赖 seeked 清理忙碌状态。
+          state.seekTargetTime = null;
+        },
         fileLoaded: (payload) => {
           const payloadSeq =
             typeof payload?.seq === 'number' && Number.isFinite(payload.seq) && payload.seq > 0
@@ -955,6 +963,7 @@ export const usePlayerStore = defineStore(
         },
         ended: () => {
           if (state.awaitingTrackLoad) return;
+          state.seekTargetTime = null;
           setEnginePlaybackStatus(state, 'stopped');
           void listeningTimeManager.flush();
           if (!state.recentSeekIgnoreEnd) {
@@ -965,6 +974,7 @@ export const usePlayerStore = defineStore(
         play: (payload) => {
           if (state.awaitingTrackLoad) return;
           if (!isCurrentNativePlaybackContext(payload) || getPlaybackHasFailed(state)) return;
+          state.seekTargetTime = null;
           setEnginePlaybackStatus(state, 'playing');
           if (isPlaybackIntentPhase(state, 'loading')) {
             completePlaybackIntent(state, state.playbackIntent.seq, { isPlaying: true });
@@ -985,6 +995,7 @@ export const usePlayerStore = defineStore(
             getPlaybackHasFailed(state)
           )
             return;
+          state.seekTargetTime = null;
           setEnginePlaybackStatus(state, 'paused');
           setPlaybackIntentPlayback(state, false);
           void listeningTimeManager.flush();
@@ -1053,6 +1064,10 @@ export const usePlayerStore = defineStore(
             ...payload,
             updatedAt: Date.now(),
           };
+          const coreState = String(payload.state ?? '').toLowerCase();
+          if (coreState && coreState !== 'seeking' && coreState !== 'buffering') {
+            state.seekTargetTime = null;
+          }
         },
         aoStateChange: (payload) => {
           state.playbackDiagnostics.ao = {
