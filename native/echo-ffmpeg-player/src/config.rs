@@ -20,6 +20,7 @@ const DEFAULT_NETWORK_TIMEOUT_SECS: f64 = 60.0;
 const DEFAULT_PLAYBACK_STALL_TIMEOUT_SECS: f64 = 8.0;
 const MIN_AUDIO_SAMPLE_RATE: u32 = 8_000;
 const MAX_AUDIO_SAMPLE_RATE: u32 = 768_000;
+const MIN_FULL_BAND_MIX_SAMPLE_RATE: u32 = 44_100;
 
 #[napi(object)]
 pub struct PlayerConfigOptions {
@@ -82,7 +83,10 @@ impl AudioSampleratePolicy {
 
     pub fn resolve(self, source_sample_rate: u32, output_sample_rate: Option<u32>) -> u32 {
         match self {
-            Self::Auto => output_sample_rate.unwrap_or(source_sample_rate).max(1),
+            Self::Auto => output_sample_rate
+                .filter(|rate| *rate >= MIN_FULL_BAND_MIX_SAMPLE_RATE)
+                .unwrap_or(source_sample_rate)
+                .max(1),
             Self::Fixed(sample_rate) => sample_rate.max(1),
         }
     }
@@ -640,7 +644,7 @@ mod tests {
     }
 
     #[test]
-    fn audio_samplerate_auto_prefers_output_rate_without_fixed_48000() {
+    fn audio_samplerate_auto_prefers_full_band_output_rate_without_fixed_48000() {
         let config = PlayerConfig::default();
 
         assert_eq!(config.audio_samplerate, AudioSampleratePolicy::Auto);
@@ -649,6 +653,10 @@ mod tests {
             48_000
         );
         assert_eq!(config.resolve_initial_mix_sample_rate(96_000, None), 96_000);
+        assert_eq!(
+            config.resolve_initial_mix_sample_rate(48_000, Some(16_000)),
+            48_000
+        );
     }
 
     #[test]

@@ -245,7 +245,16 @@ fn try_seek_current_decoder(plan: &SeekPlan, position: f64) -> napi::Result<bool
 
     plan.shared.request_decode_interrupt();
 
-    match reply_rx.recv_timeout(Duration::from_secs(2)) {
+    // A network demuxer may need a fresh HTTP range request before it can acknowledge the
+    // command. Reopening after the local two-second budget cancels that useful request and starts
+    // the same slow operation again. Keep the short bound for local files, but let remote seeks
+    // finish within a bounded portion of the configured network timeout.
+    let command_timeout = if stream::is_network_url(&plan.url) {
+        Duration::from_secs_f64(plan.config.network_timeout_secs.clamp(2.0, 15.0))
+    } else {
+        Duration::from_secs(2)
+    };
+    match reply_rx.recv_timeout(command_timeout) {
         Ok(Ok(())) => {
             restore_seek_playback_state(plan, position, "seek-command")?;
             Ok(true)

@@ -3,23 +3,34 @@ use crate::shared::{FilterInput, SharedAudio};
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 
+#[cfg(test)]
 pub fn spawn_filter_thread(shared: Arc<SharedAudio>) -> JoinHandle<()> {
+    spawn_filter_thread_with_graph(shared, None)
+}
+
+pub fn spawn_filter_thread_with_graph(
+    shared: Arc<SharedAudio>,
+    initial_graph: Option<AudioFilterGraph>,
+) -> JoinHandle<()> {
     thread::Builder::new()
         .name("player-filter".to_string())
-        .spawn(move || run_filter(shared))
+        .spawn(move || run_filter(shared, initial_graph))
         .expect("failed to spawn player filter thread")
 }
 
-fn run_filter(shared: Arc<SharedAudio>) {
+fn run_filter(shared: Arc<SharedAudio>, initial_graph: Option<AudioFilterGraph>) {
     let mut generation = shared.current_filter_generation();
     let mut decode_generation = shared.current_decode_generation();
-    let mut graph = match AudioFilterGraph::new(shared.mix_format, &shared.dsp_settings()) {
-        Ok(graph) => graph,
-        Err(err) => {
-            shared.mark_decode_failed();
-            crate::decoder::emit_decode_error(&shared, err);
-            return;
-        }
+    let mut graph = match initial_graph {
+        Some(graph) => graph,
+        None => match AudioFilterGraph::new(shared.mix_format, &shared.dsp_settings()) {
+            Ok(graph) => graph,
+            Err(err) => {
+                shared.mark_decode_failed();
+                crate::decoder::emit_decode_error(&shared, err);
+                return;
+            }
+        },
     };
     shared.set_provider_descriptor(graph.provider_descriptor());
     shared.set_filter_latency_secs(graph.latency_secs());

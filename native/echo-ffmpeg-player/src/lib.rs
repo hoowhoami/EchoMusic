@@ -520,18 +520,17 @@ fn prepare_source(
     let source_sample_rate = decoder.mix_sample_rate();
     let output_sample_rate =
         device::preferred_output_sample_rate(&config.audio_device, config.exclusive_output);
-    let mix_sample_rate =
+    let requested_mix_sample_rate =
         config.resolve_initial_mix_sample_rate(source_sample_rate, output_sample_rate);
-    let dsp_settings = prepare_dsp_settings_for_mix_rate(
+    let (mix_format, dsp_settings, initial_filter_graph) = prepare_initial_filter_graph(
+        &config,
         dsp_settings,
         spatial_file_path.as_deref(),
-        mix_sample_rate,
-    )?;
-    let mix_channels = config.resolve_mix_channels(
         decoder.source_channels(),
-        dsp_settings.requires_stereo_graph(),
-    );
-    let mix_format = MixFormat::f32(mix_sample_rate, mix_channels);
+        source_sample_rate,
+        requested_mix_sample_rate,
+    )?;
+    let mix_sample_rate = mix_format.sample_rate;
     if mix_sample_rate != source_sample_rate {
         emit_event(PlayerEvent::log(
             "info",
@@ -540,6 +539,14 @@ fn prepare_source(
                 output_sample_rate
                     .map(|rate| rate.to_string())
                     .unwrap_or_else(|| "unknown".to_string())
+            ),
+        ));
+    }
+    if mix_sample_rate != requested_mix_sample_rate {
+        emit_event(PlayerEvent::log(
+            "warn",
+            format!(
+                "DSP provider negotiated a compatible engine mix rate: requested_sample_rate={requested_mix_sample_rate}, selected_sample_rate={mix_sample_rate}"
             ),
         ));
     }
@@ -752,7 +759,8 @@ fn prepare_source(
         emit_event,
         None,
     );
-    let filter_thread = filter::spawn_filter_thread(shared.clone());
+    let filter_thread =
+        filter::spawn_filter_thread_with_graph(shared.clone(), Some(initial_filter_graph));
     let decode_generation = shared.current_decode_generation();
     let (decode_thread, decode_commands) =
         decoder::spawn_decode_worker(decoder, shared.clone(), decode_generation);
@@ -772,6 +780,107 @@ fn prepare_source(
         start_position: start_position.max(0.0),
         autostart,
     })
+}
+
+fn prepare_initial_filter_graph(
+    config: &PlayerConfig,
+    dsp_settings: DspSettings,
+    spatial_file_path: Option<&str>,
+    source_channels: usize,
+    source_sample_rate: u32,
+    requested_mix_sample_rate: u32,
+) -> Result<(MixFormat, DspSettings, audio_graph::AudioFilterGraph), String> {
+    let has_provider = dsp_settings.provider_path.is_some();
+    let mut sample_rates = vec![requested_mix_sample_rate.max(1)];
+    if has_provider {
+        for sample_rate in [source_sample_rate, 48_000, 44_100, 96_000] {
+            if sample_rate >= 44_100 && !sample_rates.contains(&sample_rate) {
+                sample_rates.push(sample_rate);
+            }
+        }
+    }
+
+    let mut last_error = None;
+    for sample_rate in sample_rates {
+        let candidate_settings = match prepare_dsp_settings_for_mix_rate(
+            dsp_settings.clone(),
+            spatial_file_path,
+            sample_rate,
+        ) {
+            Ok(settings) => settings,
+            Err(err) => {
+                last_error = Some(err);
+                continue;
+            }
+        };
+        let channels = config
+            .resolve_mix_channels(source_channels, candidate_settings.requires_stereo_graph());
+        let mix_format = MixFormat::f32(sample_rate, channels);
+        match audio_graph::AudioFilterGraph::new(mix_format, &candidate_settings) {
+            Ok(graph)
+                if provider_manifest_supports_sample_rate(
+                    &graph,
+                    candidate_settings.provider_preset_json.as_deref(),
+                    sample_rate,
+                ) =>
+            {
+                return Ok((mix_format, candidate_settings, graph));
+            }
+            Ok(_) => {
+                last_error = Some(format!(
+                    "DSP provider preset does not support {sample_rate} Hz"
+                ));
+            }
+            Err(err) => {
+                last_error = Some(err);
+                if !has_provider {
+                    break;
+                }
+            }
+        }
+    }
+
+    Err(last_error.unwrap_or_else(|| "failed to prepare audio filter graph".to_string()))
+}
+
+fn provider_manifest_supports_sample_rate(
+    graph: &audio_graph::AudioFilterGraph,
+    preset_json: Option<&str>,
+    sample_rate: u32,
+) -> bool {
+    let Some(preset_id) = preset_json
+        .and_then(|json| serde_json::from_str::<serde_json::Value>(json).ok())
+        .and_then(|value| {
+            value
+                .get("presetId")
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_owned)
+        })
+    else {
+        return true;
+    };
+    let Some(manifest) = graph.provider_descriptor().and_then(|descriptor| {
+        serde_json::from_str::<serde_json::Value>(&descriptor.manifest_json).ok()
+    }) else {
+        return true;
+    };
+    let Some(supported_rates) = manifest
+        .get("presets")
+        .and_then(serde_json::Value::as_array)
+        .and_then(|presets| {
+            presets.iter().find(|preset| {
+                preset.get("id").and_then(serde_json::Value::as_str) == Some(preset_id.as_str())
+            })
+        })
+        .and_then(|preset| preset.get("supportedSampleRates"))
+        .and_then(serde_json::Value::as_array)
+    else {
+        return true;
+    };
+    supported_rates
+        .iter()
+        .filter_map(serde_json::Value::as_u64)
+        .any(|rate| rate == u64::from(sample_rate))
 }
 
 fn apply_prepared_source(runtime: &mut PlayerRuntime, prepared: PreparedSource) {
