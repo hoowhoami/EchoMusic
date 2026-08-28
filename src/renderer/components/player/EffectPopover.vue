@@ -19,13 +19,7 @@ import Badge from '@/components/ui/Badge.vue';
 import Select from '@/components/ui/Select.vue';
 import Switch from '@/components/ui/Switch.vue';
 import Slider from '@/components/ui/Slider.vue';
-import {
-  iconArrowLeft,
-  iconArrowRight,
-  iconCheckMark,
-  iconSettings,
-  iconSlidersHorizontal,
-} from '@/icons';
+import { iconArrowLeft, iconSettings, iconSlidersHorizontal } from '@/icons';
 import { usePlayerControls } from '@/composables/usePlayerControls';
 import EffectPlaza from './EffectPlaza.vue';
 import { useAudioEffectPlaza } from '@/composables/useAudioEffectPlaza';
@@ -813,7 +807,6 @@ withDefaults(defineProps<Props>(), {
                 @click="showCurrentSpatialEffect"
               >
                 <span>{{ currentPlaybackEffectSelection.name }}</span>
-                <Icon :icon="iconArrowRight" width="12" height="12" aria-hidden="true" />
               </button>
               <strong v-else>{{ currentPlaybackEffectSelection.name }}</strong>
               <small>{{ currentPlaybackEffectSelection.detail }}</small>
@@ -824,17 +817,20 @@ withDefaults(defineProps<Props>(), {
                 class="original-effect-button"
                 :class="{ 'is-active': !currentPlaybackEffectSelection.active }"
                 :aria-pressed="!currentPlaybackEffectSelection.active"
-                title="切换为原声；保留均衡器设置"
+                :disabled="!currentPlaybackEffectSelection.active"
+                :title="
+                  currentPlaybackEffectSelection.active
+                    ? '切换为原声；保留均衡器设置'
+                    : '当前为原声'
+                "
                 @click="resetImpulseResponse"
               >
-                <Icon
-                  v-if="!currentPlaybackEffectSelection.active"
-                  :icon="iconCheckMark"
-                  width="12"
-                  height="12"
+                <span
+                  class="original-effect-dot"
+                  :class="{ 'is-visible': !currentPlaybackEffectSelection.active }"
                   aria-hidden="true"
-                />
-                原声
+                ></span>
+                <span>原声</span>
               </button>
             </div>
           </div>
@@ -1707,16 +1703,33 @@ withDefaults(defineProps<Props>(), {
   white-space: nowrap;
 }
 
-.original-effect-button:hover {
+.original-effect-button:not(:disabled):hover {
   border-color: color-mix(in srgb, var(--color-primary) 35%, transparent);
   background: color-mix(in srgb, var(--color-primary) 9%, transparent);
   color: var(--color-primary);
 }
 
 .original-effect-button.is-active {
-  border-color: var(--color-primary);
+  border-color: color-mix(in srgb, var(--color-primary) 48%, transparent);
+  background: color-mix(in srgb, var(--color-primary) 8%, var(--color-bg-elevated));
+  color: var(--color-primary);
+  cursor: default;
+}
+
+.original-effect-dot {
+  width: 5px;
+  height: 5px;
+  flex: 0 0 auto;
+  border-radius: 50%;
   background: var(--color-primary);
-  color: white;
+  opacity: 0;
+  transform: scale(0.6);
+}
+
+.original-effect-dot.is-visible {
+  opacity: 1;
+  transform: scale(1);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-primary) 14%, transparent);
 }
 
 .original-effect-button:focus-visible {
@@ -1727,6 +1740,7 @@ withDefaults(defineProps<Props>(), {
 .current-spatial-effect {
   display: flex;
   width: auto;
+  min-height: 59px;
   max-width: calc(100% - 20px);
   box-sizing: border-box;
   flex: 0 0 auto;
@@ -1755,6 +1769,9 @@ withDefaults(defineProps<Props>(), {
 }
 
 .current-spatial-effect-copy strong {
+  display: flex;
+  min-height: 26px;
+  align-items: center;
   overflow: hidden;
   color: var(--color-text-main);
   font-size: 12px;
@@ -1784,8 +1801,7 @@ withDefaults(defineProps<Props>(), {
   max-width: 100%;
   height: 26px;
   align-items: center;
-  gap: 3px;
-  padding: 0 6px 0 0;
+  padding: 0;
   border: 0;
   border-radius: 6px;
   background: transparent;

@@ -261,6 +261,18 @@ test('the current spatial effect is locatable without locking manual tab browsin
     descriptor.template.content,
     /class="current-effect-location"[\s\S]*currentPlaybackEffectSelection\.name/,
   );
+  assert.doesNotMatch(descriptor.template.content, /iconArrowRight/);
+  assert.doesNotMatch(descriptor.template.content, /iconCheckMark/);
+  assert.match(descriptor.template.content, /class="original-effect-dot"/);
+  assert.match(descriptor.template.content, /:disabled="!currentPlaybackEffectSelection\.active"/);
+  assert.match(
+    descriptor.styles[0].content,
+    /\.current-spatial-effect\s*{[\s\S]*min-height:\s*59px/,
+  );
+  assert.match(
+    descriptor.styles[0].content,
+    /\.current-spatial-effect-copy strong\s*{[\s\S]*min-height:\s*26px/,
+  );
   assert.match(descriptor.template.content, /当前由音效引擎自动处理/);
   assert.doesNotMatch(descriptor.template.content, /已保存的 EQ 设置/);
   assert.match(descriptor.template.content, /class="library-current-dot"/);
