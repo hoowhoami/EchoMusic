@@ -171,6 +171,93 @@ test('Basic DSP convolution exposes a per-effect mix and providers hide the host
   assert.equal(api.builtinAudioEngineActive.value, false);
 });
 
+test('the current spatial effect is locatable without locking manual tab browsing', async (t) => {
+  const files = [
+    {
+      id: 'headphone-effect',
+      name: '耳机空间',
+      kind: 'community-ir',
+      source: 'headphone',
+      impulseResponsePath: '/headphone.wav',
+    },
+    {
+      id: 'artist-effect',
+      name: '歌手现场',
+      kind: 'community-ir',
+      source: 'artist',
+      impulseResponsePath: '/artist.wav',
+    },
+  ];
+  const store = vue.reactive({
+    dspProviderEnabled: true,
+    dspProviderPath: '/provider',
+    dspProviderMode: 'speaker',
+    dspProviderPresetJson: '',
+    impulseResponseEnabled: true,
+    selectedImpulseResponseId: files[0].id,
+    impulseResponseFiles: files,
+    getSelectedImpulseResponse() {
+      return this.impulseResponseFiles.find((file) => file.id === this.selectedImpulseResponseId);
+    },
+    getDspProviderPreset: () => '',
+    getImpulseResponseMix: () => 0.5,
+  });
+  const player = vue.reactive({
+    playbackDiagnostics: {
+      graph: {
+        providerId: 'provider',
+        providerPath: '/provider',
+        providerMode: 'speaker',
+        providerManifestJson: JSON.stringify({
+          displayName: '测试引擎',
+          presets: [{ id: 'stage', label: '现场' }],
+        }),
+      },
+    },
+    getSpatialAudioEffectSupport: () => ({ status: 'supported', reason: '' }),
+  });
+  const { api, descriptor } = setupComponent(
+    t,
+    '../src/renderer/components/player/EffectPopover.vue',
+    {},
+    {
+      '@/composables/usePlayerControls': {
+        usePlayerControls: () => ({ player, settingStore: store }),
+      },
+      '@/composables/useAudioEffectPlaza': { useAudioEffectPlaza: () => ({}) },
+    },
+  );
+
+  assert.equal(api.activeTab.value, 'irs');
+  assert.equal(api.activeImpulseResponseLibraryTab.value, 'mine');
+  assert.equal(api.activeMyEffectSource.value, 'headphone');
+  assert.equal(api.currentPlaybackEffectSelection.value.location, '我的音效 · 耳机音效');
+  assert.equal(api.isMyEffectSourceActive('headphone'), true);
+
+  api.selectImpulseResponseLibraryTab('engine');
+  api.activeMyEffectSource.value = 'local';
+  await vue.nextTick();
+  assert.equal(api.activeImpulseResponseLibraryTab.value, 'engine');
+  assert.equal(api.activeMyEffectSource.value, 'local');
+
+  store.selectedImpulseResponseId = files[1].id;
+  await vue.nextTick();
+  assert.equal(api.activeImpulseResponseLibraryTab.value, 'mine');
+  assert.equal(api.activeMyEffectSource.value, 'artist');
+  assert.equal(api.isMyEffectSourceActive('artist'), true);
+
+  store.impulseResponseEnabled = false;
+  store.dspProviderPresetJson = '{"presetId":"stage"}';
+  await vue.nextTick();
+  assert.equal(api.activeImpulseResponseLibraryTab.value, 'engine');
+  assert.equal(api.engineLibraryContainsActive.value, true);
+  assert.equal(api.currentPlaybackEffectSelection.value.name, '现场');
+
+  assert.match(descriptor.template.content, /class="current-spatial-effect-actions"/);
+  assert.match(descriptor.template.content, /class="library-current-indicator"/);
+  assert.match(descriptor.template.content, /class="my-effect-source-current"/);
+});
+
 test('configured provider shows a loading state instead of flashing the not-imported state', (t) => {
   const store = vue.reactive({
     dspProviderEnabled: true,

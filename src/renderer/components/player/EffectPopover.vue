@@ -19,7 +19,13 @@ import Badge from '@/components/ui/Badge.vue';
 import Select from '@/components/ui/Select.vue';
 import Switch from '@/components/ui/Switch.vue';
 import Slider from '@/components/ui/Slider.vue';
-import { iconArrowLeft, iconSettings, iconSlidersHorizontal } from '@/icons';
+import {
+  iconArrowLeft,
+  iconArrowRight,
+  iconCheckMark,
+  iconSettings,
+  iconSlidersHorizontal,
+} from '@/icons';
 import { usePlayerControls } from '@/composables/usePlayerControls';
 import EffectPlaza from './EffectPlaza.vue';
 import { useAudioEffectPlaza } from '@/composables/useAudioEffectPlaza';
@@ -478,14 +484,43 @@ const selectImpulseResponse = (id: string) => {
 const impulseResponseSupport = (file: SpatialAudioEffectEntry) =>
   player.getSpatialAudioEffectSupport(file);
 
+const myEffectSources = [
+  { id: 'local', label: '本地导入' },
+  { id: 'artist', label: '歌手音效' },
+  { id: 'headphone', label: '耳机音效' },
+  { id: 'market', label: '音效市场' },
+] as const;
+type MyEffectSource = (typeof myEffectSources)[number]['id'];
+const getMyEffectSource = (file: SpatialAudioEffectEntry): MyEffectSource => {
+  if (file.kind === 'imported-ir') return 'local';
+  return file.source === 'artist' || file.source === 'headphone' ? file.source : 'market';
+};
+const getMyEffectSourceLabel = (source: MyEffectSource) =>
+  myEffectSources.find((item) => item.id === source)?.label ?? '我的音效';
+const activeMyEffectSourceId = computed<MyEffectSource | null>(() =>
+  impulseResponseActive.value && selectedImpulseResponse.value
+    ? getMyEffectSource(selectedImpulseResponse.value)
+    : null,
+);
+const myEffectLibraryContainsActive = computed(() => activeMyEffectSourceId.value !== null);
+const engineLibraryContainsActive = computed(
+  () => !impulseResponseActive.value && providerEffectActive.value,
+);
+const spatialEffectActive = computed(
+  () => myEffectLibraryContainsActive.value || engineLibraryContainsActive.value,
+);
+const isMyEffectSourceActive = (source: MyEffectSource) => activeMyEffectSourceId.value === source;
+
 const currentPlaybackEffectSelection = computed(() => {
   if (impulseResponseActive.value && selectedImpulseResponse.value) {
     const effect = selectedImpulseResponse.value;
     const type = effect.kind === 'imported-ir' ? '本地音效' : '在线音效';
+    const source = getMyEffectSource(effect);
     return {
       active: true,
       name: getImpulseResponseDisplayName(effect.name),
       type,
+      location: `我的音效 · ${getMyEffectSourceLabel(source)}`,
       detail: player.playbackDiagnostics.graph?.providerId
         ? `由 ${providerDisplayName.value} 处理`
         : '由内置音效引擎处理',
@@ -499,6 +534,7 @@ const currentPlaybackEffectSelection = computed(() => {
       active: true,
       name: preset.label,
       type: '引擎预设',
+      location: '引擎预设',
       detail: providerDisplayName.value,
     };
   }
@@ -508,6 +544,7 @@ const currentPlaybackEffectSelection = computed(() => {
       active: true,
       name: '自定义调节',
       type: '引擎音效',
+      location: '引擎预设',
       detail: providerDisplayName.value,
     };
   }
@@ -516,6 +553,7 @@ const currentPlaybackEffectSelection = computed(() => {
     active: false,
     name: '原声',
     type: '原声',
+    location: '',
     detail: player.playbackDiagnostics.graph?.providerId
       ? `${providerDisplayName.value} 已就绪`
       : '内置音效引擎',
@@ -524,17 +562,6 @@ const currentPlaybackEffectSelection = computed(() => {
 
 const getImpulseResponseDisplayName = (name: string) => normalizeAudioEffectName(name);
 
-const myEffectSources = [
-  { id: 'local', label: '本地导入' },
-  { id: 'artist', label: '歌手音效' },
-  { id: 'headphone', label: '耳机音效' },
-  { id: 'market', label: '音效市场' },
-] as const;
-type MyEffectSource = (typeof myEffectSources)[number]['id'];
-const getMyEffectSource = (file: SpatialAudioEffectEntry): MyEffectSource => {
-  if (file.kind === 'imported-ir') return 'local';
-  return file.source === 'artist' || file.source === 'headphone' ? file.source : 'market';
-};
 const initialSelectedEffect = settingStore.getSelectedImpulseResponse();
 const activeMyEffectSource = ref<string>(
   initialSelectedEffect ? getMyEffectSource(initialSelectedEffect) : 'local',
@@ -555,6 +582,30 @@ const selectTab = (tab: EffectTab) => {
 const selectImpulseResponseLibraryTab = (tab: ImpulseResponseLibraryTab) => {
   activeImpulseResponseLibraryTab.value = tab;
 };
+const showCurrentSpatialEffect = () => {
+  providerSettingsOpen.value = false;
+  activeTab.value = 'irs';
+  if (activeMyEffectSourceId.value) {
+    activeImpulseResponseLibraryTab.value = 'mine';
+    activeMyEffectSource.value = activeMyEffectSourceId.value;
+  } else if (engineLibraryContainsActive.value) {
+    activeImpulseResponseLibraryTab.value = 'engine';
+  }
+};
+const activeSpatialSelectionKey = computed(() => {
+  if (activeMyEffectSourceId.value && selectedImpulseResponse.value)
+    return `mine:${selectedImpulseResponse.value.id}`;
+  if (engineLibraryContainsActive.value)
+    return `engine:${activeProviderPresetId.value || effectiveProviderPresetJson.value}`;
+  return 'original';
+});
+watch(
+  activeSpatialSelectionKey,
+  (selection, previous) => {
+    if (selection !== 'original' && selection !== previous) showCurrentSpatialEffect();
+  },
+  { immediate: true },
+);
 const openMyEffectPlaza = (source: MyEffectSource) => {
   if (source === 'local') return;
   plaza.selectCategory(source);
@@ -589,7 +640,7 @@ withDefaults(defineProps<Props>(), {
         type="button"
         class="p-2 transition-all hover:scale-110 active:scale-90"
         :class="
-          audioEffectPresetActive || gains.some((g: number) => g !== 0) || impulseResponseActive
+          audioEffectPresetActive || gains.some((g: number) => g !== 0) || spatialEffectActive
             ? variant === 'lyric'
               ? 'text-black dark:text-white'
               : 'text-primary'
@@ -635,10 +686,15 @@ withDefaults(defineProps<Props>(), {
         </button>
         <button
           class="sidebar-item"
-          :class="{ 'is-active': activeTab === 'irs' }"
+          :class="{
+            'is-active': activeTab === 'irs',
+            'contains-active': spatialEffectActive,
+          }"
+          :title="spatialEffectActive ? '当前正在使用空间音效' : undefined"
           @click="selectTab('irs')"
         >
-          音效
+          <span>音效</span>
+          <span v-if="spatialEffectActive" class="sidebar-current-dot" aria-hidden="true"></span>
         </button>
         <button
           type="button"
@@ -740,16 +796,6 @@ withDefaults(defineProps<Props>(), {
         <div v-if="activeTab === 'irs'" class="panel-content irs-panel-content">
           <div class="panel-header irs-panel-header">
             <span class="panel-title">音效</span>
-            <button
-              type="button"
-              class="original-effect-button"
-              :class="{ 'is-active': !impulseResponseActive && !providerEffectActive }"
-              :aria-pressed="!impulseResponseActive && !providerEffectActive"
-              title="关闭音效文件和引擎预设，保留均衡器设置"
-              @click="resetImpulseResponse"
-            >
-              原声
-            </button>
           </div>
 
           <div
@@ -757,13 +803,41 @@ withDefaults(defineProps<Props>(), {
             :class="{ 'is-active': currentPlaybackEffectSelection.active }"
           >
             <div class="current-spatial-effect-copy">
-              <span class="current-spatial-effect-eyebrow">当前音效</span>
+              <span class="current-spatial-effect-eyebrow">
+                当前音效 · {{ currentPlaybackEffectSelection.type }}
+              </span>
               <strong>{{ currentPlaybackEffectSelection.name }}</strong>
               <small>{{ currentPlaybackEffectSelection.detail }}</small>
             </div>
-            <span class="current-spatial-effect-type">
-              {{ currentPlaybackEffectSelection.type }}
-            </span>
+            <div class="current-spatial-effect-actions">
+              <button
+                v-if="currentPlaybackEffectSelection.active"
+                type="button"
+                class="current-effect-location"
+                :title="`定位到${currentPlaybackEffectSelection.location}`"
+                @click="showCurrentSpatialEffect"
+              >
+                <span>{{ currentPlaybackEffectSelection.location }}</span>
+                <Icon :icon="iconArrowRight" width="11" height="11" aria-hidden="true" />
+              </button>
+              <button
+                type="button"
+                class="original-effect-button"
+                :class="{ 'is-active': !currentPlaybackEffectSelection.active }"
+                :aria-pressed="!currentPlaybackEffectSelection.active"
+                title="切换为原声；保留均衡器设置"
+                @click="resetImpulseResponse"
+              >
+                <Icon
+                  v-if="!currentPlaybackEffectSelection.active"
+                  :icon="iconCheckMark"
+                  width="12"
+                  height="12"
+                  aria-hidden="true"
+                />
+                原声
+              </button>
+            </div>
           </div>
 
           <section v-if="builtinAudioEngineActive" class="basic-dsp-mix-control">
@@ -798,17 +872,31 @@ withDefaults(defineProps<Props>(), {
             <div class="irs-library-tabs">
               <button
                 type="button"
-                :class="{ 'is-active': activeImpulseResponseLibraryTab === 'engine' }"
+                :class="{
+                  'is-active': activeImpulseResponseLibraryTab === 'engine',
+                  'contains-active': engineLibraryContainsActive,
+                }"
                 @click="selectImpulseResponseLibraryTab('engine')"
               >
-                引擎预设
+                <span>引擎预设</span>
+                <span v-if="engineLibraryContainsActive" class="library-current-indicator">
+                  <Icon :icon="iconCheckMark" width="10" height="10" aria-hidden="true" />
+                  使用中
+                </span>
               </button>
               <button
                 type="button"
-                :class="{ 'is-active': activeImpulseResponseLibraryTab === 'mine' }"
+                :class="{
+                  'is-active': activeImpulseResponseLibraryTab === 'mine',
+                  'contains-active': myEffectLibraryContainsActive,
+                }"
                 @click="selectImpulseResponseLibraryTab('mine')"
               >
-                我的音效
+                <span>我的音效</span>
+                <span v-if="myEffectLibraryContainsActive" class="library-current-indicator">
+                  <Icon :icon="iconCheckMark" width="10" height="10" aria-hidden="true" />
+                  使用中
+                </span>
               </button>
             </div>
           </div>
@@ -824,7 +912,16 @@ withDefaults(defineProps<Props>(), {
                 :key="group.id"
                 :value="group.id"
                 class="my-effect-source-tab"
+                :class="{ 'contains-active': isMyEffectSourceActive(group.id) }"
               >
+                <Icon
+                  v-if="isMyEffectSourceActive(group.id)"
+                  :icon="iconCheckMark"
+                  width="10"
+                  height="10"
+                  class="my-effect-source-current"
+                  aria-hidden="true"
+                />
                 <span>{{ group.label }}</span>
                 <small>{{ group.files.length }}</small>
               </TabsTrigger>
@@ -1356,6 +1453,7 @@ withDefaults(defineProps<Props>(), {
 }
 
 .sidebar-item {
+  position: relative;
   height: 32px;
   display: flex;
   align-items: center;
@@ -1380,6 +1478,23 @@ withDefaults(defineProps<Props>(), {
   opacity: 1;
   background: var(--color-primary);
   color: white;
+}
+
+.sidebar-current-dot {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  width: 5px;
+  height: 5px;
+  border-radius: 9999px;
+  background: var(--color-primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 14%, transparent);
+  transform: translateY(-50%);
+}
+
+.sidebar-item.is-active .sidebar-current-dot {
+  background: white;
+  box-shadow: 0 0 0 3px rgb(255 255 255 / 18%);
 }
 
 /* 主面板 */
@@ -1574,23 +1689,33 @@ withDefaults(defineProps<Props>(), {
 }
 
 .original-effect-button {
+  display: inline-flex;
   flex: 0 0 auto;
-  height: 28px;
-  padding: 0 12px;
+  height: 26px;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 0 9px;
   border: 1px solid var(--control-border);
-  border-radius: 7px;
-  background: var(--control-muted-bg);
+  border-radius: 6px;
+  background: var(--color-bg-elevated);
   color: var(--color-text-secondary);
-  font-size: 11px;
-  font-weight: 600;
+  font-size: 10px;
+  font-weight: 700;
   cursor: pointer;
+  white-space: nowrap;
 }
 
-.original-effect-button:hover,
-.original-effect-button.is-active {
+.original-effect-button:hover {
   border-color: color-mix(in srgb, var(--color-primary) 35%, transparent);
   background: color-mix(in srgb, var(--color-primary) 9%, transparent);
   color: var(--color-primary);
+}
+
+.original-effect-button.is-active {
+  border-color: var(--color-primary);
+  background: var(--color-primary);
+  color: white;
 }
 
 .original-effect-button:focus-visible {
@@ -1652,23 +1777,43 @@ withDefaults(defineProps<Props>(), {
   white-space: nowrap;
 }
 
-.current-spatial-effect-type {
+.current-spatial-effect-actions {
+  display: flex;
   flex: 0 0 auto;
-  max-width: 108px;
-  overflow: hidden;
-  padding: 3px 7px;
-  border-radius: 9999px;
-  background: var(--color-bg-elevated);
-  color: var(--color-text-secondary);
-  font-size: 8px;
-  font-weight: 700;
-  white-space: nowrap;
-  text-overflow: ellipsis;
+  align-items: center;
+  gap: 6px;
 }
 
-.current-spatial-effect.is-active .current-spatial-effect-type {
-  background: var(--color-primary);
-  color: white;
+.current-effect-location {
+  display: inline-flex;
+  max-width: 145px;
+  height: 26px;
+  align-items: center;
+  gap: 3px;
+  padding: 0 7px 0 9px;
+  border: 0;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--color-primary) 10%, transparent);
+  color: var(--color-primary);
+  font-size: 9px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.current-effect-location span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.current-effect-location:hover {
+  background: color-mix(in srgb, var(--color-primary) 17%, transparent);
+}
+
+.current-effect-location:focus-visible,
+.original-effect-button:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
 }
 
 .basic-dsp-mix-control {
@@ -1766,6 +1911,10 @@ withDefaults(defineProps<Props>(), {
   color: var(--color-primary);
 }
 
+.my-effect-source-tab.contains-active {
+  color: var(--color-primary);
+}
+
 .my-effect-source-tab[data-state='active'] {
   border-bottom-color: var(--color-primary);
 }
@@ -1774,6 +1923,11 @@ withDefaults(defineProps<Props>(), {
   font-size: 9px;
   font-weight: 500;
   opacity: 0.7;
+}
+
+.my-effect-source-current {
+  flex: 0 0 auto;
+  color: var(--color-primary);
 }
 
 .my-effect-source-tab:focus-visible,
@@ -1868,6 +2022,7 @@ withDefaults(defineProps<Props>(), {
   height: 26px;
   align-items: center;
   justify-content: center;
+  gap: 6px;
   box-sizing: border-box;
   padding: 0 8px;
   border: 0;
@@ -1888,6 +2043,20 @@ withDefaults(defineProps<Props>(), {
   background: var(--color-bg-elevated);
   color: var(--color-primary);
   box-shadow: inset 0 0 0 1px var(--control-border);
+}
+
+.irs-library-tabs button.contains-active:not(.is-active) {
+  color: var(--color-primary);
+}
+
+.library-current-indicator {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 2px;
+  color: var(--color-primary);
+  font-size: 8px;
+  font-weight: 700;
 }
 
 .provider-panel-scroll,
