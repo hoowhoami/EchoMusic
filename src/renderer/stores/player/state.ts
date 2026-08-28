@@ -41,6 +41,9 @@ export const createPlayerState = () => ({
   lastNonZeroVolume: DEFAULT_PLAYER_VOLUME,
   currentTime: 0,
   currentTimeUpdatedAt: 0,
+  // Monotonic ordering for native buffering and actual-output-progress events.
+  nativePlaybackEventRevision: 0,
+  nativePlaybackProgressRevision: 0,
   duration: 0,
   playbackRate: 1,
   playMode: 'list' as PlayMode,

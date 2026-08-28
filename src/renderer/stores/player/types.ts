@@ -45,8 +45,8 @@ export type EnginePlaybackState = {
 };
 
 export type PlaybackDiagnostics = {
-  core: (PlayerCoreStatePayload & { updatedAt: number }) | null;
-  ao: (PlayerAoStatePayload & { updatedAt: number }) | null;
+  core: (PlayerCoreStatePayload & { updatedAt: number; revision: number }) | null;
+  ao: (PlayerAoStatePayload & { updatedAt: number; revision: number }) | null;
   packetCache: (PlayerPacketCacheStats & { updatedAt: number }) | null;
   output: (PlayerAudioOutputStats & { updatedAt: number }) | null;
   graph: (PlayerAudioGraphSnapshot & { updatedAt: number }) | null;

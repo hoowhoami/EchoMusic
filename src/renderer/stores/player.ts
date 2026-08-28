@@ -22,6 +22,7 @@ import { createHistoryManager } from './player/history';
 import { createListeningTimeManager } from './player/listeningTime';
 import { createDeviceManager } from './player/device';
 import { createSpatialAudioSupport } from './player/spatialAudioSupport';
+import { shouldShowPlaybackBuffering } from './player/progressStatus';
 import {
   createPlayerEventBus,
   type PlayerEventName,
@@ -96,29 +97,12 @@ export const usePlayerStore = defineStore(
       const ao = state.playbackDiagnostics.ao;
       const coreState = String(core?.state ?? '').toLowerCase();
       if (state.nativeSeekActive || coreState === 'seeking') return 'seek';
-
-      const coreTrackSeq = Number(core?.trackSeq);
-      const aoTrackSeq = Number(ao?.trackSeq);
-      const coreGeneration = Number(core?.generation);
-      const aoGeneration = Number(ao?.generation);
-      const aoBufferingState = Number(ao?.bufferingState);
-      const sameTrack =
-        !Number.isFinite(coreTrackSeq) ||
-        !Number.isFinite(aoTrackSeq) ||
-        coreTrackSeq === aoTrackSeq;
-      const sameGeneration =
-        !Number.isFinite(coreGeneration) ||
-        !Number.isFinite(aoGeneration) ||
-        coreGeneration === aoGeneration;
-
-      // core 与 AO 分属两个异步事件流，任一状态都可能在输出恢复后短暂滞留。
-      // 两者一致且属于同一播放上下文时，才表示输出确实仍被缓冲门控。
-      return coreState === 'buffering' &&
-        ao?.paused === true &&
-        Number.isFinite(aoBufferingState) &&
-        aoBufferingState < 100 &&
-        sameTrack &&
-        sameGeneration
+      return shouldShowPlaybackBuffering({
+        core,
+        ao,
+        isPlaying: getPlaybackIsPlaying(state),
+        nativePlaybackProgressRevision: state.nativePlaybackProgressRevision,
+      })
         ? 'buffering'
         : null;
     });
@@ -913,10 +897,22 @@ export const usePlayerStore = defineStore(
               return;
             state.stallRecovering = false;
           }
-          state.currentTime = currentTime;
-          state.currentTimeUpdatedAt = Date.now();
-          void playbackManager.prepareGaplessNext();
+          const previousTime = state.currentTime;
           const now = Date.now();
+          const contextualTrackSeq = Number(payload?.trackSeq);
+          // PlayerEngine also forwards seeked as a synthetic timeUpdate without context.
+          // Only a contextual native tick that advances time proves output samples resumed.
+          if (
+            Number.isFinite(contextualTrackSeq) &&
+            contextualTrackSeq > 0 &&
+            currentTime > previousTime + 0.001
+          ) {
+            state.nativePlaybackEventRevision += 1;
+            state.nativePlaybackProgressRevision = state.nativePlaybackEventRevision;
+          }
+          state.currentTime = currentTime;
+          state.currentTimeUpdatedAt = now;
+          void playbackManager.prepareGaplessNext();
           if (now - lastEventTimeUpdate >= EVENT_TIMEUPDATE_MS) {
             lastEventTimeUpdate = now;
             emitPlayerEvent('timeupdate');
@@ -1103,15 +1099,19 @@ export const usePlayerStore = defineStore(
             state.nativeSeekGeneration = null;
             state.seekTargetTime = null;
           }
+          state.nativePlaybackEventRevision += 1;
           state.playbackDiagnostics.core = {
             ...payload,
             updatedAt: Date.now(),
+            revision: state.nativePlaybackEventRevision,
           };
         },
         aoStateChange: (payload) => {
+          state.nativePlaybackEventRevision += 1;
           state.playbackDiagnostics.ao = {
             ...payload,
             updatedAt: Date.now(),
+            revision: state.nativePlaybackEventRevision,
           };
         },
         packetCacheStats: (payload) => {
