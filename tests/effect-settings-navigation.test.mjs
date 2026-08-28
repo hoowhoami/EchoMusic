@@ -263,8 +263,9 @@ test('the current spatial effect is locatable without locking manual tab browsin
   );
   assert.doesNotMatch(descriptor.template.content, /iconArrowRight/);
   assert.doesNotMatch(descriptor.template.content, /iconCheckMark/);
-  assert.match(descriptor.template.content, /class="original-effect-dot"/);
+  assert.doesNotMatch(descriptor.template.content, /original-effect-dot/);
   assert.match(descriptor.template.content, /:disabled="!currentPlaybackEffectSelection\.active"/);
+  assert.match(descriptor.styles[0].content, /\.original-effect-button\.is-active::after\s*{/);
   assert.match(
     descriptor.styles[0].content,
     /\.current-spatial-effect\s*{[\s\S]*min-height:\s*59px/,

@@ -825,11 +825,6 @@ withDefaults(defineProps<Props>(), {
                 "
                 @click="resetImpulseResponse"
               >
-                <span
-                  class="original-effect-dot"
-                  :class="{ 'is-visible': !currentPlaybackEffectSelection.active }"
-                  aria-hidden="true"
-                ></span>
                 <span>原声</span>
               </button>
             </div>
@@ -1686,13 +1681,14 @@ withDefaults(defineProps<Props>(), {
 }
 
 .original-effect-button {
+  position: relative;
   display: inline-flex;
   flex: 0 0 auto;
   height: 26px;
   align-items: center;
   justify-content: center;
-  gap: 4px;
-  padding: 0 9px;
+  min-width: 46px;
+  padding: 0 10px;
   border: 1px solid var(--control-border);
   border-radius: 6px;
   background: var(--color-bg-elevated);
@@ -1716,20 +1712,16 @@ withDefaults(defineProps<Props>(), {
   cursor: default;
 }
 
-.original-effect-dot {
-  width: 5px;
-  height: 5px;
-  flex: 0 0 auto;
+.original-effect-button.is-active::after {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 4px;
+  height: 4px;
   border-radius: 50%;
   background: var(--color-primary);
-  opacity: 0;
-  transform: scale(0.6);
-}
-
-.original-effect-dot.is-visible {
-  opacity: 1;
-  transform: scale(1);
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-primary) 14%, transparent);
+  content: '';
 }
 
 .original-effect-button:focus-visible {
