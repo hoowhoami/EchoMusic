@@ -3,6 +3,7 @@ defineOptions({ name: 'listen-together' });
 
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import { storeToRefs } from 'pinia';
+import { CheckboxIndicator, CheckboxRoot } from 'reka-ui';
 import { useRoute, useRouter } from 'vue-router';
 import Avatar from '@/components/ui/Avatar.vue';
 import Button from '@/components/ui/Button.vue';
@@ -10,8 +11,10 @@ import Cover from '@/components/ui/Cover.vue';
 import Dialog from '@/components/ui/Dialog.vue';
 import Input from '@/components/ui/Input.vue';
 import Scrollbar from '@/components/ui/Scrollbar.vue';
+import Select from '@/components/ui/Select.vue';
 import Skeleton from '@/components/ui/Skeleton.vue';
 import { ListenTogetherApiError } from '@/api/listenTogether';
+import { getPlaylistTracks } from '@/api/playlist';
 import { search } from '@/api/search';
 import type {
   ListenTogetherMember,
@@ -20,16 +23,17 @@ import type {
   ListenTogetherRoomType,
   ListenTogetherSongOrder,
 } from '@/models/listenTogether';
+import type { PlaylistMeta } from '@/models/playlist';
 import type { Song } from '@/models/song';
-import { useListenTogetherStore } from '@/stores/listenTogether';
 import { useHistoryStore } from '@/stores/historyStore';
+import { useListenTogetherStore } from '@/stores/listenTogether';
 import { usePlayerStore } from '@/stores/player';
 import { usePlaylistStore } from '@/stores/playlist';
 import { useToastStore } from '@/stores/toast';
 import { useUserStore } from '@/stores/user';
-import { toListenTogetherAudioRefs } from '@/utils/listenTogether';
+import { LISTEN_TOGETHER_ADD_BATCH_LIMIT, toListenTogetherAudioRefs } from '@/utils/listenTogether';
 import logger from '@/utils/logger';
-import { mapSearchSong } from '@/utils/mappers';
+import { mapSearchSong, parsePlaylistTracks, resolvePlaylistTrackQueryId } from '@/utils/mappers';
 import { copyShareTarget, createShareTarget } from '@/utils/share';
 import { extractSearchLists } from '@/views/search/searchHelpers';
 import {
@@ -75,6 +79,7 @@ const {
   handlingSongOrderId,
   currentRoomSong,
   joined,
+  playbackDetached,
   isOwner,
   lastError,
   loadingRoom,
@@ -109,16 +114,24 @@ let chatCooldownTimer: number | null = null;
 const createName = ref('');
 const createRoomType = ref<ListenTogetherRoomType>(0);
 const createPrivacy = ref<ListenTogetherRoomPrivacy>(1);
-type OrderSongSource = 'recent' | 'mine' | 'search';
+type OrderSongSource = 'recent' | 'mine' | 'created' | 'favorites' | 'search';
 const orderSongSources: { id: OrderSongSource; name: string }[] = [
   { id: 'recent', name: '最近播放' },
   { id: 'mine', name: '我喜欢' },
+  { id: 'created', name: '自建歌单' },
+  { id: 'favorites', name: '收藏歌单' },
   { id: 'search', name: '搜索' },
 ];
 const orderSongSource = ref<OrderSongSource>('recent');
+const selectedOrderPlaylistId = ref('');
+const orderPlaylistSongs = ref<Song[]>([]);
+const selectedOrderSongKeys = ref<Set<string>>(new Set());
+const loadingOrderPlaylistSongs = ref(false);
+const addingOrderSongs = ref(false);
 const orderSongSearchKeyword = ref('');
 const orderSongSearchResults = ref<Song[]>([]);
 const searchingOrderSongs = ref(false);
+let orderPlaylistLoadRequestId = 0;
 
 const mergeVisibleMembers = (
   room: ListenTogetherRoom | null,
@@ -285,8 +298,65 @@ const musicRoomProgressInfo = computed(() => {
         : '1') as '1' | '2' | '3',
   };
 });
+const currentUserId = computed(() =>
+  String(userStore.info?.userid ?? userStore.info?.userId ?? ''),
+);
 const mineSongs = computed(() =>
   (playlistStore.favorites as Song[]).filter((song) => Boolean(String(song.hash ?? '').trim())),
+);
+const createdOrderPlaylists = computed(() =>
+  playlistStore.getCreatedPlaylists(Number(currentUserId.value || 0)),
+);
+const playlistIdentityValues = (playlist: PlaylistMeta | undefined) =>
+  playlist
+    ? [
+        playlist.id,
+        playlist.listid,
+        playlist.listCreateGid,
+        playlist.globalCollectionId,
+        playlist.listCreateListid,
+      ]
+        .filter(
+          (value): value is string | number =>
+            value !== undefined && value !== null && String(value) !== '',
+        )
+        .map(String)
+    : [];
+const playlistOptionId = (playlist: PlaylistMeta) =>
+  String(
+    playlist.listCreateGid || playlist.globalCollectionId || playlist.listid || playlist.id || '',
+  );
+const favoriteOrderPlaylists = computed(() => {
+  const likedIds = new Set(playlistIdentityValues(playlistStore.likedPlaylist));
+  return playlistStore.userPlaylists.filter((playlist) => {
+    if (playlist.source === 2) return false;
+    if (currentUserId.value && String(playlist.listCreateUserid ?? '') === currentUserId.value) {
+      return false;
+    }
+    return !playlistIdentityValues(playlist).some((id) => likedIds.has(id));
+  });
+});
+const orderSourcePlaylists = computed(() => {
+  if (orderSongSource.value === 'favorites') {
+    return favoriteOrderPlaylists.value;
+  }
+  return createdOrderPlaylists.value;
+});
+const selectedOrderPlaylist = computed(() =>
+  orderSourcePlaylists.value.find(
+    (playlist) => playlistOptionId(playlist) === selectedOrderPlaylistId.value,
+  ),
+);
+const orderPlaylistOptions = computed(() =>
+  orderSourcePlaylists.value.map((playlist) => ({
+    label: playlist.name,
+    value: playlistOptionId(playlist),
+  })),
+);
+const visibleOrderSongSources = computed(() =>
+  orderSongSources.filter(
+    (source) => isOwner.value || (source.id !== 'created' && source.id !== 'favorites'),
+  ),
 );
 const canCreate = computed(
   () =>
@@ -433,17 +503,47 @@ const recentOrderSongs = computed(() =>
     .slice(0, 100),
 );
 const orderSongCandidates = computed(() => {
-  if (orderSongSource.value === 'mine') {
-    return mineSongs.value.filter((song) => Number(song.mixSongId ?? song.albumAudioId ?? 0) > 0);
+  if (orderSongSource.value === 'created' || orderSongSource.value === 'favorites') {
+    return orderPlaylistSongs.value.filter(
+      (song) => Number(song.mixSongId ?? song.albumAudioId ?? 0) > 0,
+    );
   }
   if (orderSongSource.value === 'search') {
     return orderSongSearchResults.value.filter(
       (song) => Number(song.mixSongId ?? song.albumAudioId ?? 0) > 0,
     );
   }
+  if (orderSongSource.value === 'mine') {
+    return mineSongs.value.filter((song) => Number(song.mixSongId ?? song.albumAudioId ?? 0) > 0);
+  }
   return recentOrderSongs.value;
 });
+const orderSongKey = (song: Song) =>
+  String(song.hash || song.id)
+    .trim()
+    .toLowerCase();
+const selectedOrderSongs = computed(() =>
+  orderSongCandidates.value.filter((song) => selectedOrderSongKeys.value.has(orderSongKey(song))),
+);
+const selectableOrderSongs = computed(() =>
+  orderSongCandidates.value.slice(0, LISTEN_TOGETHER_ADD_BATCH_LIMIT),
+);
+type OrderSongCheckboxState = boolean | 'indeterminate';
+const allOrderSongsSelected = computed(
+  () =>
+    selectableOrderSongs.value.length > 0 &&
+    selectableOrderSongs.value.every((song) => selectedOrderSongKeys.value.has(orderSongKey(song))),
+);
+const orderSongSelectAllState = computed<OrderSongCheckboxState>(() => {
+  if (allOrderSongsSelected.value) return true;
+  if (selectedOrderSongs.value.length > 0) return 'indeterminate';
+  return false;
+});
 const orderSongEmptyCopy = computed(() => {
+  if (orderSongSource.value === 'created' || orderSongSource.value === 'favorites') {
+    if (loadingOrderPlaylistSongs.value) return '正在加载歌单歌曲';
+    return selectedOrderPlaylistId.value ? '该歌单暂无可添加歌曲' : '请选择一个歌单';
+  }
   if (orderSongSource.value === 'recent') return '还没有最近播放的歌曲';
   if (orderSongSource.value === 'mine') return '你还没有收藏歌曲';
   return orderSongSearchKeyword.value.trim() ? '没有找到匹配歌曲' : '输入歌名或歌手搜索';
@@ -567,19 +667,122 @@ const resizeMessageTextarea = () => {
 
 const focusMessageTextarea = () => messageTextarea.value?.focus();
 
+const loadOrderPlaylistSongs = async (playlist: PlaylistMeta | undefined) => {
+  const requestId = ++orderPlaylistLoadRequestId;
+  const queryId = playlist
+    ? resolvePlaylistTrackQueryId(playlistOptionId(playlist), {
+        listid: playlist.listid,
+        listCreateGid: playlist.listCreateGid,
+        listCreateUserid: playlist.listCreateUserid,
+        currentUserId: Number(currentUserId.value || 0),
+      })
+    : '';
+  if (!queryId) {
+    orderPlaylistSongs.value = [];
+    loadingOrderPlaylistSongs.value = false;
+    return;
+  }
+  loadingOrderPlaylistSongs.value = true;
+  try {
+    const allSongs: Song[] = [];
+    for (let page = 1; page <= 50; page += 1) {
+      const response = await getPlaylistTracks(queryId, page, 50);
+      const { songs, filteredCount } = parsePlaylistTracks(response);
+      allSongs.push(...songs);
+      if (songs.length + filteredCount < 50) break;
+    }
+    if (requestId !== orderPlaylistLoadRequestId) return;
+    orderPlaylistSongs.value = dedupeSongs(allSongs);
+  } catch {
+    if (requestId !== orderPlaylistLoadRequestId) return;
+    orderPlaylistSongs.value = [];
+    toastStore.warning('歌单歌曲加载失败，请稍后重试');
+  } finally {
+    if (requestId === orderPlaylistLoadRequestId) {
+      loadingOrderPlaylistSongs.value = false;
+    }
+  }
+};
+
+const selectOrderSongSource = async (source: OrderSongSource) => {
+  orderSongSource.value = source;
+  orderPlaylistSongs.value = [];
+  selectedOrderSongKeys.value = new Set();
+  if (source === 'created' || source === 'favorites') {
+    loadingOrderPlaylistSongs.value = true;
+    await playlistStore.fetchUserPlaylists();
+    if (orderSongSource.value !== source || !orderSongPickerOpen.value) return;
+    const first = orderSourcePlaylists.value[0];
+    selectedOrderPlaylistId.value = first ? playlistOptionId(first) : '';
+    void loadOrderPlaylistSongs(first);
+  }
+};
+
+const selectOrderPlaylist = (playlistId: string) => {
+  selectedOrderPlaylistId.value = playlistId;
+  orderPlaylistSongs.value = [];
+  selectedOrderSongKeys.value = new Set();
+  void loadOrderPlaylistSongs(selectedOrderPlaylist.value);
+};
+
+const toggleOrderSong = (song: Song) => {
+  if (addingOrderSongs.value) return;
+  const key = orderSongKey(song);
+  const next = new Set(selectedOrderSongKeys.value);
+  if (next.has(key)) {
+    next.delete(key);
+  } else {
+    if (next.size >= LISTEN_TOGETHER_ADD_BATCH_LIMIT) {
+      toastStore.warning(`每次最多添加 ${LISTEN_TOGETHER_ADD_BATCH_LIMIT} 首歌曲`);
+      return;
+    }
+    next.add(key);
+  }
+  selectedOrderSongKeys.value = next;
+};
+
+const setOrderSongChecked = (song: Song, checked: OrderSongCheckboxState) => {
+  if (addingOrderSongs.value) return;
+  const key = orderSongKey(song);
+  const next = new Set(selectedOrderSongKeys.value);
+  if (checked === true) {
+    if (!next.has(key) && next.size >= LISTEN_TOGETHER_ADD_BATCH_LIMIT) {
+      toastStore.warning(`每次最多添加 ${LISTEN_TOGETHER_ADD_BATCH_LIMIT} 首歌曲`);
+      return;
+    }
+    next.add(key);
+  } else {
+    next.delete(key);
+  }
+  selectedOrderSongKeys.value = next;
+};
+
+const setAllOrderSongsChecked = (checked: OrderSongCheckboxState) => {
+  if (addingOrderSongs.value) return;
+  if (checked !== true) {
+    selectedOrderSongKeys.value = new Set();
+    return;
+  }
+  selectedOrderSongKeys.value = new Set(selectableOrderSongs.value.map(orderSongKey));
+  if (orderSongCandidates.value.length > LISTEN_TOGETHER_ADD_BATCH_LIMIT) {
+    toastStore.warning(`已选择前 ${LISTEN_TOGETHER_ADD_BATCH_LIMIT} 首歌曲`);
+  }
+};
+
 const openOrderSongPicker = () => {
   orderSongSource.value = 'recent';
   orderSongSearchKeyword.value = '';
   orderSongSearchResults.value = [];
+  orderPlaylistSongs.value = [];
+  selectedOrderSongKeys.value = new Set();
+  selectedOrderPlaylistId.value = '';
   orderSongPickerOpen.value = true;
   void historyStore.hydrate();
-  if (!playlistStore.favoritesLoaded && !playlistStore.favoritesLoading) {
+  if (isOwner.value) {
+    void playlistStore.fetchUserPlaylists();
+  } else if (!playlistStore.favoritesLoaded && !playlistStore.favoritesLoading) {
     void playlistStore.fetchLikedPlaylistSongs();
   }
-};
-
-const selectOrderSongSource = (source: OrderSongSource) => {
-  orderSongSource.value = source;
 };
 
 const searchOrderSongs = async () => {
@@ -596,11 +799,29 @@ const searchOrderSongs = async () => {
   }
 };
 
+const addSelectedOrderSongs = async () => {
+  const songs = selectedOrderSongs.value;
+  if (!songs.length || addingOrderSongs.value) return;
+  addingOrderSongs.value = true;
+  try {
+    const added = await listenStore.addRoomSongs(songs);
+    if (!added) return;
+    selectedOrderSongKeys.value = new Set();
+    orderSongPickerOpen.value = false;
+  } catch (error) {
+    toastStore.warning(error instanceof Error ? error.message : '批量添加歌曲失败');
+  } finally {
+    addingOrderSongs.value = false;
+  }
+};
+
 const requestSong = async (song: Song) => {
   try {
     if (isOwner.value) await listenStore.addRoomSong(song);
-    else await listenStore.requestSong(song);
-    orderSongPickerOpen.value = false;
+    else {
+      await listenStore.requestSong(song);
+      orderSongPickerOpen.value = false;
+    }
   } catch (error) {
     toastStore.warning(
       error instanceof Error ? error.message : isOwner.value ? '添加歌曲失败' : '点歌失败',
@@ -707,6 +928,16 @@ onMounted(() => {
     // 分享链接由上面的路由 watcher 打开预览；普通入口则优先恢复服务端仍有效的
     // 众乐房会话，避免应用重启后对同一个房间重复执行 join。
     if (String(route.query.roomId ?? '').trim()) return;
+    if (joined.value) {
+      if (playbackDetached.value) {
+        try {
+          await listenStore.resumeRoomPlayback();
+        } catch (error) {
+          logger.warn('ListenTogether', 'Failed to resume room playback on page return', error);
+        }
+      }
+      return;
+    }
     if (userStore.isLoggedIn) {
       try {
         const restoredRoomId = await listenStore.recoverCurrentMusicRoomSession();
@@ -1400,12 +1631,21 @@ onUnmounted(() => {
         isOwner ? '选择歌曲后直接加入房间播放队列' : '选择歌曲后提交给房主，允许加歌后进入房间队列'
       "
       show-close
+      no-scroll
       content-class="listen-order-song-dialog"
+      body-class="listen-order-song-dialog-body"
     >
+      <p class="listen-song-dialog-description">
+        {{
+          isOwner
+            ? `从以下来源批量选择歌曲，每次最多添加 ${LISTEN_TOGETHER_ADD_BATCH_LIMIT} 首`
+            : '选择歌曲后提交给房主，允许加歌后进入房间队列'
+        }}
+      </p>
       <div class="listen-order-song-picker">
         <div class="listen-song-picker-tabs">
           <button
-            v-for="source in orderSongSources"
+            v-for="source in visibleOrderSongSources"
             :key="source.id"
             type="button"
             :class="{ 'is-active': orderSongSource === source.id }"
@@ -1414,6 +1654,16 @@ onUnmounted(() => {
             {{ source.name }}
           </button>
         </div>
+        <Select
+          v-if="isOwner && (orderSongSource === 'created' || orderSongSource === 'favorites')"
+          class="listen-song-picker-playlist-select"
+          :model-value="selectedOrderPlaylistId"
+          :options="orderPlaylistOptions"
+          placeholder="请选择歌单"
+          aria-label="选择歌曲来源歌单"
+          filterable
+          @update:model-value="selectOrderPlaylist(String($event))"
+        />
         <form
           v-if="orderSongSource === 'search'"
           class="listen-song-picker-search"
@@ -1423,22 +1673,64 @@ onUnmounted(() => {
             v-model="orderSongSearchKeyword"
             placeholder="搜索歌名或歌手"
             aria-label="搜索点播歌曲"
+            input-class="!h-10 !rounded-xl !pl-4 !text-xs"
           />
           <Button size="sm" :loading="searchingOrderSongs" type="submit">
             <Icon :icon="iconSearch" width="15" height="15" />
             搜索
           </Button>
         </form>
+        <div v-if="isOwner && orderSongCandidates.length" class="listen-song-picker-selection-bar">
+          <div class="listen-song-picker-selection-toggle">
+            <CheckboxRoot
+              id="listen-order-song-select-all"
+              class="listen-order-song-check"
+              :model-value="orderSongSelectAllState"
+              :disabled="addingOrderSongs"
+              aria-label="全选歌曲"
+              @update:model-value="setAllOrderSongsChecked"
+            >
+              <CheckboxIndicator as-child>
+                <span class="listen-order-song-check-indicator"></span>
+              </CheckboxIndicator>
+            </CheckboxRoot>
+            <label for="listen-order-song-select-all">全选</label>
+          </div>
+          <span>
+            已选择 {{ selectedOrderSongs.length }}/{{ LISTEN_TOGETHER_ADD_BATCH_LIMIT }} 首
+          </span>
+        </div>
         <Scrollbar class="listen-order-song-scroll">
           <div v-if="orderSongCandidates.length" class="listen-order-song-list">
-            <button
+            <div
               v-for="song in orderSongCandidates"
               :key="song.hash"
-              type="button"
               class="listen-order-song-option"
-              :disabled="Boolean(requestingSongHash)"
-              @click="requestSong(song)"
+              :class="{
+                'is-owner': isOwner,
+                'is-selected': isOwner && selectedOrderSongKeys.has(orderSongKey(song)),
+                'is-disabled': isOwner ? addingOrderSongs : Boolean(requestingSongHash),
+              }"
+              role="button"
+              :tabindex="isOwner ? (addingOrderSongs ? -1 : 0) : requestingSongHash ? -1 : 0"
+              :aria-disabled="isOwner ? addingOrderSongs : Boolean(requestingSongHash)"
+              @click="isOwner ? toggleOrderSong(song) : requestSong(song)"
+              @keydown.enter.prevent="isOwner ? toggleOrderSong(song) : requestSong(song)"
+              @keydown.space.prevent="isOwner ? toggleOrderSong(song) : requestSong(song)"
             >
+              <CheckboxRoot
+                v-if="isOwner"
+                class="listen-order-song-check"
+                :model-value="selectedOrderSongKeys.has(orderSongKey(song))"
+                :disabled="addingOrderSongs"
+                :aria-label="`选择歌曲 ${song.title}`"
+                @click.stop
+                @update:model-value="setOrderSongChecked(song, $event)"
+              >
+                <CheckboxIndicator as-child>
+                  <span class="listen-order-song-check-indicator"></span>
+                </CheckboxIndicator>
+              </CheckboxRoot>
               <Cover
                 :url="song.coverUrl"
                 :alt="song.title"
@@ -1450,7 +1742,7 @@ onUnmounted(() => {
                 <strong>{{ song.title }}</strong>
                 <small>{{ song.artist || '未知歌手' }}</small>
               </span>
-              <em>
+              <em v-if="!isOwner">
                 {{
                   requestingSongHash === song.hash
                     ? isOwner
@@ -1461,7 +1753,7 @@ onUnmounted(() => {
                       : '点歌'
                 }}
               </em>
-            </button>
+            </div>
           </div>
           <div v-else class="listen-song-picker-empty">
             <Icon :icon="iconMusic" width="28" height="28" />
@@ -1469,6 +1761,17 @@ onUnmounted(() => {
           </div>
         </Scrollbar>
       </div>
+      <template v-if="isOwner" #footer>
+        <Button variant="secondary" size="sm" @click="orderSongPickerOpen = false">取消</Button>
+        <Button
+          size="sm"
+          :disabled="selectedOrderSongs.length === 0 || addingOrderSongs"
+          :loading="addingOrderSongs"
+          @click="addSelectedOrderSongs"
+        >
+          批量添加（{{ selectedOrderSongs.length }}）
+        </Button>
+      </template>
     </Dialog>
 
     <Dialog
@@ -1476,49 +1779,54 @@ onUnmounted(() => {
       title="点播列表"
       description="房主允许加歌后，歌曲才会进入房间播放队列"
       show-close
+      no-scroll
       content-class="listen-song-orders-dialog"
+      body-class="listen-song-orders-dialog-body"
     >
+      <p class="listen-song-dialog-description">房主允许加歌后，歌曲才会进入房间播放队列</p>
       <div class="listen-song-orders">
-        <div v-if="loadingSongOrders && !songOrders.length" class="listen-song-picker-empty">
-          <span>正在加载点播列表…</span>
-        </div>
-        <div v-else-if="songOrders.length" class="listen-song-order-list">
-          <div v-for="order in songOrders" :key="order.id" class="listen-song-order-item">
-            <Cover
-              :url="order.song.coverUrl"
-              :alt="order.song.title"
-              :width="46"
-              :height="46"
-              :border-radius="10"
-            />
-            <span class="listen-song-order-copy">
-              <strong>{{ order.song.title }}</strong>
-              <small>{{ order.requesterName }} 的点歌 · {{ order.song.artist }}</small>
-            </span>
-            <div class="listen-song-order-actions">
-              <Button
-                variant="ghost"
-                size="xs"
-                :disabled="Boolean(handlingSongOrderId)"
-                @click="removeSongOrder(order)"
-              >
-                忽略
-              </Button>
-              <Button
-                size="xs"
-                :loading="handlingSongOrderId === order.id"
-                :disabled="Boolean(handlingSongOrderId)"
-                @click="approveSongOrder(order)"
-              >
-                允许加歌
-              </Button>
+        <Scrollbar class="listen-song-orders-scroll">
+          <div v-if="loadingSongOrders && !songOrders.length" class="listen-song-picker-empty">
+            <span>正在加载点播列表…</span>
+          </div>
+          <div v-else-if="songOrders.length" class="listen-song-order-list">
+            <div v-for="order in songOrders" :key="order.id" class="listen-song-order-item">
+              <Cover
+                :url="order.song.coverUrl"
+                :alt="order.song.title"
+                :width="46"
+                :height="46"
+                :border-radius="10"
+              />
+              <span class="listen-song-order-copy">
+                <strong>{{ order.song.title }}</strong>
+                <small>{{ order.requesterName }} 的点歌 · {{ order.song.artist }}</small>
+              </span>
+              <div class="listen-song-order-actions">
+                <Button
+                  variant="ghost"
+                  size="xs"
+                  :disabled="Boolean(handlingSongOrderId)"
+                  @click="removeSongOrder(order)"
+                >
+                  忽略
+                </Button>
+                <Button
+                  size="xs"
+                  :loading="handlingSongOrderId === order.id"
+                  :disabled="Boolean(handlingSongOrderId)"
+                  @click="approveSongOrder(order)"
+                >
+                  允许加歌
+                </Button>
+              </div>
             </div>
           </div>
-        </div>
-        <div v-else class="listen-song-picker-empty">
-          <Icon :icon="iconMusic" width="28" height="28" />
-          <span>暂时没有人点歌</span>
-        </div>
+          <div v-else class="listen-song-picker-empty">
+            <Icon :icon="iconMusic" width="28" height="28" />
+            <span>暂时没有人点歌</span>
+          </div>
+        </Scrollbar>
       </div>
     </Dialog>
 

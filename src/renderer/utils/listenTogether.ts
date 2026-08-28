@@ -14,6 +14,8 @@ import type {
   ListenTogetherTag,
 } from '@/models/listenTogether';
 
+export const LISTEN_TOGETHER_ADD_BATCH_LIMIT = 50;
+
 export const asListenTogetherRecord = (value: unknown): Record<string, unknown> | null =>
   value && typeof value === 'object' && !Array.isArray(value)
     ? (value as Record<string, unknown>)

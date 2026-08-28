@@ -908,7 +908,7 @@ watch(
                 :queueFilteredInvalidCount="playlistFilteredInvalidCount"
                 :enableDefaultDoubleTapPlay="true"
                 :onSongDoubleTapPlay="
-                  settingStore.replacePlaylist ? handleSongDoubleTapPlay : undefined
+                  settingStore.playbackQueueMode === 'context' ? handleSongDoubleTapPlay : undefined
                 "
                 :parentPlaylistId="playlist.listid || playlist.id"
                 :enableRemoveFromPlaylist="isOwnerPlaylist"

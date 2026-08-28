@@ -42,6 +42,7 @@ import type {
 } from '@/models/listenTogether';
 import type { Song } from '@/models/song';
 import {
+  LISTEN_TOGETHER_ADD_BATCH_LIMIT,
   extractListenTogetherRoomId,
   getListenTogetherRoomPageInfo,
   mapListenTogetherMemberList,
@@ -66,6 +67,7 @@ import { useUserStore } from './user';
 import logger from '@/utils/logger';
 
 const FAST_POLL_INTERVAL = 5_000;
+const PLAYING_SYNC_DRIFT_TOLERANCE = 8;
 const SLOW_POLL_INTERVAL = 15_000;
 const HEARTBEAT_INTERVAL = 55_000;
 const ROOM_PAGE_SIZE = 20;
@@ -226,7 +228,9 @@ export const useListenTogetherStore = defineStore(
     let suppressAppliedPlayerEventsUntil = 0;
     let lastAppliedRemoteSeekKey = '';
     let lastAppliedRemoteSeekAt = 0;
+    let remoteSeekLatencyEstimateMs = 0;
     let lastMissingRemoteSongKey = '';
+    let playbackDetachedByUser = false;
     const unsupportedRoomPlaybackSources = new Set<string>();
     const roomPlaybackRetryAfter = new Map<string, number>();
     let guestLocallyPaused = false;
@@ -237,6 +241,9 @@ export const useListenTogetherStore = defineStore(
 
     const joined = computed(() => phase.value === 'joined' && Boolean(activeRoomId.value));
     const activeRoomType = computed<ListenTogetherRoomType>(() => activeRoom.value?.roomType ?? 0);
+    const playbackDetached = computed(
+      () => joined.value && playerStore.currentSourceQueueId !== LISTEN_TOGETHER_QUEUE_ID,
+    );
     const currentUserId = computed(() =>
       String(userStore.info?.userid ?? userStore.info?.userId ?? ''),
     );
@@ -556,7 +563,9 @@ export const useListenTogetherStore = defineStore(
       }
     };
 
-    const syncListenTogetherQueue = (activate = true) => {
+    const syncListenTogetherQueue = (
+      activate = playerStore.currentSourceQueueId === LISTEN_TOGETHER_QUEUE_ID,
+    ) => {
       if (!activeRoomId.value) return;
       const current = playerStore.currentTrackSnapshot;
       let syncedCurrent: Song | null = null;
@@ -710,7 +719,9 @@ export const useListenTogetherStore = defineStore(
       suppressAppliedPlayerEventsUntil = 0;
       lastAppliedRemoteSeekKey = '';
       lastAppliedRemoteSeekAt = 0;
+      remoteSeekLatencyEstimateMs = 0;
       lastMissingRemoteSongKey = '';
+      playbackDetachedByUser = false;
       unsupportedRoomPlaybackSources.clear();
       roomPlaybackRetryAfter.clear();
       guestLocallyPaused = false;
@@ -1476,43 +1487,59 @@ export const useListenTogetherStore = defineStore(
       };
     };
 
-    const addRoomSong = async (song: Song, requesterId = '') => {
+    const addRoomSongs = async (songs: Song[], requesterId = '') => {
       requireLogin();
       if (
         !joined.value ||
         !activeRoomId.value ||
         activeRoomType.value !== 0 ||
         !isOwner.value ||
-        !song.hash ||
+        songs.length === 0 ||
         requestingSongHash.value
       ) {
-        return;
+        return false;
       }
+      const uniqueSongs = Array.from(
+        new Map(
+          songs
+            .filter((song) => Boolean(String(song.hash ?? '').trim()))
+            .map((song) => [String(song.hash).trim().toLowerCase(), song] as const),
+        ).values(),
+      ).slice(0, LISTEN_TOGETHER_ADD_BATCH_LIMIT);
+      if (!uniqueSongs.length) return false;
+
       const roomId = activeRoomId.value;
-      requestingSongHash.value = song.hash;
+      const audios = uniqueSongs.map((song) => ({
+        hash: String(song.hash).trim(),
+        mixSongId: song.mixSongId ?? song.albumAudioId ?? '',
+      }));
+      requestingSongHash.value = audios.length === 1 ? audios[0].hash : `batch:${audios.length}`;
       try {
-        const payload = await addListenTogetherMusicRoomSongs(
-          roomId,
-          [{ hash: song.hash, mixSongId: song.mixSongId ?? song.albumAudioId ?? '' }],
-          {
-            action: requesterId ? 4 : 1,
-            listVersion: roomListVersion.value,
-            progressInfo: currentMusicRoomProgress(),
-            requesterId,
-          },
-        );
+        const payload = await addListenTogetherMusicRoomSongs(roomId, audios, {
+          action: requesterId ? 4 : 1,
+          listVersion: roomListVersion.value,
+          progressInfo: currentMusicRoomProgress(),
+          requesterId,
+        });
         const nextListVersion = readNestedString(payload, 'list_version');
         if (nextListVersion) roomListVersion.value = nextListVersion;
         await Promise.allSettled([loadRoomSongs(true), loadSongOrders()]);
-        if (activeRoomId.value !== roomId) return;
-        toastStore.success(`已将「${song.title}」加入房间歌单`);
+        if (activeRoomId.value !== roomId) return false;
+        toastStore.success(
+          uniqueSongs.length === 1
+            ? `已将「${uniqueSongs[0].title}」加入房间歌单`
+            : `已将 ${uniqueSongs.length} 首歌曲加入房间歌单`,
+        );
+        return true;
       } catch (error) {
-        if (handleDissolvedSessionError(error, roomId)) return;
+        if (handleDissolvedSessionError(error, roomId)) return false;
         throw error;
       } finally {
         requestingSongHash.value = '';
       }
     };
+
+    const addRoomSong = (song: Song, requesterId = '') => addRoomSongs([song], requesterId);
 
     const approveSongOrder = async (order: ListenTogetherSongOrder) => {
       if (handlingSongOrderId.value) return;
@@ -1559,12 +1586,26 @@ export const useListenTogetherStore = defineStore(
 
     const applyRemotePlayback = async (force = false) => {
       const remote = remotePlayback.value;
-      if (!remote || applyingPlayback || !activeRoomId.value) return;
+      if (
+        !remote ||
+        applyingPlayback ||
+        !activeRoomId.value ||
+        playbackDetachedByUser ||
+        (!force && playerStore.currentSourceQueueId !== LISTEN_TOGETHER_QUEUE_ID)
+      ) {
+        return;
+      }
       let song = findRemoteRoomSong(remote);
       if (!song && activeRoomType.value === 0 && !roomSongs.value.length) {
         // 首次入房时 sync_player 可能先返回；只等待正在加载的队列。后续是否刷新
         // 由 list_version 决定，不能因无法匹配而在每次播放轮询中强制 fetch_list。
         await loadRoomSongs();
+        if (
+          playbackDetachedByUser ||
+          (!force && playerStore.currentSourceQueueId !== LISTEN_TOGETHER_QUEUE_ID)
+        ) {
+          return;
+        }
         song = findRemoteRoomSong(remote);
       }
       if (!song && activeRoomType.value === 0) {
@@ -1585,35 +1626,84 @@ export const useListenTogetherStore = defineStore(
 
       // 可能有多个首次同步调用同时在等待歌单；等待结束后必须再次检查，避免它们
       // 同时进入 playTrack，反复替换同一个原生音源。
-      if (applyingPlayback) return;
+      if (applyingPlayback || playbackDetachedByUser) return;
 
       applyingPlayback = true;
+      let applyLatestPlaybackAfterCurrent = false;
       try {
         const suppressAppliedPlayerEvents = () => {
           // playerStore 的生命周期事件由 Vue watcher 延迟派发，届时 applyingPlayback
           // 可能已经复位。单独标记远端产生的事件，避免被当成本地控制再次回正/上报。
           suppressAppliedPlayerEventsUntil = Date.now() + 300;
         };
-        const seekToRemotePosition = (position: number) => {
+        const expectedRemotePosition = (snapshot: ListenTogetherRemotePlayback, at = Date.now()) =>
+          Math.max(
+            0,
+            snapshot.position + (snapshot.playing ? (at - snapshot.updatedAt) / 1000 : 0),
+          );
+        const seekTargetWithLatencyLead = (
+          snapshot: ListenTogetherRemotePlayback,
+          position: number,
+        ) =>
+          snapshot.playing
+            ? position + Math.min(Math.max(0, remoteSeekLatencyEstimateMs) / 1000, 10)
+            : position;
+        const seekToRemotePosition = async (
+          snapshot: ListenTogetherRemotePlayback,
+          position: number,
+        ) => {
           const seekKey = [
             activeRoomId.value,
-            remote.hash.toLowerCase(),
-            remote.updatedAt,
+            snapshot.hash.toLowerCase(),
+            snapshot.updatedAt,
             position.toFixed(3),
           ].join(':');
           const now = Date.now();
           // 同一份远端快照可能被 seek 事件回调再次应用；原生播放器尚未回报新进度时
           // drift 仍会很大，必须在调用 seek 之前登记，保证这条命令是幂等的。
           if (seekKey === lastAppliedRemoteSeekKey && now - lastAppliedRemoteSeekAt < 2_000) {
-            return;
+            return { applied: false, superseded: false };
           }
           lastAppliedRemoteSeekKey = seekKey;
           lastAppliedRemoteSeekAt = now;
           suppressAppliedPlayerEvents();
-          playerStore.seek(position);
+          const startedAt = performance.now();
+          const seekCommand = playerStore.seek(position);
+          let remoteChangeTimer: number | null = null;
+          const superseded = new Promise<true>((resolve) => {
+            remoteChangeTimer = window.setInterval(() => {
+              const latestRemote = remotePlayback.value;
+              if (latestRemote && isRemotePositionForSong(latestRemote, song)) return;
+              if (remoteChangeTimer !== null) window.clearInterval(remoteChangeTimer);
+              remoteChangeTimer = null;
+              resolve(true);
+            }, 50);
+          });
+          const outcome = await Promise.race([seekCommand.then(() => false as const), superseded]);
+          if (remoteChangeTimer !== null) window.clearInterval(remoteChangeTimer);
+          if (outcome) return { applied: true, superseded: true };
+          const elapsedMs = performance.now() - startedAt;
+          if (elapsedMs >= 250) {
+            remoteSeekLatencyEstimateMs =
+              remoteSeekLatencyEstimateMs > 0
+                ? remoteSeekLatencyEstimateMs * 0.7 + elapsedMs * 0.3
+                : elapsedMs;
+          }
+          return { applied: true, superseded: false };
+        };
+        const shouldApplyLatestAfterSeek = (position: number) => {
+          const latestRemote = remotePlayback.value;
+          if (!latestRemote) return false;
+          if (!isRemotePositionForSong(latestRemote, song)) return true;
+          if (!latestRemote.playing) return false;
+          return (
+            Math.abs(expectedRemotePosition(latestRemote) - position) > PLAYING_SYNC_DRIFT_TOLERANCE
+          );
         };
 
-        syncListenTogetherQueue();
+        // 只有明确应用远端播放时才激活房间队列。普通的歌单刷新只更新房间
+        // 队列数据，不能抢回用户在其他页面刚刚开始的播放。
+        syncListenTogetherQueue(true);
         playlistStore.updateQueueCurrentTrack(song.id, LISTEN_TOGETHER_QUEUE_ID);
         playerStore.currentSourceQueueId = LISTEN_TOGETHER_QUEUE_ID;
         playerStore.currentPlaylist = roomSongs.value;
@@ -1636,12 +1726,7 @@ export const useListenTogetherStore = defineStore(
         // loading 与 error 即使短暂交错，也由 isLoading 优先阻止重复 playTrack。
         const trackChanged = !currentTrackMatches || (playbackUnavailable && !retryDeferred);
         const useRemotePosition = isRemotePositionForSong(remote, song);
-        const expectedPosition = Math.max(
-          0,
-          useRemotePosition
-            ? remote.position + (remote.playing ? (Date.now() - remote.updatedAt) / 1000 : 0)
-            : 0,
-        );
+        const expectedPosition = useRemotePosition ? expectedRemotePosition(remote) : 0;
         const preserveGuestPause = !isOwner.value && guestLocallyPaused;
         const shouldPlayLocally = remote.playing && !preserveGuestPause;
         if (trackChanged) {
@@ -1663,7 +1748,13 @@ export const useListenTogetherStore = defineStore(
                 hash: song.originalHash || song.hash,
                 mixSongId: song.mixSongId || song.albumAudioId || '',
               });
-              if (activeRoomId.value !== playbackRoomId) return;
+              if (
+                activeRoomId.value !== playbackRoomId ||
+                playbackDetachedByUser ||
+                playerStore.currentSourceQueueId !== LISTEN_TOGETHER_QUEUE_ID
+              ) {
+                return;
+              }
               const roomUrl =
                 readNestedString(playbackPayload, 'url') ||
                 readNestedString(playbackPayload, 'play_url') ||
@@ -1699,7 +1790,13 @@ export const useListenTogetherStore = defineStore(
               });
             }
           }
-          if (!activeRoomId.value) return;
+          if (
+            !activeRoomId.value ||
+            playbackDetachedByUser ||
+            playerStore.currentSourceQueueId !== LISTEN_TOGETHER_QUEUE_ID
+          ) {
+            return;
+          }
           suppressAppliedPlayerEvents();
           await playerStore.playTrack(song.id, roomSongs.value, {
             autoPlay: shouldPlayLocally,
@@ -1723,6 +1820,13 @@ export const useListenTogetherStore = defineStore(
                 }
               : undefined,
           });
+          if (
+            playbackDetachedByUser ||
+            playerStore.currentSourceQueueId !== LISTEN_TOGETHER_QUEUE_ID ||
+            !isSameRoomSong(playerStore.currentTrackSnapshot, song)
+          ) {
+            return;
+          }
           if (playerStore.currentAudioUrl && playerStore.playbackDisplayState !== 'error') {
             roomPlaybackRetryAfter.delete(roomPlaybackKey);
           } else {
@@ -1730,7 +1834,22 @@ export const useListenTogetherStore = defineStore(
             // playback_url/song_url，保留低频重试以覆盖临时网络或权限变化。
             roomPlaybackRetryAfter.set(roomPlaybackKey, Date.now() + 30_000);
           }
-          if (expectedPosition > 1) seekToRemotePosition(expectedPosition);
+          const latestRemote = remotePlayback.value;
+          if (!latestRemote || !isRemotePositionForSong(latestRemote, song)) {
+            applyLatestPlaybackAfterCurrent = Boolean(latestRemote);
+            return;
+          }
+          const latestExpectedPosition = expectedRemotePosition(latestRemote);
+          if (latestExpectedPosition > 1) {
+            const seekTarget = seekTargetWithLatencyLead(latestRemote, latestExpectedPosition);
+            const seekResult = await seekToRemotePosition(latestRemote, seekTarget);
+            if (
+              seekResult.superseded ||
+              (seekResult.applied && shouldApplyLatestAfterSeek(seekTarget))
+            ) {
+              applyLatestPlaybackAfterCurrent = true;
+            }
+          }
           return;
         }
 
@@ -1754,14 +1873,25 @@ export const useListenTogetherStore = defineStore(
         // force 表示使用更严格的容差，而不是无条件 seek。无条件 seek 会触发播放器
         // 的 seek 事件，访客恢复逻辑收到该事件后再次 force seek，形成响应式死循环。
         // 正常播放允许一个轮询周期以上的抖动；暂停态仍按较小误差校准。
-        const driftTolerance = force ? 0.75 : shouldPlayLocally ? 8 : 1.5;
+        const driftTolerance = force
+          ? 0.75
+          : shouldPlayLocally
+            ? PLAYING_SYNC_DRIFT_TOLERANCE
+            : 1.5;
         if (
           !preserveGuestPause &&
           drift > driftTolerance &&
           !playerStore.isLoading &&
           expectedPosition > 0
         ) {
-          seekToRemotePosition(expectedPosition);
+          const seekTarget = seekTargetWithLatencyLead(remote, expectedPosition);
+          const seekResult = await seekToRemotePosition(remote, seekTarget);
+          if (
+            seekResult.superseded ||
+            (seekResult.applied && shouldApplyLatestAfterSeek(seekTarget))
+          ) {
+            applyLatestPlaybackAfterCurrent = true;
+          }
         }
         if (!playerStore.isLoading && shouldPlayLocally !== playerStore.isPlaying) {
           suppressAppliedPlayerEvents();
@@ -1769,6 +1899,14 @@ export const useListenTogetherStore = defineStore(
         }
       } finally {
         applyingPlayback = false;
+        if (
+          applyLatestPlaybackAfterCurrent &&
+          joined.value &&
+          !playbackDetachedByUser &&
+          playerStore.currentSourceQueueId === LISTEN_TOGETHER_QUEUE_ID
+        ) {
+          queueMicrotask(() => void applyRemotePlayback(false));
+        }
       }
     };
 
@@ -1884,6 +2022,7 @@ export const useListenTogetherStore = defineStore(
 
     const hydrateSession = async (roomId: string, base?: ListenTogetherRoom | null) => {
       capturePreviousPlaybackQueue();
+      playbackDetachedByUser = false;
       activeRoomId.value = roomId;
       activeRoom.value = base ?? rooms.value.find((room) => room.id === roomId) ?? null;
       playerStore.setAutoNextSuppressed(!isOwner.value);
@@ -1907,7 +2046,6 @@ export const useListenTogetherStore = defineStore(
         }
         if (activeRoomId.value !== roomId) return;
         syncListenTogetherQueue();
-        await applyRemotePlayback(true);
         void peripheralHydration;
         lastError.value = '';
       } finally {
@@ -2211,7 +2349,13 @@ export const useListenTogetherStore = defineStore(
     };
 
     const restoreGuestPlayback = () => {
-      if (!joined.value || isOwner.value || applyingPlayback || !remotePlayback.value) {
+      if (
+        !joined.value ||
+        isOwner.value ||
+        applyingPlayback ||
+        !remotePlayback.value ||
+        playerStore.currentSourceQueueId !== LISTEN_TOGETHER_QUEUE_ID
+      ) {
         return;
       }
       // 这是本地播放器事件的回正路径，不能强制无条件校准；否则远端 seek
@@ -2286,19 +2430,47 @@ export const useListenTogetherStore = defineStore(
     };
 
     const playRoomSong = async (song: Song) => {
-      if (!canPublishOwnerPlayback() || !song.hash) return;
+      if (
+        !joined.value ||
+        !isOwner.value ||
+        activeRoomType.value !== 0 ||
+        applyingPlayback ||
+        !song.hash
+      ) {
+        return;
+      }
+      playerStore.setAutoNextSuppressed(false);
+      playbackDetachedByUser = false;
+      syncListenTogetherQueue(true);
       await playerStore.playTrack(song.id, roomSongs.value, {
         autoPlay: true,
         sourceQueueId: LISTEN_TOGETHER_QUEUE_ID,
       });
     };
 
+    const resumeRoomPlayback = async () => {
+      if (!joined.value || !activeRoomId.value) return;
+      playbackDetachedByUser = false;
+      guestLocallyPaused = false;
+      playerStore.setAutoNextSuppressed(!isOwner.value);
+      syncListenTogetherQueue(true);
+      await syncPlayback(true);
+    };
+
     playerStore.onPlayerEvent('ended', () => {
       if (canPublishOwnerPlayback()) ownerAutoSwitchUntil = Date.now() + 2_000;
     });
     playerStore.onPlayerEvent('trackchange', (payload) => {
-      if (!joined.value || applyingPlayback) return;
-      if (Date.now() < suppressAppliedPlayerEventsUntil) return;
+      if (!joined.value) return;
+      if (playerStore.currentSourceQueueId !== LISTEN_TOGETHER_QUEUE_ID) {
+        // 用户从其他页面主动播放歌曲时保留房间会话和网络轮询，但停止让
+        // 房间状态接管本地播放器，避免新音源加载与远端 seek 相互打断。
+        playbackDetachedByUser = true;
+        playerStore.setAutoNextSuppressed(false);
+        ownerAutoSwitchUntil = 0;
+        return;
+      }
+      if (applyingPlayback || Date.now() < suppressAppliedPlayerEventsUntil) return;
       if (!isOwner.value) {
         restoreGuestPlayback();
         return;
@@ -2310,6 +2482,7 @@ export const useListenTogetherStore = defineStore(
     playerStore.onPlayerEvent('play', () => {
       if (!joined.value || applyingPlayback || Date.now() < suppressAppliedPlayerEventsUntil)
         return;
+      if (playerStore.currentSourceQueueId !== LISTEN_TOGETHER_QUEUE_ID) return;
       if (!isOwner.value) {
         guestLocallyPaused = false;
         // 本机恢复播放前重新获取一次快照，避免从暂停时的旧位置继续。
@@ -2321,6 +2494,7 @@ export const useListenTogetherStore = defineStore(
     playerStore.onPlayerEvent('pause', () => {
       if (!joined.value || applyingPlayback || Date.now() < suppressAppliedPlayerEventsUntil)
         return;
+      if (playerStore.currentSourceQueueId !== LISTEN_TOGETHER_QUEUE_ID) return;
       if (!isOwner.value) {
         // 听众暂停只影响本机，不修改房间状态，后续轮询也不会把它自动恢复。
         guestLocallyPaused = true;
@@ -2331,6 +2505,7 @@ export const useListenTogetherStore = defineStore(
     playerStore.onPlayerEvent('seek', (payload) => {
       if (!joined.value || applyingPlayback || Date.now() < suppressAppliedPlayerEventsUntil)
         return;
+      if (playerStore.currentSourceQueueId !== LISTEN_TOGETHER_QUEUE_ID) return;
       if (!isOwner.value) restoreGuestPlayback();
       else if (activeRoomType.value === 0)
         publishOwnerPlayerOperation({
@@ -2431,6 +2606,7 @@ export const useListenTogetherStore = defineStore(
       remotePlayback,
       currentRoomSong,
       joined,
+      playbackDetached,
       isOwner,
       lastError,
       loadingRoom,
@@ -2450,7 +2626,9 @@ export const useListenTogetherStore = defineStore(
       setChatEnabled,
       requestSong,
       playRoomSong,
+      resumeRoomPlayback,
       addRoomSong,
+      addRoomSongs,
       approveSongOrder,
       removeSongOrder,
       loadSongOrders,

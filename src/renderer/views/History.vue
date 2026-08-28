@@ -804,7 +804,7 @@ onUnmounted(() => {
                 }"
                 :enableDefaultDoubleTapPlay="true"
                 :onSongDoubleTapPlay="
-                  settingStore.replacePlaylist ? handleSongDoubleTapPlay : undefined
+                  settingStore.playbackQueueMode === 'context' ? handleSongDoubleTapPlay : undefined
                 "
               />
             </div>

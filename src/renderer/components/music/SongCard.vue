@@ -8,10 +8,11 @@ import type { Song, SongArtist } from '@/models/song';
 import type { SetPlaybackQueueOptions } from '@/stores/playlist';
 import { usePlaylistStore } from '@/stores/playlist';
 import { usePlayerStore } from '@/stores/player';
+import { useSettingStore } from '@/stores/setting';
 import Button from '@/components/ui/Button.vue';
 import { iconMessageCircle, iconHeart, iconHeartFilled, iconPlay, iconPause } from '@/icons';
 import MvIcon from '@/components/ui/MvIcon.vue';
-import { playSongInContext, queueAndPlaySong } from '@/utils/playback';
+import { playSongInContext, queueAndPlaySong, replaceQueueAndPlay } from '@/utils/playback';
 import { getSongDerivedState } from '@/utils/song';
 
 interface Props {
@@ -56,7 +57,7 @@ const props = withDefaults(defineProps<Props>(), {
 const router = useRouter();
 const playlistStore = usePlaylistStore();
 const playerStore = usePlayerStore();
-// const settingStore = useSettingStore();
+const settingStore = useSettingStore();
 
 const baseClass = computed(() =>
   props.variant === 'list'
@@ -253,6 +254,28 @@ const handleCoverPlay = async () => {
     return;
   }
   if (!isPlayable.value) return;
+  if ((props.queueContext?.length ?? 0) > 0 && props.queueOptions?.queueId) {
+    if (settingStore.playbackQueueMode === 'context') {
+      await replaceQueueAndPlay(
+        playlistStore,
+        playerStore,
+        props.queueContext ?? [],
+        props.queueFilteredInvalidCount ?? 0,
+        payload,
+        props.queueOptions,
+      );
+    } else {
+      await playSongInContext(
+        playlistStore,
+        playerStore,
+        payload,
+        props.queueContext ?? [],
+        props.queueFilteredInvalidCount ?? 0,
+        props.queueOptions,
+      );
+    }
+    return;
+  }
   if (isCurrentCoverSong.value && playerStore.isPlaying) {
     await playerStore.togglePlay();
     return;

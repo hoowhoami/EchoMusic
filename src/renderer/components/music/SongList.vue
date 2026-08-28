@@ -8,6 +8,7 @@ import SongCard from './SongCard.vue';
 import SongListSkeletonRows from './SongListSkeletonRows.vue';
 import { iconPlay, iconPause } from '@/icons';
 import { usePlayerStore } from '@/stores/player';
+import { useSettingStore } from '@/stores/setting';
 import {
   LISTEN_TOGETHER_QUEUE_ID,
   PERSONAL_FM_QUEUE_ID,
@@ -19,6 +20,7 @@ import { isPlayableSong } from '@/utils/song';
 import {
   playSongInContext,
   queueAndPlaySong,
+  replaceQueueAndPlay,
   addSongToPlayNext,
   addSongToPlayLast,
 } from '@/utils/playback';
@@ -100,6 +102,7 @@ const props = withDefaults(defineProps<Props>(), {
 
 const playerStore = usePlayerStore();
 const playlistStore = usePlaylistStore();
+const settingStore = useSettingStore();
 const toastStore = useToastStore();
 const router = useRouter();
 
@@ -282,14 +285,25 @@ const handleTogglePlay = async (song: Song) => {
 
   const target = sourceSongsById.value.get(getSongIdText(song)) ?? song;
   if ((queueContextSongs.value.length ?? 0) > 0 && props.queueOptions?.queueId) {
-    await playSongInContext(
-      playlistStore,
-      playerStore,
-      target,
-      queueContextSongs.value,
-      props.queueFilteredInvalidCount ?? 0,
-      props.queueOptions,
-    );
+    if (settingStore.playbackQueueMode === 'context') {
+      await replaceQueueAndPlay(
+        playlistStore,
+        playerStore,
+        queueContextSongs.value,
+        props.queueFilteredInvalidCount ?? 0,
+        target,
+        props.queueOptions,
+      );
+    } else {
+      await playSongInContext(
+        playlistStore,
+        playerStore,
+        target,
+        queueContextSongs.value,
+        props.queueFilteredInvalidCount ?? 0,
+        props.queueOptions,
+      );
+    }
     return;
   }
   await queueAndPlaySong(playlistStore, playerStore, target, props.queueOptions);

@@ -614,7 +614,7 @@ onMounted(() => {
               :contextMenuItems="cloudContextMenuItems"
               :enableDefaultDoubleTapPlay="true"
               :onSongDoubleTapPlay="
-                settingStore.replacePlaylist ? handleSongDoubleTapPlay : undefined
+                settingStore.playbackQueueMode === 'context' ? handleSongDoubleTapPlay : undefined
               "
             />
             <div v-if="!loading && isBackgroundResolving" class="flex justify-center pt-4">

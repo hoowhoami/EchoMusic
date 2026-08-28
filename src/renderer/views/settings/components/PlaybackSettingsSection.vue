@@ -27,6 +27,11 @@ const impulseResponseNameDraft = ref('');
 type ImpulseResponseSourceTab = 'local' | 'community';
 const activeImpulseResponseSourceTab = ref<ImpulseResponseSourceTab>('local');
 
+const playbackQueueModeOptions = [
+  { label: '当前歌曲所在列表', value: 'context' },
+  { label: '仅当前歌曲', value: 'single' },
+];
+
 const selectedImpulseResponse = computed(() => settingStore.getSelectedImpulseResponse());
 const isCommunityAudioEffect = (file: SpatialAudioEffectEntry) =>
   file.kind === 'community-ir' ||
@@ -168,10 +173,15 @@ const handleRemoveImpulseResponse = (id: string) => {
 
     <div class="settings-item">
       <div class="space-y-1">
-        <h3 class="font-semibold">播放替换队列</h3>
-        <p class="text-sm text-text-secondary">双击播放单曲时用当前列表替换播放队列</p>
+        <h3 class="font-semibold">播放时载入队列</h3>
+        <p class="text-sm text-text-secondary">单击或双击播放歌曲时，选择要载入的歌曲范围</p>
       </div>
-      <Switch v-model="settingStore.replacePlaylist" />
+      <Select
+        class="w-52"
+        :model-value="settingStore.playbackQueueMode"
+        :options="playbackQueueModeOptions"
+        @update:model-value="settingStore.playbackQueueMode = $event as 'context' | 'single'"
+      />
     </div>
     <div class="settings-divider"></div>
     <div class="settings-item">

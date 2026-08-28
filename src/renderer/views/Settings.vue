@@ -215,7 +215,9 @@ const builtinSettingsSections = computed<SettingsRenderSection[]>(() => [
     order: 300,
     component: PlaybackSettingsSection,
     searchKeywords: [
-      '播放替换队列',
+      '播放时载入队列',
+      '当前歌曲所在列表',
+      '仅当前歌曲',
       '双击播放',
       '启动时自动播放',
       '自动播放',

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { ref } from 'vue';
 import { Icon } from '@iconify/vue';
 import type { Song } from '@/models/song';
 import Button from '@/components/ui/Button.vue';
@@ -40,14 +40,6 @@ const emit = defineEmits<{
 
 const drawerOpen = ref(false);
 const songListRef = ref<{ scrollToActive?: () => void } | null>(null);
-
-const queueOptions = computed(() => ({
-  queueId: `${props.queueIdPrefix}:${props.currentSearchKeyword.trim() || 'default'}`,
-  title: props.rowTitle,
-  subtitle: props.currentSearchSubtitle,
-  type: 'search' as const,
-  dynamic: false,
-}));
 
 const openBatchDrawer = () => {
   if (props.songs.length === 0) return;
@@ -139,7 +131,6 @@ defineExpose({ scrollToActive });
         :activeId="activeSongId"
         :showCover="true"
         :showLyricColumn="showLyricColumn"
-        :queueOptions="queueOptions"
         :enableDefaultDoubleTapPlay="true"
         rowPaddingClass="px-0"
       />

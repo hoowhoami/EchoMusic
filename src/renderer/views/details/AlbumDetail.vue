@@ -746,7 +746,7 @@ const activeSongId = computed(() => playerStore.currentTrackId ?? undefined);
                 }"
                 :enableDefaultDoubleTapPlay="true"
                 :onSongDoubleTapPlay="
-                  settingStore.replacePlaylist ? handleSongDoubleTapPlay : undefined
+                  settingStore.playbackQueueMode === 'context' ? handleSongDoubleTapPlay : undefined
                 "
               />
             </TabsContent>

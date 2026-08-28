@@ -92,7 +92,7 @@ export const useSettingStore = defineStore('setting', {
     showPlaylistCount: true,
     searchDefaultEnabled: false,
     closeBehavior: 'tray' as CloseBehavior,
-    replacePlaylist: false,
+    playbackQueueMode: 'context' as 'context' | 'single',
     autoPlayOnLaunch: false,
     gaplessPlayback: true,
     volumeFade: true,

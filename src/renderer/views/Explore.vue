@@ -721,7 +721,7 @@ const filteredArtistCards = computed(() => {
             }"
             :enableDefaultDoubleTapPlay="true"
             :onSongDoubleTapPlay="
-              settingStore.replacePlaylist ? handleRankSongDoubleTapPlay : undefined
+              settingStore.playbackQueueMode === 'context' ? handleRankSongDoubleTapPlay : undefined
             "
             rowPaddingClass="px-0"
           />
@@ -844,7 +844,7 @@ const filteredArtistCards = computed(() => {
             }"
             :enableDefaultDoubleTapPlay="true"
             :onSongDoubleTapPlay="
-              settingStore.replacePlaylist ? handleNewSongDoubleTapPlay : undefined
+              settingStore.playbackQueueMode === 'context' ? handleNewSongDoubleTapPlay : undefined
             "
             rowPaddingClass="px-0"
           />

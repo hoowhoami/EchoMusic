@@ -319,14 +319,24 @@ const handleStyleSongCoverPlay = async (song: Song) => {
   }
 
   try {
-    const played = await playSongInContext(
-      playlistStore,
-      playerStore,
-      song,
-      styleSongs.value,
-      0,
-      styleQueueOptions.value,
-    );
+    const played =
+      settingStore.playbackQueueMode === 'context'
+        ? await replaceQueueAndPlay(
+            playlistStore,
+            playerStore,
+            styleSongs.value,
+            0,
+            song,
+            styleQueueOptions.value,
+          )
+        : await playSongInContext(
+            playlistStore,
+            playerStore,
+            song,
+            styleSongs.value,
+            0,
+            styleQueueOptions.value,
+          );
     if (!played) toastStore.unavailable('当前歌曲');
   } catch {
     toastStore.actionFailed('播放');
@@ -484,7 +494,9 @@ const handleRejectAgreement = () => {
                 :showCoverPlayButton="true"
                 :enableDefaultDoubleTapPlay="true"
                 :onDoubleTapPlay="
-                  settingStore.replacePlaylist ? handleStyleSongDoubleTapPlay : undefined
+                  settingStore.playbackQueueMode === 'context'
+                    ? handleStyleSongDoubleTapPlay
+                    : undefined
                 "
                 :onCoverPlay="handleStyleSongCoverPlay"
               />
