@@ -92,13 +92,9 @@ export const usePlayerStore = defineStore(
     const playbackProgressIsBusy = computed(() => {
       if (!state.currentTrackId) return false;
       const coreState = String(state.playbackDiagnostics.core?.state ?? '').toLowerCase();
-      return (
-        state.nativeSeekActive ||
-        state.awaitingTrackLoad ||
-        state.stallRecovering ||
-        getPlaybackIsLoading(state) ||
-        coreState === 'buffering'
-      );
+      // 进度条只表达 native 明确报告的 seek / buffering 生命周期。
+      // 换源、恢复和播放意图有各自的 UI，混入这里会因异步状态交叉造成动画残留。
+      return state.nativeSeekActive || coreState === 'buffering';
     });
 
     const getResolvedPlaybackSources = (resolved: ResolvedAudioSource): PlaybackSource[] => {
