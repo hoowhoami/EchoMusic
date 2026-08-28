@@ -1107,7 +1107,9 @@
   font-size: 10px;
   font-weight: 650;
   line-height: 1.55;
+  white-space: pre-wrap;
   word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
 .listen-message.is-self {

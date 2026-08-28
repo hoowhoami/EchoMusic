@@ -444,6 +444,11 @@ export const usePlayerStore = defineStore(
       if (handlingPlaybackEnd) return;
       handlingPlaybackEnd = true;
       try {
+        if (state.autoNextSuppressed) {
+          setPlaybackIntentPlayback(state, false);
+          setEnginePlaybackStatus(state, 'paused');
+          return;
+        }
         if (playlistStore.activeQueue?.id === PERSONAL_FM_QUEUE_ID) {
           const playedQueuedNext = await playbackManager.playQueuedNextOutsidePersonalFm({
             track: state.currentTrackSnapshot,
@@ -975,7 +980,7 @@ export const usePlayerStore = defineStore(
             showPlaybackNotice('playback-failed', state.currentTrackSnapshot);
             playbackManager.applyFailedPlaybackState({ keepResolvedSource: true });
             settingStore.syncPreventSleep(false);
-            if (settingStore.autoNext && state.currentPlaylist?.length)
+            if (!state.autoNextSuppressed && settingStore.autoNext && state.currentPlaylist?.length)
               playbackManager.scheduleAutoNext();
             else playbackManager.clearAutoNextTimer();
             emitPlayerEvent('error', { error: state.lastError ?? 'playback-error' });
@@ -1055,6 +1060,11 @@ export const usePlayerStore = defineStore(
       if (state.volume > 0) state.lastNonZeroVolume = state.volume;
     };
 
+    const setAutoNextSuppressed = (suppressed: boolean) => {
+      state.autoNextSuppressed = suppressed;
+      if (suppressed) playbackManager.clearAutoNextTimer();
+    };
+
     // Explicitly return state and actions to help TypeScript
     return {
       ...toRefs(state),
@@ -1108,6 +1118,7 @@ export const usePlayerStore = defineStore(
       refreshCurrentTrack,
       init,
       setVolumeSmooth,
+      setAutoNextSuppressed,
       onPlayerEvent: playerEvents.on,
       getPlayerEventPayload,
     };

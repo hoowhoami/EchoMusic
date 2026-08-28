@@ -691,6 +691,7 @@ export const useListenTogetherStore = defineStore(
       restorePreviousPlaybackQueue();
       activeRoomId.value = '';
       activeRoom.value = null;
+      playerStore.setAutoNextSuppressed(false);
       members.value = [];
       messages.value = [];
       roomSongs.value = [];
@@ -1885,6 +1886,7 @@ export const useListenTogetherStore = defineStore(
       capturePreviousPlaybackQueue();
       activeRoomId.value = roomId;
       activeRoom.value = base ?? rooms.value.find((room) => room.id === roomId) ?? null;
+      playerStore.setAutoNextSuppressed(!isOwner.value);
       loadingRoom.value = true;
       phase.value = 'joined';
       startSessionTimers();

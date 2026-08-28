@@ -79,6 +79,8 @@ export const createPlayerState = () => ({
   autoNextTimer: null as number | null,
   autoNextAttempts: 0,
   autoNextSourceTrackId: null as string | null,
+  // Certain synchronized playback contexts must wait for their remote controller instead.
+  autoNextSuppressed: false,
   playbackNotice: null as PlaybackNotice | null,
   shuffleQueue: null as number[] | null,
   shuffleQueueLength: 0,

@@ -702,7 +702,7 @@ export const createPlaybackManager = (
   };
 
   const scheduleAutoNext = () => {
-    if (!settingStore.autoNext || !state.currentTrackId) return;
+    if (state.autoNextSuppressed || !settingStore.autoNext || !state.currentTrackId) return;
     const list =
       (playlistStore.activeQueue?.songs?.length ?? 0) > 0
         ? (playlistStore.activeQueue?.songs ?? [])

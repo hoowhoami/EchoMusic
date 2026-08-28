@@ -29,6 +29,7 @@ export type KugouCaptchaProvider =
   | 'SMS'
   | 'LOGIN'
   | 'BIND_PHONE'
+  | 'REAL_NAME'
   | 'UNKNOWN';
 
 export const KUGOU_CAPTCHA_PROVIDER_NAMES: Record<KugouCaptchaProvider, string> = {
@@ -41,6 +42,7 @@ export const KUGOU_CAPTCHA_PROVIDER_NAMES: Record<KugouCaptchaProvider, string> 
   SMS: '手机验证码',
   LOGIN: '登录确认',
   BIND_PHONE: '绑定手机号',
+  REAL_NAME: '实名认证',
   UNKNOWN: '未知验证',
 };
 
@@ -79,6 +81,7 @@ export const getKugouCaptchaProvider = (
 ): KugouCaptchaProvider => {
   const verifyType = Number(verifyInfo?.v_type || 0);
   if (verifyType === 32) return 'SMS';
+  if (verifyType === 34) return 'REAL_NAME';
   if (verifyType === 36) return 'BIND_PHONE';
   if (verifyType === 38) return 'LOGIN';
 
@@ -232,6 +235,10 @@ export const submitKugouVerification = async (verifyCode: string): Promise<boole
   const verifyType = Number(verifyInfo?.v_type || 23);
   if (verifyType === 36) {
     kugouVerificationState.error = '当前账号需绑定手机号后才能继续操作';
+    return false;
+  }
+  if (verifyType === 34) {
+    kugouVerificationState.error = '请先完成实名认证后再重试';
     return false;
   }
   if (verifyType === 38) {

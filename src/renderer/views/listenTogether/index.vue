@@ -98,10 +98,12 @@ const ownedRoomToDismiss = ref<ListenTogetherRoom | null>(null);
 const dismissingOwnedRoom = ref(false);
 const messageText = ref('');
 const chatCooldown = ref(false);
+const messageTextarea = ref<HTMLTextAreaElement | null>(null);
 const messagesScroll = ref<InstanceType<typeof Scrollbar> | null>(null);
 
 const CHAT_MESSAGE_MAX_LENGTH = 200;
 const CHAT_SEND_COOLDOWN_MS = 1500;
+const CHAT_TEXTAREA_MAX_HEIGHT = 72;
 let chatCooldownTimer: number | null = null;
 
 const createName = ref('');
@@ -550,9 +552,17 @@ const toggleChat = async () => {
 };
 
 const handleMessageKeydown = (event: KeyboardEvent) => {
-  if (event.key !== 'Enter' || event.shiftKey) return;
+  if (event.key !== 'Enter' || event.shiftKey || event.isComposing) return;
   event.preventDefault();
   void sendMessage();
+};
+
+const resizeMessageTextarea = () => {
+  const textarea = messageTextarea.value;
+  if (!textarea) return;
+  textarea.style.height = 'auto';
+  textarea.style.height = `${Math.min(textarea.scrollHeight, CHAT_TEXTAREA_MAX_HEIGHT)}px`;
+  textarea.style.overflowY = textarea.scrollHeight > CHAT_TEXTAREA_MAX_HEIGHT ? 'auto' : 'hidden';
 };
 
 const openOrderSongPicker = () => {
@@ -649,6 +659,8 @@ const formatMessageTime = (timestamp: number) => {
 watch(previewOpen, (open) => {
   if (!open) listenStore.closePreview();
 });
+
+watch(messageText, () => nextTick(resizeMessageTextarea));
 
 watch(joined, (isJoined) => {
   if (!isJoined) sessionMinimized.value = false;
@@ -1172,10 +1184,13 @@ onUnmounted(() => {
               </Scrollbar>
               <div class="listen-chat-composer" :class="{ 'is-disabled': !activeRoom?.allowChat }">
                 <textarea
+                  ref="messageTextarea"
                   v-model="messageText"
                   :disabled="!activeRoom?.allowChat || sendingMessage"
                   :placeholder="
-                    activeRoom?.allowChat ? '输入消息，Enter 发送' : '当前房间不允许聊天'
+                    activeRoom?.allowChat
+                      ? '输入消息，Enter 发送，Shift+Enter 换行'
+                      : '当前房间不允许聊天'
                   "
                   :maxlength="CHAT_MESSAGE_MAX_LENGTH"
                   rows="1"

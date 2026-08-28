@@ -54,13 +54,15 @@ const isTencentCaptcha = computed(() => provider.value === 'TX');
 const isSmsCaptcha = computed(() => provider.value === 'SMS');
 const isLoginVerification = computed(() => provider.value === 'LOGIN');
 const isBindPhone = computed(() => provider.value === 'BIND_PHONE');
+const isRealNameVerification = computed(() => provider.value === 'REAL_NAME');
 const isUnsupported = computed(
   () =>
     Boolean(kugouVerificationState.verifyInfo) &&
     !isTencentCaptcha.value &&
     !isSmsCaptcha.value &&
     !isLoginVerification.value &&
-    !isBindPhone.value,
+    !isBindPhone.value &&
+    !isRealNameVerification.value,
 );
 const loginMessage = computed(() =>
   String(kugouVerificationState.verifyInfo?.show?.msg || '').trim(),
@@ -70,6 +72,7 @@ const title = computed(() => {
   if (isSmsCaptcha.value) return '短信安全验证';
   if (isLoginVerification.value) return '登录确认';
   if (isBindPhone.value) return '需要绑定手机号';
+  if (isRealNameVerification.value) return '需要实名认证';
   return '安全验证';
 });
 const tencentActionText = computed(() => (kugouVerificationState.error ? '重新验证' : '开始验证'));
@@ -81,6 +84,8 @@ const description = computed(() => {
     return (
       bindPhoneMessage.value || '当前账号需绑定手机号后才能继续操作，请前往酷狗客户端完成绑定后重试'
     );
+  if (isRealNameVerification.value)
+    return '当前账号需要完成实名认证，请前往酷狗客户端完成认证后重试';
   if (isTencentCaptcha.value) return '完成验证后将继续刚才的操作';
   return `当前需要${providerName.value}，暂不支持自动处理`;
 });
@@ -494,13 +499,14 @@ onBeforeUnmount(resetTencentCaptcha);
           'is-sms': isSmsCaptcha,
           'is-login': isLoginVerification,
           'is-bind-phone': isBindPhone,
+          'is-real-name': isRealNameVerification,
         }"
       >
         <Icon
           :icon="
             isSmsCaptcha || isBindPhone
               ? iconSmartphone
-              : isLoginVerification
+              : isLoginVerification || isRealNameVerification
                 ? iconUser
                 : iconShield
           "
@@ -553,6 +559,10 @@ onBeforeUnmount(resetTencentCaptcha);
             bindPhoneMessage || '当前账号需绑定手机号后才能继续操作，请前往酷狗客户端完成绑定后重试'
           }}
         </p>
+      </template>
+
+      <template v-else-if="isRealNameVerification">
+        <p class="verification-note">请前往酷狗客户端完成实名认证，完成后返回此处重试刚才的操作</p>
       </template>
 
       <p v-if="kugouVerificationState.error" class="verification-error">
@@ -610,6 +620,11 @@ onBeforeUnmount(resetTencentCaptcha);
 .verification-icon.is-bind-phone {
   color: #f59e0b;
   background: color-mix(in srgb, #f59e0b 12%, transparent);
+}
+
+.verification-icon.is-real-name {
+  color: #8b5cf6;
+  background: color-mix(in srgb, #8b5cf6 12%, transparent);
 }
 
 .verification-note {
