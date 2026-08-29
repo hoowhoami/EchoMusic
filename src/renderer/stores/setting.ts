@@ -3,7 +3,11 @@ import type { CloseBehavior, ThemeMode } from '../../shared/app';
 import { normalizeLogSettings, type AppLogLevel, type LogSettings } from '../../shared/logging';
 import type { AudioQualityValue, OutputDeviceOption, OutputDeviceStatus } from '../types';
 import { buildFontFamily } from '../../shared/font';
-import { normalizeAudioEffectName, type SpatialAudioEffectEntry } from '../../shared/audio';
+import {
+  normalizeAudioEffectName,
+  type DspProviderRecord,
+  type SpatialAudioEffectEntry,
+} from '../../shared/audio';
 import { normalizeConvolutionMix } from '../../shared/audio-effect-support';
 import {
   DEFAULT_NETWORK_SETTINGS,
@@ -144,6 +148,8 @@ export const useSettingStore = defineStore('setting', {
     impulseResponseFiles: [] as SpatialAudioEffectEntry[],
     impulseResponseMixById: {} as Record<string, number>,
     dspProviderEnabled: true,
+    dspProviderId: '',
+    // Runtime-resolved path. Kept in state for legacy hydration, but no longer persisted.
     dspProviderPath: '',
     dspProviderMode: 'speaker' as 'headphone' | 'speaker',
     dspProviderPresetJson: '',
@@ -210,14 +216,19 @@ export const useSettingStore = defineStore('setting', {
     devToolsEnabled: false,
   }),
   actions: {
-    configureDspProvider(path: string, mode: 'headphone' | 'speaker' = 'speaker') {
+    configureDspProvider(
+      provider: Pick<DspProviderRecord, 'providerId' | 'path'>,
+      mode: 'headphone' | 'speaker' = 'speaker',
+    ) {
       this.dspProviderEnabled = true;
-      this.dspProviderPath = path.trim();
+      this.dspProviderId = provider.providerId.trim();
+      this.dspProviderPath = provider.path.trim();
       this.dspProviderMode = mode;
       this.dspProviderPresetJson = '';
     },
     disableDspProvider() {
       this.dspProviderEnabled = false;
+      this.dspProviderId = '';
       this.dspProviderPath = '';
       this.dspProviderPresetJson = '';
     },
@@ -640,5 +651,5 @@ export const useSettingStore = defineStore('setting', {
       return buildFontFamily(this.lyricFont);
     },
   },
-  persist: true,
+  persist: { omit: ['dspProviderPath'] },
 });

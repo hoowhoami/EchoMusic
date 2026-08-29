@@ -36,6 +36,7 @@ import type {
   AudioEffectPlaybackOptions,
   DownloadCommunityAudioEffectRequest,
   DownloadCommunityAudioEffectResult,
+  DspProviderRecord,
   ImportImpulseResponseResult,
   SpatialAudioEffectEntry,
 } from '../shared/audio';
@@ -711,10 +712,10 @@ export interface IElectronAPI {
     setSpeed: (speed: number) => Promise<void>;
     setEqualizer: (gains: number[]) => Promise<void>;
     setAudioEffect: (options: AudioEffectPlaybackOptions | null) => Promise<void>;
-    selectDspProvider: () => Promise<string | null>;
-    listDspProviders: () => Promise<string[]>;
+    selectDspProvider: (mode?: 'headphone' | 'speaker') => Promise<DspProviderRecord | null>;
+    listDspProviders: () => Promise<DspProviderRecord[]>;
     inspectDspProvider: (path: string) => Promise<DspProviderInspection>;
-    deleteDspProvider: (path: string) => Promise<void>;
+    deleteDspProvider: (providerId: string) => Promise<void>;
     getAudioGraph: () => Promise<PlayerAudioGraphSnapshot | null>;
     setAudioGraphParameter: (patch: PlayerAudioGraphParameterPatch) => Promise<void>;
     setAudioGraphPlan: (plan: PlayerAudioGraphPlanPatch) => Promise<void>;

@@ -13,6 +13,11 @@ import { matchesPendingSeekTarget, type PlaybackProgressBusyReason } from '../..
 import type { AudioEffectPlaybackOptions, SpatialAudioEffectEntry } from '../../shared/audio';
 import { createLatestRequestQueue } from '../../shared/latest-request-queue';
 import { spatialAudioEffectOptions } from '../../shared/audio-effect-support';
+import {
+  parseDspPreset,
+  providerPresetSupportsSampleRate,
+} from '../../shared/dsp-provider-settings';
+import type { DspProviderManifest } from '../../shared/player-audio-graph';
 
 import { createPlayerState } from './player/state';
 import { createPlaybackManager } from './player/playback';
@@ -174,10 +179,15 @@ export const usePlayerStore = defineStore(
       { immediate: true },
     );
 
-    const refreshCurrentTrack = async (options?: { seamless?: boolean }) => {
+    let pendingAudioGraphRebuild = false;
+    const refreshCurrentTrack = async (options?: {
+      seamless?: boolean;
+      rebuildAudioGraph?: boolean;
+    }) => {
       if (!state.currentTrackId) return;
       if (getPlaybackIsLoading(state)) {
         state.pendingSettingRefresh = true;
+        pendingAudioGraphRebuild ||= options?.rebuildAudioGraph === true;
         return;
       }
       const requestSeq = ++state.playbackRequestSeq;
@@ -265,6 +275,7 @@ export const usePlayerStore = defineStore(
           }
           if (!switched) throw lastError ?? new Error('No playable source candidate');
         } else {
+          if (options?.rebuildAudioGraph) await engine.stopForAudioGraphRebuild();
           await engine.setSource(playbackSource, { force: true });
         }
       } catch (error) {
@@ -346,7 +357,9 @@ export const usePlayerStore = defineStore(
       }
       if (state.pendingSettingRefresh) {
         state.pendingSettingRefresh = false;
-        void refreshCurrentTrack();
+        const rebuildAudioGraph = pendingAudioGraphRebuild;
+        pendingAudioGraphRebuild = false;
+        void refreshCurrentTrack({ rebuildAudioGraph });
       }
     };
 
@@ -361,13 +374,26 @@ export const usePlayerStore = defineStore(
     const ensureConfiguredProviderPath = async () => {
       if (!settingStore.dspProviderEnabled) return undefined;
       const savedPath = configuredProviderPath();
-      if (savedPath) return savedPath;
+      const savedId = (settingStore.dspProviderId || '').trim();
+      if (savedId && savedPath) return savedPath;
       const providers = await window.electron.player.listDspProviders();
       if (!settingStore.dspProviderEnabled) return undefined;
-      if (configuredProviderPath()) return configuredProviderPath();
-      if (providers.length !== 1) return undefined;
-      settingStore.configureDspProvider(providers[0], settingStore.dspProviderMode);
-      return providers[0];
+      const selected = savedId
+        ? providers.find((provider) => provider.providerId === savedId)
+        : savedPath
+          ? providers.find(
+              (provider) =>
+                provider.path === savedPath || provider.legacyPaths?.includes(savedPath),
+            )
+          : providers.length === 1
+            ? providers[0]
+            : undefined;
+      if (!selected) {
+        if (savedId || savedPath) settingStore.disableDspProvider();
+        return undefined;
+      }
+      settingStore.configureDspProvider(selected, settingStore.dspProviderMode);
+      return selected.path;
     };
     const refreshAudioGraphSnapshot = async () => {
       const graph = await engine.getAudioGraph();
@@ -716,8 +742,32 @@ export const usePlayerStore = defineStore(
       !!previous.impulseResponsePath &&
       previous.impulseResponsePath === next.impulseResponsePath &&
       previous.impulseResponseMix !== next.impulseResponseMix;
+    const providerEffectRequiresAudioGraphRebuild = (effect: AudioEffectPlaybackOptions | null) => {
+      if (!effect?.providerPath || !effect.providerPresetJson) return false;
+      const graph = state.playbackDiagnostics.graph;
+      const sampleRate = graph?.processFormat.sampleRate;
+      if (!sampleRate) return false;
+      const manifestJson =
+        (graph?.providerPath === effect.providerPath ? graph.providerManifestJson : undefined) ??
+        spatialAudioSupport.providerInspection.value?.info?.manifestJson;
+      if (!manifestJson) return false;
+      try {
+        const manifest = JSON.parse(manifestJson) as DspProviderManifest;
+        return !providerPresetSupportsSampleRate(manifest, effect.providerPresetJson, sampleRate);
+      } catch {
+        return false;
+      }
+    };
     const applySpatialAudioEffect = async (effect: AudioEffectPlaybackOptions | null) => {
-      if (canPatchBasicDspMix(appliedSpatialAudioEffect, effect)) {
+      if (providerEffectRequiresAudioGraphRebuild(effect) && state.currentTrackId) {
+        const { presetId } = parseDspPreset(effect?.providerPresetJson ?? '');
+        logger.info('PlayerStore', 'Rebuilding audio graph for provider preset sample rate', {
+          presetId,
+          currentSampleRate: state.playbackDiagnostics.graph?.processFormat.sampleRate,
+        });
+        await engine.setSpatialAudioEffect({ ...effect, deferUntilReload: true });
+        await refreshCurrentTrack({ rebuildAudioGraph: true });
+      } else if (canPatchBasicDspMix(appliedSpatialAudioEffect, effect)) {
         try {
           await engine.setAudioGraphParameter({
             kind: 'spatial',

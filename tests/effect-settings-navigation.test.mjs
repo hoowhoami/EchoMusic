@@ -46,6 +46,15 @@ function setupComponent(t, file, props, imports = {}) {
   return { api, events, descriptor };
 }
 
+test('provider presets stay selectable after playback format is known', () => {
+  const source = readFileSync(
+    new URL('../src/renderer/components/player/EffectPopover.vue', import.meta.url),
+    'utf8',
+  );
+  assert.doesNotMatch(source, /providerPresetAvailable/);
+  assert.doesNotMatch(source, /supportedSampleRates\.includes\(rate\)/);
+});
+
 test('my-effects buttons disable unsupported downloads and use the guarded player action', (t) => {
   const file = {
     id: 'combined',

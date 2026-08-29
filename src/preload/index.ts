@@ -34,6 +34,7 @@ import type {
   AudioEffectPlaybackOptions,
   DownloadCommunityAudioEffectRequest,
   DownloadCommunityAudioEffectResult,
+  DspProviderRecord,
   ImportImpulseResponseResult,
   SpatialAudioEffectEntry,
 } from '../shared/audio';
@@ -682,11 +683,13 @@ contextBridge.exposeInMainWorld('electron', {
     setEqualizer: (gains: number[]) => invokeWithPlainPayload('player:set-equalizer', gains),
     setAudioEffect: (options: AudioEffectPlaybackOptions | null) =>
       invokeWithPlainPayload('player:set-audio-effect', options),
-    selectDspProvider: () =>
-      ipcRenderer.invoke('player:select-dsp-provider') as Promise<string | null>,
-    listDspProviders: () => ipcRenderer.invoke('player:list-dsp-providers') as Promise<string[]>,
+    selectDspProvider: (mode: 'headphone' | 'speaker' = 'speaker') =>
+      ipcRenderer.invoke('player:select-dsp-provider', mode) as Promise<DspProviderRecord | null>,
+    listDspProviders: () =>
+      ipcRenderer.invoke('player:list-dsp-providers') as Promise<DspProviderRecord[]>,
     inspectDspProvider: (path: string) => ipcRenderer.invoke('player:inspect-dsp-provider', path),
-    deleteDspProvider: (path: string) => ipcRenderer.invoke('player:delete-dsp-provider', path),
+    deleteDspProvider: (providerId: string) =>
+      ipcRenderer.invoke('player:delete-dsp-provider', providerId),
     getAudioGraph: () =>
       ipcRenderer.invoke('player:get-audio-graph') as Promise<PlayerAudioGraphSnapshot | null>,
     setAudioGraphParameter: (patch: PlayerAudioGraphParameterPatch) =>

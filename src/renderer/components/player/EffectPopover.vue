@@ -65,7 +65,9 @@ const providerSettingsPanelId = useId();
 let providerSettingsTrigger: HTMLElement | null = null;
 const editingProviderPresetId = ref('');
 const activeImpulseResponseLibraryTab = ref<ImpulseResponseLibraryTab>(
-  settingStore.dspProviderEnabled && settingStore.dspProviderPath ? 'engine' : 'mine',
+  settingStore.dspProviderEnabled && (settingStore.dspProviderId || settingStore.dspProviderPath)
+    ? 'engine'
+    : 'mine',
 );
 const audioEffectOptions: readonly { value: AudioEffectValue; label: string }[] = [
   { value: 'none', label: '原声' },
@@ -102,7 +104,9 @@ const impulseResponseActive = computed(
     player.getSpatialAudioEffectSupport(selectedImpulseResponse.value).status === 'supported',
 );
 const providerConfigured = computed(
-  () => settingStore.dspProviderEnabled && !!settingStore.dspProviderPath.trim(),
+  () =>
+    settingStore.dspProviderEnabled &&
+    !!(settingStore.dspProviderId?.trim() || settingStore.dspProviderPath?.trim()),
 );
 const builtinAudioEngineActive = computed(
   () => !providerConfigured.value && !player.playbackDiagnostics.graph?.providerPath,
@@ -163,14 +167,9 @@ const providerControls = computed<DspProviderControl[]>(() =>
   configurablePresetControls(providerManifest.value, editingProviderPresetId.value),
 );
 const providerPresets = computed(() => providerManifest.value?.presets ?? []);
-const providerPresetAvailable = (preset: DspProviderPreset) => {
-  const rate = player.playbackDiagnostics.graph?.processFormat.sampleRate;
-  return !rate || !preset.supportedSampleRates || preset.supportedSampleRates.includes(rate);
-};
-const providerPresetDescription = (preset: DspProviderPreset) =>
-  providerPresetAvailable(preset)
-    ? preset.description
-    : `当前采样率不支持此音效，支持 ${preset.supportedSampleRates?.map((rate) => rate / 1000).join(' / ')} kHz`;
+// The active graph's format is not an engine capability boundary. Selecting a
+// preset may rebuild the graph at one of the preset's declared sample rates.
+const providerPresetDescription = (preset: DspProviderPreset) => preset.description;
 const providerDisplayName = computed(
   () =>
     providerManifest.value?.displayName?.trim() ||
@@ -225,8 +224,9 @@ const editingProviderPreset = computed(() =>
 );
 const providerEngineId = computed(
   () =>
-    player.playbackDiagnostics.graph?.providerId ??
-    player.dspProviderInspection?.info?.providerId ??
+    (player.playbackDiagnostics.graph?.providerId ??
+      player.dspProviderInspection?.info?.providerId ??
+      settingStore.dspProviderId) ||
     '',
 );
 const editingProviderPresetActive = computed(
@@ -262,7 +262,9 @@ const providerRuntimeCurrent = computed(
   () =>
     editingProviderPresetActive.value &&
     runtimeMatchesPreset(providerRuntimeState.value, editingProviderPresetId.value) &&
-    player.playbackDiagnostics.graph?.providerPath === settingStore.dspProviderPath &&
+    (settingStore.dspProviderId
+      ? player.playbackDiagnostics.graph?.providerId === settingStore.dspProviderId
+      : player.playbackDiagnostics.graph?.providerPath === settingStore.dspProviderPath) &&
     player.playbackDiagnostics.graph?.providerMode === activeProviderMode.value &&
     player.playbackDiagnostics.graph?.providerPresetJson === effectiveProviderPresetJson.value,
 );
@@ -398,9 +400,17 @@ watch(effectPopoverOpen, (open) => {
   if (!open) providerSettingsOpen.value = false;
 });
 // An open editor must never write into a newly loaded engine or output-mode bank.
-watch([providerEngineId, () => settingStore.dspProviderPath, activeProviderMode], () => {
-  providerSettingsOpen.value = false;
-});
+watch(
+  [
+    providerEngineId,
+    () => settingStore.dspProviderId,
+    () => settingStore.dspProviderPath,
+    activeProviderMode,
+  ],
+  () => {
+    providerSettingsOpen.value = false;
+  },
+);
 watch(providerControls, (controls) => {
   if (!controls.length) providerSettingsOpen.value = false;
 });
@@ -410,7 +420,7 @@ const setProviderPreset = (presetId: string) => {
   // still a valid target and must remain selectable for recovery.
   if (!providerConfigured.value || providerInspectionFailed.value) return;
   const preset = providerPresets.value.find((item) => item.id === presetId);
-  if (!preset || !providerPresetAvailable(preset)) return;
+  if (!preset) return;
   if (
     !impulseResponseActive.value &&
     providerEffectActive.value &&
@@ -1059,7 +1069,6 @@ withDefaults(defineProps<Props>(), {
                       class="provider-preset-button"
                       :aria-pressed="!impulseResponseActive && activeProviderPresetId === preset.id"
                       :title="providerPresetDescription(preset)"
-                      :disabled="!providerPresetAvailable(preset)"
                       @click="setProviderPreset(preset.id)"
                     >
                       <span class="provider-preset-label">{{ preset.label }}</span>

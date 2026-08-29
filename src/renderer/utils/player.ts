@@ -600,6 +600,15 @@ export class PlayerEngine {
     this.events.timeUpdate?.(0);
   }
 
+  /** Tear down the native session without resetting the renderer timeline. */
+  async stopForAudioGraphRebuild(): Promise<void> {
+    this.clearSeekPending();
+    await player?.stop();
+    // setSource(..., { force: true }) follows immediately, but clearing this
+    // prevents an accidental non-forced load from reusing the retired session.
+    this.sourceUrl = '';
+  }
+
   /** 设置 player 文件循环模式（单曲循环用） */
   setLoopFile(loop: boolean): void {
     void player?.setLoopFile(loop)?.catch((error: unknown) => {

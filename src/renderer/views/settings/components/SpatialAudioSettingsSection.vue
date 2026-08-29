@@ -10,8 +10,7 @@ import { Icon } from '@iconify/vue';
 import { iconCheckMark, iconPencil, iconPlus, iconTrash, iconX } from '@/icons';
 import SettingsSectionShell from './SettingsSectionShell.vue';
 import { sectionTitles } from '../constants';
-import { normalizeAudioEffectName } from '../../../../shared/audio';
-import type { DspProviderInspection } from '../../../../shared/audio';
+import { normalizeAudioEffectName, type DspProviderRecord } from '../../../../shared/audio';
 import type { DspProviderManifest } from '../../../../shared/player-audio-graph';
 
 const settingStore = useSettingStore();
@@ -21,8 +20,7 @@ const importing = ref(false);
 const showFileDialog = ref(false);
 const showProviderDialog = ref(false);
 const activeFileTab = ref<string>('local');
-const providerFiles = ref<string[]>([]);
-const providerInspections = ref<Record<string, DspProviderInspection | null>>({});
+const providerRecords = ref<DspProviderRecord[]>([]);
 const editingFileId = ref('');
 const fileNameDraft = ref('');
 const files = computed(() => settingStore.impulseResponseFiles);
@@ -47,17 +45,17 @@ const fileGroups = computed(() =>
   })),
 );
 const providerGraph = computed(() => playerStore.playbackDiagnostics.graph);
-const currentProviderPath = computed(
+const currentProviderId = computed(
   () =>
-    providerGraph.value?.providerPath ||
-    (settingStore.dspProviderEnabled ? settingStore.dspProviderPath : ''),
+    providerGraph.value?.providerId ||
+    (settingStore.dspProviderEnabled ? settingStore.dspProviderId : ''),
 );
 const hasImportedProvider = computed(
-  () => providerFiles.value.length > 0 || !!currentProviderPath.value,
+  () => providerRecords.value.length > 0 || !!currentProviderId.value,
 );
 
-const parseProviderManifest = (path: string): DspProviderManifest | null => {
-  const manifestJson = providerInspections.value[path]?.manifestJson;
+const parseProviderManifest = (provider: DspProviderRecord): DspProviderManifest | null => {
+  const manifestJson = provider.manifestJson;
   if (!manifestJson) return null;
   try {
     const manifest = JSON.parse(manifestJson) as DspProviderManifest;
@@ -67,20 +65,16 @@ const parseProviderManifest = (path: string): DspProviderManifest | null => {
   }
 };
 
-const providerDisplayName = (path: string) => {
-  const manifest = parseProviderManifest(path);
-  const info = providerInspections.value[path];
-  return manifest?.displayName?.trim() || info?.providerId || path.split('/').pop() || '音效引擎';
+const providerDisplayName = (provider: DspProviderRecord) => {
+  const manifest = parseProviderManifest(provider);
+  return manifest?.displayName?.trim() || provider.providerId || '音效引擎';
 };
 
-const providerDescription = (path: string) =>
-  parseProviderManifest(path)?.description?.trim() || '';
+const providerDescription = (provider: DspProviderRecord) =>
+  parseProviderManifest(provider)?.description?.trim() || '';
 
-const providerTechnicalInfo = (path: string) => {
-  const info = providerInspections.value[path];
-  if (!info) return '引擎信息读取失败';
-  return `${info.providerId} · v${info.providerVersion}`;
-};
+const providerTechnicalInfo = (provider: DspProviderRecord) =>
+  `${provider.providerId} · v${provider.providerVersion}`;
 
 const resourceDisplayName = (kind: string) => {
   const normalized = kind.trim().toLowerCase();
@@ -89,10 +83,8 @@ const resourceDisplayName = (kind: string) => {
   return kind;
 };
 
-const providerCapabilities = (path: string) => {
-  const info = providerInspections.value[path];
-  const manifest = parseProviderManifest(path);
-  if (!info) return ['能力信息不可用'];
+const providerCapabilities = (provider: DspProviderRecord) => {
+  const manifest = parseProviderManifest(provider);
 
   const capabilities = (manifest?.resources ?? []).map((resource) =>
     resource.extensions?.length
@@ -101,29 +93,17 @@ const providerCapabilities = (path: string) => {
   );
   if (manifest?.presets?.length) capabilities.push(`${manifest.presets.length} 个预设`);
   if (manifest?.controls?.length) capabilities.push(`${manifest.controls.length} 项可调参数`);
-  if (info.maxChannels > 0) capabilities.push(`最高 ${info.maxChannels} 声道`);
-  capabilities.push(info.latencyFrames > 0 ? `${info.latencyFrames} 帧延迟` : '零额外延迟');
+  if (provider.maxChannels > 0) capabilities.push(`最高 ${provider.maxChannels} 声道`);
+  capabilities.push(provider.latencyFrames > 0 ? `${provider.latencyFrames} 帧延迟` : '零额外延迟');
   return capabilities;
 };
-
-const providerFileName = (path: string) => path.split('/').pop() || path;
 
 onMounted(async () => {
   await refreshProviders();
 });
 
 const refreshProviders = async () => {
-  providerFiles.value = await window.electron.player.listDspProviders();
-  const entries = await Promise.all(
-    providerFiles.value.map(async (path) => {
-      try {
-        return [path, await window.electron.player.inspectDspProvider(path)] as const;
-      } catch {
-        return [path, null] as const;
-      }
-    }),
-  );
-  providerInspections.value = Object.fromEntries(entries);
+  providerRecords.value = await window.electron.player.listDspProviders();
 };
 
 const importFiles = async () => {
@@ -146,10 +126,9 @@ const importFiles = async () => {
 
 const importProvider = async () => {
   try {
-    const providerPath = await window.electron.player.selectDspProvider();
-    if (!providerPath) return;
-    await window.electron.player.setAudioEffect({ providerPath, providerMode: 'speaker' });
-    settingStore.configureDspProvider(providerPath, 'speaker');
+    const provider = await window.electron.player.selectDspProvider('speaker');
+    if (!provider) return;
+    settingStore.configureDspProvider(provider, 'speaker');
     await refreshProviders();
     toastStore.success('音效引擎已导入并启用');
   } catch (error) {
@@ -163,24 +142,24 @@ const openProviderDialog = async () => {
 };
 
 const activateProvider = async (
-  providerPath: string,
+  provider: DspProviderRecord,
   mode = providerGraph.value?.providerMode ??
     (settingStore.dspProviderMode === 'headphone' ? 'headphone' : 'speaker'),
 ) => {
   try {
     await window.electron.player.setAudioEffect({
-      providerPath,
+      providerPath: provider.path,
       providerMode: mode,
     });
-    settingStore.configureDspProvider(providerPath, mode);
-    toastStore.success(`已启用“${providerDisplayName(providerPath)}”`);
+    settingStore.configureDspProvider(provider, mode);
+    toastStore.success(`已启用“${providerDisplayName(provider)}”`);
   } catch (error) {
     toastStore.warning(`音效引擎启用失败: ${String(error)}`);
   }
 };
 
-const deactivateProvider = async (providerPath: string) => {
-  if (providerPath !== currentProviderPath.value) return;
+const deactivateProvider = async (provider: DspProviderRecord) => {
+  if (provider.providerId !== currentProviderId.value) return;
   const selectedEffect = settingStore.getSelectedImpulseResponse();
   const requiresEngine = !!selectedEffect?.vpfPath;
   const fallbackEffect =
@@ -192,16 +171,16 @@ const deactivateProvider = async (providerPath: string) => {
     settingStore.disableDspProvider();
     const graph = await window.electron.player.getAudioGraph();
     playerStore.playbackDiagnostics.graph = graph ? { ...graph, updatedAt: Date.now() } : null;
-    toastStore.success(`已停用“${providerDisplayName(providerPath)}”`);
+    toastStore.success(`已停用“${providerDisplayName(provider)}”`);
   } catch (error) {
     toastStore.warning(`音效引擎停用失败: ${String(error)}`);
   }
 };
 
-const removeProvider = async (providerPath: string) => {
+const removeProvider = async (provider: DspProviderRecord) => {
   try {
-    const removingActiveProvider = providerPath === currentProviderPath.value;
-    await window.electron.player.deleteDspProvider(providerPath);
+    const removingActiveProvider = provider.providerId === currentProviderId.value;
+    await window.electron.player.deleteDspProvider(provider.providerId);
     if (removingActiveProvider) {
       settingStore.disableDspProvider();
     }
@@ -259,7 +238,7 @@ const commitRename = (id: string) => {
         <p class="text-sm text-text-secondary">
           {{
             hasImportedProvider
-              ? `已安装 ${providerFiles.length} 个音效引擎`
+              ? `已安装 ${providerRecords.length} 个音效引擎`
               : '未安装第三方音效引擎'
           }}
         </p>
@@ -366,38 +345,38 @@ const commitRename = (id: string) => {
     >
       <div class="engine-card-list">
         <article
-          v-for="providerPath in providerFiles"
-          :key="providerPath"
+          v-for="provider in providerRecords"
+          :key="provider.providerId"
           class="engine-card"
-          :class="{ 'is-active': providerPath === currentProviderPath }"
+          :class="{ 'is-active': provider.providerId === currentProviderId }"
         >
           <div class="engine-card-header">
             <div class="engine-identity">
               <div class="engine-name-row">
-                <strong>{{ providerDisplayName(providerPath) }}</strong>
-                <span v-if="providerPath === currentProviderPath" class="engine-active-badge">
+                <strong>{{ providerDisplayName(provider) }}</strong>
+                <span v-if="provider.providerId === currentProviderId" class="engine-active-badge">
                   使用中
                 </span>
               </div>
-              <span class="engine-technical-info">{{ providerTechnicalInfo(providerPath) }}</span>
+              <span class="engine-technical-info">{{ providerTechnicalInfo(provider) }}</span>
             </div>
             <button
               type="button"
               class="spatial-file-delete engine-delete"
               title="删除音效引擎"
-              @click="removeProvider(providerPath)"
+              @click="removeProvider(provider)"
             >
               <Icon :icon="iconTrash" width="15" height="15" />
             </button>
           </div>
 
-          <p v-if="providerDescription(providerPath)" class="engine-description">
-            {{ providerDescription(providerPath) }}
+          <p v-if="providerDescription(provider)" class="engine-description">
+            {{ providerDescription(provider) }}
           </p>
 
           <div class="engine-capabilities" aria-label="引擎能力">
             <span
-              v-for="capability in providerCapabilities(providerPath)"
+              v-for="capability in providerCapabilities(provider)"
               :key="capability"
               class="engine-capability"
             >
@@ -406,24 +385,24 @@ const commitRename = (id: string) => {
           </div>
 
           <div class="engine-card-footer">
-            <span class="engine-file-name" :title="providerPath">
-              {{ providerFileName(providerPath) }}
+            <span class="engine-file-name" :title="provider.path">
+              {{ provider.originalFileName }}
             </span>
             <Button
               variant="outline"
               size="xs"
               type="button"
               @click="
-                providerPath === currentProviderPath
-                  ? deactivateProvider(providerPath)
-                  : activateProvider(providerPath)
+                provider.providerId === currentProviderId
+                  ? deactivateProvider(provider)
+                  : activateProvider(provider)
               "
             >
-              {{ providerPath === currentProviderPath ? '停用' : '启用' }}
+              {{ provider.providerId === currentProviderId ? '停用' : '启用' }}
             </Button>
           </div>
         </article>
-        <div v-if="providerFiles.length === 0" class="spatial-empty">暂无已安装的音效引擎</div>
+        <div v-if="providerRecords.length === 0" class="spatial-empty">暂无已安装的音效引擎</div>
       </div>
       <template #footer>
         <Button variant="outline" size="sm" type="button" @click="importProvider">

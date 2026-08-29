@@ -29,7 +29,10 @@ use windows::Win32::System::Com::{
 };
 use windows::Win32::System::Variant::VT_LPWSTR;
 
-const STABLE_EXCLUSIVE_BUFFER_100NS: i64 = 500_000;
+// GetDevicePeriod is normally available for every WASAPI endpoint. Keep a
+// conservative fallback for broken drivers, but do not clamp a reported
+// period: some exclusive-mode drivers accept only their advertised periods.
+const FALLBACK_EXCLUSIVE_BUFFER_100NS: i64 = 100_000;
 const WASAPI_DEVICE_KEY_PREFIX: &str = "wasapi:";
 const DEVICE_KEY_SEPARATOR: &str = "\u{1f}";
 
@@ -920,10 +923,20 @@ pub(crate) fn wasapi_exclusive_buffer_duration(audio_client: &Audio::IAudioClien
     let result = unsafe {
         audio_client.GetDevicePeriod(Some(&mut default_period), Some(&mut minimum_period))
     };
-    if result.is_ok() && default_period > 0 {
-        default_period.max(STABLE_EXCLUSIVE_BUFFER_100NS)
+    if result.is_ok() {
+        select_wasapi_exclusive_buffer_duration(default_period, minimum_period)
     } else {
-        STABLE_EXCLUSIVE_BUFFER_100NS
+        FALLBACK_EXCLUSIVE_BUFFER_100NS
+    }
+}
+
+fn select_wasapi_exclusive_buffer_duration(default_period: i64, minimum_period: i64) -> i64 {
+    if default_period > 0 {
+        default_period
+    } else if minimum_period > 0 {
+        minimum_period
+    } else {
+        FALLBACK_EXCLUSIVE_BUFFER_100NS
     }
 }
 
@@ -949,6 +962,8 @@ pub(crate) fn wasapi_client_error_message(context: &str, err: &windows::core::Er
         Some("device rejected the exclusive buffer size")
     } else if code == Audio::AUDCLNT_E_BUFFER_SIZE_NOT_ALIGNED {
         Some("device requires an aligned exclusive buffer size")
+    } else if code == Audio::AUDCLNT_E_INVALID_DEVICE_PERIOD {
+        Some("device rejected the exclusive buffer period")
     } else if code == Audio::AUDCLNT_E_ENDPOINT_CREATE_FAILED {
         Some("device endpoint could not be created")
     } else {
@@ -984,6 +999,27 @@ fn default_render_endpoint_id(enumerator: &Audio::IMMDeviceEnumerator) -> Option
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn exclusive_buffer_duration_preserves_the_driver_default_period() {
+        assert_eq!(
+            select_wasapi_exclusive_buffer_duration(100_000, 30_000),
+            100_000
+        );
+        assert_eq!(
+            select_wasapi_exclusive_buffer_duration(2_000_000, 30_000),
+            2_000_000
+        );
+    }
+
+    #[test]
+    fn exclusive_buffer_duration_falls_back_to_minimum_then_safe_default() {
+        assert_eq!(select_wasapi_exclusive_buffer_duration(0, 30_000), 30_000);
+        assert_eq!(
+            select_wasapi_exclusive_buffer_duration(0, 0),
+            FALLBACK_EXCLUSIVE_BUFFER_100NS
+        );
+    }
 
     #[test]
     fn default_device_callback_notifies_only_for_the_playback_role() {

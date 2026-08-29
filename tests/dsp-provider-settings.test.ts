@@ -10,6 +10,7 @@ import {
   parseDspPreset,
   presetControls,
   presetControlValues,
+  providerPresetSupportsSampleRate,
   runtimeMatchesPreset,
   validControlValue,
 } from '../src/shared/dsp-provider-settings.ts';
@@ -219,6 +220,27 @@ test('defaults, visibility and engine/device/preset storage remain independent',
     assert.equal(parseDspPreset(text).presetId, '');
 });
 
+test('preset sample rates trigger negotiation without becoming a UI availability rule', () => {
+  const manifest: DspProviderManifest = {
+    schemaVersion: 1,
+    presets: [
+      { id: 'limited', label: '限定采样率', supportedSampleRates: [44_100, 48_000] },
+      { id: 'flexible', label: '通用' },
+    ],
+  };
+  assert.equal(providerPresetSupportsSampleRate(manifest, '{"presetId":"limited"}', 48_000), true);
+  assert.equal(
+    providerPresetSupportsSampleRate(manifest, '{"presetId":"limited"}', 192_000),
+    false,
+  );
+  assert.equal(
+    providerPresetSupportsSampleRate(manifest, '{"presetId":"flexible"}', 192_000),
+    true,
+  );
+  assert.equal(providerPresetSupportsSampleRate(manifest, '', 192_000), true);
+  assert.equal(providerPresetSupportsSampleRate(manifest, '{"presetId":"limited"}', 0), true);
+});
+
 test('provider-owned controls only; saved __proto__ is data and cannot change prototypes', () => {
   assert.deepEqual(presetControlValues([{ ...controls[0], ownership: 'host' }], ''), {});
   assert.deepEqual(presetControlValues([{ ...controls[0], ownership: 'disabled' }], ''), {});
@@ -258,7 +280,10 @@ test('control schema upgrades add defaults without losing saved values', () => {
   const patch = dspPresetSettingsPatch(state, 'engine', changed);
   const key = dspPresetBankKey('engine', 'headphone', id);
   assert.equal(patch.dspProviderPresetJson, changed);
-  assert.equal(makeDspPresetJson(id, upgradedControls, patch.dspProviderPresetBank?.[key]), changed);
+  assert.equal(
+    makeDspPresetJson(id, upgradedControls, patch.dspProviderPresetBank?.[key]),
+    changed,
+  );
   const defaults = makeDspPresetJson(id, upgradedControls);
   const reset = dspPresetSettingsPatch({ ...state, ...patch }, 'engine', defaults);
   assert.deepEqual(parseDspPreset(reset.dspProviderPresetJson!).controls, {

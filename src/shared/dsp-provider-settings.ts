@@ -176,6 +176,20 @@ export function runtimeMatchesPreset(
   return !!presetId && (state?.presetId ?? state?.effect?.id ?? state?.currentEffect) === presetId;
 }
 
+export function providerPresetSupportsSampleRate(
+  manifest: DspProviderManifest | null,
+  presetJson: string | null | undefined,
+  sampleRate: number | null | undefined,
+): boolean {
+  if (!sampleRate) return true;
+  const { presetId } = parseDspPreset(presetJson ?? '');
+  if (!presetId) return true;
+  const supported = manifest?.presets?.find(
+    (preset) => preset.id === presetId,
+  )?.supportedSampleRates;
+  return !supported?.length || supported.includes(sampleRate);
+}
+
 export function controlVisible(control: DspProviderControl, values: DspControlValues): boolean {
   return (
     !control.visibleWhen ||

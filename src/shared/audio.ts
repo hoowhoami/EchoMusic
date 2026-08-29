@@ -40,6 +40,8 @@ export interface AudioEffectPlaybackOptions {
   impulseResponsePath?: string | null;
   /** Basic DSP only. Providers own their own mixing semantics. */
   impulseResponseMix?: number;
+  /** Internal hand-off: persist the effect now and apply it when the source is rebuilt. */
+  deferUntilReload?: boolean;
 }
 
 export interface DspProviderInspection {
@@ -50,6 +52,15 @@ export interface DspProviderInspection {
   maxChannels: number;
   manifestJson: string;
   stateJson: string;
+}
+
+/** Installed DSP Provider. `providerId` is the logical identity; `path` is runtime-only. */
+export interface DspProviderRecord extends DspProviderInspection {
+  path: string;
+  contentHash: string;
+  originalFileName: string;
+  importedAt: number;
+  legacyPaths?: string[];
 }
 
 const AUDIO_EFFECT_DISPLAY_EXTENSION =

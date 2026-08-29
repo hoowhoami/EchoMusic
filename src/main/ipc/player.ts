@@ -3,16 +3,23 @@ import { app, dialog } from 'electron';
 import fs from 'fs';
 import path from 'path';
 import type { PlayerController } from '../player/controller';
-import type { AudioEffectPlaybackOptions } from '../../shared/audio';
+import type { AudioEffectPlaybackOptions, DspProviderInspection } from '../../shared/audio';
 import type {
   PlayerAudioGraphParameterPatch,
   PlayerAudioGraphPlanPatch,
 } from '../../shared/player-audio-graph';
 import { restartPlayer } from '../player';
+import { DspProviderRegistry } from '../player/dspProviderRegistry';
 
 export type PlayerRef = { current: PlayerController | null };
 
 export function registerPlayerIpc(ref: PlayerRef): void {
+  const providerRoot = path.join(app.getPath('userData'), 'dsp-providers');
+  const providerRegistry = new DspProviderRegistry(providerRoot, async (providerPath) => {
+    const controller = ref.current;
+    if (!controller) throw new Error('播放器未初始化');
+    return (await controller.inspectDspProvider(providerPath)) as DspProviderInspection;
+  });
   ipcRegistry.registerHandler('player:load', async (_e, url: string) => {
     await ref.current?.loadFile(url);
   });
@@ -39,32 +46,51 @@ export function registerPlayerIpc(ref: PlayerRef): void {
     },
   );
 
-  ipcRegistry.registerHandler('player:select-dsp-provider', async () => {
-    const result = await dialog.showOpenDialog({
-      properties: ['openFile'],
-      filters: [{ name: 'EchoMusic 音效引擎', extensions: ['dll', 'dylib', 'so'] }],
-    });
-    if (result.canceled || !result.filePaths[0]) return null;
-    const sourcePath = await fs.promises.realpath(result.filePaths[0]);
-    const providerDirectory = path.join(app.getPath('userData'), 'dsp-providers');
-    await fs.promises.mkdir(providerDirectory, { recursive: true });
-    const targetPath = path.join(providerDirectory, path.basename(sourcePath));
-    if (sourcePath !== targetPath) await fs.promises.copyFile(sourcePath, targetPath);
-    return targetPath;
-  });
+  ipcRegistry.registerHandler(
+    'player:select-dsp-provider',
+    async (_event, mode: 'headphone' | 'speaker' = 'speaker') => {
+      const result = await dialog.showOpenDialog({
+        properties: ['openFile'],
+        filters: [{ name: 'EchoMusic 音效引擎', extensions: ['dll', 'dylib', 'so'] }],
+      });
+      if (result.canceled || !result.filePaths[0]) return null;
+      const sourcePath = await fs.promises.realpath(result.filePaths[0]);
+      const candidate = await providerRegistry.prepareImport(sourcePath);
+      const previous = await providerRegistry.current(candidate.providerId);
+      const controller = ref.current;
+      if (!controller) throw new Error('播放器未初始化');
+      if (previous?.contentHash === candidate.contentHash) {
+        await controller.setAudioEffect({ providerPath: previous.path, providerMode: mode });
+        return previous;
+      }
+      try {
+        const committed = await providerRegistry.commit(candidate, false);
+        await controller.setAudioEffect({ providerPath: candidate.path, providerMode: mode });
+        await providerRegistry.collect(candidate.providerId);
+        return committed;
+      } catch (error) {
+        await providerRegistry.rollback(candidate, previous);
+        throw error;
+      }
+    },
+  );
 
   ipcRegistry.registerHandler('player:list-dsp-providers', async () => {
-    const directory = path.join(app.getPath('userData'), 'dsp-providers');
-    const entries = await fs.promises.readdir(directory, { withFileTypes: true }).catch(() => []);
-    return entries
-      .filter((entry) => entry.isFile() && /\.(dll|dylib|so)$/i.test(entry.name))
-      .map((entry) => path.join(directory, entry.name));
+    return await providerRegistry.list();
   });
   ipcRegistry.registerHandler('player:inspect-dsp-provider', async (_e, providerPath: string) => {
     return (await ref.current?.inspectDspProvider(providerPath)) ?? null;
   });
-  ipcRegistry.registerHandler('player:delete-dsp-provider', async (_e, providerPath: string) => {
-    await ref.current?.deleteDspProvider(providerPath);
+  ipcRegistry.registerHandler('player:delete-dsp-provider', async (_e, providerId: string) => {
+    const controller = ref.current;
+    const installed = await providerRegistry.current(providerId);
+    if (controller) {
+      const graph = await controller.getAudioGraph();
+      if (graph.providerId === providerId || (installed && graph.providerPath === installed.path)) {
+        await controller.setAudioEffect(null);
+      }
+    }
+    await providerRegistry.delete(providerId);
   });
 
   ipcRegistry.registerHandler(

@@ -176,6 +176,37 @@ instead would leave a half-filled buffer, and CoreAudio would play whatever was 
 Apply the same shape to any new platform callback rather than relying on the body being
 panic-free.
 
+### The WASAPI exclusive period is whatever the driver reports
+
+`wasapi_exclusive_buffer_duration` passes `GetDevicePeriod`'s `defaultPeriod` straight through,
+falling back to `minimum_period` and then to `FALLBACK_EXCLUSIVE_BUFFER_100NS` only when the driver
+reports nothing usable. It deliberately does not clamp the value upward.
+
+Clamping to a "safe" minimum looks harmless and is not: exclusive-mode drivers frequently accept
+only their advertised periods, so raising the request to a rounder number gets it rejected with
+`AUDCLNT_E_INVALID_DEVICE_PERIOD`. This matches mpv's `fix_format`, which uses `defaultPeriod`
+verbatim and applies `MPMAX(..., minPeriod)` only to a user-specified period.
+
+The resulting device buffer is 3-10 ms. That is expected and does not shrink the software queue —
+`register_output_device_buffer` only ever raises `output_buffer_target_samples`, which is sized
+from `audio_buffer_secs` (200 ms by default, same as mpv).
+
+### The buffer-alignment retry is the documented MSDN flow, not an API misuse
+
+On `AUDCLNT_E_BUFFER_SIZE_NOT_ALIGNED`, `open_wasapi_output` calls `GetBufferSize` on the client
+whose `Initialize` just failed, then loops to activate a fresh client and re-initialise with the
+aligned frame count.
+
+Calling `GetBufferSize` before a successful `Initialize` normally returns
+`AUDCLNT_E_NOT_INITIALIZED`, so this reads like a bug on inspection. It is not — MSDN defines this
+error as the exception, and the returned size is the required base for the retry. mpv does exactly
+the same (`// According to MSDN, we must use this as base after the failure`), including releasing
+the client before retrying and giving up if the second attempt still reports misalignment.
+
+Retrying once is the intended behaviour. Falling back to `minimum_period` when `GetBufferSize`
+fails would be extra defence for broken drivers, not a correction — do not add it under the belief
+that the current flow is wrong.
+
 The `catch_unwind` in `device/platform_linux.rs` is unrelated — it guards a normal Rust closure in
 `with_pulse_audio_host`, not an FFI callback.
 

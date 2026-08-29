@@ -127,6 +127,7 @@ impl Task for SetAudioEffectTask {
             provider_resource_json,
             provider_mode,
             impulse_response_mix,
+            defer_until_reload,
         ) = parse_audio_effect_payload(&self.payload).map_err(napi::Error::from_reason)?;
         let has_provider_resources = provider_resource_json.is_some();
         let provider_resource_json = provider_path.as_ref().map(|_| {
@@ -165,6 +166,38 @@ impl Task for SetAudioEffectTask {
             return Err(napi::Error::from_reason(
                 "该音效资源需要外部 Provider，当前 Basic DSP 不支持".to_string(),
             ));
+        }
+        if defer_until_reload {
+            return call_core_command("defer-audio-effect", move |runtime| {
+                if runtime.spatial_request_seq != request_seq {
+                    emit_runtime_event(
+                        runtime,
+                        PlayerEvent::log(
+                            "debug",
+                            "stale deferred audio effect ignored".to_string(),
+                        ),
+                    );
+                    return Ok(());
+                }
+                runtime.spatial_file_path = impulse_response_path;
+                runtime.dsp_settings.provider_path = provider_path;
+                runtime.dsp_settings.provider_preset_json = provider_preset_json;
+                runtime.dsp_settings.provider_resource_json = provider_resource_json;
+                runtime.dsp_settings.provider_mode = provider_mode;
+                // The next source load prepares rate-dependent state after it has
+                // negotiated a process format supported by the selected preset.
+                runtime.dsp_settings.spatial = None;
+                runtime.dsp_settings.spatial_mix = impulse_response_mix;
+                update_runtime_audio_graph(runtime);
+                emit_runtime_event(
+                    runtime,
+                    PlayerEvent::log(
+                        "info",
+                        "audio effect queued for process-format rebuild".to_string(),
+                    ),
+                );
+                Ok(())
+            });
         }
         let spatial = match (
             provider_path.is_none(),
@@ -258,11 +291,12 @@ fn parse_audio_effect_payload(
         Option<String>,
         u32,
         f32,
+        bool,
     ),
     String,
 > {
     if payload.is_null() {
-        return Ok((None, None, None, None, 0, 0.5));
+        return Ok((None, None, None, None, 0, 0.5, false));
     }
     let object = payload
         .as_object()
@@ -303,6 +337,11 @@ fn parse_audio_effect_payload(
             .clamp(0.0, 1.0) as f32,
         _ => return Err("invalid impulse response mix".to_string()),
     };
+    let defer_until_reload = match object.get("deferUntilReload") {
+        None | Some(serde_json::Value::Null) => false,
+        Some(serde_json::Value::Bool(value)) => *value,
+        _ => return Err("invalid deferred audio effect flag".to_string()),
+    };
     Ok((
         impulse_response_path,
         provider_path,
@@ -310,6 +349,7 @@ fn parse_audio_effect_payload(
         provider_resource_json,
         provider_mode,
         impulse_response_mix,
+        defer_until_reload,
     ))
 }
 
@@ -365,6 +405,14 @@ mod tests {
         }))
         .expect("payload should default");
         assert_eq!(defaulted.5, 0.5);
+        assert!(!defaulted.6);
+
+        let deferred = parse_audio_effect_payload(&serde_json::json!({
+            "providerPath": "/tmp/provider.dylib",
+            "deferUntilReload": true,
+        }))
+        .expect("deferred payload should parse");
+        assert!(deferred.6);
     }
 
     #[test]

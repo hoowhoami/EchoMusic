@@ -223,6 +223,26 @@ fixed graph semantics rather than runtime-negotiated policies: while a Provider 
 the complete DSP graph, the Host preserves but does not apply its EQ values, and final user volume
 remains in the Host output stage.
 
+## Installed Provider Identity and Versions
+
+The Provider ABI's `providerId` is the cross-platform logical identity. Source filenames and
+absolute paths are never identities: filenames can collide or change, while paths are local
+runtime details required only by `LoadLibrary`/`dlopen`.
+
+Installed binaries are immutable versions addressed by their SHA-256 content hash under a
+directory derived from the full `providerId` hash. Re-importing identical content reuses the
+existing version without another write. Importing different content with the same `providerId`
+creates and validates a candidate version, then advances provider metadata as a rollback-capable
+transaction while activating it. A failed activation restores the previous metadata and binary.
+
+Windows may keep the old and new immutable versions briefly because a loaded DLL cannot be
+unlinked. The Host retries retirement in the background; successful unlink is the release signal
+after `FreeLibrary`. POSIX platforms may unlink an old mapped version immediately. Startup garbage
+collection resumes interrupted retirement after crashes. Enabling, disabling, inspecting, and
+rebuilding an audio graph load an installed immutable version directly and do not create per-instance
+disk shadow copies. Deleting the active Provider first submits a Basic DSP graph, then removes its
+logical metadata immediately; physical binary retirement remains asynchronous.
+
 ## IPC Compatibility
 
 The `setAudioEffect` IPC keeps its existing optional fields. A request without `providerPath` still

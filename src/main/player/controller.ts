@@ -112,11 +112,13 @@ const normalizeAudioEffectPlaybackOptions = async (
       providerResources,
       providerMode: options.providerMode === 'headphone' ? 'headphone' : 'speaker',
       impulseResponsePath,
+      deferUntilReload: options.deferUntilReload === true,
     };
   if (!impulseResponsePath) return null;
   return {
     impulseResponsePath,
     impulseResponseMix: normalizeConvolutionMix(options.impulseResponseMix),
+    deferUntilReload: options.deferUntilReload === true,
   };
 };
 
@@ -341,7 +343,6 @@ interface PlayerAddon {
   setAudioEffect(options: AudioEffectPlaybackOptions | null): Promise<void>;
   getAudioGraph(): Promise<PlayerAudioGraphSnapshot>;
   inspectDspProvider(path: string): Promise<unknown>;
-  deleteDspProvider(path: string): Promise<void>;
   setAudioGraphParameter(patch: PlayerAudioGraphParameterPatch): Promise<void>;
   setAudioGraphPlan(plan: PlayerAudioGraphPlanPatch): Promise<void>;
   setAudioOutput(deviceName: string, exclusive: boolean): Promise<void>;
@@ -600,14 +601,6 @@ export class PlayerController extends EventEmitter {
     const trustedPath = await resolveNativeProviderPath(providerPath);
     if (!trustedPath) throw new Error('Provider 路径无效');
     return await this.getAddonOrThrow().inspectDspProvider(trustedPath);
-  }
-
-  async deleteDspProvider(providerPath: string): Promise<void> {
-    const trustedPath = await resolveNativeProviderPath(providerPath);
-    if (!trustedPath) throw new Error('Provider 路径无效');
-    const graph = await this.getAudioGraph();
-    if (graph.providerPath === trustedPath) await this.setAudioEffect(null);
-    await fs.promises.unlink(trustedPath);
   }
 
   async setAudioGraphParameter(patch: PlayerAudioGraphParameterPatch): Promise<void> {
