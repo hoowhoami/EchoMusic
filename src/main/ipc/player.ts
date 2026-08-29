@@ -10,16 +10,21 @@ import type {
 } from '../../shared/player-audio-graph';
 import { restartPlayer } from '../player';
 import { DspProviderRegistry } from '../player/dspProviderRegistry';
+import log from '../logger';
 
 export type PlayerRef = { current: PlayerController | null };
 
 export function registerPlayerIpc(ref: PlayerRef): void {
   const providerRoot = path.join(app.getPath('userData'), 'dsp-providers');
-  const providerRegistry = new DspProviderRegistry(providerRoot, async (providerPath) => {
-    const controller = ref.current;
-    if (!controller) throw new Error('播放器未初始化');
-    return (await controller.inspectDspProvider(providerPath)) as DspProviderInspection;
-  });
+  const providerRegistry = new DspProviderRegistry(
+    providerRoot,
+    async (providerPath) => {
+      const controller = ref.current;
+      if (!controller) throw new Error('播放器未初始化');
+      return (await controller.inspectDspProvider(providerPath)) as DspProviderInspection;
+    },
+    (message, error) => log.warn(`[DspProviderRegistry] ${message}`, error),
+  );
   ipcRegistry.registerHandler('player:load', async (_e, url: string) => {
     await ref.current?.loadFile(url);
   });
@@ -55,42 +60,57 @@ export function registerPlayerIpc(ref: PlayerRef): void {
       });
       if (result.canceled || !result.filePaths[0]) return null;
       const sourcePath = await fs.promises.realpath(result.filePaths[0]);
-      const candidate = await providerRegistry.prepareImport(sourcePath);
-      const previous = await providerRegistry.current(candidate.providerId);
-      const controller = ref.current;
-      if (!controller) throw new Error('播放器未初始化');
-      if (previous?.contentHash === candidate.contentHash) {
-        await controller.setAudioEffect({ providerPath: previous.path, providerMode: mode });
-        return previous;
-      }
-      try {
-        const committed = await providerRegistry.commit(candidate, false);
-        await controller.setAudioEffect({ providerPath: candidate.path, providerMode: mode });
-        await providerRegistry.collect(candidate.providerId);
-        return committed;
-      } catch (error) {
-        await providerRegistry.rollback(candidate, previous);
-        throw error;
-      }
+      return await providerRegistry.runExclusive(async () => {
+        const candidate = await providerRegistry.prepareImport(sourcePath);
+        const previous = await providerRegistry.current(candidate.providerId);
+        const controller = ref.current;
+        if (!controller) throw new Error('播放器未初始化');
+        if (previous?.contentHash === candidate.contentHash) {
+          await controller.setAudioEffect({ providerPath: previous.path, providerMode: mode });
+          return previous;
+        }
+        try {
+          const committed = await providerRegistry.commit(candidate, false);
+          await controller.setAudioEffect({ providerPath: candidate.path, providerMode: mode });
+          await providerRegistry.collect(candidate.providerId);
+          return committed;
+        } catch (error) {
+          await providerRegistry.rollback(candidate, previous);
+          throw error;
+        }
+      });
     },
   );
 
   ipcRegistry.registerHandler('player:list-dsp-providers', async () => {
-    return await providerRegistry.list();
+    return await providerRegistry.runExclusive(() => providerRegistry.list());
   });
   ipcRegistry.registerHandler('player:inspect-dsp-provider', async (_e, providerPath: string) => {
     return (await ref.current?.inspectDspProvider(providerPath)) ?? null;
   });
   ipcRegistry.registerHandler('player:delete-dsp-provider', async (_e, providerId: string) => {
-    const controller = ref.current;
-    const installed = await providerRegistry.current(providerId);
-    if (controller) {
-      const graph = await controller.getAudioGraph();
-      if (graph.providerId === providerId || (installed && graph.providerPath === installed.path)) {
-        await controller.setAudioEffect(null);
+    await providerRegistry.runExclusive(async () => {
+      const normalizedId = typeof providerId === 'string' ? providerId.trim() : '';
+      if (!normalizedId) throw new Error('Provider ID 无效');
+      const controller = ref.current;
+      const installed = await providerRegistry.current(normalizedId);
+      if (controller) {
+        let graph = null;
+        try {
+          graph = await controller.getAudioGraph();
+        } catch (error) {
+          log.warn('[DspProviderRegistry] 无法读取当前音频图，继续删除逻辑记录', error);
+        }
+        if (
+          graph &&
+          (graph.providerId === normalizedId ||
+            (installed && graph.providerPath === installed.path))
+        ) {
+          await controller.setAudioEffect(null);
+        }
       }
-    }
-    await providerRegistry.delete(providerId);
+      await providerRegistry.delete(normalizedId);
+    });
   });
 
   ipcRegistry.registerHandler(

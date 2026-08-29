@@ -243,6 +243,14 @@ rebuilding an audio graph load an installed immutable version directly and do no
 disk shadow copies. Deleting the active Provider first submits a Basic DSP graph, then removes its
 logical metadata immediately; physical binary retirement remains asynchronous.
 
+Registry metadata is fail-closed for cleanup: a missing `provider.json` identifies an orphan that may
+be collected, while unreadable, malformed, or newer-schema metadata preserves every binary and emits
+a diagnostic. Content hashes must be canonical 64-character lowercase SHA-256 values and every
+retirement path is constrained to its hashed Provider directory. Import, list/migration, and delete
+transactions are serialized in the main process. Legacy flat-file migration runs at most once per app
+process because inspection loads native code. Retirement retries are bounded, deduplicated, and log a
+final failure for the next startup to retry.
+
 ## IPC Compatibility
 
 The `setAudioEffect` IPC keeps its existing optional fields. A request without `providerPath` still

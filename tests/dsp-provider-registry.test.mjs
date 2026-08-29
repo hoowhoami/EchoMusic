@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { mkdtemp, mkdir, readFile, readdir, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -43,11 +44,15 @@ const waitFor = async (predicate) => {
   assert.fail('condition was not satisfied');
 };
 
-const fixture = async (inspectProvider = inspection) => {
+const fixture = async (inspectProvider = inspection, reportIssue) => {
   const workspace = await mkdtemp(join(tmpdir(), 'echo-dsp-registry-'));
   const root = join(workspace, 'dsp-providers');
   await mkdir(root, { recursive: true });
-  return { workspace, root, registry: new DspProviderRegistry(root, inspectProvider) };
+  return {
+    workspace,
+    root,
+    registry: new DspProviderRegistry(root, inspectProvider, reportIssue),
+  };
 };
 
 const sourceFile = async (workspace, directory, name, contents) => {
@@ -56,6 +61,29 @@ const sourceFile = async (workspace, directory, name, contents) => {
   await writeFile(filePath, contents);
   return filePath;
 };
+
+const providerDirectory = (root, providerId) =>
+  join(root, createHash('sha256').update(providerId).digest('hex'));
+
+const metadata = (providerId, contentHash, extension = '.dll') => ({
+  schemaVersion: 1,
+  providerId,
+  current: {
+    contentHash,
+    extension,
+    originalFileName: 'Provider.dll',
+    importedAt: Date.now(),
+    inspection: {
+      providerId,
+      providerVersion: '1',
+      latencyFrames: 0,
+      preferredBlockFrames: 512,
+      maxChannels: 2,
+      manifestJson: '{}',
+      stateJson: '{}',
+    },
+  },
+});
 
 test('providerId is the identity and identical content is stored once', async () => {
   let inspectionCount = 0;
@@ -71,6 +99,12 @@ test('providerId is the identity and identical content is stored once', async ()
   assert.equal(first.providerId, 'engine.alpha');
   assert.equal(first.path, repeated.path);
   assert.equal(inspectionCount, 1);
+  assert.equal(
+    first.contentHash,
+    createHash('sha256')
+      .update(await readFile(first.path))
+      .digest('hex'),
+  );
   assert.notEqual(first.originalFileName, first.path.split('/').at(-1));
   const installed = await registry.list();
   assert.equal(installed.length, 1);
@@ -124,6 +158,29 @@ test('failed activation can roll metadata and files back to the previous version
   assert.equal(await exists(previous.path), true);
 });
 
+test('failed first activation removes only its own valid candidate metadata and file', async () => {
+  const { workspace, registry } = await fixture();
+  const source = await sourceFile(workspace, 'first', 'Provider.dll', 'engine.first-failure|1');
+  const candidate = await registry.prepareImport(source);
+  await registry.commit(candidate, false);
+  await registry.rollback(candidate, null);
+
+  assert.equal(await registry.current(candidate.providerId), null);
+  await waitFor(async () => !(await exists(candidate.path)));
+});
+
+test('rollback preserves a candidate if its metadata became unreadable', async () => {
+  const { workspace, registry } = await fixture(inspection, () => undefined);
+  const source = await sourceFile(workspace, 'first', 'Provider.dll', 'engine.rollback-corrupt|1');
+  const candidate = await registry.prepareImport(source);
+  await registry.commit(candidate, false);
+  await writeFile(join(dirname(candidate.path), 'provider.json'), '{corrupt');
+  await registry.rollback(candidate, null);
+
+  assert.equal(await exists(candidate.path), true);
+  assert.equal(await exists(join(dirname(candidate.path), 'provider.json')), true);
+});
+
 test('legacy flat files migrate and remain resolvable from their saved path', async () => {
   const { root, registry } = await fixture();
   const legacyPath = join(root, 'LegacyName.dll');
@@ -157,4 +214,106 @@ test('startup garbage collection retires an interrupted orphan version', async (
   const registry = new DspProviderRegistry(root, inspection);
   await registry.current('missing-provider');
   await waitFor(async () => !(await exists(orphan)));
+});
+
+test('corrupt and unsupported metadata preserve every provider binary and report once', async () => {
+  const workspace = await mkdtemp(join(tmpdir(), 'echo-dsp-registry-'));
+  const root = join(workspace, 'dsp-providers');
+  const corruptDirectory = providerDirectory(root, 'engine.corrupt');
+  const futureDirectory = providerDirectory(root, 'engine.future');
+  const corruptBinary = join(corruptDirectory, `${'a'.repeat(64)}.dll`);
+  const futureBinary = join(futureDirectory, `${'b'.repeat(64)}.dll`);
+  await mkdir(corruptDirectory, { recursive: true });
+  await mkdir(futureDirectory, { recursive: true });
+  await writeFile(corruptBinary, 'corrupt-binary');
+  await writeFile(futureBinary, 'future-binary');
+  await writeFile(join(corruptDirectory, 'provider.json'), '{truncated');
+  await writeFile(
+    join(futureDirectory, 'provider.json'),
+    JSON.stringify({ ...metadata('engine.future', 'b'.repeat(64)), schemaVersion: 2 }),
+  );
+  const reports = [];
+  const registry = new DspProviderRegistry(root, inspection, (message) => reports.push(message));
+
+  assert.deepEqual(await registry.list(), []);
+  assert.deepEqual(await registry.list(), []);
+  assert.equal(await exists(corruptBinary), true);
+  assert.equal(await exists(futureBinary), true);
+  assert.equal(reports.filter((message) => message.includes('已保留目录')).length, 2);
+});
+
+test('malicious content hashes and non-string provider IDs cannot escape the registry root', async () => {
+  const workspace = await mkdtemp(join(tmpdir(), 'echo-dsp-registry-'));
+  const root = join(workspace, 'dsp-providers');
+  const providerId = 'engine.malicious';
+  const directory = providerDirectory(root, providerId);
+  const victim = join(workspace, 'victim.dll');
+  await mkdir(directory, { recursive: true });
+  await writeFile(victim, 'keep-me');
+  await writeFile(
+    join(directory, 'provider.json'),
+    JSON.stringify(metadata(providerId, '../../../../victim')),
+  );
+  const registry = new DspProviderRegistry(root, inspection, () => undefined);
+
+  assert.deepEqual(await registry.list(), []);
+  assert.equal(await exists(victim), true);
+  await assert.rejects(
+    registry.discard({
+      ...metadata(providerId, '../../../../victim').current.inspection,
+      path: victim,
+      contentHash: '../../../../victim',
+      originalFileName: 'Provider.dll',
+      importedAt: Date.now(),
+    }),
+    /身份或内容哈希无效/u,
+  );
+  await assert.rejects(registry.current(42), /Provider ID 无效/u);
+  assert.equal(await exists(victim), true);
+});
+
+test('import transactions are serialized across every await boundary', async () => {
+  const { registry } = await fixture();
+  const events = [];
+  let releaseFirst;
+  const firstGate = new Promise((resolve) => {
+    releaseFirst = resolve;
+  });
+  const first = registry.runExclusive(async () => {
+    events.push('first:start');
+    await firstGate;
+    events.push('first:end');
+  });
+  const second = registry.runExclusive(async () => {
+    events.push('second:start');
+    events.push('second:end');
+  });
+
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(events, ['first:start']);
+  releaseFirst();
+  await Promise.all([first, second]);
+  assert.deepEqual(events, ['first:start', 'first:end', 'second:start', 'second:end']);
+});
+
+test('an invalid legacy binary is inspected only once per process', async () => {
+  const workspace = await mkdtemp(join(tmpdir(), 'echo-dsp-registry-'));
+  const root = join(workspace, 'dsp-providers');
+  const legacyPath = join(root, 'Unknown.dll');
+  await mkdir(root, { recursive: true });
+  await writeFile(legacyPath, 'not-a-provider');
+  let inspectionCount = 0;
+  const registry = new DspProviderRegistry(
+    root,
+    async () => {
+      inspectionCount += 1;
+      throw new Error('invalid binary');
+    },
+    () => undefined,
+  );
+
+  await registry.list();
+  await registry.list();
+  assert.equal(inspectionCount, 1);
+  assert.equal(await exists(legacyPath), true);
 });

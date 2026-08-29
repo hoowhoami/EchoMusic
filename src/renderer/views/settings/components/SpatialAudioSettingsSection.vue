@@ -17,6 +17,7 @@ const settingStore = useSettingStore();
 const playerStore = usePlayerStore();
 const toastStore = useToastStore();
 const importing = ref(false);
+const importingProvider = ref(false);
 const showFileDialog = ref(false);
 const showProviderDialog = ref(false);
 const activeFileTab = ref<string>('local');
@@ -125,6 +126,8 @@ const importFiles = async () => {
 };
 
 const importProvider = async () => {
+  if (importingProvider.value) return;
+  importingProvider.value = true;
   try {
     const provider = await window.electron.player.selectDspProvider('speaker');
     if (!provider) return;
@@ -133,6 +136,8 @@ const importProvider = async () => {
     toastStore.success('音效引擎已导入并启用');
   } catch (error) {
     toastStore.warning(`音效引擎导入失败: ${String(error)}`);
+  } finally {
+    importingProvider.value = false;
   }
 };
 
@@ -185,7 +190,7 @@ const removeProvider = async (provider: DspProviderRecord) => {
       settingStore.disableDspProvider();
     }
     await refreshProviders();
-    toastStore.success('音效引擎已删除');
+    toastStore.success('音效引擎已删除，文件将在引擎释放后完成清理');
   } catch (error) {
     toastStore.warning(`音效引擎删除失败: ${String(error)}`);
   }
@@ -405,7 +410,13 @@ const commitRename = (id: string) => {
         <div v-if="providerRecords.length === 0" class="spatial-empty">暂无已安装的音效引擎</div>
       </div>
       <template #footer>
-        <Button variant="outline" size="sm" type="button" @click="importProvider">
+        <Button
+          variant="outline"
+          size="sm"
+          type="button"
+          :disabled="importingProvider"
+          @click="importProvider"
+        >
           <Icon :icon="iconPlus" width="14" height="14" class="mr-1" />
           导入音效引擎
         </Button>
