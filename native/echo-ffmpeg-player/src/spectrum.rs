@@ -5,8 +5,10 @@ use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 const SPECTRUM_FFT_SIZE: usize = 2048;
-const SPECTRUM_FLOOR_DB: f64 = -80.0;
-const SPECTRUM_CEILING_DB: f64 = -12.0;
+const SPECTRUM_FLOOR_DB: f64 = -74.0;
+// Keep the pre-calibration visual threshold: a 0.5-amplitude bin-centered sine is near full scale.
+const SPECTRUM_CEILING_DB: f64 = -6.0;
+const HANN_COHERENT_GAIN: f64 = 0.5;
 
 #[derive(Debug)]
 pub struct SampleRing {
@@ -41,7 +43,15 @@ impl SampleRing {
         self.filled = false;
     }
 
+    #[cfg(test)]
     pub fn latest(&self, count: usize) -> Vec<f32> {
+        let mut output = Vec::with_capacity(count.min(self.samples.len()));
+        self.latest_into(count, &mut output);
+        output
+    }
+
+    pub fn latest_into(&self, count: usize, output: &mut Vec<f32>) {
+        output.clear();
         let available = if self.filled {
             self.samples.len()
         } else {
@@ -49,12 +59,15 @@ impl SampleRing {
         };
         let count = count.min(available);
         if count == 0 {
-            return vec![];
+            return;
         }
         let start = (self.cursor + self.samples.len() - count) % self.samples.len();
-        (0..count)
-            .map(|index| self.samples[(start + index) % self.samples.len()])
-            .collect()
+        let first_count = count.min(self.samples.len() - start);
+        output.extend_from_slice(&self.samples[start..start + first_count]);
+        let remaining = count - first_count;
+        if remaining > 0 {
+            output.extend_from_slice(&self.samples[..remaining]);
+        }
     }
 }
 
@@ -75,6 +88,7 @@ pub struct SpectrumAnalyzer {
     previous: Vec<f64>,
     fft: Arc<dyn Fft<f32>>,
     buffer: Vec<Complex32>,
+    snapshot: Vec<f32>,
 }
 
 impl SpectrumAnalyzer {
@@ -86,14 +100,31 @@ impl SpectrumAnalyzer {
             config,
             fft,
             buffer: vec![Complex32::ZERO; SPECTRUM_FFT_SIZE],
+            snapshot: Vec::with_capacity(SPECTRUM_FFT_SIZE),
         }
     }
 
+    #[cfg(test)]
     pub fn analyze(&mut self, ring: &SampleRing, sample_rate: u32) -> SpectrumFrame {
-        let window = ring.latest(SPECTRUM_FFT_SIZE);
+        self.snapshot_ring(ring);
+        self.analyze_snapshot(sample_rate)
+    }
+
+    pub fn snapshot_ring(&mut self, ring: &SampleRing) {
+        ring.latest_into(SPECTRUM_FFT_SIZE, &mut self.snapshot);
+    }
+
+    pub fn analyze_snapshot(&mut self, sample_rate: u32) -> SpectrumFrame {
+        let snapshot = std::mem::take(&mut self.snapshot);
+        let frame = self.analyze_samples(&snapshot, sample_rate);
+        self.snapshot = snapshot;
+        frame
+    }
+
+    pub fn analyze_samples(&mut self, window: &[f32], sample_rate: u32) -> SpectrumFrame {
         let mut bins = vec![0.0; self.config.bands];
         if !window.is_empty() {
-            self.prepare_fft_buffer(&window);
+            self.prepare_fft_buffer(window);
             self.fft.process(&mut self.buffer);
             for (bin, value) in bins.iter_mut().enumerate() {
                 let magnitude = self.band_magnitude(bin, sample_rate);
@@ -149,10 +180,14 @@ impl SpectrumAnalyzer {
         let max_bin = (SPECTRUM_FFT_SIZE / 2).saturating_sub(1);
         let mut magnitude = 0.0f64;
         for index in start.min(max_bin)..=end.min(max_bin) {
-            let value = self.buffer[index].norm() as f64 / (SPECTRUM_FFT_SIZE as f64 * 0.5);
+            let value = self.fft_bin_amplitude(index);
             magnitude = magnitude.max(value);
         }
         magnitude_to_unit(magnitude)
+    }
+
+    fn fft_bin_amplitude(&self, index: usize) -> f64 {
+        self.buffer[index].norm() as f64 / (SPECTRUM_FFT_SIZE as f64 * HANN_COHERENT_GAIN * 0.5)
     }
 
     fn band_frequency_range(&self, bin: usize) -> (f64, f64) {
@@ -203,6 +238,19 @@ mod tests {
     }
 
     #[test]
+    fn sample_ring_latest_into_reuses_capacity_across_wrap() {
+        let mut ring = SampleRing::new(4);
+        ring.push_interleaved(&[1.0, 2.0, 3.0, 4.0, 5.0], 1);
+        let mut output = Vec::with_capacity(4);
+        let capacity = output.capacity();
+
+        ring.latest_into(4, &mut output);
+
+        assert_eq!(output, vec![2.0, 3.0, 4.0, 5.0]);
+        assert_eq!(output.capacity(), capacity);
+    }
+
+    #[test]
     fn analyzer_outputs_nonzero_bins_for_tone() {
         let sample_rate = 48_000;
         let mut ring = SampleRing::new(SPECTRUM_FFT_SIZE);
@@ -227,5 +275,35 @@ mod tests {
         assert!(frame.peak > 0.4);
         assert!(frame.rms > 0.2);
         assert!(frame.bins.iter().any(|value| *value > 0.2));
+    }
+
+    #[test]
+    fn hann_window_reports_bin_centered_tone_amplitude() {
+        let mut analyzer = SpectrumAnalyzer::new(SpectrumConfig::default());
+        let bin = 43usize;
+        let amplitude = 0.5f32;
+        let window = (0..SPECTRUM_FFT_SIZE)
+            .map(|index| {
+                let phase = 2.0 * std::f32::consts::PI * bin as f32 * index as f32
+                    / SPECTRUM_FFT_SIZE as f32;
+                phase.sin() * amplitude
+            })
+            .collect::<Vec<_>>();
+
+        analyzer.prepare_fft_buffer(&window);
+        analyzer.fft.process(&mut analyzer.buffer);
+
+        assert!((analyzer.fft_bin_amplitude(bin) - f64::from(amplitude)).abs() < 0.002);
+        assert!(magnitude_to_unit(f64::from(amplitude)) > 0.99);
+        assert!(magnitude_to_unit(f64::from(amplitude) * 0.5) < 0.95);
+    }
+
+    #[test]
+    fn calibrated_spectrum_keeps_the_pre_compensation_visual_range() {
+        let floor_magnitude = 10.0_f64.powf(SPECTRUM_FLOOR_DB / 20.0);
+        let ceiling_magnitude = 10.0_f64.powf(SPECTRUM_CEILING_DB / 20.0);
+
+        assert!(magnitude_to_unit(floor_magnitude).abs() < f64::EPSILON);
+        assert!((magnitude_to_unit(ceiling_magnitude) - 1.0).abs() < f64::EPSILON);
     }
 }

@@ -1,21 +1,44 @@
 use crate::audio_graph::{process_format_for_output, AudioFilterGraph};
 use crate::shared::{FilterInput, SharedAudio};
+use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 
 #[cfg(test)]
 pub fn spawn_filter_thread(shared: Arc<SharedAudio>) -> JoinHandle<()> {
-    spawn_filter_thread_with_graph(shared, None)
+    spawn_filter_thread_with_graph(shared, None).expect("filter test worker should spawn")
 }
 
 pub fn spawn_filter_thread_with_graph(
     shared: Arc<SharedAudio>,
     initial_graph: Option<AudioFilterGraph>,
-) -> JoinHandle<()> {
+) -> Result<JoinHandle<()>, String> {
+    let panic_shared = shared.clone();
     thread::Builder::new()
         .name("player-filter".to_string())
-        .spawn(move || run_filter(shared, initial_graph))
-        .expect("failed to spawn player filter thread")
+        .spawn(move || {
+            if let Err(payload) =
+                catch_unwind(AssertUnwindSafe(|| run_filter(shared, initial_graph)))
+            {
+                panic_shared.mark_decode_failed();
+                crate::decoder::emit_decode_error(
+                    &panic_shared,
+                    format!(
+                        "filter worker panicked: {}",
+                        panic_payload_message(payload.as_ref())
+                    ),
+                );
+            }
+        })
+        .map_err(|err| format!("failed to spawn player filter thread: {err}"))
+}
+
+fn panic_payload_message(payload: &(dyn std::any::Any + Send)) -> &str {
+    payload
+        .downcast_ref::<&str>()
+        .copied()
+        .or_else(|| payload.downcast_ref::<String>().map(String::as_str))
+        .unwrap_or("unknown panic payload")
 }
 
 fn run_filter(shared: Arc<SharedAudio>, initial_graph: Option<AudioFilterGraph>) {
@@ -100,7 +123,7 @@ fn run_filter(shared: Arc<SharedAudio>, initial_graph: Option<AudioFilterGraph>)
                     }
                 };
                 shared.set_filter_latency_secs(graph.latency_secs());
-                push_filter_output(&shared, &mut output, source_frames, generation);
+                push_filter_output(&shared, &mut output, source_frames, decode_generation);
             }
             FilterInput::Boundary => {
                 if let Err(err) = graph.reset(shared.mix_format, &shared.dsp_settings()) {
@@ -123,7 +146,7 @@ fn run_filter(shared: Arc<SharedAudio>, initial_graph: Option<AudioFilterGraph>)
                     }
                 };
                 shared.set_filter_latency_secs(graph.latency_secs());
-                push_filter_output(&shared, &mut output, source_frames, generation);
+                push_filter_output(&shared, &mut output, source_frames, decode_generation);
                 if shared.is_filter_generation_current(generation) {
                     shared.mark_eof();
                 }
@@ -138,15 +161,15 @@ fn push_filter_output(
     shared: &SharedAudio,
     output: &mut Vec<f32>,
     source_frames: u64,
-    generation: u64,
+    decode_generation: u64,
 ) -> bool {
-    if output.is_empty() || !shared.is_filter_generation_current(generation) {
+    if output.is_empty() {
         return true;
     }
-    shared.push_output_samples_with_source_frames_for_filter_generation(
+    shared.push_output_samples_with_source_frames_for_decode_generation(
         output,
         source_frames,
-        generation,
+        decode_generation,
     )
 }
 

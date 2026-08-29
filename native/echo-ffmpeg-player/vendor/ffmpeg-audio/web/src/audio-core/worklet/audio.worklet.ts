@@ -2,9 +2,19 @@ import "./polyfill.ts";
 import { type AudioReader, createAudioReader } from "../queue";
 import { getErrorMessage } from "../utils";
 import type { WorkletCommand, WorkletEvent } from "./types";
-import initWasm, { SoundTouchProcessor } from "./wasm/soundtouch";
+import initWasm, {
+	SoundTouchProcessor,
+	StretchAlgorithm,
+} from "./wasm/soundtouch";
 
 const WORKLET_BLOCK_SIZE = 128;
+
+function parseStretchAlgorithm(algo?: string): StretchAlgorithm {
+	if (algo === "spectral") {
+		return StretchAlgorithm.Spectral;
+	}
+	return StretchAlgorithm.Wsola;
+}
 
 class FFmpegAudioProcessor extends AudioWorkletProcessor {
 	private audioReader: AudioReader | null = null;
@@ -38,6 +48,7 @@ class FFmpegAudioProcessor extends AudioWorkletProcessor {
 					tempo,
 					pitch,
 					rate,
+					algorithm,
 				} = data.payload;
 
 				try {
@@ -47,7 +58,12 @@ class FFmpegAudioProcessor extends AudioWorkletProcessor {
 					const wasmInstance = await initWasm({ module_or_path: wasmBytes });
 					this.wasmMemory = wasmInstance.memory;
 
-					this.stProcessor = new SoundTouchProcessor(channels, sampleRate);
+					const algoEnum = parseStretchAlgorithm(algorithm);
+					this.stProcessor = new SoundTouchProcessor(
+						channels,
+						sampleRate,
+						algoEnum,
+					);
 
 					this.stProcessor.setTempo(tempo);
 					this.stProcessor.setPitch(pitch);
@@ -79,6 +95,19 @@ class FFmpegAudioProcessor extends AudioWorkletProcessor {
 			} else if (data.type === "SET_RATE" && this.stProcessor) {
 				this.stProcessor.setRate(data.payload.rate);
 				this.currentRate = data.payload.rate;
+			} else if (data.type === "SET_ALGORITHM" && this.stProcessor) {
+				const algoEnum = parseStretchAlgorithm(data.payload.algorithm);
+				if (this.audioReader) {
+					this.audioReader.rewindReadIndexToPlayback();
+				}
+				this.stProcessor.setAlgorithm(algoEnum);
+				this.inputChunkSize = this.stProcessor.getInputChunkSize();
+				this.playbackFractional = 0.0;
+			} else if (data.type === "SET_FORMANT" && this.stProcessor) {
+				this.stProcessor.setFormantFactor(
+					data.payload.factor,
+					data.payload.compensatePitch,
+				);
 			} else if (data.type === "DESTROY") {
 				if (this.stProcessor) {
 					this.stProcessor.free();

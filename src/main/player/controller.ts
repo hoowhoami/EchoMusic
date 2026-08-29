@@ -223,6 +223,8 @@ const getPersistedNativeAudioConfig = () => {
 interface PlayerAddonEvent {
   event: string;
   eventId?: number;
+  droppedEvents?: number;
+  droppedCriticalEvents?: number;
   trackSeq?: number;
   generation?: number;
   time?: number;
@@ -392,6 +394,8 @@ export class PlayerController extends EventEmitter {
   private lastAoStateLogAt = 0;
   private lastAoStateLogKey = '';
   private lastOutputBufferLogKey = '';
+  private lastNativeDroppedEvents = 0;
+  private lastNativeDroppedCriticalEvents = 0;
   private state: PlayerState = {
     playing: false,
     paused: true,
@@ -462,6 +466,8 @@ export class PlayerController extends EventEmitter {
     this.lastAoStateLogAt = 0;
     this.lastAoStateLogKey = '';
     this.lastOutputBufferLogKey = '';
+    this.lastNativeDroppedEvents = 0;
+    this.lastNativeDroppedCriticalEvents = 0;
   }
 
   async loadFile(url: string): Promise<void> {
@@ -751,6 +757,7 @@ export class PlayerController extends EventEmitter {
   }
 
   private handleAddonEvent(event: PlayerAddonEvent): void {
+    this.observeNativeEventDelivery(event);
     if (!this.shouldAcceptAddonEvent(event)) return;
     this.rememberAcceptedAddonEventContext(event);
 
@@ -919,6 +926,42 @@ export class PlayerController extends EventEmitter {
                 : 'info'
         ]('[PlayerController]', event.message || '');
         break;
+    }
+  }
+
+  private observeNativeEventDelivery(event: PlayerAddonEvent): void {
+    const eventId = Number(event.eventId);
+    const droppedEvents = Number(event.droppedEvents);
+    const droppedCriticalEvents = Number(event.droppedCriticalEvents);
+    const hasNewDrops =
+      Number.isFinite(droppedEvents) && droppedEvents > this.lastNativeDroppedEvents;
+    const hasNewCriticalDrops =
+      Number.isFinite(droppedCriticalEvents) &&
+      droppedCriticalEvents > this.lastNativeDroppedCriticalEvents;
+
+    if (hasNewDrops) {
+      log[hasNewCriticalDrops ? 'error' : 'warn'](
+        '[PlayerController]',
+        hasNewCriticalDrops
+          ? 'native audio event delivery dropped critical messages'
+          : 'native audio event delivery dropped telemetry messages',
+        {
+          eventId: Number.isFinite(eventId) ? eventId : undefined,
+          droppedEvents: Number.isFinite(droppedEvents) ? droppedEvents : undefined,
+          droppedCriticalEvents: Number.isFinite(droppedCriticalEvents)
+            ? droppedCriticalEvents
+            : undefined,
+        },
+      );
+    }
+    if (Number.isFinite(droppedEvents) && droppedEvents >= 0) {
+      this.lastNativeDroppedEvents = Math.max(this.lastNativeDroppedEvents, droppedEvents);
+    }
+    if (Number.isFinite(droppedCriticalEvents) && droppedCriticalEvents >= 0) {
+      this.lastNativeDroppedCriticalEvents = Math.max(
+        this.lastNativeDroppedCriticalEvents,
+        droppedCriticalEvents,
+      );
     }
   }
 

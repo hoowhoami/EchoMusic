@@ -7,6 +7,7 @@ use coreaudio_sys as ca;
 use objc2_core_audio_types::{AudioBufferList, AudioValueRange};
 use std::ffi::{c_char, c_void, CStr};
 use std::mem;
+use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{sync_channel, SyncSender};
 use std::sync::Arc;
@@ -20,6 +21,11 @@ const COREAUDIO_FORMAT_FLAG_IS_BIG_ENDIAN: u32 = 1 << 1;
 const COREAUDIO_FORMAT_FLAG_IS_ALIGNED_HIGH: u32 = 1 << 4;
 const FALLBACK_SAMPLE_RATE: u32 = 48_000;
 const K_CF_STRING_ENCODING_UTF8: u32 = 0x0800_0100;
+
+/// Contains Rust panics before they can unwind through a CoreAudio C callback boundary.
+pub(crate) fn run_coreaudio_callback(callback: impl FnOnce()) -> bool {
+    catch_unwind(AssertUnwindSafe(callback)).is_ok()
+}
 
 type CFStringRef = *const c_void;
 type CFIndex = isize;
@@ -1004,11 +1010,13 @@ extern "C" fn coreaudio_device_listener(
     _addresses: *const ca::AudioObjectPropertyAddress,
     context: *mut c_void,
 ) -> i32 {
-    if context.is_null() {
-        return 0;
-    }
-    let context = unsafe { &*(context as *const CoreAudioListenerContext) };
-    let _ = context.sender.try_send(());
+    let _ = run_coreaudio_callback(|| {
+        if context.is_null() {
+            return;
+        }
+        let context = unsafe { &*(context as *const CoreAudioListenerContext) };
+        let _ = context.sender.try_send(());
+    });
     0
 }
 
@@ -1018,21 +1026,34 @@ extern "C" fn coreaudio_exclusive_change_listener(
     _addresses: *const ca::AudioObjectPropertyAddress,
     context: *mut c_void,
 ) -> i32 {
-    if context.is_null() {
-        return 0;
-    }
-    let context = unsafe { &*(context as *const CoreAudioExclusiveChangeContext) };
-    let should_reload = coreaudio_stream_format(context.device_id)
-        .map(|format| format != context.expected_format)
-        .unwrap_or(true);
-    if should_reload {
-        crate::request_output_recovery(
-            context.shared.clone(),
-            "device-changed",
-            "CoreAudio exclusive device or stream format changed".to_string(),
-        );
-    }
+    let _ = run_coreaudio_callback(|| {
+        if context.is_null() {
+            return;
+        }
+        let context = unsafe { &*(context as *const CoreAudioExclusiveChangeContext) };
+        let should_reload = coreaudio_stream_format(context.device_id)
+            .map(|format| format != context.expected_format)
+            .unwrap_or(true);
+        if should_reload {
+            crate::request_output_recovery(
+                context.shared.clone(),
+                "device-changed",
+                "CoreAudio exclusive device or stream format changed".to_string(),
+            );
+        }
+    });
     0
+}
+
+#[cfg(test)]
+mod callback_tests {
+    use super::run_coreaudio_callback;
+
+    #[test]
+    fn coreaudio_callback_guard_contains_panics() {
+        assert!(run_coreaudio_callback(|| {}));
+        assert!(!run_coreaudio_callback(|| panic!("callback panic")));
+    }
 }
 
 fn all_audio_devices() -> Option<Vec<ca::AudioDeviceID>> {
@@ -1083,7 +1104,7 @@ fn has_output_streams(id: ca::AudioDeviceID) -> bool {
         {
             return false;
         }
-        let mut buffer = Vec::<u8>::with_capacity(size as usize);
+        let mut buffer = vec![0u8; size as usize];
         let list = buffer.as_mut_ptr().cast::<AudioBufferList>();
         if ca::AudioObjectGetPropertyData(id, &address, 0, std::ptr::null(), &mut size, list.cast())
             != 0

@@ -1,11 +1,10 @@
 use super::*;
-use std::sync::mpsc::{channel, sync_channel, Receiver};
+use std::sync::mpsc::{sync_channel, Receiver, TryRecvError};
+use std::thread;
 use std::time::Duration;
 
-fn bind_test_signal_senders(
-    shared: &SharedAudio,
-) -> (Receiver<PlaybackSignal>, Receiver<PlaybackSignal>) {
-    let (control_tx, control_rx) = channel();
+fn bind_test_signal_senders(shared: &SharedAudio) -> (Receiver<()>, Receiver<PlaybackSignal>) {
+    let (control_tx, control_rx) = sync_channel(16);
     let (telemetry_tx, telemetry_rx) = sync_channel(16);
     shared
         .bind_signal_senders(control_tx, telemetry_tx)
@@ -281,12 +280,13 @@ fn playback_restart_is_emitted_when_restart_audio_is_ready() {
         8.0,
         &DspSettings::default(),
     );
-    let (rx, _telemetry_rx) = bind_test_signal_senders(&shared);
+    let (wake_rx, _telemetry_rx) = bind_test_signal_senders(&shared);
     shared.mark_playback_restart_ready(1.0);
 
+    assert_eq!(wake_rx.try_recv(), Ok(()));
     assert!(matches!(
-        rx.try_recv(),
-        Ok(PlaybackSignal::PlaybackRestart(position)) if (position - 1.0).abs() < f64::EPSILON
+        shared.take_pending_control_signal(),
+        Some(PlaybackSignal::PlaybackRestart(position)) if (position - 1.0).abs() < f64::EPSILON
     ));
     assert!(shared.push_samples(&[0.1, 0.2, 0.3, 0.4]));
     let mut output = [0.0f32; 4];
@@ -474,20 +474,22 @@ fn reset_for_decode_resume_publishes_buffering_progress_when_audio_arrives() {
         8.0,
         &DspSettings::default(),
     );
-    let (_control_rx, rx) = bind_test_signal_senders(&shared);
+    let (control_rx, _telemetry_rx) = bind_test_signal_senders(&shared);
     shared.reset_for_decode_resume(1.0, &DspSettings::default());
 
     let mut output = [1.0f32; 4];
     assert_eq!(shared.pop_into(&mut output), 0);
+    assert_eq!(control_rx.try_recv(), Ok(()));
     assert!(matches!(
-        rx.try_recv(),
-        Ok(PlaybackSignal::AoState { paused: true, .. })
+        shared.take_pending_control_signal(),
+        Some(PlaybackSignal::AoState { paused: true, .. })
     ));
 
     assert!(shared.push_samples(&[0.1; 20]));
+    assert_eq!(control_rx.try_recv(), Ok(()));
     assert!(matches!(
-        rx.try_recv(),
-        Ok(PlaybackSignal::AoState { paused: true, .. })
+        shared.take_pending_control_signal(),
+        Some(PlaybackSignal::AoState { paused: true, .. })
     ));
 }
 
@@ -499,9 +501,9 @@ fn signal_sender_rejects_duplicate_binding() {
         8.0,
         &DspSettings::default(),
     );
-    let (first_control, _first_control_rx) = channel();
+    let (first_control, _first_control_rx) = sync_channel(1);
     let (first_telemetry, _first_telemetry_rx) = sync_channel(1);
-    let (second_control, _second_control_rx) = channel();
+    let (second_control, _second_control_rx) = sync_channel(1);
     let (second_telemetry, _second_telemetry_rx) = sync_channel(1);
 
     assert!(shared
@@ -521,60 +523,198 @@ fn control_signal_is_not_blocked_by_full_telemetry_queue() {
         8.0,
         &DspSettings::default(),
     );
-    let (control_tx, control_rx) = channel();
+    let (control_tx, control_rx) = sync_channel(1);
     let (telemetry_tx, _telemetry_rx) = sync_channel(1);
     shared
         .bind_signal_senders(control_tx, telemetry_tx)
         .expect("signal senders should bind once");
 
-    shared.notify_signal(PlaybackSignal::PacketCacheStats(PacketCacheStats::default()));
-    shared.notify_signal(PlaybackSignal::PacketCacheStats(PacketCacheStats::default()));
-    shared.notify_signal(PlaybackSignal::TrackSwitch(TrackSwitchInfo {
-        url: "next.flac".to_string(),
-        audio_stream_ordinal: None,
-        seq: 9,
-        duration: 2.0,
-    }));
+    shared.update_packet_cache_stats(PacketCacheStats::default());
+    let mut changed = PacketCacheStats::default();
+    changed.eof = true;
+    shared.update_packet_cache_stats(changed);
+    shared.notify_playback_end();
 
-    assert!(matches!(
-        control_rx.try_recv(),
-        Ok(PlaybackSignal::TrackSwitch(TrackSwitchInfo { seq: 9, .. }))
-    ));
+    assert_eq!(control_rx.try_recv(), Ok(()));
+    assert_eq!(
+        shared.take_pending_control_signal(),
+        Some(PlaybackSignal::PlaybackEnd)
+    );
 }
 
 #[test]
-fn ao_resume_is_not_dropped_by_full_telemetry_queue() {
+fn latest_ao_state_is_not_dropped_or_reordered_by_full_telemetry_queue() {
     let shared = SharedAudio::new(
         MixFormat::stereo_f32(100),
         0.2,
         8.0,
         &DspSettings::default(),
     );
-    let (control_tx, control_rx) = channel();
+    let (control_tx, control_rx) = sync_channel(1);
     let (telemetry_tx, _telemetry_rx) = sync_channel(1);
     shared
         .bind_signal_senders(control_tx, telemetry_tx)
         .expect("signal senders should bind once");
 
-    shared.notify_signal(PlaybackSignal::AoState {
-        paused: true,
-        reason: "preroll",
-        buffering_state: 95.0,
-        buffered_secs: 0.19,
-        target_secs: 0.2,
-    });
-    shared.notify_signal(PlaybackSignal::AoState {
-        paused: false,
-        reason: "preroll",
-        buffering_state: 100.0,
-        buffered_secs: 0.2,
-        target_secs: 0.2,
-    });
+    shared.notify_ao_state(true, "preroll", 95.0, 0.19, 0.2);
+    shared.notify_ao_state(false, "preroll", 100.0, 0.2, 0.2);
+
+    assert_eq!(control_rx.try_recv(), Ok(()));
+    assert!(matches!(
+        shared.take_pending_control_signal(),
+        Some(PlaybackSignal::AoState { paused: false, .. })
+    ));
+}
+
+#[test]
+fn ao_state_writer_contention_preserves_the_inflight_snapshot() {
+    let shared = SharedAudio::new(
+        MixFormat::stereo_f32(100),
+        0.2,
+        8.0,
+        &DspSettings::default(),
+    );
+
+    // Model one publisher after it has claimed the odd sequence but before it
+    // commits. A second publisher must not make the sequence even or overwrite
+    // any part of that in-flight snapshot.
+    let sequence = shared.pending_ao_state_sequence.load(Ordering::Acquire);
+    shared
+        .pending_ao_state_sequence
+        .compare_exchange(
+            sequence,
+            sequence.wrapping_add(1),
+            Ordering::AcqRel,
+            Ordering::Acquire,
+        )
+        .unwrap();
+    shared
+        .pending_ao_state_paused
+        .store(true, Ordering::Relaxed);
+    shared
+        .pending_ao_state_reason_is_underrun
+        .store(false, Ordering::Relaxed);
+    shared
+        .pending_ao_state_buffering_state_bits
+        .store(95.0_f64.to_bits(), Ordering::Relaxed);
+    shared
+        .pending_ao_state_buffered_secs_bits
+        .store(0.19_f64.to_bits(), Ordering::Relaxed);
+    shared
+        .pending_ao_state_target_secs_bits
+        .store(0.2_f64.to_bits(), Ordering::Relaxed);
+
+    shared.notify_ao_state(false, "underrun", 100.0, 9.0, 8.0);
+
+    assert_eq!(
+        shared.pending_ao_state_sequence.load(Ordering::Acquire),
+        sequence.wrapping_add(1)
+    );
+    assert!(shared.pending_ao_state_paused.load(Ordering::Relaxed));
+    assert!(!shared
+        .pending_ao_state_reason_is_underrun
+        .load(Ordering::Relaxed));
+    assert_eq!(
+        shared
+            .pending_ao_state_buffering_state_bits
+            .load(Ordering::Relaxed),
+        95.0_f64.to_bits()
+    );
+
+    shared
+        .pending_ao_state_sequence
+        .store(sequence.wrapping_add(2), Ordering::Release);
+    assert!(matches!(
+        shared.take_pending_control_signal(),
+        Some(PlaybackSignal::AoState {
+            paused: true,
+            reason: "preroll",
+            buffering_state,
+            buffered_secs,
+            target_secs,
+        }) if buffering_state == 95.0 && buffered_secs == 0.19 && target_secs == 0.2
+    ));
+}
+
+#[test]
+fn full_control_wake_queue_coalesces_without_losing_pending_signals() {
+    let shared = SharedAudio::new(
+        MixFormat::stereo_f32(100),
+        0.2,
+        8.0,
+        &DspSettings::default(),
+    );
+    let (control_tx, control_rx) = sync_channel(1);
+    let (telemetry_tx, _telemetry_rx) = sync_channel(1);
+    shared
+        .bind_signal_senders(control_tx, telemetry_tx)
+        .expect("signal senders should bind once");
+
+    shared.notify_playback_restart(1.0);
+    shared.notify_playback_end();
+
+    assert_eq!(control_rx.try_recv(), Ok(()));
+    assert_eq!(control_rx.try_recv(), Err(TryRecvError::Empty));
+    assert!(matches!(
+        shared.take_pending_control_signal(),
+        Some(PlaybackSignal::PlaybackRestart(position)) if (position - 1.0).abs() < f64::EPSILON
+    ));
+    assert_eq!(
+        shared.take_pending_control_signal(),
+        Some(PlaybackSignal::PlaybackEnd)
+    );
+    assert_eq!(shared.take_pending_control_signal(), None);
+}
+
+#[test]
+fn repeated_restart_notifications_coalesce_to_the_latest_position() {
+    let shared = SharedAudio::new(
+        MixFormat::stereo_f32(100),
+        0.2,
+        8.0,
+        &DspSettings::default(),
+    );
+    let (control_tx, _control_rx) = sync_channel(1);
+    let (telemetry_tx, _telemetry_rx) = sync_channel(1);
+    shared
+        .bind_signal_senders(control_tx, telemetry_tx)
+        .expect("signal senders should bind once");
+
+    shared.notify_playback_restart(1.0);
+    shared.notify_playback_restart(2.5);
 
     assert!(matches!(
-        control_rx.try_recv(),
-        Ok(PlaybackSignal::AoState { paused: false, .. })
+        shared.take_pending_control_signal(),
+        Some(PlaybackSignal::PlaybackRestart(position)) if (position - 2.5).abs() < f64::EPSILON
     ));
+    assert_eq!(shared.take_pending_control_signal(), None);
+}
+
+#[test]
+fn stop_is_observed_even_when_the_wake_channel_is_already_full() {
+    let shared = SharedAudio::new(
+        MixFormat::stereo_f32(100),
+        0.2,
+        8.0,
+        &DspSettings::default(),
+    );
+    let (control_tx, control_rx) = sync_channel(1);
+    let (telemetry_tx, _telemetry_rx) = sync_channel(1);
+    shared
+        .bind_signal_senders(control_tx, telemetry_tx)
+        .expect("signal senders should bind once");
+
+    shared.notify_playback_restart(1.0);
+    shared.request_stop();
+
+    // This is the original restart token: request_stop cannot enqueue another
+    // one into the full wake channel. The pending mailbox assertion below is
+    // what proves that Stop still supersedes the earlier notification.
+    assert_eq!(control_rx.try_recv(), Ok(()));
+    assert_eq!(
+        shared.take_pending_control_signal(),
+        Some(PlaybackSignal::Stop)
+    );
 }
 
 #[test]
@@ -624,6 +764,110 @@ fn dsp_filter_reset_keeps_decoded_queue_available() {
         shared.pop_decoded_for_filter(shared.current_filter_generation(),),
         FilterInput::Frame(chunk)
     );
+}
+
+#[test]
+fn dsp_filter_reset_keeps_ready_output_available() {
+    let mut settings = DspSettings::default();
+    let shared = SharedAudio::new(MixFormat::stereo_f32(100), 0.1, 8.0, &settings);
+    let ready = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8];
+    assert!(shared.push_samples(&ready));
+
+    settings.speed = 1.25;
+    shared.reset_filter_for_dsp_change(&settings);
+
+    let mut output = [0.0f32; 8];
+    assert_eq!(shared.pop_into(&mut output), 4);
+    assert_eq!(output, ready);
+}
+
+#[test]
+fn dsp_filter_reset_does_not_abort_an_inflight_output_chunk() {
+    let settings = DspSettings::default();
+    let shared = Arc::new(SharedAudio::new(
+        MixFormat::stereo_f32(100),
+        0.1,
+        8.0,
+        &settings,
+    ));
+    let target_samples = shared.output_buffer_target_samples();
+    let samples = (0..target_samples * 4)
+        .map(|index| index as f32 / (target_samples * 8) as f32)
+        .collect::<Vec<_>>();
+    let source_frames = (samples.len() / MIX_CHANNELS) as u64;
+    let generation = shared.current_decode_generation();
+    let producer_shared = shared.clone();
+    let producer_samples = samples.clone();
+    let producer = thread::spawn(move || {
+        producer_shared.push_output_samples_with_source_frames_for_decode_generation(
+            &producer_samples,
+            source_frames,
+            generation,
+        )
+    });
+
+    for _ in 0..100 {
+        if shared.realtime_output.buffered_samples() >= target_samples {
+            break;
+        }
+        thread::sleep(Duration::from_millis(2));
+    }
+    assert_eq!(shared.realtime_output.buffered_samples(), target_samples);
+
+    shared.reset_filter_for_dsp_change(&settings);
+
+    let mut collected = Vec::with_capacity(samples.len());
+    let mut output = [0.0f32; 8];
+    for _ in 0..200 {
+        let frames = shared.pop_into(&mut output);
+        collected.extend_from_slice(&output[..frames * MIX_CHANNELS]);
+        if collected.len() == samples.len() {
+            break;
+        }
+        thread::sleep(Duration::from_millis(2));
+    }
+
+    assert!(producer.join().expect("producer should exit cleanly"));
+    assert_eq!(collected, samples);
+}
+
+#[test]
+fn decode_reset_aborts_and_clears_an_inflight_old_output_chunk() {
+    let settings = DspSettings::default();
+    let shared = Arc::new(SharedAudio::new(
+        MixFormat::stereo_f32(100),
+        0.1,
+        8.0,
+        &settings,
+    ));
+    let target_samples = shared.output_buffer_target_samples();
+    let samples = vec![0.25f32; target_samples * 4];
+    let generation = shared.current_decode_generation();
+    let producer_shared = shared.clone();
+    let producer = thread::spawn(move || {
+        producer_shared.push_output_samples_with_source_frames_for_decode_generation(
+            &samples,
+            (target_samples * 2) as u64,
+            generation,
+        )
+    });
+
+    for _ in 0..100 {
+        if shared.realtime_output.buffered_samples() >= target_samples {
+            break;
+        }
+        thread::sleep(Duration::from_millis(2));
+    }
+    assert_eq!(shared.realtime_output.buffered_samples(), target_samples);
+
+    shared.reset_for_decode_resume(5.0, &settings);
+
+    assert!(!producer.join().expect("stale producer should exit cleanly"));
+    assert_eq!(shared.realtime_output.buffered_samples(), 0);
+    let mut output = [1.0f32; 8];
+    assert_eq!(shared.pop_into(&mut output), 0);
+    assert_eq!(output, [0.0; 8]);
+    assert!((shared.position_secs() - 5.0).abs() < f64::EPSILON);
 }
 
 #[test]
@@ -705,7 +949,7 @@ fn gapless_boundary_resets_position_after_crossing_track_switch() {
         8.0,
         &DspSettings::default(),
     );
-    let (rx, _telemetry_rx) = bind_test_signal_senders(&shared);
+    let (wake_rx, _telemetry_rx) = bind_test_signal_senders(&shared);
     assert!(shared.push_samples(&[0.1, 0.2, 0.3, 0.4]));
     shared.mark_gapless_boundary(TrackSwitchInfo {
         url: "next.flac".to_string(),
@@ -714,20 +958,65 @@ fn gapless_boundary_resets_position_after_crossing_track_switch() {
         duration: 3.0,
     });
     assert!(shared.push_samples(&[0.5, 0.6, 0.7, 0.8]));
-
     let mut output = [0.0f32; 8];
     assert_eq!(shared.pop_into(&mut output), 4);
     assert_eq!(output, [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8]);
     assert!((shared.position_secs() - 0.02).abs() < f64::EPSILON);
     assert_eq!(shared.output_underrun_count(), 0);
 
-    match rx.try_recv() {
-        Ok(PlaybackSignal::TrackSwitch(info)) => {
+    assert_eq!(wake_rx.try_recv(), Ok(()));
+    match shared.take_pending_control_signal() {
+        Some(PlaybackSignal::TrackSwitch(info)) => {
             assert_eq!(info.url, "next.flac");
             assert_eq!(info.seq, 7);
         }
         other => panic!("expected track switch signal, got {other:?}"),
     }
+}
+
+#[test]
+fn busy_track_switch_mailbox_stalls_without_consuming_the_boundary() {
+    let shared = SharedAudio::new(
+        MixFormat::stereo_f32(100),
+        0.1,
+        8.0,
+        &DspSettings::default(),
+    );
+    let (wake_rx, _telemetry_rx) = bind_test_signal_senders(&shared);
+    assert!(shared.push_samples(&[0.1, 0.2, 0.3, 0.4]));
+    shared.mark_gapless_boundary(TrackSwitchInfo {
+        url: "next.flac".to_string(),
+        audio_stream_ordinal: None,
+        seq: 7,
+        duration: 3.0,
+    });
+    assert!(shared.push_samples(&[0.5, 0.6, 0.7, 0.8]));
+    // Fill the one-slot wake channel first. The later TrackSwitch must remain in its
+    // semantic mailbox even though its wake token is coalesced.
+    shared.notify_playback_restart(1.0);
+
+    let mailbox_guard = shared
+        .pending_track_switch
+        .lock()
+        .expect("test mailbox should lock");
+    let mut blocked_output = [1.0f32; 8];
+    assert_eq!(shared.pop_into(&mut blocked_output), 0);
+    assert_eq!(blocked_output, [0.0; 8]);
+    assert_eq!(shared.played_sample_count(), 0);
+    drop(mailbox_guard);
+
+    let mut output = [0.0f32; 8];
+    assert_eq!(shared.pop_into(&mut output), 4);
+    assert_eq!(output, [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8]);
+    assert_eq!(wake_rx.try_recv(), Ok(()));
+    assert!(matches!(
+        shared.take_pending_control_signal(),
+        Some(PlaybackSignal::TrackSwitch(TrackSwitchInfo { seq: 7, .. }))
+    ));
+    assert!(matches!(
+        shared.take_pending_control_signal(),
+        Some(PlaybackSignal::PlaybackRestart(position)) if (position - 1.0).abs() < f64::EPSILON
+    ));
 }
 
 #[test]

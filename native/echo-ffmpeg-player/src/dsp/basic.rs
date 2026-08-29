@@ -18,7 +18,8 @@ const MAX_IR_SECONDS: f32 = 8.0;
 const IR_SILENCE_THRESHOLD: f32 = 0.00000001;
 const IR_TRIM_RELATIVE_THRESHOLD: f32 = 0.00001;
 const IR_ANALYSIS_OVERSAMPLING: usize = 4;
-const EQ_RESPONSE_BINS: usize = 32768;
+const EQ_RESPONSE_LOG_POINTS: usize = 512;
+const EQ_RESPONSE_MIN_FREQUENCY: f32 = 10.0;
 const DSP_TRANSITION_FADE_SECONDS: f32 = 0.015;
 
 #[derive(Clone, Debug)]
@@ -164,10 +165,11 @@ impl DspChain {
                 MultichannelEqualizer::new(sample_rate, self.channels, &settings.equalizer);
             let previous_headroom = std::mem::replace(&mut self.eq_headroom_linear, next_headroom);
             let previous = std::mem::replace(&mut self.eq, next_eq);
-            self.eq_transition = self
-                .provider
-                .is_none()
-                .then(|| EqualizerTransition::new(sample_rate, previous, previous_headroom));
+            self.eq_transition = Some(EqualizerTransition::new(
+                sample_rate,
+                previous,
+                previous_headroom,
+            ));
             self.settings.equalizer = settings.equalizer;
         }
         if spatial_changed {
@@ -225,6 +227,7 @@ impl DspChain {
     pub fn drain(&mut self, output: &mut Vec<f32>) -> Result<(), String> {
         if let Some(provider) = self.provider.as_mut() {
             provider.drain(output, self.channels)?;
+            sanitize_samples(output);
             return Ok(());
         }
         let Some(spatial) = self.spatial.as_mut() else {
@@ -244,14 +247,15 @@ impl DspChain {
                 self.spatial_transition = None;
             }
         }
+        sanitize_samples(&mut output[tail_start..]);
         Ok(())
     }
 
     pub fn process_interleaved(&mut self, samples: &mut [f32]) -> Result<(), String> {
-        if let Some(provider) = self.provider.as_mut() {
-            provider.process(samples, self.channels)?;
-            return Ok(());
-        }
+        // Sanitize once at the graph boundary before any stateful EQ, provider,
+        // spatial, or tempo stage can retain a non-finite value. This also
+        // covers the all-zero EQ bypass and the common no-SWR direct-copy path.
+        sanitize_samples(samples);
         if let Some(transition) = self.eq_transition.as_mut() {
             self.eq_transition_buffer.clear();
             self.eq_transition_buffer.extend_from_slice(samples);
@@ -268,6 +272,11 @@ impl DspChain {
         } else {
             process_equalizer(&mut self.eq, self.eq_headroom_linear, samples);
         }
+        if let Some(provider) = self.provider.as_mut() {
+            provider.process(samples, self.channels)?;
+            sanitize_samples(samples);
+            return Ok(());
+        }
         if self.channels == 2 {
             if let Some(spatial) = self.spatial.as_mut() {
                 spatial.process_interleaved(samples);
@@ -282,6 +291,37 @@ impl DspChain {
                 self.spatial_transition = None;
             }
         }
+        Ok(())
+    }
+
+    pub fn can_reset_state(&self, settings: &DspSettings) -> bool {
+        self.provider.is_none()
+            && self.settings.provider_path == settings.provider_path
+            && self.settings.provider_mode == settings.provider_mode
+            && self.settings.provider_resource_json == settings.provider_resource_json
+            && spatial_resource_identity(&self.settings.spatial)
+                == spatial_resource_identity(&settings.spatial)
+    }
+
+    pub fn reset_state(&mut self, settings: &DspSettings) -> Result<(), String> {
+        if !self.can_reset_state(settings) {
+            return Err("DSP structure changed during in-place reset".to_string());
+        }
+        self.update_settings(settings)?;
+        self.eq.reset();
+        self.eq_transition = None;
+        self.eq_transition_buffer.clear();
+        // Provider graphs deliberately fail `can_reset_state`: a provider reset
+        // can fail after mutating opaque external state, so seek rebuilds that
+        // graph transactionally instead of attempting an in-place reset.
+        debug_assert!(self.provider.is_none());
+        if let Some(spatial) = self.spatial.as_mut() {
+            spatial.reset();
+        }
+        if let Some(limiter) = self.spatial_limiter.as_mut() {
+            limiter.reset();
+        }
+        self.spatial_transition = None;
         Ok(())
     }
 
@@ -325,6 +365,14 @@ fn process_equalizer(
         }
     }
     equalizer.process_interleaved(samples);
+}
+
+fn sanitize_samples(samples: &mut [f32]) {
+    for sample in samples {
+        if !sample.is_finite() {
+            *sample = 0.0;
+        }
+    }
 }
 
 struct EqualizerTransition {
@@ -798,6 +846,14 @@ impl MultichannelEqualizer {
             }
         }
     }
+
+    fn reset(&mut self) {
+        for channel in &mut self.filters {
+            for filter in channel {
+                filter.reset();
+            }
+        }
+    }
 }
 
 fn make_eq_filters(sample_rate: u32, gains: &[f32; EQ_BAND_COUNT]) -> Vec<Biquad> {
@@ -874,6 +930,11 @@ impl Biquad {
         let numerator = self.b0 + self.b1 * z1 + self.b2 * z2;
         let denominator = 1.0 + self.a1 * z1 + self.a2 * z2;
         numerator / denominator
+    }
+
+    fn reset(&mut self) {
+        self.z1 = 0.0;
+        self.z2 = 0.0;
     }
 }
 
@@ -1081,7 +1142,8 @@ impl SegmentConvolver {
     }
 
     fn process_sample(&mut self, sample: f32) -> f32 {
-        self.input_block.push(sample);
+        self.input_block
+            .push(if sample.is_finite() { sample } else { 0.0 });
         if self.input_block.len() == self.prepared.block_size {
             self.process_block();
             self.input_block.clear();
@@ -1229,18 +1291,36 @@ fn eq_headroom_gain(sample_rate: u32, gains: &[f32; EQ_BAND_COUNT]) -> f32 {
     if filters.is_empty() {
         return 1.0;
     }
-    let peak = (0..=EQ_RESPONSE_BINS)
-        .map(|index| std::f32::consts::PI * index as f32 / EQ_RESPONSE_BINS as f32)
-        .map(|omega| {
-            filters
-                .iter()
-                .fold(Complex32::new(1.0, 0.0), |response, filter| {
-                    response * filter.frequency_response(omega)
-                })
-                .norm()
-        })
-        .filter(|gain| gain.is_finite())
-        .fold(1.0f32, f32::max);
+    let nyquist = sample_rate.max(1) as f32 * 0.5;
+    let log_min = EQ_RESPONSE_MIN_FREQUENCY.min(nyquist);
+    let log_span = (nyquist / log_min).ln();
+    let mut peak = 1.0f32;
+    let mut observe_frequency = |frequency: f32| {
+        let omega = std::f32::consts::PI * (frequency / nyquist).clamp(0.0, 1.0);
+        let gain = filters
+            .iter()
+            .fold(Complex32::new(1.0, 0.0), |response, filter| {
+                response * filter.frequency_response(omega)
+            })
+            .norm();
+        if gain.is_finite() {
+            peak = peak.max(gain);
+        }
+    };
+    observe_frequency(0.0);
+    for index in 0..EQ_RESPONSE_LOG_POINTS {
+        let fraction = index as f32 / (EQ_RESPONSE_LOG_POINTS - 1) as f32;
+        observe_frequency(log_min * (log_span * fraction).exp());
+    }
+    // Peaking filters reach their nominal maximum at the exact band center.
+    // Include those points explicitly so the safety estimate does not depend
+    // on how a logarithmic grid happens to align at a given sample rate.
+    for frequency in EQ_FREQUENCIES {
+        if frequency < nyquist {
+            observe_frequency(frequency);
+        }
+    }
+    observe_frequency(nyquist);
     automatic_ir_output_gain(peak)
 }
 
@@ -1311,6 +1391,48 @@ mod tests {
         (energy / samples.len().max(1) as f32).sqrt()
     }
 
+    fn reference_eq_peak(sample_rate: u32, gains: &[f32; EQ_BAND_COUNT]) -> f32 {
+        const REFERENCE_BINS: usize = 131_072;
+        let filters = make_eq_filters(sample_rate, gains);
+        let nyquist = sample_rate.max(1) as f32 * 0.5;
+        let mut peak = 1.0f32;
+        let mut observe_frequency = |frequency: f32| {
+            let omega = std::f32::consts::PI * (frequency / nyquist).clamp(0.0, 1.0);
+            let gain = filters
+                .iter()
+                .fold(Complex32::new(1.0, 0.0), |response, filter| {
+                    response * filter.frequency_response(omega)
+                })
+                .norm();
+            peak = peak.max(gain);
+        };
+
+        for index in 0..=REFERENCE_BINS {
+            observe_frequency(nyquist * index as f32 / REFERENCE_BINS as f32);
+        }
+        for frequency in EQ_FREQUENCIES {
+            if frequency < nyquist {
+                observe_frequency(frequency);
+            }
+        }
+        peak
+    }
+
+    fn assert_eq_headroom_matches_reference(
+        case: &str,
+        sample_rate: u32,
+        gains: &[f32; EQ_BAND_COUNT],
+    ) {
+        let reference_peak = reference_eq_peak(sample_rate, gains);
+        let estimated_peak = eq_headroom_gain(sample_rate, gains).recip();
+        let underestimated_db = gain_to_db(reference_peak / estimated_peak).max(0.0);
+
+        assert!(
+            underestimated_db <= 0.01,
+            "case={case}, sample_rate={sample_rate}, reference_peak={reference_peak}, estimated_peak={estimated_peak}, underestimated_db={underestimated_db}"
+        );
+    }
+
     #[test]
     fn equalizer_changes_target_band_energy() {
         let sample_rate = 48_000;
@@ -1351,6 +1473,49 @@ mod tests {
     }
 
     #[test]
+    fn equalizer_headroom_does_not_miss_narrow_low_frequency_peak() {
+        let mut gains = [0.0; EQ_BAND_COUNT];
+        gains[0] = 12.0;
+
+        for sample_rate in [44_100, 48_000, 96_000, 192_000] {
+            assert_eq_headroom_matches_reference("31-hz-boost", sample_rate, &gains);
+        }
+    }
+
+    #[test]
+    fn equalizer_headroom_covers_overlapping_multiband_peaks() {
+        let mut low_cluster = [0.0; EQ_BAND_COUNT];
+        low_cluster[0..3].fill(12.0);
+
+        let mut mid_cluster = [0.0; EQ_BAND_COUNT];
+        mid_cluster[3] = 8.0;
+        mid_cluster[4] = 12.0;
+        mid_cluster[5] = 8.0;
+
+        let mut wide_boosts = [0.0; EQ_BAND_COUNT];
+        wide_boosts[0] = 12.0;
+        wide_boosts[4] = 9.0;
+        wide_boosts[9] = 12.0;
+
+        let mut mixed = [0.0; EQ_BAND_COUNT];
+        mixed.copy_from_slice(&[12.0, -6.0, 9.0, -12.0, 12.0, 6.0, -9.0, 8.0, -3.0, 12.0]);
+
+        let cases = [
+            ("low-cluster", low_cluster),
+            ("mid-cluster", mid_cluster),
+            ("wide-boosts", wide_boosts),
+            ("mixed-boosts-and-cuts", mixed),
+            ("all-bands-boosted", [12.0; EQ_BAND_COUNT]),
+        ];
+
+        for (case, gains) in cases {
+            for sample_rate in [44_100, 48_000, 96_000, 192_000] {
+                assert_eq_headroom_matches_reference(case, sample_rate, &gains);
+            }
+        }
+    }
+
+    #[test]
     fn boosted_equalizer_stays_finite_without_internal_hard_clipping() {
         let settings = DspSettings {
             equalizer: [12.0; EQ_BAND_COUNT],
@@ -1370,6 +1535,19 @@ mod tests {
 
         assert!(samples.iter().all(|sample| sample.is_finite()));
         assert!(samples.iter().all(|sample| sample.abs() <= 1.05));
+    }
+
+    #[test]
+    fn dsp_chain_sanitizes_non_finite_samples_when_all_effects_are_bypassed() {
+        let mut chain = DspChain::new(48_000, 2, &DspSettings::default())
+            .expect("default DSP chain should initialize");
+        let mut samples = [f32::NAN, f32::INFINITY, f32::NEG_INFINITY, 0.25];
+
+        chain
+            .process_interleaved(&mut samples)
+            .expect("default DSP chain should process");
+
+        assert_eq!(samples, [0.0, 0.0, 0.0, 0.25]);
     }
 
     #[test]
@@ -1478,6 +1656,37 @@ mod tests {
         let last = remainder.len() - 2;
         assert!((remainder[last] - 0.4).abs() < 0.00001);
         assert!((remainder[last + 1] + 0.2).abs() < 0.00001);
+    }
+
+    #[test]
+    fn dsp_state_reset_reuses_prepared_spatial_runtime() {
+        let settings = DspSettings {
+            spatial: Some(prepared_spatial(2, &[&[1.0], &[1.0]])),
+            spatial_mix: 1.0,
+            ..DspSettings::default()
+        };
+        let mut chain = DspChain::new(48_000, 2, &settings).expect("chain should initialize");
+        let spatial_before = chain
+            .spatial
+            .as_ref()
+            .map(|spatial| spatial as *const SpatialEffect)
+            .expect("spatial runtime should exist");
+        let mut input = vec![0.25, -0.25];
+        chain
+            .process_interleaved(&mut input)
+            .expect("spatial input should process");
+
+        chain
+            .reset_state(&settings)
+            .expect("same DSP structure should reset in place");
+
+        let spatial_after = chain
+            .spatial
+            .as_ref()
+            .map(|spatial| spatial as *const SpatialEffect)
+            .expect("spatial runtime should remain");
+        assert_eq!(spatial_before, spatial_after);
+        assert!(!chain.spatial.as_ref().unwrap().has_input);
     }
 
     #[test]

@@ -134,19 +134,24 @@ fn run_exclusive_output(
     shared.mark_output_started();
     report_output_start(start_notify, Ok(()));
 
-    let mut output_scratch = Vec::<f32>::new();
-    let mut stereo_scratch = Vec::<f32>::new();
-    let mut converted_i16 = Vec::<i16>::new();
-    let mut converted_i32 = Vec::<i32>::new();
-    let mut converted_i24 = Vec::<u8>::new();
-    let mut converted_u8 = Vec::<u8>::new();
-    let mut converted_f64 = Vec::<f64>::new();
+    let realtime_samples = format.period_frames.saturating_mul(format.channels.max(1));
+    let graph_samples = format
+        .period_frames
+        .saturating_mul(shared.mix_format.channels.max(1));
+    let mut output_scratch = Vec::<f32>::with_capacity(realtime_samples);
+    let mut stereo_scratch = Vec::<f32>::with_capacity(graph_samples);
+    let mut converted_i16 = Vec::<i16>::with_capacity(realtime_samples);
+    let mut converted_i32 = Vec::<i32>::with_capacity(realtime_samples);
+    let mut converted_i24 = Vec::<u8>::with_capacity(realtime_samples.saturating_mul(3));
+    let mut converted_u8 = Vec::<u8>::with_capacity(realtime_samples);
+    let mut converted_f64 = Vec::<f64>::with_capacity(realtime_samples);
     let mut resampler = OutputResampler::new(
         shared.mix_format.sample_rate,
         format.sample_rate,
         shared.mix_format.channels,
         format.channels,
     )?;
+    resampler.reserve_realtime_capacity(format.period_frames)?;
     let mut paused = false;
 
     while !stop.should_stop(&shared) {

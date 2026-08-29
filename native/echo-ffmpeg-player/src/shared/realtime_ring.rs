@@ -13,6 +13,10 @@ pub(super) struct RealtimeAudioRing {
     index_mask: usize,
     read: AtomicUsize,
     write: AtomicUsize,
+    /// Samples below this monotonically increasing index have been invalidated by a control
+    /// operation. Only the consumer writes `read`; producers treat this watermark as reclaimed
+    /// capacity immediately, and the consumer acknowledges it at the start of its next pop.
+    clear_before: AtomicUsize,
 }
 
 impl RealtimeAudioRing {
@@ -28,18 +32,19 @@ impl RealtimeAudioRing {
             index_mask: physical - 1,
             read: AtomicUsize::new(0),
             write: AtomicUsize::new(0),
+            clear_before: AtomicUsize::new(0),
         }
     }
 
     pub(super) fn clear(&self) {
         let write = self.write.load(Ordering::Acquire);
-        self.read.store(write, Ordering::Release);
+        self.clear_before.fetch_max(write, Ordering::Release);
     }
 
     pub(super) fn buffered_samples(&self) -> usize {
         self.write
             .load(Ordering::Acquire)
-            .saturating_sub(self.read.load(Ordering::Acquire))
+            .saturating_sub(self.effective_read(Ordering::Acquire))
             .min(self.capacity)
     }
 
@@ -56,7 +61,7 @@ impl RealtimeAudioRing {
         if samples.is_empty() {
             return (0, 0);
         }
-        let read = self.read.load(Ordering::Acquire);
+        let read = self.effective_read(Ordering::Acquire);
         let write = self.write.load(Ordering::Relaxed);
         let available = buffer_limit
             .min(self.capacity)
@@ -84,7 +89,11 @@ impl RealtimeAudioRing {
     }
 
     pub(super) fn pop_into(&self, output: &mut [f32]) -> (usize, u64) {
-        let read = self.read.load(Ordering::Relaxed);
+        let observed_read = self.read.load(Ordering::Relaxed);
+        let read = observed_read.max(self.clear_before.load(Ordering::Acquire));
+        if read != observed_read {
+            self.read.store(read, Ordering::Release);
+        }
         let write = self.write.load(Ordering::Acquire);
         let take = write
             .saturating_sub(read)
@@ -99,6 +108,12 @@ impl RealtimeAudioRing {
         }
         self.read.store(read + take, Ordering::Release);
         (take, consumed_source_frames)
+    }
+
+    fn effective_read(&self, ordering: Ordering) -> usize {
+        self.read
+            .load(ordering)
+            .max(self.clear_before.load(ordering))
     }
 }
 
@@ -186,5 +201,21 @@ mod tests {
         let (popped, recovered) = ring.pop_into(&mut out);
         assert_eq!(popped, 15);
         assert_eq!(recovered, total_pushed_frames);
+    }
+
+    #[test]
+    fn clear_reclaims_capacity_without_writing_the_consumer_index() {
+        let ring = RealtimeAudioRing::new(4);
+        assert_eq!(ring.push_limited(&[1.0; 4], 4, usize::MAX).0, 4);
+        let read_before_clear = ring.read.load(Ordering::Acquire);
+
+        ring.clear();
+
+        assert_eq!(ring.read.load(Ordering::Acquire), read_before_clear);
+        assert_eq!(ring.buffered_samples(), 0);
+        assert_eq!(ring.push_limited(&[2.0; 4], 4, usize::MAX).0, 4);
+        let mut output = [0.0; 4];
+        assert_eq!(ring.pop_into(&mut output).0, 4);
+        assert_eq!(output, [2.0; 4]);
     }
 }

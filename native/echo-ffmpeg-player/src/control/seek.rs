@@ -29,19 +29,23 @@ fn is_seek_plan_current(plan: &SeekPlan) -> napi::Result<bool> {
 }
 
 pub(crate) fn mark_seek_plan_failed(plan: &SeekPlan) -> napi::Result<()> {
-    with_runtime(|runtime| {
-        runtime.clear_pending_seek_restart(plan.interrupt.as_ref());
-        if !runtime.is_seek_request_current(plan.request_seq) {
+    let interrupt = plan.interrupt.clone();
+    let request_seq = plan.request_seq;
+    let shared = plan.shared.clone();
+    let generation = plan.generation;
+    call_core_command("mark-seek-failed", move |runtime| {
+        runtime.clear_pending_seek_restart(interrupt.as_ref());
+        if !runtime.is_seek_request_current(request_seq) {
             return Ok(());
         }
         let matches_plan = runtime.session.as_ref().is_some_and(|session| {
-            Arc::ptr_eq(&session.shared, &plan.shared)
-                && session.shared.is_decode_generation_current(plan.generation)
+            Arc::ptr_eq(&session.shared, &shared)
+                && session.shared.is_decode_generation_current(generation)
         });
         if !matches_plan {
             return Ok(());
         }
-        runtime.clear_seek_restore_paused_if_current(plan.request_seq);
+        runtime.clear_seek_restore_paused_if_current(request_seq);
         let Some(session) = runtime.session.as_mut() else {
             return Ok(());
         };
@@ -96,19 +100,25 @@ pub(crate) fn attach_restarted_decoder(
     defer_restart_events_until_audio_ready: bool,
 ) -> napi::Result<()> {
     let mut decoder = Some(decoder);
-    with_runtime(|runtime| {
-        runtime.clear_pending_seek_restart(plan.interrupt.as_ref());
-        if !runtime.is_seek_request_current(plan.request_seq) {
+    let interrupt = plan.interrupt.clone();
+    let request_seq = plan.request_seq;
+    let shared = plan.shared.clone();
+    let generation = plan.generation;
+    let was_paused = plan.was_paused;
+    let config = plan.config.clone();
+    call_core_command("attach-restarted-decoder", move |runtime| {
+        runtime.clear_pending_seek_restart(interrupt.as_ref());
+        if !runtime.is_seek_request_current(request_seq) {
             return Ok(());
         }
         let matches_plan = runtime.session.as_ref().is_some_and(|session| {
-            Arc::ptr_eq(&session.shared, &plan.shared)
-                && session.shared.is_decode_generation_current(plan.generation)
+            Arc::ptr_eq(&session.shared, &shared)
+                && session.shared.is_decode_generation_current(generation)
         });
         if !matches_plan {
             return Ok(());
         }
-        runtime.clear_seek_restore_paused_if_current(plan.request_seq);
+        let restore_paused = runtime.take_seek_restore_paused(request_seq, was_paused);
         let Some(session) = runtime.session.as_mut() else {
             return Ok(());
         };
@@ -120,24 +130,24 @@ pub(crate) fn attach_restarted_decoder(
             .shared
             .set_source_sample_format(source_sample_format);
         session.shared.set_preferred_output_sample_format(
-            plan.config
-                .resolve_output_sample_format(source_sample_format),
+            config.resolve_output_sample_format(source_sample_format),
         );
         session.shared.bind_interrupt(decoder.interrupt_handle());
         let (decode_thread, decode_commands) =
-            decoder::spawn_decode_worker(decoder, session.shared.clone(), plan.generation);
+            decoder::spawn_decode_worker(decoder, session.shared.clone(), generation)
+                .map_err(napi::Error::from_reason)?;
         session.decode_thread = Some(decode_thread);
         session.decode_commands = Some(decode_commands);
         session
             .shared
             .paused
-            .store(plan.was_paused, Ordering::Release);
+            .store(restore_paused, Ordering::Release);
         runtime.state.time_pos = position;
-        runtime.state.playing = !plan.was_paused;
-        runtime.state.paused = plan.was_paused;
+        runtime.state.playing = !restore_paused;
+        runtime.state.paused = restore_paused;
         set_runtime_core_state(
             runtime,
-            if plan.was_paused {
+            if restore_paused {
                 PlaybackCoreState::Paused
             } else {
                 PlaybackCoreState::Playing
@@ -156,23 +166,27 @@ fn restore_seek_playback_state(
     position: f64,
     reason: &'static str,
 ) -> napi::Result<()> {
-    with_runtime(|runtime| {
+    let shared = plan.shared.clone();
+    let generation = plan.generation;
+    let request_seq = plan.request_seq;
+    let was_paused = plan.was_paused;
+    call_core_command("restore-seek-playback-state", move |runtime| {
         let Some(shared) = runtime.session.as_ref().and_then(|session| {
-            (Arc::ptr_eq(&session.shared, &plan.shared)
-                && session.shared.is_decode_generation_current(plan.generation)
-                && runtime.is_seek_request_current(plan.request_seq))
+            (Arc::ptr_eq(&session.shared, &shared)
+                && session.shared.is_decode_generation_current(generation)
+                && runtime.is_seek_request_current(request_seq))
             .then(|| session.shared.clone())
         }) else {
             return Ok(());
         };
-        runtime.clear_seek_restore_paused_if_current(plan.request_seq);
-        shared.paused.store(plan.was_paused, Ordering::Release);
+        let restore_paused = runtime.take_seek_restore_paused(request_seq, was_paused);
+        shared.paused.store(restore_paused, Ordering::Release);
         runtime.state.time_pos = position;
-        runtime.state.playing = !plan.was_paused;
-        runtime.state.paused = plan.was_paused;
+        runtime.state.playing = !restore_paused;
+        runtime.state.paused = restore_paused;
         set_runtime_core_state(
             runtime,
-            if plan.was_paused {
+            if restore_paused {
                 PlaybackCoreState::Paused
             } else {
                 PlaybackCoreState::Playing
@@ -249,11 +263,7 @@ fn try_seek_current_decoder(plan: &SeekPlan, position: f64) -> napi::Result<bool
     // command. Reopening after the local two-second budget cancels that useful request and starts
     // the same slow operation again. Keep the short bound for local files, but let remote seeks
     // finish within a bounded portion of the configured network timeout.
-    let command_timeout = if stream::is_network_url(&plan.url) {
-        Duration::from_secs_f64(plan.config.network_timeout_secs.clamp(2.0, 15.0))
-    } else {
-        Duration::from_secs(2)
-    };
+    let command_timeout = plan.config.seek_timeout_for_url(&plan.url);
     match reply_rx.recv_timeout(command_timeout) {
         Ok(Ok(())) => {
             restore_seek_playback_state(plan, position, "seek-command")?;
@@ -303,17 +313,21 @@ fn try_seek_current_decoder(plan: &SeekPlan, position: f64) -> napi::Result<bool
 
 fn prepare_reopen_seek_plan(previous: &SeekPlan, position: f64) -> napi::Result<Option<SeekPlan>> {
     let interrupt = Arc::new(AtomicBool::new(false));
-    with_runtime(|runtime| {
-        if !runtime.is_seek_request_current(previous.request_seq) {
+    let previous_shared = previous.shared.clone();
+    let previous_generation = previous.generation;
+    let request_seq = previous.request_seq;
+    let was_paused = previous.was_paused;
+    call_core_command("prepare-reopen-seek", move |runtime| {
+        if !runtime.is_seek_request_current(request_seq) {
             return Ok(None);
         }
         let Some(session) = runtime.session.as_mut() else {
             return Ok(None);
         };
-        if !Arc::ptr_eq(&session.shared, &previous.shared)
+        if !Arc::ptr_eq(&session.shared, &previous_shared)
             || !session
                 .shared
-                .is_decode_generation_current(previous.generation)
+                .is_decode_generation_current(previous_generation)
         {
             return Ok(None);
         }
@@ -329,11 +343,11 @@ fn prepare_reopen_seek_plan(previous: &SeekPlan, position: f64) -> napi::Result<
         runtime.state.paused = true;
         Ok(runtime.current_url.clone().map(|url| SeekPlan {
             shared: session.shared.clone(),
-            was_paused: previous.was_paused,
+            was_paused,
             url,
             audio_stream_ordinal: runtime.current_audio_stream_ordinal,
             generation,
-            request_seq: previous.request_seq,
+            request_seq,
             config: runtime.config.clone(),
             interrupt: Some(interrupt),
             decode_commands: None,
@@ -351,10 +365,11 @@ impl Task for SeekTask {
         if !is_latest_seek_request_seq(request_seq) {
             return Ok(());
         }
-        let plan = with_runtime(|runtime| {
+        let plan = call_core_command("begin-seek", move |runtime| {
             if !runtime.accept_seek_request_seq(request_seq) {
                 return Ok(None);
             }
+            runtime.cancel_pending_source_open();
             let Some((shared, decode_commands)) = runtime
                 .session
                 .as_ref()
@@ -421,6 +436,7 @@ impl Task for SeekTask {
 
 #[napi]
 pub fn seek(time: f64) -> AsyncTask<SeekTask> {
+    invalidate_source_open_requests();
     AsyncTask::new(SeekTask {
         position: time,
         request_seq: next_seek_request_seq(),

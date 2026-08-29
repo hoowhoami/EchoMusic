@@ -4,7 +4,32 @@ All notable changes to `ffmpeg_audio` and `ffmpeg_audio_sys` will be documented 
 
 ## [Unreleased]
 
-<!-- Changes not yet released go here -->
+### ffmpeg_audio
+
+#### Added
+
+- **Added** interrupt-aware demuxer shutdown and configurable packet-cache seek deadlines.
+
+#### Changed
+
+- **Changed** packet-cache teardown to interrupt and join its worker before releasing shared state.
+- **Changed** HTTP runtime teardown to use a bounded shutdown instead of waiting indefinitely for blocking tasks.
+- **Changed** unknown-length sequential HTTP streams to reconnect after transient transport failures.
+
+#### Fixed
+
+- **Fixed** intentional `AVERROR_EXIT` cancellation being latched as a fatal packet-cache read error, which disabled cached seeks and could leave error state behind.
+- **Fixed** timed-out packet-cache seeks leaving an in-flight demuxer operation and a permanently pending seek epoch behind.
+- **Fixed** packet-cache workers spinning after fatal read errors and cached seeks incorrectly targeting retained non-current ranges.
+- **Fixed** HTTP probe, seek, and reconnect response-header waits not consistently honoring the configured receive timeout.
+- **Fixed** valid HTTP 206 responses with an unknown total length, including chunked response bodies, being rejected.
+- **Fixed** externally supplied `HttpCancelHandle` instances being cancelled when an audio source was dropped.
+- **Fixed** demuxer interrupt callback state not being explicitly retained by the owning type.
+- **Fixed** `AudioFrame::raw_data` returning samples with a lifetime that could outlive the frame borrow.
+
+### ffmpeg_audio_sys
+
+- No functional changes in this release.
 
 ## [0.3.1] - 2026-08-05
 

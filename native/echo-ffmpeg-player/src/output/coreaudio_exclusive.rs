@@ -1,16 +1,16 @@
 use super::cpal_shared::OutputResampler;
 use crate::device::platform_macos::{
     coreaudio_device_display_name, coreaudio_status_message, monitor_coreaudio_exclusive_changes,
-    prepare_coreaudio_exclusive_format, resolve_coreaudio_device_id, try_disable_coreaudio_mixing,
-    CoreAudioExclusiveChangeMonitor, CoreAudioMixingGuard, CoreAudioPcmFormat,
-    CoreAudioPcmSampleFormat, CoreAudioPhysicalFormatGuard,
+    prepare_coreaudio_exclusive_format, resolve_coreaudio_device_id, run_coreaudio_callback,
+    try_disable_coreaudio_mixing, CoreAudioExclusiveChangeMonitor, CoreAudioMixingGuard,
+    CoreAudioPcmFormat, CoreAudioPcmSampleFormat, CoreAudioPhysicalFormatGuard,
 };
 use crate::events::{PlayerErrorCode, PlayerEvent};
 use crate::exclusive::ExclusiveGuard;
 use crate::output::{
     build_output_stats, emit_output_runtime_error, fill_output_reusing,
     output_buffer_mode_for_frames, output_start_was_cancelled, report_output_start,
-    report_output_start_failure, OutputStartSender, OutputStopToken,
+    report_output_start_failure, OutputStartSender, OutputStopToken, MIN_REALTIME_BUFFER_FRAMES,
 };
 use crate::shared::SharedAudio;
 use coreaudio_sys as ca;
@@ -28,6 +28,7 @@ struct CoreAudioOutputContext {
     resampler: UnsafeCell<OutputResampler>,
     stereo_scratch: UnsafeCell<Vec<f32>>,
     output_scratch: UnsafeCell<Vec<f32>>,
+    realtime_sample_capacity: usize,
 }
 
 unsafe impl Sync for CoreAudioOutputContext {}
@@ -50,8 +51,11 @@ impl Drop for CoreAudioExclusiveOutput {
             if self.started {
                 let _ = ca::AudioDeviceStop(self.device_id, self.io_proc_id);
             }
-            let _ = ca::AudioDeviceDestroyIOProcID(self.device_id, self.io_proc_id);
-            if !self.context.is_null() {
+            let destroy_status = ca::AudioDeviceDestroyIOProcID(self.device_id, self.io_proc_id);
+            // The IOProc owns the raw client-data pointer contract. If CoreAudio could not
+            // unregister it, keeping the context alive is safer than freeing memory that a
+            // late callback may still dereference.
+            if destroy_status == 0 && !self.context.is_null() {
                 drop(Box::from_raw(self.context));
                 self.context = std::ptr::null_mut();
             }
@@ -144,17 +148,25 @@ fn run_exclusive_output(
         ),
     ));
 
+    let realtime_frames = usize::try_from(buffer_frames)
+        .unwrap_or_default()
+        .max(MIN_REALTIME_BUFFER_FRAMES);
+    let scratch_channels = format.channels.max(shared.mix_format.channels).max(1);
+    let scratch_capacity = realtime_frames.saturating_mul(scratch_channels);
+    let mut resampler = OutputResampler::new(
+        shared.mix_format.sample_rate,
+        format.sample_rate,
+        shared.mix_format.channels,
+        format.channels,
+    )?;
+    resampler.reserve_realtime_capacity(realtime_frames)?;
     let context = Box::into_raw(Box::new(CoreAudioOutputContext {
-        resampler: UnsafeCell::new(OutputResampler::new(
-            shared.mix_format.sample_rate,
-            format.sample_rate,
-            shared.mix_format.channels,
-            format.channels,
-        )?),
+        resampler: UnsafeCell::new(resampler),
         format,
         shared,
-        stereo_scratch: UnsafeCell::new(Vec::new()),
-        output_scratch: UnsafeCell::new(Vec::new()),
+        stereo_scratch: UnsafeCell::new(Vec::with_capacity(scratch_capacity)),
+        output_scratch: UnsafeCell::new(Vec::with_capacity(scratch_capacity)),
+        realtime_sample_capacity: scratch_capacity,
     }));
     let mut io_proc_id: ca::AudioDeviceIOProcID = None;
     let create_status = unsafe {
@@ -258,9 +270,26 @@ unsafe extern "C" fn render_callback(
     if output_data.is_null() || client_data.is_null() {
         return 0;
     }
-    let context = &*(client_data as *const CoreAudioOutputContext);
-    fill_coreaudio_buffers(context, output_data);
+    let succeeded = run_coreaudio_callback(|| unsafe {
+        let context = &*(client_data as *const CoreAudioOutputContext);
+        fill_coreaudio_buffers(context, output_data);
+    });
+    if !succeeded {
+        let _ = run_coreaudio_callback(|| unsafe {
+            silence_coreaudio_buffers(output_data);
+        });
+    }
     0
+}
+
+unsafe fn silence_coreaudio_buffers(list: *mut ca::AudioBufferList) {
+    let buffer_count = (*list).mNumberBuffers as usize;
+    let buffers = slice::from_raw_parts_mut((*list).mBuffers.as_mut_ptr(), buffer_count);
+    for buffer in buffers {
+        if !buffer.mData.is_null() {
+            std::ptr::write_bytes(buffer.mData, 0, buffer.mDataByteSize as usize);
+        }
+    }
 }
 
 unsafe fn fill_coreaudio_buffers(context: &CoreAudioOutputContext, list: *mut ca::AudioBufferList) {
@@ -285,6 +314,12 @@ fn fill_interleaved(buffer: &mut ca::AudioBuffer, context: &CoreAudioOutputConte
         .max(1);
     let sample_count = buffer.mDataByteSize as usize / context.format.bytes_per_sample();
     let frame_samples = sample_count - (sample_count % channels);
+    if frame_samples > context.realtime_sample_capacity {
+        unsafe {
+            std::ptr::write_bytes(buffer.mData, 0, buffer.mDataByteSize as usize);
+        }
+        return;
+    }
     match context.format.sample_format {
         CoreAudioPcmSampleFormat::F32 => unsafe {
             let output = slice::from_raw_parts_mut(buffer.mData.cast::<f32>(), frame_samples);
@@ -380,6 +415,16 @@ fn fill_non_interleaved(buffers: &mut [ca::AudioBuffer], context: &CoreAudioOutp
     let stereo_scratch = unsafe { &mut *context.stereo_scratch.get() };
     let output_scratch = unsafe { &mut *context.output_scratch.get() };
     let channels = context.format.channels.max(1);
+    if frames.saturating_mul(channels) > context.realtime_sample_capacity {
+        for buffer in buffers {
+            if !buffer.mData.is_null() {
+                unsafe {
+                    std::ptr::write_bytes(buffer.mData, 0, buffer.mDataByteSize as usize);
+                }
+            }
+        }
+        return;
+    }
     stereo_scratch.resize(frames * channels, 0.0);
     if context.format.sample_rate == context.shared.mix_format.sample_rate
         && channels == context.shared.mix_format.channels

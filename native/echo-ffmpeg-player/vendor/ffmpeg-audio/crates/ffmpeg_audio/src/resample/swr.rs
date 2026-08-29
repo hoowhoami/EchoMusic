@@ -17,6 +17,9 @@ pub struct SwrContext {
     planar_ptrs_scratch: Vec<*mut u8>,
 }
 
+// SAFETY: the context is uniquely owned, all FFmpeg state mutations require `&mut self`, and the
+// type is intentionally not `Sync`. This permits moving ownership between threads, not concurrent
+// calls to `swr_convert` on the same context.
 unsafe impl Send for SwrContext {}
 
 impl SwrContext {

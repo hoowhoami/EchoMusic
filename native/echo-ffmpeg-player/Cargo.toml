@@ -8,7 +8,7 @@ rust-version = "1.87"
 crate-type = ["cdylib"]
 
 [dependencies]
-napi = { version = "3", features = ["napi9", "serde-json"] }
+napi = { version = "3", features = ["napi9", "serde-json", "tokio_rt"] }
 napi-derive = "3"
 ffmpeg_audio = { path = "vendor/ffmpeg-audio/crates/ffmpeg_audio", features = ["http"] }
 cpal = "0.18"

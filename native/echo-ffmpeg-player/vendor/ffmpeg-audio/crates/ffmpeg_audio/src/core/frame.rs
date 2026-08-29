@@ -178,7 +178,7 @@ impl<'a> AudioFrame<'a> {
     /// * `Ok(RawAudioData)` - The corresponding memory slice enum.
     /// * `Err(AudioError::FormatMismatch)` - The requested `T` does not match the type actually
     ///   output by the underlying decoder.
-    pub fn raw_data<T: AudioSample>(&self) -> Result<RawAudioData<'a, T>> {
+    pub fn raw_data<T: AudioSample>(&self) -> Result<RawAudioData<'_, T>> {
         let fmt = self.sample_fmt();
         let is_packed = fmt == T::PACKED_FORMAT;
         let is_planar = fmt == T::PLANAR_FORMAT;

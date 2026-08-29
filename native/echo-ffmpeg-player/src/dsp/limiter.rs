@@ -9,6 +9,7 @@ pub(crate) struct LinkedLimiter {
     channels: usize,
     write_index: usize,
     ceiling: f32,
+    attack_coefficient: f32,
     release_coefficient: f32,
     gain_envelope: f32,
     delay: Vec<f32>,
@@ -22,10 +23,15 @@ impl LinkedLimiter {
         let channels = channels.max(1);
         let release_samples = sample_rate.max(1) as f32 * RELEASE_SECONDS;
         let release_coefficient = 1.0 - (-1.0 / release_samples).exp();
+        // The peak is known LOOKAHEAD frames before it leaves the delay line. Approach the
+        // required attenuation smoothly across that window and leave less than one part per
+        // million of the original gain delta when the peak reaches the output.
+        let attack_coefficient = 1.0 - 0.000001f32.powf(1.0 / Self::LOOKAHEAD as f32);
         Self {
             channels,
             write_index: 0,
             ceiling: DEFAULT_CEILING,
+            attack_coefficient,
             release_coefficient,
             gain_envelope: 1.0,
             delay: vec![0.0; Self::LOOKAHEAD * channels],
@@ -71,7 +77,12 @@ impl LinkedLimiter {
         };
         let released =
             self.gain_envelope + self.release_coefficient * (1.0 - self.gain_envelope) + 1.0e-25;
-        let gain = target_gain.min(released).min(1.0);
+        let gain = if target_gain < self.gain_envelope {
+            self.gain_envelope + self.attack_coefficient * (target_gain - self.gain_envelope)
+        } else {
+            released.min(target_gain)
+        }
+        .min(1.0);
         self.gain_envelope = gain;
 
         let delay_offset = self.write_index * self.channels;
@@ -117,6 +128,18 @@ mod tests {
         let right = samples[output_frame * 2 + 1];
         assert!(left <= DEFAULT_CEILING + 0.00001);
         assert!((left / right - 2.0).abs() < 0.00001);
+    }
+
+    #[test]
+    fn linked_limiter_smooths_attack_across_lookahead() {
+        let mut limiter = LinkedLimiter::new(48_000, 2);
+        let mut peak = [2.0, 2.0];
+        limiter.process_interleaved(&mut peak);
+        let mut silence = [0.0, 0.0];
+        limiter.process_interleaved(&mut silence);
+
+        assert!(limiter.gain_envelope < 1.0);
+        assert!(limiter.gain_envelope > DEFAULT_CEILING / 2.0);
     }
 
     #[test]

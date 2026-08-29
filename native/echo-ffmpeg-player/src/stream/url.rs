@@ -93,8 +93,8 @@ fn percent_decode_file_url(value: &str) -> String {
     let mut i = 0;
     while i < bytes.len() {
         if bytes[i] == b'%' && i + 2 < bytes.len() {
-            if let Ok(hex) = u8::from_str_radix(&value[i + 1..i + 3], 16) {
-                out.push(hex);
+            if let (Some(high), Some(low)) = (hex_nibble(bytes[i + 1]), hex_nibble(bytes[i + 2])) {
+                out.push((high << 4) | low);
                 i += 3;
                 continue;
             }
@@ -103,6 +103,15 @@ fn percent_decode_file_url(value: &str) -> String {
         i += 1;
     }
     String::from_utf8_lossy(&out).into_owned()
+}
+
+fn hex_nibble(value: u8) -> Option<u8> {
+    match value {
+        b'0'..=b'9' => Some(value - b'0'),
+        b'a'..=b'f' => Some(value - b'a' + 10),
+        b'A'..=b'F' => Some(value - b'A' + 10),
+        _ => None,
+    }
 }
 
 #[cfg(test)]
@@ -115,6 +124,13 @@ mod tests {
             file_url_to_path("file:///Users/whoami/Music/a%20b.flac", false).expect("file url");
 
         assert_eq!(path, PathBuf::from("/Users/whoami/Music/a b.flac"));
+    }
+
+    #[test]
+    fn file_url_parser_preserves_bare_percent_before_multibyte_text() {
+        let path = file_url_to_path("file:///tmp/%中x.flac", false).expect("file url");
+
+        assert_eq!(path, PathBuf::from("/tmp/%中x.flac"));
     }
 
     #[test]

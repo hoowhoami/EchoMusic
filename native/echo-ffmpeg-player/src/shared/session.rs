@@ -2,7 +2,7 @@ use super::SharedAudio;
 use crate::decoder::{DecodeCommand, DecoderData};
 use crate::output::AudioOutputHandle;
 use std::sync::mpsc::SyncSender;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 
 pub struct PlaybackSession {
@@ -25,9 +25,20 @@ impl PlaybackSession {
     }
 
     pub fn stop_background(self) {
-        let _ = std::thread::Builder::new()
+        let pending = Arc::new(Mutex::new(Some(self)));
+        let worker_pending = pending.clone();
+        let spawned = std::thread::Builder::new()
             .name("player-session-stop".to_string())
-            .spawn(move || self.stop_blocking());
+            .spawn(move || {
+                if let Some(session) = take_pending(&worker_pending) {
+                    session.stop_blocking();
+                }
+            });
+        if spawned.is_err() {
+            if let Some(session) = take_pending(&pending) {
+                session.stop_blocking();
+            }
+        }
     }
 
     pub fn stop_blocking(mut self) {
@@ -53,7 +64,23 @@ impl PlaybackSession {
 
 pub fn join_decode_background(handle: JoinHandle<Option<DecoderData>>, reason: &'static str) {
     let name = format!("player-decode-reaper-{reason}");
-    let _ = std::thread::Builder::new().name(name).spawn(move || {
-        let _ = handle.join();
+    let pending = Arc::new(Mutex::new(Some(handle)));
+    let worker_pending = pending.clone();
+    let spawned = std::thread::Builder::new().name(name).spawn(move || {
+        if let Some(handle) = take_pending(&worker_pending) {
+            let _ = handle.join();
+        }
     });
+    if spawned.is_err() {
+        if let Some(handle) = take_pending(&pending) {
+            let _ = handle.join();
+        }
+    }
+}
+
+fn take_pending<T>(pending: &Mutex<Option<T>>) -> Option<T> {
+    pending
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .take()
 }

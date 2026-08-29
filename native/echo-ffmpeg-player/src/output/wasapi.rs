@@ -337,8 +337,12 @@ fn run_wasapi_output(
         ),
     ));
 
-    let mut output_scratch = Vec::<f32>::new();
-    let mut graph_scratch = Vec::<f32>::new();
+    let realtime_frames = output.buffer_frames.max(1) as usize;
+    let mut output_scratch =
+        Vec::<f32>::with_capacity(realtime_frames.saturating_mul(output_format.channels.max(1)));
+    let mut graph_scratch = Vec::<f32>::with_capacity(
+        realtime_frames.saturating_mul(shared.mix_format.channels.max(1)),
+    );
     let mut resampler = OutputResampler::new(
         shared.mix_format.sample_rate,
         output_format.sample_rate,
@@ -346,6 +350,9 @@ fn run_wasapi_output(
         output_format.channels,
     )
     .map_err(WasapiOutputFailure::backend)?;
+    resampler
+        .reserve_realtime_capacity(realtime_frames)
+        .map_err(WasapiOutputFailure::backend)?;
 
     unsafe {
         if output_start_was_cancelled(&stop, &shared, start_notify) {

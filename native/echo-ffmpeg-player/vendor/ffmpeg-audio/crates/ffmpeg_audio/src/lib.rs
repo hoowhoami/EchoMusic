@@ -15,6 +15,7 @@ pub use core::{
 use std::{
     collections::HashMap,
     io::{Read, Seek},
+    sync::{Arc, atomic::AtomicBool},
     time::Duration,
 };
 
@@ -75,9 +76,26 @@ impl AudioReader {
     where
         T: Read + Seek + Send + 'static,
     {
+        Self::new_with_audio_stream_packet_cache_and_interrupt(
+            source,
+            audio_stream_ordinal,
+            packet_cache_options,
+            Arc::new(AtomicBool::new(false)),
+        )
+    }
+
+    pub fn new_with_audio_stream_packet_cache_and_interrupt<T>(
+        source: T,
+        audio_stream_ordinal: Option<usize>,
+        packet_cache_options: PacketCacheOptions,
+        interrupt: Arc<AtomicBool>,
+    ) -> Result<Self>
+    where
+        T: Read + Seek + Send + 'static,
+    {
         init_ffmpeg_logging();
 
-        let io_ctx = IoContext::new(source)?;
+        let io_ctx = IoContext::new_with_interrupt(source, interrupt)?;
         let demuxer = Demuxer::new_with_audio_stream(io_ctx, audio_stream_ordinal)?;
         let codec_params = demuxer.stream_codec_params();
         let decoder = Decoder::new(codec_params)?;

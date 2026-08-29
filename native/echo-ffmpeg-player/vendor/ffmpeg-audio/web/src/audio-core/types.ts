@@ -35,7 +35,19 @@ export interface EngineConfig {
 	};
 
 	queueConfig?: Partial<QueueConfig>;
+
+	/**
+	 * Default stretch algorithm to use on startup. Defaults to "spectral".
+	 */
+	defaultAlgorithm?: StretchAlgorithm;
 }
+
+/**
+ * Available time-stretching and pitch-shifting DSP algorithms.
+ * - "wsola": WSOLA time-domain algorithm (optimized for low latency).
+ * - "spectral": Phase Vocoder STFT frequency-domain algorithm (higher audio fidelity for polyphonic music).
+ */
+export type StretchAlgorithm = "wsola" | "spectral";
 
 /**
  * Represents the current playback state of the engine.

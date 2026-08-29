@@ -15,7 +15,7 @@ impl Task for SetSpeedTask {
     fn compute(&mut self) -> napi::Result<Self::Output> {
         ensure_finite_parameter(self.speed, "playback speed")?;
         let speed = tempo::normalize_speed(self.speed);
-        with_runtime(|runtime| {
+        call_core_command("set-speed", move |runtime| {
             if (runtime.dsp_settings.speed - speed).abs() < f32::EPSILON {
                 return Ok(());
             }
@@ -62,11 +62,11 @@ impl Task for SetEqualizerTask {
                 "equalizer gains must be finite".to_string(),
             ));
         }
-        with_runtime(|runtime| {
-            let mut next = [0.0f32; EQ_BAND_COUNT];
-            for (index, value) in self.gains.iter().enumerate() {
-                next[index] = value.clamp(-12.0, 12.0) as f32;
-            }
+        let mut next = [0.0f32; EQ_BAND_COUNT];
+        for (index, value) in self.gains.iter().enumerate() {
+            next[index] = value.clamp(-12.0, 12.0) as f32;
+        }
+        call_core_command("set-equalizer", move |runtime| {
             runtime.dsp_settings.equalizer = next;
             sync_current_session_dsp_settings(runtime);
             update_runtime_audio_graph(runtime);
@@ -143,22 +143,23 @@ impl Task for SetAudioEffectTask {
             }
             serde_json::Value::Array(resources).to_string()
         });
-        let (mix_format, request_seq, base_settings, session_shared) = with_runtime(|runtime| {
-            runtime.spatial_request_seq = runtime.spatial_request_seq.wrapping_add(1);
-            Ok((
-                runtime
-                    .session
-                    .as_ref()
-                    .map(|session| session.shared.mix_format)
-                    .unwrap_or_else(|| MixFormat::stereo_f32(48_000)),
-                runtime.spatial_request_seq,
-                runtime.dsp_settings.clone(),
-                runtime
-                    .session
-                    .as_ref()
-                    .map(|session| session.shared.clone()),
-            ))
-        })?;
+        let (mix_format, request_seq, base_settings, session_shared) =
+            call_core_command("begin-audio-effect", |runtime| {
+                runtime.spatial_request_seq = runtime.spatial_request_seq.wrapping_add(1);
+                Ok((
+                    runtime
+                        .session
+                        .as_ref()
+                        .map(|session| session.shared.mix_format)
+                        .unwrap_or_else(|| MixFormat::stereo_f32(48_000)),
+                    runtime.spatial_request_seq,
+                    runtime.dsp_settings.clone(),
+                    runtime
+                        .session
+                        .as_ref()
+                        .map(|session| session.shared.clone()),
+                ))
+            })?;
 
         if has_provider_resources && provider_path.is_none() {
             return Err(napi::Error::from_reason(
@@ -189,7 +190,7 @@ impl Task for SetAudioEffectTask {
         let mut prepared_graph =
             Some(AudioFilterGraph::new(mix_format, &candidate).map_err(napi::Error::from_reason)?);
 
-        with_runtime(|runtime| {
+        call_core_command("commit-audio-effect", move |runtime| {
             if runtime.spatial_request_seq != request_seq {
                 emit_runtime_event(
                     runtime,
@@ -327,8 +328,9 @@ impl Task for SetNormalizationGainTask {
 
     fn compute(&mut self) -> napi::Result<Self::Output> {
         ensure_finite_parameter(self.gain_db, "normalization gain")?;
-        with_runtime(|runtime| {
-            runtime.dsp_settings.normalization_gain_db = self.gain_db.clamp(-40.0, 24.0) as f32;
+        let gain_db = self.gain_db.clamp(-40.0, 24.0) as f32;
+        call_core_command("set-normalization-gain", move |runtime| {
+            runtime.dsp_settings.normalization_gain_db = gain_db;
             sync_current_session_dsp_settings(runtime);
             update_runtime_audio_graph(runtime);
             Ok(())

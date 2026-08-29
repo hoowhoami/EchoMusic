@@ -13,6 +13,7 @@ import {
 	type EngineState,
 	type PlayerCover,
 	type QueueConfig,
+	type StretchAlgorithm,
 } from "./types";
 import { getErrorMessage, TypedEventTarget } from "./utils";
 
@@ -51,6 +52,7 @@ export class FFmpegAudioEngine extends TypedEventTarget<EngineEventMap> {
 	private _tempo = 1.0;
 	private _pitch = 1.0;
 	private _rate = 1.0;
+	private _algorithm: StretchAlgorithm;
 
 	private timeupdateTimer: ReturnType<typeof setInterval> | null = null;
 	private loadResolve: (() => void) | null = null;
@@ -61,6 +63,7 @@ export class FFmpegAudioEngine extends TypedEventTarget<EngineEventMap> {
 	constructor(config: EngineConfig) {
 		super();
 		this.config = config;
+		this._algorithm = config.defaultAlgorithm ?? "spectral";
 
 		this.queueConfig = {
 			...DEFAULT_QUEUE_CONFIG,
@@ -216,6 +219,25 @@ export class FFmpegAudioEngine extends TypedEventTarget<EngineEventMap> {
 		this.renderer.setRate(this._rate);
 	}
 
+	public get algorithm(): StretchAlgorithm {
+		return this._algorithm;
+	}
+	public set algorithm(val: StretchAlgorithm) {
+		if (this._algorithm === val) {
+			return;
+		}
+
+		this._algorithm = val;
+		this.renderer.setAlgorithm(this._algorithm);
+	}
+
+	/**
+	 * Sets the formant multiplier factor and pitch compensation for spectral stretching.
+	 */
+	public setFormant(factor: number, compensatePitch: boolean = false): void {
+		this.renderer.setFormant(factor, compensatePitch);
+	}
+
 	public async preloadAssets(): Promise<void> {
 		if (this._assetsPreloaded) {
 			return;
@@ -308,6 +330,7 @@ export class FFmpegAudioEngine extends TypedEventTarget<EngineEventMap> {
 				this._pitch,
 				this._rate,
 				this.soundtouchWasmBuffer,
+				this._algorithm,
 			);
 
 			if (this.loadSessionId !== currentSessionId) {

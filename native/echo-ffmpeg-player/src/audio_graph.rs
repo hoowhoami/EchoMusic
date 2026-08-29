@@ -429,13 +429,36 @@ impl AudioFilterGraph {
         output_format: MixFormat,
         settings: &DspSettings,
     ) -> Result<(), String> {
+        let process_format = process_format_for_output(output_format, settings);
+        if self.output_format == output_format
+            && self.process_format == process_format
+            && self.effects.can_reset_state(settings)
+        {
+            // Prepare the new fallible tempo state first, then reset effects, and only commit
+            // converter/tempo after both operations succeed. This keeps the existing graph
+            // intact if construction or the in-place reset is rejected.
+            let next_tempo = TempoProcessor::new(
+                settings.speed,
+                process_format.sample_rate,
+                process_format.channels,
+            )?;
+            self.effects.reset_state(settings)?;
+            self.converter = SwrMixConverter::default();
+            self.tempo = next_tempo;
+            self.nodes = filter_nodes_for_settings(settings);
+            self.converted_output.clear();
+            self.processed_output.clear();
+            self.mapped_output.clear();
+            return Ok(());
+        }
         *self = Self::new(output_format, settings)?;
         Ok(())
     }
 
     /// Apply DSP setting changes without rebuilding the graph or sample converter.
-    /// The output ring must already have been cleared by the caller so that source-frame tracking
-    /// remains consistent. Does **not** recreate `SwrMixConverter`, `DspChain`, or internal buffers.
+    /// The caller keeps already-produced output as the old-settings hand-off tail; the tempo
+    /// processor drains its own pending state when speed changes so source frames are not lost.
+    /// Does **not** recreate `SwrMixConverter`, `DspChain`, or internal buffers.
     pub fn update_settings(&mut self, settings: &DspSettings) -> Result<(), String> {
         self.tempo.set_speed(settings.speed)?;
         self.effects.update_settings(settings)?;
@@ -788,7 +811,11 @@ fn convert_with_swr(
     };
     output.truncate(actual_frames.saturating_mul(output_channels.max(1)));
     for sample in output.iter_mut() {
-        *sample = sample.clamp(-1.0, 1.0);
+        *sample = if sample.is_finite() {
+            sample.clamp(-1.0, 1.0)
+        } else {
+            0.0
+        };
     }
     Ok(())
 }

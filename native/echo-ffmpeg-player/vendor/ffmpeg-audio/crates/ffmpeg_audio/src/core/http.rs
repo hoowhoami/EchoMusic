@@ -39,11 +39,12 @@ const MAX_RECONNECT_TOTAL_DELAY: Duration = Duration::from_secs(256);
 
 const USER_AGENT: &str = "Lavf/62.12.101";
 const CANCEL_BRIDGE_POLL: Duration = Duration::from_millis(25);
+const RUNTIME_SHUTDOWN_TIMEOUT: Duration = Duration::from_millis(200);
 
 type AsyncReader = Pin<Box<dyn AsyncRead + Send + Sync + 'static>>;
 
 enum FetchAction {
-    Success(AsyncReader, u64),
+    Success(AsyncReader, Option<u64>),
     Retry(Option<Duration>),
     Fatal(HttpError),
 }
@@ -52,7 +53,7 @@ enum FetchAction {
 struct ContentRange {
     start: u64,
     end: u64,
-    total: u64,
+    total: Option<u64>,
 }
 
 fn next_reconnect_delay(current: Duration) -> io::Result<Duration> {
@@ -140,7 +141,10 @@ pub struct HttpAudioSource {
     client: Client,
 
     /// The total size (in bytes) of the audio file, determined via server probing.
-    content_length: u64,
+    content_length: Option<u64>,
+
+    /// Whether nonzero byte offsets can be reopened with a Range request.
+    range_supported: bool,
 
     /// Tracks the current absolute byte offset within the file.
     current_pos: u64,
@@ -150,7 +154,7 @@ pub struct HttpAudioSource {
     body_reader: Option<AsyncReader>,
 
     /// The exclusive end offset of the currently active HTTP response range.
-    stream_end: u64,
+    stream_end: Option<u64>,
 
     /// Backoff state for consecutive reconnects without a successful read.
     reconnect_delay: Duration,
@@ -158,6 +162,10 @@ pub struct HttpAudioSource {
 
     /// Opaque cancellation handle passed in from the upper-layer application
     cancel_handle: HttpCancelHandle,
+
+    /// Whether this source created the cancellation handle and may cancel it
+    /// during teardown. Externally supplied handles can be shared by callers.
+    owns_cancel_handle: bool,
 
     /// Optional application interrupt flag mirrored by the cancellation bridge.
     cancel_flag: Option<Arc<AtomicBool>>,
@@ -175,16 +183,15 @@ pub struct HttpAudioSource {
     /// Per-read timeout. EchoMusic feeds this from player network settings.
     recv_timeout: Duration,
 
-    /// An isolated single-threaded Tokio runtime dedicated to driving current asynchronous network
-    /// operations.
-    rt: Runtime,
+    /// An isolated Tokio runtime dedicated to driving current asynchronous network operations.
+    rt: Option<Runtime>,
 }
 
 impl HttpAudioSource {
     /// Attempts to connect to and probe the target remote URL using a default cancellation token.
     ///
-    /// Connection is permitted only if the server explicitly supports HTTP Range requests
-    /// and provides a determinate content length.
+    /// Finite range-capable files retain random-access support. Sequential HTTP streams without
+    /// `Content-Length` are also accepted, but only support forward reading from byte zero.
     ///
     /// This is a convenience constructor that delegates to [`Self::new_with_cancel_handle`] with a
     /// newly created, non-canceled [`HttpCancelHandle`].
@@ -196,25 +203,24 @@ impl HttpAudioSource {
     /// # Errors
     ///
     /// Returns an error if:
-    /// * The remote server does not support HTTP Range requests (fails to return HTTP 206).
-    /// * The total stream length cannot be determined from the headers.
+    /// * The remote server returns an unsupported status or malformed range metadata.
     /// * A transport or connection error occurs during the initial network probe.
     pub fn new(url: &str) -> Result<Self> {
         Self::new_with_options(url, HttpAudioSourceOptions::default())
     }
 
     pub fn new_with_options(url: &str, options: HttpAudioSourceOptions) -> Result<Self> {
-        Self::new_with_options_and_cancel_handle(url, options, HttpCancelHandle::new())
+        Self::new_with_options_and_cancel_handle_owned(url, options, HttpCancelHandle::new(), true)
     }
 
     /// Attempts to connect to and probe the target remote URL, allowing the initial connection
     /// and response probing phase to be interrupted.
     ///
-    /// Connection is permitted only if the server explicitly supports HTTP Range requests
-    /// and provides a determinate content length.
+    /// Finite range-capable files retain random-access support. Sequential HTTP streams without
+    /// `Content-Length` are also accepted, but only support forward reading from byte zero.
     ///
-    /// The initial HTTP probe request runs inside an internally managed, single-threaded Tokio
-    /// runtime. By passing an opaque [`HttpCancelHandle`], the caller can immediately abort this
+    /// The initial HTTP probe request runs inside an internally managed Tokio runtime. By passing
+    /// an opaque [`HttpCancelHandle`], the caller can immediately abort this
     /// synchronous initialization block if the remote server hangs or is unresponsive during
     /// TCP connection, TLS handshake, or while waiting for response headers.
     ///
@@ -227,8 +233,7 @@ impl HttpAudioSource {
     ///
     /// Returns an error if:
     /// * The operation is canceled via the provided `handle` (returns [`HttpError::Cancelled`]).
-    /// * The remote server does not support HTTP Range requests (fails to return HTTP 206).
-    /// * The total stream length cannot be determined.
+    /// * The remote server returns an unsupported status or malformed range metadata.
     /// * A transport or connection error occurs during the initial network probe.
     pub fn new_with_cancel_handle(url: &str, handle: impl Into<HttpCancelHandle>) -> Result<Self> {
         Self::new_with_options_and_cancel_handle(url, HttpAudioSourceOptions::default(), handle)
@@ -241,7 +246,7 @@ impl HttpAudioSource {
     ) -> Result<Self> {
         let cancel_handle = HttpCancelHandle::new();
         let (stop, thread) = spawn_cancel_bridge(flag.clone(), cancel_handle.clone());
-        match Self::new_with_options_and_cancel_handle(url, options, cancel_handle) {
+        match Self::new_with_options_and_cancel_handle_owned(url, options, cancel_handle, true) {
             Ok(mut source) => {
                 source.cancel_flag = Some(flag);
                 source.cancel_bridge_stop = Some(stop);
@@ -260,7 +265,15 @@ impl HttpAudioSource {
         options: HttpAudioSourceOptions,
         handle: impl Into<HttpCancelHandle>,
     ) -> Result<Self> {
-        let handle = handle.into();
+        Self::new_with_options_and_cancel_handle_owned(url, options, handle.into(), false)
+    }
+
+    fn new_with_options_and_cancel_handle_owned(
+        url: &str,
+        options: HttpAudioSourceOptions,
+        handle: HttpCancelHandle,
+        owns_cancel_handle: bool,
+    ) -> Result<Self> {
         let rt = Builder::new_multi_thread()
             .worker_threads(1)
             .enable_all()
@@ -272,15 +285,19 @@ impl HttpAudioSource {
             let proxy = Proxy::all(proxy_url)
                 .map_err(|err| HttpError::Transport(format!("invalid proxy url: {err}")))?;
             client_builder = client_builder.proxy(proxy);
+        } else {
+            // `None` means the application explicitly selected direct networking. Do not let
+            // process-level HTTP_PROXY/HTTPS_PROXY environment variables override that choice.
+            client_builder = client_builder.no_proxy();
         }
         let client = client_builder
             .build()
             .map_err(|e| HttpError::Transport(e.to_string()))?;
 
         let active_token = handle.token();
-        let (content_length, stream_end, body_reader) = rt.block_on(async {
+        let (content_length, range_supported, stream_end, body_reader) = rt.block_on(async {
             tokio::select! {
-                res = Self::probe_stream(&client, url) => res,
+                res = Self::probe_stream(&client, url, options.recv_timeout) => res,
 
                 () = active_token.cancelled() => {
                     Err(HttpError::Cancelled.into())
@@ -292,18 +309,20 @@ impl HttpAudioSource {
             url: url.to_string(),
             client,
             content_length,
+            range_supported,
             current_pos: 0,
             body_reader: Some(body_reader),
             stream_end,
             reconnect_delay: Duration::ZERO,
             reconnect_total_delay: Duration::ZERO,
             cancel_handle: handle,
+            owns_cancel_handle,
             cancel_flag: None,
             active_token,
             cancel_bridge_stop: None,
             cancel_bridge_thread: None,
             recv_timeout: options.recv_timeout,
-            rt,
+            rt: Some(rt),
         })
     }
 
@@ -346,33 +365,59 @@ impl HttpAudioSource {
         self.active_token.clone()
     }
 
-    async fn probe_stream(client: &Client, url: &str) -> Result<(u64, u64, AsyncReader)> {
-        let response = client
-            .get(url)
-            .header(header::USER_AGENT, USER_AGENT)
-            .header(header::RANGE, "bytes=0-")
-            .send()
-            .await
-            .map_err(|e| HttpError::Transport(e.to_string()))?;
-
-        if response.status() != StatusCode::PARTIAL_CONTENT {
-            return Err(if response.status() == StatusCode::OK {
-                HttpError::UnsupportedRange.into()
-            } else {
-                HttpError::Status(response.status().as_u16()).into()
-            });
+    fn discard_completed_range(&mut self) -> bool {
+        if self.range_supported
+            && self.body_reader.is_some()
+            && self
+                .stream_end
+                .is_some_and(|stream_end| self.current_pos >= stream_end)
+        {
+            self.body_reader = None;
+            return true;
         }
+        false
+    }
 
-        let content_range = Self::parse_and_validate_content_range(&response, 0, None)?;
-        let content_length = content_range.total;
+    async fn probe_stream(
+        client: &Client,
+        url: &str,
+        recv_timeout: Duration,
+    ) -> Result<(Option<u64>, bool, Option<u64>, AsyncReader)> {
+        let response = tokio::time::timeout(
+            recv_timeout,
+            client
+                .get(url)
+                .header(header::USER_AGENT, USER_AGENT)
+                .header(header::RANGE, "bytes=0-")
+                .send(),
+        )
+        .await
+        .map_err(|_| HttpError::Timeout)?
+        .map_err(|e| HttpError::Transport(e.to_string()))?;
+
+        let (content_length, range_supported, stream_end) = match response.status() {
+            StatusCode::PARTIAL_CONTENT => {
+                let content_range = Self::parse_and_validate_content_range(&response, 0, None)?;
+                (
+                    content_range.total,
+                    true,
+                    Some(content_range.end.saturating_add(1)),
+                )
+            }
+            StatusCode::OK => {
+                let content_length = response.content_length();
+                (content_length, false, content_length)
+            }
+            status => return Err(HttpError::Status(status.as_u16()).into()),
+        };
 
         #[cfg(feature = "tracing")]
-        tracing::info!("Probing successful. Stream length: {content_length} bytes.");
+        tracing::info!("Probing successful. Stream length: {content_length:?} bytes.");
 
         let stream = response.bytes_stream().map_err(io::Error::other);
         let reader: AsyncReader = Box::pin(StreamReader::new(stream));
 
-        Ok((content_length, content_range.end + 1, reader))
+        Ok((content_length, range_supported, stream_end, reader))
     }
 
     fn parse_content_range(value: &str) -> Option<ContentRange> {
@@ -384,7 +429,11 @@ impl HttpAudioSource {
         let (start, end) = range.split_once('-')?;
         let start = start.parse().ok()?;
         let end = end.parse().ok()?;
-        let total = total.parse().ok()?;
+        let total = if total == "*" {
+            None
+        } else {
+            Some(total.parse().ok()?)
+        };
         (start <= end).then_some(ContentRange { start, end, total })
     }
 
@@ -399,18 +448,20 @@ impl HttpAudioSource {
                 range.start
             )));
         }
-        if range.end >= range.total {
-            return Err(HttpError::InvalidContentRange(format!(
-                "range ends at {}, total length is {}",
-                range.end, range.total
-            )));
-        }
-        if let Some(expected_total) = expected_total
-            && range.total != expected_total
+        let effective_total = range.total.or(expected_total);
+        if let Some(total) = effective_total
+            && range.end >= total
         {
             return Err(HttpError::InvalidContentRange(format!(
-                "total length is {}, expected {expected_total}",
-                range.total
+                "range ends at {}, total length is {total}",
+                range.end
+            )));
+        }
+        if let (Some(expected_total), Some(actual_total)) = (expected_total, range.total)
+            && actual_total != expected_total
+        {
+            return Err(HttpError::InvalidContentRange(format!(
+                "total length is {actual_total}, expected {expected_total}"
             )));
         }
         Ok(range)
@@ -433,14 +484,23 @@ impl HttpAudioSource {
     }
 
     async fn execute_seek_request(&self, target_pos: u64) -> FetchAction {
+        if target_pos != 0 && !self.range_supported {
+            return FetchAction::Fatal(HttpError::UnsupportedRange);
+        }
         let range_header = format!("bytes={target_pos}-");
-        let result = self
-            .client
-            .get(&self.url)
-            .header(header::USER_AGENT, USER_AGENT)
-            .header(header::RANGE, range_header)
-            .send()
-            .await;
+        let result = match tokio::time::timeout(
+            self.recv_timeout,
+            self.client
+                .get(&self.url)
+                .header(header::USER_AGENT, USER_AGENT)
+                .header(header::RANGE, range_header)
+                .send(),
+        )
+        .await
+        {
+            Ok(result) => result,
+            Err(_) => return FetchAction::Retry(None),
+        };
 
         match result {
             Ok(resp) => {
@@ -451,7 +511,7 @@ impl HttpAudioSource {
                         let content_range = match Self::parse_and_validate_content_range(
                             &resp,
                             target_pos,
-                            Some(self.content_length),
+                            self.content_length,
                         ) {
                             Ok(range) => range,
                             Err(error) => return FetchAction::Fatal(error),
@@ -460,7 +520,7 @@ impl HttpAudioSource {
                         let stream = resp.bytes_stream().map_err(io::Error::other);
                         let reader: AsyncReader = Box::pin(StreamReader::new(stream));
 
-                        FetchAction::Success(reader, content_range.end + 1)
+                        FetchAction::Success(reader, Some(content_range.end.saturating_add(1)))
                     }
                     _ if status == StatusCode::TOO_MANY_REQUESTS || status.is_server_error() => {
                         let delay = resp
@@ -482,9 +542,12 @@ impl HttpAudioSource {
 
                         FetchAction::Retry(delay)
                     }
-                    StatusCode::OK if target_pos != 0 => {
-                        FetchAction::Fatal(HttpError::UnsupportedRange)
+                    StatusCode::OK if target_pos == 0 => {
+                        let stream_end = resp.content_length();
+                        let stream = resp.bytes_stream().map_err(io::Error::other);
+                        FetchAction::Success(Box::pin(StreamReader::new(stream)), stream_end)
                     }
+                    StatusCode::OK => FetchAction::Fatal(HttpError::UnsupportedRange),
                     _ if status.is_client_error() => {
                         #[cfg(feature = "tracing")]
                         tracing::error!("Fatal client error: HTTP {}", status.as_u16());
@@ -505,16 +568,29 @@ impl HttpAudioSource {
         }
     }
 
-    async fn execute_reconnect_request(&self, target_pos: u64) -> Result<(AsyncReader, u64)> {
-        let range_header = format!("bytes={target_pos}-");
-        let response = self
+    async fn execute_reconnect_request(
+        &self,
+        target_pos: u64,
+    ) -> Result<(AsyncReader, Option<u64>)> {
+        let mut request = self
             .client
             .get(&self.url)
-            .header(header::USER_AGENT, USER_AGENT)
-            .header(header::RANGE, range_header)
+            .header(header::USER_AGENT, USER_AGENT);
+        if self.range_supported {
+            request = request.header(header::RANGE, format!("bytes={target_pos}-"));
+        }
+        let response = request
             .send()
             .await
             .map_err(|e| HttpError::Transport(e.to_string()))?;
+
+        if !self.range_supported {
+            if self.content_length.is_none() && response.status() == StatusCode::OK {
+                let stream = response.bytes_stream().map_err(io::Error::other);
+                return Ok((Box::pin(StreamReader::new(stream)), None));
+            }
+            return Err(HttpError::Status(response.status().as_u16()).into());
+        }
 
         if response.status() != StatusCode::PARTIAL_CONTENT {
             return Err(if response.status() == StatusCode::OK {
@@ -524,63 +600,71 @@ impl HttpAudioSource {
             });
         }
 
-        let content_range = Self::parse_and_validate_content_range(
-            &response,
-            target_pos,
-            Some(self.content_length),
-        )?;
+        let content_range =
+            Self::parse_and_validate_content_range(&response, target_pos, self.content_length)?;
 
         let stream = response.bytes_stream().map_err(io::Error::other);
         let reader: AsyncReader = Box::pin(StreamReader::new(stream));
 
-        Ok((reader, content_range.end + 1))
+        Ok((reader, Some(content_range.end.saturating_add(1))))
     }
 
     async fn wait_for_reconnect(&mut self) -> io::Result<()> {
-        let next_delay = next_reconnect_delay(self.reconnect_delay)?;
+        loop {
+            let next_delay = next_reconnect_delay(self.reconnect_delay)?;
 
-        if next_delay > MAX_RECONNECT_DELAY
-            || self
-                .reconnect_total_delay
-                .checked_add(next_delay)
-                .is_none_or(|delay| delay > MAX_RECONNECT_TOTAL_DELAY)
-        {
-            return Err(Error::other("HTTP reconnect timeout"));
-        }
+            if next_delay > MAX_RECONNECT_DELAY
+                || self
+                    .reconnect_total_delay
+                    .checked_add(next_delay)
+                    .is_none_or(|delay| delay > MAX_RECONNECT_TOTAL_DELAY)
+            {
+                return Err(Error::other("HTTP reconnect timeout"));
+            }
 
-        self.reconnect_delay = next_delay;
-        self.reconnect_total_delay += next_delay;
+            self.reconnect_delay = next_delay;
+            self.reconnect_total_delay += next_delay;
 
-        let target_pos = self.current_pos;
-        let cancel_token = self.cancel_token();
-        tokio::select! {
-            () = tokio::time::sleep(next_delay) => {},
-            () = cancel_token.cancelled() => {
-                return Err(Error::new(ErrorKind::Interrupted, "Cancelled"));
+            let target_pos = self.current_pos;
+            let cancel_token = self.cancel_token();
+            tokio::select! {
+                () = tokio::time::sleep(next_delay) => {},
+                () = cancel_token.cancelled() => {
+                    return Err(Error::new(ErrorKind::Interrupted, "Cancelled"));
+                }
+            }
+
+            let result = tokio::select! {
+                result = tokio::time::timeout(
+                    self.recv_timeout,
+                    self.execute_reconnect_request(target_pos),
+                ) => result
+                    .map_err(|_| Error::new(ErrorKind::TimedOut, "Reconnect request timeout"))
+                    .and_then(|result| result.map_err(io::Error::from)),
+                () = cancel_token.cancelled() => {
+                    return Err(Error::new(ErrorKind::Interrupted, "Cancelled"));
+                }
+            };
+
+            match result {
+                Ok((reader, stream_end)) => {
+                    self.body_reader = Some(reader);
+                    self.stream_end = stream_end;
+                    return Ok(());
+                }
+                Err(error) if error.kind() == ErrorKind::Interrupted => return Err(error),
+                Err(_) => continue,
             }
         }
-
-        let (reader, stream_end) = tokio::select! {
-            result = tokio::time::timeout(
-                self.recv_timeout,
-                self.execute_reconnect_request(target_pos),
-            ) => result
-                .map_err(|_| Error::new(ErrorKind::TimedOut, "Reconnect request timeout"))?
-                .map_err(io::Error::from)?,
-            () = cancel_token.cancelled() => {
-                return Err(Error::new(ErrorKind::Interrupted, "Cancelled"));
-            }
-        };
-
-        self.body_reader = Some(reader);
-        self.stream_end = stream_end;
-        Ok(())
     }
 
     async fn hard_seek_with_retry(&mut self, target_pos: u64) -> Result<()> {
         self.body_reader = None;
 
-        if target_pos >= self.content_length {
+        if self
+            .content_length
+            .is_some_and(|content_length| target_pos >= content_length)
+        {
             self.current_pos = target_pos;
             return Ok(());
         }
@@ -662,13 +746,26 @@ impl RetryPolicy {
 impl Read for HttpAudioSource {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         self.sync_cancel_state();
-        if self.current_pos >= self.content_length || buf.is_empty() {
+        if self
+            .content_length
+            .is_some_and(|content_length| self.current_pos >= content_length)
+            || buf.is_empty()
+        {
             return Ok(0);
         }
 
         loop {
             let cancel_token = self.cancel_token();
-            let rt_handle = self.rt.handle().clone();
+            let rt_handle = self
+                .rt
+                .as_ref()
+                .ok_or_else(|| Error::other("HTTP runtime is shut down"))?
+                .handle()
+                .clone();
+
+            // A server may legally cap `bytes=N-` to a finite response segment. Reopen the next
+            // segment immediately; this is a normal boundary, not a failed transfer.
+            self.discard_completed_range();
 
             if self.body_reader.is_none() {
                 let target_pos = self.current_pos;
@@ -687,8 +784,12 @@ impl Read for HttpAudioSource {
             }
 
             let reader = self.body_reader.as_mut().unwrap();
-            let remaining = self.stream_end.saturating_sub(self.current_pos);
-            let read_buf_len = std::cmp::min(remaining, buf.len() as u64) as usize;
+            let read_buf_len = self.stream_end.map_or(buf.len(), |stream_end| {
+                std::cmp::min(
+                    stream_end.saturating_sub(self.current_pos),
+                    buf.len() as u64,
+                ) as usize
+            });
             let recv_timeout = self.recv_timeout;
 
             let read_result = rt_handle.block_on(async {
@@ -704,16 +805,25 @@ impl Read for HttpAudioSource {
 
             match read_result {
                 Ok(0) => {
-                    if self.current_pos < self.stream_end {
+                    if !self.range_supported {
+                        return Ok(0);
+                    }
+                    if self
+                        .stream_end
+                        .is_some_and(|stream_end| self.current_pos < stream_end)
+                    {
                         #[cfg(feature = "tracing")]
                         tracing::warn!(
                             "Premature EOF at offset {} (expected {}). Reconnecting...",
                             self.current_pos,
-                            self.stream_end
+                            self.stream_end.unwrap_or(self.current_pos)
                         );
                     }
 
-                    if self.current_pos >= self.content_length {
+                    if self
+                        .content_length
+                        .is_some_and(|content_length| self.current_pos >= content_length)
+                    {
                         return Ok(0);
                     }
 
@@ -731,6 +841,9 @@ impl Read for HttpAudioSource {
                 }
                 #[allow(unused_variables)]
                 Err(e) => {
+                    if !self.range_supported && self.content_length.is_some() {
+                        return Err(e);
+                    }
                     #[cfg(feature = "tracing")]
                     tracing::warn!(
                         "Network read error at offset {}: {}. Reconnecting...",
@@ -757,6 +870,13 @@ impl HttpAudioSource {
 impl Drop for HttpAudioSource {
     fn drop(&mut self) {
         self.stop_cancel_bridge();
+        if self.owns_cancel_handle {
+            self.cancel_handle.cancel();
+        }
+        self.body_reader = None;
+        if let Some(rt) = self.rt.take() {
+            rt.shutdown_timeout(RUNTIME_SHUTDOWN_TIMEOUT);
+        }
     }
 }
 
@@ -817,7 +937,13 @@ impl Seek for HttpAudioSource {
                 new_pos.cast_unsigned()
             }
             SeekFrom::End(offset) => {
-                let new_pos = self.content_length.cast_signed() + offset;
+                let content_length = self.content_length.ok_or_else(|| {
+                    Error::new(
+                        ErrorKind::Unsupported,
+                        "Cannot seek from end on a stream with unknown length",
+                    )
+                })?;
+                let new_pos = content_length.cast_signed() + offset;
                 if new_pos < 0 {
                     return Err(Error::new(
                         ErrorKind::InvalidInput,
@@ -874,7 +1000,19 @@ impl Seek for HttpAudioSource {
             }
         }
 
-        let rt_handle = self.rt.handle().clone();
+        if !self.range_supported && target_pos != 0 {
+            return Err(Error::new(
+                ErrorKind::Unsupported,
+                "Server does not support byte-range seeking",
+            ));
+        }
+
+        let rt_handle = self
+            .rt
+            .as_ref()
+            .ok_or_else(|| Error::other("HTTP runtime is shut down"))?
+            .handle()
+            .clone();
         let cancel_token = self.cancel_token();
 
         rt_handle.block_on(async {
@@ -890,8 +1028,11 @@ impl Seek for HttpAudioSource {
 
 #[cfg(test)]
 mod tests {
+    use std::io::Write as _;
     use std::{
         io::{Read, Seek, SeekFrom},
+        net::TcpListener,
+        sync::mpsc::sync_channel,
         thread,
         time::Instant,
     };
@@ -903,12 +1044,67 @@ mod tests {
     const CHAOS_URL: &str = "http://localhost:8000/chaos.mp3";
     const BLOCKHOLE_URL: &str = "http://192.0.2.1/test.mp3";
 
+    fn local_options(recv_timeout: Duration) -> HttpAudioSourceOptions {
+        HttpAudioSourceOptions {
+            connect_timeout: Duration::from_secs(1),
+            recv_timeout,
+            proxy_url: None,
+        }
+    }
+
+    fn test_source(
+        content_length: Option<u64>,
+        range_supported: bool,
+        stream_end: Option<u64>,
+        body_reader: Option<AsyncReader>,
+    ) -> HttpAudioSource {
+        let cancel_handle = HttpCancelHandle::new();
+        HttpAudioSource {
+            url: "http://localhost/dummy.mp3".to_string(),
+            client: Client::builder().no_proxy().build().unwrap(),
+            content_length,
+            range_supported,
+            current_pos: 0,
+            body_reader,
+            stream_end,
+            reconnect_delay: Duration::ZERO,
+            reconnect_total_delay: Duration::ZERO,
+            cancel_handle: cancel_handle.clone(),
+            owns_cancel_handle: true,
+            cancel_flag: None,
+            active_token: cancel_handle.token(),
+            cancel_bridge_stop: None,
+            cancel_bridge_thread: None,
+            recv_timeout: RECV_TIMEOUT,
+            rt: Some(
+                tokio::runtime::Builder::new_multi_thread()
+                    .worker_threads(1)
+                    .enable_all()
+                    .build()
+                    .unwrap(),
+            ),
+        }
+    }
+
+    fn serve_responses(listener: TcpListener, responses: Vec<&'static [u8]>) -> JoinHandle<()> {
+        thread::spawn(move || {
+            for response in responses {
+                let (mut stream, _) = listener.accept().unwrap();
+                let mut request = [0u8; 2048];
+                let _ = stream.read(&mut request);
+                stream.write_all(response).unwrap();
+            }
+        })
+    }
+
     #[test]
     #[ignore = "A network connection is required. Use tests/server.go to set up the mock server."]
     fn test_basic_read_and_seek() {
         let mut source = HttpAudioSource::new(TEST_URL).unwrap();
 
-        let total_length = source.content_length;
+        let total_length = source
+            .content_length
+            .expect("range test source should have a known length");
         assert!(total_length > 1024 * 1024, "File too small for testing");
 
         let mut buf1 = vec![0u8; 100];
@@ -1030,21 +1226,25 @@ mod tests {
         let mut source = HttpAudioSource {
             url: "http://localhost/dummy.mp3".to_string(),
             client: Client::new(),
-            content_length: 1024,
+            content_length: Some(1024),
+            range_supported: true,
             current_pos: 0,
             body_reader: None,
-            stream_end: 0,
+            stream_end: Some(0),
             reconnect_delay: Duration::ZERO,
             reconnect_total_delay: Duration::ZERO,
             cancel_handle: cancel_handle.clone(),
+            owns_cancel_handle: true,
             cancel_flag: None,
             active_token: cancel_handle.token(),
             cancel_bridge_stop: None,
             cancel_bridge_thread: None,
             recv_timeout: RECV_TIMEOUT,
-            rt: tokio::runtime::Builder::new_current_thread()
-                .build()
-                .unwrap(),
+            rt: Some(
+                tokio::runtime::Builder::new_current_thread()
+                    .build()
+                    .unwrap(),
+            ),
         };
 
         let mut empty_buf = [0u8; 0];
@@ -1057,6 +1257,220 @@ mod tests {
             source.body_reader.is_none(),
             "read(0) must not initialize or reset body_reader"
         );
+    }
+
+    #[test]
+    fn probe_accepts_chunked_stream_without_content_length() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}/stream", listener.local_addr().unwrap());
+        let server = serve_responses(
+            listener,
+            vec![b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n4\r\ntest\r\n0\r\n\r\n"],
+        );
+
+        let mut source =
+            HttpAudioSource::new_with_options(&url, local_options(Duration::from_secs(1))).unwrap();
+        assert_eq!(source.content_length, None);
+        assert!(!source.range_supported);
+
+        let mut output = [0u8; 4];
+        assert_eq!(source.read(&mut output).unwrap(), 4);
+        assert_eq!(&output, b"test");
+        assert_eq!(source.read(&mut output).unwrap(), 0);
+        assert_eq!(
+            source.seek(SeekFrom::End(0)).unwrap_err().kind(),
+            ErrorKind::Unsupported
+        );
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn probe_accepts_partial_content_with_unknown_total_length() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}/unknown-total", listener.local_addr().unwrap());
+        let server = serve_responses(
+            listener,
+            vec![b"HTTP/1.1 206 Partial Content\r\nContent-Range: bytes 0-3/*\r\nContent-Length: 4\r\nConnection: close\r\n\r\ntest"],
+        );
+
+        let mut source =
+            HttpAudioSource::new_with_options(&url, local_options(Duration::from_secs(1))).unwrap();
+        assert_eq!(source.content_length, None);
+        assert!(source.range_supported);
+
+        let mut output = [0u8; 4];
+        assert_eq!(source.read(&mut output).unwrap(), 4);
+        assert_eq!(&output, b"test");
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn unknown_total_partial_content_supports_chunked_body_and_range_seek() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}/chunked-range", listener.local_addr().unwrap());
+        let server = serve_responses(
+            listener,
+            vec![
+                b"HTTP/1.1 206 Partial Content\r\nContent-Range: bytes 0-3/*\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n4\r\ntest\r\n0\r\n\r\n",
+                b"HTTP/1.1 206 Partial Content\r\nContent-Range: bytes 1-3/*\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n3\r\nest\r\n0\r\n\r\n",
+            ],
+        );
+
+        let mut source =
+            HttpAudioSource::new_with_options(&url, local_options(Duration::from_secs(1))).unwrap();
+        assert_eq!(source.content_length, None);
+        assert!(source.range_supported);
+
+        let mut output = [0u8; 4];
+        assert_eq!(source.read(&mut output).unwrap(), 4);
+        assert_eq!(&output, b"test");
+
+        assert_eq!(source.seek(SeekFrom::Start(1)).unwrap(), 1);
+        assert_eq!(source.read(&mut output).unwrap(), 3);
+        assert_eq!(&output[..3], b"est");
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn sequential_unknown_length_stream_reconnects_after_transport_error() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}/radio", listener.local_addr().unwrap());
+        let server = serve_responses(
+            listener,
+            vec![
+                b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n2\r\nab\r\n5\r\nx",
+                b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n2\r\ncd\r\n0\r\n\r\n",
+            ],
+        );
+
+        let mut source =
+            HttpAudioSource::new_with_options(&url, local_options(Duration::from_secs(2))).unwrap();
+        let mut output = [0u8; 2];
+        let mut received = Vec::new();
+        while received.len() < 5 {
+            let count = source.read(&mut output).unwrap();
+            assert!(count > 0);
+            received.extend_from_slice(&output[..count]);
+        }
+        assert_eq!(&received, b"abxcd");
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn finite_range_boundary_reopens_immediately_without_backoff() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}/segmented", listener.local_addr().unwrap());
+        let server = serve_responses(
+            listener,
+            vec![
+                b"HTTP/1.1 206 Partial Content\r\nContent-Range: bytes 0-3/8\r\nContent-Length: 4\r\nConnection: close\r\n\r\nabcd",
+                b"HTTP/1.1 206 Partial Content\r\nContent-Range: bytes 4-7/8\r\nContent-Length: 4\r\nConnection: close\r\n\r\nefgh",
+            ],
+        );
+
+        let mut source =
+            HttpAudioSource::new_with_options(&url, local_options(Duration::from_secs(1))).unwrap();
+        let mut output = [0u8; 4];
+        assert_eq!(source.read(&mut output).unwrap(), 4);
+        assert_eq!(&output, b"abcd");
+
+        let started = Instant::now();
+        assert_eq!(source.read(&mut output).unwrap(), 4);
+        assert_eq!(&output, b"efgh");
+        assert!(started.elapsed() < Duration::from_millis(500));
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn probe_response_headers_obey_receive_timeout() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}/silent", listener.local_addr().unwrap());
+        let server = thread::spawn(move || {
+            let (_stream, _) = listener.accept().unwrap();
+            thread::sleep(Duration::from_millis(200));
+        });
+
+        let started = Instant::now();
+        let result =
+            HttpAudioSource::new_with_options(&url, local_options(Duration::from_millis(30)));
+        assert!(matches!(result, Err(AudioError::Http(HttpError::Timeout))));
+        assert!(started.elapsed() < Duration::from_millis(150));
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn seek_response_headers_obey_receive_timeout() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let url = format!("http://{}/silent-seek", listener.local_addr().unwrap());
+        let (accepted_tx, accepted_rx) = sync_channel(1);
+        let server = thread::spawn(move || {
+            let deadline = Instant::now() + Duration::from_millis(300);
+            while Instant::now() < deadline {
+                match listener.accept() {
+                    Ok((_stream, _)) => {
+                        let _ = accepted_tx.send(());
+                        thread::sleep(Duration::from_millis(200));
+                        return;
+                    }
+                    Err(error) if error.kind() == ErrorKind::WouldBlock => {
+                        thread::sleep(Duration::from_millis(5));
+                    }
+                    Err(error) => panic!("seek timeout server failed: {error}"),
+                }
+            }
+        });
+        let mut source = test_source(Some(1_000), true, None, None);
+        source.url = url;
+        source.recv_timeout = Duration::from_millis(30);
+        let handle = source.rt.as_ref().unwrap().handle().clone();
+
+        let started = Instant::now();
+        let action = handle.block_on(source.execute_seek_request(100));
+        assert!(matches!(action, FetchAction::Retry(None)));
+        assert!(started.elapsed() < Duration::from_millis(150));
+        assert_eq!(accepted_rx.recv_timeout(Duration::from_millis(350)), Ok(()));
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn drop_bounds_runtime_shutdown_when_blocking_work_cannot_be_cancelled() {
+        let source = test_source(Some(1), true, None, None);
+        source
+            .rt
+            .as_ref()
+            .unwrap()
+            .spawn_blocking(|| thread::sleep(Duration::from_secs(1)));
+
+        let started = Instant::now();
+        drop(source);
+        assert!(
+            started.elapsed() < Duration::from_millis(500),
+            "runtime drop exceeded its bounded shutdown budget: {:?}",
+            started.elapsed()
+        );
+    }
+
+    #[test]
+    fn drop_does_not_cancel_an_externally_owned_handle() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}/shared-cancel", listener.local_addr().unwrap());
+        let server = serve_responses(
+            listener,
+            vec![b"HTTP/1.1 200 OK\r\nContent-Length: 1\r\nConnection: close\r\n\r\nx"],
+        );
+        let handle = HttpCancelHandle::new();
+        let source = HttpAudioSource::new_with_options_and_cancel_handle(
+            &url,
+            local_options(Duration::from_secs(1)),
+            handle.clone(),
+        )
+        .unwrap();
+
+        drop(source);
+
+        assert!(!handle.is_cancelled());
+        server.join().unwrap();
     }
 
     #[test]
@@ -1110,21 +1524,25 @@ mod tests {
         let mut source = HttpAudioSource {
             url: "http://localhost/dummy.mp3".to_string(),
             client: Client::new(),
-            content_length: 1024,
+            content_length: Some(1024),
+            range_supported: true,
             current_pos: 0,
             body_reader: None,
-            stream_end: 0,
+            stream_end: Some(0),
             reconnect_delay: Duration::ZERO,
             reconnect_total_delay: Duration::ZERO,
             cancel_handle: cancel_handle.clone(),
+            owns_cancel_handle: true,
             cancel_flag: Some(flag),
             active_token: cancel_handle.token(),
             cancel_bridge_stop: None,
             cancel_bridge_thread: None,
             recv_timeout: RECV_TIMEOUT,
-            rt: tokio::runtime::Builder::new_current_thread()
-                .build()
-                .unwrap(),
+            rt: Some(
+                tokio::runtime::Builder::new_current_thread()
+                    .build()
+                    .unwrap(),
+            ),
         };
 
         assert_eq!(source.seek(SeekFrom::Current(0)).unwrap(), 0);
@@ -1137,7 +1555,7 @@ mod tests {
         let valid = ContentRange {
             start: 100,
             end: 199,
-            total: 1_000,
+            total: Some(1_000),
         };
         assert!(HttpAudioSource::validate_content_range(valid, 100, Some(1_000)).is_ok());
 
@@ -1145,7 +1563,7 @@ mod tests {
         assert!(HttpAudioSource::validate_content_range(wrong_start, 100, Some(1_000)).is_err());
 
         let wrong_total = ContentRange {
-            total: 2_000,
+            total: Some(2_000),
             ..valid
         };
         assert!(HttpAudioSource::validate_content_range(wrong_total, 100, Some(1_000)).is_err());
@@ -1155,6 +1573,20 @@ mod tests {
             ..valid
         };
         assert!(HttpAudioSource::validate_content_range(invalid_end, 100, Some(1_000)).is_err());
+
+        let unknown_total = ContentRange {
+            start: 100,
+            end: 199,
+            total: None,
+        };
+        assert!(HttpAudioSource::validate_content_range(unknown_total, 100, None).is_ok());
+        assert!(HttpAudioSource::validate_content_range(unknown_total, 100, Some(1_000)).is_ok());
+        assert_eq!(
+            HttpAudioSource::parse_content_range("bytes 0-1023/*")
+                .unwrap()
+                .total,
+            None
+        );
     }
 
     #[test]

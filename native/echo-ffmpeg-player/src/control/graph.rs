@@ -13,7 +13,7 @@ impl Task for GetAudioGraphTask {
     type JsValue = AudioGraphSnapshot;
 
     fn compute(&mut self) -> napi::Result<Self::Output> {
-        with_runtime(|runtime| {
+        call_core_command("get-audio-graph", |runtime| {
             update_runtime_audio_graph(runtime);
             Ok(runtime.audio_graph.clone())
         })
@@ -42,7 +42,10 @@ impl Task for SetAudioGraphParameterTask {
     type JsValue = ();
 
     fn compute(&mut self) -> napi::Result<Self::Output> {
-        with_runtime(|runtime| apply_audio_graph_parameter_patches(runtime, &[self.patch.clone()]))
+        let patch = self.patch.clone();
+        call_core_command("set-audio-graph-parameter", move |runtime| {
+            apply_audio_graph_parameter_patches(runtime, &[patch])
+        })
     }
 
     fn resolve(&mut self, _env: Env, _output: Self::Output) -> napi::Result<Self::JsValue> {
@@ -55,7 +58,10 @@ impl Task for SetAudioGraphPlanTask {
     type JsValue = ();
 
     fn compute(&mut self) -> napi::Result<Self::Output> {
-        with_runtime(|runtime| apply_audio_graph_plan_patch(runtime, &self.plan))
+        let plan = self.plan.clone();
+        call_core_command("set-audio-graph-plan", move |runtime| {
+            apply_audio_graph_plan_patch(runtime, &plan)
+        })
     }
 
     fn resolve(&mut self, _env: Env, _output: Self::Output) -> napi::Result<Self::JsValue> {
@@ -106,13 +112,17 @@ fn apply_audio_graph_plan_parts(
         dsp_settings: runtime.dsp_settings.clone(),
         spatial_file_path: runtime.spatial_file_path.clone(),
     };
+    for patch in patches {
+        apply_audio_graph_parameter_patch_to_draft(&mut draft, patch, &mut effects)?;
+    }
+    // Parameter values define the state an optional DSP node would run with.
+    // Apply them before enabled flags so `enabled: false` wins atomically, while
+    // `enabled: true` can validate the final configured state instead of being
+    // a silent no-op.
     if let Some(nodes) = nodes {
         for node in nodes {
             apply_audio_graph_node_patch_to_draft(&mut draft, node, &mut effects)?;
         }
-    }
-    for patch in patches {
-        apply_audio_graph_parameter_patch_to_draft(&mut draft, patch, &mut effects)?;
     }
     if !effects.changed {
         return Ok(());
@@ -150,20 +160,32 @@ fn apply_audio_graph_node_patch_to_draft(
     };
     match node.kind.trim() {
         "equalizer" => {
-            if !enabled
-                && draft
-                    .dsp_settings
-                    .equalizer
-                    .iter()
-                    .any(|gain| gain.abs() >= 0.05)
-            {
+            let active = draft
+                .dsp_settings
+                .equalizer
+                .iter()
+                .any(|gain| gain.abs() >= 0.05);
+            if enabled && !active {
+                return Err(napi::Error::from_reason(
+                    "equalizer node cannot be enabled without a non-zero band parameter"
+                        .to_string(),
+                ));
+            }
+            if !enabled && active {
                 draft.dsp_settings.equalizer = [0.0; EQ_BAND_COUNT];
                 effects.changed = true;
             }
             Ok(())
         }
         "normalization" => {
-            if !enabled && draft.dsp_settings.normalization_gain_db.abs() >= 0.01 {
+            let active = draft.dsp_settings.normalization_gain_db.abs() >= 0.01;
+            if enabled && !active {
+                return Err(napi::Error::from_reason(
+                    "normalization node cannot be enabled without a non-zero gain parameter"
+                        .to_string(),
+                ));
+            }
+            if !enabled && active {
                 draft.dsp_settings.normalization_gain_db = 0.0;
                 effects.changed = true;
             }
@@ -190,7 +212,14 @@ fn apply_audio_graph_node_patch_to_draft(
             "VPF requires an external DSP Provider".to_string(),
         )),
         "tempo" => {
-            if !enabled && (draft.dsp_settings.speed - 1.0).abs() >= f32::EPSILON {
+            let active = (draft.dsp_settings.speed - 1.0).abs() >= f32::EPSILON;
+            if enabled && !active {
+                return Err(napi::Error::from_reason(
+                    "tempo node cannot be enabled without a non-default speed parameter"
+                        .to_string(),
+                ));
+            }
+            if !enabled && active {
                 draft.dsp_settings.speed = 1.0;
                 effects.changed = true;
                 effects.tempo_changed = true;
@@ -405,5 +434,65 @@ mod tests {
             assert_eq!(runtime.dsp_settings.equalizer, before_settings.equalizer);
             assert_eq!(runtime.audio_graph_revision, 0);
         }
+    }
+
+    #[test]
+    fn audio_graph_plan_rejects_enabling_unconfigured_optional_node() {
+        let mut runtime = PlayerRuntime::new(PlayerConfig::default());
+        let plan = AudioGraphPlanPatch {
+            nodes: Some(vec![AudioGraphNodePlanPatch {
+                kind: "equalizer".to_string(),
+                enabled: Some(true),
+            }]),
+            patches: Vec::new(),
+        };
+
+        let err = apply_audio_graph_plan_patch(&mut runtime, &plan)
+            .expect_err("an unconfigured equalizer cannot be enabled");
+
+        assert!(err.reason.contains("non-zero band parameter"));
+        assert_eq!(runtime.dsp_settings.equalizer, [0.0; EQ_BAND_COUNT]);
+    }
+
+    #[test]
+    fn audio_graph_plan_can_configure_and_enable_node_atomically() {
+        let mut runtime = PlayerRuntime::new(PlayerConfig::default());
+        let plan = AudioGraphPlanPatch {
+            nodes: Some(vec![AudioGraphNodePlanPatch {
+                kind: "equalizer".to_string(),
+                enabled: Some(true),
+            }]),
+            patches: vec![AudioGraphParameterPatch {
+                kind: "equalizer".to_string(),
+                name: "band0".to_string(),
+                value: 4.0,
+            }],
+        };
+
+        apply_audio_graph_plan_patch(&mut runtime, &plan)
+            .expect("configured equalizer should be enabled");
+
+        assert_eq!(runtime.dsp_settings.equalizer[0], 4.0);
+    }
+
+    #[test]
+    fn audio_graph_disable_wins_over_parameters_in_same_plan() {
+        let mut runtime = PlayerRuntime::new(PlayerConfig::default());
+        let plan = AudioGraphPlanPatch {
+            nodes: Some(vec![AudioGraphNodePlanPatch {
+                kind: "normalization".to_string(),
+                enabled: Some(false),
+            }]),
+            patches: vec![AudioGraphParameterPatch {
+                kind: "normalization".to_string(),
+                name: "gain".to_string(),
+                value: 6.0,
+            }],
+        };
+
+        apply_audio_graph_plan_patch(&mut runtime, &plan)
+            .expect("disable should atomically override the patched gain");
+
+        assert_eq!(runtime.dsp_settings.normalization_gain_db, 0.0);
     }
 }

@@ -124,10 +124,13 @@ pub struct Resampler {
 }
 
 // SAFETY:
-// 1. FFmpeg components (`SwrContext`, `ChannelLayout`) are thread-safe and uniquely owned by
-//    `Resampler`.
+// 1. FFmpeg components (`SwrContext`, `ChannelLayout`) are uniquely owned by `Resampler`; the
+//    underlying `SwrContext` is not safe for concurrent use, and this type deliberately is not
+//    `Sync`.
 // 2. `in_ptrs_scratch` contains raw pointers, but they are transient buffers strictly scoped to
 //    `process()` and never escape the method or persist across threads.
+// 3. Moving the uniquely owned value to another thread is sound because every operation that
+//    mutates FFmpeg state requires `&mut self`.
 unsafe impl Send for Resampler {}
 
 impl Resampler {

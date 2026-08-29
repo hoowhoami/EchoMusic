@@ -5,8 +5,9 @@ use crate::shared::{
 };
 use crate::stream::{open_stream, ReadSeek, StreamOptions};
 use ffmpeg_audio::{sys, AudioError, AudioReader, PacketCacheOptions, RawAudioData, SeekMode};
+use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::{sync_channel, Receiver, SyncSender, TryRecvError};
+use std::sync::mpsc::{sync_channel, Receiver, RecvTimeoutError, SyncSender, TryRecvError};
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
@@ -67,10 +68,11 @@ impl DecoderData {
         source: Box<dyn ReadSeek>,
         packet_cache: PacketCacheOptions,
     ) -> Result<Self, String> {
-        let reader = AudioReader::new_with_audio_stream_and_packet_cache(
+        let reader = AudioReader::new_with_audio_stream_packet_cache_and_interrupt(
             source,
             audio_stream_ordinal,
             packet_cache,
+            interrupt.clone(),
         )
         .map_err(|err| format!("failed to create audio decoder: {err}"))?;
         let duration = reader.duration();
@@ -455,13 +457,31 @@ pub fn spawn_decode_worker(
     data: DecoderData,
     shared: Arc<SharedAudio>,
     generation: u64,
-) -> (JoinHandle<Option<DecoderData>>, SyncSender<DecodeCommand>) {
+) -> Result<(JoinHandle<Option<DecoderData>>, SyncSender<DecodeCommand>), String> {
     let (tx, rx) = sync_channel::<DecodeCommand>(8);
+    let panic_shared = shared.clone();
     let handle = thread::Builder::new()
         .name("player-decode".to_string())
-        .spawn(move || decode_worker_loop(data, shared, generation, rx))
-        .expect("failed to spawn player decode worker");
-    (handle, tx)
+        .spawn(move || {
+            match catch_unwind(AssertUnwindSafe(|| {
+                decode_worker_loop(data, shared, generation, rx)
+            })) {
+                Ok(result) => result,
+                Err(payload) => {
+                    panic_shared.mark_decode_failed();
+                    emit_decode_error(
+                        &panic_shared,
+                        format!(
+                            "decoder worker panicked: {}",
+                            panic_payload_message(payload.as_ref())
+                        ),
+                    );
+                    None
+                }
+            }
+        })
+        .map_err(|err| format!("failed to spawn player decode worker: {err}"))?;
+    Ok((handle, tx))
 }
 
 fn decode_worker_loop(
@@ -476,15 +496,21 @@ fn decode_worker_loop(
     let mut pending_source_switch = None;
 
     loop {
-        if let Some(next_generation) = handle_decode_commands(
+        match handle_decode_commands(
             &mut data,
             &shared,
             &commands,
             &mut decoded_position_secs,
             &mut pending_source_switch,
         ) {
-            generation = next_generation;
-            produced_frames = 0;
+            DecodeCommandDrain::Continue(Some(next_generation)) => {
+                generation = next_generation;
+                produced_frames = 0;
+            }
+            DecodeCommandDrain::Continue(None) => {}
+            DecodeCommandDrain::Stop => {
+                return (!shared.stop.load(Ordering::Acquire)).then_some(data);
+            }
         }
         if activate_pending_source_switch(
             &mut data,
@@ -534,6 +560,22 @@ fn decode_worker_loop(
                             let position = chunk.pts_secs.unwrap_or(requested_position);
                             shared.mark_playback_restart_ready_for_generation(position, generation);
                             data.pending_playback_restart_position = None;
+                        }
+                    }
+                    if produced_frames > 0 {
+                        if let Some(actual_pts) = chunk.pts_secs {
+                            if let Some(delta_secs) = decoded_pts_discontinuity(
+                                decoded_position_secs,
+                                actual_pts,
+                                chunk.format.sample_rate,
+                            ) {
+                                emit_decode_warning(format!(
+                                    "decoded audio timestamp discontinuity: expected={:.6}s actual={:.6}s delta={:+.3}ms generation={generation}",
+                                    decoded_position_secs,
+                                    actual_pts,
+                                    delta_secs * 1_000.0
+                                ));
+                            }
                         }
                     }
                     produced_frames = produced_frames.saturating_add(chunk.frames as u64);
@@ -632,6 +674,21 @@ fn decode_worker_loop(
     }
 }
 
+fn decoded_pts_discontinuity(
+    expected_secs: f64,
+    actual_secs: f64,
+    sample_rate: u32,
+) -> Option<f64> {
+    if !expected_secs.is_finite() || !actual_secs.is_finite() {
+        return None;
+    }
+    // Audio PTS values are commonly expressed in a coarse stream time base. Allow a few
+    // samples plus 5 ms of rounding jitter, but surface any larger forward gap or overlap.
+    let tolerance_secs = (4.0 / f64::from(sample_rate.max(1))).max(0.005);
+    let delta_secs = actual_secs - expected_secs;
+    (delta_secs.abs() > tolerance_secs).then_some(delta_secs)
+}
+
 fn wait_for_generation_command(
     data: &mut DecoderData,
     shared: &SharedAudio,
@@ -657,13 +714,19 @@ fn wait_for_generation_command(
                     DecodeCommandResult::Ignored => continue,
                 }
             }
-            Err(_) => {
+            Err(RecvTimeoutError::Timeout) => {
                 if shared.should_stop_decoding() {
                     return None;
                 }
             }
+            Err(RecvTimeoutError::Disconnected) => return None,
         }
     }
+}
+
+enum DecodeCommandDrain {
+    Continue(Option<u64>),
+    Stop,
 }
 
 fn handle_decode_commands(
@@ -672,7 +735,7 @@ fn handle_decode_commands(
     commands: &Receiver<DecodeCommand>,
     decoded_position_secs: &mut f64,
     pending_source_switch: &mut Option<PendingSourceSwitch>,
-) -> Option<u64> {
+) -> DecodeCommandDrain {
     let mut next_generation = None;
     loop {
         match commands.try_recv() {
@@ -685,14 +748,22 @@ fn handle_decode_commands(
                     pending_source_switch,
                 ) {
                     DecodeCommandResult::Continue(generation) => next_generation = Some(generation),
-                    DecodeCommandResult::Stop => return None,
+                    DecodeCommandResult::Stop => return DecodeCommandDrain::Stop,
                     DecodeCommandResult::Ignored => {}
                 }
             }
-            Err(TryRecvError::Empty) => return next_generation,
-            Err(TryRecvError::Disconnected) => return next_generation,
+            Err(TryRecvError::Empty) => return DecodeCommandDrain::Continue(next_generation),
+            Err(TryRecvError::Disconnected) => return DecodeCommandDrain::Stop,
         }
     }
+}
+
+fn panic_payload_message(payload: &(dyn std::any::Any + Send)) -> &str {
+    payload
+        .downcast_ref::<&str>()
+        .copied()
+        .or_else(|| payload.downcast_ref::<String>().map(String::as_str))
+        .unwrap_or("unknown panic payload")
 }
 
 enum DecodeCommandResult {
@@ -723,7 +794,6 @@ fn handle_decode_command(
                 let _ = reply.send(Err("stale seek generation".to_string()));
                 return DecodeCommandResult::Ignored;
             }
-            data.interrupt.store(false, Ordering::Release);
             let result = data.seek_and_measure(position_secs, true);
             let generation_current = shared.is_decode_generation_current(generation);
             let seek_succeeded = result.is_ok();
@@ -807,6 +877,14 @@ fn activate_pending_source_switch(
         return false;
     };
     if !shared.is_decode_generation_current(pending.generation) {
+        pending_source_switch.take();
+        return false;
+    }
+    if pending
+        .decoder
+        .as_ref()
+        .is_some_and(|decoder| decoder.interrupt.load(Ordering::Acquire))
+    {
         pending_source_switch.take();
         return false;
     }
@@ -945,6 +1023,18 @@ mod tests {
         assert_eq!(normalize_seek_position(f64::NAN), 0.0);
         assert_eq!(normalize_seek_position(f64::INFINITY), 0.0);
         assert_eq!(normalize_seek_position(-1.0), 0.0);
+    }
+
+    #[test]
+    fn decoded_pts_continuity_ignores_rounding_but_reports_missing_audio() {
+        assert_eq!(decoded_pts_discontinuity(1.0, 1.004, 48_000), None);
+        let forward = decoded_pts_discontinuity(1.0, 1.025, 48_000)
+            .expect("25 ms missing audio should be reported");
+        let backward = decoded_pts_discontinuity(1.0, 0.975, 48_000)
+            .expect("25 ms overlap should be reported");
+        assert!((forward - 0.025).abs() < 1.0e-9);
+        assert!((backward + 0.025).abs() < 1.0e-9);
+        assert_eq!(decoded_pts_discontinuity(f64::NAN, 1.0, 48_000), None);
     }
 
     #[test]

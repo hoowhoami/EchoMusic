@@ -24,7 +24,7 @@ pub use dsp::{
     set_audio_effect, set_equalizer, set_normalization_gain, set_speed, SetAudioEffectTask,
     SetEqualizerTask, SetNormalizationGainTask, SetSpeedTask,
 };
-pub use fade::{cancel_fade, fade, pause_with_fade, play_with_fade, FadeTask};
+pub use fade::{cancel_fade, fade, pause_with_fade, play_with_fade};
 pub use graph::{
     get_audio_graph, set_audio_graph_parameter, set_audio_graph_plan, SetAudioGraphParameterTask,
     SetAudioGraphPlanTask,

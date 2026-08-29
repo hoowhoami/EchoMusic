@@ -1,3 +1,5 @@
+import type { StretchAlgorithm } from "../../types";
+
 export type WorkletCommand =
 	| {
 			type: "INIT";
@@ -9,11 +11,17 @@ export type WorkletCommand =
 				tempo: number;
 				pitch: number;
 				rate: number;
+				algorithm?: StretchAlgorithm;
 			};
 	  }
 	| { type: "SET_TEMPO"; payload: { tempo: number } }
 	| { type: "SET_PITCH"; payload: { pitch: number } }
 	| { type: "SET_RATE"; payload: { rate: number } }
+	| { type: "SET_ALGORITHM"; payload: { algorithm: StretchAlgorithm } }
+	| {
+			type: "SET_FORMANT";
+			payload: { factor: number; compensatePitch: boolean };
+	  }
 	| { type: "DESTROY" };
 
 export type WorkletEvent =

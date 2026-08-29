@@ -58,7 +58,12 @@ pub fn get_audio_devices() -> AsyncTask<GetAudioDevicesTask> {
 
 #[napi]
 pub fn set_stall_timeout(seconds: f64) -> napi::Result<()> {
-    with_runtime(|runtime| {
+    if !seconds.is_finite() {
+        return Err(napi::Error::from_reason(
+            "stall timeout must be finite".to_string(),
+        ));
+    }
+    call_core_command("set-stall-timeout", move |runtime| {
         let timeout = if seconds <= 0.0 {
             0.0
         } else {
@@ -74,7 +79,7 @@ pub fn set_stall_timeout(seconds: f64) -> napi::Result<()> {
 
 #[napi]
 pub fn set_pause_on_device_disconnect(enabled: bool) -> napi::Result<()> {
-    with_runtime(|runtime| {
+    call_core_command("set-pause-on-device-disconnect", move |runtime| {
         runtime.pause_on_device_disconnect = enabled;
         if let Some(session) = runtime.session.as_ref() {
             session.shared.set_pause_on_device_disconnect(enabled);
@@ -85,7 +90,12 @@ pub fn set_pause_on_device_disconnect(enabled: bool) -> napi::Result<()> {
 
 #[napi]
 pub fn set_network_timeout(seconds: f64) -> napi::Result<()> {
-    with_runtime(|runtime| {
+    if !seconds.is_finite() {
+        return Err(napi::Error::from_reason(
+            "network timeout must be finite".to_string(),
+        ));
+    }
+    call_core_command("set-network-timeout", move |runtime| {
         runtime.config.network_timeout_secs = seconds.clamp(1.0, 300.0);
         Ok(())
     })
@@ -93,9 +103,9 @@ pub fn set_network_timeout(seconds: f64) -> napi::Result<()> {
 
 #[napi]
 pub fn set_http_proxy(proxy: String) -> napi::Result<()> {
-    with_runtime(|runtime| {
-        let trimmed = proxy.trim();
-        runtime.config.http_proxy = (!trimmed.is_empty()).then(|| trimmed.to_string());
+    let proxy = (!proxy.trim().is_empty()).then(|| proxy.trim().to_string());
+    call_core_command("set-http-proxy", move |runtime| {
+        runtime.config.http_proxy = proxy;
         Ok(())
     })
 }

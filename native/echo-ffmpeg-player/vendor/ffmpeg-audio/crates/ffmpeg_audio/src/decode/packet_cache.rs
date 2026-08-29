@@ -1,8 +1,11 @@
 use std::{
     collections::VecDeque,
-    sync::{Arc, Condvar, Mutex},
+    sync::{
+        Arc, Condvar, Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
     thread,
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use super::demuxer::Demuxer;
@@ -15,6 +18,7 @@ pub struct PacketCacheOptions {
     pub max_duration: Duration,
     pub donate_forward_budget: bool,
     pub pause_wait: Option<Duration>,
+    pub seek_timeout: Duration,
 }
 
 impl PacketCacheOptions {
@@ -26,6 +30,7 @@ impl PacketCacheOptions {
             max_duration,
             donate_forward_budget: true,
             pause_wait: None,
+            seek_timeout: Duration::from_secs(2),
         }
     }
 
@@ -36,6 +41,11 @@ impl PacketCacheOptions {
 
     pub fn with_pause_wait(mut self, pause_wait: Option<Duration>) -> Self {
         self.pause_wait = pause_wait;
+        self
+    }
+
+    pub fn with_seek_timeout(mut self, seek_timeout: Duration) -> Self {
+        self.seek_timeout = seek_timeout.max(Duration::from_millis(1));
         self
     }
 }
@@ -142,6 +152,9 @@ struct PacketCacheState {
     stop: bool,
     pending_seek: Option<Duration>,
     error: Option<AudioError>,
+    read_failed: bool,
+    read_cancelled: bool,
+    resume_after_cancel: bool,
     epoch: u64,
     seek_completed_epoch: u64,
     access_clock: u64,
@@ -157,11 +170,13 @@ pub(crate) struct PacketCache {
     shared: Arc<SharedPacketCache>,
     options: PacketCacheOptions,
     has_returned_packet: bool,
-    _worker: thread::JoinHandle<()>,
+    interrupt: Arc<AtomicBool>,
+    worker: Option<thread::JoinHandle<()>>,
 }
 
 impl PacketCache {
     pub(crate) fn new(demuxer: Demuxer, time_base: TimeBase, options: PacketCacheOptions) -> Self {
+        let interrupt = demuxer.interrupt_flag();
         let shared = Arc::new(SharedPacketCache {
             state: Mutex::new(PacketCacheState {
                 ranges: vec![PacketCacheRange::new(0, 0)],
@@ -171,6 +186,9 @@ impl PacketCache {
                 stop: false,
                 pending_seek: None,
                 error: None,
+                read_failed: false,
+                read_cancelled: false,
+                resume_after_cancel: false,
                 epoch: 0,
                 seek_completed_epoch: 0,
                 access_clock: 0,
@@ -188,7 +206,8 @@ impl PacketCache {
             shared,
             options,
             has_returned_packet: false,
-            _worker: worker,
+            interrupt,
+            worker: Some(worker),
         }
     }
 
@@ -236,11 +255,18 @@ impl PacketCache {
                 return Ok(Some(cloned));
             }
 
+            if state.read_failed {
+                return Err(state.error.take().unwrap_or_else(|| {
+                    AudioError::InvalidData(
+                        "packet cache read failed; a real seek is required".to_string(),
+                    )
+                }));
+            }
+            if state.read_cancelled {
+                return Err(AudioError::from_ffmpeg(sys::AVERROR_EXIT));
+            }
             if state.ranges[current_range].eof {
                 return Ok(None);
-            }
-            if let Some(error) = state.error.take() {
-                return Err(error);
             }
 
             buffering = self.options.pause_wait.is_some() && self.has_returned_packet;
@@ -254,6 +280,10 @@ impl PacketCache {
 
     pub(crate) fn seek_to(&mut self, target: Duration) -> Result<()> {
         self.has_returned_packet = false;
+        // Interrupt an in-flight read before deciding whether this seek can be
+        // satisfied from the current range. The worker owns clearing the flag
+        // once it has observed the request and selected a resume/seek action.
+        self.interrupt.store(true, Ordering::Release);
         if self.try_seek_cached(target) {
             return Ok(());
         }
@@ -266,6 +296,9 @@ impl PacketCache {
         let range_index = push_empty_range(&mut state);
         state.current_range = range_index;
         state.error = None;
+        state.read_failed = false;
+        state.read_cancelled = false;
+        state.resume_after_cancel = false;
         state.pending_seek = Some(target);
         state.epoch = state.epoch.wrapping_add(1);
         let epoch = state.epoch;
@@ -273,11 +306,31 @@ impl PacketCache {
         prune_packet_cache(&mut state, self.options);
         self.shared.changed.notify_all();
 
+        let deadline = Instant::now() + self.options.seek_timeout;
         while !state.stop && state.epoch == epoch && state.seek_completed_epoch < epoch {
-            state =
-                self.shared.changed.wait(state).map_err(|_| {
-                    AudioError::InvalidData("packet cache lock poisoned".to_string())
-                })?;
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            if remaining.is_zero() {
+                abort_timed_out_packet_cache_seek(&self.shared, &self.interrupt, &mut state, epoch);
+                return Err(AudioError::InvalidData(
+                    "packet cache seek timed out".to_string(),
+                ));
+            }
+            let (next_state, wait_result) = self
+                .shared
+                .changed
+                .wait_timeout(state, remaining)
+                .map_err(|_| AudioError::InvalidData("packet cache lock poisoned".to_string()))?;
+            state = next_state;
+            if wait_result.timed_out()
+                && !state.stop
+                && state.epoch == epoch
+                && state.seek_completed_epoch < epoch
+            {
+                abort_timed_out_packet_cache_seek(&self.shared, &self.interrupt, &mut state, epoch);
+                return Err(AudioError::InvalidData(
+                    "packet cache seek timed out".to_string(),
+                ));
+            }
         }
 
         if state.stop || state.epoch != epoch {
@@ -305,7 +358,7 @@ impl PacketCache {
             seekable_ranges,
             eof: range.eof,
             pending_seek: state.pending_seek.is_some() || state.seek_completed_epoch < state.epoch,
-            has_error: state.error.is_some(),
+            has_error: state.read_failed,
         }
     }
 
@@ -313,19 +366,31 @@ impl PacketCache {
         let Ok(mut state) = self.shared.state.lock() else {
             return false;
         };
-        let Some((range_index, offset)) = packet_cache_seek_offset(&state, target) else {
+        if !apply_cached_seek(&mut state, target) {
             return false;
-        };
-        state.current_range = range_index;
-        let range = &mut state.ranges[range_index];
-        set_packet_cache_read_offset(range, offset);
-        touch_current_range(&mut state);
-        state.error = None;
-        state.pending_seek = None;
-        state.read_hysteresis = false;
+        }
         self.shared.changed.notify_all();
         true
     }
+}
+
+fn apply_cached_seek(state: &mut PacketCacheState, target: Duration) -> bool {
+    if state.read_failed {
+        return false;
+    }
+    let Some((range_index, offset)) = packet_cache_seek_offset(state, target) else {
+        return false;
+    };
+    state.current_range = range_index;
+    let range = &mut state.ranges[range_index];
+    set_packet_cache_read_offset(range, offset);
+    touch_current_range(state);
+    state.pending_seek = None;
+    state.error = None;
+    state.read_cancelled = false;
+    state.resume_after_cancel = true;
+    state.read_hysteresis = false;
+    true
 }
 
 fn packet_cache_pause_ready(
@@ -340,7 +405,8 @@ fn packet_cache_pause_ready(
     if pause_wait.is_zero()
         || options.max_duration.is_zero()
         || range.eof
-        || state.error.is_some()
+        || state.read_failed
+        || state.read_cancelled
         || state.read_hysteresis
     {
         return true;
@@ -361,7 +427,13 @@ impl Drop for PacketCache {
     fn drop(&mut self) {
         if let Ok(mut state) = self.shared.state.lock() {
             state.stop = true;
+            self.interrupt.store(true, Ordering::Release);
             self.shared.changed.notify_all();
+        } else {
+            self.interrupt.store(true, Ordering::Release);
+        }
+        if let Some(worker) = self.worker.take() {
+            let _ = worker.join();
         }
     }
 }
@@ -398,6 +470,7 @@ fn run_packet_cache_worker(
     options: PacketCacheOptions,
     shared: Arc<SharedPacketCache>,
 ) {
+    let interrupt = demuxer.interrupt_flag();
     loop {
         let action = {
             let mut state = match shared.state.lock() {
@@ -409,10 +482,19 @@ fn run_packet_cache_worker(
                     return;
                 }
                 if let Some(target) = state.pending_seek.take() {
+                    state.read_cancelled = false;
+                    state.resume_after_cancel = false;
+                    interrupt.store(false, Ordering::Release);
                     break PacketCacheAction::Seek {
                         target,
                         epoch: state.epoch,
                     };
+                }
+                if state.resume_after_cancel {
+                    state.resume_after_cancel = false;
+                    state.read_cancelled = false;
+                    interrupt.store(false, Ordering::Release);
+                    break PacketCacheAction::Resume;
                 }
 
                 prune_packet_cache(&mut state, options);
@@ -420,14 +502,7 @@ fn run_packet_cache_worker(
                 let forward_bytes = packet_cache_forward_bytes(range);
                 let forward_duration = packet_cache_forward_duration(range);
                 update_read_hysteresis(&mut state, options, forward_bytes, forward_duration);
-                let has_duration_budget = forward_duration
-                    .map(|duration| duration < options.max_duration)
-                    .unwrap_or(true);
-                if !state.ranges[state.current_range].eof
-                    && !state.read_hysteresis
-                    && forward_bytes < options.max_bytes
-                    && has_duration_budget
-                {
+                if packet_cache_worker_can_read(&state, options) {
                     break PacketCacheAction::Read { epoch: state.epoch };
                 }
 
@@ -439,6 +514,7 @@ fn run_packet_cache_worker(
         };
 
         match action {
+            PacketCacheAction::Resume => demuxer.clear_read_interrupt(),
             PacketCacheAction::Seek { target, epoch } => {
                 let result = demuxer.seek_to(target);
                 complete_packet_cache_seek(&shared, epoch, result);
@@ -459,6 +535,14 @@ fn run_packet_cache_worker(
                     }
                 }
                 Ok(None) => {
+                    if interrupt.load(Ordering::Acquire) {
+                        set_packet_cache_error(
+                            &shared,
+                            epoch,
+                            AudioError::from_ffmpeg(sys::AVERROR_EXIT),
+                        );
+                        continue;
+                    }
                     if let Ok(mut state) = shared.state.lock() {
                         if state.epoch != epoch {
                             continue;
@@ -476,6 +560,7 @@ fn run_packet_cache_worker(
 }
 
 enum PacketCacheAction {
+    Resume,
     Seek { target: Duration, epoch: u64 },
     Read { epoch: u64 },
 }
@@ -487,10 +572,54 @@ fn complete_packet_cache_seek(shared: &SharedPacketCache, epoch: u64, result: Re
         }
         state.seek_completed_epoch = epoch;
         if let Err(error) = result {
-            state.error = Some(error);
+            if is_interrupt_error(&error) {
+                // A newer control operation intentionally interrupted this
+                // seek. Report it to the waiter without poisoning the cache;
+                // the next seek will resume or reposition the worker.
+                state.error = Some(error);
+                state.read_cancelled = true;
+            } else {
+                state.error = Some(error);
+                state.read_failed = true;
+            }
         }
         shared.changed.notify_all();
     }
+}
+
+fn abort_timed_out_packet_cache_seek(
+    shared: &SharedPacketCache,
+    interrupt: &AtomicBool,
+    state: &mut PacketCacheState,
+    epoch: u64,
+) {
+    if state.epoch != epoch || state.seek_completed_epoch >= epoch {
+        return;
+    }
+    interrupt.store(true, Ordering::Release);
+    state.epoch = state.epoch.wrapping_add(1);
+    state.seek_completed_epoch = state.epoch;
+    state.pending_seek = None;
+    state.error = Some(AudioError::InvalidData(
+        "packet cache seek timed out".to_string(),
+    ));
+    state.read_failed = true;
+    state.read_cancelled = true;
+    shared.changed.notify_all();
+}
+
+fn packet_cache_worker_can_read(state: &PacketCacheState, options: PacketCacheOptions) -> bool {
+    let range = &state.ranges[state.current_range];
+    let forward_bytes = packet_cache_forward_bytes(range);
+    let has_duration_budget = packet_cache_forward_duration(range)
+        .map(|duration| duration < options.max_duration)
+        .unwrap_or(true);
+    !range.eof
+        && !state.read_failed
+        && !state.read_cancelled
+        && !state.read_hysteresis
+        && forward_bytes < options.max_bytes
+        && has_duration_budget
 }
 
 fn push_empty_range(state: &mut PacketCacheState) -> usize {
@@ -573,57 +702,53 @@ fn packet_cache_forward_duration(range: &PacketCacheRange) -> Option<Duration> {
 }
 
 fn packet_cache_seekable_ranges(state: &PacketCacheState) -> Vec<PacketCacheSeekableRange> {
-    let mut ranges = state
-        .ranges
-        .iter()
-        .filter_map(|range| {
-            let start = range.first_time?;
-            let end = range.last_time?;
-            (end >= start).then_some(PacketCacheSeekableRange { start, end })
-        })
-        .collect::<Vec<_>>();
-    ranges.sort_unstable_by_key(|range| (range.start, range.end));
-
-    let mut normalized: Vec<PacketCacheSeekableRange> = Vec::with_capacity(ranges.len());
-    for range in ranges {
-        if let Some(previous) = normalized.last_mut()
-            && range.start <= previous.end
-        {
-            previous.end = previous.end.max(range.end);
-            continue;
-        }
-        normalized.push(range);
-    }
-    normalized
+    // Only the current range shares its prefetch tail with the demuxer's physical cursor,
+    // so it is the only range that packet_cache_seek_offset can replay without a real seek.
+    // Retained ranges remain useful for memory-budget pruning but must not be advertised to
+    // the UI as immediately seekable.
+    let Some(range) = state.ranges.get(state.current_range) else {
+        return Vec::new();
+    };
+    let (Some(start), Some(end)) = (range.first_time, range.last_time) else {
+        return Vec::new();
+    };
+    (end >= start)
+        .then_some(PacketCacheSeekableRange { start, end })
+        .into_iter()
+        .collect()
 }
 
 fn packet_cache_seek_offset(state: &PacketCacheState, target: Duration) -> Option<(usize, usize)> {
-    state
-        .ranges
+    // The background demuxer has a single physical cursor, positioned at the prefetch tail of
+    // the current range. Rewinding within that range is safe: cached packets are replayed and the
+    // worker continues from the same tail. Switching directly to a retained non-current range is
+    // not safe because its cached tail and the demuxer cursor are unrelated; when that cache runs
+    // out, packets from the old cursor would be appended and create a timestamp discontinuity.
+    // Return None for cross-range hits so seek_to performs a real demuxer seek and bumps the epoch.
+    if state.read_failed {
+        return None;
+    }
+    let range_index = state.current_range;
+    let range = state.ranges.get(range_index)?;
+    let first = range
+        .packets
+        .iter()
+        .find_map(|packet| packet.pts.or(packet.end))?;
+    let last = range
+        .packets
+        .iter()
+        .rev()
+        .find_map(|packet| packet.end.or(packet.pts))?;
+    if target < first || target > last {
+        return None;
+    }
+
+    range
+        .packets
         .iter()
         .enumerate()
-        .filter_map(|(range_index, range)| {
-            let first = range
-                .packets
-                .iter()
-                .find_map(|packet| packet.pts.or(packet.end))?;
-            let last = range
-                .packets
-                .iter()
-                .rev()
-                .find_map(|packet| packet.end.or(packet.pts))?;
-            if target < first || target > last {
-                return None;
-            }
-
-            range
-                .packets
-                .iter()
-                .enumerate()
-                .find(|(_, packet)| packet.end.or(packet.pts).is_some_and(|end| end >= target))
-                .map(|(offset, _)| (range_index, offset))
-        })
-        .next()
+        .find(|(_, packet)| packet.end.or(packet.pts).is_some_and(|end| end >= target))
+        .map(|(offset, _)| (range_index, offset))
 }
 
 fn prune_packet_cache(state: &mut PacketCacheState, options: PacketCacheOptions) {
@@ -701,15 +826,15 @@ fn prune_empty_non_current_ranges(state: &mut PacketCacheState) {
 }
 
 fn remove_range(state: &mut PacketCacheState, index: usize) {
+    if state.current_range == index {
+        debug_assert!(false, "current packet-cache range must not be removed");
+        return;
+    }
     let removed_bytes = state.ranges[index].cached_bytes;
     state.total_bytes = state.total_bytes.saturating_sub(removed_bytes);
     state.ranges.remove(index);
     if state.current_range > index {
         state.current_range -= 1;
-    } else if state.current_range == index {
-        state.current_range = state
-            .current_range
-            .min(state.ranges.len().saturating_sub(1));
     }
     if state.ranges.is_empty() {
         state
@@ -756,9 +881,21 @@ fn set_packet_cache_error(shared: &SharedPacketCache, epoch: u64, error: AudioEr
         if state.epoch != epoch {
             return;
         }
-        state.error = Some(error);
+        if is_interrupt_error(&error) {
+            // AVERROR_EXIT acknowledges an intentional control interrupt.
+            // Wait for a cached-seek resume or a real seek instead of
+            // poisoning the cache or retrying the sticky AVIO error.
+            state.read_cancelled = true;
+        } else {
+            state.error = Some(error);
+            state.read_failed = true;
+        }
         shared.changed.notify_all();
     }
+}
+
+fn is_interrupt_error(error: &AudioError) -> bool {
+    matches!(error, AudioError::FFmpeg(code, _) if *code == sys::AVERROR_EXIT)
 }
 
 fn packet_pts(packet: *const sys::AVPacket, time_base: TimeBase) -> Option<Duration> {
@@ -827,6 +964,9 @@ mod tests {
             stop: false,
             pending_seek: None,
             error: None,
+            read_failed: false,
+            read_cancelled: false,
+            resume_after_cancel: false,
             epoch: 0,
             seek_completed_epoch: 0,
             access_clock: 0,
@@ -897,6 +1037,16 @@ mod tests {
     fn packet_cache_pause_resumes_early_at_eof() {
         let mut state = single_range_state(vec![packet_with_time(0, 1, 100)], 0, 0);
         state.ranges[0].eof = true;
+        let options = PacketCacheOptions::new(1_000, 0, Duration::from_secs(10))
+            .with_pause_wait(Some(Duration::from_secs(2)));
+
+        assert!(packet_cache_pause_ready(&state, 0, options));
+    }
+
+    #[test]
+    fn packet_cache_pause_does_not_hide_a_control_interrupt() {
+        let mut state = single_range_state(vec![packet_with_time(0, 1, 100)], 0, 0);
+        state.read_cancelled = true;
         let options = PacketCacheOptions::new(1_000, 0, Duration::from_secs(10))
             .with_pause_wait(Some(Duration::from_secs(2)));
 
@@ -1040,7 +1190,7 @@ mod tests {
     }
 
     #[test]
-    fn packet_cache_seek_can_hit_retained_non_current_range() {
+    fn packet_cache_seek_rejects_retained_non_current_range() {
         let mut state = single_range_state(
             vec![packet_with_time(10, 11, 100), packet_with_time(11, 12, 100)],
             0,
@@ -1057,7 +1207,7 @@ mod tests {
 
         assert_eq!(
             packet_cache_seek_offset(&state, Duration::from_millis(10_500)),
-            Some((0, 0)),
+            None,
         );
     }
 
@@ -1095,7 +1245,7 @@ mod tests {
     }
 
     #[test]
-    fn packet_cache_seekable_ranges_preserve_holes() {
+    fn packet_cache_seekable_ranges_only_expose_the_current_range() {
         let mut state = single_range_state(
             vec![packet_with_time(10, 11, 100), packet_with_time(11, 12, 100)],
             0,
@@ -1111,25 +1261,24 @@ mod tests {
         let ranges = packet_cache_seekable_ranges(&state);
         assert_eq!(
             ranges,
-            vec![
-                PacketCacheSeekableRange {
-                    start: Duration::from_secs(10),
-                    end: Duration::from_secs(12),
-                },
-                PacketCacheSeekableRange {
-                    start: Duration::from_secs(90),
-                    end: Duration::from_secs(92),
-                },
-            ]
+            vec![PacketCacheSeekableRange {
+                start: Duration::from_secs(10),
+                end: Duration::from_secs(12),
+            }]
         );
+
+        state.current_range = 1;
         assert_eq!(
-            packet_cache_seek_offset(&state, Duration::from_secs(50)),
-            None
+            packet_cache_seekable_ranges(&state),
+            vec![PacketCacheSeekableRange {
+                start: Duration::from_secs(90),
+                end: Duration::from_secs(92),
+            }]
         );
     }
 
     #[test]
-    fn packet_cache_seekable_ranges_merge_overlaps() {
+    fn packet_cache_seekable_ranges_do_not_expand_into_retained_overlaps() {
         let mut state = single_range_state(
             vec![packet_with_time(10, 11, 100), packet_with_time(11, 13, 100)],
             0,
@@ -1147,7 +1296,7 @@ mod tests {
             ranges,
             vec![PacketCacheSeekableRange {
                 start: Duration::from_secs(10),
-                end: Duration::from_secs(15),
+                end: Duration::from_secs(13),
             }]
         );
     }
@@ -1204,5 +1353,113 @@ mod tests {
         let state = shared.state.lock().unwrap();
         assert_eq!(state.seek_completed_epoch, 3);
         assert!(state.error.is_some());
+        assert!(state.read_failed);
+    }
+
+    #[test]
+    fn packet_cache_read_error_latches_worker_and_rejects_cached_seek() {
+        let mut state = single_range_state(
+            vec![packet_with_time(10, 11, 100), packet_with_time(11, 12, 100)],
+            0,
+            0,
+        );
+        state.error = Some(AudioError::InvalidData("read failed".to_string()));
+        state.read_failed = true;
+        let options = PacketCacheOptions::new(1_000, 0, Duration::from_secs(10));
+
+        assert!(!packet_cache_worker_can_read(&state, options));
+        assert_eq!(
+            packet_cache_seek_offset(&state, Duration::from_millis(10_500)),
+            None
+        );
+
+        let _ = state.error.take();
+        assert!(!packet_cache_worker_can_read(&state, options));
+    }
+
+    #[test]
+    fn intentional_read_interrupt_waits_without_poisoning_cached_seek() {
+        let state = single_range_state(
+            vec![packet_with_time(10, 11, 100), packet_with_time(11, 12, 100)],
+            0,
+            0,
+        );
+        let shared = SharedPacketCache {
+            state: Mutex::new(state),
+            changed: Condvar::new(),
+        };
+
+        set_packet_cache_error(&shared, 0, AudioError::from_ffmpeg(sys::AVERROR_EXIT));
+
+        let mut state = shared.state.lock().unwrap();
+        assert!(state.read_cancelled);
+        assert!(!state.read_failed);
+        assert!(state.error.is_none());
+        assert!(!packet_cache_worker_can_read(
+            &state,
+            PacketCacheOptions::new(1_000, 0, Duration::from_secs(10))
+        ));
+        assert_eq!(
+            packet_cache_seek_offset(&state, Duration::from_millis(10_500)),
+            Some((0, 0))
+        );
+        assert!(apply_cached_seek(&mut state, Duration::from_millis(10_500)));
+        assert!(!state.read_cancelled);
+        assert!(state.resume_after_cancel);
+        assert!(!state.read_failed);
+    }
+
+    #[test]
+    fn interrupted_seek_is_reported_without_latching_read_failure() {
+        let mut state = single_range_state(Vec::new(), 0, 0);
+        state.epoch = 3;
+        let shared = SharedPacketCache {
+            state: Mutex::new(state),
+            changed: Condvar::new(),
+        };
+
+        complete_packet_cache_seek(&shared, 3, Err(AudioError::from_ffmpeg(sys::AVERROR_EXIT)));
+
+        let state = shared.state.lock().unwrap();
+        assert_eq!(state.seek_completed_epoch, 3);
+        assert!(state.error.is_some());
+        assert!(state.read_cancelled);
+        assert!(!state.read_failed);
+    }
+
+    #[test]
+    fn timed_out_packet_cache_seek_invalidates_old_epoch_and_latches_error() {
+        let mut state = single_range_state(Vec::new(), 0, 0);
+        state.epoch = 4;
+        state.pending_seek = Some(Duration::from_secs(30));
+        let shared = SharedPacketCache {
+            state: Mutex::new(state),
+            changed: Condvar::new(),
+        };
+        let interrupt = AtomicBool::new(false);
+
+        let mut state = shared.state.lock().unwrap();
+        abort_timed_out_packet_cache_seek(&shared, &interrupt, &mut state, 4);
+
+        assert_eq!(state.epoch, 5);
+        assert_eq!(state.seek_completed_epoch, 5);
+        assert!(state.pending_seek.is_none());
+        assert!(state.read_failed);
+        assert!(state.read_cancelled);
+        assert!(state.error.is_some());
+        assert!(interrupt.load(Ordering::Acquire));
+    }
+
+    #[test]
+    fn packet_cache_seek_timeout_is_configurable() {
+        let options = PacketCacheOptions::default().with_seek_timeout(Duration::from_secs(15));
+        assert_eq!(options.seek_timeout, Duration::from_secs(15));
+    }
+
+    #[test]
+    #[should_panic(expected = "current packet-cache range must not be removed")]
+    fn removing_current_packet_cache_range_is_a_debug_invariant_violation() {
+        let mut state = single_range_state(Vec::new(), 0, 0);
+        remove_range(&mut state, 0);
     }
 }

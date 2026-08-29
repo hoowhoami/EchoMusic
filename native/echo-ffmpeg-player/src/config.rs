@@ -6,6 +6,8 @@ use ffmpeg_audio::PacketCacheOptions;
 use napi_derive::napi;
 use std::time::Duration;
 
+const PACKET_CACHE_SEEK_REPLY_MARGIN: Duration = Duration::from_millis(500);
+
 const DEFAULT_BUFFER_SECS: f64 = 0.2;
 const MAX_BUFFER_SECS: f64 = 10.0;
 const DEFAULT_DEMUXER_READAHEAD_SECS: f64 = 1.0;
@@ -240,24 +242,27 @@ impl PlayerConfig {
         let mut config = Self::default();
         if let Some(options) = options {
             if let Some(value) = options.audio_buffer_secs {
-                config.audio_buffer_secs = value.clamp(0.0, MAX_BUFFER_SECS);
+                config.audio_buffer_secs =
+                    finite_clamp(value, 0.0, MAX_BUFFER_SECS, DEFAULT_BUFFER_SECS);
             }
             config.audio_samplerate = AudioSampleratePolicy::from_option(options.audio_samplerate);
             config.audio_channels = AudioChannelPolicy::from_option(options.audio_channels);
             config.audio_format = AudioFormatPolicy::from_option(options.audio_format);
             config.gapless_audio = GaplessAudioPolicy::from_option(options.gapless_audio);
             if let Some(value) = options.demuxer_readahead_secs {
-                config.demuxer_readahead_secs = value.clamp(0.0, MAX_CACHE_SECS);
+                config.demuxer_readahead_secs =
+                    finite_clamp(value, 0.0, MAX_CACHE_SECS, DEFAULT_DEMUXER_READAHEAD_SECS);
             }
             config.cache = CacheMode::from_option(options.cache);
             if let Some(value) = options.cache_secs {
-                config.cache_secs = value.clamp(0.0, MAX_CACHE_SECS);
+                config.cache_secs = finite_clamp(value, 0.0, MAX_CACHE_SECS, DEFAULT_CACHE_SECS);
             }
             if let Some(value) = options.cache_pause {
                 config.cache_pause = value;
             }
             if let Some(value) = options.cache_pause_wait_secs {
-                config.cache_pause_wait_secs = value.clamp(0.0, MAX_CACHE_SECS);
+                config.cache_pause_wait_secs =
+                    finite_clamp(value, 0.0, MAX_CACHE_SECS, DEFAULT_CACHE_PAUSE_WAIT_SECS);
             }
             if let Some(value) = options.demuxer_max_bytes {
                 config.demuxer_max_bytes = bytes_from_number(value);
@@ -266,9 +271,11 @@ impl PlayerConfig {
                 config.demuxer_max_back_bytes = bytes_from_number(value);
             }
             if let Some(value) = options.network_timeout_secs {
-                config.network_timeout_secs = value.clamp(1.0, 300.0);
+                config.network_timeout_secs =
+                    finite_clamp(value, 1.0, 300.0, DEFAULT_NETWORK_TIMEOUT_SECS);
             }
             if let Some(value) = options.playback_stall_timeout_secs {
+                let value = finite_or(value, DEFAULT_PLAYBACK_STALL_TIMEOUT_SECS);
                 config.playback_stall_timeout_secs = if value <= 0.0 {
                     0.0
                 } else {
@@ -312,12 +319,29 @@ impl PlayerConfig {
 
     #[cfg(test)]
     pub fn packet_cache_options(&self) -> PacketCacheOptions {
-        self.packet_cache_options_for_duration(self.demuxer_readahead_secs, false)
+        self.packet_cache_options_for_duration(
+            self.demuxer_readahead_secs,
+            false,
+            Duration::from_secs(2),
+        )
     }
 
     pub fn packet_cache_options_for_url(&self, url: &str) -> PacketCacheOptions {
         let cache_enabled = self.cache_enabled_for_url(url);
-        self.packet_cache_options_for_duration(self.readahead_secs_for_url(url), cache_enabled)
+        self.packet_cache_options_for_duration(
+            self.readahead_secs_for_url(url),
+            cache_enabled,
+            self.seek_timeout_for_url(url)
+                .saturating_sub(PACKET_CACHE_SEEK_REPLY_MARGIN),
+        )
+    }
+
+    pub(crate) fn seek_timeout_for_url(&self, url: &str) -> Duration {
+        if stream::is_network_url(url) {
+            Duration::from_secs_f64(finite_or(self.network_timeout_secs, 15.0).clamp(2.0, 15.0))
+        } else {
+            Duration::from_secs(2)
+        }
     }
 
     fn readahead_secs_for_url(&self, url: &str) -> f64 {
@@ -340,6 +364,7 @@ impl PlayerConfig {
         &self,
         cache_secs: f64,
         cache_enabled: bool,
+        seek_timeout: Duration,
     ) -> PacketCacheOptions {
         let max_back_bytes = if cache_enabled {
             self.demuxer_max_back_bytes
@@ -352,6 +377,7 @@ impl PlayerConfig {
             Duration::from_secs_f64(cache_secs.max(0.0)),
         )
         .with_donate_forward_budget(cache_enabled)
+        .with_seek_timeout(seek_timeout)
         .with_pause_wait(
             (cache_enabled && self.cache_pause)
                 .then(|| Duration::from_secs_f64(self.cache_pause_wait_secs.max(0.0))),
@@ -360,10 +386,27 @@ impl PlayerConfig {
 
     pub fn stream_options(&self) -> StreamOptions {
         StreamOptions {
-            network_timeout: Duration::from_secs_f64(self.network_timeout_secs.max(1.0)),
+            network_timeout: Duration::from_secs_f64(finite_clamp(
+                self.network_timeout_secs,
+                1.0,
+                300.0,
+                DEFAULT_NETWORK_TIMEOUT_SECS,
+            )),
             http_proxy: self.http_proxy.clone(),
         }
     }
+}
+
+pub(crate) fn finite_or(value: f64, default: f64) -> f64 {
+    if value.is_finite() {
+        value
+    } else {
+        default
+    }
+}
+
+fn finite_clamp(value: f64, min: f64, max: f64, default: f64) -> f64 {
+    finite_or(value, default).clamp(min, max)
 }
 
 fn bytes_from_number(value: f64) -> usize {
@@ -397,6 +440,44 @@ mod tests {
         assert_eq!(
             config.stream_options().network_timeout,
             Duration::from_secs(60)
+        );
+    }
+
+    #[test]
+    fn player_config_replaces_non_finite_durations_with_defaults() {
+        let config = PlayerConfig::from_options(Some(PlayerConfigOptions {
+            audio_buffer_secs: Some(f64::NAN),
+            audio_samplerate: None,
+            audio_channels: None,
+            audio_format: None,
+            gapless_audio: None,
+            demuxer_readahead_secs: Some(f64::INFINITY),
+            cache: None,
+            cache_secs: Some(f64::NEG_INFINITY),
+            cache_pause: None,
+            cache_pause_wait_secs: Some(f64::NAN),
+            demuxer_max_bytes: None,
+            demuxer_max_back_bytes: None,
+            network_timeout_secs: Some(f64::NAN),
+            playback_stall_timeout_secs: Some(f64::INFINITY),
+            http_proxy: None,
+        }));
+
+        assert_eq!(config.audio_buffer_secs, DEFAULT_BUFFER_SECS);
+        assert_eq!(
+            config.demuxer_readahead_secs,
+            DEFAULT_DEMUXER_READAHEAD_SECS
+        );
+        assert_eq!(config.cache_secs, DEFAULT_CACHE_SECS);
+        assert_eq!(config.cache_pause_wait_secs, DEFAULT_CACHE_PAUSE_WAIT_SECS);
+        assert_eq!(config.network_timeout_secs, DEFAULT_NETWORK_TIMEOUT_SECS);
+        assert_eq!(
+            config.playback_stall_timeout_secs,
+            DEFAULT_PLAYBACK_STALL_TIMEOUT_SECS
+        );
+        assert_eq!(
+            config.stream_options().network_timeout,
+            Duration::from_secs_f64(DEFAULT_NETWORK_TIMEOUT_SECS)
         );
     }
 
@@ -449,6 +530,30 @@ mod tests {
                 .packet_cache_options_for_url("file:///tmp/music.flac")
                 .pause_wait,
             None,
+        );
+        assert_eq!(
+            config
+                .packet_cache_options_for_url("file:///tmp/music.flac")
+                .seek_timeout,
+            Duration::from_millis(1_500),
+        );
+        assert_eq!(
+            config
+                .packet_cache_options_for_url("https://example.test/music.flac")
+                .seek_timeout,
+            Duration::from_millis(14_500),
+        );
+        let mut shorter_network_timeout = config.clone();
+        shorter_network_timeout.network_timeout_secs = 5.0;
+        assert_eq!(
+            shorter_network_timeout.seek_timeout_for_url("https://example.test/music.flac"),
+            Duration::from_secs(5),
+        );
+        assert_eq!(
+            shorter_network_timeout
+                .packet_cache_options_for_url("https://example.test/music.flac")
+                .seek_timeout,
+            Duration::from_millis(4_500),
         );
 
         let disabled = PlayerConfig::from_options(Some(PlayerConfigOptions {

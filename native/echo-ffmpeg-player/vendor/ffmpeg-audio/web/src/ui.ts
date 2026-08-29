@@ -1,4 +1,4 @@
-import type { FFmpegAudioEngine } from "./audio-core";
+import type { FFmpegAudioEngine, StretchAlgorithm } from "./audio-core";
 
 export class AppUI {
 	private openBtn = document.getElementById("open-btn") as HTMLButtonElement;
@@ -12,6 +12,10 @@ export class AppUI {
 	private trackInfo = document.getElementById("track-info") as HTMLDivElement;
 	private coverArt = document.getElementById("cover-art") as HTMLDivElement;
 	private metadataDiv = document.getElementById("metadata") as HTMLDivElement;
+
+	private selectAlgo = document.getElementById(
+		"select-algo",
+	) as HTMLSelectElement;
 
 	private sliderVolume = document.getElementById(
 		"slider-volume",
@@ -93,6 +97,11 @@ export class AppUI {
 			this.engine.rate = val;
 		});
 
+		this.selectAlgo.addEventListener("change", (e) => {
+			const val = (e.target as HTMLSelectElement).value as StretchAlgorithm;
+			this.engine.algorithm = val;
+		});
+
 		this.btnResetDsp.addEventListener("click", () => {
 			this.resetDspSliders();
 		});
@@ -109,6 +118,8 @@ export class AppUI {
 			this.seekBar.disabled = false;
 			this.sliderVolume.disabled = false;
 
+			this.selectAlgo.disabled = false;
+			this.selectAlgo.value = this.engine.algorithm;
 			this.sliderTempo.disabled = false;
 			this.sliderPitch.disabled = false;
 			this.sliderRate.disabled = false;

@@ -67,7 +67,7 @@ impl SharedAudio {
 
     pub fn clear_gapless_prepares(&self) {
         if let Ok(mut state) = self.gapless_prepare.lock() {
-            state.epoch = state.epoch.wrapping_add(1);
+            state.epoch = state.epoch.wrapping_add(1).max(1);
             state.pending = 0;
         }
         self.gapless_prepare_changed.notify_all();
@@ -80,7 +80,9 @@ impl SharedAudio {
         if guard.epoch != request_id || guard.pending == 0 {
             return;
         }
-        let _guard = self.gapless_prepare_changed.wait(guard);
+        let _guard = self
+            .gapless_prepare_changed
+            .wait_timeout(guard, std::time::Duration::from_millis(100));
     }
 
     pub fn mark_gapless_boundary(&self, info: TrackSwitchInfo) {

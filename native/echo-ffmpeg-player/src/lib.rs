@@ -25,7 +25,7 @@ pub use control::{
     get_spectrum_snapshot, get_spectrum_status, inspect_dsp_provider, pause_with_fade,
     play_with_fade, set_audio_effect, set_audio_graph_parameter, set_audio_graph_plan,
     set_audio_output, set_equalizer, set_http_proxy, set_network_timeout, set_normalization_gain,
-    set_pause_on_device_disconnect, set_speed, set_stall_timeout, FadeTask, GetAudioDevicesTask,
+    set_pause_on_device_disconnect, set_speed, set_stall_timeout, GetAudioDevicesTask,
     GetSpectrumSnapshotTask, SetAudioEffectTask, SetAudioGraphParameterTask, SetAudioGraphPlanTask,
     SetAudioOutputTask, SetEqualizerTask, SetNormalizationGainTask, SetSpeedTask,
 };
@@ -39,7 +39,7 @@ use crate::decoder::{
 use crate::dispatcher::{
     call_core_command, call_core_command_blocking, clear_event_callback, dispatch_core_command,
     reset_event_ids, send_event, send_events, set_event_callback, start_core_dispatcher,
-    start_event_dispatcher, stop_core_dispatcher, stop_event_dispatcher,
+    start_event_dispatcher, stop_core_dispatcher, stop_event_dispatcher, EventCallback,
 };
 use crate::dsp::{prepare_spatial_effect, DspSettings, EQ_BAND_COUNT};
 use crate::events::{
@@ -49,15 +49,12 @@ use crate::events::{
 use crate::shared::{MixFormat, PlaybackSession, PlaybackSignal, SharedAudio, TrackSwitchInfo};
 use audio_graph::AudioGraphSnapshot;
 use napi::bindgen_prelude::AsyncTask;
-use napi::threadsafe_function::ThreadsafeFunction;
 use napi::{Env, Task};
 use napi_derive::napi;
 use std::sync::atomic::AtomicU64;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
-use std::sync::mpsc::{
-    channel, sync_channel, RecvTimeoutError, SyncSender, TryRecvError, TrySendError,
-};
-use std::sync::{Arc, Mutex};
+use std::sync::mpsc::{sync_channel, RecvTimeoutError, SyncSender, TryRecvError, TrySendError};
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -66,6 +63,7 @@ const SOURCE_SWITCH_BASE_LEAD_SECS: f64 = 1.0;
 const SOURCE_SWITCH_MIN_READY_SECS: f64 = 0.35;
 const SOURCE_SWITCH_MAX_LEAD_SECS: f64 = 8.0;
 const SOURCE_SWITCH_PREDECODE_SECS: f64 = 0.5;
+const CONTROL_SIGNAL_WAKE_CAPACITY: usize = 1;
 
 static RUNTIME: Mutex<Option<PlayerRuntime>> = Mutex::new(None);
 /// Mirrors `RUNTIME.is_some()` for lock-free readiness checks on hot control
@@ -84,7 +82,16 @@ static CURRENT_SHARED: Mutex<Option<Arc<SharedAudio>>> = Mutex::new(None);
 static USER_VOLUME_BITS: AtomicU32 = AtomicU32::new(1.0f32.to_bits());
 static NEXT_SEEK_REQUEST_SEQ: AtomicU64 = AtomicU64::new(0);
 static LATEST_SEEK_REQUEST_SEQ: AtomicU64 = AtomicU64::new(0);
+static NEXT_SOURCE_OPEN_REQUEST_SEQ: AtomicU64 = AtomicU64::new(0);
+static LATEST_SOURCE_OPEN_REQUEST_SEQ: AtomicU64 = AtomicU64::new(0);
+static FADE_GENERATION: AtomicU64 = AtomicU64::new(0);
 type RuntimeCommand = Box<dyn FnOnce(&mut PlayerRuntime) + Send + 'static>;
+
+pub(crate) fn runtime_guard() -> MutexGuard<'static, Option<PlayerRuntime>> {
+    RUNTIME
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
 
 fn set_current_shared(shared: Option<Arc<SharedAudio>>) {
     if let Ok(mut guard) = CURRENT_SHARED.lock() {
@@ -106,6 +113,11 @@ pub(crate) fn set_session_volume(volume: f64) -> napi::Result<()> {
             "player addon not initialized".to_string(),
         ));
     }
+    if !volume.is_finite() {
+        return Err(napi::Error::from_reason(
+            "volume must be finite".to_string(),
+        ));
+    }
     let normalized = (volume / 100.0).clamp(0.0, 1.5) as f32;
     if let Some(shared) = current_shared() {
         shared.set_volume(normalized);
@@ -114,11 +126,7 @@ pub(crate) fn set_session_volume(volume: f64) -> napi::Result<()> {
 }
 
 fn cancel_runtime_fade() {
-    if let Ok(guard) = RUNTIME.lock() {
-        if let Some(runtime) = guard.as_ref() {
-            runtime.fade_stop.store(true, Ordering::Release);
-        }
-    }
+    FADE_GENERATION.fetch_add(1, Ordering::AcqRel);
 }
 
 struct PlayerRuntime {
@@ -134,7 +142,6 @@ struct PlayerRuntime {
     spectrum_config: SpectrumConfig,
     spectrum_analyzer: spectrum::SpectrumAnalyzer,
     device_watcher: Option<device::DeviceWatcher>,
-    fade_stop: Arc<AtomicBool>,
     loop_file: bool,
     audio_graph: AudioGraphSnapshot,
     audio_graph_revision: u64,
@@ -144,6 +151,7 @@ struct PlayerRuntime {
     spatial_file_path: Option<String>,
     prepared_next: Option<PreparedNextSource>,
     gapless_prepare_interrupt: Option<(u64, Arc<AtomicBool>)>,
+    source_open_interrupt: Option<(u64, Arc<AtomicBool>)>,
     seek_restart_interrupt: Option<Arc<AtomicBool>>,
     seek_request_seq: u64,
     seek_restore_paused: Option<bool>,
@@ -206,6 +214,32 @@ struct PreparedNextSource {
     normalization_gain_db: f32,
 }
 
+fn retire_prepared_next_background(prepared: Option<PreparedNextSource>, reason: &'static str) {
+    retire_value_background(prepared, format!("player-prepared-next-reaper-{reason}"));
+}
+
+fn retire_value_background<T: Send + 'static>(value: Option<T>, name: String) {
+    let Some(value) = value else {
+        return;
+    };
+    let pending = Arc::new(Mutex::new(Some(value)));
+    let worker_pending = pending.clone();
+    let spawned = thread::Builder::new().name(name).spawn(move || {
+        let value = worker_pending
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .take();
+        drop(value);
+    });
+    if spawned.is_err() {
+        let value = pending
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .take();
+        drop(value);
+    }
+}
+
 pub(crate) enum GaplessDecodeResult {
     NotPrepared,
     Activated(Option<decoder::DecoderData>),
@@ -250,7 +284,6 @@ impl PlayerRuntime {
             spectrum_analyzer: spectrum::SpectrumAnalyzer::new(spectrum_config.clone()),
             spectrum_config,
             device_watcher: None,
-            fade_stop: Arc::new(AtomicBool::new(false)),
             loop_file: false,
             audio_graph: AudioGraphSnapshot::default(),
             audio_graph_revision: 0,
@@ -260,6 +293,7 @@ impl PlayerRuntime {
             spatial_file_path: None,
             prepared_next: None,
             gapless_prepare_interrupt: None,
+            source_open_interrupt: None,
             seek_restart_interrupt: None,
             seek_request_seq: 0,
             seek_restore_paused: None,
@@ -280,15 +314,15 @@ impl PlayerRuntime {
         self.cancel_idle_output_release();
         self.cancel_pending_seek_restart();
         self.cancel_pending_gapless_prepare();
+        self.cancel_pending_source_open();
         self.seek_restore_paused = None;
-        self.prepared_next = None;
+        retire_prepared_next_background(self.prepared_next.take(), "stop-session");
         if let Some(session) = self.session.take() {
             set_current_shared(None);
             session.stop_background();
         }
         self.state.playing = false;
         self.state.paused = true;
-        self.core_state = PlaybackCoreState::Idle;
     }
 
     fn cancel_pending_seek_restart(&mut self) {
@@ -304,6 +338,38 @@ impl PlayerRuntime {
         if let Some(session) = self.session.as_ref() {
             session.shared.clear_gapless_prepares();
         }
+    }
+
+    fn begin_source_open(&mut self, request_seq: u64, interrupt: Arc<AtomicBool>) {
+        self.cancel_pending_source_open();
+        self.source_open_interrupt = Some((request_seq, interrupt));
+    }
+
+    fn cancel_pending_source_open(&mut self) {
+        if let Some((_, interrupt)) = self.source_open_interrupt.take() {
+            interrupt.store(true, Ordering::Release);
+        }
+    }
+
+    fn source_open_is_current(&self, request_seq: u64, interrupt: &Arc<AtomicBool>) -> bool {
+        is_latest_source_open_request_seq(request_seq)
+            && self.source_open_interrupt.as_ref().is_some_and(
+                |(current_seq, current_interrupt)| {
+                    *current_seq == request_seq && Arc::ptr_eq(current_interrupt, interrupt)
+                },
+            )
+    }
+
+    fn clear_source_open_if_current(
+        &mut self,
+        request_seq: u64,
+        interrupt: &Arc<AtomicBool>,
+    ) -> bool {
+        if !self.source_open_is_current(request_seq, interrupt) {
+            return false;
+        }
+        self.source_open_interrupt = None;
+        true
     }
 
     fn clear_pending_seek_restart(&mut self, interrupt: Option<&Arc<AtomicBool>>) {
@@ -337,6 +403,20 @@ impl PlayerRuntime {
         was_paused
     }
 
+    fn update_seek_restore_paused(&mut self, paused: bool) {
+        if self.seek_restore_paused.is_some() {
+            self.seek_restore_paused = Some(paused);
+        }
+    }
+
+    fn take_seek_restore_paused(&mut self, request_seq: u64, fallback: bool) -> bool {
+        if self.is_seek_request_current(request_seq) {
+            self.seek_restore_paused.take().unwrap_or(fallback)
+        } else {
+            fallback
+        }
+    }
+
     fn clear_seek_restore_paused_if_current(&mut self, request_seq: u64) {
         if self.is_seek_request_current(request_seq) {
             self.seek_restore_paused = None;
@@ -351,6 +431,23 @@ fn next_seek_request_seq() -> u64 {
         .max(1);
     LATEST_SEEK_REQUEST_SEQ.store(seq, Ordering::Release);
     seq
+}
+
+fn next_source_open_request_seq() -> u64 {
+    let seq = NEXT_SOURCE_OPEN_REQUEST_SEQ
+        .fetch_add(1, Ordering::AcqRel)
+        .wrapping_add(1)
+        .max(1);
+    LATEST_SOURCE_OPEN_REQUEST_SEQ.store(seq, Ordering::Release);
+    seq
+}
+
+fn invalidate_source_open_requests() {
+    let _ = next_source_open_request_seq();
+}
+
+fn is_latest_source_open_request_seq(seq: u64) -> bool {
+    LATEST_SOURCE_OPEN_REQUEST_SEQ.load(Ordering::Acquire) == seq
 }
 
 fn invalidate_seek_requests() {
@@ -425,6 +522,18 @@ fn set_runtime_core_state(
     state: PlaybackCoreState,
     reason: &'static str,
 ) {
+    match state {
+        PlaybackCoreState::Playing => runtime.update_seek_restore_paused(false),
+        PlaybackCoreState::Idle
+        | PlaybackCoreState::Paused
+        | PlaybackCoreState::Draining
+        | PlaybackCoreState::Error
+        | PlaybackCoreState::DeviceLost => runtime.update_seek_restore_paused(true),
+        PlaybackCoreState::Loading
+        | PlaybackCoreState::Buffering
+        | PlaybackCoreState::Seeking
+        | PlaybackCoreState::OutputReconfig => {}
+    }
     if runtime.core_state == state {
         return;
     }
@@ -461,9 +570,7 @@ fn emit_shared_events(shared: &SharedAudio, events: Vec<PlayerEvent>) {
 }
 
 fn with_runtime<T>(f: impl FnOnce(&mut PlayerRuntime) -> napi::Result<T>) -> napi::Result<T> {
-    let mut guard = RUNTIME
-        .lock()
-        .map_err(|err| napi::Error::from_reason(format!("failed to lock player runtime: {err}")))?;
+    let mut guard = runtime_guard();
     let runtime = guard
         .as_mut()
         .ok_or_else(|| napi::Error::from_reason("player addon not initialized".to_string()))?;
@@ -505,14 +612,19 @@ fn prepare_source(
     dsp_settings: DspSettings,
     spatial_file_path: Option<String>,
     pause_on_device_disconnect: bool,
+    interrupt: Arc<AtomicBool>,
 ) -> Result<PreparedSource, String> {
-    let mut decoder = open_decoder(
+    let mut decoder = open_decoder_with_interrupt(
         url.clone(),
         audio_stream_ordinal,
         None,
+        interrupt.clone(),
         config.packet_cache_options_for_url(&url),
         &config.stream_options(),
     )?;
+    if interrupt.load(Ordering::Acquire) {
+        return Err("source open cancelled".to_string());
+    }
     if start_position > 0.0 {
         decoder.seek(start_position)?;
     }
@@ -530,6 +642,9 @@ fn prepare_source(
         source_sample_rate,
         requested_mix_sample_rate,
     )?;
+    if interrupt.load(Ordering::Acquire) {
+        return Err("source open cancelled".to_string());
+    }
     let mix_sample_rate = mix_format.sample_rate;
     if mix_sample_rate != source_sample_rate {
         emit_event(PlayerEvent::log(
@@ -584,7 +699,7 @@ fn prepare_source(
     let interrupt = decoder.interrupt_handle();
     shared.bind_interrupt(interrupt);
 
-    let (control_signal_tx, control_signal_rx) = channel::<PlaybackSignal>();
+    let (control_signal_tx, control_signal_rx) = sync_channel::<()>(CONTROL_SIGNAL_WAKE_CAPACITY);
     let (telemetry_signal_tx, telemetry_signal_rx) = sync_channel::<PlaybackSignal>(32);
     shared
         .bind_signal_senders(control_signal_tx, telemetry_signal_tx)
@@ -603,13 +718,17 @@ fn prepare_source(
             let mut last_progress_at = Instant::now();
             let mut stall_reported = false;
             loop {
-                let signal = match control_signal_rx.recv_timeout(tick) {
-                    Ok(signal) => Some(signal),
-                    Err(RecvTimeoutError::Timeout) => match telemetry_signal_rx.try_recv() {
-                        Ok(signal) => Some(signal),
-                        Err(TryRecvError::Empty | TryRecvError::Disconnected) => None,
-                    },
-                    Err(RecvTimeoutError::Disconnected) => break,
+                let signal = if let Some(signal) = signal_shared.take_pending_control_signal() {
+                    Some(signal)
+                } else {
+                    match control_signal_rx.recv_timeout(tick) {
+                        Ok(()) => signal_shared.take_pending_control_signal(),
+                        Err(RecvTimeoutError::Timeout) => match telemetry_signal_rx.try_recv() {
+                            Ok(signal) => Some(signal),
+                            Err(TryRecvError::Empty | TryRecvError::Disconnected) => None,
+                        },
+                        Err(RecvTimeoutError::Disconnected) => break,
+                    }
                 };
                 if let Some(signal) = signal {
                     match signal {
@@ -694,6 +813,11 @@ fn prepare_source(
                                 }),
                             );
                         }
+                        PlaybackSignal::OutputStatsChanged => {
+                            if let Some(stats) = signal_shared.output_stats() {
+                                emit_shared_event(&signal_shared, PlayerEvent::output_stats(stats));
+                            }
+                        }
                         PlaybackSignal::TrackSwitch(info) => {
                             apply_track_switch(info, signal_shared.clone());
                         }
@@ -759,20 +883,36 @@ fn prepare_source(
         emit_event,
         None,
     );
+    let mut session = PlaybackSession {
+        shared: shared.clone(),
+        output_thread: Some(output_thread),
+        filter_thread: None,
+        decode_thread: None,
+        decode_commands: None,
+        position_thread: Some(position_thread),
+    };
     let filter_thread =
-        filter::spawn_filter_thread_with_graph(shared.clone(), Some(initial_filter_graph));
+        match filter::spawn_filter_thread_with_graph(shared.clone(), Some(initial_filter_graph)) {
+            Ok(handle) => handle,
+            Err(err) => {
+                session.stop_background();
+                return Err(err);
+            }
+        };
+    session.filter_thread = Some(filter_thread);
     let decode_generation = shared.current_decode_generation();
     let (decode_thread, decode_commands) =
-        decoder::spawn_decode_worker(decoder, shared.clone(), decode_generation);
+        match decoder::spawn_decode_worker(decoder, shared.clone(), decode_generation) {
+            Ok(worker) => worker,
+            Err(err) => {
+                session.stop_background();
+                return Err(err);
+            }
+        };
+    session.decode_thread = Some(decode_thread);
+    session.decode_commands = Some(decode_commands);
     Ok(PreparedSource {
-        session: PlaybackSession {
-            shared,
-            output_thread: Some(output_thread),
-            filter_thread: Some(filter_thread),
-            decode_thread: Some(decode_thread),
-            decode_commands: Some(decode_commands),
-            position_thread: Some(position_thread),
-        },
+        session,
         url,
         audio_stream_ordinal,
         seq,
@@ -895,7 +1035,7 @@ fn apply_prepared_source(runtime: &mut PlayerRuntime, prepared: PreparedSource) 
     } = prepared;
     runtime.cancel_idle_output_release();
     runtime.cancel_pending_gapless_prepare();
-    runtime.prepared_next = None;
+    retire_prepared_next_background(runtime.prepared_next.take(), "apply-source");
     runtime.seek_restore_paused = None;
     set_current_shared(Some(session.shared.clone()));
     if let Some(previous) = runtime.session.replace(session) {
@@ -980,7 +1120,10 @@ fn replace_source_async(
     dsp_settings: DspSettings,
     spatial_file_path: Option<String>,
     pause_on_device_disconnect: bool,
+    open_request_seq: u64,
+    interrupt: Arc<AtomicBool>,
 ) -> napi::Result<()> {
+    let failed_url = url.clone();
     let prepared = prepare_source(
         url,
         audio_stream_ordinal,
@@ -991,9 +1134,52 @@ fn replace_source_async(
         dsp_settings,
         spatial_file_path,
         pause_on_device_disconnect,
-    )
-    .map_err(napi::Error::from_reason)?;
-    with_runtime(|runtime| {
+        interrupt.clone(),
+    );
+    let mut prepared = match prepared {
+        Ok(prepared) => Some(prepared),
+        Err(err) => {
+            let interrupt_for_command = interrupt.clone();
+            let current = call_core_command("finish-source-open-error", move |runtime| {
+                if !runtime.clear_source_open_if_current(open_request_seq, &interrupt_for_command) {
+                    return Ok(false);
+                }
+                runtime.current_url = Some(failed_url);
+                runtime.current_audio_stream_ordinal = audio_stream_ordinal;
+                runtime.current_seq = seq;
+                runtime.latest_load_seq = runtime.latest_load_seq.max(seq);
+                runtime.state.duration = 0.0;
+                runtime.state.time_pos = 0.0;
+                runtime.state.playing = false;
+                runtime.state.paused = true;
+                set_runtime_core_state(runtime, PlaybackCoreState::Error, "load-error");
+                emit_runtime_events(
+                    runtime,
+                    vec![
+                        PlayerEvent::state_change(runtime.state.clone()),
+                        PlayerEvent::duration_change(0.0),
+                        PlayerEvent::time_update(0.0),
+                    ],
+                );
+                Ok(true)
+            })?;
+            return if current {
+                Err(napi::Error::from_reason(err))
+            } else {
+                Ok(())
+            };
+        }
+    };
+    call_core_command("apply-prepared-source", move |runtime| {
+        if !runtime.clear_source_open_if_current(open_request_seq, &interrupt) {
+            if let Some(prepared) = prepared.take() {
+                prepared.session.stop_background();
+            }
+            return Ok(());
+        }
+        let prepared = prepared
+            .take()
+            .ok_or_else(|| napi::Error::from_reason("prepared source already applied"))?;
         apply_prepared_source(runtime, prepared);
         Ok(())
     })
@@ -1041,11 +1227,12 @@ pub(crate) fn activate_gapless_next_decoder(
     if !shared.is_decode_generation_current(generation) {
         return GaplessDecodeResult::NotPrepared;
     }
-    let next = with_runtime(|runtime| {
+    let shared_for_command = shared.clone();
+    let next = call_core_command("activate-gapless-next", move |runtime| {
         let Some(session) = runtime.session.as_ref() else {
             return Ok(None);
         };
-        if !Arc::ptr_eq(&session.shared, &shared) {
+        if !Arc::ptr_eq(&session.shared, &shared_for_command) {
             return Ok(None);
         }
         Ok(runtime.prepared_next.take())
@@ -1102,7 +1289,7 @@ fn restart_loop_if_enabled(shared: Arc<SharedAudio>) -> bool {
         };
         shared.paused.store(true, Ordering::Release);
         shared.request_decode_stop();
-        runtime.prepared_next = None;
+        retire_prepared_next_background(runtime.prepared_next.take(), "loop-restart");
         session.stop_decode_background("loop-restart");
         let generation = shared.reset_for_decode_resume(0.0, &runtime.dsp_settings);
         let eq_active = runtime
@@ -1174,9 +1361,7 @@ pub fn initialize(config: Option<PlayerConfigOptions>) -> napi::Result<()> {
     )
     .unwrap_or(None);
     {
-        let mut guard = RUNTIME.lock().map_err(|err| {
-            napi::Error::from_reason(format!("failed to lock player runtime: {err}"))
-        })?;
+        let mut guard = runtime_guard();
         *guard = Some(runtime);
         // Publish readiness while still holding the RUNTIME guard so it cannot
         // interleave with a concurrent shutdown_runtime: shutdown writes false
@@ -1198,15 +1383,15 @@ fn shutdown_runtime(clear_callback: bool) -> napi::Result<()> {
     // in-flight fade) start failing as soon as possible. The authoritative
     // write happens below under the RUNTIME guard.
     RUNTIME_READY.store(false, Ordering::Release);
+    cancel_runtime_fade();
     invalidate_seek_requests();
+    invalidate_source_open_requests();
     if clear_callback {
         clear_event_callback();
     }
     stop_core_dispatcher();
     let runtime = {
-        let mut guard = RUNTIME.lock().map_err(|err| {
-            napi::Error::from_reason(format!("failed to lock player runtime: {err}"))
-        })?;
+        let mut guard = runtime_guard();
         // Authoritative write under the same guard initialize() uses, so a
         // concurrent initialize cannot leave ready==true with RUNTIME=None.
         RUNTIME_READY.store(false, Ordering::Release);
@@ -1223,7 +1408,7 @@ fn shutdown_runtime(clear_callback: bool) -> napi::Result<()> {
 }
 
 #[napi]
-pub fn register_event_handler(callback: ThreadsafeFunction<PlayerEvent>) -> napi::Result<()> {
+pub fn register_event_handler(callback: EventCallback) -> napi::Result<()> {
     start_event_dispatcher()?;
     set_event_callback(callback)
 }
@@ -1232,12 +1417,16 @@ pub struct LoadFileTask {
     url: String,
     seq: u64,
     audio_stream_ordinal: Option<usize>,
+    open_request_seq: u64,
+    interrupt: Arc<AtomicBool>,
 }
 
 pub struct SwitchSourceTask {
     url: String,
     seq: u64,
     audio_stream_ordinal: Option<usize>,
+    open_request_seq: u64,
+    interrupt: Arc<AtomicBool>,
 }
 
 impl Task for SwitchSourceTask {
@@ -1246,11 +1435,17 @@ impl Task for SwitchSourceTask {
 
     fn compute(&mut self) -> napi::Result<Self::Output> {
         let url = self.url.clone();
-        let _seq = self.seq;
+        let seq = self.seq;
         let audio_stream = self.audio_stream_ordinal;
-        let (shared, current_seq, generation, commands, config) = with_runtime(|runtime| {
+        let open_request_seq = self.open_request_seq;
+        let interrupt = self.interrupt.clone();
+        let interrupt_for_begin = interrupt.clone();
+        let begin = call_core_command("begin-source-switch", move |runtime| {
+            if !is_latest_source_open_request_seq(open_request_seq) {
+                return Ok(None);
+            }
             runtime.cancel_pending_gapless_prepare();
-            runtime.prepared_next = None;
+            retire_prepared_next_background(runtime.prepared_next.take(), "source-switch-begin");
             let session = runtime
                 .session
                 .as_ref()
@@ -1258,72 +1453,123 @@ impl Task for SwitchSourceTask {
             let commands = session.decode_commands.as_ref().cloned().ok_or_else(|| {
                 napi::Error::from_reason("active decoder is not available".to_string())
             })?;
-            Ok((
+            let plan = (
                 session.shared.clone(),
                 runtime.current_seq,
                 session.shared.current_decode_generation(),
                 commands,
                 runtime.config.clone(),
-            ))
+            );
+            runtime.begin_source_open(open_request_seq, interrupt_for_begin);
+            Ok(Some(plan))
         })?;
+        let Some((shared, current_seq, generation, commands, config)) = begin else {
+            return Err(napi::Error::from_reason(
+                "stale source switch ignored".to_string(),
+            ));
+        };
 
-        let mut decoder = open_decoder(
-            url.clone(),
-            audio_stream,
-            Some(shared.mix_format.sample_rate),
-            config.packet_cache_options_for_url(&url),
-            &config.stream_options(),
-        )
-        .map_err(napi::Error::from_reason)?;
-        let duration = decoder.duration_secs();
-
-        // Seek the replacement stream to a future hand-off point while the old
-        // source keeps decoding and playing. If a remote seek consumes the
-        // initial lead, retry farther ahead based on the measured latency. The
-        // decode worker can then swap readers without performing network I/O.
-        let mut lead_secs = SOURCE_SWITCH_BASE_LEAD_SECS;
-        let mut switch_at_secs = shared.position_secs() + lead_secs;
-        let mut prepare_elapsed_ms = 0u128;
-        let mut predecoded = Vec::new();
-        for _ in 0..3 {
-            switch_at_secs = shared.position_secs() + lead_secs;
-            if duration > 0.0 {
-                switch_at_secs = switch_at_secs.min((duration - 0.05).max(0.0));
-            }
-            let prepare_started = Instant::now();
-            decoder
-                .prepare_seamless_seek(switch_at_secs)
-                .map_err(napi::Error::from_reason)?;
-            predecoded = decoder
-                .predecode_chunks(SOURCE_SWITCH_PREDECODE_SECS)
-                .map_err(napi::Error::from_reason)?;
-            prepare_elapsed_ms = prepare_started.elapsed().as_millis();
-            let ready_secs = switch_at_secs - shared.position_secs();
-            if ready_secs >= SOURCE_SWITCH_MIN_READY_SECS
-                || (duration > 0.0 && duration <= shared.position_secs() + 0.1)
-            {
-                break;
-            }
-            lead_secs = ((prepare_elapsed_ms as f64 / 1000.0) * 1.5 + 0.5)
-                .clamp(SOURCE_SWITCH_BASE_LEAD_SECS, SOURCE_SWITCH_MAX_LEAD_SECS);
-        }
-
-        let (reply_tx, reply_rx) = sync_channel(1);
-        commands
-            .send(decoder::DecodeCommand::SwitchSource {
-                decoder: Box::new(decoder),
-                predecoded,
-                switch_at_secs,
-                generation,
-                reply: reply_tx,
-            })
-            .map_err(|_| napi::Error::from_reason("active decoder stopped".to_string()))?;
-        let switch_position = reply_rx
-            .recv_timeout(Duration::from_secs(15))
-            .map_err(|_| napi::Error::from_reason("source switch timed out".to_string()))?
+        let operation = (|| -> napi::Result<(f64, f64, f64, u128)> {
+            let mut decoder = open_decoder_with_interrupt(
+                url.clone(),
+                audio_stream,
+                Some(shared.mix_format.sample_rate),
+                interrupt.clone(),
+                config.packet_cache_options_for_url(&url),
+                &config.stream_options(),
+            )
             .map_err(napi::Error::from_reason)?;
+            let duration = decoder.duration_secs();
 
-        with_runtime(|runtime| {
+            // Seek the replacement stream to a future hand-off point while the old
+            // source keeps decoding and playing. If a remote seek consumes the
+            // initial lead, retry farther ahead based on the measured latency. The
+            // decode worker can then swap readers without performing network I/O.
+            let mut lead_secs = SOURCE_SWITCH_BASE_LEAD_SECS;
+            let mut switch_at_secs = shared.position_secs() + lead_secs;
+            let mut prepare_elapsed_ms = 0u128;
+            let mut predecoded = Vec::new();
+            for _ in 0..3 {
+                switch_at_secs = shared.position_secs() + lead_secs;
+                if duration > 0.0 {
+                    switch_at_secs = switch_at_secs.min((duration - 0.05).max(0.0));
+                }
+                let prepare_started = Instant::now();
+                decoder
+                    .prepare_seamless_seek(switch_at_secs)
+                    .map_err(napi::Error::from_reason)?;
+                predecoded = decoder
+                    .predecode_chunks(SOURCE_SWITCH_PREDECODE_SECS)
+                    .map_err(napi::Error::from_reason)?;
+                prepare_elapsed_ms = prepare_started.elapsed().as_millis();
+                let ready_secs = switch_at_secs - shared.position_secs();
+                if ready_secs >= SOURCE_SWITCH_MIN_READY_SECS
+                    || (duration > 0.0 && duration <= shared.position_secs() + 0.1)
+                {
+                    break;
+                }
+                lead_secs = ((prepare_elapsed_ms as f64 / 1000.0) * 1.5 + 0.5)
+                    .clamp(SOURCE_SWITCH_BASE_LEAD_SECS, SOURCE_SWITCH_MAX_LEAD_SECS);
+            }
+
+            let interrupt_for_validation = interrupt.clone();
+            let shared_for_validation = shared.clone();
+            let valid = call_core_command("validate-source-switch", move |runtime| {
+                Ok(
+                    runtime.source_open_is_current(open_request_seq, &interrupt_for_validation)
+                        && runtime.session.as_ref().is_some_and(|session| {
+                            Arc::ptr_eq(&session.shared, &shared_for_validation)
+                        })
+                        && runtime.current_seq == current_seq,
+                )
+            })?;
+            if !valid {
+                return Err(napi::Error::from_reason(
+                    "stale source switch ignored".to_string(),
+                ));
+            }
+
+            let (reply_tx, reply_rx) = sync_channel(1);
+            commands
+                .send(decoder::DecodeCommand::SwitchSource {
+                    decoder: Box::new(decoder),
+                    predecoded,
+                    switch_at_secs,
+                    generation,
+                    reply: reply_tx,
+                })
+                .map_err(|_| napi::Error::from_reason("active decoder stopped".to_string()))?;
+            let switch_position = reply_rx
+                .recv_timeout(Duration::from_secs(15))
+                .map_err(|_| napi::Error::from_reason("source switch timed out".to_string()))?
+                .map_err(napi::Error::from_reason)?;
+            Ok((
+                switch_position,
+                duration,
+                switch_at_secs,
+                prepare_elapsed_ms,
+            ))
+        })();
+
+        let (switch_position, duration, switch_at_secs, prepare_elapsed_ms) = match operation {
+            Ok(output) => output,
+            Err(err) => {
+                let interrupt_for_error = interrupt.clone();
+                let _ = call_core_command("finish-source-switch-error", move |runtime| {
+                    runtime.clear_source_open_if_current(open_request_seq, &interrupt_for_error);
+                    Ok(())
+                });
+                return Err(err);
+            }
+        };
+
+        let interrupt_for_commit = interrupt.clone();
+        call_core_command("commit-source-switch", move |runtime| {
+            if !runtime.clear_source_open_if_current(open_request_seq, &interrupt_for_commit) {
+                return Err(napi::Error::from_reason(
+                    "stale source switch ignored".to_string(),
+                ));
+            }
             let Some(session_shared) = runtime
                 .session
                 .as_ref()
@@ -1339,9 +1585,11 @@ impl Task for SwitchSourceTask {
                 ));
             }
             runtime.cancel_pending_gapless_prepare();
-            runtime.prepared_next = None;
+            retire_prepared_next_background(runtime.prepared_next.take(), "source-switch-commit");
             runtime.current_url = Some(url.clone());
             runtime.current_audio_stream_ordinal = audio_stream;
+            runtime.current_seq = seq;
+            runtime.latest_load_seq = runtime.latest_load_seq.max(seq);
             runtime.state.duration = duration;
             emit_runtime_events(
                 runtime,
@@ -1373,43 +1621,57 @@ impl Task for LoadFileTask {
         let url = self.url.clone();
         let audio_stream = self.audio_stream_ordinal;
         let seq = self.seq;
-        let plan = with_runtime(|runtime| {
+        let open_request_seq = self.open_request_seq;
+        let interrupt = self.interrupt.clone();
+        let interrupt_for_begin = interrupt.clone();
+        let plan = call_core_command("begin-load", move |runtime| {
+            if !is_latest_source_open_request_seq(open_request_seq) {
+                return Ok(None);
+            }
             runtime.cancel_idle_output_release();
             runtime.cancel_pending_seek_restart();
             runtime.cancel_pending_gapless_prepare();
             runtime.seek_restore_paused = None;
-            runtime.prepared_next = None;
+            retire_prepared_next_background(runtime.prepared_next.take(), "load-begin");
             runtime.latest_load_seq = seq;
             set_runtime_core_state(runtime, PlaybackCoreState::Loading, "load");
-            if runtime.session.is_some() && runtime.config.gapless_audio == GaplessAudioPolicy::No {
+            let plan = if runtime.session.is_some()
+                && runtime.config.gapless_audio == GaplessAudioPolicy::No
+            {
                 runtime.stop_session();
-                return Ok(LoadPlan::Initial {
+                LoadPlan::Initial {
                     config: runtime.config.clone(),
                     dsp_settings: runtime.dsp_settings.clone(),
                     spatial_file_path: runtime.spatial_file_path.clone(),
                     pause_on_device_disconnect: runtime.pause_on_device_disconnect,
-                });
-            }
-            let Some(session) = runtime.session.as_mut() else {
-                return Ok(LoadPlan::Initial {
+                }
+            } else if let Some(session) = runtime.session.as_mut() {
+                let shared = session.shared.clone();
+                shared.paused.store(true, Ordering::Release);
+                shared.request_decode_stop();
+                session.stop_decode_background("load-replace");
+                LoadPlan::Continuous(ContinuousLoadPlan {
+                    shared,
+                    request_seq: seq,
+                    config: runtime.config.clone(),
+                    dsp_settings: runtime.dsp_settings.clone(),
+                    spatial_file_path: runtime.spatial_file_path.clone(),
+                })
+            } else {
+                LoadPlan::Initial {
                     config: runtime.config.clone(),
                     dsp_settings: runtime.dsp_settings.clone(),
                     spatial_file_path: runtime.spatial_file_path.clone(),
                     pause_on_device_disconnect: runtime.pause_on_device_disconnect,
-                });
+                }
             };
-            let shared = session.shared.clone();
-            shared.paused.store(true, Ordering::Release);
-            shared.request_decode_stop();
-            session.stop_decode_background("load-replace");
-            Ok(LoadPlan::Continuous(ContinuousLoadPlan {
-                shared,
-                request_seq: seq,
-                config: runtime.config.clone(),
-                dsp_settings: runtime.dsp_settings.clone(),
-                spatial_file_path: runtime.spatial_file_path.clone(),
-            }))
+            runtime.begin_source_open(open_request_seq, interrupt_for_begin);
+            Ok(Some(plan))
         })?;
+
+        let Some(plan) = plan else {
+            return Ok(());
+        };
 
         match plan {
             LoadPlan::Initial {
@@ -1427,12 +1689,15 @@ impl Task for LoadFileTask {
                 dsp_settings,
                 spatial_file_path,
                 pause_on_device_disconnect,
+                open_request_seq,
+                interrupt,
             ),
             LoadPlan::Continuous(plan) => {
-                let new_decoder = open_decoder(
+                let new_decoder = open_decoder_with_interrupt(
                     url.clone(),
                     audio_stream,
                     Some(plan.shared.mix_format.sample_rate),
+                    interrupt.clone(),
                     plan.config.packet_cache_options_for_url(&url),
                     &plan.config.stream_options(),
                 );
@@ -1443,13 +1708,36 @@ impl Task for LoadFileTask {
                         let preferred_output_sample_format = plan
                             .config
                             .resolve_output_sample_format(source_sample_format);
-                        let dsp_settings = prepare_dsp_settings_for_mix_rate(
+                        let dsp_settings = match prepare_dsp_settings_for_mix_rate(
                             plan.dsp_settings,
                             plan.spatial_file_path.as_deref(),
                             plan.shared.mix_format.sample_rate,
-                        )
-                        .map_err(napi::Error::from_reason)?;
-                        with_runtime(|runtime| {
+                        ) {
+                            Ok(settings) => settings,
+                            Err(err) => {
+                                let interrupt_for_command = interrupt.clone();
+                                let _ =
+                                    call_core_command("finish-load-dsp-error", move |runtime| {
+                                        runtime.clear_source_open_if_current(
+                                            open_request_seq,
+                                            &interrupt_for_command,
+                                        );
+                                        Ok(())
+                                    });
+                                return Err(napi::Error::from_reason(err));
+                            }
+                        };
+                        let interrupt_for_commit = interrupt.clone();
+                        call_core_command("commit-load", move |runtime| {
+                            if !runtime
+                                .source_open_is_current(open_request_seq, &interrupt_for_commit)
+                            {
+                                return Ok(());
+                            }
+                            runtime.clear_source_open_if_current(
+                                open_request_seq,
+                                &interrupt_for_commit,
+                            );
                             let Some(session) = runtime.session.as_mut() else {
                                 return Ok(());
                             };
@@ -1472,7 +1760,8 @@ impl Task for LoadFileTask {
                                 decoder,
                                 session.shared.clone(),
                                 generation,
-                            );
+                            )
+                            .map_err(napi::Error::from_reason)?;
                             session.decode_thread = Some(decode_thread);
                             session.decode_commands = Some(decode_commands);
                             session.shared.paused.store(true, Ordering::Release);
@@ -1502,46 +1791,67 @@ impl Task for LoadFileTask {
                         })
                     }
                     Err(err) => {
-                        with_runtime(|runtime| {
-                            let matches_current_plan = runtime
-                                .session
-                                .as_ref()
-                                .is_some_and(|session| Arc::ptr_eq(&session.shared, &plan.shared));
-                            if !matches_current_plan || runtime.latest_load_seq != plan.request_seq
-                            {
-                                return Ok(());
-                            }
+                        let interrupt_for_error = interrupt.clone();
+                        let current =
+                            call_core_command("finish-load-open-error", move |runtime| {
+                                if !runtime
+                                    .source_open_is_current(open_request_seq, &interrupt_for_error)
+                                {
+                                    return Ok(false);
+                                }
+                                runtime.clear_source_open_if_current(
+                                    open_request_seq,
+                                    &interrupt_for_error,
+                                );
+                                let matches_current_plan =
+                                    runtime.session.as_ref().is_some_and(|session| {
+                                        Arc::ptr_eq(&session.shared, &plan.shared)
+                                    });
+                                if !matches_current_plan
+                                    || runtime.latest_load_seq != plan.request_seq
+                                {
+                                    return Ok(false);
+                                }
 
-                            if let Some(session) = runtime.session.take() {
-                                set_current_shared(None);
-                                session.shared.paused.store(true, Ordering::Release);
-                                session.shared.mark_decode_failed();
-                                session.shared.set_track_seq(plan.request_seq);
-                                session.stop_background();
-                            }
-                            runtime.current_url = Some(url.clone());
-                            runtime.current_audio_stream_ordinal = audio_stream;
-                            runtime.current_seq = plan.request_seq;
-                            runtime.latest_load_seq = runtime.latest_load_seq.max(plan.request_seq);
-                            runtime.state.duration = 0.0;
-                            runtime.state.time_pos = 0.0;
-                            runtime.state.playing = false;
-                            runtime.state.paused = true;
-                            set_runtime_core_state(runtime, PlaybackCoreState::Error, "load-error");
-                            emit_runtime_event(
-                                runtime,
-                                PlayerEvent::state_change(runtime.state.clone()),
-                            );
-                            emit_runtime_events(
-                                runtime,
-                                vec![
-                                    PlayerEvent::duration_change(0.0),
-                                    PlayerEvent::time_update(0.0),
-                                ],
-                            );
+                                if let Some(session) = runtime.session.take() {
+                                    set_current_shared(None);
+                                    session.shared.paused.store(true, Ordering::Release);
+                                    session.shared.mark_decode_failed();
+                                    session.shared.set_track_seq(plan.request_seq);
+                                    session.stop_background();
+                                }
+                                runtime.current_url = Some(url.clone());
+                                runtime.current_audio_stream_ordinal = audio_stream;
+                                runtime.current_seq = plan.request_seq;
+                                runtime.latest_load_seq =
+                                    runtime.latest_load_seq.max(plan.request_seq);
+                                runtime.state.duration = 0.0;
+                                runtime.state.time_pos = 0.0;
+                                runtime.state.playing = false;
+                                runtime.state.paused = true;
+                                set_runtime_core_state(
+                                    runtime,
+                                    PlaybackCoreState::Error,
+                                    "load-error",
+                                );
+                                emit_runtime_event(
+                                    runtime,
+                                    PlayerEvent::state_change(runtime.state.clone()),
+                                );
+                                emit_runtime_events(
+                                    runtime,
+                                    vec![
+                                        PlayerEvent::duration_change(0.0),
+                                        PlayerEvent::time_update(0.0),
+                                    ],
+                                );
+                                Ok(true)
+                            })?;
+                        if current {
+                            Err(napi::Error::from_reason(err))
+                        } else {
                             Ok(())
-                        })?;
-                        Err(napi::Error::from_reason(err))
+                        }
                     }
                 }
             }
@@ -1560,6 +1870,8 @@ pub fn load_file(url: String, seq: Option<f64>) -> AsyncTask<LoadFileTask> {
         url,
         seq: seq.unwrap_or(0.0).max(0.0) as u64,
         audio_stream_ordinal: None,
+        open_request_seq: next_source_open_request_seq(),
+        interrupt: Arc::new(AtomicBool::new(false)),
     })
 }
 
@@ -1570,6 +1882,8 @@ pub fn load_mkv_track(url: String, track_id: i64, seq: Option<f64>) -> AsyncTask
         url,
         seq: seq.unwrap_or(0.0).max(0.0) as u64,
         audio_stream_ordinal: audio_stream_ordinal_from_track_id(track_id),
+        open_request_seq: next_source_open_request_seq(),
+        interrupt: Arc::new(AtomicBool::new(false)),
     })
 }
 
@@ -1579,10 +1893,13 @@ pub fn switch_source(
     track_id: Option<i64>,
     seq: Option<f64>,
 ) -> AsyncTask<SwitchSourceTask> {
+    invalidate_seek_requests();
     AsyncTask::new(SwitchSourceTask {
         url,
         seq: seq.unwrap_or(0.0).max(0.0) as u64,
         audio_stream_ordinal: track_id.and_then(audio_stream_ordinal_from_track_id),
+        open_request_seq: next_source_open_request_seq(),
+        interrupt: Arc::new(AtomicBool::new(false)),
     })
 }
 
@@ -1598,11 +1915,26 @@ pub struct PrepareNextSourceTask {
 struct GaplessPrepareGuard {
     shared: Arc<SharedAudio>,
     epoch: u64,
+    interrupt: Arc<AtomicBool>,
 }
 
 impl Drop for GaplessPrepareGuard {
     fn drop(&mut self) {
         self.shared.finish_gapless_prepare(self.epoch);
+        let epoch = self.epoch;
+        let interrupt = self.interrupt.clone();
+        dispatch_core_command(
+            "finish-gapless-prepare",
+            Box::new(move |runtime| {
+                if runtime.gapless_prepare_interrupt.as_ref().is_some_and(
+                    |(current_epoch, current_interrupt)| {
+                        *current_epoch == epoch && Arc::ptr_eq(current_interrupt, &interrupt)
+                    },
+                ) {
+                    runtime.gapless_prepare_interrupt = None;
+                }
+            }),
+        );
     }
 }
 
@@ -1625,22 +1957,24 @@ impl Task for PrepareNextSourceTask {
         let _pending = GaplessPrepareGuard {
             shared: pending_shared.clone(),
             epoch: request_id,
+            interrupt: self.interrupt.clone(),
         };
         if !pending_shared.gapless_prepare_request_is_current(request_id) {
             return Ok(false);
         }
-        let (sample_rate, current_seq, shared, config) = with_runtime(|runtime| {
-            let Some(session) = runtime.session.as_ref() else {
-                return Ok(None);
-            };
-            Ok(Some((
-                session.shared.mix_format.sample_rate,
-                runtime.current_seq,
-                session.shared.clone(),
-                runtime.config.clone(),
-            )))
-        })?
-        .ok_or_else(|| napi::Error::from_reason("no active audio session".to_string()))?;
+        let (sample_rate, current_seq, shared, config) =
+            call_core_command("snapshot-next-source-preparation", |runtime| {
+                let Some(session) = runtime.session.as_ref() else {
+                    return Ok(None);
+                };
+                Ok(Some((
+                    session.shared.mix_format.sample_rate,
+                    runtime.current_seq,
+                    session.shared.clone(),
+                    runtime.config.clone(),
+                )))
+            })?
+            .ok_or_else(|| napi::Error::from_reason("no active audio session".to_string()))?;
 
         if config.gapless_audio == GaplessAudioPolicy::No {
             return Ok(false);
@@ -1671,19 +2005,24 @@ impl Task for PrepareNextSourceTask {
             normalization_gain_db: self.normalization_gain_db,
         });
 
-        with_runtime(|runtime| {
-            let Some(session) = runtime.session.as_ref() else {
-                return Ok(false);
-            };
-            if !Arc::ptr_eq(&session.shared, &shared)
-                || runtime.current_seq != current_seq
-                || !session
-                    .shared
-                    .gapless_prepare_request_is_current(request_id)
-            {
+        let url_for_log = self.url.clone();
+        call_core_command("commit-next-source-preparation", move |runtime| {
+            let still_current = runtime.session.as_ref().is_some_and(|session| {
+                Arc::ptr_eq(&session.shared, &shared)
+                    && runtime.current_seq == current_seq
+                    && session
+                        .shared
+                        .gapless_prepare_request_is_current(request_id)
+            });
+            if !still_current {
+                retire_prepared_next_background(prepared.take(), "prepare-next-stale");
                 return Ok(false);
             }
-            runtime.prepared_next = prepared.take();
+            let prepared = prepared.take().ok_or_else(|| {
+                napi::Error::from_reason("prepared next source already committed".to_string())
+            })?;
+            let previous = runtime.prepared_next.replace(prepared);
+            retire_prepared_next_background(previous, "prepare-next-replaced");
             runtime.gapless_prepare_interrupt = None;
             emit_runtime_event(
                 runtime,
@@ -1691,7 +2030,7 @@ impl Task for PrepareNextSourceTask {
                     "info",
                     format!(
                         "gapless prepared next source: url='{}', predecoded_chunks={}",
-                        self.url,
+                        url_for_log,
                         runtime
                             .prepared_next
                             .as_ref()
@@ -1728,9 +2067,9 @@ fn predecode_gapless_head(
 
 #[napi]
 pub fn begin_next_source_preparation() -> napi::Result<f64> {
-    with_runtime(|runtime| {
+    call_core_command("begin-next-source-preparation", |runtime| {
         runtime.cancel_pending_gapless_prepare();
-        runtime.prepared_next = None;
+        retire_prepared_next_background(runtime.prepared_next.take(), "prepare-next-begin");
         let Some(session) = runtime.session.as_ref() else {
             return Ok(0.0);
         };
@@ -1741,7 +2080,7 @@ pub fn begin_next_source_preparation() -> napi::Result<f64> {
 #[napi]
 pub fn cancel_next_source_preparation(request_id: f64) -> napi::Result<bool> {
     let request_id = request_id.max(0.0) as u64;
-    with_runtime(|runtime| {
+    call_core_command("cancel-next-source-preparation", move |runtime| {
         if runtime
             .gapless_prepare_interrupt
             .as_ref()
@@ -1756,7 +2095,7 @@ pub fn cancel_next_source_preparation(request_id: f64) -> napi::Result<bool> {
         };
         let cancelled = session.shared.cancel_gapless_prepare(request_id);
         if cancelled {
-            runtime.prepared_next = None;
+            retire_prepared_next_background(runtime.prepared_next.take(), "prepare-next-cancel");
         }
         Ok(cancelled)
     })
@@ -1772,7 +2111,8 @@ pub fn prepare_next_source(
 ) -> AsyncTask<PrepareNextSourceTask> {
     let request_id = request_id.max(0.0) as u64;
     let interrupt = Arc::new(AtomicBool::new(false));
-    let pending_prepare = with_runtime(|runtime| {
+    let interrupt_for_command = interrupt.clone();
+    let pending_prepare = call_core_command("register-next-source-preparation", move |runtime| {
         let pending = runtime
             .session
             .as_ref()
@@ -1783,7 +2123,7 @@ pub fn prepare_next_source(
             })
             .map(|session| (session.shared.clone(), request_id));
         if pending.is_some() {
-            runtime.gapless_prepare_interrupt = Some((request_id, interrupt.clone()));
+            runtime.gapless_prepare_interrupt = Some((request_id, interrupt_for_command.clone()));
         }
         Ok(pending)
     })
@@ -1801,9 +2141,9 @@ pub fn prepare_next_source(
 
 #[napi]
 pub fn clear_prepared_next_source() -> napi::Result<()> {
-    with_runtime(|runtime| {
+    call_core_command("clear-prepared-next-source", |runtime| {
         runtime.cancel_pending_gapless_prepare();
-        runtime.prepared_next = None;
+        retire_prepared_next_background(runtime.prepared_next.take(), "prepare-next-clear");
         Ok(())
     })
 }
@@ -1914,7 +2254,8 @@ pub fn pause() -> napi::Result<()> {
 #[napi]
 pub fn stop() -> napi::Result<()> {
     invalidate_seek_requests();
-    with_runtime(|runtime| {
+    invalidate_source_open_requests();
+    call_core_command("stop", |runtime| {
         runtime.stop_session();
         runtime.state.time_pos = 0.0;
         update_runtime_audio_graph(runtime);
@@ -1937,6 +2278,11 @@ pub fn set_volume(volume: f64) -> napi::Result<()> {
             "player addon not initialized".to_string(),
         ));
     }
+    if !volume.is_finite() {
+        return Err(napi::Error::from_reason(
+            "volume must be finite".to_string(),
+        ));
+    }
     let normalized = (volume / 100.0).clamp(0.0, 1.5) as f32;
     cancel_runtime_fade();
     USER_VOLUME_BITS.store(normalized.to_bits(), Ordering::Release);
@@ -1955,8 +2301,98 @@ pub fn get_state() -> napi::Result<PlayerState> {
 
 #[napi]
 pub fn set_loop_file(loop_file: bool) -> napi::Result<()> {
-    with_runtime(|runtime| {
+    call_core_command("set-loop-file", move |runtime| {
         runtime.loop_file = loop_file;
         Ok(())
     })
+}
+
+#[cfg(test)]
+mod runtime_state_tests {
+    use super::*;
+
+    struct SlowDrop(Arc<AtomicBool>);
+
+    impl Drop for SlowDrop {
+        fn drop(&mut self) {
+            thread::sleep(Duration::from_millis(100));
+            self.0.store(true, Ordering::Release);
+        }
+    }
+
+    #[test]
+    fn seek_completion_uses_the_latest_playback_intent() {
+        let mut runtime = PlayerRuntime::new(PlayerConfig::default());
+        runtime.state.paused = true;
+
+        assert!(runtime.begin_seek_restore_paused());
+        runtime.update_seek_restore_paused(false);
+
+        assert!(!runtime.take_seek_restore_paused(0, true));
+        assert!(runtime.seek_restore_paused.is_none());
+    }
+
+    #[test]
+    fn stop_session_leaves_core_transition_to_the_event_emitting_caller() {
+        let mut runtime = PlayerRuntime::new(PlayerConfig::default());
+        runtime.core_state = PlaybackCoreState::Playing;
+
+        runtime.stop_session();
+
+        assert_eq!(runtime.core_state, PlaybackCoreState::Playing);
+        assert!(!runtime.state.playing);
+        assert!(runtime.state.paused);
+    }
+
+    #[test]
+    fn superseding_source_open_interrupts_old_request_and_protects_new_slot() {
+        let mut runtime = PlayerRuntime::new(PlayerConfig::default());
+        let old_seq = next_source_open_request_seq();
+        let old_interrupt = Arc::new(AtomicBool::new(false));
+        runtime.begin_source_open(old_seq, old_interrupt.clone());
+
+        let new_seq = next_source_open_request_seq();
+        let new_interrupt = Arc::new(AtomicBool::new(false));
+        runtime.begin_source_open(new_seq, new_interrupt.clone());
+
+        assert!(old_interrupt.load(Ordering::Acquire));
+        assert!(!new_interrupt.load(Ordering::Acquire));
+        assert!(!runtime.clear_source_open_if_current(old_seq, &old_interrupt));
+        assert!(runtime.source_open_is_current(new_seq, &new_interrupt));
+        assert!(runtime.clear_source_open_if_current(new_seq, &new_interrupt));
+        assert!(runtime.source_open_interrupt.is_none());
+    }
+
+    #[test]
+    fn stable_core_state_transitions_update_pending_seek_intent() {
+        let mut runtime = PlayerRuntime::new(PlayerConfig::default());
+        runtime.state.paused = false;
+        assert!(!runtime.begin_seek_restore_paused());
+
+        set_runtime_core_state(
+            &mut runtime,
+            PlaybackCoreState::DeviceLost,
+            "test-device-lost",
+        );
+
+        assert!(runtime.take_seek_restore_paused(0, false));
+    }
+
+    #[test]
+    fn prepared_next_retirement_does_not_block_the_dispatcher_caller() {
+        let dropped = Arc::new(AtomicBool::new(false));
+        let started = Instant::now();
+
+        retire_value_background(
+            Some(SlowDrop(dropped.clone())),
+            "player-prepared-next-reaper-test".to_string(),
+        );
+
+        assert!(started.elapsed() < Duration::from_millis(50));
+        let deadline = Instant::now() + Duration::from_secs(1);
+        while !dropped.load(Ordering::Acquire) && Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(1));
+        }
+        assert!(dropped.load(Ordering::Acquire));
+    }
 }

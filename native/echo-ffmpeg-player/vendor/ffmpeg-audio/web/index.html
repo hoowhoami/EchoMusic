@@ -146,6 +146,13 @@
 
 		<div class="dsp-controls">
 			<div class="slider-group">
+				<label for="select-algo">Algorithm:</label>
+				<select id="select-algo" style="flex: 1; padding: 0.3rem;" disabled>
+					<option value="wsola">WSOLA</option>
+					<option value="spectral">Spectral (Phase Vocoder)</option>
+				</select>
+			</div>
+			<div class="slider-group">
 				<label>Tempo: <span id="val-tempo">1.00x</span></label>
 				<input
 					type="range"

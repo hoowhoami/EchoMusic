@@ -1,16 +1,46 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
-import { useRoute } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 import { useSettingStore } from '@/stores/setting';
 import { pageTransitionState } from '@/plugins/runtime/theme';
+import { updateRouteViewCacheKey } from '@/utils/routeViewCache';
 import { YzsKeepAlive } from 'yzs-keep-alive-v3';
 import Sidebar from './Sidebar.vue';
 import TitleBar from './TitleBar.vue';
 import PlayerBar from './PlayerBar.vue';
 
 const route = useRoute();
+const router = useRouter();
 const settingStore = useSettingStore();
-const routeViewKey = computed(() => String(route.query._t ?? route.fullPath));
+type KeepAliveController = {
+  clearCacheByKey: (key: string) => void;
+};
+
+const keepAliveRef = ref<KeepAliveController | null>(null);
+const routeCacheRevisions = new Map<string, string>();
+const canonicalRouteKey = computed(() => {
+  const query = { ...route.query };
+  delete query._t;
+  return router.resolve({ path: route.path, query, hash: route.hash }).fullPath;
+});
+const routeRefreshToken = computed(() => {
+  const value = route.query._t;
+  const token = Array.isArray(value) ? value[0] : value;
+  return token == null ? '' : String(token);
+});
+const routeViewKey = ref(canonicalRouteKey.value);
+
+watch(
+  [canonicalRouteKey, routeRefreshToken],
+  ([canonicalKey, refreshToken]) => {
+    const update = updateRouteViewCacheKey(canonicalKey, refreshToken, routeCacheRevisions);
+    if (update.staleKey) {
+      keepAliveRef.value?.clearCacheByKey(update.staleKey);
+    }
+    routeViewKey.value = update.key;
+  },
+  { immediate: true, flush: 'sync' },
+);
 const pageTransitionAppear = computed(
   () => pageTransitionState.enabled && pageTransitionState.appear,
 );
@@ -152,7 +182,12 @@ watch(
         <TitleBar :is-sidebar-collapsed="isSidebarCollapsed" @toggle-sidebar="toggleSidebar" />
         <div class="flex-1 min-h-0 min-w-0 flex flex-col overflow-hidden">
           <router-view v-slot="{ Component }">
-            <YzsKeepAlive v-if="keepAliveMax > 0" :exclude="excludeFromCache" :max="keepAliveMax">
+            <YzsKeepAlive
+              v-if="keepAliveMax > 0"
+              ref="keepAliveRef"
+              :exclude="excludeFromCache"
+              :max="keepAliveMax"
+            >
               <component
                 :is="Component"
                 :key="routeViewKey"

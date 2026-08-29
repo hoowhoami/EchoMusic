@@ -406,6 +406,13 @@ fn build_output_stream(
     let error_shared = shared.clone();
     let error_stop = stop.clone();
     let output_sample_rate = config.sample_rate.max(1);
+    let realtime_frames = match config.buffer_size {
+        BufferSize::Fixed(frames) => frames.max(1) as usize,
+        BufferSize::Default => super::MIN_REALTIME_BUFFER_FRAMES,
+    }
+    .max(super::MIN_REALTIME_BUFFER_FRAMES);
+    let output_scratch_capacity = realtime_frames.saturating_mul(output_channels.max(1));
+    let graph_scratch_capacity = realtime_frames.saturating_mul(shared.mix_format.channels.max(1));
     let err_fn = move |err: cpal::Error| {
         if error_stop.should_stop(&error_shared) {
             return;
@@ -449,13 +456,14 @@ fn build_output_stream(
     match sample_format {
         SampleFormat::F32 => {
             let callback_stop = stop.clone();
-            let mut graph_scratch = Vec::<f32>::new();
+            let mut graph_scratch = Vec::<f32>::with_capacity(graph_scratch_capacity);
             let mut resampler = OutputResampler::new(
                 shared.mix_format.sample_rate,
                 output_sample_rate,
                 shared.mix_format.channels,
                 output_channels,
             )?;
+            resampler.reserve_realtime_capacity(realtime_frames)?;
             device
                 .build_output_stream(
                     config,
@@ -478,20 +486,25 @@ fn build_output_stream(
         }
         SampleFormat::I16 => {
             let callback_stop = stop.clone();
-            let mut output_scratch = Vec::<f32>::new();
-            let mut graph_scratch = Vec::<f32>::new();
+            let mut output_scratch = Vec::<f32>::with_capacity(output_scratch_capacity);
+            let mut graph_scratch = Vec::<f32>::with_capacity(graph_scratch_capacity);
             let mut resampler = OutputResampler::new(
                 shared.mix_format.sample_rate,
                 output_sample_rate,
                 shared.mix_format.channels,
                 output_channels,
             )?;
+            resampler.reserve_realtime_capacity(realtime_frames)?;
             device
                 .build_output_stream(
                     config,
                     move |data: &mut [i16], info| {
                         update_live_output_delay(&shared, info);
                         if callback_stop.should_stop(&shared) {
+                            data.fill(0);
+                            return;
+                        }
+                        if data.len() > output_scratch.capacity() {
                             data.fill(0);
                             return;
                         }
@@ -511,20 +524,25 @@ fn build_output_stream(
         }
         SampleFormat::U16 => {
             let callback_stop = stop;
-            let mut output_scratch = Vec::<f32>::new();
-            let mut graph_scratch = Vec::<f32>::new();
+            let mut output_scratch = Vec::<f32>::with_capacity(output_scratch_capacity);
+            let mut graph_scratch = Vec::<f32>::with_capacity(graph_scratch_capacity);
             let mut resampler = OutputResampler::new(
                 shared.mix_format.sample_rate,
                 output_sample_rate,
                 shared.mix_format.channels,
                 output_channels,
             )?;
+            resampler.reserve_realtime_capacity(realtime_frames)?;
             device
                 .build_output_stream(
                     config,
                     move |data: &mut [u16], info| {
                         update_live_output_delay(&shared, info);
                         if callback_stop.should_stop(&shared) {
+                            data.fill(0);
+                            return;
+                        }
+                        if data.len() > output_scratch.capacity() {
                             data.fill(0);
                             return;
                         }
@@ -582,7 +600,7 @@ pub(crate) fn fill_output_reusing(
         );
     }
     if shared.is_drained_for_output() && shared.mark_end_reported() {
-        shared.notify_signal(crate::shared::PlaybackSignal::PlaybackEnd);
+        shared.notify_playback_end();
     }
 }
 
@@ -618,6 +636,7 @@ pub(crate) struct OutputResampler {
     input_scratch: Vec<f32>,
     converted_scratch: Vec<f32>,
     device_output: Vec<f32>,
+    realtime_frame_capacity: usize,
 }
 
 impl OutputResampler {
@@ -644,7 +663,68 @@ impl OutputResampler {
             input_scratch: Vec::new(),
             converted_scratch: Vec::new(),
             device_output: Vec::new(),
+            realtime_frame_capacity: 0,
         })
+    }
+
+    pub(crate) fn reserve_realtime_capacity(&mut self, output_frames: usize) -> Result<(), String> {
+        let output_frames = output_frames.max(1);
+        let input_frames = self
+            .input_frames_for_output(output_frames)
+            .saturating_add(256)
+            .max(2048);
+        let output_frames_i32 = i32::try_from(output_frames)
+            .map_err(|_| "realtime output capacity is too large".to_string())?;
+        let expected_frames = self
+            .context
+            .get_out_samples(
+                i32::try_from(input_frames)
+                    .map_err(|_| "realtime resampler capacity is too large".to_string())?,
+            )
+            .map_err(|err| format!("failed to size realtime resampler buffers: {err}"))?
+            .max(output_frames_i32) as usize;
+        try_reserve_samples(
+            &mut self.input_scratch,
+            input_frames.saturating_mul(self.input_channels),
+        )?;
+        // After warm-up, swr_get_out_samples also includes the retained filter delay. Keep one
+        // callback of headroom so that slightly larger post-warm estimates cannot grow this Vec
+        // on the realtime thread.
+        let converted_scratch_frames = expected_frames.saturating_add(output_frames);
+        try_reserve_samples(
+            &mut self.converted_scratch,
+            converted_scratch_frames.saturating_mul(self.output_channels),
+        )?;
+        try_reserve_samples(
+            &mut self.device_output,
+            output_frames.saturating_mul(self.output_channels),
+        )?;
+        let pending_samples = converted_scratch_frames.saturating_mul(self.output_channels);
+        self.converted_pending
+            .try_reserve(pending_samples.saturating_sub(self.converted_pending.len()))
+            .map_err(|err| format!("failed to reserve realtime resampler queue: {err}"))?;
+        // Reset before warming, then force libswresample to allocate lazy internal
+        // delay/buffer state before the device callback starts. Reinitializing after
+        // this conversion would free the C-side buffers that the warm-up just created.
+        self.context
+            .flush()
+            .map_err(|err| format!("failed to reset output resampler before warm-up: {err}"))?;
+        self.input_scratch
+            .resize(input_frames.saturating_mul(self.input_channels), 0.0);
+        self.converted_scratch.clear();
+        convert_with_swr(
+            &mut self.context,
+            &self.input_scratch,
+            input_frames,
+            self.output_channels,
+            &mut self.converted_scratch,
+        )?;
+        self.input_scratch.clear();
+        self.converted_scratch.clear();
+        self.device_output.clear();
+        self.converted_pending.clear();
+        self.realtime_frame_capacity = output_frames;
+        Ok(())
     }
 
     pub(crate) fn fill_output(
@@ -663,6 +743,9 @@ impl OutputResampler {
         if frames == 0 {
             return;
         }
+        if self.realtime_frame_capacity > 0 && frames > self.realtime_frame_capacity {
+            return;
+        }
 
         self.device_output.resize(frames * output_channels, 0.0);
         self.device_output.fill(0.0);
@@ -674,7 +757,7 @@ impl OutputResampler {
             && self.converted_pending.is_empty()
             && shared.mark_end_reported()
         {
-            shared.notify_signal(crate::shared::PlaybackSignal::PlaybackEnd);
+            shared.notify_playback_end();
         }
     }
 
@@ -753,6 +836,12 @@ impl OutputResampler {
                 .extend(self.converted_scratch.iter().copied());
         }
     }
+}
+
+fn try_reserve_samples<T>(buffer: &mut Vec<T>, required: usize) -> Result<(), String> {
+    buffer
+        .try_reserve_exact(required.saturating_sub(buffer.len()))
+        .map_err(|err| format!("failed to reserve realtime audio buffer: {err}"))
 }
 
 fn build_swr_context(
@@ -968,6 +1057,44 @@ mod tests {
         assert!(output.iter().any(|sample| sample.abs() > 0.001));
         assert!(shared.played_sample_count() > 0);
         assert!(shared.played_sample_count() <= input_frames as u64);
+    }
+
+    #[test]
+    fn reserved_output_resampler_does_not_grow_rust_buffers_in_callback() {
+        let shared = SharedAudio::new(
+            MixFormat::stereo_f32(48_000),
+            1.0,
+            8.0,
+            &DspSettings::default(),
+        );
+        shared.paused.store(false, Ordering::Release);
+        assert!(shared.push_samples(&vec![0.25; 4096 * MIX_CHANNELS]));
+        shared.mark_eof();
+
+        let mut resampler = OutputResampler::new(48_000, 44_100, MIX_CHANNELS, MIX_CHANNELS)
+            .expect("output resampler should initialize");
+        resampler
+            .reserve_realtime_capacity(512)
+            .expect("realtime buffers should reserve");
+        let capacities = (
+            resampler.converted_pending.capacity(),
+            resampler.input_scratch.capacity(),
+            resampler.converted_scratch.capacity(),
+            resampler.device_output.capacity(),
+        );
+        let mut output = vec![0.0; 512 * MIX_CHANNELS];
+
+        resampler.fill_output(&mut output, MIX_CHANNELS, &shared);
+
+        assert_eq!(
+            capacities,
+            (
+                resampler.converted_pending.capacity(),
+                resampler.input_scratch.capacity(),
+                resampler.converted_scratch.capacity(),
+                resampler.device_output.capacity(),
+            )
+        );
     }
 
     #[test]

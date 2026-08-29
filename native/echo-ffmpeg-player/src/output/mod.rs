@@ -1,10 +1,12 @@
 mod cpal_shared;
 
+pub(crate) const MIN_REALTIME_BUFFER_FRAMES: usize = 32_768;
+
 use crate::events::{PlayerErrorCode, PlayerEvent};
 use crate::shared::{AudioOutputStats, AudioSampleFormat, SharedAudio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::SyncSender;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 
 #[cfg(target_os = "linux")]
@@ -76,12 +78,28 @@ impl AudioOutputHandle {
         let Some(thread) = self.thread.take() else {
             return;
         };
-        let _ = std::thread::Builder::new()
+        let pending = Arc::new(Mutex::new(Some(thread)));
+        let worker_pending = pending.clone();
+        let spawned = std::thread::Builder::new()
             .name(format!("player-output-reaper-{reason}"))
             .spawn(move || {
-                let _ = thread.join();
+                if let Some(thread) = take_pending_thread(&worker_pending) {
+                    let _ = thread.join();
+                }
             });
+        if spawned.is_err() {
+            if let Some(thread) = take_pending_thread(&pending) {
+                let _ = thread.join();
+            }
+        }
     }
+}
+
+fn take_pending_thread(pending: &Mutex<Option<JoinHandle<()>>>) -> Option<JoinHandle<()>> {
+    pending
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .take()
 }
 
 impl Drop for AudioOutputHandle {

@@ -1,4 +1,10 @@
-use std::{collections::HashMap, ffi::CStr, ptr, time::Duration};
+use std::{
+    collections::HashMap,
+    ffi::CStr,
+    ptr,
+    sync::{Arc, atomic::AtomicBool},
+    time::Duration,
+};
 
 use crate::{
     AudioCover, AudioError, AudioStreamInfo, FfErrorExt as _, IoContext, Result, TimeBase, sys,
@@ -9,6 +15,10 @@ pub struct Demuxer {
     packet: *mut sys::AVPacket,
     audio_stream_idx: usize,
     io_ctx: IoContext,
+    // Own the exact Arc referenced by AVFormatContext::interrupt_callback.
+    // This keeps the callback lifetime explicit instead of relying on a clone
+    // stored inside IoContext and its current field/drop order.
+    interrupt: Arc<AtomicBool>,
 }
 
 unsafe impl Send for Demuxer {}
@@ -25,6 +35,11 @@ impl Demuxer {
             }
 
             (*ctx).pb = io_ctx.ctx;
+            let interrupt = io_ctx.interrupt_flag();
+            (*ctx).interrupt_callback = sys::AVIOInterruptCB {
+                callback: Some(IoContext::interrupt_callback),
+                opaque: Arc::as_ptr(&interrupt).cast_mut().cast(),
+            };
 
             (*ctx).flags |= sys::AVFMT_FLAG_CUSTOM_IO.cast_signed();
 
@@ -95,6 +110,7 @@ impl Demuxer {
                 packet,
                 audio_stream_idx: stream_idx as usize,
                 io_ctx,
+                interrupt,
             })
         }
     }
@@ -104,6 +120,14 @@ impl Demuxer {
             let stream_ptr = *(*self.ctx).streams.add(self.audio_stream_idx);
             (*stream_ptr).codecpar
         }
+    }
+
+    pub(crate) fn interrupt_flag(&self) -> Arc<AtomicBool> {
+        self.interrupt.clone()
+    }
+
+    pub(crate) fn clear_read_interrupt(&mut self) {
+        self.io_ctx.clear_read_error();
     }
 
     pub fn read_packet(&mut self) -> Result<Option<*mut sys::AVPacket>> {

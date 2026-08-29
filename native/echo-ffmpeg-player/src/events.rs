@@ -62,6 +62,8 @@ pub struct SpectrumOptions {
 pub struct PlayerEvent {
     pub event: String,
     pub event_id: Option<f64>,
+    pub dropped_events: Option<f64>,
+    pub dropped_critical_events: Option<f64>,
     pub track_seq: Option<f64>,
     pub generation: Option<f64>,
     pub time: Option<f64>,
@@ -287,6 +289,8 @@ impl PlayerEvent {
         Self {
             event: event.to_string(),
             event_id: None,
+            dropped_events: None,
+            dropped_critical_events: None,
             track_seq: None,
             generation: None,
             time: None,

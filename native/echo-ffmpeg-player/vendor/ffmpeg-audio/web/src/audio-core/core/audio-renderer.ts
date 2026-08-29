@@ -1,3 +1,4 @@
+import type { StretchAlgorithm } from "../types";
 import type { WorkletCommand, WorkletEvent } from "../worklet/types";
 
 export class AudioRenderer {
@@ -62,6 +63,7 @@ export class AudioRenderer {
 		pitch: number,
 		rate: number,
 		stWasmBytes: ArrayBuffer,
+		algorithm?: StretchAlgorithm,
 	): Promise<void> {
 		return new Promise((resolve, reject) => {
 			if (!this._isWorkletLoaded || !this.workletNode) {
@@ -99,6 +101,7 @@ export class AudioRenderer {
 					tempo,
 					pitch,
 					rate,
+					algorithm,
 				},
 			});
 		});
@@ -114,6 +117,17 @@ export class AudioRenderer {
 
 	public setRate(rate: number): void {
 		this.postCommand({ type: "SET_RATE", payload: { rate } });
+	}
+
+	public setAlgorithm(algorithm: StretchAlgorithm): void {
+		this.postCommand({ type: "SET_ALGORITHM", payload: { algorithm } });
+	}
+
+	public setFormant(factor: number, compensatePitch: boolean = false): void {
+		this.postCommand({
+			type: "SET_FORMANT",
+			payload: { factor, compensatePitch },
+		});
 	}
 
 	/**

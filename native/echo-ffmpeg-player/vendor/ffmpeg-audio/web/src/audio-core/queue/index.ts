@@ -123,6 +123,7 @@ export interface AudioReader {
 	readPartial(outputs: Float32Array[], length: number): number;
 	addPlaybackIndex(frames: number): void;
 	getPlaybackIndex(): number;
+	rewindReadIndexToPlayback(): void;
 	getPauseAtIndex(): number;
 	clearPauseAtIndex(): void;
 	pausePlayback(): void;
@@ -356,6 +357,13 @@ class AudioQueueCore implements MainAudioController, AudioWriter, AudioReader {
 
 	addPlaybackIndex(frames: number): void {
 		Atomics.add(this.controlBlock, STATE_PLAYBACK_INDEX, frames);
+	}
+
+	rewindReadIndexToPlayback(): void {
+		const playbackIndex = Atomics.load(this.controlBlock, STATE_PLAYBACK_INDEX);
+		const writeIndex = Atomics.load(this.controlBlock, STATE_WRITE_INDEX);
+		const targetIndex = Math.min(writeIndex, Math.max(0, playbackIndex));
+		Atomics.store(this.controlBlock, STATE_READ_INDEX, targetIndex);
 	}
 
 	getPauseAtIndex(): number {
