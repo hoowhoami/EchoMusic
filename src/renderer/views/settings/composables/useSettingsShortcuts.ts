@@ -94,7 +94,7 @@ export function useSettingsShortcuts() {
       if (!recording.value) return;
       event.preventDefault();
       event.stopImmediatePropagation();
-      if (event.key === 'Backspace' || event.key === 'Delete') {
+      if (event.key === 'Backspace' || event.key === 'Delete' || event.key === 'Escape') {
         clearShortcut(recording.value.command, recording.value.scope);
         stopRecording();
         return;
