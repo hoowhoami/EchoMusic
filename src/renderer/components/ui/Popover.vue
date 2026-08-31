@@ -183,6 +183,7 @@ onUnmounted(() => {
     <PopoverTrigger as-child>
       <span
         ref="triggerWrapRef"
+        class="echo-popover-trigger"
         style="display: inline-flex"
         @mouseenter="handleTriggerEnter"
         @mouseleave="handleTriggerLeave"

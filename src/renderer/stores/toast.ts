@@ -1,6 +1,8 @@
 import { defineStore } from 'pinia';
 
 export type ToastTone = 'info' | 'success' | 'warning' | 'danger';
+export type ToastPresentation = 'auto' | 'mini' | 'standard';
+export type ToastVariant = Exclude<ToastPresentation, 'auto'>;
 
 export interface ToastAction {
   label: string;
@@ -12,33 +14,132 @@ export interface ToastItem {
   message: string;
   tone: ToastTone;
   duration: number;
+  variant: ToastVariant;
+  count: number;
   action?: ToastAction;
 }
 
 let toastId = 0;
+let activeToastTimer: number | null = null;
+let activeToastStartedAt = 0;
+let activeToastRemaining = 0;
+
+const MAX_TOAST_ITEMS = 3;
+const MINI_MESSAGE_MAX_LENGTH = 30;
+
+const clearActiveToastTimer = () => {
+  if (activeToastTimer !== null) {
+    window.clearTimeout(activeToastTimer);
+    activeToastTimer = null;
+  }
+  activeToastStartedAt = 0;
+};
+
+const resolveToastVariant = (
+  message: string,
+  action: ToastAction | undefined,
+  presentation: ToastPresentation,
+): ToastVariant => {
+  if (presentation !== 'auto') return presentation;
+  if (action || message.includes('\n') || Array.from(message).length > MINI_MESSAGE_MAX_LENGTH) {
+    return 'standard';
+  }
+  return 'mini';
+};
+
+const isDuplicateToast = (
+  item: ToastItem,
+  message: string,
+  tone: ToastTone,
+  action?: ToastAction,
+) => item.message === message && item.tone === tone && item.action?.label === action?.label;
 
 export const useToastStore = defineStore('toast', {
   state: () => ({
     items: [] as ToastItem[],
   }),
   actions: {
-    show(message: string, tone: ToastTone = 'info', duration = 2600, action?: ToastAction) {
+    show(
+      message: string,
+      tone: ToastTone = 'info',
+      duration = 2600,
+      action?: ToastAction,
+      presentation: ToastPresentation = 'auto',
+    ) {
       const normalized = String(message ?? '').trim();
       if (!normalized) return 0;
-      const id = ++toastId;
-      this.items.push({ id, message: normalized, tone, duration, action });
-      if (duration > 0) {
-        window.setTimeout(() => {
-          this.remove(id);
-        }, duration);
+
+      const duplicate = this.items.find((item) => isDuplicateToast(item, normalized, tone, action));
+      if (duplicate) {
+        duplicate.count += 1;
+        duplicate.duration = duration;
+        duplicate.action = action;
+        duplicate.variant = resolveToastVariant(normalized, action, presentation);
+        if (this.items[0]?.id === duplicate.id) this.scheduleVisibleRemoval(duration);
+        return duplicate.id;
       }
+
+      const id = ++toastId;
+      const wasEmpty = this.items.length === 0;
+      this.items.push({
+        id,
+        message: normalized,
+        tone,
+        duration,
+        variant: resolveToastVariant(normalized, action, presentation),
+        count: 1,
+        action,
+      });
+
+      if (this.items.length > MAX_TOAST_ITEMS) {
+        // 保留正在展示的卡片和最新消息，丢弃最早进入等待队列的提示。
+        this.items.splice(1, this.items.length - MAX_TOAST_ITEMS);
+      }
+
+      if (wasEmpty) this.scheduleVisibleRemoval(duration);
       return id;
     },
     showAction(message: string, action: ToastAction, tone: ToastTone = 'info', duration = 8000) {
-      return this.show(message, tone, duration, action);
+      return this.show(message, tone, duration, action, 'standard');
+    },
+    mini(message: string, tone: ToastTone = 'info', duration = 2600) {
+      return this.show(message, tone, duration, undefined, 'mini');
+    },
+    standard(message: string, tone: ToastTone = 'info', duration = 4200, action?: ToastAction) {
+      return this.show(message, tone, duration, action, 'standard');
+    },
+    scheduleVisibleRemoval(duration?: number) {
+      clearActiveToastTimer();
+      const visibleItem = this.items[0];
+      const nextDuration = duration ?? visibleItem?.duration ?? 0;
+      activeToastRemaining = Math.max(0, nextDuration);
+      if (!visibleItem || nextDuration <= 0) return;
+
+      activeToastStartedAt = Date.now();
+      activeToastTimer = window.setTimeout(() => {
+        activeToastTimer = null;
+        this.remove(visibleItem.id);
+      }, nextDuration);
+    },
+    pause(id: number) {
+      if (this.items[0]?.id !== id || activeToastTimer === null) return;
+      const elapsed = Date.now() - activeToastStartedAt;
+      activeToastRemaining = Math.max(0, activeToastRemaining - elapsed);
+      clearActiveToastTimer();
+    },
+    resume(id: number) {
+      if (this.items[0]?.id !== id || this.items[0].duration <= 0) return;
+      if (activeToastRemaining <= 0) {
+        this.remove(id);
+        return;
+      }
+      this.scheduleVisibleRemoval(activeToastRemaining);
     },
     remove(id: number) {
+      const wasVisible = this.items[0]?.id === id;
+      if (wasVisible) clearActiveToastTimer();
       this.items = this.items.filter((item) => item.id !== id);
+      if (wasVisible) this.scheduleVisibleRemoval();
     },
     info(message: string, duration?: number) {
       return this.show(message, 'info', duration);

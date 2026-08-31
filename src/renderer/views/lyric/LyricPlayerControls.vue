@@ -116,7 +116,7 @@ const handleCopySongInfo = async () => {
 </script>
 
 <template>
-  <footer class="lyric-bar">
+  <footer class="lyric-bar" data-toast-anchor="lyric-player">
     <!-- 进度条：横跨控制栏顶部，左右贴边 -->
     <div class="bar-progress-top">
       <SliderRoot

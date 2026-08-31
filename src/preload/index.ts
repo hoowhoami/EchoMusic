@@ -1003,10 +1003,15 @@ contextBridge.exposeInMainWorld('electron', {
   plugins: {
     list: () => ipcRenderer.invoke('plugins:list') as Promise<PluginListResult>,
     backups: {
-      create: (pluginId: string, options?: PluginBackupScopeOptions) =>
+      create: (
+        pluginId: string,
+        options?: PluginBackupScopeOptions,
+        settingsData?: Record<string, unknown>,
+      ) =>
         invokeWithPlainPayload<PluginBackupCreateResult>('plugins:backups:create', {
           pluginId,
           ...options,
+          settingsData,
         }),
       inspect: (pluginId: string, data: ArrayBuffer | ArrayBufferView) =>
         ipcRenderer.invoke('plugins:backups:inspect', {

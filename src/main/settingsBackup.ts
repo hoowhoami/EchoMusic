@@ -579,7 +579,9 @@ export const createPluginBackup = async (
     const archive = await createBackupArchive({
       ...scope,
       settingsData: scope.settings
-        ? (getKvStorage().get<Record<string, unknown>>(settingsKey) ?? undefined)
+        ? (request.settingsData ??
+          getKvStorage().get<Record<string, unknown>>(settingsKey) ??
+          undefined)
         : undefined,
     });
     const compressed = await compressBackupArchive(archive);

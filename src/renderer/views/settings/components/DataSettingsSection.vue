@@ -1,17 +1,23 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import { Icon } from '@iconify/vue';
 import { useSettingStore } from '@/stores/setting';
 import { useToastStore } from '@/stores/toast';
 import Button from '@/components/ui/Button.vue';
 import Dialog from '@/components/ui/Dialog.vue';
 import FontIcon from '@/components/ui/FontIcon.vue';
+import Select from '@/components/ui/Select.vue';
 import Switch from '@/components/ui/Switch.vue';
-import { iconCloudDownload, iconCloudUpload } from '@/icons';
+import { iconCloudDownload, iconCloudUpload, iconRefreshCw } from '@/icons';
 import {
   sanitizePortableAppSettings,
+  type PluginBackupProviderEntry,
   type SettingsBackupSummary,
 } from '../../../../shared/settingsBackup';
+import {
+  pluginBackupProviders,
+  type RegisteredPluginBackupProvider,
+} from '@/plugins/runtime/backups';
 import SettingsSectionShell from './SettingsSectionShell.vue';
 import { sectionTitles } from '../constants';
 
@@ -23,6 +29,7 @@ defineProps<{
 }>();
 
 const showExportDialog = ref(false);
+const showRestoreSourceDialog = ref(false);
 const showImportDialog = ref(false);
 const exportSettings = ref(true);
 const exportPlugins = ref(true);
@@ -33,6 +40,38 @@ const importSummary = ref<SettingsBackupSummary | null>(null);
 const isExporting = ref(false);
 const isInspecting = ref(false);
 const isImporting = ref(false);
+const isListingBackups = ref(false);
+const createTarget = ref('local');
+const restoreSource = ref('local');
+const restoreProviderKey = ref('local');
+const providerEntries = ref<PluginBackupProviderEntry[]>([]);
+const selectedProviderEntryId = ref('');
+const providerListError = ref('');
+
+let createAbortController: AbortController | null = null;
+let restoreAbortController: AbortController | null = null;
+
+const LOCAL_BACKUP_LOCATION = 'local';
+
+const formatProviderOptionLabel = (provider: RegisteredPluginBackupProvider) =>
+  provider.name === provider.pluginName
+    ? provider.name
+    : `${provider.name} · ${provider.pluginName}`;
+
+const providerOptions = computed(() => [
+  { label: '本地文件', value: LOCAL_BACKUP_LOCATION },
+  ...pluginBackupProviders.value.map((provider) => ({
+    label: formatProviderOptionLabel(provider),
+    value: provider.key,
+  })),
+]);
+
+const findProvider = (key: string): RegisteredPluginBackupProvider | null =>
+  pluginBackupProviders.value.find((provider) => provider.key === key) ?? null;
+
+const selectedCreateProvider = computed(() => findProvider(createTarget.value));
+const selectedRestoreProvider = computed(() => findProvider(restoreSource.value));
+const activeRestoreProvider = computed(() => findProvider(restoreProviderKey.value));
 
 const canExport = computed(() => exportSettings.value || exportPlugins.value);
 const canImport = computed(
@@ -42,9 +81,62 @@ const canImport = computed(
       (importPlugins.value && importSummary.value?.includes.plugins)),
 );
 
+const createActionLabel = computed(() =>
+  selectedCreateProvider.value
+    ? `创建并保存到 ${selectedCreateProvider.value.name}`
+    : '选择位置并创建',
+);
+
+const canReadSelectedBackup = computed(() =>
+  restoreSource.value === LOCAL_BACKUP_LOCATION
+    ? true
+    : Boolean(selectedRestoreProvider.value && selectedProviderEntryId.value),
+);
+
 const formatBackupTime = (value: string) => {
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? '未知时间' : date.toLocaleString('zh-CN');
+};
+
+const formatBackupSize = (value?: number) => {
+  if (!Number.isFinite(value) || Number(value) < 0) return '';
+  const bytes = Number(value);
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+};
+
+const resetProviderEntries = () => {
+  providerEntries.value = [];
+  selectedProviderEntryId.value = '';
+  providerListError.value = '';
+};
+
+const resetUnavailableRestoreProvider = (reopenSourceDialog = false) => {
+  restoreAbortController?.abort();
+  restoreAbortController = null;
+  isListingBackups.value = false;
+  restoreSource.value = LOCAL_BACKUP_LOCATION;
+  restoreProviderKey.value = LOCAL_BACKUP_LOCATION;
+  importToken.value = '';
+  importSummary.value = null;
+  showImportDialog.value = false;
+  resetProviderEntries();
+  if (reopenSourceDialog) showRestoreSourceDialog.value = true;
+};
+
+const setRestorePreview = (
+  token: string,
+  summary: SettingsBackupSummary,
+  providerKey = 'local',
+) => {
+  importToken.value = token;
+  importSummary.value = summary;
+  importSettings.value = summary.includes.settings;
+  importPlugins.value = summary.includes.plugins;
+  restoreProviderKey.value = providerKey;
+  showRestoreSourceDialog.value = false;
+  showImportDialog.value = true;
 };
 
 const openExportDialog = () => {
@@ -57,20 +149,51 @@ const handleExport = async () => {
   if (!canExport.value || isExporting.value) return;
   isExporting.value = true;
   try {
-    const result = await window.electron.settingsBackup.export({
+    const scope = {
       settings: exportSettings.value,
       plugins: exportPlugins.value,
-      settingsData: exportSettings.value
-        ? sanitizePortableAppSettings(settingStore.$state)
-        : undefined,
-    });
-    if (!result.ok) {
-      if (!result.canceled) toastStore.warning(result.error || '创建备份失败');
+    };
+    const settingsData = exportSettings.value
+      ? sanitizePortableAppSettings(settingStore.$state)
+      : undefined;
+    const provider = selectedCreateProvider.value;
+    if (!provider) {
+      const result = await window.electron.settingsBackup.export({
+        ...scope,
+        settingsData,
+      });
+      if (!result.ok) {
+        if (!result.canceled) toastStore.warning(result.error || '创建备份失败');
+        return;
+      }
+      showExportDialog.value = false;
+      const detail = result.summary.pluginCount
+        ? `，包含 ${result.summary.pluginCount} 个插件`
+        : '';
+      toastStore.success(`备份已创建${detail}`);
       return;
     }
+
+    const created = await provider.create(scope, settingsData);
+    if (!created.ok) {
+      if (!created.canceled) toastStore.warning(created.error || '创建备份失败');
+      return;
+    }
+    if (findProvider(provider.key) !== provider) {
+      createTarget.value = LOCAL_BACKUP_LOCATION;
+      toastStore.warning('备份存储提供方已停用，已切换到本地文件，请重新创建备份');
+      return;
+    }
+    createAbortController?.abort();
+    createAbortController = new AbortController();
+    await provider.save({
+      fileName: created.fileName,
+      data: created.data,
+      summary: created.summary,
+      signal: createAbortController.signal,
+    });
     showExportDialog.value = false;
-    const detail = result.summary.pluginCount ? `，包含 ${result.summary.pluginCount} 个插件` : '';
-    toastStore.success(`备份已创建${detail}`);
+    toastStore.success(`备份已保存到 ${provider.name}`);
   } catch (error) {
     toastStore.warning(error instanceof Error ? error.message : '创建备份失败');
   } finally {
@@ -78,20 +201,64 @@ const handleExport = async () => {
   }
 };
 
+const refreshProviderBackups = async () => {
+  const provider = selectedRestoreProvider.value;
+  if (!provider) return;
+  restoreAbortController?.abort();
+  const controller = new AbortController();
+  restoreAbortController = controller;
+  isListingBackups.value = true;
+  resetProviderEntries();
+  try {
+    const entries = await provider.list({ signal: controller.signal });
+    if (controller.signal.aborted || restoreAbortController !== controller) return;
+    providerEntries.value = entries;
+    selectedProviderEntryId.value = entries[0]?.id ?? '';
+  } catch (error) {
+    if (controller.signal.aborted || restoreAbortController !== controller) return;
+    providerListError.value = error instanceof Error ? error.message : '无法读取远端备份列表';
+  } finally {
+    if (restoreAbortController === controller) isListingBackups.value = false;
+  }
+};
+
+const openRestoreDialog = () => {
+  showRestoreSourceDialog.value = true;
+  resetProviderEntries();
+  if (selectedRestoreProvider.value) void refreshProviderBackups();
+};
+
 const handleChooseImport = async () => {
   if (isInspecting.value) return;
   isInspecting.value = true;
   try {
-    const result = await window.electron.settingsBackup.inspect();
-    if (!result.ok) {
-      if (!result.canceled) toastStore.warning(result.error || '无法读取备份文件');
+    const provider = selectedRestoreProvider.value;
+    if (!provider) {
+      const result = await window.electron.settingsBackup.inspect();
+      if (!result.ok) {
+        if (!result.canceled) toastStore.warning(result.error || '无法读取备份文件');
+        return;
+      }
+      setRestorePreview(result.token, result.summary);
       return;
     }
-    importToken.value = result.token;
-    importSummary.value = result.summary;
-    importSettings.value = result.summary.includes.settings;
-    importPlugins.value = result.summary.includes.plugins;
-    showImportDialog.value = true;
+
+    if (!selectedProviderEntryId.value) return;
+    restoreAbortController?.abort();
+    const controller = new AbortController();
+    restoreAbortController = controller;
+    const data = await provider.load({
+      id: selectedProviderEntryId.value,
+      signal: controller.signal,
+    });
+    if (controller.signal.aborted || findProvider(provider.key) !== provider) return;
+    const result = await provider.inspect(data);
+    if (controller.signal.aborted || findProvider(provider.key) !== provider) return;
+    if (!result.ok) {
+      toastStore.warning(result.error || '无法读取备份数据');
+      return;
+    }
+    setRestorePreview(result.token, result.summary, provider.key);
   } catch (error) {
     toastStore.warning(error instanceof Error ? error.message : '无法读取备份文件');
   } finally {
@@ -103,12 +270,24 @@ const handleImport = async () => {
   if (!canImport.value || isImporting.value) return;
   isImporting.value = true;
   try {
-    const result = await window.electron.settingsBackup.import({
-      token: importToken.value,
-      settings: importSettings.value,
-      plugins: importPlugins.value,
-    });
+    const provider = activeRestoreProvider.value;
+    if (restoreProviderKey.value !== LOCAL_BACKUP_LOCATION && !provider) {
+      resetUnavailableRestoreProvider(true);
+      toastStore.warning('备份存储提供方已停用，已切换到本地文件，请重新选择备份');
+      return;
+    }
+    const result = provider
+      ? await provider.restore(importToken.value, {
+          settings: importSettings.value,
+          plugins: importPlugins.value,
+        })
+      : await window.electron.settingsBackup.import({
+          token: importToken.value,
+          settings: importSettings.value,
+          plugins: importPlugins.value,
+        });
     if (!result.ok) {
+      if ('canceled' in result && result.canceled) return;
       if ((result.pluginsImported ?? 0) > 0) {
         toastStore.warning(
           `${result.error || '部分插件恢复失败'}。已恢复 ${result.pluginsImported} 个插件，正在重启…`,
@@ -124,15 +303,64 @@ const handleImport = async () => {
     }
     showImportDialog.value = false;
     toastStore.success('恢复完成，正在重启 EchoMusic…', 4000);
-    window.setTimeout(() => {
-      void window.electron.appInfo.relaunch();
-    }, 450);
+    if (!provider) {
+      window.setTimeout(() => {
+        void window.electron.appInfo.relaunch();
+      }, 450);
+    }
   } catch (error) {
     toastStore.warning(error instanceof Error ? error.message : '从备份恢复失败');
   } finally {
     isImporting.value = false;
   }
 };
+
+watch(restoreSource, () => {
+  restoreAbortController?.abort();
+  isListingBackups.value = false;
+  resetProviderEntries();
+  if (showRestoreSourceDialog.value && selectedRestoreProvider.value) {
+    void refreshProviderBackups();
+  }
+});
+
+watch(showRestoreSourceDialog, (open) => {
+  if (open) return;
+  restoreAbortController?.abort();
+  isListingBackups.value = false;
+});
+
+watch(pluginBackupProviders, () => {
+  if (createTarget.value !== LOCAL_BACKUP_LOCATION && !findProvider(createTarget.value)) {
+    createAbortController?.abort();
+    createAbortController = null;
+    createTarget.value = LOCAL_BACKUP_LOCATION;
+  }
+
+  const restoreSourceUnavailable =
+    restoreSource.value !== LOCAL_BACKUP_LOCATION && !findProvider(restoreSource.value);
+  const inspectedProviderUnavailable =
+    restoreProviderKey.value !== LOCAL_BACKUP_LOCATION && !findProvider(restoreProviderKey.value);
+
+  if (inspectedProviderUnavailable) {
+    const wasShowingRestorePreview = showImportDialog.value;
+    resetUnavailableRestoreProvider(wasShowingRestorePreview);
+    if (wasShowingRestorePreview) {
+      toastStore.warning('备份存储提供方已停用，已切换到本地文件，请重新选择备份');
+    }
+  } else if (restoreSourceUnavailable) {
+    restoreAbortController?.abort();
+    restoreAbortController = null;
+    isListingBackups.value = false;
+    restoreSource.value = LOCAL_BACKUP_LOCATION;
+    resetProviderEntries();
+  }
+});
+
+onBeforeUnmount(() => {
+  createAbortController?.abort();
+  restoreAbortController?.abort();
+});
 </script>
 
 <template>
@@ -160,20 +388,8 @@ const handleImport = async () => {
           <Icon :icon="iconCloudUpload" width="15" height="15" class="mr-1.5" />
           创建备份
         </Button>
-        <Button
-          variant="ghost"
-          size="xs"
-          class="settings-button"
-          :loading="isInspecting"
-          @click="handleChooseImport"
-        >
-          <Icon
-            v-if="!isInspecting"
-            :icon="iconCloudDownload"
-            width="15"
-            height="15"
-            class="mr-1.5"
-          />
+        <Button variant="ghost" size="xs" class="settings-button" @click="openRestoreDialog">
+          <Icon :icon="iconCloudDownload" width="15" height="15" class="mr-1.5" />
           恢复备份
         </Button>
       </div>
@@ -209,9 +425,30 @@ const handleImport = async () => {
     v-model:open="showExportDialog"
     title="创建备份"
     description="选择要写入备份文件的内容。账号登录状态、设备身份和本机文件路径不会被备份。"
+    content-class="backup-dialog"
     :close-on-interact-outside="!isExporting"
     :close-on-escape="!isExporting"
   >
+    <div class="backup-location">
+      <div class="backup-location-label">保存到</div>
+      <div class="backup-location-select">
+        <Select
+          v-model="createTarget"
+          class="w-full"
+          :options="providerOptions"
+          :disabled="isExporting"
+          aria-label="备份保存位置"
+        />
+      </div>
+      <p class="backup-location-description">
+        <template v-if="selectedCreateProvider">
+          {{ selectedCreateProvider.description || '由插件负责保存备份数据' }} · 提供者：{{
+            selectedCreateProvider.pluginName
+          }}
+        </template>
+        <template v-else>保存为本机 EchoMusic 备份文件</template>
+      </p>
+    </div>
     <div class="backup-options">
       <div class="backup-option">
         <div class="min-w-0">
@@ -229,14 +466,107 @@ const handleImport = async () => {
       </div>
     </div>
     <p class="backup-warning">
-      备份文件未加密，任何拿到文件的人都可能读取其中的插件账号与数据，请妥善保管。
+      备份内容未加密，任何拿到数据的人都可能读取其中的插件账号与数据。选择插件存储时，备份数据会交给对应插件处理。
     </p>
     <template #footer>
       <Button variant="outline" size="sm" :disabled="isExporting" @click="showExportDialog = false">
         取消
       </Button>
       <Button size="sm" :disabled="!canExport" :loading="isExporting" @click="handleExport">
-        选择位置并创建
+        {{ createActionLabel }}
+      </Button>
+    </template>
+  </Dialog>
+
+  <Dialog
+    v-model:open="showRestoreSourceDialog"
+    title="选择备份"
+    description="选择备份所在位置。插件存储会由对应插件列出和读取远端备份。"
+    content-class="backup-dialog"
+    :close-on-interact-outside="!isInspecting"
+    :close-on-escape="!isInspecting"
+  >
+    <div class="backup-location">
+      <div class="backup-location-label">从这里恢复</div>
+      <div class="backup-location-select">
+        <Select
+          v-model="restoreSource"
+          class="w-full"
+          :options="providerOptions"
+          :disabled="isInspecting"
+          aria-label="备份来源"
+        />
+      </div>
+      <p class="backup-location-description">
+        <template v-if="selectedRestoreProvider">
+          {{ selectedRestoreProvider.description || '由插件负责读取备份数据' }} · 提供者：{{
+            selectedRestoreProvider.pluginName
+          }}
+        </template>
+        <template v-else>从本机选择一个 EchoMusic 备份文件</template>
+      </p>
+    </div>
+
+    <template v-if="selectedRestoreProvider">
+      <div class="provider-list-header">
+        <span>可用备份</span>
+        <Button
+          variant="ghost"
+          size="xs"
+          :loading="isListingBackups"
+          :disabled="isInspecting"
+          @click="refreshProviderBackups"
+        >
+          <Icon v-if="!isListingBackups" :icon="iconRefreshCw" width="14" height="14" />
+          刷新
+        </Button>
+      </div>
+      <div v-if="providerEntries.length" class="provider-backup-list">
+        <button
+          v-for="entry in providerEntries"
+          :key="entry.id"
+          type="button"
+          class="provider-backup-entry"
+          :class="{ 'is-selected': selectedProviderEntryId === entry.id }"
+          :disabled="isInspecting"
+          @click="selectedProviderEntryId = entry.id"
+        >
+          <span class="provider-backup-entry-main">
+            <span class="provider-backup-entry-name">{{ entry.name }}</span>
+            <span v-if="entry.description" class="provider-backup-entry-description">
+              {{ entry.description }}
+            </span>
+          </span>
+          <span class="provider-backup-entry-meta">
+            <span v-if="entry.createdAt">{{ formatBackupTime(entry.createdAt) }}</span>
+            <span v-if="formatBackupSize(entry.size)">{{ formatBackupSize(entry.size) }}</span>
+          </span>
+        </button>
+      </div>
+      <div v-else-if="providerListError" class="provider-list-state is-error">
+        {{ providerListError }}
+      </div>
+      <div v-else class="provider-list-state">
+        {{ isListingBackups ? '正在读取备份列表…' : '没有可用备份' }}
+      </div>
+    </template>
+
+    <template #footer>
+      <Button
+        variant="outline"
+        size="sm"
+        :disabled="isInspecting"
+        @click="showRestoreSourceDialog = false"
+      >
+        取消
+      </Button>
+      <Button
+        size="sm"
+        :disabled="!canReadSelectedBackup || isListingBackups"
+        :loading="isInspecting"
+        @click="handleChooseImport"
+      >
+        {{ selectedRestoreProvider ? '读取所选备份' : '选择本地备份' }}
       </Button>
     </template>
   </Dialog>
@@ -244,7 +574,8 @@ const handleImport = async () => {
   <Dialog
     v-model:open="showImportDialog"
     title="从备份恢复"
-    description="恢复会覆盖所选项目的同名设置，并在完成后自动重启 EchoMusic。目标设备已有的其他插件不会被删除。"
+    description="恢复会覆盖所选项目的同名设置，并在完成后自动重启 EchoMusic。目标设备已有的其他插件不会被删除。使用插件存储时，继续后还需确认插件恢复权限。"
+    content-class="backup-dialog"
     :close-on-interact-outside="!isImporting"
     :close-on-escape="!isImporting"
   >
@@ -289,8 +620,32 @@ const handleImport = async () => {
 <style scoped>
 @reference "@/style.css";
 
+:global(.dialog-content.backup-dialog) {
+  min-height: min(420px, calc(100vh - 240px));
+  max-height: calc(100vh - 180px);
+}
+
 .backup-options {
   @apply space-y-3;
+}
+
+.backup-location {
+  @apply mb-4 space-y-2;
+}
+
+.backup-location-label,
+.provider-list-header {
+  @apply text-[12px] font-semibold text-text-main;
+}
+
+.backup-location-description {
+  @apply text-[11px] leading-5 text-text-secondary;
+}
+
+.backup-location-select,
+.backup-location-select :deep(.echo-popover-trigger),
+.backup-location-select :deep(.echo-select-trigger) {
+  @apply w-full;
 }
 
 .backup-option {
@@ -311,6 +666,56 @@ const handleImport = async () => {
   @apply mb-3 flex flex-col gap-1 rounded-xl border px-4 py-3 text-[11px] text-text-secondary;
   background: color-mix(in srgb, var(--color-primary) 7%, transparent);
   border-color: color-mix(in srgb, var(--color-primary) 20%, var(--control-border));
+}
+
+.provider-list-header {
+  @apply mb-2 flex items-center justify-between;
+}
+
+.provider-backup-list {
+  @apply max-h-64 space-y-2 overflow-y-auto pr-1;
+}
+
+.provider-backup-entry {
+  @apply flex w-full items-center justify-between gap-4 rounded-xl border px-4 py-3 text-left transition-colors;
+  background: var(--control-muted-bg);
+  border-color: var(--control-border);
+}
+
+.provider-backup-entry:hover:not(:disabled),
+.provider-backup-entry.is-selected {
+  border-color: color-mix(in srgb, var(--color-primary) 55%, var(--control-border));
+  background: color-mix(in srgb, var(--color-primary) 9%, var(--control-muted-bg));
+}
+
+.provider-backup-entry:disabled {
+  @apply cursor-not-allowed opacity-60;
+}
+
+.provider-backup-entry-main {
+  @apply min-w-0;
+}
+
+.provider-backup-entry-name {
+  @apply block truncate text-[12px] font-semibold text-text-main;
+}
+
+.provider-backup-entry-description {
+  @apply mt-1 block truncate text-[10px] text-text-secondary;
+}
+
+.provider-backup-entry-meta {
+  @apply flex shrink-0 flex-col items-end gap-1 text-[10px] text-text-secondary;
+}
+
+.provider-list-state {
+  @apply flex min-h-24 items-center justify-center rounded-xl border px-4 py-6 text-center text-[11px] text-text-secondary;
+  background: var(--control-muted-bg);
+  border-color: var(--control-border);
+}
+
+.provider-list-state.is-error {
+  color: var(--color-danger);
 }
 
 .backup-warning {

@@ -238,7 +238,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="player-bar-container w-full px-2 pb-1.25 z-1000">
+  <div class="player-bar-container w-full px-2 pb-1.25 z-1000" data-toast-anchor="main-player">
     <footer
       class="player-bar w-full h-21 border rounded-xl flex items-center justify-between px-3 py-1 gap-3 select-none no-drag transition-all duration-300"
     >

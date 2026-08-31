@@ -439,6 +439,7 @@ export interface IElectronAPI {
       create: (
         pluginId: string,
         options?: PluginBackupScopeOptions,
+        settingsData?: Record<string, unknown>,
       ) => Promise<PluginBackupCreateResult>;
       inspect: (
         pluginId: string,

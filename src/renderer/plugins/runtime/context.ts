@@ -340,7 +340,10 @@ export const createPluginContext = (
       delete: (key: string) =>
         window.electron.plugins?.storage.delete(descriptor.id, key) ?? Promise.resolve(null),
     },
-    backups: createPluginBackupsApi(descriptor),
+    backups: createPluginBackupsApi(descriptor, {
+      addDisposable,
+      reportPluginRuntimeError,
+    }),
     dialog: {
       selectDirectory: (options) =>
         window.electron.plugins?.dialog.selectDirectory(

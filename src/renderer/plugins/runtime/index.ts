@@ -27,7 +27,17 @@ export type {
   PluginThemeApi,
 } from './theme';
 export type { EchoPluginContext, PluginRuntimeHost } from './context';
+export type { PluginBackupsApi } from './backups';
 export type { PluginScrollContainerQueryOptions, PluginScrollContainerState } from './runtimeUi';
+export type {
+  PluginBackupProvider,
+  PluginBackupProviderEntry,
+  PluginBackupProviderListRequest,
+  PluginBackupProviderLoadRequest,
+  PluginBackupProviderRemoveRequest,
+  PluginBackupProviderSaveRequest,
+  PluginBackupScopeOptions,
+} from '../../../shared/settingsBackup';
 export type {
   PluginCoverApi,
   PluginKugouVerificationChallenge,

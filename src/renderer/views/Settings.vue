@@ -294,7 +294,7 @@ const builtinSettingsSections = computed<SettingsRenderSection[]>(() => [
   {
     id: 'network',
     label: '网络设置',
-    order: 400,
+    order: 1125,
     component: NetworkSettingsSection,
     searchKeywords: [
       '全局网络代理',
@@ -460,6 +460,8 @@ const builtinSettingsSections = computed<SettingsRenderSection[]>(() => [
       '导入与导出',
       '备份',
       '迁移',
+      '远端备份',
+      '存储提供方',
       '应用设置',
       '插件设置',
       '查看运行日志',

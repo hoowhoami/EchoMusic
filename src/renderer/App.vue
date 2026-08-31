@@ -500,7 +500,7 @@ watch(
   </Teleport>
   <AuthExpiredDialog v-if="!isMiniPlayerRoute" />
   <KugouVerificationFlow v-if="!isMiniPlayerRoute" />
-  <ToastViewport v-if="!isMiniPlayerRoute" />
+  <ToastViewport v-if="!isMiniPlayerRoute" :lyric-view-open="Boolean(player?.isLyricViewOpen)" />
   <UpdateDialog v-if="!isMiniPlayerRoute" dismiss-label="稍后" />
 </template>
 

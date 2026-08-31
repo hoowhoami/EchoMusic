@@ -588,7 +588,10 @@ const buildContext = (
     delete: (key: string) =>
       window.electron.plugins?.storage.delete(descriptor.id, key) ?? Promise.resolve(null),
   },
-  backups: createPluginBackupsApi(descriptor),
+  backups: createPluginBackupsApi(descriptor, {
+    addDisposable,
+    allowProviderRegistration: false,
+  }),
   fs: {
     listFiles: (directoryPath, options) =>
       window.electron.plugins?.fs.listFiles(descriptor.id, directoryPath, options) ??

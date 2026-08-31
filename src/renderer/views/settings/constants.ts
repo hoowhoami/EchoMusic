@@ -21,7 +21,6 @@ export const sectionTitles = {
   playback: { label: '播放体验', icon: iconPlayerPlay },
   spatialAudio: { label: '音效管理', icon: iconSlidersHorizontal },
   player: { label: '播放器设置', icon: iconSlidersHorizontal },
-  network: { label: '网络设置', icon: iconCloud },
   pageLyric: { label: '页面歌词', icon: null },
   desktopLyric: { label: '桌面歌词', icon: iconTypography },
   shortcuts: { label: '快捷键', icon: iconKeyboard },
@@ -29,6 +28,7 @@ export const sectionTitles = {
   experimental: { label: '实验性功能', icon: iconFlask },
   plugins: { label: '插件', icon: iconPlugin },
   data: { label: '数据与安全', icon: iconShield },
+  network: { label: '网络设置', icon: iconCloud },
   about: { label: '关于', icon: iconInfo },
 } as const;
 

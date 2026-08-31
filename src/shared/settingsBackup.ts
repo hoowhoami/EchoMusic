@@ -68,6 +68,8 @@ export interface PluginBackupScopeOptions {
 
 export interface PluginBackupCreateRequest extends PluginBackupScopeOptions {
   pluginId: string;
+  /** @internal Current renderer settings supplied by the host settings UI. */
+  settingsData?: Record<string, unknown>;
 }
 
 export type PluginBackupCreateResult =
@@ -110,6 +112,46 @@ export type PluginBackupRestoreResult =
       settingsImported?: boolean;
       pluginsImported?: number;
     };
+
+export interface PluginBackupProviderSaveRequest {
+  fileName: string;
+  data: ArrayBuffer;
+  summary: SettingsBackupSummary;
+  signal: AbortSignal;
+}
+
+export interface PluginBackupProviderEntry {
+  id: string;
+  name: string;
+  createdAt?: string;
+  size?: number;
+  description?: string;
+}
+
+export interface PluginBackupProviderListRequest {
+  signal: AbortSignal;
+}
+
+export interface PluginBackupProviderLoadRequest {
+  id: string;
+  signal: AbortSignal;
+}
+
+export type PluginBackupProviderRemoveRequest = PluginBackupProviderLoadRequest;
+
+export interface PluginBackupProvider {
+  id: string;
+  name: string;
+  description?: string;
+  save: (request: PluginBackupProviderSaveRequest) => unknown | Promise<unknown>;
+  list: (
+    request: PluginBackupProviderListRequest,
+  ) => PluginBackupProviderEntry[] | Promise<PluginBackupProviderEntry[]>;
+  load: (
+    request: PluginBackupProviderLoadRequest,
+  ) => ArrayBuffer | ArrayBufferView | Promise<ArrayBuffer | ArrayBufferView>;
+  remove?: (request: PluginBackupProviderRemoveRequest) => unknown | Promise<unknown>;
+}
 
 /**
  * These fields are runtime-only, tied to local hardware/files, or should be
