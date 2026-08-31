@@ -1,5 +1,13 @@
 import { defineStore } from 'pinia';
-import { getUserDetail, getUserFollow, getUserGradeInfo, getUserVipDetail } from '@/api/user';
+import {
+  getUserDetail,
+  getUserFollow,
+  getUserGradeInfo,
+  getUserVipDetail,
+  updateUserAvatar,
+  updateUserProfile,
+  type UpdateUserProfileParams,
+} from '@/api/user';
 import { useListenReportStore } from '@/stores/listenReport';
 import type { User, UserExtendsInfo } from '@/models/user';
 import { mapUser } from '@/utils/mappers';
@@ -31,6 +39,13 @@ const asApiPayload = (value: unknown): ApiPayload | null => {
 
 const isRecord = (value: unknown): value is Record<string, unknown> => {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+};
+
+const readMutationString = (payload: Record<string, unknown>, key: string): string => {
+  const direct = payload[key];
+  if (typeof direct === 'string' && direct.trim()) return direct.trim();
+  const data = isRecord(payload.data) ? payload.data[key] : undefined;
+  return typeof data === 'string' ? data.trim() : '';
 };
 
 const mergeExtendsInfo = (
@@ -205,6 +220,47 @@ export const useUserStore = defineStore('user', {
       } finally {
         this.isFetchingUserInfo = false;
       }
+    },
+
+    async updateProfile(params: UpdateUserProfileParams) {
+      if (!this.isLoggedIn || !this.info) throw new Error('请先登录后再修改个人资料');
+
+      await updateUserProfile(params);
+
+      const currentDetail = isRecord(this.info.extendsInfo?.detail)
+        ? (this.info.extendsInfo.detail as Record<string, unknown>)
+        : {};
+      const nextDetail: Record<string, unknown> = { ...currentDetail };
+      if (params.sex !== undefined) nextDetail.gender = params.sex;
+      if (params.birthday !== undefined) nextDetail.birthday = params.birthday;
+      if (params.signature !== undefined) {
+        nextDetail.descri = params.signature;
+        nextDetail.signature = params.signature;
+      }
+      if (params.province !== undefined) nextDetail.province = params.province;
+      if (params.city !== undefined) nextDetail.city = params.city;
+      if (params.memo !== undefined) nextDetail.memo = params.memo;
+      if (params.tags !== undefined) nextDetail.tags = params.tags;
+
+      const mergedExtends = mergeExtendsInfo(this.info.extendsInfo, { detail: nextDetail });
+      this.setUserInfo(
+        buildPatchedUserInfo(this.info, {
+          ...(params.nickname ? { nickname: params.nickname, userName: params.nickname } : {}),
+          detail: nextDetail,
+          ...(mergedExtends ? { extends: mergedExtends, extendsInfo: mergedExtends } : {}),
+        }),
+      );
+    },
+
+    async updateAvatar(dataUrl: string, filename?: string) {
+      if (!this.isLoggedIn || !this.info) throw new Error('请先登录后再修改头像');
+
+      const response = await updateUserAvatar(dataUrl, filename);
+      const pic = readMutationString(response, 'pic');
+      if (pic) {
+        this.setUserInfo(buildPatchedUserInfo(this.info, { pic, userPic: pic }));
+      }
+      return { pic, reviewPending: Boolean(response.reviewPending) };
     },
 
     /**

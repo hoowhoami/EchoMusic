@@ -722,6 +722,7 @@ export interface PluginMarketplaceStats {
 
 export interface PluginLocalInstallOptions {
   enableAfterInstall?: boolean;
+  expectedPluginId?: string;
 }
 
 export interface PluginMarketplacePlugin {

@@ -6,6 +6,8 @@ import { app } from 'electron';
 import log from './logger';
 import { applyKugouApiNetworkSettings, refreshNetworkSettingsFromStorage } from './networkSettings';
 import { getPersistedDeviceInfo, mergePersistedDeviceInfo } from './storage/persistedStores';
+import { mergeApiRequestBody } from '../shared/apiRequestMerge';
+import { prepareAvatarUploadQuery } from './avatarUpload';
 
 // --- 类型定义 ---
 
@@ -351,13 +353,38 @@ export const handleApiRequest = async (request: ApiRequest): Promise<ApiResponse
   // - 二进制 body（Buffer，如听歌识曲 PCM）需放入 query.data，
   //   复现 server/server.js 中 `Buffer.isBuffer(req.body) ? { data: req.body }` 的逻辑，
   //   module（如 audio_match）通过 params.data 读取并作为 octet-stream 上传。
-  // - 其余（JSON 对象）保持原有 query.body 行为。
+  // - JSON 对象既合并到顶层（与 Express 的 Object.assign 行为一致），也保留
+  //   query.body，兼容当前依赖 params.body 的一起听等模块。
   if (request.data !== undefined && request.data !== null) {
     const normalizedBody = toBufferIfBinary(request.data);
     if (Buffer.isBuffer(normalizedBody)) {
       query.data = normalizedBody;
     } else {
       query.body = normalizedBody;
+      if (
+        typeof normalizedBody === 'object' &&
+        normalizedBody !== null &&
+        !Array.isArray(normalizedBody)
+      ) {
+        mergeApiRequestBody(query, normalizedBody);
+      }
+    }
+  }
+
+  // Authorization 始终拥有最高优先级，保持与 Express 路径一致。
+  query.cookie = { ...query.cookie, ...authCookies };
+
+  if (mod.route === '/user/update/avatar') {
+    try {
+      prepareAvatarUploadQuery(query);
+    } catch (error) {
+      return {
+        status: 400,
+        body: {
+          status: 0,
+          msg: error instanceof Error ? error.message : '图片数据无效',
+        },
+      };
     }
   }
 

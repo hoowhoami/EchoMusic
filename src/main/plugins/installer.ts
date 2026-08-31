@@ -260,6 +260,7 @@ export const createPluginInstaller = ({
       if (source.kind === 'directory') {
         const sourceDirectory = await findPluginInstallSourceDirectory(source.path, '');
         const installed = await installPluginDirectory(sourceDirectory, {
+          expectedPluginId: options.expectedPluginId,
           enableAfterInstall: Boolean(options.enableAfterInstall),
         });
         return {
@@ -284,6 +285,7 @@ export const createPluginInstaller = ({
         });
         const sourceDirectory = await findPluginInstallSourceDirectory(extractDirectory, '');
         const installed = await installPluginDirectory(sourceDirectory, {
+          expectedPluginId: options.expectedPluginId,
           enableAfterInstall: Boolean(options.enableAfterInstall),
         });
         return {

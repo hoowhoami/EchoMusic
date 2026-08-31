@@ -434,7 +434,18 @@ const builtinSettingsSections = computed<SettingsRenderSection[]>(() => [
     label: '数据与安全',
     order: 1100,
     component: DataSettingsSection,
-    searchKeywords: ['查看运行日志', '本地日志目录', '清除应用数据', '持久化设置', '缓存信息'],
+    searchKeywords: [
+      '导入与导出',
+      '备份',
+      '迁移',
+      '应用设置',
+      '插件设置',
+      '查看运行日志',
+      '本地日志目录',
+      '清除应用数据',
+      '持久化设置',
+      '缓存信息',
+    ],
     props: {
       onClear: () => {
         showConfirmClear.value = true;

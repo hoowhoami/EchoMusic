@@ -1,6 +1,6 @@
 import { app } from 'electron';
 import { existsSync, mkdirSync, readdirSync, rmSync, statSync } from 'fs';
-import { join } from 'path';
+import { join, resolve } from 'path';
 import type {
   EchoPluginDescriptor,
   PluginSqliteCloseResult,
@@ -55,11 +55,11 @@ const normalizeDatabaseName = (name?: string) => {
   return normalized;
 };
 
-const getPluginSqliteRoot = (pluginId: string) =>
+export const getPluginSqliteDirectory = (pluginId: string) =>
   join(app.getPath('userData'), PLUGIN_SQLITE_ROOT, pluginId);
 
 const getDatabasePath = (pluginId: string, name: string) =>
-  join(getPluginSqliteRoot(pluginId), `${name}.sqlite`);
+  join(getPluginSqliteDirectory(pluginId), `${name}.sqlite`);
 
 const getDatabaseId = (pluginId: string, name: string) => `${pluginId}:${name}`;
 
@@ -196,7 +196,7 @@ export const openPluginSqliteDatabase = (
   try {
     const name = normalizeDatabaseName(options?.name);
     databaseId = getDatabaseId(plugin.id, name);
-    const root = getPluginSqliteRoot(plugin.id);
+    const root = getPluginSqliteDirectory(plugin.id);
     mkdirSync(root, { recursive: true });
     getNativeStorage().pluginSqliteOpen(
       databaseId,
@@ -333,7 +333,7 @@ export const closePluginSqliteDatabases = (pluginId?: string) => {
 
 export const listPluginSqliteDatabases = (pluginId: string): PluginSqliteListResult => {
   try {
-    const root = getPluginSqliteRoot(pluginId);
+    const root = getPluginSqliteDirectory(pluginId);
     if (!existsSync(root)) return { ok: true, databases: [] };
     const databases = readdirSync(root, { withFileTypes: true })
       .filter((entry) => entry.isFile() && entry.name.endsWith('.sqlite'))
@@ -346,6 +346,27 @@ export const listPluginSqliteDatabases = (pluginId: string): PluginSqliteListRes
     return { ok: true, databases };
   } catch (error) {
     return fail(error, '插件 SQLite 数据库列表读取失败');
+  }
+};
+
+export const snapshotPluginSqliteDatabases = (pluginId: string, destinationDirectory: string) => {
+  const sourceDirectory = resolve(getPluginSqliteDirectory(pluginId));
+  const destination = resolve(destinationDirectory);
+  if (sourceDirectory === destination) throw new Error('SQLite 快照目录不能与源目录相同');
+
+  rmSync(destination, { recursive: true, force: true });
+  mkdirSync(destination, { recursive: true });
+  if (!existsSync(sourceDirectory)) return;
+
+  const databaseFiles = readdirSync(sourceDirectory, { withFileTypes: true })
+    .filter((entry) => entry.isFile() && entry.name.endsWith('.sqlite'))
+    .map((entry) => entry.name)
+    .sort();
+  for (const fileName of databaseFiles) {
+    getNativeStorage().pluginSqliteBackup(
+      join(sourceDirectory, fileName),
+      join(destination, fileName),
+    );
   }
 };
 
@@ -370,7 +391,7 @@ export const deletePluginSqliteDatabase = (
 
 export const deletePluginSqliteDatabases = (pluginId: string) => {
   closePluginSqliteDatabases(pluginId);
-  rmSync(getPluginSqliteRoot(pluginId), { recursive: true, force: true });
+  rmSync(getPluginSqliteDirectory(pluginId), { recursive: true, force: true });
 };
 
 app.once('before-quit', () => closePluginSqliteDatabases());

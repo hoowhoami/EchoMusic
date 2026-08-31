@@ -1,23 +1,30 @@
 <script setup lang="ts">
 defineOptions({ name: 'profile' });
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted, reactive, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { useUserStore } from '@/stores/user';
 import { useLoginDeviceStore, type LoginDeviceSession } from '@/stores/loginDevices';
 import Button from '@/components/ui/Button.vue';
+import DatePicker from '@/components/ui/DatePicker.vue';
 import Dialog from '@/components/ui/Dialog.vue';
+import Input from '@/components/ui/Input.vue';
 import Popover from '@/components/ui/Popover.vue';
+import Select from '@/components/ui/Select.vue';
+import Textarea from '@/components/ui/Textarea.vue';
 import ContentBlacklistDialog from '@/components/profile/ContentBlacklistDialog.vue';
 
 import Avatar from '@/components/ui/Avatar.vue';
 
 import logger from '@/utils/logger';
+import { useToastStore } from '@/stores/toast';
+import type { UpdateUserProfileParams } from '@/api/user';
 import {
   iconCheck,
   iconGift,
   iconHome,
   iconInfo,
   iconLogOut,
+  iconPencil,
   iconRefreshCw,
   iconScan,
   iconShield,
@@ -26,6 +33,7 @@ import {
   iconUser,
 } from '@/icons';
 import PageScrollContainer from '@/components/ui/PageScrollContainer.vue';
+import { formatBirthdayForInput } from '../../shared/birthday';
 
 interface VipLevelInfo {
   product_type?: string;
@@ -47,6 +55,7 @@ interface DetailState {
 const router = useRouter();
 const userStore = useUserStore();
 const loginDeviceStore = useLoginDeviceStore();
+const toastStore = useToastStore();
 const userInfo = computed(() => userStore.info);
 
 const isLoading = ref(false);
@@ -54,6 +63,32 @@ const showContentBlacklist = ref(false);
 const showDeviceManager = ref(false);
 const showKickConfirm = ref(false);
 const pendingKickDevice = ref<LoginDeviceSession | null>(null);
+const showProfileEditor = ref(false);
+const isSavingProfile = ref(false);
+const isUploadingAvatar = ref(false);
+const avatarInput = ref<HTMLInputElement | null>(null);
+
+type EditableGender = 0 | 1 | 2;
+
+const profileForm = reactive({
+  nickname: '',
+  sex: 2 as EditableGender,
+  birthday: '',
+  signature: '',
+  province: '',
+  city: '',
+});
+
+const genderOptions = [
+  { label: '女', value: 0 },
+  { label: '男', value: 1 },
+  { label: '保密', value: 2 },
+];
+
+const today = new Date();
+const birthdayMax = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(
+  today.getDate(),
+).padStart(2, '0')}`;
 
 // 提取详细信息
 const detail = computed<DetailState>(
@@ -76,6 +111,144 @@ const gender = computed(() => {
   const g = detail.value?.gender;
   return g === 1 ? '男' : g === 0 ? '女' : '保密';
 });
+
+const editableGender = (): EditableGender => {
+  const value = Number(detail.value?.gender);
+  return value === 0 || value === 1 ? value : 2;
+};
+
+const currentSignature = () => String(detail.value?.descri ?? detail.value?.signature ?? '');
+
+const syncProfileForm = () => {
+  profileForm.nickname = String(userInfo.value?.nickname ?? '').trim();
+  profileForm.sex = editableGender();
+  profileForm.birthday = formatBirthdayForInput(detail.value?.birthday);
+  profileForm.signature = currentSignature();
+  profileForm.province = String(detail.value?.province ?? '').trim();
+  profileForm.city = String(detail.value?.city ?? '').trim();
+};
+
+const openProfileEditor = () => {
+  syncProfileForm();
+  showProfileEditor.value = true;
+};
+
+const getProfileErrorMessage = (error: unknown, fallback: string) => {
+  const response = (error as { response?: { body?: unknown } } | null)?.response;
+  const body =
+    response?.body && typeof response.body === 'object'
+      ? (response.body as Record<string, unknown>)
+      : undefined;
+  const message = typeof body?.msg === 'string' ? body.msg.trim() : '';
+  if (message) return message;
+  const ownMessage = error instanceof Error ? error.message.trim() : '';
+  return ownMessage && !ownMessage.startsWith('API Error:') ? ownMessage : fallback;
+};
+
+const saveProfile = async () => {
+  if (isSavingProfile.value) return;
+
+  const nickname = profileForm.nickname.trim();
+  if (!nickname) {
+    toastStore.warning('昵称不能为空');
+    return;
+  }
+
+  const params: UpdateUserProfileParams = {};
+  const currentNickname = String(userInfo.value?.nickname ?? '').trim();
+  const currentBirthday = formatBirthdayForInput(detail.value?.birthday);
+  const birthday = profileForm.birthday.trim();
+
+  if (nickname !== currentNickname) params.nickname = nickname;
+  if (profileForm.sex !== editableGender()) params.sex = profileForm.sex;
+  if (birthday !== currentBirthday) {
+    params.birthday = birthday;
+  }
+  if (profileForm.signature !== currentSignature()) params.signature = profileForm.signature;
+
+  const province = profileForm.province.trim();
+  const city = profileForm.city.trim();
+  const currentProvince = String(detail.value?.province ?? '').trim();
+  const currentCity = String(detail.value?.city ?? '').trim();
+  if ((!province && currentProvince) || (!city && currentCity)) {
+    toastStore.warning('当前接口暂不支持清空所在地区');
+    return;
+  }
+  if (province && province !== currentProvince) params.province = province;
+  if (city && city !== currentCity) params.city = city;
+
+  if (Object.keys(params).length === 0) {
+    toastStore.info('资料没有变化');
+    return;
+  }
+
+  isSavingProfile.value = true;
+  try {
+    await userStore.updateProfile(params);
+    showProfileEditor.value = false;
+    toastStore.success('个人资料已更新');
+  } catch (error) {
+    logger.error('Profile', 'Update profile error:', error);
+    toastStore.danger(getProfileErrorMessage(error, '个人资料保存失败，请稍后重试'));
+  } finally {
+    isSavingProfile.value = false;
+  }
+};
+
+const triggerAvatarPicker = () => {
+  if (!isUploadingAvatar.value) avatarInput.value?.click();
+};
+
+const readFileAsDataUrl = (file: Blob) =>
+  new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () =>
+      typeof reader.result === 'string'
+        ? resolve(reader.result)
+        : reject(new Error('图片读取失败'));
+    reader.onerror = () => reject(reader.error || new Error('图片读取失败'));
+    reader.readAsDataURL(file);
+  });
+
+const handleAvatarSelected = async (event: Event) => {
+  const input = event.target as HTMLInputElement;
+  const file = input.files?.[0];
+  input.value = '';
+  if (!file || isUploadingAvatar.value) return;
+
+  const mime = file.type.toLowerCase();
+  const extension = file.name.toLowerCase().match(/\.([a-z0-9]+)$/)?.[1] ?? '';
+  const supportedTypes = new Set(['image/jpeg', 'image/png', 'image/gif']);
+  const supportedExtensions = new Set(['jpg', 'jpeg', 'png', 'gif']);
+  if ((mime && !supportedTypes.has(mime)) || (!mime && !supportedExtensions.has(extension))) {
+    toastStore.warning('请选择 JPEG、PNG 或 GIF 图片');
+    return;
+  }
+  if (file.size > 8 * 1024 * 1024) {
+    toastStore.warning('头像图片不能超过 8 MB');
+    return;
+  }
+
+  isUploadingAvatar.value = true;
+  try {
+    const dataUrl = await readFileAsDataUrl(file);
+    const filename =
+      mime === 'image/gif' || extension === 'gif'
+        ? 'avatar.gif'
+        : mime === 'image/png' || extension === 'png'
+          ? 'avatar.png'
+          : 'avatar.jpg';
+    const result = await userStore.updateAvatar(dataUrl, filename);
+    toastStore.success(
+      result.reviewPending ? '头像已上传，正在审核中' : '头像已提交，审核完成后将正式生效',
+    );
+  } catch (error) {
+    logger.error('Profile', 'Update avatar error:', error);
+    toastStore.danger(getProfileErrorMessage(error, '头像上传失败，请稍后重试'));
+  } finally {
+    isUploadingAvatar.value = false;
+  }
+};
 
 const location = computed(() => {
   const p = detail?.value?.province || '';
@@ -280,6 +453,16 @@ onMounted(() => loadData());
                 <Button
                   variant="unstyled"
                   size="none"
+                  @click="openProfileEditor"
+                  class="w-10 h-10 flex items-center justify-center rounded-full border border-[var(--control-border)] text-text-main/70 hover:bg-[var(--control-hover-bg)] hover:text-text-main transition-all active:scale-90"
+                  title="编辑个人资料"
+                  aria-label="编辑个人资料"
+                >
+                  <Icon :icon="iconPencil" width="19" height="19" />
+                </Button>
+                <Button
+                  variant="unstyled"
+                  size="none"
                   @click="showContentBlacklist = true"
                   class="w-10 h-10 flex items-center justify-center rounded-full border border-[var(--control-border)] text-text-main/70 hover:bg-[var(--control-hover-bg)] hover:text-text-main transition-all active:scale-90"
                   title="黑名单管理"
@@ -315,9 +498,32 @@ onMounted(() => loadData());
               class="user-card relative overflow-hidden p-6 rounded-3xl bg-linear-to-br from-primary/12 via-primary/6 to-transparent border border-primary/20 mb-6"
             >
               <div class="flex items-center gap-6 relative z-10">
-                <div class="p-1 rounded-full border-2 border-primary/30 shrink-0">
+                <button
+                  type="button"
+                  class="profile-avatar-button group relative p-1 rounded-full border-2 border-primary/30 shrink-0 overflow-hidden"
+                  :disabled="isUploadingAvatar"
+                  title="修改头像"
+                  aria-label="修改头像"
+                  @click="triggerAvatarPicker"
+                >
                   <Avatar :src="userInfo.pic" class="w-19 h-19 rounded-full" />
-                </div>
+                  <span
+                    class="absolute inset-1 rounded-full flex items-center justify-center bg-black/45 text-white opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 transition-opacity"
+                  >
+                    <span
+                      v-if="isUploadingAvatar"
+                      class="w-5 h-5 rounded-full border-2 border-white border-t-transparent animate-spin"
+                    ></span>
+                    <Icon v-else :icon="iconPencil" width="20" height="20" />
+                  </span>
+                </button>
+                <input
+                  ref="avatarInput"
+                  type="file"
+                  accept="image/jpeg,image/png,image/gif"
+                  hidden
+                  @change="handleAvatarSelected"
+                />
                 <div class="flex-1 min-w-0">
                   <div class="flex items-center gap-3 mb-2">
                     <h2 class="text-[20px] font-black truncate">{{ userInfo.nickname }}</h2>
@@ -571,6 +777,83 @@ onMounted(() => loadData());
       </template>
     </Dialog>
 
+    <Dialog
+      v-model:open="showProfileEditor"
+      title="编辑个人资料"
+      description="修改后的资料会同步到当前酷狗账号。"
+      contentClass="profile-editor-dialog"
+      :showClose="true"
+      :closeOnEscape="!isSavingProfile"
+      :closeOnInteractOutside="!isSavingProfile"
+    >
+      <div class="profile-editor-form">
+        <label class="profile-editor-field">
+          <span>昵称</span>
+          <Input v-model="profileForm.nickname" placeholder="请输入昵称" />
+        </label>
+
+        <div class="profile-editor-row">
+          <label class="profile-editor-field">
+            <span>性别</span>
+            <div class="profile-editor-select">
+              <Select
+                v-model="profileForm.sex"
+                class="profile-editor-select-trigger"
+                :options="genderOptions"
+                placeholder="请选择性别"
+                aria-label="性别"
+              />
+            </div>
+          </label>
+          <label class="profile-editor-field">
+            <span>生日</span>
+            <DatePicker
+              v-model="profileForm.birthday"
+              min="1900-01-01"
+              :max="birthdayMax"
+              placeholder="请选择生日"
+              aria-label="生日"
+              clearable
+            />
+          </label>
+        </div>
+
+        <div class="profile-editor-row">
+          <label class="profile-editor-field">
+            <span>省份</span>
+            <Input v-model="profileForm.province" placeholder="例如：广东" />
+          </label>
+          <label class="profile-editor-field">
+            <span>城市</span>
+            <Input v-model="profileForm.city" placeholder="例如：广州" />
+          </label>
+        </div>
+
+        <label class="profile-editor-field">
+          <span>个性签名</span>
+          <Textarea
+            v-model="profileForm.signature"
+            :rows="3"
+            placeholder="写下一句想说的话"
+            textareaClass="profile-editor-signature"
+          />
+          <small>留空保存可清除个性签名</small>
+        </label>
+      </div>
+      <template #footer>
+        <Button
+          variant="outline"
+          size="sm"
+          :disabled="isSavingProfile"
+          @click="showProfileEditor = false"
+          >取消</Button
+        >
+        <Button variant="primary" size="sm" :loading="isSavingProfile" @click="saveProfile"
+          >保存修改</Button
+        >
+      </template>
+    </Dialog>
+
     <ContentBlacklistDialog v-model:open="showContentBlacklist" />
 
     <Dialog
@@ -702,6 +985,39 @@ onMounted(() => loadData());
   box-shadow: 0 20px 60px -10px rgba(var(--color-primary-rgb), 0.15);
 }
 
+.profile-avatar-button:disabled {
+  cursor: wait;
+}
+
+.profile-editor-form {
+  display: grid;
+  gap: 16px;
+}
+
+.profile-editor-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.profile-editor-field {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+}
+
+.profile-editor-field > span {
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--color-text-secondary);
+}
+
+.profile-editor-field > small {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+}
+
 .profile-archive-card {
   background-color: var(--color-bg-elevated) !important;
   border-color: var(--border-subtle) !important;
@@ -736,5 +1052,30 @@ onMounted(() => loadData());
 .dialog-content.login-device-dialog {
   width: min(480px, 92vw);
   max-height: min(720px, calc(100vh - 140px));
+}
+
+.dialog-content.profile-editor-dialog {
+  width: min(520px, 92vw);
+  max-height: min(760px, calc(100vh - 100px));
+}
+
+.profile-editor-dialog .profile-editor-field .relative > input,
+.profile-editor-dialog .echo-select-trigger {
+  height: 44px;
+  min-height: 44px;
+  border-color: var(--control-border);
+  border-radius: 12px;
+  padding-left: 14px;
+  font-size: 13px;
+}
+
+.profile-editor-dialog .profile-editor-select,
+.profile-editor-dialog .profile-editor-select > span,
+.profile-editor-dialog .profile-editor-select-trigger {
+  width: 100%;
+}
+
+.profile-editor-dialog .profile-editor-signature {
+  min-height: 84px;
 }
 </style>

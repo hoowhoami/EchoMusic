@@ -50,6 +50,11 @@ interface HeaderCapture {
   setCookies: string[];
 }
 
+interface NodeMultipartFormData {
+  getHeaders: () => Record<string, string>;
+  getBuffer: () => Buffer;
+}
+
 interface TransportContext {
   config: InternalAxiosRequestConfig;
   headerCapture: HeaderCapture;
@@ -162,6 +167,27 @@ const ensureProxy = async (proxyUrl: string): Promise<ProxyState> => {
 const getErrorCode = (error: unknown): string | undefined => {
   if (!error || typeof error !== 'object' || !('code' in error)) return undefined;
   return typeof error.code === 'string' ? error.code : undefined;
+};
+
+const isNodeMultipartFormData = (value: unknown): value is NodeMultipartFormData => {
+  if (!value || typeof value !== 'object') return false;
+  const candidate = value as Partial<NodeMultipartFormData>;
+  return typeof candidate.getHeaders === 'function' && typeof candidate.getBuffer === 'function';
+};
+
+/**
+ * Axios 的 fetch adapter 只原生支持 Web FormData。server 模块使用 form-data 包生成的
+ * Node stream；直接交给 Request 会保留 multipart Content-Type，却可能丢失实际字段。
+ * 当前 server 的 multipart 内容均由字符串和 Buffer 组成，可以安全地一次性序列化。
+ */
+const normalizeAdapterData = (
+  data: unknown,
+  headers: InstanceType<AxiosRuntime['AxiosHeaders']>,
+) => {
+  if (!isNodeMultipartFormData(data)) return data;
+
+  Object.entries(data.getHeaders()).forEach(([key, value]) => headers.set(key, value));
+  return data.getBuffer();
 };
 
 const createCodedError = (message: string, code: string): ErrorWithCode => {
@@ -472,8 +498,10 @@ export const createElectronAxiosAdapter = (
     const headerCapture: HeaderCapture = { setCookies: [] };
     const headers = axiosModule.AxiosHeaders.from(config.headers);
     headers.set(CAPTURE_REQUEST_HEADER, captureToken);
+    const data = normalizeAdapterData(config.data, headers);
     const adapterConfig: InternalAxiosRequestConfig = {
       ...config,
+      data,
       headers,
       env: {
         ...config.env,

@@ -46,6 +46,13 @@ import type {
 } from '../shared/audio-spectrum';
 import type { LogSettings } from '../shared/logging';
 import type { NetworkSettings } from '../shared/network';
+import type {
+  SettingsBackupExportRequest,
+  SettingsBackupExportResult,
+  SettingsBackupImportRequest,
+  SettingsBackupImportResult,
+  SettingsBackupInspectResult,
+} from '../shared/settingsBackup';
 import type { PlayerErrorPayload } from '../shared/player-error';
 import type {
   PlayerAudioGraphParameterPatch,
@@ -649,6 +656,14 @@ contextBridge.exposeInMainWorld('electron', {
   network: {
     update: (settings: Partial<NetworkSettings>) =>
       invokeWithPlainPayload<NetworkSettings>('network:update-settings', settings),
+  },
+  settingsBackup: {
+    export: (request: SettingsBackupExportRequest) =>
+      invokeWithPlainPayload<SettingsBackupExportResult>('settings-backup:export', request),
+    inspect: () =>
+      ipcRenderer.invoke('settings-backup:inspect') as Promise<SettingsBackupInspectResult>,
+    import: (request: SettingsBackupImportRequest) =>
+      invokeWithPlainPayload<SettingsBackupImportResult>('settings-backup:import', request),
   },
   player: {
     load: (url: string) => ipcRenderer.invoke('player:load', url),

@@ -127,6 +127,81 @@ export function getUserDetail() {
   return request.get('/user/detail');
 }
 
+export interface UpdateUserProfileParams {
+  nickname?: string;
+  sex?: 0 | 1 | 2;
+  birthday?: string;
+  signature?: string;
+  province?: string;
+  city?: string;
+  memo?: string;
+  tags?: string;
+}
+
+interface UserMutationResponse {
+  status?: number | string;
+  error_code?: number | string;
+  errcode?: number | string;
+  msg?: string;
+  data?: unknown;
+  photo?: string;
+  pic?: string;
+  reviewPending?: boolean;
+  [key: string]: unknown;
+}
+
+const getMutationErrorBody = (error: unknown): UserMutationResponse | undefined => {
+  const response = (error as { response?: unknown } | null)?.response;
+  if (!response || typeof response !== 'object') return undefined;
+  const body = (response as { body?: unknown }).body;
+  return body && typeof body === 'object'
+    ? (body as UserMutationResponse)
+    : (response as UserMutationResponse);
+};
+
+const ensureUserMutationSucceeded = (payload: unknown, fallback: string): UserMutationResponse => {
+  const body =
+    payload && typeof payload === 'object' ? (payload as UserMutationResponse) : undefined;
+  const status = Number(body?.status ?? 1);
+  const errorCode = Number(body?.error_code ?? body?.errcode ?? 0);
+  if (!body || status === 0 || errorCode !== 0) {
+    const error = new Error(body?.msg || fallback);
+    (error as Error & { response?: unknown }).response = payload;
+    throw error;
+  }
+  return body;
+};
+
+/**
+ * 修改当前登录账号的个人资料。
+ */
+export async function updateUserProfile(params: UpdateUserProfileParams) {
+  const response = await request.post('/user/update', params);
+  return ensureUserMutationSucceeded(response, '个人资料保存失败');
+}
+
+/**
+ * 上传并修改当前登录账号的头像。
+ * imgFile 使用 dataURL，内置 server 会完成图床 multipart 上传与资料写入。
+ */
+export async function updateUserAvatar(imgFile: string, filename?: string) {
+  try {
+    const response = await request.post('/user/update/avatar', {
+      imgFile,
+      ...(filename ? { filename } : {}),
+    });
+    return ensureUserMutationSucceeded(response, '头像上传失败');
+  } catch (error) {
+    const body = getMutationErrorBody(error);
+    // 图床上传完成后，账号资料接口会用 34236 表示头像已进入审核队列。
+    // 这是可接受的提交终态，不应向用户提示上传失败。
+    if (Number(body?.error_code ?? body?.errcode ?? 0) === 34236) {
+      return { ...body, reviewPending: true };
+    }
+    throw error;
+  }
+}
+
 export interface LoginDeviceKickTarget {
   t_mid?: string | number;
   t?: string | number;

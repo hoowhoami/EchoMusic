@@ -37,6 +37,7 @@ export interface NativeStorageAddon {
     limit?: number | null,
   ): string;
   pluginSqliteTransaction(databaseId: string, statementsJson: string): string;
+  pluginSqliteBackup(sourcePath: string, destinationPath: string): string;
 }
 
 let addon: NativeStorageAddon | null = null;

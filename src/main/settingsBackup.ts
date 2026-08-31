@@ -1,0 +1,657 @@
+import { app, BrowserWindow, dialog, type OpenDialogOptions } from 'electron';
+import { createHash, randomUUID } from 'crypto';
+import { constants as fsConstants } from 'fs';
+import fs from 'fs/promises';
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'path';
+import { promisify } from 'util';
+import { gunzip, gzip } from 'zlib';
+import log from './logger';
+import { getKvStorage } from './storage/kv';
+import {
+  getDesktopLyricPersistedSettings,
+  patchDesktopLyricPersistedSettings,
+  setMainAppSetting,
+  setPersistedLogSettings,
+  type MainAppSettings,
+} from './storage/settings';
+import { normalizeLogSettings, type AppLogLevel } from '../shared/logging';
+import { getStorePersistenceKey } from '../shared/storePersistence';
+import { isBlockedObjectKey } from '../shared/objectSafety';
+import {
+  SETTINGS_BACKUP_EXTENSION,
+  SETTINGS_BACKUP_FORMAT,
+  SETTINGS_BACKUP_VERSION,
+  sanitizePortableAppSettings,
+  type SettingsBackupExportRequest,
+  type SettingsBackupExportResult,
+  type SettingsBackupImportRequest,
+  type SettingsBackupImportResult,
+  type SettingsBackupInspectResult,
+  type SettingsBackupScope,
+  type SettingsBackupSummary,
+} from '../shared/settingsBackup';
+import {
+  exportPluginEnabledPreference,
+  exportPluginStorage,
+  getPluginDescriptor,
+  getPluginDirectory,
+  installPluginsFromLocal,
+  listPlugins,
+  normalizePluginId,
+  replacePluginEnabledPreference,
+  replacePluginStorage,
+  setPluginEnabled,
+  terminatePluginProcesses,
+} from './plugins';
+import {
+  closePluginSqliteDatabases,
+  getPluginSqliteDirectory,
+  snapshotPluginSqliteDatabases,
+} from './plugins/sqlite';
+import { closePluginWebServer } from './plugins/webServer';
+import { assertBackupManifestMatchesPlugin } from '../shared/settingsBackupValidation';
+
+const gzipAsync = promisify(gzip);
+const gunzipAsync = promisify(gunzip);
+
+const MAX_BACKUP_FILE_BYTES = 256 * 1024 * 1024;
+const MAX_BACKUP_JSON_BYTES = 512 * 1024 * 1024;
+const MAX_SETTINGS_JSON_BYTES = 2 * 1024 * 1024;
+const MAX_PLUGIN_COUNT = 200;
+const MAX_FILE_COUNT = 20_000;
+const MAX_SINGLE_FILE_BYTES = 80 * 1024 * 1024;
+const INSPECTION_TTL_MS = 10 * 60 * 1000;
+const BASE64_RE = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
+
+interface ArchivedFile {
+  path: string;
+  data: string;
+  mode?: number;
+}
+
+interface ArchivedPlugin {
+  id: string;
+  name: string;
+  version: string;
+  enabled: boolean;
+  files: ArchivedFile[];
+  storage: Record<string, unknown>;
+  sqliteFiles: ArchivedFile[];
+}
+
+interface SettingsBackupArchive {
+  format: typeof SETTINGS_BACKUP_FORMAT;
+  version: typeof SETTINGS_BACKUP_VERSION;
+  createdAt: string;
+  appVersion: string;
+  includes: SettingsBackupScope;
+  settings?: Record<string, unknown>;
+  desktopLyricSettings?: Record<string, unknown>;
+  plugins?: ArchivedPlugin[];
+}
+
+interface InspectedBackup {
+  filePath: string;
+  archive: SettingsBackupArchive;
+  expiresAt: number;
+  digest: string;
+}
+
+interface PluginRollbackSnapshot {
+  id: string;
+  directory: string;
+  existed: boolean;
+  enabledPreference?: boolean;
+  storage: Record<string, unknown>;
+  codeSnapshotDirectory: string;
+  sqliteSnapshotDirectory: string;
+}
+
+const inspectedBackups = new Map<string, InspectedBackup>();
+
+const isPlainObject = (value: unknown): value is Record<string, unknown> =>
+  Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+
+const sanitizeDesktopLyricSettings = (value: unknown): Record<string, unknown> => {
+  if (!isPlainObject(value)) return {};
+  try {
+    const cloned = JSON.parse(JSON.stringify(value)) as Record<string, unknown>;
+    return Object.fromEntries(
+      Object.entries(cloned).filter(([key]) => key !== 'windowState' && !isBlockedObjectKey(key)),
+    );
+  } catch {
+    return {};
+  }
+};
+
+const isSafeRelativePath = (value: unknown): value is string => {
+  if (typeof value !== 'string' || !value || value.includes('\0') || isAbsolute(value))
+    return false;
+  const normalized = value.replace(/\\/g, '/');
+  return !normalized.split('/').some((segment) => !segment || segment === '.' || segment === '..');
+};
+
+const getDecodedBase64Bytes = (value: string) => {
+  const padding = value.endsWith('==') ? 2 : value.endsWith('=') ? 1 : 0;
+  return Math.max(0, Math.floor((value.length * 3) / 4) - padding);
+};
+
+const toArchiveRelativePath = (root: string, filePath: string) =>
+  relative(root, filePath).split(sep).join('/');
+
+const readDirectoryFiles = async (root: string): Promise<ArchivedFile[]> => {
+  const output: ArchivedFile[] = [];
+  const walk = async (directory: string): Promise<void> => {
+    const entries = await fs.readdir(directory, { withFileTypes: true });
+    for (const entry of entries) {
+      const filePath = join(directory, entry.name);
+      if (entry.isSymbolicLink()) continue;
+      if (entry.isDirectory()) {
+        await walk(filePath);
+        continue;
+      }
+      if (!entry.isFile()) continue;
+      const stats = await fs.stat(filePath);
+      if (stats.size > MAX_SINGLE_FILE_BYTES) {
+        throw new Error(`文件过大，无法备份：${entry.name}`);
+      }
+      if (output.length >= MAX_FILE_COUNT) throw new Error('备份中的文件数量过多');
+      const data = await fs.readFile(filePath);
+      output.push({
+        path: toArchiveRelativePath(root, filePath),
+        data: data.toString('base64'),
+        mode: stats.mode & 0o777,
+      });
+    }
+  };
+
+  try {
+    await fs.access(root, fsConstants.R_OK);
+    await walk(root);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException)?.code === 'ENOENT') return [];
+    throw error;
+  }
+  return output;
+};
+
+const writeArchivedFiles = async (root: string, files: ArchivedFile[]) => {
+  const resolvedRoot = resolve(root);
+  for (const file of files) {
+    if (!isSafeRelativePath(file.path)) throw new Error('备份中包含非法文件路径');
+    const target = resolve(resolvedRoot, file.path);
+    if (target !== resolvedRoot && !target.startsWith(`${resolvedRoot}${sep}`)) {
+      throw new Error('备份文件路径超出目标目录');
+    }
+    const data = Buffer.from(file.data, 'base64');
+    await fs.mkdir(dirname(target), { recursive: true });
+    await fs.writeFile(target, data);
+    if (process.platform !== 'win32' && Number.isInteger(file.mode)) {
+      await fs.chmod(target, Number(file.mode) & 0o777);
+    }
+  }
+};
+
+const validateArchivedFiles = (value: unknown, counter: { files: number; bytes: number }) => {
+  if (!Array.isArray(value)) throw new Error('备份文件列表无效');
+  return value.map<ArchivedFile>((item) => {
+    if (
+      !isPlainObject(item) ||
+      !isSafeRelativePath(item.path) ||
+      typeof item.data !== 'string' ||
+      !BASE64_RE.test(item.data)
+    ) {
+      throw new Error('备份中包含无效文件');
+    }
+    const bytes = getDecodedBase64Bytes(item.data);
+    if (bytes > MAX_SINGLE_FILE_BYTES) throw new Error('备份中包含超大文件');
+    counter.files += 1;
+    counter.bytes += bytes;
+    if (counter.files > MAX_FILE_COUNT || counter.bytes > MAX_BACKUP_JSON_BYTES) {
+      throw new Error('备份内容超过安全限制');
+    }
+    return {
+      path: item.path,
+      data: item.data,
+      mode: Number.isInteger(item.mode) ? Number(item.mode) & 0o777 : undefined,
+    };
+  });
+};
+
+const validateArchive = (value: unknown): SettingsBackupArchive => {
+  if (!isPlainObject(value)) throw new Error('不是有效的 EchoMusic 备份文件');
+  if (value.format !== SETTINGS_BACKUP_FORMAT) throw new Error('备份文件格式不受支持');
+  if (value.version !== SETTINGS_BACKUP_VERSION) throw new Error('备份版本不受支持');
+  if (!isPlainObject(value.includes)) throw new Error('备份范围信息无效');
+
+  const includes = {
+    settings: value.includes.settings === true,
+    plugins: value.includes.plugins === true,
+  };
+  if (!includes.settings && !includes.plugins) throw new Error('备份中没有可导入的内容');
+
+  const settings = includes.settings ? sanitizePortableAppSettings(value.settings) : undefined;
+  const desktopLyricSettings = includes.settings
+    ? sanitizeDesktopLyricSettings(value.desktopLyricSettings)
+    : undefined;
+  if (
+    settings &&
+    Buffer.byteLength(JSON.stringify({ settings, desktopLyricSettings })) > MAX_SETTINGS_JSON_BYTES
+  ) {
+    throw new Error('应用设置数据过大');
+  }
+
+  const counter = { files: 0, bytes: 0 };
+  const sourcePlugins = includes.plugins ? value.plugins : [];
+  if (includes.plugins && !Array.isArray(sourcePlugins)) throw new Error('插件备份数据无效');
+  if (Array.isArray(sourcePlugins) && sourcePlugins.length > MAX_PLUGIN_COUNT) {
+    throw new Error('备份中的插件数量过多');
+  }
+  const seenPluginIds = new Set<string>();
+  const plugins = (Array.isArray(sourcePlugins) ? sourcePlugins : []).map<ArchivedPlugin>(
+    (item) => {
+      if (!isPlainObject(item)) throw new Error('插件备份条目无效');
+      const id = normalizePluginId(item.id);
+      if (!id || id !== item.id || seenPluginIds.has(id)) throw new Error('插件标识无效或重复');
+      seenPluginIds.add(id);
+      const files = validateArchivedFiles(item.files, counter);
+      const manifests = files.filter((file) => file.path === 'manifest.json');
+      if (manifests.length !== 1) {
+        throw new Error(`插件“${id}”的备份必须包含唯一的 manifest.json`);
+      }
+      let manifest: unknown;
+      try {
+        manifest = JSON.parse(Buffer.from(manifests[0].data, 'base64').toString('utf8'));
+      } catch {
+        throw new Error(`插件“${id}”的 manifest.json 无法解析`);
+      }
+      assertBackupManifestMatchesPlugin(id, manifest);
+
+      return {
+        id,
+        name: String(item.name || id).slice(0, 160),
+        version: String(item.version || '').slice(0, 80),
+        enabled: item.enabled === true,
+        files,
+        storage: isPlainObject(item.storage)
+          ? (JSON.parse(JSON.stringify(item.storage)) as Record<string, unknown>)
+          : {},
+        sqliteFiles: validateArchivedFiles(item.sqliteFiles ?? [], counter).map((file) => {
+          if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]*\.sqlite$/.test(file.path)) {
+            throw new Error(`插件“${id}”包含无效的 SQLite 快照文件`);
+          }
+          return file;
+        }),
+      };
+    },
+  );
+
+  return {
+    format: SETTINGS_BACKUP_FORMAT,
+    version: SETTINGS_BACKUP_VERSION,
+    createdAt: String(value.createdAt || ''),
+    appVersion: String(value.appVersion || ''),
+    includes,
+    ...(settings ? { settings } : {}),
+    ...(desktopLyricSettings ? { desktopLyricSettings } : {}),
+    ...(includes.plugins ? { plugins } : {}),
+  };
+};
+
+const readArchive = async (
+  filePath: string,
+): Promise<{ archive: SettingsBackupArchive; digest: string }> => {
+  const stats = await fs.stat(filePath);
+  if (!stats.isFile()) throw new Error('请选择有效的备份文件');
+  if (stats.size > MAX_BACKUP_FILE_BYTES) throw new Error('备份文件超过 256 MB');
+  const compressed = await fs.readFile(filePath);
+  let json: Buffer;
+  try {
+    json = await gunzipAsync(compressed, { maxOutputLength: MAX_BACKUP_JSON_BYTES });
+  } catch {
+    throw new Error('备份文件已损坏或格式不正确');
+  }
+  if (json.byteLength > MAX_BACKUP_JSON_BYTES) throw new Error('备份解压后超过安全限制');
+  try {
+    return {
+      archive: validateArchive(JSON.parse(json.toString('utf8'))),
+      digest: createHash('sha256').update(compressed).digest('hex'),
+    };
+  } catch (error) {
+    if (error instanceof SyntaxError) throw new Error('备份文件内容无法解析');
+    throw error;
+  }
+};
+
+const buildSummary = (archive: SettingsBackupArchive): SettingsBackupSummary => ({
+  createdAt: archive.createdAt,
+  appVersion: archive.appVersion,
+  includes: archive.includes,
+  settingCount:
+    Object.keys(archive.settings ?? {}).length +
+    Object.keys(archive.desktopLyricSettings ?? {}).length,
+  pluginCount: archive.plugins?.length ?? 0,
+  pluginNames: (archive.plugins ?? []).map((plugin) => plugin.name),
+});
+
+const getDialogWindow = () => BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
+
+const cleanupInspections = () => {
+  const now = Date.now();
+  for (const [token, inspection] of inspectedBackups) {
+    if (inspection.expiresAt <= now) inspectedBackups.delete(token);
+  }
+};
+
+export const exportSettingsBackup = async (
+  request: SettingsBackupExportRequest,
+): Promise<SettingsBackupExportResult> => {
+  try {
+    if (!request?.settings && !request?.plugins) {
+      return { ok: false, canceled: false, error: '请至少选择一项导出内容' };
+    }
+    const date = new Date().toISOString().slice(0, 10);
+    const options = {
+      title: '导出 EchoMusic 设置',
+      defaultPath: `EchoMusic-backup-${date}.${SETTINGS_BACKUP_EXTENSION}`,
+      buttonLabel: '导出',
+      filters: [{ name: 'EchoMusic 备份', extensions: [SETTINGS_BACKUP_EXTENSION] }],
+    };
+    const win = getDialogWindow();
+    const picked = win
+      ? await dialog.showSaveDialog(win, options)
+      : await dialog.showSaveDialog(options);
+    if (picked.canceled || !picked.filePath) return { ok: false, canceled: true };
+
+    const archive: SettingsBackupArchive = {
+      format: SETTINGS_BACKUP_FORMAT,
+      version: SETTINGS_BACKUP_VERSION,
+      createdAt: new Date().toISOString(),
+      appVersion: app.getVersion(),
+      includes: { settings: Boolean(request.settings), plugins: Boolean(request.plugins) },
+    };
+    if (request.settings) {
+      archive.settings = sanitizePortableAppSettings(request.settingsData);
+      archive.desktopLyricSettings = sanitizeDesktopLyricSettings(
+        getDesktopLyricPersistedSettings(),
+      );
+      if (Buffer.byteLength(JSON.stringify(archive.settings)) > MAX_SETTINGS_JSON_BYTES) {
+        throw new Error('应用设置数据过大');
+      }
+    }
+    if (request.plugins) {
+      const descriptors = listPlugins().plugins.filter((plugin) => !plugin.invalid);
+      if (descriptors.length > MAX_PLUGIN_COUNT) throw new Error('已安装插件数量过多');
+      archive.plugins = [];
+      let totalFiles = 0;
+      for (const plugin of descriptors) {
+        const files = await readDirectoryFiles(plugin.directory);
+        const sqliteSnapshotRoot = await fs.mkdtemp(
+          join(app.getPath('temp'), `echo-sqlite-export-${plugin.id}-`),
+        );
+        let sqliteFiles: ArchivedFile[];
+        try {
+          snapshotPluginSqliteDatabases(plugin.id, sqliteSnapshotRoot);
+          sqliteFiles = await readDirectoryFiles(sqliteSnapshotRoot);
+        } finally {
+          await fs.rm(sqliteSnapshotRoot, { recursive: true, force: true }).catch(() => {});
+        }
+        totalFiles += files.length + sqliteFiles.length;
+        if (totalFiles > MAX_FILE_COUNT) throw new Error('插件文件数量过多');
+        archive.plugins.push({
+          id: plugin.id,
+          name: plugin.name,
+          version: plugin.version,
+          enabled: plugin.enabled,
+          files,
+          storage: exportPluginStorage(plugin.id),
+          sqliteFiles,
+        });
+      }
+    }
+
+    const json = Buffer.from(JSON.stringify(archive));
+    if (json.byteLength > MAX_BACKUP_JSON_BYTES) throw new Error('备份内容超过 512 MB');
+    const compressed = await gzipAsync(json, { level: 9 });
+    if (compressed.byteLength > MAX_BACKUP_FILE_BYTES) throw new Error('生成的备份文件超过 256 MB');
+    await fs.writeFile(picked.filePath, compressed);
+    return {
+      ok: true,
+      canceled: false,
+      filePath: picked.filePath,
+      summary: buildSummary(archive),
+    };
+  } catch (error) {
+    log.warn('[SettingsBackup] Export failed', error);
+    return {
+      ok: false,
+      canceled: false,
+      error: error instanceof Error ? error.message : '设置导出失败',
+    };
+  }
+};
+
+export const inspectSettingsBackup = async (): Promise<SettingsBackupInspectResult> => {
+  try {
+    cleanupInspections();
+    const options: OpenDialogOptions = {
+      title: '导入 EchoMusic 设置',
+      buttonLabel: '选择备份',
+      filters: [{ name: 'EchoMusic 备份', extensions: [SETTINGS_BACKUP_EXTENSION] }],
+      properties: ['openFile'],
+    };
+    const win = getDialogWindow();
+    const picked = win
+      ? await dialog.showOpenDialog(win, options)
+      : await dialog.showOpenDialog(options);
+    const filePath = picked.filePaths[0];
+    if (picked.canceled || !filePath) return { ok: false, canceled: true };
+    const { archive, digest } = await readArchive(filePath);
+    const token = randomUUID();
+    inspectedBackups.set(token, {
+      filePath,
+      archive,
+      digest,
+      expiresAt: Date.now() + INSPECTION_TTL_MS,
+    });
+    return { ok: true, canceled: false, token, summary: buildSummary(archive) };
+  } catch (error) {
+    log.warn('[SettingsBackup] Inspect failed', error);
+    return {
+      ok: false,
+      canceled: false,
+      error: error instanceof Error ? error.message : '无法读取备份文件',
+    };
+  }
+};
+
+const snapshotPluginForRollback = async (
+  pluginId: string,
+  rollbackRoot: string,
+): Promise<PluginRollbackSnapshot> => {
+  const descriptor = getPluginDescriptor(pluginId);
+  const codeSnapshotDirectory = join(rollbackRoot, pluginId, 'code');
+  const sqliteSnapshotDirectory = join(rollbackRoot, pluginId, 'sqlite');
+  if (descriptor) {
+    await fs.mkdir(dirname(codeSnapshotDirectory), { recursive: true });
+    await fs.cp(descriptor.directory, codeSnapshotDirectory, { recursive: true });
+  }
+  snapshotPluginSqliteDatabases(pluginId, sqliteSnapshotDirectory);
+  return {
+    id: pluginId,
+    directory: descriptor?.directory ?? join(getPluginDirectory(), pluginId),
+    existed: Boolean(descriptor),
+    enabledPreference: exportPluginEnabledPreference(pluginId),
+    storage: exportPluginStorage(pluginId),
+    codeSnapshotDirectory,
+    sqliteSnapshotDirectory,
+  };
+};
+
+const restorePluginFromRollback = async (snapshot: PluginRollbackSnapshot) => {
+  await closePluginWebServer(snapshot.id).catch(() => {});
+  closePluginSqliteDatabases(snapshot.id);
+  await terminatePluginProcesses(snapshot.id).catch(() => {});
+  await fs.rm(snapshot.directory, { recursive: true, force: true });
+  if (snapshot.existed) {
+    await fs.mkdir(dirname(snapshot.directory), { recursive: true });
+    await fs.cp(snapshot.codeSnapshotDirectory, snapshot.directory, { recursive: true });
+  }
+
+  replacePluginStorage(snapshot.id, snapshot.storage);
+  replacePluginEnabledPreference(snapshot.id, snapshot.enabledPreference);
+  const sqliteDirectory = getPluginSqliteDirectory(snapshot.id);
+  await fs.rm(sqliteDirectory, { recursive: true, force: true });
+  const sqliteFiles = await fs.readdir(snapshot.sqliteSnapshotDirectory).catch(() => []);
+  if (sqliteFiles.length > 0) {
+    await fs.mkdir(dirname(sqliteDirectory), { recursive: true });
+    await fs.cp(snapshot.sqliteSnapshotDirectory, sqliteDirectory, { recursive: true });
+  }
+};
+
+const importPlugin = async (plugin: ArchivedPlugin, stagingRoot: string) => {
+  const sourceDirectory = join(stagingRoot, plugin.id);
+  await fs.mkdir(sourceDirectory, { recursive: true });
+  await writeArchivedFiles(sourceDirectory, plugin.files);
+  await closePluginWebServer(plugin.id);
+  closePluginSqliteDatabases(plugin.id);
+  await terminatePluginProcesses(plugin.id);
+  replacePluginEnabledPreference(plugin.id, false);
+  const result = await installPluginsFromLocal([sourceDirectory], {
+    enableAfterInstall: false,
+    expectedPluginId: plugin.id,
+  });
+  const installed = result.results[0];
+  if (!installed?.ok) {
+    throw new Error(installed?.error || `插件“${plugin.name}”安装失败`);
+  }
+
+  replacePluginStorage(plugin.id, plugin.storage);
+  closePluginSqliteDatabases(plugin.id);
+  const sqliteDirectory = getPluginSqliteDirectory(plugin.id);
+  await fs.rm(sqliteDirectory, { recursive: true, force: true });
+  if (plugin.sqliteFiles.length > 0) {
+    await fs.mkdir(sqliteDirectory, { recursive: true });
+    await writeArchivedFiles(sqliteDirectory, plugin.sqliteFiles);
+  }
+  const enabledResult = await setPluginEnabled(plugin.id, plugin.enabled);
+  if (!enabledResult.ok) throw new Error(enabledResult.error);
+};
+
+export const importSettingsBackup = async (
+  request: SettingsBackupImportRequest,
+): Promise<SettingsBackupImportResult> => {
+  cleanupInspections();
+  const inspection = inspectedBackups.get(String(request?.token || ''));
+  if (!inspection) return { ok: false, error: '备份选择已失效，请重新选择文件' };
+  inspectedBackups.delete(String(request.token));
+
+  const archive = inspection.archive;
+  const importSettings = Boolean(request.settings && archive.includes.settings);
+  const importPlugins = Boolean(request.plugins && archive.includes.plugins);
+  if (!importSettings && !importPlugins) return { ok: false, error: '请至少选择一项导入内容' };
+
+  let pluginsImported = 0;
+  let stagingRoot = '';
+  const rollbackSnapshots: PluginRollbackSnapshot[] = [];
+  try {
+    // Re-read the file so replacement or tampering between preview and import is detected.
+    const fresh = await readArchive(inspection.filePath);
+    const freshArchive = fresh.archive;
+    if (fresh.digest !== inspection.digest) {
+      throw new Error('备份文件在预览后发生变化，请重新选择');
+    }
+
+    if (importPlugins) {
+      stagingRoot = await fs.mkdtemp(join(app.getPath('temp'), 'echo-settings-import-'));
+      const rollbackRoot = join(stagingRoot, 'rollback');
+      for (const plugin of freshArchive.plugins ?? []) {
+        rollbackSnapshots.push(await snapshotPluginForRollback(plugin.id, rollbackRoot));
+        await importPlugin(plugin, stagingRoot);
+        pluginsImported += 1;
+      }
+    }
+
+    if (importSettings) {
+      const key = getStorePersistenceKey('setting');
+      const current = getKvStorage().get<Record<string, unknown>>(key);
+      getKvStorage().set(key, {
+        ...(isPlainObject(current) ? current : {}),
+        ...sanitizePortableAppSettings(freshArchive.settings),
+      });
+      const importedSettings = sanitizePortableAppSettings(freshArchive.settings);
+      if (['tray', 'exit'].includes(String(importedSettings.closeBehavior))) {
+        setMainAppSetting('closeBehavior', importedSettings.closeBehavior as 'tray' | 'exit');
+      }
+      if (['system', 'light', 'dark'].includes(String(importedSettings.theme))) {
+        setMainAppSetting('theme', importedSettings.theme as 'system' | 'light' | 'dark');
+      }
+      const booleanMainSettingKeys: Array<
+        Exclude<keyof MainAppSettings, 'closeBehavior' | 'theme' | 'dpiScale'>
+      > = [
+        'rememberWindowSize',
+        'preventSleep',
+        'disableGpuAcceleration',
+        'autoLaunch',
+        'startMinimized',
+        'highDpiEnabled',
+        'devToolsEnabled',
+        'taskbarCoverPreview',
+        'taskbarProgress',
+      ];
+      for (const settingKey of booleanMainSettingKeys) {
+        if (typeof importedSettings[settingKey] !== 'boolean') continue;
+        setMainAppSetting(settingKey, importedSettings[settingKey]);
+      }
+      if (
+        typeof importedSettings.dpiScale === 'number' &&
+        Number.isFinite(importedSettings.dpiScale)
+      ) {
+        setMainAppSetting('dpiScale', Math.min(2, Math.max(0.5, importedSettings.dpiScale)));
+      }
+      setPersistedLogSettings(
+        normalizeLogSettings({
+          level: importedSettings.logLevel as AppLogLevel,
+          apiResponseBody: Boolean(importedSettings.logApiResponseBody),
+          diagnosticUntil: 0,
+        }),
+      );
+      if (isPlainObject(freshArchive.desktopLyricSettings)) {
+        patchDesktopLyricPersistedSettings(freshArchive.desktopLyricSettings);
+      }
+    }
+
+    return {
+      ok: true,
+      settingsImported: importSettings,
+      pluginsImported,
+      summary: buildSummary(freshArchive),
+    };
+  } catch (error) {
+    log.warn('[SettingsBackup] Import failed', error);
+    let rollbackError: unknown;
+    for (const snapshot of rollbackSnapshots.reverse()) {
+      try {
+        await restorePluginFromRollback(snapshot);
+      } catch (restoreError) {
+        rollbackError ??= restoreError;
+        log.error('[SettingsBackup] Plugin rollback failed', {
+          pluginId: snapshot.id,
+          error: restoreError,
+        });
+      }
+    }
+    return {
+      ok: false,
+      error: rollbackError
+        ? `${error instanceof Error ? error.message : '设置导入失败'}；部分插件回滚失败，请重新启动后检查插件`
+        : error instanceof Error
+          ? error.message
+          : '设置导入失败',
+      settingsImported: false,
+      pluginsImported: 0,
+    };
+  } finally {
+    if (stagingRoot) await fs.rm(stagingRoot, { recursive: true, force: true }).catch(() => {});
+  }
+};

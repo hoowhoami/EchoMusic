@@ -651,9 +651,11 @@ onUnmounted(() => {
       <div class="w-full max-w-105 max-h-full flex flex-col items-center">
         <!-- 首次使用提示横幅 -->
         <div
-          class="tip-banner mb-4 px-4 py-2 rounded-full bg-linear-to-r from-amber-500/15 via-amber-400/10 to-amber-500/5 dark:from-amber-400/15 dark:via-amber-400/10 dark:to-amber-300/5 border border-amber-500/25 dark:border-amber-400/25 backdrop-blur-xl inline-flex items-center gap-2 shadow-[0_6px_18px_rgba(251,191,36,0.08)]"
+          class="tip-banner mb-4 max-w-full px-4 py-3 rounded-2xl bg-linear-to-r from-amber-500/15 via-amber-400/10 to-amber-500/5 dark:from-amber-400/15 dark:via-amber-400/10 dark:to-amber-300/5 border border-amber-500/25 dark:border-amber-400/25 backdrop-blur-xl inline-flex items-start gap-2.5 shadow-[0_6px_18px_rgba(251,191,36,0.08)]"
         >
-          <div class="tip-banner-icon shrink-0 relative w-5 h-5 flex items-center justify-center">
+          <div
+            class="tip-banner-icon mt-0.5 shrink-0 relative w-5 h-5 flex items-center justify-center"
+          >
             <span
               class="absolute inset-0 rounded-full bg-amber-500/25 dark:bg-amber-400/30 tip-banner-glow"
             ></span>
@@ -664,10 +666,10 @@ onUnmounted(() => {
             </span>
           </div>
           <p class="text-[13px] font-bold text-amber-700 dark:text-amber-300 leading-snug">
-            首次使用请先注册<span
+            首次使用 EchoMusic？请先在手机端下载<span
               class="underline decoration-amber-500/60 dark:decoration-amber-400/60 underline-offset-2"
               >《酷狗概念版》</span
-            >账号
+            >，完成账号注册并成功登录后，再返回这里登录。
           </p>
         </div>
 

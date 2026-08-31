@@ -45,6 +45,7 @@ import type {
   PluginWebServerResponsePayload,
   PluginWebServerStatusResult,
 } from '../../shared/plugins';
+import { isBlockedObjectKey } from '../../shared/objectSafety';
 import { getKvStorage } from '../storage/kv';
 import log from '../logger';
 import {
@@ -256,6 +257,40 @@ const clearPluginStorage = (pluginId: string) => {
     getKvStorage().delete(getPluginStorageKey(pluginId, key));
   }
   getKvStorage().delete(indexKey);
+};
+
+export const exportPluginStorage = (pluginId: string): Record<string, unknown> =>
+  Object.fromEntries(
+    getPluginStorageKeys(pluginId).map((key) => [
+      key,
+      getKvStorage().get(getPluginStorageKey(pluginId, key)),
+    ]),
+  );
+
+export const replacePluginStorage = (pluginId: string, data: unknown) => {
+  clearPluginStorage(pluginId);
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return;
+  for (const [key, value] of Object.entries(data)) {
+    if (!key || key.length > 256 || isBlockedObjectKey(key)) {
+      continue;
+    }
+    setPluginData(pluginId, key, value);
+  }
+};
+
+export const exportPluginEnabledPreference = (pluginId: string): boolean | undefined => {
+  const id = normalizePluginId(pluginId);
+  const state = getEnabledState();
+  return id && Object.prototype.hasOwnProperty.call(state, id) ? Boolean(state[id]) : undefined;
+};
+
+export const replacePluginEnabledPreference = (pluginId: string, enabled: boolean | undefined) => {
+  const id = normalizePluginId(pluginId);
+  if (!id) return;
+  const state = getEnabledState();
+  if (enabled === undefined) delete state[id];
+  else state[id] = enabled;
+  setEnabledState(state);
 };
 
 export const getPluginSafeMode = () => Boolean(getKvStorage().get<boolean>(PLUGIN_SAFE_MODE_KEY));

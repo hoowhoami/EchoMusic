@@ -1,11 +1,13 @@
 use napi_derive::napi;
 use once_cell::sync::Lazy;
+use rusqlite::backup::{Backup, StepResult};
 use rusqlite::types::{Value as SqlValue, ValueRef};
 use rusqlite::{params, params_from_iter, Connection, OpenFlags, OptionalExtension, Transaction};
 use serde_json::{json, Map, Value};
 use std::collections::HashMap;
 use std::sync::Mutex;
-use std::time::Duration;
+use std::thread;
+use std::time::{Duration, Instant};
 
 const DEFAULT_PLAYBACK_QUEUE_ID: &str = "queue:default";
 
@@ -1537,4 +1539,79 @@ pub fn plugin_sqlite_transaction(
         map_sql(tx.commit())?;
         Ok(ok_json())
     })
+}
+
+#[napi]
+pub fn plugin_sqlite_backup(source_path: String, destination_path: String) -> NativeResult<String> {
+    let source = map_sql(Connection::open_with_flags(
+        source_path,
+        OpenFlags::SQLITE_OPEN_READ_ONLY,
+    ))?;
+    map_sql(source.busy_timeout(Duration::from_secs(30)))?;
+    let mut destination = map_sql(Connection::open(destination_path))?;
+    let backup = map_sql(Backup::new(&source, &mut destination))?;
+    let started_at = Instant::now();
+    loop {
+        match map_sql(backup.step(128))? {
+            StepResult::Done => break,
+            StepResult::More => thread::sleep(Duration::from_millis(5)),
+            StepResult::Busy | StepResult::Locked => {
+                if started_at.elapsed() >= Duration::from_secs(30) {
+                    return Err(err(
+                        "SQLite backup timed out waiting for the source database",
+                    ));
+                }
+                thread::sleep(Duration::from_millis(25));
+            }
+            _ => return Err(err("SQLite backup returned an unsupported state")),
+        }
+    }
+    Ok(ok_json())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::plugin_sqlite_backup;
+    use rusqlite::Connection;
+    use std::fs;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn plugin_backup_captures_committed_wal_data() {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "echo-sqlite-backup-test-{}-{nonce}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&root).expect("create test directory");
+        let source_path = root.join("source.sqlite");
+        let destination_path = root.join("destination.sqlite");
+
+        {
+            let source = Connection::open(&source_path).expect("open source");
+            source
+                .execute_batch(
+                    "PRAGMA journal_mode=WAL;
+                     CREATE TABLE values_to_backup (value TEXT NOT NULL);
+                     INSERT INTO values_to_backup VALUES ('committed-in-wal');",
+                )
+                .expect("write source");
+            plugin_sqlite_backup(
+                source_path.to_string_lossy().into_owned(),
+                destination_path.to_string_lossy().into_owned(),
+            )
+            .expect("create online backup");
+        }
+
+        let destination = Connection::open(&destination_path).expect("open destination");
+        let value: String = destination
+            .query_row("SELECT value FROM values_to_backup", [], |row| row.get(0))
+            .expect("read backup");
+        assert_eq!(value, "committed-in-wal");
+        drop(destination);
+        fs::remove_dir_all(root).expect("cleanup test directory");
+    }
 }

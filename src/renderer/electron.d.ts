@@ -47,6 +47,13 @@ import type {
 } from '../shared/audio-spectrum';
 import type { LogSettings } from '../shared/logging';
 import type { NetworkSettings } from '../shared/network';
+import type {
+  SettingsBackupExportRequest,
+  SettingsBackupExportResult,
+  SettingsBackupImportRequest,
+  SettingsBackupImportResult,
+  SettingsBackupInspectResult,
+} from '../shared/settingsBackup';
 import type { PlayerErrorPayload } from '../shared/player-error';
 import type {
   PlayerAudioGraphParameterPatch,
@@ -399,6 +406,11 @@ export interface IElectronAPI {
   };
   network?: {
     update: (settings: Partial<NetworkSettings>) => Promise<NetworkSettings>;
+  };
+  settingsBackup: {
+    export: (request: SettingsBackupExportRequest) => Promise<SettingsBackupExportResult>;
+    inspect: () => Promise<SettingsBackupInspectResult>;
+    import: (request: SettingsBackupImportRequest) => Promise<SettingsBackupImportResult>;
   };
   audioSpectrum?: {
     getStatus: () => Promise<AudioSpectrumStatus>;
