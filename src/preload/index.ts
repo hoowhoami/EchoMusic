@@ -45,8 +45,12 @@ import type {
   AudioSpectrumSubscribeResult,
 } from '../shared/audio-spectrum';
 import type { LogSettings } from '../shared/logging';
-import type { NetworkSettings } from '../shared/network';
+import type { NetworkSettingsState, NetworkSettingsUpdateRequest } from '../shared/network';
 import type {
+  PluginBackupCreateResult,
+  PluginBackupInspectResult,
+  PluginBackupRestoreResult,
+  PluginBackupScopeOptions,
   SettingsBackupExportRequest,
   SettingsBackupExportResult,
   SettingsBackupImportRequest,
@@ -654,8 +658,9 @@ contextBridge.exposeInMainWorld('electron', {
       invokeWithPlainPayload<LogSettings>('logging:update-settings', settings),
   },
   network: {
-    update: (settings: Partial<NetworkSettings>) =>
-      invokeWithPlainPayload<NetworkSettings>('network:update-settings', settings),
+    get: () => ipcRenderer.invoke('network:get-settings') as Promise<NetworkSettingsState>,
+    update: (request: NetworkSettingsUpdateRequest) =>
+      invokeWithPlainPayload<NetworkSettingsState>('network:update-settings', request),
   },
   settingsBackup: {
     export: (request: SettingsBackupExportRequest) =>
@@ -997,6 +1002,24 @@ contextBridge.exposeInMainWorld('electron', {
   },
   plugins: {
     list: () => ipcRenderer.invoke('plugins:list') as Promise<PluginListResult>,
+    backups: {
+      create: (pluginId: string, options?: PluginBackupScopeOptions) =>
+        invokeWithPlainPayload<PluginBackupCreateResult>('plugins:backups:create', {
+          pluginId,
+          ...options,
+        }),
+      inspect: (pluginId: string, data: ArrayBuffer | ArrayBufferView) =>
+        ipcRenderer.invoke('plugins:backups:inspect', {
+          pluginId,
+          data,
+        }) as Promise<PluginBackupInspectResult>,
+      restore: (pluginId: string, token: string, options?: PluginBackupScopeOptions) =>
+        invokeWithPlainPayload<PluginBackupRestoreResult>('plugins:backups:restore', {
+          pluginId,
+          token,
+          ...options,
+        }),
+    },
     getDirectory: () => ipcRenderer.invoke('plugins:get-directory') as Promise<string>,
     openDirectory: () => ipcRenderer.invoke('plugins:open-directory') as Promise<string>,
     getDroppedFilePaths: (files: File[]) =>

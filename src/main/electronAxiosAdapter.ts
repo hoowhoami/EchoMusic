@@ -1,7 +1,7 @@
 import { STATUS_CODES } from 'node:http';
 import { randomUUID } from 'node:crypto';
 import { Readable, Transform } from 'node:stream';
-import { net, session, type ClientRequest, type Session } from 'electron';
+import { net, type ClientRequest, type Session } from 'electron';
 import type {
   AxiosAdapter,
   AxiosError,
@@ -9,9 +9,12 @@ import type {
   AxiosStatic,
   InternalAxiosRequestConfig,
 } from 'axios';
-import { normalizeProxyUrl } from '../shared/network';
+import {
+  APP_NETWORK_SESSION_PARTITION,
+  attachProxyLoginHandler,
+  getManagedNetworkSession,
+} from './networkPolicy';
 
-const KUGOU_API_SESSION_PARTITION = 'echo-kugou-api';
 const CAPTURE_REQUEST_HEADER = 'x-echo-transport-request-id';
 const DEFAULT_MAX_REDIRECTS = 21;
 const BODYLESS_STATUS_CODES = new Set([101, 204, 205, 304]);
@@ -31,17 +34,6 @@ type AxiosRuntime = Pick<AxiosStatic, 'AxiosError' | 'AxiosHeaders'> & {
   getAdapter: (adapters: 'fetch', config?: InternalAxiosRequestConfig) => AxiosAdapter;
 };
 
-interface ProxyCredentials {
-  username: string;
-  password: string;
-}
-
-interface ProxyState {
-  key: string;
-  config: Electron.ProxyConfig;
-  credentials?: ProxyCredentials;
-}
-
 interface ErrorWithCode extends Error {
   code?: string;
 }
@@ -59,16 +51,11 @@ interface TransportContext {
   config: InternalAxiosRequestConfig;
   headerCapture: HeaderCapture;
   networkSession: Session;
-  proxyState: ProxyState;
 }
 
-let appliedProxyKey: string | null = null;
-let proxyQueue: Promise<void> = Promise.resolve();
-let captureSession: Session | null = null;
+const captureSessions = new WeakSet<Session>();
 const pendingTransportContexts = new Map<string, TransportContext>();
 const headerCapturesByRequestId = new Map<number, HeaderCapture>();
-
-const getNetworkSession = (): Session => session.fromPartition(KUGOU_API_SESSION_PARTITION);
 
 const captureSetCookieHeaders = (
   source: Record<string, string | string[]> | undefined,
@@ -85,8 +72,8 @@ const findHeaderKey = (headers: Record<string, unknown>, target: string) =>
   Object.keys(headers).find((key) => key.toLowerCase() === target);
 
 const ensureHeaderCapture = (networkSession: Session) => {
-  if (captureSession === networkSession) return;
-  captureSession = networkSession;
+  if (captureSessions.has(networkSession)) return;
+  captureSessions.add(networkSession);
 
   const filter = { urls: ['http://*/*', 'https://*/*'] };
   networkSession.webRequest.onBeforeSendHeaders(filter, (details, callback) => {
@@ -108,60 +95,6 @@ const ensureHeaderCapture = (networkSession: Session) => {
   };
   networkSession.webRequest.onCompleted(filter, releaseRequestCapture);
   networkSession.webRequest.onErrorOccurred(filter, releaseRequestCapture);
-};
-
-const safeDecodeURIComponent = (value: string) => {
-  try {
-    return decodeURIComponent(value);
-  } catch {
-    return value;
-  }
-};
-
-const getProxyState = (proxyUrl: string): ProxyState => {
-  const normalized = normalizeProxyUrl(proxyUrl);
-  if (!normalized) {
-    return { key: 'system', config: { mode: 'system' } };
-  }
-
-  const parsed = new URL(normalized);
-  const proxyRules = `${parsed.protocol}//${parsed.host}`;
-  const credentials =
-    parsed.username || parsed.password
-      ? {
-          username: safeDecodeURIComponent(parsed.username),
-          password: safeDecodeURIComponent(parsed.password),
-        }
-      : undefined;
-  const credentialKey = credentials ? `\0${credentials.username}\0${credentials.password}` : '';
-
-  return {
-    key: `fixed:${proxyRules}${credentialKey}`,
-    config: { mode: 'fixed_servers', proxyRules },
-    credentials,
-  };
-};
-
-const ensureProxy = async (proxyUrl: string): Promise<ProxyState> => {
-  const desiredState = getProxyState(proxyUrl);
-  const applyTask = proxyQueue.then(async () => {
-    if (appliedProxyKey === desiredState.key) return;
-
-    const networkSession = getNetworkSession();
-    const hadPreviousConfiguration = appliedProxyKey !== null;
-    await networkSession.setProxy(desiredState.config);
-
-    // Chromium may otherwise reuse pooled sockets created with the previous proxy.
-    // This intentionally happens only after a real settings change.
-    if (hadPreviousConfiguration) await networkSession.closeAllConnections();
-    appliedProxyKey = desiredState.key;
-  });
-
-  // Keep future changes serial even if this application attempt fails. The failed key is
-  // not committed, so the next request can retry instead of getting stuck permanently.
-  proxyQueue = applyTask.catch(() => undefined);
-  await applyTask;
-  return desiredState;
 };
 
 const getErrorCode = (error: unknown): string | undefined => {
@@ -337,7 +270,7 @@ const chromiumFetch = async (input: URL | Request | string): Promise<Response> =
   if (!context)
     throw createCodedError('Unknown Chromium transport request context', 'ERR_BAD_OPTION');
 
-  const { config, networkSession, proxyState } = context;
+  const { config, networkSession } = context;
   const signal = fetchRequest.signal;
   if (signal.aborted) throw getAbortReason(signal);
 
@@ -391,13 +324,7 @@ const chromiumFetch = async (input: URL | Request | string): Promise<Response> =
 
     signal.addEventListener('abort', onAbort, { once: true });
 
-    request.on('login', (authInfo, callback) => {
-      if (authInfo.isProxy && proxyState.credentials) {
-        callback(proxyState.credentials.username, proxyState.credentials.password);
-      } else {
-        callback();
-      }
-    });
+    attachProxyLoginHandler(request);
 
     request.on('redirect', (status, nextMethod, _redirectUrl, responseHeaders) => {
       if (redirectMode === 'manual') {
@@ -478,12 +405,12 @@ const normalizeAxiosResponse = (
 
 export const createElectronAxiosAdapter = (
   axiosModule: AxiosRuntime,
-  getProxyUrl: () => string,
+  partition = APP_NETWORK_SESSION_PARTITION,
 ): AxiosAdapter => {
   return async (config) => {
-    let proxyState: ProxyState;
+    let networkSession: Session;
     try {
-      proxyState = await ensureProxy(getProxyUrl());
+      networkSession = await getManagedNetworkSession(partition);
     } catch (error) {
       throw axiosModule.AxiosError.from(
         error,
@@ -492,7 +419,6 @@ export const createElectronAxiosAdapter = (
       );
     }
 
-    const networkSession = getNetworkSession();
     ensureHeaderCapture(networkSession);
     const captureToken = randomUUID();
     const headerCapture: HeaderCapture = { setCookies: [] };
@@ -514,7 +440,6 @@ export const createElectronAxiosAdapter = (
       config: adapterConfig,
       headerCapture,
       networkSession,
-      proxyState,
     });
     const fetchAdapter = axiosModule.getAdapter('fetch', adapterConfig);
 

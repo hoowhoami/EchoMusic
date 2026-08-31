@@ -22,6 +22,12 @@ import {
   SETTINGS_BACKUP_FORMAT,
   SETTINGS_BACKUP_VERSION,
   sanitizePortableAppSettings,
+  type PluginBackupCreateRequest,
+  type PluginBackupCreateResult,
+  type PluginBackupInspectRequest,
+  type PluginBackupInspectResult,
+  type PluginBackupRestoreRequest,
+  type PluginBackupRestoreResult,
   type SettingsBackupExportRequest,
   type SettingsBackupExportResult,
   type SettingsBackupImportRequest,
@@ -35,6 +41,7 @@ import {
   exportPluginStorage,
   getPluginDescriptor,
   getPluginDirectory,
+  getPluginSafeMode,
   installPluginsFromLocal,
   listPlugins,
   normalizePluginId,
@@ -61,6 +68,7 @@ const MAX_PLUGIN_COUNT = 200;
 const MAX_FILE_COUNT = 20_000;
 const MAX_SINGLE_FILE_BYTES = 80 * 1024 * 1024;
 const INSPECTION_TTL_MS = 10 * 60 * 1000;
+const MAX_ACTIVE_INSPECTIONS = 8;
 const BASE64_RE = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
 
 interface ArchivedFile {
@@ -95,6 +103,8 @@ interface InspectedBackup {
   archive: SettingsBackupArchive;
   expiresAt: number;
   digest: string;
+  ownerPluginId?: string;
+  temporaryDirectory?: string;
 }
 
 interface PluginRollbackSnapshot {
@@ -228,7 +238,7 @@ const validateArchive = (value: unknown): SettingsBackupArchive => {
     settings: value.includes.settings === true,
     plugins: value.includes.plugins === true,
   };
-  if (!includes.settings && !includes.plugins) throw new Error('备份中没有可导入的内容');
+  if (!includes.settings && !includes.plugins) throw new Error('备份中没有可恢复的内容');
 
   const settings = includes.settings ? sanitizePortableAppSettings(value.settings) : undefined;
   const desktopLyricSettings = includes.settings
@@ -298,13 +308,10 @@ const validateArchive = (value: unknown): SettingsBackupArchive => {
   };
 };
 
-const readArchive = async (
-  filePath: string,
+const readArchiveBuffer = async (
+  compressed: Buffer,
 ): Promise<{ archive: SettingsBackupArchive; digest: string }> => {
-  const stats = await fs.stat(filePath);
-  if (!stats.isFile()) throw new Error('请选择有效的备份文件');
-  if (stats.size > MAX_BACKUP_FILE_BYTES) throw new Error('备份文件超过 256 MB');
-  const compressed = await fs.readFile(filePath);
+  if (compressed.byteLength > MAX_BACKUP_FILE_BYTES) throw new Error('备份文件超过 256 MB');
   let json: Buffer;
   try {
     json = await gunzipAsync(compressed, { maxOutputLength: MAX_BACKUP_JSON_BYTES });
@@ -323,6 +330,15 @@ const readArchive = async (
   }
 };
 
+const readArchive = async (
+  filePath: string,
+): Promise<{ archive: SettingsBackupArchive; digest: string }> => {
+  const stats = await fs.stat(filePath);
+  if (!stats.isFile()) throw new Error('请选择有效的备份文件');
+  if (stats.size > MAX_BACKUP_FILE_BYTES) throw new Error('备份文件超过 256 MB');
+  return readArchiveBuffer(await fs.readFile(filePath));
+};
+
 const buildSummary = (archive: SettingsBackupArchive): SettingsBackupSummary => ({
   createdAt: archive.createdAt,
   appVersion: archive.appVersion,
@@ -336,11 +352,78 @@ const buildSummary = (archive: SettingsBackupArchive): SettingsBackupSummary => 
 
 const getDialogWindow = () => BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
 
-const cleanupInspections = () => {
+const removeInspectionTemporaryDirectory = async (inspection: InspectedBackup) => {
+  if (!inspection.temporaryDirectory) return;
+  await fs.rm(inspection.temporaryDirectory, { recursive: true, force: true }).catch(() => {});
+};
+
+const cleanupInspections = async () => {
   const now = Date.now();
   for (const [token, inspection] of inspectedBackups) {
-    if (inspection.expiresAt <= now) inspectedBackups.delete(token);
+    if (inspection.expiresAt > now) continue;
+    inspectedBackups.delete(token);
+    await removeInspectionTemporaryDirectory(inspection);
   }
+};
+
+const createBackupArchive = async (
+  request: SettingsBackupExportRequest,
+): Promise<SettingsBackupArchive> => {
+  if (!request?.settings && !request?.plugins) throw new Error('请至少选择一项备份内容');
+
+  const archive: SettingsBackupArchive = {
+    format: SETTINGS_BACKUP_FORMAT,
+    version: SETTINGS_BACKUP_VERSION,
+    createdAt: new Date().toISOString(),
+    appVersion: app.getVersion(),
+    includes: { settings: Boolean(request.settings), plugins: Boolean(request.plugins) },
+  };
+  if (request.settings) {
+    archive.settings = sanitizePortableAppSettings(request.settingsData);
+    archive.desktopLyricSettings = sanitizeDesktopLyricSettings(getDesktopLyricPersistedSettings());
+    if (Buffer.byteLength(JSON.stringify(archive.settings)) > MAX_SETTINGS_JSON_BYTES) {
+      throw new Error('应用设置数据过大');
+    }
+  }
+  if (request.plugins) {
+    const descriptors = listPlugins().plugins.filter((plugin) => !plugin.invalid);
+    if (descriptors.length > MAX_PLUGIN_COUNT) throw new Error('已安装插件数量过多');
+    archive.plugins = [];
+    let totalFiles = 0;
+    for (const plugin of descriptors) {
+      const files = await readDirectoryFiles(plugin.directory);
+      const sqliteSnapshotRoot = await fs.mkdtemp(
+        join(app.getPath('temp'), `echo-sqlite-export-${plugin.id}-`),
+      );
+      let sqliteFiles: ArchivedFile[];
+      try {
+        snapshotPluginSqliteDatabases(plugin.id, sqliteSnapshotRoot);
+        sqliteFiles = await readDirectoryFiles(sqliteSnapshotRoot);
+      } finally {
+        await fs.rm(sqliteSnapshotRoot, { recursive: true, force: true }).catch(() => {});
+      }
+      totalFiles += files.length + sqliteFiles.length;
+      if (totalFiles > MAX_FILE_COUNT) throw new Error('插件文件数量过多');
+      archive.plugins.push({
+        id: plugin.id,
+        name: plugin.name,
+        version: plugin.version,
+        enabled: plugin.enabled,
+        files,
+        storage: exportPluginStorage(plugin.id),
+        sqliteFiles,
+      });
+    }
+  }
+  return archive;
+};
+
+const compressBackupArchive = async (archive: SettingsBackupArchive) => {
+  const json = Buffer.from(JSON.stringify(archive));
+  if (json.byteLength > MAX_BACKUP_JSON_BYTES) throw new Error('备份内容超过 512 MB');
+  const compressed = await gzipAsync(json, { level: 9 });
+  if (compressed.byteLength > MAX_BACKUP_FILE_BYTES) throw new Error('生成的备份文件超过 256 MB');
+  return compressed;
 };
 
 export const exportSettingsBackup = async (
@@ -348,13 +431,13 @@ export const exportSettingsBackup = async (
 ): Promise<SettingsBackupExportResult> => {
   try {
     if (!request?.settings && !request?.plugins) {
-      return { ok: false, canceled: false, error: '请至少选择一项导出内容' };
+      return { ok: false, canceled: false, error: '请至少选择一项备份内容' };
     }
     const date = new Date().toISOString().slice(0, 10);
     const options = {
-      title: '导出 EchoMusic 设置',
+      title: '创建 EchoMusic 备份',
       defaultPath: `EchoMusic-backup-${date}.${SETTINGS_BACKUP_EXTENSION}`,
-      buttonLabel: '导出',
+      buttonLabel: '创建备份',
       filters: [{ name: 'EchoMusic 备份', extensions: [SETTINGS_BACKUP_EXTENSION] }],
     };
     const win = getDialogWindow();
@@ -363,57 +446,8 @@ export const exportSettingsBackup = async (
       : await dialog.showSaveDialog(options);
     if (picked.canceled || !picked.filePath) return { ok: false, canceled: true };
 
-    const archive: SettingsBackupArchive = {
-      format: SETTINGS_BACKUP_FORMAT,
-      version: SETTINGS_BACKUP_VERSION,
-      createdAt: new Date().toISOString(),
-      appVersion: app.getVersion(),
-      includes: { settings: Boolean(request.settings), plugins: Boolean(request.plugins) },
-    };
-    if (request.settings) {
-      archive.settings = sanitizePortableAppSettings(request.settingsData);
-      archive.desktopLyricSettings = sanitizeDesktopLyricSettings(
-        getDesktopLyricPersistedSettings(),
-      );
-      if (Buffer.byteLength(JSON.stringify(archive.settings)) > MAX_SETTINGS_JSON_BYTES) {
-        throw new Error('应用设置数据过大');
-      }
-    }
-    if (request.plugins) {
-      const descriptors = listPlugins().plugins.filter((plugin) => !plugin.invalid);
-      if (descriptors.length > MAX_PLUGIN_COUNT) throw new Error('已安装插件数量过多');
-      archive.plugins = [];
-      let totalFiles = 0;
-      for (const plugin of descriptors) {
-        const files = await readDirectoryFiles(plugin.directory);
-        const sqliteSnapshotRoot = await fs.mkdtemp(
-          join(app.getPath('temp'), `echo-sqlite-export-${plugin.id}-`),
-        );
-        let sqliteFiles: ArchivedFile[];
-        try {
-          snapshotPluginSqliteDatabases(plugin.id, sqliteSnapshotRoot);
-          sqliteFiles = await readDirectoryFiles(sqliteSnapshotRoot);
-        } finally {
-          await fs.rm(sqliteSnapshotRoot, { recursive: true, force: true }).catch(() => {});
-        }
-        totalFiles += files.length + sqliteFiles.length;
-        if (totalFiles > MAX_FILE_COUNT) throw new Error('插件文件数量过多');
-        archive.plugins.push({
-          id: plugin.id,
-          name: plugin.name,
-          version: plugin.version,
-          enabled: plugin.enabled,
-          files,
-          storage: exportPluginStorage(plugin.id),
-          sqliteFiles,
-        });
-      }
-    }
-
-    const json = Buffer.from(JSON.stringify(archive));
-    if (json.byteLength > MAX_BACKUP_JSON_BYTES) throw new Error('备份内容超过 512 MB');
-    const compressed = await gzipAsync(json, { level: 9 });
-    if (compressed.byteLength > MAX_BACKUP_FILE_BYTES) throw new Error('生成的备份文件超过 256 MB');
+    const archive = await createBackupArchive(request);
+    const compressed = await compressBackupArchive(archive);
     await fs.writeFile(picked.filePath, compressed);
     return {
       ok: true,
@@ -426,16 +460,16 @@ export const exportSettingsBackup = async (
     return {
       ok: false,
       canceled: false,
-      error: error instanceof Error ? error.message : '设置导出失败',
+      error: error instanceof Error ? error.message : '创建备份失败',
     };
   }
 };
 
 export const inspectSettingsBackup = async (): Promise<SettingsBackupInspectResult> => {
   try {
-    cleanupInspections();
+    await cleanupInspections();
     const options: OpenDialogOptions = {
-      title: '导入 EchoMusic 设置',
+      title: '从备份恢复 EchoMusic',
       buttonLabel: '选择备份',
       filters: [{ name: 'EchoMusic 备份', extensions: [SETTINGS_BACKUP_EXTENSION] }],
       properties: ['openFile'],
@@ -461,6 +495,153 @@ export const inspectSettingsBackup = async (): Promise<SettingsBackupInspectResu
       ok: false,
       canceled: false,
       error: error instanceof Error ? error.message : '无法读取备份文件',
+    };
+  }
+};
+
+const getPluginBackupAccess = (pluginId: string) => {
+  if (getPluginSafeMode()) return { ok: false, error: '插件安全模式已开启' } as const;
+  const plugin = getPluginDescriptor(pluginId);
+  if (!plugin) return { ok: false, error: '插件不存在' } as const;
+  if (plugin.invalid) return { ok: false, error: plugin.error || '插件无效' } as const;
+  if (!plugin.compatibility.compatible) {
+    return {
+      ok: false,
+      error: plugin.compatibility.message || '插件与当前 EchoMusic 版本不兼容',
+    } as const;
+  }
+  if (!plugin.enabled) return { ok: false, error: '插件未启用' } as const;
+  if (plugin.manifest.capabilities?.backups !== true) {
+    return { ok: false, error: '插件未声明备份与恢复能力' } as const;
+  }
+  return { ok: true, plugin } as const;
+};
+
+const confirmPluginBackupOperation = async (
+  pluginName: string,
+  operation: 'create' | 'restore',
+  detail: string,
+) => {
+  const options = {
+    type: 'warning' as const,
+    title: operation === 'create' ? '允许插件创建备份？' : '允许插件恢复备份？',
+    message:
+      operation === 'create'
+        ? `插件“${pluginName}”请求创建 EchoMusic 备份`
+        : `插件“${pluginName}”请求从备份恢复 EchoMusic`,
+    detail,
+    buttons: ['取消', operation === 'create' ? '允许创建' : '恢复并重启'],
+    defaultId: 0,
+    cancelId: 0,
+    noLink: true,
+  };
+  const win = getDialogWindow();
+  const result = win
+    ? await dialog.showMessageBox(win, options)
+    : await dialog.showMessageBox(options);
+  return result.response === 1;
+};
+
+const toBackupBuffer = (value: unknown) => {
+  if (Buffer.isBuffer(value)) return Buffer.from(value);
+  if (value instanceof ArrayBuffer) return Buffer.from(new Uint8Array(value));
+  if (ArrayBuffer.isView(value)) {
+    return Buffer.from(new Uint8Array(value.buffer, value.byteOffset, value.byteLength));
+  }
+  throw new Error('备份数据必须是 ArrayBuffer 或 ArrayBufferView');
+};
+
+export const createPluginBackup = async (
+  request: PluginBackupCreateRequest,
+): Promise<PluginBackupCreateResult> => {
+  const access = getPluginBackupAccess(String(request?.pluginId || ''));
+  if (!access.ok) return { ok: false, canceled: false, error: access.error };
+
+  const scope = {
+    settings: request.settings !== false,
+    plugins: request.plugins !== false,
+  };
+  if (!scope.settings && !scope.plugins) {
+    return { ok: false, canceled: false, error: '请至少选择一项备份内容' };
+  }
+  const selected = [scope.settings ? '应用设置' : '', scope.plugins ? '插件及插件数据' : '']
+    .filter(Boolean)
+    .join('、');
+  const confirmed = await confirmPluginBackupOperation(
+    access.plugin.name,
+    'create',
+    `将允许该插件读取并保存：${selected}。备份文件未加密，请仅允许你信任的插件执行此操作。`,
+  );
+  if (!confirmed) return { ok: false, canceled: true };
+
+  try {
+    const settingsKey = getStorePersistenceKey('setting');
+    const archive = await createBackupArchive({
+      ...scope,
+      settingsData: scope.settings
+        ? (getKvStorage().get<Record<string, unknown>>(settingsKey) ?? undefined)
+        : undefined,
+    });
+    const compressed = await compressBackupArchive(archive);
+    const bytes = Uint8Array.from(compressed);
+    return {
+      ok: true,
+      canceled: false,
+      data: bytes.buffer,
+      fileName: `EchoMusic-backup-${new Date().toISOString().slice(0, 10)}.${SETTINGS_BACKUP_EXTENSION}`,
+      summary: buildSummary(archive),
+    };
+  } catch (error) {
+    log.warn('[SettingsBackup] Plugin create failed', {
+      pluginId: access.plugin.id,
+      error,
+    });
+    return {
+      ok: false,
+      canceled: false,
+      error: error instanceof Error ? error.message : '创建备份失败',
+    };
+  }
+};
+
+export const inspectPluginBackup = async (
+  request: PluginBackupInspectRequest,
+): Promise<PluginBackupInspectResult> => {
+  const access = getPluginBackupAccess(String(request?.pluginId || ''));
+  if (!access.ok) return { ok: false, error: access.error };
+
+  let temporaryDirectory = '';
+  try {
+    await cleanupInspections();
+    if (inspectedBackups.size >= MAX_ACTIVE_INSPECTIONS) {
+      throw new Error('待恢复的备份过多，请稍后重试');
+    }
+    const compressed = toBackupBuffer(request.data);
+    const { archive, digest } = await readArchiveBuffer(compressed);
+    temporaryDirectory = await fs.mkdtemp(join(app.getPath('temp'), 'echo-plugin-backup-'));
+    const filePath = join(temporaryDirectory, `backup.${SETTINGS_BACKUP_EXTENSION}`);
+    await fs.writeFile(filePath, compressed);
+    const token = randomUUID();
+    inspectedBackups.set(token, {
+      filePath,
+      archive,
+      digest,
+      ownerPluginId: access.plugin.id,
+      temporaryDirectory,
+      expiresAt: Date.now() + INSPECTION_TTL_MS,
+    });
+    return { ok: true, token, summary: buildSummary(archive) };
+  } catch (error) {
+    if (temporaryDirectory) {
+      await fs.rm(temporaryDirectory, { recursive: true, force: true }).catch(() => {});
+    }
+    log.warn('[SettingsBackup] Plugin inspect failed', {
+      pluginId: access.plugin.id,
+      error,
+    });
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : '无法读取备份数据',
     };
   }
 };
@@ -538,18 +719,25 @@ const importPlugin = async (plugin: ArchivedPlugin, stagingRoot: string) => {
   if (!enabledResult.ok) throw new Error(enabledResult.error);
 };
 
-export const importSettingsBackup = async (
+const importSettingsBackupForOwner = async (
   request: SettingsBackupImportRequest,
+  ownerPluginId?: string,
 ): Promise<SettingsBackupImportResult> => {
-  cleanupInspections();
+  await cleanupInspections();
   const inspection = inspectedBackups.get(String(request?.token || ''));
   if (!inspection) return { ok: false, error: '备份选择已失效，请重新选择文件' };
+  if (inspection.ownerPluginId !== ownerPluginId) {
+    return { ok: false, error: '备份恢复请求与选择来源不匹配' };
+  }
   inspectedBackups.delete(String(request.token));
 
   const archive = inspection.archive;
   const importSettings = Boolean(request.settings && archive.includes.settings);
   const importPlugins = Boolean(request.plugins && archive.includes.plugins);
-  if (!importSettings && !importPlugins) return { ok: false, error: '请至少选择一项导入内容' };
+  if (!importSettings && !importPlugins) {
+    await removeInspectionTemporaryDirectory(inspection);
+    return { ok: false, error: '请至少选择一项恢复内容' };
+  }
 
   let pluginsImported = 0;
   let stagingRoot = '';
@@ -644,14 +832,57 @@ export const importSettingsBackup = async (
     return {
       ok: false,
       error: rollbackError
-        ? `${error instanceof Error ? error.message : '设置导入失败'}；部分插件回滚失败，请重新启动后检查插件`
+        ? `${error instanceof Error ? error.message : '从备份恢复失败'}；部分插件回滚失败，请重新启动后检查插件`
         : error instanceof Error
           ? error.message
-          : '设置导入失败',
+          : '从备份恢复失败',
       settingsImported: false,
       pluginsImported: 0,
     };
   } finally {
     if (stagingRoot) await fs.rm(stagingRoot, { recursive: true, force: true }).catch(() => {});
+    await removeInspectionTemporaryDirectory(inspection);
   }
+};
+
+export const importSettingsBackup = (
+  request: SettingsBackupImportRequest,
+): Promise<SettingsBackupImportResult> => importSettingsBackupForOwner(request);
+
+export const restorePluginBackup = async (
+  request: PluginBackupRestoreRequest,
+): Promise<PluginBackupRestoreResult> => {
+  const access = getPluginBackupAccess(String(request?.pluginId || ''));
+  if (!access.ok) return { ok: false, canceled: false, error: access.error };
+
+  await cleanupInspections();
+  const inspection = inspectedBackups.get(String(request?.token || ''));
+  if (!inspection || inspection.ownerPluginId !== access.plugin.id) {
+    return { ok: false, canceled: false, error: '备份选择已失效，请重新检查备份数据' };
+  }
+  const scope = {
+    settings: request.settings !== false && inspection.archive.includes.settings,
+    plugins: request.plugins !== false && inspection.archive.includes.plugins,
+  };
+  if (!scope.settings && !scope.plugins) {
+    return { ok: false, canceled: false, error: '请至少选择一项恢复内容' };
+  }
+  const selected = [scope.settings ? '应用设置' : '', scope.plugins ? '插件及插件数据' : '']
+    .filter(Boolean)
+    .join('、');
+  const summary = buildSummary(inspection.archive);
+  const confirmed = await confirmPluginBackupOperation(
+    access.plugin.name,
+    'restore',
+    `将恢复：${selected}。备份来自 EchoMusic ${summary.appVersion || '未知版本'}，创建于 ${summary.createdAt || '未知时间'}。同名设置与插件会被覆盖。`,
+  );
+  if (!confirmed) return { ok: false, canceled: true };
+
+  const result = await importSettingsBackupForOwner(
+    { token: request.token, ...scope },
+    access.plugin.id,
+  );
+  return result.ok
+    ? { ...result, canceled: false, restartScheduled: true }
+    : { ...result, canceled: false };
 };

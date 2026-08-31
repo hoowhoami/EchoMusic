@@ -14,14 +14,14 @@ impl<T> ReadSeek for T where T: Read + Seek + Send {}
 #[derive(Clone, Debug)]
 pub struct StreamOptions {
     pub network_timeout: Duration,
-    pub http_proxy: Option<String>,
+    pub http_proxies: Vec<Option<String>>,
 }
 
 impl Default for StreamOptions {
     fn default() -> Self {
         Self {
             network_timeout: Duration::from_secs(60),
-            http_proxy: None,
+            http_proxies: vec![None],
         }
     }
 }

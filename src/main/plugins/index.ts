@@ -46,6 +46,10 @@ import type {
   PluginWebServerStatusResult,
 } from '../../shared/plugins';
 import { isBlockedObjectKey } from '../../shared/objectSafety';
+import {
+  applyGithubAcceleratorUrl as applyGithubProxyUrl,
+  runGithubAcceleratorFallback,
+} from '../../shared/github-accelerator';
 import { getKvStorage } from '../storage/kv';
 import log from '../logger';
 import {
@@ -82,6 +86,7 @@ import { createPluginFileApi } from './fs';
 import { createPluginProcessApi } from './process';
 import { createPluginInstaller } from './installer';
 import { requestPluginNetwork } from './network';
+import { networkFetch } from '../networkPolicy';
 import {
   closePluginWebServer,
   closePluginWebServers,
@@ -838,37 +843,6 @@ const toGithubBlobUrl = (repo: GithubRepository, filePath: string) => {
   return `https://github.com/${repo.owner}/${repo.repo}/blob/HEAD/${normalizedPath}`;
 };
 
-const isGithubHostedUrl = (value: string) => {
-  try {
-    const { hostname } = new URL(value);
-    return (
-      hostname === 'github.com' ||
-      hostname === 'raw.githubusercontent.com' ||
-      hostname === 'codeload.github.com' ||
-      hostname.endsWith('.githubusercontent.com')
-    );
-  } catch {
-    return false;
-  }
-};
-
-const normalizeGithubProxyUrl = (githubProxyUrl?: string) =>
-  String(githubProxyUrl || '')
-    .trim()
-    .replace(/\/+$/, '');
-
-const toGithubProxyUrl = (url: string, githubProxyUrl: string) =>
-  `${normalizeGithubProxyUrl(githubProxyUrl)}/${url}`;
-
-const applyGithubProxyUrl = (url: string, githubProxyUrl?: string) => {
-  const target = String(url || '').trim();
-  const proxy = normalizeGithubProxyUrl(githubProxyUrl);
-  if (!target || !proxy || !/^https?:\/\//i.test(target) || !isGithubHostedUrl(target)) {
-    return target;
-  }
-  return toGithubProxyUrl(target, proxy);
-};
-
 const normalizeMarketplaceStatsApiUrl = (value?: string) =>
   String(
     value || process.env.ECHOMUSIC_PLUGIN_STATS_API_URL || DEFAULT_PLUGIN_MARKETPLACE_STATS_API_URL,
@@ -1068,7 +1042,7 @@ const fetchWithTimeout = async (
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    return await fetch(url, {
+    return await networkFetch(url, {
       ...options,
       signal: controller.signal,
     });
@@ -1415,7 +1389,7 @@ const fetchMarketplaceText = async (url: string, githubProxyUrl?: string, forceN
   // forceNetwork（用户手动刷新）时附加唯一查询参数破除 GitHub CDN/本地 HTTP 缓存，
   // 并带上 no-cache 请求头，确保拿到仓库最新内容。
   const bustedUrl = forceNetwork ? appendUrlCacheKey(url, `cb-${Date.now()}`) : url;
-  const targetUrl = applyGithubProxyUrl(bustedUrl, githubProxyUrl);
+  const acceleratedUrl = applyGithubProxyUrl(bustedUrl, githubProxyUrl);
   const headers: Record<string, string> = {
     Accept: 'application/json,text/plain,*/*',
     'User-Agent': 'EchoMusic-Plugin-Marketplace',
@@ -1424,16 +1398,24 @@ const fetchMarketplaceText = async (url: string, githubProxyUrl?: string, forceN
     headers['Cache-Control'] = 'no-cache';
     headers.Pragma = 'no-cache';
   }
-  const response = await fetchWithTimeout(
-    targetUrl,
-    { headers },
-    PLUGIN_MARKETPLACE_FETCH_TIMEOUT_MS,
-    '插件源请求超时，请检查网络或 GitHub 代理',
-  );
-  if (!response.ok) {
-    throw new Error(`请求失败 (${response.status})`);
-  }
-  return response.text();
+  const fetchText = async (targetUrl: string) => {
+    const response = await fetchWithTimeout(
+      targetUrl,
+      { headers },
+      PLUGIN_MARKETPLACE_FETCH_TIMEOUT_MS,
+      '插件源请求超时，请检查网络或 GitHub 加速地址',
+    );
+    if (!response.ok) throw new Error(`请求失败 (${response.status})`);
+    return response.text();
+  };
+  return runGithubAcceleratorFallback({
+    acceleratorEnabled: acceleratedUrl !== bustedUrl,
+    accelerated: () => fetchText(acceleratedUrl),
+    github: () => fetchText(bustedUrl),
+    onAcceleratorFailure: (error) => {
+      log.warn('[PluginMarketplace] GitHub accelerator failed, retrying GitHub:', error);
+    },
+  });
 };
 
 const fetchMarketplaceIndex = async (
@@ -1742,24 +1724,34 @@ const downloadMarketplacePackage = async (
   directory: string,
   githubProxyUrl?: string,
 ) => {
-  const downloadUrl = applyGithubProxyUrl(plugin.downloadUrl, githubProxyUrl);
+  const acceleratedUrl = applyGithubProxyUrl(plugin.downloadUrl, githubProxyUrl);
   log.info('[PluginMarketplace] package download started', {
     pluginId: plugin.id,
     sourceId: plugin.sourceId,
   });
-  const response = await fetchWithTimeout(
-    downloadUrl,
-    {
-      headers: {
-        Accept: 'application/zip,application/octet-stream,*/*',
-        'User-Agent': 'EchoMusic-Plugin-Marketplace',
+  const download = async (url: string) => {
+    const response = await fetchWithTimeout(
+      url,
+      {
+        headers: {
+          Accept: 'application/zip,application/octet-stream,*/*',
+          'User-Agent': 'EchoMusic-Plugin-Marketplace',
+        },
       },
+      PLUGIN_MARKETPLACE_DOWNLOAD_TIMEOUT_MS,
+      '插件安装包下载超时，请检查网络或 GitHub 加速地址',
+    );
+    if (!response.ok) throw new Error(`插件下载失败 (${response.status})`);
+    return Buffer.from(await response.arrayBuffer());
+  };
+  const buffer = await runGithubAcceleratorFallback({
+    acceleratorEnabled: acceleratedUrl !== plugin.downloadUrl,
+    accelerated: () => download(acceleratedUrl),
+    github: () => download(plugin.downloadUrl),
+    onAcceleratorFailure: (error) => {
+      log.warn('[PluginMarketplace] Accelerator download failed, retrying GitHub:', error);
     },
-    PLUGIN_MARKETPLACE_DOWNLOAD_TIMEOUT_MS,
-    '插件安装包下载超时，请检查网络或 GitHub 代理',
-  );
-  if (!response.ok) throw new Error(`插件下载失败 (${response.status})`);
-  const buffer = Buffer.from(await response.arrayBuffer());
+  });
   log.info('[PluginMarketplace] package download finished', {
     pluginId: plugin.id,
     sourceId: plugin.sourceId,

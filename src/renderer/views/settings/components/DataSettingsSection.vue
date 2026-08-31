@@ -65,14 +65,14 @@ const handleExport = async () => {
         : undefined,
     });
     if (!result.ok) {
-      if (!result.canceled) toastStore.warning(result.error || '设置导出失败');
+      if (!result.canceled) toastStore.warning(result.error || '创建备份失败');
       return;
     }
     showExportDialog.value = false;
     const detail = result.summary.pluginCount ? `，包含 ${result.summary.pluginCount} 个插件` : '';
-    toastStore.success(`设置已导出${detail}`);
+    toastStore.success(`备份已创建${detail}`);
   } catch (error) {
-    toastStore.warning(error instanceof Error ? error.message : '设置导出失败');
+    toastStore.warning(error instanceof Error ? error.message : '创建备份失败');
   } finally {
     isExporting.value = false;
   }
@@ -111,24 +111,24 @@ const handleImport = async () => {
     if (!result.ok) {
       if ((result.pluginsImported ?? 0) > 0) {
         toastStore.warning(
-          `${result.error || '部分插件导入失败'}。已恢复 ${result.pluginsImported} 个插件，正在重启…`,
+          `${result.error || '部分插件恢复失败'}。已恢复 ${result.pluginsImported} 个插件，正在重启…`,
           6000,
         );
         window.setTimeout(() => {
           void window.electron.appInfo.relaunch();
         }, 900);
       } else {
-        toastStore.warning(result.error || '设置导入失败', 6000);
+        toastStore.warning(result.error || '从备份恢复失败', 6000);
       }
       return;
     }
     showImportDialog.value = false;
-    toastStore.success('导入完成，正在重启 EchoMusic…', 4000);
+    toastStore.success('恢复完成，正在重启 EchoMusic…', 4000);
     window.setTimeout(() => {
       void window.electron.appInfo.relaunch();
     }, 450);
   } catch (error) {
-    toastStore.warning(error instanceof Error ? error.message : '设置导入失败');
+    toastStore.warning(error instanceof Error ? error.message : '从备份恢复失败');
   } finally {
     isImporting.value = false;
   }
@@ -150,13 +150,15 @@ const handleImport = async () => {
 
     <div class="settings-item">
       <div class="space-y-1">
-        <h3 class="font-semibold">导入与导出</h3>
-        <p class="text-sm text-text-secondary">迁移应用设置、已安装插件及插件设置</p>
+        <h3 class="font-semibold">备份与恢复</h3>
+        <p class="text-sm text-text-secondary">
+          备份应用设置、已安装插件及插件数据，或在其他设备恢复
+        </p>
       </div>
       <div class="flex shrink-0 items-center gap-2">
         <Button variant="ghost" size="xs" class="settings-button" @click="openExportDialog">
           <Icon :icon="iconCloudUpload" width="15" height="15" class="mr-1.5" />
-          导出
+          创建备份
         </Button>
         <Button
           variant="ghost"
@@ -172,7 +174,7 @@ const handleImport = async () => {
             height="15"
             class="mr-1.5"
           />
-          导入
+          恢复备份
         </Button>
       </div>
     </div>
@@ -205,8 +207,8 @@ const handleImport = async () => {
 
   <Dialog
     v-model:open="showExportDialog"
-    title="导出设置"
-    description="选择要写入备份文件的内容。账号登录状态、设备身份和本机文件路径不会被导出。"
+    title="创建备份"
+    description="选择要写入备份文件的内容。账号登录状态、设备身份和本机文件路径不会被备份。"
     :close-on-interact-outside="!isExporting"
     :close-on-escape="!isExporting"
   >
@@ -234,15 +236,15 @@ const handleImport = async () => {
         取消
       </Button>
       <Button size="sm" :disabled="!canExport" :loading="isExporting" @click="handleExport">
-        选择位置并导出
+        选择位置并创建
       </Button>
     </template>
   </Dialog>
 
   <Dialog
     v-model:open="showImportDialog"
-    title="导入设置"
-    description="导入会覆盖所选项目的同名设置，并在完成后自动重启 EchoMusic。目标设备已有的其他插件不会被删除。"
+    title="从备份恢复"
+    description="恢复会覆盖所选项目的同名设置，并在完成后自动重启 EchoMusic。目标设备已有的其他插件不会被删除。"
     :close-on-interact-outside="!isImporting"
     :close-on-escape="!isImporting"
   >
@@ -277,7 +279,7 @@ const handleImport = async () => {
         取消
       </Button>
       <Button size="sm" :disabled="!canImport" :loading="isImporting" @click="handleImport">
-        导入并重启
+        恢复并重启
       </Button>
     </template>
   </Dialog>

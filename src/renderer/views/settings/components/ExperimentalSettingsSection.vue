@@ -9,7 +9,6 @@ import { buildAuthHeader } from '@/utils/request';
 import { suspendRendererMemoryDiagnosticsForRelaunch } from '@/utils/rendererMemoryDiagnostics';
 import type { AppLogLevel } from '../../../../shared/logging';
 import Switch from '@/components/ui/Switch.vue';
-import Input from '@/components/ui/Input.vue';
 import InputNumber from '@/components/ui/InputNumber.vue';
 import Slider from '@/components/ui/Slider.vue';
 import FontIcon from '@/components/ui/FontIcon.vue';
@@ -196,21 +195,6 @@ const confirmResetDeviceIdentity = async () => {
         />
       </div>
     </template>
-    <div class="settings-divider"></div>
-    <div class="settings-item">
-      <div class="space-y-1">
-        <h3 class="font-semibold">GitHub 加速地址</h3>
-        <p class="text-sm text-text-secondary">
-          用于更新检测、在线插件源和插件下载，留空则直连 GitHub
-        </p>
-      </div>
-      <Input
-        v-model="settingStore.githubProxyUrl"
-        placeholder="https://ghfast.top"
-        class="w-60! rounded-lg"
-        input-class="!h-9 !rounded-lg !pl-3 !pr-8 !text-sm"
-      />
-    </div>
     <div class="settings-divider"></div>
     <div class="settings-item">
       <div class="space-y-1">

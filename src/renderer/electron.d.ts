@@ -46,8 +46,12 @@ import type {
   AudioSpectrumStatus,
 } from '../shared/audio-spectrum';
 import type { LogSettings } from '../shared/logging';
-import type { NetworkSettings } from '../shared/network';
+import type { NetworkSettingsState, NetworkSettingsUpdateRequest } from '../shared/network';
 import type {
+  PluginBackupCreateResult,
+  PluginBackupInspectResult,
+  PluginBackupRestoreResult,
+  PluginBackupScopeOptions,
   SettingsBackupExportRequest,
   SettingsBackupExportResult,
   SettingsBackupImportRequest,
@@ -405,7 +409,8 @@ export interface IElectronAPI {
     update: (settings: Partial<LogSettings>) => Promise<LogSettings>;
   };
   network?: {
-    update: (settings: Partial<NetworkSettings>) => Promise<NetworkSettings>;
+    get: () => Promise<NetworkSettingsState>;
+    update: (request: NetworkSettingsUpdateRequest) => Promise<NetworkSettingsState>;
   };
   settingsBackup: {
     export: (request: SettingsBackupExportRequest) => Promise<SettingsBackupExportResult>;
@@ -430,6 +435,21 @@ export interface IElectronAPI {
   };
   plugins?: {
     list: () => Promise<PluginListResult>;
+    backups: {
+      create: (
+        pluginId: string,
+        options?: PluginBackupScopeOptions,
+      ) => Promise<PluginBackupCreateResult>;
+      inspect: (
+        pluginId: string,
+        data: ArrayBuffer | ArrayBufferView,
+      ) => Promise<PluginBackupInspectResult>;
+      restore: (
+        pluginId: string,
+        token: string,
+        options?: PluginBackupScopeOptions,
+      ) => Promise<PluginBackupRestoreResult>;
+    };
     getDirectory: () => Promise<string>;
     openDirectory: () => Promise<string>;
     getDroppedFilePaths: (files: File[]) => string[];

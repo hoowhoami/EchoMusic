@@ -32,6 +32,7 @@ import {
   createWindowResizeHandlers,
 } from '../renderer/plugins/runtime/hostApis';
 import { createPluginNetworkApi } from '../renderer/plugins/runtime/network';
+import { createPluginBackupsApi } from '../renderer/plugins/runtime/backups';
 
 const DEFAULT_PLUGIN_WINDOW_COVER_COLOR = '#0071e3';
 
@@ -88,6 +89,7 @@ interface EchoPluginWindowContext {
     set: (key: string, value: unknown) => Promise<unknown>;
     delete: (key: string) => Promise<unknown>;
   };
+  backups: ReturnType<typeof createPluginBackupsApi>;
   fs: {
     listFiles: (
       directoryPath: string,
@@ -586,6 +588,7 @@ const buildContext = (
     delete: (key: string) =>
       window.electron.plugins?.storage.delete(descriptor.id, key) ?? Promise.resolve(null),
   },
+  backups: createPluginBackupsApi(descriptor),
   fs: {
     listFiles: (directoryPath, options) =>
       window.electron.plugins?.fs.listFiles(descriptor.id, directoryPath, options) ??

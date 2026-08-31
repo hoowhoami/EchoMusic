@@ -1,11 +1,11 @@
-use crate::model::{MediaControlEvent, MetadataPayload, PlayStatePayload, TimelinePayload};
 use super::{EventCallback, SystemMediaControls};
+use crate::model::{MediaControlEvent, MetadataPayload, PlayStatePayload, TimelinePayload};
 use image::ImageFormat;
+use mpris_server::{Metadata, PlaybackStatus, Player, Time, TrackId, Uri};
 use napi::threadsafe_function::ThreadsafeFunctionCallMode;
 use std::sync::{Arc, Mutex};
-use mpris_server::{Metadata, PlaybackStatus, Player, Time, TrackId, Uri};
 use tempfile::NamedTempFile;
-use tokio::sync::mpsc::{UnboundedSender, UnboundedReceiver, unbounded_channel};
+use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 
 /// 通过回调发送媒体控制事件
 fn emit_event(callback: &Arc<Mutex<Option<EventCallback>>>, event: MediaControlEvent) {
@@ -24,12 +24,14 @@ enum MprisCommand {
         album: String,
         duration_ms: Option<f64>,
         cover_data: Option<Vec<u8>>,
-        cover_url: Option<String>,
     },
     UpdatePlayState(PlaybackStatus),
     /// 更新播放位置（微秒）
     /// 如果与上次 position 差距超过阈值，自动发送 Seeked 信号
-    UpdatePosition { position_us: i64, total_us: i64 },
+    UpdatePosition {
+        position_us: i64,
+        total_us: i64,
+    },
     Shutdown,
 }
 
@@ -102,14 +104,12 @@ async fn process_metadata_update(
     album: String,
     duration_ms: Option<f64>,
     cover_data: Option<Vec<u8>>,
-    cover_url: Option<String>,
     track_counter: &mut u64,
     cover_guard: &mut Option<NamedTempFile>,
 ) {
     *track_counter += 1;
     let track_path = format!("/org/mpris/MediaPlayer2/Track/{}", *track_counter);
-    let track_id = TrackId::try_from(track_path.as_str())
-        .unwrap_or_else(|_| TrackId::NO_TRACK);
+    let track_id = TrackId::try_from(track_path.as_str()).unwrap_or_else(|_| TrackId::NO_TRACK);
 
     let mut meta = Metadata::builder()
         .trackid(track_id)
@@ -156,20 +156,14 @@ async fn process_metadata_update(
                     }
                 }
                 Err(e) => {
-                    tracing::warn!(
-                        "Cover decode failed, will fall back to cover_url if present: {e}"
-                    );
+                    tracing::warn!("Cover decode failed: {e}");
                 }
             }
         }
     }
 
-    // 转码/写入失败，或 cover_data 为空/None 时回退到 HTTP URL
     if !cover_set {
         *cover_guard = None;
-        if let Some(ref url) = cover_url {
-            meta = meta.art_url(Uri::from(url.as_str()));
-        }
     }
 
     player.set_metadata(meta.build()).await.ok();
@@ -225,7 +219,7 @@ async fn run_mpris_loop(
                 let Some(cmd) = cmd_opt else { break };
                 match cmd {
                     MprisCommand::UpdateMetadata {
-                        title, artist, album, duration_ms, cover_data, cover_url,
+                        title, artist, album, duration_ms, cover_data,
                     } => {
                         process_metadata_update(
                             &player,
@@ -234,7 +228,6 @@ async fn run_mpris_loop(
                             album,
                             duration_ms,
                             cover_data,
-                            cover_url,
                             &mut track_counter,
                             &mut cover_guard,
                         ).await;
@@ -301,7 +294,6 @@ impl SystemMediaControls for LinuxMediaControls {
                 album: payload.album.clone(),
                 duration_ms: payload.duration_ms,
                 cover_data: payload.cover_data.clone(),
-                cover_url: payload.cover_url.clone(),
             });
         }
     }
@@ -321,7 +313,10 @@ impl SystemMediaControls for LinuxMediaControls {
         if let Some(ref tx) = self.command_tx {
             let position_us = (payload.current_time_ms * 1000.0) as i64;
             let total_us = (payload.total_time_ms * 1000.0) as i64;
-            let _ = tx.send(MprisCommand::UpdatePosition { position_us, total_us });
+            let _ = tx.send(MprisCommand::UpdatePosition {
+                position_us,
+                total_us,
+            });
         }
     }
 

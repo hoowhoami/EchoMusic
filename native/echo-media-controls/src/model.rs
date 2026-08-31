@@ -11,8 +11,6 @@ pub struct MetadataPayload {
     pub album: String,
     /// 封面图片原始字节
     pub cover_data: Option<Vec<u8>>,
-    /// 封面 HTTP URL（Linux MPRIS 备用）
-    pub cover_url: Option<String>,
     /// 歌曲时长，单位毫秒
     pub duration_ms: Option<f64>,
 }

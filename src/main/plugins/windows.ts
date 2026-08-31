@@ -18,6 +18,7 @@ import {
 import { getKvStorage } from '../storage/kv';
 import log from '../logger';
 import { WindowDragController } from '../windowDrag';
+import { registerNetworkSession } from '../networkPolicy';
 
 type PluginWindowRecord = {
   pluginId: string;
@@ -204,6 +205,7 @@ const schedulePresentationSync = (win: BrowserWindow, descriptor: PluginWindowDe
 };
 
 const loadPluginWindow = async (win: BrowserWindow, descriptor: PluginWindowDescriptor) => {
+  await registerNetworkSession(win.webContents.session);
   const query = {
     pluginId: descriptor.pluginId,
     windowId: descriptor.id,

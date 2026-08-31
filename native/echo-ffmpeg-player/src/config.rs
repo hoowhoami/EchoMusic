@@ -208,7 +208,7 @@ pub struct PlayerConfig {
     pub demuxer_max_back_bytes: usize,
     pub network_timeout_secs: f64,
     pub playback_stall_timeout_secs: f64,
-    pub http_proxy: Option<String>,
+    pub http_proxies: Vec<Option<String>>,
     pub audio_device: String,
     pub exclusive_output: bool,
 }
@@ -230,7 +230,7 @@ impl Default for PlayerConfig {
             demuxer_max_back_bytes: DEFAULT_DEMUXER_MAX_BACK_BYTES,
             network_timeout_secs: DEFAULT_NETWORK_TIMEOUT_SECS,
             playback_stall_timeout_secs: DEFAULT_PLAYBACK_STALL_TIMEOUT_SECS,
-            http_proxy: None,
+            http_proxies: vec![None],
             audio_device: "auto".to_string(),
             exclusive_output: false,
         }
@@ -285,7 +285,7 @@ impl PlayerConfig {
             if let Some(value) = options.http_proxy {
                 let trimmed = value.trim();
                 if !trimmed.is_empty() {
-                    config.http_proxy = Some(trimmed.to_string());
+                    config.http_proxies = vec![Some(trimmed.to_string())];
                 }
             }
         }
@@ -392,7 +392,7 @@ impl PlayerConfig {
                 300.0,
                 DEFAULT_NETWORK_TIMEOUT_SECS,
             )),
-            http_proxy: self.http_proxy.clone(),
+            http_proxies: self.http_proxies.clone(),
         }
     }
 }

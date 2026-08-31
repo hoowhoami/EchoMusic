@@ -4,6 +4,7 @@ import { createRequire } from 'node:module';
 import path from 'path';
 import log from './logger';
 import { getMainAppSettings } from './storage/settings';
+import { networkFetch } from './networkPolicy';
 
 /**
  * Windows 任务栏 iconic 缩略图。
@@ -60,7 +61,7 @@ function loadFallbackCover(): void {
   fallbackCoverLoading = true;
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 8000);
-  fetch(FALLBACK_COVER_URL, {
+  networkFetch(FALLBACK_COVER_URL, {
     signal: controller.signal,
     headers: {
       'User-Agent':

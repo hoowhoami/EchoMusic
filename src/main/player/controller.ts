@@ -7,6 +7,7 @@ import log from '../logger';
 import { refreshNetworkSettingsFromStorage } from '../networkSettings';
 import { getPersistedRendererSettings } from '../storage/persistedStores';
 import type { NetworkSettings } from '../../shared/network';
+import { resolveNativeProxyUrls } from '../networkPolicy';
 import type { AudioEffectPlaybackOptions } from '../../shared/audio';
 import { normalizeConvolutionMix } from '../../shared/audio-effect-support';
 import type { PlayerErrorCode, PlayerErrorPayload } from '../../shared/player-error';
@@ -358,6 +359,7 @@ interface PlayerAddon {
   setStallTimeout(seconds: number): void;
   setNetworkTimeout(seconds: number): void;
   setHttpProxy(proxy: string): void;
+  setHttpProxies(proxies: string[]): void;
   configureSpectrum(options?: unknown): { available: boolean; running: boolean; reason?: string };
   getSpectrumStatus(): { available: boolean; running: boolean; reason?: string };
   getSpectrumSnapshot(): Promise<unknown>;
@@ -453,7 +455,9 @@ export class PlayerController extends EventEmitter {
       demuxerMaxBackBytes: audioConfig.demuxerMaxBackBytes,
       networkTimeoutSecs: networkSettings.playerNetworkTimeoutSecs,
       playbackStallTimeoutSecs: audioConfig.playbackStallTimeoutSecs,
-      httpProxy: networkSettings.playerHttpProxyUrl,
+      // Applied per URL before the native source is opened so system/PAC bypass
+      // rules are resolved consistently with Chromium.
+      httpProxy: '',
     });
     log.info('[PlayerController]', 'native audio cache configured', {
       ...audioConfig,
@@ -479,7 +483,7 @@ export class PlayerController extends EventEmitter {
     try {
       await this.enqueue(() => {
         if (this.pendingLoadSeq !== seq) return undefined;
-        return this.getAddonOrThrow().loadFile(url, seq);
+        return this.loadFileWithResolvedProxy(url, seq);
       });
     } catch (err) {
       if (this.pendingLoadSeq === seq) this.pendingLoadSeq = null;
@@ -496,7 +500,7 @@ export class PlayerController extends EventEmitter {
     try {
       await this.enqueue(() => {
         if (this.pendingLoadSeq !== seq) return undefined;
-        return this.getAddonOrThrow().loadMkvTrack(url, trackId, seq);
+        return this.loadMkvTrackWithResolvedProxy(url, trackId, seq);
       });
     } catch (err) {
       if (this.pendingLoadSeq === seq) this.pendingLoadSeq = null;
@@ -506,6 +510,7 @@ export class PlayerController extends EventEmitter {
 
   async switchSource(url: string, trackId?: number | null): Promise<[number, number]> {
     const seq = ++this.loadSeq;
+    await this.applyProxyForUrl(url);
     const result = await this.getAddonOrThrow().switchSource(url, trackId ?? null, seq);
     this.state.path = url;
     this.state.audioTrackId = trackId ?? undefined;
@@ -530,6 +535,7 @@ export class PlayerController extends EventEmitter {
     normalizationGainDb?: number,
   ): Promise<number | null> {
     const seq = ++this.loadSeq;
+    await this.applyProxyForUrl(url);
     const prepared = await this.getAddonOrThrow().prepareNextSource(
       url,
       trackId ?? null,
@@ -670,8 +676,25 @@ export class PlayerController extends EventEmitter {
 
   async setNetwork(settings: NetworkSettings): Promise<void> {
     const addon = this.getAddonOrThrow();
-    addon.setHttpProxy(settings.playerHttpProxyUrl);
+    const targetUrl = /^https?:\/\//i.test(this.state.path || '')
+      ? String(this.state.path)
+      : 'https://gateway.kugou.com/';
+    addon.setHttpProxies(await resolveNativeProxyUrls(targetUrl));
     addon.setNetworkTimeout(settings.playerNetworkTimeoutSecs);
+  }
+
+  private async applyProxyForUrl(url: string): Promise<void> {
+    this.getAddonOrThrow().setHttpProxies(await resolveNativeProxyUrls(url));
+  }
+
+  private async loadFileWithResolvedProxy(url: string, seq: number) {
+    await this.applyProxyForUrl(url);
+    return this.getAddonOrThrow().loadFile(url, seq);
+  }
+
+  private async loadMkvTrackWithResolvedProxy(url: string, trackId: number, seq: number) {
+    await this.applyProxyForUrl(url);
+    return this.getAddonOrThrow().loadMkvTrack(url, trackId, seq);
   }
 
   configureSpectrum(options?: unknown) {

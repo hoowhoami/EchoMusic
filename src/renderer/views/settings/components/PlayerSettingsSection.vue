@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { useSettingStore } from '@/stores/setting';
-import Input from '@/components/ui/Input.vue';
 import InputNumber from '@/components/ui/InputNumber.vue';
 import Select from '@/components/ui/Select.vue';
 import Switch from '@/components/ui/Switch.vue';
@@ -123,26 +122,6 @@ const updatePlaybackStallTimeout = (value: string | number) => {
 const updatePlaybackStallMaxAttempts = (value: string | number) => {
   settingStore.playbackStallMaxAttempts = clampNumber(value, 3, 1, 10);
 };
-
-const updateKugouApiProxy = (value: string | number) => {
-  settingStore.kugouApiProxyUrl = String(value ?? '');
-  settingStore.syncNetworkSettings();
-};
-
-const updateKugouApiTimeout = (value: string | number) => {
-  settingStore.kugouApiTimeoutSecs = clampNumber(value, 0, 0, 300);
-  settingStore.syncNetworkSettings();
-};
-
-const updatePlayerHttpProxy = (value: string | number) => {
-  settingStore.playerHttpProxyUrl = String(value ?? '');
-  settingStore.syncNetworkSettings();
-};
-
-const updatePlayerNetworkTimeout = (value: string | number) => {
-  settingStore.playerNetworkTimeoutSecs = clampNumber(value, 60, 1, 300);
-  settingStore.syncNetworkSettings();
-};
 </script>
 
 <template>
@@ -158,7 +137,7 @@ const updatePlayerNetworkTimeout = (value: string | number) => {
     </template>
 
     <div class="settings-notice">
-      <p>播放器设置修改后重启生效</p>
+      <p>部分音频输出设置修改后重启生效</p>
     </div>
     <div class="settings-divider"></div>
 
@@ -403,72 +382,6 @@ const updatePlayerNetworkTimeout = (value: string | number) => {
         />
       </div>
     </template>
-    <div class="settings-divider"></div>
-    <div class="settings-item">
-      <div class="space-y-1">
-        <h3 class="font-semibold">酷狗 API 代理</h3>
-        <p class="text-sm text-text-secondary">
-          用于歌曲地址、歌词和推荐等接口，支持 HTTP/HTTPS 代理；留空时跟随系统代理
-        </p>
-      </div>
-      <Input
-        :model-value="settingStore.kugouApiProxyUrl"
-        placeholder="http://127.0.0.1:7890"
-        class="w-60! rounded-lg"
-        input-class="!h-9 !rounded-lg !pl-3 !pr-8 !text-sm"
-        @update:model-value="updateKugouApiProxy"
-        @clear="updateKugouApiProxy('')"
-      />
-    </div>
-    <div class="settings-divider"></div>
-    <div class="settings-item">
-      <div class="space-y-1">
-        <h3 class="font-semibold">酷狗 API 超时</h3>
-        <p class="text-sm text-text-secondary">接口请求超过该时间后中止，设为 0 使用默认行为</p>
-      </div>
-      <InputNumber
-        class="w-45"
-        :model-value="String(settingStore.kugouApiTimeoutSecs ?? 0)"
-        :min="0"
-        :max="300"
-        :step="10"
-        placeholder="0"
-        suffix="秒"
-        @update:model-value="updateKugouApiTimeout"
-      />
-    </div>
-    <div class="settings-divider"></div>
-    <div class="settings-item">
-      <div class="space-y-1">
-        <h3 class="font-semibold">播放器 HTTP 代理</h3>
-        <p class="text-sm text-text-secondary">用于播放器直接加载音频直链，支持 HTTP/HTTPS 代理</p>
-      </div>
-      <Input
-        :model-value="settingStore.playerHttpProxyUrl"
-        placeholder="http://127.0.0.1:7890"
-        class="w-60! rounded-lg"
-        input-class="!h-9 !rounded-lg !pl-3 !pr-8 !text-sm"
-        @update:model-value="updatePlayerHttpProxy"
-        @clear="updatePlayerHttpProxy('')"
-      />
-    </div>
-    <div class="settings-divider"></div>
-    <div class="settings-item">
-      <div class="space-y-1">
-        <h3 class="font-semibold">播放器网络超时</h3>
-        <p class="text-sm text-text-secondary">播放器打开音频直链的网络等待时间</p>
-      </div>
-      <InputNumber
-        class="w-45"
-        :model-value="String(settingStore.playerNetworkTimeoutSecs ?? 60)"
-        :min="1"
-        :max="300"
-        :step="10"
-        placeholder="60"
-        suffix="秒"
-        @update:model-value="updatePlayerNetworkTimeout"
-      />
-    </div>
   </SettingsSectionShell>
 </template>
 

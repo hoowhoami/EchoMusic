@@ -17,6 +17,7 @@ import FontSettingsSection from './settings/components/FontSettingsSection.vue';
 import PlaybackSettingsSection from './settings/components/PlaybackSettingsSection.vue';
 import SpatialAudioSettingsSection from './settings/components/SpatialAudioSettingsSection.vue';
 import PlayerSettingsSection from './settings/components/PlayerSettingsSection.vue';
+import NetworkSettingsSection from './settings/components/NetworkSettingsSection.vue';
 import PageLyricSettingsSection from './settings/components/PageLyricSettingsSection.vue';
 import DesktopLyricSettingsSection from './settings/components/DesktopLyricSettingsSection.vue';
 import ShortcutSettingsSection from './settings/components/ShortcutSettingsSection.vue';
@@ -288,9 +289,30 @@ const builtinSettingsSections = computed<SettingsRenderSection[]>(() => [
       '最大自动恢复次数',
       '网络波动',
       '播放稳定性',
-      '酷狗 API 代理',
+    ],
+  },
+  {
+    id: 'network',
+    label: '网络设置',
+    order: 400,
+    component: NetworkSettingsSection,
+    searchKeywords: [
+      '全局网络代理',
+      '系统代理',
+      '手动代理',
+      '自动检测',
+      'WPAD',
+      'PAC 脚本',
+      'proxyRules',
+      'SOCKS',
+      '代理认证',
+      '不代理地址',
+      'bypass',
+      'GitHub 加速站',
+      'GitHub 加速地址',
+      '在线插件源',
+      '插件下载',
       '酷狗 API 超时',
-      '播放器 HTTP 代理',
       '播放器网络超时',
       '代理',
       '超时',
@@ -401,9 +423,6 @@ const builtinSettingsSections = computed<SettingsRenderSection[]>(() => [
     searchKeywords: [
       '页面缓存',
       '最大缓存页面数',
-      'GitHub 加速地址',
-      '在线插件源',
-      '插件下载',
       '日志级别',
       'API 响应体日志',
       '临时诊断日志',
@@ -435,6 +454,9 @@ const builtinSettingsSections = computed<SettingsRenderSection[]>(() => [
     order: 1100,
     component: DataSettingsSection,
     searchKeywords: [
+      '备份与恢复',
+      '创建备份',
+      '恢复备份',
       '导入与导出',
       '备份',
       '迁移',

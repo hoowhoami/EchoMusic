@@ -199,9 +199,12 @@ export const useSettingStore = defineStore('setting', {
     audioChannels: 'auto-safe',
     audioFormat: 'auto',
     gaplessAudio: 'weak',
-    kugouApiProxyUrl: DEFAULT_NETWORK_SETTINGS.kugouApiProxyUrl,
+    proxyMode: DEFAULT_NETWORK_SETTINGS.proxyMode,
+    proxyPacScript: DEFAULT_NETWORK_SETTINGS.proxyPacScript,
+    proxyRules: DEFAULT_NETWORK_SETTINGS.proxyRules,
+    proxyUsername: DEFAULT_NETWORK_SETTINGS.proxyUsername,
+    proxyBypassRules: DEFAULT_NETWORK_SETTINGS.proxyBypassRules,
     kugouApiTimeoutSecs: DEFAULT_NETWORK_SETTINGS.kugouApiTimeoutSecs,
-    playerHttpProxyUrl: DEFAULT_NETWORK_SETTINGS.playerHttpProxyUrl,
     playerNetworkTimeoutSecs: DEFAULT_NETWORK_SETTINGS.playerNetworkTimeoutSecs,
     // 播放卡死检测：播放中进度超过该秒数无推进则判定卡死并自动恢复（0=禁用）
     playbackStallTimeout: 8,
@@ -456,17 +459,23 @@ export const useSettingStore = defineStore('setting', {
     },
     getNetworkSettings(): NetworkSettings {
       return normalizeNetworkSettings({
-        kugouApiProxyUrl: this.kugouApiProxyUrl,
+        proxyMode: this.proxyMode,
+        proxyPacScript: this.proxyPacScript,
+        proxyRules: this.proxyRules,
+        proxyUsername: this.proxyUsername,
+        proxyBypassRules: this.proxyBypassRules,
         kugouApiTimeoutSecs: this.kugouApiTimeoutSecs,
-        playerHttpProxyUrl: this.playerHttpProxyUrl,
         playerNetworkTimeoutSecs: this.playerNetworkTimeoutSecs,
       });
     },
-    syncNetworkSettings() {
-      const settings = this.getNetworkSettings();
+    applyNetworkSettings(settings: NetworkSettings) {
+      this.proxyMode = settings.proxyMode;
+      this.proxyPacScript = settings.proxyPacScript;
+      this.proxyRules = settings.proxyRules;
+      this.proxyUsername = settings.proxyUsername;
+      this.proxyBypassRules = settings.proxyBypassRules;
       this.kugouApiTimeoutSecs = settings.kugouApiTimeoutSecs;
       this.playerNetworkTimeoutSecs = settings.playerNetworkTimeoutSecs;
-      void window.electron?.network?.update(settings);
     },
     enableTemporaryDiagnosticLogging(minutes = 10) {
       this.logDiagnosticUntil = Date.now() + Math.max(1, minutes) * 60 * 1000;

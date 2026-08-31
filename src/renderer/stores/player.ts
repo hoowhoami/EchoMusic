@@ -14,6 +14,7 @@ import type { AudioEffectPlaybackOptions, SpatialAudioEffectEntry } from '../../
 import { createLatestRequestQueue } from '../../shared/latest-request-queue';
 import { spatialAudioEffectOptions } from '../../shared/audio-effect-support';
 import {
+  dspProviderRestorePatch,
   parseDspPreset,
   providerPresetSupportsSampleRate,
 } from '../../shared/dsp-provider-settings';
@@ -392,7 +393,7 @@ export const usePlayerStore = defineStore(
         if (savedId || savedPath) settingStore.disableDspProvider();
         return undefined;
       }
-      settingStore.configureDspProvider(selected, settingStore.dspProviderMode);
+      settingStore.$patch(dspProviderRestorePatch(savedId, selected));
       return selected.path;
     };
     const refreshAudioGraphSnapshot = async () => {

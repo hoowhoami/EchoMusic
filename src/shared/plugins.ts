@@ -630,6 +630,7 @@ export interface EchoPluginManifest {
   capabilities?: {
     audioSource?: boolean;
     audioSpectrum?: boolean;
+    backups?: boolean;
     kugouApi?: boolean;
     kugouVerification?: boolean;
     localFiles?: boolean;

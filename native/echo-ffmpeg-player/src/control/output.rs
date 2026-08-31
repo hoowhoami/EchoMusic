@@ -105,7 +105,26 @@ pub fn set_network_timeout(seconds: f64) -> napi::Result<()> {
 pub fn set_http_proxy(proxy: String) -> napi::Result<()> {
     let proxy = (!proxy.trim().is_empty()).then(|| proxy.trim().to_string());
     call_core_command("set-http-proxy", move |runtime| {
-        runtime.config.http_proxy = proxy;
+        runtime.config.http_proxies = vec![proxy];
+        Ok(())
+    })
+}
+
+#[napi]
+pub fn set_http_proxies(proxies: Vec<String>) -> napi::Result<()> {
+    let proxies = if proxies.is_empty() {
+        vec![None]
+    } else {
+        proxies
+            .into_iter()
+            .map(|proxy| {
+                let proxy = proxy.trim().to_string();
+                (!proxy.is_empty()).then_some(proxy)
+            })
+            .collect()
+    };
+    call_core_command("set-http-proxies", move |runtime| {
+        runtime.config.http_proxies = proxies;
         Ok(())
     })
 }

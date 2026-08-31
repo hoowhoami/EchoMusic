@@ -8,6 +8,27 @@ import type {
 export type DspControlValues = Record<string, { value: DspJsonValue }>;
 export type DspPresetBank = Record<string, string>;
 
+export function dspProviderRestorePatch(
+  currentProviderId: string,
+  provider: { providerId: string; path: string },
+): {
+  dspProviderEnabled: true;
+  dspProviderId: string;
+  dspProviderPath: string;
+  dspProviderPresetJson?: string;
+} {
+  const providerId = provider.providerId.trim();
+  const isSameProvider = !!providerId && currentProviderId.trim() === providerId;
+  return {
+    dspProviderEnabled: true,
+    dspProviderId: providerId,
+    dspProviderPath: provider.path.trim(),
+    // Resolving the non-persisted runtime path on startup must not discard the
+    // saved preset. A genuinely different provider cannot safely reuse it.
+    ...(!isSameProvider ? { dspProviderPresetJson: '' } : {}),
+  };
+}
+
 const record = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 

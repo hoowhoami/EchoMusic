@@ -8,6 +8,7 @@ import {
   persistDesktopLyricWindowState,
   resolveInitialBounds,
 } from './store';
+import { registerNetworkSession } from '../networkPolicy';
 
 const getBackgroundColor = () => '#00000000';
 const desktopLyricUsesWayland = isWaylandWindowingBackend();
@@ -225,6 +226,8 @@ export const createDesktopLyricWindow = () => {
 
 export const loadDesktopLyricWindow = async () => {
   if (!desktopLyricWindow || desktopLyricWindow.isDestroyed()) return;
+
+  await registerNetworkSession(desktopLyricWindow.webContents.session);
 
   if (desktopLyricUrl) {
     await desktopLyricWindow.loadURL(new URL('desktop-lyric.html', desktopLyricUrl).toString());

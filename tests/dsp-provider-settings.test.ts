@@ -5,6 +5,7 @@ import {
   controlDefault,
   controlVisible,
   dspPresetBankKey,
+  dspProviderRestorePatch,
   dspPresetSettingsPatch,
   makeDspPresetJson,
   parseDspPreset,
@@ -29,6 +30,31 @@ const controls: DspProviderControl[] = [
   },
   { id: 'enabled', type: 'boolean', defaultValue: true },
 ];
+
+test('restoring a saved provider path keeps its active preset across app restarts', () => {
+  const preset = '{"presetId":"stage"}';
+  const saved = {
+    dspProviderEnabled: true,
+    dspProviderId: 'engine',
+    dspProviderPath: '',
+    dspProviderPresetJson: preset,
+  };
+  const restored = {
+    ...saved,
+    ...dspProviderRestorePatch(saved.dspProviderId, {
+      providerId: 'engine',
+      path: ' /runtime/engine.so ',
+    }),
+  };
+  assert.equal(restored.dspProviderPath, '/runtime/engine.so');
+  assert.equal(restored.dspProviderPresetJson, preset);
+
+  const switched = dspProviderRestorePatch(saved.dspProviderId, {
+    providerId: 'other-engine',
+    path: '/runtime/other.so',
+  });
+  assert.equal(switched.dspProviderPresetJson, '');
+});
 
 test('editing inactive presets saves settings without selecting or changing playback', () => {
   const oldJson = makeDspPresetJson('preset-a', controls);

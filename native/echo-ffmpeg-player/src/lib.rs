@@ -24,10 +24,11 @@ pub use control::{
     cancel_fade, configure_spectrum, fade, get_audio_devices, get_audio_graph,
     get_spectrum_snapshot, get_spectrum_status, inspect_dsp_provider, pause_with_fade,
     play_with_fade, set_audio_effect, set_audio_graph_parameter, set_audio_graph_plan,
-    set_audio_output, set_equalizer, set_http_proxy, set_network_timeout, set_normalization_gain,
-    set_pause_on_device_disconnect, set_speed, set_stall_timeout, GetAudioDevicesTask,
-    GetSpectrumSnapshotTask, SetAudioEffectTask, SetAudioGraphParameterTask, SetAudioGraphPlanTask,
-    SetAudioOutputTask, SetEqualizerTask, SetNormalizationGainTask, SetSpeedTask,
+    set_audio_output, set_equalizer, set_http_proxies, set_http_proxy, set_network_timeout,
+    set_normalization_gain, set_pause_on_device_disconnect, set_speed, set_stall_timeout,
+    GetAudioDevicesTask, GetSpectrumSnapshotTask, SetAudioEffectTask, SetAudioGraphParameterTask,
+    SetAudioGraphPlanTask, SetAudioOutputTask, SetEqualizerTask, SetNormalizationGainTask,
+    SetSpeedTask,
 };
 pub use control::{seek, SeekTask};
 

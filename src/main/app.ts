@@ -1,4 +1,4 @@
-import { app, BrowserWindow, globalShortcut } from 'electron';
+import { app, BrowserWindow, dialog, globalShortcut } from 'electron';
 import { initLogger, setDiagnosticStateListener } from './logger';
 import log from './logger';
 import { startEventLoopMonitor, stopEventLoopMonitor } from './eventLoopMonitor';
@@ -34,6 +34,8 @@ import {
 } from './share';
 import { isUpdateInstallQuitRequested } from './updateInstallQuit';
 import type { PlayerController } from './player/controller';
+import { initializeNetworkSettings } from './networkSettings';
+import { installNetworkPolicyLifecycle } from './networkPolicy';
 
 const WM_TASKBARCREATED = 0x031a;
 const playerRef: { current: PlayerController | null } = { current: null };
@@ -41,6 +43,7 @@ let disposePowerMonitor: (() => void) | null = null;
 
 // --- 初始化日志 ---
 initLogger();
+installNetworkPolicyLifecycle();
 
 // --- 主进程事件循环卡顿探测器（仅诊断模式期间运行，避免常驻定时器开销）---
 setDiagnosticStateListener((active) => {
@@ -122,6 +125,17 @@ if (!gotTheLock) {
   });
 
   app.whenReady().then(async () => {
+    try {
+      await initializeNetworkSettings();
+    } catch (error) {
+      log.error('[Network] Failed to initialize global network policy:', error);
+      dialog.showErrorBox(
+        '网络代理初始化失败',
+        error instanceof Error ? error.message : '无法应用已保存的网络代理设置',
+      );
+      app.quit();
+      return;
+    }
     configureApplicationMenu({
       openSettings: openSettingsFromNativeShell,
     });

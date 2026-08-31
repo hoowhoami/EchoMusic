@@ -1,3 +1,6 @@
+import { isBlockedObjectKey } from './objectSafety';
+import { sanitizePortableNetworkSettings } from './portableNetworkSettings';
+
 export const SETTINGS_BACKUP_FORMAT = 'echomusic-settings-backup' as const;
 export const SETTINGS_BACKUP_VERSION = 1 as const;
 export const SETTINGS_BACKUP_EXTENSION = 'echomusic-backup';
@@ -56,6 +59,58 @@ export type SettingsBackupImportResult =
       pluginsImported?: number;
     };
 
+export interface PluginBackupScopeOptions {
+  /** Include portable EchoMusic settings. Defaults to true. */
+  settings?: boolean;
+  /** Include installed plugins and their persisted data. Defaults to true. */
+  plugins?: boolean;
+}
+
+export interface PluginBackupCreateRequest extends PluginBackupScopeOptions {
+  pluginId: string;
+}
+
+export type PluginBackupCreateResult =
+  | {
+      ok: true;
+      canceled: false;
+      data: ArrayBuffer;
+      fileName: string;
+      summary: SettingsBackupSummary;
+    }
+  | { ok: false; canceled: boolean; error?: string };
+
+export interface PluginBackupInspectRequest {
+  pluginId: string;
+  data: ArrayBuffer | ArrayBufferView;
+}
+
+export type PluginBackupInspectResult =
+  | {
+      ok: true;
+      token: string;
+      summary: SettingsBackupSummary;
+    }
+  | { ok: false; error: string };
+
+export interface PluginBackupRestoreRequest extends PluginBackupScopeOptions {
+  pluginId: string;
+  token: string;
+}
+
+export type PluginBackupRestoreResult =
+  | (Extract<SettingsBackupImportResult, { ok: true }> & {
+      canceled: false;
+      restartScheduled: true;
+    })
+  | {
+      ok: false;
+      canceled: boolean;
+      error?: string;
+      settingsImported?: boolean;
+      pluginsImported?: number;
+    };
+
 /**
  * These fields are runtime-only, tied to local hardware/files, or should be
  * confirmed independently on every installation. They are intentionally not
@@ -99,7 +154,7 @@ const cloneJsonObject = (value: unknown): Record<string, unknown> => {
 
 export const sanitizePortableAppSettings = (value: unknown): Record<string, unknown> => {
   const source = cloneJsonObject(value);
-  return Object.fromEntries(
+  const portable = Object.fromEntries(
     Object.entries(source).filter(
       ([key]) =>
         key.length > 0 &&
@@ -108,5 +163,5 @@ export const sanitizePortableAppSettings = (value: unknown): Record<string, unkn
         !NON_PORTABLE_APP_SETTING_KEYS.has(key),
     ),
   );
+  return sanitizePortableNetworkSettings(portable);
 };
-import { isBlockedObjectKey } from './objectSafety';

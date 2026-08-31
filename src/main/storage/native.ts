@@ -8,6 +8,7 @@ export interface NativeStorageAddon {
   close(): void;
   kvGet(key: string): string | null;
   kvSet(key: string, valueJson: string): void;
+  kvApplyBatch(mutationsJson: string): void;
   kvDelete(key: string): void;
   resetAll(): void;
   playbackGetSnapshot(hydrateAllSongs?: boolean): string;

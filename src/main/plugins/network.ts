@@ -7,6 +7,7 @@ import type {
   PluginNetworkResponse,
   PluginNetworkResponseType,
 } from '../../shared/plugins';
+import { resolveNativeProxyUrls } from '../networkPolicy';
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 const DEFAULT_MAX_RESPONSE_BYTES = 32 * 1024 * 1024;
@@ -181,7 +182,7 @@ const validateOptions = (options: PluginNetworkRequestOptions): URL => {
   return url;
 };
 
-/** Sends a plugin request through Axios' Node.js HTTP adapter in the main process. */
+/** Sends a plugin request through the app-wide Chromium transport by default. */
 export const requestPluginNetwork = async (
   options: PluginNetworkRequestOptions,
   signal?: AbortSignal,
@@ -190,6 +191,12 @@ export const requestPluginNetwork = async (
   let finalResponseUrl = url.href;
   const responseType = options.responseType ?? 'json';
   const maxResponseBytes = options.maxResponseBytes ?? DEFAULT_MAX_RESPONSE_BYTES;
+  if (options.tls && (await resolveNativeProxyUrls(url.href)).some(Boolean)) {
+    throw new PluginNetworkRequestError(
+      '插件自定义 TLS 请求不能绕过当前全局代理，请关闭自定义 TLS 选项或改用直连模式',
+      'ERR_PLUGIN_TLS_PROXY_UNSUPPORTED',
+    );
+  }
   // Ordinary HTTPS requests use Node's shared default Agent. A dedicated Agent
   // is created only for non-default TLS policy so sockets with relaxed
   // verification or custom SNI are never pooled across plugin requests.
@@ -201,9 +208,10 @@ export const requestPluginNetwork = async (
     : undefined;
 
   const config: AxiosRequestConfig = {
-    // Force the Node adapter so app-wide Axios defaults can never route plugin
-    // requests back through Chromium's restricted network stack.
-    adapter: 'http',
+    // Explicit non-default TLS policy still needs Node's HTTPS Agent. It is only
+    // permitted when the global policy resolves this URL to DIRECT, so this
+    // exceptional path never silently bypasses an active proxy.
+    ...(options.tls ? { adapter: 'http' as const, proxy: false } : {}),
     url: url.href,
     method: options.method ?? 'GET',
     headers: normalizeHeaders(options.headers),
@@ -222,7 +230,6 @@ export const requestPluginNetwork = async (
     decompress: options.decompress ?? true,
     httpsAgent,
     signal,
-    proxy: false,
     // HTTP errors remain inspectable responses; transport, timeout and cancel
     // failures still reject the promise.
     validateStatus: () => true,

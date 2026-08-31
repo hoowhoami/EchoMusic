@@ -1039,6 +1039,57 @@ pub fn kv_set(key: String, value_json: String) -> NativeResult<()> {
 }
 
 #[napi]
+pub fn kv_apply_batch(mutations_json: String) -> NativeResult<()> {
+    let mutations = parse_array(&mutations_json)?;
+    if mutations.len() > 100 {
+        return Err(err("KV batch cannot contain more than 100 mutations"));
+    }
+
+    let mut normalized = Vec::with_capacity(mutations.len());
+    for mutation in mutations {
+        let object = mutation
+            .as_object()
+            .ok_or_else(|| err("KV batch mutation must be an object"))?;
+        let key = object
+            .get("key")
+            .and_then(Value::as_str)
+            .filter(|key| !key.is_empty())
+            .ok_or_else(|| err("KV batch mutation key must be a non-empty string"))?
+            .to_string();
+        let value_json = match object.get("valueJson") {
+            Some(Value::String(value)) => Some(value.clone()),
+            Some(Value::Null) => None,
+            None => return Err(err("KV batch mutation is missing valueJson")),
+            _ => return Err(err("KV batch mutation valueJson must be a string or null")),
+        };
+        normalized.push((key, value_json));
+    }
+
+    with_connection_mut(|connection| {
+        let transaction = map_sql(connection.transaction())?;
+        let updated_at = now_ms();
+        for (key, value_json) in normalized {
+            if let Some(value_json) = value_json {
+                map_sql(transaction.execute(
+                    r#"
+                    INSERT INTO app_kv (key, value_json, updated_at)
+                    VALUES (?, ?, ?)
+                    ON CONFLICT(key) DO UPDATE SET
+                      value_json = excluded.value_json,
+                      updated_at = excluded.updated_at
+                    "#,
+                    params![key, value_json, updated_at],
+                ))?;
+            } else {
+                map_sql(transaction.execute("DELETE FROM app_kv WHERE key = ?", params![key]))?;
+            }
+        }
+        map_sql(transaction.commit())?;
+        Ok(())
+    })
+}
+
+#[napi]
 pub fn kv_delete(key: String) -> NativeResult<()> {
     with_connection(|connection| {
         map_sql(connection.execute("DELETE FROM app_kv WHERE key = ?", params![key]))?;
@@ -1571,7 +1622,7 @@ pub fn plugin_sqlite_backup(source_path: String, destination_path: String) -> Na
 
 #[cfg(test)]
 mod tests {
-    use super::plugin_sqlite_backup;
+    use super::{close, initialize, kv_apply_batch, kv_get, kv_set, plugin_sqlite_backup};
     use rusqlite::Connection;
     use std::fs;
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -1612,6 +1663,58 @@ mod tests {
             .expect("read backup");
         assert_eq!(value, "committed-in-wal");
         drop(destination);
+        fs::remove_dir_all(root).expect("cleanup test directory");
+    }
+
+    #[test]
+    fn kv_batch_sets_deletes_and_rejects_partial_mutations() {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "echo-sqlite-kv-batch-test-{}-{nonce}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&root).expect("create test directory");
+        let database_path = root.join("storage.sqlite");
+
+        initialize(database_path.to_string_lossy().into_owned()).expect("initialize storage");
+        kv_set("settings".to_string(), r#"{"mode":"old"}"#.to_string())
+            .expect("write initial settings");
+        kv_apply_batch(
+            r#"[
+                {"key":"settings","valueJson":"{\"mode\":\"system\"}"},
+                {"key":"password","valueJson":"\"ciphertext\""}
+            ]"#
+            .to_string(),
+        )
+        .expect("apply batch");
+        assert_eq!(
+            kv_get("settings".to_string()).expect("read settings"),
+            Some(r#"{"mode":"system"}"#.to_string())
+        );
+
+        let error = kv_apply_batch(
+            r#"[
+                {"key":"settings","valueJson":"{\"mode\":\"partial\"}"},
+                {"key":"password"}
+            ]"#
+            .to_string(),
+        );
+        assert!(error.is_err());
+        assert_eq!(
+            kv_get("settings".to_string()).expect("read unchanged settings"),
+            Some(r#"{"mode":"system"}"#.to_string())
+        );
+
+        kv_apply_batch(r#"[{"key":"password","valueJson":null}]"#.to_string())
+            .expect("delete password");
+        assert_eq!(
+            kv_get("password".to_string()).expect("read deleted password"),
+            None
+        );
+        close();
         fs::remove_dir_all(root).expect("cleanup test directory");
     }
 }

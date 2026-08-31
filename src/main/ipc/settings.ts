@@ -23,7 +23,11 @@ import type {
   UpdateDownloadResult,
   UpdateInstallResult,
 } from '../../shared/app';
-import type { NetworkSettings } from '../../shared/network';
+import type { NetworkSettingsUpdateRequest } from '../../shared/network';
+import {
+  applyGithubAcceleratorUrl,
+  runGithubAcceleratorFallback,
+} from '../../shared/github-accelerator';
 import {
   normalizeCommunityAudioResourceUrl,
   normalizeCommunityImpulseResponseUrl,
@@ -39,7 +43,14 @@ import type { LogSettings } from '../../shared/logging';
 import { applyLogSettings, getLogSettings } from '../logger';
 import { getPlaybackQueueStorage } from '../storage/playbackQueues';
 import { setMainAppSetting } from '../storage/settings';
-import { getNetworkSettings, updateNetworkSettings } from '../networkSettings';
+import { getNetworkSettingsState, updateNetworkSettings } from '../networkSettings';
+import {
+  COMMUNITY_AUDIO_SESSION_PARTITION,
+  attachProxyLoginHandler,
+  getManagedNetworkSession,
+  getProxyCredentials,
+  networkFetch,
+} from '../networkPolicy';
 import {
   clearUpdateInstallQuitRequested,
   markUpdateInstallQuitRequested,
@@ -80,14 +91,10 @@ const MAX_COMMUNITY_AUDIO_PENDING_WRITE_BYTES = 4 * 1024 * 1024;
 const COMMUNITY_AUDIO_DOWNLOAD_TIMEOUT_MS = 30_000;
 const MAX_COMMUNITY_AUDIO_REDIRECTS = 5;
 const COMMUNITY_REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
-const COMMUNITY_AUDIO_SESSION_PARTITION = 'echo-community-audio';
-const COMMUNITY_PROXY_AUTH_REQUIRED_ERROR = 'community proxy authentication required';
 const communityAudioEffectDownloads = new Map<
   string,
   Promise<DownloadCommunityAudioEffectResult>
 >();
-let appliedCommunityAudioProxyKey: string | null = null;
-let communityAudioProxyQueue = Promise.resolve();
 
 type GithubReleaseAsset = {
   name?: unknown;
@@ -173,44 +180,20 @@ const shouldUseArchManualUpdate = (): boolean => {
   return readLinuxPackageType() !== 'pacman';
 };
 
-const requestJson = <T>(url: string): Promise<T> =>
-  new Promise((resolveRequest, rejectRequest) => {
-    import('https')
-      .then((https) => {
-        const req = https.get(
-          url,
-          { headers: { 'User-Agent': 'EchoMusic-Updater', Accept: 'application/json' } },
-          (res) => {
-            const statusCode = res.statusCode || 0;
-            if (statusCode >= 300 && statusCode < 400 && res.headers.location) {
-              res.resume();
-              requestJson<T>(res.headers.location).then(resolveRequest, rejectRequest);
-              return;
-            }
-
-            let data = '';
-            res.setEncoding('utf8');
-            res.on('data', (chunk: string) => (data += chunk));
-            res.on('end', () => {
-              if (statusCode < 200 || statusCode >= 300) {
-                rejectRequest(new Error(`GitHub API returned HTTP ${statusCode}`));
-                return;
-              }
-              try {
-                resolveRequest(JSON.parse(data) as T);
-              } catch (error) {
-                rejectRequest(error);
-              }
-            });
-          },
-        );
-        req.on('error', rejectRequest);
-        req.setTimeout(15000, () => {
-          req.destroy(new Error('GitHub API request timed out'));
-        });
-      })
-      .catch(rejectRequest);
-  });
+const requestJson = async <T>(url: string): Promise<T> => {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15_000);
+  try {
+    const response = await networkFetch(url, {
+      signal: controller.signal,
+      headers: { 'User-Agent': 'EchoMusic-Updater', Accept: 'application/json' },
+    });
+    if (!response.ok) throw new Error(`GitHub API returned HTTP ${response.status}`);
+    return (await response.json()) as T;
+  } finally {
+    clearTimeout(timeout);
+  }
+};
 
 const normalizeReleaseVersion = (tagName: unknown): string => {
   const raw = String(tagName || '')
@@ -273,12 +256,6 @@ const getArchLinuxPackageAsset = (release: GithubRelease): GithubReleaseAsset | 
     }) ??
     null
   );
-};
-
-const withGithubProxy = (url: string, githubProxyUrl: string): string => {
-  const proxyBase = githubProxyUrl.trim();
-  if (!proxyBase || !url.startsWith('http')) return url;
-  return `${proxyBase.endsWith('/') ? proxyBase : `${proxyBase}/`}${url}`;
 };
 
 const probeAudioFileWithFfprobe = async (filePath: string): Promise<boolean | null> =>
@@ -413,52 +390,17 @@ interface CommunityAudioDownloadResponse {
 
 interface CommunityAudioNetworkContext {
   networkSession: Session;
-  proxyCredentials?: { username: string; password: string };
 }
 
-const decodeProxyCredential = (value: string): string => {
-  try {
-    return decodeURIComponent(value);
-  } catch {
-    return value;
-  }
-};
-
 const getCommunityAudioNetworkContext = async (): Promise<CommunityAudioNetworkContext> => {
-  const networkSession = session.fromPartition(COMMUNITY_AUDIO_SESSION_PARTITION);
-  const proxyUrl = getNetworkSettings().playerHttpProxyUrl;
-  const parsed = proxyUrl ? new URL(proxyUrl) : null;
-  const proxyCredentials =
-    parsed && (parsed.username || parsed.password)
-      ? {
-          username: decodeProxyCredential(parsed.username),
-          password: decodeProxyCredential(parsed.password),
-        }
-      : undefined;
-  const proxyRules = parsed ? `${parsed.protocol}//${parsed.host}` : '';
-  const proxyKey = parsed
-    ? `fixed:${proxyRules}\0${proxyCredentials?.username || ''}\0${proxyCredentials?.password || ''}`
-    : 'system';
-  const proxyConfig: Electron.ProxyConfig = parsed
-    ? { mode: 'fixed_servers', proxyRules }
-    : { mode: 'system' };
-
-  const applyTask = communityAudioProxyQueue.then(async () => {
-    if (appliedCommunityAudioProxyKey === proxyKey) return;
-    const hadPreviousConfiguration = appliedCommunityAudioProxyKey !== null;
-    await networkSession.setProxy(proxyConfig);
-    if (hadPreviousConfiguration) await networkSession.closeAllConnections();
-    appliedCommunityAudioProxyKey = proxyKey;
-  });
-  communityAudioProxyQueue = applyTask.catch(() => undefined);
-  await applyTask;
-  return { networkSession, proxyCredentials };
+  const networkSession = await getManagedNetworkSession(COMMUNITY_AUDIO_SESSION_PARTITION);
+  return { networkSession };
 };
 
 const requestCommunityAudioResource = (
   sourceUrl: URL,
   signal: AbortSignal,
-  { networkSession, proxyCredentials }: CommunityAudioNetworkContext,
+  { networkSession }: CommunityAudioNetworkContext,
 ): Promise<CommunityAudioDownloadResponse> =>
   new Promise((resolve, reject) => {
     let settled = false;
@@ -510,19 +452,7 @@ const requestCommunityAudioResource = (
     });
     request.on('error', rejectOnce);
     request.on('abort', () => rejectOnce(new Error('request aborted')));
-    request.on('login', (authInfo, callback) => {
-      if (authInfo.isProxy) {
-        if (proxyCredentials) {
-          callback(proxyCredentials.username, proxyCredentials.password);
-          return;
-        }
-        rejectOnce(new Error(COMMUNITY_PROXY_AUTH_REQUIRED_ERROR));
-        callback();
-        request.abort();
-        return;
-      }
-      callback();
-    });
+    attachProxyLoginHandler(request);
     request.end();
   });
 
@@ -760,9 +690,6 @@ const performCommunityAudioEffectDownload = async (
     await fs.promises.rm(stagingDir, { recursive: true, force: true }).catch(() => undefined);
     const message = error instanceof Error ? error.message : '';
     if (message === 'download timed out') return { error: '社区音效下载超时。' };
-    if (message === COMMUNITY_PROXY_AUTH_REQUIRED_ERROR) {
-      return { error: '播放器代理需要身份验证，请在代理地址中填写用户名和密码。' };
-    }
     return { error: '社区音效下载或校验失败。' };
   }
 };
@@ -799,6 +726,14 @@ export const registerSettingsHandlers = ({ getMainWindow, playerRef }: IpcContex
   autoUpdater.autoDownload = false;
   autoUpdater.autoInstallOnAppQuit = true;
   autoUpdater.logger = log;
+  autoUpdater.on('login', (authInfo, callback) => {
+    const credentials = getProxyCredentials();
+    if (authInfo.isProxy && credentials) {
+      callback(credentials.username, credentials.password);
+      return;
+    }
+    callback('', '');
+  });
 
   const isDev = !app.isPackaged;
 
@@ -807,6 +742,97 @@ export const registerSettingsHandlers = ({ getMainWindow, playerRef }: IpcContex
   let downloadState: UpdateDownloadResult = { status: 'idle' };
   let downloadCancellationToken: CancellationToken | null = null;
   let updateInstallExitTimeout: ReturnType<typeof setTimeout> | null = null;
+  let managedUpdaterOperationCount = 0;
+  let activeUpdateSource = {
+    prerelease: false,
+    acceleratorUrl: '',
+    usingAccelerator: false,
+  };
+
+  const runManagedUpdaterOperation = async <T>(operation: () => Promise<T>): Promise<T> => {
+    managedUpdaterOperationCount += 1;
+    try {
+      return await operation();
+    } finally {
+      managedUpdaterOperationCount -= 1;
+    }
+  };
+
+  const configureGithubUpdateSource = (prerelease: boolean) => {
+    autoUpdater.setFeedURL({
+      provider: 'github',
+      owner: 'hoowhoami',
+      repo: 'EchoMusic',
+    });
+    autoUpdater.allowPrerelease = prerelease;
+    activeUpdateSource = {
+      ...activeUpdateSource,
+      prerelease,
+      usingAccelerator: false,
+    };
+  };
+
+  const configureAcceleratedUpdateSource = async (context: {
+    prerelease: boolean;
+    acceleratorUrl: string;
+  }) => {
+    let githubFeedUrl = 'https://github.com/hoowhoami/EchoMusic/releases/latest/download';
+    if (context.prerelease) {
+      log.info('[Updater] Fetching latest prerelease tag via GitHub API...');
+      const releases = await requestJson<GithubRelease[]>(
+        'https://api.github.com/repos/hoowhoami/EchoMusic/releases?per_page=1',
+      );
+      const tag = String(releases[0]?.tag_name ?? '').trim();
+      if (!tag) throw new Error('未找到可用的 GitHub 预发布版本');
+      githubFeedUrl = `https://github.com/hoowhoami/EchoMusic/releases/download/${tag}`;
+    }
+    const feedUrl = applyGithubAcceleratorUrl(githubFeedUrl, context.acceleratorUrl);
+    if (feedUrl === githubFeedUrl) throw new Error('GitHub 加速地址无效');
+    log.info(`[Updater] Using accelerated feed URL: ${feedUrl}`);
+    autoUpdater.setFeedURL({ provider: 'generic', url: feedUrl });
+    autoUpdater.allowPrerelease = context.prerelease;
+    activeUpdateSource = {
+      ...context,
+      usingAccelerator: true,
+    };
+  };
+
+  const checkForUpdatesWithFallback = async (context: {
+    prerelease: boolean;
+    acceleratorUrl: string;
+  }) => {
+    activeUpdateSource = { ...context, usingAccelerator: false };
+    return runGithubAcceleratorFallback({
+      acceleratorEnabled: Boolean(context.acceleratorUrl),
+      accelerated: async () => {
+        await configureAcceleratedUpdateSource(context);
+        return autoUpdater.checkForUpdates();
+      },
+      github: async () => {
+        configureGithubUpdateSource(context.prerelease);
+        return autoUpdater.checkForUpdates();
+      },
+      onAcceleratorFailure: (error) => {
+        log.warn('[Updater] GitHub accelerator failed, retrying original GitHub:', error);
+      },
+    });
+  };
+
+  const downloadUpdateWithFallback = async (token: CancellationToken) =>
+    runGithubAcceleratorFallback({
+      acceleratorEnabled: activeUpdateSource.usingAccelerator,
+      accelerated: () => autoUpdater.downloadUpdate(token),
+      github: async () => {
+        configureGithubUpdateSource(activeUpdateSource.prerelease);
+        await autoUpdater.checkForUpdates();
+        if (token.cancelled) throw new Error('cancelled');
+        return autoUpdater.downloadUpdate(token);
+      },
+      shouldFallback: () => !token.cancelled,
+      onAcceleratorFailure: (error) => {
+        log.warn('[Updater] Accelerator download failed, retrying original GitHub:', error);
+      },
+    });
 
   const clearUpdateInstallExitTimeout = () => {
     if (!updateInstallExitTimeout) return;
@@ -908,6 +934,10 @@ export const registerSettingsHandlers = ({ getMainWindow, playerRef }: IpcContex
   });
 
   autoUpdater.on('error', (error) => {
+    if (managedUpdaterOperationCount > 0) {
+      log.warn('[Updater] Managed operation failed; fallback or caller will handle it:', error);
+      return;
+    }
     log.error('[Updater] Error:', error);
     const message = error?.message || '更新失败，请稍后重试。';
     // 用户主动取消下载导致的错误，静默忽略（token 已被清空，state 已是 idle）
@@ -999,7 +1029,7 @@ export const registerSettingsHandlers = ({ getMainWindow, playerRef }: IpcContex
     const isPacmanPackage = isPacmanAssetName(archiveName);
     const downloadUrl =
       typeof archiveAsset?.browser_download_url === 'string'
-        ? withGithubProxy(archiveAsset.browser_download_url, payload.githubProxyUrl)
+        ? applyGithubAcceleratorUrl(archiveAsset.browser_download_url, payload.githubProxyUrl)
         : releaseUrl;
     const downloadLabel = archiveAsset
       ? isPacmanPackage
@@ -1239,12 +1269,14 @@ export const registerSettingsHandlers = ({ getMainWindow, playerRef }: IpcContex
     },
   );
 
+  ipcRegistry.registerHandler('network:get-settings', () => getNetworkSettingsState());
+
   ipcRegistry.registerHandler(
     'network:update-settings',
-    async (_event, settings: Partial<NetworkSettings>) => {
-      const next = updateNetworkSettings(settings);
+    async (_event, request: NetworkSettingsUpdateRequest) => {
+      const next = await updateNetworkSettings(request);
       try {
-        await playerRef.current?.setNetwork(next);
+        await playerRef.current?.setNetwork(next.settings);
       } catch (error) {
         log.warn('[Network] Failed to apply player network settings:', error);
       }
@@ -1294,113 +1326,9 @@ export const registerSettingsHandlers = ({ getMainWindow, playerRef }: IpcContex
         return;
       }
 
-      // 配置更新源
-      if (githubProxyUrl) {
-        const proxyBase = githubProxyUrl.endsWith('/') ? githubProxyUrl : `${githubProxyUrl}/`;
-
-        if (prerelease) {
-          // 预发布 + 代理：先通过 GitHub API 查询最新 prerelease 的 tag，再用代理下载
-          log.info('[Updater] Fetching latest prerelease tag via GitHub API...');
-          import('https')
-            .then((https) => {
-              const apiUrl = 'https://api.github.com/repos/hoowhoami/EchoMusic/releases?per_page=1';
-              const req = https.get(
-                apiUrl,
-                { headers: { 'User-Agent': 'EchoMusic-Updater', Accept: 'application/json' } },
-                (res) => {
-                  let data = '';
-                  res.on('data', (chunk: string) => (data += chunk));
-                  res.on('end', () => {
-                    try {
-                      const releases = JSON.parse(data);
-                      const latest = releases[0];
-                      if (!latest?.tag_name) {
-                        log.warn('[Updater] No prerelease found, falling back to github provider');
-                        autoUpdater.setFeedURL({
-                          provider: 'github',
-                          owner: 'hoowhoami',
-                          repo: 'EchoMusic',
-                        });
-                      } else {
-                        const tag = latest.tag_name;
-                        const feedUrl = `${proxyBase}https://github.com/hoowhoami/EchoMusic/releases/download/${tag}`;
-                        log.info(`[Updater] Using proxy feed URL for prerelease: ${feedUrl}`);
-                        autoUpdater.setFeedURL({
-                          provider: 'generic',
-                          url: feedUrl,
-                        });
-                      }
-                    } catch {
-                      log.warn('[Updater] Failed to parse API response, falling back');
-                      autoUpdater.setFeedURL({
-                        provider: 'github',
-                        owner: 'hoowhoami',
-                        repo: 'EchoMusic',
-                      });
-                    }
-                    autoUpdater.allowPrerelease = prerelease;
-                    autoUpdater.checkForUpdates().catch((error) => {
-                      log.error('[Updater] Check failed:', error);
-                      sendToRenderer('update-check-result', {
-                        status: 'error',
-                        currentVersion: getAppInfo().version,
-                        message: error?.message || '更新检查失败，请稍后重试。',
-                        silent,
-                      } satisfies UpdateCheckResult);
-                    });
-                  });
-                },
-              );
-              req.on('error', (error) => {
-                log.warn('[Updater] API request failed, falling back to github provider:', error);
-                autoUpdater.setFeedURL({
-                  provider: 'github',
-                  owner: 'hoowhoami',
-                  repo: 'EchoMusic',
-                });
-                autoUpdater.allowPrerelease = prerelease;
-                autoUpdater.checkForUpdates().catch((err) => {
-                  log.error('[Updater] Check failed:', err);
-                  sendToRenderer('update-check-result', {
-                    status: 'error',
-                    currentVersion: getAppInfo().version,
-                    message: err?.message || '更新检查失败，请稍后重试。',
-                    silent,
-                  } satisfies UpdateCheckResult);
-                });
-              });
-            })
-            .catch(() => {
-              autoUpdater.setFeedURL({
-                provider: 'github',
-                owner: 'hoowhoami',
-                repo: 'EchoMusic',
-              });
-              autoUpdater.allowPrerelease = prerelease;
-              autoUpdater.checkForUpdates();
-            });
-          return;
-        } else {
-          // 正式版 + 代理：直接用 releases/latest/download
-          const feedUrl = `${proxyBase}https://github.com/hoowhoami/EchoMusic/releases/latest/download`;
-          log.info(`[Updater] Using proxy feed URL: ${feedUrl}`);
-          autoUpdater.setFeedURL({
-            provider: 'generic',
-            url: feedUrl,
-          });
-        }
-      } else {
-        // 无代理：用 github provider 直连
-        autoUpdater.setFeedURL({
-          provider: 'github',
-          owner: 'hoowhoami',
-          repo: 'EchoMusic',
-        });
-      }
-
-      autoUpdater.allowPrerelease = prerelease;
-
-      autoUpdater.checkForUpdates().catch((error) => {
+      runManagedUpdaterOperation(() =>
+        checkForUpdatesWithFallback({ prerelease, acceleratorUrl: githubProxyUrl }),
+      ).catch((error) => {
         log.error('[Updater] Check failed:', error);
         sendToRenderer('update-check-result', {
           status: 'error',
@@ -1443,7 +1371,7 @@ export const registerSettingsHandlers = ({ getMainWindow, playerRef }: IpcContex
     sendToRenderer('update-download-status', downloadState);
     const token = new CancellationToken();
     downloadCancellationToken = token;
-    autoUpdater.downloadUpdate(token).catch((error) => {
+    runManagedUpdaterOperation(() => downloadUpdateWithFallback(token)).catch((error) => {
       // 中止后立即重下时，旧下载尝试（如取消）的失败回调不能覆盖新下载：
       // 仅当 token 仍是当前下载的 token 时才更新错误状态。
       if (downloadCancellationToken !== token) return;

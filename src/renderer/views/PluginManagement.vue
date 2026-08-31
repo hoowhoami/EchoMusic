@@ -284,6 +284,7 @@ const getPluginFeatureTags = (manifest: EchoPluginManifest) => {
   if (manifest.capabilities?.lyrics) tags.push('歌词解析');
   if (manifest.capabilities?.audioSource) tags.push('音源解析');
   if (manifest.capabilities?.audioSpectrum) tags.push('音频频谱');
+  if (manifest.capabilities?.backups) tags.push('备份与恢复');
   if (manifest.capabilities?.kugouApi) tags.push('酷狗 API');
   if (manifest.capabilities?.kugouVerification) tags.push('酷狗验证');
   if (manifest.capabilities?.localFiles) tags.push('本地文件');

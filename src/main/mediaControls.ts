@@ -5,6 +5,7 @@ import { createRequire } from 'node:module';
 import path from 'path';
 import log from './logger';
 import { setTaskbarCover } from './taskbarThumbnail';
+import { networkFetch } from './networkPolicy';
 
 // native addon 类型（与自动生成的 index.d.ts 对齐）
 interface NativeMediaControls {
@@ -15,7 +16,6 @@ interface NativeMediaControls {
     artist: string;
     album: string;
     coverData?: number[];
-    coverUrl?: string;
     durationMs?: number;
   }): Promise<void>;
   updatePlayState(payload: { status: string }): void;
@@ -108,7 +108,7 @@ async function downloadCoverImage(url: string, signal?: AbortSignal): Promise<Bu
     }
 
     try {
-      const response = await fetch(url, {
+      const response = await networkFetch(url, {
         signal: controller.signal,
         headers: {
           'User-Agent':
@@ -258,7 +258,6 @@ export function initMediaControls(getMainWindow: () => BrowserWindow | null): vo
           artist: payload.artist,
           album: payload.album,
           coverData: coverData ? Array.from(coverData) : undefined,
-          coverUrl: payload.coverUrl,
           durationMs: payload.durationMs,
         });
       } catch (err) {

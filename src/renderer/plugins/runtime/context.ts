@@ -55,6 +55,7 @@ import { createShortcutsApi } from './shortcuts';
 import { createStyleDisposer } from './styles';
 import { createThemeApi, type PluginThemeApi } from './theme';
 import { createPluginNetworkApi } from './network';
+import { createPluginBackupsApi, type PluginBackupsApi } from './backups';
 
 type PluginCallbackRunner = <T>(
   pluginId: string,
@@ -159,6 +160,7 @@ export interface EchoPluginContext {
     set: (key: string, value: unknown) => Promise<unknown>;
     delete: (key: string) => Promise<unknown>;
   };
+  backups: PluginBackupsApi;
   dialog: NonNullable<Window['electron']['plugins']>['dialog'];
   fs: ReturnType<typeof createPluginFsApi>;
   process: {
@@ -338,6 +340,7 @@ export const createPluginContext = (
       delete: (key: string) =>
         window.electron.plugins?.storage.delete(descriptor.id, key) ?? Promise.resolve(null),
     },
+    backups: createPluginBackupsApi(descriptor),
     dialog: {
       selectDirectory: (options) =>
         window.electron.plugins?.dialog.selectDirectory(
