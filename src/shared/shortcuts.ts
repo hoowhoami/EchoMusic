@@ -23,6 +23,7 @@ export type ShortcutMap = Record<ShortcutCommand, string>;
 export interface ShortcutRegistrationFailure {
   command: ShortcutCommand;
   accelerator: string;
+  scope: 'local' | 'global';
   reason: 'invalid' | 'conflict';
 }
 

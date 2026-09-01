@@ -5,6 +5,11 @@ import type { Router } from 'vue-router';
 import { Icon } from '@iconify/vue';
 import type { Component } from 'vue';
 import { logger } from '@/utils/logger';
+import {
+  createObservedElementRegistry,
+  createObservedRootConnectionMonitor,
+  observeRootConnectionChanges,
+} from '../../../shared/observed-element-registry';
 import { createPluginUiApi } from '../registry';
 
 export interface PluginScrollContainerState {
@@ -291,25 +296,43 @@ export const createDomApi = (
     options?: { root?: Element | Document; once?: boolean },
   ) => {
     const root = options?.root ?? document.body;
-    const seen = new WeakSet<Element>();
-    const disposers: Array<() => void> = [];
+    const customElementRoot = options?.root instanceof Element ? options.root : null;
     let stopped = false;
+    const activeElements = createObservedElementRegistry<Element>((dispose) =>
+      runPluginCallback(pluginId, `DOM 监听清理: ${selector}`, dispose, undefined),
+    );
+
+    const isWithinRoot = (element: Element) =>
+      element.isConnected &&
+      (root instanceof Document
+        ? Boolean(root.documentElement?.contains(element))
+        : root.isConnected && root.contains(element));
+
+    const isCustomRootConnected = () =>
+      Boolean(
+        customElementRoot?.isConnected &&
+        customElementRoot.ownerDocument.documentElement?.contains(customElementRoot),
+      );
 
     const visit = (element: Element) => {
-      if (stopped || seen.has(element)) return;
-      seen.add(element);
+      if (stopped || activeElements.has(element)) return;
       const dispose = runPluginCallback(
         pluginId,
         `DOM 监听: ${selector}`,
         () => handler(element),
         undefined,
       );
-      if (typeof dispose === 'function') disposers.push(dispose);
+      activeElements.add(element, typeof dispose === 'function' ? dispose : null);
       if (options?.once) stop();
     };
 
     const scan = () => {
       if (stopped) return;
+      if (customElementRoot && !isCustomRootConnected()) {
+        activeElements.clear();
+        return;
+      }
+      activeElements.prune(isWithinRoot);
       if (root instanceof Element && root.matches(selector)) visit(root);
       const queryRoot = root instanceof Document ? root : root.ownerDocument;
       const scope = root instanceof Document ? root : root;
@@ -318,16 +341,27 @@ export const createDomApi = (
     };
 
     const observer = new MutationObserver(scan);
+    const rootConnection = customElementRoot
+      ? createObservedRootConnectionMonitor(
+          isCustomRootConnected,
+          () => activeElements.clear(),
+          scan,
+        )
+      : null;
+    const stopRootLifecycleObserver =
+      customElementRoot && rootConnection
+        ? observeRootConnectionChanges(
+            customElementRoot.ownerDocument,
+            (callback) => new MutationObserver(callback),
+            rootConnection,
+          )
+        : null;
     const stop = () => {
       if (stopped) return;
       stopped = true;
       observer.disconnect();
-      disposers
-        .splice(0)
-        .reverse()
-        .forEach((dispose) =>
-          runPluginCallback(pluginId, `DOM 监听清理: ${selector}`, dispose, undefined),
-        );
+      stopRootLifecycleObserver?.();
+      activeElements.clear();
     };
 
     scan();

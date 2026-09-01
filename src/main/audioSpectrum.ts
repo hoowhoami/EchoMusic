@@ -1,4 +1,9 @@
 import { ipcMain, type WebContents } from 'electron';
+import {
+  audioSpectrumOptionsIncludeWaveform,
+  filterAudioSpectrumFrameForSubscriber,
+  normalizeAudioSpectrumWaveform,
+} from '../shared/audio-spectrum';
 import type {
   AudioSpectrumFrame,
   AudioSpectrumOptions,
@@ -52,6 +57,9 @@ const getMergedOptions = (): AudioSpectrumOptions => {
   let minFrequency: number | undefined;
   let maxFrequency: number | undefined;
   let smoothing: number | undefined;
+  const includeWaveform = audioSpectrumOptionsIncludeWaveform(
+    Array.from(subscriptions.values(), (subscription) => subscription.options),
+  );
 
   for (const subscription of subscriptions.values()) {
     const options = subscription.options || {};
@@ -83,7 +91,7 @@ const getMergedOptions = (): AudioSpectrumOptions => {
     minFrequency: resolvedMinFrequency,
     maxFrequency: Math.max(maxFrequency ?? 20000, resolvedMinFrequency + 1),
     scale: 'log',
-    includeWaveform: false,
+    includeWaveform,
   };
 };
 
@@ -118,7 +126,14 @@ const broadcastFrame = (frame: AudioSpectrumFrame) => {
       continue;
     }
     try {
-      subscription.webContents.send('audio-spectrum:frame', subscription.id, frame);
+      subscription.webContents.send(
+        'audio-spectrum:frame',
+        subscription.id,
+        filterAudioSpectrumFrameForSubscriber(
+          frame,
+          subscription.options?.includeWaveform === true,
+        ),
+      );
     } catch (error) {
       log.debug('[AudioSpectrum] Failed to send frame:', error);
       subscriptions.delete(key);
@@ -138,7 +153,13 @@ const toAudioSpectrumFrame = (
   options: AudioSpectrumOptions,
 ): AudioSpectrumFrame | null => {
   if (!snapshot || typeof snapshot !== 'object') return null;
-  const value = snapshot as { bins?: number[]; peak?: number; rms?: number; timestamp?: number };
+  const value = snapshot as {
+    bins?: number[];
+    waveform?: number[];
+    peak?: number;
+    rms?: number;
+    timestamp?: number;
+  };
   if (!Array.isArray(value.bins)) return null;
   const state = controller.currentState;
   return {
@@ -151,6 +172,7 @@ const toAudioSpectrumFrame = (
     minFrequency: Number(options.minFrequency) || 20,
     maxFrequency: Number(options.maxFrequency) || 20000,
     bins: value.bins.map(toNormalizedBin),
+    waveform: normalizeAudioSpectrumWaveform(value.waveform, options.includeWaveform === true),
     rms: Number(value.rms) || 0,
     peak: Number(value.peak) || 0,
   };
@@ -223,6 +245,7 @@ const syncForSubscriptions = (): AudioSpectrumStatus => {
     minFrequency: options.minFrequency,
     maxFrequency: options.maxFrequency,
     smoothing: options.smoothing,
+    includeWaveform: options.includeWaveform,
   });
 
   const intervalMs = Math.max(16, Math.round(1000 / Math.max(1, Math.min(60, options.fps ?? 30))));

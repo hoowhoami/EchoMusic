@@ -60,3 +60,29 @@ export type AudioSpectrumSubscribeResult =
       error: string;
       status?: AudioSpectrumStatus;
     };
+
+export const audioSpectrumOptionsIncludeWaveform = (
+  options: Iterable<AudioSpectrumOptions | undefined>,
+) => {
+  for (const option of options) {
+    if (option?.includeWaveform === true) return true;
+  }
+  return false;
+};
+
+export const normalizeAudioSpectrumWaveform = (value: unknown, includeWaveform: boolean) => {
+  if (!includeWaveform || !Array.isArray(value)) return undefined;
+  return value.map((sample) => {
+    const number = Number(sample);
+    if (!Number.isFinite(number)) return 0;
+    return Math.min(1, Math.max(-1, number));
+  });
+};
+
+export const filterAudioSpectrumFrameForSubscriber = (
+  frame: AudioSpectrumFrame,
+  includeWaveform: boolean,
+): AudioSpectrumFrame => {
+  if (includeWaveform || frame.waveform === undefined) return frame;
+  return { ...frame, waveform: undefined };
+};

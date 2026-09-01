@@ -19,6 +19,10 @@ import { isPluginRendererGoneFailureReason, reportPluginRendererFailure } from '
 import { ipcRegistry } from '../ipc/registry';
 import { applyWindowAppIcon, resolveWindowIconPath } from '../appIcons';
 import { logMainMemory } from '../diagnostics/memory';
+import {
+  WindowBoundsPersistenceGate,
+  type WindowBoundsChangeKind,
+} from '../windowBoundsPersistence';
 
 const minWidth: number = 1100;
 const defaultWidth: number = 1150;
@@ -223,15 +227,10 @@ const buildWindowBounds = (): Pick<
   return bounds;
 };
 
-type WindowBoundsChangeKind = 'move' | 'resize';
-
 const shouldUseContentWindowState = () => process.platform !== 'win32';
 const shouldPersistDirtyWindowStateOnly = () => process.platform === 'win32';
 
-const pendingManualWindowChange: Record<WindowBoundsChangeKind, boolean> = {
-  move: false,
-  resize: false,
-};
+const windowBoundsPersistenceGate = new WindowBoundsPersistenceGate();
 
 const dirtyWindowState = {
   size: false,
@@ -244,24 +243,18 @@ const markWindowStateDirty = (fields: Partial<typeof dirtyWindowState>) => {
 };
 
 const markManualWindowResize = () => {
-  pendingManualWindowChange.resize = true;
+  windowBoundsPersistenceGate.markManualChange('resize');
   // 从左侧或顶部缩放时坐标也会变化。
   markWindowStateDirty({ size: true, position: true });
 };
 
 const markManualWindowMove = () => {
-  pendingManualWindowChange.move = true;
+  windowBoundsPersistenceGate.markManualChange('move');
   markWindowStateDirty({ position: true });
 };
 
 const consumeWindowBoundsChange = (kind: WindowBoundsChangeKind) => {
-  if (!shouldPersistDirtyWindowStateOnly()) {
-    markWindowStateDirty(kind === 'resize' ? { size: true, position: true } : { position: true });
-    return true;
-  }
-
-  if (!pendingManualWindowChange[kind]) return false;
-  pendingManualWindowChange[kind] = false;
+  if (!windowBoundsPersistenceGate.shouldPersist(kind)) return false;
   markWindowStateDirty(kind === 'resize' ? { size: true, position: true } : { position: true });
   return true;
 };

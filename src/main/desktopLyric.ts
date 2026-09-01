@@ -627,6 +627,7 @@ export const destroyDesktopLyricWindow = () => {
   desktopLyricDragController.dispose();
   const win = getDesktopLyricWindow();
   if (!win || win.isDestroyed()) return;
+  flushPersistWindowBounds();
   clearDesktopLyricDisplayMetricsTimer();
   clearDesktopLyricLockPhaseTimer();
   clearWindowInteractionTimers();
@@ -662,21 +663,21 @@ export const updateDesktopLyricSettings = async (partial: Partial<DesktopLyricSe
 
   persistDesktopLyricSettings(nextSettings);
 
-  const storedWindowState = getDesktopLyricWindowState();
   const win = getDesktopLyricWindow();
-  const currentBounds = win && !win.isDestroyed() ? win.getBounds() : null;
-  const candidateWindowState = {
-    width: currentBounds?.width ?? storedWindowState.width,
-    height: currentBounds?.height ?? storedWindowState.height,
-    x: desktopLyricUsesWayland ? storedWindowState.x : (currentBounds?.x ?? storedWindowState.x),
-    y: desktopLyricUsesWayland ? storedWindowState.y : (currentBounds?.y ?? storedWindowState.y),
-  };
-  const nextWindowState = constrainBoundsToDisplay(
-    layoutChanged
-      ? getLayoutPreferredBounds(candidateWindowState, nextSettings.layout)
-      : candidateWindowState,
-  );
-  persistDesktopLyricWindowState(nextWindowState);
+  let nextWindowState = getDesktopLyricWindowState();
+  if (layoutChanged) {
+    const currentBounds = win && !win.isDestroyed() ? win.getBounds() : null;
+    const candidateWindowState = {
+      width: currentBounds?.width ?? nextWindowState.width,
+      height: currentBounds?.height ?? nextWindowState.height,
+      x: desktopLyricUsesWayland ? nextWindowState.x : (currentBounds?.x ?? nextWindowState.x),
+      y: desktopLyricUsesWayland ? nextWindowState.y : (currentBounds?.y ?? nextWindowState.y),
+    };
+    nextWindowState = constrainBoundsToDisplay(
+      getLayoutPreferredBounds(candidateWindowState, nextSettings.layout),
+    );
+    persistDesktopLyricWindowState(nextWindowState);
+  }
 
   if (win && !win.isDestroyed()) {
     applyWindowSizeLimits();

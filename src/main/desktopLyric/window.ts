@@ -9,6 +9,10 @@ import {
   resolveInitialBounds,
 } from './store';
 import { registerNetworkSession } from '../networkPolicy';
+import {
+  bindWindowBoundsPersistenceEvents,
+  shouldFlushWindowBounds,
+} from '../windowBoundsPersistence';
 
 const getBackgroundColor = () => '#00000000';
 const desktopLyricUsesWayland = isWaylandWindowingBackend();
@@ -28,6 +32,7 @@ let desktopLyricRestackTimers: NodeJS.Timeout[] = [];
 let desktopLyricInteractionTimers: NodeJS.Timeout[] = [];
 let desktopLyricDockTimers: NodeJS.Timeout[] = [];
 let desktopLyricPersistBoundsTimer: NodeJS.Timeout | null = null;
+let desktopLyricBoundsDirty = false;
 let desktopLyricWorkspaceVisibility: boolean | null = null;
 
 export const getDesktopLyricWindow = () => desktopLyricWindow;
@@ -37,6 +42,7 @@ export const withDesktopLyricWindow = (window: BrowserWindow | null) => {
   if (!window) {
     desktopLyricWorkspaceVisibility = null;
     clearPersistBoundsTimer();
+    desktopLyricBoundsDirty = false;
     clearDockRestoreTimers();
   }
 };
@@ -52,6 +58,7 @@ export const persistWindowBounds = () => {
   persistDesktopLyricWindowState(
     desktopLyricUsesWayland ? { width: bounds.width, height: bounds.height } : bounds,
   );
+  desktopLyricBoundsDirty = false;
 };
 
 const clearPersistBoundsTimer = () => {
@@ -61,6 +68,7 @@ const clearPersistBoundsTimer = () => {
 };
 
 export const schedulePersistWindowBounds = () => {
+  desktopLyricBoundsDirty = true;
   clearPersistBoundsTimer();
   desktopLyricPersistBoundsTimer = setTimeout(() => {
     desktopLyricPersistBoundsTimer = null;
@@ -70,7 +78,7 @@ export const schedulePersistWindowBounds = () => {
 
 export const flushPersistWindowBounds = () => {
   clearPersistBoundsTimer();
-  persistWindowBounds();
+  if (shouldFlushWindowBounds(desktopLyricBoundsDirty)) persistWindowBounds();
 };
 
 export const clearWindowPresentationTimers = () => {
@@ -213,13 +221,11 @@ export const createDesktopLyricWindow = () => {
   // Windows 上用 moved/resized 事件保存位置（仅在操作结束后触发一次），
   // 避免 move/resize 高频触发时 DPI 缩放导致的坐标舍入偏移累积。
   // macOS/Linux 保持 move/resize（macOS 的 moved 行为不一致，Linux 不支持 moved）。
-  if (process.platform === 'win32') {
-    win.on('moved', persistWindowBounds);
-    win.on('resized', persistWindowBounds);
-  } else {
-    win.on('move', schedulePersistWindowBounds);
-    win.on('resize', schedulePersistWindowBounds);
-  }
+  bindWindowBoundsPersistenceEvents(
+    win,
+    process.platform === 'win32' ? persistWindowBounds : schedulePersistWindowBounds,
+  );
+  win.on('close', flushPersistWindowBounds);
 
   return win;
 };

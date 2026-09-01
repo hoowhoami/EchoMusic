@@ -40,6 +40,7 @@ import {
   type SpatialAudioEffectEntry,
 } from '../../shared/audio';
 import type { LogSettings } from '../../shared/logging';
+import { formatUpdateCheckError } from '../../shared/update-error';
 import { applyLogSettings, getLogSettings } from '../logger';
 import { getPlaybackQueueStorage } from '../storage/playbackQueues';
 import { setMainAppSetting } from '../storage/settings';
@@ -955,7 +956,7 @@ export const registerSettingsHandlers = ({ getMainWindow, playerRef }: IpcContex
       sendToRenderer('update-check-result', {
         status: 'error',
         currentVersion: getAppInfo().version,
-        message,
+        message: formatUpdateCheckError(error),
         silent: getEchoSilent(),
       } satisfies UpdateCheckResult);
     }
@@ -1333,7 +1334,7 @@ export const registerSettingsHandlers = ({ getMainWindow, playerRef }: IpcContex
         sendToRenderer('update-check-result', {
           status: 'error',
           currentVersion: getAppInfo().version,
-          message: error?.message || '更新检查失败，请稍后重试。',
+          message: formatUpdateCheckError(error),
           silent,
         } satisfies UpdateCheckResult);
       });

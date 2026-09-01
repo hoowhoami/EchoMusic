@@ -11,8 +11,36 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  prepare-release:
+    name: Hide Incomplete Release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Hide incomplete existing Release
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          RELEASE_JSON=$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${GITHUB_REF_NAME}" 2>/dev/null || true)
+          if [ -z "$RELEASE_JSON" ]; then
+            exit 0
+          fi
+
+          for metadata in latest.yml latest-mac.yml latest-linux.yml latest-linux-arm64.yml; do
+            if ! jq -e --arg name "$metadata" '.assets | any(.name == $name)' <<< "$RELEASE_JSON" >/dev/null; then
+              RELEASE_ID=$(jq -r '.id' <<< "$RELEASE_JSON")
+              gh api --method PATCH "repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}" -F draft=true >/dev/null
+              exit 0
+            fi
+          done
+
   build:
     name: Build ${{ matrix.artifact_name }}
+    needs: prepare-release
     timeout-minutes: 90
     runs-on: ${{ matrix.os }}
     permissions:
@@ -396,17 +424,44 @@ jobs:
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Create Release
+      # action-gh-release creates the Release before uploading its files. Keep it
+      # private while assets are being replaced/uploaded so electron-updater never
+      # observes a version whose latest*.yml metadata is not available yet.
+      - name: Hide existing Release during asset upload
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          RELEASE_ID=$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${GITHUB_REF_NAME}" --jq '.id' 2>/dev/null || true)
+          if [ -n "$RELEASE_ID" ]; then
+            gh api --method PATCH "repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}" -F draft=true >/dev/null
+          fi
+
+      - name: Upload assets to draft Release
+        id: release
         uses: softprops/action-gh-release@v2
         with:
           files: release-artifacts/**
           body: ${{ steps.changelog.outputs.BODY }}
-          draft: false
+          draft: true
           prerelease: ${{ contains(github.ref_name, '-') }}
           fail_on_unmatched_files: true
           overwrite_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish completed Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_ID: ${{ steps.release.outputs.id }}
+          IS_PRERELEASE: ${{ contains(github.ref_name, '-') }}
+        run: |
+          set -e
+          gh api --method PATCH "repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}" \
+            -F draft=false \
+            -F prerelease="$IS_PRERELEASE" >/dev/null
 
   notify:
     name: Send Telegram Notification

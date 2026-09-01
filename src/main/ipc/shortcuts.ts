@@ -127,6 +127,7 @@ const handleShortcutTrigger = (
 const registerAcceleratorMap = (
   shortcutMap: ShortcutMap,
   registeredSet: Set<string>,
+  scope: 'local' | 'global',
   handleTrigger: (command: ShortcutCommand) => void,
   shouldRegister?: (accelerator: string) => boolean,
 ): ShortcutRegistrationResult => {
@@ -143,10 +144,10 @@ const registerAcceleratorMap = (
           registered[command] = accelerator;
           registeredSet.add(accelerator);
         } else {
-          failures.push({ command, accelerator, reason: 'conflict' });
+          failures.push({ command, accelerator, scope, reason: 'conflict' });
         }
       } catch {
-        failures.push({ command, accelerator, reason: 'invalid' });
+        failures.push({ command, accelerator, scope, reason: 'invalid' });
       }
     },
   );
@@ -159,7 +160,7 @@ const registerShortcuts = (
 ): ShortcutRegistrationResult => {
   unregisterAppShortcuts();
   requestedShortcuts = shortcutMap;
-  return registerAcceleratorMap(shortcutMap, appRegisteredAccelerators, (command) =>
+  return registerAcceleratorMap(shortcutMap, appRegisteredAccelerators, 'global', (command) =>
     handleShortcutTrigger(command, getMainWindow, () => true),
   );
 };
@@ -175,6 +176,7 @@ const registerLocalShortcuts = (
   return registerAcceleratorMap(
     shortcutMap,
     appRegisteredLocalAccelerators,
+    'local',
     (command) =>
       handleShortcutTrigger(command, getMainWindow, (win) =>
         Boolean(win && !win.isDestroyed() && win.isFocused()),

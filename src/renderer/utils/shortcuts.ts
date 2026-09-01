@@ -10,6 +10,7 @@ import type {
   ShortcutMap,
   ShortcutRegistrationResult,
 } from '../../shared/shortcuts';
+import { formatShortcutRegistrationFailures } from '../../shared/shortcut-registration';
 
 type ShortcutDisplayPlatform = 'darwin' | 'win32' | 'linux' | string;
 
@@ -399,41 +400,12 @@ export const resolveShortcutMap = (scope: 'local' | 'global'): ShortcutMap => {
   };
 };
 
-const getShortcutCommandLabel = (command: ShortcutCommand) => {
-  const labels: Record<ShortcutCommand, string> = {
-    togglePlayback: '播放 / 暂停',
-    previousTrack: '上一首',
-    nextTrack: '下一首',
-    seekForward: '快进',
-    seekBackward: '快退',
-    toggleMainLyric: '主歌词开关',
-    toggleDesktopLyric: '桌面歌词开关',
-    toggleLyricsMode: '歌词模式切换',
-    cycleLyricsMode: '歌词模式轮换',
-    openLyricSource: '选择歌词版本',
-    volumeUp: '音量 +',
-    volumeDown: '音量 -',
-    toggleMute: '静音',
-    toggleFavorite: '收藏当前歌曲',
-    togglePlayMode: '切换播放模式',
-    toggleMiniPlayer: 'Mini 模式切换',
-    toggleWindow: '显示 / 隐藏窗口',
-    toggleSidebar: '侧边栏开关',
-  };
-  return labels[command] ?? command;
-};
-
-const showGlobalShortcutFailures = (result: ShortcutRegistrationResult | null | undefined) => {
+const showShortcutRegistrationFailures = (
+  result: ShortcutRegistrationResult | null | undefined,
+) => {
   if (!result?.failures?.length) return;
   const toastStore = useToastStore();
-  const message = result.failures
-    .map(({ command, accelerator, reason }) => {
-      const label = getShortcutCommandLabel(command);
-      const displayAccelerator = formatAcceleratorForDisplay(accelerator);
-      const suffix = reason === 'invalid' ? '格式无效' : '可能与其他软件冲突';
-      return `${label} (${displayAccelerator}) ${suffix}`;
-    })
-    .join('；');
+  const message = formatShortcutRegistrationFailures(result.failures, formatAcceleratorForDisplay);
   toastStore.warning(`以下快捷键未生效：${message}`, 4200);
 };
 
@@ -561,7 +533,7 @@ export const syncGlobalShortcuts = async () => {
     localEnabled,
     localShortcutMap: localEnabled ? resolveShortcutMap('local') : undefined,
   });
-  showGlobalShortcutFailures(result);
+  showShortcutRegistrationFailures(result);
 };
 
 export const initShortcutSync = () => {

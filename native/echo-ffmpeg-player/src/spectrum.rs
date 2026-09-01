@@ -145,8 +145,13 @@ impl SpectrumAnalyzer {
                 / window.len() as f64)
                 .sqrt()
         };
+        let waveform = self
+            .config
+            .include_waveform
+            .then(|| sample_waveform(window));
         SpectrumFrame {
             bins,
+            waveform,
             peak,
             rms,
             timestamp: SystemTime::now()
@@ -202,6 +207,13 @@ impl SpectrumAnalyzer {
             min_frequency * ratio.powf(upper_t),
         )
     }
+}
+
+fn sample_waveform(window: &[f32]) -> Vec<f64> {
+    window
+        .iter()
+        .map(|sample| f64::from(sample.clamp(-1.0, 1.0)))
+        .collect()
 }
 
 fn frequency_to_fft_bin(frequency: f64, sample_rate: u32) -> usize {
@@ -275,6 +287,26 @@ mod tests {
         assert!(frame.peak > 0.4);
         assert!(frame.rms > 0.2);
         assert!(frame.bins.iter().any(|value| *value > 0.2));
+        assert!(frame.waveform.is_none());
+    }
+
+    #[test]
+    fn analyzer_includes_bounded_waveform_only_when_requested() {
+        let window = (0..SPECTRUM_FFT_SIZE)
+            .map(|index| if index % 2 == 0 { 1.5 } else { -1.5 })
+            .collect::<Vec<_>>();
+        let mut analyzer = SpectrumAnalyzer::new(SpectrumConfig {
+            include_waveform: true,
+            ..SpectrumConfig::default()
+        });
+
+        let frame = analyzer.analyze_samples(&window, 48_000);
+        let waveform = frame.waveform.expect("waveform should be present");
+
+        assert_eq!(waveform.len(), SPECTRUM_FFT_SIZE);
+        assert!(waveform.iter().all(|value| (-1.0..=1.0).contains(value)));
+        assert_eq!(waveform[0], 1.0);
+        assert_eq!(waveform[1], -1.0);
     }
 
     #[test]

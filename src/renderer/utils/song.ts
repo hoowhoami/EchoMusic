@@ -20,7 +20,7 @@ export interface SongDerivedState {
 }
 
 const QUALITY_LABEL_MAP: Record<string, string> = {
-  viper_tape: '母带',
+  viper_tape: 'VPR',
   high: 'Hi-Res',
   flac: 'SQ',
   '320': 'HQ',

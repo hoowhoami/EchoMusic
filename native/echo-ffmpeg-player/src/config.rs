@@ -871,6 +871,7 @@ pub struct SpectrumConfig {
     pub min_frequency: f64,
     pub max_frequency: f64,
     pub smoothing: f64,
+    pub include_waveform: bool,
 }
 
 impl Default for SpectrumConfig {
@@ -881,6 +882,7 @@ impl Default for SpectrumConfig {
             min_frequency: 40.0,
             max_frequency: 16_000.0,
             smoothing: 0.6,
+            include_waveform: false,
         }
     }
 }
@@ -903,6 +905,9 @@ impl SpectrumConfig {
             }
             if let Some(value) = options.smoothing {
                 config.smoothing = value.clamp(0.0, 0.98);
+            }
+            if let Some(value) = options.include_waveform {
+                config.include_waveform = value;
             }
         }
         config

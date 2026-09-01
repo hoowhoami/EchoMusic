@@ -34,6 +34,7 @@ pub struct PlayerState {
 #[derive(Clone, Debug)]
 pub struct SpectrumFrame {
     pub bins: Vec<f64>,
+    pub waveform: Option<Vec<f64>>,
     pub peak: f64,
     pub rms: f64,
     pub timestamp: f64,
@@ -55,6 +56,7 @@ pub struct SpectrumOptions {
     pub min_frequency: Option<f64>,
     pub max_frequency: Option<f64>,
     pub smoothing: Option<f64>,
+    pub include_waveform: Option<bool>,
 }
 
 #[napi(object)]

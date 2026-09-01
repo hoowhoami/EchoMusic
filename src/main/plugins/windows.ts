@@ -19,6 +19,10 @@ import { getKvStorage } from '../storage/kv';
 import log from '../logger';
 import { WindowDragController } from '../windowDrag';
 import { registerNetworkSession } from '../networkPolicy';
+import {
+  bindWindowBoundsPersistenceEvents,
+  shouldFlushWindowBounds,
+} from '../windowBoundsPersistence';
 
 type PluginWindowRecord = {
   pluginId: string;
@@ -26,6 +30,7 @@ type PluginWindowRecord = {
   descriptor: PluginWindowDescriptor;
   window: BrowserWindow;
   persistTimer: ReturnType<typeof setTimeout> | null;
+  boundsDirty: boolean;
   usesPanel: boolean;
   dragController: WindowDragController;
 };
@@ -108,17 +113,32 @@ const getStoredBounds = (descriptor: PluginWindowDescriptor): Partial<PluginWind
 };
 
 const persistBounds = (record: PluginWindowRecord) => {
-  if (!record.descriptor.rememberBounds || !canUseWindow(record.window)) return;
+  if (!record.descriptor.rememberBounds || !canUseWindow(record.window)) {
+    record.boundsDirty = false;
+    return;
+  }
   const bounds = record.window.getBounds();
   getKvStorage().set(getBoundsStorageKey(record.pluginId, record.windowId), bounds);
+  record.boundsDirty = false;
 };
 
 const schedulePersistBounds = (record: PluginWindowRecord) => {
+  record.boundsDirty = true;
   if (record.persistTimer) clearTimeout(record.persistTimer);
   record.persistTimer = setTimeout(() => {
     record.persistTimer = null;
     persistBounds(record);
   }, 180);
+};
+
+const flushPersistBounds = (record: PluginWindowRecord) => {
+  if (record.persistTimer) {
+    clearTimeout(record.persistTimer);
+    record.persistTimer = null;
+  }
+  // Windows 下创建、显示及 DPI 协调可能改变实际 bounds；没有用户操作时
+  // 不用这些程序化变化覆盖上一次可信尺寸。其他平台保持原有关闭时落盘行为。
+  if (shouldFlushWindowBounds(record.boundsDirty)) persistBounds(record);
 };
 
 const getFallbackPoint = (descriptor: PluginWindowDescriptor, width: number, height: number) => {
@@ -278,6 +298,7 @@ const createPluginWindow = async (
     descriptor: effectiveDescriptor,
     window: win,
     persistTimer: null,
+    boundsDirty: false,
     usesPanel,
     dragController: null as unknown as WindowDragController,
   };
@@ -299,8 +320,8 @@ const createPluginWindow = async (
     win.showInactive();
     schedulePresentationSync(win, effectiveDescriptor);
   });
-  win.on('move', () => schedulePersistBounds(record));
-  win.on('resize', () => schedulePersistBounds(record));
+  bindWindowBoundsPersistenceEvents(win, () => schedulePersistBounds(record));
+  win.on('close', () => flushPersistBounds(record));
   win.on('closed', () => {
     cancelPluginWindowInteraction(record);
     record.dragController.dispose();
@@ -353,11 +374,7 @@ const recreatePluginWindowForPresentation = async (
     allowOutsideWorkArea: descriptor.allowOutsideWorkArea,
   };
 
-  if (record.persistTimer) {
-    clearTimeout(record.persistTimer);
-    record.persistTimer = null;
-  }
-  persistBounds(record);
+  flushPersistBounds(record);
 
   if (process.platform === 'darwin') {
     previousWindow.setVisibleOnAllWorkspaces(false, {
@@ -447,7 +464,7 @@ export const hidePluginWindow = (pluginId: string, windowId: string): PluginWind
 export const closePluginWindow = (pluginId: string, windowId: string): PluginWindowResult => {
   const record = getRecord(pluginId, windowId);
   if (!record || !canUseWindow(record.window)) return { ok: false, error: '插件窗口未打开' };
-  persistBounds(record);
+  flushPersistBounds(record);
   record.window.close();
   return { ok: true, window: record.descriptor };
 };
@@ -513,7 +530,7 @@ export const closePluginWindows = (pluginId?: string) => {
     if (pluginId && record.pluginId !== normalizePluginId(pluginId)) continue;
     try {
       if (canUseWindow(record.window)) {
-        persistBounds(record);
+        flushPersistBounds(record);
         record.window.close();
       }
     } catch {
