@@ -693,6 +693,8 @@ contextBridge.exposeInMainWorld('electron', {
         normalizationGainDb,
       ),
     clearPreparedNextSource: () => ipcRenderer.invoke('player:clear-prepared-next-source'),
+    commitPreparedNextSource: (transitionMs?: number) =>
+      ipcRenderer.invoke('player:commit-prepared-next-source', transitionMs),
     getTrackList: (url?: string) => ipcRenderer.invoke('player:get-track-list', url),
     play: () => ipcRenderer.invoke('player:play'),
     pause: () => ipcRenderer.invoke('player:pause'),

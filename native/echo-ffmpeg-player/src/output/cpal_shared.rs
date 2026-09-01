@@ -637,6 +637,9 @@ pub(crate) struct OutputResampler {
     converted_scratch: Vec<f32>,
     device_output: Vec<f32>,
     realtime_frame_capacity: usize,
+    decode_generation: u64,
+    generation_fade_frames: usize,
+    generation_fade_elapsed: usize,
 }
 
 impl OutputResampler {
@@ -664,6 +667,9 @@ impl OutputResampler {
             converted_scratch: Vec::new(),
             device_output: Vec::new(),
             realtime_frame_capacity: 0,
+            decode_generation: 0,
+            generation_fade_frames: 0,
+            generation_fade_elapsed: 0,
         })
     }
 
@@ -734,6 +740,7 @@ impl OutputResampler {
         shared: &SharedAudio,
     ) {
         output.fill(0.0);
+        self.sync_decode_generation(shared);
         if shared.paused.load(Ordering::Acquire) || shared.should_stop_output() {
             return;
         }
@@ -772,6 +779,7 @@ impl OutputResampler {
         for sample in self.device_output.iter_mut().take(take_samples) {
             *sample = self.converted_pending.pop_front().unwrap_or(0.0);
         }
+        self.apply_generation_fade();
         process_output_signal(
             &mut self.device_output,
             self.output_channels,
@@ -779,6 +787,38 @@ impl OutputResampler {
             shared.volume(),
             shared,
         );
+    }
+
+    fn sync_decode_generation(&mut self, shared: &SharedAudio) {
+        let generation = shared.current_decode_generation();
+        if generation == self.decode_generation {
+            return;
+        }
+        self.decode_generation = generation;
+        // converted_pending belongs entirely to the previous generation. Do not flush/recreate
+        // SWR here: this method runs in the realtime callback and that operation may allocate.
+        // A short zero-origin fade masks the bounded filter history retained inside SWR.
+        self.converted_pending.clear();
+        self.converted_scratch.clear();
+        self.device_output.clear();
+        self.generation_fade_frames = ((self.output_sample_rate as usize * 15) / 1_000).max(1);
+        self.generation_fade_elapsed = 0;
+    }
+
+    fn apply_generation_fade(&mut self) {
+        if self.generation_fade_elapsed >= self.generation_fade_frames {
+            return;
+        }
+        let channels = self.output_channels.max(1);
+        for frame in self.device_output.chunks_exact_mut(channels) {
+            let gain = ((self.generation_fade_elapsed + 1) as f32
+                / self.generation_fade_frames as f32)
+                .min(1.0);
+            for sample in frame {
+                *sample *= gain;
+            }
+            self.generation_fade_elapsed = self.generation_fade_elapsed.saturating_add(1);
+        }
     }
 
     fn ensure_converted_frames(&mut self, needed_frames: usize, shared: &SharedAudio) {
@@ -1057,6 +1097,37 @@ mod tests {
         assert!(output.iter().any(|sample| sample.abs() > 0.001));
         assert!(shared.played_sample_count() > 0);
         assert!(shared.played_sample_count() <= input_frames as u64);
+    }
+
+    #[test]
+    fn output_resampler_discards_pending_pcm_when_decode_generation_changes() {
+        let shared = SharedAudio::new(
+            MixFormat::stereo_f32(48_000),
+            1.0,
+            8.0,
+            &DspSettings::default(),
+        );
+        let mut resampler = OutputResampler::new(48_000, 44_100, MIX_CHANNELS, MIX_CHANNELS)
+            .expect("output resampler should initialize");
+        resampler.decode_generation = shared.current_decode_generation();
+        resampler.converted_pending.extend([0.75, -0.75]);
+        resampler.converted_scratch.extend([0.5, -0.5]);
+        resampler.device_output.extend([0.25, -0.25]);
+
+        shared.reset_for_decode_resume(0.0, &DspSettings::default());
+        resampler.sync_decode_generation(&shared);
+
+        assert!(resampler.converted_pending.is_empty());
+        assert!(resampler.converted_scratch.is_empty());
+        assert!(resampler.device_output.is_empty());
+        assert_eq!(resampler.generation_fade_elapsed, 0);
+        assert!(resampler.generation_fade_frames > 0);
+
+        resampler.device_output.resize(MIX_CHANNELS * 2, 1.0);
+        resampler.apply_generation_fade();
+        assert!(resampler.device_output[0] > 0.0);
+        assert!(resampler.device_output[0] < 0.01);
+        assert!(resampler.device_output[2] > resampler.device_output[0]);
     }
 
     #[test]

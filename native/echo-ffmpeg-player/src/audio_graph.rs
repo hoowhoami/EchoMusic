@@ -14,6 +14,7 @@ pub struct AudioFilterGraph {
     process_format: MixFormat,
     nodes: Vec<AudioFilterNode>,
     converter: SwrMixConverter,
+    output_converter: SwrGraphOutputConverter,
     tempo: TempoProcessor,
     effects: DspChain,
     converted_output: Vec<f32>,
@@ -408,6 +409,7 @@ impl AudioFilterGraph {
             process_format,
             nodes,
             converter: SwrMixConverter::default(),
+            output_converter: SwrGraphOutputConverter::default(),
             tempo: TempoProcessor::new(
                 settings.speed,
                 process_format.sample_rate,
@@ -444,6 +446,7 @@ impl AudioFilterGraph {
             )?;
             self.effects.reset_state(settings)?;
             self.converter = SwrMixConverter::default();
+            self.output_converter = SwrGraphOutputConverter::default();
             self.tempo = next_tempo;
             self.nodes = filter_nodes_for_settings(settings);
             self.converted_output.clear();
@@ -519,16 +522,20 @@ impl AudioFilterGraph {
             source_frames = source_frames.saturating_add(tempo_source_frames(
                 self.processed_output.len(),
                 self.tempo.speed(),
-                self.process_format.channels,
+                self.process_format,
+                self.output_format,
             ));
-            append_graph_output(
+            self.output_converter.process(
                 self.process_format,
                 self.output_format,
                 &self.processed_output,
                 &mut self.mapped_output,
                 output,
-            );
+            )?;
         }
+        self.mapped_output.clear();
+        self.output_converter.finish(&mut self.mapped_output)?;
+        output.extend_from_slice(&self.mapped_output);
         Ok(source_frames)
     }
 
@@ -556,7 +563,10 @@ impl AudioFilterGraph {
     }
 
     pub fn latency_secs(&self) -> f64 {
-        self.tempo.latency_secs(self.process_format.sample_rate) + self.effects.latency_secs()
+        self.converter.latency_secs()
+            + self.tempo.latency_secs(self.process_format.sample_rate)
+            + self.effects.latency_secs()
+            + self.output_converter.latency_secs()
     }
 
     fn process_graph_output(&mut self, output: &mut Vec<f32>) -> Result<u64, String> {
@@ -578,29 +588,132 @@ impl AudioFilterGraph {
         let source_frames = tempo_source_frames(
             self.processed_output.len(),
             speed,
-            self.process_format.channels,
+            self.process_format,
+            self.output_format,
         );
         output.clear();
-        append_graph_output(
+        self.output_converter.process(
             self.process_format,
             self.output_format,
             &self.processed_output,
             &mut self.mapped_output,
             output,
-        );
+        )?;
         Ok(source_frames)
     }
 }
 
 pub fn process_format_for_output(output_format: MixFormat, settings: &DspSettings) -> MixFormat {
-    if filter_nodes_for_settings(settings)
-        .iter()
-        .any(|node| node.channels == ChannelRequirement::Stereo)
+    if settings.requires_stereo_graph()
+        || filter_nodes_for_settings(settings)
+            .iter()
+            .any(|node| node.channels == ChannelRequirement::Stereo)
     {
-        MixFormat::stereo_f32(output_format.sample_rate)
+        MixFormat::stereo_f32(
+            settings
+                .provider_path
+                .as_ref()
+                .and(settings.provider_process_sample_rate)
+                .unwrap_or(output_format.sample_rate),
+        )
     } else {
         output_format
     }
+}
+
+/// Build a graph whose external format remains fixed while a Provider may run at an independent
+/// supported sample rate. Provider construction is intentionally done here, off the filter/audio
+/// callback threads, so failed candidates never disturb the active graph.
+pub fn prepare_filter_graph(
+    output_format: MixFormat,
+    mut settings: DspSettings,
+) -> Result<(DspSettings, AudioFilterGraph), String> {
+    if settings.provider_path.is_none() {
+        settings.provider_process_sample_rate = None;
+        let graph = AudioFilterGraph::new(output_format, &settings)?;
+        return Ok((settings, graph));
+    }
+
+    let mut sample_rates = Vec::with_capacity(5);
+    for sample_rate in [
+        settings.provider_process_sample_rate,
+        Some(output_format.sample_rate),
+        Some(96_000),
+        Some(48_000),
+        Some(44_100),
+    ]
+    .into_iter()
+    .flatten()
+    {
+        let sample_rate = sample_rate.max(1);
+        if !sample_rates.contains(&sample_rate) {
+            sample_rates.push(sample_rate);
+        }
+    }
+
+    let mut last_error = None;
+    for sample_rate in sample_rates {
+        let mut candidate = settings.clone();
+        candidate.provider_process_sample_rate = Some(sample_rate);
+        match AudioFilterGraph::new(output_format, &candidate) {
+            Ok(graph)
+                if provider_manifest_supports_sample_rate(
+                    &graph,
+                    candidate.provider_preset_json.as_deref(),
+                    sample_rate,
+                ) =>
+            {
+                return Ok((candidate, graph));
+            }
+            Ok(_) => {
+                last_error = Some(format!(
+                    "DSP provider preset does not support {sample_rate} Hz"
+                ));
+            }
+            Err(err) => last_error = Some(err),
+        }
+    }
+    Err(last_error.unwrap_or_else(|| "failed to prepare audio filter graph".to_string()))
+}
+
+fn provider_manifest_supports_sample_rate(
+    graph: &AudioFilterGraph,
+    preset_json: Option<&str>,
+    sample_rate: u32,
+) -> bool {
+    let Some(preset_id) = preset_json
+        .and_then(|json| serde_json::from_str::<serde_json::Value>(json).ok())
+        .and_then(|value| {
+            value
+                .get("presetId")
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_owned)
+        })
+    else {
+        return true;
+    };
+    let Some(manifest) = graph.provider_descriptor().and_then(|descriptor| {
+        serde_json::from_str::<serde_json::Value>(&descriptor.manifest_json).ok()
+    }) else {
+        return true;
+    };
+    let Some(supported_rates) = manifest
+        .get("presets")
+        .and_then(serde_json::Value::as_array)
+        .and_then(|presets| {
+            presets.iter().find(|preset| {
+                preset.get("id").and_then(serde_json::Value::as_str) == Some(preset_id.as_str())
+            })
+        })
+        .and_then(|preset| preset.get("supportedSampleRates"))
+        .and_then(serde_json::Value::as_array)
+    else {
+        return true;
+    };
+    supported_rates
+        .iter()
+        .filter_map(serde_json::Value::as_u64)
+        .any(|rate| rate == u64::from(sample_rate))
 }
 
 fn filter_nodes_for_settings(settings: &DspSettings) -> Vec<AudioFilterNode> {
@@ -695,6 +808,18 @@ impl SwrMixConverter {
         self.input_format = None;
         self.output_format = None;
         result
+    }
+
+    fn latency_secs(&self) -> f64 {
+        let sample_rate = self
+            .output_format
+            .map(|format| format.sample_rate)
+            .unwrap_or(1)
+            .max(1);
+        self.context
+            .as_ref()
+            .map(|context| context.delay(i64::from(sample_rate)) as f64 / f64::from(sample_rate))
+            .unwrap_or_default()
     }
 
     fn ensure_context(
@@ -820,29 +945,105 @@ fn convert_with_swr(
     Ok(())
 }
 
-fn tempo_source_frames(output_samples: usize, speed: f32, channels: usize) -> u64 {
-    let output_frames = output_samples / channels.max(1);
-    ((output_frames as f64) * speed.clamp(MIN_SPEED, MAX_SPEED) as f64).round() as u64
-}
-
-fn append_graph_output(
+fn tempo_source_frames(
+    output_samples: usize,
+    speed: f32,
     process_format: MixFormat,
     output_format: MixFormat,
-    processed: &[f32],
-    scratch: &mut Vec<f32>,
-    output: &mut Vec<f32>,
-) {
-    if process_format.channels == output_format.channels {
-        output.extend_from_slice(processed);
-        return;
+) -> u64 {
+    let process_frames = output_samples / process_format.channels.max(1);
+    let engine_frames = process_frames as f64 * f64::from(output_format.sample_rate.max(1))
+        / f64::from(process_format.sample_rate.max(1));
+    (engine_frames * speed.clamp(MIN_SPEED, MAX_SPEED) as f64).round() as u64
+}
+
+#[derive(Default)]
+struct SwrGraphOutputConverter {
+    context: Option<SwrContext>,
+    input_format: Option<MixFormat>,
+    output_format: Option<MixFormat>,
+}
+
+impl SwrGraphOutputConverter {
+    fn process(
+        &mut self,
+        input_format: MixFormat,
+        output_format: MixFormat,
+        input: &[f32],
+        scratch: &mut Vec<f32>,
+        output: &mut Vec<f32>,
+    ) -> Result<(), String> {
+        if input.is_empty() {
+            return Ok(());
+        }
+        if input_format == output_format {
+            output.extend_from_slice(input);
+            return Ok(());
+        }
+        self.ensure_context(input_format, output_format)?;
+        let frames = input.len() / input_format.channels.max(1);
+        let input_frames = i32::try_from(frames)
+            .map_err(|_| "audio graph output chunk is too large".to_string())?;
+        let input_data = [input.as_ptr().cast::<u8>()];
+        scratch.clear();
+        convert_with_swr(
+            self.context
+                .as_mut()
+                .ok_or_else(|| "audio graph output resampler was not initialized".to_string())?,
+            input_data.as_ptr(),
+            input_frames,
+            output_format.channels,
+            scratch,
+        )?;
+        output.extend_from_slice(scratch);
+        Ok(())
     }
-    let input_channels = process_format.channels.max(1);
-    let output_channels = output_format.channels.max(1);
-    let frames = processed.len() / input_channels;
-    scratch.clear();
-    scratch.resize(frames * output_channels, 0.0);
-    map_channels(processed, input_channels, scratch, output_channels);
-    output.extend_from_slice(scratch);
+
+    fn finish(&mut self, output: &mut Vec<f32>) -> Result<(), String> {
+        let Some(context) = self.context.as_mut() else {
+            return Ok(());
+        };
+        let channels = self
+            .output_format
+            .map(|format| format.channels)
+            .unwrap_or(2);
+        convert_with_swr(context, ptr::null(), 0, channels, output)?;
+        self.context = None;
+        self.input_format = None;
+        self.output_format = None;
+        Ok(())
+    }
+
+    fn latency_secs(&self) -> f64 {
+        let sample_rate = self
+            .output_format
+            .map(|format| format.sample_rate)
+            .unwrap_or(1)
+            .max(1);
+        self.context
+            .as_ref()
+            .map(|context| context.delay(i64::from(sample_rate)) as f64 / f64::from(sample_rate))
+            .unwrap_or_default()
+    }
+
+    fn ensure_context(
+        &mut self,
+        input_format: MixFormat,
+        output_format: MixFormat,
+    ) -> Result<(), String> {
+        if self.input_format == Some(input_format) && self.output_format == Some(output_format) {
+            return Ok(());
+        }
+        let decoded_input = DecodedAudioFormat {
+            sample_rate: input_format.sample_rate,
+            sample_format: input_format.sample_format,
+            channels: input_format.channels,
+        };
+        self.context = Some(build_swr_context(decoded_input, output_format)?);
+        self.input_format = Some(input_format);
+        self.output_format = Some(output_format);
+        Ok(())
+    }
 }
 
 fn soft_limit_interleaved(samples: &mut [f32]) {
@@ -865,44 +1066,143 @@ pub(crate) fn soft_limit_sample(sample: f32) -> f32 {
     sample.signum() * limited.min(1.0)
 }
 
-fn map_channels(input: &[f32], input_channels: usize, output: &mut [f32], output_channels: usize) {
-    let input_channels = input_channels.max(1);
-    let output_channels = output_channels.max(1);
-    for (frame_index, frame) in output.chunks_exact_mut(output_channels).enumerate() {
-        let input_frame_start = frame_index * input_channels;
-        if output_channels == 1 {
-            let mut sum = 0.0;
-            let mut count = 0usize;
-            for sample in input
-                .get(input_frame_start..input_frame_start + input_channels)
-                .unwrap_or(&[])
-            {
-                sum += *sample;
-                count += 1;
-            }
-            frame[0] = if count == 0 { 0.0 } else { sum / count as f32 };
-            continue;
-        }
-        if input_channels == 1 {
-            let sample = input.get(input_frame_start).copied().unwrap_or(0.0);
-            for target in frame.iter_mut() {
-                *target = sample;
-            }
-            continue;
-        }
-        let copy_channels = output_channels.min(input_channels);
-        if let Some(input_frame) = input.get(input_frame_start..input_frame_start + input_channels)
-        {
-            frame[..copy_channels].copy_from_slice(&input_frame[..copy_channels]);
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::dsp::basic::prepared_spatial_effect_for_test;
     use crate::shared::{AudioSampleFormat, MIX_CHANNELS};
+
+    #[test]
+    fn provider_process_rate_is_independent_from_engine_output_rate() {
+        let settings = DspSettings {
+            provider_path: Some("provider.dylib".to_string()),
+            provider_process_sample_rate: Some(96_000),
+            ..DspSettings::default()
+        };
+
+        let process = process_format_for_output(MixFormat::stereo_f32(192_000), &settings);
+
+        assert_eq!(process.sample_rate, 96_000);
+        assert_eq!(process.channels, 2);
+    }
+
+    #[test]
+    fn dsp_process_frames_are_credited_on_the_engine_clock() {
+        assert_eq!(
+            tempo_source_frames(
+                96_000 * MIX_CHANNELS,
+                1.0,
+                MixFormat::stereo_f32(96_000),
+                MixFormat::stereo_f32(192_000),
+            ),
+            192_000
+        );
+        assert_eq!(
+            tempo_source_frames(
+                48_000 * MIX_CHANNELS,
+                2.0,
+                MixFormat::stereo_f32(48_000),
+                MixFormat::stereo_f32(44_100),
+            ),
+            88_200
+        );
+    }
+
+    #[test]
+    fn graph_output_resampler_preserves_duration_across_chunk_boundaries() {
+        let input_format = MixFormat::stereo_f32(96_000);
+        let output_format = MixFormat::stereo_f32(192_000);
+        let mut converter = SwrGraphOutputConverter::default();
+        let mut scratch = Vec::new();
+        let mut output = Vec::new();
+        let chunk_frames = 960usize;
+        let chunk = vec![0.25f32; chunk_frames * MIX_CHANNELS];
+
+        for _ in 0..3 {
+            converter
+                .process(
+                    input_format,
+                    output_format,
+                    &chunk,
+                    &mut scratch,
+                    &mut output,
+                )
+                .expect("DSP output resampling should succeed");
+        }
+        scratch.clear();
+        converter
+            .finish(&mut scratch)
+            .expect("DSP output resampler should flush");
+        output.extend_from_slice(&scratch);
+
+        let expected_frames = chunk_frames * 3 * 2;
+        let actual_frames = output.len() / MIX_CHANNELS;
+        assert!(actual_frames.abs_diff(expected_frames) <= 2);
+        assert!(output.iter().all(|sample| sample.is_finite()));
+        assert!(output
+            .iter()
+            .skip(MIX_CHANNELS * 64)
+            .take(MIX_CHANNELS * 256)
+            .all(|sample| (*sample - 0.25).abs() < 0.001));
+    }
+
+    #[test]
+    #[ignore = "requires ECHOMUSIC_TEST_DSP_PROVIDER to point to a built Provider library"]
+    fn real_provider_runs_on_independent_bus_at_high_engine_rate() {
+        let provider_path = std::env::var("ECHOMUSIC_TEST_DSP_PROVIDER")
+            .expect("ECHOMUSIC_TEST_DSP_PROVIDER must point to a Provider library");
+        let settings = DspSettings {
+            provider_path: Some(provider_path),
+            provider_preset_json: Some(r#"{"presetId":"kugou-super-bass"}"#.to_string()),
+            ..DspSettings::default()
+        };
+        let engine_format = MixFormat::stereo_f32(192_000);
+        let (settings, mut graph) = prepare_filter_graph(engine_format, settings)
+            .expect("Provider graph should negotiate an independent rate");
+
+        assert_eq!(settings.provider_process_sample_rate, Some(96_000));
+        assert_eq!(graph.process_format(), MixFormat::stereo_f32(96_000));
+        assert_eq!(graph.output_format, engine_format);
+        assert!(graph.provider_descriptor().is_some());
+
+        let chunk_frames = 1_920usize;
+        let samples = (0..chunk_frames)
+            .flat_map(|frame| {
+                let phase = frame as f32 * 440.0 * std::f32::consts::TAU / 192_000.0;
+                let sample = phase.sin() * 0.05;
+                [sample, sample]
+            })
+            .collect::<Vec<_>>();
+        let chunk = DecodedAudioChunk::new(
+            DecodedAudioFormat {
+                sample_rate: 192_000,
+                sample_format: AudioSampleFormat::F32,
+                channels: MIX_CHANNELS,
+            },
+            chunk_frames,
+            None,
+            DecodedAudioData::F32(samples),
+        );
+        let mut output = Vec::new();
+        let mut output_frames = 0usize;
+        let mut source_frames = 0u64;
+        for _ in 0..8 {
+            source_frames += graph
+                .process_decoded(&chunk, &settings, &mut output)
+                .expect("Provider graph should process high-rate input");
+            assert!(output.iter().all(|sample| sample.is_finite()));
+            output_frames += output.len() / MIX_CHANNELS;
+        }
+        source_frames += graph
+            .finish(&settings, &mut output)
+            .expect("Provider graph should drain");
+        assert!(output.iter().all(|sample| sample.is_finite()));
+        output_frames += output.len() / MIX_CHANNELS;
+
+        let input_frames = chunk_frames * 8;
+        assert!(output_frames.abs_diff(input_frames) <= 8);
+        assert_eq!(source_frames, input_frames as u64);
+    }
 
     #[test]
     fn graph_converts_i16_mono_to_f32_stereo() {

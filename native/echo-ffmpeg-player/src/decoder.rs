@@ -25,6 +25,16 @@ pub enum DecodeCommand {
         generation: u64,
         reply: SyncSender<Result<f64, String>>,
     },
+    SwitchTrack {
+        decoder: Box<DecoderData>,
+        predecoded: Vec<DecodedAudioChunk>,
+        info: crate::shared::TrackSwitchInfo,
+        preferred_output_sample_format: AudioSampleFormat,
+        normalization_gain_db: f32,
+        transition_fade_frames: usize,
+        generation: u64,
+        reply: SyncSender<Result<(), String>>,
+    },
     Stop,
 }
 
@@ -579,15 +589,7 @@ fn decode_worker_loop(
                         }
                     }
                     produced_frames = produced_frames.saturating_add(chunk.frames as u64);
-                    decoded_position_secs = chunk
-                        .pts_secs
-                        .map(|pts| {
-                            pts + chunk.frames as f64 / f64::from(chunk.format.sample_rate.max(1))
-                        })
-                        .unwrap_or_else(|| {
-                            decoded_position_secs
-                                + chunk.frames as f64 / f64::from(chunk.format.sample_rate.max(1))
-                        });
+                    decoded_position_secs = decoded_chunk_end_secs(&chunk, decoded_position_secs);
 
                     if !shared.push_decoded_chunk_for_generation(chunk, generation) {
                         if shared.should_stop_decoding() {
@@ -611,9 +613,11 @@ fn decode_worker_loop(
                     continue;
                 }
                 match activate_gapless_at_eof(&shared, generation) {
-                    crate::GaplessDecodeResult::Activated(decoder) => {
-                        if let Some(decoder) = decoder {
-                            data = decoder;
+                    crate::GaplessDecodeResult::Activated(activation) => {
+                        if let Some(activation) = activation {
+                            data = activation.decoder;
+                            decoded_position_secs = activation.decoded_position_secs;
+                            produced_frames = activation.produced_frames;
                             data.publish_packet_cache_stats(&shared);
                             continue;
                         }
@@ -646,9 +650,11 @@ fn decode_worker_loop(
                         continue;
                     }
                     match activate_gapless_at_eof(&shared, generation) {
-                        crate::GaplessDecodeResult::Activated(decoder) => {
-                            if let Some(decoder) = decoder {
-                                data = decoder;
+                        crate::GaplessDecodeResult::Activated(activation) => {
+                            if let Some(activation) = activation {
+                                data = activation.decoder;
+                                decoded_position_secs = activation.decoded_position_secs;
+                                produced_frames = activation.produced_frames;
                                 continue;
                             }
                             return None;
@@ -687,6 +693,14 @@ fn decoded_pts_discontinuity(
     let tolerance_secs = (4.0 / f64::from(sample_rate.max(1))).max(0.005);
     let delta_secs = actual_secs - expected_secs;
     (delta_secs.abs() > tolerance_secs).then_some(delta_secs)
+}
+
+pub(crate) fn decoded_chunk_end_secs(chunk: &DecodedAudioChunk, previous_secs: f64) -> f64 {
+    let duration_secs = chunk.frames as f64 / f64::from(chunk.format.sample_rate.max(1));
+    chunk
+        .pts_secs
+        .map(|pts| pts + duration_secs)
+        .unwrap_or(previous_secs + duration_secs)
 }
 
 fn wait_for_generation_command(
@@ -844,6 +858,60 @@ fn handle_decode_command(
                 DecodeCommandResult::Ignored
             }
         }
+        DecodeCommand::SwitchTrack {
+            mut decoder,
+            mut predecoded,
+            info,
+            preferred_output_sample_format,
+            normalization_gain_db,
+            transition_fade_frames,
+            generation,
+            reply,
+        } => {
+            if shared.should_stop_decoding() {
+                let _ = reply.send(Err("decoder stopping".to_string()));
+                return DecodeCommandResult::Stop;
+            }
+            if !shared.is_decode_generation_current(generation) {
+                let _ = reply.send(Err("stale track switch generation".to_string()));
+                return DecodeCommandResult::Ignored;
+            }
+            pending_source_switch.take();
+            decoder.interrupt.store(false, Ordering::Release);
+            decoder.discard_before_secs = None;
+            // Manual track changes are interactive: discard the old decoded/output backlog
+            // instead of appending the new track after hundreds of milliseconds of queued PCM.
+            // The caller has already faded the audible tail to zero; the reset also publishes a
+            // new generation so output-side converted PCM from the old source is invalidated.
+            let next_generation = shared.reset_for_decode_resume(0.0, &shared.dsp_settings());
+            shared.set_source_sample_format(decoder.source_sample_format());
+            shared.set_preferred_output_sample_format(preferred_output_sample_format);
+            shared.set_normalization_gain_db(normalization_gain_db);
+            shared.mark_track_boundary(info, transition_fade_frames);
+            shared.bind_interrupt(decoder.interrupt.clone());
+            *data = *decoder;
+            *decoded_position_secs = 0.0;
+            let mut accepted = false;
+            for chunk in predecoded.drain(..) {
+                *decoded_position_secs = decoded_chunk_end_secs(&chunk, *decoded_position_secs);
+                if !shared.push_decoded_chunk_for_generation(chunk, next_generation) {
+                    if !accepted {
+                        let _ = reply.send(Err(
+                            "track switch stopped while queuing prepared audio".to_string(),
+                        ));
+                    }
+                    return DecodeCommandResult::Ignored;
+                }
+                if !accepted {
+                    let _ = reply.send(Ok(()));
+                    accepted = true;
+                }
+            }
+            if !accepted {
+                let _ = reply.send(Ok(()));
+            }
+            DecodeCommandResult::Continue(next_generation)
+        }
         DecodeCommand::Stop => {
             pending_source_switch.take();
             DecodeCommandResult::Stop
@@ -909,13 +977,7 @@ fn activate_pending_source_switch(
         if !align_switched_chunk(&mut chunk, &mut data.discard_before_secs) {
             continue;
         }
-        *decoded_position_secs = chunk
-            .pts_secs
-            .map(|pts| pts + chunk.frames as f64 / f64::from(chunk.format.sample_rate.max(1)))
-            .unwrap_or_else(|| {
-                *decoded_position_secs
-                    + chunk.frames as f64 / f64::from(chunk.format.sample_rate.max(1))
-            });
+        *decoded_position_secs = decoded_chunk_end_secs(&chunk, *decoded_position_secs);
         if !shared.push_decoded_chunk_for_generation(chunk, pending.generation) {
             if let Some(reply) = pending.reply.take() {
                 let _ = reply.send(Err("source switch stopped while queuing audio".to_string()));
@@ -1035,6 +1097,26 @@ mod tests {
         assert!((forward - 0.025).abs() < 1.0e-9);
         assert!((backward + 0.025).abs() < 1.0e-9);
         assert_eq!(decoded_pts_discontinuity(f64::NAN, 1.0, 48_000), None);
+    }
+
+    #[test]
+    fn predecoded_timeline_uses_the_new_tracks_pts() {
+        let format = DecodedAudioFormat {
+            sample_rate: 48_000,
+            sample_format: AudioSampleFormat::F32,
+            channels: 2,
+        };
+        let first =
+            DecodedAudioChunk::new(format, 24_000, Some(0.0), DecodedAudioData::F32(Vec::new()));
+        let second =
+            DecodedAudioChunk::new(format, 576, Some(0.5), DecodedAudioData::F32(Vec::new()));
+
+        let first_end = decoded_chunk_end_secs(&first, 187.477_914);
+        let second_end = decoded_chunk_end_secs(&second, first_end);
+
+        assert!((first_end - 0.5).abs() < 1.0e-9);
+        assert!((second_end - 0.512).abs() < 1.0e-9);
+        assert_eq!(decoded_pts_discontinuity(first_end, 0.5, 48_000), None);
     }
 
     #[test]

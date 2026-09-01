@@ -98,10 +98,11 @@ export const getSongPrivilegeTags = (song: Song): SongPrivilegeTag[] => {
 
 export const getSongUnavailableMessage = (song: Song): string | null => {
   if (isPlayableSong(song)) return null;
+  if (isVipSong(song)) return '需要 VIP 权限';
   if (isPaidSong(song)) return '需要购买';
   if (isNoCopyrightSong(song)) return '无版权';
   if (isUnavailableSong(song)) return '不可用';
-  return '暂无音源';
+  return '暂不可播放';
 };
 
 export const getSongQualityTag = (song: Pick<Song, 'relateGoods'>): string => {

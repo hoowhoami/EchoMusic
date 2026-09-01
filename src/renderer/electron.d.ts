@@ -727,6 +727,7 @@ export interface IElectronAPI {
       normalizationGainDb?: number,
     ) => Promise<number | null>;
     clearPreparedNextSource: () => Promise<void>;
+    commitPreparedNextSource: (transitionMs?: number) => Promise<boolean>;
     getTrackList: (url?: string) => Promise<
       Array<{
         id: number;

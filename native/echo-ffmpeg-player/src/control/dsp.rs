@@ -1,5 +1,5 @@
 use super::*;
-use crate::audio_graph::AudioFilterGraph;
+use crate::audio_graph::{prepare_filter_graph, process_format_for_output};
 use napi::bindgen_prelude::AsyncTask;
 use napi::{Env, Task};
 use napi_derive::napi;
@@ -127,7 +127,6 @@ impl Task for SetAudioEffectTask {
             provider_resource_json,
             provider_mode,
             impulse_response_mix,
-            defer_until_reload,
         ) = parse_audio_effect_payload(&self.payload).map_err(napi::Error::from_reason)?;
         let has_provider_resources = provider_resource_json.is_some();
         let provider_resource_json = provider_path.as_ref().map(|_| {
@@ -167,38 +166,6 @@ impl Task for SetAudioEffectTask {
                 "该音效资源需要外部 Provider，当前 Basic DSP 不支持".to_string(),
             ));
         }
-        if defer_until_reload {
-            return call_core_command("defer-audio-effect", move |runtime| {
-                if runtime.spatial_request_seq != request_seq {
-                    emit_runtime_event(
-                        runtime,
-                        PlayerEvent::log(
-                            "debug",
-                            "stale deferred audio effect ignored".to_string(),
-                        ),
-                    );
-                    return Ok(());
-                }
-                runtime.spatial_file_path = impulse_response_path;
-                runtime.dsp_settings.provider_path = provider_path;
-                runtime.dsp_settings.provider_preset_json = provider_preset_json;
-                runtime.dsp_settings.provider_resource_json = provider_resource_json;
-                runtime.dsp_settings.provider_mode = provider_mode;
-                // The next source load prepares rate-dependent state after it has
-                // negotiated a process format supported by the selected preset.
-                runtime.dsp_settings.spatial = None;
-                runtime.dsp_settings.spatial_mix = impulse_response_mix;
-                update_runtime_audio_graph(runtime);
-                emit_runtime_event(
-                    runtime,
-                    PlayerEvent::log(
-                        "info",
-                        "audio effect queued for process-format rebuild".to_string(),
-                    ),
-                );
-                Ok(())
-            });
-        }
         let spatial = match (
             provider_path.is_none(),
             impulse_response_path.as_deref(),
@@ -210,18 +177,29 @@ impl Task for SetAudioEffectTask {
             _ => None,
         };
 
-        // Provider creation happens on the filter thread. Validate the complete
-        // candidate graph first so a bad VPF/IRS is rejected by this command
-        // while the currently playing graph remains untouched.
-        let mut candidate = base_settings;
+        // Provider construction and sample-rate negotiation happen on this async task. The
+        // external engine/output format stays fixed; only the graph's internal DSP bus may use a
+        // different rate.
+        let mut candidate = base_settings.clone();
         candidate.provider_path = provider_path.clone();
         candidate.provider_preset_json = provider_preset_json.clone();
         candidate.provider_resource_json = provider_resource_json.clone();
         candidate.provider_mode = provider_mode;
+        if candidate.provider_path != base_settings.provider_path {
+            candidate.provider_process_sample_rate = None;
+        }
         candidate.spatial = spatial.clone();
         candidate.spatial_mix = impulse_response_mix;
-        let mut prepared_graph =
-            Some(AudioFilterGraph::new(mix_format, &candidate).map_err(napi::Error::from_reason)?);
+        let (candidate, prepared_graph) =
+            prepare_filter_graph(mix_format, candidate).map_err(napi::Error::from_reason)?;
+        let can_reconfigure_provider_in_place = can_reconfigure_provider_in_place(
+            session_shared.is_some(),
+            mix_format,
+            &base_settings,
+            &candidate,
+        );
+        let provider_process_sample_rate = candidate.provider_process_sample_rate;
+        let mut prepared_graph = Some(prepared_graph);
 
         call_core_command("commit-audio-effect", move |runtime| {
             if runtime.spatial_request_seq != request_seq {
@@ -250,14 +228,19 @@ impl Task for SetAudioEffectTask {
             runtime.dsp_settings.provider_preset_json = provider_preset_json;
             runtime.dsp_settings.provider_resource_json = provider_resource_json;
             runtime.dsp_settings.provider_mode = provider_mode;
+            runtime.dsp_settings.provider_process_sample_rate = provider_process_sample_rate;
             runtime.dsp_settings.spatial = spatial;
             runtime.dsp_settings.spatial_mix = impulse_response_mix;
             if let Some(shared) = current_shared {
+                // Keep the validated candidate until the filter worker knows whether the running
+                // Provider accepted configure(). If opaque in-place configuration fails, the
+                // candidate becomes the transactional fallback instead of killing playback.
                 shared.stage_audio_effect_graph(
                     &runtime.dsp_settings,
                     prepared_graph
                         .take()
                         .expect("prepared graph is consumed exactly once"),
+                    can_reconfigure_provider_in_place,
                 );
             }
             update_runtime_audio_graph(runtime);
@@ -281,6 +264,25 @@ impl Task for SetAudioEffectTask {
     }
 }
 
+fn can_reconfigure_provider_in_place(
+    has_session: bool,
+    mix_format: MixFormat,
+    current: &DspSettings,
+    candidate: &DspSettings,
+) -> bool {
+    has_session
+        && current.provider_path.is_some()
+        && current.provider_path == candidate.provider_path
+        && current.provider_mode == candidate.provider_mode
+        && current.provider_resource_json == candidate.provider_resource_json
+        && process_format_for_output(mix_format, current)
+            == process_format_for_output(mix_format, candidate)
+        // `configure()` has no reset-to-default command. Clearing a selected preset must adopt
+        // the freshly created candidate; otherwise the active Provider keeps processing with its
+        // previous preset even though settings already say None.
+        && !(current.provider_preset_json.is_some() && candidate.provider_preset_json.is_none())
+}
+
 fn parse_audio_effect_payload(
     payload: &serde_json::Value,
 ) -> Result<
@@ -291,12 +293,11 @@ fn parse_audio_effect_payload(
         Option<String>,
         u32,
         f32,
-        bool,
     ),
     String,
 > {
     if payload.is_null() {
-        return Ok((None, None, None, None, 0, 0.5, false));
+        return Ok((None, None, None, None, 0, 0.5));
     }
     let object = payload
         .as_object()
@@ -337,11 +338,6 @@ fn parse_audio_effect_payload(
             .clamp(0.0, 1.0) as f32,
         _ => return Err("invalid impulse response mix".to_string()),
     };
-    let defer_until_reload = match object.get("deferUntilReload") {
-        None | Some(serde_json::Value::Null) => false,
-        Some(serde_json::Value::Bool(value)) => *value,
-        _ => return Err("invalid deferred audio effect flag".to_string()),
-    };
     Ok((
         impulse_response_path,
         provider_path,
@@ -349,7 +345,6 @@ fn parse_audio_effect_payload(
         provider_resource_json,
         provider_mode,
         impulse_response_mix,
-        defer_until_reload,
     ))
 }
 
@@ -405,14 +400,6 @@ mod tests {
         }))
         .expect("payload should default");
         assert_eq!(defaulted.5, 0.5);
-        assert!(!defaulted.6);
-
-        let deferred = parse_audio_effect_payload(&serde_json::json!({
-            "providerPath": "/tmp/provider.dylib",
-            "deferUntilReload": true,
-        }))
-        .expect("deferred payload should parse");
-        assert!(deferred.6);
     }
 
     #[test]
@@ -422,5 +409,35 @@ mod tests {
             "impulseResponseMix": "50%",
         });
         assert!(parse_audio_effect_payload(&payload).is_err());
+    }
+
+    #[test]
+    fn clearing_provider_preset_requires_candidate_graph_swap() {
+        let current = DspSettings {
+            provider_path: Some("provider.dylib".to_string()),
+            provider_preset_json: Some(r#"{"presetId":"bass"}"#.to_string()),
+            provider_process_sample_rate: Some(48_000),
+            ..DspSettings::default()
+        };
+        let candidate = DspSettings {
+            provider_preset_json: None,
+            ..current.clone()
+        };
+
+        assert!(!can_reconfigure_provider_in_place(
+            true,
+            MixFormat::stereo_f32(48_000),
+            &current,
+            &candidate,
+        ));
+
+        let mut next_preset = candidate;
+        next_preset.provider_preset_json = Some(r#"{"presetId":"vocal"}"#.to_string());
+        assert!(can_reconfigure_provider_in_place(
+            true,
+            MixFormat::stereo_f32(48_000),
+            &current,
+            &next_preset,
+        ));
     }
 }

@@ -437,6 +437,10 @@ export class PlayerEngine {
     });
   }
 
+  async commitPreparedNextSource(transitionMs = 15): Promise<boolean> {
+    return (await player?.commitPreparedNextSource?.(transitionMs)) ?? false;
+  }
+
   adoptPreparedSource(source: string | PlaybackSource): void {
     const playbackSource = normalizePlaybackSource(source);
     if (!playbackSource.url) return;
@@ -598,15 +602,6 @@ export class PlayerEngine {
     this.lastTimeValue = -1;
     this.events.durationChange?.(0);
     this.events.timeUpdate?.(0);
-  }
-
-  /** Tear down the native session without resetting the renderer timeline. */
-  async stopForAudioGraphRebuild(): Promise<void> {
-    this.clearSeekPending();
-    await player?.stop();
-    // setSource(..., { force: true }) follows immediately, but clearing this
-    // prevents an accidental non-forced load from reusing the retired session.
-    this.sourceUrl = '';
   }
 
   /** 设置 player 文件循环模式（单曲循环用） */

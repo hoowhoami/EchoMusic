@@ -28,6 +28,21 @@ use std::sync::mpsc::SyncSender;
 use std::sync::{Arc, Condvar, Mutex, OnceLock, TryLockError};
 
 const AO_RING_HEADROOM_SECS: f64 = 2.0;
+const DSP_GRAPH_TRANSITION_MS: usize = 15;
+
+struct DspGraphBoundary {
+    remaining_samples: usize,
+    fade_samples: usize,
+    post_samples: usize,
+    crossed: bool,
+}
+
+pub(crate) struct FilterGraphUpdate {
+    pub filter_generation: u64,
+    pub decode_generation: u64,
+    pub settings: DspSettings,
+    pub staged_graph: Option<(AudioFilterGraph, bool)>,
+}
 
 pub struct SharedAudio {
     output_queue_wait: Mutex<()>,
@@ -46,7 +61,7 @@ pub struct SharedAudio {
     ao_state: AoBufferingState,
     pub spectrum_ring: Mutex<SampleRing>,
     dsp_settings: Mutex<DspSettings>,
-    staged_filter_graph: Mutex<Option<(u64, AudioFilterGraph)>>,
+    staged_filter_graph: Mutex<Option<(u64, AudioFilterGraph, bool)>>,
     provider_descriptor: Mutex<Option<ProviderDescriptor>>,
     pub paused: AtomicBool,
     pub stop: AtomicBool,
@@ -72,6 +87,7 @@ pub struct SharedAudio {
     packet_cache_stats: Mutex<Option<PacketCacheStats>>,
     output_stats: Mutex<Option<AudioOutputStats>>,
     gapless_boundary: Mutex<Option<GaplessBoundary>>,
+    dsp_graph_boundary: Mutex<Option<DspGraphBoundary>>,
     gapless_prepare: Mutex<GaplessPrepareState>,
     gapless_prepare_changed: Condvar,
     volume_bits: AtomicU32,
@@ -174,6 +190,7 @@ impl SharedAudio {
             packet_cache_stats: Mutex::new(None),
             output_stats: Mutex::new(None),
             gapless_boundary: Mutex::new(None),
+            dsp_graph_boundary: Mutex::new(None),
             gapless_prepare: Mutex::new(GaplessPrepareState::default()),
             gapless_prepare_changed: Condvar::new(),
             volume_bits: AtomicU32::new(1.0f32.to_bits()),
@@ -423,6 +440,35 @@ impl SharedAudio {
 
     pub fn current_filter_generation(&self) -> u64 {
         self.filter_generation.load(Ordering::Acquire)
+    }
+
+    pub(crate) fn take_filter_graph_update(
+        &self,
+        previous_generation: u64,
+    ) -> Option<FilterGraphUpdate> {
+        // Generation changes are rare compared with decoded audio chunks. Keep the steady-state
+        // filter loop lock-free and only serialize the snapshot after the atomic fast path sees
+        // pending work.
+        if self.current_filter_generation() == previous_generation {
+            return None;
+        }
+        // DSP mutations publish their settings and staged graph while holding this lock. Taking
+        // one snapshot here prevents the filter worker from pairing a new generation with the
+        // settings that preceded it.
+        let _queue = match self.output_queue_wait.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        let filter_generation = self.current_filter_generation();
+        if filter_generation == previous_generation {
+            return None;
+        }
+        Some(FilterGraphUpdate {
+            filter_generation,
+            decode_generation: self.current_decode_generation(),
+            settings: self.dsp_settings(),
+            staged_graph: self.take_staged_filter_graph(filter_generation),
+        })
     }
 
     pub fn is_filter_generation_current(&self, generation: u64) -> bool {
@@ -677,8 +723,13 @@ impl SharedAudio {
         if self.should_hold_for_buffering(queued_samples, output.len()) {
             return 0;
         }
-        // Never wait in the audio callback for the decoder's brief boundary update. Keep both
-        // the output ring and playback clock untouched and render one silent callback instead.
+        // Never wait in the audio callback for boundary updates. Keep both the output ring and
+        // playback clock untouched and render one silent callback instead.
+        let mut dsp_boundary = match self.dsp_graph_boundary.try_lock() {
+            Ok(boundary) => boundary,
+            Err(TryLockError::WouldBlock) => return 0,
+            Err(TryLockError::Poisoned(poisoned)) => poisoned.into_inner(),
+        };
         let mut boundary = match self.gapless_boundary.try_lock() {
             Ok(boundary) => boundary,
             Err(TryLockError::WouldBlock) => return 0,
@@ -702,6 +753,21 @@ impl SharedAudio {
         };
         let (consumed_samples, consumed_source_frames) = self.realtime_output.pop_into(output);
         if consumed_samples > 0 {
+            if let Some(active) = boundary.as_ref() {
+                apply_track_boundary_fade(
+                    &mut output[..consumed_samples],
+                    active.remaining_samples,
+                    active.fade_samples,
+                    self.mix_format.channels,
+                );
+            }
+            if let Some(active) = dsp_boundary.as_ref() {
+                apply_dsp_graph_boundary_fade(
+                    &mut output[..consumed_samples],
+                    active,
+                    self.mix_format.channels,
+                );
+            }
             self.output_queue_changed.notify_all();
             let underrun = consumed_samples < output.len()
                 && !self.decoded_eof.load(Ordering::Acquire)
@@ -721,6 +787,21 @@ impl SharedAudio {
                 consumed_samples
             };
             drop(boundary);
+            if let Some(active) = dsp_boundary.as_mut() {
+                if active.crossed {
+                    active.post_samples = active.post_samples.saturating_add(consumed_samples);
+                } else if consumed_samples >= active.remaining_samples {
+                    active.post_samples = consumed_samples.saturating_sub(active.remaining_samples);
+                    active.remaining_samples = 0;
+                    active.crossed = true;
+                } else {
+                    active.remaining_samples -= consumed_samples;
+                }
+                if active.crossed && active.post_samples >= active.fade_samples {
+                    *dsp_boundary = None;
+                }
+            }
+            drop(dsp_boundary);
 
             let mut track_switch_ready = false;
             if let Some(info) = boundary_signal {
@@ -754,6 +835,7 @@ impl SharedAudio {
             consumed_frames
         } else {
             drop(boundary);
+            drop(dsp_boundary);
             if !self.decoded_eof.load(Ordering::Acquire) && !self.eof.load(Ordering::Acquire) {
                 self.enter_output_underrun(0, output.len());
             }
@@ -972,7 +1054,13 @@ impl SharedAudio {
         self.end_reported.store(false, Ordering::Release);
         self.reset_output_buffering_state();
         self.ao_state.begin_preroll();
+        // A decoder generation is a discontinuity (seek, loop or replacement source). Start the
+        // next audible callback at zero instead of reusing the preceding generation's gain.
+        self.store_applied_output_gain(0.0);
         if let Ok(mut boundary) = self.gapless_boundary.lock() {
+            *boundary = None;
+        }
+        if let Ok(mut boundary) = self.dsp_graph_boundary.lock() {
             *boundary = None;
         }
         self.set_position_secs(position_secs);
@@ -1003,14 +1091,19 @@ impl SharedAudio {
         self.decoded_queue_changed.notify_all();
     }
 
-    pub fn stage_audio_effect_graph(&self, dsp_settings: &DspSettings, graph: AudioFilterGraph) {
+    pub fn stage_audio_effect_graph(
+        &self,
+        dsp_settings: &DspSettings,
+        graph: AudioFilterGraph,
+        prefer_in_place_update: bool,
+    ) {
         let _queue = self.output_queue_wait.lock();
         let generation = self
             .filter_generation
             .load(Ordering::Acquire)
             .wrapping_add(1);
         if let Ok(mut staged) = self.staged_filter_graph.lock() {
-            *staged = Some((generation, graph));
+            *staged = Some((generation, graph, prefer_in_place_update));
         }
         // Keep already processed audio in the output ring. It forms a natural
         // hand-off tail while the filter thread adopts the prepared graph.
@@ -1023,15 +1116,105 @@ impl SharedAudio {
         self.decoded_queue_changed.notify_all();
     }
 
-    pub fn take_staged_filter_graph(&self, generation: u64) -> Option<AudioFilterGraph> {
+    pub fn take_staged_filter_graph(&self, generation: u64) -> Option<(AudioFilterGraph, bool)> {
         let mut staged = self.staged_filter_graph.lock().ok()?;
         if staged
             .as_ref()
-            .is_some_and(|(value, _)| *value == generation)
+            // A later non-structural update (for example playback speed) may advance the filter
+            // generation before the worker consumes this graph. The validated candidate remains
+            // applicable and will be refreshed with the snapshot's latest settings before use.
+            .is_some_and(|(value, _, _)| *value <= generation)
         {
-            return staged.take().map(|(_, graph)| graph);
+            return staged
+                .take()
+                .map(|(_, graph, prefer_in_place)| (graph, prefer_in_place));
         }
         None
+    }
+
+    /// Mark the exact producer boundary between the old graph tail and the first samples from a
+    /// newly prepared graph. The callback applies a short zero-point envelope across that marker,
+    /// avoiding a discontinuity without clearing ready audio or restarting the output device.
+    pub fn mark_dsp_graph_boundary(&self) {
+        let mut boundary = match self.dsp_graph_boundary.lock() {
+            Ok(boundary) => boundary,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        let remaining_samples = self.realtime_output.buffered_samples();
+        let channels = self.mix_format.channels.max(1);
+        let fade_frames =
+            (self.mix_format.sample_rate as usize * DSP_GRAPH_TRANSITION_MS / 1_000).max(1);
+        *boundary = Some(DspGraphBoundary {
+            remaining_samples,
+            fade_samples: fade_frames.saturating_mul(channels),
+            post_samples: 0,
+            crossed: remaining_samples == 0,
+        });
+    }
+}
+
+fn apply_track_boundary_fade(
+    output: &mut [f32],
+    remaining_samples: usize,
+    fade_samples: usize,
+    channels: usize,
+) {
+    let channels = channels.max(1);
+    let fade_frames = fade_samples / channels;
+    if fade_frames == 0 {
+        return;
+    }
+    for (frame_index, frame) in output.chunks_exact_mut(channels).enumerate() {
+        let sample_offset = frame_index.saturating_mul(channels);
+        let gain = if sample_offset < remaining_samples {
+            let distance_frames = remaining_samples
+                .saturating_sub(sample_offset)
+                .div_ceil(channels);
+            if distance_frames > fade_frames {
+                1.0
+            } else {
+                distance_frames as f32 / fade_frames as f32
+            }
+        } else {
+            let post_frames = sample_offset
+                .saturating_sub(remaining_samples)
+                .div_ceil(channels);
+            ((post_frames + 1) as f32 / fade_frames as f32).min(1.0)
+        };
+        for sample in frame {
+            *sample *= gain;
+        }
+    }
+}
+
+fn apply_dsp_graph_boundary_fade(output: &mut [f32], boundary: &DspGraphBoundary, channels: usize) {
+    let channels = channels.max(1);
+    let fade_frames = (boundary.fade_samples / channels).max(1);
+    let fade_span = fade_frames.saturating_sub(1).max(1);
+    for (frame_index, frame) in output.chunks_exact_mut(channels).enumerate() {
+        let sample_offset = frame_index.saturating_mul(channels);
+        let gain = if !boundary.crossed && sample_offset < boundary.remaining_samples {
+            let distance_frames = boundary
+                .remaining_samples
+                .saturating_sub(sample_offset)
+                .div_ceil(channels);
+            if distance_frames > fade_frames {
+                1.0
+            } else {
+                distance_frames.saturating_sub(1) as f32 / fade_span as f32
+            }
+        } else {
+            let local_post_samples = if boundary.crossed {
+                sample_offset
+            } else {
+                sample_offset.saturating_sub(boundary.remaining_samples)
+            };
+            let post_frames = boundary.post_samples.saturating_add(local_post_samples) / channels;
+            (post_frames as f32 / fade_span as f32).min(1.0)
+        };
+        for sample in frame {
+            *sample *= gain;
+        }
     }
 }
 

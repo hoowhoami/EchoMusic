@@ -137,6 +137,12 @@ export function registerPlayerIpc(ref: PlayerRef): void {
     ref.current?.clearPreparedNextSource();
   });
 
+  ipcRegistry.registerHandler(
+    'player:commit-prepared-next-source',
+    async (_e, transitionMs?: number) =>
+      (await ref.current?.commitPreparedNextSource(transitionMs)) ?? false,
+  );
+
   ipcRegistry.registerHandler('player:get-track-list', async (_e, url?: string) => {
     return (await ref.current?.getTrackList(url)) ?? [];
   });

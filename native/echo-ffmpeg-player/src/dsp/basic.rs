@@ -31,6 +31,9 @@ pub struct DspSettings {
     pub provider_preset_json: Option<String>,
     pub provider_resource_json: Option<String>,
     pub provider_mode: u32,
+    /// Provider/DSP processing rate. The engine/output bus remains at `SharedAudio.mix_format`;
+    /// audio is resampled around the graph when this differs from the engine rate.
+    pub provider_process_sample_rate: Option<u32>,
     pub spatial: Option<PreparedSpatialEffect>,
     pub spatial_mix: f32,
 }
@@ -45,6 +48,7 @@ impl Default for DspSettings {
             provider_preset_json: None,
             provider_resource_json: None,
             provider_mode: PROVIDER_MODE_SPEAKER,
+            provider_process_sample_rate: None,
             spatial: None,
             spatial_mix: 0.5,
         }

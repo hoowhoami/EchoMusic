@@ -109,6 +109,11 @@ impl SwrContext {
         }
     }
 
+    /// Returns the currently buffered resampler delay expressed in `base` units.
+    pub fn delay(&self, base: i64) -> i64 {
+        unsafe { sys::swr_get_delay(self.ctx, base.max(1)) }
+    }
+
     /// Flushes and resets the internal state and buffers of the resampler.
     ///
     /// This is typically called after a seek operation or when starting a new stream

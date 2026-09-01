@@ -1,5 +1,5 @@
 use crate::audio_graph::{process_format_for_output, AudioFilterGraph};
-use crate::shared::{FilterInput, SharedAudio};
+use crate::shared::{FilterGraphUpdate, FilterInput, SharedAudio};
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
@@ -63,11 +63,13 @@ fn run_filter(shared: Arc<SharedAudio>, initial_graph: Option<AudioFilterGraph>)
         if shared.stop.load(std::sync::atomic::Ordering::Acquire) {
             return;
         }
-        let current_filter_gen = shared.current_filter_generation();
-        if current_filter_gen != generation {
-            let current_decode_gen = shared.current_decode_generation();
-            let settings = shared.dsp_settings();
-
+        if let Some(FilterGraphUpdate {
+            filter_generation: current_filter_gen,
+            decode_generation: current_decode_gen,
+            settings,
+            staged_graph,
+        }) = shared.take_filter_graph_update(generation)
+        {
             // A decoder reset (seek / new track) always bumps decode_generation and requires
             // a full graph rebuild.  For pure filter-only generation bumps we can skip the
             // rebuild if the internal processing format has not changed.
@@ -81,8 +83,38 @@ fn run_filter(shared: Arc<SharedAudio>, initial_graph: Option<AudioFilterGraph>)
             decode_generation = current_decode_gen;
             generation = current_filter_gen;
 
-            if let Some(prepared) = shared.take_staged_filter_graph(current_filter_gen) {
-                graph = prepared;
+            if let Some((prepared, prefer_in_place)) = staged_graph {
+                let (swapped, in_place_error) = match adopt_staged_graph(
+                    &mut graph,
+                    prepared,
+                    prefer_in_place,
+                    |candidate| candidate.update_settings(&settings),
+                    |active| active.update_settings(&settings),
+                ) {
+                    Ok(result) => result,
+                    Err(err) => {
+                        shared.mark_decode_failed();
+                        crate::decoder::emit_decode_error(
+                            &shared,
+                            format!("failed to refresh prepared DSP graph: {err}"),
+                        );
+                        return;
+                    }
+                };
+                if let Some(err) = in_place_error {
+                    crate::emit_shared_event(
+                        &shared,
+                        crate::events::PlayerEvent::log(
+                            "warn",
+                            format!(
+                                "in-place DSP provider configure failed; adopting validated graph: {err}"
+                            ),
+                        ),
+                    );
+                }
+                if swapped {
+                    shared.mark_dsp_graph_boundary();
+                }
             } else if structural {
                 if let Err(err) = graph.reset(shared.mix_format, &settings) {
                     crate::emit_shared_event(
@@ -157,6 +189,31 @@ fn run_filter(shared: Arc<SharedAudio>, initial_graph: Option<AudioFilterGraph>)
     }
 }
 
+fn adopt_staged_graph<T>(
+    active: &mut T,
+    mut staged: T,
+    prefer_in_place: bool,
+    update_staged: impl FnOnce(&mut T) -> Result<(), String>,
+    update_in_place: impl FnOnce(&mut T) -> Result<(), String>,
+) -> Result<(bool, Option<String>), String> {
+    // The graph may have been expensive to construct. Runtime-only parameters can still change
+    // while that happens, so rebase the candidate immediately before it becomes active or serves
+    // as the configure-failure fallback.
+    update_staged(&mut staged)?;
+    if prefer_in_place {
+        match update_in_place(active) {
+            Ok(()) => Ok((false, None)),
+            Err(err) => {
+                *active = staged;
+                Ok((true, Some(err)))
+            }
+        }
+    } else {
+        *active = staged;
+        Ok((true, None))
+    }
+}
+
 fn push_filter_output(
     shared: &SharedAudio,
     output: &mut Vec<f32>,
@@ -183,6 +240,63 @@ mod tests {
     };
     use std::sync::atomic::Ordering;
     use std::time::Duration;
+
+    #[test]
+    fn failed_in_place_update_adopts_validated_staged_graph() {
+        let mut active = "active";
+
+        let (swapped, error) = adopt_staged_graph(
+            &mut active,
+            "validated",
+            true,
+            |_| Ok(()),
+            |_| Err("rejected".to_string()),
+        )
+        .expect("validated graph should refresh");
+
+        assert!(swapped);
+        assert_eq!(error.as_deref(), Some("rejected"));
+        assert_eq!(active, "validated");
+    }
+
+    #[test]
+    fn successful_in_place_update_keeps_active_graph() {
+        let mut active = "active";
+
+        let (swapped, error) =
+            adopt_staged_graph(&mut active, "validated", true, |_| Ok(()), |_| Ok(()))
+                .expect("validated graph should refresh");
+
+        assert!(!swapped);
+        assert!(error.is_none());
+        assert_eq!(active, "active");
+    }
+
+    #[test]
+    fn staged_graph_is_rebased_before_it_becomes_active() {
+        #[derive(Debug, PartialEq)]
+        struct MockGraph {
+            speed: f32,
+        }
+
+        let mut active = MockGraph { speed: 1.0 };
+        let staged = MockGraph { speed: 1.0 };
+        let (swapped, error) = adopt_staged_graph(
+            &mut active,
+            staged,
+            false,
+            |candidate| {
+                candidate.speed = 1.75;
+                Ok(())
+            },
+            |_| Ok(()),
+        )
+        .expect("latest runtime settings should apply to candidate");
+
+        assert!(swapped);
+        assert!(error.is_none());
+        assert_eq!(active.speed, 1.75);
+    }
 
     #[test]
     fn filter_thread_moves_decoded_samples_to_output_queue() {

@@ -40,8 +40,6 @@ export interface AudioEffectPlaybackOptions {
   impulseResponsePath?: string | null;
   /** Basic DSP only. Providers own their own mixing semantics. */
   impulseResponseMix?: number;
-  /** Internal hand-off: persist the effect now and apply it when the source is rebuilt. */
-  deferUntilReload?: boolean;
 }
 
 export interface DspProviderInspection {

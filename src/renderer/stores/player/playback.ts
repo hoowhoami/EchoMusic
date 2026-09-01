@@ -1278,11 +1278,19 @@ export const createPlaybackManager = (
       if (queuedSong && isPlayableSong(queuedSong)) {
         playlistStore.consumeQueuedNextTrackId(queuedNextId);
         const targetTrackId = String(queuedSong.id);
-        const prepared = options?.gaplessTransition
-          ? takeGaplessPreparedSource(targetTrackId, state.currentSourceQueueId)
-          : null;
+        const prepared =
+          options?.gaplessTransition !== false
+            ? takeGaplessPreparedSource(targetTrackId, state.currentSourceQueueId)
+            : null;
+        if (prepared?.nativeSeq) {
+          try {
+            if (await engine.commitPreparedNextSource(15)) return;
+          } catch (error) {
+            logger.warn('PlayerPlayback', 'Prepared queued track switch failed:', error);
+          }
+        }
         if (prepared) clearGaplessPreparedSource();
-        void playTrack(targetTrackId, list, {
+        await playTrack(targetTrackId, list, {
           sourceQueueId: state.currentSourceQueueId,
           preResolved: prepared?.resolved,
         });
@@ -1353,9 +1361,17 @@ export const createPlaybackManager = (
     const nextSong = list[nextIndex];
     if (!nextSong) return;
     const targetTrackId = String(nextSong.id);
-    const prepared = options?.gaplessTransition
-      ? takeGaplessPreparedSource(targetTrackId, state.currentSourceQueueId)
-      : null;
+    const prepared =
+      options?.gaplessTransition !== false
+        ? takeGaplessPreparedSource(targetTrackId, state.currentSourceQueueId)
+        : null;
+    if (prepared?.nativeSeq) {
+      try {
+        if (await engine.commitPreparedNextSource(15)) return;
+      } catch (error) {
+        logger.warn('PlayerPlayback', 'Prepared manual track switch failed:', error);
+      }
+    }
     if (prepared) clearGaplessPreparedSource();
     await playTrack(targetTrackId, list, {
       sourceQueueId: state.currentSourceQueueId,

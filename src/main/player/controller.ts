@@ -113,13 +113,11 @@ const normalizeAudioEffectPlaybackOptions = async (
       providerResources,
       providerMode: options.providerMode === 'headphone' ? 'headphone' : 'speaker',
       impulseResponsePath,
-      deferUntilReload: options.deferUntilReload === true,
     };
   if (!impulseResponsePath) return null;
   return {
     impulseResponsePath,
     impulseResponseMix: normalizeConvolutionMix(options.impulseResponseMix),
-    deferUntilReload: options.deferUntilReload === true,
   };
 };
 
@@ -323,6 +321,7 @@ interface PlayerAddon {
     requestId: number,
     normalizationGainDb?: number,
   ): Promise<boolean>;
+  commitPreparedNextSource(transitionMs?: number): Promise<boolean>;
   clearPreparedNextSource(): void;
   getTrackList(url?: string): Promise<
     Array<{
@@ -546,6 +545,10 @@ export class PlayerController extends EventEmitter {
     return prepared ? seq : null;
   }
 
+  async commitPreparedNextSource(transitionMs = 15): Promise<boolean> {
+    return await this.getAddonOrThrow().commitPreparedNextSource(transitionMs);
+  }
+
   clearPreparedNextSource(): void {
     this.getAddonOrThrow().clearPreparedNextSource();
   }
@@ -655,7 +658,8 @@ export class PlayerController extends EventEmitter {
     return this.enqueue(async () => {
       const addon = this.getAddonOrThrow();
       addon.cancelFade();
-      await addon.play();
+      // Native playWithFade publishes gain=0 before it unpauses the session. Calling
+      // play() first leaks a full-volume device callback and defeats the anti-click fade.
       void addon.playWithFade(targetVolume, durationMs).catch((error: unknown) => {
         log.warn('[PlayerController] play fade failed:', error);
       });

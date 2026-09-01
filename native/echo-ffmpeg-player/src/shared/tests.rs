@@ -82,6 +82,55 @@ fn pop_into_advances_position_by_consumed_frames() {
 }
 
 #[test]
+fn manual_track_boundary_fades_old_tail_out_and_new_head_in() {
+    let mut samples = [1.0f32; 16];
+
+    // Four stereo frames from the old track followed by four from the new track. A four-frame
+    // envelope should approach zero on the old side and then rise monotonically on the new side.
+    apply_track_boundary_fade(&mut samples, 8, 8, 2);
+
+    let left: Vec<f32> = samples.chunks_exact(2).map(|frame| frame[0]).collect();
+    assert_eq!(&left[..4], &[1.0, 0.75, 0.5, 0.25]);
+    assert_eq!(&left[4..], &[0.25, 0.5, 0.75, 1.0]);
+    assert!(samples
+        .chunks_exact(2)
+        .all(|frame| (frame[0] - frame[1]).abs() < f32::EPSILON));
+}
+
+#[test]
+fn dsp_graph_boundary_envelope_survives_callback_boundaries() {
+    let shared = SharedAudio::new(
+        MixFormat::stereo_f32(200),
+        0.1,
+        8.0,
+        &DspSettings::default(),
+    );
+    assert!(shared.push_samples(&[1.0; 8]));
+    shared.mark_dsp_graph_boundary();
+    assert!(shared.push_samples(&[1.0; 8]));
+
+    let mut left = Vec::new();
+    for _ in 0..8 {
+        let mut frame = [0.0f32; 2];
+        assert_eq!(shared.pop_into(&mut frame), 1);
+        assert!((frame[0] - frame[1]).abs() < f32::EPSILON);
+        left.push(frame[0]);
+    }
+
+    assert_eq!(left, vec![1.0, 1.0, 0.5, 0.0, 0.0, 0.5, 1.0, 1.0]);
+}
+
+#[test]
+fn automatic_gapless_boundary_keeps_samples_bit_exact() {
+    let mut samples = [0.75f32, -0.5, 0.25, -0.125];
+    let original = samples;
+
+    apply_track_boundary_fade(&mut samples, 2, 0, 2);
+
+    assert_eq!(samples, original);
+}
+
+#[test]
 fn queued_audio_keeps_source_clock_when_speed_changes() {
     let shared = SharedAudio::new(
         MixFormat::stereo_f32(100),
@@ -878,14 +927,35 @@ fn staged_audio_effect_graph_keeps_ready_output_available() {
     let graph = crate::audio_graph::AudioFilterGraph::new(shared.mix_format, &settings)
         .expect("default graph should initialize");
 
-    shared.stage_audio_effect_graph(&settings, graph);
+    shared.stage_audio_effect_graph(&settings, graph, true);
 
-    assert!(shared
+    let (_, prefer_in_place) = shared
         .take_staged_filter_graph(shared.current_filter_generation())
-        .is_some());
+        .expect("staged graph should be available");
+    assert!(prefer_in_place);
     let mut output = [0.0f32; 8];
     assert_eq!(shared.pop_into(&mut output), 4);
     assert_eq!(output, [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8]);
+}
+
+#[test]
+fn staged_audio_effect_graph_survives_a_later_speed_generation() {
+    let mut settings = DspSettings::default();
+    let shared = SharedAudio::new(MixFormat::stereo_f32(100), 0.1, 8.0, &settings);
+    let graph = crate::audio_graph::AudioFilterGraph::new(shared.mix_format, &settings)
+        .expect("default graph should initialize");
+
+    let previous_generation = shared.current_filter_generation();
+    shared.stage_audio_effect_graph(&settings, graph, false);
+    settings.speed = 1.75;
+    shared.reset_filter_for_dsp_change(&settings);
+
+    let update = shared
+        .take_filter_graph_update(previous_generation)
+        .expect("combined graph and speed update should be visible");
+    assert_eq!(update.filter_generation, shared.current_filter_generation());
+    assert!((update.settings.speed - 1.75).abs() < f32::EPSILON);
+    assert!(update.staged_graph.is_some());
 }
 
 #[test]

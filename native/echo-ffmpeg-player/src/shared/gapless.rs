@@ -2,6 +2,7 @@ use super::*;
 
 pub(super) struct GaplessBoundary {
     pub(super) remaining_samples: usize,
+    pub(super) fade_samples: usize,
     pub(super) info: TrackSwitchInfo,
 }
 
@@ -86,6 +87,10 @@ impl SharedAudio {
     }
 
     pub fn mark_gapless_boundary(&self, info: TrackSwitchInfo) {
+        self.mark_track_boundary(info, 0);
+    }
+
+    pub fn mark_track_boundary(&self, info: TrackSwitchInfo, fade_frames: usize) {
         let output_samples = self.realtime_output.buffered_samples();
         let decoded_samples = self
             .decoded_queue
@@ -102,6 +107,7 @@ impl SharedAudio {
         if let Ok(mut boundary) = self.gapless_boundary.lock() {
             *boundary = Some(GaplessBoundary {
                 remaining_samples: output_samples.saturating_add(decoded_samples),
+                fade_samples: fade_frames.saturating_mul(self.mix_format.channels.max(1)),
                 info,
             });
         }

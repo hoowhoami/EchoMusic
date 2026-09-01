@@ -32,6 +32,10 @@ impl FadeJob {
             set_session_volume(self.from)?;
             call_core_command("fade-play", |runtime| {
                 if let Some(session) = runtime.session.as_ref() {
+                    // playWithFade always starts at silence. Publish that applied gain before
+                    // unpausing so the first callback cannot ramp down from the previous track's
+                    // full-volume history.
+                    session.shared.store_applied_output_gain(0.0);
                     session.shared.paused.store(false, Ordering::Release);
                 }
                 runtime.state.playing = true;

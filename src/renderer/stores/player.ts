@@ -13,12 +13,7 @@ import { matchesPendingSeekTarget, type PlaybackProgressBusyReason } from '../..
 import type { AudioEffectPlaybackOptions, SpatialAudioEffectEntry } from '../../shared/audio';
 import { createLatestRequestQueue } from '../../shared/latest-request-queue';
 import { spatialAudioEffectOptions } from '../../shared/audio-effect-support';
-import {
-  dspProviderRestorePatch,
-  parseDspPreset,
-  providerPresetSupportsSampleRate,
-} from '../../shared/dsp-provider-settings';
-import type { DspProviderManifest } from '../../shared/player-audio-graph';
+import { dspProviderRestorePatch } from '../../shared/dsp-provider-settings';
 
 import { createPlayerState } from './player/state';
 import { createPlaybackManager } from './player/playback';
@@ -180,15 +175,10 @@ export const usePlayerStore = defineStore(
       { immediate: true },
     );
 
-    let pendingAudioGraphRebuild = false;
-    const refreshCurrentTrack = async (options?: {
-      seamless?: boolean;
-      rebuildAudioGraph?: boolean;
-    }) => {
+    const refreshCurrentTrack = async (options?: { seamless?: boolean }) => {
       if (!state.currentTrackId) return;
       if (getPlaybackIsLoading(state)) {
         state.pendingSettingRefresh = true;
-        pendingAudioGraphRebuild ||= options?.rebuildAudioGraph === true;
         return;
       }
       const requestSeq = ++state.playbackRequestSeq;
@@ -275,10 +265,7 @@ export const usePlayerStore = defineStore(
             }
           }
           if (!switched) throw lastError ?? new Error('No playable source candidate');
-        } else {
-          if (options?.rebuildAudioGraph) await engine.stopForAudioGraphRebuild();
-          await engine.setSource(playbackSource, { force: true });
-        }
+        } else await engine.setSource(playbackSource, { force: true });
       } catch (error) {
         if (requestSeq === state.playbackRequestSeq) {
           if (seamless) {
@@ -358,9 +345,7 @@ export const usePlayerStore = defineStore(
       }
       if (state.pendingSettingRefresh) {
         state.pendingSettingRefresh = false;
-        const rebuildAudioGraph = pendingAudioGraphRebuild;
-        pendingAudioGraphRebuild = false;
-        void refreshCurrentTrack({ rebuildAudioGraph });
+        void refreshCurrentTrack();
       }
     };
 
@@ -450,7 +435,7 @@ export const usePlayerStore = defineStore(
       const busiVip: any[] = vipInfo?.busi_vip || [];
       const hasSvip = busiVip.some((v: any) => v.product_type === 'svip' && v.is_vip === 1);
       const hasTvip = busiVip.some((v: any) => v.product_type === 'tvip' && v.is_vip === 1);
-      const isUserNovip = userStore.isLoggedIn && !hasSvip && !hasTvip;
+      const isUserNovip = !userStore.isLoggedIn || (!hasSvip && !hasTvip);
 
       state.playbackNotice = resolvePlaybackNotice({
         code,
@@ -743,32 +728,8 @@ export const usePlayerStore = defineStore(
       !!previous.impulseResponsePath &&
       previous.impulseResponsePath === next.impulseResponsePath &&
       previous.impulseResponseMix !== next.impulseResponseMix;
-    const providerEffectRequiresAudioGraphRebuild = (effect: AudioEffectPlaybackOptions | null) => {
-      if (!effect?.providerPath || !effect.providerPresetJson) return false;
-      const graph = state.playbackDiagnostics.graph;
-      const sampleRate = graph?.processFormat.sampleRate;
-      if (!sampleRate) return false;
-      const manifestJson =
-        (graph?.providerPath === effect.providerPath ? graph.providerManifestJson : undefined) ??
-        spatialAudioSupport.providerInspection.value?.info?.manifestJson;
-      if (!manifestJson) return false;
-      try {
-        const manifest = JSON.parse(manifestJson) as DspProviderManifest;
-        return !providerPresetSupportsSampleRate(manifest, effect.providerPresetJson, sampleRate);
-      } catch {
-        return false;
-      }
-    };
     const applySpatialAudioEffect = async (effect: AudioEffectPlaybackOptions | null) => {
-      if (providerEffectRequiresAudioGraphRebuild(effect) && state.currentTrackId) {
-        const { presetId } = parseDspPreset(effect?.providerPresetJson ?? '');
-        logger.info('PlayerStore', 'Rebuilding audio graph for provider preset sample rate', {
-          presetId,
-          currentSampleRate: state.playbackDiagnostics.graph?.processFormat.sampleRate,
-        });
-        await engine.setSpatialAudioEffect({ ...effect, deferUntilReload: true });
-        await refreshCurrentTrack({ rebuildAudioGraph: true });
-      } else if (canPatchBasicDspMix(appliedSpatialAudioEffect, effect)) {
+      if (canPatchBasicDspMix(appliedSpatialAudioEffect, effect)) {
         try {
           await engine.setAudioGraphParameter({
             kind: 'spatial',
