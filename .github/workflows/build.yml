@@ -25,14 +25,16 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -e
-          RELEASE_JSON=$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${GITHUB_REF_NAME}" 2>/dev/null || true)
-          if [ -z "$RELEASE_JSON" ]; then
+          if ! RELEASE_JSON=$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${GITHUB_REF_NAME}" 2>/dev/null); then
+            exit 0
+          fi
+
+          if ! RELEASE_ID=$(jq -er '.id | select(type == "number")' <<< "$RELEASE_JSON"); then
             exit 0
           fi
 
           for metadata in latest.yml latest-mac.yml latest-linux.yml latest-linux-arm64.yml; do
-            if ! jq -e --arg name "$metadata" '.assets | any(.name == $name)' <<< "$RELEASE_JSON" >/dev/null; then
-              RELEASE_ID=$(jq -r '.id' <<< "$RELEASE_JSON")
+            if ! jq -e --arg name "$metadata" '(.assets // []) | any(.name == $name)' <<< "$RELEASE_JSON" >/dev/null; then
               gh api --method PATCH "repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}" -F draft=true >/dev/null
               exit 0
             fi
@@ -433,8 +435,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -e
-          RELEASE_ID=$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${GITHUB_REF_NAME}" --jq '.id' 2>/dev/null || true)
-          if [ -n "$RELEASE_ID" ]; then
+          if RELEASE_ID=$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${GITHUB_REF_NAME}" --jq '.id' 2>/dev/null); then
             gh api --method PATCH "repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}" -F draft=true >/dev/null
           fi
 
