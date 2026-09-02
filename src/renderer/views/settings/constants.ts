@@ -7,16 +7,20 @@ import {
   iconInfo,
   iconKeyboard,
   iconCloud,
+  iconEye,
   iconPalette,
   iconPlayerPlay,
   iconPlugin,
+  iconSettings,
   iconShield,
   iconSlidersHorizontal,
   iconTypography,
 } from '@/icons';
 
 export const sectionTitles = {
-  appearance: { label: '外观与界面', icon: iconPalette },
+  appearance: { label: '主题与外观', icon: iconPalette },
+  interface: { label: '界面显示', icon: iconEye },
+  window: { label: '窗口与启动', icon: iconSettings },
   font: { label: '字体设置', icon: null },
   playback: { label: '播放体验', icon: iconPlayerPlay },
   spatialAudio: { label: '音效管理', icon: iconSlidersHorizontal },

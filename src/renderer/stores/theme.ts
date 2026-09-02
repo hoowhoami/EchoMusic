@@ -23,6 +23,13 @@ const resolveCoverColorSources = (coverUrl: CoverColorSource): string[] => {
 let coverColorRequestSeq = 0;
 let coverColorAbortController: AbortController | null = null;
 const COVER_COLOR_SETTLE_MS = 180;
+const DEFAULT_ACCENT_GRADIENT_HEIGHT = 70;
+const DEFAULT_ACCENT_GRADIENT_STRENGTH = 100;
+
+const clampAccentGradientSetting = (value: number, min: number, max: number): number => {
+  if (!Number.isFinite(value)) return min;
+  return Math.min(max, Math.max(min, Math.round(value)));
+};
 
 export const useThemeStore = defineStore('theme', {
   state: () => ({
@@ -36,6 +43,10 @@ export const useThemeStore = defineStore('theme', {
     globalAccent: true,
     // 顶部主题色渐变氛围层
     accentGradient: true,
+    // 渐变向下延伸的窗口高度百分比
+    accentGradientHeight: DEFAULT_ACCENT_GRADIENT_HEIGHT,
+    // 渐变整体强度百分比
+    accentGradientStrength: DEFAULT_ACCENT_GRADIENT_STRENGTH,
     // 当前生效的主题色源（未归一化，用于重算）
     sourceColor: DEFAULT_ACCENT,
     // 当前歌曲封面提取色（供歌词页面“跟随封面取色”使用）
@@ -106,6 +117,19 @@ export const useThemeStore = defineStore('theme', {
       this.accentGradient = enabled;
       this.syncAccentGradient();
     },
+    setAccentGradientHeight(value: number) {
+      this.accentGradientHeight = clampAccentGradientSetting(value, 35, 100);
+      this.syncAccentGradient();
+    },
+    setAccentGradientStrength(value: number) {
+      this.accentGradientStrength = clampAccentGradientSetting(value, 20, 100);
+      this.syncAccentGradient();
+    },
+    resetAccentGradientAppearance() {
+      this.accentGradientHeight = DEFAULT_ACCENT_GRADIENT_HEIGHT;
+      this.accentGradientStrength = DEFAULT_ACCENT_GRADIENT_STRENGTH;
+      this.syncAccentGradient();
+    },
     // 从封面提取主色（仅在 cover 模式下有效）
     async refreshFromCover(coverUrl: CoverColorSource) {
       if (this.accentMode !== 'cover') return;
@@ -160,12 +184,25 @@ export const useThemeStore = defineStore('theme', {
         body.classList.add('accent-scoped');
       }
     },
-    // 同步顶部渐变开关：通过 body 上的 class 控制 CSS 作用域
+    // 同步顶部渐变开关与用户参数；插件变量仍可在 CSS 中覆盖这些基础值
     syncAccentGradient() {
-      document.body.classList.toggle('accent-gradient-disabled', !this.accentGradient);
+      const body = document.body;
+      const height = clampAccentGradientSetting(this.accentGradientHeight, 35, 100);
+      const strength = clampAccentGradientSetting(this.accentGradientStrength, 20, 100);
+      body.style.setProperty('--accent-gradient-user-height', `${height}%`);
+      body.style.setProperty('--accent-gradient-user-opacity', String(strength / 100));
+      body.classList.toggle('accent-gradient-disabled', !this.accentGradient);
     },
   },
   persist: {
-    pick: ['accentMode', 'presetId', 'customColor', 'globalAccent', 'accentGradient'],
+    pick: [
+      'accentMode',
+      'presetId',
+      'customColor',
+      'globalAccent',
+      'accentGradient',
+      'accentGradientHeight',
+      'accentGradientStrength',
+    ],
   },
 });

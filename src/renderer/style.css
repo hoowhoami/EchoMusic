@@ -671,17 +671,17 @@ body.echo-surface-translucent .player-bar {
   }
 }
 
-/* 主题色顶部渐变氛围层 */
+/* 主题色顶部渐变氛围层：顶部保持染色，向下长距离衰减并自然融入页面底色 */
 .layout-accent-gradient {
   content: '';
   position: absolute;
   top: 0;
   left: 0;
   right: 0;
-  height: var(--accent-gradient-height, 50%);
+  height: var(--accent-gradient-height, var(--accent-gradient-user-height, 70%));
   pointer-events: none;
   z-index: 200;
-  opacity: var(--accent-gradient-opacity, 1);
+  opacity: var(--accent-gradient-opacity, var(--accent-gradient-user-opacity, 1));
   --agc: var(--accent-gradient-color-rgb, var(--color-primary-rgb));
   --agp: var(--accent-gradient-peak-opacity, 0.2);
   --agm: var(--accent-gradient-mid-opacity, 0.07);
@@ -690,7 +690,7 @@ body.echo-surface-translucent .player-bar {
     linear-gradient(
       var(--accent-gradient-angle, 180deg),
       rgba(var(--agc), var(--agp)) 0%,
-      rgba(var(--agc), var(--agm)) var(--accent-gradient-mid-position, 60%),
+      rgba(var(--agc), var(--agm)) var(--accent-gradient-mid-position, 55%),
       transparent 100%
     )
   );
@@ -704,8 +704,8 @@ body.echo-surface-translucent .player-bar {
     --accent-gradient-color-rgb-dark,
     var(--accent-gradient-color-rgb, var(--color-primary-rgb))
   );
-  --agp: var(--accent-gradient-peak-opacity-dark, var(--accent-gradient-peak-opacity, 0.32));
-  --agm: var(--accent-gradient-mid-opacity-dark, var(--accent-gradient-mid-opacity, 0.11));
+  --agp: var(--accent-gradient-peak-opacity-dark, var(--accent-gradient-peak-opacity, 0.36));
+  --agm: var(--accent-gradient-mid-opacity-dark, var(--accent-gradient-mid-opacity, 0.16));
   background: var(
     --accent-gradient-background-dark,
     var(
@@ -713,7 +713,7 @@ body.echo-surface-translucent .player-bar {
       linear-gradient(
         var(--accent-gradient-angle, 180deg),
         rgba(var(--agc), var(--agp)) 0%,
-        rgba(var(--agc), var(--agm)) var(--accent-gradient-mid-position, 60%),
+        rgba(var(--agc), var(--agm)) var(--accent-gradient-mid-position, 55%),
         transparent 100%
       )
     )

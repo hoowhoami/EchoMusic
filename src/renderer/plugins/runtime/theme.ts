@@ -56,7 +56,7 @@ export interface PluginAccentGradientOptions {
   angle?: number | string;
   /** 色带高度，数字按百分比处理，也接受 '240px' / '50%' */
   height?: number | string;
-  /** 中段色标位置，数字按百分比处理，默认 60% */
+  /** 中段色标位置，数字按百分比处理，默认 55% */
   midPosition?: number | string;
   /** 顶部色标透明度（rgba alpha），支持 0-1 / 0-100 / 百分比 */
   peakOpacity?: number | string;

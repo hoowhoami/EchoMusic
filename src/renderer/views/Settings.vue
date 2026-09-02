@@ -13,6 +13,8 @@ import { iconArrowUp, iconSearch, iconX } from '@/icons';
 import { marked } from 'marked';
 import { sanitizeHtml } from '@/utils/sanitize';
 import AppearanceSettingsSection from './settings/components/AppearanceSettingsSection.vue';
+import InterfaceSettingsSection from './settings/components/InterfaceSettingsSection.vue';
+import WindowSettingsSection from './settings/components/WindowSettingsSection.vue';
 import FontSettingsSection from './settings/components/FontSettingsSection.vue';
 import PlaybackSettingsSection from './settings/components/PlaybackSettingsSection.vue';
 import SpatialAudioSettingsSection from './settings/components/SpatialAudioSettingsSection.vue';
@@ -32,6 +34,7 @@ const settingStore = useSettingStore();
 const updateStore = useUpdateStore();
 const desktopLyricStore = useDesktopLyricStore();
 const showDisclaimer = ref(false);
+const currentPlatform = window.electron?.platform;
 
 const contentRef = ref<HTMLElement | null>(null);
 const scrollbarRef = ref<InstanceType<typeof Scrollbar> | null>(null);
@@ -176,7 +179,7 @@ interface SettingsRenderSection {
 const builtinSettingsSections = computed<SettingsRenderSection[]>(() => [
   {
     id: 'appearance',
-    label: '外观与界面',
+    label: '主题与外观',
     order: 100,
     component: AppearanceSettingsSection,
     searchKeywords: [
@@ -188,19 +191,39 @@ const builtinSettingsSections = computed<SettingsRenderSection[]>(() => [
       '跟随封面',
       '预设主题色',
       '自定义主题色',
+      '顶部渐变色',
+      '渐变范围',
+      '渐变强度',
       '全局主题色',
-      '记住窗口大小',
+    ],
+  },
+  {
+    id: 'interface',
+    label: '界面显示',
+    order: 150,
+    component: InterfaceSettingsSection,
+    searchKeywords: [
       '音质音效徽标',
       '桌面歌词状态',
       '播放列表计数',
       '搜索框默认推荐词',
-      '全屏按钮',
       '侧边栏折叠',
+    ],
+  },
+  {
+    id: 'window',
+    label: '窗口与启动',
+    order: 175,
+    component: WindowSettingsSection,
+    searchKeywords: [
+      '记住窗口大小',
       '关闭行为',
       '最小化到托盘',
       '彻底退出程序',
       '开机自启动',
       '启动时最小化到托盘',
+      ...(currentPlatform === 'win32' || currentPlatform === 'linux' ? ['全屏按钮'] : []),
+      ...(currentPlatform === 'win32' ? ['任务栏封面预览', '任务栏播放进度条'] : []),
     ],
   },
   {
@@ -429,12 +452,9 @@ const builtinSettingsSections = computed<SettingsRenderSection[]>(() => [
       '禁用 GPU 加速',
       '花屏',
       '渲染异常',
-      '高 DPI 支持',
-      '高DPI',
-      'DPI',
-      'dpiScale',
-      '缩放因子',
-      'force-device-scale-factor',
+      ...(currentPlatform === 'win32' || currentPlatform === 'linux'
+        ? ['高 DPI 支持', '高DPI', 'DPI', 'dpiScale', '缩放因子', 'force-device-scale-factor']
+        : []),
       '开发者工具',
       'DevTools',
       '用户信息',

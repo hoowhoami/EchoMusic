@@ -2,16 +2,17 @@
 import { computed, ref } from 'vue';
 import { useSettingStore } from '@/stores/setting';
 import { useThemeStore } from '@/stores/theme';
-import type { CloseBehavior, ThemeMode } from '../../../../shared/app';
+import type { ThemeMode } from '../../../../shared/app';
 import type { AccentMode } from '@/stores/theme';
 import Select from '@/components/ui/Select.vue';
 import Switch from '@/components/ui/Switch.vue';
+import Slider from '@/components/ui/Slider.vue';
 import ColorPickerDialog from '@/components/ui/ColorPickerDialog.vue';
 import { ACCENT_PRESETS } from '@/utils/color';
 import { iconPalette } from '@/icons';
 import { Icon } from '@iconify/vue';
 import SettingsSectionShell from './SettingsSectionShell.vue';
-import { accentModeOptions, closeBehaviorOptions, sectionTitles, themeOptions } from '../constants';
+import { accentModeOptions, sectionTitles, themeOptions } from '../constants';
 
 const settingStore = useSettingStore();
 const themeStore = useThemeStore();
@@ -20,7 +21,9 @@ const accentPresetValues = ACCENT_PRESETS.map((item) => item.color);
 const title = sectionTitles.appearance;
 const accentPresets = ACCENT_PRESETS;
 const resolvedTitle = computed(() => title.label);
-const isWindows = computed(() => window.electron?.platform === 'win32');
+const isAccentGradientDefault = computed(
+  () => themeStore.accentGradientHeight === 70 && themeStore.accentGradientStrength === 100,
+);
 </script>
 
 <template>
@@ -96,11 +99,61 @@ const isWindows = computed(() => window.electron?.platform === 'win32');
         <h3 class="font-semibold">顶部渐变色</h3>
         <p class="text-sm text-text-secondary">在界面顶部显示跟随主题色的渐变氛围层</p>
       </div>
-      <Switch
-        :model-value="themeStore.accentGradient"
-        @update:model-value="themeStore.setAccentGradient(Boolean($event))"
-      />
+      <div class="flex items-center gap-3">
+        <button
+          type="button"
+          class="settings-color-reset disabled:opacity-40 disabled:cursor-default"
+          :disabled="isAccentGradientDefault"
+          @click="themeStore.resetAccentGradientAppearance()"
+        >
+          恢复默认
+        </button>
+        <Switch
+          :model-value="themeStore.accentGradient"
+          @update:model-value="themeStore.setAccentGradient(Boolean($event))"
+        />
+      </div>
     </div>
+    <template v-if="themeStore.accentGradient">
+      <div class="settings-divider"></div>
+      <div class="settings-item">
+        <div class="space-y-1">
+          <h3 class="font-semibold">渐变范围</h3>
+          <p class="text-sm text-text-secondary">控制顶部颜色向下延伸的距离</p>
+        </div>
+        <Slider
+          class="w-48"
+          :model-value="themeStore.accentGradientHeight"
+          :min="35"
+          :max="100"
+          :step="5"
+          show-value
+          value-suffix="%"
+          aria-label="渐变范围"
+          @update:model-value="themeStore.setAccentGradientHeight($event)"
+          @value-commit="themeStore.setAccentGradientHeight($event)"
+        />
+      </div>
+      <div class="settings-divider"></div>
+      <div class="settings-item">
+        <div class="space-y-1">
+          <h3 class="font-semibold">渐变强度</h3>
+          <p class="text-sm text-text-secondary">控制主题色氛围的浓淡</p>
+        </div>
+        <Slider
+          class="w-48"
+          :model-value="themeStore.accentGradientStrength"
+          :min="20"
+          :max="100"
+          :step="5"
+          show-value
+          value-suffix="%"
+          aria-label="渐变强度"
+          @update:model-value="themeStore.setAccentGradientStrength($event)"
+          @value-commit="themeStore.setAccentGradientStrength($event)"
+        />
+      </div>
+    </template>
     <div class="settings-divider"></div>
     <div class="settings-item">
       <div class="space-y-1">
@@ -110,130 +163,6 @@ const isWindows = computed(() => window.electron?.platform === 'win32');
       <Switch
         :model-value="themeStore.globalAccent"
         @update:model-value="themeStore.setGlobalAccent(Boolean($event))"
-      />
-    </div>
-    <div class="settings-divider"></div>
-    <div class="settings-item">
-      <div class="space-y-1">
-        <h3 class="font-semibold">记住窗口大小</h3>
-        <p class="text-sm text-text-secondary">在下次启动时自动恢复窗口大小和位置</p>
-      </div>
-      <Switch v-model="settingStore.rememberWindowSize" />
-    </div>
-    <div class="settings-divider"></div>
-    <div class="settings-item">
-      <div class="space-y-1">
-        <h3 class="font-semibold">音质音效徽标</h3>
-        <p class="text-sm text-text-secondary">在播放器音质按钮上显示当前实际音质或音效标识</p>
-      </div>
-      <Switch v-model="settingStore.showAudioQualityBadge" />
-    </div>
-    <div class="settings-divider"></div>
-    <div class="settings-item">
-      <div class="space-y-1">
-        <h3 class="font-semibold">桌面歌词状态</h3>
-        <p class="text-sm text-text-secondary">在播放器桌面歌词图标上显示开启或关闭状态角标</p>
-      </div>
-      <Switch v-model="settingStore.showDesktopLyricStatus" />
-    </div>
-    <div class="settings-divider"></div>
-    <template v-if="isWindows">
-      <div class="settings-item">
-        <div class="space-y-1">
-          <h3 class="font-semibold">任务栏封面预览</h3>
-          <p class="text-sm text-text-secondary">在任务栏窗口以及后台窗口显示封面和歌曲标题</p>
-        </div>
-        <Switch
-          :model-value="settingStore.taskbarCoverPreview"
-          @update:model-value="
-            settingStore.taskbarCoverPreview = Boolean($event);
-            settingStore.syncTaskbarCoverPreview();
-          "
-        />
-      </div>
-      <div class="settings-divider"></div>
-      <div class="settings-item">
-        <div class="space-y-1">
-          <h3 class="font-semibold">任务栏播放进度条</h3>
-          <p class="text-sm text-text-secondary">在任务栏显示播放进度</p>
-        </div>
-        <Switch
-          :model-value="settingStore.taskbarProgress"
-          @update:model-value="
-            settingStore.taskbarProgress = Boolean($event);
-            settingStore.syncTaskbarProgress();
-          "
-        />
-      </div>
-      <div class="settings-divider"></div>
-    </template>
-    <div class="settings-item">
-      <div class="space-y-1">
-        <h3 class="font-semibold">播放列表计数</h3>
-        <p class="text-sm text-text-secondary">在播放器播放列表图标上显示计数</p>
-      </div>
-      <Switch v-model="settingStore.showPlaylistCount" />
-    </div>
-    <div class="settings-divider"></div>
-    <div class="settings-item">
-      <div class="space-y-1">
-        <h3 class="font-semibold">搜索框默认推荐词</h3>
-        <p class="text-sm text-text-secondary">在搜索框显示默认推荐词，可能有广告</p>
-      </div>
-      <Switch v-model="settingStore.searchDefaultEnabled" />
-    </div>
-    <div class="settings-divider"></div>
-    <div class="settings-item">
-      <div class="space-y-1">
-        <h3 class="font-semibold">全屏按钮</h3>
-        <p class="text-sm text-text-secondary">在标题栏显示全屏按钮（仅 Windows / Linux）</p>
-      </div>
-      <Switch v-model="settingStore.showFullscreenButton" />
-    </div>
-    <div class="settings-divider"></div>
-    <div class="settings-item">
-      <div class="space-y-1">
-        <h3 class="font-semibold">侧边栏折叠</h3>
-        <p class="text-sm text-text-secondary">启用后可通过快捷键或标题栏按钮折叠侧边栏</p>
-      </div>
-      <Switch v-model="settingStore.sidebarCollapseEnabled" />
-    </div>
-    <div class="settings-divider"></div>
-    <div class="settings-item">
-      <div class="space-y-1">
-        <h3 class="font-semibold">关闭行为</h3>
-        <p class="text-sm text-text-secondary">点击窗口关闭按钮时的应用行为</p>
-      </div>
-      <Select
-        class="w-45"
-        :model-value="settingStore.closeBehavior"
-        :options="closeBehaviorOptions"
-        @update:model-value="
-          settingStore.closeBehavior = $event as CloseBehavior;
-          settingStore.syncCloseBehavior();
-        "
-      />
-    </div>
-    <div class="settings-divider"></div>
-    <div class="settings-item">
-      <div class="space-y-1">
-        <h3 class="font-semibold">开机自启动</h3>
-        <p class="text-sm text-text-secondary">登录系统时自动启动应用</p>
-      </div>
-      <Switch
-        v-model="settingStore.autoLaunch"
-        @update:model-value="settingStore.syncAutoLaunch()"
-      />
-    </div>
-    <div class="settings-divider"></div>
-    <div class="settings-item">
-      <div class="space-y-1">
-        <h3 class="font-semibold">启动时最小化到托盘</h3>
-        <p class="text-sm text-text-secondary">启动后不显示主窗口，直接最小化到系统托盘</p>
-      </div>
-      <Switch
-        v-model="settingStore.startMinimized"
-        @update:model-value="settingStore.syncStartMinimized()"
       />
     </div>
 

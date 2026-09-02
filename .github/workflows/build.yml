@@ -483,58 +483,39 @@ jobs:
         run: |
           set -e
           VERSION="${GITHUB_REF_NAME#v}"
-          CHANGELOG=$(awk -v ver="$VERSION" '
+          CHANGELOG_SUMMARY=$(awk -v ver="$VERSION" '
             /^## \[/ {
               if (found) exit
               if (index($0, "[" ver "]")) found=1
               next
             }
-            found && NF { print }
+            found && /^### / { section=substr($0, 5); next }
+            found && /^- / {
+              counts[section]++
+              take = (section == "新增" && picked[section] < 2) ||
+                     (section == "优化" && picked[section] < 1) ||
+                     (section == "修复" && picked[section] < 2)
+              if (take) {
+                text=substr($0, 3)
+                highlights[++highlight_count]=text
+                picked[section]++
+              }
+            }
+            END {
+              if (!found) exit
+              printf "新增 %d · 优化 %d · 修复 %d", counts["新增"], counts["优化"], counts["修复"]
+              for (i=1; i<=highlight_count; i++) printf "\n• %s", highlights[i]
+            }
           ' CHANGELOG.md \
-            | sed 's/^### /\n📌 /' \
-            | sed 's/^- /• /' \
-            | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g; s/"/\&quot;/g' \
-            | awk 'NR==1{printf "%s",$0;next}{printf "\n%s",$0}')
+            | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g; s/"/\&quot;/g')
 
-          if [ -z "$CHANGELOG" ]; then
-            CHANGELOG="详见 CHANGELOG.md"
+          if [ -z "$CHANGELOG_SUMMARY" ]; then
+            CHANGELOG_SUMMARY="完整更新内容请查看 Release"
           fi
 
           {
-            echo "CHANGELOG<<EOF"
-            echo "$CHANGELOG"
-            echo "EOF"
-          } >> "$GITHUB_ENV"
-
-      - name: Build artifact links from release
-        shell: bash
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -e
-          VERSION="${GITHUB_REF_NAME}"
-          REPO="${GITHUB_REPOSITORY}"
-
-          ASSETS=$(gh api "repos/${REPO}/releases/tags/${VERSION}" --jq '.assets[].name' 2>/dev/null || true)
-          if [ -z "$ASSETS" ]; then
-            echo "ARTIFACT_LINKS=无" >> "$GITHUB_ENV"
-            exit 0
-          fi
-
-          LINKS=""
-          while IFS= read -r filename; do
-            escaped_name=$(printf '%s' "$filename" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g; s/"/\&quot;/g')
-            link="https://github.com/${REPO}/releases/download/${VERSION}/${filename}"
-            if [ -z "$LINKS" ]; then
-              LINKS="• <a href=\"${link}\">${escaped_name}</a>"
-            else
-              LINKS="${LINKS}\n• <a href=\"${link}\">${escaped_name}</a>"
-            fi
-          done <<< "$ASSETS"
-
-          {
-            echo "ARTIFACT_LINKS<<EOF"
-            printf '%b\n' "$LINKS"
+            echo "CHANGELOG_SUMMARY<<EOF"
+            echo "$CHANGELOG_SUMMARY"
             echo "EOF"
           } >> "$GITHUB_ENV"
 
@@ -554,13 +535,12 @@ jobs:
           VERSION="${GITHUB_REF_NAME}"
           REPO="${GITHUB_REPOSITORY}"
 
-          printf -v MESSAGE '%s\n\n%s\n%s\n\n%s\n%s\n\n%s' \
-            "🎉 <b>EchoMusic ${VERSION} 构建成功！</b>" \
-            "📝 <b>更新内容：</b>" \
-            "${CHANGELOG}" \
-            "📦 <b>下载地址：</b>" \
-            "${ARTIFACT_LINKS}" \
-            "🔗 <a href=\"https://github.com/${REPO}/releases/tag/${VERSION}\">查看完整 Release</a>"
+          RELEASE_URL="https://github.com/${REPO}/releases/tag/${VERSION}"
+          printf -v MESSAGE '%s\n\n%s\n%s\n\n%s' \
+            "🎉 <b>EchoMusic ${VERSION} 已发布</b>" \
+            "📋 <b>更新摘要</b>" \
+            "${CHANGELOG_SUMMARY}" \
+            "⬇️ <a href=\"${RELEASE_URL}\">下载与完整更新</a>"
 
           PAYLOAD=$(jq -n \
             --arg chat_id "$TELEGRAM_CHAT_ID" \
@@ -572,7 +552,7 @@ jobs:
             PAYLOAD=$(echo "$PAYLOAD" | jq --arg topic_id "$TELEGRAM_TOPIC_ID" '. + {message_thread_id: ($topic_id | tonumber)}')
           fi
 
-          curl -sS -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+          curl --fail-with-body -sS -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
             -H "Content-Type: application/json" \
             -d "$PAYLOAD"
 
@@ -595,56 +575,38 @@ jobs:
         run: |
           set -e
           VERSION="${GITHUB_REF_NAME#v}"
-          CHANGELOG=$(awk -v ver="$VERSION" '
+          CHANGELOG_SUMMARY=$(awk -v ver="$VERSION" '
             /^## \[/ {
               if (found) exit
               if (index($0, "[" ver "]")) found=1
               next
             }
-            found && NF { print }
-          ' CHANGELOG.md \
-            | sed 's/^### /\n📌 /' \
-            | sed 's/^- /• /' \
-            | awk 'NR==1{printf "%s",$0;next}{printf "\n%s",$0}')
+            found && /^### / { section=substr($0, 5); next }
+            found && /^- / {
+              counts[section]++
+              take = (section == "新增" && picked[section] < 2) ||
+                     (section == "优化" && picked[section] < 1) ||
+                     (section == "修复" && picked[section] < 2)
+              if (take) {
+                text=substr($0, 3)
+                highlights[++highlight_count]=text
+                picked[section]++
+              }
+            }
+            END {
+              if (!found) exit
+              printf "新增 %d · 优化 %d · 修复 %d", counts["新增"], counts["优化"], counts["修复"]
+              for (i=1; i<=highlight_count; i++) printf "\n• %s", highlights[i]
+            }
+          ' CHANGELOG.md)
 
-          if [ -z "$CHANGELOG" ]; then
-            CHANGELOG="详见 CHANGELOG.md"
+          if [ -z "$CHANGELOG_SUMMARY" ]; then
+            CHANGELOG_SUMMARY="完整更新内容请查看 Release"
           fi
 
           {
-            echo "CHANGELOG<<EOF"
-            echo "$CHANGELOG"
-            echo "EOF"
-          } >> "$GITHUB_ENV"
-
-      - name: Build artifact links
-        shell: bash
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -e
-          VERSION="${GITHUB_REF_NAME}"
-          REPO="${GITHUB_REPOSITORY}"
-
-          ASSETS=$(gh api "repos/${REPO}/releases/tags/${VERSION}" --jq '.assets[].name' 2>/dev/null || true)
-          if [ -z "$ASSETS" ]; then
-            echo "QQ_ARTIFACT_LINKS=无" >> "$GITHUB_ENV"
-            exit 0
-          fi
-
-          LINKS=""
-          while IFS= read -r filename; do
-            link="https://github.com/${REPO}/releases/download/${VERSION}/${filename}"
-            if [ -z "$LINKS" ]; then
-              LINKS="• ${filename}\n  ${link}"
-            else
-              LINKS="${LINKS}\n• ${filename}\n  ${link}"
-            fi
-          done <<< "$ASSETS"
-
-          {
-            echo "QQ_ARTIFACT_LINKS<<EOF"
-            printf '%b\n' "$LINKS"
+            echo "CHANGELOG_SUMMARY<<EOF"
+            echo "$CHANGELOG_SUMMARY"
             echo "EOF"
           } >> "$GITHUB_ENV"
 
@@ -664,8 +626,9 @@ jobs:
           VERSION="${GITHUB_REF_NAME}"
           REPO="${GITHUB_REPOSITORY}"
 
-          MESSAGE=$(printf '🎉 EchoMusic %s 发布啦！\n\n📝 更新内容：\n%s\n\n📦 下载地址：\n%s\n\n🔗 查看完整 Release：https://github.com/%s/releases/tag/%s' \
-            "$VERSION" "$CHANGELOG" "$QQ_ARTIFACT_LINKS" "$REPO" "$VERSION")
+          RELEASE_URL="https://github.com/${REPO}/releases/tag/${VERSION}"
+          MESSAGE=$(printf '🎉 EchoMusic %s 已发布\n\n📋 更新摘要\n%s\n\n⬇️ 下载与完整更新\n%s' \
+            "$VERSION" "$CHANGELOG_SUMMARY" "$RELEASE_URL")
 
           HEADERS=(-H "Content-Type: application/json")
           if [ -n "$QQ_BOT_TOKEN" ]; then
@@ -677,6 +640,6 @@ jobs:
             --arg message "$MESSAGE" \
             '{message_type: "group", group_id: $group_id, message: $message}')
 
-          curl -sS -X POST "${QQ_BOT_API}/send_msg" \
+          curl --fail-with-body -sS -X POST "${QQ_BOT_API}/send_msg" \
             "${HEADERS[@]}" \
             -d "$PAYLOAD"

@@ -60,6 +60,8 @@ const restartWithDiagnostics = async () => {
   }
 };
 
+const platform = window.electron?.platform;
+const supportsHighDpiOverride = computed(() => platform === 'win32' || platform === 'linux');
 const dpiScaleLabel = computed(() => Number(settingStore.dpiScale || 1).toFixed(1));
 
 const showUserInfo = ref(false);
@@ -261,36 +263,38 @@ const confirmResetDeviceIdentity = async () => {
         "
       />
     </div>
-    <div class="settings-divider"></div>
-    <div class="settings-item">
-      <div class="space-y-1">
-        <h3 class="font-semibold">高 DPI 支持</h3>
-        <p class="text-sm text-text-secondary">按指定缩放因子适配高分屏，重启后生效</p>
-      </div>
-      <Switch
-        :model-value="settingStore.highDpiEnabled"
-        @update:model-value="setHighDpiEnabled(Boolean($event))"
-      />
-    </div>
-    <template v-if="settingStore.highDpiEnabled">
+    <template v-if="supportsHighDpiOverride">
       <div class="settings-divider"></div>
       <div class="settings-item">
         <div class="space-y-1">
-          <h3 class="font-semibold">缩放因子</h3>
-          <p class="text-sm text-text-secondary">当前 {{ dpiScaleLabel }}，范围 0.5 至 2.0</p>
+          <h3 class="font-semibold">高 DPI 支持</h3>
+          <p class="text-sm text-text-secondary">按指定缩放因子适配高分屏，重启后生效</p>
         </div>
-        <Slider
-          class="w-60"
-          :model-value="settingStore.dpiScale"
-          :min="0.5"
-          :max="2"
-          :step="0.1"
-          show-value
-          :format-value="(value) => value.toFixed(1)"
-          @update:model-value="setDpiScale"
-          @value-commit="setDpiScale"
+        <Switch
+          :model-value="settingStore.highDpiEnabled"
+          @update:model-value="setHighDpiEnabled(Boolean($event))"
         />
       </div>
+      <template v-if="settingStore.highDpiEnabled">
+        <div class="settings-divider"></div>
+        <div class="settings-item">
+          <div class="space-y-1">
+            <h3 class="font-semibold">缩放因子</h3>
+            <p class="text-sm text-text-secondary">当前 {{ dpiScaleLabel }}，范围 0.5 至 2.0</p>
+          </div>
+          <Slider
+            class="w-60"
+            :model-value="settingStore.dpiScale"
+            :min="0.5"
+            :max="2"
+            :step="0.1"
+            show-value
+            :format-value="(value) => value.toFixed(1)"
+            @update:model-value="setDpiScale"
+            @value-commit="setDpiScale"
+          />
+        </div>
+      </template>
     </template>
     <div class="settings-divider"></div>
     <div class="settings-item">
