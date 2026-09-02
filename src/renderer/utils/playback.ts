@@ -268,7 +268,7 @@ const addSongToPlayQueueNext = (
   mode: PlayNextInsertMode,
   options?: SetPlaybackQueueOptions,
 ): boolean => {
-  const nextQueueOptions = { ...(options ?? {}), activate: false };
+  const nextQueueOptions = { ...(options ?? {}), activate: false, preserveQueuedNext: true };
   const manualQueueOptions =
     playlistStore.getPreferredManualQueueOptions?.(nextQueueOptions) ?? nextQueueOptions;
   const resolvedSong = resolvePlayableSongForRequest(song, [song]);

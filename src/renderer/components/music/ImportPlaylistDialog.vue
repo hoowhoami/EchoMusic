@@ -72,6 +72,9 @@ const backgroundTargetName = ref('外部歌单导入');
 const showBackgroundConfirm = ref(false);
 const neverShowBackgroundConfirm = ref(false);
 const isLocalFallback = ref(false);
+const showDuplicateNameConfirm = ref(false);
+const duplicatePlaylistName = ref('');
+let resolveDuplicateNameConfirm: ((name: string | null) => void) | null = null;
 
 const currentUserId = computed<number | undefined>(() => {
   const value = userStore.info?.userid ?? userStore.info?.userId;
@@ -104,6 +107,47 @@ const selectedPlaylist = computed(() =>
   ),
 );
 
+const normalizedPlaylistName = (name: string) => name.trim().toLowerCase();
+const hasOwnedPlaylistWithName = (name: string) => {
+  const normalized = normalizedPlaylistName(name);
+  return (
+    normalized.length > 0 &&
+    ownedPlaylists.value.some(
+      (playlist) => normalizedPlaylistName(String(playlist.name ?? '')) === normalized,
+    )
+  );
+};
+const confirmDuplicatePlaylistName = async (name: string, run: ImportTaskRun) => {
+  await playlistStore.fetchUserPlaylists();
+  if (!canContinueTask(run)) return null;
+  const trimmedName = name.trim();
+  if (!hasOwnedPlaylistWithName(trimmedName)) return trimmedName;
+  duplicatePlaylistName.value = trimmedName;
+  return new Promise<string | null>((resolve) => {
+    resolveDuplicateNameConfirm?.(null);
+    resolveDuplicateNameConfirm = resolve;
+    showDuplicateNameConfirm.value = true;
+  });
+};
+const finishDuplicateNameConfirm = (confirmed: boolean) => {
+  const name = duplicatePlaylistName.value.trim();
+  if (confirmed && !name) return;
+  showDuplicateNameConfirm.value = false;
+  const resolve = resolveDuplicateNameConfirm;
+  resolveDuplicateNameConfirm = null;
+  resolve?.(confirmed ? name : null);
+};
+const cancelRunBeforePlaylistCreation = (run: ImportTaskRun) => {
+  run.dismiss();
+  if (currentDialogRun === run) currentDialogRun = null;
+  isStarting.value = false;
+  isImporting.value = false;
+  isLocalFallback.value = false;
+  step.value = 'input';
+  progressItems.value = [];
+  summary.value = null;
+};
+
 const canStart = computed(() => {
   if (isStarting.value || isImporting.value) return false;
   if (mode.value === 'link') return /^https?:\/\//i.test(inputText.value.trim());
@@ -132,6 +176,8 @@ const activeProgressItem = computed(() => {
 });
 
 const reset = () => {
+  finishDuplicateNameConfirm(false);
+  duplicatePlaylistName.value = '';
   step.value = 'input';
   mode.value = 'link';
   inputText.value = '';
@@ -258,7 +304,14 @@ const runLocalFallback = async (url: string, run: ImportTaskRun) => {
   if (!resolved.playlist.tracks.length) throw new Error('外部歌单没有可导入歌曲');
   if (!currentUserId.value) throw new Error('请先登录');
 
-  const playlistName = resolved.playlist.name || '导入的歌单';
+  const playlistName = await confirmDuplicatePlaylistName(
+    resolved.playlist.name || '导入的歌单',
+    run,
+  );
+  if (!playlistName) {
+    cancelRunBeforePlaylistCreation(run);
+    return;
+  }
   backgroundTargetName.value = `${playlistName} · 自动导入`;
   const listId = await playlistStore.createPlaylistAndReturnId(
     playlistName,
@@ -266,7 +319,7 @@ const runLocalFallback = async (url: string, run: ImportTaskRun) => {
     currentUserId.value,
   );
   if (!canContinueTask(run)) return;
-  if (!listId) throw new Error('创建歌单失败');
+  if (!listId) throw new Error('新歌单创建失败；如存在同名歌单，请换一个名称后重试');
 
   const tracks = resolved.playlist.tracks;
   progressItems.value = tracks.map((track) => ({ external: track, status: 'pending' }));
@@ -417,18 +470,25 @@ const startImport = async () => {
     }
 
     if (!currentUserId.value) throw new Error('请先登录');
-    const playlistName =
+    let playlistName =
       screenshotTarget.value === 'new'
         ? newScreenshotPlaylistName.value.trim()
         : selectedPlaylist.value?.name || '';
     let listId = existingListId.value;
     if (screenshotTarget.value === 'new') {
+      const confirmedName = await confirmDuplicatePlaylistName(playlistName, run);
+      if (!confirmedName) {
+        cancelRunBeforePlaylistCreation(run);
+        return;
+      }
+      playlistName = confirmedName;
       listId = await playlistStore.createPlaylistAndReturnId(
         playlistName,
         false,
         currentUserId.value,
       );
       if (!canContinueTask(run)) return;
+      if (!listId) throw new Error('新歌单创建失败；如存在同名歌单，请换一个名称后重试');
     }
     if (!listId || !playlistName) throw new Error('请选择或创建目标歌单');
     backgroundTargetName.value = playlistName;
@@ -719,6 +779,44 @@ const itemStatusLabel = (status: ImportItemResult['status']) => {
         >
         <Button v-else variant="primary" size="sm" @click="closeResult">完成</Button>
       </template>
+    </template>
+  </Dialog>
+
+  <Dialog
+    v-model:open="showDuplicateNameConfirm"
+    title="歌单名称重复"
+    :close-on-escape="false"
+    :close-on-interact-outside="false"
+  >
+    <div class="flex flex-col gap-3 py-1">
+      <p class="text-[13px] text-text-secondary leading-relaxed">
+        已有同名歌单。你可以修改名称，或保留原名称继续创建。
+      </p>
+      <Input
+        v-model="duplicatePlaylistName"
+        aria-label="新歌单名称"
+        placeholder="请输入新歌单名称"
+        input-class="h-10 rounded-xl px-3 text-[13px]"
+        @keydown.enter.prevent="finishDuplicateNameConfirm(true)"
+      />
+      <p class="text-[12px] text-text-secondary leading-relaxed">
+        {{
+          hasOwnedPlaylistWithName(duplicatePlaylistName)
+            ? '该名称仍与已有歌单重复，确定后将创建同名歌单。'
+            : '将使用这个新名称创建歌单。'
+        }}
+      </p>
+    </div>
+    <template #footer>
+      <Button variant="ghost" size="sm" @click="finishDuplicateNameConfirm(false)">取消</Button>
+      <Button
+        variant="primary"
+        size="sm"
+        :disabled="!duplicatePlaylistName.trim()"
+        @click="finishDuplicateNameConfirm(true)"
+      >
+        确定
+      </Button>
     </template>
   </Dialog>
 

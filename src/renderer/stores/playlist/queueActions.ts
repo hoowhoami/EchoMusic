@@ -1,5 +1,6 @@
 import type { Song } from '@/models/song';
 import { isSameSong } from '@/utils/song';
+import { reconcileQueuedNextForQueueReplacement } from '../../../shared/playback-queue-decision';
 import {
   DEFAULT_PLAYBACK_QUEUE_ID,
   LISTEN_TOGETHER_QUEUE_ID,
@@ -7,7 +8,12 @@ import {
   MAX_PLAYBACK_QUEUE_COUNT,
   PERSONAL_FM_QUEUE_ID,
 } from './constants';
-import { buildPlaybackQueueState, normalizePlaybackQueueRuntime, toRawSongList } from './helpers';
+import {
+  buildPlaybackQueueState,
+  bumpPlaybackQueueRevision,
+  normalizePlaybackQueueRuntime,
+  toRawSongList,
+} from './helpers';
 import type { PlaybackQueueState, SetPlaybackQueueOptions } from './types';
 
 type QueueStoreShape = {
@@ -36,6 +42,10 @@ type QueueStoreShape = {
     filteredInvalidCount?: number,
     options?: SetPlaybackQueueOptions,
   ) => void;
+  consumeQueuedNextTrackIds: (
+    songIds: readonly (string | number)[],
+    queueId?: string | number,
+  ) => void;
   syncLegacyPlaybackState: () => void;
   trimPlaybackQueues: (limit?: number) => void;
 };
@@ -50,9 +60,7 @@ export const queueActions = {
     if (options.queueId) return { ...options };
 
     const activeQueue =
-      this.playbackQueues.find((queue) => queue.id === this.activeQueueId) ??
-      this.playbackQueues.find((queue) => queue.id === this.activeQueueId) ??
-      null;
+      this.playbackQueues.find((queue) => queue.id === this.activeQueueId) ?? null;
 
     if (activeQueue && !isTransientPlaybackQueue(activeQueue.id)) {
       this.markLastNonFmQueue(activeQueue.id);
@@ -259,14 +267,20 @@ export const queueActions = {
     const previousActiveQueueId = this.activeQueueId;
     const targetQueue = this.ensurePlaybackQueue(options.queueId, options);
     const previousSongs = targetQueue.songs;
-    targetQueue.songs = toRawSongList(songs);
+    const nextSongs = toRawSongList(songs);
+    const replacement = reconcileQueuedNextForQueueReplacement({
+      previousTracks: previousSongs,
+      nextTracks: nextSongs,
+      queuedNextTrackIds: targetQueue.queuedNextTrackIds,
+      preserveQueuedNext: options.preserveQueuedNext,
+      getTrackId: (song) => song.id,
+    });
+    targetQueue.songs = nextSongs;
     targetQueue.songCount = targetQueue.songs.length;
     targetQueue.filteredInvalidCount = Math.max(0, filteredInvalidCount);
-    if (
-      songs.length !== targetQueue.songs.length ||
-      songs.some((song, index) => String(song.id) !== String(targetQueue.songs[index]?.id))
-    ) {
-      targetQueue.queuedNextTrackIds = [];
+    if (replacement.orderChanged) {
+      targetQueue.queuedNextTrackIds = replacement.queuedNextTrackIds;
+      bumpPlaybackQueueRevision(targetQueue);
     }
     targetQueue.title = options.title?.trim() || targetQueue.title || '播放列表';
     targetQueue.subtitle = options.subtitle?.trim() ?? targetQueue.subtitle;
@@ -296,11 +310,8 @@ export const queueActions = {
     }
     this.trimPlaybackQueues();
     this.syncLegacyPlaybackState();
-    const canAppend =
-      previousSongs.length > 0 &&
-      songs.length > previousSongs.length &&
-      previousSongs.every((song, index) => String(song.id) === String(songs[index]?.id));
-    if (canAppend) this.persistQueueAppendToStorage(targetQueue, songs.slice(previousSongs.length));
+    if (replacement.appendOnly)
+      this.persistQueueAppendToStorage(targetQueue, nextSongs.slice(previousSongs.length));
     else this.persistQueueToStorage(targetQueue);
   },
   setPlaybackQueue(this: QueueStoreShape, songs: Song[], filteredInvalidCount = 0) {
@@ -308,6 +319,10 @@ export const queueActions = {
   },
   clearPlaybackQueue(this: QueueStoreShape, queueId?: string | number) {
     const targetQueue = this.ensurePlaybackQueue(queueId != null ? String(queueId) : undefined);
+    const playbackDecisionChanged =
+      targetQueue.songs.length > 0 ||
+      targetQueue.queuedNextTrackIds.length > 0 ||
+      targetQueue.currentTrackId !== null;
     targetQueue.songs = toRawSongList([]);
     targetQueue.songCount = 0;
     targetQueue.filteredInvalidCount = 0;
@@ -316,6 +331,7 @@ export const queueActions = {
     if (targetQueue.id === PERSONAL_FM_QUEUE_ID) {
       this.personalFmBuffer = toRawSongList([]);
     }
+    if (playbackDecisionChanged) bumpPlaybackQueueRevision(targetQueue);
     targetQueue.updatedAt = Date.now();
     this.syncLegacyPlaybackState();
     this.persistQueueClearToStorage(targetQueue);
@@ -343,6 +359,7 @@ export const queueActions = {
       );
       if (incoming.length === 0) return 0;
       targetQueue.songCount = Math.max(0, targetQueue.songCount ?? 0) + incoming.length;
+      bumpPlaybackQueueRevision(targetQueue);
       targetQueue.title = resolvedOptions.title?.trim() || targetQueue.title || '播放列表';
       targetQueue.subtitle = resolvedOptions.subtitle?.trim() ?? targetQueue.subtitle;
       targetQueue.coverUrl = resolvedOptions.coverUrl?.trim() ?? targetQueue.coverUrl;
@@ -382,6 +399,7 @@ export const queueActions = {
     if (addedCount === 0) return 0;
     targetQueue.songs = toRawSongList(nextList);
     targetQueue.songCount = nextList.length;
+    bumpPlaybackQueueRevision(targetQueue);
     targetQueue.title = resolvedOptions.title?.trim() || targetQueue.title || '播放列表';
     targetQueue.subtitle = resolvedOptions.subtitle?.trim() ?? targetQueue.subtitle;
     targetQueue.coverUrl = resolvedOptions.coverUrl?.trim() ?? targetQueue.coverUrl;
@@ -429,8 +447,15 @@ export const queueActions = {
     const id = String(songId ?? '');
     if (!id) return;
     const targetQueue = this.ensurePlaybackQueue(queueId != null ? String(queueId) : undefined);
-    targetQueue.queuedNextTrackIds = targetQueue.queuedNextTrackIds.filter((item) => item !== id);
-    targetQueue.queuedNextTrackIds.unshift(id);
+    const nextQueuedIds = targetQueue.queuedNextTrackIds.filter((item) => item !== id);
+    nextQueuedIds.unshift(id);
+    if (
+      nextQueuedIds.length === targetQueue.queuedNextTrackIds.length &&
+      nextQueuedIds.every((item, index) => item === targetQueue.queuedNextTrackIds[index])
+    )
+      return;
+    targetQueue.queuedNextTrackIds = nextQueuedIds;
+    bumpPlaybackQueueRevision(targetQueue);
     targetQueue.updatedAt = Date.now();
     this.syncLegacyPlaybackState();
     this.persistQueueMetaToStorage(targetQueue);
@@ -443,8 +468,15 @@ export const queueActions = {
     const id = String(songId ?? '');
     if (!id) return;
     const targetQueue = this.ensurePlaybackQueue(queueId != null ? String(queueId) : undefined);
-    targetQueue.queuedNextTrackIds = targetQueue.queuedNextTrackIds.filter((item) => item !== id);
-    targetQueue.queuedNextTrackIds.push(id);
+    const nextQueuedIds = targetQueue.queuedNextTrackIds.filter((item) => item !== id);
+    nextQueuedIds.push(id);
+    if (
+      nextQueuedIds.length === targetQueue.queuedNextTrackIds.length &&
+      nextQueuedIds.every((item, index) => item === targetQueue.queuedNextTrackIds[index])
+    )
+      return;
+    targetQueue.queuedNextTrackIds = nextQueuedIds;
+    bumpPlaybackQueueRevision(targetQueue);
     targetQueue.updatedAt = Date.now();
     this.syncLegacyPlaybackState();
     this.persistQueueMetaToStorage(targetQueue);
@@ -455,9 +487,22 @@ export const queueActions = {
     queueId?: string | number,
   ) {
     const id = String(songId ?? '');
+    if (!id) return;
+    this.consumeQueuedNextTrackIds([id], queueId);
+  },
+  consumeQueuedNextTrackIds(
+    this: QueueStoreShape,
+    songIds: readonly (string | number)[],
+    queueId?: string | number,
+  ) {
+    const ids = new Set(songIds.map((id) => String(id ?? '')).filter(Boolean));
+    if (ids.size === 0) return;
     const targetQueue = this.ensurePlaybackQueue(queueId != null ? String(queueId) : undefined);
-    if (!id || targetQueue.queuedNextTrackIds.length === 0) return;
-    targetQueue.queuedNextTrackIds = targetQueue.queuedNextTrackIds.filter((item) => item !== id);
+    if (targetQueue.queuedNextTrackIds.length === 0) return;
+    const nextQueuedIds = targetQueue.queuedNextTrackIds.filter((item) => !ids.has(item));
+    if (nextQueuedIds.length === targetQueue.queuedNextTrackIds.length) return;
+    targetQueue.queuedNextTrackIds = nextQueuedIds;
+    bumpPlaybackQueueRevision(targetQueue);
     targetQueue.updatedAt = Date.now();
     this.syncLegacyPlaybackState();
     this.persistQueueMetaToStorage(targetQueue);
@@ -470,9 +515,10 @@ export const queueActions = {
     const targetQueue = this.ensurePlaybackQueue(queueId != null ? String(queueId) : undefined);
     if (targetQueue.queuedNextTrackIds.length === 0) return;
     const validIds = new Set(targetQueue.songs.map((song) => String(song.id)));
-    targetQueue.queuedNextTrackIds = targetQueue.queuedNextTrackIds.filter((id) =>
-      validIds.has(id),
-    );
+    const nextQueuedIds = targetQueue.queuedNextTrackIds.filter((id) => validIds.has(id));
+    if (nextQueuedIds.length === targetQueue.queuedNextTrackIds.length) return;
+    targetQueue.queuedNextTrackIds = nextQueuedIds;
+    bumpPlaybackQueueRevision(targetQueue);
     targetQueue.updatedAt = Date.now();
     this.syncLegacyPlaybackState();
     this.persistQueueMetaToStorage(targetQueue);
@@ -480,11 +526,19 @@ export const queueActions = {
   removeFromQueue(this: QueueStoreShape, songId: string | number, queueId?: string | number) {
     const id = String(songId ?? '');
     const targetQueue = this.ensurePlaybackQueue(queueId != null ? String(queueId) : undefined);
+    const previousSongCount = targetQueue.songs.length;
+    const previousQueuedCount = targetQueue.queuedNextTrackIds.length;
     targetQueue.songs = toRawSongList(targetQueue.songs.filter((song) => String(song.id) !== id));
     targetQueue.songCount = targetQueue.songs.length;
     targetQueue.queuedNextTrackIds = targetQueue.queuedNextTrackIds.filter((item) => item !== id);
     if (targetQueue.currentTrackId === id) {
       targetQueue.currentTrackId = null;
+    }
+    if (
+      targetQueue.songs.length !== previousSongCount ||
+      targetQueue.queuedNextTrackIds.length !== previousQueuedCount
+    ) {
+      bumpPlaybackQueueRevision(targetQueue);
     }
     targetQueue.updatedAt = Date.now();
     this.syncLegacyPlaybackState();
@@ -508,6 +562,7 @@ export const queueActions = {
     nextList.splice(normalizedTarget, 0, movedSong);
     targetQueue.songs = toRawSongList(nextList);
     targetQueue.songCount = nextList.length;
+    bumpPlaybackQueueRevision(targetQueue);
     targetQueue.updatedAt = Date.now();
     this.syncLegacyPlaybackState();
     this.persistQueueReorderToStorage(targetQueue);

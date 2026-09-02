@@ -35,6 +35,8 @@ export interface PlaybackQueueState {
   filteredInvalidCount: number;
   queuedNextTrackIds: string[];
   currentTrackId: string | null;
+  /** Runtime-only revision for changes that can alter the next playback decision. */
+  playbackRevision?: number;
   createdAt: number;
   updatedAt: number;
   dynamic: boolean;
@@ -50,4 +52,6 @@ export interface SetPlaybackQueueOptions {
   dynamic?: boolean;
   meta?: PlaybackQueueMetaValueMap;
   activate?: boolean;
+  /** Keep the explicit play-next group while its songs are being repositioned in this queue. */
+  preserveQueuedNext?: boolean;
 }

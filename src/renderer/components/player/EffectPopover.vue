@@ -24,7 +24,11 @@ import { usePlayerControls } from '@/composables/usePlayerControls';
 import EffectPlaza from './EffectPlaza.vue';
 import { useAudioEffectPlaza } from '@/composables/useAudioEffectPlaza';
 import type { AudioEffectValue } from '@/types';
-import { normalizeAudioEffectName, type SpatialAudioEffectEntry } from '../../../shared/audio';
+import {
+  normalizeAudioEffectName,
+  type DspProviderRecord,
+  type SpatialAudioEffectEntry,
+} from '../../../shared/audio';
 import type {
   DspJsonValue,
   DspProviderControl,
@@ -65,6 +69,11 @@ const providerSettingsPanel = ref<HTMLElement | null>(null);
 const providerSettingsPanelId = useId();
 let providerSettingsTrigger: HTMLElement | null = null;
 const editingProviderPresetId = ref('');
+const installedProviders = ref<DspProviderRecord[]>([]);
+const installedProvidersLoading = ref(false);
+const installedProvidersLoaded = ref(false);
+const installedProvidersError = ref('');
+const activatingProviderId = ref('');
 const activeImpulseResponseLibraryTab = ref<ImpulseResponseLibraryTab>(
   settingStore.dspProviderEnabled && (settingStore.dspProviderId || settingStore.dspProviderPath)
     ? 'engine'
@@ -156,6 +165,69 @@ const parseProviderManifestJson = (value?: string | null): DspProviderManifest |
     return typeof manifest === 'object' && manifest !== null ? manifest : null;
   } catch {
     return null;
+  }
+};
+const installedProviderManifest = (provider: DspProviderRecord) =>
+  parseProviderManifestJson(provider.manifestJson);
+const installedProviderDisplayName = (provider: DspProviderRecord) =>
+  installedProviderManifest(provider)?.displayName?.trim() || provider.providerId || '音效引擎';
+const installedProviderSummary = (provider: DspProviderRecord) => {
+  const manifest = installedProviderManifest(provider);
+  const resources = manifest?.resources ?? [];
+  const labels: string[] = [];
+  if (
+    resources.some(
+      (resource) =>
+        resource.kind.toLowerCase() === 'vpf' ||
+        resource.extensions?.some((extension) => extension.toLowerCase() === '.vpf'),
+    )
+  ) {
+    labels.push('支持 VPF');
+  }
+  if (manifest?.presets?.length) labels.push(`${manifest.presets.length} 个预设`);
+  if (provider.maxChannels > 0) labels.push(`最高 ${provider.maxChannels} 声道`);
+  return labels;
+};
+const refreshInstalledProviders = async () => {
+  if (
+    installedProvidersLoading.value ||
+    typeof window === 'undefined' ||
+    !window.electron?.player?.listDspProviders
+  ) {
+    return;
+  }
+  installedProvidersLoading.value = true;
+  installedProvidersError.value = '';
+  try {
+    installedProviders.value = await window.electron.player.listDspProviders();
+  } catch (error) {
+    installedProvidersError.value =
+      error instanceof Error ? error.message : '读取已安装音效引擎失败';
+  } finally {
+    installedProvidersLoading.value = false;
+    installedProvidersLoaded.value = true;
+  }
+};
+const activateInstalledProvider = async (provider: DspProviderRecord) => {
+  if (activatingProviderId.value) return;
+  const mode = settingStore.dspProviderMode === 'headphone' ? 'headphone' : 'speaker';
+  activatingProviderId.value = provider.providerId;
+  installedProvidersError.value = '';
+  try {
+    await window.electron.player.setAudioEffect({
+      providerPath: provider.path,
+      providerMode: mode,
+    });
+    settingStore.configureDspProvider(provider, mode);
+    const graph = await window.electron.player.getAudioGraph();
+    player.playbackDiagnostics.graph = graph ? { ...graph, updatedAt: Date.now() } : null;
+  } catch (error) {
+    installedProvidersError.value =
+      error instanceof Error
+        ? error.message
+        : `无法开启“${installedProviderDisplayName(provider)}”`;
+  } finally {
+    activatingProviderId.value = '';
   }
 };
 const providerManifest = computed<DspProviderManifest | null>(() => {
@@ -399,6 +471,7 @@ const closeProviderSettings = async () => {
 };
 watch(effectPopoverOpen, (open) => {
   if (!open) providerSettingsOpen.value = false;
+  else void refreshInstalledProviders();
 });
 // An open editor must never write into a newly loaded engine or output-mode bank.
 watch(
@@ -1099,9 +1172,66 @@ withDefaults(defineProps<Props>(), {
                 当前引擎没有声明额外预设。
               </div>
             </div>
+            <div
+              v-else-if="!installedProvidersLoaded || installedProvidersLoading"
+              class="provider-panel-empty"
+            >
+              <strong>正在查找音效引擎</strong>
+              <span>正在读取已安装的第三方音效引擎</span>
+            </div>
+            <div v-else-if="installedProviders.length" class="provider-panel-body">
+              <section
+                v-for="provider in installedProviders"
+                :key="provider.providerId"
+                class="spatial-provider-card installed-provider-card"
+              >
+                <div class="provider-card-heading">
+                  <span class="provider-card-copy">
+                    <strong>{{ installedProviderDisplayName(provider) }}</strong>
+                    <small v-if="provider.providerVersion">v{{ provider.providerVersion }}</small>
+                  </span>
+                  <span class="provider-status-dot is-installed">已安装</span>
+                </div>
+                <p
+                  v-if="installedProviderManifest(provider)?.description"
+                  class="installed-provider-description"
+                >
+                  {{ installedProviderManifest(provider)?.description }}
+                </p>
+                <div v-if="installedProviderSummary(provider).length" class="provider-capabilities">
+                  <span
+                    v-for="summary in installedProviderSummary(provider)"
+                    :key="summary"
+                    class="provider-capability"
+                  >
+                    {{ summary }}
+                  </span>
+                </div>
+                <div class="installed-provider-actions">
+                  <span :title="provider.originalFileName">{{ provider.originalFileName }}</span>
+                  <Button
+                    variant="outline"
+                    size="xs"
+                    type="button"
+                    :loading="activatingProviderId === provider.providerId"
+                    :disabled="!!activatingProviderId"
+                    @click="activateInstalledProvider(provider)"
+                  >
+                    开启
+                  </Button>
+                </div>
+              </section>
+              <p v-if="installedProvidersError" class="installed-provider-error" role="alert">
+                {{ installedProvidersError }}
+              </p>
+            </div>
             <div v-else class="provider-panel-empty">
-              <strong>尚未启用音效引擎</strong>
-              <span>请前往“设置 → 音效管理”导入第三方音效引擎</span>
+              <strong>{{
+                installedProvidersError ? '音效引擎读取失败' : '尚未导入音效引擎'
+              }}</strong>
+              <span>{{
+                installedProvidersError || '请前往“设置 → 音效管理”导入第三方音效引擎'
+              }}</span>
             </div>
           </Scrollbar>
         </div>
@@ -1370,6 +1500,47 @@ withDefaults(defineProps<Props>(), {
   background: currentColor;
   box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 14%, transparent);
   content: '';
+}
+
+.provider-status-dot.is-installed {
+  color: var(--color-text-secondary);
+}
+
+.installed-provider-description,
+.installed-provider-actions > span,
+.installed-provider-error {
+  color: var(--color-text-secondary);
+  font-size: 10px;
+}
+
+.installed-provider-card .provider-card-heading {
+  margin-bottom: 0;
+}
+
+.installed-provider-description {
+  margin: 10px 0 0;
+  line-height: 1.5;
+}
+
+.installed-provider-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.installed-provider-actions > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.installed-provider-error {
+  margin: 0;
+  color: var(--color-danger, #d14343);
+  text-align: center;
 }
 
 .provider-mode-row {

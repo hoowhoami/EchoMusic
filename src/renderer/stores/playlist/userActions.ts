@@ -2,7 +2,7 @@ import { addPlaylist, deletePlaylist, getUserPlaylists } from '@/api/playlist';
 import type { PlaylistMeta } from '@/models/playlist';
 import logger from '@/utils/logger';
 import { mapPlaylistMeta } from '@/utils/mappers';
-import { includesPlaylistIdentity } from './helpers';
+import { getPlaylistIdentityValues, includesPlaylistIdentity } from './helpers';
 
 const userPlaylistsRequests = new WeakMap<object, { generation: number; request: Promise<void> }>();
 
@@ -123,6 +123,9 @@ export const userActions = {
   ): Promise<number | null> {
     if (!currentUserId) return null;
     try {
+      const existingPlaylistIds = new Set(
+        this.userPlaylists.flatMap((playlist) => getPlaylistIdentityValues(playlist)),
+      );
       const res = await addPlaylist(name, {
         is_pri: isPrivate ? 1 : 0,
         type: 0,
@@ -141,17 +144,28 @@ export const userActions = {
       if (Number.isFinite(directId) && directId > 0) {
         return directId;
       }
-      const candidates = this.userPlaylists.filter(
-        (playlist) =>
+      const candidates = this.userPlaylists.filter((playlist) => {
+        const id = playlist.listid ?? playlist.id;
+        const identities = getPlaylistIdentityValues(playlist);
+        return (
           playlist.name === name &&
           (playlist.listCreateUserid === currentUserId ||
             playlist.listCreateUserid === undefined) &&
-          playlist.source !== 2,
-      );
-      if (candidates.length === 0) return null;
-      candidates.sort((left, right) => (right.createTime ?? 0) - (left.createTime ?? 0));
-      const found = candidates[0];
-      return found.listid ?? (typeof found.id === 'number' ? found.id : null);
+          playlist.source !== 2 &&
+          Number.isFinite(Number(id)) &&
+          Number(id) > 0 &&
+          identities.length > 0 &&
+          !identities.some((identity) => existingPlaylistIds.has(identity))
+        );
+      });
+      if (candidates.length !== 1) {
+        logger.warn('PlaylistStore', 'Cannot uniquely identify the newly created playlist', {
+          name,
+          candidateCount: candidates.length,
+        });
+        return null;
+      }
+      return Number(candidates[0].listid ?? candidates[0].id);
     } catch (e) {
       logger.error('PlaylistStore', 'Create playlist (returnId) error:', e);
       return null;

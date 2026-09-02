@@ -9,6 +9,7 @@ import type {
   PlayerAudioGraphPlanPatch,
 } from '../../shared/player-audio-graph';
 import { restartPlayer } from '../player';
+import { setPlayerAudioEffect } from '../player/audioEffectCommand';
 import { DspProviderRegistry } from '../player/dspProviderRegistry';
 import log from '../logger';
 
@@ -47,7 +48,7 @@ export function registerPlayerIpc(ref: PlayerRef): void {
   ipcRegistry.registerHandler(
     'player:set-audio-effect',
     async (_e, options: AudioEffectPlaybackOptions | null) => {
-      await ref.current?.setAudioEffect(options);
+      await setPlayerAudioEffect(ref.current, options);
     },
   );
 

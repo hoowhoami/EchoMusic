@@ -354,6 +354,111 @@ test('configured provider shows a loading state instead of flashing the not-impo
   assert.equal(api.providerPresets.value.length, 1);
 });
 
+test('installed providers can be discovered and enabled from the effect popover', async (t) => {
+  const previousWindow = globalThis.window;
+  const provider = {
+    providerId: 'installed-provider',
+    providerVersion: '2.0.0',
+    path: '/installed-provider',
+    originalFileName: 'installed-provider.dylib',
+    manifestJson: JSON.stringify({
+      displayName: '已安装引擎',
+      description: '测试音效引擎',
+      resources: [{ kind: 'vpf', extensions: ['.vpf'] }],
+      presets: [{ id: 'room', label: '房间' }],
+    }),
+    stateJson: '{}',
+    latencyFrames: 0,
+    preferredBlockFrames: 0,
+    maxChannels: 8,
+    contentHash: 'hash',
+    importedAt: 1,
+  };
+  const setAudioEffectCalls = [];
+  let setAudioEffectError = null;
+  globalThis.window = {
+    electron: {
+      player: {
+        listDspProviders: async () => [provider],
+        setAudioEffect: async (effect) => {
+          if (setAudioEffectError) throw setAudioEffectError;
+          setAudioEffectCalls.push(effect);
+        },
+        getAudioGraph: async () => ({
+          providerId: provider.providerId,
+          providerPath: provider.path,
+          providerMode: 'headphone',
+          providerManifestJson: provider.manifestJson,
+        }),
+      },
+    },
+  };
+  t.after(() => {
+    globalThis.window = previousWindow;
+  });
+
+  const store = vue.reactive({
+    dspProviderEnabled: false,
+    dspProviderId: '',
+    dspProviderPath: '',
+    dspProviderMode: 'headphone',
+    dspProviderPresetJson: '',
+    impulseResponseEnabled: false,
+    selectedImpulseResponseId: '',
+    impulseResponseFiles: [],
+    getSelectedImpulseResponse: () => null,
+    getDspProviderPreset: () => '',
+    getImpulseResponseMix: () => 0.5,
+    configureDspProvider(selected, mode) {
+      this.dspProviderEnabled = true;
+      this.dspProviderId = selected.providerId;
+      this.dspProviderPath = selected.path;
+      this.dspProviderMode = mode;
+    },
+  });
+  const player = vue.reactive({
+    playbackDiagnostics: { graph: null },
+    dspProviderInspection: null,
+    getSpatialAudioEffectSupport: () => ({ status: 'supported', reason: '' }),
+  });
+  const { api, descriptor } = setupComponent(
+    t,
+    '../src/renderer/components/player/EffectPopover.vue',
+    {},
+    {
+      '@/composables/usePlayerControls': {
+        usePlayerControls: () => ({ player, settingStore: store }),
+      },
+      '@/composables/useAudioEffectPlaza': { useAudioEffectPlaza: () => ({}) },
+    },
+  );
+
+  await api.refreshInstalledProviders();
+  assert.equal(api.installedProvidersLoaded.value, true);
+  assert.equal(api.installedProviders.value.length, 1);
+  assert.equal(api.installedProviderDisplayName(provider), '已安装引擎');
+  assert.deepEqual(api.installedProviderSummary(provider), ['支持 VPF', '1 个预设', '最高 8 声道']);
+
+  await api.activateInstalledProvider(provider);
+  assert.deepEqual(setAudioEffectCalls, [
+    { providerPath: provider.path, providerMode: 'headphone' },
+  ]);
+  assert.equal(store.dspProviderEnabled, true);
+  assert.equal(store.dspProviderId, provider.providerId);
+  assert.equal(player.playbackDiagnostics.graph.providerId, provider.providerId);
+
+  store.dspProviderEnabled = false;
+  store.dspProviderId = '';
+  setAudioEffectError = new Error('播放器未初始化');
+  await api.activateInstalledProvider(provider);
+  assert.equal(store.dspProviderEnabled, false);
+  assert.equal(store.dspProviderId, '');
+  assert.equal(api.installedProvidersError.value, '播放器未初始化');
+
+  assert.match(descriptor.template.content, /@click="activateInstalledProvider\(provider\)"/);
+  assert.match(descriptor.template.content, />\s*开启\s*<\/Button>/);
+});
+
 test('download cards disable by capability status, even if an unavailable reason is empty', (t) => {
   const state = vue.reactive({ support: { status: 'supported', reason: '' } });
   const { api, descriptor } = setupComponent(

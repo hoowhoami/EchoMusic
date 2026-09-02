@@ -98,7 +98,18 @@ export const toRawSongList = (songs: Song[] = []): Song[] => {
 
 export const normalizePlaybackQueueRuntime = (queue: PlaybackQueueState): PlaybackQueueState => {
   queue.songs = toRawSongList(queue.songs ?? []);
+  const playbackRevision = Number(queue.playbackRevision);
+  queue.playbackRevision = Number.isSafeInteger(playbackRevision)
+    ? Math.max(0, playbackRevision)
+    : 0;
   return queue;
+};
+
+export const bumpPlaybackQueueRevision = (queue: PlaybackQueueState): number => {
+  const playbackRevision = Number(queue.playbackRevision);
+  const current = Number.isSafeInteger(playbackRevision) ? Math.max(0, playbackRevision) : 0;
+  queue.playbackRevision = current >= Number.MAX_SAFE_INTEGER ? 1 : current + 1;
+  return queue.playbackRevision;
 };
 
 export const normalizePlaybackQueuesRuntime = (
@@ -124,6 +135,7 @@ export const buildPlaybackQueueState = (
     filteredInvalidCount: Math.max(0, filteredInvalidCount),
     queuedNextTrackIds: [],
     currentTrackId: null,
+    playbackRevision: 0,
     createdAt: now,
     updatedAt: now,
     dynamic: options.dynamic ?? false,

@@ -12,6 +12,7 @@ import type { PlayerErrorPayload } from '../../shared/player-error';
 import { matchesPendingSeekTarget, type PlaybackProgressBusyReason } from '../../shared/playback';
 import type { AudioEffectPlaybackOptions, SpatialAudioEffectEntry } from '../../shared/audio';
 import { createLatestRequestQueue } from '../../shared/latest-request-queue';
+import { resolvePlaybackSourceQueueId } from '../../shared/playback-queue-decision';
 import {
   DEFAULT_BASIC_DSP_CONVOLUTION_MIX,
   spatialAudioEffectOptions,
@@ -529,7 +530,11 @@ export const usePlayerStore = defineStore(
           setEnginePlaybackStatus(state, 'paused');
           return;
         }
-        if (playlistStore.activeQueue?.id === PERSONAL_FM_QUEUE_ID) {
+        const sourceQueueId = resolvePlaybackSourceQueueId({
+          currentSourceQueueId: state.currentSourceQueueId,
+          activeQueueId: playlistStore.activeQueue?.id,
+        });
+        if (sourceQueueId === PERSONAL_FM_QUEUE_ID) {
           const playedQueuedNext = await playbackManager.playQueuedNextOutsidePersonalFm({
             track: state.currentTrackSnapshot,
             playtime: state.duration,
@@ -544,13 +549,13 @@ export const usePlayerStore = defineStore(
           });
 
           if (nextFmSong) {
-            await playbackManager.playTrack(
-              String(nextFmSong.id),
-              playlistStore.activeQueue.songs,
-              {
-                sourceQueueId: PERSONAL_FM_QUEUE_ID,
-              },
-            );
+            const fmList =
+              playlistStore.getQueueById(PERSONAL_FM_QUEUE_ID)?.songs ??
+              state.currentPlaylist ??
+              [];
+            await playbackManager.playTrack(String(nextFmSong.id), fmList, {
+              sourceQueueId: PERSONAL_FM_QUEUE_ID,
+            });
           } else {
             playbackManager.stop();
           }
@@ -622,6 +627,11 @@ export const usePlayerStore = defineStore(
         () => JSON.stringify(getActiveSpatialAudioEffect()),
         () => spatialAudioEffectQueue.enqueue(getActiveSpatialAudioEffect()),
       );
+      const unsubscribeGaplessQueueDecision = watch(
+        () => playbackManager.getGaplessInvalidationKey(),
+        () => playbackManager.clearGaplessPreparedSource(),
+        { flush: 'sync' },
+      );
       // 保存取消函数，以便在需要时清理订阅
       const unsubscribeSettings = settingStore.$subscribe(() => {
         const shouldRefresh =
@@ -677,6 +687,7 @@ export const usePlayerStore = defineStore(
       return () => {
         unsubscribePauseOnDeviceDisconnect();
         unsubscribeSpatialAudio();
+        unsubscribeGaplessQueueDecision();
         unsubscribeSettings();
       };
     };
@@ -1184,7 +1195,10 @@ export const usePlayerStore = defineStore(
 
     const setAutoNextSuppressed = (suppressed: boolean) => {
       state.autoNextSuppressed = suppressed;
-      if (suppressed) playbackManager.clearAutoNextTimer();
+      if (suppressed) {
+        playbackManager.clearAutoNextTimer();
+        playbackManager.clearGaplessPreparedSource();
+      }
     };
 
     // Explicitly return state and actions to help TypeScript

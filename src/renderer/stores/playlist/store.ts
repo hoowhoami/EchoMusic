@@ -28,6 +28,12 @@ import type { PersonalFmMode, PersonalFmSongPoolId, PlaybackQueueState } from '.
 const toPlain = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 const PERSONAL_FM_PREFERENCES_STORAGE_KEY = 'personal-fm:preferences';
 
+const toStorageQueue = (queue: PlaybackQueueState) => {
+  const storageQueue = { ...queue };
+  delete storageQueue.playbackRevision;
+  return storageQueue;
+};
+
 const toStorageQueueMeta = (queue: PlaybackQueueState): Omit<PlaybackQueueState, 'songs'> => ({
   id: queue.id,
   title: queue.title,
@@ -251,7 +257,7 @@ export const usePlaylistStore = defineStore('playlist', {
       if (!this.playbackStorageReady || !window.electron?.storage) return;
       void window.electron.storage.replacePlaybackQueue(
         toPlain({
-          queue,
+          queue: toStorageQueue(queue),
           activeQueueId: this.activeQueueId,
           lastNonFmQueueId: this.lastNonFmQueueId,
         }),
@@ -372,6 +378,7 @@ export const usePlaylistStore = defineStore('playlist', {
     enqueuePlayNext: queueActions.enqueuePlayNext,
     enqueuePlayNextSequential: queueActions.enqueuePlayNextSequential,
     consumeQueuedNextTrackId: queueActions.consumeQueuedNextTrackId,
+    consumeQueuedNextTrackIds: queueActions.consumeQueuedNextTrackIds,
     peekQueuedNextTrackId: queueActions.peekQueuedNextTrackId,
     syncQueuedNextTrackIds: queueActions.syncQueuedNextTrackIds,
     removeFromQueue: queueActions.removeFromQueue,
