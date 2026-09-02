@@ -17,6 +17,8 @@ const EARLY_CONVOLUTION_FRAMES: usize = 4096;
 const MAX_IR_SECONDS: f32 = 8.0;
 const IR_SILENCE_THRESHOLD: f32 = 0.00000001;
 const IR_TRIM_RELATIVE_THRESHOLD: f32 = 0.00001;
+const IR_ONSET_RELATIVE_THRESHOLD: f32 = 0.001;
+const MAX_IR_LEADING_SILENCE_SECONDS: f32 = 0.05;
 const IR_ANALYSIS_OVERSAMPLING: usize = 4;
 const EQ_RESPONSE_LOG_POINTS: usize = 512;
 const EQ_RESPONSE_MIN_FREQUENCY: f32 = 10.0;
@@ -50,7 +52,7 @@ impl Default for DspSettings {
             provider_mode: PROVIDER_MODE_SPEAKER,
             provider_process_sample_rate: None,
             spatial: None,
-            spatial_mix: 0.5,
+            spatial_mix: 1.0,
         }
     }
 }
@@ -72,7 +74,6 @@ pub struct PreparedSpatialEffect {
     channels: usize,
     frames: usize,
     peak_response_db: f32,
-    output_gain_linear: f32,
     content_fingerprint: u64,
     responses: Vec<Arc<PreparedImpulseChannel>>,
 }
@@ -539,10 +540,6 @@ impl PreparedSpatialEffect {
     pub fn peak_response_db(&self) -> f32 {
         self.peak_response_db
     }
-
-    pub fn output_gain_db(&self) -> f32 {
-        gain_to_db(self.output_gain_linear)
-    }
 }
 
 pub fn prepare_spatial_effect(
@@ -594,7 +591,7 @@ pub fn prepare_spatial_effect(
         }
     }
 
-    if !trim_impulse_response(&mut interleaved, ir_channels) {
+    if !trim_impulse_response(&mut interleaved, ir_channels, sample_rate) {
         return Err("impulse response file is silent".to_string());
     }
 
@@ -609,7 +606,6 @@ pub fn prepare_spatial_effect(
         return Err("impulse response has an invalid frequency response".to_string());
     }
     let peak_response_db = gain_to_db(peak_response_linear);
-    let output_gain_linear = automatic_ir_output_gain(peak_response_linear);
     let content_fingerprint = impulse_content_fingerprint(&interleaved, ir_channels, sample_rate);
     let responses = response_samples
         .into_iter()
@@ -621,7 +617,6 @@ pub fn prepare_spatial_effect(
         channels: ir_channels,
         frames,
         peak_response_db,
-        output_gain_linear,
         content_fingerprint,
         responses,
     })
@@ -661,7 +656,7 @@ fn spatial_resource_identity(spatial: &Option<PreparedSpatialEffect>) -> Option<
     })
 }
 
-fn trim_impulse_response(samples: &mut Vec<f32>, channels: usize) -> bool {
+fn trim_impulse_response(samples: &mut Vec<f32>, channels: usize, sample_rate: u32) -> bool {
     let channels = channels.max(1);
     let frames = samples.len() / channels;
     let overall_peak = samples
@@ -674,6 +669,8 @@ fn trim_impulse_response(samples: &mut Vec<f32>, channels: usize) -> bool {
         return false;
     }
     let trim_threshold = (overall_peak * IR_TRIM_RELATIVE_THRESHOLD).max(IR_SILENCE_THRESHOLD);
+    let onset_threshold = (overall_peak * IR_ONSET_RELATIVE_THRESHOLD).max(trim_threshold);
+    let mut first_significant = None;
     let mut last_active = 0usize;
     for frame in 0..frames {
         let frame_start = frame * channels;
@@ -687,8 +684,18 @@ fn trim_impulse_response(samples: &mut Vec<f32>, channels: usize) -> bool {
         if peak >= trim_threshold {
             last_active = frame;
         }
+        if first_significant.is_none() && peak >= onset_threshold {
+            first_significant = Some(frame);
+        }
     }
-    let keep_frames = last_active + 1;
+    let max_leading_frames = (sample_rate as f32 * MAX_IR_LEADING_SILENCE_SECONDS).round() as usize;
+    let first_frame = first_significant
+        .map(|frame| frame.saturating_sub(max_leading_frames))
+        .unwrap_or_default();
+    let keep_frames = last_active.saturating_sub(first_frame) + 1;
+    if first_frame > 0 {
+        samples.drain(..first_frame * channels);
+    }
     samples.truncate(keep_frames * channels);
     true
 }
@@ -755,11 +762,11 @@ fn impulse_frequency_magnitudes(samples: &[f32], fft_size: usize) -> Vec<f32> {
         .collect()
 }
 
-fn automatic_ir_output_gain(peak_response_linear: f32) -> f32 {
-    if peak_response_linear <= 1.0 {
+fn headroom_gain_for_peak(peak_linear: f32) -> f32 {
+    if peak_linear <= 1.0 {
         return 1.0;
     }
-    peak_response_linear.recip().clamp(0.0, 1.0)
+    peak_linear.recip().clamp(0.0, 1.0)
 }
 
 fn impulse_content_fingerprint(samples: &[f32], channels: usize, sample_rate: u32) -> u64 {
@@ -809,7 +816,6 @@ pub(crate) fn prepared_spatial_effect_for_test(
         channels,
         frames,
         peak_response_db,
-        output_gain_linear: 1.0,
         content_fingerprint,
         responses: response_samples
             .iter()
@@ -944,7 +950,6 @@ impl Biquad {
 
 struct SpatialEffect {
     channels: usize,
-    output_gain_linear: f32,
     mix: f32,
     dry_delay_frames: usize,
     dry_delay: VecDeque<[f32; 2]>,
@@ -968,7 +973,6 @@ impl SpatialEffect {
             .unwrap_or_default();
         Self {
             channels: prepared.channels,
-            output_gain_linear: prepared.output_gain_linear,
             mix: mix.clamp(0.0, 1.0),
             dry_delay_frames,
             dry_delay: std::iter::repeat([0.0, 0.0])
@@ -998,8 +1002,8 @@ impl SpatialEffect {
             let [dry_left, dry_right] = self.delay_dry_frame(left, right);
             let (wet_left, wet_right) = self.process_wet_frame(left, right);
             let dry_mix = 1.0 - self.mix;
-            frame[0] = dry_left * dry_mix + wet_left * self.output_gain_linear * self.mix;
-            frame[1] = dry_right * dry_mix + wet_right * self.output_gain_linear * self.mix;
+            frame[0] = dry_left * dry_mix + wet_left * self.mix;
+            frame[1] = dry_right * dry_mix + wet_right * self.mix;
         }
     }
 
@@ -1012,8 +1016,8 @@ impl SpatialEffect {
             let [dry_left, dry_right] = self.delay_dry_frame(0.0, 0.0);
             let (left, right) = self.process_wet_frame(0.0, 0.0);
             let dry_mix = 1.0 - self.mix;
-            output.push(dry_left * dry_mix + left * self.output_gain_linear * self.mix);
-            output.push(dry_right * dry_mix + right * self.output_gain_linear * self.mix);
+            output.push(dry_left * dry_mix + left * self.mix);
+            output.push(dry_right * dry_mix + right * self.mix);
         }
         self.reset();
         true
@@ -1325,7 +1329,7 @@ fn eq_headroom_gain(sample_rate: u32, gains: &[f32; EQ_BAND_COUNT]) -> f32 {
         }
     }
     observe_frequency(nyquist);
-    automatic_ir_output_gain(peak)
+    headroom_gain_for_peak(peak)
 }
 
 #[cfg(test)]
@@ -1604,11 +1608,35 @@ mod tests {
     #[test]
     fn impulse_trim_preserves_quiet_tail_relative_to_peak() {
         let mut samples = vec![1.0, 0.00002, 0.0, 0.0];
-        assert!(trim_impulse_response(&mut samples, 1));
+        assert!(trim_impulse_response(&mut samples, 1, 48_000));
         assert_eq!(samples, vec![1.0, 0.00002]);
 
         let mut silent = vec![IR_SILENCE_THRESHOLD * 0.5; 8];
-        assert!(!trim_impulse_response(&mut silent, 1));
+        assert!(!trim_impulse_response(&mut silent, 1, 48_000));
+    }
+
+    #[test]
+    fn impulse_trim_caps_excessive_leading_silence_without_a_threshold_jump() {
+        let mut excessive = vec![0.0; 80];
+        excessive.extend([1.0, 0.25, 0.0]);
+        assert!(trim_impulse_response(&mut excessive, 1, 1_000));
+        assert_eq!(excessive.len(), 52);
+        assert!(excessive[..50].iter().all(|sample| *sample == 0.0));
+        assert_eq!(excessive[50..], [1.0, 0.25]);
+
+        let mut short_predelay = vec![0.0; 40];
+        short_predelay.extend([1.0, 0.25, 0.0]);
+        assert!(trim_impulse_response(&mut short_predelay, 1, 1_000));
+        assert_eq!(short_predelay.len(), 42);
+        assert_eq!(short_predelay[40..], [1.0, 0.25]);
+
+        let mut at_limit = vec![0.0; 50];
+        at_limit.extend([1.0, 0.25, 0.0]);
+        let mut just_over = vec![0.0; 51];
+        just_over.extend([1.0, 0.25, 0.0]);
+        assert!(trim_impulse_response(&mut at_limit, 1, 1_000));
+        assert!(trim_impulse_response(&mut just_over, 1, 1_000));
+        assert_eq!(at_limit, just_over);
     }
 
     #[test]
@@ -1820,18 +1848,18 @@ mod tests {
     }
 
     #[test]
-    fn automatic_ir_headroom_caps_high_gain_response_and_preserves_unity() {
-        let unity = vec![vec![1.0], vec![1.0]];
-        let unity_peak = impulse_matrix_peak_gain(&unity, 2);
-        assert!((unity_peak - 1.0).abs() < 0.00001);
-        assert_eq!(automatic_ir_output_gain(unity_peak), 1.0);
+    fn spatial_impulse_response_preserves_kernel_gain() {
+        let prepared = prepared_spatial(2, &[&[2.0], &[2.0]]);
+        let mut spatial = SpatialEffect::new(&prepared, 1.0);
+        let mut samples = vec![0.0f32; EARLY_CONVOLUTION_BLOCK_SIZE * 2];
+        samples[0] = 0.4;
+        samples[1] = -0.2;
 
-        let boosted = vec![vec![1.0, 1.0], vec![1.0, 1.0]];
-        let boosted_peak = impulse_matrix_peak_gain(&boosted, 2);
-        let output_gain = automatic_ir_output_gain(boosted_peak);
-        assert!((boosted_peak - 2.0).abs() < 0.00001);
-        assert!((output_gain - 0.5).abs() < 0.00001);
-        assert!(boosted_peak * output_gain <= 1.0 + 0.00001);
+        spatial.process_interleaved(&mut samples);
+
+        let delayed_frame = (EARLY_CONVOLUTION_BLOCK_SIZE - 1) * 2;
+        assert!((samples[delayed_frame] - 0.8).abs() < 0.00001);
+        assert!((samples[delayed_frame + 1] + 0.4).abs() < 0.00001);
     }
 
     #[test]

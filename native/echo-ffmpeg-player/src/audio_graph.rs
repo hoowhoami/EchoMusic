@@ -353,14 +353,6 @@ fn graph_node_parameters(
                     runtime_editable: false,
                 },
                 AudioGraphNodeParameterSnapshot {
-                    name: "auto-headroom".to_string(),
-                    value: format!("{:.2}", spatial.output_gain_db()),
-                    unit: Some("dB".to_string()),
-                    min: None,
-                    max: Some(0.0),
-                    runtime_editable: false,
-                },
-                AudioGraphNodeParameterSnapshot {
                     name: "duration".to_string(),
                     value: format!("{:.2}", spatial.duration_secs() * 1_000.0),
                     unit: Some("ms".to_string()),
@@ -1335,14 +1327,14 @@ mod tests {
                 .iter()
                 .map(|parameter| parameter.name.as_str())
                 .collect::<Vec<_>>(),
-            vec!["mix", "mode", "peak-response", "auto-headroom", "duration"]
+            vec!["mix", "mode", "peak-response", "duration"]
         );
         let mix = spatial
             .parameters
             .iter()
             .find(|parameter| parameter.name == "mix")
             .expect("mix parameter should be present");
-        assert_eq!(mix.value, "0.500");
+        assert_eq!(mix.value, "1.000");
         assert!(mix.runtime_editable);
     }
 

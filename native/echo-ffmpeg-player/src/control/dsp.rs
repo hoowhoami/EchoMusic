@@ -330,7 +330,7 @@ fn parse_audio_effect_payload(
         _ => return Err("invalid provider mode".to_string()),
     };
     let impulse_response_mix = match object.get("impulseResponseMix") {
-        None | Some(serde_json::Value::Null) => 0.5,
+        None | Some(serde_json::Value::Null) => 1.0,
         Some(serde_json::Value::Number(value)) => value
             .as_f64()
             .filter(|value| value.is_finite())
@@ -399,7 +399,7 @@ mod tests {
             "impulseResponsePath": "/tmp/test.wav"
         }))
         .expect("payload should default");
-        assert_eq!(defaulted.5, 0.5);
+        assert_eq!(defaulted.5, 1.0);
     }
 
     #[test]

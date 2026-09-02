@@ -32,6 +32,7 @@ import type {
   DspProviderPreset,
   DspProviderRuntimeState,
 } from '../../../shared/player-audio-graph';
+import { DEFAULT_BASIC_DSP_CONVOLUTION_MIX } from '../../../shared/audio-effect-support';
 import {
   configurablePresetControls,
   controlDefault,
@@ -119,7 +120,7 @@ const basicDspConvolutionActive = computed(() => {
 const convolutionMixPreview = ref<number | null>(null);
 const convolutionMixPercent = computed(() => {
   const file = selectedImpulseResponse.value;
-  if (!file) return 50;
+  if (!file) return DEFAULT_BASIC_DSP_CONVOLUTION_MIX * 100;
   return (
     convolutionMixPreview.value ?? Math.round(settingStore.getImpulseResponseMix(file.id) * 100)
   );

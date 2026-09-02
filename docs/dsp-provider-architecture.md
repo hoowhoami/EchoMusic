@@ -32,7 +32,7 @@ Per-preset controls, persistence and runtime acknowledgement are described in
 
 - 10-band parametric EQ with measured cascade headroom and click-free updates
 - generic mono, stereo and true-stereo convolution with latency-aligned dry/wet mixing
-- automatic IRS frequency-response headroom and stereo-linked peak protection
+- original-gain IRS convolution with stereo-linked peak protection
 - deterministic latency reporting, EOF tail draining and boundary reset
 - stable cross-platform effects that do not depend on a proprietary preset format
 
@@ -57,8 +57,10 @@ restored when playback returns to Builtin DSP.
 Basic DSP is the reliable fallback and generic processing path, not a compatibility layer for a
 specific vendor. IRS files are decoded and prepared off the streaming path; steady-state EQ,
 convolution and limiting do not allocate. Its convolution mix is adjustable from 0% (latency-aligned
-dry signal) to 100% (complete convolution output), with a product default of 50%. Downloaded
-resources keep settings under their stable effect ID; newly
+dry signal) to 100% (complete convolution output), with a product default of 100% to preserve the
+IR resource's original gain and match Provider semantics. The linked limiter only protects peaks
+that would exceed digital full scale. Downloaded resources keep settings under their stable effect
+ID; newly
 imported local resources use a SHA-256 content ID, so the user override survives restarts and
 re-imports without modifying the audio file. Provider resources do not use this Host mix because
 their mixing semantics belong to the Provider.
@@ -78,13 +80,13 @@ to `[LL, LR, RL, RR]` before import. Basic DSP accepts only mono, stereo and fou
 true-stereo IRS files; ambiguous 3-channel and surround layouts are rejected instead of being
 silently remixed. IRS content longer than eight seconds is also rejected rather than truncated.
 
-Before partitioning, the Host measures the oversampled frequency response. For true-stereo input,
-the per-output matrix row sum provides a worst-case peak bound when both input channels can reach
-full scale. Responses above unity receive automatic pre-limiter headroom up to a 0 dB linear peak;
-unity and quieter responses are left unchanged. The linked limiter and final soft limiter handle
-residual numeric and reconstruction peaks. The mix, measured peak, applied headroom and IRS
-duration are exposed in the audio graph snapshot; preparation details are also written to the
-playback log.
+Before partitioning, the Host measures the oversampled frequency response for validation and
+diagnostics. For true-stereo input, the per-output matrix row sum provides a worst-case peak bound
+when both input channels can reach full scale. This measurement does not normalize or attenuate the
+IRS: convolution preserves the resource's original gain, and the stereo-linked limiter intervenes
+only when the processed signal would exceed digital full scale. The final soft limiter handles any
+residual numeric and reconstruction peaks. The mix, measured peak and IRS duration are exposed in
+the audio graph snapshot; preparation details are also written to the playback log.
 
 The EQ measures the complete biquad cascade and applies its headroom before filtering. Live EQ
 changes crossfade the old and new filter states over 15 ms. IRS changes use the same transition
@@ -260,7 +262,7 @@ can include its normalized mix:
 ```json
 {
   "impulseResponsePath": "...",
-  "impulseResponseMix": 0.5
+  "impulseResponseMix": 1.0
 }
 ```
 

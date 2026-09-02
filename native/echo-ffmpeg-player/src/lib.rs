@@ -679,14 +679,13 @@ fn prepare_source(
         emit_event(PlayerEvent::log(
             "info",
             format!(
-                "impulse response enabled: path='{}', mix_sample_rate={}, ir_channels={}, mode={}, duration_ms={:.2}, peak_response_db={:.2}, auto_headroom_db={:.2}",
+                "impulse response enabled: path='{}', mix_sample_rate={}, ir_channels={}, mode={}, duration_ms={:.2}, peak_response_db={:.2}",
                 spatial.file_path,
                 mix_sample_rate,
                 spatial.channels(),
                 spatial.mode(),
                 spatial.duration_secs() * 1_000.0,
                 spatial.peak_response_db(),
-                spatial.output_gain_db(),
             ),
         ));
     }

@@ -1,7 +1,9 @@
 import type { AudioEffectPlaybackOptions, SpatialAudioEffectEntry } from './audio';
 import type { DspProviderManifest } from './player-audio-graph';
 
-export const DEFAULT_BASIC_DSP_CONVOLUTION_MIX = 0.5;
+// Match Provider/ViPER resource semantics: an IR is fully wet unless the user
+// explicitly chooses a dry/wet blend for the Builtin engine.
+export const DEFAULT_BASIC_DSP_CONVOLUTION_MIX = 1;
 
 export const normalizeConvolutionMix = (
   value: unknown,

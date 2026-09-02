@@ -12,7 +12,10 @@ import type { PlayerErrorPayload } from '../../shared/player-error';
 import { matchesPendingSeekTarget, type PlaybackProgressBusyReason } from '../../shared/playback';
 import type { AudioEffectPlaybackOptions, SpatialAudioEffectEntry } from '../../shared/audio';
 import { createLatestRequestQueue } from '../../shared/latest-request-queue';
-import { spatialAudioEffectOptions } from '../../shared/audio-effect-support';
+import {
+  DEFAULT_BASIC_DSP_CONVOLUTION_MIX,
+  spatialAudioEffectOptions,
+} from '../../shared/audio-effect-support';
 import { dspProviderRestorePatch } from '../../shared/dsp-provider-settings';
 
 import { createPlayerState } from './player/state';
@@ -734,7 +737,7 @@ export const usePlayerStore = defineStore(
           await engine.setAudioGraphParameter({
             kind: 'spatial',
             name: 'mix',
-            value: effect?.impulseResponseMix ?? 0.5,
+            value: effect?.impulseResponseMix ?? DEFAULT_BASIC_DSP_CONVOLUTION_MIX,
           });
         } catch {
           // A stale native build may not expose spatial.mix yet. Reloading preserves

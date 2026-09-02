@@ -292,7 +292,7 @@ test('disabled engine restores pure IR through builtin, but clears a selected co
   await plain.manager.start();
   assert.equal(plain.state.enabled, true);
   assert.equal(plain.command().impulseResponsePath, '/ir.wav');
-  assert.equal(plain.command().impulseResponseMix, 0.5);
+  assert.equal(plain.command().impulseResponseMix, 1);
 });
 test('engine switch ignores previous runtime manifest and late inspection result', async (t) => {
   const f = fixture(t);

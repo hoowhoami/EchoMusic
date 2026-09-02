@@ -1,4 +1,6 @@
-const DEFAULT_CEILING: f32 = 0.98;
+// Match the Provider/ViPER path: preserve the effect's level and intervene only
+// when a processed peak would exceed digital full scale.
+const DEFAULT_CEILING: f32 = 1.0;
 const RELEASE_SECONDS: f32 = 0.1;
 
 /// A frame-linked lookahead peak limiter.
