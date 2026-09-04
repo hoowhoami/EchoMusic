@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, useId, watch } from 'vue';
+import { computed, nextTick, ref, shallowRef, useId, watch } from 'vue';
 import { useThrottleFn } from '@vueuse/core';
 import {
   SliderRoot,
@@ -118,6 +118,38 @@ const providerConfigured = computed(
     settingStore.dspProviderEnabled &&
     !!(settingStore.dspProviderId?.trim() || settingStore.dspProviderPath?.trim()),
 );
+const impulseResponseSelectionKey = computed(() =>
+  settingStore.impulseResponseEnabled && selectedImpulseResponse.value
+    ? JSON.stringify([
+        providerConfigured.value ? settingStore.dspProviderPath : '',
+        providerConfigured.value ? settingStore.dspProviderId : '',
+        selectedImpulseResponse.value.id,
+      ])
+    : null,
+);
+const lastSupportedImpulseResponseKey = ref<string | null>(null);
+watch(
+  [
+    impulseResponseSelectionKey,
+    () =>
+      selectedImpulseResponse.value
+        ? player.getSpatialAudioEffectSupport(selectedImpulseResponse.value).status
+        : null,
+  ],
+  ([selection, status]) => {
+    if (status === 'supported') lastSupportedImpulseResponseKey.value = selection;
+    else if (status !== 'checking' || selection !== lastSupportedImpulseResponseKey.value)
+      lastSupportedImpulseResponseKey.value = null;
+  },
+  { immediate: true, flush: 'sync' },
+);
+// Keep the existing selection visible while this engine rechecks an output mode.
+// Playback and action availability still use the live capability result.
+const impulseResponseSelected = computed(
+  () =>
+    impulseResponseSelectionKey.value !== null &&
+    impulseResponseSelectionKey.value === lastSupportedImpulseResponseKey.value,
+);
 const builtinAudioEngineActive = computed(
   () => !providerConfigured.value && !player.playbackDiagnostics.graph?.providerPath,
 );
@@ -230,12 +262,53 @@ const activateInstalledProvider = async (provider: DspProviderRecord) => {
     activatingProviderId.value = '';
   }
 };
-const providerManifest = computed<DspProviderManifest | null>(() => {
-  return (
-    parseProviderManifestJson(player.playbackDiagnostics.graph?.providerManifestJson) ??
-    parseProviderManifestJson(player.dspProviderInspection?.info?.manifestJson)
-  );
+// Native graph rebuilds temporarily clear the runtime descriptor. Retain only
+// presentation metadata for this configured engine, never its runtime state.
+const providerPresentationKey = computed(() =>
+  providerConfigured.value
+    ? JSON.stringify([settingStore.dspProviderId, settingStore.dspProviderPath])
+    : '',
+);
+const liveProviderPresentation = computed(() => {
+  const graph = player.playbackDiagnostics.graph;
+  const inspection = player.dspProviderInspection;
+  const graphMatches = graph?.providerPath === settingStore.dspProviderPath;
+  const inspectionMatches = inspection?.path === settingStore.dspProviderPath;
+  if (graphMatches && graph?.providerId) {
+    return {
+      id: graph.providerId,
+      version: graph.providerVersion || '',
+      manifest: parseProviderManifestJson(graph.providerManifestJson),
+    };
+  }
+  if (inspectionMatches && inspection?.status === 'ready' && inspection.info) {
+    return {
+      id: inspection.info.providerId,
+      version: inspection.info.providerVersion || '',
+      manifest: parseProviderManifestJson(inspection.info.manifestJson),
+    };
+  }
+  return null;
 });
+const providerInspectionFailed = computed(
+  () =>
+    providerConfigured.value &&
+    !liveProviderPresentation.value &&
+    player.dspProviderInspection?.path === settingStore.dspProviderPath &&
+    player.dspProviderInspection?.status === 'failed',
+);
+const providerPresentation = shallowRef<NonNullable<typeof liveProviderPresentation.value> | null>(
+  null,
+);
+watch(
+  [providerPresentationKey, liveProviderPresentation, providerInspectionFailed],
+  ([key, live, failed], previous) => {
+    if (!key || key !== previous?.[0] || failed) providerPresentation.value = null;
+    if (key && live) providerPresentation.value = live;
+  },
+  { immediate: true, flush: 'sync' },
+);
+const providerManifest = computed(() => providerPresentation.value?.manifest ?? null);
 const providerControls = computed<DspProviderControl[]>(() =>
   configurablePresetControls(providerManifest.value, editingProviderPresetId.value),
 );
@@ -246,27 +319,12 @@ const providerPresetDescription = (preset: DspProviderPreset) => preset.descript
 const providerDisplayName = computed(
   () =>
     providerManifest.value?.displayName?.trim() ||
-    player.playbackDiagnostics.graph?.providerId ||
-    player.dspProviderInspection?.info?.providerId ||
+    providerPresentation.value?.id ||
     '第三方音效引擎',
 );
-const providerVersion = computed(
-  () =>
-    player.playbackDiagnostics.graph?.providerVersion ||
-    player.dspProviderInspection?.info?.providerVersion ||
-    '',
-);
+const providerVersion = computed(() => providerPresentation.value?.version || '');
 const providerChecking = computed(
-  () =>
-    providerConfigured.value &&
-    !player.playbackDiagnostics.graph?.providerId &&
-    !player.dspProviderInspection,
-);
-const providerInspectionFailed = computed(
-  () =>
-    providerConfigured.value &&
-    !player.playbackDiagnostics.graph?.providerId &&
-    player.dspProviderInspection?.status === 'failed',
+  () => providerConfigured.value && !providerPresentation.value && !providerInspectionFailed.value,
 );
 const activeProviderMode = computed(() => settingStore.dspProviderMode);
 const providerVpfSupport = computed<'supported' | 'unsupported' | 'unknown'>(() => {
@@ -581,13 +639,13 @@ const getMyEffectSource = (file: SpatialAudioEffectEntry): MyEffectSource => {
 const getMyEffectSourceLabel = (source: MyEffectSource) =>
   myEffectSources.find((item) => item.id === source)?.label ?? '我的音效';
 const activeMyEffectSourceId = computed<MyEffectSource | null>(() =>
-  impulseResponseActive.value && selectedImpulseResponse.value
+  impulseResponseSelected.value && selectedImpulseResponse.value
     ? getMyEffectSource(selectedImpulseResponse.value)
     : null,
 );
 const myEffectLibraryContainsActive = computed(() => activeMyEffectSourceId.value !== null);
 const engineLibraryContainsActive = computed(
-  () => !impulseResponseActive.value && providerEffectActive.value,
+  () => !impulseResponseSelected.value && providerEffectActive.value,
 );
 const spatialEffectActive = computed(
   () => myEffectLibraryContainsActive.value || engineLibraryContainsActive.value,
@@ -595,7 +653,7 @@ const spatialEffectActive = computed(
 const isMyEffectSourceActive = (source: MyEffectSource) => activeMyEffectSourceId.value === source;
 
 const currentPlaybackEffectSelection = computed(() => {
-  if (impulseResponseActive.value && selectedImpulseResponse.value) {
+  if (impulseResponseSelected.value && selectedImpulseResponse.value) {
     const effect = selectedImpulseResponse.value;
     const type = effect.kind === 'imported-ir' ? '本地音效' : '在线音效';
     const source = getMyEffectSource(effect);
@@ -604,9 +662,10 @@ const currentPlaybackEffectSelection = computed(() => {
       name: getImpulseResponseDisplayName(effect.name),
       type,
       location: `我的音效 · ${getMyEffectSourceLabel(source)}`,
-      detail: player.playbackDiagnostics.graph?.providerId
-        ? `由 ${providerDisplayName.value} 处理`
-        : '由内置音效引擎处理',
+      detail:
+        providerConfigured.value || player.playbackDiagnostics.graph?.providerId
+          ? `由 ${providerDisplayName.value} 处理`
+          : '由内置音效引擎处理',
     };
   }
 
@@ -676,16 +735,25 @@ const showCurrentSpatialEffect = () => {
   }
 };
 const activeSpatialSelectionKey = computed(() => {
-  if (activeMyEffectSourceId.value && selectedImpulseResponse.value)
+  // Track the saved selection, not transient capability checks during graph rebuilds.
+  if (settingStore.impulseResponseEnabled && selectedImpulseResponse.value)
     return `mine:${selectedImpulseResponse.value.id}`;
-  if (engineLibraryContainsActive.value)
-    return `engine:${activeProviderPresetId.value || effectiveProviderPresetJson.value}`;
+  if (providerEffectActive.value) return `engine:${activeProviderPresetId.value || 'custom'}`;
   return 'original';
 });
+let lastLocatedSpatialSelection = 'original';
 watch(
-  activeSpatialSelectionKey,
-  (selection, previous) => {
-    if (selection !== 'original' && selection !== previous) showCurrentSpatialEffect();
+  [activeSpatialSelectionKey, impulseResponseActive, engineLibraryContainsActive],
+  ([selection, mineActive, engineActive]) => {
+    if (selection === 'original') {
+      lastLocatedSpatialSelection = selection;
+    } else if (
+      (selection.startsWith('mine:') ? mineActive : engineActive) &&
+      selection !== lastLocatedSpatialSelection
+    ) {
+      lastLocatedSpatialSelection = selection;
+      showCurrentSpatialEffect();
+    }
   },
   { immediate: true },
 );
@@ -1026,7 +1094,8 @@ withDefaults(defineProps<Props>(), {
                     :class="{
                       'is-disabled': impulseResponseSupport(file).status !== 'supported',
                       'is-active':
-                        file.id === settingStore.selectedImpulseResponseId && impulseResponseActive,
+                        file.id === settingStore.selectedImpulseResponseId &&
+                        impulseResponseSelected,
                     }"
                     :title="
                       impulseResponseSupport(file).reason ||
@@ -1135,13 +1204,15 @@ withDefaults(defineProps<Props>(), {
                     :key="preset.id"
                     class="provider-preset-option"
                     :class="{
-                      'is-active': !impulseResponseActive && activeProviderPresetId === preset.id,
+                      'is-active': !impulseResponseSelected && activeProviderPresetId === preset.id,
                     }"
                   >
                     <button
                       type="button"
                       class="provider-preset-button"
-                      :aria-pressed="!impulseResponseActive && activeProviderPresetId === preset.id"
+                      :aria-pressed="
+                        !impulseResponseSelected && activeProviderPresetId === preset.id
+                      "
                       :title="providerPresetDescription(preset)"
                       @click="setProviderPreset(preset.id)"
                     >

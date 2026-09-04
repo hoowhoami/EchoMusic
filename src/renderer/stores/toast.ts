@@ -122,13 +122,15 @@ export const useToastStore = defineStore('toast', {
       }, nextDuration);
     },
     pause(id: number) {
-      if (this.items[0]?.id !== id || activeToastTimer === null) return;
+      // Passive notices must expire even if they appear beneath a stationary pointer.
+      if (this.items[0]?.id !== id || !this.items[0].action || activeToastTimer === null) return;
       const elapsed = Date.now() - activeToastStartedAt;
       activeToastRemaining = Math.max(0, activeToastRemaining - elapsed);
       clearActiveToastTimer();
     },
     resume(id: number) {
-      if (this.items[0]?.id !== id || this.items[0].duration <= 0) return;
+      if (this.items[0]?.id !== id || this.items[0].duration <= 0 || activeToastTimer !== null)
+        return;
       if (activeToastRemaining <= 0) {
         this.remove(id);
         return;

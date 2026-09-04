@@ -100,6 +100,7 @@ test('my-effects buttons disable unsupported downloads and use the guarded playe
     },
   );
   assert.equal(api.impulseResponseActive.value, false);
+  assert.equal(api.impulseResponseSelected.value, false);
   assert.equal(api.impulseResponseSupport(file).status, 'unsupported');
   api.selectImpulseResponse(file.id);
   assert.equal(selected.length, 0);
@@ -115,6 +116,16 @@ test('my-effects buttons disable unsupported downloads and use the guarded playe
   api.selectImpulseResponse(file.id);
   assert.deepEqual(selected, [file.id]);
   state.engine = { kind: 'checking' };
+  assert.equal(api.impulseResponseActive.value, false, 'pending capability remains unavailable');
+  assert.equal(api.impulseResponseSelected.value, true, 'only the existing highlight is retained');
+  state.engine = { kind: 'builtin' };
+  assert.equal(
+    api.impulseResponseSelected.value,
+    false,
+    'confirmed rejection clears the highlight',
+  );
+  state.engine = { kind: 'checking' };
+  assert.equal(api.impulseResponseSelected.value, false, 'a rejected selection is not revived');
   api.resetImpulseResponse();
   assert.equal(store.impulseResponseEnabled, false, 'original cancels a pending saved selection');
 });
@@ -206,6 +217,13 @@ test('the current spatial effect is locatable without locking manual tab browsin
     impulseResponseEnabled: true,
     selectedImpulseResponseId: files[0].id,
     impulseResponseFiles: files,
+    $patch(fn) {
+      fn();
+    },
+    rememberDspProviderPreset() {},
+    setDspProviderMode(mode) {
+      this.dspProviderMode = mode;
+    },
     getSelectedImpulseResponse() {
       return this.impulseResponseFiles.find((file) => file.id === this.selectedImpulseResponseId);
     },
@@ -224,7 +242,15 @@ test('the current spatial effect is locatable without locking manual tab browsin
         }),
       },
     },
-    getSpatialAudioEffectSupport: () => ({ status: 'supported', reason: '' }),
+    getSpatialAudioEffectSupport() {
+      return {
+        status:
+          this.playbackDiagnostics.graph.providerMode === store.dspProviderMode
+            ? 'supported'
+            : 'checking',
+        reason: '',
+      };
+    },
   });
   const { api, descriptor } = setupComponent(
     t,
@@ -250,6 +276,41 @@ test('the current spatial effect is locatable without locking manual tab browsin
   assert.equal(api.activeImpulseResponseLibraryTab.value, 'engine');
   assert.equal(api.activeMyEffectSource.value, 'local');
 
+  for (const mode of ['headphone', 'speaker']) {
+    api.setProviderMode(mode);
+    await vue.nextTick();
+    assert.equal(api.impulseResponseActive.value, false, 'mode change rechecks capability');
+    assert.equal(api.impulseResponseSelected.value, true, 'the selected effect stays highlighted');
+    assert.equal(api.currentPlaybackEffectSelection.value.name, '耳机空间');
+    assert.equal(
+      api.currentPlaybackEffectSelection.value.active,
+      true,
+      'no flash to original sound',
+    );
+    assert.equal(api.myEffectLibraryContainsActive.value, true);
+    assert.equal(api.activeImpulseResponseLibraryTab.value, 'engine');
+    player.playbackDiagnostics.graph.providerMode = mode;
+    await vue.nextTick();
+    assert.equal(api.impulseResponseActive.value, true);
+    assert.equal(
+      api.activeImpulseResponseLibraryTab.value,
+      'engine',
+      'recovery is not a new selection',
+    );
+    assert.equal(api.activeMyEffectSource.value, 'local');
+  }
+
+  api.selectTab('eq');
+  player.playbackDiagnostics.graph.providerMode = 'headphone';
+  await vue.nextTick();
+  player.playbackDiagnostics.graph.providerMode = 'speaker';
+  await vue.nextTick();
+  assert.equal(
+    api.activeTab.value,
+    'eq',
+    'capability recovery preserves the current top-level tab',
+  );
+
   store.selectedImpulseResponseId = files[1].id;
   await vue.nextTick();
   assert.equal(api.activeImpulseResponseLibraryTab.value, 'mine');
@@ -263,6 +324,11 @@ test('the current spatial effect is locatable without locking manual tab browsin
   assert.equal(api.engineLibraryContainsActive.value, true);
   assert.equal(api.currentPlaybackEffectSelection.value.name, '现场');
   assert.equal(api.providerEqLocked.value, true);
+  assert.equal(
+    api.impulseResponseSelected.value,
+    false,
+    'choosing a preset clears the file highlight',
+  );
 
   assert.match(descriptor.template.content, /class="current-spatial-effect-actions"/);
   assert.doesNotMatch(descriptor.template.content, /当前音效\s*·/);
@@ -299,7 +365,7 @@ test('the current spatial effect is locatable without locking manual tab browsin
   assert.doesNotMatch(descriptor.template.content, />\s*使用中\s*</);
 });
 
-test('configured provider shows a loading state instead of flashing the not-imported state', (t) => {
+test('provider panel loads once and survives transient metadata loss during mode switches', async (t) => {
   const store = vue.reactive({
     dspProviderEnabled: true,
     dspProviderPath: '/provider',
@@ -352,6 +418,64 @@ test('configured provider shows a loading state instead of flashing the not-impo
   assert.equal(api.providerDisplayName.value, '测试引擎');
   assert.equal(api.providerVersion.value, '1.0.0');
   assert.equal(api.providerPresets.value.length, 1);
+  const presets = api.providerPresets.value;
+  const info = player.dspProviderInspection.info;
+  store.dspProviderMode = 'headphone';
+  player.dspProviderInspection = null;
+  await vue.nextTick();
+  assert.equal(api.providerChecking.value, false, 'mode inspection must not replace the panel');
+  assert.equal(api.providerDisplayName.value, '测试引擎');
+  assert.equal(api.providerVersion.value, '1.0.0');
+  assert.equal(
+    api.providerPresets.value,
+    presets,
+    'keep the existing preset list during inspection',
+  );
+
+  player.playbackDiagnostics.graph = {
+    providerId: info.providerId,
+    providerVersion: info.providerVersion,
+    providerManifestJson: info.manifestJson,
+    providerPath: '/provider',
+    providerMode: 'headphone',
+  };
+  await vue.nextTick();
+  store.dspProviderMode = 'speaker';
+  player.playbackDiagnostics.graph = { providerPath: '/provider', providerMode: 'speaker' };
+  await vue.nextTick();
+  assert.equal(
+    api.providerChecking.value,
+    false,
+    'native descriptor reset must not replace the panel',
+  );
+  assert.equal(api.providerPresets.value[0].label, '测试预设');
+
+  player.dspProviderInspection = {
+    path: '/provider',
+    mode: 'speaker',
+    status: 'failed',
+    info: null,
+  };
+  await vue.nextTick();
+  assert.equal(api.providerInspectionFailed.value, true, 'cached metadata must not hide a failure');
+  assert.equal(api.providerPresets.value.length, 0);
+  player.dspProviderInspection = { path: '/provider', mode: 'speaker', status: 'ready', info };
+  await vue.nextTick();
+  assert.equal(api.providerPresets.value.length, 1);
+
+  store.dspProviderPath = '/other-provider';
+  await vue.nextTick();
+  assert.equal(api.providerChecking.value, true, 'a different engine cannot reuse cached metadata');
+  assert.equal(api.providerPresets.value.length, 0);
+  player.dspProviderInspection = {
+    path: '/other-provider',
+    mode: 'speaker',
+    status: 'failed',
+    info: null,
+  };
+  await vue.nextTick();
+  assert.equal(api.providerInspectionFailed.value, true);
+  assert.equal(api.providerChecking.value, false);
 });
 
 test('installed providers can be discovered and enabled from the effect popover', async (t) => {

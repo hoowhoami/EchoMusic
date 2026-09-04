@@ -117,6 +117,16 @@ const runToastAction = (id: number) => {
   }
 };
 
+const pauseToast = (event: MouseEvent) => {
+  toastStore.pause(Number((event.currentTarget as HTMLElement).dataset.toastId));
+};
+const resumeToast = (event: MouseEvent) => {
+  toastStore.resume(Number((event.currentTarget as HTMLElement).dataset.toastId));
+};
+const resumeVisibleToast = () => {
+  if (visibleToast.value) toastStore.resume(visibleToast.value.id);
+};
+
 const getToneLabel = (tone: ToastTone) => {
   if (tone === 'success') return '成功';
   if (tone === 'warning') return '警告';
@@ -143,6 +153,7 @@ watch(
 
 onMounted(() => {
   window.addEventListener('resize', schedulePositionUpdate);
+  window.addEventListener('blur', resumeVisibleToast);
   anchorMutationObserver = new MutationObserver((records) => {
     const anchorChanged = records.some(
       (record) =>
@@ -157,6 +168,8 @@ onMounted(() => {
 
 onUnmounted(() => {
   window.removeEventListener('resize', schedulePositionUpdate);
+  window.removeEventListener('blur', resumeVisibleToast);
+  resumeVisibleToast();
   anchorObserver?.disconnect();
   anchorMutationObserver?.disconnect();
   if (updateFrame !== null) window.cancelAnimationFrame(updateFrame);
@@ -174,6 +187,7 @@ onUnmounted(() => {
       <div
         v-if="visibleToast"
         :key="visibleToast.id"
+        :data-toast-id="visibleToast.id"
         :class="[
           toneClassMap[visibleToast.tone],
           `is-${visibleToast.variant}`,
@@ -182,8 +196,8 @@ onUnmounted(() => {
         class="toast-card"
         role="status"
         :aria-label="`${getToneLabel(visibleToast.tone)}：${visibleToast.message}`"
-        @mouseenter="toastStore.pause(visibleToast.id)"
-        @mouseleave="toastStore.resume(visibleToast.id)"
+        @mouseenter="pauseToast"
+        @mouseleave="resumeToast"
       >
         <span class="toast-icon" aria-hidden="true">
           <Icon :icon="toneIconMap[visibleToast.tone]" width="16" height="16" />
