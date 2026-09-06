@@ -242,6 +242,12 @@ fn start_cpal_device(
     let last_error = Arc::new(Mutex::new(None));
     let error_slot = last_error.clone();
     let err_fn = move |err: cpal::Error| {
+        // CPAL reports a transient underrun/overrun as an Xrun notification while
+        // keeping the stream usable. Treating it as fatal poisons an otherwise
+        // successful capture when stop_capture checks the backend health later.
+        if matches!(err.kind(), cpal::ErrorKind::Xrun) {
+            return;
+        }
         if let Ok(mut guard) = error_slot.try_lock() {
             *guard = Some(err.to_string());
         }
