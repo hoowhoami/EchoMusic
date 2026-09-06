@@ -22,7 +22,7 @@ const supportsCustomWindowControls = computed(() => platform === 'win32' || plat
         :icon="sectionTitles.window.icon"
         width="20"
         height="20"
-        class="text-primary"
+        class="text-primary-text"
       />
     </template>
 

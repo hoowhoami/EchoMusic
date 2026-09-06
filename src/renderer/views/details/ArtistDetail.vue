@@ -744,7 +744,7 @@ onUnmounted(() => {
         >
           <template #details>
             <div class="flex flex-col gap-1.5 text-text-main/60">
-              <div class="text-[13px] font-semibold text-primary">
+              <div class="text-[13px] font-semibold text-primary-text">
                 {{ artist.songCount || songs.length }} 歌曲 •
                 {{ artist.albumCount || albums.length }} 专辑
                 <template v-if="artist.mvCount"> • {{ artist.mvCount }} MV</template>
@@ -776,7 +776,7 @@ onUnmounted(() => {
                 variant="unstyled"
                 size="none"
                 @click="handlePlayAll"
-                class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] text-primary"
+                class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] text-primary-text"
               >
                 <Icon :icon="iconPlay" width="20" height="20" />
               </Button>
@@ -832,7 +832,7 @@ onUnmounted(() => {
             variant="unstyled"
             size="none"
             type="button"
-            class="mt-0.5 text-[11px] font-semibold text-primary"
+            class="mt-0.5 text-[11px] font-semibold text-primary-text"
             @click="showIntroDialog = true"
           >
             查看详情
@@ -1165,7 +1165,7 @@ onUnmounted(() => {
 }
 
 .mv-tag-btn.is-active {
-  @apply text-primary;
+  @apply text-primary-text;
   background: var(--color-primary-light);
 }
 </style>
@@ -1214,7 +1214,7 @@ onUnmounted(() => {
 }
 
 .artist-sort-menu-item.is-active {
-  color: var(--color-primary);
+  color: var(--color-primary-text);
   background: color-mix(in srgb, var(--color-primary) 10%, transparent);
   font-weight: 600;
 }

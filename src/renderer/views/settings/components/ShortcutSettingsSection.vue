@@ -35,9 +35,9 @@ const handleResetBoth = (command: ShortcutCommand) => {
         :icon="sectionTitles.shortcuts.icon"
         width="20"
         height="20"
-        class="text-primary"
+        class="text-primary-text"
       />
-      <FontIcon v-else :size="20" class="text-primary" />
+      <FontIcon v-else :size="20" class="text-primary-text" />
     </template>
 
     <div class="shortcut-grid-header">

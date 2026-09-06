@@ -340,7 +340,7 @@ const confirm = () => {
 
 .color-picker-btn.confirm {
   background: var(--color-primary);
-  color: white;
+  color: var(--color-on-primary);
 }
 
 .color-picker-btn.confirm:hover {

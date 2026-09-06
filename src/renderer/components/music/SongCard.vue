@@ -333,7 +333,7 @@ const handleFavorite = () => {
       <div class="song-title-row flex items-center min-w-0 gap-1.5">
         <h3
           class="song-title text-[13px] font-semibold truncate"
-          :class="props.active ? 'text-primary' : 'text-text-main'"
+          :class="props.active ? 'text-primary-text' : 'text-text-main'"
         >
           {{ songTitle }}
         </h3>
@@ -347,7 +347,7 @@ const handleFavorite = () => {
       </div>
       <div
         class="song-subline text-[12px] flex items-center gap-1 min-w-0 overflow-hidden whitespace-nowrap"
-        :class="props.active ? 'text-primary/70' : 'text-text-secondary'"
+        :class="props.active ? 'text-primary-text/70' : 'text-text-secondary'"
       >
         <span class="song-artist-list">
           <span
@@ -518,8 +518,8 @@ const handleFavorite = () => {
   letter-spacing: -0.2px;
 }
 
-.song-card .song-title.text-primary {
-  color: var(--color-primary);
+.song-card .song-title.text-primary-text {
+  color: var(--color-primary-text);
 }
 
 .song-card .song-subline {
@@ -527,8 +527,8 @@ const handleFavorite = () => {
   font-weight: 500;
 }
 
-.song-card .song-subline.text-primary\/70 {
-  color: color-mix(in srgb, var(--color-primary) 70%, transparent);
+.song-card .song-subline.text-primary-text\/70 {
+  color: color-mix(in srgb, var(--color-primary-text) 70%, transparent);
 }
 
 .song-content {
@@ -576,7 +576,7 @@ const handleFavorite = () => {
 }
 
 .song-link:hover {
-  color: var(--primary);
+  color: var(--color-primary-text);
 }
 
 .song-actions {
@@ -610,12 +610,12 @@ const handleFavorite = () => {
 }
 
 .song-action:hover {
-  color: var(--primary);
+  color: var(--color-primary-text);
   transform: scale(1.12);
 }
 
 .song-action.is-active {
-  color: var(--color-primary);
+  color: var(--color-primary-text);
   background: color-mix(in srgb, var(--color-primary) 12%, transparent);
 }
 
@@ -666,7 +666,7 @@ const handleFavorite = () => {
 
 :deep(.song-context-item:hover) {
   background-color: var(--row-hover-bg);
-  color: var(--color-primary);
+  color: var(--color-primary-text);
 }
 
 :deep(.song-context-separator) {

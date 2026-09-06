@@ -543,7 +543,7 @@ watch(
   padding: 0 8px;
   border-radius: 999px;
   background: color-mix(in srgb, var(--color-primary) 12%, transparent);
-  color: var(--color-primary);
+  color: var(--color-primary-text);
   font-size: 11px;
   font-weight: 700;
 }
@@ -628,7 +628,7 @@ watch(
   padding: 0 10px;
   border-radius: 999px;
   background: color-mix(in srgb, var(--color-primary) 10%, transparent);
-  color: var(--color-primary);
+  color: var(--color-primary-text);
   font-size: 12px;
   font-weight: 700;
 }
@@ -719,7 +719,7 @@ watch(
   flex-shrink: 0;
   font-size: 12px;
   font-weight: 700;
-  color: var(--color-primary);
+  color: var(--color-primary-text);
 }
 
 .mv-empty-hint {

@@ -33,10 +33,15 @@ import type {
   MiniPlayerSnapshot,
 } from '../../shared/mini-player';
 import { MINI_PLAYER_DIMENSIONS } from '../../shared/mini-player';
-import { DEFAULT_PLAYER_VOLUME, buildPlaybackClockSnapshot } from '../../shared/playback';
+import {
+  DEFAULT_PLAYER_VOLUME,
+  buildPlaybackClockSnapshot,
+  normalizePlayerVolume,
+} from '../../shared/playback';
 import { createLyricTimeline, findLyricIndexAtTimeMs } from '@/composables/useLyricTimeline';
 import { createStableLyricIndex } from '@/composables/useStableLyricIndex';
 import { useWindowDrag } from '@/composables/useWindowDrag';
+import { getAccentPalette } from '@/utils/color';
 
 // 卡片折叠/展开高度，源自共享尺寸常量，保证与主进程窗口尺寸一致、不漂移
 const cardCollapsedHeight = `${MINI_PLAYER_DIMENSIONS.controlsHeight}px`;
@@ -85,7 +90,7 @@ const activeShellDirection = computed(() => {
 });
 
 const volumePercent = computed(() =>
-  Math.round(Math.min(100, Math.max(0, playback.value?.volume ?? 0))),
+  Math.round(normalizePlayerVolume(playback.value?.volume ?? 0)),
 );
 
 const progressPercent = computed(() => {
@@ -105,7 +110,7 @@ const displayPercent = computed(() => {
 const volumeIcon = computed(() => {
   const value = playback.value?.volume ?? 0;
   if (value <= 0) return iconVolume3;
-  if (value <= 0.5) return iconVolume1;
+  if (value <= 50) return iconVolume1;
   return iconVolume2;
 });
 
@@ -358,8 +363,13 @@ const applySnapshot = (snapshot: MiniPlayerSnapshot | null | undefined) => {
   syncLyricClockTimer();
   if (appearance.value) {
     document.documentElement.classList.toggle('dark', appearance.value.isDark);
-    // mini 模式使用固定主题色，不跟随主窗口的封面取色/自定义色
-    document.documentElement.style.setProperty('--color-primary', '#0071e3');
+    const palette = getAccentPalette(
+      appearance.value.accentColor || '#0071e3',
+      appearance.value.isDark,
+    );
+    document.documentElement.style.setProperty('--color-primary', palette.primary);
+    document.documentElement.style.setProperty('--color-primary-text', palette.primaryText);
+    document.documentElement.style.setProperty('--color-on-primary', palette.onPrimary);
     document.documentElement.style.fontFamily = appearance.value.fontFamily || '';
   }
 };
@@ -446,7 +456,7 @@ const closeVolume = (immediate = false) => {
 };
 
 const setVolume = (value: number) => {
-  const nextVolume = Math.min(1, Math.max(0, value));
+  const nextVolume = normalizePlayerVolume(value);
   if (playback.value) {
     playback.value.volume = nextVolume;
     if (nextVolume > 0) playback.value.lastNonZeroVolume = nextVolume;
@@ -462,7 +472,7 @@ const adjustVolume = (delta: number) => {
         ? playback.value.lastNonZeroVolume!
         : DEFAULT_PLAYER_VOLUME;
     const baseVolume = currentVolume > 0 ? currentVolume : restoreVolume;
-    const nextVolume = Math.min(1, Math.max(0, baseVolume + delta));
+    const nextVolume = normalizePlayerVolume(baseVolume + delta);
     playback.value.volume = nextVolume;
     if (nextVolume > 0) playback.value.lastNonZeroVolume = nextVolume;
   }
@@ -1198,7 +1208,7 @@ onUnmounted(() => {
 
 .mini-window-btn.active,
 .mini-window-btn.active:hover {
-  color: var(--color-primary);
+  color: var(--color-primary-text);
   opacity: 1;
 }
 
@@ -1336,7 +1346,7 @@ button:disabled {
 }
 
 .mini-center-btn:hover {
-  color: var(--color-primary);
+  color: var(--color-primary-text);
   transform: translateY(-1px);
 }
 
@@ -1350,12 +1360,12 @@ button:disabled {
 }
 
 .mini-center-play:hover {
-  color: var(--color-primary);
+  color: var(--color-primary-text);
   transform: scale(1.06);
 }
 
 .mini-center-play.playing {
-  color: var(--color-primary);
+  color: var(--color-primary-text);
 }
 
 .play-offset {
@@ -1380,7 +1390,7 @@ button:disabled {
 }
 
 .mini-action-btn.active {
-  color: var(--color-primary);
+  color: var(--color-primary-text);
 }
 
 /* 收藏按钮始终红色（无论是否已收藏，由实心/空心爱心区分状态） */
@@ -1553,19 +1563,18 @@ button:disabled {
   transition:
     opacity 0.18s ease,
     transform 0.22s cubic-bezier(0.22, 1, 0.36, 1);
-  will-change: opacity, transform;
 }
 
 .mini-shell.is-expanded .mini-queue {
   border-top-color: rgba(0, 0, 0, 0.08);
   opacity: 1;
-  transform: translateY(0);
+  transform: none;
 }
 
 .mini-shell.is-expanded.expand-up .mini-queue {
   border-top-color: transparent;
   border-bottom-color: rgba(0, 0, 0, 0.08);
-  transform: translateY(0);
+  transform: none;
 }
 
 .mini-shell.expand-up .mini-queue {
@@ -1652,7 +1661,7 @@ button:disabled {
 }
 
 .mini-queue-item.active .mini-queue-song {
-  color: var(--color-primary);
+  color: var(--color-primary-text);
 }
 
 .mini-queue-artist {
@@ -1708,7 +1717,7 @@ button:disabled {
 
 .dark .mini-window-btn.active,
 .dark .mini-window-btn.active:hover {
-  color: var(--color-primary);
+  color: var(--color-primary-text);
 }
 
 /* 收藏按钮在深色下也始终保持红色 */
@@ -1724,7 +1733,7 @@ button:disabled {
 
 .dark .mini-center-btn:hover,
 .dark .mini-center-play.playing {
-  color: var(--color-primary);
+  color: var(--color-primary-text);
 }
 
 .dark .mini-center-play {

@@ -63,7 +63,7 @@
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  color: var(--color-primary);
+  color: var(--color-primary-text);
   font-size: 11px;
   line-height: 1;
   font-weight: 900;
@@ -124,7 +124,7 @@
   place-items: center;
   width: 186px;
   height: 186px;
-  color: color-mix(in srgb, var(--color-primary) 72%, white);
+  color: color-mix(in srgb, var(--color-primary-text) 72%, white);
   border: 1px solid color-mix(in srgb, var(--color-primary) 18%, transparent);
   border-radius: 999px;
   background: color-mix(in srgb, var(--color-primary) 11%, transparent);
@@ -227,7 +227,7 @@
 }
 
 .listen-search-shell:focus-within {
-  color: var(--color-primary);
+  color: var(--color-primary-text);
   border-color: color-mix(in srgb, var(--color-primary) 40%, var(--border-subtle));
   background: var(--color-bg-card);
 }
@@ -326,7 +326,7 @@
 }
 
 .listen-tag-button.is-active {
-  color: white;
+  color: var(--color-on-primary);
   border-color: var(--color-primary);
   background: var(--color-primary);
   box-shadow: 0 7px 18px color-mix(in srgb, var(--color-primary) 25%, transparent);
@@ -541,7 +541,7 @@
   gap: 7px;
   min-width: 0;
   margin-top: 14px;
-  color: var(--color-primary);
+  color: var(--color-primary-text);
   font-size: 11px;
   font-weight: 800;
 }
@@ -767,7 +767,7 @@
 .listen-now-sync-note svg {
   flex-shrink: 0;
   margin-top: 1px;
-  color: var(--color-primary);
+  color: var(--color-primary-text);
 }
 
 .listen-panel {
@@ -847,7 +847,7 @@
 }
 
 .listen-queue-item.is-current {
-  color: var(--color-primary);
+  color: var(--color-primary-text);
 }
 
 .listen-queue-item:disabled:not(.is-readonly) {
@@ -918,7 +918,7 @@
 
 .listen-queue-item:not(.is-readonly):hover .listen-request-label,
 .listen-queue-item.is-current .listen-request-label {
-  color: var(--color-primary);
+  color: var(--color-primary-text);
 }
 
 .listen-panel-empty {
@@ -955,7 +955,7 @@
 
 .listen-members-empty svg {
   flex-shrink: 0;
-  color: var(--color-primary);
+  color: var(--color-primary-text);
 }
 
 .listen-member-list {
@@ -1121,7 +1121,7 @@
 }
 
 .listen-message.is-self > div > span {
-  color: white;
+  color: var(--color-on-primary);
   border-radius: 11px 4px 11px 11px;
   background: var(--color-primary);
 }
@@ -1189,7 +1189,7 @@
   display: grid;
   place-items: center;
   border-radius: 9px;
-  color: white;
+  color: var(--color-on-primary);
   background: var(--color-primary);
   transition:
     opacity 0.16s ease,
@@ -1470,7 +1470,7 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  color: var(--color-primary);
+  color: var(--color-primary-text);
   font-size: 9px;
   font-weight: 800;
 }
@@ -1492,7 +1492,7 @@
 }
 
 .listen-style-options button.is-selected {
-  color: var(--color-primary);
+  color: var(--color-primary-text);
   border-color: color-mix(in srgb, var(--color-primary) 44%, var(--border-subtle));
   background: color-mix(in srgb, var(--color-primary) 9%, transparent);
 }
@@ -1535,7 +1535,7 @@
   display: grid;
   place-items: center;
   border-radius: 11px;
-  color: var(--color-primary);
+  color: var(--color-primary-text);
   background: color-mix(in srgb, var(--color-primary) 12%, transparent);
 }
 
@@ -1568,7 +1568,7 @@
 
 .listen-create-playlist-action {
   flex: 0 0 auto;
-  color: var(--color-primary);
+  color: var(--color-primary-text);
   font-size: 10px;
   font-weight: 850;
 }
@@ -1577,7 +1577,7 @@
   display: flex;
   align-items: center;
   gap: 9px;
-  color: var(--color-primary);
+  color: var(--color-primary-text);
 }
 
 .listen-create-summary > div > span {
@@ -2023,7 +2023,7 @@
 }
 
 .listen-room-type-tabs button.is-active .listen-room-type-icon {
-  color: white;
+  color: var(--color-on-primary);
   background: var(--color-primary);
   box-shadow: 0 6px 15px color-mix(in srgb, var(--color-primary) 22%, transparent);
 }
@@ -2085,7 +2085,7 @@
 }
 
 .listen-filter-panel .listen-tag-button.is-active {
-  color: var(--color-primary);
+  color: var(--color-primary-text);
   border-color: color-mix(in srgb, var(--color-primary) 28%, transparent);
   background: color-mix(in srgb, var(--color-primary) 10%, transparent);
   box-shadow: none;
@@ -2206,7 +2206,7 @@
   flex-shrink: 0;
   padding: 5px 7px;
   border-color: color-mix(in srgb, var(--color-primary) 18%, var(--border-subtle));
-  color: var(--color-primary);
+  color: var(--color-primary-text);
   background: color-mix(in srgb, var(--color-primary) 8%, transparent);
   backdrop-filter: none;
   font-size: 8px;
@@ -2229,7 +2229,7 @@
 
 .listen-room-song > svg {
   flex-shrink: 0;
-  color: var(--color-primary);
+  color: var(--color-primary-text);
 }
 
 .listen-room-song small {
@@ -2508,7 +2508,7 @@
 }
 
 .listen-song-picker-selection-toggle:hover:not(:has(.listen-order-song-check:disabled)) {
-  color: var(--color-primary);
+  color: var(--color-primary-text);
 }
 
 .listen-order-song-list,
@@ -2567,7 +2567,7 @@
 .listen-order-song-check[data-state='checked'],
 .listen-order-song-check[data-state='indeterminate'] {
   border-color: var(--color-primary);
-  color: white;
+  color: var(--color-on-primary);
   background: var(--color-primary);
 }
 
@@ -2648,7 +2648,7 @@
 }
 
 .listen-order-song-option em {
-  color: var(--color-primary);
+  color: var(--color-primary-text);
   font-size: 11px;
   font-style: normal;
   font-weight: 750;
@@ -2868,7 +2868,7 @@
 }
 
 .listen-browser-panel .listen-tag-button.is-active {
-  color: var(--color-primary);
+  color: var(--color-primary-text);
   border-color: color-mix(in srgb, var(--color-primary) 24%, transparent);
   background: color-mix(in srgb, var(--color-primary) 9%, transparent);
   box-shadow: none;
@@ -2944,7 +2944,7 @@
   min-height: auto;
   margin-top: 10px;
   padding: 0;
-  color: var(--color-primary);
+  color: var(--color-primary-text);
   background: transparent;
   font-size: 9px;
   font-weight: 750;

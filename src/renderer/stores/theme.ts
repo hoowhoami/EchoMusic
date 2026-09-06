@@ -4,6 +4,7 @@ import {
   DEFAULT_ACCENT,
   applyAccentToRoot,
   extractDominantColor,
+  getAccentPalette,
   getNormalizedAccent,
   hexToRgb,
   waitForAbortableDelay,
@@ -61,6 +62,10 @@ export const useThemeStore = defineStore('theme', {
     // 切歌/切主题时立即变到终值，不随 600ms 动画逐帧抖动。供组件与插件稳定消费。
     accentColor: (state): string =>
       getNormalizedAccent(state.sourceColor || DEFAULT_ACCENT, state.isDark),
+    accentTextColor: (state): string =>
+      getAccentPalette(state.sourceColor || DEFAULT_ACCENT, state.isDark).primaryText,
+    onAccentColor: (state): string =>
+      getAccentPalette(state.sourceColor || DEFAULT_ACCENT, state.isDark).onPrimary,
     // 最终主题色的 RGB 形式，格式为 "r, g, b"，方便插件拼 rgba()。
     accentColorRgb(): string {
       const rgb = hexToRgb(this.accentColor) ?? hexToRgb(DEFAULT_ACCENT);

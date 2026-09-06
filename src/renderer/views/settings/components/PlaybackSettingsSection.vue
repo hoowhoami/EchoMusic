@@ -168,7 +168,7 @@ const handleRemoveImpulseResponse = (id: string) => {
 <template>
   <SettingsSectionShell id="playback" :title="sectionTitles.playback.label">
     <template #icon>
-      <Icon :icon="iconPlayerPlay" width="20" height="20" class="text-primary" />
+      <Icon :icon="iconPlayerPlay" width="20" height="20" class="text-primary-text" />
     </template>
 
     <div class="settings-item">
@@ -517,7 +517,7 @@ const handleRemoveImpulseResponse = (id: string) => {
 
 .irs-source-tabs button.is-active {
   background: var(--color-bg-elevated);
-  color: var(--color-primary);
+  color: var(--color-primary-text);
   box-shadow: var(--shadow-control);
 }
 
@@ -603,7 +603,7 @@ const handleRemoveImpulseResponse = (id: string) => {
 }
 
 .irs-row-btn:hover {
-  color: var(--color-primary);
+  color: var(--color-primary-text);
   background: color-mix(in srgb, var(--color-primary) 10%, transparent);
 }
 

@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { iconChevronUpDown, iconSortDown, iconSortUp } from '@/icons';
 import { computed } from 'vue';
+import type { SongListSortField, SongListSortOrder } from '@/utils/songList';
 import { buildSongListGridTemplate, SONG_LIST_TITLE_OFFSET_WITH_COVER } from './songListLayout';
 
-export type SortField = 'index' | 'title' | 'album' | 'duration';
-export type SortOrder = 'asc' | 'desc' | null;
+export type SortField = SongListSortField;
+export type SortOrder = SongListSortOrder;
 
 interface Props {
   showIndex?: boolean;
@@ -72,29 +73,46 @@ const gridTemplate = computed(() =>
         <Icon v-else class="sort-icon" :icon="iconChevronUpDown" />
       </div>
 
-      <div
-        class="min-w-0 cursor-pointer hover:opacity-100 transition-opacity flex items-center"
-        @click="handleSort('title')"
-      >
+      <div class="min-w-0 flex items-center">
         <div
           v-if="props.showCover"
           class="shrink-0"
           :style="{ width: `${SONG_LIST_TITLE_OFFSET_WITH_COVER}px` }"
         ></div>
-        <div class="min-w-0 flex items-center gap-1">
-          <span>歌曲</span>
-          <Icon
-            v-if="sortField === 'title'"
-            class="sort-icon"
-            :icon="
-              sortOrder === 'asc'
-                ? iconSortUp
-                : sortOrder === 'desc'
-                  ? iconSortDown
-                  : iconChevronUpDown
-            "
-          />
-          <Icon v-else class="sort-icon" :icon="iconChevronUpDown" />
+        <div class="min-w-0 flex items-center gap-1.5">
+          <button
+            type="button"
+            class="song-sort-choice"
+            :class="{ 'is-active': sortField === 'title' }"
+            :aria-pressed="sortField === 'title'"
+            title="按歌曲名排序"
+            @click="handleSort('title')"
+          >
+            <span>歌曲</span>
+            <Icon
+              v-if="sortField === 'title'"
+              class="sort-icon"
+              :icon="sortOrder === 'desc' ? iconSortDown : iconSortUp"
+            />
+            <Icon v-else class="sort-icon sort-icon-idle" :icon="iconChevronUpDown" />
+          </button>
+          <span class="song-sort-separator" aria-hidden="true">/</span>
+          <button
+            type="button"
+            class="song-sort-choice"
+            :class="{ 'is-active': sortField === 'artist' }"
+            :aria-pressed="sortField === 'artist'"
+            title="按歌手排序"
+            @click="handleSort('artist')"
+          >
+            <span>歌手</span>
+            <Icon
+              v-if="sortField === 'artist'"
+              class="sort-icon"
+              :icon="sortOrder === 'desc' ? iconSortDown : iconSortUp"
+            />
+            <Icon v-else class="sort-icon sort-icon-idle" :icon="iconChevronUpDown" />
+          </button>
         </div>
       </div>
 
@@ -146,5 +164,34 @@ const gridTemplate = computed(() =>
 .sort-icon {
   width: 14px;
   height: 14px;
+}
+
+.song-sort-choice {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  min-width: 0;
+  padding: 4px 0;
+  color: inherit;
+  cursor: pointer;
+  transition: color 0.15s ease;
+}
+
+.song-sort-choice:hover,
+.song-sort-choice.is-active {
+  color: var(--color-primary-text);
+}
+
+.sort-icon-idle {
+  opacity: 0.58;
+}
+
+.song-sort-choice:hover .sort-icon-idle {
+  opacity: 1;
+}
+
+.song-sort-separator {
+  color: color-mix(in srgb, var(--color-text-main) 28%, transparent);
+  font-weight: 500;
 }
 </style>

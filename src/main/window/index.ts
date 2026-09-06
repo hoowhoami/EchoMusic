@@ -23,21 +23,15 @@ import {
   WindowBoundsPersistenceGate,
   type WindowBoundsChangeKind,
 } from '../windowBoundsPersistence';
+import { resolveMainWindowMinHeight } from '../windowSizing';
 
 const minWidth: number = 1100;
 const defaultWidth: number = 1150;
 const defaultHeight: number = 750;
 
-/**
- * 动态计算最小窗口高度，避免在高 DPI 缩放下超出屏幕可用区域。
- * 1920x1080 @ 150% → 可用高度约 693px
- * 3840x2160 @ 300% → 可用高度约 707px
- */
 const getMinHeight = (): number => {
   const primaryDisplay = screen.getPrimaryDisplay();
-  const availableHeight = primaryDisplay.workArea.height;
-  // 最小高度不超过可用高度的 95%，但至少 650px，最多 720px
-  return Math.max(650, Math.min(720, Math.floor(availableHeight * 0.95)));
+  return resolveMainWindowMinHeight(primaryDisplay.workArea.height);
 };
 
 const initialSettings = getMainAppSettings();

@@ -673,12 +673,12 @@ watch(selectedKey, () => {
   height: 18px;
   border-radius: 50%;
   background: var(--color-primary);
-  color: white;
+  color: var(--color-on-primary);
   box-shadow: 0 4px 12px color-mix(in srgb, var(--color-primary) 28%, transparent);
 }
 
 .status-pill.recommended-pill {
-  color: var(--color-primary);
+  color: var(--color-primary-text);
   background: color-mix(in srgb, var(--color-primary) 11%, transparent);
   border-color: color-mix(in srgb, var(--color-primary) 18%, transparent);
   font-weight: 800;
@@ -700,7 +700,7 @@ watch(selectedKey, () => {
 }
 
 .star-rating .filled {
-  color: var(--color-primary);
+  color: var(--color-primary-text);
 }
 
 .star-rating .half::before {
@@ -710,11 +710,11 @@ watch(selectedKey, () => {
   top: 0;
   width: 50%;
   overflow: hidden;
-  color: var(--color-primary);
+  color: var(--color-primary-text);
 }
 
 .candidate-tags .official {
-  color: var(--color-primary);
+  color: var(--color-primary-text);
   background: color-mix(in srgb, var(--color-primary) 9%, transparent);
   border-color: color-mix(in srgb, var(--color-primary) 16%, transparent);
 }

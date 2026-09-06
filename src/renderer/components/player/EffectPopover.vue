@@ -794,10 +794,10 @@ withDefaults(defineProps<Props>(), {
           audioEffectPresetActive || gains.some((g: number) => g !== 0) || spatialEffectActive
             ? variant === 'lyric'
               ? 'text-black dark:text-white'
-              : 'text-primary'
+              : 'text-primary-text'
             : variant === 'lyric'
               ? 'text-black/40 dark:text-white/40'
-              : 'text-text-main/50 hover:text-primary'
+              : 'text-text-main/50 hover:text-primary-text'
         "
         title="音效与均衡器"
       >
@@ -1644,7 +1644,7 @@ withDefaults(defineProps<Props>(), {
 
 .spatial-provider-mode-tabs button:hover,
 .spatial-provider-mode-tabs button.is-active {
-  color: var(--color-primary);
+  color: var(--color-primary-text);
   background: var(--color-bg-elevated);
 }
 
@@ -1726,7 +1726,7 @@ withDefaults(defineProps<Props>(), {
 .sidebar-item.is-active {
   opacity: 1;
   background: var(--color-primary);
-  color: white;
+  color: var(--color-on-primary);
 }
 
 .sidebar-current-dot {
@@ -1792,7 +1792,7 @@ withDefaults(defineProps<Props>(), {
 .reset-btn {
   font-size: 12px;
   font-weight: 600;
-  color: var(--color-primary);
+  color: var(--color-primary-text);
   opacity: 0.8;
   background: transparent;
   border: none;
@@ -1856,7 +1856,7 @@ withDefaults(defineProps<Props>(), {
 .effect-popover .pm-item:hover {
   border-color: color-mix(in srgb, var(--color-primary) 45%, transparent);
   background: color-mix(in srgb, var(--color-primary) 9%, transparent);
-  color: var(--color-primary);
+  color: var(--color-primary-text);
   opacity: 1;
 }
 
@@ -1874,7 +1874,7 @@ withDefaults(defineProps<Props>(), {
 .effect-popover .pm-item.is-active {
   border-color: var(--color-primary);
   background: var(--color-primary);
-  color: white;
+  color: var(--color-on-primary);
   opacity: 1;
 }
 
@@ -1914,7 +1914,7 @@ withDefaults(defineProps<Props>(), {
 
 .eq-bypass-hint {
   margin-top: -8px;
-  color: var(--color-primary);
+  color: var(--color-primary-text);
 }
 
 .eq-container.is-disabled .eq-slider {
@@ -1959,13 +1959,13 @@ withDefaults(defineProps<Props>(), {
 .original-effect-button:not(:disabled):hover {
   border-color: color-mix(in srgb, var(--color-primary) 35%, transparent);
   background: color-mix(in srgb, var(--color-primary) 9%, transparent);
-  color: var(--color-primary);
+  color: var(--color-primary-text);
 }
 
 .original-effect-button.is-active {
   border-color: color-mix(in srgb, var(--color-primary) 48%, transparent);
   background: color-mix(in srgb, var(--color-primary) 8%, var(--color-bg-elevated));
-  color: var(--color-primary);
+  color: var(--color-primary-text);
   cursor: default;
 }
 
@@ -2054,7 +2054,7 @@ withDefaults(defineProps<Props>(), {
   border: 0;
   border-radius: 6px;
   background: transparent;
-  color: var(--color-primary);
+  color: var(--color-primary-text);
   font-size: 12px;
   font-weight: 700;
   cursor: pointer;
@@ -2067,7 +2067,7 @@ withDefaults(defineProps<Props>(), {
 }
 
 .current-effect-location:hover {
-  color: color-mix(in srgb, var(--color-primary) 78%, var(--color-text-main));
+  color: color-mix(in srgb, var(--color-primary-text) 78%, var(--color-text-main));
 }
 
 .current-effect-location:focus-visible,
@@ -2168,11 +2168,11 @@ withDefaults(defineProps<Props>(), {
 
 .my-effect-source-tab:hover,
 .my-effect-source-tab[data-state='active'] {
-  color: var(--color-primary);
+  color: var(--color-primary-text);
 }
 
 .my-effect-source-tab.contains-active {
-  color: var(--color-primary);
+  color: var(--color-primary-text);
 }
 
 .my-effect-source-tab[data-state='active'] {
@@ -2208,7 +2208,7 @@ withDefaults(defineProps<Props>(), {
 .my-effect-source-tab[data-state='active'] .my-effect-source-count,
 .my-effect-source-tab.contains-active .my-effect-source-count {
   background: color-mix(in srgb, var(--color-primary) 10%, var(--color-bg-elevated));
-  color: var(--color-primary);
+  color: var(--color-primary-text);
 }
 
 .my-effect-source-current,
@@ -2251,7 +2251,7 @@ withDefaults(defineProps<Props>(), {
   border: 1px solid var(--control-border);
   border-radius: 6px;
   background: var(--control-muted-bg);
-  color: var(--color-primary);
+  color: var(--color-primary-text);
   font-size: 11px;
   cursor: pointer;
 }
@@ -2332,12 +2332,12 @@ withDefaults(defineProps<Props>(), {
 
 .irs-library-tabs button.is-active {
   background: var(--color-bg-elevated);
-  color: var(--color-primary);
+  color: var(--color-primary-text);
   box-shadow: inset 0 0 0 1px var(--control-border);
 }
 
 .irs-library-tabs button.contains-active:not(.is-active) {
-  color: var(--color-primary);
+  color: var(--color-primary-text);
 }
 
 .provider-panel-scroll,
@@ -2411,18 +2411,18 @@ withDefaults(defineProps<Props>(), {
 .provider-preset-option:has(.provider-preset-button:hover:not(:disabled)) {
   border-color: var(--color-primary);
   background: color-mix(in srgb, var(--color-primary) 9%, transparent);
-  color: var(--color-primary);
+  color: var(--color-primary-text);
 }
 
 .provider-preset-option.is-active {
   border-color: var(--color-primary);
   background: var(--color-primary);
-  color: white;
+  color: var(--color-on-primary);
 }
 
 .provider-preset-option.is-active:has(.provider-preset-button:hover) {
   background: var(--color-primary);
-  color: white;
+  color: var(--color-on-primary);
 }
 
 .provider-preset-label {
@@ -2445,7 +2445,7 @@ withDefaults(defineProps<Props>(), {
   padding: 0 6px;
   border-radius: 999px;
   background: color-mix(in srgb, var(--color-primary) 16%, transparent);
-  color: var(--color-primary);
+  color: var(--color-primary-text);
   font-size: 9px;
   font-weight: 700;
   line-height: 1;
@@ -2453,7 +2453,7 @@ withDefaults(defineProps<Props>(), {
 
 .provider-preset-option.is-active .provider-preset-device-tag {
   background: color-mix(in srgb, white 22%, transparent);
-  color: white;
+  color: var(--color-on-primary);
 }
 
 .provider-preset-settings {

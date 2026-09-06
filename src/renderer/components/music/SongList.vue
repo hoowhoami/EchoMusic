@@ -842,14 +842,14 @@ defineExpose({ scrollToActive, filteredCount: computed(() => filteredSongsRef.va
                 <template v-if="entry.isActive">
                   <div
                     v-show="isPlaying"
-                    class="absolute inset-0 flex items-center justify-center text-primary cursor-pointer"
+                    class="absolute inset-0 flex items-center justify-center text-primary-text cursor-pointer"
                     @click.stop="handleTogglePlay(entry.data)"
                   >
                     <Icon :icon="iconPause" width="14" height="14" />
                   </div>
                   <div
                     v-show="!isPlaying"
-                    class="absolute inset-0 flex items-center justify-center text-primary cursor-pointer"
+                    class="absolute inset-0 flex items-center justify-center text-primary-text cursor-pointer"
                     @click.stop="handleTogglePlay(entry.data)"
                   >
                     <Icon :icon="iconPlay" width="14" height="14" />
@@ -1104,7 +1104,7 @@ defineExpose({ scrollToActive, filteredCount: computed(() => filteredSongsRef.va
 }
 
 .song-list-meta-link:hover {
-  color: var(--color-primary);
+  color: var(--color-primary-text);
 }
 
 /* ─── 播放历史退场动画：缩小 + 降低透明度 ─── */
@@ -1182,7 +1182,7 @@ defineExpose({ scrollToActive, filteredCount: computed(() => filteredSongsRef.va
 :global(.song-context-item:not(:disabled):hover),
 :global(.song-context-item:not(:disabled):focus-visible) {
   background-color: var(--row-hover-bg);
-  color: var(--color-primary);
+  color: var(--color-primary-text);
 }
 
 :global(.song-context-item:disabled) {

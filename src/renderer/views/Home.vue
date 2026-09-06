@@ -662,7 +662,7 @@ const handleRejectAgreement = () => {
   align-items: center;
   justify-content: center;
   background: color-mix(in srgb, var(--color-primary) 12%, transparent);
-  color: var(--color-primary);
+  color: var(--color-primary-text);
 }
 
 .home-section {
@@ -737,7 +737,7 @@ const handleRejectAgreement = () => {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  color: var(--color-primary);
+  color: var(--color-primary-text);
   background: color-mix(in srgb, var(--color-primary) 10%, transparent);
   font-size: 12px;
   font-weight: 700;
@@ -844,7 +844,7 @@ const handleRejectAgreement = () => {
 }
 
 .style-tag-btn.active {
-  color: var(--color-primary);
+  color: var(--color-primary-text);
   border-color: var(--color-primary);
   background: var(--control-active-bg);
 }
@@ -859,7 +859,7 @@ const handleRejectAgreement = () => {
 }
 
 .style-tag-clear.active {
-  color: var(--color-primary);
+  color: var(--color-primary-text);
   border-color: var(--color-primary);
   background: var(--control-active-bg);
 }

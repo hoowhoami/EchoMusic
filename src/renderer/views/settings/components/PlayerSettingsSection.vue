@@ -132,7 +132,7 @@ const updatePlaybackStallMaxAttempts = (value: string | number) => {
         :icon="sectionTitles.player.icon"
         width="20"
         height="20"
-        class="text-primary"
+        class="text-primary-text"
       />
     </template>
 

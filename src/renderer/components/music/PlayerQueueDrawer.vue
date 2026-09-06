@@ -1115,7 +1115,6 @@ onBeforeUnmount(() => {
   touch-action: pan-y;
   user-select: none;
   -webkit-user-select: none;
-  will-change: transform;
 }
 
 .queue-slides.is-dragging {
@@ -1126,11 +1125,15 @@ onBeforeUnmount(() => {
   display: flex;
   width: 100%;
   height: 100%;
-  will-change: transform;
 }
 
 .queue-track.is-animated {
   transition: transform 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: transform;
+}
+
+.queue-slides.is-dragging .queue-track {
+  will-change: transform;
 }
 
 .queue-slide {
@@ -1172,12 +1175,12 @@ onBeforeUnmount(() => {
 }
 
 .queue-inline-resume-icon {
-  color: var(--color-primary);
+  color: var(--color-primary-text);
   flex-shrink: 0;
 }
 
 .queue-inline-resume-label {
-  color: var(--color-primary);
+  color: var(--color-primary-text);
   font-weight: 700;
   flex-shrink: 0;
 }

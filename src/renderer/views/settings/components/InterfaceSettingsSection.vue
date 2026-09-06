@@ -16,7 +16,7 @@ const settingStore = useSettingStore();
         :icon="sectionTitles.interface.icon"
         width="20"
         height="20"
-        class="text-primary"
+        class="text-primary-text"
       />
     </template>
 

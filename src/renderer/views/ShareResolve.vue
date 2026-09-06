@@ -527,7 +527,7 @@ watch(
   height: 30px;
   padding: 0 10px;
   border-radius: 8px;
-  color: var(--color-primary);
+  color: var(--color-primary-text);
   background: color-mix(in srgb, var(--color-primary) 10%, transparent);
   font-size: 12px;
   font-weight: 700;

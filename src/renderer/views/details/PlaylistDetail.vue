@@ -694,7 +694,7 @@ watch(
               <div class="flex items-center gap-3">
                 <div class="flex items-center gap-2">
                   <Avatar :src="playlist.userPic" :size="20" class="rounded-full overflow-hidden" />
-                  <span class="text-[13px] font-semibold text-primary">{{
+                  <span class="text-[13px] font-semibold text-primary-text">{{
                     playlist.nickname || 'Unknown'
                   }}</span>
                 </div>
@@ -734,7 +734,7 @@ watch(
                 <span
                   v-for="tag in playlistTags"
                   :key="tag"
-                  class="px-2 py-0.5 rounded-md text-[10px] font-semibold text-primary bg-primary/10 border border-primary/20"
+                  class="px-2 py-0.5 rounded-md text-[10px] font-semibold text-primary-text bg-primary/10 border border-primary/20"
                 >
                   {{ tag }}
                 </span>
@@ -757,7 +757,7 @@ watch(
                 variant="unstyled"
                 size="none"
                 @click="handlePlayAll"
-                class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] text-primary"
+                class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] text-primary-text"
               >
                 <Icon :icon="iconPlay" width="20" height="20" />
               </Button>
@@ -818,7 +818,7 @@ watch(
             variant="unstyled"
             size="none"
             type="button"
-            class="mt-0.5 text-[11px] font-semibold text-primary"
+            class="mt-0.5 text-[11px] font-semibold text-primary-text"
             @click="showIntroDialog = true"
           >
             查看详情

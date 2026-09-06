@@ -613,7 +613,7 @@ const activeSongId = computed(() => playerStore.currentTrackId ?? undefined);
                 variant="unstyled"
                 size="none"
                 @click="handlePlayAll"
-                class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] text-primary"
+                class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] text-primary-text"
               >
                 <Icon :icon="iconPlay" width="20" height="20" />
               </Button>
@@ -657,7 +657,7 @@ const activeSongId = computed(() => playerStore.currentTrackId ?? undefined);
             variant="unstyled"
             size="none"
             type="button"
-            class="mt-0.5 text-[11px] font-semibold text-primary"
+            class="mt-0.5 text-[11px] font-semibold text-primary-text"
             @click="showIntroDialog = true"
           >
             查看详情
@@ -825,7 +825,7 @@ const activeSongId = computed(() => playerStore.currentTrackId ?? undefined);
   text-align: left;
   font-size: 13px;
   font-weight: 600;
-  color: var(--color-primary);
+  color: var(--color-primary-text);
 }
 
 .album-singer-link.is-link {

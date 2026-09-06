@@ -138,7 +138,7 @@ watch(
 .custom-picker-option.active {
   border-color: var(--color-primary);
   background: var(--color-primary);
-  color: #ffffff;
+  color: var(--color-on-primary);
 }
 
 .custom-picker-option:hover {

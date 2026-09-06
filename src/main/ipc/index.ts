@@ -17,6 +17,7 @@ import { registerShareHandlers } from './share';
 import { registerDiagnosticsHandlers } from './diagnostics';
 import { registerCloudHandlers } from './cloud';
 import { registerSettingsBackupHandlers } from './settingsBackup';
+import { registerRecognizeHandlers } from './recognize';
 import type { IpcContext } from './types';
 
 let registered = false;
@@ -41,6 +42,7 @@ export const registerIpcHandlers = (context: IpcContext) => {
   registerDiagnosticsHandlers();
   registerCloudHandlers(context);
   registerSettingsBackupHandlers();
+  registerRecognizeHandlers();
   registered = true;
 };
 

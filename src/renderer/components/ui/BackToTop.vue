@@ -82,7 +82,7 @@ onUnmounted(() => {
 }
 
 .back-to-top-btn:hover {
-  color: var(--color-primary);
+  color: var(--color-primary-text);
 }
 
 :global(.dark .back-to-top-btn) {
@@ -90,7 +90,7 @@ onUnmounted(() => {
 }
 
 :global(.dark .back-to-top-btn:hover) {
-  color: var(--color-primary);
+  color: var(--color-primary-text);
 }
 
 .fade-enter-active,

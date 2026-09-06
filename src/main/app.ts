@@ -17,6 +17,7 @@ import {
 import { initPlayer, destroyPlayer } from './player';
 import { registerAudioSpectrumIpc, unregisterAudioSpectrumIpc } from './audioSpectrum';
 import { initMediaControls, destroyMediaControls } from './mediaControls';
+import { destroyAudioCapture } from './audioCapture';
 import { cleanupMiniPlayer } from './miniPlayer';
 import { initPowerMonitor } from './powerMonitor';
 import { clearPluginRuntimeSession, setPluginSafeMode } from './plugins';
@@ -279,6 +280,7 @@ if (!gotTheLock) {
         cleanupDesktopLyric();
         // 清理 mini 播放器模块的事件监听器和定时器
         cleanupMiniPlayer();
+        destroyAudioCapture();
         destroyMediaControls();
         if (skipPlayerCleanup) {
           log.info('[Main] before-quit: update install requested, skipping native player cleanup');

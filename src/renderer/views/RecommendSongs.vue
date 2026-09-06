@@ -169,7 +169,7 @@ onMounted(() => {
             variant="unstyled"
             size="none"
             @click="handlePlayAll"
-            class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] text-primary"
+            class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] text-primary-text"
           >
             <Icon :icon="iconPlay" width="20" height="20" />
           </Button>

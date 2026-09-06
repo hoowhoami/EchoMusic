@@ -426,7 +426,7 @@ onMounted(() => {
         class="cloud-login-empty flex flex-col items-center justify-center min-h-105 text-center px-6"
       >
         <div
-          class="w-18 h-18 rounded-3xl bg-primary/10 text-primary flex items-center justify-center mb-5"
+          class="w-18 h-18 rounded-3xl bg-primary/10 text-primary-text flex items-center justify-center mb-5"
         >
           <Icon :icon="iconCloud" width="32" height="32" />
         </div>
@@ -476,7 +476,7 @@ onMounted(() => {
               variant="unstyled"
               size="none"
               @click="handlePlayAll"
-              class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] text-primary"
+              class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] text-primary-text"
             >
               <Icon :icon="iconPlay" width="20" height="20" />
             </Button>
@@ -505,7 +505,7 @@ onMounted(() => {
           <div class="cloud-info-card">
             <div class="flex items-center justify-between">
               <div class="text-[13px] font-semibold text-text-main">云盘容量</div>
-              <div class="text-[11px] font-semibold text-primary">
+              <div class="text-[11px] font-semibold text-primary-text">
                 {{ (usageRatio * 100).toFixed(1) }}%
               </div>
             </div>
@@ -576,7 +576,7 @@ onMounted(() => {
               class="cloud-empty flex flex-col items-center justify-center py-24 text-center"
             >
               <div
-                class="w-16 h-16 rounded-[18px] bg-primary/10 text-primary flex items-center justify-center mb-4"
+                class="w-16 h-16 rounded-[18px] bg-primary/10 text-primary-text flex items-center justify-center mb-4"
               >
                 <Icon :icon="iconCloud" width="28" height="28" />
               </div>

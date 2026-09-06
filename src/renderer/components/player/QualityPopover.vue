@@ -41,11 +41,11 @@ const buttonClass = computed(() => {
   const activeClass =
     props.variant === 'lyric'
       ? 'text-black dark:text-white hover:scale-110 active:scale-90'
-      : 'text-primary hover:scale-110 active:scale-90';
+      : 'text-primary-text hover:scale-110 active:scale-90';
   const mutedClass =
     props.variant === 'lyric'
       ? 'text-black/40 dark:text-white/40 hover:scale-110 active:scale-90'
-      : 'text-text-main/50 hover:text-primary hover:scale-110 active:scale-90';
+      : 'text-text-main/50 hover:text-primary-text hover:scale-110 active:scale-90';
 
   if (isResolvedCloudSource.value) return activeClass;
   if (player.currentAudioQualityOverride !== null) return activeClass;

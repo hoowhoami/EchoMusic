@@ -64,7 +64,7 @@ const handleWheel = (e: WheelEvent) => {
             'p-2 transition-colors',
             variant === 'lyric'
               ? 'flex h-10 w-10 items-center justify-center rounded-full transition-all hover:scale-110 active:scale-90 text-black/55 dark:text-white/55'
-              : 'text-text-main/50 hover:text-primary hover:scale-110 active:scale-90',
+              : 'text-text-main/50 hover:text-primary-text hover:scale-110 active:scale-90',
           ]"
           @click.stop="toggleMute"
         >

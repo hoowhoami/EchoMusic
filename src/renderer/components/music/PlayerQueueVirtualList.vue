@@ -257,7 +257,7 @@ defineExpose({
   width: 36px;
   height: 36px;
   min-width: 36px;
-  color: var(--color-primary);
+  color: var(--color-primary-text);
   opacity: 0;
   background: transparent !important;
 }

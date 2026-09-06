@@ -642,7 +642,7 @@ const statusLabel = (item: CloudUploadItem) => {
   >
     <template #title>
       <span class="flex items-center gap-2">
-        <Icon :icon="iconCloudUpload" width="18" height="18" class="text-primary" />
+        <Icon :icon="iconCloudUpload" width="18" height="18" class="text-primary-text" />
         上传到云盘
       </span>
     </template>
@@ -795,7 +795,7 @@ const statusLabel = (item: CloudUploadItem) => {
                 :icon="iconLoader2"
                 width="14"
                 height="14"
-                class="cloud-upload-spinner text-primary"
+                class="cloud-upload-spinner text-primary-text"
               />
               <Icon
                 v-else-if="item.status === 'success'"
@@ -892,7 +892,7 @@ const statusLabel = (item: CloudUploadItem) => {
   >
     <template #title>
       <div class="flex items-center gap-2">
-        <Icon :icon="iconCloudUpload" width="18" height="18" class="text-primary" />
+        <Icon :icon="iconCloudUpload" width="18" height="18" class="text-primary-text" />
         <span>上传将在后台继续</span>
       </div>
     </template>
@@ -948,7 +948,7 @@ const statusLabel = (item: CloudUploadItem) => {
 .cloud-upload-option-icon {
   @apply flex items-center justify-center w-10 h-10 rounded-[8px] shrink-0;
   background: color-mix(in srgb, var(--color-primary) 12%, transparent);
-  color: var(--color-primary);
+  color: var(--color-primary-text);
 }
 
 .cloud-upload-progress-body {

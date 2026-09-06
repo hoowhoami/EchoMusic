@@ -66,6 +66,11 @@ import type {
 } from '../shared/player-audio-graph';
 import type { DspProviderInspection } from '../shared/audio';
 import type { ResolvePlaylistRequest, ResolvePlaylistResponse } from '../shared/external';
+import type {
+  RecognizeCaptureRequest,
+  RecognizeCaptureStatus,
+  RecognizeInputDevice,
+} from '../shared/recognize';
 import type { ShareCaptureRect, ShareTarget } from '../shared/share';
 import type { DiagnosticsMemorySnapshot } from '../shared/diagnostics';
 import type { CloudPickMode, CloudReadUploadFileDataResult } from '../shared/cloud';
@@ -427,8 +432,10 @@ export interface IElectronAPI {
     ) => () => void;
   };
   recognize: {
-    enableLoopback: () => Promise<void>;
-    disableLoopback: () => Promise<void>;
+    listInputDevices: () => Promise<RecognizeInputDevice[]>;
+    startAudioCapture: (request: RecognizeCaptureRequest) => Promise<RecognizeCaptureStatus>;
+    stopAudioCapture: () => Promise<Uint8Array>;
+    cancelAudioCapture: () => Promise<void>;
   };
   external: {
     resolvePlaylist: (req: ResolvePlaylistRequest) => Promise<ResolvePlaylistResponse>;

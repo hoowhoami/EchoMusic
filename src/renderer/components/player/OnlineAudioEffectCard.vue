@@ -120,7 +120,7 @@ const userCount = (count: number) =>
   overflow: hidden;
   border-radius: 8px;
   background: var(--color-bg-elevated);
-  color: var(--color-primary);
+  color: var(--color-primary-text);
 }
 .effect-art.is-artist {
   border-radius: 50%;
@@ -173,7 +173,7 @@ const userCount = (count: number) =>
   border: 1px solid var(--control-border);
   border-radius: 7px;
   background: var(--color-bg-elevated);
-  color: var(--color-primary);
+  color: var(--color-primary-text);
   font-size: 10px;
   font-weight: 650;
   cursor: pointer;
@@ -182,7 +182,7 @@ const userCount = (count: number) =>
 .effect-action.is-active {
   border-color: var(--color-primary);
   background: var(--color-primary);
-  color: white;
+  color: var(--color-on-primary);
 }
 .effect-action:disabled:not(.is-active) {
   color: var(--color-text-secondary);

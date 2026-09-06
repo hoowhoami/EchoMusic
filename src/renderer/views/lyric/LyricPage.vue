@@ -592,7 +592,7 @@ onUnmounted(() => {
 
 .lyric-page :deep(.overlay-control-btn--mini:hover) {
   background: transparent;
-  color: var(--color-primary);
+  color: var(--color-primary-text);
 }
 
 .lyric-page :deep(.overlay-control-btn--close:hover) {

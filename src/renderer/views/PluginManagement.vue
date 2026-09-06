@@ -323,7 +323,7 @@ const getPluginFeatureTags = (manifest: EchoPluginManifest) => {
         <div class="flex items-center gap-3">
           <!-- 安全模式 -->
           <div class="plugin-safe-mode-control">
-            <Icon :icon="iconShield" width="14" height="14" class="text-primary" />
+            <Icon :icon="iconShield" width="14" height="14" class="text-primary-text" />
             <span class="text-xs font-medium text-text-main">安全模式</span>
             <Switch
               :model-value="pluginRuntimeState.safeMode"

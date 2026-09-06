@@ -64,6 +64,11 @@ import type {
   PlayerAudioGraphSnapshot,
 } from '../shared/player-audio-graph';
 import type { ResolvePlaylistRequest, ResolvePlaylistResponse } from '../shared/external';
+import type {
+  RecognizeCaptureRequest,
+  RecognizeCaptureStatus,
+  RecognizeInputDevice,
+} from '../shared/recognize';
 import type { ShareCaptureRect, ShareTarget } from '../shared/share';
 import type {
   DiagnosticsAppProcessMetric,
@@ -995,8 +1000,16 @@ contextBridge.exposeInMainWorld('electron', {
     },
   },
   recognize: {
-    enableLoopback: () => ipcRenderer.invoke('enable-loopback-audio'),
-    disableLoopback: () => ipcRenderer.invoke('disable-loopback-audio'),
+    listInputDevices: () =>
+      ipcRenderer.invoke('recognize:list-input-devices') as Promise<RecognizeInputDevice[]>,
+    startAudioCapture: (request: RecognizeCaptureRequest) =>
+      ipcRenderer.invoke(
+        'recognize:start-audio-capture',
+        request,
+      ) as Promise<RecognizeCaptureStatus>,
+    stopAudioCapture: () =>
+      ipcRenderer.invoke('recognize:stop-audio-capture') as Promise<Uint8Array>,
+    cancelAudioCapture: () => ipcRenderer.invoke('recognize:cancel-audio-capture'),
   },
   external: {
     resolvePlaylist: (req: ResolvePlaylistRequest) =>

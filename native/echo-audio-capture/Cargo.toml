@@ -1,0 +1,25 @@
+[package]
+name = "echo-audio-capture"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.87"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+napi = { version = "3", features = ["napi9"] }
+napi-derive = "3"
+rubato = "0.16"
+
+[build-dependencies]
+napi-build = "2"
+
+[target.'cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))'.dependencies]
+cpal = "0.18"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+block2 = "0.6"
+dispatch2 = "0.3"
+objc2 = "0.6"
+objc2-foundation = { version = "0.3", features = ["NSArray", "NSError", "NSString"] }

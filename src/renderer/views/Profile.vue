@@ -590,7 +590,7 @@ onMounted(() => loadData());
               <!-- 3. Account Archives -->
               <div class="min-w-0">
                 <div class="flex items-center gap-2 mb-4">
-                  <Icon :icon="iconUser" width="16" height="16" class="text-primary" />
+                  <Icon :icon="iconUser" width="16" height="16" class="text-primary-text" />
                   <h3 class="text-[16px] font-black">账号档案</h3>
                 </div>
                 <div
@@ -624,7 +624,7 @@ onMounted(() => loadData());
               <!-- 4. Membership Status -->
               <div class="min-w-0">
                 <div class="flex items-center gap-2 mb-4">
-                  <Icon :icon="iconGift" width="16" height="16" class="text-primary" />
+                  <Icon :icon="iconGift" width="16" height="16" class="text-primary-text" />
                   <h3 class="text-[16px] font-black">会员状态</h3>
                 </div>
                 <div class="space-y-2">
@@ -910,7 +910,9 @@ onMounted(() => loadData());
             <div
               :class="[
                 'w-10 h-10 rounded-xl flex items-center justify-center shrink-0',
-                device.isCurrent ? 'bg-primary/15 text-primary' : 'bg-[var(--control-hover-bg)]',
+                device.isCurrent
+                  ? 'bg-primary/15 text-primary-text'
+                  : 'bg-[var(--control-hover-bg)]',
               ]"
             >
               <Icon :icon="iconSmartphone" width="20" height="20" />
@@ -920,7 +922,7 @@ onMounted(() => loadData());
                 <span class="text-[13px] font-black truncate">{{ device.title }}</span>
                 <span
                   v-if="device.isCurrent"
-                  class="px-1.5 py-0.5 rounded-md bg-primary/12 text-primary text-[10px] font-black shrink-0"
+                  class="px-1.5 py-0.5 rounded-md bg-primary/12 text-primary-text text-[10px] font-black shrink-0"
                   >本机</span
                 >
                 <span

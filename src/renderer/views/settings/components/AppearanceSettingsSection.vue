@@ -29,7 +29,7 @@ const isAccentGradientDefault = computed(
 <template>
   <SettingsSectionShell id="appearance" :title="resolvedTitle">
     <template #icon>
-      <Icon :icon="iconPalette" width="20" height="20" class="text-primary" />
+      <Icon :icon="iconPalette" width="20" height="20" class="text-primary-text" />
     </template>
 
     <div class="settings-item">

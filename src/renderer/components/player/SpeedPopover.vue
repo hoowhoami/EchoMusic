@@ -43,10 +43,10 @@ withDefaults(defineProps<Props>(), {
           player.playbackRate !== 1
             ? variant === 'lyric'
               ? 'text-black dark:text-white hover:scale-110 active:scale-90'
-              : 'text-primary hover:scale-110 active:scale-90'
+              : 'text-primary-text hover:scale-110 active:scale-90'
             : variant === 'lyric'
               ? 'text-black/40 dark:text-white/40 hover:scale-110 active:scale-90'
-              : 'text-text-main/50 hover:text-primary hover:scale-110 active:scale-90'
+              : 'text-text-main/50 hover:text-primary-text hover:scale-110 active:scale-90'
         "
         title="倍速播放"
       >

@@ -36,7 +36,7 @@ const romanizationStyle = computed<RomanizationStyle>({
 <template>
   <SettingsSectionShell id="pageLyric" :title="sectionTitles.pageLyric.label">
     <template #icon>
-      <PageLyricIcon :size="20" class="text-primary" />
+      <PageLyricIcon :size="20" class="text-primary-text" />
     </template>
 
     <div class="settings-item">

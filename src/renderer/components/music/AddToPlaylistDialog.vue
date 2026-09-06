@@ -174,7 +174,7 @@ const orderedPlaylists = computed(() => {
 
 .add-to-item:hover {
   border-color: var(--color-primary);
-  color: var(--color-primary);
+  color: var(--color-primary-text);
 }
 
 .add-to-skeleton {

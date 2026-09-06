@@ -1009,7 +1009,7 @@ const findSectionElement = (id: string) => {
 }
 
 .settings-anchor-item.is-active {
-  @apply text-primary font-semibold;
+  @apply text-primary-text font-semibold;
 }
 
 .settings-anchor-indicator {
@@ -1045,7 +1045,7 @@ const findSectionElement = (id: string) => {
 }
 
 .settings-empty-clear {
-  @apply text-[12px] font-semibold text-primary hover:opacity-80 transition-opacity cursor-pointer;
+  @apply text-[12px] font-semibold text-primary-text hover:opacity-80 transition-opacity cursor-pointer;
 }
 
 .settings-section {
@@ -1154,7 +1154,7 @@ const findSectionElement = (id: string) => {
 }
 
 .shortcut-reset-btn {
-  @apply text-[11px] font-semibold text-text-secondary hover:text-primary transition-colors cursor-pointer whitespace-nowrap;
+  @apply text-[11px] font-semibold text-text-secondary hover:text-primary-text transition-colors cursor-pointer whitespace-nowrap;
 }
 
 .shortcut-input {
@@ -1168,7 +1168,7 @@ const findSectionElement = (id: string) => {
 }
 
 .shortcut-input.recording {
-  @apply border-primary bg-primary/5 text-primary;
+  @apply border-primary bg-primary/5 text-primary-text;
 }
 
 .shortcut-input-disabled {
@@ -1176,7 +1176,7 @@ const findSectionElement = (id: string) => {
 }
 
 .settings-back-to-top {
-  @apply absolute bottom-4 right-6 w-11 h-11 rounded-full backdrop-blur-sm border flex items-center justify-center text-text-secondary hover:text-primary hover:border-primary/60 transition-all duration-300 cursor-pointer shadow-lg shadow-black/5 z-50;
+  @apply absolute bottom-4 right-6 w-11 h-11 rounded-full backdrop-blur-sm border flex items-center justify-center text-text-secondary hover:text-primary-text hover:border-primary/60 transition-all duration-300 cursor-pointer shadow-lg shadow-black/5 z-50;
   background: var(--color-bg-elevated);
   border-color: var(--border-subtle);
   opacity: 0;
@@ -1268,7 +1268,7 @@ const findSectionElement = (id: string) => {
 }
 
 .changelog-content :deep(a) {
-  @apply text-primary hover:underline;
+  @apply text-primary-text hover:underline;
 }
 
 .changelog-content :deep(code) {

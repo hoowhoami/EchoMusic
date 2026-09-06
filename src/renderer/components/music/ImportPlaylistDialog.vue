@@ -570,7 +570,12 @@ const itemStatusLabel = (status: ImportItemResult['status']) => {
     <template #title>
       <div class="flex items-center justify-between gap-3 w-full pr-8">
         <div class="flex items-center gap-2 min-w-0">
-          <Icon :icon="iconExternalLink" width="18" height="18" class="text-primary shrink-0" />
+          <Icon
+            :icon="iconExternalLink"
+            width="18"
+            height="18"
+            class="text-primary-text shrink-0"
+          />
           <span class="truncate">导入外部歌单</span>
         </div>
         <div class="import-stepper">
@@ -690,7 +695,7 @@ const itemStatusLabel = (status: ImportItemResult['status']) => {
           :icon="iconRefreshCw"
           width="14"
           height="14"
-          class="text-primary animate-spin"
+          class="text-primary-text animate-spin"
         />
       </div>
       <div class="import-progress-bar">
@@ -872,7 +877,7 @@ const itemStatusLabel = (status: ImportItemResult['status']) => {
 
 .import-mode-card:hover,
 .import-mode-card.is-active {
-  color: var(--color-primary);
+  color: var(--color-primary-text);
   border-color: color-mix(in srgb, var(--color-primary) 50%, var(--control-border));
   background: color-mix(in srgb, var(--color-primary) 9%, transparent);
 }
@@ -910,7 +915,7 @@ const itemStatusLabel = (status: ImportItemResult['status']) => {
 }
 
 .import-dropzone:hover {
-  color: var(--color-primary);
+  color: var(--color-primary-text);
   background: color-mix(in srgb, var(--color-primary) 7%, transparent);
 }
 
@@ -941,7 +946,7 @@ const itemStatusLabel = (status: ImportItemResult['status']) => {
 }
 
 .import-target-tabs button.is-active {
-  color: var(--color-primary);
+  color: var(--color-primary-text);
   background: var(--control-bg);
   box-shadow: 0 1px 3px color-mix(in srgb, var(--color-text-main) 10%, transparent);
 }
@@ -981,7 +986,7 @@ const itemStatusLabel = (status: ImportItemResult['status']) => {
 }
 
 .import-step-pill.is-active {
-  color: var(--color-primary);
+  color: var(--color-primary-text);
   background: color-mix(in srgb, var(--color-primary) 16%, transparent);
 }
 

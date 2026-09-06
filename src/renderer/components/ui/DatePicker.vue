@@ -279,7 +279,7 @@ const nextYear = (date: DateValue) => date.add({ years: 1 });
 }
 
 .echo-date-picker-segment:focus {
-  color: var(--color-primary);
+  color: var(--color-primary-text);
   background: rgba(var(--color-primary-rgb), 0.12);
 }
 
@@ -425,7 +425,7 @@ const nextYear = (date: DateValue) => date.add({ years: 1 });
 }
 
 .echo-date-picker-day[data-today] {
-  color: var(--color-primary);
+  color: var(--color-primary-text);
   background: color-mix(in srgb, var(--color-primary) 16%, transparent);
   box-shadow: inset 0 0 0 1px rgba(var(--color-primary-rgb), 0.6);
 }
@@ -435,7 +435,7 @@ const nextYear = (date: DateValue) => date.add({ years: 1 });
 }
 
 .echo-date-picker-day[data-selected] {
-  color: #fff;
+  color: var(--color-on-primary);
   background: var(--color-primary);
   box-shadow: none;
 }

@@ -176,7 +176,7 @@ const openMiniPlayer = () => {
 .overlay-control-btn--mini:hover,
 :global(.dark) .overlay-control-btn--mini:hover {
   background: transparent;
-  color: var(--color-primary);
+  color: var(--color-primary-text);
   opacity: 1;
 }
 </style>

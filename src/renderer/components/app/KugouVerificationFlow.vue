@@ -603,7 +603,7 @@ onBeforeUnmount(resetTencentCaptcha);
   width: 58px;
   height: 58px;
   border-radius: 999px;
-  color: var(--color-primary);
+  color: var(--color-primary-text);
   background: color-mix(in srgb, var(--color-primary) 12%, transparent);
 }
 

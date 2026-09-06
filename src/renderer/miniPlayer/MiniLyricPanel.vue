@@ -582,7 +582,7 @@ onBeforeUnmount(() => {
 }
 
 .mini-lyric-line.active {
-  color: var(--color-primary);
+  color: var(--color-primary-text);
 }
 
 .mini-lyric-primary {
@@ -671,7 +671,7 @@ onBeforeUnmount(() => {
 }
 
 .mini-lyric-line.active .mini-lyric-secondary {
-  color: color-mix(in srgb, var(--color-primary) 74%, #1d1d1f);
+  color: color-mix(in srgb, var(--color-primary-text) 74%, #1d1d1f);
 }
 
 .mini-lyric-empty {
@@ -728,11 +728,11 @@ onBeforeUnmount(() => {
 }
 
 .mini-lyric.dark .mini-lyric-line.active {
-  color: var(--color-primary);
+  color: var(--color-primary-text);
 }
 
 .mini-lyric.dark .mini-lyric-line.active .mini-lyric-secondary {
-  color: color-mix(in srgb, var(--color-primary) 72%, #f5f5f7);
+  color: color-mix(in srgb, var(--color-primary-text) 72%, #f5f5f7);
 }
 
 .mini-lyric.dark .mini-lyric-empty {

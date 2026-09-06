@@ -259,7 +259,7 @@ const refresh = () => {
 }
 .plaza-refresh:hover {
   background: var(--control-muted-bg);
-  color: var(--color-primary);
+  color: var(--color-primary-text);
 }
 .plaza-refresh:disabled {
   opacity: 0.5;
@@ -286,7 +286,7 @@ const refresh = () => {
   cursor: pointer;
 }
 .plaza-tabs button.is-active {
-  color: var(--color-primary);
+  color: var(--color-primary-text);
   background: var(--color-bg-elevated);
   box-shadow: inset 0 0 0 1px var(--control-border);
 }
@@ -324,7 +324,7 @@ const refresh = () => {
 }
 .plaza-sorts button.is-active {
   background: color-mix(in srgb, var(--color-primary) 10%, transparent);
-  color: var(--color-primary);
+  color: var(--color-primary-text);
 }
 .plaza-back {
   display: flex;
@@ -333,7 +333,7 @@ const refresh = () => {
   padding: 2px 0;
   border: 0;
   background: transparent;
-  color: var(--color-primary);
+  color: var(--color-primary-text);
   font-size: 10px;
   cursor: pointer;
 }
@@ -390,7 +390,7 @@ const refresh = () => {
 }
 .brand-card svg {
   flex-shrink: 0;
-  color: var(--color-primary);
+  color: var(--color-primary-text);
 }
 .brand-card > span {
   display: flex;
@@ -437,7 +437,7 @@ const refresh = () => {
   border: 0;
   padding: 4px;
   background: transparent;
-  color: var(--color-primary);
+  color: var(--color-primary-text);
   cursor: pointer;
 }
 .plaza-more {
@@ -445,7 +445,7 @@ const refresh = () => {
   border: 0;
   border-radius: 7px;
   background: var(--control-muted-bg);
-  color: var(--color-primary);
+  color: var(--color-primary-text);
   font-size: 11px;
   cursor: pointer;
 }

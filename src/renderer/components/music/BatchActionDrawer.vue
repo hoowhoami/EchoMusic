@@ -28,6 +28,7 @@ interface Props {
   open?: boolean;
   songs: Song[];
   sourceId?: string | number;
+  itemKeyField?: string;
   /** 自定义批量删除回调。传入后优先使用，代替原有的歌单删除逻辑。 */
   onBatchRemove?: (
     songs: Song[],
@@ -40,6 +41,7 @@ interface Props {
 const props = withDefaults(defineProps<Props>(), {
   open: false,
   sourceId: '',
+  itemKeyField: 'id',
   removeContext: 'playlist',
 });
 
@@ -66,15 +68,29 @@ const batchOp = ref<BatchOpType>(null);
 const batchProgress = ref({ done: 0, total: 0 });
 const isBatchBusy = computed(() => batchOp.value !== null);
 
+const getSongSelectionKey = (song: Song, index: number): string => {
+  const value = (song as unknown as Record<string, unknown>)[props.itemKeyField];
+  if (value !== undefined && value !== null && String(value) !== '') {
+    return `${props.itemKeyField}:${String(value)}`;
+  }
+  return `index:${index}`;
+};
+
+const songSelectionKeys = computed(() =>
+  props.songs.map((song, index) => getSongSelectionKey(song, index)),
+);
+
 const selectedSongs = computed(() =>
-  props.songs.filter((song) => selectedKeys.value.has(String(song.id))),
+  props.songs.filter((song, index) => selectedKeys.value.has(getSongSelectionKey(song, index))),
 );
 
 const isAllSelected = computed(
-  () => props.songs.length > 0 && selectedKeys.value.size === props.songs.length,
+  () =>
+    songSelectionKeys.value.length > 0 &&
+    songSelectionKeys.value.every((key) => selectedKeys.value.has(key)),
 );
 
-const isIndeterminate = computed(() => selectedKeys.value.size > 0 && !isAllSelected.value);
+const isIndeterminate = computed(() => selectedSongs.value.length > 0 && !isAllSelected.value);
 
 type CheckboxState = boolean | 'indeterminate';
 
@@ -89,11 +105,11 @@ const toggleSelectAll = () => {
     selectedKeys.value = new Set();
     return;
   }
-  selectedKeys.value = new Set(props.songs.map((song) => String(song.id)));
+  selectedKeys.value = new Set(songSelectionKeys.value);
 };
 
-const toggleSong = (song: Song) => {
-  const key = String(song.id);
+const toggleSong = (song: Song, index: number) => {
+  const key = getSongSelectionKey(song, index);
   const next = new Set(selectedKeys.value);
   if (next.has(key)) {
     next.delete(key);
@@ -103,8 +119,8 @@ const toggleSong = (song: Song) => {
   selectedKeys.value = next;
 };
 
-const setSongChecked = (song: Song, value: CheckboxState) => {
-  const key = String(song.id);
+const setSongChecked = (song: Song, index: number, value: CheckboxState) => {
+  const key = getSongSelectionKey(song, index);
   const next = new Set(selectedKeys.value);
   if (value === true) {
     next.add(key);
@@ -219,12 +235,12 @@ const removeDialogTitle = computed(() => {
 
 const removeDialogDescription = computed(() => {
   if (props.removeContext === 'history') {
-    return `确认从播放历史移除选中的 ${selectedKeys.value.size} 首歌曲？此操作无法撤销。`;
+    return `确认从播放历史移除选中的 ${selectedSongs.value.length} 首歌曲？此操作无法撤销。`;
   }
   if (props.removeContext === 'cloud') {
-    return `确认从云盘删除选中的 ${selectedKeys.value.size} 首歌曲？此操作无法撤销。`;
+    return `确认从云盘删除选中的 ${selectedSongs.value.length} 首歌曲？此操作无法撤销。`;
   }
-  return `确认从当前歌单移除选中的 ${selectedKeys.value.size} 首歌曲？此操作无法撤销。`;
+  return `确认从当前歌单移除选中的 ${selectedSongs.value.length} 首歌曲？此操作无法撤销。`;
 });
 
 const removeConfirmText = computed(() =>
@@ -474,7 +490,7 @@ const confirmRemoveFromPlaylist = async () => {
         </span>
         全选
       </Button>
-      <div class="batch-count">已选 {{ selectedKeys.size }} / {{ songs.length }}</div>
+      <div class="batch-count">已选 {{ selectedSongs.length }} / {{ songs.length }}</div>
     </div>
 
     <div class="batch-list">
@@ -490,17 +506,21 @@ const confirmRemoveFromPlaylist = async () => {
             <div :style="visibleBlockStyle">
               <div
                 v-for="entry in list"
-                :key="entry.data.id"
+                :key="getSongSelectionKey(entry.data, entry.index)"
                 class="batch-row"
-                :class="{ 'text-primary': selectedKeys.has(String(entry.data.id)) }"
+                :class="{
+                  'text-primary-text': selectedKeys.has(
+                    getSongSelectionKey(entry.data, entry.index),
+                  ),
+                }"
                 :style="{ height: `${itemHeight}px` }"
-                @click="toggleSong(entry.data)"
+                @click="toggleSong(entry.data, entry.index)"
               >
                 <div class="batch-leading" @click.stop>
                   <CheckboxRoot
                     class="batch-checkbox"
-                    :model-value="selectedKeys.has(String(entry.data.id))"
-                    @update:model-value="setSongChecked(entry.data, $event)"
+                    :model-value="selectedKeys.has(getSongSelectionKey(entry.data, entry.index))"
+                    @update:model-value="setSongChecked(entry.data, entry.index, $event)"
                   >
                     <CheckboxIndicator as-child>
                       <span class="batch-checkbox-indicator"></span>
@@ -608,7 +628,7 @@ const confirmRemoveFromPlaylist = async () => {
 
 .batch-action:hover {
   transform: scale(1.02);
-  color: var(--color-primary);
+  color: var(--color-primary-text);
   background: var(--control-hover-bg);
 }
 
@@ -699,7 +719,7 @@ const confirmRemoveFromPlaylist = async () => {
   contain: layout style paint;
 }
 
-.batch-row.text-primary {
+.batch-row.text-primary-text {
   background: var(--row-selected-bg);
 }
 

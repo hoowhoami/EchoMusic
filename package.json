@@ -27,7 +27,6 @@
     "@vueuse/core": "^14.3.0",
     "axios": "^1.18.0",
     "dompurify": "^3.4.11",
-    "electron-audio-loopback": "^1.0.6",
     "electron-log": "^5.4.4",
     "electron-updater": "^6.8.9",
     "font-list": "^2.1.0",
@@ -113,6 +112,13 @@
         ]
       },
       {
+        "from": "native/echo-audio-capture/echo-audio-capture.node",
+        "to": "native/echo-audio-capture.node",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
         "from": "native/echo-sqlite-store/echo-sqlite-store.node",
         "to": "native/echo-sqlite-store.node",
         "filter": [
@@ -168,6 +174,13 @@
     "mac": {
       "icon": "icons/icon.icns",
       "category": "public.app-category.music",
+      "hardenedRuntime": true,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.inherit.plist",
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "EchoMusic 需要访问麦克风以识别正在播放的歌曲",
+        "NSAudioCaptureUsageDescription": "EchoMusic 需要捕获系统音频以识别正在播放的歌曲"
+      },
       "target": [
         "zip",
         "dmg"

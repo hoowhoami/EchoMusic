@@ -29,9 +29,6 @@ importers:
       dompurify:
         specifier: ^3.4.11
         version: 3.4.11
-      electron-audio-loopback:
-        specifier: ^1.0.6
-        version: 1.0.6(electron@43.6.0)
       electron-log:
         specifier: ^5.4.4
         version: 5.4.4
@@ -1862,11 +1859,6 @@ packages:
     resolution: {integrity: sha512-UeJmFfOrAQS8OJWPZ4qtgHyWExa088/MtK5UEyoJGFH67cDEXkZSviOiKRCZ4Xij0zxI3JECgYs3oKx+AizQBA==}
     engines: {node: '>=0.10.0'}
     hasBin: true
-
-  electron-audio-loopback@1.0.6:
-    resolution: {integrity: sha512-QW0ogDqMpWHDAQHmQyssJ+Yh4qR3kWCP3Q4H9WuIXKwVlgkqOYGyt0v/JzbK3tBNTwfqbuHZy86kwCCajxqAdg==}
-    peerDependencies:
-      electron: '>=31.0.1'
 
   electron-builder-squirrel-windows@26.8.1:
     resolution: {integrity: sha512-o288fIdgPLHA76eDrFADHPoo7VyGkDCYbLV1GzndaMSAVBoZrGvM9m2IehdcVMzdAZJ2eV9bgyissQXHv5tGzA==}
@@ -5369,10 +5361,6 @@ snapshots:
   ejs@3.1.10:
     dependencies:
       jake: 10.9.4
-
-  electron-audio-loopback@1.0.6(electron@43.6.0):
-    dependencies:
-      electron: 43.6.0
 
   electron-builder-squirrel-windows@26.8.1(dmg-builder@26.8.1):
     dependencies:

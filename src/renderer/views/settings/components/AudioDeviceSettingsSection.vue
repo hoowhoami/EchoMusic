@@ -31,20 +31,14 @@ const currentOutputDeviceLabel = computed(() => {
 
 async function fetchInputDevices() {
   try {
-    const devices = await navigator.mediaDevices.enumerateDevices();
-    const audioInputs = devices.filter((d) => d.kind === 'audioinput');
+    const devices = await window.electron.recognize.listInputDevices();
     inputDeviceOptions.value = [
       { label: '系统默认', value: 'default' },
-      ...audioInputs
-        .filter((d) => d.deviceId && d.deviceId !== 'default')
-        .map((d) => ({
-          label: d.label || `麦克风 (${d.deviceId.slice(0, 6)})`,
-          value: d.deviceId,
-        })),
+      ...devices.map((device) => ({
+        label: device.name || `麦克风 (${device.id.slice(0, 6)})`,
+        value: device.id,
+      })),
     ];
-    if (!inputDeviceOptions.value.some((d) => d.value === settingStore.inputDevice)) {
-      settingStore.inputDevice = 'default';
-    }
   } catch {
     inputDeviceOptions.value = [{ label: '系统默认', value: 'default' }];
   }
@@ -83,9 +77,9 @@ onMounted(() => {
         :icon="sectionTitles.audioDevice.icon"
         width="20"
         height="20"
-        class="text-primary"
+        class="text-primary-text"
       />
-      <FontIcon v-else :size="20" class="text-primary" />
+      <FontIcon v-else :size="20" class="text-primary-text" />
     </template>
 
     <div class="settings-item">

@@ -44,7 +44,7 @@
   justify-content: center;
   border-radius: 8px;
   background: color-mix(in srgb, var(--color-primary) 12%, transparent);
-  color: var(--color-primary);
+  color: var(--color-primary-text);
 }
 
 .plugin-local-install-panel strong {
@@ -71,7 +71,7 @@
   justify-content: center;
   border-radius: 8px;
   background: var(--color-primary);
-  color: white;
+  color: var(--color-on-primary);
 }
 
 .plugin-safe-mode-control {
@@ -142,7 +142,7 @@
 }
 
 .plugin-view-tab.is-active {
-  color: var(--color-primary);
+  color: var(--color-primary-text);
   background: color-mix(in srgb, var(--color-primary) 12%, var(--color-bg-elevated));
   box-shadow:
     0 1px 2px rgba(0, 0, 0, 0.06),
@@ -377,7 +377,7 @@
 }
 
 .plugin-status-badge.is-active {
-  @apply text-primary bg-primary/10;
+  @apply text-primary-text bg-primary/10;
 }
 
 .plugin-status-badge.is-error {
@@ -510,7 +510,7 @@
 
 .plugin-feature-tags span {
   background: color-mix(in srgb, var(--color-primary) 10%, var(--control-muted-bg));
-  color: color-mix(in srgb, var(--color-primary) 78%, var(--color-text-main));
+  color: color-mix(in srgb, var(--color-primary-text) 78%, var(--color-text-main));
 }
 
 .marketplace-stats {
@@ -540,7 +540,7 @@
 
 .marketplace-stat-item svg {
   flex: 0 0 auto;
-  color: color-mix(in srgb, var(--color-primary) 72%, var(--color-text-secondary));
+  color: color-mix(in srgb, var(--color-primary-text) 72%, var(--color-text-secondary));
 }
 
 .marketplace-install-btn {
@@ -605,7 +605,7 @@
 }
 
 .plugin-settings-btn {
-  @apply text-text-main hover:text-primary;
+  @apply text-text-main hover:text-primary-text;
   gap: 0.25rem;
 }
 
@@ -614,7 +614,7 @@
 }
 
 .plugin-remove-btn {
-  @apply text-primary hover:text-primary-hover;
+  @apply text-primary-text hover:text-primary-hover;
 }
 
 .plugin-card.is-error .plugin-remove-btn {
@@ -687,7 +687,7 @@
   padding: 0 0.375rem;
   border-radius: 6px;
   background: color-mix(in srgb, var(--color-primary) 12%, transparent);
-  color: var(--color-primary);
+  color: var(--color-primary-text);
   font-size: 0.6875rem;
   font-weight: 800;
 }

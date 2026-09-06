@@ -59,6 +59,7 @@
 - **Audio Engine**: FFmpeg 解码 + SoundTouch 变速处理 + 原生音频输出（通过 Rust NAPI addon 进程内嵌入）
 - **Native Addons**: [napi-rs](https://napi.rs/)（Rust 编写的原生扩展）
   - `echo-ffmpeg-player`：播放引擎封装，使用 vendored `ffmpeg-audio` 与 `soundtouch-rs`，支持淡入淡出、音效引擎、音量均衡、倍速播放、输出设备切换、独占输出与实时频谱分析
+  - `echo-audio-capture`：跨平台系统输出与麦克风输入采集，提供设备选择、连续缓冲、快照和可配置 PCM 格式转换能力，用于听歌识曲等功能
   - `echo-media-controls`：系统媒体控制集成（macOS/Windows/Linux 原生 API）
   - `echo-sqlite-store`：SQLite 本地持久化存储，负责设置、播放队列与状态快照
 

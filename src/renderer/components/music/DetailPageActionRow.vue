@@ -93,7 +93,7 @@ const emit = defineEmits<{
 }
 
 .action-btn.primary {
-  @apply bg-primary text-white hover:bg-primary-hover;
+  @apply bg-primary text-on-primary hover:bg-primary-hover;
 }
 
 .action-btn.secondary.favorite {

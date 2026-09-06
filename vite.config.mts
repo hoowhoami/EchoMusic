@@ -65,8 +65,8 @@ export default defineConfig({
               external: [
                 'electron',
                 'font-list',
-                'electron-audio-loopback',
                 'music-metadata',
+                '../../native/echo-audio-capture',
                 '../../native/echo-media-controls',
                 '../../native/echo-ffmpeg-player',
                 '../../native/echo-sqlite-store',

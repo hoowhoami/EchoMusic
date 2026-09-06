@@ -204,26 +204,31 @@ const handleInteractOutside = (event: Event) => {
 
 :global(.dialog-overlay[data-state='open']) {
   opacity: 1;
-  animation: dialog-overlay-in 160ms ease-out both;
+  animation: dialog-overlay-in 160ms ease-out;
   -webkit-app-region: no-drag;
 }
 
 :global(.dialog-overlay[data-state='closed']) {
   opacity: 0;
-  animation: dialog-overlay-out 140ms ease-in both;
+  animation: dialog-overlay-out 140ms ease-in;
 }
 
 :global(.dialog-content) {
-  @apply fixed left-1/2 top-[46%] w-[420px] max-w-[92vw] rounded-2xl border flex flex-col select-none;
+  @apply fixed w-[420px] max-w-[92vw] rounded-2xl border flex flex-col select-none;
   @apply max-h-[calc(100vh-240px)];
+  /*
+   * 用自动外边距将弹窗放在可视区 46% 高度，避免百分比 translate 产生半物理像素。
+   * 内容层只做透明度动画，不缩放整棵文字内容树，防止 Windows 高 DPI 下合成层重采样发虚。
+   */
+  inset: 0 0 8vh;
+  height: fit-content;
+  margin: auto;
   background: var(--color-bg-dialog);
   border-color: var(--border-subtle);
   box-shadow: var(--shadow-dialog);
   /* 右侧留白由标题、正文和页脚承担；滚动区延伸到边缘，滑块右侧间距统一由 Scrollbar 控制。 */
   padding: 24px 0 24px 24px;
   opacity: 0;
-  transform: translate(-50%, -50%) scale(0.98);
-  will-change: transform, opacity;
 }
 
 :global(.dialog-overlay[data-dialog-stack-interactive='false']),
@@ -233,15 +238,13 @@ const handleInteractOutside = (event: Event) => {
 
 :global(.dialog-content[data-state='open']) {
   opacity: 1;
-  transform: translate(-50%, -50%) scale(1);
-  animation: dialog-content-in 180ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: dialog-content-in 180ms cubic-bezier(0.16, 1, 0.3, 1);
   -webkit-app-region: no-drag;
 }
 
 :global(.dialog-content[data-state='closed']) {
   opacity: 0;
-  transform: translate(-50%, -50%) scale(0.98);
-  animation: dialog-content-out 140ms cubic-bezier(0.4, 0, 1, 1) both;
+  animation: dialog-content-out 140ms cubic-bezier(0.4, 0, 1, 1);
 }
 
 @keyframes dialog-overlay-in {
@@ -265,22 +268,18 @@ const handleInteractOutside = (event: Event) => {
 @keyframes dialog-content-in {
   from {
     opacity: 0;
-    transform: translate(-50%, -50%) scale(0.98);
   }
   to {
     opacity: 1;
-    transform: translate(-50%, -50%) scale(1);
   }
 }
 
 @keyframes dialog-content-out {
   from {
     opacity: 1;
-    transform: translate(-50%, -50%) scale(1);
   }
   to {
     opacity: 0;
-    transform: translate(-50%, -50%) scale(0.98);
   }
 }
 

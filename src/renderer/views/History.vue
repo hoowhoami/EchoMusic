@@ -639,7 +639,7 @@ onUnmounted(() => {
               size="none"
               :disabled="songCount === 0"
               @click="handlePlayAll"
-              class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] text-primary"
+              class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] text-primary-text"
             >
               <Icon :icon="iconPlay" width="20" height="20" />
             </Button>
@@ -671,6 +671,7 @@ onUnmounted(() => {
       <BatchActionDrawer
         v-model:open="showBatchDrawer"
         :songs="songs"
+        item-key-field="historyKey"
         source-id="history"
         remove-context="history"
         :on-batch-remove="handleBatchRemove"
@@ -758,7 +759,7 @@ onUnmounted(() => {
               class="history-empty flex flex-col items-center justify-center py-24 text-center"
             >
               <div
-                class="w-16 h-16 rounded-[18px] bg-primary/10 text-primary flex items-center justify-center mb-4"
+                class="w-16 h-16 rounded-[18px] bg-primary/10 text-primary-text flex items-center justify-center mb-4"
               >
                 <Icon :icon="iconClock" width="28" height="28" />
               </div>
@@ -772,7 +773,7 @@ onUnmounted(() => {
               class="history-empty flex flex-col items-center justify-center py-24 text-center"
             >
               <div
-                class="w-16 h-16 rounded-[18px] bg-primary/10 text-primary flex items-center justify-center mb-4"
+                class="w-16 h-16 rounded-[18px] bg-primary/10 text-primary-text flex items-center justify-center mb-4"
               >
                 <Icon :icon="iconSearch" width="28" height="28" />
               </div>
@@ -896,7 +897,7 @@ onUnmounted(() => {
                       <div class="history-panel-title">常听歌手</div>
                       <div class="history-panel-subtitle">按本地累计播放次数排序</div>
                     </div>
-                    <Icon class="text-primary/75" :icon="iconMusic" width="18" height="18" />
+                    <Icon class="text-primary-text/75" :icon="iconMusic" width="18" height="18" />
                   </div>
                   <div class="history-rank-list">
                     <div
@@ -1055,7 +1056,7 @@ onUnmounted(() => {
 }
 
 .history-stat-card-icon[data-tone='primary'] {
-  color: var(--color-primary);
+  color: var(--color-primary-text);
   background: color-mix(in srgb, var(--color-primary) 14%, transparent);
 }
 

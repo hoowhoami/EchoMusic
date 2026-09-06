@@ -238,7 +238,10 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="player-bar-container w-full px-2 pb-1.25 z-1000" data-toast-anchor="main-player">
+  <div
+    class="player-bar-container w-full shrink-0 px-2 pb-1.25 z-1000"
+    data-toast-anchor="main-player"
+  >
     <footer
       class="player-bar w-full h-21 border rounded-xl flex items-center justify-between px-3 py-1 gap-3 select-none no-drag transition-all duration-300"
     >
@@ -272,22 +275,22 @@ onUnmounted(() => {
               @mouseenter="handleSongInfoHover"
             >
               <span
-                class="text-[14px] font-bold text-primary cursor-pointer transition-colors"
-                :class="{ 'hover:text-primary/80': isCurrentAlbumClickable }"
+                class="text-[14px] font-bold text-primary-text cursor-pointer transition-colors"
+                :class="{ 'hover:text-primary-text/80': isCurrentAlbumClickable }"
                 :title="isCurrentAlbumClickable ? '查看专辑' : ''"
                 @click="goToCurrentAlbum"
               >
                 {{ currentTrack ? currentTrack.name : '未在播放' }}
               </span>
-              <span v-if="currentTrack" class="text-[14px] text-primary/60 mx-0.5">-</span>
+              <span v-if="currentTrack" class="text-[14px] text-primary-text/60 mx-0.5">-</span>
               <div v-if="currentTrack" class="flex items-center">
                 <template v-for="(artist, index) in artistList" :key="index">
                   <span
                     class="text-[13px] transition-colors"
                     :class="
                       isArtistClickable(artist)
-                        ? 'text-primary/70 hover:text-primary cursor-pointer'
-                        : 'text-primary/70'
+                        ? 'text-primary-text/70 hover:text-primary-text cursor-pointer'
+                        : 'text-primary-text/70'
                     "
                     @click="isArtistClickable(artist) && goToArtist(artist)"
                   >
@@ -319,7 +322,7 @@ onUnmounted(() => {
               variant="unstyled"
               size="none"
               @click="handleOpenAddToPlaylist"
-              class="p-0.5 text-text-main/25 hover:text-primary transition-all hover:scale-110"
+              class="p-0.5 text-text-main/25 hover:text-primary-text transition-all hover:scale-110"
               title="添加到"
             >
               <Icon :icon="iconPlaylistAdd" width="20" height="20" />
@@ -329,7 +332,7 @@ onUnmounted(() => {
               variant="unstyled"
               size="none"
               @click="goToComments"
-              class="p-0.5 text-text-main/25 hover:text-primary transition-all hover:scale-110"
+              class="p-0.5 text-text-main/25 hover:text-primary-text transition-all hover:scale-110"
               title="详情及评论"
             >
               <Icon :icon="iconMessageCircle" width="20" height="20" />
@@ -340,13 +343,17 @@ onUnmounted(() => {
               variant="unstyled"
               size="none"
               @click="goToMv"
-              class="p-0.5 text-text-main/25 hover:text-primary transition-all hover:scale-110"
+              class="p-0.5 text-text-main/25 hover:text-primary-text transition-all hover:scale-110"
               title="播放 MV"
             >
               <MvIcon class="w-5 h-5" />
             </Button>
 
-            <div v-if="currentTrack?.source === 'cloud'" class="text-primary/60" title="云盘歌曲">
+            <div
+              v-if="currentTrack?.source === 'cloud'"
+              class="text-primary-text/60"
+              title="云盘歌曲"
+            >
               <Icon :icon="iconCloud" width="20" height="20" />
             </div>
 
@@ -405,7 +412,7 @@ onUnmounted(() => {
                           : 'sequential',
                   )
                 "
-                class="p-2 text-text-main/50 hover:text-primary transition-all hover:scale-110 active:scale-90"
+                class="p-2 text-text-main/50 hover:text-primary-text transition-all hover:scale-110 active:scale-90"
               >
                 <Icon
                   v-if="player.playMode === 'sequential'"
@@ -435,7 +442,7 @@ onUnmounted(() => {
             size="none"
             @click="player.prev"
             :class="[
-              'p-2 text-text-main/60 hover:text-primary transition-all hover:scale-110 active:scale-90',
+              'p-2 text-text-main/60 hover:text-primary-text transition-all hover:scale-110 active:scale-90',
               { 'player-step-busy': isPlaybackLoading },
             ]"
           >
@@ -447,7 +454,7 @@ onUnmounted(() => {
             size="none"
             @click="player.togglePlay"
             :class="[
-              'player-toggle w-9.5 h-9.5 rounded-full flex items-center justify-center hover:scale-110 hover:text-primary active:scale-95 transition-all border',
+              'player-toggle w-9.5 h-9.5 rounded-full flex items-center justify-center hover:scale-110 hover:text-primary-text active:scale-95 transition-all border',
               { 'is-loading': isPlaybackLoading },
             ]"
             :aria-busy="isPlaybackLoading"
@@ -468,7 +475,7 @@ onUnmounted(() => {
             size="none"
             @click="player.next"
             :class="[
-              'p-2 text-text-main/60 hover:text-primary transition-all hover:scale-110 active:scale-90',
+              'p-2 text-text-main/60 hover:text-primary-text transition-all hover:scale-110 active:scale-90',
               { 'player-step-busy': isPlaybackLoading },
             ]"
           >
@@ -543,7 +550,7 @@ onUnmounted(() => {
           v-if="canShareCurrentTrack"
           variant="unstyled"
           size="none"
-          class="p-2 text-text-main/50 hover:text-primary transition-all hover:scale-110 active:scale-90"
+          class="p-2 text-text-main/50 hover:text-primary-text transition-all hover:scale-110 active:scale-90"
           title="分享"
           @click="handleShareCurrentTrack"
         >
@@ -561,8 +568,8 @@ onUnmounted(() => {
             class="p-2 transition-all hover:scale-110 active:scale-90"
             :class="
               desktopLyricStore.settings.enabled
-                ? 'text-primary'
-                : 'text-text-main/50 hover:text-primary'
+                ? 'text-primary-text'
+                : 'text-text-main/50 hover:text-primary-text'
             "
             :title="desktopLyricStore.settings.enabled ? '关闭桌面歌词' : '开启桌面歌词'"
             @click="toggleDesktopLyric"
@@ -581,7 +588,7 @@ onUnmounted(() => {
           <Button
             variant="unstyled"
             size="none"
-            class="p-2 text-text-main/50 hover:text-primary transition-all hover:scale-110 active:scale-90"
+            class="p-2 text-text-main/50 hover:text-primary-text transition-all hover:scale-110 active:scale-90"
             title="播放队列"
             @click="openQueue"
           >
@@ -731,7 +738,7 @@ onUnmounted(() => {
 }
 
 .player-toggle.is-loading {
-  color: var(--color-primary);
+  color: var(--color-primary-text);
 }
 
 .player-toggle-spinner {

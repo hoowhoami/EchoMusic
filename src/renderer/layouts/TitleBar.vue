@@ -700,7 +700,7 @@ onUnmounted(() => {
 .mini-control-btn:hover,
 :global(.dark) .mini-control-btn:hover {
   background-color: transparent;
-  color: var(--color-primary);
+  color: var(--color-primary-text);
   opacity: 1;
 }
 
@@ -806,7 +806,7 @@ onUnmounted(() => {
   border-radius: 999px;
   font-size: 11px;
   font-weight: 600;
-  color: var(--color-primary);
+  color: var(--color-primary-text);
   background: color-mix(in srgb, var(--color-primary) 8%, transparent);
   transition: all 0.15s ease;
   white-space: nowrap;
@@ -857,7 +857,7 @@ onUnmounted(() => {
   padding: 6px 14px 4px;
   font-size: 10px;
   font-weight: 700;
-  color: var(--color-primary);
+  color: var(--color-primary-text);
   opacity: 0.7;
   letter-spacing: 0.3px;
   text-transform: uppercase;
@@ -880,7 +880,7 @@ onUnmounted(() => {
 
 .tb-suggest-item:hover {
   background: color-mix(in srgb, var(--color-primary) 8%, transparent);
-  color: var(--color-primary);
+  color: var(--color-primary-text);
 }
 
 :global(.dark) .tb-suggest-item:hover {
@@ -929,7 +929,7 @@ onUnmounted(() => {
 
 .task-item-icon {
   flex-shrink: 0;
-  color: var(--color-primary);
+  color: var(--color-primary-text);
   opacity: 0.8;
 }
 

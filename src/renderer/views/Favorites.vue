@@ -466,7 +466,7 @@ watch(
         class="flex flex-col items-center justify-center min-h-105 text-center px-6"
       >
         <div
-          class="w-18 h-18 rounded-3xl bg-primary/10 text-primary flex items-center justify-center mb-5"
+          class="w-18 h-18 rounded-3xl bg-primary/10 text-primary-text flex items-center justify-center mb-5"
         >
           <Icon :icon="iconHeart" width="32" height="32" />
         </div>
@@ -517,7 +517,7 @@ watch(
                 variant="unstyled"
                 size="none"
                 @click="handlePlayAll"
-                class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] text-primary"
+                class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] text-primary-text"
               >
                 <Icon :icon="iconPlay" width="20" height="20" />
               </Button>

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 defineOptions({ name: 'recognize-page' });
 
-import { ref, computed, onMounted, onUnmounted } from 'vue';
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import Button from '@/components/ui/Button.vue';
 import Cover from '@/components/ui/Cover.vue';
@@ -30,11 +30,12 @@ import { queueAndPlaySong } from '@/utils/playback';
 import { logger } from '@/utils/logger';
 import type { Song } from '@/models/song';
 import type { RecognizeMatch } from '@/utils/mappers';
-import type { RecognizeStatus } from '../../shared/recognize';
+import type {
+  RecognizeAudioSource,
+  RecognizeInputDevice,
+  RecognizeStatus,
+} from '../../shared/recognize';
 
-type AudioSource = 'mic' | 'system';
-
-const SAMPLE_RATE = 8000;
 const MAX_SECONDS = 10;
 
 const router = useRouter();
@@ -48,16 +49,18 @@ const showPlaylistDialog = ref(false);
 const isPlaylistLoading = ref(false);
 const pendingSong = ref<Song | null>(null);
 
-const audioSource = ref<AudioSource>('mic');
+const audioSource = ref<RecognizeAudioSource>('mic');
 const sourceMenuOpen = ref(false);
 const status = ref<RecognizeStatus>('idle');
 const matches = ref<RecognizeMatch[]>([]);
 const errorMsg = ref('');
 const recordingSeconds = ref(0);
 
-let mediaRecorder: MediaRecorder | null = null;
-let audioChunks: Blob[] = [];
 let recordingTimer: ReturnType<typeof setInterval> | null = null;
+let captureActive = false;
+let capturePending = false;
+let captureOperation = 0;
+let disposed = false;
 
 const isActive = computed(() => status.value === 'recording' || status.value === 'recognizing');
 
@@ -68,21 +71,14 @@ const micDevices = ref<{ label: string; value: string }[]>([
 
 async function fetchMicDevices() {
   try {
-    const devices = await navigator.mediaDevices.enumerateDevices();
-    const audioInputs = devices.filter((d) => d.kind === 'audioinput');
+    const devices = await window.electron.recognize.listInputDevices();
     micDevices.value = [
       { label: '系统默认', value: 'default' },
-      ...audioInputs
-        .filter((d) => d.deviceId && d.deviceId !== 'default')
-        .map((d) => ({
-          label: d.label || `麦克风 (${d.deviceId.slice(0, 6)})`,
-          value: d.deviceId,
-        })),
+      ...devices.map((device: RecognizeInputDevice) => ({
+        label: device.name || `麦克风 (${device.id.slice(0, 6)})`,
+        value: device.id,
+      })),
     ];
-    // 如果之前选择的设备已不存在，回退到默认
-    if (!micDevices.value.some((d) => d.value === settingStore.inputDevice)) {
-      settingStore.inputDevice = 'default';
-    }
   } catch {
     micDevices.value = [{ label: '系统默认', value: 'default' }];
   }
@@ -106,118 +102,161 @@ function distPercent(confidence: number): string {
   return `${Math.round(confidence * 100)}%`;
 }
 
-/** 解码录音并重采样为 8000Hz / 16bit / 单声道 PCM */
-async function decodeToPCM(blob: Blob): Promise<ArrayBuffer> {
-  const offlineCtx = new OfflineAudioContext(1, SAMPLE_RATE * MAX_SECONDS, SAMPLE_RATE);
-  const arrayBuffer = await blob.arrayBuffer();
-  const audioBuffer = await offlineCtx.decodeAudioData(arrayBuffer);
-  const float32 = audioBuffer.getChannelData(0);
-  const int16 = new Int16Array(float32.length);
-  for (let i = 0; i < float32.length; i++) {
-    const s = Math.max(-1, Math.min(1, float32[i]));
-    int16[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+async function submitRecognition(pcm: ArrayBuffer) {
+  status.value = 'recognizing';
+  try {
+    const results = await recognizeAudio(pcm);
+    if (disposed) return;
+    if (results.length > 0) {
+      matches.value = results;
+      status.value = 'success';
+    } else {
+      status.value = 'failed';
+      errorMsg.value = '未识别到歌曲，请靠近音源重试';
+    }
+  } catch (err) {
+    if (disposed) return;
+    status.value = 'failed';
+    errorMsg.value = '识别过程出错';
+    logger.error('Recognize', '识别过程出错', err);
   }
-  return int16.buffer;
 }
 
-async function recognizeStream(stream: MediaStream) {
-  audioChunks = [];
-  mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm;codecs=opus' });
-  mediaRecorder.ondataavailable = (e) => {
-    if (e.data.size > 0) audioChunks.push(e.data);
-  };
-  mediaRecorder.onstop = async () => {
-    stream.getTracks().forEach((t) => t.stop());
-    if (audioChunks.length === 0) {
-      status.value = 'failed';
-      errorMsg.value = '未录制到音频';
-      return;
-    }
-    status.value = 'recognizing';
-    try {
-      const blob = new Blob(audioChunks, { type: 'audio/webm' });
-      const pcm = await decodeToPCM(blob);
-      const results = await recognizeAudio(pcm);
-      if (results.length > 0) {
-        matches.value = results;
-        status.value = 'success';
-      } else {
-        status.value = 'failed';
-        errorMsg.value = '未识别到歌曲，请靠近音源重试';
-      }
-    } catch (err) {
-      status.value = 'failed';
-      errorMsg.value = '识别过程出错';
-      logger.error('Recognize', '识别过程出错', err);
-    }
-  };
-  mediaRecorder.start(500);
+function startRecordingTimer() {
   recordingTimer = setInterval(() => {
     recordingSeconds.value++;
-    if (recordingSeconds.value >= MAX_SECONDS) stopRecording();
+    if (recordingSeconds.value >= MAX_SECONDS) void stopRecording();
   }, 1000);
 }
 
-async function getMicStream(): Promise<MediaStream> {
-  const deviceId = settingStore.inputDevice !== 'default' ? settingStore.inputDevice : undefined;
-  return navigator.mediaDevices.getUserMedia({
-    audio: {
-      ...(deviceId ? { deviceId: { exact: deviceId } } : {}),
-      sampleRate: 44100,
-      channelCount: 1,
-      echoCancellation: false,
-      noiseSuppression: false,
-      autoGainControl: false,
-    },
-  });
-}
-
-async function getSystemAudioStream(): Promise<MediaStream> {
-  await window.electron.recognize.enableLoopback();
-  try {
-    const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
-    stream.getVideoTracks().forEach((t) => {
-      t.stop();
-      stream.removeTrack(t);
-    });
-    if (stream.getAudioTracks().length === 0) throw new Error('未获取到系统音频轨道');
-    return stream;
-  } finally {
-    await window.electron.recognize.disableLoopback();
+function describeCaptureError(error: unknown, source: RecognizeAudioSource): string {
+  const message = error instanceof Error ? error.message : String(error);
+  logger.error('Recognize', source === 'mic' ? '麦克风捕获失败' : '系统音频捕获失败', error);
+  const normalized = message.toLowerCase();
+  if (source === 'mic') {
+    if (
+      normalized.includes('permission') ||
+      normalized.includes('权限') ||
+      normalized.includes('denied')
+    ) {
+      return '没有麦克风权限，请在系统隐私设置中授权 EchoMusic';
+    }
+    if (normalized.includes('no default input device')) {
+      return '没有可用的默认麦克风';
+    }
+    if (
+      normalized.includes('input device is no longer available') ||
+      normalized.includes('invalid input device')
+    ) {
+      return '选择的麦克风已断开，请重新选择输入设备';
+    }
+    if (normalized.includes('no samples')) {
+      return '未录制到麦克风声音，请检查输入设备和系统音量';
+    }
+    if (normalized.includes('组件不可用') || normalized.includes('native addon')) {
+      return '原生音频采集组件不可用，请重新安装或更新 EchoMusic';
+    }
+    return '无法访问麦克风，请检查输入设备和系统权限';
   }
+  if (normalized.includes('permission') || normalized.includes('screen recording')) {
+    return '没有系统音频录制权限，请在系统隐私设置中授权 EchoMusic';
+  }
+  if (normalized.includes('no default output device')) {
+    return '没有可用的系统默认输出设备';
+  }
+  if (normalized.includes('too short')) {
+    return '录制时间过短，请重试';
+  }
+  if (normalized.includes('no samples')) {
+    return '未捕获到系统音频，请确认当前有声音正在播放';
+  }
+  if (normalized.includes('组件不可用') || normalized.includes('native addon')) {
+    return '系统音频捕获组件不可用，请重新安装或更新 EchoMusic';
+  }
+  return '无法捕获系统音频，请检查默认输出设备并关闭独占模式后重试';
 }
 
 async function startRecording() {
   if (isActive.value) return;
+  const operation = ++captureOperation;
+  const source = audioSource.value;
   status.value = 'recording';
   matches.value = [];
   errorMsg.value = '';
   recordingSeconds.value = 0;
+  capturePending = true;
   try {
-    const stream =
-      audioSource.value === 'mic' ? await getMicStream() : await getSystemAudioStream();
-    await recognizeStream(stream);
+    if (source === 'mic') {
+      await fetchMicDevices();
+    }
+    if (disposed || operation !== captureOperation) return;
+    const captureStatus = await window.electron.recognize.startAudioCapture({
+      source,
+      ...(source === 'mic' && settingStore.inputDevice !== 'default'
+        ? { deviceId: settingStore.inputDevice }
+        : {}),
+    });
+    if (disposed || operation !== captureOperation) return;
+    capturePending = false;
+    if (!captureStatus.running) {
+      throw new Error(captureStatus.error || 'audio capture failed to start');
+    }
+    captureActive = true;
+    startRecordingTimer();
   } catch (err) {
+    if (operation !== captureOperation || disposed) return;
+    capturePending = false;
     status.value = 'failed';
-    errorMsg.value =
-      audioSource.value === 'mic'
-        ? '无法访问麦克风，请检查权限设置'
-        : err instanceof Error
-          ? err.message
-          : '系统音频捕获失败';
+    errorMsg.value = describeCaptureError(err, source);
   }
 }
 
-function stopRecording() {
+function clearRecordingTimer() {
   if (recordingTimer) {
     clearInterval(recordingTimer);
     recordingTimer = null;
   }
-  if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
+}
+
+async function stopRecording() {
+  clearRecordingTimer();
+  if (capturePending) {
+    captureOperation++;
+    capturePending = false;
+    status.value = 'idle';
+    void window.electron.recognize.cancelAudioCapture();
+    return;
+  }
+  if (captureActive) {
+    captureActive = false;
+    status.value = 'recognizing';
+    try {
+      const bytes = await window.electron.recognize.stopAudioCapture();
+      const pcm = new Uint8Array(bytes).slice().buffer;
+      await submitRecognition(pcm);
+    } catch (error) {
+      if (disposed) return;
+      status.value = 'failed';
+      errorMsg.value = describeCaptureError(error, audioSource.value);
+    }
+  }
+}
+
+function cancelRecording() {
+  captureOperation++;
+  clearRecordingTimer();
+  const shouldCancelCapture = captureActive || capturePending;
+  captureActive = false;
+  capturePending = false;
+  if (shouldCancelCapture) {
+    void window.electron.recognize.cancelAudioCapture().catch((error) => {
+      logger.debug('Recognize', '取消原生音频捕获失败', error);
+    });
+  }
 }
 
 function resetAndRestart() {
-  stopRecording();
+  cancelRecording();
   status.value = 'idle';
   matches.value = [];
   errorMsg.value = '';
@@ -225,8 +264,8 @@ function resetAndRestart() {
 }
 
 function handleMainButton() {
-  if (status.value === 'recording') stopRecording();
-  else if (status.value !== 'recognizing') startRecording();
+  if (status.value === 'recording') void stopRecording();
+  else if (status.value !== 'recognizing') void startRecording();
 }
 
 function selectMicDevice(deviceId: string) {
@@ -311,14 +350,16 @@ async function handleSelectPlaylist(listId: string | number) {
 }
 
 onMounted(() => {
-  fetchMicDevices();
-  // 监听设备变化（插拔麦克风）
-  navigator.mediaDevices.addEventListener('devicechange', fetchMicDevices);
+  void fetchMicDevices();
+});
+
+watch(sourceMenuOpen, (open) => {
+  if (open && !isActive.value) void fetchMicDevices();
 });
 
 onUnmounted(() => {
-  stopRecording();
-  navigator.mediaDevices.removeEventListener('devicechange', fetchMicDevices);
+  disposed = true;
+  cancelRecording();
 });
 </script>
 
@@ -339,15 +380,6 @@ onUnmounted(() => {
               class="rec-match-item"
               @dblclick="handlePlay(match.song)"
             >
-              <div
-                class="rec-match-score"
-                :title="`匹配度 ${distPercent(match.confidence)}`"
-                :style="{ '--score': match.confidence }"
-              >
-                <span class="rec-match-score-num">{{ distPercent(match.confidence) }}</span>
-                <span class="rec-match-score-label">匹配度</span>
-              </div>
-
               <Cover
                 v-if="match.song.coverUrl"
                 :url="match.song.coverUrl"
@@ -365,6 +397,16 @@ onUnmounted(() => {
                   {{ match.song.artist }}
                   <template v-if="match.song.album"> · {{ match.song.album }}</template>
                 </div>
+              </div>
+
+              <div
+                class="rec-match-score"
+                :title="`匹配度 ${distPercent(match.confidence)}`"
+                :aria-label="`匹配度 ${distPercent(match.confidence)}`"
+                :style="{ '--score': match.confidence }"
+              >
+                <span class="rec-match-score-label">匹配度</span>
+                <span class="rec-match-score-num">{{ distPercent(match.confidence) }}</span>
               </div>
 
               <div class="rec-match-actions">
@@ -689,7 +731,7 @@ onUnmounted(() => {
     var(--color-primary),
     color-mix(in srgb, var(--color-primary) 80%, #6366f1)
   );
-  color: white;
+  color: var(--color-on-primary);
   border: none;
   cursor: pointer;
   transition: all 0.3s ease;
@@ -750,7 +792,7 @@ onUnmounted(() => {
 
 .rec-source-toggle:hover:not(:disabled) {
   border-color: var(--color-primary);
-  color: var(--color-primary);
+  color: var(--color-primary-text);
 }
 
 .rec-source-toggle:disabled {
@@ -818,7 +860,7 @@ onUnmounted(() => {
 }
 
 .rec-source-menu-item.is-active {
-  color: var(--color-primary);
+  color: var(--color-primary-text);
   background: color-mix(in srgb, var(--color-primary) 10%, transparent);
 }
 
@@ -864,7 +906,7 @@ onUnmounted(() => {
 }
 
 .rec-result-label {
-  @apply text-xs font-semibold text-primary/70 uppercase tracking-widest mb-4;
+  @apply text-xs font-semibold text-primary-text/70 uppercase tracking-widest mb-4;
   align-self: center;
   flex-shrink: 0;
 }
@@ -915,36 +957,38 @@ onUnmounted(() => {
   border-color: color-mix(in srgb, var(--color-primary) 25%, transparent);
 }
 
-/* 匹配度徽章（置于最前） */
+/* 匹配度：保持可读但弱于歌曲标题与主要操作。 */
 .rec-match-score {
   flex-shrink: 0;
-  width: 50px;
-  height: 50px;
-  border-radius: 12px;
-  display: flex;
-  flex-direction: column;
+  min-width: 76px;
+  padding: 6px 9px;
+  border-radius: 999px;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 1px;
-  background: color-mix(
-    in srgb,
-    var(--color-primary) calc(8% + var(--score, 0) * 16%),
-    transparent
-  );
-  color: var(--color-primary);
+  gap: 5px;
+  background: color-mix(in srgb, var(--color-primary) calc(4% + var(--score, 0) * 4%), transparent);
+  border: 1px solid
+    color-mix(in srgb, var(--color-primary) calc(10% + var(--score, 0) * 8%), transparent);
 }
 
 .rec-match-score-num {
-  font-size: 14px;
-  font-weight: 800;
+  order: 2;
+  color: var(--color-primary-text);
+  font-size: 12px;
+  font-weight: 750;
   line-height: 1;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
 }
 
 .rec-match-score-label {
-  font-size: 9px;
+  order: 1;
+  color: var(--color-text-secondary);
+  font-size: 10px;
   font-weight: 600;
-  opacity: 0.7;
-  transform: scale(0.92);
+  line-height: 1;
+  white-space: nowrap;
 }
 
 .rec-match-cover {
@@ -982,12 +1026,6 @@ onUnmounted(() => {
   align-items: center;
   gap: 4px;
   flex-shrink: 0;
-  opacity: 0;
-  transition: opacity 0.2s ease;
-}
-
-.rec-match-item:hover .rec-match-actions {
-  opacity: 1;
 }
 
 .rec-circle-btn {
@@ -1005,7 +1043,7 @@ onUnmounted(() => {
 }
 
 .rec-circle-primary {
-  color: var(--color-primary);
+  color: var(--color-primary-text);
   background: color-mix(in srgb, var(--color-primary) 12%, transparent);
 }
 
@@ -1055,7 +1093,7 @@ onUnmounted(() => {
 
 .rec-playlist-item:hover {
   border-color: var(--color-primary);
-  color: var(--color-primary);
+  color: var(--color-primary-text);
 }
 
 .rec-playlist-skeleton {
@@ -1088,7 +1126,7 @@ onUnmounted(() => {
 
 .rec-retry-btn:hover {
   border-color: var(--color-primary);
-  color: var(--color-primary);
+  color: var(--color-primary-text);
   background: color-mix(in srgb, var(--color-primary) 6%, transparent);
 }
 </style>

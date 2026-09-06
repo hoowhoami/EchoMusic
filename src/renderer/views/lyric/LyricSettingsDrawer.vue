@@ -711,6 +711,6 @@ const close = () => {
 }
 
 .reset-btn:hover {
-  color: var(--color-primary);
+  color: var(--color-primary-text);
 }
 </style>

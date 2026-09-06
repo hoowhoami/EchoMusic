@@ -696,7 +696,7 @@ onUnmounted(() => {
                       :icon="iconRefreshCw"
                       width="24"
                       height="24"
-                      class="animate-spin text-primary"
+                      class="animate-spin text-primary-text"
                     />
                   </div>
                   <div
@@ -710,7 +710,7 @@ onUnmounted(() => {
                       @click="loadQrCode"
                       variant="ghost"
                       size="xs"
-                      class="text-[13px] text-primary font-black hover:opacity-80"
+                      class="text-[13px] text-primary-text font-black hover:opacity-80"
                       >重新加载</Button
                     >
                   </div>
@@ -737,7 +737,7 @@ onUnmounted(() => {
                     }}
                   </span>
                   <button
-                    class="absolute right-0 w-7 h-7 rounded-full flex items-center justify-center text-text-main/40 hover:text-primary hover:bg-primary/10 transition-all active:scale-90"
+                    class="absolute right-0 w-7 h-7 rounded-full flex items-center justify-center text-text-main/40 hover:text-primary-text hover:bg-primary/10 transition-all active:scale-90"
                     :disabled="isLoadingQr"
                     @click="loadQrCode"
                   >
@@ -785,7 +785,7 @@ onUnmounted(() => {
                   <div class="mb-3 flex items-center justify-between px-1">
                     <span class="text-[13px] font-black">选择账号</span>
                     <button
-                      class="text-[12px] font-bold text-text-secondary hover:text-primary transition-colors"
+                      class="text-[12px] font-bold text-text-secondary hover:text-primary-text transition-colors"
                       :disabled="smsData.isSending"
                       @click="resetSmsAccountCandidates"
                     >
@@ -813,7 +813,7 @@ onUnmounted(() => {
                       </div>
                       <span
                         v-if="smsData.pendingUserid === account.userid"
-                        class="text-[11px] font-black text-primary"
+                        class="text-[11px] font-black text-primary-text"
                       >
                         登录中
                       </span>
@@ -1065,12 +1065,12 @@ onUnmounted(() => {
 }
 
 :deep(.login-method-trigger:hover) {
-  color: var(--color-primary);
+  color: var(--color-primary-text);
   background: color-mix(in srgb, var(--color-primary) 7%, transparent);
 }
 
 :deep(.login-method-trigger[data-state='active']) {
-  color: var(--color-primary);
+  color: var(--color-primary-text);
   border-color: color-mix(in srgb, var(--color-primary) 28%, transparent);
   background: color-mix(in srgb, var(--color-primary) 11%, transparent);
   transform: translateY(-1px);

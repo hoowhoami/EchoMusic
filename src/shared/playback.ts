@@ -4,6 +4,12 @@ export type PlaybackProgressBusyReason = 'seek' | 'buffering' | null;
 
 /** User volume percentage. 100 is the source level; values above 100 are not used by the UI. */
 export const DEFAULT_PLAYER_VOLUME = 50;
+export const MIN_PLAYER_VOLUME = 0;
+export const MAX_PLAYER_VOLUME = 100;
+
+/** Normalize a user-facing volume value to the shared 0–100 percentage scale. */
+export const normalizePlayerVolume = (value: number) =>
+  Math.min(MAX_PLAYER_VOLUME, Math.max(MIN_PLAYER_VOLUME, Number.isFinite(value) ? value : 0));
 
 const SEEK_TARGET_MATCH_TOLERANCE_SECS = 0.75;
 

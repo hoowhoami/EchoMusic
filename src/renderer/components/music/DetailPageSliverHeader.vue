@@ -247,7 +247,7 @@ onUnmounted(() => {
 .type-badge {
   @apply px-2 py-0.5 rounded-full text-[10px] font-bold tracking-[1.2px] uppercase;
   background-color: color-mix(in srgb, var(--color-primary) 8%, transparent);
-  color: var(--color-primary);
+  color: var(--color-primary-text);
   border: 0.5px solid color-mix(in srgb, var(--color-primary) 20%, transparent);
 }
 </style>

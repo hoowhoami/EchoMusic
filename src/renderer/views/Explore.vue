@@ -1007,7 +1007,7 @@ const filteredArtistCards = computed(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #ffffff;
+  color: var(--color-on-primary);
   border-radius: 8px;
   background: linear-gradient(
     135deg,
@@ -1091,12 +1091,12 @@ const filteredArtistCards = computed(() => {
 }
 
 .artist-letter-item:hover {
-  color: var(--color-primary);
+  color: var(--color-primary-text);
   background: color-mix(in srgb, var(--color-primary) 10%, transparent);
 }
 
 .artist-letter-item.is-active {
-  color: #fff;
+  color: var(--color-on-primary);
   background: var(--color-primary);
 }
 </style>

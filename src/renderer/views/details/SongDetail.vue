@@ -1294,7 +1294,7 @@ watch(total, (value) => {
         <template v-if="isMusicType" #collapsed-actions>
           <Button
             type="button"
-            class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] text-primary"
+            class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] text-primary-text"
             variant="unstyled"
             size="none"
             title="播放"
@@ -1659,7 +1659,7 @@ watch(total, (value) => {
   background: transparent;
   font-size: 13px;
   font-weight: 600;
-  color: var(--color-primary);
+  color: var(--color-primary-text);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1692,7 +1692,7 @@ watch(total, (value) => {
   max-width: min(360px, 100%);
   padding: 0;
   background: transparent;
-  color: var(--color-primary);
+  color: var(--color-primary-text);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1761,7 +1761,7 @@ watch(total, (value) => {
 }
 
 .comment-chip.is-active {
-  color: white;
+  color: var(--color-on-primary);
   border-color: transparent;
   background: var(--color-primary);
   box-shadow: none;
@@ -1872,7 +1872,7 @@ watch(total, (value) => {
   border-radius: 8px;
   font-size: 12px;
   font-weight: 600;
-  color: var(--color-primary);
+  color: var(--color-primary-text);
   background: color-mix(in srgb, var(--color-primary) 12%, transparent);
   border: 1px solid color-mix(in srgb, var(--color-primary) 24%, transparent);
 }
@@ -1958,7 +1958,7 @@ watch(total, (value) => {
   border-radius: 999px;
   font-size: 14px;
   font-weight: 700;
-  color: var(--color-primary);
+  color: var(--color-primary-text);
   background: color-mix(in srgb, var(--color-primary) 12%, transparent);
   border: 1px solid color-mix(in srgb, var(--color-primary) 22%, transparent);
   text-align: right;
@@ -2025,7 +2025,7 @@ watch(total, (value) => {
 .ranking-filter-rank {
   font-size: 13px;
   font-weight: 700;
-  color: var(--color-primary);
+  color: var(--color-primary-text);
   white-space: nowrap;
 }
 

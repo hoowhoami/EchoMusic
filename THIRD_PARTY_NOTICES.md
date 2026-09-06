@@ -15,12 +15,14 @@ This file summarizes important third-party components used by EchoMusic, especia
 | Vue               | Renderer UI framework                                          | MIT                                                                  | https://vuejs.org/                                                                                                                              |
 | Vite              | Build tooling                                                  | MIT                                                                  | https://vite.dev/                                                                                                                               |
 | napi-rs           | Native Node addon framework                                    | MIT                                                                  | https://napi.rs/                                                                                                                                |
-| cpal              | Native audio output abstraction                                | Apache-2.0 OR MIT                                                    | https://github.com/RustAudio/cpal                                                                                                               |
+| cpal              | Native audio input/output and system loopback abstraction      | Apache-2.0 OR MIT                                                    | https://github.com/RustAudio/cpal                                                                                                               |
+| rubato            | Sample-rate conversion for captured PCM audio                  | MIT                                                                  | https://github.com/HEnquist/rubato                                                                                                              |
 | rusqlite / SQLite | Local persistent storage                                       | MIT for `rusqlite`; SQLite is public domain                          | https://github.com/rusqlite/rusqlite / https://sqlite.org/                                                                                      |
 
 ## Native Modules
 
 - `native/echo-ffmpeg-player` embeds the playback engine and depends on vendored `ffmpeg-audio` and `soundtouch-rs`.
+- `native/echo-audio-capture` captures system output and microphone/input-device audio through native platform APIs.
 - `native/echo-media-controls` integrates platform media controls.
 - `native/echo-sqlite-store` provides local SQLite-backed storage.
 

@@ -406,7 +406,7 @@ onActivated(() => {
         class="fm-empty flex flex-col items-center justify-center text-center px-6"
       >
         <div
-          class="w-18 h-18 rounded-3xl bg-primary/10 text-primary flex items-center justify-center mb-5"
+          class="w-18 h-18 rounded-3xl bg-primary/10 text-primary-text flex items-center justify-center mb-5"
         >
           <Icon :icon="iconHeartFilled" width="32" height="32" />
         </div>
@@ -798,7 +798,7 @@ onActivated(() => {
 .radio-strategy-btn.is-active {
   background: var(--color-primary);
   border-color: var(--color-primary);
-  color: #fff;
+  color: var(--color-on-primary);
   box-shadow: none;
 }
 
@@ -892,7 +892,7 @@ onActivated(() => {
   align-items: center;
   justify-content: center;
   background: var(--color-primary);
-  color: #fff;
+  color: var(--color-on-primary);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.18),
     0 14px 30px rgba(var(--color-primary-rgb), 0.35);
@@ -1127,7 +1127,7 @@ onActivated(() => {
   font-size: 13px;
   font-weight: 600;
   line-height: 1.5;
-  color: var(--color-primary);
+  color: var(--color-primary-text);
   max-width: 100%;
 }
 

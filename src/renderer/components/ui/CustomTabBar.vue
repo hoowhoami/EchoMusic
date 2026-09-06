@@ -139,14 +139,18 @@ const handleKeydown = (event: KeyboardEvent, index: number) => {
 }
 
 .custom-tab-item.active {
-  color: var(--color-primary);
+  color: var(--color-primary-text);
 }
 
 .dark .custom-tab-item.active {
-  color: #ffffff;
+  color: var(--color-on-primary);
 }
 
 .dark .custom-tab-item:hover {
   color: color-mix(in srgb, #ffffff 88%, transparent);
+}
+
+.dark .custom-tab-item.active:hover {
+  color: var(--color-on-primary);
 }
 </style>

@@ -81,7 +81,7 @@
   padding: 0 18px;
   border-radius: 8px;
   background: transparent;
-  color: #ffffff;
+  color: var(--color-on-primary);
   font-size: 13px;
   font-weight: 600;
   isolation: isolate;
@@ -165,7 +165,7 @@
   padding: 12px 16px 6px;
   font-size: 11px;
   font-weight: 600;
-  color: color-mix(in srgb, var(--color-primary) 82%, transparent);
+  color: color-mix(in srgb, var(--color-primary-text) 82%, transparent);
   letter-spacing: 0.5px;
 }
 
@@ -186,7 +186,7 @@
 
 .search-suggestion-item:hover {
   background: color-mix(in srgb, var(--color-primary) 8%, transparent);
-  color: var(--color-primary);
+  color: var(--color-primary-text);
 }
 
 .search-suggestion-leading {
@@ -346,7 +346,7 @@
 
 .search-hot-tab.active {
   background: var(--color-primary);
-  color: #ffffff;
+  color: var(--color-on-primary);
 }
 
 .search-placeholder {
@@ -398,7 +398,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #ffffff;
+  color: var(--color-on-primary);
   border-radius: 8px;
   background: linear-gradient(
     135deg,

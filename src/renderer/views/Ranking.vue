@@ -303,7 +303,7 @@ watch(
               variant="unstyled"
               size="none"
               @click="handlePlayAll"
-              class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] text-primary"
+              class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] text-primary-text"
             >
               <Icon :icon="iconPlay" width="20" height="20" />
             </Button>
@@ -459,11 +459,11 @@ watch(
 }
 
 .rank-selector-item.active {
-  @apply border-primary bg-primary/10 text-primary;
+  @apply border-primary bg-primary/10 text-primary-text;
 }
 
 .rank-selector-item:hover {
-  @apply border-primary/40 bg-primary/10 text-primary;
+  @apply border-primary/40 bg-primary/10 text-primary-text;
 }
 
 .rank-selector-tabs {

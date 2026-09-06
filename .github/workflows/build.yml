@@ -53,7 +53,7 @@ jobs:
         include:
           - os: macos-14
             rust_target: aarch64-apple-darwin
-            electron_builder_args: '--mac --arm64'
+            electron_builder_args: '--mac --arm64 --config.mac.identity=-'
             artifact_name: EchoMusic-macOS-arm64
             artifact_glob: |
               release/EchoMusic-*.zip
@@ -61,7 +61,7 @@ jobs:
               release/latest-mac.yml
           - os: macos-14
             rust_target: x86_64-apple-darwin
-            electron_builder_args: '--mac --x64'
+            electron_builder_args: '--mac --x64 --config.mac.identity=-'
             artifact_name: EchoMusic-macOS-x64
             artifact_glob: |
               release/EchoMusic-*.zip
@@ -136,6 +136,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: |
+            native/echo-audio-capture
             native/echo-media-controls
             native/echo-ffmpeg-player
             native/echo-sqlite-store
@@ -158,6 +159,7 @@ jobs:
             fi
           }
           pids=()
+          build_addon echo-audio-capture & pids+=("$!")
           build_addon echo-media-controls & pids+=("$!")
           build_addon echo-ffmpeg-player & pids+=("$!")
           build_addon echo-sqlite-store & pids+=("$!")
@@ -251,7 +253,7 @@ jobs:
         shell: bash
         run: |
           set -e
-          for addon in echo-media-controls echo-ffmpeg-player echo-sqlite-store; do
+          for addon in echo-audio-capture echo-media-controls echo-ffmpeg-player echo-sqlite-store; do
             matches=$(find release \( \
               -path "*/resources/native/${addon}.node" -o \
               -path "*/Contents/Resources/native/${addon}.node" \
@@ -263,6 +265,24 @@ jobs:
             fi
             printf 'Packaged native addon found: %s\n' "$matches"
           done
+
+      - name: Verify macOS media permission and signature
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -e
+          app_path=$(find release -maxdepth 2 -type d -name '*.app' -print -quit)
+          if [ -z "$app_path" ]; then
+            echo "ERROR: packaged macOS app not found"
+            exit 1
+          fi
+
+          plist="$app_path/Contents/Info.plist"
+          /usr/libexec/PlistBuddy -c 'Print :NSMicrophoneUsageDescription' "$plist" >/dev/null
+          /usr/libexec/PlistBuddy -c 'Print :NSAudioCaptureUsageDescription' "$plist" >/dev/null
+          codesign -d --entitlements :- "$app_path" > /tmp/echo-music-entitlements.plist
+          /usr/libexec/PlistBuddy -c 'Print :com.apple.security.device.audio-input' /tmp/echo-music-entitlements.plist >/dev/null
+          codesign --verify --deep --strict --verbose=2 "$app_path"
 
       - name: Normalize and verify Arch Linux package
         if: runner.os == 'Linux'

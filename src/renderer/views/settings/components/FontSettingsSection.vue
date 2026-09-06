@@ -47,7 +47,7 @@ onMounted(() => {
 <template>
   <SettingsSectionShell id="font" :title="sectionTitles.font.label">
     <template #icon>
-      <FontIcon :size="20" class="text-primary" />
+      <FontIcon :size="20" class="text-primary-text" />
     </template>
 
     <div class="settings-item">

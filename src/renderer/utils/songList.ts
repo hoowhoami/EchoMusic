@@ -1,10 +1,12 @@
 import type { Song } from '@/models/song';
 
-export type SongListSortField = 'index' | 'title' | 'album' | 'duration';
+export type SongListSortField = 'index' | 'title' | 'artist' | 'album' | 'duration';
 export type SongListSortOrder = 'asc' | 'desc' | null;
 
 const compareText = (a: string, b: string) =>
   a.localeCompare(b, 'zh-Hans-CN', { sensitivity: 'base' });
+
+const getDisplayTitle = (song: Song): string => (song.name ?? song.title ?? '').trim();
 
 export const normalizeSongSearchQuery = (query: string): string => query.trim().toLowerCase();
 
@@ -50,7 +52,15 @@ export const sortSongs = (
   return base.sort((a, b) => {
     switch (sortField) {
       case 'title':
-        return compareText(a.title, b.title) * direction;
+        return (
+          (compareText(getDisplayTitle(a), getDisplayTitle(b)) || compareText(a.artist, b.artist)) *
+          direction
+        );
+      case 'artist':
+        return (
+          (compareText(a.artist, b.artist) || compareText(getDisplayTitle(a), getDisplayTitle(b))) *
+          direction
+        );
       case 'album':
         return compareText(albumAccessor(a), albumAccessor(b)) * direction;
       case 'duration':

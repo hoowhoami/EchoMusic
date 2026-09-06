@@ -57,6 +57,12 @@ interface Hsl {
   l: number; // [0, 1]
 }
 
+export interface AccentPalette {
+  primary: string;
+  primaryText: string;
+  onPrimary: string;
+}
+
 export const rgbToHsl = (r: number, g: number, b: number): Hsl => {
   const nr = r / 255;
   const ng = g / 255;
@@ -100,6 +106,60 @@ export const hslToRgb = (h: number, s: number, l: number): { r: number; g: numbe
   };
 };
 
+const relativeLuminance = ({ r, g, b }: { r: number; g: number; b: number }): number => {
+  const toLinear = (value: number) => {
+    const channel = value / 255;
+    return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
+  };
+  return 0.2126 * toLinear(r) + 0.7152 * toLinear(g) + 0.0722 * toLinear(b);
+};
+
+const contrastRatio = (
+  foreground: { r: number; g: number; b: number },
+  background: { r: number; g: number; b: number },
+): number => {
+  const foregroundLuminance = relativeLuminance(foreground);
+  const backgroundLuminance = relativeLuminance(background);
+  const lighter = Math.max(foregroundLuminance, backgroundLuminance);
+  const darker = Math.min(foregroundLuminance, backgroundLuminance);
+  return (lighter + 0.05) / (darker + 0.05);
+};
+
+// 略高于 4.5，为 HSL -> 8 位 RGB 取整留出余量。
+const TEXT_CONTRAST_TARGET = 4.55;
+
+const ensureTextContrast = (
+  h: number,
+  s: number,
+  l: number,
+  background: { r: number; g: number; b: number },
+  lighten: boolean,
+): string => {
+  const initial = hslToRgb(h, s, l);
+  if (contrastRatio(initial, background) >= TEXT_CONTRAST_TARGET) {
+    return rgbToHex(initial.r, initial.g, initial.b);
+  }
+
+  let low = lighten ? l : 0;
+  let high = lighten ? 1 : l;
+  for (let index = 0; index < 24; index += 1) {
+    const mid = (low + high) / 2;
+    const candidate = hslToRgb(h, s, mid);
+    const passes = contrastRatio(candidate, background) >= TEXT_CONTRAST_TARGET;
+    if (lighten) {
+      if (passes) high = mid;
+      else low = mid;
+    } else if (passes) {
+      low = mid;
+    } else {
+      high = mid;
+    }
+  }
+
+  const result = hslToRgb(h, s, lighten ? high : low);
+  return rgbToHex(result.r, result.g, result.b);
+};
+
 // ─────────────── 归一化 ───────────────
 
 // 将颜色按深/浅色模式调整到合适的视觉区间
@@ -128,6 +188,22 @@ export const normalizeAccent = (hex: string, isDark: boolean): string => {
   const { r, g, b } = hslToRgb(h, nextS, nextL);
   return rgbToHex(r, g, b);
 };
+
+const createAccentPaletteFromPrimary = (primary: string, isDark: boolean): AccentPalette => {
+  const rgb = hexToRgb(primary) ?? hexToRgb(DEFAULT_ACCENT)!;
+  const { h, s, l } = rgbToHsl(rgb.r, rgb.g, rgb.b);
+  const textBackground = hexToRgb(isDark ? '#36363a' : '#f5f5f7')!;
+  const primaryText = ensureTextContrast(h, s, l, textBackground, isDark);
+  const white = { r: 255, g: 255, b: 255 };
+  const black = { r: 0, g: 0, b: 0 };
+  const onPrimary = contrastRatio(white, rgb) >= contrastRatio(black, rgb) ? '#ffffff' : '#000000';
+
+  return { primary, primaryText, onPrimary };
+};
+
+// 主题原色负责背景和装饰；文字色按实际表面亮度独立校正；实心主题色上的前景自动取黑/白。
+export const getAccentPalette = (hex: string, isDark: boolean): AccentPalette =>
+  createAccentPaletteFromPrimary(normalizeAccent(hex, isDark), isDark);
 
 // ─────────────── 封面取色 ───────────────
 
@@ -302,6 +378,7 @@ let animationFrameId: number | null = null;
 // 直接写入 CSS 变量（无动画）
 const setAccentVars = (rgb: { r: number; g: number; b: number }, isDark: boolean) => {
   const hex = rgbToHex(rgb.r, rgb.g, rgb.b);
+  const palette = createAccentPaletteFromPrimary(hex, isDark);
   const { h, s, l } = rgbToHsl(rgb.r, rgb.g, rgb.b);
   const hoverL = isDark ? Math.min(0.8, l + 0.06) : Math.max(0.36, l - 0.04);
   const hoverRgb = hslToRgb(h, s, hoverL);
@@ -312,11 +389,15 @@ const setAccentVars = (rgb: { r: number; g: number; b: number }, isDark: boolean
 
   const root = document.documentElement;
   root.style.setProperty('--color-primary', hex);
+  root.style.setProperty('--color-primary-text', palette.primaryText);
+  root.style.setProperty('--color-on-primary', palette.onPrimary);
   root.style.setProperty('--color-primary-hover', hoverHex);
   root.style.setProperty('--color-primary-light', lightValue);
   root.style.setProperty('--color-primary-dark', darkValue);
   root.style.setProperty('--color-primary-rgb', rgbValue);
   root.style.setProperty('--color-primary-root', hex);
+  root.style.setProperty('--color-primary-text-root', palette.primaryText);
+  root.style.setProperty('--color-on-primary-root', palette.onPrimary);
   root.style.setProperty('--color-primary-hover-root', hoverHex);
   root.style.setProperty('--color-primary-light-root', lightValue);
   root.style.setProperty('--color-primary-dark-root', darkValue);

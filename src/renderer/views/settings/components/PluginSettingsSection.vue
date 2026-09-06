@@ -32,7 +32,7 @@ const handleOpenDocs = () => {
 <template>
   <SettingsSectionShell id="plugins" :title="resolvedTitle">
     <template #icon>
-      <Icon :icon="iconPlugin" width="20" height="20" class="text-primary" />
+      <Icon :icon="iconPlugin" width="20" height="20" class="text-primary-text" />
     </template>
 
     <div class="settings-item">

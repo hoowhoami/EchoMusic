@@ -446,7 +446,7 @@ onMounted(() => {
   height: 30px;
   padding: 0 10px;
   border-radius: 8px;
-  color: var(--color-primary);
+  color: var(--color-primary-text);
   background: color-mix(in srgb, var(--color-primary) 10%, transparent);
   font-size: 12px;
   font-weight: 800;
@@ -468,7 +468,7 @@ onMounted(() => {
   justify-content: center;
   flex: 0 0 auto;
   border-radius: 8px;
-  color: var(--color-primary);
+  color: var(--color-primary-text);
   background: color-mix(in srgb, var(--color-primary) 12%, transparent);
   border: 1px solid color-mix(in srgb, var(--color-primary) 22%, transparent);
 }
@@ -486,7 +486,7 @@ onMounted(() => {
 }
 
 .plugin-share-icon.is-loading {
-  color: var(--color-primary);
+  color: var(--color-primary-text);
   background: color-mix(in srgb, var(--color-primary) 14%, transparent);
   border-color: color-mix(in srgb, var(--color-primary) 28%, transparent);
 }

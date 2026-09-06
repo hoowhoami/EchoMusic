@@ -221,7 +221,12 @@ const commitRename = (id: string) => {
 <template>
   <SettingsSectionShell id="spatialAudio" :title="sectionTitles.spatialAudio.label">
     <template #icon>
-      <Icon :icon="sectionTitles.spatialAudio.icon" width="20" height="20" class="text-primary" />
+      <Icon
+        :icon="sectionTitles.spatialAudio.icon"
+        width="20"
+        height="20"
+        class="text-primary-text"
+      />
     </template>
 
     <div class="settings-item">
@@ -477,7 +482,7 @@ const commitRename = (id: string) => {
   font-size: 11px;
 }
 .spatial-file-action:hover {
-  color: var(--color-primary);
+  color: var(--color-primary-text);
 }
 .spatial-file-delete {
   color: var(--color-text-secondary);
@@ -519,7 +524,7 @@ const commitRename = (id: string) => {
 }
 .file-tab:hover,
 .file-tab[data-state='active'] {
-  color: var(--color-primary);
+  color: var(--color-primary-text);
 }
 .file-tab[data-state='active'] {
   border-bottom-color: var(--color-primary);
@@ -601,7 +606,7 @@ const commitRename = (id: string) => {
   padding: 2px 7px;
   border-radius: 9999px;
   background: var(--color-primary);
-  color: white;
+  color: var(--color-on-primary);
   font-size: 9px;
   font-weight: 700;
 }

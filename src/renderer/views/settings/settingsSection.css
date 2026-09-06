@@ -38,7 +38,7 @@
 }
 
 .settings-notice p {
-  @apply text-[12px] font-semibold text-primary;
+  @apply text-[12px] font-semibold text-primary-text;
 }
 
 .settings-button {
@@ -134,7 +134,7 @@
 }
 
 .shortcut-reset-btn {
-  @apply text-[11px] font-semibold text-text-secondary hover:text-primary transition-colors cursor-pointer whitespace-nowrap;
+  @apply text-[11px] font-semibold text-text-secondary hover:text-primary-text transition-colors cursor-pointer whitespace-nowrap;
 }
 
 .shortcut-input {
@@ -148,7 +148,7 @@
 }
 
 .shortcut-input.recording {
-  @apply border-primary bg-primary/5 text-primary;
+  @apply border-primary bg-primary/5 text-primary-text;
 }
 
 .shortcut-input-disabled {

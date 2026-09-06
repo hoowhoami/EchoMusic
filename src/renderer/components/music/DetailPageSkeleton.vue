@@ -138,7 +138,7 @@ withDefaults(defineProps<Props>(), {
   border: 0.5px solid color-mix(in srgb, var(--color-primary) 20%, transparent);
   border-radius: 999px;
   background: color-mix(in srgb, var(--color-primary) 8%, transparent);
-  color: var(--color-primary);
+  color: var(--color-primary-text);
   font-size: 10px;
   font-weight: 800;
   letter-spacing: 1.2px;

@@ -1004,7 +1004,7 @@ watch(
               </div>
               <div class="flex flex-col min-w-0 flex-1 overflow-hidden">
                 <span
-                  class="text-[13px] font-semibold text-primary truncate leading-tight tracking-tight"
+                  class="text-[13px] font-semibold text-primary-text truncate leading-tight tracking-tight"
                 >
                   {{ isLoggedIn ? userInfo?.nickname : '未登录' }}
                 </span>
@@ -1086,7 +1086,7 @@ watch(
                       isMenuItemDisabled(item)
                         ? 'is-disabled cursor-not-allowed opacity-35 text-text-main/55'
                         : isMenuItemActive(item)
-                          ? 'is-active cursor-pointer bg-primary/12 text-primary'
+                          ? 'is-active cursor-pointer bg-primary/12 text-primary-text'
                           : 'cursor-pointer text-text-main/90',
                     ]"
                     @click="handleMenuClick(item)"
@@ -1100,7 +1100,7 @@ watch(
                         isMenuItemDisabled(item)
                           ? 'text-text-main opacity-40'
                           : isMenuItemActive(item)
-                            ? 'text-primary'
+                            ? 'text-primary-text'
                             : 'text-text-main opacity-60 group-hover:opacity-100',
                       ]"
                     />
@@ -1113,7 +1113,7 @@ watch(
                         isMenuItemDisabled(item)
                           ? 'text-text-main opacity-40'
                           : isMenuItemActive(item)
-                            ? 'text-primary'
+                            ? 'text-primary-text'
                             : 'text-text-main opacity-60 group-hover:opacity-100',
                       ]"
                     />
@@ -1138,7 +1138,7 @@ watch(
               :class="[
                 'sidebar-playlist-tab',
                 activePlaylistTab === 0
-                  ? 'text-primary opacity-100'
+                  ? 'text-primary-text opacity-100'
                   : 'text-text-main opacity-60 hover:opacity-80',
               ]"
               @click="activePlaylistTab = 0"
@@ -1152,7 +1152,7 @@ watch(
               :class="[
                 'sidebar-playlist-tab',
                 activePlaylistTab === 1
-                  ? 'text-primary opacity-100'
+                  ? 'text-primary-text opacity-100'
                   : 'text-text-main opacity-60 hover:opacity-80',
               ]"
               @click="activePlaylistTab = 1"
@@ -1178,7 +1178,7 @@ watch(
                   class="sidebar-section-action sidebar-icon-btn"
                   title="歌单排序"
                   :class="{
-                    'text-primary opacity-100': settingStore.playlistSortOrder !== 'default',
+                    'text-primary-text opacity-100': settingStore.playlistSortOrder !== 'default',
                   }"
                 >
                   <Icon :icon="iconArrowsSort" width="12" height="12" />
@@ -1321,7 +1321,7 @@ watch(
                 :class="[
                   'sidebar-library-item relative w-full flex items-center gap-3 px-3.5 py-1.5 rounded-xl group cursor-pointer active:scale-[0.98] transition-all',
                   isActivePlaylist(playlist)
-                    ? 'is-active bg-primary/12 text-primary'
+                    ? 'is-active bg-primary/12 text-primary-text'
                     : 'text-text-main/90',
                 ]"
                 @click="navigateToPlaylist(playlist)"
@@ -1338,7 +1338,7 @@ watch(
                   <span
                     :class="[
                       'text-[13px] truncate w-full font-medium tracking-tight',
-                      isActivePlaylist(playlist) ? 'text-primary' : 'text-text-main/90',
+                      isActivePlaylist(playlist) ? 'text-primary-text' : 'text-text-main/90',
                     ]"
                   >
                     {{ playlist.name }}
@@ -1357,7 +1357,7 @@ watch(
                 :class="[
                   'sidebar-library-item relative w-full flex items-center gap-3 px-3.5 py-1.5 rounded-xl group cursor-pointer active:scale-[0.98] transition-all',
                   isActivePlaylist(playlist)
-                    ? 'is-active bg-primary/12 text-primary'
+                    ? 'is-active bg-primary/12 text-primary-text'
                     : 'text-text-main/90',
                 ]"
                 @click="navigateToPlaylist(playlist)"
@@ -1379,7 +1379,7 @@ watch(
                   <span
                     :class="[
                       'text-[13px] truncate w-full font-medium tracking-tight',
-                      isActivePlaylist(playlist) ? 'text-primary' : 'text-text-main/90',
+                      isActivePlaylist(playlist) ? 'text-primary-text' : 'text-text-main/90',
                     ]"
                   >
                     {{ playlist.name }}
@@ -1412,7 +1412,7 @@ watch(
                 :class="[
                   'sidebar-library-item relative w-full flex items-center gap-3 px-3.5 py-1.5 rounded-xl group cursor-pointer active:scale-[0.98] transition-all',
                   isActivePlaylist(playlist)
-                    ? 'is-active bg-primary/12 text-primary'
+                    ? 'is-active bg-primary/12 text-primary-text'
                     : 'text-text-main/90',
                 ]"
                 @click="navigateToPlaylist(playlist)"
@@ -1429,7 +1429,7 @@ watch(
                   <span
                     :class="[
                       'text-[13px] truncate w-full font-medium tracking-tight',
-                      isActivePlaylist(playlist) ? 'text-primary' : 'text-text-main/90',
+                      isActivePlaylist(playlist) ? 'text-primary-text' : 'text-text-main/90',
                     ]"
                   >
                     {{ playlist.name }}
@@ -1674,7 +1674,7 @@ watch(
 }
 
 .sidebar-rail-tab.is-active {
-  color: var(--color-primary);
+  color: var(--color-primary-text);
 }
 
 .sidebar-rail-scroll {
@@ -1754,7 +1754,7 @@ watch(
 }
 
 .sidebar-rail-item.is-active {
-  color: var(--color-primary);
+  color: var(--color-primary-text);
   background: color-mix(in srgb, var(--color-primary) 12%, transparent);
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-primary) 12%, transparent);
 }
@@ -1925,7 +1925,7 @@ watch(
 .sidebar-create-menu-icon {
   @apply inline-flex items-center justify-center w-8 h-8 rounded-[10px] shrink-0 transition-colors;
   background: color-mix(in srgb, var(--color-primary) 12%, transparent);
-  color: var(--color-primary);
+  color: var(--color-primary-text);
 }
 
 .sidebar-create-menu-item:hover .sidebar-create-menu-icon {
@@ -2014,7 +2014,7 @@ watch(
 }
 
 .sidebar-sort-menu-item.is-active {
-  color: var(--color-primary);
+  color: var(--color-primary-text);
   background: color-mix(in srgb, var(--color-primary) 10%, transparent);
   font-weight: 600;
 }

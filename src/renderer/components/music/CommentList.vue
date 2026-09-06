@@ -448,7 +448,7 @@ const formatLike = (value: number) => {
 .comment-avatar-fallback {
   font-size: 14px;
   font-weight: 700;
-  color: var(--color-primary);
+  color: var(--color-primary-text);
 }
 
 .comment-main {
@@ -493,7 +493,7 @@ const formatLike = (value: number) => {
   padding: 6px 10px;
   border-radius: 999px;
   background: var(--control-bg);
-  color: var(--color-primary);
+  color: var(--color-primary-text);
   font-size: 11px;
   font-weight: 600;
   flex-shrink: 0;
@@ -516,7 +516,7 @@ const formatLike = (value: number) => {
   margin-left: 2px;
   border: 0;
   background: transparent;
-  color: var(--color-primary);
+  color: var(--color-primary-text);
   font-size: inherit;
   font-weight: 600;
   cursor: pointer;
@@ -534,7 +534,7 @@ const formatLike = (value: number) => {
   gap: 6px;
   padding: 0;
   background: transparent;
-  color: var(--color-primary);
+  color: var(--color-primary-text);
   font-size: 12px;
   font-weight: 500;
   transition: color 0.2s ease;
@@ -549,13 +549,13 @@ const formatLike = (value: number) => {
   border-radius: 999px;
   font-size: 10px;
   font-weight: 700;
-  color: var(--color-primary);
+  color: var(--color-primary-text);
   background: color-mix(in srgb, var(--color-primary) 12%, transparent);
   border: 1px solid color-mix(in srgb, var(--color-primary) 20%, transparent);
 }
 
 .comment-badge-star {
-  color: var(--color-primary);
+  color: var(--color-primary-text);
   border-color: color-mix(in srgb, var(--color-primary) 20%, transparent);
   background: color-mix(in srgb, var(--color-primary) 12%, transparent);
 }
@@ -675,7 +675,7 @@ const formatLike = (value: number) => {
 .comment-floor-more-btn {
   font-size: 12px;
   font-weight: 600;
-  color: var(--color-primary);
+  color: var(--color-primary-text);
   padding: 4px 12px;
   border-radius: 8px;
   transition: background 0.2s ease;

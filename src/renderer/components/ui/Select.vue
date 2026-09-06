@@ -297,7 +297,7 @@ watch(open, (val) => {
 }
 
 .echo-select-tag {
-  @apply inline-flex items-center gap-0.5 h-6 px-2 rounded-md bg-primary/10 text-primary text-[11px] font-semibold shrink-0;
+  @apply inline-flex items-center gap-0.5 h-6 px-2 rounded-md bg-primary/10 text-primary-text text-[11px] font-semibold shrink-0;
 }
 
 .echo-select-tag--count {
@@ -391,7 +391,7 @@ watch(open, (val) => {
 }
 
 .echo-select-item.is-selected {
-  color: var(--color-primary);
+  color: var(--color-primary-text);
   background: var(--row-selected-bg);
 }
 
@@ -411,7 +411,7 @@ watch(open, (val) => {
 }
 
 .echo-select-item-check {
-  color: var(--color-primary);
+  color: var(--color-primary-text);
   font-size: 14px;
   font-weight: 700;
   flex-shrink: 0;
