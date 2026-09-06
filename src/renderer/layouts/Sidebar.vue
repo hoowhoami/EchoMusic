@@ -672,14 +672,6 @@ watch(
       }
       return;
     }
-
-    if (route.name === 'album-detail') {
-      const currentId = activeAlbumRouteId.value;
-      const matched = findPlaylistByRouteId(currentId, 2);
-      if (matched) {
-        activePlaylistTab.value = 1;
-      }
-    }
   },
   { immediate: true },
 );
