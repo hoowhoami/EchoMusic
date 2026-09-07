@@ -1,3 +1,12 @@
+import {
+  normalizeAccent,
+  getAccentPalette,
+  createAccentPaletteFromPrimary,
+  rgbToOklab,
+  oklabToRgb,
+} from '../../shared/accent-palette';
+export { normalizeAccent, getAccentPalette } from '../../shared/accent-palette';
+export type { AccentPalette } from '../../shared/accent-palette';
 // 主题色工具：提取、归一化、派生 CSS 变量
 
 // 默认主题色（与 style.css 默认值保持一致）
@@ -57,12 +66,6 @@ interface Hsl {
   l: number; // [0, 1]
 }
 
-export interface AccentPalette {
-  primary: string;
-  primaryText: string;
-  onPrimary: string;
-}
-
 export const rgbToHsl = (r: number, g: number, b: number): Hsl => {
   const nr = r / 255;
   const ng = g / 255;
@@ -105,105 +108,6 @@ export const hslToRgb = (h: number, s: number, l: number): { r: number; g: numbe
     b: clamp255((b + m) * 255),
   };
 };
-
-const relativeLuminance = ({ r, g, b }: { r: number; g: number; b: number }): number => {
-  const toLinear = (value: number) => {
-    const channel = value / 255;
-    return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
-  };
-  return 0.2126 * toLinear(r) + 0.7152 * toLinear(g) + 0.0722 * toLinear(b);
-};
-
-const contrastRatio = (
-  foreground: { r: number; g: number; b: number },
-  background: { r: number; g: number; b: number },
-): number => {
-  const foregroundLuminance = relativeLuminance(foreground);
-  const backgroundLuminance = relativeLuminance(background);
-  const lighter = Math.max(foregroundLuminance, backgroundLuminance);
-  const darker = Math.min(foregroundLuminance, backgroundLuminance);
-  return (lighter + 0.05) / (darker + 0.05);
-};
-
-// 略高于 4.5，为 HSL -> 8 位 RGB 取整留出余量。
-const TEXT_CONTRAST_TARGET = 4.55;
-
-const ensureTextContrast = (
-  h: number,
-  s: number,
-  l: number,
-  background: { r: number; g: number; b: number },
-  lighten: boolean,
-): string => {
-  const initial = hslToRgb(h, s, l);
-  if (contrastRatio(initial, background) >= TEXT_CONTRAST_TARGET) {
-    return rgbToHex(initial.r, initial.g, initial.b);
-  }
-
-  let low = lighten ? l : 0;
-  let high = lighten ? 1 : l;
-  for (let index = 0; index < 24; index += 1) {
-    const mid = (low + high) / 2;
-    const candidate = hslToRgb(h, s, mid);
-    const passes = contrastRatio(candidate, background) >= TEXT_CONTRAST_TARGET;
-    if (lighten) {
-      if (passes) high = mid;
-      else low = mid;
-    } else if (passes) {
-      low = mid;
-    } else {
-      high = mid;
-    }
-  }
-
-  const result = hslToRgb(h, s, lighten ? high : low);
-  return rgbToHex(result.r, result.g, result.b);
-};
-
-// ─────────────── 归一化 ───────────────
-
-// 将颜色按深/浅色模式调整到合适的视觉区间
-// 浅色模式下限制饱和度和亮度，避免过亮刺眼；深色模式下提亮避免糊掉
-export const normalizeAccent = (hex: string, isDark: boolean): string => {
-  const rgb = hexToRgb(hex);
-  if (!rgb) return DEFAULT_ACCENT;
-  const { h, s, l } = rgbToHsl(rgb.r, rgb.g, rgb.b);
-
-  // 近乎灰度的颜色，回落到默认主题色
-  if (s < 0.08) return DEFAULT_ACCENT;
-
-  let nextS = s;
-  let nextL = l;
-
-  if (isDark) {
-    // 深色模式：S ∈ [0.45, 0.85]，L ∈ [0.55, 0.72]
-    nextS = Math.min(0.85, Math.max(0.45, s));
-    nextL = Math.min(0.72, Math.max(0.55, l));
-  } else {
-    // 浅色模式：S ∈ [0.55, 0.9]，L ∈ [0.42, 0.55]
-    nextS = Math.min(0.9, Math.max(0.55, s));
-    nextL = Math.min(0.55, Math.max(0.42, l));
-  }
-
-  const { r, g, b } = hslToRgb(h, nextS, nextL);
-  return rgbToHex(r, g, b);
-};
-
-const createAccentPaletteFromPrimary = (primary: string, isDark: boolean): AccentPalette => {
-  const rgb = hexToRgb(primary) ?? hexToRgb(DEFAULT_ACCENT)!;
-  const { h, s, l } = rgbToHsl(rgb.r, rgb.g, rgb.b);
-  const textBackground = hexToRgb(isDark ? '#36363a' : '#f5f5f7')!;
-  const primaryText = ensureTextContrast(h, s, l, textBackground, isDark);
-  const white = { r: 255, g: 255, b: 255 };
-  const black = { r: 0, g: 0, b: 0 };
-  const onPrimary = contrastRatio(white, rgb) >= contrastRatio(black, rgb) ? '#ffffff' : '#000000';
-
-  return { primary, primaryText, onPrimary };
-};
-
-// 主题原色负责背景和装饰；文字色按实际表面亮度独立校正；实心主题色上的前景自动取黑/白。
-export const getAccentPalette = (hex: string, isDark: boolean): AccentPalette =>
-  createAccentPaletteFromPrimary(normalizeAccent(hex, isDark), isDark);
 
 // ─────────────── 封面取色 ───────────────
 
@@ -374,20 +278,57 @@ export const extractDominantColor = (
 // 上一次应用的 RGB（用于插值动画）
 let lastAppliedRgb = { r: 0, g: 113, b: 227 };
 let animationFrameId: number | null = null;
+const brandPalettes = [
+  getAccentPalette(DEFAULT_ACCENT, false),
+  getAccentPalette(DEFAULT_ACCENT, true),
+];
 
 // 直接写入 CSS 变量（无动画）
 const setAccentVars = (rgb: { r: number; g: number; b: number }, isDark: boolean) => {
   const hex = rgbToHex(rgb.r, rgb.g, rgb.b);
   const palette = createAccentPaletteFromPrimary(hex, isDark);
-  const { h, s, l } = rgbToHsl(rgb.r, rgb.g, rgb.b);
-  const hoverL = isDark ? Math.min(0.8, l + 0.06) : Math.max(0.36, l - 0.04);
-  const hoverRgb = hslToRgb(h, s, hoverL);
-  const hoverHex = rgbToHex(hoverRgb.r, hoverRgb.g, hoverRgb.b);
+  const hoverHex = palette.hover;
   const lightValue = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.15)`;
   const darkValue = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.36)`;
   const rgbValue = `${rgb.r}, ${rgb.g}, ${rgb.b}`;
+  const atmosphereRgb = hexToRgb(palette.atmosphere)!;
+  const atmosphereValue = `${atmosphereRgb.r}, ${atmosphereRgb.g}, ${atmosphereRgb.b}`;
 
   const root = document.documentElement;
+  const brand = brandPalettes[isDark ? 1 : 0];
+  const brandAtmosphere = hexToRgb(brand.atmosphere)!;
+  root.style.setProperty(
+    '--brand-atmosphere-rgb',
+    `${brandAtmosphere.r}, ${brandAtmosphere.g}, ${brandAtmosphere.b}`,
+  );
+  root.style.setProperty('--color-atmosphere-rgb', atmosphereValue);
+  root.style.setProperty('--color-atmosphere-rgb-root', atmosphereValue);
+  const brandColors = {
+    primary: brand.primary,
+    'primary-text': brand.primaryText,
+    'on-primary': brand.onPrimary,
+    'primary-hover': brand.hover,
+    'primary-pressed': brand.pressed,
+    'on-primary-hover': brand.onHover,
+    'on-primary-pressed': brand.onPressed,
+    'primary-subtle': brand.subtle,
+    'on-primary-subtle': brand.onSubtle,
+    'focus-ring': brand.focusRing,
+  };
+  for (const [name, value] of Object.entries(brandColors))
+    root.style.setProperty(`--brand-${name}`, value);
+  const semanticColors = {
+    'primary-pressed': palette.pressed,
+    'on-primary-hover': palette.onHover,
+    'on-primary-pressed': palette.onPressed,
+    'primary-subtle': palette.subtle,
+    'on-primary-subtle': palette.onSubtle,
+    'focus-ring': palette.focusRing,
+  };
+  for (const [name, value] of Object.entries(semanticColors)) {
+    root.style.setProperty(`--color-${name}`, value);
+    root.style.setProperty(`--color-${name}-root`, value);
+  }
   root.style.setProperty('--color-primary', hex);
   root.style.setProperty('--color-primary-text', palette.primaryText);
   root.style.setProperty('--color-on-primary', palette.onPrimary);
@@ -416,24 +357,39 @@ export const applyAccentToRoot = (hex: string, isDark: boolean) => {
     animationFrameId = null;
   }
 
-  const fromRgb = { ...lastAppliedRgb };
-  const toRgb = targetRgb;
+  const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+  if (
+    reducedMotion.matches ||
+    (targetRgb.r === lastAppliedRgb.r &&
+      targetRgb.g === lastAppliedRgb.g &&
+      targetRgb.b === lastAppliedRgb.b)
+  ) {
+    setAccentVars(targetRgb, isDark);
+    lastAppliedRgb = targetRgb;
+    return;
+  }
+
+  const fromLab = rgbToOklab(lastAppliedRgb);
+  const toLab = rgbToOklab(targetRgb);
   const duration = 600;
   const startTime = performance.now();
 
-  const lerp = (a: number, b: number, t: number) => Math.round(a + (b - a) * t);
+  const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 
   const animate = (now: number) => {
     const elapsed = now - startTime;
-    const progress = Math.min(1, elapsed / duration);
+    const progress = reducedMotion.matches ? 1 : Math.min(1, elapsed / duration);
     // ease-out 缓动
     const eased = 1 - (1 - progress) * (1 - progress);
 
-    const currentRgb = {
-      r: lerp(fromRgb.r, toRgb.r, eased),
-      g: lerp(fromRgb.g, toRgb.g, eased),
-      b: lerp(fromRgb.b, toRgb.b, eased),
-    };
+    const currentRgb =
+      progress === 1
+        ? targetRgb
+        : oklabToRgb({
+            l: lerp(fromLab.l, toLab.l, eased),
+            a: lerp(fromLab.a, toLab.a, eased),
+            b: lerp(fromLab.b, toLab.b, eased),
+          });
 
     setAccentVars(currentRgb, isDark);
     lastAppliedRgb = currentRgb;

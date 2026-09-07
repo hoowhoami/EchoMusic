@@ -17,7 +17,8 @@ const props = withDefaults(defineProps<Props>(), {
 });
 
 const variants = {
-  primary: 'bg-primary text-on-primary hover:opacity-90',
+  primary:
+    'bg-primary text-on-primary hover:bg-primary-hover hover:text-[var(--color-on-primary-hover)] active:bg-[var(--color-primary-pressed)] active:text-[var(--color-on-primary-pressed)]',
   secondary: 'bg-[var(--control-muted-bg)] text-text-main hover:bg-[var(--control-hover-bg)]',
   ghost: 'bg-transparent text-text-main hover:bg-[var(--control-hover-bg)]',
   outline:

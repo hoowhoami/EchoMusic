@@ -108,16 +108,32 @@
 
 /* 非全局主题色：主布局内回退到品牌蓝，播放栏内恢复真主题色 */
 body.accent-scoped .main-layout {
-  --color-primary: var(--color-brand);
-  --color-primary-text: var(--color-brand-text);
-  --color-on-primary: var(--color-on-brand);
-  --color-primary-hover: var(--color-brand-hover);
+  --color-atmosphere-rgb: var(--brand-atmosphere-rgb);
+  --color-primary-pressed: var(--brand-primary-pressed);
+  --color-on-primary-hover: var(--brand-on-primary-hover);
+  --color-on-primary-pressed: var(--brand-on-primary-pressed);
+  --color-primary-subtle: var(--brand-primary-subtle);
+  --color-on-primary-subtle: var(--brand-on-primary-subtle);
+  --color-focus-ring: var(--brand-focus-ring);
+
+  --color-primary: var(--brand-primary);
+  --color-primary-text: var(--brand-primary-text);
+  --color-on-primary: var(--brand-on-primary);
+  --color-primary-hover: var(--brand-primary-hover);
   --color-primary-light: var(--color-brand-light);
   --color-primary-dark: var(--color-brand-dark);
   --color-primary-rgb: var(--color-brand-rgb);
 }
 
 body.accent-scoped .main-layout .player-bar-container {
+  --color-atmosphere-rgb: var(--color-atmosphere-rgb-root);
+  --color-primary-pressed: var(--color-primary-pressed-root);
+  --color-on-primary-hover: var(--color-on-primary-hover-root);
+  --color-on-primary-pressed: var(--color-on-primary-pressed-root);
+  --color-primary-subtle: var(--color-primary-subtle-root);
+  --color-on-primary-subtle: var(--color-on-primary-subtle-root);
+  --color-focus-ring: var(--color-focus-ring-root);
+
   --color-primary: var(--color-primary-root);
   --color-primary-text: var(--color-primary-text-root);
   --color-on-primary: var(--color-on-primary-root);
@@ -682,7 +698,7 @@ body.echo-surface-translucent .player-bar {
   }
 }
 
-/* 主题色顶部渐变氛围层：顶部保持染色，向下长距离衰减并自然融入页面底色 */
+/* 保留全局叠加渐变：顶部舒缓铺开，向下逐渐淡出到透明。 */
 .layout-accent-gradient {
   content: '';
   position: absolute;
@@ -693,41 +709,36 @@ body.echo-surface-translucent .player-bar {
   pointer-events: none;
   z-index: 200;
   opacity: var(--accent-gradient-opacity, var(--accent-gradient-user-opacity, 1));
-  --agc: var(--accent-gradient-color-rgb, var(--color-primary-rgb));
-  --agp: var(--accent-gradient-peak-opacity, 0.2);
-  --agm: var(--accent-gradient-mid-opacity, 0.07);
-  background: var(
-    --accent-gradient-background,
-    linear-gradient(
-      var(--accent-gradient-angle, 180deg),
-      rgba(var(--agc), var(--agp)) 0%,
-      rgba(var(--agc), var(--agm)) var(--accent-gradient-mid-position, 55%),
-      transparent 100%
-    )
+  --agc: var(--accent-gradient-color-rgb, var(--color-atmosphere-rgb, var(--color-primary-rgb)));
+  --agp: var(--accent-gradient-peak-opacity, 0.24);
+  --agm: var(--accent-gradient-mid-opacity, 0.095);
+  --accent-gradient-default-background: linear-gradient(
+    var(--accent-gradient-angle, 180deg),
+    rgba(var(--agc), var(--agp)) 0%,
+    rgba(var(--agc), calc(var(--agp) * 0.94)) calc(var(--accent-gradient-mid-position, 55%) * 0.4),
+    rgba(var(--agc), var(--agm)) var(--accent-gradient-mid-position, 55%),
+    rgba(var(--agc), calc(var(--agm) * 0.3))
+      calc(
+        var(--accent-gradient-mid-position, 55%) +
+          (100% - var(--accent-gradient-mid-position, 55%)) * 0.56
+      ),
+    rgba(var(--agc), 0) 100%
   );
-  transition:
-    background 0.6s ease,
-    opacity 0.3s ease;
+  background: var(--accent-gradient-background, var(--accent-gradient-default-background));
+  /* Color already interpolates in OKLab in applyAccentToRoot; only animate the toggle here. */
+  transition: opacity 0.3s ease;
 }
 
 .dark .layout-accent-gradient {
   --agc: var(
     --accent-gradient-color-rgb-dark,
-    var(--accent-gradient-color-rgb, var(--color-primary-rgb))
+    var(--accent-gradient-color-rgb, var(--color-atmosphere-rgb, var(--color-primary-rgb)))
   );
-  --agp: var(--accent-gradient-peak-opacity-dark, var(--accent-gradient-peak-opacity, 0.36));
-  --agm: var(--accent-gradient-mid-opacity-dark, var(--accent-gradient-mid-opacity, 0.16));
+  --agp: var(--accent-gradient-peak-opacity-dark, var(--accent-gradient-peak-opacity, 0.22));
+  --agm: var(--accent-gradient-mid-opacity-dark, var(--accent-gradient-mid-opacity, 0.09));
   background: var(
     --accent-gradient-background-dark,
-    var(
-      --accent-gradient-background,
-      linear-gradient(
-        var(--accent-gradient-angle, 180deg),
-        rgba(var(--agc), var(--agp)) 0%,
-        rgba(var(--agc), var(--agm)) var(--accent-gradient-mid-position, 55%),
-        transparent 100%
-      )
-    )
+    var(--accent-gradient-background, var(--accent-gradient-default-background))
   );
 }
 
@@ -737,4 +748,10 @@ body.echo-surface-translucent .layout-accent-gradient {
 
 body.accent-gradient-disabled .layout-accent-gradient {
   opacity: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .layout-accent-gradient {
+    transition: none;
+  }
 }

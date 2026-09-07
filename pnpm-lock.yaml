@@ -8,6 +8,34 @@ importers:
 
   .:
     dependencies:
+      axios:
+        specifier: ^1.18.0
+        version: 1.18.0
+      electron-log:
+        specifier: ^5.4.4
+        version: 5.4.4
+      electron-updater:
+        specifier: ^6.8.9
+        version: 6.8.9
+      font-list:
+        specifier: ^2.1.0
+        version: 2.1.0
+      ieee754:
+        specifier: ^1.2.1
+        version: 1.2.1
+      ms:
+        specifier: ^2.1.3
+        version: 2.1.3
+      music-metadata:
+        specifier: ^11.14.0
+        version: 11.14.0
+      node-stream-zip:
+        specifier: ^1.15.0
+        version: 1.15.0
+      semver:
+        specifier: ^7.8.4
+        version: 7.8.4
+    devDependencies:
       '@iconify/icons-tabler':
         specifier: ^1.2.95
         version: 1.2.95
@@ -20,55 +48,6 @@ importers:
       '@internationalized/date':
         specifier: ^3.12.0
         version: 3.12.0
-      '@vueuse/core':
-        specifier: ^14.3.0
-        version: 14.3.0(vue@3.5.38(typescript@5.9.3))
-      axios:
-        specifier: ^1.18.0
-        version: 1.18.0
-      dompurify:
-        specifier: ^3.4.11
-        version: 3.4.11
-      electron-log:
-        specifier: ^5.4.4
-        version: 5.4.4
-      electron-updater:
-        specifier: ^6.8.9
-        version: 6.8.9
-      font-list:
-        specifier: ^2.1.0
-        version: 2.1.0
-      marked:
-        specifier: ^18.0.5
-        version: 18.0.5
-      music-metadata:
-        specifier: ^11.14.0
-        version: 11.14.0
-      node-stream-zip:
-        specifier: ^1.15.0
-        version: 1.15.0
-      pinia:
-        specifier: ^3.0.4
-        version: 3.0.4(typescript@5.9.3)(vue@3.5.38(typescript@5.9.3))
-      reka-ui:
-        specifier: ^2.9.10
-        version: 2.9.10(vue@3.5.38(typescript@5.9.3))
-      semver:
-        specifier: ^7.8.4
-        version: 7.8.4
-      sortablejs:
-        specifier: ^1.15.7
-        version: 1.15.7
-      vue:
-        specifier: ^3.5.38
-        version: 3.5.38(typescript@5.9.3)
-      vue-router:
-        specifier: ^4.6.4
-        version: 4.6.4(vue@3.5.38(typescript@5.9.3))
-      yzs-keep-alive-v3:
-        specifier: ^0.1.2
-        version: 0.1.2(vue@3.5.38(typescript@5.9.3))
-    devDependencies:
       '@tailwindcss/vite':
         specifier: ^4.3.0
         version: 4.3.0(vite@8.0.14(@types/node@25.9.1)(esbuild@0.28.0)(jiti@2.7.0)(yaml@2.9.0))
@@ -99,9 +78,15 @@ importers:
       '@vue/eslint-config-typescript':
         specifier: ^14.7.0
         version: 14.7.0(eslint-plugin-vue@10.9.1(@typescript-eslint/parser@8.60.0(eslint@10.4.1(jiti@2.7.0))(typescript@5.9.3))(eslint@10.4.1(jiti@2.7.0))(vue-eslint-parser@10.4.0(eslint@10.4.1(jiti@2.7.0))))(eslint@10.4.1(jiti@2.7.0))(typescript@5.9.3)
+      '@vueuse/core':
+        specifier: ^14.3.0
+        version: 14.3.0(vue@3.5.38(typescript@5.9.3))
       autoprefixer:
         specifier: ^10.5.0
         version: 10.5.0(postcss@8.5.15)
+      dompurify:
+        specifier: ^3.4.11
+        version: 3.4.11
       electron:
         specifier: 43.6.0
         version: 43.6.0
@@ -123,12 +108,24 @@ importers:
       eslint-plugin-vue:
         specifier: ^10.9.1
         version: 10.9.1(@typescript-eslint/parser@8.60.0(eslint@10.4.1(jiti@2.7.0))(typescript@5.9.3))(eslint@10.4.1(jiti@2.7.0))(vue-eslint-parser@10.4.0(eslint@10.4.1(jiti@2.7.0)))
+      marked:
+        specifier: ^18.0.5
+        version: 18.0.5
+      pinia:
+        specifier: ^3.0.4
+        version: 3.0.4(typescript@5.9.3)(vue@3.5.38(typescript@5.9.3))
       postcss:
         specifier: ^8.5.15
         version: 8.5.15
       prettier:
         specifier: ^3.8.3
         version: 3.8.3
+      reka-ui:
+        specifier: ^2.9.10
+        version: 2.9.10(vue@3.5.38(typescript@5.9.3))
+      sortablejs:
+        specifier: ^1.15.7
+        version: 1.15.7
       tailwindcss:
         specifier: ^4.3.0
         version: 4.3.0
@@ -144,9 +141,18 @@ importers:
       vite-plugin-electron-renderer:
         specifier: ^0.14.7
         version: 0.14.7
+      vue:
+        specifier: ^3.5.38
+        version: 3.5.38(typescript@5.9.3)
+      vue-router:
+        specifier: ^4.6.4
+        version: 4.6.4(vue@3.5.38(typescript@5.9.3))
       vue-tsc:
         specifier: ^3.3.3
         version: 3.3.3(typescript@5.9.3)
+      yzs-keep-alive-v3:
+        specifier: ^0.1.2
+        version: 0.1.2(vue@3.5.38(typescript@5.9.3))
 
   server:
     dependencies:

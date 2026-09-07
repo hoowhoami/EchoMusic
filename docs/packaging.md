@@ -1,0 +1,64 @@
+# Desktop packaging dependencies
+
+The renderer, desktop lyrics, and plugin window are bundled by Vite. Packages
+used only by those entry points belong in the root `devDependencies`: their
+runtime code is already included in `dist`. This includes Vue and the Vue API
+exposed to plugins by the host.
+
+electron-builder also collects production `node_modules`, even when `build.files`
+only lists `dist` and `dist-electron`. Putting renderer-only packages in root
+`dependencies` therefore ships an additional, unused copy of their source trees.
+
+Keep main-process and preload dependencies in `dependencies`. In particular,
+`font-list` and `music-metadata` are external in `vite.config.mts` and must remain
+available at runtime. This optimization intentionally leaves the other
+main-process dependencies in place, including updater and logging support.
+
+`ieee754` (used by `music-metadata` through `token-types`) and `ms` (used by
+`debug`) are explicit production dependencies as a packaging workaround. With
+the current pnpm/electron-builder dependency collector, the comparison package
+omitted these shared transitive dependencies. Keep them explicit until a packaged
+dependency-resolution check confirms that the collector includes them reliably.
+
+Before moving another dependency:
+
+1. Check imports and dynamic loading in main, preload, shared code, and plugin
+   host APIs, not just the main renderer.
+2. Run `pnpm exec vue-tsc --noEmit` and `pnpm exec vite build`.
+3. Inspect the generated main/preload imports and the packaged ASAR. Verify that
+   external runtime packages are present and renderer-only source trees are absent.
+4. Compare packages built from the same renderer/native artifacts, architecture,
+   server dependencies, signing settings, and archive format. Report compressed
+   archive size separately from installed application size.
+
+The server submodule has its own runtime dependencies. CI replaces its pnpm
+workspace links with an npm production install before packaging. When preparing
+local comparison builds, use an equivalent flat production dependency directory;
+copying workspace symlinks through `extraResources` can create broken links.
+
+Bundled third-party code still has license obligations when its package is a
+development dependency. Keep `LICENSES` and `THIRD_PARTY_NOTICES.md` in the package.
+
+## Size comparison (2026-09-07)
+
+Local macOS arm64 comparison for 2.3.1-beta.25 / Electron 43.6.0, using identical
+renderer/main/preload artifacts and native binaries, the same temporary flat
+server production install, ad-hoc signing, and electron-builder's ZIP target:
+
+| Measurement | Before | After | Reduction |
+| --- | ---: | ---: | ---: |
+| ZIP download | 128.59 MiB | 124.88 MiB | 3.71 MiB (2.9%) |
+| Application regular-file bytes | 337.74 MiB | 316.67 MiB | 21.07 MiB (6.2%) |
+| app.asar | 29.78 MiB | 8.71 MiB | 21.07 MiB (70.8%) |
+
+Application size above excludes symlinks and filesystem allocation overhead;
+it is not a `du` measurement. Results include the two explicit transitive runtime
+dependencies noted above. No dependency versions were upgraded.
+
+Validation: TypeScript checking and Vite production builds passed; the root
+lockfile passed an isolated offline frozen-lockfile check. The optimized ASAR
+omits all 13 renderer-only package directories, resolves the nine declared runtime
+dependencies and generated static main/preload imports, loads `font-list`, and
+parses a WAV with the packaged `music-metadata`. App code and native binaries
+match the comparison package byte for byte. Full application interaction and
+Windows/Linux packaging were not tested in this comparison.
