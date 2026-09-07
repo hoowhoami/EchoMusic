@@ -427,16 +427,16 @@ onMounted(() => {
   align-items: center;
   justify-content: center;
   padding: 40px 24px 72px;
-  background: var(--color-bg-main);
+  background: transparent;
 }
 
 .plugin-share-shell {
   width: min(680px, 100%);
   padding: 28px;
-  border: 1px solid var(--border-subtle);
+  border: 1px solid var(--content-panel-border);
   border-radius: 8px;
-  background: var(--color-bg-elevated);
-  box-shadow: var(--shadow-elevated);
+  background: var(--content-panel-bg);
+  box-shadow: var(--shadow-card);
 }
 
 .plugin-share-kicker {
@@ -515,7 +515,7 @@ onMounted(() => {
 .plugin-share-plugin {
   padding: 14px;
   border-radius: 8px;
-  border: 1px solid var(--border-subtle);
+  border: 1px solid var(--content-panel-border);
   background: var(--control-muted-bg);
 }
 

@@ -127,7 +127,7 @@ export const useThemeStore = defineStore('theme', {
       this.syncAccentGradient();
     },
     setAccentGradientStrength(value: number) {
-      this.accentGradientStrength = clampAccentGradientSetting(value, 20, 100);
+      this.accentGradientStrength = clampAccentGradientSetting(value, 20, 200);
       this.syncAccentGradient();
     },
     resetAccentGradientAppearance() {
@@ -193,9 +193,11 @@ export const useThemeStore = defineStore('theme', {
     syncAccentGradient() {
       const body = document.body;
       const height = clampAccentGradientSetting(this.accentGradientHeight, 35, 100);
-      const strength = clampAccentGradientSetting(this.accentGradientStrength, 20, 100);
+      const strength = clampAccentGradientSetting(this.accentGradientStrength, 20, 200);
       body.style.setProperty('--accent-gradient-user-height', `${height}%`);
-      body.style.setProperty('--accent-gradient-user-opacity', String(strength / 100));
+      // CSS opacity stops at 1; intensities above 100% scale the gradient stops instead.
+      body.style.setProperty('--accent-gradient-user-opacity', String(Math.min(1, strength / 100)));
+      body.style.setProperty('--accent-gradient-user-gain', String(Math.max(1, strength / 100)));
       body.classList.toggle('accent-gradient-disabled', !this.accentGradient);
     },
   },

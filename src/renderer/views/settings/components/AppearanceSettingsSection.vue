@@ -137,18 +137,18 @@ const isAccentGradientDefault = computed(
       <div class="settings-divider"></div>
       <div class="settings-item">
         <div class="space-y-1">
-          <h3 class="font-semibold">渐变强度</h3>
-          <p class="text-sm text-text-secondary">控制主题色氛围的浓淡</p>
+          <h3 class="font-semibold">渐变浓度</h3>
+          <p class="text-sm text-text-secondary">100% 为默认浓度，向左调淡，向右加浓</p>
         </div>
         <Slider
           class="w-48"
           :model-value="themeStore.accentGradientStrength"
           :min="20"
-          :max="100"
+          :max="200"
           :step="5"
           show-value
           value-suffix="%"
-          aria-label="渐变强度"
+          aria-label="渐变浓度"
           @update:model-value="themeStore.setAccentGradientStrength($event)"
           @value-commit="themeStore.setAccentGradientStrength($event)"
         />

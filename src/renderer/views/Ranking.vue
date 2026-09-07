@@ -454,7 +454,7 @@ watch(
 
 .rank-selector-item {
   @apply px-4 py-2 rounded-lg text-[12px] font-semibold text-text-main transition-all;
-  background: var(--control-bg);
+  background: var(--control-muted-bg);
   border: 1px solid var(--control-border);
 }
 

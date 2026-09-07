@@ -508,16 +508,16 @@ watch(
   align-items: center;
   justify-content: center;
   padding: 40px 24px 72px;
-  background: var(--color-bg-main);
+  background: transparent;
 }
 
 .share-resolve-shell {
   width: min(680px, 100%);
   padding: 28px;
-  border: 1px solid var(--border-subtle);
+  border: 1px solid var(--content-panel-border);
   border-radius: 18px;
-  background: var(--color-bg-elevated);
-  box-shadow: var(--shadow-elevated);
+  background: var(--content-panel-bg);
+  box-shadow: var(--shadow-card);
 }
 
 .share-resolve-kicker {

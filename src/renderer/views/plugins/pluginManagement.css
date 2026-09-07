@@ -2,7 +2,7 @@
 
 .plugin-management-page {
   position: relative;
-  background: var(--color-bg-main);
+  background: transparent;
 }
 
 .plugin-local-install-overlay {
@@ -80,7 +80,7 @@
   gap: 0.5rem;
   padding: 0.375rem 0.75rem;
   border-radius: 8px;
-  background: var(--control-bg);
+  background: var(--control-muted-bg);
   border: 1px solid var(--control-border);
   color: var(--color-text-main);
 }
@@ -92,7 +92,7 @@
   gap: 0.25rem;
   padding: 0.25rem;
   border-radius: 10px;
-  background: color-mix(in srgb, var(--control-bg) 92%, var(--color-text-main) 4%);
+  background: var(--control-muted-bg);
   border: 1px solid var(--control-border);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
@@ -143,7 +143,7 @@
 
 .plugin-view-tab.is-active {
   color: var(--color-primary-text);
-  background: color-mix(in srgb, var(--color-primary) 12%, var(--color-bg-elevated));
+  background: var(--control-active-bg);
   box-shadow:
     0 1px 2px rgba(0, 0, 0, 0.06),
     inset 0 0 0 1px color-mix(in srgb, var(--color-primary) 18%, transparent);
@@ -222,7 +222,7 @@
 
 .plugin-card {
   min-height: 212px;
-  background: var(--color-bg-elevated);
+  background: var(--content-panel-bg);
   border: 1px solid var(--border-subtle);
   border-radius: 8px;
   padding: 1rem;
@@ -655,7 +655,7 @@
   padding: 0.875rem;
   border: 1px solid var(--border-subtle);
   border-radius: 8px;
-  background: var(--color-bg-elevated);
+  background: var(--content-panel-bg);
 }
 
 .plugin-source-main {

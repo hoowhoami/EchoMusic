@@ -594,7 +594,7 @@ onMounted(() => loadData());
                   <h3 class="text-[16px] font-black">账号档案</h3>
                 </div>
                 <div
-                  class="profile-archive-card space-y-0.5 p-2 rounded-[18px] bg-[var(--color-bg-elevated)] border border-[var(--border-subtle)] shadow-sm"
+                  class="profile-archive-card space-y-0.5 p-2 rounded-[18px] bg-[var(--content-panel-bg)] border border-[var(--content-panel-border)] shadow-sm"
                 >
                   <div class="flex items-center justify-between px-4 py-3">
                     <span class="text-[13px] opacity-60 font-bold">用户 ID</span>
@@ -1021,9 +1021,9 @@ onMounted(() => loadData());
 }
 
 .profile-archive-card {
-  background-color: var(--color-bg-elevated) !important;
-  border-color: var(--border-subtle) !important;
-  box-shadow: var(--shadow-elevated) !important;
+  background-color: var(--content-panel-bg) !important;
+  border-color: var(--content-panel-border) !important;
+  box-shadow: var(--shadow-card) !important;
 }
 
 .login-device-row {

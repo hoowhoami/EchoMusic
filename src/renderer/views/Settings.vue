@@ -960,7 +960,7 @@ const findSectionElement = (id: string) => {
 }
 
 .settings-search:focus-within {
-  background: var(--control-bg);
+  background: var(--control-muted-bg);
   border-color: var(--color-primary);
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-primary) 12%, transparent);
 }
@@ -1054,8 +1054,8 @@ const findSectionElement = (id: string) => {
 
 .settings-card {
   @apply rounded-2xl p-5 space-y-5 transition-all duration-300 border overflow-visible;
-  background: var(--color-bg-elevated);
-  border-color: var(--border-subtle);
+  background: var(--content-panel-bg);
+  border-color: var(--content-panel-border);
   --settings-divider-color: color-mix(in srgb, var(--color-text-main) 12%, transparent);
   font-size: 13px;
   box-shadow: 0 2px 12px color-mix(in srgb, var(--color-text-main) 3%, transparent);
@@ -1159,7 +1159,7 @@ const findSectionElement = (id: string) => {
 
 .shortcut-input {
   @apply w-full px-3 py-1.5 text-[13px] font-medium border rounded-lg text-text-main text-center cursor-pointer transition-all tracking-wide;
-  background: var(--control-bg);
+  background: var(--control-muted-bg);
   border-color: var(--control-border);
 }
 
@@ -1194,7 +1194,7 @@ const findSectionElement = (id: string) => {
 
 .settings-input {
   @apply px-3 py-1.5 text-[12px] font-medium border rounded-lg text-text-main transition-all;
-  background: var(--control-bg);
+  background: var(--control-muted-bg);
   border-color: var(--control-border);
 }
 

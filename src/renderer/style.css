@@ -61,6 +61,10 @@
   --border-strong: color-mix(in srgb, var(--text-main) 18%, transparent);
   --control-bg: color-mix(in srgb, var(--surface-card-base) 94%, transparent);
   --control-muted-bg: color-mix(in srgb, var(--text-main) 4%, transparent);
+  /* 内容表面透出页面渐变；弹窗、浮层仍使用各自的不透明背景。 */
+  --content-panel-bg: color-mix(in srgb, var(--surface-card-base) 36%, transparent);
+  --content-panel-border: color-mix(in srgb, var(--text-main) 7%, transparent);
+  --content-selected-bg: color-mix(in srgb, var(--surface-card-base) 56%, transparent);
   --control-hover-bg: color-mix(in srgb, var(--text-main) 7%, transparent);
   --control-active-bg: color-mix(in srgb, var(--color-primary) 10%, transparent);
   --control-border: color-mix(in srgb, var(--border-light) 76%, transparent);
@@ -161,6 +165,9 @@ body.accent-scoped .main-layout .player-bar-container {
   --border-light: #3a3a3d;
   --control-bg: color-mix(in srgb, var(--surface-card-base) 90%, transparent);
   --control-muted-bg: color-mix(in srgb, var(--text-main) 6%, transparent);
+  --content-panel-bg: color-mix(in srgb, var(--surface-card-base) 28%, transparent);
+  --content-panel-border: color-mix(in srgb, var(--text-main) 8%, transparent);
+  --content-selected-bg: color-mix(in srgb, var(--text-main) 10%, transparent);
   --control-hover-bg: color-mix(in srgb, var(--text-main) 10%, transparent);
   --control-border: color-mix(in srgb, var(--border-light) 80%, transparent);
   --control-border-hover: color-mix(in srgb, var(--text-main) 22%, transparent);
@@ -451,8 +458,8 @@ body.accent-scoped .main-layout .player-bar-container {
   }
 
   .song-search-input {
-    background-color: var(--control-bg) !important;
-    border-color: var(--control-border-hover) !important;
+    background-color: var(--control-muted-bg) !important;
+    border: 1px solid var(--content-panel-border) !important;
     color: var(--color-text-main) !important;
     backdrop-filter: var(--surface-backdrop-filter);
   }
@@ -462,13 +469,13 @@ body.accent-scoped .main-layout .player-bar-container {
   }
 
   .song-search-input:focus-visible {
-    border-color: var(--control-border-hover) !important;
+    border-color: var(--color-primary-text) !important;
     box-shadow: none !important;
   }
 
   .song-locate-btn {
-    background-color: var(--control-bg);
-    border: 1px solid var(--control-border);
+    background-color: var(--control-muted-bg);
+    border: 1px solid var(--content-panel-border);
     box-shadow: none;
     color: color-mix(in srgb, var(--color-text-main) 70%, transparent);
     transition: all 0.2s ease;
@@ -480,6 +487,14 @@ body.accent-scoped .main-layout .player-bar-container {
     background-color: var(--control-hover-bg);
     color: color-mix(in srgb, var(--color-text-main) 90%, transparent);
   }
+
+  .song-search-input:hover:not(:focus-visible) {
+    border-color: var(--control-border-hover) !important;
+  }
+
+  .song-locate-btn:focus-visible {
+    border-color: var(--color-primary-text);
+  }
 }
 
 .explore-header,
@@ -488,6 +503,8 @@ body.accent-scoped .main-layout .player-bar-container {
 .search-song-toolbar,
 .song-list-sticky,
 .comment-main-tabs,
+.fm-play-sticky,
+.search-pinned-tabs,
 .sliver-header-root {
   isolation: isolate;
 }
@@ -497,7 +514,9 @@ body.accent-scoped .main-layout .player-bar-container {
 .new-song-toolbar::before,
 .search-song-toolbar::before,
 .song-list-sticky::before,
-.comment-main-tabs::before {
+.comment-main-tabs::before,
+.fm-play-sticky::before,
+.search-pinned-tabs::before {
   content: '';
   position: absolute;
   top: 0;
@@ -570,18 +589,9 @@ body .app-tooltip-content,
 body .song-context-menu,
 body .add-to-item,
 body .toast-card,
-body .card-container,
-body .plugin-card,
-body .plugin-settings-section,
-body .home-feature-card,
-body .cloud-info-card,
-body .route-error-card,
-body .error-shell,
 body .login-panel-card,
 body .tb-suggestions,
-body .search-suggestions-panel,
-body .profile-archive-card,
-body .rec-playlist-item {
+body .search-suggestions-panel {
   background: var(--color-bg-elevated);
 }
 
@@ -698,7 +708,7 @@ body.echo-surface-translucent .player-bar {
   }
 }
 
-/* 保留全局叠加渐变：顶部舒缓铺开，向下逐渐淡出到透明。 */
+/* 主渐变和吸顶栏切片共用同一绘制规则，始终位于文字/封面下面。 */
 .layout-accent-gradient {
   content: '';
   position: absolute;
@@ -707,11 +717,26 @@ body.echo-surface-translucent .player-bar {
   right: 0;
   height: var(--accent-gradient-height, var(--accent-gradient-user-height, 70%));
   pointer-events: none;
-  z-index: 200;
+  z-index: -1;
+}
+
+.layout-accent-gradient,
+.main-layout
+  :is(
+    .explore-header,
+    .rank-toolbar,
+    .new-song-toolbar,
+    .search-song-toolbar,
+    .song-list-sticky,
+    .comment-main-tabs,
+    .fm-play-sticky,
+    .search-pinned-tabs,
+    .sliver-header-background
+  )::after {
   opacity: var(--accent-gradient-opacity, var(--accent-gradient-user-opacity, 1));
   --agc: var(--accent-gradient-color-rgb, var(--color-atmosphere-rgb, var(--color-primary-rgb)));
-  --agp: var(--accent-gradient-peak-opacity, 0.24);
-  --agm: var(--accent-gradient-mid-opacity, 0.095);
+  --agp: var(--accent-gradient-peak-opacity, calc(0.32 * var(--accent-gradient-user-gain, 1)));
+  --agm: var(--accent-gradient-mid-opacity, calc(0.127 * var(--accent-gradient-user-gain, 1)));
   --accent-gradient-default-background: linear-gradient(
     var(--accent-gradient-angle, 180deg),
     rgba(var(--agc), var(--agp)) 0%,
@@ -729,29 +754,151 @@ body.echo-surface-translucent .player-bar {
   transition: opacity 0.3s ease;
 }
 
-.dark .layout-accent-gradient {
+.dark .layout-accent-gradient,
+.dark
+  .main-layout
+  :is(
+    .explore-header,
+    .rank-toolbar,
+    .new-song-toolbar,
+    .search-song-toolbar,
+    .song-list-sticky,
+    .comment-main-tabs,
+    .fm-play-sticky,
+    .search-pinned-tabs,
+    .sliver-header-background
+  )::after {
   --agc: var(
     --accent-gradient-color-rgb-dark,
     var(--accent-gradient-color-rgb, var(--color-atmosphere-rgb, var(--color-primary-rgb)))
   );
-  --agp: var(--accent-gradient-peak-opacity-dark, var(--accent-gradient-peak-opacity, 0.22));
-  --agm: var(--accent-gradient-mid-opacity-dark, var(--accent-gradient-mid-opacity, 0.09));
+  --agp: var(
+    --accent-gradient-peak-opacity-dark,
+    var(--accent-gradient-peak-opacity, calc(0.3 * var(--accent-gradient-user-gain, 1)))
+  );
+  --agm: var(
+    --accent-gradient-mid-opacity-dark,
+    var(--accent-gradient-mid-opacity, calc(0.123 * var(--accent-gradient-user-gain, 1)))
+  );
   background: var(
     --accent-gradient-background-dark,
     var(--accent-gradient-background, var(--accent-gradient-default-background))
   );
 }
 
-body.echo-surface-translucent .layout-accent-gradient {
+body.echo-surface-translucent .layout-accent-gradient,
+body.echo-surface-translucent
+  .main-layout
+  :is(
+    .explore-header,
+    .rank-toolbar,
+    .new-song-toolbar,
+    .search-song-toolbar,
+    .song-list-sticky,
+    .comment-main-tabs,
+    .fm-play-sticky,
+    .search-pinned-tabs,
+    .sliver-header-background
+  )::after {
   opacity: 0;
 }
 
-body.accent-gradient-disabled .layout-accent-gradient {
+body.accent-gradient-disabled .layout-accent-gradient,
+body.accent-gradient-disabled
+  .main-layout
+  :is(
+    .explore-header,
+    .rank-toolbar,
+    .new-song-toolbar,
+    .search-song-toolbar,
+    .song-list-sticky,
+    .comment-main-tabs,
+    .fm-play-sticky,
+    .search-pinned-tabs,
+    .sliver-header-background
+  )::after {
   opacity: 0;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .layout-accent-gradient {
+  .layout-accent-gradient,
+  .main-layout
+    :is(
+      .explore-header,
+      .rank-toolbar,
+      .new-song-toolbar,
+      .search-song-toolbar,
+      .song-list-sticky,
+      .comment-main-tabs,
+      .fm-play-sticky,
+      .search-pinned-tabs,
+      .sliver-header-background
+    )::after {
     transition: none;
   }
+}
+
+.main-layout {
+  isolation: isolate;
+}
+
+/* Each sticky surface has an opaque base beneath this gradient-only slice.
+   Viewport alignment keeps adjacent slices and the main canvas continuous. */
+.main-layout
+  :is(
+    .explore-header,
+    .rank-toolbar,
+    .new-song-toolbar,
+    .search-song-toolbar,
+    .song-list-sticky,
+    .comment-main-tabs,
+    .fm-play-sticky,
+    .search-pinned-tabs,
+    .sliver-header-background
+  )::after,
+.dark
+  .main-layout
+  :is(
+    .explore-header,
+    .rank-toolbar,
+    .new-song-toolbar,
+    .search-song-toolbar,
+    .song-list-sticky,
+    .comment-main-tabs,
+    .fm-play-sticky,
+    .search-pinned-tabs,
+    .sliver-header-background
+  )::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc((100% - 100vw) / 2);
+  width: 100vw;
+  z-index: -1;
+  pointer-events: none;
+  background-attachment: fixed;
+  background-repeat: no-repeat;
+  background-position: left top;
+  background-size: 100vw var(--accent-gradient-rendered-height, 70vh);
+}
+.main-layout .sliver-header-background::after {
+  z-index: 0;
+}
+
+body:not(.accent-gradient-disabled):not(.echo-surface-translucent)
+  .main-content
+  .bg-bg-main:not(.song-list-sticky):not(.rank-toolbar):not(.new-song-toolbar):not(
+    .search-song-toolbar
+  ):not(.comment-main-tabs):not(.sliver-header-background):not(.loading-view):not(.login-page) {
+  background-color: transparent;
+}
+body:not(.accent-gradient-disabled):not(.echo-surface-translucent) .main-layout .sidebar {
+  background-color: color-mix(in srgb, var(--surface-sidebar-base) 14%, transparent);
+}
+/* Equal coverage to the old translated background, without a transformed
+   coordinate system that would detach the fixed gradient from the viewport. */
+body:not(.accent-gradient-disabled):not(.echo-surface-translucent) .sliver-header-background {
+  height: var(--sliver-background-height) !important;
+  transform: none !important;
 }

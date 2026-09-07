@@ -516,7 +516,7 @@ const handleRemoveImpulseResponse = (id: string) => {
 }
 
 .irs-source-tabs button.is-active {
-  background: var(--color-bg-elevated);
+  background: var(--content-selected-bg);
   color: var(--color-primary-text);
   box-shadow: var(--shadow-control);
 }

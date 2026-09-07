@@ -1801,7 +1801,7 @@ watch(total, (value) => {
   font-size: 12px;
   font-weight: 600;
   color: var(--color-text-main);
-  background: var(--color-bg-elevated);
+  background: var(--control-muted-bg);
   box-shadow: var(--shadow-control);
 }
 

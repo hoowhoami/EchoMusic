@@ -76,8 +76,8 @@ const handleClick = () => {
 
 .card-container {
   @apply p-3 rounded-[20px] transition-all duration-300;
-  background: var(--color-bg-elevated);
-  border: 1px solid var(--border-subtle);
+  background: var(--content-panel-bg);
+  border: 1px solid var(--content-panel-border);
   box-shadow: var(--shadow-card);
 }
 

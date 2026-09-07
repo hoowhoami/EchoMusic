@@ -1033,7 +1033,7 @@ onUnmounted(() => {
 .history-album-highlight {
   border: 1px solid var(--border-subtle);
   border-radius: 8px;
-  background: color-mix(in srgb, var(--color-bg-main) 94%, var(--color-text-main) 6%);
+  background: var(--control-muted-bg);
 }
 
 .history-stat-card {

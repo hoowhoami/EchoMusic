@@ -755,7 +755,7 @@ onUnmounted(() => {
 }
 
 .tb-search-input-wrap:focus-within {
-  background: var(--control-bg);
+  background: var(--control-muted-bg);
   border-color: var(--color-primary);
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-primary) 12%, transparent);
 }

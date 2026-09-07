@@ -130,8 +130,8 @@ const handleCopyError = async () => {
   padding: 28px;
   border-radius: 30px;
   border: 1px solid var(--border-subtle);
-  background: var(--color-bg-dialog);
-  box-shadow: var(--shadow-dialog);
+  background: var(--content-panel-bg);
+  box-shadow: var(--shadow-card);
   backdrop-filter: var(--surface-backdrop-filter);
 }
 

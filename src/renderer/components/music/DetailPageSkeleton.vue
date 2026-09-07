@@ -98,7 +98,7 @@ withDefaults(defineProps<Props>(), {
 .detail-page-skeleton {
   min-height: 100%;
   padding: 10px 24px 48px;
-  background: var(--color-bg-main);
+  background: transparent;
   contain: layout style;
 }
 

@@ -564,7 +564,7 @@ const commitRename = (id: string) => {
 
 .engine-card.is-active {
   border-color: var(--color-primary);
-  background: color-mix(in srgb, var(--color-primary) 7%, var(--color-bg-elevated));
+  background: color-mix(in srgb, var(--color-primary) 7%, transparent);
 }
 
 .engine-card-header,
@@ -655,7 +655,7 @@ const commitRename = (id: string) => {
   padding: 4px 8px;
   border: 1px solid color-mix(in srgb, var(--color-primary) 20%, var(--control-border));
   border-radius: 9999px;
-  background: color-mix(in srgb, var(--color-primary) 5%, var(--color-bg-elevated));
+  background: color-mix(in srgb, var(--color-primary) 5%, transparent);
   color: var(--color-text-secondary);
   font-size: 9px;
   font-weight: 650;

@@ -800,15 +800,4 @@ watch(
   font-size: 14px;
   font-weight: 600;
 }
-
-.song-locate-btn {
-  color: var(--color-text-main);
-  opacity: 0.6;
-  transition: all 0.2s ease;
-}
-
-.song-locate-btn:hover {
-  opacity: 1;
-  background: color-mix(in srgb, var(--color-text-main) 8%, transparent);
-}
 </style>

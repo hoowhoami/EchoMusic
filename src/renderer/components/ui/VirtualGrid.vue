@@ -210,9 +210,9 @@ defineExpose({
 .virtual-grid-skeleton-card {
   min-width: 0;
   padding: 10px;
-  border: 1px solid var(--border-subtle);
+  border: 1px solid var(--content-panel-border);
   border-radius: 20px;
-  background: var(--color-bg-elevated);
+  background: var(--content-panel-bg);
   box-shadow: var(--shadow-card);
 }
 

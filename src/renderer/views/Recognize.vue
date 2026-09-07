@@ -1080,7 +1080,7 @@ onUnmounted(() => {
   padding: 8px 12px;
   border-radius: 8px;
   border: 1px solid var(--control-border);
-  background: var(--color-bg-elevated);
+  background: var(--control-muted-bg);
   text-align: left;
   display: flex;
   align-items: center;

@@ -121,8 +121,8 @@ const handleClick = () => {
   @apply p-[10px] rounded-[20px] transition-all duration-300;
   --playlist-card-shadow: var(--shadow-card);
   --playlist-card-hover-shadow: var(--shadow-card-hover);
-  background: var(--color-bg-elevated);
-  border: 1px solid var(--border-subtle);
+  background: var(--content-panel-bg);
+  border: 1px solid var(--content-panel-border);
 }
 
 .playlist-card-grid:hover .card-container {

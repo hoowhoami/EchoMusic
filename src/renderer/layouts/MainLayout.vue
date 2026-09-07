@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
+import { useResizeObserver } from '@vueuse/core';
 import { useSettingStore } from '@/stores/setting';
 import { pageTransitionState } from '@/plugins/runtime/theme';
 import { updateRouteViewCacheKey } from '@/utils/routeViewCache';
@@ -8,6 +9,17 @@ import { YzsKeepAlive } from 'yzs-keep-alive-v3';
 import Sidebar from './Sidebar.vue';
 import TitleBar from './TitleBar.vue';
 import PlayerBar from './PlayerBar.vue';
+
+const gradientRef = ref<HTMLElement | null>(null);
+// Track the resolved size, including plugin overrides in px/%/vh, for sticky slices.
+useResizeObserver(gradientRef, (entries) => {
+  const entry = entries[0];
+  if (!entry) return;
+  gradientRef.value?.parentElement?.style.setProperty(
+    '--accent-gradient-rendered-height',
+    `${entry.contentRect.height}px`,
+  );
+});
 
 const route = useRoute();
 const router = useRouter();
@@ -167,8 +179,8 @@ watch(
   <div
     class="main-layout relative h-screen w-screen flex overflow-hidden bg-bg-main text-text-main transition-colors duration-300"
   >
-    <!-- 主题色顶部渐变氛围层（横跨侧栏与内容，盖住中缝避免出现分隔白线） -->
-    <div class="layout-accent-gradient"></div>
+    <!-- 共用渐变层位于内容下面，不染色文字和封面。 -->
+    <div ref="gradientRef" class="layout-accent-gradient" aria-hidden="true"></div>
 
     <div
       class="sidebar-wrapper shrink-0 relative"

@@ -673,7 +673,6 @@ onActivated(() => {
   z-index: 105;
   margin-bottom: 18px;
   padding: 8px 0 12px;
-  background: var(--color-bg-main);
   border-bottom: 1px solid transparent;
 }
 
@@ -1035,13 +1034,7 @@ onActivated(() => {
 .fm-panel {
   border-radius: 24px;
   border: 1px solid color-mix(in srgb, var(--color-text-main) 7%, transparent);
-  background:
-    linear-gradient(
-      180deg,
-      color-mix(in srgb, var(--color-text-main) 2.2%, transparent),
-      transparent
-    ),
-    var(--color-bg-main);
+  background: var(--content-panel-bg);
   padding: 22px;
   margin-top: 28px;
   box-shadow: 0 14px 30px rgba(15, 23, 42, 0.05);

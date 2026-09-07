@@ -31,10 +31,10 @@
   background:
     linear-gradient(
       125deg,
-      color-mix(in srgb, var(--color-primary) 16%, var(--color-bg-card)) 0%,
-      var(--color-bg-card) 58%
+      color-mix(in srgb, var(--color-primary) 16%, var(--content-panel-bg)) 0%,
+      var(--content-panel-bg) 58%
     ),
-    var(--color-bg-card);
+    var(--content-panel-bg);
   box-shadow: 0 24px 65px color-mix(in srgb, var(--color-primary) 9%, transparent);
 }
 
@@ -165,7 +165,7 @@
   padding: 14px 16px;
   border: 1px solid color-mix(in srgb, var(--color-primary) 18%, var(--border-subtle));
   border-radius: 16px;
-  background: color-mix(in srgb, var(--color-primary) 7%, var(--color-bg-card));
+  background: color-mix(in srgb, var(--color-primary) 7%, var(--content-panel-bg));
 }
 
 .listen-active-session-banner > div {
@@ -229,7 +229,7 @@
 .listen-search-shell:focus-within {
   color: var(--color-primary-text);
   border-color: color-mix(in srgb, var(--color-primary) 40%, var(--border-subtle));
-  background: var(--color-bg-card);
+  background: var(--content-panel-bg);
 }
 
 .listen-search-shell input {
@@ -285,7 +285,7 @@
 .listen-room-type-tabs button.is-active {
   color: var(--color-text-main);
   border-color: color-mix(in srgb, var(--color-primary) 44%, var(--border-subtle));
-  background: color-mix(in srgb, var(--color-primary) 9%, var(--color-bg-card));
+  background: color-mix(in srgb, var(--color-primary) 9%, var(--content-panel-bg));
   box-shadow: 0 9px 24px color-mix(in srgb, var(--color-primary) 9%, transparent);
 }
 
@@ -344,7 +344,7 @@
   text-align: left;
   border: 1px solid var(--border-subtle);
   border-radius: 20px;
-  background: var(--color-bg-card);
+  background: var(--content-panel-bg);
   box-shadow: var(--shadow-card);
   transition:
     transform 0.2s ease,
@@ -697,7 +697,7 @@
       color-mix(in srgb, var(--color-primary) 18%, transparent),
       transparent 48%
     ),
-    var(--color-bg-card);
+    var(--content-panel-bg);
   box-shadow: var(--shadow-card);
 }
 
@@ -777,7 +777,7 @@
   flex-direction: column;
   border: 1px solid var(--border-subtle);
   border-radius: 18px;
-  background: var(--color-bg-card);
+  background: var(--content-panel-bg);
   box-shadow: var(--shadow-card);
 }
 
@@ -1385,7 +1385,7 @@
 .listen-privacy-options button.is-selected {
   color: var(--color-text-main);
   border-color: color-mix(in srgb, var(--color-primary) 46%, var(--border-subtle));
-  background: color-mix(in srgb, var(--color-primary) 9%, var(--color-bg-card));
+  background: color-mix(in srgb, var(--color-primary) 9%, var(--content-panel-bg));
 }
 
 .listen-create-type-options strong,
@@ -1525,7 +1525,7 @@
 
 .listen-create-playlist:hover {
   border-color: color-mix(in srgb, var(--color-primary) 42%, var(--border-subtle));
-  background: color-mix(in srgb, var(--color-primary) 7%, var(--color-bg-card));
+  background: color-mix(in srgb, var(--color-primary) 7%, var(--content-panel-bg));
 }
 
 .listen-create-playlist-icon {
@@ -1653,7 +1653,7 @@
 
 .listen-song-picker-tabs button.is-active {
   color: var(--color-text-main);
-  background: var(--color-bg-card);
+  background: var(--content-panel-bg);
   box-shadow: 0 2px 8px color-mix(in srgb, black 7%, transparent);
 }
 
@@ -1999,7 +1999,7 @@
   gap: 12px;
   padding: 13px 16px;
   border-radius: 16px;
-  background: var(--color-bg-elevated);
+  background: var(--content-panel-bg);
 }
 
 .listen-room-type-tabs button > span:last-child {
@@ -2030,7 +2030,7 @@
 
 .listen-room-type-tabs button.is-active {
   border-color: color-mix(in srgb, var(--color-primary) 42%, var(--border-subtle));
-  background: color-mix(in srgb, var(--color-primary) 8%, var(--color-bg-elevated));
+  background: var(--control-active-bg);
   box-shadow: none;
 }
 
@@ -2047,7 +2047,7 @@
   padding: 12px;
   border: 1px solid var(--border-subtle);
   border-radius: 16px;
-  background: var(--color-bg-elevated);
+  background: var(--content-panel-bg);
 }
 
 .listen-filter-strip {
@@ -2134,7 +2134,7 @@
   position: relative;
   padding: 0;
   border-radius: 16px;
-  background: var(--color-bg-elevated);
+  background: var(--content-panel-bg);
   box-shadow: none;
 }
 
@@ -2386,7 +2386,7 @@
 
 .listen-room-type-tabs button:not(.is-active) .listen-room-type-icon {
   color: color-mix(in srgb, var(--color-text-main) 58%, transparent);
-  background: color-mix(in srgb, var(--color-bg-elevated) 82%, var(--control-muted-bg));
+  background: var(--control-muted-bg);
 }
 
 .listen-room-type-tabs button:not(.is-active):hover {
@@ -2735,7 +2735,7 @@
   padding: 11px 12px 10px;
   border: 1px solid var(--border-subtle);
   border-radius: 18px;
-  background: var(--color-bg-card);
+  background: var(--content-panel-bg);
   box-shadow: 0 8px 24px color-mix(in srgb, #000 4%, transparent);
 }
 
@@ -2823,7 +2823,7 @@
 
 .listen-scope-tabs button.is-active {
   color: var(--color-text-main);
-  background: var(--color-bg-card);
+  background: var(--content-panel-bg);
   box-shadow: 0 2px 8px color-mix(in srgb, #000 8%, transparent);
 }
 
@@ -2842,7 +2842,7 @@
 
 .listen-browser-panel .listen-search-shell:focus-within {
   border-color: color-mix(in srgb, var(--color-primary) 36%, transparent);
-  background: var(--color-bg-card);
+  background: var(--content-panel-bg);
 }
 
 .listen-filter-strip {
@@ -2896,7 +2896,7 @@
 .listen-room-card {
   overflow: hidden;
   border-radius: 17px;
-  background: var(--color-bg-card);
+  background: var(--content-panel-bg);
   box-shadow: 0 8px 24px color-mix(in srgb, #000 5%, transparent);
 }
 

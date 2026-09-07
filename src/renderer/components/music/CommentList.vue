@@ -492,7 +492,7 @@ const formatLike = (value: number) => {
   gap: 6px;
   padding: 6px 10px;
   border-radius: 999px;
-  background: var(--control-bg);
+  background: var(--control-muted-bg);
   color: var(--color-primary-text);
   font-size: 11px;
   font-weight: 600;

@@ -600,8 +600,8 @@ const handleRejectAgreement = () => {
   height: 72px;
   padding: 0 18px;
   border-radius: 16px;
-  background: var(--color-bg-elevated);
-  border: 1px solid var(--border-subtle);
+  background: var(--content-panel-bg);
+  border: 1px solid var(--content-panel-border);
   transition: all 0.2s ease;
 }
 
@@ -707,7 +707,7 @@ const handleRejectAgreement = () => {
 
 .playlist-source-btn.active {
   color: var(--color-text-main);
-  background: var(--color-bg-elevated);
+  background: var(--content-selected-bg);
   box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
 }
 
@@ -748,9 +748,9 @@ const handleRejectAgreement = () => {
 }
 
 .style-recommend-panel {
-  border: 1px solid var(--border-subtle);
+  border: 1px solid var(--content-panel-border);
   border-radius: 14px;
-  background: color-mix(in srgb, var(--surface-card-base) 86%, transparent);
+  background: var(--content-panel-bg);
   padding: 14px;
 }
 
@@ -803,7 +803,7 @@ const handleRejectAgreement = () => {
 
 .style-category-btn.active {
   color: var(--color-text-main);
-  background: var(--color-bg-elevated);
+  background: var(--content-selected-bg);
   box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
 }
 
@@ -834,13 +834,14 @@ const handleRejectAgreement = () => {
 
 .style-tag-btn {
   color: var(--color-text-secondary);
-  border-color: var(--control-border);
-  background: var(--control-bg);
+  border-color: var(--content-panel-border);
+  background: var(--control-muted-bg);
 }
 
 .style-tag-btn:hover {
   color: var(--color-text-main);
   border-color: var(--control-border-hover);
+  background: var(--control-hover-bg);
 }
 
 .style-tag-btn.active {

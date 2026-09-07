@@ -1143,7 +1143,7 @@ onUnmounted(() => {
 
 .artist-sort-trigger {
   @apply inline-flex h-9 items-center gap-1.5 rounded-lg px-3 text-[12px] font-semibold text-text-main/75 transition-all;
-  background: var(--control-bg);
+  background: var(--control-muted-bg);
   border: 1px solid var(--control-border);
 }
 
