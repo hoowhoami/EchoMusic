@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import PageStickyHeader from '@/components/ui/PageStickyHeader.vue';
 defineOptions({ name: 'explore' });
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { extractAlbumGroups, extractList } from '@/utils/extractors';
@@ -600,12 +601,15 @@ const filteredArtistCards = computed(() => {
 </script>
 
 <template>
-  <PageScrollContainer class="explore-view-container">
+  <PageScrollContainer
+    class="explore-view-container"
+    :style="{ '--explore-header-height': `${exploreHeaderHeight}px` }"
+  >
     <div
       class="explore-view px-10 pt-4 pb-10"
       :style="{ '--explore-header-height': `${exploreHeaderHeight}px` }"
     >
-      <div class="explore-header">
+      <PageStickyHeader class="explore-header">
         <div class="text-[24px] font-semibold text-text-main tracking-tight">探索发现</div>
         <div class="mt-4">
           <CustomTabBar
@@ -613,7 +617,7 @@ const filteredArtistCards = computed(() => {
             :tabs="['歌单', '排行榜', '新碟上架', '新歌速递', '歌手']"
           />
         </div>
-      </div>
+      </PageStickyHeader>
 
       <div v-if="activeTabIndex === 0" class="mt-0">
         <div class="explore-toolbar">
@@ -640,7 +644,10 @@ const filteredArtistCards = computed(() => {
       </div>
 
       <div v-else-if="activeTabIndex === 1" class="mt-0">
-        <div class="rank-toolbar sticky z-120 bg-bg-main">
+        <PageStickyHeader
+          class="rank-toolbar sticky z-120 bg-bg-main"
+          :sticky-top="exploreHeaderHeight"
+        >
           <div class="rank-toolbar-inner">
             <CustomSelector :label="rankLabel" @click="showRankPicker = true" />
             <div class="rank-toolbar-actions">
@@ -649,11 +656,11 @@ const filteredArtistCards = computed(() => {
               </div>
             </div>
           </div>
-        </div>
+        </PageStickyHeader>
 
         <BatchActionDrawer v-model:open="showRankBatchDrawer" :songs="rankSongs" source-id="rank" />
 
-        <div
+        <PageStickyHeader
           class="song-list-sticky sticky z-110 bg-bg-main"
           :style="{ top: `${rankToolbarOffset}px` }"
         >
@@ -699,7 +706,7 @@ const filteredArtistCards = computed(() => {
             paddingClass="px-0"
             @sort="handleRankSort"
           />
-        </div>
+        </PageStickyHeader>
 
         <div class="pb-12">
           <SongList
@@ -753,7 +760,10 @@ const filteredArtistCards = computed(() => {
       </div>
 
       <div v-else-if="activeTabIndex === 3" class="mt-0">
-        <div class="new-song-toolbar sticky z-120 bg-bg-main">
+        <PageStickyHeader
+          class="new-song-toolbar sticky z-120 bg-bg-main"
+          :sticky-top="exploreHeaderHeight"
+        >
           <div class="new-song-toolbar-inner">
             <div class="new-song-title-wrap">
               <div class="new-song-badge-icon">
@@ -769,7 +779,7 @@ const filteredArtistCards = computed(() => {
               </div>
             </div>
           </div>
-        </div>
+        </PageStickyHeader>
 
         <BatchActionDrawer
           v-model:open="showNewSongBatchDrawer"
@@ -777,7 +787,7 @@ const filteredArtistCards = computed(() => {
           source-id="new-song"
         />
 
-        <div
+        <PageStickyHeader
           class="song-list-sticky sticky z-110 bg-bg-main"
           :style="{ top: `${newSongToolbarOffset}px` }"
         >
@@ -823,7 +833,7 @@ const filteredArtistCards = computed(() => {
             paddingClass="px-0"
             @sort="handleNewSongSort"
           />
-        </div>
+        </PageStickyHeader>
 
         <div class="pb-12">
           <SongList

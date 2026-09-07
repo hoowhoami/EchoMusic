@@ -300,6 +300,7 @@ onMounted(async () => {
   void initMiniPlayerSync().then((dispose) => {
     disposeMiniPlayerSync = dispose;
   });
+  await settings.initWindowBackground();
   settings.syncTheme();
   settings.syncCloseBehavior();
   settings.syncRememberWindowSize();

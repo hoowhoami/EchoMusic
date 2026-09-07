@@ -1523,3 +1523,13 @@ const initialThemeArgument = process.argv.find((arg) => arg.startsWith('--echo-i
 if (initialThemeArgument) {
   contextBridge.exposeInMainWorld('echoInitialDark', initialThemeArgument.endsWith('=true'));
 }
+
+const initialBackgroundArgument = process.argv.find((arg) =>
+  arg.startsWith('--echo-window-background='),
+);
+if (initialBackgroundArgument) {
+  contextBridge.exposeInMainWorld(
+    'echoWindowBackground',
+    JSON.parse(initialBackgroundArgument.slice('--echo-window-background='.length)),
+  );
+}

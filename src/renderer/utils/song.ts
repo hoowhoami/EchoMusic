@@ -110,7 +110,7 @@ export const getSongQualityTag = (song: Pick<Song, 'relateGoods'>): string => {
   const hasQuality = (quality: string, level: number) =>
     goods.some((item: SongRelateGood) => item.quality === quality || item.level === level);
 
-  if (hasQuality('viper_tape', 101)) return '母带';
+  if (hasQuality('viper_tape', 101)) return 'VPR';
   if (hasQuality('high', 6)) return 'Hi-Res';
   if (hasQuality('flac', 5)) return 'SQ';
   if (hasQuality('320', 4)) return 'HQ';

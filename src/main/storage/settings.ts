@@ -1,3 +1,4 @@
+import { DEFAULT_WINDOW_BACKGROUND, type WindowBackground } from '../../shared/window-background';
 import type { CloseBehavior, ThemeMode } from '../../shared/app';
 import type { DesktopLyricSettings } from '../../shared/desktop-lyric';
 import { DEFAULT_DESKTOP_LYRIC_SETTINGS } from '../../shared/desktop-lyric';
@@ -25,6 +26,7 @@ export type MiniPlayerWindowState = {
 export type MainAppSettings = {
   closeBehavior: CloseBehavior;
   theme: ThemeMode;
+  windowBackground: WindowBackground;
   rememberWindowSize: boolean;
   preventSleep: boolean;
   disableGpuAcceleration: boolean;
@@ -53,6 +55,7 @@ export type DesktopLyricPersistedSettings = DesktopLyricSettings & {
 export const DEFAULT_MAIN_APP_SETTINGS: MainAppSettings = {
   closeBehavior: 'tray',
   theme: 'system',
+  windowBackground: { ...DEFAULT_WINDOW_BACKGROUND },
   rememberWindowSize: true,
   preventSleep: true,
   disableGpuAcceleration: false,

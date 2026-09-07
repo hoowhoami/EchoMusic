@@ -171,8 +171,19 @@ const createMountedComponentDisposer = (
 
 const SCROLL_CONTAINER_SELECTOR = '[data-echo-scroll-container]';
 
-const isVisibleScrollContainer = (element: HTMLElement) =>
-  element.clientHeight > 0 && element.getClientRects().length > 0;
+const isVisibleScrollContainer = (element: HTMLElement) => {
+  if (!element.isConnected || element.clientHeight <= 0) return false;
+  // Cached/covered pages can retain their layout boxes while not being painted.
+  if (!element.checkVisibility({ checkVisibilityCSS: true, checkOpacity: true })) return false;
+  const rect = element.getBoundingClientRect();
+  return (
+    rect.width > 0 &&
+    rect.bottom > 0 &&
+    rect.right > 0 &&
+    rect.top < window.innerHeight &&
+    rect.left < window.innerWidth
+  );
+};
 
 const getScrollContainerState = (element: HTMLElement): PluginScrollContainerState => {
   const scrollTop = Math.max(0, element.scrollTop || 0);

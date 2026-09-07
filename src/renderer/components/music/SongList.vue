@@ -327,6 +327,8 @@ const clearStickyOffsetCache = () => {
 };
 
 const getStickyOffset = (scrollContainer: HTMLElement): number => {
+  const layerInset = scrollContainer.dataset.echoStickyInset;
+  if (layerInset !== undefined) return Number(layerInset) || 0;
   const baseSelector = '.sliver-header-root, .song-list-sticky';
   const selector = props.stickySelector ? `${baseSelector}, ${props.stickySelector}` : baseSelector;
   if (cachedStickyContainer !== scrollContainer || cachedStickySelector !== selector) {

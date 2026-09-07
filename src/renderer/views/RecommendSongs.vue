@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import PageStickyHeader from '@/components/ui/PageStickyHeader.vue';
 defineOptions({ name: 'recommend-songs' });
 import { computed, onMounted, ref } from 'vue';
 import { getEverydayRecommend } from '@/api/music';
@@ -187,7 +188,10 @@ onMounted(() => {
       <BatchActionDrawer v-model:open="showBatchDrawer" :songs="songs" source-id="recommend" />
 
       <Tabs model-value="songs" class="w-full" :style="{ minHeight: tabsMinHeight }">
-        <div class="song-list-sticky sticky z-110 bg-bg-main" :style="{ top: `${tabsTop}px` }">
+        <PageStickyHeader
+          class="song-list-sticky sticky z-110 bg-bg-main"
+          :style="{ top: `${tabsTop}px` }"
+        >
           <div class="px-6">
             <div class="border-b border-[var(--border-subtle)]">
               <div class="flex items-center justify-between h-14">
@@ -233,7 +237,7 @@ onMounted(() => {
             paddingClass="px-6"
             @sort="handleSort"
           />
-        </div>
+        </PageStickyHeader>
 
         <div class="px-6 pb-12">
           <SongList

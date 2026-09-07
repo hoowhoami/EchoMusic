@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ref, computed, useAttrs, onActivated, nextTick } from 'vue';
+import { ref, computed, useAttrs, onActivated, nextTick, onMounted, onBeforeUnmount } from 'vue';
+import { providePageStickyLayers } from '@/composables/usePageStickyLayers';
 import Scrollbar from '@/components/ui/Scrollbar.vue';
 import BackToTop from '@/components/ui/BackToTop.vue';
 import { provideScrollContainer } from '@/composables/usePageScroll';
@@ -23,6 +24,22 @@ withDefaults(defineProps<Props>(), {
 const attrs = useAttrs();
 const scrollbarRef = ref<InstanceType<typeof Scrollbar> | null>(null);
 const scrollContainerEl = ref<HTMLElement | null>(null);
+const {
+  target: stickyLayer,
+  topInset,
+  update: updateStickyLayers,
+  onWheel,
+} = providePageStickyLayers(scrollContainerEl);
+let sizeObserver: ResizeObserver | undefined;
+onMounted(() => {
+  sizeObserver = new ResizeObserver(updateStickyLayers);
+  if (scrollContainerEl.value) sizeObserver.observe(scrollContainerEl.value);
+  window.addEventListener('resize', updateStickyLayers);
+});
+onBeforeUnmount(() => {
+  sizeObserver?.disconnect();
+  window.removeEventListener('resize', updateStickyLayers);
+});
 let savedScrollTop = 0;
 
 // 当 Scrollbar 组件挂载后，获取其内部的滚动 DOM 元素
@@ -44,6 +61,7 @@ const handleScroll = () => {
   if (scrollContainerEl.value) {
     savedScrollTop = scrollContainerEl.value.scrollTop;
   }
+  updateStickyLayers();
 };
 
 // 向子组件提供滚动容器引用
@@ -55,6 +73,7 @@ onActivated(() => {
     if (scrollContainerEl.value && savedScrollTop > 0) {
       scrollContainerEl.value.scrollTop = savedScrollTop;
     }
+    updateStickyLayers();
   });
 });
 
@@ -79,12 +98,16 @@ defineExpose({
       ref="scrollbarRef"
       class="page-scroll-area"
       :hide-scrollbar="hideScrollbar"
+      :scrollbar-top-inset="topInset"
       :content-props="contentProps"
       @vue:mounted="onScrollbarMounted"
       @scroll="handleScroll"
     >
       <slot />
     </Scrollbar>
+    <div ref="stickyLayer" class="page-sticky-layer" @wheel="onWheel">
+      <div class="page-sticky-wheel-surface" aria-hidden="true"></div>
+    </div>
     <BackToTop
       v-if="!hideBackToTop"
       :scroll-container="scrollContainerEl"
@@ -107,5 +130,21 @@ defineExpose({
   flex: 1;
   min-height: 0;
   min-width: 0;
+  clip-path: inset(var(--page-sticky-inset, 0px) 0 0 0);
+}
+
+.page-sticky-layer {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 150;
+}
+
+.page-sticky-wheel-surface {
+  position: absolute;
+  inset: 0 0 auto;
+  height: var(--page-sticky-inset, 0px);
+  pointer-events: auto;
 }
 </style>

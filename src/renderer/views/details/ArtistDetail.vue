@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import PageStickyHeader from '@/components/ui/PageStickyHeader.vue';
 defineOptions({ name: 'artist-detail' });
 import { ref, shallowRef, onMounted, onUnmounted, computed, watch } from 'vue';
 import { useRouter } from 'vue-router';
@@ -840,7 +841,10 @@ onUnmounted(() => {
         </div>
 
         <Tabs v-model="activeTab" class="w-full" :style="{ minHeight: tabsMinHeight }">
-          <div class="song-list-sticky sticky z-110 bg-bg-main" :style="{ top: `${tabsTop}px` }">
+          <PageStickyHeader
+            class="song-list-sticky sticky z-110 bg-bg-main"
+            :style="{ top: `${tabsTop}px` }"
+          >
             <div class="px-6">
               <div class="border-b border-[var(--border-subtle)]">
                 <div class="flex items-center justify-between h-14">
@@ -960,7 +964,7 @@ onUnmounted(() => {
               paddingClass="px-6"
               @sort="handleSort"
             />
-          </div>
+          </PageStickyHeader>
 
           <div class="pb-12">
             <TabsContent value="songs" class="px-6 flex flex-col flex-1 min-h-0">

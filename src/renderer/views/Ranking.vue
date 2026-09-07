@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import PageStickyHeader from '@/components/ui/PageStickyHeader.vue';
 defineOptions({ name: 'ranking' });
 import { computed, onMounted, ref, watch } from 'vue';
 import { getRanks, getRankTop, getRankSongs } from '@/api/playlist';
@@ -321,7 +322,10 @@ watch(
         <BatchActionDrawer v-model:open="showBatchDrawer" :songs="songs" source-id="rank" />
 
         <Tabs model-value="songs" class="w-full" :style="{ minHeight: tabsMinHeight }">
-          <div class="song-list-sticky sticky z-110 bg-bg-main" :style="{ top: `${tabsTop}px` }">
+          <PageStickyHeader
+            class="song-list-sticky sticky z-110 bg-bg-main"
+            :style="{ top: `${tabsTop}px` }"
+          >
             <div class="px-6">
               <div class="border-b border-[var(--border-subtle)]">
                 <div class="flex items-center justify-between h-14">
@@ -367,7 +371,7 @@ watch(
               paddingClass="px-6"
               @sort="handleSort"
             />
-          </div>
+          </PageStickyHeader>
 
           <div class="px-6 pb-12">
             <SongList

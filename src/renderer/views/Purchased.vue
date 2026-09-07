@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import PageStickyHeader from '@/components/ui/PageStickyHeader.vue';
 defineOptions({ name: 'purchased' });
 import { computed, onMounted, ref, shallowRef, watch } from 'vue';
 import { getPurchasedSongs, getPurchasedAlbum } from '@/api/purchased';
@@ -420,7 +421,10 @@ onMounted(() => {
           :style="{ minHeight: tabsMinHeight }"
           @update:model-value="handleTabChange"
         >
-          <div class="song-list-sticky sticky z-110 bg-bg-main" :style="{ top: `${tabsTop}px` }">
+          <PageStickyHeader
+            class="song-list-sticky sticky z-110 bg-bg-main"
+            :style="{ top: `${tabsTop}px` }"
+          >
             <div class="px-6">
               <div class="border-b border-[var(--border-subtle)]">
                 <div class="flex items-center justify-between h-14">
@@ -485,7 +489,7 @@ onMounted(() => {
               paddingClass="px-6"
               @sort="handleSort"
             />
-          </div>
+          </PageStickyHeader>
 
           <TabsContent value="songs" class="w-full">
             <div class="px-6 pb-12">

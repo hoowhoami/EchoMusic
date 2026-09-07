@@ -97,6 +97,7 @@ watch(
 // 背景律动：流体背景，固定速度且不关联播放状态
 const isBlurBackgroundRhythmEnabled = computed(
   () =>
+    !settingStore.windowBackground.frosted &&
     settingStore.lyricPageBackgroundBlur &&
     settingStore.lyricPageBackgroundRhythm &&
     Boolean(settledBlurCoverUrl.value) &&
@@ -264,25 +265,32 @@ onUnmounted(() => {
   <div
     class="lyric-page fixed inset-0 z-1300 h-screen w-screen overflow-hidden select-none transition-colors duration-500"
     :class="{ 'is-portrait': viewMode === 'portrait' }"
-    :style="backgroundStyle"
+    :style="viewMode === 'portrait' ? backgroundStyle : undefined"
     @mousemove="handlePageMouseMove"
   >
-    <!-- 模糊封面背景层 -->
     <div
-      v-if="settingStore.lyricPageBackgroundBlur && settledBlurCoverUrl && viewMode !== 'portrait'"
-      class="lyric-blur-bg"
-      :class="{ 'lyric-blur-bg--rhythm': isBlurBackgroundRhythmEnabled }"
+      v-if="viewMode !== 'portrait'"
+      class="lyric-background"
+      :style="backgroundStyle"
+      aria-hidden="true"
     >
-      <img
-        :src="settledBlurCoverUrl"
-        class="lyric-blur-bg-img"
-        :class="{ 'lyric-blur-bg-img--rhythm': isBlurBackgroundRhythmEnabled }"
-      />
-      <LyricFluidBackground
-        :cover-url="settledBlurCoverUrl"
-        :enabled="isBlurBackgroundRhythmEnabled"
-      />
-      <div class="lyric-blur-bg-overlay"></div>
+      <!-- 模糊封面背景层 -->
+      <div
+        v-if="settingStore.lyricPageBackgroundBlur && settledBlurCoverUrl"
+        class="lyric-blur-bg"
+        :class="{ 'lyric-blur-bg--rhythm': isBlurBackgroundRhythmEnabled }"
+      >
+        <img
+          :src="settledBlurCoverUrl"
+          class="lyric-blur-bg-img"
+          :class="{ 'lyric-blur-bg-img--rhythm': isBlurBackgroundRhythmEnabled }"
+        />
+        <LyricFluidBackground
+          :cover-url="settledBlurCoverUrl"
+          :enabled="isBlurBackgroundRhythmEnabled"
+        />
+        <div class="lyric-blur-bg-overlay"></div>
+      </div>
     </div>
 
     <!-- 头部窗口控件 -->
@@ -544,7 +552,18 @@ onUnmounted(() => {
 <style scoped>
 .lyric-page {
   color: white;
+}
+
+.lyric-page.is-portrait {
   background-color: #1a1d22;
+}
+
+.lyric-background {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-color: #1a1d22;
+  transition: background-color 0.5s ease;
 }
 
 /* 模糊封面背景 */

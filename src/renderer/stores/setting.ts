@@ -1,3 +1,9 @@
+import {
+  DEFAULT_WINDOW_BACKGROUND,
+  normalizeWindowBackground,
+  type WindowBackground,
+} from '../../shared/window-background';
+import { applyWindowBackground } from '@/utils/windowBackground';
 import { defineStore } from 'pinia';
 import type { CloseBehavior, ThemeMode } from '../../shared/app';
 import { normalizeLogSettings, type AppLogLevel, type LogSettings } from '../../shared/logging';
@@ -88,6 +94,8 @@ const toImpulseResponseFilePayload = (file: SpatialAudioEffectEntry): SpatialAud
 export const useSettingStore = defineStore('setting', {
   state: () => ({
     theme: 'system' as ThemeMode,
+    windowBackground: { ...DEFAULT_WINDOW_BACKGROUND },
+    supportsWindowFrost: false,
     language: 'zh-CN',
     shortcutEnabled: true,
     suppressDefaultKeyBehaviors: true,
@@ -279,6 +287,20 @@ export const useSettingStore = defineStore('setting', {
       this.$patch({
         dspProviderPresetJson: '',
         impulseResponseEnabled: false,
+      });
+    },
+    async initWindowBackground() {
+      const result = await window.electron?.ipcRenderer.invoke('window-background:get');
+      if (!result) return;
+      this.windowBackground = normalizeWindowBackground(result.background);
+      this.supportsWindowFrost = result.supportsFrost;
+      applyWindowBackground(this.windowBackground);
+    },
+    async setWindowBackground(patch: Partial<WindowBackground>) {
+      this.windowBackground = normalizeWindowBackground({ ...this.windowBackground, ...patch });
+      applyWindowBackground(this.windowBackground);
+      await window.electron?.ipcRenderer.invoke('window-background:set', {
+        ...this.windowBackground,
       });
     },
     setTheme(theme: ThemeMode) {
@@ -660,5 +682,5 @@ export const useSettingStore = defineStore('setting', {
       return buildFontFamily(this.lyricFont);
     },
   },
-  persist: { omit: ['dspProviderPath'] },
+  persist: { omit: ['dspProviderPath', 'windowBackground', 'supportsWindowFrost'] },
 });

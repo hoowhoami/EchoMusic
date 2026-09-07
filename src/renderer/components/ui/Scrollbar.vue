@@ -11,6 +11,8 @@ interface Props {
   scrollbarInset?: number;
   /** 滑块距离滚动区域右边缘的间距（px）。 */
   scrollbarRightInset?: number;
+  /** Space occupied by the separate page header layer. */
+  scrollbarTopInset?: number;
   contentProps?: Record<string, unknown> | null;
 }
 
@@ -24,6 +26,7 @@ const props = withDefaults(defineProps<Props>(), {
   hideScrollbar: false,
   scrollbarInset: 6,
   scrollbarRightInset: 2,
+  scrollbarTopInset: 0,
   contentProps: null,
 });
 const emit = defineEmits<{
@@ -51,6 +54,7 @@ let resizeObserver: ResizeObserver | null = null;
 let observedChild: Element | null = null;
 
 const effectiveScrollbarInset = computed(() => Math.max(0, props.scrollbarInset));
+const effectiveScrollbarTopInset = computed(() => Math.max(0, props.scrollbarTopInset));
 const effectiveScrollbarRightInset = computed(() => Math.max(0, props.scrollbarRightInset));
 
 const showScrollbar = computed(() => {
@@ -115,7 +119,10 @@ defineExpose({
 
 const thumbHeight = computed(() => {
   if (scrollHeight.value === 0) return 0;
-  const trackHeight = Math.max(0, clientHeight.value - effectiveScrollbarInset.value * 2);
+  const trackHeight = Math.max(
+    0,
+    clientHeight.value - effectiveScrollbarTopInset.value - effectiveScrollbarInset.value * 2,
+  );
   if (trackHeight === 0) return 0;
   const ratio = clientHeight.value / scrollHeight.value;
   return Math.min(trackHeight, Math.max(30, trackHeight * ratio));
@@ -125,7 +132,10 @@ const thumbTop = computed(() => {
   if (scrollHeight.value === 0) return 0;
   const maxScroll = scrollHeight.value - clientHeight.value;
   if (maxScroll === 0) return effectiveScrollbarInset.value;
-  const trackHeight = Math.max(0, clientHeight.value - effectiveScrollbarInset.value * 2);
+  const trackHeight = Math.max(
+    0,
+    clientHeight.value - effectiveScrollbarTopInset.value - effectiveScrollbarInset.value * 2,
+  );
   if (trackHeight === 0) return effectiveScrollbarInset.value;
   const ratio = scrollTop.value / maxScroll;
   const maxThumbOffset = Math.max(0, trackHeight - thumbHeight.value);
@@ -236,7 +246,10 @@ const handleMouseMove = (e: MouseEvent) => {
 
   const deltaY = e.clientY - dragStartY.value;
   const maxScroll = scrollHeight.value - clientHeight.value;
-  const trackHeight = Math.max(0, clientHeight.value - effectiveScrollbarInset.value * 2);
+  const trackHeight = Math.max(
+    0,
+    clientHeight.value - effectiveScrollbarTopInset.value - effectiveScrollbarInset.value * 2,
+  );
   const maxThumbOffset = Math.max(1, trackHeight - thumbHeight.value);
   const scrollDelta = (deltaY / maxThumbOffset) * maxScroll;
 
@@ -268,7 +281,10 @@ const handleTrackClick = (e: MouseEvent) => {
   if (e.target === thumbRef.value) return;
 
   const rect = scrollbarRef.value.getBoundingClientRect();
-  const trackHeight = Math.max(0, clientHeight.value - effectiveScrollbarInset.value * 2);
+  const trackHeight = Math.max(
+    0,
+    clientHeight.value - effectiveScrollbarTopInset.value - effectiveScrollbarInset.value * 2,
+  );
   if (trackHeight === 0) return;
   const clickY = Math.max(
     0,
@@ -395,6 +411,7 @@ watch(
   overflow-y: auto;
   overflow-x: hidden;
   overscroll-behavior: contain;
+  scroll-padding-top: var(--page-sticky-inset, 0px);
   scrollbar-width: none;
 }
 
@@ -410,10 +427,10 @@ watch(
 
 .scrollbar {
   position: absolute;
-  top: 0;
+  top: v-bind('`${effectiveScrollbarTopInset}px`');
   right: 0;
   width: 12px;
-  height: 100%;
+  height: v-bind('`calc(100% - ${effectiveScrollbarTopInset}px)`');
   padding: v-bind('`${effectiveScrollbarInset}px 2px`');
   padding-right: v-bind('`${effectiveScrollbarRightInset}px`');
   box-sizing: border-box;

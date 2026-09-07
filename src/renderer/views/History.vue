@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import PageStickyHeader from '@/components/ui/PageStickyHeader.vue';
 defineOptions({ name: 'history' });
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
@@ -683,7 +684,10 @@ onUnmounted(() => {
         :style="{ minHeight: tabsMinHeight }"
         @update:model-value="handleTabChange"
       >
-        <div class="song-list-sticky sticky z-110 bg-bg-main" :style="{ top: `${tabsTop}px` }">
+        <PageStickyHeader
+          class="song-list-sticky sticky z-110 bg-bg-main"
+          :style="{ top: `${tabsTop}px` }"
+        >
           <div class="px-6">
             <div class="border-b border-[var(--border-subtle)]">
               <div class="flex items-center justify-between h-14">
@@ -750,7 +754,7 @@ onUnmounted(() => {
             paddingClass="px-6"
             @sort="handleSort"
           />
-        </div>
+        </PageStickyHeader>
 
         <div class="pb-12">
           <TabsContent value="songs" class="px-6">

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import PageStickyHeader from '@/components/ui/PageStickyHeader.vue';
 import { ref } from 'vue';
 import { Icon } from '@iconify/vue';
 import type { Song } from '@/models/song';
@@ -55,7 +56,10 @@ defineExpose({ scrollToActive });
 
 <template>
   <div>
-    <div class="search-song-toolbar sticky z-120 bg-bg-main" :style="{ top: `${stickyTop}px` }">
+    <PageStickyHeader
+      class="search-song-toolbar sticky z-120 bg-bg-main"
+      :style="{ top: `${stickyTop}px` }"
+    >
       <div class="search-song-toolbar-inner">
         <div class="search-song-title-wrap">
           <div class="search-song-badge-icon">
@@ -69,11 +73,14 @@ defineExpose({ scrollToActive });
           </div>
         </div>
       </div>
-    </div>
+    </PageStickyHeader>
 
     <BatchActionDrawer v-model:open="drawerOpen" :songs="songs" :source-id="queueIdPrefix" />
 
-    <div class="song-list-sticky sticky z-110 bg-bg-main" :style="{ top: `${stickyTop + 52}px` }">
+    <PageStickyHeader
+      class="song-list-sticky sticky z-110 bg-bg-main"
+      :style="{ top: `${stickyTop + 52}px` }"
+    >
       <div v-if="enableSearchQuery" class="border-b border-[var(--border-subtle)]">
         <div class="flex items-center justify-between h-14">
           <div class="rank-song-tab">
@@ -118,7 +125,7 @@ defineExpose({ scrollToActive });
         paddingClass="px-0"
         @sort="emit('sort', $event)"
       />
-    </div>
+    </PageStickyHeader>
 
     <div class="pb-12">
       <SongList

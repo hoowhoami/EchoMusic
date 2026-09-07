@@ -9,8 +9,23 @@
       if (typeof window.echoInitialDark === 'boolean') {
         document.documentElement.classList.toggle('dark', window.echoInitialDark);
         const background = document.createElement('style');
-        background.textContent = 'html { background: #f5f5f7; } html.dark { background: #26262a; }';
+        background.textContent =
+          'html:not(.app-background-transparent) { background: #f5f5f7; } html.dark:not(.app-background-transparent) { background: #26262a; }';
         document.head.appendChild(background);
+        const appearance = window.echoWindowBackground;
+        if (appearance) {
+          const root = document.documentElement;
+          root.classList.toggle(
+            'app-background-transparent',
+            appearance.frosted || appearance.transparency > 0 || Boolean(appearance.color),
+          );
+          root.classList.toggle('app-background-frosted', appearance.frosted);
+          root.style.setProperty(
+            '--app-background-opacity',
+            String(1 - appearance.transparency / 100),
+          );
+          if (appearance.color) root.style.setProperty('--app-background-color', appearance.color);
+        }
       }
     </script>
   </head>

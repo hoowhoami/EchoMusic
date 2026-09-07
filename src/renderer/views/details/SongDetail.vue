@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import PageStickyHeader from '@/components/ui/PageStickyHeader.vue';
 defineOptions({ name: 'song-detail-page' });
 import { ref, onMounted, onBeforeUnmount, computed, watch, nextTick } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
@@ -1337,12 +1338,15 @@ watch(total, (value) => {
             :style="{ minHeight: tabsMinHeight }"
             @update:model-value="mainTab = $event as 'detail' | 'comment'"
           >
-            <div class="comment-main-tabs sticky z-120 bg-bg-main" :style="{ top: `${tabsTop}px` }">
+            <PageStickyHeader
+              class="comment-main-tabs sticky z-120 bg-bg-main"
+              :style="{ top: `${tabsTop}px` }"
+            >
               <TabsList class="comment-main-tab-list">
                 <TabsTrigger value="detail" class="comment-main-tab-trigger">详情</TabsTrigger>
                 <TabsTrigger value="comment" class="comment-main-tab-trigger">评论</TabsTrigger>
               </TabsList>
-            </div>
+            </PageStickyHeader>
 
             <TabsContent value="detail">
               <div

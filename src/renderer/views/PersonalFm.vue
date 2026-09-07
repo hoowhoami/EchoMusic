@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import PageStickyHeader from '@/components/ui/PageStickyHeader.vue';
 defineOptions({ name: 'personal-fm' });
 import { computed, onActivated, onBeforeUnmount, onMounted, ref } from 'vue';
 import {
@@ -477,7 +478,7 @@ onActivated(() => {
         </SliverHeader>
 
         <section class="fm-shell px-6 pt-3">
-          <div class="fm-play-sticky" :style="{ top: `${FM_PLAY_STICKY_TOP}px` }">
+          <PageStickyHeader class="fm-play-sticky" :style="{ top: `${FM_PLAY_STICKY_TOP}px` }">
             <div class="radio-hero">
               <div class="radio-card">
                 <div class="radio-mode-switch">
@@ -591,7 +592,7 @@ onActivated(() => {
                 </template>
               </div>
             </div>
-          </div>
+          </PageStickyHeader>
 
           <section class="fm-panel fm-now-panel">
             <div class="fm-panel-header">

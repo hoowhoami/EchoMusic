@@ -17,6 +17,7 @@ import { accentModeOptions, sectionTitles, themeOptions } from '../constants';
 const settingStore = useSettingStore();
 const themeStore = useThemeStore();
 const showAccentPicker = ref(false);
+const showBackgroundPicker = ref(false);
 const accentPresetValues = ACCENT_PRESETS.map((item) => item.color);
 const title = sectionTitles.appearance;
 const accentPresets = ACCENT_PRESETS;
@@ -44,6 +45,78 @@ const isAccentGradientDefault = computed(
         @update:model-value="settingStore.setTheme($event as ThemeMode)"
       />
     </div>
+    <div class="settings-divider"></div>
+    <div class="settings-item">
+      <div class="space-y-1">
+        <h3 class="font-semibold">背景透明度</h3>
+        <p class="text-sm text-text-secondary">
+          0% 为不透明；应用于主界面及封面/纯歌词页，写真模式保持原样
+        </p>
+      </div>
+      <Slider
+        class="w-48"
+        :model-value="settingStore.windowBackground.transparency"
+        :min="0"
+        :max="100"
+        :step="5"
+        show-value
+        value-suffix="%"
+        aria-label="背景透明度"
+        :disabled="settingStore.windowBackground.frosted"
+        @update:model-value="settingStore.setWindowBackground({ transparency: $event })"
+      />
+    </div>
+    <div class="settings-divider"></div>
+    <div class="settings-item">
+      <div class="space-y-1">
+        <h3 class="font-semibold">毛玻璃</h3>
+        <p class="text-sm text-text-secondary">
+          {{
+            settingStore.supportsWindowFrost
+              ? '使用系统模糊效果，与底色及其透明度调节互斥；关闭后恢复原设置'
+              : '当前系统不支持毛玻璃，可使用背景透明度'
+          }}
+        </p>
+      </div>
+      <Switch
+        :model-value="settingStore.windowBackground.frosted"
+        :disabled="!settingStore.supportsWindowFrost"
+        @update:model-value="settingStore.setWindowBackground({ frosted: Boolean($event) })"
+      />
+    </div>
+    <div class="settings-divider"></div>
+    <div class="settings-item">
+      <div class="space-y-1">
+        <h3 class="font-semibold">背景底色</h3>
+        <p class="text-sm text-text-secondary">
+          {{ settingStore.windowBackground.color ? '自定义底色' : '跟随深浅色主题' }}
+        </p>
+      </div>
+      <div class="flex items-center gap-3">
+        <button
+          class="settings-color-reset disabled:opacity-40"
+          :disabled="settingStore.windowBackground.frosted || !settingStore.windowBackground.color"
+          @click="settingStore.setWindowBackground({ color: '' })"
+        >
+          跟随主题
+        </button>
+        <button
+          class="settings-color-swatch disabled:opacity-40"
+          aria-label="选择背景底色"
+          :disabled="settingStore.windowBackground.frosted"
+          :style="{ background: settingStore.windowBackground.color || 'var(--surface-main-base)' }"
+          @click="showBackgroundPicker = true"
+        ></button>
+      </div>
+    </div>
+    <ColorPickerDialog
+      :open="showBackgroundPicker"
+      title="选择背景底色"
+      :value="settingStore.windowBackground.color || (themeStore.isDark ? '#26262a' : '#f5f5f7')"
+      :presets="accentPresetValues"
+      @update:open="showBackgroundPicker = $event"
+      @confirm="(color: string) => settingStore.setWindowBackground({ color })"
+    />
     <div class="settings-divider"></div>
     <div class="settings-item">
       <div class="space-y-1">

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import PageStickyHeader from '@/components/ui/PageStickyHeader.vue';
 import { ref, computed, onMounted, onUnmounted, onActivated, watch } from 'vue';
 import Cover from '@/components/ui/Cover.vue';
 import { useScrollContainer } from '@/composables/usePageScroll';
@@ -131,7 +132,8 @@ onUnmounted(() => {
 
 <template>
   <!-- 吸顶容器：背景层由全局 surface 规则控制，支持自定义背景透出 -->
-  <div
+  <PageStickyHeader
+    :flow-height="props.collapsedHeight"
     class="sliver-header-root sticky top-0 z-100 w-full bg-bg-main"
     :style="{
       height: `${props.collapsedHeight}px`,
@@ -236,7 +238,7 @@ onUnmounted(() => {
     >
       <slot name="collapsed-actions" />
     </div>
-  </div>
+  </PageStickyHeader>
 
   <div
     class="sliver-header-spacer relative w-full bg-bg-main"

@@ -1,3 +1,5 @@
+import { release } from 'node:os';
+import { normalizeWindowBackground, type WindowBackground } from '../../shared/window-background';
 import {
   BrowserWindow,
   shell,
@@ -37,6 +39,11 @@ const getMinHeight = (): number => {
 const initialSettings = getMainAppSettings();
 let closeBehavior: CloseBehavior = initialSettings.closeBehavior;
 let currentTheme: ThemeMode = initialSettings.theme;
+let windowBackground = normalizeWindowBackground(initialSettings.windowBackground);
+const supportsWindowFrost =
+  process.platform === 'darwin' ||
+  (process.platform === 'win32' && Number(release().split('.')[2]) >= 22621);
+if (!supportsWindowFrost) windowBackground.frosted = false;
 let rememberWindowSize = initialSettings.rememberWindowSize;
 let preventSleep = initialSettings.preventSleep;
 let devToolsEnabled = initialSettings.devToolsEnabled;
@@ -144,11 +151,39 @@ const getMainWindowBackgroundColor = () =>
     : '#f5f5f7';
 
 const syncMainWindowBackground = () => {
-  if (canUseMainWindow(win)) win.setBackgroundColor(getMainWindowBackgroundColor());
+  if (!canUseMainWindow(win)) return;
+  if (nativeTheme.themeSource !== currentTheme) nativeTheme.themeSource = currentTheme;
+  win.setBackgroundColor('#00000000');
+  if (process.platform === 'darwin') {
+    // AppKit derives a transparent window's shadow from its content alpha.
+    // Cached silhouettes can remain after cards/lyrics scroll or disappear.
+    const hasShadow = !windowBackground.frosted && windowBackground.transparency === 0;
+    if (win.hasShadow() !== hasShadow) {
+      win.setHasShadow(hasShadow);
+      win.invalidateShadow();
+    }
+    const dark =
+      currentTheme === 'dark' || (currentTheme === 'system' && nativeTheme.shouldUseDarkColors);
+    win.setVibrancy(windowBackground.frosted ? (dark ? 'hud' : 'under-window') : null);
+  } else if (supportsWindowFrost && process.platform === 'win32') {
+    win.setBackgroundMaterial(windowBackground.frosted ? 'acrylic' : 'none');
+  }
 };
 
 export const registerMainWindowPreferenceHandlers = () => {
   nativeTheme.on('updated', syncMainWindowBackground);
+  ipcRegistry.registerHandler('window-background:get', () => ({
+    background: windowBackground,
+    supportsFrost: supportsWindowFrost,
+  }));
+  ipcRegistry.registerHandler('window-background:set', (event, value: WindowBackground) => {
+    if (event.sender !== win?.webContents) throw new Error('仅主窗口可以调整背景');
+    windowBackground = normalizeWindowBackground(value);
+    if (!supportsWindowFrost) windowBackground.frosted = false;
+    setMainAppSetting('windowBackground', windowBackground);
+    syncMainWindowBackground();
+    return windowBackground;
+  });
   ipcRegistry.registerListener('update-close-behavior', (_event, behavior: CloseBehavior) => {
     closeBehavior = behavior;
     setMainAppSetting('closeBehavior', behavior);
@@ -353,15 +388,19 @@ export async function createWindow() {
     minWidth: minWidth,
     minHeight: minHeight,
     show: false, // 初始不显示，防止白屏
-    backgroundColor: initialBgColor, // 动态设置背景色
+    backgroundColor: '#00000000', // 动态设置背景色
     frame: false,
-    transparent: false,
+    transparent: true,
+    ...(process.platform === 'darwin' ? { visualEffectState: 'active' as const } : {}),
     hasShadow: true,
     titleBarStyle: 'hidden',
     trafficLightPosition: { x: 14, y: 14 },
     webPreferences: {
       preload,
-      additionalArguments: [`--echo-initial-dark=${initialBgColor === '#26262a'}`],
+      additionalArguments: [
+        `--echo-initial-dark=${initialBgColor === '#26262a'}`,
+        `--echo-window-background=${JSON.stringify(windowBackground)}`,
+      ],
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
@@ -374,6 +413,7 @@ export async function createWindow() {
       devTools: devToolsEnabled, // 控制是否允许打开开发者工具
     },
   });
+  syncMainWindowBackground();
   await logMainMemory('createWindow:after BrowserWindow');
 
   applyWindowAppIcon(win);

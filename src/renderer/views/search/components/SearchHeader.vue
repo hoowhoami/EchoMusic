@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import PageStickyHeader from '@/components/ui/PageStickyHeader.vue';
 import { ref } from 'vue';
 import { Icon } from '@iconify/vue';
 import Button from '@/components/ui/Button.vue';
@@ -36,7 +37,7 @@ defineExpose({ inputRef });
 </script>
 
 <template>
-  <div v-if="showPinnedTabs" class="search-pinned-tabs sticky top-0 z-140">
+  <PageStickyHeader v-if="showPinnedTabs" class="search-pinned-tabs sticky top-0 z-140">
     <div class="px-10 py-1.5">
       <CustomTabBar
         :model-value="activeTabIndex"
@@ -44,7 +45,7 @@ defineExpose({ inputRef });
         @update:model-value="emit('update:activeTabIndex', $event)"
       />
     </div>
-  </div>
+  </PageStickyHeader>
 
   <div v-show="!showPinnedTabs" class="px-10 pt-4">
     <div class="text-[22px] font-semibold text-text-main tracking-tight">搜索</div>
