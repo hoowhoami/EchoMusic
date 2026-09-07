@@ -138,7 +138,17 @@ export function setSystemSuspended(suspended: boolean) {
   syncPowerSaveBlocker();
 }
 
+const getMainWindowBackgroundColor = () =>
+  currentTheme === 'dark' || (currentTheme === 'system' && nativeTheme.shouldUseDarkColors)
+    ? '#26262a'
+    : '#f5f5f7';
+
+const syncMainWindowBackground = () => {
+  if (canUseMainWindow(win)) win.setBackgroundColor(getMainWindowBackgroundColor());
+};
+
 export const registerMainWindowPreferenceHandlers = () => {
+  nativeTheme.on('updated', syncMainWindowBackground);
   ipcRegistry.registerListener('update-close-behavior', (_event, behavior: CloseBehavior) => {
     closeBehavior = behavior;
     setMainAppSetting('closeBehavior', behavior);
@@ -147,6 +157,7 @@ export const registerMainWindowPreferenceHandlers = () => {
   ipcRegistry.registerListener('update-theme', (_event, theme: ThemeMode) => {
     currentTheme = theme;
     setMainAppSetting('theme', theme);
+    syncMainWindowBackground();
   });
 
   ipcRegistry.registerListener('update-remember-window-size', (_event, enabled: boolean) => {
@@ -327,16 +338,7 @@ export async function createWindow() {
   const url = process.env.VITE_DEV_SERVER_URL;
   const indexHtml = join(__dirname, '../../dist/index.html');
 
-  // 根据设置或系统偏好决定初始背景色
-  let initialBgColor = '#ffffff';
-  if (currentTheme === 'dark') {
-    initialBgColor = '#1a1a1c';
-  } else if (currentTheme === 'light') {
-    initialBgColor = '#ffffff';
-  } else {
-    // 跟随系统
-    initialBgColor = nativeTheme.shouldUseDarkColors ? '#1a1a1c' : '#ffffff';
-  }
+  const initialBgColor = getMainWindowBackgroundColor();
 
   const initialBounds = buildWindowBounds();
   const initialWindowState = getPersistedWindowState();
@@ -359,6 +361,7 @@ export async function createWindow() {
     trafficLightPosition: { x: 14, y: 14 },
     webPreferences: {
       preload,
+      additionalArguments: [`--echo-initial-dark=${initialBgColor === '#26262a'}`],
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,

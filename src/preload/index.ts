@@ -1517,3 +1517,9 @@ contextBridge.exposeInMainWorld('electron', {
     },
   },
 });
+
+// 主窗口首屏在 Vue 和异步设置恢复之前使用已保存的主题。
+const initialThemeArgument = process.argv.find((arg) => arg.startsWith('--echo-initial-dark='));
+if (initialThemeArgument) {
+  contextBridge.exposeInMainWorld('echoInitialDark', initialThemeArgument.endsWith('=true'));
+}
