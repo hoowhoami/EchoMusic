@@ -724,133 +724,139 @@ watch(
           </Tooltip>
         </div>
 
-        <div v-if="visibleRailMenuGroups.length > 0" class="sidebar-rail-nav">
-          <template v-for="group in visibleRailMenuGroups" :key="group.id">
-            <div class="sidebar-rail-divider" aria-hidden="true"></div>
-            <Tooltip v-for="item in group.items" :key="item.key" :content="item.title" side="right">
-              <template #trigger>
-                <component
-                  :is="item.railComponent"
-                  v-if="item.railComponent"
-                  :item="item"
-                  :section="group"
-                  :collapsed="true"
-                />
-                <Button
-                  v-else
-                  variant="unstyled"
-                  size="none"
-                  :disabled="isMenuItemDisabled(item)"
-                  :title="item.title"
-                  :class="[
-                    'sidebar-rail-item',
-                    isMenuItemDisabled(item)
-                      ? 'is-disabled'
-                      : isMenuItemActive(item)
-                        ? 'is-active'
-                        : '',
-                  ]"
-                  @click="handleMenuClick(item)"
-                >
-                  <Icon
-                    v-if="item.builtinIcon"
-                    :icon="iconMap[item.builtinIcon]"
-                    width="19"
-                    height="19"
-                  />
-                  <PluginIcon
-                    v-else-if="item.pluginId"
-                    :icon="item.pluginIcon"
-                    width="19"
-                    height="19"
-                  />
-                </Button>
-              </template>
-            </Tooltip>
-          </template>
-        </div>
-
-        <div class="sidebar-rail-playlists">
-          <div class="sidebar-rail-divider" aria-hidden="true"></div>
-          <div
-            class="sidebar-rail-tabs"
-            :class="activePlaylistTab === 1 ? 'is-favorited' : 'is-created'"
-          >
-            <span class="sidebar-rail-tab-indicator" aria-hidden="true"></span>
-            <Tooltip content="自建歌单" side="right">
-              <template #trigger>
-                <Button
-                  variant="unstyled"
-                  size="none"
-                  title="自建歌单"
-                  :class="['sidebar-rail-tab', activePlaylistTab === 0 ? 'is-active' : '']"
-                  @click="activePlaylistTab = 0"
-                >
-                  <Icon :icon="iconPlaylistAdd" width="15" height="15" />
-                </Button>
-              </template>
-            </Tooltip>
-            <Tooltip content="收藏歌单" side="right">
-              <template #trigger>
-                <Button
-                  variant="unstyled"
-                  size="none"
-                  title="收藏歌单"
-                  :class="['sidebar-rail-tab', activePlaylistTab === 1 ? 'is-active' : '']"
-                  @click="activePlaylistTab = 1"
-                >
-                  <Icon :icon="iconHeart" width="15" height="15" />
-                </Button>
-              </template>
-            </Tooltip>
-          </div>
-
-          <Scrollbar
-            class="sidebar-rail-scroll flex-1 min-h-0"
-            :scrollbar-inset="1"
-            :content-props="{ class: 'sidebar-rail-scroll-content' }"
-          >
-            <div
-              v-if="isLoggedIn && visibleRailPlaylists.length > 0"
-              class="sidebar-rail-cover-list"
-            >
+        <Scrollbar
+          class="sidebar-content no-drag"
+          :scrollbar-inset="3"
+          :content-props="{ class: 'sidebar-rail-scroll-content' }"
+        >
+          <div v-if="visibleRailMenuGroups.length > 0" class="sidebar-rail-nav">
+            <template v-for="group in visibleRailMenuGroups" :key="group.id">
+              <div class="sidebar-rail-divider" aria-hidden="true"></div>
               <Tooltip
-                v-for="playlist in visibleRailPlaylists"
-                :key="playlist.listid || playlist.id"
-                :content="playlist.name || '歌单'"
+                v-for="item in group.items"
+                :key="item.key"
+                :content="item.title"
                 side="right"
               >
                 <template #trigger>
-                  <button
-                    type="button"
-                    :title="playlist.name || '歌单'"
+                  <component
+                    :is="item.railComponent"
+                    v-if="item.railComponent"
+                    :item="item"
+                    :section="group"
+                    :collapsed="true"
+                  />
+                  <Button
+                    v-else
+                    variant="unstyled"
+                    size="none"
+                    :disabled="isMenuItemDisabled(item)"
+                    :title="item.title"
                     :class="[
-                      'sidebar-rail-cover-btn',
-                      isActivePlaylist(playlist) ? 'is-active' : '',
+                      'sidebar-rail-item',
+                      isMenuItemDisabled(item)
+                        ? 'is-disabled'
+                        : isMenuItemActive(item)
+                          ? 'is-active'
+                          : '',
                     ]"
-                    @click="navigateToPlaylist(playlist)"
+                    @click="handleMenuClick(item)"
                   >
-                    <Cover
-                      :url="playlist.pic"
-                      :size="96"
-                      :width="32"
-                      :height="32"
-                      :borderRadius="8"
-                      class="sidebar-rail-cover"
+                    <Icon
+                      v-if="item.builtinIcon"
+                      :icon="iconMap[item.builtinIcon]"
+                      width="19"
+                      height="19"
                     />
-                  </button>
+                    <PluginIcon
+                      v-else-if="item.pluginId"
+                      :icon="item.pluginIcon"
+                      width="19"
+                      height="19"
+                    />
+                  </Button>
+                </template>
+              </Tooltip>
+            </template>
+          </div>
+          <div class="sidebar-rail-playlists">
+            <div class="sidebar-rail-divider" aria-hidden="true"></div>
+            <div
+              class="sidebar-rail-tabs"
+              :class="activePlaylistTab === 1 ? 'is-favorited' : 'is-created'"
+            >
+              <span class="sidebar-rail-tab-indicator" aria-hidden="true"></span>
+              <Tooltip content="自建歌单" side="right">
+                <template #trigger>
+                  <Button
+                    variant="unstyled"
+                    size="none"
+                    title="自建歌单"
+                    :class="['sidebar-rail-tab', activePlaylistTab === 0 ? 'is-active' : '']"
+                    @click="activePlaylistTab = 0"
+                  >
+                    <Icon :icon="iconPlaylistAdd" width="15" height="15" />
+                  </Button>
+                </template>
+              </Tooltip>
+              <Tooltip content="收藏歌单" side="right">
+                <template #trigger>
+                  <Button
+                    variant="unstyled"
+                    size="none"
+                    title="收藏歌单"
+                    :class="['sidebar-rail-tab', activePlaylistTab === 1 ? 'is-active' : '']"
+                    @click="activePlaylistTab = 1"
+                  >
+                    <Icon :icon="iconHeart" width="15" height="15" />
+                  </Button>
                 </template>
               </Tooltip>
             </div>
-            <Tooltip v-else-if="!isLoggedIn" content="登录同步云端歌单" side="right">
-              <template #trigger>
-                <div class="sidebar-rail-empty" title="登录同步云端歌单">
-                  <Icon :icon="iconCloud" width="17" height="17" />
-                </div>
-              </template>
-            </Tooltip>
-          </Scrollbar>
-        </div>
+
+            <div class="sidebar-rail-playlist-content">
+              <div
+                v-if="isLoggedIn && visibleRailPlaylists.length > 0"
+                class="sidebar-rail-cover-list"
+              >
+                <Tooltip
+                  v-for="playlist in visibleRailPlaylists"
+                  :key="playlist.listid || playlist.id"
+                  :content="playlist.name || '歌单'"
+                  side="right"
+                >
+                  <template #trigger>
+                    <button
+                      type="button"
+                      :title="playlist.name || '歌单'"
+                      :class="[
+                        'sidebar-rail-cover-btn',
+                        isActivePlaylist(playlist) ? 'is-active' : '',
+                      ]"
+                      @click="navigateToPlaylist(playlist)"
+                    >
+                      <Cover
+                        :url="playlist.pic"
+                        :size="96"
+                        :width="32"
+                        :height="32"
+                        :borderRadius="8"
+                        class="sidebar-rail-cover"
+                      />
+                    </button>
+                  </template>
+                </Tooltip>
+              </div>
+              <Tooltip v-else-if="!isLoggedIn" content="登录同步云端歌单" side="right">
+                <template #trigger>
+                  <div class="sidebar-rail-empty" title="登录同步云端歌单">
+                    <Icon :icon="iconCloud" width="17" height="17" />
+                  </div>
+                </template>
+              </Tooltip>
+            </div>
+          </div>
+        </Scrollbar>
 
         <div class="sidebar-rail-bottom">
           <Popover
@@ -1038,211 +1044,129 @@ watch(
           </div>
         </div>
 
-        <div class="px-4 shrink-0 no-drag">
-          <div v-for="group in allMenuGroups" :key="group.id" class="mb-4">
-            <h2
-              class="sidebar-section-header px-3.5 text-[11px] font-semibold text-text-main/60 uppercase tracking-[0.5px] mb-2 flex items-center gap-1 select-none"
-              :class="group.collapsible ? 'cursor-pointer' : 'cursor-default'"
-              @click="toggleSection(group)"
-            >
-              {{ group.title }}
-              <Icon
-                v-if="group.collapsible"
-                :icon="iconChevronDown"
-                width="10"
-                height="10"
-                class="sidebar-collapse-arrow transition-transform duration-200 ml-auto"
-                :class="{ '-rotate-90': isSectionCollapsed(group) }"
-              />
-            </h2>
-            <nav
-              class="sidebar-section-body"
-              :class="{ 'is-collapsed': isSectionCollapsed(group) }"
-            >
-              <div class="space-y-0.5">
-                <template v-for="item in group.items" :key="item.key">
-                  <component
-                    :is="item.component"
-                    v-if="item.component"
-                    :item="item"
-                    :section="group"
-                    :collapsed="false"
-                  />
-                  <Button
-                    v-else
-                    variant="unstyled"
-                    size="none"
-                    :disabled="isMenuItemDisabled(item)"
-                    :class="[
-                      'sidebar-nav-item w-full flex items-center gap-3.5 px-3.5 py-2 rounded-[14px] transition-all duration-200 group active:scale-[0.98]',
-                      isMenuItemDisabled(item)
-                        ? 'is-disabled cursor-not-allowed opacity-35 text-text-main/55'
-                        : isMenuItemActive(item)
-                          ? 'is-active cursor-pointer bg-primary/12 text-primary-text'
-                          : 'cursor-pointer text-text-main/90',
-                    ]"
-                    @click="handleMenuClick(item)"
-                  >
-                    <Icon
-                      v-if="item.builtinIcon"
-                      :icon="iconMap[item.builtinIcon]"
-                      width="18"
-                      height="18"
-                      :class="[
-                        isMenuItemDisabled(item)
-                          ? 'text-text-main opacity-40'
-                          : isMenuItemActive(item)
-                            ? 'text-primary-text'
-                            : 'text-text-main opacity-60 group-hover:opacity-100',
-                      ]"
+        <Scrollbar class="sidebar-content no-drag" :scrollbar-inset="3">
+          <div class="px-4">
+            <div v-for="group in allMenuGroups" :key="group.id" class="mb-4">
+              <h2
+                class="sidebar-section-header px-3.5 text-[11px] font-semibold text-text-main/60 uppercase tracking-[0.5px] mb-2 flex items-center gap-1 select-none"
+                :class="group.collapsible ? 'cursor-pointer' : 'cursor-default'"
+                @click="toggleSection(group)"
+              >
+                {{ group.title }}
+                <Icon
+                  v-if="group.collapsible"
+                  :icon="iconChevronDown"
+                  width="10"
+                  height="10"
+                  class="sidebar-collapse-arrow transition-transform duration-200 ml-auto"
+                  :class="{ '-rotate-90': isSectionCollapsed(group) }"
+                />
+              </h2>
+              <nav
+                class="sidebar-section-body"
+                :class="{ 'is-collapsed': isSectionCollapsed(group) }"
+              >
+                <div class="space-y-0.5">
+                  <template v-for="item in group.items" :key="item.key">
+                    <component
+                      :is="item.component"
+                      v-if="item.component"
+                      :item="item"
+                      :section="group"
+                      :collapsed="false"
                     />
-                    <PluginIcon
-                      v-else-if="item.pluginId"
-                      :icon="item.pluginIcon"
-                      width="18"
-                      height="18"
+                    <Button
+                      v-else
+                      variant="unstyled"
+                      size="none"
+                      :disabled="isMenuItemDisabled(item)"
                       :class="[
+                        'sidebar-nav-item w-full flex items-center gap-3.5 px-3.5 py-2 rounded-[14px] transition-all duration-200 group active:scale-[0.98]',
                         isMenuItemDisabled(item)
-                          ? 'text-text-main opacity-40'
+                          ? 'is-disabled cursor-not-allowed opacity-35 text-text-main/55'
                           : isMenuItemActive(item)
-                            ? 'text-primary-text'
-                            : 'text-text-main opacity-60 group-hover:opacity-100',
+                            ? 'is-active cursor-pointer bg-primary/12 text-primary-text'
+                            : 'cursor-pointer text-text-main/90',
                       ]"
-                    />
-                    <span
-                      class="text-[14px]"
-                      :class="[isMenuItemActive(item) ? 'font-semibold' : 'font-normal']"
+                      @click="handleMenuClick(item)"
                     >
-                      {{ item.title }}
-                    </span>
-                  </Button>
-                </template>
-              </div>
-            </nav>
+                      <Icon
+                        v-if="item.builtinIcon"
+                        :icon="iconMap[item.builtinIcon]"
+                        width="18"
+                        height="18"
+                        :class="[
+                          isMenuItemDisabled(item)
+                            ? 'text-text-main opacity-40'
+                            : isMenuItemActive(item)
+                              ? 'text-primary-text'
+                              : 'text-text-main opacity-60 group-hover:opacity-100',
+                        ]"
+                      />
+                      <PluginIcon
+                        v-else-if="item.pluginId"
+                        :icon="item.pluginIcon"
+                        width="18"
+                        height="18"
+                        :class="[
+                          isMenuItemDisabled(item)
+                            ? 'text-text-main opacity-40'
+                            : isMenuItemActive(item)
+                              ? 'text-primary-text'
+                              : 'text-text-main opacity-60 group-hover:opacity-100',
+                        ]"
+                      />
+                      <span
+                        class="text-[14px]"
+                        :class="[isMenuItemActive(item) ? 'font-semibold' : 'font-normal']"
+                      >
+                        {{ item.title }}
+                      </span>
+                    </Button>
+                  </template>
+                </div>
+              </nav>
+            </div>
           </div>
-        </div>
-
-        <div class="pl-7.5 pr-3 mb-2 shrink-0 no-drag -mt-1.5 flex items-center gap-1.5">
-          <div class="min-w-0 flex flex-1 items-center gap-1">
-            <Button
-              variant="unstyled"
-              size="none"
-              :class="[
-                'sidebar-playlist-tab',
-                activePlaylistTab === 0
-                  ? 'text-primary-text opacity-100'
-                  : 'text-text-main opacity-60 hover:opacity-80',
-              ]"
-              @click="activePlaylistTab = 0"
-            >
-              自建歌单
-            </Button>
-            <span class="sidebar-tab-divider" aria-hidden="true"></span>
-            <Button
-              variant="unstyled"
-              size="none"
-              :class="[
-                'sidebar-playlist-tab',
-                activePlaylistTab === 1
-                  ? 'text-primary-text opacity-100'
-                  : 'text-text-main opacity-60 hover:opacity-80',
-              ]"
-              @click="activePlaylistTab = 1"
-            >
-              收藏歌单
-            </Button>
-          </div>
-          <div class="flex items-center gap-0.5 shrink-0 pl-0.5">
-            <Popover
-              v-model:open="showSortMenu"
-              trigger="click"
-              side="bottom"
-              align="end"
-              :side-offset="6"
-              :show-arrow="false"
-              content-class="sidebar-sort-menu"
-            >
-              <template #trigger>
-                <Button
-                  variant="unstyled"
-                  size="none"
-                  type="button"
-                  class="sidebar-section-action sidebar-icon-btn"
-                  title="歌单排序"
-                  :class="{
-                    'text-primary-text opacity-100': settingStore.playlistSortOrder !== 'default',
-                  }"
-                >
-                  <Icon :icon="iconArrowsSort" width="12" height="12" />
-                </Button>
-              </template>
-              <div class="sidebar-sort-menu-list">
-                <div class="sidebar-sort-menu-title">排序方式</div>
-                <button
-                  type="button"
-                  class="sidebar-sort-menu-item"
-                  :class="{ 'is-active': settingStore.playlistSortOrder === 'default' }"
-                  @click="handleSortChange('default')"
-                >
-                  默认顺序
-                </button>
-                <div class="sidebar-sort-menu-divider"></div>
-                <button
-                  type="button"
-                  class="sidebar-sort-menu-item"
-                  :class="{ 'is-active': settingStore.playlistSortOrder === 'time-asc' }"
-                  @click="handleSortChange('time-asc')"
-                >
-                  时间正序
-                </button>
-                <button
-                  type="button"
-                  class="sidebar-sort-menu-item"
-                  :class="{ 'is-active': settingStore.playlistSortOrder === 'time-desc' }"
-                  @click="handleSortChange('time-desc')"
-                >
-                  时间倒序
-                </button>
-                <div class="sidebar-sort-menu-divider"></div>
-                <button
-                  type="button"
-                  class="sidebar-sort-menu-item"
-                  :class="{ 'is-active': settingStore.playlistSortOrder === 'name-asc' }"
-                  @click="handleSortChange('name-asc')"
-                >
-                  字母正序
-                </button>
-                <button
-                  type="button"
-                  class="sidebar-sort-menu-item"
-                  :class="{ 'is-active': settingStore.playlistSortOrder === 'name-desc' }"
-                  @click="handleSortChange('name-desc')"
-                >
-                  字母倒序
-                </button>
-              </div>
-            </Popover>
-            <Button
-              variant="unstyled"
-              size="none"
-              type="button"
-              class="sidebar-section-action sidebar-icon-btn"
-              title="刷新歌单"
-              :disabled="!isLoggedIn"
-              @click="refreshUserPlaylists"
-            >
-              <RefreshIcon width="13" height="13" />
-            </Button>
-            <div class="sidebar-section-action-slot">
+          <div class="sidebar-playlist-header pl-7.5 pr-3 mb-2 mt-1 flex items-center gap-1.5">
+            <div class="min-w-0 flex flex-1 items-center gap-1">
+              <Button
+                variant="unstyled"
+                size="none"
+                :class="[
+                  'sidebar-playlist-tab',
+                  activePlaylistTab === 0
+                    ? 'text-primary-text opacity-100'
+                    : 'text-text-main opacity-60 hover:opacity-80',
+                ]"
+                @click="activePlaylistTab = 0"
+              >
+                自建歌单
+              </Button>
+              <span class="sidebar-tab-divider" aria-hidden="true"></span>
+              <Button
+                variant="unstyled"
+                size="none"
+                :class="[
+                  'sidebar-playlist-tab',
+                  activePlaylistTab === 1
+                    ? 'text-primary-text opacity-100'
+                    : 'text-text-main opacity-60 hover:opacity-80',
+                ]"
+                @click="activePlaylistTab = 1"
+              >
+                收藏歌单
+              </Button>
+            </div>
+            <div class="flex items-center gap-0.5 shrink-0 pl-0.5">
               <Popover
-                v-if="isLoggedIn && activePlaylistTab === 0"
-                v-model:open="showCreateMenu"
+                v-model:open="showSortMenu"
                 trigger="click"
                 side="bottom"
                 align="end"
                 :side-offset="6"
                 :show-arrow="false"
-                content-class="sidebar-create-menu"
+                content-class="sidebar-sort-menu"
               >
                 <template #trigger>
                   <Button
@@ -1250,60 +1174,137 @@ watch(
                     size="none"
                     type="button"
                     class="sidebar-section-action sidebar-icon-btn"
-                    title="添加歌单"
+                    title="歌单排序"
+                    :class="{
+                      'text-primary-text opacity-100': settingStore.playlistSortOrder !== 'default',
+                    }"
                   >
-                    <Icon :icon="iconPlus" width="12" height="12" />
+                    <Icon :icon="iconArrowsSort" width="12" height="12" />
                   </Button>
                 </template>
-                <div class="sidebar-create-menu-list">
-                  <div class="sidebar-create-menu-title">添加歌单</div>
+                <div class="sidebar-sort-menu-list">
+                  <div class="sidebar-sort-menu-title">排序方式</div>
                   <button
                     type="button"
-                    class="sidebar-create-menu-item"
-                    @click="
-                      () => {
-                        showCreateMenu = false;
-                        openCreatePlaylistDialog();
-                      }
-                    "
+                    class="sidebar-sort-menu-item"
+                    :class="{ 'is-active': settingStore.playlistSortOrder === 'default' }"
+                    @click="handleSortChange('default')"
                   >
-                    <span class="sidebar-create-menu-icon">
-                      <Icon :icon="iconPlaylistAdd" width="16" height="16" />
-                    </span>
-                    <div class="min-w-0 flex-1 text-left">
-                      <div class="sidebar-create-menu-title-row">新建空歌单</div>
-                      <div class="sidebar-create-menu-desc">自定义名称从零开始</div>
-                    </div>
+                    默认顺序
+                  </button>
+                  <div class="sidebar-sort-menu-divider"></div>
+                  <button
+                    type="button"
+                    class="sidebar-sort-menu-item"
+                    :class="{ 'is-active': settingStore.playlistSortOrder === 'time-asc' }"
+                    @click="handleSortChange('time-asc')"
+                  >
+                    时间正序
                   </button>
                   <button
                     type="button"
-                    class="sidebar-create-menu-item"
-                    @click="
-                      () => {
-                        showCreateMenu = false;
-                        showImportDialog = true;
-                      }
-                    "
+                    class="sidebar-sort-menu-item"
+                    :class="{ 'is-active': settingStore.playlistSortOrder === 'time-desc' }"
+                    @click="handleSortChange('time-desc')"
                   >
-                    <span class="sidebar-create-menu-icon">
-                      <Icon :icon="iconExternalLink" width="16" height="16" />
-                    </span>
-                    <div class="min-w-0 flex-1 text-left">
-                      <div class="sidebar-create-menu-title-row">导入外部歌单</div>
-                      <div class="sidebar-create-menu-desc">链接 / 截图</div>
-                    </div>
+                    时间倒序
+                  </button>
+                  <div class="sidebar-sort-menu-divider"></div>
+                  <button
+                    type="button"
+                    class="sidebar-sort-menu-item"
+                    :class="{ 'is-active': settingStore.playlistSortOrder === 'name-asc' }"
+                    @click="handleSortChange('name-asc')"
+                  >
+                    字母正序
+                  </button>
+                  <button
+                    type="button"
+                    class="sidebar-sort-menu-item"
+                    :class="{ 'is-active': settingStore.playlistSortOrder === 'name-desc' }"
+                    @click="handleSortChange('name-desc')"
+                  >
+                    字母倒序
                   </button>
                 </div>
               </Popover>
+              <Button
+                variant="unstyled"
+                size="none"
+                type="button"
+                class="sidebar-section-action sidebar-icon-btn"
+                title="刷新歌单"
+                :disabled="!isLoggedIn"
+                @click="refreshUserPlaylists"
+              >
+                <RefreshIcon width="13" height="13" />
+              </Button>
+              <div class="sidebar-section-action-slot">
+                <Popover
+                  v-if="isLoggedIn && activePlaylistTab === 0"
+                  v-model:open="showCreateMenu"
+                  trigger="click"
+                  side="bottom"
+                  align="end"
+                  :side-offset="6"
+                  :show-arrow="false"
+                  content-class="sidebar-create-menu"
+                >
+                  <template #trigger>
+                    <Button
+                      variant="unstyled"
+                      size="none"
+                      type="button"
+                      class="sidebar-section-action sidebar-icon-btn"
+                      title="添加歌单"
+                    >
+                      <Icon :icon="iconPlus" width="12" height="12" />
+                    </Button>
+                  </template>
+                  <div class="sidebar-create-menu-list">
+                    <div class="sidebar-create-menu-title">添加歌单</div>
+                    <button
+                      type="button"
+                      class="sidebar-create-menu-item"
+                      @click="
+                        () => {
+                          showCreateMenu = false;
+                          openCreatePlaylistDialog();
+                        }
+                      "
+                    >
+                      <span class="sidebar-create-menu-icon">
+                        <Icon :icon="iconPlaylistAdd" width="16" height="16" />
+                      </span>
+                      <div class="min-w-0 flex-1 text-left">
+                        <div class="sidebar-create-menu-title-row">新建空歌单</div>
+                        <div class="sidebar-create-menu-desc">自定义名称从零开始</div>
+                      </div>
+                    </button>
+                    <button
+                      type="button"
+                      class="sidebar-create-menu-item"
+                      @click="
+                        () => {
+                          showCreateMenu = false;
+                          showImportDialog = true;
+                        }
+                      "
+                    >
+                      <span class="sidebar-create-menu-icon">
+                        <Icon :icon="iconExternalLink" width="16" height="16" />
+                      </span>
+                      <div class="min-w-0 flex-1 text-left">
+                        <div class="sidebar-create-menu-title-row">导入外部歌单</div>
+                        <div class="sidebar-create-menu-desc">链接 / 截图</div>
+                      </div>
+                    </button>
+                  </div>
+                </Popover>
+              </div>
             </div>
           </div>
-        </div>
 
-        <Scrollbar
-          class="sidebar-full-scroll flex-1 min-h-0 no-drag"
-          :scrollbar-inset="3"
-          :content-props="{ class: 'sidebar-scroll' }"
-        >
           <nav v-if="isLoggedIn" class="sidebar-scroll-inner space-y-0.5">
             <template v-if="activePlaylistTab === 0">
               <!-- 置顶歌单（默认收藏 + 我喜欢） -->
@@ -1554,13 +1555,13 @@ watch(
 
 :deep(.sidebar-rail-scroll-content) {
   min-height: 0;
-  padding: 0 8px 10px;
+  padding: 0 8px;
 }
 
 .sidebar-rail {
   position: relative;
   z-index: 1;
-  padding: 0 8px 10px;
+  padding: 0 0 10px;
   align-items: center;
   animation: sidebar-rail-enter 0.2s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
@@ -1569,6 +1570,26 @@ watch(
   position: relative;
   z-index: 1;
   animation: sidebar-full-enter 0.2s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.sidebar-content {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+}
+
+.sidebar-playlist-header {
+  padding-top: 6px;
+  padding-bottom: 6px;
+}
+
+.sidebar-rail-top,
+.sidebar-rail-bottom,
+.sidebar-rail-tabs,
+.sidebar-rail-divider {
+  flex-shrink: 0;
 }
 
 .sidebar-rail-top {
@@ -1669,14 +1690,8 @@ watch(
   color: var(--color-primary-text);
 }
 
-.sidebar-rail-scroll {
-  width: 80px;
-  max-width: none !important;
-}
-
-:deep(.sidebar-rail-scroll .scrollbar) {
-  padding-right: 2px;
-  padding-left: 2px;
+.sidebar-rail-playlist-content {
+  padding-bottom: 12px;
 }
 
 .sidebar-rail-cover-list {

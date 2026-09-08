@@ -1,5 +1,7 @@
 const DEFAULT_UPDATE_CHECK_ERROR = '更新检查失败，请稍后重试。';
 const UPDATE_METADATA_PUBLISHING_ERROR = '新版本正在发布，更新文件尚未准备完成，请稍后重试。';
+export const UPDATE_SIGNATURE_ERROR =
+  '更新包未通过 macOS 签名校验，重试无法解决。请手动下载最新 DMG，退出 EchoMusic 后替换「应用程序」中的旧版本。';
 
 const readErrorMessage = (error: unknown): string => {
   if (error instanceof Error) return error.message.trim();
@@ -17,7 +19,19 @@ export const isUpdateMetadataPublishingError = (error: unknown): boolean => {
   return /cannot find .*release artifacts|http(?:error)?[^\n]*404|\b404\b/i.test(message);
 };
 
+export const isUpdateSignatureError = (error: unknown): boolean => {
+  const message = readErrorMessage(error);
+  return (
+    message === UPDATE_SIGNATURE_ERROR ||
+    /code signature[\s\S]*did not pass validation|code failed to satisfy specified code requirement/i.test(
+      message,
+    ) ||
+    /代码未能满足指定的代码要求/.test(message)
+  );
+};
+
 export const formatUpdateCheckError = (error: unknown): string => {
+  if (isUpdateSignatureError(error)) return UPDATE_SIGNATURE_ERROR;
   if (isUpdateMetadataPublishingError(error)) return UPDATE_METADATA_PUBLISHING_ERROR;
   return readErrorMessage(error) || DEFAULT_UPDATE_CHECK_ERROR;
 };

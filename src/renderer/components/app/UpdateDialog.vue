@@ -7,6 +7,7 @@ import Dialog from '@/components/ui/Dialog.vue';
 import Button from '@/components/ui/Button.vue';
 import Scrollbar from '@/components/ui/Scrollbar.vue';
 import { useUpdateStore } from '@/stores/update';
+import { isUpdateSignatureError } from '../../../shared/update-error';
 
 interface Props {
   dismissLabel?: string;
@@ -33,9 +34,10 @@ const open = computed({
 // 下载中/已下载时禁止「点击外部」「ESC」关闭，避免误触丢失下载进度视图
 const allowDismiss = computed(
   () =>
-    downloadStatus.value !== 'downloading' &&
-    downloadStatus.value !== 'downloaded' &&
-    downloadStatus.value !== 'installing',
+    Boolean(checkResult.value?.manualDownload) ||
+    (downloadStatus.value !== 'downloading' &&
+      downloadStatus.value !== 'downloaded' &&
+      downloadStatus.value !== 'installing'),
 );
 
 const title = computed(() => {
@@ -45,6 +47,7 @@ const title = computed(() => {
     return `发现新版本 ${r.releaseName || r.latestVersion || ''}`.trim();
   }
   if (r.status === 'latest') return '已是最新版本';
+  if (r.manualDownload && isUpdateSignatureError(r.message)) return '请手动更新';
   return '检查更新失败';
 });
 
@@ -97,6 +100,7 @@ const handleClose = () => updateStore.closeDialog();
       <div
         v-if="
           checkResult?.status === 'available' &&
+          !checkResult.manualDownload &&
           (downloadStatus === 'downloading' ||
             downloadStatus === 'downloaded' ||
             downloadStatus === 'installing')
@@ -134,7 +138,15 @@ const handleClose = () => updateStore.closeDialog();
 
       <!-- 右侧：按钮 -->
       <Button variant="ghost" size="sm" @click="handleClose">{{ props.dismissLabel }}</Button>
-      <template v-if="checkResult?.status === 'available'">
+      <Button
+        v-if="checkResult?.manualDownload && (checkResult.downloadUrl || checkResult.releaseUrl)"
+        variant="primary"
+        size="sm"
+        @click="handleOpenDownload"
+      >
+        {{ checkResult.downloadLabel || '前往发布页下载' }}
+      </Button>
+      <template v-else-if="checkResult?.status === 'available' && !checkResult.manualDownload">
         <Button v-if="checkResult?.releaseUrl" variant="ghost" size="sm" @click="handleOpenRelease">
           前往下载
         </Button>
@@ -148,14 +160,6 @@ const handleClose = () => updateStore.closeDialog();
         </Button>
         <Button v-else-if="downloadStatus === 'installing'" variant="secondary" size="sm" disabled>
           安装中
-        </Button>
-        <Button
-          v-else-if="checkResult?.manualDownload"
-          variant="primary"
-          size="sm"
-          @click="handleOpenDownload"
-        >
-          {{ checkResult.downloadLabel || '前往下载' }}
         </Button>
         <Button v-else-if="downloadStatus === 'downloading'" variant="secondary" size="sm" disabled>
           下载中

@@ -40,7 +40,13 @@ import {
   type SpatialAudioEffectEntry,
 } from '../../shared/audio';
 import type { LogSettings } from '../../shared/logging';
-import { formatUpdateCheckError } from '../../shared/update-error';
+import { formatUpdateCheckError, isUpdateSignatureError } from '../../shared/update-error';
+import {
+  getMacDmgAsset,
+  MAC_MANUAL_UPDATE_MESSAGE,
+  requiresManualMacUpdate,
+  type GithubReleaseAsset,
+} from '../../shared/manual-update';
 import { applyLogSettings, getLogSettings } from '../logger';
 import { getPlaybackQueueStorage } from '../storage/playbackQueues';
 import { setMainAppSetting } from '../storage/settings';
@@ -97,17 +103,13 @@ const communityAudioEffectDownloads = new Map<
   Promise<DownloadCommunityAudioEffectResult>
 >();
 
-type GithubReleaseAsset = {
-  name?: unknown;
-  browser_download_url?: unknown;
-};
-
 type GithubRelease = {
   tag_name?: unknown;
   name?: unknown;
   body?: unknown;
   html_url?: unknown;
   prerelease?: unknown;
+  draft?: unknown;
   assets?: unknown;
 };
 
@@ -724,8 +726,9 @@ const getAppInfo = (): AppInfoResult => {
 };
 
 export const registerSettingsHandlers = ({ getMainWindow, playerRef }: IpcContext) => {
+  const manualMacUpdate = requiresManualMacUpdate(process.platform);
   autoUpdater.autoDownload = false;
-  autoUpdater.autoInstallOnAppQuit = true;
+  autoUpdater.autoInstallOnAppQuit = !manualMacUpdate;
   autoUpdater.logger = log;
   autoUpdater.on('login', (authInfo, callback) => {
     const credentials = getProxyCredentials();
@@ -829,7 +832,7 @@ export const registerSettingsHandlers = ({ getMainWindow, playerRef }: IpcContex
         if (token.cancelled) throw new Error('cancelled');
         return autoUpdater.downloadUpdate(token);
       },
-      shouldFallback: () => !token.cancelled,
+      shouldFallback: (error) => !token.cancelled && !isUpdateSignatureError(error),
       onAcceleratorFailure: (error) => {
         log.warn('[Updater] Accelerator download failed, retrying original GitHub:', error);
       },
@@ -940,7 +943,7 @@ export const registerSettingsHandlers = ({ getMainWindow, playerRef }: IpcContex
       return;
     }
     log.error('[Updater] Error:', error);
-    const message = error?.message || '更新失败，请稍后重试。';
+    const message = formatUpdateCheckError(error);
     // 用户主动取消下载导致的错误，静默忽略（token 已被清空，state 已是 idle）
     if (!downloadCancellationToken && downloadState.status === 'idle') return;
     // 区分检查阶段与下载阶段的错误，避免下载出错时弹窗被「检查更新失败」覆盖
@@ -983,7 +986,7 @@ export const registerSettingsHandlers = ({ getMainWindow, playerRef }: IpcContex
     sendToRenderer('update-download-status', downloadState);
   });
 
-  const checkArchLinuxManualUpdate = async (payload: {
+  const checkManualUpdate = async (payload: {
     prerelease: boolean;
     silent: boolean;
     githubProxyUrl: string;
@@ -996,9 +999,18 @@ export const registerSettingsHandlers = ({ getMainWindow, playerRef }: IpcContex
     const response = payload.prerelease
       ? await requestJson<GithubRelease[]>(releasesUrl)
       : await requestJson<GithubRelease>(releasesUrl);
-    const release = Array.isArray(response)
-      ? response.find((item) => item && item.prerelease === true) || response[0]
-      : response;
+    const releases = (Array.isArray(response) ? response : [response]).filter(
+      (item) => item && !item.draft && (payload.prerelease || !item.prerelease) && item.tag_name,
+    );
+    const release = releases.reduce<GithubRelease | undefined>((latest, item) => {
+      if (!latest) return item;
+      return isNewerRelease(
+        normalizeReleaseVersion(item.tag_name),
+        normalizeReleaseVersion(latest.tag_name),
+      )
+        ? item
+        : latest;
+    }, undefined);
 
     if (!release?.tag_name) {
       throw new Error('未找到可用的 GitHub Release。');
@@ -1025,7 +1037,9 @@ export const registerSettingsHandlers = ({ getMainWindow, playerRef }: IpcContex
       return;
     }
 
-    const archiveAsset = getArchLinuxPackageAsset(release);
+    const archiveAsset = manualMacUpdate
+      ? getMacDmgAsset(release.assets, process.arch)
+      : getArchLinuxPackageAsset(release);
     const archiveName = String(archiveAsset?.name || '').toLowerCase();
     const isPacmanPackage = isPacmanAssetName(archiveName);
     const downloadUrl =
@@ -1033,9 +1047,11 @@ export const registerSettingsHandlers = ({ getMainWindow, playerRef }: IpcContex
         ? applyGithubAcceleratorUrl(archiveAsset.browser_download_url, payload.githubProxyUrl)
         : releaseUrl;
     const downloadLabel = archiveAsset
-      ? isPacmanPackage
-        ? '下载 pacman 包'
-        : '下载 tar.gz'
+      ? manualMacUpdate
+        ? '下载 DMG 手动更新'
+        : isPacmanPackage
+          ? '下载 pacman 包'
+          : '下载 tar.gz'
       : '前往发布页下载';
 
     const result: UpdateCheckResult = {
@@ -1048,11 +1064,13 @@ export const registerSettingsHandlers = ({ getMainWindow, playerRef }: IpcContex
       downloadLabel,
       manualDownload: true,
       body: typeof release.body === 'string' ? release.body.slice(0, 4000) : '',
-      message: archiveAsset
-        ? isPacmanPackage
-          ? 'Arch Linux 暂不使用内置安装器，请下载 pacman 包后使用 pacman -U 手动安装。'
-          : 'Arch Linux 暂不使用内置安装器，请下载 tar.gz 压缩包后手动替换安装目录。'
-        : 'Arch Linux 暂不使用内置安装器，请前往发布页选择适合当前系统的安装包。',
+      message: manualMacUpdate
+        ? MAC_MANUAL_UPDATE_MESSAGE
+        : archiveAsset
+          ? isPacmanPackage
+            ? 'Arch Linux 暂不使用内置安装器，请下载 pacman 包后使用 pacman -U 手动安装。'
+            : 'Arch Linux 暂不使用内置安装器，请下载 tar.gz 压缩包后手动替换安装目录。'
+          : 'Arch Linux 暂不使用内置安装器，请前往发布页选择适合当前系统的安装包。',
       silent: payload.silent,
     };
     lastCheckResult = result;
@@ -1304,15 +1322,18 @@ export const registerSettingsHandlers = ({ getMainWindow, playerRef }: IpcContex
         return;
       }
 
-      if (shouldUseArchManualUpdate()) {
-        checkArchLinuxManualUpdate({ prerelease, silent, githubProxyUrl }).catch((error) => {
-          log.error('[Updater] Arch Linux manual check failed:', error);
-          sendToRenderer('update-check-result', {
+      if (manualMacUpdate || shouldUseArchManualUpdate()) {
+        checkManualUpdate({ prerelease, silent, githubProxyUrl }).catch((error) => {
+          log.error('[Updater] Manual update check failed:', error);
+          lastCheckResult = {
             status: 'error',
             currentVersion: getAppInfo().version,
-            message: error?.message || '更新检查失败，请稍后重试。',
+            message: formatUpdateCheckError(error),
+            manualDownload: manualMacUpdate,
+            releaseUrl: 'https://github.com/hoowhoami/EchoMusic/releases',
             silent,
-          } satisfies UpdateCheckResult);
+          };
+          sendToRenderer('update-check-result', lastCheckResult);
         });
         return;
       }
@@ -1356,6 +1377,14 @@ export const registerSettingsHandlers = ({ getMainWindow, playerRef }: IpcContex
   });
 
   ipcRegistry.registerListener('update:download', () => {
+    if (manualMacUpdate || lastCheckResult?.manualDownload) {
+      downloadState = {
+        status: 'error',
+        error: manualMacUpdate ? MAC_MANUAL_UPDATE_MESSAGE : '请前往发布页下载并手动安装更新。',
+      };
+      sendToRenderer('update-download-status', downloadState);
+      return;
+    }
     // 防重入：正在下载或已下载完成时忽略，仅回传当前状态
     if (
       downloadState.status === 'downloading' ||
@@ -1380,7 +1409,7 @@ export const registerSettingsHandlers = ({ getMainWindow, playerRef }: IpcContex
       log.error('[Updater] Download failed:', error);
       downloadState = {
         status: 'error',
-        error: error?.message || '下载失败',
+        error: formatUpdateCheckError(error),
       };
       sendToRenderer('update-download-status', downloadState);
     });
@@ -1389,6 +1418,12 @@ export const registerSettingsHandlers = ({ getMainWindow, playerRef }: IpcContex
   ipcRegistry.registerHandler(
     'update:install',
     (_event, payload?: { silent?: boolean }): UpdateInstallResult => {
+      if (manualMacUpdate || lastCheckResult?.manualDownload) {
+        return {
+          ok: false,
+          error: manualMacUpdate ? MAC_MANUAL_UPDATE_MESSAGE : '请手动安装下载的更新包。',
+        };
+      }
       if (downloadState.status !== 'downloaded') {
         const error = '更新尚未下载完成，请下载完成后再安装。';
         downloadState = { status: 'error', error };

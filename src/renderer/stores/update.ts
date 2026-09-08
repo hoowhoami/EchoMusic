@@ -5,6 +5,7 @@ import type {
   UpdateDownloadStatus,
 } from '../../shared/app';
 import { useSettingStore } from './setting';
+import { isUpdateSignatureError, UPDATE_SIGNATURE_ERROR } from '../../shared/update-error';
 
 /**
  * 更新状态的单一可信来源（single source of truth）。
@@ -77,6 +78,7 @@ export const useUpdateStore = defineStore('update', {
       } else {
         this.checkResult = payload as UpdateCheckResult;
       }
+      this.recoverSignatureFailure(this.checkResult.message);
 
       // 静默检查：仅在有可用更新时弹窗；手动检查：始终弹窗
       if (silent) {
@@ -87,6 +89,7 @@ export const useUpdateStore = defineStore('update', {
     },
 
     applyDownloadStatus(result: UpdateDownloadResult) {
+      if (result.status === 'error' && this.recoverSignatureFailure(result.error)) return;
       this.downloadStatus = result.status;
       if (result.progress) {
         this.downloadPercent = Math.round(result.progress.percent);
@@ -100,6 +103,24 @@ export const useUpdateStore = defineStore('update', {
       }
     },
 
+    recoverSignatureFailure(error: unknown) {
+      if (window.electron?.platform !== 'darwin' || !isUpdateSignatureError(error)) return false;
+      this.checkResult = {
+        ...this.checkResult,
+        status: this.checkResult?.latestVersion ? 'available' : 'error',
+        currentVersion: this.checkResult?.currentVersion || useSettingStore().appVersion || '未知',
+        releaseUrl:
+          this.checkResult?.releaseUrl || 'https://github.com/hoowhoami/EchoMusic/releases',
+        manualDownload: true,
+        downloadLabel: '手动下载最新版本',
+        message: UPDATE_SIGNATURE_ERROR,
+      };
+      this.downloadStatus = 'idle';
+      this.downloadPercent = 0;
+      this.downloadError = '';
+      return true;
+    },
+
     /** 触发检查更新。silent=false 为用户手动检查。 */
     check(silent = false) {
       if (!silent) this.isChecking = true;
@@ -109,6 +130,10 @@ export const useUpdateStore = defineStore('update', {
 
     /** 开始下载。下载中/已下载时忽略，防止重复下载。 */
     download() {
+      if (this.checkResult?.manualDownload) {
+        this.openDownload();
+        return;
+      }
       if (
         this.downloadStatus === 'downloading' ||
         this.downloadStatus === 'downloaded' ||
@@ -132,6 +157,10 @@ export const useUpdateStore = defineStore('update', {
     },
 
     async install() {
+      if (this.checkResult?.manualDownload) {
+        this.openDownload();
+        return;
+      }
       if (this.downloadStatus !== 'downloaded') return;
       const settingStore = useSettingStore();
       this.downloadStatus = 'installing';

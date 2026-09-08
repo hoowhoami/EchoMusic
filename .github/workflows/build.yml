@@ -51,6 +51,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # Ad-hoc Mac builds cannot use Squirrel.Mac automatic installation.
+          # Keep src/shared/manual-update.ts in manual mode until Developer ID
+          # signing is configured; existing ad-hoc installs need a manual migration.
           - os: macos-14
             rust_target: aarch64-apple-darwin
             electron_builder_args: '--mac --arm64 --config.mac.identity=-'

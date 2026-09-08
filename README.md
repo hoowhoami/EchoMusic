@@ -42,7 +42,7 @@
 - **插件扩展**：支持在线插件源浏览安装与本地插件加载，自定义页面、侧边栏入口、设置项、播放器按钮、歌曲右键菜单与播放事件监听。
 - **持久化能力**：支持设置、播放历史、收藏、播放状态等本地持久化。
 - **跨平台支持**：完整适配 macOS、Windows 与 Linux 系统。
-- **自动更新**：内置应用更新检测与下载，支持静默更新。
+- **应用更新**：内置版本检测与更新日志；支持自动更新的平台可在应用内下载安装，macOS 当前提供 DMG 手动更新入口。
 - **持续集成**：完善的 GitHub Actions 配置，支持多平台自动构建与 Release 发布。
 
 ## 🛠️ 技术栈
@@ -228,6 +228,8 @@ pnpm build
 - **Linux**：`deb`、`rpm`、`AppImage`、`tar.gz`
 
 ## macOS
+
+当前发行版使用 ad-hoc 签名，不支持 Squirrel.Mac 自动安装更新。应用内检查更新后，请下载对应架构的 DMG（Apple Silicon 选择 arm64，Intel 选择 x64），退出 EchoMusic，再将新版本拖入「应用程序」替换旧版本。
 
 ```bash
 xattr -cr /Applications/EchoMusic.app && codesign --force --deep --sign - /Applications/EchoMusic.app
