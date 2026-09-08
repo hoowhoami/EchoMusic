@@ -28,6 +28,14 @@ export type {
 } from './theme';
 export type { EchoPluginContext, PluginRuntimeHost } from './context';
 export type { PluginBackupsApi } from './backups';
+export type {
+  PluginGraphicsApi,
+  PluginGraphicsCapabilities,
+  PluginGraphicsCanvas,
+  PluginGraphicsCanvasOptions,
+  PluginGraphicsCanvasState,
+  PluginGraphicsFrame,
+} from './graphics';
 export type { PluginScrollContainerQueryOptions, PluginScrollContainerState } from './runtimeUi';
 export type {
   PluginBackupProvider,

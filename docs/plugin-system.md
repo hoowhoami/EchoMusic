@@ -18,6 +18,9 @@ EchoMusic 支持在线插件源和本地插件。插件可以注册页面、侧�
 - [插件开发指南](https://github.com/hoowhoami/EchoMusicPlugins/blob/main/docs/plugin-development.md)
 - [独立浮窗与 Now Playing](https://github.com/hoowhoami/EchoMusicPlugins/blob/main/docs/floating-windows.md)
 - [任务中心 API](https://github.com/hoowhoami/EchoMusicPlugins/blob/main/docs/tasks.md)
+- [HDR 插件图形 API](https://github.com/hoowhoami/EchoMusicPlugins/blob/main/docs/hdr-graphics.md)
 - [官方插件源与示例插件](https://github.com/hoowhoami/EchoMusicPlugins)
 
 宿主与插件仓库各自维护职责范围内的文档：EchoMusic 只说明插件系统的用户语义和宿主边界，具体 API 以 EchoMusicPlugins 的开发指南为准。
+
+插件图形能力独立于应用透明背景。支持的环境可输出 HDR 高光，SDR 环境对插件画布进行色调映射；WebGPU 不可用时返回 2D 回退接口，由插件提供普通视觉内容。宿主不会强制开启系统 HDR、改变屏幕亮度或提亮整个界面。能力检测不代表真实屏幕亮度已经验证，插件禁用时会释放宿主管理的画布、GPU 设备与动画。

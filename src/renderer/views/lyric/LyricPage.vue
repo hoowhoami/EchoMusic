@@ -97,7 +97,7 @@ watch(
 // 背景律动：流体背景，固定速度且不关联播放状态
 const isBlurBackgroundRhythmEnabled = computed(
   () =>
-    !settingStore.windowBackground.frosted &&
+    !settingStore.effectiveWindowBackground.frosted &&
     settingStore.lyricPageBackgroundBlur &&
     settingStore.lyricPageBackgroundRhythm &&
     Boolean(settledBlurCoverUrl.value) &&

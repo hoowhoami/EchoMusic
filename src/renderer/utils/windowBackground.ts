@@ -1,7 +1,7 @@
-import { normalizeWindowBackground, type WindowBackground } from '../../shared/window-background';
+import { resolveWindowBackground, type WindowBackground } from '../../shared/window-background';
 
 export function applyWindowBackground(value: WindowBackground) {
-  const background = normalizeWindowBackground(value);
+  const background = resolveWindowBackground(value, value.enabled);
   const root = document.documentElement;
   root.classList.toggle(
     'app-background-transparent',

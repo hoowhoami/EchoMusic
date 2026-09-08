@@ -42,6 +42,7 @@ const initialSettings = getMainAppSettings();
 let closeBehavior: CloseBehavior = initialSettings.closeBehavior;
 let currentTheme: ThemeMode = initialSettings.theme;
 let windowBackground = normalizeWindowBackground(initialSettings.windowBackground);
+let windowBackgroundActiveEnabled = windowBackground.enabled;
 const supportsWindowFrost =
   process.platform === 'darwin' ||
   (process.platform === 'win32' && Number(release().split('.')[2]) >= 22621);
@@ -155,7 +156,10 @@ const getMainWindowBackgroundColor = () =>
 const syncMainWindowBackground = () => {
   if (!canUseMainWindow(win)) return;
   if (nativeTheme.themeSource !== currentTheme) nativeTheme.themeSource = currentTheme;
-  win.setBackgroundColor('#00000000');
+  win.setBackgroundColor(
+    windowBackgroundActiveEnabled ? '#00000000' : getMainWindowBackgroundColor(),
+  );
+  if (!windowBackgroundActiveEnabled) return;
   if (process.platform === 'darwin') {
     // AppKit derives a transparent window's shadow from its content alpha.
     // Cached silhouettes can remain after cards/lyrics scroll or disappear.
@@ -176,6 +180,7 @@ export const registerMainWindowPreferenceHandlers = () => {
   nativeTheme.on('updated', syncMainWindowBackground);
   ipcRegistry.registerHandler('window-background:get', () => ({
     background: windowBackground,
+    activeEnabled: windowBackgroundActiveEnabled,
     supportsFrost: supportsWindowFrost,
   }));
   ipcRegistry.registerHandler('window-background:set', (event, value: WindowBackground) => {
@@ -383,6 +388,7 @@ export async function createWindow() {
   const minHeight = getMinHeight();
   await logMainMemory('createWindow:before BrowserWindow');
 
+  windowBackgroundActiveEnabled = windowBackground.enabled;
   win = new BrowserWindow({
     title: 'EchoMusic',
     ...(windowIconPath ? { icon: windowIconPath } : {}),
@@ -390,9 +396,9 @@ export async function createWindow() {
     minWidth: minWidth,
     minHeight: minHeight,
     show: false, // 初始不显示，防止白屏
-    backgroundColor: '#00000000', // 动态设置背景色
+    backgroundColor: windowBackgroundActiveEnabled ? '#00000000' : initialBgColor,
     frame: false,
-    transparent: true,
+    transparent: windowBackgroundActiveEnabled,
     ...(process.platform === 'darwin' ? { visualEffectState: 'active' as const } : {}),
     hasShadow: true,
     titleBarStyle: 'hidden',
@@ -416,7 +422,11 @@ export async function createWindow() {
     },
   });
   syncMainWindowBackground();
-  if (process.platform === 'win32' && Number(release().split('.')[2]) >= 22000) {
+  if (
+    windowBackgroundActiveEnabled &&
+    process.platform === 'win32' &&
+    Number(release().split('.')[2]) >= 22000
+  ) {
     // Transparent HWNDs lose Electron's native rounded frame. Clip the native
     // window itself so both web content and Acrylic respect the same corners.
     const roundedWindow = win;

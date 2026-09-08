@@ -2,6 +2,8 @@
 import { computed, ref } from 'vue';
 import { useSettingStore } from '@/stores/setting';
 import { useThemeStore } from '@/stores/theme';
+import { useToastStore } from '@/stores/toast';
+import { suspendRendererMemoryDiagnosticsForRelaunch } from '@/utils/rendererMemoryDiagnostics';
 import type { ThemeMode } from '../../../../shared/app';
 import type { AccentMode } from '@/stores/theme';
 import Select from '@/components/ui/Select.vue';
@@ -16,8 +18,31 @@ import { accentModeOptions, sectionTitles, themeOptions } from '../constants';
 
 const settingStore = useSettingStore();
 const themeStore = useThemeStore();
+const toastStore = useToastStore();
+const restarting = ref(false);
+const restartForBackground = async () => {
+  if (restarting.value) return;
+  restarting.value = true;
+  try {
+    // Wait for the current preference to reach the main process before quitting.
+    await settingStore.setWindowBackground({});
+    if (!settingStore.appIsPackaged) {
+      toastStore.info('设置已保存，请重新启动开发服务以生效');
+      restarting.value = false;
+      return;
+    }
+    suspendRendererMemoryDiagnosticsForRelaunch();
+    if (!(await window.electron?.appInfo?.relaunch())) throw new Error('Relaunch unavailable');
+  } catch {
+    restarting.value = false;
+    toastStore.warning('未能自动重启，请手动退出并重新打开应用');
+  }
+};
 const showAccentPicker = ref(false);
 const showBackgroundPicker = ref(false);
+const backgroundControlsDisabled = computed(
+  () => !settingStore.windowBackground.enabled || !settingStore.windowBackgroundActiveEnabled,
+);
 const accentPresetValues = ACCENT_PRESETS.map((item) => item.color);
 const title = sectionTitles.appearance;
 const accentPresets = ACCENT_PRESETS;
@@ -48,6 +73,35 @@ const isAccentGradientDefault = computed(
     <div class="settings-divider"></div>
     <div class="settings-item">
       <div class="space-y-1">
+        <h3 class="font-semibold">透明背景</h3>
+        <p class="text-sm text-text-secondary">默认关闭；开启或关闭后，重启应用生效</p>
+        <p
+          v-if="settingStore.windowBackgroundRestartRequired"
+          class="text-sm text-primary-text"
+          role="status"
+        >
+          设置已更改，请重启应用以{{
+            settingStore.windowBackground.enabled ? '启用透明背景' : '恢复普通窗口'
+          }}
+          <button
+            type="button"
+            class="ml-2 cursor-pointer underline underline-offset-4 disabled:cursor-wait disabled:opacity-50"
+            :disabled="restarting"
+            @click="restartForBackground"
+          >
+            {{ restarting ? '正在重启…' : '立即重启' }}
+          </button>
+        </p>
+      </div>
+      <Switch
+        :model-value="settingStore.windowBackground.enabled"
+        :disabled="restarting"
+        @update:model-value="settingStore.setWindowBackground({ enabled: Boolean($event) })"
+      />
+    </div>
+    <div class="settings-divider"></div>
+    <div class="settings-item">
+      <div class="space-y-1">
         <h3 class="font-semibold">背景透明度</h3>
         <p class="text-sm text-text-secondary">
           0% 为不透明；应用于主界面及封面/纯歌词页，写真模式保持原样
@@ -62,7 +116,7 @@ const isAccentGradientDefault = computed(
         show-value
         value-suffix="%"
         aria-label="背景透明度"
-        :disabled="settingStore.windowBackground.frosted"
+        :disabled="backgroundControlsDisabled || settingStore.windowBackground.frosted"
         @update:model-value="settingStore.setWindowBackground({ transparency: $event })"
       />
     </div>
@@ -80,7 +134,7 @@ const isAccentGradientDefault = computed(
       </div>
       <Switch
         :model-value="settingStore.windowBackground.frosted"
-        :disabled="!settingStore.supportsWindowFrost"
+        :disabled="backgroundControlsDisabled || !settingStore.supportsWindowFrost"
         @update:model-value="settingStore.setWindowBackground({ frosted: Boolean($event) })"
       />
     </div>
@@ -95,7 +149,11 @@ const isAccentGradientDefault = computed(
       <div class="flex items-center gap-3">
         <button
           class="settings-color-reset disabled:opacity-40"
-          :disabled="settingStore.windowBackground.frosted || !settingStore.windowBackground.color"
+          :disabled="
+            backgroundControlsDisabled ||
+            settingStore.windowBackground.frosted ||
+            !settingStore.windowBackground.color
+          "
           @click="settingStore.setWindowBackground({ color: '' })"
         >
           跟随主题
@@ -103,7 +161,7 @@ const isAccentGradientDefault = computed(
         <button
           class="settings-color-swatch disabled:opacity-40"
           aria-label="选择背景底色"
-          :disabled="settingStore.windowBackground.frosted"
+          :disabled="backgroundControlsDisabled || settingStore.windowBackground.frosted"
           :style="{ background: settingStore.windowBackground.color || 'var(--surface-main-base)' }"
           @click="showBackgroundPicker = true"
         ></button>

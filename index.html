@@ -13,7 +13,7 @@
           'html:not(.app-background-transparent) { background: #f5f5f7; } html.dark:not(.app-background-transparent) { background: #26262a; }';
         document.head.appendChild(background);
         const appearance = window.echoWindowBackground;
-        if (appearance) {
+        if (appearance && appearance.enabled === true) {
           const root = document.documentElement;
           root.classList.toggle(
             'app-background-transparent',

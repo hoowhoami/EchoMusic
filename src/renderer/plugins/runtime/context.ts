@@ -56,6 +56,7 @@ import { createStyleDisposer } from './styles';
 import { createThemeApi, type PluginThemeApi } from './theme';
 import { createPluginNetworkApi } from './network';
 import { createPluginBackupsApi, type PluginBackupsApi } from './backups';
+import { createPluginGraphicsApi, type PluginGraphicsApi } from './graphics';
 
 type PluginCallbackRunner = <T>(
   pluginId: string,
@@ -107,6 +108,7 @@ export interface EchoPluginContext {
   kugouVerification: ReturnType<typeof createKugouVerificationApi>;
   settings: ReturnType<typeof useSettingStore>;
   theme: PluginThemeApi;
+  graphics: PluginGraphicsApi;
   appearance: ReturnType<typeof createAppearanceApi>;
   fonts: ReturnType<typeof createFontsApi>;
   cover: PluginCoverApi;
@@ -306,6 +308,11 @@ export const createPluginContext = (
     kugouVerification: createKugouVerificationApi(descriptor),
     settings: settingStore,
     theme: createThemeApi(descriptor.id, addDisposable),
+    graphics: createPluginGraphicsApi({
+      addDisposable,
+      runCallback: (source, callback) =>
+        runPluginCallback(descriptor.id, source, callback, undefined),
+    }),
     appearance: createAppearanceApi(descriptor.id, apiDeps),
     fonts: createFontsApi(),
     cover: createCoverApi(() => themeStore.sourceColor),

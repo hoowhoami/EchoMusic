@@ -1,6 +1,7 @@
 import {
   DEFAULT_WINDOW_BACKGROUND,
   normalizeWindowBackground,
+  resolveWindowBackground,
   type WindowBackground,
 } from '../../shared/window-background';
 import { applyWindowBackground } from '@/utils/windowBackground';
@@ -95,6 +96,7 @@ export const useSettingStore = defineStore('setting', {
   state: () => ({
     theme: 'system' as ThemeMode,
     windowBackground: { ...DEFAULT_WINDOW_BACKGROUND },
+    windowBackgroundActiveEnabled: false,
     supportsWindowFrost: false,
     language: 'zh-CN',
     shortcutEnabled: true,
@@ -226,6 +228,12 @@ export const useSettingStore = defineStore('setting', {
     // DevTools 开关
     devToolsEnabled: false,
   }),
+  getters: {
+    effectiveWindowBackground: (state) =>
+      resolveWindowBackground(state.windowBackground, state.windowBackgroundActiveEnabled),
+    windowBackgroundRestartRequired: (state) =>
+      state.windowBackground.enabled !== state.windowBackgroundActiveEnabled,
+  },
   actions: {
     configureDspProvider(
       provider: Pick<DspProviderRecord, 'providerId' | 'path'>,
@@ -293,12 +301,13 @@ export const useSettingStore = defineStore('setting', {
       const result = await window.electron?.ipcRenderer.invoke('window-background:get');
       if (!result) return;
       this.windowBackground = normalizeWindowBackground(result.background);
+      this.windowBackgroundActiveEnabled = result.activeEnabled === true;
       this.supportsWindowFrost = result.supportsFrost;
-      applyWindowBackground(this.windowBackground);
+      applyWindowBackground(this.effectiveWindowBackground);
     },
     async setWindowBackground(patch: Partial<WindowBackground>) {
       this.windowBackground = normalizeWindowBackground({ ...this.windowBackground, ...patch });
-      applyWindowBackground(this.windowBackground);
+      applyWindowBackground(this.effectiveWindowBackground);
       await window.electron?.ipcRenderer.invoke('window-background:set', {
         ...this.windowBackground,
       });
@@ -682,5 +691,12 @@ export const useSettingStore = defineStore('setting', {
       return buildFontFamily(this.lyricFont);
     },
   },
-  persist: { omit: ['dspProviderPath', 'windowBackground', 'supportsWindowFrost'] },
+  persist: {
+    omit: [
+      'dspProviderPath',
+      'windowBackground',
+      'windowBackgroundActiveEnabled',
+      'supportsWindowFrost',
+    ],
+  },
 });

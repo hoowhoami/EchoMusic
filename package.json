@@ -46,6 +46,7 @@
     "@vue/eslint-config-prettier": "^10.2.0",
     "@vue/eslint-config-typescript": "^14.7.0",
     "@vueuse/core": "^14.3.0",
+    "@webgpu/types": "^0.1.72",
     "autoprefixer": "^10.5.0",
     "dompurify": "^3.4.11",
     "electron": "43.6.0",

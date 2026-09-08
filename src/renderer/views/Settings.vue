@@ -183,6 +183,7 @@ const builtinSettingsSections = computed<SettingsRenderSection[]>(() => [
     order: 100,
     component: AppearanceSettingsSection,
     searchKeywords: [
+      '透明背景',
       '背景透明度',
       '毛玻璃',
       '背景底色',
