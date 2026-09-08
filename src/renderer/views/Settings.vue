@@ -64,6 +64,20 @@ const scrollAnchorIntoView = (id: string) => {
   anchorEl.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
 };
 
+// 鼠标滚轮横向滚动导航栏：将纵向滚轮转换为横向滚动，仅在导航栏可横向滚动时生效
+const handleAnchorWheel = (event: WheelEvent) => {
+  const list = anchorListRef.value;
+  if (!list || list.scrollWidth <= list.clientWidth) return;
+  // 横向手势（触控板左右滑）交给浏览器原生横向滚动，避免重复滚动
+  if (Math.abs(event.deltaX) > Math.abs(event.deltaY)) return;
+  // 已滚到尽头时穿透，让页面继续纵向滚动
+  const atStart = list.scrollLeft <= 0 && event.deltaY < 0;
+  const atEnd = list.scrollLeft >= list.scrollWidth - list.clientWidth && event.deltaY > 0;
+  if (atStart || atEnd) return;
+  event.preventDefault();
+  list.scrollLeft += event.deltaY;
+};
+
 // 滑动指示条样式
 const indicatorReady = ref(false);
 const indicatorStyle = computed(() => {
@@ -787,7 +801,11 @@ const findSectionElement = (id: string) => {
 
     <!-- 顶部锚点导航 -->
     <div class="settings-anchor-bar shrink-0 px-6 py-1.5 sticky top-0 z-10">
-      <div ref="anchorListRef" class="settings-anchor-list flex items-center gap-0 overflow-x-auto">
+      <div
+        ref="anchorListRef"
+        class="settings-anchor-list flex items-center gap-0 overflow-x-auto"
+        @wheel="handleAnchorWheel"
+      >
         <button
           v-for="item in navItems"
           :key="item.id"
