@@ -1,0 +1,97 @@
+[
+  {
+    "seed": "#000000",
+    "light": "#0071e3",
+    "dark": "#0071e3"
+  },
+  {
+    "seed": "#ffffff",
+    "light": "#0071e3",
+    "dark": "#0071e3"
+  },
+  {
+    "seed": "#777777",
+    "light": "#0071e3",
+    "dark": "#0071e3"
+  },
+  {
+    "seed": "#0071e3",
+    "light": "#0b71d8",
+    "dark": "#2b8cee"
+  },
+  {
+    "seed": "#ff0000",
+    "light": "#f20d0d",
+    "dark": "#ee2b2b"
+  },
+  {
+    "seed": "#00ff00",
+    "light": "#0df20d",
+    "dark": "#2bee2b"
+  },
+  {
+    "seed": "#0000ff",
+    "light": "#0d0df2",
+    "dark": "#2b2bee"
+  },
+  {
+    "seed": "#ffff00",
+    "light": "#f2f20d",
+    "dark": "#eeee2b"
+  },
+  {
+    "seed": "#ff00ff",
+    "light": "#f20df2",
+    "dark": "#ee2bee"
+  },
+  {
+    "seed": "#00ffff",
+    "light": "#0df2f2",
+    "dark": "#2beeee"
+  },
+  {
+    "seed": "#efece8",
+    "light": "#cb954d",
+    "dark": "#d8bc97"
+  },
+  {
+    "seed": "#24182f",
+    "light": "#6e30a6",
+    "dark": "#8e59c0"
+  },
+  {
+    "seed": "#887766",
+    "light": "#b87736",
+    "dark": "#c08c59"
+  },
+  {
+    "seed": "#87939f",
+    "light": "#4d8ccb",
+    "dark": "#6293c4"
+  },
+  {
+    "seed": "#ff7800",
+    "light": "#f2790d",
+    "dark": "#ee872b"
+  },
+  {
+    "seed": "#420020",
+    "light": "#cb0b68",
+    "dark": "#ee2b89"
+  },
+  {
+    "seed": "#eeeecc",
+    "light": "#cbcb4d",
+    "dark": "#dbdb94"
+  },
+  {
+    "seed": "#abc",
+    "light": "#4d8ccb",
+    "dark": "#97b8d8"
+  },
+  {
+    "seed": "invalid",
+    "light": "#0071e3",
+    "dark": "#0071e3"
+  }
+]

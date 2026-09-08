@@ -5,14 +5,239 @@
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>EchoMusic</title>
+    <style>
+      /* Shared by the pre-Vue placeholder and the Loading route. */
+      .startup-main {
+        position: relative;
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+      }
+      .startup-mark {
+        box-sizing: border-box;
+        width: 120px;
+        height: 120px;
+        margin-bottom: 60px;
+        border: 1px solid var(--border-subtle, #e5e5e8);
+        border-radius: 32px;
+        background: var(--color-bg-elevated, #fff);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        box-shadow: 0 1px 3px rgb(0 0 0 / 10%);
+      }
+      .startup-mark-echo {
+        font-size: 24px;
+        font-weight: 700;
+        letter-spacing: -1px;
+        line-height: 1.25;
+      }
+      .startup-mark-music {
+        font-size: 16px;
+        font-weight: 700;
+        letter-spacing: 2px;
+        line-height: 1.25;
+        text-transform: uppercase;
+        color: var(--color-primary-text, #0071e3);
+      }
+      .startup-progress {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 24px;
+      }
+      .startup-dots {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .startup-dots i {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: color-mix(in srgb, var(--color-primary, #0071e3) 60%, transparent);
+        animation: startup-bounce 0.8s infinite cubic-bezier(0.45, 0.05, 0.55, 0.95);
+      }
+      .startup-dots i:nth-child(1) {
+        animation-delay: -0.3s;
+      }
+      .startup-dots i:nth-child(2) {
+        animation-delay: -0.15s;
+      }
+      .startup-status {
+        margin: 0;
+        font-size: 13px;
+        font-weight: 700;
+        letter-spacing: 0.5px;
+        line-height: 1.5;
+        color: color-mix(in srgb, var(--color-text-main, #1d1d1f) 60%, transparent);
+      }
+      .startup-footer {
+        position: absolute;
+        bottom: 40px;
+        left: 0;
+        right: 0;
+        text-align: center;
+        font-size: 12px;
+        line-height: 1.5;
+        font-weight: 700;
+        letter-spacing: 1.5px;
+        text-transform: uppercase;
+        color: color-mix(in srgb, var(--color-text-main, #1d1d1f) 40%, transparent);
+      }
+      html.dark .startup-mark {
+        background: var(--color-bg-elevated, #36363a);
+        border-color: var(--border-subtle, #48484b);
+      }
+      html.dark .startup-mark-music {
+        color: var(--color-primary-text, #61adf5);
+      }
+      html.dark .startup-status {
+        color: color-mix(in srgb, var(--color-text-main, #f5f5f7) 40%, transparent);
+      }
+      html.dark .startup-footer {
+        color: color-mix(in srgb, var(--color-text-main, #f5f5f7) 40%, transparent);
+      }
+      @keyframes startup-bounce {
+        0%,
+        100% {
+          transform: translateY(0);
+        }
+        50% {
+          transform: translateY(-8px);
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .startup-dots i {
+          animation: none;
+        }
+      }
+
+      /* Self-contained splash: no images, fonts or script needed for its first paint. */
+      .startup-splash-brand {
+        --splash-accent: #387be8;
+        --splash-secondary: #9466da;
+        position: absolute;
+        inset: 0;
+        overflow: hidden;
+      }
+      html.dark .startup-splash-brand {
+        --splash-accent: #7db9ff;
+        --splash-secondary: #b99aff;
+      }
+      .startup-splash-wave {
+        position: absolute;
+        top: 44%;
+        left: 4%;
+        width: 92%;
+        height: min(48vh, 440px);
+        transform: translateY(-50%);
+        display: flex;
+        align-items: center;
+        gap: clamp(3px, 0.8vw, 14px);
+        mask-image: linear-gradient(to right, transparent, #000 18%, #000 82%, transparent);
+      }
+      .startup-splash-wave i {
+        flex: 1;
+        min-width: 0;
+        height: var(--bar-height);
+        border-radius: 999px;
+        background: linear-gradient(to bottom, var(--splash-accent), var(--splash-secondary));
+        opacity: 0.38;
+        animation: startup-wave 2.4s ease-in-out infinite;
+        animation-delay: var(--bar-delay);
+      }
+      .startup-splash-name {
+        position: absolute;
+        bottom: 18%;
+        left: 0;
+        right: 0;
+        text-align: center;
+        font-size: clamp(26px, 3.2vw, 42px);
+        font-weight: 650;
+        line-height: 1.2;
+        letter-spacing: -1px;
+      }
+      #startup-placeholder .startup-status {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        overflow: hidden;
+        clip-path: inset(50%);
+        white-space: nowrap;
+      }
+      @keyframes startup-wave {
+        0%,
+        100% {
+          transform: scaleY(0.45);
+          opacity: 0.2;
+        }
+        50% {
+          transform: scaleY(1);
+          opacity: 0.45;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .startup-splash-wave i {
+          animation: none;
+        }
+      }
+
+      #startup-placeholder {
+        display: none;
+      }
+      html[data-echo-starting] {
+        background: var(--startup-bg) !important;
+      }
+      html[data-echo-starting] body,
+      html[data-echo-starting] #app {
+        margin: 0;
+        background: transparent !important;
+      }
+      html[data-echo-starting] #app {
+        visibility: hidden;
+      }
+      html[data-echo-starting] #startup-placeholder {
+        position: fixed;
+        inset: 0;
+        display: block;
+        z-index: 9999;
+        color: var(--startup-fg);
+        font:
+          14px system-ui,
+          sans-serif;
+      }
+    </style>
     <script>
-      if (typeof window.echoInitialDark === 'boolean') {
-        document.documentElement.classList.toggle('dark', window.echoInitialDark);
+      window.performance?.mark('echo:html-start');
+      const initialDark = window.echoInitialDark;
+      window.performance?.mark('echo:theme-read');
+      if (typeof initialDark === 'boolean') {
+        document.documentElement.classList.toggle('dark', initialDark);
         const background = document.createElement('style');
         background.textContent =
           'html:not(.app-background-transparent) { background: #f5f5f7; } html.dark:not(.app-background-transparent) { background: #26262a; }';
         document.head.appendChild(background);
         const appearance = window.echoWindowBackground;
+        const startupRoot = document.documentElement;
+        startupRoot.dataset.echoStarting = '';
+        const dark = initialDark;
+        const alpha = appearance?.enabled
+          ? 1 - Math.max(0, Math.min(100, appearance.transparency || 0)) / 100
+          : 1;
+        const base =
+          appearance?.enabled && appearance.color ? appearance.color : dark ? '#26262a' : '#f5f5f7';
+        startupRoot.style.setProperty(
+          '--startup-bg',
+          appearance?.enabled && appearance.frosted
+            ? 'transparent'
+            : `color-mix(in srgb, ${base} ${alpha * 100}%, transparent)`,
+        );
+        startupRoot.style.setProperty('--startup-fg', dark ? '#f5f5f7' : '#1d1d1f');
         if (appearance && appearance.enabled === true) {
           const root = document.documentElement;
           root.classList.toggle(
@@ -31,6 +256,65 @@
   </head>
   <body>
     <div id="app"></div>
+    <div id="startup-placeholder" role="status" aria-live="polite">
+      <main class="startup-main">
+        <div class="startup-splash-brand" aria-hidden="true">
+          <div class="startup-splash-wave">
+            <i style="--bar-height: 25%; --bar-delay: 0s"></i>
+            <i style="--bar-height: 25.3%; --bar-delay: -0.095s"></i>
+            <i style="--bar-height: 26.5%; --bar-delay: -0.19s"></i>
+            <i style="--bar-height: 29.3%; --bar-delay: -0.285s"></i>
+            <i style="--bar-height: 33.8%; --bar-delay: -0.38s"></i>
+            <i style="--bar-height: 39.6%; --bar-delay: -0.475s"></i>
+            <i style="--bar-height: 46.1%; --bar-delay: -0.57s"></i>
+            <i style="--bar-height: 52.3%; --bar-delay: -0.665s"></i>
+            <i style="--bar-height: 57.1%; --bar-delay: -0.76s"></i>
+            <i style="--bar-height: 59.6%; --bar-delay: -0.855s"></i>
+            <i style="--bar-height: 59.2%; --bar-delay: -0.95s"></i>
+            <i style="--bar-height: 56%; --bar-delay: -1.045s"></i>
+            <i style="--bar-height: 50.2%; --bar-delay: -1.14s"></i>
+            <i style="--bar-height: 42.9%; --bar-delay: -1.235s"></i>
+            <i style="--bar-height: 35.4%; --bar-delay: -1.33s"></i>
+            <i style="--bar-height: 29.2%; --bar-delay: -1.425s"></i>
+            <i style="--bar-height: 25.5%; --bar-delay: -1.52s"></i>
+            <i style="--bar-height: 25.4%; --bar-delay: -1.615s"></i>
+            <i style="--bar-height: 29.2%; --bar-delay: -1.71s"></i>
+            <i style="--bar-height: 36.6%; --bar-delay: -1.805s"></i>
+            <i style="--bar-height: 46.8%; --bar-delay: -1.9s"></i>
+            <i style="--bar-height: 58.2%; --bar-delay: -1.995s"></i>
+            <i style="--bar-height: 69.2%; --bar-delay: -2.09s"></i>
+            <i style="--bar-height: 78.1%; --bar-delay: -2.185s"></i>
+            <i style="--bar-height: 83.6%; --bar-delay: -2.28s"></i>
+            <i style="--bar-height: 84.8%; --bar-delay: -2.375s"></i>
+            <i style="--bar-height: 81.5%; --bar-delay: -2.47s"></i>
+            <i style="--bar-height: 74.2%; --bar-delay: -2.565s"></i>
+            <i style="--bar-height: 64.2%; --bar-delay: -2.66s"></i>
+            <i style="--bar-height: 52.8%; --bar-delay: -2.755s"></i>
+            <i style="--bar-height: 41.9%; --bar-delay: -2.85s"></i>
+            <i style="--bar-height: 33%; --bar-delay: -2.945s"></i>
+            <i style="--bar-height: 27.1%; --bar-delay: -3.04s"></i>
+            <i style="--bar-height: 25%; --bar-delay: -3.135s"></i>
+            <i style="--bar-height: 26.5%; --bar-delay: -3.23s"></i>
+            <i style="--bar-height: 30.9%; --bar-delay: -3.325s"></i>
+            <i style="--bar-height: 37.2%; --bar-delay: -3.42s"></i>
+            <i style="--bar-height: 44%; --bar-delay: -3.515s"></i>
+            <i style="--bar-height: 49.8%; --bar-delay: -3.61s"></i>
+            <i style="--bar-height: 53.8%; --bar-delay: -3.705s"></i>
+            <i style="--bar-height: 55.1%; --bar-delay: -3.8s"></i>
+            <i style="--bar-height: 53.8%; --bar-delay: -3.895s"></i>
+            <i style="--bar-height: 50.1%; --bar-delay: -3.99s"></i>
+            <i style="--bar-height: 45%; --bar-delay: -4.085s"></i>
+            <i style="--bar-height: 39.2%; --bar-delay: -4.18s"></i>
+            <i style="--bar-height: 33.8%; --bar-delay: -4.275s"></i>
+            <i style="--bar-height: 29.5%; --bar-delay: -4.37s"></i>
+            <i style="--bar-height: 26.7%; --bar-delay: -4.465s"></i>
+            <i style="--bar-height: 25.3%; --bar-delay: -4.56s"></i>
+          </div>
+          <span class="startup-splash-name">EchoMusic</span>
+        </div>
+        <p class="startup-status">正在启动 EchoMusic...</p>
+      </main>
+    </div>
     <script type="module" src="/src/renderer/main.ts"></script>
   </body>
 </html>

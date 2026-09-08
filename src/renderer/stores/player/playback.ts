@@ -86,6 +86,7 @@ export const createPlaybackManager = (
   showPlaybackNotice: (code: string, track?: Song | null) => void,
   clearPlaybackNotice: (trackId?: string | number | null) => void,
   handleOutputDeviceError?: (error: unknown) => Promise<boolean>,
+  onGaplessTrackEnded?: () => void,
 ) => {
   let gaplessPreparingKey = '';
   let gaplessPreparingRequestId: number | null = null;
@@ -591,6 +592,8 @@ export const createPlaybackManager = (
       prepared.list.find((song) => String(song.id) === prepared.targetTrackId) ?? prepared.track;
     if (!targetTrack) return false;
 
+    // 在切换旧曲目快照之前关闭听歌事件；无缝切歌不会经过普通 ended 回调。
+    onGaplessTrackEnded?.();
     const snapshot = toRawSong(targetTrack);
     playlistStore.consumeQueuedNextTrackIds(
       prepared.queuedNextTrackIdsToConsume,

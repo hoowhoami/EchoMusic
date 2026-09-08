@@ -1,4 +1,4 @@
-import { createApp } from 'vue';
+import { createApp, nextTick } from 'vue';
 import { createPinia } from 'pinia';
 import { Icon } from '@iconify/vue';
 import type { ComponentPublicInstance } from 'vue';
@@ -11,6 +11,9 @@ import { installPluginRuntime } from '@/plugins/runtime';
 import { installInputBehaviorGuard } from '@/utils/inputBehaviorGuard';
 import { startRendererMemoryDiagnostics } from '@/utils/rendererMemoryDiagnostics';
 import './style.css';
+import { finishStartup, markStartup } from '@/utils/startupTiming';
+
+markStartup('entry-ready');
 
 const app = createApp(App);
 const pinia = createPinia();
@@ -225,4 +228,15 @@ startRendererMemoryDiagnostics();
 installInputBehaviorGuard({
   isEnabled: () => useSettingStore().suppressDefaultKeyBehaviors,
 });
-app.mount('#app');
+router.afterEach((to, _from, failure) => {
+  if (!failure && to.path.startsWith('/main/')) markStartup('main-route-ready');
+});
+
+// Hand off the lightweight splash to the mounted route, including Loading.
+const mountApplication = () => {
+  markStartup('initial-route-ready');
+  app.mount('#app');
+  markStartup('app-mounted');
+  void nextTick(finishStartup);
+};
+void router.isReady().then(mountApplication, mountApplication);

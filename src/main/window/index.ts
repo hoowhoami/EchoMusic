@@ -153,6 +153,8 @@ const getMainWindowBackgroundColor = () =>
     ? '#26262a'
     : '#f5f5f7';
 
+let syncMainWindowShape: ((force?: boolean) => void) | null = null;
+
 const syncMainWindowBackground = () => {
   if (!canUseMainWindow(win)) return;
   if (nativeTheme.themeSource !== currentTheme) nativeTheme.themeSource = currentTheme;
@@ -172,7 +174,10 @@ const syncMainWindowBackground = () => {
       currentTheme === 'dark' || (currentTheme === 'system' && nativeTheme.shouldUseDarkColors);
     win.setVibrancy(windowBackground.frosted ? (dark ? 'hud' : 'under-window') : null);
   } else if (supportsWindowFrost && process.platform === 'win32') {
-    syncWindowsBackgroundMaterial(win, windowBackground.frosted);
+    if (syncWindowsBackgroundMaterial(win, windowBackground.frosted)) {
+      // DWM material changes can replace the region without changing bounds.
+      syncMainWindowShape?.(true);
+    }
   }
 };
 
@@ -389,6 +394,7 @@ export async function createWindow() {
   await logMainMemory('createWindow:before BrowserWindow');
 
   windowBackgroundActiveEnabled = windowBackground.enabled;
+  syncMainWindowShape = null;
   win = new BrowserWindow({
     title: 'EchoMusic',
     ...(windowIconPath ? { icon: windowIconPath } : {}),
@@ -431,23 +437,25 @@ export async function createWindow() {
     // window itself so both web content and Acrylic respect the same corners.
     const roundedWindow = win;
     let lastShape = '';
-    const syncShape = () => {
+    const syncShape = (force = false) => {
       if (roundedWindow.isDestroyed() || roundedWindow.isMinimized()) return;
       const [width, height] = roundedWindow.getSize();
       const square =
         roundedWindow.isMaximized() || roundedWindow.isFullScreen() || roundedWindow.isSnapped();
       const key = square ? 'square' : `${width}:${height}`;
-      if (key === lastShape) return;
+      if (!force && key === lastShape) return;
       roundedWindow.setShape(square ? [] : buildRoundedWindowShape(width, height));
       lastShape = key;
     };
-    roundedWindow.on('resize', syncShape);
-    roundedWindow.on('moved', syncShape);
-    roundedWindow.on('maximize', syncShape);
-    roundedWindow.on('unmaximize', syncShape);
-    roundedWindow.on('restore', syncShape);
-    roundedWindow.on('enter-full-screen', syncShape);
-    roundedWindow.on('leave-full-screen', syncShape);
+    syncMainWindowShape = syncShape;
+    roundedWindow.on('resize', () => syncShape());
+    roundedWindow.on('moved', () => syncShape());
+    roundedWindow.on('maximize', () => syncShape());
+    roundedWindow.on('unmaximize', () => syncShape());
+    roundedWindow.on('restore', () => syncShape(true));
+    roundedWindow.on('show', () => syncShape(true));
+    roundedWindow.on('enter-full-screen', () => syncShape());
+    roundedWindow.on('leave-full-screen', () => syncShape(true));
     syncShape();
   }
   await logMainMemory('createWindow:after BrowserWindow');

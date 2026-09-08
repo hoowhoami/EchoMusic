@@ -148,7 +148,7 @@ const isAccentGradientDefault = computed(
       </div>
       <div class="flex items-center gap-3">
         <button
-          class="settings-color-reset disabled:opacity-40"
+          class="settings-color-reset disabled:cursor-default"
           :disabled="
             backgroundControlsDisabled ||
             settingStore.windowBackground.frosted ||
@@ -159,7 +159,7 @@ const isAccentGradientDefault = computed(
           跟随主题
         </button>
         <button
-          class="settings-color-swatch disabled:opacity-40"
+          class="settings-color-swatch"
           aria-label="选择背景底色"
           :disabled="backgroundControlsDisabled || settingStore.windowBackground.frosted"
           :style="{ background: settingStore.windowBackground.color || 'var(--surface-main-base)' }"

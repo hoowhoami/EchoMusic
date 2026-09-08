@@ -101,22 +101,18 @@
 }
 
 .search-suggestions-panel {
-  position: absolute;
-  top: 48px;
-  left: 0;
-  width: 100%;
-  max-height: 400px;
+  width: var(--reka-popover-trigger-width);
+  max-height: min(400px, var(--reka-popover-content-available-height));
   border-radius: 12px;
   overflow: hidden;
   border: 1px solid var(--border-subtle);
   box-shadow: var(--shadow-elevated);
   background: var(--color-bg-elevated);
-  backdrop-filter: blur(18px);
   z-index: 260;
 }
 
 .search-suggestions-list {
-  max-height: 400px;
+  max-height: min(400px, var(--reka-popover-content-available-height));
   min-height: 0;
 }
 

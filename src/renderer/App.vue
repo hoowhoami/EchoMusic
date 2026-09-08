@@ -9,10 +9,7 @@ import {
   watch,
 } from 'vue';
 import { RouterView, useRoute, useRouter } from 'vue-router';
-import AuthExpiredDialog from '@/components/app/AuthExpiredDialog.vue';
-import KugouVerificationFlow from '@/components/app/KugouVerificationFlow.vue';
 import ToastViewport from '@/components/app/ToastViewport.vue';
-import UpdateDialog from '@/components/app/UpdateDialog.vue';
 import RouteErrorBoundary from '@/components/app/RouteErrorBoundary.vue';
 import { useSettingStore } from './stores/setting';
 import { useUpdateStore } from './stores/update';
@@ -41,6 +38,13 @@ import { extractShareTarget, getShareResourceLabel, type ShareTarget } from '../
 type PlayerStore = ReturnType<(typeof import('./stores/player'))['usePlayerStore']>;
 type SyncGlobalShortcuts = (typeof import('@/utils/shortcuts'))['syncGlobalShortcuts'];
 
+const AuthExpiredDialog = defineAsyncComponent(
+  () => import('@/components/app/AuthExpiredDialog.vue'),
+);
+const KugouVerificationFlow = defineAsyncComponent(
+  () => import('@/components/app/KugouVerificationFlow.vue'),
+);
+const UpdateDialog = defineAsyncComponent(() => import('@/components/app/UpdateDialog.vue'));
 const LyricView = defineAsyncComponent(() => import('@/views/lyric/LyricPage.vue'));
 const route = useRoute();
 const router = useRouter();

@@ -21,10 +21,12 @@ test('clear transparency never resets DWM material on a fresh window', () => {
 
 test('material changes only when entering or leaving frost', () => {
   const window = createWindow();
+  const changed: boolean[] = [];
   for (const frosted of [true, true, false, false, true]) {
-    syncWindowsBackgroundMaterial(window, frosted);
+    changed.push(syncWindowsBackgroundMaterial(window, frosted));
   }
   assert.deepEqual(window.calls, ['acrylic', 'none', 'acrylic']);
+  assert.deepEqual(changed, [true, false, true, false, true]);
 });
 
 test('recreated windows do not inherit the old native material state', () => {

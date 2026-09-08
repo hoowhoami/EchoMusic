@@ -1106,7 +1106,11 @@ const findSectionElement = (id: string) => {
 }
 
 .settings-color-swatch {
-  @apply w-8 h-8 rounded-full border-2 border-white/20 shadow-sm cursor-pointer transition-all duration-200 active:scale-95;
+  @apply w-8 h-8 rounded-full border-2 shadow-sm cursor-pointer transition-all duration-200 active:scale-95;
+  border-color: color-mix(in srgb, var(--color-text-main) 45%, var(--color-bg-main));
+  box-shadow:
+    0 0 0 2px var(--color-bg-main),
+    0 1px 4px rgb(0 0 0 / 15%);
 }
 
 .settings-color-stack {
@@ -1131,7 +1135,16 @@ const findSectionElement = (id: string) => {
   @apply text-[11px] font-semibold text-text-secondary hover:text-text-main transition-colors whitespace-nowrap;
 }
 
-.settings-color-swatch:hover {
+.settings-color-swatch:disabled {
+  cursor: not-allowed;
+}
+
+.settings-color-swatch:focus-visible {
+  outline: 2px solid var(--color-primary-text);
+  outline-offset: 3px;
+}
+
+.settings-color-swatch:enabled:hover {
   transform: scale(1.08);
 }
 

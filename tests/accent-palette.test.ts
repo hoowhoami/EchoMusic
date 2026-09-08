@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { readFileSync } from 'node:fs';
 import {
   getAccentPalette,
   createAccentPaletteFromPrimary,
@@ -49,13 +50,11 @@ test('palette text and state foregrounds meet AA across saturated, neutral and g
         assert.ok(contrastRatio(parseAccent(fg), parseAccent(bg)) >= 4.5, `${seed} ${fg} on ${bg}`);
     }
 });
-test('neutral user choices stay neutral and invalid inputs receive mode-aware fallback', () => {
+test('legacy grayscale and invalid inputs fall back to the original blue', () => {
   for (const dark of [false, true]) {
-    for (const seed of ['#000', '#fff', '#888']) {
-      const { r, g, b } = parseAccent(normalizeAccent(seed, dark));
-      assert.ok(Math.max(r, g, b) - Math.min(r, g, b) <= 1);
+    for (const seed of ['#000', '#fff', '#888', 'invalid']) {
+      assert.equal(normalizeAccent(seed, dark), '#0071e3');
     }
-    assert.equal(normalizeAccent('invalid', dark), normalizeAccent('#0071e3', dark));
   }
 });
 test('OKLab round trip preserves sRGB samples to one channel level', () => {
@@ -101,4 +100,15 @@ test('atmosphere colors soften chroma without tinting neutral seeds', () => {
         assert.ok(Math.cos(hueDifference) > 0.995, seed);
       }
     }
+});
+
+// Frozen outputs from the implementation immediately before commit 565ec44.
+test('normalization exactly matches the legacy HSL output', () => {
+  const fixtures = JSON.parse(
+    readFileSync(new URL('./legacy-accent-fixtures.json', import.meta.url), 'utf8'),
+  );
+  for (const { seed, light, dark } of fixtures) {
+    assert.equal(normalizeAccent(seed, false), light, seed);
+    assert.equal(normalizeAccent(seed, true), dark, seed);
+  }
 });

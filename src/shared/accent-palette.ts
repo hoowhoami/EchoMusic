@@ -96,19 +96,76 @@ export const compositeAccent = (foreground: Rgb, background: Rgb, alpha: number)
   g: foreground.g * alpha + background.g * (1 - alpha),
   b: foreground.b * alpha + background.b * (1 - alpha),
 });
-export const normalizeAccent = (hex: string, dark: boolean): string => {
-  const lab = rgbToOklab(parseAccent(hex));
-  const chroma = Math.hypot(lab.a, lab.b);
-  // Preserve neutral and muted custom colors; only cap excessive chroma.
-  const scale = chroma > 0 ? Math.min(1, (dark ? 0.18 : 0.21) / chroma) : 1;
-  return accentHex(
-    oklabToRgb({
-      l: clamp(lab.l, dark ? 0.72 : 0.48, dark ? 0.82 : 0.65),
-      a: lab.a * scale,
-      b: lab.b * scale,
-    }),
-  );
+// Legacy HSL normalization retained for its original color character.
+const roundChannel = (v: number) => Math.min(255, Math.max(0, Math.round(v)));
+const rgbToHsl = (r: number, g: number, b: number): { h: number; s: number; l: number } => {
+  const nr = r / 255;
+  const ng = g / 255;
+  const nb = b / 255;
+  const max = Math.max(nr, ng, nb);
+  const min = Math.min(nr, ng, nb);
+  const delta = max - min;
+  let h = 0;
+  const l = (max + min) / 2;
+  const s = delta === 0 ? 0 : delta / (1 - Math.abs(2 * l - 1));
+  if (delta !== 0) {
+    if (max === nr) h = ((ng - nb) / delta) % 6;
+    else if (max === ng) h = (nb - nr) / delta + 2;
+    else h = (nr - ng) / delta + 4;
+    h *= 60;
+    if (h < 0) h += 360;
+  }
+  return { h, s: clamp(s), l: clamp(l) };
 };
+
+const hslToRgb = (h: number, s: number, l: number): { r: number; g: number; b: number } => {
+  const sat = clamp(s);
+  const lit = clamp(l);
+  const c = (1 - Math.abs(2 * lit - 1)) * sat;
+  const hue = ((h % 360) + 360) % 360;
+  const x = c * (1 - Math.abs(((hue / 60) % 2) - 1));
+  const m = lit - c / 2;
+  let r = 0;
+  let g = 0;
+  let b = 0;
+  if (hue < 60) [r, g, b] = [c, x, 0];
+  else if (hue < 120) [r, g, b] = [x, c, 0];
+  else if (hue < 180) [r, g, b] = [0, c, x];
+  else if (hue < 240) [r, g, b] = [0, x, c];
+  else if (hue < 300) [r, g, b] = [x, 0, c];
+  else [r, g, b] = [c, 0, x];
+  return {
+    r: roundChannel((r + m) * 255),
+    g: roundChannel((g + m) * 255),
+    b: roundChannel((b + m) * 255),
+  };
+};
+
+export const normalizeAccent = (hex: string, isDark: boolean): string => {
+  if (!/^#?(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(String(hex ?? '').trim())) return '#0071e3';
+  const rgb = parseAccent(String(hex).trim());
+  const { h, s, l } = rgbToHsl(rgb.r, rgb.g, rgb.b);
+
+  // 近乎灰度的颜色，回落到默认主题色
+  if (s < 0.08) return '#0071e3';
+
+  let nextS = s;
+  let nextL = l;
+
+  if (isDark) {
+    // 深色模式：S ∈ [0.45, 0.85]，L ∈ [0.55, 0.72]
+    nextS = Math.min(0.85, Math.max(0.45, s));
+    nextL = Math.min(0.72, Math.max(0.55, l));
+  } else {
+    // 浅色模式：S ∈ [0.55, 0.9]，L ∈ [0.42, 0.55]
+    nextS = Math.min(0.9, Math.max(0.55, s));
+    nextL = Math.min(0.55, Math.max(0.42, l));
+  }
+
+  const { r, g, b } = hslToRgb(h, nextS, nextL);
+  return accentHex({ r, g, b });
+};
+
 // Includes main, elevated and interaction surfaces.
 export const accentSurfaces = (dark: boolean): string[] =>
   dark ? ['#26262a', '#36363a', '#2f2f34', '#505055'] : ['#ffffff', '#f5f5f7', '#d0d0d4'];

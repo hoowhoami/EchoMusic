@@ -6,15 +6,13 @@ import type {
 } from '../../../shared/plugins';
 import { logger } from '@/utils/logger';
 import { executePluginCommand, removePluginContributions } from '../registry';
-import { createPluginContext, type EchoPluginContext, type PluginRuntimeHost } from './context';
-import { deactivateTaskApi } from './contextApis';
+import type { EchoPluginContext, PluginRuntimeHost } from './context';
 import {
   importPluginModule,
   resolvePluginActivator,
   resolvePluginDeactivator,
   type PluginModule,
 } from './moduleLoader';
-import { refreshCurrentPlaybackState } from './playbackRefresh';
 import { createStyleDisposer } from './styles';
 
 export { pageTransitionState } from './theme';
@@ -90,6 +88,7 @@ type ActivePlugin = {
   module: PluginModule;
   disposables: Array<() => void>;
   blobUrls: string[];
+  invalidateTasks: () => void;
 };
 
 export const pluginRuntimeState = reactive({
@@ -333,7 +332,7 @@ const deactivatePlugin = async (pluginId: string) => {
   if (!active) return;
 
   // 先使任务会话失效，阻止停用期间的操作和迟到异步回调重新创建任务。
-  deactivateTaskApi(active.context.tasks);
+  active.invalidateTasks();
 
   // 收集失败的清理函数，稍后重试
   const failedDisposables: Array<() => void> = [];
@@ -401,6 +400,7 @@ const deactivatePlugin = async (pluginId: string) => {
   await syncActivePluginSession();
 
   // 插件卸载后，刷新当前播放状态，避免歌曲、歌词、封面显示来自已卸载插件的数据
+  const { refreshCurrentPlaybackState } = await import('./playbackRefresh');
   refreshCurrentPlaybackState();
 };
 
@@ -419,6 +419,11 @@ const activatePlugin = async (descriptor: EchoPluginDescriptor, host: PluginRunt
   const blobUrls: string[] = [];
 
   try {
+    // 完整插件 API 仅在首次激活时加载，不阻塞启动页面。
+    const [{ createPluginContext }, { deactivateTaskApi }] = await Promise.all([
+      import('./context'),
+      import('./contextApis'),
+    ]);
     const styleAsset = descriptor.styleFile
       ? await window.electron.plugins?.readAsset(descriptor.id, 'style')
       : null;
@@ -434,7 +439,15 @@ const activatePlugin = async (descriptor: EchoPluginDescriptor, host: PluginRunt
     });
     const activator = resolvePluginActivator(module);
     if (!activator) throw new Error('插件未导出 activate(ctx) 或默认函数');
-    activePlugins.set(descriptor.id, { descriptor, context, module, disposables, blobUrls });
+    activePlugins.set(descriptor.id, {
+      descriptor,
+      context,
+      module,
+      disposables,
+      blobUrls,
+      // 停用必须同步失效，不能等动态导入后才阻止迟到任务。
+      invalidateTasks: () => deactivateTaskApi(context.tasks),
+    });
     await activator(context);
     clearCurrentPluginFailure(descriptor.id);
     updateRecord(descriptor, 'active');
@@ -512,6 +525,7 @@ export const refreshPlugins = async (
 
     // 插件刷新完成后，重新同步当前播放状态，避免歌曲、歌词、封面不同步
     if (!options.miniPlayer && !options.desktopLyric) {
+      const { refreshCurrentPlaybackState } = await import('./playbackRefresh');
       refreshCurrentPlaybackState();
     }
   }

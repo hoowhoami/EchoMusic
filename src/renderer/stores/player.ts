@@ -88,8 +88,14 @@ export const usePlayerStore = defineStore(
       isPlaying: getPlaybackIsPlaying(state),
       ...extra,
     });
-    const emitPlayerEvent = (event: PlayerEventName, extra?: Partial<PlayerEventPayload>) =>
+    const emitPlayerEvent = (event: PlayerEventName, extra?: Partial<PlayerEventPayload>) => {
+      if (event === 'seek' || event === 'play' || event === 'pause')
+        listeningTimeManager.resetPosition();
+      if (event === 'trackchange' || event === 'ended' || event === 'error') {
+        void listeningTimeManager.flush(event === 'ended' ? '完整播放' : '中断播放');
+      }
       playerEvents.emit(event, getPlayerEventPayload(event, extra));
+    };
 
     const playbackTargetTrackId = computed(() => getPlaybackTargetTrackId(state));
     const playbackIsLoading = computed(() => getPlaybackIsLoading(state));
@@ -511,6 +517,9 @@ export const usePlayerStore = defineStore(
       showPlaybackNotice,
       clearPlaybackNotice,
       (error) => deviceManager.handleOutputDeviceError(normalizePlayerErrorPayload(error)),
+      () => {
+        void listeningTimeManager.flush('完整播放');
+      },
     );
     let audioDeviceListListenerRegistered = false;
 
@@ -939,6 +948,7 @@ export const usePlayerStore = defineStore(
           }
           state.currentTime = currentTime;
           state.currentTimeUpdatedAt = now;
+          listeningTimeManager.tick();
           void playbackManager.prepareGaplessNext();
           if (now - lastEventTimeUpdate >= EVENT_TIMEUPDATE_MS) {
             lastEventTimeUpdate = now;
@@ -947,7 +957,6 @@ export const usePlayerStore = defineStore(
           if (now - lastHistoryCheck >= HISTORY_CHECK_MS) {
             lastHistoryCheck = now;
             void historyManager.commitListeningHistory();
-            void listeningTimeManager.tick();
           }
           if (now - lastMediaSessionSync >= MEDIA_SESSION_SYNC_MS) {
             lastMediaSessionSync = now;
@@ -1026,7 +1035,6 @@ export const usePlayerStore = defineStore(
         ended: () => {
           if (state.awaitingTrackLoad) return;
           setEnginePlaybackStatus(state, 'stopped');
-          void listeningTimeManager.flush();
           if (!state.recentSeekIgnoreEnd) {
             emitPlayerEvent('ended');
             handlePlaybackEnded();
@@ -1057,7 +1065,6 @@ export const usePlayerStore = defineStore(
             return;
           setEnginePlaybackStatus(state, 'paused');
           setPlaybackIntentPlayback(state, false);
-          void listeningTimeManager.flush();
           settingStore.syncPreventSleep(false);
           engine.updateMediaPlaybackState(buildMediaState(state));
           emitPlayerEvent('pause');

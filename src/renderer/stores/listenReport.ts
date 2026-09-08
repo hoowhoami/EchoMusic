@@ -5,8 +5,8 @@ import { defineStore } from 'pinia';
  *
  * 语义约定：
  *  - dSec        本地已确认的累计听歌秒数
- *  - pendingDiff 待上报增量秒数，失败保留，成功后扣减已提交部分
- *  - lastReportAt 上次成功上报时间戳
+ *  - pendingDiff 旧版本兼容字段，CSCC 接入后清零，不重放无曲目信息的历史增量
+ *  - lastReportAt 上次成功发送播放事件的时间戳
  */
 export const useListenReportStore = defineStore('listenReport', {
   state: () => ({

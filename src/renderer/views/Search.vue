@@ -229,13 +229,23 @@ const loadHotSearches = async () => {
   }
 };
 
+let suggestionBlurTimer: number | null = null;
+let suggestionRequest = 0;
+const cancelSuggestionBlur = () => {
+  if (suggestionBlurTimer !== null) window.clearTimeout(suggestionBlurTimer);
+  suggestionBlurTimer = null;
+};
+
 const clearSuggestions = () => {
+  cancelSuggestionBlur();
+  suggestionRequest++;
   suggestionCategories.value = [];
   showSuggestions.value = false;
   isLoadingSuggestions.value = false;
 };
 
 const handleInputFocus = () => {
+  cancelSuggestionBlur();
   if (searchInput.value.trim().length > 0) {
     showSuggestions.value = true;
     if (suggestionCategories.value.length === 0 && !isLoadingSuggestions.value) {
@@ -245,12 +255,18 @@ const handleInputFocus = () => {
 };
 
 const handleInputBlur = () => {
-  window.setTimeout(() => {
+  cancelSuggestionBlur();
+  suggestionBlurTimer = window.setTimeout(() => {
+    suggestionBlurTimer = null;
+    suggestionRequest++;
+    isLoadingSuggestions.value = false;
     showSuggestions.value = false;
   }, 150);
 };
 
 const handleSearchChanged = (value: string) => {
+  cancelSuggestionBlur();
+  suggestionRequest++;
   if (debounceTimer) {
     window.clearTimeout(debounceTimer);
     debounceTimer = null;
@@ -272,6 +288,7 @@ const handleSearchChanged = (value: string) => {
 
   if (isIgnoringChanges.value) return;
 
+  showSuggestions.value = true;
   isLoadingSuggestions.value = true;
   debounceTimer = window.setTimeout(() => {
     void fetchSuggestions(value.trim());
@@ -285,15 +302,18 @@ const handleSearchChanged = (value: string) => {
 
 const fetchSuggestions = async (keywords: string) => {
   if (!keywords.trim()) return;
+  const request = ++suggestionRequest;
+  isLoadingSuggestions.value = true;
   try {
     const res = await getSearchSuggest(keywords);
-    if (searchInput.value.trim() !== keywords) return;
+    if (request !== suggestionRequest || searchInput.value.trim() !== keywords) return;
     suggestionCategories.value = extractSuggestionCategories(res);
     isLoadingSuggestions.value = false;
     if (document.activeElement === searchHeaderRef.value?.inputRef) {
       showSuggestions.value = true;
     }
   } catch {
+    if (request !== suggestionRequest || searchInput.value.trim() !== keywords) return;
     suggestionCategories.value = [];
     isLoadingSuggestions.value = false;
   }
@@ -597,6 +617,8 @@ onUnmounted(() => {
     window.clearTimeout(debounceTimer);
     debounceTimer = null;
   }
+  cancelSuggestionBlur();
+  suggestionRequest++;
   detachScrollTarget();
 });
 </script>

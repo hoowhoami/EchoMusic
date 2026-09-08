@@ -387,12 +387,11 @@ export const DEFAULT_LYRIC_PLAYED_COLOR = '#31cfa1';
 export const DEFAULT_LYRIC_UNPLAYED_COLOR = '#ffffff';
 export const LYRIC_COVER_COLOR_VALUE = '__cover__';
 
-const isDarkMode = (): boolean => document.documentElement.classList.contains('dark');
-
 const resolveLyricColor = (value: string, fallback: string): string => {
   if (value === LYRIC_COVER_COLOR_VALUE) {
     const themeStore = useThemeStore();
-    return getNormalizedAccent(themeStore.coverColor || DEFAULT_ACCENT, isDarkMode());
+    // Lyrics have a dark backdrop regardless of the application theme.
+    return getNormalizedAccent(themeStore.coverColor || DEFAULT_ACCENT, true);
   }
   return value || fallback;
 };

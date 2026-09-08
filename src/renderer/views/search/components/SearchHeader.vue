@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import PageStickyHeader from '@/components/ui/PageStickyHeader.vue';
 import { ref } from 'vue';
+import { PopoverRoot, PopoverAnchor, PopoverPortal, PopoverContent } from 'reka-ui';
 import { Icon } from '@iconify/vue';
 import Button from '@/components/ui/Button.vue';
 import CustomTabBar from '@/components/ui/CustomTabBar.vue';
@@ -32,6 +33,12 @@ const emit = defineEmits<{
 }>();
 
 const inputRef = ref<HTMLInputElement | null>(null);
+const inputWrapRef = ref<HTMLElement | null>(null);
+
+const handleInteractOutside = (event: CustomEvent<{ originalEvent: Event }>) => {
+  const target = event.detail.originalEvent.target;
+  if (target instanceof Node && inputWrapRef.value?.contains(target)) event.preventDefault();
+};
 
 defineExpose({ inputRef });
 </script>
@@ -51,86 +58,106 @@ defineExpose({ inputRef });
     <div class="text-[22px] font-semibold text-text-main tracking-tight">搜索</div>
 
     <div class="search-input-shell mt-6" :class="{ 'has-suggestions': showSuggestions }">
-      <div class="search-input-wrap">
-        <Icon :icon="iconSearch" width="18" height="18" class="search-input-icon" />
-        <input
-          ref="inputRef"
-          :value="searchInput"
-          type="text"
-          class="search-input"
-          :placeholder="defaultKeyword ? `搜索: ${defaultKeyword}` : '搜索音乐、歌手、专辑'"
-          @focus="emit('focus')"
-          @blur="emit('blur')"
-          @input="emit('update:searchInput', ($event.target as HTMLInputElement).value)"
-          @keydown.enter.prevent="emit('submit')"
-        />
-        <Button
-          v-if="searchInput"
-          variant="unstyled"
-          size="none"
-          type="button"
-          class="search-clear-btn"
-          @mousedown.prevent
-          @click="emit('clear')"
-        >
-          <Icon :icon="iconX" width="16" height="16" />
-        </Button>
-        <Button
-          variant="unstyled"
-          size="none"
-          type="button"
-          class="search-submit-btn"
-          @click="emit('submit')"
-        >
-          搜索
-        </Button>
-      </div>
-
-      <div v-if="showSuggestions" class="search-suggestions-panel">
-        <div
-          v-if="isLoadingSuggestions && suggestionCategories.length === 0"
-          class="search-suggestions-skeleton"
-          aria-busy="true"
-        >
-          <div v-for="item in 5" :key="item" class="search-suggestion-skeleton-item">
-            <Skeleton variant="circle" width="28px" height="28px" />
-            <Skeleton variant="text" width="64%" height="13px" />
-            <Skeleton variant="text" width="13px" height="13px" />
-          </div>
-        </div>
-        <div v-else-if="suggestionCategories.length === 0" class="search-suggestions-empty">
-          暂无建议
-        </div>
-        <Scrollbar v-else class="search-suggestions-list">
-          <div class="search-suggestions-list-inner">
-            <div
-              v-for="category in suggestionCategories"
-              :key="category.label"
-              class="search-suggestion-group"
+      <PopoverRoot
+        :open="showSuggestions && !showPinnedTabs"
+        @update:open="!$event && emit('blur')"
+      >
+        <PopoverAnchor as-child>
+          <div ref="inputWrapRef" class="search-input-wrap">
+            <Icon :icon="iconSearch" width="18" height="18" class="search-input-icon" />
+            <input
+              ref="inputRef"
+              :value="searchInput"
+              type="text"
+              class="search-input"
+              :placeholder="defaultKeyword ? `搜索: ${defaultKeyword}` : '搜索音乐、歌手、专辑'"
+              @focus="emit('focus')"
+              @click="emit('focus')"
+              @blur="emit('blur')"
+              @input="emit('update:searchInput', ($event.target as HTMLInputElement).value)"
+              @keydown.enter.prevent="emit('submit')"
+            />
+            <Button
+              v-if="searchInput"
+              variant="unstyled"
+              size="none"
+              type="button"
+              class="search-clear-btn"
+              @mousedown.prevent
+              @click="emit('clear')"
             >
-              <div class="search-suggestion-title">{{ category.label }}</div>
-              <Button
-                v-for="record in category.records"
-                :key="`${category.label}-${record.text}`"
-                variant="unstyled"
-                size="none"
-                type="button"
-                class="search-suggestion-item"
-                @mousedown.prevent
-                @click="emit('pickSuggestion', record.text)"
-              >
-                <span class="search-suggestion-leading">
-                  <Icon :icon="iconSearch" width="14" height="14" class="opacity-60" />
-                </span>
-                <span class="search-suggestion-text truncate">{{ record.text }}</span>
-                <span class="search-suggestion-trailing">
-                  <Icon :icon="iconChevronRight" width="13" height="13" />
-                </span>
-              </Button>
-            </div>
+              <Icon :icon="iconX" width="16" height="16" />
+            </Button>
+            <Button
+              variant="unstyled"
+              size="none"
+              type="button"
+              class="search-submit-btn"
+              @click="emit('submit')"
+            >
+              搜索
+            </Button>
           </div>
-        </Scrollbar>
-      </div>
+        </PopoverAnchor>
+        <PopoverPortal>
+          <PopoverContent
+            as-child
+            side="bottom"
+            align="start"
+            :side-offset="4"
+            :collision-padding="12"
+            @open-auto-focus.prevent
+            @close-auto-focus.prevent
+            @interact-outside="handleInteractOutside"
+          >
+            <div class="search-suggestions-panel">
+              <div
+                v-if="isLoadingSuggestions && suggestionCategories.length === 0"
+                class="search-suggestions-skeleton"
+                aria-busy="true"
+              >
+                <div v-for="item in 5" :key="item" class="search-suggestion-skeleton-item">
+                  <Skeleton variant="circle" width="28px" height="28px" />
+                  <Skeleton variant="text" width="64%" height="13px" />
+                  <Skeleton variant="text" width="13px" height="13px" />
+                </div>
+              </div>
+              <div v-else-if="suggestionCategories.length === 0" class="search-suggestions-empty">
+                暂无建议
+              </div>
+              <Scrollbar v-else class="search-suggestions-list">
+                <div class="search-suggestions-list-inner">
+                  <div
+                    v-for="category in suggestionCategories"
+                    :key="category.label"
+                    class="search-suggestion-group"
+                  >
+                    <div class="search-suggestion-title">{{ category.label }}</div>
+                    <Button
+                      v-for="record in category.records"
+                      :key="`${category.label}-${record.text}`"
+                      variant="unstyled"
+                      size="none"
+                      type="button"
+                      class="search-suggestion-item"
+                      @mousedown.prevent
+                      @click="emit('pickSuggestion', record.text)"
+                    >
+                      <span class="search-suggestion-leading">
+                        <Icon :icon="iconSearch" width="14" height="14" class="opacity-60" />
+                      </span>
+                      <span class="search-suggestion-text truncate">{{ record.text }}</span>
+                      <span class="search-suggestion-trailing">
+                        <Icon :icon="iconChevronRight" width="13" height="13" />
+                      </span>
+                    </Button>
+                  </div>
+                </div>
+              </Scrollbar>
+            </div>
+          </PopoverContent>
+        </PopoverPortal>
+      </PopoverRoot>
     </div>
 
     <div v-if="hasSearched" class="mt-6">

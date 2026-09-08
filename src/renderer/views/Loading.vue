@@ -1,12 +1,13 @@
 <script setup lang="ts">
 defineOptions({ name: 'loading-page' });
-import { onMounted, onUnmounted, ref } from 'vue';
+import { onMounted, onUnmounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { iconTriangleAlert } from '@/icons';
 import { useDeviceStore } from '@/stores/device';
 import { useToastStore } from '@/stores/toast';
 import { ensureDevice } from '@/utils/device';
 import logger from '@/utils/logger';
+import { finishStartup, markStartup, updateStartupStatus } from '@/utils/startupTiming';
 import Button from '@/components/ui/Button.vue';
 import OverlayHeader from '@/layouts/OverlayHeader.vue';
 import type { ApiServerStatus } from '@/../shared/api-server';
@@ -16,6 +17,10 @@ const deviceStore = useDeviceStore();
 const toastStore = useToastStore();
 const statusMessage = ref('正在初始化音乐引擎...');
 const hasError = ref(false);
+watch(statusMessage, updateStartupStatus, { immediate: true });
+watch(hasError, (failed) => {
+  if (failed) finishStartup();
+});
 const isDeviceReady = ref(false);
 const hasCompletedStartup = ref(false);
 const canForceEnter = ref(false);
@@ -192,10 +197,12 @@ const forceEnterApp = async () => {
 };
 
 onMounted(async () => {
+  markStartup('loading-mounted');
   // 提前预加载主界面相关 chunk，利用启动等待时间，缩短跳转后首屏挂载前的等待
   void import('@/layouts/MainLayout.vue').catch(() => {});
   void import('@/views/Home.vue').catch(() => {});
   await initStatus();
+  markStartup('status-check-complete');
 });
 
 onUnmounted(() => {
@@ -215,32 +222,14 @@ onUnmounted(() => {
       class="absolute -top-25 -right-25 w-75 h-75 rounded-full bg-primary/5 dark:bg-primary/10 blur-3xl"
     ></div>
 
-    <main class="relative h-full flex flex-col items-center justify-center">
-      <div
-        class="w-30 h-30 bg-[var(--color-bg-elevated)] border border-[var(--border-subtle)] rounded-4xl flex flex-col items-center justify-center shadow-sm mb-15"
-      >
-        <span class="text-[24px] font-bold text-text-main tracking-[-1px] leading-tight">Echo</span>
-        <span class="text-[16px] font-bold text-primary-text tracking-[2px] leading-tight uppercase"
-          >Music</span
-        >
+    <main class="startup-main">
+      <div class="startup-mark">
+        <span class="startup-mark-echo">Echo</span>
+        <span class="startup-mark-music">Music</span>
       </div>
-
-      <div v-if="!hasError" class="flex flex-col items-center space-y-6">
-        <div class="flex items-center gap-1.5">
-          <div
-            class="w-2 h-2 rounded-full bg-primary/60 animate-bounce [animation-delay:-0.3s]"
-          ></div>
-          <div
-            class="w-2 h-2 rounded-full bg-primary/60 animate-bounce [animation-delay:-0.15s]"
-          ></div>
-          <div class="w-2 h-2 rounded-full bg-primary/60 animate-bounce"></div>
-        </div>
-
-        <p
-          class="text-[13px] font-bold text-text-main/60 dark:text-text-main/40 tracking-[0.5px] uppercase"
-        >
-          {{ statusMessage }}
-        </p>
+      <div v-if="!hasError" class="startup-progress">
+        <div class="startup-dots" aria-hidden="true"><i></i><i></i><i></i></div>
+        <p class="startup-status">{{ statusMessage }}</p>
       </div>
 
       <div v-else class="flex flex-col items-center space-y-6 px-10">
@@ -266,26 +255,6 @@ onUnmounted(() => {
       </div>
     </main>
 
-    <footer class="absolute bottom-10 left-0 right-0 text-center">
-      <span class="text-[12px] font-bold text-text-main/40 uppercase tracking-[1.5px]"
-        >EchoMusic • 音为你而生</span
-      >
-    </footer>
+    <footer class="startup-footer">EchoMusic • 音为你而生</footer>
   </div>
 </template>
-
-<style scoped>
-.animate-bounce {
-  animation: bounce 0.8s infinite cubic-bezier(0.45, 0.05, 0.55, 0.95);
-}
-
-@keyframes bounce {
-  0%,
-  100% {
-    transform: translateY(0);
-  }
-  50% {
-    transform: translateY(-8px);
-  }
-}
-</style>
