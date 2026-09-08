@@ -140,7 +140,7 @@ const buttonClass = computed(() => {
                 ? 'SQ'
                 : q === 'high'
                   ? 'HR'
-                  : 'VPR'
+                  : 'VPT'
         }}</Tag>
         <span
           class="pm-check"

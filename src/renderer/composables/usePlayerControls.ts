@@ -209,7 +209,7 @@ export function usePlayerControls() {
     if (effectiveAudioQuality.value === '128') return 'SD';
     if (effectiveAudioQuality.value === '320') return 'HQ';
     if (effectiveAudioQuality.value === 'flac') return 'SQ';
-    if (effectiveAudioQuality.value === 'viper_tape') return 'VPR';
+    if (effectiveAudioQuality.value === 'viper_tape') return '母带';
     return 'HR';
   });
 

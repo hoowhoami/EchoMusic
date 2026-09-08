@@ -26,6 +26,8 @@ import {
   type WindowBoundsChangeKind,
 } from '../windowBoundsPersistence';
 import { resolveMainWindowMinHeight } from '../windowSizing';
+import { syncWindowsBackgroundMaterial } from './backgroundMaterial';
+import { buildRoundedWindowShape } from './roundedShape';
 
 const minWidth: number = 1100;
 const defaultWidth: number = 1150;
@@ -166,7 +168,7 @@ const syncMainWindowBackground = () => {
       currentTheme === 'dark' || (currentTheme === 'system' && nativeTheme.shouldUseDarkColors);
     win.setVibrancy(windowBackground.frosted ? (dark ? 'hud' : 'under-window') : null);
   } else if (supportsWindowFrost && process.platform === 'win32') {
-    win.setBackgroundMaterial(windowBackground.frosted ? 'acrylic' : 'none');
+    syncWindowsBackgroundMaterial(win, windowBackground.frosted);
   }
 };
 
@@ -414,6 +416,30 @@ export async function createWindow() {
     },
   });
   syncMainWindowBackground();
+  if (process.platform === 'win32' && Number(release().split('.')[2]) >= 22000) {
+    // Transparent HWNDs lose Electron's native rounded frame. Clip the native
+    // window itself so both web content and Acrylic respect the same corners.
+    const roundedWindow = win;
+    let lastShape = '';
+    const syncShape = () => {
+      if (roundedWindow.isDestroyed() || roundedWindow.isMinimized()) return;
+      const [width, height] = roundedWindow.getSize();
+      const square =
+        roundedWindow.isMaximized() || roundedWindow.isFullScreen() || roundedWindow.isSnapped();
+      const key = square ? 'square' : `${width}:${height}`;
+      if (key === lastShape) return;
+      roundedWindow.setShape(square ? [] : buildRoundedWindowShape(width, height));
+      lastShape = key;
+    };
+    roundedWindow.on('resize', syncShape);
+    roundedWindow.on('moved', syncShape);
+    roundedWindow.on('maximize', syncShape);
+    roundedWindow.on('unmaximize', syncShape);
+    roundedWindow.on('restore', syncShape);
+    roundedWindow.on('enter-full-screen', syncShape);
+    roundedWindow.on('leave-full-screen', syncShape);
+    syncShape();
+  }
   await logMainMemory('createWindow:after BrowserWindow');
 
   applyWindowAppIcon(win);

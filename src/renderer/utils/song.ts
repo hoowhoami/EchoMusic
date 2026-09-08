@@ -20,7 +20,7 @@ export interface SongDerivedState {
 }
 
 const QUALITY_LABEL_MAP: Record<string, string> = {
-  viper_tape: 'VPR',
+  viper_tape: '母带',
   high: 'Hi-Res',
   flac: 'SQ',
   '320': 'HQ',
@@ -110,7 +110,7 @@ export const getSongQualityTag = (song: Pick<Song, 'relateGoods'>): string => {
   const hasQuality = (quality: string, level: number) =>
     goods.some((item: SongRelateGood) => item.quality === quality || item.level === level);
 
-  if (hasQuality('viper_tape', 101)) return 'VPR';
+  if (hasQuality('viper_tape', 101)) return '母带';
   if (hasQuality('high', 6)) return 'Hi-Res';
   if (hasQuality('flac', 5)) return 'SQ';
   if (hasQuality('320', 4)) return 'HQ';
