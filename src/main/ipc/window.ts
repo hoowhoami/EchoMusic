@@ -1,4 +1,6 @@
 import { app, BrowserWindow } from 'electron';
+import { release } from 'node:os';
+import type { WindowFrameState } from '../../shared/window-frame';
 import { ipcRegistry } from './registry';
 import { hideMainWindow, quitApplication, requestMainWindowClose } from '../window';
 import { restoreActiveWindowMode } from '../window/modeController';
@@ -11,6 +13,46 @@ import type {
 import type { IpcContext } from './types';
 
 export const registerWindowHandlers = ({ getMainWindow }: IpcContext) => {
+  // Subscribe once per native window; renderer reloads query its current state again.
+  const observedWindows = new WeakSet<BrowserWindow>();
+  ipcRegistry.registerHandler('window:frame-state', (event): WindowFrameState | null => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (!win || win !== getMainWindow()) return null;
+    const readState = (): WindowFrameState => ({
+      visible:
+        !win.isMaximized() &&
+        !win.isFullScreen() &&
+        !(process.platform === 'win32' && win.isSnapped?.()),
+      radius:
+        process.platform === 'darwin'
+          ? 10
+          : process.platform === 'win32' && Number(release().split('.')[2]) >= 22000
+            ? 8
+            : 0,
+    });
+    if (!observedWindows.has(win)) {
+      let previousState = readState();
+      observedWindows.add(win);
+      const publish = () => {
+        if (!win.isDestroyed() && !win.webContents.isDestroyed()) {
+          const state = readState();
+          if (state.visible === previousState.visible && state.radius === previousState.radius)
+            return;
+          previousState = state;
+          win.webContents.send('window:frame-state-changed', state);
+        }
+      };
+      win.on('maximize', publish);
+      win.on('unmaximize', publish);
+      win.on('enter-full-screen', publish);
+      win.on('leave-full-screen', publish);
+      win.on('restore', publish);
+      win.on('resize', publish);
+      win.on('moved', publish);
+    }
+    return readState();
+  });
+
   ipcRegistry.registerListener(
     'window-control',
     (event, action: 'minimize' | 'maximize' | 'close' | 'fullscreen') => {

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import Cover from '@/components/ui/Cover.vue';
+import Scrollbar from '@/components/ui/Scrollbar.vue';
 import ProgressBusyOverlay from '@/components/player/ProgressBusyOverlay.vue';
 import MiniLyricPanel from './MiniLyricPanel.vue';
 import { useVirtualList } from '@/composables/useVirtualList';
@@ -207,6 +208,12 @@ const displayLyric = computed<MiniPlayerLyricPayload | null>(() => {
 const MINI_QUEUE_ITEM_HEIGHT = 42;
 const queueTracks = computed(() => queue.value?.tracks ?? []);
 const queueScrollerRef = ref<HTMLElement | null>(null);
+const queueScrollContentProps = {
+  ref: (element: HTMLElement | null) => {
+    queueScrollerRef.value = element;
+  },
+  class: 'mini-queue-scroll-content',
+};
 const { containerRef, visibleStart, visibleEnd, offset, totalSize, refresh, scrollToIndex } =
   useVirtualList({
     itemCount: computed(() => queueTracks.value.length),
@@ -1035,7 +1042,7 @@ onUnmounted(() => {
         class="mini-queue no-drag"
         :aria-hidden="!isQueueOpen"
       >
-        <div ref="queueScrollerRef" class="mini-queue-list">
+        <Scrollbar class="mini-queue-list" :content-props="queueScrollContentProps">
           <div ref="containerRef" :style="queueWrapperStyle">
             <div :style="queueOffsetStyle">
               <button
@@ -1076,7 +1083,7 @@ onUnmounted(() => {
             </div>
           </div>
           <div v-if="!queueTracks.length" class="mini-queue-empty">队列为空</div>
-        </div>
+        </Scrollbar>
       </div>
     </section>
   </main>
@@ -1584,17 +1591,10 @@ button:disabled {
 .mini-queue-list {
   flex: 1 1 auto;
   min-height: 0;
-  overflow-y: auto;
+}
+
+.mini-queue-list :deep(.mini-queue-scroll-content) {
   padding: 6px;
-}
-
-.mini-queue-list::-webkit-scrollbar {
-  width: 6px;
-}
-
-.mini-queue-list::-webkit-scrollbar-thumb {
-  border-radius: 999px;
-  background: rgba(0, 0, 0, 0.18);
 }
 
 .mini-queue-item {
@@ -1765,9 +1765,5 @@ button:disabled {
 
 .dark .mini-queue-item:hover {
   background: rgba(255, 255, 255, 0.07);
-}
-
-.dark .mini-queue-list::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.2);
 }
 </style>

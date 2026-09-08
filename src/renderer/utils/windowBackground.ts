@@ -3,6 +3,7 @@ import { resolveWindowBackground, type WindowBackground } from '../../shared/win
 export function applyWindowBackground(value: WindowBackground) {
   const background = resolveWindowBackground(value, value.enabled);
   const root = document.documentElement;
+  root.classList.toggle('app-background-enabled', background.enabled);
   root.classList.toggle(
     'app-background-transparent',
     background.frosted || background.transparency > 0 || Boolean(background.color),

@@ -27,6 +27,7 @@ import { pageTransitionState } from '@/plugins/runtime/theme';
 import { coverFallbackRevision } from '@/plugins/coverFallback';
 import { resolveCoverColorUrls } from '@/utils/cover';
 import { logger } from '@/utils/logger';
+import { installWindowFrame } from '@/utils/windowFrame';
 import {
   navigateToShareTarget,
   SHARE_RESOLVE_ROUTE_NAME,
@@ -57,6 +58,7 @@ const historyStore = useHistoryStore();
 const toastStore = useToastStore();
 const userStore = useUserStore();
 const contentBlacklistStore = useContentBlacklistStore();
+let disposeWindowFrame: (() => void) | null = null;
 let disposeShortcuts: (() => void) | null = null;
 let disposeDesktopLyricSync: (() => void) | null = null;
 let disposeMiniPlayerSync: (() => void) | null = null;
@@ -226,6 +228,7 @@ const flushPendingShareTarget = () => {
 };
 
 onMounted(async () => {
+  if (!isMiniPlayerRoute.value) disposeWindowFrame = installWindowFrame();
   await router.isReady();
 
   disposeShareOpen = window.electron?.share?.onOpen(openShareTarget) ?? null;
@@ -338,6 +341,7 @@ onMounted(async () => {
 });
 
 onUnmounted(() => {
+  disposeWindowFrame?.();
   window.removeEventListener('focus', scheduleClipboardShareCheck);
   window.removeEventListener(SHARE_COPIED_EVENT, handleShareCopied);
   if (silentUpdateCheckTimer !== null) {

@@ -1021,3 +1021,18 @@ html.app-background-transparent
 .page-sticky-item .sliver-header-background {
   background: transparent !important;
 }
+
+/* Keep the transparent window silhouette separate from its translucent background. */
+html.app-background-enabled.app-window-frame::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 2147483647;
+  pointer-events: none;
+  box-sizing: border-box;
+  border: 1px solid rgb(0 0 0 / 18%);
+  border-radius: var(--app-window-frame-radius, 0px);
+}
+html.dark.app-background-enabled.app-window-frame::after {
+  border-color: rgb(255 255 255 / 22%);
+}
