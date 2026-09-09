@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { Icon } from '@iconify/vue';
+import { nextTick, onMounted, ref } from 'vue';
 import Button from '@/components/ui/Button.vue';
 import {
   iconArrowBarToDown,
@@ -11,6 +12,19 @@ import {
   iconTriangleAlert,
 } from '@/icons';
 import type { PluginMarketplacePlugin } from '../../../shared/plugins';
+
+const descriptionRef = ref<HTMLParagraphElement | null>(null);
+const isTruncated = ref(false);
+
+const checkTruncation = () => {
+  if (descriptionRef.value) {
+    isTruncated.value = descriptionRef.value.scrollHeight > descriptionRef.value.clientHeight;
+  }
+};
+
+onMounted(() => {
+  nextTick(checkTruncation);
+});
 
 defineProps<{
   plugin: PluginMarketplacePlugin;
@@ -111,7 +125,13 @@ const getVersionTitle = (plugin: PluginMarketplacePlugin) => {
       </span>
     </div>
 
-    <p class="plugin-card-description">{{ plugin.description || '暂无描述' }}</p>
+    <p
+      ref="descriptionRef"
+      class="plugin-card-description"
+      :title="isTruncated ? plugin.description || '暂无描述' : undefined"
+    >
+      {{ plugin.description || '暂无描述' }}
+    </p>
 
     <div v-if="compatibilityMessage" class="plugin-card-error is-warning">
       <Icon :icon="iconTriangleAlert" width="14" height="14" />
