@@ -26,3 +26,15 @@ test('local sends suppress immediate server echoes but not other users or later 
   assert.equal(nextBarrageItem([own], 0, recent, 100).item, undefined);
   assert.equal(nextBarrageItem([own], 0, recent, 20001).item, own);
 });
+test('long and short barrage use identical pixel speed, including larger fonts and viewports', () => {
+  const { barrageTravelDuration, BARRAGE_BASE_SPEED } = module.exports;
+  for (const width of [320, 1000, 1920]) {
+    for (const text of [40, 300, 4000]) {
+      for (const speed of [0.5, 1, 2]) {
+        assert.ok(Math.abs((width + text) / barrageTravelDuration(width, text, speed) - BARRAGE_BASE_SPEED * speed) < 1e-8);
+      }
+    }
+  }
+  assert.ok(barrageTravelDuration(1000, 4000, 1) > barrageTravelDuration(1000, 40, 1));
+  assert.equal(barrageTravelDuration(1000, 100, 0), 11);
+});

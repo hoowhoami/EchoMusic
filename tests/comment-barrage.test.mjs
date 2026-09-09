@@ -150,3 +150,12 @@ test('floor module sends the correct pool, root and quoted target in a POST', as
     assert.equal(calls[0].params.content, 'reply//@Alice:original');
   }
 });
+test('client rejects oversized barrage and comment bodies before making requests', async () => {
+  const api = client({ post: async () => assert.fail('oversized content must not reach API') });
+  await assert.rejects(api.sendComment({ type: 'song-barrage', hash: 'ABC' }, '😀'.repeat(101)), /100/);
+  await assert.rejects(api.sendComment({ type: 'music', id: '42' }, '字'.repeat(201)), /200/);
+  await assert.rejects(api.sendFloorComment({ root: {}, target: {}, content: '字'.repeat(201), resourceType: 'music' }), /200/);
+  const allowed = client({ post: async () => ({ status: 1, err_code: 0 }) });
+  await allowed.sendComment({ type: 'video-barrage', hash: 'ABC' }, '😀'.repeat(100));
+  await allowed.sendComment({ type: 'album', id: '42' }, '字'.repeat(200));
+});

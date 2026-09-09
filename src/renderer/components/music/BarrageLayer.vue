@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { Directive } from 'vue';
 import { computed, onActivated, onDeactivated, onBeforeUnmount, ref, shallowRef, watch } from 'vue';
 import { useDocumentVisibility } from '@vueuse/core';
 import { useUserStore } from '@/stores/user';
@@ -7,11 +8,23 @@ import {
   normalizeBarrageItems,
   normalizeBarrageUserId,
   getFreeBarrageLane,
+  barrageTravelDuration,
   barrageIdentity,
   nextBarrageItem,
   type BarrageItem,
 } from '@/utils/barrage';
 import { getBarrage } from '@/api/comment';
+// 在节点插入后测量一次真实宽度（含字体、内边距和边框），不逐帧读取布局。
+// 起点、距离与时长使用同一次测量，窗口变化也不会让正在飞行的弹幕突然加速。
+const vFlightMotion: Directive<HTMLElement, number> = {
+  mounted(element, binding) {
+    const width = element.parentElement?.getBoundingClientRect().width ?? 0;
+    const textWidth = element.getBoundingClientRect().width;
+    element.style.left = `${width}px`;
+    element.style.setProperty('--barrage-distance', `${width + textWidth}px`);
+    element.style.animationDuration = `${barrageTravelDuration(width, textWidth, binding.value)}s`;
+  },
+};
 const props = defineProps<{
   type: 'song' | 'video';
   hash: string;
@@ -109,6 +122,11 @@ function launchNext(onlyOwn = false) {
       Date.now() + Math.max(20000, 10000 / config.value.speed + 5000),
     );
   } else if (!onlyOwn) {
+    // 长弹幕仍在屏幕上时，继续抑制它的接口回流副本。
+    for (const flight of flights.value) {
+      const key = barrageIdentity(flight);
+      if (recentOwn.has(key)) recentOwn.set(key, Date.now() + 5000);
+    }
     const next = nextBarrageItem(items.value, cursor, recentOwn, Date.now());
     cursor = next.cursor;
     item = next.item;
@@ -166,13 +184,13 @@ defineExpose({ onSent });
       <span
         v-for="flight in flights"
         :key="flight.id"
+        v-flight-motion="config.speed"
         class="barrage-flight"
         :class="{ 'is-own': Boolean(currentUserId) && flight.userId === currentUserId }"
         :style="{
           top: `calc(${flight.lane * 25}% + 2px)`,
           fontSize: `${config.fontSize}px`,
           lineHeight: '1.4',
-          animationDuration: `${10 / config.speed}s`,
         }"
         @animationend="finishFlight(flight.id)"
         >{{ flight.text }}</span
@@ -237,15 +255,12 @@ defineExpose({ onSent });
 }
 @keyframes barrage-fly {
   to {
-    transform: translateX(calc(-100cqw - 100%));
+    transform: translateX(calc(-1 * var(--barrage-distance)));
   }
-}
-.barrage-flight-area {
-  container-type: inline-size;
 }
 @media (prefers-reduced-motion: reduce) {
   .barrage-flight {
-    left: 12px;
+    left: 12px !important;
     animation-name: barrage-fade;
   }
 }

@@ -49,3 +49,14 @@ export function nextBarrageItem(
   }
   return { cursor };
 }
+
+/** CSS pixels per second at 1×, independent of text and viewport width. */
+export const BARRAGE_BASE_SPEED = 100;
+export function barrageTravelDuration(
+  containerWidth: number,
+  textWidth: number,
+  speed: number,
+): number {
+  const multiplier = Number.isFinite(speed) && speed > 0 ? speed : 1;
+  return (Math.max(0, containerWidth) + Math.max(0, textWidth)) / (BARRAGE_BASE_SPEED * multiplier);
+}

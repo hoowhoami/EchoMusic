@@ -1,4 +1,9 @@
 <script setup lang="ts">
+import {
+  BARRAGE_MAX_LENGTH,
+  COMMENT_MAX_LENGTH,
+  countCommentCharacters,
+} from '@/utils/commentLimits';
 import { handleComposerKeydown } from '@/utils/composerKeyboard';
 import { computed, watch } from 'vue';
 import { sendComment, type CommentSendResource } from '@/api/comment';
@@ -12,6 +17,11 @@ const user = useUserStore();
 const toast = useToastStore();
 const content = defineModel<string>('content', { default: '' });
 const sending = defineModel<boolean>('sending', { default: false });
+const limit = computed(() =>
+  props.resource.type.endsWith('-barrage') ? BARRAGE_MAX_LENGTH : COMMENT_MAX_LENGTH,
+);
+const count = computed(() => countCommentCharacters(content.value));
+const overLimit = computed(() => count.value > limit.value);
 const key = computed(
   () => `${props.resource.type}:${props.resource.id || ''}:${props.resource.hash || ''}`,
 );
@@ -22,7 +32,7 @@ watch(key, () => {
   content.value = '';
 });
 async function submit() {
-  if (sending.value || !content.value.trim() || !available.value) return;
+  if (overLimit.value || sending.value || !content.value.trim() || !available.value) return;
   if (!user.isLoggedIn) {
     toast.show('请先登录后再发送', 'warning');
     return;
@@ -55,27 +65,36 @@ async function submit() {
       @keydown="handleComposerKeydown($event, submit)"
       aria-description="Enter 发送，Shift + Enter 换行"
       v-model="content"
+      :aria-invalid="overLimit"
       :disabled="sending || !available"
       :rows="variant === 'barrage' ? 3 : 1"
       :aria-label="label || '发表评论'"
       :placeholder="user.isLoggedIn ? label || '写下你的评论…' : '登录后即可发送'"
     />
     <div v-if="variant === 'barrage'" class="composer-footer">
-      <span class="composer-count">{{ Array.from(content).length }} 字符</span>
+      <span class="composer-count" :class="{ 'is-over-limit': overLimit }"
+        >{{ count }} / {{ limit }}</span
+      >
       <Button
         type="submit"
         size="xs"
-        :disabled="sending || !content.trim() || !available || !user.isLoggedIn"
+        :disabled="overLimit || sending || !content.trim() || !available || !user.isLoggedIn"
       >
         {{ sending ? '发送中…' : '发送' }}
       </Button>
     </div>
+    <span
+      v-if="variant !== 'barrage'"
+      class="composer-count"
+      :class="{ 'is-over-limit': overLimit }"
+      >{{ count }} / {{ limit }}</span
+    >
     <Button
-      v-else
+      v-if="variant !== 'barrage'"
       class="comment-send"
       type="submit"
       size="xs"
-      :disabled="sending || !content.trim() || !available || !user.isLoggedIn"
+      :disabled="overLimit || sending || !content.trim() || !available || !user.isLoggedIn"
     >
       {{ sending ? '发送中…' : '发送' }}
     </Button>
@@ -167,6 +186,8 @@ textarea:focus {
   gap: 16px;
 }
 .composer-count {
+  flex-shrink: 0;
+  white-space: nowrap;
   color: var(--text-secondary);
   font-size: 12px;
   font-variant-numeric: tabular-nums;
@@ -174,5 +195,8 @@ textarea:focus {
 .composer-footer > button {
   min-width: 72px;
   font-weight: 600;
+}
+.is-over-limit {
+  color: #ef4444;
 }
 </style>

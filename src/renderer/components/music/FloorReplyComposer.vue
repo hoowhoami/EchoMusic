@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { COMMENT_MAX_LENGTH, countCommentCharacters } from '@/utils/commentLimits';
 import { handleComposerKeydown } from '@/utils/composerKeyboard';
 import { computed, ref } from 'vue';
 import type { Comment } from '@/models/comment';
@@ -12,9 +13,16 @@ const draft = ref('');
 const busy = defineModel<boolean>('busy', { default: false });
 const user = useUserStore();
 const toast = useToastStore();
-const count = computed(() => Array.from(draft.value).length);
+const count = computed(() => countCommentCharacters(draft.value));
 async function submit() {
-  if (!props.send || busy.value || !draft.value.trim() || !user.isLoggedIn) return;
+  if (
+    count.value > COMMENT_MAX_LENGTH ||
+    !props.send ||
+    busy.value ||
+    !draft.value.trim() ||
+    !user.isLoggedIn
+  )
+    return;
   busy.value = true;
   try {
     await props.send(draft.value.trim());
@@ -50,21 +58,21 @@ async function submit() {
       @keydown="handleComposerKeydown($event, submit)"
       aria-description="Enter 发送，Shift + Enter 换行"
       v-model="draft"
+      :aria-invalid="count > COMMENT_MAX_LENGTH"
       rows="3"
       :disabled="busy"
       :aria-label="`回复 ${target.userName}`"
       :placeholder="user.isLoggedIn ? '写下你的回复…' : '登录后即可回复'"
     />
     <div class="floor-composer-footer">
-      <span
-        >{{ count }} 字符<span v-if="!send" class="floor-unavailable">
-          · 回复功能即将开放</span
-        ></span
+      <span :class="{ 'is-over-limit': count > COMMENT_MAX_LENGTH }"
+        >{{ count }} / {{ COMMENT_MAX_LENGTH
+        }}<span v-if="!send" class="floor-unavailable"> · 回复功能即将开放</span></span
       >
       <Button
         type="submit"
         size="xs"
-        :disabled="!send || !draft.trim() || busy || !user.isLoggedIn"
+        :disabled="count > COMMENT_MAX_LENGTH || !send || !draft.trim() || busy || !user.isLoggedIn"
         >{{ busy ? '发送中…' : '发送回复' }}</Button
       >
     </div>
@@ -135,5 +143,8 @@ textarea:focus {
 }
 .floor-unavailable {
   opacity: 0.8;
+}
+.is-over-limit {
+  color: #ef4444;
 }
 </style>
