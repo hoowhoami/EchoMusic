@@ -580,9 +580,7 @@ const audioEffectPresetActive = computed(
   () => !isAudioEffectPresetSelectionDisabled.value && player.audioEffect !== 'none',
 );
 const isAudioEffectOptionActive = (effect: AudioEffectValue) =>
-  isAudioEffectPresetSelectionDisabled.value
-    ? effect === 'none'
-    : player.audioEffect === effect;
+  isAudioEffectPresetSelectionDisabled.value ? effect === 'none' : player.audioEffect === effect;
 
 // 节流 EQ 更新，防止高频 IPC 调用导致音频卡顿
 const throttledSetEq = useThrottleFn((newGains: number[]) => {
@@ -885,13 +883,21 @@ withDefaults(defineProps<Props>(), {
                   'is-active': isAudioEffectOptionActive(option.value),
                   'is-disabled': isAudioEffectPresetSelectionDisabled,
                 }"
-                :disabled="isAudioEffectPresetSelectionDisabled || player.audioEffectApplying || player.isLoading"
+                :disabled="
+                  isAudioEffectPresetSelectionDisabled ||
+                  player.audioEffectApplying ||
+                  player.isLoading
+                "
                 @click="setAudioEffect(option.value)"
               >
                 <span class="pm-label text-center">{{ option.label }}</span>
               </button>
             </div>
-            <div v-if="!player.audioEffectApplying && player.audioEffectError" class="song-effect-feedback" role="status">
+            <div
+              v-if="!player.audioEffectApplying && player.audioEffectError"
+              class="song-effect-feedback"
+              role="status"
+            >
               <span class="song-effect-feedback-title">所选音效暂未生效</span>
               <p>{{ player.audioEffectError }}</p>
             </div>
@@ -1841,11 +1847,15 @@ withDefaults(defineProps<Props>(), {
 }
 
 @keyframes song-effect-spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .song-effect-spinner { animation: none; }
+  .song-effect-spinner {
+    animation: none;
+  }
 }
 
 .reset-btn {

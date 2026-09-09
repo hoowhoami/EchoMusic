@@ -13,8 +13,12 @@ export function createConsolePipeGuard(onDisconnect: () => void) {
     }
   };
   return {
-    get disconnected() { return disconnected; },
-    watch(stream: EventEmitter) { stream.on('error', handleError); },
+    get disconnected() {
+      return disconnected;
+    },
+    watch(stream: EventEmitter) {
+      stream.on('error', handleError);
+    },
     write(write: () => void) {
       if (disconnected) return;
       try {

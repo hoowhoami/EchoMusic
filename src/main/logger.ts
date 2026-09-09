@@ -165,8 +165,8 @@ export function applyLogSettings(settings?: Partial<LogSettings> | null, persist
   log.transports.console.level = consolePipeGuard.disconnected
     ? false
     : app.isPackaged
-    ? PACKAGED_CONSOLE_LOG_LEVEL
-    : DEVELOPMENT_CONSOLE_LOG_LEVEL;
+      ? PACKAGED_CONSOLE_LOG_LEVEL
+      : DEVELOPMENT_CONSOLE_LOG_LEVEL;
   log.transports.ipc.level = false;
 
   const remainingMs = currentLogSettings.diagnosticUntil - Date.now();

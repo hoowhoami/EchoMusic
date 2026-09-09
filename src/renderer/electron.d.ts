@@ -724,7 +724,10 @@ export interface IElectronAPI {
   player: {
     load: (url: string) => Promise<void>;
     loadMkvTrack: (url: string, trackId: number) => Promise<void>;
-    switchSource: (url: string, trackId?: number | null) => Promise<[number, number, number] | null>;
+    switchSource: (
+      url: string,
+      trackId?: number | null,
+    ) => Promise<[number, number, number] | null>;
     beginNextSourcePreparation: () => Promise<number | null>;
     cancelNextSourcePreparation: (requestId: number) => Promise<boolean>;
     prepareNextSource: (

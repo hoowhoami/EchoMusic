@@ -375,7 +375,10 @@ export class PlayerEngine {
   async switchSource(source: string | PlaybackSource): Promise<number | undefined> {
     const playbackSource = normalizePlaybackSource(source);
     if (!playbackSource.url) return;
-    const result = await player?.switchSource?.(playbackSource.url, playbackSource.audioTrackId ?? null);
+    const result = await player?.switchSource?.(
+      playbackSource.url,
+      playbackSource.audioTrackId ?? null,
+    );
     this.clearSeekPending();
     this.sourceUrl = getPlaybackSourceKey(playbackSource);
     this.lastTimeValue = -1;
