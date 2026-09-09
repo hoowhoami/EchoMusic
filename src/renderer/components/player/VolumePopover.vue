@@ -67,6 +67,7 @@ const handleWheel = (e: WheelEvent) => {
               : 'text-text-main/50 hover:text-primary-text hover:scale-110 active:scale-90',
           ]"
           @click.stop="toggleMute"
+          :aria-label="player.volume === 0 ? '取消静音' : '静音'"
         >
           <Icon v-if="player.volume === 0" :icon="iconVolume3" width="22" height="22" />
           <Icon v-else-if="player.volume <= 50" :icon="iconVolume1" width="22" height="22" />

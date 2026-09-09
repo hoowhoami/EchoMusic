@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import Tooltip from '@/components/ui/Tooltip.vue';
+
 import { computed, ref } from 'vue';
 import { useSettingStore } from '@/stores/setting';
 import { usePlayerStore } from '@/stores/player';
@@ -177,7 +179,7 @@ const handleRemoveImpulseResponse = (id: string) => {
         <p class="text-sm text-text-secondary">单击或双击播放歌曲时，选择要载入的歌曲范围</p>
       </div>
       <Select
-        class="w-52"
+        class="w-45 shrink-0"
         :model-value="settingStore.playbackQueueMode"
         :options="playbackQueueModeOptions"
         @update:model-value="settingStore.playbackQueueMode = $event as 'context' | 'single'"
@@ -200,7 +202,7 @@ const handleRemoveImpulseResponse = (id: string) => {
         </p>
       </div>
       <Select
-        class="w-45"
+        class="w-45 shrink-0"
         :model-value="settingStore.defaultAudioQuality"
         :options="audioQualityOptions"
         @update:model-value="settingStore.defaultAudioQuality = $event as AudioQualityValue"
@@ -250,6 +252,7 @@ const handleRemoveImpulseResponse = (id: string) => {
         />
       </div>
     </template>
+
     <div class="settings-divider"></div>
     <div class="settings-item">
       <div class="space-y-1">
@@ -282,6 +285,7 @@ const handleRemoveImpulseResponse = (id: string) => {
         />
       </div>
     </template>
+
     <template v-if="false">
       <div class="settings-divider"></div>
       <div class="settings-item">
@@ -352,41 +356,54 @@ const handleRemoveImpulseResponse = (id: string) => {
                 getImpulseResponseDisplayName(file.name)
               }}</span>
             </span>
-            <button
-              v-if="editingImpulseResponseId === file.id"
-              type="button"
-              class="irs-row-btn"
-              title="保存名称"
-              @click.stop="commitRenameImpulseResponse(file.id)"
-            >
-              <Icon :icon="iconCheckMark" width="14" height="14" />
-            </button>
-            <button
-              v-if="editingImpulseResponseId === file.id"
-              type="button"
-              class="irs-row-btn"
-              title="取消重命名"
-              @click.stop="cancelRenameImpulseResponse"
-            >
-              <Icon :icon="iconX" width="14" height="14" />
-            </button>
-            <button
-              v-else
-              type="button"
-              class="irs-row-btn"
-              title="重命名"
-              @click.stop="beginRenameImpulseResponse(file)"
-            >
-              <Icon :icon="iconPencil" width="14" height="14" />
-            </button>
-            <button
-              type="button"
-              class="irs-row-btn is-danger"
-              title="移除音效文件"
-              @click.stop="handleRemoveImpulseResponse(file.id)"
-            >
-              <Icon :icon="iconTrash" width="14" height="14" />
-            </button>
+            <Tooltip v-if="editingImpulseResponseId === file.id" content="保存名称">
+              <template #trigger>
+                <button
+                  type="button"
+                  class="irs-row-btn"
+                  aria-label="保存名称"
+                  @click.stop="commitRenameImpulseResponse(file.id)"
+                >
+                  <Icon :icon="iconCheckMark" width="14" height="14" />
+                </button>
+              </template>
+            </Tooltip>
+            <Tooltip v-if="editingImpulseResponseId === file.id" content="取消重命名">
+              <template #trigger>
+                <button
+                  type="button"
+                  class="irs-row-btn"
+                  aria-label="取消重命名"
+                  @click.stop="cancelRenameImpulseResponse"
+                >
+                  <Icon :icon="iconX" width="14" height="14" />
+                </button>
+              </template>
+            </Tooltip>
+            <Tooltip v-else content="重命名">
+              <template #trigger>
+                <button
+                  type="button"
+                  class="irs-row-btn"
+                  aria-label="重命名"
+                  @click.stop="beginRenameImpulseResponse(file)"
+                >
+                  <Icon :icon="iconPencil" width="14" height="14" />
+                </button>
+              </template>
+            </Tooltip>
+            <Tooltip content="移除音效文件">
+              <template #trigger>
+                <button
+                  type="button"
+                  class="irs-row-btn is-danger"
+                  aria-label="移除音效文件"
+                  @click.stop="handleRemoveImpulseResponse(file.id)"
+                >
+                  <Icon :icon="iconTrash" width="14" height="14" />
+                </button>
+              </template>
+            </Tooltip>
           </div>
         </div>
         <div v-else class="irs-empty">
@@ -458,6 +475,7 @@ const handleRemoveImpulseResponse = (id: string) => {
         />
       </div>
     </template>
+
     <div class="settings-divider"></div>
     <div class="settings-item">
       <div class="space-y-1">

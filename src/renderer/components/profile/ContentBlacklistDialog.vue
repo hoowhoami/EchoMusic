@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import Tooltip from '@/components/ui/Tooltip.vue';
+
 import { computed, nextTick, ref, useId, watch } from 'vue';
 import type { BlacklistEntry, BlacklistLabel } from '@/api/blacklist';
 import Button from '@/components/ui/Button.vue';
@@ -208,7 +210,7 @@ watch(activeTab, () => {
                 size="none"
                 class="blacklist-refresh-button"
                 :disabled="bucket.loading || Boolean(removingKey)"
-                :title="`刷新${activeMeta.title}`"
+                :tooltip="`刷新${activeMeta.title}`"
                 :aria-label="`刷新${activeMeta.title}`"
                 @click="refreshCurrentTab"
               >
@@ -301,9 +303,13 @@ watch(activeTab, () => {
                       />
                     </div>
                     <div class="min-w-0 flex-1">
-                      <p class="truncate text-[12px] font-black" :title="displayName(entry)">
-                        {{ displayName(entry) }}
-                      </p>
+                      <Tooltip :content="displayName(entry)" overflow-only>
+                        <template #trigger>
+                          <p class="truncate text-[12px] font-black">
+                            {{ displayName(entry) }}
+                          </p>
+                        </template>
+                      </Tooltip>
                       <p
                         v-if="formatTime(entry.createdAt)"
                         class="mt-0.5 text-[10px] font-medium text-text-main/35"
@@ -317,7 +323,7 @@ watch(activeTab, () => {
                       size="none"
                       class="blacklist-entry-action"
                       :disabled="bucket.loading || Boolean(removingKey)"
-                      :title="
+                      :tooltip="
                         entry.label === 'song'
                           ? `撤销不感兴趣：${displayName(entry)}`
                           : `取消屏蔽：${displayName(entry)}`

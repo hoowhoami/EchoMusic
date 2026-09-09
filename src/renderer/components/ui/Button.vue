@@ -1,6 +1,14 @@
 <script setup lang="ts">
-import type { HTMLAttributes } from 'vue';
-import { Primitive, type PrimitiveProps } from 'reka-ui';
+import { getCurrentInstance, type HTMLAttributes } from 'vue';
+import { Primitive, useForwardExpose, type PrimitiveProps } from 'reka-ui';
+import Tooltip from './Tooltip.vue';
+
+defineOptions({ inheritAttrs: false });
+const { forwardRef } = useForwardExpose();
+// Tooltip's portal makes its root a fragment. Preserve the caller's scoped CSS
+// on the actual button instead of relying on Vue's single-root propagation.
+const callerScopeId = getCurrentInstance()?.vnode.scopeId;
+const callerScopeAttrs = callerScopeId ? { [callerScopeId]: '' } : {};
 
 interface Props extends PrimitiveProps {
   variant?: 'primary' | 'secondary' | 'ghost' | 'outline' | 'danger' | 'unstyled';
@@ -8,6 +16,8 @@ interface Props extends PrimitiveProps {
   loading?: boolean;
   disabled?: boolean;
   class?: HTMLAttributes['class'];
+  tooltip?: string;
+  tooltipSide?: 'top' | 'right' | 'bottom' | 'left';
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -37,23 +47,30 @@ const sizes = {
 </script>
 
 <template>
-  <Primitive
-    :as="as"
-    :as-child="asChild"
-    :disabled="disabled || loading"
-    :class="[
-      props.variant === 'unstyled' || props.size === 'none'
-        ? 'app-focus-ring-soft transition-all active:scale-[0.98] disabled:opacity-60 disabled:active:scale-100 disabled:cursor-not-allowed'
-        : 'app-focus-ring-soft inline-flex items-center justify-center transition-all active:scale-[0.98] disabled:opacity-60 disabled:active:scale-100 disabled:cursor-not-allowed',
-      variants[variant],
-      sizes[size],
-      props.class,
-    ]"
-  >
-    <div
-      v-if="loading"
-      class="mr-2 w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin"
-    ></div>
-    <slot />
-  </Primitive>
+  <Tooltip :content="tooltip" :side="tooltipSide" :disabled="!tooltip">
+    <template #trigger>
+      <Primitive
+        :ref="forwardRef"
+        :aria-label="tooltip || undefined"
+        v-bind="{ ...callerScopeAttrs, ...$attrs }"
+        :as="as"
+        :as-child="asChild"
+        :disabled="disabled || loading"
+        :class="[
+          props.variant === 'unstyled' || props.size === 'none'
+            ? 'app-focus-ring-soft transition-all active:scale-[0.98] disabled:opacity-60 disabled:active:scale-100 disabled:cursor-not-allowed'
+            : 'app-focus-ring-soft inline-flex items-center justify-center transition-all active:scale-[0.98] disabled:opacity-60 disabled:active:scale-100 disabled:cursor-not-allowed',
+          variants[variant],
+          sizes[size],
+          props.class,
+        ]"
+      >
+        <div
+          v-if="loading"
+          class="mr-2 w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin"
+        ></div>
+        <slot />
+      </Primitive>
+    </template>
+  </Tooltip>
 </template>

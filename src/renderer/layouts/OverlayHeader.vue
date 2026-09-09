@@ -49,7 +49,7 @@ const openMiniPlayer = () => {
         size="none"
         @click="openMiniPlayer"
         class="overlay-control-btn overlay-control-btn--mini"
-        title="mini 模式"
+        tooltip="mini 模式"
       >
         <Icon :icon="iconPictureInPicture" width="16" height="16" />
       </Button>
@@ -59,7 +59,7 @@ const openMiniPlayer = () => {
         size="none"
         @click="handleControl('minimize')"
         class="overlay-control-btn"
-        title="最小化"
+        tooltip="最小化"
       >
         <Icon :icon="iconMinus" width="14" height="14" />
       </Button>
@@ -69,7 +69,7 @@ const openMiniPlayer = () => {
         size="none"
         @click="handleControl('fullscreen')"
         class="overlay-control-btn overlay-control-btn--fullscreen"
-        title="全屏"
+        tooltip="全屏"
       >
         <Icon :icon="iconFullscreen" width="14" height="14" class="window-control-icon--static" />
       </Button>
@@ -79,7 +79,7 @@ const openMiniPlayer = () => {
         size="none"
         @click="handleControl('maximize')"
         class="overlay-control-btn"
-        title="最大化"
+        tooltip="最大化"
       >
         <Icon :icon="iconSquare" width="13" height="13" />
       </Button>
@@ -89,7 +89,7 @@ const openMiniPlayer = () => {
         size="none"
         @click="handleControl('close')"
         class="overlay-control-btn overlay-control-btn--close"
-        title="关闭"
+        tooltip="关闭"
       >
         <Icon :icon="iconX" width="14" height="14" />
       </Button>

@@ -61,7 +61,7 @@ const romanizationStyle = computed<RomanizationStyle>({
         <p class="text-sm text-text-secondary">选择页面歌词中音译的显示方式</p>
       </div>
       <Select
-        class="w-40"
+        class="w-45 shrink-0"
         :model-value="romanizationStyle"
         :options="romanizationStyleOptions"
         @update:model-value="romanizationStyle = $event as RomanizationStyle"

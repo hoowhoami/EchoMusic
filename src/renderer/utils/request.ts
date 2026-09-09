@@ -52,7 +52,12 @@ const summarizeApiBody = (body: unknown): Record<string, unknown> => {
 
   return {
     status: record.status ?? dataRecord?.status,
-    errorCode: record.error_code ?? record.errcode ?? dataRecord?.error_code ?? dataRecord?.errcode,
+    errorCode:
+      record.error_code ??
+      record.err_code ??
+      record.errcode ??
+      dataRecord?.error_code ??
+      dataRecord?.errcode,
     count: dataRecord?.count ?? record.count,
     songs: songs?.length,
     candidates: candidates?.length,
@@ -135,9 +140,13 @@ const getKugouVerificationChallenge = (
   const bodyRecord =
     body && typeof body === 'object' ? (body as Record<string, unknown>) : undefined;
 
-  // sid/edt 不会在报错响应中返回，由服务端 /sidedt 在校验时模拟生成，这里只解析事件标识。
+  // 这里只读取验证事件；服务端附加的 sid/edt 是模拟值，不是上游返回的凭证。
   const eventId =
-    bodyRecord?.ssaCode || response.headers?.['ssa-code'] || response.headers?.['SSA-CODE'] || '';
+    bodyRecord?.ssaCode ||
+    response.headers?.['ssa-code'] ||
+    response.headers?.['SSA-CODE'] ||
+    (bodyRecord?.data as Record<string, unknown> | undefined)?.event_id ||
+    '';
   const normalizedEventId = String(eventId || '').trim();
   if (!normalizedEventId) return null;
 
@@ -253,6 +262,14 @@ const ipcRequest = async (
   // 响应拦截：auth 过期检测
   handleAuthExpired(url, response.status, response.body);
 
+  if (
+    !skipKugouVerification &&
+    options?.retriedAfterKugouVerification &&
+    getKugouVerificationChallenge(response)
+  ) {
+    throw new Error('验证已完成，但酷狗仍拒绝本次操作，请稍后重试；输入内容已保留');
+  }
+
   if (!skipKugouVerification && !options?.retriedAfterKugouVerification) {
     const verifyChallenge = getKugouVerificationChallenge(response);
     if (verifyChallenge) {
@@ -276,9 +293,10 @@ const ipcRequest = async (
     if (response.status === 502) {
       const body = response.body as {
         error_code?: number | string;
+        err_code?: number | string;
         errcode?: number | string;
       } | null;
-      const code = body?.error_code ?? body?.errcode;
+      const code = body?.error_code ?? body?.err_code ?? body?.errcode;
       if (code != null && Number(code) !== 0) {
         logger.warn('API', `Upstream business error (error_code=${code})`);
       } else {

@@ -69,7 +69,7 @@ const buttonClass = computed(() => {
         type="button"
         class="p-2 transition-all"
         :class="buttonClass"
-        :title="isResolvedCloudSource ? '当前使用云盘文件' : '音质'"
+        :aria-label="isResolvedCloudSource ? '当前使用云盘文件' : '音质'"
         @mouseenter="ensureCurrentTrackCatalogQualities"
         @focus="ensureCurrentTrackCatalogQualities"
       >
@@ -84,6 +84,7 @@ const buttonClass = computed(() => {
         </span>
       </Button>
     </template>
+
     <div class="space-y-1">
       <div class="pm-title">音质选择</div>
       <div v-if="isResolvedCloudSource" class="pm-hint">当前使用云盘文件播放</div>

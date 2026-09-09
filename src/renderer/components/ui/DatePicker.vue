@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import Tooltip from '@/components/ui/Tooltip.vue';
+
 import { computed } from 'vue';
 import type { HTMLAttributes } from 'vue';
 import { parseDate, type CalendarDate, type DateValue } from '@internationalized/date';
@@ -135,31 +137,47 @@ const nextYear = (date: DateValue) => date.add({ years: 1 });
       <DatePickerCalendar v-slot="{ weekDays, grid }">
         <DatePickerHeader class="echo-date-picker-header">
           <div class="echo-date-picker-navigation">
-            <DatePickerPrev
-              class="echo-date-picker-nav-button"
-              :prev-page="previousYear"
-              title="上一年"
-            >
-              <Icon :icon="iconChevronsLeft" width="16" height="16" />
-            </DatePickerPrev>
-            <DatePickerPrev class="echo-date-picker-nav-button" title="上个月">
-              <Icon :icon="iconChevronLeft" width="16" height="16" />
-            </DatePickerPrev>
+            <Tooltip content="上一年">
+              <template #trigger>
+                <DatePickerPrev
+                  class="echo-date-picker-nav-button"
+                  :prev-page="previousYear"
+                  aria-label="上一年"
+                >
+                  <Icon :icon="iconChevronsLeft" width="16" height="16" />
+                </DatePickerPrev>
+              </template>
+            </Tooltip>
+            <Tooltip content="上个月">
+              <template #trigger>
+                <DatePickerPrev class="echo-date-picker-nav-button" aria-label="上个月">
+                  <Icon :icon="iconChevronLeft" width="16" height="16" />
+                </DatePickerPrev>
+              </template>
+            </Tooltip>
           </div>
 
           <DatePickerHeading class="echo-date-picker-heading" />
 
           <div class="echo-date-picker-navigation">
-            <DatePickerNext class="echo-date-picker-nav-button" title="下个月">
-              <Icon :icon="iconChevronRight" width="16" height="16" />
-            </DatePickerNext>
-            <DatePickerNext
-              class="echo-date-picker-nav-button"
-              :next-page="nextYear"
-              title="下一年"
-            >
-              <Icon :icon="iconChevronsRight" width="16" height="16" />
-            </DatePickerNext>
+            <Tooltip content="下个月">
+              <template #trigger>
+                <DatePickerNext class="echo-date-picker-nav-button" aria-label="下个月">
+                  <Icon :icon="iconChevronRight" width="16" height="16" />
+                </DatePickerNext>
+              </template>
+            </Tooltip>
+            <Tooltip content="下一年">
+              <template #trigger>
+                <DatePickerNext
+                  class="echo-date-picker-nav-button"
+                  :next-page="nextYear"
+                  aria-label="下一年"
+                >
+                  <Icon :icon="iconChevronsRight" width="16" height="16" />
+                </DatePickerNext>
+              </template>
+            </Tooltip>
           </div>
         </DatePickerHeader>
 

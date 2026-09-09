@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import Tooltip from '@/components/ui/Tooltip.vue';
+
 import { Icon } from '@iconify/vue';
 import Button from '@/components/ui/Button.vue';
 import Switch from '@/components/ui/Switch.vue';
@@ -67,21 +69,28 @@ const emit = defineEmits<{
 
       <div class="plugin-card-summary">
         <div class="plugin-card-header">
-          <h3 class="plugin-card-name" :title="record.descriptor.name">
-            {{ record.descriptor.name }}
-          </h3>
-          <span
-            class="plugin-status-badge"
-            :title="statusTitle"
-            :class="{
-              'is-active': record.status === 'active' && !hasCurrentFailure,
-              'is-error': hasCurrentFailure && cardFailure?.reason !== 'incompatible',
-              'is-safe': safeMode && record.descriptor.enabled && !hasCurrentFailure,
-              'is-warning': cardFailure?.reason === 'incompatible',
-            }"
-          >
-            {{ statusLabel }}
-          </span>
+          <Tooltip :content="record.descriptor.name" overflow-only>
+            <template #trigger>
+              <h3 class="plugin-card-name">
+                {{ record.descriptor.name }}
+              </h3>
+            </template>
+          </Tooltip>
+          <Tooltip :content="statusTitle">
+            <template #trigger>
+              <span
+                class="plugin-status-badge"
+                :class="{
+                  'is-active': record.status === 'active' && !hasCurrentFailure,
+                  'is-error': hasCurrentFailure && cardFailure?.reason !== 'incompatible',
+                  'is-safe': safeMode && record.descriptor.enabled && !hasCurrentFailure,
+                  'is-warning': cardFailure?.reason === 'incompatible',
+                }"
+              >
+                {{ statusLabel }}
+              </span>
+            </template>
+          </Tooltip>
         </div>
 
         <div class="plugin-card-meta">
@@ -108,7 +117,11 @@ const emit = defineEmits<{
       <span>{{ compatibilityMessage }}</span>
     </div>
 
-    <div class="plugin-card-id" :title="record.descriptor.id">ID: {{ record.descriptor.id }}</div>
+    <Tooltip :content="record.descriptor.id" overflow-only>
+      <template #trigger>
+        <div class="plugin-card-id">ID: {{ record.descriptor.id }}</div>
+      </template>
+    </Tooltip>
 
     <div class="plugin-card-actions">
       <div class="plugin-card-action-group">
@@ -118,7 +131,7 @@ const emit = defineEmits<{
             size="xs"
             class="plugin-settings-btn"
             :class="{ 'is-unavailable': !settingsAvailable }"
-            :title="settingsTitle"
+            :tooltip="settingsTitle"
             :disabled="busy"
             @click="emit('settings', record)"
           >
@@ -137,19 +150,22 @@ const emit = defineEmits<{
           </Button>
         </div>
 
-        <button
-          v-if="hasFailure"
-          class="plugin-card-failure-btn"
-          :class="{
-            'is-historical': hasHistoricalFailure,
-            'is-warning': cardFailure?.reason === 'incompatible',
-          }"
-          type="button"
-          :title="failureTitle"
-          @click="emit('failure-detail', record.descriptor.id)"
-        >
-          <Icon :icon="iconTriangleAlert" width="14" height="14" />
-        </button>
+        <Tooltip v-if="hasFailure" :content="failureTitle">
+          <template #trigger>
+            <button
+              class="plugin-card-failure-btn"
+              :class="{
+                'is-historical': hasHistoricalFailure,
+                'is-warning': cardFailure?.reason === 'incompatible',
+              }"
+              type="button"
+              :aria-label="failureTitle"
+              @click="emit('failure-detail', record.descriptor.id)"
+            >
+              <Icon :icon="iconTriangleAlert" width="14" height="14" />
+            </button>
+          </template>
+        </Tooltip>
       </div>
 
       <Switch

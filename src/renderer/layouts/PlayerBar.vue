@@ -274,14 +274,17 @@ onUnmounted(() => {
               :style="{ '--marquee-distance': marqueeDistance }"
               @mouseenter="handleSongInfoHover"
             >
-              <span
-                class="text-[14px] font-bold text-primary-text cursor-pointer transition-colors"
-                :class="{ 'hover:text-primary-text/80': isCurrentAlbumClickable }"
-                :title="isCurrentAlbumClickable ? '查看专辑' : ''"
-                @click="goToCurrentAlbum"
-              >
-                {{ currentTrack ? currentTrack.name : '未在播放' }}
-              </span>
+              <Tooltip :content="isCurrentAlbumClickable ? '查看专辑' : ''">
+                <template #trigger>
+                  <span
+                    class="text-[14px] font-bold text-primary-text cursor-pointer transition-colors"
+                    :class="{ 'hover:text-primary-text/80': isCurrentAlbumClickable }"
+                    @click="goToCurrentAlbum"
+                  >
+                    {{ currentTrack ? currentTrack.name : '未在播放' }}
+                  </span>
+                </template>
+              </Tooltip>
               <span v-if="currentTrack" class="text-[14px] text-primary-text/60 mx-0.5">-</span>
               <div v-if="currentTrack" class="flex items-center">
                 <template v-for="(artist, index) in artistList" :key="index">
@@ -312,7 +315,7 @@ onUnmounted(() => {
               size="none"
               @click="toggleFavoritePB"
               class="p-0.5 text-red-500 transition-all hover:scale-110 active:scale-90"
-              title="收藏"
+              tooltip="收藏"
             >
               <Icon :icon="isFavorite ? iconHeartFilled : iconHeart" width="20" height="20" />
             </Button>
@@ -323,7 +326,7 @@ onUnmounted(() => {
               size="none"
               @click="handleOpenAddToPlaylist"
               class="p-0.5 text-text-main/25 hover:text-primary-text transition-all hover:scale-110"
-              title="添加到"
+              tooltip="添加到"
             >
               <Icon :icon="iconPlaylistAdd" width="20" height="20" />
             </Button>
@@ -333,7 +336,7 @@ onUnmounted(() => {
               size="none"
               @click="goToComments"
               class="p-0.5 text-text-main/25 hover:text-primary-text transition-all hover:scale-110"
-              title="详情及评论"
+              tooltip="详情及评论"
             >
               <Icon :icon="iconMessageCircle" width="20" height="20" />
             </Button>
@@ -344,18 +347,18 @@ onUnmounted(() => {
               size="none"
               @click="goToMv"
               class="p-0.5 text-text-main/25 hover:text-primary-text transition-all hover:scale-110"
-              title="播放 MV"
+              tooltip="播放 MV"
             >
               <MvIcon class="w-5 h-5" />
             </Button>
 
-            <div
-              v-if="currentTrack?.source === 'cloud'"
-              class="text-primary-text/60"
-              title="云盘歌曲"
-            >
-              <Icon :icon="iconCloud" width="20" height="20" />
-            </div>
+            <Tooltip v-if="currentTrack?.source === 'cloud'" content="云盘歌曲">
+              <template #trigger>
+                <div class="text-primary-text/60">
+                  <Icon :icon="iconCloud" width="20" height="20" />
+                </div>
+              </template>
+            </Tooltip>
 
             <Popover
               v-if="playbackNotice"
@@ -371,6 +374,7 @@ onUnmounted(() => {
                   <Icon :icon="iconTriangleAlert" width="20" height="20" />
                 </div>
               </template>
+
               <div class="player-error-content">
                 <div class="player-error-title">{{ playbackNotice.title }}</div>
                 <div class="player-error-reason">{{ playbackNotice.reason }}</div>
@@ -551,7 +555,7 @@ onUnmounted(() => {
           variant="unstyled"
           size="none"
           class="p-2 text-text-main/50 hover:text-primary-text transition-all hover:scale-110 active:scale-90"
-          title="分享"
+          tooltip="分享"
           @click="handleShareCurrentTrack"
         >
           <Icon :icon="iconShare" width="20" height="20" />
@@ -571,7 +575,7 @@ onUnmounted(() => {
                 ? 'text-primary-text'
                 : 'text-text-main/50 hover:text-primary-text'
             "
-            :title="desktopLyricStore.settings.enabled ? '关闭桌面歌词' : '开启桌面歌词'"
+            :tooltip="desktopLyricStore.settings.enabled ? '关闭桌面歌词' : '开启桌面歌词'"
             @click="toggleDesktopLyric"
           >
             <Icon :icon="iconTypography" width="20" height="20" />
@@ -589,7 +593,7 @@ onUnmounted(() => {
             variant="unstyled"
             size="none"
             class="p-2 text-text-main/50 hover:text-primary-text transition-all hover:scale-110 active:scale-90"
-            title="播放队列"
+            tooltip="播放队列"
             @click="openQueue"
           >
             <Icon :icon="iconList" width="20" height="20" />
@@ -695,41 +699,6 @@ onUnmounted(() => {
     transform: scale(1.08);
     opacity: 1;
   }
-}
-
-:global(.player-error-tooltip) {
-  max-width: 280px;
-  z-index: 1400 !important;
-}
-
-.player-error-tooltip-content {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.player-error-tooltip-title {
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--state-danger);
-}
-
-:global(.dark) .player-error-tooltip-title {
-  color: #f87171;
-}
-
-.player-error-tooltip-reason {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--color-text-main);
-  line-height: 1.5;
-}
-
-.player-error-tooltip-detail {
-  font-size: 11px;
-  font-weight: 500;
-  color: var(--color-text-secondary);
-  line-height: 1.45;
 }
 
 .player-toggle {

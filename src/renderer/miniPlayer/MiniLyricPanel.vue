@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import Tooltip from '@/components/ui/Tooltip.vue';
+
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
 import type { MiniPlayerExpandDirection, MiniPlayerLyricPayload } from '../../shared/mini-player';
 import { computeLyricCharBackgroundPosition } from '@/composables/useLyricTimeline';
@@ -305,36 +307,45 @@ onBeforeUnmount(() => {
           v-if="lyric?.hasTranslation || lyric?.hasRomanization"
           class="mini-lyric-heading-actions"
         >
-          <button
-            v-if="lyric?.hasTranslation"
-            type="button"
-            class="mini-lyric-mode-btn"
-            :class="{ active: lyric?.wantTranslation }"
-            title="翻译"
-            @click="handleToggleTranslation"
-          >
-            译
-          </button>
-          <button
-            v-if="lyric?.hasRomanization"
-            type="button"
-            class="mini-lyric-mode-btn"
-            :class="{ active: lyric?.wantRomanization }"
-            title="音译"
-            @click="handleToggleRomanization"
-          >
-            音
-          </button>
-          <button
-            v-if="canShowRubyToggle"
-            type="button"
-            class="mini-lyric-mode-btn"
-            :class="{ active: lyric?.showRomanizationAsRuby }"
-            title="音译注音：将音译标注在原词上方"
-            @click="handleToggleRomanizationAsRuby"
-          >
-            注音
-          </button>
+          <Tooltip v-if="lyric?.hasTranslation" content="翻译">
+            <template #trigger>
+              <button
+                type="button"
+                class="mini-lyric-mode-btn"
+                :class="{ active: lyric?.wantTranslation }"
+                aria-label="翻译"
+                @click="handleToggleTranslation"
+              >
+                译
+              </button>
+            </template>
+          </Tooltip>
+          <Tooltip v-if="lyric?.hasRomanization" content="音译">
+            <template #trigger>
+              <button
+                type="button"
+                class="mini-lyric-mode-btn"
+                :class="{ active: lyric?.wantRomanization }"
+                aria-label="音译"
+                @click="handleToggleRomanization"
+              >
+                音
+              </button>
+            </template>
+          </Tooltip>
+          <Tooltip v-if="canShowRubyToggle" content="音译注音：将音译标注在原词上方">
+            <template #trigger>
+              <button
+                type="button"
+                class="mini-lyric-mode-btn"
+                :class="{ active: lyric?.showRomanizationAsRuby }"
+                aria-label="音译注音：将音译标注在原词上方"
+                @click="handleToggleRomanizationAsRuby"
+              >
+                注音
+              </button>
+            </template>
+          </Tooltip>
         </div>
       </div>
       <div v-if="lyricEntries.length" ref="lyricViewportRef" class="mini-lyric-lines">
@@ -369,6 +380,7 @@ onBeforeUnmount(() => {
                 </span>
               </div>
             </template>
+
             <template v-else-if="isYrcLine(entry.line) && entry.index === activeLyricIndex">
               <div class="mini-lyric-primary mini-lyric-karaoke">
                 <span
@@ -379,6 +391,7 @@ onBeforeUnmount(() => {
                 >
               </div>
             </template>
+
             <div v-else class="mini-lyric-primary">{{ entry.line.text }}</div>
             <div
               v-for="(secondaryLine, secondaryIndex) in entry.secondaryLines"
@@ -401,6 +414,7 @@ onBeforeUnmount(() => {
                   >{{ char.text }}</span
                 >
               </template>
+
               <template
                 v-else-if="
                   entry.index === activeLyricIndex &&
@@ -416,7 +430,8 @@ onBeforeUnmount(() => {
                   >{{ char.text }}</span
                 >
               </template>
-              <template v-else>{{ secondaryLine.text }}</template>
+
+              <template v-else>{{ secondaryLine.text }} </template>
             </div>
           </div>
         </div>

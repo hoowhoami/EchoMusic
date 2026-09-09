@@ -6,6 +6,8 @@ import { getSongMv, getVideoDetail, getVideoPrivilege, getVideoUrl } from '@/api
 import { formatDate, formatDuration, formatPlayCount } from '@/utils/format';
 import { useToastStore } from '@/stores/toast';
 import type { VideoMeta, VideoSource } from '@/models/video';
+import BarrageControls from '@/components/music/BarrageControls.vue';
+import BarrageLayer from '@/components/music/BarrageLayer.vue';
 import Image from '@/components/ui/Image.vue';
 import {
   extractVideoUrl,
@@ -16,12 +18,23 @@ import {
   pickDefaultVideoSource,
 } from '@/utils/mappers/video';
 import { usePlayerStore } from '@/stores/player';
+import { useSettingStore } from '@/stores/setting';
 import PageScrollContainer from '@/components/ui/PageScrollContainer.vue';
+
+const settingStore = useSettingStore();
+const barrageEnabled = computed({
+  get: () => settingStore.mvBarrageEnabled,
+  set: (value: boolean) => {
+    settingStore.mvBarrageEnabled = value;
+  },
+});
+const barrageRef = ref<InstanceType<typeof BarrageLayer> | null>(null);
 
 const route = useRoute();
 const toastStore = useToastStore();
 const playerStore = usePlayerStore();
 
+const videoPlaying = ref(false);
 const videoRef = ref<HTMLVideoElement | null>(null);
 const loading = ref(false);
 const sourceLoading = ref(false);
@@ -286,11 +299,26 @@ watch(
             preload="metadata"
             playsinline
             :poster="cover"
-            @play="handleVideoPlay"
+            @play="
+              handleVideoPlay();
+              videoPlaying = true;
+            "
+            @pause="videoPlaying = false"
+            @ended="videoPlaying = false"
+            @waiting="videoPlaying = false"
+            @playing="videoPlaying = true"
             @error="handleVideoError"
           >
             <source v-if="currentVideoUrl" :src="currentVideoUrl" />
           </video>
+          <BarrageLayer
+            ref="barrageRef"
+            v-model:enabled="barrageEnabled"
+            type="video"
+            :hash="meta?.hash || currentSourceHash"
+            :name="title"
+            :playing="videoPlaying"
+          />
 
           <div v-if="loading || sourceLoading" class="mv-overlay-state">
             <div class="mv-loading-spinner"></div>
@@ -301,6 +329,11 @@ watch(
             <span>{{ playbackError || '暂无可播放的视频' }}</span>
           </div>
         </div>
+        <BarrageControls
+          v-model="barrageEnabled"
+          :resource="{ type: 'video-barrage', hash: meta?.hash || currentSourceHash, name: title }"
+          @reload="barrageRef?.reload()"
+        />
       </div>
 
       <div class="mv-detail-wrap">

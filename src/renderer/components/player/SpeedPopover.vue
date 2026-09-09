@@ -48,11 +48,12 @@ withDefaults(defineProps<Props>(), {
               ? 'text-black/40 dark:text-white/40 hover:scale-110 active:scale-90'
               : 'text-text-main/50 hover:text-primary-text hover:scale-110 active:scale-90'
         "
-        title="倍速播放"
+        aria-label="倍速播放"
       >
         <Icon :icon="iconSpeedometer" width="20" height="20" />
       </Button>
     </template>
+
     <div class="space-y-3">
       <div class="flex items-center justify-between">
         <span class="text-[11px] font-bold opacity-50">倍速播放</span>

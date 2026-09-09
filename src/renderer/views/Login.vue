@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import Tooltip from '@/components/ui/Tooltip.vue';
+
 defineOptions({ name: 'login-page' });
 import { ref, onMounted, onUnmounted, reactive, watch } from 'vue';
 import { useRouter } from 'vue-router';
@@ -920,15 +922,18 @@ onUnmounted(() => {
                   <span class="text-[11px] font-black opacity-40 uppercase tracking-[3px]">
                     {{ qqQr.isLoading ? '正在生成二维码' : qqQr.message || '等待 QQ 扫码' }}
                   </span>
-                  <button
-                    class="absolute right-0 w-7 h-7 rounded-full flex items-center justify-center text-text-main/40 hover:text-[#12B7F5] hover:bg-[#12B7F5]/10 transition-all active:scale-90 disabled:opacity-40"
-                    :disabled="qqQr.isLoading"
-                    title="刷新 QQ 二维码"
-                    aria-label="刷新 QQ 二维码"
-                    @click="loadQqQr"
-                  >
-                    <Icon :icon="iconRefreshCw" width="14" height="14" />
-                  </button>
+                  <Tooltip content="刷新 QQ 二维码">
+                    <template #trigger>
+                      <button
+                        class="absolute right-0 w-7 h-7 rounded-full flex items-center justify-center text-text-main/40 hover:text-[#12B7F5] hover:bg-[#12B7F5]/10 transition-all active:scale-90 disabled:opacity-40"
+                        :disabled="qqQr.isLoading"
+                        aria-label="刷新 QQ 二维码"
+                        @click="loadQqQr"
+                      >
+                        <Icon :icon="iconRefreshCw" width="14" height="14" />
+                      </button>
+                    </template>
+                  </Tooltip>
                 </div>
               </TabsContent>
 
@@ -1014,18 +1019,23 @@ onUnmounted(() => {
                 <TabsList
                   class="login-method-list grid! grid-cols-5 gap-2 h-auto! w-full items-stretch"
                 >
-                  <TabsTrigger
+                  <Tooltip
                     v-for="method in loginMethods"
                     :key="method.value"
-                    :value="method.value"
-                    :data-tone="method.tone"
-                    :title="`${method.label}登录`"
-                    :aria-label="`${method.label}登录`"
-                    class="login-method-trigger group h-14! pb-0! flex-col! items-center! justify-center! gap-1 rounded-2xl border border-transparent opacity-65! hover:opacity-100! data-[state=active]:opacity-100! [&_.active-line]:hidden"
+                    :content="`${method.label}登录`"
                   >
-                    <Icon :icon="method.icon" width="20" height="20" />
-                    <span class="text-[10px] leading-none font-black">{{ method.label }}</span>
-                  </TabsTrigger>
+                    <template #trigger>
+                      <TabsTrigger
+                        :value="method.value"
+                        :data-tone="method.tone"
+                        :aria-label="`${method.label}登录`"
+                        class="login-method-trigger group h-14! pb-0! flex-col! items-center! justify-center! gap-1 rounded-2xl border border-transparent opacity-65! hover:opacity-100! data-[state=active]:opacity-100! [&_.active-line]:hidden"
+                      >
+                        <Icon :icon="method.icon" width="20" height="20" />
+                        <span class="text-[10px] leading-none font-black">{{ method.label }}</span>
+                      </TabsTrigger>
+                    </template>
+                  </Tooltip>
                 </TabsList>
               </div>
             </div>

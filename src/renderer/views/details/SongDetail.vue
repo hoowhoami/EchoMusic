@@ -22,6 +22,7 @@ import TabsList from '@/components/ui/TabsList.vue';
 import TabsTrigger from '@/components/ui/TabsTrigger.vue';
 import TabsContent from '@/components/ui/TabsContent.vue';
 import CustomTabBar from '@/components/ui/CustomTabBar.vue';
+import CommentComposer from '@/components/music/CommentComposer.vue';
 import CommentList from '@/components/music/CommentList.vue';
 import SliverHeader from '@/components/music/DetailPageSliverHeader.vue';
 import ActionRow from '@/components/music/DetailPageActionRow.vue';
@@ -1298,7 +1299,7 @@ watch(total, (value) => {
             class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] text-primary-text"
             variant="unstyled"
             size="none"
-            title="播放"
+            tooltip="播放"
             aria-label="播放"
             :disabled="!canUseSongActions || detailLoading"
             @click="handlePlaySong"
@@ -1310,7 +1311,7 @@ watch(total, (value) => {
             class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] text-text-main opacity-60"
             variant="unstyled"
             size="none"
-            title="添加到"
+            tooltip="添加到"
             aria-label="添加到"
             :disabled="!canUseSongActions || detailLoading"
             @click="handleOpenAddToPlaylist"
@@ -1322,7 +1323,7 @@ watch(total, (value) => {
             class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] text-text-main opacity-60"
             variant="unstyled"
             size="none"
-            title="分享"
+            tooltip="分享"
             aria-label="分享"
             @click="handleShareSong"
           >
@@ -1445,6 +1446,7 @@ watch(total, (value) => {
                             </div>
                           </div>
                         </template>
+
                         <div v-else class="ranking-filter-empty">暂无更多榜单详情</div>
                       </div>
                     </div>
@@ -1568,6 +1570,11 @@ watch(total, (value) => {
                   </div>
                 </template>
               </div>
+              <CommentComposer
+                class="comment-composer-bottom"
+                :resource="{ type: 'music', id: songMixSongId, name: resourceTitle }"
+                @sent="fetchComments(true)"
+              />
             </TabsContent>
           </Tabs>
         </template>
@@ -1597,6 +1604,11 @@ watch(total, (value) => {
             </div>
             <div v-else class="comment-end-hint">已加载全部评论</div>
           </div>
+          <CommentComposer
+            class="comment-composer-bottom"
+            :resource="{ type, id: String(id), name: resourceTitle }"
+            @sent="fetchComments(true)"
+          />
         </template>
       </div>
     </div>
@@ -1614,6 +1626,15 @@ watch(total, (value) => {
 
 <style scoped>
 @reference "@/style.css";
+
+.comment-composer-bottom {
+  position: sticky;
+  bottom: 12px;
+  z-index: 5;
+  width: min(720px, 100%);
+  box-sizing: border-box;
+  margin: 16px auto 0;
+}
 
 .comment-page {
   padding: 0 0 40px;

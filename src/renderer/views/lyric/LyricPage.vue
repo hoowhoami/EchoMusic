@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import Tooltip from '@/components/ui/Tooltip.vue';
+
 defineOptions({ name: 'lyric-page' });
 
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
@@ -14,6 +16,8 @@ import OverlayHeader from '@/layouts/OverlayHeader.vue';
 import Button from '@/components/ui/Button.vue';
 import AddToPlaylistDialog from '@/components/music/AddToPlaylistDialog.vue';
 import PlayerQueueDrawer from '@/components/music/PlayerQueueDrawer.vue';
+import BarrageControls from '@/components/music/BarrageControls.vue';
+import BarrageLayer from '@/components/music/BarrageLayer.vue';
 import CommentDrawer from '@/components/music/CommentDrawer.vue';
 import CoverMode from './CoverMode.vue';
 import PortraitMode from './PortraitMode.vue';
@@ -36,8 +40,16 @@ import {
   iconCopy,
 } from '@/icons';
 
+const barrageRef = ref<InstanceType<typeof BarrageLayer> | null>(null);
+
 const playerStore = usePlayerStore();
 const settingStore = useSettingStore();
+const barrageEnabled = computed({
+  get: () => settingStore.lyricBarrageEnabled,
+  set: (value: boolean) => {
+    settingStore.lyricBarrageEnabled = value;
+  },
+});
 const lyricStore = useLyricStore();
 const toastStore = useToastStore();
 
@@ -301,7 +313,7 @@ onUnmounted(() => {
           size="none"
           type="button"
           class="close-btn no-drag"
-          title="返回"
+          tooltip="返回"
           @click="closeLyricPage"
         >
           <Icon :icon="iconChevronDown" width="20" height="20" />
@@ -323,7 +335,7 @@ onUnmounted(() => {
             opacity: isCollapsed && !isMouseActive ? 0 : 1,
             transition: 'opacity 0.3s ease',
           }"
-          :title="portraitModeRef.isLyricCollapsed ? '展开歌词' : '收起歌词'"
+          :tooltip="portraitModeRef.isLyricCollapsed ? '展开歌词' : '收起歌词'"
           @click="portraitModeRef.handleCollapseClick()"
         >
           <Icon
@@ -387,7 +399,7 @@ onUnmounted(() => {
             opacity: isCollapsed && !isMouseActive ? 0 : 1,
             transition: 'opacity 0.3s ease',
           }"
-          title="播放器模式"
+          tooltip="播放器模式"
           @click="isSettingsOpen = true"
         >
           <Icon :icon="iconSettings" width="16" height="16" />
@@ -396,6 +408,14 @@ onUnmounted(() => {
     </div>
 
     <!-- 主内容区域 -->
+    <BarrageLayer
+      ref="barrageRef"
+      v-model:enabled="barrageEnabled"
+      type="song"
+      :hash="currentTrack?.hash || ''"
+      :name="currentTrack?.name"
+      :playing="playerStore.isPlaying"
+    />
     <div class="lyric-page-body">
       <div
         class="lyric-page-content"
@@ -434,7 +454,20 @@ onUnmounted(() => {
         @open-queue="isQueueDrawerOpen = true"
         @open-comment="isCommentDrawerOpen = true"
         @open-add-to-playlist="handleOpenAddToPlaylist"
-      />
+      >
+        <template #song-actions>
+          <BarrageControls
+            v-model="barrageEnabled"
+            variant="lyric"
+            :resource="{
+              type: 'song-barrage',
+              hash: currentTrack?.hash || '',
+              name: currentTrack?.name,
+            }"
+            @reload="barrageRef?.reload()"
+          />
+        </template>
+      </LyricPlayerControls>
     </div>
 
     <!-- 歌词工具按钮：固定在右侧中间 -->
@@ -450,63 +483,86 @@ onUnmounted(() => {
     >
       <!-- 上组：歌词来源 / 时间调整 -->
       <div class="lyric-page-tools-group">
-        <button
-          class="lyric-page-tool-btn"
-          title="选择歌词"
-          @click="lyricStore.sourceDialogOpen = true"
-        >
-          <Icon :icon="iconList" width="14" height="14" />
-        </button>
-        <button
-          v-if="hasLyrics"
-          class="lyric-page-tool-btn"
-          :title="`歌词后退 ${lyricOffsetStepLabel}`"
-          @click="handleOffsetAdjust(-1)"
-        >
-          <Icon :icon="iconRotateCcw" width="15" height="15" />
-        </button>
-        <button
-          v-if="hasLyrics"
-          class="lyric-page-tool-btn"
-          :title="`歌词前进 ${lyricOffsetStepLabel}`"
-          @click="handleOffsetAdjust(1)"
-        >
-          <Icon :icon="iconRotateCw" width="15" height="15" />
-        </button>
-        <button
-          v-if="hasLyrics"
-          class="lyric-page-tool-btn"
-          :style="{ visibility: lyricStore.currentTimeOffset !== 0 ? 'visible' : 'hidden' }"
-          title="重置偏移"
-          @click="handleOffsetReset"
-        >
-          <Icon :icon="iconRefreshCw" width="14" height="14" />
-        </button>
+        <Tooltip content="选择歌词">
+          <template #trigger>
+            <button
+              class="lyric-page-tool-btn"
+              aria-label="选择歌词"
+              @click="lyricStore.sourceDialogOpen = true"
+            >
+              <Icon :icon="iconList" width="14" height="14" />
+            </button>
+          </template>
+        </Tooltip>
+        <Tooltip v-if="hasLyrics" :content="`歌词后退 ${lyricOffsetStepLabel}`">
+          <template #trigger>
+            <button
+              class="lyric-page-tool-btn"
+              :aria-label="`歌词后退 ${lyricOffsetStepLabel}`"
+              @click="handleOffsetAdjust(-1)"
+            >
+              <Icon :icon="iconRotateCcw" width="15" height="15" />
+            </button>
+          </template>
+        </Tooltip>
+        <Tooltip v-if="hasLyrics" :content="`歌词前进 ${lyricOffsetStepLabel}`">
+          <template #trigger>
+            <button
+              class="lyric-page-tool-btn"
+              :aria-label="`歌词前进 ${lyricOffsetStepLabel}`"
+              @click="handleOffsetAdjust(1)"
+            >
+              <Icon :icon="iconRotateCw" width="15" height="15" />
+            </button>
+          </template>
+        </Tooltip>
+        <Tooltip v-if="hasLyrics" content="重置偏移">
+          <template #trigger>
+            <button
+              class="lyric-page-tool-btn"
+              :style="{ visibility: lyricStore.currentTimeOffset !== 0 ? 'visible' : 'hidden' }"
+              aria-label="重置偏移"
+              @click="handleOffsetReset"
+            >
+              <Icon :icon="iconRefreshCw" width="14" height="14" />
+            </button>
+          </template>
+        </Tooltip>
       </div>
 
       <!-- 下组：翻译/音译/复制 -->
       <div v-if="hasLyrics" class="lyric-page-tools-group">
-        <button
-          v-if="lyricStore.hasTranslation"
-          class="lyric-page-tool-btn"
-          :class="{ active: lyricStore.wantTranslation }"
-          title="翻译"
-          @click="lyricStore.wantTranslation = !lyricStore.wantTranslation"
-        >
-          译
-        </button>
-        <button
-          v-if="lyricStore.hasRomanization"
-          class="lyric-page-tool-btn"
-          :class="{ active: lyricStore.wantRomanization }"
-          title="音译"
-          @click="lyricStore.wantRomanization = !lyricStore.wantRomanization"
-        >
-          音
-        </button>
-        <button class="lyric-page-tool-btn" title="复制歌词" @click="handleCopyLyrics">
-          <Icon :icon="iconCopy" width="14" height="14" />
-        </button>
+        <Tooltip v-if="lyricStore.hasTranslation" content="翻译">
+          <template #trigger>
+            <button
+              class="lyric-page-tool-btn"
+              :class="{ active: lyricStore.wantTranslation }"
+              aria-label="翻译"
+              @click="lyricStore.wantTranslation = !lyricStore.wantTranslation"
+            >
+              译
+            </button>
+          </template>
+        </Tooltip>
+        <Tooltip v-if="lyricStore.hasRomanization" content="音译">
+          <template #trigger>
+            <button
+              class="lyric-page-tool-btn"
+              :class="{ active: lyricStore.wantRomanization }"
+              aria-label="音译"
+              @click="lyricStore.wantRomanization = !lyricStore.wantRomanization"
+            >
+              音
+            </button>
+          </template>
+        </Tooltip>
+        <Tooltip content="复制歌词">
+          <template #trigger>
+            <button class="lyric-page-tool-btn" aria-label="复制歌词" @click="handleCopyLyrics">
+              <Icon :icon="iconCopy" width="14" height="14" />
+            </button>
+          </template>
+        </Tooltip>
       </div>
     </div>
 
@@ -715,6 +771,7 @@ onUnmounted(() => {
 }
 
 .toolbar-right {
+  gap: 8px;
   flex: 1;
   display: flex;
   align-items: center;

@@ -17,6 +17,7 @@ import TabsTrigger from '@/components/ui/TabsTrigger.vue';
 import TabsContent from '@/components/ui/TabsContent.vue';
 import Badge from '@/components/ui/Badge.vue';
 import Dialog from '@/components/ui/Dialog.vue';
+import CommentComposer from '@/components/music/CommentComposer.vue';
 import CommentList from '@/components/music/CommentList.vue';
 import BatchActionDrawer from '@/components/music/BatchActionDrawer.vue';
 import type { Song } from '@/models/song';
@@ -708,13 +709,7 @@ watch(
                 <span class="playlist-song-count inline-flex items-center gap-1 text-text-main/50">
                   <Icon :icon="iconMusic" width="12" height="12" />
                   <span>{{ songTotalCount }}</span>
-                  <Tooltip
-                    v-if="playlistFilteredInvalidCount > 0"
-                    side="bottom"
-                    align="center"
-                    :side-offset="10"
-                    contentClass="song-filter-tooltip"
-                  >
+                  <Tooltip v-if="playlistFilteredInvalidCount > 0" side="bottom" align="center">
                     <template #trigger>
                       <Button
                         variant="unstyled"
@@ -724,6 +719,7 @@ watch(
                         <Icon :icon="iconInfo" width="14" height="14" />
                       </Button>
                     </template>
+
                     <span class="block whitespace-pre-line"
                       >当前列表已过滤 {{ playlistFilteredInvalidCount }} 首无效歌曲</span
                     >
@@ -771,6 +767,7 @@ watch(
                 <Icon :icon="iconList" width="18" height="18" />
               </Button>
             </template>
+
             <Button
               v-if="!isOwnerPlaylist && userStore.isLoggedIn"
               variant="unstyled"
@@ -872,7 +869,7 @@ watch(
                       size="none"
                       @click="handleLocate"
                       class="song-locate-btn p-2 rounded-lg"
-                      title="定位当前播放"
+                      tooltip="定位当前播放"
                     >
                       <Icon :icon="iconCurrentLocation" width="18" height="18" />
                     </Button>
@@ -960,6 +957,11 @@ watch(
                   </div>
                 </div>
               </div>
+              <CommentComposer
+                class="detail-comment-composer"
+                :resource="{ type: 'playlist', id: String(playlistCommentId), name: playlist.name }"
+                @sent="fetchComments(true)"
+              />
             </TabsContent>
           </div>
         </Tabs>
@@ -1013,19 +1015,6 @@ watch(
   transform: scale(0.96);
 }
 
-:deep(.song-filter-tooltip) {
-  max-width: 280px;
-  padding: 10px 12px;
-  border-radius: 12px;
-  background: var(--color-bg-elevated);
-  color: var(--color-text-main);
-  font-size: 12px;
-  font-weight: 600;
-  line-height: 1.45;
-  box-shadow: var(--shadow-elevated);
-  z-index: 150;
-}
-
 :deep(.song-list) {
   @apply px-0;
 }
@@ -1064,5 +1053,13 @@ watch(
   to {
     transform: rotate(360deg);
   }
+}
+.detail-comment-composer {
+  position: sticky;
+  bottom: 12px;
+  z-index: 5;
+  width: min(720px, 100%);
+  box-sizing: border-box;
+  margin: 16px auto 0;
 }
 </style>

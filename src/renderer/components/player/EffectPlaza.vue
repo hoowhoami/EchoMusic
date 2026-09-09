@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import Tooltip from '@/components/ui/Tooltip.vue';
+
 import { computed, ref, watch } from 'vue';
 import { Icon } from '@iconify/vue';
 import { iconArrowLeft, iconHeadphones, iconLoader2, iconRefreshCw } from '@/icons';
@@ -47,16 +49,19 @@ const refresh = () => {
         <h2>音效广场</h2>
         <p>{{ description }}</p>
       </div>
-      <button
-        type="button"
-        class="plaza-refresh"
-        :disabled="loading"
-        aria-label="刷新音效广场"
-        title="刷新当前分类"
-        @click="refresh"
-      >
-        <Icon :icon="iconRefreshCw" width="15" :class="{ 'plaza-spin': loading }" />
-      </button>
+      <Tooltip content="刷新当前分类">
+        <template #trigger>
+          <button
+            type="button"
+            class="plaza-refresh"
+            :disabled="loading"
+            aria-label="刷新音效广场"
+            @click="refresh"
+          >
+            <Icon :icon="iconRefreshCw" width="15" :class="{ 'plaza-spin': loading }" />
+          </button>
+        </template>
+      </Tooltip>
     </header>
     <nav class="plaza-tabs" aria-label="音效分类">
       <button
@@ -156,6 +161,7 @@ const refresh = () => {
             {{ plaza.brands.loading ? '加载中…' : '更多品牌' }}
           </button>
         </template>
+
         <template v-else>
           <OnlineAudioEffectCard
             v-for="effect in plaza.currentPage.items"

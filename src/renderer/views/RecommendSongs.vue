@@ -221,7 +221,7 @@ onMounted(() => {
                     size="none"
                     @click="handleLocate"
                     class="song-locate-btn p-2 rounded-lg"
-                    title="定位当前播放"
+                    tooltip="定位当前播放"
                   >
                     <Icon :icon="iconCurrentLocation" width="16" height="16" />
                   </Button>

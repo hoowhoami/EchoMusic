@@ -53,6 +53,15 @@ interface PendingChallenge {
   reject: (error: Error) => void;
 }
 
+export function assertKugouVerificationSuccess(body: any) {
+  const code = body?.error_code ?? body?.err_code ?? body?.errcode;
+  if (Number(body?.status) !== 1 || (code != null && Number(code) !== 0)) {
+    const error = new Error(String(body?.msg || body?.message || '安全验证未通过'));
+    Object.assign(error, { response: { body } });
+    throw error;
+  }
+}
+
 interface LoadVerifyInfoOptions {
   readyError?: string;
 }
@@ -114,6 +123,7 @@ const loadVerifyInfoForChallenge = async (
   options: LoadVerifyInfoOptions = {},
 ) => {
   kugouVerificationState.status = 'loading';
+  kugouVerificationState.verifyInfo = null;
   kugouVerificationState.error = '';
 
   const body = await challenge.request('/get/verify/info', {
@@ -122,6 +132,7 @@ const loadVerifyInfoForChallenge = async (
 
   if (activeChallenge !== challenge) return;
 
+  assertKugouVerificationSuccess(body);
   kugouVerificationState.verifyInfo = body?.data ?? body;
   kugouVerificationState.status = 'ready';
   kugouVerificationState.error = options.readyError ?? '';
@@ -139,21 +150,33 @@ const startNextChallenge = async () => {
   kugouVerificationState.status = 'loading';
   kugouVerificationState.error = '';
 
+  const challenge = activeChallenge;
   try {
-    await loadVerifyInfoForChallenge(activeChallenge);
+    await loadVerifyInfoForChallenge(challenge);
   } catch (error) {
     logger.error('KugouVerification', 'Failed to load verify info', error);
-    if (activeChallenge) {
+    if (activeChallenge === challenge) {
       kugouVerificationState.status = 'error';
-      kugouVerificationState.error = '安全验证信息获取失败，请稍后重试';
+      kugouVerificationState.error = getVerifyInfoFailureMessage(error);
     }
   }
+};
+
+export const getVerifyInfoFailureMessage = (error: unknown) => {
+  const body = (error as { response?: { body?: Record<string, unknown> } })?.response?.body;
+  const code = Number(body?.error_code ?? body?.err_code ?? body?.errcode ?? 0);
+  if (code === 36001) {
+    return '酷狗未能提供本次验证信息（36001）。可重新获取；若仍失败，请返回编辑并稍后重试，草稿会保留。';
+  }
+  return '验证信息加载失败，请检查网络后重新获取，或返回编辑稍后重试。';
 };
 
 const getVerifyFailureMessage = (error: unknown) => {
   const response = (error as any)?.response;
   const body = response?.body;
-  const errorCode = Number(body?.error_code ?? body?.errorCode ?? 0);
+  const errorCode = Number(
+    body?.error_code ?? body?.err_code ?? body?.errcode ?? body?.errorCode ?? 0,
+  );
   const dataMessage = typeof body?.data === 'string' ? body.data : '';
   const msgMessage = typeof body?.msg === 'string' ? body.msg : '';
   const message = dataMessage || msgMessage;
@@ -250,12 +273,13 @@ export const submitKugouVerification = async (verifyCode: string): Promise<boole
 
   try {
     // 桌面端无法在浏览器侧采集行为指纹，统一交由服务端 /sidedt 模拟生成 sid/edt 并完成校验。
-    await challenge.request('/sidedt', {
+    const result = await challenge.request('/sidedt', {
       eventid: challenge.eventId,
       v_type: verifyType,
       verifycode: code,
     });
     if (activeChallenge !== challenge) return false;
+    assertKugouVerificationSuccess(result);
     kugouVerificationState.status = 'success';
     finishActiveChallenge();
     return true;
@@ -281,7 +305,7 @@ export const refreshKugouVerificationInfo = async (readyError = '') => {
     logger.error('KugouVerification', 'Failed to refresh verify info', error);
     if (activeChallenge === challenge) {
       kugouVerificationState.status = 'error';
-      kugouVerificationState.error = '验证信息刷新失败，请重新触发操作';
+      kugouVerificationState.error = getVerifyInfoFailureMessage(error);
     }
     throw error;
   }

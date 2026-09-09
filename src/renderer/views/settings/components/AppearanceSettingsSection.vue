@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import Tooltip from '@/components/ui/Tooltip.vue';
+
 import { computed, ref } from 'vue';
 import { useSettingStore } from '@/stores/setting';
 import { useThemeStore } from '@/stores/theme';
@@ -64,7 +66,7 @@ const isAccentGradientDefault = computed(
         <p class="text-sm text-text-secondary">选择您喜欢的主题外观</p>
       </div>
       <Select
-        class="w-45"
+        class="w-45 shrink-0"
         :model-value="settingStore.theme"
         :options="themeOptions"
         @update:model-value="settingStore.setTheme($event as ThemeMode)"
@@ -182,7 +184,7 @@ const isAccentGradientDefault = computed(
         <p class="text-sm text-text-secondary">关闭动态主题色，或固定为封面 / 预设 / 自定义颜色</p>
       </div>
       <Select
-        class="w-45"
+        class="w-45 shrink-0"
         :model-value="themeStore.accentMode"
         :options="accentModeOptions"
         @update:model-value="themeStore.setMode($event as AccentMode)"
@@ -196,19 +198,22 @@ const isAccentGradientDefault = computed(
           <p class="text-sm text-text-secondary">挑一个贴合心情的配色</p>
         </div>
         <div class="flex gap-2 flex-nowrap">
-          <button
-            v-for="preset in accentPresets"
-            :key="preset.id"
-            type="button"
-            class="accent-preset-swatch"
-            :class="{ 'is-active': themeStore.presetId === preset.id }"
-            :style="{ backgroundColor: preset.color }"
-            :title="preset.name"
-            @click="themeStore.setPreset(preset.id)"
-          ></button>
+          <Tooltip v-for="preset in accentPresets" :key="preset.id" :content="preset.name">
+            <template #trigger>
+              <button
+                type="button"
+                class="accent-preset-swatch"
+                :class="{ 'is-active': themeStore.presetId === preset.id }"
+                :style="{ backgroundColor: preset.color }"
+                :aria-label="preset.name"
+                @click="themeStore.setPreset(preset.id)"
+              ></button>
+            </template>
+          </Tooltip>
         </div>
       </div>
     </template>
+
     <template v-if="themeStore.accentMode === 'custom'">
       <div class="settings-divider"></div>
       <div class="settings-item">
@@ -224,6 +229,7 @@ const isAccentGradientDefault = computed(
         ></button>
       </div>
     </template>
+
     <div class="settings-divider"></div>
     <div class="settings-item">
       <div class="space-y-1">
@@ -285,6 +291,7 @@ const isAccentGradientDefault = computed(
         />
       </div>
     </template>
+
     <div class="settings-divider"></div>
     <div class="settings-item">
       <div class="space-y-1">

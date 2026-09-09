@@ -107,7 +107,7 @@ defineExpose({ scrollToActive });
               variant="unstyled"
               size="none"
               class="song-locate-btn p-2 rounded-lg"
-              title="定位当前播放"
+              tooltip="定位当前播放"
               @click="emit('locate')"
             >
               <Icon :icon="iconCurrentLocation" width="16" height="16" />

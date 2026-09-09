@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import Tooltip from '@/components/ui/Tooltip.vue';
+
 import { computed } from 'vue';
 import { Icon } from '@iconify/vue';
 import Button from '@/components/ui/Button.vue';
@@ -74,7 +76,11 @@ const canAdd = computed(() => Boolean(props.sourceUrl.trim()) && !props.adding);
               <strong>{{ source.name }}</strong>
               <span v-if="source.official">官方</span>
             </div>
-            <p :title="source.url">{{ source.url }}</p>
+            <Tooltip :content="source.url" overflow-only>
+              <template #trigger>
+                <p>{{ source.url }}</p>
+              </template>
+            </Tooltip>
             <small>
               {{ source.pluginCount }} 个插件
               <template v-if="source.lastFetchedAt">
@@ -96,7 +102,7 @@ const canAdd = computed(() => Boolean(props.sourceUrl.trim()) && !props.adding);
               variant="ghost"
               size="xs"
               class="plugin-source-delete-btn"
-              :title="source.official ? '官方插件源可停用，但不能删除' : '删除插件源'"
+              :tooltip="source.official ? '官方插件源可停用，但不能删除' : '删除插件源'"
               :disabled="source.official || busySourceIds.has(source.id)"
               @click="emit('remove', source)"
             >

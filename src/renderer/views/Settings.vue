@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import Tooltip from '@/components/ui/Tooltip.vue';
+
 defineOptions({ name: 'settings-page' });
 import { computed, ref, onMounted, onUnmounted, nextTick, watch } from 'vue';
 import type { Component } from 'vue';
@@ -759,16 +761,26 @@ const findSectionElement = (id: string) => {
           class="settings-search-shell"
           :class="{ 'is-expanded': isSettingsSearchExpanded || isSettingsSearchCollapsing }"
         >
-          <button
+          <Tooltip
             v-if="!isSettingsSearchExpanded && !isSettingsSearchCollapsing"
-            type="button"
-            class="settings-search-icon-button"
-            title="搜索设置"
-            aria-label="搜索设置"
-            @click="expandSettingsSearch"
+            content="搜索设置"
           >
-            <Icon :icon="iconSearch" width="17" height="17" class="settings-search-trigger-icon" />
-          </button>
+            <template #trigger>
+              <button
+                type="button"
+                class="settings-search-icon-button"
+                aria-label="搜索设置"
+                @click="expandSettingsSearch"
+              >
+                <Icon
+                  :icon="iconSearch"
+                  width="17"
+                  height="17"
+                  class="settings-search-trigger-icon"
+                />
+              </button>
+            </template>
+          </Tooltip>
           <div
             v-if="isSettingsSearchExpanded || isSettingsSearchCollapsing"
             class="settings-search"

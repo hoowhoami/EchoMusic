@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import Tooltip from '@/components/ui/Tooltip.vue';
+
 import { useSettingStore } from '@/stores/setting';
 import Button from '@/components/ui/Button.vue';
 import Switch from '@/components/ui/Switch.vue';
@@ -80,18 +82,24 @@ const handleResetBoth = (command: ShortcutCommand) => {
           />
         </div>
         <div class="shortcut-cell-reset">
-          <button
+          <Tooltip
             v-if="
               isShortcutModified(item.command, 'local') ||
               isShortcutModified(item.command, 'global')
             "
-            type="button"
-            class="shortcut-reset-btn"
-            title="恢复默认"
-            @click="handleResetBoth(item.command)"
+            content="恢复默认"
           >
-            重置
-          </button>
+            <template #trigger>
+              <button
+                type="button"
+                class="shortcut-reset-btn"
+                aria-label="恢复默认"
+                @click="handleResetBoth(item.command)"
+              >
+                重置
+              </button>
+            </template>
+          </Tooltip>
         </div>
       </div>
     </div>

@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import Tooltip from '@/components/ui/Tooltip.vue';
+
 defineOptions({ name: 'profile' });
 import { computed, onMounted, reactive, ref } from 'vue';
 import { useRouter } from 'vue-router';
@@ -455,7 +457,7 @@ onMounted(() => loadData());
                   size="none"
                   @click="openProfileEditor"
                   class="w-10 h-10 flex items-center justify-center rounded-full border border-[var(--control-border)] text-text-main/70 hover:bg-[var(--control-hover-bg)] hover:text-text-main transition-all active:scale-90"
-                  title="编辑个人资料"
+                  tooltip="编辑个人资料"
                   aria-label="编辑个人资料"
                 >
                   <Icon :icon="iconPencil" width="19" height="19" />
@@ -465,7 +467,7 @@ onMounted(() => loadData());
                   size="none"
                   @click="showContentBlacklist = true"
                   class="w-10 h-10 flex items-center justify-center rounded-full border border-[var(--control-border)] text-text-main/70 hover:bg-[var(--control-hover-bg)] hover:text-text-main transition-all active:scale-90"
-                  title="黑名单管理"
+                  tooltip="黑名单管理"
                   aria-label="打开黑名单管理"
                 >
                   <Icon :icon="iconShield" width="20" height="20" />
@@ -475,7 +477,7 @@ onMounted(() => loadData());
                   size="none"
                   @click="openDeviceManager"
                   class="w-10 h-10 flex items-center justify-center rounded-full border border-[var(--control-border)] text-text-main/70 hover:bg-[var(--control-hover-bg)] hover:text-text-main transition-all active:scale-90"
-                  title="登录设备"
+                  tooltip="登录设备"
                   aria-label="登录设备"
                 >
                   <Icon :icon="iconSmartphone" width="20" height="20" />
@@ -485,7 +487,7 @@ onMounted(() => loadData());
                   size="none"
                   @click="handleLogout"
                   class="w-10 h-10 flex items-center justify-center rounded-full border border-[var(--control-border)] hover:bg-red-500/10 hover:text-red-500 transition-all active:scale-90"
-                  title="退出登录"
+                  tooltip="退出登录"
                   aria-label="退出登录"
                 >
                   <Icon :icon="iconLogOut" width="20" height="20" />
@@ -498,25 +500,28 @@ onMounted(() => loadData());
               class="user-card relative overflow-hidden p-6 rounded-3xl bg-linear-to-br from-primary/12 via-primary/6 to-transparent border border-primary/20 mb-6"
             >
               <div class="flex items-center gap-6 relative z-10">
-                <button
-                  type="button"
-                  class="profile-avatar-button group relative p-1 rounded-full border-2 border-primary/30 shrink-0 overflow-hidden"
-                  :disabled="isUploadingAvatar"
-                  title="修改头像"
-                  aria-label="修改头像"
-                  @click="triggerAvatarPicker"
-                >
-                  <Avatar :src="userInfo.pic" class="w-19 h-19 rounded-full" />
-                  <span
-                    class="absolute inset-1 rounded-full flex items-center justify-center bg-black/45 text-white opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 transition-opacity"
-                  >
-                    <span
-                      v-if="isUploadingAvatar"
-                      class="w-5 h-5 rounded-full border-2 border-white border-t-transparent animate-spin"
-                    ></span>
-                    <Icon v-else :icon="iconPencil" width="20" height="20" />
-                  </span>
-                </button>
+                <Tooltip content="修改头像">
+                  <template #trigger>
+                    <button
+                      type="button"
+                      class="profile-avatar-button group relative p-1 rounded-full border-2 border-primary/30 shrink-0 overflow-hidden"
+                      :disabled="isUploadingAvatar"
+                      aria-label="修改头像"
+                      @click="triggerAvatarPicker"
+                    >
+                      <Avatar :src="userInfo.pic" class="w-19 h-19 rounded-full" />
+                      <span
+                        class="absolute inset-1 rounded-full flex items-center justify-center bg-black/45 text-white opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 transition-opacity"
+                      >
+                        <span
+                          v-if="isUploadingAvatar"
+                          class="w-5 h-5 rounded-full border-2 border-white border-t-transparent animate-spin"
+                        ></span>
+                        <Icon v-else :icon="iconPencil" width="20" height="20" />
+                      </span>
+                    </button>
+                  </template>
+                </Tooltip>
                 <input
                   ref="avatarInput"
                   type="file"
@@ -667,6 +672,7 @@ onMounted(() => loadData());
                               <Icon :icon="iconInfo" width="14" height="14" class="opacity-70" />
                             </span>
                           </template>
+
                           <div class="min-w-45 space-y-1.5 text-[13px] normal-case">
                             <div class="flex items-center justify-between gap-3">
                               <span class="font-bold opacity-60">开始时间</span>
@@ -729,6 +735,7 @@ onMounted(() => loadData());
                               <Icon :icon="iconInfo" width="14" height="14" class="opacity-70" />
                             </span>
                           </template>
+
                           <div class="min-w-45 space-y-1.5 text-[13px] normal-case">
                             <div class="flex items-center justify-between gap-3">
                               <span class="font-bold opacity-60">开始时间</span>
@@ -757,6 +764,7 @@ onMounted(() => loadData());
           </div>
         </div>
       </template>
+
       <div v-else class="h-full flex flex-col items-center justify-center opacity-40 italic">
         <Icon :icon="iconUser" width="64" height="64" class="mb-4" />
         <span class="text-[16px] font-bold">请先登录以查看个人中心</span>
@@ -871,7 +879,7 @@ onMounted(() => loadData());
             variant="unstyled"
             size="none"
             class="w-8 h-8 rounded-full flex items-center justify-center text-text-main/70 hover:bg-[var(--control-hover-bg)] hover:text-text-main"
-            title="刷新登录设备"
+            tooltip="刷新登录设备"
             aria-label="刷新登录设备"
             :disabled="loginDeviceStore.loading"
             @click="refreshLoginDevices"

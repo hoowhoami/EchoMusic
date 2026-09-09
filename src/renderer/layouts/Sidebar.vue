@@ -711,7 +711,7 @@ watch(
                 variant="unstyled"
                 size="none"
                 class="sidebar-rail-avatar-btn"
-                :title="isLoggedIn ? userInfo?.nickname || '个人主页' : '点击登录账号'"
+                :aria-label="isLoggedIn ? userInfo?.nickname || '个人主页' : '点击登录账号'"
                 @click="navigateTo(isLoggedIn ? '/main/profile' : '/login')"
               >
                 <Avatar
@@ -751,7 +751,7 @@ watch(
                     variant="unstyled"
                     size="none"
                     :disabled="isMenuItemDisabled(item)"
-                    :title="item.title"
+                    :aria-label="item.title"
                     :class="[
                       'sidebar-rail-item',
                       isMenuItemDisabled(item)
@@ -791,7 +791,7 @@ watch(
                   <Button
                     variant="unstyled"
                     size="none"
-                    title="自建歌单"
+                    aria-label="自建歌单"
                     :class="['sidebar-rail-tab', activePlaylistTab === 0 ? 'is-active' : '']"
                     @click="activePlaylistTab = 0"
                   >
@@ -804,7 +804,7 @@ watch(
                   <Button
                     variant="unstyled"
                     size="none"
-                    title="收藏歌单"
+                    aria-label="收藏歌单"
                     :class="['sidebar-rail-tab', activePlaylistTab === 1 ? 'is-active' : '']"
                     @click="activePlaylistTab = 1"
                   >
@@ -828,7 +828,7 @@ watch(
                   <template #trigger>
                     <button
                       type="button"
-                      :title="playlist.name || '歌单'"
+                      :aria-label="playlist.name || '歌单'"
                       :class="[
                         'sidebar-rail-cover-btn',
                         isActivePlaylist(playlist) ? 'is-active' : '',
@@ -849,7 +849,7 @@ watch(
               </div>
               <Tooltip v-else-if="!isLoggedIn" content="登录同步云端歌单" side="right">
                 <template #trigger>
-                  <div class="sidebar-rail-empty" title="登录同步云端歌单">
+                  <div class="sidebar-rail-empty">
                     <Icon :icon="iconCloud" width="17" height="17" />
                   </div>
                 </template>
@@ -876,13 +876,14 @@ watch(
                     size="none"
                     type="button"
                     class="sidebar-rail-item"
-                    title="歌单操作"
+                    aria-label="歌单操作"
                   >
                     <Icon :icon="iconDotsVertical" width="18" height="18" />
                   </Button>
                 </template>
               </Tooltip>
             </template>
+
             <div class="sidebar-rail-more-list">
               <div class="sidebar-sort-menu-title">歌单操作</div>
               <button
@@ -974,7 +975,7 @@ watch(
                 variant="unstyled"
                 size="none"
                 class="sidebar-rail-item"
-                title="设置"
+                aria-label="设置"
                 @click="router.push('/main/settings')"
               >
                 <Icon :icon="iconSettings" width="19" height="19" />
@@ -1028,6 +1029,7 @@ watch(
                       >NOVIP</span
                     >
                   </template>
+
                   <span v-else class="opacity-60">点击登录账号</span>
                 </span>
               </div>
@@ -1174,7 +1176,7 @@ watch(
                     size="none"
                     type="button"
                     class="sidebar-section-action sidebar-icon-btn"
-                    title="歌单排序"
+                    tooltip="歌单排序"
                     :class="{
                       'text-primary-text opacity-100': settingStore.playlistSortOrder !== 'default',
                     }"
@@ -1182,6 +1184,7 @@ watch(
                     <Icon :icon="iconArrowsSort" width="12" height="12" />
                   </Button>
                 </template>
+
                 <div class="sidebar-sort-menu-list">
                   <div class="sidebar-sort-menu-title">排序方式</div>
                   <button
@@ -1233,7 +1236,7 @@ watch(
                 size="none"
                 type="button"
                 class="sidebar-section-action sidebar-icon-btn"
-                title="刷新歌单"
+                tooltip="刷新歌单"
                 :disabled="!isLoggedIn"
                 @click="refreshUserPlaylists"
               >
@@ -1256,11 +1259,12 @@ watch(
                       size="none"
                       type="button"
                       class="sidebar-section-action sidebar-icon-btn"
-                      title="添加歌单"
+                      tooltip="添加歌单"
                     >
                       <Icon :icon="iconPlus" width="12" height="12" />
                     </Button>
                   </template>
+
                   <div class="sidebar-create-menu-list">
                     <div class="sidebar-create-menu-title">添加歌单</div>
                     <button
@@ -1384,7 +1388,7 @@ watch(
                   size="none"
                   type="button"
                   class="sidebar-playlist-action"
-                  :title="isOwnerPlaylist(playlist) ? '删除歌单' : '取消收藏'"
+                  :tooltip="isOwnerPlaylist(playlist) ? '删除歌单' : '取消收藏'"
                   @click.stop="openRemovePlaylistDialog(playlist)"
                 >
                   <Icon :icon="iconTrash" width="14" height="14" />
@@ -1434,7 +1438,7 @@ watch(
                   size="none"
                   type="button"
                   class="sidebar-playlist-action"
-                  title="取消收藏"
+                  tooltip="取消收藏"
                   @click.stop="openRemovePlaylistDialog(playlist)"
                 >
                   <Icon :icon="iconTrash" width="14" height="14" />

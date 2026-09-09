@@ -163,7 +163,7 @@ const handleCopySongInfo = async () => {
       <!-- 时间 tooltip -->
       <div
         v-if="isHoveringProgress || isDraggingSeek"
-        class="bar-progress-tooltip"
+        class="bar-progress-tooltip app-tooltip-surface"
         :style="{
           left: `clamp(var(--bar-progress-tooltip-edge-gap), ${progressTooltipPercent}%, calc(100% - var(--bar-progress-tooltip-edge-gap)))`,
         }"
@@ -183,22 +183,22 @@ const handleCopySongInfo = async () => {
       <div class="bar-left">
         <!-- 歌曲信息 + 操作 -->
         <div class="bar-song-info">
-          <div
-            class="bar-song-text bar-song-clickable"
-            title="点击复制歌曲信息"
-            @click="handleCopySongInfo"
-          >
-            <span class="bar-song-title">{{ currentTrack?.name || '未在播放' }}</span>
-            <span v-if="currentTrack" class="bar-song-sep">-</span>
-            <span v-if="currentTrack" class="bar-song-artist">{{ currentTrack.artist }}</span>
-          </div>
+          <Tooltip content="点击复制歌曲信息">
+            <template #trigger>
+              <div class="bar-song-text bar-song-clickable" @click="handleCopySongInfo">
+                <span class="bar-song-title">{{ currentTrack?.name || '未在播放' }}</span>
+                <span v-if="currentTrack" class="bar-song-sep">-</span>
+                <span v-if="currentTrack" class="bar-song-artist">{{ currentTrack.artist }}</span>
+              </div>
+            </template>
+          </Tooltip>
           <div class="bar-song-actions">
             <Button
               variant="unstyled"
               size="none"
               @click="toggleFavorite"
               class="bar-action-btn text-red-500"
-              title="收藏"
+              tooltip="收藏"
             >
               <Icon :icon="isFavorite ? iconHeartFilled : iconHeart" width="20" height="20" />
             </Button>
@@ -208,7 +208,7 @@ const handleCopySongInfo = async () => {
               size="none"
               @click="emit('openAddToPlaylist')"
               class="bar-action-btn bar-action-muted"
-              title="添加到"
+              tooltip="添加到"
             >
               <Icon :icon="iconPlaylistAdd" width="20" height="20" />
             </Button>
@@ -218,10 +218,11 @@ const handleCopySongInfo = async () => {
               size="none"
               @click="emit('openComment')"
               class="bar-action-btn bar-action-muted"
-              title="评论"
+              tooltip="评论"
             >
               <Icon :icon="iconMessageCircle" width="20" height="20" />
             </Button>
+            <slot name="song-actions" />
             <Popover
               v-if="playerStore.playbackNotice"
               trigger="hover"
@@ -236,6 +237,7 @@ const handleCopySongInfo = async () => {
                   <Icon :icon="iconTriangleAlert" width="20" height="20" />
                 </div>
               </template>
+
               <div class="player-error-content">
                 <div class="player-error-title">{{ playerStore.playbackNotice.title }}</div>
                 <div class="player-error-reason">{{ playerStore.playbackNotice.reason }}</div>
@@ -328,7 +330,7 @@ const handleCopySongInfo = async () => {
           variant="unstyled"
           size="none"
           class="bar-func-btn bar-func-muted"
-          title="分享"
+          tooltip="分享"
           @click="handleShareCurrentTrack"
         >
           <Icon :icon="iconShare" width="20" height="20" />
@@ -338,13 +340,13 @@ const handleCopySongInfo = async () => {
         <QualityPopover />
         <EffectPopover />
 
-        <div class="relative">
+        <div class="bar-action-anchor relative">
           <Button
             variant="unstyled"
             size="none"
             class="bar-func-btn"
             :class="desktopLyricStore.settings.enabled ? 'bar-func-active' : 'bar-func-muted'"
-            :title="desktopLyricStore.settings.enabled ? '关闭桌面歌词' : '开启桌面歌词'"
+            :tooltip="desktopLyricStore.settings.enabled ? '关闭桌面歌词' : '开启桌面歌词'"
             @click="toggleDesktopLyric"
           >
             <Icon :icon="iconTypography" width="20" height="20" />
@@ -357,12 +359,12 @@ const handleCopySongInfo = async () => {
           />
         </div>
 
-        <div class="relative">
+        <div class="bar-action-anchor relative">
           <Button
             variant="unstyled"
             size="none"
             class="bar-func-btn bar-func-muted"
-            title="播放列表"
+            tooltip="播放列表"
             @click="emit('openQueue')"
           >
             <Icon :icon="iconList" width="20" height="20" />
@@ -409,12 +411,6 @@ const handleCopySongInfo = async () => {
   bottom: 100%;
   transform: translateX(-50%);
   margin-bottom: 4px;
-  padding: 2px 6px;
-  border-radius: 4px;
-  background: rgba(0, 0, 0, 0.75);
-  color: white;
-  font-size: 11px;
-  font-weight: 600;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
   pointer-events: none;
@@ -558,24 +554,24 @@ const handleCopySongInfo = async () => {
   gap: 4px;
 }
 
-.bar-action-btn {
+:deep(.bar-action-btn) {
   padding: 2px;
   transition: all 0.2s ease;
 }
 
-.bar-action-btn:hover {
+:deep(.bar-action-btn:hover) {
   transform: scale(1.1);
 }
 
-.bar-action-btn:active {
+:deep(.bar-action-btn:active) {
   transform: scale(0.9);
 }
 
-.bar-action-muted {
+:deep(.bar-action-muted) {
   color: rgba(255, 255, 255, 0.4);
 }
 
-.bar-action-muted:hover {
+:deep(.bar-action-muted:hover) {
   color: rgba(255, 255, 255, 0.9);
 }
 
@@ -684,6 +680,12 @@ const handleCopySongInfo = async () => {
 }
 
 /* 3. 右侧 */
+.bar-action-anchor {
+  flex: 0 0 36px;
+  width: 36px;
+  height: 36px;
+}
+
 .bar-right {
   display: flex;
   justify-content: flex-end;
@@ -693,36 +695,35 @@ const handleCopySongInfo = async () => {
   padding-right: 6px;
 }
 
-.bar-func-btn {
+:deep(.bar-func-btn) {
   padding: 8px;
   transition: all 0.2s ease;
 }
 
-.bar-func-btn:hover {
+:deep(.bar-func-btn:hover) {
   transform: scale(1.1);
 }
 
-.bar-func-btn:active {
+:deep(.bar-func-btn:active) {
   transform: scale(0.9);
 }
 
-.bar-func-muted {
+:deep(.bar-func-muted) {
   color: rgba(255, 255, 255, 0.5);
 }
 
-.bar-func-muted:hover {
+:deep(.bar-func-muted:hover) {
   color: white;
 }
 
-.bar-func-active {
+:deep(.bar-func-active) {
   color: white;
 }
 </style>
 
 <style>
 /* 歌词页底部控制栏内的徽标颜色覆盖 */
-.lyric-bar .badge,
-.lyric-bar [class*='badge'] {
+.lyric-bar .badge {
   background-color: rgba(255, 255, 255, 0.9) !important;
   color: #000 !important;
 }

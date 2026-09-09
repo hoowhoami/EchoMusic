@@ -314,7 +314,7 @@ const handleFavorite = () => {
         size="none"
         class="song-cover-play"
         :class="{ 'is-loading': isCoverPlayPending, 'is-playing': isCoverPlaying }"
-        :title="coverPlayTitle"
+        :tooltip="coverPlayTitle"
         :aria-busy="isCoverPlayPending"
         @click.stop="handleCoverPlay"
         @dblclick.stop
@@ -381,7 +381,7 @@ const handleFavorite = () => {
         size="none"
         type="button"
         class="song-action song-action-hover-only"
-        title="播放 MV"
+        tooltip="播放 MV"
         @click.stop="goToMvDetail"
       >
         <MvIcon class="w-4 h-4" />
@@ -391,7 +391,7 @@ const handleFavorite = () => {
         size="none"
         type="button"
         class="song-action song-action-hover-only"
-        title="详情及评论"
+        tooltip="详情及评论"
         @click.stop="goToSongDetail"
       >
         <Icon :icon="iconMessageCircle" width="16" height="16" />
@@ -402,7 +402,7 @@ const handleFavorite = () => {
         type="button"
         class="song-action song-action-favorite"
         :class="{ 'is-active': isFavorite }"
-        :title="isFavorite ? '已收藏' : '收藏'"
+        :tooltip="isFavorite ? '已收藏' : '收藏'"
         :aria-pressed="isFavorite"
         @click.stop="handleFavorite"
       >

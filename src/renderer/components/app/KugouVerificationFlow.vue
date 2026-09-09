@@ -11,6 +11,7 @@ import {
   KUGOU_CAPTCHA_PROVIDER_NAMES,
   kugouVerificationState,
   submitKugouVerification,
+  refreshKugouVerificationInfo,
 } from '@/utils/kugouVerification';
 import { iconShield, iconSmartphone, iconUser } from '@/icons';
 
@@ -78,6 +79,7 @@ const title = computed(() => {
 const tencentActionText = computed(() => (kugouVerificationState.error ? '重新验证' : '开始验证'));
 const description = computed(() => {
   if (isLoading.value) return '正在准备验证';
+  if (!kugouVerificationState.verifyInfo) return '尚未取得验证码，请重新获取验证信息';
   if (isSmsCaptcha.value) return '请输入酷狗下发的验证码';
   if (isLoginVerification.value) return loginMessage.value || '请登录账号以确认身份';
   if (isBindPhone.value)
@@ -518,6 +520,12 @@ onBeforeUnmount(resetTencentCaptcha);
       <div v-if="isLoading" class="verification-loading">
         <div class="verification-spinner"></div>
       </div>
+
+      <template v-else-if="!kugouVerificationState.verifyInfo">
+        <Button class="w-full" @click="refreshKugouVerificationInfo().catch(() => undefined)">
+          重新获取验证信息
+        </Button>
+      </template>
 
       <template v-else-if="isTencentCaptcha">
         <Button

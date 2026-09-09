@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import Tooltip from '@/components/ui/Tooltip.vue';
+
 import { computed, ref, watch } from 'vue';
 import { useVModel } from '@vueuse/core';
 import Dialog from '@/components/ui/Dialog.vue';
@@ -279,14 +281,14 @@ watch(selectedKey, () => {
         <div class="track-text">
           <span class="track-title">
             {{ title || '当前歌曲' }}
-            <template v-if="artist"> - {{ artist }}</template>
+            <template v-if="artist"> - {{ artist }} </template>
           </span>
         </div>
         <Button
           variant="ghost"
           size="none"
           class="refresh-btn"
-          title="刷新歌词候选"
+          tooltip="刷新歌词候选"
           :disabled="isLoading"
           @click="loadCandidates(true)"
         >
@@ -328,8 +330,8 @@ watch(selectedKey, () => {
                 <span class="candidate-title">
                   {{ candidate.song || title || '未知歌曲' }}
                   <template v-if="candidate.singer || artist">
-                    - {{ candidate.singer || artist }}</template
-                  >
+                    - {{ candidate.singer || artist }}
+                  </template>
                 </span>
               </div>
               <div class="candidate-meta">
@@ -340,16 +342,20 @@ watch(selectedKey, () => {
                   <Icon :icon="iconSparkles" width="12" height="12" />
                   智能推荐
                 </span>
-                <span class="star-rating" :title="`推荐 ${recommendationLevel(candidate)} 星`">
-                  <span
-                    v-for="index in 5"
-                    :key="index"
-                    class="star"
-                    :class="starClass(candidate, index)"
-                  >
-                    ★
-                  </span>
-                </span>
+                <Tooltip :content="`推荐 ${recommendationLevel(candidate)} 星`">
+                  <template #trigger>
+                    <span class="star-rating">
+                      <span
+                        v-for="index in 5"
+                        :key="index"
+                        class="star"
+                        :class="starClass(candidate, index)"
+                      >
+                        ★
+                      </span>
+                    </span>
+                  </template>
+                </Tooltip>
               </div>
               <div class="candidate-tags">
                 <span
@@ -393,8 +399,8 @@ watch(selectedKey, () => {
                   <div class="preview-subtitle">
                     {{ sourceLabel(selectedCandidate) }}
                     <template v-if="selectedCandidate.nickname">
-                      · {{ selectedCandidate.nickname }}</template
-                    >
+                      · {{ selectedCandidate.nickname }}
+                    </template>
                   </div>
                 </div>
                 <div class="preview-badges">

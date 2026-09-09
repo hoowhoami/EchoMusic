@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import Tooltip from '@/components/ui/Tooltip.vue';
+
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import Cover from '@/components/ui/Cover.vue';
 import Scrollbar from '@/components/ui/Scrollbar.vue';
@@ -34,11 +36,7 @@ import type {
   MiniPlayerSnapshot,
 } from '../../shared/mini-player';
 import { MINI_PLAYER_DIMENSIONS } from '../../shared/mini-player';
-import {
-  DEFAULT_PLAYER_VOLUME,
-  buildPlaybackClockSnapshot,
-  normalizePlayerVolume,
-} from '../../shared/playback';
+import { buildPlaybackClockSnapshot, normalizePlayerVolume } from '../../shared/playback';
 import { createLyricTimeline, findLyricIndexAtTimeMs } from '@/composables/useLyricTimeline';
 import { createStableLyricIndex } from '@/composables/useStableLyricIndex';
 import { useWindowDrag } from '@/composables/useWindowDrag';
@@ -334,7 +332,21 @@ const shouldApplyLyricSnapshot = (
 };
 
 const applySnapshot = (snapshot: MiniPlayerSnapshot | null | undefined) => {
-  const nextPlayback = snapshot?.playback ?? null;
+  let nextPlayback = snapshot?.playback ?? null;
+  if (pendingVolumeRequest && nextPlayback && playback.value) {
+    if (
+      nextPlayback.volumeRequestId === pendingVolumeRequest ||
+      Date.now() >= pendingVolumeDeadline
+    ) {
+      pendingVolumeRequest = null;
+    } else {
+      nextPlayback = {
+        ...nextPlayback,
+        volume: playback.value.volume,
+        lastNonZeroVolume: playback.value.lastNonZeroVolume,
+      };
+    }
+  }
   const nextLyric = snapshot?.lyric;
   const nextCoverUrl = nextPlayback?.coverUrl ?? '';
   const previousPlaybackTrackId = playback.value?.trackId ?? null;
@@ -413,7 +425,8 @@ const {
   isTargetDraggable: (target) => !(target as HTMLElement | null)?.closest('.no-drag'),
 });
 
-// 音量：点击图标=静音切换；悬停展开竖向滑块，可拖动或滚轮微调。
+// 音量：悬停或操作期间保持展开，离开整个音量区域后再收起。
+let isVolumeHovered = false;
 const clearVolumeCloseTimer = () => {
   if (volumeCloseTimer) {
     clearTimeout(volumeCloseTimer);
@@ -446,14 +459,24 @@ const openVolume = () => {
   isVolumeOpen.value = true;
 };
 
-const scheduleVolumeClose = (delay: number | Event = 260) => {
-  if (isDraggingVolume.value) return;
-  const closeDelay = typeof delay === 'number' ? delay : 260;
+const scheduleVolumeClose = () => {
   clearVolumeCloseTimer();
+  if (isDraggingVolume.value || isVolumeHovered) return;
   volumeCloseTimer = setTimeout(() => {
     volumeCloseTimer = null;
+    if (isDraggingVolume.value || isVolumeHovered) return;
     closeVolume();
-  }, closeDelay);
+  }, 700);
+};
+
+const handleVolumeEnter = () => {
+  isVolumeHovered = true;
+  openVolume();
+};
+
+const handleVolumeLeave = () => {
+  isVolumeHovered = false;
+  scheduleVolumeClose();
 };
 
 const closeVolume = (immediate = false) => {
@@ -462,28 +485,25 @@ const closeVolume = (immediate = false) => {
   isVolumeOpen.value = false;
 };
 
+let pendingVolumeRequest: string | null = null;
+let pendingVolumeDeadline = 0;
 const setVolume = (value: number) => {
   const nextVolume = normalizePlayerVolume(value);
   if (playback.value) {
     playback.value.volume = nextVolume;
     if (nextVolume > 0) playback.value.lastNonZeroVolume = nextVolume;
   }
-  command({ type: 'setVolume', value: nextVolume });
+  pendingVolumeRequest = crypto.randomUUID();
+  pendingVolumeDeadline = Date.now() + 3000;
+  command({ type: 'setVolume', value: nextVolume, requestId: pendingVolumeRequest });
 };
 
 const adjustVolume = (delta: number) => {
   if (playback.value) {
     const currentVolume = playback.value.volume ?? 0;
-    const restoreVolume =
-      (playback.value.lastNonZeroVolume ?? 0) > 0
-        ? playback.value.lastNonZeroVolume!
-        : DEFAULT_PLAYER_VOLUME;
-    const baseVolume = currentVolume > 0 ? currentVolume : restoreVolume;
-    const nextVolume = normalizePlayerVolume(baseVolume + delta);
-    playback.value.volume = nextVolume;
-    if (nextVolume > 0) playback.value.lastNonZeroVolume = nextVolume;
+    const nextVolume = normalizePlayerVolume(currentVolume + delta);
+    setVolume(nextVolume);
   }
-  command({ type: 'adjustVolume', delta });
 };
 
 const setVolumeFromEvent = (event: PointerEvent, sliderEl: HTMLElement) => {
@@ -515,7 +535,11 @@ const handleVolumePointerUp = (event: PointerEvent) => {
   const el = event.currentTarget as HTMLElement;
   if (el.hasPointerCapture(event.pointerId)) el.releasePointerCapture(event.pointerId);
   isDraggingVolume.value = false;
-  scheduleVolumeClose(900);
+  // Pointer capture can defer leave events until release; check the actual hit target.
+  isVolumeHovered = !!document
+    .elementFromPoint(event.clientX, event.clientY)
+    ?.closest('.mini-volume');
+  scheduleVolumeClose();
 };
 
 const handleVolumeWheel = (event: WheelEvent) => {
@@ -526,7 +550,7 @@ const handleVolumeWheel = (event: WheelEvent) => {
   const step = (normalized / 120) * 5;
   const direction = isMac ? 1 : -1;
   adjustVolume(step * direction);
-  scheduleVolumeClose(1200);
+  scheduleVolumeClose();
 };
 
 const ratioFromEvent = (event: PointerEvent, el: HTMLElement) => {
@@ -853,54 +877,70 @@ onUnmounted(() => {
     >
       <div class="mini-controls">
         <div class="mini-left-actions">
-          <button
-            type="button"
-            class="mini-window-btn no-drag"
-            title="关闭 mini 播放器"
-            @click="requestClose"
-          >
-            <Icon :icon="iconX" width="15" height="15" />
-          </button>
-          <button
-            type="button"
-            class="mini-window-btn no-drag"
-            title="回到主窗口"
-            @click="requestShowMain"
-          >
-            <Icon :icon="iconSquare" width="12" height="12" />
-          </button>
+          <Tooltip content="关闭 mini 播放器">
+            <template #trigger>
+              <button
+                type="button"
+                class="mini-window-btn no-drag"
+                aria-label="关闭 mini 播放器"
+                @click="requestClose"
+              >
+                <Icon :icon="iconX" width="15" height="15" />
+              </button>
+            </template>
+          </Tooltip>
+          <Tooltip content="回到主窗口">
+            <template #trigger>
+              <button
+                type="button"
+                class="mini-window-btn no-drag"
+                aria-label="回到主窗口"
+                @click="requestShowMain"
+              >
+                <Icon :icon="iconSquare" width="12" height="12" />
+              </button>
+            </template>
+          </Tooltip>
         </div>
 
-        <button
-          type="button"
-          class="mini-window-btn mini-pin-btn no-drag"
-          :class="{ active: alwaysOnTop }"
-          :title="alwaysOnTop ? '取消置顶' : '窗口置顶'"
-          @click="toggleAlwaysOnTop"
-        >
-          <Icon :icon="iconPinned" width="13" height="13" />
-        </button>
+        <Tooltip :content="alwaysOnTop ? '取消置顶' : '窗口置顶'">
+          <template #trigger>
+            <button
+              type="button"
+              class="mini-window-btn mini-pin-btn no-drag"
+              :class="{ active: alwaysOnTop }"
+              :aria-label="alwaysOnTop ? '取消置顶' : '窗口置顶'"
+              @click="toggleAlwaysOnTop"
+            >
+              <Icon :icon="iconPinned" width="13" height="13" />
+            </button>
+          </template>
+        </Tooltip>
 
-        <button
-          type="button"
-          class="mini-cover mini-cover-btn no-drag"
-          :class="{ active: isLyricOpen }"
-          :disabled="!playback"
-          title="显示歌词"
-          @click.stop="toggleLyricPanel"
-        >
-          <Cover
-            v-if="playback"
-            :url="playback.coverUrl"
-            :size="160"
-            width="44px"
-            height="44px"
-            :borderRadius="6"
-          />
-          <div v-else class="mini-cover-placeholder">
-            <Icon :icon="iconMusic" width="22" height="22" />
-          </div>
-        </button>
+        <Tooltip content="显示歌词">
+          <template #trigger>
+            <button
+              type="button"
+              class="mini-cover mini-cover-btn no-drag"
+              :class="{ active: isLyricOpen }"
+              :disabled="!playback"
+              aria-label="显示歌词"
+              @click.stop="toggleLyricPanel"
+            >
+              <Cover
+                v-if="playback"
+                :url="playback.coverUrl"
+                :size="160"
+                width="44px"
+                height="44px"
+                :borderRadius="6"
+              />
+              <div v-else class="mini-cover-placeholder">
+                <Icon :icon="iconMusic" width="22" height="22" />
+              </div>
+            </button>
+          </template>
+        </Tooltip>
 
         <div class="mini-center">
           <div class="mini-info">
@@ -908,79 +948,103 @@ onUnmounted(() => {
             <div class="mini-artist">{{ playback?.artist || 'EchoMusic' }}</div>
           </div>
           <div class="mini-hover-controls">
-            <button
-              type="button"
-              class="mini-center-btn no-drag"
-              :disabled="!playback"
-              title="上一首"
-              @click="command('previousTrack')"
-            >
-              <Icon :icon="iconSkipBack" width="17" height="17" />
-            </button>
-            <button
-              type="button"
-              class="mini-center-btn mini-center-play no-drag"
-              :class="{ playing: playback?.isPlaying }"
-              :disabled="!playback"
-              :title="playback?.isPlaying ? '暂停' : '播放'"
-              @click="command('togglePlayback')"
-            >
-              <Icon
-                :icon="playback?.isPlaying ? iconPause : iconPlay"
-                :width="playback?.isPlaying ? 18 : 16"
-                :height="playback?.isPlaying ? 18 : 16"
-                :class="{ 'play-offset': !playback?.isPlaying }"
-              />
-            </button>
-            <button
-              type="button"
-              :disabled="!playback"
-              class="mini-center-btn no-drag"
-              title="下一首"
-              @click="command('nextTrack')"
-            >
-              <Icon :icon="iconSkipForward" width="17" height="17" />
-            </button>
+            <Tooltip content="上一首">
+              <template #trigger>
+                <button
+                  type="button"
+                  class="mini-center-btn no-drag"
+                  :disabled="!playback"
+                  aria-label="上一首"
+                  @click="command('previousTrack')"
+                >
+                  <Icon :icon="iconSkipBack" width="17" height="17" />
+                </button>
+              </template>
+            </Tooltip>
+            <Tooltip :content="playback?.isPlaying ? '暂停' : '播放'">
+              <template #trigger>
+                <button
+                  type="button"
+                  class="mini-center-btn mini-center-play no-drag"
+                  :class="{ playing: playback?.isPlaying }"
+                  :disabled="!playback"
+                  :aria-label="playback?.isPlaying ? '暂停' : '播放'"
+                  @click="command('togglePlayback')"
+                >
+                  <Icon
+                    :icon="playback?.isPlaying ? iconPause : iconPlay"
+                    :width="playback?.isPlaying ? 18 : 16"
+                    :height="playback?.isPlaying ? 18 : 16"
+                    :class="{ 'play-offset': !playback?.isPlaying }"
+                  />
+                </button>
+              </template>
+            </Tooltip>
+            <Tooltip content="下一首">
+              <template #trigger>
+                <button
+                  type="button"
+                  :disabled="!playback"
+                  class="mini-center-btn no-drag"
+                  aria-label="下一首"
+                  @click="command('nextTrack')"
+                >
+                  <Icon :icon="iconSkipForward" width="17" height="17" />
+                </button>
+              </template>
+            </Tooltip>
           </div>
         </div>
 
         <div class="mini-right-actions">
-          <button
-            type="button"
-            class="mini-action-btn mini-fav-btn no-drag"
-            :disabled="!playback"
-            title="收藏当前歌曲"
-            @click="toggleFavorite"
-          >
-            <Icon
-              :icon="playback?.isFavorite ? iconHeartFilled : iconHeart"
-              width="19"
-              height="19"
-            />
-          </button>
-          <button
-            type="button"
-            class="mini-action-btn no-drag"
-            :class="{ active: isQueueOpen }"
-            title="播放队列"
-            @click="toggleQueue"
-          >
-            <Icon :icon="iconList" width="18" height="18" />
-          </button>
-          <button
-            type="button"
-            class="mini-action-btn no-drag"
-            :class="{ active: lyric?.desktopLyricEnabled }"
-            :title="lyric?.desktopLyricEnabled ? '关闭桌面歌词' : '开启桌面歌词'"
-            @click="command('toggleDesktopLyric')"
-          >
-            <Icon :icon="iconTypography" width="19" height="19" />
-          </button>
+          <Tooltip content="收藏当前歌曲">
+            <template #trigger>
+              <button
+                type="button"
+                class="mini-action-btn mini-fav-btn no-drag"
+                :disabled="!playback"
+                aria-label="收藏当前歌曲"
+                @click="toggleFavorite"
+              >
+                <Icon
+                  :icon="playback?.isFavorite ? iconHeartFilled : iconHeart"
+                  width="19"
+                  height="19"
+                />
+              </button>
+            </template>
+          </Tooltip>
+          <Tooltip content="播放队列">
+            <template #trigger>
+              <button
+                type="button"
+                class="mini-action-btn no-drag"
+                :class="{ active: isQueueOpen }"
+                aria-label="播放队列"
+                @click="toggleQueue"
+              >
+                <Icon :icon="iconList" width="18" height="18" />
+              </button>
+            </template>
+          </Tooltip>
+          <Tooltip :content="lyric?.desktopLyricEnabled ? '关闭桌面歌词' : '开启桌面歌词'">
+            <template #trigger>
+              <button
+                type="button"
+                class="mini-action-btn no-drag"
+                :class="{ active: lyric?.desktopLyricEnabled }"
+                :aria-label="lyric?.desktopLyricEnabled ? '关闭桌面歌词' : '开启桌面歌词'"
+                @click="command('toggleDesktopLyric')"
+              >
+                <Icon :icon="iconTypography" width="19" height="19" />
+              </button>
+            </template>
+          </Tooltip>
           <div
             class="mini-volume no-drag"
             :class="{ open: isVolumeOpen }"
-            @pointerenter="openVolume"
-            @pointerleave="scheduleVolumeClose"
+            @pointerenter="handleVolumeEnter"
+            @pointerleave="handleVolumeLeave"
             @wheel.prevent="handleVolumeWheel"
           >
             <button
@@ -988,7 +1052,7 @@ onUnmounted(() => {
               class="mini-action-btn no-drag"
               :class="{ active: (playback?.volume ?? 0) <= 0 }"
               :disabled="!playback"
-              :title="(playback?.volume ?? 0) <= 0 ? '取消静音' : '静音'"
+              :aria-label="(playback?.volume ?? 0) <= 0 ? '取消静音' : '静音'"
               @click="command('toggleMute')"
             >
               <Icon :icon="volumeIcon" width="19" height="19" />
@@ -1045,41 +1109,50 @@ onUnmounted(() => {
         <Scrollbar class="mini-queue-list" :content-props="queueScrollContentProps">
           <div ref="containerRef" :style="queueWrapperStyle">
             <div :style="queueOffsetStyle">
-              <button
+              <Tooltip
                 v-for="entry in visibleQueueTracks"
                 :key="entry.track.trackId"
-                type="button"
-                class="mini-queue-item no-drag"
-                :class="{ active: entry.track.trackId === currentQueueTrackId }"
-                :style="{ height: `${MINI_QUEUE_ITEM_HEIGHT}px` }"
-                :tabindex="isQueueOpen ? 0 : -1"
-                :title="`${entry.track.title} - ${entry.track.artist}`"
-                @click="playQueueTrack(entry.track.trackId)"
+                :content="`${entry.track.title} - ${entry.track.artist}`"
+                overflow-only
               >
-                <div class="mini-queue-cover">
-                  <Cover
-                    :url="entry.track.coverUrl"
-                    :size="80"
-                    width="30px"
-                    height="30px"
-                    :borderRadius="4"
-                  />
-                  <span
-                    v-if="entry.track.trackId === currentQueueTrackId"
-                    class="mini-queue-playing"
+                <template #trigger>
+                  <button
+                    type="button"
+                    class="mini-queue-item no-drag"
+                    :class="{ active: entry.track.trackId === currentQueueTrackId }"
+                    :style="{ height: `${MINI_QUEUE_ITEM_HEIGHT}px` }"
+                    :tabindex="isQueueOpen ? 0 : -1"
+                    :aria-label="`${entry.track.title} - ${entry.track.artist}`"
+                    @click="playQueueTrack(entry.track.trackId)"
                   >
-                    <Icon
-                      :icon="playback?.isPlaying ? iconPause : iconPlay"
-                      width="12"
-                      height="12"
-                    />
-                  </span>
-                </div>
-                <div class="mini-queue-meta">
-                  <div class="mini-queue-song">{{ entry.track.title }}</div>
-                  <div class="mini-queue-artist">{{ entry.track.artist }}</div>
-                </div>
-              </button>
+                    <div class="mini-queue-cover">
+                      <Cover
+                        :url="entry.track.coverUrl"
+                        :size="80"
+                        width="30px"
+                        height="30px"
+                        :borderRadius="4"
+                      />
+                      <span
+                        v-if="entry.track.trackId === currentQueueTrackId"
+                        class="mini-queue-playing"
+                      >
+                        <Icon
+                          :icon="playback?.isPlaying ? iconPause : iconPlay"
+                          width="12"
+                          height="12"
+                        />
+                      </span>
+                    </div>
+                    <div class="mini-queue-meta">
+                      <div class="mini-queue-song" data-tooltip-label>{{ entry.track.title }}</div>
+                      <div class="mini-queue-artist" data-tooltip-label>
+                        {{ entry.track.artist }}
+                      </div>
+                    </div>
+                  </button>
+                </template>
+              </Tooltip>
             </div>
           </div>
           <div v-if="!queueTracks.length" class="mini-queue-empty">队列为空</div>

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import TooltipScope from '@/components/ui/TooltipScope.vue';
 import {
   computed,
   defineAsyncComponent,
@@ -491,26 +492,28 @@ watch(
 </script>
 
 <template>
-  <RouterView v-slot="{ Component, route }">
-    <Transition
-      :name="rootPageTransitionName"
-      :mode="rootPageTransitionMode"
-      :appear="rootPageTransitionAppear"
-    >
-      <RouteErrorBoundary :key="rootPageTransitionKey" :route="route">
-        <component :is="Component" />
-      </RouteErrorBoundary>
-    </Transition>
-  </RouterView>
-  <Teleport v-if="!isMiniPlayerRoute" to="body">
-    <Transition name="lyric-overlay">
-      <LyricView v-if="player?.isLyricViewOpen" />
-    </Transition>
-  </Teleport>
-  <AuthExpiredDialog v-if="!isMiniPlayerRoute" />
-  <KugouVerificationFlow v-if="!isMiniPlayerRoute" />
-  <ToastViewport v-if="!isMiniPlayerRoute" :lyric-view-open="Boolean(player?.isLyricViewOpen)" />
-  <UpdateDialog v-if="!isMiniPlayerRoute" dismiss-label="稍后" />
+  <TooltipScope>
+    <RouterView v-slot="{ Component, route }">
+      <Transition
+        :name="rootPageTransitionName"
+        :mode="rootPageTransitionMode"
+        :appear="rootPageTransitionAppear"
+      >
+        <RouteErrorBoundary :key="rootPageTransitionKey" :route="route">
+          <component :is="Component" />
+        </RouteErrorBoundary>
+      </Transition>
+    </RouterView>
+    <Teleport v-if="!isMiniPlayerRoute" to="body">
+      <Transition name="lyric-overlay">
+        <LyricView v-if="player?.isLyricViewOpen" />
+      </Transition>
+    </Teleport>
+    <AuthExpiredDialog v-if="!isMiniPlayerRoute" />
+    <KugouVerificationFlow v-if="!isMiniPlayerRoute" />
+    <ToastViewport v-if="!isMiniPlayerRoute" :lyric-view-open="Boolean(player?.isLyricViewOpen)" />
+    <UpdateDialog v-if="!isMiniPlayerRoute" dismiss-label="稍后" />
+  </TooltipScope>
 </template>
 
 <style>
