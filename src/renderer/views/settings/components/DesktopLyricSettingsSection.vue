@@ -123,7 +123,7 @@ const updateDesktopRomanizationStyle = (value: string | number | (string | numbe
         <p class="text-sm text-text-secondary">切换桌面歌词的横排或竖排显示</p>
       </div>
       <Select
-        class="w-45"
+        class="w-45 shrink-0"
         :model-value="desktopLyricStore.settings.layout"
         :options="desktopLyricLayoutOptions"
         @update:model-value="
@@ -162,7 +162,7 @@ const updateDesktopRomanizationStyle = (value: string | number | (string | numbe
         <p class="text-sm text-text-secondary">选择桌面歌词中音译的显示方式</p>
       </div>
       <Select
-        class="w-40"
+        class="w-45 shrink-0"
         :model-value="desktopRomanizationStyle"
         :options="romanizationStyleOptions"
         @update:model-value="updateDesktopRomanizationStyle"
@@ -186,7 +186,7 @@ const updateDesktopRomanizationStyle = (value: string | number | (string | numbe
         <p class="text-sm text-text-secondary">歌词文字的排版位置</p>
       </div>
       <Select
-        class="w-45"
+        class="w-45 shrink-0"
         :model-value="desktopLyricStore.settings.alignment"
         :options="desktopLyricAlignOptions"
         @update:model-value="commitDesktopLyricSettings({ alignment: $event as any })"
@@ -220,7 +220,7 @@ const updateDesktopRomanizationStyle = (value: string | number | (string | numbe
         <p class="text-sm text-text-secondary">调整桌面歌词在其他窗口上的清晰度</p>
       </div>
       <Select
-        class="w-45"
+        class="w-45 shrink-0"
         :model-value="desktopLyricStore.settings.shadowStrength"
         :options="desktopLyricShadowOptions"
         @update:model-value="

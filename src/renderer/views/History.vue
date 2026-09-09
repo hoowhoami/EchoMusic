@@ -654,6 +654,7 @@ onUnmounted(() => {
               <Icon :icon="iconList" width="18" height="18" />
             </Button>
           </template>
+
           <Button
             v-else
             variant="unstyled"
@@ -661,7 +662,7 @@ onUnmounted(() => {
             :disabled="sharingStats"
             @click="handleShareStats"
             class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] text-text-main opacity-70"
-            title="分享听歌统计"
+            tooltip="分享听歌统计"
             aria-label="分享听歌统计"
           >
             <Icon :icon="iconShare" width="18" height="18" />
@@ -720,7 +721,7 @@ onUnmounted(() => {
                     size="none"
                     @click="handleLocate"
                     class="song-locate-btn p-2 rounded-lg"
-                    title="定位当前播放"
+                    tooltip="定位当前播放"
                   >
                     <Icon :icon="iconCurrentLocation" width="16" height="16" />
                   </Button>
@@ -730,7 +731,7 @@ onUnmounted(() => {
                     :disabled="songCount === 0"
                     @click="showClearDialog = true"
                     class="song-locate-btn p-2 rounded-lg text-text-main/40 hover:text-danger transition-colors"
-                    title="清空播放历史"
+                    tooltip="清空播放历史"
                   >
                     <Icon :icon="iconTrash" width="16" height="16" />
                   </Button>

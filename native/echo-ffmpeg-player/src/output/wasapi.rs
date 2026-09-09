@@ -95,6 +95,32 @@ enum WasapiOutputErrorAction {
     Escalate { reason: &'static str },
 }
 
+impl WasapiOutputErrorAction {
+    fn with_endpoint_active(self, active: bool) -> Self {
+        // DEVICE_INVALIDATED also means the engine format changed (for example
+        // when toggling spatial sound). Check the original endpoint, not the
+        // current default, which may already have switched after an unplug.
+        match self {
+            Self::Recover {
+                reason: "device-not-available",
+            } if active => Self::Recover {
+                reason: "stream-invalidated",
+            },
+            action => action,
+        }
+    }
+
+    fn should_pause(self, pause_on_disconnect: bool) -> bool {
+        pause_on_disconnect
+            && matches!(
+                self,
+                Self::Recover {
+                    reason: "device-not-available"
+                }
+            )
+    }
+}
+
 #[derive(Clone, Debug)]
 struct WasapiOutputFailure {
     message: String,
@@ -198,9 +224,7 @@ fn handle_wasapi_output_failure(
             ));
         }
         WasapiOutputErrorAction::Recover { reason } => {
-            if shared.should_pause_on_device_disconnect()
-                && super::is_disconnect_recovery_reason(reason)
-            {
+            if action.should_pause(shared.should_pause_on_device_disconnect()) {
                 stop.request_stop();
                 emit(PlayerEvent::error_with_reason(
                     PlayerErrorCode::OutputRuntime,
@@ -411,7 +435,15 @@ fn run_wasapi_output(
                             ));
                             continue;
                         }
-                        Err(failure) => return Err(failure),
+                        Err(mut failure) => {
+                            if matches!(failure.action, WasapiOutputErrorAction::Recover { .. }) {
+                                let active = device
+                                    .GetState()
+                                    .is_ok_and(|state| state == Audio::DEVICE_STATE_ACTIVE);
+                                failure.action = failure.action.with_endpoint_active(active);
+                            }
+                            return Err(failure);
+                        }
                     }
                 }
                 WAIT_TIMEOUT => {}
@@ -754,6 +786,47 @@ fn fill_wasapi_output(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn spatial_format_change_recovers_even_with_pause_on_disconnect() {
+        let action = classify_wasapi_client_error(Audio::AUDCLNT_E_DEVICE_INVALIDATED)
+            .with_endpoint_active(true);
+        assert_eq!(
+            action,
+            WasapiOutputErrorAction::Recover {
+                reason: "stream-invalidated"
+            }
+        );
+        assert!(!action.should_pause(true));
+    }
+
+    #[test]
+    fn unavailable_original_endpoint_preserves_disconnect_pause_policy() {
+        // A failed GetState query is also treated conservatively as inactive.
+        let action = classify_wasapi_client_error(Audio::AUDCLNT_E_DEVICE_INVALIDATED)
+            .with_endpoint_active(false);
+        assert_eq!(
+            action,
+            WasapiOutputErrorAction::Recover {
+                reason: "device-not-available"
+            }
+        );
+        assert!(action.should_pause(true));
+        assert!(!action.should_pause(false));
+    }
+
+    #[test]
+    fn invalidated_resources_and_service_restart_do_not_mean_unplugged() {
+        for code in [
+            Audio::AUDCLNT_E_RESOURCES_INVALIDATED,
+            Audio::AUDCLNT_E_SERVICE_NOT_RUNNING,
+        ] {
+            let action = classify_wasapi_client_error(code).with_endpoint_active(true);
+            assert!(!action.should_pause(true));
+        }
+        let backend = WasapiOutputErrorAction::Escalate { reason: "backend" };
+        assert_eq!(backend.with_endpoint_active(true), backend);
+    }
 
     #[test]
     fn wasapi_client_error_classification_marks_disconnects_recoverable() {

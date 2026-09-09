@@ -748,7 +748,7 @@ onUnmounted(() => {
               <div class="text-[13px] font-semibold text-primary-text">
                 {{ artist.songCount || songs.length }} 歌曲 •
                 {{ artist.albumCount || albums.length }} 专辑
-                <template v-if="artist.mvCount"> • {{ artist.mvCount }} MV</template>
+                <template v-if="artist.mvCount"> • {{ artist.mvCount }} MV </template>
               </div>
               <div class="flex items-center gap-3 text-[12px] text-text-secondary">
                 <span v-if="artist.fansCount" class="flex items-center gap-1">
@@ -790,6 +790,7 @@ onUnmounted(() => {
                 <Icon :icon="iconList" width="18" height="18" />
               </Button>
             </template>
+
             <Button
               v-if="userStore.isLoggedIn"
               variant="unstyled"
@@ -804,7 +805,7 @@ onUnmounted(() => {
               variant="unstyled"
               size="none"
               :disabled="togglingBlacklist"
-              :title="artistBlacklistStatus === 'present' ? '取消屏蔽' : '屏蔽歌手'"
+              :tooltip="artistBlacklistStatus === 'present' ? '取消屏蔽' : '屏蔽歌手'"
               :aria-label="artistBlacklistStatus === 'present' ? '取消屏蔽' : '屏蔽歌手'"
               @click="toggleArtistBlacklist"
               class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] text-text-main opacity-60"
@@ -883,13 +884,14 @@ onUnmounted(() => {
                           size="none"
                           type="button"
                           class="artist-sort-trigger"
-                          title="歌曲排序"
+                          tooltip="歌曲排序"
                         >
                           <Icon :icon="iconArrowsSort" width="15" height="15" />
                           <span>{{ songSortLabel }}</span>
                           <Icon class="artist-sort-trigger-arrow" :icon="iconChevronDown" />
                         </Button>
                       </template>
+
                       <div class="artist-sort-menu-list">
                         <div class="artist-sort-menu-title">歌曲排序</div>
                         <button
@@ -929,7 +931,7 @@ onUnmounted(() => {
                       size="none"
                       @click="handleLocate"
                       class="song-locate-btn p-2 rounded-lg"
-                      title="定位当前播放"
+                      tooltip="定位当前播放"
                     >
                       <Icon :icon="iconCurrentLocation" width="18" height="18" />
                     </Button>
@@ -1007,13 +1009,14 @@ onUnmounted(() => {
                       size="none"
                       type="button"
                       class="artist-sort-trigger"
-                      title="专辑排序"
+                      tooltip="专辑排序"
                     >
                       <Icon :icon="iconArrowsSort" width="15" height="15" />
                       <span>{{ albumSortLabel }}</span>
                       <Icon class="artist-sort-trigger-arrow" :icon="iconChevronDown" />
                     </Button>
                   </template>
+
                   <div class="artist-sort-menu-list">
                     <div class="artist-sort-menu-title">专辑排序</div>
                     <button

@@ -80,7 +80,7 @@ const supportsCustomWindowControls = computed(() => platform === 'win32' || plat
         <p class="text-sm text-text-secondary">点击窗口关闭按钮时的应用行为</p>
       </div>
       <Select
-        class="w-45"
+        class="w-45 shrink-0"
         :model-value="settingStore.closeBehavior"
         :options="closeBehaviorOptions"
         @update:model-value="

@@ -190,7 +190,7 @@ defineExpose({
               class="queue-remove"
               variant="unstyled"
               size="none"
-              title="从队列移除"
+              tooltip="从队列移除"
               @click="emit('remove', entry.data)"
             >
               <Icon :icon="iconTrash" width="14" height="14" />

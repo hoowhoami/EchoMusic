@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import TooltipScope from '@/components/ui/TooltipScope.vue';
 import { onMounted, onUnmounted } from 'vue';
 import DesktopLyricView from '@/desktopLyric/DesktopLyricView.vue';
 import { onPluginRuntimeReloadRequested, refreshPlugins } from '@/plugins/runtime';
@@ -19,5 +20,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <DesktopLyricView />
+  <TooltipScope>
+    <DesktopLyricView />
+  </TooltipScope>
 </template>

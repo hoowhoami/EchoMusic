@@ -286,7 +286,7 @@ onUnmounted(() => {
         size="none"
         @click="emit('toggleSidebar')"
         class="nav-btn group"
-        :title="props.isSidebarCollapsed ? '展开侧边栏' : '收起侧边栏'"
+        :tooltip="props.isSidebarCollapsed ? '展开侧边栏' : '收起侧边栏'"
       >
         <Icon
           :icon="iconPanelLeft"
@@ -303,7 +303,7 @@ onUnmounted(() => {
         @click="goBack"
         class="nav-btn group"
         :disabled="!canGoBack"
-        title="后退"
+        tooltip="后退"
       >
         <Icon
           :icon="iconChevronLeft"
@@ -321,7 +321,7 @@ onUnmounted(() => {
         @click="goForward"
         class="nav-btn group"
         :disabled="!canGoForward"
-        title="前进"
+        tooltip="前进"
       >
         <Icon
           :icon="iconChevronRight"
@@ -333,7 +333,7 @@ onUnmounted(() => {
           ]"
         />
       </Button>
-      <Button variant="unstyled" size="none" @click="refresh" class="nav-btn group" title="刷新">
+      <Button variant="unstyled" size="none" @click="refresh" class="nav-btn group" tooltip="刷新">
         <RefreshIcon
           width="20"
           height="20"
@@ -346,7 +346,7 @@ onUnmounted(() => {
         variant="unstyled"
         size="none"
         class="nav-btn group relative"
-        title="任务中心"
+        tooltip="任务中心"
         @click="toggleTaskPanel"
       >
         <Icon
@@ -363,7 +363,7 @@ onUnmounted(() => {
         variant="unstyled"
         size="none"
         class="nav-btn group"
-        title="听歌识曲"
+        tooltip="听歌识曲"
         @click="router.push({ name: 'recognize' })"
       >
         <Icon
@@ -380,7 +380,7 @@ onUnmounted(() => {
         variant="unstyled"
         size="none"
         class="nav-btn group"
-        title="一起听"
+        tooltip="一起听"
         @click="router.push({ name: 'listen-together' })"
       >
         <Icon
@@ -403,7 +403,7 @@ onUnmounted(() => {
           variant="unstyled"
           size="none"
           class="nav-btn group"
-          title="搜索"
+          tooltip="搜索"
           @click="expandSearch"
         >
           <Icon
@@ -497,7 +497,7 @@ onUnmounted(() => {
                   variant="unstyled"
                   size="none"
                   class="tb-suggest-item"
-                  :title="ad.title"
+                  :tooltip="ad.title"
                   @mousedown.prevent
                   @click="submitSearch(ad.subTitle || ad.mainTitle)"
                 >
@@ -522,7 +522,7 @@ onUnmounted(() => {
         size="none"
         @click="openMiniPlayer"
         class="control-btn mini-control-btn"
-        title="mini 模式"
+        tooltip="mini 模式"
       >
         <Icon :icon="iconPictureInPicture" width="16" height="16" />
       </Button>
@@ -541,7 +541,7 @@ onUnmounted(() => {
           size="none"
           @click="handleControl('fullscreen')"
           class="control-btn control-btn--fullscreen"
-          title="全屏"
+          tooltip="全屏"
         >
           <Icon :icon="iconFullscreen" width="14" height="14" class="window-control-icon--static" />
         </Button>
@@ -567,7 +567,8 @@ onUnmounted(() => {
 
   <!-- 任务中心弹窗 -->
   <Dialog v-model:open="taskPanelOpen" content-class="task-panel-dialog" show-close>
-    <template #title>任务中心</template>
+    <template #title>任务中心 </template>
+
     <div
       v-if="taskPanelEntries.length === 0"
       class="py-2 text-[13px] text-text-secondary text-center"

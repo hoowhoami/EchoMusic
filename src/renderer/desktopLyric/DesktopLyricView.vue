@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import Tooltip from '@/components/ui/Tooltip.vue';
+
 import {
   computed,
   nextTick,
@@ -1260,64 +1262,97 @@ onBeforeUnmount(() => {
       <div class="header-left" @pointerdown.stop>
         <span class="song-name">{{ songName }} - {{ artistName }}</span>
         <div v-if="hasLyrics" class="offset-controls">
-          <button
-            class="menu-btn"
-            :title="`歌词后退 ${offsetStepLabel}`"
-            @click.stop="adjustLyricOffsetBackward"
-          >
-            <Icon :icon="iconRotateCcw" width="18" height="18" />
-          </button>
-          <button
-            class="menu-btn"
-            :title="`歌词前进 ${offsetStepLabel}`"
-            @click.stop="adjustLyricOffsetForward"
-          >
-            <Icon :icon="iconRotateCw" width="18" height="18" />
-          </button>
-          <button
-            v-if="lyricTimeOffset !== 0"
-            class="menu-btn"
-            title="重置偏移"
-            @click.stop="resetLyricOffset"
-          >
-            <Icon :icon="iconRefreshCw" width="17" height="17" />
-          </button>
+          <Tooltip :content="`歌词后退 ${offsetStepLabel}`">
+            <template #trigger>
+              <button
+                class="menu-btn"
+                :aria-label="`歌词后退 ${offsetStepLabel}`"
+                @click.stop="adjustLyricOffsetBackward"
+              >
+                <Icon :icon="iconRotateCcw" width="18" height="18" />
+              </button>
+            </template>
+          </Tooltip>
+          <Tooltip :content="`歌词前进 ${offsetStepLabel}`">
+            <template #trigger>
+              <button
+                class="menu-btn"
+                :aria-label="`歌词前进 ${offsetStepLabel}`"
+                @click.stop="adjustLyricOffsetForward"
+              >
+                <Icon :icon="iconRotateCw" width="18" height="18" />
+              </button>
+            </template>
+          </Tooltip>
+          <Tooltip v-if="lyricTimeOffset !== 0" content="重置偏移">
+            <template #trigger>
+              <button class="menu-btn" aria-label="重置偏移" @click.stop="resetLyricOffset">
+                <Icon :icon="iconRefreshCw" width="17" height="17" />
+              </button>
+            </template>
+          </Tooltip>
         </div>
       </div>
       <div class="header-center" @pointerdown.stop>
-        <button class="menu-btn" title="上一首" @click.stop="playPrevious">
-          <Icon :icon="iconStepBack" width="20" height="20" />
-        </button>
-        <button class="menu-btn" :title="isPlaying ? '暂停' : '播放'" @click.stop="togglePlayback">
-          <Icon :icon="isPlaying ? iconPause : iconPlayerPlay" width="20" height="20" />
-        </button>
-        <button class="menu-btn" title="下一首" @click.stop="playNext">
-          <Icon :icon="iconStepForward" width="20" height="20" />
-        </button>
+        <Tooltip content="上一首">
+          <template #trigger>
+            <button class="menu-btn" aria-label="上一首" @click.stop="playPrevious">
+              <Icon :icon="iconStepBack" width="20" height="20" />
+            </button>
+          </template>
+        </Tooltip>
+        <Tooltip :content="isPlaying ? '暂停' : '播放'">
+          <template #trigger>
+            <button
+              class="menu-btn"
+              :aria-label="isPlaying ? '暂停' : '播放'"
+              @click.stop="togglePlayback"
+            >
+              <Icon :icon="isPlaying ? iconPause : iconPlayerPlay" width="20" height="20" />
+            </button>
+          </template>
+        </Tooltip>
+        <Tooltip content="下一首">
+          <template #trigger>
+            <button class="menu-btn" aria-label="下一首" @click.stop="playNext">
+              <Icon :icon="iconStepForward" width="20" height="20" />
+            </button>
+          </template>
+        </Tooltip>
       </div>
       <div class="header-right" @pointerdown.stop>
-        <button class="menu-btn" title="选择歌词" @click.stop="openLyricSource">
-          <Icon :icon="iconList" width="20" height="20" />
-        </button>
+        <Tooltip content="选择歌词">
+          <template #trigger>
+            <button class="menu-btn" aria-label="选择歌词" @click.stop="openLyricSource">
+              <Icon :icon="iconList" width="20" height="20" />
+            </button>
+          </template>
+        </Tooltip>
         <div v-if="hasLyrics && hasSecondary" class="tran-group">
-          <button
-            v-if="hasTranslation"
-            class="menu-btn text-toggle-btn"
-            :class="{ 'is-active': settings?.wantTranslation }"
-            title="翻译"
-            @click.stop="toggleTranslation"
-          >
-            译
-          </button>
-          <button
-            v-if="hasRomanization"
-            class="menu-btn text-toggle-btn"
-            :class="{ 'is-active': settings?.wantRomanization }"
-            title="音译"
-            @click.stop="toggleRomanization"
-          >
-            音
-          </button>
+          <Tooltip v-if="hasTranslation" content="翻译">
+            <template #trigger>
+              <button
+                class="menu-btn text-toggle-btn"
+                :class="{ 'is-active': settings?.wantTranslation }"
+                aria-label="翻译"
+                @click.stop="toggleTranslation"
+              >
+                译
+              </button>
+            </template>
+          </Tooltip>
+          <Tooltip v-if="hasRomanization" content="音译">
+            <template #trigger>
+              <button
+                class="menu-btn text-toggle-btn"
+                :class="{ 'is-active': settings?.wantRomanization }"
+                aria-label="音译"
+                @click.stop="toggleRomanization"
+              >
+                音
+              </button>
+            </template>
+          </Tooltip>
         </div>
         <button
           v-if="!isLocked || canShowUnlockButton"
@@ -1439,6 +1474,7 @@ onBeforeUnmount(() => {
             </span>
           </span>
         </template>
+
         <!-- 逐字歌词 (如果存在逐字数据则始终渲染 YRC 结构，以便手动补丁 DOM) -->
         <template v-else-if="isYrcLine(line.line)">
           <span class="scroll-content" :ref="(el) => setContentRef(el, line.key)">
@@ -1475,6 +1511,7 @@ onBeforeUnmount(() => {
             </span>
           </span>
         </template>
+
         <!-- 普通歌词 -->
         <template v-else>
           <span

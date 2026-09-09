@@ -204,7 +204,7 @@ const confirmResetDeviceIdentity = async () => {
         <p class="text-sm text-text-secondary">标准模式只记录关键运行信息、警告和错误</p>
       </div>
       <Select
-        class="w-36"
+        class="w-45 shrink-0"
         :model-value="settingStore.logLevel"
         :options="logLevelOptions"
         @update:model-value="(value) => settingStore.setLogLevel(value as AppLogLevel)"

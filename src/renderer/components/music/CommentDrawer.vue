@@ -4,6 +4,7 @@ import type { ComponentPublicInstance } from 'vue';
 import { useVModel } from '@vueuse/core';
 import Drawer from '@/components/ui/Drawer.vue';
 import Scrollbar from '@/components/ui/Scrollbar.vue';
+import CommentComposer from '@/components/music/CommentComposer.vue';
 import CommentList from '@/components/music/CommentList.vue';
 import Button from '@/components/ui/Button.vue';
 import { iconX } from '@/icons';
@@ -123,7 +124,7 @@ watch(
         class="comment-drawer-close"
         variant="ghost"
         size="xs"
-        title="关闭"
+        tooltip="关闭"
         @click="open = false"
       >
         <Icon :icon="iconX" width="20" height="20" />
@@ -165,12 +166,29 @@ watch(
           <div v-else class="comment-drawer-end-hint">已加载全部评论</div>
         </div>
       </div>
+      <CommentComposer
+        class="comment-drawer-composer"
+        :resource="{
+          type: resourceType,
+          id: resourceType === 'music' ? mixSongId || resourceId : resourceId,
+        }"
+        @sent="fetchComments(true)"
+      />
     </Scrollbar>
   </Drawer>
 </template>
 
 <style scoped>
 @reference "@/style.css";
+
+.comment-drawer-composer {
+  position: sticky;
+  bottom: 12px;
+  z-index: 5;
+  width: calc(100% - 32px);
+  box-sizing: border-box;
+  margin: 12px auto;
+}
 
 :global(.comment-drawer-overlay) {
   z-index: 1500;

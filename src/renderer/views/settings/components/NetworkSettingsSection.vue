@@ -161,7 +161,7 @@ onMounted(async () => {
         </p>
       </div>
       <Select
-        class="w-45"
+        class="w-45 shrink-0"
         :model-value="proxyModeDraft"
         :options="proxyModeOptions"
         aria-label="网络代理模式"

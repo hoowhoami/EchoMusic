@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import Tooltip from '@/components/ui/Tooltip.vue';
+
 import { computed, nextTick, ref, shallowRef, useId, watch } from 'vue';
 import { useThrottleFn } from '@vueuse/core';
 import {
@@ -799,7 +801,7 @@ withDefaults(defineProps<Props>(), {
               ? 'text-black/40 dark:text-white/40'
               : 'text-text-main/50 hover:text-primary-text'
         "
-        title="音效与均衡器"
+        aria-label="音效与均衡器"
       >
         <span class="relative inline-flex w-5 h-5 items-center justify-center">
           <Icon
@@ -835,18 +837,26 @@ withDefaults(defineProps<Props>(), {
         >
           均衡器
         </button>
-        <button
-          class="sidebar-item"
-          :class="{
-            'is-active': activeTab === 'irs',
-            'contains-active': spatialEffectActive,
-          }"
-          :title="spatialEffectActive ? '当前正在使用空间音效' : undefined"
-          @click="selectTab('irs')"
-        >
-          <span>音效</span>
-          <span v-if="spatialEffectActive" class="sidebar-current-dot" aria-hidden="true"></span>
-        </button>
+        <Tooltip :content="spatialEffectActive ? '当前正在使用空间音效' : undefined">
+          <template #trigger>
+            <button
+              class="sidebar-item"
+              :class="{
+                'is-active': activeTab === 'irs',
+                'contains-active': spatialEffectActive,
+              }"
+              :aria-label="spatialEffectActive ? '当前正在使用空间音效' : undefined"
+              @click="selectTab('irs')"
+            >
+              <span>音效</span>
+              <span
+                v-if="spatialEffectActive"
+                class="sidebar-current-dot"
+                aria-hidden="true"
+              ></span>
+            </button>
+          </template>
+        </Tooltip>
         <button
           type="button"
           class="sidebar-item"
@@ -970,34 +980,50 @@ withDefaults(defineProps<Props>(), {
             :class="{ 'is-active': currentPlaybackEffectSelection.active }"
           >
             <div class="current-spatial-effect-copy">
-              <button
+              <Tooltip
                 v-if="currentPlaybackEffectSelection.active"
-                type="button"
-                class="current-effect-location"
-                :title="`定位到${currentPlaybackEffectSelection.location}`"
-                @click="showCurrentSpatialEffect"
+                :content="`定位到${currentPlaybackEffectSelection.location}`"
               >
-                <span>{{ currentPlaybackEffectSelection.name }}</span>
-              </button>
+                <template #trigger>
+                  <button
+                    type="button"
+                    class="current-effect-location"
+                    :aria-label="`定位到${currentPlaybackEffectSelection.location}`"
+                    @click="showCurrentSpatialEffect"
+                  >
+                    <span>{{ currentPlaybackEffectSelection.name }}</span>
+                  </button>
+                </template>
+              </Tooltip>
               <strong v-else>{{ currentPlaybackEffectSelection.name }}</strong>
               <small>{{ currentPlaybackEffectSelection.detail }}</small>
             </div>
             <div class="current-spatial-effect-actions">
-              <button
-                type="button"
-                class="original-effect-button"
-                :class="{ 'is-active': !currentPlaybackEffectSelection.active }"
-                :aria-pressed="!currentPlaybackEffectSelection.active"
-                :disabled="!currentPlaybackEffectSelection.active"
-                :title="
+              <Tooltip
+                :content="
                   currentPlaybackEffectSelection.active
                     ? '切换为原声；保留均衡器设置'
                     : '当前为原声'
                 "
-                @click="resetImpulseResponse"
               >
-                <span>原声</span>
-              </button>
+                <template #trigger>
+                  <button
+                    type="button"
+                    class="original-effect-button"
+                    :class="{ 'is-active': !currentPlaybackEffectSelection.active }"
+                    :aria-pressed="!currentPlaybackEffectSelection.active"
+                    :disabled="!currentPlaybackEffectSelection.active"
+                    :aria-label="
+                      currentPlaybackEffectSelection.active
+                        ? '切换为原声；保留均衡器设置'
+                        : '当前为原声'
+                    "
+                    @click="resetImpulseResponse"
+                  >
+                    <span>原声</span>
+                  </button>
+                </template>
+              </Tooltip>
             </div>
           </div>
 
@@ -1102,28 +1128,37 @@ withDefaults(defineProps<Props>(), {
                 :content-props="{ class: 'irs-scroll-wrap' }"
               >
                 <div v-if="group.files.length" class="effect-preset-grid">
-                  <button
+                  <Tooltip
                     v-for="file in group.files"
                     :key="file.id"
-                    type="button"
-                    class="pm-item irs-preset-item w-full! m-0!"
-                    :class="{
-                      'is-disabled': impulseResponseSupport(file).status !== 'supported',
-                      'is-active':
-                        file.id === settingStore.selectedImpulseResponseId &&
-                        impulseResponseSelected,
-                    }"
-                    :title="
+                    :content="
                       impulseResponseSupport(file).reason ||
                       getImpulseResponseDisplayName(file.name)
                     "
-                    :disabled="impulseResponseSupport(file).status !== 'supported'"
-                    @click="selectImpulseResponse(file.id)"
                   >
-                    <span class="pm-label text-center irs-preset-label">
-                      {{ getImpulseResponseDisplayName(file.name) }}
-                    </span>
-                  </button>
+                    <template #trigger>
+                      <button
+                        type="button"
+                        class="pm-item irs-preset-item w-full! m-0!"
+                        :class="{
+                          'is-disabled': impulseResponseSupport(file).status !== 'supported',
+                          'is-active':
+                            file.id === settingStore.selectedImpulseResponseId &&
+                            impulseResponseSelected,
+                        }"
+                        :aria-label="
+                          impulseResponseSupport(file).reason ||
+                          getImpulseResponseDisplayName(file.name)
+                        "
+                        :disabled="impulseResponseSupport(file).status !== 'supported'"
+                        @click="selectImpulseResponse(file.id)"
+                      >
+                        <span class="pm-label text-center irs-preset-label">
+                          {{ getImpulseResponseDisplayName(file.name) }}
+                        </span>
+                      </button>
+                    </template>
+                  </Tooltip>
                 </div>
                 <div v-else class="my-effect-empty">
                   <span>{{
@@ -1198,14 +1233,17 @@ withDefaults(defineProps<Props>(), {
                           : '未声明'
                     }}
                   </span>
-                  <span
+                  <Tooltip
                     v-for="resource in providerResourceSummary"
                     :key="resource.kind"
-                    class="provider-capability"
-                    :title="resource.extensions"
+                    :content="resource.extensions"
                   >
-                    {{ resource.kind }}
-                  </span>
+                    <template #trigger>
+                      <span class="provider-capability">
+                        {{ resource.kind }}
+                      </span>
+                    </template>
+                  </Tooltip>
                 </div>
               </section>
 
@@ -1223,34 +1261,45 @@ withDefaults(defineProps<Props>(), {
                       'is-active': !impulseResponseSelected && activeProviderPresetId === preset.id,
                     }"
                   >
-                    <button
-                      type="button"
-                      class="provider-preset-button"
-                      :aria-pressed="
-                        !impulseResponseSelected && activeProviderPresetId === preset.id
-                      "
-                      :title="providerPresetDescription(preset)"
-                      @click="setProviderPreset(preset.id)"
-                    >
-                      <span class="provider-preset-label">{{ preset.label }}</span>
-                      <small
-                        v-if="preset.recommendedDevice === 'headphone'"
-                        class="provider-preset-device-tag"
-                        >耳机</small
-                      >
-                    </button>
-                    <button
+                    <Tooltip :content="providerPresetDescription(preset)">
+                      <template #trigger>
+                        <button
+                          type="button"
+                          class="provider-preset-button"
+                          :aria-pressed="
+                            !impulseResponseSelected && activeProviderPresetId === preset.id
+                          "
+                          :aria-label="providerPresetDescription(preset)"
+                          @click="setProviderPreset(preset.id)"
+                        >
+                          <span class="provider-preset-label">{{ preset.label }}</span>
+                          <small
+                            v-if="preset.recommendedDevice === 'headphone'"
+                            class="provider-preset-device-tag"
+                            >耳机</small
+                          >
+                        </button>
+                      </template>
+                    </Tooltip>
+                    <Tooltip
                       v-if="configurablePresetControls(providerManifest, preset.id).length"
-                      type="button"
-                      class="provider-preset-settings"
-                      :aria-label="`${preset.label}设置`"
-                      :title="`${preset.label}设置`"
-                      :aria-controls="providerSettingsPanelId"
-                      :aria-expanded="providerSettingsOpen && editingProviderPresetId === preset.id"
-                      @click.stop="openProviderSettings(preset.id, $event)"
+                      :content="`${preset.label}设置`"
                     >
-                      <Icon :icon="iconSettings" width="15" height="15" aria-hidden="true" />
-                    </button>
+                      <template #trigger>
+                        <button
+                          type="button"
+                          class="provider-preset-settings"
+                          :aria-label="`${preset.label}设置`"
+                          :aria-controls="providerSettingsPanelId"
+                          :aria-expanded="
+                            providerSettingsOpen && editingProviderPresetId === preset.id
+                          "
+                          @click.stop="openProviderSettings(preset.id, $event)"
+                        >
+                          <Icon :icon="iconSettings" width="15" height="15" aria-hidden="true" />
+                        </button>
+                      </template>
+                    </Tooltip>
                   </div>
                 </div>
               </section>
@@ -1295,7 +1344,11 @@ withDefaults(defineProps<Props>(), {
                   </span>
                 </div>
                 <div class="installed-provider-actions">
-                  <span :title="provider.originalFileName">{{ provider.originalFileName }}</span>
+                  <Tooltip :content="provider.originalFileName">
+                    <template #trigger>
+                      <span>{{ provider.originalFileName }}</span>
+                    </template>
+                  </Tooltip>
                   <Button
                     variant="outline"
                     size="xs"
@@ -1333,15 +1386,18 @@ withDefaults(defineProps<Props>(), {
         @keydown.esc.stop.prevent="closeProviderSettings"
       >
         <div class="provider-settings-header">
-          <button
-            type="button"
-            class="provider-settings-back"
-            aria-label="返回引擎预设"
-            title="返回引擎预设"
-            @click="closeProviderSettings"
-          >
-            <Icon :icon="iconArrowLeft" width="18" height="18" aria-hidden="true" />
-          </button>
+          <Tooltip content="返回引擎预设">
+            <template #trigger>
+              <button
+                type="button"
+                class="provider-settings-back"
+                aria-label="返回引擎预设"
+                @click="closeProviderSettings"
+              >
+                <Icon :icon="iconArrowLeft" width="18" height="18" aria-hidden="true" />
+              </button>
+            </template>
+          </Tooltip>
           <div class="provider-settings-heading">
             <strong>{{ editingProviderPreset?.label || '音效' }}设置</strong>
             <small

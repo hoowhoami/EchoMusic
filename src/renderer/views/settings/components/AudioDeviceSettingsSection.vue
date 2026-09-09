@@ -88,7 +88,7 @@ onMounted(() => {
         <p class="text-sm text-text-secondary">用于听歌识曲等需要录音的功能</p>
       </div>
       <Select
-        class="w-45"
+        class="w-45 shrink-0"
         :model-value="settingStore.inputDevice"
         :options="inputDeviceOptions"
         @update:model-value="handleInputDeviceChange($event as string)"
@@ -102,7 +102,7 @@ onMounted(() => {
         <p class="text-xs text-text-secondary/80">当前使用：{{ currentOutputDeviceLabel }}</p>
       </div>
       <Select
-        class="w-45"
+        class="w-45 shrink-0"
         :model-value="settingStore.outputDevice"
         :options="outputDeviceOptions"
         @update:model-value="handleOutputDeviceChange($event as string)"

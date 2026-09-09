@@ -343,7 +343,7 @@ const getPluginFeatureTags = (manifest: EchoPluginManifest) => {
             variant="ghost"
             size="sm"
             class="h-8"
-            title="管理插件源"
+            tooltip="管理插件源"
             @click="openSourceDialog"
           >
             <Icon :icon="iconCloud" width="16" height="16" />
@@ -478,7 +478,7 @@ const getPluginFeatureTags = (manifest: EchoPluginManifest) => {
               class="marketplace-update-all-btn h-9! shrink-0"
               :loading="isUpdatingAllMarketplace"
               :disabled="isUpdatingAllMarketplace || isMarketplaceRefreshing"
-              :title="`更新全部 ${updatableMarketplaceCount} 个插件`"
+              :tooltip="`更新全部 ${updatableMarketplaceCount} 个插件`"
               @click="updateAllMarketplacePlugins"
             >
               <Icon
@@ -503,8 +503,8 @@ const getPluginFeatureTags = (manifest: EchoPluginManifest) => {
             <span>
               {{ marketplaceCountLabel }} · {{ marketplaceSourceSummary }}
               <template v-if="marketplaceFetchedAtLabel">
-                · {{ marketplaceFetchedAtLabel }}</template
-              >
+                · {{ marketplaceFetchedAtLabel }}
+              </template>
             </span>
           </div>
 

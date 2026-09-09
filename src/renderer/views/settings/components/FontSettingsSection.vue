@@ -66,7 +66,7 @@ onMounted(() => {
         </button>
         <Select
           filterable
-          class="w-45"
+          class="w-45 shrink-0"
           :model-value="settingStore.globalFont"
           :options="globalFontOptions"
           @update:model-value="settingStore.globalFont = String($event)"
@@ -90,7 +90,7 @@ onMounted(() => {
         </button>
         <Select
           filterable
-          class="w-45"
+          class="w-45 shrink-0"
           :model-value="settingStore.lyricFont"
           :options="lyricFontOptions"
           @update:model-value="settingStore.lyricFont = String($event)"
@@ -114,7 +114,7 @@ onMounted(() => {
         </button>
         <Select
           filterable
-          class="w-45"
+          class="w-45 shrink-0"
           :model-value="desktopLyricFontName"
           :options="lyricFontOptions"
           @update:model-value="applyDesktopLyricFont(String($event))"

@@ -28,7 +28,7 @@ export const MINI_PLAYER_DIMENSIONS = {
 
 export type MiniPlayerCommand =
   | MiniPlayerSimpleCommand
-  | { type: 'setVolume'; value: number }
+  | { type: 'setVolume'; value: number; requestId?: string }
   | { type: 'adjustVolume'; delta: number }
   | { type: 'seek'; value: number }
   | { type: 'playQueueTrack'; trackId: string };
@@ -49,6 +49,7 @@ export interface MiniPlayerPlaybackPayload {
   isFavorite: boolean;
   lyricsLabel?: string;
   volume?: number;
+  volumeRequestId?: string;
   lastNonZeroVolume?: number;
   updatedAt: number;
   seekTimestamp?: number;

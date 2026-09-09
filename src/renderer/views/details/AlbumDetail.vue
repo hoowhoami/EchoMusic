@@ -23,6 +23,7 @@ import TabsTrigger from '@/components/ui/TabsTrigger.vue';
 import TabsContent from '@/components/ui/TabsContent.vue';
 import Badge from '@/components/ui/Badge.vue';
 import Dialog from '@/components/ui/Dialog.vue';
+import CommentComposer from '@/components/music/CommentComposer.vue';
 import CommentList from '@/components/music/CommentList.vue';
 import BatchActionDrawer from '@/components/music/BatchActionDrawer.vue';
 import { usePlaylistStore } from '@/stores/playlist';
@@ -627,6 +628,7 @@ const activeSongId = computed(() => playerStore.currentTrackId ?? undefined);
                 <Icon :icon="iconList" width="18" height="18" />
               </Button>
             </template>
+
             <Button
               v-if="userStore.isLoggedIn"
               variant="unstyled"
@@ -711,7 +713,7 @@ const activeSongId = computed(() => playerStore.currentTrackId ?? undefined);
                       size="none"
                       @click="handleLocate"
                       class="song-locate-btn p-2 rounded-lg"
-                      title="定位当前播放"
+                      tooltip="定位当前播放"
                     >
                       <Icon :icon="iconCurrentLocation" width="18" height="18" />
                     </Button>
@@ -795,6 +797,11 @@ const activeSongId = computed(() => playerStore.currentTrackId ?? undefined);
                   </div>
                 </div>
               </div>
+              <CommentComposer
+                class="detail-comment-composer"
+                :resource="{ type: 'album', id: String(getAlbumId()), name: album.name }"
+                @sent="fetchComments(true)"
+              />
             </TabsContent>
           </div>
         </Tabs>
@@ -891,5 +898,13 @@ const activeSongId = computed(() => playerStore.currentTrackId ?? undefined);
   to {
     transform: rotate(360deg);
   }
+}
+.detail-comment-composer {
+  position: sticky;
+  bottom: 12px;
+  z-index: 5;
+  width: min(720px, 100%);
+  box-sizing: border-box;
+  margin: 16px auto 0;
 }
 </style>

@@ -183,7 +183,7 @@ const updatePlaybackStallMaxAttempts = (value: string | number) => {
         <p class="text-sm text-text-secondary">自动时仅网络音频启用更大的 packet 缓存</p>
       </div>
       <Select
-        class="w-45"
+        class="w-45 shrink-0"
         :model-value="settingStore.cache"
         :options="cacheOptions"
         @update:model-value="updateCache"
@@ -278,7 +278,7 @@ const updatePlaybackStallMaxAttempts = (value: string | number) => {
         </p>
       </div>
       <Select
-        class="w-45"
+        class="w-45 shrink-0"
         :model-value="settingStore.audioSamplerate"
         :options="audioSamplerateOptions"
         @update:model-value="updateAudioSamplerate"
@@ -291,7 +291,7 @@ const updatePlaybackStallMaxAttempts = (value: string | number) => {
         <p class="text-sm text-text-secondary">安全自动会在音效需要立体声时升到双声道</p>
       </div>
       <Select
-        class="w-45"
+        class="w-45 shrink-0"
         :model-value="settingStore.audioChannels"
         :options="audioChannelOptions"
         @update:model-value="updateAudioChannels"
@@ -304,7 +304,7 @@ const updatePlaybackStallMaxAttempts = (value: string | number) => {
         <p class="text-sm text-text-secondary">仅独占输出下生效，普通输出使用系统混音格式</p>
       </div>
       <Select
-        class="w-45"
+        class="w-45 shrink-0"
         :model-value="settingStore.audioFormat"
         :options="audioFormatOptions"
         @update:model-value="updateAudioFormat"
@@ -317,7 +317,7 @@ const updatePlaybackStallMaxAttempts = (value: string | number) => {
         <p class="text-sm text-text-secondary">关闭后每首歌都会重新加载并重新协商输出设备</p>
       </div>
       <Select
-        class="w-45"
+        class="w-45 shrink-0"
         :model-value="settingStore.gaplessAudio"
         :options="gaplessAudioOptions"
         @update:model-value="updateGaplessAudio"

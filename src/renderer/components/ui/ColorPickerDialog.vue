@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import Tooltip from '@/components/ui/Tooltip.vue';
+
 import { computed, ref, watch } from 'vue';
 import { useVModel } from '@vueuse/core';
 import Dialog from '@/components/ui/Dialog.vue';
@@ -97,14 +99,18 @@ const confirm = () => {
       <!-- 顶部：原生色盘（美化为色块）+ hex 输入框 -->
       <div class="color-picker-top-row">
         <div class="color-picker-native-wrap">
-          <input
-            :value="normalizedDraft"
-            type="color"
-            class="color-picker-native"
-            title="点击打开系统色盘"
-            @input="handleNativeInput"
-            @change="handleNativeInput"
-          />
+          <Tooltip content="点击打开系统色盘">
+            <template #trigger>
+              <input
+                :value="normalizedDraft"
+                type="color"
+                class="color-picker-native"
+                aria-label="点击打开系统色盘"
+                @input="handleNativeInput"
+                @change="handleNativeInput"
+              />
+            </template>
+          </Tooltip>
         </div>
         <div class="color-picker-input-wrap">
           <Input
@@ -117,23 +123,25 @@ const confirm = () => {
 
       <!-- 预设色 -->
       <div v-if="props.presets.length" class="color-picker-presets">
-        <button
-          v-for="color in props.presets"
-          :key="color"
-          type="button"
-          class="color-picker-swatch"
-          :class="{ active: !isDynamicDraft && normalizedDraft === color.toLowerCase() }"
-          :style="{ backgroundColor: color }"
-          :title="color"
-          @click="applyPreset(color)"
-        >
-          <Icon
-            v-if="!isDynamicDraft && normalizedDraft === color.toLowerCase()"
-            :icon="iconCheck"
-            width="12"
-            height="12"
-          />
-        </button>
+        <Tooltip v-for="color in props.presets" :key="color" :content="color">
+          <template #trigger>
+            <button
+              type="button"
+              class="color-picker-swatch"
+              :class="{ active: !isDynamicDraft && normalizedDraft === color.toLowerCase() }"
+              :style="{ backgroundColor: color }"
+              :aria-label="color"
+              @click="applyPreset(color)"
+            >
+              <Icon
+                v-if="!isDynamicDraft && normalizedDraft === color.toLowerCase()"
+                :icon="iconCheck"
+                width="12"
+                height="12"
+              />
+            </button>
+          </template>
+        </Tooltip>
       </div>
 
       <button

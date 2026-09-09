@@ -583,6 +583,18 @@ body .dialog-content {
   background: var(--color-bg-dialog);
 }
 
+.app-tooltip-surface {
+  background-clip: padding-box;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: var(--color-bg-elevated);
+  color: var(--color-text-main);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.45;
+  box-shadow: var(--shadow-elevated);
+}
+
 body .drawer-panel,
 body .echo-popover-content,
 body .app-tooltip-content,

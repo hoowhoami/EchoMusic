@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import Tooltip from '@/components/ui/Tooltip.vue';
+
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import type { ComponentPublicInstance } from 'vue';
 import { useVModel } from '@vueuse/core';
@@ -734,46 +736,54 @@ onBeforeUnmount(() => {
             role="group"
             aria-label="队列切换"
           >
-            <button
-              type="button"
-              class="queue-arrow-btn"
-              :disabled="previewIndex === 0"
-              title="上一队列"
-              @click="handleSwitchQueueByDirection(-1)"
-            >
-              <svg
-                width="15"
-                height="15"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2.5"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              >
-                <path d="M19 12H5M12 19l-7-7 7-7" />
-              </svg>
-            </button>
-            <button
-              type="button"
-              class="queue-arrow-btn"
-              :disabled="previewIndex === queueOptions.length - 1"
-              title="下一队列"
-              @click="handleSwitchQueueByDirection(1)"
-            >
-              <svg
-                width="15"
-                height="15"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2.5"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              >
-                <path d="M5 12h14M12 5l7 7-7 7" />
-              </svg>
-            </button>
+            <Tooltip content="上一队列">
+              <template #trigger>
+                <button
+                  type="button"
+                  class="queue-arrow-btn"
+                  :disabled="previewIndex === 0"
+                  aria-label="上一队列"
+                  @click="handleSwitchQueueByDirection(-1)"
+                >
+                  <svg
+                    width="15"
+                    height="15"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2.5"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <path d="M19 12H5M12 19l-7-7 7-7" />
+                  </svg>
+                </button>
+              </template>
+            </Tooltip>
+            <Tooltip content="下一队列">
+              <template #trigger>
+                <button
+                  type="button"
+                  class="queue-arrow-btn"
+                  :disabled="previewIndex === queueOptions.length - 1"
+                  aria-label="下一队列"
+                  @click="handleSwitchQueueByDirection(1)"
+                >
+                  <svg
+                    width="15"
+                    height="15"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2.5"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <path d="M5 12h14M12 5l7 7-7 7" />
+                  </svg>
+                </button>
+              </template>
+            </Tooltip>
           </div>
         </div>
       </div>
@@ -784,7 +794,7 @@ onBeforeUnmount(() => {
           class="queue-icon-btn"
           variant="ghost"
           size="xs"
-          title="回到顶部"
+          tooltip="回到顶部"
           @click="scrollPreviewToTop"
         >
           <Icon :icon="iconArrowUp" width="20" height="20" />
@@ -794,7 +804,7 @@ onBeforeUnmount(() => {
           class="queue-icon-btn"
           variant="ghost"
           size="xs"
-          title="定位当前歌曲"
+          tooltip="定位当前歌曲"
           @click="scrollToCurrent(false)"
         >
           <Icon :icon="iconCurrentLocation" width="20" height="20" />
@@ -804,7 +814,7 @@ onBeforeUnmount(() => {
           class="queue-icon-btn"
           variant="ghost"
           size="xs"
-          :title="isAddingToPlaylist ? '添加中...' : '添加到'"
+          :tooltip="isAddingToPlaylist ? '添加中...' : '添加到'"
           :disabled="!canAddPreviewQueue || isAddingToPlaylist"
           @click="handleAddToPlaylist"
         >
@@ -816,7 +826,7 @@ onBeforeUnmount(() => {
           class="queue-icon-btn"
           variant="ghost"
           size="xs"
-          :title="
+          :tooltip="
             isMyQueue
               ? '清空我的队列'
               : previewQueue?.id === currentPlaybackQueue?.id
@@ -832,7 +842,7 @@ onBeforeUnmount(() => {
           class="queue-icon-btn"
           variant="ghost"
           size="xs"
-          title="关闭"
+          tooltip="关闭"
           @click="open = false"
         >
           <Icon :icon="iconX" width="20" height="20" />
@@ -889,7 +899,7 @@ onBeforeUnmount(() => {
               class="queue-inline-resume"
               variant="secondary"
               size="xs"
-              :title="`继续播放 ${resolveResumeTrack(queue)?.title || '这首歌'}`"
+              :tooltip="`继续播放 ${resolveResumeTrack(queue)?.title || '这首歌'}`"
               @click="handleResumePreviewQueue(resolveResumeTrack(queue))"
             >
               <Icon :icon="iconPlay" width="14" height="14" class="queue-inline-resume-icon" />

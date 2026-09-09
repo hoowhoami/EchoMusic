@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import Tooltip from '@/components/ui/Tooltip.vue';
+
 import { computed, ref, watch } from 'vue';
 import { Icon } from '@iconify/vue';
 import { iconCheckMark, iconCloudDownload, iconHeadphones, iconLoader2, iconMusic } from '@/icons';
@@ -31,66 +33,69 @@ const userCount = (count: number) =>
 </script>
 
 <template>
-  <article
-    class="online-effect"
-    :class="{ 'is-active': plaza.isActive(effect) }"
-    :title="description"
-  >
-    <span class="effect-art" :class="{ 'is-artist': effect.artistName }" aria-hidden="true">
-      <Icon :icon="effect.brandName ? iconHeadphones : iconMusic" width="20" />
-      <img
-        v-if="effect.iconUrl && !imageFailed"
-        :src="effect.iconUrl"
-        alt=""
-        loading="lazy"
-        @error="imageFailed = true"
-      />
-    </span>
-    <div class="effect-copy">
-      <strong>{{ effect.name }}</strong>
-      <span
-        >{{ effect.artistName || effect.brandName || effect.author || '音效创作者' }} ·
-        {{ plaza.typeLabel(effect) }}</span
-      >
-      <small v-if="unavailable" class="effect-requirement">{{ unavailableReason }}</small>
-      <small v-else-if="effect.userCount">{{ userCount(effect.userCount) }}</small>
-    </div>
-    <button
-      type="button"
-      class="effect-action"
-      :class="{ 'is-active': plaza.isActive(effect) }"
-      :disabled="unavailable || plaza.isActive(effect) || plaza.downloadingId !== null"
-      :title="unavailableReason || undefined"
-      :aria-label="`${plaza.downloadedEffect(effect) ? '使用' : '下载'}${effect.name}`"
-      @click="plaza.actOnEffect(effect)"
-    >
-      <Icon
-        v-if="plaza.downloadingId === effect.id"
-        :icon="iconLoader2"
-        width="13"
-        class="effect-spin"
-      />
-      <Icon v-else-if="plaza.isActive(effect)" :icon="iconCheckMark" width="13" />
-      <Icon
-        v-else-if="!plaza.downloadedEffect(effect) && !unavailable"
-        :icon="iconCloudDownload"
-        width="13"
-      />
-      {{
-        plaza.downloadingId === effect.id
-          ? '下载中'
-          : plaza.isActive(effect)
-            ? '使用中'
-            : unavailable
-              ? support.status === 'checking'
-                ? '检查中'
-                : '不可用'
-              : plaza.downloadedEffect(effect)
-                ? '使用'
-                : '下载'
-      }}
-    </button>
-  </article>
+  <Tooltip :content="description">
+    <template #trigger>
+      <article class="online-effect" :class="{ 'is-active': plaza.isActive(effect) }">
+        <span class="effect-art" :class="{ 'is-artist': effect.artistName }" aria-hidden="true">
+          <Icon :icon="effect.brandName ? iconHeadphones : iconMusic" width="20" />
+          <img
+            v-if="effect.iconUrl && !imageFailed"
+            :src="effect.iconUrl"
+            alt=""
+            loading="lazy"
+            @error="imageFailed = true"
+          />
+        </span>
+        <div class="effect-copy">
+          <strong>{{ effect.name }}</strong>
+          <span
+            >{{ effect.artistName || effect.brandName || effect.author || '音效创作者' }} ·
+            {{ plaza.typeLabel(effect) }}</span
+          >
+          <small v-if="unavailable" class="effect-requirement">{{ unavailableReason }}</small>
+          <small v-else-if="effect.userCount">{{ userCount(effect.userCount) }}</small>
+        </div>
+        <Tooltip :content="unavailableReason || undefined">
+          <template #trigger>
+            <button
+              type="button"
+              class="effect-action"
+              :class="{ 'is-active': plaza.isActive(effect) }"
+              :disabled="unavailable || plaza.isActive(effect) || plaza.downloadingId !== null"
+              :aria-label="`${plaza.downloadedEffect(effect) ? '使用' : '下载'}${effect.name}`"
+              @click="plaza.actOnEffect(effect)"
+            >
+              <Icon
+                v-if="plaza.downloadingId === effect.id"
+                :icon="iconLoader2"
+                width="13"
+                class="effect-spin"
+              />
+              <Icon v-else-if="plaza.isActive(effect)" :icon="iconCheckMark" width="13" />
+              <Icon
+                v-else-if="!plaza.downloadedEffect(effect) && !unavailable"
+                :icon="iconCloudDownload"
+                width="13"
+              />
+              {{
+                plaza.downloadingId === effect.id
+                  ? '下载中'
+                  : plaza.isActive(effect)
+                    ? '使用中'
+                    : unavailable
+                      ? support.status === 'checking'
+                        ? '检查中'
+                        : '不可用'
+                      : plaza.downloadedEffect(effect)
+                        ? '使用'
+                        : '下载'
+              }}
+            </button>
+          </template>
+        </Tooltip>
+      </article>
+    </template>
+  </Tooltip>
 </template>
 
 <style scoped>

@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import Tooltip from '@/components/ui/Tooltip.vue';
+import { handleComposerKeydown } from '@/utils/composerKeyboard';
+
 defineOptions({ name: 'listen-together' });
 
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
@@ -621,7 +624,7 @@ const confirmLeave = async (dismiss = false) => {
 };
 
 const sendMessage = async () => {
-  if (chatCooldown.value) return;
+  if (chatCooldown.value || sendingMessage.value || !activeRoom.value?.allowChat) return;
   const text = messageText.value.trim();
   if (!text) return;
   if (text.length > CHAT_MESSAGE_MAX_LENGTH) {
@@ -652,9 +655,7 @@ const toggleChat = async () => {
 };
 
 const handleMessageKeydown = (event: KeyboardEvent) => {
-  if (event.key !== 'Enter' || event.shiftKey || event.isComposing) return;
-  event.preventDefault();
-  void sendMessage();
+  handleComposerKeydown(event, sendMessage);
 };
 
 const resizeMessageTextarea = () => {
@@ -1030,7 +1031,7 @@ onUnmounted(() => {
                 variant="ghost"
                 size="sm"
                 :disabled="loadingRoomList"
-                title="刷新房间"
+                tooltip="刷新房间"
                 aria-label="刷新房间"
                 @click="loadRooms(true)"
               >
@@ -1236,6 +1237,7 @@ onUnmounted(() => {
                   <template v-if="isOwner">
                     你可以控制房间播放，操作会同步到其他设备和成员。
                   </template>
+
                   <template v-else>
                     播放由房主控制；可仅在本机暂停，再次播放会追上房间进度。
                   </template>
@@ -1261,7 +1263,7 @@ onUnmounted(() => {
                     class="listen-panel-refresh-button"
                     variant="ghost"
                     size="xs"
-                    title="刷新房间歌单"
+                    tooltip="刷新房间歌单"
                     aria-label="刷新房间歌单"
                     @click="refreshRoomSongs"
                   >
@@ -1292,7 +1294,7 @@ onUnmounted(() => {
                         width="14"
                         height="14"
                       />
-                      <template v-else>{{ index + 1 }}</template>
+                      <template v-else>{{ index + 1 }} </template>
                     </span>
                     <Cover
                       :url="song.coverUrl"
@@ -1398,6 +1400,7 @@ onUnmounted(() => {
                     <template v-if="message.system">
                       <span>{{ message.text }}</span>
                     </template>
+
                     <template v-else>
                       <Avatar
                         :src="message.avatarUrl"
@@ -1433,16 +1436,23 @@ onUnmounted(() => {
                   rows="1"
                   @keydown="handleMessageKeydown"
                 ></textarea>
-                <button
-                  type="button"
-                  :disabled="
-                    !messageText.trim() || !activeRoom?.allowChat || sendingMessage || chatCooldown
-                  "
-                  :title="chatCooldown ? '发送过于频繁，请稍候' : '发送消息'"
-                  @click="sendMessage"
-                >
-                  <Icon :icon="iconSend" width="17" height="17" />
-                </button>
+                <Tooltip :content="chatCooldown ? '发送过于频繁，请稍候' : '发送消息'">
+                  <template #trigger>
+                    <button
+                      type="button"
+                      :disabled="
+                        !messageText.trim() ||
+                        !activeRoom?.allowChat ||
+                        sendingMessage ||
+                        chatCooldown
+                      "
+                      :aria-label="chatCooldown ? '发送过于频繁，请稍候' : '发送消息'"
+                      @click="sendMessage"
+                    >
+                      <Icon :icon="iconSend" width="17" height="17" />
+                    </button>
+                  </template>
+                </Tooltip>
               </div>
             </section>
           </aside>

@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import Tooltip from '@/components/ui/Tooltip.vue';
+
 defineOptions({ name: 'recognize-page' });
 
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
@@ -395,26 +397,29 @@ onUnmounted(() => {
                 <div class="rec-match-title">{{ match.song.name }}</div>
                 <div class="rec-match-sub">
                   {{ match.song.artist }}
-                  <template v-if="match.song.album"> · {{ match.song.album }}</template>
+                  <template v-if="match.song.album"> · {{ match.song.album }} </template>
                 </div>
               </div>
 
-              <div
-                class="rec-match-score"
-                :title="`匹配度 ${distPercent(match.confidence)}`"
-                :aria-label="`匹配度 ${distPercent(match.confidence)}`"
-                :style="{ '--score': match.confidence }"
-              >
-                <span class="rec-match-score-label">匹配度</span>
-                <span class="rec-match-score-num">{{ distPercent(match.confidence) }}</span>
-              </div>
+              <Tooltip :content="`匹配度 ${distPercent(match.confidence)}`">
+                <template #trigger>
+                  <div
+                    class="rec-match-score"
+                    :aria-label="`匹配度 ${distPercent(match.confidence)}`"
+                    :style="{ '--score': match.confidence }"
+                  >
+                    <span class="rec-match-score-label">匹配度</span>
+                    <span class="rec-match-score-num">{{ distPercent(match.confidence) }}</span>
+                  </div>
+                </template>
+              </Tooltip>
 
               <div class="rec-match-actions">
                 <Button
                   variant="unstyled"
                   size="none"
                   class="rec-circle-btn rec-circle-primary"
-                  title="播放"
+                  tooltip="播放"
                   @click="handlePlay(match.song)"
                 >
                   <Icon :icon="iconPlay" width="17" height="17" />
@@ -426,7 +431,7 @@ onUnmounted(() => {
                     'rec-circle-btn',
                     isFavorite(match.song) ? 'rec-circle-fav-active' : 'rec-circle-fav',
                   ]"
-                  :title="isFavorite(match.song) ? '已收藏' : '收藏'"
+                  :tooltip="isFavorite(match.song) ? '已收藏' : '收藏'"
                   @click="handleFavorite(match.song)"
                 >
                   <Icon
@@ -439,7 +444,7 @@ onUnmounted(() => {
                   variant="unstyled"
                   size="none"
                   class="rec-circle-btn rec-circle-ghost"
-                  title="添加到歌单"
+                  tooltip="添加到歌单"
                   @click="handleAddToPlaylist(match.song)"
                 >
                   <Icon :icon="iconPlaylistAdd" width="16" height="16" />
@@ -448,7 +453,7 @@ onUnmounted(() => {
                   variant="unstyled"
                   size="none"
                   class="rec-circle-btn rec-circle-ghost"
-                  title="歌曲详情"
+                  tooltip="歌曲详情"
                   @click="goToDetail(match.song)"
                 >
                   <Icon :icon="iconInfo" width="16" height="16" />
@@ -489,6 +494,7 @@ onUnmounted(() => {
               <div class="rec-ripple rec-ripple-2" />
               <div class="rec-ripple rec-ripple-3" />
             </template>
+
             <button
               :disabled="status === 'recognizing'"
               :class="[
@@ -526,6 +532,7 @@ onUnmounted(() => {
                   <Icon :icon="iconChevronDown" width="12" height="12" class="rec-source-arrow" />
                 </button>
               </template>
+
               <div class="rec-source-menu">
                 <div class="rec-source-menu-group-label">系统</div>
                 <button

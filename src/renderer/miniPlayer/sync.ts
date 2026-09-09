@@ -110,6 +110,8 @@ const syncPlaybackSnapshotNow = () => {
   window.electron?.miniPlayer?.syncSnapshot({ playback: buildPlaybackPayload() });
 };
 
+let volumeRequestId: string | undefined;
+
 const buildPlaybackPayload = (): MiniPlayerPlaybackPayload | null => {
   const playerStore = usePlayerStore();
   const lyricStore = useLyricStore();
@@ -143,6 +145,7 @@ const buildPlaybackPayload = (): MiniPlayerPlaybackPayload | null => {
     isFavorite: resolveFavoriteState(track),
     lyricsLabel: lyricStore.currentDisplayLabel,
     volume: Number(playerStore.volume || 0),
+    volumeRequestId,
     lastNonZeroVolume: Number(playerStore.lastNonZeroVolume || 0),
     updatedAt,
     seekTimestamp,
@@ -280,6 +283,8 @@ const executeMiniPlayerCommand = (command: MiniPlayerCommand) => {
   const playerStore = usePlayerStore();
   if (command.type === 'setVolume') {
     playerStore.setVolume(command.value);
+    volumeRequestId = command.requestId;
+    window.electron.miniPlayer?.syncSnapshot({ playback: buildPlaybackPayload() });
     return;
   }
   if (command.type === 'adjustVolume') {

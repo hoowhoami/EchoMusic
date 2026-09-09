@@ -1,13 +1,20 @@
 <script setup lang="ts">
-import { reactive } from 'vue';
+import { computed, reactive, ref } from 'vue';
 import { iconMessageCircle, iconThumbsUp, iconChevronUp } from '@/icons';
 import type { Comment } from '@/models/comment';
 import type { CommentResourceType } from '@/composables/useComments';
+import FloorReplyComposer from './FloorReplyComposer.vue';
 import Button from '@/components/ui/Button.vue';
 import Skeleton from '@/components/ui/Skeleton.vue';
-import { getFloorComments } from '@/api/comment';
+import { getFloorComments, sendFloorComment } from '@/api/comment';
 import { mapCommentItem } from '@/utils/mappers';
 import { useToastStore } from '@/stores/toast';
+import {
+  groupCommentRelations,
+  mainCommentParentId,
+  mergeFloorReplies,
+  presentFloorReply,
+} from '@/utils/commentRelations';
 
 interface Props {
   comments: Comment[];
@@ -21,6 +28,14 @@ interface Props {
   fallbackMixSongId?: string;
   inlineReplies?: boolean;
   loadingSkeletonCount?: number;
+  // UI 接入点：调用方完成真实接口调用后才 resolve，失败应 reject。
+  sendFloorReply?: (request: {
+    root: Comment;
+    target: Comment;
+    content: string;
+    resourceType: CommentResourceType;
+    mixSongId?: string;
+  }) => Promise<void>;
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -33,7 +48,76 @@ const props = withDefaults(defineProps<Props>(), {
   loadingSkeletonCount: 3,
 });
 
+const relations = computed(() => groupCommentRelations(props.comments));
+const visibleComments = computed(() =>
+  props.inlineReplies ? relations.value.roots : props.comments,
+);
+const mainPresentations = computed(() =>
+  visibleComments.value.map((comment) => ({
+    comment,
+    ...presentFloorReply(comment, []),
+  })),
+);
+const contextRoot = (comment: Comment): Comment => {
+  const parent = mainCommentParentId(comment);
+  return parent ? { ...comment, id: parent, tid: parent } : comment;
+};
+const floorStateFor = (comment: Comment) => getFloorState(contextRoot(comment).id);
+const displayedReplies = (comment: Comment) =>
+  mergeFloorReplies(
+    relations.value.replies.get(String(comment.id)) ?? [],
+    floorStateFor(comment).replies,
+  );
+const replyPresentations = computed(() => {
+  const result = new Map<
+    string | number,
+    { reply: Comment; body: string; quote?: { userName: string; content: string } }[]
+  >();
+  for (const comment of visibleComments.value) {
+    const floors = floorStateFor(comment).replies;
+    result.set(
+      comment.id,
+      displayedReplies(comment).map((reply) => ({
+        reply,
+        ...presentFloorReply(reply, isFloorRecord(comment, reply) ? floors : []),
+      })),
+    );
+  }
+  return result;
+});
+const replyCountFor = (comment: Comment) =>
+  Math.max(comment.replyCount ?? 0, floorStateFor(comment).total, displayedReplies(comment).length);
+const isFloorRecord = (comment: Comment, reply: Comment) =>
+  floorStateFor(comment).replies.some((item) => item === reply);
+
 const toastStore = useToastStore();
+const replyBusy = ref(false);
+const replyRoot = ref<Comment | null>(null);
+const replyTarget = ref<Comment | null>(null);
+function startReply(root: Comment, target = root) {
+  if (replyBusy.value) return;
+  replyRoot.value = root;
+  replyTarget.value = target;
+}
+async function submitFloorReply(content: string) {
+  const root = replyRoot.value;
+  const target = replyTarget.value;
+  if (!root || !target) throw new Error('回复暂不可用');
+  await (props.sendFloorReply ?? sendFloorComment)({
+    root,
+    target,
+    content,
+    resourceType: props.resourceType,
+    mixSongId: props.fallbackMixSongId,
+  });
+  // 刷新会先清空楼层列表并卸载输入框，不能依赖子组件稍后的 sent 事件收起。
+  // 发送已成功即结束编辑；列表刷新慢或失败都不应保留已提交的草稿。
+  replyRoot.value = null;
+  replyTarget.value = null;
+  replyBusy.value = false;
+  getFloorState(root.id).expanded = true;
+  void fetchFloorReplies(root, true);
+}
 
 // 评论内容展开/收起
 const expandedContents = reactive<Set<string | number>>(new Set());
@@ -117,7 +201,7 @@ const fetchFloorReplies = async (comment: Comment, reset = false) => {
       const message = String((payload as Record<string, unknown>).message ?? '');
       const list = Array.isArray(listCandidate) ? listCandidate : [];
       const mapped = list.map(mapCommentItem);
-      state.replies = reset ? mapped : [...state.replies, ...mapped];
+      state.replies = mergeFloorReplies([], reset ? mapped : [...state.replies, ...mapped]);
       const totalCount = Number((payload as Record<string, unknown>).comments_num ?? 0) || 0;
       state.total = totalCount;
       state.hasMore = totalCount > 0 ? state.replies.length < totalCount : mapped.length >= 30;
@@ -136,11 +220,12 @@ const fetchFloorReplies = async (comment: Comment, reset = false) => {
 };
 
 const toggleFloor = (comment: Comment) => {
+  if (replyBusy.value && replyRoot.value?.id === comment.id) return;
   if (!props.inlineReplies) return;
-  const state = getFloorState(comment.id);
+  const state = floorStateFor(comment);
   if (!state.expanded) {
     state.expanded = true;
-    if (!state.initialized) void fetchFloorReplies(comment, true);
+    if (!state.initialized) void fetchFloorReplies(contextRoot(comment), true);
   } else {
     state.expanded = false;
   }
@@ -179,7 +264,11 @@ const formatLike = (value: number) => {
       {{ emptyText }}
     </div>
 
-    <div v-for="comment in comments" :key="comment.id" class="comment-item-wrap">
+    <div
+      v-for="{ comment, body, quote } in mainPresentations"
+      :key="comment.id"
+      class="comment-item-wrap"
+    >
       <div class="comment-item">
         <div class="comment-avatar">
           <img v-if="comment.avatar" :src="comment.avatar" alt="avatar" />
@@ -201,9 +290,10 @@ const formatLike = (value: number) => {
             </div>
           </div>
 
+          <div v-if="quote" class="comment-time">回复 {{ quote.userName }}</div>
           <div class="comment-content">
-            <template v-if="needsTruncate(comment.content) && !isContentExpanded(comment.id)">
-              {{ comment.content.slice(0, 120) }}...<button
+            <template v-if="needsTruncate(body) && !isContentExpanded(comment.id)">
+              {{ body.slice(0, 120) }}...<button
                 type="button"
                 class="comment-expand-btn"
                 @click="toggleContent(comment.id)"
@@ -212,9 +302,9 @@ const formatLike = (value: number) => {
               </button>
             </template>
             <template v-else>
-              {{ comment.content
+              {{ body
               }}<button
-                v-if="needsTruncate(comment.content)"
+                v-if="needsTruncate(body)"
                 type="button"
                 class="comment-expand-btn"
                 @click="toggleContent(comment.id)"
@@ -224,30 +314,67 @@ const formatLike = (value: number) => {
             </template>
           </div>
 
-          <Button
-            variant="unstyled"
-            size="none"
-            v-if="inlineReplies && comment.replyCount && comment.replyCount > 0"
-            type="button"
-            class="comment-reply"
-            @click="toggleFloor(comment)"
-          >
-            <Icon
-              :icon="getFloorState(comment.id).expanded ? iconChevronUp : iconMessageCircle"
-              width="14"
-              height="14"
-            />
-            <span>{{
-              getFloorState(comment.id).expanded ? '收起回复' : `查看${comment.replyCount}条回复`
-            }}</span>
-          </Button>
+          <blockquote v-if="quote" class="comment-floor-quote">
+            <span class="comment-floor-quote-author">{{ quote.userName }}：</span
+            >{{ quote.content }}
+          </blockquote>
+          <div v-if="inlineReplies" class="comment-actions">
+            <Button
+              variant="unstyled"
+              size="none"
+              v-if="inlineReplies && (replyCountFor(comment) > 0 || mainCommentParentId(comment))"
+              type="button"
+              class="comment-reply"
+              @click="toggleFloor(comment)"
+            >
+              <Icon
+                :icon="floorStateFor(comment).expanded ? iconChevronUp : iconMessageCircle"
+                width="14"
+                height="14"
+              />
+              <span>{{
+                floorStateFor(comment).expanded
+                  ? '收起回复'
+                  : mainCommentParentId(comment)
+                    ? '查看上下文'
+                    : `查看${replyCountFor(comment)}条回复`
+              }}</span>
+            </Button>
+            <Button
+              v-if="inlineReplies && !mainCommentParentId(comment)"
+              variant="unstyled"
+              size="none"
+              type="button"
+              class="comment-reply"
+              @click="startReply(comment)"
+            >
+              回复
+            </Button>
+          </div>
 
-          <div
-            v-if="inlineReplies && getFloorState(comment.id).expanded"
-            class="comment-floor-inline"
-          >
+          <FloorReplyComposer
+            v-if="replyRoot?.id === comment.id && replyTarget?.id === comment.id"
+            :key="`${comment.id}:${replyTarget.id}`"
+            :target="replyTarget"
+            :send="submitFloorReply"
+            v-model:busy="replyBusy"
+            @close="
+              replyRoot = null;
+              replyTarget = null;
+            "
+            @sent="
+              replyRoot = null;
+              replyTarget = null;
+            "
+          />
+
+          <div v-if="inlineReplies && floorStateFor(comment).expanded" class="comment-floor-inline">
+            <div class="comment-floor-heading">
+              <span>{{ mainCommentParentId(comment) ? '所在楼层的回复' : '全部回复' }}</span
+              ><span>{{ replyCountFor(comment) }}</span>
+            </div>
             <div
-              v-for="reply in getFloorState(comment.id).replies"
+              v-for="{ reply, body, quote } in replyPresentations.get(comment.id)"
               :key="reply.id"
               class="comment-floor-reply"
             >
@@ -258,11 +385,11 @@ const formatLike = (value: number) => {
               <div class="comment-floor-reply-body">
                 <div class="comment-floor-reply-header">
                   <span class="comment-floor-reply-name">{{ reply.userName }}</span>
-                  <span class="comment-floor-reply-time">{{ reply.time }}</span>
+                  <span v-if="quote" class="comment-floor-reply-to">回复 {{ quote.userName }}</span>
                 </div>
                 <div class="comment-floor-reply-content">
-                  <template v-if="needsTruncate(reply.content) && !isContentExpanded(reply.id)"
-                    >{{ reply.content.slice(0, 120) }}...<button
+                  <template v-if="needsTruncate(body) && !isContentExpanded(reply.id)"
+                    >{{ body.slice(0, 120) }}...<button
                       type="button"
                       class="comment-expand-btn"
                       @click="toggleContent(reply.id)"
@@ -271,9 +398,9 @@ const formatLike = (value: number) => {
                     </button></template
                   >
                   <template v-else
-                    >{{ reply.content
+                    >{{ body
                     }}<button
-                      v-if="needsTruncate(reply.content)"
+                      v-if="needsTruncate(body)"
                       type="button"
                       class="comment-expand-btn"
                       @click="toggleContent(reply.id)"
@@ -282,27 +409,58 @@ const formatLike = (value: number) => {
                     </button></template
                   >
                 </div>
+                <blockquote v-if="quote" class="comment-floor-quote">
+                  <span class="comment-floor-quote-author">{{ quote.userName }}：</span
+                  >{{ quote.content }}
+                </blockquote>
+                <div class="comment-floor-reply-footer">
+                  <span class="comment-floor-reply-time">{{ reply.time }}</span>
+                  <Button
+                    variant="unstyled"
+                    size="none"
+                    type="button"
+                    v-if="isFloorRecord(comment, reply)"
+                    class="floor-target-reply"
+                    @click="startReply(contextRoot(comment), reply)"
+                    >回复</Button
+                  >
+                </div>
+                <FloorReplyComposer
+                  v-if="replyRoot?.id === contextRoot(comment).id && replyTarget?.id === reply.id"
+                  :key="`${comment.id}:${replyTarget.id}`"
+                  :target="reply"
+                  :send="submitFloorReply"
+                  v-model:busy="replyBusy"
+                  @close="
+                    replyRoot = null;
+                    replyTarget = null;
+                  "
+                  @sent="
+                    replyRoot = null;
+                    replyTarget = null;
+                  "
+                />
               </div>
             </div>
-            <div v-if="getFloorState(comment.id).loading" class="comment-floor-loading">
+            <div v-if="floorStateFor(comment).loading" class="comment-floor-loading">
               <div class="comment-loading-spinner"></div>
               <span>加载中...</span>
             </div>
             <div
               v-if="
-                !getFloorState(comment.id).loading &&
-                getFloorState(comment.id).initialized &&
-                getFloorState(comment.id).replies.length === 0
+                !floorStateFor(comment).loading &&
+                floorStateFor(comment).initialized &&
+                displayedReplies(comment).length === 0
               "
               class="comment-floor-empty"
             >
-              {{ getFloorState(comment.id).message || '暂无回复' }}
+              {{ floorStateFor(comment).message || '暂无回复' }}
             </div>
             <div
               v-if="
-                getFloorState(comment.id).hasMore &&
-                !getFloorState(comment.id).loading &&
-                getFloorState(comment.id).replies.length > 0
+                floorStateFor(comment).hasMore &&
+                !floorStateFor(comment).loading &&
+                floorStateFor(comment).replies.length > 0
               "
               class="comment-floor-more"
             >
@@ -311,16 +469,16 @@ const formatLike = (value: number) => {
                 size="none"
                 type="button"
                 class="comment-floor-more-btn"
-                @click="fetchFloorReplies(comment)"
+                @click="fetchFloorReplies(contextRoot(comment))"
               >
-                {{ getFloorState(comment.id).loadMoreMessage || '加载更多回复' }}
+                {{ floorStateFor(comment).loadMoreMessage || '加载更多回复' }}
               </Button>
             </div>
             <div
               v-if="
-                !getFloorState(comment.id).hasMore &&
-                !getFloorState(comment.id).loading &&
-                getFloorState(comment.id).replies.length > 0
+                !floorStateFor(comment).hasMore &&
+                !floorStateFor(comment).loading &&
+                floorStateFor(comment).replies.length > 0
               "
               class="comment-floor-end"
             >
@@ -503,7 +661,7 @@ const formatLike = (value: number) => {
 .comment-content {
   margin-top: 12px;
   font-size: 14px;
-  line-height: 1.5;
+  line-height: 1.75;
   color: var(--color-text-main);
   white-space: pre-wrap;
   word-break: break-word;
@@ -528,7 +686,9 @@ const formatLike = (value: number) => {
 }
 
 .comment-reply {
-  margin-top: 12px;
+  margin-top: 0;
+  height: 24px;
+  line-height: 24px;
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -561,27 +721,27 @@ const formatLike = (value: number) => {
 }
 
 .comment-floor-inline {
-  margin-top: 14px;
-  padding: 14px 16px;
-  border-radius: 14px;
-  background: color-mix(in srgb, var(--color-text-main) 4%, transparent);
-  border: 1px solid color-mix(in srgb, var(--color-text-main) 8%, transparent);
+  margin-top: 12px;
+  padding: 16px 18px;
+  border-radius: 12px;
+  background: var(--control-muted-bg);
+  border: none;
 }
 
 .comment-floor-reply {
   display: flex;
-  gap: 10px;
-  padding: 10px 0;
+  gap: 12px;
+  padding: 16px 0;
 }
 
 .comment-floor-reply + .comment-floor-reply {
-  border-top: 1px solid color-mix(in srgb, var(--color-text-main) 8%, transparent);
+  border-top: 1px solid var(--border-subtle);
 }
 
 .comment-floor-reply-avatar {
-  width: 28px;
-  height: 28px;
-  border-radius: 14px;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
   overflow: hidden;
   flex-shrink: 0;
   background: color-mix(in srgb, var(--color-primary) 12%, transparent);
@@ -607,6 +767,7 @@ const formatLike = (value: number) => {
 
 .comment-floor-reply-header {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
 }
@@ -618,14 +779,14 @@ const formatLike = (value: number) => {
 }
 
 .comment-floor-reply-time {
-  font-size: 10px;
-  color: color-mix(in srgb, var(--color-text-main) 40%, transparent);
+  font-size: 11px;
+  color: var(--text-secondary);
 }
 
 .comment-floor-reply-content {
   margin-top: 4px;
   font-size: 13px;
-  line-height: 1.5;
+  line-height: 1.75;
   color: var(--color-text-main);
   white-space: pre-wrap;
   word-break: break-word;
@@ -691,5 +852,80 @@ const formatLike = (value: number) => {
   font-size: 11px;
   font-weight: 600;
   color: color-mix(in srgb, var(--color-text-main) 38%, transparent);
+}
+.floor-target-reply {
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+.floor-target-reply:hover {
+  color: var(--color-primary);
+}
+.comment-actions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-top: 10px;
+}
+.comment-actions :deep(svg) {
+  display: block;
+  flex-shrink: 0;
+}
+.comment-actions .comment-reply {
+  margin: 0;
+  height: 24px;
+  line-height: 24px;
+}
+.comment-floor-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  padding-bottom: 2px;
+}
+.comment-floor-heading span:last-child {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.7;
+}
+.comment-floor-reply-footer {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-top: 8px;
+}
+.comment-floor-inline :deep(.floor-composer) {
+  background: var(--color-bg-elevated);
+}
+@media (max-width: 640px) {
+  .comment-floor-inline {
+    padding: 12px;
+  }
+  .comment-floor-reply {
+    gap: 8px;
+  }
+}
+
+.comment-floor-reply-to {
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 400;
+  overflow-wrap: anywhere;
+}
+.comment-floor-quote {
+  margin: 8px 0 0;
+  padding: 6px 10px;
+  border-left: 2px solid var(--border-subtle);
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 96px;
+  overflow-y: auto;
+}
+.comment-floor-quote-author {
+  font-weight: 500;
 }
 </style>
