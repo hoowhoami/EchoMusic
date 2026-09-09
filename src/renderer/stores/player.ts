@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia';
-import { computed, reactive, toRefs, watch } from 'vue';
+import { computed, onScopeDispose, reactive, toRefs, watch } from 'vue';
 import { PERSONAL_FM_QUEUE_ID, usePlaylistStore } from './playlist';
 import { useLyricStore } from './lyric';
 import { useSettingStore } from './setting';
@@ -20,6 +20,7 @@ import {
 import { dspProviderRestorePatch } from '../../shared/dsp-provider-settings';
 
 import { createPlayerState } from './player/state';
+import { createSleepTimer } from './player/sleepTimer';
 import { createPlaybackManager } from './player/playback';
 import { createAudioManager } from './player/audio';
 import { createResolver } from './player/resolver';
@@ -558,6 +559,61 @@ export const usePlayerStore = defineStore(
     );
     let audioDeviceListListenerRegistered = false;
 
+    const sleepTimer = createSleepTimer(
+      state.sleepTimer,
+      () => ({ trackId: state.currentTrackId, playing: getPlaybackIsPlaying(state) }),
+      (action) => {
+        playbackManager.clearAutoNextTimer();
+        playbackManager.clearGaplessPreparedSource();
+        let paused = Promise.resolve();
+        // Cancel pending source/resume work as well as currently audible playback.
+        if (getPlaybackIsLoading(state) || state.awaitingTrackLoad || state.isResuming) {
+          playbackManager.stop();
+        } else {
+          setPlaybackIntentPlayback(state, false);
+          setEnginePlaybackStatus(state, 'paused');
+          const requestSeq = state.playbackRequestSeq;
+          paused = engine.pause().catch((error) => {
+            logger.warn('PlayerStore', 'Sleep timer pause failed', error);
+            if (requestSeq === state.playbackRequestSeq) playbackManager.stop();
+          });
+          engine.updateMediaPlaybackState(buildMediaState(state));
+        }
+        settingStore.syncPreventSleep(false);
+        if (action !== 'pause') {
+          state.sleepTimer.executing = true;
+          void paused
+            .then(async () => {
+              const execute = window.electron?.power?.executeSleepTimerAction;
+              if (!execute) throw new Error('请重启 EchoMusic 后使用退出或关机动作');
+              const result = await execute(action);
+              if (!result.ok) throw new Error(result.error);
+            })
+            .catch((error) => {
+              state.sleepTimer.error = error instanceof Error ? error.message : String(error);
+              toastStore.show(state.sleepTimer.error, 'danger', 8000);
+            })
+            .finally(() => {
+              state.sleepTimer.executing = false;
+            });
+        }
+      },
+    );
+    let sleepTimerInterval: ReturnType<typeof setInterval> | undefined;
+    watch(
+      () => state.sleepTimer.deadline,
+      (deadline) => {
+        clearInterval(sleepTimerInterval);
+        sleepTimerInterval = undefined;
+        if (deadline !== null) {
+          playbackManager.clearGaplessPreparedSource();
+          sleepTimerInterval = setInterval(sleepTimer.tick, 250);
+        }
+      },
+      { flush: 'sync' },
+    );
+    onScopeDispose(() => clearInterval(sleepTimerInterval));
+
     const toggleLyricView = (open?: boolean) => {
       state.isLyricViewOpen = open ?? !state.isLyricViewOpen;
     };
@@ -1060,6 +1116,7 @@ export const usePlayerStore = defineStore(
           }
           // 新文件真正加载完成，解除切歌加载护栏，放行后续进度回报
           if (!bindNativeTrackLoad(state, payloadSeq)) return;
+          state.playbackEnded = false;
           setEnginePlaybackStatus(state, 'loading');
           // 补回加载窗口内被丢弃的真实时长，避免进度条最大值停留在 0
           if (engine.duration > 0) {
@@ -1071,8 +1128,10 @@ export const usePlayerStore = defineStore(
           if (state.awaitingTrackLoad) return;
           setEnginePlaybackStatus(state, 'stopped');
           if (!state.recentSeekIgnoreEnd) {
+            state.playbackEnded = true;
+            const sleepTimerCompleted = sleepTimer.trackEnded();
             emitPlayerEvent('ended');
-            handlePlaybackEnded();
+            if (!sleepTimerCompleted) handlePlaybackEnded();
           } else state.recentSeekIgnoreEnd = false;
         },
         play: (payload) => {
@@ -1246,6 +1305,13 @@ export const usePlayerStore = defineStore(
     // Explicitly return state and actions to help TypeScript
     return {
       ...toRefs(state),
+      startSleepTimer: sleepTimer.start,
+      setSleepTimerAction: sleepTimer.setAction,
+      cancelSleepTimer: sleepTimer.cancel,
+      setSleepTimerFinishTrack: (enabled: boolean) => {
+        state.sleepTimer.finishTrack = enabled;
+        sleepTimer.tick();
+      },
       isPlaying,
       isLoading,
       playbackTargetTrackId,

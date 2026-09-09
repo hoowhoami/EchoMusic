@@ -6,6 +6,7 @@ import type {
   UpdateState,
 } from '../shared/app';
 import type { PlayMode } from '../shared/playback';
+import type { SleepTimerAction, SleepTimerActionResult } from '../shared/sleep-timer';
 import type {
   PluginGlobalShortcutRegistrationPayload,
   PluginGlobalShortcutRegistrationResult,
@@ -328,6 +329,9 @@ export interface IElectronAPI {
     onSetPlayMode: (func: (playMode: PlayMode) => void) => () => void;
   };
   power: {
+    executeSleepTimerAction: (
+      action: Exclude<SleepTimerAction, 'pause'>,
+    ) => Promise<SleepTimerActionResult>;
     onResume: (func: () => void) => () => void;
   };
   desktopLyric: {

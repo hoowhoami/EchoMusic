@@ -11,6 +11,7 @@ import type {
   PlaybackSourceKind,
 } from './types';
 import { DEFAULT_PLAYER_VOLUME } from '../../../shared/playback';
+import { createSleepTimerState } from './sleepTimer';
 
 const createPlaybackIntent = (): PlaybackIntent => ({
   seq: 0,
@@ -36,10 +37,13 @@ const createPlaybackDiagnostics = (): PlaybackDiagnostics => ({
 });
 
 export const createPlayerState = () => ({
+  sleepTimer: createSleepTimerState(),
   isLyricViewOpen: false,
   volume: DEFAULT_PLAYER_VOLUME,
   lastNonZeroVolume: DEFAULT_PLAYER_VOLUME,
   currentTime: 0,
+  // EOF survives pause events; resuming an exhausted source must reload it.
+  playbackEnded: false,
   currentTimeUpdatedAt: 0,
   // Monotonic ordering for native buffering and actual-output-progress events.
   nativePlaybackEventRevision: 0,

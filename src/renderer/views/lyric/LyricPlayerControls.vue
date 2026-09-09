@@ -17,6 +17,7 @@ import Tooltip from '@/components/ui/Tooltip.vue';
 import Badge from '@/components/ui/Badge.vue';
 import Popover from '@/components/ui/Popover.vue';
 import SpeedPopover from '@/components/player/SpeedPopover.vue';
+import SleepTimerPopover from '@/components/player/SleepTimerPopover.vue';
 import QualityPopover from '@/components/player/QualityPopover.vue';
 import EffectPopover from '@/components/player/EffectPopover.vue';
 import VolumePopover from '@/components/player/VolumePopover.vue';
@@ -252,6 +253,7 @@ const handleCopySongInfo = async () => {
       <div class="bar-center">
         <!-- 播放控制按钮 -->
         <div class="bar-controls">
+          <SleepTimerPopover />
           <Tooltip :content="playModeLabel" side="top">
             <template #trigger>
               <Button
@@ -320,6 +322,7 @@ const handleCopySongInfo = async () => {
           </Button>
 
           <VolumePopover variant="bar" />
+          <SpeedPopover />
         </div>
       </div>
 
@@ -336,7 +339,6 @@ const handleCopySongInfo = async () => {
           <Icon :icon="iconShare" width="20" height="20" />
         </Button>
 
-        <SpeedPopover />
         <QualityPopover />
         <EffectPopover />
 
@@ -601,7 +603,7 @@ const handleCopySongInfo = async () => {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 16px;
+  gap: 6px;
   height: 40px;
 }
 

@@ -16,8 +16,35 @@ import type {
   PluginShowOnTopOptions,
 } from '../../shared/plugins';
 import type { IpcContext } from './types';
+import type { SleepTimerActionResult } from '../../shared/sleep-timer';
+import { requestSystemShutdown } from '../systemShutdown';
 
 export const registerWindowHandlers = ({ getMainWindow }: IpcContext) => {
+  ipcRegistry.registerHandler(
+    'sleep-timer:execute-action',
+    async (event, action: unknown): Promise<SleepTimerActionResult> => {
+      const mainWindow = getMainWindow();
+      if (
+        !mainWindow ||
+        event.sender !== mainWindow.webContents ||
+        event.senderFrame !== mainWindow.webContents.mainFrame
+      ) {
+        return { ok: false, error: '只能从主播放器执行定时动作' };
+      }
+      if (action === 'quit') {
+        setImmediate(quitApplication);
+        return { ok: true };
+      }
+      if (action !== 'shutdown') return { ok: false, error: '不支持的定时动作' };
+      try {
+        await requestSystemShutdown();
+        return { ok: true };
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : String(error);
+        return { ok: false, error: `未能请求系统关机，请检查系统权限或未保存的工作。${detail}` };
+      }
+    },
+  );
   // Subscribe once per native window; renderer reloads query its current state again.
   const observedWindows = new WeakSet<BrowserWindow>();
   ipcRegistry.registerHandler('window:frame-state', (event): WindowFrameState | null => {

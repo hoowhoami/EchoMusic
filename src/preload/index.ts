@@ -3,6 +3,7 @@ import log from 'electron-log/renderer';
 import type { ApiServerStatus } from '../shared/api-server';
 import type { AppInfoResult, UpdateDownloadResult, UpdateState } from '../shared/app';
 import type { PlayMode } from '../shared/playback';
+import type { SleepTimerAction, SleepTimerActionResult } from '../shared/sleep-timer';
 import type {
   PluginGlobalShortcutRegistrationPayload,
   PluginGlobalShortcutRegistrationResult,
@@ -471,6 +472,8 @@ contextBridge.exposeInMainWorld('electron', {
     },
   },
   power: {
+    executeSleepTimerAction: (action: Exclude<SleepTimerAction, 'pause'>) =>
+      ipcRenderer.invoke('sleep-timer:execute-action', action) as Promise<SleepTimerActionResult>,
     onResume: (func: () => void) => {
       const listener = () => func();
       ipcRenderer.on('power:resume', listener);

@@ -181,6 +181,7 @@
       "entitlements": "build/entitlements.mac.plist",
       "entitlementsInherit": "build/entitlements.mac.inherit.plist",
       "extendInfo": {
+        "NSAppleEventsUsageDescription": "EchoMusic 需要通过系统事件执行您设置的定时关机动作。",
         "NSMicrophoneUsageDescription": "EchoMusic 需要访问麦克风以识别正在播放的歌曲",
         "NSAudioCaptureUsageDescription": "EchoMusic 需要捕获系统音频以识别正在播放的歌曲"
       },

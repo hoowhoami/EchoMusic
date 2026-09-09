@@ -401,7 +401,7 @@ export const createPlaybackManager = (
   const canAutoAdvanceGaplessly = () =>
     canPrepareGaplessForQueue(
       state.currentSourceQueueId ?? playlistStore.activeQueue?.id,
-      state.autoNextSuppressed,
+      state.autoNextSuppressed || state.sleepTimer.deadline !== null,
     );
 
   const rememberInvalidatedGaplessSource = (prepared: GaplessPreparedSource | null) => {
@@ -601,6 +601,7 @@ export const createPlaybackManager = (
     );
     state.historyLocalRecorded = false;
     state.currentTrackId = prepared.targetTrackId;
+    state.playbackEnded = false;
     state.currentSourceQueueId =
       prepared.sourceQueueId ??
       playlistStore.activeQueue?.id ??
@@ -1184,8 +1185,9 @@ export const createPlaybackManager = (
       return;
     }
 
-    if (!engine.source) {
-      await playTrack(state.currentTrackId);
+    if (!engine.source || state.playbackEnded) {
+      const { sourceQueueId, list } = getPlaybackSourceContext();
+      await playTrack(state.currentTrackId, list, { sourceQueueId });
       return;
     }
 
@@ -1265,15 +1267,28 @@ export const createPlaybackManager = (
     }
 
     engine.updateMediaPlaybackState(buildMediaState(state));
-    return seekPromise.finally(() => {
-      // 只有最新 seek 命令的完成才能结束 UI 生命周期；被覆盖的旧请求不得
-      // 清理新目标。这里依赖命令完成事件，不依赖超时。
-      if (dispatchSeq === seekDispatchSeq) {
-        state.seekTargetTime = null;
-        state.nativeSeekActive = false;
-        state.nativeSeekGeneration = null;
-      }
-    });
+    const seekTrackId = state.currentTrackId;
+    const seekRequestSeq = state.playbackRequestSeq;
+    return seekPromise
+      .then(() => {
+        if (
+          dispatchSeq === seekDispatchSeq &&
+          seekRequestSeq === state.playbackRequestSeq &&
+          seekTrackId === state.currentTrackId &&
+          (effectiveDuration <= 0 || targetTime < effectiveDuration)
+        ) {
+          state.playbackEnded = false;
+        }
+      })
+      .finally(() => {
+        // 只有最新 seek 命令的完成才能结束 UI 生命周期；被覆盖的旧请求不得
+        // 清理新目标。这里依赖命令完成事件，不依赖超时。
+        if (dispatchSeq === seekDispatchSeq) {
+          state.seekTargetTime = null;
+          state.nativeSeekActive = false;
+          state.nativeSeekGeneration = null;
+        }
+      });
   };
 
   const pushShuffleHistory = (trackId: string | null) => {
@@ -1541,6 +1556,7 @@ export const createPlaybackManager = (
   };
 
   const stop = () => {
+    state.playbackEnded = false;
     const sourceQueueId =
       state.currentSourceQueueId ?? playlistStore.activeQueue?.id ?? playlistStore.activeQueueId;
     clearAutoNextTimer();

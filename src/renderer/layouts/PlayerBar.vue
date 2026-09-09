@@ -4,6 +4,7 @@ import { computed, ref, onMounted, onUnmounted, watch, nextTick } from 'vue';
 import type { SongArtist } from '@/models/song';
 import { SliderRoot, SliderTrack, SliderRange, SliderThumb } from 'reka-ui';
 import SpeedPopover from '@/components/player/SpeedPopover.vue';
+import SleepTimerPopover from '@/components/player/SleepTimerPopover.vue';
 import QualityPopover from '@/components/player/QualityPopover.vue';
 import EffectPopover from '@/components/player/EffectPopover.vue';
 import VolumePopover from '@/components/player/VolumePopover.vue';
@@ -387,7 +388,8 @@ onUnmounted(() => {
 
       <!-- 2. 中间：播放控制 & 进度条 - 核心弹性区域 -->
       <div class="flex-[1.5] flex flex-col items-center justify-center gap-1 min-w-37.5">
-        <div class="flex items-center justify-center gap-4 h-10">
+        <div class="flex items-center justify-center gap-1.5 h-10">
+          <SleepTimerPopover />
           <!-- 播放模式 -->
           <Tooltip
             :content="
@@ -488,6 +490,7 @@ onUnmounted(() => {
 
           <!-- 音量控制 -->
           <VolumePopover variant="bar" />
+          <SpeedPopover />
         </div>
 
         <!-- 进度条系统 - 动态伸缩至最大值 -->
@@ -561,7 +564,6 @@ onUnmounted(() => {
           <Icon :icon="iconShare" width="20" height="20" />
         </Button>
 
-        <SpeedPopover />
         <QualityPopover />
         <EffectPopover />
 
