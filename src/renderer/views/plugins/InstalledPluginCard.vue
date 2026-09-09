@@ -2,24 +2,10 @@
 import Tooltip from '@/components/ui/Tooltip.vue';
 
 import { Icon } from '@iconify/vue';
-import { nextTick, onMounted, ref } from 'vue';
 import Button from '@/components/ui/Button.vue';
 import Switch from '@/components/ui/Switch.vue';
 import { iconSettings, iconTriangleAlert } from '@/icons';
 import type { PluginRuntimeRecord } from '@/plugins/runtime';
-
-const descriptionRef = ref<HTMLParagraphElement | null>(null);
-const isTruncated = ref(false);
-
-const checkTruncation = () => {
-  if (descriptionRef.value) {
-    isTruncated.value = descriptionRef.value.scrollHeight > descriptionRef.value.clientHeight;
-  }
-};
-
-onMounted(() => {
-  nextTick(checkTruncation);
-});
 
 type FailureDetail = {
   reason: string;
@@ -116,13 +102,13 @@ const emit = defineEmits<{
       </div>
     </div>
 
-    <p
-      ref="descriptionRef"
-      class="plugin-card-description"
-      :title="isTruncated ? record.descriptor.description || '暂无描述' : undefined"
-    >
-      {{ record.descriptor.description || '暂无描述' }}
-    </p>
+    <Tooltip :content="record.descriptor.description || '暂无描述'" overflow-only>
+      <template #trigger>
+        <p class="plugin-card-description">
+          {{ record.descriptor.description || '暂无描述' }}
+        </p>
+      </template>
+    </Tooltip>
 
     <div v-if="featureTags.length" class="plugin-feature-tags">
       <span v-for="tag in featureTags.slice(0, 5)" :key="tag">
