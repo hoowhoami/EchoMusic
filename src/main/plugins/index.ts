@@ -45,6 +45,7 @@ import type {
   PluginWebServerResponsePayload,
   PluginWebServerStatusResult,
 } from '../../shared/plugins';
+import { shouldRefreshMarketplace } from './marketplaceCache';
 import { isBlockedObjectKey } from '../../shared/objectSafety';
 import {
   applyGithubAcceleratorUrl as applyGithubProxyUrl,
@@ -1386,8 +1387,7 @@ const normalizeMarketplaceIndexPlugins = async (
 };
 
 const fetchMarketplaceText = async (url: string, githubProxyUrl?: string, forceNetwork = false) => {
-  // forceNetwork（用户手动刷新）时附加唯一查询参数破除 GitHub CDN/本地 HTTP 缓存，
-  // 并带上 no-cache 请求头，确保拿到仓库最新内容。
+  // 自动到期检查与手动刷新都绕过索引及 manifest 的 HTTP/CDN 缓存。
   const bustedUrl = forceNetwork ? appendUrlCacheKey(url, `cb-${Date.now()}`) : url;
   const acceleratedUrl = applyGithubProxyUrl(bustedUrl, githubProxyUrl);
   const headers: Record<string, string> = {
@@ -1423,12 +1423,29 @@ const fetchMarketplaceIndex = async (
   githubProxyUrl?: string,
   previousPlugins: PluginMarketplaceCatalogPlugin[] = [],
   forceNetwork = false,
+  installedIds?: Set<string>,
 ) => {
   const sourceRepo = parseGithubRepository(source.url);
   if (!sourceRepo) throw new Error('仅支持 GitHub 仓库地址');
   const indexUrl = toRawGithubUrl(sourceRepo, PLUGIN_MARKETPLACE_INDEX_FILE);
+  const indexStartedAt = Date.now();
   const raw = await fetchMarketplaceText(indexUrl, githubProxyUrl, forceNetwork);
   const index = JSON.parse(raw) as PluginMarketplaceIndex;
+  if (!Array.isArray(index.plugins))
+    throw new Error(`${PLUGIN_MARKETPLACE_INDEX_FILE} 插件列表格式无效`);
+  if (installedIds) {
+    // Older indexes without an id still require reading the manifest to identify the plugin.
+    index.plugins = index.plugins.filter(
+      (entry) => !normalizePluginId(entry?.id) || installedIds.has(normalizePluginId(entry.id)),
+    );
+  }
+  if (installedIds)
+    log.info('[PluginUpdates] index loaded', {
+      sourceId: source.id,
+      durationMs: Date.now() - indexStartedAt,
+      manifestCount: index.plugins.length,
+    });
+  const manifestStartedAt = Date.now();
   const result = await normalizeMarketplaceIndexPlugins(
     source,
     index,
@@ -1436,8 +1453,13 @@ const fetchMarketplaceIndex = async (
     previousPlugins,
     forceNetwork,
   );
+  if (installedIds)
+    log.info('[PluginUpdates] manifests loaded', {
+      sourceId: source.id,
+      durationMs: Date.now() - manifestStartedAt,
+    });
   const plugins = result.plugins;
-  if (plugins.length === 0) {
+  if (plugins.length === 0 && !installedIds) {
     throw new Error(`${PLUGIN_MARKETPLACE_INDEX_FILE} 未提供可用插件`);
   }
   return {
@@ -1454,6 +1476,7 @@ const fetchMarketplaceSourceCatalog = async (
   githubProxyUrl?: string,
   previousPlugins: PluginMarketplaceCatalogPlugin[] = [],
   forceNetwork = false,
+  installedIds?: Set<string>,
 ) => {
   try {
     const result = await fetchMarketplaceIndex(
@@ -1461,6 +1484,7 @@ const fetchMarketplaceSourceCatalog = async (
       githubProxyUrl,
       previousPlugins,
       forceNetwork,
+      installedIds,
     );
     const now = Date.now();
     const sourceRepo = parseGithubRepository(source.url);
@@ -1523,6 +1547,7 @@ const hydrateMarketplacePlugins = async (
   plugins: PluginMarketplaceCatalogPlugin[],
   sources: PluginMarketplaceSource[],
   githubProxyUrl?: string,
+  cachedOnly = false,
 ): Promise<PluginMarketplacePlugin[]> => {
   const installedById = new Map(listPlugins().plugins.map((plugin) => [plugin.id, plugin]));
   const enabledSourceIds = new Set(
@@ -1545,7 +1570,9 @@ const hydrateMarketplacePlugins = async (
         stats: getEmptyMarketplaceStats(),
       };
     });
-  const statsByKey = await fetchMarketplacePluginStats(hydrated);
+  const statsByKey = cachedOnly
+    ? new Map<string, PluginMarketplaceStats>()
+    : await fetchMarketplacePluginStats(hydrated);
   return hydrated
     .map((plugin) => ({
       ...plugin,
@@ -1613,7 +1640,7 @@ export const addPluginMarketplaceSource = async (
   });
   if (!candidate) return { ok: false, error: '插件源地址无效', sources };
 
-  const fetched = await fetchMarketplaceSourceCatalog(candidate, options.githubProxyUrl);
+  const fetched = await fetchMarketplaceSourceCatalog(candidate, options.githubProxyUrl, [], true);
   if (fetched.source.lastError) {
     return { ok: false, error: fetched.source.lastError, sources };
   }
@@ -1670,6 +1697,8 @@ export const removePluginMarketplaceSource = (
   return { ok: true, sourceId, sources: nextSources };
 };
 
+const marketplaceRefreshes = new Map<string, ReturnType<typeof refreshMarketplaceCatalog>>();
+
 export const listPluginMarketplace = async (
   options: PluginMarketplaceRequestOptions = {},
 ): Promise<PluginMarketplaceListResult> => {
@@ -1678,22 +1707,76 @@ export const listPluginMarketplace = async (
   let cache = getMarketplaceCache();
   let nextSources = sources;
 
-  if (options.refresh || (enabledSources.length > 0 && cache.plugins.length === 0)) {
-    const refreshed = await refreshMarketplaceCatalog(
-      sources,
-      options.githubProxyUrl,
-      cache.plugins,
-      // 仅用户手动刷新时强制破缓存；缓存为空的自动拉取走常规请求即可
-      Boolean(options.refresh),
+  if (options.installedOnly && !options.cachedOnly) {
+    const startedAt = Date.now();
+    const installedIds = new Set(listPlugins().plugins.map((plugin) => plugin.id));
+    const fetched = installedIds.size
+      ? await Promise.all(
+          enabledSources.map(async (source) => {
+            const sourceStartedAt = Date.now();
+            const result = await fetchMarketplaceSourceCatalog(
+              source,
+              options.githubProxyUrl,
+              cache.plugins,
+              true,
+              installedIds,
+            );
+            log.info('[PluginUpdates] source check finished', {
+              sourceId: source.id,
+              durationMs: Date.now() - sourceStartedAt,
+              error: result.source.lastError,
+            });
+            return result;
+          }),
+        )
+      : [];
+    const replacements = new Map(
+      fetched.flatMap((result) =>
+        result.plugins
+          .filter((plugin) => installedIds.has(plugin.id))
+          .map((plugin) => [`${plugin.sourceId}:${plugin.id}`, plugin] as const),
+      ),
     );
-    nextSources = refreshed.sources;
-    cache = refreshed.cache;
+    // Merge against the latest cache without marking an incomplete catalog refresh as fresh.
+    cache = getMarketplaceCache();
+    const merged = new Map(
+      cache.plugins.map((plugin) => [`${plugin.sourceId}:${plugin.id}`, plugin]),
+    );
+    for (const [key, plugin] of replacements) merged.set(key, plugin);
+    cache = { ...cache, plugins: [...merged.values()] };
+    if (replacements.size) setMarketplaceCache(cache);
+    nextSources = sources.map((source) => {
+      const result = fetched.find((item) => item.source.id === source.id);
+      return result ? { ...source, lastError: result.source.lastError } : source;
+    });
+    log.info('[PluginUpdates] installed plugin check finished', {
+      installedCount: installedIds.size,
+      durationMs: Date.now() - startedAt,
+    });
+  } else if (
+    !options.cachedOnly &&
+    shouldRefreshMarketplace(cache.fetchedAt, enabledSources, Boolean(options.refresh))
+  ) {
+    const key = JSON.stringify([sources, options.githubProxyUrl]);
+    let pending = marketplaceRefreshes.get(key);
+    if (!pending) {
+      pending = refreshMarketplaceCatalog(sources, options.githubProxyUrl, cache.plugins, true);
+      marketplaceRefreshes.set(key, pending);
+    }
+    try {
+      const refreshed = await pending;
+      nextSources = refreshed.sources;
+      cache = refreshed.cache;
+    } finally {
+      if (marketplaceRefreshes.get(key) === pending) marketplaceRefreshes.delete(key);
+    }
   }
 
   const plugins = await hydrateMarketplacePlugins(
     cache.plugins,
     nextSources,
     options.githubProxyUrl,
+    options.cachedOnly || options.installedOnly,
   );
   const enabledSourceErrors = nextSources
     .filter((source) => source.enabled && source.lastError)

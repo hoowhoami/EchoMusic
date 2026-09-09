@@ -703,6 +703,10 @@ export interface PluginMarketplaceSourcePatch {
 }
 
 export interface PluginMarketplaceRequestOptions {
+  /** Refresh installed plugin manifests only; omit marketplace statistics. */
+  installedOnly?: boolean;
+  /** 仅读取本地目录，供页面先展示缓存。 */
+  cachedOnly?: boolean;
   githubProxyUrl?: string;
   refresh?: boolean;
 }

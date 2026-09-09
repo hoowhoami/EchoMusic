@@ -38,13 +38,22 @@ export const createTaskBridge = (id: string, retention: TaskRetentionPolicy): Ta
       }
 
       const { status: nextStatus, ...patch } = registration;
-      if (status !== nextStatus && status !== 'running') {
+      if (status !== nextStatus && status !== 'running' && status !== 'pending') {
         register(registration);
         return;
       }
 
       let updated: boolean;
-      if (nextStatus !== 'running' && status === 'running') {
+      if (nextStatus === 'running' && status === 'pending') {
+        updated = handle.start(patch);
+      } else if (nextStatus === 'pending' && status === 'running') {
+        register(registration);
+        return;
+      } else if (
+        nextStatus !== 'running' &&
+        nextStatus !== 'pending' &&
+        (status === 'running' || status === 'pending')
+      ) {
         updated = handle.finish(nextStatus, patch);
       } else {
         updated = handle.update(patch as PluginTaskPatch);

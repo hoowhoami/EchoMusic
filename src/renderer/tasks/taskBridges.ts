@@ -1,3 +1,4 @@
+import { setupPluginUpdateTaskBridge } from './pluginUpdateTaskBridge';
 import { setupUpdateTaskBridge } from './updateTaskBridge';
 
 let activeInstallation: symbol | null = null;
@@ -11,7 +12,7 @@ export const setupTaskBridges = (): (() => void) => {
   if (activeInstallation) return () => {};
   const installation = Symbol('task-bridges');
   activeInstallation = installation;
-  const disposers: Array<() => void> = [setupUpdateTaskBridge()];
+  const disposers: Array<() => void> = [setupUpdateTaskBridge(), setupPluginUpdateTaskBridge()];
   return () => {
     if (activeInstallation !== installation) return;
     activeInstallation = null;

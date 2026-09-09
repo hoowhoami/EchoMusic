@@ -59,6 +59,7 @@ export type {
   PluginTaskPatch,
   PluginTaskRegistration,
   TaskAction,
+  TaskItem,
   TaskActionVariant,
   TaskProgress,
   TaskRetention,

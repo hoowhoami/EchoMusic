@@ -3,6 +3,7 @@ import type {
   PluginTaskHandle,
   PluginTaskRegistration,
   TaskAction,
+  TaskItem,
   TaskRetentionPolicy,
   TaskStatus,
   TaskTerminalPolicy,
@@ -16,6 +17,7 @@ export type {
   PluginTaskPatch,
   PluginTaskRegistration,
   TaskAction,
+  TaskItem,
   TaskActionVariant,
   TaskProgress,
   TaskRetention,
@@ -26,6 +28,7 @@ export type {
 } from '../../shared/tasks';
 
 const TASK_STATUS_LABELS: Record<TaskStatus, string> = {
+  pending: '待操作',
   running: '进行中',
   completed: '已完成',
   error: '失败',
@@ -126,6 +129,7 @@ const isPromiseLike = (value: unknown): value is Promise<unknown> =>
   Boolean(value && typeof (value as Promise<unknown>).then === 'function');
 
 const runTaskAction = (action: TaskAction, runtime?: TaskActionRuntime): void => {
+  if (action.disabled) return;
   const invoke = () => action.onClick();
   try {
     const result = runtime?.runAction ? runtime.runAction(action, invoke) : invoke();
@@ -158,12 +162,20 @@ const normalizeTaskActions = (
     onClick: () => runTaskAction(action, runtime),
   }));
 
-const normalizeTaskData = <T extends { actions?: TaskAction[] }>(
+const normalizeTaskData = <T extends { actions?: TaskAction[]; items?: TaskItem[] }>(
   data: T,
   runtime?: TaskActionRuntime,
 ): T => ({
   ...data,
   ...('actions' in data ? { actions: normalizeTaskActions(data.actions, runtime) } : {}),
+  ...('items' in data
+    ? {
+        items: data.items?.map((item) => ({
+          ...item,
+          actions: normalizeTaskActions(item.actions, runtime),
+        })),
+      }
+    : {}),
 });
 
 const clearTaskExpiry = (id: string): void => {
@@ -214,7 +226,7 @@ const removeTask = (id: string, generation?: symbol): boolean => {
 
 const scheduleTaskExpiry = (entry: TaskEntry): void => {
   clearTaskExpiry(entry.id);
-  if (entry.status === 'running') return;
+  if (entry.status === 'running' || entry.status === 'pending') return;
   const retention = entry.terminalPolicy[entry.status];
   if (retention.mode === 'manual') return;
 
@@ -281,7 +293,7 @@ export const registerTask = (
     ownerSession: owner.session,
     generation,
     createdAt: now,
-    ...(task.status === 'running' ? {} : { terminalEnteredAt: now }),
+    ...(['running', 'pending'].includes(task.status) ? {} : { terminalEnteredAt: now }),
   };
   taskPanelState.entries[task.id] = entry;
   taskAbortControllers.set(task.id, { generation, controller: abortController });
@@ -297,6 +309,12 @@ export const registerTask = (
       abortController.abort();
       return true;
     },
+    start: (patch = {}) => {
+      const current = getCurrentEntry(owner, task.id, generation);
+      if (!current || current.status !== 'pending' || abortController.signal.aborted) return false;
+      Object.assign(current, normalizeTaskData(patch, runtime), { status: 'running' });
+      return true;
+    },
     update: (patch) => {
       const current = getCurrentEntry(owner, task.id, generation);
       if (!current) return false;
@@ -305,7 +323,7 @@ export const registerTask = (
     },
     finish: (status, patch = {}) => {
       const current = getCurrentEntry(owner, task.id, generation);
-      if (!current || current.status !== 'running') return false;
+      if (!current || (current.status !== 'running' && current.status !== 'pending')) return false;
       Object.assign(current, normalizeTaskData(patch, runtime), {
         status,
         terminalEnteredAt: Date.now(),
@@ -331,4 +349,6 @@ export const dismissTaskEntry = (id: string, generation: symbol): boolean =>
   removeTask(id, generation);
 
 export const isManuallyDismissibleTask = (entry: TaskEntry): boolean =>
-  entry.status !== 'running' && entry.terminalPolicy[entry.status].mode === 'manual';
+  entry.status !== 'running' &&
+  entry.status !== 'pending' &&
+  entry.terminalPolicy[entry.status].mode === 'manual';

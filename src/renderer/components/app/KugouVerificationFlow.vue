@@ -9,6 +9,7 @@ import {
   cancelKugouVerification,
   getKugouCaptchaProvider,
   KUGOU_CAPTCHA_PROVIDER_NAMES,
+  KUGOU_ACCOUNT_RISK_MESSAGE,
   kugouVerificationState,
   submitKugouVerification,
   refreshKugouVerificationInfo,
@@ -56,6 +57,7 @@ const isSmsCaptcha = computed(() => provider.value === 'SMS');
 const isLoginVerification = computed(() => provider.value === 'LOGIN');
 const isBindPhone = computed(() => provider.value === 'BIND_PHONE');
 const isRealNameVerification = computed(() => provider.value === 'REAL_NAME');
+const isAccountRisk = computed(() => provider.value === 'ACCOUNT_RISK');
 const isUnsupported = computed(
   () =>
     Boolean(kugouVerificationState.verifyInfo) &&
@@ -63,7 +65,8 @@ const isUnsupported = computed(
     !isSmsCaptcha.value &&
     !isLoginVerification.value &&
     !isBindPhone.value &&
-    !isRealNameVerification.value,
+    !isRealNameVerification.value &&
+    !isAccountRisk.value,
 );
 const loginMessage = computed(() =>
   String(kugouVerificationState.verifyInfo?.show?.msg || '').trim(),
@@ -74,11 +77,13 @@ const title = computed(() => {
   if (isLoginVerification.value) return '登录确认';
   if (isBindPhone.value) return '需要绑定手机号';
   if (isRealNameVerification.value) return '需要实名认证';
+  if (isAccountRisk.value) return '账号被风控';
   return '安全验证';
 });
 const tencentActionText = computed(() => (kugouVerificationState.error ? '重新验证' : '开始验证'));
 const description = computed(() => {
   if (isLoading.value) return '正在准备验证';
+  if (isAccountRisk.value) return '需要在酷狗 APP 发起申诉';
   if (!kugouVerificationState.verifyInfo) return '尚未取得验证码，请重新获取验证信息';
   if (isSmsCaptcha.value) return '请输入酷狗下发的验证码';
   if (isLoginVerification.value) return loginMessage.value || '请登录账号以确认身份';
@@ -571,6 +576,10 @@ onBeforeUnmount(resetTencentCaptcha);
 
       <template v-else-if="isRealNameVerification">
         <p class="verification-note">请前往酷狗客户端完成实名认证，完成后返回此处重试刚才的操作</p>
+      </template>
+
+      <template v-else-if="isAccountRisk">
+        <p class="verification-note">{{ KUGOU_ACCOUNT_RISK_MESSAGE }}</p>
       </template>
 
       <p v-if="kugouVerificationState.error" class="verification-error">

@@ -1,6 +1,16 @@
-import { computed, nextTick, onMounted, ref, watch, type Ref } from 'vue';
+import { computed, nextTick, onMounted, onUnmounted, ref, watch, type Ref } from 'vue';
 import type { RouteLocationNormalizedLoaded } from 'vue-router';
-import { reloadOtherPluginRuntimes, refreshPlugins } from '@/plugins/runtime';
+import {
+  acceptMarketplaceCatalog,
+  getMarketplaceRevision,
+  marketplacePlugins,
+  busyMarketplacePluginKeys,
+  isUpdatingAllMarketplace,
+  updateAllProgress,
+  updateAllTotal,
+  installMarketplaceUpdate,
+  updateMarketplaceBatch,
+} from '@/stores/pluginUpdates';
 import { useSettingStore } from '@/stores/setting';
 import { useToastStore } from '@/stores/toast';
 import { copyShareTarget, createPluginShareTarget, isPluginIdShareable } from '@/utils/share';
@@ -29,9 +39,6 @@ export const usePluginMarketplace = ({ route, activeView }: UsePluginMarketplace
   const marketplaceLoaded = ref(false);
   const isMarketplaceLoading = ref(false);
   const isMarketplaceRefreshing = ref(false);
-  const isUpdatingAllMarketplace = ref(false);
-  const updateAllProgress = ref(0);
-  const updateAllTotal = ref(0);
   const isSourceDialogOpen = ref(false);
   const isAddingSource = ref(false);
   const marketplaceSearch = ref('');
@@ -40,9 +47,7 @@ export const usePluginMarketplace = ({ route, activeView }: UsePluginMarketplace
   const newSourceName = ref('');
   const highlightedMarketplacePluginKey = ref('');
   const handledHighlightRouteKey = ref('');
-  const busyMarketplacePluginKeys = ref<Set<string>>(new Set());
   const busySourceIds = ref<Set<string>>(new Set());
-  const marketplacePlugins = ref<PluginMarketplacePlugin[]>([]);
   const marketplaceSources = ref<PluginMarketplaceSource[]>([]);
   const marketplaceFetchedAt = ref(0);
   let marketplaceLoadPromise: Promise<void> | null = null;
@@ -172,25 +177,42 @@ export const usePluginMarketplace = ({ route, activeView }: UsePluginMarketplace
     if (isMarketplaceLoading.value || isMarketplaceRefreshing.value) {
       return marketplaceLoadPromise ?? Promise.resolve();
     }
-    if (refreshSource && marketplaceLoaded.value) isMarketplaceRefreshing.value = true;
+    if (marketplaceLoaded.value) isMarketplaceRefreshing.value = true;
     else isMarketplaceLoading.value = true;
 
     marketplaceLoadPromise = (async () => {
+      const revision = getMarketplaceRevision();
       try {
+        // 首次进入立即显示本地目录，再检查是否需要联网更新。
+        if (!marketplaceLoaded.value && !refreshSource) {
+          const cached = await window.electron.plugins?.marketplace.list({
+            ...getMarketplaceRequestOptions(),
+            cachedOnly: true,
+          });
+          if (cached?.plugins.length) {
+            marketplaceSources.value = cached.sources;
+            acceptMarketplaceCatalog(cached.plugins, revision);
+            marketplaceFetchedAt.value = cached.fetchedAt;
+            marketplaceLoaded.value = true;
+            isMarketplaceLoading.value = false;
+            isMarketplaceRefreshing.value = true;
+          }
+        }
         const result = await window.electron.plugins?.marketplace.list(
           getMarketplaceRequestOptions(refreshSource),
         );
         marketplaceSources.value = result?.sources ?? [];
-        marketplacePlugins.value = result?.plugins ?? [];
+        acceptMarketplaceCatalog(result?.plugins ?? [], revision);
         marketplaceFetchedAt.value = result?.fetchedAt ?? 0;
         marketplaceLoaded.value = true;
-        if (result && !result.ok) {
+        if (result && !result.ok && notify) {
           toastStore.warning(result.error || '插件源刷新失败');
         } else if (refreshSource && notify) {
           toastStore.actionCompleted('在线插件列表已刷新');
         }
       } catch (error) {
-        toastStore.warning(error instanceof Error ? error.message : '在线插件列表加载失败');
+        if (notify)
+          toastStore.warning(error instanceof Error ? error.message : '在线插件列表加载失败');
       } finally {
         isMarketplaceLoading.value = false;
         isMarketplaceRefreshing.value = false;
@@ -227,8 +249,8 @@ export const usePluginMarketplace = ({ route, activeView }: UsePluginMarketplace
 
   const switchView = (view: PluginManagementView) => {
     activeView.value = view;
-    if (view === 'marketplace' && !marketplaceLoaded.value) {
-      void loadMarketplace(false);
+    if (view === 'marketplace') {
+      void loadMarketplace(false, false);
     }
   };
 
@@ -358,110 +380,46 @@ export const usePluginMarketplace = ({ route, activeView }: UsePluginMarketplace
     }
   };
 
-  const markMarketplacePluginInstalled = (plugin: PluginMarketplacePlugin) => {
-    marketplacePlugins.value = marketplacePlugins.value.map((item) => {
-      if (item.sourceId !== plugin.sourceId || item.id !== plugin.id) return item;
-      return {
-        ...item,
-        installed: true,
-        installedVersion: item.version,
-        updateAvailable: false,
-      };
-    });
-  };
-
   const installMarketplacePlugin = async (plugin: PluginMarketplacePlugin) => {
     if (!canInstallMarketplacePlugin(plugin)) return false;
-    const key = getMarketplacePluginKey(plugin);
-    const next = new Set(busyMarketplacePluginKeys.value);
-    next.add(key);
-    busyMarketplacePluginKeys.value = next;
     try {
-      const result = await window.electron.plugins?.marketplace.install(
-        plugin.sourceId,
-        plugin.id,
-        {
-          githubProxyUrl: settingStore.githubProxyUrl,
-          enableAfterInstall: false,
-        },
-      );
-      if (!result?.ok) throw new Error(result?.error || '插件安装失败');
-      await refreshPlugins({ reloadActive: true });
-      await reloadOtherPluginRuntimes();
-      markMarketplacePluginInstalled(plugin);
-      toastStore.actionCompleted(result.updated ? '插件已更新' : '插件已安装');
-      return true;
+      const ok = await installMarketplaceUpdate(plugin);
+      if (ok) toastStore.actionCompleted(plugin.installed ? '插件已更新' : '插件已安装');
+      return ok;
     } catch (error) {
       toastStore.warning(getPluginInstallErrorMessage(error));
       return false;
-    } finally {
-      const done = new Set(busyMarketplacePluginKeys.value);
-      done.delete(key);
-      busyMarketplacePluginKeys.value = done;
     }
   };
 
-  const updateAllMarketplacePlugins = async () => {
-    if (isUpdatingAllMarketplace.value) return;
-    const targets = [...updatableMarketplacePlugins.value];
-    if (targets.length === 0) return;
+  const updateAllMarketplacePlugins = () =>
+    updateMarketplaceBatch(updatableMarketplacePlugins.value);
 
-    isUpdatingAllMarketplace.value = true;
-    updateAllTotal.value = targets.length;
-    updateAllProgress.value = 0;
-    let succeeded = 0;
-    const failures: string[] = [];
-    try {
-      for (const plugin of targets) {
-        const key = getMarketplacePluginKey(plugin);
-        const next = new Set(busyMarketplacePluginKeys.value);
-        next.add(key);
-        busyMarketplacePluginKeys.value = next;
-        try {
-          const result = await window.electron.plugins?.marketplace.install(
-            plugin.sourceId,
-            plugin.id,
-            {
-              githubProxyUrl: settingStore.githubProxyUrl,
-              enableAfterInstall: false,
-            },
-          );
-          if (!result?.ok) throw new Error(result?.error || '插件更新失败');
-          succeeded += 1;
-          markMarketplacePluginInstalled(plugin);
-        } catch (error) {
-          failures.push(`${plugin.name}：${getPluginInstallErrorMessage(error)}`);
-        } finally {
-          const done = new Set(busyMarketplacePluginKeys.value);
-          done.delete(key);
-          busyMarketplacePluginKeys.value = done;
-          updateAllProgress.value += 1;
-        }
-      }
-
-      if (succeeded > 0) {
-        await refreshPlugins({ reloadActive: true });
-        await reloadOtherPluginRuntimes();
-      }
-    } finally {
-      isUpdatingAllMarketplace.value = false;
-      updateAllProgress.value = 0;
-      updateAllTotal.value = 0;
-    }
-
-    if (failures.length === 0) {
-      toastStore.actionCompleted(`已更新 ${succeeded} 个插件`);
-    } else {
-      toastStore.warning(
-        `更新完成：成功 ${succeeded} 个，失败 ${failures.length} 个。${failures[0]}`,
-        6000,
-      );
+  const checkMarketplace = () => {
+    if (
+      route.name === 'plugin-management' &&
+      activeView.value === 'marketplace' &&
+      document.visibilityState === 'visible' &&
+      navigator.onLine
+    ) {
+      void loadMarketplace(false, false);
     }
   };
-
+  let refreshInterval: ReturnType<typeof setInterval> | undefined;
   onMounted(() => {
+    refreshInterval = setInterval(checkMarketplace, 60_000);
+    window.addEventListener('focus', checkMarketplace);
+    window.addEventListener('online', checkMarketplace);
+    document.addEventListener('visibilitychange', checkMarketplace);
     if (readRouteText(route.query.view) === 'marketplace') switchView('marketplace');
     void processMarketplaceRouteHighlight(false);
+  });
+
+  onUnmounted(() => {
+    clearInterval(refreshInterval);
+    window.removeEventListener('focus', checkMarketplace);
+    window.removeEventListener('online', checkMarketplace);
+    document.removeEventListener('visibilitychange', checkMarketplace);
   });
 
   watch(
@@ -469,6 +427,7 @@ export const usePluginMarketplace = ({ route, activeView }: UsePluginMarketplace
     () => {
       if (route.name !== 'plugin-management') return;
       if (readRouteText(route.query.view) === 'marketplace') switchView('marketplace');
+      else checkMarketplace();
       void processMarketplaceRouteHighlight(false);
     },
   );

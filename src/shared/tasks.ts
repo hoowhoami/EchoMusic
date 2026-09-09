@@ -1,7 +1,7 @@
 import type { IconifyIcon } from '@iconify/types';
 
-export type TaskStatus = 'running' | 'completed' | 'error' | 'aborted';
-export type TerminalTaskStatus = Exclude<TaskStatus, 'running'>;
+export type TaskStatus = 'pending' | 'running' | 'completed' | 'error' | 'aborted';
+export type TerminalTaskStatus = Exclude<TaskStatus, 'pending' | 'running'>;
 
 export type TaskRetention = { mode: 'auto'; delayMs: number } | { mode: 'manual' };
 
@@ -27,7 +27,18 @@ export interface TaskAction {
   label: string;
   variant?: TaskActionVariant;
   closePanel?: boolean;
+  disabled?: boolean;
   onClick: () => void | Promise<void>;
+}
+
+/** Display-only details; rows do not own separate task lifecycles. */
+export interface TaskItem {
+  id: string;
+  name: string;
+  description?: string;
+  statusLabel?: string;
+  error?: string;
+  actions?: TaskAction[];
 }
 
 export interface PluginTaskRegistration {
@@ -42,6 +53,7 @@ export interface PluginTaskRegistration {
   progress?: TaskProgress;
   error?: string;
   actions?: TaskAction[];
+  items?: TaskItem[];
 }
 
 export type PluginTaskPatch = Partial<Omit<PluginTaskRegistration, 'id' | 'status' | 'retention'>>;
@@ -52,8 +64,10 @@ export interface PluginTaskHandle {
   readonly signal: AbortSignal;
   /** Abort the run's work without removing its task entry. */
   cancel: () => boolean;
+  /** Transition pending to running; false for canceled, stale or non-pending handles. */
+  start: (patch?: PluginTaskPatch) => boolean;
   update: (patch: PluginTaskPatch) => boolean;
-  /** The only valid transition from running to a terminal state. */
+  /** The only valid transition from pending/running to a terminal state. */
   finish: (status: TerminalTaskStatus, patch?: PluginTaskPatch) => boolean;
   dismiss: () => boolean;
 }

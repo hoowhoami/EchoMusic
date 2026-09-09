@@ -11,6 +11,32 @@ function setup() {
   return module.exports;
 }
 const tick = () => new Promise(resolve => setImmediate(resolve));
+test('v_type 51 requires an APP appeal and cannot be submitted as a captcha', async () => {
+  for (const v_type of [51, '51']) {
+    const api = setup();
+    const paths = [];
+    let resolved = false;
+    const pending = api.requestKugouVerification('risk', async path => {
+      paths.push(path);
+      return { status: 1, data: { v_type, txappid: 'test', url: 'KGCodeTX|test' } };
+    });
+    void pending.then(() => { resolved = true; }, () => {});
+    const cancelled = assert.rejects(pending, /取消/);
+    await tick();
+    assert.equal(api.getKugouCaptchaProvider(api.kugouVerificationState.verifyInfo), 'ACCOUNT_RISK');
+    assert.equal(api.KUGOU_CAPTCHA_PROVIDER_NAMES.ACCOUNT_RISK, '账号风控');
+    for (const code of ['', 'captcha-code']) {
+      assert.equal(await api.submitKugouVerification(code), false);
+      assert.match(api.kugouVerificationState.error, /风控.*酷狗 APP.*申诉/);
+    }
+    assert.deepEqual(paths, ['/get/verify/info']);
+    assert.equal(resolved, false);
+    assert.equal(api.kugouVerificationState.open, true);
+    assert.equal(api.kugouVerificationState.status, 'ready');
+    api.cancelKugouVerification();
+    await cancelled;
+  }
+});
 test('failed verification remains pending, fresh verification can succeed and release retry once', async () => {
   const api = setup();
   let verified = false;

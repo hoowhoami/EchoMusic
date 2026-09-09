@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { setupStartupPluginUpdateCheck } from '@/stores/pluginUpdates';
+let disposePluginUpdateCheck: (() => void) | undefined;
 import TooltipScope from '@/components/ui/TooltipScope.vue';
 import {
   computed,
@@ -330,6 +332,7 @@ onMounted(async () => {
   syncTrayPlayback();
   void updateStore.init();
   disposeTaskBridges = setupTaskBridges();
+  disposePluginUpdateCheck = setupStartupPluginUpdateCheck();
   if (settings.autoCheckUpdate) {
     silentUpdateCheckTimer = window.setTimeout(() => {
       updateStore.check(true);
@@ -342,6 +345,7 @@ onMounted(async () => {
 });
 
 onUnmounted(() => {
+  disposePluginUpdateCheck?.();
   disposeWindowFrame?.();
   window.removeEventListener('focus', scheduleClipboardShareCheck);
   window.removeEventListener(SHARE_COPIED_EVENT, handleShareCopied);

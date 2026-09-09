@@ -30,6 +30,7 @@ export type KugouCaptchaProvider =
   | 'LOGIN'
   | 'BIND_PHONE'
   | 'REAL_NAME'
+  | 'ACCOUNT_RISK'
   | 'UNKNOWN';
 
 export const KUGOU_CAPTCHA_PROVIDER_NAMES: Record<KugouCaptchaProvider, string> = {
@@ -43,8 +44,11 @@ export const KUGOU_CAPTCHA_PROVIDER_NAMES: Record<KugouCaptchaProvider, string> 
   LOGIN: '登录确认',
   BIND_PHONE: '绑定手机号',
   REAL_NAME: '实名认证',
+  ACCOUNT_RISK: '账号风控',
   UNKNOWN: '未知验证',
 };
+
+export const KUGOU_ACCOUNT_RISK_MESSAGE = '当前账号被酷狗风控限制，请在酷狗客户端完成申诉流程';
 
 interface PendingChallenge {
   eventId: string;
@@ -93,6 +97,7 @@ export const getKugouCaptchaProvider = (
   if (verifyType === 34) return 'REAL_NAME';
   if (verifyType === 36) return 'BIND_PHONE';
   if (verifyType === 38) return 'LOGIN';
+  if (verifyType === 51) return 'ACCOUNT_RISK';
 
   const url = String(verifyInfo?.url || '').trim();
   const match = url.match(/^KGCode([A-Z0-9]+)\|/i);
@@ -246,6 +251,11 @@ export const submitKugouVerification = async (verifyCode: string): Promise<boole
   const challenge = activeChallenge;
   if (!challenge) {
     throw new Error('当前没有待处理的安全验证');
+  }
+
+  if (getKugouCaptchaProvider(kugouVerificationState.verifyInfo) === 'ACCOUNT_RISK') {
+    kugouVerificationState.error = KUGOU_ACCOUNT_RISK_MESSAGE;
+    return false;
   }
 
   const code = String(verifyCode || '').trim();
