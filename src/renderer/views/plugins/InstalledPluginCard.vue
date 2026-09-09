@@ -102,9 +102,13 @@ const emit = defineEmits<{
       </div>
     </div>
 
-    <p class="plugin-card-description">
-      {{ record.descriptor.description || '暂无描述' }}
-    </p>
+    <Tooltip :content="record.descriptor.description || '暂无描述'" overflow-only>
+      <template #trigger>
+        <p class="plugin-card-description">
+          {{ record.descriptor.description || '暂无描述' }}
+        </p>
+      </template>
+    </Tooltip>
 
     <div v-if="featureTags.length" class="plugin-feature-tags">
       <span v-for="tag in featureTags.slice(0, 5)" :key="tag">

@@ -124,7 +124,13 @@ const getVersionTitle = (plugin: PluginMarketplacePlugin) => {
       </template>
     </Tooltip>
 
-    <p class="plugin-card-description">{{ plugin.description || '暂无描述' }}</p>
+    <Tooltip :content="plugin.description || '暂无描述'" overflow-only>
+      <template #trigger>
+        <p class="plugin-card-description">
+          {{ plugin.description || '暂无描述' }}
+        </p>
+      </template>
+    </Tooltip>
 
     <div v-if="compatibilityMessage" class="plugin-card-error is-warning">
       <Icon :icon="iconTriangleAlert" width="14" height="14" />
