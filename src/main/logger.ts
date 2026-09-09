@@ -2,6 +2,7 @@ import { app } from 'electron';
 import { join } from 'path';
 import fs from 'fs';
 import log from 'electron-log';
+import { createConsolePipeGuard } from './consolePipeGuard';
 import {
   getEffectiveLogLevel,
   isDiagnosticActive,
@@ -56,6 +57,9 @@ const getInitialLogSettings = (): LogSettings => {
 let currentLogSettings = getInitialLogSettings();
 let loggerInitialized = false;
 let diagnosticTimer: NodeJS.Timeout | null = null;
+const consolePipeGuard = createConsolePipeGuard(() => {
+  log.transports.console.level = false;
+});
 
 /**
  * 确保日志目录存在
@@ -86,6 +90,13 @@ function getDailyLogFileName() {
  * 初始化日志配置
  */
 export function initLogger() {
+  if (loggerInitialized) return;
+  const writeConsole = log.transports.console.writeFn;
+  log.transports.console.writeFn = (options) => {
+    consolePipeGuard.write(() => writeConsole(options));
+  };
+  consolePipeGuard.watch(process.stdout);
+  consolePipeGuard.watch(process.stderr);
   const logFormat = '[{y}-{m}-{d} {h}:{i}:{s}.{ms}] [{level}] {text}';
 
   log.initialize();
@@ -151,7 +162,9 @@ export function applyLogSettings(settings?: Partial<LogSettings> | null, persist
 
   const effectiveLevel = getEffectiveLogLevel(currentLogSettings);
   log.transports.file.level = effectiveLevel;
-  log.transports.console.level = app.isPackaged
+  log.transports.console.level = consolePipeGuard.disconnected
+    ? false
+    : app.isPackaged
     ? PACKAGED_CONSOLE_LOG_LEVEL
     : DEVELOPMENT_CONSOLE_LOG_LEVEL;
   log.transports.ipc.level = false;
