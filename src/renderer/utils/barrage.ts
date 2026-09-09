@@ -37,7 +37,10 @@ export const barrageIdentity = (item: BarrageItem) => JSON.stringify([item.userI
 
 // 仅抑制刚刚本地展示的同用户同内容，避免接口回流后紧接着重复；不永久去重。
 export function nextBarrageItem(
-  items: BarrageItem[], cursor: number, recent: Map<string, number>, now: number,
+  items: BarrageItem[],
+  cursor: number,
+  recent: Map<string, number>,
+  now: number,
 ): { item?: BarrageItem; cursor: number } {
   for (const [key, expiry] of recent) if (expiry <= now) recent.delete(key);
   for (let n = 0; n < items.length; n++) {

@@ -77,7 +77,9 @@ async function load(preservePlayback = false) {
       // 审核中暂时返回空列表时保留当前播放池。
       if (!updated.length) return;
       const next = items.value[cursor % items.value.length];
-      const nextIndex = updated.findIndex(item => item.text === next.text && item.userId === next.userId);
+      const nextIndex = updated.findIndex(
+        (item) => item.text === next.text && item.userId === next.userId,
+      );
       cursor = nextIndex >= 0 ? nextIndex : cursor % updated.length;
     }
     items.value = updated;
@@ -102,7 +104,10 @@ function launchNext(onlyOwn = false) {
   if (lane < 0) return;
   let item = pendingOwn.value.shift();
   if (item) {
-    recentOwn.set(barrageIdentity(item), Date.now() + Math.max(20000, 10000 / config.value.speed + 5000));
+    recentOwn.set(
+      barrageIdentity(item),
+      Date.now() + Math.max(20000, 10000 / config.value.speed + 5000),
+    );
   } else if (!onlyOwn) {
     const next = nextBarrageItem(items.value, cursor, recentOwn, Date.now());
     cursor = next.cursor;
@@ -111,7 +116,7 @@ function launchNext(onlyOwn = false) {
   if (item) flights.value.push({ ...item, id: ++sequence, lane });
 }
 function finishFlight(id: number) {
-  flights.value = flights.value.filter(item => item.id !== id);
+  flights.value = flights.value.filter((item) => item.id !== id);
   launchNext(true);
 }
 function onSent(content: string) {
@@ -173,7 +178,11 @@ defineExpose({ onSent });
         >{{ flight.text }}</span
       >
     </div>
-    <div v-if="enabled && !flights.length && !pendingOwn.length && (loading || error || !items.length)" class="barrage-status" role="status">
+    <div
+      v-if="enabled && !flights.length && !pendingOwn.length && (loading || error || !items.length)"
+      class="barrage-status"
+      role="status"
+    >
       {{ loading ? '弹幕加载中…' : error ? '弹幕加载失败，请关闭后重新开启' : '暂无弹幕' }}
     </div>
   </div>
