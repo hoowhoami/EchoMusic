@@ -1036,3 +1036,13 @@ html.app-background-enabled.app-window-frame::after {
 html.dark.app-background-enabled.app-window-frame::after {
   border-color: rgb(255 255 255 / 22%);
 }
+
+/* Clip the entire composited document, including teleported lyrics, menus and the
+   single background layer. Unlike a native region this retains edge alpha. */
+html[data-echo-client-corners] {
+  background: transparent !important;
+  clip-path: inset(0 round var(--app-window-frame-radius, 8px));
+}
+html[data-echo-client-corners] body {
+  background: transparent !important;
+}

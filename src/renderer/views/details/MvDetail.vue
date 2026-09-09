@@ -13,6 +13,7 @@ import {
   mapVideoMetaList,
   mapVideoSourcesFromPrivilege,
   mergeVideoSources,
+  pickDefaultVideoSource,
 } from '@/utils/mappers/video';
 import { usePlayerStore } from '@/stores/player';
 import PageScrollContainer from '@/components/ui/PageScrollContainer.vue';
@@ -133,7 +134,8 @@ const syncCurrentSource = () => {
   if (!meta.value) return;
   const sources = meta.value.sources ?? [];
   const target =
-    sources.find((item) => item.hash === currentSourceHash.value) ?? sources[0] ?? null;
+    sources.find((item) => item.hash === currentSourceHash.value) ??
+    pickDefaultVideoSource(sources);
   currentSourceHash.value = target?.hash ?? '';
 };
 
@@ -181,7 +183,8 @@ const applyVersion = (nextMeta: VideoMeta) => {
     ...nextMeta,
     sources: nextMeta.sources ?? [],
   };
-  currentSourceHash.value = nextMeta.sources?.[0]?.hash ?? nextMeta.hash ?? '';
+  currentSourceHash.value =
+    pickDefaultVideoSource(nextMeta.sources ?? [])?.hash ?? nextMeta.hash ?? '';
   currentVideoUrl.value = '';
   playbackError.value = '';
 };

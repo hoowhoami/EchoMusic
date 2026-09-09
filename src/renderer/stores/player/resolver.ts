@@ -355,7 +355,12 @@ export const createResolver = (
     const finalizeResolvedSource = async (
       source: ResolvedAudioSource,
       stage: Parameters<typeof transformPluginAudioSource>[2],
-    ) => transformAudioSource(track, source, stage, options);
+    ) => {
+      const resolved = await transformAudioSource(track, source, stage, options);
+      return resolved && audioEffect !== 'none' && resolved.effect !== audioEffect
+        ? { ...resolved, noticeCode: resolved.noticeCode ?? 'audio-effect-unavailable' }
+        : resolved;
+    };
     const resolvePluginAt = async (
       position: NonNullable<Parameters<typeof resolvePluginAudioSource>[1]>,
     ): Promise<ResolvedAudioSource | null> =>

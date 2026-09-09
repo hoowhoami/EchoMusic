@@ -30,8 +30,24 @@ export function normalizeWindowBackground(
 export function resolveWindowBackground(
   value: WindowBackground,
   activeEnabled: boolean,
+  activeFrosted: boolean | null = null,
 ): WindowBackground {
   return activeEnabled
-    ? { ...normalizeWindowBackground(value), enabled: true }
+    ? {
+        ...normalizeWindowBackground(value),
+        enabled: true,
+        frosted: activeFrosted ?? value.frosted === true,
+      }
     : { ...DEFAULT_WINDOW_BACKGROUND };
+}
+
+// System Acrylic and per-pixel transparency must not share the same Windows HWND setup.
+export function getWindowComposition(value: WindowBackground, platform: string, build: number) {
+  const systemMaterial = value.enabled && value.frosted && platform === 'win32' && build >= 22621;
+  return {
+    transparent: value.enabled && !systemMaterial,
+    systemMaterial,
+    clientCornerRadius:
+      value.enabled && !systemMaterial && platform === 'win32' && build >= 22000 ? 8 : 0,
+  };
 }

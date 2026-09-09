@@ -97,6 +97,7 @@ export const useSettingStore = defineStore('setting', {
     theme: 'system' as ThemeMode,
     windowBackground: { ...DEFAULT_WINDOW_BACKGROUND },
     windowBackgroundActiveEnabled: false,
+    windowBackgroundActiveFrosted: null as boolean | null,
     supportsWindowFrost: false,
     language: 'zh-CN',
     shortcutEnabled: true,
@@ -230,9 +231,17 @@ export const useSettingStore = defineStore('setting', {
   }),
   getters: {
     effectiveWindowBackground: (state) =>
-      resolveWindowBackground(state.windowBackground, state.windowBackgroundActiveEnabled),
+      resolveWindowBackground(
+        state.windowBackground,
+        state.windowBackgroundActiveEnabled,
+        state.windowBackgroundActiveFrosted,
+      ),
     windowBackgroundRestartRequired: (state) =>
-      state.windowBackground.enabled !== state.windowBackgroundActiveEnabled,
+      state.windowBackground.enabled !== state.windowBackgroundActiveEnabled ||
+      (state.windowBackground.enabled &&
+        state.windowBackgroundActiveEnabled &&
+        state.windowBackgroundActiveFrosted !== null &&
+        state.windowBackground.frosted !== state.windowBackgroundActiveFrosted),
   },
   actions: {
     configureDspProvider(
@@ -302,6 +311,8 @@ export const useSettingStore = defineStore('setting', {
       if (!result) return;
       this.windowBackground = normalizeWindowBackground(result.background);
       this.windowBackgroundActiveEnabled = result.activeEnabled === true;
+      this.windowBackgroundActiveFrosted =
+        typeof result.activeFrosted === 'boolean' ? result.activeFrosted : null;
       this.supportsWindowFrost = result.supportsFrost;
       applyWindowBackground(this.effectiveWindowBackground);
     },
@@ -696,6 +707,7 @@ export const useSettingStore = defineStore('setting', {
       'dspProviderPath',
       'windowBackground',
       'windowBackgroundActiveEnabled',
+      'windowBackgroundActiveFrosted',
       'supportsWindowFrost',
     ],
   },

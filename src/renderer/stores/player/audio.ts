@@ -69,15 +69,24 @@ export const createAudioManager = (
   };
 
   const setAudioEffect = (effect: AudioEffectValue) => {
+    if (state.audioEffectApplying) return;
     const nextEffect = normalizeEffect(effect);
-    if (state.audioEffect === nextEffect) return;
+    if (
+      state.audioEffect === nextEffect &&
+      (!state.currentTrackId || state.currentResolvedAudioEffect === nextEffect)
+    )
+      return;
     state.audioEffect = nextEffect;
     if (!state.currentTrackId) return;
     if (getPlaybackIsLoading(state) || state.pendingSettingRefresh) {
       state.pendingSettingRefresh = true;
       return;
     }
-    void refreshCurrentTrack({ seamless: true });
+    state.audioEffectError = '';
+    state.audioEffectApplying = true;
+    void refreshCurrentTrack({ seamless: true }).finally(() => {
+      state.audioEffectApplying = false;
+    });
   };
 
   const fadeVolume = (

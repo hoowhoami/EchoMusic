@@ -580,7 +580,9 @@ const audioEffectPresetActive = computed(
   () => !isAudioEffectPresetSelectionDisabled.value && player.audioEffect !== 'none',
 );
 const isAudioEffectOptionActive = (effect: AudioEffectValue) =>
-  isAudioEffectPresetSelectionDisabled.value ? effect === 'none' : player.audioEffect === effect;
+  isAudioEffectPresetSelectionDisabled.value
+    ? effect === 'none'
+    : player.audioEffect === effect;
 
 // 节流 EQ 更新，防止高频 IPC 调用导致音频卡顿
 const throttledSetEq = useThrottleFn((newGains: number[]) => {
@@ -864,12 +866,16 @@ withDefaults(defineProps<Props>(), {
         <div v-if="activeTab === 'effect'" class="panel-content">
           <div class="panel-header">
             <span class="panel-title">歌曲音效</span>
+            <div v-if="player.audioEffectApplying" class="song-effect-pending" role="status">
+              <span class="song-effect-spinner" aria-hidden="true"></span>
+              <span>正在切换音效…</span>
+            </div>
           </div>
           <div v-if="isAudioEffectPresetSelectionDisabled" class="panel-hint">
             当前使用云盘文件播放
           </div>
           <Scrollbar class="panel-scroll">
-            <div class="effect-preset-grid">
+            <div class="effect-preset-grid" :aria-busy="player.audioEffectApplying">
               <button
                 v-for="option in audioEffectOptions"
                 :key="option.value"
@@ -879,11 +885,15 @@ withDefaults(defineProps<Props>(), {
                   'is-active': isAudioEffectOptionActive(option.value),
                   'is-disabled': isAudioEffectPresetSelectionDisabled,
                 }"
-                :disabled="isAudioEffectPresetSelectionDisabled"
+                :disabled="isAudioEffectPresetSelectionDisabled || player.audioEffectApplying || player.isLoading"
                 @click="setAudioEffect(option.value)"
               >
                 <span class="pm-label text-center">{{ option.label }}</span>
               </button>
+            </div>
+            <div v-if="!player.audioEffectApplying && player.audioEffectError" class="song-effect-feedback" role="status">
+              <span class="song-effect-feedback-title">所选音效暂未生效</span>
+              <p>{{ player.audioEffectError }}</p>
             </div>
           </Scrollbar>
         </div>
@@ -1787,6 +1797,55 @@ withDefaults(defineProps<Props>(), {
   font-weight: 500;
   line-height: 1.4;
   color: var(--color-text-secondary);
+}
+
+.song-effect-feedback {
+  margin: 4px 8px 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  background: var(--control-bg);
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.song-effect-feedback-title {
+  color: var(--color-text-main);
+  font-weight: 500;
+}
+
+.song-effect-feedback p {
+  margin: 3px 0 0;
+}
+
+.song-effect-pending {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: 12px;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.song-effect-spinner {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  border: 2px solid var(--border-subtle);
+  border-top-color: var(--color-primary-text);
+  border-radius: 50%;
+  animation: song-effect-spin 0.8s linear infinite;
+}
+
+@keyframes song-effect-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .song-effect-spinner { animation: none; }
 }
 
 .reset-btn {

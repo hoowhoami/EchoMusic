@@ -347,7 +347,11 @@ export function usePlayerControls() {
 
   const setAudioEffect = (effect: AudioEffectValue) => {
     if (isAudioEffectPresetSelectionDisabled.value) return;
-    if (player.audioEffect === effect) return;
+    if (
+      player.audioEffect === effect &&
+      (!player.currentTrackId || player.currentResolvedAudioEffect === effect)
+    )
+      return;
     player.setAudioEffect(effect);
   };
 

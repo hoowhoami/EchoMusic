@@ -195,6 +195,8 @@ export const usePlayerStore = defineStore(
       const track = findTrackById(state.currentTrackId, state.currentPlaylist, playlistStore);
       if (!track) return;
 
+      state.audioEffectError = '';
+      const isEffectChange = state.audioEffect !== state.currentResolvedAudioEffect;
       state.pendingSettingRefresh = false;
       const wasPlaying = getPlaybackIsPlaying(state);
       const seamless = options?.seamless === true && wasPlaying && !!state.currentAudioUrl;
@@ -215,7 +217,10 @@ export const usePlayerStore = defineStore(
       } catch (error) {
         if (requestSeq !== state.playbackRequestSeq) return;
         if (seamless) {
-          showPlaybackNotice('audio-url-unavailable', track);
+          showPlaybackNotice(
+            isEffectChange ? 'audio-effect-apply-failed' : 'audio-url-unavailable',
+            track,
+          );
           logger.error('PlayerStore', 'Seamless source resolution failed; old source kept:', error);
           return;
         }
@@ -223,28 +228,31 @@ export const usePlayerStore = defineStore(
         completePlaybackIntent(state, requestSeq, { isPlaying: false });
         setEnginePlaybackStatus(state, 'error');
         state.lastError = 'audio-url-unavailable';
-        showPlaybackNotice('audio-url-unavailable', track);
+        showPlaybackNotice(
+          isEffectChange ? 'audio-effect-apply-failed' : 'audio-url-unavailable',
+          track,
+        );
         logger.error('PlayerStore', 'Refresh track source resolution failed:', error);
         return;
       }
       if (requestSeq !== state.playbackRequestSeq) return;
       if (!resolved.url) {
         if (seamless) {
-          showPlaybackNotice('audio-url-unavailable', track);
+          showPlaybackNotice(
+            isEffectChange ? 'audio-effect-apply-failed' : 'audio-url-unavailable',
+            track,
+          );
           return;
         }
         abortNativeTrackLoad(state);
         completePlaybackIntent(state, requestSeq, { isPlaying: false });
         setEnginePlaybackStatus(state, 'error');
         state.lastError = 'audio-url-unavailable';
-        showPlaybackNotice('audio-url-unavailable', track);
+        showPlaybackNotice(
+          isEffectChange ? 'audio-effect-apply-failed' : 'audio-url-unavailable',
+          track,
+        );
         return;
-      }
-
-      if (resolved.noticeCode) {
-        showPlaybackNotice(resolved.noticeCode, track);
-      } else {
-        clearPlaybackNotice(state.currentTrackId);
       }
 
       audioManager.setVolume(state.volume);
@@ -261,12 +269,19 @@ export const usePlayerStore = defineStore(
           const candidates = playbackSources.length ? playbackSources : [playbackSource];
           for (const [index, candidate] of candidates.entries()) {
             try {
-              await engine.switchSource(candidate);
+              if (requestSeq !== state.playbackRequestSeq) return;
+              const trackSeq = await engine.switchSource(candidate);
+              if (requestSeq !== state.playbackRequestSeq) return;
+              // Seamless switching changes the native sequence without a file-loaded event.
+              if (trackSeq !== undefined && Number.isFinite(trackSeq) && trackSeq > 0) {
+                state.nativeTrackSeq = trackSeq;
+              }
               playbackSource = candidate;
               playbackSourceIndex = index;
               switched = true;
               break;
             } catch (error) {
+              if (requestSeq !== state.playbackRequestSeq) return;
               lastError = error;
               logger.warn('PlayerStore', 'Seamless source candidate failed', {
                 index,
@@ -279,13 +294,19 @@ export const usePlayerStore = defineStore(
       } catch (error) {
         if (requestSeq === state.playbackRequestSeq) {
           if (seamless) {
-            showPlaybackNotice('playback-failed', track);
+            showPlaybackNotice(
+              isEffectChange ? 'audio-effect-apply-failed' : 'playback-failed',
+              track,
+            );
           } else {
             abortNativeTrackLoad(state);
             completePlaybackIntent(state, requestSeq, { isPlaying: false });
             setEnginePlaybackStatus(state, 'error');
             state.lastError = 'playback-failed';
-            showPlaybackNotice('playback-failed', track);
+            showPlaybackNotice(
+              isEffectChange ? 'audio-effect-apply-failed' : 'playback-failed',
+              track,
+            );
           }
         }
         logger.error(
@@ -305,6 +326,12 @@ export const usePlayerStore = defineStore(
       state.currentAudioCandidateIndex = playbackSourceIndex;
       state.currentResolvedAudioQuality = resolved.quality;
       state.currentResolvedAudioEffect = resolved.effect;
+      if (resolved.noticeCode) {
+        showPlaybackNotice(resolved.noticeCode, track);
+      } else {
+        clearPlaybackNotice(state.currentTrackId);
+      }
+
       state.currentResolvedAudioLoudness = resolved.loudness;
       state.currentResolvedSourceKind = resolved.sourceKind ?? 'catalog';
       track.audioUrl = playbackSource.url;
@@ -447,16 +474,24 @@ export const usePlayerStore = defineStore(
       const hasTvip = busiVip.some((v: any) => v.product_type === 'tvip' && v.is_vip === 1);
       const isUserNovip = !userStore.isLoggedIn || (!hasSvip && !hasTvip);
 
-      state.playbackNotice = resolvePlaybackNotice({
+      const notice = resolvePlaybackNotice({
         code,
         track,
         autoNextEnabled: settingStore.autoNext,
         autoNextDelaySeconds: settingStore.autoNextDelaySeconds,
         isUserNovip,
       });
+      if (code.startsWith('audio-effect-')) {
+        // Effect feedback is not a playback error: keep the player/lyric error badge clear.
+        if (state.playbackNotice?.code.startsWith('audio-effect-')) state.playbackNotice = null;
+        state.audioEffectError = notice.reason;
+        return;
+      }
+      state.playbackNotice = notice;
     };
 
     const clearPlaybackNotice = (trackId?: string | number | null) => {
+      state.audioEffectError = '';
       if (!state.playbackNotice) return;
       if (
         trackId !== undefined &&

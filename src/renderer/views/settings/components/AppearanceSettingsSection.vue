@@ -80,9 +80,7 @@ const isAccentGradientDefault = computed(
           class="text-sm text-primary-text"
           role="status"
         >
-          设置已更改，请重启应用以{{
-            settingStore.windowBackground.enabled ? '启用透明背景' : '恢复普通窗口'
-          }}
+          设置已更改，重启应用后生效
           <button
             type="button"
             class="ml-2 cursor-pointer underline underline-offset-4 disabled:cursor-wait disabled:opacity-50"
@@ -127,7 +125,9 @@ const isAccentGradientDefault = computed(
         <p class="text-sm text-text-secondary">
           {{
             settingStore.supportsWindowFrost
-              ? '使用系统模糊效果，与底色及其透明度调节互斥；关闭后恢复原设置'
+              ? settingStore.windowBackgroundActiveFrosted !== null
+                ? '使用系统模糊效果，与底色及其透明度调节互斥；切换后重启生效'
+                : '使用系统模糊效果，与底色及其透明度调节互斥；关闭后恢复原设置'
               : '当前系统不支持毛玻璃，可使用背景透明度'
           }}
         </p>

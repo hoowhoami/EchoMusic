@@ -107,15 +107,6 @@ const buildSourceListFromCodecMap = (
   return sources;
 };
 
-const pickFirstSourceFromCodecMap = (
-  codecRecord: UnknownRecord,
-  codecLabel: string,
-  thumb = '',
-): VideoSource | null => {
-  const sources = buildSourceListFromCodecMap(codecRecord, codecLabel, thumb);
-  return sources[0] ?? null;
-};
-
 const collectSourcesFromMvRecord = (record: UnknownRecord): VideoSource[] => {
   const thumb = normalizeCoverUrl(
     readString(record.hdpic ?? record.thumb ?? record.img ?? record.image, ''),
@@ -127,13 +118,11 @@ const collectSourcesFromMvRecord = (record: UnknownRecord): VideoSource[] => {
     { key: 'mkv', label: 'MKV' },
   ];
 
-  for (const codec of codecMap) {
-    const codecRecord = toRecord(record[codec.key]);
-    const source = pickFirstSourceFromCodecMap(codecRecord, codec.label, thumb);
-    if (source) return [source];
-  }
-
-  return [];
+  return mergeVideoSources(
+    ...codecMap.map((codec) =>
+      buildSourceListFromCodecMap(toRecord(record[codec.key]), codec.label, thumb),
+    ),
+  );
 };
 
 const resolveMvRecords = (payload: unknown): UnknownRecord[] => {
@@ -256,7 +245,6 @@ export const mapVideoSourcesFromPrivilege = (payload: unknown): VideoSource[] =>
   const root = toRecord(payload);
   const list = Array.isArray(root.data) ? root.data : [];
   const mapped = list
-    .slice(0, 1)
     .map((item) => toRecord(item))
     .map((item): VideoSource | null => {
       const info = toRecord(item.info);
@@ -300,6 +288,12 @@ export const mergeVideoSources = (...groups: VideoSource[][]): VideoSource[] => 
         hash: item.hash,
         label: item.label || previous?.label || '默认',
         url: item.url || previous?.url || '',
+        codec:
+          previous?.codec &&
+          ['H.264', 'H.265'].includes(previous.codec) &&
+          (!item.codec || ['MP4', 'MKV'].includes(item.codec))
+            ? previous.codec
+            : item.codec || previous?.codec,
       });
     }
   }
@@ -311,3 +305,6 @@ export const mergeVideoSources = (...groups: VideoSource[][]): VideoSource[] => 
     return (right.bitrate ?? 0) - (left.bitrate ?? 0);
   });
 };
+
+export const pickDefaultVideoSource = (sources: VideoSource[]): VideoSource | null =>
+  sources.find((source) => source.codec === 'H.264') ?? sources[0] ?? null;

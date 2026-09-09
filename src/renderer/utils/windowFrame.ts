@@ -10,6 +10,10 @@ export function installWindowFrame() {
   const apply = (state: WindowFrameState | null) => {
     if (disposed) return;
     root.classList.toggle('app-window-frame', Boolean(state?.visible));
+    root.toggleAttribute(
+      'data-echo-client-corners',
+      Boolean(state?.visible && state?.clientCorners),
+    );
     root.style.setProperty('--app-window-frame-radius', `${state?.radius ?? 0}px`);
   };
   const onState = (state: unknown) => {
@@ -38,6 +42,7 @@ export function installWindowFrame() {
     disposed = true;
     ipc.off('window:frame-state-changed', onState);
     root.classList.remove('app-window-frame');
+    root.removeAttribute('data-echo-client-corners');
     root.style.removeProperty('--app-window-frame-radius');
   };
 }

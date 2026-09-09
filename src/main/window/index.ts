@@ -1,5 +1,10 @@
 import { release } from 'node:os';
-import { normalizeWindowBackground, type WindowBackground } from '../../shared/window-background';
+import {
+  getWindowComposition,
+  resolveWindowBackground,
+  normalizeWindowBackground,
+  type WindowBackground,
+} from '../../shared/window-background';
 import {
   BrowserWindow,
   shell,
@@ -27,7 +32,6 @@ import {
 } from '../windowBoundsPersistence';
 import { resolveMainWindowMinHeight } from '../windowSizing';
 import { syncWindowsBackgroundMaterial } from './backgroundMaterial';
-import { buildRoundedWindowShape } from './roundedShape';
 
 const minWidth: number = 1100;
 const defaultWidth: number = 1150;
@@ -153,7 +157,14 @@ const getMainWindowBackgroundColor = () =>
     ? '#26262a'
     : '#f5f5f7';
 
-let syncMainWindowShape: ((force?: boolean) => void) | null = null;
+let activeComposition = getWindowComposition(
+  windowBackground,
+  process.platform,
+  Number(release().split('.')[2]),
+);
+let windowBackgroundActiveFrosted: boolean | null =
+  process.platform === 'win32' ? windowBackground.frosted : null;
+export const getMainWindowClientCornerRadius = () => activeComposition.clientCornerRadius;
 
 const syncMainWindowBackground = () => {
   if (!canUseMainWindow(win)) return;
@@ -162,22 +173,24 @@ const syncMainWindowBackground = () => {
     windowBackgroundActiveEnabled ? '#00000000' : getMainWindowBackgroundColor(),
   );
   if (!windowBackgroundActiveEnabled) return;
+  const background = resolveWindowBackground(
+    windowBackground,
+    windowBackgroundActiveEnabled,
+    windowBackgroundActiveFrosted,
+  );
   if (process.platform === 'darwin') {
     // AppKit derives a transparent window's shadow from its content alpha.
     // Cached silhouettes can remain after cards/lyrics scroll or disappear.
-    const hasShadow = !windowBackground.frosted && windowBackground.transparency === 0;
+    const hasShadow = !background.frosted && background.transparency === 0;
     if (win.hasShadow() !== hasShadow) {
       win.setHasShadow(hasShadow);
       win.invalidateShadow();
     }
     const dark =
       currentTheme === 'dark' || (currentTheme === 'system' && nativeTheme.shouldUseDarkColors);
-    win.setVibrancy(windowBackground.frosted ? (dark ? 'hud' : 'under-window') : null);
+    win.setVibrancy(background.frosted ? (dark ? 'hud' : 'under-window') : null);
   } else if (supportsWindowFrost && process.platform === 'win32') {
-    if (syncWindowsBackgroundMaterial(win, windowBackground.frosted)) {
-      // DWM material changes can replace the region without changing bounds.
-      syncMainWindowShape?.(true);
-    }
+    syncWindowsBackgroundMaterial(win, background.frosted);
   }
 };
 
@@ -186,6 +199,7 @@ export const registerMainWindowPreferenceHandlers = () => {
   ipcRegistry.registerHandler('window-background:get', () => ({
     background: windowBackground,
     activeEnabled: windowBackgroundActiveEnabled,
+    activeFrosted: windowBackgroundActiveFrosted,
     supportsFrost: supportsWindowFrost,
   }));
   ipcRegistry.registerHandler('window-background:set', (event, value: WindowBackground) => {
@@ -394,7 +408,13 @@ export async function createWindow() {
   await logMainMemory('createWindow:before BrowserWindow');
 
   windowBackgroundActiveEnabled = windowBackground.enabled;
-  syncMainWindowShape = null;
+  activeComposition = getWindowComposition(
+    windowBackground,
+    process.platform,
+    Number(release().split('.')[2]),
+  );
+  windowBackgroundActiveFrosted =
+    process.platform === 'win32' ? activeComposition.systemMaterial : null;
   win = new BrowserWindow({
     title: 'EchoMusic',
     ...(windowIconPath ? { icon: windowIconPath } : {}),
@@ -404,7 +424,8 @@ export async function createWindow() {
     show: false, // 初始不显示，防止白屏
     backgroundColor: windowBackgroundActiveEnabled ? '#00000000' : initialBgColor,
     frame: false,
-    transparent: windowBackgroundActiveEnabled,
+    transparent: activeComposition.transparent,
+    roundedCorners: activeComposition.clientCornerRadius === 0,
     ...(process.platform === 'darwin' ? { visualEffectState: 'active' as const } : {}),
     hasShadow: true,
     titleBarStyle: 'hidden',
@@ -413,7 +434,7 @@ export async function createWindow() {
       preload,
       additionalArguments: [
         `--echo-initial-dark=${initialBgColor === '#26262a'}`,
-        `--echo-window-background=${JSON.stringify(windowBackground)}`,
+        `--echo-window-background=${JSON.stringify({ ...windowBackground, clientCornerRadius: rememberWindowSize && initialWindowState.isMaximized ? 0 : activeComposition.clientCornerRadius })}`,
       ],
       contextIsolation: true,
       nodeIntegration: false,
@@ -428,36 +449,6 @@ export async function createWindow() {
     },
   });
   syncMainWindowBackground();
-  if (
-    windowBackgroundActiveEnabled &&
-    process.platform === 'win32' &&
-    Number(release().split('.')[2]) >= 22000
-  ) {
-    // Transparent HWNDs lose Electron's native rounded frame. Clip the native
-    // window itself so both web content and Acrylic respect the same corners.
-    const roundedWindow = win;
-    let lastShape = '';
-    const syncShape = (force = false) => {
-      if (roundedWindow.isDestroyed() || roundedWindow.isMinimized()) return;
-      const [width, height] = roundedWindow.getSize();
-      const square =
-        roundedWindow.isMaximized() || roundedWindow.isFullScreen() || roundedWindow.isSnapped();
-      const key = square ? 'square' : `${width}:${height}`;
-      if (!force && key === lastShape) return;
-      roundedWindow.setShape(square ? [] : buildRoundedWindowShape(width, height));
-      lastShape = key;
-    };
-    syncMainWindowShape = syncShape;
-    roundedWindow.on('resize', () => syncShape());
-    roundedWindow.on('moved', () => syncShape());
-    roundedWindow.on('maximize', () => syncShape());
-    roundedWindow.on('unmaximize', () => syncShape());
-    roundedWindow.on('restore', () => syncShape(true));
-    roundedWindow.on('show', () => syncShape(true));
-    roundedWindow.on('enter-full-screen', () => syncShape());
-    roundedWindow.on('leave-full-screen', () => syncShape(true));
-    syncShape();
-  }
   await logMainMemory('createWindow:after BrowserWindow');
 
   applyWindowAppIcon(win);

@@ -513,6 +513,11 @@ fn contextualize_shared_event(shared: &SharedAudio, event: PlayerEvent) -> Playe
     )
 }
 
+fn bind_seamless_source_context(runtime: &mut PlayerRuntime, shared: &SharedAudio, seq: u64) {
+    runtime.current_seq = seq;
+    shared.set_track_seq(seq);
+}
+
 fn emit_runtime_event(runtime: &PlayerRuntime, event: PlayerEvent) {
     emit_event(contextualize_runtime_event(runtime, event));
 }
@@ -1526,7 +1531,9 @@ impl Task for SwitchSourceTask {
             retire_prepared_next_background(runtime.prepared_next.take(), "source-switch-commit");
             runtime.current_url = Some(url.clone());
             runtime.current_audio_stream_ordinal = audio_stream;
-            runtime.current_seq = seq;
+            // The output session survives a seamless switch. Its telemetry must
+            // advance with the runtime context, or the host drops every tick as stale.
+            bind_seamless_source_context(runtime, &session_shared, seq);
             runtime.latest_load_seq = runtime.latest_load_seq.max(seq);
             runtime.state.duration = duration;
             emit_runtime_events(
@@ -2421,6 +2428,26 @@ pub fn set_loop_file(loop_file: bool) -> napi::Result<()> {
 #[cfg(test)]
 mod runtime_state_tests {
     use super::*;
+
+    #[test]
+    fn seamless_source_switch_keeps_runtime_and_progress_context_in_sync() {
+        let shared = SharedAudio::new(
+            MixFormat::stereo_f32(48_000), 0.1, 8.0, &DspSettings::default(),
+        );
+        let mut runtime = PlayerRuntime::new(PlayerConfig::default());
+        runtime.current_seq = 10;
+        shared.set_track_seq(10);
+        let generation = shared.current_decode_generation();
+        for seq in [11, 12, 15] {
+            bind_seamless_source_context(&mut runtime, &shared, seq);
+            let control = contextualize_runtime_event(&runtime, PlayerEvent::duration_change(120.0));
+            let tick = contextualize_shared_event(&shared, PlayerEvent::time_update(42.0));
+            assert_eq!(control.track_seq, Some(seq as f64));
+            assert_eq!(tick.track_seq, control.track_seq);
+            assert_eq!(shared.current_decode_generation(), generation);
+            assert_eq!(tick.time, Some(42.0));
+        }
+    }
 
     struct SlowDrop(Arc<AtomicBool>);
 

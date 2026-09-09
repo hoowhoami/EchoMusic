@@ -9,6 +9,9 @@ function bootstrap(window) {
     classes = new Set();
   const root = {
     dataset: {},
+    setAttribute(name, value) {
+      this[name] = value;
+    },
     style: { setProperty: (k, v) => values.set(k, v) },
     classList: { toggle: (key, on) => (on ? classes.add(key) : classes.delete(key)) },
   };
@@ -84,4 +87,18 @@ test('startup screen is outside the Vue mount target and its styles are inline',
   assert.match(html, /<div id="app"><\/div>\s*<div id="startup-placeholder"/);
   assert.match(html, /<style>[\s\S]*\.startup-main/);
   assert.doesNotMatch(html, /<link[^>]+startup\.css/);
+});
+
+test('clear window corners apply before Vue mounts, without masking system Acrylic', () => {
+  const clear = bootstrap({
+    echoInitialDark: true,
+    echoWindowBackground: { enabled: true, clientCornerRadius: 8 },
+  });
+  assert.equal(clear.root['data-echo-client-corners'], '');
+  assert.equal(clear.values.get('--app-window-frame-radius'), '8px');
+  const frost = bootstrap({
+    echoInitialDark: true,
+    echoWindowBackground: { enabled: true, frosted: true, clientCornerRadius: 0 },
+  });
+  assert.equal(frost.root['data-echo-client-corners'], undefined);
 });

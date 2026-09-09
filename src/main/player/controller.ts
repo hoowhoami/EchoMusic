@@ -507,7 +507,7 @@ export class PlayerController extends EventEmitter {
     }
   }
 
-  async switchSource(url: string, trackId?: number | null): Promise<[number, number]> {
+  async switchSource(url: string, trackId?: number | null): Promise<[number, number, number]> {
     const seq = ++this.loadSeq;
     await this.applyProxyForUrl(url);
     const result = await this.getAddonOrThrow().switchSource(url, trackId ?? null, seq);
@@ -515,7 +515,7 @@ export class PlayerController extends EventEmitter {
     this.state.audioTrackId = trackId ?? undefined;
     this.state.idle = false;
     this.pendingLoadSeq = null;
-    return result;
+    return [result[0], result[1], seq];
   }
 
   beginNextSourcePreparation(): number | null {

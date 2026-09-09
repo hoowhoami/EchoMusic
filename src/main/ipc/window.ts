@@ -2,7 +2,12 @@ import { app, BrowserWindow } from 'electron';
 import { release } from 'node:os';
 import type { WindowFrameState } from '../../shared/window-frame';
 import { ipcRegistry } from './registry';
-import { hideMainWindow, quitApplication, requestMainWindowClose } from '../window';
+import {
+  getMainWindowClientCornerRadius,
+  hideMainWindow,
+  quitApplication,
+  requestMainWindowClose,
+} from '../window';
 import { restoreActiveWindowMode } from '../window/modeController';
 import { showMiniPlayerWindowOnTop } from '../miniPlayer';
 import type {
@@ -19,6 +24,7 @@ export const registerWindowHandlers = ({ getMainWindow }: IpcContext) => {
     const win = BrowserWindow.fromWebContents(event.sender);
     if (!win || win !== getMainWindow()) return null;
     const readState = (): WindowFrameState => ({
+      clientCorners: getMainWindowClientCornerRadius() > 0,
       visible:
         !win.isMaximized() &&
         !win.isFullScreen() &&

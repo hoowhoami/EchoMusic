@@ -15,7 +15,10 @@ function setup() {
   const pending = new Promise((done) => {
     resolve = done;
   });
+  const attributes = new Set();
   const root = {
+    toggleAttribute: (name, on) => (on ? attributes.add(name) : attributes.delete(name)),
+    removeAttribute: (name) => attributes.delete(name),
     classList: {
       toggle: (name, on) => (on ? classes.add(name) : classes.delete(name)),
       remove: (name) => classes.delete(name),
@@ -45,6 +48,7 @@ function setup() {
   });
   const dispose = module.exports.installWindowFrame();
   return {
+    attributes,
     classes,
     properties,
     dispose,
@@ -105,6 +109,8 @@ for (const platform of ['darwin', 'linux', 'win32']) {
       process: { platform },
       require: (name) => {
         if (name === 'electron') return { BrowserWindow: { fromWebContents: () => win } };
+        if (name === '../window')
+          return { getMainWindowClientCornerRadius: () => (platform === 'win32' ? 8 : 0) };
         if (name === 'node:os') return { release: () => '10.0.22631' };
         if (name === './registry')
           return {
@@ -136,3 +142,14 @@ for (const platform of ['darwin', 'linux', 'win32']) {
     }
   });
 }
+
+test('client clipping follows window state and is removed for system material', () => {
+  const env = setup();
+  env.emit({ visible: true, radius: 8, clientCorners: true });
+  assert.ok(env.attributes.has('data-echo-client-corners'));
+  env.emit({ visible: false, radius: 8, clientCorners: true });
+  assert.equal(env.attributes.size, 0);
+  env.emit({ visible: true, radius: 8, clientCorners: false });
+  assert.equal(env.attributes.size, 0);
+  env.dispose();
+});

@@ -211,6 +211,13 @@
           14px system-ui,
           sans-serif;
       }
+      html[data-echo-client-corners] {
+        background: transparent !important;
+        clip-path: inset(0 round var(--app-window-frame-radius, 8px));
+      }
+      html[data-echo-client-corners][data-echo-starting] #startup-placeholder {
+        background: var(--startup-bg);
+      }
     </style>
     <script>
       window.performance?.mark('echo:html-start');
@@ -223,6 +230,13 @@
           'html:not(.app-background-transparent) { background: #f5f5f7; } html.dark:not(.app-background-transparent) { background: #26262a; }';
         document.head.appendChild(background);
         const appearance = window.echoWindowBackground;
+        if (appearance?.clientCornerRadius > 0) {
+          document.documentElement.setAttribute('data-echo-client-corners', '');
+          document.documentElement.style.setProperty(
+            '--app-window-frame-radius',
+            `${appearance.clientCornerRadius}px`,
+          );
+        }
         const startupRoot = document.documentElement;
         startupRoot.dataset.echoStarting = '';
         const dark = initialDark;
@@ -240,10 +254,7 @@
         startupRoot.style.setProperty('--startup-fg', dark ? '#f5f5f7' : '#1d1d1f');
         if (appearance && appearance.enabled === true) {
           const root = document.documentElement;
-          root.classList.toggle(
-            'app-background-transparent',
-            appearance.frosted || appearance.transparency > 0 || Boolean(appearance.color),
-          );
+          root.classList.toggle('app-background-transparent', appearance.enabled);
           root.classList.toggle('app-background-frosted', appearance.frosted);
           root.style.setProperty(
             '--app-background-opacity',

@@ -223,6 +223,19 @@ export const resolvePlaybackNotice = (params: {
     };
   }
 
+  if (params.code === 'audio-effect-unavailable' || params.code === 'audio-effect-apply-failed') {
+    return {
+      code: params.code,
+      title: '歌曲音效未生效',
+      reason:
+        params.code === 'audio-effect-unavailable'
+          ? '未能获取所选音效音源，已使用普通音源'
+          : '所选音效切换失败，请重试或选择其他音效',
+      detail: '已保留你的选择，可再次点击重试',
+      trackId,
+    };
+  }
+
   if (params.code === 'audio-effect-cloud-fallback') {
     return {
       code: params.code,
