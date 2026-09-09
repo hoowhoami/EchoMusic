@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { handleComposerKeydown } from '@/utils/composerKeyboard';
 import { computed, ref } from 'vue';
 import type { Comment } from '@/models/comment';
 import Button from '@/components/ui/Button.vue';
@@ -46,6 +47,8 @@ async function submit() {
     </div>
     <blockquote>{{ target.content }}</blockquote>
     <textarea
+      @keydown="handleComposerKeydown($event, submit)"
+      aria-description="Enter 发送，Shift + Enter 换行"
       v-model="draft"
       rows="3"
       :disabled="busy"

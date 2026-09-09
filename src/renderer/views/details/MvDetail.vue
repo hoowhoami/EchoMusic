@@ -332,7 +332,7 @@ watch(
         <BarrageControls
           v-model="barrageEnabled"
           :resource="{ type: 'video-barrage', hash: meta?.hash || currentSourceHash, name: title }"
-          @reload="barrageRef?.reload()"
+          @sent="barrageRef?.onSent($event)"
         />
       </div>
 

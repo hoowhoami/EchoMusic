@@ -16,7 +16,7 @@ const config = computed(() =>
   props.variant === 'lyric' ? settings.lyricBarrageConfig : settings.mvBarrageConfig,
 );
 const enabled = defineModel<boolean>({ default: false });
-const emit = defineEmits<{ reload: [] }>();
+const emit = defineEmits<{ sent: [content: string] }>();
 const open = ref(false);
 // 验证弹窗会关闭并卸载 Popover 内容，草稿和发送状态必须由外层保留。
 const draft = ref('');
@@ -37,10 +37,10 @@ watch(sending, (busy) => {
     open.value = true;
   }
 });
-function handleSent() {
+function handleSent(content: string) {
   resumeComposer = false;
   open.value = false;
-  emit('reload');
+  emit('sent', content);
 }
 watch(
   () => props.resource.hash,

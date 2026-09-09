@@ -7,6 +7,8 @@ import {
   normalizeBarrageItems,
   normalizeBarrageUserId,
   getFreeBarrageLane,
+  barrageIdentity,
+  nextBarrageItem,
   type BarrageItem,
 } from '@/utils/barrage';
 import { getBarrage } from '@/api/comment';
@@ -38,6 +40,8 @@ const currentUserId = computed(() =>
 );
 const items = shallowRef<BarrageItem[]>([]);
 const flights = ref<(BarrageItem & { id: number; lane: number })[]>([]);
+const pendingOwn = ref<BarrageItem[]>([]);
+const recentOwn = new Map<string, number>();
 let generation = 0;
 let cursor = 0;
 let sequence = 0;
@@ -48,23 +52,39 @@ const running = computed(
     active.value &&
     props.playing &&
     visibility.value === 'visible' &&
-    items.value.length > 0,
+    (items.value.length > 0 || pendingOwn.value.length > 0 || flights.value.length > 0),
 );
-async function load() {
+async function load(preservePlayback = false) {
+  if (preservePlayback && (!enabled.value || !active.value || !props.hash)) return;
   const token = ++generation;
-  items.value = [];
-  flights.value = [];
-  cursor = 0;
+  if (!preservePlayback) {
+    items.value = [];
+    flights.value = [];
+    cursor = 0;
+    pendingOwn.value = [];
+    recentOwn.clear();
+  }
   error.value = '';
   loading.value = false;
   if (!enabled.value || !active.value || !props.hash) return;
-  loading.value = true;
+  loading.value = !preservePlayback || items.value.length === 0;
   try {
     const response = await getBarrage(props.type, props.hash);
     if (token !== generation) return;
-    items.value = normalizeBarrageItems(response.list);
+    const updated = normalizeBarrageItems(response.list);
+    if (preservePlayback && items.value.length) {
+      // 请求期间仍在发射弹幕，按响应到达时的下一条对齐，不能使用请求前的游标。
+      // 审核中暂时返回空列表时保留当前播放池。
+      if (!updated.length) return;
+      const next = items.value[cursor % items.value.length];
+      const nextIndex = updated.findIndex(item => item.text === next.text && item.userId === next.userId);
+      cursor = nextIndex >= 0 ? nextIndex : cursor % updated.length;
+    }
+    items.value = updated;
   } catch (e) {
-    if (token === generation) error.value = e instanceof Error ? e.message : '弹幕加载失败';
+    if (token === generation && (!preservePlayback || !items.value.length)) {
+      error.value = e instanceof Error ? e.message : '弹幕加载失败';
+    }
   } finally {
     if (token === generation) loading.value = false;
   }
@@ -76,6 +96,30 @@ watch(
   },
   { immediate: true },
 );
+function launchNext(onlyOwn = false) {
+  if (!running.value) return;
+  const lane = getFreeBarrageLane(flights.value);
+  if (lane < 0) return;
+  let item = pendingOwn.value.shift();
+  if (item) {
+    recentOwn.set(barrageIdentity(item), Date.now() + Math.max(20000, 10000 / config.value.speed + 5000));
+  } else if (!onlyOwn) {
+    const next = nextBarrageItem(items.value, cursor, recentOwn, Date.now());
+    cursor = next.cursor;
+    item = next.item;
+  }
+  if (item) flights.value.push({ ...item, id: ++sequence, lane });
+}
+function finishFlight(id: number) {
+  flights.value = flights.value.filter(item => item.id !== id);
+  launchNext(true);
+}
+function onSent(content: string) {
+  if (!enabled.value || !active.value || !props.hash || !content.trim()) return;
+  pendingOwn.value.push({ text: content.trim(), userId: currentUserId.value });
+  launchNext(true);
+  void load(true);
+}
 watch(
   [running, () => config.value.density],
   ([value]) => {
@@ -83,12 +127,7 @@ watch(
     timer = undefined;
     if (value)
       timer = setInterval(
-        () => {
-          const lane = getFreeBarrageLane(flights.value);
-          if (lane < 0 || !items.value.length) return;
-          const item = items.value[cursor++ % items.value.length];
-          flights.value.push({ ...item, id: ++sequence, lane });
-        },
+        () => launchNext(),
         config.value.density === 1 ? 4500 : config.value.density === 3 ? 1400 : 2800,
       );
   },
@@ -104,7 +143,7 @@ onBeforeUnmount(() => {
   generation++;
   if (timer) clearInterval(timer);
 });
-defineExpose({ reload: load });
+defineExpose({ onSent });
 </script>
 
 <template>
@@ -130,11 +169,11 @@ defineExpose({ reload: load });
           lineHeight: '1.4',
           animationDuration: `${10 / config.speed}s`,
         }"
-        @animationend="flights = flights.filter((item) => item.id !== flight.id)"
+        @animationend="finishFlight(flight.id)"
         >{{ flight.text }}</span
       >
     </div>
-    <div v-if="enabled && (loading || error || !items.length)" class="barrage-status" role="status">
+    <div v-if="enabled && !flights.length && !pendingOwn.length && (loading || error || !items.length)" class="barrage-status" role="status">
       {{ loading ? '弹幕加载中…' : error ? '弹幕加载失败，请关闭后重新开启' : '暂无弹幕' }}
     </div>
   </div>

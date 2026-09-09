@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import Tooltip from '@/components/ui/Tooltip.vue';
+import { handleComposerKeydown } from '@/utils/composerKeyboard';
 
 defineOptions({ name: 'listen-together' });
 
@@ -623,7 +624,7 @@ const confirmLeave = async (dismiss = false) => {
 };
 
 const sendMessage = async () => {
-  if (chatCooldown.value) return;
+  if (chatCooldown.value || sendingMessage.value || !activeRoom.value?.allowChat) return;
   const text = messageText.value.trim();
   if (!text) return;
   if (text.length > CHAT_MESSAGE_MAX_LENGTH) {
@@ -654,9 +655,7 @@ const toggleChat = async () => {
 };
 
 const handleMessageKeydown = (event: KeyboardEvent) => {
-  if (event.key !== 'Enter' || event.shiftKey || event.isComposing) return;
-  event.preventDefault();
-  void sendMessage();
+  handleComposerKeydown(event, sendMessage);
 };
 
 const resizeMessageTextarea = () => {

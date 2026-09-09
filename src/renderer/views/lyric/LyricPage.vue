@@ -464,7 +464,7 @@ onUnmounted(() => {
               hash: currentTrack?.hash || '',
               name: currentTrack?.name,
             }"
-            @reload="barrageRef?.reload()"
+            @sent="barrageRef?.onSent($event)"
           />
         </template>
       </LyricPlayerControls>

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { handleComposerKeydown } from '@/utils/composerKeyboard';
 import { computed, watch } from 'vue';
 import { sendComment, type CommentSendResource } from '@/api/comment';
 import { useUserStore } from '@/stores/user';
@@ -51,6 +52,8 @@ async function submit() {
     @submit.prevent="submit"
   >
     <textarea
+      @keydown="handleComposerKeydown($event, submit)"
+      aria-description="Enter 发送，Shift + Enter 换行"
       v-model="content"
       :disabled="sending || !available"
       :rows="variant === 'barrage' ? 3 : 1"

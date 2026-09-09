@@ -18,3 +18,11 @@ test('out-of-order animation completion only reuses vacant lanes', () => {
   assert.equal(getFreeBarrageLane([{ lane: 0 }, { lane: 2 }, { lane: 3 }]), 1);
   assert.equal(getFreeBarrageLane([0, 1, 2, 3].map(lane => ({ lane }))), -1);
 });
+test('local sends suppress immediate server echoes but not other users or later playback', () => {
+  const { barrageIdentity, nextBarrageItem } = module.exports;
+  const own = { text: 'hello', userId: '1' }, other = { text: 'hello', userId: '2' };
+  const recent = new Map([[barrageIdentity(own), 20000]]);
+  assert.equal(nextBarrageItem([own, other], 0, recent, 100).item, other);
+  assert.equal(nextBarrageItem([own], 0, recent, 100).item, undefined);
+  assert.equal(nextBarrageItem([own], 0, recent, 20001).item, own);
+});
