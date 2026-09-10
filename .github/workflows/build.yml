@@ -165,7 +165,7 @@ jobs:
           pids=()
           build_addon echo-audio-capture & pids+=("$!")
           build_addon echo-media-controls & pids+=("$!")
-          if [ "${{ runner.os }}" = "Windows" ]; then
+          if [ "${{ runner.os }}" = "Windows" ] || [ "${{ runner.os }}" = "macOS" ]; then
             build_addon echo-platform-adaptor & pids+=("$!")
           fi
           build_addon echo-audio-player & pids+=("$!")
@@ -261,7 +261,7 @@ jobs:
         run: |
           set -e
           addons=(echo-audio-capture echo-media-controls echo-audio-player echo-sqlite-store)
-          if [ "${{ runner.os }}" = "Windows" ]; then
+          if [ "${{ runner.os }}" = "Windows" ] || [ "${{ runner.os }}" = "macOS" ]; then
             addons+=(echo-platform-adaptor)
           fi
           for addon in "${addons[@]}"; do

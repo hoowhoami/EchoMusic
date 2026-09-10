@@ -1,7 +1,17 @@
 <script setup lang="ts">
 import WindowControls from './WindowControls.vue';
 import TitleBarMoreMenu from './TitleBarMoreMenu.vue';
-import { computed, watch, ref, onMounted, onUnmounted } from 'vue';
+import TitlebarActionButton from './TitlebarActionButton.vue';
+import { useTitlebarSort } from './useTitlebarSort';
+import { useResizeObserver } from '@vueuse/core';
+import {
+  createTitlebarApi,
+  reorderTitlebarLayout,
+  titlebarItems,
+  resolveTitlebarLayout,
+  partitionTitlebarActions,
+} from '@/plugins/titlebar';
+import { computed, watch, ref, onMounted, onUnmounted, nextTick } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { PopoverRoot, PopoverAnchor, PopoverPortal, PopoverContent } from 'reka-ui';
 import SearchDiscovery from '@/views/search/components/SearchDiscovery.vue';
@@ -26,6 +36,7 @@ import {
   iconSearch,
   iconMicrophone,
   iconClipboardList,
+  iconHeadphones,
 } from '@/icons';
 
 const route = useRoute();
@@ -55,6 +66,20 @@ const isLoadingHot = ref(false);
 let hotSearchLoaded = false;
 const showSuggestions = ref(false);
 const suggestions = ref<{ label: string; records: { text: string }[] }[]>([]);
+const activeSuggestionIndex = ref(-1);
+const suggestionGroups = computed(() => {
+  let index = 0;
+  return suggestions.value.map((category) => ({
+    ...category,
+    records: category.records.map((record) => ({ ...record, index: index++ })),
+  }));
+});
+const flatSuggestions = computed(() => suggestionGroups.value.flatMap((group) => group.records));
+const activeSuggestionId = computed(() =>
+  isSearchFocused.value && showSuggestions.value && activeSuggestionIndex.value >= 0
+    ? `search-suggestion-${activeSuggestionIndex.value}`
+    : undefined,
+);
 const isLoadingSuggestions = ref(false);
 const defaultKeyword = ref('');
 const defaultAds = ref<{ mainTitle: string; subTitle: string; title: string }[]>([]);
@@ -64,6 +89,93 @@ let suggestionBlurTimer: number | null = null;
 
 const toggleTaskPanel = () => {
   taskPanelOpen.value = !taskPanelOpen.value;
+};
+
+const titlebarRef = ref<HTMLElement | null>(null);
+const navigationRef = ref<HTMLElement | null>(null);
+const windowActionsRef = ref<HTMLElement | null>(null);
+const toolbarCapacity = ref(0);
+const managedActions = computed(() =>
+  resolveTitlebarLayout(titlebarItems.value, settingStore.titlebarLayout),
+);
+const placedActions = computed(() =>
+  partitionTitlebarActions(managedActions.value, toolbarCapacity.value),
+);
+const primaryActions = computed(() =>
+  placedActions.value.toolbar.filter((item) => item.pluginId === null),
+);
+const pluginActions = computed(() =>
+  placedActions.value.toolbar.filter((item) => item.pluginId !== null),
+);
+const primaryActionsRef = ref<HTMLElement | null>(null);
+const pluginActionsRef = ref<HTMLElement | null>(null);
+const saveToolbarOrder = (keys: string[]) => {
+  settingStore.titlebarLayout = reorderTitlebarLayout(
+    settingStore.titlebarLayout,
+    managedActions.value,
+    keys,
+  );
+};
+useTitlebarSort(
+  primaryActionsRef,
+  () => primaryActions.value.map((item) => item.key),
+  saveToolbarOrder,
+  '.titlebar-action',
+);
+useTitlebarSort(
+  pluginActionsRef,
+  () => pluginActions.value.map((item) => item.key),
+  saveToolbarOrder,
+  '.titlebar-action',
+);
+const updateToolbarCapacity = () => {
+  if (!titlebarRef.value || !navigationRef.value) return;
+  const style = getComputedStyle(titlebarRef.value);
+  const available =
+    titlebarRef.value.clientWidth -
+    parseFloat(style.paddingLeft || '0') -
+    parseFloat(style.paddingRight || '0');
+  // Reserve the search/navigation width, window controls, More, divider and a drag area.
+  // Measure fixed space only, so moving overflow items cannot cause resize oscillation.
+  const navigationWidth = parseFloat(getComputedStyle(navigationRef.value).flexBasis) || 410;
+  const fixedWidth = navigationWidth + (windowActionsRef.value?.offsetWidth ?? 0) + 58 + 17 + 64;
+  toolbarCapacity.value = Math.max(0, Math.floor((available - fixedWidth) / 38));
+};
+useResizeObserver([titlebarRef, windowActionsRef], updateToolbarCapacity);
+const builtinDisposers: (() => void)[] = [];
+const builtinApi = createTitlebarApi(
+  null,
+  (dispose) => builtinDisposers.push(dispose),
+  (source, error) => console.error(source, error),
+);
+const registerBuiltinActions = () => {
+  builtinApi.register({
+    id: 'recognize',
+    title: '听歌识曲',
+    icon: iconMicrophone,
+    defaultPlacement: 'toolbar',
+    order: 10,
+    onClick: async () => {
+      await router.push({ name: 'recognize' });
+    },
+  });
+  builtinApi.register({
+    id: 'tasks',
+    title: '任务中心',
+    icon: iconClipboardList,
+    defaultPlacement: 'toolbar',
+    order: 20,
+    onClick: toggleTaskPanel,
+  });
+  builtinApi.register({
+    id: 'listen-together',
+    title: '一起听',
+    icon: iconHeadphones,
+    order: 30,
+    onClick: async () => {
+      await router.push({ name: 'listen-together' });
+    },
+  });
 };
 
 // 进度条宽度钳制在 [0, 100]，防止插件注册的任务传入越界 percent
@@ -108,7 +220,7 @@ const extractSuggestions = (payload: unknown) => {
     .map((item) => toRecord(item))
     .filter((item): item is Record<string, unknown> => Boolean(item))
     .map((item) => ({
-      label: String(item.LableName ?? ''),
+      label: String(item.LableName ?? '').trim() || '综合',
       records: (Array.isArray(item.RecordDatas) ? item.RecordDatas : [])
         .map((r) => toRecord(r))
         .filter((r): r is Record<string, unknown> => Boolean(r))
@@ -116,6 +228,17 @@ const extractSuggestions = (payload: unknown) => {
         .filter((r) => r.text.length > 0),
     }))
     .filter((c) => c.records.length > 0 && c.label !== 'MV');
+};
+
+const suggestionParts = (text: string) => {
+  const keyword = searchQuery.value.trim();
+  const index = text.toLocaleLowerCase().indexOf(keyword.toLocaleLowerCase());
+  if (!keyword || index < 0) return [{ text, matched: false }];
+  return [
+    { text: text.slice(0, index), matched: false },
+    { text: text.slice(index, index + keyword.length), matched: true },
+    { text: text.slice(index + keyword.length), matched: false },
+  ].filter((part) => part.text);
 };
 
 const loadHotSearches = async () => {
@@ -137,6 +260,7 @@ const cancelSuggestionBlur = () => {
 };
 
 const collapseSearch = () => {
+  activeSuggestionIndex.value = -1;
   cancelSuggestionBlur();
   if (suggestTimer !== null) window.clearTimeout(suggestTimer);
   suggestTimer = null;
@@ -153,6 +277,7 @@ const fetchSuggestions = async (keyword: string) => {
     const result = await getSearchSuggest(keyword);
     if (request !== suggestionRequest || searchQuery.value.trim() !== keyword) return;
     suggestions.value = extractSuggestions(result);
+    activeSuggestionIndex.value = -1;
     showSuggestions.value = isSearchFocused.value && suggestions.value.length > 0;
   } catch {
     if (request !== suggestionRequest) return;
@@ -164,6 +289,7 @@ const fetchSuggestions = async (keyword: string) => {
 };
 
 const handleSearchInput = (value: string) => {
+  activeSuggestionIndex.value = -1;
   cancelSuggestionBlur();
   isSearchFocused.value = true;
   suggestionRequest++;
@@ -173,6 +299,7 @@ const handleSearchInput = (value: string) => {
   showSuggestions.value = false;
   isLoadingSuggestions.value = false;
   if (!value.trim()) return;
+  isLoadingSuggestions.value = true;
   suggestTimer = window.setTimeout(() => {
     suggestTimer = null;
     void fetchSuggestions(value.trim());
@@ -217,6 +344,29 @@ const handleGlobalPointerDown = (e: PointerEvent) => {
   collapseSearch();
 };
 
+const handleNativePointerDown = (point?: unknown) => {
+  if (!isSearchFocused.value) return;
+  if (point !== undefined) {
+    if (
+      !point ||
+      typeof point !== 'object' ||
+      !('x' in point) ||
+      !('y' in point) ||
+      typeof point.x !== 'number' ||
+      typeof point.y !== 'number' ||
+      !Number.isFinite(point.x) ||
+      !Number.isFinite(point.y)
+    )
+      return;
+    // 原生通知异步到达，只处理拖动层；历史按钮等普通区域仍由 DOM 事件判断，
+    // 避免删除历史后原位置的节点变化被误判为外部点击。
+    const target = document.elementFromPoint(point.x, point.y);
+    if (!target?.closest('.native-titlebar .drag-region')) return;
+  }
+  collapseSearch();
+  searchInputRef.value?.blur();
+};
+
 const handleSearchFocus = () => {
   void loadHotSearches();
   cancelSuggestionBlur();
@@ -248,9 +398,43 @@ const removeSearchHistory = (keyword: string) => {
 };
 
 const handleSearchKeydown = (e: KeyboardEvent) => {
+  if (e.isComposing || e.keyCode === 229) return;
   if (e.key === 'Escape') {
+    e.preventDefault();
+    e.stopPropagation();
     collapseSearch();
+    return;
   }
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    e.stopPropagation();
+    const selected =
+      isSearchFocused.value && showSuggestions.value
+        ? flatSuggestions.value[activeSuggestionIndex.value]
+        : undefined;
+    submitSearch(selected?.text);
+    return;
+  }
+  if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+  if (!searchQuery.value.trim()) return;
+  e.preventDefault();
+  e.stopPropagation();
+  if (!isSearchFocused.value) handleSearchFocus();
+  const count = flatSuggestions.value.length;
+  if (!count || isLoadingSuggestions.value) return;
+  showSuggestions.value = true;
+  const current = activeSuggestionIndex.value;
+  activeSuggestionIndex.value =
+    current < 0
+      ? e.key === 'ArrowDown'
+        ? 0
+        : count - 1
+      : (current + (e.key === 'ArrowDown' ? 1 : -1) + count) % count;
+  void nextTick(() => {
+    searchPanelRef.value
+      ?.querySelector(`[data-suggestion-index="${activeSuggestionIndex.value}"]`)
+      ?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  });
 };
 
 watch(
@@ -308,8 +492,11 @@ const fetchDefaultSearch = () => {
 };
 
 onMounted(() => {
+  registerBuiltinActions();
+  updateToolbarCapacity();
   window.addEventListener('popstate', updateNavState);
   document.addEventListener('pointerdown', handleGlobalPointerDown, true);
+  window.electron.ipcRenderer.on('window:native-pointerdown', handleNativePointerDown);
   // 获取默认搜索词
   if (settingStore.searchDefaultEnabled) {
     fetchDefaultSearch();
@@ -317,14 +504,17 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
+  builtinDisposers.forEach((dispose) => dispose());
   window.removeEventListener('popstate', updateNavState);
   document.removeEventListener('pointerdown', handleGlobalPointerDown, true);
+  window.electron.ipcRenderer.off('window:native-pointerdown', handleNativePointerDown);
   collapseSearch();
 });
 </script>
 
 <template>
   <header
+    ref="titlebarRef"
     class="native-titlebar title-bar flex items-center shrink-0 select-none transition-colors duration-300 z-200 bg-transparent relative"
   >
     <!-- 拖动层：绝对定位铺满标题栏 -->
@@ -332,6 +522,7 @@ onUnmounted(() => {
 
     <!-- 1. 左侧：导航按钮 -->
     <div
+      ref="navigationRef"
       class="titlebar-nav flex items-center gap-1 no-drag relative z-10"
       :class="navStartClass"
       :style="
@@ -399,10 +590,16 @@ onUnmounted(() => {
                 v-model="searchQuery"
                 type="text"
                 aria-label="搜索音乐、歌手、专辑"
+                role="combobox"
+                aria-autocomplete="list"
+                :aria-expanded="isSearchFocused && showSuggestions && !isLoadingSuggestions"
+                :aria-controls="
+                  showSuggestions && !isLoadingSuggestions ? 'search-suggestions-list' : undefined
+                "
+                :aria-activedescendant="activeSuggestionId"
                 class="tb-search-input"
                 :placeholder="defaultKeyword || '搜索音乐、歌手、专辑'"
                 @input="handleSearchInput(searchQuery)"
-                @keydown.enter.prevent="submitSearch()"
                 @keydown="handleSearchKeydown"
                 @focus="handleSearchFocus"
                 @click="handleSearchFocus"
@@ -441,6 +638,7 @@ onUnmounted(() => {
             <div
               ref="searchPanelRef"
               class="tb-search-panel no-drag"
+              :class="{ 'has-query': searchQuery.trim() }"
               aria-label="搜索建议与发现"
               @focusin="cancelSuggestionBlur"
               @focusout="handleSearchBlur"
@@ -472,84 +670,117 @@ onUnmounted(() => {
                   </div>
                 </div>
               </template>
-              <div v-else-if="isLoadingSuggestions" class="tb-search-status" role="status">
-                正在查找建议…
-              </div>
-              <div v-else-if="showSuggestions" class="tb-suggestions-inner">
-                <div v-for="category in suggestions" :key="category.label" class="tb-suggest-group">
-                  <div class="tb-suggest-title">{{ category.label }}</div>
-                  <Button
-                    v-for="record in category.records"
-                    :key="`${category.label}-${record.text}`"
-                    variant="unstyled"
-                    size="none"
-                    class="tb-suggest-item"
-                    @mousedown.prevent
-                    @click="submitSearch(record.text)"
+              <div v-else class="tb-query-panel">
+                <div
+                  v-if="isLoadingSuggestions"
+                  class="tb-query-loading"
+                  role="status"
+                  aria-live="polite"
+                >
+                  <span class="tb-search-status">正在查找建议…</span>
+                  <div
+                    v-for="row in 3"
+                    :key="row"
+                    class="tb-query-skeleton"
+                    aria-hidden="true"
+                  ></div>
+                </div>
+                <div
+                  v-else-if="showSuggestions"
+                  id="search-suggestions-list"
+                  class="tb-suggestions-inner"
+                  role="listbox"
+                  aria-label="搜索建议"
+                >
+                  <section
+                    v-for="category in suggestionGroups"
+                    :key="category.label"
+                    class="tb-suggest-group"
+                    role="group"
+                    :aria-label="category.label"
                   >
-                    <Icon :icon="iconSearch" width="13" height="13" class="tb-suggest-item-icon" />
-                    <span class="truncate">{{ record.text }}</span>
-                  </Button>
+                    <h3 class="tb-suggest-heading">{{ category.label }}</h3>
+                    <Button
+                      v-for="record in category.records"
+                      :key="`${category.label}-${record.text}`"
+                      variant="unstyled"
+                      size="none"
+                      class="tb-suggest-item"
+                      :class="{ 'is-active': activeSuggestionIndex === record.index }"
+                      :id="`search-suggestion-${record.index}`"
+                      :data-suggestion-index="record.index"
+                      role="option"
+                      :aria-selected="activeSuggestionIndex === record.index"
+                      :tabindex="-1"
+                      @pointermove="activeSuggestionIndex = record.index"
+                      @mousedown.prevent
+                      @click="submitSearch(record.text)"
+                    >
+                      <span class="tb-suggest-text"
+                        ><span
+                          v-for="(part, index) in suggestionParts(record.text)"
+                          :key="index"
+                          :class="{ 'tb-suggest-match': part.matched }"
+                          >{{ part.text }}</span
+                        ></span
+                      >
+                      <span class="tb-suggest-trailing" aria-hidden="true">↵</span>
+                    </Button>
+                  </section>
+                </div>
+                <div v-else class="tb-query-empty" role="status">
+                  <span>暂无相关建议</span>
+                </div>
+                <div class="tb-query-footer">
+                  <button
+                    type="button"
+                    class="tb-query-submit"
+                    @mousedown.prevent
+                    @click="submitSearch()"
+                  >
+                    搜索“{{ searchQuery.trim() }}”
+                  </button>
+                  <span class="tb-query-hint" aria-hidden="true">↑↓ 选择 · Enter 确认</span>
                 </div>
               </div>
-              <Button
-                v-if="searchQuery.trim()"
-                variant="unstyled"
-                size="none"
-                class="tb-suggest-item"
-                @click="submitSearch()"
-              >
-                <Icon :icon="iconSearch" width="14" height="14" />
-                <span class="truncate">搜索「{{ searchQuery.trim() }}」</span>
-              </Button>
             </div>
           </PopoverContent>
         </PopoverPortal>
       </PopoverRoot>
     </div>
 
-    <!-- 听歌识曲 -->
-    <Button
-      variant="unstyled"
-      size="none"
-      class="nav-btn group no-drag relative z-10"
-      tooltip="听歌识曲"
-      @click="router.push({ name: 'recognize' })"
+    <div
+      v-if="primaryActions.length"
+      ref="primaryActionsRef"
+      class="titlebar-primary-actions no-drag"
     >
-      <Icon
-        :icon="iconMicrophone"
-        width="16"
-        height="16"
-        style="stroke-width: 3"
-        class="text-text-main opacity-60 group-hover:opacity-100 transition-opacity tb-icon-bold"
+      <TitlebarActionButton
+        v-for="item in primaryActions"
+        :key="item.key"
+        :action="item"
+        :data-titlebar-key="item.key"
+        :badge="item.id === 'tasks' && taskPanelEntries.length > 0"
       />
-    </Button>
-
-    <!-- 任务中心 -->
-    <Button
-      variant="unstyled"
-      size="none"
-      class="nav-btn group no-drag relative z-10"
-      tooltip="任务中心"
-      @click="toggleTaskPanel"
-    >
-      <Icon
-        :icon="iconClipboardList"
-        width="18"
-        height="18"
-        class="text-text-main opacity-60 group-hover:opacity-100 transition-opacity"
-      />
-      <span v-if="taskPanelEntries.length > 0" class="task-badge" />
-    </Button>
+    </div>
 
     <!-- 2. 中间：拖拽区域 -->
     <div class="flex-1 h-full"></div>
 
     <div class="titlebar-tools no-drag">
-      <TitleBarMoreMenu />
+      <div v-if="pluginActions.length" ref="pluginActionsRef" class="titlebar-primary-actions">
+        <TitlebarActionButton
+          v-for="item in pluginActions"
+          :key="item.key"
+          :action="item"
+          :data-titlebar-key="item.key"
+        />
+      </div>
+      <TitleBarMoreMenu :items="managedActions" />
     </div>
     <span class="titlebar-window-divider" aria-hidden="true"></span>
-    <WindowControls show-mini-player />
+    <div ref="windowActionsRef" class="titlebar-window-actions">
+      <WindowControls show-mini-player />
+    </div>
   </header>
 
   <!-- 任务中心弹窗 -->
@@ -707,6 +938,19 @@ onUnmounted(() => {
   z-index: 10;
 }
 
+.titlebar-primary-actions,
+.titlebar-window-actions {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 4px;
+  position: relative;
+  z-index: 10;
+}
+.titlebar-window-actions {
+  height: 100%;
+}
+
 .titlebar-tools {
   display: flex;
   align-items: center;
@@ -824,76 +1068,141 @@ onUnmounted(() => {
   color: var(--color-text-secondary);
 }
 
+.tb-search-panel.has-query {
+  width: min(440px, calc(100vw - 24px));
+  padding: 0;
+  scroll-padding-block: 12px 48px;
+}
+.tb-query-footer {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 38px;
+  padding: 6px 16px;
+  border-top: 1px solid var(--border-subtle);
+  background: var(--color-bg-elevated);
+  font-size: 12px;
+}
+.tb-query-submit {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--color-primary-text);
+  cursor: pointer;
+  border-radius: 4px;
+}
+.tb-query-submit:focus-visible {
+  outline: 2px solid var(--color-primary-text);
+  outline-offset: 3px;
+}
+.tb-query-hint {
+  font-size: 11px;
+  margin-left: auto;
+  flex-shrink: 0;
+  color: var(--color-text-secondary);
+}
 .tb-suggestions-inner {
-  padding: 6px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
 }
-
 .tb-suggest-group + .tb-suggest-group {
-  margin-top: 4px;
-}
-
-.tb-suggest-group + .tb-suggest-group .tb-suggest-title {
-  border-top: 0.5px solid var(--border-subtle);
-  padding-top: 8px;
   margin-top: 2px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border-subtle);
 }
-
+.tb-suggest-heading {
+  margin: 0;
+  padding: 7px 10px 4px;
+  font-size: 11px;
+  line-height: 16px;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+}
 .tb-suggest-title {
   padding: 6px 14px 4px;
-  font-size: 10px;
-  font-weight: 700;
-  color: var(--color-primary-text);
-  opacity: 0.7;
-  letter-spacing: 0.3px;
-  text-transform: uppercase;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
 }
-
 .tb-suggest-item {
-  width: calc(100% - 12px);
-  margin: 0 6px;
+  width: 100%;
+  min-height: 36px;
   padding: 7px 10px;
   display: flex;
   align-items: center;
-  gap: 8px;
-  border-radius: 8px;
+  gap: 10px;
+  border-radius: 6px;
   font-size: 13px;
-  font-weight: 500;
+  line-height: 22px;
+  font-weight: 400;
   color: var(--color-text-main);
-  transition: all 0.15s ease;
   text-align: left;
+  transition: background-color 0.15s ease;
 }
-
-.tb-suggest-item:hover {
-  background: color-mix(in srgb, var(--color-primary) 8%, transparent);
-  color: var(--color-primary-text);
+.tb-suggest-item.is-active,
+.tb-suggest-item:focus-visible {
+  background: color-mix(in srgb, var(--color-primary) 10%, transparent);
 }
-
-:global(.dark) .tb-suggest-item:hover {
-  background: color-mix(in srgb, var(--color-primary) 14%, transparent);
-}
-
-.tb-suggest-item-icon {
-  flex-shrink: 0;
-  opacity: 0.4;
-}
-
-.tb-suggest-item-desc {
-  margin-left: auto;
-  font-size: 11px;
-  opacity: 0.45;
-  flex-shrink: 1;
+.tb-suggest-text {
+  flex: 1;
   min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-
-.task-badge {
-  position: absolute;
-  top: 6px;
-  right: 6px;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--color-primary);
-  box-shadow: 0 0 4px color-mix(in srgb, var(--color-primary) 60%, transparent);
+.tb-suggest-match {
+  font-weight: 600;
+}
+.tb-suggest-trailing {
+  flex-shrink: 0;
+  width: 18px;
+  text-align: center;
+  font-size: 14px;
+  color: var(--color-text-secondary);
+  opacity: 0;
+}
+.tb-suggest-item.is-active .tb-suggest-trailing,
+.tb-suggest-item:focus-visible .tb-suggest-trailing {
+  opacity: 0.8;
+}
+.tb-query-loading {
+  padding: 12px 22px 20px;
+}
+.tb-query-loading .tb-search-status {
+  display: block;
+  padding: 4px 0 14px;
+}
+.tb-query-skeleton {
+  height: 12px;
+  width: 70%;
+  border-radius: 6px;
+  background: var(--control-muted-bg);
+  margin: 0 0 22px;
+}
+.tb-query-skeleton:nth-of-type(2) {
+  width: 50%;
+}
+.tb-query-skeleton:last-child {
+  width: 60%;
+  margin-bottom: 0;
+}
+.tb-query-empty {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 28px 20px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+.tb-query-empty span + span {
+  font-size: 12px;
+  opacity: 0.7;
 }
 
 :global(.dialog-content.task-panel-dialog) {

@@ -944,10 +944,24 @@ onBeforeUnmount(() => {
   background: var(--surface-scrim-bg);
 }
 
-:global(.queue-drawer) {
+:global(.drawer-panel.queue-drawer) {
   padding: 0;
-  box-shadow: none;
-  bottom: 0;
+  width: min(380px, calc(100vw - 24px));
+  top: 12px;
+  right: 12px;
+  bottom: 12px;
+  border-radius: 12px;
+  box-shadow: var(--shadow-dialog);
+  overflow: hidden;
+}
+
+@media (max-width: 420px) {
+  :global(.drawer-panel.queue-drawer) {
+    top: 8px;
+    right: 8px;
+    bottom: 8px;
+    width: min(380px, calc(100vw - 16px));
+  }
 }
 
 .queue-header {

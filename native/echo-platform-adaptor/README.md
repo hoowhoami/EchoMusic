@@ -1,14 +1,18 @@
 # echo-platform-adaptor
 
-Windows desktop window integration. This addon owns HWND/DWM behavior; it has no
+Windows and macOS desktop window integration. This addon owns HWND/DWM behavior and
+local AppKit mouse observation; it has no
 SMTC/MPRIS/Now Playing lifecycle or audio dependencies.
 
 - `src/window_composition.rs`: DWM alpha clear and optional Accent BlurBehind backends.
 - `src/taskbar.rs`: iconic thumbnail and Aero Peek cover previews, moved from
   `echo-media-controls` without changing their API or image processing.
 - `src/main/native/platform.ts` in the application: shared loader and API validation.
+- `src/window_pointer.rs`: macOS local mouse-down monitor for the main window. It
+  returns every event unchanged so native dragging and double-click behavior remain
+  intact. It does not observe other applications or require Accessibility permission.
 
-## Build on Windows
+## Build on Windows or macOS
 
 ```sh
 cd native/echo-platform-adaptor
@@ -17,9 +21,9 @@ npm run build
 ```
 
 This generates `echo-platform-adaptor.node` and `index.d.ts`. Restart the application
-after rebuilding the addon. The Windows release job builds this module and
-packages it as `resources/native/echo-platform-adaptor.node`. macOS and Linux do not
-load or package it. `Cargo.lock` is committed for reproducible dependency resolution.
+after rebuilding the addon. Windows and macOS release jobs build and package it
+as `resources/native/echo-platform-adaptor.node`. Linux does not load or package it.
+`Cargo.lock` is committed for reproducible dependency resolution.
 
 Cross-target type checking from a machine with the Windows Rust target installed:
 

@@ -86,11 +86,6 @@ const emit = defineEmits<{
                 type="button"
                 class="search-hot-item"
                 :class="{ 'is-leading': index < 3 }"
-                :title="
-                  item.reason && item.reason !== item.keyword
-                    ? `${item.keyword} · ${item.reason}`
-                    : item.keyword
-                "
                 @click="emit('pickKeyword', item.keyword)"
               >
                 <span class="search-hot-number" aria-hidden="true">{{ index + 1 }}</span>

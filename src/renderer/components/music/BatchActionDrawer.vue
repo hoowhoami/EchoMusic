@@ -10,13 +10,12 @@ import { usePlaylistStore } from '@/stores/playlist';
 import type { Song } from '@/models/song';
 import { usePlayerStore } from '@/stores/player';
 import { useUserStore } from '@/stores/user';
-import { formatDuration } from '@/utils/format';
 import SongCard from '@/components/music/SongCard.vue';
 import AddToPlaylistDialog from '@/components/music/AddToPlaylistDialog.vue';
 import { isPlayableSong } from '@/utils/song';
 import { replaceQueueAndPlay } from '@/utils/playback';
 import { useToastStore } from '@/stores/toast';
-import { iconPlay, iconPlus, iconTrash, iconX } from '@/icons';
+import { iconPlay, iconPlus, iconTrash, iconX, iconList } from '@/icons';
 import {
   LISTEN_TOGETHER_QUEUE_ID,
   MANUAL_PLAYBACK_QUEUE_ID,
@@ -101,6 +100,7 @@ const selectAllState = computed<CheckboxState>(() => {
 });
 
 const toggleSelectAll = () => {
+  if (isBatchBusy.value) return;
   if (isAllSelected.value) {
     selectedKeys.value = new Set();
     return;
@@ -109,6 +109,7 @@ const toggleSelectAll = () => {
 };
 
 const toggleSong = (song: Song, index: number) => {
+  if (isBatchBusy.value) return;
   const key = getSongSelectionKey(song, index);
   const next = new Set(selectedKeys.value);
   if (next.has(key)) {
@@ -120,6 +121,7 @@ const toggleSong = (song: Song, index: number) => {
 };
 
 const setSongChecked = (song: Song, index: number, value: CheckboxState) => {
+  if (isBatchBusy.value) return;
   const key = getSongSelectionKey(song, index);
   const next = new Set(selectedKeys.value);
   if (value === true) {
@@ -154,7 +156,7 @@ watch(
   },
 );
 
-const itemHeight = 56;
+const itemHeight = 64;
 const scrollContainerRef = ref<HTMLElement | null>(null);
 const scrollbarRef = ref<InstanceType<typeof Scrollbar> | null>(null);
 
@@ -417,12 +419,104 @@ const confirmRemoveFromPlaylist = async () => {
     panelClass="batch-drawer"
   >
     <div class="batch-header">
-      <div class="batch-title">批量操作</div>
+      <div class="batch-heading">
+        <span class="batch-heading-icon"><Icon :icon="iconList" width="22" height="22" /></span>
+        <div>
+          <h2 class="batch-title">批量操作</h2>
+          <p class="batch-subtitle">共 {{ songs.length }} 首歌曲</p>
+        </div>
+      </div>
+      <Button
+        type="button"
+        class="batch-close"
+        variant="ghost"
+        size="xs"
+        aria-label="关闭"
+        :disabled="isBatchBusy"
+        @click="open = false"
+      >
+        <Icon :icon="iconX" width="14" height="14" />
+      </Button>
+    </div>
+
+    <div class="batch-selection">
+      <label class="batch-select">
+        <CheckboxRoot
+          class="batch-checkbox"
+          :model-value="selectAllState"
+          :disabled="isBatchBusy || songs.length === 0"
+          aria-label="全选歌曲"
+          @update:model-value="toggleSelectAll"
+        >
+          <CheckboxIndicator as-child
+            ><span class="batch-checkbox-indicator"></span
+          ></CheckboxIndicator>
+        </CheckboxRoot>
+        <span class="batch-count" aria-live="polite">
+          已选 <strong>{{ selectedSongs.length }}</strong
+          >/{{ songs.length }}
+        </span>
+      </label>
+    </div>
+
+    <div class="batch-list">
+      <Scrollbar
+        ref="scrollbarRef"
+        class="flex-1 min-h-0"
+        :scrollbar-inset="4"
+        @vue:mounted="onScrollbarMounted"
+      >
+        <div v-if="props.songs?.length === 0" class="batch-empty">暂无歌曲</div>
+        <div v-else ref="containerRef" class="batch-list-inner">
+          <div :style="wrapperStyle" class="batch-list-wrapper">
+            <div :style="visibleBlockStyle">
+              <div
+                v-for="entry in list"
+                :key="getSongSelectionKey(entry.data, entry.index)"
+                class="batch-row"
+                :class="{
+                  'is-selected': selectedKeys.has(getSongSelectionKey(entry.data, entry.index)),
+                }"
+                :style="{ height: `${itemHeight}px` }"
+                @click="toggleSong(entry.data, entry.index)"
+              >
+                <div class="batch-leading" @click.stop>
+                  <CheckboxRoot
+                    class="batch-checkbox"
+                    :disabled="isBatchBusy"
+                    :aria-label="`选择歌曲：${entry.data.title || '未命名歌曲'}`"
+                    :model-value="selectedKeys.has(getSongSelectionKey(entry.data, entry.index))"
+                    @update:model-value="setSongChecked(entry.data, entry.index, $event)"
+                  >
+                    <CheckboxIndicator as-child>
+                      <span class="batch-checkbox-indicator"></span>
+                    </CheckboxIndicator>
+                  </CheckboxRoot>
+                </div>
+                <div class="batch-card" :style="{ opacity: isPlayableSong(entry.data) ? 1 : 0.45 }">
+                  <SongCard
+                    :song="entry.data"
+                    :showCover="true"
+                    :showAlbum="false"
+                    :showDuration="false"
+                    :active="false"
+                    :showMore="false"
+                    :disableLinks="true"
+                    variant="list"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </Scrollbar>
+    </div>
+    <div class="batch-footer">
       <div class="batch-actions">
         <Button
           type="button"
-          class="batch-action"
-          variant="secondary"
+          class="batch-action primary"
+          variant="primary"
           size="xs"
           :disabled="!canPlaySelected || isBatchBusy"
           @click="handlePlaySelected"
@@ -461,91 +555,6 @@ const confirmRemoveFromPlaylist = async () => {
           <template v-else>删除</template>
         </Button>
       </div>
-      <Button
-        type="button"
-        class="batch-close"
-        variant="ghost"
-        size="xs"
-        aria-label="关闭"
-        :disabled="isBatchBusy"
-        @click="open = false"
-      >
-        <Icon :icon="iconX" width="14" height="14" />
-      </Button>
-    </div>
-
-    <div class="batch-selection">
-      <Button type="button" class="batch-select" variant="ghost" size="xs" @click="toggleSelectAll">
-        <span class="batch-select-leading">
-          <CheckboxRoot
-            class="batch-checkbox"
-            :model-value="selectAllState"
-            @update:model-value="toggleSelectAll"
-            @click.stop
-          >
-            <CheckboxIndicator as-child>
-              <span class="batch-checkbox-indicator"></span>
-            </CheckboxIndicator>
-          </CheckboxRoot>
-        </span>
-        全选
-      </Button>
-      <div class="batch-count">已选 {{ selectedSongs.length }} / {{ songs.length }}</div>
-    </div>
-
-    <div class="batch-list">
-      <Scrollbar
-        ref="scrollbarRef"
-        class="flex-1 min-h-0"
-        :scrollbar-inset="4"
-        @vue:mounted="onScrollbarMounted"
-      >
-        <div v-if="props.songs?.length === 0" class="batch-empty">暂无歌曲</div>
-        <div v-else ref="containerRef" class="batch-list-inner">
-          <div :style="wrapperStyle" class="batch-list-wrapper">
-            <div :style="visibleBlockStyle">
-              <div
-                v-for="entry in list"
-                :key="getSongSelectionKey(entry.data, entry.index)"
-                class="batch-row"
-                :class="{
-                  'text-primary-text': selectedKeys.has(
-                    getSongSelectionKey(entry.data, entry.index),
-                  ),
-                }"
-                :style="{ height: `${itemHeight}px` }"
-                @click="toggleSong(entry.data, entry.index)"
-              >
-                <div class="batch-leading" @click.stop>
-                  <CheckboxRoot
-                    class="batch-checkbox"
-                    :model-value="selectedKeys.has(getSongSelectionKey(entry.data, entry.index))"
-                    @update:model-value="setSongChecked(entry.data, entry.index, $event)"
-                  >
-                    <CheckboxIndicator as-child>
-                      <span class="batch-checkbox-indicator"></span>
-                    </CheckboxIndicator>
-                  </CheckboxRoot>
-                </div>
-                <div class="batch-card" :style="{ opacity: isPlayableSong(entry.data) ? 1 : 0.45 }">
-                  <SongCard
-                    :song="entry.data"
-                    :showCover="true"
-                    :showAlbum="false"
-                    :showDuration="false"
-                    :active="false"
-                    :showMore="false"
-                    :disableLinks="true"
-                    variant="list"
-                  />
-                </div>
-                <div class="batch-album">{{ entry.data.album || '未知专辑' }}</div>
-                <div class="batch-duration">{{ formatDuration(entry.data.duration) }}</div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </Scrollbar>
     </div>
   </Drawer>
 
@@ -580,41 +589,76 @@ const confirmRemoveFromPlaylist = async () => {
   background: var(--surface-scrim-bg);
 }
 
-:global(.batch-drawer) {
+:global(.drawer-panel.batch-drawer) {
   padding: 0;
-  box-shadow: none;
-  width: min(600px, 96vw);
-  top: 0;
-  bottom: 0;
+  box-shadow: var(--shadow-dialog);
+  width: min(420px, calc(100vw - 24px));
+  top: 12px;
+  right: 12px;
+  bottom: 12px;
+  border-radius: 12px;
+  overflow: hidden;
 }
 
 .batch-header {
   display: grid;
-  grid-template-columns: 1fr auto auto;
+  grid-template-columns: 1fr auto;
   align-items: center;
   gap: 12px;
-  padding: 16px 18px 12px 20px;
+  padding: 22px 20px 18px;
   user-select: none;
   -webkit-user-select: none;
 }
 
+.batch-heading {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.batch-heading-icon {
+  width: 42px;
+  height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--color-primary) 10%, transparent);
+  color: var(--color-primary-text);
+}
+.batch-subtitle {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
 .batch-title {
-  font-size: 16px;
-  font-weight: 700;
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
   color: var(--color-text-main);
 }
 
+.batch-footer {
+  flex-shrink: 0;
+  padding: 16px 20px;
+  border-top: 1px solid var(--border-subtle);
+  background: var(--color-bg-elevated);
+}
 .batch-actions {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
 }
 
 .batch-action {
   display: inline-flex;
+  flex-shrink: 0;
+  white-space: nowrap;
   align-items: center;
   gap: 8px;
-  padding: 7px 12px;
+  min-height: 38px;
+  padding: 8px 14px;
   border-radius: 10px;
   font-size: 12px;
   font-weight: 600;
@@ -626,13 +670,22 @@ const confirmRemoveFromPlaylist = async () => {
     color 0.2s ease;
 }
 
-.batch-action:hover {
-  transform: scale(1.02);
+.batch-action:not(:disabled):hover {
   color: var(--color-primary-text);
   background: var(--control-hover-bg);
 }
 
+.batch-action.primary {
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+}
+.batch-action.primary:not(:disabled):hover {
+  background: var(--color-primary-hover);
+  color: var(--color-on-primary);
+}
 .batch-action.danger {
+  margin-left: auto;
+  background: transparent;
   color: var(--state-danger);
 }
 
@@ -650,7 +703,9 @@ const confirmRemoveFromPlaylist = async () => {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 0 20px 12px 18px;
+  margin: 0 20px 10px;
+  padding: 10px 8px 12px;
+  border-bottom: 1px solid var(--border-subtle);
   font-size: 12px;
   color: var(--color-text-secondary);
   user-select: none;
@@ -661,21 +716,16 @@ const confirmRemoveFromPlaylist = async () => {
   display: inline-flex;
   align-items: center;
   gap: 12px;
-  padding-left: 0;
-  padding-right: 12px;
+  cursor: pointer;
   font-weight: 600;
   color: var(--color-text-main);
 }
 
-.batch-select-leading {
-  width: 40px;
-  flex: 0 0 40px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-
 .batch-count {
+  font-variant-numeric: tabular-nums;
+}
+.batch-count strong {
+  color: var(--color-primary-text);
   font-weight: 600;
 }
 
@@ -684,13 +734,13 @@ const confirmRemoveFromPlaylist = async () => {
   display: flex;
   flex-direction: column;
   min-height: 0;
-  padding: 0 0 16px 18px;
+  padding: 0 0 8px 20px;
   user-select: none;
   -webkit-user-select: none;
 }
 
 .batch-list-inner {
-  padding-right: 14px;
+  padding-right: 20px;
 }
 
 .batch-list-wrapper {
@@ -699,7 +749,7 @@ const confirmRemoveFromPlaylist = async () => {
 }
 
 .batch-empty {
-  padding: 20px 0 28px;
+  padding: 64px 20px;
   text-align: center;
   font-size: 13px;
   font-weight: 600;
@@ -709,35 +759,37 @@ const confirmRemoveFromPlaylist = async () => {
 .batch-row {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 0;
-  border-radius: 8px;
+  gap: 8px;
+  padding: 0 8px;
+  border-radius: 10px;
   transition: background-color 0.15s ease;
-  cursor: default;
+  cursor: pointer;
   user-select: none;
   -webkit-user-select: none;
   contain: layout style paint;
 }
 
-.batch-row.text-primary-text {
+.batch-row.is-selected {
   background: var(--row-selected-bg);
 }
 
-.batch-row:hover {
+.batch-row:not(.is-selected):hover {
   background: var(--row-hover-bg);
 }
 
 .batch-leading {
-  width: 40px;
+  width: 18px;
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
 .batch-checkbox {
-  width: 14px;
-  height: 14px;
-  border-radius: 3px;
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  border-radius: 5px;
   border: 1.5px solid var(--control-checkbox-border);
   display: inline-flex;
   align-items: center;
@@ -824,35 +876,35 @@ const confirmRemoveFromPlaylist = async () => {
   display: none;
 }
 
-.batch-album {
-  width: 180px;
-  flex: 0 1 180px;
-  min-width: 0;
-  display: block;
-  font-size: 12px;
-  opacity: 0.7;
-  color: var(--color-text-secondary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  user-select: none;
-  -webkit-user-select: none;
-}
-
-.batch-duration {
-  width: 64px;
-  flex-shrink: 0;
-  font-size: 12px;
+.batch-checkbox[data-disabled] {
+  cursor: not-allowed;
   opacity: 0.5;
-  color: var(--color-text-secondary);
-  user-select: none;
-  -webkit-user-select: none;
+}
+.batch-card :deep(.song-card) {
+  background: transparent;
+  padding: 0;
+}
+.batch-card :deep(.song-cover-frame) {
+  width: 42px;
+  height: 42px;
+  border-radius: 9px;
 }
 
-@media (max-width: 720px) {
-  :global(.batch-drawer) {
-    bottom: 0;
-    width: 94vw;
+@media (max-width: 420px) {
+  :global(.drawer-panel.batch-drawer) {
+    top: 8px;
+    right: 8px;
+    bottom: 8px;
+    width: calc(100vw - 16px);
+  }
+  .batch-header {
+    padding: 18px 14px 14px;
+  }
+  .batch-footer {
+    padding: 12px 14px;
+  }
+  .batch-action {
+    padding: 8px 10px;
   }
 }
 </style>

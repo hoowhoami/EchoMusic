@@ -281,11 +281,12 @@ body.accent-scoped .main-layout .player-bar-container {
     box-shadow: none;
   }
 
+  /* 菜单容器的阴影属于浮层外观，不能随鼠标引起的焦点切换被清除。 */
   input:focus:not(:focus-visible),
   textarea:focus:not(:focus-visible),
   select:focus:not(:focus-visible),
   button:focus:not(:focus-visible),
-  [tabindex]:focus:not(:focus-visible) {
+  [tabindex]:not(.titlebar-more-menu):focus:not(:focus-visible) {
     outline: none !important;
     box-shadow: none !important;
   }
@@ -298,7 +299,7 @@ body.accent-scoped .main-layout .player-bar-container {
 
   select:focus-visible,
   button:focus-visible,
-  [tabindex]:focus-visible {
+  [tabindex]:not(.titlebar-more-menu):focus-visible {
     outline: none !important;
     box-shadow: none !important;
   }

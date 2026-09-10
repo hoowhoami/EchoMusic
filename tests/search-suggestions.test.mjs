@@ -9,7 +9,7 @@ const source = readFileSync(
 );
 const snippet = source.slice(
   source.indexOf('const cancelSuggestionBlur'),
-  source.indexOf('const handleSearchKeydown'),
+  source.indexOf('\nwatch(', source.indexOf('const handleSearchKeydown')),
 );
 function setup() {
   const timers = new Map();
@@ -20,6 +20,7 @@ function setup() {
   const route = { name: 'home', query: {} };
   const historyActions = [];
   let inputFocused = false;
+  let nativeTarget = null;
   const input = {
     focus() {
       inputFocused = true;
@@ -30,6 +31,7 @@ function setup() {
   };
   const state = {
     showSuggestions: { value: false },
+    activeSuggestionIndex: { value: -1 },
     isLoadingSuggestions: { value: false },
     searchQuery: { value: 'love' },
     suggestions: { value: ['cached'] },
@@ -45,6 +47,12 @@ function setup() {
   const pending = [];
   const bindings = {
     ...state,
+    flatSuggestions: {
+      get value() {
+        return state.suggestions.value.flatMap((group) => group.records ?? []);
+      },
+    },
+    nextTick: (fn) => Promise.resolve(fn()),
     loadHotSearches: () => {},
     settingStore: {
       clearSearchHistory() {
@@ -68,14 +76,14 @@ function setup() {
         timers.delete(id);
       },
     },
-    document: { activeElement: input },
+    document: { activeElement: input, elementFromPoint: () => nativeTarget },
     getSearchSuggest: () => new Promise((resolve, reject) => pending.push({ resolve, reject })),
     extractSuggestions: (value) => value,
   };
   const { code } = transformSync(
     'let suggestTimer=null; let suggestionRequest=0; let suggestionBlurTimer=null;\n' +
       snippet +
-      '\nreturn {handleSearchFocus,handleSearchBlur,fetchSuggestions,handleSearchInput,submitSearch,clearSearchHistory,removeSearchHistory,handleSearchInteractOutside,handleGlobalPointerDown};',
+      '\nreturn {handleSearchKeydown,handleSearchFocus,handleSearchBlur,fetchSuggestions,handleSearchInput,submitSearch,clearSearchHistory,removeSearchHistory,handleSearchInteractOutside,handleGlobalPointerDown,handleNativePointerDown};',
     { loader: 'ts' },
   );
   return {
@@ -87,6 +95,9 @@ function setup() {
     route,
     historyActions,
     wasBlurred: () => blurred,
+    setNativeTarget: (target) => {
+      nativeTarget = target;
+    },
     api: new Function(...Object.keys(bindings), code)(...Object.values(bindings)),
   };
 }
@@ -99,6 +110,35 @@ test('refocusing cancels delayed dismissal and keeps suggestions visible', () =>
   s.api.handleSearchFocus();
   assert.equal(s.timers.size, 0);
   assert.equal(s.showSuggestions.value, true);
+});
+
+test('native titlebar click dismisses search without changing drag regions', () => {
+  const s = setup();
+  s.api.handleSearchFocus();
+  s.setNativeTarget({ closest: (selector) => selector === '.native-titlebar .drag-region' });
+  s.api.handleNativePointerDown({ x: 500, y: 20 });
+  assert.equal(s.isSearchFocused.value, false);
+  assert.equal(s.wasBlurred(), true);
+});
+
+test('delayed native notification after history removal does not dismiss search', () => {
+  const s = setup();
+  s.api.handleSearchFocus();
+  s.api.clearSearchHistory();
+  s.setNativeTarget({ closest: () => null });
+  s.api.handleNativePointerDown({ x: 200, y: 100 });
+  assert.equal(s.isSearchFocused.value, true);
+  assert.equal(s.wasBlurred(), false);
+});
+
+test('native window move or loss of focus dismisses pending suggestions', async () => {
+  const s = setup();
+  const pending = s.api.fetchSuggestions('love');
+  s.api.handleNativePointerDown();
+  s.pending[0].resolve(['late']);
+  await pending;
+  assert.equal(s.isSearchFocused.value, false);
+  assert.equal(s.showSuggestions.value, false);
 });
 
 test('an older failed request cannot clear newer suggestions', async () => {
@@ -211,4 +251,75 @@ test('submitting a different keyword keeps normal search navigation', () => {
   s.api.submitSearch('new');
   assert.equal(s.replacements.length, 0);
   assert.deepEqual(s.navigations, [{ name: 'search', query: { q: 'new' } }]);
+});
+
+const keyEvent = (key, extra = {}) => ({
+  key,
+  preventDefault() {},
+  stopPropagation() {},
+  ...extra,
+});
+function withSuggestions() {
+  const s = setup();
+  s.suggestions.value = [
+    { label: '歌曲', records: [{ text: 'first' }, { text: 'second' }] },
+    { label: '歌手', records: [{ text: 'third' }] },
+  ];
+  s.showSuggestions.value = true;
+  return s;
+}
+
+test('arrow keys traverse categories, wrap and scroll the active option into view', () => {
+  const s = withSuggestions();
+  let scrolls = 0;
+  s.searchPanelRef.value = { querySelector: () => ({ scrollIntoView: () => scrolls++ }) };
+  s.api.handleSearchKeydown(keyEvent('ArrowUp'));
+  assert.equal(s.activeSuggestionIndex.value, 2);
+  s.api.handleSearchKeydown(keyEvent('ArrowDown'));
+  assert.equal(s.activeSuggestionIndex.value, 0);
+  s.api.handleSearchKeydown(keyEvent('ArrowDown'));
+  s.api.handleSearchKeydown(keyEvent('ArrowDown'));
+  assert.equal(s.activeSuggestionIndex.value, 2);
+  assert.equal(scrolls, 4);
+  assert.equal(s.searchQuery.value, 'love');
+});
+
+test('Enter submits the active suggestion, while no selection submits the input', () => {
+  const s = withSuggestions();
+  s.api.handleSearchKeydown(keyEvent('ArrowDown'));
+  s.api.handleSearchKeydown(keyEvent('Enter'));
+  assert.equal(s.navigations[0].query.q, 'first');
+  const raw = withSuggestions();
+  raw.api.handleSearchKeydown(keyEvent('Enter'));
+  assert.equal(raw.navigations[0].query.q, 'love');
+});
+
+test('IME confirmation and navigation are not intercepted', () => {
+  const s = withSuggestions();
+  for (const key of ['Enter', 'ArrowDown', 'Escape']) {
+    s.api.handleSearchKeydown(
+      keyEvent(key, {
+        isComposing: true,
+        preventDefault() {
+          assert.fail('IME intercepted');
+        },
+      }),
+    );
+  }
+  s.api.handleSearchKeydown(keyEvent('Enter', { keyCode: 229 }));
+  assert.equal(s.navigations.length, 0);
+  assert.equal(s.activeSuggestionIndex.value, -1);
+  assert.equal(s.isSearchFocused.value, true);
+});
+
+test('editing and closing reset selection; loading and empty results cannot select stale options', () => {
+  const s = withSuggestions();
+  s.api.handleSearchKeydown(keyEvent('ArrowDown'));
+  s.api.handleSearchInput('new');
+  assert.equal(s.activeSuggestionIndex.value, -1);
+  s.api.handleSearchKeydown(keyEvent('ArrowDown'));
+  assert.equal(s.activeSuggestionIndex.value, -1);
+  s.api.handleSearchKeydown(keyEvent('Escape'));
+  assert.equal(s.isSearchFocused.value, false);
+  assert.equal(s.searchQuery.value, 'love');
 });

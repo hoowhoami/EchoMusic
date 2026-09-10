@@ -21,16 +21,47 @@ export interface NativePlatform {
 }
 
 let native: NativePlatform | null | undefined;
+const loadAddon = () =>
+  createRequire(join(process.cwd(), 'package.json'))(
+    app.isPackaged
+      ? join(process.resourcesPath, 'native/echo-platform-adaptor.node')
+      : join(__dirname, '../../native/echo-platform-adaptor/echo-platform-adaptor.node'),
+  );
+
+export interface NativeWindowPointer {
+  startWindowPointerMonitor(
+    handle: Buffer,
+    callback: (error: Error | null, point: { x: number; y: number }) => void,
+  ): void;
+  stopWindowPointerMonitor(): void;
+}
+
+let windowPointer: NativeWindowPointer | null | undefined;
+export function getNativeWindowPointer(): NativeWindowPointer | null {
+  if (windowPointer !== undefined) return windowPointer;
+  windowPointer = null;
+  if (process.platform !== 'darwin') return null;
+  try {
+    const candidate = loadAddon();
+    if (
+      typeof candidate.startWindowPointerMonitor !== 'function' ||
+      typeof candidate.stopWindowPointerMonitor !== 'function'
+    ) {
+      throw new Error('Rebuild echo-platform-adaptor for window pointer support');
+    }
+    windowPointer = candidate as NativeWindowPointer;
+  } catch (error) {
+    log.warn('[NativePlatform] Window pointer monitor unavailable:', error);
+  }
+  return windowPointer;
+}
+
 export function getNativePlatform(): NativePlatform | null {
   if (native !== undefined) return native;
   native = null;
   if (process.platform !== 'win32') return native;
   try {
-    const candidate = createRequire(join(process.cwd(), 'package.json'))(
-      app.isPackaged
-        ? join(process.resourcesPath, 'native/echo-platform-adaptor.node')
-        : join(__dirname, '../../native/echo-platform-adaptor/echo-platform-adaptor.node'),
-    );
+    const candidate = loadAddon();
     const methods: (keyof NativePlatform)[] = [
       'setWindowComposition',
       'taskbarEnableIconic',

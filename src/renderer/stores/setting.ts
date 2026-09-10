@@ -1,3 +1,4 @@
+import { emptyTitlebarLayout } from '../plugins/titlebar';
 import {
   DEFAULT_WINDOW_BACKGROUND,
   normalizeWindowBackground,
@@ -95,6 +96,7 @@ const toImpulseResponseFilePayload = (file: SpatialAudioEffectEntry): SpatialAud
 export const useSettingStore = defineStore('setting', {
   state: () => ({
     theme: 'system' as ThemeMode,
+    titlebarLayout: emptyTitlebarLayout(),
     windowBackground: { ...DEFAULT_WINDOW_BACKGROUND },
     windowBackgroundActiveEnabled: false,
     windowBackgroundLive: false,

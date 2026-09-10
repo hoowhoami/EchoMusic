@@ -177,6 +177,12 @@
     ],
     "mac": {
       "icon": "icons/icon.icns",
+      "extraResources": [
+        {
+          "from": "native/echo-platform-adaptor/echo-platform-adaptor.node",
+          "to": "native/echo-platform-adaptor.node"
+        }
+      ],
       "category": "public.app-category.music",
       "hardenedRuntime": true,
       "entitlements": "build/entitlements.mac.plist",

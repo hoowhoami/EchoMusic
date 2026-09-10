@@ -18,6 +18,7 @@ import { logMainMemory } from '../diagnostics/memory';
 import { resolveMainWindowPlacement, resolveWaylandWindowSize } from '../windowSizing';
 import { isWaylandWindowingBackend } from '../../shared/windowing';
 import { trackMainWindowState } from './state';
+import { installWindowPointerEvents } from './pointer';
 import {
   applyWindowsComposition,
   getWindowsCompositionOptions,
@@ -418,6 +419,7 @@ export async function createWindow() {
     win.setBounds(placement.bounds);
   }
   const mainWindow = win;
+  installWindowPointerEvents(mainWindow);
   titleBarController = usesNativeOverlay
     ? createTitleBarController(
         win,

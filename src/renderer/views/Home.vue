@@ -294,11 +294,6 @@ const toggleStyleTag = (tag: StyleRecommendTag) => {
   void loadStyleRecommend({ useSelectedTags: true });
 };
 
-const clearStyleTags = () => {
-  selectedStyleTagIds.value = new Set();
-  void loadStyleRecommend({ useSelectedTags: true });
-};
-
 const playStyleSongs = async (targetSong?: Song) => {
   const queueSongs = styleSongs.value.slice();
   if (queueSongs.length === 0) return false;
@@ -438,15 +433,6 @@ const handleRejectAgreement = () => {
           </div>
 
           <div class="style-tag-row">
-            <Button
-              variant="unstyled"
-              size="none"
-              class="style-tag-clear"
-              :class="{ active: selectedStyleTagIds.size === 0 }"
-              @click="clearStyleTags"
-            >
-              默认
-            </Button>
             <Button
               v-for="tag in activeStyleGroup?.child ?? []"
               :key="tag.id"
@@ -821,8 +807,7 @@ const handleRejectAgreement = () => {
   display: none;
 }
 
-.style-tag-btn,
-.style-tag-clear {
+.style-tag-btn {
   height: 32px;
   flex-shrink: 0;
   border-radius: 10px;
@@ -830,9 +815,6 @@ const handleRejectAgreement = () => {
   border: 1px solid transparent;
   font-size: 12px;
   font-weight: 700;
-}
-
-.style-tag-btn {
   color: var(--color-text-secondary);
   border-color: var(--content-panel-border);
   background: var(--control-muted-bg);
@@ -845,21 +827,6 @@ const handleRejectAgreement = () => {
 }
 
 .style-tag-btn.active {
-  color: var(--color-primary-text);
-  border-color: var(--color-primary);
-  background: var(--control-active-bg);
-}
-
-.style-tag-clear {
-  color: color-mix(in srgb, var(--color-text-main) 45%, transparent);
-}
-
-.style-tag-clear:hover {
-  color: var(--color-text-main);
-  background: var(--control-hover-bg);
-}
-
-.style-tag-clear.active {
   color: var(--color-primary-text);
   border-color: var(--color-primary);
   background: var(--control-active-bg);
