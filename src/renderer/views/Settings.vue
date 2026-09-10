@@ -4,6 +4,7 @@ import Tooltip from '@/components/ui/Tooltip.vue';
 defineOptions({ name: 'settings-page' });
 import { computed, ref, onMounted, onUnmounted, nextTick, watch } from 'vue';
 import type { Component } from 'vue';
+import { useResizeObserver } from '@vueuse/core';
 import { useSettingStore } from '@/stores/setting';
 import { useUpdateStore } from '@/stores/update';
 import { useDesktopLyricStore } from '@/desktopLyric/store';
@@ -11,7 +12,7 @@ import Dialog from '@/components/ui/Dialog.vue';
 import Button from '@/components/ui/Button.vue';
 import Scrollbar from '@/components/ui/Scrollbar.vue';
 import DisclaimerDialog from '@/components/app/DisclaimerDialog.vue';
-import { iconArrowUp, iconSearch, iconX } from '@/icons';
+import { iconArrowUp, iconChevronLeft, iconChevronRight, iconSearch, iconX } from '@/icons';
 import { marked } from 'marked';
 import { sanitizeHtml } from '@/utils/sanitize';
 import AppearanceSettingsSection from './settings/components/AppearanceSettingsSection.vue';
@@ -41,6 +42,24 @@ const currentPlatform = window.electron?.platform;
 const contentRef = ref<HTMLElement | null>(null);
 const scrollbarRef = ref<InstanceType<typeof Scrollbar> | null>(null);
 const anchorListRef = ref<HTMLElement | null>(null);
+const canScrollAnchorsLeft = ref(false);
+const canScrollAnchorsRight = ref(false);
+const updateAnchorScrollState = () => {
+  const list = anchorListRef.value;
+  canScrollAnchorsLeft.value = Boolean(list && list.scrollLeft > 1);
+  canScrollAnchorsRight.value = Boolean(
+    list && list.scrollLeft + list.clientWidth < list.scrollWidth - 1,
+  );
+};
+const scrollAnchors = (direction: -1 | 1) => {
+  const list = anchorListRef.value;
+  if (!list) return;
+  list.scrollBy({
+    left: direction * Math.max(120, list.clientWidth * 0.75),
+    behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth',
+  });
+};
+useResizeObserver(anchorListRef, updateAnchorScrollState);
 const anchorRefs = new Map<string, HTMLElement>();
 const settingsSearchKeyword = ref('');
 const settingsSearchInputRef = ref<HTMLInputElement | null>(null);
@@ -678,6 +697,7 @@ const navItems = computed(() =>
     label: section.label,
   })),
 );
+watch(navItems, updateAnchorScrollState, { flush: 'post' });
 
 // 当前滚动位置
 const currentScrollTop = ref(0);
@@ -814,10 +834,22 @@ const findSectionElement = (id: string) => {
 
     <!-- 顶部锚点导航 -->
     <div class="settings-anchor-bar shrink-0 px-6 py-1.5 sticky top-0 z-10">
+      <Button
+        variant="unstyled"
+        size="none"
+        class="settings-anchor-arrow"
+        aria-label="向左滚动设置标签"
+        tooltip="向左滚动"
+        :disabled="!canScrollAnchorsLeft"
+        @click="scrollAnchors(-1)"
+      >
+        <Icon :icon="iconChevronLeft" width="18" height="18" />
+      </Button>
       <div
         ref="anchorListRef"
         class="settings-anchor-list flex items-center gap-0 overflow-x-auto"
         @wheel="handleAnchorWheel"
+        @scroll.passive="updateAnchorScrollState"
       >
         <button
           v-for="item in navItems"
@@ -833,6 +865,17 @@ const findSectionElement = (id: string) => {
         <!-- 滑动指示条 -->
         <div class="settings-anchor-indicator" :style="indicatorStyle"></div>
       </div>
+      <Button
+        variant="unstyled"
+        size="none"
+        class="settings-anchor-arrow"
+        aria-label="向右滚动设置标签"
+        tooltip="向右滚动"
+        :disabled="!canScrollAnchorsRight"
+        @click="scrollAnchors(1)"
+      >
+        <Icon :icon="iconChevronRight" width="18" height="18" />
+      </Button>
     </div>
 
     <!-- 内容区域 -->
@@ -1020,13 +1063,29 @@ const findSectionElement = (id: string) => {
 }
 
 .settings-anchor-bar {
-  @apply flex items-center;
+  @apply flex items-center gap-1;
   border-bottom: 1px solid var(--border-subtle);
 }
 
 .settings-anchor-list {
-  @apply flex-1 flex items-center gap-0 overflow-x-auto relative;
+  @apply min-w-0 flex-1 flex items-center gap-0 overflow-x-auto relative;
   scrollbar-width: none;
+}
+
+.settings-anchor-arrow {
+  @apply flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-text-secondary transition-colors;
+}
+.settings-anchor-arrow:hover:not(:disabled) {
+  color: var(--color-text-main);
+  background: var(--control-hover-bg);
+}
+.settings-anchor-arrow:disabled {
+  opacity: 0.25;
+  cursor: default;
+}
+.settings-anchor-arrow:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
 }
 
 .settings-anchor-list::-webkit-scrollbar {
