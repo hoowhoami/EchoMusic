@@ -22,6 +22,7 @@ const settingStore = useSettingStore();
 const themeStore = useThemeStore();
 const toastStore = useToastStore();
 const restarting = ref(false);
+const windowPlatform = window.electron?.platform;
 const restartForBackground = async () => {
   if (restarting.value) return;
   restarting.value = true;
@@ -42,6 +43,49 @@ const restartForBackground = async () => {
 };
 const showAccentPicker = ref(false);
 const showBackgroundPicker = ref(false);
+const copyBackgroundDiagnostics = async () => {
+  try {
+    const runtime = await window.electron?.ipcRenderer.invoke('window-background:diagnostics');
+    const selectors = ['html', 'body', '#app', '.main-layout', '.main-content', '.lyric-page'];
+    const surfaces = selectors.flatMap((selector) => {
+      const element = document.querySelector(selector);
+      if (!element) return [];
+      const style = getComputedStyle(element);
+      return [
+        {
+          selector,
+          background: style.backgroundColor,
+          opacity: style.opacity,
+          display: style.display,
+          visibility: style.visibility,
+        },
+      ];
+    });
+    const base = getComputedStyle(document.documentElement, '::before');
+    await navigator.clipboard.writeText(
+      JSON.stringify(
+        {
+          ...runtime,
+          renderer: {
+            mode: backgroundMode.value,
+            transparency: settingStore.windowBackground.transparency,
+            backgroundLayer: {
+              color: base.backgroundColor,
+              opacity: base.opacity,
+              display: base.display,
+            },
+            surfaces,
+          },
+        },
+        null,
+        2,
+      ),
+    );
+    toastStore.info('窗口诊断信息已复制');
+  } catch {
+    toastStore.warning('未能复制窗口诊断信息');
+  }
+};
 const backgroundMode = computed(() =>
   !settingStore.windowBackground.enabled
     ? 'off'
@@ -120,6 +164,14 @@ const isAccentGradientDefault = computed(
         >
           {{ settingStore.windowBackgroundUnavailableReason }}
         </p>
+        <button
+          v-if="windowPlatform === 'win32'"
+          type="button"
+          class="text-sm text-text-secondary underline underline-offset-4 cursor-pointer"
+          @click="copyBackgroundDiagnostics"
+        >
+          复制窗口诊断信息
+        </button>
         <p
           v-if="settingStore.windowBackgroundRestartRequired"
           class="text-sm text-primary-text"

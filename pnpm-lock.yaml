@@ -48,6 +48,9 @@ importers:
       '@internationalized/date':
         specifier: ^3.12.0
         version: 3.12.0
+      '@number-flow/vue':
+        specifier: ^0.5.2
+        version: 0.5.2(vue@3.5.38(typescript@5.9.3))
       '@tailwindcss/vite':
         specifier: ^4.3.0
         version: 4.3.0(vite@8.0.14(@types/node@25.9.1)(esbuild@0.28.0)(jiti@2.7.0)(yaml@2.9.0))
@@ -602,6 +605,11 @@ packages:
   '@nodelib/fs.walk@1.2.8':
     resolution: {integrity: sha512-oGB+UxlgWcgQkgwo8GcEGwemoTFt3FIO9ababBmaGwXIoBKZ+GTy0pP185beGg7Llih/NSHSV2XAs1lnznocSg==}
     engines: {node: '>= 8'}
+
+  '@number-flow/vue@0.5.2':
+    resolution: {integrity: sha512-+FvSTXuIVeFxiTMQFv7NFGE8qqy6qVe+0s/55yascW4JWkd60twPGjN+/iFQCNW43EI2w3Yn1oUXt93kYdAyEA==}
+    peerDependencies:
+      vue: ^3
 
   '@oxc-project/types@0.132.0':
     resolution: {integrity: sha512-FESMOxil5Se014ui/Eq8fT5uHJo6nIRwH0PfJrZJXs6Gek3ZVFOrpUv3YIZT20m+extU98Hg1Ym72U58rlsxUQ==}
@@ -2026,6 +2034,9 @@ packages:
       jiti:
         optional: true
 
+  esm-env@1.2.2:
+    resolution: {integrity: sha512-Epxrv+Nr/CaL4ZcFGPJIYLWFom+YeV1DqMLHJoEd9SYRxNbaFruBwfEX/kkHUJf55j2+TUbmDcmuilbP1TmXHA==}
+
   espree@11.2.0:
     resolution: {integrity: sha512-7p3DrVEIopW1B1avAGLuCSh1jubc01H2JHc8B4qqGblmg5gI9yumBgACjWo4JlIc04ufug4xJ3SQI8HkS/Rgzw==}
     engines: {node: ^20.19.0 || ^22.13.0 || >=24}
@@ -2768,6 +2779,9 @@ packages:
 
   nth-check@2.1.1:
     resolution: {integrity: sha512-lqjrjmaOoAnWfMmBPL+XNnynZh2+swxiX3WUE0s4yEHI6m+AwrK2UZOimIRl3X/4QctVqS8AiZjFqyOGrMXb/w==}
+
+  number-flow@0.6.2:
+    resolution: {integrity: sha512-MCnImG4Q5vPwhSXnov56nOuyyKn6LC+Qd7II1UiKc+ACRtug5iAtn0+CwXNxM38AC5lSowEY+oYEtZX2qMnUyw==}
 
   object-inspect@1.13.4:
     resolution: {integrity: sha512-W67iLl4J2EXEGTbfeHCffrjDfitvLANg0UlX3wFUUSTx92KXRFegMHUVgSqE+wvhAbi4WqjGg9czysTV2Epbew==}
@@ -4122,6 +4136,12 @@ snapshots:
     dependencies:
       '@nodelib/fs.scandir': 2.1.5
       fastq: 1.20.1
+
+  '@number-flow/vue@0.5.2(vue@3.5.38(typescript@5.9.3))':
+    dependencies:
+      esm-env: 1.2.2
+      number-flow: 0.6.2
+      vue: 3.5.38(typescript@5.9.3)
 
   '@oxc-project/types@0.132.0': {}
 
@@ -5601,6 +5621,8 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
+  esm-env@1.2.2: {}
+
   espree@11.2.0:
     dependencies:
       acorn: 8.16.0
@@ -6331,6 +6353,10 @@ snapshots:
   nth-check@2.1.1:
     dependencies:
       boolbase: 1.0.0
+
+  number-flow@0.6.2:
+    dependencies:
+      esm-env: 1.2.2
 
   object-inspect@1.13.4: {}
 

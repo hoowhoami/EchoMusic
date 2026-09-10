@@ -93,7 +93,7 @@ const isMiniPlayerRoute = computed(isMiniPlayerWindow);
 watch(
   () => Boolean(player.value?.isLyricViewOpen),
   (visible) => {
-    if (!isMiniPlayerRoute.value)
+    if (!isMiniPlayerRoute.value && window.electron?.platform !== 'darwin')
       window.electron?.ipcRenderer.send('window:lyric-visibility', visible);
   },
   { immediate: true },

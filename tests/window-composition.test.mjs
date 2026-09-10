@@ -10,16 +10,17 @@ const compile = (path) =>
   }).code;
 const compositionCode = compile('../src/main/window/windowsComposition.ts');
 const materialCode = compile('../src/main/window/backgroundMaterial.ts');
-function setup({ available = true } = {}) {
+function setup({ available = true, diagnostics, legacy = false } = {}) {
   const calls = [],
     module = { exports: {} };
   const materialModule = { exports: {} };
   runInNewContext(materialCode, { module: materialModule });
   let failed = false;
   const native = {
+    ...(diagnostics ? { getWindowCompositionDiagnostics: diagnostics } : {}),
     setWindowComposition(handle, mode) {
       calls.push(['accent', handle, mode]);
-      return !failed;
+      return !failed && (!legacy || mode <= 3);
     },
   };
   runInNewContext(compositionCode, {
@@ -46,6 +47,7 @@ function setup({ available = true } = {}) {
     background,
     apply: module.exports.applyWindowsComposition,
     options: module.exports.getWindowsCompositionOptions,
+    diagnose: module.exports.readWindowsCompositionDiagnostics,
     fail: () => {
       failed = true;
     },
@@ -60,13 +62,13 @@ test('clear -> Win11 Acrylic -> clear -> opaque disables the previous backend in
   e.apply(e.win, { ...e.background, enabled: false }, 22631);
   assert.deepEqual(e.calls, [
     ['material', true],
-    ['accent', '1311768467463790320', 3],
+    ['accent', '1311768467463790320', 5],
     ['material', false],
     ['accent', '1311768467463790320', 0],
     ['material', true],
     ['material', false],
     ['material', true],
-    ['accent', '1311768467463790320', 3],
+    ['accent', '1311768467463790320', 5],
     ['material', false],
     ['accent', '1311768467463790320', 0],
   ]);
@@ -89,7 +91,7 @@ test('native failures are not cached as successful composition', () => {
   e.fail();
   assert.throws(() => e.apply(e.win, e.background, 19045));
   assert.throws(() => e.apply(e.win, e.background, 19045));
-  assert.equal(e.calls.filter((call) => call[0] === 'accent' && call[2] === 1).length, 2);
+  assert.equal(e.calls.filter((call) => call[0] === 'accent' && call[2] === 4).length, 2);
 });
 
 test('Win11 clear failure releases prepared material and retries instead of caching success', () => {
@@ -100,11 +102,11 @@ test('Win11 clear failure releases prepared material and retries instead of cach
     e.calls.map((c) => (c[0] === 'material' ? c : [c[0], c[2]])),
     [
       ['material', true],
-      ['accent', 3],
+      ['accent', 5],
       ['material', false],
       ['accent', 0],
       ['material', true],
-      ['accent', 3],
+      ['accent', 5],
       ['material', false],
       ['accent', 0],
     ],
@@ -116,7 +118,6 @@ test('Win10 and early Win11 prepare alpha at creation and keep it through off/cl
     const e = setup();
     const options = e.options(build);
     assert.equal(options.backgroundMaterial, 'acrylic');
-    assert.equal(options.thickFrame, true);
     assert.notEqual(options.transparent, true);
     for (const background of [
       { ...e.background, enabled: false },
@@ -134,7 +135,7 @@ test('Win10 and early Win11 prepare alpha at creation and keep it through off/cl
     );
     assert.deepEqual(
       e.calls.map((c) => c[2]),
-      [1, 0, 2, 0, 1],
+      [4, 0, 2, 0, 4],
     );
   }
   assert.equal(setup().options(22621).backgroundMaterial, undefined);
@@ -147,4 +148,49 @@ test('legacy Accent failure leaves the constructor alpha declaration intact', ()
     e.calls.some((c) => c[0] === 'material'),
     false,
   );
+});
+
+test('diagnostics distinguish missing and older addons without changing composition', () => {
+  for (const available of [false, true]) {
+    const e = setup({ available });
+    const result = e.diagnose(e.win);
+    assert.equal(result.nativeAvailable, available);
+    assert.equal(result.nativeDiagnosticsAvailable, false);
+    assert.equal(result.requestedBackend, 'none');
+    assert.deepEqual(e.calls, []);
+  }
+});
+test('diagnostics report native readback separately from accepted clear requests', () => {
+  const e = setup({
+    diagnostics: (address) => {
+      assert.equal(address, '1311768467463790320');
+      return { accentState: 0, systemBackdrop: 1, layered: false, remoteSession: true };
+    },
+  });
+  e.apply(e.win, e.background, 22631);
+  const count = e.calls.length;
+  const result = e.diagnose(e.win);
+  assert.equal(result.requestedBackend, 'clear');
+  assert.equal(result.actual.accentState, 0);
+  assert.equal(result.actual.remoteSession, true);
+  assert.equal(e.calls.length, count);
+});
+test('failed native diagnostics remain readable and do not reset a running effect', () => {
+  const e = setup({
+    diagnostics: () => {
+      throw new Error('readback failed');
+    },
+  });
+  e.apply(e.win, e.background, 22631);
+  const count = e.calls.length;
+  assert.match(e.diagnose(e.win).error, /readback failed/);
+  assert.equal(e.calls.length, count);
+});
+
+test('older Accent-only binaries cannot silently accept the new DWM clear modes', () => {
+  for (const build of [19045, 26100]) {
+    const e = setup({ legacy: true });
+    assert.throws(() => e.apply(e.win, e.background, build), /系统背景接口不可用/);
+    assert.equal(e.diagnose(e.win).requestedBackend, 'none');
+  }
 });

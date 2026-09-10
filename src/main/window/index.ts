@@ -21,6 +21,7 @@ import { trackMainWindowState } from './state';
 import {
   applyWindowsComposition,
   getWindowsCompositionOptions,
+  readWindowsCompositionDiagnostics,
   supportsWindowsAccent,
 } from './windowsComposition';
 import { applyMacWindowBackground } from './macComposition';
@@ -247,6 +248,23 @@ export const registerMainWindowPreferenceHandlers = () => {
     titleBarController?.setLyricVisible(visible);
   });
   ipcRegistry.registerHandler('window-background:get', readBackgroundState);
+  ipcRegistry.registerHandler('window-background:diagnostics', (event) => {
+    if (!win || event.sender !== win.webContents || event.senderFrame !== win.webContents.mainFrame)
+      throw new Error('仅主窗口可以读取窗口诊断信息');
+    return {
+      appVersion: app.getVersion(),
+      electronVersion: process.versions.electron,
+      chromiumVersion: process.versions.chrome,
+      platform: process.platform,
+      osRelease: release(),
+      packaged: app.isPackaged,
+      gpuFeatures: app.getGPUFeatureStatus(),
+      background: readBackgroundState(),
+      nativeWindowBackground: win.getBackgroundColor(),
+      composition: activeComposition,
+      windows: process.platform === 'win32' ? readWindowsCompositionDiagnostics(win) : undefined,
+    };
+  });
   ipcRegistry.registerHandler('window-background:set', (event, value: WindowBackground) => {
     if (!win || event.sender !== win.webContents || event.senderFrame !== win.webContents.mainFrame)
       throw new Error('仅主窗口可以调整背景');
@@ -340,6 +358,8 @@ export async function createWindow() {
     show: false, // 初始不显示，防止白屏
     backgroundColor: windowBackgroundActiveEnabled ? '#00000000' : initialBgColor,
     frame: process.platform === 'darwin',
+    // Electron's WS_THICKFRAME option is Windows-only, independent of materials.
+    ...(process.platform === 'win32' ? { thickFrame: true } : {}),
     ...(process.platform === 'win32'
       ? getWindowsCompositionOptions(Number(release().split('.')[2]))
       : {}),

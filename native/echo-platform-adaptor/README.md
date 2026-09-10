@@ -3,7 +3,7 @@
 Windows desktop window integration. This addon owns HWND/DWM behavior; it has no
 SMTC/MPRIS/Now Playing lifecycle or audio dependencies.
 
-- `src/window_composition.rs`: optional Accent clear/BlurBehind compatibility backend.
+- `src/window_composition.rs`: DWM alpha clear and optional Accent BlurBehind backends.
 - `src/taskbar.rs`: iconic thumbnail and Aero Peek cover previews, moved from
   `echo-media-controls` without changing their API or image processing.
 - `src/main/native/platform.ts` in the application: shared loader and API validation.
@@ -44,21 +44,42 @@ successful API call. Do not emulate corners using `SetWindowRgn` or add layered
 window styles; those would defeat the native window frame.
 
 
-Windows 11 22H2+ clear backgrounds first prepare Electron's translucent compositor
-through `setBackgroundMaterial('acrylic')`. Native mode 3 then sets only
-`DWMWA_SYSTEMBACKDROP_TYPE` to `DWMSBT_NONE` before applying clear Accent and full
-client margins. Calling Electron's `setBackgroundMaterial('none')` at that point
-would mark its surface opaque again. Leaving clear mode resets both Electron's
-material state and Accent; a mode-3 failure falls back to a solid surface. Rebuild
-the addon with the application: earlier binaries reject mode 3 rather than
-silently claiming success. Windows 10 / early Windows 11 retain the legacy path.
+## Clear composition
 
+Clear backgrounds explicitly enable DWM alpha composition through
+`DwmEnableBlurBehindWindow` with `DWM_BB_ENABLE | DWM_BB_BLURREGION`, following the
+[GLFW/ImGui alpha-compositing approach](https://github.com/ocornut/imgui/blob/master/backends/imgui_impl_win32.cpp).
+[Microsoft documents](https://learn.microsoft.com/en-us/windows/win32/api/dwmapi/nf-dwmapi-dwmenableblurbehindwindow)
+that this honors per-pixel alpha and does not produce blur on Windows 8+.
+The temporary GDI region is released immediately; it is not an HWND shape and
+is never passed to `SetWindowRgn`. Clear disables Accent instead of requesting
+`ACCENT_ENABLE_TRANSPARENTGRADIENT`, which did not produce visible transparency
+in the reported Windows 11 24H2 environment.
 
-Windows 10 / early Windows 11 declare `backgroundMaterial: acrylic` **at window
-creation** to let Electron 43 select an alpha-capable Chromium surface through
-`IsTranslucent()` / `ShouldWindowContentsBeTransparent()`. The OS material setter
-is a no-op on these versions; native clear/BlurBehind still comes from Accent.
-Keep this declaration when switching effects off (draw an opaque themed surface
-and disable Accent), so subsequent live switches retain alpha. Do not substitute
-`transparent: true`, which disables Electron's thick frame. This compatibility
-path depends on Electron internals and needs Windows regression testing on upgrades.
+Windows 11 22H2+ first prepares Electron's translucent compositor using
+`setBackgroundMaterial('acrylic')`. Native mode 5 removes only the DWM system
+backdrop and then enables DWM alpha. Calling Electron's material setter with
+`none` at this point would make its surface opaque again. Exiting clear resets
+both Electron and native states; failures attempt to disable alpha, Accent and
+client margins before the application restores its solid background.
+
+Windows 10 / early Windows 11 declare `backgroundMaterial: acrylic` at creation
+for Electron's alpha surface, then use native mode 4 for DWM alpha. Actual blur
+still uses Accent mode 2. The native material setter is a no-op on these OS
+versions. Keep the constructor declaration across off/clear/blur switches.
+
+Modes 4/5 replace the retired Accent-clear protocol 1/3. Rebuild and package the
+addon with the application: older binaries reject the new modes and trigger an
+explicit fallback. This change needs Windows visual validation; successful API
+calls and state tests alone do not establish correct desktop transparency.
+
+## Diagnosing transparent-background failures
+
+In Windows Appearance settings, choose `复制窗口诊断信息` after reproducing the
+problem with a nonzero transparency value. The report separates the accepted
+backend request from readback of Accent, DWM backdrop, composition availability,
+layered/no-redirection styles and remote-session state. It also records Electron,
+OS and application versions, GPU feature status and renderer background layers.
+No window screenshot or unrelated application content is collected. A successful
+readback still does not establish visible transparency; compare with the actual
+window. Older addons remain loadable and report native diagnostics unavailable.

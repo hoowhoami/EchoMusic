@@ -4,6 +4,14 @@ import { join } from 'node:path';
 import log from '../logger';
 
 export interface NativePlatform {
+  getWindowCompositionDiagnostics?(handle: string): {
+    layered: boolean;
+    noRedirectionBitmap: boolean;
+    remoteSession: boolean;
+    compositionEnabled?: boolean;
+    accentState?: number;
+    systemBackdrop?: number;
+  } | null;
   setWindowComposition(handle: string, mode: number): boolean;
   taskbarEnableIconic(handle: string): void;
   taskbarDisableIconic(handle: string): void;

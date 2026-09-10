@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import Tooltip from '@/components/ui/Tooltip.vue';
+import RollingNumber from '@/components/ui/RollingNumber.vue';
 
 defineOptions({ name: 'profile' });
 import { computed, onMounted, reactive, ref } from 'vue';
@@ -552,41 +553,36 @@ onMounted(() => loadData());
                       {{ detail.descri }}
                     </p>
 
-                    <div class="flex items-center gap-6">
+                    <div class="profile-stats">
                       <button
                         type="button"
-                        class="grade-entry flex flex-col text-left"
+                        class="grade-entry profile-stat text-left"
                         aria-label="查看我的等级与升级进度"
                         @click="openGradeDetail"
                       >
-                        <span class="text-[15px] font-black"
-                          >Lv.{{ gradeProgress.grade ?? '—' }}
+                        <span class="profile-stat-value"
+                          ><RollingNumber :value="`Lv.${gradeProgress.grade ?? '—'}`" />
                           <span class="text-primary-text">›</span></span
                         >
-                        <span class="text-[10px] opacity-60 uppercase font-bold tracking-wider"
-                          >升级进度</span
-                        >
+                        <span class="profile-stat-label">升级进度</span>
                       </button>
-                      <div class="w-px h-4 bg-[var(--border-subtle)]"></div>
-                      <div class="flex flex-col">
-                        <span class="text-[15px] font-black">{{ detail.follows || 0 }}</span>
-                        <span class="text-[10px] opacity-60 uppercase font-bold tracking-wider"
-                          >关注</span
-                        >
+                      <div class="profile-stat">
+                        <span class="profile-stat-value">
+                          <RollingNumber :value="String(detail.follows || 0)" />
+                        </span>
+                        <span class="profile-stat-label">关注</span>
                       </div>
-                      <div class="w-px h-4 bg-[var(--border-subtle)]"></div>
-                      <div class="flex flex-col">
-                        <span class="text-[15px] font-black">{{ detail.fans || 0 }}</span>
-                        <span class="text-[10px] opacity-60 uppercase font-bold tracking-wider"
-                          >粉丝</span
-                        >
+                      <div class="profile-stat">
+                        <span class="profile-stat-value">
+                          <RollingNumber :value="String(detail.fans || 0)" />
+                        </span>
+                        <span class="profile-stat-label">粉丝</span>
                       </div>
-                      <div class="w-px h-4 bg-[var(--border-subtle)]"></div>
-                      <div class="flex flex-col">
-                        <span class="text-[15px] font-black">{{ visitorCount }}</span>
-                        <span class="text-[10px] opacity-60 uppercase font-bold tracking-wider"
-                          >访客</span
-                        >
+                      <div class="profile-stat">
+                        <span class="profile-stat-value"
+                          ><RollingNumber :value="visitorCount"
+                        /></span>
+                        <span class="profile-stat-label">访客</span>
                       </div>
                     </div>
                   </div>
@@ -618,11 +614,14 @@ onMounted(() => loadData());
                   </div>
                   <div class="flex items-center justify-between px-4 py-3">
                     <span class="text-[13px] opacity-60 font-bold">乐龄</span>
-                    <span class="text-[13px] font-black">{{ formatAccountAge(detail.rtime) }}</span>
+                    <RollingNumber
+                      class="text-[13px] font-black"
+                      :value="formatAccountAge(detail.rtime)"
+                    />
                   </div>
                   <div class="flex items-center justify-between px-4 py-3">
                     <span class="text-[13px] opacity-60 font-bold">累计听歌</span>
-                    <span class="text-[13px] font-black">{{ listeningDuration }}</span>
+                    <RollingNumber class="text-[13px] font-black" :value="listeningDuration" />
                   </div>
                   <div class="flex items-center justify-between px-4 py-3">
                     <span class="text-[13px] opacity-60 font-bold">所在地区</span>
@@ -880,7 +879,7 @@ onMounted(() => loadData());
           <div>
             <p class="text-xs text-text-secondary">当前等级</p>
             <p class="text-5xl font-black tracking-tight mt-2">
-              Lv.{{ gradeProgress.grade ?? '—' }}
+              <RollingNumber :value="`Lv.${gradeProgress.grade ?? '—'}`" />
             </p>
           </div>
           <svg class="grade-planet" viewBox="0 0 128 112" fill="none" aria-hidden="true">
@@ -914,12 +913,16 @@ onMounted(() => loadData());
           <div class="flex flex-wrap justify-between gap-2 mt-7 mb-3 text-sm">
             <span
               >距 Lv.{{ gradeProgress.nextGrade }} 还差
-              <strong>{{ gradeProgress.remaining?.toLocaleString() }}</strong> 经验</span
+              <RollingNumber
+                class="font-bold"
+                :value="gradeProgress.remaining?.toLocaleString() ?? '—'"
+              />
+              经验</span
             >
             <span class="text-text-secondary tabular-nums"
-              >{{ gradeProgress.current?.toLocaleString() }} /
-              {{ gradeProgress.target?.toLocaleString() }}</span
-            >
+              ><RollingNumber :value="gradeProgress.current?.toLocaleString() ?? '—'" /> /
+              <RollingNumber :value="gradeProgress.target?.toLocaleString() ?? '—'"
+            /></span>
           </div>
           <div
             class="grade-progress-track"
@@ -942,7 +945,7 @@ onMounted(() => loadData());
       </div>
       <div class="flex justify-between items-center gap-4 py-5 text-sm">
         <span class="text-text-secondary">累计听歌</span>
-        <strong class="tabular-nums">{{ listeningDuration }}</strong>
+        <RollingNumber class="font-bold" :value="listeningDuration" />
       </div>
       <template #footer>
         <Button
@@ -1084,6 +1087,49 @@ onMounted(() => loadData());
 </template>
 
 <style scoped>
+.profile-stats {
+  display: flex;
+  align-items: stretch;
+  gap: 24px;
+}
+.profile-stat {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  padding: 0;
+}
+.profile-stat + .profile-stat {
+  padding-left: 24px;
+}
+.profile-stat + .profile-stat::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  height: 16px;
+  width: 1px;
+  transform: translateY(-50%);
+  background: var(--border-subtle);
+}
+.profile-stat-value {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  height: 22px;
+  font-size: 15px;
+  font-weight: 900;
+  line-height: 1.25;
+}
+.profile-stat-label {
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 14px;
+  letter-spacing: 0.05em;
+  opacity: 0.6;
+  white-space: nowrap;
+}
 .grade-entry {
   border-radius: 8px;
   cursor: pointer;

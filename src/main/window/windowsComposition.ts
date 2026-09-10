@@ -7,7 +7,6 @@ export const supportsWindowsAccent = () => Boolean(getNativePlatform());
 
 export function getWindowsCompositionOptions(build: number) {
   return {
-    thickFrame: true,
     // Before Win11 22H2, setBackgroundMaterial returns before updating Chromium.
     // The constructor still reads this value for IsTranslucent / DirectComposition.
     // Prime the alpha surface even in off mode so Accent can be toggled live.
@@ -17,6 +16,24 @@ export function getWindowsCompositionOptions(build: number) {
 }
 
 const active = new WeakMap<BrowserWindow, 'none' | 'clear' | 'blur' | 'acrylic'>();
+
+export function readWindowsCompositionDiagnostics(win: BrowserWindow) {
+  const native = getNativePlatform();
+  const result = {
+    requestedBackend: active.get(win) ?? 'none',
+    nativeAvailable: Boolean(native),
+    nativeDiagnosticsAvailable: typeof native?.getWindowCompositionDiagnostics === 'function',
+  };
+  if (!result.nativeDiagnosticsAvailable) return result;
+  try {
+    const handle = win.getNativeWindowHandle();
+    const address =
+      handle.length === 8 ? handle.readBigUInt64LE().toString() : String(handle.readUInt32LE());
+    return { ...result, actual: native!.getWindowCompositionDiagnostics!(address) };
+  } catch (error) {
+    return { ...result, error: error instanceof Error ? error.message : String(error) };
+  }
+}
 
 export function applyWindowsComposition(
   win: BrowserWindow,
@@ -48,11 +65,11 @@ export function applyWindowsComposition(
     active.set(win, 'none');
     if (mode === 'acrylic') syncWindowsBackgroundMaterial(win, true);
     else if (mode === 'clear' && build >= 22621) {
-      // Accent alone cannot update Chromium's internal translucent surface state.
+      // Native DWM alpha alone cannot update Chromium's internal translucent surface state.
       // Prepare it through Electron, then remove only the native system backdrop.
       syncWindowsBackgroundMaterial(win, true);
-      accent(3);
-    } else if (mode !== 'none') accent(mode === 'blur' ? 2 : 1);
+      accent(5);
+    } else if (mode !== 'none') accent(mode === 'blur' ? 2 : 4);
     active.set(win, mode);
   } catch (error) {
     try {
