@@ -1,3 +1,4 @@
+import { findInstalledPluginCatalogTags } from '../../shared/plugin-source';
 import { shell, type WebContents } from 'electron';
 import { existsSync, readdirSync, readFileSync, rmSync, statSync } from 'fs';
 import fs from 'fs/promises';
@@ -217,6 +218,12 @@ const setPluginInstallSource = (
   pluginId: string,
   source: NonNullable<EchoPluginDescriptor['installSource']>,
 ) => getKvStorage().set(getPluginInstallSourceKey(pluginId), source);
+
+const getPluginTagsKey = (pluginId: string) =>
+  `plugins:catalog-tags:${normalizePluginId(pluginId)}`;
+
+const setPluginTags = (pluginId: string, tags: unknown) =>
+  getKvStorage().set(getPluginTagsKey(pluginId), normalizeMarketplaceTags(tags));
 
 const setPluginInstalledAt = (pluginId: string, installedAt: number) => {
   const normalizedPluginId = normalizePluginId(pluginId);
@@ -502,6 +509,7 @@ export const listPlugins = (): PluginListResult => {
   const seenPluginIds = new Set<string>();
   let installTimesChanged = false;
   const plugins: EchoPluginDescriptor[] = [];
+  const cachedPlugins = getMarketplaceCache().plugins;
 
   const entries = readdirSync(root, { withFileTypes: true });
   for (const entry of entries) {
@@ -516,6 +524,16 @@ export const listPlugins = (): PluginListResult => {
         | null;
       if (source?.kind === 'local' || source?.kind === 'marketplace') {
         descriptor.installSource = source;
+      }
+      const savedTags = getKvStorage().get(getPluginTagsKey(descriptor.id));
+      if (Array.isArray(savedTags)) {
+        descriptor.tags = normalizeMarketplaceTags(savedTags);
+      } else {
+        const manifestTags = normalizeMarketplaceTags(descriptor.manifest.tags);
+        descriptor.tags = manifestTags.length
+          ? manifestTags
+          : findInstalledPluginCatalogTags(descriptor, cachedPlugins);
+        if (descriptor.tags.length) setPluginTags(descriptor.id, descriptor.tags);
       }
       plugins.push(descriptor);
       seenPluginIds.add(descriptor.id);
@@ -1155,6 +1173,7 @@ const pluginInstaller = createPluginInstaller({
   setEnabledState,
   setPluginInstalledAt,
   setPluginInstallSource,
+  setPluginTags,
   terminatePluginProcesses,
 });
 
@@ -1950,6 +1969,7 @@ export const installPluginFromMarketplace = async (
           name: plugin.sourceName,
           url: plugin.sourceUrl,
         },
+        tags: plugin.tags,
         expectedPluginId: plugin.id,
         enableAfterInstall: Boolean(options.enableAfterInstall),
       });
@@ -2142,6 +2162,7 @@ export const uninstallPlugin = async (pluginId: string): Promise<PluginUninstall
     clearPluginStorage(plugin.id);
     removePluginInstalledAt(plugin.id);
     getKvStorage().delete(getPluginInstallSourceKey(plugin.id));
+    getKvStorage().delete(getPluginTagsKey(plugin.id));
     clearPluginProcessConsents(plugin.id);
 
     await closePluginWebServer(plugin.id);

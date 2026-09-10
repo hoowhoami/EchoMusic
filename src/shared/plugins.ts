@@ -614,6 +614,7 @@ export type PluginSqliteDeleteResult =
     };
 
 export interface EchoPluginManifest {
+  tags?: string[];
   id: string;
   name: string;
   version: string;
@@ -661,6 +662,7 @@ export type PluginInstallSource =
   | { kind: 'marketplace'; id: string; name: string; url: string };
 
 export interface EchoPluginDescriptor {
+  tags?: string[];
   installSource?: PluginInstallSource;
   id: string;
   name: string;

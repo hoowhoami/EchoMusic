@@ -114,8 +114,12 @@ const emit = defineEmits<{
       </template>
     </Tooltip>
 
+    <div v-if="record.descriptor.tags?.length" class="marketplace-tags">
+      <span v-for="tag in record.descriptor.tags" :key="tag">{{ tag }}</span>
+    </div>
+
     <div v-if="featureTags.length" class="plugin-feature-tags">
-      <span v-for="tag in featureTags.slice(0, 5)" :key="tag">
+      <span v-for="tag in featureTags" :key="tag">
         {{ tag }}
       </span>
     </div>

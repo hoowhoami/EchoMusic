@@ -47,9 +47,6 @@ const formatCount = (value: number) =>
     maximumFractionDigits: 1,
   }).format(Math.max(0, Number(value) || 0));
 
-const getStatsTitle = (plugin: PluginMarketplacePlugin) =>
-  `安装/更新 ${formatCount(plugin.stats.installCount + plugin.stats.updateCount)} · 安装 ${formatCount(plugin.stats.installCount)} · 更新 ${formatCount(plugin.stats.updateCount)}`;
-
 const getVersionTitle = (plugin: PluginMarketplacePlugin) => {
   if (!plugin.installed) return `最新版本 v${plugin.version}`;
   if (plugin.updateAvailable)
@@ -137,11 +134,11 @@ const getVersionTitle = (plugin: PluginMarketplacePlugin) => {
     </div>
 
     <div v-if="plugin.tags.length" class="marketplace-tags">
-      <span v-for="tag in plugin.tags.slice(0, 3)" :key="tag">{{ tag }}</span>
+      <span v-for="tag in plugin.tags" :key="tag">{{ tag }}</span>
     </div>
 
     <div v-if="featureTags.length" class="plugin-feature-tags">
-      <span v-for="tag in featureTags.slice(0, 5)" :key="tag">
+      <span v-for="tag in featureTags" :key="tag">
         {{ tag }}
       </span>
     </div>
@@ -154,36 +151,32 @@ const getVersionTitle = (plugin: PluginMarketplacePlugin) => {
       </Tooltip>
     </div>
 
-    <Tooltip :content="getStatsTitle(plugin)">
-      <template #trigger>
-        <div class="marketplace-stats">
-          <Tooltip content="安装和更新总量">
-            <template #trigger>
-              <span class="marketplace-stat-item">
-                <Icon :icon="iconArrowBarToDown" width="13" height="13" />
-                {{ formatCount(plugin.stats.installCount + plugin.stats.updateCount) }}
-              </span>
-            </template>
-          </Tooltip>
-          <Tooltip content="更新量">
-            <template #trigger>
-              <span class="marketplace-stat-item">
-                <Icon :icon="iconRefreshCw" width="13" height="13" />
-                {{ formatCount(plugin.stats.updateCount) }}
-              </span>
-            </template>
-          </Tooltip>
-          <Tooltip content="热度">
-            <template #trigger>
-              <span class="marketplace-stat-item">
-                <Icon :icon="iconPulse" width="13" height="13" />
-                {{ formatCount(plugin.stats.score) }}
-              </span>
-            </template>
-          </Tooltip>
-        </div>
-      </template>
-    </Tooltip>
+    <div class="marketplace-stats">
+      <Tooltip content="安装和更新总量">
+        <template #trigger>
+          <span class="marketplace-stat-item">
+            <Icon :icon="iconArrowBarToDown" width="13" height="13" />
+            {{ formatCount(plugin.stats.installCount + plugin.stats.updateCount) }}
+          </span>
+        </template>
+      </Tooltip>
+      <Tooltip content="更新量">
+        <template #trigger>
+          <span class="marketplace-stat-item">
+            <Icon :icon="iconRefreshCw" width="13" height="13" />
+            {{ formatCount(plugin.stats.updateCount) }}
+          </span>
+        </template>
+      </Tooltip>
+      <Tooltip content="热度">
+        <template #trigger>
+          <span class="marketplace-stat-item">
+            <Icon :icon="iconPulse" width="13" height="13" />
+            {{ formatCount(plugin.stats.score) }}
+          </span>
+        </template>
+      </Tooltip>
+    </div>
 
     <div class="plugin-card-actions">
       <div class="plugin-card-primary-actions">

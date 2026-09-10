@@ -25,6 +25,7 @@ type PluginDirectoryInstallOptions = {
   expectedPluginId?: string;
   enableAfterInstall: boolean;
   source?: EchoPluginDescriptor['installSource'];
+  tags?: string[];
 };
 
 type PluginDirectoryInstallResult = {
@@ -45,6 +46,7 @@ type PluginInstallerOptions = {
     label: string,
   ) => Promise<T>;
   setEnabledState: (state: Record<string, boolean>) => void;
+  setPluginTags: (pluginId: string, tags: unknown) => void;
   setPluginInstallSource: (
     pluginId: string,
     source: NonNullable<EchoPluginDescriptor['installSource']>,
@@ -142,6 +144,7 @@ export const createPluginInstaller = ({
   setEnabledState,
   setPluginInstalledAt,
   setPluginInstallSource,
+  setPluginTags,
   terminatePluginProcesses,
 }: PluginInstallerOptions) => {
   const extractMarketplacePackage = async (
@@ -236,6 +239,7 @@ export const createPluginInstaller = ({
       await fs.rm(targetDirectory, { recursive: true, force: true });
       await fs.cp(stagingDirectory, targetDirectory, { recursive: true });
       setPluginInstallSource(pluginId, options.source ?? { kind: 'local' });
+      setPluginTags(pluginId, options.tags ?? descriptor.manifest.tags);
       if (!existingPlugin) setPluginInstalledAt(pluginId, Date.now());
       if (wasEnabled && !enableAfterInstall) nextState[pluginId] = true;
       setEnabledState(nextState);

@@ -24,3 +24,33 @@ test('本地安装和缺少历史记录明确区分', () => {
   assert.equal(getInstalledPluginSourceName({ kind: 'local' }), '本地安装');
   assert.equal(getInstalledPluginSourceName(), '未记录来源');
 });
+
+test('历史标签仅匹配唯一目录项，本地安装不误用在线同名标签', async () => {
+  const { findInstalledPluginCatalogTags } = await import('../src/shared/plugin-source.ts');
+  const descriptor = { id: 'demo', name: 'Demo', version: '1.0.0', author: 'author' };
+  const entry = {
+    ...descriptor,
+    sourceId: 'one',
+    sourceUrl: 'https://example.com',
+    tags: ['工具', '音乐'],
+  };
+  assert.deepEqual(findInstalledPluginCatalogTags(descriptor, [entry]), ['工具', '音乐']);
+  assert.deepEqual(
+    findInstalledPluginCatalogTags(descriptor, [entry, { ...entry, sourceId: 'two' }]),
+    [],
+  );
+  assert.deepEqual(
+    findInstalledPluginCatalogTags({ ...descriptor, installSource: { kind: 'local' } }, [entry]),
+    [],
+  );
+  assert.deepEqual(
+    findInstalledPluginCatalogTags(
+      {
+        ...descriptor,
+        installSource: { kind: 'marketplace', id: 'one', name: '源', url: entry.sourceUrl },
+      },
+      [entry, { ...entry, sourceId: 'two' }],
+    ),
+    ['工具', '音乐'],
+  );
+});
