@@ -2,16 +2,16 @@ interface MaterialWindow {
   setBackgroundMaterial(material: 'acrylic' | 'none'): void;
 }
 
-const frostedWindows = new WeakSet<MaterialWindow>();
+const materialWindows = new WeakSet<MaterialWindow>();
 
-export function syncWindowsBackgroundMaterial(window: MaterialWindow, frosted: boolean) {
-  if (frostedWindows.has(window) === frosted) return false;
+export function syncWindowsBackgroundMaterial(window: MaterialWindow, enabled: boolean) {
+  if (materialWindows.has(window) === enabled) return false;
 
-  // Electron's 'none' also resets DWM client-area margins. A fresh transparent
-  // window must keep its initial composition setup; only clear material that
-  // we actually enabled. Theme/color/alpha updates must not reset it either.
-  window.setBackgroundMaterial(frosted ? 'acrylic' : 'none');
-  if (frosted) frostedWindows.add(window);
-  else frostedWindows.delete(window);
+  // Both Acrylic and Win11 clear prepare Chromium's translucent surface here.
+  // 'none' also resets Electron's surface state and DWM margins, so only call it
+  // for windows that this helper prepared. Alpha/color changes must not reset it.
+  window.setBackgroundMaterial(enabled ? 'acrylic' : 'none');
+  if (enabled) materialWindows.add(window);
+  else materialWindows.delete(window);
   return true;
 }

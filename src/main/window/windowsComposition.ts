@@ -4,6 +4,18 @@ import { syncWindowsBackgroundMaterial } from './backgroundMaterial';
 import type { WindowBackground } from '../../shared/window-background';
 
 export const supportsWindowsAccent = () => Boolean(getNativePlatform());
+
+export function getWindowsCompositionOptions(build: number) {
+  return {
+    thickFrame: true,
+    // Before Win11 22H2, setBackgroundMaterial returns before updating Chromium.
+    // The constructor still reads this value for IsTranslucent / DirectComposition.
+    // Prime the alpha surface even in off mode so Accent can be toggled live.
+    // No system Acrylic is applied on these OS versions; Accent owns the effect.
+    ...(build < 22621 ? { backgroundMaterial: 'acrylic' as const } : {}),
+  };
+}
+
 const active = new WeakMap<BrowserWindow, 'none' | 'clear' | 'blur' | 'acrylic'>();
 
 export function applyWindowsComposition(
@@ -30,11 +42,17 @@ export function applyWindowsComposition(
   };
   try {
     // Clear the previous backend before selecting another; do not reset DWM on tint updates.
-    if (previous === 'acrylic') syncWindowsBackgroundMaterial(win, false);
+    if (previous === 'acrylic' || (previous === 'clear' && build >= 22621))
+      syncWindowsBackgroundMaterial(win, false);
     if (previous === 'clear' || previous === 'blur') accent(0);
     active.set(win, 'none');
     if (mode === 'acrylic') syncWindowsBackgroundMaterial(win, true);
-    else if (mode !== 'none') accent(mode === 'blur' ? 2 : 1);
+    else if (mode === 'clear' && build >= 22621) {
+      // Accent alone cannot update Chromium's internal translucent surface state.
+      // Prepare it through Electron, then remove only the native system backdrop.
+      syncWindowsBackgroundMaterial(win, true);
+      accent(3);
+    } else if (mode !== 'none') accent(mode === 'blur' ? 2 : 1);
     active.set(win, mode);
   } catch (error) {
     try {

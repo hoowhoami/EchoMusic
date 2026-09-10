@@ -103,6 +103,7 @@ export const useSettingStore = defineStore('setting', {
     windowBackgroundUnavailableReason: '',
     windowBackgroundActiveFrosted: null as boolean | null,
     supportsWindowFrost: false,
+    windowFrostBackend: 'none' as 'none' | 'vibrancy' | 'acrylic' | 'blur-behind',
     language: 'zh-CN',
     shortcutEnabled: true,
     suppressDefaultKeyBehaviors: true,
@@ -317,6 +318,7 @@ export const useSettingStore = defineStore('setting', {
       this.windowBackgroundActiveFrosted =
         typeof result.activeFrosted === 'boolean' ? result.activeFrosted : null;
       this.supportsWindowFrost = result.supportsFrost;
+      this.windowFrostBackend = result.frostBackend ?? 'none';
       this.windowBackgroundLive = result.live === true;
       this.windowBackgroundFrostLive = result.frostLive === true;
       this.windowBackgroundNeedsRestart = result.restartRequired === true;
@@ -719,6 +721,7 @@ export const useSettingStore = defineStore('setting', {
       'supportsWindowFrost',
       'windowBackgroundLive',
       'windowBackgroundFrostLive',
+      'windowFrostBackend',
       'windowBackgroundNeedsRestart',
       'windowBackgroundUnavailableReason',
     ],

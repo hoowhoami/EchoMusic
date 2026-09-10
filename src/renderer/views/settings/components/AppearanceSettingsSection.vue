@@ -108,6 +108,12 @@ const isAccentGradientDefault = computed(
           }}
         </p>
         <p
+          v-if="backgroundMode === 'frosted' && settingStore.windowFrostBackend === 'blur-behind'"
+          class="text-sm text-text-secondary"
+        >
+          兼容模式，效果受系统透明效果设置、节能模式及远程桌面环境影响
+        </p>
+        <p
           v-if="settingStore.windowBackgroundUnavailableReason"
           class="text-sm text-text-secondary"
           role="status"

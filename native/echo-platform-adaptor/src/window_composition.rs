@@ -38,12 +38,19 @@ extern "system" {
 #[link(name = "dwmapi")]
 extern "system" {
     fn DwmExtendFrameIntoClientArea(hwnd: *mut c_void, margins: *const Margins) -> i32;
+    fn DwmSetWindowAttribute(
+        hwnd: *mut c_void,
+        attribute: u32,
+        value: *const c_void,
+        size: u32,
+    ) -> i32;
 }
 
-/// mode: 0=off, 1=clear, 2=blur. Called synchronously on Electron's UI thread.
+/// mode: 0=off, 1=legacy clear, 2=blur, 3=Win11 clear after Electron compositor preparation.
+/// Called synchronously on Electron's UI thread.
 #[napi]
 pub fn set_window_composition(hwnd: String, mode: u32) -> bool {
-    if mode > 2 {
+    if mode > 3 {
         return false;
     }
     let Ok(address) = hwnd.parse::<usize>() else {
@@ -64,10 +71,25 @@ pub fn set_window_composition(hwnd: String, mode: u32) -> bool {
             return false;
         }
         let set: SetComposition = transmute(proc);
+        if mode == 3 {
+            // DWMWA_SYSTEMBACKDROP_TYPE / DWMSBT_NONE (Windows 11 22H2+).
+            // Do not call Electron's setBackgroundMaterial("none") here: it also
+            // marks Chromium's surface opaque again, hiding the Accent background.
+            let none: u32 = 1;
+            if DwmSetWindowAttribute(
+                handle,
+                38,
+                (&none as *const u32).cast(),
+                size_of::<u32>() as u32,
+            ) < 0
+            {
+                return false;
+            }
+        }
         // BlurBehind avoids Windows 10 Acrylic's synchronous resize/drag stalls.
         let mut policy = AccentPolicy {
             state: match mode {
-                1 => 2,
+                1 | 3 => 2,
                 2 => 3,
                 _ => 0,
             },

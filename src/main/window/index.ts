@@ -18,8 +18,13 @@ import { logMainMemory } from '../diagnostics/memory';
 import { resolveMainWindowPlacement, resolveWaylandWindowSize } from '../windowSizing';
 import { isWaylandWindowingBackend } from '../../shared/windowing';
 import { trackMainWindowState } from './state';
-import { applyWindowsComposition, supportsWindowsAccent } from './windowsComposition';
+import {
+  applyWindowsComposition,
+  getWindowsCompositionOptions,
+  supportsWindowsAccent,
+} from './windowsComposition';
 import { applyMacWindowBackground } from './macComposition';
+import { createTitleBarController } from './titleBar';
 import { installWindowZoom, registerWindowZoomHandlers } from './zoom';
 import {
   installWindowFullscreen,
@@ -55,17 +60,11 @@ let win: BrowserWindow | null = null;
 let isQuitting = false;
 let zoomController: ReturnType<typeof installWindowZoom> | null = null;
 let backgroundUnavailableReason = '';
+let titleBarController: ReturnType<typeof createTitleBarController> | null = null;
 const usesNativeOverlay = process.platform === 'win32' || process.platform === 'linux';
 const usesWayland = isWaylandWindowingBackend();
 const syncTitleBar = (level = normalizeZoomLevel(getMainAppSettings().windowZoomLevel)) => {
-  if (!canUseMainWindow(win) || !usesNativeOverlay) return;
-  const dark =
-    currentTheme === 'dark' || (currentTheme === 'system' && nativeTheme.shouldUseDarkColors);
-  win.setTitleBarOverlay({
-    color: '#00000000',
-    symbolColor: dark ? '#ffffff' : '#202020',
-    height: titleBarHeight(level),
-  });
+  titleBarController?.sync(level);
 };
 
 const canUseMainWindow = (mainWindow: BrowserWindow | null): mainWindow is BrowserWindow => {
@@ -175,10 +174,12 @@ const syncMainWindowBackground = () => {
   if (nativeTheme.themeSource !== currentTheme) nativeTheme.themeSource = currentTheme;
   syncTitleBar();
   if (process.platform === 'win32') {
-    win.setBackgroundColor(windowBackground.enabled ? '#00000000' : getMainWindowBackgroundColor());
     backgroundUnavailableReason = '';
     try {
       applyWindowsComposition(win, windowBackground, Number(release().split('.')[2]));
+      win.setBackgroundColor(
+        windowBackground.enabled ? '#00000000' : getMainWindowBackgroundColor(),
+      );
       windowBackgroundActiveEnabled = windowBackground.enabled;
       windowBackgroundActiveFrosted = windowBackground.frosted;
     } catch (error) {
@@ -216,6 +217,13 @@ const readBackgroundState = () => ({
   activeEnabled: windowBackgroundActiveEnabled,
   activeFrosted: windowBackgroundActiveFrosted,
   supportsFrost: supportsWindowFrost,
+  frostBackend: !supportsWindowFrost
+    ? 'none'
+    : process.platform === 'darwin'
+      ? 'vibrancy'
+      : Number(release().split('.')[2]) >= 22621
+        ? 'acrylic'
+        : 'blur-behind',
   live: process.platform === 'win32',
   frostLive: process.platform === 'darwin' || process.platform === 'win32',
   restartRequired: windowBackgroundRestartRequired,
@@ -228,6 +236,16 @@ export const registerMainWindowPreferenceHandlers = () => {
     () => zoomController,
   );
   nativeTheme.on('updated', syncMainWindowBackground);
+  ipcRegistry.registerListener('window:lyric-visibility', (event, visible: unknown) => {
+    if (
+      !win ||
+      event.sender !== win.webContents ||
+      event.senderFrame !== win.webContents.mainFrame ||
+      typeof visible !== 'boolean'
+    )
+      return;
+    titleBarController?.setLyricVisible(visible);
+  });
   ipcRegistry.registerHandler('window-background:get', readBackgroundState);
   ipcRegistry.registerHandler('window-background:set', (event, value: WindowBackground) => {
     if (!win || event.sender !== win.webContents || event.senderFrame !== win.webContents.mainFrame)
@@ -322,7 +340,9 @@ export async function createWindow() {
     show: false, // 初始不显示，防止白屏
     backgroundColor: windowBackgroundActiveEnabled ? '#00000000' : initialBgColor,
     frame: process.platform === 'darwin',
-    thickFrame: true,
+    ...(process.platform === 'win32'
+      ? getWindowsCompositionOptions(Number(release().split('.')[2]))
+      : {}),
     transparent: activeComposition.transparent,
     roundedCorners: activeComposition.clientCornerRadius === 0,
     ...(process.platform === 'darwin'
@@ -378,6 +398,17 @@ export async function createWindow() {
     win.setBounds(placement.bounds);
   }
   const mainWindow = win;
+  titleBarController = usesNativeOverlay
+    ? createTitleBarController(
+        win,
+        () =>
+          currentTheme === 'dark' || (currentTheme === 'system' && nativeTheme.shouldUseDarkColors),
+        () => normalizeZoomLevel(getMainAppSettings().windowZoomLevel),
+      )
+    : null;
+  win.webContents.on('did-start-navigation', (_event, _url, inPlace, mainFrame) => {
+    if (mainFrame && !inPlace) titleBarController?.setLyricVisible(false);
+  });
   windowStateTracker = trackMainWindowState(win, {
     initial: initialWindowState,
     enabled: () => rememberWindowSize,

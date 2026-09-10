@@ -42,3 +42,23 @@ the application displays a solid background and a status message. OS policy,
 graphics drivers and remote sessions can affect visible results even after a
 successful API call. Do not emulate corners using `SetWindowRgn` or add layered
 window styles; those would defeat the native window frame.
+
+
+Windows 11 22H2+ clear backgrounds first prepare Electron's translucent compositor
+through `setBackgroundMaterial('acrylic')`. Native mode 3 then sets only
+`DWMWA_SYSTEMBACKDROP_TYPE` to `DWMSBT_NONE` before applying clear Accent and full
+client margins. Calling Electron's `setBackgroundMaterial('none')` at that point
+would mark its surface opaque again. Leaving clear mode resets both Electron's
+material state and Accent; a mode-3 failure falls back to a solid surface. Rebuild
+the addon with the application: earlier binaries reject mode 3 rather than
+silently claiming success. Windows 10 / early Windows 11 retain the legacy path.
+
+
+Windows 10 / early Windows 11 declare `backgroundMaterial: acrylic` **at window
+creation** to let Electron 43 select an alpha-capable Chromium surface through
+`IsTranslucent()` / `ShouldWindowContentsBeTransparent()`. The OS material setter
+is a no-op on these versions; native clear/BlurBehind still comes from Accent.
+Keep this declaration when switching effects off (draw an opaque themed surface
+and disable Accent), so subsequent live switches retain alpha. Do not substitute
+`transparent: true`, which disables Electron's thick frame. This compatibility
+path depends on Electron internals and needs Windows regression testing on upgrades.

@@ -90,6 +90,14 @@ const isMiniPlayerWindow = () => {
   );
 };
 const isMiniPlayerRoute = computed(isMiniPlayerWindow);
+watch(
+  () => Boolean(player.value?.isLyricViewOpen),
+  (visible) => {
+    if (!isMiniPlayerRoute.value)
+      window.electron?.ipcRenderer.send('window:lyric-visibility', visible);
+  },
+  { immediate: true },
+);
 // 首屏从 loading 切到主界面时跳过根级过渡，避免 out-in "先淡出旧页 → 空档" 造成的白屏
 const suppressRootTransition = ref(false);
 const pendingShareTarget = ref<ShareTarget | null>(null);
