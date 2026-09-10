@@ -1,3 +1,4 @@
+import { createMoreMenuApi, removeMoreMenuItemsByPlugin } from './moreMenu';
 import { computed, markRaw, reactive } from 'vue';
 import type { Component } from 'vue';
 import type { IconifyIcon } from '@iconify/types';
@@ -151,6 +152,7 @@ const upsertContribution = <T extends PluginOwnedContribution>(
 };
 
 export const removePluginContributions = (pluginId: string) => {
+  removeMoreMenuItemsByPlugin(pluginId);
   pluginUiRegistry.pages = pluginUiRegistry.pages.filter((item) => item.pluginId !== pluginId);
   pluginUiRegistry.sidebarItems = pluginUiRegistry.sidebarItems.filter(
     (item) => item.pluginId !== pluginId,
@@ -218,6 +220,7 @@ export const createPluginUiApi = (
   };
 
   return {
+    moreMenu: createMoreMenuApi(pluginId, addDisposable, reportError),
     addPage(contribution: PluginPageRegistration) {
       const item = withOwner({
         ...contribution,

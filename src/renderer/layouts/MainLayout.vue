@@ -7,6 +7,7 @@ import { pageTransitionState } from '@/plugins/runtime/theme';
 import { updateRouteViewCacheKey } from '@/utils/routeViewCache';
 import { YzsKeepAlive } from 'yzs-keep-alive-v3';
 import Sidebar from './Sidebar.vue';
+import { iconChevronLeft, iconChevronRight } from '@/icons';
 import TitleBar from './TitleBar.vue';
 import PlayerBar from './PlayerBar.vue';
 
@@ -148,6 +149,8 @@ const excludeFromCache = [
   'song-detail-page',
   'mv-detail',
   'share-resolve-page',
+  // 搜索由当前路由驱动，避免旧关键词缓存实例继续监听并发起请求。
+  'search-page',
   'plugin-share-resolve-page',
   // 分享链接会为一起听路由附加 roomId/roomType。按 fullPath 缓存会同时保留普通页和
   // 分享页两个实例，二者的路由 watcher 会各自打开一个 Teleport Dialog，造成双层遮罩卡死。
@@ -186,12 +189,27 @@ watch(
       class="sidebar-wrapper shrink-0 relative"
       :style="{ width: isSidebarCollapsed ? '80px' : '230px' }"
     >
-      <Sidebar class="absolute inset-0" :collapsed="isSidebarCollapsed" />
+      <Sidebar id="main-sidebar" class="absolute inset-0" :collapsed="isSidebarCollapsed" />
+      <button
+        v-if="settingStore.sidebarCollapseEnabled"
+        class="sidebar-divider-toggle no-drag"
+        :aria-label="isSidebarCollapsed ? '展开侧边栏' : '收起侧边栏'"
+        :title="isSidebarCollapsed ? '展开侧边栏' : '收起侧边栏'"
+        :aria-expanded="!isSidebarCollapsed"
+        aria-controls="main-sidebar"
+        @click="toggleSidebar"
+      >
+        <Icon
+          :icon="isSidebarCollapsed ? iconChevronRight : iconChevronLeft"
+          width="12"
+          height="12"
+        />
+      </button>
     </div>
 
     <div class="flex-1 flex flex-col min-w-0 min-h-0 relative">
       <main class="main-content flex-1 flex flex-col min-h-0 overflow-hidden">
-        <TitleBar :is-sidebar-collapsed="isSidebarCollapsed" @toggle-sidebar="toggleSidebar" />
+        <TitleBar :is-sidebar-collapsed="isSidebarCollapsed" />
         <div class="flex-1 min-h-0 min-w-0 flex flex-col overflow-hidden">
           <router-view v-slot="{ Component }">
             <YzsKeepAlive
@@ -231,7 +249,48 @@ watch(
 }
 
 .sidebar-wrapper {
-  overflow: hidden;
   transition: width 0.24s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.sidebar-divider-toggle {
+  position: absolute;
+  right: -7px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 210;
+  width: 14px;
+  height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+}
+.sidebar-divider-toggle::before {
+  content: '';
+  position: absolute;
+  width: 3px;
+  height: 32px;
+  border-radius: 2px;
+  background: currentColor;
+  opacity: 0.25;
+}
+.sidebar-divider-toggle :deep(svg) {
+  opacity: 0;
+}
+.sidebar-divider-toggle:hover,
+.sidebar-divider-toggle:focus-visible {
+  background: var(--control-hover-bg);
+  color: var(--color-text-main);
+}
+.sidebar-divider-toggle:hover::before,
+.sidebar-divider-toggle:focus-visible::before {
+  opacity: 0;
+}
+.sidebar-divider-toggle:hover :deep(svg),
+.sidebar-divider-toggle:focus-visible :deep(svg) {
+  opacity: 1;
 }
 </style>

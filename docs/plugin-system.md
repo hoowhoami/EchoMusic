@@ -17,6 +17,7 @@ EchoMusic 支持在线插件源和本地插件。插件可以注册页面、侧�
 
 - [插件开发指南](https://github.com/hoowhoami/EchoMusicPlugins/blob/main/docs/plugin-development.md)
 - [独立浮窗与 Now Playing](https://github.com/hoowhoami/EchoMusicPlugins/blob/main/docs/floating-windows.md)
+- [标题栏更多菜单 API](https://github.com/hoowhoami/EchoMusicPlugins/blob/main/docs/more-menu.md)
 - [任务中心 API](https://github.com/hoowhoami/EchoMusicPlugins/blob/main/docs/tasks.md)
 - [Graphics 插件绘图 API](https://github.com/hoowhoami/EchoMusicPlugins/blob/main/docs/graphics.md)
 - [官方插件源与示例插件](https://github.com/hoowhoami/EchoMusicPlugins)

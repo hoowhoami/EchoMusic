@@ -16,12 +16,9 @@ import { iconCurrentLocation, iconSearch, iconSparkles } from '@/icons';
 
 const props = defineProps<{
   activeSongId?: string;
-  currentSearchKeyword: string;
-  currentSearchSubtitle: string;
   enableLocate?: boolean;
   enableSearchQuery?: boolean;
   queueIdPrefix: string;
-  rowTitle: string;
   searchQuery?: string;
   showLyricColumn?: boolean;
   songs: Song[];
@@ -60,59 +57,57 @@ defineExpose({ scrollToActive });
       class="search-song-toolbar sticky z-120 bg-bg-main"
       :style="{ top: `${stickyTop}px` }"
     >
-      <div class="search-song-toolbar-inner">
+      <div class="search-song-playback-actions">
         <div class="search-song-title-wrap">
           <div class="search-song-badge-icon">
             <Icon :icon="iconSparkles" width="16" height="16" />
           </div>
-          <div class="text-[15px] font-semibold text-text-main leading-none">{{ rowTitle }}</div>
+          <span class="text-[15px] font-semibold text-text-main">{{
+            showLyricColumn ? '搜索歌词' : '搜索单曲'
+          }}</span>
         </div>
-        <div class="search-song-toolbar-actions">
-          <div class="overflow-x-auto">
-            <ActionRow @play="emit('play')" @batch="openBatchDrawer" />
-          </div>
-        </div>
+        <ActionRow
+          :play-disabled="sortedSongs.length === 0"
+          :batch-disabled="songs.length === 0"
+          @play="emit('play')"
+          @batch="openBatchDrawer"
+        />
       </div>
-    </PageStickyHeader>
+      <div class="search-song-toolbar-inner">
+        <div v-if="enableSearchQuery" class="rank-song-tab">
+          <span class="rank-song-label relative"
+            >歌曲 <Badge :count="subtitleLabel ?? songs.length"
+          /></span>
+        </div>
+        <span v-else class="search-song-count">{{ subtitleLabel ?? songs.length }} 首</span>
 
-    <BatchActionDrawer v-model:open="drawerOpen" :songs="songs" :source-id="queueIdPrefix" />
-
-    <PageStickyHeader
-      class="song-list-sticky sticky z-110 bg-bg-main"
-      :style="{ top: `${stickyTop + 52}px` }"
-    >
-      <div v-if="enableSearchQuery" class="border-b border-[var(--border-subtle)]">
-        <div class="flex items-center justify-between h-14">
-          <div class="rank-song-tab">
-            <span class="rank-song-label relative">歌曲 <Badge :count="subtitleLabel" /></span>
+        <div v-if="enableSearchQuery || enableLocate" class="search-song-toolbar-actions">
+          <div v-if="enableSearchQuery" class="search-result-filter relative">
+            <input
+              :value="searchQuery"
+              type="text"
+              placeholder="筛选当前结果"
+              aria-label="筛选当前搜索结果"
+              class="song-search-input w-full h-9 pl-8 pr-3 rounded-lg text-text-main placeholder:text-text-main/50 outline-none text-[12px] transition-all"
+              @input="emit('song-search-change', ($event.target as HTMLInputElement).value)"
+            />
+            <Icon
+              class="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-main/60"
+              :icon="iconSearch"
+              width="14"
+              height="14"
+            />
           </div>
-          <div class="flex items-center gap-2">
-            <div class="relative">
-              <input
-                :value="searchQuery"
-                type="text"
-                placeholder="搜索歌曲..."
-                class="song-search-input w-52 h-9 pl-8 pr-3 rounded-lg text-text-main placeholder:text-text-main/50 outline-none text-[12px] transition-all"
-                @input="emit('song-search-change', ($event.target as HTMLInputElement).value)"
-              />
-              <Icon
-                class="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-main/60"
-                :icon="iconSearch"
-                width="14"
-                height="14"
-              />
-            </div>
-            <Button
-              v-if="enableLocate"
-              variant="unstyled"
-              size="none"
-              class="song-locate-btn p-2 rounded-lg"
-              tooltip="定位当前播放"
-              @click="emit('locate')"
-            >
-              <Icon :icon="iconCurrentLocation" width="16" height="16" />
-            </Button>
-          </div>
+          <Button
+            v-if="enableLocate"
+            variant="unstyled"
+            size="none"
+            class="song-locate-btn p-2 rounded-lg"
+            tooltip="定位当前播放"
+            @click="emit('locate')"
+          >
+            <Icon :icon="iconCurrentLocation" width="16" height="16" />
+          </Button>
         </div>
       </div>
 
@@ -126,6 +121,8 @@ defineExpose({ scrollToActive });
         @sort="emit('sort', $event)"
       />
     </PageStickyHeader>
+
+    <BatchActionDrawer v-model:open="drawerOpen" :songs="songs" :source-id="queueIdPrefix" />
 
     <div class="pb-12">
       <SongList

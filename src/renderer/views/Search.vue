@@ -11,7 +11,7 @@ import {
   type ComponentPublicInstance,
 } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { getSearchHot, getSearchSuggest, search } from '@/api/search';
+import { getSearchHot, search } from '@/api/search';
 import { useSettingStore } from '@/stores/setting';
 import { usePlaylistStore } from '@/stores/playlist';
 import type { Song } from '@/models/song';
@@ -25,6 +25,7 @@ import AlbumCard from '@/components/music/AlbumCard.vue';
 import ArtistCard from '@/components/music/ArtistCard.vue';
 import MvCard from '@/components/music/MvCard.vue';
 import PageScrollContainer from '@/components/ui/PageScrollContainer.vue';
+import Button from '@/components/ui/Button.vue';
 import { useScrollContainer } from '@/composables/usePageScroll';
 import { replaceQueueAndPlay } from '@/utils/playback';
 import { filterSongsByQuery, sortSongs } from '@/utils/songList';
@@ -34,7 +35,6 @@ import {
   extractHotCategories,
   extractSearchLists,
   extractSearchTotal,
-  extractSuggestionCategories,
   getAlbumCardProps,
   getArtistCardProps,
   getPlaylistCardProps,
@@ -43,12 +43,7 @@ import {
   TAB_SEARCH_TYPES,
   type SearchTabType,
 } from './search/searchHelpers';
-import type {
-  SearchHotCategory,
-  SearchMvCardProps,
-  SearchPaginationState,
-  SearchSuggestionCategory,
-} from './search/types';
+import type { SearchHotCategory, SearchMvCardProps, SearchPaginationState } from './search/types';
 import SearchHeader from './search/components/SearchHeader.vue';
 import SearchDiscovery from './search/components/SearchDiscovery.vue';
 import SearchGridResultsPanel from './search/components/SearchGridResultsPanel.vue';
@@ -62,21 +57,13 @@ const playerStore = usePlayerStore();
 const route = useRoute();
 const router = useRouter();
 
-const searchInput = ref('');
 const currentSearchKeyword = ref('');
-const searchHeaderRef = ref<InstanceType<typeof SearchHeader> | null>(null);
 const isLoading = ref(false);
 const isLoadingHot = ref(true);
-const isLoadingSuggestions = ref(false);
 const hasSearched = ref(false);
-const showSuggestions = ref(false);
-const isIgnoringChanges = ref(false);
 const showPinnedTabs = ref(false);
 const activeTabIndex = ref(0);
-const selectedHotCategoryIndex = ref(0);
-const defaultKeyword = ref('');
 const hotSearchCategories = ref<SearchHotCategory[]>([]);
-const suggestionCategories = ref<SearchSuggestionCategory[]>([]);
 
 const songResults = ref<Song[]>([]);
 const playlistResults = ref<PlaylistMeta[]>([]);
@@ -102,6 +89,7 @@ const paginationState = reactive<Record<SearchTabType, SearchPaginationState>>({
   mv: createSearchPaginationState(),
 });
 
+const searchErrors = reactive<Partial<Record<SearchTabType, string>>>({});
 const songSearchQuery = ref('');
 const songSortField = ref<SortField | null>(null);
 const songSortOrder = ref<SortOrder>(null);
@@ -114,14 +102,10 @@ const pinnedTabHeight = 50;
 const songToolbarOffset = computed(() => (showPinnedTabs.value ? pinnedTabHeight : 0));
 const activeSongId = computed(() => playerStore.currentTrackId ?? undefined);
 
-let debounceTimer: number | null = null;
 const scrollContainerRef = useScrollContainer();
 let scrollTarget: HTMLElement | null = null;
 
 const searchHistory = computed(() => settingStore.searchHistory ?? []);
-const currentHotKeywords = computed(
-  () => hotSearchCategories.value[selectedHotCategoryIndex.value]?.keywords ?? [],
-);
 const activeSearchType = computed(() => TAB_SEARCH_TYPES[activeTabIndex.value] ?? 'song');
 const currentSearchSubtitle = computed(() => currentSearchKeyword.value.trim() || '歌曲搜索');
 const activePagination = computed(() => paginationState[activeSearchType.value]);
@@ -217,105 +201,10 @@ const loadHotSearches = async () => {
   try {
     const hotRes = await getSearchHot();
     hotSearchCategories.value = extractHotCategories(hotRes);
-    defaultKeyword.value = '';
-    if (selectedHotCategoryIndex.value >= hotSearchCategories.value.length) {
-      selectedHotCategoryIndex.value = 0;
-    }
   } catch {
     hotSearchCategories.value = [];
-    defaultKeyword.value = '';
   } finally {
     isLoadingHot.value = false;
-  }
-};
-
-let suggestionBlurTimer: number | null = null;
-let suggestionRequest = 0;
-const cancelSuggestionBlur = () => {
-  if (suggestionBlurTimer !== null) window.clearTimeout(suggestionBlurTimer);
-  suggestionBlurTimer = null;
-};
-
-const clearSuggestions = () => {
-  cancelSuggestionBlur();
-  suggestionRequest++;
-  suggestionCategories.value = [];
-  showSuggestions.value = false;
-  isLoadingSuggestions.value = false;
-};
-
-const handleInputFocus = () => {
-  cancelSuggestionBlur();
-  if (searchInput.value.trim().length > 0) {
-    showSuggestions.value = true;
-    if (suggestionCategories.value.length === 0 && !isLoadingSuggestions.value) {
-      void fetchSuggestions(searchInput.value.trim());
-    }
-  }
-};
-
-const handleInputBlur = () => {
-  cancelSuggestionBlur();
-  suggestionBlurTimer = window.setTimeout(() => {
-    suggestionBlurTimer = null;
-    suggestionRequest++;
-    isLoadingSuggestions.value = false;
-    showSuggestions.value = false;
-  }, 150);
-};
-
-const handleSearchChanged = (value: string) => {
-  cancelSuggestionBlur();
-  suggestionRequest++;
-  if (debounceTimer) {
-    window.clearTimeout(debounceTimer);
-    debounceTimer = null;
-  }
-
-  if (!value.trim()) {
-    clearSearchResults();
-    resetPaginationState();
-    currentSearchKeyword.value = '';
-    clearSuggestions();
-    hasSearched.value = false;
-    showPinnedTabs.value = false;
-    isIgnoringChanges.value = false;
-    if (route.query.q !== undefined) {
-      void router.replace({ name: 'search', query: {} });
-    }
-    return;
-  }
-
-  if (isIgnoringChanges.value) return;
-
-  showSuggestions.value = true;
-  isLoadingSuggestions.value = true;
-  debounceTimer = window.setTimeout(() => {
-    void fetchSuggestions(value.trim());
-  }, 300);
-
-  if (hasSearched.value) {
-    hasSearched.value = false;
-    showPinnedTabs.value = false;
-  }
-};
-
-const fetchSuggestions = async (keywords: string) => {
-  if (!keywords.trim()) return;
-  const request = ++suggestionRequest;
-  isLoadingSuggestions.value = true;
-  try {
-    const res = await getSearchSuggest(keywords);
-    if (request !== suggestionRequest || searchInput.value.trim() !== keywords) return;
-    suggestionCategories.value = extractSuggestionCategories(res);
-    isLoadingSuggestions.value = false;
-    if (document.activeElement === searchHeaderRef.value?.inputRef) {
-      showSuggestions.value = true;
-    }
-  } catch {
-    if (request !== suggestionRequest || searchInput.value.trim() !== keywords) return;
-    suggestionCategories.value = [];
-    isLoadingSuggestions.value = false;
   }
 };
 
@@ -379,6 +268,7 @@ const handleSongLocate = () => songResultsPanelRef.value?.scrollToActive?.();
 
 const resetPaginationState = () => {
   TAB_SEARCH_TYPES.forEach((type) => {
+    delete searchErrors[type];
     paginationState[type].page = 1;
     paginationState[type].hasMore = false;
     paginationState[type].loadingMore = false;
@@ -438,6 +328,7 @@ const loadSearchResults = async (
   if (!keywords || state.loading) return;
 
   state.loading = true;
+  delete searchErrors[type];
   if (options?.useGlobalLoading) {
     isLoading.value = true;
   }
@@ -451,6 +342,7 @@ const loadSearchResults = async (
   } catch {
     if (token !== latestSearchToken) return;
     replaceResultsByType(type, []);
+    searchErrors[type] = '搜索请求失败，请重试';
     state.page = 1;
     state.total = null;
     state.hasMore = false;
@@ -495,25 +387,15 @@ const loadMoreActiveResults = async () => {
   }
 };
 
-const runSearch = async (keyword?: string) => {
-  const keywords = (keyword ?? searchInput.value).trim();
-  if (!keywords && defaultKeyword.value) {
-    await runSearch(defaultKeyword.value);
-    return;
-  }
+const runSearch = async (keyword: string) => {
+  const keywords = keyword.trim();
   if (!keywords) return;
-
-  isIgnoringChanges.value = true;
-  if (keyword !== undefined) {
-    searchInput.value = keyword;
-  }
 
   currentSearchKeyword.value = keywords;
   latestSearchToken += 1;
   const searchToken = latestSearchToken;
   isLoading.value = true;
   hasSearched.value = true;
-  showSuggestions.value = false;
   songSortField.value = null;
   songSortOrder.value = null;
   lyricSortField.value = null;
@@ -521,7 +403,6 @@ const runSearch = async (keyword?: string) => {
   songSearchQuery.value = '';
   clearSearchResults();
   resetPaginationState();
-  searchHeaderRef.value?.inputRef?.blur();
   settingStore.addToSearchHistory(keywords);
 
   try {
@@ -535,11 +416,6 @@ const runSearch = async (keyword?: string) => {
     resetPaginationState();
   } finally {
     if (searchToken === latestSearchToken) {
-      window.setTimeout(() => {
-        if (searchToken === latestSearchToken) {
-          isIgnoringChanges.value = false;
-        }
-      }, 100);
       await nextTick();
       handleScroll();
     }
@@ -561,28 +437,27 @@ onMounted(async () => {
 watch(
   () => route.query.q,
   (queryKeyword) => {
+    if (route.name !== 'search') return;
     const keyword = typeof queryKeyword === 'string' ? queryKeyword.trim() : '';
 
     if (!keyword) {
-      searchInput.value = '';
+      latestSearchToken++;
+      isLoading.value = false;
       currentSearchKeyword.value = '';
       clearSearchResults();
       resetPaginationState();
-      clearSuggestions();
       hasSearched.value = false;
       showPinnedTabs.value = false;
-      isIgnoringChanges.value = false;
       return;
     }
 
-    searchInput.value = keyword;
     if (keyword === currentSearchKeyword.value.trim() && hasSearched.value) {
       return;
     }
 
     void runSearch(keyword);
   },
-  { immediate: true },
+  { immediate: true, flush: 'post' },
 );
 
 watch(
@@ -613,12 +488,6 @@ watch(scrollContainerRef, () => {
 });
 
 onUnmounted(() => {
-  if (debounceTimer) {
-    window.clearTimeout(debounceTimer);
-    debounceTimer = null;
-  }
-  cancelSuggestionBlur();
-  suggestionRequest++;
   detachScrollTarget();
 });
 </script>
@@ -627,43 +496,22 @@ onUnmounted(() => {
   <PageScrollContainer class="search-view-container">
     <div class="search-view relative pb-10">
       <SearchHeader
-        ref="searchHeaderRef"
         :active-tab-index="activeTabIndex"
-        :default-keyword="defaultKeyword"
         :has-searched="hasSearched"
-        :is-loading-suggestions="isLoadingSuggestions"
-        :search-input="searchInput"
+        :keyword="currentSearchKeyword"
         :show-pinned-tabs="showPinnedTabs"
-        :show-suggestions="showSuggestions"
-        :suggestion-categories="suggestionCategories"
         :tabs="['单曲', '歌单', '专辑', '歌手', '歌词', 'MV']"
-        @blur="handleInputBlur"
-        @clear="
-          searchInput = '';
-          handleSearchChanged('');
-          searchHeaderRef?.inputRef?.focus();
-        "
-        @focus="handleInputFocus"
-        @pick-suggestion="runSearch($event)"
-        @submit="runSearch()"
         @update:active-tab-index="activeTabIndex = $event"
-        @update:search-input="
-          searchInput = $event;
-          handleSearchChanged($event);
-        "
       />
 
       <SearchDiscovery
         v-if="!hasSearched"
-        :current-hot-keywords="currentHotKeywords"
         :hot-search-categories="hotSearchCategories"
         :is-loading-hot="isLoadingHot"
         :search-history="searchHistory"
-        :selected-hot-category-index="selectedHotCategoryIndex"
         @clear-history="settingStore.clearSearchHistory()"
-        @pick-keyword="runSearch($event)"
+        @pick-keyword="router.push({ name: 'search', query: { q: $event } })"
         @remove-history="settingStore.removeFromSearchHistory($event)"
-        @update:selected-hot-category-index="selectedHotCategoryIndex = $event"
       />
 
       <SearchResultsSkeleton
@@ -672,17 +520,21 @@ onUnmounted(() => {
         :lyric-column="activeSearchType === 'lyric'"
       />
 
+      <div v-else-if="searchErrors[activeSearchType]" class="search-placeholder px-10" role="alert">
+        <p>{{ searchErrors[activeSearchType] }}</p>
+        <Button variant="secondary" size="sm" @click="runSearch(currentSearchKeyword)"
+          >重新搜索</Button
+        >
+      </div>
+
       <div v-else class="px-10 pt-4">
         <div v-if="activeTabIndex === 0">
           <SearchSongResultsPanel
             ref="songResultsPanelRef"
             :active-song-id="activeSongId"
-            :current-search-keyword="currentSearchKeyword"
-            :current-search-subtitle="currentSearchSubtitle"
             :enable-locate="true"
             :enable-search-query="true"
             :queue-id-prefix="'queue:search'"
-            :row-title="'搜索结果'"
             :search-query="songSearchQuery"
             :songs="filteredSongResults"
             :sort-field="songSortField"
@@ -790,10 +642,7 @@ onUnmounted(() => {
         <div v-else-if="activeTabIndex === 4">
           <SearchSongResultsPanel
             :active-song-id="activeSongId"
-            :current-search-keyword="currentSearchKeyword"
-            :current-search-subtitle="currentSearchSubtitle"
             :queue-id-prefix="'queue:search-lyric'"
-            :row-title="'歌词搜索'"
             :show-lyric-column="true"
             :songs="sortedLyricResults"
             :sort-field="lyricSortField"
