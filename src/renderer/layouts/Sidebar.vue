@@ -695,7 +695,12 @@ watch(
     class="sidebar h-full flex flex-col bg-bg-sidebar border-r border-[var(--border-subtle)] select-none transition-all duration-300 relative overflow-hidden"
     :class="{ 'is-rail': collapsed }"
   >
-    <div :class="['w-full shrink-0 relative', isMac ? 'h-12' : 'h-6']">
+    <div
+      :class="['w-full shrink-0 relative', isMac ? 'h-12' : 'h-6']"
+      :style="{
+        minHeight: 'var(--window-controls-left-height, 0px)',
+      }"
+    >
       <div class="drag-region"></div>
     </div>
 

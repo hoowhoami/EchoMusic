@@ -33,9 +33,9 @@ Use a temporary clone and copy the upstream tree into this directory without the
 git clone https://github.com/apoint123/ffmpeg-audio /tmp/ffmpeg-audio-update
 rsync -a --delete --exclude .git \
   /tmp/ffmpeg-audio-update/ \
-  native/echo-ffmpeg-player/vendor/ffmpeg-audio/
+  native/echo-audio-player/vendor/ffmpeg-audio/
 ```
 
 After syncing, update the `Vendored commit` value above, re-apply the compatibility patches listed above, review local diffs, and run the native player checks.
 
-Do not commit `native/echo-ffmpeg-player/vendor/ffmpeg-audio/.git`; the vendor tree should remain regular files in the EchoMusic repository.
+Do not commit `native/echo-audio-player/vendor/ffmpeg-audio/.git`; the vendor tree should remain regular files in the EchoMusic repository.

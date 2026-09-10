@@ -419,7 +419,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d0881ea181b1df73ff77ffaaf9c7544ecc11e82fba9b5f27b262a3c73a332555"
 
 [[package]]
-name = "echo-ffmpeg-player"
+name = "echo-audio-player"
 version = "0.1.0"
 dependencies = [
  "alsa",

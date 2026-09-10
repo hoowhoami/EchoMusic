@@ -58,7 +58,7 @@
 - **Backend Service**: [Node.js](https://nodejs.org/)（内置本地服务，进程内直接调用）
 - **Audio Engine**: FFmpeg 解码 + SoundTouch 变速处理 + 原生音频输出（通过 Rust NAPI addon 进程内嵌入）
 - **Native Addons**: [napi-rs](https://napi.rs/)（Rust 编写的原生扩展）
-  - `echo-ffmpeg-player`：播放引擎封装，使用 vendored `ffmpeg-audio` 与 `soundtouch-rs`，支持淡入淡出、音效引擎、音量均衡、倍速播放、输出设备切换、独占输出与实时频谱分析
+  - `echo-audio-player`：播放引擎封装，使用 vendored `ffmpeg-audio` 与 `soundtouch-rs`，支持淡入淡出、音效引擎、音量均衡、倍速播放、输出设备切换、独占输出与实时频谱分析
   - `echo-audio-capture`：跨平台系统输出与麦克风输入采集，提供设备选择、连续缓冲、快照和可配置 PCM 格式转换能力，用于听歌识曲等功能
   - `echo-media-controls`：系统媒体控制集成（macOS/Windows/Linux 原生 API）
   - `echo-sqlite-store`：SQLite 本地持久化存储，负责设置、播放队列与状态快照
@@ -100,7 +100,7 @@
 - [pnpm](https://pnpm.io/) 9+
 - [Rust](https://www.rust-lang.org/)（编译原生模块需要）
 - FFmpeg 开发库（编译播放引擎原生模块需要；运行时不依赖外部 `ffmpeg` 可执行文件）
-- Windows 编译 `echo-ffmpeg-player` 时还需要 LLVM/libclang（`bindgen` 生成 FFmpeg 绑定需要）
+- Windows 编译 `echo-audio-player` 时还需要 LLVM/libclang（`bindgen` 生成 FFmpeg 绑定需要）
 
 Windows 上如遇到 `Unable to find libclang`，先安装 LLVM，并确保 `LIBCLANG_PATH` 指向包含 `libclang.dll` 的目录：
 
@@ -150,14 +150,14 @@ setx LIBCLANG_PATH "C:\Program Files\LLVM\bin"
    倘若出现如下报错:
 
    ```bash
-   Error: Cannot find module '/home/myname/EchoMusic/native/echo-ffmpeg-player/echo-ffmpeg-player.node'
-   [error] [PlayerController] Failed to load echo-ffmpeg-player addon
+   Error: Cannot find module '/home/myname/EchoMusic/native/echo-audio-player/echo-audio-player.node'
+   [error] [PlayerController] Failed to load echo-audio-player addon
    ```
 
    需要手动编译 Rust 原生模块，因为 `*.node` 文件在 `.gitignore` 中被排除。推荐使用各 addon 自带的 napi-rs 构建脚本生成平台对应的 `.node`：
 
    ```bash
-   cd native/echo-ffmpeg-player
+   cd native/echo-audio-player
    pnpm install --ignore-workspace
    pnpm exec napi build --release --no-const-enum
 

@@ -45,11 +45,11 @@ Local macOS arm64 comparison for 2.3.1-beta.25 / Electron 43.6.0, using identica
 renderer/main/preload artifacts and native binaries, the same temporary flat
 server production install, ad-hoc signing, and electron-builder's ZIP target:
 
-| Measurement | Before | After | Reduction |
-| --- | ---: | ---: | ---: |
-| ZIP download | 128.59 MiB | 124.88 MiB | 3.71 MiB (2.9%) |
-| Application regular-file bytes | 337.74 MiB | 316.67 MiB | 21.07 MiB (6.2%) |
-| app.asar | 29.78 MiB | 8.71 MiB | 21.07 MiB (70.8%) |
+| Measurement                    |     Before |      After |         Reduction |
+| ------------------------------ | ---------: | ---------: | ----------------: |
+| ZIP download                   | 128.59 MiB | 124.88 MiB |   3.71 MiB (2.9%) |
+| Application regular-file bytes | 337.74 MiB | 316.67 MiB |  21.07 MiB (6.2%) |
+| app.asar                       |  29.78 MiB |   8.71 MiB | 21.07 MiB (70.8%) |
 
 Application size above excludes symlinks and filesystem allocation overhead;
 it is not a `du` measurement. Results include the two explicit transitive runtime
@@ -62,3 +62,11 @@ dependencies and generated static main/preload imports, loads `font-list`, and
 parses a WAV with the packaged `music-metadata`. App code and native binaries
 match the comparison package byte for byte. Full application interaction and
 Windows/Linux packaging were not tested in this comparison.
+
+## Native platform addon
+
+Windows additionally builds `native/echo-platform-adaptor` for DWM background
+composition and taskbar previews. Its `.node` file is listed in `win.extraResources`
+and verified by the release workflow. It is not a dependency of
+`echo-media-controls` and is not packaged on macOS/Linux. See
+[window shell build instructions](../native/echo-platform-adaptor/README.md).

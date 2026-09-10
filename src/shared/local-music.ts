@@ -38,7 +38,7 @@ export interface LocalAudioScanResult {
 }
 
 // 该清单 = 本地可播放格式 = FFmpeg 引擎
-// native/echo-ffmpeg-player/vendor/ffmpeg-audio/scripts/generate_config.ts
+// native/echo-audio-player/vendor/ffmpeg-audio/scripts/generate_config.ts
 // decoder/demuxer 白名单支持集，作为唯一事实源。
 // amr 虽在 FFmpeg 白名单中，但当前仅作为云盘上传业务格式保留，不纳入本地播放清单。
 export const LOCAL_AUDIO_EXTENSIONS = [

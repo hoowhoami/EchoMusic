@@ -61,6 +61,9 @@ const historyStore = useHistoryStore();
 const toastStore = useToastStore();
 const userStore = useUserStore();
 const contentBlacklistStore = useContentBlacklistStore();
+const onWindowBackgroundChanged = () => {
+  void settings.initWindowBackground();
+};
 let disposeWindowFrame: (() => void) | null = null;
 let disposeShortcuts: (() => void) | null = null;
 let disposeDesktopLyricSync: (() => void) | null = null;
@@ -310,6 +313,7 @@ onMounted(async () => {
   void initMiniPlayerSync().then((dispose) => {
     disposeMiniPlayerSync = dispose;
   });
+  window.electron.ipcRenderer.on('window-background:changed', onWindowBackgroundChanged);
   await settings.initWindowBackground();
   settings.syncTheme();
   settings.syncCloseBehavior();
@@ -347,6 +351,7 @@ onMounted(async () => {
 onUnmounted(() => {
   disposePluginUpdateCheck?.();
   disposeWindowFrame?.();
+  window.electron.ipcRenderer.off('window-background:changed', onWindowBackgroundChanged);
   window.removeEventListener('focus', scheduleClipboardShareCheck);
   window.removeEventListener(SHARE_COPIED_EVENT, handleShareCopied);
   if (silentUpdateCheckTimer !== null) {

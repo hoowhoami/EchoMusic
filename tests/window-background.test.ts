@@ -5,6 +5,7 @@ import {
   getWindowComposition,
   normalizeWindowBackground,
   resolveWindowBackground,
+  resolveRunningWindowBackground,
 } from '../src/shared/window-background.ts';
 
 test('old settings default to an opaque themed background', () => {
@@ -42,12 +43,12 @@ test('switching native mode takes effect only after recreation', () => {
   assert.deepEqual(resolveWindowBackground(disabled, false), DEFAULT_WINDOW_BACKGROUND);
 });
 
-test('Windows Acrylic uses a system window, clear transparency uses client corners', () => {
+test('Windows clear and Acrylic preserve a non-layered native window', () => {
   const clear = { enabled: true, frosted: false, transparency: 50, color: '' };
   assert.deepEqual(getWindowComposition(clear, 'win32', 22631), {
-    transparent: true,
+    transparent: false,
     systemMaterial: false,
-    clientCornerRadius: 8,
+    clientCornerRadius: 0,
   });
   assert.deepEqual(getWindowComposition({ ...clear, frosted: true }, 'win32', 22631), {
     transparent: false,
@@ -61,7 +62,7 @@ test('Windows Acrylic uses a system window, clear transparency uses client corne
   });
   for (const platform of ['darwin', 'linux']) {
     assert.deepEqual(getWindowComposition({ ...clear, frosted: true }, platform, 22631), {
-      transparent: true,
+      transparent: platform !== 'darwin',
       systemMaterial: false,
       clientCornerRadius: 0,
     });
@@ -69,7 +70,7 @@ test('Windows Acrylic uses a system window, clear transparency uses client corne
   assert.equal(getWindowComposition(clear, 'win32', 19045).clientCornerRadius, 0);
 });
 
-test('pending Windows frost changes cannot change the running composition before restart', () => {
+test('explicit active frost state takes precedence over saved preferences', () => {
   const saved = { enabled: true, frosted: true, transparency: 62, color: '#123456' };
   assert.equal(resolveWindowBackground(saved, true, false).frosted, false);
   const pendingClear = { ...saved, frosted: false };
@@ -77,4 +78,48 @@ test('pending Windows frost changes cannot change the running composition before
   assert.equal(resolveWindowBackground(saved, true, null).frosted, true);
   assert.deepEqual(resolveWindowBackground(saved, false, false), DEFAULT_WINDOW_BACKGROUND);
   assert.equal(resolveWindowBackground(pendingClear, true, false).transparency, 62);
+});
+
+const clear = { enabled: true, frosted: false, transparency: 60, color: '' };
+const frost = { ...clear, frosted: true };
+test('macOS ordinary windows toggle Vibrancy live and require recreation only for clear', () => {
+  for (const background of [DEFAULT_WINDOW_BACKGROUND, frost]) {
+    assert.deepEqual(resolveRunningWindowBackground(background, 'darwin', false), {
+      background,
+      restartRequired: false,
+    });
+    assert.equal(getWindowComposition(background, 'darwin', 0).transparent, false);
+  }
+  assert.deepEqual(resolveRunningWindowBackground(clear, 'darwin', false), {
+    background: DEFAULT_WINDOW_BACKGROUND,
+    restartRequired: true,
+  });
+  assert.deepEqual(resolveRunningWindowBackground(clear, 'darwin', true), {
+    background: clear,
+    restartRequired: false,
+  });
+  for (const background of [DEFAULT_WINDOW_BACKGROUND, frost]) {
+    assert.deepEqual(resolveRunningWindowBackground(background, 'darwin', true), {
+      background,
+      restartRequired: true,
+    });
+  }
+});
+test('Linux preserves native transparency until recreation and never enables Vibrancy', () => {
+  assert.deepEqual(resolveRunningWindowBackground(clear, 'linux', false), {
+    background: DEFAULT_WINDOW_BACKGROUND,
+    restartRequired: true,
+  });
+  assert.deepEqual(resolveRunningWindowBackground(frost, 'linux', true), {
+    background: clear,
+    restartRequired: false,
+  });
+  assert.deepEqual(resolveRunningWindowBackground({ ...clear, enabled: false }, 'linux', true), {
+    background: clear,
+    restartRequired: true,
+  });
+  assert.deepEqual(resolveRunningWindowBackground(DEFAULT_WINDOW_BACKGROUND, 'linux', false), {
+    background: DEFAULT_WINDOW_BACKGROUND,
+    restartRequired: false,
+  });
 });

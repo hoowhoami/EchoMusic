@@ -2,45 +2,33 @@ import { release } from 'node:os';
 import {
   getWindowComposition,
   resolveWindowBackground,
+  resolveRunningWindowBackground,
   normalizeWindowBackground,
   type WindowBackground,
 } from '../../shared/window-background';
-import {
-  BrowserWindow,
-  shell,
-  app,
-  nativeTheme,
-  powerSaveBlocker,
-  screen,
-  type BrowserWindowConstructorOptions,
-} from 'electron';
+import { BrowserWindow, shell, app, nativeTheme, powerSaveBlocker, screen } from 'electron';
 import { join } from 'path';
 import type { CloseBehavior, ThemeMode } from '../../shared/app';
-import {
-  getMainAppSettings,
-  setMainAppSetting,
-  type MainWindowState as WindowState,
-} from '../storage/settings';
+import { getMainAppSettings, setMainAppSetting } from '../storage/settings';
 import { getActiveWindowMode, setActiveWindowMode } from './mode';
 import { isPluginRendererGoneFailureReason, reportPluginRendererFailure } from '../plugins';
 import { ipcRegistry } from '../ipc/registry';
 import { applyWindowAppIcon, resolveWindowIconPath } from '../appIcons';
 import { logMainMemory } from '../diagnostics/memory';
+import { resolveMainWindowPlacement, resolveWaylandWindowSize } from '../windowSizing';
+import { isWaylandWindowingBackend } from '../../shared/windowing';
+import { trackMainWindowState } from './state';
+import { applyWindowsComposition, supportsWindowsAccent } from './windowsComposition';
+import { applyMacWindowBackground } from './macComposition';
+import { installWindowZoom, registerWindowZoomHandlers } from './zoom';
 import {
-  WindowBoundsPersistenceGate,
-  type WindowBoundsChangeKind,
-} from '../windowBoundsPersistence';
-import { resolveMainWindowMinHeight } from '../windowSizing';
-import { syncWindowsBackgroundMaterial } from './backgroundMaterial';
-
-const minWidth: number = 1100;
-const defaultWidth: number = 1150;
-const defaultHeight: number = 750;
-
-const getMinHeight = (): number => {
-  const primaryDisplay = screen.getPrimaryDisplay();
-  return resolveMainWindowMinHeight(primaryDisplay.workArea.height);
-};
+  installWindowFullscreen,
+  installWindowFullscreenShortcut,
+  isWindowFullscreen,
+  isWindowFullscreenTransitioning,
+  setWindowFullscreen,
+} from './fullscreen';
+import { normalizeZoomLevel, titleBarHeight, zoomLevelToFactor } from '../../shared/window-zoom';
 
 const initialSettings = getMainAppSettings();
 let closeBehavior: CloseBehavior = initialSettings.closeBehavior;
@@ -49,8 +37,10 @@ let windowBackground = normalizeWindowBackground(initialSettings.windowBackgroun
 let windowBackgroundActiveEnabled = windowBackground.enabled;
 const supportsWindowFrost =
   process.platform === 'darwin' ||
-  (process.platform === 'win32' && Number(release().split('.')[2]) >= 22621);
-if (!supportsWindowFrost) windowBackground.frosted = false;
+  (process.platform === 'win32' &&
+    (Number(release().split('.')[2]) >= 22621 || supportsWindowsAccent()));
+
+if (!supportsWindowFrost && process.platform !== 'win32') windowBackground.frosted = false;
 let rememberWindowSize = initialSettings.rememberWindowSize;
 let preventSleep = initialSettings.preventSleep;
 let devToolsEnabled = initialSettings.devToolsEnabled;
@@ -63,6 +53,20 @@ app.setLoginItemSettings({ openAtLogin: initialSettings.autoLaunch });
 
 let win: BrowserWindow | null = null;
 let isQuitting = false;
+let zoomController: ReturnType<typeof installWindowZoom> | null = null;
+let backgroundUnavailableReason = '';
+const usesNativeOverlay = process.platform === 'win32' || process.platform === 'linux';
+const usesWayland = isWaylandWindowingBackend();
+const syncTitleBar = (level = normalizeZoomLevel(getMainAppSettings().windowZoomLevel)) => {
+  if (!canUseMainWindow(win) || !usesNativeOverlay) return;
+  const dark =
+    currentTheme === 'dark' || (currentTheme === 'system' && nativeTheme.shouldUseDarkColors);
+  win.setTitleBarOverlay({
+    color: '#00000000',
+    symbolColor: dark ? '#ffffff' : '#202020',
+    height: titleBarHeight(level),
+  });
+};
 
 const canUseMainWindow = (mainWindow: BrowserWindow | null): mainWindow is BrowserWindow => {
   return Boolean(mainWindow && !mainWindow.isDestroyed());
@@ -71,8 +75,8 @@ const canUseMainWindow = (mainWindow: BrowserWindow | null): mainWindow is Brows
 export function hideMainWindow() {
   if (!canUseMainWindow(win)) return;
 
-  if (win.isFullScreen()) {
-    win.setFullScreen(false);
+  if (isWindowFullscreen(win)) {
+    setWindowFullscreen(win, false);
   }
 
   if (win.isMinimized()) {
@@ -162,50 +166,75 @@ let activeComposition = getWindowComposition(
   process.platform,
   Number(release().split('.')[2]),
 );
-let windowBackgroundActiveFrosted: boolean | null =
-  process.platform === 'win32' ? windowBackground.frosted : null;
+let windowBackgroundActiveFrosted: boolean | null = windowBackground.frosted;
+let windowBackgroundRestartRequired = false;
 export const getMainWindowClientCornerRadius = () => activeComposition.clientCornerRadius;
 
 const syncMainWindowBackground = () => {
   if (!canUseMainWindow(win)) return;
   if (nativeTheme.themeSource !== currentTheme) nativeTheme.themeSource = currentTheme;
-  win.setBackgroundColor(
-    windowBackgroundActiveEnabled ? '#00000000' : getMainWindowBackgroundColor(),
-  );
-  if (!windowBackgroundActiveEnabled) return;
-  const background = resolveWindowBackground(
-    windowBackground,
-    windowBackgroundActiveEnabled,
-    windowBackgroundActiveFrosted,
-  );
-  if (process.platform === 'darwin') {
-    // AppKit derives a transparent window's shadow from its content alpha.
-    // Cached silhouettes can remain after cards/lyrics scroll or disappear.
-    const hasShadow = !background.frosted && background.transparency === 0;
-    if (win.hasShadow() !== hasShadow) {
-      win.setHasShadow(hasShadow);
-      win.invalidateShadow();
+  syncTitleBar();
+  if (process.platform === 'win32') {
+    win.setBackgroundColor(windowBackground.enabled ? '#00000000' : getMainWindowBackgroundColor());
+    backgroundUnavailableReason = '';
+    try {
+      applyWindowsComposition(win, windowBackground, Number(release().split('.')[2]));
+      windowBackgroundActiveEnabled = windowBackground.enabled;
+      windowBackgroundActiveFrosted = windowBackground.frosted;
+    } catch (error) {
+      windowBackgroundActiveEnabled = false;
+      windowBackgroundActiveFrosted = false;
+      backgroundUnavailableReason = error instanceof Error ? error.message : '系统背景效果不可用';
+      win.setBackgroundColor(getMainWindowBackgroundColor());
     }
-    const dark =
-      currentTheme === 'dark' || (currentTheme === 'system' && nativeTheme.shouldUseDarkColors);
-    win.setVibrancy(background.frosted ? (dark ? 'hud' : 'under-window') : null);
-  } else if (supportsWindowFrost && process.platform === 'win32') {
-    syncWindowsBackgroundMaterial(win, background.frosted);
   }
+  if (process.platform !== 'win32') {
+    const state = resolveRunningWindowBackground(
+      windowBackground,
+      process.platform,
+      activeComposition.transparent,
+    );
+    windowBackgroundRestartRequired = state.restartRequired;
+    windowBackgroundActiveEnabled = state.background.enabled;
+    windowBackgroundActiveFrosted = state.background.frosted;
+    if (process.platform === 'darwin') {
+      const dark =
+        currentTheme === 'dark' || (currentTheme === 'system' && nativeTheme.shouldUseDarkColors);
+      applyMacWindowBackground(win, state.background, activeComposition.transparent, dark);
+    } else {
+      win.setBackgroundColor(
+        state.background.enabled ? '#00000000' : getMainWindowBackgroundColor(),
+      );
+    }
+  }
+  // Publish only after native materials and surface colors agree with the renderer state.
+  win.webContents.send('window-background:changed', readBackgroundState());
 };
 
+const readBackgroundState = () => ({
+  background: windowBackground,
+  activeEnabled: windowBackgroundActiveEnabled,
+  activeFrosted: windowBackgroundActiveFrosted,
+  supportsFrost: supportsWindowFrost,
+  live: process.platform === 'win32',
+  frostLive: process.platform === 'darwin' || process.platform === 'win32',
+  restartRequired: windowBackgroundRestartRequired,
+  unavailableReason: backgroundUnavailableReason,
+});
+
 export const registerMainWindowPreferenceHandlers = () => {
+  registerWindowZoomHandlers(
+    () => win,
+    () => zoomController,
+  );
   nativeTheme.on('updated', syncMainWindowBackground);
-  ipcRegistry.registerHandler('window-background:get', () => ({
-    background: windowBackground,
-    activeEnabled: windowBackgroundActiveEnabled,
-    activeFrosted: windowBackgroundActiveFrosted,
-    supportsFrost: supportsWindowFrost,
-  }));
+  ipcRegistry.registerHandler('window-background:get', readBackgroundState);
   ipcRegistry.registerHandler('window-background:set', (event, value: WindowBackground) => {
-    if (event.sender !== win?.webContents) throw new Error('仅主窗口可以调整背景');
+    if (!win || event.sender !== win.webContents || event.senderFrame !== win.webContents.mainFrame)
+      throw new Error('仅主窗口可以调整背景');
     windowBackground = normalizeWindowBackground(value);
-    if (!supportsWindowFrost) windowBackground.frosted = false;
+    if (!supportsWindowFrost && process.platform !== 'win32') windowBackground.frosted = false;
+
     setMainAppSetting('windowBackground', windowBackground);
     syncMainWindowBackground();
     return windowBackground;
@@ -223,6 +252,7 @@ export const registerMainWindowPreferenceHandlers = () => {
 
   ipcRegistry.registerListener('update-remember-window-size', (_event, enabled: boolean) => {
     rememberWindowSize = enabled;
+    windowStateTracker?.flush();
     setMainAppSetting('rememberWindowSize', enabled);
   });
 
@@ -248,146 +278,8 @@ export const registerMainWindowPreferenceHandlers = () => {
   });
 };
 
-const getPersistedWindowState = (): WindowState => {
-  return getMainAppSettings().windowState;
-};
-
-const hasVisibleArea = (bounds: { x?: number; y?: number; width: number; height: number }) => {
-  return screen.getAllDisplays().some((display) => {
-    const area = display.workArea;
-    const x = bounds.x ?? area.x;
-    const y = bounds.y ?? area.y;
-    return (
-      x < area.x + area.width &&
-      x + bounds.width > area.x &&
-      y < area.y + area.height &&
-      y + bounds.height > area.y
-    );
-  });
-};
-
-const buildWindowBounds = (): Pick<
-  BrowserWindowConstructorOptions,
-  'width' | 'height' | 'x' | 'y' | 'useContentSize'
-> => {
-  if (!rememberWindowSize) {
-    return { width: defaultWidth, height: defaultHeight } as const;
-  }
-
-  const state = getPersistedWindowState();
-  const minHeight = getMinHeight();
-  const bounds = {
-    width: Math.max(minWidth, state.width || defaultWidth),
-    height: Math.max(minHeight, state.height || defaultHeight),
-    ...(typeof state.x === 'number' ? { x: state.x } : {}),
-    ...(typeof state.y === 'number' ? { y: state.y } : {}),
-    ...(shouldUseContentWindowState() && state.boundsMode === 'content'
-      ? { useContentSize: true }
-      : {}),
-  };
-
-  if ((typeof bounds.x === 'number' || typeof bounds.y === 'number') && !hasVisibleArea(bounds)) {
-    return { width: bounds.width, height: bounds.height } as const;
-  }
-
-  return bounds;
-};
-
-const shouldUseContentWindowState = () => process.platform !== 'win32';
-const shouldPersistDirtyWindowStateOnly = () => process.platform === 'win32';
-
-const windowBoundsPersistenceGate = new WindowBoundsPersistenceGate();
-
-const dirtyWindowState = {
-  size: false,
-  position: false,
-};
-
-const markWindowStateDirty = (fields: Partial<typeof dirtyWindowState>) => {
-  dirtyWindowState.size = dirtyWindowState.size || Boolean(fields.size);
-  dirtyWindowState.position = dirtyWindowState.position || Boolean(fields.position);
-};
-
-const markManualWindowResize = () => {
-  windowBoundsPersistenceGate.markManualChange('resize');
-  // 从左侧或顶部缩放时坐标也会变化。
-  markWindowStateDirty({ size: true, position: true });
-};
-
-const markManualWindowMove = () => {
-  windowBoundsPersistenceGate.markManualChange('move');
-  markWindowStateDirty({ position: true });
-};
-
-const consumeWindowBoundsChange = (kind: WindowBoundsChangeKind) => {
-  if (!windowBoundsPersistenceGate.shouldPersist(kind)) return false;
-  markWindowStateDirty(kind === 'resize' ? { size: true, position: true } : { position: true });
-  return true;
-};
-
-const resetDirtyWindowState = () => {
-  dirtyWindowState.size = false;
-  dirtyWindowState.position = false;
-};
-
-const persistWindowState = (dirtyOnly = false) => {
-  if (!win || !rememberWindowSize || win.isDestroyed()) return;
-  const maximized = win.isMaximized();
-  // 最大化时 getBounds 返回的是全屏尺寸，会污染窗口化后恢复的大小
-  // 因此最大化状态下只更新 isMaximized 标记，保留上一次窗口化时的 width/height/x/y
-  if (maximized) {
-    const prev = getPersistedWindowState();
-    setMainAppSetting('windowState', {
-      width: prev.width,
-      height: prev.height,
-      x: prev.x,
-      y: prev.y,
-      isMaximized: true,
-      boundsMode: prev.boundsMode,
-    });
-    return;
-  }
-  const prev = getPersistedWindowState();
-  const bounds = win.getBounds();
-  const contentBounds = win.getContentBounds();
-  const nextBoundsMode: WindowState['boundsMode'] = shouldUseContentWindowState()
-    ? 'content'
-    : 'window';
-  const sizeBounds = shouldUseContentWindowState() ? contentBounds : bounds;
-  const shouldUpdateSize = !dirtyOnly || dirtyWindowState.size;
-  const shouldUpdatePosition = !dirtyOnly || dirtyWindowState.position;
-
-  setMainAppSetting('windowState', {
-    width: shouldUpdateSize ? sizeBounds.width : prev.width,
-    height: shouldUpdateSize ? sizeBounds.height : prev.height,
-    x: shouldUpdatePosition ? bounds.x : prev.x,
-    y: shouldUpdatePosition ? bounds.y : prev.y,
-    isMaximized: false,
-    boundsMode: shouldUpdateSize ? nextBoundsMode : prev.boundsMode,
-  });
-  resetDirtyWindowState();
-};
-
-let persistWindowStateTimer: ReturnType<typeof setTimeout> | null = null;
-
-const clearPersistWindowStateTimer = () => {
-  if (!persistWindowStateTimer) return;
-  clearTimeout(persistWindowStateTimer);
-  persistWindowStateTimer = null;
-};
-
-const schedulePersistWindowState = () => {
-  clearPersistWindowStateTimer();
-  persistWindowStateTimer = setTimeout(() => {
-    persistWindowStateTimer = null;
-    persistWindowState(shouldPersistDirtyWindowStateOnly());
-  }, 180);
-};
-
-const flushPersistWindowState = () => {
-  clearPersistWindowStateTimer();
-  persistWindowState(shouldPersistDirtyWindowStateOnly());
-};
+let windowStateTracker: ReturnType<typeof trackMainWindowState> | null = null;
+const flushPersistWindowState = () => windowStateTracker?.flush();
 
 export function getMainWindow() {
   return win;
@@ -401,10 +293,16 @@ export async function createWindow() {
 
   const initialBgColor = getMainWindowBackgroundColor();
 
-  const initialBounds = buildWindowBounds();
-  const initialWindowState = getPersistedWindowState();
+  const initialWindowState = getMainAppSettings().windowState;
+  const displays = screen.getAllDisplays();
+  const placement = usesWayland
+    ? resolveWaylandWindowSize(rememberWindowSize ? initialWindowState : null)
+    : resolveMainWindowPlacement(
+        rememberWindowSize ? initialWindowState : null,
+        displays,
+        screen.getPrimaryDisplay().id,
+      );
   const windowIconPath = process.platform === 'darwin' ? '' : resolveWindowIconPath();
-  const minHeight = getMinHeight();
   await logMainMemory('createWindow:before BrowserWindow');
 
   windowBackgroundActiveEnabled = windowBackground.enabled;
@@ -413,28 +311,49 @@ export async function createWindow() {
     process.platform,
     Number(release().split('.')[2]),
   );
-  windowBackgroundActiveFrosted =
-    process.platform === 'win32' ? activeComposition.systemMaterial : null;
+  windowBackgroundActiveFrosted = windowBackground.frosted;
+  windowBackgroundRestartRequired = false;
   win = new BrowserWindow({
     title: 'EchoMusic',
     ...(windowIconPath ? { icon: windowIconPath } : {}),
-    ...initialBounds,
-    minWidth: minWidth,
-    minHeight: minHeight,
+    ...placement.bounds,
+    minWidth: placement.minWidth,
+    minHeight: placement.minHeight,
     show: false, // 初始不显示，防止白屏
     backgroundColor: windowBackgroundActiveEnabled ? '#00000000' : initialBgColor,
-    frame: false,
+    frame: process.platform === 'darwin',
+    thickFrame: true,
     transparent: activeComposition.transparent,
     roundedCorners: activeComposition.clientCornerRadius === 0,
-    ...(process.platform === 'darwin' ? { visualEffectState: 'active' as const } : {}),
+    ...(process.platform === 'darwin'
+      ? {
+          // Electron chooses the translucent compositor during Widget initialization.
+          // Prime Vibrancy even when effects are off so later live toggles clear old frames.
+          // syncMainWindowBackground removes the material before loading/showing in off mode.
+          // Keep transparent:false for ordinary/frosted windows and their native frame.
+          vibrancy: 'under-window' as const,
+          visualEffectState: 'active' as const,
+          acceptFirstMouse: true,
+          titleBarOverlay: true,
+          trafficLightPosition: { x: 14, y: 14 },
+        }
+      : {}),
     hasShadow: true,
     titleBarStyle: 'hidden',
-    trafficLightPosition: { x: 14, y: 14 },
+    ...(usesNativeOverlay
+      ? {
+          titleBarOverlay: {
+            color: '#00000000',
+            symbolColor: initialBgColor === '#26262a' ? '#ffffff' : '#202020',
+            height: titleBarHeight(normalizeZoomLevel(getMainAppSettings().windowZoomLevel)),
+          },
+        }
+      : {}),
     webPreferences: {
       preload,
       additionalArguments: [
         `--echo-initial-dark=${initialBgColor === '#26262a'}`,
-        `--echo-window-background=${JSON.stringify({ ...windowBackground, clientCornerRadius: rememberWindowSize && initialWindowState.isMaximized ? 0 : activeComposition.clientCornerRadius })}`,
+        `--echo-window-background=${JSON.stringify({ ...resolveWindowBackground(windowBackground, windowBackgroundActiveEnabled), clientCornerRadius: rememberWindowSize && initialWindowState.isMaximized ? 0 : activeComposition.clientCornerRadius })}`,
       ],
       contextIsolation: true,
       nodeIntegration: false,
@@ -444,17 +363,38 @@ export async function createWindow() {
       webSecurity: false, // 禁用 CORS 限制
       allowRunningInsecureContent: true, // 允许混合内容
       backgroundThrottling: false, // 最小化后不节流，保证播放状态和歌词同步
-      zoomFactor: 1.0,
+      zoomFactor: zoomLevelToFactor(normalizeZoomLevel(getMainAppSettings().windowZoomLevel)),
       devTools: devToolsEnabled, // 控制是否允许打开开发者工具
     },
   });
+  installWindowFullscreen(win);
+  if (process.platform === 'darwin') {
+    // Keep sheets below the same fixed native strip as the traffic lights.
+    win.setSheetOffset(46);
+  }
+  if (displays.length > 1 && process.platform !== 'linux') {
+    // VS Code's Electron workaround: the constructor can clamp a secondary
+    // display's larger bounds to the primary display before the HWND is placed.
+    win.setBounds(placement.bounds);
+  }
+  const mainWindow = win;
+  windowStateTracker = trackMainWindowState(win, {
+    initial: initialWindowState,
+    enabled: () => rememberWindowSize,
+    save: (state) => setMainAppSetting('windowState', state),
+    supportsPosition: !usesWayland,
+    macOS: process.platform === 'darwin',
+    transitioning: () => isWindowFullscreenTransitioning(mainWindow),
+  });
+  zoomController = installWindowZoom(win, syncTitleBar);
+  installWindowFullscreenShortcut(win);
   syncMainWindowBackground();
   await logMainMemory('createWindow:after BrowserWindow');
 
   applyWindowAppIcon(win);
   await logMainMemory('createWindow:after window icon');
 
-  if (rememberWindowSize && initialWindowState.isMaximized) {
+  if (rememberWindowSize && initialWindowState.isMaximized === true) {
     win.maximize();
     await logMainMemory('createWindow:after maximize');
   }
@@ -462,6 +402,7 @@ export async function createWindow() {
   // 当窗口准备好显示时再展示，优雅解决启动白屏
   // 如果启用了启动时最小化，则不自动显示窗口，由用户通过托盘恢复
   win.once('ready-to-show', () => {
+    flushPersistWindowState();
     void logMainMemory('main window:ready-to-show');
     if (!initialSettings.startMinimized) {
       win?.show();
@@ -527,6 +468,7 @@ export async function createWindow() {
 
   // 拦截关闭事件
   win.on('close', (event) => {
+    flushPersistWindowState();
     if (isQuitting) return;
 
     if (closeBehavior === 'tray') {
@@ -537,33 +479,11 @@ export async function createWindow() {
     }
   });
 
-  const handleWindowBoundsChanged = (kind: WindowBoundsChangeKind) => {
-    if (!win || win.isDestroyed() || win.isMaximized()) return;
-    if (!consumeWindowBoundsChange(kind)) return;
-    schedulePersistWindowState();
-  };
-
-  if (process.platform === 'win32') {
-    win.on('will-resize', markManualWindowResize);
-    win.on('will-move', markManualWindowMove);
-    win.on('resized', () => handleWindowBoundsChanged('resize'));
-    win.on('moved', () => handleWindowBoundsChanged('move'));
-  } else {
-    win.on('resize', () => handleWindowBoundsChanged('resize'));
-    win.on('move', () => handleWindowBoundsChanged('move'));
-  }
-
-  win.on('maximize', () => {
-    flushPersistWindowState();
-  });
-
-  win.on('unmaximize', () => {
-    flushPersistWindowState();
-  });
-
   win.on('closed', () => {
-    clearPersistWindowStateTimer();
+    windowStateTracker?.dispose();
+    windowStateTracker = null;
     syncPowerSaveBlocker();
+    zoomController = null;
     win = null;
   });
 

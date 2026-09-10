@@ -1,0 +1,20 @@
+[package]
+name = "echo-platform-adaptor"
+version = "0.1.0"
+edition = "2021"
+license = "GPL-3.0-only"
+
+[lib]
+crate-type = ["cdylib"]
+
+[build-dependencies]
+napi-build = "2"
+
+[target.'cfg(target_os = "windows")'.dependencies]
+napi = { version = "3", features = ["napi9"] }
+napi-derive = "3"
+image = "0.25"
+
+[target.'cfg(target_os = "windows")'.dependencies.windows]
+version = "0.62"
+features = ["Win32_Foundation", "Win32_Graphics_Dwm", "Win32_Graphics_Gdi"]

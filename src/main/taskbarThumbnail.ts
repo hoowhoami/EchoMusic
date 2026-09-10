@@ -1,7 +1,5 @@
+import { getNativePlatform, type NativePlatform } from './native/platform';
 import type { BrowserWindow } from 'electron';
-import { app } from 'electron';
-import { createRequire } from 'node:module';
-import path from 'path';
 import log from './logger';
 import { getMainAppSettings } from './storage/settings';
 import { networkFetch } from './networkPolicy';
@@ -23,15 +21,7 @@ const DEFAULT_THUMBNAIL_MAX = 200;
 // Aero Peek 大预览的尺寸上限
 const LIVE_PREVIEW_MAX = 600;
 
-interface NativeTaskbar {
-  taskbarEnableIconic(hwnd: string): void;
-  taskbarDisableIconic(hwnd: string): void;
-  taskbarInvalidate(hwnd: string): void;
-  taskbarSetThumbnail(hwnd: string, image: Buffer, maxWidth: number, maxHeight: number): void;
-  taskbarSetLivePreview(hwnd: string, image: Buffer, maxWidth: number, maxHeight: number): void;
-}
-
-let nativeModule: NativeTaskbar | null = null;
+let nativeModule: NativePlatform | null = null;
 let targetWindow: BrowserWindow | null = null;
 let hwndStr: string | null = null;
 let coverBuffer: Buffer | null = null;
@@ -43,7 +33,6 @@ let hooked = false;
 let appliedCoverRef: Buffer | null = null;
 // 任务栏封面预览开关：关闭时走 DWM 默认实时窗口画面，不启用 iconic 封面
 let coverPreviewEnabled = false;
-const nativeRequire = createRequire(path.join(process.cwd(), 'package.json'));
 
 // 应用兜底封面：FORCE_ICONIC 开启后 DWM 只使用我们提供的位图，
 // 若封面缺失/下载中而不给位图，DWM 会渲染出黑窗。因此始终兜底一张封面。
@@ -87,23 +76,7 @@ function loadFallbackCover(): void {
     });
 }
 
-/** 加载 native addon（与 mediaControls 共用同一个 .node，require 缓存保证单例） */
-function loadNativeModule(): NativeTaskbar | null {
-  try {
-    const resourcePath = app.isPackaged
-      ? path.join(process.resourcesPath, 'native', 'echo-media-controls.node')
-      : path.join(__dirname, '../../native/echo-media-controls/echo-media-controls.node');
-    return nativeRequire(resourcePath) as NativeTaskbar;
-  } catch (err) {
-    log.warn('[TaskbarThumbnail] Primary path load failed:', err);
-    try {
-      return nativeRequire(path.join(process.cwd(), 'native/echo-media-controls')) as NativeTaskbar;
-    } catch (err2) {
-      log.error('[TaskbarThumbnail] Native addon load failed:', err, err2);
-      return null;
-    }
-  }
-}
+const loadNativeModule = getNativePlatform;
 
 /** 从窗口原生句柄 Buffer 解析 HWND 指针的无符号十进制字符串 */
 function resolveHwnd(win: BrowserWindow): string | null {

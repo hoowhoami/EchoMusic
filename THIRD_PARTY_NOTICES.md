@@ -8,8 +8,8 @@ This file summarizes important third-party components used by EchoMusic, especia
 
 | Component         | Use                                                            | License                                                              | Source / Notice                                                                                                                                 |
 | ----------------- | -------------------------------------------------------------- | -------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ffmpeg-audio`    | FFmpeg-based audio decoding in `echo-ffmpeg-player`            | GPL-3.0-only                                                         | Vendored at `native/echo-ffmpeg-player/vendor/ffmpeg-audio`; upstream: https://github.com/apoint123/ffmpeg-audio                                |
-| `soundtouch-rs`   | Tempo and playback-speed processing in `echo-ffmpeg-player`    | LGPL-2.1                                                             | Vendored at `native/echo-ffmpeg-player/vendor/soundtouch-rs`; upstream: https://github.com/apoint123/soundtouch-rs; see `LICENSES/LGPL-2.1.txt` |
+| `ffmpeg-audio`    | FFmpeg-based audio decoding in `echo-audio-player`            | GPL-3.0-only                                                         | Vendored at `native/echo-audio-player/vendor/ffmpeg-audio`; upstream: https://github.com/apoint123/ffmpeg-audio                                |
+| `soundtouch-rs`   | Tempo and playback-speed processing in `echo-audio-player`    | LGPL-2.1                                                             | Vendored at `native/echo-audio-player/vendor/soundtouch-rs`; upstream: https://github.com/apoint123/soundtouch-rs; see `LICENSES/LGPL-2.1.txt` |
 | FFmpeg            | Audio demuxing, decoding and resampling through `ffmpeg-audio` | LGPL-2.1-or-later / GPL-2.0-or-later depending on enabled components | https://ffmpeg.org/; see `LICENSES/LGPL-2.1.txt`                                                                                                |
 | Electron          | Desktop runtime                                                | MIT                                                                  | https://www.electronjs.org/                                                                                                                     |
 | Vue               | Renderer UI framework                                          | MIT                                                                  | https://vuejs.org/                                                                                                                              |
@@ -21,7 +21,7 @@ This file summarizes important third-party components used by EchoMusic, especia
 
 ## Native Modules
 
-- `native/echo-ffmpeg-player` embeds the playback engine and depends on vendored `ffmpeg-audio` and `soundtouch-rs`.
+- `native/echo-audio-player` embeds the playback engine and depends on vendored `ffmpeg-audio` and `soundtouch-rs`.
 - `native/echo-audio-capture` captures system output and microphone/input-device audio through native platform APIs.
 - `native/echo-media-controls` integrates platform media controls.
 - `native/echo-sqlite-store` provides local SQLite-backed storage.

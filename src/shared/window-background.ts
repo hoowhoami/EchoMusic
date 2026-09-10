@@ -25,8 +25,7 @@ export function normalizeWindowBackground(
   };
 }
 
-// The native window mode is fixed until the window is recreated. Keep saved
-// preferences separate from the appearance that the current window can use.
+// Keep saved preferences separate from the appearance the current window can use.
 export function resolveWindowBackground(
   value: WindowBackground,
   activeEnabled: boolean,
@@ -41,13 +40,37 @@ export function resolveWindowBackground(
     : { ...DEFAULT_WINDOW_BACKGROUND };
 }
 
-// System Acrylic and per-pixel transparency must not share the same Windows HWND setup.
+// Keep the Windows HWND non-layered in every mode. DWM owns its frame,
+// shadow, animations and corners; composition is applied independently.
 export function getWindowComposition(value: WindowBackground, platform: string, build: number) {
   const systemMaterial = value.enabled && value.frosted && platform === 'win32' && build >= 22621;
   return {
-    transparent: value.enabled && !systemMaterial,
+    transparent: value.enabled && platform !== 'win32' && !(platform === 'darwin' && value.frosted),
     systemMaterial,
-    clientCornerRadius:
-      value.enabled && !systemMaterial && platform === 'win32' && build >= 22000 ? 8 : 0,
+    clientCornerRadius: 0,
+  };
+}
+
+/** Resolve effects against the immutable BrowserWindow.transparent creation option. */
+export function resolveRunningWindowBackground(
+  value: WindowBackground,
+  platform: string,
+  transparent: boolean,
+) {
+  const wanted = normalizeWindowBackground(value);
+  if (platform === 'win32') return { background: wanted, restartRequired: false };
+  if (platform === 'darwin') {
+    const needsTransparentWindow = wanted.enabled && !wanted.frosted;
+    return {
+      // Vibrancy is independent of transparent. Clear cannot be enabled on an opaque window.
+      background:
+        needsTransparentWindow && !transparent ? { ...DEFAULT_WINDOW_BACKGROUND } : wanted,
+      restartRequired: needsTransparentWindow !== transparent,
+    };
+  }
+  // Linux has no Electron backdrop-material API; preserve the current native mode until restart.
+  return {
+    background: resolveWindowBackground(wanted, transparent, false),
+    restartRequired: wanted.enabled !== transparent,
   };
 }

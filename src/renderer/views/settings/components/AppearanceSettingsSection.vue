@@ -42,9 +42,31 @@ const restartForBackground = async () => {
 };
 const showAccentPicker = ref(false);
 const showBackgroundPicker = ref(false);
-const backgroundControlsDisabled = computed(
-  () => !settingStore.windowBackground.enabled || !settingStore.windowBackgroundActiveEnabled,
+const backgroundMode = computed(() =>
+  !settingStore.windowBackground.enabled
+    ? 'off'
+    : settingStore.windowBackground.frosted
+      ? 'frosted'
+      : 'transparent',
 );
+const backgroundModeOptions = computed(() => [
+  { label: '关闭', value: 'off' },
+  { label: '透明', value: 'transparent' },
+  {
+    label: settingStore.supportsWindowFrost ? '毛玻璃' : '毛玻璃（暂不支持）',
+    value: 'frosted',
+    disabled: !settingStore.supportsWindowFrost,
+  },
+]);
+const setBackgroundMode = (value: unknown) => {
+  if (value !== 'off' && value !== 'transparent' && value !== 'frosted') return;
+  if (value === 'frosted' && !settingStore.supportsWindowFrost) return;
+  showBackgroundPicker.value = false;
+  return settingStore.setWindowBackground({
+    enabled: value !== 'off',
+    frosted: value === 'frosted',
+  });
+};
 const accentPresetValues = ACCENT_PRESETS.map((item) => item.color);
 const title = sectionTitles.appearance;
 const accentPresets = ACCENT_PRESETS;
@@ -75,14 +97,33 @@ const isAccentGradientDefault = computed(
     <div class="settings-divider"></div>
     <div class="settings-item">
       <div class="space-y-1">
-        <h3 class="font-semibold">透明背景</h3>
-        <p class="text-sm text-text-secondary">默认关闭；开启或关闭后，重启应用生效</p>
+        <h3 class="font-semibold">窗口背景效果</h3>
+        <p class="text-sm text-text-secondary">
+          {{
+            settingStore.windowBackgroundLive
+              ? '保留系统窗口动画、边框和原生按钮；切换立即生效'
+              : settingStore.windowBackgroundFrostLive
+                ? '关闭与毛玻璃可即时切换；进出透明模式需重启'
+                : '透明效果取决于桌面合成器；切换后需重启，暂不支持毛玻璃'
+          }}
+        </p>
+        <p
+          v-if="settingStore.windowBackgroundUnavailableReason"
+          class="text-sm text-text-secondary"
+          role="status"
+        >
+          {{ settingStore.windowBackgroundUnavailableReason }}
+        </p>
         <p
           v-if="settingStore.windowBackgroundRestartRequired"
           class="text-sm text-primary-text"
           role="status"
         >
-          设置已更改，重启应用后生效
+          {{
+            settingStore.windowBackgroundActiveEnabled
+              ? '重启应用后完整应用窗口效果'
+              : '设置已保存，重启应用后生效'
+          }}
           <button
             type="button"
             class="ml-2 cursor-pointer underline underline-offset-4 disabled:cursor-wait disabled:opacity-50"
@@ -93,90 +134,73 @@ const isAccentGradientDefault = computed(
           </button>
         </p>
       </div>
-      <Switch
-        :model-value="settingStore.windowBackground.enabled"
+      <Select
+        class="w-45 shrink-0"
+        aria-label="窗口背景效果"
+        :model-value="backgroundMode"
+        :options="backgroundModeOptions"
         :disabled="restarting"
-        @update:model-value="settingStore.setWindowBackground({ enabled: Boolean($event) })"
+        @update:model-value="setBackgroundMode"
       />
     </div>
-    <div class="settings-divider"></div>
-    <div class="settings-item">
-      <div class="space-y-1">
-        <h3 class="font-semibold">背景透明度</h3>
-        <p class="text-sm text-text-secondary">
-          0% 为不透明；应用于主界面及封面/纯歌词页，写真模式保持原样
-        </p>
+    <template v-if="backgroundMode === 'transparent'">
+      <div class="settings-divider"></div>
+      <div class="settings-item">
+        <div class="space-y-1">
+          <h3 class="font-semibold">背景透明度</h3>
+          <p class="text-sm text-text-secondary">
+            0% 为不透明；应用于主界面及封面/纯歌词页，写真模式保持原样
+          </p>
+        </div>
+        <Slider
+          class="w-48"
+          :model-value="settingStore.windowBackground.transparency"
+          :min="0"
+          :max="100"
+          :step="5"
+          show-value
+          value-suffix="%"
+          aria-label="背景透明度"
+          :disabled="restarting"
+          @update:model-value="settingStore.setWindowBackground({ transparency: $event })"
+        />
       </div>
-      <Slider
-        class="w-48"
-        :model-value="settingStore.windowBackground.transparency"
-        :min="0"
-        :max="100"
-        :step="5"
-        show-value
-        value-suffix="%"
-        aria-label="背景透明度"
-        :disabled="backgroundControlsDisabled || settingStore.windowBackground.frosted"
-        @update:model-value="settingStore.setWindowBackground({ transparency: $event })"
+      <div class="settings-divider"></div>
+      <div class="settings-item">
+        <div class="space-y-1">
+          <h3 class="font-semibold">背景底色</h3>
+          <p class="text-sm text-text-secondary">
+            {{ settingStore.windowBackground.color ? '自定义底色' : '跟随深浅色主题' }}
+          </p>
+        </div>
+        <div class="flex items-center gap-3">
+          <button
+            class="settings-color-reset disabled:cursor-default"
+            :disabled="restarting || !settingStore.windowBackground.color"
+            @click="settingStore.setWindowBackground({ color: '' })"
+          >
+            跟随主题
+          </button>
+          <button
+            class="settings-color-swatch"
+            aria-label="选择背景底色"
+            :disabled="restarting"
+            :style="{
+              background: settingStore.windowBackground.color || 'var(--surface-main-base)',
+            }"
+            @click="showBackgroundPicker = true"
+          ></button>
+        </div>
+      </div>
+      <ColorPickerDialog
+        :open="showBackgroundPicker"
+        title="选择背景底色"
+        :value="settingStore.windowBackground.color || (themeStore.isDark ? '#26262a' : '#f5f5f7')"
+        :presets="accentPresetValues"
+        @update:open="showBackgroundPicker = $event"
+        @confirm="(color: string) => settingStore.setWindowBackground({ color })"
       />
-    </div>
-    <div class="settings-divider"></div>
-    <div class="settings-item">
-      <div class="space-y-1">
-        <h3 class="font-semibold">毛玻璃</h3>
-        <p class="text-sm text-text-secondary">
-          {{
-            settingStore.supportsWindowFrost
-              ? settingStore.windowBackgroundActiveFrosted !== null
-                ? '使用系统模糊效果，与底色及其透明度调节互斥；切换后重启生效'
-                : '使用系统模糊效果，与底色及其透明度调节互斥；关闭后恢复原设置'
-              : '当前系统不支持毛玻璃，可使用背景透明度'
-          }}
-        </p>
-      </div>
-      <Switch
-        :model-value="settingStore.windowBackground.frosted"
-        :disabled="backgroundControlsDisabled || !settingStore.supportsWindowFrost"
-        @update:model-value="settingStore.setWindowBackground({ frosted: Boolean($event) })"
-      />
-    </div>
-    <div class="settings-divider"></div>
-    <div class="settings-item">
-      <div class="space-y-1">
-        <h3 class="font-semibold">背景底色</h3>
-        <p class="text-sm text-text-secondary">
-          {{ settingStore.windowBackground.color ? '自定义底色' : '跟随深浅色主题' }}
-        </p>
-      </div>
-      <div class="flex items-center gap-3">
-        <button
-          class="settings-color-reset disabled:cursor-default"
-          :disabled="
-            backgroundControlsDisabled ||
-            settingStore.windowBackground.frosted ||
-            !settingStore.windowBackground.color
-          "
-          @click="settingStore.setWindowBackground({ color: '' })"
-        >
-          跟随主题
-        </button>
-        <button
-          class="settings-color-swatch"
-          aria-label="选择背景底色"
-          :disabled="backgroundControlsDisabled || settingStore.windowBackground.frosted"
-          :style="{ background: settingStore.windowBackground.color || 'var(--surface-main-base)' }"
-          @click="showBackgroundPicker = true"
-        ></button>
-      </div>
-    </div>
-    <ColorPickerDialog
-      :open="showBackgroundPicker"
-      title="选择背景底色"
-      :value="settingStore.windowBackground.color || (themeStore.isDark ? '#26262a' : '#f5f5f7')"
-      :presets="accentPresetValues"
-      @update:open="showBackgroundPicker = $event"
-      @confirm="(color: string) => settingStore.setWindowBackground({ color })"
-    />
+    </template>
     <div class="settings-divider"></div>
     <div class="settings-item">
       <div class="space-y-1">

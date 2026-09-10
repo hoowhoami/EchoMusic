@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import WindowControls from './WindowControls.vue';
 import { computed, watch, ref, onMounted, onUnmounted, nextTick } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { getSearchSuggest, getSearchDefault } from '@/api/search';
@@ -17,14 +18,10 @@ import Dialog from '@/components/ui/Dialog.vue';
 import {
   iconChevronLeft,
   iconChevronRight,
-  iconMinus,
-  iconSquare,
   iconX,
   iconSearch,
   iconMicrophone,
-  iconFullscreen,
   iconPanelLeft,
-  iconPictureInPicture,
   iconClipboardList,
   iconHeadphones,
 } from '@/icons';
@@ -82,14 +79,6 @@ const updateNavState = () => {
   const skipCurrent = route.matched.some((record) => record.meta?.skipHistory === true);
   canGoBack.value = !skipCurrent && !!historyState?.back;
   canGoForward.value = !skipCurrent && !!historyState?.forward;
-};
-
-const handleControl = (action: 'minimize' | 'maximize' | 'close' | 'fullscreen') => {
-  window.electron.windowControl(action);
-};
-
-const openMiniPlayer = () => {
-  void window.electron?.miniPlayer?.show();
 };
 
 const goBack = () => {
@@ -271,14 +260,25 @@ onUnmounted(() => {
 
 <template>
   <header
-    ref="titleBarRef"
-    class="title-bar flex items-center shrink-0 select-none transition-colors duration-300 z-200 bg-transparent relative"
+    class="native-titlebar title-bar flex items-center shrink-0 select-none transition-colors duration-300 z-200 bg-transparent relative"
   >
     <!-- 拖动层：绝对定位铺满标题栏 -->
     <div class="drag-region"></div>
 
     <!-- 1. 左侧：导航按钮 -->
-    <div class="titlebar-nav flex items-center gap-1 no-drag relative z-10" :class="navStartClass">
+    <div
+      class="titlebar-nav flex items-center gap-1 no-drag relative z-10"
+      :class="navStartClass"
+      :style="
+        isMac
+          ? {
+              paddingLeft: `max(${settingStore.sidebarCollapseEnabled ? 16 : 24}px, calc(var(--window-controls-left-inset, 0px) - ${props.isSidebarCollapsed ? 80 : 230}px))`,
+            }
+          : {
+              paddingLeft: `max(16px, calc(var(--window-controls-left-inset, 0px) - ${props.isSidebarCollapsed ? 80 : 230}px + 16px))`,
+            }
+      "
+    >
       <!-- 侧边栏折叠按钮 -->
       <Button
         v-if="settingStore.sidebarCollapseEnabled"
@@ -515,54 +515,7 @@ onUnmounted(() => {
     <!-- 2. 中间：拖拽区域 -->
     <div class="flex-1 h-full"></div>
 
-    <!-- 3. 右侧：mini 模式与窗口控制 -->
-    <div class="window-controls flex items-center no-drag h-full relative z-10">
-      <Button
-        variant="unstyled"
-        size="none"
-        @click="openMiniPlayer"
-        class="control-btn mini-control-btn"
-        tooltip="mini 模式"
-      >
-        <Icon :icon="iconPictureInPicture" width="16" height="16" />
-      </Button>
-      <template v-if="!isMac">
-        <Button
-          variant="unstyled"
-          size="none"
-          @click="handleControl('minimize')"
-          class="control-btn"
-        >
-          <Icon :icon="iconMinus" width="14" height="14" />
-        </Button>
-        <Button
-          v-if="settingStore.showFullscreenButton"
-          variant="unstyled"
-          size="none"
-          @click="handleControl('fullscreen')"
-          class="control-btn control-btn--fullscreen"
-          tooltip="全屏"
-        >
-          <Icon :icon="iconFullscreen" width="14" height="14" class="window-control-icon--static" />
-        </Button>
-        <Button
-          variant="unstyled"
-          size="none"
-          @click="handleControl('maximize')"
-          class="control-btn"
-        >
-          <Icon :icon="iconSquare" width="13" height="13" />
-        </Button>
-        <Button
-          variant="unstyled"
-          size="none"
-          @click="handleControl('close')"
-          class="control-btn hover:bg-red-500 hover:text-white"
-        >
-          <Icon :icon="iconX" width="14" height="14" />
-        </Button>
-      </template>
-    </div>
+    <WindowControls show-mini-player />
   </header>
 
   <!-- 任务中心弹窗 -->
@@ -656,7 +609,7 @@ onUnmounted(() => {
 
 <style scoped>
 .title-bar {
-  height: 46px;
+  height: max(46px, calc(35px / var(--window-zoom-factor, 1)));
 }
 
 .titlebar-nav {
@@ -694,49 +647,6 @@ onUnmounted(() => {
 .tb-icon-bold :deep(circle),
 .tb-icon-bold :deep(polyline) {
   stroke-width: 2.5 !important;
-}
-
-.control-btn {
-  width: 48px;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--color-text-main);
-  background: transparent;
-  border: none;
-  transition: all 0.2s;
-}
-
-.mini-control-btn {
-  width: 40px;
-  color: var(--color-text-main);
-  opacity: 0.68;
-}
-
-.control-btn:hover {
-  background-color: var(--control-hover-bg);
-}
-
-.control-btn--fullscreen:hover {
-  background-color: var(--control-hover-bg);
-}
-
-.window-control-icon--static {
-  animation: none;
-  transition: none;
-  transform: none;
-}
-
-.control-btn:hover.hover\:bg-red-500 {
-  background-color: #ff3b30 !important;
-}
-
-.mini-control-btn:hover,
-:global(.dark) .mini-control-btn:hover {
-  background-color: transparent;
-  color: var(--color-primary-text);
-  opacity: 1;
 }
 
 /* 搜索区域 */

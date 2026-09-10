@@ -147,5 +147,5 @@ EchoMusic 的测试只验证通用 manifest、设置持久化、资源能力和 
 ```sh
 node --experimental-strip-types --test tests/audio-effect-support.test.mjs tests/dsp-provider-settings.test.ts tests/latest-request-queue.test.ts tests/effect-settings-navigation.test.mjs
 pnpm exec vue-tsc --noEmit
-cargo test --manifest-path native/echo-ffmpeg-player/Cargo.toml
+cargo test --manifest-path native/echo-audio-player/Cargo.toml
 ```

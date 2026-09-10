@@ -92,7 +92,7 @@ const SUPPORTED_IMPULSE_RESPONSE_EXTENSIONS = new Set([
 const MAX_COMMUNITY_IMPULSE_RESPONSE_BYTES = 32 * 1024 * 1024;
 const MAX_COMMUNITY_VPF_BYTES = 1024 * 1024;
 const VPF_MAGIC = Buffer.from('ViPER4WindowsX', 'ascii');
-// Keep in sync with SECTION_SIZES in native/echo-ffmpeg-player/src/vpf.rs.
+// Keep in sync with SECTION_SIZES in native/echo-audio-player/src/vpf.rs.
 const VPF_SECTION_SIZES = [0x170, 0x2e4, 0x2e8, 0x31c] as const;
 const MAX_COMMUNITY_AUDIO_PENDING_WRITE_BYTES = 4 * 1024 * 1024;
 const COMMUNITY_AUDIO_DOWNLOAD_TIMEOUT_MS = 30_000;

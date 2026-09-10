@@ -141,7 +141,8 @@ jobs:
           workspaces: |
             native/echo-audio-capture
             native/echo-media-controls
-            native/echo-ffmpeg-player
+            native/echo-platform-adaptor
+            native/echo-audio-player
             native/echo-sqlite-store
 
       - name: Add Rust cross-compile target
@@ -164,7 +165,10 @@ jobs:
           pids=()
           build_addon echo-audio-capture & pids+=("$!")
           build_addon echo-media-controls & pids+=("$!")
-          build_addon echo-ffmpeg-player & pids+=("$!")
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            build_addon echo-platform-adaptor & pids+=("$!")
+          fi
+          build_addon echo-audio-player & pids+=("$!")
           build_addon echo-sqlite-store & pids+=("$!")
 
           status=0
@@ -178,14 +182,14 @@ jobs:
         shell: bash
         run: |
           set -e
-          addon="native/echo-ffmpeg-player/echo-ffmpeg-player.node"
+          addon="native/echo-audio-player/echo-audio-player.node"
           if [ ! -f "$addon" ]; then
             echo "ERROR: ffmpeg player addon not found: $addon"
             exit 1
           fi
 
-          otool -L "$addon" | tee /tmp/echo-ffmpeg-player-otool.txt
-          if grep -E 'lib(avcodec|avformat|avutil|swresample|mpv).*\.(dylib|so)' /tmp/echo-ffmpeg-player-otool.txt; then
+          otool -L "$addon" | tee /tmp/echo-audio-player-otool.txt
+          if grep -E 'lib(avcodec|avformat|avutil|swresample|mpv).*\.(dylib|so)' /tmp/echo-audio-player-otool.txt; then
             echo "ERROR: ffmpeg player addon unexpectedly links to system FFmpeg/mpv libraries"
             exit 1
           fi
@@ -195,14 +199,14 @@ jobs:
         shell: bash
         run: |
           set -e
-          addon="native/echo-ffmpeg-player/echo-ffmpeg-player.node"
+          addon="native/echo-audio-player/echo-audio-player.node"
           if [ ! -f "$addon" ]; then
             echo "ERROR: ffmpeg player addon not found: $addon"
             exit 1
           fi
 
-          ldd "$addon" | tee /tmp/echo-ffmpeg-player-ldd.txt
-          if grep -E 'lib(avcodec|avformat|avutil|swresample|mpv)\.so' /tmp/echo-ffmpeg-player-ldd.txt; then
+          ldd "$addon" | tee /tmp/echo-audio-player-ldd.txt
+          if grep -E 'lib(avcodec|avformat|avutil|swresample|mpv)\.so' /tmp/echo-audio-player-ldd.txt; then
             echo "ERROR: ffmpeg player addon unexpectedly links to system FFmpeg/mpv libraries"
             exit 1
           fi
@@ -256,7 +260,11 @@ jobs:
         shell: bash
         run: |
           set -e
-          for addon in echo-audio-capture echo-media-controls echo-ffmpeg-player echo-sqlite-store; do
+          addons=(echo-audio-capture echo-media-controls echo-audio-player echo-sqlite-store)
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            addons+=(echo-platform-adaptor)
+          fi
+          for addon in "${addons[@]}"; do
             matches=$(find release \( \
               -path "*/resources/native/${addon}.node" -o \
               -path "*/Contents/Resources/native/${addon}.node" \

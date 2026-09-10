@@ -43,5 +43,5 @@ actual system headers.
 When upstream `pipewire` publishes a release whose Rust feature gates are
 compatible with older distro headers, or CI moves to headers that provide these
 symbols, remove the `[patch.crates-io]` entry from
-`native/echo-ffmpeg-player/Cargo.toml`, delete this vendor directory, run
+`native/echo-audio-player/Cargo.toml`, delete this vendor directory, run
 `cargo update -p pipewire`, and verify Linux CI with PipeWire enabled.

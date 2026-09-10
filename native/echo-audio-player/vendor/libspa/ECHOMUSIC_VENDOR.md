@@ -41,5 +41,5 @@ EchoMusic audio path does not use these video metadata helpers.
 
 When upstream publishes a fixed `libspa` release compatible with
 `libspa-sys 0.10.x`, remove the `[patch.crates-io]` entry from
-`native/echo-ffmpeg-player/Cargo.toml`, delete this vendor directory, run
+`native/echo-audio-player/Cargo.toml`, delete this vendor directory, run
 `cargo update -p libspa`, and verify Linux CI with PipeWire enabled.

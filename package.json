@@ -1,6 +1,6 @@
 {
   "name": "echo-music",
-  "version": "2.3.2-beta.1",
+  "version": "2.3.2-beta.2",
   "description": "EchoMusic desktop client.",
   "license": "GPL-3.0-only",
   "author": {
@@ -108,8 +108,8 @@
         ]
       },
       {
-        "from": "native/echo-ffmpeg-player/echo-ffmpeg-player.node",
-        "to": "native/echo-ffmpeg-player.node",
+        "from": "native/echo-audio-player/echo-audio-player.node",
+        "to": "native/echo-audio-player.node",
         "filter": [
           "**/*"
         ]
@@ -192,6 +192,12 @@
     },
     "win": {
       "icon": "icons/icon.ico",
+      "extraResources": [
+        {
+          "from": "native/echo-platform-adaptor/echo-platform-adaptor.node",
+          "to": "native/echo-platform-adaptor.node"
+        }
+      ],
       "target": [
         "nsis"
       ]

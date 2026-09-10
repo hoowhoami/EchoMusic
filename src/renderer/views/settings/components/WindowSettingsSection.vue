@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
+import { useWindowZoom } from '@/composables/useWindowZoom';
+const { percent, zoomIn, zoomOut, reset, canZoomIn, canZoomOut } = useWindowZoom();
 import { useSettingStore } from '@/stores/setting';
 import type { CloseBehavior } from '../../../../shared/app';
 import Select from '@/components/ui/Select.vue';
@@ -26,6 +28,38 @@ const supportsCustomWindowControls = computed(() => platform === 'win32' || plat
       />
     </template>
 
+    <div class="settings-item">
+      <div class="space-y-1">
+        <h3 class="font-semibold">界面缩放</h3>
+        <p class="text-sm text-text-secondary">
+          立即调整整个界面并自动保存。{{ platform === 'darwin' ? '⌘' : 'Ctrl' }} + 加号 /
+          减号缩放，0 重置
+        </p>
+      </div>
+      <div class="flex items-center gap-3 shrink-0" role="group" aria-label="界面缩放">
+        <button
+          type="button"
+          class="px-3 py-2 disabled:opacity-40"
+          aria-label="缩小界面"
+          :disabled="!canZoomOut"
+          @click="zoomOut"
+        >
+          −
+        </button>
+        <output class="min-w-12 text-center" aria-live="polite">{{ percent }}%</output>
+        <button
+          type="button"
+          class="px-3 py-2 disabled:opacity-40"
+          aria-label="放大界面"
+          :disabled="!canZoomIn"
+          @click="zoomIn"
+        >
+          +
+        </button>
+        <button type="button" class="px-3 py-2 text-primary-text" @click="reset">重置</button>
+      </div>
+    </div>
+    <div class="settings-divider"></div>
     <div class="settings-item">
       <div class="space-y-1">
         <h3 class="font-semibold">记住窗口大小</h3>

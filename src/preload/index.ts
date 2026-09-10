@@ -1536,3 +1536,42 @@ if (initialBackgroundArgument) {
     JSON.parse(initialBackgroundArgument.slice('--echo-window-background='.length)),
   );
 }
+
+// Native titlebar geometry is expressed in DIPs while DOM layout uses zoomed CSS pixels.
+const macTitlebar = typeof process !== 'undefined' && process.platform === 'darwin';
+let nativeFullscreen = false;
+const controlsOverlay = (
+  navigator as Navigator & {
+    windowControlsOverlay?: EventTarget & { visible: boolean; getTitlebarAreaRect(): DOMRect };
+  }
+).windowControlsOverlay;
+const syncWindowZoomGeometry = () => {
+  const root = document.documentElement;
+  if (!root) return;
+  const factor = webFrame.getZoomFactor();
+  root.style.setProperty('--window-zoom-factor', String(factor));
+  // Fullscreen returns an empty rectangle; never reserve an entire viewport for it.
+  const rect =
+    !nativeFullscreen && controlsOverlay?.visible ? controlsOverlay.getTitlebarAreaRect() : null;
+  const inset = rect && rect.width > 0 ? Math.max(0, window.innerWidth - rect.x - rect.width) : 0;
+  // macOS keeps the 14/14 traffic-light anchor aligned with the collapsed sidebar.
+  // Reserve its 80x46 DIP strip centrally; WCO may report a wider safe area.
+  const leftInset = Math.max(
+    rect && rect.width > 0 ? Math.max(0, rect.x) : 0,
+    macTitlebar && !nativeFullscreen ? 80 / factor : 0,
+  );
+  root.style.setProperty('--window-controls-inset', `${inset}px`);
+  root.style.setProperty('--window-controls-left-inset', `${leftInset}px`);
+  root.style.setProperty(
+    '--window-controls-left-height',
+    leftInset > 0 ? (macTitlebar ? `${46 / factor}px` : `max(46px, ${35 / factor}px)`) : '0px',
+  );
+};
+ipcRenderer.on('window:fullscreen-changed', (_event, fullscreen: boolean) => {
+  nativeFullscreen = fullscreen;
+  syncWindowZoomGeometry();
+});
+ipcRenderer.on('window:zoom-changed', syncWindowZoomGeometry);
+controlsOverlay?.addEventListener('geometrychange', syncWindowZoomGeometry);
+window.addEventListener('resize', syncWindowZoomGeometry);
+window.addEventListener('DOMContentLoaded', syncWindowZoomGeometry, { once: true });

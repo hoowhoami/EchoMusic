@@ -1,3 +1,4 @@
+import { MAIN_WINDOW_DEFAULT_SIZE } from '../windowSizing';
 import { DEFAULT_WINDOW_BACKGROUND, type WindowBackground } from '../../shared/window-background';
 import type { CloseBehavior, ThemeMode } from '../../shared/app';
 import type { DesktopLyricSettings } from '../../shared/desktop-lyric';
@@ -12,7 +13,6 @@ export type MainWindowState = {
   x?: number;
   y?: number;
   isMaximized: boolean;
-  boundsMode?: 'window' | 'content';
 };
 
 export type MiniPlayerWindowState = {
@@ -27,6 +27,7 @@ export type MainAppSettings = {
   closeBehavior: CloseBehavior;
   theme: ThemeMode;
   windowBackground: WindowBackground;
+  windowZoomLevel: number;
   rememberWindowSize: boolean;
   preventSleep: boolean;
   disableGpuAcceleration: boolean;
@@ -56,6 +57,7 @@ export const DEFAULT_MAIN_APP_SETTINGS: MainAppSettings = {
   closeBehavior: 'tray',
   theme: 'system',
   windowBackground: { ...DEFAULT_WINDOW_BACKGROUND },
+  windowZoomLevel: 0,
   rememberWindowSize: true,
   preventSleep: true,
   disableGpuAcceleration: false,
@@ -67,8 +69,7 @@ export const DEFAULT_MAIN_APP_SETTINGS: MainAppSettings = {
   taskbarCoverPreview: false,
   taskbarProgress: true,
   windowState: {
-    width: 1100,
-    height: 750,
+    ...MAIN_WINDOW_DEFAULT_SIZE,
     isMaximized: false,
   },
   miniPlayerWindowState: {

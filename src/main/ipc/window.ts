@@ -18,6 +18,7 @@ import type {
 import type { IpcContext } from './types';
 import type { SleepTimerActionResult } from '../../shared/sleep-timer';
 import { requestSystemShutdown } from '../systemShutdown';
+import { isWindowFullscreen, setWindowFullscreen } from '../window/fullscreen';
 
 export const registerWindowHandlers = ({ getMainWindow }: IpcContext) => {
   ipcRegistry.registerHandler(
@@ -52,10 +53,9 @@ export const registerWindowHandlers = ({ getMainWindow }: IpcContext) => {
     if (!win || win !== getMainWindow()) return null;
     const readState = (): WindowFrameState => ({
       clientCorners: getMainWindowClientCornerRadius() > 0,
-      visible:
-        !win.isMaximized() &&
-        !win.isFullScreen() &&
-        !(process.platform === 'win32' && win.isSnapped?.()),
+      // Windows owns the complete DWM frame, including maximized/snapped corners.
+      // Keep the decorative alpha-frame only on platforms that still need it.
+      visible: process.platform !== 'win32' && !win.isMaximized() && !win.isFullScreen(),
       radius:
         process.platform === 'darwin'
           ? 10
@@ -96,7 +96,7 @@ export const registerWindowHandlers = ({ getMainWindow }: IpcContext) => {
         if (browserWindow.isMaximized()) browserWindow.unmaximize();
         else browserWindow.maximize();
       } else if (action === 'fullscreen') {
-        browserWindow.setFullScreen(!browserWindow.isFullScreen());
+        setWindowFullscreen(browserWindow, !isWindowFullscreen(browserWindow));
       } else if (action === 'close') {
         const mainWindow = getMainWindow();
         if (mainWindow && browserWindow.id === mainWindow.id) {

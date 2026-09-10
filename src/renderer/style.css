@@ -1034,21 +1034,6 @@ html.app-background-transparent
   background: transparent !important;
 }
 
-/* Keep the transparent window silhouette separate from its translucent background. */
-html.app-background-enabled.app-window-frame::after {
-  content: '';
-  position: fixed;
-  inset: 0;
-  z-index: 2147483647;
-  pointer-events: none;
-  box-sizing: border-box;
-  border: 1px solid rgb(0 0 0 / 18%);
-  border-radius: var(--app-window-frame-radius, 0px);
-}
-html.dark.app-background-enabled.app-window-frame::after {
-  border-color: rgb(255 255 255 / 22%);
-}
-
 /* Clip the entire composited document, including teleported lyrics, menus and the
    single background layer. Unlike a native region this retains edge alpha. */
 html[data-echo-client-corners] {
@@ -1057,4 +1042,9 @@ html[data-echo-client-corners] {
 }
 html[data-echo-client-corners] body {
   background: transparent !important;
+}
+
+/* Preload tracks WCO geometry across zoom, fullscreen and display changes. */
+.native-titlebar {
+  padding-right: var(--window-controls-inset, 0px);
 }

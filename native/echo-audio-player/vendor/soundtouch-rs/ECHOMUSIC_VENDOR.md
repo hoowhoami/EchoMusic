@@ -43,9 +43,9 @@ rsync -a --delete --exclude .git \
   --exclude src/spectral \
   --exclude benches/spectral_bench.rs \
   /tmp/soundtouch-rs-update/ \
-  native/echo-ffmpeg-player/vendor/soundtouch-rs/
+  native/echo-audio-player/vendor/soundtouch-rs/
 ```
 
 After syncing, update the `Vendored commit` value above; re-apply the Cargo feature, exports, README, lockfile, and compatibility patches listed above; review local diffs; and run the native player checks. In particular, verify that `src/spectral/LICENSE-SIGNALSMITH.md` is still present before committing.
 
-Do not commit `native/echo-ffmpeg-player/vendor/soundtouch-rs/.git`; the vendor tree should remain regular files in the EchoMusic repository.
+Do not commit `native/echo-audio-player/vendor/soundtouch-rs/.git`; the vendor tree should remain regular files in the EchoMusic repository.

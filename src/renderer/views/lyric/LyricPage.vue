@@ -656,23 +656,10 @@ onUnmounted(() => {
   background: rgba(0, 0, 0, 0.5);
 }
 
-/* 强制 OverlayHeader 控制按钮为白色 */
-.lyric-page :deep(.overlay-control-btn) {
-  color: white;
-}
-
-.lyric-page :deep(.overlay-control-btn:hover) {
-  background: rgba(255, 255, 255, 0.1);
-}
-
-.lyric-page :deep(.overlay-control-btn--mini:hover) {
-  background: transparent;
-  color: var(--color-primary-text);
-}
-
-.lyric-page :deep(.overlay-control-btn--close:hover) {
-  background: #ff3b30;
-  color: white;
+/* The return/close, Mini and fullscreen actions share the same foreground states. */
+.lyric-page {
+  --window-action-color: rgba(255, 255, 255, 0.7);
+  --window-action-hover-color: #fff;
 }
 
 .close-btn {
@@ -682,12 +669,12 @@ onUnmounted(() => {
   width: 32px;
   height: 32px;
   border-radius: 50%;
-  color: rgba(255, 255, 255, 0.7);
+  color: var(--window-action-color);
   transition: all 0.2s ease;
 }
 
 .close-btn:hover {
-  color: white;
+  color: var(--window-action-hover-color);
   background: rgba(255, 255, 255, 0.1);
 }
 

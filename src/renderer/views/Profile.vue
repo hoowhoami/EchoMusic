@@ -36,6 +36,11 @@ import {
 } from '@/icons';
 import PageScrollContainer from '@/components/ui/PageScrollContainer.vue';
 import { formatBirthdayForInput } from '../../shared/birthday';
+import {
+  formatAccountAge,
+  formatListeningDuration,
+  getGradeProgress,
+} from '../../shared/profileStats';
 
 interface VipLevelInfo {
   product_type?: string;
@@ -66,6 +71,21 @@ const showDeviceManager = ref(false);
 const showKickConfirm = ref(false);
 const pendingKickDevice = ref<LoginDeviceSession | null>(null);
 const showProfileEditor = ref(false);
+const showGradeDetail = ref(false);
+const gradeLoading = ref(false);
+const gradeProgress = computed(() => getGradeProgress(detail.value));
+const listeningDuration = computed(() =>
+  formatListeningDuration(detail.value.d_sec, detail.value.duration),
+);
+const openGradeDetail = async () => {
+  showGradeDetail.value = true;
+  gradeLoading.value = true;
+  try {
+    await userStore.fetchGradeInfo();
+  } finally {
+    gradeLoading.value = false;
+  }
+};
 const isSavingProfile = ref(false);
 const isUploadingAvatar = ref(false);
 const avatarInput = ref<HTMLInputElement | null>(null);
@@ -266,27 +286,6 @@ const location = computed(() => {
   }
   return '-';
 });
-
-// 格式化逻辑
-const formatLeLing = (rtime: any) => {
-  if (!rtime) return '未知';
-  const timestamp = Number.parseInt(String(rtime), 10);
-  if (!Number.isFinite(timestamp) || timestamp <= 0) return '未知';
-  const start = new Date(timestamp * 1000);
-  const diff = Date.now() - start.getTime();
-  if (diff < 0) return '未知';
-  const days = Math.max(1, Math.floor(diff / (1000 * 60 * 60 * 24)));
-  if (days > 365) return `${Math.floor(days / 365)} 年`;
-  if (days > 30) return `${Math.floor(days / 30)} 个月`;
-  return `${days} 天`;
-};
-
-const formatDuration = (minutes: any) => {
-  if (!minutes) return '0 小时';
-  const m = parseInt(minutes) || 0;
-  if (m > 60) return `${Math.floor(m / 60)} 小时 ${m % 60} 分钟`;
-  return `${m} 分钟`;
-};
 
 const getVipExpireText = (vipData: any) => {
   if (!vipData?.vip_end_time) return null;
@@ -554,12 +553,20 @@ onMounted(() => loadData());
                     </p>
 
                     <div class="flex items-center gap-6">
-                      <div class="flex flex-col">
-                        <span class="text-[15px] font-black">Lv.{{ detail.p_grade || 0 }}</span>
-                        <span class="text-[10px] opacity-60 uppercase font-bold tracking-wider"
-                          >等级</span
+                      <button
+                        type="button"
+                        class="grade-entry flex flex-col text-left"
+                        aria-label="查看我的等级与升级进度"
+                        @click="openGradeDetail"
+                      >
+                        <span class="text-[15px] font-black"
+                          >Lv.{{ gradeProgress.grade ?? '—' }}
+                          <span class="text-primary-text">›</span></span
                         >
-                      </div>
+                        <span class="text-[10px] opacity-60 uppercase font-bold tracking-wider"
+                          >升级进度</span
+                        >
+                      </button>
                       <div class="w-px h-4 bg-[var(--border-subtle)]"></div>
                       <div class="flex flex-col">
                         <span class="text-[15px] font-black">{{ detail.follows || 0 }}</span>
@@ -611,13 +618,11 @@ onMounted(() => loadData());
                   </div>
                   <div class="flex items-center justify-between px-4 py-3">
                     <span class="text-[13px] opacity-60 font-bold">乐龄</span>
-                    <span class="text-[13px] font-black">{{ formatLeLing(detail.rtime) }}</span>
+                    <span class="text-[13px] font-black">{{ formatAccountAge(detail.rtime) }}</span>
                   </div>
                   <div class="flex items-center justify-between px-4 py-3">
                     <span class="text-[13px] opacity-60 font-bold">累计听歌</span>
-                    <span class="text-[13px] font-black">{{
-                      formatDuration(detail.duration)
-                    }}</span>
+                    <span class="text-[13px] font-black">{{ listeningDuration }}</span>
                   </div>
                   <div class="flex items-center justify-between px-4 py-3">
                     <span class="text-[13px] opacity-60 font-bold">所在地区</span>
@@ -863,6 +868,94 @@ onMounted(() => loadData());
     </Dialog>
 
     <ContentBlacklistDialog v-model:open="showContentBlacklist" />
+    <Dialog
+      v-model:open="showGradeDetail"
+      title="我的等级"
+      description="每一次聆听，都在积累成长。"
+      show-close
+      content-class="profile-grade-dialog"
+    >
+      <div class="grade-card" :aria-busy="gradeLoading">
+        <div class="flex items-center justify-between gap-4">
+          <div>
+            <p class="text-xs text-text-secondary">当前等级</p>
+            <p class="text-5xl font-black tracking-tight mt-2">
+              Lv.{{ gradeProgress.grade ?? '—' }}
+            </p>
+          </div>
+          <svg class="grade-planet" viewBox="0 0 128 112" fill="none" aria-hidden="true">
+            <!-- 唱片化作星球，轨道前后分层；使用主题色适配明暗外观。 -->
+            <ellipse class="grade-planet-halo" cx="64" cy="58" rx="48" ry="45" />
+            <path class="grade-planet-orbit" d="M 13 78 C -6 58 93 14 115 34" />
+            <circle class="grade-planet-disc" cx="64" cy="56" r="34" />
+            <g class="grade-planet-grooves">
+              <circle cx="64" cy="56" r="28" />
+              <circle cx="64" cy="56" r="23" />
+              <circle cx="64" cy="56" r="18" />
+            </g>
+            <path class="grade-planet-shine" d="M 39 49 A 26 26 0 0 1 59 31" />
+            <circle class="grade-planet-label" cx="64" cy="56" r="11" />
+            <circle class="grade-planet-hole" cx="64" cy="56" r="3" />
+            <path class="grade-planet-orbit" d="M 115 34 C 139 53 34 101 13 78" />
+            <circle class="grade-planet-moon" cx="101" cy="65" r="4" />
+            <path
+              class="grade-planet-star"
+              d="M 25 16 L 27 22 L 33 24 L 27 26 L 25 32 L 23 26 L 17 24 L 23 22 Z"
+            />
+            <path
+              class="grade-planet-note"
+              d="M 104 15 V 5 L 112 3 V 12 M 104 15 C 104 19 97 19 97 16 C 97 13 104 12 104 15 Z M 112 12 C 112 16 105 16 105 13 C 105 10 112 9 112 12 Z"
+            />
+            <circle class="grade-planet-star" cx="90" cy="97" r="2" />
+            <circle class="grade-planet-star" cx="13" cy="48" r="1.5" />
+          </svg>
+        </div>
+        <template v-if="gradeProgress.available">
+          <div class="flex flex-wrap justify-between gap-2 mt-7 mb-3 text-sm">
+            <span
+              >距 Lv.{{ gradeProgress.nextGrade }} 还差
+              <strong>{{ gradeProgress.remaining?.toLocaleString() }}</strong> 经验</span
+            >
+            <span class="text-text-secondary tabular-nums"
+              >{{ gradeProgress.current?.toLocaleString() }} /
+              {{ gradeProgress.target?.toLocaleString() }}</span
+            >
+          </div>
+          <div
+            class="grade-progress-track"
+            role="progressbar"
+            aria-label="等级经验进度"
+            :aria-valuenow="
+              gradeProgress.current === null
+                ? 0
+                : Math.min(gradeProgress.current, gradeProgress.target ?? 0)
+            "
+            :aria-valuemin="0"
+            :aria-valuemax="gradeProgress.target ?? 100"
+          >
+            <div class="grade-progress-fill" :style="{ width: `${gradeProgress.percent}%` }"></div>
+          </div>
+        </template>
+        <p v-else class="mt-6 text-sm text-text-secondary" role="status">
+          {{ gradeLoading ? '正在获取升级进度…' : '暂未获取到下一等级进度，请稍后刷新' }}
+        </p>
+      </div>
+      <div class="flex justify-between items-center gap-4 py-5 text-sm">
+        <span class="text-text-secondary">累计听歌</span>
+        <strong class="tabular-nums">{{ listeningDuration }}</strong>
+      </div>
+      <template #footer>
+        <Button
+          variant="outline"
+          size="sm"
+          :loading="gradeLoading"
+          :disabled="gradeLoading"
+          @click="openGradeDetail"
+          >刷新进度</Button
+        >
+        <Button size="sm" @click="showGradeDetail = false">继续听歌</Button>
+      </template>
+    </Dialog>
 
     <Dialog
       v-model:open="showDeviceManager"
@@ -991,6 +1084,94 @@ onMounted(() => loadData());
 </template>
 
 <style scoped>
+.grade-entry {
+  border-radius: 8px;
+  cursor: pointer;
+  transition: color 160ms;
+}
+.grade-entry:hover {
+  color: var(--color-primary-text);
+}
+.grade-entry:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 5px;
+}
+.grade-card {
+  padding: 24px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 20px;
+  background: linear-gradient(
+    135deg,
+    rgba(var(--color-primary-rgb), 0.16),
+    rgba(var(--color-primary-rgb), 0.03)
+  );
+}
+.grade-planet {
+  width: 128px;
+  height: 112px;
+  flex-shrink: 0;
+  color: var(--color-primary-text);
+}
+.grade-planet-halo {
+  fill: rgba(var(--color-primary-rgb), 0.06);
+}
+.grade-planet-disc {
+  fill: var(--color-primary-text);
+  stroke: rgba(var(--color-primary-rgb), 0.3);
+  stroke-width: 2;
+}
+.grade-planet-grooves {
+  stroke: var(--color-bg-main);
+  stroke-opacity: 0.22;
+}
+.grade-planet-shine {
+  stroke: white;
+  stroke-opacity: 0.55;
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+.grade-planet-label {
+  fill: var(--color-primary);
+}
+.grade-planet-hole {
+  fill: var(--color-bg-main);
+}
+.grade-planet-orbit {
+  stroke: var(--color-primary);
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+.grade-planet-moon {
+  fill: var(--color-primary);
+  stroke: var(--color-bg-main);
+  stroke-width: 2;
+}
+.grade-planet-star {
+  fill: currentColor;
+  opacity: 0.65;
+}
+.grade-planet-note {
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+}
+@media (max-width: 420px) {
+  .grade-planet {
+    width: 96px;
+    height: 84px;
+  }
+}
+.grade-progress-track {
+  height: 8px;
+  overflow: hidden;
+  border-radius: 99px;
+  background: var(--border-subtle);
+}
+.grade-progress-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: var(--color-primary);
+}
 .user-card {
   box-shadow: 0 20px 60px -10px rgba(var(--color-primary-rgb), 0.15);
 }
@@ -1052,6 +1233,9 @@ onMounted(() => loadData());
 </style>
 
 <style>
+.dialog-content.profile-grade-dialog {
+  width: min(520px, 92vw);
+}
 .vip-expire-popover.echo-popover-content {
   padding: 12px 14px;
   border-radius: 14px;

@@ -97,6 +97,10 @@ export const useSettingStore = defineStore('setting', {
     theme: 'system' as ThemeMode,
     windowBackground: { ...DEFAULT_WINDOW_BACKGROUND },
     windowBackgroundActiveEnabled: false,
+    windowBackgroundLive: false,
+    windowBackgroundFrostLive: false,
+    windowBackgroundNeedsRestart: false,
+    windowBackgroundUnavailableReason: '',
     windowBackgroundActiveFrosted: null as boolean | null,
     supportsWindowFrost: false,
     language: 'zh-CN',
@@ -240,12 +244,7 @@ export const useSettingStore = defineStore('setting', {
         state.windowBackgroundActiveEnabled,
         state.windowBackgroundActiveFrosted,
       ),
-    windowBackgroundRestartRequired: (state) =>
-      state.windowBackground.enabled !== state.windowBackgroundActiveEnabled ||
-      (state.windowBackground.enabled &&
-        state.windowBackgroundActiveEnabled &&
-        state.windowBackgroundActiveFrosted !== null &&
-        state.windowBackground.frosted !== state.windowBackgroundActiveFrosted),
+    windowBackgroundRestartRequired: (state) => state.windowBackgroundNeedsRestart,
   },
   actions: {
     configureDspProvider(
@@ -318,6 +317,10 @@ export const useSettingStore = defineStore('setting', {
       this.windowBackgroundActiveFrosted =
         typeof result.activeFrosted === 'boolean' ? result.activeFrosted : null;
       this.supportsWindowFrost = result.supportsFrost;
+      this.windowBackgroundLive = result.live === true;
+      this.windowBackgroundFrostLive = result.frostLive === true;
+      this.windowBackgroundNeedsRestart = result.restartRequired === true;
+      this.windowBackgroundUnavailableReason = result.unavailableReason || '';
       applyWindowBackground(this.effectiveWindowBackground);
     },
     async setWindowBackground(patch: Partial<WindowBackground>) {
@@ -326,6 +329,7 @@ export const useSettingStore = defineStore('setting', {
       await window.electron?.ipcRenderer.invoke('window-background:set', {
         ...this.windowBackground,
       });
+      await this.initWindowBackground();
     },
     setTheme(theme: ThemeMode) {
       this.theme = theme;
@@ -713,6 +717,10 @@ export const useSettingStore = defineStore('setting', {
       'windowBackgroundActiveEnabled',
       'windowBackgroundActiveFrosted',
       'supportsWindowFrost',
+      'windowBackgroundLive',
+      'windowBackgroundFrostLive',
+      'windowBackgroundNeedsRestart',
+      'windowBackgroundUnavailableReason',
     ],
   },
 });

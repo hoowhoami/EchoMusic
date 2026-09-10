@@ -1,6 +1,6 @@
 # Audio Engine Invariants
 
-Design decisions in `native/echo-ffmpeg-player` that are not obvious from the code, together with
+Design decisions in `native/echo-audio-player` that are not obvious from the code, together with
 the reasoning behind them. Each entry states the rule, why the alternative was rejected, and how to
 tell if a future change has broken it.
 
