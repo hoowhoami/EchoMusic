@@ -104,13 +104,13 @@ const reorderByKeyboard = (event: KeyboardEvent, index: number) => {
         <div class="titlebar-more-menu no-drag" aria-label="更多应用">
           <div class="titlebar-more-heading">
             <span>更多应用</span>
-            <Button
-              variant="unstyled"
-              size="none"
-              class="titlebar-reset"
+            <button
+              type="button"
+              class="titlebar-reset app-focus-ring-soft"
               @click="settings.titlebarLayout = emptyTitlebarLayout()"
-              >恢复默认</Button
             >
+              恢复默认
+            </button>
           </div>
           <div ref="listRef">
             <div
@@ -299,9 +299,12 @@ body.echo-surface-translucent .titlebar-more-menu.titlebar-more-menu {
   font-size: 12px;
   text-align: left;
   color: var(--color-text-secondary);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
 }
 .titlebar-reset:hover {
-  background: var(--control-hover-bg);
+  color: var(--color-primary-text);
 }
 .titlebar-more-empty {
   padding: 12px;

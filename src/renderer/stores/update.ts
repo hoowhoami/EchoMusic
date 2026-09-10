@@ -25,6 +25,7 @@ export const useUpdateStore = defineStore('update', {
     initialized: false,
     disposeDownload: null as null | (() => void),
     checkResultListener: null as null | ((payload: unknown) => void),
+    releaseNotesListener: null as null | ((payload: unknown) => void),
   }),
   actions: {
     /** 注册 IPC 监听并从主进程拉取当前状态（恢复进度）。幂等。 */
@@ -35,6 +36,22 @@ export const useUpdateStore = defineStore('update', {
       const listener = (payload: unknown) => this.handleCheckResult(payload);
       this.checkResultListener = listener;
       window.electron?.ipcRenderer?.on('update-check-result', listener);
+      const notesListener = (payload: unknown) => {
+        if (!payload || typeof payload !== 'object') return;
+        const result = payload as UpdateCheckResult;
+        if (
+          this.checkResult?.status !== 'available' ||
+          result.latestVersion !== this.checkResult.latestVersion
+        )
+          return;
+        this.checkResult = {
+          ...this.checkResult,
+          body: result.body,
+          notesStatus: result.notesStatus,
+        };
+      };
+      this.releaseNotesListener = notesListener;
+      window.electron?.ipcRenderer?.on('update-release-notes', notesListener);
 
       this.disposeDownload =
         window.electron?.updater?.onDownloadStatus((result) => {
@@ -53,6 +70,10 @@ export const useUpdateStore = defineStore('update', {
     },
 
     dispose() {
+      if (this.releaseNotesListener) {
+        window.electron?.ipcRenderer?.off('update-release-notes', this.releaseNotesListener);
+        this.releaseNotesListener = null;
+      }
       if (this.checkResultListener) {
         window.electron?.ipcRenderer?.off('update-check-result', this.checkResultListener);
         this.checkResultListener = null;

@@ -41,6 +41,7 @@ import {
 } from '../../shared/audio';
 import type { LogSettings } from '../../shared/logging';
 import { formatUpdateCheckError, isUpdateSignatureError } from '../../shared/update-error';
+import { normalizeUpdateNotes, resolveUpdateNotes } from '../../shared/update-notes';
 import {
   getMacDmgAsset,
   MAC_MANUAL_UPDATE_MESSAGE,
@@ -894,19 +895,42 @@ export const registerSettingsHandlers = ({ getMainWindow, playerRef }: IpcContex
     if (win && !win.isDestroyed()) win.webContents.send(channel, data);
   };
 
+  const publishAvailableUpdate = (result: UpdateCheckResult, release?: GithubRelease) => {
+    result.notesStatus = result.body?.trim() ? 'ready' : 'loading';
+    lastCheckResult = result;
+    sendToRenderer('update-check-result', result);
+    if (result.notesStatus === 'ready') return;
+    void resolveUpdateNotes(
+      result.latestVersion!,
+      requestJson,
+      async (url) => {
+        const response = await networkFetch(url, { signal: AbortSignal.timeout(10_000) });
+        if (!response.ok) throw new Error(`Changelog HTTP ${response.status}`);
+        return response.text();
+      },
+      release,
+    )
+      .then((body) => {
+        // A newer check may already have replaced this result.
+        if (lastCheckResult !== result) return;
+        result.body = body;
+        result.notesStatus = body ? 'ready' : 'unavailable';
+        sendToRenderer('update-release-notes', result);
+      })
+      .catch((error) => {
+        log.warn('[Updater] Release notes unavailable:', error);
+        if (lastCheckResult !== result) return;
+        result.notesStatus = 'unavailable';
+        sendToRenderer('update-release-notes', result);
+      });
+  };
+
   // --- autoUpdater 事件 ---
   autoUpdater.on('update-available', (info) => {
     const { version: currentVersion } = getAppInfo();
     const silent = getEchoSilent();
 
-    // releaseNotes 可能是 string 或 Array<{ version: string; note: string | null }>
-    // 只展示最新版本的更新内容
-    let body = '';
-    if (typeof info.releaseNotes === 'string') {
-      body = info.releaseNotes.slice(0, 4000);
-    } else if (Array.isArray(info.releaseNotes) && info.releaseNotes.length > 0) {
-      body = (info.releaseNotes[0].note || '').trim().slice(0, 4000);
-    }
+    const body = normalizeUpdateNotes(info.releaseNotes, info.version);
 
     const result: UpdateCheckResult = {
       status: 'available',
@@ -917,8 +941,7 @@ export const registerSettingsHandlers = ({ getMainWindow, playerRef }: IpcContex
       body,
       silent,
     };
-    lastCheckResult = result;
-    sendToRenderer('update-check-result', result);
+    publishAvailableUpdate(result);
   });
 
   autoUpdater.on('update-not-available', (info) => {
@@ -1063,7 +1086,7 @@ export const registerSettingsHandlers = ({ getMainWindow, playerRef }: IpcContex
       downloadUrl,
       downloadLabel,
       manualDownload: true,
-      body: typeof release.body === 'string' ? release.body.slice(0, 4000) : '',
+      body: normalizeUpdateNotes(release.body, latestVersion),
       message: manualMacUpdate
         ? MAC_MANUAL_UPDATE_MESSAGE
         : archiveAsset
@@ -1073,9 +1096,8 @@ export const registerSettingsHandlers = ({ getMainWindow, playerRef }: IpcContex
           : 'Arch Linux 暂不使用内置安装器，请前往发布页选择适合当前系统的安装包。',
       silent: payload.silent,
     };
-    lastCheckResult = result;
     downloadState = { status: 'idle' };
-    sendToRenderer('update-check-result', result);
+    publishAvailableUpdate(result, release);
     sendToRenderer('update-download-status', downloadState);
   };
 

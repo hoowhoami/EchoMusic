@@ -14,6 +14,7 @@ export type UpdateCheckResult = {
   downloadLabel?: string;
   manualDownload?: boolean;
   body?: string;
+  notesStatus?: 'loading' | 'ready' | 'unavailable';
   message?: string;
   silent?: boolean;
 };

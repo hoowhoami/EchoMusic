@@ -5,7 +5,6 @@ import { marked } from 'marked';
 import { sanitizeHtml } from '@/utils/sanitize';
 import Dialog from '@/components/ui/Dialog.vue';
 import Button from '@/components/ui/Button.vue';
-import Scrollbar from '@/components/ui/Scrollbar.vue';
 import { useUpdateStore } from '@/stores/update';
 import { isUpdateSignatureError } from '../../../shared/update-error';
 
@@ -55,8 +54,8 @@ const description = computed(() => {
   const r = checkResult.value;
   if (!r) return '';
   if (r.status === 'available') {
-    if (r.message) return r.message;
-    return `当前版本 v${r.currentVersion}，发现新版本 ${r.releaseName || r.latestVersion || ''}`.trim();
+    const currentVersion = `当前版本 v${r.currentVersion.replace(/^v/i, '')}`;
+    return r.message ? `${currentVersion}\n${r.message}` : currentVersion;
   }
   if (r.status === 'latest') {
     return `当前版本 v${r.currentVersion} 已是最新版本。`;
@@ -86,14 +85,24 @@ const handleClose = () => updateStore.closeDialog();
     :title="title"
     :description="description"
     showClose
-    :noScroll="Boolean(bodyHtml)"
     :close-on-escape="allowDismiss"
     :close-on-interact-outside="allowDismiss"
     :content-style="{ width: '520px' }"
   >
-    <Scrollbar v-if="bodyHtml" class="update-changelog" :content-props="{ class: 'px-4 py-3' }">
+    <div v-if="bodyHtml" class="update-changelog px-4 py-3">
       <div class="changelog-content" v-html="bodyHtml"></div>
-    </Scrollbar>
+    </div>
+    <p
+      v-else-if="checkResult?.status === 'available'"
+      class="text-sm text-text-secondary"
+      role="status"
+    >
+      {{
+        checkResult.notesStatus === 'loading'
+          ? '正在加载更新日志…'
+          : '暂未获取到更新日志，可前往发布页查看。'
+      }}
+    </p>
 
     <template #footer>
       <!-- 左侧：进度条 -->
@@ -172,7 +181,6 @@ const handleClose = () => updateStore.closeDialog();
 
 <style scoped>
 .update-changelog {
-  max-height: min(288px, 40vh);
   font-size: 13px;
   line-height: 1.5;
   color: var(--color-text-secondary);

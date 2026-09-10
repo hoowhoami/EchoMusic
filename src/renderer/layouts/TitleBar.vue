@@ -101,14 +101,8 @@ const managedActions = computed(() =>
 const placedActions = computed(() =>
   partitionTitlebarActions(managedActions.value, toolbarCapacity.value),
 );
-const primaryActions = computed(() =>
-  placedActions.value.toolbar.filter((item) => item.pluginId === null),
-);
-const pluginActions = computed(() =>
-  placedActions.value.toolbar.filter((item) => item.pluginId !== null),
-);
-const primaryActionsRef = ref<HTMLElement | null>(null);
-const pluginActionsRef = ref<HTMLElement | null>(null);
+const toolbarActions = computed(() => placedActions.value.toolbar);
+const toolbarActionsRef = ref<HTMLElement | null>(null);
 const saveToolbarOrder = (keys: string[]) => {
   settingStore.titlebarLayout = reorderTitlebarLayout(
     settingStore.titlebarLayout,
@@ -117,14 +111,8 @@ const saveToolbarOrder = (keys: string[]) => {
   );
 };
 useTitlebarSort(
-  primaryActionsRef,
-  () => primaryActions.value.map((item) => item.key),
-  saveToolbarOrder,
-  '.titlebar-action',
-);
-useTitlebarSort(
-  pluginActionsRef,
-  () => pluginActions.value.map((item) => item.key),
+  toolbarActionsRef,
+  () => toolbarActions.value.map((item) => item.key),
   saveToolbarOrder,
   '.titlebar-action',
 );
@@ -750,16 +738,16 @@ onUnmounted(() => {
     </div>
 
     <div
-      v-if="primaryActions.length"
-      ref="primaryActionsRef"
+      v-if="toolbarActions.length"
+      ref="toolbarActionsRef"
       class="titlebar-primary-actions no-drag"
     >
       <TitlebarActionButton
-        v-for="item in primaryActions"
+        v-for="item in toolbarActions"
         :key="item.key"
         :action="item"
         :data-titlebar-key="item.key"
-        :badge="item.id === 'tasks' && taskPanelEntries.length > 0"
+        :badge="item.pluginId === null && item.id === 'tasks' && taskPanelEntries.length > 0"
       />
     </div>
 
@@ -767,14 +755,6 @@ onUnmounted(() => {
     <div class="flex-1 h-full"></div>
 
     <div class="titlebar-tools no-drag">
-      <div v-if="pluginActions.length" ref="pluginActionsRef" class="titlebar-primary-actions">
-        <TitlebarActionButton
-          v-for="item in pluginActions"
-          :key="item.key"
-          :action="item"
-          :data-titlebar-key="item.key"
-        />
-      </div>
       <TitleBarMoreMenu :items="managedActions" />
     </div>
     <span class="titlebar-window-divider" aria-hidden="true"></span>

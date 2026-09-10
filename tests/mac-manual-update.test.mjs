@@ -5,6 +5,7 @@ import { test } from 'node:test';
 import { transformSync } from 'esbuild';
 import * as policy from '../src/shared/manual-update.ts';
 import * as updateErrors from '../src/shared/update-error.ts';
+import * as updateNotes from '../src/shared/update-notes.ts';
 import * as accelerator from '../src/shared/github-accelerator.ts';
 import * as pinia from 'pinia';
 
@@ -36,8 +37,11 @@ const loadMain = ({ platform = 'darwin', arch = 'arm64', response = [release], e
   const handlers = new Map();
   const events = [];
   const calls = [];
+  const updaterEvents = new Map();
   const updater = {
-    on() {},
+    on(name, handler) {
+      updaterEvents.set(name, handler);
+    },
     setFeedURL() {},
     checkForUpdates: async () => {
       calls.push('check');
@@ -64,12 +68,16 @@ const loadMain = ({ platform = 'darwin', arch = 'arm64', response = [release], e
       'font-list': {},
       '../../shared/manual-update': policy,
       '../../shared/update-error': updateErrors,
+      '../../shared/update-notes': updateNotes,
       '../../shared/github-accelerator': accelerator,
       '../networkPolicy': {
         networkFetch: async (url) => {
           calls.push(url);
           if (error) throw error;
-          return { ok: true, json: async () => response };
+          return {
+            ok: true,
+            json: async () => (typeof response === 'function' ? response(url) : response),
+          };
         },
       },
     },
@@ -79,7 +87,7 @@ const loadMain = ({ platform = 'darwin', arch = 'arm64', response = [release], e
     getMainWindow: () => ({
       isDestroyed: () => false,
       webContents: {
-        send: (channel, data) => events.push({ channel, data }),
+        send: (channel, data) => events.push({ channel, data: structuredClone(data) }),
       },
     }),
     playerRef: { current: null },
@@ -88,6 +96,7 @@ const loadMain = ({ platform = 'darwin', arch = 'arm64', response = [release], e
     handlers,
     events,
     updater,
+    updaterEvents,
     calls,
     async check(payload = {}) {
       handlers.get('check-for-updates')(null, { prerelease: true, ...payload });
@@ -209,4 +218,75 @@ test('signature errors recover the dialog and manual buttons never call download
   });
   assert.equal(store.checkResult.manualDownload, true);
   assert.ok(store.checkResult.releaseUrl.endsWith('/releases'));
+});
+
+test('generic updater publishes available immediately, then fills release notes', async () => {
+  const s = loadMain({ platform: 'win32', response: release });
+  s.updaterEvents.get('update-available')({ version: '2.3.1-beta.27' });
+  assert.equal(s.events.at(-1).data.status, 'available');
+  assert.equal(s.events.at(-1).data.notesStatus, 'loading');
+  await new Promise(setImmediate);
+  const notes = s.events.find((event) => event.channel === 'update-release-notes');
+  assert.equal(notes.data.body, release.body);
+  assert.equal(notes.data.notesStatus, 'ready');
+});
+
+test('late notes cannot overwrite a newer version check', async () => {
+  let finish;
+  const s = loadMain({
+    platform: 'win32',
+    response: () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  });
+  s.updaterEvents.get('update-available')({ version: '2.3.1-beta.27' });
+  await new Promise(setImmediate);
+  s.updaterEvents.get('update-available')({ version: '2.3.2', releaseNotes: 'newer notes' });
+  finish(release);
+  await new Promise(setImmediate);
+  assert.equal(s.events.filter((event) => event.channel === 'update-release-notes').length, 0);
+  assert.equal(s.events.at(-1).data.body, 'newer notes');
+});
+
+test('release-note enrichment updates a closed dialog without reopening it and disposes listeners', async (t) => {
+  const original = globalThis.window;
+  const listeners = new Map();
+  globalThis.window = {
+    electron: {
+      ipcRenderer: {
+        on: (name, listener) => listeners.set(name, listener),
+        off: (name) => listeners.delete(name),
+      },
+    },
+  };
+  t.after(() => {
+    globalThis.window = original;
+  });
+  pinia.setActivePinia(pinia.createPinia());
+  const { useUpdateStore } = compile('../src/renderer/stores/update.ts', {
+    pinia,
+    './setting': { useSettingStore: () => ({ appVersion: '2.3.0' }) },
+    '../../shared/update-error': updateErrors,
+  });
+  const store = useUpdateStore();
+  await store.init();
+  store.handleCheckResult({
+    status: 'available',
+    currentVersion: '2.3.0',
+    latestVersion: '2.3.1',
+    notesStatus: 'loading',
+  });
+  store.closeDialog();
+  listeners.get('update-release-notes')({
+    latestVersion: '2.3.1',
+    body: 'release notes',
+    notesStatus: 'ready',
+  });
+  assert.equal(store.checkResult.body, 'release notes');
+  assert.equal(store.dialogOpen, false);
+  listeners.get('update-release-notes')({ latestVersion: '2.3.2', body: 'wrong version' });
+  assert.equal(store.checkResult.body, 'release notes');
+  store.dispose();
+  assert.equal(listeners.size, 0);
 });

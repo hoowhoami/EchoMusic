@@ -192,9 +192,9 @@ watch(
       <Sidebar id="main-sidebar" class="absolute inset-0" :collapsed="isSidebarCollapsed" />
       <button
         v-if="settingStore.sidebarCollapseEnabled"
+        type="button"
         class="sidebar-divider-toggle no-drag"
         :aria-label="isSidebarCollapsed ? '展开侧边栏' : '收起侧边栏'"
-        :title="isSidebarCollapsed ? '展开侧边栏' : '收起侧边栏'"
         :aria-expanded="!isSidebarCollapsed"
         aria-controls="main-sidebar"
         @click="toggleSidebar"
