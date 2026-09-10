@@ -4,7 +4,7 @@ import { useRouter } from 'vue-router';
 import Button from '@/components/ui/Button.vue';
 import { Icon } from '@iconify/vue';
 import SettingsSectionShell from './SettingsSectionShell.vue';
-import { iconPlugin, iconExternalLink } from '@/icons';
+import { iconPlugin } from '@/icons';
 import { sectionTitles } from '../constants';
 import { pluginRuntimeState } from '@/plugins/runtime';
 
@@ -43,7 +43,12 @@ const handleOpenDocs = () => {
           <span v-if="pluginCount > 0">（{{ enabledCount }}/{{ pluginCount }} 个已启用）</span>
         </p>
       </div>
-      <Button variant="ghost" size="xs" class="settings-button" @click="handleOpenPluginManagement">
+      <Button
+        variant="unstyled"
+        size="none"
+        class="settings-action"
+        @click="handleOpenPluginManagement"
+      >
         管理面板
       </Button>
     </div>
@@ -55,13 +60,8 @@ const handleOpenDocs = () => {
         <h3 class="font-semibold">插件文档</h3>
         <p class="text-sm text-text-secondary">了解如何开发和使用插件</p>
       </div>
-      <Button
-        variant="ghost"
-        size="xs"
-        class="text-text-secondary h-10 w-10 min-w-0 p-0"
-        @click="handleOpenDocs"
-      >
-        <Icon :icon="iconExternalLink" width="20" height="20" />
+      <Button variant="unstyled" size="none" class="settings-action" @click="handleOpenDocs">
+        查看文档
       </Button>
     </div>
   </SettingsSectionShell>

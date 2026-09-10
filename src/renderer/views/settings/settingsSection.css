@@ -49,6 +49,53 @@
   @apply text-red-500 hover:text-red-400 transition-colors;
 }
 
+.settings-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  min-height: 32px;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 20px;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    color 150ms,
+    background-color 150ms;
+}
+
+.settings-action:hover:not(:disabled) {
+  color: var(--color-text-main);
+  background: var(--control-hover-bg);
+}
+
+.settings-action-primary,
+.settings-action-primary:hover:not(:disabled) {
+  color: var(--color-primary-text);
+}
+
+.settings-action-danger,
+.settings-action-danger:hover:not(:disabled) {
+  @apply text-red-500;
+}
+
+.settings-action:focus-visible {
+  outline: 2px solid var(--color-primary-text);
+  outline-offset: 2px;
+}
+
+.settings-action:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
 .settings-color-swatch {
   @apply w-8 h-8 rounded-full border-2 shadow-sm cursor-pointer transition-all duration-200 active:scale-95;
   border-color: color-mix(in srgb, var(--color-text-main) 45%, var(--color-bg-main));
@@ -86,10 +133,6 @@
 
 .settings-color-actions {
   @apply flex items-center justify-end min-h-5 px-1;
-}
-
-.settings-color-reset {
-  @apply text-[11px] font-semibold text-text-secondary hover:text-text-main transition-colors whitespace-nowrap;
 }
 
 .settings-input {
@@ -144,10 +187,6 @@
 
 .shortcut-cell-reset {
   @apply flex items-center justify-center;
-}
-
-.shortcut-reset-btn {
-  @apply text-[11px] font-semibold text-text-secondary hover:text-primary-text transition-colors cursor-pointer whitespace-nowrap;
 }
 
 .shortcut-input {

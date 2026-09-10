@@ -91,8 +91,8 @@ const handleResetBoth = (command: ShortcutCommand) => {
           >
             <template #trigger>
               <button
+                class="settings-action"
                 type="button"
-                class="shortcut-reset-btn"
                 aria-label="恢复默认"
                 @click="handleResetBoth(item.command)"
               >
@@ -127,7 +127,7 @@ const handleResetBoth = (command: ShortcutCommand) => {
         <h3 class="font-semibold">恢复默认</h3>
         <p class="text-sm text-text-secondary">恢复所有快捷键为默认</p>
       </div>
-      <Button variant="outline" size="xs" class="settings-button" @click="resetAllShortcuts">
+      <Button variant="unstyled" size="none" class="settings-action" @click="resetAllShortcuts">
         恢复默认
       </Button>
     </div>

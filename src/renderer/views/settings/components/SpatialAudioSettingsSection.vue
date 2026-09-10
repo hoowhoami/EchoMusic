@@ -238,7 +238,12 @@ const commitRename = (id: string) => {
           {{ files.length }} 个文件，按本地导入、歌手音效、耳机音效和音效市场分类管理
         </p>
       </div>
-      <Button variant="outline" size="xs" type="button" @click="showFileDialog = true"
+      <Button
+        variant="unstyled"
+        size="none"
+        class="settings-action"
+        type="button"
+        @click="showFileDialog = true"
         >管理文件</Button
       >
     </div>
@@ -255,7 +260,12 @@ const commitRename = (id: string) => {
           }}
         </p>
       </div>
-      <Button variant="outline" size="xs" type="button" @click="openProviderDialog"
+      <Button
+        variant="unstyled"
+        size="none"
+        class="settings-action"
+        type="button"
+        @click="openProviderDialog"
         >管理引擎</Button
       >
     </div>

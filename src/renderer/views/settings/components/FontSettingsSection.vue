@@ -57,9 +57,9 @@ onMounted(() => {
       </div>
       <div class="flex items-center gap-2">
         <button
+          class="settings-action"
           v-if="settingStore.globalFont !== 'system-ui'"
           type="button"
-          class="text-[11px] font-semibold text-text-secondary hover:text-text-main transition-colors whitespace-nowrap"
           @click="settingStore.globalFont = 'system-ui'"
         >
           重置
@@ -81,9 +81,9 @@ onMounted(() => {
       </div>
       <div class="flex items-center gap-2">
         <button
+          class="settings-action"
           v-if="settingStore.lyricFont !== 'follow'"
           type="button"
-          class="text-[11px] font-semibold text-text-secondary hover:text-text-main transition-colors whitespace-nowrap"
           @click="settingStore.lyricFont = 'follow'"
         >
           重置
@@ -105,9 +105,9 @@ onMounted(() => {
       </div>
       <div class="flex items-center gap-2">
         <button
+          class="settings-action"
           v-if="desktopLyricFontName !== 'follow'"
           type="button"
-          class="text-[11px] font-semibold text-text-secondary hover:text-text-main transition-colors whitespace-nowrap"
           @click="applyDesktopLyricFont('follow')"
         >
           重置

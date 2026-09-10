@@ -270,8 +270,8 @@ const updateDesktopRomanizationStyle = (value: string | number | (string | numbe
         </div>
         <div class="settings-color-actions">
           <button
+            class="settings-action"
             type="button"
-            class="settings-color-reset"
             :class="{ invisible: !hasCustomDesktopLyricColors }"
             @click="
               commitDesktopLyricSettings({
@@ -302,9 +302,9 @@ const updateDesktopRomanizationStyle = (value: string | number | (string | numbe
         </div>
         <div class="flex items-center gap-2">
           <button
+            class="settings-action"
             v-if="settingStore.desktopLyricFilterPattern"
             type="button"
-            class="text-[11px] font-semibold text-text-secondary hover:text-text-main transition-colors whitespace-nowrap"
             @click="settingStore.desktopLyricFilterPattern = ''"
           >
             恢复默认

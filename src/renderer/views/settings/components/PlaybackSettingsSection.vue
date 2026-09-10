@@ -294,7 +294,13 @@ const handleRemoveImpulseResponse = (id: string) => {
           <p class="text-sm text-text-secondary">管理本地导入和在线下载的音效文件</p>
         </div>
         <div class="irs-actions">
-          <Button variant="outline" size="xs" type="button" @click="openImpulseResponseDialog">
+          <Button
+            variant="unstyled"
+            size="none"
+            class="settings-action"
+            type="button"
+            @click="openImpulseResponseDialog"
+          >
             <Icon :icon="iconPlus" width="14" height="14" class="mr-1" />
             添加
           </Button>

@@ -165,9 +165,9 @@ const isAccentGradientDefault = computed(
           {{ settingStore.windowBackgroundUnavailableReason }}
         </p>
         <button
+          class="settings-action"
           v-if="windowPlatform === 'win32'"
           type="button"
-          class="text-sm text-text-secondary underline underline-offset-4 cursor-pointer"
           @click="copyBackgroundDiagnostics"
         >
           复制窗口诊断信息
@@ -183,8 +183,8 @@ const isAccentGradientDefault = computed(
               : '设置已保存，重启应用后生效'
           }}
           <button
+            class="settings-action settings-action-primary"
             type="button"
-            class="ml-2 cursor-pointer underline underline-offset-4 disabled:cursor-wait disabled:opacity-50"
             :disabled="restarting"
             @click="restartForBackground"
           >
@@ -233,7 +233,7 @@ const isAccentGradientDefault = computed(
         </div>
         <div class="flex items-center gap-3">
           <button
-            class="settings-color-reset disabled:cursor-default"
+            class="settings-action"
             :disabled="restarting || !settingStore.windowBackground.color"
             @click="settingStore.setWindowBackground({ color: '' })"
           >
@@ -320,8 +320,8 @@ const isAccentGradientDefault = computed(
       </div>
       <div class="flex items-center gap-3">
         <button
+          class="settings-action"
           type="button"
-          class="settings-color-reset disabled:opacity-40 disabled:cursor-default"
           :disabled="isAccentGradientDefault"
           @click="themeStore.resetAccentGradientAppearance()"
         >

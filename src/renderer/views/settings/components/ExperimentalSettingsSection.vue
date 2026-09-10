@@ -229,21 +229,28 @@ const confirmResetDeviceIdentity = async () => {
       </div>
       <div class="flex items-center gap-2">
         <Button
+          variant="unstyled"
+          size="none"
+          class="settings-action"
           v-if="diagnosticActive"
-          variant="outline"
-          size="xs"
           @click="settingStore.disableTemporaryDiagnosticLogging()"
         >
           关闭
         </Button>
         <Button
-          variant="secondary"
-          size="xs"
+          variant="unstyled"
+          size="none"
+          class="settings-action"
           @click="settingStore.enableTemporaryDiagnosticLogging(10)"
         >
           10 分钟
         </Button>
-        <Button variant="secondary" size="xs" @click="restartWithDiagnostics">
+        <Button
+          variant="unstyled"
+          size="none"
+          class="settings-action"
+          @click="restartWithDiagnostics"
+        >
           {{ diagnosticRestartLabel }}
         </Button>
       </div>
@@ -318,7 +325,9 @@ const confirmResetDeviceIdentity = async () => {
         <h3 class="font-semibold">用户信息</h3>
         <p class="text-sm text-text-secondary">查看当前账号与设备信息，可复制鉴权头用于调试接口</p>
       </div>
-      <Button variant="secondary" size="xs" @click="showUserInfoDialog">查看</Button>
+      <Button variant="unstyled" size="none" class="settings-action" @click="showUserInfoDialog"
+        >查看</Button
+      >
     </div>
     <div class="settings-divider"></div>
     <div class="settings-item">
@@ -328,7 +337,12 @@ const confirmResetDeviceIdentity = async () => {
           清除本机 guid、mid、dfid，并在重启后重新生成设备身份
         </p>
       </div>
-      <Button variant="danger" size="xs" @click="showResetDeviceIdentityConfirm = true">
+      <Button
+        variant="unstyled"
+        size="none"
+        class="settings-action settings-action-danger"
+        @click="showResetDeviceIdentityConfirm = true"
+      >
         重置
       </Button>
     </div>

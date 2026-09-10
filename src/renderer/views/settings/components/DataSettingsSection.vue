@@ -8,7 +8,7 @@ import Dialog from '@/components/ui/Dialog.vue';
 import FontIcon from '@/components/ui/FontIcon.vue';
 import Select from '@/components/ui/Select.vue';
 import Switch from '@/components/ui/Switch.vue';
-import { iconCloudDownload, iconCloudUpload, iconRefreshCw } from '@/icons';
+import { iconRefreshCw } from '@/icons';
 import {
   sanitizePortableAppSettings,
   type PluginBackupProviderEntry,
@@ -384,12 +384,10 @@ onBeforeUnmount(() => {
         </p>
       </div>
       <div class="flex shrink-0 items-center gap-2">
-        <Button variant="ghost" size="xs" class="settings-button" @click="openExportDialog">
-          <Icon :icon="iconCloudUpload" width="15" height="15" class="mr-1.5" />
+        <Button variant="unstyled" size="none" class="settings-action" @click="openExportDialog">
           创建备份
         </Button>
-        <Button variant="ghost" size="xs" class="settings-button" @click="openRestoreDialog">
-          <Icon :icon="iconCloudDownload" width="15" height="15" class="mr-1.5" />
+        <Button variant="unstyled" size="none" class="settings-action" @click="openRestoreDialog">
           恢复备份
         </Button>
       </div>
@@ -401,9 +399,9 @@ onBeforeUnmount(() => {
         <p class="text-sm text-text-secondary">打开本地日志目录以供排查问题</p>
       </div>
       <Button
-        variant="ghost"
-        size="xs"
-        class="settings-button"
+        variant="unstyled"
+        size="none"
+        class="settings-action"
         @click="settingStore.openLogDirectory()"
       >
         立即查看
@@ -415,7 +413,12 @@ onBeforeUnmount(() => {
         <h3 class="font-semibold">清除应用数据</h3>
         <p class="text-sm text-text-secondary">移除所有持久化设置及缓存信息</p>
       </div>
-      <Button variant="ghost" size="xs" class="settings-button danger" @click="onClear">
+      <Button
+        variant="unstyled"
+        size="none"
+        class="settings-action settings-action-danger"
+        @click="onClear"
+      >
         立即清除
       </Button>
     </div>

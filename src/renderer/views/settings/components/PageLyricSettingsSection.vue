@@ -132,8 +132,8 @@ const romanizationStyle = computed<RomanizationStyle>({
         </div>
         <div class="settings-color-actions">
           <button
+            class="settings-action"
             type="button"
-            class="settings-color-reset"
             :class="{ invisible: !hasCustomLyricColors }"
             @click="lyricColorPicker.reset"
           >
@@ -182,9 +182,9 @@ const romanizationStyle = computed<RomanizationStyle>({
         </div>
         <div class="flex items-center gap-2">
           <button
+            class="settings-action"
             v-if="settingStore.lyricFilterPattern"
             type="button"
-            class="text-[11px] font-semibold text-text-secondary hover:text-text-main transition-colors whitespace-nowrap"
             @click="settingStore.lyricFilterPattern = ''"
           >
             恢复默认

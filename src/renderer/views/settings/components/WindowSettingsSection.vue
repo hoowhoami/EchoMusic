@@ -56,7 +56,7 @@ const supportsCustomWindowControls = computed(() => platform === 'win32' || plat
         >
           +
         </button>
-        <button type="button" class="px-3 py-2 text-primary-text" @click="reset">重置</button>
+        <button class="settings-action" type="button" @click="reset">重置</button>
       </div>
     </div>
     <div class="settings-divider"></div>
