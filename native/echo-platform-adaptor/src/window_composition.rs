@@ -1,6 +1,7 @@
 //! Windows DWM alpha composition and optional Accent blur. Never changes HWND styles or shape.
 //! The Accent policy is undocumented: resolve it at runtime and report failure.
 use napi_derive::napi;
+use std::cell::Cell;
 use std::ffi::c_void;
 use std::mem::{size_of, transmute};
 
@@ -49,6 +50,8 @@ extern "system" {
     fn IsWindow(hwnd: *mut c_void) -> i32;
     fn GetWindowLongW(hwnd: *mut c_void, index: i32) -> i32;
     fn GetSystemMetrics(index: i32) -> i32;
+    fn GetForegroundWindow() -> *mut c_void;
+    fn DefWindowProcW(hwnd: *mut c_void, message: u32, wparam: usize, lparam: isize) -> isize;
 }
 #[link(name = "dwmapi")]
 extern "system" {
@@ -69,8 +72,113 @@ extern "system" {
     ) -> i32;
 }
 
+type SubclassProc =
+    unsafe extern "system" fn(*mut c_void, u32, usize, isize, usize, usize) -> isize;
+#[link(name = "comctl32")]
+extern "system" {
+    fn SetWindowSubclass(hwnd: *mut c_void, proc: SubclassProc, id: usize, data: usize) -> i32;
+    fn GetWindowSubclass(hwnd: *mut c_void, proc: SubclassProc, id: usize, data: *mut usize)
+        -> i32;
+    fn RemoveWindowSubclass(hwnd: *mut c_void, proc: SubclassProc, id: usize) -> i32;
+    fn DefSubclassProc(hwnd: *mut c_void, message: u32, wparam: usize, lparam: isize) -> isize;
+}
+const LEGACY_COMPOSITION_SUBCLASS: usize = 0x4543484f;
+thread_local! { static REPAIRING_LEGACY_FRAME: Cell<bool> = const { Cell::new(false) }; }
+
+// Electron <Win11 22H2 leaves HWNDMessageHandler::is_translucent_ false.
+// Its SetDwmFrameExtension can restore 0/1px insets after our full-client margins.
+// Repair only legacy effect windows, after Chromium has finished processing.
+unsafe extern "system" fn legacy_composition_proc(
+    hwnd: *mut c_void,
+    message: u32,
+    wparam: usize,
+    lparam: isize,
+    id: usize,
+    _data: usize,
+) -> isize {
+    if message == 0x0082 {
+        // WM_NCDESTROY
+        RemoveWindowSubclass(hwnd, legacy_composition_proc, id);
+        return DefSubclassProc(hwnd, message, wparam, lparam);
+    }
+    let result = DefSubclassProc(hwnd, message, wparam, lparam);
+    // WM_WINDOWPOSCHANGED (show/resize), WM_NCACTIVATE, WM_DWMCOMPOSITIONCHANGED.
+    if !matches!(message, 0x0047 | 0x0086 | 0x031e) || IsWindow(hwnd) == 0 {
+        return result;
+    }
+    let mut mode = 0;
+    if GetWindowSubclass(hwnd, legacy_composition_proc, id, &mut mode) == 0 {
+        return result;
+    }
+    let mode = mode & 0xff;
+    if !REPAIRING_LEGACY_FRAME.with(|busy| busy.replace(true)) {
+        let active = if message == 0x0086 {
+            wparam != 0
+        } else {
+            GetForegroundWindow() == hwnd
+        };
+        let repaired = if message == 0x031e {
+            set_window_composition((hwnd as usize).to_string(), mode as u32)
+        } else {
+            refresh_legacy_frame(hwnd, mode as u32, active, false)
+        };
+        // Retain read-only evidence of a later repair failure without allocating
+        // callback state. Recheck installation because reapplication can remove it.
+        let mut current = 0;
+        if GetWindowSubclass(hwnd, legacy_composition_proc, id, &mut current) != 0
+            && current & 0xff == mode
+        {
+            SetWindowSubclass(
+                hwnd,
+                legacy_composition_proc,
+                id,
+                mode | if repaired { 0 } else { 0x100 },
+            );
+        }
+        REPAIRING_LEGACY_FRAME.with(|busy| busy.set(false));
+    }
+    result
+}
+
+unsafe fn refresh_legacy_frame(
+    hwnd: *mut c_void,
+    mode: u32,
+    active: bool,
+    reset_alpha: bool,
+) -> bool {
+    // Same non-client activation used by Electron's Win11 material path. The -1
+    // parameter prevents Windows painting a system caption over custom controls.
+    DefWindowProcW(hwnd, 0x0086, usize::from(active), -1);
+    if DwmExtendFrameIntoClientArea(
+        hwnd,
+        &Margins {
+            left: -1,
+            right: -1,
+            top: -1,
+            bottom: -1,
+        },
+    ) < 0
+    {
+        return false;
+    }
+    !reset_alpha || mode != 6 || set_alpha_composition(hwnd, true)
+}
+
+unsafe fn remove_legacy_frame_repair(hwnd: *mut c_void) -> bool {
+    let mut mode = 0;
+    GetWindowSubclass(
+        hwnd,
+        legacy_composition_proc,
+        LEGACY_COMPOSITION_SUBCLASS,
+        &mut mode,
+    ) == 0
+        || RemoveWindowSubclass(hwnd, legacy_composition_proc, LEGACY_COMPOSITION_SUBCLASS) != 0
+}
+
 #[napi(object)]
 pub struct WindowCompositionDiagnostics {
+    pub legacy_frame_repair_installed: bool,
+    pub legacy_frame_repair_last_succeeded: Option<bool>,
     pub layered: bool,
     pub no_redirection_bitmap: bool,
     pub remote_session: bool,
@@ -124,7 +232,17 @@ pub fn get_window_composition_diagnostics(hwnd: String) -> Option<WindowComposit
                 accent_state = Some(policy.state);
             }
         }
+        let mut legacy_mode = 0;
+        let legacy_frame_repair_installed = GetWindowSubclass(
+            handle,
+            legacy_composition_proc,
+            LEGACY_COMPOSITION_SUBCLASS,
+            &mut legacy_mode,
+        ) != 0;
         Some(WindowCompositionDiagnostics {
+            legacy_frame_repair_installed,
+            legacy_frame_repair_last_succeeded: legacy_frame_repair_installed
+                .then_some(legacy_mode & 0x100 == 0),
             layered: styles & 0x00080000 != 0,
             no_redirection_bitmap: styles & 0x00200000 != 0,
             remote_session: GetSystemMetrics(0x1000) != 0,
@@ -160,12 +278,12 @@ unsafe fn set_alpha_composition(handle: *mut c_void, enabled: bool) -> bool {
     result >= 0
 }
 
-/// mode: 0=off, 2=Accent blur, 4=DWM clear, 5=Win11 DWM clear after Electron preparation.
-/// Modes 4/5 deliberately differ from the retired Accent-clear 1/3 protocol:
+/// mode: 0=off, 5=Win11 DWM clear, 6=legacy DWM clear+frame repair, 7=legacy blur+frame repair.
+/// Modes 6/7 deliberately differ from the former legacy 4/2 protocol:
 /// old addons reject them, causing an explicit fallback instead of silent failure.
 #[napi]
 pub fn set_window_composition(hwnd: String, mode: u32) -> bool {
-    if !matches!(mode, 0 | 2 | 4 | 5) {
+    if !matches!(mode, 0 | 5 | 6 | 7) {
         return false;
     }
     let Ok(address) = hwnd.parse::<usize>() else {
@@ -217,6 +335,9 @@ pub fn set_window_composition(hwnd: String, mode: u32) -> bool {
             ) >= 0
         };
         let success = (|| {
+            if !remove_legacy_frame_repair(handle) {
+                return false;
+            }
             // Clear both native backends before installing the next one.
             if !set_alpha_composition(handle, false) || !accent(0) {
                 return false;
@@ -237,14 +358,33 @@ pub fn set_window_composition(hwnd: String, mode: u32) -> bool {
             if !margins(if mode == 0 { 0 } else { -1 }) {
                 return false;
             }
-            match mode {
-                4 | 5 => set_alpha_composition(handle, true),
-                2 => accent(3), // BlurBehind avoids Win10 Acrylic drag stalls.
+            let applied = match mode {
+                6 | 5 => set_alpha_composition(handle, true),
+                7 => accent(3), // BlurBehind avoids Win10 Acrylic drag stalls.
                 _ => true,
+            };
+            if !applied {
+                return false;
             }
+            if matches!(mode, 7 | 6) {
+                if SetWindowSubclass(
+                    handle,
+                    legacy_composition_proc,
+                    LEGACY_COMPOSITION_SUBCLASS,
+                    mode as usize,
+                ) == 0
+                {
+                    return false;
+                }
+                if !refresh_legacy_frame(handle, mode, GetForegroundWindow() == handle, true) {
+                    return false;
+                }
+            }
+            true
         })();
         if !success {
             // Best-effort rollback of every backend, including partial DWM setup.
+            let _ = remove_legacy_frame_repair(handle);
             let _ = set_alpha_composition(handle, false);
             let _ = accent(0);
             let _ = margins(0);

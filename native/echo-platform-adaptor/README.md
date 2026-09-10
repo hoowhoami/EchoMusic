@@ -68,11 +68,11 @@ both Electron and native states; failures attempt to disable alpha, Accent and
 client margins before the application restores its solid background.
 
 Windows 10 / early Windows 11 declare `backgroundMaterial: acrylic` at creation
-for Electron's alpha surface, then use native mode 4 for DWM alpha. Actual blur
-still uses Accent mode 2. The native material setter is a no-op on these OS
+for Electron's alpha surface, then use native mode 6 for DWM alpha. Actual blur
+still uses Accent mode 7. The native material setter is a no-op on these OS
 versions. Keep the constructor declaration across off/clear/blur switches.
 
-Modes 4/5 replace the retired Accent-clear protocol 1/3. Rebuild and package the
+Mode 5 is the Win11 DWM-clear protocol; modes 6/7 include legacy frame repair. Rebuild and package the
 addon with the application: older binaries reject the new modes and trigger an
 explicit fallback. This change needs Windows visual validation; successful API
 calls and state tests alone do not establish correct desktop transparency.
@@ -87,3 +87,27 @@ OS and application versions, GPU feature status and renderer background layers.
 No window screenshot or unrelated application content is collected. A successful
 readback still does not establish visible transparency; compare with the actual
 window. Older addons remain loadable and report native diagnostics unavailable.
+
+
+## Legacy HWND frame synchronization (Windows 10 / early Windows 11)
+
+Electron 43 skips `SetIsTranslucent` and its non-client activation update before
+Windows 11 22H2. Chromium can consequently overwrite full-client DWM margins with
+0/1-pixel frame margins during native window events, even when the constructor's
+material declaration made the rendered content alpha-capable.
+
+Modes 6 (DWM clear) and 7 (Accent blur) install a `SetWindowSubclass` callback on
+the main HWND. After Chromium processes window-position/activation events, it
+restores full-client DWM margins and calls `DefWindowProcW(WM_NCACTIVATE, ..., -1)`
+without painting a system caption. Composition changes reapply the active native
+backend. A UI-thread recursion guard prevents repair feedback loops. The subclass
+is removed on effect switches, failures and `WM_NCDESTROY`; it changes neither
+window styles nor window shape. Win11 22H2+ mode 5 does not install this callback.
+
+The former legacy 4/2 protocol is no longer used: old binaries must reject 6/7,
+not silently run a backend missing frame repair. The diagnostic field
+`legacyFrameRepairInstalled` confirms installation; `legacyFrameRepairLastSucceeded`
+records the last API repair result. Neither establishes visual success. Also,
+`nativeWindowBackground` is Electron's RGB-only value: `#000000` does not reveal
+whether alpha is zero. Regression-test cold launch, show/hide, resize,
+maximize/restore, focus changes and off/clear/blur transitions on actual Win10.

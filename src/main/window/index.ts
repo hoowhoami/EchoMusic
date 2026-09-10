@@ -262,6 +262,7 @@ export const registerMainWindowPreferenceHandlers = () => {
       gpuFeatures: app.getGPUFeatureStatus(),
       background: readBackgroundState(),
       nativeWindowBackground: win.getBackgroundColor(),
+      nativeWindowBackgroundIncludesAlpha: false, // Electron returns RGB hex only.
       composition: activeComposition,
       windows: process.platform === 'win32' ? readWindowsCompositionDiagnostics(win) : undefined,
     };

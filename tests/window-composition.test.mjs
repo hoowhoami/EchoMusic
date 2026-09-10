@@ -10,7 +10,7 @@ const compile = (path) =>
   }).code;
 const compositionCode = compile('../src/main/window/windowsComposition.ts');
 const materialCode = compile('../src/main/window/backgroundMaterial.ts');
-function setup({ available = true, diagnostics, legacy = false } = {}) {
+function setup({ available = true, diagnostics, legacy = false, modeMax = Infinity } = {}) {
   const calls = [],
     module = { exports: {} };
   const materialModule = { exports: {} };
@@ -20,7 +20,7 @@ function setup({ available = true, diagnostics, legacy = false } = {}) {
     ...(diagnostics ? { getWindowCompositionDiagnostics: diagnostics } : {}),
     setWindowComposition(handle, mode) {
       calls.push(['accent', handle, mode]);
-      return !failed && (!legacy || mode <= 3);
+      return !failed && (!legacy || mode <= 3) && mode <= modeMax;
     },
   };
   runInNewContext(compositionCode, {
@@ -78,7 +78,7 @@ test('Win10 uses BlurBehind and a fresh opaque window makes no native calls', ()
   e.apply(e.win, { ...e.background, enabled: false }, 19045);
   assert.deepEqual(e.calls, []);
   e.apply(e.win, { ...e.background, frosted: true }, 19045);
-  assert.deepEqual(e.calls, [['accent', '1311768467463790320', 2]]);
+  assert.deepEqual(e.calls, [['accent', '1311768467463790320', 7]]);
 });
 test('missing addon reports a fallback and does not prevent official Win11 Acrylic', () => {
   const e = setup({ available: false });
@@ -91,7 +91,7 @@ test('native failures are not cached as successful composition', () => {
   e.fail();
   assert.throws(() => e.apply(e.win, e.background, 19045));
   assert.throws(() => e.apply(e.win, e.background, 19045));
-  assert.equal(e.calls.filter((call) => call[0] === 'accent' && call[2] === 4).length, 2);
+  assert.equal(e.calls.filter((call) => call[0] === 'accent' && call[2] === 6).length, 2);
 });
 
 test('Win11 clear failure releases prepared material and retries instead of caching success', () => {
@@ -135,7 +135,7 @@ test('Win10 and early Win11 prepare alpha at creation and keep it through off/cl
     );
     assert.deepEqual(
       e.calls.map((c) => c[2]),
-      [4, 0, 2, 0, 4],
+      [6, 0, 7, 0, 6],
     );
   }
   assert.equal(setup().options(22621).backgroundMaterial, undefined);
@@ -193,4 +193,17 @@ test('older Accent-only binaries cannot silently accept the new DWM clear modes'
     assert.throws(() => e.apply(e.win, e.background, build), /系统背景接口不可用/);
     assert.equal(e.diagnose(e.win).requestedBackend, 'none');
   }
+});
+
+test('Win10 effects reject pre-frame-repair addons while Win11 keeps its working DWM mode', () => {
+  for (const build of [19045, 22000]) {
+    for (const frosted of [false, true]) {
+      const e = setup({ modeMax: 5 });
+      assert.throws(() => e.apply(e.win, { ...e.background, frosted }, build));
+      assert.equal(e.diagnose(e.win).requestedBackend, 'none');
+    }
+  }
+  const e = setup({ modeMax: 5 });
+  assert.doesNotThrow(() => e.apply(e.win, e.background, 26100));
+  assert.equal(e.diagnose(e.win).requestedBackend, 'clear');
 });

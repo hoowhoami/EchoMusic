@@ -69,7 +69,7 @@ export function applyWindowsComposition(
       // Prepare it through Electron, then remove only the native system backdrop.
       syncWindowsBackgroundMaterial(win, true);
       accent(5);
-    } else if (mode !== 'none') accent(mode === 'blur' ? 2 : 4);
+    } else if (mode !== 'none') accent(mode === 'blur' ? 7 : 6);
     active.set(win, mode);
   } catch (error) {
     try {

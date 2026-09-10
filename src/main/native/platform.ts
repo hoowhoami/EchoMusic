@@ -5,6 +5,8 @@ import log from '../logger';
 
 export interface NativePlatform {
   getWindowCompositionDiagnostics?(handle: string): {
+    legacyFrameRepairInstalled?: boolean;
+    legacyFrameRepairLastSucceeded?: boolean;
     layered: boolean;
     noRedirectionBitmap: boolean;
     remoteSession: boolean;
