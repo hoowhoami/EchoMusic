@@ -210,6 +210,14 @@ const getPluginDirectoryInstallTime = (directory: string) => {
   }
 };
 
+const getPluginInstallSourceKey = (pluginId: string) =>
+  `plugins:install-source:${normalizePluginId(pluginId)}`;
+
+const setPluginInstallSource = (
+  pluginId: string,
+  source: NonNullable<EchoPluginDescriptor['installSource']>,
+) => getKvStorage().set(getPluginInstallSourceKey(pluginId), source);
+
 const setPluginInstalledAt = (pluginId: string, installedAt: number) => {
   const normalizedPluginId = normalizePluginId(pluginId);
   const timestamp = normalizePluginTimestamp(installedAt);
@@ -503,6 +511,12 @@ export const listPlugins = (): PluginListResult => {
     if (!existsSync(manifestPath)) continue;
     try {
       const descriptor = toDescriptor(directory, entry.name, enabledState);
+      const source = getKvStorage().get(getPluginInstallSourceKey(descriptor.id)) as
+        | EchoPluginDescriptor['installSource']
+        | null;
+      if (source?.kind === 'local' || source?.kind === 'marketplace') {
+        descriptor.installSource = source;
+      }
       plugins.push(descriptor);
       seenPluginIds.add(descriptor.id);
       if (!installTimes[descriptor.id]) {
@@ -1140,6 +1154,7 @@ const pluginInstaller = createPluginInstaller({
   runWithTimeout,
   setEnabledState,
   setPluginInstalledAt,
+  setPluginInstallSource,
   terminatePluginProcesses,
 });
 
@@ -1929,6 +1944,12 @@ export const installPluginFromMarketplace = async (
         method: 'archive',
       });
       const installed = await installPluginDirectory(sourceDirectory, {
+        source: {
+          kind: 'marketplace',
+          id: plugin.sourceId,
+          name: plugin.sourceName,
+          url: plugin.sourceUrl,
+        },
         expectedPluginId: plugin.id,
         enableAfterInstall: Boolean(options.enableAfterInstall),
       });
@@ -2120,6 +2141,7 @@ export const uninstallPlugin = async (pluginId: string): Promise<PluginUninstall
     }
     clearPluginStorage(plugin.id);
     removePluginInstalledAt(plugin.id);
+    getKvStorage().delete(getPluginInstallSourceKey(plugin.id));
     clearPluginProcessConsents(plugin.id);
 
     await closePluginWebServer(plugin.id);

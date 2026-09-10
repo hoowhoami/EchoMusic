@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { logger } from '@/utils/logger';
 import WindowControls from './WindowControls.vue';
 import TitleBarMoreMenu from './TitleBarMoreMenu.vue';
 import TitlebarActionButton from './TitlebarActionButton.vue';
@@ -332,7 +333,7 @@ const handleGlobalPointerDown = (e: PointerEvent) => {
   collapseSearch();
 };
 
-const handleNativePointerDown = (point?: unknown) => {
+const handleNativePointerDown = (point?: unknown, details?: unknown) => {
   if (!isSearchFocused.value) return;
   if (point !== undefined) {
     if (
@@ -349,8 +350,16 @@ const handleNativePointerDown = (point?: unknown) => {
     // 原生通知异步到达，只处理拖动层；历史按钮等普通区域仍由 DOM 事件判断，
     // 避免删除历史后原位置的节点变化被误判为外部点击。
     const target = document.elementFromPoint(point.x, point.y);
-    if (!target?.closest('.native-titlebar .drag-region')) return;
+    if (!target?.closest('.native-titlebar .drag-region, .native-titlebar .titlebar-drag-space')) {
+      logger.info('TitlebarPointer', {
+        popup: 'search',
+        decision: 'ignored-non-drag-target',
+        details,
+      });
+      return;
+    }
   }
+  logger.info('TitlebarPointer', { popup: 'search', decision: 'close', details });
   collapseSearch();
   searchInputRef.value?.blur();
 };
@@ -752,7 +761,7 @@ onUnmounted(() => {
     </div>
 
     <!-- 2. 中间：拖拽区域 -->
-    <div class="flex-1 h-full"></div>
+    <div class="titlebar-drag-space flex-1 h-full"></div>
 
     <div class="titlebar-tools no-drag">
       <TitleBarMoreMenu :items="managedActions" />

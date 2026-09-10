@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import PluginSourceInfo from './PluginSourceInfo.vue';
+import { getInstalledPluginSourceName } from '../../../shared/plugin-source';
 import Tooltip from '@/components/ui/Tooltip.vue';
 
 import { Icon } from '@iconify/vue';
@@ -93,13 +95,15 @@ const emit = defineEmits<{
           </Tooltip>
         </div>
 
-        <div class="plugin-card-meta">
-          <span>v{{ record.descriptor.version }}</span>
-          <span v-if="record.descriptor.manifest.author">
-            · {{ record.descriptor.manifest.author }}
-          </span>
+        <div v-if="record.descriptor.manifest.author" class="plugin-card-meta">
+          {{ record.descriptor.manifest.author }}
         </div>
       </div>
+    </div>
+
+    <div class="plugin-card-version-source">
+      <span class="plugin-card-version">v{{ record.descriptor.version }}</span>
+      <PluginSourceInfo :name="getInstalledPluginSourceName(record.descriptor.installSource)" />
     </div>
 
     <Tooltip :content="record.descriptor.description || '暂无描述'" overflow-only>
@@ -121,11 +125,13 @@ const emit = defineEmits<{
       <span>{{ compatibilityMessage }}</span>
     </div>
 
-    <Tooltip :content="record.descriptor.id" overflow-only>
-      <template #trigger>
-        <div class="plugin-card-id">ID: {{ record.descriptor.id }}</div>
-      </template>
-    </Tooltip>
+    <div class="plugin-card-details">
+      <Tooltip :content="record.descriptor.id" overflow-only>
+        <template #trigger>
+          <div class="plugin-card-id">ID: {{ record.descriptor.id }}</div>
+        </template>
+      </Tooltip>
+    </div>
 
     <div class="plugin-card-actions">
       <div class="plugin-card-action-group">

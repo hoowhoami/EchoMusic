@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { logger } from '@/utils/logger';
 import { computed, ref, onMounted, onUnmounted } from 'vue';
 import { PopoverRoot, PopoverTrigger, PopoverPortal, PopoverContent } from 'reka-ui';
 import { iconDots, iconPinned } from '@/icons';
@@ -14,7 +15,7 @@ import { useTitlebarSort } from './useTitlebarSort';
 const props = defineProps<{ items: ResolvedTitlebarAction[] }>();
 const settings = useSettingStore();
 const open = ref(false);
-const handleNativePointerDown = (point?: unknown) => {
+const handleNativePointerDown = (point?: unknown, details?: unknown) => {
   if (!open.value) return;
   if (point !== undefined) {
     if (
@@ -31,8 +32,16 @@ const handleNativePointerDown = (point?: unknown) => {
     // 与搜索弹层一致：只补充原生拖动层点击，普通按钮由 Popover 处理。
     // 不把延迟到达的图钉/触发按钮点击当成外部点击。
     const target = document.elementFromPoint(point.x, point.y);
-    if (!target?.closest('.native-titlebar .drag-region')) return;
+    if (!target?.closest('.native-titlebar .drag-region, .native-titlebar .titlebar-drag-space')) {
+      logger.info('TitlebarPointer', {
+        popup: 'more',
+        decision: 'ignored-non-drag-target',
+        details,
+      });
+      return;
+    }
   }
+  logger.info('TitlebarPointer', { popup: 'more', decision: 'close', details });
   open.value = false;
 };
 onMounted(() => {
@@ -157,6 +166,12 @@ const reorderByKeyboard = (event: KeyboardEvent, index: number) => {
 
 <style scoped>
 .more-trigger {
+  /* 浮层以按钮为定位锚点，按压时保持几何尺寸不变。 */
+  scale: none;
+  transform: none;
+  transition:
+    background-color 0.12s ease,
+    color 0.12s ease;
   width: 34px;
   height: 34px;
   display: flex;

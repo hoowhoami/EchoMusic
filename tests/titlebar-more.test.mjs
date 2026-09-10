@@ -25,6 +25,7 @@ function setup(target = null) {
     'onMounted',
     'onUnmounted',
     'document',
+    'logger',
     code,
   )(
     () => ({ items: [] }),
@@ -35,6 +36,7 @@ function setup(target = null) {
     () => {},
     () => {},
     { elementFromPoint: () => target },
+    { info() {} },
   );
   api.open.value = true;
   return { settings, ...api };
@@ -78,5 +80,11 @@ test('native window movement/blur dismisses More and invalid payloads are ignore
     s.handleNativePointerDown(point);
   assert.equal(s.open.value, true);
   s.handleNativePointerDown();
+  assert.equal(s.open.value, false);
+});
+
+test('native click on the central titlebar spacer closes More', () => {
+  const s = setup({ closest: (selector) => selector.includes('.titlebar-drag-space') });
+  s.handleNativePointerDown({ x: 500, y: 20 });
   assert.equal(s.open.value, false);
 });

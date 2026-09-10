@@ -24,6 +24,7 @@ import { ensurePluginRoot, isPathInside } from './path';
 type PluginDirectoryInstallOptions = {
   expectedPluginId?: string;
   enableAfterInstall: boolean;
+  source?: EchoPluginDescriptor['installSource'];
 };
 
 type PluginDirectoryInstallResult = {
@@ -44,6 +45,10 @@ type PluginInstallerOptions = {
     label: string,
   ) => Promise<T>;
   setEnabledState: (state: Record<string, boolean>) => void;
+  setPluginInstallSource: (
+    pluginId: string,
+    source: NonNullable<EchoPluginDescriptor['installSource']>,
+  ) => void;
   setPluginInstalledAt: (pluginId: string, installedAt: number) => void;
   terminatePluginProcesses: (pluginId?: string) => Promise<void>;
 };
@@ -136,6 +141,7 @@ export const createPluginInstaller = ({
   runWithTimeout,
   setEnabledState,
   setPluginInstalledAt,
+  setPluginInstallSource,
   terminatePluginProcesses,
 }: PluginInstallerOptions) => {
   const extractMarketplacePackage = async (
@@ -229,6 +235,7 @@ export const createPluginInstaller = ({
       }
       await fs.rm(targetDirectory, { recursive: true, force: true });
       await fs.cp(stagingDirectory, targetDirectory, { recursive: true });
+      setPluginInstallSource(pluginId, options.source ?? { kind: 'local' });
       if (!existingPlugin) setPluginInstalledAt(pluginId, Date.now());
       if (wasEnabled && !enableAfterInstall) nextState[pluginId] = true;
       setEnabledState(nextState);

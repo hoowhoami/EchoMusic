@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import PluginSourceInfo from './PluginSourceInfo.vue';
+import { getPluginSourceName } from '../../../shared/plugin-source';
 import Tooltip from '@/components/ui/Tooltip.vue';
 
 import { Icon } from '@iconify/vue';
@@ -105,24 +107,21 @@ const getVersionTitle = (plugin: PluginMarketplacePlugin) => {
       </div>
     </div>
 
-    <Tooltip :content="getVersionTitle(plugin)">
-      <template #trigger>
-        <div class="marketplace-version-row">
-          <span class="marketplace-version-pill">
-            <span>最新</span>
-            <strong>v{{ plugin.version }}</strong>
-          </span>
-          <span
-            v-if="plugin.installed"
-            class="marketplace-version-pill"
-            :class="{ 'is-update': plugin.updateAvailable }"
-          >
-            <span>已装</span>
-            <strong>v{{ plugin.installedVersion }}</strong>
-          </span>
-        </div>
-      </template>
-    </Tooltip>
+    <div class="plugin-card-version-source">
+      <Tooltip :content="getVersionTitle(plugin)">
+        <template #trigger>
+          <span class="plugin-card-version">v{{ plugin.version }}</span>
+        </template>
+      </Tooltip>
+      <PluginSourceInfo :name="getPluginSourceName(plugin.sourceName, plugin.sourceUrl)" />
+    </div>
+
+    <div v-if="plugin.installed && plugin.updateAvailable" class="marketplace-version-row">
+      <span class="marketplace-version-pill is-update">
+        <span>已装</span>
+        <strong>v{{ plugin.installedVersion }}</strong>
+      </span>
+    </div>
 
     <Tooltip :content="plugin.description || '暂无描述'" overflow-only>
       <template #trigger>
@@ -137,8 +136,7 @@ const getVersionTitle = (plugin: PluginMarketplacePlugin) => {
       <span>{{ compatibilityMessage }}</span>
     </div>
 
-    <div class="marketplace-tags">
-      <span>{{ plugin.sourceName }}</span>
+    <div v-if="plugin.tags.length" class="marketplace-tags">
       <span v-for="tag in plugin.tags.slice(0, 3)" :key="tag">{{ tag }}</span>
     </div>
 
@@ -148,11 +146,13 @@ const getVersionTitle = (plugin: PluginMarketplacePlugin) => {
       </span>
     </div>
 
-    <Tooltip :content="plugin.id" overflow-only>
-      <template #trigger>
-        <div class="plugin-card-id">ID: {{ plugin.id }}</div>
-      </template>
-    </Tooltip>
+    <div class="plugin-card-details">
+      <Tooltip :content="plugin.id" overflow-only>
+        <template #trigger>
+          <div class="plugin-card-id">ID: {{ plugin.id }}</div>
+        </template>
+      </Tooltip>
+    </div>
 
     <Tooltip :content="getStatsTitle(plugin)">
       <template #trigger>

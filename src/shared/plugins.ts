@@ -656,7 +656,12 @@ export interface EchoPluginCompatibility {
   message: string;
 }
 
+export type PluginInstallSource =
+  | { kind: 'local' }
+  | { kind: 'marketplace'; id: string; name: string; url: string };
+
 export interface EchoPluginDescriptor {
+  installSource?: PluginInstallSource;
   id: string;
   name: string;
   version: string;

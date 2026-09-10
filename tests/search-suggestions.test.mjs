@@ -46,6 +46,7 @@ function setup() {
   };
   const pending = [];
   const bindings = {
+    logger: { info() {} },
     ...state,
     flatSuggestions: {
       get value() {
@@ -115,7 +116,16 @@ test('refocusing cancels delayed dismissal and keeps suggestions visible', () =>
 test('native titlebar click dismisses search without changing drag regions', () => {
   const s = setup();
   s.api.handleSearchFocus();
-  s.setNativeTarget({ closest: (selector) => selector === '.native-titlebar .drag-region' });
+  s.setNativeTarget({ closest: (selector) => selector.includes('.native-titlebar .drag-region') });
+  s.api.handleNativePointerDown({ x: 500, y: 20 });
+  assert.equal(s.isSearchFocused.value, false);
+  assert.equal(s.wasBlurred(), true);
+});
+
+test('native click on the central titlebar spacer dismisses search', () => {
+  const s = setup();
+  s.api.handleSearchFocus();
+  s.setNativeTarget({ closest: (selector) => selector.includes('.titlebar-drag-space') });
   s.api.handleNativePointerDown({ x: 500, y: 20 });
   assert.equal(s.isSearchFocused.value, false);
   assert.equal(s.wasBlurred(), true);
