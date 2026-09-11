@@ -6,7 +6,7 @@ defineOptions({ name: 'listen-together' });
 
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import { storeToRefs } from 'pinia';
-import { CheckboxIndicator, CheckboxRoot } from 'reka-ui';
+import Checkbox from '@/components/ui/Checkbox.vue';
 import { useRoute, useRouter } from 'vue-router';
 import Avatar from '@/components/ui/Avatar.vue';
 import Button from '@/components/ui/Button.vue';
@@ -1692,23 +1692,18 @@ onUnmounted(() => {
         </form>
         <div v-if="isOwner && orderSongCandidates.length" class="listen-song-picker-selection-bar">
           <div class="listen-song-picker-selection-toggle">
-            <CheckboxRoot
+            <Checkbox
               id="listen-order-song-select-all"
               class="listen-order-song-check"
               :model-value="orderSongSelectAllState"
               :disabled="addingOrderSongs"
               aria-label="全选歌曲"
               @update:model-value="setAllOrderSongsChecked"
-            >
-              <CheckboxIndicator as-child>
-                <span class="listen-order-song-check-indicator"></span>
-              </CheckboxIndicator>
-            </CheckboxRoot>
-            <label for="listen-order-song-select-all">全选</label>
+            />
+            <label for="listen-order-song-select-all" aria-live="polite">
+              {{ selectedOrderSongs.length }}/{{ LISTEN_TOGETHER_ADD_BATCH_LIMIT }}
+            </label>
           </div>
-          <span>
-            已选择 {{ selectedOrderSongs.length }}/{{ LISTEN_TOGETHER_ADD_BATCH_LIMIT }} 首
-          </span>
         </div>
         <Scrollbar class="listen-order-song-scroll">
           <div v-if="orderSongCandidates.length" class="listen-order-song-list">
@@ -1728,19 +1723,16 @@ onUnmounted(() => {
               @keydown.enter.prevent="isOwner ? toggleOrderSong(song) : requestSong(song)"
               @keydown.space.prevent="isOwner ? toggleOrderSong(song) : requestSong(song)"
             >
-              <CheckboxRoot
+              <Checkbox
                 v-if="isOwner"
                 class="listen-order-song-check"
                 :model-value="selectedOrderSongKeys.has(orderSongKey(song))"
                 :disabled="addingOrderSongs"
                 :aria-label="`选择歌曲 ${song.title}`"
                 @click.stop
+                @keydown.stop
                 @update:model-value="setOrderSongChecked(song, $event)"
-              >
-                <CheckboxIndicator as-child>
-                  <span class="listen-order-song-check-indicator"></span>
-                </CheckboxIndicator>
-              </CheckboxRoot>
+              />
               <Cover
                 :url="song.coverUrl"
                 :alt="song.title"

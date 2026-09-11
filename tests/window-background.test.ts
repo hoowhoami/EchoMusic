@@ -4,6 +4,7 @@ import {
   DEFAULT_WINDOW_BACKGROUND,
   getWindowComposition,
   normalizeWindowBackground,
+  resolvePlatformWindowBackground,
   resolveWindowBackground,
   resolveRunningWindowBackground,
 } from '../src/shared/window-background.ts';
@@ -62,7 +63,7 @@ test('Windows clear and Acrylic preserve a non-layered native window', () => {
   });
   for (const platform of ['darwin', 'linux']) {
     assert.deepEqual(getWindowComposition({ ...clear, frosted: true }, platform, 22631), {
-      transparent: platform !== 'darwin',
+      transparent: false,
       systemMaterial: false,
       clientCornerRadius: 0,
     });
@@ -114,10 +115,13 @@ test('modern Windows retains live native composition at the build boundary', () 
 });
 test('legacy Windows can cancel a pending clear selection without restarting', () => {
   assert.equal(resolveRunningWindowBackground(clear, 'win32', false, 19045).restartRequired, true);
-  assert.deepEqual(resolveRunningWindowBackground(DEFAULT_WINDOW_BACKGROUND, 'win32', false, 19045), {
-    background: DEFAULT_WINDOW_BACKGROUND,
-    restartRequired: false,
-  });
+  assert.deepEqual(
+    resolveRunningWindowBackground(DEFAULT_WINDOW_BACKGROUND, 'win32', false, 19045),
+    {
+      background: DEFAULT_WINDOW_BACKGROUND,
+      restartRequired: false,
+    },
+  );
   const saved = { ...clear, transparency: 87, color: '#123456' };
   const pending = resolveRunningWindowBackground(saved, 'win32', false, 19045);
   assert.equal(pending.background.enabled, false);
@@ -149,21 +153,22 @@ test('macOS ordinary windows toggle Vibrancy live and require recreation for cle
     });
   }
 });
-test('Linux preserves native transparency until recreation and never enables Vibrancy', () => {
-  assert.deepEqual(resolveRunningWindowBackground(clear, 'linux', false), {
-    background: DEFAULT_WINDOW_BACKGROUND,
-    restartRequired: true,
-  });
-  assert.deepEqual(resolveRunningWindowBackground(frost, 'linux', true), {
-    background: clear,
-    restartRequired: false,
-  });
-  assert.deepEqual(resolveRunningWindowBackground({ ...clear, enabled: false }, 'linux', true), {
-    background: clear,
-    restartRequired: true,
-  });
-  assert.deepEqual(resolveRunningWindowBackground(DEFAULT_WINDOW_BACKGROUND, 'linux', false), {
-    background: DEFAULT_WINDOW_BACKGROUND,
-    restartRequired: false,
-  });
+test('Linux ignores saved effects and runtime requests without requiring a restart', () => {
+  for (const wanted of [DEFAULT_WINDOW_BACKGROUND, clear, frost, { ...frost, color: '#123456' }]) {
+    assert.deepEqual(resolvePlatformWindowBackground(wanted, 'linux'), DEFAULT_WINDOW_BACKGROUND);
+    assert.deepEqual(getWindowComposition(wanted, 'linux', 0), {
+      transparent: false,
+      systemMaterial: false,
+      clientCornerRadius: 0,
+    });
+    for (const transparent of [false, true]) {
+      assert.deepEqual(resolveRunningWindowBackground(wanted, 'linux', transparent), {
+        background: DEFAULT_WINDOW_BACKGROUND,
+        restartRequired: false,
+      });
+    }
+    for (const platform of ['win32', 'darwin']) {
+      assert.deepEqual(resolvePlatformWindowBackground(wanted, platform), wanted);
+    }
+  }
 });

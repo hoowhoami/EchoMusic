@@ -23,6 +23,7 @@ const themeStore = useThemeStore();
 const toastStore = useToastStore();
 const restarting = ref(false);
 const windowPlatform = window.electron?.platform;
+const supportsWindowBackground = windowPlatform === 'win32' || windowPlatform === 'darwin';
 const restartForBackground = async () => {
   if (restarting.value) return;
   restarting.value = true;
@@ -138,141 +139,143 @@ const isAccentGradientDefault = computed(
         @update:model-value="settingStore.setTheme($event as ThemeMode)"
       />
     </div>
-    <div class="settings-divider"></div>
-    <div class="settings-item">
-      <div class="space-y-1">
-        <h3 class="font-semibold">窗口背景效果</h3>
-        <p class="text-sm text-text-secondary">
-          {{
-            settingStore.windowBackgroundLive
-              ? '保留系统窗口动画、边框和原生按钮；切换立即生效'
-              : windowPlatform === 'win32'
-                ? '透明与毛玻璃可即时切换；开启或关闭背景效果需重启'
-                : settingStore.windowBackgroundFrostLive
-                  ? '关闭与毛玻璃可即时切换；进出透明模式需重启'
-                  : '透明效果取决于桌面合成器；切换后需重启，暂不支持毛玻璃'
-          }}
-        </p>
-        <p
-          v-if="
-            windowPlatform === 'win32' &&
-            !settingStore.windowBackgroundLive &&
-            settingStore.windowBackgroundFrostLive
-          "
-          class="text-sm text-text-secondary"
-        >
-          此版本 Windows
-          的透明与毛玻璃模式可能不支持系统贴边、双击最大化、窗口动画及边缘缩放；关闭背景效果并重启可恢复原生窗口行为
-        </p>
-        <p
-          v-if="
-            backgroundMode === 'frosted' && settingStore.windowFrostBackend === 'accent-acrylic'
-          "
-          class="text-sm text-text-secondary"
-        >
-          Windows 兼容毛玻璃；拖动和调整窗口大小时暂停模糊，结束后恢复。效果受系统设置影响
-        </p>
-        <p
-          v-if="settingStore.windowBackgroundUnavailableReason"
-          class="text-sm text-text-secondary"
-          role="status"
-        >
-          {{ settingStore.windowBackgroundUnavailableReason }}
-        </p>
-        <button
-          class="settings-action"
-          v-if="windowPlatform === 'win32'"
-          type="button"
-          @click="copyBackgroundDiagnostics"
-        >
-          复制窗口诊断信息
-        </button>
-        <p
-          v-if="settingStore.windowBackgroundRestartRequired"
-          class="text-sm text-primary-text"
-          role="status"
-        >
-          {{
-            settingStore.windowBackgroundActiveEnabled
-              ? '重启应用后完整应用窗口效果'
-              : '设置已保存，重启应用后生效'
-          }}
-          <button
-            class="settings-action settings-action-primary"
-            type="button"
-            :disabled="restarting"
-            @click="restartForBackground"
+    <template v-if="supportsWindowBackground">
+      <div class="settings-divider"></div>
+      <div class="settings-item">
+        <div class="space-y-1">
+          <h3 class="font-semibold">窗口背景效果</h3>
+          <p class="text-sm text-text-secondary">
+            {{
+              settingStore.windowBackgroundLive
+                ? '保留系统窗口动画、边框和原生按钮；切换立即生效'
+                : windowPlatform === 'win32'
+                  ? '透明与毛玻璃可即时切换；开启或关闭背景效果需重启'
+                  : '关闭与毛玻璃可即时切换；进出透明模式需重启'
+            }}
+          </p>
+          <p
+            v-if="
+              windowPlatform === 'win32' &&
+              !settingStore.windowBackgroundLive &&
+              settingStore.windowBackgroundFrostLive
+            "
+            class="text-sm text-text-secondary"
           >
-            {{ restarting ? '正在重启…' : '立即重启' }}
-          </button>
-        </p>
-      </div>
-      <Select
-        class="w-45 shrink-0"
-        aria-label="窗口背景效果"
-        :model-value="backgroundMode"
-        :options="backgroundModeOptions"
-        :disabled="restarting"
-        @update:model-value="setBackgroundMode"
-      />
-    </div>
-    <template v-if="backgroundMode === 'transparent'">
-      <div class="settings-divider"></div>
-      <div class="settings-item">
-        <div class="space-y-1">
-          <h3 class="font-semibold">背景透明度</h3>
-          <p class="text-sm text-text-secondary">
-            0% 为不透明；应用于主界面及封面/纯歌词页，写真模式保持原样
+            此版本 Windows
+            的透明与毛玻璃模式可能不支持系统贴边、双击最大化、窗口动画及边缘缩放；关闭背景效果并重启可恢复原生窗口行为
           </p>
-        </div>
-        <Slider
-          class="w-48"
-          :model-value="settingStore.windowBackground.transparency"
-          :min="0"
-          :max="100"
-          :step="5"
-          show-value
-          value-suffix="%"
-          aria-label="背景透明度"
-          :disabled="restarting"
-          @update:model-value="settingStore.setWindowBackground({ transparency: $event })"
-        />
-      </div>
-      <div class="settings-divider"></div>
-      <div class="settings-item">
-        <div class="space-y-1">
-          <h3 class="font-semibold">背景底色</h3>
-          <p class="text-sm text-text-secondary">
-            {{ settingStore.windowBackground.color ? '自定义底色' : '跟随深浅色主题' }}
+          <p
+            v-if="
+              backgroundMode === 'frosted' && settingStore.windowFrostBackend === 'accent-acrylic'
+            "
+            class="text-sm text-text-secondary"
+          >
+            Windows 兼容毛玻璃；拖动和调整窗口大小时暂停模糊，结束后恢复。效果受系统设置影响
           </p>
-        </div>
-        <div class="flex items-center gap-3">
+          <p
+            v-if="settingStore.windowBackgroundUnavailableReason"
+            class="text-sm text-text-secondary"
+            role="status"
+          >
+            {{ settingStore.windowBackgroundUnavailableReason }}
+          </p>
           <button
             class="settings-action"
-            :disabled="restarting || !settingStore.windowBackground.color"
-            @click="settingStore.setWindowBackground({ color: '' })"
+            v-if="windowPlatform === 'win32'"
+            type="button"
+            @click="copyBackgroundDiagnostics"
           >
-            跟随主题
+            复制窗口诊断信息
           </button>
-          <button
-            class="settings-color-swatch"
-            aria-label="选择背景底色"
-            :disabled="restarting"
-            :style="{
-              background: settingStore.windowBackground.color || 'var(--surface-main-base)',
-            }"
-            @click="showBackgroundPicker = true"
-          ></button>
+          <p
+            v-if="settingStore.windowBackgroundRestartRequired"
+            class="text-sm text-primary-text"
+            role="status"
+          >
+            {{
+              settingStore.windowBackgroundActiveEnabled
+                ? '重启应用后完整应用窗口效果'
+                : '设置已保存，重启应用后生效'
+            }}
+            <button
+              class="settings-action settings-action-primary"
+              type="button"
+              :disabled="restarting"
+              @click="restartForBackground"
+            >
+              {{ restarting ? '正在重启…' : '立即重启' }}
+            </button>
+          </p>
         </div>
+        <Select
+          class="w-45 shrink-0"
+          aria-label="窗口背景效果"
+          :model-value="backgroundMode"
+          :options="backgroundModeOptions"
+          :disabled="restarting"
+          @update:model-value="setBackgroundMode"
+        />
       </div>
-      <ColorPickerDialog
-        :open="showBackgroundPicker"
-        title="选择背景底色"
-        :value="settingStore.windowBackground.color || (themeStore.isDark ? '#26262a' : '#f5f5f7')"
-        :presets="accentPresetValues"
-        @update:open="showBackgroundPicker = $event"
-        @confirm="(color: string) => settingStore.setWindowBackground({ color })"
-      />
+      <template v-if="backgroundMode === 'transparent'">
+        <div class="settings-divider"></div>
+        <div class="settings-item">
+          <div class="space-y-1">
+            <h3 class="font-semibold">背景透明度</h3>
+            <p class="text-sm text-text-secondary">
+              0% 为不透明；应用于主界面及封面/纯歌词页，写真模式保持原样
+            </p>
+          </div>
+          <Slider
+            class="w-48"
+            :model-value="settingStore.windowBackground.transparency"
+            :min="0"
+            :max="100"
+            :step="5"
+            show-value
+            value-suffix="%"
+            aria-label="背景透明度"
+            :disabled="restarting"
+            @update:model-value="settingStore.setWindowBackground({ transparency: $event })"
+          />
+        </div>
+        <div class="settings-divider"></div>
+        <div class="settings-item">
+          <div class="space-y-1">
+            <h3 class="font-semibold">背景底色</h3>
+            <p class="text-sm text-text-secondary">
+              {{ settingStore.windowBackground.color ? '自定义底色' : '跟随深浅色主题' }}
+            </p>
+          </div>
+          <div class="flex items-center gap-3">
+            <button
+              class="settings-action"
+              :disabled="restarting || !settingStore.windowBackground.color"
+              @click="settingStore.setWindowBackground({ color: '' })"
+            >
+              跟随主题
+            </button>
+            <button
+              class="settings-color-swatch"
+              aria-label="选择背景底色"
+              :disabled="restarting"
+              :style="{
+                background: settingStore.windowBackground.color || 'var(--surface-main-base)',
+              }"
+              @click="showBackgroundPicker = true"
+            ></button>
+          </div>
+        </div>
+        <ColorPickerDialog
+          :open="showBackgroundPicker"
+          title="选择背景底色"
+          :value="
+            settingStore.windowBackground.color || (themeStore.isDark ? '#26262a' : '#f5f5f7')
+          "
+          :presets="accentPresetValues"
+          @update:open="showBackgroundPicker = $event"
+          @confirm="(color: string) => settingStore.setWindowBackground({ color })"
+        />
+      </template>
     </template>
     <div class="settings-divider"></div>
     <div class="settings-item">

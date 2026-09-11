@@ -5,7 +5,7 @@ import Drawer from '@/components/ui/Drawer.vue';
 import Dialog from '@/components/ui/Dialog.vue';
 import Button from '@/components/ui/Button.vue';
 import Scrollbar from '@/components/ui/Scrollbar.vue';
-import { CheckboxIndicator, CheckboxRoot } from 'reka-ui';
+import Checkbox from '@/components/ui/Checkbox.vue';
 import { usePlaylistStore } from '@/stores/playlist';
 import type { Song } from '@/models/song';
 import { usePlayerStore } from '@/stores/player';
@@ -441,20 +441,14 @@ const confirmRemoveFromPlaylist = async () => {
 
     <div class="batch-selection">
       <label class="batch-select">
-        <CheckboxRoot
-          class="batch-checkbox"
+        <Checkbox
           :model-value="selectAllState"
           :disabled="isBatchBusy || songs.length === 0"
           aria-label="全选歌曲"
           @update:model-value="toggleSelectAll"
-        >
-          <CheckboxIndicator as-child
-            ><span class="batch-checkbox-indicator"></span
-          ></CheckboxIndicator>
-        </CheckboxRoot>
+        />
         <span class="batch-count" aria-live="polite">
-          已选 <strong>{{ selectedSongs.length }}</strong
-          >/{{ songs.length }}
+          {{ selectedSongs.length }}/{{ songs.length }}
         </span>
       </label>
     </div>
@@ -481,17 +475,12 @@ const confirmRemoveFromPlaylist = async () => {
                 @click="toggleSong(entry.data, entry.index)"
               >
                 <div class="batch-leading" @click.stop>
-                  <CheckboxRoot
-                    class="batch-checkbox"
+                  <Checkbox
                     :disabled="isBatchBusy"
                     :aria-label="`选择歌曲：${entry.data.title || '未命名歌曲'}`"
                     :model-value="selectedKeys.has(getSongSelectionKey(entry.data, entry.index))"
                     @update:model-value="setSongChecked(entry.data, entry.index, $event)"
-                  >
-                    <CheckboxIndicator as-child>
-                      <span class="batch-checkbox-indicator"></span>
-                    </CheckboxIndicator>
-                  </CheckboxRoot>
+                  />
                 </div>
                 <div class="batch-card" :style="{ opacity: isPlayableSong(entry.data) ? 1 : 0.45 }">
                   <SongCard
@@ -724,10 +713,6 @@ const confirmRemoveFromPlaylist = async () => {
 .batch-count {
   font-variant-numeric: tabular-nums;
 }
-.batch-count strong {
-  color: var(--color-primary-text);
-  font-weight: 600;
-}
 
 .batch-list {
   flex: 1;
@@ -785,76 +770,6 @@ const confirmRemoveFromPlaylist = async () => {
   justify-content: center;
 }
 
-.batch-checkbox {
-  width: 16px;
-  height: 16px;
-  flex-shrink: 0;
-  border-radius: 5px;
-  border: 1.5px solid var(--control-checkbox-border);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--control-checkbox-bg);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--surface-card-base) 36%, transparent);
-  transition:
-    background 0.2s ease,
-    border-color 0.2s ease,
-    box-shadow 0.2s ease;
-}
-
-.batch-checkbox:hover {
-  border-color: var(--control-checkbox-border-hover);
-  background: color-mix(in srgb, var(--color-primary) 8%, var(--control-checkbox-bg));
-}
-
-.batch-checkbox:focus-visible {
-  outline: none;
-  border-color: var(--control-checkbox-border-hover);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 18%, transparent);
-}
-
-.batch-checkbox[data-state='checked'],
-.batch-checkbox[data-state='indeterminate'] {
-  border-color: var(--color-primary);
-  background: var(--color-primary);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-primary) 14%, transparent);
-}
-
-.batch-checkbox-indicator {
-  width: 8px;
-  height: 8px;
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.batch-checkbox[data-state='checked'] .batch-checkbox-indicator::after {
-  content: '';
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  width: 4px;
-  height: 7px;
-  border: 2px solid var(--control-checkbox-indicator);
-  border-top: none;
-  border-left: none;
-  transform: translate(-50%, -55%) rotate(45deg);
-}
-
-.batch-checkbox[data-state='indeterminate'] .batch-checkbox-indicator::after {
-  content: '';
-  width: 8px;
-  height: 2px;
-  border: none;
-  background: var(--control-checkbox-indicator);
-  border-radius: 999px;
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%);
-}
-
 .batch-card {
   min-width: 0;
   flex: 1;
@@ -876,10 +791,6 @@ const confirmRemoveFromPlaylist = async () => {
   display: none;
 }
 
-.batch-checkbox[data-disabled] {
-  cursor: not-allowed;
-  opacity: 0.5;
-}
 .batch-card :deep(.song-card) {
   background: transparent;
   padding: 0;

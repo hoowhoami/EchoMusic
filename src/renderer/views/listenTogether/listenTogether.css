@@ -1728,77 +1728,6 @@
   cursor: default;
 }
 
-.listen-song-picker-checkbox {
-  width: 15px;
-  height: 15px;
-  flex: 0 0 auto;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: 1.5px solid var(--control-checkbox-border);
-  border-radius: 4px;
-  background: var(--control-checkbox-bg);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--surface-card-base) 36%, transparent);
-  cursor: pointer;
-  transition:
-    background 0.16s ease,
-    border-color 0.16s ease,
-    box-shadow 0.16s ease;
-}
-
-.listen-song-picker-checkbox:hover {
-  border-color: var(--control-checkbox-border-hover);
-}
-
-.listen-song-picker-checkbox:focus-visible {
-  outline: none;
-  border-color: var(--control-checkbox-border-hover);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 18%, transparent);
-}
-
-.listen-song-picker-checkbox[data-state='checked'],
-.listen-song-picker-checkbox[data-state='indeterminate'],
-.listen-song-picker-select-all[data-state='checked'] .listen-song-picker-checkbox,
-.listen-song-picker-select-all[data-state='indeterminate'] .listen-song-picker-checkbox {
-  border-color: var(--color-primary);
-  background: var(--color-primary);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-primary) 14%, transparent);
-}
-
-.listen-song-picker-checkbox-indicator {
-  width: 8px;
-  height: 8px;
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.listen-song-picker-checkbox[data-state='checked'] .listen-song-picker-checkbox-indicator::after,
-.listen-song-picker-select-all[data-state='checked'] .listen-song-picker-checkbox-indicator::after {
-  content: '';
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  width: 4px;
-  height: 7px;
-  border: 2px solid var(--control-checkbox-indicator);
-  border-top: none;
-  border-left: none;
-  transform: translate(-50%, -55%) rotate(45deg);
-}
-
-.listen-song-picker-checkbox[data-state='indeterminate']
-  .listen-song-picker-checkbox-indicator::after,
-.listen-song-picker-select-all[data-state='indeterminate']
-  .listen-song-picker-checkbox-indicator::after {
-  content: '';
-  width: 8px;
-  height: 2px;
-  border-radius: 999px;
-  background: var(--control-checkbox-indicator);
-}
-
 .listen-song-picker-bulk-actions span,
 .listen-song-picker-selected-total {
   color: color-mix(in srgb, var(--color-text-main) 42%, transparent);
@@ -2486,7 +2415,6 @@
 .listen-song-picker-selection-bar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   flex-shrink: 0;
   padding: 0 10px;
   color: var(--color-text-secondary);
@@ -2505,6 +2433,7 @@
 
 .listen-song-picker-selection-toggle label {
   cursor: pointer;
+  font-variant-numeric: tabular-nums;
 }
 
 .listen-song-picker-selection-toggle:hover:not(:has(.listen-order-song-check:disabled)) {
@@ -2542,64 +2471,11 @@
 }
 
 .listen-order-song-option.is-owner {
-  grid-template-columns: 18px 44px minmax(0, 1fr);
+  grid-template-columns: 16px 44px minmax(0, 1fr);
 }
 
 .listen-order-song-option.is-selected {
   background: color-mix(in srgb, var(--color-primary) 10%, transparent);
-}
-
-.listen-order-song-check {
-  width: 18px;
-  height: 18px;
-  display: grid;
-  flex: 0 0 18px;
-  place-items: center;
-  border: 1px solid var(--border-subtle);
-  border-radius: 5px;
-  color: transparent;
-  background: transparent;
-  font-size: 12px;
-  font-weight: 900;
-  cursor: pointer;
-}
-
-.listen-order-song-check[data-state='checked'],
-.listen-order-song-check[data-state='indeterminate'] {
-  border-color: var(--color-primary);
-  color: var(--color-on-primary);
-  background: var(--color-primary);
-}
-
-.listen-order-song-check:disabled {
-  cursor: default;
-  opacity: 0.55;
-}
-
-.listen-order-song-check-indicator {
-  width: 10px;
-  height: 10px;
-  position: relative;
-  display: grid;
-  place-items: center;
-}
-
-.listen-order-song-check[data-state='checked'] .listen-order-song-check-indicator::after {
-  content: '';
-  width: 5px;
-  height: 8px;
-  border: 2px solid var(--control-checkbox-indicator);
-  border-top: 0;
-  border-left: 0;
-  transform: translateY(-1px) rotate(45deg);
-}
-
-.listen-order-song-check[data-state='indeterminate'] .listen-order-song-check-indicator::after {
-  content: '';
-  width: 9px;
-  height: 2px;
-  border-radius: 999px;
-  background: var(--control-checkbox-indicator);
 }
 
 .listen-order-song-option:hover:not(.is-disabled) {

@@ -5,7 +5,7 @@ import { useVModel } from '@vueuse/core';
 import Dialog from '@/components/ui/Dialog.vue';
 import Button from '@/components/ui/Button.vue';
 import Scrollbar from '@/components/ui/Scrollbar.vue';
-import { CheckboxIndicator, CheckboxRoot } from 'reka-ui';
+import Checkbox from '@/components/ui/Checkbox.vue';
 import {
   iconCheckMark,
   iconCloudUpload,
@@ -901,14 +901,11 @@ const statusLabel = (item: CloudUploadItem) => {
         关闭此弹窗不会中断上传，你可以在标题栏「当前任务」面板中查看进度。
       </p>
       <label class="flex items-center gap-2 cursor-pointer select-none">
-        <CheckboxRoot
-          v-model:model-value="neverShowBackgroundConfirm"
-          class="w-4 h-4 rounded border border-[var(--border-main)] flex items-center justify-center data-[state=checked]:bg-[var(--color-primary)] data-[state=checked]:border-[var(--color-primary)]"
-        >
-          <CheckboxIndicator class="text-white">
-            <Icon :icon="iconCheckMark" width="12" height="12" />
-          </CheckboxIndicator>
-        </CheckboxRoot>
+        <Checkbox
+          :model-value="neverShowBackgroundConfirm"
+          aria-label="以后不再提醒"
+          @update:model-value="neverShowBackgroundConfirm = $event === true"
+        />
         <span class="text-[12px] text-text-secondary">以后不再提醒</span>
       </label>
     </div>
