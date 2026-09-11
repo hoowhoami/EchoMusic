@@ -22,6 +22,11 @@ import {
   normalizeNetworkSettings,
   type NetworkSettings,
 } from '../../shared/network';
+import type {
+  WindowBackgroundFrostBackend,
+  WindowBackgroundStrategyId,
+  WindowBackgroundTransparentMode,
+} from '../../shared/window-background-strategy';
 import { configureRendererLogger } from '@/utils/logger';
 import {
   dspPresetBankKey,
@@ -104,8 +109,10 @@ export const useSettingStore = defineStore('setting', {
     windowBackgroundNeedsRestart: false,
     windowBackgroundUnavailableReason: '',
     windowBackgroundActiveFrosted: null as boolean | null,
+    windowBackgroundStrategy: 'default' as WindowBackgroundStrategyId,
+    windowBackgroundTransparentMode: 'layered' as WindowBackgroundTransparentMode,
     supportsWindowFrost: false,
-    windowFrostBackend: 'none' as 'none' | 'vibrancy' | 'acrylic' | 'blur-behind',
+    windowFrostBackend: 'none' as WindowBackgroundFrostBackend,
     language: 'zh-CN',
     shortcutEnabled: true,
     suppressDefaultKeyBehaviors: true,
@@ -319,17 +326,23 @@ export const useSettingStore = defineStore('setting', {
       this.windowBackgroundActiveEnabled = result.activeEnabled === true;
       this.windowBackgroundActiveFrosted =
         typeof result.activeFrosted === 'boolean' ? result.activeFrosted : null;
+      this.windowBackgroundStrategy = result.strategy ?? 'default';
+      this.windowBackgroundTransparentMode = result.transparentMode ?? 'layered';
       this.supportsWindowFrost = result.supportsFrost;
       this.windowFrostBackend = result.frostBackend ?? 'none';
       this.windowBackgroundLive = result.live === true;
       this.windowBackgroundFrostLive = result.frostLive === true;
       this.windowBackgroundNeedsRestart = result.restartRequired === true;
       this.windowBackgroundUnavailableReason = result.unavailableReason || '';
-      applyWindowBackground(this.effectiveWindowBackground);
+      applyWindowBackground(this.effectiveWindowBackground, {
+        transparentMode: this.windowBackgroundTransparentMode,
+      });
     },
     async setWindowBackground(patch: Partial<WindowBackground>) {
       this.windowBackground = normalizeWindowBackground({ ...this.windowBackground, ...patch });
-      applyWindowBackground(this.effectiveWindowBackground);
+      applyWindowBackground(this.effectiveWindowBackground, {
+        transparentMode: this.windowBackgroundTransparentMode,
+      });
       await window.electron?.ipcRenderer.invoke('window-background:set', {
         ...this.windowBackground,
       });
@@ -720,6 +733,8 @@ export const useSettingStore = defineStore('setting', {
       'windowBackground',
       'windowBackgroundActiveEnabled',
       'windowBackgroundActiveFrosted',
+      'windowBackgroundStrategy',
+      'windowBackgroundTransparentMode',
       'supportsWindowFrost',
       'windowBackgroundLive',
       'windowBackgroundFrostLive',

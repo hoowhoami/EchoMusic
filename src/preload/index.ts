@@ -1545,14 +1545,28 @@ const controlsOverlay = (
     windowControlsOverlay?: EventTarget & { visible: boolean; getTitlebarAreaRect(): DOMRect };
   }
 ).windowControlsOverlay;
+let lastTitlebarArea: { x: number; width: number } | null = null;
 const syncWindowZoomGeometry = () => {
   const root = document.documentElement;
   if (!root) return;
   const factor = webFrame.getZoomFactor();
   root.style.setProperty('--window-zoom-factor', String(factor));
+  // Electron can briefly report an empty WCO rectangle while the transparent
+  // window is being recomposed. Keep the last valid safe area for that frame so
+  // the app's right-side actions cannot move underneath the native close button.
+  const overlayVisible = controlsOverlay?.visible === true;
+  const reportedRect =
+    !nativeFullscreen && overlayVisible ? controlsOverlay.getTitlebarAreaRect() : null;
+  if (reportedRect && reportedRect.width > 0 && Number.isFinite(reportedRect.x)) {
+    lastTitlebarArea = { x: reportedRect.x, width: reportedRect.width };
+  }
   // Fullscreen returns an empty rectangle; never reserve an entire viewport for it.
   const rect =
-    !nativeFullscreen && controlsOverlay?.visible ? controlsOverlay.getTitlebarAreaRect() : null;
+    !nativeFullscreen && overlayVisible
+      ? reportedRect && reportedRect.width > 0
+        ? reportedRect
+        : lastTitlebarArea
+      : null;
   const inset = rect && rect.width > 0 ? Math.max(0, window.innerWidth - rect.x - rect.width) : 0;
   // macOS keeps the 14/14 traffic-light anchor aligned with the collapsed sidebar.
   // Reserve its 80x46 DIP strip centrally; WCO may report a wider safe area.
@@ -1572,6 +1586,12 @@ ipcRenderer.on('window:fullscreen-changed', (_event, fullscreen: boolean) => {
   syncWindowZoomGeometry();
 });
 ipcRenderer.on('window:zoom-changed', syncWindowZoomGeometry);
+// setTitleBarOverlay() and transparent-window composition update asynchronously
+// on Linux. Re-read the WCO safe area after the background preference changes.
+ipcRenderer.on('window-background:changed', () => {
+  syncWindowZoomGeometry();
+  window.requestAnimationFrame(syncWindowZoomGeometry);
+});
 controlsOverlay?.addEventListener('geometrychange', syncWindowZoomGeometry);
 window.addEventListener('resize', syncWindowZoomGeometry);
 window.addEventListener('DOMContentLoaded', syncWindowZoomGeometry, { once: true });

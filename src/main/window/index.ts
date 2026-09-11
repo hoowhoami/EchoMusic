@@ -6,6 +6,10 @@ import {
   normalizeWindowBackground,
   type WindowBackground,
 } from '../../shared/window-background';
+import {
+  detectWindowBackgroundStrategy,
+  resolveWindowBackgroundCapabilities,
+} from '../../shared/window-background-strategy';
 import { BrowserWindow, shell, app, nativeTheme, powerSaveBlocker, screen } from 'electron';
 import { join } from 'path';
 import type { CloseBehavior, ThemeMode } from '../../shared/app';
@@ -27,6 +31,7 @@ import {
 } from './windowsComposition';
 import { applyMacWindowBackground } from './macComposition';
 import { createTitleBarController } from './titleBar';
+import { createHyprlandBackgroundController } from './hyprlandBackground';
 import { installWindowZoom, registerWindowZoomHandlers } from './zoom';
 import {
   installWindowFullscreen,
@@ -42,10 +47,18 @@ let closeBehavior: CloseBehavior = initialSettings.closeBehavior;
 let currentTheme: ThemeMode = initialSettings.theme;
 let windowBackground = normalizeWindowBackground(initialSettings.windowBackground);
 let windowBackgroundActiveEnabled = windowBackground.enabled;
-const supportsWindowFrost =
-  process.platform === 'darwin' ||
-  (process.platform === 'win32' &&
-    (Number(release().split('.')[2]) >= 22621 || supportsWindowsAccent()));
+const osBuild = Number(release().split('.')[2]);
+const windowBackgroundStrategy = detectWindowBackgroundStrategy({
+  platform: process.platform,
+  env: process.env,
+});
+const windowBackgroundCapabilities = resolveWindowBackgroundCapabilities({
+  platform: process.platform,
+  build: osBuild,
+  strategy: windowBackgroundStrategy,
+  windowsAccentAvailable: process.platform === 'win32' && supportsWindowsAccent(),
+});
+const supportsWindowFrost = windowBackgroundCapabilities.supportsFrost;
 
 if (!supportsWindowFrost && process.platform !== 'win32') windowBackground.frosted = false;
 let rememberWindowSize = initialSettings.rememberWindowSize;
@@ -162,14 +175,19 @@ const getMainWindowBackgroundColor = () =>
     ? '#26262a'
     : '#f5f5f7';
 
-let activeComposition = getWindowComposition(
-  windowBackground,
-  process.platform,
-  Number(release().split('.')[2]),
-);
+let activeComposition = getWindowComposition(windowBackground, process.platform, osBuild);
 let windowBackgroundActiveFrosted: boolean | null = windowBackground.frosted;
 let windowBackgroundRestartRequired = false;
+let hyprlandBackgroundController: ReturnType<typeof createHyprlandBackgroundController> | null =
+  null;
 export const getMainWindowClientCornerRadius = () => activeComposition.clientCornerRadius;
+
+const syncHyprlandBackground = () => {
+  if (!hyprlandBackgroundController) return;
+  hyprlandBackgroundController.setBlurEnabled(
+    windowBackgroundActiveEnabled && windowBackgroundActiveFrosted === true,
+  );
+};
 
 const syncMainWindowBackground = () => {
   if (!canUseMainWindow(win)) return;
@@ -178,7 +196,7 @@ const syncMainWindowBackground = () => {
   if (process.platform === 'win32') {
     backgroundUnavailableReason = '';
     try {
-      applyWindowsComposition(win, windowBackground, Number(release().split('.')[2]));
+      applyWindowsComposition(win, windowBackground, osBuild);
       win.setBackgroundColor(
         windowBackground.enabled ? '#00000000' : getMainWindowBackgroundColor(),
       );
@@ -196,6 +214,7 @@ const syncMainWindowBackground = () => {
       windowBackground,
       process.platform,
       activeComposition.transparent,
+      windowBackgroundCapabilities,
     );
     windowBackgroundRestartRequired = state.restartRequired;
     windowBackgroundActiveEnabled = state.background.enabled;
@@ -210,6 +229,7 @@ const syncMainWindowBackground = () => {
       );
     }
   }
+  syncHyprlandBackground();
   // Publish only after native materials and surface colors agree with the renderer state.
   win.webContents.send('window-background:changed', readBackgroundState());
 };
@@ -219,15 +239,11 @@ const readBackgroundState = () => ({
   activeEnabled: windowBackgroundActiveEnabled,
   activeFrosted: windowBackgroundActiveFrosted,
   supportsFrost: supportsWindowFrost,
-  frostBackend: !supportsWindowFrost
-    ? 'none'
-    : process.platform === 'darwin'
-      ? 'vibrancy'
-      : Number(release().split('.')[2]) >= 22621
-        ? 'acrylic'
-        : 'blur-behind',
-  live: process.platform === 'win32',
-  frostLive: process.platform === 'darwin' || process.platform === 'win32',
+  frostBackend: windowBackgroundCapabilities.frostBackend,
+  strategy: windowBackgroundCapabilities.strategy,
+  transparentMode: windowBackgroundCapabilities.transparentMode,
+  live: windowBackgroundCapabilities.live,
+  frostLive: windowBackgroundCapabilities.frostLive,
   restartRequired: windowBackgroundRestartRequired,
   unavailableReason: backgroundUnavailableReason,
 });
@@ -344,11 +360,7 @@ export async function createWindow() {
   await logMainMemory('createWindow:before BrowserWindow');
 
   windowBackgroundActiveEnabled = windowBackground.enabled;
-  activeComposition = getWindowComposition(
-    windowBackground,
-    process.platform,
-    Number(release().split('.')[2]),
-  );
+  activeComposition = getWindowComposition(windowBackground, process.platform, osBuild);
   windowBackgroundActiveFrosted = windowBackground.frosted;
   windowBackgroundRestartRequired = false;
   win = new BrowserWindow({
@@ -362,9 +374,7 @@ export async function createWindow() {
     frame: process.platform === 'darwin',
     // Electron's WS_THICKFRAME option is Windows-only, independent of materials.
     ...(process.platform === 'win32' ? { thickFrame: true } : {}),
-    ...(process.platform === 'win32'
-      ? getWindowsCompositionOptions(Number(release().split('.')[2]))
-      : {}),
+    ...(process.platform === 'win32' ? getWindowsCompositionOptions(osBuild) : {}),
     transparent: activeComposition.transparent,
     roundedCorners: activeComposition.clientCornerRadius === 0,
     ...(process.platform === 'darwin'
@@ -395,7 +405,14 @@ export async function createWindow() {
       preload,
       additionalArguments: [
         `--echo-initial-dark=${initialBgColor === '#26262a'}`,
-        `--echo-window-background=${JSON.stringify({ ...resolveWindowBackground(windowBackground, windowBackgroundActiveEnabled), clientCornerRadius: rememberWindowSize && initialWindowState.isMaximized ? 0 : activeComposition.clientCornerRadius })}`,
+        `--echo-window-background=${JSON.stringify({
+          ...resolveWindowBackground(windowBackground, windowBackgroundActiveEnabled),
+          transparentMode: windowBackgroundCapabilities.transparentMode,
+          clientCornerRadius:
+            rememberWindowSize && initialWindowState.isMaximized
+              ? 0
+              : activeComposition.clientCornerRadius,
+        })}`,
       ],
       contextIsolation: true,
       nodeIntegration: false,
@@ -420,6 +437,9 @@ export async function createWindow() {
     win.setBounds(placement.bounds);
   }
   const mainWindow = win;
+  if (windowBackgroundStrategy === 'hyprland') {
+    hyprlandBackgroundController = createHyprlandBackgroundController(mainWindow);
+  }
   installWindowPointerEvents(mainWindow);
   titleBarController = usesNativeOverlay
     ? createTitleBarController(
@@ -462,6 +482,9 @@ export async function createWindow() {
       win?.show();
       void logMainMemory('main window:after show');
     }
+    // The native surface address is only reliable after the window has been
+    // created by the compositor; retry the selected blur mode at this point.
+    syncHyprlandBackground();
   });
 
   win.webContents.once('dom-ready', () => {

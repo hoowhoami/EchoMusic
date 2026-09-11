@@ -93,15 +93,14 @@ const backgroundMode = computed(() =>
       ? 'frosted'
       : 'transparent',
 );
-const backgroundModeOptions = computed(() => [
-  { label: '关闭', value: 'off' },
-  { label: '透明', value: 'transparent' },
-  {
-    label: settingStore.supportsWindowFrost ? '毛玻璃' : '毛玻璃（暂不支持）',
-    value: 'frosted',
-    disabled: !settingStore.supportsWindowFrost,
-  },
-]);
+const backgroundModeOptions = computed(() => {
+  const options = [
+    { label: '关闭', value: 'off' },
+    { label: '透明', value: 'transparent' },
+  ];
+  if (settingStore.supportsWindowFrost) options.push({ label: '毛玻璃', value: 'frosted' });
+  return options;
+});
 const setBackgroundMode = (value: unknown) => {
   if (value !== 'off' && value !== 'transparent' && value !== 'frosted') return;
   if (value === 'frosted' && !settingStore.supportsWindowFrost) return;
@@ -144,11 +143,13 @@ const isAccentGradientDefault = computed(
         <h3 class="font-semibold">窗口背景效果</h3>
         <p class="text-sm text-text-secondary">
           {{
-            settingStore.windowBackgroundLive
-              ? '保留系统窗口动画、边框和原生按钮；切换立即生效'
-              : settingStore.windowBackgroundFrostLive
-                ? '关闭与毛玻璃可即时切换；进出透明模式需重启'
-                : '透明效果取决于桌面合成器；切换后需重启，暂不支持毛玻璃'
+            settingStore.windowFrostBackend === 'hyprland-blur'
+              ? '透明效果取决于桌面合成器；切换后需重启'
+              : settingStore.windowBackgroundLive
+                ? '保留系统窗口动画、边框和原生按钮；切换立即生效'
+                : settingStore.windowBackgroundFrostLive
+                  ? '关闭与毛玻璃可即时切换；进出透明模式需重启'
+                  : '透明效果取决于桌面合成器；切换后需重启'
           }}
         </p>
         <p
@@ -201,7 +202,26 @@ const isAccentGradientDefault = computed(
         @update:model-value="setBackgroundMode"
       />
     </div>
-    <template v-if="backgroundMode === 'transparent'">
+    <template
+      v-if="
+        backgroundMode === 'transparent' && settingStore.windowBackgroundTransparentMode === 'pure'
+      "
+    >
+      <div class="settings-divider"></div>
+      <div class="settings-item">
+        <div class="space-y-1">
+          <h3 class="font-semibold">纯透明模式</h3>
+          <p class="text-sm text-text-secondary">
+            当前桌面后端提供真正的透明窗口，透明度和背景底色由合成器处理
+          </p>
+        </div>
+      </div>
+    </template>
+    <template
+      v-else-if="
+        backgroundMode === 'transparent' && settingStore.windowBackgroundTransparentMode !== 'pure'
+      "
+    >
       <div class="settings-divider"></div>
       <div class="settings-item">
         <div class="space-y-1">

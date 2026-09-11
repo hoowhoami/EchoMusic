@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import Button from '@/components/ui/Button.vue';
-import { iconFullscreen, iconPictureInPicture } from '@/icons';
+import { computed, onMounted, onUnmounted, ref } from 'vue';
+import { iconFullscreen, iconPictureInPicture, iconX } from '@/icons';
 import { useSettingStore } from '@/stores/setting';
 withDefaults(defineProps<{ showMiniPlayer?: boolean }>(), { showMiniPlayer: false });
 const settings = useSettingStore();
@@ -9,6 +10,21 @@ const openMiniPlayer = () => {
 };
 const toggleFullscreen = () => window.electron.windowControl('fullscreen');
 const isMac = window.electron.platform === 'darwin';
+const isLinux = window.electron.platform === 'linux';
+const controlsOverlay = (
+  navigator as Navigator & { windowControlsOverlay?: EventTarget & { visible: boolean } }
+).windowControlsOverlay;
+const nativeControlsVisible = ref(!isLinux || controlsOverlay?.visible === true);
+const showFallbackClose = computed(() => isLinux && !nativeControlsVisible.value);
+const syncNativeControls = () => {
+  nativeControlsVisible.value = !isLinux || controlsOverlay?.visible === true;
+};
+onMounted(() => {
+  syncNativeControls();
+  controlsOverlay?.addEventListener('geometrychange', syncNativeControls);
+});
+onUnmounted(() => controlsOverlay?.removeEventListener('geometrychange', syncNativeControls));
+const closeWindow = () => window.electron.windowControl('close');
 </script>
 
 <template>
@@ -34,6 +50,17 @@ const isMac = window.electron.platform === 'darwin';
       @click="toggleFullscreen"
     >
       <Icon :icon="iconFullscreen" width="14" height="14" />
+    </Button>
+    <Button
+      v-if="showFallbackClose"
+      variant="unstyled"
+      size="none"
+      class="window-action window-close-action"
+      tooltip="关闭窗口"
+      aria-label="关闭窗口"
+      @click="closeWindow"
+    >
+      <Icon :icon="iconX" width="16" height="16" />
     </Button>
   </div>
 </template>
