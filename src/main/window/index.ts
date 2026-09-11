@@ -21,7 +21,6 @@ import { trackMainWindowState } from './state';
 import { installWindowPointerEvents } from './pointer';
 import {
   applyWindowsComposition,
-  getWindowsCompositionOptions,
   readWindowsCompositionDiagnostics,
   supportsWindowsAccent,
 } from './windowsComposition';
@@ -368,10 +367,7 @@ export async function createWindow() {
     backgroundColor: windowBackgroundActiveEnabled ? '#00000000' : initialBgColor,
     frame: process.platform === 'darwin',
     // Electron's WS_THICKFRAME option is Windows-only, independent of materials.
-    ...(process.platform === 'win32' ? { thickFrame: true } : {}),
-    ...(process.platform === 'win32'
-      ? getWindowsCompositionOptions(Number(release().split('.')[2]), activeComposition.transparent)
-      : {}),
+    ...(process.platform === 'win32' ? { thickFrame: !activeComposition.transparent } : {}),
     transparent: activeComposition.transparent,
     roundedCorners: activeComposition.clientCornerRadius === 0,
     ...(process.platform === 'darwin'

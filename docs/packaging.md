@@ -44,16 +44,15 @@ development dependency. Keep `LICENSES` and `THIRD_PARTY_NOTICES.md` in the pack
 Windows background effects depend on Electron's compositor internals, not just
 whether the native API returns success. Before shipping an Electron upgrade:
 
-1. On Windows 10 and early Windows 11 (builds below 22621), clear now uses
-   `transparent: true` without a background material or native clear call.
-   Entering/leaving clear requires restart. Verify saved tint/opacity, canceling a
-   pending selection, and restoring the native frame after switching to off/frost
-   and restarting. Snap, double-click maximize, animation and resizing limitations
-   in clear are accepted and explained in settings; do not claim native-frame parity.
-   Off/frost use `transparent: false` and can switch live. Rebuild the platform
-   addon for Acrylic mode 8; beta.3 binaries reject it. Verify native drag/resize
-   suspends Acrylic and restores it on release, including closing during resize.
-   Test cold starts, show/hide, fullscreen and effect switches on actual Windows.
+1. On Windows 10 and early Windows 11 (builds below 22621), both clear and frost
+   use `transparent: true`, without a constructor background material. Entering
+   or leaving effects requires restart; clear/frost switches are live. Verify
+   saved tint/opacity and restoration of native frame behavior after selecting
+   off and restarting. Both effects have the disclosed native snap/animation
+   limitations. Rebuild the platform addon for modes 10/11: they enable/clear
+   Accent without resetting Electron's DWM alpha or margins. Older addons must
+   fail explicitly. Test clear → frost → clear, drag/resize suspension and restore,
+   cold starts, show/hide and fullscreen on actual Windows.
 2. On Windows 11 22H2+, verify clear remains unblurred after theme changes,
    zoom, resize, maximize/restore and page reload. Electron prepares its surface
    as Acrylic, then native mode 5 sets the DWM backdrop to `NONE` and enables DWM alpha. Repeated

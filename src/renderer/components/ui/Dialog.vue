@@ -136,12 +136,19 @@ const handleInteractOutside = (event: Event) => {
           </DialogClose>
 
           <!-- 固定头部：标题 -->
-          <div v-if="hasTitle" class="dialog-header shrink-0">
+          <div
+            v-if="hasTitle"
+            class="dialog-header shrink-0"
+            :class="{ 'dialog-header-with-actions': slots.headerActions }"
+          >
             <DialogTitle as-child>
               <h3 class="dialog-title">
                 <slot name="title">{{ props.title }}</slot>
               </h3>
             </DialogTitle>
+            <div v-if="slots.headerActions" class="dialog-header-actions">
+              <slot name="headerActions" />
+            </div>
           </div>
           <VisuallyHidden v-else>
             <DialogTitle>对话框</DialogTitle>
@@ -303,6 +310,17 @@ const handleInteractOutside = (event: Event) => {
 
 .dialog-title {
   @apply text-lg font-bold text-text-main;
+}
+.dialog-header-with-actions {
+  padding-right: 96px;
+}
+.dialog-header-actions {
+  position: absolute;
+  top: 16px;
+  right: 56px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .dialog-description {

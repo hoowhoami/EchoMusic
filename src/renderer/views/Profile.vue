@@ -15,6 +15,7 @@ import Popover from '@/components/ui/Popover.vue';
 import Select from '@/components/ui/Select.vue';
 import Textarea from '@/components/ui/Textarea.vue';
 import ContentBlacklistDialog from '@/components/profile/ContentBlacklistDialog.vue';
+import ListeningPreferencesDialog from '@/components/profile/ListeningPreferencesDialog.vue';
 
 import Avatar from '@/components/ui/Avatar.vue';
 
@@ -24,13 +25,13 @@ import type { UpdateUserProfileParams } from '@/api/user';
 import {
   iconCheck,
   iconGift,
+  iconHeadphones,
   iconHome,
   iconInfo,
   iconLogOut,
   iconPencil,
   iconRefreshCw,
   iconScan,
-  iconShield,
   iconSmartphone,
   iconTrash,
   iconUser,
@@ -68,6 +69,7 @@ const userInfo = computed(() => userStore.info);
 
 const isLoading = ref(false);
 const showContentBlacklist = ref(false);
+const showListeningPreferences = ref(false);
 const showDeviceManager = ref(false);
 const showKickConfirm = ref(false);
 const pendingKickDevice = ref<LoginDeviceSession | null>(null);
@@ -465,12 +467,12 @@ onMounted(() => loadData());
                 <Button
                   variant="unstyled"
                   size="none"
-                  @click="showContentBlacklist = true"
+                  @click="showListeningPreferences = true"
                   class="w-10 h-10 flex items-center justify-center rounded-full border border-[var(--control-border)] text-text-main/70 hover:bg-[var(--control-hover-bg)] hover:text-text-main transition-all active:scale-90"
-                  tooltip="黑名单管理"
-                  aria-label="打开黑名单管理"
+                  tooltip="听歌偏好"
+                  aria-label="听歌偏好"
                 >
-                  <Icon :icon="iconShield" width="20" height="20" />
+                  <Icon :icon="iconHeadphones" width="20" height="20" />
                 </Button>
                 <Button
                   variant="unstyled"
@@ -867,6 +869,10 @@ onMounted(() => loadData());
     </Dialog>
 
     <ContentBlacklistDialog v-model:open="showContentBlacklist" />
+    <ListeningPreferencesDialog
+      v-model:open="showListeningPreferences"
+      @blacklist="showContentBlacklist = true"
+    />
     <Dialog
       v-model:open="showGradeDetail"
       title="我的等级"

@@ -14,6 +14,7 @@ import {
 import { getAlbumComments } from '@/api/comment';
 import SliverHeader from '@/components/music/DetailPageSliverHeader.vue';
 import DetailPageSkeleton from '@/components/music/DetailPageSkeleton.vue';
+import DynamicAlbumCover from '@/components/music/DynamicAlbumCover.vue';
 import ActionRow from '@/components/music/DetailPageActionRow.vue';
 import SongList from '@/components/music/SongList.vue';
 import SongListHeader from '@/components/music/SongListHeader.vue';
@@ -73,6 +74,10 @@ const album = ref<AlbumMeta | null>(null);
 // 使用 shallowRef 极大减少响应式开销
 const songs = shallowRef<Song[]>([]);
 const loadedSongCount = ref(0);
+const coverAudioId = computed(() => {
+  const song = songs.value.find((item) => item.albumAudioId || item.mixSongId);
+  return song?.albumAudioId || song?.mixSongId;
+});
 
 const activeTab = ref('songs');
 const loadingComments = ref(false);
@@ -563,6 +568,17 @@ const activeSongId = computed(() => playerStore.currentTrackId ?? undefined);
           :hasDetails="true"
           :expandedHeight="196"
         >
+          <template #cover="{ expanded }">
+            <DynamicAlbumCover
+              :enabled="settingStore.dynamicAlbumCover"
+              :url="album.pic"
+              :album-audio-id="coverAudioId"
+              :album-id="album.id"
+              :active="expanded && !playerStore.isLyricViewOpen"
+              :size="400"
+              :alt="album.name"
+            />
+          </template>
           <template #details>
             <div class="flex flex-col gap-1.5 text-text-main/60">
               <div class="album-artist-line">

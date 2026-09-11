@@ -195,13 +195,26 @@ watch(
   background: var(--surface-scrim-bg);
 }
 
-:global(.comment-drawer) {
+:global(.drawer-panel.comment-drawer) {
   z-index: 1510;
   padding: 0;
-  box-shadow: none;
-  bottom: 0;
-  width: min(460px, 88vw);
+  top: 12px;
+  right: 12px;
+  bottom: 12px;
+  width: min(460px, calc(100vw - 24px));
+  border-radius: 12px;
+  box-shadow: var(--shadow-dialog);
+  overflow: hidden;
   font-size: 13px;
+}
+
+@media (max-width: 420px) {
+  :global(.drawer-panel.comment-drawer) {
+    top: 8px;
+    right: 8px;
+    bottom: 8px;
+    width: min(460px, calc(100vw - 16px));
+  }
 }
 
 .comment-drawer-header {
@@ -210,6 +223,7 @@ watch(
   justify-content: space-between;
   padding: 20px 20px 14px;
   border-bottom: 1px solid var(--border-subtle);
+  flex-shrink: 0;
 }
 
 .comment-drawer-heading {

@@ -9,11 +9,16 @@ interface Props {
   ariaLabel?: string;
   tabIds?: string[];
   panelIds?: string[];
+  disabled?: boolean;
+  /** 切换设置值时使用单选组语义；切换内容面板时使用默认 tablist。 */
+  role?: 'tablist' | 'radiogroup';
 }
 
 const props = withDefaults(defineProps<Props>(), {
   tabs: () => [],
   modelValue: 0,
+  disabled: false,
+  role: 'tablist',
 });
 
 const emit = defineEmits<{
@@ -21,24 +26,36 @@ const emit = defineEmits<{
 }>();
 
 const tabCount = computed(() => (props.tabs.length > 0 ? props.tabs.length : 1));
+const hasSelection = computed(
+  () =>
+    Number.isInteger(props.modelValue) &&
+    props.modelValue >= 0 &&
+    props.modelValue < props.tabs.length,
+);
 
 const sliderStyle = computed(() => ({
   width: `calc(100% / ${tabCount.value})`,
   transform: `translateX(${props.modelValue * 100}%)`,
+  visibility: hasSelection.value ? ('visible' as const) : ('hidden' as const),
 }));
 
 const isSelected = (index: number) => index === props.modelValue;
 
 const handleSelect = (index: number) => {
+  if (props.disabled || !Number.isInteger(index) || index < 0 || index >= props.tabs.length) return;
   if (index === props.modelValue) return;
   emit('update:modelValue', index);
 };
 
 const handleKeydown = (event: KeyboardEvent, index: number) => {
+  if (props.disabled || props.tabs.length === 0) return;
   let nextIndex = index;
-  if (event.key === 'ArrowRight') {
+  if (event.key === 'ArrowRight' || (props.role === 'radiogroup' && event.key === 'ArrowDown')) {
     nextIndex = (index + 1) % tabCount.value;
-  } else if (event.key === 'ArrowLeft') {
+  } else if (
+    event.key === 'ArrowLeft' ||
+    (props.role === 'radiogroup' && event.key === 'ArrowUp')
+  ) {
     nextIndex = (index - 1 + tabCount.value) % tabCount.value;
   } else if (event.key === 'Home') {
     nextIndex = 0;
@@ -50,14 +67,19 @@ const handleKeydown = (event: KeyboardEvent, index: number) => {
 
   event.preventDefault();
   handleSelect(nextIndex);
-  const tablist = (event.currentTarget as HTMLElement).closest<HTMLElement>('[role="tablist"]');
-  tablist?.querySelectorAll<HTMLElement>('[role="tab"]')[nextIndex]?.focus();
+  const track = (event.currentTarget as HTMLElement).closest<HTMLElement>('.custom-tab-track');
+  track?.querySelectorAll<HTMLElement>('.custom-tab-item')[nextIndex]?.focus();
 };
 </script>
 
 <template>
   <div class="custom-tab-root" :class="props.class">
-    <div class="custom-tab-track" role="tablist" :aria-label="props.ariaLabel">
+    <div
+      class="custom-tab-track"
+      :role="props.role"
+      :aria-label="props.ariaLabel"
+      :aria-disabled="disabled || undefined"
+    >
       <div class="custom-tab-slider" :style="sliderStyle" aria-hidden="true"></div>
       <Button
         variant="unstyled"
@@ -67,11 +89,13 @@ const handleKeydown = (event: KeyboardEvent, index: number) => {
         type="button"
         class="custom-tab-item"
         :class="{ active: isSelected(index) }"
-        role="tab"
+        :role="props.role === 'radiogroup' ? 'radio' : 'tab'"
         :id="props.tabIds?.[index]"
-        :aria-controls="props.panelIds?.[index]"
-        :aria-selected="isSelected(index)"
-        :tabindex="isSelected(index) ? 0 : -1"
+        :aria-controls="props.role === 'tablist' ? props.panelIds?.[index] : undefined"
+        :aria-selected="props.role === 'tablist' ? isSelected(index) : undefined"
+        :aria-checked="props.role === 'radiogroup' ? isSelected(index) : undefined"
+        :disabled="disabled"
+        :tabindex="!disabled && (isSelected(index) || (!hasSelection && index === 0)) ? 0 : -1"
         @click="handleSelect(index)"
         @keydown="handleKeydown($event, index)"
       >
@@ -152,5 +176,12 @@ const handleKeydown = (event: KeyboardEvent, index: number) => {
 
 .dark .custom-tab-item.active:hover {
   color: var(--color-on-primary);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .custom-tab-slider,
+  .custom-tab-item {
+    transition: none;
+  }
 }
 </style>

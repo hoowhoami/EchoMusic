@@ -174,7 +174,9 @@ onUnmounted(() => {
             height: `${coverSize}px`,
           }"
         >
-          <Cover :url="coverUrl" :size="400" :width="coverSize" :height="coverSize" />
+          <slot name="cover" :expanded="progress < 0.9">
+            <Cover :url="coverUrl" :size="400" :width="coverSize" :height="coverSize" />
+          </slot>
         </div>
       </div>
 

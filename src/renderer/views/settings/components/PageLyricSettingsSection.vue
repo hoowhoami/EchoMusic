@@ -145,6 +145,14 @@ const romanizationStyle = computed<RomanizationStyle>({
     <div class="settings-divider"></div>
     <div class="settings-item">
       <div class="space-y-1">
+        <h3 class="font-semibold">专辑动态封面</h3>
+        <p class="text-sm text-text-secondary">仅用于歌词页封面模式，无资源时显示静态封面</p>
+      </div>
+      <Switch v-model="settingStore.lyricDynamicAlbumCover" />
+    </div>
+    <div class="settings-divider"></div>
+    <div class="settings-item">
+      <div class="space-y-1">
         <h3 class="font-semibold">封面模糊背景</h3>
         <p class="text-sm text-text-secondary">
           将封面图片模糊化作为歌词页背景，关闭时使用主题色纯色背景

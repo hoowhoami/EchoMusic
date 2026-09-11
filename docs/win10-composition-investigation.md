@@ -36,20 +36,21 @@ temporarily disables Acrylic. Its
 explicitly treats pure transparency differently, selecting `transparent: true`.
 This is a third-party VS Code extension, not VS Code's built-in implementation.
 
-The working-tree change now uses native protocol 8 for Win10/early Win11 frost,
-with native modal-loop drag suppression instead of the extension's JS debounce.
-It uses the minimum nonzero Acrylic tint alpha from
-[Tauri window-vibrancy](https://github.com/tauri-apps/window-vibrancy/blob/dev/src/windows.rs).
-Our addon does not change HWND styles. Clear now uses Electron's `transparent: true`
-creation option without `backgroundMaterial` or native DWM clear calls. The user
-accepted the native frame/animation limitations. Entering or leaving clear requires
-restart; pending incompatible effects fall back to solid instead of reporting
-success. Off/frost remain nontransparent Electron windows. Both implementations
-still require Windows 10 visual validation.
+## Follow-up: opaque Acrylic also failed
+
+Windows 10 19045 / Electron 43.7.0 feedback confirmed Electron clear works but
+opaque Acrylic mode 8 does not, with a gray exterior edge despite successful
+native calls. The implementation now uses transparent Electron windows for both
+effects. Modes 10/11 only enable/clear Accent, leaving Electron's DWM alpha and
+margins intact during switching, dragging and rollback. The constructor material
+bootstrap is removed. Both effects share the accepted frame limitations; enabling
+or disabling effects requires restart, while clear/frost switches are live.
+This corrects the earlier assumption that the extension's opaque Acrylic setup
+would also work here. The new frost result still requires actual Windows testing.
 
 ## Controlled reproduction
 
-Use a Windows build of the current native addon (protocols 6, 7 and 8). From the repo:
+Use a Windows build of the current native addon (protocols 10 and 11). From the repo:
 
 ```powershell
 pnpm exec electron scripts/repro-win10-composition.cjs
@@ -64,10 +65,9 @@ pnpm exec electron scripts/repro-win10-composition.cjs --addon="C:\path\to\resou
 The experiment does not start EchoMusic or read/write its settings. It creates two
 windows with minimal transparent HTML. A is the old opaque material-bootstrap
 configuration; B is the new Electron transparent clear configuration (no material).
-Electron disables `thickFrame` for B. Press 0 (solid), 1 (Electron clear), 2 (new
-Acrylic), 3 (old BlurBehind) or 4 (old DWM clear). Both start with Electron clear;
+Electron disables `thickFrame` for B. Press 0 (solid), 1 (Electron clear), 2 (Acrylic). Both start with Electron clear;
 A is expected to remain opaque in that case. For the production frost configuration,
-use Acrylic on A. Place a patterned window behind them and record visible results
+use Acrylic on B. Place a patterned window behind them and record visible results
 separately from console API results. Test moving, resizing and minimize/restore.
 
 - A fails, B works: narrows the problem to the Electron transparency/frame paths;

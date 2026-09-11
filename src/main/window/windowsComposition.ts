@@ -5,16 +5,6 @@ import type { WindowBackground } from '../../shared/window-background';
 
 export const supportsWindowsAccent = () => Boolean(getNativePlatform());
 
-export function getWindowsCompositionOptions(build: number, transparent = false) {
-  return {
-    // Before Win11 22H2, setBackgroundMaterial returns before updating Chromium.
-    // The constructor still reads this value for IsTranslucent / DirectComposition.
-    // Clear instead uses transparent:true and needs no material bootstrap.
-    // No system Acrylic is applied on these OS versions; Accent owns the effect.
-    ...(build < 22621 && !transparent ? { backgroundMaterial: 'acrylic' as const } : {}),
-  };
-}
-
 const active = new WeakMap<
   BrowserWindow,
   'none' | 'clear' | 'electron-transparent' | 'accent-acrylic' | 'acrylic'
@@ -66,7 +56,8 @@ export function applyWindowsComposition(
     // Clear the previous backend before selecting another; do not reset DWM on tint updates.
     if (previous === 'acrylic' || (previous === 'clear' && build >= 22621))
       syncWindowsBackgroundMaterial(win, false);
-    if (previous === 'clear' || previous === 'accent-acrylic') accent(0);
+    if (previous === 'clear') accent(0);
+    if (previous === 'accent-acrylic') accent(11);
     active.set(win, 'none');
     if (mode === 'acrylic') syncWindowsBackgroundMaterial(win, true);
     else if (mode === 'clear' && build >= 22621) {
@@ -74,7 +65,7 @@ export function applyWindowsComposition(
       // Prepare it through Electron, then remove only the native system backdrop.
       syncWindowsBackgroundMaterial(win, true);
       accent(5);
-    } else if (mode === 'accent-acrylic') accent(8);
+    } else if (mode === 'accent-acrylic') accent(10);
     // Legacy clear is provided by BrowserWindow.transparent. Calling the old
     // DWM mode here would reintroduce the failed opaque-window workaround.
     active.set(win, mode);
@@ -85,7 +76,7 @@ export function applyWindowsComposition(
       /* best effort */
     }
     try {
-      accent(0);
+      accent(build < 22621 ? 11 : 0);
     } catch {
       /* solid Chromium surface remains the fallback */
     }

@@ -1,9 +1,13 @@
 <script setup lang="ts">
 import { usePlayerControls } from '@/composables/usePlayerControls';
-import Cover from '@/components/ui/Cover.vue';
+import DynamicAlbumCover from '@/components/music/DynamicAlbumCover.vue';
+import { usePlayerStore } from '@/stores/player';
+import { useSettingStore } from '@/stores/setting';
 import LyricScroller from './LyricScroller.vue';
 
 const { currentTrack } = usePlayerControls();
+const playerStore = usePlayerStore();
+const settingStore = useSettingStore();
 </script>
 
 <template>
@@ -11,7 +15,17 @@ const { currentTrack } = usePlayerControls();
     <!-- 左侧：封面 + 歌曲信息 -->
     <section class="cover-side">
       <div class="cover-wrapper">
-        <Cover :url="currentTrack?.coverUrl" :size="800" :borderRadius="24" class="cover-img" />
+        <DynamicAlbumCover
+          :enabled="settingStore.lyricDynamicAlbumCover"
+          :url="currentTrack?.coverUrl"
+          :album-audio-id="currentTrack?.albumAudioId || currentTrack?.mixSongId"
+          :album-id="currentTrack?.albumId"
+          :active="playerStore.isPlaying"
+          :size="800"
+          :border-radius="24"
+          :alt="currentTrack?.albumName || currentTrack?.name || '专辑封面'"
+          class="cover-img"
+        />
       </div>
       <div class="song-info">
         <h1 class="song-title">{{ currentTrack?.name || '未在播放' }}</h1>

@@ -146,9 +146,11 @@ const isAccentGradientDefault = computed(
           {{
             settingStore.windowBackgroundLive
               ? '保留系统窗口动画、边框和原生按钮；切换立即生效'
-              : settingStore.windowBackgroundFrostLive
-                ? '关闭与毛玻璃可即时切换；进出透明模式需重启'
-                : '透明效果取决于桌面合成器；切换后需重启，暂不支持毛玻璃'
+              : windowPlatform === 'win32'
+                ? '透明与毛玻璃可即时切换；开启或关闭背景效果需重启'
+                : settingStore.windowBackgroundFrostLive
+                  ? '关闭与毛玻璃可即时切换；进出透明模式需重启'
+                  : '透明效果取决于桌面合成器；切换后需重启，暂不支持毛玻璃'
           }}
         </p>
         <p
@@ -160,7 +162,7 @@ const isAccentGradientDefault = computed(
           class="text-sm text-text-secondary"
         >
           此版本 Windows
-          的纯透明模式可能不支持系统贴边、双击最大化、窗口动画及边缘缩放；切回关闭或毛玻璃并重启可恢复原生窗口行为
+          的透明与毛玻璃模式可能不支持系统贴边、双击最大化、窗口动画及边缘缩放；关闭背景效果并重启可恢复原生窗口行为
         </p>
         <p
           v-if="
@@ -397,6 +399,17 @@ const isAccentGradientDefault = computed(
         :model-value="themeStore.globalAccent"
         @update:model-value="themeStore.setGlobalAccent(Boolean($event))"
       />
+    </div>
+
+    <div class="settings-divider"></div>
+    <div class="settings-item">
+      <div class="space-y-1">
+        <h3 class="font-semibold">专辑动态封面</h3>
+        <p class="text-sm text-text-secondary">
+          在专辑详情展示动态封面，无资源时使用静态封面；歌词页可单独设置
+        </p>
+      </div>
+      <Switch v-model="settingStore.dynamicAlbumCover" />
     </div>
 
     <ColorPickerDialog

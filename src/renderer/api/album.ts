@@ -1,5 +1,17 @@
 import request from '@/utils/request';
 
+/** 专辑动态封面（短视频），缺少专辑 ID 时仍可按专辑音乐 ID 查询。 */
+export function getAlbumDynamicCover(albumAudioId: string, albumId?: string) {
+  return request.get('/album/dycover', {
+    params: {
+      album_audio_id: albumAudioId,
+      ...(albumId ? { album_id: albumId } : {}),
+    },
+    // Artwork is optional and must not interrupt playback with a verification dialog.
+    skipKugouVerification: true,
+  });
+}
+
 /**
  * 获取专辑详情
  */

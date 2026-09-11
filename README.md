@@ -58,10 +58,6 @@
 - **Backend Service**: [Node.js](https://nodejs.org/)（内置本地服务，进程内直接调用）
 - **Audio Engine**: FFmpeg 解码 + SoundTouch 变速处理 + 原生音频输出（通过 Rust NAPI addon 进程内嵌入）
 - **Native Addons**: [napi-rs](https://napi.rs/)（Rust 编写的原生扩展）
-  - `echo-audio-player`：播放引擎封装，使用 vendored `ffmpeg-audio` 与 `soundtouch-rs`，支持淡入淡出、音效引擎、音量均衡、倍速播放、输出设备切换、独占输出与实时频谱分析
-  - `echo-audio-capture`：跨平台系统输出与麦克风输入采集，提供设备选择、连续缓冲、快照和可配置 PCM 格式转换能力，用于听歌识曲等功能
-  - `echo-media-controls`：系统媒体控制集成（macOS/Windows/Linux 原生 API）
-  - `echo-sqlite-store`：SQLite 本地持久化存储，负责设置、播放队列与状态快照
 
 ## 🖼️ 界面截图
 
@@ -98,18 +94,44 @@
 
 - [Node.js](https://nodejs.org/) 22.12+
 - [pnpm](https://pnpm.io/) 9+
-- [Rust](https://www.rust-lang.org/)（编译原生模块需要）
-- FFmpeg 开发库（编译播放引擎原生模块需要；运行时不依赖外部 `ffmpeg` 可执行文件）
-- Windows 编译 `echo-audio-player` 时还需要 LLVM/libclang（`bindgen` 生成 FFmpeg 绑定需要）
+- [Rust](https://www.rust-lang.org/) stable（项目中的音频模块声明最低 Rust 1.87，建议使用当前 stable）
+- C/C++ 编译工具链及 LLVM/libclang（原生依赖与 `bindgen` 生成绑定需要）
 
-Windows 上如遇到 `Unable to find libclang`，先安装 LLVM，并确保 `LIBCLANG_PATH` 指向包含 `libclang.dll` 的目录：
+#### macOS
+
+安装 Xcode Command Line Tools 和 LLVM（以下依赖安装命令使用 Homebrew）：
+
+```bash
+xcode-select --install
+brew install llvm pkg-config
+export LIBCLANG_PATH="$(brew --prefix llvm)/lib"
+```
+
+已安装 Command Line Tools 时跳过第一条命令。在设置了 `LIBCLANG_PATH` 的同一终端中执行后续构建。
+
+#### Windows
+
+安装 Visual Studio Build Tools 的“使用 C++ 的桌面开发”工作负载及 Windows SDK，使用 MSVC Rust 工具链；编译 ARM64 时还需安装对应的 ARM64 C++ 工具。LLVM/libclang 可通过以下 PowerShell 命令安装、配置：
 
 ```powershell
 winget install LLVM.LLVM
-setx LIBCLANG_PATH "C:\Program Files\LLVM\bin"
+$env:LIBCLANG_PATH = "C:\Program Files\LLVM\bin"
 ```
 
-重新打开终端后再执行原生模块构建命令。若使用 Visual Studio 自带的 LLVM，也可以把 `LIBCLANG_PATH` 设置为对应的 `VC\Tools\Llvm\x64\bin` 目录。
+`LIBCLANG_PATH` 必须指向包含 `libclang.dll` 的目录。以上设置立即作用于当前终端；如需持久化，可再执行 `setx LIBCLANG_PATH "C:\Program Files\LLVM\bin"`，新终端才会读取该持久化设置。也可使用 Visual Studio 自带 LLVM 的相应目录。
+
+#### Linux
+
+以 Debian / Ubuntu 为例，安装编译工具、libclang 和音频后端开发库；后半部分为运行 Electron 所需的桌面依赖：
+
+```bash
+sudo apt-get update
+sudo apt-get install -y build-essential pkg-config clang libclang-dev \
+  libasound2-dev libpulse-dev libpipewire-0.3-dev \
+  libgtk-3-dev libnotify-dev libnss3 libxss1 libxtst6 xdg-utils
+```
+
+其他发行版安装对应软件包。播放引擎的 Linux 后端同时启用 ALSA、PulseAudio 和 PipeWire，不能只安装其中一个后端的开发库。
 
 ### 本地开发
 
@@ -145,32 +167,72 @@ setx LIBCLANG_PATH "C:\Program Files\LLVM\bin"
    printf '%s' './electron' > path.txt
    ```
 
-3. **编译 Rust 原生模块**
+3. **编译全部 Native 模块**
 
-   倘若出现如下报错:
+   `*.node` 产物不随源码提交。首次开发、修改 Rust 代码或切换系统/CPU 架构后，都需要构建对应模块。根目录的 `pnpm install` 只覆盖根项目和 `server` workspace，`pnpm dev` / `pnpm build` 不会自动编译这些 Native 模块。
+
+   | 模块目录                       | 用途                       | 构建平台                        |
+   | ------------------------------ | -------------------------- | ------------------------------- |
+   | `native/echo-audio-player`     | 播放、解码及音效处理       | macOS / Windows / Linux         |
+   | `native/echo-audio-capture`    | 系统音频和麦克风采集       | macOS / Windows / Linux         |
+   | `native/echo-media-controls`   | 系统媒体控制               | macOS / Windows / Linux         |
+   | `native/echo-sqlite-store`     | SQLite 持久化存储          | macOS / Windows / Linux         |
+   | `native/echo-platform-adaptor` | 系统窗口、任务栏等平台适配 | macOS / Windows；Linux 无需构建 |
+
+   以下命令均从仓库根目录执行，逐个安装模块的构建依赖并运行其 `build` 脚本（`napi build --release --no-const-enum`），遇到错误即停止。
+
+   **macOS / Linux（Bash）：**
 
    ```bash
-   Error: Cannot find module '/home/myname/EchoMusic/native/echo-audio-player/echo-audio-player.node'
-   [error] [PlayerController] Failed to load echo-audio-player addon
+   bash <<'BASH'
+   set -e
+   addons=(echo-audio-player echo-audio-capture echo-media-controls echo-sqlite-store)
+   if [[ "$(uname -s)" == "Darwin" ]]; then
+     addons+=(echo-platform-adaptor)
+   fi
+   for addon in "${addons[@]}"; do
+     (
+       cd "native/$addon"
+       npm install
+       npm run build
+     )
+   done
+   BASH
    ```
 
-   需要手动编译 Rust 原生模块，因为 `*.node` 文件在 `.gitignore` 中被排除。推荐使用各 addon 自带的 napi-rs 构建脚本生成平台对应的 `.node`：
+   **Windows（PowerShell）：**
+
+   ```powershell
+   $addons = @("echo-audio-player", "echo-audio-capture", "echo-media-controls", "echo-sqlite-store", "echo-platform-adaptor")
+   foreach ($addon in $addons) {
+     Push-Location "native/$addon"
+     try {
+       npm install
+       if ($LASTEXITCODE -ne 0) { throw "安装 $addon 构建依赖失败" }
+       npm run build
+       if ($LASTEXITCODE -ne 0) { throw "构建 $addon 失败" }
+     } finally {
+       Pop-Location
+     }
+   }
+   ```
+
+   每个模块会在自身目录生成同名 `.node`，例如 `native/echo-audio-capture/echo-audio-capture.node`。仅执行 `cargo build --release` 不会将产物转换并放到应用期望的这个路径，应使用上述 napi-rs 脚本。
+
+   **检查产物（在仓库根目录执行，适用于三平台）：**
 
    ```bash
-   cd native/echo-audio-player
-   pnpm install --ignore-workspace
-   pnpm exec napi build --release --no-const-enum
-
-   cd ../echo-media-controls
-   npm install
-   npm run build
-
-   cd ../echo-sqlite-store
-   npm install
-   npm run build
-
-   cd ../..
+   node -e 'const fs = require("node:fs"); const addons = ["echo-audio-player", "echo-audio-capture", "echo-media-controls", "echo-sqlite-store"]; if (process.platform === "darwin" || process.platform === "win32") addons.push("echo-platform-adaptor"); for (const name of addons) { const file = "native/" + name + "/" + name + ".node"; if (!fs.existsSync(file)) throw new Error("缺少产物: " + file); console.log(file); } console.log("当前 Node 平台/架构:", process.platform, process.arch);'
    ```
+
+   此检查只确认文件存在。所有 `.node` 的平台和架构还必须与运行的 Electron 或打包目标一致：x64 与 arm64 产物不能混用。通常在目标平台、目标架构的环境中构建；交叉编译时，需先准备目标工具链、SDK 和 `rustup target add <target>`，再在**每个模块目录**运行 `npx napi build --release --no-const-enum --target <target>`，打包时选择相同架构。可参考 [CI 构建矩阵](.github/workflows/build.yml)。
+
+   **常见问题：**
+   - `Cannot find module .../echo-*.node`：检查对应模块是否构建成功、产物是否位于上述路径。
+   - `Unable to find libclang`：检查 LLVM/libclang 安装与 `LIBCLANG_PATH`；它应指向库所在目录，而不是可执行文件。
+   - Linux 报 ALSA / PulseAudio / PipeWire 的 `pkg-config` 错误：补齐上面的开发库，并确认 `pkg-config` 能找到目标架构的库。
+   - FFmpeg 提示 `Falling back to attempting to link the system's FFmpeg`：检查 `native/echo-audio-player/vendor/ffmpeg-audio/crates/ffmpeg_audio_sys/vendor/` 中的 `ffmpeg_slim.zip` 和 `configs.zip` 是否完整。默认构建不需要设置 `FFMPEG_MODE=system`；使用系统 FFmpeg 会引入额外的开发库及运行时动态库依赖。
+   - 重编译后完全退出并重新启动 EchoMusic，已加载的 Native 模块不会随前端热更新重新加载。
 
 4. **启动本地开发服务器**
 
@@ -217,9 +279,13 @@ EchoMusic 支持在线插件源和本地插件，可以扩展页面、音源、�
 
 **手动编译：**
 
+先完成“快速开始”中的依赖安装及全部 Native 模块构建，确认 `.node` 与打包架构一致，再在根目录执行：
+
 ```bash
 pnpm build
 ```
+
+`pnpm build` 执行类型检查、Vite 构建和 electron-builder 打包；`npmRebuild` 已关闭，打包过程只复制现有 Native 产物，不会替你补编译。Windows / macOS 需包含全部 5 个模块，Linux 需包含前 4 个。
 
 ## 📦 打包产物
 

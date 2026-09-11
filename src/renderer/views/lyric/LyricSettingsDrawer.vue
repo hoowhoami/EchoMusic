@@ -281,6 +281,13 @@ const close = () => {
           <div class="section-title">显示</div>
           <div class="setting-row">
             <div class="setting-text">
+              <span class="setting-label">专辑动态封面</span>
+              <span class="setting-hint">仅用于歌词页封面模式，无资源时显示静态封面</span>
+            </div>
+            <Switch v-model="settingStore.lyricDynamicAlbumCover" />
+          </div>
+          <div class="setting-row">
+            <div class="setting-text">
               <span class="setting-label">封面模糊背景</span>
               <span class="setting-hint">使用封面作为沉浸式背景</span>
             </div>
@@ -395,13 +402,25 @@ const close = () => {
 
 <style>
 /* Drawer 面板样式：跟随主题 */
-.lyric-settings-panel {
-  top: 0 !important;
-  bottom: 0 !important;
-  width: min(360px, 90vw) !important;
-  background: var(--lyric-settings-panel-bg, var(--color-bg-dialog)) !important;
-  border-color: var(--lyric-settings-panel-border, var(--border-subtle)) !important;
-  box-shadow: var(--shadow-elevated) !important;
+.drawer-panel.lyric-settings-panel {
+  top: 12px;
+  right: 12px;
+  bottom: 12px;
+  width: min(360px, calc(100vw - 24px));
+  border-radius: 12px;
+  background: var(--lyric-settings-panel-bg, var(--color-bg-dialog));
+  border-color: var(--lyric-settings-panel-border, var(--border-subtle));
+  box-shadow: var(--shadow-dialog);
+  overflow: hidden;
+}
+
+@media (max-width: 420px) {
+  .drawer-panel.lyric-settings-panel {
+    top: 8px;
+    right: 8px;
+    bottom: 8px;
+    width: min(360px, calc(100vw - 16px));
+  }
 }
 
 .dark .lyric-settings-panel {

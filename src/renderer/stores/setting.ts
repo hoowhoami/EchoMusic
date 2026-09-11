@@ -124,6 +124,8 @@ export const useSettingStore = defineStore('setting', {
     volumeFade: true,
     volumeFadeTime: 1000,
     lyricViewMode: 'cover' as 'cover' | 'portrait' | 'lyric',
+    dynamicAlbumCover: false,
+    lyricDynamicAlbumCover: false,
     lyricArtistBackdrop: true,
     lyricPortraitFallbackCover: false,
     lyricBackdropOpacity: 50,

@@ -361,12 +361,13 @@ unsafe fn set_alpha_composition(handle: *mut c_void, enabled: bool) -> bool {
 }
 
 /// mode: 0=off, 5=Win11 DWM clear, 6=legacy DWM clear+frame repair, 7=legacy blur+frame repair,
-/// 8=legacy Acrylic with native move/resize suppression.
+/// 8=old opaque-window Acrylic; 10/11=enable/clear Accent on an Electron transparent
+/// window without modifying Electron's DWM alpha or frame margins.
 /// Modes 6/7 deliberately differ from the former legacy 4/2 protocol:
 /// old addons reject them, causing an explicit fallback instead of silent failure.
 #[napi]
 pub fn set_window_composition(hwnd: String, mode: u32) -> bool {
-    if !matches!(mode, 0 | 5 | 6 | 7 | 8) {
+    if !matches!(mode, 0 | 5 | 6 | 7 | 8 | 10 | 11) {
         return false;
     }
     let Ok(address) = hwnd.parse::<usize>() else {
@@ -375,6 +376,24 @@ pub fn set_window_composition(hwnd: String, mode: u32) -> bool {
     let handle = address as *mut c_void;
     unsafe {
         if handle.is_null() || IsWindow(handle) == 0 {
+            return false;
+        }
+        if matches!(mode, 10 | 11) {
+            // Electron owns the alpha surface and margins of this window. Never
+            // reset them on entry, exit or rollback; doing so can break clear.
+            if !remove_acrylic_drag(handle) {
+                return false;
+            }
+            if mode == 11 {
+                return set_accent(handle, 0);
+            }
+            if set_accent(handle, 4)
+                && SetWindowSubclass(handle, acrylic_drag_proc, ACRYLIC_DRAG_SUBCLASS, 0) != 0
+            {
+                return true;
+            }
+            let _ = remove_acrylic_drag(handle);
+            let _ = set_accent(handle, 0);
             return false;
         }
         let accent = |state: i32| set_accent(handle, state);
