@@ -522,8 +522,16 @@ watch(
       </Transition>
     </RouterView>
     <Teleport v-if="!isMiniPlayerRoute" to="body">
-      <Transition name="lyric-overlay">
-        <LyricView v-if="player?.isLyricViewOpen" />
+      <Transition
+        name="lyric-overlay"
+        @before-enter="(el) => el.removeAttribute('data-leaving')"
+        @before-leave="(el) => el.setAttribute('data-leaving', '')"
+      >
+        <!-- Mount the host synchronously, even while the lyric chunk is loading.
+             Reveal the retained page as soon as the leave transition starts. -->
+        <div v-if="player?.isLyricViewOpen" class="lyric-overlay-host">
+          <LyricView />
+        </div>
       </Transition>
     </Teleport>
     <AuthExpiredDialog v-if="!isMiniPlayerRoute" />
@@ -535,6 +543,12 @@ watch(
 
 <style>
 /* 歌词覆盖层动画 */
+.lyric-overlay-host {
+  position: fixed;
+  inset: 0;
+  z-index: 1300;
+}
+
 .lyric-overlay-enter-active {
   transition:
     transform 0.35s cubic-bezier(0.16, 1, 0.3, 1),

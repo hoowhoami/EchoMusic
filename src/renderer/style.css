@@ -949,17 +949,27 @@ html.app-background-frosted::before {
 }
 /* A lyric overlay replaces the page rather than exposing its retained content.
    Keep the page mounted for scroll/cache state, but remove it from painting and input. */
-html.app-background-transparent body:has(.lyric-page:not(.is-portrait)) .main-layout {
+html.app-background-transparent body:has(.lyric-overlay-host:not([data-leaving])) .main-layout {
   visibility: hidden;
   pointer-events: none;
+  /* Suppress the whole composited subtree immediately, including descendants
+     with explicit visibility and layers that would otherwise fade out. */
+  opacity: 0 !important;
+  transition: none !important;
 }
-html.app-background-transparent:has(.lyric-page:not(.is-portrait))::before {
+html.app-background-transparent:has(.lyric-overlay-host:not([data-leaving]))::before {
   display: none;
 }
 html.app-background-transparent .lyric-page:not(.is-portrait) .lyric-background {
   opacity: var(--app-background-opacity, 1);
 }
 html.app-background-frosted .lyric-page:not(.is-portrait) .lyric-background {
+  /* Keep white lyrics legible over light desktop materials. This scrim is
+     independent of the transparency slider and only affects the background. */
+  background: rgba(0, 0, 0, 0.55) !important;
+  opacity: 1;
+}
+html.app-background-frosted .lyric-page:not(.is-portrait) .lyric-blur-bg {
   display: none;
 }
 html.app-background-transparent
