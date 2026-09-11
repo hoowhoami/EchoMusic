@@ -19,7 +19,7 @@ import {
   normalizePluginId,
 } from './common';
 import { readManifest, toDescriptor } from './descriptor';
-import { ensurePluginRoot, isPathInside } from './path';
+import { getPluginRoot, isPathInside } from './path';
 
 type PluginDirectoryInstallOptions = {
   expectedPluginId?: string;
@@ -53,6 +53,7 @@ type PluginInstallerOptions = {
   ) => void;
   setPluginInstalledAt: (pluginId: string, installedAt: number) => void;
   terminatePluginProcesses: (pluginId?: string) => Promise<void>;
+  withMetadataMutation: <T>(pluginId: string, mutate: () => Promise<T>) => Promise<T>;
 };
 
 const pathExists = async (filePath: string) => {
@@ -146,6 +147,7 @@ export const createPluginInstaller = ({
   setPluginInstallSource,
   setPluginTags,
   terminatePluginProcesses,
+  withMetadataMutation,
 }: PluginInstallerOptions) => {
   const extractMarketplacePackage = async (
     zipPath: string,
@@ -196,7 +198,7 @@ export const createPluginInstaller = ({
     const sourceStats = await fs.stat(sourceDirectory);
     if (!sourceStats.isDirectory()) throw new Error('插件源必须是文件夹');
 
-    const manifestResult = readManifest(join(sourceDirectory, PLUGIN_MANIFEST_FILE));
+    const manifestResult = await readManifest(join(sourceDirectory, PLUGIN_MANIFEST_FILE));
     if (manifestResult.error) throw new Error(manifestResult.error);
     const pluginId = normalizePluginId(manifestResult.manifest.id);
     if (!pluginId) throw new Error('manifest.id 不能为空');
@@ -206,7 +208,8 @@ export const createPluginInstaller = ({
       throw new Error(`插件清单 id 与索引不一致: ${pluginId || '空'} / ${expectedPluginId}`);
     }
 
-    const root = resolve(ensurePluginRoot());
+    const root = resolve(getPluginRoot());
+    await fs.mkdir(root, { recursive: true });
     const existingPlugin = findPlugin(pluginId);
     const targetDirectory = existingPlugin
       ? resolve(existingPlugin.directory)
@@ -220,7 +223,7 @@ export const createPluginInstaller = ({
     try {
       const enableAfterInstall = Boolean(options.enableAfterInstall);
       await fs.cp(sourceDirectory, stagingDirectory, { recursive: true });
-      const descriptor = toDescriptor(stagingDirectory, pluginId, {
+      const descriptor = await toDescriptor(stagingDirectory, pluginId, {
         ...getEnabledState(),
         ...(enableAfterInstall ? { [pluginId]: true } : {}),
       });
@@ -229,27 +232,31 @@ export const createPluginInstaller = ({
         throw new Error(descriptor.compatibility.message || '插件与当前 EchoMusic 版本不兼容');
       }
 
-      const nextState = getEnabledState();
-      const wasEnabled = Boolean(nextState[pluginId]);
-      if (enableAfterInstall) nextState[pluginId] = true;
-      await terminatePluginProcesses(pluginId);
-      if (process.platform === 'win32') {
-        await new Promise((resolveDelay) => setTimeout(resolveDelay, 100));
-      }
-      await fs.rm(targetDirectory, { recursive: true, force: true });
-      await fs.cp(stagingDirectory, targetDirectory, { recursive: true });
-      setPluginInstallSource(pluginId, options.source ?? { kind: 'local' });
-      setPluginTags(pluginId, options.tags ?? descriptor.manifest.tags);
-      if (!existingPlugin) setPluginInstalledAt(pluginId, Date.now());
-      if (wasEnabled && !enableAfterInstall) nextState[pluginId] = true;
-      setEnabledState(nextState);
+      await withMetadataMutation(pluginId, async () => {
+        try {
+          await terminatePluginProcesses(pluginId);
+          if (process.platform === 'win32') {
+            await new Promise((resolveDelay) => setTimeout(resolveDelay, 100));
+          }
+          await fs.rm(targetDirectory, { recursive: true, force: true });
+          await fs.cp(stagingDirectory, targetDirectory, { recursive: true });
+          setPluginInstallSource(pluginId, options.source ?? { kind: 'local' });
+          setPluginTags(pluginId, options.tags ?? descriptor.manifest.tags);
+          if (!existingPlugin) setPluginInstalledAt(pluginId, Date.now());
+          // Read current preferences after async work, preserving changes to other plugins.
+          if (enableAfterInstall) setEnabledState({ ...getEnabledState(), [pluginId]: true });
+        } catch (error) {
+          setEnabledState({ ...getEnabledState(), [pluginId]: false });
+          throw error;
+        }
+      });
 
       const installed = findPlugin(pluginId);
       if (!installed) throw new Error('插件安装后扫描失败');
       return {
         plugin: installed,
         updated: Boolean(existingPlugin),
-        enabled: Boolean(nextState[pluginId]),
+        enabled: installed.enabled,
       };
     } finally {
       await fs.rm(stagingParent, { recursive: true, force: true });

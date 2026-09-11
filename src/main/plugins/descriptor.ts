@@ -1,5 +1,5 @@
 import { app } from 'electron';
-import { existsSync, readFileSync, statSync } from 'fs';
+import fs from 'fs/promises';
 import { basename, extname, join } from 'path';
 import { pathToFileURL } from 'url';
 import {
@@ -156,11 +156,11 @@ const normalizePluginWindowDescriptors = (
   return { windows, error: '' };
 };
 
-export const readManifest = (
+export const readManifest = async (
   manifestPath: string,
-): { manifest: EchoPluginManifest; error: string } => {
+): Promise<{ manifest: EchoPluginManifest; error: string }> => {
   try {
-    const raw = readFileSync(manifestPath, 'utf8');
+    const raw = await fs.readFile(manifestPath, 'utf8');
     const parsed = JSON.parse(raw) as EchoPluginManifest;
     return { manifest: parsed, error: '' };
   } catch (error) {
@@ -240,6 +240,9 @@ const validateManifestCapabilities = (manifest: EchoPluginManifest) => {
   if (capabilities.sqlite !== undefined && typeof capabilities.sqlite !== 'boolean') {
     return 'manifest.capabilities.sqlite 必须是布尔值';
   }
+  if (capabilities.tcp !== undefined && typeof capabilities.tcp !== 'boolean') {
+    return 'manifest.capabilities.tcp 必须是布尔值';
+  }
   if (
     capabilities.unrestrictedNetwork !== undefined &&
     typeof capabilities.unrestrictedNetwork !== 'boolean'
@@ -300,13 +303,13 @@ export const validateManifest = (manifest: EchoPluginManifest, manifestError: st
   return '';
 };
 
-export const toDescriptor = (
+export const toDescriptor = async (
   directory: string,
   directoryName: string,
   enabledState: Record<string, boolean>,
-): EchoPluginDescriptor => {
+): Promise<EchoPluginDescriptor> => {
   const manifestPath = join(directory, PLUGIN_MANIFEST_FILE);
-  const { manifest, error: manifestError } = readManifest(manifestPath);
+  const { manifest, error: manifestError } = await readManifest(manifestPath);
   const id = normalizePluginId(manifest.id) || normalizePluginId(directoryName) || directoryName;
   const mainFile = resolvePluginFile(directory, manifest.main || 'index.js');
   const styleFile = manifest.style ? resolvePluginFile(directory, manifest.style) : '';
@@ -314,18 +317,32 @@ export const toDescriptor = (
   const iconSource = getManifestIconSource(manifest);
   const iconFile =
     iconSource && !isRemoteImageSource(iconSource) ? resolvePluginFile(directory, iconSource) : '';
-  const iconFileExists = Boolean(iconFile && existsSync(iconFile));
+  const paths = new Set(
+    [
+      iconFile,
+      mainFile,
+      styleFile,
+      ...windows.flatMap((item) => [item.mainFile, item.styleFile]),
+    ].filter(Boolean),
+  );
+  const stats = new Map(
+    await Promise.all(
+      [...paths].map(async (path) => [path, await fs.stat(path).catch(() => null)] as const),
+    ),
+  );
+  const exists = (path: string) => Boolean(stats.get(path)?.isFile());
+  const iconFileExists = Boolean(iconFile && exists(iconFile));
   const iconVersion = String(manifest.version || '0.0.0');
   const iconCacheKey = iconFileExists
-    ? `${iconVersion}-${Math.round(statSync(iconFile).mtimeMs)}`
+    ? `${iconVersion}-${Math.round(stats.get(iconFile)!.mtimeMs)}`
     : iconVersion;
   const validationError = validateManifest(manifest, manifestError);
   const compatibility = getEchoMusicCompatibility(manifest);
-  const mainError = !validationError && mainFile && !existsSync(mainFile) ? '插件入口不存在' : '';
+  const mainError = !validationError && mainFile && !exists(mainFile) ? '插件入口不存在' : '';
   const styleError =
-    !validationError && styleFile && !existsSync(styleFile) ? '插件样式文件不存在' : '';
-  const missingMainWindow = windows.find((item) => !existsSync(item.mainFile));
-  const missingStyleWindow = windows.find((item) => item.styleFile && !existsSync(item.styleFile));
+    !validationError && styleFile && !exists(styleFile) ? '插件样式文件不存在' : '';
+  const missingMainWindow = windows.find((item) => !exists(item.mainFile));
+  const missingStyleWindow = windows.find((item) => item.styleFile && !exists(item.styleFile));
   const invalidMainExtensionWindow = windows.find(
     (item) => !['.js', '.mjs'].includes(extname(item.mainFile).toLowerCase()),
   );

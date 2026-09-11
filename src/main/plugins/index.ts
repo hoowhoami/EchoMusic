@@ -1,6 +1,6 @@
 import { findInstalledPluginCatalogTags } from '../../shared/plugin-source';
 import { shell, type WebContents } from 'electron';
-import { existsSync, readdirSync, readFileSync, rmSync, statSync } from 'fs';
+import { statSync } from 'fs';
 import fs from 'fs/promises';
 import { createHash } from 'crypto';
 import { tmpdir } from 'os';
@@ -53,6 +53,9 @@ import {
   runGithubAcceleratorFallback,
 } from '../../shared/github-accelerator';
 import { getKvStorage } from '../storage/kv';
+import { onKvChange } from '../storage/kvEvents';
+import { createPluginMetadataRegistry } from './metadata';
+import { closePluginWindows } from './windows';
 import log from '../logger';
 import {
   DEFAULT_PLUGIN_MARKETPLACE_SOURCE_ID,
@@ -83,11 +86,12 @@ import {
   toDescriptor,
   validateManifest,
 } from './descriptor';
-import { ensurePluginRoot, isPathInside } from './path';
+import { ensurePluginRoot, getPluginRoot, isPathInside } from './path';
 import { createPluginFileApi } from './fs';
 import { createPluginProcessApi } from './process';
 import { createPluginInstaller } from './installer';
 import { requestPluginNetwork } from './network';
+import { PluginTcpError, pluginTcpManager } from './tcp';
 import { networkFetch } from '../networkPolicy';
 import {
   closePluginWebServer,
@@ -169,8 +173,58 @@ const compareInstalledPlugins = (
 
 const pluginProcessSessionId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
-const getEnabledState = (): PluginEnabledState =>
-  getKvStorage().get<PluginEnabledState>(PLUGIN_STATE_KEY) ?? {};
+const accessRevokedListeners = new Set<(pluginIds: string[]) => void>();
+const resourceCleanup = new Map<string, Promise<void>>();
+const revokePluginAccess = (pluginIds: string[]) => {
+  for (const listener of accessRevokedListeners) listener(pluginIds);
+  for (const pluginId of pluginIds) {
+    pluginTcpManager.closeAll({ pluginId });
+    closePluginSqliteDatabases(pluginId);
+    const cleanup = Promise.allSettled([
+      resourceCleanup.get(pluginId),
+      closePluginWindows(pluginId),
+      closePluginWebServer(pluginId),
+      terminatePluginProcesses(pluginId),
+    ]).then(() => {});
+    resourceCleanup.set(pluginId, cleanup);
+    void cleanup.finally(() => {
+      if (resourceCleanup.get(pluginId) === cleanup) resourceCleanup.delete(pluginId);
+    });
+  }
+};
+export const onPluginAccessRevoked = (listener: (pluginIds: string[]) => void) => {
+  accessRevokedListeners.add(listener);
+  return () => accessRevokedListeners.delete(listener);
+};
+
+const pluginMetadata = createPluginMetadataRegistry(
+  () => scanPluginDescriptors(),
+  revokePluginAccess,
+);
+let preferencesInitialized = false;
+let lastPluginFailure: PluginFailureRecord | null = null;
+const normalizeEnabledState = (value: unknown): PluginEnabledState =>
+  value && typeof value === 'object' && !Array.isArray(value)
+    ? Object.fromEntries(
+        Object.entries(value).map(([id, enabled]) => [normalizePluginId(id), enabled === true]),
+      )
+    : {};
+
+onKvChange((change) => {
+  if ('reset' in change) {
+    pluginMetadata.setEnabled({});
+    pluginMetadata.setSafeMode(false);
+    lastPluginFailure = null;
+  } else if (change.key === PLUGIN_STATE_KEY) {
+    pluginMetadata.setEnabled(normalizeEnabledState(change.value));
+  } else if (change.key === PLUGIN_SAFE_MODE_KEY) {
+    pluginMetadata.setSafeMode(Boolean(change.value));
+  } else if (change.key === PLUGIN_LAST_FAILURE_KEY) {
+    lastPluginFailure = (change.value as PluginFailureRecord | undefined) ?? null;
+  }
+});
+
+const getEnabledState = (): PluginEnabledState => pluginMetadata.getEnabled();
 
 const setEnabledState = (state: PluginEnabledState) => {
   getKvStorage().set(PLUGIN_STATE_KEY, state);
@@ -197,9 +251,9 @@ const setPluginInstallTimes = (times: PluginInstallTimes) => {
   getKvStorage().set(PLUGIN_INSTALL_TIMES_KEY, times);
 };
 
-const getPluginDirectoryInstallTime = (directory: string) => {
+const getPluginDirectoryInstallTime = async (directory: string) => {
   try {
-    const stats = statSync(directory);
+    const stats = await fs.stat(directory);
     return (
       normalizePluginTimestamp(stats.birthtimeMs) ||
       normalizePluginTimestamp(stats.ctimeMs) ||
@@ -314,7 +368,7 @@ export const replacePluginEnabledPreference = (pluginId: string, enabled: boolea
   setEnabledState(state);
 };
 
-export const getPluginSafeMode = () => Boolean(getKvStorage().get<boolean>(PLUGIN_SAFE_MODE_KEY));
+export const getPluginSafeMode = () => pluginMetadata.getSafeMode();
 
 const normalizePluginIds = (pluginIds: unknown) => {
   if (!Array.isArray(pluginIds)) return [];
@@ -353,8 +407,7 @@ const setLastFailure = (failure: PluginFailureRecord) => {
   getKvStorage().set(PLUGIN_LAST_FAILURE_KEY, failure);
 };
 
-export const getPluginLastFailure = () =>
-  getKvStorage().get<PluginFailureRecord>(PLUGIN_LAST_FAILURE_KEY);
+export const getPluginLastFailure = () => lastPluginFailure;
 
 const removePluginIdFromFailure = (
   failure: PluginFailureRecord,
@@ -412,6 +465,7 @@ export const setPluginSafeMode = async (enabled: boolean): Promise<PluginSetSafe
   try {
     getKvStorage().set(PLUGIN_SAFE_MODE_KEY, Boolean(enabled));
     if (enabled) {
+      pluginTcpManager.closeAll();
       getKvStorage().delete(PLUGIN_STARTUP_SESSION_KEY);
       getKvStorage().delete(PLUGIN_ACTIVE_SESSION_KEY);
       await closePluginWebServers();
@@ -501,24 +555,23 @@ export const reportPluginRendererFailure = (
   return true;
 };
 
-export const listPlugins = (): PluginListResult => {
-  recoverPreviousPluginCrash();
-  const root = ensurePluginRoot();
+let discoveredInstallTimes: PluginInstallTimes = {};
+const scanPluginDescriptors = async (): Promise<EchoPluginDescriptor[]> => {
+  const root = getPluginRoot();
+  await fs.mkdir(root, { recursive: true });
   const enabledState = getEnabledState();
   const installTimes = getPluginInstallTimes();
-  const seenPluginIds = new Set<string>();
-  let installTimesChanged = false;
   const plugins: EchoPluginDescriptor[] = [];
   const cachedPlugins = getMarketplaceCache().plugins;
 
-  const entries = readdirSync(root, { withFileTypes: true });
+  const entries = await fs.readdir(root, { withFileTypes: true });
   for (const entry of entries) {
     if (!entry.isDirectory()) continue;
     const directory = join(root, entry.name);
     const manifestPath = join(directory, PLUGIN_MANIFEST_FILE);
-    if (!existsSync(manifestPath)) continue;
+    if (!(await fs.stat(manifestPath).catch(() => null))?.isFile()) continue;
     try {
-      const descriptor = toDescriptor(directory, entry.name, enabledState);
+      const descriptor = await toDescriptor(directory, entry.name, enabledState);
       const source = getKvStorage().get(getPluginInstallSourceKey(descriptor.id)) as
         | EchoPluginDescriptor['installSource']
         | null;
@@ -533,37 +586,75 @@ export const listPlugins = (): PluginListResult => {
         descriptor.tags = manifestTags.length
           ? manifestTags
           : findInstalledPluginCatalogTags(descriptor, cachedPlugins);
-        if (descriptor.tags.length) setPluginTags(descriptor.id, descriptor.tags);
       }
       plugins.push(descriptor);
-      seenPluginIds.add(descriptor.id);
       if (!installTimes[descriptor.id]) {
-        installTimes[descriptor.id] = getPluginDirectoryInstallTime(directory);
-        installTimesChanged = true;
+        installTimes[descriptor.id] = await getPluginDirectoryInstallTime(directory);
       }
     } catch (error) {
       log.warn('[Plugin] Failed to read plugin descriptor', { directory, error });
     }
   }
 
-  for (const pluginId of Object.keys(installTimes)) {
-    if (seenPluginIds.has(pluginId)) continue;
-    delete installTimes[pluginId];
-    installTimesChanged = true;
-  }
-  if (installTimesChanged) setPluginInstallTimes(installTimes);
-
   plugins.sort((left, right) => compareInstalledPlugins(left, right, installTimes));
-  return {
-    plugins,
-    directory: root,
-    safeMode: getPluginSafeMode(),
-    lastFailure: getPluginLastFailure() ?? null,
-  };
+  discoveredInstallTimes = installTimes;
+  return plugins;
 };
 
-const findPlugin = (pluginId: string) =>
-  listPlugins().plugins.find((plugin) => plugin.id === normalizePluginId(pluginId)) ?? null;
+export const listPlugins = (): PluginListResult => ({
+  plugins: pluginMetadata.list(),
+  directory: getPluginRoot(),
+  safeMode: getPluginSafeMode(),
+  lastFailure: getPluginLastFailure(),
+});
+
+/** Only startup and explicit management operations refresh metadata. Never called by access checks. */
+export const refreshPluginMetadata = async (): Promise<PluginListResult> => {
+  if (!preferencesInitialized) {
+    pluginMetadata.setEnabled(normalizeEnabledState(getKvStorage().get(PLUGIN_STATE_KEY)));
+    pluginMetadata.setSafeMode(Boolean(getKvStorage().get(PLUGIN_SAFE_MODE_KEY)));
+    lastPluginFailure = getKvStorage().get<PluginFailureRecord>(PLUGIN_LAST_FAILURE_KEY);
+    preferencesInitialized = true;
+    recoverPreviousPluginCrash();
+  }
+  await pluginMetadata.refresh();
+  // Persist migration/enrichment only after the scan was committed. Discarded scans must
+  // not overwrite a concurrent install's timestamps or a removed plugin's saved tags.
+  const installTimes = getPluginInstallTimes();
+  let timesChanged = false;
+  for (const plugin of pluginMetadata.list()) {
+    if (!installTimes[plugin.id] && discoveredInstallTimes[plugin.id]) {
+      installTimes[plugin.id] = discoveredInstallTimes[plugin.id];
+      timesChanged = true;
+    }
+    if (plugin.tags?.length && !Array.isArray(getKvStorage().get(getPluginTagsKey(plugin.id)))) {
+      setPluginTags(plugin.id, plugin.tags);
+    }
+  }
+  if (timesChanged) setPluginInstallTimes(installTimes);
+  return listPlugins();
+};
+
+/** Revokes before any filesystem mutation and rebuilds from disk after success or rollback. */
+export const withPluginMetadataMutation = async <T>(
+  pluginId: string,
+  mutate: () => Promise<T>,
+): Promise<T> => {
+  const id = normalizePluginId(pluginId);
+  const finish = pluginMetadata.beginMutation(id);
+  try {
+    await resourceCleanup.get(id);
+    return await mutate();
+  } finally {
+    finish();
+    await refreshPluginMetadata();
+  }
+};
+
+const findPlugin = (pluginId: string) => pluginMetadata.get(normalizePluginId(pluginId));
+
+export const isPluginAccessCurrent = (plugin: EchoPluginDescriptor) =>
+  pluginMetadata.isCurrent(plugin);
 
 const getPluginCompatibilityError = (plugin: EchoPluginDescriptor) =>
   plugin.compatibility.compatible
@@ -582,6 +673,17 @@ export const {
 });
 
 export const getPluginDescriptor = (pluginId: string) => findPlugin(pluginId);
+
+export const assertPluginTcpAccess = (pluginId: string) => {
+  if (getPluginSafeMode()) throw new PluginTcpError('插件安全模式已开启');
+  const plugin = findPlugin(pluginId);
+  if (!plugin) throw new PluginTcpError('插件不存在');
+  if (plugin.invalid) throw new PluginTcpError(plugin.error || '插件无效');
+  const compatibilityError = getPluginCompatibilityError(plugin);
+  if (compatibilityError) throw new PluginTcpError(compatibilityError);
+  if (!plugin.enabled) throw new PluginTcpError('插件未启用');
+  if (plugin.manifest.capabilities?.tcp !== true) throw new PluginTcpError('插件未声明 TCP 能力');
+};
 
 export const requestPluginNetworkForPlugin = (
   pluginId: string,
@@ -740,7 +842,9 @@ export const listenPluginWebServerForPlugin = async (
   if (accessError) return { ok: false, error: accessError };
 
   try {
-    return await listenPluginWebServer(plugin, options, webContents);
+    return await listenPluginWebServer(plugin, options, webContents, () =>
+      isPluginAccessCurrent(plugin),
+    );
   } catch (error) {
     return {
       ok: false,
@@ -1175,6 +1279,7 @@ const pluginInstaller = createPluginInstaller({
   setPluginInstallSource,
   setPluginTags,
   terminatePluginProcesses,
+  withMetadataMutation: withPluginMetadataMutation,
 });
 
 const {
@@ -2001,6 +2106,7 @@ export const installPluginFromMarketplace = async (
 };
 
 export const getPluginWindowDescriptor = (pluginId: string, windowId: string) => {
+  if (getPluginSafeMode()) return null;
   const plugin = findPlugin(pluginId);
   if (!plugin || plugin.invalid || !plugin.compatibility.compatible || !plugin.enabled) return null;
   const normalizedWindowId = normalizePluginId(windowId);
@@ -2023,6 +2129,7 @@ export const setPluginEnabled = async (
   nextState[plugin.id] = Boolean(enabled);
   setEnabledState(nextState);
   if (!enabled) {
+    pluginTcpManager.closeAll({ pluginId: plugin.id });
     await closePluginWebServer(plugin.id);
     closePluginSqliteDatabases(plugin.id);
     await terminatePluginProcesses(plugin.id);
@@ -2031,10 +2138,10 @@ export const setPluginEnabled = async (
   return refreshed ? { ok: true, plugin: refreshed } : { ok: false, error: '插件刷新失败' };
 };
 
-export const readPluginTextAsset = (
+export const readPluginTextAsset = async (
   pluginId: string,
   asset: 'main' | 'style',
-): PluginAssetSourceResult => {
+): Promise<PluginAssetSourceResult> => {
   if (getPluginSafeMode()) return { ok: false, error: '插件安全模式已开启' };
   const plugin = findPlugin(pluginId);
   if (!plugin) return { ok: false, error: '插件不存在' };
@@ -2049,7 +2156,6 @@ export const readPluginTextAsset = (
   const pluginDir = resolve(plugin.directory);
   const resolvedFile = resolve(filePath);
   if (!isPathInside(pluginDir, resolvedFile)) return { ok: false, error: '插件资源路径非法' };
-  if (!existsSync(resolvedFile)) return { ok: false, error: '插件资源不存在' };
 
   const ext = extname(resolvedFile).toLowerCase();
   if (asset === 'main' && !['.js', '.mjs'].includes(ext)) {
@@ -2060,7 +2166,9 @@ export const readPluginTextAsset = (
   }
 
   try {
-    return { ok: true, source: readFileSync(resolvedFile, 'utf8') };
+    const source = await fs.readFile(resolvedFile, 'utf8');
+    if (!isPluginAccessCurrent(plugin)) return { ok: false, error: '插件权限已失效' };
+    return { ok: true, source };
   } catch (error) {
     return {
       ok: false,
@@ -2069,11 +2177,11 @@ export const readPluginTextAsset = (
   }
 };
 
-export const readPluginWindowTextAsset = (
+export const readPluginWindowTextAsset = async (
   pluginId: string,
   windowId: string,
   asset: 'main' | 'style',
-): PluginAssetSourceResult => {
+): Promise<PluginAssetSourceResult> => {
   if (getPluginSafeMode()) return { ok: false, error: '插件安全模式已开启' };
   const plugin = findPlugin(pluginId);
   if (!plugin) return { ok: false, error: '插件不存在' };
@@ -2092,7 +2200,6 @@ export const readPluginWindowTextAsset = (
   const pluginDir = resolve(plugin.directory);
   const resolvedFile = resolve(filePath);
   if (!isPathInside(pluginDir, resolvedFile)) return { ok: false, error: '插件窗口资源路径非法' };
-  if (!existsSync(resolvedFile)) return { ok: false, error: '插件窗口资源不存在' };
 
   const ext = extname(resolvedFile).toLowerCase();
   if (asset === 'main' && !['.js', '.mjs'].includes(ext)) {
@@ -2103,7 +2210,9 @@ export const readPluginWindowTextAsset = (
   }
 
   try {
-    return { ok: true, source: readFileSync(resolvedFile, 'utf8') };
+    const source = await fs.readFile(resolvedFile, 'utf8');
+    if (!isPluginAccessCurrent(plugin)) return { ok: false, error: '插件权限已失效' };
+    return { ok: true, source };
   } catch (error) {
     return {
       ok: false,
@@ -2145,39 +2254,43 @@ export const uninstallPlugin = async (pluginId: string): Promise<PluginUninstall
   const plugin = findPlugin(pluginId);
   if (!plugin) return { ok: false, error: '插件不存在' };
 
-  const root = resolve(ensurePluginRoot());
+  const root = resolve(getPluginRoot());
   const directory = resolve(plugin.directory);
   if (!isPathInside(root, directory) || directory === root) {
     return { ok: false, error: '插件目录非法' };
   }
 
   try {
-    const nextState = getEnabledState();
-    delete nextState[plugin.id];
-    setEnabledState(nextState);
-    const lastFailure = getPluginLastFailure();
-    if (lastFailure?.pluginId === plugin.id || lastFailure?.pluginIds?.includes(plugin.id)) {
-      getKvStorage().delete(PLUGIN_LAST_FAILURE_KEY);
-    }
-    clearPluginStorage(plugin.id);
-    removePluginInstalledAt(plugin.id);
-    getKvStorage().delete(getPluginInstallSourceKey(plugin.id));
-    getKvStorage().delete(getPluginTagsKey(plugin.id));
-    clearPluginProcessConsents(plugin.id);
+    return await withPluginMetadataMutation(plugin.id, async () => {
+      const nextState = getEnabledState();
+      delete nextState[plugin.id];
+      setEnabledState(nextState);
+      const lastFailure = getPluginLastFailure();
+      if (lastFailure?.pluginId === plugin.id || lastFailure?.pluginIds?.includes(plugin.id)) {
+        getKvStorage().delete(PLUGIN_LAST_FAILURE_KEY);
+      }
+      clearPluginStorage(plugin.id);
+      removePluginInstalledAt(plugin.id);
+      getKvStorage().delete(getPluginInstallSourceKey(plugin.id));
+      getKvStorage().delete(getPluginTagsKey(plugin.id));
+      clearPluginProcessConsents(plugin.id);
 
-    await closePluginWebServer(plugin.id);
-    deletePluginSqliteDatabases(plugin.id);
+      pluginTcpManager.closeAll({ pluginId: plugin.id });
 
-    // 等待进程完全终止
-    await terminatePluginProcesses(plugin.id);
+      await closePluginWebServer(plugin.id);
+      deletePluginSqliteDatabases(plugin.id);
 
-    // Windows下额外等待一小段时间，确保文件句柄被释放
-    if (process.platform === 'win32') {
-      await new Promise((resolve) => setTimeout(resolve, 100));
-    }
+      // 等待进程完全终止
+      await terminatePluginProcesses(plugin.id);
 
-    rmSync(directory, { recursive: true, force: true });
-    return { ok: true, pluginId: plugin.id };
+      // Windows下额外等待一小段时间，确保文件句柄被释放
+      if (process.platform === 'win32') {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+
+      await fs.rm(directory, { recursive: true, force: true });
+      return { ok: true as const, pluginId: plugin.id };
+    });
   } catch (error) {
     return {
       ok: false,

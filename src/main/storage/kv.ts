@@ -1,4 +1,5 @@
 import { getNativeStorage } from './native';
+import { notifyKvChange } from './kvEvents';
 
 type KvBatchMutation =
   | { key: string; value: unknown; delete?: never }
@@ -17,6 +18,7 @@ export class KvStorage {
 
   set(key: string, value: unknown): void {
     getNativeStorage().kvSet(key, JSON.stringify(value));
+    notifyKvChange({ key, value });
   }
 
   applyBatch(mutations: KvBatchMutation[]): void {
@@ -28,10 +30,14 @@ export class KvStorage {
       return { key: mutation.key, valueJson };
     });
     getNativeStorage().kvApplyBatch(JSON.stringify(payload));
+    for (const mutation of mutations) {
+      notifyKvChange({ key: mutation.key, value: mutation.delete ? undefined : mutation.value });
+    }
   }
 
   delete(key: string): void {
     getNativeStorage().kvDelete(key);
+    notifyKvChange({ key });
   }
 }
 

@@ -49,6 +49,8 @@ import {
   replacePluginStorage,
   setPluginEnabled,
   terminatePluginProcesses,
+  withPluginMetadataMutation,
+  isPluginAccessCurrent,
 } from './plugins';
 import {
   closePluginSqliteDatabases,
@@ -574,6 +576,9 @@ export const createPluginBackup = async (
   );
   if (!confirmed) return { ok: false, canceled: true };
 
+  if (!isPluginAccessCurrent(access.plugin))
+    return { ok: false, canceled: false, error: '插件权限已失效' };
+
   try {
     const settingsKey = getStorePersistenceKey('setting');
     const archive = await createBackupArchive({
@@ -586,6 +591,8 @@ export const createPluginBackup = async (
     });
     const compressed = await compressBackupArchive(archive);
     const bytes = Uint8Array.from(compressed);
+    if (!isPluginAccessCurrent(access.plugin))
+      return { ok: false, canceled: false, error: '插件权限已失效' };
     return {
       ok: true,
       canceled: false,
@@ -672,24 +679,26 @@ const snapshotPluginForRollback = async (
 };
 
 const restorePluginFromRollback = async (snapshot: PluginRollbackSnapshot) => {
-  await closePluginWebServer(snapshot.id).catch(() => {});
-  closePluginSqliteDatabases(snapshot.id);
-  await terminatePluginProcesses(snapshot.id).catch(() => {});
-  await fs.rm(snapshot.directory, { recursive: true, force: true });
-  if (snapshot.existed) {
-    await fs.mkdir(dirname(snapshot.directory), { recursive: true });
-    await fs.cp(snapshot.codeSnapshotDirectory, snapshot.directory, { recursive: true });
-  }
+  await withPluginMetadataMutation(snapshot.id, async () => {
+    await closePluginWebServer(snapshot.id).catch(() => {});
+    closePluginSqliteDatabases(snapshot.id);
+    await terminatePluginProcesses(snapshot.id).catch(() => {});
+    await fs.rm(snapshot.directory, { recursive: true, force: true });
+    if (snapshot.existed) {
+      await fs.mkdir(dirname(snapshot.directory), { recursive: true });
+      await fs.cp(snapshot.codeSnapshotDirectory, snapshot.directory, { recursive: true });
+    }
 
-  replacePluginStorage(snapshot.id, snapshot.storage);
-  replacePluginEnabledPreference(snapshot.id, snapshot.enabledPreference);
-  const sqliteDirectory = getPluginSqliteDirectory(snapshot.id);
-  await fs.rm(sqliteDirectory, { recursive: true, force: true });
-  const sqliteFiles = await fs.readdir(snapshot.sqliteSnapshotDirectory).catch(() => []);
-  if (sqliteFiles.length > 0) {
-    await fs.mkdir(dirname(sqliteDirectory), { recursive: true });
-    await fs.cp(snapshot.sqliteSnapshotDirectory, sqliteDirectory, { recursive: true });
-  }
+    replacePluginStorage(snapshot.id, snapshot.storage);
+    replacePluginEnabledPreference(snapshot.id, snapshot.enabledPreference);
+    const sqliteDirectory = getPluginSqliteDirectory(snapshot.id);
+    await fs.rm(sqliteDirectory, { recursive: true, force: true });
+    const sqliteFiles = await fs.readdir(snapshot.sqliteSnapshotDirectory).catch(() => []);
+    if (sqliteFiles.length > 0) {
+      await fs.mkdir(dirname(sqliteDirectory), { recursive: true });
+      await fs.cp(snapshot.sqliteSnapshotDirectory, sqliteDirectory, { recursive: true });
+    }
+  });
 };
 
 const importPlugin = async (plugin: ArchivedPlugin, stagingRoot: string) => {
@@ -880,6 +889,8 @@ export const restorePluginBackup = async (
   );
   if (!confirmed) return { ok: false, canceled: true };
 
+  if (!isPluginAccessCurrent(access.plugin))
+    return { ok: false, canceled: false, error: '插件权限已失效' };
   const result = await importSettingsBackupForOwner(
     { token: request.token, ...scope },
     access.plugin.id,

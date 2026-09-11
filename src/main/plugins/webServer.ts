@@ -331,6 +331,7 @@ export const listenPluginWebServer = async (
   plugin: EchoPluginDescriptor,
   options: PluginWebServerListenOptions | undefined,
   webContents: WebContents,
+  isAccessCurrent: () => boolean,
 ): Promise<PluginWebServerListenResult> => {
   const normalizedOptions = normalizeListenOptions(options);
   const existing = servers.get(plugin.id);
@@ -346,6 +347,7 @@ export const listenPluginWebServer = async (
   }
 
   if (webContents.isDestroyed()) return { ok: false, error: '插件运行上下文已销毁' };
+  if (!isAccessCurrent()) return { ok: false, error: '插件权限已失效' };
 
   const server = createServer(async (request, response) => {
     const record = servers.get(plugin.id);
@@ -427,6 +429,10 @@ export const listenPluginWebServer = async (
   });
 
   const address = server.address();
+  if (!isAccessCurrent() || webContents.isDestroyed()) {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    return { ok: false, error: '插件权限已失效' };
+  }
   const port = typeof address === 'object' && address ? address.port : normalizedOptions.port;
   const host = normalizedOptions.host;
   const origin = `http://${host}:${port}`;

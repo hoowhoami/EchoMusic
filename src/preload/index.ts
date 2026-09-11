@@ -47,6 +47,7 @@ import type {
 } from '../shared/audio-spectrum';
 import type { LogSettings } from '../shared/logging';
 import type { NetworkSettingsState, NetworkSettingsUpdateRequest } from '../shared/network';
+import type { PluginTcpNativeApi } from '../shared/plugin-tcp';
 import type {
   PluginBackupCreateResult,
   PluginBackupInspectResult,
@@ -1311,6 +1312,23 @@ contextBridge.exposeInMainWorld('electron', {
         ) as Promise<PluginProcessTerminateResult>,
     },
     net: {
+      tcp: {
+        connect: (pluginId, connectionId, options) =>
+          ipcRenderer.invoke(
+            'plugins:tcp:connect',
+            pluginId,
+            connectionId,
+            toPlainIpcPayload(options),
+          ),
+        read: (pluginId, connectionId) =>
+          ipcRenderer.invoke('plugins:tcp:read', pluginId, connectionId),
+        write: (pluginId, connectionId, data) =>
+          ipcRenderer.invoke('plugins:tcp:write', pluginId, connectionId, data),
+        close: (pluginId, connectionId) =>
+          ipcRenderer.invoke('plugins:tcp:close', pluginId, connectionId),
+        end: (pluginId, connectionId) =>
+          ipcRenderer.invoke('plugins:tcp:end', pluginId, connectionId),
+      } satisfies PluginTcpNativeApi,
       request: (pluginId: string, requestId: string, options: PluginNetworkRequestOptions) => {
         const { body, ...requestOptions } = options;
         const requestBody =

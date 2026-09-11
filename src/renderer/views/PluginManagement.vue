@@ -291,6 +291,7 @@ const getPluginFeatureTags = (manifest: EchoPluginManifest) => {
   if (manifest.capabilities?.process) tags.push('本地进程');
   if (manifest.capabilities?.sqlite) tags.push('SQLite');
   if (manifest.capabilities?.unrestrictedNetwork) tags.push('原生网络');
+  if (manifest.capabilities?.tcp) tags.push('TCP 网络');
   if (manifest.contributes?.windows?.length) tags.push('插件浮窗');
   return tags;
 };

@@ -10,6 +10,8 @@ import type {
 } from '../../shared/plugins';
 import {
   getPluginDescriptor,
+  getPluginSafeMode,
+  isPluginAccessCurrent,
   getPluginWindowDescriptor,
   isPluginRendererGoneFailureReason,
   normalizePluginId,
@@ -402,6 +404,7 @@ export const showPluginWindow = async (
   windowId: string,
   options: PluginWindowShowOptions = {},
 ): Promise<PluginWindowResult> => {
+  if (getPluginSafeMode()) return { ok: false, error: '插件安全模式已开启' };
   const plugin = getPluginDescriptor(pluginId);
   if (!plugin) return { ok: false, error: '插件不存在' };
   if (plugin.invalid) return { ok: false, error: plugin.error || '插件无效' };
@@ -450,6 +453,10 @@ export const showPluginWindow = async (
     }
   }
 
+  if (!isPluginAccessCurrent(plugin)) {
+    if (canUseWindow(record.window)) record.window.close();
+    return { ok: false, error: '插件权限已失效' };
+  }
   return { ok: true, window: record.descriptor, bounds: record.window.getBounds() };
 };
 
@@ -540,6 +547,7 @@ export const closePluginWindows = (pluginId?: string) => {
 };
 
 export const getPluginWindowContext = (pluginId: string, windowId: string) => {
+  if (getPluginSafeMode()) return { ok: false as const, error: '插件安全模式已开启' };
   const plugin = getPluginDescriptor(pluginId);
   if (!plugin) return { ok: false as const, error: '插件不存在' };
   if (plugin.invalid) return { ok: false as const, error: plugin.error || '插件无效' };

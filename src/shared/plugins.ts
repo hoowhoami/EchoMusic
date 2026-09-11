@@ -639,6 +639,7 @@ export interface EchoPluginManifest {
     lyrics?: boolean;
     process?: boolean;
     sqlite?: boolean;
+    tcp?: boolean;
     unrestrictedNetwork?: boolean;
     webServer?: boolean;
   };

@@ -1,4 +1,5 @@
 import { ipcRegistry } from './registry';
+import { registerPluginTcpHandlers } from './pluginTcp';
 import { BrowserWindow, dialog, type OpenDialogOptions, type WebContents } from 'electron';
 import type {
   PluginAssetSourceResult,
@@ -62,6 +63,7 @@ import type {
 } from '../../shared/plugins';
 import {
   clearPluginFailureRecord,
+  assertPluginTcpAccess,
   clearPluginStartup,
   deletePluginData,
   deletePluginFile,
@@ -77,7 +79,8 @@ import {
   listPluginMarketplace,
   listPluginMarketplaceSources,
   listPluginSqliteDatabasesForPlugin,
-  listPlugins,
+  refreshPluginMetadata,
+  onPluginAccessRevoked,
   launchPluginProcess,
   markPluginStartup,
   normalizePluginId,
@@ -140,6 +143,15 @@ const activePluginNetworkRequests = new Map<string, ActivePluginNetworkRequest>(
 const activePluginNetworkRequestCounts = new Map<string, number>();
 const trackedPluginNetworkOwners = new WeakSet<WebContents>();
 const MAX_CONCURRENT_PLUGIN_NETWORK_REQUESTS = 64;
+
+onPluginAccessRevoked((pluginIds) => {
+  const ids = new Set(pluginIds);
+  for (const [key, request] of activePluginNetworkRequests) {
+    if (!ids.has(request.pluginId)) continue;
+    request.controller.abort();
+    releasePluginNetworkRequest(key, request);
+  }
+});
 
 const getPluginNetworkRequestKey = (ownerId: number, pluginId: string, requestId: string) =>
   JSON.stringify([ownerId, pluginId, requestId]);
@@ -204,6 +216,7 @@ const showPluginOpenDialog = async (
 };
 
 export const registerPluginHandlers = (context: IpcContext) => {
+  registerPluginTcpHandlers(assertPluginTcpAccess);
   const refreshPluginAppIcons = (options?: { force?: boolean }): PluginAppIconRefreshResult => {
     refreshAppIconConfig();
     // 按需：若解析出的图标配置与上次已应用的一致，则跳过昂贵的应用步骤
@@ -221,7 +234,10 @@ export const registerPluginHandlers = (context: IpcContext) => {
     return result;
   };
 
-  ipcRegistry.registerHandler('plugins:list', (): PluginListResult => listPlugins());
+  ipcRegistry.registerHandler(
+    'plugins:list',
+    (): Promise<PluginListResult> => refreshPluginMetadata(),
+  );
   ipcRegistry.registerHandler('plugins:get-directory', (): string => getPluginDirectory());
   ipcRegistry.registerHandler('plugins:open-directory', (): string => openPluginDirectory());
   ipcRegistry.registerHandler(
@@ -606,7 +622,7 @@ export const registerPluginHandlers = (context: IpcContext) => {
   );
   ipcRegistry.registerHandler(
     'plugins:read-asset',
-    (_event, pluginId: string, asset: 'main' | 'style'): PluginAssetSourceResult =>
+    (_event, pluginId: string, asset: 'main' | 'style'): Promise<PluginAssetSourceResult> =>
       readPluginTextAsset(pluginId, asset),
   );
   ipcRegistry.registerHandler(
@@ -616,7 +632,7 @@ export const registerPluginHandlers = (context: IpcContext) => {
       pluginId: string,
       windowId: string,
       asset: 'main' | 'style',
-    ): PluginAssetSourceResult => readPluginWindowTextAsset(pluginId, windowId, asset),
+    ): Promise<PluginAssetSourceResult> => readPluginWindowTextAsset(pluginId, windowId, asset),
   );
   ipcRegistry.registerHandler('plugins:data:get', (_event, pluginId: string, key: string) =>
     getPluginData(pluginId, key),

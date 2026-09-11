@@ -409,6 +409,12 @@ export const createPluginProcessApi = ({
 
     try {
       const launch = await resolvePluginProcessLaunch(plugin, options);
+      const assertCurrent = () => {
+        if (getPluginSafeMode() || findPlugin(pluginId) !== plugin || !plugin.enabled) {
+          throw new Error('插件权限已失效');
+        }
+      };
+      assertCurrent();
       const allowed = await confirmPluginProcessLaunch(
         owner,
         plugin,
@@ -416,6 +422,7 @@ export const createPluginProcessApi = ({
         launch.executableHash,
       );
       if (!allowed) return { ok: false, error: '用户已取消启动本地程序', canceled: true };
+      assertCurrent();
 
       const child = spawn(launch.executablePath, launch.args, {
         cwd: launch.cwd,
@@ -458,6 +465,12 @@ export const createPluginProcessApi = ({
       });
 
       const pid = Number(child.pid);
+      try {
+        assertCurrent();
+      } catch (error) {
+        child.kill();
+        throw error;
+      }
       if (!Number.isFinite(pid) || pid <= 0) {
         child.kill();
         return { ok: false, error: '插件进程启动失败' };

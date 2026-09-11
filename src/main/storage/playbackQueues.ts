@@ -11,6 +11,7 @@ import type {
   StorageUpdateQueueMetaPayload,
 } from '../../shared/storage';
 import { getNativeStorage } from './native';
+import { notifyKvChange } from './kvEvents';
 
 const parseJson = <T>(value: string | null, fallback: T): T => {
   if (!value) return fallback;
@@ -80,6 +81,7 @@ export class PlaybackQueueStorage {
 
   resetAll(): void {
     getNativeStorage().resetAll();
+    notifyKvChange({ reset: true });
   }
 }
 

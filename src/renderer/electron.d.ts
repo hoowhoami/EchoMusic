@@ -1,4 +1,5 @@
 import type { ApiServerStatus } from '../shared/api-server';
+import type { PluginTcpNativeApi } from '../shared/plugin-tcp';
 import type {
   AppInfoResult,
   UpdateDownloadResult,
@@ -612,6 +613,7 @@ export interface IElectronAPI {
       terminate: (pluginId: string, pid: number) => Promise<PluginProcessTerminateResult>;
     };
     net: {
+      tcp: PluginTcpNativeApi;
       request: (
         pluginId: string,
         requestId: string,

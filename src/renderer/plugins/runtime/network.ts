@@ -4,6 +4,7 @@ import type {
   PluginNetworkRequestOptions,
   PluginNetworkResponse,
 } from '../../../shared/plugins';
+import { createPluginTcpApi } from './tcp';
 
 export type PluginNetworkRequestInit = Omit<PluginNetworkRequestOptions, 'body'> & {
   body?: PluginNetworkRequestOptions['body'] | Blob;
@@ -107,6 +108,7 @@ export const createPluginNetworkApi = (
   }) as PluginNetworkRequest;
 
   return {
+    tcp: createPluginTcpApi(descriptor, addDisposable),
     /** Browser Fetch semantics, including Chromium's forbidden-header rules. */
     fetch: window.fetch.bind(window),
     /** Main-process Axios request using the unrestricted Node.js HTTP adapter. */

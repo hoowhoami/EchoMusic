@@ -20,7 +20,7 @@ import { initMediaControls, destroyMediaControls } from './mediaControls';
 import { destroyAudioCapture } from './audioCapture';
 import { cleanupMiniPlayer } from './miniPlayer';
 import { initPowerMonitor } from './powerMonitor';
-import { clearPluginRuntimeSession, setPluginSafeMode } from './plugins';
+import { clearPluginRuntimeSession, refreshPluginMetadata, setPluginSafeMode } from './plugins';
 import { applyDesktopAppIcon, applyTaskbarShortcutIcon, refreshAppIconConfig } from './appIcons';
 import { setupThumbarButtons } from './thumbar';
 import { setupTaskbarThumbnail, destroyTaskbarThumbnail } from './taskbarThumbnail';
@@ -150,6 +150,12 @@ if (!gotTheLock) {
     };
 
     // --- Loading 阶段：在窗口创建前完成核心服务初始化 ---
+    try {
+      await refreshPluginMetadata();
+    } catch (error) {
+      log.error('[Plugin] Failed to initialize plugin metadata:', error);
+      await setPluginSafeMode(true);
+    }
 
     // 注册频谱 IPC（渲染进程启动后立即可用，且拥有独立捕获生命周期）
     registerAudioSpectrumIpc(() => playerRef.current);
