@@ -3,7 +3,7 @@ import {
   getWindowComposition,
   resolveWindowBackground,
   resolveRunningWindowBackground,
-  resolvePlatformWindowBackground,
+  normalizeWindowBackground,
   type WindowBackground,
 } from '../../shared/window-background';
 import { BrowserWindow, shell, app, nativeTheme, powerSaveBlocker, screen } from 'electron';
@@ -39,10 +39,7 @@ import { normalizeZoomLevel, titleBarHeight, zoomLevelToFactor } from '../../sha
 const initialSettings = getMainAppSettings();
 let closeBehavior: CloseBehavior = initialSettings.closeBehavior;
 let currentTheme: ThemeMode = initialSettings.theme;
-let windowBackground = resolvePlatformWindowBackground(
-  initialSettings.windowBackground,
-  process.platform,
-);
+let windowBackground = normalizeWindowBackground(initialSettings.windowBackground);
 let windowBackgroundActiveEnabled = windowBackground.enabled;
 const supportsWindowFrost =
   process.platform === 'darwin' ||
@@ -279,7 +276,7 @@ export const registerMainWindowPreferenceHandlers = () => {
   ipcRegistry.registerHandler('window-background:set', (event, value: WindowBackground) => {
     if (!win || event.sender !== win.webContents || event.senderFrame !== win.webContents.mainFrame)
       throw new Error('仅主窗口可以调整背景');
-    windowBackground = resolvePlatformWindowBackground(value, process.platform);
+    windowBackground = normalizeWindowBackground(value);
     if (!supportsWindowFrost && process.platform !== 'win32') windowBackground.frosted = false;
 
     setMainAppSetting('windowBackground', windowBackground);

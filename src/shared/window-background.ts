@@ -25,17 +25,6 @@ export function normalizeWindowBackground(
   };
 }
 
-// Linux window effects are left to the desktop compositor. Ignore saved or
-// imported preferences as well as runtime requests on unsupported platforms.
-export function resolvePlatformWindowBackground(
-  value: Partial<WindowBackground> | null,
-  platform: string,
-): WindowBackground {
-  return platform === 'win32' || platform === 'darwin'
-    ? normalizeWindowBackground(value)
-    : { ...DEFAULT_WINDOW_BACKGROUND };
-}
-
 // Keep saved preferences separate from the appearance the current window can use.
 export function resolveWindowBackground(
   value: WindowBackground,
@@ -58,7 +47,7 @@ export function getWindowComposition(value: WindowBackground, platform: string, 
   return {
     transparent:
       value.enabled &&
-      (platform === 'win32' ? build < 22621 : platform === 'darwin' && !value.frosted),
+      (platform === 'win32' ? build < 22621 : !(platform === 'darwin' && value.frosted)),
     systemMaterial,
     clientCornerRadius: 0,
   };
@@ -71,7 +60,7 @@ export function resolveRunningWindowBackground(
   transparent: boolean,
   build = 22621,
 ) {
-  const wanted = resolvePlatformWindowBackground(value, platform);
+  const wanted = normalizeWindowBackground(value);
   if (platform === 'win32') {
     if (build >= 22621) return { background: wanted, restartRequired: false };
     const needsTransparentWindow = wanted.enabled;
@@ -92,8 +81,9 @@ export function resolveRunningWindowBackground(
       restartRequired: needsTransparentWindow !== transparent,
     };
   }
+  // Linux has no Electron backdrop-material API; preserve the current native mode until restart.
   return {
-    background: wanted,
-    restartRequired: false,
+    background: resolveWindowBackground(wanted, transparent, false),
+    restartRequired: wanted.enabled !== transparent,
   };
 }
