@@ -5,6 +5,7 @@ import {
   getWindowComposition,
   normalizeWindowBackground,
   resolveWindowBackground,
+  resolveRendererWindowBackground,
   resolveRunningWindowBackground,
 } from '../src/shared/window-background.ts';
 
@@ -114,10 +115,13 @@ test('modern Windows retains live native composition at the build boundary', () 
 });
 test('legacy Windows can cancel a pending clear selection without restarting', () => {
   assert.equal(resolveRunningWindowBackground(clear, 'win32', false, 19045).restartRequired, true);
-  assert.deepEqual(resolveRunningWindowBackground(DEFAULT_WINDOW_BACKGROUND, 'win32', false, 19045), {
-    background: DEFAULT_WINDOW_BACKGROUND,
-    restartRequired: false,
-  });
+  assert.deepEqual(
+    resolveRunningWindowBackground(DEFAULT_WINDOW_BACKGROUND, 'win32', false, 19045),
+    {
+      background: DEFAULT_WINDOW_BACKGROUND,
+      restartRequired: false,
+    },
+  );
   const saved = { ...clear, transparency: 87, color: '#123456' };
   const pending = resolveRunningWindowBackground(saved, 'win32', false, 19045);
   assert.equal(pending.background.enabled, false);
@@ -165,5 +169,26 @@ test('Linux preserves native transparency until recreation and never enables Vib
   assert.deepEqual(resolveRunningWindowBackground(DEFAULT_WINDOW_BACKGROUND, 'linux', false), {
     background: DEFAULT_WINDOW_BACKGROUND,
     restartRequired: false,
+  });
+});
+
+test('compositor-backed frost stays active on an existing transparent window', () => {
+  assert.deepEqual(
+    resolveRunningWindowBackground(frost, 'linux', true, { frostMode: 'compositor' }),
+    {
+      background: frost,
+      restartRequired: false,
+    },
+  );
+});
+
+test('Hyprland renderer uses a pure transparent surface', () => {
+  assert.deepEqual(resolveRendererWindowBackground(clear, 'pure'), {
+    ...clear,
+    transparency: 100,
+    color: '',
+  });
+  assert.deepEqual(resolveRendererWindowBackground(DEFAULT_WINDOW_BACKGROUND, 'pure'), {
+    ...DEFAULT_WINDOW_BACKGROUND,
   });
 });
