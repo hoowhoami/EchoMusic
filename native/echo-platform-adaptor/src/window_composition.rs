@@ -83,6 +83,74 @@ extern "system" {
     fn DefSubclassProc(hwnd: *mut c_void, message: u32, wparam: usize, lparam: isize) -> isize;
 }
 const LEGACY_COMPOSITION_SUBCLASS: usize = 0x4543484f;
+const ACRYLIC_DRAG_SUBCLASS: usize = 0x45434841;
+
+unsafe fn set_accent(handle: *mut c_void, state: i32) -> bool {
+    let name: Vec<u16> = "user32.dll\0".encode_utf16().collect();
+    let module = GetModuleHandleW(name.as_ptr());
+    let proc = if module.is_null() {
+        std::ptr::null_mut()
+    } else {
+        GetProcAddress(module, b"SetWindowCompositionAttribute\0".as_ptr())
+    };
+    if proc.is_null() {
+        return state == 0;
+    }
+    let set: SetComposition = transmute(proc);
+    let mut policy = AccentPolicy {
+        state,
+        flags: 0,
+        // window-vibrancy's legacy Acrylic path requires nonzero tint alpha.
+        // Use the smallest alpha; application surfaces supply the theme color.
+        color: if state == 4 { 0x01000000 } else { 0 },
+        animation: 0,
+    };
+    let mut data = AttributeData {
+        attribute: 19,
+        data: (&mut policy as *mut AccentPolicy).cast(),
+        size: size_of::<AccentPolicy>(),
+    };
+    set(handle, &mut data) != 0
+}
+
+// Suspend expensive legacy Acrylic during the OS modal move/resize loop.
+// Unlike a JS debounce, these messages also cover a paused mouse inside the loop.
+// Data bits: 1 = suspended, 2 = last native operation failed.
+unsafe extern "system" fn acrylic_drag_proc(
+    hwnd: *mut c_void,
+    message: u32,
+    wparam: usize,
+    lparam: isize,
+    id: usize,
+    _data: usize,
+) -> isize {
+    if message == 0x0082 {
+        RemoveWindowSubclass(hwnd, acrylic_drag_proc, id); // WM_NCDESTROY
+        return DefSubclassProc(hwnd, message, wparam, lparam);
+    }
+    if message == 0x0231 {
+        // WM_ENTERSIZEMOVE: disable before the modal loop.
+        let ok = set_accent(hwnd, 0);
+        SetWindowSubclass(hwnd, acrylic_drag_proc, id, 1 | if ok { 0 } else { 2 });
+    }
+    let result = DefSubclassProc(hwnd, message, wparam, lparam);
+    let mut data = 0;
+    if matches!(message, 0x0232 | 0x031e) // WM_EXITSIZEMOVE / WM_DWMCOMPOSITIONCHANGED
+        && IsWindow(hwnd) != 0
+        && GetWindowSubclass(hwnd, acrylic_drag_proc, id, &mut data) != 0
+        && (message == 0x0232 || data & 1 == 0)
+    {
+        let ok = set_accent(hwnd, 4);
+        SetWindowSubclass(hwnd, acrylic_drag_proc, id, if ok { 0 } else { 2 });
+    }
+    result
+}
+
+unsafe fn remove_acrylic_drag(hwnd: *mut c_void) -> bool {
+    let mut data = 0;
+    GetWindowSubclass(hwnd, acrylic_drag_proc, ACRYLIC_DRAG_SUBCLASS, &mut data) == 0
+        || RemoveWindowSubclass(hwnd, acrylic_drag_proc, ACRYLIC_DRAG_SUBCLASS) != 0
+}
 thread_local! { static REPAIRING_LEGACY_FRAME: Cell<bool> = const { Cell::new(false) }; }
 
 // Electron <Win11 22H2 leaves HWNDMessageHandler::is_translucent_ false.
@@ -177,6 +245,9 @@ unsafe fn remove_legacy_frame_repair(hwnd: *mut c_void) -> bool {
 
 #[napi(object)]
 pub struct WindowCompositionDiagnostics {
+    pub acrylic_drag_handler_installed: bool,
+    pub acrylic_suspended: bool,
+    pub acrylic_last_operation_succeeded: Option<bool>,
     pub legacy_frame_repair_installed: bool,
     pub legacy_frame_repair_last_succeeded: Option<bool>,
     pub layered: bool,
@@ -239,7 +310,18 @@ pub fn get_window_composition_diagnostics(hwnd: String) -> Option<WindowComposit
             LEGACY_COMPOSITION_SUBCLASS,
             &mut legacy_mode,
         ) != 0;
+        let mut acrylic_data = 0;
+        let acrylic_drag_handler_installed = GetWindowSubclass(
+            handle,
+            acrylic_drag_proc,
+            ACRYLIC_DRAG_SUBCLASS,
+            &mut acrylic_data,
+        ) != 0;
         Some(WindowCompositionDiagnostics {
+            acrylic_drag_handler_installed,
+            acrylic_suspended: acrylic_drag_handler_installed && acrylic_data & 1 != 0,
+            acrylic_last_operation_succeeded: acrylic_drag_handler_installed
+                .then_some(acrylic_data & 2 == 0),
             legacy_frame_repair_installed,
             legacy_frame_repair_last_succeeded: legacy_frame_repair_installed
                 .then_some(legacy_mode & 0x100 == 0),
@@ -278,12 +360,13 @@ unsafe fn set_alpha_composition(handle: *mut c_void, enabled: bool) -> bool {
     result >= 0
 }
 
-/// mode: 0=off, 5=Win11 DWM clear, 6=legacy DWM clear+frame repair, 7=legacy blur+frame repair.
+/// mode: 0=off, 5=Win11 DWM clear, 6=legacy DWM clear+frame repair, 7=legacy blur+frame repair,
+/// 8=legacy Acrylic with native move/resize suppression.
 /// Modes 6/7 deliberately differ from the former legacy 4/2 protocol:
 /// old addons reject them, causing an explicit fallback instead of silent failure.
 #[napi]
 pub fn set_window_composition(hwnd: String, mode: u32) -> bool {
-    if !matches!(mode, 0 | 5 | 6 | 7) {
+    if !matches!(mode, 0 | 5 | 6 | 7 | 8) {
         return false;
     }
     let Ok(address) = hwnd.parse::<usize>() else {
@@ -294,35 +377,7 @@ pub fn set_window_composition(hwnd: String, mode: u32) -> bool {
         if handle.is_null() || IsWindow(handle) == 0 {
             return false;
         }
-        let name: Vec<u16> = "user32.dll\0".encode_utf16().collect();
-        let module = GetModuleHandleW(name.as_ptr());
-        let proc = if module.is_null() {
-            std::ptr::null_mut()
-        } else {
-            GetProcAddress(module, b"SetWindowCompositionAttribute\0".as_ptr())
-        };
-        let set: Option<SetComposition> = if proc.is_null() {
-            None
-        } else {
-            Some(transmute(proc))
-        };
-        let accent = |state: i32| {
-            let Some(set) = set else {
-                return state == 0;
-            };
-            let mut policy = AccentPolicy {
-                state,
-                flags: 0,
-                color: 0,
-                animation: 0,
-            };
-            let mut data = AttributeData {
-                attribute: 19,
-                data: (&mut policy as *mut AccentPolicy).cast(),
-                size: size_of::<AccentPolicy>(),
-            };
-            set(handle, &mut data) != 0
-        };
+        let accent = |state: i32| set_accent(handle, state);
         let margins = |edge: i32| {
             DwmExtendFrameIntoClientArea(
                 handle,
@@ -336,6 +391,9 @@ pub fn set_window_composition(hwnd: String, mode: u32) -> bool {
         };
         let success = (|| {
             if !remove_legacy_frame_repair(handle) {
+                return false;
+            }
+            if !remove_acrylic_drag(handle) {
                 return false;
             }
             // Clear both native backends before installing the next one.
@@ -355,15 +413,21 @@ pub fn set_window_composition(hwnd: String, mode: u32) -> bool {
                     return false;
                 }
             }
-            if !margins(if mode == 0 { 0 } else { -1 }) {
+            if !margins(if matches!(mode, 0 | 8) { 0 } else { -1 }) {
                 return false;
             }
             let applied = match mode {
                 6 | 5 => set_alpha_composition(handle, true),
-                7 => accent(3), // BlurBehind avoids Win10 Acrylic drag stalls.
+                7 => accent(3), // Retained for comparison with older releases.
+                8 => accent(4),
                 _ => true,
             };
             if !applied {
+                return false;
+            }
+            if mode == 8
+                && SetWindowSubclass(handle, acrylic_drag_proc, ACRYLIC_DRAG_SUBCLASS, 0) == 0
+            {
                 return false;
             }
             if matches!(mode, 7 | 6) {
@@ -385,6 +449,7 @@ pub fn set_window_composition(hwnd: String, mode: u32) -> bool {
         if !success {
             // Best-effort rollback of every backend, including partial DWM setup.
             let _ = remove_legacy_frame_repair(handle);
+            let _ = remove_acrylic_drag(handle);
             let _ = set_alpha_composition(handle, false);
             let _ = accent(0);
             let _ = margins(0);

@@ -20,9 +20,9 @@ export function installWindowFullscreen(win: BrowserWindow) {
   let requested: boolean | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
   const get = () => requested ?? win.isFullScreen();
-  const publish = () => {
+  const publish = (value = get()) => {
     if (!win.isDestroyed() && !win.webContents.isDestroyed())
-      win.webContents.send('window:fullscreen-changed', get());
+      win.webContents.send('window:fullscreen-changed', value);
   };
   const clear = () => {
     clearTimeout(timer);
@@ -57,15 +57,22 @@ export function installWindowFullscreen(win: BrowserWindow) {
       publish();
     } else if (value !== win.isFullScreen()) apply(value);
   };
-  const settled = () => {
+  const settled = (value: boolean) => {
+    // Windows emits these events before updating isFullScreen(). In particular,
+    // HTML fullscreen's Escape exit has no app request to override that old value.
+    // Only AppKit needs to serialize requests across an asynchronous animation.
+    if (process.platform !== 'darwin') {
+      publish(value);
+      return;
+    }
     const next = requested;
     clear();
     requested = undefined;
-    if (next !== undefined && next !== win.isFullScreen()) apply(next);
-    else publish();
+    if (next !== undefined && next !== value) apply(next);
+    else publish(value);
   };
-  win.on('enter-full-screen', settled);
-  win.on('leave-full-screen', settled);
+  win.on('enter-full-screen', () => settled(true));
+  win.on('leave-full-screen', () => settled(false));
   win.webContents.on('did-finish-load', publish);
   win.once('closed', () => {
     clear();
@@ -78,6 +85,14 @@ export function installWindowFullscreen(win: BrowserWindow) {
 
 export function installWindowFullscreenShortcut(win: BrowserWindow) {
   if (process.platform !== 'win32' && process.platform !== 'linux') return;
+
+  let htmlFullscreen = false;
+  win.webContents.on('enter-html-full-screen', () => {
+    htmlFullscreen = true;
+  });
+  win.webContents.on('leave-html-full-screen', () => {
+    htmlFullscreen = false;
+  });
 
   // Keep the shortcut local to the main window, including when its button is hidden.
   win.webContents.on('before-input-event', (event, input) => {
@@ -92,6 +107,10 @@ export function installWindowFullscreenShortcut(win: BrowserWindow) {
       return;
 
     event.preventDefault();
-    if (!input.isAutoRepeat) setWindowFullscreen(win, !isWindowFullscreen(win));
+    if (input.isAutoRepeat) return;
+    // Let Chromium restore the video, viewport and original window state together.
+    // setFullScreen(false) alone leaves the HTML fullscreen element in place.
+    if (htmlFullscreen) win.webContents.send('window:exit-html-fullscreen');
+    else setWindowFullscreen(win, !isWindowFullscreen(win));
   });
 }

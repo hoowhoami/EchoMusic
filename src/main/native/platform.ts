@@ -5,6 +5,9 @@ import log from '../logger';
 
 export interface NativePlatform {
   getWindowCompositionDiagnostics?(handle: string): {
+    acrylicDragHandlerInstalled?: boolean;
+    acrylicSuspended?: boolean;
+    acrylicLastOperationSucceeded?: boolean;
     legacyFrameRepairInstalled?: boolean;
     legacyFrameRepairLastSucceeded?: boolean;
     layered: boolean;

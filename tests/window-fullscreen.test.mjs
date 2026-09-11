@@ -17,13 +17,15 @@ function setup(platform) {
   let fullscreen = false;
   let prevented = 0;
   const transitions = [];
+  const sent = [];
+  const webContents = Object.assign(new EventEmitter(), {
+    send: (channel) => sent.push(channel),
+  });
+  webContents.on('newListener', (name, handler) => {
+    if (name === 'before-input-event') listener = handler;
+  });
   module.exports.installWindowFullscreenShortcut({
-    webContents: {
-      on: (name, handler) => {
-        assert.equal(name, 'before-input-event');
-        listener = handler;
-      },
-    },
+    webContents,
     isFullScreen: () => fullscreen,
     setFullScreen: (value) => {
       fullscreen = value;
@@ -32,6 +34,8 @@ function setup(platform) {
   });
   return {
     transitions,
+    sent,
+    webContents,
     get prevented() {
       return prevented;
     },
@@ -69,7 +73,78 @@ for (const platform of ['win32', 'linux']) {
     assert.deepEqual(window.transitions, []);
     assert.equal(window.prevented, 0);
   });
+
+  test(`${platform}: F11 exits HTML fullscreen before changing the native window`, () => {
+    const window = setup(platform);
+    window.webContents.emit('enter-html-full-screen');
+    window.send();
+    window.send({ isAutoRepeat: true });
+    assert.deepEqual(window.sent, ['window:exit-html-fullscreen']);
+    assert.deepEqual(window.transitions, []);
+    window.webContents.emit('leave-html-full-screen');
+    window.send();
+    assert.deepEqual(window.transitions, [true]);
+  });
+
+  test(`${platform}: leaving a video preserves a pre-existing native fullscreen session`, () => {
+    const window = setup(platform);
+    window.send();
+    window.webContents.emit('enter-html-full-screen');
+    window.send();
+    assert.deepEqual(window.sent, ['window:exit-html-fullscreen']);
+    assert.deepEqual(window.transitions, [true]);
+    window.webContents.emit('leave-html-full-screen');
+    window.send();
+    assert.deepEqual(window.transitions, [true, false]);
+  });
 }
+
+function windowsController() {
+  const module = { exports: {} };
+  runInNewContext(code, { module, process: { platform: 'win32' }, clearTimeout });
+  let actual = false;
+  const sent = [];
+  const calls = [];
+  const win = Object.assign(new EventEmitter(), {
+    isDestroyed: () => false,
+    isFullScreen: () => actual,
+    setFullScreen(value) {
+      calls.push(value);
+      assert.ok(calls.length < 5, 'must not recursively request the same transition');
+      nativeTransition(value);
+    },
+    webContents: Object.assign(new EventEmitter(), {
+      isDestroyed: () => false,
+      send: (_channel, value) => sent.push(value),
+    }),
+  });
+  function nativeTransition(value) {
+    // Electron on Windows notifies BEFORE widget()->SetFullscreen(value).
+    win.emit(value ? 'enter-full-screen' : 'leave-full-screen');
+    actual = value;
+  }
+  const controller = module.exports.installWindowFullscreen(win);
+  return { controller, calls, sent, nativeTransition };
+}
+
+test('Windows: video entry and Escape exit publish the event state, not the old native state', () => {
+  const e = windowsController();
+  e.nativeTransition(true);
+  assert.equal(e.sent.at(-1), true);
+  e.nativeTransition(false);
+  assert.equal(e.sent.at(-1), false);
+  assert.equal(e.controller.get(), false);
+  assert.deepEqual(e.calls, []);
+});
+
+test('Windows: app fullscreen requests never recurse inside early native notifications', () => {
+  const e = windowsController();
+  e.controller.set(true);
+  assert.equal(e.sent.at(-1), true);
+  e.controller.set(false);
+  assert.equal(e.sent.at(-1), false);
+  assert.deepEqual(e.calls, [true, false]);
+});
 
 test('macOS keeps its native fullscreen entry', () => {
   assert.equal(setup('darwin').installed, false);

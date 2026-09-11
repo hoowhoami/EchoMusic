@@ -82,6 +82,50 @@ test('explicit active frost state takes precedence over saved preferences', () =
 
 const clear = { enabled: true, frosted: false, transparency: 60, color: '' };
 const frost = { ...clear, frosted: true };
+test('legacy Windows selects an Electron transparent window only for clear', () => {
+  for (const build of [19045, 22000, 22620]) {
+    assert.equal(getWindowComposition(clear, 'win32', build).transparent, true);
+    assert.equal(getWindowComposition(frost, 'win32', build).transparent, false);
+    assert.equal(
+      getWindowComposition(DEFAULT_WINDOW_BACKGROUND, 'win32', build).transparent,
+      false,
+    );
+    for (const transparent of [false, true]) {
+      for (const wanted of [DEFAULT_WINDOW_BACKGROUND, clear, frost]) {
+        const restartRequired = (wanted.enabled && !wanted.frosted) !== transparent;
+        assert.deepEqual(resolveRunningWindowBackground(wanted, 'win32', transparent, build), {
+          background: restartRequired ? DEFAULT_WINDOW_BACKGROUND : wanted,
+          restartRequired,
+        });
+      }
+    }
+  }
+});
+test('modern Windows retains live native composition at the build boundary', () => {
+  for (const build of [22621, 26100]) {
+    for (const background of [DEFAULT_WINDOW_BACKGROUND, clear, frost]) {
+      assert.equal(getWindowComposition(background, 'win32', build).transparent, false);
+      assert.deepEqual(resolveRunningWindowBackground(background, 'win32', false, build), {
+        background,
+        restartRequired: false,
+      });
+    }
+  }
+});
+test('legacy Windows can cancel a pending clear selection without restarting', () => {
+  assert.equal(resolveRunningWindowBackground(clear, 'win32', false, 19045).restartRequired, true);
+  assert.deepEqual(resolveRunningWindowBackground(frost, 'win32', false, 19045), {
+    background: frost,
+    restartRequired: false,
+  });
+  const saved = { ...clear, transparency: 87, color: '#123456' };
+  const pending = resolveRunningWindowBackground(saved, 'win32', false, 19045);
+  assert.equal(pending.background.enabled, false);
+  assert.deepEqual(resolveRunningWindowBackground(saved, 'win32', true, 19045), {
+    background: saved,
+    restartRequired: false,
+  });
+});
 test('macOS ordinary windows toggle Vibrancy live and require recreation only for clear', () => {
   for (const background of [DEFAULT_WINDOW_BACKGROUND, frost]) {
     assert.deepEqual(resolveRunningWindowBackground(background, 'darwin', false), {

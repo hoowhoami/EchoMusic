@@ -39,7 +39,7 @@ Media controls remain in `echo-media-controls`; enabling/disabling media control
 does not initialize or tear down this addon.
 
 `SetWindowCompositionAttribute` is dynamically resolved and its Accent policy is
-undocumented. Windows 10 BlurBehind avoids Acrylic's interactive-resize stalls.
+undocumented. Windows 10 uses Accent Acrylic, suspended during native move/resize.
 Windows 11 22H2+ Acrylic uses Electron's official `setBackgroundMaterial` instead.
 An unavailable DLL export, invalid HWND, or failed native operation returns false;
 the application displays a solid background and a status message. OS policy,
@@ -67,12 +67,21 @@ backdrop and then enables DWM alpha. Calling Electron's material setter with
 both Electron and native states; failures attempt to disable alpha, Accent and
 client margins before the application restores its solid background.
 
-Windows 10 / early Windows 11 declare `backgroundMaterial: acrylic` at creation
-for Electron's alpha surface, then use native mode 6 for DWM alpha. Actual blur
-still uses Accent mode 7. The native material setter is a no-op on these OS
-versions. Keep the constructor declaration across off/clear/blur switches.
+Windows 10 / early Windows 11 clear uses Electron's `transparent: true` creation
+option, with no background material or native clear call. Entering/leaving clear
+requires restart. The resulting native snap/maximize/animation/resize limitations
+are accepted and explained in settings. Off/frost keep `transparent: false` and
+can switch live. Their constructor retains `backgroundMaterial: acrylic`; actual
+frost uses native mode 8, not the unsupported Electron material setter.
 
-Mode 5 is the Win11 DWM-clear protocol; modes 6/7 include legacy frame repair. Rebuild and package the
+**Known failure:** Windows 10 19045 still reports neither clear nor blur working in
+2.3.2-beta.3, even with successful frame repair. The constructor declaration does
+not initialize Chromium Widget opacity. See the
+[investigation and controlled reproduction](../../docs/win10-composition-investigation.md).
+
+Mode 5 is the Win11 DWM-clear protocol; mode 6 includes legacy frame repair;
+mode 8 installs Acrylic drag suppression. Modes 6/7 are retained for comparison only.
+Rebuild and package the
 addon with the application: older binaries reject the new modes and trigger an
 explicit fallback. This change needs Windows visual validation; successful API
 calls and state tests alone do not establish correct desktop transparency.
@@ -89,12 +98,12 @@ readback still does not establish visible transparency; compare with the actual
 window. Older addons remain loadable and report native diagnostics unavailable.
 
 
-## Legacy HWND frame synchronization (Windows 10 / early Windows 11)
+## Retired legacy HWND frame synchronization (comparison only)
 
 Electron 43 skips `SetIsTranslucent` and its non-client activation update before
 Windows 11 22H2. Chromium can consequently overwrite full-client DWM margins with
-0/1-pixel frame margins during native window events, even when the constructor's
-material declaration made the rendered content alpha-capable.
+0/1-pixel frame margins during native window events. The constructor's material
+declaration alone does not establish that the complete output path supports alpha.
 
 Modes 6 (DWM clear) and 7 (Accent blur) install a `SetWindowSubclass` callback on
 the main HWND. After Chromium processes window-position/activation events, it
@@ -111,3 +120,23 @@ records the last API repair result. Neither establishes visual success. Also,
 `nativeWindowBackground` is Electron's RGB-only value: `#000000` does not reveal
 whether alpha is zero. Regression-test cold launch, show/hide, resize,
 maximize/restore, focus changes and off/clear/blur transitions on actual Win10.
+
+## Windows 10 Acrylic
+
+Mode 8 replaces the unsuccessful BlurBehind frost path. This follows the backend
+choice in [Vibrancy Continued](https://github.com/illixion/vscode-vibrancy-continued/blob/08068850c9bf4b8af0ebf7223364ce2016bc5b22/runtime/index.mjs)
+and the minimum nonzero Acrylic tint alpha in
+[window-vibrancy](https://github.com/tauri-apps/window-vibrancy/blob/dev/src/windows.rs).
+It resets previous DWM alpha/margins and applies Accent state 4 with tint alpha 1/255.
+It does not install the old repeated frame-margin repair callback.
+
+The native subclass suspends Accent at `WM_ENTERSIZEMOVE`, then restores it after
+`WM_EXITSIZEMOVE`. Composition changes reapply it only outside that loop. Switching
+effects removes the subclass before clearing Accent; closing removes it at
+`WM_NCDESTROY`. This uses OS move/resize boundaries rather than a polling timer.
+Diagnostics expose `acrylicDragHandlerInstalled`, `acrylicSuspended` and
+`acrylicLastOperationSucceeded`; these remain API observations, not visual proof.
+
+Both clear and frost now have production implementations, but Windows 10 visual
+regression is still required. Clear uses Electron transparency; frost uses Accent
+Acrylic. The reported working Windows 11 22H2+ native composition path is unchanged.

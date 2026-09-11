@@ -217,6 +217,11 @@ const reorderByKeyboard = (event: KeyboardEvent, index: number) => {
   transform: translateZ(0);
   backface-visibility: hidden;
 }
+.titlebar-more-menu[data-state='closed'] {
+  /* Presence 异步卸载前立即隐藏，避免关闭阶段的定位更新露出一帧。 */
+  visibility: hidden;
+  pointer-events: none;
+}
 body.echo-surface-translucent .titlebar-more-menu.titlebar-more-menu {
   -webkit-backdrop-filter: none;
   backdrop-filter: none;

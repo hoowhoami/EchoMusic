@@ -152,10 +152,23 @@ const isAccentGradientDefault = computed(
           }}
         </p>
         <p
-          v-if="backgroundMode === 'frosted' && settingStore.windowFrostBackend === 'blur-behind'"
+          v-if="
+            windowPlatform === 'win32' &&
+            !settingStore.windowBackgroundLive &&
+            settingStore.windowBackgroundFrostLive
+          "
           class="text-sm text-text-secondary"
         >
-          兼容模式，效果受系统透明效果设置、节能模式及远程桌面环境影响
+          此版本 Windows
+          的纯透明模式可能不支持系统贴边、双击最大化、窗口动画及边缘缩放；切回关闭或毛玻璃并重启可恢复原生窗口行为
+        </p>
+        <p
+          v-if="
+            backgroundMode === 'frosted' && settingStore.windowFrostBackend === 'accent-acrylic'
+          "
+          class="text-sm text-text-secondary"
+        >
+          Windows 兼容毛玻璃；拖动和调整窗口大小时暂停模糊，结束后恢复。效果受系统设置影响
         </p>
         <p
           v-if="settingStore.windowBackgroundUnavailableReason"

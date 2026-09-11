@@ -73,25 +73,41 @@ test('clear -> Win11 Acrylic -> clear -> opaque disables the previous backend in
     ['accent', '1311768467463790320', 0],
   ]);
 });
-test('Win10 uses BlurBehind and a fresh opaque window makes no native calls', () => {
+test('Win10 uses Accent Acrylic and a fresh opaque window makes no native calls', () => {
   const e = setup();
   e.apply(e.win, { ...e.background, enabled: false }, 19045);
   assert.deepEqual(e.calls, []);
   e.apply(e.win, { ...e.background, frosted: true }, 19045);
-  assert.deepEqual(e.calls, [['accent', '1311768467463790320', 7]]);
+  assert.deepEqual(e.calls, [['accent', '1311768467463790320', 8]]);
+  assert.equal(e.diagnose(e.win).requestedBackend, 'accent-acrylic');
+});
+test('legacy clear relies on Electron alpha and works without a native addon', () => {
+  for (const build of [19045, 22000, 22620]) {
+    const e = setup({ available: false });
+    assert.equal(e.options(build, true).backgroundMaterial, undefined);
+    e.apply(e.win, e.background, build);
+    assert.equal(e.diagnose(e.win).requestedBackend, 'electron-transparent');
+    e.apply(e.win, { ...e.background, transparency: 100 }, build);
+    e.apply(e.win, { ...e.background, enabled: false }, build);
+    assert.equal(e.diagnose(e.win).requestedBackend, 'none');
+    assert.deepEqual(e.calls, []);
+  }
 });
 test('missing addon reports a fallback and does not prevent official Win11 Acrylic', () => {
   const e = setup({ available: false });
-  assert.throws(() => e.apply(e.win, e.background, 19045), /系统背景接口不可用/);
+  assert.throws(
+    () => e.apply(e.win, { ...e.background, frosted: true }, 19045),
+    /系统背景接口不可用/,
+  );
   e.apply(e.win, { ...e.background, frosted: true }, 22631);
   assert.deepEqual(e.calls.at(-1), ['material', true]);
 });
 test('native failures are not cached as successful composition', () => {
   const e = setup();
   e.fail();
-  assert.throws(() => e.apply(e.win, e.background, 19045));
-  assert.throws(() => e.apply(e.win, e.background, 19045));
-  assert.equal(e.calls.filter((call) => call[0] === 'accent' && call[2] === 6).length, 2);
+  assert.throws(() => e.apply(e.win, { ...e.background, frosted: true }, 19045));
+  assert.throws(() => e.apply(e.win, { ...e.background, frosted: true }, 19045));
+  assert.equal(e.calls.filter((call) => call[0] === 'accent' && call[2] === 8).length, 2);
 });
 
 test('Win11 clear failure releases prepared material and retries instead of caching success', () => {
@@ -113,7 +129,7 @@ test('Win11 clear failure releases prepared material and retries instead of cach
   );
 });
 
-test('Win10 and early Win11 prepare alpha at creation and keep it through off/clear/blur toggles', () => {
+test('legacy off/clear/Acrylic switches preserve constructor options without calling the unsupported material setter', () => {
   for (const build of [19045, 22000]) {
     const e = setup();
     const options = e.options(build);
@@ -135,15 +151,45 @@ test('Win10 and early Win11 prepare alpha at creation and keep it through off/cl
     );
     assert.deepEqual(
       e.calls.map((c) => c[2]),
-      [6, 0, 7, 0, 6],
+      [8, 0],
     );
   }
   assert.equal(setup().options(22621).backgroundMaterial, undefined);
 });
+
+test('legacy Acrylic rejects beta.3 addons and rolls back without caching success', () => {
+  const e = setup({ modeMax: 7 });
+  for (let attempt = 0; attempt < 2; attempt++) {
+    assert.throws(() => e.apply(e.win, { ...e.background, frosted: true }, 19045));
+    assert.equal(e.diagnose(e.win).requestedBackend, 'none');
+  }
+  assert.deepEqual(
+    e.calls.map((c) => c[2]),
+    [8, 0, 8, 0],
+  );
+});
+
+test('Acrylic diagnostics expose drag suppression independently of requested effect', () => {
+  const e = setup({
+    diagnostics: () => ({
+      acrylicDragHandlerInstalled: true,
+      acrylicSuspended: true,
+      acrylicLastOperationSucceeded: true,
+      accentState: 0,
+    }),
+  });
+  e.apply(e.win, { ...e.background, frosted: true }, 19045);
+  const state = e.diagnose(e.win);
+  assert.equal(state.requestedBackend, 'accent-acrylic');
+  assert.equal(state.actual.acrylicSuspended, true);
+  assert.equal(state.actual.accentState, 0);
+  e.apply(e.win, { ...e.background, frosted: true, transparency: 90 }, 19045);
+  assert.equal(e.calls.length, 1); // Do not re-enable Acrylic mid-drag on theme/tint sync.
+});
 test('legacy Accent failure leaves the constructor alpha declaration intact', () => {
   const e = setup();
   e.fail();
-  assert.throws(() => e.apply(e.win, e.background, 19045));
+  assert.throws(() => e.apply(e.win, { ...e.background, frosted: true }, 19045));
   assert.equal(
     e.calls.some((c) => c[0] === 'material'),
     false,
@@ -188,7 +234,7 @@ test('failed native diagnostics remain readable and do not reset a running effec
 });
 
 test('older Accent-only binaries cannot silently accept the new DWM clear modes', () => {
-  for (const build of [19045, 26100]) {
+  for (const build of [22621, 26100]) {
     const e = setup({ legacy: true });
     assert.throws(() => e.apply(e.win, e.background, build), /系统背景接口不可用/);
     assert.equal(e.diagnose(e.win).requestedBackend, 'none');
@@ -197,7 +243,7 @@ test('older Accent-only binaries cannot silently accept the new DWM clear modes'
 
 test('Win10 effects reject pre-frame-repair addons while Win11 keeps its working DWM mode', () => {
   for (const build of [19045, 22000]) {
-    for (const frosted of [false, true]) {
+    for (const frosted of [true]) {
       const e = setup({ modeMax: 5 });
       assert.throws(() => e.apply(e.win, { ...e.background, frosted }, build));
       assert.equal(e.diagnose(e.win).requestedBackend, 'none');

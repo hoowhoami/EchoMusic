@@ -1551,14 +1551,15 @@ const syncWindowZoomGeometry = () => {
   const factor = webFrame.getZoomFactor();
   root.style.setProperty('--window-zoom-factor', String(factor));
   // Fullscreen returns an empty rectangle; never reserve an entire viewport for it.
+  const fullscreen = nativeFullscreen || Boolean(document.fullscreenElement);
   const rect =
-    !nativeFullscreen && controlsOverlay?.visible ? controlsOverlay.getTitlebarAreaRect() : null;
+    !fullscreen && controlsOverlay?.visible ? controlsOverlay.getTitlebarAreaRect() : null;
   const inset = rect && rect.width > 0 ? Math.max(0, window.innerWidth - rect.x - rect.width) : 0;
   // macOS keeps the 14/14 traffic-light anchor aligned with the collapsed sidebar.
   // Reserve its 80x46 DIP strip centrally; WCO may report a wider safe area.
   const leftInset = Math.max(
     rect && rect.width > 0 ? Math.max(0, rect.x) : 0,
-    macTitlebar && !nativeFullscreen ? 80 / factor : 0,
+    macTitlebar && !fullscreen ? 80 / factor : 0,
   );
   root.style.setProperty('--window-controls-inset', `${inset}px`);
   root.style.setProperty('--window-controls-left-inset', `${leftInset}px`);
@@ -1570,6 +1571,14 @@ const syncWindowZoomGeometry = () => {
 ipcRenderer.on('window:fullscreen-changed', (_event, fullscreen: boolean) => {
   nativeFullscreen = fullscreen;
   syncWindowZoomGeometry();
+});
+ipcRenderer.on('window:exit-html-fullscreen', () => {
+  if (document.fullscreenElement) void document.exitFullscreen().catch(() => undefined);
+});
+document.addEventListener('fullscreenchange', () => {
+  syncWindowZoomGeometry();
+  // Native window and HTML fullscreen notifications may precede WCO layout updates.
+  requestAnimationFrame(syncWindowZoomGeometry);
 });
 ipcRenderer.on('window:zoom-changed', syncWindowZoomGeometry);
 controlsOverlay?.addEventListener('geometrychange', syncWindowZoomGeometry);

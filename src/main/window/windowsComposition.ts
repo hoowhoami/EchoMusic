@@ -5,17 +5,20 @@ import type { WindowBackground } from '../../shared/window-background';
 
 export const supportsWindowsAccent = () => Boolean(getNativePlatform());
 
-export function getWindowsCompositionOptions(build: number) {
+export function getWindowsCompositionOptions(build: number, transparent = false) {
   return {
     // Before Win11 22H2, setBackgroundMaterial returns before updating Chromium.
     // The constructor still reads this value for IsTranslucent / DirectComposition.
-    // Prime the alpha surface even in off mode so Accent can be toggled live.
+    // Clear instead uses transparent:true and needs no material bootstrap.
     // No system Acrylic is applied on these OS versions; Accent owns the effect.
-    ...(build < 22621 ? { backgroundMaterial: 'acrylic' as const } : {}),
+    ...(build < 22621 && !transparent ? { backgroundMaterial: 'acrylic' as const } : {}),
   };
 }
 
-const active = new WeakMap<BrowserWindow, 'none' | 'clear' | 'blur' | 'acrylic'>();
+const active = new WeakMap<
+  BrowserWindow,
+  'none' | 'clear' | 'electron-transparent' | 'accent-acrylic' | 'acrylic'
+>();
 
 export function readWindowsCompositionDiagnostics(win: BrowserWindow) {
   const native = getNativePlatform();
@@ -45,8 +48,10 @@ export function applyWindowsComposition(
     : background.frosted
       ? build >= 22621
         ? 'acrylic'
-        : 'blur'
-      : 'clear';
+        : 'accent-acrylic'
+      : build >= 22621
+        ? 'clear'
+        : 'electron-transparent';
   const previous = active.get(win) ?? 'none';
   if (previous === mode) return;
   const accent = (value: number) => {
@@ -61,7 +66,7 @@ export function applyWindowsComposition(
     // Clear the previous backend before selecting another; do not reset DWM on tint updates.
     if (previous === 'acrylic' || (previous === 'clear' && build >= 22621))
       syncWindowsBackgroundMaterial(win, false);
-    if (previous === 'clear' || previous === 'blur') accent(0);
+    if (previous === 'clear' || previous === 'accent-acrylic') accent(0);
     active.set(win, 'none');
     if (mode === 'acrylic') syncWindowsBackgroundMaterial(win, true);
     else if (mode === 'clear' && build >= 22621) {
@@ -69,7 +74,9 @@ export function applyWindowsComposition(
       // Prepare it through Electron, then remove only the native system backdrop.
       syncWindowsBackgroundMaterial(win, true);
       accent(5);
-    } else if (mode !== 'none') accent(mode === 'blur' ? 7 : 6);
+    } else if (mode === 'accent-acrylic') accent(8);
+    // Legacy clear is provided by BrowserWindow.transparent. Calling the old
+    // DWM mode here would reintroduce the failed opaque-window workaround.
     active.set(win, mode);
   } catch (error) {
     try {

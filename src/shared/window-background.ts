@@ -40,12 +40,16 @@ export function resolveWindowBackground(
     : { ...DEFAULT_WINDOW_BACKGROUND };
 }
 
-// Keep the Windows HWND non-layered in every mode. DWM owns its frame,
-// shadow, animations and corners; composition is applied independently.
+// Legacy Windows clear needs Electron's transparent creation path. Frost and
+// modern Windows keep the native frame; no HWND style patches are applied.
 export function getWindowComposition(value: WindowBackground, platform: string, build: number) {
   const systemMaterial = value.enabled && value.frosted && platform === 'win32' && build >= 22621;
   return {
-    transparent: value.enabled && platform !== 'win32' && !(platform === 'darwin' && value.frosted),
+    transparent:
+      value.enabled &&
+      (platform === 'win32'
+        ? build < 22621 && !value.frosted
+        : !(platform === 'darwin' && value.frosted)),
     systemMaterial,
     clientCornerRadius: 0,
   };
@@ -56,9 +60,20 @@ export function resolveRunningWindowBackground(
   value: WindowBackground,
   platform: string,
   transparent: boolean,
+  build = 22621,
 ) {
   const wanted = normalizeWindowBackground(value);
-  if (platform === 'win32') return { background: wanted, restartRequired: false };
+  if (platform === 'win32') {
+    if (build >= 22621) return { background: wanted, restartRequired: false };
+    const needsTransparentWindow = wanted.enabled && !wanted.frosted;
+    const restartRequired = needsTransparentWindow !== transparent;
+    return {
+      // Do not run Acrylic on the outgoing transparent window or report clear
+      // active on an opaque window. Off is safe immediately in either case.
+      background: restartRequired ? { ...DEFAULT_WINDOW_BACKGROUND } : wanted,
+      restartRequired,
+    };
+  }
   if (platform === 'darwin') {
     const needsTransparentWindow = wanted.enabled && !wanted.frosted;
     return {

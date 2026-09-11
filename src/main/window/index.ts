@@ -176,14 +176,21 @@ const syncMainWindowBackground = () => {
   if (nativeTheme.themeSource !== currentTheme) nativeTheme.themeSource = currentTheme;
   syncTitleBar();
   if (process.platform === 'win32') {
+    const state = resolveRunningWindowBackground(
+      windowBackground,
+      process.platform,
+      activeComposition.transparent,
+      Number(release().split('.')[2]),
+    );
+    windowBackgroundRestartRequired = state.restartRequired;
     backgroundUnavailableReason = '';
     try {
-      applyWindowsComposition(win, windowBackground, Number(release().split('.')[2]));
+      applyWindowsComposition(win, state.background, Number(release().split('.')[2]));
       win.setBackgroundColor(
-        windowBackground.enabled ? '#00000000' : getMainWindowBackgroundColor(),
+        state.background.enabled ? '#00000000' : getMainWindowBackgroundColor(),
       );
-      windowBackgroundActiveEnabled = windowBackground.enabled;
-      windowBackgroundActiveFrosted = windowBackground.frosted;
+      windowBackgroundActiveEnabled = state.background.enabled;
+      windowBackgroundActiveFrosted = state.background.frosted;
     } catch (error) {
       windowBackgroundActiveEnabled = false;
       windowBackgroundActiveFrosted = false;
@@ -225,8 +232,8 @@ const readBackgroundState = () => ({
       ? 'vibrancy'
       : Number(release().split('.')[2]) >= 22621
         ? 'acrylic'
-        : 'blur-behind',
-  live: process.platform === 'win32',
+        : 'accent-acrylic',
+  live: process.platform === 'win32' && Number(release().split('.')[2]) >= 22621,
   frostLive: process.platform === 'darwin' || process.platform === 'win32',
   restartRequired: windowBackgroundRestartRequired,
   unavailableReason: backgroundUnavailableReason,
@@ -363,7 +370,7 @@ export async function createWindow() {
     // Electron's WS_THICKFRAME option is Windows-only, independent of materials.
     ...(process.platform === 'win32' ? { thickFrame: true } : {}),
     ...(process.platform === 'win32'
-      ? getWindowsCompositionOptions(Number(release().split('.')[2]))
+      ? getWindowsCompositionOptions(Number(release().split('.')[2]), activeComposition.transparent)
       : {}),
     transparent: activeComposition.transparent,
     roundedCorners: activeComposition.clientCornerRadius === 0,

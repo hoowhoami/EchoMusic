@@ -105,7 +105,7 @@ export const useSettingStore = defineStore('setting', {
     windowBackgroundUnavailableReason: '',
     windowBackgroundActiveFrosted: null as boolean | null,
     supportsWindowFrost: false,
-    windowFrostBackend: 'none' as 'none' | 'vibrancy' | 'acrylic' | 'blur-behind',
+    windowFrostBackend: 'none' as 'none' | 'vibrancy' | 'acrylic' | 'accent-acrylic',
     language: 'zh-CN',
     shortcutEnabled: true,
     suppressDefaultKeyBehaviors: true,

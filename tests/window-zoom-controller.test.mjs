@@ -97,8 +97,8 @@ test('zoom IPC rejects auxiliary renderers and subframes', () => {
     5,
   );
 });
-for (const platform of ['linux', 'darwin'])
-  test(`${platform} native control reservation is zoom-aware and clears in fullscreen`, () => {
+for (const platform of ['win32', 'linux', 'darwin'])
+  test(`${platform} native control reservation restores across native and HTML fullscreen`, async () => {
     const code = readFileSync(new URL('../src/preload/index.ts', import.meta.url), 'utf8').split(
       '// Native titlebar geometry',
     )[1];
@@ -107,20 +107,31 @@ for (const platform of ['linux', 'darwin'])
     let factor = 1;
     let left = 0;
     let right = 138;
+    let exitCalls = 0;
+    let frame;
     const overlay = {
       visible: true,
       getTitlebarAreaRect: () => ({ x: left / factor, width: (1000 - left - right) / factor }),
       addEventListener: (name, fn) => handlers.set(name, fn),
     };
     const win = { innerWidth: 1000, addEventListener: (name, fn) => handlers.set(name, fn) };
+    const document = {
+      documentElement: { style: { setProperty: (name, value) => properties.set(name, value) } },
+      fullscreenElement: null,
+      addEventListener: (name, fn) => handlers.set(name, fn),
+      exitFullscreen: async () => {
+        exitCalls++;
+      },
+    };
     runInNewContext(
       transformSync('// Native titlebar geometry' + code, { loader: 'ts', format: 'cjs' }).code,
       {
         process: { platform },
         navigator: { windowControlsOverlay: overlay },
         window: win,
-        document: {
-          documentElement: { style: { setProperty: (name, value) => properties.set(name, value) } },
+        document,
+        requestAnimationFrame: (callback) => {
+          frame = callback;
         },
         webFrame: { getZoomFactor: () => factor },
         ipcRenderer: { on: (name, fn) => handlers.set(name, fn) },
@@ -153,4 +164,46 @@ for (const platform of ['linux', 'darwin'])
     assert.equal(properties.get('--window-controls-left-height'), '0px');
     handlers.get('window:fullscreen-changed')(null, false);
     if (platform === 'darwin') assert.equal(properties.get('--window-controls-left-inset'), '40px');
+
+    left = 0;
+    right = 138;
+    overlay.visible = true;
+    handlers.get('geometrychange')();
+    assert.equal(properties.get('--window-controls-inset'), '69px');
+    document.fullscreenElement = {};
+    handlers.get('window:fullscreen-changed')(null, true);
+    handlers.get('fullscreenchange')();
+    frame();
+    assert.equal(properties.get('--window-controls-inset'), '0px');
+    assert.equal(properties.get('--window-controls-left-inset'), '0px');
+
+    // F11 uses the same DOM exit API as video controls. Native exit can arrive
+    // before fullscreenchange, with WCO geometry only available on the next frame.
+    handlers.get('window:exit-html-fullscreen')();
+    assert.equal(exitCalls, 1);
+    handlers.get('window:fullscreen-changed')(null, false);
+    assert.equal(properties.get('--window-controls-inset'), '0px');
+    document.fullscreenElement = null;
+    overlay.visible = false;
+    handlers.get('fullscreenchange')();
+    overlay.visible = true;
+    frame();
+    assert.equal(properties.get('--window-controls-inset'), '69px');
+    handlers.get('window:exit-html-fullscreen')();
+    assert.equal(exitCalls, 1, 'ignore requests after HTML fullscreen has already exited');
+
+    // A native fullscreen session stays fullscreen when exiting a nested video.
+    handlers.get('window:fullscreen-changed')(null, true);
+    handlers.get('fullscreenchange')();
+    frame();
+    assert.equal(properties.get('--window-controls-inset'), '0px');
+    handlers.get('window:fullscreen-changed')(null, false);
+    assert.equal(properties.get('--window-controls-inset'), '69px');
+
+    document.fullscreenElement = {};
+    document.exitFullscreen = async () => {
+      throw new Error('fullscreen exited concurrently');
+    };
+    handlers.get('window:exit-html-fullscreen')();
+    await Promise.resolve();
   });

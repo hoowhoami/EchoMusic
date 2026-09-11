@@ -44,11 +44,16 @@ development dependency. Keep `LICENSES` and `THIRD_PARTY_NOTICES.md` in the pack
 Windows background effects depend on Electron's compositor internals, not just
 whether the native API returns success. Before shipping an Electron upgrade:
 
-1. On Windows 10 and early Windows 11 (builds 22000–22620), verify DWM alpha clear
-   and BlurBehind in the packaged application. Test cold starts in each mode and
-   `off → clear → blur → off → clear` without restarting. Confirm the constructor's
-   `backgroundMaterial: acrylic` still selects an alpha-capable Chromium surface
-   while the OS material setter remains a no-op; keep `transparent: false`.
+1. On Windows 10 and early Windows 11 (builds below 22621), clear now uses
+   `transparent: true` without a background material or native clear call.
+   Entering/leaving clear requires restart. Verify saved tint/opacity, canceling a
+   pending selection, and restoring the native frame after switching to off/frost
+   and restarting. Snap, double-click maximize, animation and resizing limitations
+   in clear are accepted and explained in settings; do not claim native-frame parity.
+   Off/frost use `transparent: false` and can switch live. Rebuild the platform
+   addon for Acrylic mode 8; beta.3 binaries reject it. Verify native drag/resize
+   suspends Acrylic and restores it on release, including closing during resize.
+   Test cold starts, show/hide, fullscreen and effect switches on actual Windows.
 2. On Windows 11 22H2+, verify clear remains unblurred after theme changes,
    zoom, resize, maximize/restore and page reload. Electron prepares its surface
    as Acrylic, then native mode 5 sets the DWM backdrop to `NONE` and enables DWM alpha. Repeated
