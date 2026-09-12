@@ -49,6 +49,25 @@ pub struct TrackSwitchInfo {
     pub audio_stream_ordinal: Option<usize>,
     pub seq: u64,
     pub duration: f64,
+    /// Timeline position (seconds) of the first sample of the new track that reaches the
+    /// output. Non-zero when a transition starts the incoming track at a cue point.
+    pub start_position_secs: f64,
+    /// Loudness-normalisation gain (dB) of the new track. Applied exactly when the output
+    /// callback crosses the boundary so the level change lines up with the audio.
+    pub normalization_gain_db: Option<f32>,
+}
+
+impl TrackSwitchInfo {
+    pub fn new(url: String, audio_stream_ordinal: Option<usize>, seq: u64, duration: f64) -> Self {
+        Self {
+            url,
+            audio_stream_ordinal,
+            seq,
+            duration,
+            start_position_secs: 0.0,
+            normalization_gain_db: None,
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]

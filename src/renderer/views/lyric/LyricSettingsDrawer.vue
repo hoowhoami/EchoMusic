@@ -403,9 +403,9 @@ const close = () => {
 <style>
 /* Drawer 面板样式：跟随主题 */
 .drawer-panel.lyric-settings-panel {
-  top: 12px;
+  top: var(--drawer-safe-top);
   right: 12px;
-  bottom: 12px;
+  bottom: var(--drawer-safe-bottom);
   width: min(360px, calc(100vw - 24px));
   border-radius: 12px;
   background: var(--lyric-settings-panel-bg, var(--color-bg-dialog));
@@ -416,9 +416,9 @@ const close = () => {
 
 @media (max-width: 420px) {
   .drawer-panel.lyric-settings-panel {
-    top: 8px;
+    --drawer-top-gap: 16px;
+    --drawer-bottom-gap: -4px;
     right: 8px;
-    bottom: 8px;
     width: min(360px, calc(100vw - 16px));
   }
 }

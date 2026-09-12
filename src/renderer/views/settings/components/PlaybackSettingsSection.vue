@@ -18,6 +18,11 @@ import SettingsSectionShell from './SettingsSectionShell.vue';
 import { audioQualityOptions, sectionTitles } from '../constants';
 import { normalizeAudioEffectName, type SpatialAudioEffectEntry } from '../../../../shared/audio';
 import { calculateNormalizationGainDb } from '../../../../shared/loudness';
+import {
+  MAX_FADE_CROSS_SECS,
+  TRACK_TRANSITION_OPTIONS,
+  type TrackTransitionMode,
+} from '../../../../shared/track-transition';
 
 const settingStore = useSettingStore();
 const playerStore = usePlayerStore();
@@ -73,6 +78,27 @@ const autoNextMaxAttemptsInput = computed({
 
 const handleVolumeNormalizationChange = (enabled: boolean) => {
   settingStore.volumeNormalization = enabled;
+};
+
+const trackTransitionOptions = TRACK_TRANSITION_OPTIONS;
+const trackTransitionMode = computed(() => settingStore.effectiveTrackTransitionMode);
+const transitionSelectOptions = computed(() =>
+  trackTransitionOptions.map((option) => ({
+    label: option.label,
+    value: option.value,
+  })),
+);
+const selectedTrackTransitionOption = computed(
+  () =>
+    trackTransitionOptions.find((option) => option.value === trackTransitionMode.value) ??
+    trackTransitionOptions[0],
+);
+const selectTrackTransitionMode = (mode: TrackTransitionMode) => {
+  if (trackTransitionMode.value === mode) return;
+  settingStore.setTrackTransitionMode(mode);
+};
+const handleFadeCrossSlider = (value: number) => {
+  settingStore.setFadeCrossSecs(value);
 };
 
 const handleReferenceLufsSlider = (value: number) => {
@@ -219,16 +245,44 @@ const handleRemoveImpulseResponse = (id: string) => {
     <div class="settings-divider"></div>
     <div class="settings-item">
       <div class="space-y-1">
-        <h3 class="font-semibold">无缝播放</h3>
-        <p class="text-sm text-text-secondary">提前准备下一首，减少歌曲衔接时的停顿</p>
+        <h3 class="font-semibold">歌曲过渡设置</h3>
+        <p class="text-sm text-text-secondary">{{ selectedTrackTransitionOption.description }}</p>
       </div>
-      <Switch v-model="settingStore.gaplessPlayback" />
+      <Select
+        class="w-56 shrink-0"
+        :model-value="trackTransitionMode"
+        :options="transitionSelectOptions"
+        aria-label="歌曲过渡设置"
+        @update:model-value="selectTrackTransitionMode($event as TrackTransitionMode)"
+      />
     </div>
+    <template v-if="trackTransitionMode === 'fade'">
+      <div class="settings-divider"></div>
+      <div class="settings-item">
+        <div class="space-y-1">
+          <h3 class="font-semibold">过渡时长</h3>
+          <p class="text-sm text-text-secondary">调整两首歌交叠淡入淡出的时间</p>
+        </div>
+        <Slider
+          class="w-48"
+          :model-value="settingStore.fadeCrossSecs"
+          :min="0"
+          :max="MAX_FADE_CROSS_SECS"
+          :step="1"
+          show-value
+          :value-suffix="' 秒'"
+          @update:model-value="handleFadeCrossSlider($event)"
+          @value-commit="handleFadeCrossSlider($event)"
+        />
+      </div>
+    </template>
     <div class="settings-divider"></div>
     <div class="settings-item">
       <div class="space-y-1">
-        <h3 class="font-semibold">淡入淡出播放</h3>
-        <p class="text-sm text-text-secondary">启用歌曲切换时的过渡效果</p>
+        <h3 class="font-semibold">开始播放时淡入</h3>
+        <p class="text-sm text-text-secondary">
+          点击播放一首新歌时音量从静音渐起；暂停与继续始终即时生效，切歌由上方的歌曲过渡设置决定
+        </p>
       </div>
       <Switch v-model="settingStore.volumeFade" />
     </div>
@@ -236,8 +290,8 @@ const handleRemoveImpulseResponse = (id: string) => {
       <div class="settings-divider"></div>
       <div class="settings-item">
         <div class="space-y-1">
-          <h3 class="font-semibold">淡入淡出时长</h3>
-          <p class="text-sm text-text-secondary">调整歌曲切换时的过渡时长</p>
+          <h3 class="font-semibold">淡入时长</h3>
+          <p class="text-sm text-text-secondary">调整开始播放时的音量渐起时长</p>
         </div>
         <Slider
           class="w-48"

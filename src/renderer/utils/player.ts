@@ -22,7 +22,9 @@ export interface PlayerEngineEvents {
   playbackRestart?: (payload?: { time?: number; reason?: string }) => void;
   durationChange?: (duration: number) => void;
   /** 新文件加载完成（player file-loaded），用于切歌后放行进度回报 */
-  fileLoaded?: (payload?: { path?: string; seq?: number } & PlayerPlaybackContext) => void;
+  fileLoaded?: (
+    payload?: { path?: string; seq?: number; startTime?: number } & PlayerPlaybackContext,
+  ) => void;
   ended?: () => void;
   play?: (payload?: PlayerPlaybackContext) => void;
   pause?: (payload?: PlayerPlaybackContext) => void;
@@ -269,8 +271,12 @@ export class PlayerEngine {
     this.cleanupFns.push(offDuration);
 
     const offFileLoaded = player.onFileLoaded?.(
-      (payload?: { path?: string; seq?: number } & PlayerPlaybackContext) => {
+      (payload?: { path?: string; seq?: number; startTime?: number } & PlayerPlaybackContext) => {
         this.clearSeekPending();
+        if (typeof payload?.startTime === 'number' && Number.isFinite(payload.startTime)) {
+          this.lastTimeValue = payload.startTime;
+          this.lastTimeUpdateMs = Date.now();
+        }
         this.events.fileLoaded?.(payload);
       },
     );
@@ -458,6 +464,18 @@ export class PlayerEngine {
     void player?.setStallTimeout?.(Math.max(0, Number(seconds) || 0))?.catch((error: unknown) => {
       logger.warn('PlayerEngine', 'set stall timeout failed', { error: String(error) });
     });
+  }
+
+  /** 歌曲过渡设置：无缝 / 淡入淡出（0~15 秒）/ 智能混音基础 / 智能混音进阶。 */
+  setTransitionSettings(options: { mode: string; fadeSecs: number }): void {
+    void player
+      ?.setTransitionSettings?.(options)
+      ?.then((snapshot) => {
+        logger.info('PlayerEngine', 'Track transition settings applied', snapshot ?? options);
+      })
+      .catch((error: unknown) => {
+        logger.warn('PlayerEngine', 'set transition settings failed', { error: String(error) });
+      });
   }
 
   async play(options?: {

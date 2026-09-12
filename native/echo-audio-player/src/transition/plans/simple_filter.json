@@ -1,0 +1,70 @@
+{
+  "name": "SimpleFilterPreset",
+  "description": "A simple DJ plan with crossfade and filters",
+  "Achain": {
+    "description": "Gain and HPF for Track A",
+    "list": [
+      {
+        "effect": {
+          "type": 1,
+          "value": 0.0
+        },
+        "automation": {
+          "type": "piecewise",
+          "m": 0.0,
+          "n": -20.0,
+          "start_pos": 0.5,
+          "end_pos": 1,
+          "curve_type": 2
+        }
+      },
+      {
+        "effect": {
+          "type": 3,
+          "freq": 10.0
+        },
+        "automation": {
+          "type": "piecewise",
+          "m": 10.0,
+          "n": 4000.0,
+          "start_pos": 0.0,
+          "end_pos": 0.6,
+          "curve_type": 2
+        }
+      }
+    ]
+  },
+  "Bchain": {
+    "description": "Gain and LPF for Track B",
+    "list": [
+      {
+        "effect": {
+          "type": 1,
+          "value": -20.0
+        },
+        "automation": {
+          "type": "piecewise",
+          "m": -20.0,
+          "n": 0.0,
+          "start_pos": 0.0,
+          "end_pos": 0.5,
+          "curve_type": 1
+        }
+      },
+      {
+        "effect": {
+          "type": 2,
+          "freq": 20.0
+        },
+        "automation": {
+          "type": "piecewise",
+          "m": 20.0,
+          "n": 8000.0,
+          "start_pos": 0.0,
+          "end_pos": 1,
+          "curve_type": 0
+        }
+      }
+    ]
+  }
+}

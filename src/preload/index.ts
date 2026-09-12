@@ -750,6 +750,10 @@ contextBridge.exposeInMainWorld('electron', {
     setMediaTitle: (title: string) => ipcRenderer.invoke('player:set-media-title', title),
     setLoopFile: (loop: boolean) => ipcRenderer.invoke('player:set-loop-file', loop),
     setStallTimeout: (seconds: number) => ipcRenderer.invoke('player:set-stall-timeout', seconds),
+    setTransitionSettings: (options: { mode?: string; fadeSecs?: number }) =>
+      invokeWithPlainPayload('player:set-transition-settings', options),
+    getTransitionSettings: () => ipcRenderer.invoke('player:get-transition-settings'),
+    getTransitionDiagnostics: () => ipcRenderer.invoke('player:get-transition-diagnostics'),
     onTimeUpdate: (
       func: (payload: number | { time?: number; trackSeq?: number; generation?: number }) => void,
     ) => {

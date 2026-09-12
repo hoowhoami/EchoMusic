@@ -52,7 +52,9 @@ const isMac = window.electron.platform === 'darwin';
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--window-action-color, var(--color-text-main));
+  /* 默认态与顶栏其他按钮（.titlebar-action / .more-trigger）一致：次级色，hover 提亮。
+     歌词页通过 --window-action-color / --window-action-hover-color 覆盖为白色系。 */
+  color: var(--window-action-color, var(--color-text-secondary));
   background: transparent;
   transition: color 0.2s;
 }

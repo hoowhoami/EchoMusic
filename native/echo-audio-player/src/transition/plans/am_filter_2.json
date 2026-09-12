@@ -1,0 +1,184 @@
+{
+  "name": "AM",
+  "description": "An apple music type filter plan",
+  "Achain": {
+    "description": "No effect for Track A",
+    "list": [
+      {
+        "effect": {
+          "type": 1,
+          "value": 0.0
+        },
+        "automation": {
+          "type": "custom",
+          "control_points": [
+            [
+              0.0,
+              0.0
+            ],
+            [
+              0.5,
+              0.0
+            ],
+            [
+              0.75,
+              -2.0
+            ],
+            [
+              0.85,
+              -6.0
+            ],
+            [
+              0.92,
+              -15.0
+            ],
+            [
+              1.0,
+              -35.0
+            ]
+          ]
+        }
+      },
+      {
+        "effect": {
+          "type": 2,
+          "freq": 20000.0
+        },
+        "automation": {
+          "type": "custom",
+          "control_points": [
+            [
+              0.0,
+              20000.0
+            ],
+            [
+              0.1,
+              10000.0
+            ],
+            [
+              0.25,
+              6500.0
+            ],
+            [
+              0.4,
+              4500.0
+            ],
+            [
+              0.65,
+              4000.0
+            ],
+            [
+              0.75,
+              3600.0
+            ],
+            [
+              0.85,
+              2500.0
+            ]
+          ]
+        }
+      },
+      {
+        "effect": {
+          "type": 0,
+          "target_param": "low",
+          "low": 0.0
+        },
+        "automation": {
+          "type": "step",
+          "m": 0,
+          "n": -15,
+          "step_pos": 0.8
+        }
+      }
+    ]
+  },
+  "Bchain": {
+    "description": "No effect for Track B",
+    "list": [
+      {
+        "effect": {
+          "type": 1,
+          "value": -30.0
+        },
+        "automation": {
+          "type": "custom",
+          "control_points": [
+            [
+              0.35,
+              -30.0
+            ],
+            [
+              0.5,
+              -15
+            ],
+            [
+              0.7,
+              -7
+            ],
+            [
+              0.85,
+              -3
+            ],
+            [
+              0.92,
+              0.0
+            ]
+          ]
+        }
+      },
+      {
+        "effect": {
+          "type": 3,
+          "freq": 10000.0
+        },
+        "automation": {
+          "type": "custom",
+          "control_points": [
+            [
+              0.35,
+              10000
+            ],
+            [
+              0.4,
+              1500
+            ],
+            [
+              0.55,
+              800.0
+            ],
+            [
+              0.75,
+              700.0
+            ],
+            [
+              0.82,
+              550.0
+            ],
+            [
+              0.92,
+              100.0
+            ],
+            [
+              1.0,
+              20.0
+            ]
+          ]
+        }
+      },
+      {
+        "effect": {
+          "type": 0,
+          "target_param": "low",
+          "low": -15
+        },
+        "automation": {
+          "type": "step",
+          "m": -15,
+          "n": 0,
+          "step_pos": 0.8
+        }
+      }
+    ]
+  }
+}

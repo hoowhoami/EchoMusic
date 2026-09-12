@@ -749,21 +749,29 @@ fn filter_nodes_for_settings(settings: &DspSettings) -> Vec<AudioFilterNode> {
     nodes
 }
 
+/// Converts decoded chunks (any sample format / rate / channel count) into the packed f32
+/// mix format. Shared by the filter graph and by the transition decks in the decoder.
 #[derive(Default)]
-struct SwrMixConverter {
+pub(crate) struct SwrMixConverter {
     context: Option<SwrContext>,
     input_format: Option<DecodedAudioFormat>,
     output_format: Option<MixFormat>,
 }
 
 impl SwrMixConverter {
-    fn process(
+    pub(crate) fn process(
         &mut self,
         chunk: &DecodedAudioChunk,
         output_format: MixFormat,
         output: &mut Vec<f32>,
     ) -> Result<(), String> {
         if can_copy_directly(chunk.format, output_format) {
+            // A chunk that is already in mix format (transition mixer output, or a source
+            // that matches the engine) must not be reordered before the resampler's
+            // delay-line residue from the preceding format: drain that residue first.
+            if self.context.is_some() {
+                self.finish(output)?;
+            }
             if let DecodedAudioData::F32(samples) = &chunk.data {
                 output.extend_from_slice(samples);
             }
@@ -778,16 +786,30 @@ impl SwrMixConverter {
             .context
             .as_mut()
             .ok_or_else(|| "swresample context was not initialized".to_string())?;
+        if output.is_empty() {
+            return convert_with_swr(
+                context,
+                input_data.as_ptr(),
+                input_frames,
+                output_format.channels,
+                output,
+            );
+        }
+        // `convert_with_swr` overwrites its buffer; keep prior content (e.g. a flushed
+        // residue) by converting into scratch and appending.
+        let mut converted = Vec::new();
         convert_with_swr(
             context,
             input_data.as_ptr(),
             input_frames,
             output_format.channels,
-            output,
-        )
+            &mut converted,
+        )?;
+        output.extend_from_slice(&converted);
+        Ok(())
     }
 
-    fn finish(&mut self, output: &mut Vec<f32>) -> Result<(), String> {
+    pub(crate) fn finish(&mut self, output: &mut Vec<f32>) -> Result<(), String> {
         let Some(context) = self.context.as_mut() else {
             return Ok(());
         };
@@ -795,14 +817,16 @@ impl SwrMixConverter {
             .output_format
             .map(|format| format.channels)
             .unwrap_or(2);
-        let result = convert_with_swr(context, ptr::null(), 0, channels, output);
+        let mut tail = Vec::new();
+        let result = convert_with_swr(context, ptr::null(), 0, channels, &mut tail);
+        output.extend_from_slice(&tail);
         self.context = None;
         self.input_format = None;
         self.output_format = None;
         result
     }
 
-    fn latency_secs(&self) -> f64 {
+    pub(crate) fn latency_secs(&self) -> f64 {
         let sample_rate = self
             .output_format
             .map(|format| format.sample_rate)

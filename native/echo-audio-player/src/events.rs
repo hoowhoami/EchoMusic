@@ -148,6 +148,15 @@ impl PlayerEvent {
         }
     }
 
+    /// `file-loaded` for a track that starts playing at `start_secs` (song transitions
+    /// enter the incoming track at its cue point rather than at 0).
+    pub fn file_loaded_at(path: String, seq: u64, start_secs: f64) -> Self {
+        Self {
+            time: Some(start_secs.max(0.0)),
+            ..Self::file_loaded(path, seq)
+        }
+    }
+
     pub fn playback_restart(time: f64, reason: &str) -> Self {
         Self {
             event: "playback-restart".to_string(),

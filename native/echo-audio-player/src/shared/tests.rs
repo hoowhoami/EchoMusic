@@ -989,12 +989,7 @@ fn gapless_filter_boundary_keeps_decoded_order() {
     );
 
     assert!(shared.push_decoded_chunk_for_generation(first.clone(), generation));
-    shared.mark_gapless_boundary(TrackSwitchInfo {
-        url: "next.flac".to_string(),
-        audio_stream_ordinal: None,
-        seq: 8,
-        duration: 2.0,
-    });
+    shared.mark_gapless_boundary(TrackSwitchInfo::new("next.flac".to_string(), None, 8, 2.0));
     assert!(shared.push_decoded_chunk_for_generation(second.clone(), generation));
 
     assert_eq!(
@@ -1021,12 +1016,7 @@ fn gapless_boundary_resets_position_after_crossing_track_switch() {
     );
     let (wake_rx, _telemetry_rx) = bind_test_signal_senders(&shared);
     assert!(shared.push_samples(&[0.1, 0.2, 0.3, 0.4]));
-    shared.mark_gapless_boundary(TrackSwitchInfo {
-        url: "next.flac".to_string(),
-        audio_stream_ordinal: None,
-        seq: 7,
-        duration: 3.0,
-    });
+    shared.mark_gapless_boundary(TrackSwitchInfo::new("next.flac".to_string(), None, 7, 3.0));
     assert!(shared.push_samples(&[0.5, 0.6, 0.7, 0.8]));
     let mut output = [0.0f32; 8];
     assert_eq!(shared.pop_into(&mut output), 4);
@@ -1054,12 +1044,7 @@ fn busy_track_switch_mailbox_stalls_without_consuming_the_boundary() {
     );
     let (wake_rx, _telemetry_rx) = bind_test_signal_senders(&shared);
     assert!(shared.push_samples(&[0.1, 0.2, 0.3, 0.4]));
-    shared.mark_gapless_boundary(TrackSwitchInfo {
-        url: "next.flac".to_string(),
-        audio_stream_ordinal: None,
-        seq: 7,
-        duration: 3.0,
-    });
+    shared.mark_gapless_boundary(TrackSwitchInfo::new("next.flac".to_string(), None, 7, 3.0));
     assert!(shared.push_samples(&[0.5, 0.6, 0.7, 0.8]));
     // Fill the one-slot wake channel first. The later TrackSwitch must remain in its
     // semantic mailbox even though its wake token is coalesced.
@@ -1099,12 +1084,7 @@ fn gapless_boundary_keeps_advancing_the_ao_clock() {
     );
     let (_control_rx, _telemetry_rx) = bind_test_signal_senders(&shared);
     assert!(shared.push_samples(&[0.1; 4]));
-    shared.mark_gapless_boundary(TrackSwitchInfo {
-        url: "next.flac".to_string(),
-        audio_stream_ordinal: None,
-        seq: 7,
-        duration: 3.0,
-    });
+    shared.mark_gapless_boundary(TrackSwitchInfo::new("next.flac".to_string(), None, 7, 3.0));
     assert!(shared.push_samples(&[0.2; 4]));
 
     let mut boundary_output = [0.0f32; 8];
@@ -1132,12 +1112,7 @@ fn gapless_boundary_resets_underrun_counter() {
     shared.observe_output_request(240);
     assert_eq!(shared.output_buffer_target_samples(), 240);
     assert!(shared.push_samples(&[0.1, 0.2, 0.3, 0.4]));
-    shared.mark_gapless_boundary(TrackSwitchInfo {
-        url: "next.flac".to_string(),
-        audio_stream_ordinal: None,
-        seq: 7,
-        duration: 3.0,
-    });
+    shared.mark_gapless_boundary(TrackSwitchInfo::new("next.flac".to_string(), None, 7, 3.0));
     assert!(shared.push_samples(&[0.5, 0.6, 0.7, 0.8]));
 
     let mut output = [0.0f32; 8];
@@ -1157,12 +1132,7 @@ fn gapless_boundary_short_read_keeps_new_track_in_underrun_hold() {
         &DspSettings::default(),
     );
     assert!(shared.push_samples(&[0.1, 0.2, 0.3, 0.4]));
-    shared.mark_gapless_boundary(TrackSwitchInfo {
-        url: "next.flac".to_string(),
-        audio_stream_ordinal: None,
-        seq: 7,
-        duration: 3.0,
-    });
+    shared.mark_gapless_boundary(TrackSwitchInfo::new("next.flac".to_string(), None, 7, 3.0));
     assert!(shared.push_samples(&[0.5, 0.6]));
 
     let mut output = [0.0f32; 40];

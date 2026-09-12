@@ -692,7 +692,9 @@ export const usePlayerStore = defineStore(
           }
           return;
         }
-        await playbackManager.next({ gaplessTransition: settingStore.gaplessPlayback });
+        await playbackManager.next({
+          gaplessTransition: settingStore.effectiveTrackTransitionMode !== 'none',
+        });
       } finally {
         handlingPlaybackEnd = false;
       }
@@ -706,7 +708,8 @@ export const usePlayerStore = defineStore(
         compatibilityMode: settingStore.compatibilityMode,
         volumeFade: settingStore.volumeFade,
         volumeFadeTime: settingStore.volumeFadeTime,
-        gaplessPlayback: settingStore.gaplessPlayback,
+        trackTransitionMode: settingStore.effectiveTrackTransitionMode,
+        fadeCrossSecs: settingStore.fadeCrossSecs,
         outputDevice: settingStore.outputDevice,
         exclusiveAudioDevice: settingStore.exclusiveAudioDevice,
         playbackStallTimeout: settingStore.playbackStallTimeout,
@@ -718,6 +721,14 @@ export const usePlayerStore = defineStore(
         () => settingStore.pauseOnOutputDeviceDisconnect,
         (enabled) => {
           void window.electron?.player?.setPauseOnDeviceDisconnect(enabled);
+        },
+        { immediate: true },
+      );
+      // 歌曲过渡设置下发给 native 引擎；模式/时长变化时引擎会丢弃按旧设置准备的下一首。
+      const unsubscribeTrackTransition = watch(
+        () => [settingStore.effectiveTrackTransitionMode, settingStore.fadeCrossSecs] as const,
+        ([mode, fadeSecs]) => {
+          engine.setTransitionSettings({ mode, fadeSecs });
         },
         { immediate: true },
       );
@@ -741,7 +752,9 @@ export const usePlayerStore = defineStore(
         const shouldUpdateFade =
           settingStore.volumeFade !== snapshot.volumeFade ||
           settingStore.volumeFadeTime !== snapshot.volumeFadeTime;
-        const shouldUpdateGapless = settingStore.gaplessPlayback !== snapshot.gaplessPlayback;
+        const shouldUpdateGapless =
+          settingStore.effectiveTrackTransitionMode !== snapshot.trackTransitionMode ||
+          settingStore.fadeCrossSecs !== snapshot.fadeCrossSecs;
         const shouldUpdateOutputDevice =
           settingStore.outputDevice !== snapshot.outputDevice ||
           settingStore.exclusiveAudioDevice !== snapshot.exclusiveAudioDevice;
@@ -756,7 +769,8 @@ export const usePlayerStore = defineStore(
           compatibilityMode: settingStore.compatibilityMode,
           volumeFade: settingStore.volumeFade,
           volumeFadeTime: settingStore.volumeFadeTime,
-          gaplessPlayback: settingStore.gaplessPlayback,
+          trackTransitionMode: settingStore.effectiveTrackTransitionMode,
+          fadeCrossSecs: settingStore.fadeCrossSecs,
           outputDevice: settingStore.outputDevice,
           exclusiveAudioDevice: settingStore.exclusiveAudioDevice,
           playbackStallTimeout: settingStore.playbackStallTimeout,
@@ -772,8 +786,9 @@ export const usePlayerStore = defineStore(
         if (shouldUpdateFade && getPlaybackIsPlaying(state)) {
           void audioManager.fadeVolume(state.volume, { durationMs: 120, respectUserVolume: false });
         }
-        if (shouldUpdateGapless && !settingStore.gaplessPlayback)
-          playbackManager.clearGaplessPreparedSource();
+        // Any transition change invalidates a next source prepared under the old plan; the
+        // regular prefetch tick prepares it again with the new settings.
+        if (shouldUpdateGapless) playbackManager.clearGaplessPreparedSource();
         if (shouldUpdateOutputDevice)
           void deviceManager.applyOutputDevice(settingStore.outputDevice);
         if (shouldUpdateStallTimeout)
@@ -786,6 +801,7 @@ export const usePlayerStore = defineStore(
       // 返回清理函数
       return () => {
         unsubscribePauseOnDeviceDisconnect();
+        unsubscribeTrackTransition();
         unsubscribeSpatialAudio();
         unsubscribeGaplessQueueDecision();
         unsubscribeSettings();
@@ -1103,7 +1119,12 @@ export const usePlayerStore = defineStore(
                   payload.trackSeq > 0
                 ? payload.trackSeq
                 : undefined;
-          if (playbackManager.activateGaplessPreparedTransition(payloadSeq)) return;
+          const payloadStartTime =
+            typeof payload?.startTime === 'number' && Number.isFinite(payload.startTime)
+              ? Math.max(0, payload.startTime)
+              : 0;
+          if (playbackManager.activateGaplessPreparedTransition(payloadSeq, payloadStartTime))
+            return;
           const expectedPath =
             state.currentPlaybackSource?.url ?? state.currentAudioUrl ?? undefined;
           if (

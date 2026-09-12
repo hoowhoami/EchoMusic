@@ -4,6 +4,9 @@ use crate::shared::{
     PacketCacheSeekableRange, PacketCacheStats, SharedAudio,
 };
 use crate::stream::{open_stream, ReadSeek, StreamOptions};
+use crate::transition_runner::{
+    split_chunk_at, AbortedTransition, ArmedTransition, RunnerStep, TransitionRunner,
+};
 use ffmpeg_audio::{sys, AudioError, AudioReader, PacketCacheOptions, RawAudioData, SeekMode};
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -16,6 +19,10 @@ pub enum DecodeCommand {
     Seek {
         position_secs: f64,
         generation: u64,
+        /// Track the caller believes is playing (`runtime.current_seq`). During a
+        /// transition this decides whether the seek targets the outgoing or the incoming
+        /// track; `None` means "whatever is live".
+        track_seq: Option<u64>,
         reply: SyncSender<Result<(), String>>,
     },
     SwitchSource {
@@ -23,6 +30,7 @@ pub enum DecodeCommand {
         predecoded: Vec<DecodedAudioChunk>,
         switch_at_secs: f64,
         generation: u64,
+        track_seq: Option<u64>,
         reply: SyncSender<Result<f64, String>>,
     },
     SwitchTrack {
@@ -32,6 +40,26 @@ pub enum DecodeCommand {
         preferred_output_sample_format: AudioSampleFormat,
         normalization_gain_db: f32,
         transition_fade_frames: usize,
+        generation: u64,
+        reply: SyncSender<Result<(), String>>,
+    },
+    /// Hold a prepared transition until the current decoder reaches its cut point.
+    ArmTransition {
+        armed: Box<ArmedTransition>,
+        generation: u64,
+    },
+    /// Drop the armed transition (queue changed, settings changed, prepare cancelled).
+    DisarmTransition {
+        request_id: Option<u64>,
+        reset_position_secs: Option<f64>,
+    },
+    /// Start the armed transition now (manual skip). The caller has already reset the
+    /// pipeline to `generation` at `resume_position_secs` (the audible position), so the
+    /// outgoing decoder is re-seeked there and the blend starts where the listener is,
+    /// capped to `max_overlap_secs`.
+    StartTransition {
+        max_overlap_secs: f64,
+        resume_position_secs: f64,
         generation: u64,
         reply: SyncSender<Result<(), String>>,
     },
@@ -135,6 +163,12 @@ impl DecoderData {
         self.seek_and_measure(position_secs, false)
     }
 
+    /// Drop decoded frames before `position_secs` (sample-accurate alignment after a
+    /// seek that landed on an earlier codec frame). `None` disables trimming.
+    pub fn set_discard_before_secs(&mut self, position_secs: Option<f64>) {
+        self.discard_before_secs = position_secs.filter(|secs| secs.is_finite() && *secs > 0.0);
+    }
+
     fn seek_and_measure(
         &mut self,
         position_secs: f64,
@@ -175,11 +209,22 @@ impl DecoderData {
     }
 
     pub fn decode_next_chunk(&mut self) -> Result<Option<DecodedAudioChunk>, String> {
-        self.reader
-            .receive_frame()
-            .map_err(|err| format!("failed to decode audio source: {err}"))?
-            .map(|frame| decoded_chunk_from_frame(&frame))
-            .transpose()
+        loop {
+            let chunk = self
+                .reader
+                .receive_frame()
+                .map_err(|err| format!("failed to decode audio source: {err}"))?
+                .map(|frame| decoded_chunk_from_frame(&frame))
+                .transpose()?;
+            let Some(mut chunk) = chunk else {
+                return Ok(None);
+            };
+            // Honour a pending sample-accurate alignment (seek landed on an earlier frame).
+            if !align_switched_chunk(&mut chunk, &mut self.discard_before_secs) {
+                continue;
+            }
+            return Ok(Some(chunk));
+        }
     }
 
     pub fn predecode_chunks(&mut self, seconds: f64) -> Result<Vec<DecodedAudioChunk>, String> {
@@ -494,6 +539,191 @@ pub fn spawn_decode_worker(
     Ok((handle, tx))
 }
 
+/// Mutable per-worker state shared by the main loop and the command handlers.
+struct WorkerState {
+    decoded_position_secs: f64,
+    /// Track sequence of the decoder currently in `data` (the live/outgoing track).
+    live_seq: u64,
+    pending_source_switch: Option<PendingSourceSwitch>,
+    /// Transition waiting for the current decoder to reach its cut point.
+    armed_transition: Option<Box<ArmedTransition>>,
+    /// A transition armed for the *next* hand-off while a runner is still active
+    /// (short incoming track, or the renderer prefetched early). Promoted when the
+    /// runner finishes and its outgoing track matches.
+    pending_arm: Option<Box<ArmedTransition>>,
+    /// Transition currently being rendered.
+    runner: Option<TransitionRunner>,
+    /// Manual-skip request that arrived before the transition could start:
+    /// `(max_overlap_secs, resume_position_secs, reply)`.
+    start_now: Option<(f64, f64, SyncSender<Result<(), String>>)>,
+    /// Recent decoded chunks of the live track (kept only while a transition is armed),
+    /// used to pre-roll the tempo stretcher with audio from before the cut point.
+    recent_chunks: std::collections::VecDeque<DecodedAudioChunk>,
+    recent_frames: usize,
+}
+
+/// Seconds of recent audio retained for the stretcher pre-roll.
+const RECENT_HISTORY_SECS: f64 = 0.5;
+
+impl WorkerState {
+    fn new(decoded_position_secs: f64, live_seq: u64) -> Self {
+        Self {
+            decoded_position_secs,
+            live_seq,
+            pending_source_switch: None,
+            armed_transition: None,
+            pending_arm: None,
+            runner: None,
+            start_now: None,
+            recent_chunks: std::collections::VecDeque::new(),
+            recent_frames: 0,
+        }
+    }
+
+    /// Remember a chunk of the live track for the stretcher pre-roll.
+    fn remember_chunk(&mut self, chunk: &DecodedAudioChunk) {
+        if self.armed_transition.is_none() {
+            if !self.recent_chunks.is_empty() {
+                self.recent_chunks.clear();
+                self.recent_frames = 0;
+            }
+            return;
+        }
+        let limit = (RECENT_HISTORY_SECS * f64::from(chunk.format.sample_rate.max(1))) as usize;
+        self.recent_chunks.push_back(chunk.clone());
+        self.recent_frames += chunk.frames;
+        while self.recent_frames > limit && self.recent_chunks.len() > 1 {
+            if let Some(dropped) = self.recent_chunks.pop_front() {
+                self.recent_frames = self.recent_frames.saturating_sub(dropped.frames);
+            }
+        }
+    }
+
+    fn take_recent_chunks(&mut self) -> Vec<DecodedAudioChunk> {
+        self.recent_frames = 0;
+        self.recent_chunks.drain(..).collect()
+    }
+
+    /// Drop everything transition-related (Stop / source replacement).
+    fn drop_transition_state(&mut self) {
+        self.armed_transition = None;
+        self.pending_arm = None;
+        self.fail_start_now("transition cancelled");
+    }
+
+    fn fail_start_now(&mut self, reason: &str) {
+        if let Some((_, _, reply)) = self.start_now.take() {
+            let _ = reply.send(Err(reason.to_string()));
+        }
+    }
+
+    /// Whether a command that names `track_seq` refers to the incoming deck of the
+    /// active runner (the UI has already switched to it).
+    fn targets_incoming(&self, track_seq: Option<u64>, shared: &SharedAudio) -> bool {
+        match (track_seq, self.runner.as_ref()) {
+            (Some(seq), Some(runner)) => seq == runner.incoming_seq(),
+            (None, Some(runner)) => shared.current_track_seq() == runner.incoming_seq(),
+            _ => false,
+        }
+    }
+}
+
+/// Stop the active runner. Returns the decoder that should be live afterwards: the
+/// incoming one when the caller's command targets it (or it is already audible),
+/// otherwise the outgoing decoder stays and deck B is re-armed for a later attempt.
+fn generation_of(shared: &SharedAudio) -> u64 {
+    shared.current_decode_generation()
+}
+
+fn abort_runner(
+    data: &mut DecoderData,
+    shared: &Arc<SharedAudio>,
+    state: &mut WorkerState,
+    prefer_incoming: bool,
+) {
+    let Some(runner) = state.runner.take() else {
+        return;
+    };
+    shared.bind_secondary_interrupt(None);
+    let incoming_seq = runner.incoming_seq();
+    // The output callback publishes the incoming track's sequence exactly when it crosses
+    // the boundary; anything queued but not yet rendered was thrown away by the reset.
+    let incoming_is_audible = shared.current_track_seq() == incoming_seq;
+    match runner.abort(incoming_is_audible) {
+        Some(AbortedTransition::Live(decoder, position)) => {
+            // The incoming track is already audible: it is the live decoder now, whatever
+            // the caller asked for.
+            let _ = prefer_incoming;
+            let previous = std::mem::replace(data, decoder);
+            crate::retire_value_background(
+                Some(previous),
+                "player-transition-outgoing-reaper".to_string(),
+            );
+            state.decoded_position_secs = position;
+            state.live_seq = incoming_seq;
+            shared.bind_interrupt(data.interrupt.clone());
+        }
+        Some(AbortedTransition::Rearm(armed)) => {
+            if prefer_incoming {
+                // The UI targets the incoming track but nothing of it has played yet:
+                // make it live from its entry point.
+                hand_off_armed_directly(shared, data, armed, state, generation_of(shared));
+            } else {
+                shared.bind_interrupt(data.interrupt.clone());
+                if let Some(previous) = state.armed_transition.replace(armed) {
+                    crate::retire_value_background(
+                        Some(previous),
+                        "player-transition-replaced-arm-reaper".to_string(),
+                    );
+                }
+            }
+        }
+        None => {
+            shared.bind_interrupt(data.interrupt.clone());
+        }
+    }
+}
+
+fn disarm_matching_runner(
+    data: &mut DecoderData,
+    shared: &Arc<SharedAudio>,
+    state: &mut WorkerState,
+    request_id: Option<u64>,
+) {
+    let Some(runner) = state.runner.take() else {
+        return;
+    };
+    if !runner.matches_request(request_id) {
+        state.runner = Some(runner);
+        return;
+    }
+    shared.bind_secondary_interrupt(None);
+    let incoming_seq = runner.incoming_seq();
+    let incoming_is_audible = shared.current_track_seq() == incoming_seq;
+    match runner.abort(incoming_is_audible) {
+        Some(AbortedTransition::Live(decoder, position)) => {
+            let previous = std::mem::replace(data, decoder);
+            crate::retire_value_background(
+                Some(previous),
+                "player-transition-disarm-outgoing-reaper".to_string(),
+            );
+            state.decoded_position_secs = position;
+            state.live_seq = incoming_seq;
+            shared.bind_interrupt(data.interrupt.clone());
+        }
+        Some(AbortedTransition::Rearm(armed)) => {
+            crate::retire_value_background(
+                Some(armed),
+                "player-transition-disarm-incoming-reaper".to_string(),
+            );
+            shared.bind_interrupt(data.interrupt.clone());
+        }
+        None => {
+            shared.bind_interrupt(data.interrupt.clone());
+        }
+    }
+}
+
 fn decode_worker_loop(
     mut data: DecoderData,
     shared: Arc<SharedAudio>,
@@ -502,17 +732,10 @@ fn decode_worker_loop(
 ) -> Option<DecoderData> {
     shared.bind_interrupt(data.interrupt.clone());
     let mut produced_frames = 0u64;
-    let mut decoded_position_secs = shared.position_secs();
-    let mut pending_source_switch = None;
+    let mut state = WorkerState::new(shared.position_secs(), shared.current_track_seq());
 
     loop {
-        match handle_decode_commands(
-            &mut data,
-            &shared,
-            &commands,
-            &mut decoded_position_secs,
-            &mut pending_source_switch,
-        ) {
+        match handle_decode_commands(&mut data, &shared, &commands, &mut state) {
             DecodeCommandDrain::Continue(Some(next_generation)) => {
                 generation = next_generation;
                 produced_frames = 0;
@@ -522,12 +745,7 @@ fn decode_worker_loop(
                 return (!shared.stop.load(Ordering::Acquire)).then_some(data);
             }
         }
-        if activate_pending_source_switch(
-            &mut data,
-            &shared,
-            &mut decoded_position_secs,
-            &mut pending_source_switch,
-        ) {
+        if activate_pending_source_switch(&mut data, &shared, &mut state) {
             produced_frames = 0;
         }
         data.publish_packet_cache_stats(&shared);
@@ -535,13 +753,12 @@ fn decode_worker_loop(
             return (!shared.stop.load(Ordering::Acquire)).then_some(data);
         }
         if !shared.is_decode_generation_current(generation) {
-            match wait_for_generation_command(
-                &mut data,
-                &shared,
-                &commands,
-                &mut decoded_position_secs,
-                &mut pending_source_switch,
-            ) {
+            // A reset invalidated everything in flight. A running mix is abandoned; if
+            // the incoming track was already audible it stays live, otherwise deck B is
+            // re-armed and the outgoing track resumes when the next command arrives.
+            abort_runner(&mut data, &shared, &mut state, false);
+            state.fail_start_now("playback reset");
+            match wait_for_generation_command(&mut data, &shared, &commands, &mut state) {
                 Some(next_generation) => {
                     generation = next_generation;
                     produced_frames = 0;
@@ -550,6 +767,108 @@ fn decode_worker_loop(
                 None => return (!shared.stop.load(Ordering::Acquire)).then_some(data),
             }
         }
+
+        // ---- Transition rendering -------------------------------------------------------
+        if let Some(runner) = state.runner.as_mut() {
+            match runner.step(&shared, &mut data) {
+                RunnerStep::Continue => {
+                    // Yield briefly when the output queue is full or a deck is starved so the
+                    // loop does not spin; the decoded-queue wait inside push already blocks
+                    // when the queue is at capacity.
+                    continue;
+                }
+                RunnerStep::Finished(handoff) => {
+                    let finished_seq = state
+                        .runner
+                        .as_ref()
+                        .map(|runner| runner.incoming_seq())
+                        .unwrap_or(state.live_seq);
+                    state.runner = None;
+                    let outgoing = std::mem::replace(&mut data, handoff.decoder);
+                    crate::retire_value_background(
+                        Some(outgoing),
+                        "player-transition-outgoing-reaper".to_string(),
+                    );
+                    state.decoded_position_secs = handoff.decoded_position_secs;
+                    state.live_seq = finished_seq;
+                    produced_frames = handoff.produced_frames;
+                    shared.bind_interrupt(data.interrupt.clone());
+                    shared.bind_secondary_interrupt(None);
+                    data.publish_packet_cache_stats(&shared);
+                    // A transition prepared for the track that just became live can now
+                    // be armed normally.
+                    if let Some(pending) = state.pending_arm.take() {
+                        if pending.outgoing_seq == state.live_seq {
+                            state.armed_transition = Some(pending);
+                        } else {
+                            crate::retire_value_background(
+                                Some(pending),
+                                "player-transition-stale-arm-reaper".to_string(),
+                            );
+                        }
+                    }
+                    emit_decode_info(&shared, "transition finished; incoming track continues");
+                    continue;
+                }
+                RunnerStep::Failed(err) => {
+                    state.runner = None;
+                    shared.mark_decode_failed();
+                    emit_decode_error(&shared, format!("song transition failed: {err}"));
+                    return None;
+                }
+            }
+        }
+
+        // ---- Manual start request -------------------------------------------------------
+        if let Some((max_overlap_secs, resume_position_secs, reply)) = state.start_now.take() {
+            match state.armed_transition.take() {
+                Some(mut armed) => {
+                    // The control side reset the queues at the audible position; move the
+                    // outgoing decoder there so the blend starts where the listener is.
+                    if (state.decoded_position_secs - resume_position_secs).abs() > 0.05 {
+                        match data.prepare_seamless_seek(resume_position_secs) {
+                            Ok(_) => {
+                                data.set_discard_before_secs(Some(resume_position_secs));
+                                state.decoded_position_secs = resume_position_secs;
+                            }
+                            Err(err) => {
+                                emit_decode_warning(format!(
+                                    "manual transition: re-seek to audible position failed, blending from decode position: {err}"
+                                ));
+                            }
+                        }
+                    }
+                    armed.start_now(state.decoded_position_secs, max_overlap_secs);
+                    match begin_transition(
+                        &shared,
+                        &mut data,
+                        armed,
+                        None,
+                        state.take_recent_chunks(),
+                        &mut state,
+                        generation,
+                    ) {
+                        Ok(()) => {
+                            let _ = reply.send(Ok(()));
+                        }
+                        Err((err, armed)) => {
+                            emit_decode_warning(format!(
+                                "manual transition could not start; switching directly: {err}"
+                            ));
+                            hand_off_armed_directly(
+                                &shared, &mut data, armed, &mut state, generation,
+                            );
+                            let _ = reply.send(Ok(()));
+                        }
+                    }
+                }
+                None => {
+                    let _ = reply.send(Err("no transition armed".to_string()));
+                }
+            }
+            continue;
+        }
+
         let decode_result = if data.seeked_to_end {
             Ok(None)
         } else {
@@ -575,21 +894,71 @@ fn decode_worker_loop(
                     if produced_frames > 0 {
                         if let Some(actual_pts) = chunk.pts_secs {
                             if let Some(delta_secs) = decoded_pts_discontinuity(
-                                decoded_position_secs,
+                                state.decoded_position_secs,
                                 actual_pts,
                                 chunk.format.sample_rate,
                             ) {
                                 emit_decode_warning(format!(
                                     "decoded audio timestamp discontinuity: expected={:.6}s actual={:.6}s delta={:+.3}ms generation={generation}",
-                                    decoded_position_secs,
+                                    state.decoded_position_secs,
                                     actual_pts,
                                     delta_secs * 1_000.0
                                 ));
                             }
                         }
                     }
+                    let chunk_start_secs = chunk.pts_secs.unwrap_or(state.decoded_position_secs);
+                    let chunk_end_secs =
+                        decoded_chunk_end_secs(&chunk, state.decoded_position_secs);
+
+                    // ---- Armed transition reaching its cut point ---------------------------
+                    let reaches_cut = state
+                        .armed_transition
+                        .as_ref()
+                        .is_some_and(|armed| armed.should_start(chunk_end_secs));
+                    if reaches_cut {
+                        let armed = state
+                            .armed_transition
+                            .take()
+                            .expect("armed transition checked above");
+                        let cut = armed.plan.a_cut_secs.max(chunk_start_secs);
+                        let (head, tail) = split_chunk_at(chunk, chunk_start_secs, cut);
+                        let mut preroll = state.take_recent_chunks();
+                        if let Some(head) = head.as_ref() {
+                            preroll.push(head.clone());
+                        }
+                        if let Some(head) = head {
+                            produced_frames = produced_frames.saturating_add(head.frames as u64);
+                            state.decoded_position_secs =
+                                decoded_chunk_end_secs(&head, state.decoded_position_secs);
+                            if !shared.push_decoded_chunk_for_generation(head, generation) {
+                                if shared.should_stop_decoding() {
+                                    return (!shared.stop.load(Ordering::Acquire)).then_some(data);
+                                }
+                                continue;
+                            }
+                        }
+                        let mut armed = armed;
+                        armed.rebase_to(state.decoded_position_secs);
+                        if let Err((err, armed)) = begin_transition(
+                            &shared, &mut data, armed, tail, preroll, &mut state, generation,
+                        ) {
+                            emit_decode_warning(format!(
+                                "song transition could not start; falling back to gapless: {err}"
+                            ));
+                            // Keep the outgoing track playing to its end, then hand off.
+                            state.armed_transition = Some(armed);
+                            if let Some(armed) = state.armed_transition.as_mut() {
+                                armed.plan.overlap_secs = 0.0;
+                                armed.plan.a_cut_secs = f64::MAX;
+                            }
+                        }
+                        continue;
+                    }
+
                     produced_frames = produced_frames.saturating_add(chunk.frames as u64);
-                    decoded_position_secs = decoded_chunk_end_secs(&chunk, decoded_position_secs);
+                    state.decoded_position_secs = chunk_end_secs;
+                    state.remember_chunk(&chunk);
 
                     if !shared.push_decoded_chunk_for_generation(chunk, generation) {
                         if shared.should_stop_decoding() {
@@ -612,11 +981,36 @@ fn decode_worker_loop(
                 if !shared.is_decode_generation_current(generation) {
                     continue;
                 }
+                // A transition armed for a cut point we never reached (track shorter than
+                // expected, trailing-silence trim beyond the real end): run it now as a
+                // gapless hand-off so the incoming track still starts at its cue point.
+                if let Some(mut armed) = state.armed_transition.take() {
+                    armed.rebase_to(state.decoded_position_secs);
+                    armed.plan.overlap_secs = 0.0;
+                    armed.plan.a_end_secs = state.decoded_position_secs;
+                    match begin_transition(
+                        &shared,
+                        &mut data,
+                        armed,
+                        None,
+                        state.take_recent_chunks(),
+                        &mut state,
+                        generation,
+                    ) {
+                        Ok(()) => {}
+                        Err((_, armed)) => {
+                            hand_off_armed_directly(
+                                &shared, &mut data, armed, &mut state, generation,
+                            );
+                        }
+                    }
+                    continue;
+                }
                 match activate_gapless_at_eof(&shared, generation) {
                     crate::GaplessDecodeResult::Activated(activation) => {
                         if let Some(activation) = activation {
                             data = activation.decoder;
-                            decoded_position_secs = activation.decoded_position_secs;
+                            state.decoded_position_secs = activation.decoded_position_secs;
                             produced_frames = activation.produced_frames;
                             data.publish_packet_cache_stats(&shared);
                             continue;
@@ -649,11 +1043,33 @@ fn decode_worker_loop(
                     if !shared.is_decode_generation_current(generation) {
                         continue;
                     }
+                    if let Some(mut armed) = state.armed_transition.take() {
+                        armed.rebase_to(state.decoded_position_secs);
+                        armed.plan.overlap_secs = 0.0;
+                        armed.plan.a_end_secs = state.decoded_position_secs;
+                        match begin_transition(
+                            &shared,
+                            &mut data,
+                            armed,
+                            None,
+                            Vec::new(),
+                            &mut state,
+                            generation,
+                        ) {
+                            Ok(()) => {}
+                            Err((_, armed)) => {
+                                hand_off_armed_directly(
+                                    &shared, &mut data, armed, &mut state, generation,
+                                );
+                            }
+                        }
+                        continue;
+                    }
                     match activate_gapless_at_eof(&shared, generation) {
                         crate::GaplessDecodeResult::Activated(activation) => {
                             if let Some(activation) = activation {
                                 data = activation.decoder;
-                                decoded_position_secs = activation.decoded_position_secs;
+                                state.decoded_position_secs = activation.decoded_position_secs;
                                 produced_frames = activation.produced_frames;
                                 continue;
                             }
@@ -678,6 +1094,103 @@ fn decode_worker_loop(
             }
         }
     }
+}
+
+/// Start rendering an armed transition. `data` (the outgoing decoder) stays with the
+/// worker and is borrowed by the runner on every step; the runner owns deck B. On failure
+/// the incoming deck is handed back so the caller can fall back to a plain hand-off.
+fn begin_transition(
+    shared: &Arc<SharedAudio>,
+    data: &mut DecoderData,
+    armed: Box<ArmedTransition>,
+    a_tail: Option<DecodedAudioChunk>,
+    a_preroll: Vec<DecodedAudioChunk>,
+    state: &mut WorkerState,
+    generation: u64,
+) -> Result<(), (String, Box<ArmedTransition>)> {
+    let plan_note = armed.plan.note.clone();
+    let mode = armed.mode();
+    let overlap = armed.plan.overlap_secs;
+    let b_start = armed.plan.b_start_secs;
+    if overlap <= 0.0 {
+        // Gapless (or a fade that degenerated to a splice): no mixer, no edge fades — the
+        // incoming track is queued sample-exactly behind the outgoing one. `a_tail`
+        // (audio past the cut, i.e. trimmed trailing silence) is dropped.
+        emit_decode_info(
+            shared,
+            &format!(
+                "song transition: direct hand-off, mode={} b_start={b_start:.2}s ({plan_note})",
+                mode.as_str()
+            ),
+        );
+        hand_off_armed_directly(shared, data, armed, state, generation);
+        return Ok(());
+    }
+    shared.set_source_sample_format(armed.decoder.source_sample_format());
+    shared.set_preferred_output_sample_format(armed.preferred_output_sample_format);
+    // Both decoders must be cancellable while the blend runs (seek/stop set the flag
+    // bound here); route the incoming deck's flag through the outgoing one.
+    let incoming_interrupt = armed.decoder.interrupt_handle();
+    incoming_interrupt.store(false, Ordering::Release);
+    let runner = TransitionRunner::start(
+        shared,
+        *armed,
+        a_tail,
+        a_preroll,
+        state.decoded_position_secs,
+        generation,
+    )?;
+    shared.bind_interrupt(data.interrupt.clone());
+    shared.bind_secondary_interrupt(Some(incoming_interrupt));
+    state.runner = Some(runner);
+    emit_decode_info(
+        shared,
+        &format!(
+            "song transition started: mode={} overlap={overlap:.2}s b_start={b_start:.2}s ({plan_note})",
+            mode.as_str()
+        ),
+    );
+    Ok(())
+}
+
+/// Make the incoming deck live without mixing (the runner could not be built). The
+/// pre-decoded head is queued behind a continuous boundary so the switch stays gapless.
+fn hand_off_armed_directly(
+    shared: &Arc<SharedAudio>,
+    data: &mut DecoderData,
+    armed: Box<ArmedTransition>,
+    state: &mut WorkerState,
+    generation: u64,
+) {
+    let armed = *armed;
+    let mut info = armed.info;
+    info.start_position_secs = armed.plan.b_start_secs;
+    // No overlap: the boundary itself switches straight to the incoming track's own gain
+    // (the shared reference gain only matters while both decks are summed).
+    info.normalization_gain_db = Some(armed.post_overlap_normalization_gain_db);
+    let live_seq = info.seq;
+    shared.set_source_sample_format(armed.decoder.source_sample_format());
+    shared.set_preferred_output_sample_format(armed.preferred_output_sample_format);
+    shared.mark_track_boundary_continuous(info);
+    let previous = std::mem::replace(data, *armed.decoder);
+    crate::retire_value_background(
+        Some(previous),
+        "player-transition-outgoing-reaper".to_string(),
+    );
+    shared.bind_interrupt(data.interrupt.clone());
+    shared.bind_secondary_interrupt(None);
+    state.live_seq = live_seq;
+    state.decoded_position_secs = armed.plan.b_start_secs;
+    for chunk in armed.predecoded {
+        state.decoded_position_secs = decoded_chunk_end_secs(&chunk, state.decoded_position_secs);
+        if !shared.push_decoded_chunk_for_generation(chunk, generation) {
+            break;
+        }
+    }
+}
+
+pub(crate) fn emit_decode_info(shared: &SharedAudio, message: &str) {
+    crate::emit_shared_event(shared, PlayerEvent::log("info", message.to_string()));
 }
 
 fn decoded_pts_discontinuity(
@@ -705,29 +1218,20 @@ pub(crate) fn decoded_chunk_end_secs(chunk: &DecodedAudioChunk, previous_secs: f
 
 fn wait_for_generation_command(
     data: &mut DecoderData,
-    shared: &SharedAudio,
+    shared: &Arc<SharedAudio>,
     commands: &Receiver<DecodeCommand>,
-    decoded_position_secs: &mut f64,
-    pending_source_switch: &mut Option<PendingSourceSwitch>,
+    state: &mut WorkerState,
 ) -> Option<u64> {
     loop {
         if shared.should_stop_decoding() {
             return None;
         }
         match commands.recv_timeout(Duration::from_millis(50)) {
-            Ok(command) => {
-                match handle_decode_command(
-                    data,
-                    shared,
-                    command,
-                    decoded_position_secs,
-                    pending_source_switch,
-                ) {
-                    DecodeCommandResult::Continue(generation) => return Some(generation),
-                    DecodeCommandResult::Stop => return None,
-                    DecodeCommandResult::Ignored => continue,
-                }
-            }
+            Ok(command) => match handle_decode_command(data, shared, command, state) {
+                DecodeCommandResult::Continue(generation) => return Some(generation),
+                DecodeCommandResult::Stop => return None,
+                DecodeCommandResult::Ignored => continue,
+            },
             Err(RecvTimeoutError::Timeout) => {
                 if shared.should_stop_decoding() {
                     return None;
@@ -745,27 +1249,18 @@ enum DecodeCommandDrain {
 
 fn handle_decode_commands(
     data: &mut DecoderData,
-    shared: &SharedAudio,
+    shared: &Arc<SharedAudio>,
     commands: &Receiver<DecodeCommand>,
-    decoded_position_secs: &mut f64,
-    pending_source_switch: &mut Option<PendingSourceSwitch>,
+    state: &mut WorkerState,
 ) -> DecodeCommandDrain {
     let mut next_generation = None;
     loop {
         match commands.try_recv() {
-            Ok(command) => {
-                match handle_decode_command(
-                    data,
-                    shared,
-                    command,
-                    decoded_position_secs,
-                    pending_source_switch,
-                ) {
-                    DecodeCommandResult::Continue(generation) => next_generation = Some(generation),
-                    DecodeCommandResult::Stop => return DecodeCommandDrain::Stop,
-                    DecodeCommandResult::Ignored => {}
-                }
-            }
+            Ok(command) => match handle_decode_command(data, shared, command, state) {
+                DecodeCommandResult::Continue(generation) => next_generation = Some(generation),
+                DecodeCommandResult::Stop => return DecodeCommandDrain::Stop,
+                DecodeCommandResult::Ignored => {}
+            },
             Err(TryRecvError::Empty) => return DecodeCommandDrain::Continue(next_generation),
             Err(TryRecvError::Disconnected) => return DecodeCommandDrain::Stop,
         }
@@ -788,18 +1283,35 @@ enum DecodeCommandResult {
 
 fn handle_decode_command(
     data: &mut DecoderData,
-    shared: &SharedAudio,
+    shared: &Arc<SharedAudio>,
     command: DecodeCommand,
-    decoded_position_secs: &mut f64,
-    pending_source_switch: &mut Option<PendingSourceSwitch>,
+    state: &mut WorkerState,
 ) -> DecodeCommandResult {
     match command {
         DecodeCommand::Seek {
             position_secs,
             generation,
+            track_seq,
             reply,
         } => {
-            pending_source_switch.take();
+            state.pending_source_switch.take();
+            // A seek during a blend aborts it. Which deck the seek applies to follows the
+            // track the UI shows: the incoming one once the boundary has been crossed (or
+            // when the caller names it), otherwise the outgoing one keeps playing and the
+            // incoming deck is re-armed for a fresh attempt.
+            let prefer_incoming = state.targets_incoming(track_seq, shared);
+            abort_runner(data, shared, state, prefer_incoming);
+            state.fail_start_now("seek");
+            if let Some(seq) = track_seq {
+                if seq != state.live_seq && state.runner.is_none() {
+                    // The caller is on a track we do not have (should not happen); the seek
+                    // still applies to the live decoder so playback never stalls.
+                    emit_decode_warning(format!(
+                        "seek targets track seq {seq} but live seq is {}",
+                        state.live_seq
+                    ));
+                }
+            }
             if shared.should_stop_decoding() {
                 let _ = reply.send(Err("decoder stopping".to_string()));
                 return DecodeCommandResult::Stop;
@@ -818,7 +1330,9 @@ fn handle_decode_command(
             }
             let _ = reply.send(result.map(|_| ()));
             if generation_current && seek_succeeded {
-                *decoded_position_secs = position_secs;
+                state.decoded_position_secs = position_secs;
+                // Seeking past the cut point of an armed transition means it starts as
+                // soon as decoding resumes (`rebase_to` handles the late start).
                 DecodeCommandResult::Continue(generation)
             } else {
                 DecodeCommandResult::Ignored
@@ -829,6 +1343,7 @@ fn handle_decode_command(
             predecoded,
             switch_at_secs,
             generation,
+            track_seq,
             reply,
         } => {
             if shared.should_stop_decoding() {
@@ -839,20 +1354,28 @@ fn handle_decode_command(
                 let _ = reply.send(Err("stale source switch generation".to_string()));
                 return DecodeCommandResult::Ignored;
             }
-            pending_source_switch.take();
-            *pending_source_switch = Some(PendingSourceSwitch {
+            if state.runner.is_some() {
+                // Quality/source switches are planned on a single track's timeline; mixing
+                // in a replacement reader mid-blend cannot line up. Refuse so the caller
+                // keeps the current source (its own fallback path) and retries later.
+                let _ = reply.send(Err(
+                    "source switch refused during a song transition".to_string()
+                ));
+                return DecodeCommandResult::Ignored;
+            }
+            let _ = track_seq;
+            // A replacement source for the live track invalidates the armed transition's
+            // deck-A assumptions only if the tracks differ; same-track quality switches keep
+            // the plan (cue points are timeline positions, not byte offsets).
+            state.pending_source_switch.take();
+            state.pending_source_switch = Some(PendingSourceSwitch {
                 decoder: Some(decoder),
                 predecoded,
                 switch_at_secs: switch_at_secs.max(0.0),
                 generation,
                 reply: Some(reply),
             });
-            if activate_pending_source_switch(
-                data,
-                shared,
-                decoded_position_secs,
-                pending_source_switch,
-            ) {
+            if activate_pending_source_switch(data, shared, state) {
                 DecodeCommandResult::Continue(generation)
             } else {
                 DecodeCommandResult::Ignored
@@ -876,7 +1399,13 @@ fn handle_decode_command(
                 let _ = reply.send(Err("stale track switch generation".to_string()));
                 return DecodeCommandResult::Ignored;
             }
-            pending_source_switch.take();
+            state.pending_source_switch.take();
+            // A manual track load replaces everything: abandon any blend and forget the
+            // armed transition (it was planned against the track being replaced).
+            if let Some(runner) = state.runner.take() {
+                drop(runner.abort(true));
+            }
+            state.drop_transition_state();
             decoder.interrupt.store(false, Ordering::Release);
             decoder.discard_before_secs = None;
             // Manual track changes are interactive: discard the old decoded/output backlog
@@ -887,13 +1416,20 @@ fn handle_decode_command(
             shared.set_source_sample_format(decoder.source_sample_format());
             shared.set_preferred_output_sample_format(preferred_output_sample_format);
             shared.set_normalization_gain_db(normalization_gain_db);
+            let switched_seq = info.seq;
             shared.mark_track_boundary(info, transition_fade_frames);
             shared.bind_interrupt(decoder.interrupt.clone());
-            *data = *decoder;
-            *decoded_position_secs = 0.0;
+            let previous = std::mem::replace(data, *decoder);
+            crate::retire_value_background(
+                Some(previous),
+                "player-track-switch-reaper".to_string(),
+            );
+            state.live_seq = switched_seq;
+            state.decoded_position_secs = 0.0;
             let mut accepted = false;
             for chunk in predecoded.drain(..) {
-                *decoded_position_secs = decoded_chunk_end_secs(&chunk, *decoded_position_secs);
+                state.decoded_position_secs =
+                    decoded_chunk_end_secs(&chunk, state.decoded_position_secs);
                 if !shared.push_decoded_chunk_for_generation(chunk, next_generation) {
                     if !accepted {
                         let _ = reply.send(Err(
@@ -912,8 +1448,128 @@ fn handle_decode_command(
             }
             DecodeCommandResult::Continue(next_generation)
         }
+        DecodeCommand::ArmTransition { armed, generation } => {
+            if shared.should_stop_decoding() {
+                return DecodeCommandResult::Stop;
+            }
+            if !shared.is_decode_generation_current(generation) {
+                crate::retire_value_background(
+                    Some(armed),
+                    "player-transition-stale-arm-reaper".to_string(),
+                );
+                return DecodeCommandResult::Ignored;
+            }
+            if let Some(runner) = state.runner.as_ref() {
+                if armed.outgoing_seq == runner.incoming_seq() {
+                    // Prepared for the track that is currently fading in: keep it until
+                    // the blend finishes.
+                    if let Some(previous) = state.pending_arm.replace(armed) {
+                        crate::retire_value_background(
+                            Some(previous),
+                            "player-transition-replaced-arm-reaper".to_string(),
+                        );
+                    }
+                } else {
+                    crate::retire_value_background(
+                        Some(armed),
+                        "player-transition-stale-arm-reaper".to_string(),
+                    );
+                }
+                return DecodeCommandResult::Ignored;
+            }
+            if let Some(previous) = state.armed_transition.replace(armed) {
+                crate::retire_value_background(
+                    Some(previous),
+                    "player-transition-replaced-arm-reaper".to_string(),
+                );
+            }
+            DecodeCommandResult::Ignored
+        }
+        DecodeCommand::DisarmTransition {
+            request_id,
+            reset_position_secs,
+        } => {
+            let matches =
+                |armed: &ArmedTransition| request_id.is_none_or(|id| armed.request_id == id);
+            let mut next_generation = None;
+            if let Some(position_secs) = reset_position_secs {
+                disarm_matching_runner(data, shared, state, request_id);
+                state.fail_start_now("transition disarmed");
+                let position_secs = position_secs.max(0.0);
+                let generation =
+                    shared.reset_for_decode_resume(position_secs, &shared.dsp_settings());
+                match data.prepare_seamless_seek(position_secs) {
+                    Ok(_) => {
+                        data.set_discard_before_secs(if position_secs > 0.0 {
+                            Some(position_secs)
+                        } else {
+                            None
+                        });
+                        state.decoded_position_secs = position_secs;
+                    }
+                    Err(err) => {
+                        emit_decode_warning(format!(
+                            "transition disarmed but live decoder could not seek to {position_secs:.2}s: {err}"
+                        ));
+                    }
+                }
+                next_generation = Some(generation);
+            }
+            if state.armed_transition.as_deref().is_some_and(matches) {
+                crate::retire_value_background(
+                    state.armed_transition.take(),
+                    "player-transition-disarm-reaper".to_string(),
+                );
+            }
+            if state.pending_arm.as_deref().is_some_and(matches) {
+                crate::retire_value_background(
+                    state.pending_arm.take(),
+                    "player-transition-disarm-reaper".to_string(),
+                );
+            }
+            next_generation
+                .map(DecodeCommandResult::Continue)
+                .unwrap_or(DecodeCommandResult::Ignored)
+        }
+        DecodeCommand::StartTransition {
+            max_overlap_secs,
+            resume_position_secs,
+            generation,
+            reply,
+        } => {
+            if shared.should_stop_decoding() {
+                let _ = reply.send(Err("decoder stopping".to_string()));
+                return DecodeCommandResult::Stop;
+            }
+            if !shared.is_decode_generation_current(generation) {
+                let _ = reply.send(Err("stale transition generation".to_string()));
+                return DecodeCommandResult::Ignored;
+            }
+            if state.runner.is_some() {
+                // Already blending: nothing to do, report success.
+                let _ = reply.send(Ok(()));
+                return DecodeCommandResult::Continue(generation);
+            }
+            if state.armed_transition.is_none() {
+                let _ = reply.send(Err("no transition armed".to_string()));
+                return DecodeCommandResult::Ignored;
+            }
+            state.fail_start_now("superseded");
+            state.start_now = Some((
+                max_overlap_secs.max(0.0),
+                resume_position_secs.max(0.0),
+                reply,
+            ));
+            // The caller bumped the generation when it reset the queues; adopt it so the
+            // blend is queued under the live generation.
+            DecodeCommandResult::Continue(generation)
+        }
         DecodeCommand::Stop => {
-            pending_source_switch.take();
+            state.pending_source_switch.take();
+            if let Some(runner) = state.runner.take() {
+                drop(runner.abort(true));
+            }
+            state.drop_transition_state();
             DecodeCommandResult::Stop
         }
     }
@@ -938,14 +1594,13 @@ impl Drop for PendingSourceSwitch {
 fn activate_pending_source_switch(
     data: &mut DecoderData,
     shared: &SharedAudio,
-    decoded_position_secs: &mut f64,
-    pending_source_switch: &mut Option<PendingSourceSwitch>,
+    state: &mut WorkerState,
 ) -> bool {
-    let Some(pending) = pending_source_switch.as_ref() else {
+    let Some(pending) = state.pending_source_switch.as_ref() else {
         return false;
     };
     if !shared.is_decode_generation_current(pending.generation) {
-        pending_source_switch.take();
+        state.pending_source_switch.take();
         return false;
     }
     if pending
@@ -953,17 +1608,18 @@ fn activate_pending_source_switch(
         .as_ref()
         .is_some_and(|decoder| decoder.interrupt.load(Ordering::Acquire))
     {
-        pending_source_switch.take();
+        state.pending_source_switch.take();
         return false;
     }
-    if *decoded_position_secs + f64::EPSILON < pending.switch_at_secs {
+    if state.decoded_position_secs + f64::EPSILON < pending.switch_at_secs {
         return false;
     }
 
-    let mut pending = pending_source_switch
+    let mut pending = state
+        .pending_source_switch
         .take()
         .expect("pending source switch checked above");
-    let handoff_position = decoded_position_secs.max(0.0);
+    let handoff_position = state.decoded_position_secs.max(0.0);
     let mut decoder = pending
         .decoder
         .take()
@@ -972,12 +1628,13 @@ fn activate_pending_source_switch(
     decoder.discard_before_secs = Some(handoff_position);
     shared.set_source_sample_format(decoder.source_sample_format());
     shared.bind_interrupt(decoder.interrupt.clone());
-    *data = *decoder;
+    let previous = std::mem::replace(data, *decoder);
+    crate::retire_value_background(Some(previous), "player-source-switch-reaper".to_string());
     for mut chunk in pending.predecoded.drain(..) {
         if !align_switched_chunk(&mut chunk, &mut data.discard_before_secs) {
             continue;
         }
-        *decoded_position_secs = decoded_chunk_end_secs(&chunk, *decoded_position_secs);
+        state.decoded_position_secs = decoded_chunk_end_secs(&chunk, state.decoded_position_secs);
         if !shared.push_decoded_chunk_for_generation(chunk, pending.generation) {
             if let Some(reply) = pending.reply.take() {
                 let _ = reply.send(Err("source switch stopped while queuing audio".to_string()));
@@ -1281,7 +1938,7 @@ pub(crate) fn emit_decode_error(shared: &SharedAudio, message: String) {
     crate::emit_shared_event(shared, PlayerEvent::error(PlayerErrorCode::Decode, message));
 }
 
-fn emit_decode_warning(message: String) {
+pub(crate) fn emit_decode_warning(message: String) {
     crate::emit_event(PlayerEvent::log("warn", message));
 }
 

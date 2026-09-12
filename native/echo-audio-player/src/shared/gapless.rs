@@ -91,6 +91,23 @@ impl SharedAudio {
     }
 
     pub fn mark_track_boundary(&self, info: TrackSwitchInfo, fade_frames: usize) {
+        self.mark_track_boundary_inner(info, fade_frames, true);
+    }
+
+    /// Track boundary for a transition rendered inside the decode worker: the audio on both
+    /// sides is one continuous stream (the overlap was already mixed), so the filter graph
+    /// must not be reset and no envelope is applied. Only the clock, track sequence and the
+    /// incoming track's loudness gain change when the output callback crosses it.
+    pub fn mark_track_boundary_continuous(&self, info: TrackSwitchInfo) {
+        self.mark_track_boundary_inner(info, 0, false);
+    }
+
+    fn mark_track_boundary_inner(
+        &self,
+        info: TrackSwitchInfo,
+        fade_frames: usize,
+        reset_filter_graph: bool,
+    ) {
         let output_samples = self.realtime_output.buffered_samples();
         let decoded_samples = self
             .decoded_queue
@@ -100,7 +117,9 @@ impl SharedAudio {
                     as f64)
                     / self.speed().max(0.001) as f64)
                     .round() as usize;
-                queue.push_boundary();
+                if reset_filter_graph {
+                    queue.push_boundary();
+                }
                 samples
             })
             .unwrap_or_default();

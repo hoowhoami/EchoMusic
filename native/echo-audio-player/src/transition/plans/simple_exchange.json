@@ -1,0 +1,68 @@
+{
+  "name": "3bandEQPreset",
+  "description": "A DJ plan with simple gain exchange",
+  "Achain": {
+    "description": "Gain and 3bandEQ for Track A",
+    "list": [
+      {
+        "effect": {
+          "type": 1,
+          "value": 0.0
+        },
+        "automation": {
+          "type": "piecewise",
+          "m": 0.0,
+          "n": -20.0,
+          "start_pos": 0.0,
+          "end_pos": 1,
+          "curve_type": 2
+        }
+      },
+      {
+        "effect": {
+          "type": 0,
+          "target_param": "low",
+          "low": 0.0
+        },
+        "automation": {
+          "type": "step",
+          "m": 0,
+          "n": -28,
+          "step_pos": 0.5
+        }
+      }
+    ]
+  },
+  "Bchain": {
+    "description": "Gain and 3bandEQ for Track B",
+    "list": [
+      {
+        "effect": {
+          "type": 1,
+          "value": -20.0
+        },
+        "automation": {
+          "type": "piecewise",
+          "m": -20.0,
+          "n": 0.0,
+          "start_pos": 0.0,
+          "end_pos": 1,
+          "curve_type": 1
+        }
+      },
+      {
+        "effect": {
+          "type": 0,
+          "target_param": "low",
+          "low": -28
+        },
+        "automation": {
+          "type": "step",
+          "m": -28,
+          "n": 0,
+          "step_pos": 0.5
+        }
+      }
+    ]
+  }
+}

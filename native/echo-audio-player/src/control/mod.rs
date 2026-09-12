@@ -8,6 +8,7 @@ mod output_lifecycle;
 mod provider;
 mod seek;
 mod spectrum;
+pub(crate) mod transition;
 
 fn ensure_finite_parameter(value: f64, name: &str) -> napi::Result<()> {
     if value.is_finite() {
@@ -44,4 +45,11 @@ pub(crate) use seek::{
 pub use seek::{seek, SeekTask};
 pub use spectrum::{
     configure_spectrum, get_spectrum_snapshot, get_spectrum_status, GetSpectrumSnapshotTask,
+};
+pub(crate) use transition::{
+    armed_transition_from_prepared, plan_prepared_transition, PreparedTransitionInputs,
+};
+pub use transition::{
+    get_transition_diagnostics, get_transition_settings, set_transition_settings,
+    TransitionSettingsOptions, TransitionSettingsSnapshot,
 };

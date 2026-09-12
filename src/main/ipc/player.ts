@@ -2,7 +2,7 @@ import { ipcRegistry } from './registry';
 import { app, dialog } from 'electron';
 import fs from 'fs';
 import path from 'path';
-import type { PlayerController } from '../player/controller';
+import type { PlayerController, PlayerTransitionSettingsOptions } from '../player/controller';
 import type { AudioEffectPlaybackOptions, DspProviderInspection } from '../../shared/audio';
 import type {
   PlayerAudioGraphParameterPatch,
@@ -266,4 +266,23 @@ export function registerPlayerIpc(ref: PlayerRef): void {
   ipcRegistry.registerHandler('player:set-stall-timeout', (_e, seconds: number) => {
     ref.current?.setStallTimeout(Number(seconds) || 0);
   });
+
+  ipcRegistry.registerHandler(
+    'player:set-transition-settings',
+    (_e, options: { mode?: string; fadeSecs?: number } | undefined) =>
+      ref.current?.setTransitionSettings({
+        mode: options?.mode as PlayerTransitionSettingsOptions['mode'],
+        fadeSecs: options?.fadeSecs,
+      }) ?? null,
+  );
+
+  ipcRegistry.registerHandler(
+    'player:get-transition-settings',
+    () => ref.current?.getTransitionSettings() ?? null,
+  );
+
+  ipcRegistry.registerHandler(
+    'player:get-transition-diagnostics',
+    () => ref.current?.getTransitionDiagnostics() ?? null,
+  );
 }

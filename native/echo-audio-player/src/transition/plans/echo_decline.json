@@ -1,0 +1,40 @@
+{
+  "name": "NoPlan",
+  "description": "A DJ plan with no effect",
+  "Achain": {
+    "description": "No effect for Track A",
+    "list": [
+      {
+        "effect": {
+          "type": 5,
+          "value": 0.0
+        },
+        "automation": {
+          "type": "step",
+          "m": 0,
+          "n": 1,
+          "step_pos": 0.55
+        }
+      }
+    ]
+  },
+  "Bchain": {
+    "description": "No effect for Track B",
+    "list": [
+      {
+        "effect": {
+          "type": 1,
+          "value": -30.0
+        },
+        "automation": {
+          "type": "piecewise",
+          "m": -30.0,
+          "n": 0,
+          "start_pos": 0.0,
+          "end_pos": 1,
+          "curve_type": 0
+        }
+      }
+    ]
+  }
+}

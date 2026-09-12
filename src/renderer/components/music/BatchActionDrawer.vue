@@ -582,9 +582,9 @@ const confirmRemoveFromPlaylist = async () => {
   padding: 0;
   box-shadow: var(--shadow-dialog);
   width: min(420px, calc(100vw - 24px));
-  top: 12px;
+  top: var(--drawer-safe-top);
   right: 12px;
-  bottom: 12px;
+  bottom: var(--drawer-safe-bottom);
   border-radius: 12px;
   overflow: hidden;
 }
@@ -803,9 +803,9 @@ const confirmRemoveFromPlaylist = async () => {
 
 @media (max-width: 420px) {
   :global(.drawer-panel.batch-drawer) {
-    top: 8px;
+    --drawer-top-gap: 16px;
+    --drawer-bottom-gap: -4px;
     right: 8px;
-    bottom: 8px;
     width: calc(100vw - 16px);
   }
   .batch-header {

@@ -8,6 +8,9 @@ pub struct SeekTask {
 pub(crate) struct SeekPlan {
     pub(crate) shared: Arc<SharedAudio>,
     pub(crate) was_paused: bool,
+    /// Track the UI is on when the seek was issued (decides which deck a seek during a
+    /// song transition applies to).
+    pub(crate) track_seq: u64,
     pub(crate) url: String,
     pub(crate) audio_stream_ordinal: Option<usize>,
     pub(crate) generation: u64,
@@ -218,6 +221,7 @@ fn try_seek_current_decoder(plan: &SeekPlan, position: f64) -> napi::Result<bool
             match sender.try_send(decoder::DecodeCommand::Seek {
                 position_secs: position,
                 generation: plan.generation,
+                track_seq: Some(plan.track_seq),
                 reply: reply_tx,
             }) {
                 Ok(()) => break reply_rx,
@@ -344,6 +348,7 @@ fn prepare_reopen_seek_plan(previous: &SeekPlan, position: f64) -> napi::Result<
         Ok(runtime.current_url.clone().map(|url| SeekPlan {
             shared: session.shared.clone(),
             was_paused,
+            track_seq: runtime.current_seq,
             url,
             audio_stream_ordinal: runtime.current_audio_stream_ordinal,
             generation,
@@ -389,6 +394,7 @@ impl Task for SeekTask {
             Ok(runtime.current_url.clone().map(|url| SeekPlan {
                 shared,
                 was_paused,
+                track_seq: runtime.current_seq,
                 url,
                 audio_stream_ordinal: runtime.current_audio_stream_ordinal,
                 generation,

@@ -31,6 +31,10 @@ import {
 import type { PlaybackSource, ResolvedAudioSource } from './types';
 import { canPrepareGaplessForQueue, getQueueAdvanceAuthority } from './queueAdvancePolicy';
 import {
+  transitionPrefetchLeadSecs,
+  transitionPreparesNextTrack,
+} from '../../../shared/track-transition';
+import {
   abortNativeTrackLoad,
   beginNativeTrackLoad,
   beginPlaybackIntent,
@@ -43,6 +47,7 @@ import {
   setPlaybackIntentPlayback,
 } from './stateMachine';
 
+/** Fallback prefetch window when the transition settings are unavailable. */
 const GAPLESS_PREFETCH_WINDOW_SECS = 30;
 const GAPLESS_SEEK_REGISTRATION_WINDOW_SECS = 2;
 
@@ -518,7 +523,7 @@ export const createPlaybackManager = (
     return prepared;
   };
 
-  const activateGaplessPreparedTransition = (seq?: number): boolean => {
+  const activateGaplessPreparedTransition = (seq?: number, startTime = 0): boolean => {
     if (!seq) return false;
     const invalidated = invalidatedGaplessSources.get(seq);
     if (invalidated) {
@@ -625,7 +630,8 @@ export const createPlaybackManager = (
     clearPlaybackNotice();
     applyResolvedAudioSource(targetTrack, prepared.resolved);
     engine.adoptPreparedSource(state.currentPlaybackSource ?? prepared.resolved.url);
-    state.currentTime = 0;
+    // Smart mixes enter the next track at its cue point, not at 0.
+    state.currentTime = Number.isFinite(startTime) ? Math.max(0, startTime) : 0;
     state.currentTimeUpdatedAt = Date.now();
     state.duration = prepared.resolved.url ? engine.duration || state.duration : state.duration;
     completePlaybackIntent(state, state.playbackRequestSeq, { isPlaying: true });
@@ -684,8 +690,9 @@ export const createPlaybackManager = (
     // Gapless belongs to the source currently producing audio, not whichever queue
     // happens to be selected in the UI while that source is still playing.
     const gaplessAllowed = canAutoAdvanceGaplessly();
+    const transitionMode = settingStore.effectiveTrackTransitionMode;
     if (
-      !settingStore.gaplessPlayback ||
+      !transitionPreparesNextTrack(transitionMode) ||
       !gaplessAllowed ||
       ((options?.requirePlaying ?? true) && !getPlaybackIsPlaying(state)) ||
       getPlaybackIsLoading(state)
@@ -699,7 +706,13 @@ export const createPlaybackManager = (
     const position = options?.position ?? state.currentTime;
     if (state.duration <= 0 || position <= 0) return Promise.resolve();
     const remaining = state.duration - position;
-    if (remaining > GAPLESS_PREFETCH_WINDOW_SECS || (!options?.allowAtEnd && remaining < 0.2))
+    // Smart mixing analyses both tracks and may cut the current one up to ~25 s early, so
+    // its prefetch window is wider than the plain gapless one.
+    const prefetchWindow = Math.max(
+      GAPLESS_PREFETCH_WINDOW_SECS,
+      transitionPrefetchLeadSecs(transitionMode, settingStore.fadeCrossSecs),
+    );
+    if (remaining > prefetchWindow || (!options?.allowAtEnd && remaining < 0.2))
       return Promise.resolve();
 
     const next = resolveOrderedNextTrack();

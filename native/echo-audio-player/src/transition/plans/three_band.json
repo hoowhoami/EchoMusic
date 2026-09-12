@@ -1,0 +1,156 @@
+{
+  "name": "3bandEQPreset",
+  "description": "A DJ plan with crossfade and 3bandEQ",
+  "Achain": {
+    "description": "Gain and 3bandEQ for Track A",
+    "list": [
+      {
+        "effect": {
+          "type": 1,
+          "value": 0.0
+        },
+        "automation": {
+          "type": "piecewise",
+          "m": 0.0,
+          "n": -20.0,
+          "start_pos": 0.0,
+          "end_pos": 1,
+          "curve_type": 2
+        }
+      },
+      {
+        "effect": {
+          "type": 0,
+          "target_param": "low",
+          "low": 0.0
+        },
+        "automation": {
+          "type": "step",
+          "m": 0,
+          "n": -20,
+          "step_pos": 0.5
+        }
+      },
+      {
+        "effect": {
+          "type": 0,
+          "target_param": "mid",
+          "mid": 0.0
+        },
+        "automation": {
+          "type": "piecewise",
+          "m": 0.0,
+          "n": -20.0,
+          "start_pos": 0.0,
+          "end_pos": 1.0,
+          "curve_type": 0
+        }
+      },
+      {
+        "effect": {
+          "type": 0,
+          "target_param": "high",
+          "high": 0.0
+        },
+        "automation": {
+          "type": "piecewise",
+          "m": 0.0,
+          "n": -20.0,
+          "start_pos": 0.0,
+          "end_pos": 1.0,
+          "curve_type": 0
+        }
+      },
+      {
+        "effect": {
+          "type": 4,
+          "mix": 0.0
+        },
+        "automation": {
+          "type": "piecewise",
+          "m": 0.0,
+          "n": 0.6,
+          "start_pos": 0.1,
+          "end_pos": 0.8,
+          "curve_type": 0
+        }
+      }
+    ]
+  },
+  "Bchain": {
+    "description": "Gain and 3bandEQ for Track B",
+    "list": [
+      {
+        "effect": {
+          "type": 1,
+          "value": -20.0
+        },
+        "automation": {
+          "type": "piecewise",
+          "m": -20.0,
+          "n": 0.0,
+          "start_pos": 0.0,
+          "end_pos": 1,
+          "curve_type": 1
+        }
+      },
+      {
+        "effect": {
+          "type": 0,
+          "target_param": "low",
+          "low": -20
+        },
+        "automation": {
+          "type": "step",
+          "m": -20,
+          "n": 0,
+          "step_pos": 0.5
+        }
+      },
+      {
+        "effect": {
+          "type": 0,
+          "target_param": "mid",
+          "mid": -20.0
+        },
+        "automation": {
+          "type": "piecewise",
+          "m": -20.0,
+          "n": 0.0,
+          "start_pos": 0.0,
+          "end_pos": 1.0,
+          "curve_type": 0
+        }
+      },
+      {
+        "effect": {
+          "type": 0,
+          "target_param": "high",
+          "high": -20.0
+        },
+        "automation": {
+          "type": "piecewise",
+          "m": -20.0,
+          "n": 0.0,
+          "start_pos": 0.2,
+          "end_pos": 1.0,
+          "curve_type": 0
+        }
+      },
+      {
+        "effect": {
+          "type": 4,
+          "mix": 0.6
+        },
+        "automation": {
+          "type": "piecewise",
+          "m": 0.6,
+          "n": 0.0,
+          "start_pos": 0.2,
+          "end_pos": 1,
+          "curve_type": 0
+        }
+      }
+    ]
+  }
+}

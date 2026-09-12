@@ -947,9 +947,9 @@ onBeforeUnmount(() => {
 :global(.drawer-panel.queue-drawer) {
   padding: 0;
   width: min(380px, calc(100vw - 24px));
-  top: 12px;
+  top: var(--drawer-safe-top);
   right: 12px;
-  bottom: 12px;
+  bottom: var(--drawer-safe-bottom);
   border-radius: 12px;
   box-shadow: var(--shadow-dialog);
   overflow: hidden;
@@ -957,9 +957,9 @@ onBeforeUnmount(() => {
 
 @media (max-width: 420px) {
   :global(.drawer-panel.queue-drawer) {
-    top: 8px;
+    --drawer-top-gap: 16px;
+    --drawer-bottom-gap: -4px;
     right: 8px;
-    bottom: 8px;
     width: min(380px, calc(100vw - 16px));
   }
 }

@@ -90,6 +90,18 @@ onUnmounted(() => {
 }
 
 :global(.drawer-panel) {
+  /*
+   * 抽屉的安全区：
+   * - 上方避开标题栏 / 窗口控制按钮（高度与 TitleBar / OverlayHeader 保持一致）；
+   * - 下方避开播放器（--drawer-bottom-offset 由 PlayerBar 按实际高度发布，已含 8px 余量）。
+   * 上下边距刻意不对称：整体略向下沉，让面板离标题栏更远一些。
+   * 各具体抽屉的 top / bottom 请统一引用这两个变量，不要再写死 12px。
+   */
+  --drawer-top-gap: 28px;
+  --drawer-bottom-gap: 0px;
+  --drawer-titlebar-height: max(46px, calc(35px / var(--window-zoom-factor, 1)));
+  --drawer-safe-top: calc(var(--drawer-titlebar-height) + var(--drawer-top-gap));
+  --drawer-safe-bottom: calc(var(--drawer-bottom-offset, 96px) + var(--drawer-bottom-gap));
   position: fixed;
   background: var(--color-bg-elevated);
   border: 1px solid var(--border-subtle);
@@ -112,9 +124,9 @@ onUnmounted(() => {
 }
 
 :global(.drawer-right) {
-  top: 0;
+  top: var(--drawer-safe-top);
   right: 0;
-  bottom: var(--drawer-bottom-offset, 96px);
+  bottom: var(--drawer-safe-bottom);
   width: min(380px, 88vw);
   border-radius: 10px 0 0 10px;
   transform: translateX(24px);
@@ -123,8 +135,8 @@ onUnmounted(() => {
 
 :global(.drawer-bottom) {
   left: var(--drawer-content-left, 0px);
-  top: var(--drawer-content-top, 0px);
-  bottom: var(--drawer-bottom-offset, 96px);
+  top: max(var(--drawer-content-top, 0px), var(--drawer-safe-top));
+  bottom: var(--drawer-safe-bottom);
   transform: translateY(8%);
   width: var(--drawer-content-width, 92vw);
   border-radius: 24px;

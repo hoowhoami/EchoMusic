@@ -356,12 +356,29 @@ interface PlayerAddon {
   setPauseOnDeviceDisconnect(enabled: boolean): void;
   setLoopFile(loop: boolean): void;
   setStallTimeout(seconds: number): void;
+  setTransitionSettings(options?: PlayerTransitionSettingsOptions): PlayerTransitionSettings;
+  getTransitionSettings(): PlayerTransitionSettings;
+  getTransitionDiagnostics(): string | null;
   setNetworkTimeout(seconds: number): void;
   setHttpProxy(proxy: string): void;
   setHttpProxies(proxies: string[]): void;
   configureSpectrum(options?: unknown): { available: boolean; running: boolean; reason?: string };
   getSpectrumStatus(): { available: boolean; running: boolean; reason?: string };
   getSpectrumSnapshot(): Promise<unknown>;
+}
+
+export type PlayerTransitionMode = 'none' | 'gapless' | 'fade' | 'automix-basic' | 'automix-pro';
+
+export interface PlayerTransitionSettingsOptions {
+  mode?: PlayerTransitionMode;
+  fadeSecs?: number;
+}
+
+export interface PlayerTransitionSettings {
+  mode: PlayerTransitionMode;
+  fadeSecs: number;
+  /** Seconds before the end of the current track at which the next source should be prepared. */
+  prefetchLeadSecs: number;
 }
 
 export interface PlayerState {
@@ -397,6 +414,8 @@ export class PlayerController extends EventEmitter {
   private lastAoStateLogKey = '';
   private lastOutputBufferLogKey = '';
   private lastNativeDroppedEvents = 0;
+  /** Last applied song-transition settings; re-applied when the engine is restarted. */
+  private transitionSettings: PlayerTransitionSettingsOptions | null = null;
   private lastNativeDroppedCriticalEvents = 0;
   private state: PlayerState = {
     playing: false,
@@ -461,6 +480,13 @@ export class PlayerController extends EventEmitter {
     log.info('[PlayerController]', 'native audio cache configured', {
       ...audioConfig,
     });
+    if (this.transitionSettings) {
+      try {
+        this.addon.setTransitionSettings(this.transitionSettings);
+      } catch (error) {
+        log.warn('[PlayerController]', 'failed to restore transition settings', error);
+      }
+    }
     return true;
   }
 
@@ -678,6 +704,25 @@ export class PlayerController extends EventEmitter {
     this.getAddonOrThrow().setStallTimeout(Math.max(0, Math.min(60, Number(seconds) || 0)));
   }
 
+  /** 歌曲过渡设置：无缝 / 淡入淡出 / 智能混音（基础、进阶）。 */
+  setTransitionSettings(options: PlayerTransitionSettingsOptions): PlayerTransitionSettings {
+    const payload: PlayerTransitionSettingsOptions = {};
+    if (options.mode) payload.mode = options.mode;
+    if (typeof options.fadeSecs === 'number' && Number.isFinite(options.fadeSecs)) {
+      payload.fadeSecs = Math.max(0, Math.min(15, options.fadeSecs));
+    }
+    this.transitionSettings = { ...(this.transitionSettings ?? {}), ...payload };
+    return this.getAddonOrThrow().setTransitionSettings(payload);
+  }
+
+  getTransitionSettings(): PlayerTransitionSettings {
+    return this.getAddonOrThrow().getTransitionSettings();
+  }
+
+  getTransitionDiagnostics(): string | null {
+    return this.getAddonOrThrow().getTransitionDiagnostics();
+  }
+
   async setNetwork(settings: NetworkSettings): Promise<void> {
     const addon = this.getAddonOrThrow();
     const targetUrl = /^https?:\/\//i.test(this.state.path || '')
@@ -856,11 +901,17 @@ export class PlayerController extends EventEmitter {
           this.activeTrackSeq = event.trackSeq;
           if (this.pendingLoadSeq === event.trackSeq) this.pendingLoadSeq = null;
         }
+        if (typeof event.time === 'number' && Number.isFinite(event.time)) {
+          this.state.timePos = event.time;
+        }
         this.emit('file-loaded', {
           path: event.path,
           seq: event.seq,
           trackSeq: event.trackSeq,
           generation: event.generation,
+          // Song transitions start the incoming track at its cue point.
+          startTime:
+            typeof event.time === 'number' && Number.isFinite(event.time) ? event.time : undefined,
         });
         break;
       case 'state-change':

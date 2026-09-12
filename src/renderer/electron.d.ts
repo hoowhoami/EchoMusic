@@ -795,6 +795,16 @@ export interface IElectronAPI {
     setMediaTitle: (title: string) => Promise<void>;
     setLoopFile: (loop: boolean) => Promise<void>;
     setStallTimeout: (seconds: number) => Promise<void>;
+    setTransitionSettings: (options: {
+      mode?: string;
+      fadeSecs?: number;
+    }) => Promise<{ mode: string; fadeSecs: number; prefetchLeadSecs: number } | null>;
+    getTransitionSettings: () => Promise<{
+      mode: string;
+      fadeSecs: number;
+      prefetchLeadSecs: number;
+    } | null>;
+    getTransitionDiagnostics: () => Promise<string | null>;
     onTimeUpdate: (func: (payload: number | PlayerTimeUpdatePayload) => void) => () => void;
     onSeeked: (func: (time: number) => void) => () => void;
     onSeekStateChange: (func: (payload: PlayerSeekStatePayload) => void) => () => void;
@@ -806,6 +816,8 @@ export interface IElectronAPI {
         seq?: number;
         trackSeq?: number;
         generation?: number;
+        /** Start position of the new track (song transitions enter at a cue point). */
+        startTime?: number;
       }) => void,
     ) => () => void;
     onStateChange: (func: (state: PlayerStateChangePayload) => void) => () => void;

@@ -37,6 +37,14 @@ struct DspGraphBoundary {
     crossed: bool,
 }
 
+/// A deferred normalisation-gain change: applied by the output callback once
+/// `remaining_samples` more samples have been rendered (used when a song transition's
+/// overlap ends and the callback gain must settle on the incoming track's own value).
+struct GainMarker {
+    remaining_samples: usize,
+    gain_db: f32,
+}
+
 pub(crate) struct FilterGraphUpdate {
     pub filter_generation: u64,
     pub decode_generation: u64,
@@ -88,6 +96,7 @@ pub struct SharedAudio {
     output_stats: Mutex<Option<AudioOutputStats>>,
     gapless_boundary: Mutex<Option<GaplessBoundary>>,
     dsp_graph_boundary: Mutex<Option<DspGraphBoundary>>,
+    gain_marker: Mutex<Option<GainMarker>>,
     gapless_prepare: Mutex<GaplessPrepareState>,
     gapless_prepare_changed: Condvar,
     volume_bits: AtomicU32,
@@ -111,6 +120,9 @@ pub struct SharedAudio {
     preferred_output_sample_format: AtomicU32,
     spectrum_sample_rate: AtomicU32,
     interrupt: Mutex<Option<Arc<AtomicBool>>>,
+    /// Interrupt flag of a second decoder that is active at the same time as the primary
+    /// one (the incoming deck while a song transition renders).
+    secondary_interrupt: Mutex<Option<Arc<AtomicBool>>>,
     control_signal_tx: OnceLock<SyncSender<()>>,
     telemetry_signal_tx: OnceLock<SyncSender<PlaybackSignal>>,
 }
@@ -191,6 +203,7 @@ impl SharedAudio {
             output_stats: Mutex::new(None),
             gapless_boundary: Mutex::new(None),
             dsp_graph_boundary: Mutex::new(None),
+            gain_marker: Mutex::new(None),
             gapless_prepare: Mutex::new(GaplessPrepareState::default()),
             gapless_prepare_changed: Condvar::new(),
             volume_bits: AtomicU32::new(1.0f32.to_bits()),
@@ -214,6 +227,7 @@ impl SharedAudio {
             preferred_output_sample_format: AtomicU32::new(AudioSampleFormat::Unknown as u32),
             spectrum_sample_rate: AtomicU32::new(mix_sample_rate),
             interrupt: Mutex::new(None),
+            secondary_interrupt: Mutex::new(None),
             control_signal_tx: OnceLock::new(),
             telemetry_signal_tx: OnceLock::new(),
             track_seq: AtomicU64::new(0),
@@ -228,6 +242,7 @@ impl SharedAudio {
             if let Some(interrupt) = guard.as_ref() {
                 interrupt.store(true, Ordering::Release);
             }
+            self.interrupt_secondary();
         }
         self.wake_control_signal();
         self.output_queue_changed.notify_all();
@@ -294,6 +309,7 @@ impl SharedAudio {
             if let Some(interrupt) = guard.as_ref() {
                 interrupt.store(true, Ordering::Release);
             }
+            self.interrupt_secondary();
         }
         self.output_queue_changed.notify_all();
         self.decoded_queue_changed.notify_all();
@@ -305,6 +321,7 @@ impl SharedAudio {
             if let Some(interrupt) = guard.as_ref() {
                 interrupt.store(true, Ordering::Release);
             }
+            self.interrupt_secondary();
         }
         self.output_queue_changed.notify_all();
         self.decoded_queue_changed.notify_all();
@@ -420,6 +437,13 @@ impl SharedAudio {
     }
 
     pub fn set_normalization_gain_db(&self, gain_db: f32) {
+        self.store_normalization_gain_db(gain_db);
+        self.decoded_queue_changed.notify_all();
+    }
+
+    /// Lock-free part of [`SharedAudio::set_normalization_gain_db`]; safe to call from the
+    /// output callback when a track boundary carries the next track's loudness gain.
+    fn store_normalization_gain_db(&self, gain_db: f32) {
         let gain_db = if gain_db.is_finite() {
             gain_db.clamp(-40.0, 24.0)
         } else {
@@ -428,10 +452,9 @@ impl SharedAudio {
         let gain = 10.0f32.powf(gain_db / 20.0).clamp(0.0, 16.0);
         self.normalization_gain_bits
             .store(gain.to_bits(), Ordering::Release);
-        if let Ok(mut settings) = self.dsp_settings.lock() {
+        if let Ok(mut settings) = self.dsp_settings.try_lock() {
             settings.normalization_gain_db = gain_db;
         }
-        self.decoded_queue_changed.notify_all();
     }
 
     pub fn is_decode_generation_current(&self, generation: u64) -> bool {
@@ -479,6 +502,25 @@ impl SharedAudio {
         interrupt.store(false, Ordering::Release);
         if let Ok(mut guard) = self.interrupt.lock() {
             *guard = Some(interrupt);
+        }
+    }
+
+    /// Register (or clear) the interrupt flag of a concurrently active second decoder so
+    /// stop / seek cancel both readers.
+    pub fn bind_secondary_interrupt(&self, interrupt: Option<Arc<AtomicBool>>) {
+        if let Some(flag) = interrupt.as_ref() {
+            flag.store(false, Ordering::Release);
+        }
+        if let Ok(mut guard) = self.secondary_interrupt.lock() {
+            *guard = interrupt;
+        }
+    }
+
+    fn interrupt_secondary(&self) {
+        if let Ok(guard) = self.secondary_interrupt.lock() {
+            if let Some(interrupt) = guard.as_ref() {
+                interrupt.store(true, Ordering::Release);
+            }
         }
     }
 
@@ -735,6 +777,11 @@ impl SharedAudio {
             Err(TryLockError::WouldBlock) => return 0,
             Err(TryLockError::Poisoned(poisoned)) => poisoned.into_inner(),
         };
+        let mut gain_marker = match self.gain_marker.try_lock() {
+            Ok(marker) => marker,
+            Err(TryLockError::WouldBlock) => return 0,
+            Err(TryLockError::Poisoned(poisoned)) => poisoned.into_inner(),
+        };
         // A gapless boundary carries heap-owned track metadata. Reserve its single pending
         // mailbox before consuming any boundary samples. If the signal thread is taking the
         // previous value, render silence and retry next callback without advancing the ring.
@@ -787,6 +834,16 @@ impl SharedAudio {
                 consumed_samples
             };
             drop(boundary);
+            if let Some(marker) = gain_marker.as_mut() {
+                if consumed_samples >= marker.remaining_samples {
+                    let gain_db = marker.gain_db;
+                    *gain_marker = None;
+                    self.store_normalization_gain_db(gain_db);
+                } else {
+                    marker.remaining_samples -= consumed_samples;
+                }
+            }
+            drop(gain_marker);
             if let Some(active) = dsp_boundary.as_mut() {
                 if active.crossed {
                     active.post_samples = active.post_samples.saturating_add(consumed_samples);
@@ -806,9 +863,23 @@ impl SharedAudio {
             let mut track_switch_ready = false;
             if let Some(info) = boundary_signal {
                 let post_boundary_frames = self.source_frames_for_output(post_boundary_samples);
-                self.played_samples
-                    .store(post_boundary_frames, Ordering::Release);
+                let start_offset_frames =
+                    if info.start_position_secs.is_finite() && info.start_position_secs > 0.0 {
+                        (info.start_position_secs * f64::from(self.mix_format.sample_rate.max(1)))
+                            .round() as u64
+                    } else {
+                        0
+                    };
+                self.played_samples.store(
+                    post_boundary_frames.saturating_add(start_offset_frames),
+                    Ordering::Release,
+                );
                 self.set_track_seq(info.seq);
+                if let Some(gain_db) = info.normalization_gain_db {
+                    // The incoming track's loudness gain becomes effective with its first
+                    // audible sample; the per-buffer gain ramp keeps the change click-free.
+                    self.store_normalization_gain_db(gain_db);
+                }
                 if let Ok(mut ring) = self.spectrum_ring.try_lock() {
                     ring.clear();
                 }
@@ -835,6 +906,7 @@ impl SharedAudio {
             consumed_frames
         } else {
             drop(boundary);
+            drop(gain_marker);
             drop(dsp_boundary);
             if !self.decoded_eof.load(Ordering::Acquire) && !self.eof.load(Ordering::Acquire) {
                 self.enter_output_underrun(0, output.len());
@@ -1060,8 +1132,14 @@ impl SharedAudio {
         if let Ok(mut boundary) = self.gapless_boundary.lock() {
             *boundary = None;
         }
+        if let Ok(mut pending) = self.pending_track_switch.lock() {
+            *pending = None;
+        }
         if let Ok(mut boundary) = self.dsp_graph_boundary.lock() {
             *boundary = None;
+        }
+        if let Ok(mut marker) = self.gain_marker.lock() {
+            *marker = None;
         }
         self.set_position_secs(position_secs);
         self.set_speed(dsp_settings.speed);
@@ -1130,6 +1208,27 @@ impl SharedAudio {
                 .map(|(_, graph, prefer_in_place)| (graph, prefer_in_place));
         }
         None
+    }
+
+    /// Schedule a normalisation-gain change for the point in the stream that the producer is
+    /// at right now (everything queued so far keeps the current gain).
+    pub fn mark_gain_marker(&self, gain_db: f32) {
+        let output_samples = self.realtime_output.buffered_samples();
+        let decoded_samples = self
+            .decoded_queue
+            .lock()
+            .map(|queue| {
+                (((queue.estimated_mix_frames * self.mix_format.channels.max(1)) as f64)
+                    / self.speed().max(0.001) as f64)
+                    .round() as usize
+            })
+            .unwrap_or_default();
+        if let Ok(mut marker) = self.gain_marker.lock() {
+            *marker = Some(GainMarker {
+                remaining_samples: output_samples.saturating_add(decoded_samples),
+                gain_db,
+            });
+        }
     }
 
     /// Mark the exact producer boundary between the old graph tail and the first samples from a

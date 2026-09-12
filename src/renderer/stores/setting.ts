@@ -24,6 +24,13 @@ import {
 } from '../../shared/network';
 import { configureRendererLogger } from '@/utils/logger';
 import {
+  clampFadeCrossSecs,
+  DEFAULT_FADE_CROSS_SECS,
+  DEFAULT_TRACK_TRANSITION_MODE,
+  isTrackTransitionMode,
+  type TrackTransitionMode,
+} from '../../shared/track-transition';
+import {
   dspPresetBankKey,
   dspPresetSettingsPatch,
   parseDspPreset,
@@ -120,9 +127,12 @@ export const useSettingStore = defineStore('setting', {
     closeBehavior: 'tray' as CloseBehavior,
     playbackQueueMode: 'context' as 'context' | 'single',
     autoPlayOnLaunch: false,
-    gaplessPlayback: true,
     volumeFade: true,
     volumeFadeTime: 1000,
+    /** 歌曲过渡设置：无缝 / 淡入淡出 / 智能混音基础 / 智能混音进阶 / 关闭。 */
+    trackTransitionMode: DEFAULT_TRACK_TRANSITION_MODE as TrackTransitionMode,
+    /** 淡入淡出播放时长，0~15 秒。 */
+    fadeCrossSecs: DEFAULT_FADE_CROSS_SECS,
     lyricViewMode: 'cover' as 'cover' | 'portrait' | 'lyric',
     dynamicAlbumCover: false,
     lyricDynamicAlbumCover: false,
@@ -250,6 +260,11 @@ export const useSettingStore = defineStore('setting', {
         state.windowBackgroundActiveFrosted,
       ),
     windowBackgroundRestartRequired: (state) => state.windowBackgroundNeedsRestart,
+    /** Transition mode guarded against unknown persisted values. */
+    effectiveTrackTransitionMode: (state): TrackTransitionMode =>
+      isTrackTransitionMode(state.trackTransitionMode)
+        ? state.trackTransitionMode
+        : DEFAULT_TRACK_TRANSITION_MODE,
   },
   actions: {
     configureDspProvider(
@@ -347,6 +362,12 @@ export const useSettingStore = defineStore('setting', {
     resetShortcutDefaults() {
       this.defaultShortcutLabels = { ...DEFAULT_SHORTCUT_LABELS };
       this.defaultGlobalShortcutLabels = { ...DEFAULT_GLOBAL_SHORTCUT_LABELS };
+    },
+    setTrackTransitionMode(mode: TrackTransitionMode) {
+      this.trackTransitionMode = isTrackTransitionMode(mode) ? mode : DEFAULT_TRACK_TRANSITION_MODE;
+    },
+    setFadeCrossSecs(secs: number) {
+      this.fadeCrossSecs = clampFadeCrossSecs(secs);
     },
     ensureShortcutDefaults() {
       this.defaultShortcutLabels = {

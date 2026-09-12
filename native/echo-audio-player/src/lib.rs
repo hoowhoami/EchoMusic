@@ -13,22 +13,28 @@ mod shared;
 mod spectrum;
 mod stream;
 mod tempo;
+mod transition;
+mod transition_runner;
+#[cfg(test)]
+mod transition_tests;
 
 use control::{
-    attach_restarted_decoder, handle_output_device_list_change,
+    armed_transition_from_prepared, attach_restarted_decoder, handle_output_device_list_change,
     handle_playback_output_device_event, mark_seek_plan_failed, open_decoder_at_position,
-    prepare_dsp_settings_for_mix_rate, request_output_recovery, restart_output_for_runtime,
-    schedule_idle_output_release_for_runtime, SeekPlan,
+    plan_prepared_transition, prepare_dsp_settings_for_mix_rate, request_output_recovery,
+    restart_output_for_runtime, schedule_idle_output_release_for_runtime, PreparedTransitionInputs,
+    SeekPlan,
 };
 pub use control::{
     cancel_fade, configure_spectrum, fade, get_audio_devices, get_audio_graph,
-    get_spectrum_snapshot, get_spectrum_status, inspect_dsp_provider, pause_with_fade,
-    play_with_fade, set_audio_effect, set_audio_graph_parameter, set_audio_graph_plan,
-    set_audio_output, set_equalizer, set_http_proxies, set_http_proxy, set_network_timeout,
-    set_normalization_gain, set_pause_on_device_disconnect, set_speed, set_stall_timeout,
+    get_spectrum_snapshot, get_spectrum_status, get_transition_diagnostics,
+    get_transition_settings, inspect_dsp_provider, pause_with_fade, play_with_fade,
+    set_audio_effect, set_audio_graph_parameter, set_audio_graph_plan, set_audio_output,
+    set_equalizer, set_http_proxies, set_http_proxy, set_network_timeout, set_normalization_gain,
+    set_pause_on_device_disconnect, set_speed, set_stall_timeout, set_transition_settings,
     GetAudioDevicesTask, GetSpectrumSnapshotTask, SetAudioEffectTask, SetAudioGraphParameterTask,
     SetAudioGraphPlanTask, SetAudioOutputTask, SetEqualizerTask, SetNormalizationGainTask,
-    SetSpeedTask,
+    SetSpeedTask, TransitionSettingsOptions, TransitionSettingsSnapshot,
 };
 pub use control::{seek, SeekTask};
 
@@ -152,6 +158,8 @@ struct PlayerRuntime {
     idle_output_release_seq: u64,
     spatial_file_path: Option<String>,
     prepared_next: Option<PreparedNextSource>,
+    /// Prepare request whose source is armed inside the decode worker as a transition.
+    armed_transition_request: Option<u64>,
     gapless_prepare_interrupt: Option<(u64, Arc<AtomicBool>)>,
     source_open_interrupt: Option<(u64, Arc<AtomicBool>)>,
     seek_restart_interrupt: Option<Arc<AtomicBool>>,
@@ -214,6 +222,11 @@ struct PreparedNextSource {
     duration: f64,
     preferred_output_sample_format: shared::AudioSampleFormat,
     normalization_gain_db: f32,
+    /// Transition decided at prepare time (None = plain gapless hand-off at EOF).
+    transition: Option<transition::decide::TransitionPlan>,
+    /// Loudness gain of the track that was playing when the plan was made.
+    current_normalization_gain_db: f32,
+    request_id: u64,
 }
 
 fn retire_prepared_next_background(prepared: Option<PreparedNextSource>, reason: &'static str) {
@@ -301,6 +314,7 @@ impl PlayerRuntime {
             idle_output_release_seq: 0,
             spatial_file_path: None,
             prepared_next: None,
+            armed_transition_request: None,
             gapless_prepare_interrupt: None,
             source_open_interrupt: None,
             seek_restart_interrupt: None,
@@ -326,6 +340,7 @@ impl PlayerRuntime {
         self.cancel_pending_source_open();
         self.seek_restore_paused = None;
         retire_prepared_next_background(self.prepared_next.take(), "stop-session");
+        self.armed_transition_request = None;
         if let Some(session) = self.session.take() {
             set_current_shared(None);
             session.stop_background();
@@ -467,7 +482,76 @@ fn is_latest_seek_request_seq(seq: u64) -> bool {
     seq == 0 || LATEST_SEEK_REQUEST_SEQ.load(Ordering::Acquire) == seq
 }
 
+#[cfg(test)]
+pub(crate) fn load_file_task_for_test(url: String, seq: u64) -> LoadFileTask {
+    invalidate_seek_requests();
+    LoadFileTask {
+        url,
+        seq,
+        audio_stream_ordinal: None,
+        open_request_seq: next_source_open_request_seq(),
+        interrupt: Arc::new(AtomicBool::new(false)),
+    }
+}
+
+#[cfg(test)]
+pub(crate) fn prepare_next_source_task_for_test(
+    url: String,
+    seq: u64,
+    request_id: u64,
+    normalization_gain_db: f32,
+) -> PrepareNextSourceTask {
+    let interrupt = Arc::new(AtomicBool::new(false));
+    let interrupt_for_command = interrupt.clone();
+    let pending_prepare = call_core_command("register-next-source-preparation", move |runtime| {
+        let pending = runtime
+            .session
+            .as_ref()
+            .filter(|session| {
+                session
+                    .shared
+                    .gapless_prepare_request_is_current(request_id)
+            })
+            .map(|session| (session.shared.clone(), request_id));
+        if pending.is_some() {
+            runtime.gapless_prepare_interrupt = Some((request_id, interrupt_for_command.clone()));
+        }
+        Ok(pending)
+    })
+    .ok()
+    .flatten();
+    PrepareNextSourceTask {
+        url,
+        seq,
+        audio_stream_ordinal: None,
+        pending_prepare,
+        interrupt,
+        normalization_gain_db,
+    }
+}
+
+#[cfg(test)]
+pub(crate) fn stop_output_for_test() {
+    let output = call_core_command("take-output-for-test", |runtime| {
+        Ok(runtime
+            .session
+            .as_mut()
+            .and_then(|session| session.output_thread.take()))
+    })
+    .ok()
+    .flatten();
+    if let Some(output) = output {
+        output.shutdown();
+    }
+}
+
 pub(crate) fn emit_event(event: PlayerEvent) {
+    #[cfg(test)]
+    if let Ok(sink) = transition_tests::TEST_EVENT_SINK.lock() {
+        if let Some(sink) = sink.as_ref() {
+            let _ = sink.send(event.clone());
+        }
+    }
     if event.event == "error" {
         let core_state = match event.error_code.as_deref() {
             Some("output-device-unavailable") | Some("output-runtime") => {
@@ -1027,18 +1111,26 @@ fn apply_track_switch(info: TrackSwitchInfo, shared: Arc<SharedAudio>) {
             runtime.current_seq = info.seq;
             runtime.latest_load_seq = runtime.latest_load_seq.max(info.seq);
             runtime.state.duration = info.duration;
-            runtime.state.time_pos = 0.0;
+            let start_position = if info.start_position_secs.is_finite() {
+                info.start_position_secs.max(0.0)
+            } else {
+                0.0
+            };
+            runtime.state.time_pos = start_position;
             runtime.state.playing = true;
             runtime.state.paused = false;
+            if let Some(gain_db) = info.normalization_gain_db {
+                runtime.dsp_settings.normalization_gain_db = gain_db;
+            }
             set_runtime_core_state(runtime, PlaybackCoreState::Playing, "gapless-track-switch");
             emit_runtime_events(
                 runtime,
                 vec![
                     PlayerEvent::duration_change(info.duration),
-                    PlayerEvent::file_loaded(info.url, info.seq),
+                    PlayerEvent::file_loaded_at(info.url, info.seq, start_position),
                     PlayerEvent::state_change(runtime.state.clone()),
-                    PlayerEvent::playback_restart(0.0, "gapless-track-switch"),
-                    PlayerEvent::time_update(0.0),
+                    PlayerEvent::playback_restart(start_position, "gapless-track-switch"),
+                    PlayerEvent::time_update(start_position),
                 ],
             );
         }),
@@ -1194,12 +1286,12 @@ pub(crate) fn activate_gapless_next_decoder(
     // Apply the target track's loudness before any predecoded samples cross the
     // boundary; waiting for the renderer restart event is too late.
     shared.set_normalization_gain_db(next.normalization_gain_db);
-    shared.mark_gapless_boundary(TrackSwitchInfo {
-        url: next.url,
-        audio_stream_ordinal: next.audio_stream_ordinal,
-        seq: next.seq,
-        duration: next.duration,
-    });
+    shared.mark_gapless_boundary(TrackSwitchInfo::new(
+        next.url,
+        next.audio_stream_ordinal,
+        next.seq,
+        next.duration,
+    ));
     let mut decoded_position_secs = 0.0;
     let mut produced_frames = 0u64;
     for chunk in next.predecoded {
@@ -1233,6 +1325,7 @@ fn restart_loop_if_enabled(shared: Arc<SharedAudio>) -> bool {
         shared.paused.store(true, Ordering::Release);
         shared.request_decode_stop();
         retire_prepared_next_background(runtime.prepared_next.take(), "loop-restart");
+        runtime.armed_transition_request = None;
         session.stop_decode_background("loop-restart");
         let generation = shared.reset_for_decode_resume(0.0, &runtime.dsp_settings);
         let eq_active = runtime
@@ -1256,6 +1349,7 @@ fn restart_loop_if_enabled(shared: Arc<SharedAudio>) -> bool {
         Ok(Some(SeekPlan {
             shared,
             was_paused: false,
+            track_seq: runtime.current_seq,
             url,
             audio_stream_ordinal: runtime.current_audio_stream_ordinal,
             generation,
@@ -1475,6 +1569,7 @@ impl Task for SwitchSourceTask {
             let (reply_tx, reply_rx) = sync_channel(1);
             commands
                 .send(decoder::DecodeCommand::SwitchSource {
+                    track_seq: Some(current_seq),
                     decoder: Box::new(decoder),
                     predecoded,
                     switch_at_secs,
@@ -1974,6 +2069,93 @@ impl Task for PrepareNextSourceTask {
         let duration = decoder.duration_secs();
         let preferred_output_sample_format =
             config.resolve_output_sample_format(decoder.source_sample_format());
+
+        // Song transitions: analyse both tracks and decide the cue points now, while the
+        // current track still has plenty of time left.
+        let (current_url, current_ordinal, current_gain_db) =
+            call_core_command("snapshot-transition-context", |runtime| {
+                Ok((
+                    runtime.current_url.clone(),
+                    runtime.current_audio_stream_ordinal,
+                    runtime.dsp_settings.normalization_gain_db,
+                ))
+            })?;
+        let transition = match plan_prepared_transition(
+            &mut decoder,
+            PreparedTransitionInputs {
+                next_url: &self.url,
+                next_audio_stream_ordinal: self.audio_stream_ordinal,
+                current_url: current_url.as_deref(),
+                current_audio_stream_ordinal: current_ordinal,
+                config: &config,
+                interrupt: &self.interrupt,
+            },
+        ) {
+            Ok(plan) => plan,
+            Err(err) => {
+                if self.interrupt.load(Ordering::Acquire) {
+                    emit_event(PlayerEvent::log(
+                        "info",
+                        format!("transition analysis cancelled: {err}"),
+                    ));
+                    return Ok(false);
+                }
+                emit_event(PlayerEvent::log(
+                    "warn",
+                    format!("transition analysis failed; using plain gapless hand-off: {err}"),
+                ));
+                None
+            }
+        };
+        // Temporary analysis readers use the prepare interrupt too, and ffmpeg_audio marks
+        // that flag when such a reader is dropped. If the prepare request is still current,
+        // clear that internal reader shutdown before opening the playback reader.
+        if self.interrupt.load(Ordering::Acquire)
+            && pending_shared.gapless_prepare_request_is_current(request_id)
+        {
+            self.interrupt.store(false, Ordering::Release);
+        }
+        // Position the incoming decoder at its entry point. Analysis consumed the head of
+        // the stream, and seeking *backwards* on a network reader means re-requesting bytes
+        // the packet cache already dropped (slow, and FLAC frequently fails to resync), so
+        // open a fresh reader for playback and keep the analysed one only as a fallback.
+        let b_start = transition
+            .as_ref()
+            .map(|plan| plan.b_start_secs)
+            .unwrap_or(0.0)
+            .max(0.0);
+        let direct_gapless_transition = transition.as_ref().is_some_and(|plan| {
+            plan.mode == transition::TransitionMode::Gapless && plan.overlap_secs <= 0.0
+        });
+        if transition.is_some() {
+            match open_decoder_with_interrupt(
+                self.url.clone(),
+                self.audio_stream_ordinal,
+                Some(sample_rate),
+                self.interrupt.clone(),
+                config.packet_cache_options_for_url(&self.url),
+                &config.stream_options(),
+            ) {
+                Ok(fresh) => decoder = fresh,
+                Err(err) => {
+                    if self.interrupt.load(Ordering::Acquire) {
+                        return Ok(false);
+                    }
+                    emit_event(PlayerEvent::log(
+                        "warn",
+                        format!(
+                            "reopening next source after analysis failed; reusing reader: {err}"
+                        ),
+                    ));
+                }
+            }
+        }
+        if b_start > 0.0 && !direct_gapless_transition {
+            decoder
+                .prepare_seamless_seek(b_start)
+                .map_err(napi::Error::from_reason)?;
+        }
+        decoder.set_discard_before_secs(if b_start > 0.0 { Some(b_start) } else { None });
         let predecoded =
             predecode_gapless_head(&mut decoder, sample_rate).map_err(napi::Error::from_reason)?;
         let mut prepared = Some(PreparedNextSource {
@@ -1985,6 +2167,9 @@ impl Task for PrepareNextSourceTask {
             duration,
             preferred_output_sample_format,
             normalization_gain_db: self.normalization_gain_db,
+            transition,
+            current_normalization_gain_db: current_gain_db,
+            request_id,
         });
 
         let url_for_log = self.url.clone();
@@ -2003,21 +2188,25 @@ impl Task for PrepareNextSourceTask {
             let prepared = prepared.take().ok_or_else(|| {
                 napi::Error::from_reason("prepared next source already committed".to_string())
             })?;
-            let previous = runtime.prepared_next.replace(prepared);
-            retire_prepared_next_background(previous, "prepare-next-replaced");
             runtime.gapless_prepare_interrupt = None;
+            let has_transition = prepared.transition.is_some();
+            let predecoded_chunks = prepared.predecoded.len();
+            if has_transition {
+                // Hand the prepared source to the decode worker: it owns the cut point.
+                if !arm_prepared_transition(runtime, prepared) {
+                    return Ok(false);
+                }
+            } else {
+                let previous = runtime.prepared_next.replace(prepared);
+                retire_prepared_next_background(previous, "prepare-next-replaced");
+            }
             emit_runtime_event(
                 runtime,
                 PlayerEvent::log(
                     "info",
                     format!(
-                        "gapless prepared next source: url='{}', predecoded_chunks={}",
-                        url_for_log,
-                        runtime
-                            .prepared_next
-                            .as_ref()
-                            .map(|next| next.predecoded.len())
-                            .unwrap_or_default()
+                        "gapless prepared next source: url='{}', predecoded_chunks={}, transition={}",
+                        url_for_log, predecoded_chunks, has_transition
                     ),
                 ),
             );
@@ -2030,6 +2219,77 @@ impl Task for PrepareNextSourceTask {
     }
 }
 
+/// Move a prepared source with a transition plan into the decode worker. The worker keeps
+/// it until the outgoing track reaches the cut point (or a manual skip starts it).
+fn arm_prepared_transition(runtime: &mut PlayerRuntime, prepared: PreparedNextSource) -> bool {
+    let Some(session) = runtime.session.as_ref() else {
+        retire_prepared_next_background(Some(prepared), "arm-no-session");
+        return false;
+    };
+    let Some(commands) = session.decode_commands.as_ref() else {
+        retire_prepared_next_background(Some(prepared), "arm-no-decoder");
+        return false;
+    };
+    let Some(plan) = prepared.transition.clone() else {
+        return false;
+    };
+    let generation = session.shared.current_decode_generation();
+    let info = TrackSwitchInfo::new(
+        prepared.url.clone(),
+        prepared.audio_stream_ordinal,
+        prepared.seq,
+        prepared.duration,
+    );
+    let armed = armed_transition_from_prepared(
+        plan,
+        prepared.decoder,
+        prepared.predecoded,
+        info,
+        prepared.preferred_output_sample_format,
+        prepared.current_normalization_gain_db,
+        prepared.normalization_gain_db,
+        prepared.request_id,
+        runtime.current_seq,
+    );
+    let request_id = prepared.request_id;
+    match commands.try_send(decoder::DecodeCommand::ArmTransition {
+        armed: Box::new(armed),
+        generation,
+    }) {
+        Ok(()) => {
+            runtime.armed_transition_request = Some(request_id);
+            // The prepared slot stays empty: the decoder owns the source now. Keep a marker
+            // so the renderer's "prepared" bookkeeping (clear/cancel) still reaches it.
+            true
+        }
+        Err(err) => {
+            emit_runtime_event(
+                runtime,
+                PlayerEvent::log("warn", format!("failed to arm song transition: {err}")),
+            );
+            false
+        }
+    }
+}
+
+/// Tell the decode worker to forget an armed transition (queue changed / prepare cleared).
+fn disarm_transition(runtime: &mut PlayerRuntime, reason: &'static str) {
+    let Some(request_id) = runtime.armed_transition_request.take() else {
+        return;
+    };
+    if let Some(commands) = runtime
+        .session
+        .as_ref()
+        .and_then(|session| session.decode_commands.as_ref())
+    {
+        let _ = commands.try_send(decoder::DecodeCommand::DisarmTransition {
+            request_id: Some(request_id),
+            reset_position_secs: None,
+        });
+    }
+    let _ = reason;
+}
+
 impl Task for CommitPreparedNextSourceTask {
     type Output = bool;
     type JsValue = bool;
@@ -2040,6 +2300,132 @@ impl Task for CommitPreparedNextSourceTask {
         } else {
             15.0
         };
+        // An armed transition (fade / automix) starts immediately on a manual skip; the
+        // decoder blends from the current position instead of cutting.
+        let armed = call_core_command("commit-armed-transition", |runtime| {
+            let Some(request_id) = runtime.armed_transition_request else {
+                return Ok(None);
+            };
+            let Some(session) = runtime.session.as_ref() else {
+                return Ok(None);
+            };
+            let Some(commands) = session.decode_commands.as_ref().cloned() else {
+                return Ok(None);
+            };
+            let was_playing = runtime.state.playing && !runtime.state.paused;
+            Ok(Some((
+                request_id,
+                commands,
+                session.shared.clone(),
+                runtime.dsp_settings.clone(),
+                was_playing,
+            )))
+        })?;
+        if let Some((_request_id, commands, shared, dsp_settings, was_playing)) = armed {
+            // Fade the audible tail out over one transport fade so the cut at the audible
+            // position cannot click, then drop the decode/output look-ahead so the blend
+            // starts where the listener is (not seconds later). The reset also wakes a
+            // worker blocked on a full queue (paused playback) and publishes a fresh
+            // generation for the mixed audio.
+            if was_playing {
+                shared.set_volume(0.0);
+                thread::sleep(Duration::from_millis(TRANSPORT_FADE_OUT_MS));
+            }
+            let resume_position_secs = shared.position_secs();
+            shared.paused.store(true, Ordering::Release);
+            let generation = shared.reset_for_decode_resume(resume_position_secs, &dsp_settings);
+            shared.set_volume(user_volume());
+            let max_overlap_secs = if was_playing {
+                transition::decide::MANUAL_MAX_OVERLAP_SECS
+            } else {
+                0.0
+            };
+            let (reply_tx, reply_rx) = sync_channel(1);
+            if commands
+                .send(decoder::DecodeCommand::StartTransition {
+                    max_overlap_secs,
+                    resume_position_secs,
+                    generation,
+                    reply: reply_tx,
+                })
+                .is_ok()
+            {
+                match reply_rx.recv_timeout(Duration::from_secs(15)) {
+                    Ok(Ok(())) => {
+                        let resume_shared = shared.clone();
+                        call_core_command_blocking(
+                            "commit-armed-transition-started",
+                            move |runtime| {
+                                runtime.armed_transition_request = None;
+                                runtime.cancel_idle_output_release();
+                                let matches_session =
+                                    runtime.session.as_ref().is_some_and(|session| {
+                                        Arc::ptr_eq(&session.shared, &resume_shared)
+                                    });
+                                if !matches_session {
+                                    return Ok(());
+                                }
+                                let output_needs_restart =
+                                    runtime.session.as_ref().is_some_and(|session| {
+                                        session
+                                            .output_thread
+                                            .as_ref()
+                                            .is_none_or(output::AudioOutputHandle::has_exited)
+                                            || !session.shared.output_has_started()
+                                    });
+                                if output_needs_restart {
+                                    let config = runtime.config.clone();
+                                    restart_output_for_runtime(runtime, config, false)?;
+                                    runtime.cancel_idle_output_release();
+                                }
+                                if let Some(session) = runtime.session.as_ref() {
+                                    mark_prepared_switch_resumed(
+                                        &session.shared,
+                                        &mut runtime.state,
+                                    );
+                                }
+                                set_runtime_core_state(
+                                    runtime,
+                                    PlaybackCoreState::Playing,
+                                    "prepared-transition-resume",
+                                );
+                                emit_runtime_event(
+                                    runtime,
+                                    PlayerEvent::state_change(runtime.state.clone()),
+                                );
+                                Ok(())
+                            },
+                        )?;
+                        return Ok(true);
+                    }
+                    Ok(Err(err)) => {
+                        emit_event(PlayerEvent::log(
+                            "warn",
+                            format!("armed transition could not start: {err}"),
+                        ));
+                    }
+                    Err(_) => {
+                        emit_event(PlayerEvent::log(
+                            "warn",
+                            "armed transition start timed out".to_string(),
+                        ));
+                    }
+                }
+            }
+            call_core_command("commit-armed-transition-failed", move |runtime| {
+                runtime.armed_transition_request = None;
+                // Resume the outgoing track where it was so the fallback load does not
+                // leave playback paused.
+                if let Some(session) = runtime.session.as_ref() {
+                    if Arc::ptr_eq(&session.shared, &shared) {
+                        session.shared.paused.store(!was_playing, Ordering::Release);
+                    }
+                }
+                Ok(())
+            })?;
+            return Ok(false);
+        }
+
         let plan = call_core_command("commit-prepared-next-plan", |runtime| {
             let Some(next) = runtime.prepared_next.take() else {
                 return Ok(None);
@@ -2067,12 +2453,8 @@ impl Task for CommitPreparedNextSourceTask {
         let transition_fade_frames =
             ((f64::from(sample_rate) * transition_ms / 1_000.0).round() as usize).max(1);
         let (reply_tx, reply_rx) = sync_channel(1);
-        let info = TrackSwitchInfo {
-            url: next.url,
-            audio_stream_ordinal: next.audio_stream_ordinal,
-            seq: next.seq,
-            duration: next.duration,
-        };
+        let info =
+            TrackSwitchInfo::new(next.url, next.audio_stream_ordinal, next.seq, next.duration);
         // A manual skip should not wait for the old decoder/output queues to drain. Fade the
         // currently audible tail first; SwitchTrack then resets those queues and starts the
         // already-open decoder in the same output session.
@@ -2179,6 +2561,7 @@ pub fn begin_next_source_preparation() -> napi::Result<f64> {
     call_core_command("begin-next-source-preparation", |runtime| {
         runtime.cancel_pending_gapless_prepare();
         retire_prepared_next_background(runtime.prepared_next.take(), "prepare-next-begin");
+        disarm_transition(runtime, "prepare-next-begin");
         let Some(session) = runtime.session.as_ref() else {
             return Ok(0.0);
         };
@@ -2205,6 +2588,9 @@ pub fn cancel_next_source_preparation(request_id: f64) -> napi::Result<bool> {
         let cancelled = session.shared.cancel_gapless_prepare(request_id);
         if cancelled {
             retire_prepared_next_background(runtime.prepared_next.take(), "prepare-next-cancel");
+        }
+        if runtime.armed_transition_request == Some(request_id) {
+            disarm_transition(runtime, "prepare-next-cancel");
         }
         Ok(cancelled)
     })
@@ -2262,6 +2648,7 @@ pub fn clear_prepared_next_source() -> napi::Result<()> {
     call_core_command("clear-prepared-next-source", |runtime| {
         runtime.cancel_pending_gapless_prepare();
         retire_prepared_next_background(runtime.prepared_next.take(), "prepare-next-clear");
+        disarm_transition(runtime, "prepare-next-clear");
         Ok(())
     })
 }
@@ -2432,7 +2819,10 @@ mod runtime_state_tests {
     #[test]
     fn seamless_source_switch_keeps_runtime_and_progress_context_in_sync() {
         let shared = SharedAudio::new(
-            MixFormat::stereo_f32(48_000), 0.1, 8.0, &DspSettings::default(),
+            MixFormat::stereo_f32(48_000),
+            0.1,
+            8.0,
+            &DspSettings::default(),
         );
         let mut runtime = PlayerRuntime::new(PlayerConfig::default());
         runtime.current_seq = 10;
@@ -2440,7 +2830,8 @@ mod runtime_state_tests {
         let generation = shared.current_decode_generation();
         for seq in [11, 12, 15] {
             bind_seamless_source_context(&mut runtime, &shared, seq);
-            let control = contextualize_runtime_event(&runtime, PlayerEvent::duration_change(120.0));
+            let control =
+                contextualize_runtime_event(&runtime, PlayerEvent::duration_change(120.0));
             let tick = contextualize_shared_event(&shared, PlayerEvent::time_update(42.0));
             assert_eq!(control.track_seq, Some(seq as f64));
             assert_eq!(tick.track_seq, control.track_seq);

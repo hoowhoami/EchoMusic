@@ -198,9 +198,9 @@ watch(
 :global(.drawer-panel.comment-drawer) {
   z-index: 1510;
   padding: 0;
-  top: 12px;
+  top: var(--drawer-safe-top);
   right: 12px;
-  bottom: 12px;
+  bottom: var(--drawer-safe-bottom);
   width: min(460px, calc(100vw - 24px));
   border-radius: 12px;
   box-shadow: var(--shadow-dialog);
@@ -210,9 +210,9 @@ watch(
 
 @media (max-width: 420px) {
   :global(.drawer-panel.comment-drawer) {
-    top: 8px;
+    --drawer-top-gap: 16px;
+    --drawer-bottom-gap: -4px;
     right: 8px;
-    bottom: 8px;
     width: min(460px, calc(100vw - 16px));
   }
 }
