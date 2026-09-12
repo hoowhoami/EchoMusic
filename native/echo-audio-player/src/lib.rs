@@ -2156,8 +2156,19 @@ impl Task for PrepareNextSourceTask {
                 .map_err(napi::Error::from_reason)?;
         }
         decoder.set_discard_before_secs(if b_start > 0.0 { Some(b_start) } else { None });
-        let predecoded =
-            predecode_gapless_head(&mut decoder, sample_rate).map_err(napi::Error::from_reason)?;
+        let predecoded = match predecode_gapless_head(&mut decoder, sample_rate) {
+            Ok(predecoded) => predecoded,
+            Err(err) => {
+                if self.interrupt.load(Ordering::Acquire) {
+                    return Ok(false);
+                }
+                emit_event(PlayerEvent::log(
+                    "warn",
+                    format!("gapless predecode failed; skipping prepared hand-off: {err}"),
+                ));
+                return Ok(false);
+            }
+        };
         let mut prepared = Some(PreparedNextSource {
             decoder,
             predecoded,
