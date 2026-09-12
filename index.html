@@ -240,9 +240,12 @@
         const startupRoot = document.documentElement;
         startupRoot.dataset.echoStarting = '';
         const dark = initialDark;
-        const alpha = appearance?.enabled
-          ? 1 - Math.max(0, Math.min(100, appearance.transparency || 0)) / 100
-          : 1;
+        const pureTransparent = appearance?.transparentMode === 'pure' && appearance?.enabled;
+        const alpha = pureTransparent
+          ? 0
+          : appearance?.enabled
+            ? 1 - Math.max(0, Math.min(100, appearance.transparency || 0)) / 100
+            : 1;
         const base =
           appearance?.enabled && appearance.color ? appearance.color : dark ? '#26262a' : '#f5f5f7';
         startupRoot.style.setProperty(

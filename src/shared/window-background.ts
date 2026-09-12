@@ -1,3 +1,8 @@
+import type {
+  WindowBackgroundCapabilities,
+  WindowBackgroundTransparentMode,
+} from './window-background-strategy';
+
 export interface WindowBackground {
   enabled: boolean;
   transparency: number;
@@ -58,8 +63,11 @@ export function resolveRunningWindowBackground(
   value: WindowBackground,
   platform: string,
   transparent: boolean,
-  build = 22621,
+  buildOrCapabilities: number | Pick<WindowBackgroundCapabilities, 'frostMode'> = 22621,
 ) {
+  const build = typeof buildOrCapabilities === 'number' ? buildOrCapabilities : 22621;
+  const frostMode =
+    typeof buildOrCapabilities === 'number' ? 'none' : buildOrCapabilities.frostMode;
   const wanted = normalizeWindowBackground(value);
   if (platform === 'win32') {
     if (build >= 22621) return { background: wanted, restartRequired: false };
@@ -82,8 +90,28 @@ export function resolveRunningWindowBackground(
     };
   }
   // Linux has no Electron backdrop-material API; preserve the current native mode until restart.
+  // Hyprland's compositor blur uses the same transparent BrowserWindow setup,
+  // but unlike other Linux backends its frosted mode remains meaningful at runtime.
   return {
-    background: resolveWindowBackground(wanted, transparent, false),
+    background: resolveWindowBackground(
+      wanted,
+      transparent,
+      frostMode === 'compositor' ? wanted.frosted : false,
+    ),
     restartRequired: wanted.enabled !== transparent,
   };
+}
+
+/**
+ * Resolve the renderer-facing appearance after the host backend is known.
+ * Hyprland's compositor owns both blur and translucency, so no synthetic
+ * color/opacity layer should be painted by the page in that mode.
+ */
+export function resolveRendererWindowBackground(
+  value: WindowBackground,
+  transparentMode: WindowBackgroundTransparentMode = 'layered',
+): WindowBackground {
+  const normalized = normalizeWindowBackground(value);
+  if (transparentMode !== 'pure' || !normalized.enabled) return normalized;
+  return { ...normalized, transparency: 100, color: '' };
 }

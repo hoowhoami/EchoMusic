@@ -38,6 +38,16 @@ test('main startup adopts the saved theme and material, other windows stay untou
     echoWindowBackground: { enabled: true, color: '#334455', transparency: 30 },
   });
   assert.equal(alpha.values.get('--startup-bg'), 'color-mix(in srgb, #334455 70%, transparent)');
+  const pure = bootstrap({
+    echoInitialDark: false,
+    echoWindowBackground: {
+      enabled: true,
+      color: '#334455',
+      transparency: 30,
+      transparentMode: 'pure',
+    },
+  });
+  assert.equal(pure.values.get('--startup-bg'), 'color-mix(in srgb, #334455 0%, transparent)');
   assert.deepEqual(bootstrap({}).root.dataset, {});
 });
 
