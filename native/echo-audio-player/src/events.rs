@@ -69,6 +69,7 @@ pub struct PlayerEvent {
     pub track_seq: Option<f64>,
     pub generation: Option<f64>,
     pub time: Option<f64>,
+    pub transition: Option<TrackTransitionInfo>,
     pub duration: Option<f64>,
     pub state: Option<PlayerState>,
     pub reason: Option<String>,
@@ -89,6 +90,13 @@ pub struct PlayerEvent {
     pub packet_cache: Option<PacketCacheStats>,
     pub output_stats: Option<AudioOutputStats>,
     pub audio_graph: Option<AudioGraphSnapshot>,
+}
+
+#[napi(object)]
+#[derive(Clone, Debug, PartialEq)]
+pub struct TrackTransitionInfo {
+    pub mode: String,
+    pub overlap_secs: f64,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -155,6 +163,11 @@ impl PlayerEvent {
             time: Some(start_secs.max(0.0)),
             ..Self::file_loaded(path, seq)
         }
+    }
+
+    pub fn with_transition(mut self, transition: Option<TrackTransitionInfo>) -> Self {
+        self.transition = transition;
+        self
     }
 
     pub fn playback_restart(time: f64, reason: &str) -> Self {
@@ -305,6 +318,7 @@ impl PlayerEvent {
             track_seq: None,
             generation: None,
             time: None,
+            transition: None,
             duration: None,
             state: None,
             reason: None,

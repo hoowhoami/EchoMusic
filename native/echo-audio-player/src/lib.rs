@@ -10,6 +10,8 @@ mod exclusive;
 mod filter;
 mod output;
 mod shared;
+#[cfg(test)]
+mod source_change_tests;
 mod spectrum;
 mod stream;
 mod tempo;
@@ -21,9 +23,9 @@ mod transition_tests;
 use control::{
     armed_transition_from_prepared, attach_restarted_decoder, handle_output_device_list_change,
     handle_playback_output_device_event, mark_seek_plan_failed, open_decoder_at_position,
-    plan_prepared_transition, prepare_dsp_settings_for_mix_rate, request_output_recovery,
-    restart_output_for_runtime, schedule_idle_output_release_for_runtime, PreparedTransitionInputs,
-    SeekPlan,
+    prepare_dsp_settings_for_mix_rate, prepare_transition_audio, request_output_recovery,
+    restart_output_for_runtime, schedule_idle_output_release_for_runtime, PreparationCancellation,
+    PreparedTransitionInputs, SeekPlan,
 };
 pub use control::{
     cancel_fade, configure_spectrum, fade, get_audio_devices, get_audio_graph,
@@ -160,7 +162,7 @@ struct PlayerRuntime {
     prepared_next: Option<PreparedNextSource>,
     /// Prepare request whose source is armed inside the decode worker as a transition.
     armed_transition_request: Option<u64>,
-    gapless_prepare_interrupt: Option<(u64, Arc<AtomicBool>)>,
+    gapless_prepare_interrupt: Option<(u64, Arc<PreparationCancellation>)>,
     source_open_interrupt: Option<(u64, Arc<AtomicBool>)>,
     seek_restart_interrupt: Option<Arc<AtomicBool>>,
     seek_request_seq: u64,
@@ -357,7 +359,7 @@ impl PlayerRuntime {
 
     fn cancel_pending_gapless_prepare(&mut self) {
         if let Some((_, interrupt)) = self.gapless_prepare_interrupt.take() {
-            interrupt.store(true, Ordering::Release);
+            interrupt.cancel();
         }
         if let Some(session) = self.session.as_ref() {
             session.shared.clear_gapless_prepares();
@@ -501,7 +503,7 @@ pub(crate) fn prepare_next_source_task_for_test(
     request_id: u64,
     normalization_gain_db: f32,
 ) -> PrepareNextSourceTask {
-    let interrupt = Arc::new(AtomicBool::new(false));
+    let interrupt = Arc::new(PreparationCancellation::default());
     let interrupt_for_command = interrupt.clone();
     let pending_prepare = call_core_command("register-next-source-preparation", move |runtime| {
         let pending = runtime
@@ -1127,7 +1129,8 @@ fn apply_track_switch(info: TrackSwitchInfo, shared: Arc<SharedAudio>) {
                 runtime,
                 vec![
                     PlayerEvent::duration_change(info.duration),
-                    PlayerEvent::file_loaded_at(info.url, info.seq, start_position),
+                    PlayerEvent::file_loaded_at(info.url, info.seq, start_position)
+                        .with_transition(info.transition),
                     PlayerEvent::state_change(runtime.state.clone()),
                     PlayerEvent::playback_restart(start_position, "gapless-track-switch"),
                     PlayerEvent::time_update(start_position),
@@ -1286,12 +1289,17 @@ pub(crate) fn activate_gapless_next_decoder(
     // Apply the target track's loudness before any predecoded samples cross the
     // boundary; waiting for the renderer restart event is too late.
     shared.set_normalization_gain_db(next.normalization_gain_db);
-    shared.mark_gapless_boundary(TrackSwitchInfo::new(
+    let mut info = TrackSwitchInfo::new(
         next.url,
         next.audio_stream_ordinal,
         next.seq,
         next.duration,
-    ));
+    );
+    info.transition = Some(events::TrackTransitionInfo {
+        mode: "gapless".to_string(),
+        overlap_secs: 0.0,
+    });
+    shared.mark_gapless_boundary(info);
     let mut decoded_position_secs = 0.0;
     let mut produced_frames = 0u64;
     for chunk in next.predecoded {
@@ -1757,10 +1765,12 @@ impl Task for LoadFileTask {
                                 let was_playing = plan.was_playing;
                                 let _ =
                                     call_core_command("finish-load-dsp-error", move |runtime| {
-                                        runtime.clear_source_open_if_current(
+                                        if !runtime.clear_source_open_if_current(
                                             open_request_seq,
                                             &interrupt_for_command,
-                                        );
+                                        ) {
+                                            return Ok(());
+                                        }
                                         set_runtime_core_state(
                                             runtime,
                                             if was_playing {
@@ -1937,8 +1947,43 @@ impl Task for LoadFileTask {
 }
 
 #[napi]
+pub fn begin_source_change() -> napi::Result<()> {
+    invalidate_seek_requests();
+    invalidate_source_open_requests();
+    cancel_runtime_fade();
+    call_core_command("begin-source-change", |runtime| {
+        runtime.cancel_idle_output_release();
+        runtime.cancel_pending_source_open();
+        runtime.cancel_pending_seek_restart();
+        runtime.cancel_pending_gapless_prepare();
+        retire_prepared_next_background(runtime.prepared_next.take(), "source-change");
+        runtime.armed_transition_request = None;
+        runtime.seek_restore_paused = None;
+        if let Some(session) = runtime.session.as_mut() {
+            session.shared.paused.store(true, Ordering::Release);
+            session.shared.request_decode_stop();
+            session.stop_decode_background("source-change");
+            // Invalidate in-flight decode/filter writes and discard both PCM queues.
+            // Keep the output session open so rapid skips don't churn the audio device.
+            session
+                .shared
+                .reset_for_decode_resume(0.0, &runtime.dsp_settings);
+            session.shared.request_decode_stop();
+        }
+        runtime.current_url = None;
+        runtime.state.playing = false;
+        runtime.state.paused = true;
+        runtime.state.time_pos = 0.0;
+        runtime.state.duration = 0.0;
+        set_runtime_core_state(runtime, PlaybackCoreState::Loading, "source-change");
+        Ok(())
+    })
+}
+
+#[napi]
 pub fn load_file(url: String, seq: Option<f64>) -> AsyncTask<LoadFileTask> {
     invalidate_seek_requests();
+    cancel_runtime_fade();
     AsyncTask::new(LoadFileTask {
         url,
         seq: seq.unwrap_or(0.0).max(0.0) as u64,
@@ -1951,6 +1996,7 @@ pub fn load_file(url: String, seq: Option<f64>) -> AsyncTask<LoadFileTask> {
 #[napi]
 pub fn load_mkv_track(url: String, track_id: i64, seq: Option<f64>) -> AsyncTask<LoadFileTask> {
     invalidate_seek_requests();
+    cancel_runtime_fade();
     AsyncTask::new(LoadFileTask {
         url,
         seq: seq.unwrap_or(0.0).max(0.0) as u64,
@@ -1981,7 +2027,7 @@ pub struct PrepareNextSourceTask {
     seq: u64,
     audio_stream_ordinal: Option<usize>,
     pending_prepare: Option<(Arc<SharedAudio>, u64)>,
-    interrupt: Arc<AtomicBool>,
+    interrupt: Arc<PreparationCancellation>,
     normalization_gain_db: f32,
 }
 
@@ -1992,7 +2038,7 @@ pub struct CommitPreparedNextSourceTask {
 struct GaplessPrepareGuard {
     shared: Arc<SharedAudio>,
     epoch: u64,
-    interrupt: Arc<AtomicBool>,
+    interrupt: Arc<PreparationCancellation>,
 }
 
 impl Drop for GaplessPrepareGuard {
@@ -2057,19 +2103,6 @@ impl Task for PrepareNextSourceTask {
             return Ok(false);
         }
 
-        let mut decoder = open_decoder_with_interrupt(
-            self.url.clone(),
-            self.audio_stream_ordinal,
-            Some(sample_rate),
-            self.interrupt.clone(),
-            config.packet_cache_options_for_url(&self.url),
-            &config.stream_options(),
-        )
-        .map_err(napi::Error::from_reason)?;
-        let duration = decoder.duration_secs();
-        let preferred_output_sample_format =
-            config.resolve_output_sample_format(decoder.source_sample_format());
-
         // Song transitions: analyse both tracks and decide the cue points now, while the
         // current track still has plenty of time left.
         let (current_url, current_ordinal, current_gain_db) =
@@ -2080,8 +2113,8 @@ impl Task for PrepareNextSourceTask {
                     runtime.dsp_settings.normalization_gain_db,
                 ))
             })?;
-        let transition = match plan_prepared_transition(
-            &mut decoder,
+        let audio = match prepare_transition_audio(
+            sample_rate,
             PreparedTransitionInputs {
                 next_url: &self.url,
                 next_audio_stream_ordinal: self.audio_stream_ordinal,
@@ -2091,84 +2124,28 @@ impl Task for PrepareNextSourceTask {
                 interrupt: &self.interrupt,
             },
         ) {
-            Ok(plan) => plan,
+            Ok(audio) => audio,
             Err(err) => {
-                if self.interrupt.load(Ordering::Acquire) {
+                if self.interrupt.is_cancelled() {
                     emit_event(PlayerEvent::log(
                         "info",
-                        format!("transition analysis cancelled: {err}"),
+                        format!("next source preparation cancelled: {err}"),
                     ));
                     return Ok(false);
                 }
                 emit_event(PlayerEvent::log(
                     "warn",
-                    format!("transition analysis failed; using plain gapless hand-off: {err}"),
-                ));
-                None
-            }
-        };
-        // Temporary analysis readers use the prepare interrupt too, and ffmpeg_audio marks
-        // that flag when such a reader is dropped. If the prepare request is still current,
-        // clear that internal reader shutdown before opening the playback reader.
-        if self.interrupt.load(Ordering::Acquire)
-            && pending_shared.gapless_prepare_request_is_current(request_id)
-        {
-            self.interrupt.store(false, Ordering::Release);
-        }
-        // Position the incoming decoder at its entry point. Analysis consumed the head of
-        // the stream, and seeking *backwards* on a network reader means re-requesting bytes
-        // the packet cache already dropped (slow, and FLAC frequently fails to resync), so
-        // open a fresh reader for playback and keep the analysed one only as a fallback.
-        let b_start = transition
-            .as_ref()
-            .map(|plan| plan.b_start_secs)
-            .unwrap_or(0.0)
-            .max(0.0);
-        let direct_gapless_transition = transition.as_ref().is_some_and(|plan| {
-            plan.mode == transition::TransitionMode::Gapless && plan.overlap_secs <= 0.0
-        });
-        if transition.is_some() {
-            match open_decoder_with_interrupt(
-                self.url.clone(),
-                self.audio_stream_ordinal,
-                Some(sample_rate),
-                self.interrupt.clone(),
-                config.packet_cache_options_for_url(&self.url),
-                &config.stream_options(),
-            ) {
-                Ok(fresh) => decoder = fresh,
-                Err(err) => {
-                    if self.interrupt.load(Ordering::Acquire) {
-                        return Ok(false);
-                    }
-                    emit_event(PlayerEvent::log(
-                        "warn",
-                        format!(
-                            "reopening next source after analysis failed; reusing reader: {err}"
-                        ),
-                    ));
-                }
-            }
-        }
-        if b_start > 0.0 && !direct_gapless_transition {
-            decoder
-                .prepare_seamless_seek(b_start)
-                .map_err(napi::Error::from_reason)?;
-        }
-        decoder.set_discard_before_secs(if b_start > 0.0 { Some(b_start) } else { None });
-        let predecoded = match predecode_gapless_head(&mut decoder, sample_rate) {
-            Ok(predecoded) => predecoded,
-            Err(err) => {
-                if self.interrupt.load(Ordering::Acquire) {
-                    return Ok(false);
-                }
-                emit_event(PlayerEvent::log(
-                    "warn",
-                    format!("gapless predecode failed; skipping prepared hand-off: {err}"),
+                    format!("next source preparation failed; skipping prepared hand-off: {err}"),
                 ));
                 return Ok(false);
             }
         };
+        let decoder = audio.decoder;
+        let predecoded = audio.predecoded;
+        let transition = audio.plan;
+        let duration = decoder.duration_secs();
+        let preferred_output_sample_format =
+            config.resolve_output_sample_format(decoder.source_sample_format());
         let mut prepared = Some(PreparedNextSource {
             decoder,
             predecoded,
@@ -2590,7 +2567,7 @@ pub fn cancel_next_source_preparation(request_id: f64) -> napi::Result<bool> {
             .is_some_and(|(epoch, _)| *epoch == request_id)
         {
             if let Some((_, interrupt)) = runtime.gapless_prepare_interrupt.take() {
-                interrupt.store(true, Ordering::Release);
+                interrupt.cancel();
             }
         }
         let Some(session) = runtime.session.as_ref() else {
@@ -2616,7 +2593,7 @@ pub fn prepare_next_source(
     normalization_gain_db: Option<f64>,
 ) -> AsyncTask<PrepareNextSourceTask> {
     let request_id = request_id.max(0.0) as u64;
-    let interrupt = Arc::new(AtomicBool::new(false));
+    let interrupt = Arc::new(PreparationCancellation::default());
     let interrupt_for_command = interrupt.clone();
     let pending_prepare = call_core_command("register-next-source-preparation", move |runtime| {
         let pending = runtime
@@ -2704,41 +2681,21 @@ pub fn get_track_list(url: Option<String>) -> AsyncTask<GetTrackListTask> {
     AsyncTask::new(GetTrackListTask { url, config })
 }
 
-pub struct PlayTask;
+pub struct PlayTask {
+    source_request_seq: u64,
+}
 
 impl Task for PlayTask {
     type Output = ();
     type JsValue = ();
 
     fn compute(&mut self) -> napi::Result<Self::Output> {
-        call_core_command_blocking("play", |runtime| {
-            runtime.cancel_idle_output_release();
-            let Some(session) = runtime.session.as_ref() else {
-                return Err(napi::Error::from_reason(
-                    "no audio source loaded".to_string(),
-                ));
-            };
-            let output_needs_restart = session
-                .output_thread
-                .as_ref()
-                .is_none_or(output::AudioOutputHandle::has_exited)
-                || !session.shared.output_has_started();
-            if output_needs_restart {
-                let config = runtime.config.clone();
-                restart_output_for_runtime(runtime, config, false)?;
-                runtime.cancel_idle_output_release();
+        let source_request_seq = self.source_request_seq;
+        call_core_command_blocking("play", move |runtime| {
+            if !is_latest_source_open_request_seq(source_request_seq) {
+                return Ok(());
             }
-            let Some(session) = runtime.session.as_ref() else {
-                return Err(napi::Error::from_reason(
-                    "audio session ended while resuming output".to_string(),
-                ));
-            };
-            session.shared.paused.store(false, Ordering::Release);
-            runtime.state.playing = true;
-            runtime.state.paused = false;
-            set_runtime_core_state(runtime, PlaybackCoreState::Playing, "play");
-            emit_runtime_event(runtime, PlayerEvent::state_change(runtime.state.clone()));
-            Ok(())
+            resume_runtime_playback(runtime, false)
         })
     }
 
@@ -2747,13 +2704,59 @@ impl Task for PlayTask {
     }
 }
 
+fn resume_runtime_playback(runtime: &mut PlayerRuntime, fade_in: bool) -> napi::Result<()> {
+    if runtime.current_url.is_none() || runtime.source_open_interrupt.is_some() {
+        return Err(napi::Error::from_reason(
+            "no audio source loaded".to_string(),
+        ));
+    }
+    runtime.cancel_idle_output_release();
+    let Some(session) = runtime.session.as_ref() else {
+        return Err(napi::Error::from_reason(
+            "no audio source loaded".to_string(),
+        ));
+    };
+    let output_needs_restart = session
+        .output_thread
+        .as_ref()
+        .is_none_or(output::AudioOutputHandle::has_exited)
+        || !session.shared.output_has_started();
+    if output_needs_restart {
+        let config = runtime.config.clone();
+        restart_output_for_runtime(runtime, config, false)?;
+        runtime.cancel_idle_output_release();
+    }
+    let Some(session) = runtime.session.as_ref() else {
+        return Err(napi::Error::from_reason(
+            "audio session ended while resuming output".to_string(),
+        ));
+    };
+    if fade_in {
+        session.shared.set_volume(0.0);
+        session.shared.store_applied_output_gain(0.0);
+    }
+    session.shared.paused.store(false, Ordering::Release);
+    runtime.state.playing = true;
+    runtime.state.paused = false;
+    set_runtime_core_state(
+        runtime,
+        PlaybackCoreState::Playing,
+        if fade_in { "fade-play" } else { "play" },
+    );
+    emit_runtime_event(runtime, PlayerEvent::state_change(runtime.state.clone()));
+    Ok(())
+}
+
 #[napi]
 pub fn play() -> AsyncTask<PlayTask> {
-    AsyncTask::new(PlayTask)
+    AsyncTask::new(PlayTask {
+        source_request_seq: LATEST_SOURCE_OPEN_REQUEST_SEQ.load(Ordering::Acquire),
+    })
 }
 
 #[napi]
 pub fn pause() -> napi::Result<()> {
+    cancel_runtime_fade();
     call_core_command("pause", |runtime| {
         if let Some(session) = runtime.session.as_ref() {
             session.shared.paused.store(true, Ordering::Release);
@@ -2769,6 +2772,7 @@ pub fn pause() -> napi::Result<()> {
 
 #[napi]
 pub fn stop() -> napi::Result<()> {
+    cancel_runtime_fade();
     invalidate_seek_requests();
     invalidate_source_open_requests();
     call_core_command("stop", |runtime| {

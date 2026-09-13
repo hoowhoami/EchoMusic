@@ -11,6 +11,37 @@
  */
 export type TrackTransitionMode = 'none' | 'gapless' | 'fade' | 'automix-basic' | 'automix-pro';
 
+/** Actual transition carried by the incoming track's audible playback boundary. */
+export interface TrackTransitionPlaybackInfo {
+  mode: TrackTransitionMode;
+  overlapSecs: number;
+}
+
+export function formatTrackTransitionNotice(
+  transition: TrackTransitionPlaybackInfo | null | undefined,
+  startTime: number,
+): string | null {
+  if (!transition || !isTrackTransitionMode(transition.mode) || transition.mode === 'none') {
+    return null;
+  }
+  const label = {
+    gapless: '无缝',
+    fade: '淡入淡出',
+    'automix-basic': '智能渐变',
+    'automix-pro': '智能交融',
+  }[transition.mode];
+  const parts = [label];
+  const seconds = (value: number) =>
+    Number.isFinite(value) && value > 0 ? Number(value.toFixed(1)) : 0;
+  const overlap = seconds(transition.overlapSecs);
+  const skipped = seconds(startTime);
+  if (overlap > 0 && transition.mode !== 'gapless') {
+    parts.push(`${overlap} 秒`);
+  }
+  if (skipped > 0) parts.push(`跳过 ${skipped} 秒`);
+  return parts.join(' · ');
+}
+
 export const TRACK_TRANSITION_MODES: readonly TrackTransitionMode[] = [
   'automix-pro',
   'automix-basic',

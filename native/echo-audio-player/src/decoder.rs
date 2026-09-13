@@ -1165,6 +1165,10 @@ fn hand_off_armed_directly(
     let armed = *armed;
     let mut info = armed.info;
     info.start_position_secs = armed.plan.b_start_secs;
+    info.transition = Some(crate::events::TrackTransitionInfo {
+        mode: "gapless".to_string(),
+        overlap_secs: 0.0,
+    });
     // No overlap: the boundary itself switches straight to the incoming track's own gain
     // (the shared reference gain only matters while both decks are summed).
     info.normalization_gain_db = Some(armed.post_overlap_normalization_gain_db);

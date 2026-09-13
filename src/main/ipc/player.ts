@@ -26,14 +26,21 @@ export function registerPlayerIpc(ref: PlayerRef): void {
     },
     (message, error) => log.warn(`[DspProviderRegistry] ${message}`, error),
   );
-  ipcRegistry.registerHandler('player:load', async (_e, url: string) => {
-    await ref.current?.loadFile(url);
+  ipcRegistry.registerHandler('player:begin-source-change', () => {
+    if (!ref.current) throw new Error('播放器未初始化');
+    return ref.current.beginSourceChange();
   });
 
-  ipcRegistry.registerHandler('player:load-mkv-track', async (_e, url: string, trackId: number) => {
-    await ref.current?.loadMkvTrack(url, trackId);
+  ipcRegistry.registerHandler('player:load', async (_e, url: string, requestId?: number) => {
+    return (await ref.current?.loadFile(url, requestId)) ?? null;
   });
 
+  ipcRegistry.registerHandler(
+    'player:load-mkv-track',
+    async (_e, url: string, trackId: number, requestId?: number) => {
+      return (await ref.current?.loadMkvTrack(url, trackId, requestId)) ?? null;
+    },
+  );
   ipcRegistry.registerHandler(
     'player:switch-source',
     async (_e, url: string, trackId?: number | null) =>
@@ -148,8 +155,8 @@ export function registerPlayerIpc(ref: PlayerRef): void {
     return (await ref.current?.getTrackList(url)) ?? [];
   });
 
-  ipcRegistry.registerHandler('player:play', async () => {
-    await ref.current?.play();
+  ipcRegistry.registerHandler('player:play', async (_e, requestId?: number) => {
+    await ref.current?.play(requestId);
   });
 
   ipcRegistry.registerHandler('player:pause', async () => {
@@ -229,8 +236,8 @@ export function registerPlayerIpc(ref: PlayerRef): void {
 
   ipcRegistry.registerHandler(
     'player:play-with-fade',
-    async (_e, targetVolume: number, durationMs: number) => {
-      await ref.current?.playWithFade(targetVolume, durationMs);
+    async (_e, targetVolume: number, durationMs: number, requestId?: number) => {
+      await ref.current?.playWithFade(targetVolume, durationMs, requestId);
     },
   );
 

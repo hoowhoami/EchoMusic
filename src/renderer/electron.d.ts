@@ -7,6 +7,7 @@ import type {
   UpdateState,
 } from '../shared/app';
 import type { PlayMode } from '../shared/playback';
+import type { TrackTransitionPlaybackInfo } from '../shared/track-transition';
 import type { SleepTimerAction, SleepTimerActionResult } from '../shared/sleep-timer';
 import type {
   PluginGlobalShortcutRegistrationPayload,
@@ -728,8 +729,13 @@ export interface IElectronAPI {
     ) => () => void;
   };
   player: {
-    load: (url: string) => Promise<void>;
-    loadMkvTrack: (url: string, trackId: number) => Promise<void>;
+    beginSourceChange: () => Promise<number>;
+    load: (url: string, requestId?: number) => Promise<{ seq: number; duration: number } | null>;
+    loadMkvTrack: (
+      url: string,
+      trackId: number,
+      requestId?: number,
+    ) => Promise<{ seq: number; duration: number } | null>;
     switchSource: (
       url: string,
       trackId?: number | null,
@@ -754,7 +760,7 @@ export interface IElectronAPI {
         lang?: string;
       }>
     >;
-    play: () => Promise<void>;
+    play: (requestId?: number) => Promise<void>;
     pause: () => Promise<void>;
     stop: () => Promise<void>;
     seek: (time: number) => Promise<void>;
@@ -777,7 +783,7 @@ export interface IElectronAPI {
     fade: (from: number, to: number, durationMs: number) => Promise<void>;
     cancelFade: () => Promise<void>;
     pauseWithFade: (savedVolume: number, durationMs: number) => Promise<void>;
-    playWithFade: (targetVolume: number, durationMs: number) => Promise<void>;
+    playWithFade: (targetVolume: number, durationMs: number, requestId?: number) => Promise<void>;
     getState: () => Promise<{
       playing: boolean;
       paused: boolean;
@@ -818,6 +824,7 @@ export interface IElectronAPI {
         generation?: number;
         /** Start position of the new track (song transitions enter at a cue point). */
         startTime?: number;
+        transition?: TrackTransitionPlaybackInfo;
       }) => void,
     ) => () => void;
     onStateChange: (func: (state: PlayerStateChangePayload) => void) => () => void;

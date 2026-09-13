@@ -14,6 +14,7 @@ import {
 export type { TrackLoudness } from '../../shared/loudness';
 import { DEFAULT_PLAYER_VOLUME } from '../../shared/playback';
 import type { PlaybackSource } from '@/stores/player/types';
+import type { TrackTransitionPlaybackInfo } from '../../shared/track-transition';
 
 export interface PlayerEngineEvents {
   timeUpdate?: (currentTime: number, payload?: PlayerPlaybackContext) => void;
@@ -23,7 +24,12 @@ export interface PlayerEngineEvents {
   durationChange?: (duration: number) => void;
   /** 新文件加载完成（player file-loaded），用于切歌后放行进度回报 */
   fileLoaded?: (
-    payload?: { path?: string; seq?: number; startTime?: number } & PlayerPlaybackContext,
+    payload?: {
+      path?: string;
+      seq?: number;
+      startTime?: number;
+      transition?: TrackTransitionPlaybackInfo;
+    } & PlayerPlaybackContext,
   ) => void;
   ended?: () => void;
   play?: (payload?: PlayerPlaybackContext) => void;
@@ -206,6 +212,9 @@ export class PlayerEngine {
   private lastTimeUpdateMs = 0;
   private readonly TIME_UPDATE_THROTTLE_MS = 250;
   private seekPending = false;
+  private sourceRevision = 0;
+  private sourceRequest: Promise<number> | null = null;
+  private sourcePending = false;
 
   constructor() {
     if (player) {
@@ -219,6 +228,7 @@ export class PlayerEngine {
 
   private bindPlayerEvents(): void {
     const offTime = player.onTimeUpdate((payload) => {
+      if (this.sourcePending) return;
       const time = typeof payload === 'number' ? payload : Number(payload?.time);
       if (!Number.isFinite(time)) return;
       if (this.seekPending) return;
@@ -240,6 +250,7 @@ export class PlayerEngine {
     this.cleanupFns.push(offTime);
 
     const offSeeked = player.onSeeked?.((time: number) => {
+      if (this.sourcePending) return;
       this.clearSeekPending();
       this.lastTimeValue = time;
       this.lastTimeUpdateMs = Date.now();
@@ -254,6 +265,7 @@ export class PlayerEngine {
     if (offSeekState) this.cleanupFns.push(offSeekState);
 
     const offPlaybackRestart = player.onPlaybackRestart?.((payload) => {
+      if (this.sourcePending) return;
       this.clearSeekPending();
       if (typeof payload?.time === 'number') {
         this.lastTimeValue = payload.time;
@@ -264,6 +276,7 @@ export class PlayerEngine {
     if (offPlaybackRestart) this.cleanupFns.push(offPlaybackRestart);
 
     const offDuration = player.onDurationChange((duration: number) => {
+      if (this.sourcePending) return;
       if (duration === this.durationValue) return;
       this.durationValue = duration;
       this.events.durationChange?.(duration);
@@ -271,8 +284,20 @@ export class PlayerEngine {
     this.cleanupFns.push(offDuration);
 
     const offFileLoaded = player.onFileLoaded?.(
-      (payload?: { path?: string; seq?: number; startTime?: number } & PlayerPlaybackContext) => {
+      (
+        payload?: {
+          path?: string;
+          seq?: number;
+          startTime?: number;
+          transition?: TrackTransitionPlaybackInfo;
+        } & PlayerPlaybackContext,
+      ) => {
+        // Explicit loads are bound by their command acknowledgement, never a late event
+        // from a source that was superseded while the URL resolver was running.
+        if (this.sourcePending) return;
         this.clearSeekPending();
+        this.lastTimeValue = -1;
+        this.lastTimeUpdateMs = 0;
         if (typeof payload?.startTime === 'number' && Number.isFinite(payload.startTime)) {
           this.lastTimeValue = payload.startTime;
           this.lastTimeUpdateMs = Date.now();
@@ -283,6 +308,7 @@ export class PlayerEngine {
     if (offFileLoaded) this.cleanupFns.push(offFileLoaded);
 
     const offState = player.onStateChange((state) => {
+      if (this.sourcePending) return;
       const context = { trackSeq: state.trackSeq, generation: state.generation };
       if (state.playing) {
         this.events.play?.(context);
@@ -293,6 +319,7 @@ export class PlayerEngine {
     this.cleanupFns.push(offState);
 
     const offEnd = player.onPlaybackEnd((reason: string) => {
+      if (this.sourcePending) return;
       if (reason === 'eof') {
         this.events.ended?.();
       } else if (reason === 'error') {
@@ -365,26 +392,59 @@ export class PlayerEngine {
     if (!playbackSource.url) return;
     const sourceKey = getPlaybackSourceKey(playbackSource);
     if (this.sourceUrl === sourceKey && !options?.force) return;
-    this.clearSeekPending();
+    this.beginSourceChange();
     this.sourceUrl = sourceKey;
     this.durationValue = 0;
     this.lastTimeValue = -1;
     this.events.durationChange?.(0);
 
-    if (playbackSource.audioTrackId && playbackSource.audioTrackId > 0) {
-      await player?.loadMkvTrack(playbackSource.url, playbackSource.audioTrackId);
-    } else {
-      await player?.load(playbackSource.url);
-    }
+    await this.loadSource(playbackSource);
+  }
+
+  /** Invalidate transport work immediately, including the URL-resolution window. */
+  beginSourceChange(): void {
+    ++this.sourceRevision;
+    this.sourcePending = true;
+    this.sourceUrl = '';
+    this.clearSeekPending();
+    this.lastTimeValue = -1;
+    this.lastTimeUpdateMs = 0;
+    this.sourceRequest =
+      player?.beginSourceChange() ?? Promise.reject(new Error('player API not available'));
+    // Resolution can fail before setSource consumes this promise.
+    void this.sourceRequest.catch((error) =>
+      logger.warn('PlayerEngine', 'Begin source change failed', error),
+    );
+  }
+
+  private async loadSource(source: PlaybackSource): Promise<void> {
+    const revision = this.sourceRevision;
+    const requestId = await this.sourceRequest;
+    if (revision !== this.sourceRevision) return;
+    const result =
+      source.audioTrackId && source.audioTrackId > 0
+        ? await player?.loadMkvTrack(source.url, source.audioTrackId, requestId ?? undefined)
+        : await player?.load(source.url, requestId ?? undefined);
+    if (revision !== this.sourceRevision) return;
+    if (!result) throw new Error('Audio source load was superseded');
+    this.sourcePending = false;
+    this.clearSeekPending();
+    this.lastTimeValue = -1;
+    this.lastTimeUpdateMs = 0;
+    this.durationValue = result.duration;
+    this.events.durationChange?.(result.duration);
+    this.events.fileLoaded?.({ path: source.url, seq: result.seq, trackSeq: result.seq });
   }
 
   async switchSource(source: string | PlaybackSource): Promise<number | undefined> {
+    const revision = this.sourceRevision;
     const playbackSource = normalizePlaybackSource(source);
     if (!playbackSource.url) return;
     const result = await player?.switchSource?.(
       playbackSource.url,
       playbackSource.audioTrackId ?? null,
     );
+    if (revision !== this.sourceRevision) return;
     this.clearSeekPending();
     this.sourceUrl = getPlaybackSourceKey(playbackSource);
     this.lastTimeValue = -1;
@@ -403,13 +463,9 @@ export class PlayerEngine {
   async reloadSource(source: string | PlaybackSource): Promise<void> {
     const playbackSource = normalizePlaybackSource(source);
     if (!playbackSource.url) return;
-    this.clearSeekPending();
+    this.beginSourceChange();
     this.sourceUrl = getPlaybackSourceKey(playbackSource);
-    if (playbackSource.audioTrackId && playbackSource.audioTrackId > 0) {
-      await player?.loadMkvTrack(playbackSource.url, playbackSource.audioTrackId);
-    } else {
-      await player?.load(playbackSource.url);
-    }
+    await this.loadSource(playbackSource);
   }
 
   async beginNextSourcePreparation(): Promise<number | null> {
@@ -483,21 +539,25 @@ export class PlayerEngine {
     fadeDurationMs?: number;
     timeoutMs?: number;
   }): Promise<void> {
+    const revision = this.sourceRevision;
+    const requestId = await this.sourceRequest;
+    if (revision !== this.sourceRevision || this.sourcePending) return;
     const durationMs = options?.fadeIn ? (options.fadeDurationMs ?? 500) : 0;
     if (durationMs > 0) {
-      logger.info('PlayerEngine', 'Fade in started', {
+      logger.info('PlayerEngine', 'Fade in requested', {
         targetVolume: this.volumeValue,
         durationMs,
       });
       // 复合命令：主进程内完成 setVolume(0) → play → fade，fade 不阻塞
       await this.withTimeout(
-        player?.playWithFade(this.volumeValue, durationMs) ?? Promise.resolve(),
+        player?.playWithFade(this.volumeValue, durationMs, requestId ?? undefined) ??
+          Promise.resolve(),
         options?.timeoutMs,
         'player play',
       );
     } else {
       await this.withTimeout(
-        player?.play() ?? Promise.resolve(),
+        player?.play(requestId ?? undefined) ?? Promise.resolve(),
         options?.timeoutMs,
         'player play',
       );
@@ -615,6 +675,9 @@ export class PlayerEngine {
   }
 
   reset(): void {
+    ++this.sourceRevision;
+    this.sourcePending = true;
+    this.sourceRequest = null;
     this.clearSeekPending();
     void player?.stop()?.catch((error: unknown) => {
       logger.warn('PlayerEngine', 'stop failed', { error: String(error) });

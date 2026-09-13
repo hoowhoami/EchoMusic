@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
   clampFadeCrossSecs,
+  formatTrackTransitionNotice,
   normalizeTrackTransitionMode,
   TRACK_TRANSITION_OPTIONS,
   transitionOverlapsTracks,
@@ -18,6 +19,35 @@ test('options mirror the QQ Music transition choices', () => {
     assert.ok(option.label.length > 0);
     assert.ok(option.description.length > 0);
   }
+});
+
+test('playback notices describe the executed transition and incoming cue', () => {
+  assert.equal(
+    formatTrackTransitionNotice({ mode: 'gapless', overlapSecs: 0 }, 0.84),
+    '无缝 · 跳过 0.8 秒',
+  );
+  assert.equal(
+    formatTrackTransitionNotice({ mode: 'automix-pro', overlapSecs: 5 }, 1.26),
+    '智能交融 · 5 秒 · 跳过 1.3 秒',
+  );
+  assert.equal(
+    formatTrackTransitionNotice({ mode: 'automix-basic', overlapSecs: 3.5 }, 0),
+    '智能渐变 · 3.5 秒',
+  );
+  assert.equal(
+    formatTrackTransitionNotice({ mode: 'fade', overlapSecs: 4 }, 0),
+    '淡入淡出 · 4 秒',
+  );
+});
+
+test('ordinary loads have no notice and invalid or tiny durations are omitted', () => {
+  assert.equal(formatTrackTransitionNotice(undefined, 3), null);
+  assert.equal(formatTrackTransitionNotice({ mode: 'none', overlapSecs: 0 }, 0), null);
+  assert.equal(formatTrackTransitionNotice({ mode: 'gapless', overlapSecs: 0 }, 0.01), '无缝');
+  assert.equal(
+    formatTrackTransitionNotice({ mode: 'fade', overlapSecs: Number.NaN }, -1),
+    '淡入淡出',
+  );
 });
 
 test('fade length is clamped to the 0–15 s slider', () => {

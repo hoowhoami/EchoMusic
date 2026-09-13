@@ -249,7 +249,7 @@ const handleRemoveImpulseResponse = (id: string) => {
         <p class="text-sm text-text-secondary">{{ selectedTrackTransitionOption.description }}</p>
       </div>
       <Select
-        class="w-56 shrink-0"
+        class="w-45 shrink-0"
         :model-value="trackTransitionMode"
         :options="transitionSelectOptions"
         aria-label="歌曲过渡设置"
@@ -280,9 +280,7 @@ const handleRemoveImpulseResponse = (id: string) => {
     <div class="settings-item">
       <div class="space-y-1">
         <h3 class="font-semibold">开始播放时淡入</h3>
-        <p class="text-sm text-text-secondary">
-          点击播放一首新歌时音量从静音渐起；暂停与继续始终即时生效，切歌由上方的歌曲过渡设置决定
-        </p>
+        <p class="text-sm text-text-secondary">点击播放一首新歌时音量从静音渐起</p>
       </div>
       <Switch v-model="settingStore.volumeFade" />
     </div>

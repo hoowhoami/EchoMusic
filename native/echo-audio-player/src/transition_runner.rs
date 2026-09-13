@@ -267,6 +267,10 @@ impl TransitionRunner {
         b.pending = armed.predecoded;
         let mut info = armed.info;
         info.start_position_secs = plan.b_start_secs;
+        info.transition = Some(crate::events::TrackTransitionInfo {
+            mode: plan.mode.as_str().to_string(),
+            overlap_secs: plan.overlap_secs,
+        });
         let rearm_incoming_seq = info.seq;
         let rearm = RearmInfo {
             plan: plan.clone(),

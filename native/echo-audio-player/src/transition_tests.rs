@@ -3,7 +3,8 @@
 
 use super::*;
 use crate::control::{
-    armed_transition_from_prepared, plan_prepared_transition, PreparedTransitionInputs,
+    armed_transition_from_prepared, prepare_transition_audio, PreparationCancellation,
+    PreparedTransitionInputs,
 };
 use crate::decoder::{spawn_decode_worker, DecodeCommand, DecoderData};
 use crate::dsp::DspSettings;
@@ -194,10 +195,9 @@ fn set_mode(mode: TransitionMode, fade_secs: f32) {
 /// Prepare B exactly like `PrepareNextSourceTask` does and arm it on the worker.
 fn prepare_and_arm(rig: &Rig, a_url: &str, b_url: &str, request_id: u64) -> f64 {
     let config = PlayerConfig::default();
-    let interrupt = Arc::new(AtomicBool::new(false));
-    let mut decoder = open(b_url);
-    let plan = plan_prepared_transition(
-        &mut decoder,
+    let interrupt = PreparationCancellation::default();
+    let audio = prepare_transition_audio(
+        SR,
         PreparedTransitionInputs {
             next_url: b_url,
             next_audio_stream_ordinal: None,
@@ -207,12 +207,11 @@ fn prepare_and_arm(rig: &Rig, a_url: &str, b_url: &str, request_id: u64) -> f64 
             interrupt: &interrupt,
         },
     )
-    .expect("plan")
-    .expect("mode produces a plan");
+    .expect("prepare");
+    let plan = audio.plan.expect("mode produces a plan");
+    let decoder = audio.decoder;
+    let predecoded = audio.predecoded;
     let b_start = plan.b_start_secs;
-    decoder.prepare_seamless_seek(b_start).expect("seek B");
-    decoder.set_discard_before_secs(if b_start > 0.0 { Some(b_start) } else { None });
-    let predecoded = predecode_gapless_head(&mut decoder, SR).expect("predecode");
     let duration = decoder.duration_secs();
     let armed = armed_transition_from_prepared(
         plan,
@@ -248,6 +247,9 @@ fn gapless_mode_trims_silence_and_switches_track_seq_continuously() {
     let (info, at_samples) = switch.expect("track switch signalled");
     assert_eq!(info.seq, 2);
     assert!((info.start_position_secs - 1.0).abs() < 0.05);
+    let notice = info.transition.as_ref().expect("gapless playback notice");
+    assert_eq!(notice.mode, "gapless");
+    assert_eq!(notice.overlap_secs, 0.0);
     // A direct hand-off switches straight to B's own loudness gain at the boundary.
     assert!((info.normalization_gain_db.unwrap() - (-3.0)).abs() < 1e-5);
     let expected_b_gain = 10.0f32.powf(-3.0 / 20.0);
@@ -288,6 +290,9 @@ fn fade_mode_overlaps_tracks_for_the_configured_duration() {
     assert_eq!(info.seq, 2);
     let switch_secs = at_samples as f64 / 2.0 / f64::from(SR);
     // The boundary (UI switch) sits where the overlap starts: 32 − 2 = 30 s.
+    let notice = info.transition.as_ref().expect("fade playback notice");
+    assert_eq!(notice.mode, "fade");
+    assert!((notice.overlap_secs - 2.0).abs() < 1e-6);
     assert!((switch_secs - 30.0).abs() < 0.3, "switch at {switch_secs}s");
     // Total = 30 s of A alone + 2 s overlap + 30 s of B alone = 62 s.
     let total_secs = out.len() as f64 / 2.0 / f64::from(SR);
@@ -599,6 +604,12 @@ fn manual_start_blends_from_the_audible_position_with_the_short_cap() {
     let (info, at_samples) = switch.expect("track switch signalled");
     assert_eq!(info.seq, 2);
     // The blend starts immediately (boundary within the first callbacks after the reset).
+    let notice = info.transition.as_ref().expect("manual transition notice");
+    assert_eq!(notice.mode, "fade");
+    assert!(
+        (notice.overlap_secs - 4.0).abs() < 1e-6,
+        "notice must use the executed cap"
+    );
     let switch_secs = at_samples as f64 / 2.0 / f64::from(SR);
     assert!(
         switch_secs < 0.3,
@@ -723,6 +734,10 @@ struct RangeServer {
 
 impl RangeServer {
     fn start(root: std::path::PathBuf) -> Self {
+        Self::start_chunked(root, usize::MAX)
+    }
+
+    fn start_chunked(root: std::path::PathBuf, response_bytes: usize) -> Self {
         use std::io::{Read, Write};
         let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
         listener.set_nonblocking(true).expect("nonblocking");
@@ -766,13 +781,18 @@ impl RangeServer {
                         let size = data.len();
                         let mut range = None;
                         for line in lines {
-                            if let Some(value) = line.strip_prefix("Range: bytes=") {
+                            if let Some(value) = line
+                                .strip_prefix("Range: bytes=")
+                                .or_else(|| line.strip_prefix("range: bytes="))
+                            {
                                 let mut ends = value.split('-');
                                 let start = ends.next().unwrap_or("").parse::<usize>().ok();
                                 let end = ends.next().unwrap_or("").parse::<usize>().ok();
                                 range = Some((
                                     start.unwrap_or(0),
-                                    end.unwrap_or(size - 1).min(size - 1),
+                                    end.unwrap_or(size - 1)
+                                        .min(size - 1)
+                                        .min(start.unwrap_or(0).saturating_add(response_bytes - 1)),
                                 ));
                             }
                         }
@@ -780,6 +800,12 @@ impl RangeServer {
                             Some((s, e)) => ("206 Partial Content", s, e),
                             None => ("200 OK", 0, size - 1),
                         };
+                        if start >= size || start > end {
+                            let _ = stream.write_all(
+                                b"HTTP/1.1 416 Range Not Satisfiable\r\nContent-Length: 0\r\n\r\n",
+                            );
+                            return;
+                        }
                         let body = &data[start..=end];
                         let mut header = format!(
                             "HTTP/1.1 {status}\r\nContent-Type: audio/flac\r\nAccept-Ranges: bytes\r\nContent-Length: {}\r\n",
@@ -822,10 +848,164 @@ impl Drop for RangeServer {
     }
 }
 
+#[test]
+fn http_gapless_flac_skips_head_and_plays_to_end() {
+    let _guard = TEST_SERIAL.lock().unwrap_or_else(|p| p.into_inner());
+    set_mode(TransitionMode::Gapless, 0.0);
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+    // Force multiple Range responses even during B's head analysis and predecode.
+    let server = RangeServer::start_chunked(root, 4093);
+    let url = server.url("gapless-silence.flac");
+    let mut rig = Rig::start(&url);
+    let b_start = prepare_and_arm(&rig, &url, &url, 1);
+    assert!((b_start - 1.0).abs() < 0.05, "b_start {b_start}");
+    let (out, switch) = rig.drain(40.0);
+    let (info, at_samples) = switch.expect("FLAC track switch");
+    assert_eq!(info.seq, 2);
+    assert!((info.start_position_secs - b_start).abs() < 1.0 / f64::from(SR));
+    let switch_secs = at_samples as f64 / 2.0 / f64::from(SR);
+    assert!((switch_secs - 14.5).abs() < 0.15, "switch at {switch_secs}");
+    let total_secs = out.len() as f64 / 2.0 / f64::from(SR);
+    assert!(
+        (total_secs - 29.5).abs() < 0.15,
+        "output ended at {total_secs}"
+    );
+    assert!(
+        (rig.shared.position_secs() - 16.0).abs() < 0.15,
+        "B clock ended at {}",
+        rig.shared.position_secs()
+    );
+    let window = SR as usize / 10 * 2;
+    for start in
+        ((14.0 * f64::from(SR)) as usize * 2..(27.0 * f64::from(SR)) as usize * 2).step_by(window)
+    {
+        assert!(
+            rms(&out[start..start + window]) > 0.01,
+            "silent gap at {}",
+            start as f64 / 2.0 / f64::from(SR)
+        );
+    }
+    rig.stop();
+}
+
+#[test]
+fn http_flac_reader_replacement_keeps_frames_and_timestamps() {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+    let server = RangeServer::start_chunked(root, 4093);
+    let url = server.url("gapless-silence.flac");
+    let cancellation = PreparationCancellation::default();
+    let config = PlayerConfig::default();
+    let open = || {
+        DecoderData::open(
+            url.clone(),
+            None,
+            Some(SR),
+            cancellation.reader_interrupt(),
+            config.packet_cache_options_for_url(&url),
+            &config.stream_options(),
+        )
+        .unwrap()
+    };
+    let mut decoder = open();
+    decoder.predecode_chunks(6.0).unwrap();
+    let mut tail = open();
+    tail.prepare_seamless_seek(4.0).unwrap();
+    tail.predecode_chunks(12.0).unwrap();
+    drop(tail);
+    // Replacing the analysed reader used to cancel the newly opened reader here,
+    // truncating a FLAC packet and producing AVERROR_INVALIDDATA after the hand-off.
+    decoder = open();
+    decoder.set_discard_before_secs(Some(1.0));
+    let mut frames = 0;
+    while let Some(chunk) = decoder.decode_next_chunk().expect("decode B through EOF") {
+        let expected_pts = 1.0 + frames as f64 / f64::from(SR);
+        let pts = chunk.pts_secs.expect("B timestamp");
+        // Frame PTS is rounded to microseconds; trimming rounds up to a whole sample.
+        assert!(
+            (pts - expected_pts).abs() < 1.0 / f64::from(SR) + 1.0e-6,
+            "B timestamp {pts} expected {expected_pts} after {frames} frames"
+        );
+        frames += chunk.frames;
+    }
+    assert!(
+        frames.abs_diff(15 * SR as usize) <= 1,
+        "decoded {frames} frames"
+    );
+    assert!(!cancellation.is_cancelled());
+}
+
+#[test]
+fn failed_tail_analysis_reopens_b_at_zero() {
+    let _guard = TEST_SERIAL.lock().unwrap_or_else(|p| p.into_inner());
+    set_mode(TransitionMode::Gapless, 0.0);
+    let b = TestWav::new(8.0, 660.0, 120.0, 1.0, 0.0);
+    let config = PlayerConfig::default();
+    let interrupt = PreparationCancellation::default();
+    let audio = prepare_transition_audio(
+        SR,
+        PreparedTransitionInputs {
+            next_url: &b.url(),
+            next_audio_stream_ordinal: None,
+            current_url: Some("/nonexistent/echo-transition-outgoing.wav"),
+            current_audio_stream_ordinal: None,
+            config: &config,
+            interrupt: &interrupt,
+        },
+    )
+    .expect("fallback prepare");
+    assert!(audio.plan.is_none());
+    assert_eq!(audio.predecoded[0].pts_secs, Some(0.0));
+    let mut frames: usize = audio.predecoded.iter().map(|chunk| chunk.frames).sum();
+    let mut decoder = audio.decoder;
+    while let Some(chunk) = decoder.decode_next_chunk().expect("fallback decode") {
+        frames += chunk.frames;
+    }
+    assert_eq!(
+        frames,
+        8 * SR as usize,
+        "fallback must retain the entire B track"
+    );
+}
+
+#[test]
+fn analysis_reader_teardown_does_not_cancel_playback_or_the_request() {
+    let wav = TestWav::new(8.0, 660.0, 120.0, 1.0, 0.0);
+    let cancellation = PreparationCancellation::default();
+    let analysis_interrupt = cancellation.reader_interrupt();
+    let playback_interrupt = cancellation.reader_interrupt();
+    let mut analysis = DecoderData::open(
+        wav.url(),
+        None,
+        Some(SR),
+        analysis_interrupt.clone(),
+        ffmpeg_audio::PacketCacheOptions::default(),
+        &crate::stream::StreamOptions::default(),
+    )
+    .expect("analysis reader");
+    analysis.prepare_seamless_seek(2.0).expect("analysis seek");
+    drop(analysis);
+    assert!(
+        analysis_interrupt.load(Ordering::Acquire),
+        "reader shutdown sets its own flag"
+    );
+    assert!(
+        !playback_interrupt.load(Ordering::Acquire),
+        "sibling must remain readable"
+    );
+    assert!(!cancellation.is_cancelled());
+    cancellation.cancel();
+    assert!(playback_interrupt.load(Ordering::Acquire));
+    assert!(
+        cancellation.reader_interrupt().load(Ordering::Acquire),
+        "readers registered after cancellation must also be cancelled"
+    );
+}
+
 /// Two FLAC files served over HTTP (like the CDN in production). Reproduces the failure
 /// seen in the field: preparing the next track analysed both streams via seeks into a
 /// partially cached network FLAC and returned `nativeSeq: null`, so no transition ran.
 #[test]
+#[ignore = "manual test requiring /tmp/track_a.flac and /tmp/track_b.flac"]
 fn http_flac_prepare_survives_network_seek_errors_and_blends() {
     let _guard = TEST_SERIAL.lock().unwrap_or_else(|p| p.into_inner());
     let root = std::env::temp_dir();
@@ -894,6 +1074,7 @@ fn http_flac_prepare_survives_network_seek_errors_and_blends() {
 }
 
 #[test]
+#[ignore = "manual seek probe requiring /tmp/track_a.flac"]
 fn probe_http_flac_seek_behaviour() {
     let _guard = TEST_SERIAL.lock().unwrap_or_else(|p| p.into_inner());
     let root = std::env::temp_dir();

@@ -7,6 +7,7 @@ import log from '../logger';
 import { refreshNetworkSettingsFromStorage } from '../networkSettings';
 import { getPersistedRendererSettings } from '../storage/persistedStores';
 import type { NetworkSettings } from '../../shared/network';
+import type { TrackTransitionPlaybackInfo } from '../../shared/track-transition';
 import { resolveNativeProxyUrls } from '../networkPolicy';
 import type { AudioEffectPlaybackOptions } from '../../shared/audio';
 import { normalizeConvolutionMix } from '../../shared/audio-effect-support';
@@ -229,6 +230,7 @@ interface PlayerAddonEvent {
   trackSeq?: number;
   generation?: number;
   time?: number;
+  transition?: TrackTransitionPlaybackInfo;
   duration?: number;
   state?: PlayerState;
   reason?: string;
@@ -310,6 +312,7 @@ interface PlayerAddon {
   destroy(): void;
   registerEventHandler(callback: (err: Error | null, event: PlayerAddonEvent) => void): void;
   loadFile(url: string, seq?: number): Promise<void>;
+  beginSourceChange(): void;
   loadMkvTrack(url: string, trackId: number, seq?: number): Promise<void>;
   switchSource(url: string, trackId: number | null, seq?: number): Promise<[number, number]>;
   beginNextSourcePreparation(): number;
@@ -406,6 +409,7 @@ export class PlayerController extends EventEmitter {
   private addon: PlayerAddon | null = null;
   private commandQueue: Promise<void> = Promise.resolve();
   private loadSeq = 0;
+  private sourceRequestSeq = 0;
   private activeTrackSeq = 0;
   private activeGeneration = 0;
   private seekSeq = 0;
@@ -491,6 +495,8 @@ export class PlayerController extends EventEmitter {
   }
 
   destroy(): void {
+    ++this.sourceRequestSeq;
+    this.pendingLoadSeq = ++this.loadSeq;
     this.addon?.destroy();
     this.addon = null;
     this.lastAoStateLogAt = 0;
@@ -500,33 +506,44 @@ export class PlayerController extends EventEmitter {
     this.lastNativeDroppedCriticalEvents = 0;
   }
 
-  async loadFile(url: string): Promise<void> {
+  beginSourceChange(): number {
+    const requestId = ++this.sourceRequestSeq;
+    // Reserve an event barrier before URL resolution starts in the renderer.
+    this.pendingLoadSeq = ++this.loadSeq;
+    this.getAddonOrThrow().beginSourceChange();
+    return requestId;
+  }
+
+  async loadFile(url: string, requestId?: number) {
+    requestId ??= this.beginSourceChange();
+    if (requestId !== this.sourceRequestSeq) return null;
     const seq = ++this.loadSeq;
     this.state.path = url;
     this.state.idle = false;
     this.pendingLoadSeq = seq;
     try {
-      await this.enqueue(() => {
-        if (this.pendingLoadSeq !== seq) return undefined;
-        return this.loadFileWithResolvedProxy(url, seq);
-      });
+      // Native load cancellation must see the new request while an old open is running.
+      await this.loadFileWithResolvedProxy(url, seq);
+      if (requestId !== this.sourceRequestSeq || seq !== this.activeTrackSeq) return null;
+      return { seq, duration: this.getState().duration };
     } catch (err) {
       if (this.pendingLoadSeq === seq) this.pendingLoadSeq = null;
       throw err;
     }
   }
 
-  async loadMkvTrack(url: string, trackId: number): Promise<void> {
+  async loadMkvTrack(url: string, trackId: number, requestId?: number) {
+    requestId ??= this.beginSourceChange();
+    if (requestId !== this.sourceRequestSeq) return null;
     const seq = ++this.loadSeq;
     this.state.path = url;
     this.state.audioTrackId = trackId;
     this.state.idle = false;
     this.pendingLoadSeq = seq;
     try {
-      await this.enqueue(() => {
-        if (this.pendingLoadSeq !== seq) return undefined;
-        return this.loadMkvTrackWithResolvedProxy(url, trackId, seq);
-      });
+      await this.loadMkvTrackWithResolvedProxy(url, trackId, seq);
+      if (requestId !== this.sourceRequestSeq || seq !== this.activeTrackSeq) return null;
+      return { seq, duration: this.getState().duration };
     } catch (err) {
       if (this.pendingLoadSeq === seq) this.pendingLoadSeq = null;
       throw err;
@@ -535,8 +552,12 @@ export class PlayerController extends EventEmitter {
 
   async switchSource(url: string, trackId?: number | null): Promise<[number, number, number]> {
     const seq = ++this.loadSeq;
-    await this.applyProxyForUrl(url);
+    const requestId = this.sourceRequestSeq;
+    const proxies = await resolveNativeProxyUrls(url);
+    if (requestId !== this.sourceRequestSeq) throw new Error('Source switch was superseded');
+    this.getAddonOrThrow().setHttpProxies(proxies);
     const result = await this.getAddonOrThrow().switchSource(url, trackId ?? null, seq);
+    if (requestId !== this.sourceRequestSeq) throw new Error('Source switch was superseded');
     this.state.path = url;
     this.state.audioTrackId = trackId ?? undefined;
     this.state.idle = false;
@@ -583,16 +604,25 @@ export class PlayerController extends EventEmitter {
     return this.getAddonOrThrow().getTrackList(url);
   }
 
-  play() {
-    return this.enqueue(() => this.getAddonOrThrow().play());
+  play(requestId = this.sourceRequestSeq) {
+    return this.enqueue(() => {
+      if (requestId !== this.sourceRequestSeq) return;
+      if (this.pendingLoadSeq !== null) throw new Error('Audio source is still loading');
+      return this.getAddonOrThrow().play();
+    });
   }
 
   async pause(): Promise<void> {
-    await this.enqueue(() => this.getAddonOrThrow().pause());
+    const requestId = this.sourceRequestSeq;
+    await this.enqueue(() => {
+      if (requestId === this.sourceRequestSeq) this.getAddonOrThrow().pause();
+    });
   }
 
   async stop(): Promise<void> {
-    await this.enqueue(() => this.getAddonOrThrow().stop());
+    ++this.sourceRequestSeq;
+    this.pendingLoadSeq = ++this.loadSeq;
+    this.getAddonOrThrow().stop();
   }
 
   async seek(time: number): Promise<void> {
@@ -673,22 +703,25 @@ export class PlayerController extends EventEmitter {
   }
 
   pauseWithFade(savedVolume: number, durationMs: number) {
+    const requestId = this.sourceRequestSeq;
     return this.enqueue(async () => {
+      if (requestId !== this.sourceRequestSeq) return;
       await this.getAddonOrThrow().pauseWithFade(savedVolume, durationMs);
+      if (requestId !== this.sourceRequestSeq) return;
       this.getAddonOrThrow().pause();
       this.getAddonOrThrow().setVolume(savedVolume);
     });
   }
 
-  playWithFade(targetVolume: number, durationMs: number) {
+  playWithFade(targetVolume: number, durationMs: number, requestId = this.sourceRequestSeq) {
     return this.enqueue(async () => {
+      if (requestId !== this.sourceRequestSeq) return;
+      if (this.pendingLoadSeq !== null) throw new Error('Audio source is still loading');
       const addon = this.getAddonOrThrow();
       addon.cancelFade();
       // Native playWithFade publishes gain=0 before it unpauses the session. Calling
       // play() first leaks a full-volume device callback and defeats the anti-click fade.
-      void addon.playWithFade(targetVolume, durationMs).catch((error: unknown) => {
-        log.warn('[PlayerController] play fade failed:', error);
-      });
+      await addon.playWithFade(targetVolume, durationMs);
     });
   }
 
@@ -737,13 +770,29 @@ export class PlayerController extends EventEmitter {
   }
 
   private async loadFileWithResolvedProxy(url: string, seq: number) {
-    await this.applyProxyForUrl(url);
-    return this.getAddonOrThrow().loadFile(url, seq);
+    const proxies = await resolveNativeProxyUrls(url);
+    if (this.pendingLoadSeq !== seq) return;
+    const addon = this.getAddonOrThrow();
+    addon.setHttpProxies(proxies);
+    await addon.loadFile(url, seq);
+    this.acceptCompletedLoad(seq);
   }
 
   private async loadMkvTrackWithResolvedProxy(url: string, trackId: number, seq: number) {
-    await this.applyProxyForUrl(url);
-    return this.getAddonOrThrow().loadMkvTrack(url, trackId, seq);
+    const proxies = await resolveNativeProxyUrls(url);
+    if (this.pendingLoadSeq !== seq) return;
+    const addon = this.getAddonOrThrow();
+    addon.setHttpProxies(proxies);
+    await addon.loadMkvTrack(url, trackId, seq);
+    this.acceptCompletedLoad(seq);
+  }
+
+  private acceptCompletedLoad(seq: number) {
+    // Promise completion and the event bridge can arrive in either order.
+    if (this.pendingLoadSeq !== seq) return;
+    this.pendingLoadSeq = null;
+    this.activeTrackSeq = seq;
+    this.activeGeneration = 0;
   }
 
   configureSpectrum(options?: unknown) {
@@ -910,6 +959,7 @@ export class PlayerController extends EventEmitter {
           trackSeq: event.trackSeq,
           generation: event.generation,
           // Song transitions start the incoming track at its cue point.
+          transition: event.transition,
           startTime:
             typeof event.time === 'number' && Number.isFinite(event.time) ? event.time : undefined,
         });

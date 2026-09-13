@@ -20,6 +20,7 @@ import type { useSettingStore } from '../setting';
 import { PERSONAL_FM_QUEUE_ID, type PlaybackQueueState } from '../playlist';
 import { toRawSong, toRawSongList } from '../playlist/helpers';
 import { useHistoryStore } from '../historyStore';
+import { useToastStore } from '../toast';
 import {
   buildMediaMeta,
   buildMediaState,
@@ -31,8 +32,10 @@ import {
 import type { PlaybackSource, ResolvedAudioSource } from './types';
 import { canPrepareGaplessForQueue, getQueueAdvanceAuthority } from './queueAdvancePolicy';
 import {
+  formatTrackTransitionNotice,
   transitionPrefetchLeadSecs,
   transitionPreparesNextTrack,
+  type TrackTransitionPlaybackInfo,
 } from '../../../shared/track-transition';
 import {
   abortNativeTrackLoad,
@@ -523,7 +526,11 @@ export const createPlaybackManager = (
     return prepared;
   };
 
-  const activateGaplessPreparedTransition = (seq?: number, startTime = 0): boolean => {
+  const activateGaplessPreparedTransition = (
+    seq?: number,
+    startTime = 0,
+    transition?: TrackTransitionPlaybackInfo,
+  ): boolean => {
     if (!seq) return false;
     const invalidated = invalidatedGaplessSources.get(seq);
     if (invalidated) {
@@ -679,6 +686,8 @@ export const createPlaybackManager = (
     state.historyLocalRecorded = true;
     void useHistoryStore().recordPlay(snapshot);
     void resolver.fetchClimaxMarks(targetTrack);
+    const notice = formatTrackTransitionNotice(transition, state.currentTime);
+    if (notice) useToastStore().show(notice, 'info', 3200);
     return true;
   };
 
@@ -959,8 +968,8 @@ export const createPlaybackManager = (
     const autoPlay = options?.autoPlay ?? true;
     const snapshot = toRawSong(track);
 
-    // 不调用 engine.reset()，避免释放音频设备导致多设备同步抢占
-    // player 的 loadFile 会直接替换当前文件，无需先 stop
+    // Cancel old opens/play/fades before resolving the URL, retaining the output device.
+    engine.beginSourceChange();
     engine.setPlaybackRate(state.playbackRate);
 
     state.currentTrackId = resolvedId;
@@ -1142,6 +1151,12 @@ export const createPlaybackManager = (
         completePlaybackIntent(state, requestSeq, { isPlaying: true });
         setEnginePlaybackStatus(state, 'playing', resolvedId);
       }
+      logger.info('PlayerPlayback', 'Track playback committed', {
+        trackId: resolvedId,
+        requestSeq,
+        nativeTrackSeq: state.nativeTrackSeq,
+        autoPlay,
+      });
       void resolver.fetchClimaxMarks(track);
     } catch (error) {
       logger.error('PlayerPlayback', 'Play track failed:', error);
@@ -1515,13 +1530,17 @@ export const createPlaybackManager = (
     }
 
     const prepared =
-      options?.gaplessTransition !== false ? takeGaplessPreparedSource(decision) : null;
+      options?.gaplessTransition === true ? takeGaplessPreparedSource(decision) : null;
+    // Manual skips go through playTrack synchronously so every click advances the
+    // selection before the next click. Only automatic EOF may await a prepared commit.
+    const requestSeq = state.playbackRequestSeq;
     if (prepared?.nativeSeq) {
       try {
         if (await engine.commitPreparedNextSource(15)) return;
       } catch (error) {
         logger.warn('PlayerPlayback', 'Prepared track switch failed:', error);
       }
+      if (requestSeq !== state.playbackRequestSeq) return;
     }
     if (prepared) clearGaplessPreparedSource();
     playlistStore.consumeQueuedNextTrackIds(

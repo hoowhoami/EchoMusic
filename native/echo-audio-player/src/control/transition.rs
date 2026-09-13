@@ -5,6 +5,45 @@ use crate::transition::{TransitionMode, TransitionSettings};
 use crate::transition_runner::ArmedTransition;
 use napi_derive::napi;
 use std::collections::HashMap;
+use std::sync::Weak;
+
+/// A prepare request cancels all of its readers, but a reader's seek/drop must not
+/// cancel the request or any sibling reader.
+#[derive(Default)]
+pub(crate) struct PreparationCancellation {
+    state: Mutex<PreparationCancellationState>,
+}
+
+#[derive(Default)]
+struct PreparationCancellationState {
+    cancelled: bool,
+    readers: Vec<Weak<AtomicBool>>,
+}
+
+impl PreparationCancellation {
+    pub(crate) fn reader_interrupt(&self) -> Arc<AtomicBool> {
+        let mut state = self.state.lock().unwrap_or_else(|p| p.into_inner());
+        let interrupt = Arc::new(AtomicBool::new(state.cancelled));
+        state.readers.retain(|reader| reader.strong_count() > 0);
+        state.readers.push(Arc::downgrade(&interrupt));
+        interrupt
+    }
+
+    pub(crate) fn cancel(&self) {
+        let mut state = self.state.lock().unwrap_or_else(|p| p.into_inner());
+        state.cancelled = true;
+        for reader in state.readers.iter().filter_map(Weak::upgrade) {
+            reader.store(true, Ordering::Release);
+        }
+    }
+
+    pub(crate) fn is_cancelled(&self) -> bool {
+        self.state
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .cancelled
+    }
+}
 
 /// Head window analysed on the incoming track for smart mixing.
 const HEAD_WINDOW_SECS: f64 = 45.0;
@@ -188,7 +227,7 @@ fn analyse_window(
     decoder: &mut decoder::DecoderData,
     window_start_secs: f64,
     window_secs: f64,
-    interrupt: &Arc<AtomicBool>,
+    interrupt: &PreparationCancellation,
 ) -> Result<TrackAnalysis, String> {
     let duration = decoder.duration_secs();
     let start = window_start_secs.max(0.0);
@@ -201,7 +240,7 @@ fn analyse_window(
     let mut converter = crate::audio_graph::SwrMixConverter::default();
     let mut decode_errors = 0usize;
     while collected < window_secs {
-        if interrupt.load(Ordering::Acquire) {
+        if interrupt.is_cancelled() {
             return Err("analysis cancelled".to_string());
         }
         let chunk = match decoder.decode_next_chunk() {
@@ -258,7 +297,7 @@ fn ensure_tail_analysis(
     url: &str,
     audio_stream_ordinal: Option<usize>,
     config: &PlayerConfig,
-    interrupt: &Arc<AtomicBool>,
+    interrupt: &PreparationCancellation,
     window_secs: f64,
 ) -> Result<TrackAnalysis, String> {
     let cached = cache_get(key);
@@ -274,7 +313,7 @@ fn ensure_tail_analysis(
         url.to_string(),
         audio_stream_ordinal,
         None,
-        interrupt.clone(),
+        interrupt.reader_interrupt(),
         config.packet_cache_options_for_url(url),
         &config.stream_options(),
     )?;
@@ -286,7 +325,7 @@ fn ensure_tail_analysis(
     let analysis = match analyse_window(&mut decoder, start, window_secs + 1.0, interrupt) {
         Ok(analysis) => analysis,
         Err(first_err) => {
-            if interrupt.load(Ordering::Acquire) {
+            if interrupt.is_cancelled() {
                 return Err(first_err);
             }
             // Retry with a fresh reader and the short (silence-only) window: enough for a
@@ -295,7 +334,7 @@ fn ensure_tail_analysis(
                 url.to_string(),
                 audio_stream_ordinal,
                 None,
-                interrupt.clone(),
+                interrupt.reader_interrupt(),
                 config.packet_cache_options_for_url(url),
                 &config.stream_options(),
             )?;
@@ -313,12 +352,11 @@ fn ensure_tail_analysis(
     Ok(analysis)
 }
 
-/// Analyse the head of the (already open) incoming decoder. The decoder is reset to the
-/// start afterwards by the caller via seek.
+/// Analyse the head of the incoming decoder. The caller opens a fresh playback reader.
 fn ensure_head_analysis(
     key: &str,
     decoder: &mut decoder::DecoderData,
-    interrupt: &Arc<AtomicBool>,
+    interrupt: &PreparationCancellation,
     window_secs: f64,
 ) -> Result<TrackAnalysis, String> {
     let cached = cache_get(key);
@@ -340,18 +378,82 @@ pub(crate) struct PreparedTransitionInputs<'a> {
     pub current_url: Option<&'a str>,
     pub current_audio_stream_ordinal: Option<usize>,
     pub config: &'a PlayerConfig,
-    pub interrupt: &'a Arc<AtomicBool>,
+    pub interrupt: &'a PreparationCancellation,
 }
 
-/// Build the transition for `next` while it is being prepared: analyses both tracks,
-/// decides the cue points, seeks the incoming decoder to its entry and pre-decodes from
-/// there. Returns `Ok(None)` when the mode is off or the tracks are unsuitable, in which
-/// case the caller keeps the plain gapless path.
-pub(crate) fn plan_prepared_transition(
-    decoder: &mut decoder::DecoderData,
+pub(crate) struct PreparedTransitionAudio {
+    pub decoder: decoder::DecoderData,
+    pub predecoded: Vec<shared::DecodedAudioChunk>,
+    pub plan: Option<crate::transition::decide::TransitionPlan>,
+}
+
+pub(crate) fn prepare_transition_audio(
+    sample_rate: u32,
     inputs: PreparedTransitionInputs<'_>,
-) -> Result<Option<crate::transition::decide::TransitionPlan>, String> {
+) -> Result<PreparedTransitionAudio, String> {
+    let open = || {
+        if inputs.interrupt.is_cancelled() {
+            return Err("next source preparation cancelled".to_string());
+        }
+        open_decoder_with_interrupt(
+            inputs.next_url.to_string(),
+            inputs.next_audio_stream_ordinal,
+            Some(sample_rate),
+            inputs.interrupt.reader_interrupt(),
+            inputs.config.packet_cache_options_for_url(inputs.next_url),
+            &inputs.config.stream_options(),
+        )
+    };
+    let mut decoder = open()?;
     let settings = current_transition_settings();
+    let analyse = settings.mode != TransitionMode::None && inputs.current_url.is_some();
+    let plan = if analyse {
+        let plan = match plan_prepared_transition(&mut decoder, &inputs, settings) {
+            Ok(plan) => plan,
+            Err(err) => {
+                if inputs.interrupt.is_cancelled() {
+                    return Err(err);
+                }
+                emit_event(PlayerEvent::log(
+                    "warn",
+                    format!("transition analysis failed; using plain gapless hand-off: {err}"),
+                ));
+                None
+            }
+        };
+        // Analysis can consume B even if it fails or produces no plan. Always reopen;
+        // reusing that reader would silently omit audio before its current position.
+        drop(decoder);
+        decoder = open()?;
+        plan
+    } else {
+        None
+    };
+    let b_start = plan.as_ref().map_or(0.0, |plan| plan.b_start_secs).max(0.0);
+    let direct_gapless = plan
+        .as_ref()
+        .is_some_and(|plan| plan.mode == TransitionMode::Gapless && plan.overlap_secs <= 0.0);
+    if b_start > 0.0 && !direct_gapless {
+        decoder.prepare_seamless_seek(b_start)?;
+    }
+    decoder.set_discard_before_secs(Some(b_start));
+    let predecoded = predecode_gapless_head(&mut decoder, sample_rate)?;
+    if inputs.interrupt.is_cancelled() {
+        return Err("next source preparation cancelled".to_string());
+    }
+    Ok(PreparedTransitionAudio {
+        decoder,
+        predecoded,
+        plan,
+    })
+}
+
+/// Analyse both tracks and decide the cue points. The caller reopens B afterwards.
+fn plan_prepared_transition(
+    decoder: &mut decoder::DecoderData,
+    inputs: &PreparedTransitionInputs<'_>,
+    settings: TransitionSettings,
+) -> Result<Option<crate::transition::decide::TransitionPlan>, String> {
     if settings.mode == TransitionMode::None {
         return Ok(None);
     }

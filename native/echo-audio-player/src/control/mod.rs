@@ -47,7 +47,8 @@ pub use spectrum::{
     configure_spectrum, get_spectrum_snapshot, get_spectrum_status, GetSpectrumSnapshotTask,
 };
 pub(crate) use transition::{
-    armed_transition_from_prepared, plan_prepared_transition, PreparedTransitionInputs,
+    armed_transition_from_prepared, prepare_transition_audio, PreparationCancellation,
+    PreparedTransitionInputs,
 };
 pub use transition::{
     get_transition_diagnostics, get_transition_settings, set_transition_settings,

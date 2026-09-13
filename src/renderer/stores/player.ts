@@ -1123,15 +1123,19 @@ export const usePlayerStore = defineStore(
             typeof payload?.startTime === 'number' && Number.isFinite(payload.startTime)
               ? Math.max(0, payload.startTime)
               : 0;
-          if (playbackManager.activateGaplessPreparedTransition(payloadSeq, payloadStartTime))
+          if (
+            playbackManager.activateGaplessPreparedTransition(
+              payloadSeq,
+              payloadStartTime,
+              payload?.transition,
+            )
+          )
             return;
           const expectedPath =
             state.currentPlaybackSource?.url ?? state.currentAudioUrl ?? undefined;
           if (
             state.awaitingTrackLoad &&
-            payload?.path &&
-            expectedPath &&
-            payload.path !== expectedPath
+            (!expectedPath || (payload?.path && payload.path !== expectedPath))
           ) {
             return;
           }

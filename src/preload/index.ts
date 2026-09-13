@@ -3,6 +3,7 @@ import log from 'electron-log/renderer';
 import type { ApiServerStatus } from '../shared/api-server';
 import type { AppInfoResult, UpdateDownloadResult, UpdateState } from '../shared/app';
 import type { PlayMode } from '../shared/playback';
+import type { TrackTransitionPlaybackInfo } from '../shared/track-transition';
 import type { SleepTimerAction, SleepTimerActionResult } from '../shared/sleep-timer';
 import type {
   PluginGlobalShortcutRegistrationPayload,
@@ -680,9 +681,10 @@ contextBridge.exposeInMainWorld('electron', {
       invokeWithPlainPayload<SettingsBackupImportResult>('settings-backup:import', request),
   },
   player: {
-    load: (url: string) => ipcRenderer.invoke('player:load', url),
-    loadMkvTrack: (url: string, trackId: number) =>
-      ipcRenderer.invoke('player:load-mkv-track', url, trackId),
+    beginSourceChange: () => ipcRenderer.invoke('player:begin-source-change'),
+    load: (url: string, requestId?: number) => ipcRenderer.invoke('player:load', url, requestId),
+    loadMkvTrack: (url: string, trackId: number, requestId?: number) =>
+      ipcRenderer.invoke('player:load-mkv-track', url, trackId, requestId),
     switchSource: (url: string, trackId?: number | null) =>
       ipcRenderer.invoke('player:switch-source', url, trackId),
     beginNextSourcePreparation: () => ipcRenderer.invoke('player:begin-next-source-preparation'),
@@ -705,7 +707,7 @@ contextBridge.exposeInMainWorld('electron', {
     commitPreparedNextSource: (transitionMs?: number) =>
       ipcRenderer.invoke('player:commit-prepared-next-source', transitionMs),
     getTrackList: (url?: string) => ipcRenderer.invoke('player:get-track-list', url),
-    play: () => ipcRenderer.invoke('player:play'),
+    play: (requestId?: number) => ipcRenderer.invoke('player:play', requestId),
     pause: () => ipcRenderer.invoke('player:pause'),
     stop: () => ipcRenderer.invoke('player:stop'),
     seek: (time: number) => ipcRenderer.invoke('player:seek', time),
@@ -740,8 +742,8 @@ contextBridge.exposeInMainWorld('electron', {
     cancelFade: () => ipcRenderer.invoke('player:cancel-fade'),
     pauseWithFade: (savedVolume: number, durationMs: number) =>
       ipcRenderer.invoke('player:pause-with-fade', savedVolume, durationMs),
-    playWithFade: (targetVolume: number, durationMs: number) =>
-      ipcRenderer.invoke('player:play-with-fade', targetVolume, durationMs),
+    playWithFade: (targetVolume: number, durationMs: number, requestId?: number) =>
+      ipcRenderer.invoke('player:play-with-fade', targetVolume, durationMs, requestId),
     getState: () => ipcRenderer.invoke('player:get-state'),
     available: () => ipcRenderer.invoke('player:available') as Promise<boolean>,
     restart: () => ipcRenderer.invoke('player:restart') as Promise<boolean>,
@@ -803,11 +805,20 @@ contextBridge.exposeInMainWorld('electron', {
         seq?: number;
         trackSeq?: number;
         generation?: number;
+        startTime?: number;
+        transition?: TrackTransitionPlaybackInfo;
       }) => void,
     ) => {
       const listener = (
         _event: Electron.IpcRendererEvent,
-        payload?: { path?: string; seq?: number; trackSeq?: number; generation?: number },
+        payload?: {
+          path?: string;
+          seq?: number;
+          trackSeq?: number;
+          generation?: number;
+          startTime?: number;
+          transition?: TrackTransitionPlaybackInfo;
+        },
       ) => func(payload);
       ipcRenderer.on('player:file-loaded', listener);
       return () => ipcRenderer.removeListener('player:file-loaded', listener);
