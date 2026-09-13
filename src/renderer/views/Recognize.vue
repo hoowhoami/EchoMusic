@@ -51,7 +51,12 @@ const showPlaylistDialog = ref(false);
 const isPlaylistLoading = ref(false);
 const pendingSong = ref<Song | null>(null);
 
-const audioSource = ref<RecognizeAudioSource>('mic');
+const audioSource = computed<RecognizeAudioSource>({
+  get: () => settingStore.recognizeAudioSource,
+  set: (source) => {
+    settingStore.recognizeAudioSource = source;
+  },
+});
 const sourceMenuOpen = ref(false);
 const status = ref<RecognizeStatus>('idle');
 const matches = ref<RecognizeMatch[]>([]);

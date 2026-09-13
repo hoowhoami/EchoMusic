@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import Tooltip from '@/components/ui/Tooltip.vue';
 
-import PageStickyHeader from '@/components/ui/PageStickyHeader.vue';
 defineOptions({ name: 'personal-fm' });
 import { computed, onActivated, onBeforeUnmount, onMounted, ref } from 'vue';
 import {
@@ -36,7 +35,6 @@ const personalFmLoading = ref(false);
 const personalFmPreloading = ref(false);
 const personalFmVinylsRef = ref<HTMLElement | null>(null);
 const personalFmVisibleSideCount = ref(3);
-const FM_PLAY_STICKY_TOP = 56;
 let personalFmVinylsObserver: ResizeObserver | null = null;
 let personalFmPreviewPromise: Promise<Song | null> | null = null;
 
@@ -403,7 +401,7 @@ onActivated(() => {
 
 <template>
   <PageScrollContainer class="personal-fm-container">
-    <div class="personal-fm-view bg-bg-main min-h-full pb-10">
+    <div class="personal-fm-view bg-bg-main min-h-full pb-3">
       <section
         v-if="!isLoggedIn"
         class="fm-empty flex flex-col items-center justify-center text-center px-6"
@@ -480,7 +478,8 @@ onActivated(() => {
         </SliverHeader>
 
         <section class="fm-shell px-6 pt-3">
-          <PageStickyHeader class="fm-play-sticky" :style="{ top: `${FM_PLAY_STICKY_TOP}px` }">
+          <!-- 播放区随页面滚动，为低窗口中的当前播放卡片保留完整可视空间。 -->
+          <div class="fm-play-section">
             <div class="radio-hero">
               <div class="radio-card">
                 <div class="radio-mode-switch">
@@ -607,7 +606,7 @@ onActivated(() => {
                 </template>
               </div>
             </div>
-          </PageStickyHeader>
+          </div>
 
           <section class="fm-panel fm-now-panel">
             <div class="fm-panel-header">
@@ -684,9 +683,8 @@ onActivated(() => {
   min-height: 420px;
 }
 
-.fm-play-sticky {
-  position: sticky;
-  z-index: 105;
+.fm-play-section {
+  position: relative;
   margin-bottom: 18px;
   padding: 8px 0 12px;
   border-bottom: 1px solid transparent;

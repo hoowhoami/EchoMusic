@@ -8,6 +8,7 @@ import {
 import { applyWindowBackground } from '@/utils/windowBackground';
 import { defineStore } from 'pinia';
 import type { CloseBehavior, ThemeMode } from '../../shared/app';
+import type { RecognizeAudioSource } from '../../shared/recognize';
 import { normalizeLogSettings, type AppLogLevel, type LogSettings } from '../../shared/logging';
 import type { AudioQualityValue, OutputDeviceOption, OutputDeviceStatus } from '../types';
 import { buildFontFamily } from '../../shared/font';
@@ -223,6 +224,10 @@ export const useSettingStore = defineStore('setting', {
     lyricFont: 'follow',
     // 输入设备（麦克风）
     inputDevice: 'default',
+    recognizeAudioSource: 'system' as RecognizeAudioSource,
+    // 歌手详情页的歌曲、专辑分别记住上次选择，跨歌手复用。
+    artistSongSort: 'new' as 'new' | 'hot',
+    artistAlbumSort: 'new' as 'new' | 'hot',
     // 侧边栏板块折叠状态
     sidebarSectionCollapsed: { discover: false, library: false } as Record<string, boolean>,
     // 歌单排序方式

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import PageStickyHeader from '@/components/ui/PageStickyHeader.vue';
 defineOptions({ name: 'artist-detail' });
-import { ref, shallowRef, onMounted, onUnmounted, computed, watch } from 'vue';
+import { ref, shallowRef, onMounted, onActivated, onUnmounted, computed, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { useRouteId } from '@/composables/useRouteId';
 import {
@@ -106,14 +106,14 @@ const artist = ref<ReturnType<typeof mapArtistDetailMeta> | null>(null);
 
 // 使用 shallowRef 避免对成千上万个歌曲对象进行深层响应式代理，极大提升性能
 const songs = shallowRef<Song[]>([]);
-const songSort = ref<ArtistSongSort>('new');
+const songSort = ref<ArtistSongSort>(settingStore.artistSongSort);
 const songSortMenuOpen = ref(false);
 let songFetchToken = 0;
 const albums = shallowRef<ReturnType<typeof mapAlbumMeta>[]>([]);
 const albumPage = ref(1);
 const albumHasMore = ref(false);
 const albumFetched = ref(false);
-const albumSort = ref<ArtistAlbumSort>('new');
+const albumSort = ref<ArtistAlbumSort>(settingStore.artistAlbumSort);
 const albumSortMenuOpen = ref(false);
 let albumFetchToken = 0;
 const mvs = shallowRef<ArtistMvCardProps[]>([]);
@@ -245,6 +245,7 @@ const loadArtistSongs = async (artistId = getArtistId()) => {
 
 const switchSongSort = (sort: ArtistSongSort) => {
   songSortMenuOpen.value = false;
+  settingStore.artistSongSort = sort;
   if (sort === songSort.value) return;
   songSort.value = sort;
   resetSongTableSort();
@@ -280,7 +281,7 @@ const fetchData = async () => {
 onIdChange(() => {
   artist.value = null;
   songs.value = [];
-  songSort.value = 'new';
+  songSort.value = settingStore.artistSongSort;
   songFetchToken += 1;
   albums.value = [];
   mvs.value = [];
@@ -291,7 +292,7 @@ onIdChange(() => {
   albumPage.value = 1;
   albumHasMore.value = false;
   albumFetched.value = false;
-  albumSort.value = 'new';
+  albumSort.value = settingStore.artistAlbumSort;
   albumFetchToken += 1;
   loadedSongCount.value = 0;
   searchQuery.value = '';
@@ -630,10 +631,11 @@ const resetAlbumPaging = () => {
 
 const switchAlbumSort = (sort: ArtistAlbumSort) => {
   albumSortMenuOpen.value = false;
+  settingStore.artistAlbumSort = sort;
   if (sort === albumSort.value) return;
   albumSort.value = sort;
   resetAlbumPaging();
-  void fetchMoreAlbums();
+  if (activeTab.value === 'albums') void fetchMoreAlbums();
 };
 
 const fetchMoreAlbums = async () => {
@@ -706,6 +708,12 @@ watch(scrollContainerRef, () => {
 onMounted(() => {
   void fetchData();
   setupLoadMoreObserver();
+});
+
+onActivated(() => {
+  // 其他歌手页可能已修改偏好；恢复缓存时同步排序和数据，避免标签与结果不一致。
+  switchSongSort(settingStore.artistSongSort);
+  switchAlbumSort(settingStore.artistAlbumSort);
 });
 
 // 切换到 MV/专辑 tab 时懒加载

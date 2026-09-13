@@ -504,7 +504,6 @@ body.accent-scoped .main-layout .player-bar-container {
 .search-song-toolbar,
 .song-list-sticky,
 .comment-main-tabs,
-.fm-play-sticky,
 .search-pinned-tabs,
 .sliver-header-root {
   isolation: isolate;
@@ -516,7 +515,6 @@ body.accent-scoped .main-layout .player-bar-container {
 .search-song-toolbar::before,
 .song-list-sticky::before,
 .comment-main-tabs::before,
-.fm-play-sticky::before,
 .search-pinned-tabs::before {
   content: '';
   position: absolute;
@@ -742,7 +740,6 @@ body.echo-surface-translucent .player-bar {
     .search-song-toolbar,
     .song-list-sticky,
     .comment-main-tabs,
-    .fm-play-sticky,
     .search-pinned-tabs,
     .sliver-header-background
   )::after {
@@ -777,7 +774,6 @@ body.echo-surface-translucent .player-bar {
     .search-song-toolbar,
     .song-list-sticky,
     .comment-main-tabs,
-    .fm-play-sticky,
     .search-pinned-tabs,
     .sliver-header-background
   )::after {
@@ -809,7 +805,6 @@ body.echo-surface-translucent
     .search-song-toolbar,
     .song-list-sticky,
     .comment-main-tabs,
-    .fm-play-sticky,
     .search-pinned-tabs,
     .sliver-header-background
   )::after {
@@ -826,7 +821,6 @@ body.accent-gradient-disabled
     .search-song-toolbar,
     .song-list-sticky,
     .comment-main-tabs,
-    .fm-play-sticky,
     .search-pinned-tabs,
     .sliver-header-background
   )::after {
@@ -843,7 +837,6 @@ body.accent-gradient-disabled
       .search-song-toolbar,
       .song-list-sticky,
       .comment-main-tabs,
-      .fm-play-sticky,
       .search-pinned-tabs,
       .sliver-header-background
     )::after {
@@ -865,7 +858,6 @@ body.accent-gradient-disabled
     .search-song-toolbar,
     .song-list-sticky,
     .comment-main-tabs,
-    .fm-play-sticky,
     .search-pinned-tabs,
     .sliver-header-background
   )::after,
@@ -878,7 +870,6 @@ body.accent-gradient-disabled
     .search-song-toolbar,
     .song-list-sticky,
     .comment-main-tabs,
-    .fm-play-sticky,
     .search-pinned-tabs,
     .sliver-header-background
   )::after {
@@ -986,7 +977,6 @@ html.app-background-transparent
     .song-list-sticky,
     .comment-main-tabs,
     .search-pinned-tabs,
-    .fm-play-sticky,
     .sliver-header-root,
     .sliver-header-background
   ) {
@@ -1002,7 +992,6 @@ html.app-background-transparent
     .song-list-sticky,
     .comment-main-tabs,
     .search-pinned-tabs,
-    .fm-play-sticky,
     .sliver-header-background
   )::before,
 html.app-background-transparent
@@ -1015,7 +1004,6 @@ html.app-background-transparent
     .song-list-sticky,
     .comment-main-tabs,
     .search-pinned-tabs,
-    .fm-play-sticky,
     .sliver-header-background
   )::after {
   display: none;
