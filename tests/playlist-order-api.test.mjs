@@ -82,6 +82,46 @@ test('playlist queries no longer forward the ignored need_sort parameter', async
   }
 });
 
+test('new playlist query uses v3 with numeric paging and preserves response sorting metadata', async () => {
+  const query = require('../server/module/playlist_track_all_new.js');
+  const defaults = await query({ listid: 12 }, async (config) => config);
+  assert.equal(defaults.url, '/v4/get_list_all_file_v3');
+  assert.equal(defaults.data.type, 0);
+  assert.equal(defaults.data.page, 1);
+  assert.equal(defaults.data.pagesize, 300);
+  assert.equal('show_relate_goods' in defaults.data, false);
+
+  const response = { status: 1, data: { list_ver: 9, info: [{ fileid: 95, sort: 0 }] } };
+  const result = await query(
+    {
+      listid: '12',
+      type: '1',
+      page: '2',
+      pagesize: '200',
+      cookie: { userid: '123', token: 'test' },
+    },
+    async (config) => {
+      assert.equal(config.url, '/v4/get_list_all_file_v3');
+      assert.equal(config.method, 'post');
+      assert.equal(config.encryptType, 'android');
+      assert.equal(config.headers['x-router'], 'cloudlist.service.kugou.com');
+      assert.deepEqual(config.data, {
+        listid: '12',
+        userid: '123',
+        type: 1,
+        page: 2,
+        pagesize: 200,
+        area_code: 1,
+        allplatform: 1,
+        show_cover: 1,
+        token: 'test',
+      });
+      return response;
+    },
+  );
+  assert.equal(result, response);
+});
+
 test('server sorting endpoints forward versions and distinct category/file identifiers', async () => {
   const song = await loadSortModule('playlist_tracks_sort')(
     {

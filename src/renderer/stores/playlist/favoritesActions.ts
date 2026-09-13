@@ -22,7 +22,7 @@ const localPlaylistSongsComplete = new Map<string, boolean>();
 
 export type AddToPlaylistResult = 'added' | 'exists' | 'failed';
 
-const DUPLICATE_CHECK_PAGE_SIZE = 200;
+const DUPLICATE_CHECK_PAGE_SIZE = 300;
 const DUPLICATE_CHECK_MAX_PAGES = 50;
 
 const waitForStableFavorites = async (

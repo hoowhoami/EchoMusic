@@ -436,7 +436,7 @@ const fetchData = async () => {
         return { items: parsedSongs, hasMore };
       },
       {
-        pageSize: 200,
+        pageSize: ownedListId !== null ? 300 : 200,
         concurrency: 3,
         dedupeKey: (song) => String(song.id),
         logTag: 'PlaylistDetailLoader',

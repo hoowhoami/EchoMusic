@@ -694,14 +694,15 @@ const loadOrderPlaylistSongs = async (playlist: PlaylistMeta | undefined) => {
     : null;
   try {
     const allSongs: Song[] = [];
+    const pageSize = ownedListId !== null ? 300 : 50;
     for (let page = 1; page <= 50; page += 1) {
       const response =
         ownedListId !== null
-          ? await getPlaylistTracksNew(ownedListId, page, 50)
-          : await getPlaylistTracks(queryId, page, 50);
+          ? await getPlaylistTracksNew(ownedListId, page, pageSize)
+          : await getPlaylistTracks(queryId, page, pageSize);
       const { songs, filteredCount } = parsePlaylistTracks(response);
       allSongs.push(...songs);
-      if (songs.length + filteredCount < 50) break;
+      if (songs.length + filteredCount < pageSize) break;
     }
     if (requestId !== orderPlaylistLoadRequestId) return;
     orderPlaylistSongs.value = dedupeSongs(

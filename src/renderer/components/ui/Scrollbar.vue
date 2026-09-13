@@ -206,7 +206,7 @@ const scheduleAutoHide = () => {
       isHovering.value = false;
     }
     autoHideTimer.value = null;
-  }, 1500);
+  }, 600);
 };
 
 const handleScroll = (event: Event) => {

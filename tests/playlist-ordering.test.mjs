@@ -74,8 +74,8 @@ test('new endpoint uses listid for every page and version preflight before savin
   const draft = ids(snapshot).reverse();
   await api.persistPlaylistOrder(snapshot, draft);
   assert.deepEqual(reads, [
-    [trackTarget.listid, 1, 200],
-    [trackTarget.listid, 2, 200],
+    [trackTarget.listid, 1, 300],
+    [trackTarget.listid, 2, 300],
     [trackTarget.listid, 1, 1],
   ]);
   assert.deepEqual(writes, [[12, 1277, draft.map((id, index) => `${id}|${index}`).join(',')]]);
@@ -142,7 +142,7 @@ test('favorites sort by position and forced refresh ignores the previous respons
     '@/utils/song': {},
     '@/utils/playlistOrder': { orderByPlaylistPosition, orderByCollectTime },
     '@/utils/logger': silentLogger,
-    './constants': { FAVORITES_PAGE_SIZE: 200 },
+    './constants': { FAVORITES_PAGE_SIZE: 300 },
     './helpers': { dedupeSongs: (songs) => songs },
   });
   const store = {
@@ -175,7 +175,7 @@ test('favorites sort by position and forced refresh ignores the previous respons
   );
 });
 
-test('1060 tracks sort globally across all six pages by sort rather than collecttime', async () => {
+test('1060 tracks sort globally across all four pages by sort rather than collecttime', async () => {
   const rows = Array.from({ length: 1060 }, (_, i) => ({
     fileid: i + 1,
     sort: 1059 - i,
@@ -188,12 +188,13 @@ test('1060 tracks sort globally across all six pages by sort rather than collect
   const api = setup({
     getPlaylistTracksNew: async (queryId, p, size) => {
       assert.equal(queryId, trackTarget.listid);
+      assert.equal(size, 300);
       calls.push([queryId, p, size]);
       return page(rows.slice((p - 1) * size, p * size), rows.length);
     },
   });
   const snapshot = await api.loadPlaylistOrder(trackTarget);
-  assert.equal(calls.length, 6);
+  assert.equal(calls.length, 4);
   assert.equal(snapshot.items.length, 1060);
   assert.equal(snapshot.items[0].id, '1060');
   assert.equal(snapshot.items.at(-1).id, '1');
@@ -209,7 +210,7 @@ test('1060 tracks sort globally across all six pages by sort rather than collect
 });
 
 test('short and empty playlists load once; exact-page total does not request an extra page', async () => {
-  for (const count of [0, 33, 200]) {
+  for (const count of [0, 33, 300]) {
     let calls = 0;
     const api = setup({
       getPlaylistTracksNew: async () => {
@@ -230,8 +231,8 @@ test('incomplete pages, missing versions, duplicate IDs and version drift refuse
     async () => page([{ mixsongid: 123 }]),
     async (_id, p) =>
       page(
-        Array.from({ length: p === 1 ? 200 : 1 }, (_, i) => ({ fileid: (p - 1) * 200 + i + 1 })),
-        201,
+        Array.from({ length: p === 1 ? 300 : 1 }, (_, i) => ({ fileid: (p - 1) * 300 + i + 1 })),
+        301,
         p,
       ),
   ];
@@ -423,11 +424,12 @@ test('favorites keep skeleton active and publish only the complete list', async 
   });
   const { favoritesActions } = compile('../src/renderer/stores/playlist/favoritesActions.ts', {
     '@/api/playlist': {
-      getPlaylistTracksNew: async (_id, page) => {
+      getPlaylistTracksNew: async (_id, page, size) => {
+        assert.equal(size, 300);
         if (page === 1)
-          return Array.from({ length: 200 }, (_, i) => ({
+          return Array.from({ length: 300 }, (_, i) => ({
             id: i + 1,
-            playlistSort: 200 - i,
+            playlistSort: 300 - i,
             collectTime: i + 1,
           }));
         if (page === 2) {
@@ -442,7 +444,7 @@ test('favorites keep skeleton active and publish only the complete list', async 
     '@/utils/song': {},
     '@/utils/playlistOrder': { orderByPlaylistPosition, orderByCollectTime },
     '@/utils/logger': silentLogger,
-    './constants': { FAVORITES_PAGE_SIZE: 200 },
+    './constants': { FAVORITES_PAGE_SIZE: 300 },
     './helpers': { dedupeSongs: (songs) => songs },
   });
   const store = {
@@ -463,12 +465,12 @@ test('favorites keep skeleton active and publish only the complete list', async 
   assert.equal(store.favoritesLoading, true);
   assert.equal(store.favoritesLoaded, false);
   assert.deepEqual(store.favorites, []);
-  finishSecond([{ id: 201, playlistSort: 0, collectTime: 201 }]);
+  finishSecond([{ id: 301, playlistSort: 0, collectTime: 301 }]);
   await result;
   assert.equal(store.favoritesLoading, false);
   assert.equal(store.favoritesLoaded, true);
   assert.deepEqual(
     store.favorites.map((song) => song.id),
-    Array.from({ length: 201 }, (_, i) => 201 - i),
+    Array.from({ length: 301 }, (_, i) => 301 - i),
   );
 });

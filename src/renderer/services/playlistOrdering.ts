@@ -65,7 +65,7 @@ export async function loadPlaylistOrder(
   target: PlaylistOrderTarget,
   isCurrent = () => true,
 ): Promise<PlaylistOrderSnapshot> {
-  const pageSize = 200;
+  const pageSize = target.kind === 'tracks' ? 300 : 200;
   const rows: Record<string, unknown>[] = [];
   let version: number | null = null;
   let total: number | null = null;

@@ -28,7 +28,7 @@ export function getPlaylistTracks(id: string | number, page = 1, pagesize = 30) 
 /**
  * 获取歌单所有歌曲 (新版 - 支持用户歌单)
  */
-export function getPlaylistTracksNew(listid: string | number, page = 1, pagesize = 30) {
+export function getPlaylistTracksNew(listid: string | number, page = 1, pagesize = 300) {
   return request.get('/playlist/track/all/new', {
     params: { listid, page, pagesize },
   });
