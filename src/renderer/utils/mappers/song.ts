@@ -364,6 +364,8 @@ export const mapPlaylistSong = (json: unknown): Song => {
     fileId: parseOptionalInt(
       pickValue(record.fileid, record.file_id, record.Audioid, record.audio_id),
     ),
+    playlistSort: parseOptionalInt(record.sort),
+    collectTime: parseOptionalInt(record.collecttime),
     privilege,
     relateGoods,
     source,

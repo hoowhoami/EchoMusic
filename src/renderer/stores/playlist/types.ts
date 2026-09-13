@@ -18,7 +18,6 @@ export type PlaybackQueueType =
 
 export type PersonalFmMode = 'normal' | 'small' | 'peak';
 export type PersonalFmSongPoolId = 0 | 1 | 2;
-export type PlaylistSortOrder = 'default' | 'time-desc' | 'time-asc' | 'name-asc' | 'name-desc';
 
 export interface PlaybackQueueMetaValueMap {
   [key: string]: string | number | boolean | null | undefined;

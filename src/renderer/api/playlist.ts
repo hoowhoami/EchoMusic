@@ -43,6 +43,18 @@ export function getUserPlaylists(page = 1, pagesize = 30) {
   });
 }
 
+/** 保存歌单歌曲的自定义顺序，fileid 使用歌单接口返回的文件 ID。 */
+export function savePlaylistTrackOrder(listid: number, listVer: number, data: string, type = 0) {
+  return request.get('/playlist/tracks/sort', {
+    params: { listid, list_ver: listVer, type, data },
+  });
+}
+
+/** 自建和收藏歌单分别从 0 开始编号。 */
+export function savePlaylistOrder(totalVer: number, data: string) {
+  return request.get('/playlist/sort', { params: { total_ver: totalVer, data } });
+}
+
 /**
  * 获取排行榜列表
  */

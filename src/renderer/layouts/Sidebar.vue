@@ -13,6 +13,8 @@ import Scrollbar from '@/components/ui/Scrollbar.vue';
 import Switch from '@/components/ui/Switch.vue';
 import Tooltip from '@/components/ui/Tooltip.vue';
 import ImportPlaylistDialog from '@/components/music/ImportPlaylistDialog.vue';
+import PlaylistOrderDialog from '@/components/music/PlaylistOrderDialog.vue';
+import type { PlaylistOrderTarget } from '@/services/playlistOrdering';
 import {
   iconClock,
   iconCloud,
@@ -32,8 +34,8 @@ import {
   iconDotsVertical,
 } from '@/icons';
 import type { PlaylistMeta } from '@/models/playlist';
-import { usePlaylistStore, sortPlaylists } from '@/stores/playlist';
-import type { PlaylistSortOrder } from '@/stores/playlist';
+import { usePlaylistStore } from '@/stores/playlist';
+import { orderByPlaylistPosition } from '@/utils/playlistOrder';
 import { useUserStore } from '@/stores/user';
 import { useToastStore } from '@/stores/toast';
 import { useSettingStore } from '@/stores/setting';
@@ -90,7 +92,7 @@ const showCreateDialog = ref(false);
 const showRemoveDialog = ref(false);
 const showImportDialog = ref(false);
 const showCreateMenu = ref(false);
-const showSortMenu = ref(false);
+const showPlaylistActions = ref(false);
 const isCreatingPlaylist = ref(false);
 const isRemovingPlaylist = ref(false);
 const newPlaylistName = ref('');
@@ -362,9 +364,18 @@ const toggleSection = (section: SidebarSection) => {
   };
 };
 
-const handleSortChange = (order: PlaylistSortOrder) => {
-  settingStore.playlistSortOrder = order;
-  showSortMenu.value = false;
+const showPlaylistOrder = ref(false);
+const playlistOrderTarget = ref<PlaylistOrderTarget>({ kind: 'playlists', type: 0, fixedIds: [] });
+const openPlaylistOrder = () => {
+  showPlaylistActions.value = false;
+  playlistOrderTarget.value = {
+    kind: 'playlists',
+    type: activePlaylistTab.value === 0 ? 0 : 1,
+    fixedIds: createdPlaylists.value.pinned.map((playlist) =>
+      String(playlist.listid ?? playlist.id),
+    ),
+  };
+  showPlaylistOrder.value = true;
 };
 
 const getPlaylistIdentityList = (playlist: PlaylistMeta): string[] => {
@@ -414,7 +425,7 @@ const createdPlaylists = computed(() => {
       normal.push(playlist);
     }
   }
-  const sorted = sortPlaylists(normal, settingStore.playlistSortOrder as PlaylistSortOrder);
+  const sorted = orderByPlaylistPosition(normal, (playlist) => playlist.sortOrder);
   return { pinned, normal: sorted };
 });
 
@@ -422,7 +433,7 @@ const favoritedPlaylists = computed(() => {
   const all = playlistStore.userPlaylists.filter(
     (playlist) => playlist.source !== 2 && !isLikedPlaylist(playlist) && !isOwnerPlaylist(playlist),
   );
-  return sortPlaylists(all, settingStore.playlistSortOrder as PlaylistSortOrder);
+  return orderByPlaylistPosition(all, (playlist) => playlist.sortOrder);
 });
 
 const visibleRailPlaylists = computed(() =>
@@ -865,7 +876,7 @@ watch(
 
         <div class="sidebar-rail-bottom">
           <Popover
-            v-model:open="showSortMenu"
+            v-model:open="showPlaylistActions"
             trigger="click"
             side="right"
             align="end"
@@ -897,7 +908,7 @@ watch(
                 :disabled="!isLoggedIn"
                 @click="
                   () => {
-                    showSortMenu = false;
+                    showPlaylistActions = false;
                     refreshUserPlaylists();
                   }
                 "
@@ -910,7 +921,7 @@ watch(
                 :disabled="!isLoggedIn || activePlaylistTab !== 0"
                 @click="
                   () => {
-                    showSortMenu = false;
+                    showPlaylistActions = false;
                     openCreatePlaylistDialog();
                   }
                 "
@@ -923,7 +934,7 @@ watch(
                 :disabled="!isLoggedIn || activePlaylistTab !== 0"
                 @click="
                   () => {
-                    showSortMenu = false;
+                    showPlaylistActions = false;
                     showImportDialog = true;
                   }
                 "
@@ -934,42 +945,10 @@ watch(
               <button
                 type="button"
                 class="sidebar-sort-menu-item"
-                :class="{ 'is-active': settingStore.playlistSortOrder === 'default' }"
-                @click="handleSortChange('default')"
+                :disabled="!isLoggedIn"
+                @click="openPlaylistOrder"
               >
-                默认顺序
-              </button>
-              <button
-                type="button"
-                class="sidebar-sort-menu-item"
-                :class="{ 'is-active': settingStore.playlistSortOrder === 'time-asc' }"
-                @click="handleSortChange('time-asc')"
-              >
-                时间正序
-              </button>
-              <button
-                type="button"
-                class="sidebar-sort-menu-item"
-                :class="{ 'is-active': settingStore.playlistSortOrder === 'time-desc' }"
-                @click="handleSortChange('time-desc')"
-              >
-                时间倒序
-              </button>
-              <button
-                type="button"
-                class="sidebar-sort-menu-item"
-                :class="{ 'is-active': settingStore.playlistSortOrder === 'name-asc' }"
-                @click="handleSortChange('name-asc')"
-              >
-                字母正序
-              </button>
-              <button
-                type="button"
-                class="sidebar-sort-menu-item"
-                :class="{ 'is-active': settingStore.playlistSortOrder === 'name-desc' }"
-                @click="handleSortChange('name-desc')"
-              >
-                字母倒序
+                自定义顺序…
               </button>
             </div>
           </Popover>
@@ -1166,76 +1145,17 @@ watch(
               </Button>
             </div>
             <div class="flex items-center gap-0.5 shrink-0 pl-0.5">
-              <Popover
-                v-model:open="showSortMenu"
-                trigger="click"
-                side="bottom"
-                align="end"
-                :side-offset="6"
-                :show-arrow="false"
-                content-class="sidebar-sort-menu"
+              <Button
+                variant="unstyled"
+                size="none"
+                type="button"
+                class="sidebar-section-action sidebar-icon-btn"
+                tooltip="调整歌单顺序"
+                :disabled="!isLoggedIn"
+                @click="openPlaylistOrder"
               >
-                <template #trigger>
-                  <Button
-                    variant="unstyled"
-                    size="none"
-                    type="button"
-                    class="sidebar-section-action sidebar-icon-btn"
-                    tooltip="歌单排序"
-                    :class="{
-                      'text-primary-text opacity-100': settingStore.playlistSortOrder !== 'default',
-                    }"
-                  >
-                    <Icon :icon="iconArrowsSort" width="12" height="12" />
-                  </Button>
-                </template>
-
-                <div class="sidebar-sort-menu-list">
-                  <div class="sidebar-sort-menu-title">排序方式</div>
-                  <button
-                    type="button"
-                    class="sidebar-sort-menu-item"
-                    :class="{ 'is-active': settingStore.playlistSortOrder === 'default' }"
-                    @click="handleSortChange('default')"
-                  >
-                    默认顺序
-                  </button>
-                  <div class="sidebar-sort-menu-divider"></div>
-                  <button
-                    type="button"
-                    class="sidebar-sort-menu-item"
-                    :class="{ 'is-active': settingStore.playlistSortOrder === 'time-asc' }"
-                    @click="handleSortChange('time-asc')"
-                  >
-                    时间正序
-                  </button>
-                  <button
-                    type="button"
-                    class="sidebar-sort-menu-item"
-                    :class="{ 'is-active': settingStore.playlistSortOrder === 'time-desc' }"
-                    @click="handleSortChange('time-desc')"
-                  >
-                    时间倒序
-                  </button>
-                  <div class="sidebar-sort-menu-divider"></div>
-                  <button
-                    type="button"
-                    class="sidebar-sort-menu-item"
-                    :class="{ 'is-active': settingStore.playlistSortOrder === 'name-asc' }"
-                    @click="handleSortChange('name-asc')"
-                  >
-                    字母正序
-                  </button>
-                  <button
-                    type="button"
-                    class="sidebar-sort-menu-item"
-                    :class="{ 'is-active': settingStore.playlistSortOrder === 'name-desc' }"
-                    @click="handleSortChange('name-desc')"
-                  >
-                    字母倒序
-                  </button>
-                </div>
-              </Popover>
+                <Icon :icon="iconArrowsSort" width="12" height="12" />
+              </Button>
               <Button
                 variant="unstyled"
                 size="none"
@@ -1544,6 +1464,11 @@ watch(
   </Dialog>
 
   <ImportPlaylistDialog v-model:open="showImportDialog" />
+  <PlaylistOrderDialog
+    v-if="showPlaylistOrder"
+    v-model:open="showPlaylistOrder"
+    :target="playlistOrderTarget"
+  />
 </template>
 
 <style scoped>

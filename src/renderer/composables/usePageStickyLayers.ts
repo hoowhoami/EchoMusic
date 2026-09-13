@@ -20,10 +20,12 @@ export function providePageStickyLayers(scroll: Ref<HTMLElement | null>) {
   const target = ref<HTMLElement | null>(null);
   const topInset = ref(0);
   const entries = new Set<PageStickyEntry>();
+  let updateFrame = 0;
+  let disposed = false;
   const setStyle = (el: HTMLElement, name: string, value: string) => {
     if (el.style.getPropertyValue(name) !== value) el.style.setProperty(name, value);
   };
-  const update = () => {
+  const commitLayout = () => {
     if (!scroll.value || !target.value || !scroll.value.isConnected) return;
     const viewport = scroll.value.getBoundingClientRect();
     if (!viewport.width || !viewport.height) return;
@@ -56,7 +58,7 @@ export function providePageStickyLayers(scroll: Ref<HTMLElement | null>) {
     for (const [index, item] of measured.entries()) {
       const { entry, rect, style, height, marginTop, marginBottom } = item;
       const top = plan.tops[index];
-      setStyle(entry.layer, 'top', `${top}px`);
+      setStyle(entry.layer, 'transform', `translate3d(0, ${top}px, 0)`);
       setStyle(entry.layer, 'left', `${rect.left - viewport.left}px`);
       setStyle(entry.layer, 'width', `${rect.width}px`);
       setStyle(entry.layer, 'z-index', style.zIndex === 'auto' ? '1' : style.zIndex);
@@ -68,12 +70,22 @@ export function providePageStickyLayers(scroll: Ref<HTMLElement | null>) {
     }
     const inset = plan.inset;
     topInset.value = inset;
-    scroll.value.dataset.echoStickyInset = String(inset);
-    setStyle(
-      scroll.value.closest('.page-scroll-container') as HTMLElement,
-      '--page-sticky-inset',
-      `${inset}px`,
-    );
+    if (scroll.value.dataset.echoStickyInset !== String(inset)) {
+      scroll.value.dataset.echoStickyInset = String(inset);
+    }
+    const container = scroll.value.closest<HTMLElement>('.page-scroll-container');
+    if (container) setStyle(container, '--page-sticky-inset', `${inset}px`);
+  };
+  const update = () => {
+    if (disposed || updateFrame) return;
+    // Scroll listeners first update Vue's sliver height and tabsTop. Measure after
+    // that DOM flush, once per frame, so the overlay and clip use the same state.
+    // Synchronous scroll updates used to commit old geometry, then descendant
+    // mutation observers and prop watchers measured it again after Vue's patch.
+    updateFrame = requestAnimationFrame(() => {
+      updateFrame = 0;
+      commitLayout();
+    });
   };
   const register = (entry: PageStickyEntry) => {
     entries.add(entry);
@@ -83,7 +95,6 @@ export function providePageStickyLayers(scroll: Ref<HTMLElement | null>) {
     const mutation = new MutationObserver(update);
     mutation.observe(entry.content, {
       attributes: true,
-      subtree: true,
       childList: true,
       attributeFilter: ['style', 'class'],
     });
@@ -113,6 +124,10 @@ export function providePageStickyLayers(scroll: Ref<HTMLElement | null>) {
     const scale = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? viewport.clientHeight : 1;
     viewport.scrollBy({ top: event.deltaY * scale, behavior: 'instant' });
   };
-  onBeforeUnmount(() => entries.clear());
+  onBeforeUnmount(() => {
+    disposed = true;
+    if (updateFrame) cancelAnimationFrame(updateFrame);
+    entries.clear();
+  });
   return { target, topInset, update, onWheel };
 }

@@ -57,7 +57,6 @@ export type {
   PersonalFmSongPoolId,
   PlaybackQueueMetaValueMap,
   PlaybackQueueState,
-  PlaylistSortOrder,
   SetPlaybackQueueOptions,
 } from './types';
 export {
@@ -69,11 +68,7 @@ export {
   PERSONAL_FM_MODE,
   PERSONAL_FM_QUEUE_ID,
 } from './constants';
-export {
-  getPersonalFmModePresentation,
-  getPersonalFmSongPoolPresentation,
-  sortPlaylists,
-} from './helpers';
+export { getPersonalFmModePresentation, getPersonalFmSongPoolPresentation } from './helpers';
 
 export const usePlaylistStore = defineStore('playlist', {
   state: () => ({

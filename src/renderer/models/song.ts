@@ -54,6 +54,10 @@ export interface Song {
   listenTogetherGenting?: number;
   mixSongId: string | number;
   fileId?: string | number;
+  /** 歌单中的全局自定义顺序（need_sort 返回），0 位于最前。 */
+  playlistSort?: number;
+  /** 歌单收藏时间（上游 collecttime）。 */
+  collectTime?: number;
   cloudFileId?: string | number;
   cloudAddedAt?: number;
   cloudSortOrder?: number;

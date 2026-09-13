@@ -3,7 +3,9 @@ import PageStickyHeader from '@/components/ui/PageStickyHeader.vue';
 defineOptions({ name: 'playlist-detail' });
 import { ref, shallowRef, onMounted, onBeforeUnmount, computed, watch } from 'vue';
 import { useRouteId } from '@/composables/useRouteId';
-import { getPlaylistDetail, getPlaylistTracks } from '@/api/playlist';
+import { getPlaylistDetail, getPlaylistTracks, getPlaylistTracksNew } from '@/api/playlist';
+import { resolveOwnedPlaylistListId } from '@/utils/playlistTrackSource';
+import { orderByPlaylistPosition } from '@/utils/playlistOrder';
 import { getPlaylistComments } from '@/api/comment';
 import SliverHeader from '@/components/music/DetailPageSliverHeader.vue';
 import DetailPageSkeleton from '@/components/music/DetailPageSkeleton.vue';
@@ -20,6 +22,8 @@ import Dialog from '@/components/ui/Dialog.vue';
 import CommentComposer from '@/components/music/CommentComposer.vue';
 import CommentList from '@/components/music/CommentList.vue';
 import BatchActionDrawer from '@/components/music/BatchActionDrawer.vue';
+import PlaylistOrderDialog from '@/components/music/PlaylistOrderDialog.vue';
+import type { PlaylistOrderTarget } from '@/services/playlistOrdering';
 import type { Song } from '@/models/song';
 import { formatDate } from '@/utils/format';
 import { useUserStore } from '@/stores/user';
@@ -39,6 +43,7 @@ import {
   iconSearch,
   iconPlay,
   iconList,
+  iconArrowsSort,
   iconMusic,
   iconHeart,
   iconHeartFilled,
@@ -84,6 +89,7 @@ const commentPage = ref(1);
 const hasMoreComments = ref(true);
 const showIntroDialog = ref(false);
 const showBatchDrawer = ref(false);
+const showPlaylistOrder = ref(false);
 
 // 搜索和定位逻辑
 const searchQuery = ref('');
@@ -101,6 +107,48 @@ const isOwnerPlaylist = computed(() => {
   const currentUserId = userStore.info?.userid;
   return !!meta && !!currentUserId && meta.listCreateUserid === currentUserId && meta.source !== 2;
 });
+
+const ownedPlaylistListId = computed(() =>
+  resolveOwnedPlaylistListId(getPlaylistId(), {
+    ...playlist.value,
+    listid: playlistStore.findPlaylistByIdentity(getPlaylistId())?.listid,
+    currentUserId: userStore.info?.userid,
+  }),
+);
+
+const orderPlaylistSongs = (items: readonly Song[]) =>
+  ownedPlaylistListId.value !== null
+    ? orderByPlaylistPosition(items, (song) => song.playlistSort)
+    : Array.from(items);
+
+const playlistOrderTarget = computed<PlaylistOrderTarget | null>(() => {
+  if (!isOwnerPlaylist.value || !userStore.isLoggedIn) return null;
+  // 只能使用当前账号的 listid，不能把公开歌单 ID 或原作者 listid 传给写接口。
+  const entry =
+    playlistStore.findPlaylistByIdentity(getPlaylistId()) ??
+    playlistStore.userPlaylists.find(
+      (item) => !!item.listCreateGid && item.listCreateGid === playlist.value?.listCreateGid,
+    );
+  if (!entry || entry.listCreateUserid !== userStore.info?.userid || entry.source === 2)
+    return null;
+  const listid = Number(entry.listid ?? entry.id);
+  return Number.isSafeInteger(listid) && listid > 0
+    ? {
+        kind: 'tracks',
+        listid,
+        queryId: resolvePlaylistTrackQueryId(getPlaylistId(), {
+          listid: entry.listid,
+          listCreateGid: entry.listCreateGid || entry.globalCollectionId,
+        }),
+        title: playlist.value?.name ?? '',
+      }
+    : null;
+});
+const handlePlaylistOrderSaved = () => {
+  sortField.value = null;
+  sortOrder.value = null;
+  searchQuery.value = '';
+};
 
 const currentPlaylistIds = computed(() => {
   const meta = playlist.value;
@@ -288,6 +336,7 @@ watch(scrollContainerRef, () => {
 
 // 歌曲分页加载器
 let songLoader: PagedSongLoader<Song> | null = null;
+let songLoadGeneration = 0;
 let pendingAddedPlaylistSongs: Song[] = [];
 let pendingRemovedPlaylistSongs: Song[] = [];
 
@@ -315,7 +364,7 @@ const mergePlaylistLocalChanges = (items: readonly Song[]) => {
 };
 
 const updateSongsFromLoader = (items: readonly Song[], complete = false) => {
-  const mergedSongs = mergePlaylistLocalChanges(items);
+  const mergedSongs = mergePlaylistLocalChanges(orderPlaylistSongs(items));
   songs.value = mergedSongs;
   loadedSongCount.value = mergedSongs.length;
   playlistStore.rememberPlaylistSongs(
@@ -326,11 +375,15 @@ const updateSongsFromLoader = (items: readonly Song[], complete = false) => {
 };
 
 const fetchData = async () => {
+  const generation = ++songLoadGeneration;
+  const isCurrent = () => generation === songLoadGeneration;
+  songLoader?.abort();
   loading.value = true;
   try {
     pendingAddedPlaylistSongs = [];
     pendingRemovedPlaylistSongs = [];
     const detailRes = await getPlaylistDetail(getPlaylistId());
+    if (!isCurrent()) return;
     if (detailRes) {
       const { status, data } = detailRes;
       if (status === 1) {
@@ -342,6 +395,7 @@ const fetchData = async () => {
 
     const playlistMeta = playlist.value;
     const currentUserId = userStore.info?.userid;
+    const ownedListId = ownedPlaylistListId.value;
     const queryId = resolvePlaylistTrackQueryId(getPlaylistId(), {
       listid: playlistMeta?.listid,
       listCreateGid: playlistMeta?.listCreateGid,
@@ -357,9 +411,12 @@ const fetchData = async () => {
     // 重置过滤计数
     playlistFilteredInvalidCount.value = 0;
 
-    songLoader = new PagedSongLoader<Song>(
+    const loader = new PagedSongLoader<Song>(
       async (page, pageSize) => {
-        const res = await getPlaylistTracks(queryId, page, pageSize);
+        const res =
+          ownedListId !== null
+            ? await getPlaylistTracksNew(ownedListId, page, pageSize)
+            : await getPlaylistTracks(queryId, page, pageSize);
         if (!res || typeof res !== 'object') return { items: [], hasMore: false };
         const hasStatus = 'status' in res;
         const statusOk = hasStatus && (res as { status?: number }).status === 1;
@@ -373,7 +430,7 @@ const fetchData = async () => {
               ? (res as { info?: unknown }).info
               : res;
         const { songs: parsedSongs, filteredCount } = parsePlaylistTracks(payload ?? res);
-        playlistFilteredInvalidCount.value += filteredCount;
+        if (isCurrent()) playlistFilteredInvalidCount.value += filteredCount;
         // 返回数量不足一页说明没有更多了
         const hasMore = parsedSongs.length + filteredCount >= pageSize;
         return { items: parsedSongs, hasMore };
@@ -383,30 +440,22 @@ const fetchData = async () => {
         concurrency: 3,
         dedupeKey: (song) => String(song.id),
         logTag: 'PlaylistDetailLoader',
-        onPageLoaded(allItems) {
-          updateSongsFromLoader(allItems, false);
-        },
         onComplete(allItems) {
-          updateSongsFromLoader(allItems, true);
+          if (isCurrent()) updateSongsFromLoader(allItems, true);
         },
         onError() {
-          toastStore.loadFailed('歌单歌曲');
+          if (isCurrent()) toastStore.loadFailed('歌单歌曲');
         },
       },
     );
 
-    // 首页加载完立即渲染
-    await songLoader.loadFirstPage();
-
-    // 后台加载剩余页
-    const targetTotal = playlistMeta?.count ?? 0;
-    if (!songLoader.fullyLoaded && !songLoader.failed && targetTotal > songLoader.count) {
-      void songLoader.loadRemaining();
-    }
+    songLoader = loader;
+    // 完整加载后一次性显示，期间保留骨架屏。
+    await loader.loadAll();
   } catch (e) {
     console.error('Fetch playlist error:', e);
   } finally {
-    loading.value = false;
+    if (isCurrent()) loading.value = false;
   }
 };
 
@@ -437,6 +486,8 @@ onIdChange(() => {
 });
 
 onBeforeUnmount(() => {
+  songLoadGeneration++;
+  songLoader?.abort();
   commentObserver?.disconnect();
   commentObserver = null;
 });
@@ -634,7 +685,7 @@ const handlePlayAll = async () => {
   );
   // 后台等待全部加载完，静默更新播放队列
   if (songLoader && !songLoader.fullyLoaded && !songLoader.failed) {
-    const allSongs = Array.from(await songLoader.waitForAll()) as Song[];
+    const allSongs = orderPlaylistSongs(await songLoader.waitForAll());
     const sortedAllSongs = sortSongs(allSongs, sortField.value, sortOrder.value, {
       indexSource: allSongs,
     });
@@ -850,6 +901,15 @@ watch(
                   </TabsList>
 
                   <div v-if="activeTab === 'songs'" class="flex items-center gap-2">
+                    <Button
+                      v-if="playlistOrderTarget"
+                      variant="ghost"
+                      size="sm"
+                      tooltip="调整歌曲顺序"
+                      @click="showPlaylistOrder = true"
+                    >
+                      <Icon :icon="iconArrowsSort" width="16" />
+                    </Button>
                     <div class="relative">
                       <input
                         v-model="searchQuery"
@@ -976,6 +1036,12 @@ watch(
       </template>
     </div>
   </PageScrollContainer>
+  <PlaylistOrderDialog
+    v-if="showPlaylistOrder && playlistOrderTarget"
+    v-model:open="showPlaylistOrder"
+    :target="playlistOrderTarget"
+    @saved="handlePlaylistOrderSaved"
+  />
 </template>
 
 <style scoped>

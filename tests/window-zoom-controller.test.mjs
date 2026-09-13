@@ -81,7 +81,7 @@ test('rapid native shortcuts update the authoritative value and reset persists',
   send('=');
   send('=');
   send('-');
-  assert.equal(e.controller.get(), 3);
+  assert.equal(Math.round(model.exports.zoomLevelToFactor(e.controller.get()) * 100), 149);
   send('0');
   assert.equal(e.controller.get(), 0);
   assert.equal(e.saved.windowZoomLevel, 0);

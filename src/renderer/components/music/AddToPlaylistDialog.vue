@@ -6,10 +6,10 @@ import Button from '@/components/ui/Button.vue';
 import Skeleton from '@/components/ui/Skeleton.vue';
 import { iconList } from '@/icons';
 import type { Playlist } from '@/models/playlist';
-import { sortPlaylists, usePlaylistStore } from '@/stores/playlist';
-import type { PlaybackQueueState, PlaylistSortOrder } from '@/stores/playlist/types';
+import { usePlaylistStore } from '@/stores/playlist';
+import { orderByPlaylistPosition } from '@/utils/playlistOrder';
+import type { PlaybackQueueState } from '@/stores/playlist/types';
 import { includesPlaylistIdentity } from '@/stores/playlist/helpers';
-import { useSettingStore } from '@/stores/setting';
 
 interface Props {
   open?: boolean;
@@ -43,7 +43,6 @@ const emit = defineEmits<{
 
 const open = useVModel(props, 'open', emit, { defaultValue: false });
 const playlistStore = usePlaylistStore();
-const settingStore = useSettingStore();
 
 const contentClass = computed(() =>
   ['max-w-[420px]', props.contentClass].filter(Boolean).join(' '),
@@ -62,7 +61,7 @@ const orderedPlaylists = computed(() => {
     if (isPinnedPlaylist(playlist)) pinned.push(playlist);
     else normal.push(playlist);
   }
-  return [...pinned, ...sortPlaylists(normal, settingStore.playlistSortOrder as PlaylistSortOrder)];
+  return [...pinned, ...orderByPlaylistPosition(normal, (playlist) => playlist.sortOrder)];
 });
 </script>
 

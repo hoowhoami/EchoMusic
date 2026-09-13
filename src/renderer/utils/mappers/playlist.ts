@@ -89,6 +89,7 @@ export const mapPlaylistMeta = (json: unknown): PlaylistMeta => {
       updateTime: parseOptionalInt(record.update_time),
       source: parseIntSafe(pickValue(record.source, 1)),
       type: typeValue,
+      sortOrder: parseOptionalInt(record.sort),
       isDefault,
       songs: undefined,
     };

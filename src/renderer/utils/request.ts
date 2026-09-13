@@ -232,7 +232,12 @@ const ipcRequest = async (
   )}`;
 
   if (response.status >= 400) {
-    logger.warn('API', `${baseLine}\n  └─ Response: ${stringifyForLog(response.body, 800)}`);
+    const requestBodyLine =
+      config?.data !== undefined ? `\n  ├─ Body: ${stringifyForLog(config.data, 800)}` : '';
+    logger.warn(
+      'API',
+      `${baseLine}${requestBodyLine}\n  └─ Response: ${stringifyForLog(response.body, 800)}`,
+    );
   } else {
     logger.debug('API', baseLine);
     const shouldLogBody = logger.settings().apiResponseBody || logger.isEnabled('verbose');

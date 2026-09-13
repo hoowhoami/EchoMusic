@@ -7,7 +7,6 @@ import type {
   PersonalFmMode,
   PersonalFmSongPoolId,
   PlaybackQueueState,
-  PlaylistSortOrder,
   SetPlaybackQueueOptions,
 } from './types';
 
@@ -189,29 +188,4 @@ export const appendQueueSong = (queue: PlaybackQueueState, song: Song): boolean 
   if (exists) return false;
   queue.songs = toRawSongList([...queue.songs, song]);
   return true;
-};
-
-export const sortPlaylists = (
-  playlists: PlaylistMeta[],
-  order: PlaylistSortOrder,
-): PlaylistMeta[] => {
-  if (order === 'default' || !order) return playlists;
-  const sorted = playlists.slice();
-  const compareText = (a: string, b: string) =>
-    a.localeCompare(b, 'zh-Hans-CN', { sensitivity: 'base' });
-  switch (order) {
-    case 'time-desc':
-      sorted.sort((a, b) => (b.createTime ?? 0) - (a.createTime ?? 0));
-      break;
-    case 'time-asc':
-      sorted.sort((a, b) => (a.createTime ?? 0) - (b.createTime ?? 0));
-      break;
-    case 'name-asc':
-      sorted.sort((a, b) => compareText(a.name || '', b.name || ''));
-      break;
-    case 'name-desc':
-      sorted.sort((a, b) => compareText(b.name || '', a.name || ''));
-      break;
-  }
-  return sorted;
 };

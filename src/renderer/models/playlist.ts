@@ -22,6 +22,7 @@ export interface Playlist {
   heat?: number;
   publishDate?: string;
   createTime?: number;
+  sortOrder?: number;
   updateTime?: number;
   source: number;
   type?: number;

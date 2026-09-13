@@ -2,12 +2,13 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
   normalizeZoomLevel,
+  stepZoomLevel,
   zoomLevelToFactor,
   zoomShortcut,
   titleBarHeight,
 } from '../src/shared/window-zoom.ts';
 
-test('VS Code zoom range, exponential steps and invalid settings', () => {
+test('stored Chromium levels, zoom range and invalid settings remain compatible', () => {
   for (const value of [null, '2', NaN, Infinity, {}, undefined])
     assert.equal(normalizeZoomLevel(value), 0);
   assert.equal(normalizeZoomLevel(99), 8);
@@ -19,6 +20,22 @@ test('VS Code zoom range, exponential steps and invalid settings', () => {
   assert.equal(titleBarHeight(-8), 35);
   assert.equal(titleBarHeight(0), 46);
   assert.equal(titleBarHeight(2), 66);
+});
+test('zoom commands change by five percentage points without accumulating drift', () => {
+  const percent = (level: number) => Math.round(zoomLevelToFactor(level) * 100);
+  let level = 0;
+  for (let expected = 105; expected <= 200; expected += 5) {
+    level = stepZoomLevel(level, 1);
+    assert.equal(percent(level), expected);
+  }
+  for (let expected = 195; expected >= 95; expected -= 5) {
+    level = stepZoomLevel(level, -1);
+    assert.equal(percent(level), expected);
+  }
+  assert.equal(percent(stepZoomLevel(2, 1)), 149);
+  assert.equal(percent(stepZoomLevel(2, -1)), 139);
+  assert.equal(stepZoomLevel(-8, -1), -8);
+  assert.equal(stepZoomLevel(8, 1), 8);
 });
 test('zoom key bindings use the platform modifier and exclude AltGr', () => {
   const input = { key: '=', control: true, meta: false, alt: false };

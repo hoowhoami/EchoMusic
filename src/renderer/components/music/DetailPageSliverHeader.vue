@@ -78,15 +78,21 @@ defineExpose({ currentHeight });
 
 const scrollContainerRef = useScrollContainer();
 
+const setScrollPosition = (scrollTop: number) => {
+  // Past the collapsed range the header is stationary; keep its entire subtree
+  // out of Vue's scroll updates, including cover/details slots.
+  scrollY.value = Math.min(Math.max(0, scrollTop), Math.max(0, scrollThreshold.value));
+};
+
 const handleScroll = (e: Event) => {
   const target = e.target as HTMLElement;
-  scrollY.value = target.scrollTop;
+  setScrollPosition(target.scrollTop);
 };
 
 const syncScrollPosition = () => {
   const scrollContainer = scrollContainerRef.value;
   if (scrollContainer) {
-    scrollY.value = scrollContainer.scrollTop;
+    setScrollPosition(scrollContainer.scrollTop);
   }
 };
 
@@ -94,7 +100,7 @@ const bindScroll = () => {
   const scrollContainer = scrollContainerRef.value;
   if (scrollContainer) {
     scrollContainer.addEventListener('scroll', handleScroll, { passive: true });
-    scrollY.value = scrollContainer.scrollTop;
+    setScrollPosition(scrollContainer.scrollTop);
   }
 };
 
@@ -112,9 +118,11 @@ watch(scrollContainerRef, (newEl, oldEl) => {
   }
   if (newEl) {
     newEl.addEventListener('scroll', handleScroll, { passive: true });
-    scrollY.value = newEl.scrollTop;
+    setScrollPosition(newEl.scrollTop);
   }
 });
+
+watch(scrollThreshold, syncScrollPosition);
 
 onMounted(() => {
   bindScroll();
@@ -188,22 +196,19 @@ onUnmounted(() => {
         <!-- 标题行 -->
         <div class="flex items-center justify-between gap-3 shrink-0">
           <h1
-            class="flex-1 min-w-0 font-bold text-text-main leading-tight truncate origin-left transition-all duration-75"
+            class="flex-1 min-w-0 font-bold text-text-main leading-tight truncate origin-left"
             :style="{ fontSize: `${props.titleFontSize}px`, transform: `scale(${titleScale})` }"
           >
             {{ title }}
           </h1>
-          <div
-            class="type-badge shrink-0 transition-opacity duration-200"
-            :style="{ opacity: detailsOpacity }"
-          >
+          <div class="type-badge shrink-0" :style="{ opacity: detailsOpacity }">
             {{ typeLabel }}
           </div>
         </div>
 
         <!-- 详情插槽：flex-1 占据中间剩余空间，上下 padding 让内容居中 -->
         <div
-          class="flex flex-col flex-1 min-h-0 justify-center transition-all duration-75"
+          class="flex flex-col flex-1 min-h-0 justify-center"
           :style="{
             opacity: detailsOpacity,
             transform: `translateY(${detailsTranslateY}px)`,
@@ -217,7 +222,7 @@ onUnmounted(() => {
 
         <!-- 操作按钮行：贴底 -->
         <div
-          class="shrink-0 transition-all duration-75"
+          class="shrink-0"
           :style="{
             opacity: detailsOpacity,
             transform: `translateY(${detailsTranslateY}px)`,
@@ -231,7 +236,7 @@ onUnmounted(() => {
 
     <!-- 吸顶后的操作按钮 -->
     <div
-      class="absolute right-5 top-0 h-full flex items-center gap-1 transition-all duration-300 z-30"
+      class="absolute right-5 top-0 h-full flex items-center gap-1 z-30"
       :style="{
         opacity: progress > 0.85 ? (progress - 0.85) * 6.6 : 0,
         transform: `translateX(${(1 - progress) * 20}px)`,

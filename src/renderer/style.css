@@ -1016,6 +1016,7 @@ html.app-background-transparent
 }
 .page-sticky-item {
   position: absolute;
+  top: 0;
   pointer-events: auto;
 }
 .page-sticky-item > div {

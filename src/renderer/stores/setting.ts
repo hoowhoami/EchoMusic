@@ -230,8 +230,6 @@ export const useSettingStore = defineStore('setting', {
     artistAlbumSort: 'new' as 'new' | 'hot',
     // 侧边栏板块折叠状态
     sidebarSectionCollapsed: { discover: false, library: false } as Record<string, boolean>,
-    // 歌单排序方式
-    playlistSortOrder: 'default' as 'default' | 'time-desc' | 'time-asc' | 'name-asc' | 'name-desc',
     // mpv-style audio buffering settings
     demuxerReadaheadSecs: 1,
     cache: 'auto' as 'auto' | 'yes' | 'no',

@@ -27,6 +27,8 @@ import SongListHeader, {
 } from '@/components/music/SongListHeader.vue';
 import ActionRow from '@/components/music/DetailPageActionRow.vue';
 import BatchActionDrawer from '@/components/music/BatchActionDrawer.vue';
+import PlaylistOrderDialog from '@/components/music/PlaylistOrderDialog.vue';
+import type { PlaylistOrderTarget } from '@/services/playlistOrdering';
 import VirtualGrid from '@/components/ui/VirtualGrid.vue';
 import AlbumCard from '@/components/music/AlbumCard.vue';
 import ArtistCard from '@/components/music/ArtistCard.vue';
@@ -35,7 +37,14 @@ import PageScrollContainer from '@/components/ui/PageScrollContainer.vue';
 import Button from '@/components/ui/Button.vue';
 import { useScrollContainer } from '@/composables/usePageScroll';
 import { useStickyTabsLayout } from '@/composables/useStickyTabsLayout';
-import { iconCurrentLocation, iconHeart, iconList, iconPlay, iconSearch } from '@/icons';
+import {
+  iconCurrentLocation,
+  iconHeart,
+  iconList,
+  iconPlay,
+  iconSearch,
+  iconArrowsSort,
+} from '@/icons';
 import { replaceQueueAndPlay } from '@/utils/playback';
 import { filterSongsByQuery, sortSongs } from '@/utils/songList';
 
@@ -66,6 +75,25 @@ const showBatchDrawer = ref(false);
 const sortField = ref<SortField | null>(null);
 const sortOrder = ref<SortOrder>(null);
 const activeSongId = computed(() => playerStore.currentTrackId ?? undefined);
+const showPlaylistOrder = ref(false);
+const playlistOrderTarget = computed<PlaylistOrderTarget | null>(() => {
+  const liked = playlistStore.likedPlaylist;
+  if (!isLoggedIn.value || !liked || liked.listCreateUserid !== userStore.info?.userid) return null;
+  const listid = Number(liked.listid ?? liked.id);
+  return Number.isSafeInteger(listid) && listid > 0
+    ? {
+        kind: 'tracks',
+        listid,
+        queryId: playlistStore.likedPlaylistQueryId ?? liked.id,
+        title: liked.name,
+      }
+    : null;
+});
+const handlePlaylistOrderSaved = () => {
+  sortField.value = null;
+  sortOrder.value = null;
+  searchQuery.value = '';
+};
 
 const favoriteCoverUrl = computed(() =>
   createThemedIconCoverUrl(themeStore.sourceColor, iconHeart),
@@ -578,6 +606,15 @@ watch(
 
                   <!-- 歌曲 tab 右侧操作 -->
                   <div v-if="activeTab === 'songs'" class="flex items-center gap-2">
+                    <Button
+                      v-if="playlistOrderTarget"
+                      variant="ghost"
+                      size="sm"
+                      tooltip="调整歌曲顺序"
+                      @click="showPlaylistOrder = true"
+                    >
+                      <Icon :icon="iconArrowsSort" width="16" />
+                    </Button>
                     <div class="relative">
                       <input
                         v-model="searchQuery"
@@ -795,6 +832,12 @@ watch(
       </template>
     </div>
   </PageScrollContainer>
+  <PlaylistOrderDialog
+    v-if="showPlaylistOrder && playlistOrderTarget"
+    v-model:open="showPlaylistOrder"
+    :target="playlistOrderTarget"
+    @saved="handlePlaylistOrderSaved"
+  />
 </template>
 
 <style scoped>

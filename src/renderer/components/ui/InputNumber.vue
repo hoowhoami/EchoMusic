@@ -3,6 +3,8 @@ import { computed, ref, onBeforeUnmount } from 'vue';
 import { iconChevronUp, iconChevronDown } from '@/icons';
 
 interface Props {
+  id?: string;
+  size?: 'sm' | 'md';
   modelValue?: number | string;
   min?: number;
   max?: number;
@@ -20,6 +22,7 @@ const props = withDefaults(defineProps<Props>(), {
   placeholder: '',
   suffix: '',
   disabled: false,
+  size: 'md',
 });
 
 const emit = defineEmits<{
@@ -130,9 +133,16 @@ onBeforeUnmount(stopPress);
 </script>
 
 <template>
-  <div :class="['input-number', props.class, { 'is-disabled': props.disabled }]">
+  <div
+    :class="[
+      'input-number',
+      props.class,
+      { 'is-disabled': props.disabled, 'is-small': props.size === 'sm' },
+    ]"
+  >
     <input
       ref="inputRef"
+      :id="props.id"
       type="text"
       inputmode="numeric"
       :value="isEditing ? editingValue : props.modelValue"
@@ -211,6 +221,21 @@ onBeforeUnmount(stopPress);
 
 .input-number-field::placeholder {
   color: color-mix(in srgb, var(--color-text-main) 40%, transparent);
+}
+
+.input-number.is-small {
+  height: 28px;
+  border-radius: 8px;
+}
+
+.input-number.is-small .input-number-field {
+  padding-left: 10px;
+  font-size: 12px;
+  line-height: 26px;
+}
+
+.input-number.is-small .input-number-controls {
+  width: 22px;
 }
 
 .input-number-field:disabled {

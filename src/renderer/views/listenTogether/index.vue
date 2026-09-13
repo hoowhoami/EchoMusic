@@ -17,7 +17,9 @@ import Scrollbar from '@/components/ui/Scrollbar.vue';
 import Select from '@/components/ui/Select.vue';
 import Skeleton from '@/components/ui/Skeleton.vue';
 import { ListenTogetherApiError } from '@/api/listenTogether';
-import { getPlaylistTracks } from '@/api/playlist';
+import { getPlaylistTracks, getPlaylistTracksNew } from '@/api/playlist';
+import { resolveOwnedPlaylistListId } from '@/utils/playlistTrackSource';
+import { orderByPlaylistPosition } from '@/utils/playlistOrder';
 import { search } from '@/api/search';
 import type {
   ListenTogetherMember,
@@ -684,16 +686,29 @@ const loadOrderPlaylistSongs = async (playlist: PlaylistMeta | undefined) => {
     return;
   }
   loadingOrderPlaylistSongs.value = true;
+  const ownedListId = playlist
+    ? resolveOwnedPlaylistListId(playlistOptionId(playlist), {
+        ...playlist,
+        currentUserId: Number(currentUserId.value || 0),
+      })
+    : null;
   try {
     const allSongs: Song[] = [];
     for (let page = 1; page <= 50; page += 1) {
-      const response = await getPlaylistTracks(queryId, page, 50);
+      const response =
+        ownedListId !== null
+          ? await getPlaylistTracksNew(ownedListId, page, 50)
+          : await getPlaylistTracks(queryId, page, 50);
       const { songs, filteredCount } = parsePlaylistTracks(response);
       allSongs.push(...songs);
       if (songs.length + filteredCount < 50) break;
     }
     if (requestId !== orderPlaylistLoadRequestId) return;
-    orderPlaylistSongs.value = dedupeSongs(allSongs);
+    orderPlaylistSongs.value = dedupeSongs(
+      ownedListId !== null
+        ? orderByPlaylistPosition(allSongs, (song) => song.playlistSort)
+        : allSongs,
+    );
   } catch {
     if (requestId !== orderPlaylistLoadRequestId) return;
     orderPlaylistSongs.value = [];

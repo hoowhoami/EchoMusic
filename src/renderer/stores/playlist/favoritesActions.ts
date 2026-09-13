@@ -1,4 +1,5 @@
-import { addPlaylistTrack, deletePlaylistTrack, getPlaylistTracks } from '@/api/playlist';
+import { addPlaylistTrack, deletePlaylistTrack, getPlaylistTracksNew } from '@/api/playlist';
+import { orderByPlaylistPosition } from '@/utils/playlistOrder';
 import type { PlaylistMeta } from '@/models/playlist';
 import type { Song } from '@/models/song';
 import { parsePlaylistTracks } from '@/utils/mappers';
@@ -29,14 +30,16 @@ const waitForStableFavorites = async (
   fallback: () => readonly Song[],
 ): Promise<readonly Song[]> => {
   const loadedSongs = await loader.waitForAll();
-  return loader.failed ? fallback() : loadedSongs;
+  return loader.failed
+    ? fallback()
+    : orderByPlaylistPosition(loadedSongs, (song) => song.playlistSort);
 };
 
 const loadPlaylistSongsForDuplicateCheck = async (targetId: string): Promise<Song[] | null> => {
   const songs: Song[] = [];
   try {
     for (let page = 1; page <= DUPLICATE_CHECK_MAX_PAGES; page += 1) {
-      const res = await getPlaylistTracks(targetId, page, DUPLICATE_CHECK_PAGE_SIZE);
+      const res = await getPlaylistTracksNew(targetId, page, DUPLICATE_CHECK_PAGE_SIZE);
       if (!res || typeof res !== 'object') return songs.length > 0 ? songs : null;
       const hasStatus = 'status' in res;
       const statusOk = hasStatus && (res as { status?: number }).status === 1;
@@ -176,14 +179,14 @@ export const favoritesActions = {
     this.favoritesLoaded = true;
     this.favoritesLoading = false;
   },
-  async fetchLikedPlaylistSongs(this: FavoritesStoreShape) {
-    if (this.favoritesLoading && favoritesLoader) {
+  async fetchLikedPlaylistSongs(this: FavoritesStoreShape, force = false) {
+    if (!force && this.favoritesLoading && favoritesLoader) {
       return (await waitForStableFavorites(favoritesLoader, () => this.favorites)).length > 0;
     }
 
     const likedPlaylist = this.likedPlaylist;
-    const likedQueryId = this.likedPlaylistQueryId;
-    if (!likedPlaylist || !likedQueryId) {
+    const likedListId = this.likedPlaylistListId;
+    if (!likedPlaylist || !likedListId) {
       this.favorites = [];
       this.favoritesLoaded = true;
       this.favoritesLoading = false;
@@ -195,14 +198,13 @@ export const favoritesActions = {
     }
 
     const requestGeneration = this.userCollectionsGeneration;
-    const queryId = String(likedQueryId);
     const previousFavorites = this.favorites.slice();
     const previousFavoritesLoaded = this.favoritesLoaded;
     this.favoritesLoaded = false;
     this.favoritesLoading = true;
     const loader = new PagedSongLoader<Song>(
       async (page, pageSize) => {
-        const response = await getPlaylistTracks(queryId, page, pageSize);
+        const response = await getPlaylistTracksNew(likedListId, page, pageSize);
         const { songs: pageSongs, filteredCount } = parsePlaylistTracks(response);
         const hasMore = pageSongs.length + filteredCount >= pageSize;
         return { items: pageSongs, hasMore };
@@ -213,8 +215,7 @@ export const favoritesActions = {
         dedupeKey: (song) => String(song.id),
         logTag: 'FavoritesLoader',
         maxPages: 50,
-        onPageLoaded: (allItems) => updateFavorites(allItems),
-        onComplete: (allItems) => updateFavorites(allItems, true),
+        onComplete: (allItems) => updateFavorites(allItems),
         onError: () => {
           if (!isCurrentLoader()) return;
           this.favorites = previousFavorites;
@@ -227,21 +228,16 @@ export const favoritesActions = {
     const isCurrentLoader = () =>
       favoritesLoader === loader && this.userCollectionsGeneration === requestGeneration;
 
-    const updateFavorites = (items: readonly Song[], loaded = false) => {
+    const updateFavorites = (items: readonly Song[]) => {
       if (!isCurrentLoader()) return;
-      this.favorites = dedupeSongs(items.slice());
-      if (loaded) {
-        this.favoritesLoaded = true;
-        this.favoritesLoading = false;
-      }
+      this.favorites = dedupeSongs(orderByPlaylistPosition(items, (song) => song.playlistSort));
+      this.favoritesLoaded = true;
+      this.favoritesLoading = false;
     };
 
     favoritesLoader = loader;
 
-    await loader.loadFirstPage();
-    if (!loader.fullyLoaded && !loader.failed) {
-      void loader.loadRemaining();
-    }
+    await loader.loadAll();
 
     return loader.count > 0;
   },

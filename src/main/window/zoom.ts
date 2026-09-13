@@ -1,7 +1,7 @@
 import type { BrowserWindow } from 'electron';
 import { ipcRegistry } from '../ipc/registry';
 import { getMainAppSettings, setMainAppSetting } from '../storage/settings';
-import { normalizeZoomLevel, zoomShortcut } from '../../shared/window-zoom';
+import { normalizeZoomLevel, stepZoomLevel, zoomShortcut } from '../../shared/window-zoom';
 
 // One authority for shortcuts, settings, reload and startup. Auxiliary lyric and
 // plugin windows have separate sizing contracts and do not inherit this setting.
@@ -28,7 +28,7 @@ export function installWindowZoom(win: BrowserWindow, onChange: (level: number) 
     const action = zoomShortcut(input, process.platform);
     if (!action) return;
     event.preventDefault();
-    set(action === 'reset' ? 0 : level + (action === 'in' ? 1 : -1));
+    set(action === 'reset' ? 0 : stepZoomLevel(level, action === 'in' ? 1 : -1));
   });
   // Suppress Chromium's unpersisted Ctrl+wheel zoom; explicit commands own zoom.
   win.webContents.on('zoom-changed', (event) => event.preventDefault());

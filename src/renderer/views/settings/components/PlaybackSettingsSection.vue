@@ -97,8 +97,8 @@ const selectTrackTransitionMode = (mode: TrackTransitionMode) => {
   if (trackTransitionMode.value === mode) return;
   settingStore.setTrackTransitionMode(mode);
 };
-const handleFadeCrossSlider = (value: number) => {
-  settingStore.setFadeCrossSecs(value);
+const handleFadeCrossChange = (value: string) => {
+  settingStore.setFadeCrossSecs(Number(value));
 };
 
 const handleReferenceLufsSlider = (value: number) => {
@@ -263,16 +263,14 @@ const handleRemoveImpulseResponse = (id: string) => {
           <h3 class="font-semibold">过渡时长</h3>
           <p class="text-sm text-text-secondary">调整两首歌交叠淡入淡出的时间</p>
         </div>
-        <Slider
-          class="w-48"
+        <InputNumber
+          class="w-45 shrink-0"
           :model-value="settingStore.fadeCrossSecs"
           :min="0"
           :max="MAX_FADE_CROSS_SECS"
           :step="1"
-          show-value
-          :value-suffix="' 秒'"
-          @update:model-value="handleFadeCrossSlider($event)"
-          @value-commit="handleFadeCrossSlider($event)"
+          suffix="秒"
+          @update:model-value="handleFadeCrossChange"
         />
       </div>
     </template>
