@@ -1,8 +1,8 @@
 {
-  "name": "NoPlan",
-  "description": "A DJ plan with no effect",
+  "name": "fallback-exchange",
+  "description": "Gain and bass exchange for transitions without a beat grid",
   "Achain": {
-    "description": "No effect for Track A",
+    "description": "Outgoing gain fade and bass reduction",
     "list": [
       {
         "effect": {
@@ -34,7 +34,7 @@
     ]
   },
   "Bchain": {
-    "description": "No effect for Track B",
+    "description": "Incoming gain fade and bass restoration",
     "list": [
       {
         "effect": {

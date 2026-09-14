@@ -96,6 +96,23 @@ fn open(url: &str) -> DecoderData {
     .expect("open test wav")
 }
 
+#[test]
+fn cancelled_analysis_seek_preserves_the_decoder_position() {
+    let wav = TestWav::new(8.0, 440.0, 120.0, 0.0, 0.0);
+    let mut decoder = open(&wav.url());
+    let cancellation = PreparationCancellation::default();
+    cancellation.cancel();
+    let err = decoder
+        .prepare_cancellable_seek(4.0, || cancellation.is_cancelled())
+        .expect_err("cancelled seek");
+    assert!(err.contains("cancelled"));
+    let first = decoder
+        .decode_next_chunk()
+        .expect("decode")
+        .expect("first chunk");
+    assert!(first.pts_secs.unwrap_or(0.0).abs() < 0.01);
+}
+
 struct Rig {
     shared: Arc<SharedAudio>,
     commands: SyncSender<DecodeCommand>,
@@ -183,6 +200,82 @@ fn rms(samples: &[f32]) -> f32 {
         return 0.0;
     }
     (samples.iter().map(|s| s * s).sum::<f32>() / samples.len() as f32).sqrt()
+}
+
+#[test]
+fn source_switch_catchup_handoff_keeps_output_samples_continuous() {
+    let _guard = TEST_SERIAL.lock().unwrap_or_else(|p| p.into_inner());
+    let wav = TestWav::new(6.0, 440.0, 120.0, 0.0, 0.0);
+    let mut reference = Rig::start(&wav.url());
+    let (expected, _) = reference.drain(8.0);
+    reference.stop();
+
+    let mut replacement = open(&wav.url());
+    replacement.prepare_cancellable_seek(0.0, || false).unwrap();
+    let (switch_at_secs, predecoded) = replacement
+        .prepare_source_switch_chunks(0.0, 1.5, || 0.0, || false)
+        .unwrap();
+    let mut rig = Rig::start(&wav.url());
+    let (reply, received) = sync_channel(1);
+    rig.commands
+        .send(DecodeCommand::SwitchSource {
+            decoder: Box::new(replacement),
+            predecoded,
+            switch_at_secs,
+            generation: rig.shared.current_decode_generation(),
+            track_seq: Some(1),
+            reply,
+        })
+        .unwrap();
+    let (actual, _) = rig.drain(8.0);
+    rig.stop();
+    assert!(received
+        .recv_timeout(Duration::from_secs(1))
+        .unwrap()
+        .is_ok());
+    assert_eq!(
+        actual.len(),
+        expected.len(),
+        "no repeated or skipped frames"
+    );
+    let max_error = actual
+        .iter()
+        .zip(&expected)
+        .map(|(a, b)| (a - b).abs())
+        .fold(0.0f32, f32::max);
+    assert!(max_error < 1e-6, "switch changed samples: {max_error}");
+}
+
+#[test]
+fn source_switch_empty_buffer_falls_back_to_uninterrupted_old_source() {
+    let _guard = TEST_SERIAL.lock().unwrap_or_else(|p| p.into_inner());
+    let wav = TestWav::new(6.0, 440.0, 120.0, 0.0, 0.0);
+    let mut reference = Rig::start(&wav.url());
+    let (expected, _) = reference.drain(8.0);
+    reference.stop();
+    let mut rig = Rig::start(&wav.url());
+    let (reply, received) = sync_channel(1);
+    rig.commands
+        .send(DecodeCommand::SwitchSource {
+            decoder: Box::new(open(&wav.url())),
+            predecoded: Vec::new(),
+            switch_at_secs: 0.0,
+            generation: rig.shared.current_decode_generation(),
+            track_seq: Some(1),
+            reply,
+        })
+        .unwrap();
+    let (actual, _) = rig.drain(8.0);
+    rig.stop();
+    assert!(received
+        .recv_timeout(Duration::from_secs(1))
+        .unwrap()
+        .unwrap_err()
+        .contains("insufficient prepared audio"));
+    assert_eq!(
+        actual, expected,
+        "rejected switch must not alter the old source output"
+    );
 }
 
 fn set_mode(mode: TransitionMode, fade_secs: f32) {
@@ -277,10 +370,32 @@ fn gapless_mode_trims_silence_and_switches_track_seq_continuously() {
 }
 
 #[test]
+fn fade_keeps_silent_boundaries_through_decode_and_handoff() {
+    let _guard = TEST_SERIAL.lock().unwrap_or_else(|p| p.into_inner());
+    set_mode(TransitionMode::Fade, 2.0);
+    let a = TestWav::new(32.0, 440.0, 120.0, 0.0, 1.0);
+    let b = TestWav::new(32.0, 880.0, 120.0, 0.5, 0.0);
+    let mut rig = Rig::start(&a.url());
+    let b_start = prepare_and_arm(&rig, &a.url(), &b.url(), 1);
+    assert_eq!(b_start, 0.0, "plain fade must not skip B's silent head");
+    let (output, boundary) = rig.drain(90.0);
+    let (info, at_samples) = boundary.expect("fade boundary");
+    assert_eq!(info.start_position_secs, 0.0);
+    let switch_secs = at_samples as f64 / 2.0 / f64::from(SR);
+    assert!((switch_secs - 30.0).abs() < 0.3, "switch at {switch_secs}");
+    let total_secs = output.len() as f64 / 2.0 / f64::from(SR);
+    assert!(
+        (total_secs - 62.0).abs() < 0.3,
+        "full untrimmed duration: {total_secs}"
+    );
+    rig.stop();
+}
+
+#[test]
 fn fade_mode_overlaps_tracks_for_the_configured_duration() {
     let _guard = TEST_SERIAL.lock().unwrap_or_else(|p| p.into_inner());
     set_mode(TransitionMode::Fade, 2.0);
-    // Tracks must exceed `fadePlaySupportSongMinDuration` (30 s) to be overlapped.
+    // Tracks must be at least 30 seconds long to support overlapping playback.
     let a = TestWav::new(32.0, 440.0, 120.0, 0.0, 0.0);
     let b = TestWav::new(32.0, 880.0, 120.0, 0.0, 0.0);
     let mut rig = Rig::start(&a.url());
@@ -311,7 +426,7 @@ fn fade_mode_overlaps_tracks_for_the_configured_duration() {
 }
 
 #[test]
-fn settings_change_disarms_active_transition_runner() {
+fn explicit_transition_reset_disarms_active_runner() {
     let _guard = TEST_SERIAL.lock().unwrap_or_else(|p| p.into_inner());
     set_mode(TransitionMode::Fade, 2.0);
     let a = TestWav::new(32.0, 440.0, 120.0, 0.0, 0.0);
@@ -484,7 +599,7 @@ fn seek_during_overlap_abandons_deck_a_and_continues_on_b() {
         }
     }
     assert!(switched, "overlap never started");
-    // Seek B to 6 s mid-overlap.
+    // Seek B to 30 s mid-overlap.
     let generation = rig
         .shared
         .reset_for_decode_resume(30.0, &DspSettings::default());
@@ -512,17 +627,15 @@ fn seek_during_overlap_abandons_deck_a_and_continues_on_b() {
 static TEST_SERIAL: Mutex<()> = Mutex::new(());
 
 #[test]
-fn seek_on_outgoing_track_before_the_boundary_keeps_a_live_and_rearms_b() {
+fn seek_on_outgoing_track_drops_the_old_plan_and_keeps_a_live() {
     let _guard = TEST_SERIAL.lock().unwrap_or_else(|p| p.into_inner());
     set_mode(TransitionMode::Fade, 3.0);
-    // A = 36 s, cut at 33 s. Seek A to 20 s (UI still on A, track_seq 1) while the
-    // transition is armed; the blend must still happen later from the new position.
+    // Seek A while B is armed. User transport wins; the old plan must not cut A short.
     let a = TestWav::new(36.0, 440.0, 120.0, 0.0, 0.0);
     let b = TestWav::new(32.0, 880.0, 120.0, 0.0, 0.0);
     let mut rig = Rig::start(&a.url());
     prepare_and_arm(&rig, &a.url(), &b.url(), 1);
-    // Let the worker run ahead: drain ~1 s of output so decoding reaches the cut point
-    // (the decoded queue holds only ~0.5 s, so the worker blocks at ≈1.5 s decoded).
+    // Drain about one second while keeping the transition ahead of the audible position.
     let mut buffer = vec![0.0f32; 1_024];
     let mut drained = 0usize;
     let started = Instant::now();
@@ -551,14 +664,95 @@ fn seek_on_outgoing_track_before_the_boundary_keeps_a_live_and_rearms_b() {
         .expect("seek reply")
         .expect("seek ok");
     let (out, switch) = rig.drain(90.0);
-    // The transition still happens later: A plays 20 s → 33 s (13 s), overlap 3 s, then B.
-    let (info, at_samples) = switch.expect("track switch signalled after the seek");
-    assert_eq!(info.seq, 2);
-    let switch_secs = at_samples as f64 / 2.0 / f64::from(SR);
-    assert!((switch_secs - 13.0).abs() < 0.4, "switch at {switch_secs}s");
+    assert!(
+        switch.is_none(),
+        "old transition switched tracks after seek"
+    );
+    assert_eq!(rig.shared.current_track_seq(), 1);
     let total_secs = out.len() as f64 / 2.0 / f64::from(SR);
-    // 13 s of A alone + 3 s overlap + 29 s of B alone = 45 s.
-    assert!((total_secs - 45.0).abs() < 0.4, "total {total_secs}s");
+    assert!((total_secs - 16.0).abs() < 0.4, "total {total_secs}s");
+    rig.stop();
+}
+
+#[test]
+fn seek_near_eof_does_not_wait_for_an_armed_transition_while_paused() {
+    let _guard = TEST_SERIAL.lock().unwrap_or_else(|p| p.into_inner());
+    set_mode(TransitionMode::Fade, 3.0);
+    let a = TestWav::new(36.0, 440.0, 120.0, 0.0, 0.0);
+    let b = TestWav::new(32.0, 880.0, 120.0, 0.0, 0.0);
+    let mut rig = Rig::start(&a.url());
+    prepare_and_arm(&rig, &a.url(), &b.url(), 1);
+    rig.shared.paused.store(true, Ordering::Release);
+    let generation = rig
+        .shared
+        .reset_for_decode_resume(35.0, &DspSettings::default());
+    let (reply, result) = sync_channel(1);
+    rig.commands
+        .send(DecodeCommand::Seek {
+            position_secs: 35.0,
+            generation,
+            track_seq: Some(1),
+            reply,
+        })
+        .expect("seek");
+    result
+        .recv_timeout(Duration::from_secs(2))
+        .expect("bounded seek reply")
+        .expect("seek ok");
+    assert!(rig.shared.paused.load(Ordering::Acquire));
+    rig.shared.paused.store(false, Ordering::Release);
+    let (out, switch) = rig.drain(5.0);
+    assert!(switch.is_none());
+    assert_eq!(rig.shared.current_track_seq(), 1);
+    let secs = out.len() as f64 / 2.0 / f64::from(SR);
+    assert!((secs - 1.0).abs() < 0.2, "audio after seek: {secs}s");
+    rig.stop();
+}
+
+#[test]
+fn stale_seek_does_not_disarm_a_newer_transition() {
+    let _guard = TEST_SERIAL.lock().unwrap_or_else(|p| p.into_inner());
+    set_mode(TransitionMode::Fade, 3.0);
+    let a = TestWav::new(36.0, 440.0, 120.0, 0.0, 0.0);
+    let b = TestWav::new(32.0, 880.0, 120.0, 0.0, 0.0);
+    let mut rig = Rig::start(&a.url());
+    let old_generation = rig.shared.current_decode_generation();
+    let generation = rig
+        .shared
+        .reset_for_decode_resume(20.0, &DspSettings::default());
+    let (reply, result) = sync_channel(1);
+    rig.commands
+        .send(DecodeCommand::Seek {
+            position_secs: 20.0,
+            generation,
+            track_seq: Some(1),
+            reply,
+        })
+        .expect("seek");
+    result
+        .recv_timeout(Duration::from_secs(2))
+        .expect("reply")
+        .expect("seek ok");
+    prepare_and_arm(&rig, &a.url(), &b.url(), 1);
+    let (reply, result) = sync_channel(1);
+    rig.commands
+        .send(DecodeCommand::Seek {
+            position_secs: 0.0,
+            generation: old_generation,
+            track_seq: Some(1),
+            reply,
+        })
+        .expect("stale seek");
+    // Unlike a real seek, a stale command does not reset the queue. Keep consuming
+    // audio so the worker can leave its queue-capacity wait and handle the command.
+    let (out, switch) = rig.drain(50.0);
+    assert!(result
+        .recv_timeout(Duration::from_secs(2))
+        .expect("stale reply")
+        .is_err());
+    assert_eq!(switch.expect("new transition survived").0.seq, 2);
+    let secs = out.len() as f64 / 2.0 / f64::from(SR);
+    assert!((secs - 45.0).abs() < 0.4, "audio after seek: {secs}s");
     rig.stop();
 }
 
@@ -632,6 +826,72 @@ pub(crate) static TEST_EVENT_SINK: Mutex<Option<std::sync::mpsc::Sender<PlayerEv
 /// by draining `SharedAudio` ourselves.
 #[test]
 fn runtime_fade_transition_is_rendered_through_the_real_prepare_path() {
+    run_runtime_transition_settings_test(SettingsChangeTiming::Unchanged);
+}
+
+#[test]
+fn runtime_settings_change_reprepares_without_resetting_current_audio() {
+    run_runtime_transition_settings_test(SettingsChangeTiming::Prepared);
+}
+
+#[test]
+fn runtime_settings_change_preserves_the_playing_transition() {
+    run_runtime_transition_settings_test(SettingsChangeTiming::Playing);
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum SettingsChangeTiming {
+    Unchanged,
+    Prepared,
+    Playing,
+}
+
+#[test]
+fn cancelling_a_completed_prepare_only_retires_its_own_source() {
+    let _guard = TEST_SERIAL.lock().unwrap_or_else(|p| p.into_inner());
+    crate::initialize(None).expect("initialize");
+    crate::set_transition_settings(Some(crate::control::TransitionSettingsOptions {
+        mode: Some("none".to_string()),
+        fade_secs: None,
+    }))
+    .expect("settings");
+    let a = TestWav::new(8.0, 440.0, 120.0, 0.0, 0.0);
+    let b = TestWav::new(8.0, 880.0, 120.0, 0.0, 0.0);
+    crate::load_file_task_for_test(a.url(), 1)
+        .compute()
+        .expect("load");
+    crate::stop_output_for_test();
+    let shared = crate::current_shared().expect("session");
+    let generation = shared.current_decode_generation();
+    let old_id = crate::begin_next_source_preparation().expect("old request");
+    let new_id = crate::begin_next_source_preparation().expect("new request");
+    let mut prepare = crate::prepare_next_source_task_for_test(b.url(), 2, new_id as u64, 0.0);
+    assert!(prepare.compute().expect("prepare"));
+    assert!(
+        !shared.gapless_prepare_is_pending(),
+        "preparation has completed"
+    );
+    crate::cancel_next_source_preparation(old_id).expect("cancel old");
+    let retained_id = call_core_command("test-prepared-id", |runtime| {
+        Ok(runtime
+            .prepared_next
+            .as_ref()
+            .map(|source| source.request_id))
+    })
+    .expect("prepared id");
+    crate::cancel_next_source_preparation(new_id).expect("cancel completed");
+    let cleared = call_core_command("test-prepared-cleared", |runtime| {
+        Ok(runtime.prepared_next.is_none())
+    })
+    .expect("prepared cleared");
+    let final_generation = shared.current_decode_generation();
+    crate::destroy().ok();
+    assert_eq!(retained_id, Some(new_id as u64));
+    assert!(cleared, "completed source was not retired");
+    assert_eq!(final_generation, generation);
+}
+
+fn run_runtime_transition_settings_test(timing: SettingsChangeTiming) {
     let _guard = TEST_SERIAL.lock().unwrap_or_else(|p| p.into_inner());
     let (event_tx, event_rx) = std::sync::mpsc::channel::<PlayerEvent>();
     *TEST_EVENT_SINK.lock().unwrap() = Some(event_tx);
@@ -671,11 +931,41 @@ fn runtime_fade_transition_is_rendered_through_the_real_prepare_path() {
     // prepare B (seq 2) the way `prepareGaplessNext` does.
     let request_id = crate::begin_next_source_preparation().expect("begin") as u64;
     assert!(request_id > 0);
+    let generation = shared.current_decode_generation();
+    // Renderer reloads reapply the same settings while playback/preparation continues.
+    crate::set_transition_settings(Some(crate::control::TransitionSettingsOptions {
+        mode: Some("fade".to_string()),
+        fade_secs: Some(3.0),
+    }))
+    .expect("reapply settings");
+    assert!(
+        shared.gapless_prepare_request_is_current(request_id),
+        "unchanged settings cancelled the pending preparation"
+    );
     let mut prepare = crate::prepare_next_source_task_for_test(b.url(), 2, request_id, -3.0);
     let prepared = prepare.compute().expect("prepare B");
     assert!(prepared, "prepareNextSource returned false");
     let diag = crate::get_transition_diagnostics().unwrap();
     eprintln!("diag = {diag:?}");
+
+    let change_settings = || {
+        crate::set_transition_settings(Some(crate::control::TransitionSettingsOptions {
+            mode: Some("gapless".to_string()),
+            fade_secs: Some(3.0),
+        }))
+        .expect("change settings");
+    };
+    let target_seq = if timing == SettingsChangeTiming::Prepared {
+        change_settings();
+        assert!(!shared.gapless_prepare_request_is_current(request_id));
+        let replacement_id = crate::begin_next_source_preparation().expect("reprepare") as u64;
+        let mut replacement =
+            crate::prepare_next_source_task_for_test(b.url(), 3, replacement_id, -3.0);
+        assert!(replacement.compute().expect("prepare with new settings"));
+        3
+    } else {
+        2
+    };
 
     // Drain to the end of both tracks, recording the boundary.
     let started = Instant::now();
@@ -689,8 +979,11 @@ fn runtime_fade_transition_is_rendered_through_the_real_prepare_path() {
         } else {
             std::thread::sleep(Duration::from_millis(1));
         }
-        if switch_at.is_none() && shared.current_track_seq() == 2 {
+        if switch_at.is_none() && shared.current_track_seq() == target_seq {
             switch_at = Some(out.len());
+            if timing == SettingsChangeTiming::Playing {
+                change_settings();
+            }
         }
         if started.elapsed() > Duration::from_secs(60) {
             break;
@@ -706,21 +999,54 @@ fn runtime_fade_transition_is_rendered_through_the_real_prepare_path() {
     let output_rate = f64::from(shared.mix_format.sample_rate);
     let total_secs = out.len() as f64 / 2.0 / output_rate;
     let switch_secs = switch_at.map(|s| s as f64 / 2.0 / output_rate);
+    let final_generation = shared.current_decode_generation();
+    let final_track_gain = crate::call_core_command("check-track-gain", |runtime| {
+        Ok(runtime.dsp_settings.normalization_gain_db)
+    })
+    .expect("track gain");
+    let final_output_gain = shared.normalization_gain();
     eprintln!("total = {total_secs:.2}s switch = {switch_secs:?}");
     crate::destroy().ok();
     *TEST_EVENT_SINK.lock().unwrap() = None;
+    assert!(
+        (final_track_gain + 3.0).abs() < 1e-6,
+        "next prepare/seek must use B's own gain"
+    );
+    assert!((final_output_gain - 10.0f32.powf(-3.0 / 20.0)).abs() < 1e-5);
+    assert_eq!(
+        final_generation, generation,
+        "transition settings reset decoding"
+    );
     assert!(
         logs.iter()
             .any(|l| l.contains("transition planned: mode=fade")),
         "no plan logged"
     );
     assert!(
-        logs.iter().any(|l| l.contains("song transition started")),
-        "transition never started"
+        !logs
+            .iter()
+            .any(|l| l.contains("transition head analysis started: mode=fade")),
+        "timed fades must not decode a silence-analysis window"
     );
     assert!(
-        (total_secs - 77.0).abs() < 0.5,
-        "expected 40 + 40 − 3 = 77 s of audio, got {total_secs}"
+        switch_at.is_some(),
+        "prepared source never reached playback"
+    );
+    if timing != SettingsChangeTiming::Prepared {
+        assert!(
+            logs.iter()
+                .any(|l| l.contains("transition finished; incoming track continues")),
+            "the original fade did not finish"
+        );
+    }
+    let expected_secs = if timing == SettingsChangeTiming::Prepared {
+        80.0
+    } else {
+        77.0
+    };
+    assert!(
+        (total_secs - expected_secs).abs() < 0.5,
+        "expected {expected_secs}s of audio, got {total_secs}"
     );
 }
 

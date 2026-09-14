@@ -126,6 +126,7 @@ test('favorites sort by position and forced refresh ignores the previous respons
     finishOld = resolve;
   });
   let requests = 0;
+  const coverUpdates = [];
   const fresh = [
     { id: 2, playlistSort: 1, collectTime: 1 },
     { id: 1, playlistSort: 0, collectTime: 2 },
@@ -139,6 +140,16 @@ test('favorites sort by position and forced refresh ignores the previous respons
     },
     '@/utils/mappers': { parsePlaylistTracks: (songs) => ({ songs, filteredCount: 0 }) },
     '@/utils/PagedSongLoader': loader,
+    '@/stores/user': { useUserStore: () => ({ info: { userid: 7 } }) },
+    '@/stores/playlistCovers': {
+      usePlaylistCoversStore: () => ({
+        updateFromPages: async (_playlist, userId, pages, isCurrent) => {
+          assert.equal(userId, 7);
+          assert.equal(isCurrent(), true);
+          coverUpdates.push(pages);
+        },
+      }),
+    },
     '@/utils/song': {},
     '@/utils/playlistOrder': { orderByPlaylistPosition, orderByCollectTime },
     '@/utils/logger': silentLogger,
@@ -163,6 +174,7 @@ test('favorites sort by position and forced refresh ignores the previous respons
   );
   finishOld([{ id: 99, playlistSort: 0 }]);
   await oldLoad;
+  assert.deepEqual(coverUpdates, [[fresh]], 'Aborted pages must not update the cover');
   assert.deepEqual(
     store.favorites.map((song) => song.id),
     [1, 2],
@@ -173,6 +185,16 @@ test('favorites sort by position and forced refresh ignores the previous respons
     (await favoritesActions.waitForFavoritesLoaded.call(store)).map((song) => song.id),
     [1, 2],
   );
+  // 热重载保留了 loading 状态，但对应的分页加载器已经结束。
+  store.favoritesLoading = true;
+  store.favoritesLoaded = false;
+  await favoritesActions.fetchLikedPlaylistSongs.call(store);
+  assert.equal(
+    store.favoritesLoading,
+    false,
+    'A completed loader must not keep the skeleton active',
+  );
+  assert.equal(store.favoritesLoaded, true);
 });
 
 test('1060 tracks sort globally across all four pages by sort rather than collecttime', async () => {
@@ -410,7 +432,10 @@ test('collecttime keeps ties stable and places missing or invalid timestamps las
   );
 });
 
-test('favorites keep skeleton active and publish only the complete list', async () => {
+test('favorites publish the first page while remaining pages load, without marking it complete', async () => {
+  const requestedPages = [];
+  let failRemaining = false;
+  let coverUpdates = 0;
   const loader = compile('../src/renderer/utils/PagedSongLoader.ts', {
     '@/utils/logger': silentLogger,
   });
@@ -425,6 +450,7 @@ test('favorites keep skeleton active and publish only the complete list', async 
   const { favoritesActions } = compile('../src/renderer/stores/playlist/favoritesActions.ts', {
     '@/api/playlist': {
       getPlaylistTracksNew: async (_id, page, size) => {
+        requestedPages.push(page);
         assert.equal(size, 300);
         if (page === 1)
           return Array.from({ length: 300 }, (_, i) => ({
@@ -433,6 +459,7 @@ test('favorites keep skeleton active and publish only the complete list', async 
             collectTime: i + 1,
           }));
         if (page === 2) {
+          if (failRemaining) throw new Error('Second page failed');
           secondRequested();
           return secondPage;
         }
@@ -441,6 +468,14 @@ test('favorites keep skeleton active and publish only the complete list', async 
     },
     '@/utils/mappers': { parsePlaylistTracks: (songs) => ({ songs, filteredCount: 0 }) },
     '@/utils/PagedSongLoader': loader,
+    '@/stores/user': { useUserStore: () => ({ info: { userid: 7 } }) },
+    '@/stores/playlistCovers': {
+      usePlaylistCoversStore: () => ({
+        updateFromPages: async () => {
+          coverUpdates++;
+        },
+      }),
+    },
     '@/utils/song': {},
     '@/utils/playlistOrder': { orderByPlaylistPosition, orderByCollectTime },
     '@/utils/logger': silentLogger,
@@ -464,13 +499,30 @@ test('favorites keep skeleton active and publish only the complete list', async 
   assert.equal(finished, false);
   assert.equal(store.favoritesLoading, true);
   assert.equal(store.favoritesLoaded, false);
-  assert.deepEqual(store.favorites, []);
+  assert.equal(coverUpdates, 0, 'A partial list cannot update the cover');
+  assert.equal(store.favorites.length, 300);
+  assert.deepEqual(
+    store.favorites.map((song) => song.id),
+    Array.from({ length: 300 }, (_, i) => 300 - i),
+  );
+  const joined = favoritesActions.fetchLikedPlaylistSongs.call(store);
+  assert.equal(requestedPages.filter((page) => page === 1).length, 1);
   finishSecond([{ id: 301, playlistSort: 0, collectTime: 301 }]);
   await result;
+  await joined;
   assert.equal(store.favoritesLoading, false);
   assert.equal(store.favoritesLoaded, true);
+  assert.equal(coverUpdates, 1);
   assert.deepEqual(
     store.favorites.map((song) => song.id),
     Array.from({ length: 301 }, (_, i) => 301 - i),
   );
+  failRemaining = true;
+  store.favorites = [];
+  store.favoritesLoaded = false;
+  await favoritesActions.fetchLikedPlaylistSongs.call(store, true);
+  assert.equal(store.favorites.length, 300, 'Later failures retain the songs already displayed');
+  assert.equal(store.favoritesLoaded, false);
+  assert.equal(store.favoritesLoading, false);
+  assert.equal(coverUpdates, 1, 'Failed pagination cannot update the cover');
 });

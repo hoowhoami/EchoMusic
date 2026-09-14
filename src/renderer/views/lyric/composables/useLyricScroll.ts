@@ -20,7 +20,7 @@ export function useLyricScroll(
   const isUserScrolling = ref(false);
   const scrollHighlightIndex = ref(-1); // 滚轮停止后高亮的行索引
   let userScrollResumeTimer: number | null = null;
-  let scrollEndTimer: number | null = null;
+  let wheelRafId: number | null = null;
   let scrollRafId: number | null = null;
 
   const clearUserScrollTimer = () => {
@@ -30,11 +30,21 @@ export function useLyricScroll(
     }
   };
 
-  const clearScrollEndTimer = () => {
-    if (scrollEndTimer !== null) {
-      window.clearTimeout(scrollEndTimer);
-      scrollEndTimer = null;
+  const resumeFollowing = (smooth = false) => {
+    isUserScrolling.value = false;
+    scrollHighlightIndex.value = -1;
+    clearUserScrollTimer();
+    if (wheelRafId !== null) {
+      cancelAnimationFrame(wheelRafId);
+      wheelRafId = null;
     }
+    void nextTick(() =>
+      scrollToLine(
+        activeIndex?.value ?? lyricStore.currentIndex,
+        smooth,
+        collapsed?.value ?? false,
+      ),
+    );
   };
 
   const scrollToLineNow = (index: number, smooth: boolean, collapsed = false) => {
@@ -131,8 +141,6 @@ export function useLyricScroll(
     return closestIndex;
   };
 
-  let scrollRafPending = false;
-
   const handleWheel = () => {
     if (lyricStore.lines.length === 0) return;
     isUserScrolling.value = true;
@@ -141,10 +149,10 @@ export function useLyricScroll(
     clearUserScrollTimer();
 
     // 用 rAF 节流：每帧最多计算一次中心行
-    if (!scrollRafPending) {
-      scrollRafPending = true;
-      requestAnimationFrame(() => {
-        scrollRafPending = false;
+    if (wheelRafId === null) {
+      wheelRafId = requestAnimationFrame(() => {
+        wheelRafId = null;
+        if (!isUserScrolling.value) return;
         const index = findLineAtScrollPosition();
         if (index >= 0) {
           scrollHighlightIndex.value = index;
@@ -154,10 +162,7 @@ export function useLyricScroll(
 
     // 5 秒后恢复自动跟随
     userScrollResumeTimer = window.setTimeout(() => {
-      userScrollResumeTimer = null;
-      isUserScrolling.value = false;
-      scrollHighlightIndex.value = -1;
-      scrollToLine(activeIndex?.value ?? lyricStore.currentIndex, true);
+      resumeFollowing(true);
     }, 5000);
   };
 
@@ -173,16 +178,9 @@ export function useLyricScroll(
     },
   );
 
-  // 切歌时重置
-  watch(
-    () => playerStore.currentTrackSnapshot?.id,
-    () => {
-      isUserScrolling.value = false;
-      scrollHighlightIndex.value = -1;
-      clearUserScrollTimer();
-      clearScrollEndTimer();
-      nextTick(() => scrollToLine(activeIndex?.value ?? lyricStore.currentIndex, false));
-    },
+  // Explicit transport always takes priority over browsing the lyric sheet.
+  watch([() => playerStore.currentTrackId, () => playerStore.seekTimestamp], () =>
+    resumeFollowing(),
   );
 
   const dispose = () => {
@@ -191,7 +189,10 @@ export function useLyricScroll(
       scrollRafId = null;
     }
     clearUserScrollTimer();
-    clearScrollEndTimer();
+    if (wheelRafId !== null) {
+      cancelAnimationFrame(wheelRafId);
+      wheelRafId = null;
+    }
   };
 
   return {

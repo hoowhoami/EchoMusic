@@ -1,14 +1,9 @@
-//! Song-transition engine: gapless, crossfade and QQ-Music-style "smart mix" (AutoMix)
-//! reconstructed from the QQ Music 11.9.1 client (see `.planning/crossfade-transitions/`).
+//! Song transitions: silence-trimmed handoffs, timed fades and content-aware mixing.
 //!
-//! Layering mirrors QQ's `AudioPlayConfigManager` (gapless / fade) and
-//! `QMAutoMixManager` + `SSAutoMixInst` (AutoMix):
-//!
-//! * [`plan`] – the eight DJ plan templates extracted from the binary + automation curves.
-//! * [`effects`] – per-deck effect chain executing a plan (`SSAutoMixInst` DSP).
-//! * [`analysis`] – local MIR replacing the `music.mir.MixPlanSvr` payload (bpm, beat grid,
-//!   silence bounds, section boundaries).
-//! * [`decide`] – `DesideCue` V1/V2/V3 reconstruction producing a [`TransitionPlan`].
+//! * [`plan`] – effect templates and automation curves.
+//! * [`effects`] – per-deck effect chains executing a plan.
+//! * [`analysis`] – local tempo, beat-grid, silence and section analysis.
+//! * [`decide`] – cue selection producing a [`TransitionPlan`].
 //! * [`mixer`] – the dual-deck overlap mixer that renders a plan sample-accurately.
 
 pub mod analysis;
@@ -37,11 +32,11 @@ pub enum TransitionMode {
     None,
     /// 无缝播放: skip leading/trailing silence, butt-splice sample-continuously.
     Gapless,
-    /// 淡入淡出播放 0–15 s: equal-power overlap, A fades out while B fades in.
+    /// 淡入淡出播放 0–15 s: linear-amplitude overlap without silence trimming.
     Fade,
-    /// 智能混音-基础渐变: content-aware cue points + simple gain/bass exchange.
+    /// Content-aware cue points with unchanged tempo and gain/bass exchange.
     AutomixBasic,
-    /// 智能混音-进阶交融: beat-matched cue points + multi-band filter blend.
+    /// Beat-matched cue points with multi-band filtering and optional tempo adjustment.
     AutomixPro,
 }
 
@@ -78,24 +73,24 @@ impl TransitionMode {
     }
 }
 
-/// User settings for transitions (mirrors QQ's `fadePlayCrossTime`, `fadePlayEnable`,
-/// `gapless_enableGaplessPlay`, `autoMixBase/Pro`).
+/// User-selected transition mode and timed-fade duration.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct TransitionSettings {
     pub mode: TransitionMode,
-    /// Crossfade length for [`TransitionMode::Fade`], 0–15 s (`fadePlayMaxCrossTime`).
+    /// Crossfade length for [`TransitionMode::Fade`], from 0 to 15 seconds.
     pub fade_secs: f32,
 }
 
 pub const MAX_FADE_SECS: f32 = 15.0;
-/// Songs shorter than this are never overlapped (`fadePlaySupportSongMinDuration` analogue).
+pub const DEFAULT_FADE_SECS: f32 = 15.0;
+/// Songs shorter than this are never overlapped.
 pub const MIN_SUPPORTED_TRACK_SECS: f64 = 30.0;
 
 impl Default for TransitionSettings {
     fn default() -> Self {
         Self {
             mode: TransitionMode::AutomixPro,
-            fade_secs: 5.0,
+            fade_secs: DEFAULT_FADE_SECS,
         }
     }
 }
@@ -105,7 +100,7 @@ impl TransitionSettings {
         let fade_secs = if self.fade_secs.is_finite() {
             self.fade_secs.clamp(0.0, MAX_FADE_SECS)
         } else {
-            5.0
+            DEFAULT_FADE_SECS
         };
         Self {
             mode: self.mode,
@@ -148,7 +143,7 @@ mod tests {
     }
 
     #[test]
-    fn settings_clamp_fade_to_qq_range() {
+    fn settings_clamp_fade_to_supported_range() {
         let settings = TransitionSettings {
             mode: TransitionMode::Fade,
             fade_secs: 40.0,
@@ -160,7 +155,7 @@ mod tests {
             fade_secs: f32::NAN,
         }
         .sanitized();
-        assert_eq!(nan.fade_secs, 5.0);
+        assert_eq!(nan.fade_secs, DEFAULT_FADE_SECS);
         assert!(TransitionMode::AutomixPro.overlaps());
         assert!(!TransitionMode::Gapless.overlaps());
         assert!(settings.prefetch_lead_secs() > 30.0);

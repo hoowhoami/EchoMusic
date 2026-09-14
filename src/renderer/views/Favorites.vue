@@ -1,12 +1,21 @@
 <script setup lang="ts">
 import PageStickyHeader from '@/components/ui/PageStickyHeader.vue';
 defineOptions({ name: 'favorites' });
-import { computed, nextTick, onMounted, onUnmounted, ref, shallowRef, watch } from 'vue';
-import { useRoute } from 'vue-router';
+import {
+  computed,
+  nextTick,
+  onActivated,
+  onMounted,
+  onUnmounted,
+  ref,
+  shallowRef,
+  watch,
+} from 'vue';
 import { usePlaylistStore } from '@/stores/playlist';
 import { usePlayerStore } from '@/stores/player';
 import { useSettingStore } from '@/stores/setting';
 import { useUserStore } from '@/stores/user';
+import { usePlaylistCoversStore } from '@/stores/playlistCovers';
 import { useToastStore } from '@/stores/toast';
 import { useThemeStore } from '@/stores/theme';
 import { getUserFollow, getUserVideoCollect } from '@/api/user';
@@ -52,9 +61,10 @@ const playlistStore = usePlaylistStore();
 const playerStore = usePlayerStore();
 const settingStore = useSettingStore();
 const userStore = useUserStore();
+const playlistCoversStore = usePlaylistCoversStore();
+void playlistCoversStore.hydrate();
 const toastStore = useToastStore();
 const themeStore = useThemeStore();
-const route = useRoute();
 
 const isLoggedIn = computed(() => userStore.isLoggedIn);
 const currentUserKey = computed(() =>
@@ -67,8 +77,12 @@ const { tabsTop, tabsMinHeight } = useStickyTabsLayout(sliverHeaderRef);
 // ========== 歌曲 Tab ==========
 const songs = computed(() => playlistStore.favorites);
 const favoritesLoading = computed(() => playlistStore.favoritesLoading);
-const routeRefreshLoading = ref(route.query._t !== undefined);
-const songListLoading = computed(() => favoritesLoading.value || routeRefreshLoading.value);
+// 加载状态跟随实际请求，不能从会被缓存保留的刷新查询参数推导。
+const routeRefreshLoading = ref(false);
+let refreshGeneration = 0;
+const songListLoading = computed(
+  () => songs.value.length === 0 && (favoritesLoading.value || routeRefreshLoading.value),
+);
 const songListRef = ref<{ scrollToActive?: () => void } | null>(null);
 const searchQuery = ref('');
 const showBatchDrawer = ref(false);
@@ -95,9 +109,11 @@ const handlePlaylistOrderSaved = () => {
   searchQuery.value = '';
 };
 
-const favoriteCoverUrl = computed(() =>
-  createThemedIconCoverUrl(themeStore.sourceColor, iconHeart),
-);
+const favoriteCoverUrl = computed(() => {
+  const liked = playlistStore.likedPlaylist;
+  const cover = liked ? playlistCoversStore.coverFor(liked, userStore.info?.userid) : '';
+  return cover || createThemedIconCoverUrl(themeStore.sourceColor, iconHeart);
+});
 
 const sortedSongs = computed(() => {
   return sortSongs(songs.value, sortField.value, sortOrder.value, {
@@ -430,10 +446,12 @@ const handleTabChange = (value: string | number) => {
 
 // ========== 生命周期 ==========
 const refreshFavorites = async () => {
+  const generation = ++refreshGeneration;
   if (!isLoggedIn.value || !currentUserKey.value) {
     routeRefreshLoading.value = false;
     return;
   }
+  routeRefreshLoading.value = true;
   try {
     if (!playlistStore.likedPlaylistQueryId && !playlistStore.likedPlaylistListId) {
       await playlistStore.fetchUserPlaylists();
@@ -441,7 +459,7 @@ const refreshFavorites = async () => {
     }
     await playlistStore.fetchLikedPlaylistSongs();
   } finally {
-    routeRefreshLoading.value = false;
+    if (generation === refreshGeneration) routeRefreshLoading.value = false;
   }
 };
 
@@ -461,6 +479,12 @@ onMounted(async () => {
   await nextTick();
   setupLoadMoreObserver();
   loadActiveTabData();
+});
+
+onActivated(() => {
+  if (!playlistStore.favoritesLoaded || playlistStore.favoritesLoading) {
+    void refreshFavorites();
+  }
 });
 
 onUnmounted(() => {

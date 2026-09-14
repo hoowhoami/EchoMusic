@@ -26,6 +26,7 @@ import CommentComposer from '@/components/music/CommentComposer.vue';
 import CommentList from '@/components/music/CommentList.vue';
 import SliverHeader from '@/components/music/DetailPageSliverHeader.vue';
 import ActionRow from '@/components/music/DetailPageActionRow.vue';
+import DetailPageError from '@/components/music/DetailPageError.vue';
 import AddToPlaylistDialog from '@/components/music/AddToPlaylistDialog.vue';
 import PageScrollContainer from '@/components/ui/PageScrollContainer.vue';
 import Button from '@/components/ui/Button.vue';
@@ -140,7 +141,9 @@ const hotwordPage = ref(1);
 const hasMoreHotword = ref(true);
 const selectedHotword = ref<string | null>(null);
 
-const detailLoading = ref(false);
+const detailLoading = ref(isMusicType.value);
+const detailFailed = ref(false);
+let detailRequestGeneration = 0;
 const privilegeData = ref<Record<string, unknown> | null>(null);
 const rankingData = ref<Record<string, unknown> | null>(null);
 const rankingFilterData = ref<Record<string, unknown> | null>(null);
@@ -1114,30 +1117,49 @@ const fetchHeaderStats = async () => {
   }
 };
 
+const readDetailResponse = (response: unknown) => {
+  const record = toPlainRecord(response);
+  if (!record || Object.keys(record).length === 0) return null;
+  if (record.status != null && Number(record.status) !== 1) return null;
+  const errorCode = record.error_code ?? record.err_code ?? record.errcode;
+  return errorCode != null && Number(errorCode) !== 0 ? null : record;
+};
+
+const hasDetailContent = computed(
+  () =>
+    !!(
+      qualityTags.value.length ||
+      effectTags.value.length ||
+      rankingInfo.value.length ||
+      rankingSummary.value
+    ),
+);
+
 const fetchDetailData = async () => {
-  if (type !== 'music') return;
+  if (type !== 'music' || (detailLoading.value && detailRequestGeneration > 0)) return;
+  const generation = ++detailRequestGeneration;
+  const isCurrent = () => generation === detailRequestGeneration;
   detailLoading.value = true;
-  privilegeData.value = null;
-  rankingData.value = null;
-  rankingFilterData.value = null;
-  rankingFilterLoaded.value = false;
-  rankingFilterLoading.value = false;
-  expandedRankingKey.value = '';
+  detailFailed.value = false;
+  // 重试时保留成功加载的内容，某个附加接口失败也不清空其他信息。
   try {
     const hash = songHash.value;
-    const privilegeRes = hash
-      ? await getSongPrivilegeLite(hash, songAlbumId.value || undefined)
-      : null;
-    if (privilegeRes && typeof privilegeRes === 'object') {
-      const record = privilegeRes as unknown as Record<string, unknown>;
-      const data = (record.data as unknown[]) || [];
-      const list = Array.isArray(data) ? data : [];
-      privilegeData.value =
-        list.length > 0 && typeof list[0] === 'object'
-          ? (list[0] as Record<string, unknown>)
-          : null;
-      if (privilegeData.value) {
-        detailSong.value = buildSongFromPrivilege(privilegeData.value);
+    if (hash) {
+      try {
+        const response = readDetailResponse(
+          await getSongPrivilegeLite(hash, songAlbumId.value || undefined),
+        );
+        if (!isCurrent()) return;
+        const item = Array.isArray(response?.data) ? toPlainRecord(response.data[0]) : null;
+        if (!item || Object.keys(item).length === 0) {
+          detailFailed.value = true;
+        } else {
+          privilegeData.value = item;
+          detailSong.value = buildSongFromPrivilege(item);
+        }
+      } catch {
+        if (!isCurrent()) return;
+        detailFailed.value = true;
       }
     }
     const mixSongId = getValidMixSongId();
@@ -1147,23 +1169,29 @@ const fetchDetailData = async () => {
         getSongRanking(mixSongId),
         getSongRankingFilter(mixSongId),
       ]);
-      const rankingRes = rankingResult.status === 'fulfilled' ? rankingResult.value : null;
+      if (!isCurrent()) return;
+      const rankingRes =
+        rankingResult.status === 'fulfilled' ? readDetailResponse(rankingResult.value) : null;
       const rankingFilterRes =
-        rankingFilterResult.status === 'fulfilled' ? rankingFilterResult.value : null;
-      if (rankingRes && typeof rankingRes === 'object') {
-        rankingData.value = rankingRes as unknown as Record<string, unknown>;
+        rankingFilterResult.status === 'fulfilled'
+          ? readDetailResponse(rankingFilterResult.value)
+          : null;
+      if (rankingRes) rankingData.value = rankingRes;
+      if (rankingFilterRes) {
+        rankingFilterData.value = rankingFilterRes;
+        rankingFilterLoaded.value = true;
       }
-      if (rankingFilterRes && typeof rankingFilterRes === 'object') {
-        rankingFilterData.value = rankingFilterRes as unknown as Record<string, unknown>;
-      }
-      rankingFilterLoaded.value = true;
-      rankingFilterLoading.value = false;
+      if (!rankingRes || !rankingFilterRes) detailFailed.value = true;
+    } else if (!hash) {
+      detailFailed.value = true;
     }
   } catch {
-    toastStore.loadFailed('歌曲详情');
+    if (isCurrent()) detailFailed.value = true;
   } finally {
-    rankingFilterLoading.value = false;
-    detailLoading.value = false;
+    if (isCurrent()) {
+      rankingFilterLoading.value = false;
+      detailLoading.value = false;
+    }
   }
 };
 
@@ -1218,6 +1246,7 @@ onMounted(async () => {
 });
 
 onBeforeUnmount(() => {
+  detailRequestGeneration++;
   commentLoadMoreObserver?.disconnect();
   commentLoadMoreObserver = null;
 });
@@ -1351,12 +1380,17 @@ watch(total, (value) => {
 
             <TabsContent value="detail">
               <div
-                v-if="
-                  !detailLoading &&
-                  (qualityTags.length || effectTags.length || rankingInfo.length || rankingSummary)
-                "
-                class="detail-section detail-section--plain"
+                v-if="detailLoading && !hasDetailContent"
+                class="detail-section"
+                aria-busy="true"
+                aria-label="正在加载歌曲详情"
               >
+                <Skeleton variant="text" width="80px" height="14px" />
+                <div class="mt-4 flex gap-2">
+                  <Skeleton v-for="item in 3" :key="item" width="72px" height="28px" />
+                </div>
+              </div>
+              <div v-if="hasDetailContent" class="detail-section detail-section--plain">
                 <div v-if="qualityTags.length" class="detail-block">
                   <div class="detail-title">可选音质</div>
                   <div class="detail-tags">
@@ -1453,6 +1487,18 @@ watch(total, (value) => {
                   </div>
                 </div>
               </div>
+              <DetailPageError
+                v-if="detailFailed && !detailLoading"
+                :resource-name="hasDetailContent ? '部分歌曲详情' : '歌曲详情'"
+                :compact="hasDetailContent"
+                @retry="fetchDetailData"
+              />
+              <p
+                v-else-if="!detailLoading && !hasDetailContent"
+                class="py-12 text-center text-xs text-text-secondary"
+              >
+                暂无更多歌曲详情
+              </p>
             </TabsContent>
 
             <TabsContent value="comment">

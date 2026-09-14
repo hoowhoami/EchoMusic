@@ -93,6 +93,9 @@ export default defineConfig({
   ].filter(Boolean),
   server: {
     // dev 模式下 API 请求通过 IPC 直连 main 进程，不再需要 HTTP proxy
+    watch: {
+      ignored: ['**/.planning/**'],
+    },
   },
   resolve: {
     alias: {

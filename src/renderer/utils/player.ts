@@ -12,7 +12,7 @@ import {
   type TrackLoudness,
 } from '../../shared/loudness';
 export type { TrackLoudness } from '../../shared/loudness';
-import { DEFAULT_PLAYER_VOLUME } from '../../shared/playback';
+import { DEFAULT_PLAYER_VOLUME, matchesPendingSeekTarget } from '../../shared/playback';
 import type { PlaybackSource } from '@/stores/player/types';
 import type { TrackTransitionPlaybackInfo } from '../../shared/track-transition';
 
@@ -32,8 +32,8 @@ export interface PlayerEngineEvents {
     } & PlayerPlaybackContext,
   ) => void;
   ended?: () => void;
-  play?: (payload?: PlayerPlaybackContext) => void;
-  pause?: (payload?: PlayerPlaybackContext) => void;
+  play?: (payload?: PlayerPlaybackContext & { time?: number }) => void;
+  pause?: (payload?: PlayerPlaybackContext & { time?: number }) => void;
   error?: (event: Event) => void;
   /** Native 播放引擎检测到播放卡死，携带卡死时的播放位置（秒） */
   stalled?: (position: number) => void;
@@ -211,8 +211,9 @@ export class PlayerEngine {
   // 时间更新节流
   private lastTimeUpdateMs = 0;
   private readonly TIME_UPDATE_THROTTLE_MS = 250;
-  private seekPending = false;
+  private pendingSeek: { target: number } | null = null;
   private sourceRevision = 0;
+  private sourceSwitchRevision = 0;
   private sourceRequest: Promise<number> | null = null;
   private sourcePending = false;
 
@@ -231,7 +232,7 @@ export class PlayerEngine {
       if (this.sourcePending) return;
       const time = typeof payload === 'number' ? payload : Number(payload?.time);
       if (!Number.isFinite(time)) return;
-      if (this.seekPending) return;
+      if (this.pendingSeek) return;
       const previousTime = this.lastTimeValue;
       if (time === previousTime) return;
       // 节流：限制时间更新频率
@@ -251,6 +252,7 @@ export class PlayerEngine {
 
     const offSeeked = player.onSeeked?.((time: number) => {
       if (this.sourcePending) return;
+      if (!matchesPendingSeekTarget(this.pendingSeek?.target, time)) return;
       this.clearSeekPending();
       this.lastTimeValue = time;
       this.lastTimeUpdateMs = Date.now();
@@ -266,6 +268,7 @@ export class PlayerEngine {
 
     const offPlaybackRestart = player.onPlaybackRestart?.((payload) => {
       if (this.sourcePending) return;
+      if (!matchesPendingSeekTarget(this.pendingSeek?.target, payload?.time)) return;
       this.clearSeekPending();
       if (typeof payload?.time === 'number') {
         this.lastTimeValue = payload.time;
@@ -309,7 +312,11 @@ export class PlayerEngine {
 
     const offState = player.onStateChange((state) => {
       if (this.sourcePending) return;
-      const context = { trackSeq: state.trackSeq, generation: state.generation };
+      const context = {
+        trackSeq: state.trackSeq,
+        generation: state.generation,
+        time: state.timePos,
+      };
       if (state.playing) {
         this.events.play?.(context);
       } else if (state.paused) {
@@ -367,7 +374,7 @@ export class PlayerEngine {
   }
 
   private clearSeekPending(): void {
-    this.seekPending = false;
+    this.pendingSeek = null;
   }
 
   // ── 公开 API ──
@@ -438,13 +445,15 @@ export class PlayerEngine {
 
   async switchSource(source: string | PlaybackSource): Promise<number | undefined> {
     const revision = this.sourceRevision;
+    const switchRevision = ++this.sourceSwitchRevision;
     const playbackSource = normalizePlaybackSource(source);
     if (!playbackSource.url) return;
     const result = await player?.switchSource?.(
       playbackSource.url,
       playbackSource.audioTrackId ?? null,
     );
-    if (revision !== this.sourceRevision) return;
+    if (revision !== this.sourceRevision || switchRevision !== this.sourceSwitchRevision) return;
+    if (!result) throw new Error('Audio source switch did not complete');
     this.clearSeekPending();
     this.sourceUrl = getPlaybackSourceKey(playbackSource);
     this.lastTimeValue = -1;
@@ -574,18 +583,21 @@ export class PlayerEngine {
     }
   }
 
-  seek(time: number): Promise<void> {
-    this.beginSeek();
+  async seek(time: number): Promise<void> {
+    if (!Number.isFinite(time)) return;
+    const request = { target: Math.max(0, time) };
+    this.pendingSeek = request;
     this.lastTimeValue = -1;
     this.lastTimeUpdateMs = 0;
-    return (player?.seek(time) ?? Promise.resolve()).catch((err: unknown) => {
-      this.clearSeekPending();
+    try {
+      await player?.seek(request.target);
+    } catch (err) {
       logger.warn('PlayerEngine', 'seek failed', { time, error: String(err) });
-    });
-  }
-
-  beginSeek(): void {
-    this.seekPending = true;
+    } finally {
+      // EOF and superseded native seeks can resolve without seeked/playback-restart.
+      // The command lifetime owns this gate; an older command must not clear a new one.
+      if (this.pendingSeek === request) this.clearSeekPending();
+    }
   }
 
   setEqualizer(gains: number[]): void {
@@ -737,6 +749,13 @@ export class PlayerEngine {
       upstreamGainDb: loudness.gain,
       gainDb: gainDb.toFixed(2) + ' dB',
     });
+  }
+
+  adoptPreparedTrackLoudness(loudness: TrackLoudness | null): void {
+    // Native owns the queued overlap reference and the final gain marker. Update the
+    // track cache without overwriting either gain at the audible track boundary.
+    this.lastTrackLoudness = loudness;
+    this.normalizationGain = Math.pow(10, this.getTrackLoudnessGainDb(loudness) / 20);
   }
 
   getTrackLoudnessGainDb(loudness: TrackLoudness | null): number {

@@ -1,17 +1,13 @@
-//! Local music-information-retrieval (MIR) replacing QQ's server-side
-//! `music.mir.MixPlanSvr` payload (`QMNewMirInfo`: `cue.cuts / cuts_2 / entrys / entrys_2`
-//! + `beat.bpm`).
+//! Local analysis of silence, tempo, beats and section boundaries.
 //!
 //! Everything works on a mono, decimated envelope plus the vendored SoundTouch BPM
-//! detector, so a 45 s head window and a 90 s tail window analyse in well under 100 ms.
+//! detector. Network reads and decoding are performed by the preparation worker.
 //!
 //! Outputs, in seconds on the track timeline:
-//! * `leading_silence` / `trailing_silence` – gapless trim points
-//!   (`gaplessPlayStartMuteMS` / `EndMuteMS` / `EndMutePercent` analogues).
+//! * `leading_silence` / `trailing_silence` – gapless trim points.
 //! * `bpm`, `beat_secs`, `beat_phase`, `downbeat_phase` – beat grid.
 //! * `energy` – RMS envelope (100 ms hop) used by cue decisions.
-//! * `sections` – structural boundaries (novelty peaks snapped to downbeats), which play
-//!   the role of `cuts[0]` (outgoing track) and `entrys[]` (incoming track).
+//! * `sections` – novelty peaks snapped to downbeats, used as exit and entry candidates.
 
 use soundtouch_rs::BpmDetect;
 use std::f32::consts::PI;

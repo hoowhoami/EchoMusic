@@ -204,6 +204,7 @@ type PlayerAoState = {
 type PlayerStateChangePayload = {
   playing?: boolean;
   paused?: boolean;
+  timePos?: number;
   trackSeq?: number;
   generation?: number;
 };

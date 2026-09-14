@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import PageStickyHeader from '@/components/ui/PageStickyHeader.vue';
 defineOptions({ name: 'album-detail' });
-import { ref, shallowRef, onMounted, onBeforeUnmount, computed, watch } from 'vue';
+import { ref, shallowRef, onMounted, onActivated, onBeforeUnmount, computed, watch } from 'vue';
 import { extractFirstObject, extractList } from '@/utils/extractors';
 import { useRouter } from 'vue-router';
 import { useRouteId } from '@/composables/useRouteId';
@@ -14,6 +14,7 @@ import {
 import { getAlbumComments } from '@/api/comment';
 import SliverHeader from '@/components/music/DetailPageSliverHeader.vue';
 import DetailPageSkeleton from '@/components/music/DetailPageSkeleton.vue';
+import DetailPageError from '@/components/music/DetailPageError.vue';
 import DynamicAlbumCover from '@/components/music/DynamicAlbumCover.vue';
 import ActionRow from '@/components/music/DetailPageActionRow.vue';
 import SongList from '@/components/music/SongList.vue';
@@ -358,7 +359,10 @@ watch(scrollContainerRef, () => {
   setupCommentObserver();
 });
 
+let loadGeneration = 0;
 const fetchData = async () => {
+  const generation = ++loadGeneration;
+  const isCurrent = () => generation === loadGeneration;
   loading.value = true;
   loadingSongs.value = true;
   const albumId = getAlbumId();
@@ -366,18 +370,22 @@ const fetchData = async () => {
   // 1. 先获取专辑详情
   const detailTask = getAlbumDetail(albumId)
     .then((detailRes) => {
+      if (!isCurrent()) return;
       const detailRaw = extractFirstObject(detailRes);
-      if (detailRaw) {
-        album.value = mapAlbumDetailMeta(detailRaw);
-        albumArtists.value = parseAlbumArtists(detailRaw);
-      } else {
-        albumArtists.value = [];
+      const meta = detailRaw && mapAlbumDetailMeta(detailRaw);
+      if (!meta || !meta.id) {
+        throw new Error('Album detail response contains no album');
       }
-      loading.value = false;
+      album.value = meta;
+      albumArtists.value = parseAlbumArtists(detailRaw);
     })
     .catch((e) => {
+      if (!isCurrent()) return;
       logger.error('AlbumDetail', 'Fetch album detail error', e);
-      loading.value = false;
+      if (album.value) toastStore.loadFailed('专辑详情');
+    })
+    .finally(() => {
+      if (isCurrent()) loading.value = false;
     });
 
   // 2. 中止上一次加载
@@ -386,7 +394,7 @@ const fetchData = async () => {
   }
 
   // 3. 创建加载器获取歌曲
-  songLoader = new PagedSongLoader<Song>(
+  const loader = new PagedSongLoader<Song>(
     async (page, pageSize) => {
       const res = await getAlbumSongs(albumId, page, pageSize);
       if (!res || typeof res !== 'object' || !('status' in res) || res.status !== 1) {
@@ -401,29 +409,34 @@ const fetchData = async () => {
       dedupeKey: (song) => String(song.mixSongId || song.id),
       logTag: 'AlbumSongsLoader',
       onPageLoaded(allItems) {
+        if (!isCurrent()) return;
         songs.value = allItems.slice();
         loadedSongCount.value = allItems.length;
       },
       onComplete(allItems) {
+        if (!isCurrent()) return;
         songs.value = allItems.slice();
         loadedSongCount.value = allItems.length;
       },
       onError() {
-        toastStore.loadFailed('专辑歌曲');
+        if (isCurrent()) toastStore.loadFailed('专辑歌曲');
       },
     },
   );
 
-  const songsTask = songLoader
+  songLoader = loader;
+  const songsTask = loader
     .loadFirstPage()
     .then(() => {
+      if (!isCurrent()) return;
       loadingSongs.value = false;
       // 首页加载完后，只要还有更多数据就继续加载剩余页
-      if (!songLoader!.fullyLoaded && !songLoader!.failed) {
-        void songLoader!.loadRemaining();
+      if (!loader.fullyLoaded && !loader.failed) {
+        void loader.loadRemaining();
       }
     })
     .catch((e) => {
+      if (!isCurrent()) return;
       console.error('Fetch album songs error:', e);
       loadingSongs.value = false;
     });
@@ -436,7 +449,13 @@ onMounted(() => {
   setupCommentObserver();
 });
 
+onActivated(() => {
+  if (!album.value && !loading.value) void fetchData();
+});
+
 onBeforeUnmount(() => {
+  loadGeneration++;
+  songLoader?.abort();
   commentObserver?.disconnect();
   commentObserver = null;
 });
@@ -557,6 +576,8 @@ const activeSongId = computed(() => playerStore.currentTrackId ?? undefined);
   <PageScrollContainer class="album-detail-page">
     <div class="album-detail-container bg-bg-main min-h-full">
       <DetailPageSkeleton v-if="loading && !album" typeLabel="ALBUM" :expandedHeight="196" />
+
+      <DetailPageError v-else-if="!album" resource-name="专辑" @retry="fetchData" />
 
       <template v-else-if="album">
         <!-- 1. Sliver Header -->

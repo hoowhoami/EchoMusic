@@ -2,6 +2,8 @@ import type { LyricLinePayload } from '../../shared/lyrics';
 import type { PlaybackClockSnapshot } from '../../shared/playback';
 
 export interface LyricTimelinePlayback {
+  trackId?: string | null;
+  trackSeq?: number;
   currentTime?: number;
   duration?: number;
   isPlaying?: boolean;
@@ -12,20 +14,10 @@ export interface LyricTimelinePlayback {
 }
 
 export interface LyricTimelineOptions {
-  clockSyncToleranceMs?: number;
-  recentSeekWindowMs?: number;
   playbackStaleThresholdMs?: number;
-  backwardResyncThresholdMs?: number;
-  snapshotDelayCompensationMs?: number;
-  backwardDriftCorrectionRatio?: number;
 }
 
-const DEFAULT_CLOCK_SYNC_TOLERANCE_MS = 300;
-export const DEFAULT_LYRIC_RECENT_SEEK_WINDOW_MS = 800;
 const DEFAULT_PLAYBACK_STALE_THRESHOLD_MS = 1800;
-const DEFAULT_BACKWARD_RESYNC_THRESHOLD_MS = 1500;
-const DEFAULT_SNAPSHOT_DELAY_COMPENSATION_MS = 1000;
-const DEFAULT_BACKWARD_DRIFT_CORRECTION_RATIO = 0.35;
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 
@@ -74,118 +66,67 @@ export const computeLyricCharBackgroundPosition = (
   timelineMs: number,
 ) => `${100 - computeLyricCharProgress(charStartMs, charEndMs, timelineMs) * 100}%`;
 
-// Engine time remains the source of truth. This helper only interpolates between fresh
-// engine samples so lyric animation can stay smooth without drifting through stalls.
+// Synchronize on immutable source samples, then interpolate only until their freshness
+// deadline. Animation frames and re-sent IPC snapshots are not new engine samples.
 export function createLyricTimeline(options: LyricTimelineOptions = {}) {
-  const clockSyncToleranceMs = options.clockSyncToleranceMs ?? DEFAULT_CLOCK_SYNC_TOLERANCE_MS;
-  const recentSeekWindowMs = options.recentSeekWindowMs ?? DEFAULT_LYRIC_RECENT_SEEK_WINDOW_MS;
-  const playbackStaleThresholdMs =
-    options.playbackStaleThresholdMs ?? DEFAULT_PLAYBACK_STALE_THRESHOLD_MS;
-  const backwardResyncThresholdMs =
-    options.backwardResyncThresholdMs ?? DEFAULT_BACKWARD_RESYNC_THRESHOLD_MS;
-  const snapshotDelayCompensationMs =
-    options.snapshotDelayCompensationMs ?? DEFAULT_SNAPSHOT_DELAY_COMPENSATION_MS;
-  const backwardDriftCorrectionRatio = clamp(
-    options.backwardDriftCorrectionRatio ?? DEFAULT_BACKWARD_DRIFT_CORRECTION_RATIO,
-    0,
-    1,
-  );
+  const staleMs = options.playbackStaleThresholdMs ?? DEFAULT_PLAYBACK_STALE_THRESHOLD_MS;
+  let sampleKey = '';
+  let transportKey = '';
+  let positionMs = 0;
+  let anchorTick = 0;
+  let deadlineTick = 0;
+  let rate = 1;
+  let advancing = false;
+  let revision = 0;
 
-  let baseMs = 0;
-  let anchorTick = performance.now();
-  let lastPlaybackUpdateTick = 0;
-  let lastObservedSampleKey = '';
-
-  const getRate = (playback: LyricTimelinePlayback | null | undefined) => {
-    const rate = Number(playback?.clock?.playbackRate ?? playback?.playbackRate ?? 1);
-    return Number.isFinite(rate) && rate > 0 ? rate : 1;
-  };
-
-  const readPlaybackSample = (playback: LyricTimelinePlayback | null | undefined) => {
-    if (!playback) return { ms: 0, freshWallSample: false };
-    const clock = playback.clock;
-    if (clock) {
-      return {
-        ms: Math.max(0, Math.round(Number(clock.positionMs) || 0)),
-        freshWallSample: true,
-      };
-    }
-
-    const rawMs = Math.max(0, Math.round(Number(playback.currentTime || 0) * 1000));
-    const updatedAt = Number(playback.updatedAt || 0);
-    if (!playback.isPlaying || !updatedAt) return { ms: rawMs, freshWallSample: false };
-
-    const wallDelay = Date.now() - updatedAt;
-    if (wallDelay <= 0 || wallDelay > snapshotDelayCompensationMs) {
-      return { ms: rawMs, freshWallSample: false };
-    }
-    return {
-      ms: rawMs + Math.round(wallDelay * getRate(playback)),
-      freshWallSample: true,
-    };
-  };
+  const project = (now: number) =>
+    positionMs + (advancing ? Math.max(0, Math.min(now, deadlineTick) - anchorTick) * rate : 0);
 
   const sync = (playback: LyricTimelinePlayback | null | undefined, force = false) => {
-    const now = performance.now();
-    const sample = readPlaybackSample(playback);
-    const nextBaseMs = sample.ms;
-    const sampleIsPlaying = playback?.clock?.isPlaying ?? playback?.isPlaying ?? false;
-    const sampleKey = [
-      playback?.clock?.trackId ?? '',
-      Number(playback?.clock?.positionMs ?? 0),
-      Number(playback?.clock?.durationMs ?? 0),
-      Number(playback?.clock?.generation ?? 0),
-      Number(playback?.currentTime ?? 0),
-      Number(playback?.updatedAt ?? 0),
-      sampleIsPlaying ? 1 : 0,
-      getRate(playback),
-      Number(playback?.clock?.seekTimestamp ?? playback?.seekTimestamp ?? 0),
+    const clock = playback?.clock;
+    const nextPosition = Math.max(
+      0,
+      Number(clock?.positionMs ?? (playback?.currentTime ?? 0) * 1000) || 0,
+    );
+    const nextRate = Number(clock?.playbackRate ?? playback?.playbackRate ?? 1);
+    const nextPlaying = Boolean(clock?.isPlaying ?? playback?.isPlaying);
+    const nextAdvancing = nextPlaying && (clock?.isAdvancing ?? true);
+    const sampledAt = Number(clock?.sampledAt ?? playback?.updatedAt ?? 0);
+    const nextTransportKey = [
+      clock?.trackId ?? playback?.trackId ?? '',
+      clock?.trackSeq ?? playback?.trackSeq ?? 0,
+      clock?.generation ?? playback?.seekTimestamp ?? 0,
+      clock?.seekTimestamp ?? playback?.seekTimestamp ?? 0,
+      nextPlaying,
+      nextAdvancing,
+      nextRate,
     ].join('|');
-    const hasFreshEngineSample = force || sampleKey !== lastObservedSampleKey;
-    if (hasFreshEngineSample) {
-      lastPlaybackUpdateTick = now;
-      lastObservedSampleKey = sampleKey;
-    } else {
-      return;
+    const nextSampleKey = [nextTransportKey, nextPosition, sampledAt].join('|');
+    if (!force && nextSampleKey === sampleKey) return;
+
+    const now = performance.now();
+    const transportChanged = nextTransportKey !== transportKey;
+    const age = sampledAt > 0 ? Math.max(0, Date.now() - sampledAt) : 0;
+    const nextAge = Math.min(age, staleMs);
+    const safeRate = Number.isFinite(nextRate) && nextRate > 0 ? nextRate : 1;
+    const projectedPosition = nextPosition + (nextAdvancing ? nextAge * safeRate : 0);
+    if (force || transportChanged || Math.abs(projectedPosition - project(now)) > 750) {
+      revision += 1;
     }
-
-    if (sampleIsPlaying && !force) {
-      const predictedMs = baseMs + (now - anchorTick) * getRate(playback);
-      const driftMs = nextBaseMs - predictedMs;
-      const seekTimestamp = Number(playback?.clock?.seekTimestamp ?? playback?.seekTimestamp ?? 0);
-      const recentSeek = seekTimestamp > 0 && Date.now() - seekTimestamp < recentSeekWindowMs;
-
-      if (!recentSeek) {
-        if (Math.abs(driftMs) < clockSyncToleranceMs) return;
-        if (driftMs < 0 && -driftMs < backwardResyncThresholdMs) {
-          if (sample.freshWallSample && backwardDriftCorrectionRatio > 0) {
-            baseMs = Math.max(0, predictedMs + driftMs * backwardDriftCorrectionRatio);
-            anchorTick = now;
-          }
-          return;
-        }
-      }
-    }
-
-    baseMs = nextBaseMs;
+    sampleKey = nextSampleKey;
+    transportKey = nextTransportKey;
+    positionMs = projectedPosition;
     anchorTick = now;
+    deadlineTick = now + Math.max(0, staleMs - age);
+    rate = safeRate;
+    advancing = nextAdvancing;
   };
 
   const getPlaybackMs = (playback: LyricTimelinePlayback | null | undefined) => {
+    sync(playback);
     if (!playback) return 0;
-    const now = performance.now();
-    const isPlaying = playback.clock?.isPlaying ?? playback.isPlaying;
-    // When engine samples stop, freeze at the end of the interpolation window.
-    // Returning baseMs here rewinds lyrics to the last load/play/pause anchor.
-    // The freshness deadline follows samples even when sync keeps the old anchor
-    // because their drift was within tolerance.
-    const projectionTick = Math.min(now, lastPlaybackUpdateTick + playbackStaleThresholdMs);
-    const value = isPlaying
-      ? baseMs + Math.max(0, projectionTick - anchorTick) * getRate(playback)
-      : baseMs;
-    const durationMs = playback.clock
-      ? Math.max(0, Number(playback.clock.durationMs || 0))
-      : Math.max(0, Number(playback.duration || 0) * 1000);
+    const value = project(performance.now());
+    const durationMs = playback.clock?.durationMs ?? (playback.duration ?? 0) * 1000;
     return durationMs > 0 ? clamp(value, 0, durationMs) : Math.max(0, value);
   };
 
@@ -207,5 +148,8 @@ export function createLyricTimeline(options: LyricTimelineOptions = {}) {
     getPlaybackMs,
     getTimelineMs,
     findIndex,
+    get revision() {
+      return revision;
+    },
   };
 }

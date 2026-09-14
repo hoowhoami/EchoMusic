@@ -37,6 +37,85 @@ fn audio_sample_format_candidates_prefer_lossless_conversions() {
 }
 
 #[test]
+fn transition_loudness_telemetry_follows_output_boundaries() {
+    let shared = SharedAudio::new(
+        MixFormat::stereo_f32(100),
+        1.0,
+        8.0,
+        &DspSettings::default(),
+    );
+    let (_wake_rx, telemetry_rx) = bind_test_signal_senders(&shared);
+    assert!(shared.push_samples(&[0.2; 16]));
+    let mut info = TrackSwitchInfo::new("next.flac".to_string(), None, 7, 3.0);
+    info.normalization_gain_db = Some(-2.0);
+    shared.mark_gapless_boundary(info);
+    assert!(shared.push_samples(&[0.2; 16]));
+    shared.mark_gain_marker(-8.0);
+    assert!(shared.push_samples(&[0.2; 16]));
+    let gain_events = || {
+        telemetry_rx
+            .try_iter()
+            .filter(|signal| matches!(signal, PlaybackSignal::NormalizationGainApplied { .. }))
+            .collect::<Vec<_>>()
+    };
+    assert!(gain_events().is_empty(), "queued gains are not applied yet");
+    let mut output = [0.0; 16];
+    assert_eq!(shared.pop_into(&mut output), 8);
+    assert_eq!(
+        gain_events(),
+        vec![PlaybackSignal::NormalizationGainApplied {
+            track_seq: 7,
+            gain_db: -2.0,
+            stage: "track-boundary",
+        }]
+    );
+    assert!((shared.normalization_gain() - 10.0f32.powf(-2.0 / 20.0)).abs() < 1e-6);
+    assert_eq!(shared.pop_into(&mut output), 8);
+    assert_eq!(
+        gain_events(),
+        vec![PlaybackSignal::NormalizationGainApplied {
+            track_seq: 7,
+            gain_db: -8.0,
+            stage: "overlap-end",
+        }]
+    );
+    assert!((shared.normalization_gain() - 10.0f32.powf(-8.0 / 20.0)).abs() < 1e-6);
+    assert_eq!(shared.pop_into(&mut output), 8);
+    assert!(
+        gain_events().is_empty(),
+        "steady playback must not spam logs"
+    );
+}
+
+#[test]
+fn dsp_sync_preserves_output_gain_until_the_queued_marker() {
+    let settings = DspSettings::default();
+    let shared = SharedAudio::new(MixFormat::stereo_f32(100), 0.1, 8.0, &settings);
+    shared.set_normalization_gain_db(-2.0);
+    assert!(shared.push_samples(&[0.2; 16]));
+    shared.mark_gain_marker(-8.0);
+    let mut next_settings = settings;
+    next_settings.normalization_gain_db = -8.0;
+    next_settings.equalizer[0] = 3.0;
+    shared.update_dsp_settings_preserving_normalization(&next_settings);
+    assert!((shared.normalization_gain() - 10.0f32.powf(-2.0 / 20.0)).abs() < 1e-6);
+    assert_eq!(shared.dsp_settings().equalizer[0], 3.0);
+    let mut output = [0.0; 8];
+    assert_eq!(shared.pop_into(&mut output), 4);
+    assert!((shared.normalization_gain() - 10.0f32.powf(-2.0 / 20.0)).abs() < 1e-6);
+    assert_eq!(shared.pop_into(&mut output), 4);
+    assert!((shared.normalization_gain() - 10.0f32.powf(-8.0 / 20.0)).abs() < 1e-6);
+    shared.update_dsp_settings_preserving_normalization(&next_settings);
+    assert!((shared.normalization_gain() - 10.0f32.powf(-8.0 / 20.0)).abs() < 1e-6);
+    shared.set_normalization_gain_db(0.0);
+    assert_eq!(
+        shared.normalization_gain(),
+        1.0,
+        "explicit gain changes still work"
+    );
+}
+
+#[test]
 fn provider_descriptor_cache_survives_runtime_gain_but_invalidates_provider_changes() {
     let settings = DspSettings {
         provider_path: Some("provider.dylib".to_string()),

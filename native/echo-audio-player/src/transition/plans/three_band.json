@@ -1,6 +1,6 @@
 {
-  "name": "3bandEQPreset",
-  "description": "A DJ plan with crossfade and 3bandEQ",
+  "name": "three-band",
+  "description": "Three-band gain exchange with an outgoing reverb tail",
   "Achain": {
     "description": "Gain and 3bandEQ for Track A",
     "list": [

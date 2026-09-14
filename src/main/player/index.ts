@@ -56,15 +56,17 @@ function registerEventForwarding(controller: PlayerController): void {
     });
   });
   controller.on('seeked', (time) => {
-    const seekTimestamp = Date.now();
     getMainWindow()?.webContents.send('player:seeked', time);
     // Native seek/duration events do not carry trackSeq today; the bridge only applies them
     // outside a track transition, or after the transition timeout has released the guard.
-    patchDesktopLyricPlaybackFromPlayer({ currentTime: time, seekTimestamp, reason: 'seek' });
-    patchMiniPlayerPlaybackFromPlayer({ currentTime: time, seekTimestamp, reason: 'seek' });
+    patchDesktopLyricPlaybackFromPlayer({ currentTime: time, reason: 'seek' });
+    patchMiniPlayerPlaybackFromPlayer({ currentTime: time, reason: 'seek' });
   });
   controller.on('seek-state-change', (payload) => {
     getMainWindow()?.webContents.send('player:seek-state-change', payload);
+    const patch = { isAdvancing: !payload.active, trackSeq: payload.trackSeq };
+    patchDesktopLyricPlaybackFromPlayer(patch);
+    patchMiniPlayerPlaybackFromPlayer(patch);
   });
   controller.on('playback-restart', (payload) => {
     getMainWindow()?.webContents.send('player:playback-restart', payload);

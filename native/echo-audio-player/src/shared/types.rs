@@ -53,9 +53,10 @@ pub struct TrackSwitchInfo {
     /// output. Non-zero when a transition starts the incoming track at a cue point.
     pub start_position_secs: f64,
     pub transition: Option<crate::events::TrackTransitionInfo>,
-    /// Loudness-normalisation gain (dB) of the new track. Applied exactly when the output
-    /// callback crosses the boundary so the level change lines up with the audio.
+    /// Output gain at the boundary; may be a common reference during an overlap.
     pub normalization_gain_db: Option<f32>,
+    /// Incoming track's own gain, distinct from the temporary overlap reference.
+    pub track_normalization_gain_db: Option<f32>,
 }
 
 impl TrackSwitchInfo {
@@ -68,6 +69,7 @@ impl TrackSwitchInfo {
             start_position_secs: 0.0,
             transition: None,
             normalization_gain_db: None,
+            track_normalization_gain_db: None,
         }
     }
 }
@@ -85,6 +87,11 @@ pub enum PlaybackSignal {
     PacketCacheStats(PacketCacheStats),
     OutputStats(AudioOutputStats),
     OutputStatsChanged,
+    NormalizationGainApplied {
+        track_seq: u64,
+        gain_db: f32,
+        stage: &'static str,
+    },
     TrackSwitch(TrackSwitchInfo),
     PlaybackEnd,
     Stop,

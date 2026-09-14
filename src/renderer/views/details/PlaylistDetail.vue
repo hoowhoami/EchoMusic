@@ -1,14 +1,17 @@
 <script setup lang="ts">
+import { parsePlaylistTags } from '@/utils/playlistTags';
 import PageStickyHeader from '@/components/ui/PageStickyHeader.vue';
 defineOptions({ name: 'playlist-detail' });
-import { ref, shallowRef, onMounted, onBeforeUnmount, computed, watch } from 'vue';
+import { ref, shallowRef, onMounted, onActivated, onBeforeUnmount, computed, watch } from 'vue';
 import { useRouteId } from '@/composables/useRouteId';
 import { getPlaylistDetail, getPlaylistTracks, getPlaylistTracksNew } from '@/api/playlist';
 import { resolveOwnedPlaylistListId } from '@/utils/playlistTrackSource';
 import { orderByPlaylistPosition } from '@/utils/playlistOrder';
+import { usePlaylistCoversStore } from '@/stores/playlistCovers';
 import { getPlaylistComments } from '@/api/comment';
 import SliverHeader from '@/components/music/DetailPageSliverHeader.vue';
 import DetailPageSkeleton from '@/components/music/DetailPageSkeleton.vue';
+import DetailPageError from '@/components/music/DetailPageError.vue';
 import ActionRow from '@/components/music/DetailPageActionRow.vue';
 import SongList from '@/components/music/SongList.vue';
 import SongListHeader from '@/components/music/SongListHeader.vue';
@@ -23,6 +26,8 @@ import CommentComposer from '@/components/music/CommentComposer.vue';
 import CommentList from '@/components/music/CommentList.vue';
 import BatchActionDrawer from '@/components/music/BatchActionDrawer.vue';
 import PlaylistOrderDialog from '@/components/music/PlaylistOrderDialog.vue';
+import PlaylistEditDialog from '@/components/music/PlaylistEditDialog.vue';
+import { canEditPlaylist } from '@/services/playlistEditing';
 import type { PlaylistOrderTarget } from '@/services/playlistOrdering';
 import type { Song } from '@/models/song';
 import { formatDate } from '@/utils/format';
@@ -44,6 +49,7 @@ import {
   iconPlay,
   iconList,
   iconArrowsSort,
+  iconPencil,
   iconMusic,
   iconHeart,
   iconHeartFilled,
@@ -90,6 +96,7 @@ const hasMoreComments = ref(true);
 const showIntroDialog = ref(false);
 const showBatchDrawer = ref(false);
 const showPlaylistOrder = ref(false);
+const showPlaylistEdit = ref(false);
 
 // 搜索和定位逻辑
 const searchQuery = ref('');
@@ -98,6 +105,8 @@ const sliverHeaderRef = ref<{ currentHeight?: number } | null>(null);
 const { tabsTop, tabsMinHeight } = useStickyTabsLayout(sliverHeaderRef);
 const userStore = useUserStore();
 const playlistStore = usePlaylistStore();
+const playlistCoversStore = usePlaylistCoversStore();
+void playlistCoversStore.hydrate();
 const playerStore = usePlayerStore();
 const settingStore = useSettingStore();
 const toastStore = useToastStore();
@@ -120,6 +129,48 @@ const orderPlaylistSongs = (items: readonly Song[]) =>
   ownedPlaylistListId.value !== null
     ? orderByPlaylistPosition(items, (song) => song.playlistSort)
     : Array.from(items);
+
+const coverPlaylistMeta = computed(() => {
+  const detail = playlist.value;
+  if (!detail) return null;
+  const entry = playlistStore.findPlaylistByIdentity(getPlaylistId());
+  return {
+    ...detail,
+    listid: entry?.listid ?? ownedPlaylistListId.value ?? detail.listid,
+    type: entry?.type ?? detail.type,
+    hasCustomCover:
+      entry?.type === 1
+        ? entry.hasCustomCover
+        : detail.hasCustomCover === true || entry?.hasCustomCover === true,
+    pic: entry?.hasCustomCover ? entry.pic : detail.pic,
+  };
+});
+const playlistCoverUrl = computed(() =>
+  coverPlaylistMeta.value
+    ? playlistCoversStore.coverFor(coverPlaylistMeta.value, userStore.info?.userid)
+    : '',
+);
+
+const editablePlaylist = computed(() => {
+  if (!userStore.isLoggedIn) return null;
+  const entry =
+    playlistStore.findPlaylistByIdentity(getPlaylistId()) ??
+    playlistStore.userPlaylists.find(
+      (item) => !!item.listCreateGid && item.listCreateGid === playlist.value?.listCreateGid,
+    );
+  return entry && canEditPlaylist(entry) && !playlist.value?.isDefault ? entry : null;
+});
+const handlePlaylistEdited = (updated: PlaylistMeta) => {
+  if (!playlist.value) return;
+  playlist.value = {
+    ...playlist.value,
+    name: updated.name,
+    tags: updated.tags,
+    intro: updated.intro,
+    pic: updated.pic,
+    hasCustomCover: updated.hasCustomCover,
+  };
+};
 
 const playlistOrderTarget = computed<PlaylistOrderTarget | null>(() => {
   if (!isOwnerPlaylist.value || !userStore.isLoggedIn) return null;
@@ -188,13 +239,7 @@ const songTotalCount = computed(() => {
   return metaCount > 0 ? metaCount : loadedSongCount.value;
 });
 
-const playlistTags = computed(() => {
-  const raw = playlist.value?.tags ?? '';
-  return raw
-    .split(',')
-    .map((tag) => tag.trim())
-    .filter((tag) => tag.length > 0);
-});
+const playlistTags = computed(() => parsePlaylistTags(playlist.value?.tags));
 
 const playlistCommentId = computed(() => {
   const meta = playlist.value;
@@ -376,22 +421,24 @@ const updateSongsFromLoader = (items: readonly Song[], complete = false) => {
 
 const fetchData = async () => {
   const generation = ++songLoadGeneration;
-  const isCurrent = () => generation === songLoadGeneration;
+  const accountGeneration = playlistStore.userCollectionsGeneration;
+  const accountId = userStore.info?.userid;
+  const hadCompleteSongs = songs.value.length > 0 && isCurrentPlaylistSongCacheComplete();
+  const isCurrent = () =>
+    generation === songLoadGeneration &&
+    accountGeneration === playlistStore.userCollectionsGeneration &&
+    accountId === userStore.info?.userid;
   songLoader?.abort();
-  loading.value = true;
+  loading.value = songs.value.length === 0;
   try {
     pendingAddedPlaylistSongs = [];
     pendingRemovedPlaylistSongs = [];
     const detailRes = await getPlaylistDetail(getPlaylistId());
     if (!isCurrent()) return;
-    if (detailRes) {
-      const { status, data } = detailRes;
-      if (status === 1) {
-        if (data?.[0]) {
-          playlist.value = mapPlaylistMeta(data?.[0]);
-        }
-      }
+    if (detailRes?.status !== 1 || !detailRes.data?.[0]) {
+      throw new Error('Playlist detail response contains no playlist');
     }
+    playlist.value = mapPlaylistMeta(detailRes.data[0]);
 
     const playlistMeta = playlist.value;
     const currentUserId = userStore.info?.userid;
@@ -410,6 +457,7 @@ const fetchData = async () => {
 
     // 重置过滤计数
     playlistFilteredInvalidCount.value = 0;
+    const coverPages = new Map<number, unknown>();
 
     const loader = new PagedSongLoader<Song>(
       async (page, pageSize) => {
@@ -417,6 +465,7 @@ const fetchData = async () => {
           ownedListId !== null
             ? await getPlaylistTracksNew(ownedListId, page, pageSize)
             : await getPlaylistTracks(queryId, page, pageSize);
+        if (isCurrent() && ownedListId !== null) coverPages.set(page, res);
         if (!res || typeof res !== 'object') return { items: [], hasMore: false };
         const hasStatus = 'status' in res;
         const statusOk = hasStatus && (res as { status?: number }).status === 1;
@@ -440,28 +489,53 @@ const fetchData = async () => {
         concurrency: 3,
         dedupeKey: (song) => String(song.id),
         logTag: 'PlaylistDetailLoader',
+        onPageLoaded(allItems) {
+          if (!isCurrent()) return;
+          if (!hadCompleteSongs) updateSongsFromLoader(allItems);
+          loading.value = false;
+        },
         onComplete(allItems) {
-          if (isCurrent()) updateSongsFromLoader(allItems, true);
+          if (!isCurrent()) return;
+          updateSongsFromLoader(allItems, true);
+          if (ownedListId !== null && coverPlaylistMeta.value) {
+            void playlistCoversStore.updateFromPages(
+              coverPlaylistMeta.value,
+              accountId,
+              Array.from(coverPages)
+                .filter(([page]) => page <= loader.loadedPages)
+                .sort(([a], [b]) => a - b)
+                .map(([, response]) => response),
+              isCurrent,
+            );
+          }
+          coverPages.clear();
         },
         onError() {
+          coverPages.clear();
           if (isCurrent()) toastStore.loadFailed('歌单歌曲');
         },
       },
     );
 
     songLoader = loader;
-    // 完整加载后一次性显示，期间保留骨架屏。
+    // 统一逐页展示；自建歌单仅在更新列表时额外按 sort 排序。
     await loader.loadAll();
   } catch (e) {
     console.error('Fetch playlist error:', e);
+    if (isCurrent() && playlist.value) toastStore.loadFailed('歌单详情');
   } finally {
-    if (isCurrent()) loading.value = false;
+    if (generation === songLoadGeneration) loading.value = false;
   }
 };
 
 onMounted(() => {
   fetchData();
   setupCommentObserver();
+});
+
+onActivated(() => {
+  // 失败后的空页面也会被缓存；返回时重新加载，已有内容和进行中的请求继续复用。
+  if (!playlist.value && !loading.value) void fetchData();
 });
 
 // id 变化时重置数据（仅同路由间切换，如歌单A→歌单B）
@@ -542,6 +616,15 @@ const secondaryActions = computed(() => {
   }
 
   if (playlist.value) {
+    if (editablePlaylist.value) {
+      actions.push({
+        icon: iconPencil,
+        label: '编辑歌单',
+        onTap: () => {
+          showPlaylistEdit.value = true;
+        },
+      });
+    }
     actions.push({
       icon: iconShare,
       label: '分享',
@@ -731,13 +814,15 @@ watch(
     <div class="playlist-detail-container bg-bg-main min-h-full">
       <DetailPageSkeleton v-if="loading && !playlist" typeLabel="PLAYLIST" :expandedHeight="176" />
 
+      <DetailPageError v-else-if="!playlist" resource-name="歌单" @retry="fetchData" />
+
       <template v-else-if="playlist">
         <!-- 1. Sliver Header -->
         <SliverHeader
           ref="sliverHeaderRef"
           typeLabel="PLAYLIST"
           :title="playlist.name"
-          :coverUrl="playlist.pic"
+          :coverUrl="playlistCoverUrl"
           :hasDetails="true"
           :expandedHeight="176"
           :collapsedHeight="56"
@@ -840,6 +925,17 @@ watch(
                 width="18"
                 height="18"
               />
+            </Button>
+            <Button
+              v-if="editablePlaylist"
+              variant="unstyled"
+              size="none"
+              tooltip="编辑歌单"
+              aria-label="编辑歌单"
+              @click="showPlaylistEdit = true"
+              class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] text-text-main opacity-60"
+            >
+              <Icon :icon="iconPencil" width="18" height="18" />
             </Button>
             <Button
               variant="unstyled"
@@ -1036,6 +1132,12 @@ watch(
       </template>
     </div>
   </PageScrollContainer>
+  <PlaylistEditDialog
+    v-if="showPlaylistEdit && editablePlaylist"
+    v-model:open="showPlaylistEdit"
+    :target="editablePlaylist"
+    @saved="handlePlaylistEdited"
+  />
   <PlaylistOrderDialog
     v-if="showPlaylistOrder && playlistOrderTarget"
     v-model:open="showPlaylistOrder"

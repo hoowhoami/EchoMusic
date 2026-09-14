@@ -39,10 +39,14 @@ export type PlaybackClockReason =
 
 export interface PlaybackClockSnapshot {
   trackId: string | null;
+  trackSeq?: number;
+  /** Engine position at sampledAt; never pre-projected by the sender. */
   positionMs: number;
   durationMs: number;
   playbackRate: number;
   isPlaying: boolean;
+  /** Playback intent can remain playing while seeking or buffering. */
+  isAdvancing?: boolean;
   generation: number;
   seekTimestamp?: number;
   sampledAt?: number;
@@ -51,18 +55,17 @@ export interface PlaybackClockSnapshot {
 
 export interface PlaybackClockSource {
   trackId?: string | number | null;
+  trackSeq?: number | null;
   currentTime?: number | null;
   duration?: number | null;
   playbackRate?: number | null;
   isPlaying?: boolean | null;
+  isAdvancing?: boolean;
   seekTimestamp?: number | null;
   updatedAt?: number | null;
   reason?: PlaybackClockReason;
 }
 
-const MAX_PLAYBACK_CLOCK_PROJECTION_MS = 1000;
-const DEFAULT_PLAYBACK_REGRESSION_TOLERANCE_MS = 1200;
-const DEFAULT_PLAYBACK_SAMPLE_GRACE_MS = 500;
 const DEFAULT_PLAYBACK_BRIDGE_TIMEOUT_MS = 5000;
 const DEFAULT_PLAYBACK_BRIDGE_RENDERER_SAMPLE_GRACE_MS = 500;
 
@@ -70,8 +73,6 @@ const finiteNumber = (value: unknown, fallback = 0) => {
   const number = Number(value);
   return Number.isFinite(number) ? number : fallback;
 };
-
-const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 
 export const normalizePlaybackRate = (value: unknown) => {
   const rate = finiteNumber(value, 1);
@@ -85,24 +86,52 @@ export const buildPlaybackClockSnapshot = (source: PlaybackClockSource): Playbac
   const playbackRate = normalizePlaybackRate(source.playbackRate);
   const isPlaying = Boolean(source.isPlaying);
   const rawPositionMs = Math.max(0, Math.round(finiteNumber(source.currentTime, 0) * 1000));
-  const projectedMs =
-    isPlaying && sampledAt > 0
-      ? Math.round(
-          clamp(Date.now() - sampledAt, 0, MAX_PLAYBACK_CLOCK_PROJECTION_MS) * playbackRate,
-        )
-      : 0;
 
   return {
     trackId:
       source.trackId !== undefined && source.trackId !== null ? String(source.trackId) : null,
-    positionMs: rawPositionMs + projectedMs,
+    ...(source.trackSeq ? { trackSeq: source.trackSeq } : {}),
+    positionMs: rawPositionMs,
     durationMs: Math.max(0, Math.round(finiteNumber(source.duration, 0) * 1000)),
     playbackRate,
     isPlaying,
+    isAdvancing: isPlaying && (source.isAdvancing ?? true),
     generation,
     ...(seekTimestamp > 0 ? { seekTimestamp } : {}),
     ...(sampledAt > 0 ? { sampledAt } : {}),
     ...(source.reason ? { reason: source.reason } : {}),
+  };
+};
+
+/** One source clock per player, shared by every lyric consumer and IPC publisher. */
+export const createPlaybackClock = () => {
+  let previous: PlaybackClockSnapshot | undefined;
+  let previousSourceSample = 0;
+  return (source: PlaybackClockSource): PlaybackClockSnapshot => {
+    const clock = buildPlaybackClockSnapshot(source);
+    const sourceSample = clock.sampledAt ?? 0;
+    // A resume/rate/buffering change starts a new interpolation segment. Do not
+    // charge time spent paused to the next segment, or refresh it on a duration edit.
+    const transportChanged =
+      previous &&
+      (previous.trackId !== clock.trackId ||
+        previous.trackSeq !== clock.trackSeq ||
+        previous.generation !== clock.generation ||
+        previous.isPlaying !== clock.isPlaying ||
+        previous.isAdvancing !== clock.isAdvancing ||
+        previous.playbackRate !== clock.playbackRate);
+    if (transportChanged && sourceSample === previousSourceSample) {
+      clock.sampledAt = Date.now();
+    } else if (
+      previous &&
+      sourceSample === previousSourceSample &&
+      clock.positionMs === previous.positionMs
+    ) {
+      clock.sampledAt = previous.sampledAt;
+    }
+    previousSourceSample = sourceSample;
+    previous = clock;
+    return clock;
   };
 };
 
@@ -122,6 +151,7 @@ export interface PlaybackSnapshotPatch {
   currentTime?: number;
   duration?: number;
   isPlaying?: boolean;
+  isAdvancing?: boolean;
   playbackRate?: number;
   seekTimestamp?: number;
   reason?: PlaybackClockReason;
@@ -162,8 +192,6 @@ export const shouldAcceptPlaybackSnapshot = <T extends PlaybackSnapshotLike>(
   current: T | null,
   options: {
     isSamePlayback?: (next: T, current: T) => boolean;
-    regressionToleranceMs?: number;
-    sampleGraceMs?: number;
   } = {},
 ) => {
   if (!next || !current) return true;
@@ -175,27 +203,19 @@ export const shouldAcceptPlaybackSnapshot = <T extends PlaybackSnapshotLike>(
       ? nextTrackSeq === currentTrackSeq
       : next.trackId === current.trackId);
   if (!isSamePlayback) return true;
-  if (Boolean(next.isPlaying) !== Boolean(current.isPlaying)) return true;
 
   const nextSeekTimestamp = finiteNumber(next.seekTimestamp || next.clock?.seekTimestamp, 0);
   const currentSeekTimestamp = finiteNumber(
     current.seekTimestamp || current.clock?.seekTimestamp,
     0,
   );
-  if (nextSeekTimestamp !== currentSeekTimestamp) return true;
+  if (nextSeekTimestamp !== currentSeekTimestamp) return nextSeekTimestamp > currentSeekTimestamp;
 
   const nextUpdatedAt = readPlaybackSnapshotUpdatedAt(next);
   const currentUpdatedAt = readPlaybackSnapshotUpdatedAt(current);
-  const nextPositionMs = readPlaybackSnapshotPositionMs(next);
-  const currentPositionMs = readPlaybackSnapshotPositionMs(current);
-  const regressionToleranceMs =
-    options.regressionToleranceMs ?? DEFAULT_PLAYBACK_REGRESSION_TOLERANCE_MS;
-  const sampleGraceMs = options.sampleGraceMs ?? DEFAULT_PLAYBACK_SAMPLE_GRACE_MS;
-  const isRegression = nextPositionMs + regressionToleranceMs < currentPositionMs;
-  const isOlderSample =
-    nextUpdatedAt > 0 && currentUpdatedAt > 0 && nextUpdatedAt + sampleGraceMs < currentUpdatedAt;
-
-  return !(Boolean(next.isPlaying) && Boolean(current.isPlaying) && isRegression && isOlderSample);
+  // Old samples can jump forward after a backward seek or restore an obsolete
+  // play/pause state. Position direction is not a valid ordering criterion.
+  return !(nextUpdatedAt > 0 && currentUpdatedAt > 0 && nextUpdatedAt < currentUpdatedAt);
 };
 
 export const isSamePlaybackSnapshot = <T extends PlaybackSnapshotLike>(
@@ -295,7 +315,14 @@ export const patchPlaybackSnapshot = <T extends PlaybackSnapshotLike & { trackId
   const playbackRate = normalizePlaybackRate(patch.playbackRate ?? current.playbackRate ?? 1);
   const isPlaying =
     typeof patch.isPlaying === 'boolean' ? patch.isPlaying : Boolean(current.isPlaying);
-  const updatedAt = Date.now();
+  const transportChanged =
+    (patch.isPlaying !== undefined && patch.isPlaying !== current.isPlaying) ||
+    (patch.isAdvancing !== undefined && patch.isAdvancing !== current.clock?.isAdvancing) ||
+    (patch.playbackRate !== undefined && patch.playbackRate !== current.playbackRate);
+  const updatedAt =
+    patch.currentTime !== undefined || transportChanged
+      ? Date.now()
+      : readPlaybackSnapshotUpdatedAt(current);
   const seekTimestamp =
     Number.isFinite(Number(patch.seekTimestamp)) && Number(patch.seekTimestamp) > 0
       ? Number(patch.seekTimestamp)
@@ -313,9 +340,17 @@ export const patchPlaybackSnapshot = <T extends PlaybackSnapshotLike & { trackId
     ...(seekTimestamp > 0 ? { seekTimestamp } : {}),
     clock: buildPlaybackClockSnapshot({
       trackId: current.trackId,
+      trackSeq,
       currentTime,
       duration,
       isPlaying,
+      isAdvancing:
+        patch.isAdvancing ??
+        (typeof patch.isPlaying === 'boolean'
+          ? isPlaying
+          : patch.currentTime !== undefined
+            ? isPlaying
+            : current.clock?.isAdvancing),
       playbackRate,
       updatedAt,
       seekTimestamp,

@@ -145,21 +145,25 @@ export const createResolver = (
   playlistStore: ReturnType<typeof usePlaylistStore>,
   settingStore: ReturnType<typeof useSettingStore>,
 ) => {
-  const getEffectiveAudioQuality = (): AudioQualityValue => {
-    return normalizeQuality(state.currentAudioQualityOverride ?? settingStore.defaultAudioQuality);
+  const getEffectiveAudioQuality = (track?: Pick<Song, 'id'>): AudioQualityValue => {
+    const isCurrentTrack = !track || String(track.id) === String(state.currentTrackId);
+    return normalizeQuality(
+      (isCurrentTrack ? state.currentAudioQualityOverride : null) ??
+        settingStore.defaultAudioQuality,
+    );
   };
 
-  const getResolvedAudioQuality = (track: Pick<Song, 'relateGoods'>): AudioQualityValue => {
+  const getResolvedAudioQuality = (track: Pick<Song, 'id' | 'relateGoods'>): AudioQualityValue => {
     return resolveEffectiveSongQuality(
       track,
-      getEffectiveAudioQuality(),
+      getEffectiveAudioQuality(track),
       settingStore.compatibilityMode ?? true,
     );
   };
 
   const createPluginAudioSourceContext = (track: Song, forceReload = false) => ({
     track,
-    quality: getEffectiveAudioQuality(),
+    quality: getEffectiveAudioQuality(track),
     effect: normalizeEffect(state.audioEffect),
     forceReload,
   });
@@ -315,7 +319,7 @@ export const createResolver = (
 
   const resolveAudioUrl = async (
     track: Song,
-    options?: { forceReload?: boolean },
+    options?: { forceReload?: boolean; reuseRelateGoods?: boolean },
   ): Promise<ResolvedAudioSource> => {
     const canReuseCurrentSource =
       !!track.audioUrl &&
@@ -345,7 +349,7 @@ export const createResolver = (
       };
     }
 
-    const audioQuality = getEffectiveAudioQuality();
+    const audioQuality = getEffectiveAudioQuality(track);
     const audioEffect = normalizeEffect(state.audioEffect);
     const compatibilityMode = settingStore.compatibilityMode ?? true;
     const pluginAudioSourceContext = createPluginAudioSourceContext(
@@ -543,7 +547,7 @@ export const createResolver = (
     let relateGoods: SongRelateGood[] = [];
     try {
       relateGoods = await ensureTrackRelateGoods(catalogTrack, {
-        forceRefresh: catalogTrack === track,
+        forceRefresh: catalogTrack === track && !options?.reuseRelateGoods,
       });
     } catch (error) {
       logger.warn('PlayerResolver', 'Resolve privilege lite failed, continue playback:', error, {

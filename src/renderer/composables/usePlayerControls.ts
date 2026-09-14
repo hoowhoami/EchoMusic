@@ -169,7 +169,9 @@ export function usePlayerControls() {
   const cloudAudioSourceLoadingKey = ref('');
   let catalogQualityFetchSeq = 0;
   let cloudAudioSourceFetchSeq = 0;
-  const isAudioEffectPresetSelectionDisabled = computed(() => isResolvedCloudSource.value);
+  const isAudioEffectPresetSelectionDisabled = computed(
+    () => isResolvedCloudSource.value || isAudioSourceSwitching.value,
+  );
   const hasCatalogQualityError = computed(
     () =>
       !!catalogQualityLookupKey.value &&
@@ -184,8 +186,14 @@ export function usePlayerControls() {
       settingStore.compatibilityMode ?? true,
     );
   });
+  const isAudioSourceSwitching = computed(
+    () =>
+      player.audioSourceRefreshRequestSeq !== null &&
+      player.audioSourceRefreshRequestSeq === player.playbackRequestSeq,
+  );
 
   const isAudioQualityDisabled = (quality: AudioQualityValue) => {
+    if (isAudioSourceSwitching.value) return true;
     if (hasCloudAudioSourceOption.value) {
       const track = currentTrack.value;
       if (!track || !catalogQualityLookupKey.value) return true;
@@ -244,18 +252,11 @@ export function usePlayerControls() {
   const setAudioQuality = (quality: AudioQualityValue) => {
     if (isAudioQualityDisabled(quality)) return;
     clearCatalogQualityError();
-    if (hasCloudAudioSourceOption.value) {
-      player.preferCurrentTrackCatalogQuality(quality);
-      return;
-    }
-    if (player.currentAudioQualityOverride === null && effectiveAudioQuality.value === quality)
-      return;
-    if (player.currentAudioQualityOverride === quality) return;
-    player.setCurrentAudioQualityOverride(quality);
+    player.setPreferredAudioQuality(quality);
   };
 
   const setCloudAudioSource = () => {
-    if (!hasCloudAudioSourceOption.value) return;
+    if (isAudioSourceSwitching.value || !hasCloudAudioSourceOption.value) return;
     clearCatalogQualityError();
     player.preferCurrentTrackCloudSource();
   };
@@ -547,6 +548,8 @@ export function usePlayerControls() {
     setPlaybackRate,
     // 音质
     effectiveAudioQuality,
+    requestedAudioQuality,
+    isAudioSourceSwitching,
     isResolvedCloudSource,
     hasCloudAudioSourceOption,
     hasCatalogAudioSourceOption,

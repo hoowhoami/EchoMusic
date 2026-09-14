@@ -1,8 +1,6 @@
 //! DJ plan templates and automation curves.
 //!
-//! The eight plan templates embedded here were extracted verbatim from the
-//! `__TEXT,__cstring` section of the QQ Music 11.9.1 macOS binary (see
-//! `.planning/crossfade-transitions/re/findings/`). The JSON schema is:
+//! Embedded effect templates use the following JSON schema.
 //!
 //! ```text
 //! { name, description,
@@ -17,14 +15,11 @@
 //!   `step` (m until `step_pos`, then n), `custom` (`control_points` [[pos, value], …]).
 //!
 //! Positions are normalised over the overlap window (0 = mix start, 1 = mix end).
-//! The binary's `SetPos` comment states that positions past the end simply hold the
-//! final value, which `evaluate` mirrors by clamping.
+//! Positions outside the window hold the nearest boundary value.
 //!
-//! The exact `curve_type` maths is not recoverable from strings alone; the binary only
-//! shows that curve 1 is used for every gain fade-in and curve 2 for every gain
-//! fade-out. We reconstruct them as the equal-power pair `sin(u·π/2)` / `1-cos(u·π/2)`.
-//! For gain targets the pair is applied to **linear amplitude** (that is the only domain
-//! in which `gA² + gB² = 1` holds, i.e. the only reason the two curve types exist);
+//! Curve types 1 and 2 use `sin(u·π/2)` and `1-cos(u·π/2)` interpolation.
+//! Gain targets interpolate in **linear amplitude**, allowing complementary fades
+//! to conserve power (`gA² + gB² = 1`);
 //! curve 0 and all non-gain parameters interpolate in the parameter's own unit.
 
 use serde::{Deserialize, Serialize};
@@ -34,37 +29,31 @@ pub const SIMPLE_FILTER_JSON: &str = include_str!("plans/simple_filter.json");
 pub const THREE_BAND_JSON: &str = include_str!("plans/three_band.json");
 pub const SIMPLE_EXCHANGE_JSON: &str = include_str!("plans/simple_exchange.json");
 pub const FILTER_EQ_JSON: &str = include_str!("plans/filter_eq.json");
-pub const NO_PLAN_JSON: &str = include_str!("plans/no_plan.json");
-pub const ECHO_DECLINE_JSON: &str = include_str!("plans/echo_decline.json");
-pub const AM_FILTER_JSON: &str = include_str!("plans/am_filter.json");
-pub const AM_FILTER_2_JSON: &str = include_str!("plans/am_filter_2.json");
+pub const FALLBACK_EXCHANGE_JSON: &str = include_str!("plans/fallback_exchange.json");
+pub const ECHO_TAIL_JSON: &str = include_str!("plans/echo_tail.json");
+pub const SMOOTH_FILTER_JSON: &str = include_str!("plans/smooth_filter.json");
+pub const LAYERED_FILTER_JSON: &str = include_str!("plans/layered_filter.json");
 
-/// Identifies one of the embedded plan templates. The names follow the symbol names in
-/// the QQ Music binary (`kFilterPresetJson`, `k3bandPresetJson`, …).
+/// Identifies an embedded template by its audible effect.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum PlanTemplate {
-    /// `kFilterPresetJson` – "SimpleFilterPreset": gain crossfade + HPF sweep on A, LPF
-    /// sweep on B. Short, filter-driven DJ blend.
+    /// Gain crossfade with an outgoing high-pass and incoming low-pass sweep.
     SimpleFilter,
-    /// `k3bandPresetJson` – "3bandEQPreset": gain + full 3-band swap + reverb tail. The
-    /// richest template; used for long, beat-matched blends.
+    /// Three-band exchange with a reverb tail for longer, beat-matched blends.
     ThreeBand,
-    /// `simpleexchange` – "3bandEQPreset" (simple gain exchange): gain crossfade + bass
-    /// swap at the midpoint.
+    /// Gain crossfade with a bass swap at the midpoint.
     SimpleExchange,
-    /// `filterEQPresetJson` – gain exchange + bass swap + HPF/LPF sweeps.
+    /// Gain and bass exchange with high-pass and low-pass sweeps.
     FilterEq,
-    /// `NoPlanJson` – "NoPlan": plain gain exchange + bass swap. The engine falls back to
-    /// this when the BPM relationship is unusable.
-    NoPlan,
-    /// `EchoDeclineJson` – A ends in an echo tail while B fades in linearly.
-    EchoDecline,
-    /// `AMfilterPlanJson` – "AM": Apple-Music style, A ducks late and low-passes, B enters
-    /// through an opening high-pass.
-    AmFilter,
-    /// `AMfilterPlanJson2` – denser control-point variant of [`PlanTemplate::AmFilter`].
-    AmFilter2,
+    /// Gain and bass exchange used when beat analysis cannot guide the transition.
+    FallbackExchange,
+    /// Outgoing echo tail with a linear incoming fade.
+    EchoTail,
+    /// Late outgoing fade with low-pass filtering and a high-pass incoming sweep.
+    SmoothFilter,
+    /// Denser control-point variant of [`PlanTemplate::SmoothFilter`].
+    LayeredFilter,
 }
 
 impl PlanTemplate {
@@ -74,23 +63,23 @@ impl PlanTemplate {
             Self::ThreeBand => THREE_BAND_JSON,
             Self::SimpleExchange => SIMPLE_EXCHANGE_JSON,
             Self::FilterEq => FILTER_EQ_JSON,
-            Self::NoPlan => NO_PLAN_JSON,
-            Self::EchoDecline => ECHO_DECLINE_JSON,
-            Self::AmFilter => AM_FILTER_JSON,
-            Self::AmFilter2 => AM_FILTER_2_JSON,
+            Self::FallbackExchange => FALLBACK_EXCHANGE_JSON,
+            Self::EchoTail => ECHO_TAIL_JSON,
+            Self::SmoothFilter => SMOOTH_FILTER_JSON,
+            Self::LayeredFilter => LAYERED_FILTER_JSON,
         }
     }
 
-    pub fn symbol_name(self) -> &'static str {
+    pub fn id(self) -> &'static str {
         match self {
-            Self::SimpleFilter => "kFilterPresetJson",
-            Self::ThreeBand => "k3bandPresetJson",
-            Self::SimpleExchange => "simpleexchange",
-            Self::FilterEq => "filterEQPresetJson",
-            Self::NoPlan => "NoPlanJson",
-            Self::EchoDecline => "EchoDeclineJson",
-            Self::AmFilter => "AMfilterPlanJson",
-            Self::AmFilter2 => "AMfilterPlanJson2",
+            Self::SimpleFilter => "simple-filter",
+            Self::ThreeBand => "three-band",
+            Self::SimpleExchange => "simple-exchange",
+            Self::FilterEq => "filter-eq",
+            Self::FallbackExchange => "fallback-exchange",
+            Self::EchoTail => "echo-tail",
+            Self::SmoothFilter => "smooth-filter",
+            Self::LayeredFilter => "layered-filter",
         }
     }
 
@@ -98,7 +87,7 @@ impl PlanTemplate {
         DjPlan::parse(self.json()).unwrap_or_else(|err| {
             // The templates are compile-time constants validated by unit tests, so this
             // cannot fail at runtime; keep the panic message informative regardless.
-            panic!("embedded DJ plan {} is invalid: {err}", self.symbol_name())
+            panic!("embedded DJ plan {} is invalid: {err}", self.id())
         })
     }
 }
@@ -256,7 +245,7 @@ impl CurveShape {
 
 impl Automation {
     /// Evaluate the automated value at normalised overlap position `pos`. Positions
-    /// outside `0..=1` hold the boundary values (QQ: "always in the last time").
+    /// outside `0..=1` hold the boundary values.
     pub fn evaluate(&self, pos: f32) -> f32 {
         let pos = if pos.is_finite() { pos } else { 0.0 };
         match self {
@@ -362,27 +351,29 @@ mod tests {
     use super::*;
 
     #[test]
-    fn all_embedded_templates_parse_and_match_binary_structure() {
+    fn embedded_templates_have_expected_names_and_effect_chains() {
         let expected = [
-            (PlanTemplate::SimpleFilter, "SimpleFilterPreset", 2, 2),
-            (PlanTemplate::ThreeBand, "3bandEQPreset", 5, 5),
-            (PlanTemplate::SimpleExchange, "3bandEQPreset", 2, 2),
-            (PlanTemplate::FilterEq, "3bandEQPreset", 3, 3),
-            (PlanTemplate::NoPlan, "NoPlan", 2, 2),
-            (PlanTemplate::EchoDecline, "NoPlan", 1, 1),
-            (PlanTemplate::AmFilter, "AM", 3, 3),
-            (PlanTemplate::AmFilter2, "AM", 3, 3),
+            (PlanTemplate::SimpleFilter, "simple-filter", 2, 2),
+            (PlanTemplate::ThreeBand, "three-band", 5, 5),
+            (PlanTemplate::SimpleExchange, "simple-exchange", 2, 2),
+            (PlanTemplate::FilterEq, "filter-eq", 3, 3),
+            (PlanTemplate::FallbackExchange, "fallback-exchange", 2, 2),
+            (PlanTemplate::EchoTail, "echo-tail", 1, 1),
+            (PlanTemplate::SmoothFilter, "smooth-filter", 3, 3),
+            (PlanTemplate::LayeredFilter, "layered-filter", 3, 3),
         ];
         for (template, name, a_len, b_len) in expected {
             let plan = template.load();
-            assert_eq!(plan.name, name, "{}", template.symbol_name());
-            assert_eq!(plan.a_chain.list.len(), a_len, "{}", template.symbol_name());
-            assert_eq!(plan.b_chain.list.len(), b_len, "{}", template.symbol_name());
+            assert_eq!(plan.name, name, "{}", template.id());
+            assert_eq!(plan.name, template.id());
+            assert_eq!(serde_json::to_value(template).unwrap(), name);
+            assert_eq!(plan.a_chain.list.len(), a_len, "{}", template.id());
+            assert_eq!(plan.b_chain.list.len(), b_len, "{}", template.id());
             for slot in plan.a_chain.list.iter().chain(plan.b_chain.list.iter()) {
                 assert!(
                     !matches!(slot.target(), EffectTarget::Unknown(_)),
                     "{} has an unknown effect type",
-                    template.symbol_name()
+                    template.id()
                 );
             }
         }
@@ -447,7 +438,7 @@ mod tests {
 
     #[test]
     fn custom_control_points_interpolate_and_hold_ends() {
-        let plan = PlanTemplate::AmFilter.load();
+        let plan = PlanTemplate::SmoothFilter.load();
         let b_gain = &plan.b_chain.list[0];
         // control points: [0.25,-30],[0.45,-10],[0.55,-5],[0.9,0]
         assert_eq!(b_gain.automation.evaluate(0.0), -30.0);
@@ -467,7 +458,7 @@ mod tests {
         let b_lpf = &plan.b_chain.list[1];
         assert_eq!(b_lpf.target(), EffectTarget::LowPassHz);
         assert_eq!(b_lpf.initial_value(), 20.0);
-        let plan = PlanTemplate::EchoDecline.load();
+        let plan = PlanTemplate::EchoTail.load();
         assert_eq!(plan.a_chain.list[0].target(), EffectTarget::EchoMix);
         assert_eq!(plan.a_chain.list[0].automation.evaluate(0.6), 1.0);
     }

@@ -9,7 +9,11 @@ import logger from '@/utils/logger';
 import { normalizePlayerErrorPayload, PlayerEngine, type PlayerEngineEvents } from '@/utils/player';
 import type { Song } from '@/models/song';
 import type { PlayerErrorPayload } from '../../shared/player-error';
-import { matchesPendingSeekTarget, type PlaybackProgressBusyReason } from '../../shared/playback';
+import {
+  createPlaybackClock,
+  matchesPendingSeekTarget,
+  type PlaybackProgressBusyReason,
+} from '../../shared/playback';
 import type { AudioEffectPlaybackOptions, SpatialAudioEffectEntry } from '../../shared/audio';
 import { createLatestRequestQueue } from '../../shared/latest-request-queue';
 import { resolvePlaybackSourceQueueId } from '../../shared/playback-queue-decision';
@@ -108,7 +112,11 @@ export const usePlayerStore = defineStore(
       const core = state.playbackDiagnostics.core;
       const ao = state.playbackDiagnostics.ao;
       const coreState = String(core?.state ?? '').toLowerCase();
-      if (state.nativeSeekActive || coreState === 'seeking') return 'seek';
+      if (
+        state.nativeSeekActive ||
+        (coreState === 'seeking' && state.nativePlaybackProgressRevision <= (core?.revision ?? 0))
+      )
+        return 'seek';
       return shouldShowPlaybackBuffering({
         core,
         ao,
@@ -119,6 +127,37 @@ export const usePlayerStore = defineStore(
         : null;
     });
     const playbackProgressIsBusy = computed(() => playbackProgressBusyReason.value !== null);
+    const updatePlaybackClock = createPlaybackClock();
+    const playbackClock = computed(() =>
+      updatePlaybackClock({
+        trackId: state.currentTrackId,
+        trackSeq: state.nativeTrackSeq,
+        currentTime: state.currentTime,
+        duration: state.duration,
+        playbackRate: state.playbackRate,
+        isPlaying: isPlaying.value,
+        isAdvancing:
+          !state.awaitingTrackLoad &&
+          state.seekTargetTime === null &&
+          !state.stallRecovering &&
+          !playbackProgressIsBusy.value,
+        updatedAt: state.currentTimeUpdatedAt,
+        seekTimestamp: state.seekTimestamp,
+      }),
+    );
+
+    // The store owns the exported lyric index even when every lyric window is closed.
+    // Views compute their animated cursor locally and never write it back here.
+    watch(
+      [
+        playbackClock,
+        () => lyricStore.lines,
+        () => lyricStore.loadedHash,
+        () => lyricStore.currentTimeOffset,
+      ],
+      () => lyricStore.updateCurrentIndex(playbackClock.value.positionMs / 1000),
+      { immediate: true },
+    );
 
     const getResolvedPlaybackSources = (resolved: ResolvedAudioSource): PlaybackSource[] => {
       const fallbackTrackId = resolved.source?.audioTrackId ?? resolved.audioTrackId ?? null;
@@ -188,206 +227,261 @@ export const usePlayerStore = defineStore(
 
     const refreshCurrentTrack = async (options?: { seamless?: boolean }) => {
       if (!state.currentTrackId) return;
-      if (getPlaybackIsLoading(state)) {
+      if (getPlaybackIsLoading(state) || state.nativeSeekActive || state.seekTargetTime != null) {
         state.pendingSettingRefresh = true;
         return;
       }
       const requestSeq = ++state.playbackRequestSeq;
+      const refreshTrackId = String(state.currentTrackId);
+      const isRefreshCurrent = () =>
+        requestSeq === state.playbackRequestSeq && String(state.currentTrackId) === refreshTrackId;
       const track = findTrackById(state.currentTrackId, state.currentPlaylist, playlistStore);
       if (!track) return;
 
-      state.audioEffectError = '';
-      const isEffectChange = state.audioEffect !== state.currentResolvedAudioEffect;
-      state.pendingSettingRefresh = false;
-      const wasPlaying = getPlaybackIsPlaying(state);
-      const seamless = options?.seamless === true && wasPlaying && !!state.currentAudioUrl;
-      const previousTime = state.currentTime;
-      if (!seamless) {
-        beginPlaybackIntent(state, {
-          seq: requestSeq,
-          trackId: String(state.currentTrackId),
-          sourceQueueId: state.currentSourceQueueId,
-          shouldPlay: wasPlaying,
-        });
-        beginNativeTrackLoad(state);
-      }
-
-      let resolved: ResolvedAudioSource;
+      state.audioSourceRefreshRequestSeq = requestSeq;
+      const refreshStartedAt = Date.now();
+      const requestedQuality =
+        state.currentAudioQualityOverride ?? settingStore.defaultAudioQuality;
+      state.audioSourceRefreshQuality = requestedQuality;
+      logger.info('PlayerStore', 'Audio source refresh started', { requestSeq, requestedQuality });
       try {
-        resolved = await resolver.resolveAudioUrl(track, { forceReload: true });
-      } catch (error) {
-        if (requestSeq !== state.playbackRequestSeq) return;
-        if (seamless) {
-          showPlaybackNotice(
-            isEffectChange ? 'audio-effect-apply-failed' : 'audio-url-unavailable',
-            track,
-          );
-          logger.error('PlayerStore', 'Seamless source resolution failed; old source kept:', error);
-          return;
+        playbackManager.clearGaplessPreparedSource();
+        state.audioEffectError = '';
+        const isEffectChange = state.audioEffect !== state.currentResolvedAudioEffect;
+        state.pendingSettingRefresh = false;
+        const wasPlaying = getPlaybackIsPlaying(state);
+        const seamless = options?.seamless === true && wasPlaying && !!state.currentAudioUrl;
+        const previousTime = state.currentTime;
+        if (!seamless) {
+          beginPlaybackIntent(state, {
+            seq: requestSeq,
+            trackId: String(state.currentTrackId),
+            sourceQueueId: state.currentSourceQueueId,
+            shouldPlay: wasPlaying,
+          });
+          beginNativeTrackLoad(state);
         }
-        abortNativeTrackLoad(state);
-        completePlaybackIntent(state, requestSeq, { isPlaying: false });
-        setEnginePlaybackStatus(state, 'error');
-        state.lastError = 'audio-url-unavailable';
-        showPlaybackNotice(
-          isEffectChange ? 'audio-effect-apply-failed' : 'audio-url-unavailable',
-          track,
-        );
-        logger.error('PlayerStore', 'Refresh track source resolution failed:', error);
-        return;
-      }
-      if (requestSeq !== state.playbackRequestSeq) return;
-      if (!resolved.url) {
-        if (seamless) {
-          showPlaybackNotice(
-            isEffectChange ? 'audio-effect-apply-failed' : 'audio-url-unavailable',
-            track,
-          );
-          return;
-        }
-        abortNativeTrackLoad(state);
-        completePlaybackIntent(state, requestSeq, { isPlaying: false });
-        setEnginePlaybackStatus(state, 'error');
-        state.lastError = 'audio-url-unavailable';
-        showPlaybackNotice(
-          isEffectChange ? 'audio-effect-apply-failed' : 'audio-url-unavailable',
-          track,
-        );
-        return;
-      }
 
-      audioManager.setVolume(state.volume);
-      if (requestSeq !== state.playbackRequestSeq) return;
-
-      const playbackSources = getResolvedPlaybackSources(resolved);
-      let playbackSource = playbackSources[0] ?? { url: resolved.url };
-      let playbackSourceIndex = 0;
-      const savedDuration = state.duration;
-      try {
-        if (seamless) {
-          let switched = false;
-          let lastError: unknown;
-          const candidates = playbackSources.length ? playbackSources : [playbackSource];
-          for (const [index, candidate] of candidates.entries()) {
-            try {
-              if (requestSeq !== state.playbackRequestSeq) return;
-              const trackSeq = await engine.switchSource(candidate);
-              if (requestSeq !== state.playbackRequestSeq) return;
-              // Seamless switching changes the native sequence without a file-loaded event.
-              if (trackSeq !== undefined && Number.isFinite(trackSeq) && trackSeq > 0) {
-                state.nativeTrackSeq = trackSeq;
-              }
-              playbackSource = candidate;
-              playbackSourceIndex = index;
-              switched = true;
-              break;
-            } catch (error) {
-              if (requestSeq !== state.playbackRequestSeq) return;
-              lastError = error;
-              logger.warn('PlayerStore', 'Seamless source candidate failed', {
-                index,
-                error: String(error),
-              });
-            }
-          }
-          if (!switched) throw lastError ?? new Error('No playable source candidate');
-        } else await engine.setSource(playbackSource, { force: true });
-      } catch (error) {
-        if (requestSeq === state.playbackRequestSeq) {
+        let resolved: ResolvedAudioSource;
+        try {
+          resolved = await resolver.resolveAudioUrl(track, {
+            forceReload: true,
+            reuseRelateGoods: true,
+          });
+        } catch (error) {
+          if (requestSeq !== state.playbackRequestSeq) return;
           if (seamless) {
             showPlaybackNotice(
-              isEffectChange ? 'audio-effect-apply-failed' : 'playback-failed',
+              isEffectChange ? 'audio-effect-apply-failed' : 'audio-url-unavailable',
               track,
             );
-          } else {
-            abortNativeTrackLoad(state);
-            completePlaybackIntent(state, requestSeq, { isPlaying: false });
-            setEnginePlaybackStatus(state, 'error');
-            state.lastError = 'playback-failed';
-            showPlaybackNotice(
-              isEffectChange ? 'audio-effect-apply-failed' : 'playback-failed',
-              track,
+            logger.error(
+              'PlayerStore',
+              'Seamless source resolution failed; old source kept:',
+              error,
             );
+            return;
           }
+          abortNativeTrackLoad(state);
+          completePlaybackIntent(state, requestSeq, { isPlaying: false });
+          setEnginePlaybackStatus(state, 'error');
+          state.lastError = 'audio-url-unavailable';
+          showPlaybackNotice(
+            isEffectChange ? 'audio-effect-apply-failed' : 'audio-url-unavailable',
+            track,
+          );
+          logger.error('PlayerStore', 'Refresh track source resolution failed:', error);
+          return;
         }
-        logger.error(
-          'PlayerStore',
-          seamless
-            ? 'Seamless source switch failed; old source kept:'
-            : 'Refresh track reload failed:',
-          error,
-        );
-        return;
-      }
-      if (requestSeq !== state.playbackRequestSeq) return;
-      state.currentAudioUrl = playbackSource.url;
-      state.currentPlaybackSource = playbackSource;
-      state.currentAudioCandidateUrls = playbackSources.map((source) => source.url);
-      state.currentAudioCandidateSources = playbackSources;
-      state.currentAudioCandidateIndex = playbackSourceIndex;
-      state.currentResolvedAudioQuality = resolved.quality;
-      state.currentResolvedAudioEffect = resolved.effect;
-      if (resolved.noticeCode) {
-        showPlaybackNotice(resolved.noticeCode, track);
-      } else {
-        clearPlaybackNotice(state.currentTrackId);
-      }
+        if (!isRefreshCurrent()) return;
+        logger.info('PlayerStore', 'Audio source resolved', {
+          requestSeq,
+          requestedQuality,
+          resolvedQuality: resolved.quality,
+          elapsedMs: Date.now() - refreshStartedAt,
+        });
+        if (!resolved.url) {
+          if (seamless) {
+            showPlaybackNotice(
+              isEffectChange ? 'audio-effect-apply-failed' : 'audio-url-unavailable',
+              track,
+            );
+            return;
+          }
+          abortNativeTrackLoad(state);
+          completePlaybackIntent(state, requestSeq, { isPlaying: false });
+          setEnginePlaybackStatus(state, 'error');
+          state.lastError = 'audio-url-unavailable';
+          showPlaybackNotice(
+            isEffectChange ? 'audio-effect-apply-failed' : 'audio-url-unavailable',
+            track,
+          );
+          return;
+        }
 
-      state.currentResolvedAudioLoudness = resolved.loudness;
-      state.currentResolvedSourceKind = resolved.sourceKind ?? 'catalog';
-      track.audioUrl = playbackSource.url;
-      if (!state.duration && !engine.duration && savedDuration) state.duration = savedDuration;
-      engine.applyTrackLoudness(resolved.loudness);
-      engine.setPlaybackRate(state.playbackRate);
-      void resolver.fetchClimaxMarks(track);
+        audioManager.setVolume(state.volume);
+        if (requestSeq !== state.playbackRequestSeq) return;
 
-      if (!seamless && previousTime > 0) {
-        state.recentSeekIgnoreEnd = true;
-        window.setTimeout(() => {
-          state.recentSeekIgnoreEnd = false;
-        }, 1500);
-        let actualDuration = engine.duration;
-        if (actualDuration <= 0) {
-          for (let i = 0; i < 10; i++) {
-            await new Promise((r) => window.setTimeout(r, 50));
+        const playbackSources = getResolvedPlaybackSources(resolved);
+        let playbackSource = playbackSources[0] ?? { url: resolved.url };
+        let playbackSourceIndex = 0;
+        const savedDuration = state.duration;
+        try {
+          if (seamless) {
+            let switched = false;
+            let lastError: unknown;
+            const candidates = playbackSources.length ? playbackSources : [playbackSource];
+            for (const [index, candidate] of candidates.entries()) {
+              try {
+                if (!isRefreshCurrent()) return;
+                const trackSeq = await engine.switchSource(candidate);
+                if (!isRefreshCurrent()) return;
+                // Bind the acknowledged timeline (older native bridges may assign a new seq).
+                if (trackSeq !== undefined && Number.isFinite(trackSeq) && trackSeq > 0) {
+                  state.nativeTrackSeq = trackSeq;
+                }
+                playbackSource = candidate;
+                playbackSourceIndex = index;
+                switched = true;
+                break;
+              } catch (error) {
+                if (!isRefreshCurrent()) return;
+                lastError = error;
+                logger.warn('PlayerStore', 'Seamless source candidate failed', {
+                  index,
+                  error: String(error),
+                });
+                // A different URL cannot repair a cancelled transport operation.
+                if (
+                  /source switch (?:cancelled|was superseded|timed out|preparation (?:timed out|unavailable))|stale source switch|active decoder stopped/i.test(
+                    String(error),
+                  )
+                )
+                  throw error;
+              }
+            }
+            if (!switched) throw lastError ?? new Error('No playable source candidate');
+          } else await engine.setSource(playbackSource, { force: true });
+        } catch (error) {
+          if (requestSeq === state.playbackRequestSeq) {
+            if (seamless) {
+              showPlaybackNotice(
+                isEffectChange ? 'audio-effect-apply-failed' : 'playback-failed',
+                track,
+              );
+            } else {
+              abortNativeTrackLoad(state);
+              completePlaybackIntent(state, requestSeq, { isPlaying: false });
+              setEnginePlaybackStatus(state, 'error');
+              state.lastError = 'playback-failed';
+              showPlaybackNotice(
+                isEffectChange ? 'audio-effect-apply-failed' : 'playback-failed',
+                track,
+              );
+            }
+          }
+          logger.error(
+            'PlayerStore',
+            seamless
+              ? 'Seamless source switch failed; old source kept:'
+              : 'Refresh track reload failed:',
+            error,
+          );
+          return;
+        }
+        if (!isRefreshCurrent()) return;
+        state.currentAudioUrl = playbackSource.url;
+        state.currentPlaybackSource = playbackSource;
+        state.currentAudioCandidateUrls = playbackSources.map((source) => source.url);
+        state.currentAudioCandidateSources = playbackSources;
+        state.currentAudioCandidateIndex = playbackSourceIndex;
+        state.currentResolvedAudioQuality = resolved.quality;
+        state.currentResolvedAudioEffect = resolved.effect;
+        if (resolved.noticeCode) {
+          showPlaybackNotice(resolved.noticeCode, track);
+        } else {
+          clearPlaybackNotice(state.currentTrackId);
+        }
+
+        state.currentResolvedAudioLoudness = resolved.loudness;
+        state.currentResolvedSourceKind = resolved.sourceKind ?? 'catalog';
+        track.audioUrl = playbackSource.url;
+        if (!state.duration && !engine.duration && savedDuration) state.duration = savedDuration;
+        engine.applyTrackLoudness(resolved.loudness);
+        engine.setPlaybackRate(state.playbackRate);
+        void resolver.fetchClimaxMarks(track);
+
+        if (!seamless && previousTime > 0) {
+          state.recentSeekIgnoreEnd = true;
+          window.setTimeout(() => {
+            state.recentSeekIgnoreEnd = false;
+          }, 1500);
+          let actualDuration = engine.duration;
+          if (actualDuration <= 0) {
+            for (let i = 0; i < 10; i++) {
+              await new Promise((r) => window.setTimeout(r, 50));
+              if (requestSeq !== state.playbackRequestSeq) return;
+              actualDuration = engine.duration;
+              if (actualDuration > 0) break;
+            }
+          }
+          if (requestSeq !== state.playbackRequestSeq) return;
+          let safeTime = previousTime;
+          if (actualDuration > 0 && previousTime >= actualDuration - 0.5) safeTime = 0;
+          engine.seek(safeTime);
+          state.currentTime = safeTime;
+          state.currentTimeUpdatedAt = Date.now();
+        }
+
+        let resumed = seamless || !wasPlaying;
+        if (!seamless && wasPlaying) {
+          try {
+            await engine.play();
             if (requestSeq !== state.playbackRequestSeq) return;
-            actualDuration = engine.duration;
-            if (actualDuration > 0) break;
+            resumed = true;
+          } catch (error) {
+            logger.error('PlayerStore', 'Reload track failed:', error);
+            resumed = false;
           }
         }
         if (requestSeq !== state.playbackRequestSeq) return;
-        let safeTime = previousTime;
-        if (actualDuration > 0 && previousTime >= actualDuration - 0.5) safeTime = 0;
-        engine.seek(safeTime);
-        state.currentTime = safeTime;
-        state.currentTimeUpdatedAt = Date.now();
-      }
-
-      let resumed = seamless || !wasPlaying;
-      if (!seamless && wasPlaying) {
-        try {
-          await engine.play();
-          if (requestSeq !== state.playbackRequestSeq) return;
-          resumed = true;
-        } catch (error) {
-          logger.error('PlayerStore', 'Reload track failed:', error);
-          resumed = false;
+        if (!state.duration && !engine.duration && track.duration) state.duration = track.duration;
+        if (wasPlaying && resumed) engine.setVolume(state.volume);
+        if (!seamless) {
+          completePlaybackIntent(state, requestSeq, { isPlaying: wasPlaying && resumed });
+          setEnginePlaybackStatus(state, wasPlaying && resumed ? 'playing' : 'paused');
         }
-      }
-      if (requestSeq !== state.playbackRequestSeq) return;
-      if (!state.duration && !engine.duration && track.duration) state.duration = track.duration;
-      if (wasPlaying && resumed) engine.setVolume(state.volume);
-      if (!seamless) {
-        completePlaybackIntent(state, requestSeq, { isPlaying: wasPlaying && resumed });
-        setEnginePlaybackStatus(state, wasPlaying && resumed ? 'playing' : 'paused');
-      }
-      if (state.pendingSettingRefresh) {
-        state.pendingSettingRefresh = false;
-        void refreshCurrentTrack();
+      } finally {
+        if (state.audioSourceRefreshRequestSeq === requestSeq) {
+          state.audioSourceRefreshRequestSeq = null;
+          state.audioSourceRefreshQuality = null;
+          if (
+            String(state.currentTrackId) !== refreshTrackId &&
+            state.currentTrackId &&
+            state.currentAudioQualityOverride === null &&
+            requestedQuality === settingStore.defaultAudioQuality &&
+            state.currentResolvedAudioQuality !== requestedQuality
+          ) {
+            // A boundary already queued before invalidation may have made B audible.
+            state.pendingSettingRefresh = true;
+          }
+          if (state.pendingSettingRefresh && !getPlaybackIsLoading(state)) {
+            state.pendingSettingRefresh = false;
+            void refreshCurrentTrack({ seamless: true });
+          } else {
+            void playbackManager.prepareGaplessNext();
+          }
+        }
+        logger.info('PlayerStore', 'Audio source refresh finished', {
+          requestSeq,
+          requestedQuality,
+          elapsedMs: Date.now() - refreshStartedAt,
+          superseded: requestSeq !== state.playbackRequestSeq,
+        });
       }
     };
 
-    const audioManager = createAudioManager(state, engine, refreshCurrentTrack);
+    const audioManager = createAudioManager(state, engine, refreshCurrentTrack, settingStore);
     const configuredProviderPath = () =>
       settingStore.dspProviderEnabled
         ? settingStore.dspProviderPath.trim() || undefined
@@ -743,12 +837,29 @@ export const usePlayerStore = defineStore(
         () => playbackManager.clearGaplessPreparedSource(),
         { flush: 'sync' },
       );
+      const unsubscribePendingSourceRefresh = watch(
+        () =>
+          state.pendingSettingRefresh &&
+          !!state.currentTrackId &&
+          !getPlaybackIsLoading(state) &&
+          !getPlaybackHasFailed(state) &&
+          !state.nativeSeekActive &&
+          state.seekTargetTime == null &&
+          state.audioSourceRefreshRequestSeq == null,
+        (ready) => {
+          if (!ready) return;
+          state.pendingSettingRefresh = false;
+          void refreshCurrentTrack({ seamless: true });
+        },
+        { flush: 'post' },
+      );
       // 保存取消函数，以便在需要时清理订阅
       const unsubscribeSettings = settingStore.$subscribe(() => {
+        const compatibilityChanged = settingStore.compatibilityMode !== snapshot.compatibilityMode;
         const shouldRefresh =
           (state.currentAudioQualityOverride === null &&
             settingStore.defaultAudioQuality !== snapshot.defaultAudioQuality) ||
-          settingStore.compatibilityMode !== snapshot.compatibilityMode;
+          compatibilityChanged;
         const shouldUpdateFade =
           settingStore.volumeFade !== snapshot.volumeFade ||
           settingStore.volumeFadeTime !== snapshot.volumeFadeTime;
@@ -779,16 +890,26 @@ export const usePlayerStore = defineStore(
           volumeNormalizationLufs: settingStore.volumeNormalizationLufs,
         };
         if (shouldRefresh) {
-          if (getPlaybackIsLoading(state) || state.pendingSettingRefresh)
-            state.pendingSettingRefresh = true;
-          else void refreshCurrentTrack();
+          const refreshing =
+            state.audioSourceRefreshRequestSeq != null &&
+            state.audioSourceRefreshRequestSeq === state.playbackRequestSeq;
+          const requestedQuality =
+            state.currentAudioQualityOverride ?? settingStore.defaultAudioQuality;
+          const alreadyRequested =
+            refreshing &&
+            state.audioSourceRefreshQuality === requestedQuality &&
+            !compatibilityChanged;
+          if (!alreadyRequested) {
+            if (refreshing || getPlaybackIsLoading(state) || state.pendingSettingRefresh)
+              state.pendingSettingRefresh = true;
+            else void refreshCurrentTrack({ seamless: true });
+          }
         }
         if (shouldUpdateFade && getPlaybackIsPlaying(state)) {
           void audioManager.fadeVolume(state.volume, { durationMs: 120, respectUserVolume: false });
         }
-        // Any transition change invalidates a next source prepared under the old plan; the
-        // regular prefetch tick prepares it again with the new settings.
-        if (shouldUpdateGapless) playbackManager.clearGaplessPreparedSource();
+        // Reprepare pending plans, but let a transition already rendering finish normally.
+        if (shouldUpdateGapless) playbackManager.invalidateGaplessForSettings();
         if (shouldUpdateOutputDevice)
           void deviceManager.applyOutputDevice(settingStore.outputDevice);
         if (shouldUpdateStallTimeout)
@@ -804,6 +925,7 @@ export const usePlayerStore = defineStore(
         unsubscribeTrackTransition();
         unsubscribeSpatialAudio();
         unsubscribeGaplessQueueDecision();
+        unsubscribePendingSourceRefresh();
         unsubscribeSettings();
       };
     };
@@ -1022,6 +1144,12 @@ export const usePlayerStore = defineStore(
         if (!Number.isFinite(trackSeq) || trackSeq <= 0) return true;
         return state.nativeTrackSeq === null || state.nativeTrackSeq === trackSeq;
       };
+      const syncTransportPosition = (payload?: { time?: number }) => {
+        if (typeof payload?.time !== 'number' || !Number.isFinite(payload.time)) return;
+        if (!matchesPendingSeekTarget(state.seekTargetTime, payload.time)) return;
+        state.currentTime = Math.max(0, payload.time);
+        state.currentTimeUpdatedAt = Date.now();
+      };
 
       const events: PlayerEngineEvents = {
         timeUpdate: (currentTime, payload) => {
@@ -1162,6 +1290,7 @@ export const usePlayerStore = defineStore(
         play: (payload) => {
           if (state.awaitingTrackLoad) return;
           if (!isCurrentNativePlaybackContext(payload) || getPlaybackHasFailed(state)) return;
+          syncTransportPosition(payload);
           setEnginePlaybackStatus(state, 'playing');
           if (isPlaybackIntentPhase(state, 'loading')) {
             completePlaybackIntent(state, state.playbackIntent.seq, { isPlaying: true });
@@ -1182,6 +1311,7 @@ export const usePlayerStore = defineStore(
             getPlaybackHasFailed(state)
           )
             return;
+          syncTransportPosition(payload);
           setEnginePlaybackStatus(state, 'paused');
           setPlaybackIntentPlayback(state, false);
           settingStore.syncPreventSleep(false);
@@ -1343,6 +1473,7 @@ export const usePlayerStore = defineStore(
       playbackIsLoading,
       playbackProgressBusyReason,
       playbackProgressIsBusy,
+      playbackClock,
       playbackDisplayState,
       getSpatialAudioEffectSupport,
       dspProviderInspection: spatialAudioSupport.providerInspection,
@@ -1369,6 +1500,7 @@ export const usePlayerStore = defineStore(
       setAudioEffect: audioManager.setAudioEffect,
       fadeVolume: audioManager.fadeVolume,
       setCurrentAudioQualityOverride: audioManager.setCurrentAudioQualityOverride,
+      setPreferredAudioQuality: audioManager.setPreferredAudioQuality,
       preferCurrentTrackCatalogQuality: audioManager.preferCurrentTrackCatalogQuality,
       preferCurrentTrackCloudSource: audioManager.preferCurrentTrackCloudSource,
 

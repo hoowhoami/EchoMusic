@@ -5,7 +5,6 @@ import {
   computeLyricCharBackgroundPosition,
   createLyricTimeline,
 } from '@/composables/useLyricTimeline';
-import { buildPlaybackClockSnapshot } from '../../../../shared/playback';
 
 /** 副歌词类型：音译 / 翻译 */
 export type SubLyricKind = 'romanized' | 'translated';
@@ -27,21 +26,7 @@ export function useYrcAnimation(activeIndex?: Ref<number>) {
   const LYRIC_LOOKAHEAD = 0;
   const timeline = createLyricTimeline();
 
-  const getPlayback = () => {
-    const playback = {
-      trackId: playerStore.currentTrackId,
-      currentTime: playerStore.currentTime,
-      duration: playerStore.duration,
-      isPlaying: playerStore.isPlaying,
-      playbackRate: playerStore.playbackRate,
-      updatedAt: playerStore.currentTimeUpdatedAt,
-      seekTimestamp: playerStore.seekTimestamp,
-    };
-    return {
-      ...playback,
-      clock: buildPlaybackClockSnapshot(playback),
-    };
-  };
+  const getPlayback = () => ({ clock: playerStore.playbackClock });
 
   // ── 字符元素注册表 ──
   // 主歌词：行索引 -> 字符元素数组（按字符下标存放）
@@ -205,6 +190,7 @@ export function useYrcAnimation(activeIndex?: Ref<number>) {
   };
 
   return {
+    getTimelineRevision: () => timeline.revision,
     getNowMs,
     getLyricTimelineMs,
     updateYrcDom,

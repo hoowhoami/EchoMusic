@@ -55,6 +55,32 @@ export function savePlaylistOrder(totalVer: number, data: string) {
   return request.get('/playlist/sort', { params: { total_ver: totalVer, data } });
 }
 
+export function updatePlaylistInfo(params: {
+  listid: number;
+  total_ver: number;
+  type: 0 | 1;
+  name?: string;
+  sort: number;
+  tags: string;
+  intro: string;
+  pic?: string;
+}) {
+  return request.get('/playlist/update', { params });
+}
+
+export function uploadPlaylistCover(data: ArrayBuffer) {
+  return request.post('/playlist/pic/upload', new Uint8Array(data), {
+    headers: { 'Content-Type': 'application/octet-stream' },
+    params: { type: 'custom', extendName: '.png' },
+  });
+}
+
+export function updatePlaylistCover(totalVer: number, listid: number, type: 0 | 1, pic: string) {
+  return request.get('/playlist/pic', {
+    params: { total_ver: totalVer, data: `${listid}|${type}|${pic}` },
+  });
+}
+
 /**
  * 获取排行榜列表
  */

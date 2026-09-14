@@ -410,6 +410,7 @@ export class PlayerController extends EventEmitter {
   private commandQueue: Promise<void> = Promise.resolve();
   private loadSeq = 0;
   private sourceRequestSeq = 0;
+  private sourceSwitchSeq = 0;
   private activeTrackSeq = 0;
   private activeGeneration = 0;
   private seekSeq = 0;
@@ -551,17 +552,25 @@ export class PlayerController extends EventEmitter {
   }
 
   async switchSource(url: string, trackId?: number | null): Promise<[number, number, number]> {
-    const seq = ++this.loadSeq;
+    // A quality switch keeps the same song/timeline. Changing its event identity
+    // makes ticks disappear if the renderer supersedes the refresh before its ack.
+    const seq = this.activeTrackSeq || ++this.loadSeq;
+    const switchSeq = ++this.sourceSwitchSeq;
     const requestId = this.sourceRequestSeq;
+    const isCurrent = () =>
+      requestId === this.sourceRequestSeq &&
+      switchSeq === this.sourceSwitchSeq &&
+      (this.activeTrackSeq === 0 || this.activeTrackSeq === seq);
     const proxies = await resolveNativeProxyUrls(url);
-    if (requestId !== this.sourceRequestSeq) throw new Error('Source switch was superseded');
+    if (!isCurrent()) throw new Error('Source switch was superseded');
     this.getAddonOrThrow().setHttpProxies(proxies);
     const result = await this.getAddonOrThrow().switchSource(url, trackId ?? null, seq);
-    if (requestId !== this.sourceRequestSeq) throw new Error('Source switch was superseded');
+    if (!isCurrent()) throw new Error('Source switch was superseded');
     this.state.path = url;
     this.state.audioTrackId = trackId ?? undefined;
     this.state.idle = false;
     this.pendingLoadSeq = null;
+    this.activeTrackSeq = seq;
     return [result[0], result[1], seq];
   }
 

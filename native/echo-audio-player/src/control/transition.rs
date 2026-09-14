@@ -150,7 +150,7 @@ fn snapshot(settings: TransitionSettings) -> TransitionSettingsSnapshot {
     }
 }
 
-/// Configure the song-transition mode (QQ Music's 歌曲过渡设置).
+/// Configure the transition mode and timed-fade duration.
 #[napi]
 pub fn set_transition_settings(
     options: Option<TransitionSettingsOptions>,
@@ -170,24 +170,27 @@ pub fn set_transition_settings(
     }
     let settings = settings.sanitized();
     if let Ok(mut current) = TRANSITION_SETTINGS.lock() {
+        // Renderer initialization may reapply settings during ongoing playback.
+        if *current == settings {
+            return Ok(snapshot(settings));
+        }
         *current = settings;
     }
-    // Already prepared/active transitions were planned with the previous settings; drop
-    // them so the renderer prepares again with the new ones.
+    // Replan only transitions that have not started. A running mix (including queued
+    // audio ahead of the audible clock) must finish without resetting the live decoder.
     if RUNTIME_READY.load(Ordering::Acquire) {
         let _ = call_core_command("transition-settings-changed", |runtime| {
             if let Some(session) = runtime.session.as_ref() {
                 if let Some(commands) = session.decode_commands.as_ref() {
-                    let reset_position_secs = session.shared.position_secs();
                     if let Err(err) = commands.try_send(decoder::DecodeCommand::DisarmTransition {
                         request_id: None,
-                        reset_position_secs: Some(reset_position_secs),
+                        reset_position_secs: None,
                     }) {
                         emit_runtime_event(
                             runtime,
                             PlayerEvent::log(
                                 "warn",
-                                format!("failed to disarm active song transition: {err}"),
+                                format!("failed to disarm pending song transition: {err}"),
                             ),
                         );
                     }
@@ -231,8 +234,11 @@ fn analyse_window(
 ) -> Result<TrackAnalysis, String> {
     let duration = decoder.duration_secs();
     let start = window_start_secs.max(0.0);
+    if interrupt.is_cancelled() {
+        return Err("analysis cancelled".to_string());
+    }
     if start > 0.0 {
-        decoder.prepare_seamless_seek(start)?;
+        decoder.prepare_cancellable_seek(start, || interrupt.is_cancelled())?;
     }
     let mut analyzer: Option<TrackAnalyzer> = None;
     let mut collected = 0.0f64;
@@ -406,8 +412,8 @@ pub(crate) fn prepare_transition_audio(
     };
     let mut decoder = open()?;
     let settings = current_transition_settings();
-    let analyse = settings.mode != TransitionMode::None && inputs.current_url.is_some();
-    let plan = if analyse {
+    let needs_analysis = settings.mode == TransitionMode::Gapless || settings.mode.is_automix();
+    let plan = if settings.mode != TransitionMode::None && inputs.current_url.is_some() {
         let plan = match plan_prepared_transition(&mut decoder, &inputs, settings) {
             Ok(plan) => plan,
             Err(err) => {
@@ -421,10 +427,12 @@ pub(crate) fn prepare_transition_audio(
                 None
             }
         };
-        // Analysis can consume B even if it fails or produces no plan. Always reopen;
-        // reusing that reader would silently omit audio before its current position.
-        drop(decoder);
-        decoder = open()?;
+        // Only signal analysis consumes B. Timed fades read metadata and keep the
+        // untouched playback decoder, avoiding an extra network reader and seek.
+        if needs_analysis {
+            drop(decoder);
+            decoder = open()?;
+        }
         plan
     } else {
         None
@@ -434,7 +442,7 @@ pub(crate) fn prepare_transition_audio(
         .as_ref()
         .is_some_and(|plan| plan.mode == TransitionMode::Gapless && plan.overlap_secs <= 0.0);
     if b_start > 0.0 && !direct_gapless {
-        decoder.prepare_seamless_seek(b_start)?;
+        decoder.prepare_cancellable_seek(b_start, || inputs.interrupt.is_cancelled())?;
     }
     decoder.set_discard_before_secs(Some(b_start));
     let predecoded = predecode_gapless_head(&mut decoder, sample_rate)?;
@@ -460,6 +468,34 @@ fn plan_prepared_transition(
     let Some(current_url) = inputs.current_url else {
         return Ok(None);
     };
+    if settings.mode == TransitionMode::Fade {
+        if settings.fade_secs <= 0.05 {
+            return Ok(None);
+        }
+        let current = open_decoder_with_interrupt(
+            current_url.to_string(),
+            inputs.current_audio_stream_ordinal,
+            None,
+            inputs.interrupt.reader_interrupt(),
+            inputs.config.packet_cache_options_for_url(current_url),
+            &inputs.config.stream_options(),
+        )?;
+        let a = TrackAnalysis {
+            duration_secs: current.duration_secs(),
+            ..Default::default()
+        };
+        let b = TrackAnalysis {
+            duration_secs: decoder.duration_secs(),
+            ..Default::default()
+        };
+        return Ok(decide_prepared_transition(TransitionRequest {
+            settings,
+            trigger: TransitionTrigger::EndOfTrack,
+            a: &a,
+            b: &b,
+            a_position_secs: 0.0,
+        }));
+    }
     let next_key = cache_key(inputs.next_url, inputs.next_audio_stream_ordinal);
     let current_key = cache_key(current_url, inputs.current_audio_stream_ordinal);
     let (head_window, tail_window) = if settings.mode.is_automix() {
@@ -467,7 +503,27 @@ fn plan_prepared_transition(
     } else {
         (GAPLESS_HEAD_WINDOW_SECS, GAPLESS_TAIL_WINDOW_SECS)
     };
+    let started = std::time::Instant::now();
+    emit_event(PlayerEvent::log(
+        "info",
+        format!(
+            "transition head analysis started: mode={} window={head_window:.1}s",
+            settings.mode.as_str()
+        ),
+    ));
     let head = ensure_head_analysis(&next_key, decoder, inputs.interrupt, head_window)?;
+    emit_event(PlayerEvent::log(
+        "info",
+        format!(
+            "transition head analysis completed: elapsed_ms={}",
+            started.elapsed().as_millis()
+        ),
+    ));
+    let started = std::time::Instant::now();
+    emit_event(PlayerEvent::log(
+        "info",
+        format!("transition tail analysis started: window={tail_window:.1}s"),
+    ));
     let tail = ensure_tail_analysis(
         &current_key,
         current_url,
@@ -476,6 +532,13 @@ fn plan_prepared_transition(
         inputs.interrupt,
         tail_window,
     )?;
+    emit_event(PlayerEvent::log(
+        "info",
+        format!(
+            "transition tail analysis completed: elapsed_ms={}",
+            started.elapsed().as_millis()
+        ),
+    ));
     let request = TransitionRequest {
         settings,
         trigger: TransitionTrigger::EndOfTrack,
@@ -483,9 +546,13 @@ fn plan_prepared_transition(
         b: &head,
         a_position_secs: 0.0,
     };
-    let Some(plan) = decide_transition(&request) else {
-        return Ok(None);
-    };
+    Ok(decide_prepared_transition(request))
+}
+
+fn decide_prepared_transition(
+    request: TransitionRequest<'_>,
+) -> Option<crate::transition::decide::TransitionPlan> {
+    let plan = decide_transition(&request)?;
     remember_plan(&plan);
     emit_event(PlayerEvent::log(
         "info",
@@ -501,7 +568,7 @@ fn plan_prepared_transition(
             plan.note
         ),
     ));
-    Ok(Some(plan))
+    Some(plan)
 }
 
 /// Linear loudness gain from dB (matches `SharedAudio::set_normalization_gain_db`).
@@ -538,6 +605,14 @@ pub(crate) fn armed_transition_from_prepared(
     let reference = norm_a.max(norm_b).max(1.0e-3);
     let reference_db = 20.0 * reference.log10();
     info.normalization_gain_db = Some(reference_db);
+    info.track_normalization_gain_db = Some(next_normalization_gain_db);
+    emit_event(PlayerEvent::log(
+        "info",
+        format!(
+            "transition loudness armed: request={request_id:?} outgoing_seq={outgoing_seq} incoming_seq={} mode={} template={:?} a_gain_db={current_normalization_gain_db:.2} b_gain_db={next_normalization_gain_db:.2} reference_gain_db={reference_db:.2} a_mix_gain={:.6} b_mix_gain={:.6}",
+            info.seq, plan.mode.as_str(), plan.template, norm_a / reference, norm_b / reference,
+        ),
+    ));
     ArmedTransition {
         plan,
         decoder: Box::new(decoder),
@@ -575,7 +650,7 @@ mod tests {
         let armed = armed_transition_from_prepared(
             crate::transition::decide::TransitionPlan {
                 mode: TransitionMode::Fade,
-                version: crate::transition::decide::DecisionVersion::Fade,
+                strategy: crate::transition::decide::DecisionStrategy::Fade,
                 trigger: TransitionTrigger::EndOfTrack,
                 a_cut_secs: 0.0,
                 a_end_secs: 1.0,
@@ -606,11 +681,12 @@ mod tests {
         assert_eq!(armed.b_gain, 1.0);
         assert!(armed.info.normalization_gain_db.unwrap().abs() < 1e-5);
         assert_eq!(armed.post_overlap_normalization_gain_db, 0.0);
+        assert_eq!(armed.info.track_normalization_gain_db, Some(0.0));
         // Reverse case: A louder than B → B pre-scaled below unity, A at unity.
         let armed = armed_transition_from_prepared(
             crate::transition::decide::TransitionPlan {
                 mode: TransitionMode::Fade,
-                version: crate::transition::decide::DecisionVersion::Fade,
+                strategy: crate::transition::decide::DecisionStrategy::Fade,
                 trigger: TransitionTrigger::EndOfTrack,
                 a_cut_secs: 0.0,
                 a_end_secs: 1.0,
@@ -639,6 +715,7 @@ mod tests {
         assert!((armed.b_gain - 0.251).abs() < 0.01);
         assert!((armed.info.normalization_gain_db.unwrap() - 6.0).abs() < 1e-4);
         assert_eq!(armed.post_overlap_normalization_gain_db, -6.0);
+        assert_eq!(armed.info.track_normalization_gain_db, Some(-6.0));
     }
 
     fn test_decoder() -> decoder::DecoderData {

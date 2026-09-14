@@ -39,6 +39,7 @@ import { MINI_PLAYER_DIMENSIONS } from '../../shared/mini-player';
 import { buildPlaybackClockSnapshot, normalizePlayerVolume } from '../../shared/playback';
 import { createLyricTimeline, findLyricIndexAtTimeMs } from '@/composables/useLyricTimeline';
 import { createStableLyricIndex } from '@/composables/useStableLyricIndex';
+import { subscribeWithSnapshot } from '@/utils/snapshotSubscription';
 import { useWindowDrag } from '@/composables/useWindowDrag';
 import { getAccentPalette } from '@/utils/color';
 
@@ -77,6 +78,8 @@ const isDraggingVolume = ref(false);
 let volumeCloseTimer: ReturnType<typeof setTimeout> | null = null;
 let shellDirectionHoldTimer: ReturnType<typeof setTimeout> | null = null;
 let disposeSnapshot: (() => void) | null = null;
+let snapshotEventRevision = 0;
+let snapshotReadRevision = 0;
 let lyricClockTimer: ReturnType<typeof setInterval> | null = null;
 
 const isQueueOpen = computed(() => expandedMode.value === 'queue');
@@ -166,19 +169,19 @@ const getLyricTimelineMs = () =>
     LYRIC_LOOKAHEAD_MS,
   );
 
-const isRecentLyricSeek = () => {
-  const seekTimestamp = Number(playback.value?.seekTimestamp ?? 0);
-  return seekTimestamp > 0 && Date.now() - seekTimestamp < 800;
-};
+let lastTimelineRevision = -1;
 
 const refreshLiveLyricIndex = (options?: { forceSync?: boolean; resetStable?: boolean }) => {
   lyricTimeline.sync(getTimelinePlayback(), options?.forceSync);
   const timelineMs = getLyricTimelineMs();
   liveLyricTimelineMs.value = timelineMs;
   const rawIndex = resolveLiveLyricIndex(timelineMs);
-  const nextIndex = options?.resetStable
-    ? stableLyricIndex.reset(rawIndex, timelineMs)
-    : stableLyricIndex.apply(rawIndex, timelineMs);
+  const revision = lyricTimeline.revision;
+  const nextIndex =
+    options?.resetStable || revision !== lastTimelineRevision
+      ? stableLyricIndex.reset(rawIndex, timelineMs)
+      : stableLyricIndex.apply(rawIndex, timelineMs);
+  lastTimelineRevision = revision;
   if (liveLyricIndex.value !== nextIndex) liveLyricIndex.value = nextIndex;
 };
 
@@ -376,8 +379,7 @@ const applySnapshot = (snapshot: MiniPlayerSnapshot | null | undefined) => {
       nextPlayback?.trackId !== previousPlaybackTrackId ||
       lyric.value?.trackId !== previousLyricTrackId ||
       (lyric.value?.lines.length ?? 0) !== previousLyricLineCount ||
-      (lyric.value?.timeOffset ?? 0) !== previousLyricTimeOffset ||
-      isRecentLyricSeek(),
+      (lyric.value?.timeOffset ?? 0) !== previousLyricTimeOffset,
   });
   syncLyricClockTimer();
   if (appearance.value) {
@@ -741,6 +743,7 @@ const playQueueTrack = (trackId: string) => {
 // 窗口被隐藏（关闭 mini / 回主窗口）时，主进程已折叠窗口，这里同步收起队列状态
 // 窗口重新可见时重新获取最新 snapshot 确保主题/状态同步
 const handleVisibility = async () => {
+  const request = ++snapshotReadRevision;
   if (document.visibilityState === 'hidden') {
     expandRequestSeq += 1;
     cancelExpandFrame();
@@ -752,7 +755,15 @@ const handleVisibility = async () => {
     closeVolume(true);
   } else if (document.visibilityState === 'visible') {
     try {
-      applySnapshot(await window.electron?.miniPlayer?.getSnapshot?.());
+      const eventRevision = snapshotEventRevision;
+      const snapshot = await window.electron?.miniPlayer?.getSnapshot?.();
+      if (
+        disposeSnapshot &&
+        request === snapshotReadRevision &&
+        eventRevision === snapshotEventRevision
+      ) {
+        applySnapshot(snapshot);
+      }
     } catch {
       // ignore
     }
@@ -809,8 +820,7 @@ watch(
       next[4] === false ||
       next[6] !== previous[6] ||
       next[8] !== previous[8] ||
-      next[9] !== previous[9] ||
-      isRecentLyricSeek();
+      next[9] !== previous[9];
     refreshLiveLyricIndex({ resetStable });
     syncLyricClockTimer();
   },
@@ -819,12 +829,23 @@ watch(
 
 onMounted(async () => {
   document.documentElement.classList.add('mini-player-window');
+  const subscription = subscribeWithSnapshot({
+    read: async () => (await window.electron?.miniPlayer?.getSnapshot?.()) ?? null,
+    subscribe: (receive: (snapshot: MiniPlayerSnapshot) => void) =>
+      window.electron?.miniPlayer?.onSnapshot((snapshot) => {
+        snapshotEventRevision += 1;
+        receive(snapshot);
+      }) ?? (() => {}),
+    applySnapshot,
+    applyMessage: applySnapshot,
+  });
+  disposeSnapshot = subscription.dispose;
   try {
-    applySnapshot(await window.electron?.miniPlayer?.getSnapshot?.());
+    await subscription.ready;
   } catch {
-    applySnapshot(null);
+    /* Keep the live subscription after query failure. */
   }
-  disposeSnapshot = window.electron?.miniPlayer?.onSnapshot(applySnapshot) ?? null;
+  if (disposeSnapshot !== subscription.dispose) return;
   document.addEventListener('visibilitychange', handleVisibility);
 });
 

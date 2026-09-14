@@ -10,7 +10,6 @@ import { executeShortcutCommand } from '@/utils/shortcuts';
 import { setWithLimit } from '@/utils/lruMap';
 import type { Song } from '@/models/song';
 import { resolveFavoriteSongKey } from '@/stores/playlist/helpers';
-import { buildPlaybackClockSnapshot } from '../../shared/playback';
 import type {
   MiniPlayerCommand,
   MiniPlayerLyricPayload,
@@ -149,15 +148,7 @@ const buildPlaybackPayload = (): MiniPlayerPlaybackPayload | null => {
     lastNonZeroVolume: Number(playerStore.lastNonZeroVolume || 0),
     updatedAt,
     seekTimestamp,
-    clock: buildPlaybackClockSnapshot({
-      trackId,
-      currentTime,
-      duration,
-      isPlaying,
-      playbackRate,
-      updatedAt,
-      seekTimestamp,
-    }),
+    clock: playerStore.playbackClock,
   };
 };
 
@@ -319,6 +310,7 @@ export const initMiniPlayerSync = async () => {
   const desktopLyricStore = useDesktopLyricStore();
   const stops: WatchStopHandle[] = [];
   const {
+    playbackClock,
     currentTime,
     isPlaying,
     duration,
@@ -401,7 +393,6 @@ export const initMiniPlayerSync = async () => {
   };
 
   const syncLyricStateSnapshot = () => {
-    lyricStore.updateCurrentIndex(currentTime.value);
     const lyric = buildLyricPayload();
     const nextStateKey = JSON.stringify({
       currentIndex: lyric.currentIndex,
@@ -452,6 +443,7 @@ export const initMiniPlayerSync = async () => {
   stops.push(
     watch(
       [
+        playbackClock,
         currentTime,
         isPlaying,
         duration,

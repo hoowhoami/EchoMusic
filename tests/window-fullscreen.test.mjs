@@ -206,7 +206,7 @@ test('native traffic lights, reload, timeout and closing reconcile fullscreen st
   const e = macController();
   e.settle(true);
   assert.equal(e.sent.at(-1), true);
-  e.win.webContents.emit('did-finish-load');
+  e.win.webContents.emit('did-finish-load', { sender: e.win.webContents });
   assert.equal(e.sent.at(-1), true);
   e.controller.set(false);
   e.expire();

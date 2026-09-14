@@ -159,6 +159,44 @@ test('scroll and observer bursts commit one layout using the latest sliver and t
   );
 });
 
+test('adding and removing an intro repositions the header without a scroll event', () => {
+  const env = setup();
+  let introHeight = 0;
+  const page = Object.assign(
+    env.element(() => ({ height: 1000 + introHeight })),
+    {
+      parentElement: env.viewport,
+    },
+  );
+  const entry = {
+    placeholder: Object.assign(
+      env.element(() => ({ top: 176 + introHeight, left: 0, width: 800 })),
+      { parentElement: page },
+    ),
+    content: env.element(() => ({ height: 94 })),
+    layer: env.element(() => ({})),
+    top: () => 176,
+    flowHeight: () => undefined,
+  };
+  const unregister = env.context.register(entry);
+  env.flush();
+  const observer = env.observers.find((item) => item.targets.some(({ target }) => target === page));
+  assert.ok(observer, 'content ancestors must be observed even when header sizes stay fixed');
+  for (const height of [84, 0]) {
+    introHeight = height;
+    observer.callback();
+    env.flush();
+    assert.equal(
+      entry.layer.style.getPropertyValue('transform'),
+      `translate3d(0, ${176 + height}px, 0)`,
+    );
+    assert.equal(env.api.topInset.value, height ? 0 : 270);
+    assert.equal(env.viewport.scrollTop, 0);
+  }
+  unregister();
+  assert.equal(observer.targets.length, 0);
+});
+
 test('removing headers resets clipping and unmount cancels queued layout work', () => {
   const env = setup();
   const unregister = env.context.register({

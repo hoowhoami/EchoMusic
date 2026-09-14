@@ -1,4 +1,5 @@
 import { reactive } from 'vue';
+import type { PlaybackClockSnapshot } from '../../shared/playback';
 import type { LyricCharacterPayload, LyricLinePayload } from '../../shared/lyrics';
 
 export type PluginLyricEffectScope = 'page' | 'desktop';
@@ -20,6 +21,9 @@ export type PluginLyricEffectSnapshot = {
   playbackRate: number;
   isPlaying: boolean;
   timelineMs: number;
+  /** Raw source sample; generation/seekTimestamp identify explicit discontinuities. */
+  clock?: PlaybackClockSnapshot;
+  seekTimestamp?: number;
   lyricOffsetMs: number;
   lyricsMode: 'none' | 'translation' | 'romanization' | 'both';
   collapsed: boolean;

@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { test } from 'node:test';
 import { transformSync } from 'esbuild';
+import * as loudness from '../src/shared/loudness.ts';
 
 const require = createRequire(import.meta.url);
 const logger = { info() {}, warn() {}, error() {}, debug() {} };
@@ -154,6 +155,76 @@ test('stop supersedes an in-flight load instead of waiting behind it', async () 
   assert.equal(await pending, null);
 });
 
+test('quality switches retain the live timeline even if their renderer acknowledgement is superseded', async () => {
+  const { controller, addon, loads } = controllerFixture();
+  const loading = controller.loadFile('ordinary');
+  await flush();
+  loads[0].resolve();
+  const { seq } = await loading;
+  const switches = [];
+  addon.switchSource = (url, _trackId, trackSeq) => {
+    const pending = defer();
+    switches.push({ url, trackSeq, ...pending });
+    return pending.promise;
+  };
+  const times = [];
+  controller.on('time-update', (event) => times.push(event));
+  const vpt = controller.switchSource('vpt');
+  await flush();
+  const ordinary = controller.switchSource('ordinary');
+  const obsolete = assert.rejects(vpt, /superseded/);
+  await flush();
+  switches[0].resolve([20, 120]);
+  await obsolete;
+  controller.handleAddonEvent({ event: 'time-update', time: 21, trackSeq: switches[0].trackSeq });
+  switches[1].resolve([22, 120]);
+  assert.equal((await ordinary)[2], seq);
+  controller.handleAddonEvent({ event: 'time-update', time: 23, trackSeq: switches[1].trackSeq });
+  assert.deepEqual(
+    times.map((event) => [event.time, event.trackSeq]),
+    [
+      [21, seq],
+      [23, seq],
+    ],
+  );
+});
+
+test('a delayed proxy lookup cannot launch an older quality switch after the latest choice', async () => {
+  const proxies = new Map();
+  const { controller, addon } = controllerFixture((url) => {
+    const pending = defer();
+    proxies.set(url, pending);
+    return pending.promise;
+  });
+  const switched = [];
+  addon.switchSource = async (url) => {
+    switched.push(url);
+    return [20, 120];
+  };
+  const old = controller.switchSource('vpt');
+  const obsolete = assert.rejects(old, /superseded/);
+  const current = controller.switchSource('ordinary');
+  proxies.get('ordinary').resolve([]);
+  await current;
+  proxies.get('vpt').resolve([]);
+  await obsolete;
+  assert.deepEqual(switched, ['ordinary']);
+});
+
+test('a quality acknowledgement cannot roll back an automatic next-track boundary', async () => {
+  const { controller, addon } = controllerFixture();
+  controller.activeTrackSeq = 4;
+  const pending = defer();
+  addon.switchSource = () => pending.promise;
+  const switched = controller.switchSource('vpt');
+  const obsolete = assert.rejects(switched, /superseded/);
+  await flush();
+  controller.handleAddonEvent({ event: 'time-update', time: 1, trackSeq: 5 });
+  pending.resolve([20, 120]);
+  await obsolete;
+  assert.equal(controller.activeTrackSeq, 5);
+});
+
 function engineFixture() {
   const handlers = {},
     loads = [],
@@ -167,9 +238,15 @@ function engineFixture() {
         loads.push({ url, requestId, ...pending });
         return pending.promise;
       },
+      switchSource(url) {
+        const pending = defer();
+        loads.push({ url, ...pending });
+        return pending.promise;
+      },
       play: async (requestId) => calls.push(['play', requestId]),
       playWithFade: async (_volume, _duration, requestId) => calls.push(['fade', requestId]),
       stop: async () => {},
+      setNormalizationGain: async (gain) => calls.push(['normalization', gain]),
     },
     {
       get(target, name) {
@@ -186,7 +263,7 @@ function engineFixture() {
     '../src/renderer/utils/player.ts',
     {
       './logger': logger,
-      '../../shared/loudness': { DEFAULT_REFERENCE_LUFS: -14 },
+      '../../shared/loudness': loudness,
       '../../shared/playback': { DEFAULT_PLAYER_VOLUME: 50 },
     },
     { electron: { player: api } },
@@ -194,6 +271,34 @@ function engineFixture() {
   const engine = new PlayerEngine();
   return { engine, handlers, loads, calls };
 }
+
+test('prepared loudness adoption updates the cache without overwriting native overlap gains', () => {
+  const { engine, calls } = engineFixture();
+  const a = { lufs: -10, peak: null, gain: 0 };
+  const b = { lufs: -8, peak: null, gain: 0 };
+  engine.setVolumeNormalization(true);
+  engine.applyTrackLoudness(a);
+  assert.equal(calls.filter(([name]) => name === 'normalization').length, 1);
+  engine.adoptPreparedTrackLoudness(b);
+  assert.ok(Math.abs(engine.normalizationGainDb - -6) < 1e-6);
+  assert.equal(calls.filter(([name]) => name === 'normalization').length, 1);
+  engine.setReferenceLufs(-16);
+  assert.deepEqual(calls.at(-1), ['normalization', -8], 'reference changes use B metadata');
+  engine.adoptPreparedTrackLoudness(null);
+  assert.equal(engine.normalizationGainDb, 0);
+  assert.equal(calls.filter(([name]) => name === 'normalization').length, 2);
+  engine.applyTrackLoudness(a);
+  assert.deepEqual(calls.at(-1), ['normalization', -6], 'ordinary loads still issue a gain update');
+});
+
+test('adopting while normalization is disabled retains metadata for a later enable', () => {
+  const { engine, calls } = engineFixture();
+  engine.adoptPreparedTrackLoudness({ lufs: -8, peak: null, gain: 0 });
+  assert.equal(engine.normalizationGainDb, 0);
+  assert.equal(calls.filter(([name]) => name === 'normalization').length, 0);
+  engine.setVolumeNormalization(true);
+  assert.deepEqual(calls.at(-1), ['normalization', -6]);
+});
 
 test('old file-loaded during URL resolution cannot bind; load acknowledgement restores progress without an event', async () => {
   const { engine, handlers, loads } = engineFixture();
@@ -236,4 +341,15 @@ test('an obsolete load acknowledgement cannot clear the latest load guard', asyn
   await engine.play({ fadeIn: true });
   assert.deepEqual(files, [2]);
   assert.deepEqual(calls, [['fade', loads[1].requestId]]);
+});
+
+test('late quality switch acknowledgement cannot replace the latest engine source', async () => {
+  const { engine, loads } = engineFixture();
+  const old = engine.switchSource('vpt');
+  const current = engine.switchSource('ordinary');
+  loads[1].resolve([22, 120, 4]);
+  assert.equal(await current, 4);
+  loads[0].resolve([20, 120, 4]);
+  assert.equal(await old, undefined);
+  assert.equal(engine.source, 'ordinary');
 });

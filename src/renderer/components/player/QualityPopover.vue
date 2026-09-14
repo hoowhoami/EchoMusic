@@ -12,6 +12,8 @@ const {
   settingStore,
   currentTrack,
   effectiveAudioQuality,
+  requestedAudioQuality,
+  isAudioSourceSwitching,
   isResolvedCloudSource,
   hasCloudAudioSourceOption,
   hasCatalogAudioSourceOption,
@@ -37,6 +39,31 @@ const props = withDefaults(defineProps<Props>(), {
   side: 'top',
 });
 
+const qualityOptions = [
+  { value: '128', label: '标准', badge: 'SD' },
+  { value: '320', label: '高品质', badge: 'HQ' },
+  { value: 'flac', label: '无损', badge: 'SQ' },
+  { value: 'high', label: 'Hi-Res', badge: 'HR' },
+  { value: 'viper_tape', label: '蝰蛇母带', badge: 'VPT' },
+] as const;
+
+const isSwitchingToCloud = computed(
+  () =>
+    isAudioSourceSwitching.value &&
+    !!player.currentTrackId &&
+    player.currentCloudSourceOverrideTrackId === String(player.currentTrackId),
+);
+const switchingLabel = computed(() =>
+  isSwitchingToCloud.value
+    ? '云盘文件'
+    : (qualityOptions.find((option) => option.value === requestedAudioQuality.value)?.label ??
+      '音质'),
+);
+const isPendingQuality = (quality: string) =>
+  isAudioSourceSwitching.value &&
+  !isSwitchingToCloud.value &&
+  requestedAudioQuality.value === quality;
+
 const buttonClass = computed(() => {
   const activeClass =
     props.variant === 'lyric'
@@ -47,8 +74,7 @@ const buttonClass = computed(() => {
       ? 'text-black/40 dark:text-white/40 hover:scale-110 active:scale-90'
       : 'text-text-main/50 hover:text-primary-text hover:scale-110 active:scale-90';
 
-  if (isResolvedCloudSource.value) return activeClass;
-  if (player.currentAudioQualityOverride !== null) return activeClass;
+  if (currentTrack.value) return activeClass;
   return mutedClass;
 });
 </script>
@@ -69,7 +95,14 @@ const buttonClass = computed(() => {
         type="button"
         class="p-2 transition-all"
         :class="buttonClass"
-        :aria-label="isResolvedCloudSource ? '当前使用云盘文件' : '音质'"
+        :aria-label="
+          isAudioSourceSwitching
+            ? `正在切换至${switchingLabel}`
+            : isResolvedCloudSource
+              ? '当前使用云盘文件'
+              : '音质'
+        "
+        :aria-busy="isAudioSourceSwitching"
         @mouseenter="ensureCurrentTrackCatalogQualities"
         @focus="ensureCurrentTrackCatalogQualities"
       >
@@ -86,8 +119,15 @@ const buttonClass = computed(() => {
     </template>
 
     <div class="space-y-1">
-      <div class="pm-title">音质选择</div>
-      <div v-if="isResolvedCloudSource" class="pm-hint">当前使用云盘文件播放</div>
+      <div class="pm-header">
+        <div class="pm-title">音质选择</div>
+        <div class="pm-status" role="status" aria-live="polite">
+          {{ isAudioSourceSwitching ? `正在切换至${switchingLabel}…` : '播放音质' }}
+        </div>
+      </div>
+      <div v-if="isResolvedCloudSource && !isAudioSourceSwitching" class="pm-hint">
+        当前使用云盘文件播放
+      </div>
       <div v-if="hasCloudAudioSourceOption && isCatalogQualityLoading" class="pm-hint">
         正在获取曲库音质
       </div>
@@ -101,73 +141,81 @@ const buttonClass = computed(() => {
         v-if="hasCloudAudioSourceOption"
         type="button"
         class="pm-item"
-        :class="{ 'is-active': isResolvedCloudSource }"
+        :class="{
+          'is-active': isResolvedCloudSource,
+          'is-pending': isSwitchingToCloud,
+          'is-locked': isAudioSourceSwitching,
+        }"
+        :disabled="isAudioSourceSwitching"
+        :aria-busy="isSwitchingToCloud"
         @click="setCloudAudioSource"
       >
         <span class="pm-label">云盘文件</span>
         <Tag class="pm-tag" color="#0EA5E9">CLD</Tag>
-        <span class="pm-check" :class="{ 'is-visible': isResolvedCloudSource }">✓</span>
+        <span
+          class="pm-check"
+          :class="{ 'is-visible': isResolvedCloudSource || isSwitchingToCloud }"
+        >
+          <span v-if="isSwitchingToCloud" class="pm-spinner" aria-hidden="true"></span>
+          <template v-else>✓</template>
+        </span>
       </button>
       <div v-if="hasCloudAudioSourceOption" class="pm-divider"></div>
       <button
-        v-for="q in ['128', '320', 'flac', 'high', 'viper_tape'] as const"
-        :key="q"
+        v-for="q in qualityOptions"
+        :key="q.value"
         type="button"
         class="pm-item"
         :class="{
-          'is-active': !isResolvedCloudSource && effectiveAudioQuality === q,
-          'is-disabled': isAudioQualityDisabled(q),
+          'is-active': !isResolvedCloudSource && effectiveAudioQuality === q.value,
+          'is-disabled': !isAudioSourceSwitching && isAudioQualityDisabled(q.value),
+          'is-locked': isAudioSourceSwitching,
+          'is-pending': isPendingQuality(q.value),
         }"
-        :disabled="isAudioQualityDisabled(q)"
-        @click="setAudioQuality(q)"
+        :disabled="isAudioQualityDisabled(q.value)"
+        :aria-busy="isPendingQuality(q.value)"
+        @click="setAudioQuality(q.value)"
       >
-        <span class="pm-label">{{
-          q === '128'
-            ? '标准'
-            : q === '320'
-              ? '高品质'
-              : q === 'flac'
-                ? '无损'
-                : q === 'high'
-                  ? 'Hi-Res'
-                  : '蝰蛇母带'
-        }}</span>
-        <Tag class="pm-tag" :color="getAudioQualityTagColor(q)">{{
-          q === '128'
-            ? 'SD'
-            : q === '320'
-              ? 'HQ'
-              : q === 'flac'
-                ? 'SQ'
-                : q === 'high'
-                  ? 'HR'
-                  : 'VPT'
-        }}</Tag>
+        <span class="pm-label">{{ q.label }}</span>
+        <Tag class="pm-tag" :color="getAudioQualityTagColor(q.value)">{{ q.badge }}</Tag>
         <span
           class="pm-check"
           :class="{
-            'is-visible': !isResolvedCloudSource && effectiveAudioQuality === q,
+            'is-visible':
+              (!isResolvedCloudSource && effectiveAudioQuality === q.value) ||
+              isPendingQuality(q.value),
           }"
-          >✓</span
         >
+          <span v-if="isPendingQuality(q.value)" class="pm-spinner" aria-hidden="true"></span>
+          <template v-else>✓</template>
+        </span>
       </button>
     </div>
   </Popover>
 </template>
 
-<style>
-.quality-popover.echo-popover-content {
-  width: 160px;
-  padding: 10px 0;
+<style scoped>
+:global(.quality-popover.echo-popover-content) {
+  width: 208px;
+  padding: 8px 0;
   background: var(--color-bg-elevated);
   border-color: var(--border-subtle);
 }
 
+.pm-header {
+  padding: 4px 14px 8px;
+}
+
 .pm-title {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
-  opacity: 0.5;
-  padding: 0 10px 4px 10px;
+}
+
+.pm-status {
+  margin-top: 4px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--color-text-secondary);
 }
 
 .pm-hint {
@@ -189,7 +237,7 @@ const buttonClass = computed(() => {
   align-items: center;
   width: calc(100% - 12px);
   margin: 0 6px;
-  padding: 6px 8px;
+  padding: 9px 8px;
   border-radius: 8px;
   font-size: 12px;
   font-weight: 600;
@@ -203,7 +251,7 @@ const buttonClass = computed(() => {
     opacity 0.15s ease;
 }
 
-.pm-item:hover {
+.pm-item:hover:not(:disabled) {
   background: var(--row-hover-bg);
   opacity: 1;
 }
@@ -222,6 +270,38 @@ const buttonClass = computed(() => {
   background: transparent;
 }
 
+.pm-item.is-locked {
+  cursor: wait;
+  opacity: 0.4;
+}
+
+.pm-item.is-pending {
+  background: var(--row-selected-bg);
+  opacity: 1;
+}
+
+.pm-spinner {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border: 1.5px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: quality-spin 0.8s linear infinite;
+}
+
+@keyframes quality-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pm-spinner {
+    animation: none;
+  }
+}
+
 .pm-label {
   flex: 1;
   text-align: left;
@@ -234,6 +314,9 @@ const buttonClass = computed(() => {
 }
 
 .pm-check {
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
   width: 14px;
   text-align: right;
   font-size: 12px;

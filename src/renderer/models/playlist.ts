@@ -24,6 +24,8 @@ export interface Playlist {
   createTime?: number;
   sortOrder?: number;
   updateTime?: number;
+  listVer?: number;
+  hasCustomCover?: boolean;
   source: number;
   type?: number;
   isDefault?: boolean;

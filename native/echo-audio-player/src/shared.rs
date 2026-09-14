@@ -399,17 +399,27 @@ impl SharedAudio {
     }
 
     pub fn update_dsp_settings(&self, settings: &DspSettings) {
+        self.update_dsp_settings_inner(settings, true);
+    }
+
+    pub fn update_dsp_settings_preserving_normalization(&self, settings: &DspSettings) {
+        self.update_dsp_settings_inner(settings, false);
+    }
+
+    fn update_dsp_settings_inner(&self, settings: &DspSettings, update_normalization: bool) {
         self.set_speed(settings.speed);
-        let normalization_gain = settings.normalization_gain_linear();
-        self.normalization_gain_bits.store(
-            if normalization_gain.is_finite() {
-                normalization_gain.clamp(0.0, 16.0)
-            } else {
-                1.0
-            }
-            .to_bits(),
-            Ordering::Release,
-        );
+        if update_normalization {
+            let normalization_gain = settings.normalization_gain_linear();
+            self.normalization_gain_bits.store(
+                if normalization_gain.is_finite() {
+                    normalization_gain.clamp(0.0, 16.0)
+                } else {
+                    1.0
+                }
+                .to_bits(),
+                Ordering::Release,
+            );
+        }
         self.effect_limiter_active.store(
             settings.provider_path.is_some() || settings.spatial.is_some(),
             Ordering::Release,
@@ -419,7 +429,11 @@ impl SharedAudio {
                 || current.provider_mode != settings.provider_mode
                 || current.provider_resource_json != settings.provider_resource_json
                 || current.provider_preset_json != settings.provider_preset_json;
+            let normalization_gain_db = current.normalization_gain_db;
             *current = settings.clone();
+            if !update_normalization {
+                current.normalization_gain_db = normalization_gain_db;
+            }
             if provider_changed {
                 self.set_provider_descriptor(None);
             }
@@ -839,6 +853,11 @@ impl SharedAudio {
                     let gain_db = marker.gain_db;
                     *gain_marker = None;
                     self.store_normalization_gain_db(gain_db);
+                    self.notify_telemetry(PlaybackSignal::NormalizationGainApplied {
+                        track_seq: self.track_seq.load(Ordering::Acquire),
+                        gain_db,
+                        stage: "overlap-end",
+                    });
                 } else {
                     marker.remaining_samples -= consumed_samples;
                 }
@@ -879,6 +898,13 @@ impl SharedAudio {
                     // The incoming track's loudness gain becomes effective with its first
                     // audible sample; the per-buffer gain ramp keeps the change click-free.
                     self.store_normalization_gain_db(gain_db);
+                }
+                if let Some(gain_db) = info.normalization_gain_db {
+                    self.notify_telemetry(PlaybackSignal::NormalizationGainApplied {
+                        track_seq: info.seq,
+                        gain_db,
+                        stage: "track-boundary",
+                    });
                 }
                 if let Ok(mut ring) = self.spectrum_ring.try_lock() {
                     ring.clear();

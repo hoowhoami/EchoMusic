@@ -1,7 +1,7 @@
-//! Dual-deck overlap mixer – the `SSAutoMixInst` equivalent.
+//! Dual-deck overlap mixer.
 //!
 //! The mixer owns two decks. Deck A is the outgoing track starting at its cut point
-//! (`cue1`), deck B is the incoming track starting at its entry point (`cue2`). Both decks
+//! (`a_cut_secs`), deck B is the incoming track starting at `b_start_secs`. Both decks
 //! are fed already-converted interleaved f32 audio in the engine mix format. The mixer
 //! renders the overlap window sample-accurately:
 //!
@@ -12,11 +12,11 @@
 //! ```
 //!
 //! * The automation position is `frames_rendered / overlap_frames`; positions past 1.0
-//!   hold their final values, exactly like QQ's `SetPos`.
-//! * Deck A's stretch ratio comes from the cue decision (`speedType = 2`). Stretching is
+//!   hold their final values.
+//! * Deck A's stretch ratio comes from the cue decision. Stretching is
 //!   done with the vendored SoundTouch WSOLA engine; the engine's initial latency is
 //!   discarded so the first output frame corresponds to the cut point.
-//! * Edge micro-fades (`_nEdgeOverlapSamples`) remove the residual click when A is
+//! * Edge micro-fades remove the residual click when A is
 //!   truncated at -20 dB and when B starts mid-waveform.
 //! * After A runs out, its chain is drained for reverb/echo tails; B's chain is blended
 //!   back to dry over `POST_MIX_RELEASE_SECS` so the incoming track never stays filtered.
@@ -38,9 +38,6 @@ pub const MAX_A_TAIL_SECS: f32 = 2.0;
 const STRETCH_MIN_RATIO: f32 = 0.5;
 const STRETCH_MAX_RATIO: f32 = 2.0;
 const STRETCH_CHUNK_FRAMES: usize = 2_048;
-/// How much the side (L−R) component of the receding deck is narrowed at the crossover
-/// (0 = plain L/R sum). Kept subtle: 25 % narrowing of the *fading* deck only.
-const MS_SIDE_NARROWING: f32 = 0.25;
 
 /// How the overlap window is shaped.
 #[derive(Clone, Debug)]
@@ -54,6 +51,8 @@ pub struct MixerConfig {
     /// Plan driving both effect chains. `None` = plain pass-through decks (the caller
     /// shapes gains through `a_gain` / `b_gain` or relies on the edge fades only).
     pub plan: Option<DjPlan>,
+    /// Sample-wise linear amplitude fade, with no additional edge envelopes or M/S.
+    pub linear_fade: bool,
     /// Tempo ratio applied to deck A (`>1` = faster). `1.0` disables stretching.
     pub a_tempo_ratio: f32,
     /// Linear gain applied to each deck after its chain (loudness normalisation).
@@ -303,11 +302,19 @@ impl Stretcher {
     }
 }
 
+struct EarlyFinish {
+    start_frame: usize,
+    end_frame: usize,
+    position: f32,
+}
+
 pub struct TransitionMixer {
     sample_rate: u32,
     channels: usize,
     overlap_frames: usize,
+    linear_fade: bool,
     rendered_frames: usize,
+    early_finish: Option<EarlyFinish>,
     a: Deck,
     b: Deck,
     stretcher: Option<Stretcher>,
@@ -363,7 +370,9 @@ impl TransitionMixer {
             sample_rate,
             channels,
             overlap_frames: config.overlap_frames,
+            linear_fade: config.linear_fade,
             rendered_frames: 0,
+            early_finish: None,
             a: Deck {
                 chain: a_chain,
                 queue: VecDeque::new(),
@@ -377,8 +386,16 @@ impl TransitionMixer {
                 gain: sanitize_gain(config.b_gain),
             },
             stretcher,
-            a_tail_fade_frames: (A_TAIL_FADE_SECS * sample_rate as f32) as usize,
-            b_head_fade_frames: (B_HEAD_FADE_SECS * sample_rate as f32) as usize,
+            a_tail_fade_frames: if config.linear_fade {
+                0
+            } else {
+                (A_TAIL_FADE_SECS * sample_rate as f32) as usize
+            },
+            b_head_fade_frames: if config.linear_fade {
+                0
+            } else {
+                (B_HEAD_FADE_SECS * sample_rate as f32) as usize
+            },
             b_started: false,
             a_drained_frames: 0,
             max_a_tail_frames,
@@ -391,6 +408,9 @@ impl TransitionMixer {
 
     /// Normalised overlap position for the next frame to be rendered.
     pub fn position(&self) -> f32 {
+        if let Some(finish) = &self.early_finish {
+            return finish.position;
+        }
         if self.overlap_frames == 0 {
             return 1.0;
         }
@@ -405,6 +425,23 @@ impl TransitionMixer {
 
     pub fn a_finished(&self) -> bool {
         self.a.state == DeckState::Finished
+    }
+
+    /// Release the current blend into dry B without dropping any of B's queued audio.
+    pub fn finish_early(&mut self) {
+        if self.finished || self.early_finish.is_some() {
+            return;
+        }
+        let frames = (self.sample_rate as usize / 20).max(1);
+        self.early_finish = Some(EarlyFinish {
+            start_frame: self.rendered_frames,
+            end_frame: self.rendered_frames.saturating_add(frames),
+            position: self.position().clamp(0.0, 1.0),
+        });
+        self.b_release_started = true;
+        self.b.chain.begin_bypass(frames);
+        self.max_a_tail_frames = 0;
+        self.push_a(DeckInput::End);
     }
 
     pub fn push_a(&mut self, input: DeckInput<'_>) {
@@ -499,7 +536,10 @@ impl TransitionMixer {
             if self.finished {
                 break;
             }
-            let want = AUTOMATION_BLOCK_FRAMES.min(max_frames - produced);
+            let mut want = AUTOMATION_BLOCK_FRAMES.min(max_frames - produced);
+            if let Some(finish) = &self.early_finish {
+                want = want.min(finish.end_frame.saturating_sub(self.rendered_frames));
+            }
             let frames = match self.frames_available(want) {
                 Some(frames) => frames,
                 None => break,
@@ -528,30 +568,29 @@ impl TransitionMixer {
             let block = &mut output.samples[start..];
             let a_gain = self.a.gain;
             let b_gain = self.b.gain;
-            if channels == 2 {
-                // Mid/side summing (`AutoMix: MS (Mid-Side) processing enabled`): the two
-                // decks are combined in the M/S domain with the side component of the
-                // *quieter* deck slightly narrowed towards the crossover, so two wide mixes
-                // do not smear into a phasey stereo image while both are audible.
-                let pos = self.position().clamp(0.0, 1.0);
-                let a_side = 1.0 - MS_SIDE_NARROWING * (pos * FRAC_PI_2).sin();
-                let b_side = 1.0 - MS_SIDE_NARROWING * (pos * FRAC_PI_2).cos();
-                for (frame_index, frame) in block.chunks_exact_mut(2).enumerate() {
-                    let ai = frame_index * 2;
-                    let al = self.scratch_a.get(ai).copied().unwrap_or(0.0) * a_gain;
-                    let ar = self.scratch_a.get(ai + 1).copied().unwrap_or(0.0) * a_gain;
-                    let bl = self.scratch_b.get(ai).copied().unwrap_or(0.0) * b_gain;
-                    let br = self.scratch_b.get(ai + 1).copied().unwrap_or(0.0) * b_gain;
-                    let mid = 0.5 * (al + ar) + 0.5 * (bl + br);
-                    let side = 0.5 * (al - ar) * a_side + 0.5 * (bl - br) * b_side;
-                    frame[0] = mid + side;
-                    frame[1] = mid - side;
-                }
-            } else {
-                for (index, sample) in block.iter_mut().enumerate() {
+            for (frame_index, frame) in block.chunks_exact_mut(channels).enumerate() {
+                let (a_envelope, b_envelope) = if let Some(finish) = &self.early_finish {
+                    let progress = (self.rendered_frames + frame_index - finish.start_frame) as f32
+                        / (finish.end_frame - finish.start_frame).max(1) as f32;
+                    let (a, b) = if self.linear_fade {
+                        (1.0 - finish.position, finish.position)
+                    } else {
+                        (1.0, 1.0)
+                    };
+                    (a * (1.0 - progress), b + (1.0 - b) * progress)
+                } else if self.linear_fade {
+                    let position = (self.rendered_frames + frame_index) as f64
+                        / self.overlap_frames.max(1) as f64;
+                    let position = position.clamp(0.0, 1.0) as f32;
+                    (1.0 - position, position)
+                } else {
+                    (1.0, 1.0)
+                };
+                for (channel, sample) in frame.iter_mut().enumerate() {
+                    let index = frame_index * channels + channel;
                     let a = self.scratch_a.get(index).copied().unwrap_or(0.0) * a_gain;
                     let b = self.scratch_b.get(index).copied().unwrap_or(0.0) * b_gain;
-                    *sample = a + b;
+                    *sample = a * a_envelope + b * b_envelope;
                 }
             }
             produced += frames;
@@ -605,7 +644,17 @@ impl TransitionMixer {
 
     /// Settle lazy deck-state transitions and the overall completion flag.
     fn refresh_state(&mut self) {
-        let overlap_done = self.rendered_frames >= self.overlap_frames;
+        let overlap_done = if let Some(finish) = &self.early_finish {
+            let done = self.rendered_frames >= finish.end_frame;
+            if done {
+                self.a.state = DeckState::Finished;
+                self.a.queue.clear();
+                self.stretcher = None;
+            }
+            done
+        } else {
+            self.rendered_frames >= self.overlap_frames
+        };
         if overlap_done && !self.b_release_started {
             self.b_release_started = true;
             let release = (POST_MIX_RELEASE_SECS * self.sample_rate as f32) as usize;
@@ -767,11 +816,55 @@ mod tests {
             channels: 2,
             overlap_frames,
             plan,
+            linear_fade: false,
             a_tempo_ratio: 1.0,
             a_gain: 1.0,
             b_gain: 1.0,
             a_beat_secs: None,
             b_beat_secs: None,
+        }
+    }
+
+    #[test]
+    fn early_finish_releases_in_fifty_ms_without_losing_b_frames() {
+        for plan in [
+            None,
+            Some(PlanTemplate::LayeredFilter.load()),
+            Some(PlanTemplate::EchoTail.load()),
+        ] {
+            for channels in [1, 2, 6] {
+                for block_size in [1, 127, 1024] {
+                    let frames = SR as usize;
+                    let mut cfg = config(frames * 15, plan.clone());
+                    cfg.channels = channels;
+                    cfg.linear_fade = plan.is_none();
+                    let mut mixer = TransitionMixer::new(cfg).unwrap();
+                    let b = vec![0.2; frames * channels];
+                    mixer.push_a(DeckInput::Samples(&vec![0.3; frames * channels]));
+                    mixer.push_b(DeckInput::Samples(&b));
+                    let before = mixer.render(480);
+                    let position = mixer.position();
+                    mixer.finish_early();
+                    mixer.finish_early();
+                    let mut consumed = before.b_frames_consumed;
+                    let mut release_frames = 0;
+                    for _ in 0..3_000 {
+                        let output = mixer.render(block_size);
+                        assert!(output.samples.iter().all(|sample| sample.is_finite()));
+                        consumed += output.b_frames_consumed;
+                        release_frames += output.samples.len() / channels;
+                        assert_eq!(mixer.position(), position);
+                        if mixer.is_finished() {
+                            break;
+                        }
+                    }
+                    assert!(mixer.is_finished());
+                    assert_eq!(release_frames, SR as usize / 20);
+                    let remainder = mixer.take_b_remainder();
+                    assert_eq!(consumed + remainder.len() / channels, frames);
+                    assert!(remainder.iter().all(|sample| *sample == 0.2));
+                }
+            }
         }
     }
 
@@ -829,7 +922,7 @@ mod tests {
 
     #[test]
     fn plain_crossfade_conserves_energy_with_equal_power_plan() {
-        let plan = PlanTemplate::NoPlan.load();
+        let plan = PlanTemplate::FallbackExchange.load();
         let overlap = SR as usize * 2;
         let mut mixer = TransitionMixer::new(config(overlap, Some(plan))).expect("mixer");
         let a = tone(1_000.0, 0.4, overlap, 2);
@@ -947,8 +1040,7 @@ mod tests {
     }
 
     #[test]
-    fn mid_side_sum_keeps_mono_content_exact_and_only_narrows_the_fading_side() {
-        // Mono-in-stereo A + mono-in-stereo B: M/S summing must equal the plain sum.
+    fn stereo_sum_preserves_mid_and_side_without_unrequested_processing() {
         let mut mixer = TransitionMixer::new(config(4_800, None)).expect("mixer");
         let a = tone(440.0, 0.4, 4_800, 2);
         let b = tone(660.0, 0.4, 4_800, 2);
@@ -965,7 +1057,7 @@ mod tests {
                 out[i]
             );
         }
-        // Pure side content on A (L = −R) at the *end* of the window is narrowed by 25 %.
+        // Pure side content must retain its full width as well.
         let mut mixer = TransitionMixer::new(config(4_800, None)).expect("mixer");
         let side: Vec<f32> = (0..4_800).flat_map(|_| [0.5f32, -0.5f32]).collect();
         mixer.push_a(DeckInput::Samples(&side));
@@ -980,12 +1072,63 @@ mod tests {
         let last = out.len() - 2;
         // 20 ms tail fade also applies to the very last frames; probe just before it.
         let probe = last - 2 * 1_200;
-        assert!(
-            (out[probe] - 0.5 * (1.0 - 0.25 * (0.75f32 * std::f32::consts::FRAC_PI_2).sin())).abs()
-                < 0.02,
-            "{}",
-            out[probe]
-        );
+        assert!((out[probe] - 0.5).abs() < 1.0e-6);
+        assert!((out[probe + 1] + 0.5).abs() < 1.0e-6);
+    }
+
+    #[test]
+    fn linear_fade_is_sample_accurate_and_independent_of_render_block_size() {
+        for channels in [1, 2, 6] {
+            for block_size in [1, 127, 1_024] {
+                let frames = 4_801;
+                let mut cfg = config(frames, None);
+                cfg.channels = channels;
+                cfg.linear_fade = true;
+                cfg.a_gain = 0.5;
+                cfg.b_gain = 0.25;
+                let mut mixer = TransitionMixer::new(cfg).unwrap();
+                let a: Vec<f32> = (0..frames * channels)
+                    .map(|i| if i % channels == 0 { 1.0 } else { -0.4 })
+                    .collect();
+                let b: Vec<f32> = (0..frames * channels)
+                    .map(|i| if i % channels == 0 { -0.8 } else { 0.6 })
+                    .collect();
+                mixer.push_a(DeckInput::Samples(&a));
+                mixer.push_a(DeckInput::End);
+                mixer.push_b(DeckInput::Samples(&b));
+                let mut output = Vec::new();
+                let mut consumed = 0;
+                while !mixer.is_finished() {
+                    let block = mixer.render(block_size);
+                    assert!(!block.samples.is_empty() || mixer.is_finished());
+                    consumed += block.b_frames_consumed;
+                    output.extend(block.samples);
+                }
+                assert_eq!(output.len(), a.len());
+                assert_eq!(consumed, frames);
+                for (i, sample) in output.iter().enumerate() {
+                    let t = (i / channels) as f32 / frames as f32;
+                    let expected = a[i] * 0.5 * (1.0 - t) + b[i] * 0.25 * t;
+                    assert!((sample - expected).abs() < 1.0e-6, "sample {i}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn linear_fade_does_not_leak_a_left_only_track_into_the_right_channel() {
+        let frames = 4_800;
+        let mut cfg = config(frames, None);
+        cfg.linear_fade = true;
+        let mut mixer = TransitionMixer::new(cfg).unwrap();
+        let a: Vec<f32> = (0..frames).flat_map(|_| [0.5, 0.0]).collect();
+        mixer.push_a(DeckInput::Samples(&a));
+        mixer.push_a(DeckInput::End);
+        mixer.push_b(DeckInput::Samples(&vec![0.0; frames * 2]));
+        let output = mixer.render(frames).samples;
+        assert!(output.chunks_exact(2).all(|frame| frame[1] == 0.0));
+        assert_eq!(output[0], 0.5);
+        assert!((output[frames] - 0.25).abs() < 1.0e-6);
     }
 
     #[test]

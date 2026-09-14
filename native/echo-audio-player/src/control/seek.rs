@@ -88,7 +88,13 @@ pub(crate) fn open_decoder_at_position(
     .map_err(napi::Error::from_reason)?;
 
     if position > 0.0 {
-        decoder.seek(position).map_err(napi::Error::from_reason)?;
+        decoder
+            .prepare_cancellable_seek(position, || {
+                !is_latest_seek_request_seq(plan.request_seq)
+                    || !plan.shared.is_decode_generation_current(plan.generation)
+            })
+            .map_err(napi::Error::from_reason)?;
+        decoder.confirm_playback_restart_when_audio_ready(position);
     } else {
         decoder.confirm_playback_restart_when_audio_ready(position);
     }
@@ -227,7 +233,10 @@ fn try_seek_current_decoder(plan: &SeekPlan, position: f64) -> napi::Result<bool
                 Ok(()) => break reply_rx,
                 Err(TrySendError::Full(_)) => {
                     retries += 1;
-                    if retries >= SEEK_COMMAND_RETRIES || !is_seek_plan_current(plan)? {
+                    if !is_seek_plan_current(plan)? {
+                        return Ok(true);
+                    }
+                    if retries >= SEEK_COMMAND_RETRIES {
                         plan.shared.request_decode_interrupt();
                         emit_shared_event(
                             &plan.shared,
@@ -268,7 +277,21 @@ fn try_seek_current_decoder(plan: &SeekPlan, position: f64) -> napi::Result<bool
     // the same slow operation again. Keep the short bound for local files, but let remote seeks
     // finish within a bounded portion of the configured network timeout.
     let command_timeout = plan.config.seek_timeout_for_url(&plan.url);
-    match reply_rx.recv_timeout(command_timeout) {
+    let started = Instant::now();
+    let reply = loop {
+        if !is_seek_plan_current(plan)? {
+            return Ok(true);
+        }
+        let remaining = command_timeout.saturating_sub(started.elapsed());
+        if remaining.is_zero() {
+            break Err(RecvTimeoutError::Timeout);
+        }
+        match reply_rx.recv_timeout(remaining.min(Duration::from_millis(100))) {
+            Err(RecvTimeoutError::Timeout) => continue,
+            result => break result,
+        }
+    };
+    match reply {
         Ok(Ok(())) => {
             restore_seek_playback_state(plan, position, "seek-command")?;
             Ok(true)
@@ -375,6 +398,9 @@ impl Task for SeekTask {
                 return Ok(None);
             }
             runtime.cancel_pending_source_open();
+            let Some(url) = runtime.current_url.clone() else {
+                return Ok(None);
+            };
             let Some((shared, decode_commands)) = runtime
                 .session
                 .as_ref()
@@ -385,13 +411,16 @@ impl Task for SeekTask {
             let was_paused = runtime.begin_seek_restore_paused();
             set_runtime_core_state(runtime, PlaybackCoreState::Seeking, "seek");
             runtime.cancel_pending_seek_restart();
+            runtime.cancel_pending_gapless_prepare();
+            retire_prepared_next_background(runtime.prepared_next.take(), "seek");
+            runtime.armed_transition_request = None;
             shared.paused.store(true, Ordering::Release);
             let generation = shared.reset_for_decode_resume(position, &runtime.dsp_settings);
             runtime.state.time_pos = position;
             runtime.state.playing = false;
             runtime.state.paused = true;
             emit_runtime_event(runtime, PlayerEvent::seek(position));
-            Ok(runtime.current_url.clone().map(|url| SeekPlan {
+            Ok(Some(SeekPlan {
                 shared,
                 was_paused,
                 track_seq: runtime.current_seq,
@@ -422,6 +451,9 @@ impl Task for SeekTask {
         {
             Ok(()) => Ok(()),
             Err(err) => {
+                if !is_seek_plan_current(&plan)? {
+                    return Ok(());
+                }
                 mark_seek_plan_failed(&plan)?;
                 emit_event(
                     PlayerEvent::error(
@@ -443,8 +475,21 @@ impl Task for SeekTask {
 #[napi]
 pub fn seek(time: f64) -> AsyncTask<SeekTask> {
     invalidate_source_open_requests();
+    let request_seq = next_seek_request_seq();
+    // Cancel analysis before queuing async work so it cannot occupy all worker slots
+    // while the user's seek waits to begin.
+    if RUNTIME_READY.load(Ordering::Acquire) {
+        let _ = call_core_command("prioritize-user-seek", move |runtime| {
+            if is_latest_seek_request_seq(request_seq) {
+                runtime.cancel_pending_gapless_prepare();
+                retire_prepared_next_background(runtime.prepared_next.take(), "seek-request");
+                runtime.armed_transition_request = None;
+            }
+            Ok(())
+        });
+    }
     AsyncTask::new(SeekTask {
         position: time,
-        request_seq: next_seek_request_seq(),
+        request_seq,
     })
 }

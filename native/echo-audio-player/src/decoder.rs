@@ -8,6 +8,7 @@ use crate::transition_runner::{
     split_chunk_at, AbortedTransition, ArmedTransition, RunnerStep, TransitionRunner,
 };
 use ffmpeg_audio::{sys, AudioError, AudioReader, PacketCacheOptions, RawAudioData, SeekMode};
+use std::collections::VecDeque;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{sync_channel, Receiver, RecvTimeoutError, SyncSender, TryRecvError};
@@ -23,6 +24,12 @@ pub enum DecodeCommand {
         /// transition this decides whether the seek targets the outgoing or the incoming
         /// track; `None` means "whatever is live".
         track_seq: Option<u64>,
+        reply: SyncSender<Result<(), String>>,
+    },
+    PrepareSourceSwitch {
+        track_seq: u64,
+        generation: u64,
+        interrupt: Arc<AtomicBool>,
         reply: SyncSender<Result<(), String>>,
     },
     SwitchSource {
@@ -154,13 +161,21 @@ impl DecoderData {
     }
 
     pub fn seek(&mut self, position_secs: f64) -> Result<(), String> {
-        let elapsed_ms = self.seek_and_measure(position_secs, true)?;
+        let elapsed_ms = self.seek_and_measure(position_secs, true, || false)?;
         log_seek_elapsed(position_secs, elapsed_ms);
         Ok(())
     }
 
     pub fn prepare_seamless_seek(&mut self, position_secs: f64) -> Result<u128, String> {
-        self.seek_and_measure(position_secs, false)
+        self.seek_and_measure(position_secs, false, || false)
+    }
+
+    pub fn prepare_cancellable_seek(
+        &mut self,
+        position_secs: f64,
+        is_cancelled: impl Fn() -> bool,
+    ) -> Result<u128, String> {
+        self.seek_and_measure(position_secs, false, is_cancelled)
     }
 
     /// Drop decoded frames before `position_secs` (sample-accurate alignment after a
@@ -173,7 +188,11 @@ impl DecoderData {
         &mut self,
         position_secs: f64,
         announce_restart: bool,
+        is_cancelled: impl Fn() -> bool,
     ) -> Result<u128, String> {
+        if is_cancelled() {
+            return Err("decoder seek cancelled".to_string());
+        }
         let position_secs = normalize_seek_position(position_secs);
         let target = Duration::from_secs_f64(position_secs);
         let started = Instant::now();
@@ -190,6 +209,10 @@ impl DecoderData {
         self.reader
             .seek(target, SeekMode::Accurate)
             .or_else(|accurate_err| {
+                // Request cancellation is separate from the reader's temporary seek interrupt.
+                if is_cancelled() {
+                    return Err("decoder seek cancelled".to_string());
+                }
                 emit_decode_warning(format!(
                     "accurate seek failed, falling back to coarse seek: {accurate_err}"
                 ));
@@ -199,6 +222,9 @@ impl DecoderData {
                     )
                 })
             })?;
+        if is_cancelled() {
+            return Err("decoder seek cancelled".to_string());
+        }
         self.pending_playback_restart_position = announce_restart.then_some(position_secs);
         Ok(started.elapsed().as_millis())
     }
@@ -227,6 +253,7 @@ impl DecoderData {
         }
     }
 
+    #[cfg(test)]
     pub fn predecode_chunks(&mut self, seconds: f64) -> Result<Vec<DecodedAudioChunk>, String> {
         let mut chunks = Vec::new();
         let mut decoded_secs = 0.0;
@@ -238,6 +265,24 @@ impl DecoderData {
             chunks.push(chunk);
         }
         Ok(chunks)
+    }
+
+    pub fn prepare_source_switch_chunks(
+        &mut self,
+        seek_position_secs: f64,
+        predecode_secs: f64,
+        playback_position: impl Fn() -> f64,
+        is_cancelled: impl Fn() -> bool,
+    ) -> Result<(f64, Vec<DecodedAudioChunk>), String> {
+        catch_up_source_switch(
+            seek_position_secs,
+            self.duration_secs(),
+            predecode_secs,
+            playback_position,
+            is_cancelled,
+            || self.decode_next_chunk(),
+            Duration::from_secs(5),
+        )
     }
 
     fn publish_packet_cache_stats(&self, shared: &SharedAudio) {
@@ -272,6 +317,64 @@ impl DecoderData {
     }
 }
 
+// Keep a short rolling PCM window near the live clock. A slow initial seek
+// must not trigger another remote seek followed by seconds of scheduled waiting.
+fn catch_up_source_switch(
+    seek_position_secs: f64,
+    duration_secs: f64,
+    predecode_secs: f64,
+    playback_position: impl Fn() -> f64,
+    is_cancelled: impl Fn() -> bool,
+    mut decode_next: impl FnMut() -> Result<Option<DecodedAudioChunk>, String>,
+    budget: Duration,
+) -> Result<(f64, Vec<DecodedAudioChunk>), String> {
+    let started = Instant::now();
+    let mut chunks: VecDeque<DecodedAudioChunk> = VecDeque::new();
+    let mut decoded_end = seek_position_secs;
+    let mut eof = false;
+    loop {
+        if is_cancelled() {
+            return Err("source switch cancelled during catch-up".to_string());
+        }
+        if started.elapsed() >= budget {
+            return Err("source switch preparation timed out during catch-up".to_string());
+        }
+        let position = playback_position().max(0.0);
+        if duration_secs > 0.0 && position >= duration_secs {
+            return Err("source switch cancelled: replacement ended before hand-off".to_string());
+        }
+        let mut switch_at = position + 0.2;
+        if duration_secs > 0.0 {
+            switch_at = switch_at.min((duration_secs - 0.05).max(0.0));
+        }
+        let mut discard_before = Some(switch_at);
+        while let Some(front) = chunks.front_mut() {
+            if align_switched_chunk(front, &mut discard_before) {
+                break;
+            }
+            chunks.pop_front();
+        }
+        if !chunks.is_empty() && (decoded_end >= switch_at + predecode_secs.max(0.5) || eof) {
+            return Ok((switch_at, chunks.into_iter().collect()));
+        }
+        if eof {
+            return Err("source switch cancelled: replacement ended before hand-off".to_string());
+        }
+        match decode_next()? {
+            Some(mut chunk) => {
+                // Some demuxers omit frame timestamps; retain the sequential clock
+                // so trimming and the worker hand-off still agree on sample position.
+                if chunk.pts_secs.is_none() {
+                    chunk.pts_secs = Some(decoded_end);
+                }
+                decoded_end = decoded_chunk_end_secs(&chunk, decoded_end);
+                chunks.push_back(chunk);
+            }
+            None => eof = true,
+        }
+    }
+}
+
 const TERMINAL_SEEK_TOLERANCE: Duration = Duration::from_millis(50);
 const TAIL_SEEK_ERROR_TOLERANCE: Duration = Duration::from_millis(250);
 fn normalize_seek_position(position_secs: f64) -> f64 {
@@ -302,6 +405,7 @@ fn await_gapless_decoder<F>(
 where
     F: FnMut() -> crate::GaplessDecodeResult,
 {
+    let deadline = Instant::now() + Duration::from_secs(2);
     loop {
         match activate() {
             result @ crate::GaplessDecodeResult::Activated(_) => return result,
@@ -312,8 +416,17 @@ where
         }
 
         let Some(request_id) = shared.pending_gapless_prepare_request() else {
-            return crate::GaplessDecodeResult::NotPrepared;
+            // Preparation may finish after the first activation check but before the
+            // pending flag is read. Give the newly published source one final check.
+            return activate();
         };
+        if Instant::now() >= deadline {
+            shared.cancel_gapless_prepare(request_id);
+            emit_decode_warning(
+                "gapless EOF wait timed out; continuing with normal track change".to_string(),
+            );
+            return crate::GaplessDecodeResult::NotPrepared;
+        }
         shared.wait_for_gapless_prepare_change(request_id);
     }
 }
@@ -606,8 +719,14 @@ impl WorkerState {
 
     /// Drop everything transition-related (Stop / source replacement).
     fn drop_transition_state(&mut self) {
-        self.armed_transition = None;
-        self.pending_arm = None;
+        crate::retire_value_background(
+            self.armed_transition.take(),
+            "player-transition-armed-reaper".to_string(),
+        );
+        crate::retire_value_background(
+            self.pending_arm.take(),
+            "player-transition-pending-reaper".to_string(),
+        );
         self.fail_start_now("transition cancelled");
     }
 
@@ -628,13 +747,7 @@ impl WorkerState {
     }
 }
 
-/// Stop the active runner. Returns the decoder that should be live afterwards: the
-/// incoming one when the caller's command targets it (or it is already audible),
-/// otherwise the outgoing decoder stays and deck B is re-armed for a later attempt.
-fn generation_of(shared: &SharedAudio) -> u64 {
-    shared.current_decode_generation()
-}
-
+/// Stop the mix without seeking the unused deck; the audible track remains live.
 fn abort_runner(
     data: &mut DecoderData,
     shared: &Arc<SharedAudio>,
@@ -649,11 +762,10 @@ fn abort_runner(
     // The output callback publishes the incoming track's sequence exactly when it crosses
     // the boundary; anything queued but not yet rendered was thrown away by the reset.
     let incoming_is_audible = shared.current_track_seq() == incoming_seq;
-    match runner.abort(incoming_is_audible) {
-        Some(AbortedTransition::Live(decoder, position)) => {
+    match runner.abort_for_transport(incoming_is_audible || prefer_incoming) {
+        Some((decoder, position)) => {
             // The incoming track is already audible: it is the live decoder now, whatever
             // the caller asked for.
-            let _ = prefer_incoming;
             let previous = std::mem::replace(data, decoder);
             crate::retire_value_background(
                 Some(previous),
@@ -662,21 +774,6 @@ fn abort_runner(
             state.decoded_position_secs = position;
             state.live_seq = incoming_seq;
             shared.bind_interrupt(data.interrupt.clone());
-        }
-        Some(AbortedTransition::Rearm(armed)) => {
-            if prefer_incoming {
-                // The UI targets the incoming track but nothing of it has played yet:
-                // make it live from its entry point.
-                hand_off_armed_directly(shared, data, armed, state, generation_of(shared));
-            } else {
-                shared.bind_interrupt(data.interrupt.clone());
-                if let Some(previous) = state.armed_transition.replace(armed) {
-                    crate::retire_value_background(
-                        Some(previous),
-                        "player-transition-replaced-arm-reaper".to_string(),
-                    );
-                }
-            }
         }
         None => {
             shared.bind_interrupt(data.interrupt.clone());
@@ -755,7 +852,7 @@ fn decode_worker_loop(
         if !shared.is_decode_generation_current(generation) {
             // A reset invalidated everything in flight. A running mix is abandoned; if
             // the incoming track was already audible it stays live, otherwise deck B is
-            // re-armed and the outgoing track resumes when the next command arrives.
+            // retired and the outgoing track resumes when the next command arrives.
             abort_runner(&mut data, &shared, &mut state, false);
             state.fail_start_now("playback reset");
             match wait_for_generation_command(&mut data, &shared, &commands, &mut state) {
@@ -1298,14 +1395,21 @@ fn handle_decode_command(
             track_seq,
             reply,
         } => {
+            if shared.should_stop_decoding() {
+                let _ = reply.send(Err("decoder stopping".to_string()));
+                return DecodeCommandResult::Stop;
+            }
+            if !shared.is_decode_generation_current(generation) {
+                let _ = reply.send(Err("stale seek generation".to_string()));
+                return DecodeCommandResult::Ignored;
+            }
             state.pending_source_switch.take();
             // A seek during a blend aborts it. Which deck the seek applies to follows the
             // track the UI shows: the incoming one once the boundary has been crossed (or
-            // when the caller names it), otherwise the outgoing one keeps playing and the
-            // incoming deck is re-armed for a fresh attempt.
+            // when the caller names it), otherwise the outgoing track remains live.
             let prefer_incoming = state.targets_incoming(track_seq, shared);
             abort_runner(data, shared, state, prefer_incoming);
-            state.fail_start_now("seek");
+            state.drop_transition_state();
             if let Some(seq) = track_seq {
                 if seq != state.live_seq && state.runner.is_none() {
                     // The caller is on a track we do not have (should not happen); the seek
@@ -1316,15 +1420,9 @@ fn handle_decode_command(
                     ));
                 }
             }
-            if shared.should_stop_decoding() {
-                let _ = reply.send(Err("decoder stopping".to_string()));
-                return DecodeCommandResult::Stop;
-            }
-            if !shared.is_decode_generation_current(generation) {
-                let _ = reply.send(Err("stale seek generation".to_string()));
-                return DecodeCommandResult::Ignored;
-            }
-            let result = data.seek_and_measure(position_secs, true);
+            let result = data.seek_and_measure(position_secs, true, || {
+                shared.should_stop_decoding() || !shared.is_decode_generation_current(generation)
+            });
             let generation_current = shared.is_decode_generation_current(generation);
             let seek_succeeded = result.is_ok();
             if let Ok(elapsed_ms) = result.as_ref() {
@@ -1335,12 +1433,43 @@ fn handle_decode_command(
             let _ = reply.send(result.map(|_| ()));
             if generation_current && seek_succeeded {
                 state.decoded_position_secs = position_secs;
-                // Seeking past the cut point of an armed transition means it starts as
-                // soon as decoding resumes (`rebase_to` handles the late start).
+                // The renderer may prepare a new transition after this seek completes.
                 DecodeCommandResult::Continue(generation)
             } else {
                 DecodeCommandResult::Ignored
             }
+        }
+        DecodeCommand::PrepareSourceSwitch {
+            track_seq,
+            generation,
+            interrupt,
+            reply,
+        } => {
+            if interrupt.load(Ordering::Acquire)
+                || shared.should_stop_decoding()
+                || !shared.is_decode_generation_current(generation)
+            {
+                let _ = reply.send(Err("source switch cancelled before preparation".to_string()));
+                return DecodeCommandResult::Ignored;
+            }
+            let target_seq = state
+                .runner
+                .as_ref()
+                .map_or(state.live_seq, |runner| runner.incoming_seq());
+            if target_seq != track_seq || shared.current_track_seq() != track_seq {
+                let _ = reply.send(Err("source switch cancelled: track changed".to_string()));
+                return DecodeCommandResult::Ignored;
+            }
+            state.drop_transition_state();
+            if let Some(runner) = state.runner.as_mut() {
+                runner.finish_for_source_switch();
+                emit_decode_info(
+                    shared,
+                    "source switch: releasing active song transition into current track",
+                );
+            }
+            let _ = reply.send(Ok(()));
+            DecodeCommandResult::Ignored
         }
         DecodeCommand::SwitchSource {
             decoder,
@@ -1358,25 +1487,25 @@ fn handle_decode_command(
                 let _ = reply.send(Err("stale source switch generation".to_string()));
                 return DecodeCommandResult::Ignored;
             }
-            if state.runner.is_some() {
-                // Quality/source switches are planned on a single track's timeline; mixing
-                // in a replacement reader mid-blend cannot line up. Refuse so the caller
-                // keeps the current source (its own fallback path) and retries later.
-                let _ = reply.send(Err(
-                    "source switch refused during a song transition".to_string()
-                ));
+            let target_seq = state
+                .runner
+                .as_ref()
+                .map_or(state.live_seq, |runner| runner.incoming_seq());
+            if track_seq.is_some_and(|seq| seq != target_seq) {
+                let _ = reply.send(Err("source switch cancelled: track changed".to_string()));
                 return DecodeCommandResult::Ignored;
             }
-            let _ = track_seq;
-            // A replacement source for the live track invalidates the armed transition's
-            // deck-A assumptions only if the tracks differ; same-track quality switches keep
-            // the plan (cue points are timeline positions, not byte offsets).
+            state.drop_transition_state();
+            if let Some(runner) = state.runner.as_mut() {
+                runner.finish_for_source_switch();
+            }
             state.pending_source_switch.take();
             state.pending_source_switch = Some(PendingSourceSwitch {
                 decoder: Some(decoder),
                 predecoded,
                 switch_at_secs: switch_at_secs.max(0.0),
                 generation,
+                track_seq: target_seq,
                 reply: Some(reply),
             });
             if activate_pending_source_switch(data, shared, state) {
@@ -1584,6 +1713,7 @@ struct PendingSourceSwitch {
     predecoded: Vec<DecodedAudioChunk>,
     switch_at_secs: f64,
     generation: u64,
+    track_seq: u64,
     reply: Option<SyncSender<Result<f64, String>>>,
 }
 
@@ -1592,7 +1722,40 @@ impl Drop for PendingSourceSwitch {
         if let Some(reply) = self.reply.take() {
             let _ = reply.send(Err("source switch cancelled".to_string()));
         }
+        crate::retire_value_background(
+            self.decoder.take(),
+            "player-pending-source-reaper".to_string(),
+        );
     }
+}
+
+const SOURCE_SWITCH_MIN_BUFFER_SECS: f64 = 0.2;
+
+fn align_source_switch_buffer(chunks: &mut Vec<DecodedAudioChunk>, handoff: f64) -> f64 {
+    let mut discard_before = Some(handoff);
+    chunks.retain_mut(|chunk| align_switched_chunk(chunk, &mut discard_before));
+    let mut end = handoff;
+    let mut buffered_secs = 0.0;
+    for (index, chunk) in chunks.iter().enumerate() {
+        let Some(start) = chunk.pts_secs.filter(|pts| pts.is_finite()) else {
+            return 0.0;
+        };
+        let rate = f64::from(chunk.format.sample_rate.max(1));
+        // The first sample can round up to the new source's sample grid; later
+        // chunks must be contiguous apart from the reader's microsecond PTS rounding.
+        let tolerance = if index == 0 {
+            1.0 / rate + 2.0e-6
+        } else {
+            2.0e-6
+        };
+        if (start - end).abs() > tolerance {
+            return 0.0;
+        }
+        let seconds = chunk.frames as f64 / rate;
+        end = start + seconds;
+        buffered_secs += seconds;
+    }
+    buffered_secs
 }
 
 fn activate_pending_source_switch(
@@ -1604,6 +1767,14 @@ fn activate_pending_source_switch(
         return false;
     };
     if !shared.is_decode_generation_current(pending.generation) {
+        state.pending_source_switch.take();
+        return false;
+    }
+    // The outgoing decoder still owns A until the short release hands B back.
+    if state.runner.is_some() {
+        return false;
+    }
+    if pending.track_seq != state.live_seq {
         state.pending_source_switch.take();
         return false;
     }
@@ -1624,6 +1795,20 @@ fn activate_pending_source_switch(
         .take()
         .expect("pending source switch checked above");
     let handoff_position = state.decoded_position_secs.max(0.0);
+    let buffered_secs = align_source_switch_buffer(&mut pending.predecoded, handoff_position);
+    if buffered_secs + 1.0e-6 < SOURCE_SWITCH_MIN_BUFFER_SECS {
+        let error = format!(
+            "source switch cancelled: insufficient prepared audio at hand-off (position={handoff_position:.3}, buffered_secs={buffered_secs:.3}, required_secs={SOURCE_SWITCH_MIN_BUFFER_SECS:.3}); old source kept"
+        );
+        emit_decode_info(shared, &error);
+        if let Some(reply) = pending.reply.take() {
+            let _ = reply.send(Err(error));
+        }
+        return false;
+    }
+    emit_decode_info(shared, &format!(
+        "source switch buffer ready: position={handoff_position:.3}, buffered_secs={buffered_secs:.3}"
+    ));
     let mut decoder = pending
         .decoder
         .take()
@@ -1673,9 +1858,11 @@ fn align_switched_chunk(
         return false;
     }
     if start < target {
-        // Subtract a tiny fraction before ceil so a timestamp that is exactly
-        // on a sample boundary is not rounded up by binary floating-point noise.
-        let trim_frames = (((target - start) * sample_rate) - 1.0e-7).ceil() as usize;
+        // Reader PTS values are rounded to microseconds. Account for that precision
+        // before ceil, or a matching sample boundary can lose one extra frame.
+        let timestamp_tolerance_frames = (sample_rate * 1.0e-6).min(0.49) + 1.0e-7;
+        let trim_frames =
+            (((target - start) * sample_rate) - timestamp_tolerance_frames).ceil() as usize;
         chunk.trim_start_frames(trim_frames);
     }
     *discard_before_secs = None;
@@ -1716,6 +1903,458 @@ pub fn audio_stream_ordinal_from_track_id(track_id: i64) -> Option<usize> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn switch_test_chunk(start: f64, frames: usize) -> DecodedAudioChunk {
+        DecodedAudioChunk {
+            format: DecodedAudioFormat {
+                sample_rate: 1_000,
+                sample_format: AudioSampleFormat::F32,
+                channels: 2,
+            },
+            pts_secs: Some(start),
+            frames,
+            data: DecodedAudioData::F32(vec![0.25; frames * 2]),
+        }
+    }
+
+    #[test]
+    fn source_switch_catchup_keeps_a_short_contiguous_window_after_a_slow_seek() {
+        let live = std::cell::Cell::new(14.0);
+        let mut next = 10.0;
+        let (switch_at, chunks) = catch_up_source_switch(
+            10.0,
+            300.0,
+            0.5,
+            || live.get(),
+            || false,
+            || {
+                let chunk = switch_test_chunk(next, 100);
+                next += 0.1;
+                live.set(live.get() + 0.001);
+                Ok(Some(chunk))
+            },
+            Duration::from_secs(1),
+        )
+        .unwrap();
+        assert!((switch_at - live.get() - 0.2).abs() < 1e-6);
+        assert!((chunks[0].pts_secs.unwrap() - switch_at).abs() <= 0.001);
+        let mut end = chunks[0].pts_secs.unwrap();
+        for chunk in &chunks {
+            assert!((chunk.pts_secs.unwrap() - end).abs() < 1e-6);
+            end = decoded_chunk_end_secs(chunk, end);
+        }
+        assert!(end >= switch_at + 0.5);
+        assert!(end < switch_at + 0.61);
+    }
+
+    #[test]
+    fn source_switch_catchup_supports_paused_playback_and_missing_timestamps() {
+        let (switch_at, chunks) = catch_up_source_switch(
+            10.0,
+            0.0,
+            0.5,
+            || 10.0,
+            || false,
+            || {
+                let mut chunk = switch_test_chunk(0.0, 100);
+                chunk.pts_secs = None;
+                Ok(Some(chunk))
+            },
+            Duration::from_secs(1),
+        )
+        .unwrap();
+        assert!((switch_at - 10.2).abs() < 1e-6);
+        assert!((chunks[0].pts_secs.unwrap() - switch_at).abs() < 0.001);
+    }
+
+    #[test]
+    fn source_switch_catchup_cancels_without_consuming_more_audio() {
+        let cancelled = std::cell::Cell::new(false);
+        let mut reads = 0;
+        let result = catch_up_source_switch(
+            10.0,
+            300.0,
+            0.5,
+            || 14.0,
+            || cancelled.get(),
+            || {
+                reads += 1;
+                cancelled.set(true);
+                Ok(Some(switch_test_chunk(10.0, 100)))
+            },
+            Duration::from_secs(1),
+        );
+        assert!(result.unwrap_err().contains("cancelled"));
+        assert_eq!(reads, 1);
+        let timed_out = catch_up_source_switch(
+            10.0,
+            300.0,
+            0.5,
+            || 14.0,
+            || false,
+            || panic!("expired catch-up must not decode"),
+            Duration::ZERO,
+        );
+        assert!(timed_out.unwrap_err().contains("preparation timed out"));
+    }
+
+    #[test]
+    fn source_switch_catchup_accepts_a_short_tail_but_rejects_an_exhausted_source() {
+        let mut tail = Some(switch_test_chunk(0.8, 200));
+        let (switch_at, chunks) = catch_up_source_switch(
+            0.8,
+            1.0,
+            0.5,
+            || 0.9,
+            || false,
+            || Ok(tail.take()),
+            Duration::from_secs(1),
+        )
+        .unwrap();
+        assert!((switch_at - 0.95).abs() < 1e-6);
+        assert_eq!(chunks.iter().map(|chunk| chunk.frames).sum::<usize>(), 50);
+        let result = catch_up_source_switch(
+            0.0,
+            1.0,
+            0.5,
+            || 0.9,
+            || false,
+            || Ok(None),
+            Duration::from_secs(1),
+        );
+        assert!(result.unwrap_err().contains("replacement ended"));
+    }
+
+    #[test]
+    fn source_switch_catchup_propagates_decode_failure_before_handoff() {
+        let result = catch_up_source_switch(
+            10.0,
+            300.0,
+            0.5,
+            || 10.0,
+            || false,
+            || Err("invalid audio data".to_string()),
+            Duration::from_secs(1),
+        );
+        assert_eq!(result.unwrap_err(), "invalid audio data");
+    }
+
+    #[test]
+    fn source_switch_catchup_with_real_decoder_preserves_the_next_frame_position() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/gapless-silence.flac");
+        let mut decoder = DecoderData::open(
+            path.to_string_lossy().into_owned(),
+            None,
+            Some(48_000),
+            Arc::new(AtomicBool::new(false)),
+            PacketCacheOptions::default(),
+            &StreamOptions::default(),
+        )
+        .unwrap();
+        decoder.prepare_cancellable_seek(1.0, || false).unwrap();
+        // Simulate playback advancing while a seek takes three seconds.
+        let (switch_at, chunks) = decoder
+            .prepare_source_switch_chunks(1.0, 0.9, || 4.0, || false)
+            .unwrap();
+        assert!((switch_at - 4.2).abs() < 1e-6);
+        assert!((chunks[0].pts_secs.unwrap() - switch_at).abs() < 0.001);
+        let last = chunks.last().unwrap();
+        let end = decoded_chunk_end_secs(last, switch_at);
+        assert!(
+            end >= switch_at + 0.9,
+            "requested pipeline reserve must be prepared"
+        );
+        let next = decoder.decode_next_chunk().unwrap().unwrap();
+        assert!((next.pts_secs.unwrap() - end).abs() < 0.001);
+    }
+
+    fn source_switch_decoder() -> DecoderData {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("vendor/ffmpeg-audio/crates/ffmpeg_audio/tests/assets/seek_test.aac");
+        DecoderData::open(
+            path.to_string_lossy().into_owned(),
+            None,
+            Some(48_000),
+            Arc::new(AtomicBool::new(false)),
+            PacketCacheOptions::default(),
+            &StreamOptions::default(),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn source_switch_rejects_exhausted_short_or_discontinuous_buffers_without_touching_live_audio()
+    {
+        let cases = [
+            Vec::new(),
+            vec![switch_test_chunk(10.0, 500)],
+            vec![switch_test_chunk(10.0, 650)],
+            vec![switch_test_chunk(10.6, 900)],
+            vec![switch_test_chunk(10.538, 100), switch_test_chunk(10.8, 400)],
+            vec![switch_test_chunk(10.538, 100), switch_test_chunk(10.6, 400)],
+            vec![switch_test_chunk(10.538, 50)],
+        ];
+        for predecoded in cases {
+            let shared = SharedAudio::new(
+                crate::shared::MixFormat::stereo_f32(48_000),
+                1.0,
+                8.0,
+                &crate::dsp::DspSettings::default(),
+            );
+            shared.set_track_seq(7);
+            let generation = shared.current_decode_generation();
+            let mut data = source_switch_decoder();
+            let old_interrupt = data.interrupt.clone();
+            let mut state = WorkerState::new(10.538, 7);
+            let (reply, received) = sync_channel(1);
+            state.pending_source_switch = Some(PendingSourceSwitch {
+                decoder: Some(Box::new(source_switch_decoder())),
+                predecoded,
+                switch_at_secs: 10.0,
+                generation,
+                track_seq: 7,
+                reply: Some(reply),
+            });
+            assert!(!activate_pending_source_switch(
+                &mut data, &shared, &mut state
+            ));
+            assert!(received
+                .try_recv()
+                .unwrap()
+                .unwrap_err()
+                .contains("insufficient prepared audio"));
+            assert!(state.pending_source_switch.is_none());
+            assert!(Arc::ptr_eq(&data.interrupt, &old_interrupt));
+            assert!(!old_interrupt.load(Ordering::Acquire));
+            assert_eq!(state.decoded_position_secs, 10.538);
+            assert_eq!(state.live_seq, 7);
+            assert_eq!(shared.current_decode_generation(), generation);
+            let next = data.decode_next_chunk().unwrap().unwrap();
+            let expected = source_switch_decoder()
+                .decode_next_chunk()
+                .unwrap()
+                .unwrap();
+            assert_eq!(next.pts_secs, expected.pts_secs);
+            assert_eq!(next.data, expected.data);
+        }
+    }
+
+    #[test]
+    fn source_switch_checks_reserve_at_the_delayed_actual_handoff() {
+        let shared = SharedAudio::new(
+            crate::shared::MixFormat::stereo_f32(48_000),
+            1.0,
+            8.0,
+            &crate::dsp::DspSettings::default(),
+        );
+        shared.set_track_seq(7);
+        let mut data = source_switch_decoder();
+        let old_interrupt = data.interrupt.clone();
+        let mut replacement = source_switch_decoder();
+        replacement.duration = Some(Duration::from_secs(20));
+        let new_interrupt = replacement.interrupt.clone();
+        let mut state = WorkerState::new(10.0, 7);
+        let (reply, received) = sync_channel(1);
+        state.pending_source_switch = Some(PendingSourceSwitch {
+            decoder: Some(Box::new(replacement)),
+            predecoded: vec![switch_test_chunk(10.2, 900)],
+            switch_at_secs: 10.2,
+            generation: shared.current_decode_generation(),
+            track_seq: 7,
+            reply: Some(reply),
+        });
+        assert!(!activate_pending_source_switch(
+            &mut data, &shared, &mut state
+        ));
+        assert!(Arc::ptr_eq(&data.interrupt, &old_interrupt));
+        assert!(matches!(received.try_recv(), Err(TryRecvError::Empty)));
+        state.decoded_position_secs = 10.738;
+        assert!(activate_pending_source_switch(
+            &mut data, &shared, &mut state
+        ));
+        assert_eq!(received.try_recv().unwrap().unwrap(), 10.738);
+        assert!(Arc::ptr_eq(&data.interrupt, &new_interrupt));
+        assert!((state.decoded_position_secs - 11.1).abs() < 1.0e-6);
+        assert_eq!(state.live_seq, 7);
+    }
+
+    #[test]
+    fn source_switch_buffer_alignment_rejects_unknown_pts_and_preserves_the_reserve_boundary() {
+        let mut chunks = vec![switch_test_chunk(10.0, 900)];
+        assert!((align_source_switch_buffer(&mut chunks, 10.7) - 0.2).abs() < 1e-6);
+        let mut unknown = vec![switch_test_chunk(10.0, 900)];
+        unknown[0].pts_secs = None;
+        assert_eq!(align_source_switch_buffer(&mut unknown, 10.5), 0.0);
+    }
+
+    #[test]
+    fn source_switch_releases_active_blend_and_never_replaces_outgoing_decoder() {
+        use crate::shared::{MixFormat, TrackSwitchInfo};
+        use crate::transition::decide::{
+            DecisionStrategy, SpeedType, TransitionPlan, TransitionTrigger,
+        };
+        use crate::transition::TransitionMode;
+        let shared = Arc::new(SharedAudio::new(
+            MixFormat::stereo_f32(48_000),
+            8.0,
+            8.0,
+            &crate::dsp::DspSettings::default(),
+        ));
+        let generation = shared.current_decode_generation();
+        shared.set_track_seq(2);
+        let mut data = source_switch_decoder();
+        let mut state = WorkerState::new(100.0, 1);
+        let format = DecodedAudioFormat {
+            sample_rate: 48_000,
+            sample_format: AudioSampleFormat::F32,
+            channels: 2,
+        };
+        let armed = ArmedTransition {
+            plan: TransitionPlan {
+                mode: TransitionMode::AutomixPro,
+                strategy: DecisionStrategy::Fade,
+                trigger: TransitionTrigger::EndOfTrack,
+                a_cut_secs: 100.0,
+                a_end_secs: 115.0,
+                b_start_secs: 0.0,
+                overlap_secs: 15.0,
+                template: Some(crate::transition::plan::PlanTemplate::LayeredFilter),
+                a_tempo_ratio: 1.0,
+                speed_type: SpeedType::None,
+                bpm_a: None,
+                bpm_b: None,
+                bars: None,
+                a_beat_secs: None,
+                b_beat_secs: None,
+                note: String::new(),
+            },
+            decoder: Box::new(source_switch_decoder()),
+            predecoded: vec![DecodedAudioChunk::new(
+                format,
+                24_000,
+                Some(0.0),
+                DecodedAudioData::F32(vec![0.2; 48_000]),
+            )],
+            info: TrackSwitchInfo::new("incoming".to_string(), None, 2, 200.0),
+            preferred_output_sample_format: AudioSampleFormat::F32,
+            a_gain: 1.0,
+            b_gain: 0.5,
+            post_overlap_normalization_gain_db: -6.0,
+            request_id: 1,
+            outgoing_seq: 1,
+        };
+        state.runner = Some(
+            TransitionRunner::start(&shared, armed, None, Vec::new(), 100.0, generation)
+                .unwrap_or_else(|(err, _)| panic!("{err}")),
+        );
+        let (tx, rx) = sync_channel(1);
+        handle_decode_command(
+            &mut data,
+            &shared,
+            DecodeCommand::PrepareSourceSwitch {
+                track_seq: 1,
+                generation,
+                interrupt: Arc::new(AtomicBool::new(false)),
+                reply: tx,
+            },
+            &mut state,
+        );
+        assert!(rx
+            .try_recv()
+            .unwrap()
+            .unwrap_err()
+            .contains("track changed"));
+        let (tx, rx) = sync_channel(1);
+        handle_decode_command(
+            &mut data,
+            &shared,
+            DecodeCommand::PrepareSourceSwitch {
+                track_seq: 2,
+                generation,
+                interrupt: Arc::new(AtomicBool::new(false)),
+                reply: tx,
+            },
+            &mut state,
+        );
+        assert_eq!(rx.try_recv().unwrap(), Ok(()));
+        let (tx, rx) = sync_channel(1);
+        handle_decode_command(
+            &mut data,
+            &shared,
+            DecodeCommand::SwitchSource {
+                track_seq: Some(2),
+                generation,
+                decoder: Box::new(source_switch_decoder()),
+                predecoded: vec![DecodedAudioChunk::new(
+                    format,
+                    24_000,
+                    Some(0.5),
+                    DecodedAudioData::F32(vec![0.2; 48_000]),
+                )],
+                switch_at_secs: 0.1,
+                reply: tx,
+            },
+            &mut state,
+        );
+        assert!(matches!(rx.try_recv(), Err(TryRecvError::Empty)));
+        assert!(state.runner.is_some());
+        assert_eq!(state.live_seq, 1);
+        for _ in 0..100 {
+            match state.runner.as_mut().unwrap().step(&shared, &mut data) {
+                RunnerStep::Continue => {}
+                RunnerStep::Failed(err) => panic!("{err}"),
+                RunnerStep::Finished(handoff) => {
+                    data = handoff.decoder;
+                    state.decoded_position_secs = handoff.decoded_position_secs;
+                    state.live_seq = 2;
+                    state.runner = None;
+                    break;
+                }
+            }
+        }
+        assert!(
+            state.runner.is_none(),
+            "quality switch must not wait for the full overlap"
+        );
+        assert!(
+            (state.decoded_position_secs - 0.5).abs() < 1e-6,
+            "B read-ahead is preserved"
+        );
+        assert!(activate_pending_source_switch(
+            &mut data, &shared, &mut state
+        ));
+        assert!((rx.try_recv().unwrap().unwrap() - 0.5).abs() < 1e-6);
+        assert_eq!(state.live_seq, 2);
+    }
+
+    #[test]
+    fn cancelled_source_switch_preflight_does_not_change_the_live_decoder() {
+        let shared = Arc::new(SharedAudio::new(
+            crate::shared::MixFormat::stereo_f32(48_000),
+            1.0,
+            8.0,
+            &crate::dsp::DspSettings::default(),
+        ));
+        shared.set_track_seq(7);
+        let mut data = source_switch_decoder();
+        let mut state = WorkerState::new(42.0, 7);
+        let (tx, rx) = sync_channel(1);
+        handle_decode_command(
+            &mut data,
+            &shared,
+            DecodeCommand::PrepareSourceSwitch {
+                track_seq: 7,
+                generation: shared.current_decode_generation(),
+                interrupt: Arc::new(AtomicBool::new(true)),
+                reply: tx,
+            },
+            &mut state,
+        );
+        assert!(rx.try_recv().unwrap().is_err());
+        assert_eq!(state.decoded_position_secs, 42.0);
+        assert_eq!(state.live_seq, 7);
+    }
 
     #[test]
     fn seek_target_at_duration_is_terminal() {
@@ -1866,6 +2505,7 @@ mod tests {
         let waiter_shared = shared.clone();
         let waiter_ready = ready.clone();
         let (waiting_tx, waiting_rx) = sync_channel(1);
+        let (published_tx, published_rx) = sync_channel(1);
         let waiter = thread::spawn(move || {
             let mut reported_wait = false;
             await_gapless_decoder(&waiter_shared, 0, || {
@@ -1875,6 +2515,8 @@ mod tests {
                     if !reported_wait {
                         reported_wait = true;
                         let _ = waiting_tx.send(());
+                        // Publish between the activation check and the pending-flag read.
+                        published_rx.recv_timeout(Duration::from_secs(1)).unwrap();
                     }
                     crate::GaplessDecodeResult::NotPrepared
                 }
@@ -1884,11 +2526,28 @@ mod tests {
         waiting_rx.recv().unwrap();
         ready.store(true, Ordering::Release);
         shared.finish_gapless_prepare(request_id);
+        published_tx.send(()).unwrap();
         let result = waiter.join().unwrap();
         assert!(matches!(
             result,
             crate::GaplessDecodeResult::Activated(None)
         ));
+    }
+
+    #[test]
+    fn eof_gapless_wait_has_a_native_deadline() {
+        let shared = Arc::new(SharedAudio::new(
+            crate::shared::MixFormat::stereo_f32(48_000),
+            0.2,
+            8.0,
+            &crate::dsp::DspSettings::default(),
+        ));
+        shared.begin_gapless_prepare();
+        let started = Instant::now();
+        let result = await_gapless_decoder(&shared, 0, || crate::GaplessDecodeResult::NotPrepared);
+        assert!(matches!(result, crate::GaplessDecodeResult::NotPrepared));
+        assert!(started.elapsed() < Duration::from_secs(3));
+        assert!(!shared.gapless_prepare_is_pending());
     }
 
     #[test]

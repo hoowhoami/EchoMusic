@@ -30,6 +30,7 @@ import {
   isDesktopLyricFullSnapshot,
   mergeDesktopLyricSnapshotMessage,
   type DesktopLyricSnapshot,
+  type DesktopLyricSnapshotMessage,
   type LyricCharacterPayload,
   type LyricLinePayload,
 } from '../../shared/desktop-lyric';
@@ -44,10 +45,10 @@ import {
   computeLyricCharBackgroundPosition,
   computeLyricCharProgress,
   createLyricTimeline,
-  DEFAULT_LYRIC_RECENT_SEEK_WINDOW_MS,
   findLyricIndexAtTimeMs,
 } from '@/composables/useLyricTimeline';
 import { createStableLyricIndex } from '@/composables/useStableLyricIndex';
+import { subscribeWithSnapshot } from '@/utils/snapshotSubscription';
 import { findNextVisibleLyricIndex, resolveVisibleLyricIndex } from '@/utils/lyricFilter';
 import { useWindowDrag } from '@/composables/useWindowDrag';
 import { useWindowResize, type WindowResizeDirection } from '@/composables/useWindowResize';
@@ -93,19 +94,19 @@ const stableLyricIndex = createStableLyricIndex();
 
 const getTimelinePlayback = () => snapshot.value?.playback ?? null;
 
-const isRecentLyricSeek = () => {
-  const seekTimestamp = Number(snapshot.value?.playback?.seekTimestamp ?? 0);
-  return seekTimestamp > 0 && Date.now() - seekTimestamp < DEFAULT_LYRIC_RECENT_SEEK_WINDOW_MS;
-};
+let lastTimelineRevision = -1;
 
 const refreshTimelineState = (options?: { resetStable?: boolean }) => {
   const state = getTimelinePlayback();
   playSeekMsRaw = lyricTimeline.getPlaybackMs(state);
   const timelineMs = Math.round(playSeekMsRaw + lyricTimeOffset.value);
   const rawIndex = findLyricIndexAtTimeMs(lyrics.value, timelineMs);
-  const nextIndex = options?.resetStable
-    ? stableLyricIndex.reset(rawIndex, timelineMs)
-    : stableLyricIndex.apply(rawIndex, timelineMs);
+  const revision = lyricTimeline.revision;
+  const nextIndex =
+    options?.resetStable || revision !== lastTimelineRevision
+      ? stableLyricIndex.reset(rawIndex, timelineMs)
+      : stableLyricIndex.apply(rawIndex, timelineMs);
+  lastTimelineRevision = revision;
   if (nextIndex !== activeLineIndex.value) {
     activeLineIndex.value = nextIndex;
   }
@@ -661,6 +662,8 @@ const buildLyricEffectSnapshot = (): PluginLyricEffectSnapshot => {
     playbackRate: state?.playbackRate ?? 1,
     isPlaying: state?.isPlaying ?? false,
     timelineMs: playSeekMsRaw + lyricTimeOffset.value,
+    clock: playback.value?.clock,
+    seekTimestamp: playback.value?.seekTimestamp,
     lyricOffsetMs: lyricTimeOffset.value,
     lyricsMode: lyricsMode.value,
     collapsed: false,
@@ -769,7 +772,7 @@ watch([renderLyricLines, lyricsMode, lyricLayout, isPlaying], () => {
   // 渲染行结构变化（注音/普通副歌词/逐字数据就绪等）时丢弃旧 DOM 缓存，
   // 避免同 key 行切换渲染分支后逐字填充作用在已脱离文档的旧节点上
   resetLyricDomCache();
-  syncManualDomAfterRender({ resetStable: !isPlaying.value || isRecentLyricSeek() });
+  syncManualDomAfterRender({ resetStable: !isPlaying.value });
 });
 
 // 拖拽
@@ -1105,7 +1108,7 @@ const playNext = () => {
 
 const syncAnchor = (force = false) => {
   lyricTimeline.sync(getTimelinePlayback(), force);
-  refreshTimelineState({ resetStable: force || !isPlaying.value || isRecentLyricSeek() });
+  refreshTimelineState({ resetStable: force || !isPlaying.value });
 };
 
 // ── 生命周期 ──
@@ -1117,19 +1120,14 @@ onMounted(async () => {
 
   const desktopLyricApi = window.electron?.desktopLyric;
   const initialBoundsPromise = desktopLyricApi?.getWindow().catch(() => null);
-  snapshot.value = (await desktopLyricApi?.getSnapshot()) ?? null;
-  syncUnlockButtonBounds();
-  cacheWindowBounds(await initialBoundsPromise);
-  syncAnchor(true);
-  // 从窗口高度计算初始字体大小
-  localFontSize.value = computedFontSize.value;
-  reducedMotionQuery = window.matchMedia?.('(prefers-reduced-motion: reduce)') ?? null;
-  updateReducedMotion();
-  reducedMotionQuery?.addEventListener?.('change', updateReducedMotion);
-  setupLyricEffectHost();
-
-  disposeSnapshotListener =
-    window.electron?.desktopLyric?.onSnapshot((message) => {
+  const subscription = subscribeWithSnapshot({
+    read: async () => (await desktopLyricApi?.getSnapshot()) ?? null,
+    subscribe: (receive: (message: DesktopLyricSnapshotMessage) => void) =>
+      desktopLyricApi?.onSnapshot(receive) ?? (() => {}),
+    applySnapshot: (initial) => {
+      snapshot.value = initial;
+    },
+    applyMessage: (message) => {
       const next = mergeDesktopLyricSnapshotMessage(snapshot.value, message);
       if (!next) return;
       snapshot.value = next;
@@ -1146,7 +1144,26 @@ onMounted(async () => {
         }
       }
       notifyLyricEffectHost();
-    }) ?? null;
+    },
+  });
+  disposeSnapshotListener = subscription.dispose;
+  try {
+    await subscription.ready;
+  } catch {
+    /* Keep listening for a full snapshot. */
+  }
+  if (disposeSnapshotListener !== subscription.dispose) return;
+
+  syncUnlockButtonBounds();
+  cacheWindowBounds(await initialBoundsPromise);
+  if (disposeSnapshotListener !== subscription.dispose) return;
+  syncAnchor(true);
+  // 从窗口高度计算初始字体大小
+  localFontSize.value = computedFontSize.value;
+  reducedMotionQuery = window.matchMedia?.('(prefers-reduced-motion: reduce)') ?? null;
+  updateReducedMotion();
+  reducedMotionQuery?.addEventListener?.('change', updateReducedMotion);
+  setupLyricEffectHost();
 
   const applyHoverState = (hovered: boolean) => {
     if (!isLocked.value) {
@@ -1212,6 +1229,7 @@ onBeforeUnmount(() => {
   document.body.classList.remove('desktop-lyric-window');
   document.getElementById('app')?.classList.remove('desktop-lyric-window');
   disposeSnapshotListener?.();
+  disposeSnapshotListener = null;
   disposeHoverListener?.();
   disposeCancelDragListener?.();
   disposeCancelDragListener = null;

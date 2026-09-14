@@ -1,4 +1,5 @@
 import type { PlayerState } from './state';
+import type { useSettingStore } from '../setting';
 import type { PlayerEngine } from '@/utils/player';
 import type { AudioEffectValue, AudioQualityValue, PlayMode } from '../../types';
 import { clampNumber, normalizeEffect, normalizeQuality } from './utils';
@@ -9,7 +10,12 @@ export const createAudioManager = (
   state: PlayerState,
   engine: PlayerEngine,
   refreshCurrentTrack: (options?: { seamless?: boolean }) => Promise<void>,
+  settingStore: Pick<ReturnType<typeof useSettingStore>, 'defaultAudioQuality'>,
 ) => {
+  const isSourceSwitching = () =>
+    state.audioSourceRefreshRequestSeq != null &&
+    state.audioSourceRefreshRequestSeq === state.playbackRequestSeq;
+
   const normalizeVolume = (value: number, fallback = DEFAULT_PLAYER_VOLUME) => {
     const candidate = Number.isFinite(value) ? value : fallback;
     return clampNumber(Number.isFinite(candidate) ? candidate : DEFAULT_PLAYER_VOLUME, 0, 100);
@@ -69,7 +75,7 @@ export const createAudioManager = (
   };
 
   const setAudioEffect = (effect: AudioEffectValue) => {
-    if (state.audioEffectApplying) return;
+    if (state.audioEffectApplying || isSourceSwitching()) return;
     const nextEffect = normalizeEffect(effect);
     if (
       state.audioEffect === nextEffect &&
@@ -104,12 +110,42 @@ export const createAudioManager = (
     });
   };
 
+  const setPreferredAudioQuality = (quality: AudioQualityValue) => {
+    if (isSourceSwitching()) return;
+    const nextQuality = normalizeQuality(quality);
+    const changed =
+      settingStore.defaultAudioQuality !== nextQuality ||
+      state.currentAudioQualityOverride !== null ||
+      state.currentResolvedAudioQuality !== nextQuality ||
+      state.currentResolvedSourceKind === 'cloud';
+    if (!changed) return;
+    state.currentAudioQualityOverride = null;
+    state.currentCatalogSourceOverrideTrackId = state.currentTrackId
+      ? String(state.currentTrackId)
+      : null;
+    state.currentCloudSourceOverrideTrackId = null;
+    settingStore.defaultAudioQuality = nextQuality;
+    if (!state.currentTrackId) return;
+    if (getPlaybackIsLoading(state) || state.pendingSettingRefresh) {
+      state.pendingSettingRefresh = true;
+      return;
+    }
+    void refreshCurrentTrack({ seamless: true });
+  };
+
   const setCurrentAudioQualityOverride = (
     quality: AudioQualityValue | null,
     options?: { refresh?: boolean },
   ) => {
+    if (isSourceSwitching()) return;
     const nextQuality = quality ? normalizeQuality(quality) : null;
-    if (state.currentAudioQualityOverride === nextQuality) return;
+    if (
+      state.currentAudioQualityOverride === nextQuality &&
+      (state.currentResolvedAudioQuality === nextQuality ||
+        state.audioSourceRefreshRequestSeq === state.playbackRequestSeq ||
+        options?.refresh === false)
+    )
+      return;
     state.currentAudioQualityOverride = nextQuality;
     if (options?.refresh === false) return;
     if (!state.currentTrackId) return;
@@ -121,13 +157,15 @@ export const createAudioManager = (
   };
 
   const preferCurrentTrackCatalogQuality = (quality: AudioQualityValue) => {
-    if (!state.currentTrackId) return;
+    if (!state.currentTrackId || isSourceSwitching()) return;
     const nextQuality = normalizeQuality(quality);
     const trackId = String(state.currentTrackId);
     // 当前曲目的手动音质覆盖会持续到切歌，用于在云盘/曲库音源间来回切换时保持用户选择。
     const changed =
       state.currentCatalogSourceOverrideTrackId !== trackId ||
-      state.currentAudioQualityOverride !== nextQuality;
+      state.currentAudioQualityOverride !== nextQuality ||
+      (state.currentResolvedAudioQuality !== nextQuality &&
+        state.audioSourceRefreshRequestSeq !== state.playbackRequestSeq);
     if (!changed) return;
     state.currentCatalogSourceOverrideTrackId = trackId;
     state.currentCloudSourceOverrideTrackId = null;
@@ -140,7 +178,7 @@ export const createAudioManager = (
   };
 
   const preferCurrentTrackCloudSource = () => {
-    if (!state.currentTrackId) return;
+    if (!state.currentTrackId || isSourceSwitching()) return;
     const trackId = String(state.currentTrackId);
     const changed =
       state.currentCatalogSourceOverrideTrackId !== null ||
@@ -169,6 +207,7 @@ export const createAudioManager = (
     setEq,
     setAudioEffect,
     fadeVolume,
+    setPreferredAudioQuality,
     setCurrentAudioQualityOverride,
     preferCurrentTrackCatalogQuality,
     preferCurrentTrackCloudSource,

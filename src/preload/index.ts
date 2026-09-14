@@ -827,13 +827,20 @@ contextBridge.exposeInMainWorld('electron', {
       func: (state: {
         playing?: boolean;
         paused?: boolean;
+        timePos?: number;
         trackSeq?: number;
         generation?: number;
       }) => void,
     ) => {
       const listener = (
         _event: Electron.IpcRendererEvent,
-        state: { playing?: boolean; paused?: boolean; trackSeq?: number; generation?: number },
+        state: {
+          playing?: boolean;
+          paused?: boolean;
+          timePos?: number;
+          trackSeq?: number;
+          generation?: number;
+        },
       ) => func(state);
       ipcRenderer.on('player:state-change', listener);
       return () => ipcRenderer.removeListener('player:state-change', listener);

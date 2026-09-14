@@ -1,10 +1,10 @@
 /**
- * 歌曲过渡设置（对应 QQ 音乐「歌曲过渡设置」四选一）：
+ * 歌曲过渡模式，供设置界面和播放引擎共用。
  *
- * - `gapless`        无缝播放：自动跳过首尾静音片段，切歌时声音不间断
- * - `fade`           淡入淡出播放 0~15 秒：前曲渐弱、后曲渐强
- * - `automix-basic`  智能混音-基础渐变：更多保留原曲片段的丝滑衔接
- * - `automix-pro`    智能混音-进阶交融：切歌点更智能，适配段落节奏特征
+ * - `gapless`        无缝播放：裁剪首尾静音后衔接
+ * - `fade`           淡入淡出：按指定时长交叠播放
+ * - `automix-basic`  自然衔接：保持原速，自动选择衔接位置
+ * - `automix-pro`    节奏融合：结合节拍和段落调整混音
  * - `none`           关闭（硬切）
  *
  * 引擎侧（native/echo-audio-player `transition` 模块）按同名字符串解析。
@@ -27,8 +27,8 @@ export function formatTrackTransitionNotice(
   const label = {
     gapless: '无缝',
     fade: '淡入淡出',
-    'automix-basic': '智能渐变',
-    'automix-pro': '智能交融',
+    'automix-basic': '自然衔接',
+    'automix-pro': '节奏融合',
   }[transition.mode];
   const parts = [label];
   const seconds = (value: number) =>
@@ -51,7 +51,7 @@ export const TRACK_TRANSITION_MODES: readonly TrackTransitionMode[] = [
 ];
 
 export const MAX_FADE_CROSS_SECS = 15;
-export const DEFAULT_FADE_CROSS_SECS = 5;
+export const DEFAULT_FADE_CROSS_SECS = 15;
 export const DEFAULT_TRACK_TRANSITION_MODE: TrackTransitionMode = TRACK_TRANSITION_MODES[0];
 
 export interface TrackTransitionOption {
@@ -63,21 +63,21 @@ export interface TrackTransitionOption {
 export const TRACK_TRANSITION_OPTIONS: readonly TrackTransitionOption[] = [
   {
     value: 'automix-pro',
-    label: '智能混音-进阶交融',
-    description: '切歌点更智能 适配段落节奏特征',
+    label: '节奏融合',
+    description: '结合节拍与段落选择衔接位置，自动调整混音',
   },
   {
     value: 'automix-basic',
-    label: '智能混音-基础渐变',
-    description: '更多保留原曲片段的丝滑衔接',
+    label: '自然衔接',
+    description: '保持歌曲原速，自动选择衔接位置与时长',
   },
-  { value: 'fade', label: '淡入淡出播放', description: '前曲渐弱 后曲渐强' },
+  { value: 'fade', label: '淡入淡出', description: '按设定时长交叠播放，前曲渐弱、后曲渐强' },
   {
     value: 'gapless',
     label: '无缝播放',
-    description: '自动跳过首尾静音片段 切歌时声音不间断',
+    description: '跳过首尾静音，直接衔接下一首',
   },
-  { value: 'none', label: '关闭', description: '播放完毕后直接切换 不做过渡处理' },
+  { value: 'none', label: '关闭', description: '保留完整首尾，播放结束后切换下一首' },
 ];
 
 export function isTrackTransitionMode(value: unknown): value is TrackTransitionMode {
@@ -94,7 +94,7 @@ export function normalizeTrackTransitionMode(value: unknown): TrackTransitionMod
   return isTrackTransitionMode(value) ? value : DEFAULT_TRACK_TRANSITION_MODE;
 }
 
-/** Clamp the crossfade length to QQ Music's 0–15 s slider range. */
+/** Keep the crossfade duration within the supported range. */
 export function clampFadeCrossSecs(value: unknown): number {
   const numeric = typeof value === 'number' ? value : Number(value);
   if (!Number.isFinite(numeric)) return DEFAULT_FADE_CROSS_SECS;
@@ -130,4 +130,19 @@ export function transitionPrefetchLeadSecs(mode: TrackTransitionMode, fadeSecs: 
     default:
       return 30;
   }
+}
+
+/** Preparation includes network reads and musical analysis, not just playback buffering. */
+export function transitionPreparationTimeoutSecs(
+  mode: TrackTransitionMode,
+  remainingSecs: number,
+  playbackRate: number,
+): number {
+  if (mode === 'none' || !Number.isFinite(remainingSecs)) return 0;
+  const rate = Number.isFinite(playbackRate) && playbackRate > 0 ? playbackRate : 1;
+  // Release the native EOF wait before the outgoing song ends, even for a late request.
+  const available = remainingSecs / rate - 2;
+  if (available < 1) return 0;
+  const budget = mode === 'automix-basic' || mode === 'automix-pro' ? 60 : 20;
+  return Math.min(budget, available);
 }

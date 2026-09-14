@@ -1,8 +1,8 @@
 {
-  "name": "AM",
-  "description": "An apple music type filter plan",
+  "name": "layered-filter",
+  "description": "Multi-stage gain and filter blend with a late outgoing fade",
   "Achain": {
-    "description": "No effect for Track A",
+    "description": "Outgoing gain, low-pass sweep and bass reduction",
     "list": [
       {
         "effect": {
@@ -94,7 +94,7 @@
     ]
   },
   "Bchain": {
-    "description": "No effect for Track B",
+    "description": "Incoming gain, high-pass sweep and bass restoration",
     "list": [
       {
         "effect": {

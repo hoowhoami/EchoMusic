@@ -4,6 +4,8 @@ import type { PlaylistMeta } from '@/models/playlist';
 import type { Song } from '@/models/song';
 import { parsePlaylistTracks } from '@/utils/mappers';
 import { PagedSongLoader } from '@/utils/PagedSongLoader';
+import { useUserStore } from '@/stores/user';
+import { usePlaylistCoversStore } from '@/stores/playlistCovers';
 import { isSameSong } from '@/utils/song';
 import logger from '@/utils/logger';
 import { FAVORITES_PAGE_SIZE } from './constants';
@@ -180,7 +182,8 @@ export const favoritesActions = {
     this.favoritesLoading = false;
   },
   async fetchLikedPlaylistSongs(this: FavoritesStoreShape, force = false) {
-    if (!force && this.favoritesLoading && favoritesLoader) {
+    // 页面热重载可能保留 loading 状态，只有仍在运行的加载器可以复用。
+    if (!force && this.favoritesLoading && favoritesLoader?.loading) {
       return (await waitForStableFavorites(favoritesLoader, () => this.favorites)).length > 0;
     }
 
@@ -198,6 +201,11 @@ export const favoritesActions = {
     }
 
     const requestGeneration = this.userCollectionsGeneration;
+    const user = useUserStore();
+    const accountId = user.info?.userid;
+    const covers = usePlaylistCoversStore();
+    const coverPages = new Map<number, unknown>();
+    let coverUpdate: Promise<void> | undefined;
     const previousFavorites = this.favorites.slice();
     const previousFavoritesLoaded = this.favoritesLoaded;
     this.favoritesLoaded = false;
@@ -205,6 +213,7 @@ export const favoritesActions = {
     const loader = new PagedSongLoader<Song>(
       async (page, pageSize) => {
         const response = await getPlaylistTracksNew(likedListId, page, pageSize);
+        if (isCurrentLoader()) coverPages.set(page, response);
         const { songs: pageSongs, filteredCount } = parsePlaylistTracks(response);
         const hasMore = pageSongs.length + filteredCount >= pageSize;
         return { items: pageSongs, hasMore };
@@ -215,31 +224,62 @@ export const favoritesActions = {
         dedupeKey: (song) => String(song.id),
         logTag: 'FavoritesLoader',
         maxPages: 50,
-        onComplete: (allItems) => updateFavorites(allItems),
-        onError: () => {
+        onPageLoaded: (allItems) => {
+          // 初次加载逐页展示；刷新已有完整列表时保留旧列表，避免缩回第一页。
+          if (!previousFavoritesLoaded) updateFavorites(allItems, false);
+        },
+        onComplete: (allItems) => {
           if (!isCurrentLoader()) return;
-          this.favorites = previousFavorites;
-          this.favoritesLoaded = previousFavoritesLoaded || previousFavorites.length > 0;
+          updateFavorites(allItems, true);
+          coverUpdate = covers.updateFromPages(
+            this.likedPlaylist ?? likedPlaylist,
+            accountId,
+            Array.from(coverPages)
+              // 不让并发预取的越界页（info:null）使有效快照失效。
+              .filter(([page]) => page <= loader.loadedPages)
+              .sort(([left], [right]) => left - right)
+              .map(([, response]) => response),
+            isCurrentLoader,
+          );
+          coverPages.clear();
+        },
+        onError: () => {
+          coverPages.clear();
+          if (!isCurrentLoader()) return;
+          if (previousFavoritesLoaded) this.favorites = previousFavorites;
+          this.favoritesLoaded = previousFavoritesLoaded;
           this.favoritesLoading = false;
         },
       },
     );
 
     const isCurrentLoader = () =>
-      favoritesLoader === loader && this.userCollectionsGeneration === requestGeneration;
+      favoritesLoader === loader &&
+      this.userCollectionsGeneration === requestGeneration &&
+      user.info?.userid === accountId &&
+      this.likedPlaylistListId === likedListId;
 
-    const updateFavorites = (items: readonly Song[]) => {
+    const updateFavorites = (items: readonly Song[], complete: boolean) => {
       if (!isCurrentLoader()) return;
       this.favorites = dedupeSongs(orderByPlaylistPosition(items, (song) => song.playlistSort));
-      this.favoritesLoaded = true;
-      this.favoritesLoading = false;
+      this.favoritesLoaded = complete;
+      if (complete) this.favoritesLoading = false;
     };
 
     favoritesLoader = loader;
 
-    await loader.loadAll();
-
-    return loader.count > 0;
+    try {
+      await loader.loadAll();
+      await coverUpdate;
+      return loader.count > 0;
+    } finally {
+      coverPages.clear();
+      // 即使数据因账号/歌单变化而被丢弃，也要结束本次加载状态。
+      // 新请求和账号重置后的状态由其各自的请求负责。
+      if (favoritesLoader === loader && this.userCollectionsGeneration === requestGeneration) {
+        this.favoritesLoading = false;
+      }
+    }
   },
   async waitForFavoritesLoaded(this: FavoritesStoreShape): Promise<readonly Song[]> {
     if (favoritesLoader) {

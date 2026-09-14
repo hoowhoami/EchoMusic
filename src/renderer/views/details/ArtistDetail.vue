@@ -14,6 +14,7 @@ import {
 } from '@/api/artist';
 import SliverHeader from '@/components/music/DetailPageSliverHeader.vue';
 import DetailPageSkeleton from '@/components/music/DetailPageSkeleton.vue';
+import DetailPageError from '@/components/music/DetailPageError.vue';
 import ActionRow from '@/components/music/DetailPageActionRow.vue';
 import SongList from '@/components/music/SongList.vue';
 import SongListHeader from '@/components/music/SongListHeader.vue';
@@ -252,7 +253,9 @@ const switchSongSort = (sort: ArtistSongSort) => {
   void loadArtistSongs();
 };
 
+let detailFetchToken = 0;
 const fetchData = async () => {
+  const token = ++detailFetchToken;
   const artistId = getArtistId();
   loading.value = true;
 
@@ -262,14 +265,19 @@ const fetchData = async () => {
   // 1. 获取歌手详情
   const detailTask = getArtistDetail(artistId)
     .then((res) => {
+      if (token !== detailFetchToken) return;
       const detailRaw = extractFirstObject(res);
-      if (detailRaw) {
-        artist.value = mapArtistDetailMeta(detailRaw);
+      const meta = detailRaw && mapArtistDetailMeta(detailRaw);
+      if (!meta || !meta.id) {
+        throw new Error('Artist detail response contains no artist');
       }
-      loading.value = false;
+      artist.value = meta;
     })
     .catch(() => {
-      loading.value = false;
+      if (token === detailFetchToken && artist.value) toastStore.loadFailed('歌手详情');
+    })
+    .finally(() => {
+      if (token === detailFetchToken) loading.value = false;
     });
 
   const songsTask = loadArtistSongs(artistId);
@@ -711,6 +719,11 @@ onMounted(() => {
 });
 
 onActivated(() => {
+  if (!artist.value && !loading.value) {
+    // fetchData 会读取当前歌曲排序，不再同时发起一次排序加载。
+    songSort.value = settingStore.artistSongSort;
+    void fetchData();
+  }
   // 其他歌手页可能已修改偏好；恢复缓存时同步排序和数据，避免标签与结果不一致。
   switchSongSort(settingStore.artistSongSort);
   switchAlbumSort(settingStore.artistAlbumSort);
@@ -727,6 +740,7 @@ watch(activeTab, (tab) => {
 });
 
 onUnmounted(() => {
+  detailFetchToken++;
   loadMoreObserver?.disconnect();
   loadMoreObserver = null;
 });
@@ -741,6 +755,8 @@ onUnmounted(() => {
         cover="round"
         :expandedHeight="196"
       />
+
+      <DetailPageError v-else-if="!artist" resource-name="歌手" @retry="fetchData" />
 
       <template v-else-if="artist">
         <SliverHeader

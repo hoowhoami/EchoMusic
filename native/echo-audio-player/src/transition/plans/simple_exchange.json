@@ -1,8 +1,8 @@
 {
-  "name": "3bandEQPreset",
-  "description": "A DJ plan with simple gain exchange",
+  "name": "simple-exchange",
+  "description": "Gain crossfade with a midpoint bass exchange",
   "Achain": {
-    "description": "Gain and 3bandEQ for Track A",
+    "description": "Outgoing gain fade and bass reduction",
     "list": [
       {
         "effect": {
@@ -34,7 +34,7 @@
     ]
   },
   "Bchain": {
-    "description": "Gain and 3bandEQ for Track B",
+    "description": "Incoming gain fade and bass restoration",
     "list": [
       {
         "effect": {

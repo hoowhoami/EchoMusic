@@ -1,8 +1,8 @@
 {
-  "name": "3bandEQPreset",
-  "description": "A DJ plan with simple gain exchange",
+  "name": "filter-eq",
+  "description": "Gain and bass exchange with complementary filter sweeps",
   "Achain": {
-    "description": "Gain and 3bandEQ for Track A",
+    "description": "Outgoing gain fade, bass reduction and high-pass sweep",
     "list": [
       {
         "effect": {
@@ -48,7 +48,7 @@
     ]
   },
   "Bchain": {
-    "description": "Gain and 3bandEQ for Track B",
+    "description": "Incoming gain fade, bass restoration and low-pass sweep",
     "list": [
       {
         "effect": {

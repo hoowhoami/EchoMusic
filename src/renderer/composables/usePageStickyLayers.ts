@@ -92,6 +92,13 @@ export function providePageStickyLayers(scroll: Ref<HTMLElement | null>) {
     const resize = new ResizeObserver(update);
     resize.observe(entry.content);
     resize.observe(entry.placeholder);
+    // 简介等前置内容增减会移动占位节点，但不会改变它自身的尺寸。
+    // 监听滚动内容中的祖先尺寸，让吸顶层同步新的文档流位置。
+    let parent = entry.placeholder.parentElement;
+    while (parent && parent !== scroll.value) {
+      resize.observe(parent);
+      parent = parent.parentElement;
+    }
     const mutation = new MutationObserver(update);
     mutation.observe(entry.content, {
       attributes: true,

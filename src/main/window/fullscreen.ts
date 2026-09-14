@@ -73,7 +73,7 @@ export function installWindowFullscreen(win: BrowserWindow) {
   };
   win.on('enter-full-screen', () => settled(true));
   win.on('leave-full-screen', () => settled(false));
-  win.webContents.on('did-finish-load', publish);
+  win.webContents.on('did-finish-load', () => publish());
   win.once('closed', () => {
     clear();
     controllers.delete(win);

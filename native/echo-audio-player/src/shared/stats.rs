@@ -146,7 +146,7 @@ impl SharedAudio {
         })
     }
 
-    fn notify_telemetry(&self, signal: PlaybackSignal) {
+    pub(super) fn notify_telemetry(&self, signal: PlaybackSignal) {
         if let Some(sender) = self.telemetry_signal_tx.get() {
             let _ = sender.try_send(signal);
         }

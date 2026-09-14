@@ -72,6 +72,145 @@ test('renderer sorting calls use GET query parameters through to cloud protocol 
   ]);
 });
 
+test('playlist metadata and cover updates use GET parameters and the new cloud modules', async () => {
+  const code = transformSync(
+    readFileSync(new URL('../src/renderer/api/playlist.ts', import.meta.url), 'utf8'),
+    { loader: 'ts', format: 'cjs' },
+  ).code;
+  const mod = { exports: {} };
+  const calls = [];
+  new Function('require', 'module', 'exports', code)(
+    () => ({
+      get: async (url, { params }) => {
+        calls.push({ url, params });
+        return loadSortModule(url === '/playlist/update' ? 'playlist_update' : 'playlist_pic')({
+          ...params,
+          cookie: { userid: '7', token: 'mock' },
+        });
+      },
+    }),
+    mod,
+    mod.exports,
+  );
+  const info = await mod.exports.updatePlaylistInfo({
+    listid: 12,
+    total_ver: 9,
+    type: 0,
+    name: '新名称',
+    sort: 8,
+    tags: '华语,流行',
+    intro: '简介',
+  });
+  assert.equal(info.url, '/v1/modify_list');
+  assert.deepEqual(info.data, {
+    listid: 12,
+    total_ver: 9,
+    type: 0,
+    name: '新名称',
+    sort: 8,
+    tags: '华语,流行',
+    intro: '简介',
+  });
+  const pic = await mod.exports.updatePlaylistCover(
+    10,
+    12,
+    1,
+    'https://imge.kugou.com/stdmusic/400/2020/a.jpg',
+  );
+  assert.equal(pic.url, '/v1/modify_list_pic');
+  assert.deepEqual(pic.data, {
+    total_ver: 10,
+    data: [{ listid: 12, type: 1, pic: 'stdmusic/a.jpg' }],
+  });
+  assert.deepEqual(pic.cookie, { userid: '7', token: 'mock' });
+  assert.deepEqual(
+    calls.map((call) => call.url),
+    ['/playlist/update', '/playlist/pic'],
+  );
+});
+
+test('cover uploads forward client bytes and extension without server format processing', async () => {
+  const bytes = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 0]);
+  let uploaded;
+  const uploadModule = { exports: {} };
+  const deps = {
+    axios: async (config) => {
+      uploaded = config;
+      return { data: { IsSuccess: true, FileName: '20260914.png' } };
+    },
+    fs: { existsSync: (path) => path === '/tmp/封面.png', readFileSync: () => bytes },
+    '../util/crypto': { cryptoMd5: () => 'mock-digest' },
+    '../util/runtime': { resolveProxy: () => false },
+  };
+  new Function(
+    'require',
+    'module',
+    'exports',
+    readFileSync(new URL('../server/module/playlist_pic_upload.js', import.meta.url), 'utf8'),
+  )(
+    (id) => {
+      assert.ok(id in deps, id);
+      return deps[id];
+    },
+    uploadModule,
+    uploadModule.exports,
+  );
+  const apiModule = { exports: {} };
+  const code = transformSync(
+    readFileSync(new URL('../src/renderer/api/playlist.ts', import.meta.url), 'utf8'),
+    { loader: 'ts', format: 'cjs' },
+  ).code;
+  new Function('require', 'module', 'exports', code)(
+    () => ({
+      get: async (url, { params }) => {
+        assert.equal(url, '/playlist/update');
+        return loadSortModule('playlist_update')(params);
+      },
+      post: async (url, data, { params, headers }) => {
+        assert.equal(url, '/playlist/pic/upload');
+        assert.equal(headers['Content-Type'], 'application/octet-stream');
+        assert.ok(data instanceof Uint8Array);
+        return uploadModule.exports({ ...params, data: Buffer.from(data) });
+      },
+    }),
+    apiModule,
+    apiModule.exports,
+  );
+  const result = await apiModule.exports.uploadPlaylistCover(Uint8Array.from(bytes).buffer);
+  assert.equal(result.body.FileName, '20260914.png');
+  assert.equal(uploaded.method, 'post');
+  assert.equal(uploaded.params.type, 'custom');
+  assert.equal(uploaded.params.extendName, '.png');
+  assert.deepEqual(uploaded.data, bytes);
+  await uploadModule.exports({ file: '/tmp/封面.png', extendName: '.jpg' });
+  assert.equal(uploaded.params.extendName, '.jpg');
+  assert.deepEqual(uploaded.data, bytes);
+  const otherBytes = Buffer.from('RIFF1234WEBP');
+  await uploadModule.exports({ data: otherBytes, extendName: '.webp' });
+  assert.equal(uploaded.params.extendName, '.webp');
+  assert.deepEqual(uploaded.data, otherBytes);
+  await uploadModule.exports({ data: bytes });
+  assert.equal(uploaded.params.extendName, '.jpg');
+  const saved = await apiModule.exports.updatePlaylistInfo({
+    listid: 12,
+    type: 0,
+    total_ver: 9,
+    sort: 8,
+    tags: '流行',
+    intro: '原简介',
+    pic: 'custom/20260914.png',
+  });
+  assert.deepEqual(saved.data, {
+    listid: 12,
+    type: 0,
+    total_ver: 9,
+    sort: 8,
+    tags: '流行',
+    intro: '原简介',
+    pic: 'custom/20260914.png',
+  });
+});
+
 test('playlist queries no longer forward the ignored need_sort parameter', async () => {
   for (const name of ['playlist_track_all', 'playlist_track_all_new']) {
     const query = require(`../server/module/${name}.js`);

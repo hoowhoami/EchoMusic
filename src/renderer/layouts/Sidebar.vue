@@ -37,6 +37,7 @@ import type { PlaylistMeta } from '@/models/playlist';
 import { usePlaylistStore } from '@/stores/playlist';
 import { orderByPlaylistPosition } from '@/utils/playlistOrder';
 import { useUserStore } from '@/stores/user';
+import { usePlaylistCoversStore } from '@/stores/playlistCovers';
 import { useToastStore } from '@/stores/toast';
 import { useSettingStore } from '@/stores/setting';
 import { useImportTaskStore } from '@/stores/importTask';
@@ -55,6 +56,8 @@ const route = useRoute();
 const attrs = useAttrs();
 const userStore = useUserStore();
 const playlistStore = usePlaylistStore();
+const playlistCoversStore = usePlaylistCoversStore();
+void playlistCoversStore.hydrate();
 const toastStore = useToastStore();
 const settingStore = useSettingStore();
 const importTaskStore = useImportTaskStore();
@@ -852,7 +855,7 @@ watch(
                       @click="navigateToPlaylist(playlist)"
                     >
                       <Cover
-                        :url="playlist.pic"
+                        :url="playlistCoversStore.coverFor(playlist, userStore.info?.userid)"
                         :size="96"
                         :width="32"
                         :height="32"
@@ -1032,7 +1035,7 @@ watch(
 
         <Scrollbar class="sidebar-content no-drag" :scrollbar-inset="3">
           <div class="px-4">
-            <div v-for="group in allMenuGroups" :key="group.id" class="mb-4">
+            <div v-for="group in allMenuGroups" :key="group.id" class="mb-1.5 last:mb-0">
               <h2
                 class="sidebar-section-header px-3.5 text-[11px] font-semibold text-text-main/60 uppercase tracking-[0.5px] mb-2 flex items-center gap-1 select-none"
                 :class="group.collapsible ? 'cursor-pointer' : 'cursor-default'"
@@ -1114,7 +1117,7 @@ watch(
               </nav>
             </div>
           </div>
-          <div class="sidebar-playlist-header pl-7.5 pr-3 mb-2 mt-1 flex items-center gap-1.5">
+          <div class="sidebar-playlist-header pl-7.5 pr-3 mb-2 flex items-center gap-1.5">
             <div class="min-w-0 flex flex-1 items-center gap-1">
               <Button
                 variant="unstyled"
@@ -1249,7 +1252,7 @@ watch(
                 @click="navigateToPlaylist(playlist)"
               >
                 <Cover
-                  :url="playlist.pic"
+                  :url="playlistCoversStore.coverFor(playlist, userStore.info?.userid)"
                   :size="100"
                   :width="28"
                   :height="28"
@@ -1285,7 +1288,7 @@ watch(
                 @click="navigateToPlaylist(playlist)"
               >
                 <Cover
-                  :url="playlist.pic"
+                  :url="playlistCoversStore.coverFor(playlist, userStore.info?.userid)"
                   :size="100"
                   :width="28"
                   :height="28"
@@ -1340,7 +1343,7 @@ watch(
                 @click="navigateToPlaylist(playlist)"
               >
                 <Cover
-                  :url="playlist.pic"
+                  :url="playlistCoversStore.coverFor(playlist, userStore.info?.userid)"
                   :size="100"
                   :width="28"
                   :height="28"

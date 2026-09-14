@@ -1,6 +1,6 @@
 {
-  "name": "SimpleFilterPreset",
-  "description": "A simple DJ plan with crossfade and filters",
+  "name": "simple-filter",
+  "description": "Gain crossfade with complementary high-pass and low-pass sweeps",
   "Achain": {
     "description": "Gain and HPF for Track A",
     "list": [

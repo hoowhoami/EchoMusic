@@ -1,7 +1,6 @@
 //! Per-deck effect chain driven by a DJ plan's automation.
 //!
-//! Effect semantics (reconstructed from the QQ Music plan templates and the
-//! `SSAutoMixInst` symbol set: three-band parametric EQ, filters, reverb, echo):
+//! Supported effects and their processing parameters:
 //!
 //! | type | effect   | parameter          | implementation                                   |
 //! |------|----------|--------------------|--------------------------------------------------|
@@ -738,7 +737,7 @@ mod tests {
 
     #[test]
     fn gain_stage_follows_automation_from_unity_to_minus_twenty() {
-        let plan = PlanTemplate::NoPlan.load();
+        let plan = PlanTemplate::FallbackExchange.load();
         let mut chain = DeckEffectChain::new(&plan.a_chain, SR, 2);
         let input = sine(440.0, SR as usize, 2);
         let output = run_chain_over_window(&mut chain, &input, 2);
@@ -820,7 +819,7 @@ mod tests {
             rms(&tail)
         );
 
-        let plan = PlanTemplate::EchoDecline.load();
+        let plan = PlanTemplate::EchoTail.load();
         let mut echo_chain = DeckEffectChain::new(&plan.a_chain, SR, 1);
         echo_chain.set_echo_beat_secs(0.1);
         // Let the step automation settle (mix 0 → 1 at pos 0.55, smoothed over ~30 ms).

@@ -214,7 +214,6 @@ impl TransitionRunner {
         let overlap_frames = (plan.overlap_secs.max(0.0) * f64::from(sample_rate)).round() as usize;
         let plan_for_mixer = match plan.template {
             Some(template) => Some(template.load()),
-            None if plan.uses_equal_power_fade() => Some(equal_power_fade_plan()),
             None => None,
         };
         let mut mixer = match TransitionMixer::new(MixerConfig {
@@ -222,6 +221,7 @@ impl TransitionRunner {
             channels: mix_format.channels,
             overlap_frames,
             plan: plan_for_mixer,
+            linear_fade: plan.uses_plain_fade(),
             a_tempo_ratio: plan.a_tempo_ratio as f32,
             a_gain: armed.a_gain,
             b_gain: armed.b_gain,
@@ -364,7 +364,6 @@ impl TransitionRunner {
                 if !self.push_mixed(shared, output.samples) {
                     return RunnerStep::Continue;
                 }
-                self.mark_post_overlap_gain(shared);
             }
             if self.mixer.is_finished() || (!produced && self.a.ended && self.b.ended) {
                 return self.finish(shared);
@@ -388,14 +387,9 @@ impl TransitionRunner {
         self.mixer.push_a(DeckInput::End);
     }
 
-    /// Once the overlap window is complete only deck B (plus A's effect tail) remains, so
-    /// the callback's normalisation gain can settle on B's own value.
-    fn mark_post_overlap_gain(&mut self, shared: &SharedAudio) {
-        if self.post_gain_marked || self.mixer.position() < 1.0 {
-            return;
-        }
-        self.post_gain_marked = true;
-        shared.mark_gain_marker(self.rearm.post_overlap_normalization_gain_db);
+    pub fn finish_for_source_switch(&mut self) {
+        self.end_a();
+        self.mixer.finish_early();
     }
 
     fn push_mixed(&mut self, shared: &SharedAudio, samples: Vec<f32>) -> bool {
@@ -501,10 +495,18 @@ impl TransitionRunner {
 
     fn finish(&mut self, shared: &SharedAudio) -> RunnerStep {
         if !self.post_gain_marked {
-            // Overlap 0 / aborted early: the callback gain switches at the boundary and
-            // settles on B's value immediately after.
+            // Effect tails and B's release still use reference-scaled deck gains.
+            // Switch only where unscaled B resumes, not at the nominal overlap end.
             self.post_gain_marked = true;
             shared.mark_gain_marker(self.rearm.post_overlap_normalization_gain_db);
+            crate::decoder::emit_decode_info(
+                shared,
+                &format!(
+                    "transition loudness end queued: incoming_seq={} gain_db={:.2}",
+                    self.incoming_seq(),
+                    self.rearm.post_overlap_normalization_gain_db,
+                ),
+            );
         }
         // Whatever B audio the mixer did not consume continues as plain mix-format audio.
         let remainder = self.mixer.take_b_remainder();
@@ -553,6 +555,20 @@ impl TransitionRunner {
         })
     }
 
+    /// Transport commands must not seek the unused deck before restoring the live one.
+    pub fn abort_for_transport(mut self, keep_incoming: bool) -> Option<(DecoderData, f64)> {
+        let live = if keep_incoming {
+            self.b
+                .decoder
+                .take()
+                .map(|decoder| (*decoder, self.b.position_secs))
+        } else {
+            None
+        };
+        crate::retire_value_background(Some(self), "player-transition-abort-reaper".to_string());
+        live
+    }
+
     /// Abandon the mix. `incoming_is_audible` tells whether the output callback already
     /// crossed the boundary (i.e. the listener has heard the incoming track): then the
     /// incoming decoder becomes the live decoder at its current position. Otherwise every
@@ -588,20 +604,6 @@ impl TransitionRunner {
             outgoing_seq: self.rearm.outgoing_seq,
         })))
     }
-}
-
-/// The plain 淡入淡出 plan: mirrored equal-power gain curves that take the outgoing deck
-/// all the way to silence (unlike the DJ templates, which stop at -20 dB because the
-/// track ends anyway).
-fn equal_power_fade_plan() -> crate::transition::plan::DjPlan {
-    crate::transition::plan::DjPlan::parse(
-        r#"{"name":"Fade","description":"equal-power crossfade",
-            "Achain":{"list":[{"effect":{"type":1,"value":0.0},
-              "automation":{"type":"piecewise","m":0.0,"n":-90.0,"start_pos":0.0,"end_pos":1.0,"curve_type":2}}]},
-            "Bchain":{"list":[{"effect":{"type":1,"value":-90.0},
-              "automation":{"type":"piecewise","m":-90.0,"n":0.0,"start_pos":0.0,"end_pos":1.0,"curve_type":1}}]}}"#,
-    )
-    .expect("built-in fade plan is valid")
 }
 
 fn truncate_chunk(chunk: &mut DecodedAudioChunk, frames: usize) {
@@ -682,11 +684,10 @@ mod tests {
         assert!(tail.is_none());
     }
 
-    #[test]
-    fn rebase_moves_cut_to_now_and_shrinks_overlap() {
+    fn dummy_armed_transition() -> ArmedTransition {
         let plan = TransitionPlan {
             mode: TransitionMode::Fade,
-            version: crate::transition::decide::DecisionVersion::Fade,
+            strategy: crate::transition::decide::DecisionStrategy::Fade,
             trigger: crate::transition::decide::TransitionTrigger::EndOfTrack,
             a_cut_secs: 100.0,
             a_end_secs: 110.0,
@@ -702,7 +703,7 @@ mod tests {
             b_beat_secs: None,
             note: String::new(),
         };
-        let mut armed = ArmedTransition {
+        ArmedTransition {
             plan,
             decoder: Box::new(dummy_decoder()),
             predecoded: Vec::new(),
@@ -713,7 +714,125 @@ mod tests {
             post_overlap_normalization_gain_db: 0.0,
             request_id: 1,
             outgoing_seq: 1,
-        };
+        }
+    }
+
+    #[test]
+    fn gain_marker_waits_for_effect_tails_before_unscaled_b_resumes() {
+        let shared = SharedAudio::new(
+            MixFormat::stereo_f32(44_100),
+            // This offline fixture has no filter consumer: hold the full four seconds.
+            8.0,
+            8.0,
+            &crate::dsp::DspSettings::default(),
+        );
+        let mut armed = dummy_armed_transition();
+        armed.plan.mode = TransitionMode::AutomixBasic;
+        armed.plan.template = Some(crate::transition::plan::PlanTemplate::EchoTail);
+        armed.plan.a_end_secs = 100.1;
+        armed.plan.overlap_secs = 0.1;
+        armed.plan.b_start_secs = 0.0;
+        armed.post_overlap_normalization_gain_db = -6.0;
+        armed.b_gain = 10.0f32.powf(-6.0 / 20.0);
+        armed.predecoded.push(DecodedAudioChunk::new(
+            DecodedAudioFormat {
+                sample_rate: 44_100,
+                sample_format: AudioSampleFormat::F32,
+                channels: 2,
+            },
+            44_100 * 4,
+            Some(0.0),
+            DecodedAudioData::F32(vec![0.2; 44_100 * 4 * 2]),
+        ));
+        let mut runner = TransitionRunner::start(
+            &shared,
+            armed,
+            Some(chunk(20, 100.0)),
+            Vec::new(),
+            100.0,
+            shared.current_decode_generation(),
+        )
+        .unwrap_or_else(|(err, _)| panic!("runner start: {err}"));
+        let mut a_decoder = dummy_decoder();
+        let mut saw_tail = false;
+        for _ in 0..1_000 {
+            match runner.step(&shared, &mut a_decoder) {
+                RunnerStep::Continue => {
+                    if runner.mixer.position() >= 1.0 && !runner.mixer.is_finished() {
+                        saw_tail = true;
+                        assert!(
+                            !runner.post_gain_marked,
+                            "tail still uses reference-scaled gains"
+                        );
+                    }
+                }
+                RunnerStep::Finished(_) => {
+                    assert!(saw_tail);
+                    assert!(runner.post_gain_marked);
+                    return;
+                }
+                RunnerStep::Failed(err) => panic!("runner failed: {err}"),
+            }
+        }
+        panic!("runner failed to finish within its tail budget");
+    }
+
+    #[test]
+    fn transport_abort_drops_inaudible_b_without_seeking_it() {
+        let shared = SharedAudio::new(
+            MixFormat::stereo_f32(44_100),
+            0.5,
+            8.0,
+            &crate::dsp::DspSettings::default(),
+        );
+        let armed = dummy_armed_transition();
+        let interrupt = armed.decoder.interrupt_handle();
+        let runner = TransitionRunner::start(
+            &shared,
+            armed,
+            None,
+            Vec::new(),
+            100.0,
+            shared.current_decode_generation(),
+        )
+        .unwrap_or_else(|(err, _)| panic!("runner start: {err}"));
+        // Any attempt to re-seek B would now fail. Transport must still keep A live.
+        interrupt.store(true, std::sync::atomic::Ordering::Release);
+        assert!(runner.abort_for_transport(false).is_none());
+        assert!(interrupt.load(std::sync::atomic::Ordering::Acquire));
+    }
+
+    #[test]
+    fn transport_abort_keeps_audible_b_at_its_current_position() {
+        let shared = SharedAudio::new(
+            MixFormat::stereo_f32(44_100),
+            0.5,
+            8.0,
+            &crate::dsp::DspSettings::default(),
+        );
+        let armed = dummy_armed_transition();
+        let interrupt = armed.decoder.interrupt_handle();
+        let mut runner = TransitionRunner::start(
+            &shared,
+            armed,
+            None,
+            Vec::new(),
+            100.0,
+            shared.current_decode_generation(),
+        )
+        .unwrap_or_else(|(err, _)| panic!("runner start: {err}"));
+        runner.b.position_secs = 3.5;
+        let (decoder, position) = runner.abort_for_transport(true).expect("live B");
+        assert_eq!(position, 3.5);
+        assert!(std::sync::Arc::ptr_eq(
+            &interrupt,
+            &decoder.interrupt_handle()
+        ));
+    }
+
+    #[test]
+    fn rebase_moves_cut_to_now_and_shrinks_overlap() {
+        let mut armed = dummy_armed_transition();
         assert!(!armed.should_start(99.0));
         assert!(armed.should_start(100.0));
         armed.rebase_to(104.0);

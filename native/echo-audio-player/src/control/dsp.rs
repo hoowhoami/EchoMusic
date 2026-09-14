@@ -86,7 +86,11 @@ pub fn set_equalizer(gains: Vec<f64>) -> AsyncTask<SetEqualizerTask> {
 
 pub(crate) fn sync_current_session_dsp_settings(runtime: &PlayerRuntime) {
     if let Some(session) = runtime.session.as_ref() {
-        session.shared.update_dsp_settings(&runtime.dsp_settings);
+        // Output-time gain markers own the overlap reference. Synchronizing EQ or
+        // graph settings must not replace it with the track's final gain.
+        session
+            .shared
+            .update_dsp_settings_preserving_normalization(&runtime.dsp_settings);
     }
 }
 
@@ -366,6 +370,9 @@ impl Task for SetNormalizationGainTask {
         let gain_db = self.gain_db.clamp(-40.0, 24.0) as f32;
         call_core_command("set-normalization-gain", move |runtime| {
             runtime.dsp_settings.normalization_gain_db = gain_db;
+            if let Some(session) = runtime.session.as_ref() {
+                session.shared.set_normalization_gain_db(gain_db);
+            }
             sync_current_session_dsp_settings(runtime);
             update_runtime_audio_graph(runtime);
             Ok(())

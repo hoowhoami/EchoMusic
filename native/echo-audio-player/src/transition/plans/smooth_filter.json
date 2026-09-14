@@ -1,8 +1,8 @@
 {
-  "name": "AM",
-  "description": "An apple music type filter plan",
+  "name": "smooth-filter",
+  "description": "Late gain fade with complementary filter sweeps",
   "Achain": {
-    "description": "No effect for Track A",
+    "description": "Outgoing gain, low-pass sweep and bass reduction",
     "list": [
       {
         "effect": {
@@ -86,7 +86,7 @@
     ]
   },
   "Bchain": {
-    "description": "No effect for Track B",
+    "description": "Incoming gain, high-pass sweep and bass restoration",
     "list": [
       {
         "effect": {

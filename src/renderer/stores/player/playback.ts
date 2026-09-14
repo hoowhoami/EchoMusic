@@ -34,6 +34,7 @@ import { canPrepareGaplessForQueue, getQueueAdvanceAuthority } from './queueAdva
 import {
   formatTrackTransitionNotice,
   transitionPrefetchLeadSecs,
+  transitionPreparationTimeoutSecs,
   transitionPreparesNextTrack,
   type TrackTransitionPlaybackInfo,
 } from '../../../shared/track-transition';
@@ -46,6 +47,7 @@ import {
   failPlaybackIntent,
   getPlaybackIsLoading,
   getPlaybackIsPlaying,
+  getPlaybackHasFailed,
   setEnginePlaybackStatus,
   setPlaybackIntentPlayback,
 } from './stateMachine';
@@ -99,8 +101,17 @@ export const createPlaybackManager = (
   let gaplessPreparingKey = '';
   let gaplessPreparingRequestId: number | null = null;
   let gaplessPreparingRegistration: Promise<void> | null = null;
+  let gaplessPreparingContext: {
+    invalidationKey: string;
+    allowCompletion: boolean;
+    expire?: () => void;
+  } | null = null;
   let gaplessPreparedSource: GaplessPreparedSource | null = null;
-  const invalidatedGaplessSources = new Map<number, GaplessPreparedSource>();
+  let timedOutGaplessPrepareKey = '';
+  const invalidatedGaplessSources = new Map<
+    number,
+    { prepared: GaplessPreparedSource; completionContextKey?: string }
+  >();
   let deferredPreResolvedFallback: DeferredPreResolvedFallback | null = null;
   let seekDispatchSeq = 0;
 
@@ -402,7 +413,9 @@ export const createPlaybackManager = (
     [
       decision.key,
       state.audioEffect,
-      state.currentAudioQualityOverride ?? settingStore.defaultAudioQuality,
+      decision.targetTrackId === String(state.currentTrackId)
+        ? (state.currentAudioQualityOverride ?? settingStore.defaultAudioQuality)
+        : settingStore.defaultAudioQuality,
       settingStore.compatibilityMode ? 'compat' : 'strict',
     ].join('|');
 
@@ -412,9 +425,12 @@ export const createPlaybackManager = (
       state.autoNextSuppressed || state.sleepTimer.deadline !== null,
     );
 
-  const rememberInvalidatedGaplessSource = (prepared: GaplessPreparedSource | null) => {
+  const rememberInvalidatedGaplessSource = (
+    prepared: GaplessPreparedSource | null,
+    completionContextKey?: string,
+  ) => {
     if (!prepared?.nativeSeq) return;
-    invalidatedGaplessSources.set(prepared.nativeSeq, prepared);
+    invalidatedGaplessSources.set(prepared.nativeSeq, { prepared, completionContextKey });
     while (invalidatedGaplessSources.size > 8) {
       const oldestSeq = invalidatedGaplessSources.keys().next().value;
       if (typeof oldestSeq !== 'number') break;
@@ -423,12 +439,24 @@ export const createPlaybackManager = (
   };
 
   const clearGaplessPreparedSource = (rememberForRecovery = true) => {
-    if (rememberForRecovery) rememberInvalidatedGaplessSource(gaplessPreparedSource);
+    timedOutGaplessPrepareKey = '';
+    if (rememberForRecovery) {
+      rememberInvalidatedGaplessSource(gaplessPreparedSource);
+    }
     gaplessPreparingKey = '';
     gaplessPreparingRequestId = null;
     gaplessPreparingRegistration = null;
+    gaplessPreparingContext = null;
     gaplessPreparedSource = null;
     engine.clearPreparedNextSource();
+  };
+
+  const invalidateGaplessForSettings = () => {
+    // Native preserves mixes already rendering. Keep their metadata so a late boundary
+    // can be accepted without reloading, provided the playback context is still valid.
+    rememberInvalidatedGaplessSource(gaplessPreparedSource, getGaplessInvalidationKey());
+    if (gaplessPreparingContext) gaplessPreparingContext.allowCompletion = true;
+    clearGaplessPreparedSource(false);
   };
 
   const resolveOrderedNextTrack = (options?: {
@@ -496,6 +524,7 @@ export const createPlaybackManager = (
       getQueueAdvanceAuthority(state.currentSourceQueueId ?? activeQueue?.id),
       state.audioEffect,
       state.currentAudioQualityOverride ?? settingStore.defaultAudioQuality,
+      settingStore.defaultAudioQuality,
       settingStore.compatibilityMode ? 'compat' : 'strict',
     ].join('|');
   };
@@ -532,9 +561,13 @@ export const createPlaybackManager = (
     transition?: TrackTransitionPlaybackInfo,
   ): boolean => {
     if (!seq) return false;
-    const invalidated = invalidatedGaplessSources.get(seq);
+    const retained = invalidatedGaplessSources.get(seq);
+    invalidatedGaplessSources.delete(seq);
+    const invalidated =
+      retained && retained.completionContextKey !== getGaplessInvalidationKey()
+        ? retained.prepared
+        : null;
     if (invalidated) {
-      invalidatedGaplessSources.delete(seq);
       logger.warn('PlayerPlayback', 'Invalidated gapless source reached playback boundary', {
         fromTrackId: invalidated.currentTrackId,
         staleTargetTrackId: invalidated.targetTrackId,
@@ -563,8 +596,9 @@ export const createPlaybackManager = (
       }
       return true;
     }
-    if (gaplessPreparedSource?.nativeSeq !== seq) return false;
-    const prepared = gaplessPreparedSource;
+    const prepared =
+      gaplessPreparedSource?.nativeSeq === seq ? gaplessPreparedSource : retained?.prepared;
+    if (!prepared) return false;
     const currentDecision = canAutoAdvanceGaplessly() ? resolveOrderedNextTrack() : null;
     if (
       String(state.currentTrackId ?? '') !== prepared.currentTrackId ||
@@ -655,7 +689,7 @@ export const createPlaybackManager = (
     state.currentCloudSourceOverrideTrackId = null;
     const isSameTrack = prepared.targetTrackId === prepared.currentTrackId;
     if (prepared.resolved.loudness || !isSameTrack) {
-      engine.applyTrackLoudness(prepared.resolved.loudness);
+      engine.adoptPreparedTrackLoudness(prepared.resolved.loudness);
     }
     engine.setLoopFile(state.playMode === 'single');
 
@@ -711,7 +745,17 @@ export const createPlaybackManager = (
       }
       return Promise.resolve();
     }
-    if (state.awaitingTrackLoad || state.stallRecovering) return Promise.resolve();
+    if (
+      state.awaitingTrackLoad ||
+      state.pendingSettingRefresh ||
+      (state.audioSourceRefreshRequestSeq != null &&
+        state.audioSourceRefreshRequestSeq === state.playbackRequestSeq) ||
+      state.stallRecovering ||
+      state.seekTargetTime != null ||
+      state.nativeSeekActive ||
+      getPlaybackHasFailed(state)
+    )
+      return Promise.resolve();
     const position = options?.position ?? state.currentTime;
     if (state.duration <= 0 || position <= 0) return Promise.resolve();
     const remaining = state.duration - position;
@@ -721,8 +765,7 @@ export const createPlaybackManager = (
       GAPLESS_PREFETCH_WINDOW_SECS,
       transitionPrefetchLeadSecs(transitionMode, settingStore.fadeCrossSecs),
     );
-    if (remaining > prefetchWindow || (!options?.allowAtEnd && remaining < 0.2))
-      return Promise.resolve();
+    if (remaining > prefetchWindow) return Promise.resolve();
 
     const next = resolveOrderedNextTrack();
     if (!next) {
@@ -732,10 +775,25 @@ export const createPlaybackManager = (
 
     const targetTrackId = next.targetTrackId;
     const key = getGaplessPrepareKey(next);
+    const attemptKey = JSON.stringify([
+      getGaplessInvalidationKey(),
+      key,
+      transitionMode,
+      settingStore.fadeCrossSecs,
+    ]);
+    if (timedOutGaplessPrepareKey === attemptKey) return Promise.resolve();
     if (gaplessPreparedSource?.key === key) return Promise.resolve();
+    const timeoutSecs = transitionPreparationTimeoutSecs(
+      transitionMode,
+      remaining,
+      state.playbackRate,
+    );
     if (gaplessPreparingKey === key) {
+      // A seek or speed change can bring EOF forward while analysis is still running.
+      if (timeoutSecs <= 0) gaplessPreparingContext?.expire?.();
       return gaplessPreparingRegistration ?? Promise.resolve();
     }
+    if (timeoutSecs <= 0) return Promise.resolve();
     if (gaplessPreparingKey || gaplessPreparedSource) {
       clearGaplessPreparedSource();
     }
@@ -744,8 +802,14 @@ export const createPlaybackManager = (
       currentTrackId: state.currentTrackId,
       targetTrackId,
       remaining: Number(remaining.toFixed(2)),
+      timeoutSecs: Number(timeoutSecs.toFixed(2)),
     });
     gaplessPreparingKey = key;
+    const context: NonNullable<typeof gaplessPreparingContext> = {
+      invalidationKey: getGaplessInvalidationKey(),
+      allowCompletion: false,
+    };
+    gaplessPreparingContext = context;
     let registrationSettled = false;
     let settleRegistration = () => {};
     const registration = new Promise<void>((resolve) => {
@@ -758,33 +822,31 @@ export const createPlaybackManager = (
     gaplessPreparingRegistration = registration;
     void (async () => {
       let requestId: number | null = null;
-      let nativePrepared = false;
       let preparedCommitted = false;
       let preparationTimeout: number | null = null;
       try {
+        context.expire = () => {
+          if (gaplessPreparingContext !== context) return;
+          logger.warn('PlayerPlayback', 'Gapless prepare timed out; using normal track change', {
+            targetTrackId,
+            timeoutSecs: Number(timeoutSecs.toFixed(2)),
+          });
+          settleRegistration();
+          clearGaplessPreparedSource();
+          // Reopening the same readers on every prefetch tick cannot complete this attempt.
+          timedOutGaplessPrepareKey = attemptKey;
+        };
+        preparationTimeout = window.setTimeout(context.expire, timeoutSecs * 1000);
         requestId = await engine.beginNextSourcePreparation();
         if (!requestId) return;
-        if (gaplessPreparingKey !== key) {
-          engine.cancelNextSourcePreparation(requestId);
+        if (gaplessPreparingContext !== context) {
           return;
         }
         gaplessPreparingRequestId = requestId;
         settleRegistration();
 
-        const timeoutSecs = Number(settingStore.playbackStallTimeout ?? 8);
-        if (Number.isFinite(timeoutSecs) && timeoutSecs > 0) {
-          preparationTimeout = window.setTimeout(() => {
-            if (gaplessPreparingKey !== key || gaplessPreparingRequestId !== requestId) return;
-            logger.warn('PlayerPlayback', 'Gapless prepare timed out', {
-              targetTrackId,
-              timeoutSecs,
-            });
-            clearGaplessPreparedSource();
-          }, timeoutSecs * 1000);
-        }
-
         const resolved: ResolvedAudioSource = await resolver.resolveAudioUrl(next.track);
-        if (gaplessPreparingKey !== key || gaplessPreparingRequestId !== requestId) return;
+        if (gaplessPreparingContext !== context || gaplessPreparingRequestId !== requestId) return;
         if (!resolved.url) {
           logger.warn('PlayerPlayback', 'Gapless prepare skipped: empty resolved url', {
             targetTrackId,
@@ -799,6 +861,21 @@ export const createPlaybackManager = (
           : sameTrack
             ? engine.normalizationGainDb
             : 0;
+        logger.info('PlayerPlayback', 'Transition loudness prepared', {
+          requestId,
+          currentTrackId: state.currentTrackId,
+          targetTrackId,
+          normalizationEnabled: engine.volumeNormalizationEnabled,
+          referenceLufs: settingStore.volumeNormalizationLufs,
+          currentGainDb: engine.normalizationGainDb,
+          nextGainDb: normalizationGainDb,
+          nextLoudness: resolved.loudness ?? null,
+          gainSource: resolved.loudness
+            ? 'track-metadata'
+            : sameTrack
+              ? 'same-track-cache'
+              : 'missing-metadata-unity',
+        });
         const nativeSeq = primarySource
           ? await engine
               .prepareNextSource(primarySource, requestId, normalizationGainDb)
@@ -807,11 +884,11 @@ export const createPlaybackManager = (
                 return null;
               })
           : null;
-        nativePrepared = nativeSeq !== null;
-        if (gaplessPreparingKey !== key || gaplessPreparingRequestId !== requestId) {
+        if (gaplessPreparingContext !== context || gaplessPreparingRequestId !== requestId) {
           if (nativeSeq !== null) {
             rememberInvalidatedGaplessSource(
               createGaplessPreparedSource(next, key, resolved, nativeSeq),
+              context.allowCompletion ? context.invalidationKey : undefined,
             );
           }
           return;
@@ -828,13 +905,13 @@ export const createPlaybackManager = (
         if (preparationTimeout !== null) window.clearTimeout(preparationTimeout);
         settleRegistration();
         if (requestId && !preparedCommitted) {
-          if (nativePrepared) engine.clearPreparedNextSource();
-          else engine.cancelNextSourcePreparation(requestId);
+          engine.cancelNextSourcePreparation(requestId);
         }
-        if (gaplessPreparingKey === key && gaplessPreparingRequestId === requestId) {
+        if (gaplessPreparingContext === context && gaplessPreparingRequestId === requestId) {
           gaplessPreparingKey = '';
           gaplessPreparingRequestId = null;
           gaplessPreparingRegistration = null;
+          gaplessPreparingContext = null;
         }
       }
     })();
@@ -1256,11 +1333,15 @@ export const createPlaybackManager = (
   };
 
   const seek = (time: number): Promise<void> => {
+    if (!Number.isFinite(time)) return Promise.resolve();
     const effectiveDuration = engine.duration > 0 ? engine.duration : state.duration;
     const targetTime = Math.max(0, Math.min(effectiveDuration, time));
     const dispatchSeq = ++seekDispatchSeq;
+    const seekTrackId = state.currentTrackId;
+    const seekRequestSeq = state.playbackRequestSeq;
+    clearGaplessPreparedSource();
     state.seekTargetTime = targetTime;
-    state.seekTimestamp = Date.now();
+    state.seekTimestamp = Math.max(Date.now(), state.seekTimestamp + 1);
     state.currentTime = targetTime;
     state.currentTimeUpdatedAt = state.seekTimestamp;
 
@@ -1268,35 +1349,16 @@ export const createPlaybackManager = (
     // 否则播放完毕后不会自动切下一首
     const remaining = effectiveDuration - targetTime;
     const nearEnd = effectiveDuration > 0 && remaining < GAPLESS_SEEK_REGISTRATION_WINDOW_SECS;
+    state.recentSeekIgnoreEnd = !nearEnd;
     if (!nearEnd) {
-      state.recentSeekIgnoreEnd = true;
       window.setTimeout(() => {
-        state.recentSeekIgnoreEnd = false;
+        if (dispatchSeq === seekDispatchSeq) state.recentSeekIgnoreEnd = false;
       }, 800);
     }
-
-    const prepareForTarget = () =>
-      prepareGaplessNext({
-        position: targetTime,
-        allowAtEnd: true,
-        requirePlaying: false,
-      });
-
-    let seekPromise: Promise<void>;
-    if (!nearEnd) {
-      seekPromise = engine.seek(targetTime);
-      void prepareForTarget();
-    } else {
-      seekPromise = (async () => {
-        await prepareForTarget();
-        if (dispatchSeq !== seekDispatchSeq) return;
-        await engine.seek(targetTime);
-      })();
-    }
-
+    // User transport takes priority over background transition analysis.
+    const seekPromise = engine.seek(targetTime);
+    let shouldPrepare = false;
     engine.updateMediaPlaybackState(buildMediaState(state));
-    const seekTrackId = state.currentTrackId;
-    const seekRequestSeq = state.playbackRequestSeq;
     return seekPromise
       .then(() => {
         if (
@@ -1306,15 +1368,23 @@ export const createPlaybackManager = (
           (effectiveDuration <= 0 || targetTime < effectiveDuration)
         ) {
           state.playbackEnded = false;
+          shouldPrepare = true;
         }
       })
       .finally(() => {
         // 只有最新 seek 命令的完成才能结束 UI 生命周期；被覆盖的旧请求不得
         // 清理新目标。这里依赖命令完成事件，不依赖超时。
-        if (dispatchSeq === seekDispatchSeq) {
+        if (
+          dispatchSeq === seekDispatchSeq &&
+          seekRequestSeq === state.playbackRequestSeq &&
+          seekTrackId === state.currentTrackId
+        ) {
           state.seekTargetTime = null;
           state.nativeSeekActive = false;
           state.nativeSeekGeneration = null;
+          if (shouldPrepare) {
+            void prepareGaplessNext({ position: targetTime, requirePlaying: false });
+          }
         }
       });
   };
@@ -1800,6 +1870,7 @@ export const createPlaybackManager = (
     prepareGaplessNext,
     activateGaplessPreparedTransition,
     clearGaplessPreparedSource,
+    invalidateGaplessForSettings,
     getGaplessInvalidationKey,
     pickRandomIndex,
     shuffleInsert,

@@ -71,6 +71,8 @@ export const createPlayerState = () => ({
   recentSeekIgnoreEnd: false,
   settingsWatcherRegistered: false,
   pendingSettingRefresh: false,
+  audioSourceRefreshRequestSeq: null as number | null,
+  audioSourceRefreshQuality: null as AudioQualityValue | null,
   climaxMarks: [] as ClimaxMark[],
   appliedOutputDeviceId: 'default' as string,
   _lastAppliedExclusive: false,

@@ -8,12 +8,29 @@ import {
   transitionOverlapsTracks,
   transitionPrefetchLeadSecs,
   transitionPreparesNextTrack,
+  transitionPreparationTimeoutSecs,
 } from '../src/shared/track-transition.ts';
 
-test('options mirror the QQ Music transition choices', () => {
+test('preparation has its own budget capped by the outgoing playback deadline', () => {
+  assert.equal(transitionPreparationTimeoutSecs('automix-pro', 75, 1), 60);
+  assert.equal(transitionPreparationTimeoutSecs('automix-basic', 75, 1), 60);
+  assert.equal(transitionPreparationTimeoutSecs('fade', 35, 1), 20);
+  assert.equal(transitionPreparationTimeoutSecs('gapless', 30, 1), 20);
+  assert.equal(transitionPreparationTimeoutSecs('automix-pro', 10, 2), 3);
+  assert.equal(transitionPreparationTimeoutSecs('automix-pro', 1.8, 1), 0);
+  assert.equal(transitionPreparationTimeoutSecs('none', 75, 1), 0);
+  assert.equal(transitionPreparationTimeoutSecs('gapless', Number.NaN, 1), 0);
+  assert.equal(transitionPreparationTimeoutSecs('gapless', 30, Number.NaN), 20);
+});
+
+test('transition options keep stable mode values and behavior-based labels', () => {
   assert.deepEqual(
     TRACK_TRANSITION_OPTIONS.map((option) => option.value),
     ['automix-pro', 'automix-basic', 'fade', 'gapless', 'none'],
+  );
+  assert.deepEqual(
+    TRACK_TRANSITION_OPTIONS.map((option) => option.label),
+    ['节奏融合', '自然衔接', '淡入淡出', '无缝播放', '关闭'],
   );
   for (const option of TRACK_TRANSITION_OPTIONS) {
     assert.ok(option.label.length > 0);
@@ -28,16 +45,13 @@ test('playback notices describe the executed transition and incoming cue', () =>
   );
   assert.equal(
     formatTrackTransitionNotice({ mode: 'automix-pro', overlapSecs: 5 }, 1.26),
-    '智能交融 · 5 秒 · 跳过 1.3 秒',
+    '节奏融合 · 5 秒 · 跳过 1.3 秒',
   );
   assert.equal(
     formatTrackTransitionNotice({ mode: 'automix-basic', overlapSecs: 3.5 }, 0),
-    '智能渐变 · 3.5 秒',
+    '自然衔接 · 3.5 秒',
   );
-  assert.equal(
-    formatTrackTransitionNotice({ mode: 'fade', overlapSecs: 4 }, 0),
-    '淡入淡出 · 4 秒',
-  );
+  assert.equal(formatTrackTransitionNotice({ mode: 'fade', overlapSecs: 4 }, 0), '淡入淡出 · 4 秒');
 });
 
 test('ordinary loads have no notice and invalid or tiny durations are omitted', () => {
@@ -50,13 +64,13 @@ test('ordinary loads have no notice and invalid or tiny durations are omitted', 
   );
 });
 
-test('fade length is clamped to the 0–15 s slider', () => {
+test('fade duration stays within the supported 0–15 seconds', () => {
   assert.equal(clampFadeCrossSecs(40), 15);
   assert.equal(clampFadeCrossSecs(-3), 0);
   assert.equal(clampFadeCrossSecs(7.6), 8);
   assert.equal(clampFadeCrossSecs('12'), 12);
-  assert.equal(clampFadeCrossSecs(Number.NaN), 5);
-  assert.equal(clampFadeCrossSecs(undefined), 5);
+  assert.equal(clampFadeCrossSecs(Number.NaN), 15);
+  assert.equal(clampFadeCrossSecs(undefined), 15);
 });
 
 test('unknown persisted modes fall back to the first option', () => {

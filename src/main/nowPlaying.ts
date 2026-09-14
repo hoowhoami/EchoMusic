@@ -14,6 +14,7 @@ import { getMainWindow } from './window';
 import { isCoverPreviewEnabled, setCoverPreviewEnabled } from './taskbarThumbnail';
 import { setTaskbarProgressEnabled } from './taskbarProgress';
 import { setMainAppSetting } from './storage/settings';
+import { buildPlaybackClockSnapshot } from '../shared/playback';
 
 const NOW_PLAYING_COMMANDS = new Set<NowPlayingCommand>([
   'togglePlayback',
@@ -153,7 +154,7 @@ const sanitizePlayback = (payload: unknown): NowPlayingPlaybackPayload | null =>
   if (!isPlainRecord(payload)) return snapshot.playback;
   const trackId = String(payload.trackId ?? '').trim();
   if (!trackId) return null;
-  return {
+  const playback: NowPlayingPlaybackPayload = {
     trackId,
     lyricHash: String(payload.lyricHash || trackId),
     title: String(payload.title || '未知歌曲'),
@@ -167,7 +168,16 @@ const sanitizePlayback = (payload: unknown): NowPlayingPlaybackPayload | null =>
     isPersonalFM: Boolean(payload.isPersonalFM),
     playbackRate: Math.max(0.1, toFiniteNumber(payload.playbackRate, 1)),
     updatedAt: toFiniteNumber(payload.updatedAt, Date.now()),
+    seekTimestamp: Math.max(0, toFiniteNumber(payload.seekTimestamp)),
   };
+  const clock = isPlainRecord(payload.clock) ? payload.clock : {};
+  playback.clock = buildPlaybackClockSnapshot({
+    ...playback,
+    trackSeq: toFiniteNumber(clock.trackSeq),
+    isAdvancing: typeof clock.isAdvancing === 'boolean' ? clock.isAdvancing : playback.isPlaying,
+    updatedAt: toFiniteNumber(clock.sampledAt, playback.updatedAt),
+  });
+  return playback;
 };
 
 const sanitizeLyric = (

@@ -10,7 +10,6 @@ import { executeShortcutCommand } from '@/utils/shortcuts';
 import { setWithLimit } from '@/utils/lruMap';
 import type { Song } from '@/models/song';
 import { resolveFavoriteSongKey } from '@/stores/playlist/helpers';
-import { buildPlaybackClockSnapshot } from '../../shared/playback';
 import type {
   NowPlayingCommand,
   NowPlayingPlaybackPayload,
@@ -146,15 +145,7 @@ const buildPlaybackPayload = (): NowPlayingPlaybackPayload | null => {
     playbackRate,
     updatedAt,
     seekTimestamp,
-    clock: buildPlaybackClockSnapshot({
-      trackId,
-      currentTime,
-      duration,
-      isPlaying,
-      playbackRate,
-      updatedAt,
-      seekTimestamp,
-    }),
+    clock: playerStore.playbackClock,
   };
 };
 
@@ -169,6 +160,7 @@ export const initNowPlayingSync = async () => {
   const toastStore = useToastStore();
   const stops: WatchStopHandle[] = [];
   const {
+    playbackClock,
     currentTime,
     currentTimeUpdatedAt,
     isPlaying,
@@ -207,7 +199,9 @@ export const initNowPlayingSync = async () => {
     const playback = buildPlaybackPayload();
     const trackId = playback?.lyricHash || playback?.trackId || null;
     const activeLines =
-      trackId && loadedHash.value === trackId ? lines.value.map(normalizeLinePayload) : [];
+      includeLines && trackId && loadedHash.value === trackId
+        ? lines.value.map(normalizeLinePayload)
+        : [];
     return {
       trackId,
       revision: lyricRevision,
@@ -314,6 +308,7 @@ export const initNowPlayingSync = async () => {
   stops.push(
     watch(
       [
+        playbackClock,
         currentTime,
         currentTimeUpdatedAt,
         isPlaying,

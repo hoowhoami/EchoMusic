@@ -10,7 +10,6 @@ import {
   isDesktopLyricFullSnapshot,
   mergeDesktopLyricSnapshotMessage,
 } from '../../shared/desktop-lyric';
-import { buildPlaybackClockSnapshot } from '../../shared/playback';
 import type {
   DesktopLyricCommand,
   DesktopLyricPlaybackPayload,
@@ -106,6 +105,7 @@ const buildPlaybackSignature = (
     boolKey(playback?.isPlaying),
     stableNumberKey(playback?.playbackRate ?? 1, 1000),
     stableNumberKey(playback?.seekTimestamp ?? 0),
+    JSON.stringify(playback?.clock),
     currentIndex,
     lyricTimeOffset,
     boolKey(lyricSyncWarning),
@@ -213,15 +213,7 @@ const buildPlaybackPayload = (): DesktopLyricPlaybackPayload | null => {
     playbackRate,
     updatedAt,
     seekTimestamp,
-    clock: buildPlaybackClockSnapshot({
-      trackId,
-      currentTime,
-      duration,
-      isPlaying,
-      playbackRate,
-      updatedAt,
-      seekTimestamp,
-    }),
+    clock: playerStore.playbackClock,
   };
 };
 
@@ -241,6 +233,7 @@ export const initDesktopLyricSync = async () => {
 
   const stops: WatchStopHandle[] = [];
   const {
+    playbackClock,
     currentTime,
     isPlaying,
     duration,
@@ -439,6 +432,7 @@ export const initDesktopLyricSync = async () => {
   stops.push(
     watch(
       [
+        playbackClock,
         currentTime,
         isPlaying,
         duration,
@@ -450,10 +444,6 @@ export const initDesktopLyricSync = async () => {
         seekTimestamp,
       ],
       () => {
-        // 桌面歌词启用时自驱动歌词行索引（不更新逐字高亮，桌面歌词窗口自己处理）
-        if (desktopLyricStore.settings.enabled) {
-          lyricStore.updateCurrentIndex(currentTime.value);
-        }
         scheduleProgressSync();
       },
       { immediate: true, deep: true },

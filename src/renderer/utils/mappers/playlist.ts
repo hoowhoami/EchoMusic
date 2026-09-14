@@ -19,6 +19,7 @@ import {
 } from './shared';
 import { mapPlaylistSong } from './song';
 import { splitValidSongs } from '../song';
+import { serializePlaylistTags } from '../playlistTags';
 
 export interface PlaylistTrackQueryContext {
   listid?: number;
@@ -75,7 +76,7 @@ export const mapPlaylistMeta = (json: unknown): PlaylistMeta => {
       userPic: formatPic(
         pickValue(record.user_pic, record.avatar, record.create_user_pic, record.pic, ''),
       ),
-      tags: readString(record.tags, ''),
+      tags: serializePlaylistTags(record.tags),
       playCount: parseIntSafe(
         pickValue(record.play_count, record.playcount, record.count, record.play_total, 0),
       ),
@@ -87,6 +88,8 @@ export const mapPlaylistMeta = (json: unknown): PlaylistMeta => {
       publishDate: readString(pickValue(record.publishtime, record.publish_time, '')).split(' ')[0],
       createTime: parseOptionalInt(pickValue(record.create_time, record.addtime)),
       updateTime: parseOptionalInt(record.update_time),
+      listVer: parseOptionalInt(record.list_ver),
+      hasCustomCover: record.is_custom_pic == null ? undefined : Number(record.is_custom_pic) === 1,
       source: parseIntSafe(pickValue(record.source, 1)),
       type: typeValue,
       sortOrder: parseOptionalInt(record.sort),
@@ -165,7 +168,7 @@ export const mapPlaylistMeta = (json: unknown): PlaylistMeta => {
     userPic: formatPic(
       pickValue(record.user_pic, record.avatar, record.create_user_pic, record.author_pic, ''),
     ),
-    tags: readString(record.tags, ''),
+    tags: serializePlaylistTags(record.tags),
     playCount: parseIntSafe(
       pickValue(
         record.playcount,
@@ -186,6 +189,11 @@ export const mapPlaylistMeta = (json: unknown): PlaylistMeta => {
     publishDate: readString(pickValue(record.publishtime, record.publish_time, '')).split(' ')[0],
     createTime: parseOptionalInt(pickValue(record.create_time, record.addtime)),
     updateTime: parseOptionalInt(record.update_time),
+    listVer: parseOptionalInt(pickValue(record.list_ver, extra.list_ver)),
+    hasCustomCover:
+      pickValue(record.is_custom_pic, extra.is_custom_pic) == null
+        ? undefined
+        : Number(pickValue(record.is_custom_pic, extra.is_custom_pic)) === 1,
     source: parseIntSafe(pickValue(record.source, 1)),
     type: typeValue,
     isDefault,

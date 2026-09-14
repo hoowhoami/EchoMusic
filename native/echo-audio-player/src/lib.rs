@@ -68,10 +68,6 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 const GAPLESS_PREDECODE_SECS: f64 = 0.5;
-const SOURCE_SWITCH_BASE_LEAD_SECS: f64 = 1.0;
-const SOURCE_SWITCH_MIN_READY_SECS: f64 = 0.35;
-const SOURCE_SWITCH_MAX_LEAD_SECS: f64 = 8.0;
-const SOURCE_SWITCH_PREDECODE_SECS: f64 = 0.5;
 const TRANSPORT_FADE_OUT_MS: u64 = 24;
 const CONTROL_SIGNAL_WAKE_CAPACITY: usize = 1;
 
@@ -918,6 +914,15 @@ fn prepare_source(
                                 emit_shared_event(&signal_shared, PlayerEvent::output_stats(stats));
                             }
                         }
+                        PlaybackSignal::NormalizationGainApplied { track_seq, gain_db, stage } => {
+                            emit_shared_event(
+                                &signal_shared,
+                                PlayerEvent::log(
+                                    "info",
+                                    format!("transition loudness applied: track_seq={track_seq} stage={stage} gain_db={gain_db:.2}"),
+                                ),
+                            );
+                        }
                         PlaybackSignal::TrackSwitch(info) => {
                             apply_track_switch(info, signal_shared.clone());
                         }
@@ -1121,7 +1126,10 @@ fn apply_track_switch(info: TrackSwitchInfo, shared: Arc<SharedAudio>) {
             runtime.state.time_pos = start_position;
             runtime.state.playing = true;
             runtime.state.paused = false;
-            if let Some(gain_db) = info.normalization_gain_db {
+            if let Some(gain_db) = info
+                .track_normalization_gain_db
+                .or(info.normalization_gain_db)
+            {
                 runtime.dsp_settings.normalization_gain_db = gain_db;
             }
             set_runtime_core_state(runtime, PlaybackCoreState::Playing, "gapless-track-switch");
@@ -1289,12 +1297,8 @@ pub(crate) fn activate_gapless_next_decoder(
     // Apply the target track's loudness before any predecoded samples cross the
     // boundary; waiting for the renderer restart event is too late.
     shared.set_normalization_gain_db(next.normalization_gain_db);
-    let mut info = TrackSwitchInfo::new(
-        next.url,
-        next.audio_stream_ordinal,
-        next.seq,
-        next.duration,
-    );
+    let mut info =
+        TrackSwitchInfo::new(next.url, next.audio_stream_ordinal, next.seq, next.duration);
     info.transition = Some(events::TrackTransitionInfo {
         mode: "gapless".to_string(),
         overlap_secs: 0.0,
@@ -1474,11 +1478,21 @@ pub struct SwitchSourceTask {
     interrupt: Arc<AtomicBool>,
 }
 
+#[derive(Default, Debug)]
+struct SourceSwitchTimings {
+    preflight_ms: u128,
+    open_ms: u128,
+    seek_ms: u128,
+    catchup_ms: u128,
+    handoff_ms: u128,
+}
+
 impl Task for SwitchSourceTask {
     type Output = (f64, f64);
     type JsValue = (f64, f64);
 
     fn compute(&mut self) -> napi::Result<Self::Output> {
+        let started = Instant::now();
         let url = self.url.clone();
         let seq = self.seq;
         let audio_stream = self.audio_stream_ordinal;
@@ -1488,6 +1502,11 @@ impl Task for SwitchSourceTask {
         let begin = call_core_command("begin-source-switch", move |runtime| {
             if !is_latest_source_open_request_seq(open_request_seq) {
                 return Ok(None);
+            }
+            if seq > 0 && seq != runtime.current_seq {
+                return Err(napi::Error::from_reason(
+                    "source switch cancelled: track changed",
+                ));
             }
             runtime.cancel_pending_gapless_prepare();
             retire_prepared_next_background(runtime.prepared_next.take(), "source-switch-begin");
@@ -1514,7 +1533,36 @@ impl Task for SwitchSourceTask {
             ));
         };
 
-        let operation = (|| -> napi::Result<(f64, f64, f64, u128)> {
+        let mut timings = SourceSwitchTimings::default();
+        let operation = (|| -> napi::Result<(f64, f64, f64)> {
+            let (prepare_tx, prepare_rx) = sync_channel(1);
+            commands
+                .try_send(decoder::DecodeCommand::PrepareSourceSwitch {
+                    track_seq: current_seq,
+                    generation,
+                    interrupt: interrupt.clone(),
+                    reply: prepare_tx,
+                })
+                .map_err(|_| napi::Error::from_reason("source switch preparation unavailable"))?;
+            prepare_rx
+                .recv_timeout(Duration::from_secs(2))
+                .map_err(|_| napi::Error::from_reason("source switch preparation timed out"))?
+                .map_err(napi::Error::from_reason)?;
+            timings.preflight_ms = started.elapsed().as_millis();
+            let is_cancelled = || {
+                !is_latest_source_open_request_seq(open_request_seq)
+                    || !shared.is_decode_generation_current(generation)
+                    || shared.current_track_seq() != current_seq
+                    || shared.should_stop_decoding()
+            };
+            let source_error = |error: String| {
+                napi::Error::from_reason(if is_cancelled() {
+                    "source switch cancelled during preparation".to_string()
+                } else {
+                    error
+                })
+            };
+            let open_started = Instant::now();
             let mut decoder = open_decoder_with_interrupt(
                 url.clone(),
                 audio_stream,
@@ -1523,40 +1571,32 @@ impl Task for SwitchSourceTask {
                 config.packet_cache_options_for_url(&url),
                 &config.stream_options(),
             )
-            .map_err(napi::Error::from_reason)?;
+            .map_err(source_error)?;
+            timings.open_ms = open_started.elapsed().as_millis();
             let duration = decoder.duration_secs();
 
-            // Seek the replacement stream to a future hand-off point while the old
-            // source keeps decoding and playing. If a remote seek consumes the
-            // initial lead, retry farther ahead based on the measured latency. The
-            // decode worker can then swap readers without performing network I/O.
-            let mut lead_secs = SOURCE_SWITCH_BASE_LEAD_SECS;
-            let mut switch_at_secs = shared.position_secs() + lead_secs;
-            let mut prepare_elapsed_ms = 0u128;
-            let mut predecoded = Vec::new();
-            for _ in 0..3 {
-                switch_at_secs = shared.position_secs() + lead_secs;
-                if duration > 0.0 {
-                    switch_at_secs = switch_at_secs.min((duration - 0.05).max(0.0));
-                }
-                let prepare_started = Instant::now();
-                decoder
-                    .prepare_seamless_seek(switch_at_secs)
-                    .map_err(napi::Error::from_reason)?;
-                predecoded = decoder
-                    .predecode_chunks(SOURCE_SWITCH_PREDECODE_SECS)
-                    .map_err(napi::Error::from_reason)?;
-                prepare_elapsed_ms = prepare_started.elapsed().as_millis();
-                let ready_secs = switch_at_secs - shared.position_secs();
-                if ready_secs >= SOURCE_SWITCH_MIN_READY_SECS
-                    || (duration > 0.0 && duration <= shared.position_secs() + 0.1)
-                {
-                    break;
-                }
-                lead_secs = ((prepare_elapsed_ms as f64 / 1000.0) * 1.5 + 0.5)
-                    .clamp(SOURCE_SWITCH_BASE_LEAD_SECS, SOURCE_SWITCH_MAX_LEAD_SECS);
+            let mut seek_position_secs = shared.position_secs();
+            if duration > 0.0 {
+                seek_position_secs = seek_position_secs.min((duration - 0.1).max(0.0));
             }
+            let seek_started = Instant::now();
+            decoder
+                .prepare_cancellable_seek(seek_position_secs, is_cancelled)
+                .map_err(source_error)?;
+            timings.seek_ms = seek_started.elapsed().as_millis();
+            let catchup_started = Instant::now();
+            let (switch_at_secs, predecoded) = decoder
+                .prepare_source_switch_chunks(
+                    seek_position_secs,
+                    // Cover read-ahead in both the decoded queue and output ring.
+                    0.5 + 2.0 * shared.requested_output_buffer_secs(),
+                    || shared.position_secs(),
+                    is_cancelled,
+                )
+                .map_err(source_error)?;
+            timings.catchup_ms = catchup_started.elapsed().as_millis();
 
+            let handoff_started = Instant::now();
             let interrupt_for_validation = interrupt.clone();
             let shared_for_validation = shared.clone();
             let valid = call_core_command("validate-source-switch", move |runtime| {
@@ -1589,17 +1629,16 @@ impl Task for SwitchSourceTask {
                 .recv_timeout(Duration::from_secs(15))
                 .map_err(|_| napi::Error::from_reason("source switch timed out".to_string()))?
                 .map_err(napi::Error::from_reason)?;
-            Ok((
-                switch_position,
-                duration,
-                switch_at_secs,
-                prepare_elapsed_ms,
-            ))
+            timings.handoff_ms = handoff_started.elapsed().as_millis();
+            Ok((switch_position, duration, switch_at_secs))
         })();
 
-        let (switch_position, duration, switch_at_secs, prepare_elapsed_ms) = match operation {
+        let (switch_position, duration, switch_at_secs) = match operation {
             Ok(output) => output,
             Err(err) => {
+                // A timed-out hand-off may still be queued on the decoder worker.
+                // Cancel it before releasing the request so it cannot switch later.
+                interrupt.store(true, Ordering::Release);
                 let interrupt_for_error = interrupt.clone();
                 let _ = call_core_command("finish-source-switch-error", move |runtime| {
                     runtime.clear_source_open_if_current(open_request_seq, &interrupt_for_error);
@@ -1646,7 +1685,8 @@ impl Task for SwitchSourceTask {
                     PlayerEvent::log(
                         "info",
                         format!(
-                            "source switched without output restart: position={switch_position:.3}, scheduled={switch_at_secs:.3}, prepare_ms={prepare_elapsed_ms}, url='{url}'"
+                            "source switched without output restart: position={switch_position:.3}, scheduled={switch_at_secs:.3}, total_ms={}, timings={timings:?}, url='{url}'",
+                            started.elapsed().as_millis()
                         ),
                     ),
                 ],
@@ -2113,6 +2153,11 @@ impl Task for PrepareNextSourceTask {
                     runtime.dsp_settings.normalization_gain_db,
                 ))
             })?;
+        let preparation_started = Instant::now();
+        emit_event(PlayerEvent::log(
+            "info",
+            format!("next source preparation started: request={request_id}"),
+        ));
         let audio = match prepare_transition_audio(
             sample_rate,
             PreparedTransitionInputs {
@@ -2193,8 +2238,9 @@ impl Task for PrepareNextSourceTask {
                 PlayerEvent::log(
                     "info",
                     format!(
-                        "gapless prepared next source: url='{}', predecoded_chunks={}, transition={}",
-                        url_for_log, predecoded_chunks, has_transition
+                        "gapless prepared next source: url='{}', predecoded_chunks={}, transition={}, request={}, elapsed_ms={}",
+                        url_for_log, predecoded_chunks, has_transition, request_id,
+                        preparation_started.elapsed().as_millis()
                     ),
                 ),
             );
@@ -2574,7 +2620,12 @@ pub fn cancel_next_source_preparation(request_id: f64) -> napi::Result<bool> {
             return Ok(false);
         };
         let cancelled = session.shared.cancel_gapless_prepare(request_id);
-        if cancelled {
+        if cancelled
+            || runtime
+                .prepared_next
+                .as_ref()
+                .is_some_and(|source| source.request_id == request_id)
+        {
             retire_prepared_next_background(runtime.prepared_next.take(), "prepare-next-cancel");
         }
         if runtime.armed_transition_request == Some(request_id) {
