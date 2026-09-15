@@ -27,7 +27,7 @@ test('Hyprland detection accepts its instance signature and desktop identifiers'
   );
 });
 
-test('Hyprland uses compositor blur and pure transparency', () => {
+test('Hyprland uses compositor blur and keeps layered transparency controls', () => {
   assert.deepEqual(
     resolveWindowBackgroundCapabilities({ platform: 'linux', build: 0, strategy: 'hyprland' }),
     {
@@ -37,7 +37,7 @@ test('Hyprland uses compositor blur and pure transparency', () => {
       frostMode: 'compositor',
       frostLive: true,
       live: false,
-      transparentMode: 'pure',
+      transparentMode: 'layered',
     },
   );
 });

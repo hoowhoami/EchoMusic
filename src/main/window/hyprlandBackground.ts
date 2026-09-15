@@ -1,11 +1,11 @@
 import { execFile } from 'node:child_process';
 import type { BrowserWindow } from 'electron';
 import log from '../logger';
+import { createHyprlandBlurQueue } from './hyprlandBlurQueue';
 
 type HyprlandWindow = Pick<BrowserWindow, 'getNativeWindowHandle' | 'isDestroyed' | 'getTitle'>;
 
 const HYPRCTL_TIMEOUT_MS = 2000;
-const HYPRLAND_RETRY_MS = 500;
 const MIN_WINDOW_ADDRESS = 0x100;
 
 const getWindowAddress = (win: HyprlandWindow) => {
@@ -106,51 +106,9 @@ const applyWindowBlur = async (win: HyprlandWindow, enabled: boolean) => {
  * hyprctl call is in flight.
  */
 export function createHyprlandBackgroundController(win: HyprlandWindow) {
-  let requested: boolean | null = null;
-  let applied: boolean | null = null;
-  let running = false;
-  let retryTimer: NodeJS.Timeout | null = null;
-
-  const scheduleRetry = () => {
-    if (retryTimer || win.isDestroyed()) return;
-    retryTimer = setTimeout(() => {
-      retryTimer = null;
-      void flush();
-    }, HYPRLAND_RETRY_MS);
-    if (typeof retryTimer.unref === 'function') retryTimer.unref();
-  };
-
-  const flush = async () => {
-    if (running) return;
-    running = true;
-    try {
-      while (requested !== null) {
-        const target = requested;
-        requested = null;
-        if (target === applied || win.isDestroyed()) continue;
-        try {
-          await applyWindowBlur(win, target);
-          applied = target;
-        } catch (error) {
-          log.debug('[HyprlandBackground] Unable to update window blur:', error);
-          // A Wayland surface may not appear in `hyprctl clients` until after
-          // ready-to-show. Keep the requested state and retry without blocking
-          // the main process; later changes replace this pending value.
-          requested = target;
-          scheduleRetry();
-          break;
-        }
-      }
-    } finally {
-      running = false;
-      if (requested !== null && !retryTimer) void flush();
-    }
-  };
-
-  return {
-    setBlurEnabled(enabled: boolean) {
-      requested = enabled;
-      void flush();
-    },
-  };
+  return createHyprlandBlurQueue(
+    (enabled) => applyWindowBlur(win, enabled),
+    () => win.isDestroyed(),
+    (error) => log.debug('[HyprlandBackground] Unable to update window blur:', error),
+  );
 }

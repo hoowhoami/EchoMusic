@@ -1,5 +1,6 @@
 import type {
   WindowBackgroundCapabilities,
+  WindowBackgroundStrategyId,
   WindowBackgroundTransparentMode,
 } from './windowBackgroundStrategy';
 
@@ -46,13 +47,22 @@ export function resolveWindowBackground(
 }
 
 // Both legacy Windows effects need Electron's alpha surface. Modern Windows
-// uses native composition without a transparent BrowserWindow.
-export function getWindowComposition(value: WindowBackground, platform: string, build: number) {
+// uses native composition without a transparent BrowserWindow. Hyprland keeps
+// the alpha surface for the lifetime of the window so the app layer can toggle
+// its own opacity without recreating the BrowserWindow.
+export function getWindowComposition(
+  value: WindowBackground,
+  platform: string,
+  build: number,
+  strategy: WindowBackgroundStrategyId = 'default',
+) {
   const systemMaterial = value.enabled && value.frosted && platform === 'win32' && build >= 22621;
+  const alwaysTransparent = platform === 'linux' && strategy === 'hyprland';
   return {
     transparent:
-      value.enabled &&
-      (platform === 'win32' ? build < 22621 : !(platform === 'darwin' && value.frosted)),
+      alwaysTransparent ||
+      (value.enabled &&
+        (platform === 'win32' ? build < 22621 : !(platform === 'darwin' && value.frosted))),
     systemMaterial,
     clientCornerRadius: 0,
   };
@@ -63,11 +73,16 @@ export function resolveRunningWindowBackground(
   value: WindowBackground,
   platform: string,
   transparent: boolean,
-  buildOrCapabilities: number | Pick<WindowBackgroundCapabilities, 'frostMode'> = 22621,
+  buildOrCapabilities:
+    | number
+    | Pick<WindowBackgroundCapabilities, 'frostMode' | 'strategy'> = 22621,
 ) {
   const build = typeof buildOrCapabilities === 'number' ? buildOrCapabilities : 22621;
   const frostMode =
     typeof buildOrCapabilities === 'number' ? 'none' : buildOrCapabilities.frostMode;
+  const strategy =
+    typeof buildOrCapabilities === 'number' ? 'default' : buildOrCapabilities.strategy;
+  const alwaysTransparent = platform === 'linux' && strategy === 'hyprland';
   const wanted = normalizeWindowBackground(value);
   if (platform === 'win32') {
     if (build >= 22621) return { background: wanted, restartRequired: false };
@@ -90,22 +105,22 @@ export function resolveRunningWindowBackground(
     };
   }
   // Linux has no Electron backdrop-material API; preserve the current native mode until restart.
-  // Hyprland's compositor blur uses the same transparent BrowserWindow setup,
-  // but unlike other Linux backends its frosted mode remains meaningful at runtime.
+  // Hyprland creates a transparent BrowserWindow from the start, so toggling
+  // the app layer and compositor blur is live after that initial creation.
   return {
     background: resolveWindowBackground(
       wanted,
-      transparent,
+      alwaysTransparent && transparent ? wanted.enabled : transparent,
       frostMode === 'compositor' ? wanted.frosted : false,
     ),
-    restartRequired: wanted.enabled !== transparent,
+    restartRequired: alwaysTransparent ? !transparent : wanted.enabled !== transparent,
   };
 }
 
 /**
  * Resolve the renderer-facing appearance after the host backend is known.
- * Hyprland's compositor owns both blur and translucency, so no synthetic
- * color/opacity layer should be painted by the page in that mode.
+ * Hyprland owns the native transparent surface and blur, while the page keeps
+ * its color/opacity layer so the controls remain adjustable at runtime.
  */
 export function resolveRendererWindowBackground(
   value: WindowBackground,
