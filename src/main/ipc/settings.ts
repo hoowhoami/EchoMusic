@@ -27,7 +27,7 @@ import type { NetworkSettingsUpdateRequest } from '../../shared/network';
 import {
   applyGithubAcceleratorUrl,
   runGithubAcceleratorFallback,
-} from '../../shared/github-accelerator';
+} from '../../shared/githubAccelerator';
 import {
   normalizeCommunityAudioResourceUrl,
   normalizeCommunityImpulseResponseUrl,
@@ -40,14 +40,14 @@ import {
   type SpatialAudioEffectEntry,
 } from '../../shared/audio';
 import type { LogSettings } from '../../shared/logging';
-import { formatUpdateCheckError, isUpdateSignatureError } from '../../shared/update-error';
-import { normalizeUpdateNotes, resolveUpdateNotes } from '../../shared/update-notes';
+import { formatUpdateCheckError, isUpdateSignatureError } from '../../shared/updateError';
+import { normalizeUpdateNotes, resolveUpdateNotes } from '../../shared/updateNotes';
 import {
   getMacDmgAsset,
   MAC_MANUAL_UPDATE_MESSAGE,
   requiresManualMacUpdate,
   type GithubReleaseAsset,
-} from '../../shared/manual-update';
+} from '../../shared/manualUpdate';
 import { applyLogSettings, getLogSettings } from '../logger';
 import { getPlaybackQueueStorage } from '../storage/playbackQueues';
 import { setMainAppSetting } from '../storage/settings';

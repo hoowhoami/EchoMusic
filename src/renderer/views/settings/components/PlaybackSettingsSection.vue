@@ -22,7 +22,7 @@ import {
   MAX_FADE_CROSS_SECS,
   TRACK_TRANSITION_OPTIONS,
   type TrackTransitionMode,
-} from '../../../../shared/track-transition';
+} from '../../../../shared/trackTransition';
 
 const settingStore = useSettingStore();
 const playerStore = usePlayerStore();

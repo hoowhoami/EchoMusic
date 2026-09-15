@@ -14,7 +14,7 @@ import type {
   NowPlayingCommand,
   NowPlayingPlaybackPayload,
   NowPlayingSnapshotPatch,
-} from '../../shared/now-playing';
+} from '../../shared/nowPlaying';
 import { normalizeLyricLinePayload } from '../../shared/lyrics';
 import type { ShortcutCommand } from '../../shared/shortcuts';
 

@@ -5,7 +5,7 @@ import {
   normalizeZoomLevel,
   stepZoomLevel,
   zoomLevelToFactor,
-} from '../../shared/window-zoom';
+} from '../../shared/windowZoom';
 
 export function useWindowZoom() {
   const level = ref(0);

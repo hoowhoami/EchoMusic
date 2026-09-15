@@ -2,7 +2,7 @@ import { computed, reactive, ref, watch } from 'vue';
 import { useSettingStore } from '@/stores/setting';
 import { usePlayerStore } from '@/stores/player';
 import { useToastStore } from '@/stores/toast';
-import type { AudioEffectSupport } from '../../shared/audio-effect-support';
+import type { AudioEffectSupport } from '../../shared/audioEffectSupport';
 import {
   getArtistAudioEffects,
   getAudioEffectBrands,

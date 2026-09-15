@@ -1,7 +1,7 @@
 import type { BrowserWindow } from 'electron';
 import { ipcRegistry } from '../ipc/registry';
 import { getMainAppSettings, setMainAppSetting } from '../storage/settings';
-import { normalizeZoomLevel, stepZoomLevel, zoomShortcut } from '../../shared/window-zoom';
+import { normalizeZoomLevel, stepZoomLevel, zoomShortcut } from '../../shared/windowZoom';
 
 // One authority for shortcuts, settings, reload and startup. Auxiliary lyric and
 // plugin windows have separate sizing contracts and do not inherit this setting.

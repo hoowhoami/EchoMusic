@@ -37,8 +37,8 @@ import type {
   DspProviderManifest,
   DspProviderPreset,
   DspProviderRuntimeState,
-} from '../../../shared/player-audio-graph';
-import { DEFAULT_BASIC_DSP_CONVOLUTION_MIX } from '../../../shared/audio-effect-support';
+} from '../../../shared/playerAudioGraph';
+import { DEFAULT_BASIC_DSP_CONVOLUTION_MIX } from '../../../shared/audioEffectSupport';
 import {
   configurablePresetControls,
   controlDefault,
@@ -50,7 +50,7 @@ import {
   runtimeMatchesPreset,
   validControlValue,
   type DspControlValues,
-} from '../../../shared/dsp-provider-settings';
+} from '../../../shared/dspProviderSettings';
 
 const {
   player,

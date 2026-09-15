@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { formatShortcutRegistrationFailures } from '../src/shared/shortcut-registration.ts';
+import { formatShortcutRegistrationFailures } from '../src/shared/shortcutRegistration.ts';
 import type { ShortcutRegistrationFailure } from '../src/shared/shortcuts.ts';
 
 test('明确标识全局快捷键冲突', () => {

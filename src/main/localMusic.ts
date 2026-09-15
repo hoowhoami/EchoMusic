@@ -3,8 +3,8 @@ import type {
   LocalAudioMetadata,
   LocalAudioScanOptions,
   LocalAudioScanResult,
-} from '../shared/local-music';
-import { LOCAL_AUDIO_EXTENSIONS } from '../shared/local-music';
+} from '../shared/localMusic';
+import { LOCAL_AUDIO_EXTENSIONS } from '../shared/localMusic';
 import { readAudioMetadata, resolveAudioTitleAndArtist } from './media/audioMetadata';
 import { scanLocalFiles, type ScannedLocalFile } from './media/fileScanner';
 

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import PluginSourceInfo from './PluginSourceInfo.vue';
-import { getPluginSourceName } from '../../../shared/plugin-source';
+import { getPluginSourceName } from '../../../shared/pluginSource';
 import Tooltip from '@/components/ui/Tooltip.vue';
 
 import { Icon } from '@iconify/vue';

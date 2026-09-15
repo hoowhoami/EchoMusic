@@ -1,4 +1,4 @@
-import type { WindowBackground } from '../../shared/window-background';
+import type { WindowBackground } from '../../shared/windowBackground';
 
 interface MacCompositionWindow {
   setVibrancy(type: 'hud' | 'under-window' | null): void;

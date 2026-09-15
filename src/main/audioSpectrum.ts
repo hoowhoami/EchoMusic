@@ -3,7 +3,7 @@ import {
   audioSpectrumOptionsIncludeWaveform,
   filterAudioSpectrumFrameForSubscriber,
   normalizeAudioSpectrumWaveform,
-} from '../shared/audio-spectrum';
+} from '../shared/audioSpectrum';
 import type {
   AudioSpectrumFrame,
   AudioSpectrumOptions,
@@ -11,7 +11,7 @@ import type {
   AudioSpectrumSubscribePayload,
   AudioSpectrumSubscribeResult,
   AudioSpectrumUnsubscribePayload,
-} from '../shared/audio-spectrum';
+} from '../shared/audioSpectrum';
 import log from './logger';
 import type { PlayerController } from './player/controller';
 

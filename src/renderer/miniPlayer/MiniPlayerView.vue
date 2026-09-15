@@ -34,8 +34,8 @@ import type {
   MiniPlayerQueuePayload,
   MiniPlayerQueueTrack,
   MiniPlayerSnapshot,
-} from '../../shared/mini-player';
-import { MINI_PLAYER_DIMENSIONS } from '../../shared/mini-player';
+} from '../../shared/miniPlayer';
+import { MINI_PLAYER_DIMENSIONS } from '../../shared/miniPlayer';
 import { buildPlaybackClockSnapshot, normalizePlayerVolume } from '../../shared/playback';
 import { createLyricTimeline, findLyricIndexAtTimeMs } from '@/composables/useLyricTimeline';
 import { createStableLyricIndex } from '@/composables/useStableLyricIndex';

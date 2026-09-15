@@ -13,7 +13,7 @@ import { iconCheckMark, iconPencil, iconPlus, iconTrash, iconX } from '@/icons';
 import SettingsSectionShell from './SettingsSectionShell.vue';
 import { sectionTitles } from '../constants';
 import { normalizeAudioEffectName, type DspProviderRecord } from '../../../../shared/audio';
-import type { DspProviderManifest } from '../../../../shared/player-audio-graph';
+import type { DspProviderManifest } from '../../../../shared/playerAudioGraph';
 
 const settingStore = useSettingStore();
 const playerStore = usePlayerStore();

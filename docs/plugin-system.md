@@ -10,7 +10,7 @@ EchoMusic 支持在线插件源和本地插件。插件可以注册页面、侧�
 - 插件异常时可在“插件管理”中启用安全模式；安全模式会暂时停止加载第三方插件，但保留原启用状态。
 - 插件可以独立发起网络请求。核心音乐请求的数据路径与第三方插件的数据行为应分别判断。
 - 声明 `tcp` 能力的插件可以直接连接本机、内网或公网的 TCP 服务，例如 OpenRGB SDK Server；此连接不使用应用的 HTTP 代理，也不提供 TLS。禁用插件、安全模式或关闭所属窗口时，宿主会释放连接。
-- TCP 支持连接生命周期及单次 read/write/end 的 `AbortSignal`（进行中取消会中止整条连接）、排空发送队列后保留读取能力的 `end()`，以及连接选项 `keepAlive` / `keepAliveInitialDelayMs`。keepalive 默认关闭；end 沿用写入超时。接口定义见 `src/shared/plugin-tcp.ts`，用法见下方 TCP 网络 API 文档。
+- TCP 支持连接生命周期及单次 read/write/end 的 `AbortSignal`（进行中取消会中止整条连接）、排空发送队列后保留读取能力的 `end()`，以及连接选项 `keepAlive` / `keepAliveInitialDelayMs`。keepalive 默认关闭；end 沿用写入超时。接口定义见 `src/shared/pluginTcp.ts`，用法见下方 TCP 网络 API 文档。
 - 宿主在内存中维护插件清单、启用状态和安全模式，业务 API 的权限检查不会扫描插件目录。启动和刷新插件列表时异步读取清单；安装、更新、卸载及备份恢复/回滚会自动失效并重建对应记录。直接编辑清单或替换插件目录后，需要刷新插件列表或重启应用；失效期间不允许用旧记录继续申请能力。
 - 声明 `backups` 能力的插件可以通过 `ctx.backups` 创建、检查和恢复备份，也可以用 `registerProvider()` 将插件提供的存储位置接入主程序“备份与恢复”界面；创建与恢复均需用户在宿主确认框中授权，备份内容本身不加密。
 

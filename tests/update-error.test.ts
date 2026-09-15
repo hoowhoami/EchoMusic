@@ -5,7 +5,7 @@ import {
   isUpdateMetadataPublishingError,
   isUpdateSignatureError,
   UPDATE_SIGNATURE_ERROR,
-} from '../src/shared/update-error.ts';
+} from '../src/shared/updateError.ts';
 
 test('recognizes missing updater metadata while a Release is being published', () => {
   const error = new Error('Cannot find latest.yml in the latest release artifacts: HttpError: 404');

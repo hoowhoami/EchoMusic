@@ -1,4 +1,4 @@
-import { findInstalledPluginCatalogTags } from '../../shared/plugin-source';
+import { findInstalledPluginCatalogTags } from '../../shared/pluginSource';
 import { shell, type WebContents } from 'electron';
 import { statSync } from 'fs';
 import fs from 'fs/promises';
@@ -51,7 +51,7 @@ import { isBlockedObjectKey } from '../../shared/objectSafety';
 import {
   applyGithubAcceleratorUrl as applyGithubProxyUrl,
   runGithubAcceleratorFallback,
-} from '../../shared/github-accelerator';
+} from '../../shared/githubAccelerator';
 import { getKvStorage } from '../storage/kv';
 import { onKvChange } from '../storage/kvEvents';
 import { createPluginMetadataRegistry } from './metadata';

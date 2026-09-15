@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { transformSync } from 'esbuild';
 import * as vue from 'vue';
-import * as support from '../src/shared/audio-effect-support.ts';
+import * as support from '../src/shared/audioEffectSupport.ts';
 
 const ir = {
   id: 'ir',
@@ -57,7 +57,7 @@ const { createSpatialAudioSupport } = loadModule(
   '../src/renderer/stores/player/spatialAudioSupport.ts',
   {
     vue,
-    '../../../shared/audio-effect-support': support,
+    '../../../shared/audioEffectSupport': support,
   },
 );
 const deferred = () => {

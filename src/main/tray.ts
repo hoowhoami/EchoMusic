@@ -2,7 +2,7 @@ import { Menu, Tray, app, nativeImage, type MenuItemConstructorOptions } from 'e
 import { statSync } from 'fs';
 import { quitApplication } from './window';
 import { DEFAULT_PLAYER_VOLUME, type PlayMode } from '../shared/playback';
-import type { DesktopLyricSnapshot } from '../shared/desktop-lyric';
+import type { DesktopLyricSnapshot } from '../shared/desktopLyric';
 import type { TrayCommand, TrayPlaybackPayload } from '../shared/tray';
 import log from './logger';
 import { resolveTrayIconPath } from './appIcons';

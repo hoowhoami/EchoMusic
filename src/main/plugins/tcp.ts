@@ -1,5 +1,5 @@
 import { Socket } from 'node:net';
-import type { PluginTcpNativeConnectOptions } from '../../shared/plugin-tcp';
+import type { PluginTcpNativeConnectOptions } from '../../shared/pluginTcp';
 
 const READ_BYTES = 64 * 1024;
 const MAX_WRITE_BYTES = 1024 * 1024;

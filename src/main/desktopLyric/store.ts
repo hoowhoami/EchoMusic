@@ -3,7 +3,7 @@ import type {
   DesktopLyricLayout,
   DesktopLyricSettings,
   DesktopLyricShadowStrength,
-} from '../../shared/desktop-lyric';
+} from '../../shared/desktopLyric';
 import {
   DEFAULT_DESKTOP_LYRIC_PERSISTED_SETTINGS,
   getDesktopLyricPersistedSettings,

@@ -3,20 +3,20 @@ import type { Pinia } from 'pinia';
 import type { EchoPluginDescriptor } from '../../../shared/plugins';
 import type { PluginTaskApi } from '../../../shared/tasks';
 import { createFontApi } from '../../../shared/font';
-import type { AudioSpectrumFrame, AudioSpectrumOptions } from '../../../shared/audio-spectrum';
+import type { AudioSpectrumFrame, AudioSpectrumOptions } from '../../../shared/audioSpectrum';
 import type {
   DesktopLyricCommand,
   DesktopLyricSettings,
   DesktopLyricSnapshotMessage,
   DesktopLyricWindowBoundsUpdate,
-} from '../../../shared/desktop-lyric';
-import type { MiniPlayerCommand, MiniPlayerSnapshot } from '../../../shared/mini-player';
+} from '../../../shared/desktopLyric';
+import type { MiniPlayerCommand, MiniPlayerSnapshot } from '../../../shared/miniPlayer';
 import type {
   NowPlayingAppearancePayload,
   NowPlayingCommand,
   NowPlayingLyricPayload,
   NowPlayingSnapshot,
-} from '../../../shared/now-playing';
+} from '../../../shared/nowPlaying';
 import type { IconifyIcon } from '@iconify/types';
 import * as icons from '@/icons';
 import type { Song } from '@/models/song';

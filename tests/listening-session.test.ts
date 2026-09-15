@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { createListeningSession, type ListeningIdentity } from '../src/shared/listening-session.ts';
+import { createListeningSession, type ListeningIdentity } from '../src/shared/listeningSession.ts';
 
 function fixture() {
   let now = 0;

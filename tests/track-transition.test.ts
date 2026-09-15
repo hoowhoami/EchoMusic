@@ -9,7 +9,7 @@ import {
   transitionPrefetchLeadSecs,
   transitionPreparesNextTrack,
   transitionPreparationTimeoutSecs,
-} from '../src/shared/track-transition.ts';
+} from '../src/shared/trackTransition.ts';
 
 test('preparation has its own budget capped by the outgoing playback deadline', () => {
   assert.equal(transitionPreparationTimeoutSecs('automix-pro', 75, 1), 60);

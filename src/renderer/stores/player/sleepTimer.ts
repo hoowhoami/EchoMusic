@@ -1,4 +1,4 @@
-import type { SleepTimerAction } from '../../../shared/sleep-timer';
+import type { SleepTimerAction } from '../../../shared/sleepTimer';
 
 export const createSleepTimerState = () => ({
   action: 'pause' as SleepTimerAction,

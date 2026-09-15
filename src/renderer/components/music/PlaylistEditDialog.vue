@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, ref, shallowRef, watch } from 'vue';
 import Dialog from '@/components/ui/Dialog.vue';
 import Button from '@/components/ui/Button.vue';
+import Tooltip from '@/components/ui/Tooltip.vue';
 import Input from '@/components/ui/Input.vue';
 import TagInput from '@/components/ui/TagInput.vue';
 import { parsePlaylistTags, serializePlaylistTags } from '@/utils/playlistTags';
@@ -256,9 +257,11 @@ onBeforeUnmount(() => {
             >
               {{ selectingCover ? '正在读取…' : '更换封面' }}
             </Button>
-            <span v-if="selectedCover" class="edit-cover-name" :title="selectedCover.name">{{
-              selectedCover.name
-            }}</span>
+            <Tooltip v-if="selectedCover" :content="selectedCover.name" overflow-only>
+              <template #trigger>
+                <span class="edit-cover-name" data-tooltip-label>{{ selectedCover.name }}</span>
+              </template>
+            </Tooltip>
           </div>
         </div>
       </div>

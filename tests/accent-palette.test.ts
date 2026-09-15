@@ -11,7 +11,7 @@ import {
   rgbToOklab,
   oklabToRgb,
   accentSurfaces,
-} from '../src/shared/accent-palette.ts';
+} from '../src/shared/accentPalette.ts';
 
 const colors = [
   '#000000',

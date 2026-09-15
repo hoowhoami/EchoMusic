@@ -10,7 +10,7 @@ import type {
   CloudUploadFile,
 } from '../../shared/cloud';
 import { CLOUD_UPLOAD_EXTENSIONS, CLOUD_UPLOAD_MAX_SIZE } from '../../shared/cloud';
-import type { LocalAudioMetadata } from '../../shared/local-music';
+import type { LocalAudioMetadata } from '../../shared/localMusic';
 import { readAudioMetadata, resolveAudioTitleAndArtist } from '../media/audioMetadata';
 import {
   normalizeFileExtension,

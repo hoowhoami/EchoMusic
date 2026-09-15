@@ -1,8 +1,8 @@
 import {
   resolveRendererWindowBackground,
   type WindowBackground,
-} from '../../shared/window-background';
-import type { WindowBackgroundTransparentMode } from '../../shared/window-background-strategy';
+} from '../../shared/windowBackground';
+import type { WindowBackgroundTransparentMode } from '../../shared/windowBackgroundStrategy';
 
 export function applyWindowBackground(
   value: WindowBackground,

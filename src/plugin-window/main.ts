@@ -22,7 +22,7 @@ import type {
   PluginWindowResizeOptions,
 } from '../shared/plugins';
 import type { IconifyIcon } from '@iconify/types';
-import type { AudioSpectrumFrame, AudioSpectrumOptions } from '../shared/audio-spectrum';
+import type { AudioSpectrumFrame, AudioSpectrumOptions } from '../shared/audioSpectrum';
 import { createFontApi } from '../shared/font';
 import * as icons from '../renderer/icons';
 import { createThemedIconCoverUrl } from '../renderer/utils/themedCover';

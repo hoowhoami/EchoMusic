@@ -14,8 +14,8 @@ import {
   providerPresetSupportsSampleRate,
   runtimeMatchesPreset,
   validControlValue,
-} from '../src/shared/dsp-provider-settings.ts';
-import type { DspProviderControl, DspProviderManifest } from '../src/shared/player-audio-graph.ts';
+} from '../src/shared/dspProviderSettings.ts';
+import type { DspProviderControl, DspProviderManifest } from '../src/shared/playerAudioGraph.ts';
 
 const controls: DspProviderControl[] = [
   { id: 'amount', type: 'number', defaultValue: 10, range: { min: 0, max: 20, step: 1 } },

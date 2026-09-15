@@ -6,8 +6,8 @@ import type {
   NowPlayingPlaybackPayload,
   NowPlayingSnapshot,
   NowPlayingSnapshotPatch,
-} from '../shared/now-playing';
-import { DEFAULT_NOW_PLAYING_APPEARANCE, DEFAULT_NOW_PLAYING_LYRIC } from '../shared/now-playing';
+} from '../shared/nowPlaying';
+import { DEFAULT_NOW_PLAYING_APPEARANCE, DEFAULT_NOW_PLAYING_LYRIC } from '../shared/nowPlaying';
 import type { LyricLinePayload } from '../shared/lyrics';
 import type { IpcContext } from './ipc/types';
 import { getMainWindow } from './window';

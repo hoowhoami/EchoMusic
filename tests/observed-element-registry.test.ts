@@ -4,7 +4,7 @@ import {
   createObservedElementRegistry,
   createObservedRootConnectionMonitor,
   observeRootConnectionChanges,
-} from '../src/shared/observed-element-registry.ts';
+} from '../src/shared/observedElementRegistry.ts';
 
 test('releases cleanup as soon as an observed element becomes inactive', () => {
   const cleaned: string[] = [];

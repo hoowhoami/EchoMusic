@@ -1,10 +1,10 @@
 import { contextBridge, ipcRenderer, webFrame, webUtils } from 'electron';
 import log from 'electron-log/renderer';
-import type { ApiServerStatus } from '../shared/api-server';
+import type { ApiServerStatus } from '../shared/apiServer';
 import type { AppInfoResult, UpdateDownloadResult, UpdateState } from '../shared/app';
 import type { PlayMode } from '../shared/playback';
-import type { TrackTransitionPlaybackInfo } from '../shared/track-transition';
-import type { SleepTimerAction, SleepTimerActionResult } from '../shared/sleep-timer';
+import type { TrackTransitionPlaybackInfo } from '../shared/trackTransition';
+import type { SleepTimerAction, SleepTimerActionResult } from '../shared/sleepTimer';
 import type {
   PluginGlobalShortcutRegistrationPayload,
   PluginGlobalShortcutRegistrationResult,
@@ -20,18 +20,18 @@ import type {
   DesktopLyricSnapshotMessage,
   DesktopLyricSnapshotPatch,
   DesktopLyricWindowBoundsUpdate,
-} from '../shared/desktop-lyric';
+} from '../shared/desktopLyric';
 import { isWaylandWindowingBackend } from '../shared/windowing';
 import type {
   NowPlayingCommand,
   NowPlayingSnapshot,
   NowPlayingSnapshotPatch,
-} from '../shared/now-playing';
+} from '../shared/nowPlaying';
 import type {
   MiniPlayerCommand,
   MiniPlayerSnapshot,
   MiniPlayerSnapshotPatch,
-} from '../shared/mini-player';
+} from '../shared/miniPlayer';
 import type {
   AudioEffectPlaybackOptions,
   DownloadCommunityAudioEffectRequest,
@@ -45,10 +45,10 @@ import type {
   AudioSpectrumOptions,
   AudioSpectrumStatus,
   AudioSpectrumSubscribeResult,
-} from '../shared/audio-spectrum';
+} from '../shared/audioSpectrum';
 import type { LogSettings } from '../shared/logging';
 import type { NetworkSettingsState, NetworkSettingsUpdateRequest } from '../shared/network';
-import type { PluginTcpNativeApi } from '../shared/plugin-tcp';
+import type { PluginTcpNativeApi } from '../shared/pluginTcp';
 import type {
   PluginBackupCreateResult,
   PluginBackupInspectResult,
@@ -60,12 +60,12 @@ import type {
   SettingsBackupImportResult,
   SettingsBackupInspectResult,
 } from '../shared/settingsBackup';
-import type { PlayerErrorPayload } from '../shared/player-error';
+import type { PlayerErrorPayload } from '../shared/playerError';
 import type {
   PlayerAudioGraphParameterPatch,
   PlayerAudioGraphPlanPatch,
   PlayerAudioGraphSnapshot,
-} from '../shared/player-audio-graph';
+} from '../shared/playerAudioGraph';
 import type { ResolvePlaylistRequest, ResolvePlaylistResponse } from '../shared/external';
 import type {
   RecognizeCaptureRequest,

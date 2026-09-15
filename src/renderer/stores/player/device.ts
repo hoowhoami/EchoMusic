@@ -2,7 +2,7 @@ import logger from '@/utils/logger';
 import type { PlayerState } from './state';
 import type { useSettingStore } from '../setting';
 import type { PlayerEngine } from '@/utils/player';
-import type { PlayerErrorCode, PlayerErrorPayload } from '../../../shared/player-error';
+import type { PlayerErrorCode, PlayerErrorPayload } from '../../../shared/playerError';
 import {
   getPlaybackIsPlaying,
   setEnginePlaybackStatus,

@@ -3,7 +3,7 @@ import test from 'node:test';
 import {
   applyGithubAcceleratorUrl,
   runGithubAcceleratorFallback,
-} from '../src/shared/github-accelerator.ts';
+} from '../src/shared/githubAccelerator.ts';
 
 test('rewrites only GitHub-hosted URLs through the configured accelerator', () => {
   assert.equal(

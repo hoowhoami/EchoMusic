@@ -1,7 +1,7 @@
 import { screen, type BrowserWindow } from 'electron';
 import { getNativeWindowPointer } from '../native/platform';
 import log from '../logger';
-import { titleBarHeight } from '../../shared/window-zoom';
+import { titleBarHeight } from '../../shared/windowZoom';
 
 // Native drag regions bypass DOM pointerdown. Observe them without changing hit testing.
 export function installWindowPointerEvents(win: BrowserWindow) {

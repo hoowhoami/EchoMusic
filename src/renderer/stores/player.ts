@@ -8,20 +8,20 @@ import { useUserStore } from './user';
 import logger from '@/utils/logger';
 import { normalizePlayerErrorPayload, PlayerEngine, type PlayerEngineEvents } from '@/utils/player';
 import type { Song } from '@/models/song';
-import type { PlayerErrorPayload } from '../../shared/player-error';
+import type { PlayerErrorPayload } from '../../shared/playerError';
 import {
   createPlaybackClock,
   matchesPendingSeekTarget,
   type PlaybackProgressBusyReason,
 } from '../../shared/playback';
 import type { AudioEffectPlaybackOptions, SpatialAudioEffectEntry } from '../../shared/audio';
-import { createLatestRequestQueue } from '../../shared/latest-request-queue';
-import { resolvePlaybackSourceQueueId } from '../../shared/playback-queue-decision';
+import { createLatestRequestQueue } from '../../shared/latestRequestQueue';
+import { resolvePlaybackSourceQueueId } from '../../shared/playbackQueueDecision';
 import {
   DEFAULT_BASIC_DSP_CONVOLUTION_MIX,
   spatialAudioEffectOptions,
-} from '../../shared/audio-effect-support';
-import { dspProviderRestorePatch } from '../../shared/dsp-provider-settings';
+} from '../../shared/audioEffectSupport';
+import { dspProviderRestorePatch } from '../../shared/dspProviderSettings';
 
 import { createPlayerState } from './player/state';
 import { createSleepTimer } from './player/sleepTimer';

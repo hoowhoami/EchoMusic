@@ -11,7 +11,7 @@ import {
   resolveQueuedNextTrackDecision,
   resolveQueueAdvanceAuthority,
   resolveNextTrackDecision,
-} from '../src/shared/playback-queue-decision.ts';
+} from '../src/shared/playbackQueueDecision.ts';
 import {
   LISTEN_TOGETHER_QUEUE_ID,
   PERSONAL_FM_QUEUE_ID,

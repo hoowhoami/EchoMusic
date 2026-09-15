@@ -1,4 +1,4 @@
-import type { WindowFrameState } from '../../shared/window-frame';
+import type { WindowFrameState } from '../../shared/windowFrame';
 
 /** A non-interactive frame, independent of window background opacity. */
 export function installWindowFrame() {

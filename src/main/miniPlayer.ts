@@ -7,8 +7,8 @@ import type {
   MiniPlayerPlaybackPayload,
   MiniPlayerSnapshot,
   MiniPlayerSnapshotPatch,
-} from '../shared/mini-player';
-import { MINI_PLAYER_DIMENSIONS } from '../shared/mini-player';
+} from '../shared/miniPlayer';
+import { MINI_PLAYER_DIMENSIONS } from '../shared/miniPlayer';
 import {
   acceptPlaybackBridgeRendererPayload,
   beginPlaybackBridgeTransition,

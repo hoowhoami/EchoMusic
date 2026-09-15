@@ -9,8 +9,8 @@ import {
   resolveNextTrackDecision,
   type NextTrackTargetDecision,
   type OrderedPlaybackMode,
-} from '../../../shared/playback-queue-decision';
-import { consumePlayedQueuedNextTrack } from '../../../shared/playback-queue-execution';
+} from '../../../shared/playbackQueueDecision';
+import { consumePlayedQueuedNextTrack } from '../../../shared/playbackQueueExecution';
 import type { PluginAudioSourceTransformStage } from '@/plugins/audioSource';
 import { isPlayableSong } from '@/utils/song';
 import type { PlayerState } from './state';
@@ -37,7 +37,7 @@ import {
   transitionPreparationTimeoutSecs,
   transitionPreparesNextTrack,
   type TrackTransitionPlaybackInfo,
-} from '../../../shared/track-transition';
+} from '../../../shared/trackTransition';
 import {
   abortNativeTrackLoad,
   beginNativeTrackLoad,

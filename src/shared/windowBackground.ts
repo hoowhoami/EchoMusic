@@ -1,7 +1,7 @@
 import type {
   WindowBackgroundCapabilities,
   WindowBackgroundTransparentMode,
-} from './window-background-strategy';
+} from './windowBackgroundStrategy';
 
 export interface WindowBackground {
   enabled: boolean;

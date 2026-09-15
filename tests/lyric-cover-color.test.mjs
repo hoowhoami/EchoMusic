@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { transformSync } from 'esbuild';
-import { normalizeAccent } from '../src/shared/accent-palette.ts';
+import { normalizeAccent } from '../src/shared/accentPalette.ts';
 
 const theme = { coverColor: '#0071e3' };
 const { code } = transformSync(

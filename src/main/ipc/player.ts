@@ -7,7 +7,7 @@ import type { AudioEffectPlaybackOptions, DspProviderInspection } from '../../sh
 import type {
   PlayerAudioGraphParameterPatch,
   PlayerAudioGraphPlanPatch,
-} from '../../shared/player-audio-graph';
+} from '../../shared/playerAudioGraph';
 import { restartPlayer } from '../player';
 import { setPlayerAudioEffect } from '../player/audioEffectCommand';
 import { DspProviderRegistry } from '../player/dspProviderRegistry';

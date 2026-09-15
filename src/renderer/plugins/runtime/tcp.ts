@@ -1,5 +1,5 @@
 import type { EchoPluginDescriptor } from '../../../shared/plugins';
-import type { PluginTcpConnectOptions, PluginTcpConnection } from '../../../shared/plugin-tcp';
+import type { PluginTcpConnectOptions, PluginTcpConnection } from '../../../shared/pluginTcp';
 
 let connectionSequence = 0;
 

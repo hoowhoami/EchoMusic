@@ -1,6 +1,6 @@
 import { basename, extname } from 'path';
 import { parseFile } from 'music-metadata';
-import type { LocalAudioMetadata } from '../../shared/local-music';
+import type { LocalAudioMetadata } from '../../shared/localMusic';
 
 export const resolveAudioTitleAndArtist = (
   fileName: string,

@@ -33,7 +33,7 @@ import {
   type DesktopLyricSnapshotMessage,
   type LyricCharacterPayload,
   type LyricLinePayload,
-} from '../../shared/desktop-lyric';
+} from '../../shared/desktopLyric';
 import { buildFontFamily } from '../../shared/font';
 import {
   getPluginLyricEffectClassNames,

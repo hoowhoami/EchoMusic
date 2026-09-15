@@ -4,7 +4,7 @@ import {
   detectWindowBackgroundStrategy,
   isHyprlandEnvironment,
   resolveWindowBackgroundCapabilities,
-} from '../src/shared/window-background-strategy.ts';
+} from '../src/shared/windowBackgroundStrategy.ts';
 
 test('Hyprland detection accepts its instance signature and desktop identifiers', () => {
   assert.equal(isHyprlandEnvironment({ HYPRLAND_INSTANCE_SIGNATURE: 'abc123' }), true);

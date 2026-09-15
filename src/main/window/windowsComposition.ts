@@ -1,7 +1,7 @@
 import type { BrowserWindow } from 'electron';
 import { getNativePlatform } from '../native/platform';
 import { syncWindowsBackgroundMaterial } from './backgroundMaterial';
-import type { WindowBackground } from '../../shared/window-background';
+import type { WindowBackground } from '../../shared/windowBackground';
 
 export const supportsWindowsAccent = () => Boolean(getNativePlatform());
 

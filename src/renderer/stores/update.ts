@@ -5,7 +5,7 @@ import type {
   UpdateDownloadStatus,
 } from '../../shared/app';
 import { useSettingStore } from './setting';
-import { isUpdateSignatureError, UPDATE_SIGNATURE_ERROR } from '../../shared/update-error';
+import { isUpdateSignatureError, UPDATE_SIGNATURE_ERROR } from '../../shared/updateError';
 
 /**
  * 更新状态的单一可信来源（single source of truth）。

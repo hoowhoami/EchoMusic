@@ -1,8 +1,8 @@
 import { MAIN_WINDOW_DEFAULT_SIZE } from '../windowSizing';
-import { DEFAULT_WINDOW_BACKGROUND, type WindowBackground } from '../../shared/window-background';
+import { DEFAULT_WINDOW_BACKGROUND, type WindowBackground } from '../../shared/windowBackground';
 import type { CloseBehavior, ThemeMode } from '../../shared/app';
-import type { DesktopLyricSettings } from '../../shared/desktop-lyric';
-import { DEFAULT_DESKTOP_LYRIC_SETTINGS } from '../../shared/desktop-lyric';
+import type { DesktopLyricSettings } from '../../shared/desktopLyric';
+import { DEFAULT_DESKTOP_LYRIC_SETTINGS } from '../../shared/desktopLyric';
 import type { LogSettings } from '../../shared/logging';
 import { DEFAULT_LOG_SETTINGS } from '../../shared/logging';
 import { getKvStorage } from './kv';

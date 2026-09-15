@@ -10,7 +10,7 @@ import type {
   ShortcutMap,
   ShortcutRegistrationResult,
 } from '../../shared/shortcuts';
-import { formatShortcutRegistrationFailures } from '../../shared/shortcut-registration';
+import { formatShortcutRegistrationFailures } from '../../shared/shortcutRegistration';
 
 type ShortcutDisplayPlatform = 'darwin' | 'win32' | 'linux' | string;
 

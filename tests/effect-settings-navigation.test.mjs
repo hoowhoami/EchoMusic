@@ -4,9 +4,9 @@ import { test } from 'node:test';
 import { transformSync } from 'esbuild';
 import * as vue from 'vue';
 import { compileScript, parse } from 'vue/compiler-sfc';
-import * as settings from '../src/shared/dsp-provider-settings.ts';
+import * as settings from '../src/shared/dspProviderSettings.ts';
 import * as audio from '../src/shared/audio.ts';
-import * as audioSupport from '../src/shared/audio-effect-support.ts';
+import * as audioSupport from '../src/shared/audioEffectSupport.ts';
 
 // Exercise the actual SFC setup/watchers without Electron, DOM, or audio playback.
 function setupComponent(t, file, props, imports = {}) {
@@ -25,7 +25,7 @@ function setupComponent(t, file, props, imports = {}) {
       provide() {},
     },
     '@vueuse/core': { useThrottleFn: (fn) => fn },
-    '../../../shared/dsp-provider-settings': settings,
+    '../../../shared/dspProviderSettings': settings,
     '../../../shared/audio': audio,
     ...imports,
   };

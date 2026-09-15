@@ -1,4 +1,4 @@
-import type { LocalAudioMetadata } from './local-music';
+import type { LocalAudioMetadata } from './localMusic';
 
 export type PluginWindowType = 'floating';
 export type PluginWindowPosition = 'center' | 'top-center';

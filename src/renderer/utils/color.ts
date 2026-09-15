@@ -4,9 +4,9 @@ import {
   createAccentPaletteFromPrimary,
   rgbToOklab,
   oklabToRgb,
-} from '../../shared/accent-palette';
-export { normalizeAccent, getAccentPalette } from '../../shared/accent-palette';
-export type { AccentPalette } from '../../shared/accent-palette';
+} from '../../shared/accentPalette';
+export { normalizeAccent, getAccentPalette } from '../../shared/accentPalette';
+export type { AccentPalette } from '../../shared/accentPalette';
 // 主题色工具：提取、归一化、派生 CSS 变量
 
 // 默认主题色（与 style.css 默认值保持一致）

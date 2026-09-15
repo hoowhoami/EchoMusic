@@ -2,7 +2,7 @@ import fs from 'fs/promises';
 import { basename, dirname, extname, resolve } from 'path';
 import { pathToFileURL } from 'url';
 import type { Stats } from 'fs';
-import type { LocalAudioMetadata } from '../../shared/local-music';
+import type { LocalAudioMetadata } from '../../shared/localMusic';
 import type {
   EchoPluginDescriptor,
   PluginDeleteFileResult,

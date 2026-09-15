@@ -2,7 +2,7 @@
 import Tooltip from '@/components/ui/Tooltip.vue';
 
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
-import type { MiniPlayerExpandDirection, MiniPlayerLyricPayload } from '../../shared/mini-player';
+import type { MiniPlayerExpandDirection, MiniPlayerLyricPayload } from '../../shared/miniPlayer';
 import { computeLyricCharBackgroundPosition } from '@/composables/useLyricTimeline';
 
 const props = defineProps<{

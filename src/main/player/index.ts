@@ -1,7 +1,7 @@
 import log from '../logger';
 import { getMainWindow } from '../window';
 import { PlayerController } from './controller';
-import type { PlayerErrorPayload } from '../../shared/player-error';
+import type { PlayerErrorPayload } from '../../shared/playerError';
 import {
   beginDesktopLyricPlaybackBridgeTransition,
   patchDesktopLyricPlaybackFromPlayer,

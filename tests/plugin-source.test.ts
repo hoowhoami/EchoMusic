@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { getInstalledPluginSourceName, getPluginSourceName } from '../src/shared/plugin-source.ts';
+import { getInstalledPluginSourceName, getPluginSourceName } from '../src/shared/pluginSource.ts';
 
 test('来源使用名称，缺少名称时回退到源地址', () => {
   assert.equal(getPluginSourceName(' 官方源 ', 'https://example.com'), '官方源');
@@ -26,7 +26,7 @@ test('本地安装和缺少历史记录明确区分', () => {
 });
 
 test('历史标签仅匹配唯一目录项，本地安装不误用在线同名标签', async () => {
-  const { findInstalledPluginCatalogTags } = await import('../src/shared/plugin-source.ts');
+  const { findInstalledPluginCatalogTags } = await import('../src/shared/pluginSource.ts');
   const descriptor = { id: 'demo', name: 'Demo', version: '1.0.0', author: 'author' };
   const entry = {
     ...descriptor,

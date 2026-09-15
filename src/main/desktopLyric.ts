@@ -9,7 +9,7 @@ import type {
   DesktopLyricSnapshotMessage,
   DesktopLyricSnapshotPatch,
   DesktopLyricWindowBoundsUpdate,
-} from '../shared/desktop-lyric';
+} from '../shared/desktopLyric';
 import { isWaylandWindowingBackend } from '../shared/windowing';
 import {
   acceptPlaybackBridgeRendererPayload,

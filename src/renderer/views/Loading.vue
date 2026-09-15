@@ -10,7 +10,7 @@ import logger from '@/utils/logger';
 import { finishStartup, markStartup, updateStartupStatus } from '@/utils/startupTiming';
 import Button from '@/components/ui/Button.vue';
 import OverlayHeader from '@/layouts/OverlayHeader.vue';
-import type { ApiServerStatus } from '@/../shared/api-server';
+import type { ApiServerStatus } from '@/../shared/apiServer';
 
 const router = useRouter();
 const deviceStore = useDeviceStore();

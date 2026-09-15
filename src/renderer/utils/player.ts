@@ -1,11 +1,11 @@
 import logger from './logger';
 import type { AudioEffectPlaybackOptions } from '../../shared/audio';
-import type { PlayerErrorPayload } from '../../shared/player-error';
+import type { PlayerErrorPayload } from '../../shared/playerError';
 import type {
   PlayerAudioGraphParameterPatch,
   PlayerAudioGraphPlanPatch,
   PlayerAudioGraphSnapshot,
-} from '../../shared/player-audio-graph';
+} from '../../shared/playerAudioGraph';
 import {
   calculateNormalizationGainDb,
   DEFAULT_REFERENCE_LUFS,
@@ -14,7 +14,7 @@ import {
 export type { TrackLoudness } from '../../shared/loudness';
 import { DEFAULT_PLAYER_VOLUME, matchesPendingSeekTarget } from '../../shared/playback';
 import type { PlaybackSource } from '@/stores/player/types';
-import type { TrackTransitionPlaybackInfo } from '../../shared/track-transition';
+import type { TrackTransitionPlaybackInfo } from '../../shared/trackTransition';
 
 export interface PlayerEngineEvents {
   timeUpdate?: (currentTime: number, payload?: PlayerPlaybackContext) => void;

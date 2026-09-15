@@ -1,5 +1,5 @@
 import type { AudioEffectPlaybackOptions, SpatialAudioEffectEntry } from './audio';
-import type { DspProviderManifest } from './player-audio-graph';
+import type { DspProviderManifest } from './playerAudioGraph';
 
 // Match Provider/ViPER resource semantics: an IR is fully wet unless the user
 // explicitly chooses a dry/wet blend for the Builtin engine.

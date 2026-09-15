@@ -306,10 +306,16 @@ export function reportListeningEvent(options: {
   mixsongid: number;
   duration?: number;
   state?: string;
-  d_sec?: number;
-  diff_sec?: number;
 }) {
   return request.post('/user/listen/report', options, { skipKugouVerification: true });
+}
+
+/**
+ * 周期性独立写入听歌等级累计时长（与 CSCC 事件解耦），避免同段时长被重复计入。
+ * 对接 /user/grade/info 的上报模式（d_sec=服务端当前基线，diff_sec=新增秒数）。
+ */
+export function reportGradeProgress(payload: { d_sec: number; diff_sec: number }) {
+  return request.post('/user/grade/info', payload, { skipKugouVerification: true });
 }
 
 /**

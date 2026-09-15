@@ -4,7 +4,7 @@ import {
   normalizeUpdateNotes,
   extractVersionNotes,
   resolveUpdateNotes,
-} from '../src/shared/update-notes.ts';
+} from '../src/shared/updateNotes.ts';
 
 test('selects notes for the target version instead of the first array item', () => {
   assert.equal(

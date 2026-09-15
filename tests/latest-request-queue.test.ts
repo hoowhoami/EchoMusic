@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { createLatestRequestQueue } from '../src/shared/latest-request-queue.ts';
+import { createLatestRequestQueue } from '../src/shared/latestRequestQueue.ts';
 
 const tick = () => new Promise<void>((resolve) => setImmediate(resolve));
 function deferred() {

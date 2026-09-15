@@ -4,7 +4,7 @@ import {
   normalizeWindowBackground,
   resolveWindowBackground,
   type WindowBackground,
-} from '../../shared/window-background';
+} from '../../shared/windowBackground';
 import { applyWindowBackground } from '@/utils/windowBackground';
 import { defineStore } from 'pinia';
 import type { CloseBehavior, ThemeMode } from '../../shared/app';
@@ -17,7 +17,7 @@ import {
   type DspProviderRecord,
   type SpatialAudioEffectEntry,
 } from '../../shared/audio';
-import { normalizeConvolutionMix } from '../../shared/audio-effect-support';
+import { normalizeConvolutionMix } from '../../shared/audioEffectSupport';
 import {
   DEFAULT_NETWORK_SETTINGS,
   normalizeNetworkSettings,
@@ -27,7 +27,7 @@ import type {
   WindowBackgroundFrostBackend,
   WindowBackgroundStrategyId,
   WindowBackgroundTransparentMode,
-} from '../../shared/window-background-strategy';
+} from '../../shared/windowBackgroundStrategy';
 import { configureRendererLogger } from '@/utils/logger';
 import {
   clampFadeCrossSecs,
@@ -35,13 +35,13 @@ import {
   DEFAULT_TRACK_TRANSITION_MODE,
   isTrackTransitionMode,
   type TrackTransitionMode,
-} from '../../shared/track-transition';
+} from '../../shared/trackTransition';
 import {
   dspPresetBankKey,
   dspPresetSettingsPatch,
   parseDspPreset,
   type DspPresetBank,
-} from '../../shared/dsp-provider-settings';
+} from '../../shared/dspProviderSettings';
 
 export const DEFAULT_SHORTCUT_LABELS: Record<string, string> = {
   togglePlayback: '⌘Space',

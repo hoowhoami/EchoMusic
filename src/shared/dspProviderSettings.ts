@@ -3,7 +3,7 @@ import type {
   DspProviderControl,
   DspProviderManifest,
   DspProviderRuntimeState,
-} from './player-audio-graph';
+} from './playerAudioGraph';
 
 export type DspControlValues = Record<string, { value: DspJsonValue }>;
 export type DspPresetBank = Record<string, string>;

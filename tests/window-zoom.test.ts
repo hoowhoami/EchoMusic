@@ -6,7 +6,7 @@ import {
   zoomLevelToFactor,
   zoomShortcut,
   titleBarHeight,
-} from '../src/shared/window-zoom.ts';
+} from '../src/shared/windowZoom.ts';
 
 test('stored Chromium levels, zoom range and invalid settings remain compatible', () => {
   for (const value of [null, '2', NaN, Infinity, {}, undefined])

@@ -9,14 +9,14 @@ import {
   DEFAULT_DESKTOP_LYRIC_OFFSET_STEP_SECONDS,
   isDesktopLyricFullSnapshot,
   mergeDesktopLyricSnapshotMessage,
-} from '../../shared/desktop-lyric';
+} from '../../shared/desktopLyric';
 import type {
   DesktopLyricCommand,
   DesktopLyricPlaybackPayload,
   DesktopLyricSettings,
   DesktopLyricSnapshot,
   LyricLinePayload,
-} from '../../shared/desktop-lyric';
+} from '../../shared/desktopLyric';
 
 const DESKTOP_LYRIC_PROGRESS_SYNC_INTERVAL_MS = 80;
 const DEFAULT_DESKTOP_LYRIC_OFFSET_STEP_MS = DEFAULT_DESKTOP_LYRIC_OFFSET_STEP_SECONDS * 1000;

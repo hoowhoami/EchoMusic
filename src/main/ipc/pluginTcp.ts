@@ -2,7 +2,7 @@ import { app, type WebContents } from 'electron';
 import { ipcRegistry } from './registry';
 import { PluginTcpError, pluginTcpManager } from '../plugins/tcp';
 import { normalizePluginId } from '../plugins/common';
-import type { PluginTcpNativeConnectOptions } from '../../shared/plugin-tcp';
+import type { PluginTcpNativeConnectOptions } from '../../shared/pluginTcp';
 
 const owners = new WeakSet<WebContents>();
 const trackOwner = (owner: WebContents) => {

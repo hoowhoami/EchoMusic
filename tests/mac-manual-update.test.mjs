@@ -3,10 +3,10 @@ import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { test } from 'node:test';
 import { transformSync } from 'esbuild';
-import * as policy from '../src/shared/manual-update.ts';
-import * as updateErrors from '../src/shared/update-error.ts';
-import * as updateNotes from '../src/shared/update-notes.ts';
-import * as accelerator from '../src/shared/github-accelerator.ts';
+import * as policy from '../src/shared/manualUpdate.ts';
+import * as updateErrors from '../src/shared/updateError.ts';
+import * as updateNotes from '../src/shared/updateNotes.ts';
+import * as accelerator from '../src/shared/githubAccelerator.ts';
 import * as pinia from 'pinia';
 
 const require = createRequire(import.meta.url);
@@ -66,10 +66,10 @@ const loadMain = ({ platform = 'darwin', arch = 'arm64', response = [release], e
       'electron-log': { info() {}, warn() {}, error() {} },
       'electron-updater': { autoUpdater: updater, CancellationToken: class {} },
       'font-list': {},
-      '../../shared/manual-update': policy,
-      '../../shared/update-error': updateErrors,
-      '../../shared/update-notes': updateNotes,
-      '../../shared/github-accelerator': accelerator,
+      '../../shared/manualUpdate': policy,
+      '../../shared/updateError': updateErrors,
+      '../../shared/updateNotes': updateNotes,
+      '../../shared/githubAccelerator': accelerator,
       '../networkPolicy': {
         networkFetch: async (url) => {
           calls.push(url);
@@ -189,7 +189,7 @@ test('signature errors recover the dialog and manual buttons never call download
   const { useUpdateStore } = compile('../src/renderer/stores/update.ts', {
     pinia,
     './setting': { useSettingStore: () => ({ appVersion: '2.3.0' }) },
-    '../../shared/update-error': updateErrors,
+    '../../shared/updateError': updateErrors,
   });
   const store = useUpdateStore();
   store.handleCheckResult({
@@ -267,7 +267,7 @@ test('release-note enrichment updates a closed dialog without reopening it and d
   const { useUpdateStore } = compile('../src/renderer/stores/update.ts', {
     pinia,
     './setting': { useSettingStore: () => ({ appVersion: '2.3.0' }) },
-    '../../shared/update-error': updateErrors,
+    '../../shared/updateError': updateErrors,
   });
   const store = useUpdateStore();
   await store.init();

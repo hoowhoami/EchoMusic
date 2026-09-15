@@ -5,11 +5,11 @@ import {
   resolveRunningWindowBackground,
   normalizeWindowBackground,
   type WindowBackground,
-} from '../../shared/window-background';
+} from '../../shared/windowBackground';
 import {
   detectWindowBackgroundStrategy,
   resolveWindowBackgroundCapabilities,
-} from '../../shared/window-background-strategy';
+} from '../../shared/windowBackgroundStrategy';
 import { BrowserWindow, shell, app, nativeTheme, powerSaveBlocker, screen } from 'electron';
 import { join } from 'path';
 import type { CloseBehavior, ThemeMode } from '../../shared/app';
@@ -39,7 +39,7 @@ import {
   isWindowFullscreenTransitioning,
   setWindowFullscreen,
 } from './fullscreen';
-import { normalizeZoomLevel, titleBarHeight, zoomLevelToFactor } from '../../shared/window-zoom';
+import { normalizeZoomLevel, titleBarHeight, zoomLevelToFactor } from '../../shared/windowZoom';
 
 const initialSettings = getMainAppSettings();
 let closeBehavior: CloseBehavior = initialSettings.closeBehavior;

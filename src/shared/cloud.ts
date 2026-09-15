@@ -1,6 +1,6 @@
 // 云盘上传相关的 IPC 类型定义（主进程选择文件/文件夹 → 渲染进程上传）
 
-import { LOCAL_AUDIO_EXTENSIONS } from './local-music';
+import { LOCAL_AUDIO_EXTENSIONS } from './localMusic';
 
 export type CloudPickMode = 'file' | 'folder';
 

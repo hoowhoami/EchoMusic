@@ -7,7 +7,7 @@ import {
   resolveWindowBackground,
   resolveRendererWindowBackground,
   resolveRunningWindowBackground,
-} from '../src/shared/window-background.ts';
+} from '../src/shared/windowBackground.ts';
 
 test('old settings default to an opaque themed background', () => {
   assert.deepEqual(normalizeWindowBackground(null), DEFAULT_WINDOW_BACKGROUND);

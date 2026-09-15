@@ -43,7 +43,7 @@ function controllerFixture(proxy = async () => []) {
     '../networkSettings': {},
     '../storage/persistedStores': {},
     '../networkPolicy': { resolveNativeProxyUrls: proxy },
-    '../../shared/audio-effect-support': {},
+    '../../shared/audioEffectSupport': {},
   });
   const controller = new PlayerController();
   const loads = [],

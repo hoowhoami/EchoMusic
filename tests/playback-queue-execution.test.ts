@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { consumePlayedQueuedNextTrack } from '../src/shared/playback-queue-execution.ts';
+import { consumePlayedQueuedNextTrack } from '../src/shared/playbackQueueExecution.ts';
 
 test('playing from a non-active source queue consumes only that queue marker', () => {
   const activeQueueId = 'queue:active';

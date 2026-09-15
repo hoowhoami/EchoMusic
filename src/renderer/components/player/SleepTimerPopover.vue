@@ -9,7 +9,7 @@ import Button from '@/components/ui/Button.vue';
 import Popover from '@/components/ui/Popover.vue';
 import Switch from '@/components/ui/Switch.vue';
 import { usePlayerStore } from '@/stores/player';
-import { sleepTimerActionLabels, type SleepTimerAction } from '../../../shared/sleep-timer';
+import { sleepTimerActionLabels, type SleepTimerAction } from '../../../shared/sleepTimer';
 
 const player = usePlayerStore();
 const open = ref(false);

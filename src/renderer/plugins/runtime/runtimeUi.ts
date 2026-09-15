@@ -9,7 +9,7 @@ import {
   createObservedElementRegistry,
   createObservedRootConnectionMonitor,
   observeRootConnectionChanges,
-} from '../../../shared/observed-element-registry';
+} from '../../../shared/observedElementRegistry';
 import { createPluginUiApi } from '../registry';
 
 export interface PluginScrollContainerState {

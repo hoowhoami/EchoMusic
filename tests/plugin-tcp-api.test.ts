@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { getEventListeners } from 'node:events';
 import { afterEach, test } from 'node:test';
 import type { EchoPluginDescriptor } from '../src/shared/plugins.ts';
-import type { PluginTcpNativeApi } from '../src/shared/plugin-tcp.ts';
+import type { PluginTcpNativeApi } from '../src/shared/pluginTcp.ts';
 import { createPluginTcpApi } from '../src/renderer/plugins/runtime/tcp.ts';
 
 const originalWindow = globalThis.window;

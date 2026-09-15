@@ -1,6 +1,6 @@
 import type { Song } from '@/models/song';
 import { isSameSong } from '@/utils/song';
-import { reconcileQueuedNextForQueueReplacement } from '../../../shared/playback-queue-decision';
+import { reconcileQueuedNextForQueueReplacement } from '../../../shared/playbackQueueDecision';
 import {
   DEFAULT_PLAYBACK_QUEUE_ID,
   LISTEN_TOGETHER_QUEUE_ID,

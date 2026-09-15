@@ -6,7 +6,7 @@ import { sanitizeHtml } from '@/utils/sanitize';
 import Dialog from '@/components/ui/Dialog.vue';
 import Button from '@/components/ui/Button.vue';
 import { useUpdateStore } from '@/stores/update';
-import { isUpdateSignatureError } from '../../../shared/update-error';
+import { isUpdateSignatureError } from '../../../shared/updateError';
 
 interface Props {
   dismissLabel?: string;

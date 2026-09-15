@@ -2,9 +2,9 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { transformSync } from 'esbuild';
-import * as decisions from '../src/shared/playback-queue-decision.ts';
-import * as execution from '../src/shared/playback-queue-execution.ts';
-import * as transitions from '../src/shared/track-transition.ts';
+import * as decisions from '../src/shared/playbackQueueDecision.ts';
+import * as execution from '../src/shared/playbackQueueExecution.ts';
+import * as transitions from '../src/shared/trackTransition.ts';
 import * as stateMachine from '../src/renderer/stores/player/stateMachine.ts';
 
 const code = transformSync(
@@ -86,9 +86,9 @@ function setup({ prepare, begin, seek, timers = { setTimeout, clearTimeout } } =
   const module = { exports: {} };
   const dependencies = {
     '@/utils/logger': { info: noop, warn: (...args) => calls.warnings.push(args) },
-    '../../../shared/playback-queue-decision': decisions,
-    '../../../shared/playback-queue-execution': execution,
-    '../../../shared/track-transition': transitions,
+    '../../../shared/playbackQueueDecision': decisions,
+    '../../../shared/playbackQueueExecution': execution,
+    '../../../shared/trackTransition': transitions,
     '@/utils/song': { isPlayableSong: () => true },
     '@/utils/player': {},
     '../playlist': { PERSONAL_FM_QUEUE_ID: 'fm' },

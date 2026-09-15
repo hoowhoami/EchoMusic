@@ -7,16 +7,16 @@ import log from '../logger';
 import { refreshNetworkSettingsFromStorage } from '../networkSettings';
 import { getPersistedRendererSettings } from '../storage/persistedStores';
 import type { NetworkSettings } from '../../shared/network';
-import type { TrackTransitionPlaybackInfo } from '../../shared/track-transition';
+import type { TrackTransitionPlaybackInfo } from '../../shared/trackTransition';
 import { resolveNativeProxyUrls } from '../networkPolicy';
 import type { AudioEffectPlaybackOptions } from '../../shared/audio';
-import { normalizeConvolutionMix } from '../../shared/audio-effect-support';
-import type { PlayerErrorCode, PlayerErrorPayload } from '../../shared/player-error';
+import { normalizeConvolutionMix } from '../../shared/audioEffectSupport';
+import type { PlayerErrorCode, PlayerErrorPayload } from '../../shared/playerError';
 import type {
   PlayerAudioGraphParameterPatch,
   PlayerAudioGraphPlanPatch,
   PlayerAudioGraphSnapshot,
-} from '../../shared/player-audio-graph';
+} from '../../shared/playerAudioGraph';
 
 const DEFAULT_AUDIO_OUTPUT_BUFFER_SECS = 0.2;
 const DEFAULT_AUDIO_SAMPLERATE = 'auto';

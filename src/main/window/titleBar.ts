@@ -1,4 +1,4 @@
-import { titleBarHeight } from '../../shared/window-zoom';
+import { titleBarHeight } from '../../shared/windowZoom';
 
 interface TitleBarWindow {
   isDestroyed(): boolean;

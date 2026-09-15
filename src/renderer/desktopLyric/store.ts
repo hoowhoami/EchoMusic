@@ -3,7 +3,7 @@ import { useToastStore } from '../stores/toast';
 import {
   DEFAULT_DESKTOP_LYRIC_SETTINGS,
   type DesktopLyricSettings,
-} from '../../shared/desktop-lyric';
+} from '../../shared/desktopLyric';
 
 const mergeSettings = (settings?: Partial<DesktopLyricSettings>): DesktopLyricSettings => ({
   ...DEFAULT_DESKTOP_LYRIC_SETTINGS,

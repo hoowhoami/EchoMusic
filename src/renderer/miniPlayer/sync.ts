@@ -15,7 +15,7 @@ import type {
   MiniPlayerLyricPayload,
   MiniPlayerPlaybackPayload,
   MiniPlayerQueuePayload,
-} from '../../shared/mini-player';
+} from '../../shared/miniPlayer';
 import { normalizeLyricLinePayload as normalizeSharedLyricLinePayload } from '../../shared/lyrics';
 
 const MINI_PLAYER_PROGRESS_SYNC_INTERVAL_MS = 120;

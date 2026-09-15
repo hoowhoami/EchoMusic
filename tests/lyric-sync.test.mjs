@@ -6,7 +6,7 @@ import { transformSync } from 'esbuild';
 import * as vue from 'vue';
 import * as playback from '../src/shared/playback.ts';
 import * as loudness from '../src/shared/loudness.ts';
-import * as nowPlaying from '../src/shared/now-playing.ts';
+import * as nowPlaying from '../src/shared/nowPlaying.ts';
 import { createLyricTimeline } from '../src/renderer/composables/useLyricTimeline.ts';
 
 const require = createRequire(import.meta.url);
@@ -250,7 +250,7 @@ test('plugin snapshot transport preserves source clock and seek identity', () =>
   const api = compile('../src/main/nowPlaying.ts', {
     './ipc/registry': {},
     electron: { BrowserWindow: { getAllWindows: () => [] } },
-    '../shared/now-playing': nowPlaying,
+    '../shared/nowPlaying': nowPlaying,
     '../shared/playback': playback,
     './window': { getMainWindow: () => null },
     './taskbarThumbnail': { isCoverPreviewEnabled: () => false },

@@ -4,7 +4,7 @@ import {
   audioSpectrumOptionsIncludeWaveform,
   filterAudioSpectrumFrameForSubscriber,
   normalizeAudioSpectrumWaveform,
-} from '../src/shared/audio-spectrum.ts';
+} from '../src/shared/audioSpectrum.ts';
 
 test('enables waveform generation when any spectrum subscriber requests it', () => {
   assert.equal(audioSpectrumOptionsIncludeWaveform([]), false);

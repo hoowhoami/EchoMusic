@@ -9,7 +9,7 @@ const compile = (file) =>
     format: 'cjs',
   }).code;
 const model = { exports: {} };
-runInNewContext(compile('../src/shared/window-zoom.ts'), { module: model });
+runInNewContext(compile('../src/shared/windowZoom.ts'), { module: model });
 function setup() {
   const module = { exports: {} },
     handlers = new Map(),
@@ -22,7 +22,7 @@ function setup() {
     module,
     process: { platform: 'win32' },
     require(name) {
-      if (name === '../../shared/window-zoom') return model.exports;
+      if (name === '../../shared/windowZoom') return model.exports;
       if (name === '../storage/settings')
         return {
           getMainAppSettings: () => saved,

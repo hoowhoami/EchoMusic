@@ -1,11 +1,11 @@
 import { computed, ref, watch } from 'vue';
 import type { SpatialAudioEffectEntry, DspProviderInspection } from '../../../shared/audio';
-import type { PlayerAudioGraphSnapshot } from '../../../shared/player-audio-graph';
+import type { PlayerAudioGraphSnapshot } from '../../../shared/playerAudioGraph';
 import {
   audioEffectSupport,
   parseAudioEffectManifest,
   type AudioEffectEngineSupport,
-} from '../../../shared/audio-effect-support';
+} from '../../../shared/audioEffectSupport';
 
 // Store-scoped rather than popover-scoped: capability reconciliation also runs
 // while the panel is closed, during startup and after engine changes.

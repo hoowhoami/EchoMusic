@@ -1,6 +1,6 @@
 import { app, BrowserWindow } from 'electron';
 import { release } from 'node:os';
-import type { WindowFrameState } from '../../shared/window-frame';
+import type { WindowFrameState } from '../../shared/windowFrame';
 import { ipcRegistry } from './registry';
 import {
   getMainWindowClientCornerRadius,
@@ -16,7 +16,7 @@ import type {
   PluginShowOnTopOptions,
 } from '../../shared/plugins';
 import type { IpcContext } from './types';
-import type { SleepTimerActionResult } from '../../shared/sleep-timer';
+import type { SleepTimerActionResult } from '../../shared/sleepTimer';
 import { requestSystemShutdown } from '../systemShutdown';
 import { isWindowFullscreen, setWindowFullscreen } from '../window/fullscreen';
 

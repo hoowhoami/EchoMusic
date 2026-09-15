@@ -1,4 +1,4 @@
-import { LOCAL_AUDIO_EXTENSIONS } from '../../shared/local-music';
+import { LOCAL_AUDIO_EXTENSIONS } from '../../shared/localMusic';
 import { normalizeFileExtensions } from '../media/fileScanner';
 
 export const PLUGIN_STATE_KEY = 'plugins:enabled';

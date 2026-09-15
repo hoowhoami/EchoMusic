@@ -14,6 +14,7 @@ export function createListeningSession(deps: {
   start: (identity: ListeningIdentity) => Promise<boolean>;
   end: (identity: ListeningIdentity, duration: number, state: string) => Promise<void>;
   onError: (error: unknown) => void;
+  onAccumulate?: (milliseconds: number) => void;
 }) {
   let segment: Segment | null = null;
   let sample: { time: number; position: number } | null = null;
@@ -64,7 +65,9 @@ export function createListeningSession(deps: {
       const speed = Number.isFinite(rate) && rate > 0 ? rate : 1;
       // Long gaps (suspend/stall) and discontinuous seeks never count as listening.
       if (elapsed > 0 && elapsed <= 5000 && progress > 0 && progress <= elapsed * speed + 1000) {
-        segment.milliseconds += Math.min(elapsed, progress / speed);
+        const increment = Math.min(elapsed, progress / speed);
+        segment.milliseconds += increment;
+        deps.onAccumulate?.(increment);
       }
     }
     sample = { time, position };

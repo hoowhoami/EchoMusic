@@ -43,7 +43,7 @@ function setup(platform) {
       __esModule: true,
       default: { warn() {}, info: (...args) => logs.push(args), debug() {} },
     },
-    '../../shared/window-zoom': { titleBarHeight: () => 92 },
+    '../../shared/windowZoom': { titleBarHeight: () => 92 },
   };
   new Function('require', 'module', 'exports', 'process', code)(
     (id) => imports[id],
