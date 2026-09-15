@@ -186,10 +186,11 @@ let hyprlandBackgroundController: ReturnType<typeof createHyprlandBackgroundCont
   null;
 export const getMainWindowClientCornerRadius = () => activeComposition.clientCornerRadius;
 
-const syncHyprlandBackground = () => {
+const syncHyprlandBackground = (remapped = false) => {
   if (!hyprlandBackgroundController) return;
   hyprlandBackgroundController.setBlurEnabled(
     windowBackgroundActiveEnabled && windowBackgroundActiveFrosted === true,
+    remapped,
   );
 };
 
@@ -501,6 +502,9 @@ export async function createWindow() {
     // created by the compositor; retry the selected blur mode at this point.
     syncHyprlandBackground();
   });
+  // Hide/show can recreate the Hyprland client property while the saved
+  // setting stays unchanged. Re-apply it after every map, without delaying show.
+  win.on('show', () => syncHyprlandBackground(true));
 
   win.webContents.once('dom-ready', () => {
     void logMainMemory('main window:dom-ready');
