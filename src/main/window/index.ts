@@ -174,7 +174,12 @@ const getMainWindowBackgroundColor = () =>
     ? '#26262a'
     : '#f5f5f7';
 
-let activeComposition = getWindowComposition(windowBackground, process.platform, osBuild);
+let activeComposition = getWindowComposition(
+  windowBackground,
+  process.platform,
+  osBuild,
+  windowBackgroundStrategy,
+);
 let windowBackgroundActiveFrosted: boolean | null = windowBackground.frosted;
 let windowBackgroundRestartRequired = false;
 let hyprlandBackgroundController: ReturnType<typeof createHyprlandBackgroundController> | null =
@@ -366,7 +371,12 @@ export async function createWindow() {
   await logMainMemory('createWindow:before BrowserWindow');
 
   windowBackgroundActiveEnabled = windowBackground.enabled;
-  activeComposition = getWindowComposition(windowBackground, process.platform, osBuild);
+  activeComposition = getWindowComposition(
+    windowBackground,
+    process.platform,
+    osBuild,
+    windowBackgroundStrategy,
+  );
   windowBackgroundActiveFrosted = windowBackground.frosted;
   windowBackgroundRestartRequired = false;
   win = new BrowserWindow({
@@ -376,7 +386,7 @@ export async function createWindow() {
     minWidth: placement.minWidth,
     minHeight: placement.minHeight,
     show: false, // 初始不显示，防止白屏
-    backgroundColor: windowBackgroundActiveEnabled ? '#00000000' : initialBgColor,
+    backgroundColor: activeComposition.transparent ? '#00000000' : initialBgColor,
     frame: process.platform === 'darwin',
     // Electron's WS_THICKFRAME option is Windows-only, independent of materials.
     ...(process.platform === 'win32' ? { thickFrame: !activeComposition.transparent } : {}),

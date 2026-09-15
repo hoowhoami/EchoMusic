@@ -96,15 +96,15 @@ export function resolveWindowBackgroundCapabilities({
   if (platform === 'linux' && strategy === 'hyprland') {
     return {
       strategy: 'hyprland',
-      // Hyprland supplies the backdrop through decoration.blur. The app only
-      // exposes a transparent surface and never edits the user's compositor
-      // configuration.
+      // Hyprland supplies the backdrop through decoration.blur. The app keeps
+      // an optional color/opacity layer for live controls and never edits the
+      // user's compositor configuration.
       supportsFrost: true,
       frostBackend: 'hyprland-blur',
       frostMode: 'compositor',
       frostLive: true,
       live: false,
-      transparentMode: 'pure',
+      transparentMode: 'layered',
     };
   }
 

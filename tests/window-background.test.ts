@@ -182,13 +182,25 @@ test('compositor-backed frost stays active on an existing transparent window', (
   );
 });
 
-test('Hyprland renderer uses a pure transparent surface', () => {
-  assert.deepEqual(resolveRendererWindowBackground(clear, 'pure'), {
-    ...clear,
-    transparency: 100,
-    color: '',
-  });
-  assert.deepEqual(resolveRendererWindowBackground(DEFAULT_WINDOW_BACKGROUND, 'pure'), {
+test('Hyprland renderer preserves the app transparency layer', () => {
+  assert.deepEqual(resolveRendererWindowBackground(clear, 'layered'), clear);
+  assert.deepEqual(resolveRendererWindowBackground(DEFAULT_WINDOW_BACKGROUND, 'layered'), {
     ...DEFAULT_WINDOW_BACKGROUND,
+  });
+});
+
+test('Hyprland keeps a transparent native surface while toggling the app layer live', () => {
+  const hyprland = { strategy: 'hyprland' as const, frostMode: 'compositor' as const };
+  assert.deepEqual(
+    resolveRunningWindowBackground(DEFAULT_WINDOW_BACKGROUND, 'linux', true, hyprland),
+    { background: DEFAULT_WINDOW_BACKGROUND, restartRequired: false },
+  );
+  assert.deepEqual(resolveRunningWindowBackground(clear, 'linux', true, hyprland), {
+    background: clear,
+    restartRequired: false,
+  });
+  assert.deepEqual(resolveRunningWindowBackground(clear, 'linux', false, hyprland), {
+    background: DEFAULT_WINDOW_BACKGROUND,
+    restartRequired: true,
   });
 });
