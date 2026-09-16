@@ -148,7 +148,7 @@ const isAccentGradientDefault = computed(
               : windowPlatform === 'win32'
                 ? '透明与毛玻璃可即时切换；开启或关闭背景效果需重启'
                 : settingStore.windowFrostBackend === 'hyprland-blur'
-                  ? '透明效果取决于桌面合成器；切换后需重启'
+                  ? '透明度和毛玻璃可即时切换；效果由 Hyprland 合成器提供'
                   : settingStore.windowBackgroundFrostLive
                     ? '关闭与毛玻璃可即时切换；进出透明模式需重启'
                     : '透明效果取决于桌面合成器；切换后需重启'
