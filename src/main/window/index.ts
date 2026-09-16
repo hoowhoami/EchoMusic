@@ -174,17 +174,23 @@ const getMainWindowBackgroundColor = () =>
     ? '#26262a'
     : '#f5f5f7';
 
-let activeComposition = getWindowComposition(windowBackground, process.platform, osBuild);
+let activeComposition = getWindowComposition(
+  windowBackground,
+  process.platform,
+  osBuild,
+  windowBackgroundStrategy,
+);
 let windowBackgroundActiveFrosted: boolean | null = windowBackground.frosted;
 let windowBackgroundRestartRequired = false;
 let hyprlandBackgroundController: ReturnType<typeof createHyprlandBackgroundController> | null =
   null;
 export const getMainWindowClientCornerRadius = () => activeComposition.clientCornerRadius;
 
-const syncHyprlandBackground = () => {
+const syncHyprlandBackground = (remapped = false) => {
   if (!hyprlandBackgroundController) return;
   hyprlandBackgroundController.setBlurEnabled(
     windowBackgroundActiveEnabled && windowBackgroundActiveFrosted === true,
+    remapped,
   );
 };
 
@@ -366,7 +372,12 @@ export async function createWindow() {
   await logMainMemory('createWindow:before BrowserWindow');
 
   windowBackgroundActiveEnabled = windowBackground.enabled;
-  activeComposition = getWindowComposition(windowBackground, process.platform, osBuild);
+  activeComposition = getWindowComposition(
+    windowBackground,
+    process.platform,
+    osBuild,
+    windowBackgroundStrategy,
+  );
   windowBackgroundActiveFrosted = windowBackground.frosted;
   windowBackgroundRestartRequired = false;
   win = new BrowserWindow({
@@ -376,7 +387,7 @@ export async function createWindow() {
     minWidth: placement.minWidth,
     minHeight: placement.minHeight,
     show: false, // 初始不显示，防止白屏
-    backgroundColor: windowBackgroundActiveEnabled ? '#00000000' : initialBgColor,
+    backgroundColor: activeComposition.transparent ? '#00000000' : initialBgColor,
     frame: process.platform === 'darwin',
     // Electron's WS_THICKFRAME option is Windows-only, independent of materials.
     ...(process.platform === 'win32' ? { thickFrame: !activeComposition.transparent } : {}),
@@ -491,6 +502,9 @@ export async function createWindow() {
     // created by the compositor; retry the selected blur mode at this point.
     syncHyprlandBackground();
   });
+  // Hide/show can recreate the Hyprland client property while the saved
+  // setting stays unchanged. Re-apply it after every map, without delaying show.
+  win.on('show', () => syncHyprlandBackground(true));
 
   win.webContents.once('dom-ready', () => {
     void logMainMemory('main window:dom-ready');
