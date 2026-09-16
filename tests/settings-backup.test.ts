@@ -23,7 +23,7 @@ test('removes local PAC paths and downgrades the exported mode', () => {
       playerNetworkTimeoutSecs: 45,
     }),
     {
-      proxyMode: 'system',
+      proxyMode: 'direct',
       playerNetworkTimeoutSecs: 45,
     },
   );

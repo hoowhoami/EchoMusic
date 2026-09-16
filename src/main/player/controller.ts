@@ -984,7 +984,10 @@ export class PlayerController extends EventEmitter {
       case 'playback-end':
         this.state.playing = false;
         this.state.paused = true;
-        this.emit('playback-end', event.reason || 'eof');
+        this.emit('playback-end', event.reason || 'eof', {
+          trackSeq: event.trackSeq,
+          generation: event.generation,
+        });
         break;
       case 'stalled':
         if (typeof event.time === 'number') {

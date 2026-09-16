@@ -221,10 +221,13 @@ onUnmounted(() => {
 
 <style>
 .echo-popover-content {
+  --popover-background: var(--floating-surface-bg);
   z-index: 9999;
   border-radius: 16px;
-  background: var(--color-bg-elevated);
-  border: 1px solid var(--border-subtle);
+  background: var(--popover-background);
+  -webkit-backdrop-filter: var(--floating-surface-filter);
+  backdrop-filter: var(--floating-surface-filter);
+  border: 0;
   box-shadow: var(--shadow-elevated);
   padding: 12px;
   user-select: none;
@@ -233,9 +236,9 @@ onUnmounted(() => {
 }
 
 .echo-popover-arrow {
-  fill: var(--color-bg-elevated);
+  display: block;
+  fill: var(--popover-background);
   stroke: none;
-  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.04));
 }
 
 .popover-fade-enter-active {

@@ -111,8 +111,8 @@ function registerEventForwarding(controller: PlayerController): void {
   controller.on('ao-state-change', (payload) =>
     getMainWindow()?.webContents.send('player:ao-state-change', payload),
   );
-  controller.on('playback-end', (reason) => {
-    getMainWindow()?.webContents.send('player:playback-end', reason);
+  controller.on('playback-end', (reason, context) => {
+    getMainWindow()?.webContents.send('player:playback-end', reason, context);
     patchDesktopLyricPlaybackFromPlayer({ isPlaying: false, reason: 'pause' });
     patchMiniPlayerPlaybackFromPlayer({ isPlaying: false, reason: 'pause' });
   });

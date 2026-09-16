@@ -284,6 +284,17 @@ const selectAction = (action: SleepTimerAction) => {
 
 <style>
 .sleep-timer-popover.echo-popover-content {
+  --sleep-timer-secondary: var(--color-text-secondary);
+  --sleep-timer-border: color-mix(
+    in srgb,
+    var(--color-text-main) 26%,
+    var(--surface-elevated-base)
+  );
+  --sleep-timer-divider: color-mix(
+    in srgb,
+    var(--color-text-main) 16%,
+    var(--surface-elevated-base)
+  );
   width: min(596px, calc(100vw - 24px));
   padding: 20px;
   color: var(--color-text-main);
@@ -291,8 +302,16 @@ const selectAction = (action: SleepTimerAction) => {
 
 .dark .sleep-timer-popover.echo-popover-content {
   --sleep-timer-secondary: color-mix(in srgb, var(--color-text-main) 78%, var(--color-bg-elevated));
-  --sleep-timer-border: color-mix(in srgb, var(--color-text-main) 24%, var(--color-bg-elevated));
-  --sleep-timer-divider: color-mix(in srgb, var(--color-text-main) 16%, var(--color-bg-elevated));
+  --sleep-timer-border: color-mix(
+    in srgb,
+    var(--color-text-main) 32%,
+    var(--surface-elevated-base)
+  );
+  --sleep-timer-divider: color-mix(
+    in srgb,
+    var(--color-text-main) 22%,
+    var(--surface-elevated-base)
+  );
 }
 </style>
 
@@ -309,7 +328,7 @@ const selectAction = (action: SleepTimerAction) => {
 }
 .sleep-timer-actions {
   padding-left: 22px;
-  border-left: 1px solid var(--border-subtle);
+  border-left: 1px solid var(--sleep-timer-divider);
 }
 .sleep-timer-action {
   display: flex;
@@ -317,7 +336,7 @@ const selectAction = (action: SleepTimerAction) => {
   gap: 10px;
   width: 100%;
   padding: 10px 12px;
-  border: 1px solid var(--border-subtle);
+  border: 1px solid var(--sleep-timer-border);
   border-radius: 12px;
   cursor: pointer;
 }
@@ -326,7 +345,7 @@ const selectAction = (action: SleepTimerAction) => {
 }
 .sleep-timer-action.is-selected {
   color: var(--color-primary-text);
-  border-color: color-mix(in srgb, var(--color-primary) 48%, transparent);
+  border-color: color-mix(in srgb, var(--color-primary) 65%, var(--surface-elevated-base));
   background: color-mix(in srgb, var(--color-primary) 9%, transparent);
 }
 .sleep-timer-action:disabled {
@@ -345,7 +364,7 @@ const selectAction = (action: SleepTimerAction) => {
   display: flex;
   align-items: center;
   gap: 8px;
-  border-top: 1px solid var(--border-subtle);
+  border-top: 1px solid var(--sleep-timer-divider);
   margin-top: 16px;
   padding-top: 14px;
 }
@@ -418,7 +437,7 @@ const selectAction = (action: SleepTimerAction) => {
   align-items: center;
   gap: 2px;
   padding: 10px 0;
-  border: 1px solid var(--border-subtle);
+  border: 1px solid var(--sleep-timer-border);
   border-radius: 12px;
   transition:
     background 150ms,
@@ -431,7 +450,7 @@ const selectAction = (action: SleepTimerAction) => {
   justify-content: space-between;
   width: 100%;
   padding: 10px 12px;
-  border: 1px solid var(--border-subtle);
+  border: 1px solid var(--sleep-timer-border);
   border-radius: 10px;
   font-size: 12px;
   cursor: pointer;
@@ -443,7 +462,7 @@ const selectAction = (action: SleepTimerAction) => {
 .sleep-timer-preset.is-selected,
 .sleep-timer-custom.is-selected {
   color: var(--color-primary-text);
-  border-color: color-mix(in srgb, var(--color-primary) 48%, transparent);
+  border-color: color-mix(in srgb, var(--color-primary) 65%, var(--surface-elevated-base));
   background: color-mix(in srgb, var(--color-primary) 9%, transparent);
 }
 .sleep-timer-input-row {
@@ -454,7 +473,7 @@ const selectAction = (action: SleepTimerAction) => {
 .sleep-timer-input-row input {
   width: 104px;
   padding: 8px 12px;
-  border: 1px solid var(--control-border);
+  border: 1px solid var(--sleep-timer-border);
   border-radius: 10px;
   background: var(--control-muted-bg);
   font-size: 14px;
@@ -467,11 +486,11 @@ const selectAction = (action: SleepTimerAction) => {
   gap: 10px;
   margin-top: 14px;
   padding: 14px 0;
-  border-top: 1px solid var(--border-subtle);
+  border-top: 1px solid var(--sleep-timer-divider);
 }
 
 /* Keep small supporting text readable, including inside accent-colored selections. */
-.dark .sleep-timer-secondary {
+.sleep-timer-secondary {
   color: var(--sleep-timer-secondary);
   opacity: 1;
 }

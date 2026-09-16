@@ -5,16 +5,25 @@ import { test } from 'node:test';
 import { transformSync } from 'esbuild';
 
 const module = { exports: {} };
-new Function('module', transformSync(readFileSync(new URL('../src/main/consolePipeGuard.ts', import.meta.url), 'utf8'), {loader: 'ts', format: 'cjs'}).code)(module);
+new Function(
+  'module',
+  transformSync(readFileSync(new URL('../src/main/consolePipeGuard.ts', import.meta.url), 'utf8'), {
+    loader: 'ts',
+    format: 'cjs',
+  }).code,
+)(module);
 const { createConsolePipeGuard } = module.exports;
-const brokenPipe = () => Object.assign(new Error('broken pipe'), {code: 'EPIPE'});
+const brokenPipe = () => Object.assign(new Error('broken pipe'), { code: 'EPIPE' });
 
 test('synchronous EPIPE disables console once and prevents subsequent writes', () => {
   let disabled = 0;
   let writes = 0;
   const guard = createConsolePipeGuard(() => disabled++);
   guard.write(() => writes++);
-  guard.write(() => { writes++; throw brokenPipe(); });
+  guard.write(() => {
+    writes++;
+    throw brokenPipe();
+  });
   guard.write(() => writes++);
   assert.equal(writes, 2);
   assert.equal(disabled, 1);
@@ -37,7 +46,13 @@ test('asynchronous stdout and stderr EPIPE are handled without recursive logging
 test('unrelated exceptions are not swallowed', () => {
   const guard = createConsolePipeGuard(() => assert.fail());
   const error = new Error('formatting bug');
-  assert.throws(() => guard.write(() => { throw error; }), error);
+  assert.throws(
+    () =>
+      guard.write(() => {
+        throw error;
+      }),
+    error,
+  );
   const stream = new EventEmitter();
   guard.watch(stream);
   assert.throws(() => stream.emit('error', error), error);

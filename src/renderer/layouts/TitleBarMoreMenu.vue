@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { logger } from '@/utils/logger';
 import { computed, ref, onMounted, onUnmounted } from 'vue';
-import { PopoverRoot, PopoverTrigger, PopoverPortal, PopoverContent } from 'reka-ui';
+import { PopoverRoot, PopoverAnchor, PopoverTrigger, PopoverPortal, PopoverContent } from 'reka-ui';
 import { iconDots, iconPinned } from '@/icons';
 import Button from '@/components/ui/Button.vue';
 import PluginIcon from '@/plugins/PluginIcon.vue';
@@ -89,21 +89,24 @@ const reorderByKeyboard = (event: KeyboardEvent, index: number) => {
 
 <template>
   <PopoverRoot v-model:open="open">
-    <PopoverTrigger as-child>
-      <Button
-        variant="unstyled"
-        size="none"
-        class="more-trigger"
-        tooltip="更多"
-        tooltip-side="bottom"
-        aria-label="更多"
-      >
-        <Icon :icon="iconDots" width="20" height="20" />
-      </Button>
-    </PopoverTrigger>
+    <PopoverAnchor as="span" class="more-anchor">
+      <PopoverTrigger as-child>
+        <Button
+          variant="unstyled"
+          size="none"
+          class="more-trigger"
+          tooltip="更多"
+          tooltip-side="bottom"
+          aria-label="更多"
+        >
+          <Icon :icon="iconDots" width="20" height="20" />
+        </Button>
+      </PopoverTrigger>
+    </PopoverAnchor>
     <PopoverPortal>
       <PopoverContent
         as-child
+        side="bottom"
         align="end"
         :side-offset="8"
         position-strategy="fixed"
@@ -165,6 +168,13 @@ const reorderByKeyboard = (event: KeyboardEvent, index: number) => {
 </template>
 
 <style scoped>
+.more-anchor {
+  display: inline-flex;
+  flex-shrink: 0;
+  width: 34px;
+  height: 34px;
+}
+
 .more-trigger {
   /* 浮层以按钮为定位锚点，按压时保持几何尺寸不变。 */
   scale: none;
@@ -205,7 +215,9 @@ const reorderByKeyboard = (event: KeyboardEvent, index: number) => {
   -webkit-app-region: no-drag;
   padding: 6px;
   border-radius: 12px;
-  background: var(--color-bg-elevated, var(--bg-elevated));
+  background: var(--floating-surface-bg);
+  -webkit-backdrop-filter: var(--floating-surface-filter);
+  backdrop-filter: var(--floating-surface-filter);
   color: var(--color-text-main);
   border: 1px solid color-mix(in srgb, var(--color-text-main) 12%, transparent);
   box-shadow:
@@ -221,11 +233,6 @@ const reorderByKeyboard = (event: KeyboardEvent, index: number) => {
   /* Presence 异步卸载前立即隐藏，避免关闭阶段的定位更新露出一帧。 */
   visibility: hidden;
   pointer-events: none;
-}
-body.echo-surface-translucent .titlebar-more-menu.titlebar-more-menu {
-  -webkit-backdrop-filter: none;
-  backdrop-filter: none;
-  background: var(--surface-elevated-base);
 }
 .titlebar-more-menu .titlebar-more-item {
   display: flex;

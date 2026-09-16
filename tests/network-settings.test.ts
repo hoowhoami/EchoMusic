@@ -10,7 +10,7 @@ import {
   parseElectronResolvedProxy,
 } from '../src/shared/network.ts';
 
-test('defaults to the system proxy and keeps timeouts independent', () => {
+test('defaults to direct connection and keeps timeouts independent', () => {
   assert.deepEqual(normalizeNetworkSettings(undefined), DEFAULT_NETWORK_SETTINGS);
   assert.deepEqual(
     normalizeNetworkSettings({ kugouApiTimeoutSecs: 17, playerNetworkTimeoutSecs: 41 }),
@@ -46,9 +46,9 @@ test('preserves all Electron proxy modes and mode-specific fields', () => {
   assert.equal(normalizeProxyPacScript('file:///tmp/proxy.pac'), 'file:///tmp/proxy.pac');
 });
 
-test('unknown modes fall back to system without inferring a configuration', () => {
+test('unknown modes fall back to direct without inferring a configuration', () => {
   const settings = normalizeNetworkSettings({ proxyMode: 'unsupported', arbitrary: 'proxy:80' });
-  assert.equal(settings.proxyMode, 'system');
+  assert.equal(settings.proxyMode, 'direct');
   assert.equal(settings.proxyRules, '');
 });
 

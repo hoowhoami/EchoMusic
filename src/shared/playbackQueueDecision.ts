@@ -16,7 +16,11 @@ export const resolveQueueAdvanceAuthority = (options: {
 export const canPrepareGaplessTransition = (options: {
   authority: QueueAdvanceAuthority;
   autoNextSuppressed: boolean;
-}): boolean => options.authority === 'local' && !options.autoNextSuppressed;
+  hasDynamicCandidateProvider?: boolean;
+}): boolean =>
+  !options.autoNextSuppressed &&
+  (options.authority === 'local' ||
+    (options.authority === 'dynamic-provider' && options.hasDynamicCandidateProvider === true));
 
 export const resolveOrderedPlaybackMode = (
   playMode: PlaybackMode,

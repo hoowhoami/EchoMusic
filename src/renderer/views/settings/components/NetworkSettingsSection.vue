@@ -18,11 +18,11 @@ import { sectionTitles } from '../constants';
 const settingStore = useSettingStore();
 const toastStore = useToastStore();
 const proxyModeOptions = [
+  { label: '直接连接', value: 'direct' },
   { label: '跟随系统', value: 'system' },
   { label: '自动检测（WPAD）', value: 'auto_detect' },
   { label: 'PAC 脚本', value: 'pac_script' },
   { label: '手动代理', value: 'fixed_servers' },
-  { label: '强制直连', value: 'direct' },
 ];
 const proxyModeDraft = ref<NetworkProxyMode>(settingStore.proxyMode);
 const proxyPacScriptDraft = ref(settingStore.proxyPacScript);
@@ -48,7 +48,7 @@ const updateProxyModeDraft = (value: string | number | Array<string | number>) =
   const next = String(Array.isArray(value) ? value[0] : value);
   proxyModeDraft.value = proxyModeOptions.some((item) => item.value === next)
     ? (next as NetworkProxyMode)
-    : 'system';
+    : 'direct';
 };
 
 const updateKugouApiTimeout = (value: string | number) => {

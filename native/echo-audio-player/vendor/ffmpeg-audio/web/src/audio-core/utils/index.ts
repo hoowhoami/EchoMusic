@@ -1,2 +1,2 @@
-export * from "./error";
-export * from "./TypedEventTarget";
+export * from './error';
+export * from './TypedEventTarget';

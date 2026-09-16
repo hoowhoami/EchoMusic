@@ -631,7 +631,7 @@ const confirmRemoveFromPlaylist = async () => {
   flex-shrink: 0;
   padding: 16px 20px;
   border-top: 1px solid var(--border-subtle);
-  background: var(--color-bg-elevated);
+  background: transparent;
 }
 .batch-actions {
   display: flex;

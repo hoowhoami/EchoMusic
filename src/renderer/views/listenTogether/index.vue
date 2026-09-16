@@ -110,6 +110,7 @@ const messageText = ref('');
 const chatCooldown = ref(false);
 const messageTextarea = ref<HTMLTextAreaElement | null>(null);
 const messagesScroll = ref<InstanceType<typeof Scrollbar> | null>(null);
+const isUserNearBottom = ref(true);
 
 const CHAT_MESSAGE_MAX_LENGTH = 200;
 const CHAT_SEND_COOLDOWN_MS = 1500;
@@ -636,6 +637,7 @@ const sendMessage = async () => {
   try {
     await listenStore.sendMessage(text);
     messageText.value = '';
+    isUserNearBottom.value = true;
     chatCooldown.value = true;
     if (chatCooldownTimer !== null) window.clearTimeout(chatCooldownTimer);
     chatCooldownTimer = window.setTimeout(() => {
@@ -645,6 +647,13 @@ const sendMessage = async () => {
   } catch (error) {
     toastStore.warning(error instanceof Error ? error.message : '消息发送失败');
   }
+};
+
+const handleChatScroll = (event: Event) => {
+  const el = event.target as HTMLElement;
+  if (!el) return;
+  const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+  isUserNearBottom.value = distanceFromBottom <= 50;
 };
 
 const toggleChat = async () => {
@@ -910,7 +919,9 @@ watch(
   () => messages.value.length,
   async () => {
     await nextTick();
-    messagesScroll.value?.scrollTo({ top: 999_999, behavior: 'smooth' });
+    if (isUserNearBottom.value) {
+      messagesScroll.value?.scrollTo({ top: 999_999, behavior: 'smooth' });
+    }
   },
 );
 
@@ -1401,7 +1412,7 @@ onUnmounted(() => {
                   {{ activeRoom?.allowChat ? '关闭聊天' : '开启聊天' }}
                 </Button>
               </div>
-              <Scrollbar ref="messagesScroll" class="listen-chat-scroll">
+              <Scrollbar ref="messagesScroll" class="listen-chat-scroll" @scroll="handleChatScroll">
                 <div class="listen-message-list">
                   <div v-if="!messages.length" class="listen-message-empty">暂无房间消息</div>
                   <div

@@ -97,7 +97,6 @@ const handleWheel = (e: WheelEvent) => {
 .vol-popover.echo-popover-content {
   width: auto;
   padding: 12px;
-  background: var(--color-bg-elevated);
   border-color: var(--border-subtle);
 }
 

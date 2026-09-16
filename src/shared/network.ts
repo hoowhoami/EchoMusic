@@ -27,7 +27,7 @@ export interface NetworkProxyCredentials {
 }
 
 export const DEFAULT_NETWORK_SETTINGS: NetworkSettings = {
-  proxyMode: 'system',
+  proxyMode: 'direct',
   proxyPacScript: '',
   proxyRules: '',
   proxyUsername: '',
@@ -121,7 +121,7 @@ const normalizeProxyMode = (value: unknown): NetworkProxyMode => {
   ) {
     return value;
   }
-  return 'system';
+  return 'direct';
 };
 
 const normalizeProxyBypassRules = (value: unknown): string => {

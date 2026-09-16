@@ -1291,7 +1291,6 @@ onMounted(() => loadData());
 .vip-expire-popover.echo-popover-content {
   padding: 12px 14px;
   border-radius: 14px;
-  background: var(--color-bg-elevated);
   border-color: var(--border-subtle);
 }
 

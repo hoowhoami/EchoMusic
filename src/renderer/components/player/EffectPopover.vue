@@ -1573,8 +1573,7 @@ withDefaults(defineProps<Props>(), {
   width: min(540px, calc(100vw - 24px));
   height: min(460px, calc(100vh - 100px));
   padding: 0;
-  overflow: hidden;
-  background: var(--color-bg-elevated);
+  overflow: visible;
   border-color: var(--border-subtle);
   display: flex;
 }
@@ -1752,6 +1751,8 @@ withDefaults(defineProps<Props>(), {
   width: 100%;
   height: 100%;
   min-width: 0;
+  border-radius: inherit;
+  overflow: hidden;
 }
 
 .effect-layout {

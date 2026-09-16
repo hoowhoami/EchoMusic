@@ -110,7 +110,6 @@ withDefaults(defineProps<Props>(), {
 .speed-popover.echo-popover-content {
   width: 320px;
   padding: 14px 16px 12px;
-  background: var(--color-bg-elevated);
   border-color: var(--border-subtle);
 }
 

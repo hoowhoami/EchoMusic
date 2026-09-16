@@ -6,12 +6,9 @@
 //! owns both decoders until the mix is over and hands the incoming decoder back.
 //!
 //! All mixing happens here, on the decode thread, in the engine mix format. The output
-//! queue receives ordinary f32 chunks, so the filter thread and the output callback never
-//! know that two tracks were involved – the only visible change is the continuous track
-//! boundary (clock / sequence / loudness switch) marked when the first mixed sample is
-//! queued.
+//! filter worker processes A and B through independent, continuous DSP graphs before
+//! the mixer applies deck gains and transition envelopes. Mixed chunks bypass DSP.
 
-use crate::audio_graph::SwrMixConverter;
 use crate::decoder::{decoded_chunk_end_secs, DecoderData};
 use crate::shared::{
     AudioSampleFormat, DecodedAudioChunk, DecodedAudioData, DecodedAudioFormat, MixFormat,
@@ -20,6 +17,7 @@ use crate::shared::{
 use crate::transition::decide::TransitionPlan;
 use crate::transition::mixer::{DeckInput, MixerConfig, TransitionMixer};
 use crate::transition::TransitionMode;
+use crate::transition_filter::DeckFilterOperation;
 
 /// Frames rendered per mixer call.
 const RENDER_BLOCK_FRAMES: usize = 2_048;
@@ -115,7 +113,6 @@ impl ArmedTransition {
 /// hand-off.
 struct Deck {
     decoder: Option<Box<DecoderData>>,
-    converter: SwrMixConverter,
     /// Chunks decoded but not yet handed to the mixer (split tail of A, predecoded head of B).
     pending: Vec<DecodedAudioChunk>,
     ended: bool,
@@ -129,7 +126,6 @@ impl Deck {
     fn new(decoder: Option<Box<DecoderData>>, position_secs: f64) -> Self {
         Self {
             decoder,
-            converter: SwrMixConverter::default(),
             pending: Vec::new(),
             ended: false,
             position_secs,
@@ -181,6 +177,11 @@ pub struct TransitionRunner {
     rearm_incoming_seq: u64,
     /// Whether the post-overlap normalisation gain has been scheduled.
     post_gain_marked: bool,
+    speed: f32,
+    dsp_started: bool,
+    midpoint_logged: bool,
+    b_decoded_position_secs: f64,
+    speed_change_released: bool,
 }
 
 struct RearmInfo {
@@ -204,19 +205,25 @@ impl TransitionRunner {
         shared: &SharedAudio,
         armed: ArmedTransition,
         a_tail: Option<DecodedAudioChunk>,
-        a_preroll: Vec<DecodedAudioChunk>,
+        _a_preroll: Vec<DecodedAudioChunk>,
         a_position_secs: f64,
         generation: u64,
     ) -> Result<Self, (String, Box<ArmedTransition>)> {
         let mix_format = shared.mix_format;
         let sample_rate = mix_format.sample_rate.max(1);
         let plan = armed.plan.clone();
-        let overlap_frames = (plan.overlap_secs.max(0.0) * f64::from(sample_rate)).round() as usize;
+        let speed = shared
+            .dsp_settings()
+            .speed
+            .clamp(crate::tempo::MIN_SPEED, crate::tempo::MAX_SPEED);
+        let overlap_frames = (plan.overlap_secs.max(0.0) * f64::from(sample_rate)
+            / f64::from(speed))
+        .round() as usize;
         let plan_for_mixer = match plan.template {
             Some(template) => Some(template.load()),
             None => None,
         };
-        let mut mixer = match TransitionMixer::new(MixerConfig {
+        let mixer = match TransitionMixer::new(MixerConfig {
             sample_rate,
             channels: mix_format.channels,
             overlap_frames,
@@ -225,8 +232,8 @@ impl TransitionRunner {
             a_tempo_ratio: plan.a_tempo_ratio as f32,
             a_gain: armed.a_gain,
             b_gain: armed.b_gain,
-            a_beat_secs: plan.a_beat_secs.map(|secs| secs as f32),
-            b_beat_secs: plan.b_beat_secs.map(|secs| secs as f32),
+            a_beat_secs: plan.a_beat_secs.map(|secs| secs as f32 / speed),
+            b_beat_secs: plan.b_beat_secs.map(|secs| secs as f32 / speed),
         }) {
             Ok(mixer) => mixer,
             Err(err) => return Err((err, Box::new(armed))),
@@ -234,34 +241,6 @@ impl TransitionRunner {
         let mut a = Deck::new(None, a_position_secs);
         if let Some(tail) = a_tail {
             a.pending.push(tail);
-        }
-        // Settle the tempo stretcher with audio from before the cut so its first kept
-        // frame is the cut point itself (see `Stretcher` docs).
-        let wanted = mixer.a_preroll_frames_wanted();
-        if wanted > 0 && !a_preroll.is_empty() {
-            let mut preroll_converter = SwrMixConverter::default();
-            let mut converted = Vec::new();
-            for chunk in &a_preroll {
-                let mut scratch = Vec::new();
-                if preroll_converter
-                    .process(chunk, mix_format, &mut scratch)
-                    .is_err()
-                {
-                    converted.clear();
-                    break;
-                }
-                converted.extend_from_slice(&scratch);
-            }
-            let mut tail_scratch = Vec::new();
-            if preroll_converter.finish(&mut tail_scratch).is_ok() {
-                converted.extend_from_slice(&tail_scratch);
-            }
-            let channels = mix_format.channels.max(1);
-            let frames = converted.len() / channels;
-            let keep = frames.min(wanted);
-            if keep > 0 {
-                mixer.preroll_a(&converted[(frames - keep) * channels..]);
-            }
         }
         let mut b = Deck::new(Some(armed.decoder), plan.b_start_secs);
         b.pending = armed.predecoded;
@@ -282,6 +261,11 @@ impl TransitionRunner {
             outgoing_seq: armed.outgoing_seq,
             b_start_secs: plan.b_start_secs,
         };
+        // Pre-warm the incoming deck's DSP graph (provider init included) so the first
+        // mixed blocks are not stalled behind it. Fire-and-forget: a stale generation or
+        // missing worker leaves the request as a benign no-op and `step` retries via its
+        // own Preroll.
+        shared.warm_transition_deck(rearm.request_id, generation, speed);
         Ok(Self {
             mix_format,
             mixer,
@@ -296,6 +280,11 @@ impl TransitionRunner {
             rearm,
             rearm_incoming_seq,
             post_gain_marked: false,
+            speed,
+            dsp_started: false,
+            midpoint_logged: false,
+            b_decoded_position_secs: plan.b_start_secs,
+            speed_change_released: false,
         })
     }
 
@@ -311,6 +300,42 @@ impl TransitionRunner {
     /// `a_decoder` is the outgoing track's decoder (owned by the decode worker). Each
     /// step pushes at most one block so decode commands are serviced between blocks.
     pub fn step(&mut self, shared: &SharedAudio, a_decoder: &mut DecoderData) -> RunnerStep {
+        if !self.speed_change_released
+            && (shared.dsp_settings().speed - self.speed).abs() > f32::EPSILON
+        {
+            self.finish_for_source_switch();
+            self.speed_change_released = true;
+            crate::decoder::emit_decode_info(
+                shared,
+                &format!(
+                    "transition released: request={} reason=speed-change seek=false",
+                    self.rearm.request_id,
+                ),
+            );
+        }
+        if !self.dsp_started {
+            match self.filter_deck(shared, DeckFilterOperation::Preroll) {
+                Ok(preroll) => {
+                    let channels = self.mix_format.channels.max(1);
+                    let keep = self
+                        .mixer
+                        .a_preroll_frames_wanted()
+                        .min(preroll.len() / channels);
+                    if keep > 0 {
+                        self.mixer
+                            .preroll_a(&preroll[preroll.len() - keep * channels..]);
+                    }
+                    self.dsp_started = true;
+                }
+                Err(_)
+                    if shared.should_stop_decoding()
+                        || !shared.is_decode_generation_current(self.generation) =>
+                {
+                    return RunnerStep::Continue
+                }
+                Err(err) => return RunnerStep::Failed(err),
+            }
+        }
         for _ in 0..MAX_MIX_ITERATIONS_PER_STEP {
             if shared.should_stop_decoding()
                 || !shared.is_decode_generation_current(self.generation)
@@ -321,7 +346,7 @@ impl TransitionRunner {
             // treated like the main loop treats them: interrupt / stop / stale generation
             // simply yield, a broken tail ends the deck early instead of failing the mix.
             if !self.a.ended && self.mixer.a_queued_frames() < B_READAHEAD_FRAMES {
-                if let Err(err) = self.feed_a(a_decoder, RENDER_BLOCK_FRAMES * 2) {
+                if let Err(err) = self.feed_a(shared, a_decoder, RENDER_BLOCK_FRAMES * 2) {
                     if a_decoder
                         .interrupt_handle()
                         .load(std::sync::atomic::Ordering::Acquire)
@@ -338,7 +363,7 @@ impl TransitionRunner {
             }
             // Feed B until the mixer has a comfortable read-ahead.
             if !self.b.ended && self.mixer.b_queued_frames() < B_READAHEAD_FRAMES {
-                if let Err(err) = self.feed_b(B_READAHEAD_FRAMES) {
+                if let Err(err) = self.feed_b(shared, B_READAHEAD_FRAMES) {
                     let interrupted = self.b.decoder.as_ref().is_some_and(|decoder| {
                         decoder
                             .interrupt_handle()
@@ -357,9 +382,10 @@ impl TransitionRunner {
             let produced = !output.samples.is_empty();
             if produced {
                 let frames = output.samples.len() / self.mix_format.channels.max(1);
-                self.b.position_secs +=
-                    output.b_frames_consumed as f64 / f64::from(self.mix_format.sample_rate.max(1));
-                self.b.produced_frames += output.b_frames_consumed as u64;
+                self.b.position_secs += output.b_frames_consumed as f64 * f64::from(self.speed)
+                    / f64::from(self.mix_format.sample_rate.max(1));
+                self.b.produced_frames +=
+                    (output.b_frames_consumed as f64 * f64::from(self.speed)).round() as u64;
                 self.mixed_frames += frames as u64;
                 if !self.push_mixed(shared, output.samples) {
                     return RunnerStep::Continue;
@@ -380,10 +406,6 @@ impl TransitionRunner {
             return;
         }
         self.a.ended = true;
-        self.scratch.clear();
-        if self.a.converter.finish(&mut self.scratch).is_ok() && !self.scratch.is_empty() {
-            self.mixer.push_a(DeckInput::Samples(&self.scratch));
-        }
         self.mixer.push_a(DeckInput::End);
     }
 
@@ -393,6 +415,26 @@ impl TransitionRunner {
     }
 
     fn push_mixed(&mut self, shared: &SharedAudio, samples: Vec<f32>) -> bool {
+        if !self.boundary_marked || (!self.midpoint_logged && self.mixer.position() >= 0.5) {
+            let peak = samples
+                .iter()
+                .fold(0.0f32, |peak, sample| peak.max(sample.abs()));
+            let rms = (samples
+                .iter()
+                .map(|sample| f64::from(*sample).powi(2))
+                .sum::<f64>()
+                / samples.len().max(1) as f64)
+                .sqrt();
+            crate::decoder::emit_decode_info(shared, &format!(
+                "transition loudness mix: request={} outgoing_seq={} incoming_seq={} generation={} stage={} output_frame={} a_trim={:.6} b_trim={:.6} pre_reference_peak={peak:.6} pre_reference_rms={rms:.6} dsp=per-deck",
+                self.rearm.request_id, self.rearm.outgoing_seq, self.incoming_seq(), self.generation,
+                if !self.boundary_marked { "start" } else { "midpoint" }, self.mixed_frames,
+                self.rearm.a_gain, self.rearm.b_gain,
+            ));
+            if self.boundary_marked {
+                self.midpoint_logged = true;
+            }
+        }
         if !self.boundary_marked {
             if let Some(info) = self.info.take() {
                 shared.mark_track_boundary_continuous(info);
@@ -410,10 +452,28 @@ impl TransitionRunner {
             None,
             DecodedAudioData::F32(samples),
         );
-        shared.push_decoded_chunk_for_generation(chunk, self.generation)
+        shared.push_processed_chunk(chunk, self.generation, self.speed)
     }
 
-    fn feed_a(&mut self, a_decoder: &mut DecoderData, want_frames: usize) -> Result<(), String> {
+    fn filter_deck(
+        &self,
+        shared: &SharedAudio,
+        operation: DeckFilterOperation,
+    ) -> Result<Vec<f32>, String> {
+        shared.process_transition_deck(
+            self.rearm.request_id,
+            self.generation,
+            self.speed,
+            operation,
+        )
+    }
+
+    fn feed_a(
+        &mut self,
+        shared: &SharedAudio,
+        a_decoder: &mut DecoderData,
+        want_frames: usize,
+    ) -> Result<(), String> {
         let mut fed = 0usize;
         while fed < want_frames && !self.a.ended {
             let chunk = if !self.a.pending.is_empty() {
@@ -422,6 +482,9 @@ impl TransitionRunner {
                 a_decoder.decode_next_chunk()?
             };
             let Some(mut chunk) = chunk else {
+                self.scratch =
+                    self.filter_deck(shared, DeckFilterOperation::Finish { incoming: false })?;
+                self.mixer.push_a(DeckInput::Samples(&self.scratch));
                 self.a.ended = true;
                 self.mixer.push_a(DeckInput::End);
                 break;
@@ -442,12 +505,18 @@ impl TransitionRunner {
             self.a.position_secs = decoded_chunk_end_secs(&chunk, self.a.position_secs);
             self.scratch.clear();
             if chunk.frames > 0 {
-                self.a
-                    .converter
-                    .process(&chunk, self.mix_format, &mut self.scratch)?;
+                self.scratch = self.filter_deck(
+                    shared,
+                    DeckFilterOperation::Process {
+                        incoming: false,
+                        chunk,
+                    },
+                )?;
             }
             if self.a.ended {
-                self.a.converter.finish(&mut self.scratch)?;
+                let tail =
+                    self.filter_deck(shared, DeckFilterOperation::Finish { incoming: false })?;
+                self.scratch.extend(tail);
             }
             if !self.scratch.is_empty() {
                 fed += self.scratch.len() / self.mix_format.channels.max(1);
@@ -460,7 +529,7 @@ impl TransitionRunner {
         Ok(())
     }
 
-    fn feed_b(&mut self, want_frames: usize) -> Result<(), String> {
+    fn feed_b(&mut self, shared: &SharedAudio, want_frames: usize) -> Result<(), String> {
         let mut fed = 0usize;
         while fed < want_frames && !self.b.ended {
             let chunk = if !self.b.pending.is_empty() {
@@ -473,18 +542,23 @@ impl TransitionRunner {
             };
             let Some(chunk) = chunk else {
                 self.b.ended = true;
-                self.scratch.clear();
-                self.b.converter.finish(&mut self.scratch)?;
+                self.scratch =
+                    self.filter_deck(shared, DeckFilterOperation::Finish { incoming: true })?;
                 if !self.scratch.is_empty() {
                     self.mixer.push_b(DeckInput::Samples(&self.scratch));
                 }
                 self.mixer.push_b(DeckInput::End);
                 break;
             };
-            self.scratch.clear();
-            self.b
-                .converter
-                .process(&chunk, self.mix_format, &mut self.scratch)?;
+            self.b_decoded_position_secs =
+                decoded_chunk_end_secs(&chunk, self.b_decoded_position_secs);
+            self.scratch = self.filter_deck(
+                shared,
+                DeckFilterOperation::Process {
+                    incoming: true,
+                    chunk,
+                },
+            )?;
             if !self.scratch.is_empty() {
                 fed += self.scratch.len() / self.mix_format.channels.max(1);
                 self.mixer.push_b(DeckInput::Samples(&self.scratch));
@@ -495,6 +569,17 @@ impl TransitionRunner {
 
     fn finish(&mut self, shared: &SharedAudio) -> RunnerStep {
         if !self.post_gain_marked {
+            // This ordered request also waits for all earlier mixed output to be queued,
+            // so the gain marker cannot overlook a block in flight in the filter worker.
+            if let Err(err) = self.filter_deck(shared, DeckFilterOperation::Promote) {
+                return if shared.should_stop_decoding()
+                    || !shared.is_decode_generation_current(self.generation)
+                {
+                    RunnerStep::Continue
+                } else {
+                    RunnerStep::Failed(err)
+                };
+            }
             // Effect tails and B's release still use reference-scaled deck gains.
             // Switch only where unscaled B resumes, not at the nominal overlap end.
             self.post_gain_marked = true;
@@ -512,24 +597,15 @@ impl TransitionRunner {
         let remainder = self.mixer.take_b_remainder();
         if !remainder.is_empty() {
             let frames = remainder.len() / self.mix_format.channels.max(1);
-            self.b.position_secs += frames as f64 / f64::from(self.mix_format.sample_rate.max(1));
-            self.b.produced_frames += frames as u64;
+            self.b.position_secs += frames as f64 * f64::from(self.speed)
+                / f64::from(self.mix_format.sample_rate.max(1));
+            self.b.produced_frames += (frames as f64 * f64::from(self.speed)).round() as u64;
             if !self.push_mixed(shared, remainder) {
                 return RunnerStep::Continue;
             }
         }
-        // The B converter may still hold resampler residue for the *next* chunk; the
-        // filter thread's own converter takes over from here, so flush it now.
-        self.scratch.clear();
-        if self.b.converter.finish(&mut self.scratch).is_ok() && !self.scratch.is_empty() {
-            let samples = std::mem::take(&mut self.scratch);
-            let frames = samples.len() / self.mix_format.channels.max(1);
-            self.b.position_secs += frames as f64 / f64::from(self.mix_format.sample_rate.max(1));
-            self.b.produced_frames += frames as u64;
-            if !self.push_mixed(shared, samples) {
-                return RunnerStep::Continue;
-            }
-        }
+        // The incoming graph (including resampler and tempo state) is retained by the
+        // filter worker. Do not flush/recreate it at this handoff.
         let Some(decoder) = self.b.decoder.take() else {
             return RunnerStep::Failed("incoming decoder missing at hand-off".to_string());
         };
@@ -543,6 +619,8 @@ impl TransitionRunner {
         let leftover = std::mem::take(&mut self.b.pending);
         for chunk in leftover {
             self.b.position_secs = decoded_chunk_end_secs(&chunk, self.b.position_secs);
+            self.b_decoded_position_secs =
+                decoded_chunk_end_secs(&chunk, self.b_decoded_position_secs);
             self.b.produced_frames += chunk.frames as u64;
             if !shared.push_decoded_chunk_for_generation(chunk, self.generation) {
                 break;
@@ -550,7 +628,7 @@ impl TransitionRunner {
         }
         RunnerStep::Finished(TransitionHandoff {
             decoder: *decoder,
-            decoded_position_secs: self.b.position_secs,
+            decoded_position_secs: self.b_decoded_position_secs,
             produced_frames: self.b.produced_frames,
         })
     }
@@ -719,13 +797,14 @@ mod tests {
 
     #[test]
     fn gain_marker_waits_for_effect_tails_before_unscaled_b_resumes() {
-        let shared = SharedAudio::new(
+        let shared = std::sync::Arc::new(SharedAudio::new(
             MixFormat::stereo_f32(44_100),
-            // This offline fixture has no filter consumer: hold the full four seconds.
+            // Hold the full four seconds without an output consumer.
             8.0,
             8.0,
             &crate::dsp::DspSettings::default(),
-        );
+        ));
+        let _filter = crate::filter::TestFilterWorker::start(shared.clone());
         let mut armed = dummy_armed_transition();
         armed.plan.mode = TransitionMode::AutomixBasic;
         armed.plan.template = Some(crate::transition::plan::PlanTemplate::EchoTail);

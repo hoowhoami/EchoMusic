@@ -729,30 +729,7 @@ export const usePlayerStore = defineStore(
           activeQueueId: playlistStore.activeQueue?.id,
         });
         if (sourceQueueId === PERSONAL_FM_QUEUE_ID) {
-          const playedQueuedNext = await playbackManager.playQueuedNextOutsidePersonalFm({
-            track: state.currentTrackSnapshot,
-            playtime: state.duration,
-            isOverplay: true,
-          });
-          if (playedQueuedNext) return;
-
-          const nextFmSong = await playlistStore.consumeNextPersonalFmTrack({
-            track: state.currentTrackSnapshot,
-            playtime: state.duration,
-            isOverplay: true,
-          });
-
-          if (nextFmSong) {
-            const fmList =
-              playlistStore.getQueueById(PERSONAL_FM_QUEUE_ID)?.songs ??
-              state.currentPlaylist ??
-              [];
-            await playbackManager.playTrack(String(nextFmSong.id), fmList, {
-              sourceQueueId: PERSONAL_FM_QUEUE_ID,
-            });
-          } else {
-            playbackManager.stop();
-          }
+          await playbackManager.advancePersonalFm(true);
           return;
         }
         if (state.playMode === 'single') {
@@ -1119,7 +1096,9 @@ export const usePlayerStore = defineStore(
       })();
       engine.setVolumeNormalization(settingStore.volumeNormalization);
       engine.setReferenceLufs(settingStore.volumeNormalizationLufs);
-      engine.setLoopFile(state.playMode === 'single');
+      engine.setLoopFile(
+        state.playMode === 'single' && state.currentSourceQueueId !== PERSONAL_FM_QUEUE_ID,
+      );
       engine.setStallTimeout(settingStore.playbackStallTimeout ?? 8);
       registerSettingWatchers();
       if (!audioDeviceListListenerRegistered) {
@@ -1277,8 +1256,14 @@ export const usePlayerStore = defineStore(
             engine.updateMediaPlaybackState(buildMediaState(state));
           }
         },
-        ended: () => {
-          if (state.awaitingTrackLoad) return;
+        ended: (payload) => {
+          if (
+            !state.currentTrackId ||
+            state.awaitingTrackLoad ||
+            !isCurrentNativePlaybackContext(payload) ||
+            state.playbackEnded
+          )
+            return;
           setEnginePlaybackStatus(state, 'stopped');
           if (!state.recentSeekIgnoreEnd) {
             state.playbackEnded = true;
@@ -1512,6 +1497,7 @@ export const usePlayerStore = defineStore(
       seek: playbackManager.seek,
       next: playbackManager.next,
       dislikePersonalFm: playbackManager.dislikePersonalFm,
+      playPersonalFmTrack: playbackManager.playPersonalFmTrack,
       prev: playbackManager.prev,
       stop: playbackManager.stop,
 

@@ -91,6 +91,9 @@ pub enum PlaybackSignal {
         track_seq: u64,
         gain_db: f32,
         stage: &'static str,
+        captured_at: std::time::Instant,
+        generation: u64,
+        output_position_secs: f64,
     },
     TrackSwitch(TrackSwitchInfo),
     PlaybackEnd,
@@ -100,6 +103,8 @@ pub enum PlaybackSignal {
 #[derive(Debug, PartialEq)]
 pub enum FilterInput {
     Frame(DecodedAudioChunk),
+    Processed(DecodedAudioChunk, u64),
+    Deck(crate::transition_filter::DeckFilterRequest),
     Boundary,
     Eof,
     Stopped,

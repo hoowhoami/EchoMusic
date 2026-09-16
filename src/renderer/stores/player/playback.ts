@@ -18,6 +18,7 @@ import { normalizePlayerErrorPayload, type PlayerEngine } from '@/utils/player';
 import type { usePlaylistStore } from '../playlist';
 import type { useSettingStore } from '../setting';
 import { PERSONAL_FM_QUEUE_ID, type PlaybackQueueState } from '../playlist';
+import type { PersonalFmCandidate } from '../playlist/personalFmActions';
 import { toRawSong, toRawSongList } from '../playlist/helpers';
 import { useHistoryStore } from '../historyStore';
 import { useToastStore } from '../toast';
@@ -66,6 +67,9 @@ type GaplessPreparedSource = {
   list: Song[];
   resolved: ResolvedAudioSource;
   nativeSeq: number | null;
+  requestSeq: number;
+  fmCandidate?: PersonalFmCandidate;
+  fromPersonalFm?: boolean;
 };
 
 type PlaybackNextDecision = NextTrackTargetDecision<Song> & {
@@ -75,6 +79,8 @@ type PlaybackNextDecision = NextTrackTargetDecision<Song> & {
   sourceQueueId: string | null;
   queueRevision: number;
   mode: OrderedPlaybackMode;
+  fmCandidate?: PersonalFmCandidate;
+  fromPersonalFm?: boolean;
 };
 
 /** 预解析候选全部失效后，供原生异步错误路径消费的一次性完整解析任务。 */
@@ -108,6 +114,53 @@ export const createPlaybackManager = (
   } | null = null;
   let gaplessPreparedSource: GaplessPreparedSource | null = null;
   let timedOutGaplessPrepareKey = '';
+  const adoptedNativeSeqs = new Set<number>();
+  let fmAdvanceId = 0;
+  let pendingFmLoad: { requestSeq: number; candidate: PersonalFmCandidate } | null = null;
+  // The exact occurrence a candidate was committed under. Manual selections append
+  // `:advanceId`, so reporting must reuse it (not the bare fmOccurrence) or repeated
+  // plays of the same track under one context would be collapsed by the dedup key.
+  let committedFmOccurrence: string | null = null;
+  const fmOccurrence = () =>
+    `${state.playbackRequestSeq}:${state.nativeTrackSeq ?? 0}:${state.currentTrackId ?? ''}`;
+  const fmForeignQueues = () => {
+    const queues = playlistStore.playbackQueues.filter(
+      (queue) =>
+        getQueueAdvanceAuthority(queue.id) === 'local' && queue.queuedNextTrackIds.length > 0,
+    );
+    return queues.sort(
+      (a, b) =>
+        Number(b.id === playlistStore.lastNonFmQueueId) -
+        Number(a.id === playlistStore.lastNonFmQueueId),
+    );
+  };
+  const reportFmAdvance = (action: 'play' | 'garbage' = 'play', natural = false) => {
+    // A failed or superseded load never became a played FM occurrence.
+    if (action === 'play' && pendingFmLoad?.requestSeq === state.playbackRequestSeq) return;
+    void playlistStore.reportPersonalFmAdvance(committedFmOccurrence ?? fmOccurrence(), {
+      track: state.currentTrackSnapshot,
+      playtime: state.currentTime,
+      isOverplay:
+        action !== 'garbage' &&
+        (natural || (state.duration > 0 && state.currentTime >= state.duration - 2)),
+      action,
+    });
+  };
+  const commitFmLoad = (requestSeq: number) => {
+    if (!pendingFmLoad || pendingFmLoad.requestSeq !== requestSeq) return true;
+    const { candidate } = pendingFmLoad;
+    pendingFmLoad = null;
+    const list = playlistStore.commitPersonalFmCandidate(candidate);
+    if (!list) return false;
+    committedFmOccurrence = candidate.occurrence;
+    state.currentPlaylist = list;
+    if (!state.historyLocalRecorded) {
+      state.historyLocalRecorded = true;
+      void useHistoryStore().recordPlay(candidate.track);
+    }
+    void playlistStore.replenishPersonalFmBuffer();
+    return true;
+  };
   const invalidatedGaplessSources = new Map<
     number,
     { prepared: GaplessPreparedSource; completionContextKey?: string }
@@ -283,6 +336,10 @@ export const createPlaybackManager = (
           await engine.play();
           if (!isCurrentRequest()) return false;
         }
+        if (!commitFmLoad(requestSeq)) {
+          stop();
+          return false;
+        }
         if (targetPosition > 0) engine.seek(targetPosition);
         completePlaybackIntent(state, requestSeq, { isPlaying: shouldAutoPlay });
         setEnginePlaybackStatus(state, shouldAutoPlay ? 'playing' : 'paused', trackId);
@@ -364,6 +421,10 @@ export const createPlaybackManager = (
       if (shouldAutoPlay) {
         await engine.play();
         if (!isCurrentRequest()) return false;
+      }
+      if (!commitFmLoad(requestSeq)) {
+        stop();
+        return false;
       }
       if (targetPosition > 0) engine.seek(targetPosition);
       completePlaybackIntent(state, requestSeq, { isPlaying: shouldAutoPlay });
@@ -463,10 +524,58 @@ export const createPlaybackManager = (
     explicitAdvance?: boolean;
   }): PlaybackNextDecision | null => {
     if (!state.currentTrackId) return null;
+    if (getPlaybackSourceQueueId() === PERSONAL_FM_QUEUE_ID) {
+      const foreignQueue = fmForeignQueues()[0];
+      if (foreignQueue) {
+        const decision = resolveQueuedNextTrackDecision({
+          tracks: foreignQueue.songs,
+          currentTrackId: state.currentTrackId,
+          queuedNextTrackIds: foreignQueue.queuedNextTrackIds,
+          getTrackId: (song) => song.id,
+          isPlayable: isPlayableSong,
+        });
+        if (!decision || decision.reason === 'cleanup') return null;
+        return {
+          ...decision,
+          currentTrackId: String(state.currentTrackId),
+          list: foreignQueue.songs,
+          sourceQueueId: foreignQueue.id,
+          queueRevision: foreignQueue.playbackRevision ?? 0,
+          mode: 'sequential',
+          fromPersonalFm: true,
+          key: `fm-queued|${playlistStore.personalFmSessionEpoch}|${fmOccurrence()}|${foreignQueue.id}|${foreignQueue.playbackRevision}|${decision.targetTrackId}`,
+        };
+      }
+      const candidate = playlistStore.peekNextPersonalFmCandidate(
+        String(state.currentTrackId),
+        fmOccurrence(),
+      );
+      if (!candidate) return null;
+      const queue = playlistStore.getQueueById(PERSONAL_FM_QUEUE_ID);
+      if (!queue) return null;
+      const list = queue.songs.some((song) => String(song.id) === String(candidate.track.id))
+        ? queue.songs
+        : [...queue.songs, candidate.track];
+      return {
+        track: candidate.track,
+        targetTrackId: String(candidate.track.id),
+        targetIndex: list.findIndex((song) => String(song.id) === String(candidate.track.id)),
+        reason: 'queue-order',
+        queuedNextTrackId: null,
+        queuedNextTrackIdsToConsume: [],
+        currentTrackId: String(state.currentTrackId),
+        list,
+        sourceQueueId: PERSONAL_FM_QUEUE_ID,
+        queueRevision: queue.playbackRevision ?? 0,
+        mode: 'sequential',
+        fmCandidate: candidate,
+        fromPersonalFm: true,
+        key: `fm|${candidate.sessionEpoch}|${candidate.occurrence}|${candidate.origin}|${candidate.key}`,
+      };
+    }
     const mode = resolveOrderedPlaybackMode(state.playMode, options?.explicitAdvance === true);
     if (!mode) return null;
     const sourceQueueId = getPlaybackSourceQueueId();
-    if (sourceQueueId === PERSONAL_FM_QUEUE_ID) return null;
     const sourceQueue = getCurrentSourceQueue();
     if (sourceQueue) playlistStore.syncQueuedNextTrackIds(sourceQueue.id);
     const list = sourceQueue ? sourceQueue.songs : (state.currentPlaylist ?? []);
@@ -522,6 +631,9 @@ export const createPlaybackManager = (
       state.playbackRequestSeq,
       state.autoNextSuppressed ? 'suppressed' : 'automatic',
       getQueueAdvanceAuthority(state.currentSourceQueueId ?? activeQueue?.id),
+      getPlaybackSourceQueueId() === PERSONAL_FM_QUEUE_ID
+        ? `${playlistStore.personalFmSessionEpoch}|${resolveOrderedNextTrack()?.key ?? ''}`
+        : '',
       state.audioEffect,
       state.currentAudioQualityOverride ?? settingStore.defaultAudioQuality,
       settingStore.defaultAudioQuality,
@@ -534,6 +646,7 @@ export const createPlaybackManager = (
     key: string,
     resolved: ResolvedAudioSource,
     nativeSeq: number | null,
+    requestSeq: number,
   ): GaplessPreparedSource => ({
     key,
     currentTrackId: decision.currentTrackId,
@@ -544,6 +657,9 @@ export const createPlaybackManager = (
     list: toRawSongList(decision.list),
     resolved,
     nativeSeq,
+    requestSeq,
+    fmCandidate: decision.fmCandidate,
+    fromPersonalFm: decision.fromPersonalFm,
   });
 
   const takeGaplessPreparedSource = (
@@ -561,8 +677,28 @@ export const createPlaybackManager = (
     transition?: TrackTransitionPlaybackInfo,
   ): boolean => {
     if (!seq) return false;
+    if (adoptedNativeSeqs.has(seq)) return true;
     const retained = invalidatedGaplessSources.get(seq);
     invalidatedGaplessSources.delete(seq);
+    const known =
+      gaplessPreparedSource?.nativeSeq === seq ? gaplessPreparedSource : retained?.prepared;
+    if (known?.fromPersonalFm) {
+      adoptedNativeSeqs.add(seq);
+      if (adoptedNativeSeqs.size > 128)
+        adoptedNativeSeqs.delete(adoptedNativeSeqs.values().next().value!);
+      if (
+        known.requestSeq !== state.playbackRequestSeq ||
+        known.currentTrackId !== String(state.currentTrackId ?? '')
+      )
+        return true;
+      if (state.autoNextSuppressed) {
+        clearGaplessPreparedSource(false);
+        setPlaybackIntentPlayback(state, false);
+        setEnginePlaybackStatus(state, 'paused');
+        engine.pause();
+        return true;
+      }
+    }
     const invalidated =
       retained && retained.completionContextKey !== getGaplessInvalidationKey()
         ? retained.prepared
@@ -574,6 +710,10 @@ export const createPlaybackManager = (
         nativeSeq: seq,
       });
       if (!state.awaitingTrackLoad) {
+        if (getPlaybackSourceQueueId() === PERSONAL_FM_QUEUE_ID) {
+          void advancePersonalFm(true);
+          return true;
+        }
         const samePlaybackContext =
           String(state.currentTrackId ?? '') === invalidated.currentTrackId &&
           String(state.currentSourceQueueId ?? playlistStore.activeQueue?.id ?? '') ===
@@ -612,6 +752,10 @@ export const createPlaybackManager = (
         nativeSeq: seq,
       });
       clearGaplessPreparedSource(false);
+      if (!state.awaitingTrackLoad && getPlaybackSourceQueueId() === PERSONAL_FM_QUEUE_ID) {
+        void advancePersonalFm(true);
+        return true;
+      }
       if (!state.awaitingTrackLoad && currentDecision) {
         playlistStore.consumeQueuedNextTrackIds(
           currentDecision.queuedNextTrackIdsToConsume,
@@ -632,7 +776,22 @@ export const createPlaybackManager = (
       fromTrackId: prepared.currentTrackId,
       targetTrackId: prepared.targetTrackId,
       nativeSeq: seq,
+      sourceQueueId: prepared.sourceQueueId,
+      fmOrigin: prepared.fmCandidate?.origin,
     });
+    if (prepared.fmCandidate) {
+      const list = playlistStore.commitPersonalFmCandidate(prepared.fmCandidate);
+      if (!list) {
+        void advancePersonalFm(true);
+        return true;
+      }
+      committedFmOccurrence = prepared.fmCandidate.occurrence;
+      prepared.list = list;
+    }
+    adoptedNativeSeqs.add(seq);
+    if (adoptedNativeSeqs.size > 128)
+      adoptedNativeSeqs.delete(adoptedNativeSeqs.values().next().value!);
+    if (prepared.fromPersonalFm) reportFmAdvance();
 
     const targetTrack =
       prepared.list.find((song) => String(song.id) === prepared.targetTrackId) ?? prepared.track;
@@ -663,6 +822,9 @@ export const createPlaybackManager = (
     state.supersededNativeTrackSeq = null;
     state.currentPlaylist = prepared.list;
     state.currentTrackSnapshot = snapshot;
+    if (prepared.fromPersonalFm && !prepared.fmCandidate && state.currentSourceQueueId) {
+      playlistStore.setActiveQueue(state.currentSourceQueueId);
+    }
     playlistStore.updateQueueCurrentTrack(
       prepared.targetTrackId,
       state.currentSourceQueueId ?? playlistStore.activeQueue?.id ?? playlistStore.activeQueueId,
@@ -691,7 +853,10 @@ export const createPlaybackManager = (
     if (prepared.resolved.loudness || !isSameTrack) {
       engine.adoptPreparedTrackLoudness(prepared.resolved.loudness);
     }
-    engine.setLoopFile(state.playMode === 'single');
+    engine.setLoopFile(
+      state.playMode === 'single' && state.currentSourceQueueId !== PERSONAL_FM_QUEUE_ID,
+    );
+    if (prepared.fmCandidate) void playlistStore.replenishPersonalFmBuffer();
 
     const lyricHash = String(targetTrack.hash ?? targetTrack.id ?? '');
     if (targetTrack.lyric) {
@@ -767,6 +932,10 @@ export const createPlaybackManager = (
     );
     if (remaining > prefetchWindow) return Promise.resolve();
 
+    if (getPlaybackSourceQueueId() === PERSONAL_FM_QUEUE_ID) {
+      void playlistStore.replenishPersonalFmBuffer();
+    }
+
     const next = resolveOrderedNextTrack();
     if (!next) {
       clearGaplessPreparedSource();
@@ -805,6 +974,7 @@ export const createPlaybackManager = (
       timeoutSecs: Number(timeoutSecs.toFixed(2)),
     });
     gaplessPreparingKey = key;
+    const requestSeq = state.playbackRequestSeq;
     const context: NonNullable<typeof gaplessPreparingContext> = {
       invalidationKey: getGaplessInvalidationKey(),
       allowCompletion: false,
@@ -887,7 +1057,7 @@ export const createPlaybackManager = (
         if (gaplessPreparingContext !== context || gaplessPreparingRequestId !== requestId) {
           if (nativeSeq !== null) {
             rememberInvalidatedGaplessSource(
-              createGaplessPreparedSource(next, key, resolved, nativeSeq),
+              createGaplessPreparedSource(next, key, resolved, nativeSeq, requestSeq),
               context.allowCompletion ? context.invalidationKey : undefined,
             );
           }
@@ -897,7 +1067,13 @@ export const createPlaybackManager = (
           targetTrackId,
           nativeSeq,
         });
-        gaplessPreparedSource = createGaplessPreparedSource(next, key, resolved, nativeSeq);
+        gaplessPreparedSource = createGaplessPreparedSource(
+          next,
+          key,
+          resolved,
+          nativeSeq,
+          requestSeq,
+        );
         preparedCommitted = true;
       } catch (error) {
         logger.warn('PlayerPlayback', 'Prepare gapless next source failed:', error);
@@ -922,14 +1098,15 @@ export const createPlaybackManager = (
     const { sourceQueueId, sourceQueue, list } = getPlaybackSourceContext();
     if (sourceQueue) playlistStore.syncQueuedNextTrackIds(sourceQueue.id);
     if (sourceQueueId === PERSONAL_FM_QUEUE_ID) {
-      const currentTrack =
-        findTrackById(state.currentTrackId, state.currentPlaylist, playlistStore) ||
-        state.currentTrackSnapshot;
-      void playlistStore.ensurePersonalFmQueue({
-        track: currentTrack,
-        playtime: state.currentTime,
-        isOverplay: false,
-      });
+      if (pendingFmLoad?.requestSeq === state.playbackRequestSeq) {
+        if (pendingFmLoad.candidate.sessionEpoch !== playlistStore.personalFmSessionEpoch) {
+          stop();
+          return;
+        }
+        playlistStore.skipFailedPersonalFmCandidate(pendingFmLoad.candidate);
+      }
+      await advancePersonalFm(false, false, true);
+      return;
     }
     if (list.length === 0 || !state.currentTrackId) return;
 
@@ -955,11 +1132,12 @@ export const createPlaybackManager = (
 
   const scheduleAutoNext = () => {
     if (state.autoNextSuppressed || !settingStore.autoNext || !state.currentTrackId) return;
-    const { list } = getPlaybackSourceContext();
-    if (list.length <= 1) return;
+    const { list, sourceQueueId } = getPlaybackSourceContext();
+    const isFm = sourceQueueId === PERSONAL_FM_QUEUE_ID;
+    if (list.length <= 1 && !isFm) return;
 
     const currentTrackId = String(state.currentTrackId);
-    const maxAttempts = Math.max(0, Math.floor(settingStore.autoNextMaxAttempts || 0));
+    const maxAttempts = Math.max(0, Math.floor(settingStore.autoNextMaxAttempts || (isFm ? 3 : 0)));
     if (maxAttempts > 0 && state.autoNextAttempts >= maxAttempts) return;
 
     clearAutoNextTimer();
@@ -990,10 +1168,14 @@ export const createPlaybackManager = (
       /** 预解析地址加载失败后，重新执行一次完整音源解析链。 */
       fallbackOnPreResolvedFailure?: boolean;
       onPreResolvedFailure?: (reason: string) => void;
+      fmCandidate?: PersonalFmCandidate;
     },
   ) => {
     const requestSeq = ++state.playbackRequestSeq;
     deferredPreResolvedFallback = null;
+    fmAdvanceId++;
+    pendingFmLoad = options?.fmCandidate ? { requestSeq, candidate: options.fmCandidate } : null;
+    if (!options?.fmCandidate) committedFmOccurrence = null;
     state.historyLocalRecorded = false;
     const recordLocalHistoryOnce = (song: Song) => {
       if (requestSeq !== state.playbackRequestSeq) return;
@@ -1053,10 +1235,11 @@ export const createPlaybackManager = (
     state.currentTrackSnapshot = snapshot;
     historyManager.resetHistoryUploadState(track);
     state.currentPlaylist = sourceList;
-    playlistStore.updateQueueCurrentTrack(
-      resolvedId,
-      state.currentSourceQueueId ?? playlistStore.activeQueue?.id ?? playlistStore.activeQueueId,
-    );
+    if (!options?.fmCandidate)
+      playlistStore.updateQueueCurrentTrack(
+        resolvedId,
+        state.currentSourceQueueId ?? playlistStore.activeQueue?.id ?? playlistStore.activeQueueId,
+      );
     state.currentAudioUrl = '';
     state.currentPlaybackSource = null;
     state.currentAudioCandidateUrls = [];
@@ -1153,6 +1336,13 @@ export const createPlaybackManager = (
     if (requestSeq !== state.playbackRequestSeq) return;
 
     const resolvedLyricAlbumAudioId = String(track.albumAudioId ?? track.mixSongId ?? '');
+    if (
+      options?.fmCandidate &&
+      options.fmCandidate.sessionEpoch !== playlistStore.personalFmSessionEpoch
+    ) {
+      stop();
+      return;
+    }
     if (lyricHash && resolvedLyricAlbumAudioId !== initialLyricAlbumAudioId) {
       void lyricStore.fetchLyrics(lyricHash, {
         force: true,
@@ -1199,8 +1389,15 @@ export const createPlaybackManager = (
     try {
       await engine.setSource(state.currentPlaybackSource ?? resolved.url, { force: true });
       if (requestSeq !== state.playbackRequestSeq) return;
+      if (
+        options?.fmCandidate &&
+        options.fmCandidate.sessionEpoch !== playlistStore.personalFmSessionEpoch
+      ) {
+        stop();
+        return;
+      }
       engine.applyTrackLoudness(resolved.loudness);
-      engine.setLoopFile(state.playMode === 'single');
+      engine.setLoopFile(state.playMode === 'single' && sourceQueueId !== PERSONAL_FM_QUEUE_ID);
       if (autoPlay) {
         if (settingStore.volumeFade) {
           const fadeMs = clampNumber(settingStore.volumeFadeTime ?? 1000, 500, 3000);
@@ -1213,6 +1410,10 @@ export const createPlaybackManager = (
 
       // 在 engine.play() 成功后立即记录本地历史，使用闭包捕获的 snapshot
       // 避免因 player end-file 事件竞态导致 state.currentTrackSnapshot 被下一首覆盖
+      if (!commitFmLoad(requestSeq)) {
+        stop();
+        return;
+      }
       recordLocalHistoryOnce(snapshot);
 
       state.autoNextAttempts = 0;
@@ -1270,6 +1471,10 @@ export const createPlaybackManager = (
     if (state.isResuming) return;
 
     if (!state.currentTrackId) {
+      if (playlistStore.activeQueue?.id === PERSONAL_FM_QUEUE_ID) {
+        await playPersonalFmTrack();
+        return;
+      }
       if ((playlistStore.activeQueue?.songs.length ?? playlistStore.defaultList.length) > 0) {
         const activeSongs = playlistStore.activeQueue?.songs ?? playlistStore.defaultList;
         let firstTrackIndex = 0;
@@ -1282,6 +1487,7 @@ export const createPlaybackManager = (
     }
 
     if (getPlaybackIsPlaying(state)) {
+      fmAdvanceId++;
       setPlaybackIntentPlayback(state, false);
       settingStore.syncPreventSleep(false);
       engine.updateMediaPlaybackState(buildMediaState(state));
@@ -1292,6 +1498,10 @@ export const createPlaybackManager = (
 
     if (!engine.source || state.playbackEnded) {
       const { sourceQueueId, list } = getPlaybackSourceContext();
+      if (sourceQueueId === PERSONAL_FM_QUEUE_ID) {
+        await playPersonalFmTrack(state.currentTrackSnapshot ?? undefined);
+        return;
+      }
       await playTrack(state.currentTrackId, list, { sourceQueueId });
       return;
     }
@@ -1334,6 +1544,7 @@ export const createPlaybackManager = (
 
   const seek = (time: number): Promise<void> => {
     if (!Number.isFinite(time)) return Promise.resolve();
+    fmAdvanceId++;
     const effectiveDuration = engine.duration > 0 ? engine.duration : state.duration;
     const targetTime = Math.max(0, Math.min(effectiveDuration, time));
     const dispatchSeq = ++seekDispatchSeq;
@@ -1398,166 +1609,175 @@ export const createPlaybackManager = (
     }
   };
 
-  const playQueuedNextOutsidePersonalFm = async (options?: {
-    track?: Song | null;
-    playtime?: number;
-    isOverplay?: boolean;
-  }) => {
-    if (getPlaybackSourceQueueId() !== PERSONAL_FM_QUEUE_ID) return false;
-
-    const candidateQueues: PlaybackQueueState[] = [];
-    const seenQueueIds = new Set<string>();
-    const addCandidateQueue = (queueId?: string | number | null) => {
-      const resolvedId = String(queueId ?? '');
-      if (!resolvedId || resolvedId === PERSONAL_FM_QUEUE_ID || seenQueueIds.has(resolvedId)) {
+  const playPersonalFmTrack = async (
+    selected?: Song,
+    preserveFailureChain = false,
+    preResolved?: ResolvedAudioSource,
+    automatic = false,
+  ) => {
+    const advanceId = ++fmAdvanceId;
+    const requestSeq = state.playbackRequestSeq;
+    if (automatic && state.autoNextSuppressed) return;
+    if (!playlistStore.getQueueById(PERSONAL_FM_QUEUE_ID)) {
+      const ready = await playlistStore.startPersonalFm();
+      if (!ready || advanceId !== fmAdvanceId || requestSeq !== state.playbackRequestSeq) return;
+    }
+    const epoch = playlistStore.personalFmSessionEpoch;
+    const occurrence = `${fmOccurrence()}:${advanceId}`;
+    let candidate = playlistStore.peekNextPersonalFmCandidate(
+      getPlaybackSourceQueueId() === PERSONAL_FM_QUEUE_ID
+        ? String(state.currentTrackId ?? '')
+        : null,
+      occurrence,
+      selected,
+    );
+    if (!candidate && !selected) {
+      await playlistStore.replenishPersonalFmBuffer();
+      if (
+        advanceId !== fmAdvanceId ||
+        epoch !== playlistStore.personalFmSessionEpoch ||
+        requestSeq !== state.playbackRequestSeq ||
+        (automatic && state.autoNextSuppressed)
+      )
+        return;
+      if (getPlaybackSourceQueueId() === PERSONAL_FM_QUEUE_ID && fmForeignQueues().length > 0) {
+        await advancePersonalFm(automatic, false, preserveFailureChain);
         return;
       }
-      const queue = playlistStore.getQueueById(resolvedId);
-      if (!queue) return;
-      seenQueueIds.add(resolvedId);
-      candidateQueues.push(queue);
-    };
-
-    addCandidateQueue(playlistStore.lastNonFmQueueId);
-    playlistStore.playbackQueueList.forEach((queue) => {
-      if (queue.queuedNextTrackIds.length > 0) addCandidateQueue(queue.id);
-    });
-
-    for (const queue of candidateQueues) {
-      await playlistStore.ensurePlaybackQueueSongsLoaded(queue.id);
-      const targetQueue = playlistStore.getQueueById(queue.id);
-      if (!targetQueue) continue;
-
-      playlistStore.syncQueuedNextTrackIds(targetQueue.id);
-      let queuedNextId = playlistStore.peekQueuedNextTrackId(targetQueue.id);
-      while (queuedNextId) {
-        const queuedSong = targetQueue.songs.find(
-          (song) => String(song.id) === String(queuedNextId),
-        );
-        playlistStore.consumeQueuedNextTrackId(queuedNextId, targetQueue.id);
-        if (queuedSong && isPlayableSong(queuedSong)) {
-          await playlistStore.ensurePersonalFmQueue({
-            track: options?.track ?? state.currentTrackSnapshot,
-            playtime: options?.playtime ?? state.currentTime,
-            isOverplay:
-              options?.isOverplay ??
-              (state.duration > 0 ? state.currentTime >= Math.max(0, state.duration - 2) : false),
-          });
-          const queueSongs = targetQueue.songs.slice();
-          playlistStore.setActiveQueue(targetQueue.id);
-          await playTrack(String(queuedSong.id), queueSongs, { sourceQueueId: targetQueue.id });
-          return true;
-        }
-        queuedNextId = playlistStore.peekQueuedNextTrackId(targetQueue.id);
-      }
+      candidate = playlistStore.peekNextPersonalFmCandidate(
+        getPlaybackSourceQueueId() === PERSONAL_FM_QUEUE_ID
+          ? String(state.currentTrackId ?? '')
+          : null,
+        occurrence,
+      );
     }
-
-    return false;
+    if (!candidate) {
+      if (getPlaybackSourceQueueId() === PERSONAL_FM_QUEUE_ID) stop();
+      showPlaybackNotice('audio-url-unavailable');
+      return;
+    }
+    const queue = playlistStore.getQueueById(PERSONAL_FM_QUEUE_ID);
+    if (!queue) return;
+    const list = queue.songs.some((song) => String(song.id) === String(candidate.track.id))
+      ? queue.songs.slice()
+      : [...queue.songs, candidate.track];
+    await playTrack(String(candidate.track.id), list, {
+      sourceQueueId: PERSONAL_FM_QUEUE_ID,
+      fmCandidate: candidate,
+      preserveFailureChain,
+      preResolved,
+      fallbackOnPreResolvedFailure: Boolean(preResolved),
+    });
   };
 
-  // 私人 FM「不喜欢」：上报 garbage、从队列移除当前曲目并切到下一首
-  const dislikePersonalFm = async () => {
-    const { sourceQueueId, sourceQueue, list } = getPlaybackSourceContext();
-    if (sourceQueueId !== PERSONAL_FM_QUEUE_ID) return false;
-    if (!state.currentTrackId) return false;
-
-    if (sourceQueue) playlistStore.syncQueuedNextTrackIds(sourceQueue.id);
-    const currentIndex = list.findIndex((s) => String(s.id) === String(state.currentTrackId));
-    const currentTrack =
-      (currentIndex >= 0 ? list[currentIndex] : null) ||
-      findTrackById(state.currentTrackId, state.currentPlaylist, playlistStore) ||
-      state.currentTrackSnapshot;
-    if (!currentTrack) return false;
-
-    clearAutoNextTimer();
-
-    // 上报「不喜欢」
-    await playlistStore.ensurePersonalFmQueue({
-      track: currentTrack,
-      playtime: Math.max(0, Math.floor(state.currentTime || 0)),
-      action: 'garbage',
-      isOverplay: false,
-    });
-
-    // 从私人 FM 队列移除当前曲目
-    playlistStore.removeFromQueue(String(currentTrack.id), PERSONAL_FM_QUEUE_ID);
-
-    // 删除后优先播放队列中原位置的下一首；队列没有下一首时再从 FM buffer 消费
-    const queueSongs = playlistStore.getQueueById(PERSONAL_FM_QUEUE_ID)?.songs ?? [];
-    const fmNextSong =
-      currentIndex >= 0 && currentIndex < queueSongs.length
-        ? queueSongs[currentIndex]
-        : await playlistStore.consumeNextPersonalFmTrack({
-            playtime: 0,
-            isOverplay: false,
-          });
-    if (!fmNextSong) {
-      stop();
-      return true;
+  const advancePersonalFm = async (
+    natural = false,
+    disliked = false,
+    preserveFailureChain = false,
+  ) => {
+    if (
+      getPlaybackSourceQueueId() !== PERSONAL_FM_QUEUE_ID ||
+      (natural && state.autoNextSuppressed)
+    )
+      return;
+    const advanceId = ++fmAdvanceId;
+    const epoch = playlistStore.personalFmSessionEpoch;
+    const requestSeq = state.playbackRequestSeq;
+    const isCurrent = () =>
+      advanceId === fmAdvanceId &&
+      epoch === playlistStore.personalFmSessionEpoch &&
+      requestSeq === state.playbackRequestSeq &&
+      (!natural || !state.autoNextSuppressed) &&
+      getPlaybackSourceQueueId() === PERSONAL_FM_QUEUE_ID;
+    if (getPlaybackHasFailed(state) && pendingFmLoad?.requestSeq === requestSeq) {
+      playlistStore.skipFailedPersonalFmCandidate(pendingFmLoad.candidate);
     }
+    const nextCandidate = playlistStore.peekNextPersonalFmCandidate(
+      String(state.currentTrackId ?? ''),
+      fmOccurrence(),
+    );
+    const decision = !disliked ? resolveOrderedNextTrack() : null;
+    const prepared = decision ? takeGaplessPreparedSource(decision) : null;
+    reportFmAdvance(disliked ? 'garbage' : 'play', natural);
+    clearAutoNextTimer();
+    clearGaplessPreparedSource();
+    if (disliked) {
+      // Stop the disliked audio immediately, even if fetching the next song is slow.
+      engine.beginSourceChange();
+      if (state.currentTrackId)
+        playlistStore.removeFromQueue(String(state.currentTrackId), PERSONAL_FM_QUEUE_ID);
+    }
+    for (const queued of fmForeignQueues()) {
+      try {
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        await Promise.race([
+          playlistStore.ensurePlaybackQueueSongsLoaded(queued.id),
+          new Promise<never>((_, reject) => {
+            timer = setTimeout(() => reject(new Error('Queued-next load timed out')), 10_000);
+          }),
+        ]).finally(() => clearTimeout(timer));
+      } catch (error) {
+        if (!isCurrent()) return;
+        logger.warn('PlayerPlayback', 'FM queued-next load failed:', error);
+        stop();
+        showPlaybackNotice('audio-url-unavailable');
+        return;
+      }
+      if (!isCurrent()) return;
+      const queue = playlistStore.getQueueById(queued.id);
+      if (!queue) continue;
+      const decision = resolveQueuedNextTrackDecision({
+        tracks: queue.songs,
+        currentTrackId: state.currentTrackId,
+        queuedNextTrackIds: queue.queuedNextTrackIds,
+        getTrackId: (song) => song.id,
+        isPlayable: isPlayableSong,
+      });
+      if (!decision) continue;
+      if (decision.reason === 'cleanup') {
+        playlistStore.consumeQueuedNextTrackIds(decision.queuedNextTrackIdsToConsume, queue.id);
+        continue;
+      }
+      const playback = playTrack(decision.targetTrackId, queue.songs.slice(), {
+        sourceQueueId: queue.id,
+        preserveFailureChain,
+        preResolved:
+          prepared?.targetTrackId === decision.targetTrackId ? prepared.resolved : undefined,
+        fallbackOnPreResolvedFailure: Boolean(prepared),
+      });
+      playlistStore.setActiveQueue(queue.id);
+      await playback;
+      return;
+    }
+    if (!isCurrent()) return;
+    await playPersonalFmTrack(
+      disliked ? nextCandidate?.track : undefined,
+      preserveFailureChain,
+      prepared?.fmCandidate && prepared.targetTrackId === String(nextCandidate?.track.id ?? '')
+        ? prepared.resolved
+        : undefined,
+      natural,
+    );
+  };
 
-    const fmList = playlistStore.getQueueById(PERSONAL_FM_QUEUE_ID)?.songs ?? list;
-    await playTrack(String(fmNextSong.id), fmList, { sourceQueueId: PERSONAL_FM_QUEUE_ID });
+  const dislikePersonalFm = async () => {
+    if (getPlaybackSourceQueueId() !== PERSONAL_FM_QUEUE_ID || !state.currentTrackId) return false;
+    await advancePersonalFm(false, true);
     return true;
   };
 
   const next = async (options?: { gaplessTransition?: boolean }) => {
     const { sourceQueueId, sourceQueue, list } = getPlaybackSourceContext();
+    if (sourceQueueId === PERSONAL_FM_QUEUE_ID) {
+      await advancePersonalFm(options?.gaplessTransition === true);
+      return;
+    }
     if (sourceQueue) playlistStore.syncQueuedNextTrackIds(sourceQueue.id);
     if (list.length === 0) return;
-
     clearAutoNextTimer();
-
-    // 随机模式下，切歌前将当前曲目记入历史
-    if (state.playMode === 'random' && state.currentTrackId) {
+    if (state.playMode === 'random' && state.currentTrackId)
       pushShuffleHistory(state.currentTrackId);
-    }
-
-    if (
-      sourceQueueId === PERSONAL_FM_QUEUE_ID &&
-      (await playQueuedNextOutsidePersonalFm({
-        track:
-          list.find((song) => String(song.id) === String(state.currentTrackId)) ||
-          findTrackById(state.currentTrackId, state.currentPlaylist, playlistStore) ||
-          state.currentTrackSnapshot,
-        playtime: state.currentTime,
-        isOverplay:
-          state.duration > 0 ? state.currentTime >= Math.max(0, state.duration - 2) : false,
-      }))
-    ) {
-      return;
-    }
-
-    const currentIndex = list.findIndex((s) => String(s.id) === String(state.currentTrackId));
-
-    if (sourceQueueId === PERSONAL_FM_QUEUE_ID) {
-      void playlistStore.ensurePersonalFmQueue({
-        track:
-          list[currentIndex] ||
-          findTrackById(state.currentTrackId, state.currentPlaylist, playlistStore) ||
-          state.currentTrackSnapshot,
-        playtime: state.currentTime,
-        isOverplay:
-          state.duration > 0 ? state.currentTime >= Math.max(0, state.duration - 2) : false,
-      });
-      const fmNextSong =
-        currentIndex >= 0 && currentIndex < list.length - 1
-          ? list[currentIndex + 1]
-          : await playlistStore.consumeNextPersonalFmTrack({
-              track:
-                list[currentIndex] ||
-                findTrackById(state.currentTrackId, state.currentPlaylist, playlistStore) ||
-                state.currentTrackSnapshot,
-              playtime: state.currentTime,
-              isOverplay:
-                state.duration > 0 ? state.currentTime >= Math.max(0, state.duration - 2) : false,
-            });
-      if (fmNextSong) {
-        const fmList = playlistStore.getQueueById(PERSONAL_FM_QUEUE_ID)?.songs ?? list;
-        await playTrack(String(fmNextSong.id), fmList, { sourceQueueId: PERSONAL_FM_QUEUE_ID });
-      }
-      return;
-    }
+    const currentIndex = list.findIndex((song) => String(song.id) === String(state.currentTrackId));
 
     if (state.playMode === 'random') {
       const queuedDecision = resolveQueuedNextTrackDecision({
@@ -1627,6 +1847,13 @@ export const createPlaybackManager = (
     const { sourceQueueId, list } = getPlaybackSourceContext();
     if (list.length === 0) return;
 
+    if (sourceQueueId === PERSONAL_FM_QUEUE_ID) {
+      const index = list.findIndex((song) => String(song.id) === String(state.currentTrackId));
+      const track = list.slice(0, Math.max(0, index)).reverse().find(isPlayableSong);
+      if (track) await playPersonalFmTrack(track);
+      return;
+    }
+
     clearAutoNextTimer();
 
     // 随机模式下，从播放历史中回退
@@ -1658,6 +1885,9 @@ export const createPlaybackManager = (
   };
 
   const stop = () => {
+    fmAdvanceId++;
+    pendingFmLoad = null;
+    committedFmOccurrence = null;
     state.playbackEnded = false;
     const sourceQueueId =
       state.currentSourceQueueId ?? playlistStore.activeQueue?.id ?? playlistStore.activeQueueId;
@@ -1862,7 +2092,8 @@ export const createPlaybackManager = (
     seek,
     next,
     dislikePersonalFm,
-    playQueuedNextOutsidePersonalFm,
+    advancePersonalFm,
+    playPersonalFmTrack,
     prev,
     stop,
     recoverFromStall,

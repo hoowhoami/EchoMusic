@@ -886,8 +886,14 @@ contextBridge.exposeInMainWorld('electron', {
       ipcRenderer.on('player:ao-state-change', listener);
       return () => ipcRenderer.removeListener('player:ao-state-change', listener);
     },
-    onPlaybackEnd: (func: (reason: string) => void) => {
-      const listener = (_event: Electron.IpcRendererEvent, reason: string) => func(reason);
+    onPlaybackEnd: (
+      func: (reason: string, context?: { trackSeq?: number; generation?: number }) => void,
+    ) => {
+      const listener = (
+        _event: Electron.IpcRendererEvent,
+        reason: string,
+        context?: { trackSeq?: number; generation?: number },
+      ) => func(reason, context);
       ipcRenderer.on('player:playback-end', listener);
       return () => ipcRenderer.removeListener('player:playback-end', listener);
     },

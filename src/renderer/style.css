@@ -540,13 +540,7 @@ body.echo-surface-translucent .song-list-sticky,
 body.echo-surface-translucent .comment-main-tabs,
 body.echo-surface-translucent .search-pinned-tabs,
 body.echo-surface-translucent .sliver-header-root,
-body.echo-surface-translucent .dialog-content,
-body.echo-surface-translucent .drawer-panel,
-body.echo-surface-translucent .echo-popover-content,
-body.echo-surface-translucent .app-tooltip-content,
-body.echo-surface-translucent .song-context-menu,
 body.echo-surface-translucent .add-to-item,
-body.echo-surface-translucent .toast-card,
 body.echo-surface-translucent .card-container,
 body.echo-surface-translucent .plugin-card,
 body.echo-surface-translucent .plugin-safe-mode-control,
@@ -578,10 +572,6 @@ body.echo-surface-translucent .sliver-header-background {
   background: var(--surface-main-base) !important;
 }
 
-body .dialog-content {
-  background: var(--color-bg-dialog);
-}
-
 .app-tooltip-surface {
   background-clip: padding-box;
   padding: 6px 10px;
@@ -594,21 +584,56 @@ body .dialog-content {
   box-shadow: var(--shadow-elevated);
 }
 
-body .drawer-panel,
-body .echo-popover-content,
-body .app-tooltip-content,
-body .song-context-menu,
 body .add-to-item,
-body .toast-card,
 body .login-panel-card,
 body .tb-suggestions,
 body .search-suggestions-panel {
   background: var(--color-bg-elevated);
 }
 
-body .echo-popover-arrow,
-body .app-tooltip-arrow {
-  fill: var(--color-bg-elevated);
+/* Floating surfaces stay opaque unless the appearance setting enables frosting. */
+.echo-popover-content,
+.drawer-panel,
+.dialog-content,
+.app-tooltip-content,
+.song-context-menu,
+.echo-date-picker-content,
+.titlebar-more-menu,
+.tb-search-panel,
+.toast-card {
+  --floating-surface-base: var(--surface-elevated-base);
+  --floating-surface-bg: var(--floating-surface-base);
+  --floating-surface-filter: none;
+}
+
+.dialog-content {
+  --floating-surface-base: var(--surface-dialog-base);
+}
+
+.app-tooltip-content {
+  background: var(--floating-surface-bg);
+  -webkit-backdrop-filter: var(--floating-surface-filter);
+  backdrop-filter: var(--floating-surface-filter);
+}
+
+@supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+  @media (prefers-reduced-transparency: no-preference) {
+    html.floating-surfaces-frosted
+      :is(
+        .echo-popover-content,
+        .drawer-panel,
+        .dialog-content,
+        .app-tooltip-content,
+        .song-context-menu,
+        .echo-date-picker-content,
+        .titlebar-more-menu,
+        .tb-search-panel,
+        .toast-card
+      ) {
+      --floating-surface-bg: color-mix(in srgb, var(--floating-surface-base) 82%, transparent);
+      --floating-surface-filter: blur(24px) saturate(140%);
+    }
+  }
 }
 
 body .player-bar {

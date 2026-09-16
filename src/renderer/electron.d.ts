@@ -831,7 +831,9 @@ export interface IElectronAPI {
     onStateChange: (func: (state: PlayerStateChangePayload) => void) => () => void;
     onCoreStateChange: (func: (payload: PlayerCoreStateChangePayload) => void) => () => void;
     onAoStateChange: (func: (payload: PlayerAoState) => void) => () => void;
-    onPlaybackEnd: (func: (reason: string) => void) => () => void;
+    onPlaybackEnd: (
+      func: (reason: string, context?: { trackSeq?: number; generation?: number }) => void,
+    ) => () => void;
     onStall: (func: (position: number) => void) => () => void;
     onError: (func: (payload: PlayerErrorPayload) => void) => () => void;
     onAudioDeviceListChanged: (

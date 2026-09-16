@@ -756,7 +756,6 @@ onUnmounted(() => {
 .player-error-popover.echo-popover-content {
   width: 220px;
   padding: 12px 14px;
-  background: var(--color-bg-elevated);
   border-color: var(--border-subtle);
 }
 

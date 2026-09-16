@@ -411,6 +411,13 @@ watch(
   },
 );
 watch(
+  () => settings.floatingSurfaceFrosted,
+  (enabled) => {
+    document.documentElement.classList.toggle('floating-surfaces-frosted', enabled === true);
+  },
+  { immediate: true },
+);
+watch(
   () => settings.globalFont,
   () => {
     if (!isMiniPlayerRoute.value) applyGlobalFont();

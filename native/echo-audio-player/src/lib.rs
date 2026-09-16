@@ -16,6 +16,7 @@ mod spectrum;
 mod stream;
 mod tempo;
 mod transition;
+mod transition_filter;
 mod transition_runner;
 #[cfg(test)]
 mod transition_tests;
@@ -816,6 +817,8 @@ fn prepare_source(
             loop {
                 let signal = if let Some(signal) = signal_shared.take_pending_control_signal() {
                     Some(signal)
+                } else if let Ok(signal) = telemetry_signal_rx.try_recv() {
+                    Some(signal)
                 } else {
                     match control_signal_rx.recv_timeout(tick) {
                         Ok(()) => signal_shared.take_pending_control_signal(),
@@ -914,12 +917,12 @@ fn prepare_source(
                                 emit_shared_event(&signal_shared, PlayerEvent::output_stats(stats));
                             }
                         }
-                        PlaybackSignal::NormalizationGainApplied { track_seq, gain_db, stage } => {
+                        PlaybackSignal::NormalizationGainApplied { track_seq, gain_db, stage, captured_at, generation, output_position_secs } => {
                             emit_shared_event(
                                 &signal_shared,
                                 PlayerEvent::log(
                                     "info",
-                                    format!("transition loudness applied: track_seq={track_seq} stage={stage} gain_db={gain_db:.2}"),
+                                    format!("transition loudness applied: track_seq={track_seq} generation={generation} stage={stage} gain_db={gain_db:.2} output_position_secs={output_position_secs:.6} delivery_delay_ms={:.3} gain_alignment=pcm-frame", captured_at.elapsed().as_secs_f64() * 1000.0),
                                 ),
                             );
                         }

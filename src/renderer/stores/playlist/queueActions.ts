@@ -25,6 +25,7 @@ type QueueStoreShape = {
   lastNonFmQueueId: string;
   markLastNonFmQueue: (queueId: string | number | null | undefined) => void;
   personalFmBuffer: Song[];
+  personalFmSessionEpoch: number;
   playbackQueues: PlaybackQueueState[];
   queueFilteredInvalidCount: number;
   queuedNextTrackIds: string[];
@@ -213,6 +214,7 @@ export const queueActions = {
     this.persistQueueMetaToStorage(matched);
   },
   removePersonalFmQueue(this: QueueStoreShape, options?: { preserveBuffer?: boolean }) {
+    this.personalFmSessionEpoch++;
     const nextQueues = this.playbackQueues.filter((queue) => queue.id !== PERSONAL_FM_QUEUE_ID);
     this.playbackQueues = nextQueues.map(normalizePlaybackQueueRuntime);
     if (this.activeQueueId === PERSONAL_FM_QUEUE_ID) {
@@ -329,6 +331,7 @@ export const queueActions = {
     targetQueue.queuedNextTrackIds = [];
     targetQueue.currentTrackId = null;
     if (targetQueue.id === PERSONAL_FM_QUEUE_ID) {
+      this.personalFmSessionEpoch++;
       this.personalFmBuffer = toRawSongList([]);
     }
     if (playbackDecisionChanged) bumpPlaybackQueueRevision(targetQueue);

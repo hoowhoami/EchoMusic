@@ -2,44 +2,44 @@
  * Queue memory allocation and buffer watermark configuration (based on seconds)
  */
 export interface QueueConfig {
-	/** Total capacity of the circular buffer (seconds) */
-	capacitySeconds: number;
-	/** Notification watermark to trigger decoder wakeup (seconds) */
-	notifyWatermarkSeconds: number;
-	/** Emergency watermark; decoder wakes up immediately and unconditionally if below this value (seconds) */
-	emergencyWatermarkSeconds: number;
+  /** Total capacity of the circular buffer (seconds) */
+  capacitySeconds: number;
+  /** Notification watermark to trigger decoder wakeup (seconds) */
+  notifyWatermarkSeconds: number;
+  /** Emergency watermark; decoder wakes up immediately and unconditionally if below this value (seconds) */
+  emergencyWatermarkSeconds: number;
 }
 
 /**
  * Configuration required to initialize the audio engine.
  */
 export interface EngineConfig {
-	/**
-	 * The AudioContext injected by the host environment.
-	 */
-	audioContext: AudioContext;
+  /**
+   * The AudioContext injected by the host environment.
+   */
+  audioContext: AudioContext;
 
-	/**
-	 * Injected GainNode for volume control
-	 */
-	gainNode?: GainNode;
+  /**
+   * Injected GainNode for volume control
+   */
+  gainNode?: GainNode;
 
-	/**
-	 * URLs for external static resources, typically resolved by the host's build tool.
-	 */
-	assets: {
-		workerUrl: string;
-		workletUrl: string;
-		ffmpegWasmUrl: string;
-		soundtouchWasmUrl: string;
-	};
+  /**
+   * URLs for external static resources, typically resolved by the host's build tool.
+   */
+  assets: {
+    workerUrl: string;
+    workletUrl: string;
+    ffmpegWasmUrl: string;
+    soundtouchWasmUrl: string;
+  };
 
-	queueConfig?: Partial<QueueConfig>;
+  queueConfig?: Partial<QueueConfig>;
 
-	/**
-	 * Default stretch algorithm to use on startup. Defaults to "spectral".
-	 */
-	defaultAlgorithm?: StretchAlgorithm;
+  /**
+   * Default stretch algorithm to use on startup. Defaults to "spectral".
+   */
+  defaultAlgorithm?: StretchAlgorithm;
 }
 
 /**
@@ -47,22 +47,21 @@ export interface EngineConfig {
  * - "wsola": WSOLA time-domain algorithm (optimized for low latency).
  * - "spectral": Phase Vocoder STFT frequency-domain algorithm (higher audio fidelity for polyphonic music).
  */
-export type StretchAlgorithm = "wsola" | "spectral";
+export type StretchAlgorithm = 'wsola' | 'spectral';
 
 /**
  * Represents the current playback state of the engine.
  */
-export type EngineState = "idle" | "loading" | "ready" | "playing" | "paused";
+export type EngineState = 'idle' | 'loading' | 'ready' | 'playing' | 'paused';
 
 export const EngineErrorCode = {
-	Aborted: 1,
-	Network: 2,
-	Decode: 3,
-	SrcNotSupported: 4,
+  Aborted: 1,
+  Network: 2,
+  Decode: 3,
+  SrcNotSupported: 4,
 } as const;
 
-export type EngineErrorCodeValue =
-	(typeof EngineErrorCode)[keyof typeof EngineErrorCode];
+export type EngineErrorCodeValue = (typeof EngineErrorCode)[keyof typeof EngineErrorCode];
 
 /**
  * Structure for engine-level errors.
@@ -72,26 +71,26 @@ export type EngineErrorCodeValue =
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/MediaError)
  */
 export interface EngineError {
-	code: EngineErrorCodeValue;
-	message: string;
+  code: EngineErrorCodeValue;
+  message: string;
 }
 
 /**
  * Structure for extracted cover art data.
  */
 export interface PlayerCover {
-	bytes: ArrayBuffer;
-	mime: string | null;
+  bytes: ArrayBuffer;
+  mime: string | null;
 }
 
 /**
  * Event map matching the DOM CustomEvent style.
  */
 export interface EngineEventMap {
-	play: CustomEvent<void>;
-	pause: CustomEvent<void>;
-	loadedmetadata: CustomEvent<void>;
-	timeupdate: CustomEvent<void>;
-	ended: CustomEvent<void>;
-	error: CustomEvent<EngineError>;
+  play: CustomEvent<void>;
+  pause: CustomEvent<void>;
+  loadedmetadata: CustomEvent<void>;
+  timeupdate: CustomEvent<void>;
+  ended: CustomEvent<void>;
+  error: CustomEvent<EngineError>;
 }

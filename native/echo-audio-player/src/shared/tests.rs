@@ -61,24 +61,26 @@ fn transition_loudness_telemetry_follows_output_boundaries() {
     assert!(gain_events().is_empty(), "queued gains are not applied yet");
     let mut output = [0.0; 16];
     assert_eq!(shared.pop_into(&mut output), 8);
-    assert_eq!(
-        gain_events(),
-        vec![PlaybackSignal::NormalizationGainApplied {
+    assert!(matches!(
+        gain_events().as_slice(),
+        [PlaybackSignal::NormalizationGainApplied {
             track_seq: 7,
             gain_db: -2.0,
             stage: "track-boundary",
+            ..
         }]
-    );
+    ));
     assert!((shared.normalization_gain() - 10.0f32.powf(-2.0 / 20.0)).abs() < 1e-6);
     assert_eq!(shared.pop_into(&mut output), 8);
-    assert_eq!(
-        gain_events(),
-        vec![PlaybackSignal::NormalizationGainApplied {
+    assert!(matches!(
+        gain_events().as_slice(),
+        [PlaybackSignal::NormalizationGainApplied {
             track_seq: 7,
             gain_db: -8.0,
             stage: "overlap-end",
+            ..
         }]
-    );
+    ));
     assert!((shared.normalization_gain() - 10.0f32.powf(-8.0 / 20.0)).abs() < 1e-6);
     assert_eq!(shared.pop_into(&mut output), 8);
     assert!(
@@ -113,6 +115,70 @@ fn dsp_sync_preserves_output_gain_until_the_queued_marker() {
         1.0,
         "explicit gain changes still work"
     );
+}
+
+#[test]
+fn transition_reference_does_not_boost_a_inside_a_callback_spanning_both_markers() {
+    let settings = DspSettings {
+        normalization_gain_db: -9.3,
+        ..DspSettings::default()
+    };
+    let shared = SharedAudio::new(MixFormat::stereo_f32(100), 1.0, 8.0, &settings);
+    let a_gain = settings.normalization_gain_linear();
+    let reference = 10.0f32.powf(-3.5 / 20.0);
+    assert!(shared.push_samples(&[0.5; 16]));
+    let mut info = TrackSwitchInfo::new("b".to_string(), None, 2, 3.0);
+    info.normalization_gain_db = Some(-3.5);
+    shared.mark_track_boundary_continuous(info);
+    assert!(shared.push_samples(&[0.5 * a_gain / reference; 16]));
+    shared.mark_gain_marker(-6.0);
+    assert!(shared.push_samples(&[0.5; 16]));
+    let mut output = [0.0; 48];
+    assert_eq!(shared.pop_into(&mut output), 24);
+    assert!(output[..32]
+        .iter()
+        .all(|sample| (*sample - 0.5 * a_gain).abs() < 1e-6));
+    let b_gain = 10.0f32.powf(-6.0 / 20.0);
+    assert!(output[32..]
+        .iter()
+        .all(|sample| (*sample - 0.5 * b_gain).abs() < 1e-6));
+    assert!((shared.normalization_gain() - b_gain).abs() < 1e-6);
+    assert!(shared.push_samples(&[0.5; 16]));
+    assert_eq!(shared.pop_into(&mut output[..16]), 8);
+    assert!(output[..16]
+        .iter()
+        .all(|sample| (*sample - 0.5 * b_gain).abs() < 1e-6));
+}
+
+#[test]
+fn playback_reset_cancels_a_waiting_transition_dsp_request() {
+    let shared = Arc::new(SharedAudio::new(
+        MixFormat::stereo_f32(100),
+        1.0,
+        8.0,
+        &DspSettings::default(),
+    ));
+    let worker_shared = shared.clone();
+    let (tx, rx) = sync_channel(1);
+    let generation = shared.current_decode_generation();
+    let worker = thread::spawn(move || {
+        let result = worker_shared.process_transition_deck(
+            1,
+            generation,
+            1.0,
+            crate::transition_filter::DeckFilterOperation::Preroll,
+        );
+        tx.send(result).unwrap();
+    });
+    // Pop but do not execute the request, simulating an in-flight filter operation.
+    let request = shared.pop_decoded_for_filter(shared.current_filter_generation());
+    assert!(matches!(request, FilterInput::Deck(_)));
+    shared.reset_for_decode_resume(2.0, &DspSettings::default());
+    assert!(rx
+        .recv_timeout(Duration::from_secs(1))
+        .expect("cancelled without filter reply")
+        .is_err());
+    worker.join().unwrap();
 }
 
 #[test]

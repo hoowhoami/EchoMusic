@@ -109,6 +109,7 @@ const toImpulseResponseFilePayload = (file: SpatialAudioEffectEntry): SpatialAud
 export const useSettingStore = defineStore('setting', {
   state: () => ({
     theme: 'system' as ThemeMode,
+    floatingSurfaceFrosted: false,
     titlebarLayout: emptyTitlebarLayout(),
     windowBackground: { ...DEFAULT_WINDOW_BACKGROUND },
     windowBackgroundActiveEnabled: false,
@@ -367,6 +368,9 @@ export const useSettingStore = defineStore('setting', {
         ...this.windowBackground,
       });
       await this.initWindowBackground();
+    },
+    setFloatingSurfaceFrosted(enabled: boolean) {
+      this.floatingSurfaceFrosted = enabled === true;
     },
     setTheme(theme: ThemeMode) {
       this.theme = theme;

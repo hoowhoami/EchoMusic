@@ -124,11 +124,15 @@ struct Rig {
 
 impl Rig {
     fn start(a_url: &str) -> Self {
+        Self::start_with_settings(a_url, &DspSettings::default())
+    }
+
+    fn start_with_settings(a_url: &str, settings: &DspSettings) -> Self {
         let shared = Arc::new(SharedAudio::new(
             MixFormat::stereo_f32(SR),
             0.5,
             8.0,
-            &DspSettings::default(),
+            settings,
         ));
         let (control_tx, control_rx) = sync_channel(64);
         let (telemetry_tx, telemetry_rx) = sync_channel(64);
@@ -422,6 +426,86 @@ fn fade_mode_overlaps_tracks_for_the_configured_duration() {
         "before {before} middle {middle}"
     );
     assert!(after > before * 0.5, "after {after} before {before}");
+    rig.stop();
+}
+
+#[test]
+fn per_deck_dsp_transition_preserves_duration_at_non_unit_speed() {
+    let _guard = TEST_SERIAL.lock().unwrap_or_else(|p| p.into_inner());
+    set_mode(TransitionMode::Fade, 2.0);
+    let a = TestWav::new(32.0, 440.0, 120.0, 0.0, 0.0);
+    let b = TestWav::new(32.0, 880.0, 120.0, 0.0, 0.0);
+    for speed in [0.75, 1.25] {
+        let settings = DspSettings {
+            speed,
+            ..DspSettings::default()
+        };
+        let mut rig = Rig::start_with_settings(&a.url(), &settings);
+        prepare_and_arm(&rig, &a.url(), &b.url(), 1);
+        let (output, switch) = rig.drain(100.0);
+        let (_, at) = switch.expect("track switch");
+        let actual_cut = at as f64 / (f64::from(SR) * 2.0);
+        let actual_duration = output.len() as f64 / (f64::from(SR) * 2.0);
+        assert!(
+            (actual_cut - 30.0 / f64::from(speed)).abs() < 0.3,
+            "cut={actual_cut} speed={speed}"
+        );
+        assert!(
+            (actual_duration - 62.0 / f64::from(speed)).abs() < 0.3,
+            "duration={actual_duration} speed={speed}"
+        );
+        assert!(rig.shared.is_drained_for_output());
+        rig.stop();
+    }
+}
+
+#[test]
+fn speed_change_releases_blend_without_seek_or_decoder_reset() {
+    let _guard = TEST_SERIAL.lock().unwrap_or_else(|p| p.into_inner());
+    set_mode(TransitionMode::Fade, 8.0);
+    let a = TestWav::new(32.0, 440.0, 120.0, 0.0, 0.0);
+    let b = TestWav::new(32.0, 880.0, 120.0, 0.0, 0.0);
+    let mut rig = Rig::start(&a.url());
+    prepare_and_arm(&rig, &a.url(), &b.url(), 1);
+    let generation = rig.shared.current_decode_generation();
+    let mut buffer = [0.0; 1024];
+    let started = Instant::now();
+    while rig.shared.current_track_seq() != 2 && started.elapsed() < Duration::from_secs(5) {
+        if rig.shared.pop_into(&mut buffer) == 0 {
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        while rig.shared.take_pending_control_signal().is_some() {}
+    }
+    assert_eq!(rig.shared.current_track_seq(), 2);
+    let mut settings = rig.shared.dsp_settings();
+    settings.speed = 1.25;
+    rig.shared.reset_filter_for_dsp_change(&settings);
+    let b_gain = 10.0f32.powf(-3.0 / 20.0);
+    let mut frames = 0;
+    let started = Instant::now();
+    while (rig.shared.normalization_gain() - b_gain).abs() > 1e-5
+        && started.elapsed() < Duration::from_secs(5)
+    {
+        let consumed = rig.shared.pop_into(&mut buffer);
+        frames += consumed;
+        if consumed == 0 {
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        while rig.shared.take_pending_control_signal().is_some() {}
+    }
+    assert!(
+        (rig.shared.normalization_gain() - b_gain).abs() < 1e-5,
+        "blend must release"
+    );
+    assert!(
+        frames < SR as usize * 2,
+        "release cannot wait for the remaining eight-second blend"
+    );
+    assert_eq!(rig.shared.current_decode_generation(), generation);
+    let (output, _) = rig.drain(100.0);
+    assert!(!output.is_empty());
+    assert!(rig.shared.is_drained_for_output());
+    assert_eq!(rig.shared.current_track_seq(), 2);
     rig.stop();
 }
 

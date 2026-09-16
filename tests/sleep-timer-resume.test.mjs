@@ -17,7 +17,7 @@ assert.ok(toggleStart >= 0 && toggleEnd > toggleStart);
 const toggleCode = transformSync(playbackSource.slice(toggleStart, toggleEnd), {
   loader: 'ts',
 }).code;
-const endedStart = storeSource.indexOf('        ended: () => {');
+const endedStart = storeSource.indexOf('        ended: (payload) => {');
 const endedEnd = storeSource.indexOf('        play: (payload)', endedStart);
 assert.ok(endedStart >= 0 && endedEnd > endedStart);
 const endedCode = transformSync(`const handlers = {${storeSource.slice(endedStart, endedEnd)}};`, {
@@ -36,6 +36,8 @@ function setup() {
   const list = [{ id: 'finished-song' }, { id: 'next-song' }];
   const deps = {
     state,
+    PERSONAL_FM_QUEUE_ID: 'queue:personal-fm',
+    isCurrentNativePlaybackContext: () => true,
     engine: {
       source: 'existing-source',
       play: async () => calls.push('resume'),

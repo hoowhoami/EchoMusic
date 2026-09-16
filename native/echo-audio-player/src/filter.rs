@@ -9,6 +9,29 @@ pub fn spawn_filter_thread(shared: Arc<SharedAudio>) -> JoinHandle<()> {
     spawn_filter_thread_with_graph(shared, None).expect("filter test worker should spawn")
 }
 
+#[cfg(test)]
+pub(crate) struct TestFilterWorker(Arc<SharedAudio>, Option<JoinHandle<()>>);
+
+#[cfg(test)]
+impl TestFilterWorker {
+    pub(crate) fn start(shared: Arc<SharedAudio>) -> Self {
+        let worker = spawn_filter_thread(shared.clone());
+        Self(shared, Some(worker))
+    }
+}
+
+#[cfg(test)]
+impl Drop for TestFilterWorker {
+    fn drop(&mut self) {
+        self.0.request_stop();
+        self.1
+            .take()
+            .expect("filter worker")
+            .join()
+            .expect("filter worker stopped");
+    }
+}
+
 pub fn spawn_filter_thread_with_graph(
     shared: Arc<SharedAudio>,
     initial_graph: Option<AudioFilterGraph>,
@@ -58,28 +81,43 @@ fn run_filter(shared: Arc<SharedAudio>, initial_graph: Option<AudioFilterGraph>)
     shared.set_provider_descriptor(graph.provider_descriptor());
     shared.set_filter_latency_secs(graph.latency_secs());
     let mut output = Vec::<f32>::new();
+    let mut incoming = crate::transition_filter::IncomingDeckFilter::default();
 
     loop {
         if shared.stop.load(std::sync::atomic::Ordering::Acquire) {
             return;
         }
+        // A decoder reset (seek / new track) always bumps decode_generation; drop the
+        // separated incoming-deck state even when no filter-graph update accompanies the
+        // bump. The filter worker has no per-update side channel, so watch it directly.
+        let decode_before_update = decode_generation;
+        let observed_decode_generation = shared.current_decode_generation();
+        if observed_decode_generation != decode_before_update {
+            incoming.clear();
+            decode_generation = observed_decode_generation;
+        }
         if let Some(FilterGraphUpdate {
             filter_generation: current_filter_gen,
             decode_generation: current_decode_gen,
-            settings,
+            mut settings,
             staged_graph,
         }) = shared.take_filter_graph_update(generation)
         {
             // A decoder reset (seek / new track) always bumps decode_generation and requires
             // a full graph rebuild.  For pure filter-only generation bumps we can skip the
             // rebuild if the internal processing format has not changed.
-            let structural = current_decode_gen != decode_generation
+            let structural = current_decode_gen != decode_before_update
                 || process_format_for_output(shared.mix_format, &settings)
                     != graph.process_format()
                 || graph.provider_identity() != settings.provider_path.as_deref()
                 || graph.provider_mode() != settings.provider_mode
                 || graph.provider_resource_identity() != settings.provider_resource_json.as_deref();
 
+            if let Some(speed) = incoming.active_speed() {
+                // The runner releases the blend on a speed change. Its already-rendered
+                // deck queues keep their old tempo until B is promoted without a seek.
+                settings.speed = speed;
+            }
             decode_generation = current_decode_gen;
             generation = current_filter_gen;
 
@@ -144,6 +182,17 @@ fn run_filter(shared: Arc<SharedAudio>, initial_graph: Option<AudioFilterGraph>)
         }
 
         match shared.pop_decoded_for_filter(generation) {
+            FilterInput::Deck(request) => {
+                let result = incoming.process(&mut graph, &shared, &request);
+                shared.set_filter_latency_secs(graph.latency_secs());
+                let _ = request.reply.send(result);
+            }
+            FilterInput::Processed(chunk, source_frames) => {
+                if let crate::shared::DecodedAudioData::F32(samples) = chunk.data {
+                    output = samples;
+                    push_filter_output(&shared, &mut output, source_frames, decode_generation);
+                }
+            }
             FilterInput::Frame(chunk) => {
                 let settings = shared.dsp_settings();
                 let source_frames = match graph.process_decoded(&chunk, &settings, &mut output) {
@@ -155,9 +204,14 @@ fn run_filter(shared: Arc<SharedAudio>, initial_graph: Option<AudioFilterGraph>)
                     }
                 };
                 shared.set_filter_latency_secs(graph.latency_secs());
+                incoming.remember(
+                    &output,
+                    shared.mix_format.sample_rate as usize * shared.mix_format.channels * 2,
+                );
                 push_filter_output(&shared, &mut output, source_frames, decode_generation);
             }
             FilterInput::Boundary => {
+                incoming.clear();
                 if let Err(err) = graph.reset(shared.mix_format, &shared.dsp_settings()) {
                     shared.mark_decode_failed();
                     crate::decoder::emit_decode_error(&shared, err);

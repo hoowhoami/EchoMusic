@@ -22,4 +22,5 @@ export const canPrepareGaplessForQueue = (
   canPrepareGaplessTransition({
     authority: getQueueAdvanceAuthority(queueId),
     autoNextSuppressed,
+    hasDynamicCandidateProvider: String(queueId ?? '') === PERSONAL_FM_QUEUE_ID,
   });

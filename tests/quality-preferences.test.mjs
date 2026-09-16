@@ -12,6 +12,7 @@ new Function('require', 'module', compile(read('../src/renderer/stores/player/au
   if (id === './utils') return { normalizeQuality: (value) => value };
   if (id === './stateMachine') return { getPlaybackIsLoading: (state) => state.loading };
   if (id === '../../../shared/playback') return { DEFAULT_PLAYER_VOLUME: 75 };
+  if (id === '../playlist/constants') return { PERSONAL_FM_QUEUE_ID: 'fm' };
   throw new Error(id);
 }, audio);
 const playerSource = read('../src/renderer/stores/player.ts');

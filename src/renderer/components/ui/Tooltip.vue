@@ -84,9 +84,11 @@ watch(
           hide-when-detached
           :class="['app-tooltip-surface', 'app-tooltip-content', props.contentClass]"
         >
-          <slot>
-            {{ props.content }}
-          </slot>
+          <div class="app-tooltip-body">
+            <slot>
+              {{ props.content }}
+            </slot>
+          </div>
           <TooltipArrow :width="14" :height="8" class="app-tooltip-arrow" />
         </TooltipContent>
       </TooltipPortal>
@@ -100,16 +102,21 @@ watch(
 :global(.app-tooltip-content) {
   max-width: min(320px, calc(100vw - 16px));
   max-height: var(--reka-tooltip-content-available-height);
-  overflow: hidden;
+  overflow: visible;
   overflow-wrap: anywhere;
   white-space: pre-line;
   z-index: 10030;
   user-select: none;
 }
 
+:global(.app-tooltip-body) {
+  max-height: max(0px, calc(var(--reka-tooltip-content-available-height, 100vh) - 12px));
+  overflow: hidden;
+}
+
 :global(.app-tooltip-arrow) {
   display: block;
-  fill: var(--color-bg-elevated);
+  fill: var(--floating-surface-bg);
   stroke: none;
 }
 </style>

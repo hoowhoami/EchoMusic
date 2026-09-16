@@ -353,3 +353,65 @@ test('late quality switch acknowledgement cannot replace the latest engine sourc
   assert.equal(await old, undefined);
   assert.equal(engine.source, 'ordinary');
 });
+
+test('EOF carries native identity through controller and engine; old tracks and seek generations are rejected', () => {
+  const { controller } = controllerFixture();
+  const { engine, handlers } = engineFixture();
+  const ends = [];
+  engine.setEvents({ ended: (context) => ends.push(context) });
+  controller.on('playback-end', (reason, context) => handlers.onPlaybackEnd(reason, context));
+  controller.activeTrackSeq = 2;
+  controller.activeGeneration = 3;
+  controller.handleAddonEvent({ event: 'playback-end', reason: 'eof', trackSeq: 1, generation: 3 });
+  controller.handleAddonEvent({ event: 'playback-end', reason: 'eof', trackSeq: 2, generation: 2 });
+  assert.deepEqual(ends, []);
+  controller.handleAddonEvent({ event: 'playback-end', reason: 'eof', trackSeq: 2, generation: 3 });
+  assert.deepEqual(ends, [{ trackSeq: 2, generation: 3 }]);
+});
+
+test('renderer discards residual outgoing EOF and repeated EOF after an adopted FM boundary', () => {
+  const source = readFileSync(new URL('../src/renderer/stores/player.ts', import.meta.url), 'utf8');
+  const start = source.indexOf('        ended: (payload) => {');
+  const end = source.indexOf('        play: (payload)', start);
+  assert.ok(start >= 0 && end > start);
+  const state = {
+    currentTrackId: 'b',
+    nativeTrackSeq: 2,
+    awaitingTrackLoad: false,
+    playbackEnded: false,
+  };
+  let advances = 0;
+  let endings = 0;
+  const events = new Function(
+    'state',
+    'isCurrentNativePlaybackContext',
+    'setEnginePlaybackStatus',
+    'sleepTimer',
+    'emitPlayerEvent',
+    'handlePlaybackEnded',
+    `return ({${source.slice(start, end)}});`,
+  )(
+    state,
+    (payload) => payload.trackSeq === state.nativeTrackSeq,
+    () => {},
+    {
+      trackEnded: () => {
+        endings++;
+        return false;
+      },
+    },
+    () => {},
+    () => advances++,
+  );
+  events.ended({ trackSeq: 1 });
+  assert.equal(endings, 0);
+  assert.equal(advances, 0);
+  events.ended({ trackSeq: 2 });
+  events.ended({ trackSeq: 2 });
+  assert.equal(endings, 1);
+  assert.equal(advances, 1);
+  state.currentTrackId = null;
+  state.playbackEnded = false;
+  events.ended({ trackSeq: 2 });
+  assert.equal(advances, 1, 'a residual EOF after stop cannot restart FM');
+});

@@ -594,12 +594,9 @@ pub(crate) fn armed_transition_from_prepared(
     outgoing_seq: u64,
 ) -> ArmedTransition {
     let mut info = info;
-    // The output callback multiplies everything by one normalisation gain, which it
-    // switches when it crosses the boundary (= the start of the mixed audio). During the
-    // overlap the mixer therefore pre-scales both decks relative to a common reference:
-    // the *larger* of the two gains is applied by the callback, so neither deck is scaled
-    // above unity inside the graph (its soft limiter would otherwise squash the louder
-    // deck before the callback can attenuate it).
+    // Each deck has already passed through its own DSP/limiter before these trims.
+    // The common reference is applied at exact PCM boundaries before device resampling;
+    // no nonlinear shared graph sits between the deck trims and this reference.
     let norm_a = normalization_gain_linear(current_normalization_gain_db);
     let norm_b = normalization_gain_linear(next_normalization_gain_db);
     let reference = norm_a.max(norm_b).max(1.0e-3);
@@ -609,7 +606,7 @@ pub(crate) fn armed_transition_from_prepared(
     emit_event(PlayerEvent::log(
         "info",
         format!(
-            "transition loudness armed: request={request_id:?} outgoing_seq={outgoing_seq} incoming_seq={} mode={} template={:?} a_gain_db={current_normalization_gain_db:.2} b_gain_db={next_normalization_gain_db:.2} reference_gain_db={reference_db:.2} a_mix_gain={:.6} b_mix_gain={:.6}",
+            "transition loudness armed: request={request_id:?} outgoing_seq={outgoing_seq} incoming_seq={} mode={} template={:?} a_gain_db={current_normalization_gain_db:.2} b_gain_db={next_normalization_gain_db:.2} reference_gain_db={reference_db:.2} a_mix_gain={:.6} b_mix_gain={:.6} gain_stage=post-deck-dsp",
             info.seq, plan.mode.as_str(), plan.template, norm_a / reference, norm_b / reference,
         ),
     ));

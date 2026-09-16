@@ -14,6 +14,7 @@ new Function('require', 'module', transformSync(source, { loader: 'ts', format: 
       return { normalizeEffect: (value) => value, normalizeQuality: (value) => value };
     if (id === './stateMachine') return { getPlaybackIsLoading: (state) => state.loading };
     if (id === '../../../shared/playback') return { DEFAULT_PLAYER_VOLUME: 75 };
+    if (id === '../playlist/constants') return { PERSONAL_FM_QUEUE_ID: 'fm' };
     throw new Error(id);
   },
   module,

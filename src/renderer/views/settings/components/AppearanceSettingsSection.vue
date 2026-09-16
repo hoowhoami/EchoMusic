@@ -432,6 +432,21 @@ const isAccentGradientDefault = computed(
       <Switch v-model="settingStore.dynamicAlbumCover" />
     </div>
 
+    <div class="settings-divider"></div>
+    <div class="settings-item">
+      <div class="space-y-1">
+        <h3 id="floating-surface-frosted-label" class="font-semibold">浮层磨砂效果</h3>
+        <p class="text-sm text-text-secondary">
+          为弹出层、抽屉、对话框和提示菜单添加半透明磨砂背景
+        </p>
+      </div>
+      <Switch
+        :model-value="settingStore.floatingSurfaceFrosted"
+        aria-labelledby="floating-surface-frosted-label"
+        @update:model-value="settingStore.setFloatingSurfaceFrosted($event)"
+      />
+    </div>
+
     <ColorPickerDialog
       :open="showAccentPicker"
       title="选择主题色"

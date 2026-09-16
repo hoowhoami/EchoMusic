@@ -5,7 +5,7 @@ export const sanitizePortableNetworkSettings = (
   try {
     if (new URL(settings.proxyPacScript).protocol === 'file:') {
       delete settings.proxyPacScript;
-      if (settings.proxyMode === 'pac_script') settings.proxyMode = 'system';
+      if (settings.proxyMode === 'pac_script') settings.proxyMode = 'direct';
     }
   } catch {
     // Invalid PAC values are handled by the network settings normalizer on import.

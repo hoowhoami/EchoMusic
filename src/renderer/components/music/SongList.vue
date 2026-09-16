@@ -1139,7 +1139,9 @@ defineExpose({ scrollToActive, filteredCount: computed(() => filteredSongsRef.va
   min-width: 172px;
   padding: 6px;
   border-radius: 12px;
-  background: var(--color-bg-elevated);
+  background: var(--floating-surface-bg);
+  -webkit-backdrop-filter: var(--floating-surface-filter);
+  backdrop-filter: var(--floating-surface-filter);
   border: 1px solid var(--border-subtle);
   box-shadow: var(--shadow-elevated);
   display: flex;
@@ -1151,12 +1153,6 @@ defineExpose({ scrollToActive, filteredCount: computed(() => filteredSongsRef.va
   isolation: isolate;
   transform: translateZ(0);
   backface-visibility: hidden;
-}
-
-:global(body.echo-surface-translucent .song-context-menu.song-context-menu) {
-  -webkit-backdrop-filter: none;
-  backdrop-filter: none;
-  background: var(--surface-elevated-base);
 }
 
 :global(.song-context-item) {

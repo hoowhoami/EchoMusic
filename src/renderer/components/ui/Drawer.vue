@@ -79,12 +79,17 @@ onUnmounted(() => {
   /* Drawer 属于非模态辅助层；模态 Dialog（从 1600 起）始终保持在其上方。 */
   z-index: 1400;
   opacity: 0;
+  visibility: hidden;
   pointer-events: none;
-  transition: opacity 0.2s ease;
+  transition:
+    opacity 0.2s ease,
+    visibility 0s linear 0.2s;
 }
 
 :global(.drawer-overlay[data-state='open']) {
   opacity: 1;
+  visibility: visible;
+  transition-delay: 0s;
   pointer-events: auto;
   -webkit-app-region: no-drag;
 }
@@ -103,21 +108,27 @@ onUnmounted(() => {
   --drawer-safe-top: calc(var(--drawer-titlebar-height) + var(--drawer-top-gap));
   --drawer-safe-bottom: calc(var(--drawer-bottom-offset, 96px) + var(--drawer-bottom-gap));
   position: fixed;
-  background: var(--color-bg-elevated);
+  background: var(--floating-surface-bg);
+  -webkit-backdrop-filter: var(--floating-surface-filter);
+  backdrop-filter: var(--floating-surface-filter);
   border: 1px solid var(--border-subtle);
   box-shadow: var(--shadow-dialog);
   opacity: 0;
+  visibility: hidden;
   pointer-events: none;
   z-index: 1410;
   transition:
     opacity 0.22s cubic-bezier(0.16, 1, 0.3, 1),
-    transform 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+    transform 0.22s cubic-bezier(0.16, 1, 0.3, 1),
+    visibility 0s linear 0.22s;
   display: flex;
   flex-direction: column;
 }
 
 :global(.drawer-panel[data-state='open']) {
   opacity: 1;
+  visibility: visible;
+  transition-delay: 0s;
   pointer-events: auto;
   transform: translate(0, 0);
   -webkit-app-region: no-drag;

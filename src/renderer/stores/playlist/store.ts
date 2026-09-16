@@ -94,6 +94,7 @@ export const usePlaylistStore = defineStore('playlist', {
     personalFmSongPoolId: 0 as PersonalFmSongPoolId,
     personalFmPreferencesReady: false,
     personalFmBuffer: toRawSongList([]),
+    personalFmSessionEpoch: 0,
   }),
   getters: {
     likedPlaylist(state) {
@@ -339,6 +340,11 @@ export const usePlaylistStore = defineStore('playlist', {
     updateQueueCurrentTrack: queueActions.updateQueueCurrentTrack,
     getQueueRemainingSongCount: queueActions.getQueueRemainingSongCount,
     getPersonalFmPreviewTrack: personalFmActions.getPersonalFmPreviewTrack,
+    peekNextPersonalFmCandidate: personalFmActions.peekNextPersonalFmCandidate,
+    commitPersonalFmCandidate: personalFmActions.commitPersonalFmCandidate,
+    skipFailedPersonalFmCandidate: personalFmActions.skipFailedPersonalFmCandidate,
+    replenishPersonalFmBuffer: personalFmActions.replenishPersonalFmBuffer,
+    reportPersonalFmAdvance: personalFmActions.reportPersonalFmAdvance,
     getPersonalFmDisplayTracks: personalFmActions.getPersonalFmDisplayTracks,
     updatePersonalFmMode: personalFmActions.updatePersonalFmMode,
     updatePersonalFmSongPool: personalFmActions.updatePersonalFmSongPool,

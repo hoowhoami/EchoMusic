@@ -5,6 +5,7 @@ import type { AudioEffectValue, AudioQualityValue, PlayMode } from '../../types'
 import { clampNumber, normalizeEffect, normalizeQuality } from './utils';
 import { DEFAULT_PLAYER_VOLUME } from '../../../shared/playback';
 import { getPlaybackIsLoading } from './stateMachine';
+import { PERSONAL_FM_QUEUE_ID } from '../playlist/constants';
 
 export const createAudioManager = (
   state: PlayerState,
@@ -57,7 +58,7 @@ export const createAudioManager = (
     state.shuffleQueueLength = 0;
     state.shufflePlayed = new Set();
     state.shuffleHistory = [];
-    engine.setLoopFile(mode === 'single');
+    engine.setLoopFile(mode === 'single' && state.currentSourceQueueId !== PERSONAL_FM_QUEUE_ID);
   };
 
   const setVolumeNormalization = (enabled: boolean) => {

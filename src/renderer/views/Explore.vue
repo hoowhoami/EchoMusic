@@ -135,7 +135,7 @@ const albumPayload = ref<Record<string, unknown>>({});
 const albumFallbackList = ref<unknown[]>([]);
 const loadingAlbums = ref(false);
 const tabLoaded = reactive({ rank: false, album: false, newSong: false, artist: false });
-const exploreHeaderHeight = 102;
+const exploreHeaderHeight = 106;
 const rankToolbarOffset = exploreHeaderHeight + 46;
 const newSongToolbarOffset = exploreHeaderHeight + 46;
 
@@ -963,12 +963,13 @@ const filteredArtistCards = computed(() => {
 <style scoped>
 @reference "@/style.css";
 
-.explore-header {
+/* PageStickyHeader teleports this element without the parent scope attribute. */
+:global(.explore-view-container .explore-header) {
   position: sticky;
   top: 0;
   z-index: 130;
   background: var(--color-bg-main);
-  padding: 0 0 6px 0;
+  padding: 0 0 10px 0;
   min-height: var(--explore-header-height);
 }
 

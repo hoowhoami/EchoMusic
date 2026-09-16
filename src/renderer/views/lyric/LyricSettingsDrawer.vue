@@ -408,7 +408,6 @@ const close = () => {
   bottom: var(--drawer-safe-bottom);
   width: min(360px, calc(100vw - 24px));
   border-radius: 12px;
-  background: var(--lyric-settings-panel-bg, var(--color-bg-dialog));
   border-color: var(--lyric-settings-panel-border, var(--border-subtle));
   box-shadow: var(--shadow-dialog);
   overflow: hidden;
@@ -424,11 +423,6 @@ const close = () => {
 }
 
 .dark .lyric-settings-panel {
-  --lyric-settings-panel-bg: color-mix(
-    in srgb,
-    var(--surface-elevated-base) 96%,
-    var(--surface-dialog-base) 4%
-  );
   --lyric-settings-panel-border: rgba(255, 255, 255, 0.14);
 }
 

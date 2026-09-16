@@ -642,7 +642,9 @@ const handleFavorite = () => {
   min-width: 172px;
   padding: 6px;
   border-radius: 12px;
-  background: var(--color-bg-elevated);
+  background: var(--floating-surface-bg);
+  -webkit-backdrop-filter: var(--floating-surface-filter);
+  backdrop-filter: var(--floating-surface-filter);
   border: 1px solid var(--border-subtle);
   box-shadow: var(--shadow-elevated);
   display: flex;

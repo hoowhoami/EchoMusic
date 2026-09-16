@@ -2,6 +2,7 @@ import { getPersonalFm, type PersonalFmParams } from '@/api/music';
 import type { Song } from '@/models/song';
 import { extractList } from '@/utils/extractors';
 import logger from '@/utils/logger';
+import { isPlayableSong } from '@/utils/song';
 import { mapTopSong } from '@/utils/mappers';
 import { PERSONAL_FM_MODE, PERSONAL_FM_QUEUE_ID } from './constants';
 import {
@@ -17,6 +18,27 @@ import {
 import type { PersonalFmMode, PersonalFmSongPoolId, PlaybackQueueState } from './types';
 
 let personalFmSessionResetPending = true;
+
+export type PersonalFmCandidate = {
+  sessionEpoch: number;
+  occurrence: string;
+  key: string;
+  track: Song;
+  origin: 'buffer' | 'history';
+};
+
+const fmRequests = new WeakMap<object, { epoch: number; promise: Promise<number> }>();
+const fmRefillAfter = new WeakMap<object, { epoch: number; time: number }>();
+const fmCommits = new WeakMap<object, Set<string>>();
+const fmFeedback = new WeakMap<object, Set<string>>();
+const rememberOnce = (ledger: WeakMap<object, Set<string>>, store: object, key: string) => {
+  let keys = ledger.get(store);
+  if (!keys) ledger.set(store, (keys = new Set()));
+  if (keys.has(key)) return false;
+  keys.add(key);
+  if (keys.size > 128) keys.delete(keys.values().next().value!);
+  return true;
+};
 
 type PersonalFmStoreShape = {
   activeQueueId: string;
@@ -35,6 +57,7 @@ type PersonalFmStoreShape = {
   ) => PlaybackQueueState;
   fetchPersonalFmSongs: (params?: PersonalFmParams) => Promise<Song[]>;
   personalFmBuffer: Song[];
+  personalFmSessionEpoch: number;
   personalFmMode: PersonalFmMode;
   personalFmSongPoolId: PersonalFmSongPoolId;
   playbackQueues: PlaybackQueueState[];
@@ -100,6 +123,124 @@ const buildPersonalFmParams = (
 };
 
 export const personalFmActions = {
+  peekNextPersonalFmCandidate(
+    this: PersonalFmStoreShape,
+    currentTrackId: string | null,
+    occurrence: string,
+    selected?: Song,
+  ): PersonalFmCandidate | null {
+    const queue = this.playbackQueues.find((item) => item.id === PERSONAL_FM_QUEUE_ID);
+    const index = queue?.songs.findIndex((song) => String(song.id) === currentTrackId) ?? -1;
+    const history = index >= 0 ? queue!.songs.slice(index + 1).find(isPlayableSong) : undefined;
+    const track =
+      selected ??
+      history ??
+      this.personalFmBuffer.find(
+        (song) => String(song.id) !== currentTrackId && isPlayableSong(song),
+      );
+    if (!track || !isPlayableSong(track)) return null;
+    const key = resolveSongQueueKey(track);
+    const inBuffer = this.personalFmBuffer.some((song) => resolveSongQueueKey(song) === key);
+    const inHistory = queue?.songs.some((song) => resolveSongQueueKey(song) === key);
+    if (!inBuffer && !inHistory) return null;
+    return {
+      sessionEpoch: this.personalFmSessionEpoch,
+      occurrence,
+      key,
+      track,
+      origin: (selected ? inHistory : track === history) ? 'history' : 'buffer',
+    };
+  },
+  commitPersonalFmCandidate(this: PersonalFmStoreShape, candidate: PersonalFmCandidate) {
+    if (candidate.sessionEpoch !== this.personalFmSessionEpoch) return null;
+    const queue = this.playbackQueues.find((item) => item.id === PERSONAL_FM_QUEUE_ID);
+    if (!queue) return null;
+    const source = candidate.origin === 'buffer' ? this.personalFmBuffer : queue.songs;
+    if (!source.some((song) => resolveSongQueueKey(song) === candidate.key)) return null;
+    if (
+      !rememberOnce(
+        fmCommits,
+        this,
+        `${candidate.sessionEpoch}|${candidate.occurrence}|${candidate.key}`,
+      )
+    )
+      return null;
+    if (candidate.origin === 'buffer') {
+      this.personalFmBuffer = toRawSongList(
+        this.personalFmBuffer.filter((song) => resolveSongQueueKey(song) !== candidate.key),
+      );
+    }
+    const appended = appendQueueSong(queue, candidate.track);
+    this.activeQueueId = queue.id;
+    queue.currentTrackId = String(candidate.track.id);
+    queue.songCount = queue.songs.length;
+    queue.updatedAt = Date.now();
+    this.syncLegacyPlaybackState();
+    if (appended) this.persistQueueAppendToStorage(queue, [candidate.track]);
+    return queue.songs.slice();
+  },
+  skipFailedPersonalFmCandidate(this: PersonalFmStoreShape, candidate: PersonalFmCandidate) {
+    if (candidate.sessionEpoch !== this.personalFmSessionEpoch) return;
+    this.personalFmBuffer = toRawSongList(
+      this.personalFmBuffer.filter((song) => resolveSongQueueKey(song) !== candidate.key),
+    );
+  },
+  replenishPersonalFmBuffer(this: PersonalFmStoreShape): Promise<number> {
+    if (this.personalFmBuffer.filter(isPlayableSong).length > 4) return Promise.resolve(0);
+    const epoch = this.personalFmSessionEpoch;
+    const pending = fmRequests.get(this);
+    if (pending?.epoch === epoch) return pending.promise;
+    const retry = fmRefillAfter.get(this);
+    if (retry?.epoch === epoch && Date.now() < retry.time) return Promise.resolve(0);
+    const promise = this.fetchPersonalFmSongs({
+      mode: this.personalFmMode,
+      song_pool_id: this.personalFmSongPoolId,
+    })
+      .then((songs) => {
+        if (epoch !== this.personalFmSessionEpoch) return 0;
+        this.personalFmBuffer = toRawSongList(mergeQueueSongs(this.personalFmBuffer, songs));
+        return songs.length;
+      })
+      .catch((error) => {
+        logger.warn('PlaylistStore', 'Replenish personal fm failed:', error);
+        return 0;
+      })
+      .finally(() => {
+        if (fmRequests.get(this)?.promise === promise) {
+          fmRequests.delete(this);
+          fmRefillAfter.set(this, { epoch, time: Date.now() + 5_000 });
+        }
+      });
+    fmRequests.set(this, { epoch, promise });
+    return promise;
+  },
+  reportPersonalFmAdvance(
+    this: PersonalFmStoreShape,
+    occurrence: string,
+    options: {
+      track: Song | null;
+      playtime: number;
+      action?: 'play' | 'garbage';
+      isOverplay: boolean;
+    },
+  ): Promise<number> {
+    const epoch = this.personalFmSessionEpoch;
+    if (!rememberOnce(fmFeedback, this, `${epoch}|${occurrence}`)) return Promise.resolve(0);
+    const queue = this.playbackQueues.find((item) => item.id === PERSONAL_FM_QUEUE_ID);
+    if (!queue) return Promise.resolve(0);
+    return this.fetchPersonalFmSongs(
+      buildPersonalFmParams(queue, options.track, this.personalFmBuffer.length, options),
+    )
+      .then((songs) => {
+        if (epoch !== this.personalFmSessionEpoch) return 0;
+        this.personalFmBuffer = toRawSongList(mergeQueueSongs(this.personalFmBuffer, songs));
+        return songs.length;
+      })
+      .catch((error) => {
+        logger.warn('PlaylistStore', 'Report personal fm advance failed:', error);
+        return 0;
+      });
+  },
   getPersonalFmPreviewTrack(this: PersonalFmStoreShape) {
     const queue = this.playbackQueues.find((item) => item.id === PERSONAL_FM_QUEUE_ID);
     if (personalFmSessionResetPending && this.personalFmBuffer.length > 0) {
@@ -136,6 +277,7 @@ export const personalFmActions = {
   },
   updatePersonalFmMode(this: PersonalFmStoreShape, mode: PersonalFmMode) {
     const presentation = getPersonalFmModePresentation(mode);
+    if (this.personalFmMode !== presentation.mode) this.personalFmSessionEpoch++;
     this.personalFmMode = presentation.mode;
     this.persistPersonalFmPreferences();
     const queue = this.playbackQueues.find((item) => item.id === PERSONAL_FM_QUEUE_ID);
@@ -151,6 +293,7 @@ export const personalFmActions = {
   },
   updatePersonalFmSongPool(this: PersonalFmStoreShape, songPoolId?: PersonalFmSongPoolId | number) {
     const presentation = getPersonalFmSongPoolPresentation(songPoolId);
+    if (this.personalFmSongPoolId !== presentation.songPoolId) this.personalFmSessionEpoch++;
     this.personalFmSongPoolId = presentation.songPoolId;
     this.persistPersonalFmPreferences();
     const queue = this.playbackQueues.find((item) => item.id === PERSONAL_FM_QUEUE_ID);
@@ -176,6 +319,7 @@ export const personalFmActions = {
     },
   ) {
     const presentation = getPersonalFmModePresentation(options?.mode ?? this.personalFmMode);
+    const epoch = ++this.personalFmSessionEpoch;
     const songPoolPresentation = getPersonalFmSongPoolPresentation(
       options?.songPoolId ?? this.personalFmSongPoolId,
     );
@@ -208,6 +352,7 @@ export const personalFmActions = {
         mode: presentation.mode,
         song_pool_id: songPoolPresentation.songPoolId,
       });
+      if (epoch !== this.personalFmSessionEpoch) return null;
       this.personalFmBuffer = toRawSongList(dedupeSongs(songs));
       if (!options?.preserveQueue) {
         personalFmSessionResetPending = false;
@@ -227,11 +372,13 @@ export const personalFmActions = {
   async refreshPersonalFmPreview(this: PersonalFmStoreShape, mode?: PersonalFmMode) {
     const presentation = getPersonalFmModePresentation(mode ?? this.personalFmMode);
     this.updatePersonalFmMode(presentation.mode);
+    const epoch = ++this.personalFmSessionEpoch;
     try {
       const songs = await this.fetchPersonalFmSongs({
         mode: presentation.mode,
         song_pool_id: this.personalFmSongPoolId,
       });
+      if (epoch !== this.personalFmSessionEpoch) return [];
       if (songs.length > 0) {
         this.personalFmBuffer = toRawSongList(dedupeSongs(songs));
       }
@@ -242,7 +389,13 @@ export const personalFmActions = {
     }
   },
   async fetchPersonalFmSongs(this: PersonalFmStoreShape, params: PersonalFmParams = {}) {
-    const response = await getPersonalFm(params);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const response = await Promise.race([
+      getPersonalFm(params),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error('Personal FM request timed out')), 10_000);
+      }),
+    ]).finally(() => clearTimeout(timer));
     return extractList(response).map((item) => mapTopSong(item));
   },
   async startPersonalFm(
@@ -262,6 +415,7 @@ export const personalFmActions = {
     }
     const queue = ensurePersonalFmPlaybackQueue(this);
     if (options?.fresh) {
+      this.personalFmSessionEpoch++;
       queue.songs = toRawSongList([]);
       queue.queuedNextTrackIds = [];
       queue.currentTrackId = null;
@@ -278,10 +432,12 @@ export const personalFmActions = {
       personalFmSessionResetPending = false;
       return true;
     }
+    const epoch = this.personalFmSessionEpoch;
     const songs = await this.fetchPersonalFmSongs({
       mode: presentation.mode,
       song_pool_id: songPoolPresentation.songPoolId,
     });
+    if (epoch !== this.personalFmSessionEpoch) return false;
     if (songs.length === 0) return false;
     queue.songs = toRawSongList([]);
     queue.currentTrackId = null;
@@ -326,9 +482,11 @@ export const personalFmActions = {
     if (!shouldTopUpBuffer && options?.action !== 'garbage') return 0;
 
     const params = buildPersonalFmParams(queue, track, remainSongcnt, options);
+    const epoch = this.personalFmSessionEpoch;
 
     try {
       const nextSongs = await this.fetchPersonalFmSongs(params);
+      if (epoch !== this.personalFmSessionEpoch) return 0;
       if (nextSongs.length === 0 || !shouldTopUpBuffer) return 0;
       this.personalFmBuffer = toRawSongList(mergeQueueSongs(this.personalFmBuffer, nextSongs));
       return nextSongs.length;

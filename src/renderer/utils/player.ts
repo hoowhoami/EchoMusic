@@ -31,7 +31,7 @@ export interface PlayerEngineEvents {
       transition?: TrackTransitionPlaybackInfo;
     } & PlayerPlaybackContext,
   ) => void;
-  ended?: () => void;
+  ended?: (payload?: PlayerPlaybackContext) => void;
   play?: (payload?: PlayerPlaybackContext & { time?: number }) => void;
   pause?: (payload?: PlayerPlaybackContext & { time?: number }) => void;
   error?: (event: Event) => void;
@@ -325,10 +325,10 @@ export class PlayerEngine {
     });
     this.cleanupFns.push(offState);
 
-    const offEnd = player.onPlaybackEnd((reason: string) => {
+    const offEnd = player.onPlaybackEnd((reason: string, context?: PlayerPlaybackContext) => {
       if (this.sourcePending) return;
       if (reason === 'eof') {
-        this.events.ended?.();
+        this.events.ended?.(context);
       } else if (reason === 'error') {
         this.events.error?.(new Event('error'));
       }

@@ -108,6 +108,10 @@ impl SharedAudio {
         fade_frames: usize,
         reset_filter_graph: bool,
     ) {
+        // Serialize the queue snapshot with the callback's boundary consumption.
+        let Ok(mut boundary) = self.gapless_boundary.lock() else {
+            return;
+        };
         let output_samples = self.realtime_output.buffered_samples();
         let decoded_samples = self
             .decoded_queue
@@ -123,13 +127,12 @@ impl SharedAudio {
                 samples
             })
             .unwrap_or_default();
-        if let Ok(mut boundary) = self.gapless_boundary.lock() {
-            *boundary = Some(GaplessBoundary {
-                remaining_samples: output_samples.saturating_add(decoded_samples),
-                fade_samples: fade_frames.saturating_mul(self.mix_format.channels.max(1)),
-                info,
-            });
-        }
+        *boundary = Some(GaplessBoundary {
+            remaining_samples: output_samples.saturating_add(decoded_samples),
+            fade_samples: fade_frames.saturating_mul(self.mix_format.channels.max(1)),
+            info,
+        });
+        drop(boundary);
         self.eof.store(false, Ordering::Release);
         self.end_reported.store(false, Ordering::Release);
         self.ao_state.reset();

@@ -230,7 +230,9 @@ const handleInteractOutside = (event: Event) => {
   inset: 0 0 8vh;
   height: fit-content;
   margin: auto;
-  background: var(--color-bg-dialog);
+  background: var(--floating-surface-bg);
+  -webkit-backdrop-filter: var(--floating-surface-filter);
+  backdrop-filter: var(--floating-surface-filter);
   border-color: var(--border-subtle);
   box-shadow: var(--shadow-dialog);
   /* 右侧留白由标题、正文和页脚承担；滚动区延伸到边缘，滑块右侧间距统一由 Scrollbar 控制。 */

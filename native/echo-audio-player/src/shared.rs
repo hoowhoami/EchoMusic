@@ -6,6 +6,7 @@ mod ao_state;
 mod clock;
 mod decoded_queue;
 mod gapless;
+mod normalization;
 mod realtime_ring;
 mod session;
 mod stats;
@@ -101,6 +102,7 @@ pub struct SharedAudio {
     gapless_prepare_changed: Condvar,
     volume_bits: AtomicU32,
     normalization_gain_bits: AtomicU32,
+    applied_normalization_gain_bits: AtomicU32,
     effect_limiter_active: AtomicBool,
     /// Gain actually applied at the end of the previous output callback buffer.
     /// Stored as f32 bits; NaN means "unset" (first buffer applies the target directly).
@@ -210,6 +212,7 @@ impl SharedAudio {
             normalization_gain_bits: AtomicU32::new(
                 dsp_settings.normalization_gain_linear().to_bits(),
             ),
+            applied_normalization_gain_bits: AtomicU32::new(f32::NAN.to_bits()),
             effect_limiter_active: AtomicBool::new(
                 dsp_settings.provider_path.is_some() || dsp_settings.spatial.is_some(),
             ),
@@ -583,6 +586,95 @@ impl SharedAudio {
     }
 
     fn push_decoded_chunk_checked(&self, chunk: DecodedAudioChunk, generation: u64) -> bool {
+        self.push_chunk_checked(chunk, generation, None)
+    }
+
+    pub(crate) fn push_processed_chunk(
+        &self,
+        chunk: DecodedAudioChunk,
+        generation: u64,
+        speed: f32,
+    ) -> bool {
+        let source_frames = (chunk.frames as f64 * f64::from(speed)).round() as u64;
+        self.push_chunk_checked(chunk, generation, Some(source_frames))
+    }
+
+    pub(crate) fn process_transition_deck(
+        &self,
+        request_id: u64,
+        generation: u64,
+        speed: f32,
+        operation: crate::transition_filter::DeckFilterOperation,
+    ) -> Result<Vec<f32>, String> {
+        use std::sync::mpsc::{sync_channel, RecvTimeoutError};
+        let (reply, receive) = sync_channel(1);
+        {
+            let mut queue = self
+                .decoded_queue
+                .lock()
+                .map_err(|_| "decoded queue poisoned")?;
+            if self.should_stop_decoding() || !self.is_decode_generation_current(generation) {
+                return Err("transition DSP request cancelled".to_string());
+            }
+            queue.push_deck(crate::transition_filter::DeckFilterRequest {
+                request_id,
+                generation,
+                speed,
+                operation,
+                reply,
+            });
+        }
+        self.decoded_queue_changed.notify_all();
+        loop {
+            if self.should_stop_decoding() || !self.is_decode_generation_current(generation) {
+                return Err("transition DSP request cancelled".to_string());
+            }
+            if self.decode_failed.load(Ordering::Acquire) {
+                return Err("transition DSP worker failed".to_string());
+            }
+            match receive.recv_timeout(std::time::Duration::from_millis(20)) {
+                Ok(result) => return result,
+                Err(RecvTimeoutError::Timeout) => continue,
+                Err(RecvTimeoutError::Disconnected) => {
+                    return Err("transition DSP worker disconnected".to_string())
+                }
+            }
+        }
+    }
+
+    /// Queue a fire-and-forget Preroll for the incoming deck so its DSP graph (including
+    /// any provider library load) is built before the overlap begins. Nobody waits on the
+    /// reply: the filter worker constructs and caches the graph keyed by `request_id`, and
+    /// a later synchronous [`Self::process_transition_deck`] with the same id reuses it.
+    /// A stale generation, a stopped worker, or a missing worker make this a benign no-op.
+    pub(crate) fn warm_transition_deck(&self, request_id: u64, generation: u64, speed: f32) {
+        use std::sync::mpsc::sync_channel;
+        let (reply, receive) = sync_channel(1);
+        drop(receive);
+        {
+            let Ok(mut queue) = self.decoded_queue.lock() else {
+                return;
+            };
+            if self.should_stop_decoding() || !self.is_decode_generation_current(generation) {
+                return;
+            }
+            queue.push_deck(crate::transition_filter::DeckFilterRequest {
+                request_id,
+                generation,
+                speed,
+                operation: crate::transition_filter::DeckFilterOperation::Preroll,
+                reply,
+            });
+        }
+        self.decoded_queue_changed.notify_all();
+    }
+
+    fn push_chunk_checked(
+        &self,
+        chunk: DecodedAudioChunk,
+        generation: u64,
+        processed_source_frames: Option<u64>,
+    ) -> bool {
         if chunk.frames == 0 {
             return true;
         }
@@ -605,7 +697,11 @@ impl SharedAudio {
         if self.should_stop_decoding() || !self.is_decode_generation_current(generation) {
             return false;
         }
-        queue.push(chunk, self.mix_format.sample_rate);
+        if let Some(source_frames) = processed_source_frames {
+            queue.push_processed(chunk, source_frames);
+        } else {
+            queue.push(chunk, self.mix_format.sample_rate);
+        }
         drop(queue);
         self.decoded_queue_changed.notify_all();
         true
@@ -716,6 +812,10 @@ impl SharedAudio {
         self.decoded_queue_changed.notify_all();
         match item {
             Some(DecodedQueueItem::Chunk(chunk)) => FilterInput::Frame(chunk),
+            Some(DecodedQueueItem::Processed(chunk, frames)) => {
+                FilterInput::Processed(chunk, frames)
+            }
+            Some(DecodedQueueItem::Deck(request)) => FilterInput::Deck(request),
             Some(DecodedQueueItem::Boundary) => FilterInput::Boundary,
             None => FilterInput::Stopped,
         }
@@ -834,6 +934,20 @@ impl SharedAudio {
                 && !self.decoded_eof.load(Ordering::Acquire)
                 && !self.eof.load(Ordering::Acquire);
             let consumed_frames = consumed_samples / self.mix_format.channels.max(1);
+            let boundary_gain = boundary
+                .as_ref()
+                .and_then(|active| {
+                    active
+                        .info
+                        .normalization_gain_db
+                        .map(|db| (active.remaining_samples, db))
+                })
+                .filter(|(offset, _)| *offset <= consumed_samples);
+            let end_gain = gain_marker
+                .as_ref()
+                .map(|marker| (marker.remaining_samples, marker.gain_db))
+                .filter(|(offset, _)| *offset <= consumed_samples);
+            self.normalize_output(&mut output[..consumed_samples], boundary_gain, end_gain);
             let mut boundary_signal = None;
             let post_boundary_samples = if let Some(active) = boundary.as_mut() {
                 if consumed_samples >= active.remaining_samples {
@@ -848,15 +962,40 @@ impl SharedAudio {
                 consumed_samples
             };
             drop(boundary);
+            let mut end_telemetry = None;
             if let Some(marker) = gain_marker.as_mut() {
                 if consumed_samples >= marker.remaining_samples {
                     let gain_db = marker.gain_db;
+                    let offset = marker.remaining_samples;
+                    let (track_seq, output_position_secs) =
+                        if let Some(info) = boundary_signal.as_ref() {
+                            let boundary_offset = consumed_samples - post_boundary_samples;
+                            (
+                                info.seq,
+                                info.start_position_secs
+                                    + self.source_frames_for_output(
+                                        offset.saturating_sub(boundary_offset),
+                                    ) as f64
+                                        / f64::from(self.mix_format.sample_rate.max(1)),
+                            )
+                        } else {
+                            (
+                                self.current_track_seq(),
+                                (self.played_sample_count() as f64
+                                    + consumed_source_frames as f64 * offset as f64
+                                        / consumed_samples as f64)
+                                    / f64::from(self.mix_format.sample_rate.max(1)),
+                            )
+                        };
                     *gain_marker = None;
                     self.store_normalization_gain_db(gain_db);
-                    self.notify_telemetry(PlaybackSignal::NormalizationGainApplied {
-                        track_seq: self.track_seq.load(Ordering::Acquire),
+                    end_telemetry = Some(PlaybackSignal::NormalizationGainApplied {
+                        track_seq,
                         gain_db,
                         stage: "overlap-end",
+                        captured_at: std::time::Instant::now(),
+                        generation: self.current_decode_generation(),
+                        output_position_secs,
                     });
                 } else {
                     marker.remaining_samples -= consumed_samples;
@@ -895,15 +1034,22 @@ impl SharedAudio {
                 );
                 self.set_track_seq(info.seq);
                 if let Some(gain_db) = info.normalization_gain_db {
-                    // The incoming track's loudness gain becomes effective with its first
-                    // audible sample; the per-buffer gain ramp keeps the change click-free.
-                    self.store_normalization_gain_db(gain_db);
+                    // Both markers may occur inside one callback. Keep chronological state.
+                    let final_gain = end_gain
+                        .filter(|(offset, _)| {
+                            boundary_gain.is_some_and(|(start, _)| *offset >= start)
+                        })
+                        .map_or(gain_db, |(_, db)| db);
+                    self.store_normalization_gain_db(final_gain);
                 }
                 if let Some(gain_db) = info.normalization_gain_db {
                     self.notify_telemetry(PlaybackSignal::NormalizationGainApplied {
                         track_seq: info.seq,
                         gain_db,
                         stage: "track-boundary",
+                        captured_at: std::time::Instant::now(),
+                        generation: self.current_decode_generation(),
+                        output_position_secs: info.start_position_secs,
                     });
                 }
                 if let Ok(mut ring) = self.spectrum_ring.try_lock() {
@@ -921,6 +1067,9 @@ impl SharedAudio {
                     .fetch_add(consumed_source_frames, Ordering::AcqRel);
             }
             drop(pending_track_switch);
+            if let Some(signal) = end_telemetry {
+                self.notify_telemetry(signal);
+            }
             if track_switch_ready {
                 self.wake_control_signal();
             }
@@ -1239,6 +1388,9 @@ impl SharedAudio {
     /// Schedule a normalisation-gain change for the point in the stream that the producer is
     /// at right now (everything queued so far keeps the current gain).
     pub fn mark_gain_marker(&self, gain_db: f32) {
+        let Ok(mut marker) = self.gain_marker.lock() else {
+            return;
+        };
         let output_samples = self.realtime_output.buffered_samples();
         let decoded_samples = self
             .decoded_queue
@@ -1249,12 +1401,10 @@ impl SharedAudio {
                     .round() as usize
             })
             .unwrap_or_default();
-        if let Ok(mut marker) = self.gain_marker.lock() {
-            *marker = Some(GainMarker {
-                remaining_samples: output_samples.saturating_add(decoded_samples),
-                gain_db,
-            });
-        }
+        *marker = Some(GainMarker {
+            remaining_samples: output_samples.saturating_add(decoded_samples),
+            gain_db,
+        });
     }
 
     /// Mark the exact producer boundary between the old graph tail and the first samples from a

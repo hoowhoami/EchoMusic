@@ -963,18 +963,25 @@ fn process_output_signal(
     shared: &SharedAudio,
 ) {
     let channels = channels.max(1);
-    let target_gain = volume * shared.normalization_gain();
+    // Track normalization was applied at exact PCM boundaries by SharedAudio::pop_into.
+    let target_gain = volume;
     // Ramp from the gain applied at the end of the previous buffer to the current
     // target across this buffer, so fades and volume changes stay zipper-free even
     // though the control side only updates the target every ~16 ms.
     let start_gain = shared.applied_output_gain().unwrap_or(target_gain);
-    let preserve_effect_limiter =
-        shared.effect_limiter_active() && start_gain.max(target_gain) <= 1.0;
+    // The per-sample |scaled| <= 1.0 guard below is the definitive clipping protection
+    // (mixed decks can sum past unity even when each deck passes its own limiter). Once
+    // the scaled sample is within range it must pass untouched, even when normalization
+    // is boosting: baked normalization is already inside the samples, so requiring
+    // normalization_gain() <= 1.0 here would knee compression on 0.95..1.0 content for
+    // no protection gain.
+    let preserve_effect_limiter = shared.effect_limiter_active()
+        && start_gain.max(target_gain) <= 1.0;
     let frames = output.len() / channels;
     if frames == 0 || (start_gain - target_gain).abs() <= f32::EPSILON {
         for sample in output.iter_mut() {
             let scaled = *sample * target_gain;
-            *sample = if preserve_effect_limiter {
+            *sample = if preserve_effect_limiter && scaled.abs() <= 1.0 {
                 scaled
             } else {
                 soft_limit_sample(scaled)
@@ -987,7 +994,7 @@ fn process_output_signal(
             let gain = start_gain + step * (frame_index + 1) as f32;
             for sample in frame.iter_mut() {
                 let scaled = *sample * gain;
-                *sample = if preserve_effect_limiter {
+                *sample = if preserve_effect_limiter && scaled.abs() <= 1.0 {
                     scaled
                 } else {
                     soft_limit_sample(scaled)
@@ -998,7 +1005,7 @@ fn process_output_signal(
         // so no sample is ever emitted unscaled.
         for sample in chunks.into_remainder() {
             let scaled = *sample * target_gain;
-            *sample = if preserve_effect_limiter {
+            *sample = if preserve_effect_limiter && scaled.abs() <= 1.0 {
                 scaled
             } else {
                 soft_limit_sample(scaled)
@@ -1415,6 +1422,8 @@ mod tests {
 
         settings.normalization_gain_db = 6.0;
         shared.update_dsp_settings(&settings);
+        assert!(shared.push_samples(&output));
+        assert_eq!(shared.pop_into(&mut output), 1);
         process_output_signal(&mut output, 2, 48_000, 0.5, &shared);
 
         let expected = 0.25 * 0.5 * settings.normalization_gain_linear();
@@ -1431,6 +1440,8 @@ mod tests {
 
         settings.normalization_gain_db = 3.0;
         shared.update_dsp_settings(&settings);
+        assert!(shared.push_samples(&output));
+        assert_eq!(shared.pop_into(&mut output), 1);
         process_output_signal(&mut output, 2, 48_000, 1.0, &shared);
 
         assert!(output[0] < 1.0);
@@ -1453,6 +1464,51 @@ mod tests {
     }
 
     #[test]
+    fn summed_decks_are_peak_protected_even_when_provider_has_a_limiter() {
+        let shared = SharedAudio::new(
+            MixFormat::stereo_f32(48_000),
+            0.2,
+            8.0,
+            &DspSettings::default(),
+        );
+        shared.set_effect_limiter_active_for_test(true);
+        let mut output = [1.5, -1.5];
+        process_output_signal(&mut output, 2, 48_000, 1.0, &shared);
+        assert!(output
+            .iter()
+            .all(|sample| sample.is_finite() && sample.abs() <= 1.0));
+    }
+
+    #[test]
+    fn boosted_normalization_preserves_in_range_samples_and_caps_overs() {
+        let shared = SharedAudio::new(
+            MixFormat::stereo_f32(48_000),
+            0.2,
+            8.0,
+            &DspSettings::default(),
+        );
+        let mut settings = DspSettings::default();
+        settings.normalization_gain_db = 6.0;
+        shared.update_dsp_settings(&settings);
+        shared.set_effect_limiter_active_for_test(true);
+        // Normalization is baked into the samples by pop_into; the callback only applies
+        // volume. A final scaled sample at 0.97 must pass untouched, while a true
+        // overshoot (mixed decks > unity even after per-deck limiting) is still capped.
+        let mut output = [0.97, 1.5];
+        process_output_signal(&mut output, 2, 48_000, 1.0, &shared);
+        assert!(
+            (output[0] - 0.97).abs() < 1e-5,
+            "in-range boosted sample must pass unchanged, got {}",
+            output[0]
+        );
+        assert!(
+            output[1].is_finite() && output[1].abs() <= 1.0,
+            "overshoot must be capped, got {}",
+            output[1]
+        );
+    }
+
+    #[test]
     fn output_signal_ignores_non_finite_normalization_gain() {
         let mix_format = MixFormat::stereo_f32(48_000);
         let mut settings = DspSettings::default();
@@ -1461,6 +1517,8 @@ mod tests {
 
         settings.normalization_gain_db = f32::NAN;
         shared.update_dsp_settings(&settings);
+        assert!(shared.push_samples(&output));
+        assert_eq!(shared.pop_into(&mut output), 1);
         process_output_signal(&mut output, 2, 48_000, 0.5, &shared);
 
         assert_eq!(output, [0.125, -0.125]);

@@ -246,10 +246,12 @@ onUnmounted(() => {
 }
 
 .toast-card {
-  @apply relative flex max-w-full items-center border shadow-lg backdrop-blur-md;
+  @apply relative flex max-w-full items-center border shadow-lg;
   width: fit-content;
   color: var(--color-text-main);
-  background: color-mix(in srgb, var(--color-bg-elevated) 94%, transparent);
+  background: var(--floating-surface-bg);
+  -webkit-backdrop-filter: var(--floating-surface-filter);
+  backdrop-filter: var(--floating-surface-filter);
   border-color: var(--border-subtle);
   box-shadow:
     0 10px 30px rgba(0, 0, 0, 0.14),

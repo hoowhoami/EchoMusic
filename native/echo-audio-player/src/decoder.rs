@@ -2202,6 +2202,7 @@ mod tests {
             &crate::dsp::DspSettings::default(),
         ));
         let generation = shared.current_decode_generation();
+        let _filter = crate::filter::TestFilterWorker::start(shared.clone());
         shared.set_track_seq(2);
         let mut data = source_switch_decoder();
         let mut state = WorkerState::new(100.0, 1);

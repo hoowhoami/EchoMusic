@@ -98,7 +98,10 @@ test('legacy clear -> frost -> clear preserves Electron alpha across repeated sw
     e.apply(e.win, { ...e.background, frosted: true }, 19045);
     e.apply(e.win, e.background, 19045);
   }
-  assert.deepEqual(e.calls.map(c => c[2]), [10, 11, 10, 11]);
+  assert.deepEqual(
+    e.calls.map((c) => c[2]),
+    [10, 11, 10, 11],
+  );
   assert.equal(e.diagnose(e.win).requestedBackend, 'electron-transparent');
 });
 test('missing addon reports a fallback and does not prevent official Win11 Acrylic', () => {

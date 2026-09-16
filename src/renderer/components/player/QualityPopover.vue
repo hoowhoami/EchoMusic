@@ -198,7 +198,6 @@ const buttonClass = computed(() => {
 :global(.quality-popover.echo-popover-content) {
   width: 208px;
   padding: 8px 0;
-  background: var(--color-bg-elevated);
   border-color: var(--border-subtle);
 }
 
