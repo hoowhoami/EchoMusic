@@ -7,11 +7,24 @@ export interface PageStickyEntry {
   content: HTMLElement;
   top: () => number;
   flowHeight: () => number | undefined;
+  visualHeight?: () => number;
 }
+
+interface StickyMetric {
+  absTop: number;
+  left: number;
+  width: number;
+  height: number;
+  marginTop: number;
+  marginBottom: number;
+  zIndex: string;
+}
+
 interface PageStickyLayers {
   target: Ref<HTMLElement | null>;
   register: (entry: PageStickyEntry) => () => void;
   update: () => void;
+  invalidate: () => void;
 }
 const key: InjectionKey<PageStickyLayers> = Symbol('page-sticky-layers');
 export const usePageStickyLayers = () => inject(key, null);
@@ -20,52 +33,84 @@ export function providePageStickyLayers(scroll: Ref<HTMLElement | null>) {
   const target = ref<HTMLElement | null>(null);
   const topInset = ref(0);
   const entries = new Set<PageStickyEntry>();
+  const metrics = new Map<PageStickyEntry, StickyMetric>();
+  let viewport = { top: 0, left: 0, height: 0 };
+  let stale = true;
   let updateFrame = 0;
   let disposed = false;
+
   const setStyle = (el: HTMLElement, name: string, value: string) => {
     if (el.style.getPropertyValue(name) !== value) el.style.setProperty(name, value);
   };
+
+  const measureEntry = (entry: PageStickyEntry, scrollTop: number): StickyMetric => {
+    const placeholderRect = entry.placeholder.getBoundingClientRect();
+    const contentRect = entry.content.getBoundingClientRect();
+    const style = getComputedStyle(entry.content);
+    return {
+      absTop: placeholderRect.top + scrollTop - viewport.top,
+      left: placeholderRect.left - viewport.left,
+      width: placeholderRect.width,
+      height: contentRect.height,
+      marginTop: parseFloat(style.marginTop) || 0,
+      marginBottom: parseFloat(style.marginBottom) || 0,
+      zIndex: style.zIndex === 'auto' ? '1' : style.zIndex,
+    };
+  };
+
+  const ensureMetrics = () => {
+    if (!stale) return;
+    const scrollEl = scroll.value;
+    if (!scrollEl) return;
+    const rect = scrollEl.getBoundingClientRect();
+    viewport = { top: rect.top, left: rect.left, height: rect.height };
+    const scrollTop = scrollEl.scrollTop;
+    for (const entry of entries) metrics.set(entry, measureEntry(entry, scrollTop));
+    stale = false;
+  };
+
   const commitLayout = () => {
     if (!scroll.value || !target.value || !scroll.value.isConnected) return;
-    const viewport = scroll.value.getBoundingClientRect();
-    if (!viewport.width || !viewport.height) return;
-    const measured = [...entries].map((entry) => {
-      const rect = entry.placeholder.getBoundingClientRect();
-      const contentRect = entry.content.getBoundingClientRect();
-      const style = getComputedStyle(entry.content);
-      const marginTop = parseFloat(style.marginTop) || 0;
-      const marginBottom = parseFloat(style.marginBottom) || 0;
-      const height = contentRect.height;
-      const visualHeight =
-        parseFloat(entry.content.style.getPropertyValue('--sliver-background-height')) || height;
-      const naturalTop = rect.top - viewport.top;
+    ensureMetrics();
+    if (!viewport.height) return;
+    const scrollTop = scroll.value.scrollTop;
+    const items: {
+      entry: PageStickyEntry;
+      metric: StickyMetric;
+      naturalTop: number;
+      stickyTop: number;
+      visualHeight: number;
+      marginTop: number;
+    }[] = [];
+    for (const entry of entries) {
+      let metric = metrics.get(entry);
+      if (!metric) {
+        metric = measureEntry(entry, scrollTop);
+        metrics.set(entry, metric);
+      }
+      const naturalTop = metric.absTop - scrollTop;
       const stickyTop = entry.top();
-      return {
+      items.push({
         entry,
-        rect,
+        metric,
         naturalTop,
         stickyTop,
-        visualHeight,
-        style,
-        height,
-        marginTop,
-        marginBottom,
-      };
-    });
-    const plan = planPageStickyLayout(measured, viewport.height);
-    // Header geometry and the viewport barrier are committed together. The barrier
-    // stays put during compositor scrolling; no row-by-row clips chase scrollTop.
-    for (const [index, item] of measured.entries()) {
-      const { entry, rect, style, height, marginTop, marginBottom } = item;
-      const top = plan.tops[index];
+        visualHeight: entry.visualHeight?.() ?? metric.height,
+        marginTop: metric.marginTop,
+      });
+    }
+    const plan = planPageStickyLayout(items, viewport.height);
+    for (let i = 0; i < items.length; i++) {
+      const { entry, metric } = items[i];
+      const top = plan.tops[i];
       setStyle(entry.layer, 'transform', `translate3d(0, ${top}px, 0)`);
-      setStyle(entry.layer, 'left', `${rect.left - viewport.left}px`);
-      setStyle(entry.layer, 'width', `${rect.width}px`);
-      setStyle(entry.layer, 'z-index', style.zIndex === 'auto' ? '1' : style.zIndex);
+      setStyle(entry.layer, 'left', `${metric.left}px`);
+      setStyle(entry.layer, 'width', `${metric.width}px`);
+      setStyle(entry.layer, 'z-index', metric.zIndex);
       setStyle(
         entry.placeholder,
         'height',
-        `${entry.flowHeight() ?? height + marginTop + marginBottom}px`,
+        `${entry.flowHeight() ?? metric.height + metric.marginTop + metric.marginBottom}px`,
       );
     }
     const inset = plan.inset;
@@ -76,30 +121,32 @@ export function providePageStickyLayers(scroll: Ref<HTMLElement | null>) {
     const container = scroll.value.closest<HTMLElement>('.page-scroll-container');
     if (container) setStyle(container, '--page-sticky-inset', `${inset}px`);
   };
+
   const update = () => {
     if (disposed || updateFrame) return;
-    // Scroll listeners first update Vue's sliver height and tabsTop. Measure after
-    // that DOM flush, once per frame, so the overlay and clip use the same state.
-    // Synchronous scroll updates used to commit old geometry, then descendant
-    // mutation observers and prop watchers measured it again after Vue's patch.
     updateFrame = requestAnimationFrame(() => {
       updateFrame = 0;
       commitLayout();
     });
   };
+
+  const invalidate = () => {
+    stale = true;
+    update();
+  };
+
   const register = (entry: PageStickyEntry) => {
     entries.add(entry);
-    const resize = new ResizeObserver(update);
+    stale = true;
+    const resize = new ResizeObserver(invalidate);
     resize.observe(entry.content);
     resize.observe(entry.placeholder);
-    // 简介等前置内容增减会移动占位节点，但不会改变它自身的尺寸。
-    // 监听滚动内容中的祖先尺寸，让吸顶层同步新的文档流位置。
     let parent = entry.placeholder.parentElement;
     while (parent && parent !== scroll.value) {
       resize.observe(parent);
       parent = parent.parentElement;
     }
-    const mutation = new MutationObserver(update);
+    const mutation = new MutationObserver(invalidate);
     mutation.observe(entry.content, {
       attributes: true,
       childList: true,
@@ -108,17 +155,20 @@ export function providePageStickyLayers(scroll: Ref<HTMLElement | null>) {
     update();
     return () => {
       entries.delete(entry);
+      metrics.delete(entry);
       resize.disconnect();
       mutation.disconnect();
+      stale = true;
       update();
     };
   };
-  provide(key, { target, register, update });
+
+  provide(key, { target, register, update, invalidate });
+
   const onWheel = (event: WheelEvent) => {
     const viewport = scroll.value;
     if (!viewport || event.ctrlKey || Math.abs(event.deltaX) > Math.abs(event.deltaY)) return;
     let element = event.target instanceof Element ? event.target : null;
-    // Dropdowns and other nested scroll controls retain their own wheel behavior.
     while (element && element !== target.value) {
       if (element instanceof HTMLElement) {
         const style = getComputedStyle(element);
@@ -131,10 +181,13 @@ export function providePageStickyLayers(scroll: Ref<HTMLElement | null>) {
     const scale = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? viewport.clientHeight : 1;
     viewport.scrollBy({ top: event.deltaY * scale, behavior: 'instant' });
   };
+
   onBeforeUnmount(() => {
     disposed = true;
     if (updateFrame) cancelAnimationFrame(updateFrame);
     entries.clear();
+    metrics.clear();
   });
-  return { target, topInset, update, onWheel };
+
+  return { target, topInset, update, invalidate, onWheel };
 }

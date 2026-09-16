@@ -12,7 +12,11 @@ import {
 import { usePageStickyLayers } from '@/composables/usePageStickyLayers';
 
 defineOptions({ inheritAttrs: false });
-const props = defineProps<{ stickyTop?: number; flowHeight?: number }>();
+const props = defineProps<{
+  stickyTop?: number;
+  flowHeight?: number;
+  visualHeight?: () => number;
+}>();
 const attrs = useAttrs();
 const context = usePageStickyLayers();
 const placeholder = ref<HTMLElement | null>(null);
@@ -36,11 +40,12 @@ const bind = async () => {
       ) ||
         0),
     flowHeight: () => props.flowHeight,
+    visualHeight: props.visualHeight,
   });
 };
 watch(target, bind);
 watch(
-  () => [props.stickyTop, props.flowHeight, attrs.style],
+  () => [props.stickyTop, props.flowHeight, props.visualHeight, attrs.style],
   () => nextTick(() => context?.update()),
   { deep: true },
 );

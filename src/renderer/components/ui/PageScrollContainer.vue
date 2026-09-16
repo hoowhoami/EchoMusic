@@ -28,17 +28,18 @@ const {
   target: stickyLayer,
   topInset,
   update: updateStickyLayers,
+  invalidate: invalidateStickyLayers,
   onWheel,
 } = providePageStickyLayers(scrollContainerEl);
 let sizeObserver: ResizeObserver | undefined;
 onMounted(() => {
-  sizeObserver = new ResizeObserver(updateStickyLayers);
+  sizeObserver = new ResizeObserver(invalidateStickyLayers);
   if (scrollContainerEl.value) sizeObserver.observe(scrollContainerEl.value);
-  window.addEventListener('resize', updateStickyLayers);
+  window.addEventListener('resize', invalidateStickyLayers);
 });
 onBeforeUnmount(() => {
   sizeObserver?.disconnect();
-  window.removeEventListener('resize', updateStickyLayers);
+  window.removeEventListener('resize', invalidateStickyLayers);
 });
 let savedScrollTop = 0;
 

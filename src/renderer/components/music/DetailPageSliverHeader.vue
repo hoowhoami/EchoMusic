@@ -142,108 +142,111 @@ onUnmounted(() => {
   <!-- 吸顶容器：背景层由全局 surface 规则控制，支持自定义背景透出 -->
   <PageStickyHeader
     :flow-height="props.collapsedHeight"
+    :visual-height="() => currentHeight"
     class="sliver-header-root sticky top-0 z-100 w-full bg-bg-main"
-    :style="{
-      height: `${props.collapsedHeight}px`,
-      '--sliver-background-height': `${currentHeight}px`,
-    }"
+    :style="{ height: `${props.collapsedHeight}px` }"
   >
-    <!-- 展开背景层：不再使用 opacity 变化，仅随滚动上移 -->
     <div
-      class="sliver-header-background absolute inset-0 z-0 pointer-events-none bg-bg-main origin-top"
-      :style="{
-        height: `${props.expandedHeight}px`,
-        transform: `translateY(${-backgroundTranslateY}px)`,
-      }"
-    ></div>
-
-    <!-- 内容层 -->
-    <div
-      class="relative z-10 h-full items-start overflow-visible pointer-events-none flex"
-      :style="{
-        paddingLeft: `${props.contentPaddingX}px`,
-        paddingRight: `${props.contentPaddingX}px`,
-        gap: `${props.contentGap}px`,
-        paddingTop: `${contentPaddingTop}px`,
-      }"
+      class="sliver-header-shell w-full"
+      :style="{ '--sliver-background-height': `${currentHeight}px` }"
     >
-      <!-- 封面图 -->
+      <!-- 展开背景层：不再使用 opacity 变化，仅随滚动上移 -->
       <div
-        class="shrink-0 relative z-30 origin-top-left flex items-start overflow-visible pointer-events-auto"
-        :style="{ width: `${currentCoverWidth}px` }"
-      >
-        <div
-          class="origin-top-left transition-shadow duration-300 shrink-0"
-          :style="{
-            transform: `scale(${coverScale})`,
-            borderRadius: `${16 - progress * 2}px`,
-            overflow: 'hidden',
-            width: `${coverSize}px`,
-            height: `${coverSize}px`,
-          }"
-        >
-          <slot name="cover" :expanded="progress < 0.9">
-            <Cover :url="coverUrl" :size="400" :width="coverSize" :height="coverSize" />
-          </slot>
-        </div>
-      </div>
+        class="sliver-header-background absolute inset-0 z-0 pointer-events-none bg-bg-main origin-top"
+        :style="{
+          height: `${props.expandedHeight}px`,
+          transform: `translateY(${-backgroundTranslateY}px)`,
+        }"
+      ></div>
 
-      <!-- 标题和详情 -->
+      <!-- 内容层 -->
       <div
-        class="flex-1 flex flex-col min-w-0 relative z-10 pointer-events-auto"
-        :style="{ height: `${rightColumnHeight}px` }"
+        class="relative z-10 h-full items-start overflow-visible pointer-events-none flex"
+        :style="{
+          paddingLeft: `${props.contentPaddingX}px`,
+          paddingRight: `${props.contentPaddingX}px`,
+          gap: `${props.contentGap}px`,
+          paddingTop: `${contentPaddingTop}px`,
+        }"
       >
-        <!-- 标题行 -->
-        <div class="flex items-center justify-between gap-3 shrink-0">
-          <h1
-            class="flex-1 min-w-0 font-bold text-text-main leading-tight truncate origin-left"
-            :style="{ fontSize: `${props.titleFontSize}px`, transform: `scale(${titleScale})` }"
+        <!-- 封面图 -->
+        <div
+          class="shrink-0 relative z-30 origin-top-left flex items-start overflow-visible pointer-events-auto"
+          :style="{ width: `${currentCoverWidth}px` }"
+        >
+          <div
+            class="origin-top-left transition-shadow duration-300 shrink-0"
+            :style="{
+              transform: `scale(${coverScale})`,
+              borderRadius: `${16 - progress * 2}px`,
+              overflow: 'hidden',
+              width: `${coverSize}px`,
+              height: `${coverSize}px`,
+            }"
           >
-            {{ title }}
-          </h1>
-          <div class="type-badge shrink-0" :style="{ opacity: detailsOpacity }">
-            {{ typeLabel }}
+            <slot name="cover" :expanded="progress < 0.9">
+              <Cover :url="coverUrl" :size="400" :width="coverSize" :height="coverSize" />
+            </slot>
           </div>
         </div>
 
-        <!-- 详情插槽：flex-1 占据中间剩余空间，上下 padding 让内容居中 -->
+        <!-- 标题和详情 -->
         <div
-          class="flex flex-col flex-1 min-h-0 justify-center"
-          :style="{
-            opacity: detailsOpacity,
-            transform: `translateY(${detailsTranslateY}px)`,
-            pointerEvents: progress > 0.4 ? 'none' : 'auto',
-            paddingTop: `${props.detailsMarginTop}px`,
-            paddingBottom: `${props.detailsMarginTop}px`,
-          }"
+          class="flex-1 flex flex-col min-w-0 relative z-10 pointer-events-auto"
+          :style="{ height: `${rightColumnHeight}px` }"
         >
-          <slot name="details" />
-        </div>
+          <!-- 标题行 -->
+          <div class="flex items-center justify-between gap-3 shrink-0">
+            <h1
+              class="flex-1 min-w-0 font-bold text-text-main leading-tight truncate origin-left"
+              :style="{ fontSize: `${props.titleFontSize}px`, transform: `scale(${titleScale})` }"
+            >
+              {{ title }}
+            </h1>
+            <div class="type-badge shrink-0" :style="{ opacity: detailsOpacity }">
+              {{ typeLabel }}
+            </div>
+          </div>
 
-        <!-- 操作按钮行：贴底 -->
-        <div
-          class="shrink-0"
-          :style="{
-            opacity: detailsOpacity,
-            transform: `translateY(${detailsTranslateY}px)`,
-            pointerEvents: progress > 0.4 ? 'none' : 'auto',
-          }"
-        >
-          <slot name="actions" />
+          <!-- 详情插槽：flex-1 占据中间剩余空间，上下 padding 让内容居中 -->
+          <div
+            class="flex flex-col flex-1 min-h-0 justify-center"
+            :style="{
+              opacity: detailsOpacity,
+              transform: `translateY(${detailsTranslateY}px)`,
+              pointerEvents: progress > 0.4 ? 'none' : 'auto',
+              paddingTop: `${props.detailsMarginTop}px`,
+              paddingBottom: `${props.detailsMarginTop}px`,
+            }"
+          >
+            <slot name="details" />
+          </div>
+
+          <!-- 操作按钮行：贴底 -->
+          <div
+            class="shrink-0"
+            :style="{
+              opacity: detailsOpacity,
+              transform: `translateY(${detailsTranslateY}px)`,
+              pointerEvents: progress > 0.4 ? 'none' : 'auto',
+            }"
+          >
+            <slot name="actions" />
+          </div>
         </div>
       </div>
-    </div>
 
-    <!-- 吸顶后的操作按钮 -->
-    <div
-      class="absolute right-5 top-0 h-full flex items-center gap-1 z-30"
-      :style="{
-        opacity: progress > 0.85 ? (progress - 0.85) * 6.6 : 0,
-        transform: `translateX(${(1 - progress) * 20}px)`,
-        pointerEvents: progress > 0.9 ? 'auto' : 'none',
-      }"
-    >
-      <slot name="collapsed-actions" />
+      <!-- 吸顶后的操作按钮 -->
+      <div
+        class="absolute right-5 top-0 h-full flex items-center gap-1 z-30"
+        :style="{
+          opacity: progress > 0.85 ? (progress - 0.85) * 6.6 : 0,
+          transform: `translateX(${(1 - progress) * 20}px)`,
+          pointerEvents: progress > 0.9 ? 'auto' : 'none',
+        }"
+      >
+        <slot name="collapsed-actions" />
+      </div>
     </div>
   </PageStickyHeader>
 

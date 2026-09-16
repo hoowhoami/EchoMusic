@@ -169,6 +169,7 @@ const loadVideoUrl = async (hash: string) => {
     await nextTick();
     if (videoRef.value) {
       await pauseMusicPlayback();
+      videoRef.value.volume = 0.5;
       videoRef.value.load();
       await videoRef.value.play().catch(() => undefined);
     }
