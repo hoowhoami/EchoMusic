@@ -2,6 +2,11 @@ import { useAuthStore } from '@/stores/auth';
 import { useUserStore } from '@/stores/user';
 import { useDeviceStore } from '@/stores/device';
 import { logger } from './logger';
+import {
+  getCurrentRequestOrigin,
+  hasServerInterceptors,
+  runServerInterceptorChain,
+} from './serverInterceptors';
 import { getPayloadSize, maskSensitiveText, stringifyForLog } from '../../shared/logging';
 import { requestKugouVerification, type KugouVerificationChallenge } from './kugouVerification';
 
@@ -20,6 +25,9 @@ interface ApiResponse {
   body: any;
   cookie?: string[];
   headers?: Record<string, string>;
+  /** 拦截器短路（Mock/转发）标记 */
+  mocked?: boolean;
+  handledBy?: string;
 }
 
 interface RequestConfig {
@@ -199,8 +207,40 @@ const ipcRequest = async (
   let response: ApiResponse;
   let error: any = null;
 
+  // 插件服务请求拦截链（主程序 → 插件拦截器 → server）：
+  // 仅处理 host 来源请求；插件经 ctx.kugou 发起的请求标记为 plugin 来源，直接绕过链。
+  // 拦截器可在 IPC 序列化之前修改 params/data/headers/url（主进程会基于新值重算签名），
+  // 也可不调用 next 直接短路返回 Mock/转发响应。
+  const origin = getCurrentRequestOrigin();
   try {
-    response = await window.electron.api.request(ipcConfig);
+    if (origin.type === 'host' && hasServerInterceptors()) {
+      response = await runServerInterceptorChain(
+        {
+          method,
+          url,
+          params,
+          ...(ipcConfig.data !== undefined ? { data: ipcConfig.data } : {}),
+          headers,
+          origin,
+        },
+        (req) =>
+          window.electron.api.request({
+            method: req.method,
+            url: req.url,
+            params: req.params,
+            headers: req.headers,
+            ...(req.data !== undefined ? { data: req.data } : {}),
+          }) as Promise<ApiResponse>,
+      );
+      if (response.mocked) {
+        logger.debug(
+          'API',
+          `[${method}] ${maskSensitiveText(url)} short-circuited by plugin: ${response.handledBy ?? 'unknown'}`,
+        );
+      }
+    } else {
+      response = await window.electron.api.request(ipcConfig);
+    }
   } catch (e) {
     error = e;
     response = { status: 0, body: null };

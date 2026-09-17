@@ -39,12 +39,14 @@ import {
   iconShuffle,
   iconListRestart,
   iconShare,
+  iconShirt,
 } from '@/icons';
 
 const emit = defineEmits<{
   (e: 'openQueue'): void;
   (e: 'openComment'): void;
   (e: 'openAddToPlaylist'): void;
+  (e: 'openSkins'): void;
 }>();
 
 const settingStore = useSettingStore();
@@ -328,6 +330,16 @@ const handleCopySongInfo = async () => {
 
       <!-- 3. 右侧：功能选项 -->
       <div class="bar-right">
+        <Button
+          variant="unstyled"
+          size="none"
+          class="bar-func-btn bar-func-muted"
+          tooltip="换肤"
+          @click="emit('openSkins')"
+        >
+          <Icon :icon="iconShirt" width="20" height="20" />
+        </Button>
+
         <Button
           v-if="canShareCurrentTrack"
           variant="unstyled"

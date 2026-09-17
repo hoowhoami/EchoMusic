@@ -2,6 +2,7 @@
 import { setupStartupPluginUpdateCheck } from '@/stores/pluginUpdates';
 let disposePluginUpdateCheck: (() => void) | undefined;
 import TooltipScope from '@/components/ui/TooltipScope.vue';
+import SettingsDialog from '@/components/app/SettingsDialog.vue';
 import {
   computed,
   defineAsyncComponent,
@@ -545,6 +546,7 @@ watch(
     <KugouVerificationFlow v-if="!isMiniPlayerRoute" />
     <ToastViewport v-if="!isMiniPlayerRoute" :lyric-view-open="Boolean(player?.isLyricViewOpen)" />
     <UpdateDialog v-if="!isMiniPlayerRoute" dismiss-label="稍后" />
+    <SettingsDialog v-if="!isMiniPlayerRoute" />
   </TooltipScope>
 </template>
 

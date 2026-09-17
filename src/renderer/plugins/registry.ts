@@ -1,4 +1,5 @@
 import { createTitlebarApi, removeTitlebarItemsByPlugin } from './titlebar';
+import { createLyricsPageApi, removeLyricsPagesByPlugin } from './lyricsPage';
 import { computed, markRaw, reactive } from 'vue';
 import type { Component } from 'vue';
 import type { IconifyIcon } from '@iconify/types';
@@ -152,6 +153,7 @@ const upsertContribution = <T extends PluginOwnedContribution>(
 };
 
 export const removePluginContributions = (pluginId: string) => {
+  removeLyricsPagesByPlugin(pluginId);
   removeTitlebarItemsByPlugin(pluginId);
   pluginUiRegistry.pages = pluginUiRegistry.pages.filter((item) => item.pluginId !== pluginId);
   pluginUiRegistry.sidebarItems = pluginUiRegistry.sidebarItems.filter(
@@ -220,6 +222,7 @@ export const createPluginUiApi = (
   };
 
   return {
+    lyricsPage: createLyricsPageApi(pluginId, addDisposable, reportError),
     titlebar: createTitlebarApi(pluginId, addDisposable, reportError),
     addPage(contribution: PluginPageRegistration) {
       const item = withOwner({

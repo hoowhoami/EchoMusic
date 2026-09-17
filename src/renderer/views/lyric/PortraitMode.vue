@@ -9,9 +9,17 @@ import { coverFallbackRevision } from '@/plugins/coverFallback';
 import { resolveCoverDisplayUrl } from '@/utils/cover';
 import Cover from '@/components/ui/Cover.vue';
 import LyricScroller from './LyricScroller.vue';
+import { DEFAULT_LYRIC_PLAYED_COLOR, DEFAULT_LYRIC_UNPLAYED_COLOR } from '@/stores/lyric';
+import { useLyricSkin } from './composables/useLyricSkin';
+import {
+  HOST_SKIN_KEYS,
+  LYRIC_SKIN_PORTRAIT_DEFAULTS,
+  resolveLyricSkinColor,
+} from './skins/config';
 
 const { currentTrack } = usePlayerControls();
 const settingStore = useSettingStore();
+const { settings } = useLyricSkin(HOST_SKIN_KEYS.portrait, LYRIC_SKIN_PORTRAIT_DEFAULTS);
 
 const currentTrackLyricHash = computed(() =>
   String(currentTrack.value?.hash ?? currentTrack.value?.id ?? '').trim(),
@@ -44,7 +52,14 @@ const {
   startPortraitCarousel,
   stopPortraitCarousel,
   dispose: disposePortrait,
-} = useLyricPortrait({ currentTrack, currentTrackLyricHash, settingStore });
+} = useLyricPortrait({
+  currentTrack,
+  currentTrackLyricHash,
+  carousel: {
+    enabled: computed(() => Boolean(settings.value.carouselEnabled)),
+    interval: computed(() => settings.value.carouselInterval),
+  },
+});
 
 const portraitLayers = ref<[string, string]>(['', '']);
 const visiblePortraitLayer = ref<0 | 1>(0);
@@ -52,7 +67,7 @@ const hasVisiblePortrait = computed(() =>
   Boolean(portraitLayers.value[0] || portraitLayers.value[1]),
 );
 const showCoverFallback = computed(
-  () => settingStore.lyricPortraitFallbackCover && !hasVisiblePortrait.value,
+  () => Boolean(settings.value.portraitFallbackCover) && !hasVisiblePortrait.value,
 );
 const blurLayers = ref<[string, string]>(['', '']);
 const visibleBlurLayer = ref<0 | 1>(0);
@@ -137,8 +152,8 @@ const clearCollapseTimer = () => {
 
 const scheduleCollapse = () => {
   clearCollapseTimer();
-  if (!settingStore.lyricAutoCollapseEnabled) return;
-  const delay = Math.max(settingStore.lyricAutoCollapseDelay || 5, 5) * 1000;
+  if (!settings.value.autoCollapseEnabled) return;
+  const delay = Math.max(settings.value.autoCollapseDelay || 5, 5) * 1000;
   collapseTimer = window.setTimeout(() => {
     collapseTimer = null;
     isLyricCollapsed.value = true;
@@ -271,9 +286,9 @@ watch(
 );
 
 watch(
-  () => [settingStore.lyricCarouselEnabled, settingStore.lyricCarouselInterval],
+  () => [settings.value.carouselEnabled, settings.value.carouselInterval],
   () => {
-    if (settingStore.lyricCarouselEnabled && hasPortraitGallery.value) {
+    if (settings.value.carouselEnabled && hasPortraitGallery.value) {
       startPortraitCarousel();
     } else {
       stopPortraitCarousel();
@@ -345,12 +360,20 @@ defineExpose({
     <div
       v-if="hasVisiblePortrait || showCoverFallback"
       class="portrait-overlay"
-      :style="{ opacity: 1 - settingStore.lyricBackdropOpacity / 100 }"
+      :style="{ opacity: 1 - settings.backdropOpacity / 100 }"
     ></div>
 
     <!-- 歌词区域 -->
     <div class="portrait-lyric-area">
-      <LyricScroller :collapsed="isLyricCollapsed" />
+      <LyricScroller
+        :collapsed="isLyricCollapsed"
+        :font-scale="settings.fontScale"
+        :font-weight-index="settings.fontWeightIndex"
+        :played-color="resolveLyricSkinColor(settings.playedColor, DEFAULT_LYRIC_PLAYED_COLOR)"
+        :unplayed-color="
+          resolveLyricSkinColor(settings.unplayedColor, DEFAULT_LYRIC_UNPLAYED_COLOR)
+        "
+      />
     </div>
 
     <!-- 收起时点击展开的遮罩 -->

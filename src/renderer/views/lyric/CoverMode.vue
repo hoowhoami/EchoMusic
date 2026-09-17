@@ -2,12 +2,14 @@
 import { usePlayerControls } from '@/composables/usePlayerControls';
 import DynamicAlbumCover from '@/components/music/DynamicAlbumCover.vue';
 import { usePlayerStore } from '@/stores/player';
-import { useSettingStore } from '@/stores/setting';
+import { DEFAULT_LYRIC_PLAYED_COLOR, DEFAULT_LYRIC_UNPLAYED_COLOR } from '@/stores/lyric';
 import LyricScroller from './LyricScroller.vue';
+import { useLyricSkin } from './composables/useLyricSkin';
+import { HOST_SKIN_KEYS, LYRIC_SKIN_COVER_DEFAULTS, resolveLyricSkinColor } from './skins/config';
 
 const { currentTrack } = usePlayerControls();
 const playerStore = usePlayerStore();
-const settingStore = useSettingStore();
+const { settings } = useLyricSkin(HOST_SKIN_KEYS.cover, LYRIC_SKIN_COVER_DEFAULTS);
 </script>
 
 <template>
@@ -16,7 +18,7 @@ const settingStore = useSettingStore();
     <section class="cover-side">
       <div class="cover-wrapper">
         <DynamicAlbumCover
-          :enabled="settingStore.lyricDynamicAlbumCover"
+          :enabled="settings.dynamicAlbumCover"
           :url="currentTrack?.coverUrl"
           :album-audio-id="currentTrack?.albumAudioId || currentTrack?.mixSongId"
           :album-id="currentTrack?.albumId"
@@ -35,7 +37,14 @@ const settingStore = useSettingStore();
 
     <!-- 右侧：歌词 -->
     <section class="lyric-side">
-      <LyricScroller />
+      <LyricScroller
+        :font-scale="settings.fontScale"
+        :font-weight-index="settings.fontWeightIndex"
+        :played-color="resolveLyricSkinColor(settings.playedColor, DEFAULT_LYRIC_PLAYED_COLOR)"
+        :unplayed-color="
+          resolveLyricSkinColor(settings.unplayedColor, DEFAULT_LYRIC_UNPLAYED_COLOR)
+        "
+      />
     </section>
   </div>
 </template>

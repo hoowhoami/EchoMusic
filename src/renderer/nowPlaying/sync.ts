@@ -15,6 +15,7 @@ import type {
   NowPlayingPlaybackPayload,
   NowPlayingSnapshotPatch,
 } from '../../shared/nowPlaying';
+import { isNowPlayingCommand } from '../../shared/nowPlaying';
 import { normalizeLyricLinePayload } from '../../shared/lyrics';
 import type { ShortcutCommand } from '../../shared/shortcuts';
 
@@ -46,18 +47,6 @@ const SHORTCUT_COMMANDS = new Set<ShortcutCommand>([
   'toggleWindow',
   'toggleSidebar',
 ]);
-
-const NOW_PLAYING_COMMANDS = new Set<NowPlayingCommand>([
-  ...SHORTCUT_COMMANDS,
-  'toggleTranslation',
-  'toggleRomanization',
-  'lyricOffsetBackward',
-  'lyricOffsetForward',
-  'lyricOffsetReset',
-]);
-
-const isNowPlayingCommand = (value: unknown): value is NowPlayingCommand =>
-  typeof value === 'string' && NOW_PLAYING_COMMANDS.has(value as NowPlayingCommand);
 
 const normalizeLinePayload = normalizeLyricLinePayload;
 
@@ -268,6 +257,20 @@ export const initNowPlayingSync = async () => {
   };
 
   const handleCommand = (command: NowPlayingCommand) => {
+    // 带参数的对象命令：seek / setVolume / adjustVolume，由 nowPlaying 命令通道转发至主播放器
+    if (typeof command !== 'string') {
+      if (command.type === 'seek') {
+        playerStore.seek(Math.max(0, command.value));
+        syncPlaybackSnapshot();
+      } else if (command.type === 'setVolume') {
+        playerStore.setVolume(Math.min(100, Math.max(0, command.value)));
+        syncPlaybackSnapshot();
+      } else if (command.type === 'adjustVolume') {
+        playerStore.adjustVolume(command.value);
+        syncPlaybackSnapshot();
+      }
+      return;
+    }
     if (SHORTCUT_COMMANDS.has(command as ShortcutCommand)) {
       executeShortcutCommand(command as ShortcutCommand);
       syncPlaybackSnapshot();

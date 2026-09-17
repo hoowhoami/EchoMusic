@@ -7,9 +7,9 @@ import { setWithLimit } from '@/utils/lruMap';
 interface PortraitOptions {
   currentTrack: ComputedRef<Record<string, any> | null | undefined>;
   currentTrackLyricHash: ComputedRef<string>;
-  settingStore: {
-    lyricCarouselEnabled: boolean;
-    lyricCarouselInterval: number;
+  carousel: {
+    enabled: ComputedRef<boolean>;
+    interval: ComputedRef<number>;
   };
 }
 
@@ -61,7 +61,7 @@ const preDecodePortrait = (url: string) => {
 };
 
 export function useLyricPortrait(options: PortraitOptions) {
-  const { currentTrack, currentTrackLyricHash, settingStore } = options;
+  const { currentTrack, currentTrackLyricHash, carousel } = options;
 
   const artistPortraitUrls = ref<string[]>([]);
   const activePortraitIndex = ref(0);
@@ -88,9 +88,9 @@ export function useLyricPortrait(options: PortraitOptions) {
 
   const startPortraitCarousel = () => {
     stopPortraitCarousel();
-    if (!settingStore.lyricCarouselEnabled) return;
+    if (!carousel.enabled.value) return;
     if (artistPortraitUrls.value.length <= 1) return;
-    const ms = Math.max(settingStore.lyricCarouselInterval || 15, 5) * 1000;
+    const ms = Math.max(carousel.interval.value || 15, 5) * 1000;
     portraitCarouselTimer = window.setInterval(() => {
       const total = artistPortraitUrls.value.length;
       if (total <= 1) {

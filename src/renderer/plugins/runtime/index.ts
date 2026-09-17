@@ -25,7 +25,22 @@ export type {
   PluginThemeApi,
 } from './theme';
 export type { EchoPluginContext, PluginRuntimeHost } from './context';
+export type { LyricsPageRegistration, LyricsSkinSettings } from '../lyricsPage';
+export type { LyricSkinHandle } from '../../views/lyric/composables/useLyricSkin';
+export type {
+  LyricsPageContext,
+  LyricsPagePanel,
+} from '../../views/lyric/composables/useLyricsPageContext';
 export type { PluginBackupsApi } from './backups';
+export type { PluginServerInterceptApi } from './serverIntercept';
+export type {
+  PluginServerInterceptOptions,
+  PluginServerInterceptor,
+  PluginServerMatcher,
+  PluginServerNext,
+  PluginServerRequest,
+  PluginServerResponse,
+} from '../../../shared/plugins';
 export type {
   PluginGraphicsApi,
   PluginGraphicsCapabilities,

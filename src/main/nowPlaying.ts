@@ -1,13 +1,16 @@
 import { ipcRegistry } from './ipc/registry';
 import { BrowserWindow } from 'electron';
 import type {
-  NowPlayingCommand,
   NowPlayingLyricPayload,
   NowPlayingPlaybackPayload,
   NowPlayingSnapshot,
   NowPlayingSnapshotPatch,
 } from '../shared/nowPlaying';
-import { DEFAULT_NOW_PLAYING_APPEARANCE, DEFAULT_NOW_PLAYING_LYRIC } from '../shared/nowPlaying';
+import {
+  DEFAULT_NOW_PLAYING_APPEARANCE,
+  DEFAULT_NOW_PLAYING_LYRIC,
+  isNowPlayingCommand,
+} from '../shared/nowPlaying';
 import type { LyricLinePayload } from '../shared/lyrics';
 import type { IpcContext } from './ipc/types';
 import { getMainWindow } from './window';
@@ -15,32 +18,6 @@ import { isCoverPreviewEnabled, setCoverPreviewEnabled } from './taskbarThumbnai
 import { setTaskbarProgressEnabled } from './taskbarProgress';
 import { setMainAppSetting } from './storage/settings';
 import { buildPlaybackClockSnapshot } from '../shared/playback';
-
-const NOW_PLAYING_COMMANDS = new Set<NowPlayingCommand>([
-  'togglePlayback',
-  'previousTrack',
-  'nextTrack',
-  'seekForward',
-  'seekBackward',
-  'toggleMainLyric',
-  'toggleDesktopLyric',
-  'toggleLyricsMode',
-  'cycleLyricsMode',
-  'openLyricSource',
-  'volumeUp',
-  'volumeDown',
-  'toggleMute',
-  'toggleFavorite',
-  'togglePlayMode',
-  'toggleMiniPlayer',
-  'toggleWindow',
-  'toggleSidebar',
-  'toggleTranslation',
-  'toggleRomanization',
-  'lyricOffsetBackward',
-  'lyricOffsetForward',
-  'lyricOffsetReset',
-]);
 
 let snapshot: NowPlayingSnapshot = {
   playback: null,
@@ -322,8 +299,8 @@ export const registerNowPlayingHandlers = (context: IpcContext) => {
     },
   );
 
-  ipcRegistry.registerListener('now-playing:command', (_event, command: NowPlayingCommand) => {
-    if (!NOW_PLAYING_COMMANDS.has(command)) return;
+  ipcRegistry.registerListener('now-playing:command', (_event, command: unknown) => {
+    if (!isNowPlayingCommand(command)) return;
     const mainWindow = context.getMainWindow();
     if (!mainWindow || mainWindow.isDestroyed() || mainWindow.webContents.isDestroyed()) return;
     mainWindow.webContents.send('now-playing:command', command);

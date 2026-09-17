@@ -26,6 +26,23 @@ export const LYRIC_COLOR_PRESETS = [
 
 type LyricColorField = 'playedColor' | 'unplayedColor';
 
+/** 独立导出：取当前主题封面取色选项，供各皮肤设置复用。 */
+export const getLyricCoverDynamicOption = (): {
+  label: string;
+  value: string;
+  color: string;
+} => {
+  const themeStore = useThemeStore();
+  return {
+    label: '跟随封面取色',
+    value: LYRIC_COVER_COLOR_VALUE,
+    color: getNormalizedAccent(
+      themeStore.coverColor || DEFAULT_ACCENT,
+      document.documentElement.classList.contains('dark'),
+    ),
+  };
+};
+
 // 页面歌词颜色选择器的公共状态与操作
 export const useLyricColorPicker = () => {
   const lyricStore = useLyricStore();

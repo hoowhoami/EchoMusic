@@ -66,9 +66,9 @@ export function usePlayerControls() {
   const toggleFavorite = () => {
     if (!currentTrack.value) return;
     if (isFavorite.value) {
-      playlist.removeFavoriteSong(currentTrack.value);
+      return playlist.removeFavoriteSong(currentTrack.value);
     } else {
-      playlist.addToFavorites(currentTrack.value);
+      return playlist.addToFavorites(currentTrack.value);
     }
   };
 
@@ -459,6 +459,8 @@ export function usePlayerControls() {
 
   // ── 添加到歌单 ──
   const showAddToPlaylistDialog = ref(false);
+  // Freeze the target at open time; changing playback must not change the pending action.
+  const addToPlaylistTrack = ref<Song | null>(null);
   const isPlaylistLoading = ref(false);
 
   const canAddToPlaylist = computed(() => userStore.isLoggedIn && !!currentTrack.value);
@@ -476,6 +478,7 @@ export function usePlayerControls() {
 
   const handleOpenAddToPlaylist = async () => {
     if (!canAddToPlaylist.value) return;
+    addToPlaylistTrack.value = currentTrack.value ? { ...currentTrack.value } : null;
     showAddToPlaylistDialog.value = true;
     if (playlist.userPlaylists.length === 0) {
       isPlaylistLoading.value = true;
@@ -489,9 +492,10 @@ export function usePlayerControls() {
   };
 
   const handleAddToQueue = (queueId?: string) => {
-    if (!currentTrack.value) return;
+    const track = addToPlaylistTrack.value;
+    if (!track) return;
     const options = queueId ? { queueId } : {};
-    const addedCount = playlist.appendToPlaybackQueue?.([currentTrack.value], options) ?? 0;
+    const addedCount = playlist.appendToPlaybackQueue?.([track], options) ?? 0;
     if (addedCount > 0) {
       toastStore.actionCompleted(
         queueId === MANUAL_PLAYBACK_QUEUE_ID ? '已添加到我的队列' : '已添加到队列',
@@ -505,9 +509,10 @@ export function usePlayerControls() {
   };
 
   const handleSelectPlaylist = async (listId: string | number) => {
-    if (!currentTrack.value) return;
+    const track = addToPlaylistTrack.value;
+    if (!track) return;
     try {
-      const result = await playlist.addToPlaylist(String(listId), currentTrack.value);
+      const result = await playlist.addToPlaylist(String(listId), track);
       if (result === 'added') {
         toastStore.actionCompleted('添加成功');
         showAddToPlaylistDialog.value = false;
@@ -530,6 +535,7 @@ export function usePlayerControls() {
     settingStore,
     desktopLyricStore,
     currentTrack,
+    currentPlaybackQueue,
     // 收藏
     isFavorite,
     toggleFavorite,

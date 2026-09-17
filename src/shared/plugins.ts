@@ -410,6 +410,64 @@ export interface PluginNetworkResponse<T = PluginNetworkResponseData> {
   data: T;
 }
 
+// --- 服务请求拦截器（ctx.server.intercept） ---
+
+/**
+ * 可拦截的服务请求（Authorization 注入完成、发往主进程 server 之前的形态）。
+ * 修改 params/data/headers/url 后，主进程 server 会基于新值重新计算签名。
+ */
+export interface PluginServerRequest {
+  /** HTTP 方法，'GET' | 'POST' */
+  method: string;
+  /** 路由路径，如 '/song/url'，对应 server/module 下的模块 */
+  url: string;
+  params: Record<string, any>;
+  data?: any;
+  headers: Record<string, string>;
+  /** 请求来源：host=主程序业务代码（拦截器只处理此类）；plugin=插件经 ctx.kugou 发起 */
+  origin: { type: 'host' } | { type: 'plugin'; pluginId: string };
+}
+
+export interface PluginServerResponse {
+  status: number;
+  body: any;
+  cookie?: string[];
+  headers?: Record<string, string>;
+  /** 未真实出网（被某层拦截器短路 Mock/转发）时为 true；插件也可显式设置 */
+  mocked?: boolean;
+  /** 短路该请求的插件 id；响应来自真实 server 时不存在，外层插件据此感知内层已接管 */
+  handledBy?: string;
+}
+
+export type PluginServerNext = (
+  requestPatch?: Partial<Omit<PluginServerRequest, 'origin'>>,
+) => Promise<PluginServerResponse>;
+
+export type PluginServerInterceptor = (
+  request: PluginServerRequest,
+  next: PluginServerNext,
+) => Promise<PluginServerResponse> | PluginServerResponse;
+
+/**
+ * 匹配条件（决定本拦截器是否应用于本次请求）：
+ * - string：按路由路径前缀匹配（如 '/song/' 匹配 '/song/url'）
+ * - RegExp：对 request.url 执行 test
+ * - 函数：拿到完整请求自行判断，可读 method/params/data/headers/origin
+ */
+export type PluginServerMatcher = string | RegExp | ((request: PluginServerRequest) => boolean);
+
+export interface PluginServerInterceptOptions {
+  /**
+   * 优先级，默认 0。数值越大越靠外层（请求阶段越早执行、响应阶段越晚执行）。
+   * 同优先级按注册先后稳定排序。建议档位：100 观测/日志、0 数据转换、-100 Mock/转发。
+   */
+  priority?: number;
+  /** 预过滤条件；不匹配的请求不会调用 handler（透明跳过）。默认匹配全部 */
+  match?: PluginServerMatcher;
+  /** 仅用于日志与排查的标签（如 'traffic-logger'），不参与排序 */
+  name?: string;
+}
+
 export interface PluginWebServerListenOptions {
   port?: number;
   host?: '127.0.0.1' | 'localhost';
@@ -637,11 +695,14 @@ export interface EchoPluginManifest {
     localFiles?: boolean;
     lyricEffects?: boolean;
     lyrics?: boolean;
+    lyricsPage?: boolean;
     process?: boolean;
     sqlite?: boolean;
     tcp?: boolean;
     unrestrictedNetwork?: boolean;
     webServer?: boolean;
+    /** 拦截主程序发往 server 的 API 请求（读取凭证与数据、修改、Mock、转发） */
+    serverIntercept?: boolean;
   };
   contributes?: {
     windows?: PluginWindowManifest[];

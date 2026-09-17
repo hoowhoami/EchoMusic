@@ -393,7 +393,15 @@ export const createRuntimeUiApi = (
   });
   return {
     ...baseUi,
-    components: hostComponentLoaders,
+    components: {
+      ...hostComponentLoaders,
+      LyricScroller: () =>
+        import('../../views/lyric/LyricScroller.vue').then((module) => module.default),
+      LyricPlayerControls: () =>
+        import('../../views/lyric/LyricPlayerControls.vue').then((module) => module.default),
+      BarrageControls: () =>
+        import('../../components/music/BarrageControls.vue').then((module) => module.default),
+    } as Record<string, HostComponentLoader>,
     mount: (
       target: string | Element,
       component: Component,

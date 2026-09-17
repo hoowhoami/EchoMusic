@@ -11,6 +11,7 @@ import {
 import { useLyricStore, type LyricLine } from '@/stores/lyric';
 import { usePlayerStore } from '@/stores/player';
 import { useSettingStore } from '@/stores/setting';
+import { LYRIC_FONT_WEIGHTS } from './skins/config';
 import { useLyricScroll } from './composables/useLyricScroll';
 import { useYrcAnimation } from './composables/useYrcAnimation';
 import { createStableLyricIndex } from '@/composables/useStableLyricIndex';
@@ -26,11 +27,30 @@ import {
 
 interface Props {
   collapsed?: boolean;
+  /** 皮肤配置：字号 / 字重索引 / 已播色 / 未播色，缺省回退到歌词 store 的全局值。 */
+  fontScale?: number;
+  fontWeightIndex?: number;
+  playedColor?: string;
+  unplayedColor?: string;
 }
 
 const props = withDefaults(defineProps<Props>(), {
   collapsed: false,
 });
+
+const resolvedFontScale = computed(() =>
+  typeof props.fontScale === 'number' ? props.fontScale : lyricStore.fontScale,
+);
+const resolvedFontWeightIndex = computed(() =>
+  typeof props.fontWeightIndex === 'number' ? props.fontWeightIndex : lyricStore.fontWeightIndex,
+);
+const resolvedFontWeightValue = computed(
+  () => LYRIC_FONT_WEIGHTS[Math.max(0, Math.min(8, resolvedFontWeightIndex.value))] ?? 900,
+);
+const effectivePlayedColor = computed(() => props.playedColor || lyricStore.effectivePlayedColor);
+const effectiveUnplayedColor = computed(
+  () => props.unplayedColor || lyricStore.effectiveUnplayedColor,
+);
 
 const lyricStore = useLyricStore();
 const playerStore = usePlayerStore();
@@ -82,8 +102,6 @@ const {
 type CharRefEl = Element | ComponentPublicInstance | null;
 const toHtmlEl = (el: CharRefEl): HTMLElement | null => (el instanceof HTMLElement ? el : null);
 
-const effectivePlayedColor = computed(() => lyricStore.effectivePlayedColor);
-const effectiveUnplayedColor = computed(() => lyricStore.effectiveUnplayedColor);
 const hasLyrics = computed(() => lyricStore.lines.length > 0);
 const staticLyricLines = computed(() =>
   lyricStore.rawLyric
@@ -102,9 +120,11 @@ const staticLyricLines = computed(() =>
 const hasStaticLyrics = computed(
   () => !hasLyrics.value && !lyricStore.isLoading && staticLyricLines.value.length > 0,
 );
-const titleFontSize = computed(() => `${1.5 * lyricStore.fontScale}rem`);
-const secondaryFontSize = computed(() => `${1.2 * lyricStore.fontScale}rem`);
-const secondaryFontWeight = computed(() => String(Math.max(500, lyricStore.fontWeightValue - 200)));
+const titleFontSize = computed(() => `${1.5 * resolvedFontScale.value}rem`);
+const secondaryFontSize = computed(() => `${1.2 * resolvedFontScale.value}rem`);
+const secondaryFontWeight = computed(() =>
+  String(Math.max(500, resolvedFontWeightValue.value - 200)),
+);
 const lyricFontFamily = computed(() => settingStore.buildLyricFontFamily());
 // 逐字渐变背景（已播色 → 未播色）
 const activeYrcBgStyle = computed(
@@ -115,7 +135,7 @@ const activeYrcBgStyle = computed(
 const isYrcLine = (line: { characters: unknown[] }) => (line.characters?.length ?? 0) > 1;
 
 // 注音标注（音译显示在每个字上方）所需的字号：比主歌词小一档
-const rubyFontSize = computed(() => `${0.62 * 1.5 * lyricStore.fontScale}rem`);
+const rubyFontSize = computed(() => `${0.62 * 1.5 * resolvedFontScale.value}rem`);
 // 是否以注音方式渲染该行的音译（需开启注音模式，否则音译作为独立副行显示）
 const isRubyLine = (line: LyricLine) =>
   lyricStore.showRomanization &&
@@ -210,8 +230,8 @@ const buildLyricEffectSnapshot = (): PluginLyricEffectSnapshot => {
       playedColor: effectivePlayedColor.value,
       unplayedColor: effectiveUnplayedColor.value,
       fontFamily: lyricFontFamily.value,
-      fontScale: lyricStore.fontScale,
-      fontWeight: lyricStore.fontWeightValue,
+      fontScale: resolvedFontScale.value,
+      fontWeight: resolvedFontWeightValue.value,
     },
   };
 };
@@ -511,7 +531,7 @@ watch(
                 data-echo-lyric-primary
                 :style="{
                   fontSize: titleFontSize,
-                  fontWeight: String(lyricStore.fontWeightValue),
+                  fontWeight: String(resolvedFontWeightValue),
                 }"
               >
                 <!-- 注音模式：音译逐字标注在每个字上方 -->
@@ -767,7 +787,7 @@ watch(
             :style="{
               color: effectiveUnplayedColor,
               fontSize: titleFontSize,
-              fontWeight: String(lyricStore.fontWeightValue),
+              fontWeight: String(resolvedFontWeightValue),
             }"
           >
             {{ line }}

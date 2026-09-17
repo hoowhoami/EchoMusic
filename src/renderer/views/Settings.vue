@@ -4,7 +4,6 @@ import Tooltip from '@/components/ui/Tooltip.vue';
 defineOptions({ name: 'settings-page' });
 import { computed, ref, onMounted, onUnmounted, nextTick, watch } from 'vue';
 import type { Component } from 'vue';
-import { useResizeObserver } from '@vueuse/core';
 import { useSettingStore } from '@/stores/setting';
 import { useUpdateStore } from '@/stores/update';
 import { useDesktopLyricStore } from '@/desktopLyric/store';
@@ -12,7 +11,7 @@ import Dialog from '@/components/ui/Dialog.vue';
 import Button from '@/components/ui/Button.vue';
 import Scrollbar from '@/components/ui/Scrollbar.vue';
 import DisclaimerDialog from '@/components/app/DisclaimerDialog.vue';
-import { iconArrowUp, iconChevronLeft, iconChevronRight, iconSearch, iconX } from '@/icons';
+import { iconSearch, iconX } from '@/icons';
 import { marked } from 'marked';
 import { sanitizeHtml } from '@/utils/sanitize';
 import AppearanceSettingsSection from './settings/components/AppearanceSettingsSection.vue';
@@ -31,7 +30,7 @@ import ExperimentalSettingsSection from './settings/components/ExperimentalSetti
 import PluginSettingsSection from './settings/components/PluginSettingsSection.vue';
 import DataSettingsSection from './settings/components/DataSettingsSection.vue';
 import AboutSettingsSection from './settings/components/AboutSettingsSection.vue';
-import { shortcutItems } from './settings/constants';
+import { sectionTitles, shortcutItems } from './settings/constants';
 
 const settingStore = useSettingStore();
 const updateStore = useUpdateStore();
@@ -39,28 +38,15 @@ const desktopLyricStore = useDesktopLyricStore();
 const showDisclaimer = ref(false);
 const currentPlatform = window.electron?.platform;
 
+const props = withDefaults(defineProps<{ embedded?: boolean; initialSection?: string }>(), {
+  embedded: false,
+  initialSection: 'appearance',
+});
+const emit = defineEmits<{ (event: 'close'): void }>();
+const closeSettings = () => emit('close');
+
 const contentRef = ref<HTMLElement | null>(null);
 const scrollbarRef = ref<InstanceType<typeof Scrollbar> | null>(null);
-const anchorListRef = ref<HTMLElement | null>(null);
-const canScrollAnchorsLeft = ref(false);
-const canScrollAnchorsRight = ref(false);
-const updateAnchorScrollState = () => {
-  const list = anchorListRef.value;
-  canScrollAnchorsLeft.value = Boolean(list && list.scrollLeft > 1);
-  canScrollAnchorsRight.value = Boolean(
-    list && list.scrollLeft + list.clientWidth < list.scrollWidth - 1,
-  );
-};
-const scrollAnchors = (direction: -1 | 1) => {
-  const list = anchorListRef.value;
-  if (!list) return;
-  list.scrollBy({
-    left: direction * Math.max(120, list.clientWidth * 0.75),
-    behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth',
-  });
-};
-useResizeObserver(anchorListRef, updateAnchorScrollState);
-const anchorRefs = new Map<string, HTMLElement>();
 const settingsSearchKeyword = ref('');
 const settingsSearchInputRef = ref<HTMLInputElement | null>(null);
 const settingsSearchContainerRef = ref<HTMLElement | null>(null);
@@ -70,92 +56,12 @@ let settingsSearchCollapseTimer: number | null = null;
 
 const normalizeSearchText = (value: string) => value.toLocaleLowerCase().replace(/\s+/g, '');
 
-const setAnchorRef = (id: string, el: HTMLElement | null) => {
-  if (el) {
-    anchorRefs.set(id, el);
-  } else {
-    anchorRefs.delete(id);
-  }
-};
-
-// 确保激活的锚点按钮在可视区域内
-const scrollAnchorIntoView = (id: string) => {
-  const anchorEl = anchorRefs.get(id);
-  if (!anchorEl || !anchorListRef.value) return;
-  anchorEl.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
-};
-
-// 鼠标滚轮横向滚动导航栏：将纵向滚轮转换为横向滚动，仅在导航栏可横向滚动时生效
-const handleAnchorWheel = (event: WheelEvent) => {
-  const list = anchorListRef.value;
-  if (!list || list.scrollWidth <= list.clientWidth) return;
-  // 横向手势（触控板左右滑）交给浏览器原生横向滚动，避免重复滚动
-  if (Math.abs(event.deltaX) > Math.abs(event.deltaY)) return;
-  // 已滚到尽头时穿透，让页面继续纵向滚动
-  const atStart = list.scrollLeft <= 0 && event.deltaY < 0;
-  const atEnd = list.scrollLeft >= list.scrollWidth - list.clientWidth && event.deltaY > 0;
-  if (atStart || atEnd) return;
-  event.preventDefault();
-  list.scrollLeft += event.deltaY;
-};
-
-// 滑动指示条样式
-const indicatorReady = ref(false);
-const indicatorStyle = computed(() => {
-  // 依赖 indicatorReady 确保 mounted 后重新计算
-  if (!indicatorReady.value) return { opacity: '0' };
-  const anchorEl = anchorRefs.get(activeSection.value);
-  if (!anchorEl || !anchorListRef.value) {
-    return { opacity: '0' };
-  }
-  const left = anchorEl.offsetLeft;
-  const width = anchorEl.offsetWidth;
-  return {
-    transform: `translateX(${left}px)`,
-    width: `${width}px`,
-    opacity: '1',
-  };
-});
-
 // 当前激活的锚点
-const activeSection = ref('appearance');
-
-// 标记：是否由用户点击锚点触发的滚动（期间忽略滚动监听）
-let isClickScrolling = false;
-let clickScrollTimer: any = null;
-
-const getSectionOffsetTop = (sectionEl: HTMLElement, wrapEl: HTMLElement): number => {
-  const sectionRect = sectionEl.getBoundingClientRect();
-  const wrapRect = wrapEl.getBoundingClientRect();
-  return sectionRect.top - wrapRect.top + wrapEl.scrollTop;
-};
+const activeSection = ref(props.initialSection);
 
 // 点击锚点时：滚动到对应 section
 const scrollToSection = (id: string) => {
-  if (isClickScrolling && activeSection.value === id) return;
   activeSection.value = id;
-  scrollAnchorIntoView(id);
-
-  isClickScrolling = true;
-  if (clickScrollTimer) clearTimeout(clickScrollTimer);
-
-  nextTick(() => {
-    const sectionElement = findSectionElement(id);
-    if (sectionElement && scrollbarRef.value?.wrapRef) {
-      const wrap = scrollbarRef.value.wrapRef;
-      const scrollTop = getSectionOffsetTop(sectionElement, wrap) - 12;
-      wrap.scrollTo({
-        top: scrollTop,
-        behavior: 'instant',
-      });
-
-      clickScrollTimer = setTimeout(() => {
-        isClickScrolling = false;
-      }, 50);
-    } else {
-      isClickScrolling = false;
-    }
-  });
 };
 
 // 初始化
@@ -171,9 +77,6 @@ const initSettings = async () => {
 onMounted(() => {
   initSettings();
   document.addEventListener('pointerdown', handleSettingsSearchPointerDown, true);
-  nextTick(() => {
-    indicatorReady.value = true;
-  });
 });
 
 const showConfirmClear = ref(false);
@@ -702,13 +605,6 @@ const navItems = computed(() =>
     label: section.label,
   })),
 );
-watch(navItems, updateAnchorScrollState, { flush: 'post' });
-
-// 当前滚动位置
-const currentScrollTop = ref(0);
-
-// 是否显示返回顶部按钮
-const showBackToTop = ref(false);
 
 onUnmounted(() => {
   document.removeEventListener('pointerdown', handleSettingsSearchPointerDown, true);
@@ -720,11 +616,8 @@ watch(
   async () => {
     const firstSectionId = settingsSections.value[0]?.id ?? '';
     activeSection.value = firstSectionId;
-    showBackToTop.value = false;
-    currentScrollTop.value = 0;
     await nextTick();
     scrollbarRef.value?.setScrollTop(0);
-    if (firstSectionId) scrollAnchorIntoView(firstSectionId);
   },
   { flush: 'post' },
 );
@@ -735,236 +628,188 @@ watch(
     if (sections.some((section) => section.id === activeSection.value)) return;
     activeSection.value = sections[0]?.id ?? '';
     await nextTick();
-    if (activeSection.value) scrollAnchorIntoView(activeSection.value);
   },
   { flush: 'post' },
 );
 
-// 返回顶部
-const scrollToTop = () => {
-  scrollbarRef.value?.setScrollTop(0);
-};
-
-// 监听滚动，更新当前激活的锚点
-const handleScroll = () => {
-  if (!scrollbarRef.value?.wrapRef || isClickScrolling) return;
-  const wrap = scrollbarRef.value.wrapRef;
-  currentScrollTop.value = wrap.scrollTop;
-
-  // 控制返回顶部按钮显示
-  showBackToTop.value = currentScrollTop.value > 300;
-
-  for (let i = navItems.value.length - 1; i >= 0; i--) {
-    const section = findSectionElement(navItems.value[i].id);
-    if (section && getSectionOffsetTop(section, wrap) <= currentScrollTop.value + 40) {
-      if (activeSection.value !== navItems.value[i].id) {
-        activeSection.value = navItems.value[i].id;
-        scrollAnchorIntoView(navItems.value[i].id);
-      }
-      break;
-    }
-  }
-};
-
-const findSectionElement = (id: string) => {
-  return (
-    Array.from(contentRef.value?.querySelectorAll<HTMLElement>('[data-section]') ?? []).find(
-      (section) => section.dataset.section === id,
-    ) ?? null
-  );
-};
+watch(activeSection, () => scrollbarRef.value?.setScrollTop(0), { flush: 'post' });
 </script>
 
 <template>
-  <div class="settings-page h-full flex flex-col min-h-0">
-    <!-- 页面头部 -->
-    <header class="settings-header shrink-0 px-6 pt-4 pb-1">
-      <div class="flex w-full items-center justify-between">
-        <h1 class="text-lg font-bold text-text-main">偏好设置</h1>
-        <div
-          ref="settingsSearchContainerRef"
-          class="settings-search-shell"
-          :class="{ 'is-expanded': isSettingsSearchExpanded || isSettingsSearchCollapsing }"
-        >
-          <Tooltip
-            v-if="!isSettingsSearchExpanded && !isSettingsSearchCollapsing"
-            content="搜索设置"
-          >
-            <template #trigger>
-              <button
-                type="button"
-                class="settings-search-icon-button"
-                aria-label="搜索设置"
-                @click="expandSettingsSearch"
-              >
-                <Icon
-                  :icon="iconSearch"
-                  width="17"
-                  height="17"
-                  class="settings-search-trigger-icon"
-                />
-              </button>
-            </template>
-          </Tooltip>
-          <div
-            v-if="isSettingsSearchExpanded || isSettingsSearchCollapsing"
-            class="settings-search"
-            :class="{ 'is-collapsing': isSettingsSearchCollapsing }"
-          >
-            <Icon :icon="iconSearch" width="15" height="15" class="settings-search-icon" />
-            <input
-              ref="settingsSearchInputRef"
-              v-model="settingsSearchKeyword"
-              type="search"
-              class="settings-search-input"
-              placeholder="搜索设置"
-              aria-label="搜索设置"
-              @keydown="handleSettingsSearchKeydown"
-              @blur="handleSettingsSearchBlur"
-            />
-            <button
-              v-if="settingsSearchKeyword"
-              type="button"
-              class="settings-search-clear"
-              aria-label="清空搜索"
-              @mousedown.prevent
-              @click="clearSettingsSearch"
-            >
-              <Icon :icon="iconX" width="14" height="14" />
-            </button>
+  <div class="settings-page-shell" :class="{ 'is-embedded': props.embedded }">
+    <div class="settings-page h-full flex flex-col min-h-0">
+      <!-- 页面头部 -->
+      <header class="settings-header shrink-0 px-6 pt-4 pb-1">
+        <div class="flex w-full items-center justify-between">
+          <div class="settings-heading">
+            <h1 class="text-lg font-bold text-text-main">偏好设置</h1>
+            <span v-if="props.embedded" class="settings-heading-hint">全局设置</span>
           </div>
-        </div>
-      </div>
-    </header>
-
-    <!-- 顶部锚点导航 -->
-    <div class="settings-anchor-bar shrink-0 px-6 py-1.5 sticky top-0 z-10">
-      <Button
-        variant="unstyled"
-        size="none"
-        class="settings-anchor-arrow"
-        aria-label="向左滚动设置标签"
-        tooltip="向左滚动"
-        :disabled="!canScrollAnchorsLeft"
-        @click="scrollAnchors(-1)"
-      >
-        <Icon :icon="iconChevronLeft" width="18" height="18" />
-      </Button>
-      <div
-        ref="anchorListRef"
-        class="settings-anchor-list flex items-center gap-0 overflow-x-auto"
-        @wheel="handleAnchorWheel"
-        @scroll.passive="updateAnchorScrollState"
-      >
-        <button
-          v-for="item in navItems"
-          :key="item.id"
-          type="button"
-          :ref="(el) => setAnchorRef(item.id, el as HTMLElement | null)"
-          class="settings-anchor-item"
-          :class="{ 'is-active': activeSection === item.id }"
-          @click="scrollToSection(item.id)"
-        >
-          <span class="settings-anchor-label">{{ item.label }}</span>
-        </button>
-        <!-- 滑动指示条 -->
-        <div class="settings-anchor-indicator" :style="indicatorStyle"></div>
-      </div>
-      <Button
-        variant="unstyled"
-        size="none"
-        class="settings-anchor-arrow"
-        aria-label="向右滚动设置标签"
-        tooltip="向右滚动"
-        :disabled="!canScrollAnchorsRight"
-        @click="scrollAnchors(1)"
-      >
-        <Icon :icon="iconChevronRight" width="18" height="18" />
-      </Button>
-    </div>
-
-    <!-- 内容区域 -->
-    <Scrollbar
-      ref="scrollbarRef"
-      class="flex-1 min-h-0 settings-content-scroll"
-      :content-props="{
-        class: 'settings-content-inner',
-        'data-echo-scroll-container': 'true',
-        'data-echo-scroll-role': 'settings',
-      }"
-      @scroll="handleScroll"
-    >
-      <div ref="contentRef" class="settings-content">
-        <div
-          v-if="hasSettingsSearchKeyword && settingsSections.length === 0"
-          class="settings-empty"
-        >
-          <Icon :icon="iconSearch" width="22" height="22" />
-          <span>没有找到匹配的设置</span>
-          <button type="button" class="settings-empty-clear" @click="clearSettingsSearch">
-            清空搜索
+          <div
+            ref="settingsSearchContainerRef"
+            class="settings-search-shell"
+            :class="{ 'is-expanded': isSettingsSearchExpanded || isSettingsSearchCollapsing }"
+          >
+            <Tooltip
+              v-if="!isSettingsSearchExpanded && !isSettingsSearchCollapsing"
+              content="搜索设置"
+            >
+              <template #trigger>
+                <button
+                  type="button"
+                  class="settings-search-icon-button"
+                  aria-label="搜索设置"
+                  @click="expandSettingsSearch"
+                >
+                  <Icon
+                    :icon="iconSearch"
+                    width="17"
+                    height="17"
+                    class="settings-search-trigger-icon"
+                  />
+                </button>
+              </template>
+            </Tooltip>
+            <div
+              v-if="isSettingsSearchExpanded || isSettingsSearchCollapsing"
+              class="settings-search"
+              :class="{ 'is-collapsing': isSettingsSearchCollapsing }"
+            >
+              <Icon :icon="iconSearch" width="15" height="15" class="settings-search-icon" />
+              <input
+                ref="settingsSearchInputRef"
+                v-model="settingsSearchKeyword"
+                type="search"
+                class="settings-search-input"
+                placeholder="搜索设置"
+                aria-label="搜索设置"
+                @keydown="handleSettingsSearchKeydown"
+                @blur="handleSettingsSearchBlur"
+              />
+              <button
+                v-if="settingsSearchKeyword"
+                type="button"
+                class="settings-search-clear"
+                aria-label="清空搜索"
+                @mousedown.prevent
+                @click="clearSettingsSearch"
+              >
+                <Icon :icon="iconX" width="14" height="14" />
+              </button>
+            </div>
+          </div>
+          <button
+            v-if="props.embedded"
+            type="button"
+            class="settings-modal-close"
+            aria-label="关闭设置"
+            @click="closeSettings"
+          >
+            <Icon :icon="iconX" width="18" height="18" />
           </button>
         </div>
+      </header>
 
-        <template v-else>
-          <component
-            :is="section.component"
-            v-for="section in settingsSections"
-            :key="getSectionRenderKey(section)"
-            v-bind="section.props ?? {}"
-          />
-        </template>
+      <!-- 左侧分类 + 右侧内容 -->
+      <div class="settings-layout">
+        <aside class="settings-sidebar" aria-label="设置分类">
+          <button
+            v-for="item in navItems"
+            :key="item.id"
+            type="button"
+            class="settings-nav-item"
+            :class="{ 'is-active': activeSection === item.id }"
+            @click="scrollToSection(item.id)"
+          >
+            <Icon
+              v-if="sectionTitles[item.id as keyof typeof sectionTitles]?.icon"
+              :icon="sectionTitles[item.id as keyof typeof sectionTitles].icon!"
+              width="16"
+              height="16"
+            />
+            <span>{{ item.label }}</span>
+          </button>
+        </aside>
+
+        <Scrollbar
+          ref="scrollbarRef"
+          class="settings-content-scroll"
+          :content-props="{
+            class: 'settings-content-inner',
+            'data-echo-scroll-container': 'true',
+            'data-echo-scroll-role': 'settings',
+          }"
+        >
+          <div ref="contentRef" class="settings-content">
+            <div
+              v-if="hasSettingsSearchKeyword && settingsSections.length === 0"
+              class="settings-empty"
+            >
+              <Icon :icon="iconSearch" width="22" height="22" />
+              <span>没有找到匹配的设置</span>
+              <button type="button" class="settings-empty-clear" @click="clearSettingsSearch">
+                清空搜索
+              </button>
+            </div>
+
+            <template v-else>
+              <component
+                :is="section.component"
+                v-for="section in settingsSections.filter((item) => item.id === activeSection)"
+                :key="getSectionRenderKey(section)"
+                v-show="hasSettingsSearchKeyword || section.id === activeSection"
+                v-bind="section.props ?? {}"
+                :data-section="section.id"
+              />
+            </template>
+          </div>
+        </Scrollbar>
       </div>
-    </Scrollbar>
 
-    <!-- 返回顶部按钮 -->
-    <button class="settings-back-to-top" :class="{ visible: showBackToTop }" @click="scrollToTop">
-      <Icon :icon="iconArrowUp" width="18" height="18" />
-    </button>
+      <!-- 弹窗组件 -->
+      <Dialog
+        v-model:open="showConfirmClear"
+        title="清除应用数据"
+        description="此操作将移除所有持久化设置与缓存，无法撤销。"
+      >
+        <template #footer>
+          <Button
+            class="settings-button"
+            variant="outline"
+            size="sm"
+            @click="showConfirmClear = false"
+            >取消</Button
+          >
+          <Button
+            class="settings-button"
+            variant="danger"
+            size="sm"
+            @click="
+              settingStore.clearAppData();
+              showConfirmClear = false;
+            "
+            >确认清除</Button
+          >
+        </template>
+      </Dialog>
 
-    <!-- 弹窗组件 -->
-    <Dialog
-      v-model:open="showConfirmClear"
-      title="清除应用数据"
-      description="此操作将移除所有持久化设置与缓存，无法撤销。"
-    >
-      <template #footer>
-        <Button
-          class="settings-button"
-          variant="outline"
-          size="sm"
-          @click="showConfirmClear = false"
-          >取消</Button
-        >
-        <Button
-          class="settings-button"
-          variant="danger"
-          size="sm"
-          @click="
-            settingStore.clearAppData();
-            showConfirmClear = false;
-          "
-          >确认清除</Button
-        >
-      </template>
-    </Dialog>
+      <Dialog
+        v-model:open="showChangelog"
+        :title="`更新日志`"
+        showClose
+        noScroll
+        :content-style="{ width: '520px' }"
+      >
+        <Scrollbar class="settings-update-changelog" :content-props="{ class: 'px-4 py-3' }">
+          <div class="changelog-content" v-html="changelogHtml"></div>
+        </Scrollbar>
+        <template #footer>
+          <Button variant="ghost" size="sm" @click="showChangelog = false">关闭</Button>
+        </template>
+      </Dialog>
 
-    <Dialog
-      v-model:open="showChangelog"
-      :title="`更新日志`"
-      showClose
-      noScroll
-      :content-style="{ width: '520px' }"
-    >
-      <Scrollbar class="settings-update-changelog" :content-props="{ class: 'px-4 py-3' }">
-        <div class="changelog-content" v-html="changelogHtml"></div>
-      </Scrollbar>
-      <template #footer>
-        <Button variant="ghost" size="sm" @click="showChangelog = false">关闭</Button>
-      </template>
-    </Dialog>
-
-    <DisclaimerDialog v-model:open="showDisclaimer" />
+      <DisclaimerDialog v-model:open="showDisclaimer" />
+    </div>
   </div>
 </template>
 
@@ -976,8 +821,126 @@ const findSectionElement = (id: string) => {
   background: transparent;
 }
 
+.settings-page-shell {
+  height: 100%;
+  min-height: 0;
+}
+
+.settings-page-shell.is-embedded > .settings-page {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: var(--surface-card-base);
+}
+
+.settings-heading {
+  flex: 1;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.settings-heading-hint {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+}
+
+.settings-modal-close {
+  margin-left: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  color: var(--color-text-secondary);
+  transition:
+    background 0.2s,
+    color 0.2s;
+}
+
+.settings-modal-close:hover {
+  color: var(--color-text-main);
+  background: var(--control-hover-bg);
+}
+
+.settings-layout {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  padding: 8px 0 20px 16px;
+  gap: 0;
+}
+
+.settings-sidebar {
+  display: flex;
+  flex: 0 0 188px;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  padding: 4px 16px 4px 4px;
+  border-right: 1px solid var(--border-subtle);
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.settings-sidebar::-webkit-scrollbar {
+  display: none;
+}
+
+.settings-nav-item {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 38px;
+  padding: 0 12px;
+  border-radius: 10px;
+  color: var(--color-text-secondary);
+  font-size: 13px;
+  font-weight: 600;
+  text-align: left;
+  transition:
+    background 0.2s,
+    color 0.2s;
+}
+
+.settings-nav-item:hover {
+  color: var(--color-text-main);
+  background: var(--control-hover-bg);
+}
+
+.settings-nav-item.is-active {
+  color: var(--color-primary-text, var(--color-primary));
+  background: color-mix(in srgb, var(--color-primary) 14%, transparent);
+}
+
+.settings-content-scroll {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
 .settings-header {
   @apply flex items-center;
+}
+
+@media (max-width: 640px) {
+  .settings-sidebar {
+    flex-basis: 120px;
+  }
+  .settings-layout {
+    gap: 0;
+    padding: 8px 0 12px 8px;
+  }
+  .settings-nav-item {
+    padding: 0 8px;
+    gap: 6px;
+    font-size: 12px;
+  }
+  .settings-heading-hint {
+    display: none;
+  }
 }
 
 .settings-search-shell {
@@ -1127,7 +1090,7 @@ const findSectionElement = (id: string) => {
 }
 
 :deep(.settings-content-inner) {
-  padding: 24px 32px;
+  padding: 24px 24px 24px 18px;
 }
 
 .settings-content {

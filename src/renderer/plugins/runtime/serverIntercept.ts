@@ -1,0 +1,83 @@
+import type { EchoPluginDescriptor } from '../../../shared/plugins';
+import type {
+  PluginServerInterceptOptions,
+  PluginServerInterceptor,
+  PluginServerMatcher,
+  PluginServerRequest,
+  PluginServerResponse,
+} from '../../../shared/plugins';
+import { registerServerInterceptor } from '../../utils/serverInterceptors';
+
+interface ServerInterceptApiDeps {
+  addDisposable: (dispose: () => void) => () => void;
+  reportPluginRuntimeError: (pluginId: string, error: unknown, source?: string) => void;
+}
+
+export interface PluginServerInterceptApi {
+  intercept: (
+    interceptor: PluginServerInterceptor,
+    options?: PluginServerInterceptOptions,
+  ) => () => void;
+}
+
+const isValidServerResponse = (value: unknown): value is PluginServerResponse =>
+  Boolean(value) &&
+  typeof value === 'object' &&
+  typeof (value as PluginServerResponse).status === 'number';
+
+/**
+ * fail-open 包装：插件拦截器任何异常都不能导致主程序断网。
+ * next 由执行器保证幂等，因此 catch 中可无脑 return next()：
+ * - 调用 next 之前抛错 → 正常放行出网；
+ * - await next() 之后加工响应时抛错 → 返回同一个下游结果，不会重复出网。
+ */
+const wrapSafe =
+  (
+    pluginId: string,
+    handler: PluginServerInterceptor,
+    reportError: ServerInterceptApiDeps['reportPluginRuntimeError'],
+  ): PluginServerInterceptor =>
+  async (request, next) => {
+    try {
+      const result = await handler(request, next);
+      return isValidServerResponse(result) ? result : next();
+    } catch (error) {
+      reportError(pluginId, error, '服务请求拦截器');
+      return next();
+    }
+  };
+
+/** 谓词型 match 在执行器内直接调用，插件抛错时按"不匹配"处理，避免污染整个链 */
+const wrapMatcher = (
+  pluginId: string,
+  matcher: PluginServerMatcher | undefined,
+  reportError: ServerInterceptApiDeps['reportPluginRuntimeError'],
+): PluginServerMatcher | undefined => {
+  if (typeof matcher !== 'function') return matcher;
+  return (request: PluginServerRequest) => {
+    try {
+      return matcher(request) === true;
+    } catch (error) {
+      reportError(pluginId, error, '服务请求拦截器匹配条件');
+      return false;
+    }
+  };
+};
+
+export const createServerInterceptApi = (
+  descriptor: EchoPluginDescriptor,
+  deps: ServerInterceptApiDeps,
+): PluginServerInterceptApi => ({
+  intercept: (interceptor, options = {}) => {
+    if (descriptor.manifest.capabilities?.serverIntercept !== true) {
+      throw new Error('插件未声明服务请求拦截能力（capabilities.serverIntercept）');
+    }
+    const safeHandler = wrapSafe(descriptor.id, interceptor, deps.reportPluginRuntimeError);
+    const safeOptions: PluginServerInterceptOptions = {
+      ...options,
+      match: wrapMatcher(descriptor.id, options.match, deps.reportPluginRuntimeError),
+    };
+    const dispose = registerServerInterceptor(descriptor.id, safeHandler, safeOptions);
+    return deps.addDisposable(dispose);
+  },
+});

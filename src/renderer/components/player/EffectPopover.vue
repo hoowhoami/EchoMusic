@@ -52,6 +52,18 @@ import {
   type DspControlValues,
 } from '../../../shared/dspProviderSettings';
 
+interface Props {
+  variant?: 'lyric' | 'bar';
+  side?: 'top' | 'bottom';
+  open?: boolean;
+}
+const props = withDefaults(defineProps<Props>(), {
+  variant: 'bar',
+  side: 'top',
+  open: undefined,
+});
+const emit = defineEmits<{ 'update:open': [open: boolean] }>();
+
 const {
   player,
   settingStore,
@@ -65,7 +77,14 @@ type EffectTab = 'effect' | 'eq' | 'irs' | 'plaza';
 type ImpulseResponseLibraryTab = 'mine' | 'engine';
 
 const activeTab = ref<EffectTab>('effect');
-const effectPopoverOpen = ref(false);
+const internalOpen = ref(false);
+const effectPopoverOpen = computed({
+  get: () => props.open ?? internalOpen.value,
+  set: (open: boolean) => {
+    internalOpen.value = open;
+    emit('update:open', open);
+  },
+});
 const providerSettingsOpen = ref(false);
 const providerSettingsPanel = ref<HTMLElement | null>(null);
 const providerSettingsPanelId = useId();
@@ -529,10 +548,14 @@ const closeProviderSettings = async () => {
   await nextTick();
   if (effectPopoverOpen.value) providerSettingsTrigger?.focus({ preventScroll: true });
 };
-watch(effectPopoverOpen, (open) => {
-  if (!open) providerSettingsOpen.value = false;
-  else void refreshInstalledProviders();
-});
+watch(
+  effectPopoverOpen,
+  (open) => {
+    if (!open) providerSettingsOpen.value = false;
+    else void refreshInstalledProviders();
+  },
+  { immediate: true },
+);
 // An open editor must never write into a newly loaded engine or output-mode bank.
 watch(
   [
@@ -764,22 +787,12 @@ const openMyEffectPlaza = (source: MyEffectSource) => {
   plaza.selectCategory(source);
   selectTab('plaza');
 };
-
-interface Props {
-  variant?: 'lyric' | 'bar';
-  side?: 'top' | 'bottom';
-}
-
-withDefaults(defineProps<Props>(), {
-  variant: 'bar',
-  side: 'top',
-});
 </script>
 
 <template>
   <Popover
     v-model:open="effectPopoverOpen"
-    :trigger="providerSettingsOpen ? 'click' : 'hover'"
+    :trigger="props.open !== undefined || providerSettingsOpen ? 'click' : 'hover'"
     :side="side"
     align="end"
     :side-offset="8"

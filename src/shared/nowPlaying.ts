@@ -12,7 +12,56 @@ export type NowPlayingCommand =
   | 'lyricOffsetForward'
   | 'lyricOffsetReset'
   | 'seekForward'
-  | 'seekBackward';
+  | 'seekBackward'
+  // 带参数的播放控制命令：让插件浮窗、独立窗口等场景能精确控制播放位置与音量
+  | { type: 'seek'; value: number }
+  | { type: 'setVolume'; value: number }
+  | { type: 'adjustVolume'; value: number };
+
+/** 所有合法的字符串形式 NowPlayingCommand（来自快捷键与 nowPlaying 扩展命令） */
+export const NOW_PLAYING_COMMANDS = new Set<string>([
+  'togglePlayback',
+  'previousTrack',
+  'nextTrack',
+  'seekForward',
+  'seekBackward',
+  'toggleMainLyric',
+  'toggleDesktopLyric',
+  'toggleLyricsMode',
+  'cycleLyricsMode',
+  'openLyricSource',
+  'volumeUp',
+  'volumeDown',
+  'toggleMute',
+  'toggleFavorite',
+  'togglePlayMode',
+  'toggleMiniPlayer',
+  'toggleWindow',
+  'toggleSidebar',
+  'toggleTranslation',
+  'toggleRomanization',
+  'lyricOffsetBackward',
+  'lyricOffsetForward',
+  'lyricOffsetReset',
+]);
+
+const OBJECT_COMMAND_TYPES = new Set(['seek', 'setVolume', 'adjustVolume']);
+
+/** 判断传入值是否为有效的 NowPlayingCommand（字符串或合法对象命令） */
+export const isNowPlayingCommand = (value: unknown): value is NowPlayingCommand => {
+  if (typeof value === 'string') return NOW_PLAYING_COMMANDS.has(value);
+  if (!value || typeof value !== 'object') return false;
+  const cmd = value as { type?: unknown; value?: unknown };
+  if (
+    typeof cmd.type === 'string' &&
+    OBJECT_COMMAND_TYPES.has(cmd.type) &&
+    typeof cmd.value === 'number' &&
+    Number.isFinite(cmd.value)
+  ) {
+    return true;
+  }
+  return false;
+};
 
 export interface NowPlayingPlaybackPayload {
   trackId: string;

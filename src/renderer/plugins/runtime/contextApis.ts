@@ -444,6 +444,7 @@ export const createDesktopLyricApi = (descriptor: EchoPluginDescriptor, deps: Ru
 
 export const createMiniPlayerApi = (descriptor: EchoPluginDescriptor, deps: RuntimeApiDeps) => {
   const miniPlayer = window.electron.miniPlayer;
+  const runCommand = (command: MiniPlayerCommand) => miniPlayer.command(command);
 
   return {
     getSnapshot: () => miniPlayer.getSnapshot(),
@@ -453,6 +454,13 @@ export const createMiniPlayerApi = (descriptor: EchoPluginDescriptor, deps: Runt
     setExpanded: (expanded: boolean) => miniPlayer.setExpanded(expanded),
     setAlwaysOnTop: (alwaysOnTop: boolean) => miniPlayer.setAlwaysOnTop(alwaysOnTop),
     getBounds: () => miniPlayer.getBounds(),
+    // 跳转到指定播放位置（秒）。通过 command 通道转发，保留浮窗自身的 seekTimestamp 同步逻辑。
+    seek: (value: number) => runCommand({ type: 'seek', value }),
+    // 设置音量（0-100）。requestId 可选，用于关联浮窗音量滑块的请求，避免 UI 抖动。
+    setVolume: (value: number, requestId?: string) =>
+      runCommand({ type: 'setVolume', value, ...(requestId ? { requestId } : {}) }),
+    // 相对调整音量，delta 可正可负，最终结果会被 clamp 到 [0,100]。
+    adjustVolume: (delta: number) => runCommand({ type: 'adjustVolume', delta }),
     onSnapshot: (handler: (snapshot: MiniPlayerSnapshot) => void) => {
       const dispose = miniPlayer.onSnapshot((snapshot) =>
         deps.runPluginCallback(

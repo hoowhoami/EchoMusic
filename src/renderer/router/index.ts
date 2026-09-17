@@ -4,6 +4,7 @@ import {
   type RouteLocationNormalized,
   type RouteRecordRaw,
 } from 'vue-router';
+import { openSettingsDialog, settingsDialogOpen } from '@/composables/useSettingsDialog';
 
 const routes: RouteRecordRaw[] = [
   {
@@ -179,6 +180,11 @@ const shouldSkipHistory = (route: RouteLocationNormalized): boolean => {
 };
 
 router.beforeEach((to, from) => {
+  if (to.name === 'settings') {
+    openSettingsDialog();
+    return from.matched.length ? false : { path: '/main', replace: true };
+  }
+  if (from.matched.length) settingsDialogOpen.value = false;
   const skipToHistory = shouldSkipHistory(to);
   const skipFromHistory = from.matched.length > 0 && shouldSkipHistory(from);
 

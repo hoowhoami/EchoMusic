@@ -57,6 +57,7 @@ import { createThemeApi, type PluginThemeApi } from './theme';
 import { createPluginNetworkApi } from './network';
 import { createPluginBackupsApi, type PluginBackupsApi } from './backups';
 import { createPluginGraphicsApi, type PluginGraphicsApi } from './graphics';
+import { createServerInterceptApi, type PluginServerInterceptApi } from './serverIntercept';
 
 type PluginCallbackRunner = <T>(
   pluginId: string,
@@ -64,6 +65,11 @@ type PluginCallbackRunner = <T>(
   callback: () => T,
   fallback: T,
 ) => T;
+
+// 浮窗 player.getState() 的返回类型，直接复用 preload 暴露的 window.electron.player.getState 签名
+type PluginWindowPlayerState = Awaited<
+  ReturnType<NonNullable<Window['electron']['player']>['getState']>
+>;
 
 type PluginRuntimeErrorReporter = (
   pluginId: string,
@@ -149,6 +155,19 @@ export interface EchoPluginContext {
     getBounds: (windowId: string) => Promise<unknown>;
     setIgnoreMouseEvents: (windowId: string, ignore: boolean) => Promise<unknown>;
     showOnTop: (windowId: string, options?: PluginShowOnTopOptions) => Promise<unknown>;
+    // 浮窗播放控制入口：轻量 IPC 路径，作用于全局主播放器；与 ctx.player（响应式 store）互补
+    player: {
+      play: () => Promise<void>;
+      pause: () => Promise<void>;
+      stop: () => Promise<void>;
+      seek: (time: number) => Promise<void>;
+      setVolume: (volume: number) => Promise<void>;
+      adjustVolume: (delta: number) => Promise<void>;
+      setSpeed: (speed: number) => Promise<void>;
+      toggleMute: () => Promise<void>;
+      togglePlayMode: () => Promise<void>;
+      getState: () => Promise<PluginWindowPlayerState>;
+    };
   };
   host: {
     showOnTop: (
@@ -224,6 +243,7 @@ export interface EchoPluginContext {
     ) => () => void;
   };
   net: ReturnType<typeof createPluginNetworkApi>;
+  server: PluginServerInterceptApi;
   icons: typeof icons;
   tasks: ReturnType<typeof createTaskApi>;
   electron: Window['electron'];
@@ -444,6 +464,7 @@ export const createPluginContext = (
     },
     dom: createDomApi(descriptor.id, addDisposable, runPluginCallback),
     net: createPluginNetworkApi(descriptor, addDisposable),
+    server: createServerInterceptApi(descriptor, apiDeps),
     icons,
     tasks: createTaskApi(descriptor.id, apiDeps),
     electron: window.electron,

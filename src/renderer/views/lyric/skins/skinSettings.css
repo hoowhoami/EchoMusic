@@ -1,0 +1,147 @@
+.skin-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.setting-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 32px;
+  gap: 14px;
+}
+
+.setting-row-compact {
+  min-height: 24px;
+}
+
+.setting-row .setting-text {
+  flex: 1;
+}
+
+.setting-text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.setting-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text-main);
+}
+
+.setting-hint {
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--color-text-secondary);
+}
+
+.setting-value {
+  font-size: 12px;
+  font-weight: 600;
+  font-family: monospace;
+  color: var(--color-text-secondary);
+}
+
+.settings-slider-root {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+  height: 24px;
+  margin: 2px 0 4px;
+  touch-action: none;
+  user-select: none;
+  cursor: pointer;
+}
+
+.settings-slider-track {
+  position: relative;
+  flex-grow: 1;
+  height: 4px;
+  border-radius: 9999px;
+  background-color: var(--control-track-bg);
+}
+
+.settings-slider-range {
+  position: absolute;
+  height: 100%;
+  border-radius: 9999px;
+  background-color: var(--color-primary);
+}
+
+.settings-slider-thumb {
+  display: block;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background-color: var(--control-thumb-bg);
+  border: 1px solid var(--control-border);
+  box-shadow: var(--shadow-control);
+  outline: none;
+}
+
+.color-row {
+  display: grid;
+  gap: 12px;
+}
+
+.color-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: var(--control-bg);
+  border: 1px solid var(--control-border);
+}
+
+.color-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.color-label {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--color-text-secondary);
+}
+
+.color-hint {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+}
+
+.color-swatch {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 1px solid var(--control-border);
+  cursor: pointer;
+  transition: transform 0.15s ease;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+}
+
+.color-swatch:hover {
+  transform: scale(1.08);
+}
+
+.reset-btn {
+  align-self: flex-start;
+  min-height: 18px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: color 0.2s;
+}
+
+.reset-btn:hover {
+  color: var(--color-primary-text);
+}

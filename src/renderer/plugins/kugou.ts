@@ -1,4 +1,5 @@
 import type { EchoPluginDescriptor } from '../../shared/plugins';
+import { runWithRequestOrigin } from '../utils/serverInterceptors';
 
 type RuntimeApiModule = Record<string, unknown>;
 type RuntimeApiFunction = (...args: unknown[]) => unknown;
@@ -69,7 +70,11 @@ const createApiNamespace = (descriptor: EchoPluginDescriptor, namespace: string)
       const method = async (...args: unknown[]) => {
         requireKugouApiCapability(descriptor);
         const api = await loadApiFunction(namespace, property);
-        return api(...args);
+        // 标记为插件来源：插件经 ctx.kugou 发起的请求绕过服务拦截链（防递归）。
+        // 业务 api 函数均在同步段发起 request.get/post，因此同步包裹即可正确标记。
+        return runWithRequestOrigin({ type: 'plugin', pluginId: descriptor.id }, () =>
+          (api as RuntimeApiFunction)(...args),
+        );
       };
 
       Reflect.set(target, property, method, receiver);

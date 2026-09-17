@@ -178,6 +178,49 @@ export const createPluginWindowsApi = (pluginId: string) => {
       getWindowsApi()?.setIgnoreMouseEvents(pluginId, windowId, ignore) ?? unavailable(),
     showOnTop: (windowId: string, options?: PluginShowOnTopOptions) =>
       getWindowsApi()?.showOnTop(pluginId, windowId, options) ?? unavailable(),
+    // 浮窗播放控制：直接走 window.electron.player IPC，作用于全局主播放器
+    player: {
+      play: () =>
+        window.electron?.player?.play?.() ?? Promise.reject(new Error('播放器 API 不可用')),
+      pause: () =>
+        window.electron?.player?.pause?.() ?? Promise.reject(new Error('播放器 API 不可用')),
+      stop: () =>
+        window.electron?.player?.stop?.() ?? Promise.reject(new Error('播放器 API 不可用')),
+      seek: (time: number) =>
+        window.electron?.player?.seek?.(time) ?? Promise.reject(new Error('播放器 API 不可用')),
+      setVolume: (volume: number) =>
+        window.electron?.player?.setVolume?.(volume) ??
+        Promise.reject(new Error('播放器 API 不可用')),
+      setSpeed: (speed: number) =>
+        window.electron?.player?.setSpeed?.(speed) ??
+        Promise.reject(new Error('播放器 API 不可用')),
+      getState: () =>
+        window.electron?.player?.getState?.() ?? Promise.reject(new Error('播放器 API 不可用')),
+      // adjustVolume: 先读当前 volume，加 delta 并 clamp 到 [0,100]，再写回
+      adjustVolume: async (delta: number) => {
+        const state = await window.electron?.player?.getState?.();
+        if (!state || typeof state.volume !== 'number') {
+          throw new Error('播放器状态不可用');
+        }
+        const next = Math.min(100, Math.max(0, state.volume + delta));
+        await window.electron?.player?.setVolume?.(next);
+      },
+      // toggleMute / togglePlayMode 走 nowPlaying command 通道，由主窗口 playerStore 处理（mute 的 lastNonZeroVolume、playMode 的循环切换逻辑都在那里）
+      toggleMute: () => {
+        if (window.electron?.nowPlaying?.command) {
+          window.electron.nowPlaying.command('toggleMute');
+          return Promise.resolve();
+        }
+        return Promise.reject(new Error('播放器 API 不可用'));
+      },
+      togglePlayMode: () => {
+        if (window.electron?.nowPlaying?.command) {
+          window.electron.nowPlaying.command('togglePlayMode');
+          return Promise.resolve();
+        }
+        return Promise.reject(new Error('播放器 API 不可用'));
+      },
+    },
   };
 };
 

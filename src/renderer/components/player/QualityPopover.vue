@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, watch } from 'vue';
 import Popover from '@/components/ui/Popover.vue';
 import Tag from '@/components/ui/Tag.vue';
 import Badge from '@/components/ui/Badge.vue';
@@ -30,14 +30,25 @@ const {
 interface Props {
   /** 触发按钮的样式变体 */
   variant?: 'lyric' | 'bar';
+  open?: boolean;
   /** Popover 弹出方向 */
   side?: 'top' | 'bottom';
 }
 
 const props = withDefaults(defineProps<Props>(), {
+  open: undefined,
   variant: 'bar',
   side: 'top',
 });
+
+const emit = defineEmits<{ 'update:open': [open: boolean] }>();
+watch(
+  () => props.open,
+  (open) => {
+    if (open) void ensureCurrentTrackCatalogQualities();
+  },
+  { immediate: true },
+);
 
 const qualityOptions = [
   { value: '128', label: '标准', badge: 'SD' },
@@ -81,7 +92,9 @@ const buttonClass = computed(() => {
 
 <template>
   <Popover
-    trigger="hover"
+    :trigger="props.open === undefined ? 'hover' : 'click'"
+    :open="props.open"
+    @update:open="emit('update:open', $event)"
     :side="props.side"
     align="center"
     :side-offset="8"

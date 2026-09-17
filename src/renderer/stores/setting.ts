@@ -142,7 +142,10 @@ export const useSettingStore = defineStore('setting', {
     trackTransitionMode: DEFAULT_TRACK_TRANSITION_MODE as TrackTransitionMode,
     /** 淡入淡出播放时长，0~15 秒。 */
     fadeCrossSecs: DEFAULT_FADE_CROSS_SECS,
-    lyricViewMode: 'cover' as 'cover' | 'portrait' | 'lyric',
+    lyricViewMode: 'cover' as 'cover' | 'portrait' | 'lyric' | 'amll',
+    lyricsPageProvider: 'host:cover',
+    /** 皮肤名 → 皮肤配置。由各皮肤的 defaults/validate 解释，宿主只负责隔离与持久化。 */
+    lyricsPageSkinConfigs: {} as Record<string, Record<string, unknown>>,
     dynamicAlbumCover: false,
     lyricDynamicAlbumCover: false,
     lyricArtistBackdrop: true,
@@ -755,6 +758,22 @@ export const useSettingStore = defineStore('setting', {
     buildLyricFontFamily(): string {
       if (!this.lyricFont || this.lyricFont === 'follow') return this.buildGlobalFontFamily();
       return buildFontFamily(this.lyricFont);
+    },
+    // 歌词页皮肤配置：宿主只负责隔离与持久化，解释权归皮肤 defaults/validate。
+    getLyricSkinConfig(skinKey: string): Record<string, unknown> | undefined {
+      return this.lyricsPageSkinConfigs[skinKey];
+    },
+    patchLyricSkinConfig(skinKey: string, config: Record<string, unknown>) {
+      this.lyricsPageSkinConfigs = {
+        ...this.lyricsPageSkinConfigs,
+        [skinKey]: { ...config },
+      };
+    },
+    resetLyricSkinConfig(skinKey: string) {
+      if (!(skinKey in this.lyricsPageSkinConfigs)) return;
+      const next = { ...this.lyricsPageSkinConfigs };
+      delete next[skinKey];
+      this.lyricsPageSkinConfigs = next;
     },
   },
   persist: {

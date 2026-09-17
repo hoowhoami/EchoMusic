@@ -252,6 +252,12 @@ const validateManifestCapabilities = (manifest: EchoPluginManifest) => {
   if (capabilities.webServer !== undefined && typeof capabilities.webServer !== 'boolean') {
     return 'manifest.capabilities.webServer 必须是布尔值';
   }
+  if (
+    capabilities.serverIntercept !== undefined &&
+    typeof capabilities.serverIntercept !== 'boolean'
+  ) {
+    return 'manifest.capabilities.serverIntercept 必须是布尔值';
+  }
   return '';
 };
 

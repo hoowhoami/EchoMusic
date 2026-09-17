@@ -36,7 +36,7 @@ const emit = defineEmits<{
   (e: 'update:open', value: boolean): void;
 }>();
 
-const internalOpen = ref(false);
+const internalOpen = ref(props.open ?? false);
 // 真实 DOM 引用，用于点击外部判断
 const triggerWrapRef = ref<HTMLElement | null>(null);
 const contentWrapRef = ref<HTMLElement | null>(null);

@@ -1,81 +1,116 @@
 <script setup lang="ts">
 /**
- * 歌词页设置 Drawer
- * 强制深色毛玻璃风格，与歌词页沉浸式环境协调
+ * 歌词页换肤 Drawer（右侧抽屉）
+ * 强制深色毛玻璃风格，与歌词页沉浸式环境协调。
+ * 皮肤设置统一由「全局设置 → 页面歌词」承接，这里只负责挑选皮肤。
  */
 import { computed } from 'vue';
 import { useSettingStore } from '@/stores/setting';
-import { useLyricStore } from '@/stores/lyric';
-import { useLyricColorPicker } from '@/composables/useLyricColorPicker';
 import Drawer from '@/components/ui/Drawer.vue';
-import { SliderRoot, SliderTrack, SliderRange, SliderThumb } from 'reka-ui';
-import Switch from '@/components/ui/Switch.vue';
 import Button from '@/components/ui/Button.vue';
-import InputNumber from '@/components/ui/InputNumber.vue';
-import Select from '@/components/ui/Select.vue';
-import ColorPickerDialog from '@/components/ui/ColorPickerDialog.vue';
-import { iconX } from '@/icons';
+import LyricSkinSettingsPanel from './LyricSkinSettingsPanel.vue';
+import {
+  HOST_SKIN_PREFIX,
+  lyricsPages,
+  resolveLyricsPage,
+  resolveLyricSkinKey,
+  retryLyricsPage,
+} from '@/plugins/lyricsPage';
+import type { LyricSkin } from '@/plugins/lyricsPage';
+import { iconCheck, iconChevronLeft, iconMusic, iconSettings, iconX } from '@/icons';
 
-type LyricViewMode = 'cover' | 'portrait' | 'lyric';
+type LyricViewMode = 'cover' | 'portrait' | 'lyric' | 'amll';
+
+interface SkinGroup {
+  label: string;
+  key: string;
+  skins: LyricSkin[];
+}
 
 interface Props {
   open: boolean;
+  view?: 'skins' | 'settings';
 }
 
-defineProps<Props>();
+withDefaults(defineProps<Props>(), {
+  view: 'skins',
+});
 const emit = defineEmits<{
   (e: 'update:open', value: boolean): void;
+  (e: 'update:view', value: 'skins' | 'settings'): void;
+  (e: 'open-global-settings'): void;
 }>();
 
 const settingStore = useSettingStore();
-const lyricStore = useLyricStore();
-const lyricColorPicker = useLyricColorPicker();
 
-const currentMode = computed({
-  get: () => settingStore.lyricViewMode,
-  set: (v: LyricViewMode) => {
-    settingStore.lyricViewMode = v;
-  },
-});
-
-const fontSizeLabel = computed(() => `${Math.round(lyricStore.fontScale * 100)}%`);
-const fontWeightLabel = computed(() => `W${lyricStore.fontWeightValue}`);
-const backdropOpacityLabel = computed(() => `${settingStore.lyricBackdropOpacity}%`);
-const carouselIntervalLabel = computed(() => `${settingStore.lyricCarouselInterval}s`);
-const hasCustomLyricColors = computed(() =>
-  Boolean(lyricStore.playedColor || lyricStore.unplayedColor),
+const allSkins = computed(() =>
+  lyricsPages.value.filter(
+    (skin) => skin.key.startsWith(HOST_SKIN_PREFIX) || resolveLyricsPage(skin.key),
+  ),
 );
-type RomanizationStyle = 'separate-line' | 'ruby';
-const romanizationStyleOptions = [
-  { label: '独立一行', value: 'separate-line' },
-  { label: '注音', value: 'ruby' },
-];
-const romanizationStyle = computed<RomanizationStyle>({
-  get: () => (lyricStore.showRomanizationAsRuby ? 'ruby' : 'separate-line'),
-  set: (value) => {
-    lyricStore.showRomanizationAsRuby = value === 'ruby';
-  },
+const isSkinAvailable = (skin: LyricSkin) =>
+  skin.key.startsWith(HOST_SKIN_PREFIX) || resolveLyricsPage(skin.key) !== undefined;
+
+const skinGroups = computed<SkinGroup[]>(() => {
+  const builtins = allSkins.value.filter((skin) => skin.key.startsWith(HOST_SKIN_PREFIX));
+  const plugins = allSkins.value.filter((skin) => !skin.key.startsWith(HOST_SKIN_PREFIX));
+  const groups: SkinGroup[] = [{ label: '内置', key: 'builtin', skins: builtins }];
+  if (plugins.length > 0) {
+    groups.push({ label: '自定义', key: 'custom', skins: plugins });
+  }
+  return groups;
 });
 
-const effectivePlayedColor = computed(() => lyricStore.effectivePlayedColor);
-const effectiveUnplayedColor = computed(() => lyricStore.effectiveUnplayedColor);
+const activeSkinKey = computed(() =>
+  resolveLyricSkinKey(settingStore.lyricsPageProvider, settingStore.lyricViewMode),
+);
 
-const handleTranslationToggle = (enabled: boolean) => {
-  lyricStore.wantTranslation = enabled;
+const activeSkin = computed(() => allSkins.value.find((skin) => skin.key === activeSkinKey.value));
+
+const retryActiveSkin = () => {
+  retryLyricsPage(activeSkinKey.value);
 };
 
-const handleRomanizationToggle = (enabled: boolean) => {
-  lyricStore.wantRomanization = enabled;
+const applySkin = (key: string) => {
+  if (key.startsWith(HOST_SKIN_PREFIX)) {
+    settingStore.lyricViewMode = key.slice(HOST_SKIN_PREFIX.length) as LyricViewMode;
+  }
+  settingStore.lyricsPageProvider = key;
 };
 
-const modeOptions: { value: LyricViewMode; label: string }[] = [
-  { value: 'cover', label: '封面' },
-  { value: 'portrait', label: '写真' },
-  { value: 'lyric', label: '歌词' },
-];
+/** 皮肤卡交互：单击选中皮肤；已选中皮肤再次点击进入该皮肤的设置面板。 */
+const selectSkin = (skin: LyricSkin) => {
+  if (!isSkinAvailable(skin)) return;
+  if (skin.key === activeSkinKey.value) {
+    emit('update:view', 'settings');
+    return;
+  }
+  applySkin(skin.key);
+  retryLyricsPage(skin.key);
+};
+
+const backToSkins = () => {
+  emit('update:view', 'skins');
+};
 
 const close = () => {
   emit('update:open', false);
+};
+
+const skinDisplayTitle = (skin: LyricSkin) => skin.title;
+
+const cardStyle = (skin: LyricSkin, index: number) => {
+  if (skin.preview) return undefined;
+  const palettes = [
+    'linear-gradient(135deg, #274060, #141b2c)',
+    'linear-gradient(135deg, #3b2e4d, #1a1626)',
+    'linear-gradient(135deg, #244a3a, #141f1c)',
+    'linear-gradient(135deg, #4d3a1f, #211a10)',
+    'linear-gradient(135deg, #3a2345, #171020)',
+    'linear-gradient(135deg, #1f3d4d, #101a20)',
+  ];
+  const hash = [...skin.key].reduce((acc, ch) => acc + ch.charCodeAt(0), 0);
+  return { background: palettes[(hash + index) % palettes.length] };
 };
 </script>
 
@@ -91,338 +126,160 @@ const close = () => {
       <!-- 头部 -->
       <div class="settings-header">
         <div class="settings-title-group">
-          <h2 class="settings-title">歌词页设置</h2>
-          <p class="settings-subtitle">调整当前歌词页的显示、颜色与写真行为</p>
+          <h2 class="settings-title">{{ view === 'settings' ? '皮肤设置' : '换肤' }}</h2>
+          <p v-if="view === 'settings'" class="settings-subtitle">
+            {{ activeSkin ? skinDisplayTitle(activeSkin) : '当前皮肤' }}
+          </p>
         </div>
-        <Button variant="unstyled" size="none" class="settings-close-btn" @click="close">
-          <Icon :icon="iconX" width="18" height="18" />
-        </Button>
+        <div class="settings-header-actions">
+          <Button
+            v-if="view === 'settings'"
+            variant="unstyled"
+            size="none"
+            class="settings-header-action"
+            tooltip="返回换肤"
+            aria-label="返回换肤"
+            @click="backToSkins"
+          >
+            <Icon :icon="iconChevronLeft" width="17" height="17" />
+          </Button>
+          <Button
+            variant="unstyled"
+            size="none"
+            class="settings-header-action"
+            tooltip="全局设置"
+            aria-label="全局设置"
+            @click="emit('open-global-settings')"
+          >
+            <Icon :icon="iconSettings" width="17" height="17" />
+          </Button>
+          <Button variant="unstyled" size="none" class="settings-close-btn" @click="close">
+            <Icon :icon="iconX" width="18" height="18" />
+          </Button>
+        </div>
       </div>
 
       <!-- 内容 -->
       <div class="settings-body">
-        <!-- 模式切换 -->
-        <div class="settings-section">
-          <div class="section-title">显示模式</div>
-          <div class="mode-switcher">
-            <button
-              v-for="opt in modeOptions"
-              :key="opt.value"
-              class="mode-option"
-              :class="{ active: currentMode === opt.value }"
-              @click="currentMode = opt.value"
-            >
-              {{ opt.label }}
-            </button>
+        <!-- 换肤：皮肤列表 -->
+        <template v-if="view === 'skins'">
+          <div class="skin-groups">
+            <div v-for="group in skinGroups" :key="group.key" class="skin-group">
+              <div class="skin-group-label">{{ group.label }}</div>
+              <div class="skin-grid">
+                <button
+                  v-for="(skin, index) in group.skins"
+                  :key="skin.key"
+                  type="button"
+                  class="skin-card"
+                  :class="{
+                    active: skin.key === activeSkinKey,
+                    unavailable: !isSkinAvailable(skin),
+                  }"
+                  @click="selectSkin(skin)"
+                >
+                  <div class="skin-card-preview">
+                    <img v-if="skin.preview" :src="skin.preview" alt="" />
+                    <!-- 内置皮肤：用 CSS 绘制能体现各自特征的缩略图 -->
+                    <div
+                      v-else-if="skin.pluginId === 'host'"
+                      class="skin-thumb"
+                      :class="`skin-thumb--${skin.id}`"
+                    >
+                      <template v-if="skin.id === 'cover'">
+                        <div class="thumb-cover-art"></div>
+                        <div class="thumb-cover-lines"><span></span><span></span><span></span></div>
+                      </template>
+                      <template v-else-if="skin.id === 'portrait'">
+                        <div class="thumb-portrait-img"></div>
+                        <div class="thumb-portrait-lines"><span></span><span></span></div>
+                      </template>
+                      <template v-else-if="skin.id === 'lyric'">
+                        <div class="thumb-lyric-lines">
+                          <span></span>
+                          <span class="is-current"></span>
+                          <span></span>
+                          <span></span>
+                        </div>
+                      </template>
+                      <template v-else-if="skin.id === 'amll'">
+                        <div class="thumb-amll-lines">
+                          <span></span>
+                          <span class="is-current"></span>
+                          <span></span>
+                        </div>
+                      </template>
+                    </div>
+                    <!-- 插件皮肤：渐变背景 + 音符图标 -->
+                    <div v-else class="skin-card-placeholder" :style="cardStyle(skin, index)">
+                      <Icon :icon="iconMusic" width="26" height="26" class="skin-card-icon" />
+                    </div>
+                    <span v-if="skin.key === activeSkinKey" class="skin-card-check">
+                      <Icon :icon="iconCheck" width="12" height="12" />
+                    </span>
+                    <span
+                      v-if="skin.key === activeSkinKey"
+                      class="skin-card-settings"
+                      aria-hidden="true"
+                    >
+                      <Icon :icon="iconSettings" width="13" height="13" />
+                    </span>
+                  </div>
+                  <div class="skin-card-title">{{ skinDisplayTitle(skin) }}</div>
+                  <div v-if="!isSkinAvailable(skin)" class="skin-card-unavailable-label">
+                    不可用
+                  </div>
+                </button>
+              </div>
+            </div>
           </div>
-        </div>
+        </template>
 
-        <!-- 字体设置 -->
-        <div class="settings-section lyric-settings-card">
-          <div class="section-title">文字</div>
-          <div class="setting-row setting-row-compact">
-            <span class="setting-label">大小</span>
-            <span class="setting-value">{{ fontSizeLabel }}</span>
+        <!-- 皮肤设置 -->
+        <template v-else>
+          <div v-if="activeSkin?.settings?.component" class="skin-settings-wrap">
+            <LyricSkinSettingsPanel :skin="activeSkin" :key="activeSkin.key" />
           </div>
-          <SliderRoot
-            :model-value="[lyricStore.fontScale]"
-            :min="0.7"
-            :max="1.4"
-            :step="0.1"
-            class="settings-slider-root"
-            @update:model-value="(v) => v?.length && lyricStore.updateFontScale(v[0])"
-          >
-            <SliderTrack class="settings-slider-track">
-              <SliderRange class="settings-slider-range" />
-            </SliderTrack>
-            <SliderThumb class="settings-slider-thumb" />
-          </SliderRoot>
-          <div class="setting-row setting-row-compact">
-            <span class="setting-label">字重</span>
-            <span class="setting-value">{{ fontWeightLabel }}</span>
-          </div>
-          <SliderRoot
-            :model-value="[lyricStore.fontWeightIndex]"
-            :min="0"
-            :max="8"
-            :step="1"
-            class="settings-slider-root"
-            @update:model-value="(v) => v?.length && lyricStore.updateFontWeight(v[0])"
-          >
-            <SliderTrack class="settings-slider-track">
-              <SliderRange class="settings-slider-range" />
-            </SliderTrack>
-            <SliderThumb class="settings-slider-thumb" />
-          </SliderRoot>
-        </div>
-
-        <!-- 歌词对齐 -->
-        <div class="settings-section lyric-settings-card">
-          <div class="section-title">歌词对齐</div>
-          <div class="setting-row">
-            <div class="setting-text">
-              <span class="setting-label">微调步长</span>
-              <span class="setting-hint">前进 / 后退按钮每次调整的时间量</span>
-            </div>
-            <InputNumber
-              class="w-32"
-              :model-value="String(settingStore.lyricOffsetStep ?? 0.1)"
-              :min="0.1"
-              :max="5"
-              :step="0.1"
-              placeholder="0.1"
-              suffix="秒"
-              @update:model-value="
-                settingStore.lyricOffsetStep = Math.max(0.1, Math.min(5, Number($event) || 0.1))
-              "
-            />
-          </div>
-        </div>
-
-        <!-- 歌词颜色 -->
-        <div class="settings-section lyric-settings-card">
-          <div class="section-title">歌词颜色</div>
-          <div class="color-row">
-            <div class="color-item">
-              <div class="color-text">
-                <span class="color-label">已播字色</span>
-                <span class="color-hint">设置当前歌词已播颜色</span>
-              </div>
-              <button
-                class="color-swatch"
-                :style="{ backgroundColor: effectivePlayedColor }"
-                @click="lyricColorPicker.open('playedColor')"
-              ></button>
-            </div>
-            <div class="color-item">
-              <div class="color-text">
-                <span class="color-label">未播字色</span>
-                <span class="color-hint">设置当前歌词未播颜色</span>
-              </div>
-              <button
-                class="color-swatch"
-                :style="{ backgroundColor: effectiveUnplayedColor }"
-                @click="lyricColorPicker.open('unplayedColor')"
-              ></button>
-            </div>
-          </div>
-          <div class="color-actions">
-            <button
-              class="reset-btn"
-              :class="{ invisible: !hasCustomLyricColors }"
-              @click="lyricColorPicker.reset"
-            >
-              重置
-            </button>
-          </div>
-        </div>
-
-        <!-- 翻译/音译 -->
-        <div class="settings-section lyric-settings-card">
-          <div class="section-title">翻译</div>
-          <div class="setting-row">
-            <div class="setting-text">
-              <span class="setting-label">歌词来源</span>
-              <span class="setting-hint">
-                {{
-                  lyricStore.manualCandidateForCurrentHash
-                    ? '已手动选择当前歌词版本'
-                    : '使用智能推荐歌词版本'
-                }}
-              </span>
-            </div>
-            <Button
-              variant="ghost"
-              size="xs"
-              class="source-change-btn"
-              @click="lyricStore.sourceDialogOpen = true"
-            >
-              更换
-            </Button>
-          </div>
-          <div class="setting-row">
-            <div class="setting-text">
-              <span class="setting-label">翻译</span>
-              <span class="setting-hint">有翻译时显示翻译</span>
-            </div>
-            <Switch
-              :model-value="lyricStore.wantTranslation"
-              :disabled="!lyricStore.hasTranslation"
-              @update:model-value="handleTranslationToggle"
-            />
-          </div>
-          <div class="setting-row">
-            <div class="setting-text">
-              <span class="setting-label">音译</span>
-              <span class="setting-hint">有音译时显示音译</span>
-            </div>
-            <Switch
-              :model-value="lyricStore.wantRomanization"
-              :disabled="!lyricStore.hasRomanization"
-              @update:model-value="handleRomanizationToggle"
-            />
-          </div>
-          <div v-if="lyricStore.wantRomanization" class="setting-row">
-            <div class="setting-text">
-              <span class="setting-label">音译样式</span>
-              <span class="setting-hint">选择当前页面中音译的显示方式</span>
-            </div>
-            <Select
-              class="w-36"
-              :model-value="romanizationStyle"
-              :options="romanizationStyleOptions"
-              @update:model-value="romanizationStyle = $event as RomanizationStyle"
-            />
-          </div>
-        </div>
-
-        <!-- 背景 -->
-        <div class="settings-section lyric-settings-card">
-          <div class="section-title">显示</div>
-          <div class="setting-row">
-            <div class="setting-text">
-              <span class="setting-label">专辑动态封面</span>
-              <span class="setting-hint">仅用于歌词页封面模式，无资源时显示静态封面</span>
-            </div>
-            <Switch v-model="settingStore.lyricDynamicAlbumCover" />
-          </div>
-          <div class="setting-row">
-            <div class="setting-text">
-              <span class="setting-label">封面模糊背景</span>
-              <span class="setting-hint">使用封面作为沉浸式背景</span>
-            </div>
-            <Switch v-model="settingStore.lyricPageBackgroundBlur" />
-          </div>
-          <div class="setting-row">
-            <div class="setting-text">
-              <span class="setting-label">背景律动</span>
-              <span class="setting-hint">需开启封面模糊背景，此功能会增加性能消耗</span>
-            </div>
-            <Switch
-              v-model="settingStore.lyricPageBackgroundRhythm"
-              :disabled="!settingStore.lyricPageBackgroundBlur"
-            />
-          </div>
-          <div class="setting-row">
-            <div class="setting-text">
-              <span class="setting-label">歌词过滤</span>
-              <span class="setting-hint">隐藏制作信息与版权声明</span>
-            </div>
-            <Switch v-model="settingStore.lyricFilterEnabled" />
-          </div>
-        </div>
-
-        <!-- 写真模式专属设置 -->
-        <template v-if="currentMode === 'portrait'">
-          <div class="settings-section lyric-settings-card portrait-card">
-            <div class="section-title">写真设置</div>
-            <div class="setting-row setting-row-compact">
-              <span class="setting-label">背景透明度</span>
-              <span class="setting-value">{{ backdropOpacityLabel }}</span>
-            </div>
-            <SliderRoot
-              :model-value="[settingStore.lyricBackdropOpacity]"
-              :min="10"
-              :max="100"
-              :step="5"
-              class="settings-slider-root"
-              @update:model-value="(v) => v?.length && (settingStore.lyricBackdropOpacity = v[0])"
-            >
-              <SliderTrack class="settings-slider-track">
-                <SliderRange class="settings-slider-range" />
-              </SliderTrack>
-              <SliderThumb class="settings-slider-thumb" />
-            </SliderRoot>
-            <div class="setting-row">
-              <div class="setting-text">
-                <span class="setting-label">自动轮播</span>
-                <span class="setting-hint">多张写真时自动切换</span>
-              </div>
-              <Switch v-model="settingStore.lyricCarouselEnabled" />
-            </div>
-            <div class="setting-row">
-              <div class="setting-text">
-                <span class="setting-label">无写真时展示封面</span>
-                <span class="setting-hint">没有写真图片时使用歌曲封面填充背景</span>
-              </div>
-              <Switch v-model="settingStore.lyricPortraitFallbackCover" />
-            </div>
-            <template v-if="settingStore.lyricCarouselEnabled">
-              <div class="setting-row setting-row-compact">
-                <span class="setting-label">轮播间隔</span>
-                <span class="setting-value">{{ carouselIntervalLabel }}</span>
-              </div>
-              <SliderRoot
-                :model-value="[settingStore.lyricCarouselInterval]"
-                :min="5"
-                :max="60"
-                :step="5"
-                class="settings-slider-root"
-                @update:model-value="
-                  (v) => v?.length && (settingStore.lyricCarouselInterval = v[0])
-                "
-              >
-                <SliderTrack class="settings-slider-track">
-                  <SliderRange class="settings-slider-range" />
-                </SliderTrack>
-                <SliderThumb class="settings-slider-thumb" />
-              </SliderRoot>
-            </template>
-            <div class="setting-row">
-              <div class="setting-text">
-                <span class="setting-label">歌词自动收起</span>
-                <span class="setting-hint">无操作后收起到底部两行</span>
-              </div>
-              <Switch v-model="settingStore.lyricAutoCollapseEnabled" />
-            </div>
-            <div class="setting-row">
-              <div class="setting-text">
-                <span class="setting-label">收起时隐藏控制栏</span>
-                <span class="setting-hint">让写真画面更干净</span>
-              </div>
-              <Switch v-model="settingStore.lyricCollapseHideControls" />
-            </div>
+          <div v-else class="skin-settings-empty">
+            当前皮肤没有可用的自定义设置。
+            <br />
+            可前往「全局设置 → 页面歌词」调整外观选项。
           </div>
         </template>
       </div>
     </div>
   </Drawer>
-
-  <!-- 颜色选择器对话框 -->
-  <ColorPickerDialog
-    :open="lyricColorPicker.isOpen.value"
-    :title="lyricColorPicker.activeTitle.value"
-    :value="lyricColorPicker.activeValue.value"
-    :presets="lyricColorPicker.presets"
-    :dynamic-option="lyricColorPicker.dynamicOption.value"
-    @update:open="(open: boolean) => !open && lyricColorPicker.close()"
-    @confirm="lyricColorPicker.apply"
-  />
 </template>
 
 <style>
-/* Drawer 面板样式：跟随主题 */
+/* Drawer 面板样式：与其他抽屉保持一致的安全区与边距（不遮挡标题栏 / 播放器，不贴边），跟随主题 */
 .drawer-panel.lyric-settings-panel {
-  top: var(--drawer-safe-top);
-  right: 12px;
-  bottom: var(--drawer-safe-bottom);
-  width: min(360px, calc(100vw - 24px));
-  border-radius: 12px;
-  border-color: var(--lyric-settings-panel-border, var(--border-subtle));
-  box-shadow: var(--shadow-dialog);
-  overflow: hidden;
+  top: var(--drawer-safe-top) !important;
+  right: 12px !important;
+  bottom: var(--drawer-safe-bottom) !important;
+  width: min(360px, calc(100vw - 24px)) !important;
+  border-radius: 12px !important;
+  background: var(--lyric-settings-panel-bg, var(--color-bg-dialog)) !important;
+  border-color: var(--lyric-settings-panel-border, var(--border-subtle)) !important;
+  box-shadow: var(--shadow-dialog) !important;
+  overflow: hidden !important;
 }
 
 @media (max-width: 420px) {
   .drawer-panel.lyric-settings-panel {
     --drawer-top-gap: 16px;
     --drawer-bottom-gap: -4px;
-    right: 8px;
-    width: min(360px, calc(100vw - 16px));
+    right: 8px !important;
+    width: min(360px, calc(100vw - 16px)) !important;
   }
 }
 
 .dark .lyric-settings-panel {
+  --lyric-settings-panel-bg: color-mix(
+    in srgb,
+    var(--surface-elevated-base) 96%,
+    var(--surface-dialog-base) 4%
+  );
   --lyric-settings-panel-border: rgba(255, 255, 255, 0.14);
 }
 
@@ -437,7 +294,6 @@ const close = () => {
   --lyric-settings-card-bg: color-mix(in srgb, var(--surface-card-base) 96%, var(--text-main) 4%);
   --lyric-settings-card-border: var(--border-subtle);
   --lyric-settings-card-shadow: none;
-  --lyric-settings-control-border: var(--control-border);
 
   display: flex;
   flex-direction: column;
@@ -458,7 +314,6 @@ const close = () => {
   --lyric-settings-card-border: rgba(255, 255, 255, 0.16);
   --lyric-settings-card-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 8px 20px rgba(0, 0, 0, 0.12);
-  --lyric-settings-control-border: rgba(255, 255, 255, 0.16);
 }
 
 .settings-header {
@@ -502,6 +357,29 @@ const close = () => {
   transition: all 0.2s;
 }
 
+.settings-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.settings-header-action {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  color: var(--color-text-main);
+  opacity: 0.55;
+  transition: all 0.2s;
+}
+
+.settings-header-action:hover {
+  opacity: 1;
+  background: var(--control-hover-bg);
+}
+
 .settings-close-btn:hover {
   opacity: 1;
   background: var(--control-hover-bg);
@@ -521,21 +399,23 @@ const close = () => {
   display: none;
 }
 
-.settings-section {
+/* 换肤面板 */
+.skin-groups {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 16px;
 }
 
-.lyric-settings-card {
-  padding: 14px 14px 12px;
-  border-radius: 18px;
-  background: var(--lyric-settings-card-bg);
-  border: 1px solid var(--lyric-settings-card-border);
-  box-shadow: var(--lyric-settings-card-shadow);
+.skin-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
-.section-title {
+.skin-group-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   font-size: 11px;
   font-weight: 700;
   color: var(--color-text-secondary);
@@ -543,187 +423,319 @@ const close = () => {
   letter-spacing: 0.06em;
 }
 
-.setting-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  min-height: 32px;
-  gap: 14px;
+.skin-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 12px;
 }
 
-.setting-row-compact {
-  min-height: 24px;
-}
-
-.setting-row .setting-text {
-  flex: 1;
-}
-
-.setting-text {
+.skin-card {
+  position: relative;
   display: flex;
   flex-direction: column;
-  gap: 3px;
-  min-width: 0;
-}
-
-.setting-label {
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--color-text-main);
-}
-
-.setting-hint {
-  font-size: 11px;
-  line-height: 1.35;
-  color: var(--color-text-secondary);
-}
-
-.setting-value {
-  font-size: 12px;
-  font-weight: 600;
-  font-family: monospace;
-  color: var(--color-text-secondary);
-}
-
-.lyric-settings-card .settings-slider-root {
-  margin: 2px 0 4px;
-}
-
-.setting-slider {
-  width: 100%;
-}
-
-.settings-slider-root {
-  position: relative;
-  display: flex;
-  align-items: center;
-  width: 100%;
-  height: 24px;
-  touch-action: none;
-  user-select: none;
-  cursor: pointer;
-}
-
-.settings-slider-track {
-  position: relative;
-  flex-grow: 1;
-  height: 4px;
-  border-radius: 9999px;
-  background-color: var(--control-track-bg);
-}
-
-.settings-slider-range {
-  position: absolute;
-  height: 100%;
-  border-radius: 9999px;
-  background-color: var(--color-primary);
-}
-
-.settings-slider-thumb {
-  display: block;
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  background-color: var(--control-thumb-bg);
-  border: 1px solid var(--control-border);
-  box-shadow: var(--shadow-control);
-  outline: none;
-}
-
-.mode-switcher {
-  display: flex;
-  gap: 4px;
-  padding: 3px;
-  background: var(--control-muted-bg);
-  border-radius: 12px;
-}
-
-.mode-option {
-  flex: 1;
-  padding: 8px 12px;
-  border-radius: 9px;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--color-text-secondary);
-  text-align: center;
+  gap: 7px;
+  padding: 10px;
+  border-radius: 16px;
+  background: var(--lyric-settings-card-bg);
+  border: 1px solid var(--lyric-settings-card-border);
+  box-shadow: var(--lyric-settings-card-shadow);
   cursor: pointer;
   transition: all 0.2s ease;
+  text-align: left;
 }
 
-.mode-option:hover {
-  color: var(--color-text-main);
+.skin-card:hover {
+  border-color: color-mix(in srgb, var(--color-primary) 55%, transparent);
+  transform: translateY(-1px);
 }
 
-.mode-option.active {
-  color: var(--color-text-main);
-  background: var(--color-bg-elevated);
-  box-shadow: var(--shadow-control);
+.skin-card.active {
+  border-color: var(--color-primary);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--color-primary) 70%, transparent),
+    0 6px 18px color-mix(in srgb, var(--color-primary) 18%, transparent);
 }
 
-.color-row {
-  display: grid;
-  gap: 12px;
+.skin-card.unavailable {
+  opacity: 0.45;
+  cursor: default;
 }
 
-.color-item {
+.skin-card.unavailable:hover {
+  border-color: var(--lyric-settings-card-border);
+  transform: none;
+}
+
+.skin-card-preview {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border-radius: 11px;
+  overflow: hidden;
+  background: #1a1d22;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, white 8%, transparent);
+}
+
+.skin-card-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.skin-card-preview::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(180deg, color-mix(in srgb, white 10%, transparent), transparent 32%);
+  pointer-events: none;
+}
+
+.skin-card-placeholder {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 10px 12px;
-  border-radius: 14px;
-  background: var(--control-bg);
-  border: 1px solid var(--lyric-settings-control-border);
+  justify-content: center;
+  width: 100%;
+  height: 100%;
 }
 
-.color-text {
+.skin-card-icon {
+  color: rgba(255, 255, 255, 0.7);
+  filter: drop-shadow(0 1px 8px rgba(0, 0, 0, 0.35));
+}
+
+/* ===== 内置皮肤 CSS 缩略图 ===== */
+.skin-thumb {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #121418;
+}
+
+/* 封面模式：左专辑封面 + 右歌词行 */
+.skin-thumb--cover {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
+  align-items: center;
+  gap: 10px;
+  padding: 0 12px;
+  background: linear-gradient(135deg, #1b1f27, #101216);
 }
-
-.color-label {
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--color-text-secondary);
-}
-
-.color-hint {
-  font-size: 11px;
-  color: var(--color-text-secondary);
-}
-
-.color-swatch {
+.thumb-cover-art {
+  flex-shrink: 0;
   width: 34px;
   height: 34px;
-  border-radius: 50%;
-  border: 1px solid var(--lyric-settings-control-border);
-  cursor: pointer;
-  transition: transform 0.15s ease;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+  border-radius: 7px;
+  background: linear-gradient(135deg, #5b8def, #8b5cf6 55%, #ec4899);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
 }
-
-.color-swatch:hover {
-  transform: scale(1.08);
-}
-
-.color-actions {
+.thumb-cover-lines {
   display: flex;
-  justify-content: flex-end;
-  min-height: 18px;
-  padding-top: 2px;
+  flex-direction: column;
+  gap: 5px;
+  flex: 1;
+}
+.thumb-cover-lines span {
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.22);
+}
+.thumb-cover-lines span:nth-child(1) {
+  width: 80%;
+}
+.thumb-cover-lines span:nth-child(2) {
+  width: 55%;
+  background: rgba(255, 255, 255, 0.4);
+}
+.thumb-cover-lines span:nth-child(3) {
+  width: 65%;
 }
 
-.reset-btn {
-  min-height: 18px;
+/* 写真模式：竖版大图 + 底部歌词 */
+.skin-thumb--portrait {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 8px;
+  gap: 6px;
+  background: linear-gradient(160deg, #2a2230, #14111a);
+}
+.thumb-portrait-img {
+  width: 30px;
+  height: 38px;
+  border-radius: 5px;
+  background: linear-gradient(160deg, #f472b6, #a78bfa 50%, #60a5fa);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.45);
+}
+.thumb-portrait-lines {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+}
+.thumb-portrait-lines span {
+  height: 3px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.28);
+}
+.thumb-portrait-lines span:nth-child(1) {
+  width: 70%;
+}
+.thumb-portrait-lines span:nth-child(2) {
+  width: 45%;
+}
+
+/* 歌词模式：居中多行歌词，当前行高亮 */
+.skin-thumb--lyric {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background: radial-gradient(circle at 50% 40%, #1f2937, #0d1117);
+}
+.thumb-lyric-lines {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 0 10px;
+}
+.thumb-lyric-lines span {
+  height: 5px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.18);
+}
+.thumb-lyric-lines span:nth-child(1) {
+  width: 50%;
+}
+.thumb-lyric-lines span.is-current {
+  width: 78%;
+  height: 6px;
+  background: linear-gradient(90deg, #fff, rgba(255, 255, 255, 0.7));
+  box-shadow: 0 0 10px rgba(255, 255, 255, 0.35);
+}
+.thumb-lyric-lines span:nth-child(3) {
+  width: 60%;
+}
+.thumb-lyric-lines span:nth-child(4) {
+  width: 40%;
+}
+
+/* Apple Music 模式：渐变背景 + 发光大字歌词 */
+.skin-thumb--amll {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  background: linear-gradient(135deg, #ec4899 0%, #8b5cf6 45%, #3b82f6 100%);
+}
+.thumb-amll-lines {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  padding: 0 12px;
+}
+.thumb-amll-lines span {
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.5);
+}
+.thumb-amll-lines span:nth-child(1) {
+  width: 55%;
+}
+.thumb-amll-lines span.is-current {
+  width: 85%;
+  height: 7px;
+  background: #fff;
+  box-shadow: 0 0 14px rgba(255, 255, 255, 0.7);
+}
+.thumb-amll-lines span:nth-child(3) {
+  width: 65%;
+}
+
+.skin-card-check {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  color: white;
+  background: var(--color-primary);
+  box-shadow:
+    0 1px 6px color-mix(in srgb, var(--color-primary) 55%, transparent),
+    inset 0 0 0 1px color-mix(in srgb, white 22%, transparent);
+  z-index: 1;
+  transition: opacity 0.15s ease;
+}
+
+/* 已选中皮肤卡片：hover 时显示设置图标，提示再次点击可进入设置 */
+.skin-card-settings {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  color: white;
+  background: var(--color-primary);
+  box-shadow:
+    0 1px 6px color-mix(in srgb, var(--color-primary) 55%, transparent),
+    inset 0 0 0 1px color-mix(in srgb, white 22%, transparent);
+  z-index: 1;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.skin-card.active:hover .skin-card-check {
+  opacity: 0;
+}
+
+.skin-card.active:hover .skin-card-settings {
+  opacity: 1;
+}
+
+.skin-card-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-main);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.skin-card-unavailable-label {
   font-size: 11px;
   font-weight: 600;
   color: var(--color-text-secondary);
-  transition: color 0.2s;
+  line-height: 1;
 }
 
-.reset-btn:hover {
-  color: var(--color-primary-text);
+/* 皮肤设置视图 */
+.skin-settings-wrap {
+  display: flex;
+  flex-direction: column;
+  padding: 4px 4px 8px;
+}
+
+.skin-settings-empty {
+  padding: 24px 16px;
+  text-align: center;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--color-text-secondary);
 }
 </style>
