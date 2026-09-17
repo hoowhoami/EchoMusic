@@ -5,7 +5,9 @@ import type {
   PluginListResult,
 } from '../../../shared/plugins';
 import { logger } from '@/utils/logger';
+import { useSettingStore } from '@/stores/setting';
 import { executePluginCommand, removePluginContributions } from '../registry';
+import { isLyricsPageKeyOwnedBy } from '../lyricsPage';
 import type { EchoPluginContext, PluginRuntimeHost } from './context';
 import {
   importPluginModule,
@@ -587,6 +589,8 @@ export const uninstallRuntimePlugin = async (pluginId: string) => {
   if (!result?.ok) {
     throw new Error(result?.error || '插件卸载失败');
   }
+  // 仅卸载路径清理皮肤配置：禁用/启用（refreshPlugins 走 deactivatePlugin）必须保留用户设置
+  useSettingStore().removeLyricSkinConfigsWhere((key) => isLyricsPageKeyOwnedBy(key, pluginId));
   await refreshPlugins();
   return result.pluginId;
 };

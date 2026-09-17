@@ -266,7 +266,7 @@ export const initNowPlayingSync = async () => {
         playerStore.setVolume(Math.min(100, Math.max(0, command.value)));
         syncPlaybackSnapshot();
       } else if (command.type === 'adjustVolume') {
-        playerStore.adjustVolume(command.value);
+        playerStore.adjustVolume(command.delta);
         syncPlaybackSnapshot();
       }
       return;

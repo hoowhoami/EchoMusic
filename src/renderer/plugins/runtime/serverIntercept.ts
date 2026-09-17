@@ -3,6 +3,7 @@ import type {
   PluginServerInterceptOptions,
   PluginServerInterceptor,
   PluginServerMatcher,
+  PluginServerNext,
   PluginServerRequest,
   PluginServerResponse,
 } from '../../../shared/plugins';
@@ -30,6 +31,9 @@ const isValidServerResponse = (value: unknown): value is PluginServerResponse =>
  * next 由执行器保证幂等，因此 catch 中可无脑 return next()：
  * - 调用 next 之前抛错 → 正常放行出网；
  * - await next() 之后加工响应时抛错 → 返回同一个下游结果，不会重复出网。
+ *
+ * 透传识别：插件未捕获直接 return next() 时，下游的真实网络错误会从 handler 抛出。
+ * 通过记录下游 rejection 的错误身份并在 catch 中比对，这类失败不再被误报为插件错误。
  */
 const wrapSafe =
   (
@@ -38,12 +42,26 @@ const wrapSafe =
     reportError: ServerInterceptApiDeps['reportPluginRuntimeError'],
   ): PluginServerInterceptor =>
   async (request, next) => {
+    let downstream: Promise<PluginServerResponse> | undefined;
+    let downstreamError: unknown;
+    // 录制 rejection 的原始错误；注册先于 handler 的 await，因此 wrapSafe 的 catch
+    // 执行时 downstreamError 必已就位。
+    const trackNext: PluginServerNext = (...args) => {
+      downstream ??= next(...args).catch((error) => {
+        downstreamError = error;
+        throw error;
+      });
+      return downstream;
+    };
     try {
-      const result = await handler(request, next);
-      return isValidServerResponse(result) ? result : next();
+      const result = await handler(request, trackNext);
+      return isValidServerResponse(result) ? result : trackNext();
     } catch (error) {
+      if (downstream && downstreamError !== undefined && error === downstreamError) {
+        return downstream; // 插件透传的下游失败：不上报，原样继续向上传播
+      }
       reportError(pluginId, error, '服务请求拦截器');
-      return next();
+      return trackNext();
     }
   };
 

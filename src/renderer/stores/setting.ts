@@ -775,6 +775,13 @@ export const useSettingStore = defineStore('setting', {
       delete next[skinKey];
       this.lyricsPageSkinConfigs = next;
     },
+    /** 按 key 谓词批量清理皮肤配置（如卸载插件时移除其孤儿配置），键格式知识归 lyricsPage 模块。 */
+    removeLyricSkinConfigsWhere(predicate: (skinKey: string) => boolean) {
+      const entries = Object.entries(this.lyricsPageSkinConfigs);
+      const kept = entries.filter(([skinKey]) => !predicate(skinKey));
+      if (kept.length === entries.length) return;
+      this.lyricsPageSkinConfigs = Object.fromEntries(kept);
+    },
   },
   persist: {
     omit: [

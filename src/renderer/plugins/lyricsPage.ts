@@ -107,6 +107,19 @@ export function retryLyricsPage(key: string) {
   if (entry) failed.delete(entry.revision);
 }
 
+/**
+ * 判断皮肤配置 key 是否属于某插件（key 由本模块以 JSON.stringify([pluginId, id]) 生成）。
+ * 供卸载插件时清理其孤儿皮肤配置使用；宿主内置 key（'host:*'）与非法 key 一律不属于插件。
+ */
+export function isLyricsPageKeyOwnedBy(key: string, pluginId: string): boolean {
+  try {
+    const [ownerId] = JSON.parse(key) as unknown[];
+    return ownerId === pluginId;
+  } catch {
+    return false;
+  }
+}
+
 /** Revoke retained action callbacks when the owning page is replaced or unmounted. */
 export function scopeLyricsPageContext(
   page: LyricsPageContext,

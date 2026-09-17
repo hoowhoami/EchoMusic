@@ -7,6 +7,7 @@ import {
   hasServerInterceptors,
   runServerInterceptorChain,
 } from './serverInterceptors';
+import type { PluginServerRequest } from '../../shared/plugins';
 import { getPayloadSize, maskSensitiveText, stringifyForLog } from '../../shared/logging';
 import { requestKugouVerification, type KugouVerificationChallenge } from './kugouVerification';
 
@@ -39,6 +40,8 @@ interface RequestConfig {
 
 interface InternalRequestOptions {
   retriedAfterKugouVerification?: boolean;
+  /** 显式指定的请求来源；验证重试等异步续体必须传此值，不能依赖 ambient 标记 */
+  origin?: PluginServerRequest['origin'];
 }
 
 // --- 拦截器逻辑（从原 axios 版本保留） ---
@@ -211,16 +214,20 @@ const ipcRequest = async (
   // 仅处理 host 来源请求；插件经 ctx.kugou 发起的请求标记为 plugin 来源，直接绕过链。
   // 拦截器可在 IPC 序列化之前修改 params/data/headers/url（主进程会基于新值重算签名），
   // 也可不调用 next 直接短路返回 Mock/转发响应。
-  const origin = getCurrentRequestOrigin();
+  // 来源在同步入口段读取一次（此时 runWithRequestOrigin 的同步标记仍生效）；
+  // 验证重试等异步续体经 options.origin 显式传递，避免读回宿主默认值把插件请求放进拦截链。
+  const origin = options?.origin ?? getCurrentRequestOrigin();
   try {
     if (origin.type === 'host' && hasServerInterceptors()) {
       response = await runServerInterceptorChain(
         {
           method,
           url,
-          params,
+          // 传入宿主侧副本：插件直接原地修改 request.params/headers 不会污染
+          // 本函数后续用于日志的局部变量（修改仍会随链正常传递给 sender）。
+          params: { ...params },
           ...(ipcConfig.data !== undefined ? { data: ipcConfig.data } : {}),
-          headers,
+          headers: { ...headers },
           origin,
         },
         (req) =>
@@ -326,7 +333,9 @@ const ipcRequest = async (
         }),
       );
       logger.info('API', `Kugou verification passed, retrying ${url}`);
-      return ipcRequest(method, url, config, { retriedAfterKugouVerification: true });
+      // 重试沿用原始请求的来源：此处已处于异步续体，ambient 标记早已恢复为 host，
+      // 显式透传可避免插件来源请求被放进拦截链。
+      return ipcRequest(method, url, config, { retriedAfterKugouVerification: true, origin });
     }
   }
 
