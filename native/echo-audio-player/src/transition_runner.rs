@@ -182,6 +182,9 @@ pub struct TransitionRunner {
     midpoint_logged: bool,
     b_decoded_position_secs: f64,
     speed_change_released: bool,
+    /// Processed B audio waiting to be queued at hand-off. Survives `Continue`
+    /// from a full output queue so `finish` can retry without dropping samples.
+    handoff_samples: Vec<f32>,
 }
 
 struct RearmInfo {
@@ -285,6 +288,7 @@ impl TransitionRunner {
             midpoint_logged: false,
             b_decoded_position_secs: plan.b_start_secs,
             speed_change_released: false,
+            handoff_samples: Vec::new(),
         })
     }
 
@@ -568,6 +572,34 @@ impl TransitionRunner {
     }
 
     fn finish(&mut self, shared: &SharedAudio) -> RunnerStep {
+        // Drain leftover B through the incoming DSP graph before Promote: mixed
+        // chunks after Promote bypass DSP, so pending audio would skip the filter.
+        // Process one pending chunk at a time so a cancelled DSP request can retry
+        // the rest on the next finish() call.
+        while !self.b.pending.is_empty() {
+            let chunk = self.b.pending.remove(0);
+            self.b_decoded_position_secs =
+                decoded_chunk_end_secs(&chunk, self.b_decoded_position_secs);
+            self.scratch = match self.filter_deck(
+                shared,
+                DeckFilterOperation::Process {
+                    incoming: true,
+                    chunk,
+                },
+            ) {
+                Ok(samples) => samples,
+                Err(err) => {
+                    return if shared.should_stop_decoding()
+                        || !shared.is_decode_generation_current(self.generation)
+                    {
+                        RunnerStep::Continue
+                    } else {
+                        RunnerStep::Failed(err)
+                    };
+                }
+            };
+            self.handoff_samples.append(&mut self.scratch);
+        }
         if !self.post_gain_marked {
             // This ordered request also waits for all earlier mixed output to be queued,
             // so the gain marker cannot overlook a block in flight in the filter worker.
@@ -593,16 +625,23 @@ impl TransitionRunner {
                 ),
             );
         }
-        // Whatever B audio the mixer did not consume continues as plain mix-format audio.
+        // Mixer remainder is drained at most once; park it on handoff_samples so a
+        // later Continue from a cancelled DSP request still has the leftover B audio.
         let remainder = self.mixer.take_b_remainder();
         if !remainder.is_empty() {
-            let frames = remainder.len() / self.mix_format.channels.max(1);
+            self.handoff_samples.extend(remainder);
+        }
+        if !self.handoff_samples.is_empty() {
+            let samples = std::mem::take(&mut self.handoff_samples);
+            let frames = samples.len() / self.mix_format.channels.max(1);
+            if !self.push_mixed(shared, samples) {
+                // push_mixed only returns false when the generation is dying, so
+                // dropping here is the same as abandoning the mix.
+                return RunnerStep::Continue;
+            }
             self.b.position_secs += frames as f64 * f64::from(self.speed)
                 / f64::from(self.mix_format.sample_rate.max(1));
             self.b.produced_frames += (frames as f64 * f64::from(self.speed)).round() as u64;
-            if !self.push_mixed(shared, remainder) {
-                return RunnerStep::Continue;
-            }
         }
         // The incoming graph (including resampler and tempo state) is retained by the
         // filter worker. Do not flush/recreate it at this handoff.
@@ -614,17 +653,6 @@ impl TransitionRunner {
                 shared.mark_track_boundary_continuous(info);
             }
             self.boundary_marked = true;
-        }
-        // Any B chunks decoded ahead but not fed (should be none) are re-queued by the caller.
-        let leftover = std::mem::take(&mut self.b.pending);
-        for chunk in leftover {
-            self.b.position_secs = decoded_chunk_end_secs(&chunk, self.b.position_secs);
-            self.b_decoded_position_secs =
-                decoded_chunk_end_secs(&chunk, self.b_decoded_position_secs);
-            self.b.produced_frames += chunk.frames as u64;
-            if !shared.push_decoded_chunk_for_generation(chunk, self.generation) {
-                break;
-            }
         }
         RunnerStep::Finished(TransitionHandoff {
             decoder: *decoder,

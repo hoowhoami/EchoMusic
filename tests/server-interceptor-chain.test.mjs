@@ -16,6 +16,7 @@ const bundle = await build({
         runServerInterceptorChain,
         runWithRequestOrigin,
         getCurrentRequestOrigin,
+        isValidServerResponse,
       } from './src/renderer/utils/serverInterceptors';
       export { createServerInterceptApi } from './src/renderer/plugins/runtime/serverIntercept';
       export { isNowPlayingCommand } from './src/shared/nowPlaying';
@@ -57,6 +58,7 @@ const {
   runServerInterceptorChain,
   runWithRequestOrigin,
   getCurrentRequestOrigin,
+  isValidServerResponse,
   createServerInterceptApi,
   isNowPlayingCommand,
   isLyricsPageKeyOwnedBy,
@@ -303,6 +305,29 @@ test('interceptor without capability or with invalid return falls through safely
   assert.equal(hasServerInterceptors(), true);
 });
 
+test('non-HTTP status values fall through instead of short-circuiting', async () => {
+  assert.equal(isValidServerResponse({ status: 200, body: null }), true);
+  assert.equal(isValidServerResponse({ status: 404 }), true);
+  assert.equal(isValidServerResponse({ status: 0 }), false);
+  assert.equal(isValidServerResponse({ status: Number.NaN }), false);
+  assert.equal(isValidServerResponse({ status: 99 }), false);
+  assert.equal(isValidServerResponse({ status: 600 }), false);
+
+  let sent = 0;
+  disposers.push(
+    registerServerInterceptor('bad-status', async () => ({ status: 0, body: 'not http' })),
+  );
+  const response = await runServerInterceptorChain(
+    { method: 'GET', url: '/x', params: {}, headers: {}, origin: { type: 'host' } },
+    async (req) => {
+      sent += 1;
+      return okSender(req);
+    },
+  );
+  assert.equal(sent, 1);
+  assert.equal(response.status, 200);
+});
+
 test('request origin marker is captured in sync segment and restored immediately', async () => {
   assert.deepEqual(getCurrentRequestOrigin(), { type: 'host' });
   const captured = runWithRequestOrigin({ type: 'plugin', pluginId: 'p' }, () =>
@@ -324,6 +349,28 @@ test('request origin marker is captured in sync segment and restored immediately
   await promise;
   assert.deepEqual(syncObserved, { type: 'plugin', pluginId: 'p' });
   assert.deepEqual(asyncObserved, { type: 'host' });
+});
+
+test('plugin interceptor re-entry sees plugin origin in the sync segment', async () => {
+  const { api } = createPluginInterceptor();
+  let syncObserved;
+  let asyncObserved;
+  disposers.push(
+    api.intercept(async (req, next) => {
+      syncObserved = getCurrentRequestOrigin();
+      await Promise.resolve();
+      asyncObserved = getCurrentRequestOrigin();
+      return next();
+    }),
+  );
+  const response = await runServerInterceptorChain(
+    { method: 'GET', url: '/x', params: {}, headers: {}, origin: { type: 'host' } },
+    okSender,
+  );
+  assert.equal(response.status, 200);
+  assert.deepEqual(syncObserved, { type: 'plugin', pluginId: 'test-plugin' });
+  assert.deepEqual(asyncObserved, { type: 'host' });
+  assert.deepEqual(getCurrentRequestOrigin(), { type: 'host' });
 });
 
 test('isNowPlayingCommand validates string and object commands including adjustVolume delta', () => {

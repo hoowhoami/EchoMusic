@@ -258,6 +258,7 @@ watch(pluginPage, (next, previous) => {
   // 仅当 provider 指向自定义皮肤但解析失败时才提示；用户主动切换到内置皮肤不提示
   if (previous && !next && !settingStore.lyricsPageProvider.startsWith(HOST_SKIN_PREFIX)) {
     toastStore.warning('自定义歌词页不可用，已恢复默认歌词页');
+    settingStore.lyricsPageProvider = `${HOST_SKIN_PREFIX}cover`;
   }
 });
 

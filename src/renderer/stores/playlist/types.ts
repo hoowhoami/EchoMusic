@@ -16,8 +16,20 @@ export type PlaybackQueueType =
   | 'manual'
   | 'purchased';
 
-export type PersonalFmMode = 'normal' | 'small' | 'peak';
+export type PersonalFmMode = 'normal' | 'small' | 'peak' | 'radio';
 export type PersonalFmSongPoolId = 0 | 1 | 2;
+export type PersonalFmAction =
+  | 'play'
+  | 'login'
+  | 'garbage'
+  | 'cancel_garbage'
+  | 'click_red'
+  | 'cancel_red'
+  | 'download'
+  | 'black_singer'
+  | 'cancel_black_singer'
+  | 'update_recommend_source'
+  | 'change_song_pool';
 
 export interface PlaybackQueueMetaValueMap {
   [key: string]: string | number | boolean | null | undefined;

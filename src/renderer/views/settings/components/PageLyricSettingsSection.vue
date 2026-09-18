@@ -132,15 +132,6 @@ const offsetStepOptions = [0.1, 0.25, 0.5, 1, 2].map((value) => ({
         </div>
       </div>
     </template>
-    <div class="settings-divider"></div>
-    <div class="settings-item">
-      <div class="space-y-1">
-        <h3 class="font-semibold">各皮肤外观设置</h3>
-        <p class="text-sm text-text-secondary">
-          字号、字重、歌词颜色、动态封面、写真细节等属于各皮肤的专属设置，请在歌词页点右上角「换肤」，选中皮肤后再点卡片进入调整
-        </p>
-      </div>
-    </div>
   </SettingsSectionShell>
 </template>
 

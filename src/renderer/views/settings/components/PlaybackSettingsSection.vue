@@ -274,6 +274,21 @@ const handleRemoveImpulseResponse = (id: string) => {
         />
       </div>
     </template>
+    <template v-if="trackTransitionMode === 'automix-pro'">
+      <div class="settings-divider"></div>
+      <div class="settings-item">
+        <div class="space-y-1">
+          <h3 class="font-semibold">对齐节拍</h3>
+          <p class="text-sm text-text-secondary">
+            将当前歌曲尾声微调到下一首的速度，关闭时保持原速
+          </p>
+        </div>
+        <Switch
+          :model-value="settingStore.automixMatchTempo"
+          @update:model-value="settingStore.setAutomixMatchTempo"
+        />
+      </div>
+    </template>
     <div class="settings-divider"></div>
     <div class="settings-item">
       <div class="space-y-1">

@@ -203,7 +203,12 @@ const ipcRequest = async (
   };
 
   if (config?.data) {
-    ipcConfig.data = config.data;
+    const data = config.data;
+    ipcConfig.data = Array.isArray(data)
+      ? [...data]
+      : data && typeof data === 'object' && Object.getPrototypeOf(data) === Object.prototype
+        ? { ...data }
+        : data;
   }
 
   const startTime = performance.now();
@@ -311,8 +316,10 @@ const ipcRequest = async (
     }
   }
 
-  // 响应拦截：auth 过期检测
-  handleAuthExpired(url, response.status, response.body);
+  // 响应拦截：auth 过期检测。Mock 短路响应不是真实上游结果，不能据此弹登录过期。
+  if (!response.mocked) {
+    handleAuthExpired(url, response.status, response.body);
+  }
 
   if (
     !skipKugouVerification &&

@@ -8,9 +8,10 @@
 //!   boundaries, without silence trimming.
 //! * **Natural blend** – unchanged tempo, short bar-counted overlap and downbeat-aligned
 //!   cues, with gain/bass exchange or filter/echo effects for differing tempos.
-//! * **Rhythm blend** – evaluates tempo adjustment, selects overlap bars from the tempo
-//!   ratio, prefers section boundaries and uses multi-band effects. Missing or
-//!   incompatible beat grids fall back to a fixed filter blend.
+//! * **Rhythm blend** – keeps the outgoing tempo. Close tempos use bar-counted
+//!   overlap and multi-band effects; residual outside ±1 % falls back to a
+//!   filter mix so the first song never rushes or drags. Missing beat grids
+//!   use the same filter mix.
 
 use super::analysis::TrackAnalysis;
 use super::plan::PlanTemplate;
@@ -40,7 +41,7 @@ const SHORT_BLEND_RATIO_BANDS: [(f64, f64); 2] = [(0.64, 0.85), (1.493, 1.8)];
 const TEMPO_MULTIPLIERS: [f64; 5] = [3.0, 2.0, 1.0, 0.5, 1.0 / 3.0];
 /// Tempo ratio tolerance below which no stretch is applied.
 const NO_STRETCH_TOLERANCE: f64 = 0.01;
-/// Maximum tempo adjustment applied to the outgoing track: ±8 %.
+/// Maximum tempo adjustment applied to the outgoing track when match-tempo is on: ±8 %.
 const MAX_STRETCH_RATIO: f64 = 1.08;
 const MIN_STRETCH_RATIO: f64 = 0.92;
 /// Basic mode accepts tracks whose tempos differ by at most this much without stretching.
@@ -458,18 +459,27 @@ fn pro_plan(request: &TransitionRequest<'_>) -> TransitionPlan {
     let (Some(bpm_a), Some(bpm_b), true) = (a.bpm, b.bpm, grids_ok) else {
         return filter_fallback_plan(request, "pro: no beat grid → layered filter fallback");
     };
-    // Select unchanged playback or a bounded tempo adjustment.
+    // Stretching A is opt-in (`match_tempo`): speeding a song the listener already
+    // knows is heard as a rush. Default is a filter mix whenever the residual is
+    // outside the no-stretch band.
     let raw_ratio = f64::from(bpm_b) / f64::from(bpm_a);
     let (ratio, speed_mode) = tempo_ratio_and_mode(bpm_a, bpm_b);
     let (speed_type, a_tempo_ratio) = if (ratio - 1.0).abs() <= NO_STRETCH_TOLERANCE {
         (SpeedType::None, 1.0)
-    } else if (MIN_STRETCH_RATIO..=MAX_STRETCH_RATIO).contains(&ratio) {
-        // Stretch A (the outgoing deck) so its beats land on B's grid.
+    } else if request.settings.match_tempo && (MIN_STRETCH_RATIO..=MAX_STRETCH_RATIO).contains(&ratio)
+    {
         (SpeedType::TempoMatch, ratio)
     } else {
         return filter_fallback_plan(
             request,
-            &format!("pro: residual tempo ratio {ratio:.3} (mode {speed_mode}) outside stretch range → layered filter fallback"),
+            &format!(
+                "pro: residual tempo ratio {ratio:.3} (mode {speed_mode}) {} → layered filter fallback",
+                if request.settings.match_tempo {
+                    "outside stretch range"
+                } else {
+                    "match-tempo off"
+                }
+            ),
         );
     };
     // Select the entry window from the raw tempo ratio before half/double-time folding.
@@ -630,7 +640,19 @@ mod tests {
     }
 
     fn settings(mode: TransitionMode, fade_secs: f32) -> TransitionSettings {
-        TransitionSettings { mode, fade_secs }
+        TransitionSettings {
+            mode,
+            fade_secs,
+            match_tempo: false,
+        }
+    }
+
+    fn settings_match_tempo(mode: TransitionMode, fade_secs: f32) -> TransitionSettings {
+        TransitionSettings {
+            mode,
+            fade_secs,
+            match_tempo: true,
+        }
     }
 
     #[test]
@@ -775,7 +797,27 @@ mod tests {
     }
 
     #[test]
-    fn pro_mode_tempo_matches_and_uses_four_bars_for_small_ratio() {
+    fn pro_mode_keeps_original_tempo_for_close_ratios_and_does_not_stretch() {
+        let a = analysis(240.0, 120.0, 0.5, vec![]);
+        let b = analysis(200.0, 120.5, 0.2, vec![]);
+        let plan = decide_transition(&TransitionRequest {
+            settings: settings(TransitionMode::AutomixPro, 5.0),
+            trigger: TransitionTrigger::EndOfTrack,
+            a: &a,
+            b: &b,
+            a_position_secs: 0.0,
+        })
+        .unwrap();
+        assert_eq!(plan.strategy, DecisionStrategy::Section);
+        assert_eq!(plan.speed_type, SpeedType::None);
+        assert!((plan.a_tempo_ratio - 1.0).abs() < 1e-9);
+        // Ratio ≈ 1.004 falls in the close-tempo band and selects four bars.
+        assert_eq!(plan.bars, Some(4));
+        assert_eq!(plan.template, Some(PlanTemplate::FilterEq));
+        // 4 bars at 120 bpm = 8 s, unstretched.
+        assert!((plan.overlap_secs - 8.0).abs() < 1e-3, "{}", plan.overlap_secs);
+
+        // 124 vs 128 is ±3 %: previously TempoMatch (audible rush). Now filter fallback.
         let a = analysis(240.0, 124.0, 0.5, vec![]);
         let b = analysis(200.0, 128.0, 0.2, vec![]);
         let plan = decide_transition(&TransitionRequest {
@@ -786,19 +828,33 @@ mod tests {
             a_position_secs: 0.0,
         })
         .unwrap();
+        assert_eq!(plan.speed_type, SpeedType::None);
+        assert!((plan.a_tempo_ratio - 1.0).abs() < 1e-9);
+        assert_eq!(plan.template, Some(PlanTemplate::LayeredFilter));
+    }
+
+    #[test]
+    fn pro_mode_match_tempo_stretches_outgoing_within_eight_percent() {
+        let a = analysis(240.0, 124.0, 0.5, vec![]);
+        let b = analysis(200.0, 128.0, 0.2, vec![]);
+        let plan = decide_transition(&TransitionRequest {
+            settings: settings_match_tempo(TransitionMode::AutomixPro, 5.0),
+            trigger: TransitionTrigger::EndOfTrack,
+            a: &a,
+            b: &b,
+            a_position_secs: 0.0,
+        })
+        .unwrap();
         assert_eq!(plan.strategy, DecisionStrategy::TempoMatched);
         assert_eq!(plan.speed_type, SpeedType::TempoMatch);
         assert!((plan.a_tempo_ratio - 128.0 / 124.0).abs() < 1e-6);
-        // Ratio 1.032 falls in the close-tempo band and selects four bars.
         assert_eq!(plan.bars, Some(4));
         assert_eq!(plan.template, Some(PlanTemplate::FilterEq));
-        // Overlap is measured in B time: 4 bars at 128 bpm = 7.5 s.
         assert!(
             (plan.overlap_secs - 7.5).abs() < 1e-3,
             "{}",
             plan.overlap_secs
         );
-        // A span in A time = 4 bars at 124 bpm ≈ 7.74 s.
         assert!((plan.a_end_secs - plan.a_cut_secs - 240.0 / 124.0 * 4.0).abs() < 1e-3);
     }
 
@@ -870,9 +926,7 @@ mod tests {
         assert_eq!(plan.speed_type, SpeedType::None);
         assert!(plan.overlap_secs > 10.0 && plan.overlap_secs <= 12.0);
 
-        // 120 vs 63 bpm: mode 3 (×0.5) folds the residual to 1.05 (stretchable) while the
-        // raw ratio 0.525 misses the special band (1/ratio ≈ 1.905) and selects the
-        // "medium" entry: 12 bars of A (24 s) stretched by 1.05 → 22.9 s, under the 25 s cap.
+        // 120 vs 63 bpm: residual 1.05 used to TempoMatch (audible 5 % rush). Now filter.
         let b = analysis(200.0, 63.0, 0.0, vec![]);
         let plan = decide_transition(&TransitionRequest {
             settings: settings(TransitionMode::AutomixPro, 5.0),
@@ -882,33 +936,9 @@ mod tests {
             a_position_secs: 0.0,
         })
         .unwrap();
-        assert_eq!(plan.speed_type, SpeedType::TempoMatch);
-        assert!(
-            (plan.a_tempo_ratio - 1.05).abs() < 1e-9,
-            "{}",
-            plan.a_tempo_ratio
-        );
-        assert_eq!(plan.bars, Some(12));
-        assert_eq!(plan.template, Some(PlanTemplate::ThreeBand));
-        assert!(
-            (plan.overlap_secs - 24.0 / 1.05).abs() < 1e-6,
-            "{}",
-            plan.overlap_secs
-        );
-        assert!(plan.overlap_secs <= PRO_MAX_OVERLAP_SECS);
-
-        // Slow A (60 bpm, 4 s bars) vs 63 bpm: 12 bars = 48 s → 8 → 4 bars (16 s / 1.05).
-        let slow_a = analysis(240.0, 60.0, 0.0, vec![]);
-        let plan = decide_transition(&TransitionRequest {
-            settings: settings(TransitionMode::AutomixPro, 5.0),
-            trigger: TransitionTrigger::EndOfTrack,
-            a: &slow_a,
-            b: &b,
-            a_position_secs: 0.0,
-        })
-        .unwrap();
-        assert_eq!(plan.bars, Some(4));
-        assert!(plan.overlap_secs <= PRO_MAX_OVERLAP_SECS);
+        assert_eq!(plan.speed_type, SpeedType::None);
+        assert!((plan.a_tempo_ratio - 1.0).abs() < 1e-9);
+        assert_eq!(plan.template, Some(PlanTemplate::LayeredFilter));
 
         // 120 vs 150 bpm: raw 1.25 → 1/ratio = 0.8 ∈ (0.64, 0.85): special 4-beat blend,
         // but the residual (mode 2, 1.25) requires the layered filter fallback.

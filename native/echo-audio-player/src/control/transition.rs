@@ -62,6 +62,7 @@ const ANALYSIS_MIN_SECS: f64 = 2.0;
 pub(crate) static TRANSITION_SETTINGS: Mutex<TransitionSettings> = Mutex::new(TransitionSettings {
     mode: TransitionMode::AutomixPro,
     fade_secs: 5.0,
+    match_tempo: false,
 });
 
 /// Cache of per-track analyses keyed by URL (+ audio stream ordinal).
@@ -88,16 +89,32 @@ fn cache_key(url: &str, audio_stream_ordinal: Option<usize>) -> String {
     }
 }
 
+fn cache_touch(order: &mut Vec<String>, key: &str) {
+    if let Some(index) = order.iter().position(|item| item == key) {
+        order.remove(index);
+    }
+    order.push(key.to_string());
+}
+
+fn cache_evict(cache: &mut AnalysisCache) {
+    while cache.order.len() > ANALYSIS_CACHE_ENTRIES {
+        let evicted = cache.order.remove(0);
+        cache.entries.remove(&evicted);
+    }
+}
+
 fn cache_get(key: &str) -> CachedAnalysis {
-    ANALYSIS_CACHE
-        .lock()
-        .ok()
-        .and_then(|cache| {
-            cache
-                .as_ref()
-                .and_then(|cache| cache.entries.get(key).cloned())
-        })
-        .unwrap_or_default()
+    let Ok(mut guard) = ANALYSIS_CACHE.lock() else {
+        return CachedAnalysis::default();
+    };
+    let Some(cache) = guard.as_mut() else {
+        return CachedAnalysis::default();
+    };
+    let Some(entry) = cache.entries.get(key).cloned() else {
+        return CachedAnalysis::default();
+    };
+    cache_touch(&mut cache.order, key);
+    entry
 }
 
 fn cache_put(key: String, update: impl FnOnce(&mut CachedAnalysis)) {
@@ -105,14 +122,9 @@ fn cache_put(key: String, update: impl FnOnce(&mut CachedAnalysis)) {
         return;
     };
     let cache = guard.get_or_insert_with(AnalysisCache::default);
-    if !cache.entries.contains_key(&key) {
-        cache.order.push(key.clone());
-        while cache.order.len() > ANALYSIS_CACHE_ENTRIES {
-            let evicted = cache.order.remove(0);
-            cache.entries.remove(&evicted);
-        }
-    }
+    cache_touch(&mut cache.order, &key);
     update(cache.entries.entry(key).or_default());
+    cache_evict(cache);
 }
 
 pub(crate) fn current_transition_settings() -> TransitionSettings {
@@ -130,6 +142,8 @@ pub struct TransitionSettingsOptions {
     pub mode: Option<String>,
     /// Crossfade length in seconds for `fade` (0–15).
     pub fade_secs: Option<f64>,
+    /// Stretch the outgoing track to the incoming BPM in automix-pro. Default off.
+    pub match_tempo: Option<bool>,
 }
 
 #[napi(object)]
@@ -137,6 +151,7 @@ pub struct TransitionSettingsOptions {
 pub struct TransitionSettingsSnapshot {
     pub mode: String,
     pub fade_secs: f64,
+    pub match_tempo: bool,
     /// Seconds before the end of the current track at which the renderer should have the
     /// next source prepared.
     pub prefetch_lead_secs: f64,
@@ -146,6 +161,7 @@ fn snapshot(settings: TransitionSettings) -> TransitionSettingsSnapshot {
     TransitionSettingsSnapshot {
         mode: settings.mode.as_str().to_string(),
         fade_secs: f64::from(settings.fade_secs),
+        match_tempo: settings.match_tempo,
         prefetch_lead_secs: settings.prefetch_lead_secs(),
     }
 }
@@ -167,6 +183,9 @@ pub fn set_transition_settings(
         } else {
             settings.fade_secs
         };
+    }
+    if let Some(match_tempo) = options.match_tempo {
+        settings.match_tempo = match_tempo;
     }
     let settings = settings.sanitized();
     if let Ok(mut current) = TRANSITION_SETTINGS.lock() {
@@ -383,6 +402,7 @@ pub(crate) struct PreparedTransitionInputs<'a> {
     pub next_audio_stream_ordinal: Option<usize>,
     pub current_url: Option<&'a str>,
     pub current_audio_stream_ordinal: Option<usize>,
+    pub current_duration_secs: Option<f64>,
     pub config: &'a PlayerConfig,
     pub interrupt: &'a PreparationCancellation,
 }
@@ -472,16 +492,22 @@ fn plan_prepared_transition(
         if settings.fade_secs <= 0.05 {
             return Ok(None);
         }
-        let current = open_decoder_with_interrupt(
-            current_url.to_string(),
-            inputs.current_audio_stream_ordinal,
-            None,
-            inputs.interrupt.reader_interrupt(),
-            inputs.config.packet_cache_options_for_url(current_url),
-            &inputs.config.stream_options(),
-        )?;
+        let duration_secs = match inputs.current_duration_secs {
+            Some(duration) if duration.is_finite() && duration > 0.0 => duration,
+            _ => {
+                let current = open_decoder_with_interrupt(
+                    current_url.to_string(),
+                    inputs.current_audio_stream_ordinal,
+                    None,
+                    inputs.interrupt.reader_interrupt(),
+                    inputs.config.packet_cache_options_for_url(current_url),
+                    &inputs.config.stream_options(),
+                )?;
+                current.duration_secs()
+            }
+        };
         let a = TrackAnalysis {
-            duration_secs: current.duration_secs(),
+            duration_secs,
             ..Default::default()
         };
         let b = TrackAnalysis {
@@ -629,17 +655,55 @@ pub(crate) fn armed_transition_from_prepared(
 mod tests {
     use super::*;
 
+    static TEST_CACHE_LOCK: Mutex<()> = Mutex::new(());
+
+    fn reset_analysis_cache() {
+        if let Ok(mut guard) = ANALYSIS_CACHE.lock() {
+            *guard = None;
+        }
+    }
+
+    fn with_isolated_cache(test: impl FnOnce()) {
+        let _guard = TEST_CACHE_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        reset_analysis_cache();
+        test();
+        reset_analysis_cache();
+    }
+
     #[test]
     fn cache_evicts_oldest_entries() {
-        for index in 0..(ANALYSIS_CACHE_ENTRIES + 3) {
-            cache_put(format!("track-{index}"), |entry| {
+        with_isolated_cache(|| {
+            for index in 0..(ANALYSIS_CACHE_ENTRIES + 3) {
+                cache_put(format!("evict-{index}"), |entry| {
+                    entry.head = Some(TrackAnalysis::default());
+                });
+            }
+            assert!(cache_get("evict-0").head.is_none());
+            assert!(
+                cache_get(&format!("evict-{}", ANALYSIS_CACHE_ENTRIES + 2))
+                    .head
+                    .is_some()
+            );
+        });
+    }
+
+    #[test]
+    fn cache_get_refreshes_recency() {
+        with_isolated_cache(|| {
+            for index in 0..ANALYSIS_CACHE_ENTRIES {
+                cache_put(format!("recency-{index}"), |entry| {
+                    entry.head = Some(TrackAnalysis::default());
+                });
+            }
+            assert!(cache_get("recency-0").head.is_some());
+            cache_put("recency-new".to_string(), |entry| {
                 entry.head = Some(TrackAnalysis::default());
             });
-        }
-        assert!(cache_get("track-0").head.is_none());
-        assert!(cache_get(&format!("track-{}", ANALYSIS_CACHE_ENTRIES + 2))
-            .head
-            .is_some());
+            assert!(cache_get("recency-0").head.is_some());
+            assert!(cache_get("recency-1").head.is_none());
+        });
     }
 
     #[test]

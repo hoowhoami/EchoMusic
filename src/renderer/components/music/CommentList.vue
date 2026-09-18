@@ -8,6 +8,7 @@ import Button from '@/components/ui/Button.vue';
 import Skeleton from '@/components/ui/Skeleton.vue';
 import { getFloorComments, sendFloorComment } from '@/api/comment';
 import { mapCommentItem } from '@/utils/mappers';
+import { enrichCommentsWithYoungVip } from '@/utils/commentVipCache';
 import { useToastStore } from '@/stores/toast';
 import {
   groupCommentRelations,
@@ -200,7 +201,7 @@ const fetchFloorReplies = async (comment: Comment, reset = false) => {
       const errCode = Number((payload as Record<string, unknown>).err_code ?? 0) || 0;
       const message = String((payload as Record<string, unknown>).message ?? '');
       const list = Array.isArray(listCandidate) ? listCandidate : [];
-      const mapped = list.map(mapCommentItem);
+      const mapped = await enrichCommentsWithYoungVip(list.map(mapCommentItem));
       state.replies = mergeFloorReplies([], reset ? mapped : [...state.replies, ...mapped]);
       const totalCount = Number((payload as Record<string, unknown>).comments_num ?? 0) || 0;
       state.total = totalCount;
@@ -236,6 +237,8 @@ const formatLike = (value: number) => {
   const fixed = (value / 10000).toFixed(value >= 100000 ? 0 : 1);
   return `${fixed.replace(/\.0$/, '')}w`;
 };
+
+const commentIpText = (comment: Comment) => comment.ipLocation || '';
 </script>
 
 <template>
@@ -271,18 +274,35 @@ const formatLike = (value: number) => {
     >
       <div class="comment-item">
         <div class="comment-avatar">
-          <img v-if="comment.avatar" :src="comment.avatar" alt="avatar" />
-          <div v-else class="comment-avatar-fallback">?</div>
+          <div class="comment-avatar-frame">
+            <img v-if="comment.avatar" :src="comment.avatar" alt="avatar" />
+            <div v-else class="comment-avatar-fallback">?</div>
+          </div>
+          <img
+            v-if="comment.talentIcon"
+            class="comment-talent-icon"
+            :src="comment.talentIcon"
+            alt=""
+          />
         </div>
         <div class="comment-main">
           <div class="comment-topline">
             <div class="comment-meta">
               <div class="comment-userline">
                 <span class="comment-name">{{ comment.userName }}</span>
+                <span
+                  v-for="badge in comment.badges"
+                  :key="badge.key"
+                  class="comment-badge"
+                  :class="`comment-badge-${badge.kind}`"
+                  >{{ badge.label }}</span
+                >
                 <span v-if="comment.isHot" class="comment-badge">热门</span>
-                <span v-if="comment.isStar" class="comment-badge comment-badge-star">歌手</span>
               </div>
-              <div class="comment-time">{{ comment.time }}</div>
+              <div class="comment-time">
+                {{ comment.time
+                }}<template v-if="commentIpText(comment)"> · {{ commentIpText(comment) }}</template>
+              </div>
             </div>
             <div class="comment-like">
               <Icon :icon="iconThumbsUp" width="12" height="12" />
@@ -379,12 +399,27 @@ const formatLike = (value: number) => {
               class="comment-floor-reply"
             >
               <div class="comment-floor-reply-avatar">
-                <img v-if="reply.avatar" :src="reply.avatar" alt="avatar" />
-                <div v-else class="comment-avatar-fallback">?</div>
+                <div class="comment-avatar-frame">
+                  <img v-if="reply.avatar" :src="reply.avatar" alt="avatar" />
+                  <div v-else class="comment-avatar-fallback">?</div>
+                </div>
+                <img
+                  v-if="reply.talentIcon"
+                  class="comment-talent-icon comment-talent-icon-floor"
+                  :src="reply.talentIcon"
+                  alt=""
+                />
               </div>
               <div class="comment-floor-reply-body">
                 <div class="comment-floor-reply-header">
                   <span class="comment-floor-reply-name">{{ reply.userName }}</span>
+                  <span
+                    v-for="badge in reply.badges"
+                    :key="badge.key"
+                    class="comment-badge comment-badge-floor"
+                    :class="`comment-badge-${badge.kind}`"
+                    >{{ badge.label }}</span
+                  >
                   <span v-if="quote" class="comment-floor-reply-to">回复 {{ quote.userName }}</span>
                 </div>
                 <div class="comment-floor-reply-content">
@@ -414,7 +449,10 @@ const formatLike = (value: number) => {
                   >{{ quote.content }}
                 </blockquote>
                 <div class="comment-floor-reply-footer">
-                  <span class="comment-floor-reply-time">{{ reply.time }}</span>
+                  <span class="comment-floor-reply-time">
+                    {{ reply.time
+                    }}<template v-if="commentIpText(reply)"> · {{ commentIpText(reply) }}</template>
+                  </span>
                   <Button
                     variant="unstyled"
                     size="none"
@@ -586,21 +624,39 @@ const formatLike = (value: number) => {
 }
 
 .comment-avatar {
+  position: relative;
   width: 36px;
   height: 36px;
+  flex-shrink: 0;
+}
+
+.comment-avatar-frame {
+  width: 100%;
+  height: 100%;
   border-radius: 18px;
   overflow: hidden;
-  flex-shrink: 0;
   background: color-mix(in srgb, var(--color-primary) 12%, transparent);
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
-.comment-avatar img {
+.comment-avatar-frame img {
   width: 100%;
   height: 100%;
   object-fit: cover;
+}
+
+.comment-talent-icon {
+  position: absolute;
+  right: 1px;
+  bottom: 1px;
+  width: 16px;
+  height: 16px;
+  pointer-events: none;
+  z-index: 1;
+  object-fit: contain;
+  user-select: none;
 }
 
 .comment-avatar-fallback {
@@ -720,6 +776,68 @@ const formatLike = (value: number) => {
   background: color-mix(in srgb, var(--color-primary) 12%, transparent);
 }
 
+.comment-badge-svip,
+.comment-badge-svip-year {
+  color: #fff;
+  border: 0;
+  background: linear-gradient(90deg, #f97316, color-mix(in srgb, #f97316 80%, transparent));
+}
+
+.comment-badge-concept,
+.comment-badge-concept-year {
+  color: #fff;
+  border: 0;
+  background: linear-gradient(90deg, #f97316, color-mix(in srgb, #f97316 80%, transparent));
+}
+
+.comment-badge-vip,
+.comment-badge-vip-year {
+  color: #fff;
+  border: 0;
+  background: linear-gradient(90deg, #e8a317, color-mix(in srgb, #e8a317 80%, transparent));
+}
+
+.comment-badge-music,
+.comment-badge-music-year {
+  color: #fff;
+  border: 0;
+  background: linear-gradient(90deg, #3b82f6, color-mix(in srgb, #3b82f6 80%, transparent));
+}
+
+.comment-badge-changting,
+.comment-badge-wvip,
+.comment-badge-qvip {
+  color: #fff;
+  border: 0;
+  background: linear-gradient(90deg, #07c160, color-mix(in srgb, #07c160 80%, transparent));
+}
+
+.comment-badge-talent {
+  color: #fff;
+  border: 0;
+  background: linear-gradient(90deg, #8b5cf6, color-mix(in srgb, #8b5cf6 80%, transparent));
+}
+
+.comment-badge-student {
+  color: #fff;
+  border: 0;
+  background: linear-gradient(90deg, #0ea5e9, color-mix(in srgb, #0ea5e9 80%, transparent));
+}
+
+.comment-badge-actor,
+.comment-badge-biz,
+.comment-badge-tme-star,
+.comment-badge-auth {
+  color: #fff;
+  border: 0;
+  background: linear-gradient(90deg, #07c160, color-mix(in srgb, #07c160 80%, transparent));
+}
+
+.comment-badge-floor {
+  padding: 1px 5px;
+  font-size: 9px;
+}
+
 .comment-floor-inline {
   margin-top: 12px;
   padding: 16px 18px;
@@ -739,25 +857,25 @@ const formatLike = (value: number) => {
 }
 
 .comment-floor-reply-avatar {
+  position: relative;
   width: 30px;
   height: 30px;
-  border-radius: 50%;
-  overflow: hidden;
   flex-shrink: 0;
-  background: color-mix(in srgb, var(--color-primary) 12%, transparent);
-  display: flex;
-  align-items: center;
-  justify-content: center;
 }
 
-.comment-floor-reply-avatar img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
+.comment-floor-reply-avatar .comment-avatar-frame {
+  border-radius: 50%;
 }
 
 .comment-floor-reply-avatar .comment-avatar-fallback {
   font-size: 11px;
+}
+
+.comment-talent-icon-floor {
+  width: 14px;
+  height: 14px;
+  right: 0;
+  bottom: 0;
 }
 
 .comment-floor-reply-body {

@@ -38,6 +38,7 @@ const personalFmModeOptions: Array<{ value: PersonalFmMode; label: string }> = [
   { value: 'normal', label: '红心' },
   { value: 'small', label: '小众' },
   { value: 'peak', label: '速览' },
+  { value: 'radio', label: '电台' },
 ];
 
 const personalFmSongPoolOptions: Array<{ value: PersonalFmSongPoolId; label: string }> = [
@@ -248,6 +249,7 @@ const handleChangePersonalFmMode = async (mode: PersonalFmMode) => {
     await playlistStore.resetPersonalFmPreview({
       mode,
       songPoolId: selectedPersonalFmSongPoolId.value,
+      action: 'login',
     });
     if (isPersonalFmActive.value) {
       await playCurrentPersonalFm();
@@ -264,6 +266,7 @@ const handleChangePersonalFmSongPool = async (songPoolId: PersonalFmSongPoolId) 
     await playlistStore.resetPersonalFmPreview({
       mode: selectedPersonalFmMode.value,
       songPoolId,
+      action: 'change_song_pool',
     });
     if (isPersonalFmActive.value) {
       await playCurrentPersonalFm();
@@ -283,6 +286,7 @@ const handleDislikePersonalFm = async () => {
       await playlistStore.resetPersonalFmPreview({
         mode: selectedPersonalFmMode.value,
         songPoolId: selectedPersonalFmSongPoolId.value,
+        action: 'login',
       });
       return;
     }
@@ -302,6 +306,7 @@ const preloadPersonalFmPreview = () => {
       mode: selectedPersonalFmMode.value,
       songPoolId: selectedPersonalFmSongPoolId.value,
       preserveQueue: true,
+      action: 'login',
     })
     .finally(() => {
       personalFmPreloading.value = false;
@@ -677,7 +682,7 @@ onActivated(() => {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  width: fit-content;
+  width: 100%;
   padding: 4px;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.14);
@@ -685,10 +690,11 @@ onActivated(() => {
 }
 
 .radio-mode-btn {
-  min-width: 52px;
-  padding: 7px 12px;
+  min-width: 0;
+  flex: 1;
+  padding: 7px 6px;
   border-radius: 999px;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 700;
   color: rgba(255, 255, 255, 0.74);
   transition: all 0.2s ease;

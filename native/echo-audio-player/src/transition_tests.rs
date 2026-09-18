@@ -286,7 +286,11 @@ fn set_mode(mode: TransitionMode, fade_secs: f32) {
     let mut settings = crate::control::transition::TRANSITION_SETTINGS
         .lock()
         .expect("settings");
-    *settings = TransitionSettings { mode, fade_secs };
+    *settings = TransitionSettings {
+        mode,
+        fade_secs,
+        match_tempo: false,
+    };
 }
 
 /// Prepare B exactly like `PrepareNextSourceTask` does and arm it on the worker.
@@ -300,6 +304,7 @@ fn prepare_and_arm(rig: &Rig, a_url: &str, b_url: &str, request_id: u64) -> f64 
             next_audio_stream_ordinal: None,
             current_url: Some(a_url),
             current_audio_stream_ordinal: None,
+            current_duration_secs: None,
             config: &config,
             interrupt: &interrupt,
         },
@@ -1358,6 +1363,7 @@ fn failed_tail_analysis_reopens_b_at_zero() {
             next_audio_stream_ordinal: None,
             current_url: Some("/nonexistent/echo-transition-outgoing.wav"),
             current_audio_stream_ordinal: None,
+            current_duration_secs: None,
             config: &config,
             interrupt: &interrupt,
         },

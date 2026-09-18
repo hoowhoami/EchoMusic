@@ -8,6 +8,7 @@ import {
   getFloorComments,
 } from '@/api/comment';
 import { mapCommentItem } from '@/utils/mappers';
+import { enrichCommentsWithYoungVip } from '@/utils/commentVipCache';
 import type { Comment } from '@/models/comment';
 import { useToastStore } from '@/stores/toast';
 
@@ -28,7 +29,7 @@ interface UseCommentsOptions {
 }
 
 /** 构建评论数据 */
-const buildPayload = (data: unknown): CommentPayload => {
+const buildPayload = async (data: unknown): Promise<CommentPayload> => {
   const record = data && typeof data === 'object' ? (data as Record<string, unknown>) : {};
   const payload = (record.data as Record<string, unknown>) || record;
   const listCandidate = (payload.list ?? payload.comments ?? []) as unknown;
@@ -48,12 +49,17 @@ const buildPayload = (data: unknown): CommentPayload => {
   const classifyCandidate = payload.classify_list ?? [];
   const hotwordCandidate = payload.hot_word_list ?? [];
 
-  const hotMapped = hotList.map(mapCommentItem).map((item) => ({ ...item, isHot: true }));
-  const starMapped = starList.map(mapCommentItem).map((item) => ({ ...item, isStar: true }));
+  const hotMapped = await enrichCommentsWithYoungVip(
+    hotList.map(mapCommentItem).map((item) => ({ ...item, isHot: true })),
+  );
+  const starMapped = await enrichCommentsWithYoungVip(
+    starList.map(mapCommentItem).map((item) => ({ ...item, isStar: true })),
+  );
+  const listMapped = await enrichCommentsWithYoungVip(list.map(mapCommentItem));
 
   return {
     hot: [...starMapped, ...hotMapped],
-    list: list.map(mapCommentItem),
+    list: listMapped,
     total: Number(payload.count ?? payload.total ?? record.count ?? record.total ?? 0) || 0,
     classifyList: Array.isArray(classifyCandidate)
       ? classifyCandidate.map((item) => ({
@@ -134,7 +140,7 @@ export function useComments(options: UseCommentsOptions) {
         'status' in res &&
         (res as { status?: number }).status === 1
       ) {
-        const payload = buildPayload(res);
+        const payload = await buildPayload(res);
         if (reset) {
           hotComments.value = payload.hot ?? [];
           classifyList.value = payload.classifyList;
@@ -183,7 +189,7 @@ export function useComments(options: UseCommentsOptions) {
         'status' in res &&
         (res as { status?: number }).status === 1
       ) {
-        const payload = buildPayload(res);
+        const payload = await buildPayload(res);
         if (reset) {
           hotComments.value = payload.hot ?? [];
         }
@@ -224,7 +230,7 @@ export function useComments(options: UseCommentsOptions) {
         'status' in res &&
         (res as { status?: number }).status === 1
       ) {
-        const payload = buildPayload(res);
+        const payload = await buildPayload(res);
         if (reset) {
           hotComments.value = payload.hot ?? [];
         }
@@ -274,7 +280,7 @@ export function useComments(options: UseCommentsOptions) {
         'status' in res &&
         (res as { status?: number }).status === 1
       ) {
-        const payload = buildPayload(res);
+        const payload = await buildPayload(res);
         classifyComments.value = reset
           ? payload.list
           : [...classifyComments.value, ...payload.list];
@@ -316,7 +322,7 @@ export function useComments(options: UseCommentsOptions) {
         'status' in res &&
         (res as { status?: number }).status === 1
       ) {
-        const payload = buildPayload(res);
+        const payload = await buildPayload(res);
         hotwordComments.value = reset ? payload.list : [...hotwordComments.value, ...payload.list];
         const selectedItem = hotwordList.value.find(
           (item) => item.content === selectedHotword.value,
@@ -439,7 +445,7 @@ export function useFloorComments(resourceType: CommentResourceType, fallbackMixS
         const errCode = Number((payload as Record<string, unknown>).err_code ?? 0) || 0;
         const message = String((payload as Record<string, unknown>).message ?? '');
         const list = Array.isArray(listCandidate) ? listCandidate : [];
-        const mapped = list.map(mapCommentItem);
+        const mapped = await enrichCommentsWithYoungVip(list.map(mapCommentItem));
         floorReplies.value = reset ? mapped : [...floorReplies.value, ...mapped];
         const totalCount = Number((payload as Record<string, unknown>).comments_num ?? 0) || 0;
         floorTotal.value = totalCount;

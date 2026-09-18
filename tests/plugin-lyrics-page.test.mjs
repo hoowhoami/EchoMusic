@@ -101,6 +101,7 @@ const makeApi = (id = 'test', errors = []) =>
     id,
     () => {},
     (source, error) => errors.push({ source, error }),
+    true,
   );
 const key = (id = 'test', page = 'custom') => JSON.stringify([id, page]);
 afterEach(() => {
@@ -315,7 +316,7 @@ test('host and none modes replace native content, keep shared panels, and revoke
   assert.throws(() => page.panels.open('queue'), /失效/);
 });
 
-test('render failures recover native content, retain selection, and do not retry on each open', async (t) => {
+test('render failures recover native content, reset selection, and do not retry on each open', async (t) => {
   setupFixture(t);
   const errors = [];
   let attempts = 0;
@@ -334,12 +335,51 @@ test('render failures recover native content, retain selection, and do not retry
   assert.ok(find(tree, 'CoverMode.vue'));
   assert.equal(attempts, 1);
   assert.equal(errors.length, 1);
-  assert.equal(fixture.settings.lyricsPageProvider, key());
+  assert.equal(fixture.settings.lyricsPageProvider, 'host:cover');
   assert.equal(api.resolveLyricsPage(key()), undefined);
-  api.retryLyricsPage(key());
+  api.retryAndSelectLyricsPage(key(), (next) => {
+    fixture.settings.lyricsPageProvider = next;
+  });
   await flush();
   assert.equal(attempts, 2);
   assert.ok(find(tree, 'CoverMode.vue'));
+  assert.equal(fixture.settings.lyricsPageProvider, 'host:cover');
+});
+
+test('lyrics page register throws without capabilities.lyricsPage', () => {
+  const denied = api.createLyricsPageApi('denied', () => {}, () => {}, false);
+  assert.throws(
+    () => denied.register({ id: 'custom', component: { render: () => null } }),
+    /lyricsPage/,
+  );
+  assert.equal(api.resolveLyricsPage(key('denied')), undefined);
+});
+
+test('scoped barrage.enabled stays live and is revoked after unmount', () => {
+  const enabled = { value: false };
+  const page = {
+    barrage: {
+      get enabled() {
+        return enabled.value;
+      },
+      set enabled(value) {
+        enabled.value = value;
+      },
+      send() {},
+    },
+  };
+  let active = true;
+  const scoped = api.scopeLyricsPageContext(page, () => active);
+  assert.equal(scoped.barrage.enabled, false);
+  enabled.value = true;
+  assert.equal(scoped.barrage.enabled, true);
+  scoped.barrage.enabled = false;
+  assert.equal(enabled.value, false);
+  active = false;
+  assert.throws(() => scoped.barrage.enabled, /失效/);
+  assert.throws(() => {
+    scoped.barrage.enabled = true;
+  }, /失效/);
 });
 
 test('plugin panels use host surfaces; comments keep their original song and Escape closes the panel first', async (t) => {

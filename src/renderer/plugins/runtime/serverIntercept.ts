@@ -7,7 +7,11 @@ import type {
   PluginServerRequest,
   PluginServerResponse,
 } from '../../../shared/plugins';
-import { registerServerInterceptor } from '../../utils/serverInterceptors';
+import {
+  isValidServerResponse,
+  registerServerInterceptor,
+  runWithRequestOrigin,
+} from '../../utils/serverInterceptors';
 
 interface ServerInterceptApiDeps {
   addDisposable: (dispose: () => void) => () => void;
@@ -20,11 +24,6 @@ export interface PluginServerInterceptApi {
     options?: PluginServerInterceptOptions,
   ) => () => void;
 }
-
-const isValidServerResponse = (value: unknown): value is PluginServerResponse =>
-  Boolean(value) &&
-  typeof value === 'object' &&
-  typeof (value as PluginServerResponse).status === 'number';
 
 /**
  * fail-open 包装：插件拦截器任何异常都不能导致主程序断网。
@@ -54,7 +53,9 @@ const wrapSafe =
       return downstream;
     };
     try {
-      const result = await handler(request, trackNext);
+      const result = await runWithRequestOrigin({ type: 'plugin', pluginId }, () =>
+        handler(request, trackNext),
+      );
       return isValidServerResponse(result) ? result : trackNext();
     } catch (error) {
       if (downstream && downstreamError !== undefined && error === downstreamError) {

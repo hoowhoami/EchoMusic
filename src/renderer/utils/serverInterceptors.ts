@@ -66,14 +66,19 @@ export const registerServerInterceptor = (
 
 export const hasServerInterceptors = (): boolean => registrations.length > 0;
 
+/**
+ * 插件返回值是否可当作 HTTP 响应。只约束 status 是 100–599 的有限数字，
+ * 不限制 4xx/5xx，也不要求 body/headers，避免卡住 Mock、错误页和重定向。
+ */
+export const isValidServerResponse = (value: unknown): value is PluginServerResponse => {
+  if (!value || typeof value !== 'object') return false;
+  const status = (value as PluginServerResponse).status;
+  return typeof status === 'number' && Number.isFinite(status) && status >= 100 && status < 600;
+};
+
 /** 优先级降序、注册序号升序：高优先级在外层，同优先级先注册在外层 */
 const sortedChain = (): Registration[] =>
   registrations.slice().sort((a, b) => b.priority - a.priority || a.seq - b.seq);
-
-const isValidResponse = (value: unknown): value is PluginServerResponse =>
-  Boolean(value) &&
-  typeof value === 'object' &&
-  typeof (value as PluginServerResponse).status === 'number';
 
 /**
  * 洋葱链执行：只有 match 命中的拦截器才会被进入，链尾调用真实发送器 sender。
@@ -119,7 +124,7 @@ export const runServerInterceptorChain = async (
     };
 
     return Promise.resolve(current.handler(request, next)).then((result) => {
-      if (isValidResponse(result)) {
+      if (isValidServerResponse(result)) {
         // 未调用 next 且返回了响应 = 短路接管，打上来源标记（插件显式设置优先）
         if (!downstream) {
           result.mocked ??= true;

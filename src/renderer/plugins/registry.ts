@@ -180,6 +180,7 @@ export const createPluginUiApi = (
   pluginId: string,
   addDisposable: (dispose: () => void) => void,
   onRuntimeError?: (source: string, error: unknown) => void,
+  capabilities?: { lyricsPage?: boolean },
 ) => {
   const withOwner = <T extends { id: string; order?: number }>(contribution: T) => ({
     ...contribution,
@@ -222,7 +223,12 @@ export const createPluginUiApi = (
   };
 
   return {
-    lyricsPage: createLyricsPageApi(pluginId, addDisposable, reportError),
+    lyricsPage: createLyricsPageApi(
+      pluginId,
+      addDisposable,
+      reportError,
+      capabilities?.lyricsPage === true,
+    ),
     titlebar: createTitlebarApi(pluginId, addDisposable, reportError),
     addPage(contribution: PluginPageRegistration) {
       const item = withOwner({

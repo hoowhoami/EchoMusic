@@ -72,6 +72,8 @@ export interface Song {
   isOriginal?: boolean;
   recDesc?: string;
   similarDesc?: string;
+  /** 私人 FM 当前推荐标记（click_red / cancel_red 等操作建议回传）。 */
+  curMark?: string;
   playCount?: number;
   lastPlayedAt?: number;
   historyKey?: string;

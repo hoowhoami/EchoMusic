@@ -53,6 +53,8 @@ export const TRACK_TRANSITION_MODES: readonly TrackTransitionMode[] = [
 export const MAX_FADE_CROSS_SECS = 15;
 export const DEFAULT_FADE_CROSS_SECS = 15;
 export const DEFAULT_TRACK_TRANSITION_MODE: TrackTransitionMode = TRACK_TRANSITION_MODES[0];
+/** Stretch the outgoing track to the incoming BPM during 节奏融合. Default off. */
+export const DEFAULT_AUTOMIX_MATCH_TEMPO = false;
 
 export interface TrackTransitionOption {
   value: TrackTransitionMode;

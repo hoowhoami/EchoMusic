@@ -3,6 +3,27 @@ import type { ComputedRef, Ref } from 'vue';
 import { useSettingStore } from '@/stores/setting';
 import type { LyricsSkinSettings } from '@/plugins/lyricsPage';
 
+const sameSkinValue = (left: unknown, right: unknown): boolean => {
+  if (Object.is(left, right)) return true;
+  if (left === null || right === null) return false;
+  if (typeof left !== 'object' || typeof right !== 'object') return false;
+  if (Array.isArray(left) || Array.isArray(right)) {
+    return (
+      Array.isArray(left) &&
+      Array.isArray(right) &&
+      left.length === right.length &&
+      left.every((item, index) => sameSkinValue(item, right[index]))
+    );
+  }
+  const leftRecord = left as Record<string, unknown>;
+  const rightRecord = right as Record<string, unknown>;
+  const leftKeys = Object.keys(leftRecord);
+  return (
+    leftKeys.length === Object.keys(rightRecord).length &&
+    leftKeys.every((itemKey) => sameSkinValue(leftRecord[itemKey], rightRecord[itemKey]))
+  );
+};
+
 export interface LyricSkinHandle<T extends Record<string, unknown> = Record<string, unknown>> {
   key: Ref<string>;
   settings: ComputedRef<T>;
@@ -35,7 +56,17 @@ export function useLyricSkin<T extends Record<string, unknown> = Record<string, 
       const errors = (result as { errors?: string[] }).errors;
       if (errors?.length) return { ok: false, errors };
     }
-    settingStore.patchLyricSkinConfig(key.value, next);
+    const overrides: Record<string, unknown> = {};
+    for (const [itemKey, itemValue] of Object.entries(next)) {
+      if (!sameSkinValue(itemValue, defaults[itemKey as keyof T])) {
+        overrides[itemKey] = itemValue;
+      }
+    }
+    if (Object.keys(overrides).length === 0) {
+      settingStore.resetLyricSkinConfig(key.value);
+    } else {
+      settingStore.patchLyricSkinConfig(key.value, overrides);
+    }
     return { ok: true };
   };
 

@@ -532,7 +532,7 @@ export class PlayerEngine {
   }
 
   /** 歌曲过渡设置：无缝 / 淡入淡出（0~15 秒）/ 智能混音基础 / 智能混音进阶。 */
-  setTransitionSettings(options: { mode: string; fadeSecs: number }): void {
+  setTransitionSettings(options: { mode: string; fadeSecs: number; matchTempo?: boolean }): void {
     void player
       ?.setTransitionSettings?.(options)
       ?.then((snapshot) => {

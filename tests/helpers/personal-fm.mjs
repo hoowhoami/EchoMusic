@@ -118,5 +118,5 @@ export function createFmStore({ queue, buffer, fetch, timers } = {}) {
     persistQueueAppendToStorage: (_queue, songs) => persisted.push(...songs),
     ...actions.personalFmActions,
   });
-  return { store, requests, persisted };
+  return { store, requests, persisted, helpers };
 }

@@ -79,6 +79,9 @@ pub struct TransitionSettings {
     pub mode: TransitionMode,
     /// Crossfade length for [`TransitionMode::Fade`], from 0 to 15 seconds.
     pub fade_secs: f32,
+    /// Stretch the outgoing track to match the incoming BPM during automix-pro.
+    /// Off by default: speeding a song the listener already knows is audible as a rush.
+    pub match_tempo: bool,
 }
 
 pub const MAX_FADE_SECS: f32 = 15.0;
@@ -91,6 +94,7 @@ impl Default for TransitionSettings {
         Self {
             mode: TransitionMode::AutomixPro,
             fade_secs: DEFAULT_FADE_SECS,
+            match_tempo: false,
         }
     }
 }
@@ -105,6 +109,7 @@ impl TransitionSettings {
         Self {
             mode: self.mode,
             fade_secs,
+            match_tempo: self.match_tempo,
         }
     }
 
@@ -147,12 +152,14 @@ mod tests {
         let settings = TransitionSettings {
             mode: TransitionMode::Fade,
             fade_secs: 40.0,
+            match_tempo: false,
         }
         .sanitized();
         assert_eq!(settings.fade_secs, MAX_FADE_SECS);
         let nan = TransitionSettings {
             mode: TransitionMode::Fade,
             fade_secs: f32::NAN,
+            match_tempo: false,
         }
         .sanitized();
         assert_eq!(nan.fade_secs, DEFAULT_FADE_SECS);

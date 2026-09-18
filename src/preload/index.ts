@@ -591,6 +591,8 @@ contextBridge.exposeInMainWorld('electron', {
       return () => ipcRenderer.removeListener('now-playing:snapshot', listener);
     },
     command: (command: NowPlayingCommand) => ipcRenderer.send('now-playing:command', command),
+    invokeCommand: (command: NowPlayingCommand) =>
+      invokeWithPlainPayload<boolean>('now-playing:command', command),
     onCommand: (func: (command: NowPlayingCommand) => void) => {
       const listener = (_event: Electron.IpcRendererEvent, command: NowPlayingCommand) =>
         func(command);
@@ -752,7 +754,7 @@ contextBridge.exposeInMainWorld('electron', {
     setMediaTitle: (title: string) => ipcRenderer.invoke('player:set-media-title', title),
     setLoopFile: (loop: boolean) => ipcRenderer.invoke('player:set-loop-file', loop),
     setStallTimeout: (seconds: number) => ipcRenderer.invoke('player:set-stall-timeout', seconds),
-    setTransitionSettings: (options: { mode?: string; fadeSecs?: number }) =>
+    setTransitionSettings: (options: { mode?: string; fadeSecs?: number; matchTempo?: boolean }) =>
       invokeWithPlainPayload('player:set-transition-settings', options),
     getTransitionSettings: () => ipcRenderer.invoke('player:get-transition-settings'),
     getTransitionDiagnostics: () => ipcRenderer.invoke('player:get-transition-diagnostics'),

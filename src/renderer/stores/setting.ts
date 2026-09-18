@@ -31,6 +31,7 @@ import type {
 import { configureRendererLogger } from '@/utils/logger';
 import {
   clampFadeCrossSecs,
+  DEFAULT_AUTOMIX_MATCH_TEMPO,
   DEFAULT_FADE_CROSS_SECS,
   DEFAULT_TRACK_TRANSITION_MODE,
   isTrackTransitionMode,
@@ -142,6 +143,8 @@ export const useSettingStore = defineStore('setting', {
     trackTransitionMode: DEFAULT_TRACK_TRANSITION_MODE as TrackTransitionMode,
     /** 淡入淡出播放时长，0~15 秒。 */
     fadeCrossSecs: DEFAULT_FADE_CROSS_SECS,
+    /** 节奏融合时是否把出曲变速对齐下一首 BPM。默认关，避免尾声听起来被催着走。 */
+    automixMatchTempo: DEFAULT_AUTOMIX_MATCH_TEMPO,
     lyricViewMode: 'cover' as 'cover' | 'portrait' | 'lyric' | 'amll',
     lyricsPageProvider: 'host:cover',
     /** 皮肤名 → 皮肤配置。由各皮肤的 defaults/validate 解释，宿主只负责隔离与持久化。 */
@@ -391,6 +394,9 @@ export const useSettingStore = defineStore('setting', {
     },
     setFadeCrossSecs(secs: number) {
       this.fadeCrossSecs = clampFadeCrossSecs(secs);
+    },
+    setAutomixMatchTempo(enabled: boolean) {
+      this.automixMatchTempo = Boolean(enabled);
     },
     ensureShortcutDefaults() {
       this.defaultShortcutLabels = {

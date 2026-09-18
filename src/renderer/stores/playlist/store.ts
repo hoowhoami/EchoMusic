@@ -55,6 +55,7 @@ export type { PlaylistInfo } from '@/models/playlist';
 export type {
   PersonalFmMode,
   PersonalFmSongPoolId,
+  PersonalFmAction,
   PlaybackQueueMetaValueMap,
   PlaybackQueueState,
   SetPlaybackQueueOptions,
@@ -345,6 +346,7 @@ export const usePlaylistStore = defineStore('playlist', {
     skipFailedPersonalFmCandidate: personalFmActions.skipFailedPersonalFmCandidate,
     replenishPersonalFmBuffer: personalFmActions.replenishPersonalFmBuffer,
     reportPersonalFmAdvance: personalFmActions.reportPersonalFmAdvance,
+    reportPersonalFmFeedback: personalFmActions.reportPersonalFmFeedback,
     getPersonalFmDisplayTracks: personalFmActions.getPersonalFmDisplayTracks,
     updatePersonalFmMode: personalFmActions.updatePersonalFmMode,
     updatePersonalFmSongPool: personalFmActions.updatePersonalFmSongPool,

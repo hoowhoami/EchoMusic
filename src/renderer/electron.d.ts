@@ -383,6 +383,7 @@ export interface IElectronAPI {
     syncSnapshot: (payload: NowPlayingSnapshotPatch) => void;
     onSnapshot: (func: (snapshot: NowPlayingSnapshot) => void) => () => void;
     command: (command: NowPlayingCommand) => void;
+    invokeCommand: (command: NowPlayingCommand) => Promise<boolean>;
     onCommand: (func: (command: NowPlayingCommand) => void) => () => void;
   };
   miniPlayer: {
@@ -805,10 +806,17 @@ export interface IElectronAPI {
     setTransitionSettings: (options: {
       mode?: string;
       fadeSecs?: number;
-    }) => Promise<{ mode: string; fadeSecs: number; prefetchLeadSecs: number } | null>;
+      matchTempo?: boolean;
+    }) => Promise<{
+      mode: string;
+      fadeSecs: number;
+      matchTempo: boolean;
+      prefetchLeadSecs: number;
+    } | null>;
     getTransitionSettings: () => Promise<{
       mode: string;
       fadeSecs: number;
+      matchTempo: boolean;
       prefetchLeadSecs: number;
     } | null>;
     getTransitionDiagnostics: () => Promise<string | null>;

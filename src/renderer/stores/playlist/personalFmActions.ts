@@ -15,7 +15,12 @@ import {
   resolveSongQueueKey,
   toRawSongList,
 } from './helpers';
-import type { PersonalFmMode, PersonalFmSongPoolId, PlaybackQueueState } from './types';
+import type {
+  PersonalFmAction,
+  PersonalFmMode,
+  PersonalFmSongPoolId,
+  PlaybackQueueState,
+} from './types';
 
 let personalFmSessionResetPending = true;
 
@@ -64,11 +69,12 @@ type PersonalFmStoreShape = {
   persistPersonalFmPreferences: () => void;
   persistQueueAppendToStorage: (queue: PlaybackQueueState, songs: Song[]) => void;
   removePersonalFmQueue: (options?: { preserveBuffer?: boolean }) => void;
+  reportPersonalFmFeedback: (action: PersonalFmAction, track?: Song | null) => Promise<number>;
   syncLegacyPlaybackState: () => void;
   ensurePersonalFmQueue: (options?: {
     track?: Song | null;
     playtime?: number;
-    action?: 'play' | 'garbage';
+    action?: PersonalFmAction;
     isOverplay?: boolean;
   }) => Promise<number>;
   updatePersonalFmMode: (mode: PersonalFmMode) => void;
@@ -90,13 +96,26 @@ const ensurePersonalFmPlaybackQueue = (store: PersonalFmStoreShape) => {
   });
 };
 
+const resolvePersonalFmCurMark = (track: Song | null | undefined): string => {
+  const mark = String(track?.curMark ?? '').trim();
+  return mark;
+};
+
+const isCurrentPersonalFmTrack = (queue: PlaybackQueueState | undefined, track: Song | null) => {
+  if (!queue || !track) return false;
+  const currentId = String(queue.currentTrackId ?? '');
+  if (currentId && String(track.id) === currentId) return true;
+  const current = queue.songs.find((song) => String(song.id) === currentId);
+  return current ? resolveSongQueueKey(current) === resolveSongQueueKey(track) : false;
+};
+
 const buildPersonalFmParams = (
   queue: PlaybackQueueState,
   track: Song | null,
   remainSongcnt: number,
   options?: {
     playtime?: number;
-    action?: 'play' | 'garbage';
+    action?: PersonalFmAction;
     isOverplay?: boolean;
   },
 ): PersonalFmParams => {
@@ -111,6 +130,8 @@ const buildPersonalFmParams = (
     if (track.hash) params.hash = track.hash;
     const songid = resolveSongNumericId(track);
     if (songid) params.songid = songid;
+    const curMark = resolvePersonalFmCurMark(track);
+    if (curMark) params.cur_mark = curMark;
     if (options?.playtime !== undefined) {
       params.playtime = Math.max(0, Math.floor(options.playtime));
     }
@@ -184,6 +205,17 @@ export const personalFmActions = {
     this.personalFmBuffer = toRawSongList(
       this.personalFmBuffer.filter((song) => resolveSongQueueKey(song) !== candidate.key),
     );
+    if (candidate.origin !== 'history') return;
+    const queue = this.playbackQueues.find((item) => item.id === PERSONAL_FM_QUEUE_ID);
+    if (!queue) return;
+    const currentId = String(queue.currentTrackId ?? '');
+    queue.songs = toRawSongList(
+      queue.songs.filter(
+        (song) => resolveSongQueueKey(song) !== candidate.key || String(song.id) === currentId,
+      ),
+    );
+    queue.songCount = queue.songs.length;
+    queue.updatedAt = Date.now();
   },
   replenishPersonalFmBuffer(this: PersonalFmStoreShape): Promise<number> {
     if (this.personalFmBuffer.filter(isPlayableSong).length > 4) return Promise.resolve(0);
@@ -220,7 +252,7 @@ export const personalFmActions = {
     options: {
       track: Song | null;
       playtime: number;
-      action?: 'play' | 'garbage';
+      action?: PersonalFmAction;
       isOverplay: boolean;
     },
   ): Promise<number> {
@@ -238,6 +270,37 @@ export const personalFmActions = {
       })
       .catch((error) => {
         logger.warn('PlaylistStore', 'Report personal fm advance failed:', error);
+        return 0;
+      });
+  },
+  reportPersonalFmFeedback(
+    this: PersonalFmStoreShape,
+    action: PersonalFmAction,
+    track?: Song | null,
+  ): Promise<number> {
+    const queue = this.playbackQueues.find((item) => item.id === PERSONAL_FM_QUEUE_ID);
+    const target =
+      track ??
+      queue?.songs.find((song) => String(song.id) === String(queue.currentTrackId ?? '')) ??
+      null;
+    if (!queue || !target || !isCurrentPersonalFmTrack(queue, target)) return Promise.resolve(0);
+    const current =
+      queue.songs.find((song) => String(song.id) === String(queue.currentTrackId ?? '')) ?? target;
+    const marked = resolvePersonalFmCurMark(target)
+      ? target
+      : { ...target, curMark: current.curMark };
+    const epoch = this.personalFmSessionEpoch;
+    return this.fetchPersonalFmSongs(
+      buildPersonalFmParams(queue, marked, this.personalFmBuffer.length, { action }),
+    )
+      .then((songs) => {
+        if (epoch !== this.personalFmSessionEpoch) return 0;
+        if (songs.length === 0) return 0;
+        this.personalFmBuffer = toRawSongList(mergeQueueSongs(this.personalFmBuffer, songs));
+        return songs.length;
+      })
+      .catch((error) => {
+        logger.warn('PlaylistStore', 'Report personal fm feedback failed:', error);
         return 0;
       });
   },
@@ -316,6 +379,7 @@ export const personalFmActions = {
       mode?: PersonalFmMode;
       songPoolId?: PersonalFmSongPoolId | number;
       preserveQueue?: boolean;
+      action?: PersonalFmAction;
     },
   ) {
     const presentation = getPersonalFmModePresentation(options?.mode ?? this.personalFmMode);
@@ -328,6 +392,13 @@ export const personalFmActions = {
     this.persistPersonalFmPreferences();
 
     const queue = this.playbackQueues.find((item) => item.id === PERSONAL_FM_QUEUE_ID) ?? null;
+    const action = options?.action ?? 'login';
+    const currentTrack =
+      action === 'change_song_pool'
+        ? (queue?.songs.find((song) => String(song.id) === String(queue.currentTrackId ?? '')) ??
+          this.personalFmBuffer[0] ??
+          null)
+        : null;
     if (queue && !options?.preserveQueue) {
       queue.title = presentation.title;
       queue.subtitle = presentation.subtitle;
@@ -348,10 +419,20 @@ export const personalFmActions = {
     this.personalFmBuffer = toRawSongList([]);
 
     try {
-      const songs = await this.fetchPersonalFmSongs({
-        mode: presentation.mode,
-        song_pool_id: songPoolPresentation.songPoolId,
-      });
+      const songs = await this.fetchPersonalFmSongs(
+        buildPersonalFmParams(
+          queue ??
+            ({
+              meta: {
+                mode: presentation.mode,
+                song_pool_id: songPoolPresentation.songPoolId,
+              },
+            } as PlaybackQueueState),
+          currentTrack,
+          0,
+          { action },
+        ),
+      );
       if (epoch !== this.personalFmSessionEpoch) return null;
       this.personalFmBuffer = toRawSongList(dedupeSongs(songs));
       if (!options?.preserveQueue) {
@@ -377,6 +458,8 @@ export const personalFmActions = {
       const songs = await this.fetchPersonalFmSongs({
         mode: presentation.mode,
         song_pool_id: this.personalFmSongPoolId,
+        action: 'login',
+        remain_songcnt: 0,
       });
       if (epoch !== this.personalFmSessionEpoch) return [];
       if (songs.length > 0) {
@@ -436,6 +519,8 @@ export const personalFmActions = {
     const songs = await this.fetchPersonalFmSongs({
       mode: presentation.mode,
       song_pool_id: songPoolPresentation.songPoolId,
+      action: 'login',
+      remain_songcnt: 0,
     });
     if (epoch !== this.personalFmSessionEpoch) return false;
     if (songs.length === 0) return false;
@@ -468,7 +553,7 @@ export const personalFmActions = {
     options?: {
       track?: Song | null;
       playtime?: number;
-      action?: 'play' | 'garbage';
+      action?: PersonalFmAction;
       isOverplay?: boolean;
     },
   ) {
@@ -500,7 +585,7 @@ export const personalFmActions = {
     options?: {
       track?: Song | null;
       playtime?: number;
-      action?: 'play' | 'garbage';
+      action?: PersonalFmAction;
       isOverplay?: boolean;
     },
   ) {

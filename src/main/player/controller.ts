@@ -375,11 +375,13 @@ export type PlayerTransitionMode = 'none' | 'gapless' | 'fade' | 'automix-basic'
 export interface PlayerTransitionSettingsOptions {
   mode?: PlayerTransitionMode;
   fadeSecs?: number;
+  matchTempo?: boolean;
 }
 
 export interface PlayerTransitionSettings {
   mode: PlayerTransitionMode;
   fadeSecs: number;
+  matchTempo: boolean;
   /** Seconds before the end of the current track at which the next source should be prepared. */
   prefetchLeadSecs: number;
 }
@@ -752,6 +754,9 @@ export class PlayerController extends EventEmitter {
     if (options.mode) payload.mode = options.mode;
     if (typeof options.fadeSecs === 'number' && Number.isFinite(options.fadeSecs)) {
       payload.fadeSecs = Math.max(0, Math.min(15, options.fadeSecs));
+    }
+    if (typeof options.matchTempo === 'boolean') {
+      payload.matchTempo = options.matchTempo;
     }
     this.transitionSettings = { ...(this.transitionSettings ?? {}), ...payload };
     return this.getAddonOrThrow().setTransitionSettings(payload);

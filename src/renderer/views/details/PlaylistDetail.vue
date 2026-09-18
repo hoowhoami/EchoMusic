@@ -35,6 +35,7 @@ import { useUserStore } from '@/stores/user';
 import Button from '@/components/ui/Button.vue';
 import Tooltip from '@/components/ui/Tooltip.vue';
 import { mapPlaylistMeta, resolvePlaylistTrackQueryId, mapCommentItem } from '@/utils/mappers';
+import { enrichCommentsWithYoungVip } from '@/utils/commentVipCache';
 import { parsePlaylistTracks } from '@/utils/mappers';
 import type { PlaylistMeta } from '@/models/playlist';
 import type { Comment } from '@/models/comment';
@@ -281,8 +282,12 @@ const fetchComments = async (reset = false) => {
       const hotCandidate = data.hot_list ?? data.weight_list ?? [];
       const list = Array.isArray(listCandidate) ? listCandidate : [];
       const hotList = Array.isArray(hotCandidate) ? hotCandidate : [];
-      const mapped = list.map(mapCommentItem).filter((item) => item.content.length > 0);
-      const mappedHot = hotList.map(mapCommentItem).filter((item) => item.content.length > 0);
+      const mapped = (await enrichCommentsWithYoungVip(list.map(mapCommentItem))).filter(
+        (item) => item.content.length > 0,
+      );
+      const mappedHot = (await enrichCommentsWithYoungVip(hotList.map(mapCommentItem))).filter(
+        (item) => item.content.length > 0,
+      );
       if (reset) {
         hotComments.value = mappedHot.map((item) => ({ ...item }));
       }

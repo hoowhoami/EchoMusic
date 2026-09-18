@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { constants, createFmStore, queuePolicy } from './helpers/personal-fm.mjs';
+import { constants, createFmStore, helpers, queuePolicy } from './helpers/personal-fm.mjs';
 
 test('FM peek is read-only, commit consumes and persists exactly once', () => {
   const { store, requests, persisted } = createFmStore();
@@ -138,6 +138,23 @@ test('confirmed failed candidates leave the buffer without history or garbage fe
   );
 });
 
+test('failed history candidates leave the queue without dropping the current song', () => {
+  const { store, requests, persisted } = createFmStore();
+  store.activeQueue.songs.push({ id: 'history', hash: 'history', duration: 100 });
+  const candidate = store.peekNextPersonalFmCandidate('a', 'history-1');
+  assert.equal(candidate.origin, 'history');
+  assert.equal(candidate.track.id, 'history');
+  store.skipFailedPersonalFmCandidate(candidate);
+  assert.deepEqual(
+    store.activeQueue.songs.map((s) => s.id),
+    ['a'],
+  );
+  assert.equal(store.peekNextPersonalFmCandidate('a', 'history-2').track.id, 'b');
+  assert.equal(store.commitPersonalFmCandidate(candidate), null);
+  assert.equal(persisted.length, 0);
+  assert.equal(requests.length, 0);
+});
+
 test('FM capability is explicit; listen-together and suppressed queues remain excluded', () => {
   assert.equal(
     queuePolicy.getQueueAdvanceAuthority(constants.PERSONAL_FM_QUEUE_ID),
@@ -161,4 +178,60 @@ test('unplayable recommendations do not prevent low-watermark replenishment', as
   await store.replenishPersonalFmBuffer();
   assert.equal(requests.length, 1);
   assert.equal(store.peekNextPersonalFmCandidate('a', '1').track.id, 'new');
+});
+
+test('radio mode is a first-class FM presentation', () => {
+  assert.equal(helpers.getPersonalFmModePresentation('radio').mode, 'radio');
+  assert.equal(helpers.getPersonalFmModePresentation('radio').title, '电台 Radio');
+  assert.equal(helpers.getPersonalFmModePresentation('unknown').mode, 'normal');
+});
+
+test('first FM fetch uses login and song-pool switch reports change_song_pool with cur_mark', async () => {
+  const { store, requests } = createFmStore({
+    fetch: async () => [{ id: 'd', hash: 'd', curMark: 'mark-d' }],
+  });
+  store.activeQueue.songs[0].curMark = 'mark-a';
+  await store.resetPersonalFmPreview({ mode: 'radio' });
+  assert.equal(requests.at(-1).action, 'login');
+  assert.equal(requests.at(-1).mode, 'radio');
+  assert.equal(requests.at(-1).remain_songcnt, 0);
+  assert.equal(requests.at(-1).cur_mark, undefined);
+
+  store.personalFmBuffer = [{ id: 'b', hash: 'b', duration: 100, curMark: 'mark-b' }];
+  store.activeQueue.songs = [{ id: 'a', hash: 'a', duration: 100, curMark: 'mark-a' }];
+  store.activeQueue.currentTrackId = 'a';
+  await store.resetPersonalFmPreview({ songPoolId: 1, action: 'change_song_pool' });
+  const last = requests.at(-1);
+  assert.equal(last.action, 'change_song_pool');
+  assert.equal(last.song_pool_id, 1);
+  assert.equal(last.hash, 'a');
+  assert.equal(last.cur_mark, 'mark-a');
+});
+
+test('advance and like feedback forward cur_mark; like is limited to the current FM track', async () => {
+  const { store, requests } = createFmStore({ fetch: async () => [] });
+  await store.reportPersonalFmAdvance('1:1:a', {
+    track: { id: 'a', hash: 'a', curMark: 'mark-a' },
+    playtime: 8.2,
+    action: 'garbage',
+    isOverplay: false,
+  });
+  assert.equal(requests[0].cur_mark, 'mark-a');
+  assert.equal(requests[0].action, 'garbage');
+
+  await store.reportPersonalFmFeedback('click_red', {
+    id: 'a',
+    hash: 'a',
+    curMark: 'mark-a',
+  });
+  assert.equal(requests[1].action, 'click_red');
+  assert.equal(requests[1].cur_mark, 'mark-a');
+  assert.equal(requests[1].hash, 'a');
+
+  await store.reportPersonalFmFeedback('click_red', {
+    id: 'other',
+    hash: 'other',
+    curMark: 'mark-other',
+  });
+  assert.equal(requests.length, 2);
 });

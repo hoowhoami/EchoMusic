@@ -40,10 +40,12 @@ export const MAX_PLUGIN_FILE_SCAN_LIMIT = 10000;
 export const DEFAULT_PLUGIN_READ_BYTES = 1024 * 1024;
 export const MAX_PLUGIN_READ_BYTES = 4 * 1024 * 1024;
 export const MAX_PLUGIN_WRITE_BYTES = 8 * 1024 * 1024;
-export const PLUGIN_WINDOW_MIN_WIDTH = 180;
-export const PLUGIN_WINDOW_MIN_HEIGHT = 48;
-export const PLUGIN_WINDOW_MAX_WIDTH = 1400;
-export const PLUGIN_WINDOW_MAX_HEIGHT = 900;
+export const PLUGIN_WINDOW_MIN_WIDTH = 1;
+/** 1px so taskbar / single-line lyric plugins can match font and bar height. */
+export const PLUGIN_WINDOW_MIN_HEIGHT = 1;
+/** Soft cap only: actual size is still clamped to the current display. */
+export const PLUGIN_WINDOW_MAX_WIDTH = 100000;
+export const PLUGIN_WINDOW_MAX_HEIGHT = 100000;
 export const PLUGIN_MARKETPLACE_FETCH_TIMEOUT_MS = 30_000;
 export const PLUGIN_MARKETPLACE_DOWNLOAD_TIMEOUT_MS = 180_000;
 export const PLUGIN_MARKETPLACE_EXTRACT_TIMEOUT_MS = 120_000;

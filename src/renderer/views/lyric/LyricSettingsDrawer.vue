@@ -14,7 +14,7 @@ import {
   lyricsPages,
   resolveLyricsPage,
   resolveLyricSkinKey,
-  retryLyricsPage,
+  retryAndSelectLyricsPage,
 } from '@/plugins/lyricsPage';
 import type { LyricSkin } from '@/plugins/lyricsPage';
 import { iconCheck, iconChevronLeft, iconMusic, iconSettings, iconX } from '@/icons';
@@ -67,15 +67,15 @@ const activeSkinKey = computed(() =>
 
 const activeSkin = computed(() => allSkins.value.find((skin) => skin.key === activeSkinKey.value));
 
-const retryActiveSkin = () => {
-  retryLyricsPage(activeSkinKey.value);
-};
-
 const applySkin = (key: string) => {
   if (key.startsWith(HOST_SKIN_PREFIX)) {
     settingStore.lyricViewMode = key.slice(HOST_SKIN_PREFIX.length) as LyricViewMode;
   }
   settingStore.lyricsPageProvider = key;
+};
+
+const retryActiveSkin = () => {
+  retryAndSelectLyricsPage(activeSkinKey.value, applySkin);
 };
 
 /** 皮肤卡交互：单击选中皮肤；已选中皮肤再次点击进入该皮肤的设置面板。 */
@@ -85,8 +85,7 @@ const selectSkin = (skin: LyricSkin) => {
     emit('update:view', 'settings');
     return;
   }
-  applySkin(skin.key);
-  retryLyricsPage(skin.key);
+  retryAndSelectLyricsPage(skin.key, applySkin);
 };
 
 const backToSkins = () => {

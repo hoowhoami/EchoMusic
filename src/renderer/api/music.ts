@@ -20,15 +20,31 @@ export interface AudioImageAuthor {
   imgs?: Record<string, AudioImagePortrait[] | undefined>;
 }
 
+export type PersonalFmMode = 'normal' | 'small' | 'peak' | 'radio';
+
+export type PersonalFmAction =
+  | 'play'
+  | 'login'
+  | 'garbage'
+  | 'cancel_garbage'
+  | 'click_red'
+  | 'cancel_red'
+  | 'download'
+  | 'black_singer'
+  | 'cancel_black_singer'
+  | 'update_recommend_source'
+  | 'change_song_pool';
+
 export interface PersonalFmParams {
   hash?: string;
   songid?: string | number;
   playtime?: string | number;
-  mode?: 'normal' | 'small' | 'peak' | string;
-  action?: 'play' | 'garbage' | string;
+  mode?: PersonalFmMode | string;
+  action?: PersonalFmAction | string;
   song_pool_id?: string | number;
   is_overplay?: string | number;
   remain_songcnt?: string | number;
+  cur_mark?: string | number;
 }
 
 export interface EverydayStyleRecommendParams {

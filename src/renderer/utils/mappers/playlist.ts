@@ -20,6 +20,7 @@ import {
 import { mapPlaylistSong } from './song';
 import { splitValidSongs } from '../song';
 import { serializePlaylistTags } from '../playlistTags';
+import { commentChipsFromRaw, commentTalentIconFromRaw } from '../commentVip';
 
 export interface PlaylistTrackQueryContext {
   listid?: number;
@@ -757,6 +758,10 @@ export const mapCommentItem = (item: unknown): Comment => {
     ),
     '匿名用户',
   );
+  const userId = readString(
+    pickValue(record.user_id, record.userid, record.uid, userRecord?.userid, userRecord?.id, ''),
+    '',
+  ).trim();
   const avatar = readString(
     pickValue(
       record.user_pic,
@@ -810,11 +815,19 @@ export const mapCommentItem = (item: unknown): Comment => {
     pickValue(record.isStar, record.is_star, record.star, 0) === true ||
     parseIntSafe(pickValue(record.isStar, record.is_star, record.star, 0)) === 1;
 
+  const ipLocation = readString(
+    pickValue(record.location, record.ip_location, record.ipLocation, ''),
+    '',
+  );
+  const badges = commentChipsFromRaw(record);
+  const talentIcon = commentTalentIconFromRaw(record);
+
   return {
     id,
     comment_id: id || undefined,
     userName,
     user_name: userName || undefined,
+    userId: userId && userId !== '0' ? userId : undefined,
     userPic: avatar || undefined,
     user_pic: avatar || undefined,
     avatar,
@@ -830,6 +843,9 @@ export const mapCommentItem = (item: unknown): Comment => {
     reply_num: replyCount,
     isHot,
     isStar,
+    ipLocation: ipLocation || undefined,
+    badges: badges.length > 0 ? badges : undefined,
+    talentIcon: talentIcon || undefined,
     raw: record,
     specialId: specialId || undefined,
     special_id: specialId || undefined,

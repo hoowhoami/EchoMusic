@@ -107,6 +107,12 @@ export function retryLyricsPage(key: string) {
   if (entry) failed.delete(entry.revision);
 }
 
+/** 清失败标记并切回该皮肤；失败后宿主已重置到封面，换肤面板再点同一张卡走这里。 */
+export function retryAndSelectLyricsPage(key: string, apply: (nextKey: string) => void) {
+  retryLyricsPage(key);
+  apply(key);
+}
+
 /**
  * 判断皮肤配置 key 是否属于某插件（key 由本模块以 JSON.stringify([pluginId, id]) 生成）。
  * 供卸载插件时清理其孤儿皮肤配置使用；宿主内置 key（'host:*'）与非法 key 一律不属于插件。
@@ -132,9 +138,33 @@ export function scopeLyricsPageContext(
         return value(...args);
       };
     if (value && typeof value === 'object' && !isRef(value)) {
-      return Object.freeze(
-        Object.fromEntries(Object.entries(value).map(([key, item]) => [key, bind(item)])),
-      );
+      const next: PropertyDescriptorMap = {};
+      for (const [key, descriptor] of Object.entries(Object.getOwnPropertyDescriptors(value))) {
+        if (typeof descriptor.get === 'function' || typeof descriptor.set === 'function') {
+          next[key] = {
+            enumerable: descriptor.enumerable,
+            configurable: descriptor.configurable,
+            get: descriptor.get
+              ? () => {
+                  if (!isActive()) throw new Error('插件歌词页已失效');
+                  return descriptor.get!.call(value);
+                }
+              : undefined,
+            set: descriptor.set
+              ? (nextValue: unknown) => {
+                  if (!isActive()) throw new Error('插件歌词页已失效');
+                  descriptor.set!.call(value, nextValue);
+                }
+              : undefined,
+          };
+          continue;
+        }
+        next[key] = {
+          ...descriptor,
+          value: bind(descriptor.value),
+        };
+      }
+      return Object.freeze(Object.defineProperties({}, next));
     }
     return value;
   };
@@ -153,9 +183,13 @@ export function createLyricsPageApi(
   pluginId: string,
   addDisposable: (dispose: () => void) => void,
   reportError: (source: string, error: unknown) => void,
+  allowed: boolean,
 ) {
   return {
     register(input: LyricsPageRegistration) {
+      if (allowed !== true) {
+        throw new Error('插件未声明歌词页能力（capabilities.lyricsPage）');
+      }
       const id = String(input.id ?? '').trim();
       if (!id || !input.component || !['object', 'function'].includes(typeof input.component)) {
         throw new Error('歌词页需要 id 和 Vue component');

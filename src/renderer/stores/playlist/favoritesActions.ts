@@ -84,6 +84,10 @@ type FavoritesStoreShape = {
   likedPlaylist: PlaylistMeta | undefined;
   likedPlaylistListId: number | null;
   likedPlaylistQueryId: string | number | null;
+  reportPersonalFmFeedback?: (
+    action: 'click_red' | 'cancel_red',
+    track?: Song | null,
+  ) => Promise<number>;
   rememberPlaylistSongs: (
     listId: string | number | null | undefined,
     songs: readonly Song[],
@@ -539,6 +543,7 @@ export const favoritesActions = {
             this.markPlaylistContentChanged(listId, 'add', [song]);
           }
           logger.info('PlaylistStore', `Song ${song.name} added to favorites on cloud`);
+          if (!alreadyFavorited) void this.reportPersonalFmFeedback?.('click_red', song);
           return true;
         }
         if (!alreadyFavorited) {
@@ -579,6 +584,7 @@ export const favoritesActions = {
           this.forgetPlaylistSongs(listId, [song]);
           this.markPlaylistContentChanged(listId, 'remove', [song]);
           logger.info('PlaylistStore', `Song ${song.name} removed from favorites on cloud`);
+          void this.reportPersonalFmFeedback?.('cancel_red', song);
           return true;
         }
         this.favorites = previousFavorites;
@@ -627,6 +633,7 @@ export const favoritesActions = {
         this.forgetPlaylistSongs(listId, [removedSong]);
         this.markPlaylistContentChanged(listId, 'remove', [removedSong]);
         logger.info('PlaylistStore', `Song ${song.name} removed from favorites on cloud`);
+        void this.reportPersonalFmFeedback?.('cancel_red', removedSong);
         return true;
       }
       this.favorites = previousFavorites;

@@ -781,6 +781,7 @@ export const usePlayerStore = defineStore(
         volumeFadeTime: settingStore.volumeFadeTime,
         trackTransitionMode: settingStore.effectiveTrackTransitionMode,
         fadeCrossSecs: settingStore.fadeCrossSecs,
+        automixMatchTempo: settingStore.automixMatchTempo,
         outputDevice: settingStore.outputDevice,
         exclusiveAudioDevice: settingStore.exclusiveAudioDevice,
         playbackStallTimeout: settingStore.playbackStallTimeout,
@@ -797,9 +798,14 @@ export const usePlayerStore = defineStore(
       );
       // 歌曲过渡设置下发给 native 引擎；模式/时长变化时引擎会丢弃按旧设置准备的下一首。
       const unsubscribeTrackTransition = watch(
-        () => [settingStore.effectiveTrackTransitionMode, settingStore.fadeCrossSecs] as const,
-        ([mode, fadeSecs]) => {
-          engine.setTransitionSettings({ mode, fadeSecs });
+        () =>
+          [
+            settingStore.effectiveTrackTransitionMode,
+            settingStore.fadeCrossSecs,
+            settingStore.automixMatchTempo,
+          ] as const,
+        ([mode, fadeSecs, matchTempo]) => {
+          engine.setTransitionSettings({ mode, fadeSecs, matchTempo });
         },
         { immediate: true },
       );
@@ -842,7 +848,8 @@ export const usePlayerStore = defineStore(
           settingStore.volumeFadeTime !== snapshot.volumeFadeTime;
         const shouldUpdateGapless =
           settingStore.effectiveTrackTransitionMode !== snapshot.trackTransitionMode ||
-          settingStore.fadeCrossSecs !== snapshot.fadeCrossSecs;
+          settingStore.fadeCrossSecs !== snapshot.fadeCrossSecs ||
+          settingStore.automixMatchTempo !== snapshot.automixMatchTempo;
         const shouldUpdateOutputDevice =
           settingStore.outputDevice !== snapshot.outputDevice ||
           settingStore.exclusiveAudioDevice !== snapshot.exclusiveAudioDevice;
@@ -859,6 +866,7 @@ export const usePlayerStore = defineStore(
           volumeFadeTime: settingStore.volumeFadeTime,
           trackTransitionMode: settingStore.effectiveTrackTransitionMode,
           fadeCrossSecs: settingStore.fadeCrossSecs,
+          automixMatchTempo: settingStore.automixMatchTempo,
           outputDevice: settingStore.outputDevice,
           exclusiveAudioDevice: settingStore.exclusiveAudioDevice,
           playbackStallTimeout: settingStore.playbackStallTimeout,

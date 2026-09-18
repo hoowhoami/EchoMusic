@@ -17,7 +17,7 @@ import type { PlayerState } from './state';
 import { normalizePlayerErrorPayload, type PlayerEngine } from '@/utils/player';
 import type { usePlaylistStore } from '../playlist';
 import type { useSettingStore } from '../setting';
-import { PERSONAL_FM_QUEUE_ID, type PlaybackQueueState } from '../playlist';
+import { PERSONAL_FM_QUEUE_ID, type PersonalFmAction, type PlaybackQueueState } from '../playlist';
 import type { PersonalFmCandidate } from '../playlist/personalFmActions';
 import { toRawSong, toRawSongList } from '../playlist/helpers';
 import { useHistoryStore } from '../historyStore';
@@ -134,7 +134,7 @@ export const createPlaybackManager = (
         Number(a.id === playlistStore.lastNonFmQueueId),
     );
   };
-  const reportFmAdvance = (action: 'play' | 'garbage' = 'play', natural = false) => {
+  const reportFmAdvance = (action: PersonalFmAction = 'play', natural = false) => {
     // A failed or superseded load never became a played FM occurrence.
     if (action === 'play' && pendingFmLoad?.requestSeq === state.playbackRequestSeq) return;
     void playlistStore.reportPersonalFmAdvance(committedFmOccurrence ?? fmOccurrence(), {
@@ -159,6 +159,16 @@ export const createPlaybackManager = (
       void useHistoryStore().recordPlay(candidate.track);
     }
     void playlistStore.replenishPersonalFmBuffer();
+    return true;
+  };
+  const recoverFailedFmCommit = async (requestSeq: number, preserveFailureChain?: boolean) => {
+    const failedFmCandidate =
+      pendingFmLoad?.requestSeq === requestSeq ? pendingFmLoad.candidate : null;
+    if (!commitFmLoad(requestSeq)) {
+      if (failedFmCandidate) playlistStore.skipFailedPersonalFmCandidate(failedFmCandidate);
+      await advancePersonalFm(false, false, preserveFailureChain);
+      return false;
+    }
     return true;
   };
   const invalidatedGaplessSources = new Map<
@@ -336,10 +346,8 @@ export const createPlaybackManager = (
           await engine.play();
           if (!isCurrentRequest()) return false;
         }
-        if (!commitFmLoad(requestSeq)) {
-          stop();
-          return false;
-        }
+        // commit 失败已经 skip + 切下一首 FM，对调用方视为已处理，避免再走失败态/自动下一首。
+        if (!(await recoverFailedFmCommit(requestSeq))) return true;
         if (targetPosition > 0) engine.seek(targetPosition);
         completePlaybackIntent(state, requestSeq, { isPlaying: shouldAutoPlay });
         setEnginePlaybackStatus(state, shouldAutoPlay ? 'playing' : 'paused', trackId);
@@ -422,10 +430,7 @@ export const createPlaybackManager = (
         await engine.play();
         if (!isCurrentRequest()) return false;
       }
-      if (!commitFmLoad(requestSeq)) {
-        stop();
-        return false;
-      }
+      if (!(await recoverFailedFmCommit(requestSeq))) return true;
       if (targetPosition > 0) engine.seek(targetPosition);
       completePlaybackIntent(state, requestSeq, { isPlaying: shouldAutoPlay });
       setEnginePlaybackStatus(state, shouldAutoPlay ? 'playing' : 'paused', trackId);
@@ -1410,10 +1415,7 @@ export const createPlaybackManager = (
 
       // 在 engine.play() 成功后立即记录本地历史，使用闭包捕获的 snapshot
       // 避免因 player end-file 事件竞态导致 state.currentTrackSnapshot 被下一首覆盖
-      if (!commitFmLoad(requestSeq)) {
-        stop();
-        return;
-      }
+      if (!(await recoverFailedFmCommit(requestSeq, options?.preserveFailureChain))) return;
       recordLocalHistoryOnce(snapshot);
 
       state.autoNextAttempts = 0;
@@ -1694,7 +1696,7 @@ export const createPlaybackManager = (
     }
     const nextCandidate = playlistStore.peekNextPersonalFmCandidate(
       String(state.currentTrackId ?? ''),
-      fmOccurrence(),
+      `${fmOccurrence()}:${advanceId}`,
     );
     const decision = !disliked ? resolveOrderedNextTrack() : null;
     const prepared = decision ? takeGaplessPreparedSource(decision) : null;

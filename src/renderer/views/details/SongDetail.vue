@@ -14,6 +14,7 @@ import {
 } from '@/api/comment';
 import { getSongPrivilegeLite, getSongRanking, getSongRankingFilter } from '@/api/music';
 import { mapCommentItem } from '@/utils/mappers';
+import { enrichCommentsWithYoungVip } from '@/utils/commentVipCache';
 import type { Comment } from '@/models/comment';
 import type { Song } from '@/models/song';
 import { getSongEffectTags, getSongQualityTags } from '@/utils/song';
@@ -783,7 +784,7 @@ const singerComments = computed(() => hotComments.value.filter((item) => item.is
 //   () => singerComments.value.length > 0 || popularComments.value.length > 0,
 // );
 
-const buildPayload = (data: unknown): CommentPayload => {
+const buildPayload = async (data: unknown): Promise<CommentPayload> => {
   const record = data && typeof data === 'object' ? (data as Record<string, unknown>) : {};
   const payload = (record.data as Record<string, unknown>) || record;
   const listCandidate = (payload.list ?? payload.comments ?? []) as unknown;
@@ -803,12 +804,17 @@ const buildPayload = (data: unknown): CommentPayload => {
   const classifyCandidate = payload.classify_list ?? [];
   const hotwordCandidate = payload.hot_word_list ?? [];
 
-  const hotMapped = hotList.map(mapCommentItem).map((item) => ({ ...item, isHot: true }));
-  const starMapped = starList.map(mapCommentItem).map((item) => ({ ...item, isStar: true }));
+  const hotMapped = await enrichCommentsWithYoungVip(
+    hotList.map(mapCommentItem).map((item) => ({ ...item, isHot: true })),
+  );
+  const starMapped = await enrichCommentsWithYoungVip(
+    starList.map(mapCommentItem).map((item) => ({ ...item, isStar: true })),
+  );
+  const listMapped = await enrichCommentsWithYoungVip(list.map(mapCommentItem));
 
   return {
     hot: [...starMapped, ...hotMapped],
-    list: list.map(mapCommentItem),
+    list: listMapped,
     total: Number(payload.count ?? payload.total ?? record.count ?? record.total ?? 0) || 0,
     classifyList: Array.isArray(classifyCandidate)
       ? classifyCandidate.map((item) => ({
@@ -854,7 +860,7 @@ const fetchMusicComments = async (reset = false) => {
       'status' in res &&
       (res as { status?: number }).status === 1
     ) {
-      const payload = buildPayload(res);
+      const payload = await buildPayload(res);
       if (reset) {
         hotComments.value = payload.hot ?? [];
         classifyList.value = payload.classifyList;
@@ -905,7 +911,7 @@ const fetchPlaylistComments = async (reset = false) => {
       'status' in res &&
       (res as { status?: number }).status === 1
     ) {
-      const payload = buildPayload(res);
+      const payload = await buildPayload(res);
       if (reset) {
         hotComments.value = payload.hot ?? [];
       }
@@ -948,7 +954,7 @@ const fetchAlbumComments = async (reset = false) => {
       'status' in res &&
       (res as { status?: number }).status === 1
     ) {
-      const payload = buildPayload(res);
+      const payload = await buildPayload(res);
       if (reset) {
         hotComments.value = payload.hot ?? [];
       }
@@ -999,7 +1005,7 @@ const fetchClassifyComments = async (reset = false) => {
       'status' in res &&
       (res as { status?: number }).status === 1
     ) {
-      const payload = buildPayload(res);
+      const payload = await buildPayload(res);
       classifyComments.value = reset ? payload.list : [...classifyComments.value, ...payload.list];
       const selectedItem = classifyList.value.find((item) => item.id === selectedClassify.value);
       const totalCount = payload.total || selectedItem?.count || 0;
@@ -1046,7 +1052,7 @@ const fetchHotwordComments = async (reset = false) => {
       'status' in res &&
       (res as { status?: number }).status === 1
     ) {
-      const payload = buildPayload(res);
+      const payload = await buildPayload(res);
       hotwordComments.value = reset ? payload.list : [...hotwordComments.value, ...payload.list];
       const selectedItem = hotwordList.value.find((item) => item.content === selectedHotword.value);
       const totalCount = payload.total || selectedItem?.count || 0;

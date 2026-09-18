@@ -238,6 +238,18 @@ export function getUserVipDetail() {
 }
 
 /**
+ * 批量查询评论作者概念/畅听等产品（Young `/v2/batch_union_vipinfo`）
+ */
+export function getBatchUnionVipinfo(useridlist: Array<string | number>) {
+  return request.get('/user/batch/union/vipinfo', {
+    params: { useridlist: useridlist?.join(',') },
+    headers: {
+      'X-Skip-Auth': '1',
+    },
+  });
+}
+
+/**
  * 领取每日畅听会员
  */
 export function claimDayVip(day: string) {

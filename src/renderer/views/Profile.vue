@@ -18,6 +18,7 @@ import ContentBlacklistDialog from '@/components/profile/ContentBlacklistDialog.
 import ListeningPreferencesDialog from '@/components/profile/ListeningPreferencesDialog.vue';
 
 import Avatar from '@/components/ui/Avatar.vue';
+import Tag from '@/components/ui/Tag.vue';
 
 import logger from '@/utils/logger';
 import { useToastStore } from '@/stores/toast';
@@ -33,7 +34,6 @@ import {
   iconRefreshCw,
   iconScan,
   iconSmartphone,
-  iconTrash,
   iconUser,
 } from '@/icons';
 import PageScrollContainer from '@/components/ui/PageScrollContainer.vue';
@@ -290,6 +290,11 @@ const location = computed(() => {
   return '-';
 });
 
+const ipLocation = computed(() => {
+  const value = detail.value?.loc;
+  return typeof value === 'string' ? value.trim() : '';
+});
+
 const getVipExpireText = (vipData: any) => {
   if (!vipData?.vip_end_time) return null;
   try {
@@ -501,6 +506,7 @@ onMounted(() => loadData());
             <div
               class="user-card relative overflow-hidden p-6 rounded-3xl bg-linear-to-br from-primary/12 via-primary/6 to-transparent border border-primary/20 mb-6"
             >
+              <Tag v-if="ipLocation" class="profile-ip-location">{{ ipLocation }}</Tag>
               <div class="flex items-center gap-6 relative z-10">
                 <Tooltip content="修改头像">
                   <template #trigger>
@@ -532,17 +538,17 @@ onMounted(() => loadData());
                   @change="handleAvatarSelected"
                 />
                 <div class="flex-1 min-w-0">
-                  <div class="flex items-center gap-3 mb-2">
+                  <div class="flex items-center gap-3 mb-2 min-w-0">
                     <h2 class="text-[20px] font-black truncate">{{ userInfo.nickname }}</h2>
                     <div
                       v-if="tvip"
-                      class="px-1.5 py-0.5 rounded-md bg-linear-to-r from-[#07C160] to-[#07C160]/80 text-white text-[9px] font-black shadow-sm"
+                      class="px-1.5 py-0.5 rounded-md bg-linear-to-r from-[#07C160] to-[#07C160]/80 text-white text-[9px] font-black shadow-sm shrink-0"
                     >
                       畅听
                     </div>
                     <div
                       v-if="svip"
-                      class="px-1.5 py-0.5 rounded-md bg-linear-to-r from-orange-500 to-orange-500/80 text-white text-[9px] font-black shadow-sm"
+                      class="px-1.5 py-0.5 rounded-md bg-linear-to-r from-orange-500 to-orange-500/80 text-white text-[9px] font-black shadow-sm shrink-0"
                     >
                       概念
                     </div>
@@ -1050,20 +1056,14 @@ onMounted(() => loadData());
             </div>
             <Button
               v-if="!device.isCurrent"
-              variant="danger"
+              variant="ghost"
               size="xs"
               :disabled="!device.canKick"
               :loading="loginDeviceStore.kickingId === device.id"
-              class="shrink-0"
+              class="shrink-0 text-red-500/80 hover:bg-red-500/10 hover:text-red-500"
               @click="requestKickDevice(device)"
             >
-              <Icon
-                v-if="loginDeviceStore.kickingId !== device.id"
-                :icon="iconTrash"
-                width="13"
-                height="13"
-              />
-              <span class="ml-1">移除</span>
+              <span>移除</span>
             </Button>
           </div>
         </div>
@@ -1226,6 +1226,20 @@ onMounted(() => loadData());
 }
 .user-card {
   box-shadow: 0 20px 60px -10px rgba(var(--color-primary-rgb), 0.15);
+}
+
+.profile-ip-location {
+  position: absolute;
+  top: 14px;
+  right: 16px;
+  z-index: 11;
+  max-width: 40%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--color-primary-text);
+  background: color-mix(in srgb, var(--color-primary) 12%, transparent);
+  border-color: color-mix(in srgb, var(--color-primary) 20%, transparent);
+  pointer-events: none;
 }
 
 .profile-avatar-button:disabled {

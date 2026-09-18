@@ -2148,12 +2148,13 @@ impl Task for PrepareNextSourceTask {
 
         // Song transitions: analyse both tracks and decide the cue points now, while the
         // current track still has plenty of time left.
-        let (current_url, current_ordinal, current_gain_db) =
+        let (current_url, current_ordinal, current_gain_db, current_duration_secs) =
             call_core_command("snapshot-transition-context", |runtime| {
                 Ok((
                     runtime.current_url.clone(),
                     runtime.current_audio_stream_ordinal,
                     runtime.dsp_settings.normalization_gain_db,
+                    runtime.state.duration,
                 ))
             })?;
         let preparation_started = Instant::now();
@@ -2168,6 +2169,8 @@ impl Task for PrepareNextSourceTask {
                 next_audio_stream_ordinal: self.audio_stream_ordinal,
                 current_url: current_url.as_deref(),
                 current_audio_stream_ordinal: current_ordinal,
+                current_duration_secs: Some(current_duration_secs)
+                    .filter(|duration| duration.is_finite() && *duration > 0.0),
                 config: &config,
                 interrupt: &self.interrupt,
             },

@@ -387,10 +387,16 @@ export const createRuntimeUiApi = (
   addDisposable: (dispose: () => void) => () => void,
   runPluginCallback: PluginCallbackRunner,
   reportPluginRuntimeError: PluginRuntimeErrorReporter,
+  capabilities?: { lyricsPage?: boolean },
 ) => {
-  const baseUi = createPluginUiApi(pluginId, addDisposable, (source, error) => {
-    void reportPluginRuntimeError(pluginId, error, source);
-  });
+  const baseUi = createPluginUiApi(
+    pluginId,
+    addDisposable,
+    (source, error) => {
+      void reportPluginRuntimeError(pluginId, error, source);
+    },
+    capabilities,
+  );
   return {
     ...baseUi,
     components: {

@@ -276,10 +276,11 @@ export function registerPlayerIpc(ref: PlayerRef): void {
 
   ipcRegistry.registerHandler(
     'player:set-transition-settings',
-    (_e, options: { mode?: string; fadeSecs?: number } | undefined) =>
+    (_e, options: { mode?: string; fadeSecs?: number; matchTempo?: boolean } | undefined) =>
       ref.current?.setTransitionSettings({
         mode: options?.mode as PlayerTransitionSettingsOptions['mode'],
         fadeSecs: options?.fadeSecs,
+        matchTempo: options?.matchTempo,
       }) ?? null,
   );
 

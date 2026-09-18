@@ -233,6 +233,10 @@ export const mapTopSong = (json: unknown): Song => {
     similarDesc: normalizeText(
       readString(pickValue(recSongInfo.similar_desc, recSongInfo.similarDesc, '')),
     ),
+    curMark: readString(
+      pickValue(recSongInfo.cur_mark, recSongInfo.curMark, record.cur_mark, record.curMark, ''),
+      '',
+    ),
   };
 };
 

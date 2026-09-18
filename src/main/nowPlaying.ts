@@ -299,6 +299,15 @@ export const registerNowPlayingHandlers = (context: IpcContext) => {
     },
   );
 
+  ipcRegistry.registerHandler('now-playing:command', async (_event, command: unknown) => {
+    if (!isNowPlayingCommand(command)) return false;
+    const mainWindow = context.getMainWindow();
+    if (!mainWindow || mainWindow.isDestroyed() || mainWindow.webContents.isDestroyed())
+      return false;
+    mainWindow.webContents.send('now-playing:command', command);
+    return true;
+  });
+
   ipcRegistry.registerListener('now-playing:command', (_event, command: unknown) => {
     if (!isNowPlayingCommand(command)) return;
     const mainWindow = context.getMainWindow();

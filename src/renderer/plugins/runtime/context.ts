@@ -395,6 +395,7 @@ export const createPluginContext = (
       addDisposable,
       runPluginCallback,
       reportPluginRuntimeError,
+      descriptor.manifest.capabilities,
     ),
     commands: {
       register: (id, handler, options) => {

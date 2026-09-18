@@ -10,25 +10,22 @@ import type {
   SetPlaybackQueueOptions,
 } from './types';
 
+const PERSONAL_FM_MODE_PRESENTATION: Record<
+  PersonalFmMode,
+  { title: string; subtitle: string; label: string }
+> = {
+  normal: { title: '红心 Radio', subtitle: '猜你喜欢', label: '红心 Radio' },
+  small: { title: '小众 Radio', subtitle: '小众推荐', label: '小众 Radio' },
+  peak: { title: '速览 Radio', subtitle: '速览推荐', label: '速览 Radio' },
+  radio: { title: '电台 Radio', subtitle: '电台推荐', label: '电台 Radio' },
+};
+
 export const getPersonalFmModePresentation = (mode?: PersonalFmMode | string) => {
   const resolvedMode: PersonalFmMode =
-    mode === 'small' ? 'small' : mode === 'peak' ? 'peak' : PERSONAL_FM_MODE;
+    mode === 'small' || mode === 'peak' || mode === 'radio' ? mode : PERSONAL_FM_MODE;
   return {
     mode: resolvedMode,
-    title:
-      resolvedMode === 'small'
-        ? '小众 Radio'
-        : resolvedMode === 'peak'
-          ? '速览 Radio'
-          : '红心 Radio',
-    subtitle:
-      resolvedMode === 'small' ? '小众推荐' : resolvedMode === 'peak' ? '速览推荐' : '猜你喜欢',
-    label:
-      resolvedMode === 'small'
-        ? '小众 Radio'
-        : resolvedMode === 'peak'
-          ? '速览 Radio'
-          : '红心 Radio',
+    ...PERSONAL_FM_MODE_PRESENTATION[resolvedMode],
   };
 };
 
