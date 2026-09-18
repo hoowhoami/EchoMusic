@@ -14,6 +14,7 @@ const props = defineProps<{
   isDark: boolean;
   expandDirection?: MiniPlayerExpandDirection;
   timelineMs?: number;
+  seekTimestamp?: number;
 }>();
 
 const lyricLines = computed(() => props.lyric?.lines ?? []);
@@ -21,11 +22,14 @@ const lyricViewportRef = ref<HTMLElement | null>(null);
 const lyricTrackRef = ref<HTMLElement | null>(null);
 const lyricTrackOffset = ref(0);
 const animateLyricTrack = ref(false);
+const isUserScrolling = ref(false);
 // 面板刚打开时抑制前几次 index 变化引起的滚动，等稳定后再响应
 const isStabilizing = ref(false);
 let stabilizeTimer: ReturnType<typeof setTimeout> | null = null;
 let lyricMeasureFrameId: number | null = null;
 let lyricSettleTimer: ReturnType<typeof setTimeout> | null = null;
+let userScrollResumeTimer: ReturnType<typeof setTimeout> | null = null;
+const USER_SCROLL_RESUME_MS = 5000;
 
 const activeLyricIndex = computed(() => {
   const index = props.lyric?.currentIndex ?? -1;
@@ -217,14 +221,42 @@ const cancelStabilizeTimer = () => {
   }
 };
 
-const positionActiveLyric = (animate: boolean) => {
+const cancelUserScrollResumeTimer = () => {
+  if (userScrollResumeTimer !== null) {
+    clearTimeout(userScrollResumeTimer);
+    userScrollResumeTimer = null;
+  }
+};
+
+const stopUserScrolling = () => {
+  isUserScrolling.value = false;
+  cancelUserScrollResumeTimer();
+};
+
+const getLyricMaxOffset = () => {
+  const viewport = lyricViewportRef.value;
+  const track = lyricTrackRef.value;
+  if (!viewport || !track) return 0;
+  return Math.max(0, track.scrollHeight - viewport.clientHeight);
+};
+
+const applyLyricOffset = (nextTop: number, animate: boolean) => {
+  const viewport = lyricViewportRef.value;
+  if (!viewport || viewport.clientHeight <= 0) return;
+  const boundedTop = Math.min(getLyricMaxOffset(), Math.max(0, nextTop));
+  const distance = boundedTop - lyricTrackOffset.value;
+  if (Math.abs(distance) < 0.5) return;
+  animateLyricTrack.value = animate && Math.abs(distance) <= viewport.clientHeight * 1.4;
+  lyricTrackOffset.value = boundedTop;
+};
+
+const positionLyricIndex = (index: number, animate: boolean) => {
   cancelPendingLyricMeasure();
   lyricMeasureFrameId = requestAnimationFrame(() => {
     lyricMeasureFrameId = null;
     if (!props.visible) return;
 
     const viewport = lyricViewportRef.value;
-    const index = activeLyricIndex.value;
     const track = lyricTrackRef.value;
     if (!viewport || !track || index < 0 || viewport.clientHeight <= 0) return;
 
@@ -232,16 +264,48 @@ const positionActiveLyric = (animate: boolean) => {
     if (!target) return;
 
     const anchorRatio = 0.42;
-    const nextTop =
-      target.offsetTop - viewport.clientHeight * anchorRatio + target.offsetHeight / 2;
-    const maxTop = Math.max(0, track.scrollHeight - viewport.clientHeight);
-    const boundedTop = Math.min(maxTop, Math.max(0, nextTop));
-    const distance = boundedTop - lyricTrackOffset.value;
-    if (Math.abs(distance) < 1) return;
-
-    animateLyricTrack.value = animate && Math.abs(distance) <= viewport.clientHeight * 1.4;
-    lyricTrackOffset.value = boundedTop;
+    applyLyricOffset(
+      target.offsetTop - viewport.clientHeight * anchorRatio + target.offsetHeight / 2,
+      animate,
+    );
   });
+};
+
+const positionActiveLyric = (animate: boolean) => {
+  if (isUserScrolling.value) return;
+  positionLyricIndex(activeLyricIndex.value, animate);
+};
+
+const handleLyricWheel = (event: WheelEvent) => {
+  if (!props.visible || lyricLines.value.length === 0) return;
+  event.preventDefault();
+  event.stopPropagation();
+
+  const viewport = lyricViewportRef.value;
+  if (!viewport || viewport.clientHeight <= 0) return;
+
+  const delta =
+    event.deltaMode === 1
+      ? event.deltaY * 16
+      : event.deltaMode === 2
+        ? event.deltaY * viewport.clientHeight
+        : event.deltaY;
+
+  isUserScrolling.value = true;
+  cancelUserScrollResumeTimer();
+  applyLyricOffset(lyricTrackOffset.value + delta, false);
+
+  userScrollResumeTimer = setTimeout(() => {
+    userScrollResumeTimer = null;
+    isUserScrolling.value = false;
+    positionActiveLyric(true);
+  }, USER_SCROLL_RESUME_MS);
+};
+
+const handleLyricLineClick = (index: number, line: MiniPlayerLyricPayload['lines'][number]) => {
+  window.electron?.miniPlayer?.command({ type: 'seek', value: Number(line.time) || 0 });
+  stopUserScrolling();
+  void nextTick(() => positionLyricIndex(index, true));
 };
 
 watch(
@@ -250,6 +314,7 @@ watch(
     if (!visible || index < 0) {
       cancelLyricSettleTimer();
       cancelStabilizeTimer();
+      stopUserScrolling();
       isStabilizing.value = false;
       return;
     }
@@ -260,6 +325,7 @@ watch(
     if (!wasVisible) {
       cancelStabilizeTimer();
       isStabilizing.value = false;
+      stopUserScrolling();
       await nextTick();
       positionActiveLyric(false);
       stabilizeTimer = setTimeout(() => {
@@ -269,11 +335,14 @@ watch(
       return;
     }
 
+    const isSameVisibleTrack = trackId === previousTrackId;
+    if (!isSameVisibleTrack) stopUserScrolling();
+
     // 稳定化期间忽略后续 index 变化
     if (isStabilizing.value) return;
+    if (isUserScrolling.value) return;
 
     await nextTick();
-    const isSameVisibleTrack = trackId === previousTrackId;
     positionActiveLyric(isSameVisibleTrack && previousIndex >= 0);
 
     if (!isSameVisibleTrack) {
@@ -286,10 +355,20 @@ watch(
   { immediate: true },
 );
 
+watch(
+  () => props.seekTimestamp ?? 0,
+  (timestamp, previous) => {
+    if (!props.visible || !timestamp || timestamp === previous) return;
+    stopUserScrolling();
+    void nextTick(() => positionActiveLyric(true));
+  },
+);
+
 onBeforeUnmount(() => {
   cancelPendingLyricMeasure();
   cancelLyricSettleTimer();
   cancelStabilizeTimer();
+  cancelUserScrollResumeTimer();
 });
 </script>
 
@@ -348,7 +427,12 @@ onBeforeUnmount(() => {
           </Tooltip>
         </div>
       </div>
-      <div v-if="lyricEntries.length" ref="lyricViewportRef" class="mini-lyric-lines">
+      <div
+        v-if="lyricEntries.length"
+        ref="lyricViewportRef"
+        class="mini-lyric-lines"
+        @wheel.prevent="handleLyricWheel"
+      >
         <div ref="lyricTrackRef" class="mini-lyric-track" :style="lyricTrackStyle">
           <div
             v-for="entry in lyricEntries"
@@ -357,6 +441,9 @@ onBeforeUnmount(() => {
             class="mini-lyric-line"
             :class="{ active: entry.index === activeLyricIndex }"
             :ref="setLineElement(entry.index)"
+            role="button"
+            tabindex="-1"
+            @click="handleLyricLineClick(entry.index, entry.line)"
           >
             <template v-if="isRubyLine(entry.line)">
               <div
@@ -573,6 +660,7 @@ onBeforeUnmount(() => {
   overflow: hidden;
   overflow-anchor: none;
   overscroll-behavior: none;
+  touch-action: pan-y;
 }
 
 .mini-lyric-track {
@@ -587,6 +675,7 @@ onBeforeUnmount(() => {
   text-align: center;
   color: rgba(60, 60, 67, 0.6);
   --mini-lyric-unplayed: rgba(60, 60, 67, 0.6);
+  cursor: pointer;
   transition:
     color 0.18s ease,
     opacity 0.18s ease;
@@ -594,6 +683,10 @@ onBeforeUnmount(() => {
 
 .mini-lyric-line + .mini-lyric-line {
   margin-top: 2px;
+}
+
+.mini-lyric-line:hover {
+  color: rgba(29, 29, 31, 0.82);
 }
 
 .mini-lyric-line.active {
@@ -740,6 +833,10 @@ onBeforeUnmount(() => {
 .mini-lyric.dark .mini-lyric-line {
   color: rgba(245, 245, 247, 0.55);
   --mini-lyric-unplayed: rgba(245, 245, 247, 0.55);
+}
+
+.mini-lyric.dark .mini-lyric-line:hover {
+  color: rgba(245, 245, 247, 0.82);
 }
 
 .mini-lyric.dark .mini-lyric-line.active {

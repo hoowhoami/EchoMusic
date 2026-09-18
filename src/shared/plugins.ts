@@ -471,6 +471,12 @@ export interface PluginServerInterceptOptions {
 export interface PluginWebServerListenOptions {
   port?: number;
   host?: '127.0.0.1' | 'localhost';
+  /** Concurrent WebSocket connections. Default 16, max 64. */
+  maxConnections?: number;
+  /** Max WebSocket message size in bytes. Default 1 MiB, max 8 MiB. */
+  maxMessageBytes?: number;
+  /** Max queued outbound WebSocket bytes. Default 4× message size, max 32 MiB. */
+  maxBufferedBytes?: number;
 }
 
 export interface PluginWebServerRequest {
@@ -483,6 +489,126 @@ export interface PluginWebServerRequest {
   headers: Record<string, string | string[]>;
   body: ArrayBuffer;
   remoteAddress: string;
+}
+
+export type PluginWebSocketData =
+  | string
+  | ArrayBuffer
+  | ArrayBufferView<ArrayBufferLike>
+  | {
+      type: 'base64';
+      data: string;
+    };
+
+export interface PluginWebSocketUpgradeRequest {
+  connectionId: string;
+  pluginId: string;
+  url: string;
+  path: string;
+  query: Record<string, string | string[]>;
+  headers: Record<string, string | string[]>;
+  protocols: string[];
+  remoteAddress: string;
+}
+
+export interface PluginWebSocketUpgradeDecision {
+  accept?: boolean;
+  protocol?: string;
+}
+
+export type PluginWebSocketUpgradeHandlerResult =
+  | PluginWebSocketUpgradeDecision
+  | boolean
+  | void
+  | Promise<PluginWebSocketUpgradeDecision | boolean | void>;
+
+export interface PluginWebSocketOpenEvent {
+  connectionId: string;
+  pluginId: string;
+  protocol: string;
+  url: string;
+  path: string;
+  query: Record<string, string | string[]>;
+  headers: Record<string, string | string[]>;
+  remoteAddress: string;
+}
+
+export interface PluginWebSocketMessageEvent {
+  data: ArrayBuffer | string;
+}
+
+export interface PluginWebSocketCloseEvent {
+  code: number;
+  reason: string;
+}
+
+export interface PluginWebSocketNativeMessageEvent {
+  connectionId: string;
+  pluginId: string;
+  data: ArrayBuffer | string;
+  binary: boolean;
+}
+
+export interface PluginWebSocketNativeCloseEvent {
+  connectionId: string;
+  pluginId: string;
+  code: number;
+  reason: string;
+}
+
+export interface PluginWebSocketNativeErrorEvent {
+  connectionId: string;
+  pluginId: string;
+  error: string;
+}
+
+export interface PluginWebSocketConnection {
+  readonly connectionId: string;
+  readonly protocol: string;
+  readonly url: string;
+  readonly path: string;
+  readonly query: Record<string, string | string[]>;
+  readonly headers: Record<string, string | string[]>;
+  readonly remoteAddress: string;
+  readonly readyState: number;
+  send(data: PluginWebSocketData): Promise<{ ok: boolean; error?: string }>;
+  ping(data?: PluginWebSocketData): Promise<{ ok: boolean; error?: string }>;
+  close(code?: number, reason?: string): Promise<{ ok: boolean; error?: string }>;
+  onMessage(handler: (event: PluginWebSocketMessageEvent) => void): () => void;
+  onClose(handler: (event: PluginWebSocketCloseEvent) => void): () => void;
+  onError(handler: (error: Error) => void): () => void;
+}
+
+export type PluginWebSocketConnectionHandler = (
+  socket: PluginWebSocketConnection,
+) => void | (() => void);
+
+export interface PluginWebSocketListenOptions {
+  path?: string;
+  onUpgrade?: (request: PluginWebSocketUpgradeRequest) => PluginWebSocketUpgradeHandlerResult;
+}
+
+export interface PluginWebServerListenConfig
+  extends PluginWebServerListenOptions, PluginWebSocketListenOptions {
+  onRequest?: (request: PluginWebServerRequest) => PluginWebServerHandlerResult;
+  onConnection?: PluginWebSocketConnectionHandler;
+}
+
+export interface PluginWebSocketSendPayload {
+  connectionId: string;
+  data?: PluginWebSocketData;
+}
+
+export interface PluginWebSocketClosePayload {
+  connectionId: string;
+  code?: number;
+  reason?: string;
+}
+
+export interface PluginWebSocketUpgradeResponse {
+  connectionId: string;
+  accept: boolean;
+  protocol?: string;
 }
 
 export type PluginWebServerJsonBody =
@@ -545,6 +671,7 @@ export type PluginWebServerStatusResult =
       url: string;
       startedAt: number;
       pendingRequests: number;
+      connections: number;
     }
   | {
       ok: false;

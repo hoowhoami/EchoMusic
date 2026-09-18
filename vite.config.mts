@@ -66,6 +66,8 @@ export default defineConfig({
                 'electron',
                 'font-list',
                 'music-metadata',
+                'bufferutil',
+                'utf-8-validate',
                 '../../native/echo-audio-capture',
                 '../../native/echo-media-controls',
                 '../../native/echo-platform-adaptor',

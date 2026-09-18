@@ -1,6 +1,6 @@
 # 插件系统
 
-EchoMusic 支持在线插件源和本地插件。插件可以注册页面、侧边栏入口、设置面板、播放器按钮、歌曲菜单、快捷键和后台任务，也可以接入音源、歌词、实时频谱、独立浮窗、本地文件、SQLite、网络请求、TCP 设备服务、本地 Web 服务与备份恢复。
+EchoMusic 支持在线插件源和本地插件。插件可以注册页面、侧边栏入口、设置面板、播放器按钮、歌曲菜单、快捷键和后台任务，也可以接入音源、歌词、实时频谱、独立浮窗、本地文件、SQLite、网络请求、TCP 设备服务、本地 HTTP / WebSocket 服务与备份恢复。
 
 插件还可以提供完整歌词页界面。在「设置 → 页面歌词 → 歌词页界面」或歌词页设置中选择；注册不会自动替换当前选择。插件可保留原生歌词页标题栏（并非主窗口搜索导航栏），或自行绘制整个歌词页。切歌、音量、收藏、播放模式、队列以及歌词、音质、音效、评论、添加歌单等操作仍复用宿主能力。插件不可用或渲染失败时切回封面皮肤；设置中的选择会一并重置，需要重新选中该皮肤才会重试。可运行示例见 [歌词页替换示例](../examples/lyrics-page-plugin/README.md)。
 
@@ -25,6 +25,7 @@ EchoMusic 支持在线插件源和本地插件。插件可以注册页面、侧�
 - [标题栏 API](https://github.com/hoowhoami/EchoMusicPlugins/blob/main/docs/titlebar.md)
 - [任务中心 API](https://github.com/hoowhoami/EchoMusicPlugins/blob/main/docs/tasks.md)
 - [Graphics 插件绘图 API](https://github.com/hoowhoami/EchoMusicPlugins/blob/main/docs/graphics.md)
+- [本地 Web 服务与 WebSocket](https://github.com/hoowhoami/EchoMusicPlugins/blob/main/docs/web-server.md)
 - [TCP 网络 API](https://github.com/hoowhoami/EchoMusicPlugins/blob/main/docs/tcp.md)
 - [官方插件源与示例插件](https://github.com/hoowhoami/EchoMusicPlugins)
 

@@ -1119,6 +1119,7 @@ onUnmounted(() => {
         :is-dark="appearance?.isDark ?? false"
         :expand-direction="expandDirection"
         :timeline-ms="liveLyricTimelineMs"
+        :seek-timestamp="playback?.seekTimestamp ?? 0"
         :aria-hidden="!isLyricOpen"
       />
 

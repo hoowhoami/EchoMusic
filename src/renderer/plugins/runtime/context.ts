@@ -8,14 +8,8 @@ import type {
   PluginProcessLaunchOptions,
   PluginProcessLaunchResult,
   PluginProcessTerminateResult,
-  PluginWebServerHandlerResult,
-  PluginWebServerListenOptions,
-  PluginWebServerRequest,
-  PluginWindowBounds,
-  PluginWindowShowOptions,
   PluginShowOnTopOptions,
   PluginHostWindowTarget,
-  PluginWindowResizeOptions,
 } from '../../../shared/plugins';
 import * as icons from '@/icons';
 import { usePlayerStore } from '@/stores/player';
@@ -65,11 +59,6 @@ type PluginCallbackRunner = <T>(
   callback: () => T,
   fallback: T,
 ) => T;
-
-// 浮窗 player.getState() 的返回类型，直接复用 preload 暴露的 window.electron.player.getState 签名
-type PluginWindowPlayerState = Awaited<
-  ReturnType<NonNullable<Window['electron']['player']>['getState']>
->;
 
 type PluginRuntimeErrorReporter = (
   pluginId: string,
@@ -129,46 +118,7 @@ export interface EchoPluginContext {
   nowPlaying: Window['electron']['nowPlaying'];
   desktopLyric: ReturnType<typeof createDesktopLyricApi>;
   miniPlayer: ReturnType<typeof createMiniPlayerApi>;
-  windows: {
-    show: (windowId: string, options?: PluginWindowShowOptions) => Promise<unknown>;
-    hide: (windowId: string) => Promise<unknown>;
-    close: (windowId: string) => Promise<unknown>;
-    move: (windowId: string, bounds: Partial<PluginWindowBounds>) => Promise<unknown>;
-    drag: {
-      start: (windowId: string, sessionId: string) => Promise<boolean>;
-      move: (windowId: string, sessionId: string, x: number, y: number) => void;
-      end: (windowId: string, sessionId: string) => Promise<unknown>;
-      cancel: (windowId: string, sessionId: string) => Promise<unknown>;
-      bind: (windowId: string, element: HTMLElement) => () => void;
-    };
-    resize: {
-      start: (windowId: string, sessionId: string) => Promise<boolean>;
-      resize: (windowId: string, sessionId: string, bounds: PluginWindowBounds) => void;
-      end: (windowId: string, sessionId: string) => Promise<unknown>;
-      cancel: (windowId: string, sessionId: string) => Promise<unknown>;
-      bind: (
-        windowId: string,
-        element: HTMLElement,
-        options?: PluginWindowResizeOptions,
-      ) => () => void;
-    };
-    getBounds: (windowId: string) => Promise<unknown>;
-    setIgnoreMouseEvents: (windowId: string, ignore: boolean) => Promise<unknown>;
-    showOnTop: (windowId: string, options?: PluginShowOnTopOptions) => Promise<unknown>;
-    // 浮窗播放控制入口：轻量 IPC 路径，作用于全局主播放器；与 ctx.player（响应式 store）互补
-    player: {
-      play: () => Promise<void>;
-      pause: () => Promise<void>;
-      stop: () => Promise<void>;
-      seek: (time: number) => Promise<void>;
-      setVolume: (volume: number) => Promise<void>;
-      adjustVolume: (delta: number) => Promise<void>;
-      setSpeed: (speed: number) => Promise<void>;
-      toggleMute: () => Promise<void>;
-      togglePlayMode: () => Promise<void>;
-      getState: () => Promise<PluginWindowPlayerState>;
-    };
-  };
+  windows: ReturnType<typeof createPluginWindowsApi>;
   host: {
     showOnTop: (
       target?: PluginHostWindowTarget,
@@ -188,17 +138,7 @@ export interface EchoPluginContext {
     launch: (options: PluginProcessLaunchOptions) => Promise<PluginProcessLaunchResult>;
     terminate: (pid: number) => Promise<PluginProcessTerminateResult>;
   };
-  webServer: {
-    listen: (
-      handler: (request: PluginWebServerRequest) => PluginWebServerHandlerResult,
-      options?: PluginWebServerListenOptions,
-    ) => ReturnType<NonNullable<Window['electron']['plugins']>['webServer']['listen']>;
-    status: () => ReturnType<NonNullable<Window['electron']['plugins']>['webServer']['status']>;
-    close: () => ReturnType<NonNullable<Window['electron']['plugins']>['webServer']['close']>;
-    onRequest: (
-      handler: (request: PluginWebServerRequest) => PluginWebServerHandlerResult,
-    ) => () => void;
-  };
+  webServer: ReturnType<typeof createPluginWebServerApi>;
   sqlite: ReturnType<typeof createPluginSqliteApi>;
   ui: ReturnType<typeof createRuntimeUiApi>;
   commands: {

@@ -1,5 +1,7 @@
-import { app, type WebContents } from 'electron';
+import type { WebContents } from 'electron';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'http';
+import type { Duplex } from 'stream';
+import { WebSocket, WebSocketServer } from 'ws';
 import type {
   EchoPluginDescriptor,
   PluginWebServerCloseResult,
@@ -8,14 +10,29 @@ import type {
   PluginWebServerRequest,
   PluginWebServerResponsePayload,
   PluginWebServerStatusResult,
+  PluginWebSocketClosePayload,
+  PluginWebSocketData,
+  PluginWebSocketNativeCloseEvent,
+  PluginWebSocketNativeErrorEvent,
+  PluginWebSocketNativeMessageEvent,
+  PluginWebSocketOpenEvent,
+  PluginWebSocketSendPayload,
+  PluginWebSocketUpgradeRequest,
+  PluginWebSocketUpgradeResponse,
 } from '../../shared/plugins';
-import log from '../logger';
 
 const DEFAULT_PLUGIN_WEB_SERVER_HOST = '127.0.0.1';
 const MAX_PLUGIN_WEB_SERVER_REQUEST_BYTES = 2 * 1024 * 1024;
 const MAX_PLUGIN_WEB_SERVER_RESPONSE_BYTES = 8 * 1024 * 1024;
 const PLUGIN_WEB_SERVER_REQUEST_TIMEOUT_MS = 15_000;
+const PLUGIN_WEB_SOCKET_UPGRADE_TIMEOUT_MS = 10_000;
+const DEFAULT_PLUGIN_WEB_SOCKET_CONNECTIONS = 16;
+const MAX_PLUGIN_WEB_SOCKET_CONNECTIONS = 64;
+const DEFAULT_PLUGIN_WEB_SOCKET_MESSAGE_BYTES = 1 * 1024 * 1024;
+const MAX_PLUGIN_WEB_SOCKET_MESSAGE_BYTES = 8 * 1024 * 1024;
+const MAX_PLUGIN_WEB_SOCKET_BUFFERED_BYTES = 32 * 1024 * 1024;
 const REQUEST_ID_RANDOM = Math.random().toString(36).slice(2);
+const UPGRADE_PROTOCOL = Symbol('pluginWebSocketProtocol');
 
 type PendingRequest = {
   pluginId: string;
@@ -24,9 +41,37 @@ type PendingRequest = {
   timeout: NodeJS.Timeout;
 };
 
+type PendingUpgrade = {
+  connectionId: string;
+  request: IncomingMessage;
+  socket: Duplex;
+  head: Buffer;
+  timeout: NodeJS.Timeout;
+  parsedUrl: URL;
+  headers: Record<string, string | string[]>;
+  protocols: string[];
+  remoteAddress: string;
+};
+
+type ActiveWebSocket = {
+  connectionId: string;
+  pluginId: string;
+  socket: WebSocket;
+  protocol: string;
+  url: string;
+  path: string;
+  query: Record<string, string | string[]>;
+  headers: Record<string, string | string[]>;
+  remoteAddress: string;
+  closed: boolean;
+  maxMessageBytes: number;
+  maxBufferedBytes: number;
+};
+
 type PluginWebServerRecord = {
   pluginId: string;
   server: Server;
+  socketsServer: WebSocketServer;
   webContents: WebContents;
   ownerWebContentsId: number;
   host: string;
@@ -35,11 +80,29 @@ type PluginWebServerRecord = {
   url: string;
   startedAt: number;
   pendingRequests: Map<string, PendingRequest>;
+  pendingUpgrades: Map<string, PendingUpgrade>;
+  sockets: Map<string, ActiveWebSocket>;
+  maxConnections: number;
+  maxMessageBytes: number;
+  maxBufferedBytes: number;
   onOwnerDestroyed: () => void;
+};
+
+type UpgradeRequestWithProtocol = IncomingMessage & {
+  [UPGRADE_PROTOCOL]?: string;
 };
 
 const servers = new Map<string, PluginWebServerRecord>();
 let requestSeq = 0;
+
+const clampLimit = (value: unknown, fallback: number, min: number, max: number) => {
+  if (value === undefined) return fallback;
+  const numeric = Number(value);
+  if (!Number.isInteger(numeric) || numeric < min || numeric > max) {
+    throw new Error(`限制必须是 ${min}-${max} 之间的整数`);
+  }
+  return numeric;
+};
 
 const normalizeListenOptions = (options?: PluginWebServerListenOptions) => {
   const rawPort = Number(options?.port ?? 0);
@@ -55,9 +118,31 @@ const normalizeListenOptions = (options?: PluginWebServerListenOptions) => {
     throw new Error('插件 Web 服务只能监听 127.0.0.1');
   }
 
+  const maxConnections = clampLimit(
+    options?.maxConnections,
+    DEFAULT_PLUGIN_WEB_SOCKET_CONNECTIONS,
+    1,
+    MAX_PLUGIN_WEB_SOCKET_CONNECTIONS,
+  );
+  const maxMessageBytes = clampLimit(
+    options?.maxMessageBytes,
+    DEFAULT_PLUGIN_WEB_SOCKET_MESSAGE_BYTES,
+    1024,
+    MAX_PLUGIN_WEB_SOCKET_MESSAGE_BYTES,
+  );
+  const maxBufferedBytes = clampLimit(
+    options?.maxBufferedBytes,
+    Math.min(maxMessageBytes * 4, MAX_PLUGIN_WEB_SOCKET_BUFFERED_BYTES),
+    maxMessageBytes,
+    MAX_PLUGIN_WEB_SOCKET_BUFFERED_BYTES,
+  );
+
   return {
     port,
     host: DEFAULT_PLUGIN_WEB_SERVER_HOST,
+    maxConnections,
+    maxMessageBytes,
+    maxBufferedBytes,
   };
 };
 
@@ -200,6 +285,195 @@ const sendSimpleResponse = (
   response.end(body);
 };
 
+const toWebSocketPayload = (data: PluginWebSocketData | undefined) => {
+  if (data === undefined || data === null) {
+    return { payload: Buffer.alloc(0), binary: true };
+  }
+  if (typeof data === 'string') return { payload: data, binary: false };
+  if (data instanceof ArrayBuffer) return { payload: Buffer.from(data), binary: true };
+  if (ArrayBuffer.isView(data)) {
+    return {
+      payload: Buffer.from(data.buffer, data.byteOffset, data.byteLength),
+      binary: true,
+    };
+  }
+  if (
+    typeof data === 'object' &&
+    !Array.isArray(data) &&
+    String((data as { type?: unknown }).type || '') === 'base64'
+  ) {
+    return {
+      payload: Buffer.from(String((data as { data?: unknown }).data || ''), 'base64'),
+      binary: true,
+    };
+  }
+  throw new Error('不支持的 WebSocket 数据格式');
+};
+
+const parseSecWebSocketProtocol = (value: string | string[] | undefined) => {
+  const raw = Array.isArray(value) ? value.join(',') : String(value || '');
+  return raw
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+};
+
+const getHeaderValue = (headers: IncomingMessage['headers'], name: string) => {
+  const value = headers[name];
+  return Array.isArray(value) ? value[0] : value;
+};
+
+const rejectUpgradeSocket = (socket: Duplex, status: number) => {
+  const reason =
+    status === 400
+      ? 'Bad Request'
+      : status === 403
+        ? 'Forbidden'
+        : status === 404
+          ? 'Not Found'
+          : status === 429
+            ? 'Too Many Requests'
+            : status === 503
+              ? 'Service Unavailable'
+              : 'Error';
+  try {
+    socket.write(`HTTP/1.1 ${status} ${reason}\r\nConnection: close\r\n\r\n`);
+  } catch {
+    // ignore
+  }
+  socket.destroy();
+};
+
+const emitWebSocketEvent = (
+  record: PluginWebServerRecord,
+  channel:
+    | 'plugins:web-server:ws-open'
+    | 'plugins:web-server:ws-message'
+    | 'plugins:web-server:ws-close'
+    | 'plugins:web-server:ws-error',
+  payload:
+    | PluginWebSocketOpenEvent
+    | PluginWebSocketNativeMessageEvent
+    | PluginWebSocketNativeCloseEvent
+    | PluginWebSocketNativeErrorEvent,
+) => {
+  if (record.webContents.isDestroyed()) return;
+  record.webContents.send(channel, payload);
+};
+
+const closeActiveWebSocket = (
+  record: PluginWebServerRecord,
+  active: ActiveWebSocket,
+  code: number,
+  reason: string,
+  terminate = false,
+) => {
+  if (active.closed) return;
+  active.closed = true;
+  record.sockets.delete(active.connectionId);
+  try {
+    if (terminate || active.socket.readyState !== WebSocket.OPEN) {
+      active.socket.terminate();
+    } else {
+      active.socket.close(code, reason);
+    }
+  } catch {
+    try {
+      active.socket.terminate();
+    } catch {
+      // ignore
+    }
+  }
+  emitWebSocketEvent(record, 'plugins:web-server:ws-close', {
+    connectionId: active.connectionId,
+    pluginId: record.pluginId,
+    code,
+    reason,
+  });
+};
+
+const attachWebSocket = (
+  record: PluginWebServerRecord,
+  pending: PendingUpgrade,
+  socket: WebSocket,
+  protocol: string,
+) => {
+  const active: ActiveWebSocket = {
+    connectionId: pending.connectionId,
+    pluginId: record.pluginId,
+    socket,
+    protocol,
+    url: `${pending.parsedUrl.pathname}${pending.parsedUrl.search}`,
+    path: pending.parsedUrl.pathname,
+    query: normalizeQuery(pending.parsedUrl.searchParams),
+    headers: pending.headers,
+    remoteAddress: pending.remoteAddress,
+    closed: false,
+    maxMessageBytes: record.maxMessageBytes,
+    maxBufferedBytes: record.maxBufferedBytes,
+  };
+  record.sockets.set(active.connectionId, active);
+
+  socket.on('message', (data, isBinary) => {
+    if (active.closed) return;
+    const buffer = Buffer.isBuffer(data)
+      ? data
+      : data instanceof ArrayBuffer
+        ? Buffer.from(data)
+        : ArrayBuffer.isView(data)
+          ? Buffer.from(data.buffer, data.byteOffset, data.byteLength)
+          : Buffer.from(String(data));
+    emitWebSocketEvent(record, 'plugins:web-server:ws-message', {
+      connectionId: active.connectionId,
+      pluginId: record.pluginId,
+      data: isBinary ? toArrayBuffer(buffer) : buffer.toString('utf8'),
+      binary: isBinary,
+    });
+  });
+  socket.on('error', (error) => {
+    emitWebSocketEvent(record, 'plugins:web-server:ws-error', {
+      connectionId: active.connectionId,
+      pluginId: record.pluginId,
+      error: error instanceof Error ? error.message : 'WebSocket 连接异常',
+    });
+    closeActiveWebSocket(record, active, 1011, 'socket error', true);
+  });
+  socket.on('close', (code, reason) => {
+    if (active.closed) return;
+    active.closed = true;
+    record.sockets.delete(active.connectionId);
+    emitWebSocketEvent(record, 'plugins:web-server:ws-close', {
+      connectionId: active.connectionId,
+      pluginId: record.pluginId,
+      code: code || 1005,
+      reason: Buffer.isBuffer(reason) ? reason.toString('utf8') : String(reason || ''),
+    });
+  });
+
+  emitWebSocketEvent(record, 'plugins:web-server:ws-open', {
+    connectionId: active.connectionId,
+    pluginId: record.pluginId,
+    protocol,
+    url: active.url,
+    path: active.path,
+    query: active.query,
+    headers: active.headers,
+    remoteAddress: active.remoteAddress,
+  });
+};
+
+const acceptPendingUpgrade = (
+  record: PluginWebServerRecord,
+  pending: PendingUpgrade,
+  protocol: string,
+) => {
+  const request = pending.request as UpgradeRequestWithProtocol;
+  request[UPGRADE_PROTOCOL] = protocol;
+  record.socketsServer.handleUpgrade(pending.request, pending.socket, pending.head, (socket) => {
+    attachWebSocket(record, pending, socket, protocol);
+  });
+};
+
 const getStatusFromRecord = (record: PluginWebServerRecord): PluginWebServerStatusResult => ({
   ok: true,
   pluginId: record.pluginId,
@@ -210,6 +484,7 @@ const getStatusFromRecord = (record: PluginWebServerRecord): PluginWebServerStat
   url: record.url,
   startedAt: record.startedAt,
   pendingRequests: record.pendingRequests.size,
+  connections: record.sockets.size,
 });
 
 const getListenResultFromRecord = (record: PluginWebServerRecord): PluginWebServerListenResult => ({
@@ -232,12 +507,78 @@ const closeRecord = async (record: PluginWebServerRecord) => {
   }
   record.pendingRequests.clear();
 
+  for (const pending of record.pendingUpgrades.values()) {
+    clearTimeout(pending.timeout);
+    rejectUpgradeSocket(pending.socket, 503);
+  }
+  record.pendingUpgrades.clear();
+
+  for (const active of record.sockets.values()) {
+    closeActiveWebSocket(record, active, 1001, 'server shutdown', true);
+  }
+
+  await new Promise<void>((resolve) => {
+    record.socketsServer.close(() => resolve());
+  });
+
   await new Promise<void>((resolve) => {
     record.server.close((error) => {
       if (error) {
-        log.warn('[PluginWebServer] Close failed', { pluginId: record.pluginId, error });
+        if (!process.env.NODE_TEST_CONTEXT) {
+          void import('../logger')
+            .then((module) => {
+              module.default.warn('[PluginWebServer] Close failed', {
+                pluginId: record.pluginId,
+                error,
+              });
+            })
+            .catch(() => undefined);
+        }
       }
       resolve();
+    });
+  });
+};
+
+const requireOwnedRecord = (pluginId: string, webContents?: WebContents) => {
+  const record = servers.get(pluginId);
+  if (!record) return { ok: false as const, error: '插件 Web 服务未运行' };
+  if (webContents && record.ownerWebContentsId !== webContents.id) {
+    return { ok: false as const, error: '插件 Web 服务不属于当前运行上下文' };
+  }
+  return { ok: true as const, record };
+};
+
+const sendOnActiveSocket = (
+  active: ActiveWebSocket,
+  data: PluginWebSocketData | undefined,
+  kind: 'message' | 'ping',
+) => {
+  if (active.closed || active.socket.readyState !== WebSocket.OPEN) {
+    return { ok: false, error: 'WebSocket 已关闭' };
+  }
+  const { payload, binary } = toWebSocketPayload(data);
+  const size = typeof payload === 'string' ? Buffer.byteLength(payload) : payload.byteLength;
+  if (size > active.maxMessageBytes) {
+    return { ok: false, error: 'WebSocket 消息超过插件限制' };
+  }
+  if (active.socket.bufferedAmount + size > active.maxBufferedBytes) {
+    return { ok: false, error: 'WebSocket 发送缓冲已满' };
+  }
+  if (kind === 'ping') {
+    active.socket.ping(payload);
+    return { ok: true };
+  }
+  return new Promise<{ ok: boolean; error?: string }>((resolve) => {
+    active.socket.send(payload, { binary }, (error) => {
+      if (error) {
+        resolve({
+          ok: false,
+          error: error instanceof Error ? error.message : 'WebSocket 发送失败',
+        });
+        return;
+      }
+      resolve({ ok: true });
     });
   });
 };
@@ -276,6 +617,7 @@ export const getPluginWebServerStatus = (pluginId: string): PluginWebServerStatu
       url: '',
       startedAt: 0,
       pendingRequests: 0,
+      connections: 0,
     };
   }
   return getStatusFromRecord(record);
@@ -327,6 +669,165 @@ export const respondPluginWebServerRequest = (
   }
 };
 
+export const respondPluginWebSocketUpgrade = (
+  pluginId: string,
+  payload: PluginWebSocketUpgradeResponse,
+  webContents?: WebContents,
+) => {
+  const owned = requireOwnedRecord(pluginId, webContents);
+  if (!owned.ok) return owned;
+  const connectionId = String(payload?.connectionId || '');
+  const pending = connectionId ? owned.record.pendingUpgrades.get(connectionId) : null;
+  if (!pending) {
+    if (owned.record.sockets.has(connectionId)) return { ok: true };
+    return { ok: false, error: 'WebSocket 升级请求不存在或已超时' };
+  }
+
+  owned.record.pendingUpgrades.delete(connectionId);
+  clearTimeout(pending.timeout);
+
+  if (!payload.accept) {
+    rejectUpgradeSocket(pending.socket, 403);
+    return { ok: true };
+  }
+  if (owned.record.sockets.size >= owned.record.maxConnections) {
+    rejectUpgradeSocket(pending.socket, 429);
+    return { ok: false, error: 'WebSocket 连接数量已达到上限' };
+  }
+
+  const requested = String(payload.protocol || '').trim();
+  if (requested && !pending.protocols.includes(requested)) {
+    rejectUpgradeSocket(pending.socket, 400);
+    return { ok: false, error: 'WebSocket 子协议不被客户端支持' };
+  }
+  const protocol = requested || pending.protocols[0] || '';
+  try {
+    acceptPendingUpgrade(owned.record, pending, protocol);
+    return { ok: true };
+  } catch (error) {
+    rejectUpgradeSocket(pending.socket, 400);
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : 'WebSocket 升级失败',
+    };
+  }
+};
+
+export const sendPluginWebSocket = (
+  pluginId: string,
+  payload: PluginWebSocketSendPayload,
+  webContents?: WebContents,
+) => {
+  const owned = requireOwnedRecord(pluginId, webContents);
+  if (!owned.ok) return owned;
+  const active = owned.record.sockets.get(String(payload?.connectionId || ''));
+  if (!active) return { ok: false, error: 'WebSocket 连接不存在' };
+  try {
+    return sendOnActiveSocket(active, payload.data, 'message');
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : 'WebSocket 发送失败',
+    };
+  }
+};
+
+export const pingPluginWebSocket = (
+  pluginId: string,
+  payload: PluginWebSocketSendPayload,
+  webContents?: WebContents,
+) => {
+  const owned = requireOwnedRecord(pluginId, webContents);
+  if (!owned.ok) return owned;
+  const active = owned.record.sockets.get(String(payload?.connectionId || ''));
+  if (!active) return { ok: false, error: 'WebSocket 连接不存在' };
+  try {
+    return sendOnActiveSocket(active, payload.data, 'ping');
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : 'WebSocket ping 失败',
+    };
+  }
+};
+
+export const closePluginWebSocket = (
+  pluginId: string,
+  payload: PluginWebSocketClosePayload,
+  webContents?: WebContents,
+) => {
+  const owned = requireOwnedRecord(pluginId, webContents);
+  if (!owned.ok) return owned;
+  const active = owned.record.sockets.get(String(payload?.connectionId || ''));
+  if (!active) return { ok: false, error: 'WebSocket 连接不存在' };
+  const code = Number.isInteger(payload.code) ? Number(payload.code) : 1000;
+  if (code !== 1000 && (code < 3000 || code > 4999)) {
+    return { ok: false, error: 'WebSocket 关闭码无效' };
+  }
+  closeActiveWebSocket(owned.record, active, code, String(payload.reason || ''));
+  return { ok: true };
+};
+
+const handleUpgrade = (
+  pluginId: string,
+  request: IncomingMessage,
+  socket: Duplex,
+  head: Buffer,
+) => {
+  const record = servers.get(pluginId);
+  if (!record || record.webContents.isDestroyed()) {
+    rejectUpgradeSocket(socket, 503);
+    return;
+  }
+  if (record.sockets.size + record.pendingUpgrades.size >= record.maxConnections) {
+    rejectUpgradeSocket(socket, 429);
+    return;
+  }
+  if (!String(getHeaderValue(request.headers, 'sec-websocket-key') || '').trim()) {
+    rejectUpgradeSocket(socket, 400);
+    return;
+  }
+
+  const rawUrl = request.url || '/';
+  const parsedUrl = new URL(rawUrl, record.origin);
+  const connectionId = `${Date.now()}-${++requestSeq}-${REQUEST_ID_RANDOM}`;
+  const pending: PendingUpgrade = {
+    connectionId,
+    request,
+    socket,
+    head: Buffer.from(head),
+    timeout: setTimeout(() => {
+      const current = record.pendingUpgrades.get(connectionId);
+      if (!current) return;
+      record.pendingUpgrades.delete(connectionId);
+      rejectUpgradeSocket(current.socket, 503);
+    }, PLUGIN_WEB_SOCKET_UPGRADE_TIMEOUT_MS),
+    parsedUrl,
+    headers: normalizeHeaders(request.headers),
+    protocols: parseSecWebSocketProtocol(request.headers['sec-websocket-protocol']),
+    remoteAddress: request.socket.remoteAddress || '',
+  };
+  record.pendingUpgrades.set(connectionId, pending);
+  socket.once('close', () => {
+    const current = record.pendingUpgrades.get(connectionId);
+    if (!current) return;
+    clearTimeout(current.timeout);
+    record.pendingUpgrades.delete(connectionId);
+  });
+
+  const payload: PluginWebSocketUpgradeRequest = {
+    connectionId,
+    pluginId: record.pluginId,
+    url: `${parsedUrl.pathname}${parsedUrl.search}`,
+    path: parsedUrl.pathname,
+    query: normalizeQuery(parsedUrl.searchParams),
+    headers: pending.headers,
+    protocols: pending.protocols,
+    remoteAddress: pending.remoteAddress,
+  };
+  record.webContents.send('plugins:web-server:upgrade', payload);
+};
+
 export const listenPluginWebServer = async (
   plugin: EchoPluginDescriptor,
   options: PluginWebServerListenOptions | undefined,
@@ -339,7 +840,10 @@ export const listenPluginWebServer = async (
     if (
       existing.ownerWebContentsId === webContents.id &&
       existing.host === normalizedOptions.host &&
-      (normalizedOptions.port === 0 || existing.port === normalizedOptions.port)
+      (normalizedOptions.port === 0 || existing.port === normalizedOptions.port) &&
+      existing.maxConnections === normalizedOptions.maxConnections &&
+      existing.maxMessageBytes === normalizedOptions.maxMessageBytes &&
+      existing.maxBufferedBytes === normalizedOptions.maxBufferedBytes
     ) {
       return getListenResultFromRecord(existing);
     }
@@ -414,6 +918,20 @@ export const listenPluginWebServer = async (
     }
   });
 
+  const socketsServer = new WebSocketServer({
+    noServer: true,
+    maxPayload: normalizedOptions.maxMessageBytes,
+    perMessageDeflate: false,
+    clientTracking: false,
+    handleProtocols: (_protocols, request) => {
+      const protocol = (request as UpgradeRequestWithProtocol)[UPGRADE_PROTOCOL] || '';
+      return protocol || false;
+    },
+  });
+  server.on('upgrade', (request, socket, head) => {
+    handleUpgrade(plugin.id, request, socket, head);
+  });
+
   await new Promise<void>((resolve, reject) => {
     const onError = (error: Error) => {
       server.removeListener('listening', onListening);
@@ -430,6 +948,7 @@ export const listenPluginWebServer = async (
 
   const address = server.address();
   if (!isAccessCurrent() || webContents.isDestroyed()) {
+    socketsServer.close();
     await new Promise<void>((resolve) => server.close(() => resolve()));
     return { ok: false, error: '插件权限已失效' };
   }
@@ -440,6 +959,7 @@ export const listenPluginWebServer = async (
   const record: PluginWebServerRecord = {
     pluginId: plugin.id,
     server,
+    socketsServer,
     webContents,
     ownerWebContentsId: webContents.id,
     host,
@@ -448,13 +968,23 @@ export const listenPluginWebServer = async (
     url: `${origin}/`,
     startedAt: Date.now(),
     pendingRequests: new Map(),
+    pendingUpgrades: new Map(),
+    sockets: new Map(),
+    maxConnections: normalizedOptions.maxConnections,
+    maxMessageBytes: normalizedOptions.maxMessageBytes,
+    maxBufferedBytes: normalizedOptions.maxBufferedBytes,
     onOwnerDestroyed,
   };
   webContents.once('destroyed', onOwnerDestroyed);
   servers.set(plugin.id, record);
 
-  log.info('[PluginWebServer] Listening', { pluginId: plugin.id, url: record.url });
   return getListenResultFromRecord(record);
 };
 
-app.once('before-quit', () => void closePluginWebServers());
+if (!process.env.NODE_TEST_CONTEXT) {
+  void import('electron')
+    .then(({ app }) => {
+      app.once('before-quit', () => void closePluginWebServers());
+    })
+    .catch(() => undefined);
+}

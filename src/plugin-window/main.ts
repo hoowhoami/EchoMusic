@@ -10,11 +10,6 @@ import type {
   PluginSqliteQueryOptions,
   PluginSqliteRow,
   PluginSqliteStatement,
-  PluginWebServerHandlerResult,
-  PluginWebServerListenOptions,
-  PluginWebServerRequest,
-  PluginWebServerResponse,
-  PluginWebServerResponsePayload,
   PluginWindowDescriptor,
   PluginShowOnTopOptions,
   PluginHostWindowTarget,
@@ -33,6 +28,7 @@ import {
 } from '../renderer/plugins/runtime/hostApis';
 import { createPluginNetworkApi } from '../renderer/plugins/runtime/network';
 import { createPluginBackupsApi } from '../renderer/plugins/runtime/backups';
+import { createPluginWebServerApi } from '../renderer/plugins/runtime/runtimeServices';
 
 const DEFAULT_PLUGIN_WINDOW_COVER_COLOR = '#0071e3';
 
@@ -114,17 +110,7 @@ interface EchoPluginWindowContext {
     terminate: (pid: number) => Promise<PluginProcessTerminateResult>;
   };
   net: ReturnType<typeof createPluginNetworkApi>;
-  webServer: {
-    listen: (
-      handler: (request: PluginWebServerRequest) => PluginWebServerHandlerResult,
-      options?: PluginWebServerListenOptions,
-    ) => ReturnType<NonNullable<Window['electron']['plugins']>['webServer']['listen']>;
-    status: () => ReturnType<NonNullable<Window['electron']['plugins']>['webServer']['status']>;
-    close: () => ReturnType<NonNullable<Window['electron']['plugins']>['webServer']['close']>;
-    onRequest: (
-      handler: (request: PluginWebServerRequest) => PluginWebServerHandlerResult,
-    ) => () => void;
-  };
+  webServer: ReturnType<typeof createPluginWebServerApi>;
   sqlite: ReturnType<typeof createPluginSqliteApi>;
   css: {
     inject: (cssText: string, options?: { id?: string }) => () => void;
@@ -296,145 +282,6 @@ const serializeForIpc = (value: unknown): unknown => {
   } catch {
     return null;
   }
-};
-
-const isArrayBufferLike = (value: unknown): value is ArrayBuffer =>
-  value instanceof ArrayBuffer || Object.prototype.toString.call(value) === '[object ArrayBuffer]';
-
-const isPluginWebServerBase64Body = (value: unknown): value is { type: 'base64'; data: string } =>
-  Boolean(
-    value &&
-    typeof value === 'object' &&
-    !Array.isArray(value) &&
-    Reflect.get(value, 'type') === 'base64',
-  );
-
-const isPluginWebServerResponseLike = (value: unknown): value is PluginWebServerResponse =>
-  Boolean(
-    value &&
-    typeof value === 'object' &&
-    !Array.isArray(value) &&
-    ('status' in value || 'headers' in value || 'body' in value),
-  );
-
-const normalizePluginWebServerBody = (body: unknown): PluginWebServerResponsePayload['body'] => {
-  if (body === undefined || body === null) return body;
-  if (typeof body === 'string') return body;
-  if (isArrayBufferLike(body) || ArrayBuffer.isView(body)) return body;
-  if (isPluginWebServerBase64Body(body)) {
-    return {
-      type: 'base64' as const,
-      data: String(body.data || ''),
-    };
-  }
-  return serializeForIpc(body) as PluginWebServerResponsePayload['body'];
-};
-
-const normalizePluginWebServerResponse = (
-  requestId: string,
-  result: Awaited<PluginWebServerHandlerResult>,
-): PluginWebServerResponsePayload => {
-  if (result === undefined) {
-    return {
-      requestId,
-      status: 204,
-    };
-  }
-
-  if (isPluginWebServerResponseLike(result)) {
-    return {
-      requestId,
-      status: result.status,
-      headers: serializeForIpc(result.headers) as PluginWebServerResponsePayload['headers'],
-      body: normalizePluginWebServerBody(result.body),
-    };
-  }
-
-  return {
-    requestId,
-    body: normalizePluginWebServerBody(result),
-  };
-};
-
-const createPluginWebServerApi = (descriptor: EchoPluginDescriptor) => {
-  const getWebServerApi = () => window.electron.plugins?.webServer;
-  const requireWebServerCapability = () => {
-    if (descriptor.manifest.capabilities?.webServer !== true) {
-      throw new Error('插件未声明 Web 服务能力');
-    }
-  };
-  let closeOnDisposeRegistered = false;
-  let listenRequestDisposer: (() => void) | null = null;
-  const ensureCloseOnDispose = () => {
-    if (closeOnDisposeRegistered) return;
-    closeOnDisposeRegistered = true;
-    addDisposable(() => {
-      void getWebServerApi()?.close(descriptor.id);
-    });
-  };
-
-  const onRequest = (
-    handler: (request: PluginWebServerRequest) => PluginWebServerHandlerResult,
-  ) => {
-    requireWebServerCapability();
-    const dispose =
-      getWebServerApi()?.onRequest((request) => {
-        if (request.pluginId !== descriptor.id) return;
-        void (async () => {
-          let payload: PluginWebServerResponsePayload;
-          try {
-            const result = await handler(request);
-            payload = normalizePluginWebServerResponse(request.requestId, result);
-          } catch (error) {
-            reportFailure(error, '插件 Web 服务请求');
-            payload = {
-              requestId: request.requestId,
-              status: 500,
-              body: '插件 Web 服务处理异常',
-            };
-          }
-          await getWebServerApi()?.respond(descriptor.id, payload);
-        })();
-      }) ?? (() => undefined);
-    return addDisposable(dispose);
-  };
-
-  return {
-    listen: async (
-      handler: (request: PluginWebServerRequest) => PluginWebServerHandlerResult,
-      options?: PluginWebServerListenOptions,
-    ) => {
-      requireWebServerCapability();
-      listenRequestDisposer?.();
-      const disposeRequestHandler = onRequest(handler);
-      listenRequestDisposer = disposeRequestHandler;
-      ensureCloseOnDispose();
-      const result = (await getWebServerApi()?.listen(
-        descriptor.id,
-        serializeForIpc(options) as PluginWebServerListenOptions,
-      )) ?? { ok: false as const, error: '插件 Web 服务 API 不可用' };
-      if (!result.ok) {
-        disposeRequestHandler();
-        if (listenRequestDisposer === disposeRequestHandler) listenRequestDisposer = null;
-      }
-      return result;
-    },
-    status: () => {
-      requireWebServerCapability();
-      return (
-        getWebServerApi()?.status(descriptor.id) ??
-        Promise.resolve({ ok: false as const, error: '插件 Web 服务 API 不可用' })
-      );
-    },
-    close: () => {
-      requireWebServerCapability();
-      return (
-        getWebServerApi()?.close(descriptor.id) ??
-        Promise.resolve({ ok: false as const, error: '插件 Web 服务 API 不可用' })
-      );
-    },
-    onRequest,
-  };
 };
 
 const createPluginSqliteApi = (descriptor: EchoPluginDescriptor) => {
@@ -621,7 +468,18 @@ const buildContext = (
       Promise.resolve({ ok: false, error: '插件进程 API 不可用' }),
   },
   net: createPluginNetworkApi(descriptor, addDisposable),
-  webServer: createPluginWebServerApi(descriptor),
+  webServer: createPluginWebServerApi(
+    descriptor,
+    addDisposable,
+    (_pluginId, _source, callback, fallback) => {
+      try {
+        return callback();
+      } catch {
+        return fallback;
+      }
+    },
+    (_pluginId, error, source) => reportFailure(error, source || '插件 Web 服务'),
+  ),
   sqlite: createPluginSqliteApi(descriptor),
   css: {
     inject: (cssText, options) =>

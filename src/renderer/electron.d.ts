@@ -131,6 +131,14 @@ import type {
   PluginWebServerRequest,
   PluginWebServerResponsePayload,
   PluginWebServerStatusResult,
+  PluginWebSocketClosePayload,
+  PluginWebSocketNativeCloseEvent,
+  PluginWebSocketNativeErrorEvent,
+  PluginWebSocketNativeMessageEvent,
+  PluginWebSocketOpenEvent,
+  PluginWebSocketSendPayload,
+  PluginWebSocketUpgradeRequest,
+  PluginWebSocketUpgradeResponse,
   PluginWriteFileData,
   PluginWriteFileOptions,
   PluginWriteFileResult,
@@ -636,6 +644,27 @@ export interface IElectronAPI {
       ) => Promise<{ ok: boolean; error?: string }>;
       close: (pluginId: string) => Promise<PluginWebServerCloseResult>;
       onRequest: (func: (request: PluginWebServerRequest) => void) => () => void;
+      upgrade: (
+        pluginId: string,
+        payload: PluginWebSocketUpgradeResponse,
+      ) => Promise<{ ok: boolean; error?: string }>;
+      send: (
+        pluginId: string,
+        payload: PluginWebSocketSendPayload,
+      ) => Promise<{ ok: boolean; error?: string }>;
+      ping: (
+        pluginId: string,
+        payload: PluginWebSocketSendPayload,
+      ) => Promise<{ ok: boolean; error?: string }>;
+      closeSocket: (
+        pluginId: string,
+        payload: PluginWebSocketClosePayload,
+      ) => Promise<{ ok: boolean; error?: string }>;
+      onUpgrade: (func: (request: PluginWebSocketUpgradeRequest) => void) => () => void;
+      onOpen: (func: (event: PluginWebSocketOpenEvent) => void) => () => void;
+      onMessage: (func: (event: PluginWebSocketNativeMessageEvent) => void) => () => void;
+      onClose: (func: (event: PluginWebSocketNativeCloseEvent) => void) => () => void;
+      onError: (func: (event: PluginWebSocketNativeErrorEvent) => void) => () => void;
     };
     sqlite: {
       open: (

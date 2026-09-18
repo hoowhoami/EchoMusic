@@ -45,6 +45,9 @@ import type {
   PluginWebServerListenResult,
   PluginWebServerResponsePayload,
   PluginWebServerStatusResult,
+  PluginWebSocketClosePayload,
+  PluginWebSocketSendPayload,
+  PluginWebSocketUpgradeResponse,
 } from '../../shared/plugins';
 import { shouldRefreshMarketplace } from './marketplaceCache';
 import { isBlockedObjectKey } from '../../shared/objectSafety';
@@ -96,9 +99,13 @@ import { networkFetch } from '../networkPolicy';
 import {
   closePluginWebServer,
   closePluginWebServers,
+  closePluginWebSocket,
   getPluginWebServerStatus,
   listenPluginWebServer,
+  pingPluginWebSocket,
   respondPluginWebServerRequest,
+  respondPluginWebSocketUpgrade,
+  sendPluginWebSocket,
 } from './webServer';
 import {
   allPluginSqlite,
@@ -861,6 +868,30 @@ export const respondPluginWebServerRequestForPlugin = (
   payload: PluginWebServerResponsePayload,
   webContents?: WebContents,
 ) => respondPluginWebServerRequest(normalizePluginId(pluginId), payload, webContents);
+
+export const respondPluginWebSocketUpgradeForPlugin = (
+  pluginId: string,
+  payload: PluginWebSocketUpgradeResponse,
+  webContents?: WebContents,
+) => respondPluginWebSocketUpgrade(normalizePluginId(pluginId), payload, webContents);
+
+export const sendPluginWebSocketForPlugin = (
+  pluginId: string,
+  payload: PluginWebSocketSendPayload,
+  webContents?: WebContents,
+) => sendPluginWebSocket(normalizePluginId(pluginId), payload, webContents);
+
+export const pingPluginWebSocketForPlugin = (
+  pluginId: string,
+  payload: PluginWebSocketSendPayload,
+  webContents?: WebContents,
+) => pingPluginWebSocket(normalizePluginId(pluginId), payload, webContents);
+
+export const closePluginWebSocketForPlugin = (
+  pluginId: string,
+  payload: PluginWebSocketClosePayload,
+  webContents?: WebContents,
+) => closePluginWebSocket(normalizePluginId(pluginId), payload, webContents);
 
 export const closePluginWebServerForPlugin = async (
   pluginId: string,

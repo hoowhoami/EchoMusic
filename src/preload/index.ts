@@ -139,6 +139,14 @@ import type {
   PluginWebServerRequest,
   PluginWebServerResponsePayload,
   PluginWebServerStatusResult,
+  PluginWebSocketClosePayload,
+  PluginWebSocketNativeCloseEvent,
+  PluginWebSocketNativeErrorEvent,
+  PluginWebSocketNativeMessageEvent,
+  PluginWebSocketOpenEvent,
+  PluginWebSocketSendPayload,
+  PluginWebSocketUpgradeRequest,
+  PluginWebSocketUpgradeResponse,
   PluginWriteFileData,
   PluginWriteFileOptions,
   PluginWriteFileResult,
@@ -1401,6 +1409,64 @@ contextBridge.exposeInMainWorld('electron', {
           func(request);
         ipcRenderer.on('plugins:web-server:request', listener);
         return () => ipcRenderer.removeListener('plugins:web-server:request', listener);
+      },
+      upgrade: (pluginId: string, payload: PluginWebSocketUpgradeResponse) =>
+        ipcRenderer.invoke('plugins:web-server:ws-upgrade', pluginId, payload) as Promise<{
+          ok: boolean;
+          error?: string;
+        }>,
+      send: (pluginId: string, payload: PluginWebSocketSendPayload) =>
+        ipcRenderer.invoke('plugins:web-server:ws-send', pluginId, payload) as Promise<{
+          ok: boolean;
+          error?: string;
+        }>,
+      ping: (pluginId: string, payload: PluginWebSocketSendPayload) =>
+        ipcRenderer.invoke('plugins:web-server:ws-ping', pluginId, payload) as Promise<{
+          ok: boolean;
+          error?: string;
+        }>,
+      closeSocket: (pluginId: string, payload: PluginWebSocketClosePayload) =>
+        ipcRenderer.invoke('plugins:web-server:ws-close', pluginId, payload) as Promise<{
+          ok: boolean;
+          error?: string;
+        }>,
+      onUpgrade: (func: (request: PluginWebSocketUpgradeRequest) => void) => {
+        const listener = (
+          _event: Electron.IpcRendererEvent,
+          request: PluginWebSocketUpgradeRequest,
+        ) => func(request);
+        ipcRenderer.on('plugins:web-server:upgrade', listener);
+        return () => ipcRenderer.removeListener('plugins:web-server:upgrade', listener);
+      },
+      onOpen: (func: (event: PluginWebSocketOpenEvent) => void) => {
+        const listener = (_event: Electron.IpcRendererEvent, event: PluginWebSocketOpenEvent) =>
+          func(event);
+        ipcRenderer.on('plugins:web-server:ws-open', listener);
+        return () => ipcRenderer.removeListener('plugins:web-server:ws-open', listener);
+      },
+      onMessage: (func: (event: PluginWebSocketNativeMessageEvent) => void) => {
+        const listener = (
+          _event: Electron.IpcRendererEvent,
+          event: PluginWebSocketNativeMessageEvent,
+        ) => func(event);
+        ipcRenderer.on('plugins:web-server:ws-message', listener);
+        return () => ipcRenderer.removeListener('plugins:web-server:ws-message', listener);
+      },
+      onClose: (func: (event: PluginWebSocketNativeCloseEvent) => void) => {
+        const listener = (
+          _event: Electron.IpcRendererEvent,
+          event: PluginWebSocketNativeCloseEvent,
+        ) => func(event);
+        ipcRenderer.on('plugins:web-server:ws-close', listener);
+        return () => ipcRenderer.removeListener('plugins:web-server:ws-close', listener);
+      },
+      onError: (func: (event: PluginWebSocketNativeErrorEvent) => void) => {
+        const listener = (
+          _event: Electron.IpcRendererEvent,
+          event: PluginWebSocketNativeErrorEvent,
+        ) => func(event);
+        ipcRenderer.on('plugins:web-server:ws-error', listener);
+        return () => ipcRenderer.removeListener('plugins:web-server:ws-error', listener);
       },
     },
     sqlite: {

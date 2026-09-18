@@ -55,6 +55,9 @@ import type {
   PluginWebServerListenResult,
   PluginWebServerResponsePayload,
   PluginWebServerStatusResult,
+  PluginWebSocketClosePayload,
+  PluginWebSocketSendPayload,
+  PluginWebSocketUpgradeResponse,
   PluginWriteFileData,
   PluginWriteFileOptions,
   PluginWriteFileResult,
@@ -96,6 +99,10 @@ import {
   reportPluginFailure,
   requestPluginNetworkForPlugin,
   respondPluginWebServerRequestForPlugin,
+  respondPluginWebSocketUpgradeForPlugin,
+  sendPluginWebSocketForPlugin,
+  pingPluginWebSocketForPlugin,
+  closePluginWebSocketForPlugin,
   setPluginData,
   setPluginActiveSession,
   setPluginEnabled,
@@ -491,6 +498,42 @@ export const registerPluginHandlers = (context: IpcContext) => {
     'plugins:web-server:close',
     (event, pluginId: string): Promise<PluginWebServerCloseResult> =>
       closePluginWebServerForPlugin(pluginId, event.sender),
+  );
+  ipcRegistry.registerHandler(
+    'plugins:web-server:ws-upgrade',
+    (
+      event,
+      pluginId: string,
+      payload: PluginWebSocketUpgradeResponse,
+    ): { ok: boolean; error?: string } =>
+      respondPluginWebSocketUpgradeForPlugin(pluginId, payload, event.sender),
+  );
+  ipcRegistry.registerHandler(
+    'plugins:web-server:ws-send',
+    (
+      event,
+      pluginId: string,
+      payload: PluginWebSocketSendPayload,
+    ): { ok: boolean; error?: string } | Promise<{ ok: boolean; error?: string }> =>
+      sendPluginWebSocketForPlugin(pluginId, payload, event.sender),
+  );
+  ipcRegistry.registerHandler(
+    'plugins:web-server:ws-ping',
+    (
+      event,
+      pluginId: string,
+      payload: PluginWebSocketSendPayload,
+    ): { ok: boolean; error?: string } | Promise<{ ok: boolean; error?: string }> =>
+      pingPluginWebSocketForPlugin(pluginId, payload, event.sender),
+  );
+  ipcRegistry.registerHandler(
+    'plugins:web-server:ws-close',
+    (
+      event,
+      pluginId: string,
+      payload: PluginWebSocketClosePayload,
+    ): { ok: boolean; error?: string } =>
+      closePluginWebSocketForPlugin(pluginId, payload, event.sender),
   );
   ipcRegistry.registerHandler(
     'plugins:sqlite:open',
