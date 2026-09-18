@@ -77,11 +77,25 @@ export const getBinaryByteLength = (value: unknown): number | null => {
   return null;
 };
 
+const summarizeErrorForLog = (error: Error, depth: number): Record<string, unknown> => {
+  const result: Record<string, unknown> = {
+    name: error.name,
+    message: maskSensitiveText(error.message),
+  };
+  if (error.stack) result.stack = maskSensitiveText(error.stack);
+  const extra = sanitizeForLog({ ...error }, depth + 1);
+  if (extra && typeof extra === 'object' && !Array.isArray(extra)) {
+    Object.assign(result, extra);
+  }
+  return result;
+};
+
 export const sanitizeForLog = (value: unknown, depth = 0): unknown => {
   if (value == null) return value;
   if (typeof value === 'string') return maskSensitiveText(value);
   if (typeof value !== 'object') return value;
   if (depth >= 4) return '[Object]';
+  if (value instanceof Error) return summarizeErrorForLog(value, depth);
 
   if (Array.isArray(value)) {
     return value.slice(0, 30).map((item) => sanitizeForLog(item, depth + 1));

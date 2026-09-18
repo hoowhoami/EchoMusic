@@ -4,6 +4,7 @@ import { Icon } from '@iconify/vue';
 import type { ComponentPublicInstance } from 'vue';
 import App from './App.vue';
 import router from './router';
+import { isAbortError } from '../shared/abortError';
 import { logger } from '@/utils/logger';
 import { sqlitePersistPlugin } from '@/stores/sqlitePersist';
 import { useSettingStore } from '@/stores/setting';
@@ -139,6 +140,10 @@ const navigateToErrorPage = async (error: unknown, status: string): Promise<void
 };
 
 app.config.errorHandler = (err: unknown, instance, info) => {
+  if (isAbortError(err)) {
+    logger.debug('App', 'Ignored abort in Vue error handler', getErrorSummary(err));
+    return;
+  }
   logger.error('App', 'Vue global exception catch', {
     error: getErrorSummary(err),
     component: getComponentSummary(instance),
@@ -150,6 +155,11 @@ app.config.errorHandler = (err: unknown, instance, info) => {
 window.addEventListener('error', (event) => {
   const errorMessage = event.error?.message ?? event.message ?? '';
   const filename = event.filename ?? '';
+  if (isAbortError(event.error) || isAbortError(errorMessage)) {
+    event.preventDefault();
+    logger.debug('App', 'Ignored abort window error', errorMessage);
+    return;
+  }
   const pluginSource = getPluginErrorSource(event.error, event.message, filename);
   if (pluginSource) {
     // Plugin runtime owns reporting and persistence for plugin errors.
@@ -185,6 +195,11 @@ window.addEventListener('error', (event) => {
 });
 
 window.addEventListener('unhandledrejection', (event) => {
+  if (isAbortError(event.reason)) {
+    event.preventDefault();
+    logger.debug('App', 'Ignored abort promise rejection', getErrorSummary(event.reason));
+    return;
+  }
   const pluginSource = getPluginErrorSource(event.reason);
   if (pluginSource) {
     // Plugin runtime owns reporting and persistence for plugin errors.

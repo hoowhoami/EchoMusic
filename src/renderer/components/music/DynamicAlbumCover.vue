@@ -6,6 +6,7 @@ import {
   usePreferredReducedMotion,
 } from '@vueuse/core';
 import Cover from '@/components/ui/Cover.vue';
+import { isAbortError } from '../../../shared/abortError';
 import { loadAlbumDynamicCover } from '@/services/albumDynamicCover';
 import { normalizeAlbumCoverId, type AlbumDynamicCover } from '@/utils/albumDynamicCover';
 
@@ -128,7 +129,7 @@ watch(
     }
     video.muted = true;
     void video.play().catch((error: unknown) => {
-      if (!canPlay.value || (error instanceof DOMException && error.name === 'AbortError')) return;
+      if (!canPlay.value || isAbortError(error)) return;
       nextSource(video);
     });
   },

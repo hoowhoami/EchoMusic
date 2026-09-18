@@ -4,6 +4,7 @@ import type {
   PluginFailureRecord,
   PluginListResult,
 } from '../../../shared/plugins';
+import { isAbortError } from '../../../shared/abortError';
 import { logger } from '@/utils/logger';
 import { useSettingStore } from '@/stores/setting';
 import { executePluginCommand, removePluginContributions } from '../registry';
@@ -207,6 +208,7 @@ const reportPluginFailure = async (
     fallback: string;
   },
 ) => {
+  if (isAbortError(error)) return;
   const message = getErrorMessage(error, options.fallback);
   const createdAt = Date.now();
   const existing = pluginRuntimeState.failures[pluginId];
@@ -321,6 +323,10 @@ const installPluginRuntimeErrorHandlers = () => {
   runtimeErrorHandlersInstalled = true;
 
   window.addEventListener('error', (event) => {
+    if (isAbortError(event.error) || isAbortError(event.message)) {
+      event.preventDefault();
+      return;
+    }
     const pluginId = extractPluginIdFromErrorSource(event.error, event.message, event.filename);
     if (!pluginId) return;
     event.preventDefault();
@@ -333,6 +339,10 @@ const installPluginRuntimeErrorHandlers = () => {
   });
 
   window.addEventListener('unhandledrejection', (event) => {
+    if (isAbortError(event.reason)) {
+      event.preventDefault();
+      return;
+    }
     const pluginId = extractPluginIdFromErrorSource(event.reason);
     if (!pluginId) return;
     event.preventDefault();

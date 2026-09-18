@@ -3,6 +3,7 @@ import type { BrowserWindow } from 'electron';
 import { app } from 'electron';
 import { createRequire } from 'node:module';
 import path from 'path';
+import { isAbortError } from '../shared/abortError';
 import log from './logger';
 import { setTaskbarCover } from './taskbarThumbnail';
 import { networkFetch } from './networkPolicy';
@@ -37,9 +38,6 @@ let lastCoverCache: { url: string; data: Buffer | null } | null = null;
 let activeCoverDownload: { url: string; promise: Promise<Buffer | null> } | null = null;
 const nativeRequire = createRequire(path.join(process.cwd(), 'package.json'));
 const METADATA_COVER_SETTLE_MS = 120;
-
-const isAbortError = (error: unknown) =>
-  error instanceof Error && (error.name === 'AbortError' || error.message === 'AbortError');
 
 const waitForAbortableDelay = (ms: number, signal: AbortSignal) =>
   new Promise<boolean>((resolve) => {
