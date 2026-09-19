@@ -16,6 +16,8 @@ import type { IpcContext } from './ipc/types';
 import { getMainWindow } from './window';
 import { isCoverPreviewEnabled, setCoverPreviewEnabled } from './taskbarThumbnail';
 import { setTaskbarProgressEnabled } from './taskbarProgress';
+import { updateThumbarPlayback } from './thumbar';
+import { setTaskbarCardPlayback } from './taskbarThumbnail';
 import { setMainAppSetting } from './storage/settings';
 import { buildPlaybackClockSnapshot } from '../shared/playback';
 
@@ -270,6 +272,8 @@ export const syncNowPlayingSnapshot = (payload: NowPlayingSnapshotPatch) => {
   };
   sendSnapshot();
   applyWindowTitle(snapshot.playback);
+  updateThumbarPlayback(snapshot.playback);
+  setTaskbarCardPlayback(snapshot.playback);
   return snapshot;
 };
 

@@ -25,6 +25,7 @@ import { applyDesktopAppIcon, applyTaskbarShortcutIcon, refreshAppIconConfig } f
 import { setupThumbarButtons } from './thumbar';
 import { setupTaskbarThumbnail, destroyTaskbarThumbnail } from './taskbarThumbnail';
 import { refreshTaskbarProgress } from './taskbarProgress';
+import { restoreTaskbarPlayer, cleanupTaskbarPlayer } from './taskbarMediaBar';
 import { configureApplicationMenu, configureWebContentsShortcuts } from './applicationMenu';
 import { logMainMemory } from './diagnostics/memory';
 import {
@@ -194,6 +195,7 @@ if (!gotTheLock) {
     applyTaskbarShortcutIcon();
     await logMainMemory('after app icons');
     await createWindow();
+    restoreTaskbarPlayer();
     await logMainMemory('after main window');
     openShareUrlFromArgv(process.argv);
     flushPendingShareTargets();
@@ -268,6 +270,7 @@ if (!gotTheLock) {
 
     // 先在主窗口 HWND 仍有效时关闭 DWM iconic 缩略图，避免任务栏保留等待位图的缓存状态。
     destroyTaskbarThumbnail();
+    cleanupTaskbarPlayer();
 
     // 第一步：立即隐藏所有窗口 + 销毁托盘，用户视觉上已退出
     destroyTray();
