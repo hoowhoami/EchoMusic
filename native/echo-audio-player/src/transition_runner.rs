@@ -578,17 +578,20 @@ impl TransitionRunner {
         // the rest on the next finish() call.
         while !self.b.pending.is_empty() {
             let chunk = self.b.pending.remove(0);
-            self.b_decoded_position_secs =
+            let next_decoded_position =
                 decoded_chunk_end_secs(&chunk, self.b_decoded_position_secs);
             self.scratch = match self.filter_deck(
                 shared,
                 DeckFilterOperation::Process {
                     incoming: true,
-                    chunk,
+                    chunk: chunk.clone(),
                 },
             ) {
                 Ok(samples) => samples,
                 Err(err) => {
+                    // Restore the chunk so a cancelled DSP request retries it on
+                    // the next finish() instead of dropping incoming audio.
+                    self.b.pending.insert(0, chunk);
                     return if shared.should_stop_decoding()
                         || !shared.is_decode_generation_current(self.generation)
                     {
@@ -598,6 +601,7 @@ impl TransitionRunner {
                     };
                 }
             };
+            self.b_decoded_position_secs = next_decoded_position;
             self.handoff_samples.append(&mut self.scratch);
         }
         if !self.post_gain_marked {

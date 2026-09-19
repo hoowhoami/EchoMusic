@@ -76,6 +76,19 @@ const autoNextMaxAttemptsInput = computed({
   },
 });
 
+const visibleAudioQualityOptions = computed(() =>
+  settingStore.viperTapeQualityEnabled
+    ? audioQualityOptions
+    : audioQualityOptions.filter((option) => option.value !== 'viper_tape'),
+);
+
+const handleViperTapeQualityEnabledChange = (enabled: boolean) => {
+  settingStore.viperTapeQualityEnabled = enabled;
+  if (!enabled && settingStore.defaultAudioQuality === 'viper_tape') {
+    settingStore.defaultAudioQuality = 'high';
+  }
+};
+
 const handleVolumeNormalizationChange = (enabled: boolean) => {
   settingStore.volumeNormalization = enabled;
 };
@@ -222,6 +235,19 @@ const handleRemoveImpulseResponse = (id: string) => {
     <div class="settings-divider"></div>
     <div class="settings-item">
       <div class="space-y-1">
+        <h3 class="font-semibold">蝰蛇母带</h3>
+        <p class="text-sm text-text-secondary">
+          默认关闭。该音质需要转码，文件更大、起播更慢，且仅部分歌曲提供。开启后才会出现在默认音质和播放器音质列表中。
+        </p>
+      </div>
+      <Switch
+        :model-value="settingStore.viperTapeQualityEnabled"
+        @update:model-value="handleViperTapeQualityEnabledChange"
+      />
+    </div>
+    <div class="settings-divider"></div>
+    <div class="settings-item">
+      <div class="space-y-1">
         <h3 class="font-semibold">默认音质</h3>
         <p class="text-sm text-text-secondary">
           新歌曲默认按此音质解析，播放器中可临时覆盖当前歌曲
@@ -230,7 +256,7 @@ const handleRemoveImpulseResponse = (id: string) => {
       <Select
         class="w-45 shrink-0"
         :model-value="settingStore.defaultAudioQuality"
-        :options="audioQualityOptions"
+        :options="visibleAudioQualityOptions"
         @update:model-value="settingStore.defaultAudioQuality = $event as AudioQualityValue"
       />
     </div>

@@ -85,6 +85,7 @@ type PluginWebServerRecord = {
   maxConnections: number;
   maxMessageBytes: number;
   maxBufferedBytes: number;
+  allowCrossOrigin: boolean;
   onOwnerDestroyed: () => void;
 };
 
@@ -143,6 +144,7 @@ const normalizeListenOptions = (options?: PluginWebServerListenOptions) => {
     maxConnections,
     maxMessageBytes,
     maxBufferedBytes,
+    allowCrossOrigin: options?.allowCrossOrigin === true,
   };
 };
 
@@ -321,6 +323,23 @@ const parseSecWebSocketProtocol = (value: string | string[] | undefined) => {
 const getHeaderValue = (headers: IncomingMessage['headers'], name: string) => {
   const value = headers[name];
   return Array.isArray(value) ? value[0] : value;
+};
+
+const isSameOriginWebSocket = (originHeader: string, record: PluginWebServerRecord) => {
+  const origin = originHeader.trim();
+  if (!origin) return true;
+  try {
+    const parsed = new URL(origin);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:' && parsed.protocol !== 'ws:') {
+      return false;
+    }
+    const host = parsed.hostname.toLowerCase();
+    if (host !== '127.0.0.1' && host !== 'localhost' && host !== '::1') return false;
+    const port = parsed.port || (parsed.protocol === 'https:' ? '443' : '80');
+    return port === String(record.port);
+  } catch {
+    return false;
+  }
 };
 
 const rejectUpgradeSocket = (socket: Duplex, status: number) => {
@@ -566,6 +585,10 @@ const sendOnActiveSocket = (
     return { ok: false, error: 'WebSocket 发送缓冲已满' };
   }
   if (kind === 'ping') {
+    const pingSize = typeof payload === 'string' ? Buffer.byteLength(payload) : payload.byteLength;
+    if (pingSize > 125) {
+      return { ok: false, error: 'WebSocket ping 载荷不能超过 125 字节' };
+    }
     active.socket.ping(payload);
     return { ok: true };
   }
@@ -760,11 +783,11 @@ export const closePluginWebSocket = (
   if (!owned.ok) return owned;
   const active = owned.record.sockets.get(String(payload?.connectionId || ''));
   if (!active) return { ok: false, error: 'WebSocket 连接不存在' };
-  const code = Number.isInteger(payload.code) ? Number(payload.code) : 1000;
+  const code = Number.isInteger(payload?.code) ? Number(payload.code) : 1000;
   if (code !== 1000 && (code < 3000 || code > 4999)) {
     return { ok: false, error: 'WebSocket 关闭码无效' };
   }
-  closeActiveWebSocket(owned.record, active, code, String(payload.reason || ''));
+  closeActiveWebSocket(owned.record, active, code, String(payload?.reason || ''));
   return { ok: true };
 };
 
@@ -786,6 +809,13 @@ const handleUpgrade = (
   if (!String(getHeaderValue(request.headers, 'sec-websocket-key') || '').trim()) {
     rejectUpgradeSocket(socket, 400);
     return;
+  }
+  if (!record.allowCrossOrigin) {
+    const originHeader = String(getHeaderValue(request.headers, 'origin') || '');
+    if (!isSameOriginWebSocket(originHeader, record)) {
+      rejectUpgradeSocket(socket, 403);
+      return;
+    }
   }
 
   const rawUrl = request.url || '/';
@@ -843,7 +873,8 @@ export const listenPluginWebServer = async (
       (normalizedOptions.port === 0 || existing.port === normalizedOptions.port) &&
       existing.maxConnections === normalizedOptions.maxConnections &&
       existing.maxMessageBytes === normalizedOptions.maxMessageBytes &&
-      existing.maxBufferedBytes === normalizedOptions.maxBufferedBytes
+      existing.maxBufferedBytes === normalizedOptions.maxBufferedBytes &&
+      existing.allowCrossOrigin === normalizedOptions.allowCrossOrigin
     ) {
       return getListenResultFromRecord(existing);
     }
@@ -973,6 +1004,7 @@ export const listenPluginWebServer = async (
     maxConnections: normalizedOptions.maxConnections,
     maxMessageBytes: normalizedOptions.maxMessageBytes,
     maxBufferedBytes: normalizedOptions.maxBufferedBytes,
+    allowCrossOrigin: normalizedOptions.allowCrossOrigin,
     onOwnerDestroyed,
   };
   webContents.once('destroyed', onOwnerDestroyed);
@@ -981,10 +1013,6 @@ export const listenPluginWebServer = async (
   return getListenResultFromRecord(record);
 };
 
-if (!process.env.NODE_TEST_CONTEXT) {
-  void import('electron')
-    .then(({ app }) => {
-      app.once('before-quit', () => void closePluginWebServers());
-    })
-    .catch(() => undefined);
-}
+export const registerPluginWebServerCleanup = (onBeforeQuit: (handler: () => void) => void) => {
+  onBeforeQuit(() => void closePluginWebServers());
+};

@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Electron-43.4.1-blue?logo=electron" alt="Electron">
+  <img src="https://img.shields.io/badge/Electron-43.7.2-blue?logo=electron" alt="Electron">
   <img src="https://img.shields.io/badge/Vue-3.5-brightgreen?logo=vue.js" alt="Vue 3">
   <img src="https://img.shields.io/badge/TypeScript-5.9-blue?logo=typescript" alt="TypeScript">
   <img src="https://img.shields.io/badge/Rust-napi--rs-orange?logo=rust" alt="Rust">
@@ -47,7 +47,7 @@
 
 ## 🛠️ 技术栈
 
-- **Desktop Shell**: [Electron](https://www.electronjs.org/) 43.4
+- **Desktop Shell**: [Electron](https://www.electronjs.org/) 43.7
 - **Frontend**: [Vue 3.5](https://vuejs.org/) + [TypeScript 5.9](https://www.typescriptlang.org/)
 - **Build Tool**: [Vite](https://vite.dev/) 8
 - **State Management**: [Pinia](https://pinia.vuejs.org/) + 原生 SQLite 持久化
@@ -160,9 +160,9 @@ sudo apt-get install -y build-essential pkg-config clang libclang-dev \
    需手动下载并解压Electron到对应目录：
 
    ```bash
-   cd node_modules/.pnpm/electron@43.4.1/node_modules/electron/
+   cd node_modules/.pnpm/electron@43.7.2/node_modules/electron/
    mkdir -p dist
-   curl -L -o /tmp/electron.zip "https://npmmirror.com/mirrors/electron/v43.4.1/electron-v43.4.1-linux-x64.zip"
+   curl -L -o /tmp/electron.zip "https://npmmirror.com/mirrors/electron/v43.7.2/electron-v43.7.2-linux-x64.zip"
    unzip -o /tmp/electron.zip -d dist/
    printf '%s' './electron' > path.txt
    ```

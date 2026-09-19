@@ -12,7 +12,14 @@ afterEach(() =>
   }),
 );
 
-const fixture = () => {
+const flush = async () => {
+  await Promise.resolve();
+  await Promise.resolve();
+};
+
+const fixture = (
+  run?: (id: string, source: string, callback: () => unknown, fallback: unknown) => unknown,
+) => {
   const calls: unknown[][] = [];
   const listeners = new Map<string, Set<(payload: never) => void>>();
   const emit = (name: string, payload: unknown) => {
@@ -103,7 +110,7 @@ const fixture = () => {
       disposers.push(dispose);
       return dispose;
     },
-    (_id, _source, callback) => callback(),
+    run ?? ((_id, _source, callback) => callback()),
     () => undefined,
   );
   return { api, calls, emit, dispose: () => disposers.forEach((dispose) => dispose()) };
@@ -128,8 +135,7 @@ test('onConnection exposes a socket handle instead of a callback bag', async () 
     protocols: ['echo'],
     remoteAddress: '127.0.0.1',
   });
-  await Promise.resolve();
-  await Promise.resolve();
+  await flush();
   assert.deepEqual(calls.at(-1), [
     'upgrade',
     'rgb',
@@ -175,8 +181,7 @@ test('listen can start HTTP and WebSocket together', async () => {
     protocols: [],
     remoteAddress: '127.0.0.1',
   });
-  await Promise.resolve();
-  await Promise.resolve();
+  await flush();
   emit('open', {
     connectionId: 'c1',
     pluginId: 'rgb',
@@ -191,7 +196,7 @@ test('listen can start HTTP and WebSocket together', async () => {
   dispose();
 });
 
-test('path-scoped handlers ignore other upgrades', async () => {
+test('path-scoped handlers reject other upgrades', async () => {
   const { api, calls, emit, dispose } = fixture();
   api.onConnection(() => undefined, { path: '/live' });
   emit('upgrade', {
@@ -204,10 +209,101 @@ test('path-scoped handlers ignore other upgrades', async () => {
     protocols: [],
     remoteAddress: '127.0.0.1',
   });
-  await Promise.resolve();
-  assert.equal(
-    calls.some((call) => call[0] === 'upgrade'),
-    false,
-  );
+  await flush();
+  assert.deepEqual(calls.at(-1), [
+    'upgrade',
+    'rgb',
+    { connectionId: 'other', accept: false },
+  ]);
+  dispose();
+});
+
+test('onUpgrade that throws rejects the connection (fail closed)', async () => {
+  const { api, calls, emit, dispose } = fixture();
+  api.onConnection(() => undefined, {
+    onUpgrade: () => {
+      throw new Error('auth exploded');
+    },
+  });
+  emit('upgrade', {
+    connectionId: 'c1',
+    pluginId: 'rgb',
+    url: '/live',
+    path: '/live',
+    query: {},
+    headers: {},
+    protocols: [],
+    remoteAddress: '127.0.0.1',
+  });
+  await flush();
+  assert.deepEqual(calls.at(-1), [
+    'upgrade',
+    'rgb',
+    { connectionId: 'c1', accept: false, protocol: undefined },
+  ]);
+  dispose();
+});
+
+test('production-style runPluginCallback still rejects when onUpgrade throws', async () => {
+  const run = (_id: string, _source: string, callback: () => unknown, fallback: unknown) => {
+    try {
+      const result = callback();
+      if (result instanceof Promise) {
+        return result.catch(() => fallback);
+      }
+      return result;
+    } catch {
+      return fallback;
+    }
+  };
+  const { api, calls, emit, dispose } = fixture(run);
+  api.onConnection(() => undefined, {
+    onUpgrade: () => {
+      throw new Error('auth exploded');
+    },
+  });
+  emit('upgrade', {
+    connectionId: 'c1',
+    pluginId: 'rgb',
+    url: '/live',
+    path: '/live',
+    query: {},
+    headers: {},
+    protocols: [],
+    remoteAddress: '127.0.0.1',
+  });
+  await flush();
+  assert.deepEqual(calls.at(-1), [
+    'upgrade',
+    'rgb',
+    { connectionId: 'c1', accept: false, protocol: undefined },
+  ]);
+  dispose();
+});
+
+test('listen() a second time disposes the previous onConnection handlers', async () => {
+  const { api, emit, dispose } = fixture();
+  const sockets: string[] = [];
+  await api.listen({
+    onConnection: (socket) => {
+      sockets.push(`first:${socket.connectionId}`);
+    },
+  });
+  await api.listen({
+    onConnection: (socket) => {
+      sockets.push(`second:${socket.connectionId}`);
+    },
+  });
+  emit('open', {
+    connectionId: 'c1',
+    pluginId: 'rgb',
+    protocol: '',
+    url: '/live',
+    path: '/live',
+    query: {},
+    headers: {},
+    remoteAddress: '127.0.0.1',
+  });
+  assert.deepEqual(sockets, ['second:c1']);
   dispose();
 });

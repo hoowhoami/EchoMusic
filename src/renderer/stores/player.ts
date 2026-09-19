@@ -777,6 +777,7 @@ export const usePlayerStore = defineStore(
       let snapshot = {
         defaultAudioQuality: settingStore.defaultAudioQuality,
         compatibilityMode: settingStore.compatibilityMode,
+        viperTapeQualityEnabled: settingStore.viperTapeQualityEnabled,
         volumeFade: settingStore.volumeFade,
         volumeFadeTime: settingStore.volumeFadeTime,
         trackTransitionMode: settingStore.effectiveTrackTransitionMode,
@@ -839,10 +840,13 @@ export const usePlayerStore = defineStore(
       // 保存取消函数，以便在需要时清理订阅
       const unsubscribeSettings = settingStore.$subscribe(() => {
         const compatibilityChanged = settingStore.compatibilityMode !== snapshot.compatibilityMode;
+        const viperTapeChanged =
+          settingStore.viperTapeQualityEnabled !== snapshot.viperTapeQualityEnabled;
+        const qualityPolicyChanged = compatibilityChanged || viperTapeChanged;
         const shouldRefresh =
           (state.currentAudioQualityOverride === null &&
             settingStore.defaultAudioQuality !== snapshot.defaultAudioQuality) ||
-          compatibilityChanged;
+          qualityPolicyChanged;
         const shouldUpdateFade =
           settingStore.volumeFade !== snapshot.volumeFade ||
           settingStore.volumeFadeTime !== snapshot.volumeFadeTime;
@@ -862,6 +866,7 @@ export const usePlayerStore = defineStore(
         snapshot = {
           defaultAudioQuality: settingStore.defaultAudioQuality,
           compatibilityMode: settingStore.compatibilityMode,
+          viperTapeQualityEnabled: settingStore.viperTapeQualityEnabled,
           volumeFade: settingStore.volumeFade,
           volumeFadeTime: settingStore.volumeFadeTime,
           trackTransitionMode: settingStore.effectiveTrackTransitionMode,
@@ -883,7 +888,7 @@ export const usePlayerStore = defineStore(
           const alreadyRequested =
             refreshing &&
             state.audioSourceRefreshQuality === requestedQuality &&
-            !compatibilityChanged;
+            !qualityPolicyChanged;
           if (!alreadyRequested) {
             if (refreshing || getPlaybackIsLoading(state) || state.pendingSettingRefresh)
               state.pendingSettingRefresh = true;

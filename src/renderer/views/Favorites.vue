@@ -34,6 +34,7 @@ import SongListHeader, {
   type SortField,
   type SortOrder,
 } from '@/components/music/SongListHeader.vue';
+import SongSearchInput from '@/components/music/SongSearchInput.vue';
 import ActionRow from '@/components/music/DetailPageActionRow.vue';
 import BatchActionDrawer from '@/components/music/BatchActionDrawer.vue';
 import PlaylistOrderDialog from '@/components/music/PlaylistOrderDialog.vue';
@@ -46,14 +47,7 @@ import PageScrollContainer from '@/components/ui/PageScrollContainer.vue';
 import Button from '@/components/ui/Button.vue';
 import { useScrollContainer } from '@/composables/usePageScroll';
 import { useStickyTabsLayout } from '@/composables/useStickyTabsLayout';
-import {
-  iconCurrentLocation,
-  iconHeart,
-  iconList,
-  iconPlay,
-  iconSearch,
-  iconArrowsSort,
-} from '@/icons';
+import { iconCurrentLocation, iconHeart, iconList, iconPlay, iconArrowsSort } from '@/icons';
 import { replaceQueueAndPlay } from '@/utils/playback';
 import { filterSongsByQuery, sortSongs } from '@/utils/songList';
 
@@ -639,20 +633,7 @@ watch(
                     >
                       <Icon :icon="iconArrowsSort" width="16" />
                     </Button>
-                    <div class="relative">
-                      <input
-                        v-model="searchQuery"
-                        type="text"
-                        placeholder="搜索歌曲..."
-                        class="song-search-input w-52 h-9 pl-8 pr-3 rounded-lg text-text-main placeholder:text-text-main/50 outline-none text-[12px] transition-all"
-                      />
-                      <Icon
-                        class="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-main/60"
-                        :icon="iconSearch"
-                        width="14"
-                        height="14"
-                      />
-                    </div>
+                    <SongSearchInput v-model="searchQuery" />
                     <Button
                       variant="unstyled"
                       size="none"
@@ -666,38 +647,12 @@ watch(
 
                   <!-- 歌手 tab 右侧搜索 -->
                   <div v-if="activeTab === 'singers'" class="flex items-center gap-2">
-                    <div class="relative">
-                      <input
-                        v-model="singerSearchQuery"
-                        type="text"
-                        placeholder="搜索歌手..."
-                        class="song-search-input w-52 h-9 pl-8 pr-3 rounded-lg text-text-main placeholder:text-text-main/50 outline-none text-[12px] transition-all"
-                      />
-                      <Icon
-                        class="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-main/60"
-                        :icon="iconSearch"
-                        width="14"
-                        height="14"
-                      />
-                    </div>
+                    <SongSearchInput v-model="singerSearchQuery" placeholder="搜索歌手..." />
                   </div>
 
                   <!-- 专辑 tab 右侧搜索 -->
                   <div v-if="activeTab === 'albums'" class="flex items-center gap-2">
-                    <div class="relative">
-                      <input
-                        v-model="albumSearchQuery"
-                        type="text"
-                        placeholder="搜索专辑..."
-                        class="song-search-input w-52 h-9 pl-8 pr-3 rounded-lg text-text-main placeholder:text-text-main/50 outline-none text-[12px] transition-all"
-                      />
-                      <Icon
-                        class="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-main/60"
-                        :icon="iconSearch"
-                        width="14"
-                        height="14"
-                      />
-                    </div>
+                    <SongSearchInput v-model="albumSearchQuery" placeholder="搜索专辑..." />
                   </div>
                 </div>
               </div>

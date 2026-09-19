@@ -48,6 +48,19 @@ export function useSettingsShortcuts() {
     return formatShortcutLabelForDisplay(rawValue, window.electron?.platform);
   };
 
+  const hasShortcutValue = (command: ShortcutCommand, scope: ShortcutScope) => {
+    if (isRecording(command, scope)) return false;
+    const rawValue =
+      scope === 'global'
+        ? resolveLabel(
+            globalShortcutBindings.value,
+            settingStore.defaultGlobalShortcutLabels,
+            command,
+          )
+        : resolveLabel(shortcutBindings.value, settingStore.defaultShortcutLabels, command);
+    return Boolean(rawValue);
+  };
+
   const getShortcutPlaceholder = (command: ShortcutCommand, scope: ShortcutScope) => {
     if (isRecording(command, scope)) return '按键盘输入快捷键';
     if (scope === 'global' && !settingStore.globalShortcutsEnabled) return '开启后可录制';
@@ -115,7 +128,9 @@ export function useSettingsShortcuts() {
         return existingLabel && areShortcutLabelsEquivalent(existingLabel, label);
       });
       if (conflictEntry) {
-        toastStore.warning(`该快捷键已分配给“${getShortcutCommandTitle(conflictEntry.command)}”`);
+        if (settingStore.shortcutConflictPromptEnabled !== false) {
+          toastStore.warning(`该快捷键已分配给“${getShortcutCommandTitle(conflictEntry.command)}”`);
+        }
         return;
       }
       if (recording.value.scope === 'global') {
@@ -137,7 +152,7 @@ export function useSettingsShortcuts() {
     const outsideHandler = (event: MouseEvent) => {
       if (!recording.value) return;
       const target = event.target as HTMLElement | null;
-      if (target?.closest('.shortcut-input')) return;
+      if (target?.closest('.shortcut-input-wrap')) return;
       stopRecording();
     };
     window.addEventListener('mousedown', outsideHandler, true);
@@ -181,8 +196,10 @@ export function useSettingsShortcuts() {
   });
 
   return {
+    clearShortcut,
     getShortcutPlaceholder,
     getShortcutValue,
+    hasShortcutValue,
     isRecording,
     isShortcutModified,
     resetAllShortcuts,

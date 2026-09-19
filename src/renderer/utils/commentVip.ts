@@ -162,6 +162,7 @@ export const resolveYoungPlateId = (
 export const shouldShowVipPlate = (
   plateId: number,
   musicKind: number,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   _ext?: CommentVipExt,
 ): boolean =>
   plateId === 7 ||
@@ -308,7 +309,7 @@ const mapBusiVip = (entry: unknown): CommentBusiVip | null => {
   if (!productType) return null;
   return {
     productType,
-    isVip: flag(record.is_vip ?? record.isVip ?? 1),
+    isVip: flag(record.is_vip ?? record.isVip),
     yType: parseIntSafe(record.y_type ?? record.yType),
   };
 };

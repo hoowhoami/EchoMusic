@@ -12,7 +12,8 @@ import SongListHeader, {
 } from '@/components/music/SongListHeader.vue';
 import ActionRow from '@/components/music/DetailPageActionRow.vue';
 import BatchActionDrawer from '@/components/music/BatchActionDrawer.vue';
-import { iconCurrentLocation, iconSearch, iconSparkles } from '@/icons';
+import SongSearchInput from '@/components/music/SongSearchInput.vue';
+import { iconCurrentLocation, iconSparkles } from '@/icons';
 
 const props = defineProps<{
   activeSongId?: string;
@@ -82,22 +83,15 @@ defineExpose({ scrollToActive });
         <span v-else class="search-song-count">{{ subtitleLabel ?? songs.length }} 首</span>
 
         <div v-if="enableSearchQuery || enableLocate" class="search-song-toolbar-actions">
-          <div v-if="enableSearchQuery" class="search-result-filter relative">
-            <input
-              :value="searchQuery"
-              type="text"
-              placeholder="筛选当前结果"
-              aria-label="筛选当前搜索结果"
-              class="song-search-input w-full h-9 pl-8 pr-3 rounded-lg text-text-main placeholder:text-text-main/50 outline-none text-[12px] transition-all"
-              @input="emit('song-search-change', ($event.target as HTMLInputElement).value)"
-            />
-            <Icon
-              class="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-main/60"
-              :icon="iconSearch"
-              width="14"
-              height="14"
-            />
-          </div>
+          <SongSearchInput
+            v-if="enableSearchQuery"
+            class="search-result-filter"
+            input-class="w-full"
+            :model-value="searchQuery"
+            placeholder="筛选当前结果"
+            ariaLabel="筛选当前搜索结果"
+            @update:model-value="emit('song-search-change', $event)"
+          />
           <Button
             v-if="enableLocate"
             variant="unstyled"

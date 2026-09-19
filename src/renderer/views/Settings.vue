@@ -195,6 +195,8 @@ const builtinSettingsSections = computed<SettingsRenderSection[]>(() => [
       'SQ 无损品质',
       'Hi-Res 品质',
       '蝰蛇母带',
+      '开启蝰蛇母带',
+      '母带音质',
       'viper_tape',
       'flac',
       '无损',

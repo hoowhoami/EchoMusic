@@ -14,10 +14,11 @@ import SliverHeader from '@/components/music/DetailPageSliverHeader.vue';
 import ActionRow from '@/components/music/DetailPageActionRow.vue';
 import SongList from '@/components/music/SongList.vue';
 import SongListHeader from '@/components/music/SongListHeader.vue';
+import SongSearchInput from '@/components/music/SongSearchInput.vue';
 import BatchActionDrawer from '@/components/music/BatchActionDrawer.vue';
 import { mapTopSong } from '@/utils/mappers';
 import type { SortField, SortOrder } from '@/components/music/SongListHeader.vue';
-import { iconPlay, iconList, iconCurrentLocation, iconSearch } from '@/icons';
+import { iconPlay, iconList, iconCurrentLocation } from '@/icons';
 import { replaceQueueAndPlay } from '@/utils/playback';
 import Button from '@/components/ui/Button.vue';
 import Badge from '@/components/ui/Badge.vue';
@@ -202,20 +203,7 @@ onMounted(() => {
                 </TabsList>
 
                 <div class="flex items-center gap-2">
-                  <div class="relative">
-                    <input
-                      v-model="searchQuery"
-                      type="text"
-                      placeholder="搜索歌曲..."
-                      class="song-search-input w-52 h-9 pl-8 pr-3 rounded-lg text-text-main placeholder:text-text-main/50 outline-none text-[12px] transition-all"
-                    />
-                    <Icon
-                      class="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-main/60"
-                      :icon="iconSearch"
-                      width="14"
-                      height="14"
-                    />
-                  </div>
+                  <SongSearchInput v-model="searchQuery" />
                   <Button
                     variant="unstyled"
                     size="none"

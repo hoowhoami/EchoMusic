@@ -172,6 +172,7 @@ export const useSettingStore = defineStore('setting', {
     defaultAudioQuality: 'high' as AudioQualityValue,
     compatibilityMode: true,
     globalShortcutsEnabled: false,
+    shortcutConflictPromptEnabled: true,
     shortcutBindings: {} as Record<string, string>,
     globalShortcutBindings: {} as Record<string, string>,
     defaultShortcutLabels: { ...DEFAULT_SHORTCUT_LABELS } as Record<string, string>,
@@ -261,6 +262,7 @@ export const useSettingStore = defineStore('setting', {
     playbackStallTimeout: 8,
     // 同一首歌连续卡死的最大自动恢复次数，超过则回退到失败提示/自动下一首
     playbackStallMaxAttempts: 3,
+    viperTapeQualityEnabled: false,
     // 快进 / 快退步长（秒）
     seekForwardOffset: 5,
     seekBackwardOffset: 5,

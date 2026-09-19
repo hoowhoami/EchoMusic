@@ -955,7 +955,7 @@ onMounted(() => loadData());
           {{ gradeLoading ? '正在获取升级进度…' : '暂未获取到下一等级进度，请稍后刷新' }}
         </p>
       </div>
-      <div class="flex justify-between items-center gap-4 py-5 text-sm">
+      <div class="flex justify-between items-center gap-4 py-6 text-sm">
         <span class="text-text-secondary">累计听歌</span>
         <RollingNumber class="font-bold" :value="listeningDuration" />
       </div>
@@ -1149,7 +1149,7 @@ onMounted(() => loadData());
   outline-offset: 5px;
 }
 .grade-card {
-  padding: 24px;
+  padding: 32px 24px;
   border: 1px solid var(--border-subtle);
   border-radius: 20px;
   background: linear-gradient(
@@ -1301,6 +1301,9 @@ onMounted(() => loadData());
 <style>
 .dialog-content.profile-grade-dialog {
   width: min(520px, 92vw);
+  max-height: min(680px, calc(100vh - 140px));
+  padding-top: 28px;
+  padding-bottom: 28px;
 }
 .vip-expire-popover.echo-popover-content {
   padding: 12px 14px;

@@ -189,10 +189,44 @@
   @apply flex items-center justify-center;
 }
 
+.shortcut-input-wrap {
+  position: relative;
+}
+
 .shortcut-input {
   @apply w-full px-3 py-1.5 text-[13px] font-medium border rounded-lg text-text-main text-center cursor-pointer transition-all tracking-wide;
   background: var(--control-muted-bg);
   border-color: var(--control-border);
+}
+
+.shortcut-input-wrap:has(.shortcut-input-clear) .shortcut-input {
+  padding-right: 22px;
+}
+
+.shortcut-input-clear {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transform: translateY(-50%);
+  transition:
+    color 150ms,
+    background-color 150ms;
+}
+
+.shortcut-input-clear:hover {
+  color: var(--color-text-main);
+  background: var(--control-hover-bg);
 }
 
 .shortcut-input:hover {

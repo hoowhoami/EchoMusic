@@ -3,8 +3,27 @@ import { commentChipsFromRaw, commentTalentIconFromRaw } from '@/utils/commentVi
 import type { Comment } from '@/models/comment';
 import { isRecord, toRecord } from '../../shared/object';
 
-const cache = new Map<string, unknown[]>();
+const SUCCESS_TTL_MS = 30 * 60 * 1000;
+const FAILURE_TTL_MS = 30 * 1000;
+const MAX_CACHE_ENTRIES = 500;
+
+type CacheEntry = { busiVip: unknown[]; expiresAt: number };
+
+const cache = new Map<string, CacheEntry>();
 const inflight = new Map<string, Promise<void>>();
+
+const isFresh = (entry: CacheEntry | undefined): entry is CacheEntry =>
+  Boolean(entry && entry.expiresAt > Date.now());
+
+const remember = (id: string, busiVip: unknown[], ttl: number) => {
+  if (cache.has(id)) cache.delete(id);
+  cache.set(id, { busiVip, expiresAt: Date.now() + ttl });
+  while (cache.size > MAX_CACHE_ENTRIES) {
+    const oldest = cache.keys().next().value;
+    if (oldest === undefined) break;
+    cache.delete(oldest);
+  }
+};
 
 const commentUserId = (comment: Comment): string => {
   const raw = comment.raw && typeof comment.raw === 'object' ? comment.raw : {};
@@ -39,17 +58,17 @@ const fetchChunk = async (userIds: string[]): Promise<void> => {
     const response = await getBatchUnionVipinfo(userIds);
     const mapped = parseBusiVipMap(response);
     for (const id of userIds) {
-      cache.set(id, mapped[id] ?? []);
+      remember(id, mapped[id] ?? [], SUCCESS_TTL_MS);
     }
   } catch {
     for (const id of userIds) {
-      if (!cache.has(id)) cache.set(id, []);
+      if (!isFresh(cache.get(id))) remember(id, [], FAILURE_TTL_MS);
     }
   }
 };
 
 const ensureUserIds = async (userIds: string[]): Promise<void> => {
-  const missing = [...new Set(userIds)].filter((id) => id && !cache.has(id));
+  const missing = [...new Set(userIds)].filter((id) => id && !isFresh(cache.get(id)));
   if (missing.length === 0) return;
   const pending: Promise<void>[] = [];
   for (let index = 0; index < missing.length; index += 20) {
@@ -68,8 +87,9 @@ const ensureUserIds = async (userIds: string[]): Promise<void> => {
 const attachCachedVip = (comment: Comment): Comment => {
   const userId = commentUserId(comment);
   if (!userId) return comment;
-  const busiVip = cache.get(userId);
-  if (!busiVip) return comment;
+  const entry = cache.get(userId);
+  if (!isFresh(entry)) return comment;
+  const busiVip = entry.busiVip;
   const raw = { ...(comment.raw ?? {}), busi_vip: busiVip, user_id: userId };
   const badges = commentChipsFromRaw(raw);
   const talentIcon = commentTalentIconFromRaw(raw);

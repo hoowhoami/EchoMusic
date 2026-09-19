@@ -103,6 +103,7 @@ import {
   getPluginWebServerStatus,
   listenPluginWebServer,
   pingPluginWebSocket,
+  registerPluginWebServerCleanup,
   respondPluginWebServerRequest,
   respondPluginWebSocketUpgrade,
   sendPluginWebSocket,
@@ -677,6 +678,11 @@ export const {
   findPlugin,
   getPluginCompatibilityError,
   getPluginSafeMode,
+});
+
+registerPluginWebServerCleanup((handler) => {
+  const { app } = require('electron') as typeof import('electron');
+  app.once('before-quit', handler);
 });
 
 export const getPluginDescriptor = (pluginId: string) => findPlugin(pluginId);

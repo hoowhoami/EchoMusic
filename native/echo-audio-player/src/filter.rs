@@ -40,6 +40,7 @@ pub fn spawn_filter_thread_with_graph(
     thread::Builder::new()
         .name("player-filter".to_string())
         .spawn(move || {
+            let _qos = crate::platform_qos::boost_audio_producer_thread();
             if let Err(payload) =
                 catch_unwind(AssertUnwindSafe(|| run_filter(shared, initial_graph)))
             {

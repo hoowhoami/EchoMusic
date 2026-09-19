@@ -493,6 +493,29 @@ body.accent-scoped .main-layout .player-bar-container {
     border-color: var(--control-border-hover) !important;
   }
 
+  .song-search-clear {
+    position: absolute;
+    right: 6px;
+    top: 50%;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border-radius: 999px;
+    color: color-mix(in srgb, var(--color-text-main) 50%, transparent);
+    transform: translateY(-50%);
+    transition:
+      color 0.15s ease,
+      background-color 0.15s ease;
+  }
+
+  .song-search-clear:hover {
+    color: var(--color-text-main);
+    background: var(--control-hover-bg);
+  }
+
   .song-locate-btn:focus-visible {
     border-color: var(--color-primary-text);
   }

@@ -60,7 +60,10 @@ test('J() shows plate for young products, VIP, music-pack, or super-VIP', () => 
 test('super VIP is user_type bit 16, not svip_level', () => {
   const base = { userYType: -1, svipLevel: 8, busiVip: [] };
   assert.equal(resolveCommentVipKind(1, 0, 0, { ...base, userType: 16 }), 'svip');
-  assert.equal(resolveCommentVipKind(1, 0, 0, { ...base, userType: 16, userYType: 16 }), 'svip-year');
+  assert.equal(
+    resolveCommentVipKind(1, 0, 0, { ...base, userType: 16, userYType: 16 }),
+    'svip-year',
+  );
   assert.equal(resolveCommentVipKind(1, 0, 0, { ...base, userType: 0 }), 'vip');
   assert.equal(resolveCommentVipKind(1, 0, 0, { ...base, userType: 3 }), 'vip');
 });
@@ -98,10 +101,7 @@ test('达人 is an avatar icon from vinfo9.pic, not a username chip', () => {
     }),
     [],
   );
-  assert.equal(
-    commentTalentIconFromRaw({ vinfo9: { cmt_talent_status: 1 } }),
-    COMMENT_TALENT_ICON,
-  );
+  assert.equal(commentTalentIconFromRaw({ vinfo9: { cmt_talent_status: 1 } }), COMMENT_TALENT_ICON);
   assert.equal(
     commentTalentIconFromRaw({
       vinfo9: {
@@ -209,5 +209,20 @@ test('Young plate is mutually exclusive: super bit > 概念 svip > 畅听 tvip',
       busi_vip: [{ product_type: 'tvip', is_vip: 1 }],
     }).map((chip) => chip.label),
     ['畅听VIP'],
+  );
+});
+
+test('missing is_vip does not default to an active product', () => {
+  assert.deepEqual(
+    commentChipsFromRaw({
+      busi_vip: [{ product_type: 'tvip' }],
+    }),
+    [],
+  );
+  assert.deepEqual(
+    commentChipsFromRaw({
+      busi_vip: [{ product_type: 'tvip', is_vip: 0 }],
+    }),
+    [],
   );
 });

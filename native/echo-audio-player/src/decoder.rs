@@ -631,6 +631,7 @@ pub fn spawn_decode_worker(
     let handle = thread::Builder::new()
         .name("player-decode".to_string())
         .spawn(move || {
+            let _qos = crate::platform_qos::boost_audio_producer_thread();
             match catch_unwind(AssertUnwindSafe(|| {
                 decode_worker_loop(data, shared, generation, rx)
             })) {

@@ -105,24 +105,31 @@ export const getSongUnavailableMessage = (song: Song): string | null => {
   return '暂不可播放';
 };
 
-export const getSongQualityTag = (song: Pick<Song, 'relateGoods'>): string => {
+export const getSongQualityTag = (
+  song: Pick<Song, 'relateGoods'>,
+  viperTapeEnabled = true,
+): string => {
   const goods = song.relateGoods ?? [];
   const hasQuality = (quality: string, level: number) =>
     goods.some((item: SongRelateGood) => item.quality === quality || item.level === level);
 
-  if (hasQuality('viper_tape', 101)) return '母带';
+  if (viperTapeEnabled && hasQuality('viper_tape', 101)) return '母带';
   if (hasQuality('high', 6)) return 'Hi-Res';
   if (hasQuality('flac', 5)) return 'SQ';
   if (hasQuality('320', 4)) return 'HQ';
   return '';
 };
 
-export const getSongQualityTags = (relateGoods: SongRelateGood[] | undefined): string[] => {
+export const getSongQualityTags = (
+  relateGoods: SongRelateGood[] | undefined,
+  viperTapeEnabled = true,
+): string[] => {
   if (!relateGoods?.length) return [];
   const seen = new Set<string>();
   const tags: string[] = [];
   for (const item of relateGoods) {
     const quality = item.quality ?? '';
+    if (!viperTapeEnabled && quality === 'viper_tape') continue;
     const normalized = QUALITY_LABEL_MAP[quality] ?? '';
     if (!normalized || EFFECT_QUALITIES.has(quality) || seen.has(normalized)) continue;
     seen.add(normalized);
@@ -185,43 +192,63 @@ export const hasSongQuality = (
   return goods.some((item: SongRelateGood) => doesRelateGoodMatchQuality(item, quality));
 };
 
-export const getAvailableSongQualities = (song: Pick<Song, 'relateGoods'>): AudioQualityValue[] => {
+export const getAvailableSongQualities = (
+  song: Pick<Song, 'relateGoods'>,
+  viperTapeEnabled = true,
+): AudioQualityValue[] => {
   const result: AudioQualityValue[] = ['128'];
   if (hasSongQuality(song, '320')) result.push('320');
   if (hasSongQuality(song, 'flac')) result.push('flac');
   if (hasSongQuality(song, 'high')) result.push('high');
-  if (hasSongQuality(song, 'viper_tape')) result.push('viper_tape');
+  if (viperTapeEnabled && hasSongQuality(song, 'viper_tape')) result.push('viper_tape');
   return result;
+};
+
+export const clampPreferredAudioQuality = (
+  preferred: AudioQualityValue,
+  viperTapeEnabled = true,
+): AudioQualityValue => {
+  if (!viperTapeEnabled && preferred === 'viper_tape') return 'high';
+  return AUDIO_QUALITY_ORDER.includes(preferred) ? preferred : '128';
 };
 
 export const getSongQualityCandidates = (
   preferred: AudioQualityValue,
   compatibilityMode = true,
+  viperTapeEnabled = true,
 ): AudioQualityValue[] => {
-  const normalized = AUDIO_QUALITY_ORDER.includes(preferred) ? preferred : '128';
+  const normalized = clampPreferredAudioQuality(preferred, viperTapeEnabled);
   const index = AUDIO_QUALITY_ORDER.indexOf(normalized);
   if (!compatibilityMode) return [normalized];
-  return AUDIO_QUALITY_ORDER.slice(0, index + 1).reverse();
+  return AUDIO_QUALITY_ORDER.slice(0, index + 1)
+    .reverse()
+    .filter((quality) => viperTapeEnabled || quality !== 'viper_tape');
 };
 
 export const resolveEffectiveSongQuality = (
   song: Pick<Song, 'relateGoods'>,
   preferred: AudioQualityValue,
   compatibilityMode = true,
+  viperTapeEnabled = true,
 ): AudioQualityValue => {
   const goods = song.relateGoods ?? [];
-  if (goods.length === 0) return preferred;
+  const clampedPreferred = clampPreferredAudioQuality(preferred, viperTapeEnabled);
+  if (goods.length === 0) return clampedPreferred;
 
-  const candidates = getSongQualityCandidates(preferred, compatibilityMode);
+  const candidates = getSongQualityCandidates(
+    clampedPreferred,
+    compatibilityMode,
+    viperTapeEnabled,
+  );
   for (const quality of candidates) {
     if (hasSongQuality(song, quality)) return quality;
   }
 
-  const available = getAvailableSongQualities(song);
+  const available = getAvailableSongQualities(song, viperTapeEnabled);
   return available[available.length - 1] ?? '128';
 };
 
-export const getSongDerivedState = (song: Song): SongDerivedState => {
+export const getSongDerivedState = (song: Song, viperTapeEnabled = true): SongDerivedState => {
   const isVip = isVipSong(song);
   const isPaid = isPaidSong(song);
   const isNoCopyright = isNoCopyrightSong(song);
@@ -229,7 +256,7 @@ export const getSongDerivedState = (song: Song): SongDerivedState => {
   const canPlay = canPlaySong(song);
   const isPlayable = isPlayableSong(song);
   const unavailableMessage = getSongUnavailableMessage(song);
-  const qualityTag = getSongQualityTag(song);
+  const qualityTag = getSongQualityTag(song, viperTapeEnabled);
   const privilegeTags = getSongPrivilegeTags(song);
 
   return {

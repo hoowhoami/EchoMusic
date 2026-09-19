@@ -942,6 +942,7 @@ fn cancelling_a_completed_prepare_only_retires_its_own_source() {
     crate::set_transition_settings(Some(crate::control::TransitionSettingsOptions {
         mode: Some("none".to_string()),
         fade_secs: None,
+        match_tempo: None,
     }))
     .expect("settings");
     let a = TestWav::new(8.0, 440.0, 120.0, 0.0, 0.0);
@@ -988,6 +989,7 @@ fn run_runtime_transition_settings_test(timing: SettingsChangeTiming) {
     crate::set_transition_settings(Some(crate::control::TransitionSettingsOptions {
         mode: Some("fade".to_string()),
         fade_secs: Some(3.0),
+        match_tempo: None,
     }))
     .expect("settings");
     // Realistic lengths: the fade mode refuses to overlap tracks shorter than 30 s.
@@ -1025,6 +1027,7 @@ fn run_runtime_transition_settings_test(timing: SettingsChangeTiming) {
     crate::set_transition_settings(Some(crate::control::TransitionSettingsOptions {
         mode: Some("fade".to_string()),
         fade_secs: Some(3.0),
+        match_tempo: None,
     }))
     .expect("reapply settings");
     assert!(
@@ -1041,6 +1044,7 @@ fn run_runtime_transition_settings_test(timing: SettingsChangeTiming) {
         crate::set_transition_settings(Some(crate::control::TransitionSettingsOptions {
             mode: Some("gapless".to_string()),
             fade_secs: Some(3.0),
+            match_tempo: None,
         }))
         .expect("change settings");
     };
@@ -1438,6 +1442,7 @@ fn http_flac_prepare_survives_network_seek_errors_and_blends() {
     crate::set_transition_settings(Some(crate::control::TransitionSettingsOptions {
         mode: Some("automix-pro".to_string()),
         fade_secs: Some(5.0),
+        match_tempo: None,
     }))
     .expect("settings");
 

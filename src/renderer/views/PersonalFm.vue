@@ -18,6 +18,7 @@ import Button from '@/components/ui/Button.vue';
 import Cover from '@/components/ui/Cover.vue';
 import Skeleton from '@/components/ui/Skeleton.vue';
 import SliverHeader from '@/components/music/DetailPageSliverHeader.vue';
+import { useSettingStore } from '@/stores/setting';
 import { getSongQualityTags } from '@/utils/song';
 import type { PersonalFmMode, PersonalFmSongPoolId } from '@/stores/playlist';
 import type { Song } from '@/models/song';
@@ -27,6 +28,7 @@ const playlistStore = usePlaylistStore();
 const playerStore = usePlayerStore();
 const userStore = useUserStore();
 const themeStore = useThemeStore();
+const settingStore = useSettingStore();
 const personalFmLoading = ref(false);
 const personalFmPreloading = ref(false);
 const personalFmVinylsRef = ref<HTMLElement | null>(null);
@@ -120,7 +122,8 @@ const personalFmCurrentTrackInfoChips = computed(() => {
     track.duration > 0
       ? `${Math.floor(track.duration / 60)}:${String(Math.floor(track.duration % 60)).padStart(2, '0')}`
       : '';
-  const quality = getSongQualityTags(track.relateGoods).at(-1) ?? '';
+  const quality =
+    getSongQualityTags(track.relateGoods, settingStore.viperTapeQualityEnabled).at(-1) ?? '';
 
   if (duration) chips.push(duration);
   if (quality) chips.push(quality);

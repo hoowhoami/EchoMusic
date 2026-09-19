@@ -33,6 +33,7 @@ import PageScrollContainer from '@/components/ui/PageScrollContainer.vue';
 import Button from '@/components/ui/Button.vue';
 import Skeleton from '@/components/ui/Skeleton.vue';
 import { useStickyTabsLayout } from '@/composables/useStickyTabsLayout';
+import { useSettingStore } from '@/stores/setting';
 import { useToastStore } from '@/stores/toast';
 import {
   LISTEN_TOGETHER_QUEUE_ID,
@@ -57,6 +58,7 @@ interface CommentPayload {
 const route = useRoute();
 const router = useRouter();
 const toastStore = useToastStore();
+const settingStore = useSettingStore();
 const playlistStore = usePlaylistStore();
 const playerStore = usePlayerStore();
 const userStore = useUserStore();
@@ -685,7 +687,9 @@ const relateGoods = computed(() =>
   ),
 );
 
-const qualityTags = computed(() => getSongQualityTags(relateGoods.value));
+const qualityTags = computed(() =>
+  getSongQualityTags(relateGoods.value, settingStore.viperTapeQualityEnabled),
+);
 
 const effectTags = computed(() => getSongEffectTags(relateGoods.value));
 

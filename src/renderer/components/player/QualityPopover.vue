@@ -50,13 +50,19 @@ watch(
   { immediate: true },
 );
 
-const qualityOptions = [
+const allQualityOptions = [
   { value: '128', label: '标准', badge: 'SD' },
   { value: '320', label: '高品质', badge: 'HQ' },
   { value: 'flac', label: '无损', badge: 'SQ' },
   { value: 'high', label: 'Hi-Res', badge: 'HR' },
   { value: 'viper_tape', label: '蝰蛇母带', badge: 'VPT' },
 ] as const;
+
+const qualityOptions = computed(() =>
+  settingStore.viperTapeQualityEnabled
+    ? allQualityOptions
+    : allQualityOptions.filter((option) => option.value !== 'viper_tape'),
+);
 
 const isSwitchingToCloud = computed(
   () =>
@@ -67,7 +73,7 @@ const isSwitchingToCloud = computed(
 const switchingLabel = computed(() =>
   isSwitchingToCloud.value
     ? '云盘文件'
-    : (qualityOptions.find((option) => option.value === requestedAudioQuality.value)?.label ??
+    : (qualityOptions.value.find((option) => option.value === requestedAudioQuality.value)?.label ??
       '音质'),
 );
 const isPendingQuality = (quality: string) =>

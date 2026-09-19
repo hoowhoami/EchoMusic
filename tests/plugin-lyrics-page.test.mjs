@@ -168,6 +168,7 @@ function setupFixture(t) {
     lyricsPageProvider: 'host',
     effectiveWindowBackground: {},
     lyricOffsetStep: 0.5,
+    viperTapeQualityEnabled: true,
   });
   fixture.lyric = reactive({
     lines: [],
@@ -209,6 +210,7 @@ function setupFixture(t) {
   fixture.controls = {
     player,
     playlist: { removeFromQueue: (...args) => calls.push(['remove', ...args]) },
+    settingStore: fixture.settings,
     currentTrack: ref(track),
     currentPlaybackQueue: ref({ id: 'queue-a', songs: [track] }),
     isQueueDrawerOpen: ref(false),
@@ -459,6 +461,16 @@ test('page controls share reactive playback and validate seek, volume, queues, a
   assert.throws(() => page.audio.setQuality('high'), /不可用/);
   page.audio.setQuality('flac');
   assert.deepEqual(calls.at(-1), ['quality', 'flac']);
+  assert.equal(
+    page.state.value.qualityOptions.some((option) => option.value === 'viper_tape'),
+    true,
+  );
+  fixture.settings.viperTapeQualityEnabled = false;
+  assert.equal(
+    page.state.value.qualityOptions.some((option) => option.value === 'viper_tape'),
+    false,
+  );
+  assert.throws(() => page.audio.setQuality('viper_tape'), /不可用/);
   page.lyrics.adjustOffset(500);
   assert.equal(page.state.value.lyrics.timeOffset, 500);
   page.lyrics.resetOffset();

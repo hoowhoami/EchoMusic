@@ -21,7 +21,7 @@ const policyEnd = playerSource.indexOf('        if (shouldUpdateFade', policySta
 const syncSettings = new Function(
   'state',
   'settingStore',
-  'compatibilityChanged',
+  'qualityPolicyChanged',
   'refreshCurrentTrack',
   'getPlaybackIsLoading',
   'shouldRefresh',
@@ -29,7 +29,11 @@ const syncSettings = new Function(
 );
 function setup() {
   const settings = defineStore('test-quality', {
-    state: () => ({ defaultAudioQuality: '128', compatibilityMode: true }),
+    state: () => ({
+      defaultAudioQuality: '128',
+      compatibilityMode: true,
+      viperTapeQualityEnabled: false,
+    }),
   })(createPinia());
   const state = reactive({
     currentTrackId: 'a',
@@ -51,18 +55,22 @@ function setup() {
   };
   let previousQuality = settings.defaultAudioQuality;
   let previousCompatibility = settings.compatibilityMode;
+  let previousViperTape = settings.viperTapeQualityEnabled;
   settings.$subscribe(() => {
     const compatibilityChanged = previousCompatibility !== settings.compatibilityMode;
+    const viperTapeChanged = previousViperTape !== settings.viperTapeQualityEnabled;
+    const qualityPolicyChanged = compatibilityChanged || viperTapeChanged;
     const shouldRefresh =
-      compatibilityChanged ||
+      qualityPolicyChanged ||
       (state.currentAudioQualityOverride === null &&
         previousQuality !== settings.defaultAudioQuality);
     previousQuality = settings.defaultAudioQuality;
     previousCompatibility = settings.compatibilityMode;
+    previousViperTape = settings.viperTapeQualityEnabled;
     syncSettings(
       state,
       settings,
-      compatibilityChanged,
+      qualityPolicyChanged,
       refresh,
       (value) => value.loading,
       shouldRefresh,
@@ -109,6 +117,19 @@ test('compatibility changes are not swallowed by an in-flight refresh of the sam
   e.settings.$dispose();
 });
 
+test('disabling viper tape quality is not swallowed by an in-flight refresh of the same quality', async () => {
+  const e = setup();
+  e.settings.viperTapeQualityEnabled = true;
+  await nextTick();
+  e.state.pendingSettingRefresh = false;
+  e.manager.setPreferredAudioQuality('flac');
+  await nextTick();
+  e.settings.viperTapeQualityEnabled = false;
+  await nextTick();
+  assert.equal(e.state.pendingSettingRefresh, true);
+  e.settings.$dispose();
+});
+
 test('cloud selection keeps the saved quality preference for subsequent catalog songs', async () => {
   const e = setup();
   e.state.currentResolvedSourceKind = 'cloud';
@@ -137,7 +158,7 @@ test('a failed preferred quality can be retried without changing the preference 
 });
 
 const resolverSource = read('../src/renderer/stores/player/resolver.ts');
-const resolverStart = resolverSource.indexOf('  const getEffectiveAudioQuality =');
+const resolverStart = resolverSource.indexOf('  const isViperTapeQualityEnabled =');
 const resolverEnd = resolverSource.indexOf('  const transformAudioSource =', resolverStart);
 const qualityResolvers = new Function(
   'state',
@@ -149,7 +170,11 @@ const qualityResolvers = new Function(
 );
 test('explicit per-track overrides do not leak into next-track or plugin source requests', () => {
   const state = { currentTrackId: 'a', currentAudioQualityOverride: '320', audioEffect: 'none' };
-  const settings = { defaultAudioQuality: 'high', compatibilityMode: true };
+  const settings = {
+    defaultAudioQuality: 'high',
+    compatibilityMode: true,
+    viperTapeQualityEnabled: true,
+  };
   const resolver = qualityResolvers(
     state,
     settings,
@@ -165,6 +190,54 @@ test('explicit per-track overrides do not leak into next-track or plugin source 
   state.currentTrackId = 'b';
   state.currentAudioQualityOverride = null;
   assert.equal(resolver.getEffectiveAudioQuality({ id: 'c' }), 'high');
+});
+
+test('viper tape preference is clamped to high when the quality gate is off', () => {
+  const state = {
+    currentTrackId: 'a',
+    currentAudioQualityOverride: 'viper_tape',
+    audioEffect: 'none',
+  };
+  const settings = {
+    defaultAudioQuality: 'viper_tape',
+    compatibilityMode: true,
+    viperTapeQualityEnabled: false,
+  };
+  const resolver = qualityResolvers(
+    state,
+    settings,
+    (value) => value,
+    (value) => value,
+    (_track, quality) => quality,
+  );
+  assert.equal(resolver.getEffectiveAudioQuality(), 'high');
+  assert.equal(resolver.getEffectiveAudioQuality({ id: 'a' }), 'high');
+  assert.equal(resolver.getEffectiveAudioQuality({ id: 'b' }), 'high');
+  assert.equal(resolver.createPluginAudioSourceContext({ id: 'b' }).quality, 'high');
+  assert.equal(resolver.getResolvedAudioQuality({ id: 'a' }), 'high');
+});
+
+test('viper tape preference is kept when the quality gate is on', () => {
+  const state = {
+    currentTrackId: 'a',
+    currentAudioQualityOverride: 'viper_tape',
+    audioEffect: 'none',
+  };
+  const settings = {
+    defaultAudioQuality: 'high',
+    compatibilityMode: true,
+    viperTapeQualityEnabled: true,
+  };
+  const resolver = qualityResolvers(
+    state,
+    settings,
+    (value) => value,
+    (value) => value,
+    (_track, quality) => quality,
+  );
+  assert.equal(resolver.getEffectiveAudioQuality(), 'viper_tape');
+  assert.equal(resolver.getEffectiveAudioQuality({ id: 'b' }), 'high');
+  assert.equal(resolver.createPluginAudioSourceContext({ id: 'a' }).quality, 'viper_tape');
 });
 
 test('a quality preference changed during loading is applied once after loading and seek settle', async () => {

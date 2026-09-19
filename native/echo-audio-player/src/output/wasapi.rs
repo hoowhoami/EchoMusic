@@ -11,13 +11,14 @@ use crate::output::{
     report_output_start, report_output_start_failure, service_wasapi_event, OutputStartSender,
     OutputStopToken,
 };
+use crate::platform_qos;
 use crate::shared::SharedAudio;
 use std::ptr;
 use std::slice;
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
-use windows::core::{HRESULT, PCSTR};
+use windows::core::HRESULT;
 use windows::Win32::Foundation::{CloseHandle, HANDLE, WAIT_FAILED, WAIT_OBJECT_0, WAIT_TIMEOUT};
 use windows::Win32::Media::Audio;
 use windows::Win32::System::Threading;
@@ -150,36 +151,6 @@ impl WasapiOutputFailure {
     }
 }
 
-struct MmcssTask {
-    handle: HANDLE,
-}
-
-impl MmcssTask {
-    fn register() -> Result<Self, String> {
-        let mut task_index = 0u32;
-        let handle = unsafe {
-            Threading::AvSetMmThreadCharacteristicsA(
-                PCSTR(b"Pro Audio\0".as_ptr()),
-                &mut task_index,
-            )
-        }
-        .map_err(|err| format!("failed to set WASAPI thread to Pro Audio MMCSS: {err}"))?;
-        unsafe {
-            Threading::AvSetMmThreadPriority(handle, Threading::AVRT_PRIORITY_HIGH)
-                .map_err(|err| format!("failed to raise WASAPI MMCSS priority: {err}"))?;
-        }
-        Ok(Self { handle })
-    }
-}
-
-impl Drop for MmcssTask {
-    fn drop(&mut self) {
-        unsafe {
-            let _ = Threading::AvRevertMmThreadCharacteristics(self.handle);
-        }
-    }
-}
-
 fn classify_wasapi_client_error(code: HRESULT) -> WasapiOutputErrorAction {
     if code == Audio::AUDCLNT_E_DEVICE_INVALIDATED {
         WasapiOutputErrorAction::Recover {
@@ -255,32 +226,35 @@ pub fn spawn_output_thread(
     emit: fn(PlayerEvent),
     start_notify: Option<OutputStartSender>,
 ) -> JoinHandle<()> {
-    thread::spawn(move || {
-        let mut start_notify = start_notify;
-        let requested_mode = WasapiShareMode::from_exclusive(exclusive);
-        match run_wasapi_output(
-            &device_name,
-            requested_mode,
-            shared.clone(),
-            stop.clone(),
-            emit,
-            &mut start_notify,
-        ) {
-            Ok(()) => {}
-            Err(failure) => {
-                if handle_wasapi_output_failure(
-                    requested_mode,
-                    &shared,
-                    &stop,
-                    emit,
-                    &mut start_notify,
-                    failure,
-                ) {
-                    return;
+    thread::Builder::new()
+        .name("player-wasapi-output".to_string())
+        .spawn(move || {
+            let mut start_notify = start_notify;
+            let requested_mode = WasapiShareMode::from_exclusive(exclusive);
+            match run_wasapi_output(
+                &device_name,
+                requested_mode,
+                shared.clone(),
+                stop.clone(),
+                emit,
+                &mut start_notify,
+            ) {
+                Ok(()) => {}
+                Err(failure) => {
+                    if handle_wasapi_output_failure(
+                        requested_mode,
+                        &shared,
+                        &stop,
+                        emit,
+                        &mut start_notify,
+                        failure,
+                    ) {
+                        return;
+                    }
                 }
             }
-        }
-    })
+        })
+        .expect("failed to spawn WASAPI output thread")
 }
 
 fn run_wasapi_output(
@@ -292,7 +266,7 @@ fn run_wasapi_output(
     start_notify: &mut Option<OutputStartSender>,
 ) -> Result<(), WasapiOutputFailure> {
     let _com = ComApartment::init().map_err(WasapiOutputFailure::backend)?;
-    let _mmcss = match MmcssTask::register() {
+    let _mmcss = match platform_qos::boost_audio_output_thread() {
         Ok(task) => {
             emit(PlayerEvent::log(
                 "info",

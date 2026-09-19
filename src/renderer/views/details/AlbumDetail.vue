@@ -19,6 +19,7 @@ import DynamicAlbumCover from '@/components/music/DynamicAlbumCover.vue';
 import ActionRow from '@/components/music/DetailPageActionRow.vue';
 import SongList from '@/components/music/SongList.vue';
 import SongListHeader from '@/components/music/SongListHeader.vue';
+import SongSearchInput from '@/components/music/SongSearchInput.vue';
 import Tabs from '@/components/ui/Tabs.vue';
 import TabsList from '@/components/ui/TabsList.vue';
 import TabsTrigger from '@/components/ui/TabsTrigger.vue';
@@ -41,7 +42,6 @@ import { useSettingStore } from '@/stores/setting';
 import { logger } from '@/utils/logger';
 import {
   iconCurrentLocation,
-  iconSearch,
   iconPlay,
   iconList,
   iconHeart,
@@ -736,20 +736,7 @@ const activeSongId = computed(() => playerStore.currentTrackId ?? undefined);
                   </TabsList>
 
                   <div v-if="activeTab === 'songs'" class="flex items-center gap-2">
-                    <div class="relative">
-                      <input
-                        v-model="searchQuery"
-                        type="text"
-                        placeholder="搜索歌曲..."
-                        class="song-search-input w-52 h-9 pl-8 pr-3 rounded-lg text-text-main placeholder:text-text-main/50 outline-none text-[12px] transition-all"
-                      />
-                      <Icon
-                        class="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-main/60 dark:text-text-main/60"
-                        :icon="iconSearch"
-                        width="14"
-                        height="14"
-                      />
-                    </div>
+                    <SongSearchInput v-model="searchQuery" />
                     <Button
                       variant="unstyled"
                       size="none"

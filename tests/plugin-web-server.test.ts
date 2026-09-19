@@ -172,3 +172,126 @@ test('binary frames and close codes round-trip through the host socket', async (
   assert.equal(String(reason), 'done');
   assert.ok(sockets.some((entry) => Array.isArray(entry) && entry[0] === 'close'));
 });
+
+test('cross-origin browser upgrades are rejected unless the plugin opts in', async (t) => {
+  const { origin, webContents } = await fixture(t);
+  const client = new WebSocket(`${origin.replace('http', 'ws')}/live`, {
+    origin: 'http://evil.example',
+  });
+  client.on('error', () => undefined);
+  t.after(() => client.terminate());
+  const error = once(client, 'unexpected-response');
+  const [, response] = await error;
+  assert.equal(response.statusCode, 403);
+  const didUpgrade = await Promise.race([
+    once(webContents, 'plugins:web-server:upgrade').then(() => true),
+    new Promise((resolve) => setTimeout(() => resolve(false), 50)),
+  ]);
+  assert.equal(didUpgrade, false);
+});
+
+test('allowCrossOrigin lets a plugin accept other browser origins', async (t) => {
+  const { origin, upgrades, webContents } = await (async () => {
+    const webContents = new EventEmitter() as MockWebContents;
+    webContents.id = 1;
+    webContents.isDestroyed = () => false;
+    webContents.send = (channel: string, payload: unknown) => {
+      webContents.emit(channel, payload);
+    };
+    const upgrades: unknown[] = [];
+    webContents.on('plugins:web-server:upgrade', (payload) => upgrades.push(payload));
+    const result = await listenPluginWebServer(
+      plugin,
+      { port: 0, allowCrossOrigin: true },
+      webContents as never,
+      () => true,
+    );
+    assert.equal(result.ok, true);
+    if (!result.ok) throw new Error(result.error);
+    t.after(() => closePluginWebServer(plugin.id, webContents as never));
+    return { webContents, origin: result.origin, upgrades };
+  })();
+  const client = new WebSocket(`${origin.replace('http', 'ws')}/live`, {
+    origin: 'http://evil.example',
+  });
+  client.on('error', () => undefined);
+  t.after(() => client.terminate());
+  await once(webContents, 'plugins:web-server:upgrade');
+  const upgrade = upgrades[0] as { connectionId: string };
+  const opened = once(client, 'open');
+  assert.equal(
+    respondPluginWebSocketUpgrade(
+      plugin.id,
+      { connectionId: upgrade.connectionId, accept: true },
+      webContents as never,
+    ).ok,
+    true,
+  );
+  await opened;
+});
+
+test('clients that omit Origin are still accepted by default', async (t) => {
+  const { origin, upgrades, webContents } = await fixture(t);
+  const client = new WebSocket(`${origin.replace('http', 'ws')}/live`);
+  client.on('error', () => undefined);
+  t.after(() => client.terminate());
+  await once(webContents, 'plugins:web-server:upgrade');
+  const upgrade = upgrades[0] as { connectionId: string };
+  const opened = once(client, 'open');
+  assert.equal(
+    respondPluginWebSocketUpgrade(
+      plugin.id,
+      { connectionId: upgrade.connectionId, accept: true },
+      webContents as never,
+    ).ok,
+    true,
+  );
+  await opened;
+});
+
+test('oversized ping payloads return a Chinese error instead of RangeError', async (t) => {
+  const { origin, upgrades, webContents } = await fixture(t);
+  const client = new WebSocket(`${origin.replace('http', 'ws')}/live`);
+  client.on('error', () => undefined);
+  t.after(() => client.terminate());
+  await once(webContents, 'plugins:web-server:upgrade');
+  const upgrade = upgrades[0] as { connectionId: string };
+  const opened = once(client, 'open');
+  respondPluginWebSocketUpgrade(
+    plugin.id,
+    { connectionId: upgrade.connectionId, accept: true },
+    webContents as never,
+  );
+  await opened;
+  const result = pingPluginWebSocket(
+    plugin.id,
+    { connectionId: upgrade.connectionId, data: 'x'.repeat(126) },
+    webContents as never,
+  );
+  assert.equal(result.ok, false);
+  assert.equal(result.error, 'WebSocket ping 载荷不能超过 125 字节');
+});
+
+test('closePluginWebSocket treats a missing code as 1000', async (t) => {
+  const { origin, upgrades, webContents } = await fixture(t);
+  const client = new WebSocket(`${origin.replace('http', 'ws')}/live`);
+  client.on('error', () => undefined);
+  t.after(() => client.terminate());
+  await once(webContents, 'plugins:web-server:upgrade');
+  const upgrade = upgrades[0] as { connectionId: string };
+  const opened = once(client, 'open');
+  respondPluginWebSocketUpgrade(
+    plugin.id,
+    { connectionId: upgrade.connectionId, accept: true },
+    webContents as never,
+  );
+  await opened;
+  const closed = once(client, 'close');
+  assert.equal(
+    closePluginWebSocket(plugin.id, { connectionId: upgrade.connectionId }, webContents as never)
+      .ok,
+    true,
+  );
+  const [code] = await closed;
+  assert.equal(code, 1000);
+});

@@ -11,7 +11,10 @@ test('recognizes Chromium fetch abort', () => {
 test('recognizes DOM and Axios abort shapes', () => {
   assert.equal(isAbortError(new DOMException('The operation was aborted', 'AbortError')), true);
   assert.equal(isAbortError(new DOMException('This operation was aborted', 'AbortError')), true);
-  assert.equal(isAbortError({ name: 'CanceledError', message: 'canceled', code: 'ERR_CANCELED' }), true);
+  assert.equal(
+    isAbortError({ name: 'CanceledError', message: 'canceled', code: 'ERR_CANCELED' }),
+    true,
+  );
   assert.equal(isAbortError({ __CANCEL__: true, message: 'canceled' }), true);
   assert.equal(isAbortError('The user aborted a request.'), true);
 });
@@ -23,6 +26,20 @@ test('does not treat real failures as aborts', () => {
   assert.equal(isAbortError(new Error('network connection timed out')), false);
   assert.equal(isAbortError(new DOMException('The operation timed out.', 'TimeoutError')), false);
   assert.equal(isAbortError('request was not canceled by the user'), false);
+});
+
+test('does not treat AbortSignal.timeout as a user abort', () => {
+  const timeout = new DOMException('The operation was aborted due to timeout', 'TimeoutError');
+  assert.equal(isAbortError(timeout), false);
+  assert.equal(
+    isAbortError({ name: 'TimeoutError', message: 'The operation was aborted due to timeout' }),
+    false,
+  );
+  assert.equal(isAbortError(new Error('The operation was aborted due to timeout')), false);
+});
+
+test('numeric ENOTDIR-style codes are not treated as aborts', () => {
+  assert.equal(isAbortError({ code: 20, message: 'ENOTDIR' }), false);
 });
 
 test('serializes Error objects for logs instead of empty objects', () => {

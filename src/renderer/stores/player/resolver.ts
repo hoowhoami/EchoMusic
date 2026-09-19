@@ -145,12 +145,16 @@ export const createResolver = (
   playlistStore: ReturnType<typeof usePlaylistStore>,
   settingStore: ReturnType<typeof useSettingStore>,
 ) => {
+  const isViperTapeQualityEnabled = () => settingStore.viperTapeQualityEnabled ?? false;
+
   const getEffectiveAudioQuality = (track?: Pick<Song, 'id'>): AudioQualityValue => {
     const isCurrentTrack = !track || String(track.id) === String(state.currentTrackId);
-    return normalizeQuality(
+    const quality = normalizeQuality(
       (isCurrentTrack ? state.currentAudioQualityOverride : null) ??
         settingStore.defaultAudioQuality,
     );
+    if (!isViperTapeQualityEnabled() && quality === 'viper_tape') return 'high';
+    return quality;
   };
 
   const getResolvedAudioQuality = (track: Pick<Song, 'id' | 'relateGoods'>): AudioQualityValue => {
@@ -158,6 +162,7 @@ export const createResolver = (
       track,
       getEffectiveAudioQuality(track),
       settingStore.compatibilityMode ?? true,
+      isViperTapeQualityEnabled(),
     );
   };
 
@@ -592,7 +597,11 @@ export const createResolver = (
       }
     }
 
-    const candidates = getSongQualityCandidates(audioQuality, compatibilityMode);
+    const candidates = getSongQualityCandidates(
+      audioQuality,
+      compatibilityMode,
+      isViperTapeQualityEnabled(),
+    );
     for (const quality of candidates) {
       const matched = relateGoods.find(
         (item) => doesRelateGoodMatchQuality(item, quality) && item.hash,

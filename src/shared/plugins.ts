@@ -477,6 +477,12 @@ export interface PluginWebServerListenOptions {
   maxMessageBytes?: number;
   /** Max queued outbound WebSocket bytes. Default 4× message size, max 32 MiB. */
   maxBufferedBytes?: number;
+  /**
+   * Allow WebSocket clients whose `Origin` is not this server (`http://127.0.0.1:<port>` /
+   * `http://localhost:<port>`). Default false: browsers on other origins are rejected.
+   * Non-browser clients that omit `Origin` are still accepted.
+   */
+  allowCrossOrigin?: boolean;
 }
 
 export interface PluginWebServerRequest {

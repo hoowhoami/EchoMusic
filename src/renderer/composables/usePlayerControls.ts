@@ -184,6 +184,7 @@ export function usePlayerControls() {
       currentTrack.value,
       requestedAudioQuality.value,
       settingStore.compatibilityMode ?? true,
+      settingStore.viperTapeQualityEnabled ?? false,
     );
   });
   const isAudioSourceSwitching = computed(
@@ -194,6 +195,7 @@ export function usePlayerControls() {
 
   const isAudioQualityDisabled = (quality: AudioQualityValue) => {
     if (isAudioSourceSwitching.value) return true;
+    if (quality === 'viper_tape' && !(settingStore.viperTapeQualityEnabled ?? false)) return true;
     if (hasCloudAudioSourceOption.value) {
       const track = currentTrack.value;
       if (!track || !catalogQualityLookupKey.value) return true;

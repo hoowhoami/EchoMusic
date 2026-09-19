@@ -404,8 +404,14 @@ const showShortcutRegistrationFailures = (
   result: ShortcutRegistrationResult | null | undefined,
 ) => {
   if (!result?.failures?.length) return;
+  const settingStore = useSettingStore();
+  const failures =
+    settingStore.shortcutConflictPromptEnabled === false
+      ? result.failures.filter((failure) => failure.reason !== 'conflict')
+      : result.failures;
+  if (!failures.length) return;
   const toastStore = useToastStore();
-  const message = formatShortcutRegistrationFailures(result.failures, formatAcceleratorForDisplay);
+  const message = formatShortcutRegistrationFailures(failures, formatAcceleratorForDisplay);
   toastStore.warning(`以下快捷键未生效：${message}`, 4200);
 };
 

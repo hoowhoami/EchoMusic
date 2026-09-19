@@ -42,6 +42,9 @@ type PluginRuntimeErrorReporter = (
 const isArrayBufferLike = (value: unknown): value is ArrayBuffer =>
   value instanceof ArrayBuffer || Object.prototype.toString.call(value) === '[object ArrayBuffer]';
 
+/** Sentinel returned by `runPluginCallback` when a plugin `onUpgrade` throws or rejects. */
+const UPGRADE_CALLBACK_FAILED: unique symbol = Symbol('pluginWebSocketUpgradeFailed');
+
 const isPluginWebServerBase64Body = (value: unknown): value is { type: 'base64'; data: string } =>
   Boolean(
     value &&
@@ -111,6 +114,7 @@ export const createPluginWebServerApi = (
   };
   let closeOnDisposeRegistered = false;
   let listenRequestDisposer: (() => void) | null = null;
+  let listenConnectionDisposer: (() => void) | null = null;
   const ensureCloseOnDispose = () => {
     if (closeOnDisposeRegistered) return;
     closeOnDisposeRegistered = true;
@@ -236,19 +240,34 @@ export const createPluginWebServerApi = (
 
     const disposeUpgrade = native.onUpgrade((request) => {
       if (request.pluginId !== descriptor.id) return;
-      if (expectedPath && request.path !== expectedPath) return;
+      if (expectedPath && request.path !== expectedPath) {
+        void native.upgrade(descriptor.id, {
+          connectionId: request.connectionId,
+          accept: false,
+        });
+        return;
+      }
       void (async () => {
-        let decision: { accept: boolean; protocol?: string } = { accept: true };
+        // Fail closed: a throwing/rejecting `onUpgrade` must reject the connection.
+        // `runPluginCallback` swallows plugin errors and returns the fallback, so the
+        // fallback itself is the rejection marker — never `true`.
+        let decision: { accept: boolean; protocol?: string } = { accept: false };
         try {
-          const result = await runPluginCallback(
-            descriptor.id,
-            '插件 WebSocket 升级',
-            () => options?.onUpgrade?.(request),
-            true as const,
-          );
-          decision = normalizeUpgradeDecision(
-            result as Awaited<PluginWebSocketUpgradeHandlerResult>,
-          );
+          const onUpgrade = options?.onUpgrade;
+          const result = onUpgrade
+            ? await runPluginCallback<
+                PluginWebSocketUpgradeHandlerResult | typeof UPGRADE_CALLBACK_FAILED
+              >(
+                descriptor.id,
+                '插件 WebSocket 升级',
+                () => onUpgrade(request),
+                UPGRADE_CALLBACK_FAILED,
+              )
+            : undefined;
+          decision =
+            result === UPGRADE_CALLBACK_FAILED
+              ? { accept: false }
+              : normalizeUpgradeDecision(result as Awaited<PluginWebSocketUpgradeHandlerResult>);
         } catch (error) {
           void reportPluginRuntimeError(descriptor.id, error, '插件 WebSocket 升级');
           decision = { accept: false };
@@ -350,6 +369,9 @@ export const createPluginWebServerApi = (
     const config = typeof handlerOrOptions === 'function' ? options : handlerOrOptions;
     const handler = typeof handlerOrOptions === 'function' ? handlerOrOptions : config?.onRequest;
     listenRequestDisposer?.();
+    listenConnectionDisposer?.();
+    listenRequestDisposer = null;
+    listenConnectionDisposer = null;
     const disposeRequestHandler = handler
       ? onRequest(handler)
       : onRequest(() => ({ status: 404, body: 'Not Found' }));
@@ -362,6 +384,7 @@ export const createPluginWebServerApi = (
           maxConnections: config.maxConnections,
           maxMessageBytes: config.maxMessageBytes,
           maxBufferedBytes: config.maxBufferedBytes,
+          allowCrossOrigin: config.allowCrossOrigin,
         }
       : undefined;
     const result = (await getWebServerApi()?.listen(
@@ -374,7 +397,7 @@ export const createPluginWebServerApi = (
       return result;
     }
     if (config?.onConnection) {
-      onConnection(config.onConnection, {
+      listenConnectionDisposer = onConnection(config.onConnection, {
         path: config.path,
         onUpgrade: config.onUpgrade,
       });

@@ -28,8 +28,21 @@ interface UseCommentsOptions {
   mixSongId?: string;
 }
 
-/** 构建评论数据 */
-const buildPayload = async (data: unknown): Promise<CommentPayload> => {
+const mergeVipComments = (current: Comment[], enriched: Comment[]): Comment[] => {
+  if (enriched.length === 0 || current.length === 0) return current;
+  const byId = new Map(enriched.map((item) => [String(item.id), item]));
+  let changed = false;
+  const next = current.map((item) => {
+    const patch = byId.get(String(item.id));
+    if (!patch) return item;
+    changed = true;
+    return patch;
+  });
+  return changed ? next : current;
+};
+
+/** 构建评论数据。VIP 铭牌异步补上，不挡住列表首屏。 */
+const buildPayload = (data: unknown): CommentPayload => {
   const record = data && typeof data === 'object' ? (data as Record<string, unknown>) : {};
   const payload = (record.data as Record<string, unknown>) || record;
   const listCandidate = (payload.list ?? payload.comments ?? []) as unknown;
@@ -49,13 +62,9 @@ const buildPayload = async (data: unknown): Promise<CommentPayload> => {
   const classifyCandidate = payload.classify_list ?? [];
   const hotwordCandidate = payload.hot_word_list ?? [];
 
-  const hotMapped = await enrichCommentsWithYoungVip(
-    hotList.map(mapCommentItem).map((item) => ({ ...item, isHot: true })),
-  );
-  const starMapped = await enrichCommentsWithYoungVip(
-    starList.map(mapCommentItem).map((item) => ({ ...item, isStar: true })),
-  );
-  const listMapped = await enrichCommentsWithYoungVip(list.map(mapCommentItem));
+  const hotMapped = hotList.map(mapCommentItem).map((item) => ({ ...item, isHot: true }));
+  const starMapped = starList.map(mapCommentItem).map((item) => ({ ...item, isStar: true }));
+  const listMapped = list.map(mapCommentItem);
 
   return {
     hot: [...starMapped, ...hotMapped],
@@ -75,6 +84,14 @@ const buildPayload = async (data: unknown): Promise<CommentPayload> => {
         }))
       : [],
   };
+};
+
+const enrichPayload = async (payload: CommentPayload): Promise<CommentPayload> => {
+  const [hot, list] = await Promise.all([
+    payload.hot ? enrichCommentsWithYoungVip(payload.hot) : Promise.resolve(undefined),
+    enrichCommentsWithYoungVip(payload.list),
+  ]);
+  return { ...payload, hot: hot ?? payload.hot, list };
 };
 
 export function useComments(options: UseCommentsOptions) {
@@ -119,6 +136,15 @@ export function useComments(options: UseCommentsOptions) {
     () => !hasMoreHotword.value && !isLoadingHotword.value && hotwordComments.value.length > 0,
   );
 
+  const applyVipLater = (payload: CommentPayload, apply: (enriched: CommentPayload) => void) => {
+    void enrichPayload(payload)
+      .then((enriched) => {
+        if (stopped.value) return;
+        apply(enriched);
+      })
+      .catch(() => undefined);
+  };
+
   const fetchMusicComments = async (reset = false) => {
     if (stopped.value) return;
     if (isLoadingComments.value) return;
@@ -140,7 +166,7 @@ export function useComments(options: UseCommentsOptions) {
         'status' in res &&
         (res as { status?: number }).status === 1
       ) {
-        const payload = await buildPayload(res);
+        const payload = buildPayload(res);
         if (reset) {
           hotComments.value = payload.hot ?? [];
           classifyList.value = payload.classifyList;
@@ -160,6 +186,12 @@ export function useComments(options: UseCommentsOptions) {
           payload.list.length > 0 &&
           (total.value > 0 ? comments.value.length < total.value : payload.list.length >= 30);
         if (hasMore.value) page.value += 1;
+        applyVipLater(payload, (enriched) => {
+          if (reset && enriched.hot) {
+            hotComments.value = mergeVipComments(hotComments.value, enriched.hot);
+          }
+          comments.value = mergeVipComments(comments.value, enriched.list);
+        });
       }
     } catch {
       toastStore.loadFailed('评论');
@@ -189,7 +221,7 @@ export function useComments(options: UseCommentsOptions) {
         'status' in res &&
         (res as { status?: number }).status === 1
       ) {
-        const payload = await buildPayload(res);
+        const payload = buildPayload(res);
         if (reset) {
           hotComments.value = payload.hot ?? [];
         }
@@ -201,6 +233,12 @@ export function useComments(options: UseCommentsOptions) {
           payload.list.length > 0 &&
           (total.value > 0 ? comments.value.length < total.value : payload.list.length >= 30);
         if (hasMore.value) page.value += 1;
+        applyVipLater(payload, (enriched) => {
+          if (reset && enriched.hot) {
+            hotComments.value = mergeVipComments(hotComments.value, enriched.hot);
+          }
+          comments.value = mergeVipComments(comments.value, enriched.list);
+        });
       }
     } catch {
       toastStore.loadFailed('评论');
@@ -230,7 +268,7 @@ export function useComments(options: UseCommentsOptions) {
         'status' in res &&
         (res as { status?: number }).status === 1
       ) {
-        const payload = await buildPayload(res);
+        const payload = buildPayload(res);
         if (reset) {
           hotComments.value = payload.hot ?? [];
         }
@@ -242,6 +280,12 @@ export function useComments(options: UseCommentsOptions) {
           payload.list.length > 0 &&
           (total.value > 0 ? comments.value.length < total.value : payload.list.length >= 30);
         if (hasMore.value) page.value += 1;
+        applyVipLater(payload, (enriched) => {
+          if (reset && enriched.hot) {
+            hotComments.value = mergeVipComments(hotComments.value, enriched.hot);
+          }
+          comments.value = mergeVipComments(comments.value, enriched.list);
+        });
       }
     } catch {
       toastStore.loadFailed('评论');
@@ -280,7 +324,7 @@ export function useComments(options: UseCommentsOptions) {
         'status' in res &&
         (res as { status?: number }).status === 1
       ) {
-        const payload = await buildPayload(res);
+        const payload = buildPayload(res);
         classifyComments.value = reset
           ? payload.list
           : [...classifyComments.value, ...payload.list];
@@ -290,6 +334,9 @@ export function useComments(options: UseCommentsOptions) {
           payload.list.length > 0 &&
           (totalCount > 0 ? classifyComments.value.length < totalCount : payload.list.length >= 30);
         if (hasMoreClassify.value) classifyPage.value += 1;
+        applyVipLater(payload, (enriched) => {
+          classifyComments.value = mergeVipComments(classifyComments.value, enriched.list);
+        });
       }
     } catch {
       toastStore.loadFailed('分类评论');
@@ -322,7 +369,7 @@ export function useComments(options: UseCommentsOptions) {
         'status' in res &&
         (res as { status?: number }).status === 1
       ) {
-        const payload = await buildPayload(res);
+        const payload = buildPayload(res);
         hotwordComments.value = reset ? payload.list : [...hotwordComments.value, ...payload.list];
         const selectedItem = hotwordList.value.find(
           (item) => item.content === selectedHotword.value,
@@ -332,6 +379,9 @@ export function useComments(options: UseCommentsOptions) {
           payload.list.length > 0 &&
           (totalCount > 0 ? hotwordComments.value.length < totalCount : payload.list.length >= 30);
         if (hasMoreHotword.value) hotwordPage.value += 1;
+        applyVipLater(payload, (enriched) => {
+          hotwordComments.value = mergeVipComments(hotwordComments.value, enriched.list);
+        });
       }
     } catch {
       toastStore.loadFailed('热词评论');
@@ -389,6 +439,8 @@ export function useComments(options: UseCommentsOptions) {
 /** 楼层评论加载 */
 export function useFloorComments(resourceType: CommentResourceType, fallbackMixSongId?: string) {
   const toastStore = useToastStore();
+  const stopped = ref(false);
+  let floorGeneration = 0;
 
   const floorLoading = ref(false);
   const floorReplies = ref<Comment[]>([]);
@@ -403,6 +455,7 @@ export function useFloorComments(resourceType: CommentResourceType, fallbackMixS
   );
 
   const resetFloor = () => {
+    floorGeneration += 1;
     floorReplies.value = [];
     floorTotal.value = 0;
     floorPage.value = 1;
@@ -412,13 +465,16 @@ export function useFloorComments(resourceType: CommentResourceType, fallbackMixS
   };
 
   const fetchFloorReplies = async (comment: Comment, reset = false) => {
+    if (stopped.value) return;
     if (floorLoading.value) return;
     if (!floorHasMore.value && !reset) return;
     if (reset) {
+      floorGeneration += 1;
       floorPage.value = 1;
       floorReplies.value = [];
       floorHasMore.value = true;
     }
+    const requestGeneration = floorGeneration;
     floorLoading.value = true;
     try {
       const specialId = comment.specialId ?? '';
@@ -439,13 +495,14 @@ export function useFloorComments(resourceType: CommentResourceType, fallbackMixS
         page: floorPage.value,
         pagesize: 30,
       });
+      if (stopped.value || requestGeneration !== floorGeneration) return;
       if (res && typeof res === 'object') {
         const payload = (res as { data?: unknown }).data ?? res;
         const listCandidate = (payload as Record<string, unknown>).list ?? [];
         const errCode = Number((payload as Record<string, unknown>).err_code ?? 0) || 0;
         const message = String((payload as Record<string, unknown>).message ?? '');
         const list = Array.isArray(listCandidate) ? listCandidate : [];
-        const mapped = await enrichCommentsWithYoungVip(list.map(mapCommentItem));
+        const mapped = list.map(mapCommentItem);
         floorReplies.value = reset ? mapped : [...floorReplies.value, ...mapped];
         const totalCount = Number((payload as Record<string, unknown>).comments_num ?? 0) || 0;
         floorTotal.value = totalCount;
@@ -456,13 +513,27 @@ export function useFloorComments(resourceType: CommentResourceType, fallbackMixS
         if (floorReplies.value.length === 0) {
           floorMessage.value = errCode !== 0 ? '楼层评论暂不可用' : message || '暂无回复';
         }
+        void enrichCommentsWithYoungVip(mapped)
+          .then((enriched) => {
+            if (stopped.value || requestGeneration !== floorGeneration) return;
+            floorReplies.value = mergeVipComments(floorReplies.value, enriched);
+          })
+          .catch(() => undefined);
       }
     } catch {
+      if (stopped.value || requestGeneration !== floorGeneration) return;
       toastStore.loadFailed('楼层评论');
       floorLoadMoreMessage.value = '加载更多失败，点击重试';
     } finally {
       floorLoading.value = false;
     }
+  };
+
+  const stop = () => {
+    stopped.value = true;
+  };
+  const resume = () => {
+    stopped.value = false;
   };
 
   return {
@@ -476,5 +547,7 @@ export function useFloorComments(resourceType: CommentResourceType, fallbackMixS
     showFloorEnd,
     resetFloor,
     fetchFloorReplies,
+    stop,
+    resume,
   };
 }

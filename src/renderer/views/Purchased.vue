@@ -15,6 +15,7 @@ import SliverHeader from '@/components/music/DetailPageSliverHeader.vue';
 import ActionRow from '@/components/music/DetailPageActionRow.vue';
 import SongList from '@/components/music/SongList.vue';
 import SongListHeader from '@/components/music/SongListHeader.vue';
+import SongSearchInput from '@/components/music/SongSearchInput.vue';
 import BatchActionDrawer from '@/components/music/BatchActionDrawer.vue';
 import type { SortField, SortOrder } from '@/components/music/SongListHeader.vue';
 import VirtualGrid from '@/components/ui/VirtualGrid.vue';
@@ -26,7 +27,7 @@ import TabsContent from '@/components/ui/TabsContent.vue';
 import Badge from '@/components/ui/Badge.vue';
 import PageScrollContainer from '@/components/ui/PageScrollContainer.vue';
 import Button from '@/components/ui/Button.vue';
-import { iconCurrentLocation, iconList, iconPlay, iconSearch, iconShoppingBag } from '@/icons';
+import { iconCurrentLocation, iconList, iconPlay, iconShoppingBag } from '@/icons';
 import { useStickyTabsLayout } from '@/composables/useStickyTabsLayout';
 import { replaceQueueAndPlay } from '@/utils/playback';
 import { filterSongsByQuery, sortSongs } from '@/utils/songList';
@@ -438,34 +439,12 @@ onMounted(() => {
                   </TabsList>
 
                   <div class="flex items-center gap-2">
-                    <div class="relative" v-if="activeTab === 'songs'">
-                      <input
-                        v-model="searchQuery"
-                        type="text"
-                        placeholder="搜索歌曲..."
-                        class="song-search-input w-52 h-9 pl-8 pr-3 rounded-lg text-text-main placeholder:text-text-main/50 outline-none text-[12px] transition-all"
-                      />
-                      <Icon
-                        class="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-main/60"
-                        :icon="iconSearch"
-                        width="14"
-                        height="14"
-                      />
-                    </div>
-                    <div v-else-if="activeTab === 'albums'" class="relative">
-                      <input
-                        v-model="albumSearchQuery"
-                        type="text"
-                        placeholder="搜索专辑..."
-                        class="song-search-input w-52 h-9 pl-8 pr-3 rounded-lg text-text-main placeholder:text-text-main/50 outline-none text-[12px] transition-all"
-                      />
-                      <Icon
-                        class="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-main/60"
-                        :icon="iconSearch"
-                        width="14"
-                        height="14"
-                      />
-                    </div>
+                    <SongSearchInput v-if="activeTab === 'songs'" v-model="searchQuery" />
+                    <SongSearchInput
+                      v-else-if="activeTab === 'albums'"
+                      v-model="albumSearchQuery"
+                      placeholder="搜索专辑..."
+                    />
                     <Button
                       v-if="activeTab === 'songs'"
                       variant="unstyled"

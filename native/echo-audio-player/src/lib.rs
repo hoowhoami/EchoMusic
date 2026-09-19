@@ -9,6 +9,7 @@ mod events;
 mod exclusive;
 mod filter;
 mod output;
+mod platform_qos;
 mod shared;
 #[cfg(test)]
 mod source_change_tests;
@@ -1403,6 +1404,7 @@ fn restart_loop_if_enabled(shared: Arc<SharedAudio>) -> bool {
 #[napi]
 pub fn initialize(config: Option<PlayerConfigOptions>) -> napi::Result<()> {
     shutdown_runtime(false)?;
+    platform_qos::opt_out_process_power_throttling();
     reset_event_ids();
     start_event_dispatcher()?;
     let mut runtime = PlayerRuntime::new(PlayerConfig::from_options(config));
