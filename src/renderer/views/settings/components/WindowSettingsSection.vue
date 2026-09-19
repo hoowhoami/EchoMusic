@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import { useWindowZoom } from '@/composables/useWindowZoom';
 const { percent, zoomIn, zoomOut, reset, canZoomIn, canZoomOut } = useWindowZoom();
 import { useSettingStore } from '@/stores/setting';
@@ -14,6 +14,33 @@ const settingStore = useSettingStore();
 const platform = window.electron?.platform;
 const isWindows = computed(() => platform === 'win32');
 const supportsCustomWindowControls = computed(() => platform === 'win32' || platform === 'linux');
+const barEnabled = ref(false);
+const barBusy = ref(false);
+const barMessage = ref('');
+onMounted(async () => {
+  if (!isWindows.value) return;
+  try {
+    barEnabled.value = Boolean(
+      (await window.electron.ipcRenderer.invoke('taskbar-player:get-state')).enabled,
+    );
+  } catch {
+    barMessage.value = '读取失败，可点击重新显示重试';
+  }
+});
+const setBar = async (value: boolean) => {
+  if (barBusy.value) return;
+  barBusy.value = true;
+  barMessage.value = '';
+  try {
+    const state = await window.electron.ipcRenderer.invoke('taskbar-player:set-enabled', value);
+    barEnabled.value = Boolean(state.enabled);
+    if (state.enabled && !state.visible) barMessage.value = '已开启；全屏时暂时隐藏';
+  } catch (error) {
+    barMessage.value = `打开失败：${error instanceof Error ? error.message : String(error)}`;
+  } finally {
+    barBusy.value = false;
+  }
+};
 </script>
 
 <template>
@@ -78,6 +105,26 @@ const supportsCustomWindowControls = computed(() => platform === 'win32' || plat
       </div>
     </template>
     <template v-if="isWindows">
+      <div class="settings-divider"></div>
+      <div class="settings-item">
+        <div class="space-y-1">
+          <h3 class="font-semibold">任务栏快捷播控（独立横条）</h3>
+          <p class="text-sm text-text-secondary">
+            在任务栏空闲区显示，可拖出小窗；不影响图标悬停播控。空间不足时显示在任务栏旁。
+          </p>
+          <p v-if="barMessage" role="status" class="text-sm text-text-secondary">
+            {{ barMessage }}
+          </p>
+          <button class="text-primary-text text-sm" :disabled="barBusy" @click="setBar(true)">
+            重新显示
+          </button>
+        </div>
+        <Switch
+          :model-value="barEnabled"
+          :disabled="barBusy"
+          @update:model-value="setBar(Boolean($event))"
+        />
+      </div>
       <div class="settings-divider"></div>
       <div class="settings-item">
         <div class="space-y-1">

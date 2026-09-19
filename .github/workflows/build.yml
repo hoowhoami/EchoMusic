@@ -253,6 +253,7 @@ jobs:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
           ELECTRON_BUILDER_BINARIES_MIRROR: https://github.com/electron-userland/electron-builder-binaries/releases/download/
         run: |
+          pnpm run build:taskbar-helper
           pnpm exec vue-tsc --noEmit && pnpm exec vite build
           pnpm exec electron-builder ${{ matrix.electron_builder_args }} --publish never
 

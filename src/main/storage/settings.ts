@@ -38,6 +38,7 @@ export type MainAppSettings = {
   devToolsEnabled: boolean;
   taskbarCoverPreview: boolean;
   taskbarProgress: boolean;
+  taskbarPlayerEnabled: boolean;
   windowState: MainWindowState;
   miniPlayerWindowState: MiniPlayerWindowState;
 };
@@ -68,6 +69,7 @@ export const DEFAULT_MAIN_APP_SETTINGS: MainAppSettings = {
   devToolsEnabled: false,
   taskbarCoverPreview: false,
   taskbarProgress: true,
+  taskbarPlayerEnabled: false,
   windowState: {
     ...MAIN_WINDOW_DEFAULT_SIZE,
     isMaximized: false,

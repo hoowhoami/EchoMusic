@@ -21,6 +21,8 @@ This file summarizes important third-party components used by EchoMusic, especia
 
 ## Native Modules
 
+- `@resvg/resvg-js` (MPL-2.0) rasterizes Windows taskbar preview cards. Its platform-specific native binaries and license are distributed with the application. Source: https://github.com/yisibl/resvg-js
+
 - `native/echo-audio-player` embeds the playback engine and depends on vendored `ffmpeg-audio` and `soundtouch-rs`.
 - `native/echo-audio-capture` captures system output and microphone/input-device audio through native platform APIs.
 - `native/echo-media-controls` integrates platform media controls.
