@@ -884,13 +884,16 @@ onMounted(() => loadData());
       title="我的等级"
       description="每一次聆听，都在积累成长。"
       show-close
+      no-scroll
       content-class="profile-grade-dialog"
+      description-class="profile-grade-description"
     >
+      <p class="profile-grade-description">每一次聆听，都在积累成长。</p>
       <div class="grade-card" :aria-busy="gradeLoading">
-        <div class="flex items-center justify-between gap-4">
-          <div>
-            <p class="text-xs text-text-secondary">当前等级</p>
-            <p class="text-5xl font-black tracking-tight mt-2">
+        <div class="grade-card-hero">
+          <div class="grade-card-copy">
+            <p class="grade-card-label">当前等级</p>
+            <p class="grade-card-level">
               <RollingNumber :value="`Lv.${gradeProgress.grade ?? '—'}`" />
             </p>
           </div>
@@ -922,16 +925,16 @@ onMounted(() => loadData());
           </svg>
         </div>
         <template v-if="gradeProgress.available">
-          <div class="flex flex-wrap justify-between gap-2 mt-7 mb-3 text-sm">
-            <span
+          <div class="grade-progress-meta">
+            <span class="grade-progress-hint"
               >距 Lv.{{ gradeProgress.nextGrade }} 还差
               <RollingNumber
-                class="font-bold"
+                class="font-semibold"
                 :value="gradeProgress.remaining?.toLocaleString() ?? '—'"
               />
               经验</span
             >
-            <span class="text-text-secondary tabular-nums"
+            <span class="grade-progress-nums"
               ><RollingNumber :value="gradeProgress.current?.toLocaleString() ?? '—'" /> /
               <RollingNumber :value="gradeProgress.target?.toLocaleString() ?? '—'"
             /></span>
@@ -951,13 +954,13 @@ onMounted(() => loadData());
             <div class="grade-progress-fill" :style="{ width: `${gradeProgress.percent}%` }"></div>
           </div>
         </template>
-        <p v-else class="mt-6 text-sm text-text-secondary" role="status">
+        <p v-else class="grade-progress-empty" role="status">
           {{ gradeLoading ? '正在获取升级进度…' : '暂未获取到下一等级进度，请稍后刷新' }}
         </p>
       </div>
-      <div class="flex justify-between items-center gap-4 py-6 text-sm">
-        <span class="text-text-secondary">累计听歌</span>
-        <RollingNumber class="font-bold" :value="listeningDuration" />
+      <div class="grade-listen-row">
+        <span>累计听歌</span>
+        <RollingNumber :value="listeningDuration" />
       </div>
       <template #footer>
         <Button
@@ -1149,18 +1152,44 @@ onMounted(() => loadData());
   outline-offset: 5px;
 }
 .grade-card {
-  padding: 32px 24px;
+  min-height: 176px;
+  padding: 22px 20px 18px;
   border: 1px solid var(--border-subtle);
-  border-radius: 20px;
+  border-radius: 16px;
+  overflow: hidden;
   background: linear-gradient(
     135deg,
-    rgba(var(--color-primary-rgb), 0.16),
+    rgba(var(--color-primary-rgb), 0.14),
     rgba(var(--color-primary-rgb), 0.03)
   );
 }
+.grade-card-hero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.grade-card-copy {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+.grade-card-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: var(--color-text-secondary);
+}
+.grade-card-level {
+  margin-top: 4px;
+  min-height: 34px;
+  font-size: 30px;
+  font-weight: 800;
+  letter-spacing: -0.04em;
+  line-height: 1.1;
+}
 .grade-planet {
-  width: 128px;
-  height: 112px;
+  width: 88px;
+  height: 76px;
   flex-shrink: 0;
   color: var(--color-primary-text);
 }
@@ -1209,15 +1238,54 @@ onMounted(() => loadData());
 }
 @media (max-width: 420px) {
   .grade-planet {
-    width: 96px;
-    height: 84px;
+    width: 72px;
+    height: 62px;
   }
 }
+.grade-progress-meta {
+  display: flex;
+  flex-wrap: nowrap;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  margin: 18px 0 8px;
+  font-size: 12px;
+  line-height: 1.4;
+}
+.grade-progress-hint {
+  min-width: 0;
+  flex: 1 1 auto;
+  white-space: nowrap;
+}
+.grade-progress-nums {
+  flex: 0 0 auto;
+  color: var(--color-text-secondary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.grade-progress-empty {
+  margin-top: 16px;
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
 .grade-progress-track {
-  height: 8px;
+  height: 5px;
   overflow: hidden;
   border-radius: 99px;
   background: var(--border-subtle);
+}
+.grade-listen-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 2px 4px;
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+.grade-listen-row :deep(.rolling-number) {
+  font-weight: 700;
+  color: var(--color-text-main);
 }
 .grade-progress-fill {
   height: 100%;
@@ -1300,10 +1368,27 @@ onMounted(() => loadData());
 
 <style>
 .dialog-content.profile-grade-dialog {
-  width: min(520px, 92vw);
-  max-height: min(680px, calc(100vh - 140px));
-  padding-top: 28px;
+  width: min(400px, 92vw);
+  max-height: min(720px, calc(100vh - 108px));
+  padding-top: 26px;
   padding-bottom: 28px;
+  overflow: hidden;
+}
+.dialog-content.profile-grade-dialog .dialog-title {
+  font-size: 16px;
+}
+.dialog-content.profile-grade-dialog .profile-grade-description {
+  margin: 0 0 14px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--color-text-secondary);
+}
+.dialog-content.profile-grade-dialog .dialog-body {
+  overflow: hidden;
+}
+.dialog-content.profile-grade-dialog .rolling-number {
+  display: inline-block;
+  font-variant-numeric: tabular-nums;
 }
 .vip-expire-popover.echo-popover-content {
   padding: 12px 14px;
