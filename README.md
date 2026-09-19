@@ -300,7 +300,7 @@ pnpm build
 - `EchoMusic-native-windows-arm64`
 - `EchoMusic-native-windows-x64`
 
-artifact 内的 ZIP 根目录固定为 `native`，模块路径为 `native/<模块文件夹>/<模块名>.node`，例如 `native/echo-audio-player/echo-audio-player.node`。下载 ZIP 并在仓库根目录解压后即可恢复本地 `pnpm build` 或 electron-builder 所需的目录布局。Linux 包含四个通用模块；macOS 和 Windows 额外包含 `echo-platform-adaptor`。x64 与 arm64 的 `.node` 产物不能混用。
+artifact 内的目录根为 `native`，模块路径为 `native/<模块文件夹>/<模块名>.node`，例如 `native/echo-audio-player/echo-audio-player.node`。GitHub Actions 会自动将 artifact 打包；下载后解压到仓库根目录即可恢复本地 `pnpm build` 或 electron-builder 所需的目录布局。Linux 包含四个通用模块；macOS 和 Windows 额外包含 `echo-platform-adaptor`。x64 与 arm64 的 `.node` 产物不能混用。
 
 该 workflow 与主桌面发布流程复用 pnpm 依赖缓存和 Rust 缓存，但每个平台在独立 runner 中编译并打包，避免不同架构覆盖同名 `.node` 文件。
 

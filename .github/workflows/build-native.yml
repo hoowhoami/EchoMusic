@@ -150,7 +150,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libarchive-tools libasound2-dev libpulse-dev libpipewire-0.3-dev libgtk-3-dev libnotify-dev libnss3 libxss1 libxtst6 xdg-utils zip
+          sudo apt-get install -y libarchive-tools libasound2-dev libpulse-dev libpipewire-0.3-dev libgtk-3-dev libnotify-dev libnss3 libxss1 libxtst6 xdg-utils
 
       - name: Install root dependencies
         run: pnpm install --frozen-lockfile
@@ -264,52 +264,32 @@ jobs:
           find "$staging" -type f -print | sort
           printf '%s\n' "$staging" > "$RUNNER_TEMP/echo-music-native-staging"
 
-      - name: Create native archive on Unix
-        if: runner.os != 'Windows'
+      - name: Verify staged native addons
         shell: bash
         env:
-          ARCHIVE_NAME: ${{ matrix.artifact_name }}
+          INCLUDE_PLATFORM_ADAPTOR: ${{ matrix.include_platform_adaptor }}
         run: |
           set -euo pipefail
           staging=$(<"$RUNNER_TEMP/echo-music-native-staging")
-          archive="$RUNNER_TEMP/${ARCHIVE_NAME}.zip"
-          (
-            cd "$staging"
-            zip -q -r "$archive" native
-          )
-          unzip -tq "$archive"
-          unzip -Z1 "$archive" | sort
-          test "$(unzip -Z1 "$archive" | grep -c '^native/.*\.node$')" -eq "${{ matrix.include_platform_adaptor && 5 || 4 }}"
+          expected="${{ matrix.include_platform_adaptor && 5 || 4 }}"
+          mapfile -t node_files < <(find "$staging/native" -type f -name '*.node' | sort)
+          if [[ "${#node_files[@]}" -ne "$expected" ]]; then
+            printf '发现的 native 文件：\n%s\n' "${node_files[@]}"
+            echo "ERROR: staged native addon count is ${#node_files[@]}, expected $expected"
+            exit 1
+          fi
+          for file in "${node_files[@]}"; do
+            [[ "$file" == "$staging/native"/*/*\.node ]] || {
+              echo "ERROR: unexpected staged native path: $file"
+              exit 1
+            }
+          done
+          find "$staging/native" -type f -print | sort
 
-      - name: Create native archive on Windows
-        if: runner.os == 'Windows'
-        shell: pwsh
-        env:
-          ARCHIVE_NAME: ${{ matrix.artifact_name }}
-        run: |
-          $staging = Get-Content -Raw "$env:RUNNER_TEMP/echo-music-native-staging"
-          $staging = $staging.Trim()
-          $archive = Join-Path $env:RUNNER_TEMP "$env:ARCHIVE_NAME.zip"
-          Compress-Archive -Path (Join-Path $staging 'native') -DestinationPath $archive -Force
-          $entries = @(& tar -tf $archive)
-          $nodeEntries = @($entries | Where-Object { $_ -match '^native/.+/.+\.node$' })
-          $unexpectedEntries = @($entries | Where-Object { $_ -match '^native/.+/.+\.node$' -and $_ -notmatch '^native/(echo-audio-capture|echo-media-controls|echo-audio-player|echo-sqlite-store|echo-platform-adaptor)/\1\.node$' })
-          $expected = if ('${{ matrix.include_platform_adaptor }}' -eq 'true') { 5 } else { 4 }
-          if ($nodeEntries.Count -ne $expected) {
-            $entries | Write-Host
-            throw "压缩包中的 native 模块数量不正确：$($nodeEntries.Count)，预期 $expected"
-          }
-          if ($unexpectedEntries.Count -gt 0) {
-            $unexpectedEntries | Write-Host
-            throw '压缩包包含路径格式不正确的 native 模块'
-          }
-          $entries | Write-Host
-
-      - name: Upload native archive
+      - name: Upload native artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact_name }}
-          path: ${{ runner.temp }}/${{ matrix.artifact_name }}.zip
+          path: ${{ runner.temp }}/echo-music-native
           if-no-files-found: error
-          compression-level: 0
           retention-days: 7

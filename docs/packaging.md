@@ -43,7 +43,7 @@ development dependency. Keep `LICENSES` and `THIRD_PARTY_NOTICES.md` in the pack
 
 `.github/workflows/build-native.yml` 提供只编译 Native addon 的手动 GitHub Actions 流程。运行 **Build Native Addons** 时可以选择任意一个或多个目标：macOS arm64/x64、Linux arm64/x64、Windows arm64/x64。选中的目标在独立矩阵任务中并行执行，未选中的目标不会构建。
 
-该流程只上传 GitHub Actions artifact，不创建或更新 GitHub Release。每个平台上传一个以目标命名的 ZIP，例如 `EchoMusic-native-windows-arm64`。ZIP 内不包含临时 staging 目录，根目录和文件布局固定如下：
+该流程只上传 GitHub Actions artifact，不创建或更新 GitHub Release。每个平台上传一个以目标命名的 artifact，例如 `EchoMusic-native-windows-arm64`。GitHub Actions 会自动压缩 artifact，上传内容根为 `native`，文件布局固定如下：
 
 ```text
 native/
@@ -53,7 +53,7 @@ native/
 └── echo-sqlite-store/echo-sqlite-store.node
 ```
 
-Windows 和 macOS 还会包含 `native/echo-platform-adaptor/echo-platform-adaptor.node`；Linux 不构建也不包含该模块。下载对应架构的 artifact 后，将 ZIP 解压到仓库根目录即可恢复本地 Native 构建产物路径。x64 与 arm64 的 `.node` 文件不能互换。
+Windows 和 macOS 还会包含 `native/echo-platform-adaptor/echo-platform-adaptor.node`；Linux 不构建也不包含该模块。下载对应架构的 artifact 后，将 GitHub Actions 自动生成的压缩包解压到仓库根目录即可恢复本地 Native 构建产物路径。x64 与 arm64 的 `.node` 文件不能互换。
 
 该流程复用主桌面发布流程的 pnpm 依赖缓存、Rust toolchain 和 Rust workspace cache，但不同目标始终在独立 runner 中生成和上传产物。不要在不同架构任务之间共享工作区中的同名 `.node` 文件，也不要把 Native-only artifact 当作完整的 Electron 安装包。
 
