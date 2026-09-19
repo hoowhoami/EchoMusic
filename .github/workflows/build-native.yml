@@ -272,18 +272,19 @@ jobs:
           set -euo pipefail
           staging=$(<"$RUNNER_TEMP/echo-music-native-staging")
           expected="${{ matrix.include_platform_adaptor && 5 || 4 }}"
-          mapfile -t node_files < <(find "$staging/native" -type f -name '*.node' | sort)
-          if [[ "${#node_files[@]}" -ne "$expected" ]]; then
-            printf '发现的 native 文件：\n%s\n' "${node_files[@]}"
-            echo "ERROR: staged native addon count is ${#node_files[@]}, expected $expected"
+          node_count=$(find "$staging/native" -type f -name '*.node' | wc -l | tr -d ' ')
+          if [[ "$node_count" -ne "$expected" ]]; then
+            echo "发现的 native 文件："
+            find "$staging/native" -type f -name '*.node' -print | sort
+            echo "ERROR: staged native addon count is $node_count, expected $expected"
             exit 1
           fi
-          for file in "${node_files[@]}"; do
-            [[ "$file" == "$staging/native"/*/*\.node ]] || {
+          while IFS= read -r file; do
+            [[ "$file" == "$staging/native"/*/*.node ]] || {
               echo "ERROR: unexpected staged native path: $file"
               exit 1
             }
-          done
+          done < <(find "$staging/native" -type f -name '*.node' -print)
           find "$staging/native" -type f -print | sort
 
       - name: Upload native artifact
