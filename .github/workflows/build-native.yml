@@ -1,0 +1,315 @@
+name: Build Native Addons
+
+on:
+  workflow_dispatch:
+    inputs:
+      macos_arm64:
+        description: macOS arm64
+        required: true
+        default: true
+        type: boolean
+      macos_x64:
+        description: macOS x64
+        required: true
+        default: true
+        type: boolean
+      linux_x64:
+        description: Linux x64
+        required: true
+        default: true
+        type: boolean
+      linux_arm64:
+        description: Linux arm64
+        required: true
+        default: true
+        type: boolean
+      windows_x64:
+        description: Windows x64
+        required: true
+        default: true
+        type: boolean
+      windows_arm64:
+        description: Windows arm64
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  validate-selection:
+    name: Validate platform selection
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.selection.outputs.matrix }}
+    steps:
+      - name: Build selected platform matrix
+        id: selection
+        shell: bash
+        env:
+          MACOS_ARM64: ${{ inputs.macos_arm64 }}
+          MACOS_X64: ${{ inputs.macos_x64 }}
+          LINUX_X64: ${{ inputs.linux_x64 }}
+          LINUX_ARM64: ${{ inputs.linux_arm64 }}
+          WINDOWS_X64: ${{ inputs.windows_x64 }}
+          WINDOWS_ARM64: ${{ inputs.windows_arm64 }}
+        run: |
+          set -euo pipefail
+          node <<'NODE' >> "$GITHUB_OUTPUT"
+          const selected = [
+            process.env.MACOS_ARM64 === 'true' && {
+              os: 'macos-14',
+              rust_target: 'aarch64-apple-darwin',
+              platform: 'macos',
+              arch: 'arm64',
+              artifact_name: 'EchoMusic-native-macos-arm64',
+              include_platform_adaptor: true
+            },
+            process.env.MACOS_X64 === 'true' && {
+              os: 'macos-14',
+              rust_target: 'x86_64-apple-darwin',
+              platform: 'macos',
+              arch: 'x64',
+              artifact_name: 'EchoMusic-native-macos-x64',
+              include_platform_adaptor: true
+            },
+            process.env.LINUX_X64 === 'true' && {
+              os: 'ubuntu-22.04',
+              rust_target: '',
+              platform: 'linux',
+              arch: 'x64',
+              artifact_name: 'EchoMusic-native-linux-x64',
+              include_platform_adaptor: false
+            },
+            process.env.LINUX_ARM64 === 'true' && {
+              os: 'ubuntu-22.04-arm',
+              rust_target: '',
+              platform: 'linux',
+              arch: 'arm64',
+              artifact_name: 'EchoMusic-native-linux-arm64',
+              include_platform_adaptor: false
+            },
+            process.env.WINDOWS_X64 === 'true' && {
+              os: 'windows-latest',
+              rust_target: '',
+              platform: 'windows',
+              arch: 'x64',
+              artifact_name: 'EchoMusic-native-windows-x64',
+              include_platform_adaptor: true
+            },
+            process.env.WINDOWS_ARM64 === 'true' && {
+              os: 'windows-11-arm',
+              rust_target: '',
+              platform: 'windows',
+              arch: 'arm64',
+              artifact_name: 'EchoMusic-native-windows-arm64',
+              include_platform_adaptor: true
+            }
+          ].filter(Boolean)
+
+          if (selected.length === 0) {
+            console.error('至少选择一个平台后再运行 workflow。')
+            process.exit(1)
+          }
+
+          console.error(`已选择 ${selected.length} 个平台：${selected.map(({ artifact_name }) => artifact_name).join(', ')}`)
+          process.stdout.write(`matrix<<EOF\n${JSON.stringify({ include: selected })}\nEOF\n`)
+          NODE
+
+  build:
+    name: Build ${{ matrix.artifact_name }}
+    needs: validate-selection
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.validate-selection.outputs.matrix) }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libarchive-tools libasound2-dev libpulse-dev libpipewire-0.3-dev libgtk-3-dev libnotify-dev libnss3 libxss1 libxtst6 xdg-utils zip
+
+      - name: Install root dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            native/echo-audio-capture
+            native/echo-media-controls
+            native/echo-platform-adaptor
+            native/echo-audio-player
+            native/echo-sqlite-store
+
+      - name: Add Rust cross-compile target
+        if: matrix.rust_target != ''
+        run: rustup target add ${{ matrix.rust_target }}
+
+      - name: Build native addons
+        shell: bash
+        env:
+          RUST_TARGET: ${{ matrix.rust_target }}
+          INCLUDE_PLATFORM_ADAPTOR: ${{ matrix.include_platform_adaptor }}
+        run: |
+          set -euo pipefail
+
+          build_addon() {
+            local addon="$1"
+            (
+              cd "native/$addon"
+              npm install
+              if [[ -n "$RUST_TARGET" ]]; then
+                npx napi build --release --no-const-enum --target "$RUST_TARGET"
+              else
+                npm run build
+              fi
+            )
+          }
+
+          pids=()
+          build_addon echo-audio-capture & pids+=("$!")
+          build_addon echo-media-controls & pids+=("$!")
+          if [[ "$INCLUDE_PLATFORM_ADAPTOR" == "true" ]]; then
+            build_addon echo-platform-adaptor & pids+=("$!")
+          fi
+          build_addon echo-audio-player & pids+=("$!")
+          build_addon echo-sqlite-store & pids+=("$!")
+
+          status=0
+          for pid in "${pids[@]}"; do
+            wait "$pid" || status=$?
+          done
+          exit "$status"
+
+      - name: Verify FFmpeg player linkage on macOS
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -euo pipefail
+          addon=native/echo-audio-player/echo-audio-player.node
+          test -s "$addon"
+          otool -L "$addon" | tee /tmp/echo-audio-player-otool.txt
+          if grep -E 'lib(avcodec|avformat|avutil|swresample|mpv).*\.(dylib|so)' /tmp/echo-audio-player-otool.txt; then
+            echo "ERROR: native player unexpectedly links to system FFmpeg/mpv libraries"
+            exit 1
+          fi
+
+      - name: Verify FFmpeg player linkage on Linux
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          addon=native/echo-audio-player/echo-audio-player.node
+          test -s "$addon"
+          ldd "$addon" | tee /tmp/echo-audio-player-ldd.txt
+          if grep -E 'lib(avcodec|avformat|avutil|swresample|mpv)\.so' /tmp/echo-audio-player-ldd.txt; then
+            echo "ERROR: native player unexpectedly links to system FFmpeg/mpv libraries"
+            exit 1
+          fi
+
+      - name: Stage and verify native addons
+        shell: bash
+        env:
+          INCLUDE_PLATFORM_ADAPTOR: ${{ matrix.include_platform_adaptor }}
+        run: |
+          set -euo pipefail
+          staging="$RUNNER_TEMP/echo-music-native"
+          rm -rf "$staging"
+          mkdir -p "$staging/native"
+
+          addons=(echo-audio-capture echo-media-controls echo-audio-player echo-sqlite-store)
+          if [[ "$INCLUDE_PLATFORM_ADAPTOR" == "true" ]]; then
+            addons+=(echo-platform-adaptor)
+          fi
+
+          for addon in "${addons[@]}"; do
+            source="native/$addon/$addon.node"
+            destination="$staging/native/$addon/$addon.node"
+            if [[ ! -s "$source" ]]; then
+              echo "ERROR: native addon is missing or empty: $source"
+              find native -maxdepth 2 -type f -name '*.node' -print
+              exit 1
+            fi
+            mkdir -p "$(dirname "$destination")"
+            cp "$source" "$destination"
+          done
+
+          find "$staging" -type f -print | sort
+          printf '%s\n' "$staging" > "$RUNNER_TEMP/echo-music-native-staging"
+
+      - name: Create native archive on Unix
+        if: runner.os != 'Windows'
+        shell: bash
+        env:
+          ARCHIVE_NAME: ${{ matrix.artifact_name }}
+        run: |
+          set -euo pipefail
+          staging=$(<"$RUNNER_TEMP/echo-music-native-staging")
+          archive="$RUNNER_TEMP/${ARCHIVE_NAME}.zip"
+          (
+            cd "$staging"
+            zip -q -r "$archive" native
+          )
+          unzip -tq "$archive"
+          unzip -Z1 "$archive" | sort
+          test "$(unzip -Z1 "$archive" | grep -c '^native/.*\.node$')" -eq "${{ matrix.include_platform_adaptor && 5 || 4 }}"
+
+      - name: Create native archive on Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          ARCHIVE_NAME: ${{ matrix.artifact_name }}
+        run: |
+          $staging = Get-Content -Raw "$env:RUNNER_TEMP/echo-music-native-staging"
+          $staging = $staging.Trim()
+          $archive = Join-Path $env:RUNNER_TEMP "$env:ARCHIVE_NAME.zip"
+          Compress-Archive -Path (Join-Path $staging 'native') -DestinationPath $archive -Force
+          $entries = @(& tar -tf $archive)
+          $nodeEntries = @($entries | Where-Object { $_ -match '^native/.+/.+\.node$' })
+          $unexpectedEntries = @($entries | Where-Object { $_ -match '^native/.+/.+\.node$' -and $_ -notmatch '^native/(echo-audio-capture|echo-media-controls|echo-audio-player|echo-sqlite-store|echo-platform-adaptor)/\1\.node$' })
+          $expected = if ('${{ matrix.include_platform_adaptor }}' -eq 'true') { 5 } else { 4 }
+          if ($nodeEntries.Count -ne $expected) {
+            $entries | Write-Host
+            throw "压缩包中的 native 模块数量不正确：$($nodeEntries.Count)，预期 $expected"
+          }
+          if ($unexpectedEntries.Count -gt 0) {
+            $unexpectedEntries | Write-Host
+            throw '压缩包包含路径格式不正确的 native 模块'
+          }
+          $entries | Write-Host
+
+      - name: Upload native archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: ${{ runner.temp }}/${{ matrix.artifact_name }}.zip
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7

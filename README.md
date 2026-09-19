@@ -287,6 +287,23 @@ pnpm build
 
 `pnpm build` 执行类型检查、Vite 构建和 electron-builder 打包；`npmRebuild` 已关闭，打包过程只复制现有 Native 产物，不会替你补编译。Windows / macOS 需包含全部 5 个模块，Linux 需包含前 4 个。
 
+## 🧰 Native 模块 CI 产物
+
+除了推送 `v*` Tag 时运行的完整桌面发布流程，Actions 还提供独立的 **Build Native Addons** 手动 workflow。进入 GitHub Actions 后点击 **Run workflow**，可以分别勾选 macOS arm64/x64、Linux arm64/x64、Windows arm64/x64；默认全部勾选。选中的目标会在独立矩阵任务中并行编译，未选中的目标不会启动。
+
+该流程只上传 GitHub Actions 的 CI artifact，不创建或发布 GitHub Release，也不是完整桌面安装包。每个目标生成一个独立 artifact，例如：
+
+- `EchoMusic-native-macos-arm64`
+- `EchoMusic-native-macos-x64`
+- `EchoMusic-native-linux-arm64`
+- `EchoMusic-native-linux-x64`
+- `EchoMusic-native-windows-arm64`
+- `EchoMusic-native-windows-x64`
+
+artifact 内的 ZIP 根目录固定为 `native`，模块路径为 `native/<模块文件夹>/<模块名>.node`，例如 `native/echo-audio-player/echo-audio-player.node`。下载 ZIP 并在仓库根目录解压后即可恢复本地 `pnpm build` 或 electron-builder 所需的目录布局。Linux 包含四个通用模块；macOS 和 Windows 额外包含 `echo-platform-adaptor`。x64 与 arm64 的 `.node` 产物不能混用。
+
+该 workflow 与主桌面发布流程复用 pnpm 依赖缓存和 Rust 缓存，但每个平台在独立 runner 中编译并打包，避免不同架构覆盖同名 `.node` 文件。
+
 ## 📦 打包产物
 
 - **macOS**：`dmg`、`zip`
