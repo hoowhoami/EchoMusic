@@ -109,8 +109,8 @@ const audioEffectOptions: readonly { value: AudioEffectValue; label: string }[] 
   { value: 'ancient', label: '尤克里里' },
   { value: 'surnay', label: '唢呐' },
   { value: 'dj', label: 'DJ' },
-  { value: 'viper_atmos', label: '蝰蛇全景声' },
-  { value: 'viper_clear', label: '蝰蛇超清' },
+  // { value: 'viper_atmos', label: '蝰蛇全景声' },
+  // { value: 'viper_clear', label: '蝰蛇超清' },
 ];
 
 // 内置曲线已按对数频率重采样到当前标准 10 段，运行时不做旧频点迁移。
@@ -901,7 +901,7 @@ const openMyEffectPlaza = (source: MyEffectSource) => {
                 v-for="option in audioEffectOptions"
                 :key="option.value"
                 type="button"
-                class="pm-item w-full! m-0!"
+                class="pm-item effect-option w-full! m-0!"
                 :class="{
                   'is-active': isAudioEffectOptionActive(option.value),
                   'is-disabled': isAudioEffectPresetSelectionDisabled,
@@ -967,7 +967,7 @@ const openMyEffectPlaza = (source: MyEffectSource) => {
                 v-for="preset in eqPresets"
                 :key="preset.name"
                 type="button"
-                class="pm-item w-full! m-0!"
+                class="pm-item effect-option w-full! m-0!"
                 :class="{
                   'is-active': isPresetActive(preset.gains),
                   'is-disabled': providerEqLocked,
@@ -2021,6 +2021,13 @@ const openMyEffectPlaza = (source: MyEffectSource) => {
   min-width: 0;
   flex: 1;
   text-align: center;
+}
+
+.effect-popover .effect-option {
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 20px;
 }
 
 .effect-preset-grid {
