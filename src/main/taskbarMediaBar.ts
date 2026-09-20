@@ -208,7 +208,6 @@ async function createBar(): Promise<void> {
     else await candidate.loadFile(join(__dirname, '../../dist/taskbar-player.html'));
     if (win !== candidate || !usable(candidate)) return;
     ready = true;
-    installSystemListeners();
     await refreshTaskbarShellLayout();
     present(true);
   } catch (error) {
@@ -223,7 +222,10 @@ export async function setTaskbarPlayerEnabled(
   if (process.platform !== 'win32') throw new Error('任务栏快捷播控仅支持 Windows');
   enabled = value;
   setMainAppSetting('taskbarPlayerEnabled', value);
-  if (enabled && !usable(win)) {
+  // A shared attempt can finish without a window after a concurrent disable.
+  // Reconcile the latest intent after every await, including attempts whose
+  // BrowserWindow exists but whose page has not finished loading yet.
+  while (enabled && !quitting && (creating || !usable(win))) {
     if (!creating)
       creating = createBar().finally(() => {
         creating = null;
@@ -231,7 +233,7 @@ export async function setTaskbarPlayerEnabled(
     await creating;
   }
   present(true);
-  if (!enabled) disposeSystem?.();
+  if (!enabled || quitting) disposeSystem?.();
   else installSystemListeners();
   return { enabled, visible: usable(win) && win.isVisible() };
 }

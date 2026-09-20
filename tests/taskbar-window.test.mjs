@@ -27,7 +27,7 @@ const load = (file, mocks, globals = {}) => {
   return module.exports;
 };
 
-function setup() {
+function setup({ refresh = async () => {}, loadPage = async () => {} } = {}) {
   const windows = [],
     timers = new Set(),
     handlers = new Map();
@@ -106,6 +106,7 @@ function setup() {
     }
     async loadFile() {
       if (failLoad) throw new Error('test load failed');
+      await loadPage(this);
     }
   }
   const boundsGate = load('../src/main/windowBoundsPersistence.ts', {});
@@ -142,7 +143,7 @@ function setup() {
       },
       './taskbarShell': {
         getTaskbarShellLayout: () => shell,
-        refreshTaskbarShellLayout: async () => {},
+        refreshTaskbarShellLayout: refresh,
         setTaskbarProbeWindow() {},
       },
       './logger': { __esModule: true, default: { error() {} } },
@@ -170,6 +171,82 @@ function setup() {
     },
   };
 }
+
+test('enable retries when it joins a creation that already bailed out while disabled', async () => {
+  let finishProbe;
+  let probes = 0;
+  const env = setup({
+    refresh: () =>
+      ++probes === 1
+        ? {
+            then: (resolve) => {
+              finishProbe = resolve;
+            },
+          }
+        : undefined,
+  });
+  const first = env.api.setTaskbarPlayerEnabled(true);
+  await new Promise(setImmediate);
+  await env.api.setTaskbarPlayerEnabled(false);
+  finishProbe();
+  // createBar sees disabled and returns; its shared promise has not settled yet.
+  await Promise.resolve();
+  assert.equal(env.windows.length, 0);
+  const reopened = env.api.setTaskbarPlayerEnabled(true);
+  env.api.restoreTaskbarPlayer();
+  const results = await Promise.all([first, reopened]);
+  assert.equal(env.windows.length, 1);
+  assert.ok(results.every((result) => result.enabled && result.visible));
+  assert.equal(env.timers.size, 1);
+  env.api.cleanupTaskbarPlayer();
+});
+
+test('concurrent enable waits for the existing window to finish loading', async () => {
+  const page = Promise.withResolvers();
+  const env = setup({ loadPage: () => page.promise });
+  const first = env.api.setTaskbarPlayerEnabled(true);
+  await new Promise(setImmediate);
+  assert.equal(env.windows.length, 1);
+  let settled = false;
+  const second = env.api.setTaskbarPlayerEnabled(true).then((result) => {
+    settled = true;
+    return result;
+  });
+  await new Promise(setImmediate);
+  assert.equal(settled, false);
+  page.resolve();
+  const results = await Promise.all([first, second]);
+  assert.ok(results.every((result) => result.visible));
+  assert.equal(env.windows.length, 1);
+  env.api.cleanupTaskbarPlayer();
+});
+
+test('disable during page load wins without reinstalling system listeners', async () => {
+  const page = Promise.withResolvers();
+  const env = setup({ loadPage: () => page.promise });
+  const pending = env.api.setTaskbarPlayerEnabled(true);
+  await new Promise(setImmediate);
+  await env.api.setTaskbarPlayerEnabled(false);
+  page.resolve();
+  const state = await pending;
+  assert.equal(state.enabled, false);
+  assert.equal(state.visible, false);
+  assert.equal(env.timers.size, 0);
+  assert.equal(env.screen.listenerCount('display-added'), 0);
+  env.api.cleanupTaskbarPlayer();
+});
+
+test('cleanup during a pending shell probe does not recreate windows or listeners', async () => {
+  const probe = Promise.withResolvers();
+  const env = setup({ refresh: () => probe.promise });
+  const pending = env.api.setTaskbarPlayerEnabled(true);
+  env.api.cleanupTaskbarPlayer();
+  probe.resolve();
+  assert.equal((await pending).visible, false);
+  assert.equal(env.windows.length, 0);
+  assert.equal(env.timers.size, 0);
+  assert.equal(env.screen.listenerCount('display-added'), 0);
+});
 
 test('concurrent show requests create one isolated window and explicit reopening restores presentation', async () => {
   const env = setup();

@@ -25,7 +25,7 @@ Preview cards use `@resvg/resvg-js` to produce a real PNG (Electron does not dec
 With Node 24 and installed dependencies:
 
 ```sh
-node --test tests/taskbar-seek.test.mjs tests/taskbar-shell.test.mjs tests/taskbar-window.test.mjs tests/taskbar-dock.test.ts tests/taskbar-migration.test.mjs tests/window-bounds-persistence.test.ts tests/window-frame.test.mjs tests/window-rounded-shape.test.ts
+node --test tests/taskbar-seek.test.mjs tests/taskbar-shell.test.mjs tests/taskbar-window.test.mjs tests/taskbar-helper-build.test.mjs tests/taskbar-dock.test.ts tests/taskbar-migration.test.mjs tests/window-bounds-persistence.test.ts tests/window-frame.test.mjs
 pnpm exec vue-tsc --noEmit
 pnpm exec vite build
 pnpm run build:taskbar-helper
@@ -34,3 +34,5 @@ pnpm run build:taskbar-helper
 Tests cover geometry/DPI, isolated-window lifecycle and recovery, command routing, favorite state, real preview PNG generation, system theme selection and deferred seeking. They do not replace Windows desktop acceptance.
 
 Manual checks before release: enable/disable/reopen, minimize/restore the main app, fullscreen recovery, transport/favorite/seek/lyric synchronization, detach/redock, and small/large taskbars with multiple monitors and different scale factors. Also verify crowded, vertical and auto-hidden fallback layouts and independent system/application theme choices. macOS/Linux should retain their existing behavior with no taskbar player window.
+
+Local helper compilation requires Windows and .NET Framework 4.x (the `v4.0.30319` toolchain directory, including `csc.exe` and WPF UI Automation assemblies; .NET Framework 4.8 also uses this directory). A modern .NET runtime alone is not sufficient. If these components are absent, the build reports `csc.exe not found`; install/enable the Windows .NET Framework components before retrying. The helper output directory is ignored by Git; empty output directories are cleaned up without deleting a successfully compiled helper.
