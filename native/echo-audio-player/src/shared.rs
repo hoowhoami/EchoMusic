@@ -1257,6 +1257,10 @@ impl SharedAudio {
         self.decoded_queue_changed.notify_all();
     }
 
+    pub fn has_decoded_eof(&self) -> bool {
+        self.decoded_eof.load(Ordering::Acquire) && !self.decode_failed.load(Ordering::Acquire)
+    }
+
     pub fn mark_decode_failed(&self) {
         self.decode_failed.store(true, Ordering::Release);
     }

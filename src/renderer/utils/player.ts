@@ -443,7 +443,7 @@ export class PlayerEngine {
     this.events.fileLoaded?.({ path: source.url, seq: result.seq, trackSeq: result.seq });
   }
 
-  async switchSource(source: string | PlaybackSource): Promise<number | undefined> {
+  async switchSource(source: string | PlaybackSource): Promise<number | null | undefined> {
     const revision = this.sourceRevision;
     const switchRevision = ++this.sourceSwitchRevision;
     const playbackSource = normalizePlaybackSource(source);
@@ -453,6 +453,8 @@ export class PlayerEngine {
       playbackSource.audioTrackId ?? null,
     );
     if (revision !== this.sourceRevision || switchRevision !== this.sourceSwitchRevision) return;
+    // EOF can precede the audible end while queued audio is still playing.
+    if (result === null) return null;
     if (!result) throw new Error('Audio source switch did not complete');
     this.clearSeekPending();
     this.sourceUrl = getPlaybackSourceKey(playbackSource);

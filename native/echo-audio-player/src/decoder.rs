@@ -1742,18 +1742,25 @@ fn align_source_switch_buffer(chunks: &mut Vec<DecodedAudioChunk>, handoff: f64)
             return 0.0;
         };
         let rate = f64::from(chunk.format.sample_rate.max(1));
-        // The first sample can round up to the new source's sample grid; later
-        // chunks must be contiguous apart from the reader's microsecond PTS rounding.
+        // The reader exposes microseconds, but containers such as Matroska store
+        // millisecond PTS. Consecutive AAC/PCM frames can therefore differ from
+        // their sample-count clock by up to one millisecond without missing audio.
+        // The first sample can also round up to the replacement's sample grid.
         let tolerance = if index == 0 {
-            1.0 / rate + 2.0e-6
+            1.0 / rate + 1.0e-3 + 2.0e-6
         } else {
-            2.0e-6
+            1.0e-3 + 2.0e-6
         };
         if (start - end).abs() > tolerance {
             return 0.0;
         }
         let seconds = chunk.frames as f64 / rate;
-        end = start + seconds;
+        // Anchor once and count samples, so repeated small gaps cannot accumulate
+        // unnoticed merely because each individual gap fits the PTS tolerance.
+        if index == 0 {
+            end = start;
+        }
+        end += seconds;
         buffered_secs += seconds;
     }
     buffered_secs
@@ -2085,6 +2092,45 @@ mod tests {
     }
 
     #[test]
+    fn source_switch_real_buffers_are_contiguous_at_arbitrary_handoff_positions() {
+        for asset in [
+            "tests/fixtures/gapless-silence.flac",
+            "vendor/ffmpeg-audio/crates/ffmpeg_audio/tests/assets/seek_test.aac",
+            "vendor/ffmpeg-audio/crates/ffmpeg_audio/tests/assets/negative_pts.mkv",
+        ] {
+            for position in [0.0, 0.137] {
+                let mut decoder = DecoderData::open(
+                    std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                        .join(asset)
+                        .to_string_lossy()
+                        .into_owned(),
+                    None,
+                    Some(48_000),
+                    Arc::new(AtomicBool::new(false)),
+                    PacketCacheOptions::default(),
+                    &StreamOptions::default(),
+                )
+                .unwrap();
+                decoder
+                    .prepare_cancellable_seek(position, || false)
+                    .unwrap();
+                let (switch_at, mut chunks) = decoder
+                    .prepare_source_switch_chunks(position, 0.5, || position, || false)
+                    .unwrap();
+                let buffered = align_source_switch_buffer(&mut chunks, switch_at + 0.153);
+                assert!(
+                    buffered >= 0.3,
+                    "{asset} at {position}: reserve={buffered}, chunks={:?}",
+                    chunks
+                        .iter()
+                        .map(|c| (c.pts_secs, c.frames, c.format.sample_rate))
+                        .collect::<Vec<_>>()
+                );
+            }
+        }
+    }
+
+    #[test]
     fn source_switch_rejects_exhausted_short_or_discontinuous_buffers_without_touching_live_audio()
     {
         let cases = [
@@ -2187,6 +2233,28 @@ mod tests {
         let mut unknown = vec![switch_test_chunk(10.0, 900)];
         unknown[0].pts_secs = None;
         assert_eq!(align_source_switch_buffer(&mut unknown, 10.5), 0.0);
+    }
+
+    #[test]
+    fn source_switch_buffer_tolerates_rounded_pts_but_rejects_gaps_and_drift() {
+        let make_chunks = |starts: &[f64]| {
+            starts
+                .iter()
+                .map(|&start| {
+                    let mut chunk = switch_test_chunk(start, 1024);
+                    chunk.format.sample_rate = 48_000;
+                    chunk
+                })
+                .collect::<Vec<_>>()
+        };
+        let mut rounded = make_chunks(&[0.0, 0.021, 0.043, 0.064]);
+        assert!((align_source_switch_buffer(&mut rounded, 0.0) - 4096.0 / 48_000.0).abs() < 1e-9);
+        let mut gap = make_chunks(&[0.0, 0.024, 0.045]);
+        assert_eq!(align_source_switch_buffer(&mut gap, 0.0), 0.0);
+        let mut overlap = make_chunks(&[0.0, 0.019, 0.040]);
+        assert_eq!(align_source_switch_buffer(&mut overlap, 0.0), 0.0);
+        let mut drift = make_chunks(&[0.0, 0.022, 0.044, 0.066]);
+        assert_eq!(align_source_switch_buffer(&mut drift, 0.0), 0.0);
     }
 
     #[test]

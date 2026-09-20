@@ -336,6 +336,15 @@ export const usePlayerStore = defineStore(
                 if (!isRefreshCurrent()) return;
                 const trackSeq = await engine.switchSource(candidate);
                 if (!isRefreshCurrent()) return;
+                if (trackSeq === null) {
+                  // The decoder has finished, but its buffered tail is still audible.
+                  // Keep the preference for the next track without claiming it is applied.
+                  logger.info('PlayerStore', 'Audio source refresh deferred until next track', {
+                    requestSeq,
+                    trackId: refreshTrackId,
+                  });
+                  return;
+                }
                 // Bind the acknowledged timeline (older native bridges may assign a new seq).
                 if (trackSeq !== undefined && Number.isFinite(trackSeq) && trackSeq > 0) {
                   state.nativeTrackSeq = trackSeq;

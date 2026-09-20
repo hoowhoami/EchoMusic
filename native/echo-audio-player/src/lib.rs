@@ -1492,6 +1492,70 @@ struct SourceSwitchTimings {
     handoff_ms: u128,
 }
 
+const SOURCE_SWITCH_TRACK_ENDED: &str = "source switch deferred: current track ended";
+
+fn source_switch_track_ended(shared: &SharedAudio, generation: u64, track_seq: u64) -> bool {
+    shared.has_decoded_eof()
+        && !shared.should_stop_decoding()
+        && shared.is_decode_generation_current(generation)
+        && shared.current_track_seq() == track_seq
+}
+
+fn source_switch_worker_error(
+    shared: &SharedAudio,
+    generation: u64,
+    track_seq: u64,
+    fallback: &str,
+) -> String {
+    if source_switch_track_ended(shared, generation, track_seq) {
+        SOURCE_SWITCH_TRACK_ENDED.to_string()
+    } else {
+        fallback.to_string()
+    }
+}
+
+fn prepare_source_switch_worker(
+    shared: &SharedAudio,
+    commands: &SyncSender<decoder::DecodeCommand>,
+    generation: u64,
+    track_seq: u64,
+    interrupt: Arc<AtomicBool>,
+) -> Result<(), String> {
+    if source_switch_track_ended(shared, generation, track_seq) {
+        return Err(SOURCE_SWITCH_TRACK_ENDED.to_string());
+    }
+    let (reply, receive) = sync_channel(1);
+    commands
+        .try_send(decoder::DecodeCommand::PrepareSourceSwitch {
+            track_seq,
+            generation,
+            interrupt,
+            reply,
+        })
+        .map_err(|error| match error {
+            TrySendError::Full(_) => {
+                "source switch preparation unavailable: command queue full".to_string()
+            }
+            TrySendError::Disconnected(_) => source_switch_worker_error(
+                shared,
+                generation,
+                track_seq,
+                "source switch preparation unavailable: decoder disconnected",
+            ),
+        })?;
+    receive
+        .recv_timeout(Duration::from_secs(2))
+        .map_err(|error| match error {
+            RecvTimeoutError::Timeout => "source switch preparation timed out".to_string(),
+            RecvTimeoutError::Disconnected => source_switch_worker_error(
+                shared,
+                generation,
+                track_seq,
+                "source switch preparation unavailable: decoder disconnected",
+            ),
+        })?
+}
+
 impl Task for SwitchSourceTask {
     type Output = (f64, f64);
     type JsValue = (f64, f64);
@@ -1512,6 +1576,11 @@ impl Task for SwitchSourceTask {
                 return Err(napi::Error::from_reason(
                     "source switch cancelled: track changed",
                 ));
+            }
+            if runtime.session.as_ref().is_some_and(|session| {
+                session.shared.has_decoded_eof() && !session.shared.should_stop_decoding()
+            }) {
+                return Err(napi::Error::from_reason(SOURCE_SWITCH_TRACK_ENDED));
             }
             runtime.cancel_pending_gapless_prepare();
             retire_prepared_next_background(runtime.prepared_next.take(), "source-switch-begin");
@@ -1540,19 +1609,14 @@ impl Task for SwitchSourceTask {
 
         let mut timings = SourceSwitchTimings::default();
         let operation = (|| -> napi::Result<(f64, f64, f64)> {
-            let (prepare_tx, prepare_rx) = sync_channel(1);
-            commands
-                .try_send(decoder::DecodeCommand::PrepareSourceSwitch {
-                    track_seq: current_seq,
-                    generation,
-                    interrupt: interrupt.clone(),
-                    reply: prepare_tx,
-                })
-                .map_err(|_| napi::Error::from_reason("source switch preparation unavailable"))?;
-            prepare_rx
-                .recv_timeout(Duration::from_secs(2))
-                .map_err(|_| napi::Error::from_reason("source switch preparation timed out"))?
-                .map_err(napi::Error::from_reason)?;
+            prepare_source_switch_worker(
+                &shared,
+                &commands,
+                generation,
+                current_seq,
+                interrupt.clone(),
+            )
+            .map_err(napi::Error::from_reason)?;
             timings.preflight_ms = started.elapsed().as_millis();
             let is_cancelled = || {
                 !is_latest_source_open_request_seq(open_request_seq)
@@ -1629,11 +1693,34 @@ impl Task for SwitchSourceTask {
                     generation,
                     reply: reply_tx,
                 })
-                .map_err(|_| napi::Error::from_reason("active decoder stopped".to_string()))?;
+                .map_err(|_| {
+                    napi::Error::from_reason(source_switch_worker_error(
+                        &shared,
+                        generation,
+                        current_seq,
+                        "active decoder stopped",
+                    ))
+                })?;
             let switch_position = reply_rx
                 .recv_timeout(Duration::from_secs(15))
-                .map_err(|_| napi::Error::from_reason("source switch timed out".to_string()))?
-                .map_err(napi::Error::from_reason)?;
+                .map_err(|error| {
+                    napi::Error::from_reason(match error {
+                        RecvTimeoutError::Timeout => "source switch timed out".to_string(),
+                        RecvTimeoutError::Disconnected => source_switch_worker_error(
+                            &shared,
+                            generation,
+                            current_seq,
+                            "active decoder stopped",
+                        ),
+                    })
+                })?
+                .map_err(|error| {
+                    napi::Error::from_reason(if error == "source switch cancelled" {
+                        source_switch_worker_error(&shared, generation, current_seq, &error)
+                    } else {
+                        error
+                    })
+                })?;
             timings.handoff_ms = handoff_started.elapsed().as_millis();
             Ok((switch_position, duration, switch_at_secs))
         })();

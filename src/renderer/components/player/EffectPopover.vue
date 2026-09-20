@@ -68,6 +68,7 @@ const {
   player,
   settingStore,
   currentTrack,
+  isResolvedCloudSource,
   isAudioEffectPresetSelectionDisabled,
   audioEffectButtonBadge,
   setAudioEffect,
@@ -602,10 +603,10 @@ const providerEqLocked = computed(() => {
   return providerConfigured.value || !!player.playbackDiagnostics.graph?.providerPath;
 });
 const audioEffectPresetActive = computed(
-  () => !isAudioEffectPresetSelectionDisabled.value && player.audioEffect !== 'none',
+  () => !isResolvedCloudSource.value && player.audioEffect !== 'none',
 );
 const isAudioEffectOptionActive = (effect: AudioEffectValue) =>
-  isAudioEffectPresetSelectionDisabled.value ? effect === 'none' : player.audioEffect === effect;
+  isResolvedCloudSource.value ? effect === 'none' : player.audioEffect === effect;
 
 // 节流 EQ 更新，防止高频 IPC 调用导致音频卡顿
 const throttledSetEq = useThrottleFn((newGains: number[]) => {
@@ -892,9 +893,7 @@ const openMyEffectPlaza = (source: MyEffectSource) => {
               <span>正在切换音效…</span>
             </div>
           </div>
-          <div v-if="isAudioEffectPresetSelectionDisabled" class="panel-hint">
-            当前使用云盘文件播放
-          </div>
+          <div v-if="isResolvedCloudSource" class="panel-hint">当前使用云盘文件播放</div>
           <Scrollbar class="panel-scroll">
             <div class="effect-preset-grid" :aria-busy="player.audioEffectApplying">
               <button
@@ -906,6 +905,7 @@ const openMyEffectPlaza = (source: MyEffectSource) => {
                   'is-active': isAudioEffectOptionActive(option.value),
                   'is-disabled': isAudioEffectPresetSelectionDisabled,
                 }"
+                :aria-pressed="isAudioEffectOptionActive(option.value)"
                 :disabled="
                   isAudioEffectPresetSelectionDisabled ||
                   player.audioEffectApplying ||

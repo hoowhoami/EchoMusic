@@ -43,8 +43,10 @@ export function registerPlayerIpc(ref: PlayerRef): void {
   );
   ipcRegistry.registerHandler(
     'player:switch-source',
-    async (_e, url: string, trackId?: number | null) =>
-      (await ref.current?.switchSource(url, trackId)) ?? null,
+    async (_e, url: string, trackId?: number | null) => {
+      if (!ref.current) throw new Error('播放器未初始化');
+      return await ref.current.switchSource(url, trackId);
+    },
   );
 
   ipcRegistry.registerHandler(

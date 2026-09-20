@@ -80,6 +80,31 @@ function controllerFixture(proxy = async () => []) {
   return { controller, addon, loads, calls };
 }
 
+test('source switch IPC distinguishes EOF deferral from an unavailable player', async () => {
+  const source = readFileSync(new URL('../src/main/ipc/player.ts', import.meta.url), 'utf8');
+  const start = source.lastIndexOf(
+    '  ipcRegistry.registerHandler(',
+    source.indexOf("'player:switch-source'"),
+  );
+  const end = source.indexOf('  ipcRegistry.registerHandler(', start + 1);
+  const code = transformSync(source.slice(start, end), { loader: 'ts' }).code;
+  let handler;
+  const ref = { current: null };
+  new Function('ipcRegistry', 'ref', code)(
+    {
+      registerHandler(_name, fn) {
+        handler = fn;
+      },
+    },
+    ref,
+  );
+  await assert.rejects(handler(null, 'new'), /播放器未初始化/);
+  ref.current = { switchSource: async () => null };
+  assert.equal(await handler(null, 'new'), null);
+  ref.current = { switchSource: async () => [1, 120, 4] };
+  assert.deepEqual(await handler(null, 'new'), [1, 120, 4]);
+});
+
 test('a slow native load does not block newer loads and only the latest completion binds', async () => {
   const { controller, loads, calls } = controllerFixture();
   const oldRequest = controller.beginSourceChange();
@@ -225,6 +250,38 @@ test('a quality acknowledgement cannot roll back an automatic next-track boundar
   assert.equal(controller.activeTrackSeq, 5);
 });
 
+test('only a current-track EOF defers a source switch without mutating controller state', async () => {
+  const { controller, addon } = controllerFixture();
+  controller.activeTrackSeq = 4;
+  controller.state.path = 'old';
+  const before = { ...controller.state };
+  addon.switchSource = async () => {
+    throw new Error('source switch deferred: current track ended');
+  };
+  assert.equal(await controller.switchSource('new'), null);
+  assert.deepEqual(controller.state, before);
+  assert.equal(controller.activeTrackSeq, 4);
+  for (const message of [
+    'source switch preparation unavailable: command queue full',
+    'source switch preparation unavailable: decoder disconnected',
+    'source switch preparation timed out',
+  ]) {
+    addon.switchSource = async () => {
+      throw new Error(message);
+    };
+    await assert.rejects(controller.switchSource('new'), { message });
+  }
+  const pending = defer();
+  addon.switchSource = () => pending.promise;
+  const old = controller.switchSource('new');
+  const rejected = assert.rejects(old, /superseded/);
+  await flush();
+  controller.activeTrackSeq = 5;
+  pending.reject(new Error('source switch deferred: current track ended'));
+  await rejected;
+  assert.equal(controller.activeTrackSeq, 5);
+});
+
 function engineFixture() {
   const handlers = {},
     loads = [],
@@ -352,6 +409,18 @@ test('late quality switch acknowledgement cannot replace the latest engine sourc
   loads[0].resolve([20, 120, 4]);
   assert.equal(await old, undefined);
   assert.equal(engine.source, 'ordinary');
+});
+
+test('EOF deferral leaves the engine source unchanged and missing acknowledgements still fail', async () => {
+  const { engine, loads } = engineFixture();
+  const before = engine.source;
+  const deferred = engine.switchSource('new');
+  loads[0].resolve(null);
+  assert.equal(await deferred, null);
+  assert.equal(engine.source, before);
+  const missing = engine.switchSource('new');
+  loads[1].resolve(undefined);
+  await assert.rejects(missing, /did not complete/);
 });
 
 test('EOF carries native identity through controller and engine; old tracks and seek generations are rejected', () => {

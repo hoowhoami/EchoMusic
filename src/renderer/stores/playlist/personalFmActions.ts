@@ -110,7 +110,7 @@ const isCurrentPersonalFmTrack = (queue: PlaybackQueueState | undefined, track: 
 };
 
 const buildPersonalFmParams = (
-  queue: PlaybackQueueState,
+  queue: Pick<PlaybackQueueState, 'meta'>,
   track: Song | null,
   remainSongcnt: number,
   options?: {
@@ -421,13 +421,12 @@ export const personalFmActions = {
     try {
       const songs = await this.fetchPersonalFmSongs(
         buildPersonalFmParams(
-          queue ??
-            ({
-              meta: {
-                mode: presentation.mode,
-                song_pool_id: songPoolPresentation.songPoolId,
-              },
-            } as PlaybackQueueState),
+          queue ?? {
+            meta: {
+              mode: presentation.mode,
+              song_pool_id: songPoolPresentation.songPoolId,
+            },
+          },
           currentTrack,
           0,
           { action },

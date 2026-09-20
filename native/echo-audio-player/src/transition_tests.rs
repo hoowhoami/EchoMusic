@@ -282,6 +282,37 @@ fn source_switch_empty_buffer_falls_back_to_uninterrupted_old_source() {
     );
 }
 
+#[test]
+fn source_switch_after_decoder_eof_preserves_the_still_audible_tail() {
+    let _guard = TEST_SERIAL.lock().unwrap_or_else(|p| p.into_inner());
+    let wav = TestWav::new(0.1, 440.0, 120.0, 0.0, 0.0);
+    let mut reference = Rig::start(&wav.url());
+    let (expected, _) = reference.drain(1.0);
+    reference.stop();
+    let mut rig = Rig::start(&wav.url());
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while !rig.shared.has_decoded_eof() && Instant::now() < deadline {
+        thread::sleep(Duration::from_millis(1));
+    }
+    assert!(rig.shared.has_decoded_eof());
+    assert!(!rig.shared.is_drained_for_output());
+    let error = prepare_source_switch_worker(
+        &rig.shared,
+        &rig.commands,
+        rig.shared.current_decode_generation(),
+        1,
+        Arc::new(AtomicBool::new(false)),
+    )
+    .unwrap_err();
+    assert_eq!(error, SOURCE_SWITCH_TRACK_ENDED);
+    let (actual, _) = rig.drain(1.0);
+    rig.stop();
+    assert_eq!(
+        actual, expected,
+        "deferral must leave all queued audio untouched"
+    );
+}
+
 fn set_mode(mode: TransitionMode, fade_secs: f32) {
     let mut settings = crate::control::transition::TRANSITION_SETTINGS
         .lock()

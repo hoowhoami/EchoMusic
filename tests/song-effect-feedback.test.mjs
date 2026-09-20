@@ -2,6 +2,46 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { transformSync } from 'esbuild';
+import { computed, reactive } from 'vue';
+
+test('song effect selection stays on the requested effect while switching and after failure', () => {
+  const popover = readFileSync(
+    new URL('../src/renderer/components/player/EffectPopover.vue', import.meta.url),
+    'utf8',
+  );
+  const code = transformSync(
+    popover.slice(
+      popover.indexOf('const audioEffectPresetActive ='),
+      popover.indexOf('// 节流 EQ 更新'),
+    ),
+    { loader: 'ts' },
+  ).code;
+  const player = reactive({ audioEffect: 'vocal', audioEffectError: '' });
+  const status = reactive({ cloud: false, switching: false });
+  const { active, selected } = new Function(
+    'computed',
+    'player',
+    'isResolvedCloudSource',
+    'isAudioEffectPresetSelectionDisabled',
+    `${code}; return { active: audioEffectPresetActive, selected: isAudioEffectOptionActive };`,
+  )(
+    computed,
+    player,
+    computed(() => status.cloud),
+    computed(() => status.cloud || status.switching),
+  );
+  for (const switching of [false, true, false]) {
+    status.switching = switching;
+    if (!switching) player.audioEffectError = '切换失败';
+    assert.equal(selected('vocal'), true);
+    assert.equal(selected('none'), false);
+    assert.equal(active.value, true);
+  }
+  status.cloud = true;
+  assert.equal(selected('none'), true);
+  assert.equal(selected('vocal'), false);
+  assert.equal(active.value, false);
+});
 
 const source = readFileSync(
   new URL('../src/renderer/stores/player/audio.ts', import.meta.url),
@@ -148,6 +188,7 @@ function refreshHarness(
     { loader: 'ts' },
   ).code;
   const preloads = [];
+  const notices = [];
   const settings = { defaultAudioQuality: '128' };
   const dependencies = {
     state,
@@ -167,15 +208,54 @@ function refreshHarness(
     engine: { switchSource, applyTrackLoudness() {}, setPlaybackRate() {}, setVolume() {} },
     getResolvedPlaybackSources: () => [{ url: 'new' }, { url: 'backup' }],
     clearPlaybackNotice() {},
-    showPlaybackNotice() {},
+    showPlaybackNotice(code) {
+      notices.push(code);
+    },
     logger: { info() {}, warn() {}, error() {} },
   };
   const refresh = new Function(
     ...Object.keys(dependencies),
     `${code}; return refreshCurrentTrack;`,
   )(...Object.values(dependencies));
-  return { state, refresh, settings, preloads };
+  return { state, refresh, settings, preloads, notices };
 }
+
+test('EOF defers the selected effect without retries, false success, or an error notice', async () => {
+  let switches = 0;
+  const { state, refresh, preloads, notices } = refreshHarness(async () => {
+    switches++;
+    return null;
+  });
+  await refresh({ seamless: true });
+  assert.equal(switches, 1);
+  assert.equal(state.audioEffect, 'vocal');
+  assert.equal(state.currentResolvedAudioEffect, 'none');
+  assert.equal(state.currentAudioUrl, 'old');
+  assert.equal(state.currentResolvedAudioQuality, '128');
+  assert.equal(state.nativeTrackSeq, 10);
+  assert.equal(state.currentTime, 20);
+  assert.equal(state.audioSourceRefreshRequestSeq, null);
+  assert.equal(state.pendingSettingRefresh, false);
+  assert.equal(state.audioEffectError, '');
+  assert.deepEqual(notices, []);
+  assert.equal(preloads.length, 1);
+});
+
+test('unavailable workers and queue saturation still report switch failures', async () => {
+  for (const message of [
+    'source switch preparation unavailable: command queue full',
+    'source switch preparation unavailable: decoder disconnected',
+  ]) {
+    let switches = 0;
+    const { refresh, notices } = refreshHarness(async () => {
+      switches++;
+      throw new Error(message);
+    });
+    await refresh({ seamless: true });
+    assert.equal(switches, 1);
+    assert.deepEqual(notices, ['audio-effect-apply-failed']);
+  }
+});
 test('seamless switch binds the new native sequence so progress ticks are accepted', async () => {
   const { state, refresh } = refreshHarness(async () => 11);
   await refresh({ seamless: true });

@@ -2,6 +2,96 @@
 use super::*;
 
 #[test]
+fn source_switch_eof_during_preflight_is_deferred_but_live_disconnect_and_full_queue_are_errors() {
+    for eof in [false, true] {
+        let shared = Arc::new(SharedAudio::new(
+            MixFormat::stereo_f32(48_000),
+            0.2,
+            8.0,
+            &DspSettings::default(),
+        ));
+        shared.set_track_seq(7);
+        let generation = shared.current_decode_generation();
+        let (commands, receive) = sync_channel(1);
+        let worker_shared = shared.clone();
+        let worker = thread::spawn(move || {
+            let command = receive.recv().unwrap();
+            if eof {
+                worker_shared.mark_decoded_eof();
+            }
+            drop(command);
+        });
+        let error = prepare_source_switch_worker(
+            &shared,
+            &commands,
+            generation,
+            7,
+            Arc::new(AtomicBool::new(false)),
+        )
+        .unwrap_err();
+        worker.join().unwrap();
+        assert_eq!(
+            error,
+            if eof {
+                SOURCE_SWITCH_TRACK_ENDED
+            } else {
+                "source switch preparation unavailable: decoder disconnected"
+            }
+        );
+    }
+
+    let shared = SharedAudio::new(
+        MixFormat::stereo_f32(48_000),
+        0.2,
+        8.0,
+        &DspSettings::default(),
+    );
+    shared.set_track_seq(7);
+    let generation = shared.current_decode_generation();
+    let (commands, receive) = sync_channel(1);
+    commands.send(decoder::DecodeCommand::Stop).unwrap();
+    assert_eq!(
+        prepare_source_switch_worker(
+            &shared,
+            &commands,
+            generation,
+            7,
+            Arc::new(AtomicBool::new(false))
+        )
+        .unwrap_err(),
+        "source switch preparation unavailable: command queue full"
+    );
+    drop(receive);
+    assert_eq!(
+        prepare_source_switch_worker(
+            &shared,
+            &commands,
+            generation,
+            7,
+            Arc::new(AtomicBool::new(false))
+        )
+        .unwrap_err(),
+        "source switch preparation unavailable: decoder disconnected"
+    );
+    shared.mark_decoded_eof();
+    assert_eq!(
+        prepare_source_switch_worker(
+            &shared,
+            &commands,
+            generation,
+            7,
+            Arc::new(AtomicBool::new(false))
+        )
+        .unwrap_err(),
+        SOURCE_SWITCH_TRACK_ENDED
+    );
+    assert!(!source_switch_track_ended(&shared, generation, 8));
+    assert!(!source_switch_track_ended(&shared, generation + 1, 7));
+    shared.mark_decode_failed();
+    assert!(!source_switch_track_ended(&shared, generation, 7));
+}
+
+#[test]
 fn source_change_retains_output_session_but_drains_and_invalidates_old_audio() {
     initialize(None).unwrap();
     let shared = Arc::new(SharedAudio::new(
