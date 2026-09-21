@@ -1,8 +1,12 @@
 import { BrowserWindow, nativeImage, ipcMain } from 'electron';
 import { deflateSync } from 'zlib';
 import log from './logger';
+import type { NowPlayingPlaybackPayload } from '../shared/nowPlaying';
 
 let currentIsPlaying = false;
+let currentIsFavorite = false;
+let hasCurrentTrack = false;
+let targetWindow: BrowserWindow | null = null;
 let thumbarSetup = false;
 
 // --- RGBA PNG Generator (支持抗锯齿) ---
@@ -90,9 +94,9 @@ function createRgbaPng(
 // --- 图标绘制（64x64 超采样 + 抗锯齿） ---
 
 const ICON_SIZE = 64;
-const ICON_R = 51;
-const ICON_G = 51;
-const ICON_B = 54;
+const ICON_R = 43;
+const ICON_G = 90;
+const ICON_B = 58;
 
 /** 三角形 SDF（基于重心坐标的有符号距离） */
 function triangleSdf(
@@ -233,11 +237,31 @@ function makeNextIcon(): Buffer {
   });
 }
 
+function makeHeartIcon(filled: boolean): Buffer {
+  const inside = (x: number, y: number, scale = 1) => {
+    const px = (x - (ICON_SIZE - 1) / 2) / (20 * scale);
+    const py = ((ICON_SIZE - 1) / 2 - y) / (20 * scale);
+    const sum = px * px + py * py - 1;
+    return sum * sum * sum - px * px * py * py * py <= 0;
+  };
+  return createRgbaPng(ICON_SIZE, ICON_SIZE, (setPixel) => {
+    for (let y = 0; y < ICON_SIZE; y++) {
+      for (let x = 0; x < ICON_SIZE; x++) {
+        if (inside(x, y) && (filled || !inside(x, y, 0.76))) {
+          setPixel(x, y, filled ? 232 : ICON_R, filled ? 43 : ICON_G, filled ? 91 : ICON_B, 255);
+        }
+      }
+    }
+  });
+}
+
 let cachedIcons: {
   play: Electron.NativeImage;
   pause: Electron.NativeImage;
   prev: Electron.NativeImage;
   next: Electron.NativeImage;
+  heart: Electron.NativeImage;
+  heartFilled: Electron.NativeImage;
 } | null = null;
 
 function getIcons() {
@@ -247,6 +271,8 @@ function getIcons() {
     pause: nativeImage.createFromBuffer(makePauseIcon()),
     prev: nativeImage.createFromBuffer(makePrevIcon()),
     next: nativeImage.createFromBuffer(makeNextIcon()),
+    heart: nativeImage.createFromBuffer(makeHeartIcon(false)),
+    heartFilled: nativeImage.createFromBuffer(makeHeartIcon(true)),
   };
   return cachedIcons;
 }
@@ -257,6 +283,7 @@ function buildThumbarButtons(win: BrowserWindow): Electron.ThumbarButton[] {
     {
       tooltip: '上一曲',
       icon: icons.prev,
+      flags: hasCurrentTrack ? [] : ['disabled'],
       click: () => {
         log.debug('[Thumbar] Previous track clicked');
         win.webContents.send('media-control:event', { type: 'PreviousSong' });
@@ -265,6 +292,7 @@ function buildThumbarButtons(win: BrowserWindow): Electron.ThumbarButton[] {
     {
       tooltip: currentIsPlaying ? '暂停' : '播放',
       icon: currentIsPlaying ? icons.pause : icons.play,
+      flags: hasCurrentTrack ? [] : ['disabled'],
       click: () => {
         log.debug('[Thumbar] Play/Pause clicked');
         win.webContents.send('media-control:event', {
@@ -275,9 +303,20 @@ function buildThumbarButtons(win: BrowserWindow): Electron.ThumbarButton[] {
     {
       tooltip: '下一曲',
       icon: icons.next,
+      flags: hasCurrentTrack ? [] : ['disabled'],
       click: () => {
         log.debug('[Thumbar] Next track clicked');
         win.webContents.send('media-control:event', { type: 'NextSong' });
+      },
+    },
+    {
+      tooltip: currentIsFavorite ? '取消收藏' : '收藏',
+      icon: currentIsFavorite ? icons.heartFilled : icons.heart,
+      flags: hasCurrentTrack ? [] : ['disabled'],
+      click: () => {
+        if (hasCurrentTrack && !win.isDestroyed()) {
+          win.webContents.send('now-playing:command', 'toggleFavorite');
+        }
       },
     },
   ];
@@ -292,19 +331,23 @@ function applyThumbarButtons(win: BrowserWindow) {
 
 export function setupThumbarButtons(win: BrowserWindow) {
   if (process.platform !== 'win32') return;
+  if (targetWindow !== win) {
+    targetWindow = win;
+    // Rebind window lifecycle on recreation, without adding duplicate IPC listeners.
+    win.on('show', () => applyThumbarButtons(win));
+    win.once('closed', () => {
+      if (targetWindow === win) targetWindow = null;
+    });
+  }
   if (!thumbarSetup) {
     thumbarSetup = true;
 
-    ipcMain.on('thumbar:update-play-state', (_event, isPlaying: boolean) => {
+    ipcMain.on('thumbar:update-play-state', (event, isPlaying: boolean) => {
+      const win = targetWindow;
+      if (!win || win.isDestroyed() || event.sender.id !== win.webContents.id) return;
+      if (typeof isPlaying !== 'boolean' || !hasCurrentTrack) return;
       if (currentIsPlaying === isPlaying) return;
       currentIsPlaying = isPlaying;
-      if (!win.isDestroyed()) {
-        applyThumbarButtons(win);
-      }
-    });
-
-    // 窗口从隐藏恢复时重新设置 thumbar 按钮（setSkipTaskbar 会清除按钮）
-    win.on('show', () => {
       if (!win.isDestroyed()) {
         applyThumbarButtons(win);
       }
@@ -313,4 +356,22 @@ export function setupThumbarButtons(win: BrowserWindow) {
 
   applyThumbarButtons(win);
   log.info('[Thumbar] Thumbnail toolbar buttons initialized');
+}
+
+/** Reuse the validated v2.3.1 playback snapshot; no second renderer state channel. */
+export function updateThumbarPlayback(playback: NowPlayingPlaybackPayload | null): void {
+  if (process.platform !== 'win32') return;
+  const hasTrack = Boolean(playback?.trackId);
+  const playing = hasTrack && Boolean(playback?.isPlaying);
+  const favorite = hasTrack && Boolean(playback?.isFavorite);
+  if (
+    hasCurrentTrack === hasTrack &&
+    currentIsPlaying === playing &&
+    currentIsFavorite === favorite
+  )
+    return;
+  hasCurrentTrack = hasTrack;
+  currentIsPlaying = playing;
+  currentIsFavorite = favorite;
+  if (targetWindow) applyThumbarButtons(targetWindow);
 }

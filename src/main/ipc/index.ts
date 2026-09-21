@@ -9,6 +9,7 @@ import { registerDesktopLyricHandlers } from '../desktopLyric';
 import { registerMainWindowPreferenceHandlers } from '../window';
 import { registerMiniPlayerHandlers } from '../miniPlayer';
 import { registerNowPlayingHandlers } from '../nowPlaying';
+import { registerTaskbarPlayerHandlers } from '../taskbarMediaBar';
 import { registerExternalHandlers } from './external';
 import { registerStorageHandlers } from './storage';
 import { registerPluginHandlers } from './plugins';
@@ -32,6 +33,7 @@ export const registerIpcHandlers = (context: IpcContext) => {
   registerShortcutHandlers(context);
   registerTrayHandlers();
   registerNowPlayingHandlers(context);
+  registerTaskbarPlayerHandlers();
   registerDesktopLyricHandlers();
   registerMiniPlayerHandlers();
   registerExternalHandlers();

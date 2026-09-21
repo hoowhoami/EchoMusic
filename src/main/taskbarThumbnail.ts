@@ -1,5 +1,8 @@
 import { getNativePlatform, type NativePlatform } from './native/platform';
 import type { BrowserWindow } from 'electron';
+import { nativeImage } from 'electron';
+import type { NowPlayingPlaybackPayload } from '../shared/nowPlaying';
+import { cardProgressPixel, renderTaskbarCard } from './taskbarCard';
 import log from './logger';
 import { getMainAppSettings } from './storage/settings';
 import { networkFetch } from './networkPolicy';
@@ -26,6 +29,13 @@ let targetWindow: BrowserWindow | null = null;
 let hwndStr: string | null = null;
 let coverBuffer: Buffer | null = null;
 let fallbackCoverBuffer: Buffer | null = null;
+let cardBuffer: Buffer | null = null;
+let cardPlayback: NowPlayingPlaybackPayload | null = null;
+let cardKey = '';
+let cardVersion = 0;
+let cardRendering = false;
+let cardDirty = false;
+let cardTimer: ReturnType<typeof setTimeout> | null = null;
 let fallbackCoverLoading = false;
 let iconicEnabled = false;
 let hooked = false;
@@ -42,6 +52,75 @@ const FALLBACK_COVER_URL = 'https://imge.kugou.com/soft/collection/default.jpg';
 function currentCover(): Buffer | null {
   if (coverBuffer && coverBuffer.length > 0) return coverBuffer;
   return fallbackCoverBuffer && fallbackCoverBuffer.length > 0 ? fallbackCoverBuffer : null;
+}
+
+function currentThumbnail(): Buffer | null {
+  return cardBuffer ?? currentCover();
+}
+
+function queueCardRender(immediate = false): void {
+  if (immediate) cardVersion += 1;
+  cardDirty = true;
+  if (!coverPreviewEnabled || !targetWindow || targetWindow.isDestroyed()) return;
+  if (cardRendering) return;
+  if (cardTimer) {
+    if (!immediate) return;
+    clearTimeout(cardTimer);
+  }
+  // A progress tick needs at most one bitmap per second, not one per lyric update.
+  cardTimer = setTimeout(
+    () => {
+      cardTimer = null;
+      void refreshCard();
+    },
+    immediate ? 0 : 1000,
+  );
+}
+
+async function refreshCard(): Promise<void> {
+  const version = cardVersion;
+  cardRendering = true;
+  cardDirty = false;
+  try {
+    const cover = currentCover();
+    const coverPng = cover
+      ? nativeImage.createFromBuffer(cover).resize({ width: 48, height: 48 }).toPNG()
+      : undefined;
+    const rendered = await renderTaskbarCard(cardPlayback, coverPng);
+    if (
+      version !== cardVersion ||
+      !targetWindow ||
+      targetWindow.isDestroyed() ||
+      !coverPreviewEnabled
+    )
+      return;
+    cardBuffer = rendered;
+    applyState();
+  } catch (error) {
+    log.warn('[TaskbarThumbnail] Card rendering failed; retaining cover preview:', error);
+  } finally {
+    cardRendering = false;
+    if (cardDirty && coverPreviewEnabled && targetWindow && !targetWindow.isDestroyed())
+      queueCardRender();
+  }
+}
+
+export function setTaskbarCardPlayback(playback: NowPlayingPlaybackPayload | null): void {
+  if (process.platform !== 'win32') return;
+  const identityChanged =
+    cardPlayback?.trackId !== playback?.trackId ||
+    cardPlayback?.title !== playback?.title ||
+    cardPlayback?.artist !== playback?.artist;
+  const key = JSON.stringify([
+    playback?.trackId,
+    playback?.title,
+    playback?.artist,
+    cardProgressPixel(playback),
+  ]);
+  cardPlayback = playback;
+  if (key === cardKey) return;
+  cardKey = key;
+  queueCardRender(identityChanged);
 }
 
 /** 加载应用兜底封面（有在途/已加载则跳过） */
@@ -63,6 +142,7 @@ function loadFallbackCover(): void {
       const data = buf && buf.byteLength > 0 ? Buffer.from(buf) : null;
       if (data) {
         fallbackCoverBuffer = data;
+        queueCardRender(true);
         // 兜底封面就绪后若真实封面仍缺失，刷新一次缩略图
         if (!coverBuffer) applyState();
       }
@@ -94,7 +174,8 @@ function resolveHwnd(win: BrowserWindow): string | null {
 /** 开关由「任务栏封面预览」控制：开则始终显示封面（真实，缺失时用兜底），关则回落到 DWM 实时窗口画面 */
 function applyState(): void {
   if (!nativeModule || !hwndStr) return;
-  const shouldShowCover = coverPreviewEnabled && !!currentCover();
+  const thumbnail = currentThumbnail();
+  const shouldShowCover = coverPreviewEnabled && !!thumbnail;
   try {
     if (shouldShowCover) {
       const needEnable = !iconicEnabled;
@@ -103,8 +184,8 @@ function applyState(): void {
         iconicEnabled = true;
       }
       // 封面已应用过且 iconic 已开启时无需重复触发系统重新索取
-      if (needEnable || appliedCoverRef !== coverBuffer) {
-        appliedCoverRef = coverBuffer;
+      if (needEnable || appliedCoverRef !== thumbnail) {
+        appliedCoverRef = thumbnail;
         // 触发系统重新索取缩略图，换上当前封面
         nativeModule.taskbarInvalidate(hwndStr);
       }
@@ -123,9 +204,9 @@ function applyState(): void {
 
 /** 处理悬停缩略图请求：从 lParam 解析最大尺寸并写入封面 */
 function onThumbnailRequest(lParam: Buffer): void {
-  if (!nativeModule || !hwndStr) return;
+  if (!nativeModule || !hwndStr || !iconicEnabled || !coverPreviewEnabled) return;
   // 封面暂缺时保留 DWM 已有的缩略图，避免回退到实时窗口捕获而黑屏
-  const cover = currentCover();
+  const cover = currentThumbnail();
   if (!cover) return;
   let maxWidth = DEFAULT_THUMBNAIL_MAX;
   let maxHeight = DEFAULT_THUMBNAIL_MAX;
@@ -149,9 +230,9 @@ function onThumbnailRequest(lParam: Buffer): void {
 
 /** 处理 Aero Peek 大预览请求：写入封面 */
 function onLivePreviewRequest(): void {
-  if (!nativeModule || !hwndStr) return;
+  if (!nativeModule || !hwndStr || !iconicEnabled || !coverPreviewEnabled) return;
   // 封面暂缺时保留 DWM 已有内容，避免回退到实时窗口捕获而黑屏
-  const cover = currentCover();
+  const cover = currentThumbnail();
   if (!cover) return;
   try {
     nativeModule.taskbarSetLivePreview(hwndStr, cover, LIVE_PREVIEW_MAX, LIVE_PREVIEW_MAX);
@@ -185,6 +266,7 @@ export function setupTaskbarThumbnail(win: BrowserWindow): void {
 
   // 从已持久化的主进程设置初始化任务栏封面预览开关
   coverPreviewEnabled = Boolean(getMainAppSettings().taskbarCoverPreview);
+  queueCardRender(true);
 
   if (!hooked) {
     win.hookWindowMessage(WM_DWMSENDICONICTHUMBNAIL, (_wParam, lParam) => {
@@ -211,6 +293,7 @@ export function setTaskbarCover(cover: Buffer | null): void {
   if (cover && cover.length > 0) {
     coverBuffer = cover;
   }
+  queueCardRender(true);
   if (!currentCover()) {
     // 没有任何可用封面（首次启动/上一张已清空）时加载兜底封面作为安全网
     loadFallbackCover();
@@ -226,6 +309,11 @@ export function isCoverPreviewEnabled(): boolean {
 /** 设置任务栏封面预览开关（关闭时回退到 DWM 实时窗口画面） */
 export function setCoverPreviewEnabled(enabled: boolean): void {
   coverPreviewEnabled = enabled;
+  cardVersion += 1;
+  cardBuffer = null;
+  if (cardTimer) clearTimeout(cardTimer);
+  cardTimer = null;
+  if (enabled) queueCardRender(true);
   applyState();
 }
 
@@ -246,6 +334,13 @@ export function destroyTaskbarThumbnail(): void {
   }
   iconicEnabled = false;
   hooked = false;
+  cardVersion += 1;
+  if (cardTimer) clearTimeout(cardTimer);
+  cardTimer = null;
+  cardBuffer = null;
+  cardKey = '';
+  cardPlayback = null;
+  cardDirty = false;
   appliedCoverRef = null;
   coverBuffer = null;
   fallbackCoverBuffer = null;

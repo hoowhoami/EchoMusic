@@ -246,6 +246,10 @@ jobs:
             ~/.cache/electron-builder
           key: ${{ runner.os }}-electron-builder-${{ hashFiles('package.json') }}
 
+      - name: Build Windows taskbar layout helper
+        if: runner.os == 'Windows'
+        run: pnpm run build:taskbar-helper
+
       - name: Build desktop app
         shell: bash
         env:

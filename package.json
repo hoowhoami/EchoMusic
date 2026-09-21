@@ -9,9 +9,10 @@
   },
   "main": "dist-electron/main/index.js",
   "scripts": {
+    "build:taskbar-helper": "node scripts/build-taskbar-layout.mjs",
     "dev": "vite",
-    "build": "vue-tsc --noEmit && vite build && electron-builder",
-    "build:win": "cd server && npm install --omit=dev && cd .. && vue-tsc --noEmit && vite build && electron-builder --win --x64",
+    "build": "node scripts/build-taskbar-layout.mjs && vue-tsc --noEmit && vite build && electron-builder",
+    "build:win": "node scripts/build-taskbar-layout.mjs && cd server && npm install --omit=dev && cd .. && vue-tsc --noEmit && vite build && electron-builder --win --x64",
     "build:mac": "cd server && npm install --omit=dev && cd .. && vue-tsc --noEmit && vite build && electron-builder --mac",
     "build:linux": "cd server && npm install --omit=dev && cd .. && vue-tsc --noEmit && vite build && electron-builder --linux",
     "preview": "vite preview",
@@ -20,6 +21,7 @@
     "format": "prettier --write \"src/**/*.{vue,ts,js,json}\" \"vite.config.mts\" \"tsconfig*.json\""
   },
   "dependencies": {
+    "@resvg/resvg-js": "2.6.2",
     "axios": "^1.18.0",
     "electron-log": "^5.4.4",
     "electron-updater": "^6.8.9",
@@ -210,6 +212,10 @@
     "win": {
       "icon": "icons/icon.ico",
       "extraResources": [
+        {
+          "from": "build/taskbar-layout/EchoMusic.TaskbarLayout.exe",
+          "to": "native/EchoMusic.TaskbarLayout.exe"
+        },
         {
           "from": "native/echo-platform-adaptor/echo-platform-adaptor.node",
           "to": "native/echo-platform-adaptor.node"

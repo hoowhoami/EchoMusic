@@ -42,6 +42,7 @@ export default defineConfig({
     rollupOptions: {
       input: {
         main: resolve(__dirname, 'index.html'),
+        taskbarPlayer: resolve(__dirname, 'taskbar-player.html'),
         desktopLyric: resolve(__dirname, 'desktop-lyric.html'),
         pluginWindow: resolve(__dirname, 'plugin-window.html'),
       },
@@ -63,6 +64,7 @@ export default defineConfig({
             emptyOutDir: true,
             rollupOptions: {
               external: [
+                '@resvg/resvg-js',
                 'electron',
                 'font-list',
                 'music-metadata',
