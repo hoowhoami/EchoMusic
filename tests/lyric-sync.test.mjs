@@ -247,13 +247,19 @@ test('older seek completion/rejection and old restart cannot unlock a newer seek
 });
 
 test('plugin snapshot transport preserves source clock and seek identity', () => {
+  const thumbnailStates = [];
+  const cardStates = [];
   const api = compile('../src/main/nowPlaying.ts', {
     './ipc/registry': {},
     electron: { BrowserWindow: { getAllWindows: () => [] } },
     '../shared/nowPlaying': nowPlaying,
     '../shared/playback': playback,
     './window': { getMainWindow: () => null },
-    './taskbarThumbnail': { isCoverPreviewEnabled: () => false },
+    './taskbarThumbnail': {
+      isCoverPreviewEnabled: () => false,
+      setTaskbarCardPlayback: (state) => cardStates.push(state),
+    },
+    './thumbar': { updateThumbarPlayback: (state) => thumbnailStates.push(state) },
     './taskbarProgress': {},
     './storage/settings': {},
   });
@@ -279,6 +285,8 @@ test('plugin snapshot transport preserves source clock and seek identity', () =>
   assert.equal(result.playback.clock.trackSeq, 7);
   assert.equal(result.playback.clock.positionMs, 20_000);
   assert.equal(result.playback.clock.isAdvancing, false);
+  assert.equal(thumbnailStates[0], result.playback);
+  assert.equal(cardStates[0], result.playback);
 });
 
 test('seeking after manual lyric scrolling immediately restores automatic following', async (t) => {
