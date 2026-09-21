@@ -38,12 +38,16 @@ test('catalog expires after five minutes; failures retry after one minute', () =
 function setup(fetchedAt = now) {
   let cache = { fetchedAt, plugins: [{ id: 'old' }] };
   const calls = [];
+  const hydrations = [];
   let finish;
   const list = create(listCode, 'listPluginMarketplace', {
     getSavedMarketplaceSources: () => sources,
     getMarketplaceCache: () => cache,
     shouldRefreshMarketplace,
-    hydrateMarketplacePlugins: async (plugins) => plugins,
+    hydrateMarketplacePlugins: async (...args) => {
+      hydrations.push(args);
+      return args[0];
+    },
     refreshMarketplaceCatalog: (...args) => {
       calls.push(args);
       return new Promise((resolve) => {
@@ -54,7 +58,7 @@ function setup(fetchedAt = now) {
       });
     },
   });
-  return { list, calls, finish: () => finish() };
+  return { list, calls, hydrations, finish: () => finish() };
 }
 
 test('cached-only reads return stale content without waiting for network', async () => {
@@ -67,11 +71,30 @@ test('fresh catalog is reused; explicit refresh bypasses it', async () => {
   const t = setup();
   await t.list();
   assert.equal(t.calls.length, 0);
+  assert.equal(t.hydrations.at(-1)[4], false);
   const pending = t.list({ refresh: true });
   assert.equal(t.calls.length, 1);
   assert.equal(t.calls[0][3], true);
   t.finish();
   assert.equal((await pending).plugins[0].id, 'new');
+  assert.equal(t.hydrations.at(-1)[4], true);
+});
+
+test('hydration forwards manual statistics refresh and preserves cached-only priority', async () => {
+  const hydrate = create(
+    slice('const hydrateMarketplacePlugins =', 'const refreshMarketplaceCatalog ='),
+    'hydrateMarketplacePlugins',
+    {
+      listPlugins: () => ({ plugins: [] }),
+      fetchMarketplacePluginStats: async (plugins, cachedOnly, refresh) => {
+        assert.deepEqual(plugins, []);
+        assert.equal(cachedOnly, true);
+        assert.equal(refresh, true);
+        return new Map();
+      },
+    },
+  );
+  await hydrate([], [], undefined, true, true);
 });
 
 test('expired catalog auto-refreshes and simultaneous calls share the request', async () => {
@@ -201,7 +224,8 @@ function setupView() {
     window,
     document,
     navigator: { onLine: true },
-    setInterval: (fn) => {
+    setInterval: (fn, interval) => {
+      assert.equal(interval, 5 * 60_000);
       events.set('interval', fn);
       return 1;
     },

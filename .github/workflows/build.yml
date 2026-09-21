@@ -280,6 +280,15 @@ jobs:
             fi
             printf 'Packaged native addon found: %s\n' "$matches"
           done
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            helper=$(find release -path '*/resources/native/EchoMusic.TaskbarLayout.exe' -type f -print)
+            if [ -z "$helper" ]; then
+              echo "ERROR: packaged taskbar layout helper not found: EchoMusic.TaskbarLayout.exe"
+              find release -path '*/resources/native/*' -type f -print
+              exit 1
+            fi
+            printf 'Packaged taskbar layout helper found: %s\n' "$helper"
+          fi
 
       - name: Verify macOS media permission and signature
         if: runner.os == 'macOS'

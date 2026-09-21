@@ -1,4 +1,5 @@
 const MAX_STATS_BATCH = 200;
+const MAX_BODY_BYTES = 1024 * 1024;
 
 const json = (body, init = {}) =>
   new Response(JSON.stringify(body), {
@@ -73,34 +74,36 @@ const computeScore = (stats, daily) => {
   return Math.max(0, Math.round((installs * 3 + todayInstalls * 5 - failures * 2) * 10) / 10);
 };
 
-const readStats = async (env, sourceId, pluginId) => {
-  const normalizedSourceId = normalizeSourceId(sourceId);
-  const normalizedPluginId = normalizePluginId(pluginId);
-  const [statsRow, dailyRow] = await Promise.all([
-    env.PLUGIN_STATS_DB.prepare(
-      `SELECT install_count AS installCount,
-              update_count AS updateCount,
-              failure_count AS failureCount,
-              last_installed_at AS lastInstalledAt,
-              last_updated_at AS lastUpdatedAt
-         FROM plugin_stats
-        WHERE source_id = ? AND plugin_id = ?`,
-    )
-      .bind(normalizedSourceId, normalizedPluginId)
-      .first(),
-    env.PLUGIN_STATS_DB.prepare(
-      `SELECT install_count AS installCount,
-              update_count AS updateCount,
-              failure_count AS failureCount
-         FROM plugin_daily_stats
-        WHERE source_id = ? AND plugin_id = ? AND day = ?`,
-    )
-      .bind(normalizedSourceId, normalizedPluginId, dayKey())
-      .first(),
-  ]);
-  const normalized = normalizeStats(statsRow);
-  normalized.score = computeScore(normalized, dailyRow);
-  return normalized;
+// JSON binds the entire identity batch as one parameter, avoiding D1's bind limit.
+// Both joins use the existing composite primary keys; no schema migration needed.
+const readStatsBatch = async (env, plugins) => {
+  if (!plugins.length) return [];
+  const { results } = await env.PLUGIN_STATS_DB.prepare(
+    `WITH requested AS (
+       SELECT json_extract(value, '$.sourceId') AS source_id,
+              json_extract(value, '$.pluginId') AS plugin_id
+         FROM json_each(?)
+     )
+     SELECT r.source_id AS sourceId, r.plugin_id AS pluginId,
+            s.install_count AS installCount, s.update_count AS updateCount,
+            s.failure_count AS failureCount,
+            s.last_installed_at AS lastInstalledAt, s.last_updated_at AS lastUpdatedAt,
+            d.install_count AS todayInstallCount, d.update_count AS todayUpdateCount
+       FROM requested r
+       LEFT JOIN plugin_stats s ON s.source_id = r.source_id AND s.plugin_id = r.plugin_id
+       LEFT JOIN plugin_daily_stats d
+         ON d.source_id = r.source_id AND d.plugin_id = r.plugin_id AND d.day = ?`,
+  )
+    .bind(JSON.stringify(plugins), dayKey())
+    .all();
+  return results.map((row) => {
+    const stats = normalizeStats(row);
+    stats.score = computeScore(stats, {
+      installCount: row.todayInstallCount,
+      updateCount: row.todayUpdateCount,
+    });
+    return { sourceId: row.sourceId, pluginId: row.pluginId, stats };
+  });
 };
 
 const getIncrementStatements = (env, plugin, field, timeField, now) => {
@@ -223,33 +226,58 @@ const incrementStats = async (env, plugin, field, timeField) => {
   const now = new Date().toISOString();
   const statements = getIncrementStatements(env, plugin, field, timeField, now);
   await env.PLUGIN_STATS_DB.batch(statements);
-  return readStats(env, sourceId, pluginId);
+  return (await readStatsBatch(env, [{ sourceId, pluginId }]))[0].stats;
 };
 
+class RequestError extends Error {
+  constructor(message, status = 400) {
+    super(message);
+    this.status = status;
+  }
+}
+
 const readJsonBody = async (request) => {
+  if (Number(request.headers.get('content-length')) > MAX_BODY_BYTES) {
+    throw new RequestError('request body too large', 413);
+  }
+  if (!request.body) throw new RequestError('missing JSON body');
+  const reader = request.body.getReader();
+  const decoder = new TextDecoder();
+  let bytes = 0;
+  let text = '';
   try {
-    return await request.json();
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      bytes += value.byteLength;
+      if (bytes > MAX_BODY_BYTES) {
+        await reader.cancel();
+        throw new RequestError('request body too large', 413);
+      }
+      text += decoder.decode(value, { stream: true });
+    }
+    text += decoder.decode();
+  } finally {
+    reader.releaseLock();
+  }
+  try {
+    return JSON.parse(text);
   } catch {
-    return null;
+    throw new RequestError('invalid JSON body');
   }
 };
 
 const handleStats = async (request, env) => {
   const body = await readJsonBody(request);
-  const plugins = Array.isArray(body?.plugins) ? body.plugins.slice(0, MAX_STATS_BATCH) : [];
-  const rows = await Promise.all(
-    plugins.map(async (item) => {
-      const sourceId = normalizeSourceId(item?.sourceId);
-      const pluginId = normalizePluginId(item?.pluginId);
-      if (!sourceId || !pluginId) return null;
-      return {
-        sourceId,
-        pluginId,
-        stats: await readStats(env, sourceId, pluginId),
-      };
-    }),
-  );
-  return json({ ok: true, plugins: rows.filter(Boolean) });
+  if (!Array.isArray(body?.plugins)) throw new RequestError('plugins must be an array');
+  // Retain the old endpoint's first-200 behavior for older clients.
+  const unique = new Map();
+  for (const item of body.plugins.slice(0, MAX_STATS_BATCH)) {
+    const sourceId = normalizeSourceId(item?.sourceId);
+    const pluginId = normalizePluginId(item?.pluginId);
+    if (sourceId && pluginId) unique.set(`${sourceId}:${pluginId}`, { sourceId, pluginId });
+  }
+  return json({ ok: true, plugins: await readStatsBatch(env, [...unique.values()]) });
 };
 
 const handleEvents = async (request, env) => {
@@ -258,6 +286,9 @@ const handleEvents = async (request, env) => {
   const plugin = body?.plugin || {};
   if (!['install', 'update', 'failure'].includes(event)) {
     return json({ ok: false, error: 'invalid event' }, { status: 400 });
+  }
+  if (!normalizeSourceId(plugin.sourceId) || !normalizePluginId(plugin.pluginId)) {
+    throw new RequestError('missing plugin identity');
   }
   const field =
     event === 'install' ? 'installCount' : event === 'update' ? 'updateCount' : 'failureCount';
@@ -277,10 +308,10 @@ export default {
     const url = new URL(request.url);
     try {
       if (request.method === 'POST' && url.pathname === '/v1/plugins/stats') {
-        return handleStats(request, env);
+        return await handleStats(request, env);
       }
       if (request.method === 'POST' && url.pathname === '/v1/plugins/events') {
-        return handleEvents(request, env);
+        return await handleEvents(request, env);
       }
       if (request.method === 'GET' && url.pathname === '/health') {
         return json({ ok: true });
@@ -289,7 +320,7 @@ export default {
     } catch (error) {
       return json(
         { ok: false, error: error instanceof Error ? error.message : 'worker error' },
-        { status: 500 },
+        { status: error instanceof RequestError ? error.status : 500 },
       );
     }
   },

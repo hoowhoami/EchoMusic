@@ -407,7 +407,7 @@ export const usePluginMarketplace = ({ route, activeView }: UsePluginMarketplace
   };
   let refreshInterval: ReturnType<typeof setInterval> | undefined;
   onMounted(() => {
-    refreshInterval = setInterval(checkMarketplace, 60_000);
+    refreshInterval = setInterval(checkMarketplace, 5 * 60_000);
     window.addEventListener('focus', checkMarketplace);
     window.addEventListener('online', checkMarketplace);
     document.addEventListener('visibilitychange', checkMarketplace);

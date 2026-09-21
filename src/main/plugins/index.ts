@@ -1,5 +1,5 @@
 import { findInstalledPluginCatalogTags } from '../../shared/pluginSource';
-import { shell, type WebContents } from 'electron';
+import { app, shell, type WebContents } from 'electron';
 import { statSync } from 'fs';
 import fs from 'fs/promises';
 import { createHash } from 'crypto';
@@ -50,6 +50,7 @@ import type {
   PluginWebSocketUpgradeResponse,
 } from '../../shared/plugins';
 import { shouldRefreshMarketplace } from './marketplaceCache';
+import { createMarketplaceStatsCache, type MarketplaceStatsSnapshot } from './marketplaceStats';
 import { isBlockedObjectKey } from '../../shared/objectSafety';
 import {
   applyGithubAcceleratorUrl as applyGithubProxyUrl,
@@ -681,7 +682,6 @@ export const {
 });
 
 registerPluginWebServerCleanup((handler) => {
-  const { app } = require('electron') as typeof import('electron');
   app.once('before-quit', handler);
 });
 
@@ -1056,6 +1056,14 @@ const getEmptyMarketplaceStats = (): PluginMarketplaceStats => ({
   lastUpdatedAt: '',
 });
 
+const isValidMarketplaceStats = (value: unknown) => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const stats = value as Record<string, unknown>;
+  return ['installCount', 'updateCount', 'failureCount', 'score'].every(
+    (key) => typeof stats[key] === 'number' && Number.isFinite(stats[key]) && stats[key] >= 0,
+  );
+};
+
 const normalizeMarketplaceStats = (value: unknown): PluginMarketplaceStats => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     return getEmptyMarketplaceStats();
@@ -1073,78 +1081,54 @@ const normalizeMarketplaceStats = (value: unknown): PluginMarketplaceStats => {
 
 const getMarketplaceStatsKey = (sourceId: string, pluginId: string) => `${sourceId}:${pluginId}`;
 
-const fetchMarketplacePluginStats = async (
-  plugins: PluginMarketplacePlugin[],
-): Promise<Map<string, PluginMarketplaceStats>> => {
-  const urlCandidates = getMarketplaceStatsApiUrlCandidates('/v1/plugins/stats');
-  if (urlCandidates.length === 0 || plugins.length === 0) return new Map();
-
-  try {
-    let response: Response | null = null;
-    let lastError: unknown = null;
-    for (const url of urlCandidates) {
-      try {
-        const result = await fetchWithTimeout(
-          url,
-          {
-            method: 'POST',
-            headers: {
-              Accept: 'application/json',
-              'Content-Type': 'application/json',
-              'User-Agent': 'EchoMusic-Plugin-Marketplace',
-            },
-            body: JSON.stringify({
-              plugins: plugins.map((plugin) => ({
-                sourceId: plugin.sourceId,
-                pluginId: plugin.id,
-                version: plugin.version,
-                sourceUrl: plugin.sourceUrl,
-                sourceName: plugin.sourceName,
-                repo: plugin.repo,
-                packagePath: plugin.packagePath,
-                downloadUrl: plugin.downloadUrl,
-                checksum: plugin.checksum,
-              })),
-            }),
-          },
-          PLUGIN_MARKETPLACE_FETCH_TIMEOUT_MS,
-          '插件热度统计请求超时',
-        );
-        if (!result.ok) throw new Error(await getHttpFailureMessage(result, '统计请求失败'));
-        response = result;
-        break;
-      } catch (error) {
-        lastError = error;
-        log.warn('[PluginMarketplace] stats request attempt failed', {
-          error: error instanceof Error ? error.message : String(error),
-        });
-      }
-    }
-    if (!response) {
-      throw lastError instanceof Error ? lastError : new Error('统计请求失败');
-    }
+const marketplaceStatsCache = createMarketplaceStatsCache({
+  read: () => getKvStorage().get<MarketplaceStatsSnapshot>('plugins:marketplace:stats:v1'),
+  write: (snapshot) => getKvStorage().set('plugins:marketplace:stats:v1', snapshot),
+  onError: (error) =>
+    log.warn('[PluginMarketplace] stats refresh failed; retaining cached stats', {
+      error: error instanceof Error ? error.message : String(error),
+    }),
+  fetch: async (endpoint, plugins) => {
+    const response = await networkFetch(`${endpoint}/v1/plugins/stats`, {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+        'User-Agent': 'EchoMusic-Plugin-Marketplace',
+      },
+      body: JSON.stringify({ plugins }),
+      // Keep the deadline active while consuming the response body too.
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!response.ok) throw new Error(await getHttpFailureMessage(response, '统计请求失败'));
     const payload = (await response.json()) as { plugins?: unknown };
-    const rows = Array.isArray(payload.plugins) ? payload.plugins : [];
+    if (!Array.isArray(payload?.plugins)) throw new Error('插件统计响应格式错误');
     const statsByKey = new Map<string, PluginMarketplaceStats>();
-    for (const row of rows) {
-      if (!row || typeof row !== 'object') continue;
-      const item = row as { sourceId?: unknown; pluginId?: unknown; stats?: unknown };
-      const sourceId = String(item.sourceId || '').trim();
-      const pluginId = normalizePluginId(item.pluginId);
+    for (const row of payload.plugins) {
+      if (!row || typeof row !== 'object' || !isValidMarketplaceStats(row.stats)) continue;
+      const sourceId = String(row.sourceId || '').trim();
+      const pluginId = normalizePluginId(row.pluginId);
       if (!sourceId || !pluginId) continue;
       statsByKey.set(
         getMarketplaceStatsKey(sourceId, pluginId),
-        normalizeMarketplaceStats(item.stats),
+        normalizeMarketplaceStats(row.stats),
       );
     }
     return statsByKey;
-  } catch (error) {
-    log.warn('[PluginMarketplace] stats request failed', {
-      error: error instanceof Error ? error.message : String(error),
-    });
-    return new Map();
-  }
-};
+  },
+});
+
+const fetchMarketplacePluginStats = (
+  plugins: PluginMarketplacePlugin[],
+  cachedOnly = false,
+  forceRefresh = false,
+) =>
+  marketplaceStatsCache.get(
+    normalizeMarketplaceStatsApiUrl(),
+    plugins.map((plugin) => ({ sourceId: plugin.sourceId, pluginId: plugin.id })),
+    cachedOnly,
+    forceRefresh,
+  );
 
 const reportMarketplacePluginInstallEvent = async (
   plugin: PluginMarketplacePlugin,
@@ -1187,6 +1171,15 @@ const reportMarketplacePluginInstallEvent = async (
           '插件安装统计上报超时',
         );
         if (!response.ok) throw new Error(await getHttpFailureMessage(response, '统计上报失败'));
+        // Reading the response must never retry an already accepted increment.
+        const payload = (await response.json().catch(() => null)) as { stats?: unknown } | null;
+        if (isValidMarketplaceStats(payload?.stats)) {
+          marketplaceStatsCache.update(
+            url.slice(0, -'/v1/plugins/events'.length),
+            { sourceId: plugin.sourceId, pluginId: plugin.id },
+            normalizeMarketplaceStats(payload?.stats),
+          );
+        }
         return;
       } catch (reportError) {
         lastError = reportError;
@@ -1724,6 +1717,7 @@ const hydrateMarketplacePlugins = async (
   sources: PluginMarketplaceSource[],
   githubProxyUrl?: string,
   cachedOnly = false,
+  refreshStats = false,
 ): Promise<PluginMarketplacePlugin[]> => {
   const installedById = new Map(listPlugins().plugins.map((plugin) => [plugin.id, plugin]));
   const enabledSourceIds = new Set(
@@ -1746,9 +1740,7 @@ const hydrateMarketplacePlugins = async (
         stats: getEmptyMarketplaceStats(),
       };
     });
-  const statsByKey = cachedOnly
-    ? new Map<string, PluginMarketplaceStats>()
-    : await fetchMarketplacePluginStats(hydrated);
+  const statsByKey = await fetchMarketplacePluginStats(hydrated, cachedOnly, refreshStats);
   return hydrated
     .map((plugin) => ({
       ...plugin,
@@ -1953,6 +1945,7 @@ export const listPluginMarketplace = async (
     nextSources,
     options.githubProxyUrl,
     options.cachedOnly || options.installedOnly,
+    Boolean(options.refresh),
   );
   const enabledSourceErrors = nextSources
     .filter((source) => source.enabled && source.lastError)
