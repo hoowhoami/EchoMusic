@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useRouteTabs } from '@/composables/useRouteTabs';
 import { computed, ref } from 'vue';
 import { useRoute } from 'vue-router';
 import { Icon } from '@iconify/vue';
@@ -40,7 +41,10 @@ import type { EchoPluginManifest } from '../../shared/plugins';
 
 const route = useRoute();
 const toastStore = useToastStore();
-const activeView = ref<'installed' | 'marketplace'>('installed');
+const {
+  state: { view: activeView },
+  isActive,
+} = useRouteTabs({ view: ['installed', 'marketplace'] });
 const isRefreshing = ref(false);
 const isSafeModeBusy = ref(false);
 const isUninstalling = ref(false);
@@ -89,7 +93,7 @@ const {
   shareMarketplacePlugin,
   installMarketplacePlugin,
   updateAllMarketplacePlugins,
-} = usePluginMarketplace({ route, activeView });
+} = usePluginMarketplace({ route, activeView, isActive });
 
 const records = computed(() => pluginRuntimeState.records);
 const pluginCountLabel = computed(() => {

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useRouteTabs } from '@/composables/useRouteTabs';
 import PageStickyHeader from '@/components/ui/PageStickyHeader.vue';
 defineOptions({ name: 'history' });
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
@@ -109,13 +110,16 @@ const sliverHeaderRef = ref<{ currentHeight?: number } | null>(null);
 const { tabsTop, tabsMinHeight } = useStickyTabsLayout(sliverHeaderRef);
 const sortField = ref<SortField | null>(null);
 const sortOrder = ref<SortOrder>(null);
-const activeTab = ref<'songs' | 'stats'>('songs');
+const {
+  state: { tab: activeTab },
+  select: selectTabs,
+} = useRouteTabs({ tab: ['songs', 'stats'] });
 const historyStatsRef = ref<HTMLElement | null>(null);
 const sharingStats = ref(false);
 
 const handleTabChange = (value: string | number) => {
   const next = String(value);
-  if (next === 'songs' || next === 'stats') activeTab.value = next;
+  void selectTabs({ tab: next });
 };
 
 const mapLocalEntryToSong = (entry: LocalHistoryEntry): Song => ({

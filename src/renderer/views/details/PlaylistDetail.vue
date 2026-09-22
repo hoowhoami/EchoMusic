@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useRouteTabs } from '@/composables/useRouteTabs';
 import { parsePlaylistTags } from '@/utils/playlistTags';
 import PageStickyHeader from '@/components/ui/PageStickyHeader.vue';
 defineOptions({ name: 'playlist-detail' });
@@ -87,7 +88,11 @@ const songs = shallowRef<Song[]>([]);
 const loadedSongCount = ref(0);
 
 const playlistFilteredInvalidCount = ref(0);
-const activeTab = ref('songs');
+const {
+  state: { tab: activeTab },
+  select: selectTabs,
+  isActive,
+} = useRouteTabs({ tab: ['songs', 'comments'] });
 const loadingComments = ref(false);
 const comments = ref<Comment[]>([]);
 const hotComments = ref<Comment[]>([]);
@@ -341,12 +346,12 @@ const handleSort = (field: SortField) => {
   }
 };
 
-const handleTabChange = (value: string | number) => {
-  activeTab.value = String(value);
-  if (value === 'comments' && comments.value.length === 0) {
-    fetchComments(true);
-  }
+const handleTabChange = (value: string | number) => selectTabs({ tab: String(value) });
+const loadActiveTabData = () => {
+  if (!isActive.value || !playlist.value) return;
+  if (activeTab.value === 'comments' && comments.value.length === 0) void fetchComments(true);
 };
+watch([activeTab, playlist], loadActiveTabData);
 
 // 滚动加载更多评论（使用 IntersectionObserver）
 const scrollContainerRef = useScrollContainer();
@@ -534,7 +539,7 @@ const fetchData = async () => {
 };
 
 onMounted(() => {
-  fetchData();
+  void fetchData();
   setupCommentObserver();
 });
 

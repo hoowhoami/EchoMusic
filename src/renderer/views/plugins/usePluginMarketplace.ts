@@ -28,12 +28,17 @@ interface MarketplaceHighlightTarget {
 interface UsePluginMarketplaceOptions {
   route: RouteLocationNormalizedLoaded;
   activeView: Ref<PluginManagementView>;
+  isActive: Readonly<Ref<boolean>>;
 }
 
 export const getMarketplacePluginKey = (plugin: PluginMarketplacePlugin) =>
   `${plugin.sourceId}:${plugin.id}`;
 
-export const usePluginMarketplace = ({ route, activeView }: UsePluginMarketplaceOptions) => {
+export const usePluginMarketplace = ({
+  route,
+  activeView,
+  isActive,
+}: UsePluginMarketplaceOptions) => {
   const toastStore = useToastStore();
   const settingStore = useSettingStore();
   const marketplaceLoaded = ref(false);
@@ -224,6 +229,7 @@ export const usePluginMarketplace = ({ route, activeView }: UsePluginMarketplace
   };
 
   const processMarketplaceRouteHighlight = async (force = false) => {
+    if (!isActive.value) return;
     const target = getMarketplaceRouteHighlightTarget();
     if (!target) return;
     const shouldRefresh = shouldRefreshMarketplaceForRouteHighlight();
@@ -248,10 +254,9 @@ export const usePluginMarketplace = ({ route, activeView }: UsePluginMarketplace
   };
 
   const switchView = (view: PluginManagementView) => {
+    if (!isActive.value) return;
     activeView.value = view;
-    if (view === 'marketplace') {
-      void loadMarketplace(false, false);
-    }
+    if (view === 'marketplace') void loadMarketplace(false, false);
   };
 
   const openSourceDialog = async () => {
@@ -397,6 +402,7 @@ export const usePluginMarketplace = ({ route, activeView }: UsePluginMarketplace
 
   const checkMarketplace = () => {
     if (
+      isActive.value &&
       route.name === 'plugin-management' &&
       activeView.value === 'marketplace' &&
       document.visibilityState === 'visible' &&
@@ -411,7 +417,7 @@ export const usePluginMarketplace = ({ route, activeView }: UsePluginMarketplace
     window.addEventListener('focus', checkMarketplace);
     window.addEventListener('online', checkMarketplace);
     document.addEventListener('visibilitychange', checkMarketplace);
-    if (readRouteText(route.query.view) === 'marketplace') switchView('marketplace');
+    if (readRouteText(route.query.view) === 'marketplace') checkMarketplace();
     void processMarketplaceRouteHighlight(false);
   });
 
@@ -425,12 +431,14 @@ export const usePluginMarketplace = ({ route, activeView }: UsePluginMarketplace
   watch(
     () => route.fullPath,
     () => {
-      if (route.name !== 'plugin-management') return;
-      if (readRouteText(route.query.view) === 'marketplace') switchView('marketplace');
-      else checkMarketplace();
+      if (!isActive.value) return;
+      checkMarketplace();
       void processMarketplaceRouteHighlight(false);
     },
   );
+  watch(isActive, (active) => {
+    if (active) checkMarketplace();
+  });
 
   return {
     marketplaceLoaded,

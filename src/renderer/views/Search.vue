@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useRouteTabs } from '@/composables/useRouteTabs';
 defineOptions({ name: 'search-page' });
 import {
   computed,
@@ -62,7 +63,12 @@ const isLoading = ref(false);
 const isLoadingHot = ref(true);
 const hasSearched = ref(false);
 const showPinnedTabs = ref(false);
-const activeTabIndex = ref(0);
+const {
+  state: { tab: activeTab },
+  select: selectTabs,
+  isActive,
+} = useRouteTabs({ tab: TAB_SEARCH_TYPES });
+const activeTabIndex = computed(() => TAB_SEARCH_TYPES.indexOf(activeTab.value));
 const hotSearchCategories = ref<SearchHotCategory[]>([]);
 
 const songResults = ref<Song[]>([]);
@@ -434,10 +440,12 @@ onMounted(async () => {
   await attachScrollTarget();
 });
 
+const selectSearchTab = (index: number) => selectTabs({ tab: TAB_SEARCH_TYPES[index] });
+
 watch(
-  () => route.query.q,
-  (queryKeyword) => {
-    if (route.name !== 'search') return;
+  () => [route.name, route.query.q, activeSearchType.value] as const,
+  ([name, queryKeyword, type]) => {
+    if (name !== 'search' || !isActive.value) return;
     const keyword = typeof queryKeyword === 'string' ? queryKeyword.trim() : '';
 
     if (!keyword) {
@@ -452,6 +460,8 @@ watch(
     }
 
     if (keyword === currentSearchKeyword.value.trim() && hasSearched.value) {
+      const state = paginationState[type];
+      if (!state.loaded && !state.loading) void loadSearchResults(type);
       return;
     }
 
@@ -466,12 +476,6 @@ watch(
     nextTick(() => {
       handleScroll();
     });
-    if (!hasSearched.value) return;
-    const type = activeSearchType.value;
-    const state = paginationState[type];
-    if (!state.loaded && !state.loading) {
-      void loadSearchResults(type);
-    }
   },
 );
 
@@ -501,7 +505,7 @@ onUnmounted(() => {
         :keyword="currentSearchKeyword"
         :show-pinned-tabs="showPinnedTabs"
         :tabs="['单曲', '歌单', '专辑', '歌手', '歌词', 'MV']"
-        @update:active-tab-index="activeTabIndex = $event"
+        @update:active-tab-index="selectSearchTab"
       />
 
       <SearchDiscovery

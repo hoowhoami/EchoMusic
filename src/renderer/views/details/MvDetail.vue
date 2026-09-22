@@ -20,6 +20,11 @@ import {
 import { usePlayerStore } from '@/stores/player';
 import { useSettingStore } from '@/stores/setting';
 import PageScrollContainer from '@/components/ui/PageScrollContainer.vue';
+import Button from '@/components/ui/Button.vue';
+import { iconHeart, iconHeartFilled } from '@/icons';
+import { useUserStore } from '@/stores/user';
+import { useVideoCollectionStore } from '@/stores/videoCollection';
+import { normalizeVideoId } from '@/utils/videoCollection';
 
 const settingStore = useSettingStore();
 const barrageEnabled = computed({
@@ -33,6 +38,8 @@ const barrageRef = ref<InstanceType<typeof BarrageLayer> | null>(null);
 const route = useRoute();
 const toastStore = useToastStore();
 const playerStore = usePlayerStore();
+const userStore = useUserStore();
+const videoCollectionStore = useVideoCollectionStore();
 
 const videoPlaying = ref(false);
 const videoRef = ref<HTMLVideoElement | null>(null);
@@ -44,6 +51,63 @@ const currentVersionIndex = ref(0);
 const currentSourceHash = ref('');
 const currentVideoUrl = ref('');
 const playbackError = ref('');
+const collectionError = ref(false);
+const collectionId = computed(() => meta.value?.videoId || '');
+const isCollected = computed(() => videoCollectionStore.isCollected(collectionId.value));
+const collectionPending = computed(() => videoCollectionStore.isPending(collectionId.value));
+const collectionLabel = computed(() => {
+  if (collectionError.value && !videoCollectionStore.loaded) return '重试收藏状态';
+  return isCollected.value ? '已收藏' : '收藏 MV';
+});
+
+const loadCollectionState = async () => {
+  if (!userStore.isLoggedIn || !collectionId.value) return;
+  const account = userStore.info?.userid;
+  const id = collectionId.value;
+  collectionError.value = false;
+  try {
+    await videoCollectionStore.ensureLoaded();
+  } catch {
+    if (!userStore.isLoggedIn || userStore.info?.userid !== account || collectionId.value !== id)
+      return;
+    collectionError.value = true;
+    toastStore.loadFailed('MV 收藏状态');
+  }
+};
+
+const toggleCollection = async () => {
+  if (!userStore.isLoggedIn) {
+    toastStore.loginRequired('收藏 MV');
+    return;
+  }
+  if (!collectionId.value || collectionPending.value) return;
+  if (!videoCollectionStore.loaded) {
+    await loadCollectionState();
+    return;
+  }
+  const id = collectionId.value;
+  const account = userStore.info?.userid;
+  const action = isCollected.value ? '取消收藏' : '收藏';
+  try {
+    const collected = await videoCollectionStore.toggle(id);
+    if (collected === undefined) return;
+    toastStore.actionSucceeded(action);
+    if (meta.value?.videoId === id && meta.value.collectionCount !== undefined) {
+      meta.value.collectionCount = Math.max(0, meta.value.collectionCount + (collected ? 1 : -1));
+    }
+    const version = mvVersions.value.find((item) => item.videoId === id);
+    if (version?.collectionCount !== undefined) {
+      version.collectionCount = Math.max(0, version.collectionCount + (collected ? 1 : -1));
+    }
+  } catch {
+    if (userStore.isLoggedIn && userStore.info?.userid === account) toastStore.actionFailed(action);
+  }
+};
+
+watch(
+  () => [collectionId.value, userStore.isLoggedIn, userStore.info?.userid],
+  () => void loadCollectionState(),
+);
 
 const routeAlbumAudioId = computed(() =>
   String(route.query.albumAudioId ?? route.query.mixSongId ?? '').trim(),
@@ -101,6 +165,7 @@ const publishText = computed(() =>
 
 const buildInitialMeta = (): VideoMeta => ({
   id: routeVideoId.value || routeHash.value || routeAlbumAudioId.value,
+  videoId: normalizeVideoId(routeVideoId.value),
   hash: routeHash.value,
   title: fallbackTitle.value || 'MV播放',
   coverUrl: fallbackCover.value,
@@ -123,6 +188,7 @@ const mergeMeta = (nextMeta: VideoMeta | null) => {
   meta.value = {
     ...current,
     ...nextMeta,
+    videoId: nextMeta.videoId || current.videoId,
     title: nextMeta.title || current.title,
     coverUrl: nextMeta.coverUrl || current.coverUrl,
     description: nextMeta.description || current.description,
@@ -222,8 +288,14 @@ const fetchMvMeta = async () => {
       const versionList = mapVideoMetaList(payload);
       if (versionList.length > 0) {
         mvVersions.value = versionList;
-        currentVersionIndex.value = 0;
-        applyVersion(versionList[0]);
+        const requestedIndex = versionList.findIndex((item) =>
+          routeVideoId.value
+            ? item.videoId === normalizeVideoId(routeVideoId.value)
+            : item.hash === routeHash.value,
+        );
+        currentVersionIndex.value = Math.max(0, requestedIndex);
+        applyVersion(versionList[currentVersionIndex.value]);
+        continue;
       }
       mergeMeta(mapVideoMeta(payload, routeHash.value));
       applySources(mapVideoSourcesFromPrivilege(payload));
@@ -330,11 +402,36 @@ watch(
             <span>{{ playbackError || '暂无可播放的视频' }}</span>
           </div>
         </div>
-        <BarrageControls
-          v-model="barrageEnabled"
-          :resource="{ type: 'video-barrage', hash: meta?.hash || currentSourceHash, name: title }"
-          @sent="barrageRef?.onSent($event)"
-        />
+        <div class="mv-player-actions">
+          <Button
+            size="xs"
+            :variant="isCollected ? 'secondary' : 'ghost'"
+            :loading="videoCollectionStore.loading || collectionPending"
+            :disabled="loading || !collectionId"
+            :aria-pressed="isCollected"
+            :tooltip="
+              !collectionId ? '暂无可用的 MV 收藏信息' : isCollected ? '取消收藏' : collectionLabel
+            "
+            @click="toggleCollection"
+          >
+            <Icon
+              :icon="isCollected ? iconHeartFilled : iconHeart"
+              width="16"
+              height="16"
+              class="mr-2 text-red-500"
+            />
+            {{ collectionLabel }}
+          </Button>
+          <BarrageControls
+            v-model="barrageEnabled"
+            :resource="{
+              type: 'video-barrage',
+              hash: meta?.hash || currentSourceHash,
+              name: title,
+            }"
+            @sent="barrageRef?.onSent($event)"
+          />
+        </div>
       </div>
 
       <div class="mv-detail-wrap">
@@ -456,6 +553,14 @@ watch(
 
 .mv-player-wrap {
   padding-top: 16px;
+}
+
+.mv-player-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 16px;
 }
 
 .mv-player-box {

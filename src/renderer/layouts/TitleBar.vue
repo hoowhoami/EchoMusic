@@ -38,6 +38,7 @@ import {
   iconMicrophone,
   iconClipboardList,
   iconHeadphones,
+  iconPlugin,
 } from '@/icons';
 
 const route = useRoute();
@@ -163,6 +164,16 @@ const registerBuiltinActions = () => {
     order: 30,
     onClick: async () => {
       await router.push({ name: 'listen-together' });
+    },
+  });
+  builtinApi.register({
+    id: 'plugin-management',
+    title: '插件管理',
+    icon: iconPlugin,
+    defaultPlacement: 'more',
+    order: 40,
+    onClick: async () => {
+      await router.push({ name: 'plugin-management' });
     },
   });
 };
@@ -305,7 +316,7 @@ const submitSearch = (keyword?: string) => {
   if (route.name === 'search' && route.query.q === q) {
     // 同词再次提交也要真正执行，使用现有页面刷新机制而非重复导航。
     const revision = String(Math.max(Date.now(), Number(route.query._t || 0) + 1));
-    void router.replace({ name: 'search', query: { q, _t: revision } });
+    void router.replace({ name: 'search', query: { ...route.query, q, _t: revision } });
   } else {
     void router.push({ name: 'search', query: { q } });
   }

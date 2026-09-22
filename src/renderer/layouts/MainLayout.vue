@@ -4,7 +4,7 @@ import { useRoute, useRouter } from 'vue-router';
 import { useResizeObserver } from '@vueuse/core';
 import { useSettingStore } from '@/stores/setting';
 import { pageTransitionState } from '@/plugins/runtime/theme';
-import { updateRouteViewCacheKey } from '@/utils/routeViewCache';
+import { getRouteViewCacheQuery, updateRouteViewCacheKey } from '@/utils/routeViewCache';
 import { YzsKeepAlive } from 'yzs-keep-alive-v3';
 import Sidebar from './Sidebar.vue';
 import { iconChevronLeft, iconChevronRight } from '@/icons';
@@ -32,8 +32,7 @@ type KeepAliveController = {
 const keepAliveRef = ref<KeepAliveController | null>(null);
 const routeCacheRevisions = new Map<string, string>();
 const canonicalRouteKey = computed(() => {
-  const query = { ...route.query };
-  delete query._t;
+  const query = getRouteViewCacheQuery(route);
   return router.resolve({ path: route.path, query, hash: route.hash }).fullPath;
 });
 const routeRefreshToken = computed(() => {

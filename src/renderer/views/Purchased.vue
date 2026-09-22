@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useRouteTabs } from '@/composables/useRouteTabs';
 import PageStickyHeader from '@/components/ui/PageStickyHeader.vue';
 defineOptions({ name: 'purchased' });
 import { computed, onMounted, ref, shallowRef, watch } from 'vue';
@@ -40,7 +41,10 @@ const settingStore = useSettingStore();
 const userStore = useUserStore();
 const themeStore = useThemeStore();
 
-const activeTab = ref('songs');
+const {
+  state: { tab: activeTab },
+  select: selectTabs,
+} = useRouteTabs({ tab: ['songs', 'albums'] });
 const sliverHeaderRef = ref<InstanceType<typeof SliverHeader> | null>(null);
 const { tabsTop, tabsMinHeight } = useStickyTabsLayout(sliverHeaderRef);
 const songListRef = ref<{ scrollToActive?: () => void } | null>(null);
@@ -237,7 +241,7 @@ const loadMoreAlbums = async () => {
 
 const handleTabChange = (tab: string | number) => {
   const tabStr = String(tab);
-  activeTab.value = tabStr;
+  void selectTabs({ tab: tabStr });
   if (tabStr === 'songs' && songs.value.length === 0 && !songsLoading.value) {
     void loadSongs();
   } else if (tabStr === 'albums' && albums.value.length === 0 && !albumsLoading.value) {

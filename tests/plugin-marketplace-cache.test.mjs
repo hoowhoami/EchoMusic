@@ -231,7 +231,7 @@ function setupView() {
     },
     clearInterval: () => events.delete('interval'),
   });
-  const view = use({ route, activeView });
+  const view = use({ route, activeView, isActive: { value: true } });
   return { view, calls, events, mounts, unmounts, pending, route, document, activeView, watchers };
 }
 const settle = () => new Promise((resolve) => setImmediate(resolve));

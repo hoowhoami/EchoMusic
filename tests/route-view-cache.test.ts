@@ -1,6 +1,16 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { updateRouteViewCacheKey } from '../src/renderer/utils/routeViewCache.ts';
+import { buildSync } from 'esbuild';
+const source = buildSync({
+  entryPoints: [new URL('../src/renderer/utils/routeViewCache.ts', import.meta.url).pathname],
+  bundle: true,
+  platform: 'node',
+  format: 'cjs',
+  write: false,
+}).outputFiles[0].text;
+const mod = { exports: {} as any };
+new Function('module', 'exports', source)(mod, mod.exports);
+const { updateRouteViewCacheKey } = mod.exports;
 
 test('a refreshed route keeps using the refreshed cache entry after direct navigation', () => {
   const revisions = new Map<string, string>();

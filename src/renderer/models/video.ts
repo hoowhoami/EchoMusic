@@ -23,6 +23,7 @@ export interface VideoSource {
 
 export interface VideoMeta {
   id: string;
+  videoId?: string;
   hash: string;
   title: string;
   description?: string;

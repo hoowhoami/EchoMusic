@@ -170,6 +170,7 @@ export function persistDesktopLyricSettings(nextSettings: DesktopLyricSettings) 
     alwaysOnTop: nextSettings.alwaysOnTop,
     wantTranslation: nextSettings.wantTranslation,
     wantRomanization: nextSettings.wantRomanization,
+    showRomanizationAsRuby: nextSettings.showRomanizationAsRuby,
     theme: nextSettings.theme,
     opacity: nextSettings.opacity,
     scale: nextSettings.scale,

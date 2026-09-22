@@ -243,14 +243,14 @@ test('leaving both input and panel still closes after the blur delay', () => {
   assert.equal(s.isSearchFocused.value, false);
 });
 
-test('submitting the same keyword refreshes results instead of a no-op router push', () => {
+test('submitting the same keyword refreshes results and preserves the selected category', () => {
   const s = setup();
   s.route.name = 'search';
-  s.route.query = { q: 'love', _t: '9999999999999' };
+  s.route.query = { q: 'love', tab: 'special', _t: '9999999999999' };
   s.api.submitSearch('love');
   assert.equal(s.navigations.length, 0);
   assert.deepEqual(s.replacements, [
-    { name: 'search', query: { q: 'love', _t: '10000000000000' } },
+    { name: 'search', query: { q: 'love', tab: 'special', _t: '10000000000000' } },
   ]);
 });
 

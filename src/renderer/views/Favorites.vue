@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useRouteTabs } from '@/composables/useRouteTabs';
 import PageStickyHeader from '@/components/ui/PageStickyHeader.vue';
 defineOptions({ name: 'favorites' });
 import {
@@ -15,6 +16,7 @@ import { usePlaylistStore } from '@/stores/playlist';
 import { usePlayerStore } from '@/stores/player';
 import { useSettingStore } from '@/stores/setting';
 import { useUserStore } from '@/stores/user';
+import { useVideoCollectionStore } from '@/stores/videoCollection';
 import { usePlaylistCoversStore } from '@/stores/playlistCovers';
 import { useToastStore } from '@/stores/toast';
 import { useThemeStore } from '@/stores/theme';
@@ -55,6 +57,7 @@ const playlistStore = usePlaylistStore();
 const playerStore = usePlayerStore();
 const settingStore = useSettingStore();
 const userStore = useUserStore();
+const videoCollectionStore = useVideoCollectionStore();
 const playlistCoversStore = usePlaylistCoversStore();
 void playlistCoversStore.hydrate();
 const toastStore = useToastStore();
@@ -64,7 +67,11 @@ const isLoggedIn = computed(() => userStore.isLoggedIn);
 const currentUserKey = computed(() =>
   String(userStore.info?.userid ?? userStore.info?.userId ?? ''),
 );
-const activeTab = ref('songs');
+const {
+  state: { tab: activeTab },
+  select: selectTabs,
+  isActive,
+} = useRouteTabs({ tab: ['songs', 'singers', 'users', 'albums', 'videos'] });
 const sliverHeaderRef = ref<InstanceType<typeof SliverHeader> | null>(null);
 const { tabsTop, tabsMinHeight } = useStickyTabsLayout(sliverHeaderRef);
 
@@ -320,6 +327,7 @@ const videosLoaded = ref(false);
 const videosPage = ref(1);
 const videosHasMore = ref(true);
 const VIDEOS_PAGE_SIZE = 30;
+let videosGeneration = 0;
 
 const fetchVideos = async (reset = false) => {
   if (!isLoggedIn.value) return;
@@ -329,6 +337,10 @@ const fetchVideos = async (reset = false) => {
   const requestGeneration = accountGeneration;
   const requestUserKey = currentUserKey.value;
   const requestPage = reset ? 1 : videosPage.value;
+  const requestVideosGeneration = videosGeneration;
+  const isCurrentVideoRequest = () =>
+    requestVideosGeneration === videosGeneration &&
+    isCurrentAccountRequest(requestGeneration, requestUserKey);
   if (reset) {
     videosPage.value = 1;
     videosHasMore.value = true;
@@ -336,7 +348,7 @@ const fetchVideos = async (reset = false) => {
   videosLoading.value = true;
   try {
     const res = await getUserVideoCollect(requestPage, VIDEOS_PAGE_SIZE);
-    if (!isCurrentAccountRequest(requestGeneration, requestUserKey)) return;
+    if (!isCurrentVideoRequest()) return;
     if (res && typeof res === 'object' && 'data' in res) {
       const data = (res as { data?: { info?: unknown[]; ctotal?: number } }).data;
       const info = Array.isArray(data?.info) ? data.info : [];
@@ -369,22 +381,33 @@ const fetchVideos = async (reset = false) => {
       videosLoaded.value = true;
     }
   } catch {
-    if (!isCurrentAccountRequest(requestGeneration, requestUserKey)) return;
+    if (!isCurrentVideoRequest()) return;
     toastStore.loadFailed('收藏视频');
     videosHasMore.value = false;
   } finally {
-    if (!isCurrentAccountRequest(requestGeneration, requestUserKey)) return;
+    if (!isCurrentVideoRequest()) return;
     videosLoading.value = false;
   }
 };
 
 const resetVideos = () => {
+  videosGeneration += 1;
   videos.value = [];
   videosLoading.value = false;
   videosLoaded.value = false;
   videosPage.value = 1;
   videosHasMore.value = true;
 };
+
+watch(
+  () => videoCollectionStore.revision,
+  () => {
+    // 失活时也要让旧数据失效，返回页面后由 loadActiveTabData 补拉。
+    resetVideos();
+    if (!isActive.value) return;
+    if (activeTab.value === 'videos') void fetchVideos(true);
+  },
+);
 
 // ========== 滚动加载 ==========
 const scrollContainerRef = useScrollContainer();
@@ -428,15 +451,7 @@ watch(scrollContainerRef, () => {
 });
 
 // ========== Tab 切换懒加载 ==========
-const handleTabChange = (value: string | number) => {
-  activeTab.value = String(value);
-  if ((activeTab.value === 'singers' || activeTab.value === 'users') && !followedLoaded.value) {
-    void fetchFollowed();
-  }
-  if (activeTab.value === 'videos' && !videosLoaded.value) {
-    void fetchVideos(true);
-  }
-};
+const handleTabChange = (value: string | number) => selectTabs({ tab: String(value) });
 
 // ========== 生命周期 ==========
 const refreshFavorites = async () => {
@@ -458,6 +473,7 @@ const refreshFavorites = async () => {
 };
 
 const loadActiveTabData = () => {
+  if (!isActive.value) return;
   if (!isLoggedIn.value) return;
   if (!currentUserKey.value) return;
   if ((activeTab.value === 'singers' || activeTab.value === 'users') && !followedLoaded.value) {
@@ -468,6 +484,8 @@ const loadActiveTabData = () => {
   }
 };
 
+watch(activeTab, loadActiveTabData);
+
 onMounted(async () => {
   void refreshFavorites();
   await nextTick();
@@ -476,6 +494,7 @@ onMounted(async () => {
 });
 
 onActivated(() => {
+  loadActiveTabData();
   if (!playlistStore.favoritesLoaded || playlistStore.favoritesLoading) {
     void refreshFavorites();
   }

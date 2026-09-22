@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useRouteTabs } from '@/composables/useRouteTabs';
 import PageStickyHeader from '@/components/ui/PageStickyHeader.vue';
 defineOptions({ name: 'explore' });
 import { computed, onMounted, reactive, ref, watch } from 'vue';
@@ -83,7 +84,17 @@ const recommendedPlaylists = ref<PlaylistMeta[]>([]);
 const newSongs = ref<Song[]>([]);
 const loadingPlaylists = ref(true);
 const loadingNewSongs = ref(false);
-const activeTabIndex = ref(0);
+const exploreTabs = ['playlists', 'ranks', 'albums', 'songs', 'artists'] as const;
+const {
+  state: { tab: activeTab },
+  select: selectTabs,
+} = useRouteTabs({ tab: exploreTabs });
+const activeTabIndex = computed({
+  get: () => exploreTabs.indexOf(activeTab.value),
+  set: (index: number) => {
+    void selectTabs({ tab: exploreTabs[index] });
+  },
+});
 const showPlaylistPicker = ref(false);
 const showRankPicker = ref(false);
 const showAlbumPicker = ref(false);
@@ -510,6 +521,7 @@ watch(
       void loadArtists();
     }
   },
+  { immediate: true },
 );
 
 const handleSelectRank = (option: PickerOption) => {

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useRouteTabs } from '@/composables/useRouteTabs';
 import PageStickyHeader from '@/components/ui/PageStickyHeader.vue';
 defineOptions({ name: 'artist-detail' });
 import { ref, shallowRef, onMounted, onActivated, onUnmounted, computed, watch } from 'vue';
@@ -124,7 +125,10 @@ const mvHasMore = ref(false);
 const mvFetched = ref(false);
 const mvTag = ref<'all' | 'official' | 'live' | 'fan' | 'artist'>('all');
 
-const activeTab = ref('songs');
+const {
+  state: { tab: activeTab },
+  isActive,
+} = useRouteTabs({ tab: ['songs', 'albums', 'mvs'] });
 const loadedSongCount = ref(0);
 // const loadedAlbumCount = computed(() => albums.value.length);
 const showBatchDrawer = ref(false);
@@ -305,7 +309,6 @@ onIdChange(() => {
   loadedSongCount.value = 0;
   searchQuery.value = '';
   resetSongTableSort();
-  activeTab.value = 'songs';
   if (songLoader) {
     songLoader.abort();
     songLoader = null;
@@ -715,10 +718,12 @@ watch(scrollContainerRef, () => {
 
 onMounted(() => {
   void fetchData();
+  loadActiveTabData();
   setupLoadMoreObserver();
 });
 
 onActivated(() => {
+  loadActiveTabData();
   if (!artist.value && !loading.value) {
     // fetchData 会读取当前歌曲排序，不再同时发起一次排序加载。
     songSort.value = settingStore.artistSongSort;
@@ -729,15 +734,13 @@ onActivated(() => {
   switchAlbumSort(settingStore.artistAlbumSort);
 });
 
-// 切换到 MV/专辑 tab 时懒加载
-watch(activeTab, (tab) => {
-  if (tab === 'mvs' && !mvFetched.value) {
-    void fetchMvs(1);
-  }
-  if (tab === 'albums' && !albumFetched.value) {
-    void fetchMoreAlbums();
-  }
-});
+// 点击和路由恢复共用懒加载逻辑。
+const loadActiveTabData = () => {
+  if (!isActive.value) return;
+  if (activeTab.value === 'mvs' && !mvFetched.value) void fetchMvs(1);
+  if (activeTab.value === 'albums' && !albumFetched.value) void fetchMoreAlbums();
+};
+watch(activeTab, loadActiveTabData);
 
 onUnmounted(() => {
   detailFetchToken++;

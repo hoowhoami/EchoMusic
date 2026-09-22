@@ -19,12 +19,22 @@ function load(
   return module.exports;
 }
 const objects = load('../src/shared/object.ts');
+const collection = load('../src/renderer/utils/videoCollection.ts', () => objects);
 const { mapVideoMeta, mapVideoSourcesFromPrivilege, mergeVideoSources, pickDefaultVideoSource } =
   load('../src/renderer/utils/mappers/video.ts', (name) => {
     if (name === '@/utils/cover') return { normalizeCoverUrl: (url) => url };
+    if (name === '@/utils/videoCollection') return collection;
     if (name === '../../../shared/object') return objects;
     throw new Error(name);
   });
+
+test('collection identity uses numeric video IDs and never falls back to a hash or song ID', () => {
+  assert.equal(mapVideoMeta({ data: [[{ video_id: 123, hash: 'abc' }]] }).videoId, '123');
+  assert.equal(mapVideoMeta({ data: [{ id: '456', hash: 'abc' }] }).videoId, '456');
+  const fallback = mapVideoMeta({ data: [[{ hash: '123', album_audio_id: 789 }]] });
+  assert.equal(fallback.id, '123');
+  assert.equal(fallback.videoId, '');
+});
 
 test('MV retains every available quality and codec, ignoring empty hashes', () => {
   const meta = mapVideoMeta({

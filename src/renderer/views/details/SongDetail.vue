@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useRouteTabs } from '@/composables/useRouteTabs';
 import PageStickyHeader from '@/components/ui/PageStickyHeader.vue';
 defineOptions({ name: 'song-detail-page' });
 import { ref, onMounted, onBeforeUnmount, computed, watch, nextTick } from 'vue';
@@ -107,18 +108,23 @@ const headerTypeLabel = computed(() => {
 
 const headerTitle = computed(() => resourceTitle.value || title.value);
 
-const mainTab = ref<'detail' | 'comment'>('detail');
+const commentTabValues = ['all', 'classify', 'hotword'] as const;
+const {
+  state: { tab: mainTab, commentTab: activeCommentTab },
+  select: selectTabs,
+  isActive,
+} = useRouteTabs(
+  {
+    tab: ['detail', 'comment'],
+    commentTab: commentTabValues,
+  },
+  { tab: 'mainTab' },
+);
 const sliverHeaderRef = ref<{ currentHeight?: number } | null>(null);
 const { tabsTop, tabsMinHeight } = useStickyTabsLayout(sliverHeaderRef);
 
-const activeCommentTab = ref('all');
-const commentTabValues = ['all', 'classify', 'hotword'] as const;
 const activeCommentTabIndex = computed({
-  get: () =>
-    Math.max(
-      0,
-      commentTabValues.indexOf(activeCommentTab.value as (typeof commentTabValues)[number]),
-    ),
+  get: () => commentTabValues.indexOf(activeCommentTab.value),
   set: (value: number) => {
     handleCommentTabChange(commentTabValues[value] ?? 'all');
   },
@@ -1081,19 +1087,22 @@ const fetchComments = async (reset = false) => {
   return fetchAlbumComments(reset);
 };
 
-const handleCommentTabChange = (value: string | number) => {
-  activeCommentTab.value = String(value);
-  if (value === 'classify' && classifyComments.value.length === 0) {
+const loadActiveCommentTab = () => {
+  if (!isActive.value) return;
+  if (activeCommentTab.value === 'classify' && classifyComments.value.length === 0) {
     void fetchClassifyComments(true);
   }
-  if (value === 'hotword' && hotwordComments.value.length === 0) {
+  if (activeCommentTab.value === 'hotword' && hotwordComments.value.length === 0) {
     void fetchHotwordComments(true);
   }
+};
+watch(activeCommentTab, loadActiveCommentTab);
+
+const handleCommentTabChange = async (value: string | number) => {
+  await selectTabs({ commentTab: String(value) });
   window.scrollTo({ top: 0, behavior: 'smooth' });
-  // 延迟检查，等待 DOM 更新完成
-  setTimeout(() => {
-    triggerLoadMore();
-  }, 100);
+  // 延迟检查，等待 DOM 更新完成。
+  setTimeout(() => triggerLoadMore(), 100);
 };
 
 const fetchHeaderStats = async () => {
@@ -1235,8 +1244,6 @@ const toggleRankingDetail = (rank: Record<string, unknown>, index: number) => {
 };
 
 const loadCurrentResource = async () => {
-  mainTab.value =
-    String(route.query.tab ?? route.query.mainTab ?? 'detail') === 'comment' ? 'comment' : 'detail';
   if (isMusicType.value) {
     await fetchDetailData();
     await fetchComments(true);
@@ -1249,6 +1256,7 @@ const loadCurrentResource = async () => {
 onMounted(async () => {
   setupCommentLoadMoreObserver();
   await loadCurrentResource();
+  loadActiveCommentTab();
   void nextTick(() => {
     scrollChipRowToActive(classifyChipRowRef.value);
     scrollChipRowToActive(hotwordChipRowRef.value);

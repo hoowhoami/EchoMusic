@@ -50,6 +50,7 @@ const routes: RouteRecordRaw[] = [
         path: 'explore',
         name: 'explore',
         component: () => import('@/views/Explore.vue'),
+        meta: { tabQueryKeys: ['tab'] },
       },
       {
         path: 'listen-together',
@@ -61,7 +62,7 @@ const routes: RouteRecordRaw[] = [
         path: 'search',
         name: 'search',
         component: () => import('@/views/Search.vue'),
-        meta: { title: '搜索' },
+        meta: { tabQueryKeys: ['tab'], title: '搜索' },
       },
       {
         path: 'recognize',
@@ -78,12 +79,13 @@ const routes: RouteRecordRaw[] = [
         path: 'history',
         name: 'history',
         component: () => import('@/views/History.vue'),
+        meta: { tabQueryKeys: ['tab'] },
       },
       {
         path: 'favorites',
         name: 'favorites',
         component: () => import('@/views/Favorites.vue'),
-        meta: { title: '我最喜爱' },
+        meta: { tabQueryKeys: ['tab'], title: '我最喜爱' },
       },
       {
         path: 'cloud',
@@ -94,6 +96,7 @@ const routes: RouteRecordRaw[] = [
         path: 'purchased',
         name: 'purchased',
         component: () => import('@/views/Purchased.vue'),
+        meta: { tabQueryKeys: ['tab'] },
       },
       {
         path: 'profile',
@@ -110,7 +113,7 @@ const routes: RouteRecordRaw[] = [
         path: 'settings/plugins',
         name: 'plugin-management',
         component: () => import('@/views/PluginManagement.vue'),
-        meta: { title: '插件管理' },
+        meta: { tabQueryKeys: ['view'], title: '插件管理' },
       },
       {
         path: 'plugin/:pluginId/:pageId',
@@ -122,25 +125,25 @@ const routes: RouteRecordRaw[] = [
         path: 'playlist/:id',
         name: 'playlist-detail',
         component: () => import('@/views/details/PlaylistDetail.vue'),
-        meta: { title: '歌单详情' },
+        meta: { tabQueryKeys: ['tab'], title: '歌单详情' },
       },
       {
         path: 'artist/:id',
         name: 'artist-detail',
         component: () => import('@/views/details/ArtistDetail.vue'),
-        meta: { title: '歌手详情' },
+        meta: { tabQueryKeys: ['tab'], title: '歌手详情' },
       },
       {
         path: 'album/:id',
         name: 'album-detail',
         component: () => import('@/views/details/AlbumDetail.vue'),
-        meta: { title: '专辑详情' },
+        meta: { tabQueryKeys: ['tab'], title: '专辑详情' },
       },
       {
         path: 'detail/:id',
         name: 'song-detail',
         component: () => import('@/views/details/SongDetail.vue'),
-        meta: { title: '歌曲详情' },
+        meta: { tabQueryKeys: ['tab', 'mainTab', 'commentTab'], title: '歌曲详情' },
       },
       {
         path: 'mv/:id',

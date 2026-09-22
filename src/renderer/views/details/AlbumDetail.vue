@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useRouteTabs } from '@/composables/useRouteTabs';
 import PageStickyHeader from '@/components/ui/PageStickyHeader.vue';
 defineOptions({ name: 'album-detail' });
 import { ref, shallowRef, onMounted, onActivated, onBeforeUnmount, computed, watch } from 'vue';
@@ -81,7 +82,11 @@ const coverAudioId = computed(() => {
   return song?.albumAudioId || song?.mixSongId;
 });
 
-const activeTab = ref('songs');
+const {
+  state: { tab: activeTab },
+  select: selectTabs,
+  isActive,
+} = useRouteTabs({ tab: ['songs', 'comments'] });
 const loadingComments = ref(false);
 const comments = ref<Comment[]>([]);
 const hotComments = ref<Comment[]>([]);
@@ -321,12 +326,12 @@ const loadingSongs = ref(true);
 // 歌曲分页加载器
 let songLoader: PagedSongLoader<Song> | null = null;
 
-const handleTabChange = (value: string | number) => {
-  activeTab.value = String(value);
-  if (value === 'comments' && comments.value.length === 0) {
-    fetchComments(true);
-  }
+const handleTabChange = (value: string | number) => selectTabs({ tab: String(value) });
+const loadActiveTabData = () => {
+  if (!isActive.value) return;
+  if (activeTab.value === 'comments' && comments.value.length === 0) void fetchComments(true);
 };
+watch(activeTab, loadActiveTabData);
 
 // 滚动加载更多评论（使用 IntersectionObserver）
 const scrollContainerRef = useScrollContainer();
@@ -451,6 +456,7 @@ const fetchData = async () => {
 
 onMounted(() => {
   fetchData();
+  loadActiveTabData();
   setupCommentObserver();
 });
 

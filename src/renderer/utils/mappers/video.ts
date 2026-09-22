@@ -1,5 +1,6 @@
 import type { VideoAuthor, VideoMeta, VideoSource, VideoTag } from '@/models/video';
 import { normalizeCoverUrl } from '@/utils/cover';
+import { normalizeVideoId } from '@/utils/videoCollection';
 import { isRecord, toRecord, type UnknownRecord } from '../../../shared/object';
 
 const readString = (value: unknown, fallback = ''): string => {
@@ -200,6 +201,7 @@ export const mapVideoMeta = (payload: unknown, targetHash = ''): VideoMeta | nul
 
   return {
     id: readString(record.video_id ?? record.id ?? hash, hash),
+    videoId: normalizeVideoId(record.video_id ?? record.id),
     hash,
     title: readString(record.mv_name ?? record.name ?? record.video_name, 'MV播放'),
     description: readString(record.desc ?? record.remark ?? '', ''),
