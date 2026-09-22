@@ -28,6 +28,8 @@ type PlayerCoreStateChangedPayload = {
 };
 type DeviceManagerCallbacks = {
   recoverPlaybackStatusAfterOutputChange?: (playerState: NativePlayerState) => void;
+  /** 「设备断开时暂停」触发的主动暂停：只需轻量提示，不是播放错误。 */
+  notifyOutputDeviceDisconnectPause?: (message: string) => void;
 };
 
 const OUTPUT_RECONFIG_SETTLE_MS = 3000;
@@ -83,6 +85,16 @@ export const createDeviceManager = (
     );
   };
 
+  const isOutputRecoveryFailureError = (error: PlayerErrorPayload) =>
+    (error.message || '').toLowerCase().includes('audio output recovery failed');
+
+  // 开关开启时，原生层对设备断开/失效不做重连，而是停掉输出并以 error 事件上报。
+  // 这是用户配置的预期暂停，不应在播放器上挂“播放错误”徽标。
+  const isConfiguredDisconnectPause = (error: PlayerErrorPayload) =>
+    settingStore.pauseOnOutputDeviceDisconnect &&
+    isDeviceRecoveryReason(error.reason) &&
+    !isOutputRecoveryFailureError(error);
+
   const isNoOutputDeviceAvailableError = (error: PlayerErrorPayload) => {
     const normalized = (error.message || '').toLowerCase();
     return (
@@ -136,23 +148,32 @@ export const createDeviceManager = (
     }
   };
 
-  const pauseForOutputDeviceDisconnect = (message: string) => {
+  const pauseForOutputDeviceDisconnect = (
+    message: string,
+    options: { configured?: boolean } = {},
+  ) => {
     if (getPlaybackIsPlaying(state)) void engine.pause();
-    state.lastError = 'output-device-unavailable';
-    state.playbackNotice = {
-      code: 'output-device-unavailable',
-      title: '输出设备不可用',
-      reason: message.replace(/，?已暂停播放。?$/, ''),
-      detail: '连接或启用音频输出设备后重试',
-      trackId: state.currentTrackId ? String(state.currentTrackId) : null,
-    };
+    if (options.configured) {
+      // 用户开启了「设备断开时暂停」：这是预期内的暂停，只给一次轻提示，
+      // 不写入 lastError / playbackNotice，避免播放栏显示播放错误。
+      callbacks.notifyOutputDeviceDisconnectPause?.(message);
+    } else {
+      state.lastError = 'output-device-unavailable';
+      state.playbackNotice = {
+        code: 'output-device-unavailable',
+        title: '输出设备不可用',
+        reason: message.replace(/，?已暂停播放。?$/, ''),
+        detail: '连接或启用音频输出设备后重试',
+        trackId: state.currentTrackId ? String(state.currentTrackId) : null,
+      };
+    }
     state.awaitingTrackLoad = false;
     state.supersededNativeTrackSeq = null;
     state.stallRecovering = false;
     setPlaybackIntentPlayback(state, false);
     setEnginePlaybackStatus(state, 'paused');
     settingStore.syncPreventSleep(false);
-    settingStore.setOutputDeviceStatus('error', message);
+    settingStore.setOutputDeviceStatus(options.configured ? 'paused' : 'error', message);
   };
 
   const handleOutputDeviceError = async (error: PlayerErrorPayload): Promise<boolean> => {
@@ -164,6 +185,11 @@ export const createDeviceManager = (
         !applyingOutputDevice &&
         !nativeOutputReconfigActive;
       if (!isEscalatedDeviceError && !isNoOutputDeviceAvailableError(error)) return true;
+    }
+
+    if (error.errorCode !== 'output-exclusive' && isConfiguredDisconnectPause(error)) {
+      pauseForOutputDeviceDisconnect('输出设备已断开，已暂停播放。', { configured: true });
+      return true;
     }
 
     const message =
@@ -274,7 +300,9 @@ export const createDeviceManager = (
           settingStore.pauseOnOutputDeviceDisconnect &&
           (getPlaybackIsPlaying(state) || state.playbackIntent.phase === 'loading')
         ) {
-          pauseForOutputDeviceDisconnect('未检测到可用输出设备，已暂停播放。');
+          pauseForOutputDeviceDisconnect('未检测到可用输出设备，已暂停播放。', {
+            configured: true,
+          });
         } else {
           settingStore.setOutputDeviceStatus('error', '未检测到可用输出设备。');
         }
@@ -312,13 +340,15 @@ export const createDeviceManager = (
         settingStore.pauseOnOutputDeviceDisconnect && !isIntentionalOutputReconfigActive();
 
       if (hasDisconnectedOutputDevice && shouldPauseForDisconnect) {
-        pauseForOutputDeviceDisconnect('检测到输出设备断开，已暂停播放。');
+        pauseForOutputDeviceDisconnect('检测到输出设备断开，已暂停播放。', { configured: true });
         return;
       }
 
       if (!hasCurrentDevice) {
         if (shouldPauseForDisconnect) {
-          pauseForOutputDeviceDisconnect('所选输出设备已不可用，已暂停播放。');
+          pauseForOutputDeviceDisconnect('所选输出设备已不可用，已暂停播放。', {
+            configured: true,
+          });
           state.appliedOutputDeviceId = currentOutput;
         } else {
           settingStore.setOutputDeviceStatus('error', '所选输出设备当前不可用。');

@@ -200,6 +200,21 @@ for (const platform of ['win32', 'linux', 'darwin'])
     handlers.get('window:fullscreen-changed')(null, false);
     assert.equal(properties.get('--window-controls-inset'), '69px');
 
+    // Transparent Windows windows keep the native caption buttons in emulated fullscreen.
+    handlers.get('window:fullscreen-changed')(null, true, { nativeControls: true });
+    assert.equal(properties.get('--window-controls-inset'), '69px');
+    document.fullscreenElement = {};
+    handlers.get('fullscreenchange')();
+    assert.equal(properties.get('--window-controls-inset'), '0px', 'HTML video still fills');
+    document.fullscreenElement = null;
+    handlers.get('fullscreenchange')();
+    assert.equal(properties.get('--window-controls-inset'), '69px');
+    handlers.get('window:fullscreen-changed')(null, false, { nativeControls: true });
+    assert.equal(properties.get('--window-controls-inset'), '69px');
+    handlers.get('window:fullscreen-changed')(null, true);
+    assert.equal(properties.get('--window-controls-inset'), '0px');
+    handlers.get('window:fullscreen-changed')(null, false);
+
     document.fullscreenElement = {};
     document.exitFullscreen = async () => {
       throw new Error('fullscreen exited concurrently');

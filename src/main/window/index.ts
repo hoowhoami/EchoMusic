@@ -442,7 +442,11 @@ export async function createWindow() {
       devTools: devToolsEnabled, // 控制是否允许打开开发者工具
     },
   });
-  installWindowFullscreen(win);
+  // Windows cannot give a transparent window WS_THICKFRAME (Windows 10 clear/frost).
+  // Electron then emulates fullscreen and maximize with SetBounds: isFullScreen()
+  // stays false, the WCO caption buttons stay visible and SC_MAXIMIZE is swallowed.
+  const emulatedWindowChrome = process.platform === 'win32' && activeComposition.transparent;
+  installWindowFullscreen(win, { emulated: emulatedWindowChrome });
   if (process.platform === 'darwin') {
     // Keep sheets below the same fixed native strip as the traffic lights.
     win.setSheetOffset(46);
@@ -456,7 +460,10 @@ export async function createWindow() {
   if (windowBackgroundStrategy === 'hyprland') {
     hyprlandBackgroundController = createHyprlandBackgroundController(mainWindow);
   }
-  installWindowPointerEvents(mainWindow);
+  installWindowPointerEvents(mainWindow, {
+    emulatedMaximize: emulatedWindowChrome,
+    isFullscreen: () => isWindowFullscreen(mainWindow),
+  });
   titleBarController = usesNativeOverlay
     ? createTitleBarController(
         win,
@@ -475,6 +482,7 @@ export async function createWindow() {
     supportsPosition: !usesWayland,
     macOS: process.platform === 'darwin',
     transitioning: () => isWindowFullscreenTransitioning(mainWindow),
+    fullscreen: () => isWindowFullscreen(mainWindow),
   });
   zoomController = installWindowZoom(win, syncTitleBar);
   installWindowFullscreenShortcut(win);

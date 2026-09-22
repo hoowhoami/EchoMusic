@@ -3,8 +3,18 @@ import { getNativeWindowPointer } from '../native/platform';
 import log from '../logger';
 import { titleBarHeight } from '../../shared/windowZoom';
 
+type WindowPointerOptions = {
+  /**
+   * Electron swallows SC_MAXIMIZE for transparent Windows windows because the
+   * system maximize cannot apply without WS_THICKFRAME, so a caption double-click
+   * does nothing. Route the command to its emulated maximize/unmaximize instead.
+   */
+  emulatedMaximize?: boolean;
+  isFullscreen?: () => boolean;
+};
+
 // Native drag regions bypass DOM pointerdown. Observe them without changing hit testing.
-export function installWindowPointerEvents(win: BrowserWindow) {
+export function installWindowPointerEvents(win: BrowserWindow, options: WindowPointerOptions = {}) {
   const send = (point?: { x: number; y: number }) => {
     if (!win.isDestroyed() && !win.webContents.isDestroyed()) {
       win.webContents.send('window:native-pointerdown', point);
@@ -80,10 +90,25 @@ export function installWindowPointerEvents(win: BrowserWindow) {
       const event = param.readUInt32LE(0) & 0xffff;
       if (event === 0x0201 || event === 0x0204) clientClick('WM_PARENTNOTIFY');
     });
+    const toggleEmulatedMaximize = () => {
+      // Windows never reports these windows as zoomed, so restore arrives as SC_MAXIMIZE too.
+      setImmediate(() => {
+        if (win.isDestroyed()) return;
+        if (options.isFullscreen?.()) {
+          report('WM_SYSCOMMAND', 'ignored-maximize-while-fullscreen');
+          return;
+        }
+        const maximized = win.isMaximized();
+        report('WM_SYSCOMMAND', maximized ? 'emulated-unmaximize' : 'emulated-maximize');
+        if (maximized) win.unmaximize();
+        else win.maximize();
+      });
+    };
     win.hookWindowMessage(0x0112, (param) => {
       if (param.length < 4) return;
       const command = param.readUInt32LE(0) & 0xfff0;
       if ([0xf010, 0xf030, 0xf120].includes(command)) notify('WM_SYSCOMMAND');
+      if (command === 0xf030 && options.emulatedMaximize) toggleEmulatedMaximize();
     });
     report('install', 'ready', {
       messages: ['NC-button', 'client-button', 'parent-notify', 'system-command'],

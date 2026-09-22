@@ -99,12 +99,14 @@ for (const platform of ['win32', 'linux']) {
   });
 }
 
-function windowsController() {
+function windowsController(options) {
   const module = { exports: {} };
   runInNewContext(code, { module, process: { platform: 'win32' }, clearTimeout });
   let actual = false;
   const sent = [];
+  const details = [];
   const calls = [];
+  const emulated = options?.emulated === true;
   const win = Object.assign(new EventEmitter(), {
     isDestroyed: () => false,
     isFullScreen: () => actual,
@@ -115,17 +117,42 @@ function windowsController() {
     },
     webContents: Object.assign(new EventEmitter(), {
       isDestroyed: () => false,
-      send: (_channel, value) => sent.push(value),
+      send: (_channel, value, detail) => {
+        sent.push(value);
+        details.push(detail);
+      },
     }),
   });
   function nativeTransition(value) {
     // Electron on Windows notifies BEFORE widget()->SetFullscreen(value).
     win.emit(value ? 'enter-full-screen' : 'leave-full-screen');
-    actual = value;
+    // Transparent windows only get SetBounds: the widget never reports fullscreen.
+    if (!emulated) actual = value;
   }
-  const controller = module.exports.installWindowFullscreen(win);
-  return { controller, calls, sent, nativeTransition };
+  const controller = module.exports.installWindowFullscreen(win, options);
+  return { controller, calls, sent, details, nativeTransition };
 }
+
+test('Windows transparent windows track emulated fullscreen from Electron notifications', () => {
+  const e = windowsController({ emulated: true });
+  e.controller.set(true);
+  assert.equal(e.controller.get(), true, 'isFullScreen() stays false for emulated fullscreen');
+  assert.equal(e.details.at(-1)?.nativeControls, true);
+  e.controller.set(true);
+  assert.deepEqual(e.calls, [true], 'a repeated request must not re-enter fullscreen');
+  e.controller.set(false);
+  assert.equal(e.controller.get(), false);
+  assert.deepEqual(e.calls, [true, false]);
+  // Request and Electron's notification both publish, like the opaque path.
+  assert.equal(e.sent.at(-1), false);
+  assert.ok(e.sent.every((value) => typeof value === 'boolean'));
+});
+
+test('Windows opaque windows report hidden native controls while fullscreen', () => {
+  const e = windowsController();
+  e.controller.set(true);
+  assert.equal(e.details.at(-1)?.nativeControls, false);
+});
 
 test('Windows: video entry and Escape exit publish the event state, not the old native state', () => {
   const e = windowsController();

@@ -1654,6 +1654,8 @@ if (initialBackgroundArgument) {
 // Native titlebar geometry is expressed in DIPs while DOM layout uses zoomed CSS pixels.
 const macTitlebar = typeof process !== 'undefined' && process.platform === 'darwin';
 let nativeFullscreen = false;
+// Transparent Windows windows keep drawing the native caption buttons while fullscreen.
+let fullscreenKeepsNativeControls = false;
 const controlsOverlay = (
   navigator as Navigator & {
     windowControlsOverlay?: EventTarget & { visible: boolean; getTitlebarAreaRect(): DOMRect };
@@ -1669,13 +1671,14 @@ const syncWindowZoomGeometry = () => {
   // window is being recomposed. Keep the last valid safe area for that frame so
   // the app's right-side actions cannot move underneath the native close button.
   const overlayVisible = controlsOverlay?.visible === true;
+  const nativeControlsHidden = nativeFullscreen && !fullscreenKeepsNativeControls;
   const reportedRect =
-    !nativeFullscreen && overlayVisible ? controlsOverlay.getTitlebarAreaRect() : null;
+    !nativeControlsHidden && overlayVisible ? controlsOverlay.getTitlebarAreaRect() : null;
   if (reportedRect && reportedRect.width > 0 && Number.isFinite(reportedRect.x)) {
     lastTitlebarArea = { x: reportedRect.x, width: reportedRect.width };
   }
   // Fullscreen returns an empty rectangle; never reserve an entire viewport for it.
-  const fullscreen = nativeFullscreen || Boolean(document.fullscreenElement);
+  const fullscreen = nativeControlsHidden || Boolean(document.fullscreenElement);
   const rect =
     !fullscreen && overlayVisible
       ? reportedRect && reportedRect.width > 0
@@ -1696,10 +1699,14 @@ const syncWindowZoomGeometry = () => {
     leftInset > 0 ? (macTitlebar ? `${46 / factor}px` : `max(46px, ${35 / factor}px)`) : '0px',
   );
 };
-ipcRenderer.on('window:fullscreen-changed', (_event, fullscreen: boolean) => {
-  nativeFullscreen = fullscreen;
-  syncWindowZoomGeometry();
-});
+ipcRenderer.on(
+  'window:fullscreen-changed',
+  (_event, fullscreen: boolean, details?: { nativeControls?: boolean }) => {
+    nativeFullscreen = fullscreen;
+    fullscreenKeepsNativeControls = details?.nativeControls === true;
+    syncWindowZoomGeometry();
+  },
+);
 ipcRenderer.on('window:exit-html-fullscreen', () => {
   if (document.fullscreenElement) void document.exitFullscreen().catch(() => undefined);
 });

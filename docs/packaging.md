@@ -70,7 +70,13 @@ whether the native API returns success. Before shipping an Electron upgrade:
    limitations. Rebuild the platform addon for modes 10/11: they enable/clear
    Accent without resetting Electron's DWM alpha or margins. Older addons must
    fail explicitly. Test clear → frost → clear, drag/resize suspension and restore,
-   cold starts, show/hide and fullscreen on actual Windows.
+   cold starts, show/hide and fullscreen on actual Windows. Electron clears
+   `thickFrame` for transparent windows and emulates fullscreen/maximize with
+   `SetBounds`: `isFullScreen()` stays false, the WCO caption buttons stay visible
+   in fullscreen and `SC_MAXIMIZE` is swallowed. `window/fullscreen.ts` tracks the
+   emulated state, `window/pointer.ts` toggles maximize on the swallowed command
+   and the preload keeps the caption safe area; re-verify F11, the fullscreen
+   button and caption double-click after an upgrade.
 2. On Windows 11 22H2+, verify clear remains unblurred after theme changes,
    zoom, resize, maximize/restore and page reload. Electron prepares its surface
    as Acrylic, then native mode 5 sets the DWM backdrop to `NONE` and enables DWM alpha. Repeated

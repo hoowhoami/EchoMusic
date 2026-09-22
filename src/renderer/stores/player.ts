@@ -643,6 +643,9 @@ export const usePlayerStore = defineStore(
 
     const deviceManager = createDeviceManager(state, engine, settingStore, {
       recoverPlaybackStatusAfterOutputChange,
+      notifyOutputDeviceDisconnectPause: (message) => {
+        toastStore.info(message, 4200);
+      },
     });
 
     const playbackManager = createPlaybackManager(

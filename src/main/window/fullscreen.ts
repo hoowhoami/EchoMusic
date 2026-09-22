@@ -1,5 +1,15 @@
 import type { BrowserWindow } from 'electron';
 
+type WindowFullscreenOptions = {
+  /**
+   * Windows cannot give a transparent window WS_THICKFRAME, so Electron emulates
+   * fullscreen by resizing it to the display: isFullScreen() stays false and the
+   * native caption buttons remain visible. Track the state from Electron's own
+   * enter/leave notifications instead of the widget.
+   */
+  emulated?: boolean;
+};
+
 const controllers = new WeakMap<BrowserWindow, ReturnType<typeof installWindowFullscreen>>();
 
 export function isWindowFullscreen(win: BrowserWindow) {
@@ -16,13 +26,16 @@ export function setWindowFullscreen(win: BrowserWindow, value: boolean) {
   else win.setFullScreen(value);
 }
 
-export function installWindowFullscreen(win: BrowserWindow) {
+export function installWindowFullscreen(win: BrowserWindow, options: WindowFullscreenOptions = {}) {
+  const emulated = options.emulated === true;
   let requested: boolean | undefined;
+  let tracked = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
-  const get = () => requested ?? win.isFullScreen();
+  const native = () => (emulated ? tracked : win.isFullScreen());
+  const get = () => requested ?? native();
   const publish = (value = get()) => {
     if (!win.isDestroyed() && !win.webContents.isDestroyed())
-      win.webContents.send('window:fullscreen-changed', value);
+      win.webContents.send('window:fullscreen-changed', value, { nativeControls: emulated });
   };
   const clear = () => {
     clearTimeout(timer);
@@ -55,9 +68,10 @@ export function installWindowFullscreen(win: BrowserWindow) {
     if (timer) {
       requested = value;
       publish();
-    } else if (value !== win.isFullScreen()) apply(value);
+    } else if (value !== native()) apply(value);
   };
   const settled = (value: boolean) => {
+    tracked = value;
     // Windows emits these events before updating isFullScreen(). In particular,
     // HTML fullscreen's Escape exit has no app request to override that old value.
     // Only AppKit needs to serialize requests across an asynchronous animation.

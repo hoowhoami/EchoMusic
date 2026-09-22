@@ -6,7 +6,7 @@ import { transformSync } from 'esbuild';
 
 const source = readFileSync(new URL('../src/main/window/pointer.ts', import.meta.url), 'utf8');
 const { code } = transformSync(source, { loader: 'ts', format: 'cjs' });
-function setup(platform) {
+function setup(platform, options) {
   const win = new EventEmitter();
   const sent = [];
   const hooks = new Map();
@@ -51,7 +51,7 @@ function setup(platform) {
     module.exports,
     { platform },
   );
-  module.exports.installWindowPointerEvents(win);
+  module.exports.installWindowPointerEvents(win, options);
   return {
     win,
     sent,
@@ -162,6 +162,52 @@ test('Windows ignores malformed parameters and callbacks after window destructio
   s.hooks.get(0x0210)(param(0x201));
   s.hooks.get(0x0112)(param(0xf012));
   assert.equal(s.sent.length, 0);
+});
+
+test('Windows transparent windows toggle emulated maximize on the swallowed SC_MAXIMIZE', async () => {
+  let fullscreen = false;
+  const s = setup('win32', { emulatedMaximize: true, isFullscreen: () => fullscreen });
+  const calls = [];
+  let maximized = false;
+  s.win.isMaximized = () => maximized;
+  s.win.maximize = () => {
+    maximized = true;
+    calls.push('maximize');
+  };
+  s.win.unmaximize = () => {
+    maximized = false;
+    calls.push('unmaximize');
+  };
+  const tick = () => new Promise((resolve) => setImmediate(resolve));
+  // Electron swallows SC_MAXIMIZE before the OS acts, so restore also arrives as SC_MAXIMIZE.
+  s.hooks.get(0x0112)(param(0xf030));
+  await tick();
+  s.hooks.get(0x0112)(param(0xf032));
+  await tick();
+  assert.deepEqual(calls, ['maximize', 'unmaximize']);
+  fullscreen = true;
+  s.hooks.get(0x0112)(param(0xf030));
+  await tick();
+  assert.deepEqual(calls, ['maximize', 'unmaximize']);
+  fullscreen = false;
+  for (const value of [0xf120, 0xf010, 0xf020]) s.hooks.get(0x0112)(param(value));
+  await tick();
+  assert.deepEqual(calls, ['maximize', 'unmaximize']);
+  assert.equal(s.sent.length, 5, 'popup dismissal is unchanged');
+  s.destroy();
+  s.hooks.get(0x0112)(param(0xf030));
+  await tick();
+  assert.deepEqual(calls, ['maximize', 'unmaximize']);
+});
+
+test('Windows opaque windows leave the system maximize command to the OS', async () => {
+  const s = setup('win32');
+  let maximizeCalls = 0;
+  s.win.isMaximized = () => false;
+  s.win.maximize = () => maximizeCalls++;
+  s.hooks.get(0x0112)(param(0xf030));
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(maximizeCalls, 0);
 });
 
 test('moving or blurring the window dismisses without native monitor support', () => {

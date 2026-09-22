@@ -29,6 +29,8 @@ export type OutputDeviceStatus =
   | 'unsupported'
   | 'permission'
   | 'fallback'
+  /** 「设备断开时暂停」触发的主动暂停，不是错误。 */
+  | 'paused'
   | 'error';
 
 export type ShortcutScope = 'local' | 'global';

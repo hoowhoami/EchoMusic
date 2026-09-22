@@ -108,6 +108,10 @@ test('fullscreen/minimize never overwrite the last normal rectangle or maximize 
   e.win.minimized = false;
   e.win.bounds = { x: 0, y: 0, width: 3840, height: 2160 };
   assert.equal(readMainWindowState(e.win, initial), initial);
+  // Emulated Windows fullscreen fills the display while isFullScreen() stays false.
+  e.win.fullscreen = false;
+  assert.equal(readMainWindowState(e.win, initial, { fullscreen: () => true }), initial);
+  assert.equal(readMainWindowState(e.win, initial, { fullscreen: () => false }).width, 3840);
   e.tracker.dispose();
 });
 test('programmatic and native changes use the same snapshot, with deduplication and no dirty gate', () => {

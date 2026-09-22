@@ -16,9 +16,21 @@ interface StatefulWindow {
 export function readMainWindowState(
   win: StatefulWindow,
   previous: MainWindowState,
-  options: { supportsPosition?: boolean; transitioning?: () => boolean; macOS?: boolean } = {},
+  options: {
+    supportsPosition?: boolean;
+    transitioning?: () => boolean;
+    /** Emulated Windows fullscreen leaves isFullScreen() false while the window fills the display. */
+    fullscreen?: () => boolean;
+    macOS?: boolean;
+  } = {},
 ): MainWindowState {
-  if (win.isDestroyed() || win.isMinimized() || win.isFullScreen() || options.transitioning?.())
+  if (
+    win.isDestroyed() ||
+    win.isMinimized() ||
+    win.isFullScreen() ||
+    options.fullscreen?.() ||
+    options.transitioning?.()
+  )
     return previous;
   // VS Code records macOS zoom as a normal window size, not a maximized mode.
   const isMaximized = !options.macOS && win.isMaximized();
@@ -39,6 +51,7 @@ export function trackMainWindowState(
     save(state: MainWindowState): void;
     supportsPosition?: boolean;
     transitioning?: () => boolean;
+    fullscreen?: () => boolean;
     macOS?: boolean;
   },
 ) {
