@@ -67,6 +67,11 @@ export interface NativeWindowsDoubleClick {
     callback: (error: Error | null, point: { x: number; y: number }) => void,
   ): void;
   stopWindowsDoubleClickMonitor(): void;
+  getWindowsDoubleClickDiagnostics?(): {
+    installed: boolean;
+    totalDblclick: number;
+    foregroundDblclick: number;
+  };
 }
 
 let windowsDoubleClick: NativeWindowsDoubleClick | null | undefined;

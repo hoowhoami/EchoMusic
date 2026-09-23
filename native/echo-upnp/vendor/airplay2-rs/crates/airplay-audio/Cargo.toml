@@ -1,0 +1,38 @@
+[package]
+name = "airplay-audio"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Audio encoding and RTP streaming for AirPlay 2"
+
+[dependencies]
+airplay-core = { path = "../airplay-core" }
+airplay-crypto = { path = "../airplay-crypto" }
+airplay-timing = { path = "../airplay-timing" }
+airplay-resampler = { path = "../airplay-resampler" }
+tokio.workspace = true
+futures.workspace = true
+async-trait.workspace = true
+symphonia.workspace = true
+tracing.workspace = true
+socket2.workspace = true
+rand.workspace = true
+crossbeam-channel = "0.5"
+libc = "0.2"
+spin_sleep = "1.2"
+
+# Audio codecs
+alac-encoder.workspace = true
+fdk-aac.workspace = true
+
+# Audio processing
+biquad = "0.4"
+rustfft = "6"
+
+[dev-dependencies]
+tokio-test.workspace = true
+mockall.workspace = true
+test-case.workspace = true
+proptest.workspace = true
+hound = "3.5"  # WAV file writing for audio validation tests

@@ -1,0 +1,19 @@
+[package]
+name = "echo-upnp"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.87"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+napi = { version = "3", features = ["napi9", "tokio_rt"] }
+napi-derive = "3"
+rupnp = { path = "vendor/rupnp", default-features = false }
+http = "1"
+tokio = { version = "1", features = ["time"] }
+serde_json = "1"
+
+[build-dependencies]
+napi-build = "2"

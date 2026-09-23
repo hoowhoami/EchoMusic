@@ -1,0 +1,23 @@
+[package]
+name = "airplay-discovery"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "mDNS/Bonjour service discovery for AirPlay devices"
+
+[dependencies]
+airplay-core = { path = "../airplay-core" }
+uuid.workspace = true
+tokio.workspace = true
+tokio-stream.workspace = true
+futures.workspace = true
+async-trait.workspace = true
+async-stream.workspace = true
+mdns-sd.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+tokio-test.workspace = true
+mockall.workspace = true
+test-case.workspace = true

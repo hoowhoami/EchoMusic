@@ -1,0 +1,41 @@
+[package]
+name = "rupnp"
+version = "3.0.0"
+authors = ["Jakob Hellermann <jakob.hellermann@protonmail.com>"]
+readme = "README.md"
+repository = "https://github.com/jakobhellermann/rupnp"
+description = "An asynchronous library for finding UPnP control points, performing actions on them and reading their service descriptions."
+categories = ["network-programming", "asynchronous"]
+keywords = ["async", "upnp", "networking", "protocols"]
+license = "MIT/Apache-2.0"
+edition = "2018"
+
+[features]
+default = ["subscribe", "genawaiter", "if-addrs"]
+
+full_device_spec = []
+subscribe = ["tokio"]
+
+[dependencies]
+tokio = { version = "1.0", features = ["net", "io-util"], optional = true }
+futures-core = "0.3"
+futures-util = { version = "0.3", default-features = false }
+genawaiter = { version = "0.99", default-features = false, features = ["futures03"], optional = true }
+if-addrs = { version = "0.13", optional = true }
+http = "1.0"
+ssdp-client = "2.0"
+roxmltree = "0.20"
+hyper = { version = "1.0", features = ["client", "http1"] }
+hyper-util = { version = "0.1.11", features = ["client", "client-legacy", "http1"] }
+bytes = "1.0"
+http-body-util = "0.1.3"
+
+[dev-dependencies]
+tokio = { version = "1.0", features = ["macros", "fs", "rt-multi-thread"] }
+futures = "0.3"
+anyhow = "1.0"
+
+
+[[example]]
+name = "subscribe"
+required-features = ["subscribe"]

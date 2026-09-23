@@ -1,0 +1,27 @@
+[package]
+name = "airplay-rtsp"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "RTSP protocol implementation for AirPlay 2"
+
+[dependencies]
+airplay-core = { path = "../airplay-core" }
+airplay-crypto = { path = "../airplay-crypto" }
+airplay-pairing = { path = "../airplay-pairing" }
+tokio.workspace = true
+futures.workspace = true
+async-trait.workspace = true
+plist.workspace = true
+uuid.workspace = true
+tracing.workspace = true
+serde.workspace = true
+serde_bytes.workspace = true
+rand.workspace = true
+base64 = "0.22"
+
+[dev-dependencies]
+tokio-test.workspace = true
+mockall.workspace = true
+test-case.workspace = true

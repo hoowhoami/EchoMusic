@@ -1,0 +1,33 @@
+# Cross-compilation configuration
+# See: https://github.com/cross-rs/cross
+
+[build.env]
+passthrough = [
+    "RUST_LOG",
+    "RUST_BACKTRACE",
+]
+
+# Raspberry Pi Zero (ARMv6 with hardware float)
+[target.arm-unknown-linux-gnueabihf]
+# Use custom Dockerfile to add fdk-aac and other native deps
+pre-build = [
+    "dpkg --add-architecture armhf",
+    "apt-get update",
+    "apt-get install -y libfdk-aac-dev:armhf libasound2-dev:armhf libavahi-compat-libdnssd-dev:armhf libdbus-1-dev:armhf",
+]
+
+# Raspberry Pi 2/3/4 (ARMv7)
+[target.armv7-unknown-linux-gnueabihf]
+pre-build = [
+    "dpkg --add-architecture armhf",
+    "apt-get update",
+    "apt-get install -y libfdk-aac-dev:armhf libasound2-dev:armhf libavahi-compat-libdnssd-dev:armhf libdbus-1-dev:armhf",
+]
+
+# Raspberry Pi 3/4/5 64-bit
+[target.aarch64-unknown-linux-gnu]
+pre-build = [
+    "dpkg --add-architecture arm64",
+    "apt-get update",
+    "apt-get install -y libfdk-aac-dev:arm64 libasound2-dev:arm64 libavahi-compat-libdnssd-dev:arm64 libdbus-1-dev:arm64",
+]

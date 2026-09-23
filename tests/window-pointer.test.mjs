@@ -17,6 +17,7 @@ function setup(platform, options) {
   let destroyed = false;
   let cursor = { x: 600, y: 120 };
   let dipCalls = 0;
+  let totalDblclick = 0;
   const logs = [];
   win.id = 1;
   win.getContentBounds = () => ({ x: 100, y: 100, width: 1000, height: 700 });
@@ -57,6 +58,11 @@ function setup(platform, options) {
         stopWindowsDoubleClickMonitor: () => {
           stopCount++;
         },
+        getWindowsDoubleClickDiagnostics: () => ({
+          installed: true,
+          totalDblclick,
+          foregroundDblclick: totalDblclick,
+        }),
       }),
     },
     '../logger': {
@@ -81,7 +87,10 @@ function setup(platform, options) {
       cursor = point;
     },
     notify: (point) => pointerCallback(null, point),
-    dblclick: (point) => dblclickCallback(null, point),
+    dblclick: (point) => {
+      totalDblclick++;
+      dblclickCallback(null, point);
+    },
     started: () => startCount,
     stopped: () => stopCount,
     dipCalls: () => dipCalls,
@@ -199,6 +208,8 @@ test('Windows native double-click forwards CSS points to the renderer', () => {
   assert.deepEqual(s.sent, [
     ['window:native-dblclick', { x: 450, y: 20 }, { source: 'WM_LBUTTONDBLCLK', eventId: 1 }],
   ]);
+  const forwardLog = s.logs.find((args) => args[1]?.decision === 'forward-dblclick');
+  assert.equal(forwardLog[1].totalDblclick, 1, 'hook counters travel with the report');
   // A later single-click notification shares the same sequence.
   s.hooks.get(0x0201)();
   assert.equal(s.sent[1][0], 'window:native-pointerdown');

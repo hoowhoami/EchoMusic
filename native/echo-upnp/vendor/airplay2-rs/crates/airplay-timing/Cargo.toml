@@ -1,0 +1,20 @@
+[package]
+name = "airplay-timing"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "PTP and NTP timing synchronization for AirPlay 2"
+
+[dependencies]
+airplay-core = { path = "../airplay-core" }
+tokio.workspace = true
+futures.workspace = true
+async-trait.workspace = true
+socket2.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+tokio-test.workspace = true
+mockall.workspace = true
+test-case.workspace = true

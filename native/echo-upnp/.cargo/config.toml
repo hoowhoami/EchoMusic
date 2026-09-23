@@ -1,0 +1,12 @@
+# Windows 上静态链接 MSVC C Runtime（MSVCP140.dll、VCRUNTIME140.dll 等），
+# 避免用户系统因缺少 Visual C++ Redistributable 而无法加载 .node 文件。
+# 代价：编译产物体积略增（几十 KB），但换来零系统依赖。
+
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
+
+[target.aarch64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
+
+[target.i686-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]

@@ -1,0 +1,52 @@
+[package]
+name = "airplay-crypto"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Cryptographic primitives for AirPlay 2 authentication and streaming"
+
+[features]
+default = []
+srp-debug = []  # Enable SRP transcript logging for debugging M4 failures
+
+[dependencies]
+airplay-core = { path = "../airplay-core" }
+
+# Cryptography
+rand.workspace = true
+x25519-dalek.workspace = true
+ed25519-dalek.workspace = true
+curve25519-dalek.workspace = true
+chacha20poly1305.workspace = true
+aes.workspace = true
+cbc.workspace = true
+aes-gcm = "0.10"
+ctr = "0.9"
+sha2.workspace = true
+hkdf.workspace = true
+num-bigint.workspace = true
+
+# RSA encryption (for RAOP key exchange)
+rsa = "0.9"
+sha1 = "0.10"
+
+# Digest authentication (RFC 2617)
+md-5 = "0.10"
+
+# Base64 encoding (for SDP key attributes)
+base64 = "0.22"
+
+# Utilities
+zeroize = { version = "1.7", features = ["derive"] }
+subtle = "2.5"
+
+[dev-dependencies]
+proptest.workspace = true
+test-case.workspace = true
+hex = "0.4"
+criterion = { version = "0.5", features = ["html_reports"] }
+
+[[bench]]
+name = "crypto_benches"
+harness = false

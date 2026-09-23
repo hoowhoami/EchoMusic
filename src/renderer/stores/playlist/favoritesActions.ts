@@ -31,10 +31,12 @@ const waitForStableFavorites = async (
   loader: PagedSongLoader<Song>,
   fallback: () => readonly Song[],
 ): Promise<readonly Song[]> => {
-  const loadedSongs = await loader.waitForAll();
-  return loader.failed
-    ? fallback()
-    : orderByPlaylistPosition(loadedSongs, (song) => song.playlistSort);
+  await loader.waitForAll();
+  // 强制刷新可能替换正在等待的加载器；最终以合并本地操作后的 Store 为准。
+  while (favoritesLoader?.loading) {
+    await favoritesLoader.waitForAll();
+  }
+  return fallback();
 };
 
 const loadPlaylistSongsForDuplicateCheck = async (targetId: string): Promise<Song[] | null> => {
@@ -103,9 +105,91 @@ type FavoritesStoreShape = {
   userPlaylists: PlaylistMeta[];
 };
 
+type FavoriteChange = { action: 'add' | 'remove'; songs: readonly Song[] };
+type FavoritesRuntime = {
+  base?: Song[];
+  pending: Set<FavoriteChange>;
+  refresh?: FavoriteChange[];
+};
+
+const favoritesRuntimes = new WeakMap<FavoritesStoreShape, FavoritesRuntime>();
+const getFavoritesRuntime = (store: FavoritesStoreShape): FavoritesRuntime => {
+  let runtime = favoritesRuntimes.get(store);
+  if (!runtime) {
+    runtime = { pending: new Set() };
+    favoritesRuntimes.set(store, runtime);
+  }
+  return runtime;
+};
+
+const applyFavoriteChange = (songs: Song[], change: FavoriteChange): Song[] => {
+  if (change.action === 'remove') {
+    return removeSongsFromKnownList(songs, Array.from(change.songs));
+  }
+  const added = change.songs.filter(
+    (song) => !songs.some((item) => isSameSong(item, song) || String(item.id) === String(song.id)),
+  );
+  return dedupeSongs([...added, ...songs]);
+};
+
+const publishFavorites = (store: FavoritesStoreShape, songs: Song[]) => {
+  const runtime = getFavoritesRuntime(store);
+  // 待完成操作只覆盖展示状态，不混入服务端快照，失败时可按歌曲撤回。
+  runtime.base = runtime.pending.size > 0 ? songs : undefined;
+  store.favorites = Array.from(runtime.pending).reduce(applyFavoriteChange, songs);
+};
+
+const commitFavoriteChange = (store: FavoritesStoreShape, change: FavoriteChange) => {
+  const runtime = getFavoritesRuntime(store);
+  runtime.refresh?.push(change);
+  publishFavorites(store, applyFavoriteChange(runtime.base ?? store.favorites, change));
+};
+
+const syncPlaylistFavorites = (
+  store: FavoritesStoreShape,
+  listId: string | number,
+  action: FavoriteChange['action'],
+  songs: readonly Song[],
+) => {
+  if (
+    songs.length > 0 &&
+    store.likedPlaylist &&
+    includesPlaylistIdentity(store.likedPlaylist, String(listId))
+  ) {
+    commitFavoriteChange(store, { action, songs });
+  }
+};
+
+const beginFavoriteChange = (store: FavoritesStoreShape, change: FavoriteChange) => {
+  const runtime = getFavoritesRuntime(store);
+  const generation = store.userCollectionsGeneration;
+  const listId = store.likedPlaylistListId;
+  const base = runtime.base ?? store.favorites;
+  runtime.pending.add(change);
+  publishFavorites(store, base);
+  return (success: boolean): boolean => {
+    if (
+      favoritesRuntimes.get(store) !== runtime ||
+      store.userCollectionsGeneration !== generation ||
+      store.likedPlaylistListId !== listId
+    )
+      return false;
+    const current = runtime.base ?? store.favorites;
+    runtime.pending.delete(change);
+    if (success) {
+      runtime.refresh?.push(change);
+      publishFavorites(store, applyFavoriteChange(current, change));
+    } else {
+      publishFavorites(store, current);
+    }
+    return true;
+  };
+};
+
 export const favoritesActions = {
   resetUserCollections(this: FavoritesStoreShape) {
     this.userCollectionsGeneration += 1;
+    favoritesRuntimes.delete(this);
     favoritesLoader?.abort();
     favoritesLoader = null;
     localPlaylistSongsCache.clear();
@@ -181,7 +265,10 @@ export const favoritesActions = {
     return localPlaylistSongsCache.get(String(listId)) ?? [];
   },
   syncCloudFavorites(this: FavoritesStoreShape, songs: Song[]) {
-    this.favorites = dedupeSongs(songs);
+    favoritesLoader?.abort();
+    favoritesLoader = null;
+    getFavoritesRuntime(this).refresh = undefined;
+    publishFavorites(this, dedupeSongs(songs));
     this.favoritesLoaded = true;
     this.favoritesLoading = false;
   },
@@ -210,7 +297,10 @@ export const favoritesActions = {
     const covers = usePlaylistCoversStore();
     const coverPages = new Map<number, unknown>();
     let coverUpdate: Promise<void> | undefined;
-    const previousFavorites = this.favorites.slice();
+    const runtime = getFavoritesRuntime(this);
+    const changes: FavoriteChange[] = [];
+    runtime.refresh = changes;
+    const previousFavorites = (runtime.base ?? this.favorites).slice();
     const previousFavoritesLoaded = this.favoritesLoaded;
     this.favoritesLoaded = false;
     this.favoritesLoading = true;
@@ -250,7 +340,9 @@ export const favoritesActions = {
         onError: () => {
           coverPages.clear();
           if (!isCurrentLoader()) return;
-          if (previousFavoritesLoaded) this.favorites = previousFavorites;
+          if (previousFavoritesLoaded) {
+            publishFavorites(this, changes.reduce(applyFavoriteChange, previousFavorites));
+          }
           this.favoritesLoaded = previousFavoritesLoaded;
           this.favoritesLoading = false;
         },
@@ -265,7 +357,8 @@ export const favoritesActions = {
 
     const updateFavorites = (items: readonly Song[], complete: boolean) => {
       if (!isCurrentLoader()) return;
-      this.favorites = dedupeSongs(orderByPlaylistPosition(items, (song) => song.playlistSort));
+      const ordered = dedupeSongs(orderByPlaylistPosition(items, (song) => song.playlistSort));
+      publishFavorites(this, changes.reduce(applyFavoriteChange, ordered));
       this.favoritesLoaded = complete;
       if (complete) this.favoritesLoading = false;
     };
@@ -275,9 +368,10 @@ export const favoritesActions = {
     try {
       await loader.loadAll();
       await coverUpdate;
-      return loader.count > 0;
+      return this.favorites.length > 0;
     } finally {
       coverPages.clear();
+      if (runtime.refresh === changes) runtime.refresh = undefined;
       // 即使数据因账号/歌单变化而被丢弃，也要结束本次加载状态。
       // 新请求和账号重置后的状态由其各自的请求负责。
       if (favoritesLoader === loader && this.userCollectionsGeneration === requestGeneration) {
@@ -302,6 +396,12 @@ export const favoritesActions = {
     try {
       let existingSongs = this.getKnownPlaylistSongs(targetId);
       if (existingSongs.some((item) => isSameSong(item, song))) {
+        syncPlaylistFavorites(
+          this,
+          targetId,
+          'add',
+          existingSongs.filter((item) => isSameSong(item, song)),
+        );
         logger.info('PlaylistStore', `Song ${song.name} already exists in playlist ${targetId}`);
         return 'exists';
       }
@@ -319,6 +419,12 @@ export const favoritesActions = {
             this.rememberPlaylistSongs(targetId, loadedSongs, true);
             existingSongs = loadedSongs;
             if (existingSongs.some((item) => isSameSong(item, song))) {
+              syncPlaylistFavorites(
+                this,
+                targetId,
+                'add',
+                existingSongs.filter((item) => isSameSong(item, song)),
+              );
               logger.info(
                 'PlaylistStore',
                 `Song ${song.name} already exists in playlist ${targetId}`,
@@ -331,6 +437,7 @@ export const favoritesActions = {
 
       const res = await addPlaylistTrack(targetId, buildPlaylistTrackPayload(song));
       if (res && typeof res === 'object' && 'status' in res && res.status === 1) {
+        syncPlaylistFavorites(this, targetId, 'add', [song]);
         if (this.hasCompleteKnownPlaylistSongs(targetId)) {
           this.rememberPlaylistSongs(targetId, [...existingSongs, song], true);
         }
@@ -351,6 +458,7 @@ export const favoritesActions = {
       const fileId = String(song.fileId ?? song.mixSongId ?? '');
       const res = await deletePlaylistTrack(targetId, fileId);
       if (res && typeof res === 'object' && 'status' in res && res.status === 1) {
+        syncPlaylistFavorites(this, targetId, 'remove', [song]);
         this.forgetPlaylistSongs(targetId, [song]);
         this.markPlaylistContentChanged(targetId, 'remove', [song]);
         logger.info('PlaylistStore', `Song ${song.name} removed from playlist ${targetId}`);
@@ -372,6 +480,12 @@ export const favoritesActions = {
     if (!targetId || total === 0) return { successCount: 0, failedCount: total };
 
     const existingSongs = this.getKnownPlaylistSongs(targetId);
+    syncPlaylistFavorites(
+      this,
+      targetId,
+      'add',
+      existingSongs.filter((item) => songs.some((song) => isSameSong(item, song))),
+    );
     const dedupedSongs: Song[] = [];
     const seenIncoming = new Set<string>();
     songs.forEach((song) => {
@@ -425,6 +539,7 @@ export const favoritesActions = {
         );
         if (res && typeof res === 'object' && 'status' in res && res.status === 1) {
           successCount += batch.length;
+          syncPlaylistFavorites(this, targetId, 'add', batch);
           addedSongs.push(...batch);
         } else {
           failedCount += batch.length;
@@ -499,6 +614,7 @@ export const favoritesActions = {
         );
         if (res && typeof res === 'object' && 'status' in res && res.status === 1) {
           successCount += batch.length;
+          syncPlaylistFavorites(this, targetId, 'remove', batch);
           removedSongs.push(...batch);
         } else {
           failedCount += batch.length;
@@ -523,81 +639,42 @@ export const favoritesActions = {
     const likedPlaylist = await this.ensureLikedPlaylistReady();
     const listId = likedPlaylist.listId;
     const alreadyFavorited = this.isFavoriteSong(song);
-    if (!alreadyFavorited) {
-      this.favorites = [song, ...this.favorites];
-    }
+    if (!listId) return false;
+    const finish = beginFavoriteChange(this, { action: 'add', songs: [song] });
 
-    if (listId) {
-      try {
-        const songData = `${song.name}|${song.hash}|${song.albumId || 0}|${song.mixSongId}`;
-        const res = await addPlaylistTrack(listId, songData);
-        if (res && typeof res === 'object' && 'status' in res && res.status === 1) {
-          if (!alreadyFavorited) {
-            const existingSongs = this.getKnownPlaylistSongs(listId);
-            if (
-              this.hasCompleteKnownPlaylistSongs(listId) &&
-              !existingSongs.some((item) => isSameSong(item, song))
-            ) {
-              this.rememberPlaylistSongs(listId, [...existingSongs, song], true);
-            }
-            this.markPlaylistContentChanged(listId, 'add', [song]);
+    try {
+      const songData = `${song.name}|${song.hash}|${song.albumId || 0}|${song.mixSongId}`;
+      const res = await addPlaylistTrack(listId, songData);
+      if (res && typeof res === 'object' && 'status' in res && res.status === 1) {
+        if (!finish(true)) return false;
+        if (!alreadyFavorited) {
+          const existingSongs = this.getKnownPlaylistSongs(listId);
+          if (
+            this.hasCompleteKnownPlaylistSongs(listId) &&
+            !existingSongs.some((item) => isSameSong(item, song))
+          ) {
+            this.rememberPlaylistSongs(listId, [...existingSongs, song], true);
           }
-          logger.info('PlaylistStore', `Song ${song.name} added to favorites on cloud`);
-          if (!alreadyFavorited) void this.reportPersonalFmFeedback?.('click_red', song);
-          return true;
+          this.markPlaylistContentChanged(listId, 'add', [song]);
         }
-        if (!alreadyFavorited) {
-          this.favorites = this.favorites.filter((item) => !isSameSong(item, song));
-        }
-        logger.warn('PlaylistStore', 'Add to favorites sync failed:', res);
-        return false;
-      } catch (e) {
-        if (!alreadyFavorited) {
-          this.favorites = this.favorites.filter((item) => !isSameSong(item, song));
-        }
-        logger.error('PlaylistStore', 'Add to favorites sync error:', e);
-        return false;
+        logger.info('PlaylistStore', `Song ${song.name} added to favorites on cloud`);
+        if (!alreadyFavorited) void this.reportPersonalFmFeedback?.('click_red', song);
+        return true;
       }
+      finish(false);
+      logger.warn('PlaylistStore', 'Add to favorites sync failed:', res);
+      return false;
+    } catch (e) {
+      finish(false);
+      logger.error('PlaylistStore', 'Add to favorites sync error:', e);
+      return false;
     }
-
-    if (!alreadyFavorited) {
-      this.favorites = this.favorites.filter((item) => !isSameSong(item, song));
-    }
-    return false;
   },
   async removeFromFavorites(this: FavoritesStoreShape, id: string) {
     const song = this.favorites.find((item) => String(item.id) === String(id));
     if (!song) return;
 
-    const previousFavorites = this.favorites.slice();
-    this.favorites = this.favorites.filter(
-      (item) => !isSameSong(item, song) && String(item.id) !== String(id),
-    );
-
-    const likedPlaylist = await this.ensureLikedPlaylistReady();
-    const listId = likedPlaylist.listId;
-    if (listId) {
-      try {
-        const fileId = String(song.fileId ?? song.mixSongId ?? '');
-        const res = await deletePlaylistTrack(listId, fileId);
-        if (res && typeof res === 'object' && 'status' in res && res.status === 1) {
-          this.forgetPlaylistSongs(listId, [song]);
-          this.markPlaylistContentChanged(listId, 'remove', [song]);
-          logger.info('PlaylistStore', `Song ${song.name} removed from favorites on cloud`);
-          void this.reportPersonalFmFeedback?.('cancel_red', song);
-          return true;
-        }
-        this.favorites = previousFavorites;
-        logger.warn('PlaylistStore', 'Remove from favorites sync failed:', res);
-        return false;
-      } catch (e) {
-        this.favorites = previousFavorites;
-        logger.error('PlaylistStore', 'Remove from favorites sync error:', e);
-        return false;
-      }
-    }
-    this.favorites = previousFavorites;
-    return false;
+    return favoritesActions.removeFavoriteSong.call(this, song);
   },
   async removeFavoriteSong(this: FavoritesStoreShape, song: Song) {
     const matched = this.favorites.find(
@@ -608,39 +685,27 @@ export const favoritesActions = {
       song.fileId ?? matched?.fileId ?? song.mixSongId ?? matched?.mixSongId ?? '',
     );
 
-    const previousFavorites = this.favorites.slice();
-    if (matched) {
-      this.favorites = this.favorites.filter(
-        (item) => !isSameSong(item, matched) && String(item.id) !== String(matched.id),
-      );
-    } else {
-      this.favorites = this.favorites.filter(
-        (item) => !isSameSong(item, song) && String(item.id) !== String(song.id),
-      );
-    }
-
     const likedPlaylist = await this.ensureLikedPlaylistReady();
     const listId = likedPlaylist.listId;
-    if (!listId) {
-      this.favorites = previousFavorites;
-      return false;
-    }
+    if (!listId) return false;
+    const removedSong = matched ?? song;
+    const finish = beginFavoriteChange(this, { action: 'remove', songs: [removedSong] });
 
     try {
       const res = await deletePlaylistTrack(listId, effectiveFileId);
       if (res && typeof res === 'object' && 'status' in res && res.status === 1) {
-        const removedSong = matched ?? song;
+        if (!finish(true)) return false;
         this.forgetPlaylistSongs(listId, [removedSong]);
         this.markPlaylistContentChanged(listId, 'remove', [removedSong]);
         logger.info('PlaylistStore', `Song ${song.name} removed from favorites on cloud`);
         void this.reportPersonalFmFeedback?.('cancel_red', removedSong);
         return true;
       }
-      this.favorites = previousFavorites;
+      finish(false);
       logger.warn('PlaylistStore', 'Remove from favorites sync failed:', res);
       return false;
     } catch (e) {
-      this.favorites = previousFavorites;
+      finish(false);
       logger.error('PlaylistStore', 'Remove from favorites sync error:', e);
       return false;
     }

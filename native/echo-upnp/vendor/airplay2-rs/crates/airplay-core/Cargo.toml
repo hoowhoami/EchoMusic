@@ -1,0 +1,15 @@
+[package]
+name = "airplay-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+thiserror.workspace = true
+uuid.workspace = true
+serde.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+test-case.workspace = true

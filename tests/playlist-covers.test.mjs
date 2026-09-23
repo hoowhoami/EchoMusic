@@ -44,6 +44,9 @@ const maps = compile('../src/renderer/utils/mappers/playlist.ts', {
   './song': song,
   '../song': {},
   '../playlistTags': tags,
+  '../commentVip': compile('../src/renderer/utils/commentVip.ts', {
+    '../../shared/object': object,
+  }),
 });
 
 test('playlist tags display names for both user and public metadata responses', () => {

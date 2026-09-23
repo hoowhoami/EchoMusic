@@ -72,6 +72,18 @@ export function installWindowPointerEvents(win: BrowserWindow, options: WindowPo
       const zoom = win.webContents.getZoomFactor();
       return { x: x / zoom, y: y / zoom };
     };
+    // Counters distinguish "the OS never produced a double-click" from "it was
+    // dropped by gating" when a transparent/acrylic window misbehaves.
+    let monitorDiagnostics:
+      | { installed: boolean; totalDblclick: number; foregroundDblclick: number }
+      | undefined;
+    const readDblclickDiagnostics = () => {
+      const native = getWindowsDoubleClickMonitor();
+      if (native?.getWindowsDoubleClickDiagnostics) {
+        monitorDiagnostics = native.getWindowsDoubleClickDiagnostics();
+      }
+      return monitorDiagnostics ?? {};
+    };
     // A real double-click on the child/top-level HWND: forward it so the renderer
     // can confirm the point is a drag region and then run the regular toggle.
     const clientDoubleClick = (
@@ -90,7 +102,7 @@ export function installWindowPointerEvents(win: BrowserWindow, options: WindowPo
         return;
       }
       const eventId = ++sequence;
-      report(source, 'forward-dblclick', { eventId });
+      report(source, 'forward-dblclick', { eventId, ...readDblclickDiagnostics() });
       win.webContents.send('window:native-dblclick', point, { source, eventId });
     };
     const clientClick = (source: string) => {
@@ -127,7 +139,7 @@ export function installWindowPointerEvents(win: BrowserWindow, options: WindowPo
       if (event === 0x0201 || event === 0x0204) clientClick('WM_PARENTNOTIFY');
     });
     // The child HWND's WM_LBUTTONDBLCLK is the only reliable double-click signal on
-    // a captionless transparent window. A WH_MOUSE thread hook inherits the OS
+    // a captionless transparent window. A WH_MOUSE_LL hook inherits the OS
     // double-click timing/distance rules and never intercepts the message itself.
     if (options.emulatedMaximize) {
       const native = getWindowsDoubleClickMonitor();
@@ -141,7 +153,13 @@ export function installWindowPointerEvents(win: BrowserWindow, options: WindowPo
             clientDoubleClick('WM_LBUTTONDBLCLK', point, true);
           });
           stopMonitor = () => native.stopWindowsDoubleClickMonitor();
-          report('native-dblclick', 'installed');
+          report('native-dblclick', 'installed', readDblclickDiagnostics());
+          // Observe, never consume: if the top-level still hit-tests the titlebar
+          // as HTCAPTION, the system runs its own SC_MAXIMIZE on the double-click.
+          win.hookWindowMessage(0x00a3, (hitTest) => {
+            const hit = hitTest.length >= 4 ? hitTest.readUInt32LE(0) : -1;
+            if (hit === 2) report('WM_NCLBUTTONDBLCLK', 'caption-dblclick-observed');
+          });
         } catch (error) {
           log.warn('[TitlebarPointer] Could not install the native double-click monitor:', error);
         }

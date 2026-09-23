@@ -1,0 +1,38 @@
+[package]
+name = "airplay-bluetooth"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Bluetooth A2DP audio source for AirPlay 2 streaming"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+airplay-core = { path = "../airplay-core" }
+airplay-audio = { path = "../airplay-audio" }
+airplay-resampler = { path = "../airplay-resampler" }
+
+# Bluetooth (Linux only via BlueZ D-Bus)
+bluer = { version = "0.17", features = ["full"] }
+
+# ALSA audio capture
+alsa = "0.9"
+
+# Async runtime
+tokio.workspace = true
+futures.workspace = true
+async-trait.workspace = true
+
+# Channels for audio thread communication
+crossbeam-channel = "0.5"
+
+# System calls
+libc = "0.2"
+
+# Error handling
+thiserror.workspace = true
+
+# Logging
+tracing.workspace = true
+
+[dev-dependencies]
+tokio-test.workspace = true
