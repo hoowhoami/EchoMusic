@@ -375,6 +375,27 @@ const handleNativePointerDown = (point?: unknown, details?: unknown) => {
   searchInputRef.value?.blur();
 };
 
+const handleNativeDoubleClick = (point?: unknown, details?: unknown) => {
+  if (
+    !point ||
+    typeof point !== 'object' ||
+    !('x' in point) ||
+    !('y' in point) ||
+    typeof point.x !== 'number' ||
+    typeof point.y !== 'number' ||
+    !Number.isFinite(point.x) ||
+    !Number.isFinite(point.y)
+  )
+    return;
+  const target = document.elementFromPoint(point.x, point.y);
+  if (!target?.closest('.native-titlebar .drag-region, .native-titlebar .titlebar-drag-space')) {
+    logger.info('TitlebarPointer', { decision: 'ignored-non-drag-target', details });
+    return;
+  }
+  logger.info('TitlebarPointer', { decision: 'toggle-maximize', details });
+  window.electron.windowControl('maximize');
+};
+
 const handleSearchFocus = () => {
   void loadHotSearches();
   cancelSuggestionBlur();
@@ -505,6 +526,7 @@ onMounted(() => {
   window.addEventListener('popstate', updateNavState);
   document.addEventListener('pointerdown', handleGlobalPointerDown, true);
   window.electron.ipcRenderer.on('window:native-pointerdown', handleNativePointerDown);
+  window.electron.ipcRenderer.on('window:native-dblclick', handleNativeDoubleClick);
   // 获取默认搜索词
   if (settingStore.searchDefaultEnabled) {
     fetchDefaultSearch();
@@ -516,6 +538,7 @@ onUnmounted(() => {
   window.removeEventListener('popstate', updateNavState);
   document.removeEventListener('pointerdown', handleGlobalPointerDown, true);
   window.electron.ipcRenderer.off('window:native-pointerdown', handleNativePointerDown);
+  window.electron.ipcRenderer.off('window:native-dblclick', handleNativeDoubleClick);
   collapseSearch();
 });
 </script>

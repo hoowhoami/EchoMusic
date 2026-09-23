@@ -61,6 +61,34 @@ export function getNativeWindowPointer(): NativeWindowPointer | null {
   return windowPointer;
 }
 
+export interface NativeWindowsDoubleClick {
+  startWindowsDoubleClickMonitor(
+    handle: Buffer,
+    callback: (error: Error | null, point: { x: number; y: number }) => void,
+  ): void;
+  stopWindowsDoubleClickMonitor(): void;
+}
+
+let windowsDoubleClick: NativeWindowsDoubleClick | null | undefined;
+export function getWindowsDoubleClickMonitor(): NativeWindowsDoubleClick | null {
+  if (windowsDoubleClick !== undefined) return windowsDoubleClick;
+  windowsDoubleClick = null;
+  if (process.platform !== 'win32') return null;
+  try {
+    const candidate = loadAddon();
+    if (
+      typeof candidate.startWindowsDoubleClickMonitor !== 'function' ||
+      typeof candidate.stopWindowsDoubleClickMonitor !== 'function'
+    ) {
+      throw new Error('Rebuild echo-platform-adaptor for double-click monitor support');
+    }
+    windowsDoubleClick = candidate as NativeWindowsDoubleClick;
+  } catch (error) {
+    log.warn('[NativePlatform] Windows double-click monitor unavailable:', error);
+  }
+  return windowsDoubleClick;
+}
+
 export function getNativePlatform(): NativePlatform | null {
   if (native !== undefined) return native;
   native = null;
