@@ -72,11 +72,16 @@ whether the native API returns success. Before shipping an Electron upgrade:
    fail explicitly. Test clear → frost → clear, drag/resize suspension and restore,
    cold starts, show/hide and fullscreen on actual Windows. Electron clears
    `thickFrame` for transparent windows and emulates fullscreen/maximize with
-   `SetBounds`: `isFullScreen()` stays false, the WCO caption buttons stay visible
-   in fullscreen and `SC_MAXIMIZE` is swallowed. `window/fullscreen.ts` tracks the
-   emulated state, `window/pointer.ts` toggles maximize on the swallowed command
-   and the preload keeps the caption safe area; re-verify F11, the fullscreen
-   button and caption double-click after an upgrade.
+   `SetBounds`: `isFullScreen()` stays false and the WCO caption buttons stay
+   visible in fullscreen. Without `WS_CAPTION`/`WS_MAXIMIZEBOX` the OS never turns
+   a caption double-click into `SC_MAXIMIZE`. Emulated maximize and fullscreen
+   also share one `restore_bounds_`, so fullscreen from a maximized window loses
+   the normal rectangle. `window/fullscreen.ts` tracks the emulated state and
+   snapshots/restores the pre-fullscreen window (hiding the maximize and minimize
+   buttons meanwhile; close can only be disabled, so it stays), `window/pointer.ts` toggles maximize on `WM_NCLBUTTONDBLCLK` and
+   the preload keeps the caption safe area; re-verify F11, the fullscreen button,
+   fullscreen from maximized, restore afterwards and caption double-click after
+   an upgrade.
 2. On Windows 11 22H2+, verify clear remains unblurred after theme changes,
    zoom, resize, maximize/restore and page reload. Electron prepares its surface
    as Acrylic, then native mode 5 sets the DWM backdrop to `NONE` and enables DWM alpha. Repeated

@@ -1,4 +1,4 @@
-import type { BrowserWindow } from 'electron';
+import type { BrowserWindow, Rectangle } from 'electron';
 
 type WindowFullscreenOptions = {
   /**
@@ -31,7 +31,36 @@ export function installWindowFullscreen(win: BrowserWindow, options: WindowFulls
   let requested: boolean | undefined;
   let tracked = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
+  // Emulated fullscreen and emulated maximize share one Electron restore rectangle:
+  // entering fullscreen from a maximized window overwrites the normal bounds, so
+  // leaving keeps the window at work-area size and restore has nothing to return to.
+  // Keep our own snapshot of the pre-fullscreen window. Real fullscreen hides the
+  // WCO buttons; emulated fullscreen keeps drawing them, so hide maximize (Electron
+  // derives "maximized" from the bounds and would flip it on every transition) and
+  // minimize (its restore path has no emulated-fullscreen handling). Close cannot be
+  // hidden, only disabled, so it stays available.
+  let snapshot: { maximized: boolean; bounds: Rectangle } | null = null;
+  let nested = 0;
   const native = () => (emulated ? tracked : win.isFullScreen());
+  const captureEmulatedEntry = () => {
+    const maximized = win.isMaximized();
+    snapshot = { maximized, bounds: maximized ? win.getNormalBounds() : win.getBounds() };
+    win.setMaximizable(false);
+    win.setMinimizable(false);
+  };
+  const restoreEmulatedExit = () => {
+    const state = snapshot;
+    snapshot = null;
+    // Electron applies its own restore bounds after notifying; override them afterwards.
+    setImmediate(() => {
+      if (win.isDestroyed() || tracked) return;
+      win.setMaximizable(true);
+      win.setMinimizable(true);
+      if (!state) return;
+      win.setBounds(state.bounds);
+      if (state.maximized) win.maximize();
+    });
+  };
   const get = () => requested ?? native();
   const publish = (value = get()) => {
     if (!win.isDestroyed() && !win.webContents.isDestroyed())
@@ -71,6 +100,22 @@ export function installWindowFullscreen(win: BrowserWindow, options: WindowFulls
     } else if (value !== native()) apply(value);
   };
   const settled = (value: boolean) => {
+    if (emulated) {
+      if (value) {
+        // HTML fullscreen inside app fullscreen re-enters Electron's emulation;
+        // Chromium cannot see the emulated state, so pair it here instead.
+        if (tracked) {
+          nested++;
+          return;
+        }
+        captureEmulatedEntry();
+      } else if (nested > 0) {
+        nested--;
+        return;
+      } else {
+        restoreEmulatedExit();
+      }
+    }
     tracked = value;
     // Windows emits these events before updating isFullScreen(). In particular,
     // HTML fullscreen's Escape exit has no app request to override that old value.

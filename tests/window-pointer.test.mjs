@@ -164,7 +164,7 @@ test('Windows ignores malformed parameters and callbacks after window destructio
   assert.equal(s.sent.length, 0);
 });
 
-test('Windows transparent windows toggle emulated maximize on the swallowed SC_MAXIMIZE', async () => {
+test('Windows transparent windows toggle emulated maximize on a caption double-click', async () => {
   let fullscreen = false;
   const s = setup('win32', { emulatedMaximize: true, isFullscreen: () => fullscreen });
   const calls = [];
@@ -179,32 +179,38 @@ test('Windows transparent windows toggle emulated maximize on the swallowed SC_M
     calls.push('unmaximize');
   };
   const tick = () => new Promise((resolve) => setImmediate(resolve));
-  // Electron swallows SC_MAXIMIZE before the OS acts, so restore also arrives as SC_MAXIMIZE.
-  s.hooks.get(0x0112)(param(0xf030));
+  // No WS_CAPTION: the OS never produces SC_MAXIMIZE, only the non-client double-click.
+  s.hooks.get(0x00a3)(param(2));
   await tick();
-  s.hooks.get(0x0112)(param(0xf032));
+  s.hooks.get(0x00a3)(param(2));
+  await tick();
+  assert.deepEqual(calls, ['maximize', 'unmaximize']);
+  // WCO caption buttons, resize borders and malformed parameters are not the drag region.
+  for (const hit of [9, 8, 20, 1]) s.hooks.get(0x00a3)(param(hit));
+  s.hooks.get(0x00a3)(Buffer.alloc(2));
   await tick();
   assert.deepEqual(calls, ['maximize', 'unmaximize']);
   fullscreen = true;
-  s.hooks.get(0x0112)(param(0xf030));
+  s.hooks.get(0x00a3)(param(2));
   await tick();
   assert.deepEqual(calls, ['maximize', 'unmaximize']);
   fullscreen = false;
-  for (const value of [0xf120, 0xf010, 0xf020]) s.hooks.get(0x0112)(param(value));
-  await tick();
-  assert.deepEqual(calls, ['maximize', 'unmaximize']);
-  assert.equal(s.sent.length, 5, 'popup dismissal is unchanged');
-  s.destroy();
   s.hooks.get(0x0112)(param(0xf030));
+  await tick();
+  assert.deepEqual(calls, ['maximize', 'unmaximize'], 'system commands are only observed');
+  assert.equal(s.sent.length, 1, 'popup dismissal is unchanged');
+  s.destroy();
+  s.hooks.get(0x00a3)(param(2));
   await tick();
   assert.deepEqual(calls, ['maximize', 'unmaximize']);
 });
 
-test('Windows opaque windows leave the system maximize command to the OS', async () => {
+test('Windows opaque windows leave caption double-clicks to the OS', async () => {
   const s = setup('win32');
   let maximizeCalls = 0;
   s.win.isMaximized = () => false;
   s.win.maximize = () => maximizeCalls++;
+  assert.equal(s.hooks.has(0x00a3), false);
   s.hooks.get(0x0112)(param(0xf030));
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(maximizeCalls, 0);

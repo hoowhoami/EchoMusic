@@ -99,17 +99,44 @@ for (const platform of ['win32', 'linux']) {
   });
 }
 
-function windowsController(options) {
+const WORK_AREA = { x: 0, y: 0, width: 1920, height: 1040 };
+const DISPLAY = { x: 0, y: 0, width: 1920, height: 1080 };
+const NORMAL = { x: 100, y: 80, width: 1200, height: 800 };
+const sameRect = (a, b) => ['x', 'y', 'width', 'height'].every((key) => a[key] === b[key]);
+
+function windowsController(options, initial = {}) {
   const module = { exports: {} };
-  runInNewContext(code, { module, process: { platform: 'win32' }, clearTimeout });
+  runInNewContext(code, { module, process: { platform: 'win32' }, clearTimeout, setImmediate });
   let actual = false;
   const sent = [];
   const details = [];
   const calls = [];
+  const maximizable = [];
+  const minimizable = [];
   const emulated = options?.emulated === true;
+  // Electron's transparent-window emulation: one restore rectangle shared by
+  // Maximize() and SetFullScreen(), and "maximized" means bounds == work area.
+  let bounds = initial.maximized ? { ...WORK_AREA } : { ...NORMAL };
+  let restoreBounds = { ...NORMAL };
+  let maximized = false;
   const win = Object.assign(new EventEmitter(), {
     isDestroyed: () => false,
     isFullScreen: () => actual,
+    isMaximized: () => (emulated ? sameRect(bounds, WORK_AREA) : maximized),
+    getBounds: () => bounds,
+    getNormalBounds: () => (emulated ? restoreBounds : bounds),
+    setBounds(value) {
+      bounds = { ...value };
+    },
+    maximize() {
+      if (emulated) {
+        restoreBounds = bounds;
+        bounds = { ...WORK_AREA };
+      } else maximized = true;
+      win.emit('maximize');
+    },
+    setMaximizable: (value) => maximizable.push(value),
+    setMinimizable: (value) => minimizable.push(value),
     setFullScreen(value) {
       calls.push(value);
       assert.ok(calls.length < 5, 'must not recursively request the same transition');
@@ -126,12 +153,86 @@ function windowsController(options) {
   function nativeTransition(value) {
     // Electron on Windows notifies BEFORE widget()->SetFullscreen(value).
     win.emit(value ? 'enter-full-screen' : 'leave-full-screen');
+    if (!emulated) {
+      actual = value;
+      return;
+    }
     // Transparent windows only get SetBounds: the widget never reports fullscreen.
-    if (!emulated) actual = value;
+    if (value) {
+      restoreBounds = bounds;
+      bounds = { ...DISPLAY };
+    } else bounds = restoreBounds;
   }
   const controller = module.exports.installWindowFullscreen(win, options);
-  return { controller, calls, sent, details, nativeTransition };
+  return {
+    win,
+    controller,
+    calls,
+    sent,
+    details,
+    maximizable,
+    minimizable,
+    nativeTransition,
+    bounds: () => bounds,
+    normalBounds: () => restoreBounds,
+    settle: () => new Promise((resolve) => setImmediate(resolve)),
+  };
 }
+
+test('Windows transparent windows leave fullscreen back to the maximized state they entered from', async () => {
+  const e = windowsController({ emulated: true }, { maximized: true });
+  assert.equal(e.win.isMaximized(), true);
+  e.controller.set(true);
+  assert.deepEqual(e.maximizable, [false], 'hide the maximize button while fullscreen');
+  assert.deepEqual(e.minimizable, [false], 'hide the minimize button like real fullscreen');
+  assert.deepEqual(e.bounds(), DISPLAY);
+  e.controller.set(false);
+  assert.equal(e.controller.get(), false);
+  await e.settle();
+  assert.deepEqual(e.maximizable, [false, true]);
+  assert.deepEqual(e.minimizable, [false, true]);
+  assert.equal(e.win.isMaximized(), true);
+  assert.deepEqual(e.normalBounds(), NORMAL, 'restore keeps the pre-maximize rectangle');
+});
+
+test('Windows transparent windows leave fullscreen back to their normal bounds', async () => {
+  const e = windowsController({ emulated: true });
+  e.controller.set(true);
+  e.controller.set(false);
+  await e.settle();
+  assert.equal(e.win.isMaximized(), false);
+  assert.deepEqual(e.bounds(), NORMAL);
+  assert.deepEqual(e.maximizable, [false, true]);
+});
+
+test('Windows transparent windows keep app fullscreen across a nested HTML fullscreen video', async () => {
+  const e = windowsController({ emulated: true }, { maximized: true });
+  e.controller.set(true);
+  const published = e.sent.length;
+  // Chromium cannot see emulated fullscreen, so a video re-enters and leaves it natively.
+  e.nativeTransition(true);
+  e.nativeTransition(false);
+  await e.settle();
+  assert.equal(e.controller.get(), true);
+  assert.equal(e.sent.length, published, 'nested transitions publish nothing');
+  assert.deepEqual(e.bounds(), DISPLAY);
+  assert.deepEqual(e.maximizable, [false]);
+  e.controller.set(false);
+  await e.settle();
+  assert.equal(e.controller.get(), false);
+  assert.equal(e.win.isMaximized(), true);
+  assert.deepEqual(e.normalBounds(), NORMAL);
+});
+
+test('Windows opaque windows never touch maximizable or bounds around fullscreen', async () => {
+  const e = windowsController();
+  e.controller.set(true);
+  e.controller.set(false);
+  await e.settle();
+  assert.deepEqual(e.maximizable, []);
+  assert.deepEqual(e.minimizable, []);
+  assert.deepEqual(e.bounds(), NORMAL);
+});
 
 test('Windows transparent windows track emulated fullscreen from Electron notifications', () => {
   const e = windowsController({ emulated: true });

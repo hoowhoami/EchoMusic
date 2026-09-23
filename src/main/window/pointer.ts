@@ -5,9 +5,10 @@ import { titleBarHeight } from '../../shared/windowZoom';
 
 type WindowPointerOptions = {
   /**
-   * Electron swallows SC_MAXIMIZE for transparent Windows windows because the
-   * system maximize cannot apply without WS_THICKFRAME, so a caption double-click
-   * does nothing. Route the command to its emulated maximize/unmaximize instead.
+   * Transparent Windows windows have neither WS_CAPTION nor WS_MAXIMIZEBOX
+   * (Electron and Chromium strip both for translucent widgets), so DefWindowProc
+   * never turns a caption double-click into SC_MAXIMIZE. Handle the double-click
+   * itself and drive Electron's emulated maximize/unmaximize.
    */
   emulatedMaximize?: boolean;
   isFullscreen?: () => boolean;
@@ -90,28 +91,37 @@ export function installWindowPointerEvents(win: BrowserWindow, options: WindowPo
       const event = param.readUInt32LE(0) & 0xffff;
       if (event === 0x0201 || event === 0x0204) clientClick('WM_PARENTNOTIFY');
     });
-    const toggleEmulatedMaximize = () => {
-      // Windows never reports these windows as zoomed, so restore arrives as SC_MAXIMIZE too.
+    const toggleEmulatedMaximize = (source: string) => {
+      // Leave the message handler before changing bounds; Electron emulates both
+      // directions with SetBounds and reports maximized by comparing to the work area.
       setImmediate(() => {
         if (win.isDestroyed()) return;
         if (options.isFullscreen?.()) {
-          report('WM_SYSCOMMAND', 'ignored-maximize-while-fullscreen');
+          report(source, 'ignored-maximize-while-fullscreen');
           return;
         }
         const maximized = win.isMaximized();
-        report('WM_SYSCOMMAND', maximized ? 'emulated-unmaximize' : 'emulated-maximize');
+        report(source, maximized ? 'emulated-unmaximize' : 'emulated-maximize');
         if (maximized) win.unmaximize();
         else win.maximize();
       });
     };
+    if (options.emulatedMaximize) {
+      // WM_NCLBUTTONDBLCLK with HTCAPTION: the drag region, not the WCO caption buttons.
+      win.hookWindowMessage(0x00a3, (hitTest) => {
+        const hit = hitTest.length >= 4 ? hitTest.readUInt32LE(0) : -1;
+        if (hit === 2) toggleEmulatedMaximize('WM_NCLBUTTONDBLCLK');
+        else report('WM_NCLBUTTONDBLCLK', 'ignored-non-caption', { hitTest: hit });
+      });
+    }
     win.hookWindowMessage(0x0112, (param) => {
       if (param.length < 4) return;
       const command = param.readUInt32LE(0) & 0xfff0;
       if ([0xf010, 0xf030, 0xf120].includes(command)) notify('WM_SYSCOMMAND');
-      if (command === 0xf030 && options.emulatedMaximize) toggleEmulatedMaximize();
     });
     report('install', 'ready', {
       messages: ['NC-button', 'client-button', 'parent-notify', 'system-command'],
+      emulatedMaximize: Boolean(options.emulatedMaximize),
     });
   }
   // Also dismiss when dragging or leaving the window, including native-addon fallback.
