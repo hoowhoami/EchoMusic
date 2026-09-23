@@ -105,6 +105,21 @@ const param = (value) => {
   return buffer;
 };
 
+// Replace the wall clock so double-click timing is deterministic.
+function makeClock() {
+  const realNow = Date.now;
+  let now = 1_000_000;
+  Date.now = () => now;
+  return {
+    advance: (ms) => {
+      now += ms;
+    },
+    restore() {
+      Date.now = realNow;
+    },
+  };
+}
+
 test('Windows client clicks use content-relative CSS coordinates and filter body/borders', () => {
   const s = setup('win32');
   s.hooks.get(0x0201)();
@@ -221,4 +236,167 @@ test('moving or blurring the window dismisses without native monitor support', (
   s.win.emit('move');
   s.win.emit('blur');
   assert.equal(s.sent.length, 2);
+});
+
+test('Windows transparent windows toggle on a paired client double-click', async () => {
+  const clock = makeClock();
+  try {
+    let fullscreen = false;
+    const s = setup('win32', { emulatedMaximize: true, isFullscreen: () => fullscreen });
+    const calls = [];
+    // isMaximized() is unreliable for emulated windows: it compares bounds to the
+    // work area and can disagree with the visible state. The toggle must track state.
+    s.win.isMaximized = () => false;
+    s.win.maximize = () => calls.push('maximize');
+    s.win.unmaximize = () => calls.push('unmaximize');
+    const tick = () => new Promise((resolve) => setImmediate(resolve));
+    // First press arms the window; the second within GetDoubleClickTime toggles once.
+    s.hooks.get(0x0201)();
+    clock.advance(140);
+    s.hooks.get(0x0210)(param(0x0201));
+    await tick();
+    assert.deepEqual(calls, ['maximize']);
+    assert.equal(s.sent.length, 1, 'the paired press does not notify the renderer again');
+    // Toggling back uses the tracked state even though isMaximized() still reports false.
+    clock.advance(140);
+    s.hooks.get(0x0201)();
+    clock.advance(140);
+    s.hooks.get(0x0201)();
+    await tick();
+    assert.deepEqual(calls, ['maximize', 'unmaximize']);
+    // Fullscreen gates the second toggle.
+    fullscreen = true;
+    clock.advance(140);
+    s.hooks.get(0x0201)();
+    clock.advance(140);
+    s.hooks.get(0x0201)();
+    await tick();
+    assert.deepEqual(calls, ['maximize', 'unmaximize']);
+  } finally {
+    clock.restore();
+  }
+});
+
+test('Windows client double-click pairing requires a stable cursor and a fresh window', async () => {
+  const clock = makeClock();
+  try {
+    const s = setup('win32', { emulatedMaximize: true });
+    const calls = [];
+    s.win.maximize = () => calls.push('maximize');
+    s.win.unmaximize = () => calls.push('unmaximize');
+    const tick = () => new Promise((resolve) => setImmediate(resolve));
+    // A press that moved between down events is a drag, not a double-click.
+    s.hooks.get(0x0201)();
+    s.setCursor({ x: 640, y: 120 });
+    clock.advance(140);
+    s.hooks.get(0x0201)();
+    await tick();
+    assert.deepEqual(calls, []);
+    assert.equal(s.sent.length, 2);
+    // A press outside the titlebar clears the pending pair.
+    s.setCursor({ x: 600, y: 120 });
+    clock.advance(140);
+    s.hooks.get(0x0201)();
+    s.setCursor({ x: 600, y: 300 });
+    clock.advance(140);
+    s.hooks.get(0x0201)();
+    await tick();
+    assert.deepEqual(calls, []);
+    assert.equal(s.sent.length, 3);
+    // Window move/blur clears the pair too (and the move itself sends a dismissal).
+    s.setCursor({ x: 600, y: 120 });
+    clock.advance(140);
+    s.hooks.get(0x0201)();
+    s.win.emit('move');
+    clock.advance(140);
+    s.hooks.get(0x0201)();
+    await tick();
+    assert.deepEqual(calls, []);
+    assert.equal(s.sent.length, 6);
+  } finally {
+    clock.restore();
+  }
+});
+
+test('Windows client presses beyond the double-click window never pair', async () => {
+  const clock = makeClock();
+  try {
+    const s = setup('win32', { emulatedMaximize: true });
+    const calls = [];
+    s.win.maximize = () => calls.push('maximize');
+    s.win.unmaximize = () => calls.push('unmaximize');
+    const tick = () => new Promise((resolve) => setImmediate(resolve));
+    s.hooks.get(0x0201)();
+    clock.advance(700);
+    s.hooks.get(0x0201)();
+    await tick();
+    assert.deepEqual(calls, []);
+    assert.equal(s.sent.length, 2);
+  } finally {
+    clock.restore();
+  }
+});
+
+test('Windows same-press duplicates from multiple hooks do not create a double-click', async () => {
+  const clock = makeClock();
+  try {
+    const s = setup('win32', { emulatedMaximize: true });
+    const calls = [];
+    s.win.isMaximized = () => false;
+    s.win.maximize = () => calls.push('maximize');
+    s.win.unmaximize = () => calls.push('unmaximize');
+    const tick = () => new Promise((resolve) => setImmediate(resolve));
+    // The same physical press can arrive as both a client and a PARENTNOTIFY message.
+    s.hooks.get(0x0201)();
+    clock.advance(5);
+    s.hooks.get(0x0210)(param(0x0201));
+    clock.advance(5);
+    s.hooks.get(0x0210)(param(0x0201));
+    assert.equal(s.sent.length, 1, 'duplicate reports of one press notify once');
+    // A real second press later still pairs against the first press.
+    clock.advance(120);
+    s.hooks.get(0x0201)();
+    await tick();
+    assert.deepEqual(calls, ['maximize']);
+    assert.equal(s.sent.length, 1);
+  } finally {
+    clock.restore();
+  }
+});
+
+test('Windows right-button presses clear the armed double-click', async () => {
+  const clock = makeClock();
+  try {
+    const s = setup('win32', { emulatedMaximize: true });
+    const calls = [];
+    s.win.maximize = () => calls.push('maximize');
+    const tick = () => new Promise((resolve) => setImmediate(resolve));
+    s.hooks.get(0x0201)();
+    clock.advance(140);
+    s.hooks.get(0x0204)();
+    clock.advance(140);
+    s.hooks.get(0x0201)();
+    await tick();
+    assert.deepEqual(calls, []);
+    assert.equal(s.sent.length, 3);
+  } finally {
+    clock.restore();
+  }
+});
+
+test('Windows opaque windows never toggle from client presses', async () => {
+  const clock = makeClock();
+  try {
+    const s = setup('win32');
+    let maximizeCalls = 0;
+    s.win.maximize = () => maximizeCalls++;
+    s.hooks.get(0x0201)();
+    clock.advance(120);
+    s.hooks.get(0x0201)();
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(maximizeCalls, 0);
+    assert.equal(s.sent.length, 2, 'both presses still notify');
+  } finally {
+    clock.restore();
+  }
 });
