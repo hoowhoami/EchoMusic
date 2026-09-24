@@ -242,6 +242,64 @@ test('Windows native double-click ignores fullscreen windows', () => {
   assert.equal(s.logs.at(-1)?.[1]?.decision, 'ignored-maximize-while-fullscreen');
 });
 
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+test('Windows pairs two close titlebar presses when the OS emits no WM_LBUTTONDBLCLK', async () => {
+  const s = setup('win32', { emulatedMaximize: true });
+  s.hooks.get(0x0210)(param(0x0201));
+  await sleep(120);
+  s.hooks.get(0x0210)(param(0x0201));
+  assert.equal(s.sent.length, 2);
+  assert.deepEqual(s.sent[0], [
+    'window:native-pointerdown',
+    { x: 250, y: 10 },
+    { source: 'WM_PARENTNOTIFY', eventId: 1 },
+  ]);
+  assert.deepEqual(s.sent[1][0], 'window:native-dblclick');
+  assert.equal(s.sent[1][2].source, 'WM_PARENTNOTIFY');
+  const pairLog = s.logs.find((args) => args[1]?.decision === 'emulated-dblclick');
+  assert.ok(pairLog, 'pairing decision is logged');
+  assert.equal(s.sent[1][2].eventId, 2);
+});
+
+test('Windows does not pair separated, distant or right-button presses', async () => {
+  const s = setup('win32', { emulatedMaximize: true });
+  s.hooks.get(0x0201)();
+  await sleep(120);
+  s.setCursor({ x: 700, y: 120 });
+  s.hooks.get(0x0201)();
+  assert.equal(s.sent.length, 2);
+  assert.equal(
+    s.sent.some((event) => event[0] === 'window:native-dblclick'),
+    false,
+  );
+  s.setCursor({ x: 600, y: 120 });
+  await sleep(600);
+  s.hooks.get(0x0204)();
+  await sleep(120);
+  s.hooks.get(0x0204)();
+  assert.equal(s.sent.length, 4);
+  assert.equal(
+    s.sent.some((event) => event[0] === 'window:native-dblclick'),
+    false,
+  );
+});
+
+test('Windows pairing yields to the single native double-click and enters cooldown', async () => {
+  const s = setup('win32', { emulatedMaximize: true });
+  s.dblclick({ x: 1000, y: 140 });
+  assert.equal(s.sent.length, 1);
+  s.hooks.get(0x0201)();
+  await sleep(120);
+  s.hooks.get(0x0201)();
+  assert.equal(s.sent.length, 3);
+  assert.equal(
+    s.sent.filter((event) => event[0] === 'window:native-dblclick').length,
+    1,
+    'the pairing path must not fire again while the native forward is in cooldown',
+  );
+});
+
 test('Windows teardown stops the native monitor and drops late callbacks', () => {
   const s = setup('win32', { emulatedMaximize: true });
   s.destroy();

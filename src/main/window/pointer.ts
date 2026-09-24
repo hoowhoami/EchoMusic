@@ -84,6 +84,27 @@ export function installWindowPointerEvents(win: BrowserWindow, options: WindowPo
       }
       return monitorDiagnostics ?? {};
     };
+    // Transparent/acrylic Windows 10 windows can never produce the client-area
+    // WM_LBUTTONDBLCLK the native hook below watches (the click target lacks
+    // CS_DBLCLKS and the frameless drag path consumes the second press), leaving
+    // the hook counters at zero. Those boxes still deliver every press to the
+    // parent as WM_PARENTNOTIFY, so pair two close titlebar presses as a fallback
+    // transport and forward them through the same renderer path.
+    const DOUBLE_CLICK_MS = 500;
+    const MIN_CLICK_GAP_MS = 60;
+    const DOUBLE_CLICK_PX = 6;
+    const PAIRING_COOLDOWN_MS = 700;
+    let titlebarPress: { at: number; x: number; y: number } | null = null;
+    let pairingCooldownUntil = 0;
+    // Single forward point for every transport (native hook, press pairing and
+    // caption double-click) so alternatives cannot double-toggle.
+    const forwardDoubleClick = (source: string, point: { x: number; y: number }) => {
+      titlebarPress = null;
+      pairingCooldownUntil = Date.now() + PAIRING_COOLDOWN_MS;
+      const eventId = ++sequence;
+      report(source, 'forward-dblclick', { eventId, ...readDblclickDiagnostics() });
+      win.webContents.send('window:native-dblclick', point, { source, eventId });
+    };
     // A real double-click on the child/top-level HWND: forward it so the renderer
     // can confirm the point is a drag region and then run the regular toggle.
     const clientDoubleClick = (
@@ -101,11 +122,9 @@ export function installWindowPointerEvents(win: BrowserWindow, options: WindowPo
         report(source, 'outside-titlebar');
         return;
       }
-      const eventId = ++sequence;
-      report(source, 'forward-dblclick', { eventId, ...readDblclickDiagnostics() });
-      win.webContents.send('window:native-dblclick', point, { source, eventId });
+      forwardDoubleClick(source, point);
     };
-    const clientClick = (source: string) => {
+    const clientClick = (source: string, button: 'left' | 'right' = 'left') => {
       if (win.isDestroyed() || win.webContents.isDestroyed()) return;
       // Electron returns both values in screen DIPs, including on mixed-DPI monitors.
       // Read synchronously in the native message callback, before a drag moves the window.
@@ -114,6 +133,27 @@ export function installWindowPointerEvents(win: BrowserWindow, options: WindowPo
       if (!point) {
         log.debug('[TitlebarPointer]', { source, decision: 'outside-titlebar' });
         return;
+      }
+      if (button === 'left' && options.emulatedMaximize) {
+        const now = Date.now();
+        const last = titlebarPress;
+        if (now < pairingCooldownUntil || !last || now - last.at > DOUBLE_CLICK_MS) {
+          titlebarPress = { at: now, ...point };
+        } else if (now - last.at < MIN_CLICK_GAP_MS) {
+          return;
+        } else {
+          const distancePx = Math.hypot(last.x - point.x, last.y - point.y);
+          if (distancePx <= DOUBLE_CLICK_PX) {
+            report(source, 'emulated-dblclick', {
+              intervalMs: now - last.at,
+              distancePx,
+              ...readDblclickDiagnostics(),
+            });
+            forwardDoubleClick(source, point);
+            return;
+          }
+          titlebarPress = { at: now, ...point };
+        }
       }
       notify(source, point);
     };
@@ -127,16 +167,17 @@ export function installWindowPointerEvents(win: BrowserWindow, options: WindowPo
         else report(source, 'ignored-non-caption', { hitTest: hit });
       });
     }
-    for (const [message, source] of [
-      [0x0201, 'WM_LBUTTONDOWN'],
-      [0x0204, 'WM_RBUTTONDOWN'],
+    for (const [message, source, button] of [
+      [0x0201, 'WM_LBUTTONDOWN', 'left'],
+      [0x0204, 'WM_RBUTTONDOWN', 'right'],
     ] as const) {
-      win.hookWindowMessage(message, () => clientClick(source));
+      win.hookWindowMessage(message, () => clientClick(source, button));
     }
     win.hookWindowMessage(0x0210, (param) => {
       if (param.length < 4) return;
       const event = param.readUInt32LE(0) & 0xffff;
-      if (event === 0x0201 || event === 0x0204) clientClick('WM_PARENTNOTIFY');
+      if (event === 0x0201) clientClick('WM_PARENTNOTIFY', 'left');
+      else if (event === 0x0204) clientClick('WM_PARENTNOTIFY', 'right');
     });
     // The child HWND's WM_LBUTTONDBLCLK is the only reliable double-click signal on
     // a captionless transparent window. A WH_MOUSE_LL hook inherits the OS
@@ -155,10 +196,19 @@ export function installWindowPointerEvents(win: BrowserWindow, options: WindowPo
           stopMonitor = () => native.stopWindowsDoubleClickMonitor();
           report('native-dblclick', 'installed', readDblclickDiagnostics());
           // Observe, never consume: if the top-level still hit-tests the titlebar
-          // as HTCAPTION, the system runs its own SC_MAXIMIZE on the double-click.
+          // as HTCAPTION, the system schedules its own SC_MAXIMIZE — which these
+          // captionless windows swallow — so forward the toggle instead.
           win.hookWindowMessage(0x00a3, (hitTest) => {
             const hit = hitTest.length >= 4 ? hitTest.readUInt32LE(0) : -1;
-            if (hit === 2) report('WM_NCLBUTTONDBLCLK', 'caption-dblclick-observed');
+            if (hit !== 2) {
+              if (hit !== -1)
+                report('WM_NCLBUTTONDBLCLK', 'observed-non-caption', { hitTest: hit });
+              return;
+            }
+            const cursor = screen.getCursorScreenPoint();
+            const point = contentPoint(cursor, false);
+            if (point) forwardDoubleClick('WM_NCLBUTTONDBLCLK', point);
+            else report('WM_NCLBUTTONDBLCLK', 'outside-titlebar');
           });
         } catch (error) {
           log.warn('[TitlebarPointer] Could not install the native double-click monitor:', error);
