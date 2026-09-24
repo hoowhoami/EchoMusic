@@ -2,6 +2,7 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { Icon } from '@iconify/vue';
 import Button from '@/components/ui/Button.vue';
+import Input from '@/components/ui/Input.vue';
 import Scrollbar from '@/components/ui/Scrollbar.vue';
 import Switch from '@/components/ui/Switch.vue';
 import { openSettingsDialog } from '@/composables/useSettingsDialog';
@@ -14,13 +15,36 @@ const settingStore = useSettingStore();
 const pin = ref('');
 const pinTarget = ref('');
 const emit = defineEmits<{ close: [] }>();
+const TEMP_CAST_PIN_MOCK_TARGET_ID = 'airplay:temp-pin-mock';
+const TEMP_CAST_PIN_MOCK_TARGET: OutputTargetView = {
+  targetId: TEMP_CAST_PIN_MOCK_TARGET_ID,
+  protocol: 'airplay',
+  displayName: '会议室 Apple TV',
+  addresses: ['192.168.110.88'],
+  modelName: 'AppleTV',
+  note: '需要验证码 · 192.168.110.88',
+  paired: false,
+  connection: { connected: false, available: true },
+};
+const TEMP_CAST_READY_MOCK_TARGET: OutputTargetView = {
+  targetId: 'airplay:temp-ready-mock',
+  protocol: 'airplay',
+  displayName: '客厅 HomePod',
+  addresses: ['192.168.110.89'],
+  modelName: 'HomePod',
+  note: '192.168.110.89',
+  paired: true,
+  connection: { connected: false, available: true },
+};
 
 const dlnaTargets = computed(() =>
   output.visibleTargets.filter((target) => target.protocol === 'dlna'),
 );
-const airplayTargets = computed(() =>
-  output.visibleTargets.filter((target) => target.protocol === 'airplay'),
-);
+const airplayTargets = computed(() => [
+  ...output.visibleTargets.filter((target) => target.protocol === 'airplay'),
+  TEMP_CAST_PIN_MOCK_TARGET,
+  TEMP_CAST_READY_MOCK_TARGET,
+]);
 const remoteActive = computed(() => output.snapshot && output.snapshot.protocol !== 'local');
 const remoteDeviceCount = computed(() => dlnaTargets.value.length + airplayTargets.value.length);
 const activeTitle = computed(() =>
@@ -55,20 +79,17 @@ const isActiveTarget = (target: OutputTargetView) =>
     : output.snapshot.displayName === target.displayName);
 
 async function choose(target: OutputTargetView): Promise<void> {
-  if (
-    target.protocol === 'airplay' &&
-    target.paired === false &&
-    pinTarget.value !== target.targetId
-  ) {
-    pinTarget.value = target.targetId;
+  const currentPinTarget = pinTarget.value === target.targetId;
+  if (!currentPinTarget) {
+    pinTarget.value = '';
     pin.value = '';
+  }
+  if (target.protocol === 'airplay' && target.paired === false && !currentPinTarget) {
+    pinTarget.value = target.targetId;
     return;
   }
 
-  const result = await output.connect(
-    target.targetId,
-    pinTarget.value === target.targetId ? pin.value : undefined,
-  );
+  const result = await output.connect(target.targetId, currentPinTarget ? pin.value : undefined);
   if (result.ok) {
     pinTarget.value = '';
     pin.value = '';
@@ -193,36 +214,56 @@ onUnmounted(() => {
           <small>{{ airplayTargets.length }} 台</small>
         </div>
         <Scrollbar class="cast-device-scroll" :scrollbar-inset="3" :scrollbar-right-bleed="9">
-          <button
-            v-for="target in airplayTargets"
-            :key="target.targetId"
-            type="button"
-            class="cast-device-row app-focus-ring-soft"
-            :class="{ active: isActiveTarget(target), connecting: isConnectingTarget(target) }"
-            :disabled="output.busy || !settingStore.networkPlaybackEnabled"
-            @click="choose(target)"
-          >
-            <span class="cast-device-name">{{ deviceName(target) }}</span>
-            <span v-if="isConnectingTarget(target)" class="cast-device-meta is-connecting">
-              <Icon :icon="iconLoader2" width="12" height="12" class="animate-spin" />
-              连接中
-            </span>
-            <span v-else-if="targetMeta(target)" class="cast-device-meta">
-              {{ targetMeta(target) }}
-            </span>
-          </button>
-          <label v-if="pinTarget" class="cast-pin">
-            <span>PIN</span>
-            <input
-              v-model="pin"
-              maxlength="8"
-              inputmode="numeric"
-              @keydown.enter.prevent="submitPin"
-            />
-            <Button variant="secondary" size="sm" :disabled="output.busy" @click="submitPin">
-              连接
-            </Button>
-          </label>
+          <template v-for="target in airplayTargets" :key="target.targetId">
+            <div
+              v-if="pinTarget === target.targetId"
+              class="cast-device-row cast-device-row-expanded"
+              :class="{ active: isActiveTarget(target), connecting: isConnectingTarget(target) }"
+            >
+              <div class="cast-device-main">
+                <span class="cast-device-name">{{ deviceName(target) }}</span>
+                <span v-if="targetMeta(target)" class="cast-device-meta">
+                  {{ targetMeta(target) }}
+                </span>
+              </div>
+              <div class="cast-pin-form">
+                <Input
+                  v-model="pin"
+                  class="cast-pin-input"
+                  input-class="cast-pin-input-control"
+                  placeholder="输入密码/验证码"
+                  maxlength="32"
+                  @keydown.enter.prevent="submitPin"
+                />
+                <Button
+                  class="cast-pin-submit"
+                  variant="secondary"
+                  size="none"
+                  :disabled="output.busy"
+                  @click="submitPin"
+                >
+                  连接
+                </Button>
+              </div>
+            </div>
+            <button
+              v-else
+              type="button"
+              class="cast-device-row app-focus-ring-soft"
+              :class="{ active: isActiveTarget(target), connecting: isConnectingTarget(target) }"
+              :disabled="output.busy || !settingStore.networkPlaybackEnabled"
+              @click="choose(target)"
+            >
+              <span class="cast-device-name">{{ deviceName(target) }}</span>
+              <span v-if="isConnectingTarget(target)" class="cast-device-meta is-connecting">
+                <Icon :icon="iconLoader2" width="12" height="12" class="animate-spin" />
+                连接中
+              </span>
+              <span v-else-if="targetMeta(target)" class="cast-device-meta">
+                {{ targetMeta(target) }}
+              </span>
+            </button>
+          </template>
           <p v-if="airplayTargets.length === 0" class="cast-empty">
             {{ output.searching ? '正在搜索设备' : '没有找到设备' }}
           </p>
@@ -446,6 +487,23 @@ onUnmounted(() => {
   opacity: 1;
 }
 
+.cast-device-row-expanded {
+  grid-template-columns: 1fr;
+  align-items: stretch;
+  gap: 7px;
+  padding: 7px;
+  border-color: color-mix(in srgb, var(--color-primary) 22%, transparent);
+  background: color-mix(in srgb, var(--color-primary) 6%, var(--control-hover-bg));
+}
+
+.cast-device-main {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
 .cast-device-name {
   min-width: 0;
   overflow: hidden;
@@ -466,24 +524,50 @@ onUnmounted(() => {
   padding: 5px 8px;
 }
 
-.cast-pin {
-  display: flex;
+.cast-pin-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px;
   align-items: center;
-  gap: 7px;
-  padding: 5px 2px;
-  color: var(--color-text-secondary);
-  font-size: 11px;
-  font-weight: 700;
 }
 
-.cast-pin input {
-  width: 68px;
+.cast-pin-input {
+  min-width: 0;
+}
+
+.cast-pin-input :deep(.cast-pin-input-control) {
   height: 28px;
-  padding: 0 8px;
-  border: 1px solid var(--control-border);
+  padding-left: 8px;
+  border-color: var(--control-border);
   border-radius: 7px;
-  background: var(--control-muted-bg);
+  background: color-mix(in srgb, var(--floating-surface-bg) 84%, transparent);
   color: var(--color-text-main);
-  outline: none;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.cast-pin-input :deep(.cast-pin-input-control::placeholder) {
+  color: var(--color-text-muted);
+}
+
+.cast-pin-input :deep(button[type='button']) {
+  right: 5px;
+  width: 20px;
+  height: 20px;
+  color: var(--color-text-secondary);
+}
+
+.cast-pin-input :deep(button[type='button']:hover) {
+  color: var(--color-text-main);
+  background: var(--control-hover-bg);
+}
+
+.cast-pin-submit {
+  height: 28px;
+  padding: 0 12px;
+  border-radius: 7px;
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
 }
 </style>

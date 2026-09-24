@@ -38,6 +38,21 @@ interface OutputView {
   diagnostics?: string;
 }
 
+function outputErrorMessage(error?: string): string {
+  switch (error) {
+    case 'pin-required':
+      return '请输入 AirPlay 密码或设备屏幕上显示的验证码';
+    case 'pin-invalid':
+      return 'AirPlay 密码或验证码不正确，请重新输入';
+    case 'airplay-permission-required':
+      return '设备拒绝了 AirPlay 连接，请在接收设备上允许 EchoMusic 后重试';
+    case 'airplay-mfi-required':
+      return '该 AirPlay 设备需要 Apple MFi 硬件认证，EchoMusic 当前无法连接';
+    default:
+      return error || '连接失败';
+  }
+}
+
 export const useOutputStore = defineStore('output', () => {
   const settingStore = useSettingStore();
   const targets = ref<OutputTargetView[]>([]);
@@ -52,7 +67,7 @@ export const useOutputStore = defineStore('output', () => {
   const searching = computed(
     () => refreshing.value || diagnostics.value.startsWith('正在搜索投放设备'),
   );
-  const visibleTargets = targets;
+  const visibleTargets = computed(() => targets.value);
   let started = false;
   let browsingRequests = 0;
   let refreshFlight: Promise<void> | null = null;
@@ -147,7 +162,7 @@ export const useOutputStore = defineStore('output', () => {
     error.value = '';
     try {
       const result = await api.connect(targetId, pin);
-      if (!result.ok) error.value = result.error || '连接失败';
+      if (!result.ok) error.value = outputErrorMessage(result.error);
       apply(await api.getSession());
       return result;
     } catch (caught) {

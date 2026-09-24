@@ -127,8 +127,8 @@ importers:
         specifier: ^3.4.11
         version: 3.4.11
       electron:
-        specifier: 43.7.5
-        version: 43.7.5
+        specifier: 43.7.1
+        version: 43.7.1
       electron-builder:
         specifier: 26.8.1
         version: 26.8.1(electron-builder-squirrel-windows@26.8.1)
@@ -2112,8 +2112,8 @@ packages:
     resolution: {integrity: sha512-bO3y10YikuUwUuDUQRM4KfwNkKhnpVO7IPdbsrejwN9/AABJzzTQ4GeHwyzNSrVO+tEH3/Np255a3sVZpZDjvg==}
     engines: {node: '>=8.0.0'}
 
-  electron@43.7.5:
-    resolution: {integrity: sha512-AR+OLH/8QAwx6Lz6mhaDQhesbjC/Xh2WOiFSI/CDFU6FKX/qJdBg65bEUn+MLvbvIi/LlaRQeLljnUcKb1KS0A==}
+  electron@43.7.1:
+    resolution: {integrity: sha512-+637qklMfTs0gF6/W2HX9rLT/c9G9aFDeAgMeMbMEPkrIXclYqTAAWBE7owERECvcf0vwUu3Sn2e/Xdy+14vEg==}
     engines: {node: '>= 22.12.0'}
     hasBin: true
 
@@ -5845,7 +5845,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  electron@43.7.5:
+  electron@43.7.1:
     dependencies:
       '@electron-internal/extract-zip': 1.0.3
       '@electron/get': 5.0.0

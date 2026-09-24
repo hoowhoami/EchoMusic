@@ -94,6 +94,13 @@ export function resolvePlayerBarActions(
 
 const clampCapacity = (value: number | undefined) => Math.max(0, Math.floor(value ?? 0));
 
+export const countPlayerBarActionSlots = (
+  width: number,
+  reserved: number,
+  slot: number,
+  max = Number.POSITIVE_INFINITY,
+) => Math.max(0, Math.min(max, Math.floor((Math.max(0, width) - reserved) / slot)));
+
 export function partitionPlayerBarActions(
   actions: readonly ResolvedPlayerBarAction[],
   capacity: PlayerBarPlacementCapacity,

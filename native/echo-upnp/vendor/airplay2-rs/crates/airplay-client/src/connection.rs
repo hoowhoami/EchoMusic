@@ -233,6 +233,22 @@ pub struct Connection {
 }
 
 impl Connection {
+    /// Ask the receiver to show a pairing PIN on screen.
+    pub async fn start_pin_pairing(device: Device) -> Result<()> {
+        let ip_addr = select_best_address(&device.addresses)
+            .ok_or_else(|| RtspError::ConnectionRefused)?;
+        let addr = SocketAddr::new(*ip_addr, device.port);
+        info!("Requesting AirPlay pairing PIN from {} at {}", device.name, addr);
+
+        let mut rtsp = RtspConnection::new(addr);
+        rtsp.connect().await?;
+        let response = rtsp.send(RtspRequest::pair_pin_start()).await?;
+        if response.status_code >= 400 {
+            return Err(RtspError::UnexpectedStatus(response.status_code).into());
+        }
+        Ok(())
+    }
+
     /// Create new connection to device.
     pub async fn connect(device: Device, config: StreamConfig) -> Result<Self> {
         Self::connect_with_pin(device, config, "3939").await

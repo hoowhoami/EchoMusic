@@ -52,6 +52,7 @@ import {
 } from '@/icons';
 import { usePlayerControls } from '@/composables/usePlayerControls';
 import {
+  countPlayerBarActionSlots,
   partitionPlayerBarActions,
   resolvePlayerBarActions,
   type PlayerBarAction,
@@ -444,9 +445,6 @@ const activatePlayerBarAction = (item: ResolvedPlayerBarAction) => {
   void item.onClick();
 };
 
-const countActionSlots = (width: number, reserved: number, slot: number, max = 6) =>
-  Math.max(0, Math.min(max, Math.floor((Math.max(0, width) - reserved) / slot)));
-
 const updateActionCapacity = () => {
   const barWidth = playerBarRef.value?.clientWidth ?? 0;
   const leftWidth = leftActionsRef.value?.parentElement?.clientWidth ?? 0;
@@ -458,9 +456,9 @@ const updateActionCapacity = () => {
   const fallbackRightWidth = Math.max(0, barWidth - leftWidth - centerWidth - 64);
   const rightWidth = Math.max(measuredRightWidth, fallbackRightWidth);
   actionCapacity.value = {
-    left: countActionSlots(leftWidth, 72, 28, 5),
-    center: countActionSlots(centerWidth, 0, 36, 7),
-    right: countActionSlots(rightWidth, 112, 36, 5),
+    left: countPlayerBarActionSlots(leftWidth, 72, 28),
+    center: countPlayerBarActionSlots(centerWidth, 0, 36),
+    right: countPlayerBarActionSlots(rightWidth, 112, 36),
   };
 };
 
@@ -720,7 +718,7 @@ onUnmounted(() => {
         ref="centerAreaRef"
         class="flex-[1.5] flex flex-col items-center justify-center gap-1 min-w-37.5"
       >
-        <div class="flex items-center justify-center gap-1.5 h-10">
+        <div class="player-bar-action-strip flex items-center justify-center gap-1.5 h-10">
           <template v-for="item in centerPlayerBarActions" :key="item.key">
             <SleepTimerPopover v-if="item.component === 'sleep-timer'" />
             <VolumePopover v-else-if="item.component === 'volume'" variant="bar" />
@@ -835,7 +833,7 @@ onUnmounted(() => {
       <!-- 3. 右侧：功能选项 - 弹性增长 -->
       <div
         ref="rightActionsRef"
-        class="player-actions flex-1 flex justify-end items-center gap-1 min-w-30 max-w-[320px]"
+        class="player-actions player-bar-action-strip flex-1 flex justify-end items-center gap-1 min-w-30 max-w-[320px]"
       >
         <template v-for="item in rightPlayerBarActions" :key="item.key">
           <SleepTimerPopover v-if="item.component === 'sleep-timer'" />
@@ -941,6 +939,35 @@ onUnmounted(() => {
 
 .player-actions {
   padding-right: 6px;
+}
+
+.player-bar-action-strip {
+  --player-bar-action-size: 36px;
+}
+
+.player-bar-action-strip :deep(button) {
+  display: inline-flex;
+  width: var(--player-bar-action-size);
+  height: var(--player-bar-action-size);
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 var(--player-bar-action-size);
+  line-height: 1;
+}
+
+.player-bar-action-strip :deep(svg),
+.player-bar-action-strip :deep(.plugin-icon) {
+  display: block;
+}
+
+.player-bar-action-strip :deep(button > span.relative > svg[style]) {
+  transform: none !important;
+}
+
+.player-bar-action-strip :deep(.player-toggle) {
+  width: 38px;
+  height: 38px;
+  flex-basis: 38px;
 }
 
 .player-error-indicator {

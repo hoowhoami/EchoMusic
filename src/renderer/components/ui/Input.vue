@@ -1,7 +1,10 @@
 <script setup lang="ts">
+import { useAttrs } from 'vue';
 import { useVModel } from '@vueuse/core';
 import { type PrimitiveProps } from 'reka-ui';
 import { iconX } from '@/icons';
+
+defineOptions({ inheritAttrs: false });
 
 interface Props extends PrimitiveProps {
   modelValue?: string | number;
@@ -21,6 +24,7 @@ const props = withDefaults(defineProps<Props>(), {
 const emits = defineEmits(['update:modelValue', 'clear']);
 
 const value = useVModel(props, 'modelValue', emits);
+const attrs = useAttrs();
 
 const handleClear = () => {
   value.value = '';
@@ -32,6 +36,7 @@ const handleClear = () => {
   <div :class="['relative group w-full', props.class]">
     <input
       v-model="value"
+      v-bind="attrs"
       :type="type"
       :placeholder="placeholder"
       :class="[

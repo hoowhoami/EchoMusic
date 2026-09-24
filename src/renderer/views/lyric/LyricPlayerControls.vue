@@ -29,6 +29,7 @@ import CastPopover from '@/components/player/CastPopover.vue';
 import ProgressBusyOverlay from '@/components/player/ProgressBusyOverlay.vue';
 import PlayerBarMoreMenu from '@/layouts/PlayerBarMoreMenu.vue';
 import {
+  countPlayerBarActionSlots,
   partitionPlayerBarActions,
   resolvePlayerBarActions,
   type PlayerBarAction,
@@ -425,9 +426,6 @@ const activatePlayerBarAction = (item: ResolvedPlayerBarAction) => {
   void item.onClick();
 };
 
-const countActionSlots = (width: number, reserved: number, slot: number, max = 6) =>
-  Math.max(0, Math.min(max, Math.floor((Math.max(0, width) - reserved) / slot)));
-
 const updateActionCapacity = () => {
   const barWidth = lyricBarRef.value?.clientWidth ?? 0;
   const leftWidth = leftActionsRef.value?.parentElement?.clientWidth ?? 0;
@@ -439,9 +437,9 @@ const updateActionCapacity = () => {
   const fallbackRightWidth = Math.max(0, barWidth - leftWidth - centerWidth - 56);
   const rightWidth = Math.max(measuredRightWidth, fallbackRightWidth);
   actionCapacity.value = {
-    left: countActionSlots(leftWidth, 64, 28, 5),
-    center: countActionSlots(centerWidth, 0, 36, 7),
-    right: countActionSlots(rightWidth, 112, 36, 6),
+    left: countPlayerBarActionSlots(leftWidth, 64, 28),
+    center: countPlayerBarActionSlots(centerWidth, 0, 36),
+    right: countPlayerBarActionSlots(rightWidth, 112, 36),
   };
 };
 
@@ -599,7 +597,7 @@ useResizeObserver(
       <!-- 2. 中间：播放控制 -->
       <div ref="centerAreaRef" class="bar-center">
         <!-- 播放控制按钮 -->
-        <div class="bar-controls">
+        <div class="bar-controls player-bar-action-strip">
           <template v-for="item in centerPlayerBarActions" :key="item.key">
             <SleepTimerPopover v-if="item.component === 'sleep-timer'" />
             <VolumePopover v-else-if="item.component === 'volume'" variant="bar" />
@@ -657,7 +655,7 @@ useResizeObserver(
       </div>
 
       <!-- 3. 右侧：功能选项 -->
-      <div ref="rightActionsRef" class="bar-right">
+      <div ref="rightActionsRef" class="bar-right player-bar-action-strip">
         <template v-for="item in rightPlayerBarActions" :key="item.key">
           <SleepTimerPopover v-if="item.component === 'sleep-timer'" />
           <VolumePopover v-else-if="item.component === 'volume'" variant="bar" />
@@ -922,6 +920,35 @@ useResizeObserver(
   justify-content: center;
   gap: 6px;
   height: 40px;
+}
+
+.player-bar-action-strip {
+  --player-bar-action-size: 36px;
+}
+
+.player-bar-action-strip :deep(button) {
+  display: inline-flex;
+  width: var(--player-bar-action-size);
+  height: var(--player-bar-action-size);
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 var(--player-bar-action-size);
+  line-height: 1;
+}
+
+.player-bar-action-strip :deep(svg),
+.player-bar-action-strip :deep(.plugin-icon) {
+  display: block;
+}
+
+.player-bar-action-strip :deep(button > span.relative > svg[style]) {
+  transform: none !important;
+}
+
+.player-bar-action-strip :deep(.bar-play-btn) {
+  width: 38px;
+  height: 38px;
+  flex-basis: 38px;
 }
 
 .bar-ctrl-btn {

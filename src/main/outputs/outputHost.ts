@@ -301,6 +301,29 @@ function formatAirplayTarget(target: AirplayTarget): string {
   return parts.join(', ');
 }
 
+function airplayConnectErrorMessage(error?: string): string {
+  switch (error) {
+    case 'pin-required':
+      return '请输入 AirPlay 密码或设备屏幕上显示的验证码';
+    case 'pin-invalid':
+      return 'AirPlay 密码或验证码不正确，请重新输入';
+    case 'airplay-permission-required':
+      return '设备拒绝了 AirPlay 连接，请在接收设备上允许 EchoMusic 后重试';
+    case 'airplay-mfi-required':
+      return '该 AirPlay 设备需要 Apple MFi 硬件认证，EchoMusic 当前无法连接';
+    default:
+      return error || 'AirPlay 连接失败';
+  }
+}
+
+function dlnaConnectErrorMessage(error: unknown, fallback: string): string {
+  const message = error instanceof Error ? error.message : String(error);
+  if (/\b(401|403)\b|unauthorized|forbidden/i.test(message)) {
+    return '设备要求授权，请在设备端允许当前网络后重试';
+  }
+  return error instanceof Error ? error.message : fallback;
+}
+
 function readLocalNetworkIdentity(): { addresses: string[]; macs: string[] } {
   const addresses = new Set<string>();
   const macs = new Set<string>();
@@ -742,7 +765,7 @@ export class OutputHost {
         'warn',
         `DLNA 连接设备描述失败: ${formatDlnaTarget(target)}, error=${error instanceof Error ? error.message : String(error)}`,
       );
-      return { ok: false, error: error instanceof Error ? error.message : '读取设备描述失败' };
+      return { ok: false, error: dlnaConnectErrorMessage(error, '读取设备描述失败') };
     }
     const av = findService(loaded.services, 'AVTransport');
     const rc = findService(loaded.services, 'RenderingControl');
@@ -867,10 +890,8 @@ export class OutputHost {
     await this.stopRemote(false);
     const result = await airplay.connect(target.targetId, pin);
     if (!result.ok) {
-      this.log(
-        'warn',
-        `AirPlay 连接失败: ${target.displayName} (${target.targetId}) ${result.error || '未知错误'}`,
-      );
+      const message = airplayConnectErrorMessage(result.error);
+      this.log('warn', `AirPlay 连接失败: ${target.displayName} (${target.targetId}) ${message}`);
       return result;
     }
     const port = result.pcmPort ?? 0;

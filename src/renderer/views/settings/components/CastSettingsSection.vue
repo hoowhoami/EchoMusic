@@ -220,13 +220,8 @@ function submitPin(): void {
             </span>
           </button>
           <label v-if="pinTarget" class="cast-pin">
-            PIN
-            <input
-              v-model="pin"
-              maxlength="8"
-              inputmode="numeric"
-              @keydown.enter.prevent="submitPin"
-            />
+            密码/验证码
+            <input v-model="pin" maxlength="32" @keydown.enter.prevent="submitPin" />
             <button
               type="button"
               class="settings-action"

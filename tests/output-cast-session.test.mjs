@@ -118,7 +118,7 @@ function harness(options = {}) {
   const host = new OutputHost({
     now: () => 1_000,
     local,
-    native,
+    native: options.native ?? native,
     airplay: options.airplay,
     media,
     allowLoopbackRelay: true,
@@ -580,6 +580,74 @@ test('AirPlay connection failure is logged for diagnostics', async () => {
       ),
       true,
     );
+  } finally {
+    await box.media.stop();
+  }
+});
+
+test('AirPlay PIN requirement keeps the machine-readable code and logs a readable message', async () => {
+  const box = harness({
+    airplay: {
+      available: true,
+      async discover() {
+        return [];
+      },
+      async connect() {
+        return { ok: false, error: 'pin-required' };
+      },
+      async disconnect() {},
+      async pause() {},
+      async resume() {},
+      async seek() {
+        return 0;
+      },
+      async stop() {},
+      async setVolume() {},
+      async flushTrack() {
+        return 0;
+      },
+      status() {
+        return { connected: false, delaySec: 0, format: '', inputBits: 16 };
+      },
+    },
+    localNetworkIdentity: () => ({ addresses: [], macs: [] }),
+  });
+  try {
+    box.host.noteAirplayDevices([
+      { id: '11:22:33:44:55:66', name: 'Living Room', needsPin: false },
+    ]);
+    const result = await box.host.connect('11:22:33:44:55:66');
+    assert.deepEqual(result, { ok: false, error: 'pin-required' });
+    assert.equal(
+      box.logs.some(
+        ([level, message]) =>
+          level === 'warn' &&
+          message.includes('AirPlay 连接失败') &&
+          message.includes('请输入 AirPlay 密码或设备屏幕上显示的验证码'),
+      ),
+      true,
+    );
+  } finally {
+    await box.media.stop();
+  }
+});
+
+test('DLNA auth failures show a concise authorization hint', async () => {
+  const box = harness({
+    native: {
+      async loadDevice() {
+        throw new Error('device description failed: The control point responded with status code 401');
+      },
+      async action() {
+        return {};
+      },
+      async clearDeviceCache() {},
+    },
+  });
+  try {
+    const result = await box.host.connect('uuid:renderer-1');
+    assert.equal(result.ok, false);
+    assert.equal(result.error, '设备要求授权，请在设备端允许当前网络后重试');
   } finally {
     await box.media.stop();
   }

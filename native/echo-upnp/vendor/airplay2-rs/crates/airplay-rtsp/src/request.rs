@@ -187,6 +187,10 @@ impl RtspRequest {
             .body(body)
     }
 
+    pub fn pair_pin_start() -> Self {
+        Self::new(RtspMethod::Post, "/pair-pin-start")
+    }
+
     /// Create a fruit pair-setup request (Apple TV pairing protocol).
     ///
     /// Uses binary plist content type. The body should be a binary plist dictionary.

@@ -358,15 +358,20 @@ impl Worker {
             return fail("设备不在当前发现结果里");
         };
         if device.requires_password && pin.trim().is_empty() {
+            let _ = client.start_pin_pairing(&device).await;
             return fail("pin-required");
         }
         let connected = if pin.trim().is_empty() {
             client.connect(&device).await
         } else {
-            client.connect_with_pin(&device, pin.trim()).await
+            client.connect_with_pairing_pin(&device, pin.trim()).await
         };
         if let Err(err) = connected {
-            self.last_error = Some(err.to_string());
+            let error = normalize_connect_error(&err.to_string());
+            if error == "pin-required" {
+                let _ = client.start_pin_pairing(&device).await;
+            }
+            self.last_error = Some(error);
             return fail(
                 &self
                     .last_error
@@ -541,6 +546,30 @@ fn fail(error: &str) -> Link {
         format: None,
         pcm_port: None,
     }
+}
+
+fn normalize_connect_error(error: &str) -> String {
+    let lower = error.to_lowercase();
+    if lower.contains("invalid pin")
+        || lower.contains("srp verification failed")
+        || lower.contains("verification failed")
+    {
+        return "pin-invalid".to_string();
+    }
+    if lower.contains("requires password")
+        || lower.contains("401")
+        || lower.contains("unauthorized")
+        || lower.contains("pair-pin")
+    {
+        return "pin-required".to_string();
+    }
+    if lower.contains("pairing rejected") || lower.contains("unexpected status code: 403") {
+        return "airplay-permission-required".to_string();
+    }
+    if lower.contains("mfi") {
+        return "airplay-mfi-required".to_string();
+    }
+    error.to_string()
 }
 
 fn found_device(device: &Device) -> FoundDevice {

@@ -158,6 +158,50 @@ impl AirPlayClient {
         Ok(())
     }
 
+    /// Connect to a device with a user-entered AirPlay password or screen code.
+    ///
+    /// Prefer saved HomeKit pair-verify identities when available, then try the
+    /// normal transient path, and finally fall back to HomeKit Normal pair-setup
+    /// which persists an identity for future connections.
+    pub async fn connect_with_pairing_pin(&mut self, device: &Device, pin: &str) -> Result<()> {
+        if self.connection.is_some() {
+            self.disconnect().await?;
+        }
+
+        let stream_config = self.stream_config.clone();
+        let mut connection =
+            match Connection::connect_auto(device.clone(), stream_config.clone(), pin).await {
+                Ok(connection) => connection,
+                Err(first_error) => {
+                    tracing::warn!(
+                        "AirPlay transient/pair-verify connect failed: {}; trying HomeKit Normal pairing",
+                        first_error
+                    );
+                    Connection::connect_with_pin_pairing(device.clone(), stream_config, pin)
+                        .await
+                        .map_err(|second_error| {
+                            tracing::warn!(
+                                "AirPlay HomeKit Normal pairing failed after transient failure: {}",
+                                second_error
+                            );
+                            second_error
+                        })?
+                }
+            };
+
+        connection.set_render_delay_ms(self.render_delay_ms);
+        connection.setup().await?;
+        self.connection = Some(connection);
+        self.emit_event(ClientEvent::Connected(device.clone())).await;
+
+        Ok(())
+    }
+
+    /// Ask a receiver to show a screen pairing code when it supports that flow.
+    pub async fn start_pin_pairing(&mut self, device: &Device) -> Result<()> {
+        Connection::start_pin_pairing(device.clone()).await
+    }
+
     /// Stop the group control listener thread if running.
     fn stop_group_control_listener(&mut self) {
         self.group_control_stop.store(true, Ordering::Release);
