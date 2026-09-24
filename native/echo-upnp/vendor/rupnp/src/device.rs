@@ -245,6 +245,10 @@ impl DeviceSpec {
     pub fn upc(&self) -> Option<&str> {
         self.upc.as_ref().map(String::as_str)
     }
+    #[cfg(feature = "full_device_spec")]
+    pub fn presentation_url(&self) -> Option<&str> {
+        self.presentation_url.as_ref().map(String::as_str)
+    }
 
     /// Returns a list of this devices subdevices.
     /// Note that this does not recurse, if you want that behaviour use

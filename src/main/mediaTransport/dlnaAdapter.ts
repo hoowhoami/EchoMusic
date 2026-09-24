@@ -55,6 +55,16 @@ export interface UpnpDeviceSnapshot {
   descriptionUrl: string;
   deviceType: string;
   friendlyName: string;
+  manufacturer?: string;
+  manufacturerUrl?: string;
+  modelName?: string;
+  modelDescription?: string;
+  modelNumber?: string;
+  modelUrl?: string;
+  serialNumber?: string;
+  udn?: string;
+  upc?: string;
+  presentationUrl?: string;
   services: UpnpServiceEndpoint[];
 }
 

@@ -6,8 +6,20 @@ export interface OutputTargetView {
   targetId: string;
   protocol: 'local' | 'dlna' | 'airplay';
   displayName: string;
+  location?: string;
+  addresses?: string[];
+  manufacturer?: string;
+  manufacturerUrl?: string;
   modelName?: string;
+  modelDescription?: string;
+  modelNumber?: string;
+  modelUrl?: string;
+  serialNumber?: string;
+  udn?: string;
+  upc?: string;
+  presentationUrl?: string;
   note?: string;
+  paired?: boolean;
   connection?: { connected?: boolean; available?: boolean; error?: string };
 }
 

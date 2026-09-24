@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
+import { EventEmitter } from 'node:events';
 import { test } from 'node:test';
-import { createSsdpDiscovery } from '../src/main/mediaTransport/discovery.ts';
+import { createSsdpDiscovery, SEARCH_TARGETS, SSDP_PORT } from '../src/main/mediaTransport/discovery.ts';
 
 /** 响应报文首行需是 HTTP/1.1（SSDP 响应）。 */
 function msearchResponse(opts: {
@@ -197,4 +198,43 @@ test('无 USN 仅有 ST 时报文被忽略', async () => {
   discovery.feedForTest(raw, { address: '192.168.1.9' });
   assert.equal(discovery.cachedUsnCount, 0);
   await discovery.stop();
+});
+
+test('SSDP 主动搜索使用临时源端口并发送到标准 1900 目标端口', async () => {
+  const logs: Array<{ level: string; message: string }> = [];
+  const sends: Array<{ port: number; address: string }> = [];
+  const binds: number[] = [];
+  class FakeSocket extends EventEmitter {
+    bind(port: number) {
+      binds.push(port);
+      queueMicrotask(() => {
+        this.emit('listening');
+      });
+    }
+    address() {
+      return { address: '0.0.0.0', family: 'IPv4', port: 49152 };
+    }
+    addMembership() {}
+    send(_data: Buffer, _offset: number, _length: number, port: number, address: string) {
+      sends.push({ port, address });
+    }
+    close(callback?: () => void) {
+      callback?.();
+    }
+  }
+
+  const discovery = createSsdpDiscovery({
+    log: (level, message) => logs.push({ level, message }),
+    socketFactory: () => new FakeSocket() as any,
+  });
+  await discovery.search(true);
+  await discovery.stop();
+
+  assert.deepEqual(binds, [0]);
+  assert.equal(
+    logs.some((entry) => entry.level === 'info' && entry.message.includes('socket ready')),
+    true,
+  );
+  assert.ok(sends.length >= SEARCH_TARGETS.length);
+  assert.equal(sends.every((send) => send.port === SSDP_PORT), true);
 });

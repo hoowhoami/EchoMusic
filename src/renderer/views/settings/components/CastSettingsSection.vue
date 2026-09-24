@@ -69,7 +69,7 @@ function isActiveTarget(target: OutputTargetView): boolean {
 async function choose(target: OutputTargetView): Promise<void> {
   if (
     target.protocol === 'airplay' &&
-    target.note === '需要 PIN' &&
+    target.paired === false &&
     pinTarget.value !== target.targetId
   ) {
     pinTarget.value = target.targetId;

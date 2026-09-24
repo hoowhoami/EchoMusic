@@ -213,22 +213,64 @@ export function createSsdpDiscovery(options: SsdpDiscoveryOptions = {}): SsdpHan
     }
   }
 
+  const makeSocket = () =>
+    (options.socketFactory
+      ? options.socketFactory()
+      : dgram.createSocket({ type: 'udp4', reuseAddr: true })) as dgram.Socket;
+
+  async function bindSocket(sock: dgram.Socket, port: number): Promise<Error | null> {
+    return new Promise((resolve) => {
+      const cleanup = () => {
+        sock.off('listening', onListening);
+        sock.off('error', onError);
+      };
+      const onListening = () => {
+        cleanup();
+        resolve(null);
+      };
+      const onError = (err: Error) => {
+        cleanup();
+        resolve(err);
+      };
+      sock.once('listening', onListening);
+      sock.once('error', onError);
+      try {
+        sock.bind(port);
+      } catch (error) {
+        cleanup();
+        resolve(error instanceof Error ? error : new Error(String(error)));
+      }
+    });
+  }
+
+  async function closeSocket(sock: dgram.Socket): Promise<void> {
+    await new Promise<void>((resolve) => {
+      try {
+        sock.removeAllListeners('message');
+        sock.removeAllListeners('error');
+        sock.close(() => resolve());
+      } catch {
+        resolve();
+      }
+    });
+  }
+
   async function openSocket(): Promise<dgram.Socket> {
     if (socket) return socket;
-    socket = (
-      options.socketFactory
-        ? options.socketFactory()
-        : dgram.createSocket({ type: 'udp4', reuseAddr: true })
-    ) as dgram.Socket;
+    const sock = makeSocket();
+    const bindError = await bindSocket(sock, 0);
+    if (bindError) {
+      await closeSocket(sock);
+      throw bindError;
+    }
+    socket = sock;
     socket.on('message', handleMessage);
     socket.on('error', (err) => {
       log('error', `[SSDP] socket error: ${err.message}`);
     });
-    socket.bind(SSDP_PORT);
-    await new Promise<void>((resolve) => {
-      socket!.once('listening', () => resolve());
-      socket!.once('error', () => resolve());
-    });
+    const address = socket.address();
+    const boundPort = typeof address === 'object' ? address.port : 0;
+    log('info', `[SSDP] socket ready: port=${boundPort}`);
     try {
       socket.addMembership(SSDP_ADDR);
     } catch (err) {
@@ -248,7 +290,7 @@ export function createSsdpDiscovery(options: SsdpDiscoveryOptions = {}): SsdpHan
       `USER-AGENT: EchoMusic/1.0 UPnP/1.1\r\n` +
       `\r\n`;
     const data = Buffer.from(request, 'utf8');
-    // 组播地址发送 + 各 IPv4 接口多播（覆盖多网卡/单播响应习惯）。
+    // 使用临时源端口发送到 SSDP 标准目标端口 1900；设备会回到该临时端口。
     sock.send(data, 0, data.length, SSDP_PORT, SSDP_ADDR);
     for (const iface of listIpv4s()) {
       try {
@@ -260,6 +302,7 @@ export function createSsdpDiscovery(options: SsdpDiscoveryOptions = {}): SsdpHan
   }
 
   async function searchOnce(): Promise<void> {
+    log('info', `[SSDP] M-SEARCH ${SEARCH_TARGETS.length} targets`);
     for (const target of SEARCH_TARGETS) {
       try {
         // MX=2；连续发送亦属规范内的“staggered”重试。

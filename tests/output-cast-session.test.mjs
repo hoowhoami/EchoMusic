@@ -127,6 +127,7 @@ function harness(options = {}) {
     emitPlayer: (event, ...args) => player.push([event, ...args]),
     emitOutput: (event) => output.push(event),
     log: (level, message) => logs.push([level, message]),
+    runAirplayDiagnostics: options.runAirplayDiagnostics,
   });
   host.noteDlnaDevices([{ usn: 'uuid:renderer-1', location: LOCATION, server: 'Speaker' }]);
   return {
@@ -256,6 +257,68 @@ test('DLNA list title does not expose raw SSDP server header', async () => {
       host.targets().find((target) => target.targetId === 'uuid:smartshare-1')?.displayName,
       'Speaker',
     );
+  } finally {
+    await media.stop();
+  }
+});
+
+test('DLNA discovery logs stable device identity fields', async () => {
+  const { host, logs, media } = harness();
+  try {
+    host.noteDlnaDevices([
+      {
+        usn: 'uuid:smartshare-1',
+        location: 'http://192.0.2.31:8200/root.xml',
+        server: 'Linux/4.19.116+, UPnP/1.0, SmartShare device/1.0',
+        st: 'urn:schemas-upnp-org:device:MediaRenderer:1',
+        interface: '192.0.2.31',
+        maxAgeSec: 1800,
+      },
+    ]);
+    const line = logs.find(
+      ([level, message]) =>
+        level === 'info' &&
+        message.includes('DLNA 发现设备') &&
+        message.includes('uuid:smartshare-1'),
+    )?.[1];
+    assert.ok(line);
+    assert.match(line, /SmartShare/);
+    assert.match(line, /location=http:\/\/192\.0\.2\.31:8200\/root\.xml/);
+    assert.match(line, /server=Linux\/4\.19\.116\+, UPnP\/1\.0, SmartShare device\/1\.0/);
+    assert.match(line, /st=urn:schemas-upnp-org:device:MediaRenderer:1/);
+    assert.match(line, /from=192\.0\.2\.31/);
+  } finally {
+    await media.stop();
+  }
+});
+
+test('DLNA targets expose a stable note for same-name devices', async () => {
+  const { host, media } = harness();
+  try {
+    host.noteDlnaDevices([
+      {
+        usn: 'uuid:gateway-a',
+        location: 'http://192.168.1.1:52869/description.xml',
+        server: 'Linux, UPnP/1.0',
+        name: '天翼网关',
+        manufacturer: 'CT',
+        modelName: 'Gateway',
+        modelNumber: 'A',
+        serialNumber: 'SN-001',
+      },
+      {
+        usn: 'uuid:gateway-b',
+        location: 'http://192.168.1.100:52869/description.xml',
+        server: 'Linux, UPnP/1.0',
+        name: '天翼网关',
+      },
+    ]);
+    const first = host.targets().find((target) => target.targetId === 'uuid:gateway-a');
+    const second = host.targets().find((target) => target.targetId === 'uuid:gateway-b');
+    assert.equal(first?.displayName, '天翼网关');
+    assert.match(first?.note ?? '', /CT · Gateway · A · SN-001 · 192\.168\.1\.1:52869/);
+    assert.equal(second?.displayName, '天翼网关');
+    assert.match(second?.note ?? '', /192\.168\.1\.100:52869/);
   } finally {
     await media.stop();
   }
@@ -422,6 +485,41 @@ test('local AirPlay receiver is hidden from discovered targets', async () => {
   }
 });
 
+test('AirPlay target note distinguishes same-name devices', async () => {
+  const box = harness({
+    localNetworkIdentity: () => ({ addresses: [], macs: [] }),
+  });
+  try {
+    box.host.noteAirplayDevices([
+      {
+        id: '11:22:33:44:55:66',
+        name: 'MacBook Pro',
+        model: 'MacBookPro18,1',
+        addresses: ['fe80::1', '192.0.2.55'],
+        needsPin: false,
+      },
+      {
+        id: '22:33:44:55:66:77',
+        name: 'MacBook Pro',
+        model: 'MacBookPro17,1',
+        addresses: ['192.0.2.56'],
+        needsPin: true,
+      },
+    ]);
+    const airplayTargets = box.host.targets().filter((target) => target.protocol === 'airplay');
+    assert.deepEqual(
+      airplayTargets.map((target) => target.displayName),
+      ['MacBook Pro', 'MacBook Pro'],
+    );
+    assert.deepEqual(
+      airplayTargets.map((target) => target.note),
+      ['MacBookPro18,1 · 192.0.2.55', '需要 PIN · MacBookPro17,1 · 192.0.2.56'],
+    );
+  } finally {
+    await box.media.stop();
+  }
+});
+
 test('explicit DLNA removal clears the last visible remote target', async () => {
   const box = harness();
   try {
@@ -488,6 +586,7 @@ test('AirPlay connection failure is logged for diagnostics', async () => {
 });
 
 test('empty AirPlay discovery updates diagnostics for troubleshooting', async () => {
+  let diagnosticsCalls = 0;
   const box = harness({
     airplay: {
       available: true,
@@ -513,16 +612,72 @@ test('empty AirPlay discovery updates diagnostics for troubleshooting', async ()
       },
     },
     localNetworkIdentity: () => ({ addresses: [], macs: [] }),
+    runAirplayDiagnostics: () => {
+      diagnosticsCalls += 1;
+    },
   });
   try {
     box.host.setEnabled(true);
     await box.host.refresh();
     await tick();
     assert.match(box.host.diagnosticMessage, /未发现 AirPlay/);
+    assert.equal(diagnosticsCalls, 1);
     assert.equal(
       box.logs.some(([level, message]) => level === 'info' && message.includes('AirPlay 发现完成')),
       true,
     );
+  } finally {
+    await box.media.stop();
+  }
+});
+
+test('hidden local AirPlay receiver does not expand Bonjour diagnostics', async () => {
+  let diagnosticsCalls = 0;
+  const box = harness({
+    airplay: {
+      available: true,
+      async discover() {
+        return [
+          {
+            id: '62:98:33:E3:BB:50',
+            name: 'whoami的MacBook Pro',
+            addresses: ['127.0.0.1'],
+            needsPin: false,
+          },
+        ];
+      },
+      async connect() {
+        return { ok: false };
+      },
+      async disconnect() {},
+      async pause() {},
+      async resume() {},
+      async seek() {
+        return 0;
+      },
+      async stop() {},
+      async setVolume() {},
+      async flushTrack() {
+        return 0;
+      },
+      status() {
+        return { connected: false, delaySec: 0, format: '', inputBits: 16 };
+      },
+    },
+    localNetworkIdentity: () => ({
+      addresses: ['127.0.0.1'],
+      macs: ['62:98:33:E3:BB:50'],
+    }),
+    runAirplayDiagnostics: () => {
+      diagnosticsCalls += 1;
+    },
+  });
+  try {
+    box.host.setEnabled(true);
+    await box.host.refresh();
+    await tick();
+    assert.equal(diagnosticsCalls, 0);
+    assert.equal(box.host.diagnosticMessage, '仅发现本机 AirPlay，已隐藏');
   } finally {
     await box.media.stop();
   }

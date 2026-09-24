@@ -112,12 +112,14 @@ const handleDocumentMousedown = (event: MouseEvent) => {
   closeFloatingPanels();
 };
 
-const layoutZones: { value: PlayerBarPlacement; label: string; hint: string }[] = [
-  { value: 'center', label: '中上', hint: '播放控制区' },
-  { value: 'left', label: '左下', hint: '歌曲信息下方' },
-  { value: 'right', label: '右侧', hint: '功能按钮区' },
-  { value: 'more', label: '更多', hint: '默认收纳' },
+const layoutZones: { value: PlayerBarPlacement; ariaLabel: string }[] = [
+  { value: 'center', ariaLabel: '播放控制区按钮' },
+  { value: 'left', ariaLabel: '歌曲信息区按钮' },
+  { value: 'right', ariaLabel: '功能按钮区按钮' },
+  { value: 'more', ariaLabel: '更多菜单按钮' },
 ];
+const previewLayoutZones = computed(() => layoutZones.filter((zone) => zone.value !== 'more'));
+const moreLayoutZone = computed(() => layoutZones.find((zone) => zone.value === 'more'));
 
 const groupedItems = computed<Record<PlayerBarPlacement, ResolvedPlayerBarAction[]>>(() => ({
   left: visibleItems.value.filter((item) => item.placement === 'left'),
@@ -365,57 +367,123 @@ onBeforeUnmount(() => {
       </div>
 
       <div ref="boardRef" class="playerbar-layout-board" aria-label="播放栏按钮布局">
-        <div
-          v-for="zone in layoutZones"
-          :key="zone.value"
-          class="playerbar-layout-zone"
-          :class="`zone-${zone.value}`"
-        >
-          <div class="playerbar-layout-zone-title">
-            <span>{{ zone.label }}</span>
-            <small>{{ zone.hint }}</small>
+        <div class="playerbar-layout-preview">
+          <div class="playerbar-skeleton-left" aria-hidden="true">
+            <span class="playerbar-skeleton-cover"></span>
+            <span class="playerbar-skeleton-lines">
+              <span></span>
+              <span></span>
+            </span>
           </div>
-          <div
-            class="playerbar-layout-zone-list"
-            :data-playerbar-placement-list="zone.value"
-            :aria-label="`${zone.label}按钮`"
-          >
-            <div
-              v-for="(item, index) in groupedItems[zone.value]"
-              :key="item.key"
-              role="button"
-              tabindex="0"
-              class="playerbar-layout-chip app-focus-ring-soft"
-              :class="{ disabled: item.disabled }"
-              :data-playerbar-key="item.key"
-              :aria-label="item.title"
-              :title="item.tooltip && item.tooltip !== item.title ? item.tooltip : item.title"
-              @keydown="reorderByKeyboard($event, item, zone.value, index)"
-            >
-              <span class="playerbar-chip-icon">
-                <MvIcon v-if="item.key === 'mv'" class="w-[18px] h-[18px]" />
-                <PluginIcon v-else :icon="item.icon" :width="18" :height="18" />
-              </span>
-              <span class="playerbar-chip-title">{{ item.title }}</span>
-              <button
-                v-if="badgeControlForItem(item)"
-                type="button"
-                class="playerbar-chip-badge-check app-focus-ring-soft"
-                :class="{ active: badgeControlForItem(item)?.active }"
-                :aria-pressed="badgeControlForItem(item)?.active"
-                :aria-label="badgeControlLabel(badgeControlForItem(item)!)"
-                :title="badgeControlLabel(badgeControlForItem(item)!)"
-                @pointerdown.stop
-                @mousedown.stop
-                @click.stop="badgeControlForItem(item)?.toggle()"
+          <div class="playerbar-skeleton-center" aria-hidden="true">
+            <span class="playerbar-skeleton-controls">
+              <span></span>
+              <span></span>
+              <span></span>
+            </span>
+            <span class="playerbar-skeleton-progress"></span>
+          </div>
+          <div class="playerbar-skeleton-right" aria-hidden="true">
+            <span></span>
+            <span></span>
+            <span></span>
+          </div>
+          <template v-for="zone in previewLayoutZones" :key="zone.value">
+            <div class="playerbar-layout-zone" :class="`zone-${zone.value}`">
+              <div
+                class="playerbar-layout-zone-list"
+                :data-playerbar-placement-list="zone.value"
+                :aria-label="zone.ariaLabel"
               >
-                <span class="playerbar-chip-check-box" aria-hidden="true"></span>
-                <span class="playerbar-chip-badge-label">徽标</span>
-              </button>
+                <div
+                  v-for="(item, index) in groupedItems[zone.value]"
+                  :key="item.key"
+                  role="button"
+                  tabindex="0"
+                  class="playerbar-layout-chip app-focus-ring-soft"
+                  :class="{ disabled: item.disabled }"
+                  :data-playerbar-key="item.key"
+                  :aria-label="item.title"
+                  :title="item.tooltip && item.tooltip !== item.title ? item.tooltip : item.title"
+                  @keydown="reorderByKeyboard($event, item, zone.value, index)"
+                >
+                  <span class="playerbar-chip-icon">
+                    <MvIcon v-if="item.key === 'mv'" class="w-[18px] h-[18px]" />
+                    <PluginIcon v-else :icon="item.icon" :width="18" :height="18" />
+                  </span>
+                  <span class="playerbar-chip-title">{{ item.title }}</span>
+                  <button
+                    v-if="badgeControlForItem(item)"
+                    type="button"
+                    class="playerbar-chip-badge-check app-focus-ring-soft"
+                    :class="{ active: badgeControlForItem(item)?.active }"
+                    :aria-pressed="badgeControlForItem(item)?.active"
+                    :aria-label="badgeControlLabel(badgeControlForItem(item)!)"
+                    :title="badgeControlLabel(badgeControlForItem(item)!)"
+                    @pointerdown.stop
+                    @mousedown.stop
+                    @click.stop="badgeControlForItem(item)?.toggle()"
+                  >
+                    <span class="playerbar-chip-check-box" aria-hidden="true"></span>
+                    <span class="playerbar-chip-badge-label">徽标</span>
+                  </button>
+                </div>
+                <span
+                  v-if="!groupedItems[zone.value].length"
+                  class="playerbar-layout-empty"
+                  aria-hidden="true"
+                ></span>
+              </div>
             </div>
-            <span v-if="!groupedItems[zone.value].length" class="playerbar-layout-empty"
-              >拖到这里</span
+          </template>
+        </div>
+        <div class="playerbar-layout-more-shelf">
+          <span class="playerbar-layout-more-title">更多</span>
+          <div class="playerbar-layout-zone zone-more" :aria-label="moreLayoutZone?.ariaLabel">
+            <div
+              class="playerbar-layout-zone-list"
+              data-playerbar-placement-list="more"
+              aria-label="更多菜单按钮"
             >
+              <div
+                v-for="(item, index) in groupedItems.more"
+                :key="item.key"
+                role="button"
+                tabindex="0"
+                class="playerbar-layout-chip app-focus-ring-soft"
+                :class="{ disabled: item.disabled }"
+                :data-playerbar-key="item.key"
+                :aria-label="item.title"
+                :title="item.tooltip && item.tooltip !== item.title ? item.tooltip : item.title"
+                @keydown="reorderByKeyboard($event, item, 'more', index)"
+              >
+                <span class="playerbar-chip-icon">
+                  <MvIcon v-if="item.key === 'mv'" class="w-[18px] h-[18px]" />
+                  <PluginIcon v-else :icon="item.icon" :width="18" :height="18" />
+                </span>
+                <span class="playerbar-chip-title">{{ item.title }}</span>
+                <button
+                  v-if="badgeControlForItem(item)"
+                  type="button"
+                  class="playerbar-chip-badge-check app-focus-ring-soft"
+                  :class="{ active: badgeControlForItem(item)?.active }"
+                  :aria-pressed="badgeControlForItem(item)?.active"
+                  :aria-label="badgeControlLabel(badgeControlForItem(item)!)"
+                  :title="badgeControlLabel(badgeControlForItem(item)!)"
+                  @pointerdown.stop
+                  @mousedown.stop
+                  @click.stop="badgeControlForItem(item)?.toggle()"
+                >
+                  <span class="playerbar-chip-check-box" aria-hidden="true"></span>
+                  <span class="playerbar-chip-badge-label">徽标</span>
+                </button>
+              </div>
+              <span
+                v-if="!groupedItems.more.length"
+                class="playerbar-layout-empty"
+                aria-hidden="true"
+              ></span>
+            </div>
           </div>
         </div>
       </div>
@@ -512,7 +580,7 @@ onBeforeUnmount(() => {
 }
 
 .playerbar-more-popover.echo-popover-content.is-editing {
-  width: 620px;
+  width: 860px;
 }
 
 .playerbar-more-popover.echo-popover-content > div:first-child {
@@ -631,99 +699,225 @@ onBeforeUnmount(() => {
 }
 
 .playerbar-layout-board {
+  display: flex;
+  min-width: 780px;
+  flex-direction: column;
+  gap: 9px;
+  overflow-x: auto;
+  padding: 10px;
+  border: 1px solid color-mix(in srgb, var(--color-text-main) 8%, transparent);
+  border-radius: 16px;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--floating-surface-bg) 92%, transparent),
+    color-mix(in srgb, var(--control-muted-bg) 70%, transparent)
+  );
+  box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 18%, transparent);
+  scrollbar-width: thin;
+}
+
+.playerbar-layout-preview {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns:
+    minmax(208px, 1.12fr)
+    minmax(300px, 1.68fr)
+    minmax(208px, 1.12fr);
   grid-template-areas:
-    'center center'
-    'left right'
-    'more more';
-  gap: 8px;
+    'left-skeleton center-skeleton right-skeleton'
+    'left center right';
+  grid-template-rows: 42px 68px;
+  align-items: center;
+  gap: 7px 12px;
+  min-width: 750px;
+  padding: 9px 12px;
+  border: 1px solid color-mix(in srgb, var(--color-text-main) 7%, transparent);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--floating-surface-bg) 58%, transparent);
+}
+
+.playerbar-skeleton-left,
+.playerbar-skeleton-center,
+.playerbar-skeleton-right {
+  min-width: 0;
+  border-radius: 12px;
+  opacity: 0.72;
+  pointer-events: none;
+}
+
+.playerbar-skeleton-left {
+  grid-area: left-skeleton;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 0 8px;
+}
+
+.playerbar-skeleton-cover {
+  width: 34px;
+  height: 34px;
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--color-text-secondary) 18%, transparent);
+}
+
+.playerbar-skeleton-lines {
+  display: grid;
+  flex: 1 1 auto;
+  gap: 6px;
+  min-width: 0;
+}
+
+.playerbar-skeleton-lines span {
+  height: 5px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--color-text-secondary) 16%, transparent);
+}
+
+.playerbar-skeleton-lines span:first-child {
+  width: 76%;
+}
+
+.playerbar-skeleton-lines span:last-child {
+  width: 48%;
+}
+
+.playerbar-skeleton-center {
+  grid-area: center-skeleton;
+  display: grid;
+  align-content: center;
+  gap: 9px;
+  padding: 0 18px;
+}
+
+.playerbar-skeleton-controls {
+  display: flex;
+  justify-content: center;
+  gap: 16px;
+}
+
+.playerbar-skeleton-controls span {
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--color-text-secondary) 17%, transparent);
+}
+
+.playerbar-skeleton-controls span:nth-child(2) {
+  width: 26px;
+  height: 26px;
+  margin-top: -5px;
+  background: color-mix(in srgb, var(--color-primary) 16%, transparent);
+}
+
+.playerbar-skeleton-progress {
+  height: 4px;
+  border-radius: 999px;
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--color-primary) 28%, transparent) 0 38%,
+    color-mix(in srgb, var(--color-text-secondary) 15%, transparent) 38% 100%
+  );
+}
+
+.playerbar-skeleton-right {
+  grid-area: right-skeleton;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 9px;
+  padding: 0 8px;
+}
+
+.playerbar-skeleton-right span {
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--color-text-secondary) 15%, transparent);
 }
 
 .playerbar-layout-zone {
+  position: relative;
   min-width: 0;
-  padding: 8px;
-  border: 1px solid color-mix(in srgb, var(--color-text-main) 9%, transparent);
-  border-radius: 10px;
-  background: color-mix(in srgb, var(--control-muted-bg) 76%, transparent);
+  padding: 3px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
 }
 
 .playerbar-layout-zone.zone-center {
   grid-area: center;
+  background: color-mix(in srgb, var(--floating-surface-bg) 42%, transparent);
 }
 
 .playerbar-layout-zone.zone-left {
   grid-area: left;
-  justify-self: stretch;
-  width: auto;
 }
 
 .playerbar-layout-zone.zone-right {
   grid-area: right;
-  justify-self: stretch;
-  width: auto;
 }
 
 .playerbar-layout-zone.zone-more {
-  grid-area: more;
-}
-
-.playerbar-layout-zone-title {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 7px;
-  color: var(--color-text-main);
-  font-size: 12px;
-  font-weight: 800;
-}
-
-.playerbar-layout-zone-title small {
   min-width: 0;
-  overflow: hidden;
+}
+
+.playerbar-layout-more-shelf {
+  position: relative;
+  min-width: 750px;
+  padding: 24px 10px 8px;
+  border: 1px solid color-mix(in srgb, var(--color-text-main) 7%, transparent);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--control-muted-bg) 54%, transparent);
+}
+
+.playerbar-layout-more-title {
+  position: absolute;
+  left: 13px;
+  top: 8px;
   color: var(--color-text-secondary);
-  font-size: 10px;
-  font-weight: 600;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
 }
 
 .playerbar-layout-zone-list {
   display: flex;
-  min-height: 42px;
-  flex-wrap: wrap;
-  align-content: flex-start;
+  min-height: 64px;
+  flex-wrap: nowrap;
+  align-items: center;
   gap: 6px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-top: 28px;
+  scrollbar-width: none;
+}
+
+.playerbar-layout-zone-list::-webkit-scrollbar {
+  display: none;
 }
 
 .playerbar-layout-zone.zone-center .playerbar-layout-zone-list {
-  min-height: 72px;
+  justify-content: center;
 }
 
 .playerbar-layout-zone.zone-more .playerbar-layout-zone-list {
-  min-height: 48px;
-  max-height: 180px;
-  overflow-y: auto;
-  scrollbar-width: thin;
+  justify-content: flex-start;
 }
 
 .playerbar-layout-chip {
   display: inline-flex;
-  max-width: 192px;
-  min-width: 0;
-  height: 30px;
+  position: relative;
+  flex: 0 0 34px;
+  width: 34px;
+  height: 34px;
   align-items: center;
-  gap: 7px;
-  padding: 0 8px;
-  border-radius: 999px;
+  justify-content: center;
+  padding: 0;
+  border-radius: 10px;
   color: var(--color-text-main);
-  background: var(--floating-surface-bg);
+  background: color-mix(in srgb, var(--floating-surface-bg) 78%, transparent);
   border: 1px solid color-mix(in srgb, var(--color-text-main) 8%, transparent);
   box-shadow: 0 1px 2px color-mix(in srgb, #000 7%, transparent);
   cursor: grab;
-  font-size: 12px;
-  font-weight: 700;
 }
 
 .playerbar-layout-chip:hover:not(.disabled),
@@ -745,38 +939,39 @@ onBeforeUnmount(() => {
   flex: 0 0 18px;
   align-items: center;
   justify-content: center;
-  color: var(--color-text-secondary);
+  color: currentColor;
 }
 
 .playerbar-chip-badge-check {
   display: inline-flex;
-  flex: 0 0 auto;
-  height: 22px;
+  position: absolute;
+  top: -28px;
+  left: 50%;
+  width: 24px;
+  height: 24px;
   align-items: center;
   justify-content: center;
-  gap: 4px;
-  margin-left: 1px;
-  padding: 0 6px 0 5px;
-  border: 1px solid color-mix(in srgb, var(--color-text-main) 10%, transparent);
-  border-radius: 999px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
   color: color-mix(in srgb, var(--color-text-secondary) 82%, transparent);
-  background: color-mix(in srgb, var(--control-muted-bg) 80%, transparent);
+  background: transparent;
   cursor: pointer;
   font-size: 10px;
   font-weight: 800;
+  transform: translateX(-50%);
+  z-index: 2;
 }
 
 .playerbar-chip-check-box {
   position: relative;
-  width: 11px;
-  height: 11px;
+  width: 14px;
+  height: 14px;
   border: 1.5px solid currentColor;
   border-radius: 3px;
 }
 
 .playerbar-chip-badge-check.active {
-  border-color: color-mix(in srgb, var(--color-primary) 36%, transparent);
-  background: color-mix(in srgb, var(--color-primary) 14%, transparent);
   color: var(--color-primary-text);
 }
 
@@ -788,10 +983,10 @@ onBeforeUnmount(() => {
 .playerbar-chip-badge-check.active .playerbar-chip-check-box::after {
   content: '';
   position: absolute;
-  left: 2px;
-  top: 0;
-  width: 4px;
-  height: 7px;
+  left: 3px;
+  top: 1px;
+  width: 4.5px;
+  height: 8px;
   border: solid var(--color-on-primary, #fff);
   border-width: 0 1.5px 1.5px 0;
   transform: rotate(45deg);
@@ -799,18 +994,14 @@ onBeforeUnmount(() => {
 
 .playerbar-chip-badge-check:hover {
   color: var(--color-primary-text);
-  background: var(--control-hover-bg);
 }
 
 .playerbar-chip-badge-label {
-  line-height: 1;
+  display: none;
 }
 
 .playerbar-chip-title {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  display: none;
 }
 
 .playerbar-more-badge {
@@ -851,14 +1042,14 @@ onBeforeUnmount(() => {
 
 .playerbar-layout-empty {
   display: inline-flex;
-  height: 30px;
+  flex: 0 0 32px;
+  width: 32px;
+  height: 32px;
   align-items: center;
-  padding: 0 10px;
+  justify-content: center;
   border: 1px dashed color-mix(in srgb, var(--color-text-main) 16%, transparent);
-  border-radius: 999px;
+  border-radius: 10px;
   color: color-mix(in srgb, var(--color-text-secondary) 76%, transparent);
-  font-size: 11px;
-  font-weight: 700;
   pointer-events: none;
 }
 
@@ -881,34 +1072,6 @@ onBeforeUnmount(() => {
 @media (max-width: 420px) {
   .playerbar-more-popover.echo-popover-content {
     width: calc(100vw - 24px);
-  }
-
-  .playerbar-layout-board {
-    grid-template-columns: 1fr;
-    grid-template-areas:
-      'center'
-      'left'
-      'right'
-      'more';
-  }
-
-  .playerbar-layout-zone.zone-left,
-  .playerbar-layout-zone.zone-right {
-    justify-self: stretch;
-    width: auto;
-  }
-
-  .playerbar-layout-zone.zone-left {
-    grid-area: left;
-  }
-
-  .playerbar-layout-zone.zone-right {
-    grid-area: right;
-  }
-
-  .playerbar-layout-zone.zone-more .playerbar-layout-zone-list {
-    min-height: 72px;
-    max-height: 140px;
   }
 }
 </style>

@@ -38,8 +38,54 @@ const nativeRequire = createRequire(path.join(process.cwd(), 'package.json'));
 
 let discovery: SsdpHandle | null = null;
 let scanTimer: NodeJS.Timeout | null = null;
+let scanSearchFlight: Promise<void> | null = null;
 let shuttingDown = false;
 let upnpNative: UpnpNativeLike | null = null;
+let scanActiveLogged = false;
+const ignoredDlnaDeviceIds = new Set<string>();
+const dlnaDescriptionCache = new Map<
+  string,
+  {
+    location: string;
+    name?: string;
+    deviceType?: string;
+    manufacturer?: string;
+    manufacturerUrl?: string;
+    modelName?: string;
+    modelDescription?: string;
+    modelNumber?: string;
+    modelUrl?: string;
+    serialNumber?: string;
+    udn?: string;
+    upc?: string;
+    presentationUrl?: string;
+    services?: string[];
+    pending?: Promise<void>;
+  }
+>();
+
+function isRendererSearchTarget(st: string): boolean {
+  const lower = st.toLowerCase();
+  return lower.includes('mediarenderer') || lower.includes('avtransport');
+}
+
+function shouldPublishDlnaDevice(device: SsdpDeviceEntry): boolean {
+  const description = dlnaDescriptionCache.get(device.usn);
+  if (!description || description.location !== device.location || description.pending) {
+    return isRendererSearchTarget(device.st);
+  }
+  if (description.deviceType?.toLowerCase().includes('mediarenderer')) return true;
+  if (description.services?.some((service) => service.toLowerCase().includes('avtransport'))) {
+    return true;
+  }
+  if (!ignoredDlnaDeviceIds.has(device.usn)) {
+    ignoredDlnaDeviceIds.add(device.usn);
+    log.info(
+      `DLNA 忽略不可播放设备: id=${device.usn}, name=${description.name || '-'}, type=${description.deviceType || '-'}, services=${description.services?.join('/') || '-'}`,
+    );
+  }
+  return false;
+}
 
 function outputLog(level: 'info' | 'warn' | 'error', message: string): void {
   if (level === 'error') {
@@ -196,25 +242,114 @@ function localTransport(getController: () => PlayerController | null) {
   };
 }
 
+function scheduleDlnaDescriptionLoad(device: SsdpDeviceEntry): void {
+  if (!upnpNative || !device.location) return;
+  const cached = dlnaDescriptionCache.get(device.usn);
+  if (cached?.location === device.location && (cached.name || cached.pending)) return;
+  const record = {
+    location: device.location,
+    name: cached?.location === device.location ? cached.name : undefined,
+    deviceType: cached?.location === device.location ? cached.deviceType : undefined,
+    manufacturer: cached?.location === device.location ? cached.manufacturer : undefined,
+    manufacturerUrl: cached?.location === device.location ? cached.manufacturerUrl : undefined,
+    modelName: cached?.location === device.location ? cached.modelName : undefined,
+    modelDescription: cached?.location === device.location ? cached.modelDescription : undefined,
+    modelNumber: cached?.location === device.location ? cached.modelNumber : undefined,
+    modelUrl: cached?.location === device.location ? cached.modelUrl : undefined,
+    serialNumber: cached?.location === device.location ? cached.serialNumber : undefined,
+    udn: cached?.location === device.location ? cached.udn : undefined,
+    upc: cached?.location === device.location ? cached.upc : undefined,
+    presentationUrl: cached?.location === device.location ? cached.presentationUrl : undefined,
+    services: cached?.location === device.location ? cached.services : undefined,
+    pending: undefined as Promise<void> | undefined,
+  };
+  dlnaDescriptionCache.set(device.usn, record);
+  log.info(`DLNA 加载设备描述: id=${device.usn}, location=${device.location}`);
+  record.pending = upnpNative
+    .loadDevice(device.location)
+    .then((loaded) => {
+      record.name = loaded.friendlyName;
+      record.deviceType = loaded.deviceType;
+      record.manufacturer = loaded.manufacturer;
+      record.manufacturerUrl = loaded.manufacturerUrl;
+      record.modelName = loaded.modelName;
+      record.modelDescription = loaded.modelDescription;
+      record.modelNumber = loaded.modelNumber;
+      record.modelUrl = loaded.modelUrl;
+      record.serialNumber = loaded.serialNumber;
+      record.udn = loaded.udn;
+      record.upc = loaded.upc;
+      record.presentationUrl = loaded.presentationUrl;
+      record.services = loaded.services.map(
+        (service) => `${service.serviceId}:${service.serviceType}`,
+      );
+      log.info(
+        `DLNA 设备描述完成: id=${device.usn}, name=${loaded.friendlyName || '-'}, manufacturer=${loaded.manufacturer || '-'}, model=${loaded.modelName || '-'}, modelNumber=${loaded.modelNumber || '-'}, serial=${loaded.serialNumber || '-'}, udn=${loaded.udn || '-'}, type=${loaded.deviceType || '-'}, services=${loaded.services.length}`,
+      );
+      pushDlnaDevices();
+    })
+    .catch((error) => {
+      log.warn(
+        `DLNA 设备描述失败: id=${device.usn}, location=${device.location}, error=${error instanceof Error ? error.message : String(error)}`,
+      );
+    })
+    .finally(() => {
+      const latest = dlnaDescriptionCache.get(device.usn);
+      if (latest === record) record.pending = undefined;
+    });
+}
+
 function pushDlnaDevices(): void {
   const host = getOutputHost();
   if (!host || !discovery) return;
-  host.noteDlnaDevices(
-    discovery.list().map((device) => ({
+  const entries = [];
+  for (const device of discovery.list()) {
+    scheduleDlnaDescriptionLoad(device);
+    if (!shouldPublishDlnaDevice(device)) {
+      const description = dlnaDescriptionCache.get(device.usn);
+      if (description && description.location === device.location && !description.pending) {
+        host.removeDlnaDevice(device.usn);
+      }
+      continue;
+    }
+    const description = dlnaDescriptionCache.get(device.usn);
+    entries.push({
       usn: device.usn,
       location: device.location,
       server: device.server,
-    })),
-  );
+      name: description?.location === device.location ? description.name : undefined,
+      manufacturer:
+        description?.location === device.location ? description.manufacturer : undefined,
+      manufacturerUrl:
+        description?.location === device.location ? description.manufacturerUrl : undefined,
+      modelName: description?.location === device.location ? description.modelName : undefined,
+      modelDescription:
+        description?.location === device.location ? description.modelDescription : undefined,
+      modelNumber: description?.location === device.location ? description.modelNumber : undefined,
+      modelUrl: description?.location === device.location ? description.modelUrl : undefined,
+      serialNumber:
+        description?.location === device.location ? description.serialNumber : undefined,
+      udn: description?.location === device.location ? description.udn : undefined,
+      upc: description?.location === device.location ? description.upc : undefined,
+      presentationUrl:
+        description?.location === device.location ? description.presentationUrl : undefined,
+      st: device.st,
+      interface: device.interface,
+      maxAgeSec: device.maxAgeSec,
+    });
+  }
+  host.noteDlnaDevices(entries);
 }
 
 function handleDlnaDeviceChange(device: SsdpDeviceEntry): void {
   const host = getOutputHost();
   if (!host || !discovery) return;
   if (!device.location) {
+    dlnaDescriptionCache.delete(device.usn);
     host.removeDlnaDevice(device.usn);
     return;
   }
+  scheduleDlnaDescriptionLoad(device);
   pushDlnaDevices();
 }
 
@@ -222,9 +357,19 @@ export function syncOutputScan(): void {
   const host = getOutputHost();
   if (!host || !discovery || shuttingDown) return;
   if (host.wantsScan) {
+    if (!scanActiveLogged) {
+      scanActiveLogged = true;
+      log.info(`DLNA SSDP 扫描启动: echo-upnp=${upnpNative ? 'ready' : 'missing'}`);
+    }
     void discovery
       .start()
-      .then(() => discovery?.search())
+      .then(() => {
+        if (scanSearchFlight) return scanSearchFlight;
+        scanSearchFlight = (discovery?.search() ?? Promise.resolve()).finally(() => {
+          scanSearchFlight = null;
+        });
+        return scanSearchFlight;
+      })
       .catch((error) => log.warn(`[Output] SSDP 启动失败: ${String(error)}`));
     if (!scanTimer) scanTimer = setInterval(pushDlnaDevices, 4000);
     return;
@@ -233,6 +378,13 @@ export function syncOutputScan(): void {
     clearInterval(scanTimer);
     scanTimer = null;
   }
+  if (scanActiveLogged) {
+    scanActiveLogged = false;
+    log.info('DLNA SSDP 扫描停止');
+  }
+  scanSearchFlight = null;
+  dlnaDescriptionCache.clear();
+  ignoredDlnaDeviceIds.clear();
   void discovery.stop().catch(() => undefined);
 }
 

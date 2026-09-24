@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 import { Icon } from '@iconify/vue';
 import Badge from '@/components/ui/Badge.vue';
 import Button from '@/components/ui/Button.vue';
@@ -28,6 +28,7 @@ const props = withDefaults(defineProps<Props>(), {
 
 const emit = defineEmits<{ 'update:open': [open: boolean] }>();
 const output = useOutputStore();
+const popoverRef = ref<InstanceType<typeof Popover> | null>(null);
 
 const remoteActive = computed(() => output.snapshot && output.snapshot.protocol !== 'local');
 const triggerMode = computed(() =>
@@ -41,16 +42,23 @@ const buttonClass = computed(() => {
     ? 'text-black/40 dark:text-white/40 hover:text-black dark:hover:text-white'
     : 'text-text-main/50 hover:text-primary-text';
 });
+
+function closePopover(): void {
+  popoverRef.value?.close();
+  emit('update:open', false);
+}
 </script>
 
 <template>
   <Popover
+    ref="popoverRef"
     :trigger="triggerMode"
     :open="props.open"
     :side="props.side"
     align="end"
     :side-offset="8"
     :show-arrow="props.showArrow"
+    :hold-open="Boolean(output.connectingTargetId)"
     content-class="cast-popover"
     @update:open="emit('update:open', $event)"
   >
@@ -75,7 +83,7 @@ const buttonClass = computed(() => {
       </Button>
     </template>
 
-    <CastPanel />
+    <CastPanel @close="closePopover" />
   </Popover>
 </template>
 

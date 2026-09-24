@@ -13,6 +13,7 @@ const output = useOutputStore();
 const settingStore = useSettingStore();
 const pin = ref('');
 const pinTarget = ref('');
+const emit = defineEmits<{ close: [] }>();
 
 const dlnaTargets = computed(() =>
   output.visibleTargets.filter((target) => target.protocol === 'dlna'),
@@ -56,7 +57,7 @@ const isActiveTarget = (target: OutputTargetView) =>
 async function choose(target: OutputTargetView): Promise<void> {
   if (
     target.protocol === 'airplay' &&
-    target.note === '需要 PIN' &&
+    target.paired === false &&
     pinTarget.value !== target.targetId
   ) {
     pinTarget.value = target.targetId;
@@ -71,6 +72,7 @@ async function choose(target: OutputTargetView): Promise<void> {
   if (result.ok) {
     pinTarget.value = '';
     pin.value = '';
+    emit('close');
   } else if (result.error === 'pin-required') {
     pinTarget.value = target.targetId;
   }

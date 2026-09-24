@@ -108,6 +108,16 @@ pub struct UpnpDeviceSnapshot {
     pub description_url: String,
     pub device_type: String,
     pub friendly_name: String,
+    pub manufacturer: String,
+    pub manufacturer_url: Option<String>,
+    pub model_name: String,
+    pub model_description: Option<String>,
+    pub model_number: Option<String>,
+    pub model_url: Option<String>,
+    pub serial_number: Option<String>,
+    pub udn: String,
+    pub upc: Option<String>,
+    pub presentation_url: Option<String>,
     pub services: Vec<UpnpServiceEndpoint>,
 }
 
@@ -140,6 +150,16 @@ pub async fn load_device(description_url: String) -> Result<UpnpDeviceSnapshot> 
         description_url: url,
         device_type,
         friendly_name,
+        manufacturer: device.manufacturer().to_string(),
+        manufacturer_url: device.manufacturer_url().map(ToString::to_string),
+        model_name: device.model_name().to_string(),
+        model_description: device.model_description().map(ToString::to_string),
+        model_number: device.model_number().map(ToString::to_string),
+        model_url: device.model_url().map(ToString::to_string),
+        serial_number: device.serial_number().map(ToString::to_string),
+        udn: device.udn().to_string(),
+        upc: device.upc().map(ToString::to_string),
+        presentation_url: device.presentation_url().map(ToString::to_string),
         services,
     })
 }

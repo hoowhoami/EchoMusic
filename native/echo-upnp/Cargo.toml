@@ -10,7 +10,7 @@ crate-type = ["cdylib"]
 [dependencies]
 napi = { version = "3", features = ["napi9", "tokio_rt"] }
 napi-derive = "3"
-rupnp = { path = "vendor/rupnp", default-features = false }
+rupnp = { path = "vendor/rupnp", default-features = false, features = ["full_device_spec"] }
 http = "1"
 tokio = { version = "1", features = ["time"] }
 serde_json = "1"

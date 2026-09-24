@@ -1,10 +1,9 @@
 <script setup lang="ts">
 import { computed, ref, useId } from 'vue';
-import moon from '@iconify/icons-tabler/moon';
 import power from '@iconify/icons-tabler/power';
 import logout from '@iconify/icons-tabler/logout';
 import playerPause from '@iconify/icons-tabler/player-pause';
-import { iconCheck } from '@/icons';
+import { iconCheck, iconMoon } from '@/icons';
 import Button from '@/components/ui/Button.vue';
 import Popover from '@/components/ui/Popover.vue';
 import Switch from '@/components/ui/Switch.vue';
@@ -126,14 +125,14 @@ const selectAction = (action: SleepTimerAction) => {
         :aria-expanded="open"
         aria-haspopup="dialog"
       >
-        <Icon :icon="moon" width="20" height="20" />
+        <Icon :icon="iconMoon" width="20" height="20" />
         <span v-if="active" class="sleep-timer-dot" />
       </Button>
     </template>
 
     <section class="sleep-timer-panel" aria-label="定时关闭" @keydown.esc="open = false">
       <header class="flex items-center gap-3">
-        <div class="sleep-timer-moon"><Icon :icon="moon" width="22" height="22" /></div>
+        <div class="sleep-timer-moon"><Icon :icon="iconMoon" width="22" height="22" /></div>
         <div class="flex-1">
           <h2 class="text-[15px] font-bold">定时关闭</h2>
           <p class="sleep-timer-secondary text-[11px] opacity-50 mt-0.5">让音乐陪你入睡</p>

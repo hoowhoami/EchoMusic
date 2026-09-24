@@ -16,6 +16,7 @@ interface Props {
   duration?: number;
   open?: boolean;
   disabled?: boolean;
+  holdOpen?: boolean;
   contentClass?: string;
   contentStyle?: string | Record<string, string>;
 }
@@ -93,6 +94,7 @@ const doShow = () => {
 };
 
 const doHide = () => {
+  if (props.holdOpen) return;
   clearTimers();
   if (props.trigger === 'hover') {
     hideTimer = setTimeout(() => setOpen(false), props.duration);
@@ -175,6 +177,11 @@ onUnmounted(() => {
   unregisterParentBranch?.();
   clearTimers();
   document.removeEventListener('mousedown', handleDocumentMousedown, true);
+});
+
+defineExpose({
+  close: () => setOpen(false),
+  open: () => setOpen(true),
 });
 </script>
 

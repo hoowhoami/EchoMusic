@@ -56,7 +56,7 @@ import {
   iconListRestart,
   iconShare,
   iconShirt,
-  iconClock,
+  iconMoon,
   iconVolume2,
   iconSpeedometer,
   iconPulse,
@@ -209,7 +209,7 @@ const playerBarActions = computed<PlayerBarAction[]>(() => [
   {
     id: 'sleep-timer',
     title: '定时关闭',
-    icon: iconClock as IconifyIcon,
+    icon: iconMoon as IconifyIcon,
     component: 'sleep-timer',
     trigger: 'hover',
     defaultPlacement: 'center',

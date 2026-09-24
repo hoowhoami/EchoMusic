@@ -144,6 +144,39 @@ interface DlnaTarget {
   location: string;
   displayName: string;
   server: string;
+  manufacturer?: string;
+  manufacturerUrl?: string;
+  modelName?: string;
+  modelDescription?: string;
+  modelNumber?: string;
+  modelUrl?: string;
+  serialNumber?: string;
+  udn?: string;
+  upc?: string;
+  presentationUrl?: string;
+  st?: string;
+  interface?: string;
+  maxAgeSec?: number;
+}
+
+interface DlnaDeviceEntry {
+  usn: string;
+  location: string;
+  server?: string;
+  name?: string;
+  manufacturer?: string;
+  manufacturerUrl?: string;
+  modelName?: string;
+  modelDescription?: string;
+  modelNumber?: string;
+  modelUrl?: string;
+  serialNumber?: string;
+  udn?: string;
+  upc?: string;
+  presentationUrl?: string;
+  st?: string;
+  interface?: string;
+  maxAgeSec?: number;
 }
 
 interface AirplayTarget {
@@ -175,6 +208,97 @@ function normalizeMac(value: string): string {
     .trim()
     .toLowerCase()
     .replace(/[^0-9a-f]/g, '');
+}
+
+function hasDlnaTargetChanged(previous: DlnaTarget, next: DlnaTarget): boolean {
+  return (
+    previous.location !== next.location ||
+    previous.displayName !== next.displayName ||
+    previous.server !== next.server ||
+    previous.manufacturer !== next.manufacturer ||
+    previous.manufacturerUrl !== next.manufacturerUrl ||
+    previous.modelName !== next.modelName ||
+    previous.modelDescription !== next.modelDescription ||
+    previous.modelNumber !== next.modelNumber ||
+    previous.modelUrl !== next.modelUrl ||
+    previous.serialNumber !== next.serialNumber ||
+    previous.udn !== next.udn ||
+    previous.upc !== next.upc ||
+    previous.presentationUrl !== next.presentationUrl ||
+    previous.st !== next.st ||
+    previous.interface !== next.interface
+  );
+}
+
+function formatDlnaTarget(target: DlnaTarget): string {
+  const parts = [`${target.displayName}`, `id=${target.targetId}`, `location=${target.location}`];
+  if (target.manufacturer) parts.push(`manufacturer=${target.manufacturer}`);
+  if (target.manufacturerUrl) parts.push(`manufacturerUrl=${target.manufacturerUrl}`);
+  if (target.modelName) parts.push(`model=${target.modelName}`);
+  if (target.modelDescription) parts.push(`modelDescription=${target.modelDescription}`);
+  if (target.modelNumber) parts.push(`modelNumber=${target.modelNumber}`);
+  if (target.modelUrl) parts.push(`modelUrl=${target.modelUrl}`);
+  if (target.serialNumber) parts.push(`serial=${target.serialNumber}`);
+  if (target.udn) parts.push(`udn=${target.udn}`);
+  if (target.upc) parts.push(`upc=${target.upc}`);
+  if (target.presentationUrl) parts.push(`presentationUrl=${target.presentationUrl}`);
+  if (target.server) parts.push(`server=${target.server}`);
+  if (target.st) parts.push(`st=${target.st}`);
+  if (target.interface) parts.push(`from=${target.interface}`);
+  return parts.join(', ');
+}
+
+function hostLabelFromLocation(location: string): string {
+  try {
+    return new URL(location).host;
+  } catch {
+    return '';
+  }
+}
+
+function compactJoin(parts: Array<string | undefined | null>): string {
+  return parts
+    .map((part) => String(part ?? '').trim())
+    .filter(Boolean)
+    .join(' · ');
+}
+
+function dlnaTargetNote(target: DlnaTarget): string | undefined {
+  const model = compactJoin([
+    target.manufacturer,
+    target.modelName,
+    target.modelNumber,
+    target.serialNumber,
+  ]);
+  const host = hostLabelFromLocation(target.location) || target.interface;
+  return compactJoin([model, host]) || undefined;
+}
+
+function primaryNetworkAddress(addresses?: string[]): string | undefined {
+  const normalized = (addresses ?? []).map(normalizeAddress).filter(Boolean);
+  return (
+    normalized.find((address) => /^\d+\.\d+\.\d+\.\d+$/.test(address) && address !== '127.0.0.1') ??
+    normalized.find((address) => address !== '::1' && address !== '127.0.0.1') ??
+    normalized[0]
+  );
+}
+
+function airplayTargetNote(target: AirplayTarget): string | undefined {
+  return (
+    compactJoin([
+      target.needsPin ? '需要 PIN' : undefined,
+      target.model,
+      primaryNetworkAddress(target.addresses),
+    ]) || undefined
+  );
+}
+
+function formatAirplayTarget(target: AirplayTarget): string {
+  const parts = [`${target.displayName}`, `id=${target.targetId}`];
+  if (target.model) parts.push(`model=${target.model}`);
+  if (target.addresses?.length) parts.push(`addresses=${target.addresses.join('/')}`);
+  if (target.needsPin) parts.push('pin=required');
+  return parts.join(', ');
 }
 
 function readLocalNetworkIdentity(): { addresses: string[]; macs: string[] } {
@@ -282,28 +406,47 @@ export class OutputHost {
     if (this.backend) void this.backend.setTrackMeta(this.trackMeta);
   }
 
-  noteDlnaDevices(
-    entries: Array<{ usn: string; location: string; server?: string; name?: string }>,
-  ): void {
+  noteDlnaDevices(entries: DlnaDeviceEntry[]): void {
     const seen = new Set<string>();
     for (const entry of entries) {
       if (!entry.usn || !hostOf(entry.location)) continue;
       seen.add(entry.usn);
       const previous = this.dlnaTargets.get(entry.usn);
       const displayName = pickDlnaDisplayName(entry, previous?.displayName);
-      this.dlnaTargets.set(entry.usn, {
+      const target: DlnaTarget = {
         kind: 'dlna',
         targetId: entry.usn,
         location: entry.location,
         displayName,
         server: entry.server || previous?.server || '',
-      });
+        manufacturer: entry.manufacturer || previous?.manufacturer,
+        manufacturerUrl: entry.manufacturerUrl || previous?.manufacturerUrl,
+        modelName: entry.modelName || previous?.modelName,
+        modelDescription: entry.modelDescription || previous?.modelDescription,
+        modelNumber: entry.modelNumber || previous?.modelNumber,
+        modelUrl: entry.modelUrl || previous?.modelUrl,
+        serialNumber: entry.serialNumber || previous?.serialNumber,
+        udn: entry.udn || previous?.udn,
+        upc: entry.upc || previous?.upc,
+        presentationUrl: entry.presentationUrl || previous?.presentationUrl,
+        st: entry.st || previous?.st,
+        interface: entry.interface || previous?.interface,
+        maxAgeSec: entry.maxAgeSec ?? previous?.maxAgeSec,
+      };
+      this.dlnaTargets.set(entry.usn, target);
+      if (!previous) {
+        this.log('info', `DLNA 发现设备: ${formatDlnaTarget(target)}`);
+      } else if (hasDlnaTargetChanged(previous, target)) {
+        this.log('info', `DLNA 设备更新: ${formatDlnaTarget(target)}`);
+      }
     }
     // 搜索刚开始时缓存可能还是空的，不能据此把活动会话判成离线。
     if (seen.size > 0) {
       for (const id of [...this.dlnaTargets.keys()]) {
         if (!seen.has(id)) {
+          const removed = this.dlnaTargets.get(id);
           this.dlnaTargets.delete(id);
+          if (removed) this.log('info', `DLNA 设备离线: ${formatDlnaTarget(removed)}`);
           if (this.mode === 'dlna' && this.device && this.targetId === id) {
             void this.loseLink('device-offline');
           }
@@ -314,7 +457,9 @@ export class OutputHost {
   }
 
   removeDlnaDevice(usn: string): void {
+    const removed = this.dlnaTargets.get(usn);
     if (!this.dlnaTargets.delete(usn)) return;
+    if (removed) this.log('info', `DLNA 设备离线: ${formatDlnaTarget(removed)}`);
     if (this.mode === 'dlna' && this.device && this.targetId === usn) {
       void this.loseLink('device-offline');
     }
@@ -450,20 +595,20 @@ export class OutputHost {
         ? await this.deps.airplay!.discoverEach(5000, mergeDiscoveredDevice)
         : await this.deps.airplay!.discover(5000);
       const stats = this.noteAirplayDevices(devices);
-      const visibleNames = devices
-        .filter((device) => this.airplayTargets.has(device.id))
-        .map((device) => device.name || device.id);
+      const visibleDevices = devices
+        .map((device) => this.airplayTargets.get(device.id))
+        .filter((target): target is AirplayTarget => Boolean(target));
       this.log(
         'info',
-        `AirPlay 发现完成: visible=${stats.accepted}/${stats.found}, hiddenLocal=${stats.filteredLocal}, devices=${visibleNames.join(', ') || '-'}`,
+        `AirPlay 发现完成: visible=${stats.accepted}/${stats.found}, hiddenLocal=${stats.filteredLocal}, devices=${visibleDevices.map(formatAirplayTarget).join(' | ') || '-'}`,
       );
-      if (stats.accepted === 0) {
+      if (stats.found === 0) {
         this.deps.runAirplayDiagnostics?.();
       }
       if (stats.accepted > 0) {
         this.diagnostics = `已发现 ${stats.accepted} 台 AirPlay 设备`;
       } else if (stats.found > 0 && stats.filteredLocal === stats.found) {
-        this.diagnostics = `发现 ${stats.found} 台 AirPlay 设备，但都被识别为本机接收器并隐藏`;
+        this.diagnostics = `仅发现本机 AirPlay，已隐藏`;
       } else if (stats.found === 0 && this.dlnaTargets.size === 0) {
         this.diagnostics =
           '未发现 AirPlay / DLNA 设备，请确认设备在同一局域网且 AirPlay 接收器已允许当前网络访问';
@@ -490,6 +635,17 @@ export class OutputHost {
       protocol: 'dlna',
       displayName: target.displayName,
       location: target.location,
+      manufacturer: target.manufacturer,
+      manufacturerUrl: target.manufacturerUrl,
+      modelName: target.modelName,
+      modelDescription: target.modelDescription,
+      modelNumber: target.modelNumber,
+      modelUrl: target.modelUrl,
+      serialNumber: target.serialNumber,
+      udn: target.udn,
+      upc: target.upc,
+      presentationUrl: target.presentationUrl,
+      note: dlnaTargetNote(target),
       lastSeenAt: this.now(),
       connection: {
         connected: this.mode === 'dlna' && this.targetId === target.targetId && this.link === 'up',
@@ -500,9 +656,10 @@ export class OutputHost {
       targetId: target.targetId,
       protocol: 'airplay',
       displayName: target.displayName,
+      addresses: target.addresses,
       modelName: target.model,
       paired: !target.needsPin,
-      note: target.needsPin ? '需要 PIN' : undefined,
+      note: airplayTargetNote(target),
       lastSeenAt: this.now(),
       connection: {
         connected:
@@ -574,8 +731,17 @@ export class OutputHost {
     if (!allowed) return { ok: false, error: '设备地址无效' };
     let loaded: UpnpDeviceSnapshot;
     try {
+      this.log('info', `DLNA 连接读取设备描述: ${formatDlnaTarget(target)}`);
       loaded = await this.deps.native.loadDevice(target.location);
+      this.log(
+        'info',
+        `DLNA 连接设备描述完成: name=${loaded.friendlyName || '-'}, type=${loaded.deviceType || '-'}, services=${loaded.services.length}`,
+      );
     } catch (error) {
+      this.log(
+        'warn',
+        `DLNA 连接设备描述失败: ${formatDlnaTarget(target)}, error=${error instanceof Error ? error.message : String(error)}`,
+      );
       return { ok: false, error: error instanceof Error ? error.message : '读取设备描述失败' };
     }
     const av = findService(loaded.services, 'AVTransport');
@@ -667,7 +833,20 @@ export class OutputHost {
       this.diagnostics = '设备已被其他控制端接管，已停止自动推进';
       this.publish();
     });
-    this.dlnaTargets.set(target.targetId, { ...target, displayName: this.targetName });
+    this.dlnaTargets.set(target.targetId, {
+      ...target,
+      displayName: this.targetName,
+      manufacturer: loaded.manufacturer || target.manufacturer,
+      manufacturerUrl: loaded.manufacturerUrl || target.manufacturerUrl,
+      modelName: loaded.modelName || target.modelName,
+      modelDescription: loaded.modelDescription || target.modelDescription,
+      modelNumber: loaded.modelNumber || target.modelNumber,
+      modelUrl: loaded.modelUrl || target.modelUrl,
+      serialNumber: loaded.serialNumber || target.serialNumber,
+      udn: loaded.udn || target.udn,
+      upc: loaded.upc || target.upc,
+      presentationUrl: loaded.presentationUrl || target.presentationUrl,
+    });
     this.diagnostics =
       volume == null ? '已连接，未能读取设备音量' : '已连接。本机音效不会作用在 DLNA 原曲上';
     await this.startObserve(loaded, av.eventSubUrl, allowed, token);
