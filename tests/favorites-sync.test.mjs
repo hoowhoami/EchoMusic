@@ -99,6 +99,109 @@ function setup(overrides = {}) {
   return store;
 }
 
+function setupResolver(store, state, albumAudioId = '900') {
+  const { createResolver } = compile('../src/renderer/stores/player/resolver.ts', {
+    '@/api/music': {
+      getSongPrivilegeLite: async () => ({ data: [{ album_audio_id: albumAudioId }] }),
+    },
+    '@/utils/logger': logger,
+    '@/utils/cover': { normalizeCoverUrl: () => '' },
+    '@/utils/song': songUtils,
+    '@/plugins/audioSource': {},
+    '@/services/cloudAudioIndex': {},
+    './utils': { summarizeSong: (song) => ({ id: song.id }) },
+  });
+  return createResolver(state, store, {});
+}
+
+test('favorites match a normalized hash even when playback and playlist IDs differ or are incomplete', () => {
+  const store = setup();
+  for (const mixSongId of [0, undefined, '', 1]) {
+    store.favorites = [{ ...track(1), hash: ' ABC ', mixSongId }];
+    assert.equal(store.isFavoriteSong({ ...track(90), hash: 'abc' }), true);
+  }
+  store.favorites = [track(1)];
+  assert.equal(store.isFavoriteSong({ ...track(2), mixSongId: '1' }), true);
+  // A reused row ID or title alone must not match a different recording.
+  assert.equal(store.isFavoriteSong({ ...track(2), id: '1', name: 'Song 1' }), false);
+  assert.equal(store.isFavoriteSong(track(3)), false);
+  store.favorites = [{ id: 'local-only', name: 'Local', mixSongId: 0 }];
+  assert.equal(store.isFavoriteSong({ id: 'local-only', mixSongId: 0 }), true);
+  store.favorites = [{ id: '', mixSongId: '', hash: '' }];
+  assert.equal(store.isFavoriteSong({ id: '', mixSongId: '', hash: '' }), false);
+});
+
+test('normal playback metadata enrichment rebuilds shared favorites identities and preserves reactive hearts', async () => {
+  const store = setup();
+  const song = helpers.toRawSong(track(1));
+  store.favorites = [song, track(2)];
+  const state = vue.reactive({ currentTrackSnapshot: song });
+  const playerHeart = vue.computed(() => store.isFavoriteSong(state.currentTrackSnapshot));
+  const rowHeart = vue.computed(() => store.isFavoriteSong(song));
+  assert.equal(playerHeart.value, true);
+  assert.equal(rowHeart.value, true);
+  const keysBefore = store.favoriteSongKeySet;
+  await setupResolver(store, state).ensureTrackRelateGoods(song, { throwOnError: true });
+  assert.equal(song.mixSongId, '900');
+  assert.notEqual(store.favoriteSongKeySet, keysBefore);
+  assert.equal(store.isFavoriteSong({ ...track(90), mixSongId: '900' }), true);
+  assert.equal(playerHeart.value, true);
+  assert.equal(rowHeart.value, true);
+  state.currentTrackSnapshot = track(3);
+  assert.equal(playerHeart.value, false);
+  state.currentTrackSnapshot = { ...song };
+  assert.equal(playerHeart.value, true);
+  assert.equal(store.favorites.length, 2);
+});
+
+test('enriching an independent playback snapshot preserves its heart without mutating the favorites list', async () => {
+  const store = setup();
+  store.favorites = [track(1)];
+  const favorites = store.favorites;
+  const playing = { ...track(1), mixSongId: 0 };
+  const state = vue.reactive({ currentTrackSnapshot: playing });
+  const heart = vue.computed(() => store.isFavoriteSong(state.currentTrackSnapshot));
+  assert.equal(heart.value, true);
+  await setupResolver(store, state).ensureTrackRelateGoods(playing, { throwOnError: true });
+  assert.equal(heart.value, true);
+  assert.equal(store.favorites, favorites);
+  assert.equal(store.favorites[0].mixSongId, 1);
+});
+
+test('cancelling a hash-matched favorite uses its playlist file ID after playback metadata changes', async () => {
+  const requests = [];
+  const store = setup({
+    deletePlaylistTrack: async (...args) => {
+      requests.push(args);
+      return { status: 1 };
+    },
+  });
+  store.favorites = [{ ...track(1), fileId: 1001 }];
+  const playing = { ...track(90), hash: 'hash-1', fileId: 9999 };
+  assert.equal(store.isFavoriteSong(playing), true);
+  assert.equal(await store.removeFavoriteSong(playing), true);
+  assert.deepEqual(requests, [[12, '1001']]);
+  assert.equal(store.isFavoriteSong(playing), false);
+  assert.equal(store.isFavoriteSong(track(1)), false);
+});
+
+test('metadata enrichment during an optimistic favorite still permits an isolated rollback', async () => {
+  const write = deferred();
+  const store = setup({ addPlaylistTrack: () => write.promise });
+  store.favorites = [track(2)];
+  const song = helpers.toRawSong(track(1));
+  const adding = store.addToFavorites(song);
+  await flush();
+  const state = vue.reactive({ currentTrackSnapshot: song });
+  assert.equal(store.isFavoriteSong(song), true);
+  await setupResolver(store, state).ensureTrackRelateGoods(song, { throwOnError: true });
+  assert.equal(store.isFavoriteSong(song), true);
+  write.resolve({ status: 0 });
+  assert.equal(await adding, false);
+  assert.equal(store.isFavoriteSong(song), false);
+  assert.equal(store.isFavoriteSong(track(2)), true);
+});
+
 test('single and batch playlist changes update reactive hearts only for the liked playlist', async () => {
   const store = setup();
   const song = track(1);

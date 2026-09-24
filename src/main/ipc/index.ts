@@ -2,6 +2,7 @@ import { ipcRegistry } from './registry';
 import { registerApiServerHandlers } from './server';
 import { registerWindowHandlers } from './window';
 import { registerPlayerIpc } from './player';
+import { registerOutputIpc } from './output';
 import { registerSettingsHandlers } from './settings';
 import { registerShortcutHandlers } from './shortcuts';
 import { registerTrayHandlers } from './tray';
@@ -29,6 +30,7 @@ export const registerIpcHandlers = (context: IpcContext) => {
   registerMainWindowPreferenceHandlers();
   registerApiServerHandlers();
   registerPlayerIpc(context.playerRef);
+  registerOutputIpc();
   registerSettingsHandlers(context);
   registerShortcutHandlers(context);
   registerTrayHandlers();

@@ -37,6 +37,7 @@
 - **音频增强**：内置跨平台音效引擎，支持 10 段均衡器（按完整频响自动前级补偿）、LUFS 响度标准化和 WAV/IRS 空间音效；也可导入兼容音效引擎，扩展更多预设、可调参数与组合音效。
 - **实时频谱分析**：直接从播放引擎提取音频数据，使用 FFT 进行实时频谱分析，为插件提供低延迟、高精度的频谱帧。
 - **系统媒体控制**：原生集成 macOS MPNowPlayingInfoCenter、Windows SMTC、Linux MPRIS，支持系统媒体按键和进度同步。
+- **网络投放**：支持发现并投放到 DLNA / AirPlay 设备，保留本机播放队列与投放状态。
 - **系统集成**：支持窗口控制、系统托盘、托盘快捷控制、全局快捷键、开机自启动、启动时最小化和 mini 模式。
 - **音频设备**：支持切换音频输出设备、独占模式输出。
 - **插件扩展**：支持在线插件源浏览安装与本地插件加载，自定义页面、侧边栏入口、设置项、播放器按钮、歌曲右键菜单与播放事件监听。
@@ -177,6 +178,8 @@ sudo apt-get install -y build-essential pkg-config clang libclang-dev \
    | `native/echo-audio-capture`    | 系统音频和麦克风采集       | macOS / Windows / Linux         |
    | `native/echo-media-controls`   | 系统媒体控制               | macOS / Windows / Linux         |
    | `native/echo-sqlite-store`     | SQLite 持久化存储          | macOS / Windows / Linux         |
+   | `native/echo-upnp`             | DLNA / UPnP 设备控制       | macOS / Windows / Linux         |
+   | `native/echo-airplay`          | AirPlay 设备发现与音频发送 | macOS / Windows / Linux         |
    | `native/echo-platform-adaptor` | 系统窗口、任务栏等平台适配 | macOS / Windows；Linux 无需构建 |
 
    以下命令均从仓库根目录执行，逐个安装模块的构建依赖并运行其 `build` 脚本（`napi build --release --no-const-enum`），遇到错误即停止。
@@ -186,7 +189,7 @@ sudo apt-get install -y build-essential pkg-config clang libclang-dev \
    ```bash
    bash <<'BASH'
    set -e
-   addons=(echo-audio-player echo-audio-capture echo-media-controls echo-sqlite-store)
+   addons=(echo-audio-player echo-audio-capture echo-media-controls echo-sqlite-store echo-upnp echo-airplay)
    if [[ "$(uname -s)" == "Darwin" ]]; then
      addons+=(echo-platform-adaptor)
    fi
@@ -203,7 +206,7 @@ sudo apt-get install -y build-essential pkg-config clang libclang-dev \
    **Windows（PowerShell）：**
 
    ```powershell
-   $addons = @("echo-audio-player", "echo-audio-capture", "echo-media-controls", "echo-sqlite-store", "echo-platform-adaptor")
+   $addons = @("echo-audio-player", "echo-audio-capture", "echo-media-controls", "echo-sqlite-store", "echo-upnp", "echo-airplay", "echo-platform-adaptor")
    foreach ($addon in $addons) {
      Push-Location "native/$addon"
      try {
@@ -217,12 +220,12 @@ sudo apt-get install -y build-essential pkg-config clang libclang-dev \
    }
    ```
 
-   每个模块会在自身目录生成同名 `.node`，例如 `native/echo-audio-capture/echo-audio-capture.node`。仅执行 `cargo build --release` 不会将产物转换并放到应用期望的这个路径，应使用上述 napi-rs 脚本。
+   每个模块会在自身目录生成同名 `.node`，例如 `native/echo-audio-capture/echo-audio-capture.node`。新模块不使用 `index.node` 作为产物名。仅执行 `cargo build --release` 不会将产物转换并放到应用期望的这个路径，应使用上述 napi-rs 脚本。
 
    **检查产物（在仓库根目录执行，适用于三平台）：**
 
    ```bash
-   node -e 'const fs = require("node:fs"); const addons = ["echo-audio-player", "echo-audio-capture", "echo-media-controls", "echo-sqlite-store"]; if (process.platform === "darwin" || process.platform === "win32") addons.push("echo-platform-adaptor"); for (const name of addons) { const file = "native/" + name + "/" + name + ".node"; if (!fs.existsSync(file)) throw new Error("缺少产物: " + file); console.log(file); } console.log("当前 Node 平台/架构:", process.platform, process.arch);'
+   node -e 'const fs = require("node:fs"); const addons = ["echo-audio-player", "echo-audio-capture", "echo-media-controls", "echo-sqlite-store", "echo-upnp", "echo-airplay"]; if (process.platform === "darwin" || process.platform === "win32") addons.push("echo-platform-adaptor"); for (const name of addons) { const file = "native/" + name + "/" + name + ".node"; if (!fs.existsSync(file)) throw new Error("缺少产物: " + file); console.log(file); } console.log("当前 Node 平台/架构:", process.platform, process.arch);'
    ```
 
    此检查只确认文件存在。所有 `.node` 的平台和架构还必须与运行的 Electron 或打包目标一致：x64 与 arm64 产物不能混用。通常在目标平台、目标架构的环境中构建；交叉编译时，需先准备目标工具链、SDK 和 `rustup target add <target>`，再在**每个模块目录**运行 `npx napi build --release --no-const-enum --target <target>`，打包时选择相同架构。可参考 [CI 构建矩阵](.github/workflows/build.yml)。
@@ -285,7 +288,7 @@ EchoMusic 支持在线插件源和本地插件，可以扩展页面、音源、�
 pnpm build
 ```
 
-`pnpm build` 执行类型检查、Vite 构建和 electron-builder 打包；`npmRebuild` 已关闭，打包过程只复制现有 Native 产物，不会替你补编译。Windows / macOS 需包含全部 5 个模块，Linux 需包含前 4 个。
+`pnpm build` 执行类型检查、Vite 构建和 electron-builder 打包；`npmRebuild` 已关闭，打包过程只复制现有 Native 产物，不会替你补编译。Windows / macOS 需包含全部 7 个模块，Linux 需包含除 `echo-platform-adaptor` 外的 6 个模块。
 
 ## 🧰 Native 模块 CI 产物
 
@@ -300,7 +303,7 @@ pnpm build
 - `EchoMusic-native-windows-arm64`
 - `EchoMusic-native-windows-x64`
 
-artifact 内的目录根为 `native`，模块路径为 `native/<模块文件夹>/<模块名>.node`，例如 `native/echo-audio-player/echo-audio-player.node`。GitHub Actions 会自动将 artifact 打包；下载后解压到仓库根目录即可恢复本地 `pnpm build` 或 electron-builder 所需的目录布局。Linux 包含四个通用模块；macOS 和 Windows 额外包含 `echo-platform-adaptor`。x64 与 arm64 的 `.node` 产物不能混用。
+artifact 内的目录根为 `native`，模块路径为 `native/<模块文件夹>/<模块名>.node`，例如 `native/echo-audio-player/echo-audio-player.node`。GitHub Actions 会自动将 artifact 打包；下载后解压到仓库根目录即可恢复本地 `pnpm build` 或 electron-builder 所需的目录布局。Linux 包含六个通用模块；macOS 和 Windows 额外包含 `echo-platform-adaptor`。x64 与 arm64 的 `.node` 产物不能混用。
 
 该 workflow 与主桌面发布流程复用 pnpm 依赖缓存和 Rust 缓存，但每个平台在独立 runner 中编译并打包，避免不同架构覆盖同名 `.node` 文件。
 

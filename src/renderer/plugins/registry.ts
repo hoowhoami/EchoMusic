@@ -1,4 +1,5 @@
 import { createTitlebarApi, removeTitlebarItemsByPlugin } from './titlebar';
+import { createPlayerbarApi, removePlayerbarItemsByPlugin } from './playerbar';
 import { createLyricsPageApi, removeLyricsPagesByPlugin } from './lyricsPage';
 import { computed, markRaw, reactive } from 'vue';
 import type { Component } from 'vue';
@@ -155,6 +156,7 @@ const upsertContribution = <T extends PluginOwnedContribution>(
 export const removePluginContributions = (pluginId: string) => {
   removeLyricsPagesByPlugin(pluginId);
   removeTitlebarItemsByPlugin(pluginId);
+  removePlayerbarItemsByPlugin(pluginId);
   pluginUiRegistry.pages = pluginUiRegistry.pages.filter((item) => item.pluginId !== pluginId);
   pluginUiRegistry.sidebarItems = pluginUiRegistry.sidebarItems.filter(
     (item) => item.pluginId !== pluginId,
@@ -230,6 +232,7 @@ export const createPluginUiApi = (
       capabilities?.lyricsPage === true,
     ),
     titlebar: createTitlebarApi(pluginId, addDisposable, reportError),
+    playerbar: createPlayerbarApi(pluginId, addDisposable, reportError),
     addPage(contribution: PluginPageRegistration) {
       const item = withOwner({
         ...contribution,

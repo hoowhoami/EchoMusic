@@ -33,12 +33,14 @@ interface Props {
   open?: boolean;
   /** Popover 弹出方向 */
   side?: 'top' | 'bottom';
+  showArrow?: boolean;
 }
 
 const props = withDefaults(defineProps<Props>(), {
   open: undefined,
   variant: 'bar',
   side: 'top',
+  showArrow: true,
 });
 
 const emit = defineEmits<{ 'update:open': [open: boolean] }>();
@@ -104,7 +106,7 @@ const buttonClass = computed(() => {
     :side="props.side"
     align="center"
     :side-offset="8"
-    :show-arrow="true"
+    :show-arrow="props.showArrow"
     content-class="quality-popover"
   >
     <template #trigger>

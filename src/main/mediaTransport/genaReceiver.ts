@@ -49,9 +49,16 @@ export class GenaReceiver {
     return this.boundPort;
   }
 
-  /** 生成回调 URL（供 rupnp subscribe 使用）。 */
-  callbackUrl(instance: string): string {
-    return `http://${this.options.bindHost}:${this.boundPort}/gena/${instance}/${encodeURIComponent(this.randToken())}`;
+  private armedTokens = new Set<string>();
+
+  /** 在 SID 返回前允许带该 token 的首个 NOTIFY，避免订阅响应和初始事件竞争。 */
+  armToken(token: string): void {
+    if (token) this.armedTokens.add(token);
+  }
+
+  /** 生成回调 URL。传入稳定 token 时，宿主可在订阅完成前 arm 它。 */
+  callbackUrl(instance: string, token = this.randToken()): string {
+    return `http://${this.options.bindHost}:${this.boundPort}/gena/${instance}/${encodeURIComponent(token)}`;
   }
 
   private randToken(): string {
@@ -76,13 +83,17 @@ export class GenaReceiver {
         return;
       }
       const sid = (req.headers['sid'] as string | undefined)?.trim() ?? '';
-      if (!sid || !this.activeSubscriptions.has(sid)) {
+      const token = tokenFromPath(req.url);
+      const known = Boolean(sid) && this.activeSubscriptions.has(sid);
+      const armed = Boolean(token) && this.armedTokens.has(token);
+      if (!known && !armed) {
         // 忽略未知订阅，同时避免对无关请求暴露信息。
         res.statusCode = 412;
         res.end();
         return;
       }
-      this.consume(req, res, sid);
+      if (sid) this.trackSubscription(sid);
+      this.consume(req, res, sid || token);
     });
     this.server.on('clientError', (_err, socket) => {
       try {
@@ -105,6 +116,7 @@ export class GenaReceiver {
     const server = this.server;
     this.server = null;
     this.activeSubscriptions.clear();
+    this.armedTokens.clear();
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }
 
@@ -134,6 +146,16 @@ export class GenaReceiver {
         // 忽略
       }
     });
+  }
+}
+
+function tokenFromPath(url: string | undefined): string {
+  const match = /\/gena\/[^/]+\/([^/?#]+)/.exec(url ?? '');
+  if (!match) return '';
+  try {
+    return decodeURIComponent(match[1]);
+  } catch {
+    return match[1];
   }
 }
 

@@ -216,6 +216,7 @@ export const createResolver = (
         const relateGoods = parseRelateGoodsFromPrivilege(privilegeRes);
         const metadata = parseTrackMetadataFromPrivilege(privilegeRes);
         Object.assign(track, metadata, { relateGoods });
+        playlistStore.refreshFavoriteSongIdentity(track);
         if (
           state.currentTrackSnapshot &&
           String(state.currentTrackSnapshot.id) === String(track.id)

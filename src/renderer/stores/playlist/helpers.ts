@@ -156,6 +156,22 @@ export const resolveFavoriteSongKey = (song: Song | null | undefined): string =>
   return `id:${String(song.id ?? '')}`;
 };
 
+/** 收藏身份同时保留 ID 与 hash，播放补全 ID 后仍可匹配歌单中的原始记录。 */
+export const resolveFavoriteSongKeys = (song: Song | null | undefined): string[] => {
+  if (!song) return [];
+  const keys: string[] = [];
+  const mixSongId = String(song.mixSongId ?? '').trim();
+  const hash = String(song.hash ?? '')
+    .trim()
+    .toLowerCase();
+  if (mixSongId && mixSongId !== '0') keys.push(`mx:${mixSongId}`);
+  if (hash) keys.push(`hash:${hash}`);
+  // id 可能是列表行 ID；有歌曲身份时不以它跨来源匹配，避免误认不同歌曲。
+  const id = String(song.id ?? '').trim();
+  if (keys.length === 0 && id && id !== '0') keys.push(`id:${id}`);
+  return keys;
+};
+
 export const buildPlaylistTrackPayload = (song: Song): string =>
   `${song.name}|${song.hash}|${song.albumId || 0}|${song.mixSongId}`;
 

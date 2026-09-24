@@ -167,6 +167,8 @@ jobs:
             native/echo-platform-adaptor
             native/echo-audio-player
             native/echo-sqlite-store
+            native/echo-upnp
+            native/echo-airplay
 
       - name: Add Rust cross-compile target
         if: matrix.rust_target != ''
@@ -201,6 +203,8 @@ jobs:
           fi
           build_addon echo-audio-player & pids+=("$!")
           build_addon echo-sqlite-store & pids+=("$!")
+          build_addon echo-upnp & pids+=("$!")
+          build_addon echo-airplay & pids+=("$!")
 
           status=0
           for pid in "${pids[@]}"; do
@@ -244,7 +248,7 @@ jobs:
           rm -rf "$staging"
           mkdir -p "$staging/native"
 
-          addons=(echo-audio-capture echo-media-controls echo-audio-player echo-sqlite-store)
+          addons=(echo-audio-capture echo-media-controls echo-audio-player echo-sqlite-store echo-upnp echo-airplay)
           if [[ "$INCLUDE_PLATFORM_ADAPTOR" == "true" ]]; then
             addons+=(echo-platform-adaptor)
           fi
@@ -271,7 +275,7 @@ jobs:
         run: |
           set -euo pipefail
           staging=$(<"$RUNNER_TEMP/echo-music-native-staging")
-          expected="${{ matrix.include_platform_adaptor && 5 || 4 }}"
+          expected="${{ matrix.include_platform_adaptor && 7 || 6 }}"
           node_count=$(find "$staging/native" -type f -name '*.node' | wc -l | tr -d ' ')
           if [[ "$node_count" -ne "$expected" ]]; then
             echo "发现的 native 文件："

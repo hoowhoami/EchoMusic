@@ -759,6 +759,79 @@ export interface IElectronAPI {
       func: (event: { type: string; positionMs?: number; offsetMs?: number }) => void,
     ) => () => void;
   };
+  output: {
+    listTargets: () => Promise<
+      Array<{
+        targetId: string;
+        protocol: 'local' | 'dlna' | 'airplay';
+        displayName: string;
+        modelName?: string;
+        note?: string;
+      }>
+    >;
+    refresh: () => Promise<
+      Array<{
+        targetId: string;
+        protocol: 'local' | 'dlna' | 'airplay';
+        displayName: string;
+        modelName?: string;
+        note?: string;
+      }>
+    >;
+    connect: (targetId: string, pin?: string) => Promise<{ ok: boolean; error?: string }>;
+    disconnect: () => Promise<{
+      snapshot?: {
+        protocol: 'local' | 'dlna' | 'airplay';
+        displayName: string;
+        state: string;
+        actualFormat: string | null;
+      } | null;
+      targets?: Array<{
+        targetId: string;
+        protocol: 'local' | 'dlna' | 'airplay';
+        displayName: string;
+      }>;
+      diagnostics?: string;
+    }>;
+    setEnabled: (enabled: boolean) => Promise<{
+      snapshot?: {
+        protocol: 'local' | 'dlna' | 'airplay';
+        displayName: string;
+        state: string;
+        actualFormat: string | null;
+      } | null;
+      diagnostics?: string;
+    }>;
+    setBrowsing: (open: boolean) => Promise<boolean>;
+    setTrackMeta: (meta: {
+      title?: string;
+      artist?: string;
+      album?: string;
+      artwork?: string;
+      durationMs?: number;
+      mime?: string;
+      headers?: Record<string, string>;
+    }) => Promise<void>;
+    getSession: () => Promise<{
+      snapshot?: {
+        protocol: 'local' | 'dlna' | 'airplay';
+        displayName: string;
+        state: string;
+        actualFormat: string | null;
+        capabilities?: { dsp?: boolean; relayed?: boolean };
+      } | null;
+      targets?: Array<{
+        targetId: string;
+        protocol: 'local' | 'dlna' | 'airplay';
+        displayName: string;
+        modelName?: string;
+        note?: string;
+      }>;
+      diagnostics?: string;
+    }>;
+    clearRecords: () => Promise<{ diagnostics?: string }>;
+    onEvent: (func: (event: { type: string; payload?: unknown }) => void) => () => void;
+  };
   player: {
     beginSourceChange: () => Promise<number>;
     load: (url: string, requestId?: number) => Promise<{ seq: number; duration: number } | null>;

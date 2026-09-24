@@ -368,6 +368,20 @@ interface PlayerAddon {
   configureSpectrum(options?: unknown): { available: boolean; running: boolean; reason?: string };
   getSpectrumStatus(): { available: boolean; running: boolean; reason?: string };
   getSpectrumSnapshot(): Promise<unknown>;
+  setAirplayTap?(port: number, enabled: boolean): void;
+  setAirplayEpoch?(epoch: number): void;
+  getAirplayTapStats?(): AirplayTapStats;
+}
+
+interface AirplayTapStats {
+  enabled: boolean;
+  epoch: number;
+  queuedFrames: number;
+  queuedBytes: number;
+  writtenFrames: number;
+  writtenBytes: number;
+  overruns: number;
+  writeErrors: number;
 }
 
 export type PlayerTransitionMode = 'none' | 'gapless' | 'fade' | 'automix-basic' | 'automix-pro';
@@ -710,6 +724,30 @@ export class PlayerController extends EventEmitter {
       this.state.audioDevice = nextDevice;
       this.state.exclusiveOutput = nextExclusive;
     });
+  }
+
+  setAirplayTap(port: number, enabled: boolean): Promise<void> {
+    const addon = this.getAddonOrThrow();
+    if (!addon.setAirplayTap) {
+      return Promise.reject(
+        new Error('当前播放器模块没有 AirPlay 音频出口，需要重新构建 echo-audio-player'),
+      );
+    }
+    return this.enqueue(async () => {
+      addon.setAirplayTap?.(port, enabled);
+    });
+  }
+
+  setAirplayEpoch(epoch: number): Promise<void> {
+    const addon = this.getAddonOrThrow();
+    if (!addon.setAirplayEpoch) return Promise.resolve();
+    return this.enqueue(async () => {
+      addon.setAirplayEpoch?.(epoch);
+    });
+  }
+
+  getAirplayTapStats(): AirplayTapStats | null {
+    return this.getAddonOrThrow().getAirplayTapStats?.() ?? null;
   }
 
   getAudioDevices() {

@@ -11,6 +11,8 @@ interface Props {
   scrollbarInset?: number;
   /** 滑块距离滚动区域右边缘的间距（px）。 */
   scrollbarRightInset?: number;
+  /** 滚动区域向右延伸的距离（px），用于让滑块贴齐带内边距容器的视觉边缘。 */
+  scrollbarRightBleed?: number;
   /** Space occupied by the separate page header layer. */
   scrollbarTopInset?: number;
   contentProps?: Record<string, unknown> | null;
@@ -26,6 +28,7 @@ const props = withDefaults(defineProps<Props>(), {
   hideScrollbar: false,
   scrollbarInset: 6,
   scrollbarRightInset: 2,
+  scrollbarRightBleed: 0,
   scrollbarTopInset: 0,
   contentProps: null,
 });
@@ -56,6 +59,7 @@ let observedChild: Element | null = null;
 const effectiveScrollbarInset = computed(() => Math.max(0, props.scrollbarInset));
 const effectiveScrollbarTopInset = computed(() => Math.max(0, props.scrollbarTopInset));
 const effectiveScrollbarRightInset = computed(() => Math.max(0, props.scrollbarRightInset));
+const effectiveScrollbarRightBleed = computed(() => Math.max(0, props.scrollbarRightBleed));
 
 const showScrollbar = computed(() => {
   if (props.hideScrollbar) return false;
@@ -391,10 +395,13 @@ watch(
 <style scoped>
 .scroll-area {
   position: relative;
-  width: 100%;
-  max-width: 100%;
+  width: v-bind('`calc(100% + ${effectiveScrollbarRightBleed}px)`');
+  max-width: v-bind('`calc(100% + ${effectiveScrollbarRightBleed}px)`');
   min-width: 0;
   min-height: 0;
+  margin-right: v-bind('`-${effectiveScrollbarRightBleed}px`');
+  padding-right: v-bind('`${effectiveScrollbarRightBleed}px`');
+  box-sizing: border-box;
   overflow: hidden;
   display: flex;
   flex-direction: column;

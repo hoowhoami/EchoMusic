@@ -12,7 +12,26 @@ import { usePlayerStore } from '@/stores/player';
 import { sleepTimerActionLabels, type SleepTimerAction } from '../../../shared/sleepTimer';
 
 const player = usePlayerStore();
-const open = ref(false);
+interface Props {
+  open?: boolean;
+  side?: 'top' | 'bottom';
+  showArrow?: boolean;
+}
+
+const props = withDefaults(defineProps<Props>(), {
+  open: undefined,
+  side: 'top',
+  showArrow: true,
+});
+const emit = defineEmits<{ 'update:open': [open: boolean] }>();
+const internalOpen = ref(false);
+const open = computed({
+  get: () => props.open ?? internalOpen.value,
+  set: (value: boolean) => {
+    internalOpen.value = value;
+    emit('update:open', value);
+  },
+});
 const finishTrackId = useId();
 const selected = ref<number | 'custom'>(30);
 const customMinutes = ref<number | string>(45);
@@ -85,11 +104,12 @@ const selectAction = (action: SleepTimerAction) => {
 
 <template>
   <Popover
-    trigger="hover"
+    :trigger="props.open === undefined ? 'hover' : 'click'"
     :open="open"
     align="center"
+    :side="props.side"
     :side-offset="8"
-    :show-arrow="true"
+    :show-arrow="props.showArrow"
     content-class="sleep-timer-popover"
     @update:open="syncSelection"
   >

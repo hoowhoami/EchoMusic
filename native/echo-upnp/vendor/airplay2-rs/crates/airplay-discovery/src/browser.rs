@@ -2,7 +2,7 @@
 
 use crate::parser::TxtRecordParser;
 use crate::traits::{BrowseEvent, Discovery};
-use crate::{AIRPLAY_SERVICE_TYPE, RAOP_SERVICE_TYPE};
+use crate::{AIRPLAY_P2P_SERVICE_TYPE, AIRPLAY_SERVICE_TYPE, RAOP_SERVICE_TYPE};
 use airplay_core::error::DiscoveryError;
 use airplay_core::{Device, DeviceId, Result};
 use async_trait::async_trait;
@@ -185,6 +185,11 @@ impl Discovery for ServiceBrowser {
             .browse(RAOP_SERVICE_TYPE)
             .map_err(|e| DiscoveryError::Daemon(format!("Failed to browse RAOP: {}", e)))?;
 
+        let airplay_p2p_receiver = self
+            .daemon
+            .browse(AIRPLAY_P2P_SERVICE_TYPE)
+            .map_err(|e| DiscoveryError::Daemon(format!("Failed to browse AirPlay P2P: {}", e)))?;
+
         let devices = Arc::clone(&self.devices);
         let running = Arc::clone(&self.running);
 
@@ -211,6 +216,13 @@ impl Discovery for ServiceBrowser {
                         yield browse_event;
                     }
                 }
+
+                // Check AirPlay P2P events
+                if let Ok(event) = airplay_p2p_receiver.recv_timeout(recv_timeout) {
+                    if let Some(browse_event) = Self::handle_service_event(event, false, &devices).await {
+                        yield browse_event;
+                    }
+                }
             }
         };
 
@@ -231,6 +243,11 @@ impl Discovery for ServiceBrowser {
             .browse(RAOP_SERVICE_TYPE)
             .map_err(|e| DiscoveryError::Daemon(format!("Failed to browse RAOP: {}", e)))?;
 
+        let airplay_p2p_receiver = self
+            .daemon
+            .browse(AIRPLAY_P2P_SERVICE_TYPE)
+            .map_err(|e| DiscoveryError::Daemon(format!("Failed to browse AirPlay P2P: {}", e)))?;
+
         let devices = Arc::clone(&self.devices);
         let start = std::time::Instant::now();
 
@@ -248,11 +265,17 @@ impl Discovery for ServiceBrowser {
             if let Ok(event) = raop_receiver.recv_timeout(recv_timeout) {
                 Self::handle_service_event(event, true, &devices).await;
             }
+
+            // Check AirPlay P2P events
+            if let Ok(event) = airplay_p2p_receiver.recv_timeout(recv_timeout) {
+                Self::handle_service_event(event, false, &devices).await;
+            }
         }
 
         // Stop browsing
         let _ = self.daemon.stop_browse(AIRPLAY_SERVICE_TYPE);
         let _ = self.daemon.stop_browse(RAOP_SERVICE_TYPE);
+        let _ = self.daemon.stop_browse(AIRPLAY_P2P_SERVICE_TYPE);
 
         self.running.store(false, Ordering::SeqCst);
 
@@ -264,6 +287,7 @@ impl Discovery for ServiceBrowser {
         self.running.store(false, Ordering::SeqCst);
         let _ = self.daemon.stop_browse(AIRPLAY_SERVICE_TYPE);
         let _ = self.daemon.stop_browse(RAOP_SERVICE_TYPE);
+        let _ = self.daemon.stop_browse(AIRPLAY_P2P_SERVICE_TYPE);
     }
 
     async fn get_device(&self, id: &DeviceId) -> Option<Device> {

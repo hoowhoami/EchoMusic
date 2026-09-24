@@ -1,4 +1,5 @@
 import { emptyTitlebarLayout } from '../plugins/titlebar';
+import { emptyPlayerBarLayout } from '../layouts/playerBarActions';
 import {
   DEFAULT_WINDOW_BACKGROUND,
   normalizeWindowBackground,
@@ -112,6 +113,7 @@ export const useSettingStore = defineStore('setting', {
     theme: 'system' as ThemeMode,
     floatingSurfaceFrosted: false,
     titlebarLayout: emptyTitlebarLayout(),
+    playerBarLayout: emptyPlayerBarLayout(),
     windowBackground: { ...DEFAULT_WINDOW_BACKGROUND },
     windowBackgroundActiveEnabled: false,
     windowBackgroundLive: false,
@@ -187,7 +189,9 @@ export const useSettingStore = defineStore('setting', {
     outputDeviceStatus: 'idle' as OutputDeviceStatus,
     outputDeviceStatusMessage: '',
     pauseOnOutputDeviceDisconnect: false,
+    networkPlaybackEnabled: false,
     showAudioQualityBadge: true,
+    showAudioEffectBadge: true,
     showDesktopLyricStatus: true,
     taskbarCoverPreview: false,
     taskbarProgress: true,

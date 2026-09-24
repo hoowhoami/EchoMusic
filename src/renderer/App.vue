@@ -16,6 +16,7 @@ import { RouterView, useRoute, useRouter } from 'vue-router';
 import ToastViewport from '@/components/app/ToastViewport.vue';
 import RouteErrorBoundary from '@/components/app/RouteErrorBoundary.vue';
 import { useSettingStore } from './stores/setting';
+import { useOutputStore } from './stores/output';
 import { useUpdateStore } from './stores/update';
 import { useThemeStore } from './stores/theme';
 import { usePlaylistStore } from './stores/playlist';
@@ -243,6 +244,7 @@ const flushPendingShareTarget = () => {
 };
 
 onMounted(async () => {
+  void useOutputStore().bind();
   if (!isMiniPlayerRoute.value) disposeWindowFrame = installWindowFrame();
   await router.isReady();
 

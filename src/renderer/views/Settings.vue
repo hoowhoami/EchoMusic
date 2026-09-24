@@ -26,6 +26,7 @@ import PageLyricSettingsSection from './settings/components/PageLyricSettingsSec
 import DesktopLyricSettingsSection from './settings/components/DesktopLyricSettingsSection.vue';
 import ShortcutSettingsSection from './settings/components/ShortcutSettingsSection.vue';
 import AudioDeviceSettingsSection from './settings/components/AudioDeviceSettingsSection.vue';
+import CastSettingsSection from './settings/components/CastSettingsSection.vue';
 import ExperimentalSettingsSection from './settings/components/ExperimentalSettingsSection.vue';
 import PluginSettingsSection from './settings/components/PluginSettingsSection.vue';
 import DataSettingsSection from './settings/components/DataSettingsSection.vue';
@@ -144,13 +145,7 @@ const builtinSettingsSections = computed<SettingsRenderSection[]>(() => [
     label: '界面显示',
     order: 150,
     component: InterfaceSettingsSection,
-    searchKeywords: [
-      '音质音效徽标',
-      '桌面歌词状态',
-      '播放列表计数',
-      '搜索框默认推荐词',
-      '侧边栏折叠',
-    ],
+    searchKeywords: ['搜索框默认推荐词', '侧边栏折叠'],
   },
   {
     id: 'window',
@@ -385,6 +380,22 @@ const builtinSettingsSections = computed<SettingsRenderSection[]>(() => [
       '耳机断开',
       '避免外放',
       '暂停播放',
+    ],
+  },
+  {
+    id: 'cast',
+    label: '投放',
+    order: 850,
+    component: CastSettingsSection,
+    searchKeywords: [
+      '投放',
+      'DLNA',
+      'AirPlay',
+      '网络播放',
+      '音箱',
+      '电视',
+      '切回本机',
+      '清除设备记录',
     ],
   },
   {
@@ -641,7 +652,7 @@ watch(activeSection, () => scrollbarRef.value?.setScrollTop(0), { flush: 'post' 
   <div class="settings-page-shell" :class="{ 'is-embedded': props.embedded }">
     <div class="settings-page h-full flex flex-col min-h-0">
       <!-- 页面头部 -->
-      <header class="settings-header shrink-0 px-6 pt-4 pb-1">
+      <header class="settings-header shrink-0 px-5 pt-3 pb-0">
         <div class="flex w-full items-center justify-between">
           <div class="settings-heading">
             <h1 class="text-lg font-bold text-text-main">偏好设置</h1>
@@ -870,7 +881,7 @@ watch(activeSection, () => scrollbarRef.value?.setScrollTop(0), { flush: 'post' 
   display: flex;
   flex: 1;
   min-height: 0;
-  padding: 8px 0 20px 16px;
+  padding: 4px 0 16px 16px;
   gap: 0;
 }
 
@@ -933,7 +944,7 @@ watch(activeSection, () => scrollbarRef.value?.setScrollTop(0), { flush: 'post' 
   }
   .settings-layout {
     gap: 0;
-    padding: 8px 0 12px 8px;
+    padding: 4px 0 10px 8px;
   }
   .settings-nav-item {
     padding: 0 8px;
@@ -1092,7 +1103,7 @@ watch(activeSection, () => scrollbarRef.value?.setScrollTop(0), { flush: 'post' 
 }
 
 :deep(.settings-content-inner) {
-  padding: 24px 24px 24px 18px;
+  padding: 14px 16px 20px 18px;
 }
 
 .settings-content {

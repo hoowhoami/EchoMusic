@@ -3,6 +3,7 @@ import type { AudioQualityValue, ShortcutItem } from '@/types';
 import type { CloseBehavior, ThemeMode } from '../../../shared/app';
 import {
   iconDeviceSpeaker,
+  iconCast,
   iconFlask,
   iconInfo,
   iconKeyboard,
@@ -32,6 +33,7 @@ export const sectionTitles = {
   desktopLyric: { label: '桌面歌词', icon: iconPictureInPicture },
   shortcuts: { label: '快捷键', icon: iconKeyboard },
   audioDevice: { label: '音频设备', icon: iconDeviceSpeaker },
+  cast: { label: '投放', icon: iconCast },
   experimental: { label: '实验性功能', icon: iconFlask },
   plugins: { label: '插件', icon: iconPlugin },
   data: { label: '数据与安全', icon: iconShield },

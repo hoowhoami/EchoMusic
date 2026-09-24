@@ -1,3 +1,4 @@
+mod airplay_tap;
 mod cpal_shared;
 
 pub(crate) const MIN_REALTIME_BUFFER_FRAMES: usize = 32_768;

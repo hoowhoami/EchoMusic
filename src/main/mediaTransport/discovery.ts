@@ -91,7 +91,7 @@ function candidateUsn(usn: string | undefined): string | null {
   if (!UUID_RE.test(trimmed)) {
     return null;
   }
-  return trimmed;
+  return trimmed.split('::')[0] ?? trimmed;
 }
 
 export function createSsdpDiscovery(options: SsdpDiscoveryOptions = {}): SsdpHandle {
@@ -105,6 +105,20 @@ export function createSsdpDiscovery(options: SsdpDiscoveryOptions = {}): SsdpHan
   let socket: dgram.Socket | null = null;
   let staleTimer: NodeJS.Timeout | null = null;
   let started = false;
+
+  function notifyRemoved(usn: string, st: string, address: string): void {
+    options.onDevice?.({
+      usn,
+      st,
+      location: '',
+      server: '',
+      maxAgeSec: 0,
+      interface: address,
+      firstSeen: now(),
+      lastSeen: now(),
+      expiresAt: 0,
+    });
+  }
 
   function acceptDevice(headers: Record<string, string>, rinfo: dgram.RemoteInfo): void {
     const usn = candidateUsn(headers['usn']);
@@ -125,6 +139,7 @@ export function createSsdpDiscovery(options: SsdpDiscoveryOptions = {}): SsdpHan
         existing.lastSeen = nowMs;
         existing.expiresAt = expiresAt;
         existing.st = headers['st'] ?? existing.st;
+        return;
       } else {
         // 端点变化（如 IP 变更）→ 视为新设备，旧端点随会话结束清理。
         devices.set(usn, {
@@ -183,18 +198,7 @@ export function createSsdpDiscovery(options: SsdpDiscoveryOptions = {}): SsdpHan
       const removed = devices.delete(usn);
       if (removed) {
         log('info', `[SSDP] byebye ${usn}`);
-        // 通知外层（若有订阅）。
-        options.onDevice?.({
-          usn,
-          st: headers['nt'] ?? '',
-          location: '',
-          server: '',
-          maxAgeSec: 0,
-          interface: rinfo.address,
-          firstSeen: now(),
-          lastSeen: now(),
-          expiresAt: 0,
-        });
+        notifyRemoved(usn, headers['nt'] ?? '', rinfo.address);
       }
     }
   }
@@ -204,6 +208,7 @@ export function createSsdpDiscovery(options: SsdpDiscoveryOptions = {}): SsdpHan
       if (entry.expiresAt <= nowMs) {
         devices.delete(key);
         log('info', `[SSDP] expire ${key}`);
+        notifyRemoved(key, entry.st, entry.interface);
       }
     }
   }
@@ -272,6 +277,7 @@ export function createSsdpDiscovery(options: SsdpDiscoveryOptions = {}): SsdpHan
       if (!allowScan()) return;
       evictExpired(now());
     }, STALE_CHECK_MS);
+    staleTimer.unref?.();
   }
 
   const handle: SsdpHandle = {
@@ -327,7 +333,8 @@ export function createSsdpDiscovery(options: SsdpDiscoveryOptions = {}): SsdpHan
     },
     get(usn) {
       evictExpired(now());
-      return devices.get(usn.trim().toLowerCase());
+      const key = candidateUsn(usn);
+      return key ? devices.get(key) : undefined;
     },
     feedForTest(text, rinfo = {}) {
       const sock = socket;

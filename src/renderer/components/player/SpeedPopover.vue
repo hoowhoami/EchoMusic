@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { computed, ref } from 'vue';
 import { SliderRoot, SliderTrack, SliderRange, SliderThumb } from 'reka-ui';
 import Popover from '@/components/ui/Popover.vue';
 import Button from '@/components/ui/Button.vue';
@@ -16,22 +17,37 @@ const {
 interface Props {
   variant?: 'lyric' | 'bar';
   side?: 'top' | 'bottom';
+  open?: boolean;
+  showArrow?: boolean;
 }
 
-withDefaults(defineProps<Props>(), {
+const props = withDefaults(defineProps<Props>(), {
   variant: 'bar',
   side: 'top',
+  open: undefined,
+  showArrow: true,
+});
+const emit = defineEmits<{ 'update:open': [open: boolean] }>();
+const internalOpen = ref(false);
+const popoverOpen = computed({
+  get: () => props.open ?? internalOpen.value,
+  set: (open: boolean) => {
+    internalOpen.value = open;
+    emit('update:open', open);
+  },
 });
 </script>
 
 <template>
   <Popover
-    trigger="hover"
-    :side="side"
+    :trigger="props.open === undefined ? 'hover' : 'click'"
+    :open="popoverOpen"
+    :side="props.side"
     align="center"
     :side-offset="8"
-    :show-arrow="true"
+    :show-arrow="props.showArrow"
     content-class="speed-popover"
+    @update:open="popoverOpen = $event"
   >
     <template #trigger>
       <Button
@@ -41,10 +57,10 @@ withDefaults(defineProps<Props>(), {
         class="p-2 transition-all"
         :class="
           player.playbackRate !== 1
-            ? variant === 'lyric'
+            ? props.variant === 'lyric'
               ? 'text-black dark:text-white hover:scale-110 active:scale-90'
               : 'text-primary-text hover:scale-110 active:scale-90'
-            : variant === 'lyric'
+            : props.variant === 'lyric'
               ? 'text-black/40 dark:text-white/40 hover:scale-110 active:scale-90'
               : 'text-text-main/50 hover:text-primary-text hover:scale-110 active:scale-90'
         "

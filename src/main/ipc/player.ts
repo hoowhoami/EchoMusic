@@ -9,6 +9,7 @@ import type {
   PlayerAudioGraphPlanPatch,
 } from '../../shared/playerAudioGraph';
 import { restartPlayer } from '../player';
+import { getOutputHost } from '../outputs/outputHost';
 import { setPlayerAudioEffect } from '../player/audioEffectCommand';
 import { DspProviderRegistry } from '../player/dspProviderRegistry';
 import log from '../logger';
@@ -27,31 +28,41 @@ export function registerPlayerIpc(ref: PlayerRef): void {
     (message, error) => log.warn(`[DspProviderRegistry] ${message}`, error),
   );
   ipcRegistry.registerHandler('player:begin-source-change', () => {
+    const output = getOutputHost();
+    if (output?.ownsTransport) return output.beginSourceChange();
     if (!ref.current) throw new Error('播放器未初始化');
     return ref.current.beginSourceChange();
   });
 
   ipcRegistry.registerHandler('player:load', async (_e, url: string, requestId?: number) => {
+    const output = getOutputHost();
+    if (output?.airplayActive) await output.prepareAirplayTrack();
+    if (output?.ownsTransport) return output.load(url, requestId);
     return (await ref.current?.loadFile(url, requestId)) ?? null;
   });
 
   ipcRegistry.registerHandler(
     'player:load-mkv-track',
     async (_e, url: string, trackId: number, requestId?: number) => {
+      const output = getOutputHost();
+      if (output?.airplayActive) await output.prepareAirplayTrack();
+      if (output?.ownsTransport) return output.load(url, requestId, trackId);
       return (await ref.current?.loadMkvTrack(url, trackId, requestId)) ?? null;
     },
   );
   ipcRegistry.registerHandler(
     'player:switch-source',
     async (_e, url: string, trackId?: number | null) => {
+      const output = getOutputHost();
+      if (output?.airplayActive) await output.prepareAirplayTrack();
+      if (output?.ownsTransport) return output.switchSource(url, trackId);
       if (!ref.current) throw new Error('播放器未初始化');
       return await ref.current.switchSource(url, trackId);
     },
   );
 
-  ipcRegistry.registerHandler(
-    'player:begin-next-source-preparation',
-    async () => ref.current?.beginNextSourcePreparation() ?? null,
+  ipcRegistry.registerHandler('player:begin-next-source-preparation', async () =>
+    getOutputHost()?.ownsTransport ? null : (ref.current?.beginNextSourcePreparation() ?? null),
   );
 
   ipcRegistry.registerHandler(
@@ -137,6 +148,7 @@ export function registerPlayerIpc(ref: PlayerRef): void {
       trackId?: number | null,
       normalizationGainDb?: number,
     ) => {
+      if (getOutputHost()?.ownsTransport) return null;
       return (
         (await ref.current?.prepareNextSource(url, requestId, trackId, normalizationGainDb)) ?? null
       );
@@ -150,7 +162,9 @@ export function registerPlayerIpc(ref: PlayerRef): void {
   ipcRegistry.registerHandler(
     'player:commit-prepared-next-source',
     async (_e, transitionMs?: number) =>
-      (await ref.current?.commitPreparedNextSource(transitionMs)) ?? false,
+      getOutputHost()?.ownsTransport
+        ? false
+        : ((await ref.current?.commitPreparedNextSource(transitionMs)) ?? false),
   );
 
   ipcRegistry.registerHandler('player:get-track-list', async (_e, url?: string) => {
@@ -158,26 +172,43 @@ export function registerPlayerIpc(ref: PlayerRef): void {
   });
 
   ipcRegistry.registerHandler('player:play', async (_e, requestId?: number) => {
+    const output = getOutputHost();
+    if (output?.ownsTransport) return output.play();
+    if (output?.airplayActive) await output.resumeAirplay();
     await ref.current?.play(requestId);
+    if (output?.airplayActive) output.probeAirplayPlayback('播放开始');
   });
 
   ipcRegistry.registerHandler('player:pause', async () => {
+    const output = getOutputHost();
+    if (output?.ownsTransport) return output.pause();
     await ref.current?.pause();
+    if (output?.airplayActive) await output.pauseAirplay();
   });
 
   ipcRegistry.registerHandler('player:stop', async () => {
+    const output = getOutputHost();
+    if (output?.ownsTransport) return output.stop();
     await ref.current?.stop();
+    if (output?.airplayActive) await output.stopAirplay();
   });
 
   ipcRegistry.registerHandler('player:seek', async (_e, time: number) => {
+    const output = getOutputHost();
+    if (output?.ownsTransport) return output.seek(time);
+    if (output?.airplayActive) await output.seekAirplay(time);
     await ref.current?.seek(time);
   });
 
   ipcRegistry.registerHandler('player:set-volume', async (_e, volume: number) => {
-    await ref.current?.setVolume(Math.max(0, Math.min(100, volume)));
+    const output = getOutputHost();
+    const clamped = Math.max(0, Math.min(100, volume));
+    if (output?.ownsTransport || output?.airplayActive) return output.setVolume(clamped);
+    await ref.current?.setVolume(clamped);
   });
 
   ipcRegistry.registerHandler('player:set-speed', async (_e, speed: number) => {
+    if (getOutputHost()?.ownsTransport) throw new Error('当前输出不支持倍速');
     await ref.current?.setSpeed(speed);
   });
 
@@ -232,19 +263,32 @@ export function registerPlayerIpc(ref: PlayerRef): void {
   ipcRegistry.registerHandler(
     'player:pause-with-fade',
     async (_e, savedVolume: number, durationMs: number) => {
+      const output = getOutputHost();
+      if (output?.ownsTransport) return output.pause();
       await ref.current?.pauseWithFade(savedVolume, durationMs);
+      if (output?.airplayActive) await output.pauseAirplay();
     },
   );
 
   ipcRegistry.registerHandler(
     'player:play-with-fade',
     async (_e, targetVolume: number, durationMs: number, requestId?: number) => {
+      const output = getOutputHost();
+      if (output?.ownsTransport) return output.play();
+      if (output?.airplayActive) await output.resumeAirplay();
       await ref.current?.playWithFade(targetVolume, durationMs, requestId);
+      if (output?.airplayActive) output.probeAirplayPlayback('淡入播放开始');
     },
   );
 
   ipcRegistry.registerHandler('player:get-state', () => {
-    return ref.current?.getState() ?? null;
+    const output = getOutputHost();
+    if (output?.ownsTransport) return output.getState();
+    const state = ref.current?.getState() ?? null;
+    if (output?.airplayActive && state && typeof state.timePos === 'number') {
+      return { ...state, timePos: Math.max(0, state.timePos - output.airplayDelaySec()) };
+    }
+    return state;
   });
 
   ipcRegistry.registerHandler('player:available', () => {

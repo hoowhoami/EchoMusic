@@ -29,6 +29,7 @@ export type {
 } from './theme';
 export type { EchoPluginContext, PluginRuntimeHost } from './context';
 export type { LyricsPageRegistration, LyricsSkinSettings } from '../lyricsPage';
+export type { PlayerbarItem } from '../playerbar';
 export type { LyricSkinHandle } from '../../views/lyric/composables/useLyricSkin';
 export type {
   LyricsPageContext,

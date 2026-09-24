@@ -15,6 +15,7 @@ import {
   cleanupDesktopLyric,
 } from './desktopLyric';
 import { initPlayer, destroyPlayer } from './player';
+import { initOutputRuntime } from './outputs/outputRuntime';
 import { registerAudioSpectrumIpc, unregisterAudioSpectrumIpc } from './audioSpectrum';
 import { initMediaControls, destroyMediaControls } from './mediaControls';
 import { destroyAudioCapture } from './audioCapture';
@@ -173,6 +174,11 @@ if (!gotTheLock) {
     ]);
 
     playerRef.current = playerInstance ?? null;
+    try {
+      initOutputRuntime(() => playerRef.current);
+    } catch (error) {
+      log.error('[Main] Failed to init output session:', error);
+    }
     log.info('[Main] Pre-window initialization complete', {
       playerAvailable: !!playerRef.current,
       platform: process.platform,

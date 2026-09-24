@@ -22,30 +22,6 @@ const settingStore = useSettingStore();
 
     <div class="settings-item">
       <div class="space-y-1">
-        <h3 class="font-semibold">音质音效徽标</h3>
-        <p class="text-sm text-text-secondary">在播放器音质按钮上显示当前实际音质或音效标识</p>
-      </div>
-      <Switch v-model="settingStore.showAudioQualityBadge" />
-    </div>
-    <div class="settings-divider"></div>
-    <div class="settings-item">
-      <div class="space-y-1">
-        <h3 class="font-semibold">桌面歌词状态</h3>
-        <p class="text-sm text-text-secondary">在播放器桌面歌词图标上显示开启或关闭状态角标</p>
-      </div>
-      <Switch v-model="settingStore.showDesktopLyricStatus" />
-    </div>
-    <div class="settings-divider"></div>
-    <div class="settings-item">
-      <div class="space-y-1">
-        <h3 class="font-semibold">播放列表计数</h3>
-        <p class="text-sm text-text-secondary">在播放器播放列表图标上显示计数</p>
-      </div>
-      <Switch v-model="settingStore.showPlaylistCount" />
-    </div>
-    <div class="settings-divider"></div>
-    <div class="settings-item">
-      <div class="space-y-1">
         <h3 class="font-semibold">搜索框默认推荐词</h3>
         <p class="text-sm text-text-secondary">在搜索框显示默认推荐词，可能有广告</p>
       </div>

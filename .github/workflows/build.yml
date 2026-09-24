@@ -144,6 +144,8 @@ jobs:
             native/echo-platform-adaptor
             native/echo-audio-player
             native/echo-sqlite-store
+            native/echo-upnp
+            native/echo-airplay
 
       - name: Add Rust cross-compile target
         if: matrix.rust_target != ''
@@ -170,6 +172,8 @@ jobs:
           fi
           build_addon echo-audio-player & pids+=("$!")
           build_addon echo-sqlite-store & pids+=("$!")
+          build_addon echo-upnp & pids+=("$!")
+          build_addon echo-airplay & pids+=("$!")
 
           status=0
           for pid in "${pids[@]}"; do
@@ -264,7 +268,7 @@ jobs:
         shell: bash
         run: |
           set -e
-          addons=(echo-audio-capture echo-media-controls echo-audio-player echo-sqlite-store)
+          addons=(echo-audio-capture echo-media-controls echo-audio-player echo-sqlite-store echo-upnp echo-airplay)
           if [ "${{ runner.os }}" = "Windows" ] || [ "${{ runner.os }}" = "macOS" ]; then
             addons+=(echo-platform-adaptor)
           fi

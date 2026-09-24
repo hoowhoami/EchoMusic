@@ -1633,6 +1633,34 @@ contextBridge.exposeInMainWorld('electron', {
       return () => ipcRenderer.removeListener('media-control:event', listener);
     },
   },
+  output: {
+    listTargets: () => ipcRenderer.invoke('output:list-targets'),
+    refresh: () => ipcRenderer.invoke('output:refresh'),
+    connect: (targetId: string, pin?: string) =>
+      ipcRenderer.invoke('output:connect', targetId, pin),
+    disconnect: () => ipcRenderer.invoke('output:disconnect'),
+    setEnabled: (enabled: boolean) => ipcRenderer.invoke('output:set-enabled', enabled),
+    setBrowsing: (open: boolean) => ipcRenderer.invoke('output:set-browsing', open),
+    setTrackMeta: (meta: {
+      title?: string;
+      artist?: string;
+      album?: string;
+      artwork?: string;
+      durationMs?: number;
+      mime?: string;
+      headers?: Record<string, string>;
+    }) => ipcRenderer.invoke('output:set-track-meta', meta),
+    getSession: () => ipcRenderer.invoke('output:get-session'),
+    clearRecords: () => ipcRenderer.invoke('output:clear-records'),
+    onEvent: (func: (event: { type: string; payload?: unknown }) => void) => {
+      const listener = (
+        _event: Electron.IpcRendererEvent,
+        data: { type: string; payload?: unknown },
+      ) => func(data);
+      ipcRenderer.on('output:event', listener);
+      return () => ipcRenderer.removeListener('output:event', listener);
+    },
+  },
 });
 
 // 主窗口首屏在 Vue 和异步设置恢复之前使用已保存的主题。

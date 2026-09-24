@@ -53,6 +53,8 @@ export interface MediaServerOptions {
   log?: (level: 'info' | 'warn' | 'error', message: string) => void;
   /** 可注入的网卡地址提供者（测试/多网卡） */
   addressProvider?: () => string[];
+  /** 上游 401/403/410：音源可能已过期，宿主提示按既有流程重取，不在这里改写媒体。 */
+  onUpstreamStatus?: (status: number, url: string) => void;
 }
 
 const MIME_BY_EXT: Record<string, string> = {
@@ -199,6 +201,7 @@ export class MediaServer {
   private readonly tokenBytes: number;
   private readonly highWaterMark: number;
   private readonly log: (level: 'info' | 'warn' | 'error', message: string) => void;
+  private readonly onUpstreamStatus?: (status: number, url: string) => void;
   private readonly resources = new Map<string, MediaResource>();
   private readonly tokens = new Map<string, string>();
   private server: http.Server | null = null;
@@ -209,6 +212,7 @@ export class MediaServer {
     this.tokenBytes = options.tokenBytes ?? 32;
     this.highWaterMark = options.highWaterMark ?? 64 * 1024;
     this.log = options.log ?? (() => {});
+    this.onUpstreamStatus = options.onUpstreamStatus;
     this.bindHost = options.bindHost ?? pickLanIpv4(options.addressProvider);
   }
 
@@ -439,6 +443,7 @@ export class MediaServer {
       return;
     }
     if (status !== 200 && status !== 206) {
+      if (status === 401 || status === 403 || status === 410) this.onUpstreamStatus?.(status, url);
       res.statusCode = 502;
       res.end();
       return;

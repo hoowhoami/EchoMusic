@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
 import { SliderRoot, SliderTrack, SliderRange, SliderThumb } from 'reka-ui';
 import Popover from '@/components/ui/Popover.vue';
 import Button from '@/components/ui/Button.vue';
@@ -11,15 +11,27 @@ const { player, handleVolumeChange, toggleMute } = usePlayerControls();
 interface Props {
   variant?: 'lyric' | 'bar';
   side?: 'top' | 'bottom';
+  open?: boolean;
+  showArrow?: boolean;
 }
 
-withDefaults(defineProps<Props>(), {
+const props = withDefaults(defineProps<Props>(), {
   variant: 'bar',
   side: 'top',
+  open: undefined,
+  showArrow: true,
 });
+const emit = defineEmits<{ 'update:open': [open: boolean] }>();
 
 const isMac = navigator.platform.toLowerCase().includes('mac');
-const popoverOpen = ref(false);
+const internalOpen = ref(false);
+const popoverOpen = computed({
+  get: () => props.open ?? internalOpen.value,
+  set: (open: boolean) => {
+    internalOpen.value = open;
+    emit('update:open', open);
+  },
+});
 
 // 滚轮保持弹出层不消失的定时器
 let wheelKeepAliveTimer: ReturnType<typeof setTimeout> | null = null;
@@ -48,11 +60,11 @@ const handleWheel = (e: WheelEvent) => {
   <div class="flex items-center" @wheel="handleWheel">
     <Popover
       v-model:open="popoverOpen"
-      trigger="hover"
+      :trigger="props.open === undefined ? 'hover' : 'click'"
       :side="side"
       align="center"
       :side-offset="0"
-      :show-arrow="true"
+      :show-arrow="props.showArrow"
       content-class="vol-popover"
     >
       <template #trigger>
@@ -62,7 +74,7 @@ const handleWheel = (e: WheelEvent) => {
           type="button"
           :class="[
             'p-2 transition-colors',
-            variant === 'lyric'
+            props.variant === 'lyric'
               ? 'flex h-10 w-10 items-center justify-center rounded-full transition-all hover:scale-110 active:scale-90 text-black/55 dark:text-white/55'
               : 'text-text-main/50 hover:text-primary-text hover:scale-110 active:scale-90',
           ]"

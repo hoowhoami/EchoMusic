@@ -14,7 +14,7 @@ import {
   dedupeSongs,
   includesPlaylistIdentity,
   removeSongsFromKnownList,
-  resolveFavoriteSongKey,
+  resolveFavoriteSongKeys,
   resolveSongQueueKey,
 } from './helpers';
 
@@ -215,8 +215,12 @@ export const favoritesActions = {
     };
   },
   isFavoriteSong(this: FavoritesStoreShape, song: Song) {
-    const key = resolveFavoriteSongKey(song);
-    return key ? this.favoriteSongKeySet.has(key) : false;
+    return resolveFavoriteSongKeys(song).some((key) => this.favoriteSongKeySet.has(key));
+  },
+  refreshFavoriteSongIdentity(this: FavoritesStoreShape, song: Song) {
+    // 播放队列可能和收藏共享同一歌曲对象。shallowRef 不跟踪其内部字段，
+    // 元数据补全后替换数组引用，让索引和歌曲列表的红心一起重新计算。
+    if (this.favorites.includes(song)) this.favorites = this.favorites.slice();
   },
   rememberPlaylistSongs(
     this: FavoritesStoreShape,
@@ -682,7 +686,7 @@ export const favoritesActions = {
     );
 
     const effectiveFileId = String(
-      song.fileId ?? matched?.fileId ?? song.mixSongId ?? matched?.mixSongId ?? '',
+      matched?.fileId ?? song.fileId ?? matched?.mixSongId ?? song.mixSongId ?? '',
     );
 
     const likedPlaylist = await this.ensureLikedPlaylistReady();

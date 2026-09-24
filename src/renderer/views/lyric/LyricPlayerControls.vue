@@ -5,6 +5,8 @@
  * 沉浸在页面底部，不浮动
  */
 import { computed, ref } from 'vue';
+import { useResizeObserver } from '@vueuse/core';
+import type { IconifyIcon } from '@iconify/types';
 import { SliderRoot, SliderTrack, SliderRange, SliderThumb } from 'reka-ui';
 import { usePlayerControls } from '@/composables/usePlayerControls';
 import { useDeferredSeek } from '@/composables/useDeferredSeek';
@@ -16,13 +18,27 @@ import Button from '@/components/ui/Button.vue';
 import Tooltip from '@/components/ui/Tooltip.vue';
 import Badge from '@/components/ui/Badge.vue';
 import Popover from '@/components/ui/Popover.vue';
+import MvIcon from '@/components/ui/MvIcon.vue';
+import PluginIcon from '@/plugins/PluginIcon.vue';
 import SpeedPopover from '@/components/player/SpeedPopover.vue';
 import SleepTimerPopover from '@/components/player/SleepTimerPopover.vue';
 import QualityPopover from '@/components/player/QualityPopover.vue';
 import EffectPopover from '@/components/player/EffectPopover.vue';
 import VolumePopover from '@/components/player/VolumePopover.vue';
+import CastPopover from '@/components/player/CastPopover.vue';
 import ProgressBusyOverlay from '@/components/player/ProgressBusyOverlay.vue';
+import PlayerBarMoreMenu from '@/layouts/PlayerBarMoreMenu.vue';
 import {
+  partitionPlayerBarActions,
+  resolvePlayerBarActions,
+  type PlayerBarAction,
+  type PlayerBarPlacementCapacity,
+  type ResolvedPlayerBarAction,
+} from '@/layouts/playerBarActions';
+import { playerbarItems } from '@/plugins/playerbar';
+import { useOutputStore } from '@/stores/output';
+import {
+  iconMusic,
   iconPause,
   iconPlay,
   iconSkipBack,
@@ -40,6 +56,12 @@ import {
   iconListRestart,
   iconShare,
   iconShirt,
+  iconClock,
+  iconVolume2,
+  iconSpeedometer,
+  iconPulse,
+  iconSlidersHorizontal,
+  iconCast,
 } from '@/icons';
 
 const emit = defineEmits<{
@@ -52,6 +74,7 @@ const emit = defineEmits<{
 const settingStore = useSettingStore();
 const desktopLyricStore = useDesktopLyricStore();
 const toastStore = useToastStore();
+const outputStore = useOutputStore();
 
 const {
   player: playerStore,
@@ -63,11 +86,22 @@ const {
   toggleDesktopLyric,
   queueCount,
   canAddToPlaylist,
+  hasCurrentTrackMv,
+  goToMv,
   canShareCurrentTrack,
   handleShareCurrentTrack,
 } = usePlayerControls();
 
 const isHoveringProgress = ref(false);
+const lyricBarRef = ref<HTMLElement | null>(null);
+const leftActionsRef = ref<HTMLElement | null>(null);
+const centerAreaRef = ref<HTMLElement | null>(null);
+const rightActionsRef = ref<HTMLElement | null>(null);
+const actionCapacity = ref<PlayerBarPlacementCapacity>({
+  left: 3,
+  center: 7,
+  right: 4,
+});
 const isPlaybackLoading = computed(() => playerStore.playbackIsLoading);
 const { isBusy: isProgressBusy, ariaLabel: progressAriaLabel } = usePlaybackProgressStatus(
   () => playerStore.playbackProgressBusyReason,
@@ -116,10 +150,309 @@ const handleCopySongInfo = async () => {
     toastStore.warning('复制失败');
   }
 };
+
+const queueBadge = computed(() => {
+  return queueCount.value > 99 ? '99+' : String(queueCount.value);
+});
+const isRemoteOutputActive = computed(
+  () => outputStore.snapshot && outputStore.snapshot.protocol !== 'local',
+);
+
+const playModeIcon = computed(() => {
+  if (playerStore.playMode === 'sequential') return iconRepeatOff as IconifyIcon;
+  if (playerStore.playMode === 'list') return iconRepeat as IconifyIcon;
+  if (playerStore.playMode === 'random') return iconShuffle as IconifyIcon;
+  return iconListRestart as IconifyIcon;
+});
+
+const playerBarBadgeControls = computed(() => [
+  {
+    key: 'audio-quality',
+    actionKeys: ['quality'],
+    label: '音质',
+    active: settingStore.showAudioQualityBadge,
+    toggle: () => {
+      settingStore.showAudioQualityBadge = !settingStore.showAudioQualityBadge;
+    },
+  },
+  {
+    key: 'audio-effect',
+    actionKeys: ['effect'],
+    label: '音效',
+    active: settingStore.showAudioEffectBadge,
+    toggle: () => {
+      settingStore.showAudioEffectBadge = !settingStore.showAudioEffectBadge;
+    },
+  },
+]);
+
+const pluginPlayerBarActions = computed<PlayerBarAction[]>(() =>
+  playerbarItems.value.map((item) => ({
+    key: item.key,
+    id: item.id,
+    title: item.title,
+    icon: item.icon,
+    tooltip: item.tooltip,
+    badge: item.badge(),
+    badgeTitle: item.badgeTitle,
+    badgeDefaultVisible: item.badgeDefaultVisible,
+    trigger: item.trigger,
+    defaultPlacement: item.defaultPlacement,
+    order: item.order,
+    visible: item.visible(),
+    disabled: item.disabled(),
+    onClick: item.onClick,
+  })),
+);
+
+const playerBarActions = computed<PlayerBarAction[]>(() => [
+  {
+    id: 'sleep-timer',
+    title: '定时关闭',
+    icon: iconClock as IconifyIcon,
+    component: 'sleep-timer',
+    trigger: 'hover',
+    defaultPlacement: 'center',
+    order: 1,
+    visible: true,
+    onClick: () => {},
+  },
+  {
+    id: 'play-mode',
+    title: '播放模式',
+    icon: playModeIcon.value,
+    tooltip: playModeLabel.value,
+    trigger: 'click',
+    defaultPlacement: 'center',
+    order: 2,
+    visible: true,
+    onClick: cyclePlayMode,
+  },
+  {
+    id: 'previous',
+    title: '上一首',
+    icon: iconSkipBack as IconifyIcon,
+    trigger: 'click',
+    defaultPlacement: 'center',
+    order: 3,
+    visible: true,
+    disabled: isPlaybackLoading.value,
+    onClick: playerStore.prev,
+  },
+  {
+    id: 'play-toggle',
+    title: playerStore.isPlaying ? '暂停' : '播放',
+    icon: (playerStore.isPlaying ? iconPause : iconPlay) as IconifyIcon,
+    trigger: 'click',
+    defaultPlacement: 'center',
+    order: 4,
+    visible: true,
+    disabled: isPlaybackLoading.value,
+    onClick: playerStore.togglePlay,
+  },
+  {
+    id: 'next',
+    title: '下一首',
+    icon: iconSkipForward as IconifyIcon,
+    trigger: 'click',
+    defaultPlacement: 'center',
+    order: 5,
+    visible: true,
+    disabled: isPlaybackLoading.value,
+    onClick: playerStore.next,
+  },
+  {
+    id: 'volume',
+    title: '音量',
+    icon: iconVolume2 as IconifyIcon,
+    component: 'volume',
+    trigger: 'hover',
+    defaultPlacement: 'center',
+    order: 6,
+    visible: true,
+    onClick: () => {},
+  },
+  {
+    id: 'speed',
+    title: '倍速',
+    icon: iconSpeedometer as IconifyIcon,
+    component: 'speed',
+    trigger: 'hover',
+    defaultPlacement: 'center',
+    order: 7,
+    visible: true,
+    onClick: () => {},
+  },
+  {
+    id: 'add-to-playlist',
+    title: '添加到',
+    icon: iconPlaylistAdd as IconifyIcon,
+    defaultPlacement: 'left',
+    order: 10,
+    visible: canAddToPlaylist.value,
+    disabled: !canAddToPlaylist.value,
+    onClick: () => emit('openAddToPlaylist'),
+  },
+  {
+    id: 'comments',
+    title: '评论',
+    icon: iconMessageCircle as IconifyIcon,
+    defaultPlacement: 'left',
+    order: 20,
+    visible: Boolean(currentTrack.value),
+    disabled: !currentTrack.value,
+    onClick: () => emit('openComment'),
+  },
+  {
+    id: 'mv',
+    title: '播放 MV',
+    icon: iconMusic as IconifyIcon,
+    defaultPlacement: 'left',
+    order: 30,
+    visible: hasCurrentTrackMv.value,
+    disabled: !hasCurrentTrackMv.value,
+    onClick: goToMv,
+  },
+  {
+    id: 'lyric-skins',
+    title: '换肤',
+    icon: iconShirt as IconifyIcon,
+    defaultPlacement: 'right',
+    order: 35,
+    visible: true,
+    onClick: () => emit('openSkins'),
+  },
+  {
+    id: 'share',
+    title: '分享',
+    icon: iconShare as IconifyIcon,
+    defaultPlacement: 'more',
+    order: 40,
+    visible: canShareCurrentTrack.value,
+    disabled: !canShareCurrentTrack.value,
+    onClick: handleShareCurrentTrack,
+  },
+  {
+    id: 'quality',
+    title: '音质',
+    icon: iconPulse as IconifyIcon,
+    component: 'quality',
+    trigger: 'hover',
+    defaultPlacement: 'right',
+    order: 42,
+    visible: true,
+    onClick: () => {},
+  },
+  {
+    id: 'effect',
+    title: '音效',
+    icon: iconSlidersHorizontal as IconifyIcon,
+    component: 'effect',
+    trigger: 'hover',
+    defaultPlacement: 'right',
+    order: 44,
+    visible: true,
+    onClick: () => {},
+  },
+  {
+    id: 'desktop-lyric',
+    title: '桌面歌词',
+    icon: iconTypography as IconifyIcon,
+    tooltip: desktopLyricStore.settings.enabled ? '关闭桌面歌词' : '开启桌面歌词',
+    defaultPlacement: 'right',
+    order: 50,
+    visible: true,
+    active: desktopLyricStore.settings.enabled,
+    badge: settingStore.showDesktopLyricStatus
+      ? desktopLyricStore.settings.enabled
+        ? 'ON'
+        : 'OFF'
+      : desktopLyricStore.settings.enabled
+        ? 'ON'
+        : 'OFF',
+    badgeTitle: '桌面歌词',
+    badgeDefaultVisible: settingStore.showDesktopLyricStatus,
+    onClick: toggleDesktopLyric,
+  },
+  {
+    id: 'cast',
+    title: '投放',
+    icon: iconCast as IconifyIcon,
+    component: 'cast',
+    trigger: 'hover',
+    defaultPlacement: 'more',
+    order: 55,
+    visible: true,
+    active: Boolean(isRemoteOutputActive.value),
+    badge: isRemoteOutputActive.value ? 'ON' : null,
+    badgeTitle: '投放状态',
+    badgeDefaultVisible: true,
+    onClick: () => {},
+  },
+  {
+    id: 'queue',
+    title: '播放队列',
+    icon: iconList as IconifyIcon,
+    defaultPlacement: 'right',
+    order: 60,
+    visible: true,
+    badge: queueBadge.value,
+    badgeTitle: '队列计数',
+    badgeDefaultVisible: settingStore.showPlaylistCount,
+    onClick: () => emit('openQueue'),
+  },
+  ...pluginPlayerBarActions.value,
+]);
+
+const resolvedPlayerBarActions = computed(() =>
+  resolvePlayerBarActions(playerBarActions.value, settingStore.playerBarLayout),
+);
+
+const renderedPlayerBarActions = computed(() =>
+  partitionPlayerBarActions(resolvedPlayerBarActions.value, actionCapacity.value),
+);
+
+const leftPlayerBarActions = computed(() => renderedPlayerBarActions.value.left);
+
+const centerPlayerBarActions = computed(() => renderedPlayerBarActions.value.center);
+
+const rightPlayerBarActions = computed(() => renderedPlayerBarActions.value.right);
+
+const overflowPlayerBarActions = computed(() => renderedPlayerBarActions.value.overflow);
+
+const activatePlayerBarAction = (item: ResolvedPlayerBarAction) => {
+  if (item.disabled) return;
+  void item.onClick();
+};
+
+const countActionSlots = (width: number, reserved: number, slot: number, max = 6) =>
+  Math.max(0, Math.min(max, Math.floor((Math.max(0, width) - reserved) / slot)));
+
+const updateActionCapacity = () => {
+  const barWidth = lyricBarRef.value?.clientWidth ?? 0;
+  const leftWidth = leftActionsRef.value?.parentElement?.clientWidth ?? 0;
+  const measuredCenterWidth = centerAreaRef.value?.clientWidth ?? 0;
+  const measuredRightWidth = rightActionsRef.value?.clientWidth ?? 0;
+  const fallbackCenterWidth = Math.max(0, barWidth - leftWidth - measuredRightWidth - 56);
+  const centerWidth =
+    measuredCenterWidth >= 36 ? measuredCenterWidth : fallbackCenterWidth || measuredCenterWidth;
+  const fallbackRightWidth = Math.max(0, barWidth - leftWidth - centerWidth - 56);
+  const rightWidth = Math.max(measuredRightWidth, fallbackRightWidth);
+  actionCapacity.value = {
+    left: countActionSlots(leftWidth, 64, 28, 5),
+    center: countActionSlots(centerWidth, 0, 36, 7),
+    right: countActionSlots(rightWidth, 112, 36, 6),
+  };
+};
+
+useResizeObserver(
+  [lyricBarRef, leftActionsRef, centerAreaRef, rightActionsRef],
+  updateActionCapacity,
+);
 </script>
 
 <template>
-  <footer class="lyric-bar" data-toast-anchor="lyric-player">
+  <footer ref="lyricBarRef" class="lyric-bar" data-toast-anchor="lyric-player">
     <!-- 进度条：横跨控制栏顶部，左右贴边 -->
     <div class="bar-progress-top">
       <SliderRoot
@@ -195,7 +528,7 @@ const handleCopySongInfo = async () => {
               </div>
             </template>
           </Tooltip>
-          <div class="bar-song-actions">
+          <div ref="leftActionsRef" class="bar-song-actions">
             <Button
               variant="unstyled"
               size="none"
@@ -205,26 +538,38 @@ const handleCopySongInfo = async () => {
             >
               <Icon :icon="isFavorite ? iconHeartFilled : iconHeart" width="20" height="20" />
             </Button>
-            <Button
-              v-if="canAddToPlaylist"
-              variant="unstyled"
-              size="none"
-              @click="emit('openAddToPlaylist')"
-              class="bar-action-btn bar-action-muted"
-              tooltip="添加到"
-            >
-              <Icon :icon="iconPlaylistAdd" width="20" height="20" />
-            </Button>
-            <Button
-              v-if="currentTrack"
-              variant="unstyled"
-              size="none"
-              @click="emit('openComment')"
-              class="bar-action-btn bar-action-muted"
-              tooltip="评论"
-            >
-              <Icon :icon="iconMessageCircle" width="20" height="20" />
-            </Button>
+            <template v-for="item in leftPlayerBarActions" :key="item.key">
+              <SleepTimerPopover v-if="item.component === 'sleep-timer'" />
+              <VolumePopover v-else-if="item.component === 'volume'" variant="bar" />
+              <SpeedPopover v-else-if="item.component === 'speed'" />
+              <QualityPopover v-else-if="item.component === 'quality'" />
+              <EffectPopover v-else-if="item.component === 'effect'" />
+              <CastPopover
+                v-else-if="item.component === 'cast'"
+                variant="lyric"
+                :show-badge="Boolean(item.visibleBadge)"
+              />
+              <div v-else class="bar-action-anchor">
+                <Button
+                  variant="unstyled"
+                  size="none"
+                  class="bar-action-btn"
+                  :class="item.active ? 'bar-func-active' : 'bar-action-muted'"
+                  :disabled="item.disabled"
+                  :tooltip="item.tooltip || item.title"
+                  @click="activatePlayerBarAction(item)"
+                >
+                  <MvIcon v-if="item.key === 'mv'" class="w-5 h-5" />
+                  <PluginIcon v-else :icon="item.icon" :width="20" :height="20" />
+                </Button>
+                <Badge
+                  v-if="item.visibleBadge"
+                  :count="item.visibleBadge"
+                  class="-top-px"
+                  style="right: -5px"
+                />
+              </div>
+            </template>
             <slot name="song-actions" />
             <Popover
               v-if="playerStore.playbackNotice"
@@ -252,144 +597,104 @@ const handleCopySongInfo = async () => {
       </div>
 
       <!-- 2. 中间：播放控制 -->
-      <div class="bar-center">
+      <div ref="centerAreaRef" class="bar-center">
         <!-- 播放控制按钮 -->
         <div class="bar-controls">
-          <SleepTimerPopover />
-          <Tooltip :content="playModeLabel" side="top">
-            <template #trigger>
+          <template v-for="item in centerPlayerBarActions" :key="item.key">
+            <SleepTimerPopover v-if="item.component === 'sleep-timer'" />
+            <VolumePopover v-else-if="item.component === 'volume'" variant="bar" />
+            <SpeedPopover v-else-if="item.component === 'speed'" />
+            <QualityPopover v-else-if="item.component === 'quality'" />
+            <EffectPopover v-else-if="item.component === 'effect'" />
+            <CastPopover
+              v-else-if="item.component === 'cast'"
+              variant="lyric"
+              :show-badge="Boolean(item.visibleBadge)"
+            />
+            <div v-else class="bar-action-anchor">
               <Button
                 variant="unstyled"
                 size="none"
-                @click="cyclePlayMode"
-                class="bar-ctrl-btn bar-ctrl-muted"
+                :class="[
+                  item.id === 'play-toggle' ? 'bar-play-btn' : 'bar-ctrl-btn',
+                  item.active ? 'bar-func-active' : 'bar-ctrl-muted',
+                  {
+                    'bar-ctrl-main': ['previous', 'next'].includes(item.id),
+                    'is-busy': isPlaybackLoading && ['previous', 'next'].includes(item.id),
+                    'is-loading': isPlaybackLoading && item.id === 'play-toggle',
+                  },
+                ]"
+                :disabled="item.disabled && item.id !== 'play-toggle'"
+                :tooltip="item.tooltip || item.title"
+                :aria-busy="item.id === 'play-toggle' ? isPlaybackLoading : undefined"
+                @click="activatePlayerBarAction(item)"
               >
-                <Icon
-                  v-if="playerStore.playMode === 'sequential'"
-                  :icon="iconRepeatOff"
-                  width="22"
-                  height="22"
+                <span
+                  v-if="item.id === 'play-toggle' && isPlaybackLoading"
+                  class="bar-play-spinner"
+                  aria-hidden="true"
+                ></span>
+                <MvIcon v-else-if="item.key === 'mv'" class="w-5 h-5" />
+                <PluginIcon
+                  v-else
+                  :icon="item.icon"
+                  :width="item.id === 'play-toggle' && !playerStore.isPlaying ? 16 : 20"
+                  :height="20"
+                  :class="
+                    item.id === 'play-toggle' && !playerStore.isPlaying ? 'ml-0.5' : undefined
+                  "
                 />
-                <Icon
-                  v-else-if="playerStore.playMode === 'list'"
-                  :icon="iconRepeat"
-                  width="22"
-                  height="22"
-                />
-                <Icon
-                  v-else-if="playerStore.playMode === 'random'"
-                  :icon="iconShuffle"
-                  width="22"
-                  height="22"
-                />
-                <Icon v-else :icon="iconListRestart" width="22" height="22" />
               </Button>
-            </template>
-          </Tooltip>
-
-          <Button
-            variant="unstyled"
-            size="none"
-            @click="playerStore.prev()"
-            :class="['bar-ctrl-btn bar-ctrl-main', { 'is-busy': isPlaybackLoading }]"
-          >
-            <Icon :icon="iconSkipBack" width="22" height="22" />
-          </Button>
-
-          <Button
-            variant="unstyled"
-            size="none"
-            @click="playerStore.togglePlay()"
-            :class="['bar-play-btn', { 'is-loading': isPlaybackLoading }]"
-            :aria-busy="isPlaybackLoading"
-          >
-            <span v-if="isPlaybackLoading" class="bar-play-spinner" aria-hidden="true"></span>
-            <Icon
-              v-else-if="!playerStore.isPlaying"
-              :icon="iconPlay"
-              width="16"
-              height="16"
-              class="ml-0.5"
-            />
-            <Icon v-else :icon="iconPause" width="20" height="20" />
-          </Button>
-
-          <Button
-            variant="unstyled"
-            size="none"
-            @click="playerStore.next()"
-            :class="['bar-ctrl-btn bar-ctrl-main', { 'is-busy': isPlaybackLoading }]"
-          >
-            <Icon :icon="iconSkipForward" width="22" height="22" />
-          </Button>
-
-          <VolumePopover variant="bar" />
-          <SpeedPopover />
+              <Badge
+                v-if="item.visibleBadge"
+                :count="item.visibleBadge"
+                class="-top-px"
+                style="right: -5px"
+              />
+            </div>
+          </template>
         </div>
       </div>
 
       <!-- 3. 右侧：功能选项 -->
-      <div class="bar-right">
-        <Button
-          variant="unstyled"
-          size="none"
-          class="bar-func-btn bar-func-muted"
-          tooltip="换肤"
-          @click="emit('openSkins')"
-        >
-          <Icon :icon="iconShirt" width="20" height="20" />
-        </Button>
-
-        <Button
-          v-if="canShareCurrentTrack"
-          variant="unstyled"
-          size="none"
-          class="bar-func-btn bar-func-muted"
-          tooltip="分享"
-          @click="handleShareCurrentTrack"
-        >
-          <Icon :icon="iconShare" width="20" height="20" />
-        </Button>
-
-        <QualityPopover />
-        <EffectPopover />
-
-        <div class="bar-action-anchor relative">
-          <Button
-            variant="unstyled"
-            size="none"
-            class="bar-func-btn"
-            :class="desktopLyricStore.settings.enabled ? 'bar-func-active' : 'bar-func-muted'"
-            :tooltip="desktopLyricStore.settings.enabled ? '关闭桌面歌词' : '开启桌面歌词'"
-            @click="toggleDesktopLyric"
-          >
-            <Icon :icon="iconTypography" width="20" height="20" />
-          </Button>
-          <Badge
-            v-if="settingStore.showDesktopLyricStatus"
-            :count="desktopLyricStore.settings.enabled ? 'ON' : 'OFF'"
-            class="-top-px"
-            style="right: -5px"
+      <div ref="rightActionsRef" class="bar-right">
+        <template v-for="item in rightPlayerBarActions" :key="item.key">
+          <SleepTimerPopover v-if="item.component === 'sleep-timer'" />
+          <VolumePopover v-else-if="item.component === 'volume'" variant="bar" />
+          <SpeedPopover v-else-if="item.component === 'speed'" />
+          <QualityPopover v-else-if="item.component === 'quality'" />
+          <EffectPopover v-else-if="item.component === 'effect'" />
+          <CastPopover
+            v-else-if="item.component === 'cast'"
+            variant="lyric"
+            :show-badge="Boolean(item.visibleBadge)"
           />
-        </div>
-
-        <div class="bar-action-anchor relative">
-          <Button
-            variant="unstyled"
-            size="none"
-            class="bar-func-btn bar-func-muted"
-            tooltip="播放列表"
-            @click="emit('openQueue')"
-          >
-            <Icon :icon="iconList" width="20" height="20" />
-          </Button>
-          <Badge
-            v-if="settingStore.showPlaylistCount"
-            :count="queueCount > 99 ? '99+' : queueCount"
-            class="-top-px"
-            style="right: -5px"
-          />
-        </div>
+          <div v-else class="bar-action-anchor">
+            <Button
+              variant="unstyled"
+              size="none"
+              class="bar-func-btn"
+              :class="item.active ? 'bar-func-active' : 'bar-func-muted'"
+              :disabled="item.disabled"
+              :tooltip="item.tooltip || item.title"
+              @click="activatePlayerBarAction(item)"
+            >
+              <MvIcon v-if="item.key === 'mv'" class="w-5 h-5" />
+              <PluginIcon v-else :icon="item.icon" :width="20" :height="20" />
+            </Button>
+            <Badge
+              v-if="item.visibleBadge"
+              :count="item.visibleBadge"
+              class="-top-px"
+              style="right: -5px"
+            />
+          </div>
+        </template>
+        <PlayerBarMoreMenu
+          :items="resolvedPlayerBarActions"
+          :menu-items="overflowPlayerBarActions"
+          :badges="playerBarBadgeControls"
+        />
       </div>
     </div>
   </footer>
@@ -695,9 +1000,17 @@ const handleCopySongInfo = async () => {
 
 /* 3. 右侧 */
 .bar-action-anchor {
+  position: relative;
   flex: 0 0 36px;
   width: 36px;
   height: 36px;
+}
+
+.bar-song-actions .bar-action-anchor {
+  flex: 0 0 auto;
+  width: auto;
+  height: auto;
+  display: inline-flex;
 }
 
 .bar-right {

@@ -16,7 +16,7 @@ import {
   getPlaylistIdentityValues,
   normalizePlaybackQueueRuntime,
   normalizePlaybackQueuesRuntime,
-  resolveFavoriteSongKey,
+  resolveFavoriteSongKeys,
   toRawSongList,
 } from './helpers';
 import { favoritesActions } from './favoritesActions';
@@ -155,7 +155,7 @@ export const usePlaylistStore = defineStore('playlist', {
       return playlist.listid;
     },
     favoriteSongKeySet(state): Set<string> {
-      return new Set(state.favorites.map((song) => resolveFavoriteSongKey(song)).filter(Boolean));
+      return new Set(state.favorites.flatMap(resolveFavoriteSongKeys));
     },
   },
   actions: {
@@ -361,6 +361,7 @@ export const usePlaylistStore = defineStore('playlist', {
     ensureLikedPlaylistReady: favoritesActions.ensureLikedPlaylistReady,
     resetUserCollections: favoritesActions.resetUserCollections,
     isFavoriteSong: favoritesActions.isFavoriteSong,
+    refreshFavoriteSongIdentity: favoritesActions.refreshFavoriteSongIdentity,
     findPlaylistByIdentity: userActions.findPlaylistByIdentity,
     isFavoriteAlbum: userActions.isFavoriteAlbum,
     isOwnedPlaylist: userActions.isOwnedPlaylist,

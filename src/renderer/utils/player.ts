@@ -216,6 +216,8 @@ export class PlayerEngine {
   private sourceSwitchRevision = 0;
   private sourceRequest: Promise<number> | null = null;
   private sourcePending = false;
+  // 在飞行中的换源加载 promise（loadSource 结算后置空），用于恢复播放等命令等待其落地
+  private sourceLoadPromise: Promise<void> | null = null;
 
   constructor() {
     if (player) {
@@ -428,19 +430,23 @@ export class PlayerEngine {
     const revision = this.sourceRevision;
     const requestId = await this.sourceRequest;
     if (revision !== this.sourceRevision) return;
-    const result =
-      source.audioTrackId && source.audioTrackId > 0
-        ? await player?.loadMkvTrack(source.url, source.audioTrackId, requestId ?? undefined)
-        : await player?.load(source.url, requestId ?? undefined);
-    if (revision !== this.sourceRevision) return;
-    if (!result) throw new Error('Audio source load was superseded');
-    this.sourcePending = false;
-    this.clearSeekPending();
-    this.lastTimeValue = -1;
-    this.lastTimeUpdateMs = 0;
-    this.durationValue = result.duration;
-    this.events.durationChange?.(result.duration);
-    this.events.fileLoaded?.({ path: source.url, seq: result.seq, trackSeq: result.seq });
+    const loadTask = (async () => {
+      const result =
+        source.audioTrackId && source.audioTrackId > 0
+          ? await player?.loadMkvTrack(source.url, source.audioTrackId, requestId ?? undefined)
+          : await player?.load(source.url, requestId ?? undefined);
+      if (revision !== this.sourceRevision) return;
+      if (!result) throw new Error('Audio source load was superseded');
+      this.sourcePending = false;
+      this.clearSeekPending();
+      this.lastTimeValue = -1;
+      this.lastTimeUpdateMs = 0;
+      this.durationValue = result.duration;
+      this.events.durationChange?.(result.duration);
+      this.events.fileLoaded?.({ path: source.url, seq: result.seq, trackSeq: result.seq });
+    })();
+    this.sourceLoadPromise = loadTask;
+    await loadTask;
   }
 
   async switchSource(source: string | PlaybackSource): Promise<number | null | undefined> {
@@ -552,7 +558,20 @@ export class PlayerEngine {
   }): Promise<void> {
     const revision = this.sourceRevision;
     const requestId = await this.sourceRequest;
-    if (revision !== this.sourceRevision || this.sourcePending) return;
+    if (revision !== this.sourceRevision) return;
+    if (this.sourcePending) {
+      // 恢复播放撞上仍在下发的换源加载：静默早退会让渲染层标记为"播放中"而引擎
+      // 实际保持暂停，需要再次点击暂停/播放才能恢复。等待这次加载落地后再补发播放命令。
+      const pendingLoad = this.sourceLoadPromise;
+      if (pendingLoad) {
+        await pendingLoad.catch(() => undefined);
+        if (revision !== this.sourceRevision) return;
+      }
+      // 加载失败且未被换代时无法继续，交给上层走重载兜底，避免静默成功。
+      if (this.sourcePending) {
+        throw new Error('Play deferred: audio source load not settled');
+      }
+    }
     const durationMs = options?.fadeIn ? (options.fadeDurationMs ?? 500) : 0;
     if (durationMs > 0) {
       logger.info('PlayerEngine', 'Fade in requested', {
@@ -804,6 +823,15 @@ export class PlayerEngine {
       coverUrl,
       durationMs: meta.durationMs || 0,
     });
+    void window.electron?.output
+      ?.setTrackMeta({
+        title: meta.title,
+        artist: meta.artist,
+        album: meta.album ?? '',
+        artwork: coverUrl,
+        durationMs: meta.durationMs || 0,
+      })
+      .catch(() => undefined);
   }
 
   /** 更新系统媒体控制的播放状态和进度 */

@@ -1,0 +1,21 @@
+[package]
+name = "echo-airplay"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.87"
+description = "EchoMusic AirPlay sender. ALAC 44100 Hz 16-bit from post-DSP i16 PCM."
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+napi = { version = "3", features = ["napi9", "tokio_rt"] }
+napi-derive = "3"
+tokio = { version = "1", features = ["rt-multi-thread", "sync", "time", "macros"] }
+tokio-stream = "0.1"
+airplay-client = { path = "../echo-upnp/vendor/airplay2-rs/crates/airplay-client" }
+airplay-audio = { path = "../echo-upnp/vendor/airplay2-rs/crates/airplay-audio" }
+airplay-discovery = { path = "../echo-upnp/vendor/airplay2-rs/crates/airplay-discovery" }
+
+[build-dependencies]
+napi-build = "2"

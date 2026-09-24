@@ -56,11 +56,13 @@ interface Props {
   variant?: 'lyric' | 'bar';
   side?: 'top' | 'bottom';
   open?: boolean;
+  showArrow?: boolean;
 }
 const props = withDefaults(defineProps<Props>(), {
   variant: 'bar',
   side: 'top',
   open: undefined,
+  showArrow: true,
 });
 const emit = defineEmits<{ 'update:open': [open: boolean] }>();
 
@@ -797,7 +799,7 @@ const openMyEffectPlaza = (source: MyEffectSource) => {
     :side="side"
     align="end"
     :side-offset="8"
-    :show-arrow="true"
+    :show-arrow="props.showArrow"
     content-class="effect-popover"
   >
     <template #trigger>
@@ -825,7 +827,7 @@ const openMyEffectPlaza = (source: MyEffectSource) => {
             style="transform: translateY(3px)"
           />
           <Badge
-            v-if="currentTrack && settingStore.showAudioQualityBadge && audioEffectButtonBadge"
+            v-if="currentTrack && settingStore.showAudioEffectBadge && audioEffectButtonBadge"
             :count="audioEffectButtonBadge"
             class="absolute top-2px"
             :style="{ right: '-12px' }"

@@ -564,6 +564,22 @@ fn build_output_stream(
     }
 }
 
+
+fn forward_or_silence(
+    output: &mut [f32],
+    channels: usize,
+    sample_rate: u32,
+    volume: f32,
+    shared: &SharedAudio,
+) {
+    if super::airplay_tap::is_enabled() {
+        super::airplay_tap::push_f32(output, channels, sample_rate);
+        output.fill(0.0);
+        return;
+    }
+    process_output_signal(output, channels, sample_rate, volume, shared);
+}
+
 pub(crate) fn fill_output_reusing(
     output: &mut [f32],
     output_channels: usize,
@@ -579,25 +595,13 @@ pub(crate) fn fill_output_reusing(
     let graph_channels = shared.mix_format.channels.max(1);
     if output_channels == graph_channels {
         shared.pop_into(output);
-        process_output_signal(
-            output,
-            output_channels,
-            shared.mix_format.sample_rate,
-            volume,
-            shared,
-        );
+        forward_or_silence(output, output_channels, shared.mix_format.sample_rate, volume, shared);
     } else {
         let frames = output.len() / output_channels;
         graph_scratch.resize(frames * graph_channels, 0.0);
         shared.pop_into(graph_scratch);
         map_channels_to_output(graph_scratch, graph_channels, output, output_channels);
-        process_output_signal(
-            output,
-            output_channels,
-            shared.mix_format.sample_rate,
-            volume,
-            shared,
-        );
+        forward_or_silence(output, output_channels, shared.mix_format.sample_rate, volume, shared);
     }
     if shared.is_drained_for_output() && shared.mark_end_reported() {
         shared.notify_playback_end();

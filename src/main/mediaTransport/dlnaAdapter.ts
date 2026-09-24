@@ -14,7 +14,6 @@
 import { EventEmitter } from 'events';
 import type { OutputBackendLike } from '../outputs/sessionManager';
 import {
-  DEFAULT_OUTPUT_CAPABILITIES,
   type OutputCapability,
   type OutputSessionSnapshot,
   type OutputTrackMeta,
@@ -68,6 +67,9 @@ export interface DlnaAdapterDeps {
   native: UpnpNativeLike;
   bus: EventEmitter;
   now?: () => number;
+  /** 设备描述里的 serviceId。缺省保持旧的服务类型 URN，供既有单测使用。 */
+  avTransportServiceId?: string;
+  renderingControlServiceId?: string;
 }
 
 export interface DlnaCommand {
@@ -102,7 +104,18 @@ export class DlnaBackend implements OutputBackendLike {
   private readonly bus: EventEmitter;
   private readonly now: () => number;
   private gate: EpochGate;
-  private currentCapabilities: OutputCapability = { ...DEFAULT_OUTPUT_CAPABILITIES };
+  private currentCapabilities: OutputCapability = {
+    pause: true,
+    seek: 'by-time',
+    volume: true,
+    mute: false,
+    rate: false,
+    position: 'approximate',
+    nextUri: false,
+    gapless: false,
+    dsp: false,
+    spectrum: false,
+  };
   private currentUri = '';
   private durationSec: number | null = null;
   private volume: number | null = null;
@@ -115,12 +128,36 @@ export class DlnaBackend implements OutputBackendLike {
     kind: 'user-stop',
     proceed: false,
   };
+  private readonly avTransportId: string;
+  private readonly renderingId: string;
+  private sourceMime = 'audio/*';
 
   constructor(deps: DlnaAdapterDeps) {
     this.deps = deps;
     this.bus = deps.bus;
     this.now = deps.now ?? (() => Date.now());
     this.gate = { routeEpoch: deps.routeEpoch, trackGeneration: deps.trackGeneration };
+    this.avTransportId = deps.avTransportServiceId || AV_TRANSPORT_SERVICE;
+    this.renderingId = deps.renderingControlServiceId || RENDERING_CONTROL_SERVICE;
+  }
+
+  /** 宿主在 load 前声明探测到的 MIME。不改变音源内容。 */
+  setSourceHint(hint: { mime?: string | null; relayed?: boolean }): void {
+    if (hint.mime?.trim()) this.sourceMime = hint.mime.trim();
+    if (hint.relayed != null)
+      this.currentCapabilities = { ...this.currentCapabilities, relayed: hint.relayed };
+  }
+
+  private didlFor(url: string, title?: string): string {
+    return buildDidlLite({
+      title: this.trackMeta.title || title || url,
+      artist: this.trackMeta.artist,
+      album: this.trackMeta.album,
+      coverUrl: this.trackMeta.artwork,
+      url,
+      mime: this.sourceMime,
+      durationSec: this.trackMeta.durationMs != null ? this.trackMeta.durationMs / 1000 : undefined,
+    });
   }
 
   beginSourceChange(): number {
@@ -128,8 +165,8 @@ export class DlnaBackend implements OutputBackendLike {
   }
 
   async load(url: string): Promise<{ seq: number; duration: number } | null> {
-    const meta = buildDidlLite({ title: url, url, mime: 'audio/*' });
-    await this.soap(AV_TRANSPORT_SERVICE, 'SetAVTransportURI', {
+    const meta = this.didlFor(url);
+    await this.soap(this.avTransportId, 'SetAVTransportURI', {
       InstanceID: '0',
       CurrentURI: url,
       CurrentURIMetaData: meta,
@@ -140,8 +177,8 @@ export class DlnaBackend implements OutputBackendLike {
   }
 
   async loadMkv(url: string, trackId: number): Promise<{ seq: number; duration: number } | null> {
-    const meta = buildDidlLite({ title: `track-${trackId}`, url, mime: 'video/*' });
-    await this.soap(AV_TRANSPORT_SERVICE, 'SetAVTransportURI', {
+    const meta = this.didlFor(url, `track-${trackId}`);
+    await this.soap(this.avTransportId, 'SetAVTransportURI', {
       InstanceID: '0',
       CurrentURI: url,
       CurrentURIMetaData: meta,
@@ -179,20 +216,20 @@ export class DlnaBackend implements OutputBackendLike {
   }
 
   async play(): Promise<void> {
-    await this.soap(AV_TRANSPORT_SERVICE, 'Play', { InstanceID: '0', Speed: '1' });
+    await this.soap(this.avTransportId, 'Play', { InstanceID: '0', Speed: '1' });
     this.pendingCommand = 'none';
     this.lastKnownState = 'PLAYING';
   }
 
   async pause(): Promise<void> {
-    await this.soap(AV_TRANSPORT_SERVICE, 'Pause', { InstanceID: '0' });
+    await this.soap(this.avTransportId, 'Pause', { InstanceID: '0' });
     this.lastKnownState = 'PAUSED_PLAYBACK';
   }
 
   async stop(): Promise<void> {
     this.pendingCommand = 'stop';
     try {
-      await this.soap(AV_TRANSPORT_SERVICE, 'Stop', { InstanceID: '0' });
+      await this.soap(this.avTransportId, 'Stop', { InstanceID: '0' });
     } catch (error) {
       this.pendingCommand = 'none';
       throw error;
@@ -202,7 +239,7 @@ export class DlnaBackend implements OutputBackendLike {
   }
 
   async seek(timeSec: number): Promise<void> {
-    await this.soap(AV_TRANSPORT_SERVICE, 'Seek', {
+    await this.soap(this.avTransportId, 'Seek', {
       InstanceID: '0',
       Unit: 'REL_TIME',
       Target: formatUpnpDuration(timeSec) ?? '00:00:00',
@@ -212,7 +249,7 @@ export class DlnaBackend implements OutputBackendLike {
 
   async setVolume(volume: number): Promise<void> {
     const clamped = Math.max(0, Math.min(100, Math.round(volume)));
-    await this.soap(RENDERING_CONTROL_SERVICE, 'SetVolume', {
+    await this.soap(this.renderingId, 'SetVolume', {
       InstanceID: '0',
       Channel: 'Master',
       DesiredVolume: String(clamped),
@@ -256,9 +293,9 @@ export class DlnaBackend implements OutputBackendLike {
     serviceId: string,
     actionName: string,
     args: Record<string, string>,
-  ): Promise<void> {
+  ): Promise<Record<string, string>> {
     try {
-      await this.deps.native.action(this.deps.descriptionUrl, serviceId, actionName, args);
+      return await this.deps.native.action(this.deps.descriptionUrl, serviceId, actionName, args);
     } catch (e) {
       const rejectedAction: CommandResult['rejectedAction'] =
         actionName === 'Pause'
@@ -276,43 +313,75 @@ export class DlnaBackend implements OutputBackendLike {
     }
   }
 
-  /** LastChange 上报：只做事件分类与纪元过滤，不在此重放命令。 */
-  handleLastChange(payload: string, eventGate: EpochGate = this.gate): void {
+  /**
+   * 轮询或 GENA 共用的观测入口。pending 命令只抑制这一次判定，
+   * 避免用户 Stop 之后把曲尾的下一次 STOPPED 永久当成非 EOF。
+   */
+  observeTransport(
+    update: {
+      transportState?: string;
+      positionSec?: number | null;
+      durationSec?: number | null;
+      trackUri?: string | null;
+    },
+    eventGate: EpochGate = this.gate,
+  ): void {
     if (!acceptsEvent(this.gate, eventGate)) return;
-    const parsed = parseLastChange(payload);
-    if (!parsed) return;
-    const duration = parseUpnpDuration(parsed.values.CurrentTrackDuration);
-    const position = parseUpnpDuration(parsed.values.RelativeTimePosition);
-    if (duration !== null) this.durationSec = duration;
-    if (position !== null) {
-      this.lastKnownPositionSec = position;
+    if (update.durationSec != null && Number.isFinite(update.durationSec)) {
+      this.durationSec = update.durationSec;
+    }
+    if (update.positionSec != null && Number.isFinite(update.positionSec)) {
+      this.lastKnownPositionSec = update.positionSec;
       this.positionUpdatedAt = this.now();
     }
-    const state = parsed.values.TransportState;
+    const state = update.transportState;
     if (!state) return;
     const prev = this.lastClassification;
-    if (STOPPED_STATES.has(state)) {
+    if (!STOPPED_STATES.has(state)) {
       this.lastKnownState = state;
-      const next = classifyRemoteStop({
-        currentUri: this.currentUri,
-        eventUri: parsed.values.CurrentTrackURI ?? parsed.values.AVTransportURI ?? null,
-        durationSec: this.durationSec,
-        positionSec: this.lastKnownPositionSec,
-        reportedState: state,
-        pendingCommand: this.pendingCommand,
-        sessionEpoch: eventGate.routeEpoch,
-        activeEpoch: this.gate.routeEpoch,
-        trackGeneration: eventGate.trackGeneration,
-        activeGeneration: this.gate.trackGeneration,
-        ceassedLastPoll: STOPPED_STATES.has(this.lastKnownState),
-        nearEnd: false,
-      });
-      if (shouldEmitPlaybackEnded(prev, next)) {
-        this.bus.emit('playback-ended', { targetId: this.deps.targetId });
-      }
-      this.lastClassification = next;
-    } else {
-      this.lastKnownState = state;
+      return;
     }
+    this.lastKnownState = state;
+    const next = classifyRemoteStop({
+      currentUri: this.currentUri,
+      eventUri: update.trackUri ?? null,
+      durationSec: this.durationSec,
+      positionSec: this.lastKnownPositionSec,
+      reportedState: state,
+      pendingCommand: this.pendingCommand,
+      sessionEpoch: eventGate.routeEpoch,
+      activeEpoch: this.gate.routeEpoch,
+      trackGeneration: eventGate.trackGeneration,
+      activeGeneration: this.gate.trackGeneration,
+      ceassedLastPoll: true,
+      nearEnd: false,
+    });
+    if (this.pendingCommand !== 'none') this.pendingCommand = 'none';
+    if (next.kind === 'other-controller' && prev.kind !== 'other-controller') {
+      this.bus.emit('taken-over', { targetId: this.deps.targetId });
+    }
+    if (shouldEmitPlaybackEnded(prev, next)) {
+      this.bus.emit('playback-ended', {
+        targetId: this.deps.targetId,
+        trackGeneration: this.gate.trackGeneration,
+        routeEpoch: this.gate.routeEpoch,
+      });
+    }
+    this.lastClassification = next;
+  }
+
+  /** LastChange 上报：只做事件分类与纪元过滤，不在此重放命令。 */
+  handleLastChange(payload: string, eventGate: EpochGate = this.gate): void {
+    const parsed = parseLastChange(payload);
+    if (!parsed) return;
+    this.observeTransport(
+      {
+        transportState: parsed.values.TransportState,
+        positionSec: parseUpnpDuration(parsed.values.RelativeTimePosition),
+        durationSec: parseUpnpDuration(parsed.values.CurrentTrackDuration),
+        trackUri: parsed.values.CurrentTrackURI ?? parsed.values.AVTransportURI ?? null,
+      },
+      eventGate,
+    );
   }
 }

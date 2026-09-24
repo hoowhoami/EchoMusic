@@ -3,7 +3,12 @@ import { test } from 'node:test';
 import { createSsdpDiscovery } from '../src/main/mediaTransport/discovery.ts';
 
 /** 响应报文首行需是 HTTP/1.1（SSDP 响应）。 */
-function msearchResponse(opts: { usn: string; st: string; location: string; maxAge?: string }): string {
+function msearchResponse(opts: {
+  usn: string;
+  st: string;
+  location: string;
+  maxAge?: string;
+}): string {
   return (
     `HTTP/1.1 200 OK\r\n` +
     `CACHE-CONTROL: max-age=${opts.maxAge ?? '600'}\r\n` +
@@ -27,64 +32,99 @@ function notify(nts: string, opts: { usn: string; stOrNt: string; location?: str
   );
 }
 
-test('M-SEARCH 响应按 USN 缓存、去重、过期', () => {
+test('M-SEARCH 响应按 USN 缓存、去重、过期', async () => {
   let fakeNow = 1_000_000;
-  const events: string[] = [];
+  const events: Array<{ usn: string; location: string }> = [];
   const discovery = createSsdpDiscovery({
     now: () => fakeNow,
     log: () => {},
-    onDevice: (d) => events.push(`device:${d.usn}`),
+    onDevice: (device) => events.push({ usn: device.usn, location: device.location }),
   });
-  discovery.start().then(async () => {
+  await discovery.start();
+  try {
     const rinfo = { address: '192.168.1.222' };
     discovery.feedForTest(
-      msearchResponse({ usn: 'uuid:abc-123::upnp:rootdevice', st: 'upnp:rootdevice', location: 'http://192.168.1.10:57000' }),
+      msearchResponse({
+        usn: 'uuid:abc-123::upnp:rootdevice',
+        st: 'upnp:rootdevice',
+        location: 'http://192.168.1.10:57000',
+      }),
       rinfo,
     );
     assert.equal(discovery.cachedUsnCount, 1);
     const entry = discovery.get('uuid:abc-123::upnp:rootdevice');
     assert.ok(entry);
+    assert.equal(entry!.usn, 'uuid:abc-123');
     assert.equal(entry!.location, 'http://192.168.1.10:57000');
     assert.equal(entry!.st, 'upnp:rootdevice');
 
     // 同一 USN 重复响应 → 不新增
     discovery.feedForTest(
-      msearchResponse({ usn: 'uuid:abc-123::upnp:rootdevice', st: 'upnp:rootdevice', location: 'http://192.168.1.10:57000' }),
+      msearchResponse({
+        usn: 'uuid:abc-123::upnp:rootdevice',
+        st: 'upnp:rootdevice',
+        location: 'http://192.168.1.10:57000',
+      }),
       rinfo,
     );
     assert.equal(discovery.cachedUsnCount, 1);
-    assert.equal(events.filter((e) => e.startsWith('device:')).length, 1);
+    assert.equal(events.length, 1);
 
     // location 变化 → 视为端点变更，仍去重（同 USN）
     discovery.feedForTest(
-      msearchResponse({ usn: 'uuid:abc-123::upnp:rootdevice', st: 'upnp:rootdevice', location: 'http://192.168.1.11:57000' }),
+      msearchResponse({
+        usn: 'uuid:abc-123::upnp:rootdevice',
+        st: 'upnp:rootdevice',
+        location: 'http://192.168.1.11:57000',
+      }),
       rinfo,
     );
     assert.equal(discovery.cachedUsnCount, 1);
-    assert.equal(discovery.get('uuid:abc-123::upnp:rootdevice')!.location, 'http://192.168.1.11:57000');
+    assert.equal(
+      discovery.get('uuid:abc-123::upnp:rootdevice')!.location,
+      'http://192.168.1.11:57000',
+    );
 
     // 过期清理
     fakeNow += 601_000;
     assert.equal(discovery.list().length, 0);
+    assert.deepEqual(events.at(-1), { usn: 'uuid:abc-123', location: '' });
+    assert.equal(events.length, 3);
+  } finally {
     await discovery.stop();
-  });
+  }
 });
 
 test('NOTIFY ssdp:alive 收录、ssdp:byebye 移除', async () => {
   let fakeNow = 1_000_000;
-  const discovery = createSsdpDiscovery({ now: () => fakeNow, log: () => {} });
+  const events: Array<{ usn: string; location: string }> = [];
+  const discovery = createSsdpDiscovery({
+    now: () => fakeNow,
+    log: () => {},
+    onDevice: (device) => events.push({ usn: device.usn, location: device.location }),
+  });
   await discovery.start();
 
   const usn = 'uuid:renderer-42::urn:schemas-upnp-org:device:MediaRenderer:1';
   const rendererSt = 'urn:schemas-upnp-org:device:MediaRenderer:1';
-  discovery.feedForTest(notify('ssdp:alive', { usn, stOrNt: rendererSt, location: 'http://192.168.1.50:1900/desc.xml' }), {
-    address: '192.168.1.51',
-  });
+  discovery.feedForTest(
+    notify('ssdp:alive', {
+      usn,
+      stOrNt: rendererSt,
+      location: 'http://192.168.1.50:1900/desc.xml',
+    }),
+    {
+      address: '192.168.1.51',
+    },
+  );
   assert.equal(discovery.cachedUsnCount, 1);
   assert.ok(discovery.get(usn));
 
-  discovery.feedForTest(notify('ssdp:byebye', { usn, stOrNt: rendererSt }), { address: '192.168.1.51' });
+  discovery.feedForTest(notify('ssdp:byebye', { usn, stOrNt: rendererSt }), {
+    address: '192.168.1.51',
+  });
   assert.equal(discovery.cachedUsnCount, 0);
+  assert.deepEqual(events.at(-1), { usn: 'uuid:renderer-42', location: '' });
 
   await discovery.stop();
 });
@@ -95,15 +135,36 @@ test('多网卡同一 USN 去重合并；不可信 Location 忽略', async () =>
   await discovery.start();
 
   const usn = 'uuid:multi-1::upnp:rootdevice';
-  const payload = msearchResponse({ usn, st: 'upnp:rootdevice', location: 'http://192.168.1.10:57000' });
+  const payload = msearchResponse({
+    usn,
+    st: 'upnp:rootdevice',
+    location: 'http://192.168.1.10:57000',
+  });
   discovery.feedForTest(payload, { address: '192.168.1.10' });
   discovery.feedForTest(payload, { address: '10.0.0.5' });
   assert.equal(discovery.cachedUsnCount, 1);
 
+  discovery.feedForTest(
+    msearchResponse({
+      usn: 'uuid:multi-1::urn:schemas-upnp-org:device:MediaRenderer:1',
+      st: 'urn:schemas-upnp-org:device:MediaRenderer:1',
+      location: 'http://192.168.1.10:57000',
+    }),
+    { address: '192.168.1.10' },
+  );
+  assert.equal(discovery.cachedUsnCount, 1);
+
   // file:、javascript: 等非法 Location 不收录
-  discovery.feedForTest(msearchResponse({ usn: 'uuid:evil::upnp:rootdevice', st: 'upnp:rootdevice', location: 'javascript:alert(1)' }), {
-    address: '192.168.1.66',
-  });
+  discovery.feedForTest(
+    msearchResponse({
+      usn: 'uuid:evil::upnp:rootdevice',
+      st: 'upnp:rootdevice',
+      location: 'javascript:alert(1)',
+    }),
+    {
+      address: '192.168.1.66',
+    },
+  );
   assert.equal(discovery.cachedUsnCount, 1);
 
   await discovery.stop();
@@ -115,7 +176,11 @@ test('超过上限后拒绝新增（防海量响应刷爆内存）', async () =>
   await discovery.start();
   for (let i = 0; i < 5; i++) {
     discovery.feedForTest(
-      msearchResponse({ usn: `uuid:d-${i}::upnp:rootdevice`, st: 'upnp:rootdevice', location: `http://192.168.1.1:${5000 + i}` }),
+      msearchResponse({
+        usn: `uuid:d-${i}::upnp:rootdevice`,
+        st: 'upnp:rootdevice',
+        location: `http://192.168.1.1:${5000 + i}`,
+      }),
       { address: '192.168.1.2' },
     );
   }
