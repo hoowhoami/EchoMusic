@@ -22,5 +22,13 @@ const props = defineProps<Props>();
 <style scoped>
 .badge {
   /* 固定深浅背景保证任何主题色下都清晰 */
+  box-sizing: border-box;
+  line-height: 1;
+}
+
+:global(.playerbar-action-badge) {
+  top: 0 !important;
+  right: 0 !important;
+  transform: translate(35%, -28%);
 }
 </style>

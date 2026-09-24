@@ -114,7 +114,7 @@ const buttonClass = computed(() => {
         variant="unstyled"
         size="none"
         type="button"
-        class="p-2 transition-all"
+        class="relative p-2 transition-all"
         :class="buttonClass"
         :aria-label="
           isAudioSourceSwitching
@@ -127,15 +127,14 @@ const buttonClass = computed(() => {
         @mouseenter="ensureCurrentTrackCatalogQualities"
         @focus="ensureCurrentTrackCatalogQualities"
       >
-        <span class="relative inline-flex w-5 h-5 items-center justify-center">
-          <AudioWaveIcon class="w-5 h-5" style="transform: translateY(3px)" />
-          <Badge
-            v-if="currentTrack && settingStore.showAudioQualityBadge && audioQualityButtonBadge"
-            :count="audioQualityButtonBadge"
-            class="absolute top-2px"
-            :style="{ right: '-16px' }"
-          />
+        <span class="inline-flex w-5 h-5 items-center justify-center">
+          <AudioWaveIcon class="w-5 h-5" />
         </span>
+        <Badge
+          v-if="currentTrack && settingStore.showAudioQualityBadge && audioQualityButtonBadge"
+          :count="audioQualityButtonBadge"
+          class="playerbar-action-badge"
+        />
       </Button>
     </template>
 

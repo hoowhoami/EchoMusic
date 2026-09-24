@@ -67,19 +67,14 @@ function closePopover(): void {
         variant="unstyled"
         size="none"
         type="button"
-        class="inline-flex items-center justify-center p-2 leading-none transition-all hover:scale-110 active:scale-90"
+        class="relative inline-flex items-center justify-center p-2 leading-none transition-all hover:scale-110 active:scale-90"
         :class="buttonClass"
         :aria-label="remoteActive ? `正在投放到${output.snapshot?.displayName}` : '投放'"
       >
-        <span class="relative inline-flex w-5 h-5 items-center justify-center">
+        <span class="inline-flex w-5 h-5 items-center justify-center">
           <Icon :icon="iconCast" width="20" height="20" />
-          <Badge
-            v-if="remoteActive && props.showBadge"
-            count="ON"
-            class="absolute top-2px"
-            :style="{ right: '-14px' }"
-          />
         </span>
+        <Badge v-if="remoteActive && props.showBadge" count="ON" class="playerbar-action-badge" />
       </Button>
     </template>
 

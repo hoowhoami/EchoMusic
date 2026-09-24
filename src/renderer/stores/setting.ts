@@ -1,5 +1,6 @@
 import { emptyTitlebarLayout } from '../plugins/titlebar';
 import { emptyPlayerBarLayout } from '../layouts/playerBarActions';
+import { emptySidebarLayout } from '../layouts/sidebarLayout';
 import {
   DEFAULT_WINDOW_BACKGROUND,
   normalizeWindowBackground,
@@ -114,6 +115,7 @@ export const useSettingStore = defineStore('setting', {
     floatingSurfaceFrosted: false,
     titlebarLayout: emptyTitlebarLayout(),
     playerBarLayout: emptyPlayerBarLayout(),
+    sidebarLayout: emptySidebarLayout(),
     windowBackground: { ...DEFAULT_WINDOW_BACKGROUND },
     windowBackgroundActiveEnabled: false,
     windowBackgroundLive: false,

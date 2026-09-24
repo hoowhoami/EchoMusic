@@ -15,6 +15,12 @@ import Tooltip from '@/components/ui/Tooltip.vue';
 import ImportPlaylistDialog from '@/components/music/ImportPlaylistDialog.vue';
 import PlaylistOrderDialog from '@/components/music/PlaylistOrderDialog.vue';
 import type { PlaylistOrderTarget } from '@/services/playlistOrdering';
+import SidebarLayoutEditor from './SidebarLayoutEditor.vue';
+import {
+  resolveSidebarLayout,
+  type SidebarLayoutItem,
+  type SidebarLayoutSection,
+} from './sidebarLayout';
 import {
   iconClock,
   iconCloud,
@@ -124,7 +130,7 @@ const iconMap = {
 
 type BuiltinSidebarIcon = keyof typeof iconMap;
 
-interface SidebarMenuItem {
+interface SidebarMenuItem extends SidebarLayoutItem {
   id: string;
   key: string;
   title: string;
@@ -134,6 +140,8 @@ interface SidebarMenuItem {
   pageId?: string;
   builtinIcon?: BuiltinSidebarIcon;
   pluginIcon?: PluginIconValue;
+  layoutIcon?: PluginIconValue;
+  layoutCover?: string;
   before?: string;
   after?: string;
   disabled?: boolean | (() => boolean);
@@ -143,7 +151,7 @@ interface SidebarMenuItem {
   onClick?: () => void | Promise<void>;
 }
 
-interface SidebarSection {
+interface SidebarSection extends SidebarLayoutSection<SidebarMenuItem> {
   id: string;
   title: string;
   order: number;
@@ -225,6 +233,10 @@ const builtinSidebarSections = [
     ],
   },
 ] satisfies SidebarSection[];
+
+const DEFAULT_PLAYLIST_SECTION_ID = 'created-playlist-defaults';
+const DEFAULT_PLAYLIST_KEY = 'playlist:created:default';
+const LIKED_PLAYLIST_KEY = 'playlist:created:liked';
 
 const getPluginPagePath = (pluginId: string, pageId: string) =>
   `/main/plugin/${encodeURIComponent(pluginId)}/${encodeURIComponent(pageId)}`;
@@ -324,7 +336,7 @@ const resolveFlag = (value?: boolean | (() => boolean), fallback = false) => {
   return value ?? fallback;
 };
 
-const allMenuGroups = computed(() => {
+const rawMenuGroups = computed<SidebarSection[]>(() => {
   const sections = new Map<string, SidebarSection>();
   for (const section of builtinSidebarSections) {
     sections.set(section.id, {
@@ -345,7 +357,12 @@ const allMenuGroups = computed(() => {
   return Array.from(sections.values())
     .map((section) => ({
       ...section,
-      items: sortMenuItems(section.items).filter((item) => resolveFlag(item.visible, true)),
+      items: sortMenuItems(section.items)
+        .filter((item) => resolveFlag(item.visible, true))
+        .map((item) => ({
+          ...item,
+          layoutIcon: item.builtinIcon ? iconMap[item.builtinIcon] : item.pluginIcon,
+        })),
     }))
     .filter((section) => section.items.length > 0)
     .sort(
@@ -354,12 +371,16 @@ const allMenuGroups = computed(() => {
     );
 });
 
-const isSectionCollapsed = (section: SidebarSection) =>
+const allMenuGroups = computed(() =>
+  resolveSidebarLayout(rawMenuGroups.value, settingStore.sidebarLayout),
+);
+
+const isSectionCollapsed = (section: { id: string; collapsible?: boolean }) =>
   section.collapsible && (settingStore.sidebarSectionCollapsed[section.id] ?? false);
 const visibleRailMenuGroups = computed(() =>
-  allMenuGroups.value.filter((group) => !isSectionCollapsed(group)),
+  allMenuGroups.value.filter((group) => group.isRailVisible && !isSectionCollapsed(group)),
 );
-const toggleSection = (section: SidebarSection) => {
+const toggleSection = (section: { id: string; collapsible?: boolean }) => {
   if (!section.collapsible) return;
   settingStore.sidebarSectionCollapsed = {
     ...settingStore.sidebarSectionCollapsed,
@@ -414,6 +435,21 @@ const isDefaultPlaylist = (playlist: PlaylistMeta): boolean => {
 
 const canRemovePlaylist = (playlist: PlaylistMeta): boolean => !isDefaultPlaylist(playlist);
 
+const getDefaultPlaylistLayoutKey = (playlist: PlaylistMeta): string => {
+  if (isLikedPlaylist(playlist)) return LIKED_PLAYLIST_KEY;
+  if (isDefaultPlaylist(playlist)) return DEFAULT_PLAYLIST_KEY;
+  return '';
+};
+
+const isDefaultPlaylistHidden = (playlist: PlaylistMeta): boolean => {
+  const key = getDefaultPlaylistLayoutKey(playlist);
+  if (!key) return false;
+  return (
+    settingStore.sidebarLayout.hiddenSections?.[DEFAULT_PLAYLIST_SECTION_ID] === true ||
+    settingStore.sidebarLayout.hiddenItems?.[key] === true
+  );
+};
+
 const createdPlaylists = computed(() => {
   const all = playlistStore.userPlaylists.filter(
     (playlist) => playlist.source !== 2 && isOwnerPlaylist(playlist),
@@ -432,6 +468,49 @@ const createdPlaylists = computed(() => {
   return { pinned, normal: sorted };
 });
 
+const visibleCreatedPinnedPlaylists = computed(() =>
+  createdPlaylists.value.pinned.filter((playlist) => !isDefaultPlaylistHidden(playlist)),
+);
+
+const defaultPlaylistEditSection = computed<SidebarSection | null>(() => {
+  const items = createdPlaylists.value.pinned
+    .map((playlist, index): SidebarMenuItem | null => {
+      const key = getDefaultPlaylistLayoutKey(playlist);
+      if (!key) return null;
+      return {
+        id: key,
+        key,
+        title: playlist.name || (key === LIKED_PLAYLIST_KEY ? '我喜欢' : '默认收藏'),
+        order: index + 1,
+        lockedOrder: true,
+        layoutCover: playlistCoversStore.coverFor(playlist, userStore.info?.userid),
+      };
+    })
+    .filter((item): item is SidebarMenuItem => Boolean(item));
+  if (!items.length) return null;
+  return {
+    id: DEFAULT_PLAYLIST_SECTION_ID,
+    title: '自建歌单',
+    order: 1000,
+    collapsible: false,
+    items,
+  };
+});
+
+const editableMenuGroups = computed(() => {
+  const sections = resolveSidebarLayout(rawMenuGroups.value, settingStore.sidebarLayout, {
+    includeHidden: true,
+  });
+  const playlistSection = defaultPlaylistEditSection.value;
+  if (!playlistSection) return sections;
+  return [
+    ...sections,
+    ...resolveSidebarLayout([playlistSection], settingStore.sidebarLayout, {
+      includeHidden: true,
+    }),
+  ];
+});
+
 const favoritedPlaylists = computed(() => {
   const all = playlistStore.userPlaylists.filter(
     (playlist) => playlist.source !== 2 && !isLikedPlaylist(playlist) && !isOwnerPlaylist(playlist),
@@ -441,7 +520,7 @@ const favoritedPlaylists = computed(() => {
 
 const visibleRailPlaylists = computed(() =>
   activePlaylistTab.value === 0
-    ? [...createdPlaylists.value.pinned, ...createdPlaylists.value.normal]
+    ? [...visibleCreatedPinnedPlaylists.value, ...createdPlaylists.value.normal]
     : favoritedPlaylists.value,
 );
 
@@ -957,6 +1036,8 @@ watch(
             </div>
           </Popover>
 
+          <SidebarLayoutEditor :sections="editableMenuGroups" collapsed />
+
           <Tooltip content="设置" side="right">
             <template #trigger>
               <Button
@@ -1242,7 +1323,7 @@ watch(
             <template v-if="activePlaylistTab === 0">
               <!-- 置顶歌单（默认收藏 + 我喜欢） -->
               <div
-                v-for="playlist in createdPlaylists.pinned"
+                v-for="playlist in visibleCreatedPinnedPlaylists"
                 :key="playlist.listid || playlist.id"
                 :class="[
                   'sidebar-library-item relative w-full flex items-center gap-3 px-3.5 py-1.5 rounded-xl group cursor-pointer active:scale-[0.98] transition-all',
@@ -1273,7 +1354,9 @@ watch(
               </div>
               <!-- 分隔线 -->
               <div
-                v-if="createdPlaylists.pinned.length > 0 && createdPlaylists.normal.length > 0"
+                v-if="
+                  visibleCreatedPinnedPlaylists.length > 0 && createdPlaylists.normal.length > 0
+                "
                 class="sidebar-playlist-divider"
               ></div>
               <!-- 普通歌单（受排序影响） -->
@@ -1324,7 +1407,9 @@ watch(
                 </Button>
               </div>
               <div
-                v-if="createdPlaylists.pinned.length === 0 && createdPlaylists.normal.length === 0"
+                v-if="
+                  visibleCreatedPinnedPlaylists.length === 0 && createdPlaylists.normal.length === 0
+                "
                 class="py-8 text-center opacity-40 text-[12px] italic"
               >
                 暂无自建歌单
@@ -1389,6 +1474,9 @@ watch(
             >
           </div>
         </Scrollbar>
+        <div class="sidebar-layout-toolbar no-drag">
+          <SidebarLayoutEditor :sections="editableMenuGroups" />
+        </div>
       </div>
     </template>
   </aside>
@@ -1521,6 +1609,14 @@ watch(
 .sidebar-playlist-header {
   padding-top: 6px;
   padding-bottom: 6px;
+}
+
+.sidebar-layout-toolbar {
+  display: flex;
+  width: 100%;
+  justify-content: flex-end;
+  flex-shrink: 0;
+  padding: 6px 16px 10px;
 }
 
 .sidebar-rail-top,

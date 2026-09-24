@@ -807,7 +807,7 @@ const openMyEffectPlaza = (source: MyEffectSource) => {
         variant="unstyled"
         size="none"
         type="button"
-        class="p-2 transition-all hover:scale-110 active:scale-90"
+        class="relative p-2 transition-all hover:scale-110 active:scale-90"
         :class="
           audioEffectPresetActive || gains.some((g: number) => g !== 0) || spatialEffectActive
             ? variant === 'lyric'
@@ -819,20 +819,14 @@ const openMyEffectPlaza = (source: MyEffectSource) => {
         "
         aria-label="音效与均衡器"
       >
-        <span class="relative inline-flex w-5 h-5 items-center justify-center">
-          <Icon
-            :icon="iconSlidersHorizontal"
-            width="20"
-            height="20"
-            style="transform: translateY(3px)"
-          />
-          <Badge
-            v-if="currentTrack && settingStore.showAudioEffectBadge && audioEffectButtonBadge"
-            :count="audioEffectButtonBadge"
-            class="absolute top-2px"
-            :style="{ right: '-12px' }"
-          />
+        <span class="inline-flex w-5 h-5 items-center justify-center">
+          <Icon :icon="iconSlidersHorizontal" width="20" height="20" />
         </span>
+        <Badge
+          v-if="currentTrack && settingStore.showAudioEffectBadge && audioEffectButtonBadge"
+          :count="audioEffectButtonBadge"
+          class="playerbar-action-badge"
+        />
       </Button>
     </template>
 

@@ -635,7 +635,10 @@ onUnmounted(() => {
             </div>
           </div>
 
-          <div ref="leftActionsRef" class="flex items-center gap-2.5 mt-1.5 h-6">
+          <div
+            ref="leftActionsRef"
+            class="player-bar-left-actions flex items-center gap-1.5 mt-1 h-7"
+          >
             <Button
               variant="unstyled"
               size="none"
@@ -656,7 +659,7 @@ onUnmounted(() => {
                 v-else-if="item.component === 'cast'"
                 :show-badge="Boolean(item.visibleBadge)"
               />
-              <div v-else class="relative inline-flex">
+              <div v-else class="playerbar-action-anchor playerbar-left-action-anchor">
                 <Button
                   variant="unstyled"
                   size="none"
@@ -674,8 +677,7 @@ onUnmounted(() => {
                 <Badge
                   v-if="item.visibleBadge"
                   :count="item.visibleBadge"
-                  class="-top-px"
-                  style="right: -5px"
+                  class="playerbar-action-badge"
                 />
               </div>
             </template>
@@ -729,7 +731,7 @@ onUnmounted(() => {
               v-else-if="item.component === 'cast'"
               :show-badge="Boolean(item.visibleBadge)"
             />
-            <div v-else class="relative inline-flex">
+            <div v-else class="playerbar-action-anchor">
               <Button
                 variant="unstyled"
                 size="none"
@@ -765,8 +767,7 @@ onUnmounted(() => {
               <Badge
                 v-if="item.visibleBadge"
                 :count="item.visibleBadge"
-                class="-top-px"
-                style="right: -5px"
+                class="playerbar-action-badge"
               />
             </div>
           </template>
@@ -845,7 +846,7 @@ onUnmounted(() => {
             v-else-if="item.component === 'cast'"
             :show-badge="Boolean(item.visibleBadge)"
           />
-          <div v-else class="relative inline-flex">
+          <div v-else class="playerbar-action-anchor">
             <Button
               variant="unstyled"
               size="none"
@@ -863,8 +864,7 @@ onUnmounted(() => {
             <Badge
               v-if="item.visibleBadge"
               :count="item.visibleBadge"
-              class="-top-px"
-              style="right: -5px"
+              class="playerbar-action-badge"
             />
           </div>
         </template>
@@ -943,6 +943,26 @@ onUnmounted(() => {
 
 .player-bar-action-strip {
   --player-bar-action-size: 36px;
+}
+
+.player-bar-left-actions {
+  --player-bar-action-size: 28px;
+}
+
+.playerbar-action-anchor {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--player-bar-action-size);
+  height: var(--player-bar-action-size);
+  flex: 0 0 var(--player-bar-action-size);
+}
+
+.playerbar-action-anchor.playerbar-left-action-anchor {
+  width: 28px;
+  height: 28px;
+  flex-basis: 28px;
 }
 
 .player-bar-action-strip :deep(button) {

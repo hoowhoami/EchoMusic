@@ -73,10 +73,10 @@ const handleWheel = (e: WheelEvent) => {
           size="none"
           type="button"
           :class="[
-            'p-2 transition-colors',
+            'transition-colors',
             props.variant === 'lyric'
               ? 'flex h-10 w-10 items-center justify-center rounded-full transition-all hover:scale-110 active:scale-90 text-black/55 dark:text-white/55'
-              : 'text-text-main/50 hover:text-primary-text hover:scale-110 active:scale-90',
+              : 'flex h-9 w-9 items-center justify-center text-text-main/50 hover:text-primary-text hover:scale-110 active:scale-90',
           ]"
           @click.stop="toggleMute"
           :aria-label="player.volume === 0 ? '取消静音' : '静音'"

@@ -526,7 +526,10 @@ useResizeObserver(
               </div>
             </template>
           </Tooltip>
-          <div ref="leftActionsRef" class="bar-song-actions">
+          <div
+            ref="leftActionsRef"
+            class="bar-song-actions player-bar-action-strip bar-song-action-strip"
+          >
             <Button
               variant="unstyled"
               size="none"
@@ -563,8 +566,7 @@ useResizeObserver(
                 <Badge
                   v-if="item.visibleBadge"
                   :count="item.visibleBadge"
-                  class="-top-px"
-                  style="right: -5px"
+                  class="playerbar-action-badge"
                 />
               </div>
             </template>
@@ -646,8 +648,7 @@ useResizeObserver(
               <Badge
                 v-if="item.visibleBadge"
                 :count="item.visibleBadge"
-                class="-top-px"
-                style="right: -5px"
+                class="playerbar-action-badge"
               />
             </div>
           </template>
@@ -683,8 +684,7 @@ useResizeObserver(
             <Badge
               v-if="item.visibleBadge"
               :count="item.visibleBadge"
-              class="-top-px"
-              style="right: -5px"
+              class="playerbar-action-badge"
             />
           </div>
         </template>
@@ -926,6 +926,10 @@ useResizeObserver(
   --player-bar-action-size: 36px;
 }
 
+.bar-song-action-strip {
+  --player-bar-action-size: 28px;
+}
+
 .player-bar-action-strip :deep(button) {
   display: inline-flex;
   width: var(--player-bar-action-size);
@@ -1028,16 +1032,12 @@ useResizeObserver(
 /* 3. 右侧 */
 .bar-action-anchor {
   position: relative;
-  flex: 0 0 36px;
-  width: 36px;
-  height: 36px;
-}
-
-.bar-song-actions .bar-action-anchor {
-  flex: 0 0 auto;
-  width: auto;
-  height: auto;
+  flex: 0 0 var(--player-bar-action-size);
+  width: var(--player-bar-action-size);
+  height: var(--player-bar-action-size);
   display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .bar-right {
