@@ -291,14 +291,14 @@ export const initNowPlayingSync = async () => {
         command === 'lyricOffsetBackward' ? -LYRIC_OFFSET_STEP_MS : LYRIC_OFFSET_STEP_MS;
       const nextOffset = lyricStore.adjustTimeOffset(delta);
       const sign = nextOffset >= 0 ? '+' : '';
-      toastStore.success(`歌词偏移: ${sign}${(nextOffset / 1000).toFixed(1)}s`);
+      toastStore.success(`单曲歌词偏移: ${sign}${(nextOffset / 1000).toFixed(1)}s`);
       lyricStore.updateCurrentIndex(playerStore.currentTime);
       syncPlaybackSnapshot();
       return;
     }
     if (command === 'lyricOffsetReset') {
       lyricStore.resetTimeOffset();
-      toastStore.success('歌词偏移已重置');
+      toastStore.success('单曲歌词偏移已重置，全局设置保留');
       lyricStore.updateCurrentIndex(playerStore.currentTime);
       syncPlaybackSnapshot();
     }

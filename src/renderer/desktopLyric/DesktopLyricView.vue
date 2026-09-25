@@ -1302,9 +1302,9 @@ onBeforeUnmount(() => {
               </button>
             </template>
           </Tooltip>
-          <Tooltip v-if="lyricTimeOffset !== 0" content="重置偏移">
+          <Tooltip v-if="hasLyrics" content="重置单曲偏移（保留全局设置）">
             <template #trigger>
-              <button class="menu-btn" aria-label="重置偏移" @click.stop="resetLyricOffset">
+              <button class="menu-btn" aria-label="重置单曲偏移" @click.stop="resetLyricOffset">
                 <Icon :icon="iconRefreshCw" width="17" height="17" />
               </button>
             </template>
