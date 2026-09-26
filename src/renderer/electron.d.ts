@@ -47,6 +47,7 @@ import type {
   AudioSpectrumFrame,
   AudioSpectrumOptions,
   AudioSpectrumStatus,
+  AudioSpectrumSubscriptionHandle,
 } from '../shared/audioSpectrum';
 import type { LogSettings } from '../shared/logging';
 import type { NetworkSettingsState, NetworkSettingsUpdateRequest } from '../shared/network';
@@ -445,7 +446,7 @@ export interface IElectronAPI {
       options: AudioSpectrumOptions,
       func: (frame: AudioSpectrumFrame) => void,
       metadata?: { pluginId?: string },
-    ) => () => void;
+    ) => AudioSpectrumSubscriptionHandle;
   };
   recognize: {
     listInputDevices: () => Promise<RecognizeInputDevice[]>;

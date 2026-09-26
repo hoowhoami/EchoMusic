@@ -45,6 +45,7 @@ import type {
   AudioSpectrumOptions,
   AudioSpectrumStatus,
   AudioSpectrumSubscribeResult,
+  AudioSpectrumSubscriptionHandle,
 } from '../shared/audioSpectrum';
 import type { LogSettings } from '../shared/logging';
 import type { NetworkSettingsState, NetworkSettingsUpdateRequest } from '../shared/network';
@@ -1016,8 +1017,9 @@ contextBridge.exposeInMainWorld('electron', {
       options: AudioSpectrumOptions,
       func: (frame: AudioSpectrumFrame) => void,
       metadata?: { pluginId?: string },
-    ) => {
+    ): AudioSpectrumSubscriptionHandle => {
       const subscriptionId = `audio-spectrum-${Date.now()}-${++audioSpectrumSubscriptionSeq}`;
+      let disposed = false;
       const listener = (
         _event: Electron.IpcRendererEvent,
         frameSubscriptionId: string,
@@ -1033,12 +1035,25 @@ contextBridge.exposeInMainWorld('electron', {
       }).catch(() => {
         ipcRenderer.removeListener('audio-spectrum:frame', listener);
       });
-      return () => {
+
+      const setPaused = (paused: boolean) => {
+        if (disposed) return;
+        void invokeWithPlainPayload<AudioSpectrumStatus>('audio-spectrum:set-paused', {
+          subscriptionId,
+          paused,
+        }).catch(() => {});
+      };
+
+      const dispose = () => {
+        if (disposed) return;
+        disposed = true;
         ipcRenderer.removeListener('audio-spectrum:frame', listener);
         void invokeWithPlainPayload<AudioSpectrumStatus>('audio-spectrum:unsubscribe', {
           subscriptionId,
         }).catch(() => {});
       };
+
+      return Object.assign(dispose, { setPaused });
     },
   },
   recognize: {

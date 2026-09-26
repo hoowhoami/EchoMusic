@@ -1,5 +1,6 @@
 import { computed } from 'vue';
 import type { Pinia } from 'pinia';
+import { createPluginSpectrumSubscription } from './spectrumSubscription';
 import type { EchoPluginDescriptor } from '../../../shared/plugins';
 import type { PluginTaskApi } from '../../../shared/tasks';
 import { createFontApi } from '../../../shared/font';
@@ -321,19 +322,7 @@ export const createAudioApi = (descriptor: EchoPluginDescriptor, deps: RuntimeAp
       },
       subscribe: (options: AudioSpectrumOptions, handler: (frame: AudioSpectrumFrame) => void) => {
         requireAudioSpectrumCapability();
-        const dispose =
-          window.electron.audioSpectrum?.subscribe(
-            options,
-            (frame) =>
-              deps.runPluginCallback(
-                descriptor.id,
-                '音频频谱事件',
-                () => handler(frame),
-                undefined,
-              ),
-            { pluginId: descriptor.id },
-          ) ?? (() => undefined);
-        return deps.addDisposable(dispose);
+        return createPluginSpectrumSubscription(descriptor.id, options, handler, deps);
       },
     },
   };

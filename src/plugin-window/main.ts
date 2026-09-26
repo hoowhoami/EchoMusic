@@ -419,11 +419,21 @@ const buildContext = (
       },
       subscribe: (options, handler) => {
         requireAudioSpectrumCapability(descriptor);
-        return addDisposable(
+        const handle =
           window.electron.audioSpectrum?.subscribe(options, handler, {
             pluginId: descriptor.id,
-          }) ?? (() => undefined),
-        );
+          }) ?? null;
+        if (!handle) return addDisposable(() => undefined);
+
+        // 插件窗口没有 Vue 生命周期，用文档可见性近似：窗口隐藏（hide）或最小化时
+        // 暂停投递，重新显示时恢复。订阅本身保留，参数合并不受影响。
+        const sync = () => handle.setPaused(document.visibilityState === 'hidden');
+        document.addEventListener('visibilitychange', sync);
+        sync();
+        return addDisposable(() => {
+          document.removeEventListener('visibilitychange', sync);
+          handle();
+        });
       },
     },
   },

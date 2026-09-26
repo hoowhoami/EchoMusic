@@ -1,12 +1,13 @@
 import { ipcMain, type WebContents } from 'electron';
 import {
-  audioSpectrumOptionsIncludeWaveform,
   filterAudioSpectrumFrameForSubscriber,
+  mergeAudioSpectrumOptions,
   normalizeAudioSpectrumWaveform,
 } from '../shared/audioSpectrum';
 import type {
   AudioSpectrumFrame,
   AudioSpectrumOptions,
+  AudioSpectrumSetPausedPayload,
   AudioSpectrumStatus,
   AudioSpectrumSubscribePayload,
   AudioSpectrumSubscribeResult,
@@ -20,6 +21,11 @@ type AudioSpectrumSubscription = {
   pluginId: string;
   webContents: WebContents;
   options?: AudioSpectrumOptions;
+  /**
+   * 订阅者主动暂停（页面不可见/窗口隐藏）。暂停的订阅不参与参数合并，也不接收帧，
+   * 但保留在表中以便恢复，避免把 fps/binCount 的并集永久性地抬高。
+   */
+  paused: boolean;
 };
 
 const subscriptions = new Map<string, AudioSpectrumSubscription>();
@@ -45,55 +51,21 @@ const status = (running: boolean, reason?: string): AudioSpectrumStatus => ({
   subscriberCount: subscriptions.size,
 });
 
-const clampNumber = (value: unknown, min: number, max: number) => {
-  const number = Number(value);
-  if (!Number.isFinite(number)) return undefined;
-  return Math.min(max, Math.max(min, number));
-};
-
-const getMergedOptions = (): AudioSpectrumOptions => {
-  let fps: number | undefined;
-  let binCount: number | undefined;
-  let minFrequency: number | undefined;
-  let maxFrequency: number | undefined;
-  let smoothing: number | undefined;
-  const includeWaveform = audioSpectrumOptionsIncludeWaveform(
-    Array.from(subscriptions.values(), (subscription) => subscription.options),
-  );
-
+/** 仅统计仍在接收数据的订阅者数量，供状态与诊断使用。 */
+const countActiveSubscriptions = () => {
+  let count = 0;
   for (const subscription of subscriptions.values()) {
-    const options = subscription.options || {};
-    const nextFps = clampNumber(options.fps, 1, 60);
-    const nextBinCount = clampNumber(options.binCount, 8, 512);
-    const nextMinFrequency = clampNumber(options.minFrequency, 1, 20000);
-    const nextMaxFrequency = clampNumber(options.maxFrequency, 2, 24000);
-    const nextSmoothing = clampNumber(options.smoothing, 0, 0.95);
-
-    if (nextFps !== undefined) fps = Math.max(fps ?? nextFps, nextFps);
-    if (nextBinCount !== undefined) binCount = Math.max(binCount ?? nextBinCount, nextBinCount);
-    if (nextMinFrequency !== undefined) {
-      minFrequency = Math.min(minFrequency ?? nextMinFrequency, nextMinFrequency);
-    }
-    if (nextMaxFrequency !== undefined) {
-      maxFrequency = Math.max(maxFrequency ?? nextMaxFrequency, nextMaxFrequency);
-    }
-    if (nextSmoothing !== undefined) {
-      smoothing = Math.min(smoothing ?? nextSmoothing, nextSmoothing);
-    }
+    if (!subscription.paused) count += 1;
   }
-
-  const resolvedMinFrequency = minFrequency ?? 20;
-  return {
-    fps: fps ?? 30,
-    binCount: binCount ?? 128,
-    fftSize: 2048,
-    smoothing: smoothing ?? 0.65,
-    minFrequency: resolvedMinFrequency,
-    maxFrequency: Math.max(maxFrequency ?? 20000, resolvedMinFrequency + 1),
-    scale: 'log',
-    includeWaveform,
-  };
+  return count;
 };
+
+const getMergedOptions = (): AudioSpectrumOptions =>
+  mergeAudioSpectrumOptions(
+    Array.from(subscriptions.values(), (subscription) =>
+      subscription.paused ? undefined : subscription.options,
+    ),
+  );
 
 const removeDeadSubscriptions = () => {
   let changed = false;
@@ -125,6 +97,8 @@ const broadcastFrame = (frame: AudioSpectrumFrame) => {
       subscriptions.delete(key);
       continue;
     }
+    // 订阅者已暂停：不再序列化也不再跨进程发送，避免把帧投递到看不见的窗口。
+    if (subscription.paused) continue;
     try {
       subscription.webContents.send(
         'audio-spectrum:frame',
@@ -183,6 +157,11 @@ const pollFrame = async () => {
     stopPolling();
     return;
   }
+  // 订阅可能在上一轮广播后全部被暂停：不再取快照，直接停表。
+  if (countActiveSubscriptions() === 0) {
+    stopPolling();
+    return;
+  }
   if (pollingInFlight) return;
   const controller = getControllerRef?.();
   if (!controller) return;
@@ -234,6 +213,11 @@ const syncForSubscriptions = (): AudioSpectrumStatus => {
     stopPolling();
     return status(false);
   }
+  // 所有订阅者都已暂停：完全停止轮询与 FFT 配置，不为看不见的界面付出任何代价。
+  if (countActiveSubscriptions() === 0) {
+    stopPolling();
+    return status(false, '订阅者均已暂停');
+  }
 
   const controller = getControllerRef?.();
   if (!controller) return status(false, '播放引擎未初始化');
@@ -264,7 +248,7 @@ const getStatus = (): AudioSpectrumStatus => {
   return {
     ...controller.getSpectrumStatus(),
     provider: 'player',
-    subscriberCount: subscriptions.size,
+    subscriberCount: countActiveSubscriptions(),
   };
 };
 
@@ -310,6 +294,7 @@ export const registerAudioSpectrumIpc = (
         pluginId: String(payload?.pluginId || '').trim(),
         webContents,
         options: payload?.options,
+        paused: false,
       });
       log.info('[AudioSpectrum] subscription added', {
         pluginId: String(payload?.pluginId || '').trim() || undefined,
@@ -345,6 +330,30 @@ export const registerAudioSpectrumIpc = (
       return syncForSubscriptions();
     },
   );
+
+  ipcMain.handle(
+    'audio-spectrum:set-paused',
+    (event, payload: AudioSpectrumSetPausedPayload): AudioSpectrumStatus => {
+      const subscriptionId = String(payload?.subscriptionId || '').trim();
+      const subscription = subscriptionId
+        ? subscriptions.get(getSubscriptionKey(event.sender, subscriptionId))
+        : undefined;
+      if (!subscription) return syncForSubscriptions();
+
+      const paused = payload?.paused === true;
+      if (subscription.paused !== paused) {
+        subscription.paused = paused;
+        log.info('[AudioSpectrum] subscription paused state changed', {
+          pluginId: subscription.pluginId || undefined,
+          paused,
+          activeSubscribers: countActiveSubscriptions(),
+          webContentsId: event.sender.id,
+        });
+      }
+      // 合并参数与轮询频率都依赖活跃订阅集合，必须重新同步。
+      return syncForSubscriptions();
+    },
+  );
 };
 
 export const unregisterAudioSpectrumIpc = () => {
@@ -356,6 +365,7 @@ export const unregisterAudioSpectrumIpc = () => {
   ipcMain.removeHandler('audio-spectrum:get-snapshot');
   ipcMain.removeHandler('audio-spectrum:subscribe');
   ipcMain.removeHandler('audio-spectrum:unsubscribe');
+  ipcMain.removeHandler('audio-spectrum:set-paused');
   destroyedWebContents = new WeakSet();
   getControllerRef = null;
 };

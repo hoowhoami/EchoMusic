@@ -288,7 +288,7 @@ const createPluginWindow = async (
       enableWebSQL: false,
       webSecurity: false,
       allowRunningInsecureContent: true,
-      backgroundThrottling: false,
+      backgroundThrottling: true,
       zoomFactor: 1.0,
       partition: `persist:plugin-window-${descriptor.pluginId}-${descriptor.id}`,
     },

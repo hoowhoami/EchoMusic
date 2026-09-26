@@ -379,13 +379,36 @@ const stopRaf = () => {
   }
 };
 
+/**
+ * 逐字歌词只在「正在播放且窗口可见」时需要逐帧刷新。
+ * 窗口隐藏（最小化/被遮挡）时停表：此时没有任何像素会被绘制，
+ * 继续跑 rAF 只会白烧主线程并挤占插件与频谱的帧预算。
+ * 重新可见时立即补一次全量刷新，避免回到前台看到错位的歌词。
+ */
+const isPageVisible = () => document.visibilityState !== 'hidden';
+
+const syncRaf = () => {
+  if (playerStore.isPlaying && isPageVisible()) startRaf();
+  else stopRaf();
+};
+
+const handleVisibilityChange = () => {
+  if (!isPageVisible()) {
+    stopRaf();
+    return;
+  }
+  // 回到前台：先用当前播放位置纠正索引，再决定是否继续逐帧刷新。
+  refreshLyricIndexes();
+  updateYrcDom();
+  syncRaf();
+};
+
 watch(
   () => playerStore.playbackClock,
   () => {
     refreshLyricIndexes();
     updateYrcDom();
-    if (playerStore.isPlaying) startRaf();
-    else stopRaf();
+    syncRaf();
   },
 );
 
@@ -393,10 +416,11 @@ onMounted(() => {
   reducedMotionQuery = window.matchMedia?.('(prefers-reduced-motion: reduce)') ?? null;
   updateReducedMotion();
   reducedMotionQuery?.addEventListener?.('change', updateReducedMotion);
+  document.addEventListener('visibilitychange', handleVisibilityChange);
   syncSeekAnchor();
   refreshLyricIndexes({ resetStable: true });
   updateYrcDom();
-  if (playerStore.isPlaying) startRaf();
+  syncRaf();
   nextTick(() => {
     setupLyricEffectHost();
     scrollToLine(scrollIndex.value, false);
@@ -410,6 +434,7 @@ onUnmounted(() => {
   lyricEffectHostRegistration = null;
   reducedMotionQuery?.removeEventListener?.('change', updateReducedMotion);
   reducedMotionQuery = null;
+  document.removeEventListener('visibilitychange', handleVisibilityChange);
 });
 
 // 收起/展开时重新定位（瞬间跳转，不用动画）

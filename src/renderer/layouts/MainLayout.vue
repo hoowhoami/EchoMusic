@@ -144,7 +144,6 @@ const excludeFromCache = [
   'login-page',
   'loading-page',
   'error-page',
-  'lyric-page',
   'song-detail-page',
   'mv-detail',
   'share-resolve-page',
@@ -152,10 +151,12 @@ const excludeFromCache = [
   'search-page',
   'plugin-share-resolve-page',
   // 分享链接会为一起听路由附加 roomId/roomType。按 fullPath 缓存会同时保留普通页和
-  // 分享页两个实例，二者的路由 watcher 会各自打开一个 Teleport Dialog，造成双层遮罩卡死。
+  // 分享页两个实例，其路由 watcher 会各自打开一个 Teleport Dialog，造成双层遮罩卡死。
   'listen-together',
   'profile',
   'settings-page',
+  // 注意：歌词页（lyric-page）不在此列表。它由 App.vue 以 v-if 挂载在 KeepAlive 之外，
+  // 本就不受这里的缓存影响；逐字歌词的逐帧刷新改由 LyricScroller 按窗口可见性自行开关。
 ];
 
 const keepAliveMax = computed(() =>
