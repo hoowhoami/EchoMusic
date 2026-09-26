@@ -15,36 +15,13 @@ const settingStore = useSettingStore();
 const pin = ref('');
 const pinTarget = ref('');
 const emit = defineEmits<{ close: [] }>();
-const TEMP_CAST_PIN_MOCK_TARGET_ID = 'airplay:temp-pin-mock';
-const TEMP_CAST_PIN_MOCK_TARGET: OutputTargetView = {
-  targetId: TEMP_CAST_PIN_MOCK_TARGET_ID,
-  protocol: 'airplay',
-  displayName: '会议室 Apple TV',
-  addresses: ['192.168.110.88'],
-  modelName: 'AppleTV',
-  note: '需要验证码 · 192.168.110.88',
-  paired: false,
-  connection: { connected: false, available: true },
-};
-const TEMP_CAST_READY_MOCK_TARGET: OutputTargetView = {
-  targetId: 'airplay:temp-ready-mock',
-  protocol: 'airplay',
-  displayName: '客厅 HomePod',
-  addresses: ['192.168.110.89'],
-  modelName: 'HomePod',
-  note: '192.168.110.89',
-  paired: true,
-  connection: { connected: false, available: true },
-};
 
 const dlnaTargets = computed(() =>
   output.visibleTargets.filter((target) => target.protocol === 'dlna'),
 );
-const airplayTargets = computed(() => [
-  ...output.visibleTargets.filter((target) => target.protocol === 'airplay'),
-  TEMP_CAST_PIN_MOCK_TARGET,
-  TEMP_CAST_READY_MOCK_TARGET,
-]);
+const airplayTargets = computed(() =>
+  output.visibleTargets.filter((target) => target.protocol === 'airplay'),
+);
 const remoteActive = computed(() => output.snapshot && output.snapshot.protocol !== 'local');
 const remoteDeviceCount = computed(() => dlnaTargets.value.length + airplayTargets.value.length);
 const activeTitle = computed(() =>
