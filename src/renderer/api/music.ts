@@ -52,6 +52,14 @@ export interface EverydayStyleRecommendParams {
   tagids?: string;
 }
 
+export interface HomeDiscoverParams {
+  support?: 'only_song' | string;
+  recallType?: 'song' | 'mv' | 'album' | 'songlist' | 'radio' | 'anchor' | string;
+  todayPlayNum?: number;
+  pagesize?: number;
+  goKyExtra?: Array<{ key: string; val: string }>;
+}
+
 export interface CloudSongUrlResult {
   url: string;
   urls: string[];
@@ -232,6 +240,19 @@ export function getEverydayStyleRecommend(params: EverydayStyleRecommendParams =
 export function getPersonalFm(params: PersonalFmParams = {}) {
   return request.get('/personal/fm', {
     params,
+  });
+}
+
+/**
+ * 首页刷歌推荐流。上游仅验证 only_song 可稳定返回歌曲内容。
+ */
+export function getHomeDiscover(params: HomeDiscoverParams = {}) {
+  return request.post('/home/discover', {
+    support: params.support ?? 'only_song',
+    recall_type: params.recallType ?? 'song',
+    today_play_num: params.todayPlayNum ?? 0,
+    pagesize: params.pagesize ?? 4,
+    ...(params.goKyExtra ? { go_ky_extra: params.goKyExtra } : {}),
   });
 }
 

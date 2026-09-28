@@ -250,6 +250,78 @@ export function getBatchUnionVipinfo(useridlist: Array<string | number>) {
 }
 
 /**
+ * 获取当前账号好友列表。
+ */
+export function getUserFriends() {
+  return request.post('/user/friends');
+}
+
+/**
+ * 获取当前账号粉丝列表。
+ */
+export function getUserFans() {
+  return request.post('/user/fans');
+}
+
+/**
+ * 获取访客列表，默认查当前账号。
+ */
+export function getUserVisitors(page = 1, targetUserId?: string | number) {
+  return request.post('/user/visitors', {
+    page,
+    ...(targetUserId ? { t_userid: targetUserId } : {}),
+  });
+}
+
+export interface UserFollowMessageParams {
+  tag?: string;
+  id?: string | number;
+  pagesize?: number;
+  maxid?: string | number;
+}
+
+/**
+ * 获取私信会话历史。已有会话传 tag，普通会话也可传对方 id。
+ */
+export function getUserFollowMessages(params: UserFollowMessageParams) {
+  return request.get('/user/follow/message', {
+    params,
+  });
+}
+
+export interface SendUserFollowChatParams {
+  tag?: string;
+  tuid?: string | number;
+  alert?: string;
+  msgtype?: 201 | 202 | 205 | number;
+  url?: string;
+  thumbUrl?: string;
+  imgFile?: string;
+  nickname?: string;
+  source?: number;
+  followSource?: number;
+  sourcePath?: string;
+  width?: number;
+  height?: number;
+  isOriginal?: boolean;
+  originalSize?: number;
+  retry?: boolean;
+}
+
+/**
+ * 发送私信。文本消息默认 msgtype=201；图片可传 url 或 imgFile(dataURL/base64)。
+ */
+export function sendUserFollowChat(params: SendUserFollowChatParams) {
+  return request.post('/user/follow/chat', {
+    ...params,
+    follow_source: params.followSource,
+    source_path: params.sourcePath,
+    is_original: params.isOriginal,
+    original_size: params.originalSize,
+  });
+}
+
+/**
  * 领取每日畅听会员
  */
 export function claimDayVip(day: string) {

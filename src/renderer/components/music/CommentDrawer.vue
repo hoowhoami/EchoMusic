@@ -156,6 +156,7 @@ watch(
           :resourceType="resourceType"
           :fallbackMixSongId="mixSongId || resourceId"
           compact
+          @deleted="fetchComments(true)"
         />
 
         <div v-if="isLoadingComments || showCommentsEnd" class="comment-drawer-load-more">

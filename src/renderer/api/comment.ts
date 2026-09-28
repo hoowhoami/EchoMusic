@@ -210,6 +210,12 @@ export interface FloorReplyRequest {
   mixSongId?: string;
 }
 
+export interface DeleteCommentRequest {
+  comment: Comment;
+  resourceType: 'music' | 'album' | 'playlist';
+  mixSongId?: string | number;
+}
+
 export async function sendFloorComment({
   root,
   target,
@@ -243,4 +249,28 @@ export async function sendFloorComment({
     if (body?.msg || body?.message) throw new Error(String(body.msg || body.message));
     throw error;
   }
+}
+
+export async function deleteComment({ comment, resourceType, mixSongId }: DeleteCommentRequest) {
+  const cid = comment.comment_id || comment.id;
+  if (!cid) throw new Error('缺少评论 ID，无法删除');
+
+  const specialId =
+    comment.specialId || comment.specialChildId || comment.special_id || comment.special_child_id;
+  const parentId = comment.tid && String(comment.tid) !== String(comment.id) ? comment.tid : '';
+  const code = comment.code || (resourceType === 'music' ? undefined : resourceType);
+  const response = await request.get('/comment/music/del', {
+    params: {
+      cid,
+      special_id: specialId,
+      tid: parentId || undefined,
+      code,
+      mixsongid:
+        resourceType === 'music'
+          ? comment.mixSongId || comment.mixsongid || mixSongId || comment.album_audio_id
+          : undefined,
+    },
+  });
+  assertCommentSuccess(response);
+  return response;
 }

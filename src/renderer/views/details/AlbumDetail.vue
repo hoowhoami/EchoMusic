@@ -807,6 +807,7 @@ const activeSongId = computed(() => playerStore.currentTrackId ?? undefined);
                   :fallbackMixSongId="String(currentId)"
                   compact
                   hide-empty
+                  @deleted="fetchComments(true)"
                 />
                 <CommentList
                   :comments="comments"
@@ -816,6 +817,7 @@ const activeSongId = computed(() => playerStore.currentTrackId ?? undefined);
                   :fallbackMixSongId="String(currentId)"
                   compact
                   :hide-empty="hotComments.length > 0"
+                  @deleted="fetchComments(true)"
                 />
 
                 <div v-if="hasMoreComments" ref="commentSentinelRef" class="h-1" />

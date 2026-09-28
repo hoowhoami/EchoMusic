@@ -1540,6 +1540,7 @@ watch(total, (value) => {
                       :fallbackMixSongId="songMixSongId"
                       compact
                       hide-empty
+                      @deleted="fetchComments(true)"
                     />
                     <div v-if="singerComments.length" class="comment-singer-divider"></div>
                     <CommentList
@@ -1548,6 +1549,7 @@ watch(total, (value) => {
                       :resourceType="type"
                       :fallbackMixSongId="songMixSongId"
                       compact
+                      @deleted="fetchComments(true)"
                     />
                     <div v-if="hasMore" ref="commentSentinelRef" class="h-1" />
                     <div v-if="isLoadingComments || showCommentsEnd" class="comment-load-more">
@@ -1585,6 +1587,7 @@ watch(total, (value) => {
                       :fallbackMixSongId="songMixSongId"
                       compact
                       empty-text="该分类下暂无评论"
+                      @deleted="fetchClassifyComments(true)"
                     />
                     <div v-if="hasMoreClassify" ref="commentSentinelRef" class="h-1" />
                     <div v-if="isLoadingClassify || showClassifyEnd" class="comment-load-more">
@@ -1622,6 +1625,7 @@ watch(total, (value) => {
                       :fallbackMixSongId="songMixSongId"
                       compact
                       empty-text="该热词下暂无评论"
+                      @deleted="fetchHotwordComments(true)"
                     />
                     <div v-if="hasMoreHotword" ref="commentSentinelRef" class="h-1" />
                     <div v-if="isLoadingHotword || showHotwordEnd" class="comment-load-more">
@@ -1652,6 +1656,7 @@ watch(total, (value) => {
             :fallbackMixSongId="songMixSongId"
             compact
             hide-empty
+            @deleted="fetchComments(true)"
           />
           <CommentList
             :comments="comments"
@@ -1659,6 +1664,7 @@ watch(total, (value) => {
             :resourceType="type"
             :fallbackMixSongId="songMixSongId"
             compact
+            @deleted="fetchComments(true)"
           />
           <div v-if="hasMore" ref="commentSentinelRef" class="h-1" />
           <div v-if="isLoadingComments || showCommentsEnd" class="comment-load-more">

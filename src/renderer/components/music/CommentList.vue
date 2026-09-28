@@ -1,15 +1,17 @@
 <script setup lang="ts">
 import { computed, reactive, ref } from 'vue';
-import { iconMessageCircle, iconThumbsUp, iconChevronUp } from '@/icons';
+import { iconMessageCircle, iconThumbsUp, iconChevronUp, iconTrash } from '@/icons';
 import type { Comment } from '@/models/comment';
 import type { CommentResourceType } from '@/composables/useComments';
 import FloorReplyComposer from './FloorReplyComposer.vue';
 import Button from '@/components/ui/Button.vue';
 import Skeleton from '@/components/ui/Skeleton.vue';
-import { getFloorComments, sendFloorComment } from '@/api/comment';
+import Popconfirm from '@/components/ui/Popconfirm.vue';
+import { deleteComment, getFloorComments, sendFloorComment } from '@/api/comment';
 import { mapCommentItem } from '@/utils/mappers';
 import { enrichCommentsWithYoungVip } from '@/utils/commentVipCache';
 import { useToastStore } from '@/stores/toast';
+import { useUserStore } from '@/stores/user';
 import {
   groupCommentRelations,
   mainCommentParentId,
@@ -48,6 +50,10 @@ const props = withDefaults(defineProps<Props>(), {
   inlineReplies: true,
   loadingSkeletonCount: 3,
 });
+
+const emit = defineEmits<{
+  (e: 'deleted', comment: Comment): void;
+}>();
 
 const relations = computed(() => groupCommentRelations(props.comments));
 const visibleComments = computed(() =>
@@ -92,9 +98,12 @@ const isFloorRecord = (comment: Comment, reply: Comment) =>
   floorStateFor(comment).replies.some((item) => item === reply);
 
 const toastStore = useToastStore();
+const userStore = useUserStore();
 const replyBusy = ref(false);
 const replyRoot = ref<Comment | null>(null);
 const replyTarget = ref<Comment | null>(null);
+const deletingCommentIds = reactive<Set<string | number>>(new Set());
+const DELETE_REFRESH_DELAY_MS = 450;
 function startReply(root: Comment, target = root) {
   if (replyBusy.value) return;
   replyRoot.value = root;
@@ -239,11 +248,43 @@ const formatLike = (value: number) => {
 };
 
 const commentIpText = (comment: Comment) => comment.ipLocation || '';
+const canDeleteComment = (comment: Comment) => {
+  const currentUserId = String(userStore.info?.userid ?? userStore.info?.userId ?? '');
+  return Boolean(currentUserId && comment.userId && String(comment.userId) === currentUserId);
+};
+const isDeletingComment = (comment: Comment) => deletingCommentIds.has(comment.id);
+const refreshDeletedFloor = (comment: Comment) => {
+  const tid = comment.tid && String(comment.tid) !== String(comment.id) ? comment.tid : '';
+  if (!tid) return false;
+  const state = getFloorState(tid);
+  if (!state.initialized && state.replies.length === 0) return false;
+  void fetchFloorReplies({ ...comment, id: tid, tid }, true);
+  return true;
+};
+const handleDeleteComment = async (comment: Comment) => {
+  if (!canDeleteComment(comment) || isDeletingComment(comment)) return;
+  deletingCommentIds.add(comment.id);
+  try {
+    await deleteComment({
+      comment,
+      resourceType: props.resourceType,
+      mixSongId: props.fallbackMixSongId,
+    });
+    toastStore.actionCompleted('评论已删除');
+    refreshDeletedFloor(comment);
+    window.setTimeout(() => emit('deleted', comment), DELETE_REFRESH_DELAY_MS);
+  } catch (error) {
+    const message = error instanceof Error && error.message ? error.message : '删除评论失败';
+    toastStore.warning(message);
+  } finally {
+    deletingCommentIds.delete(comment.id);
+  }
+};
 </script>
 
 <template>
   <div class="comment-list" :class="{ 'is-compact': compact }">
-    <div v-if="loading && comments.length === 0" class="comment-loading">
+    <div v-if="loading && visibleComments.length === 0" class="comment-loading">
       <div v-for="index in loadingSkeletonCount" :key="index" class="comment-skeleton-item">
         <Skeleton variant="circle" width="36px" height="36px" />
         <div class="comment-skeleton-main">
@@ -263,7 +304,7 @@ const commentIpText = (comment: Comment) => comment.ipLocation || '';
       </div>
     </div>
 
-    <div v-else-if="!hideEmpty && comments.length === 0" class="comment-empty">
+    <div v-else-if="!hideEmpty && visibleComments.length === 0" class="comment-empty">
       {{ emptyText }}
     </div>
 
@@ -338,7 +379,7 @@ const commentIpText = (comment: Comment) => comment.ipLocation || '';
             <span class="comment-floor-quote-author">{{ quote.userName }}：</span
             >{{ quote.content }}
           </blockquote>
-          <div v-if="inlineReplies" class="comment-actions">
+          <div v-if="inlineReplies || canDeleteComment(comment)" class="comment-actions">
             <Button
               variant="unstyled"
               size="none"
@@ -370,6 +411,27 @@ const commentIpText = (comment: Comment) => comment.ipLocation || '';
             >
               回复
             </Button>
+            <Popconfirm
+              v-if="canDeleteComment(comment)"
+              :disabled="isDeletingComment(comment)"
+              title="确认删除这条评论？"
+              confirm-text="删除"
+              tone="danger"
+              @confirm="handleDeleteComment(comment)"
+            >
+              <template #trigger>
+                <Button
+                  variant="unstyled"
+                  size="none"
+                  type="button"
+                  class="comment-delete"
+                  :disabled="isDeletingComment(comment)"
+                  tooltip="删除评论"
+                >
+                  <Icon :icon="iconTrash" width="13" height="13" />
+                </Button>
+              </template>
+            </Popconfirm>
           </div>
 
           <FloorReplyComposer
@@ -462,6 +524,27 @@ const commentIpText = (comment: Comment) => comment.ipLocation || '';
                     @click="startReply(contextRoot(comment), reply)"
                     >回复</Button
                   >
+                  <Popconfirm
+                    v-if="canDeleteComment(reply)"
+                    :disabled="isDeletingComment(reply)"
+                    title="确认删除这条回复？"
+                    confirm-text="删除"
+                    tone="danger"
+                    @confirm="handleDeleteComment(reply)"
+                  >
+                    <template #trigger>
+                      <Button
+                        variant="unstyled"
+                        size="none"
+                        type="button"
+                        class="floor-target-delete"
+                        :disabled="isDeletingComment(reply)"
+                        tooltip="删除回复"
+                      >
+                        <Icon :icon="iconTrash" width="12" height="12" />
+                      </Button>
+                    </template>
+                  </Popconfirm>
                 </div>
                 <FloorReplyComposer
                   v-if="replyRoot?.id === contextRoot(comment).id && replyTarget?.id === reply.id"
@@ -758,6 +841,37 @@ const commentIpText = (comment: Comment) => comment.ipLocation || '';
 
 .comment-reply:hover {
   opacity: 0.8;
+}
+
+.comment-delete,
+.floor-target-delete {
+  color: var(--text-secondary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.comment-delete {
+  width: 24px;
+  height: 24px;
+  opacity: 0.72;
+}
+
+.floor-target-delete {
+  width: 20px;
+  height: 20px;
+}
+
+.comment-delete:hover,
+.floor-target-delete:hover {
+  color: var(--state-danger);
+}
+
+.comment-delete:disabled,
+.floor-target-delete:disabled {
+  opacity: 0.5;
+  pointer-events: none;
 }
 
 .comment-badge {

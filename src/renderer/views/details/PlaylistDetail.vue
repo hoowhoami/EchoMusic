@@ -1085,6 +1085,7 @@ watch(
                   :fallbackMixSongId="String(currentId)"
                   compact
                   hide-empty
+                  @deleted="fetchComments(true)"
                 />
                 <CommentList
                   :comments="comments"
@@ -1094,6 +1095,7 @@ watch(
                   :fallbackMixSongId="String(currentId)"
                   compact
                   :hide-empty="hotComments.length > 0"
+                  @deleted="fetchComments(true)"
                 />
 
                 <div v-if="hasMoreComments" ref="commentSentinelRef" class="h-1" />
