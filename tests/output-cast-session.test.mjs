@@ -824,6 +824,68 @@ test('AirPlay refresh does not start discovery while a connection is pending', a
   }
 });
 
+test('AirPlay connection suppresses an older discovery timeout', async () => {
+  let rejectDiscover;
+  let releaseConnect;
+  const box = harness({
+    airplay: {
+      available: true,
+      discover() {
+        return new Promise((_, reject) => {
+          rejectDiscover = () => reject(new Error('AirPlay 命令超时'));
+        });
+      },
+      connect() {
+        return new Promise((resolve) => {
+          releaseConnect = () => resolve({ ok: false, error: 'AirPlay 命令超时' });
+        });
+      },
+      async disconnect() {},
+      async pause() {},
+      async resume() {},
+      async seek() {
+        return 0;
+      },
+      async stop() {},
+      async setVolume() {},
+      async flushTrack() {
+        return 0;
+      },
+      status() {
+        return {
+          connected: false,
+          delaySec: 0,
+          format: '',
+          inputBits: 16,
+          error: '',
+        };
+      },
+    },
+    localNetworkIdentity: () => ({ addresses: [], macs: [] }),
+  });
+  try {
+    box.host.noteAirplayDevices([
+      { id: '11:22:33:44:55:66', name: 'Living Room', needsPin: false },
+    ]);
+    box.host.setEnabled(true);
+    await box.host.refresh();
+    await tick();
+    const pending = box.host.connect('11:22:33:44:55:66');
+    await tick();
+    rejectDiscover();
+    await tick();
+    assert.equal(
+      box.logs.some(([, message]) => message.includes('AirPlay 发现未在本轮刷新内完成')),
+      false,
+    );
+    releaseConnect();
+    const result = await pending;
+    assert.equal(result.ok, false);
+  } finally {
+    await box.media.stop();
+  }
+});
+
 test('DLNA auth failures show a concise authorization hint', async () => {
   const box = harness({
     native: {

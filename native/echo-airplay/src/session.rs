@@ -18,6 +18,8 @@ use tokio::sync::mpsc as async_mpsc;
 
 const MAX_SAMPLES: usize = 65_536;
 const TRANSPORT_RATE: u32 = 44_100;
+const DISCOVER_MIN_TIMEOUT_MS: u32 = 200;
+const DISCOVER_MAX_TIMEOUT_MS: u32 = 8_000;
 
 pub fn discovery_backend() -> &'static str {
     #[cfg(target_os = "macos")]
@@ -62,11 +64,6 @@ pub struct Status {
 }
 
 enum Command {
-    Discover {
-        timeout_ms: u32,
-        progress: Option<Sender<FoundDevice>>,
-        reply: Sender<Result<Vec<FoundDevice>, String>>,
-    },
     Connect {
         id: String,
         pin: String,
@@ -101,6 +98,7 @@ enum Command {
 pub struct Session {
     tx: async_mpsc::Sender<Command>,
     status: SharedStatus,
+    devices: SharedDevices,
 }
 
 impl Session {
@@ -108,7 +106,9 @@ impl Session {
         let (tx, mut rx) = async_mpsc::channel(8);
         let command_tx = tx.clone();
         let status = new_status_mirror();
+        let devices = new_device_cache();
         let worker_status = Arc::clone(&status);
+        let worker_devices = Arc::clone(&devices);
         thread::Builder::new()
             .name("airplay-session".to_string())
             .spawn(move || {
@@ -135,7 +135,7 @@ impl Session {
                             return;
                         }
                     };
-                    let mut state = Worker::new(worker_status);
+                    let mut state = Worker::new(worker_status, worker_devices);
                     while let Some(command) = rx.recv().await {
                         if !state.handle(&mut client, command).await {
                             break;
@@ -148,6 +148,7 @@ impl Session {
         Self {
             tx: command_tx,
             status,
+            devices,
         }
     }
 
@@ -160,21 +161,40 @@ impl Session {
         timeout_ms: u32,
         progress: Option<Sender<FoundDevice>>,
     ) -> Result<Vec<FoundDevice>, String> {
-        self.roundtrip(
-            |reply| Command::Discover {
-                timeout_ms,
-                progress,
-                reply,
-            },
-            Duration::from_secs(12),
-        )?
+        let timeout_ms = timeout_ms.clamp(DISCOVER_MIN_TIMEOUT_MS, DISCOVER_MAX_TIMEOUT_MS);
+        let timeout = Duration::from_millis(u64::from(timeout_ms));
+        let devices = discover_airplay_devices(timeout, progress)?;
+        let listed = devices.iter().map(found_device).collect();
+        if let Ok(mut cache) = self.devices.lock() {
+            *cache = devices;
+        }
+        Ok(listed)
     }
 
     pub fn connect(&self, id: String, pin: String) -> Result<Link, String> {
-        self.roundtrip(
+        update_status(&self.status, |status| {
+            status.connected = false;
+            status.delay_sec = 0.0;
+            status.error = Some("AirPlay CONNECT 已提交，等待 native worker".to_string());
+            status.feed_stats = None;
+        });
+        echo_native_log::info(format!(
+            "AirPlay native CONNECT 已提交: id={id}, pin={}",
+            if pin.trim().is_empty() { "no" } else { "yes" }
+        ));
+        let result = self.roundtrip(
             |reply| Command::Connect { id, pin, reply },
-            Duration::from_secs(40),
-        )
+            Duration::from_secs(60),
+        );
+        if let Err(error) = &result {
+            update_status(&self.status, |status| {
+                status.connected = false;
+                status.error = Some(format!("AirPlay CONNECT 等待结果失败: {error}"));
+                status.feed_stats = None;
+            });
+            echo_native_log::warn(format!("AirPlay native CONNECT 等待结果失败: {error}"));
+        }
+        result
     }
 
     pub fn disconnect(&self) -> Result<(), String> {
@@ -243,9 +263,6 @@ async fn refuse_until_closed(rx: &mut async_mpsc::Receiver<Command>, error: Stri
     while let Some(command) = rx.recv().await {
         let message = error.clone();
         match command {
-            Command::Discover { reply, .. } => {
-                let _ = reply.send(Err(message));
-            }
             Command::Connect { reply, .. } => {
                 let _ = reply.send(Link {
                     ok: false,
@@ -286,6 +303,7 @@ struct FeedStats {
 }
 
 type SharedStatus = Arc<Mutex<StatusMirror>>;
+type SharedDevices = Arc<Mutex<Vec<Device>>>;
 
 #[derive(Clone)]
 struct StatusMirror {
@@ -312,6 +330,10 @@ impl Default for StatusMirror {
 
 fn new_status_mirror() -> SharedStatus {
     Arc::new(Mutex::new(StatusMirror::default()))
+}
+
+fn new_device_cache() -> SharedDevices {
+    Arc::new(Mutex::new(Vec::new()))
 }
 
 fn update_status(status: &SharedStatus, update: impl FnOnce(&mut StatusMirror)) {
@@ -352,7 +374,7 @@ fn snapshot_status(status: &SharedStatus) -> Status {
 }
 
 struct Worker {
-    devices: Vec<Device>,
+    devices: SharedDevices,
     feed: Option<Feed>,
     raop: Option<RaopConnection>,
     epoch: u32,
@@ -362,9 +384,9 @@ struct Worker {
 }
 
 impl Worker {
-    fn new(status: SharedStatus) -> Self {
+    fn new(status: SharedStatus, devices: SharedDevices) -> Self {
         Self {
-            devices: Vec::new(),
+            devices,
             feed: None,
             raop: None,
             epoch: 0,
@@ -394,15 +416,6 @@ impl Worker {
         command: Command,
     ) -> bool {
         match command {
-            Command::Discover {
-                timeout_ms,
-                progress,
-                reply,
-            } => {
-                let timeout = Duration::from_millis(timeout_ms.clamp(200, 8_000) as u64);
-                let found = self.discover_devices(client, timeout, progress).await;
-                let _ = reply.send(found);
-            }
             Command::Connect { id, pin, reply } => {
                 let _ = reply.send(self.connect(client, &id, &pin).await);
             }
@@ -430,7 +443,9 @@ impl Worker {
                 let _ = reply.send(self.seek(client, 0.0).await);
             }
             Command::Clear => {
-                self.devices.clear();
+                if let Ok(mut devices) = self.devices.lock() {
+                    devices.clear();
+                }
                 self.last_error = None;
                 self.update_status(|status| {
                     status.error = None;
@@ -447,7 +462,7 @@ impl Worker {
         pin: &str,
     ) -> Link {
         self.shutdown(client).await;
-        let Some(device) = self.lookup(id).cloned() else {
+        let Some(device) = self.lookup(id) else {
             return fail("设备不在当前发现结果里");
         };
         if device.supports_raop() && !device.supports_airplay2() {
@@ -790,35 +805,6 @@ impl Worker {
         Ok(port)
     }
 
-    async fn discover_devices(
-        &mut self,
-        _client: &airplay_client::AirPlayClient,
-        timeout: Duration,
-        progress: Option<Sender<FoundDevice>>,
-    ) -> Result<Vec<FoundDevice>, String> {
-        #[cfg(target_os = "macos")]
-        {
-            let progress_tx = progress.clone();
-            let devices = bonjour::discover_with_progress(timeout, move |device| {
-                if let Some(tx) = &progress_tx {
-                    let _ = tx.send(found_device(&device));
-                }
-            })
-            .await;
-            let listed = devices.iter().map(found_device).collect();
-            self.devices = devices;
-            Ok(listed)
-        }
-
-        #[cfg(not(target_os = "macos"))]
-        {
-            let devices = browse_devices(timeout, progress).await?;
-            let listed = devices.iter().map(found_device).collect();
-            self.devices = devices;
-            Ok(listed)
-        }
-    }
-
     async fn seek(
         &mut self,
         client: &mut airplay_client::AirPlayClient,
@@ -925,11 +911,13 @@ impl Worker {
             })
     }
 
-    fn lookup(&self, id: &str) -> Option<&Device> {
+    fn lookup(&self, id: &str) -> Option<Device> {
         let wanted = normalize_id(id);
-        self.devices
+        let devices = self.devices.lock().ok()?;
+        devices
             .iter()
             .find(|device| device_id(device) == id || normalize_id(&device_id(device)) == wanted)
+            .cloned()
     }
 
     async fn shutdown(&mut self, client: &mut airplay_client::AirPlayClient) {
@@ -988,6 +976,33 @@ fn normalize_connect_error(error: &str) -> String {
         return "airplay-mfi-required".to_string();
     }
     error.to_string()
+}
+
+fn discover_airplay_devices(
+    timeout: Duration,
+    progress: Option<Sender<FoundDevice>>,
+) -> Result<Vec<Device>, String> {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(|err| err.to_string())?;
+    runtime.block_on(async move {
+        #[cfg(target_os = "macos")]
+        {
+            let progress_tx = progress.clone();
+            Ok(bonjour::discover_with_progress(timeout, move |device| {
+                if let Some(tx) = &progress_tx {
+                    let _ = tx.send(found_device(&device));
+                }
+            })
+            .await)
+        }
+
+        #[cfg(not(target_os = "macos"))]
+        {
+            browse_devices(timeout, progress).await
+        }
+    })
 }
 
 fn found_device(device: &Device) -> FoundDevice {

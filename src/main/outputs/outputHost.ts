@@ -404,6 +404,7 @@ export class OutputHost {
   private refreshFlight: Promise<OutputTargetEntry[]> | null = null;
   private airplayScanFlight: Promise<void> | null = null;
   private airplayConnecting = false;
+  private airplayScanToken = 0;
   private loggedAirplayDiscoveryBackend = '';
   private loggedLocalAirplayIds = new Set<string>();
   private lastDlnaPollLogAt = 0;
@@ -616,12 +617,17 @@ export class OutputHost {
     if (this.airplayScanFlight || !this.deps.airplay?.available) return;
     this.diagnostics = '正在搜索投放设备...';
     this.publish();
-    this.airplayScanFlight = this.scanAirplayDevices().finally(() => {
+    const token = ++this.airplayScanToken;
+    this.airplayScanFlight = this.scanAirplayDevices(token).finally(() => {
       this.airplayScanFlight = null;
     });
   }
 
-  private async scanAirplayDevices(): Promise<void> {
+  private isCurrentAirplayScan(token: number): boolean {
+    return this.airplayScanToken === token && !this.airplayConnecting;
+  }
+
+  private async scanAirplayDevices(token: number): Promise<void> {
     try {
       const backend = this.deps.airplay?.discoveryBackend?.() || 'unknown';
       if (backend !== this.loggedAirplayDiscoveryBackend) {
@@ -630,6 +636,7 @@ export class OutputHost {
       }
       const discovered = new Map<string, AirplayDeviceInfo>();
       const mergeDiscoveredDevice = (device: AirplayDeviceInfo) => {
+        if (!this.isCurrentAirplayScan(token)) return;
         if (!device.id) return;
         discovered.set(device.id, device);
         const stats = this.noteAirplayDevices([...discovered.values()], {
@@ -643,6 +650,7 @@ export class OutputHost {
       const devices = this.deps.airplay!.discoverEach
         ? await this.deps.airplay!.discoverEach(5000, mergeDiscoveredDevice)
         : await this.deps.airplay!.discover(5000);
+      if (!this.isCurrentAirplayScan(token)) return;
       const stats = this.noteAirplayDevices(devices);
       const visibleDevices = devices
         .map((device) => this.airplayTargets.get(device.id))
@@ -666,6 +674,7 @@ export class OutputHost {
       }
       this.publish();
     } catch (error) {
+      if (!this.isCurrentAirplayScan(token)) return;
       const message = error instanceof Error ? error.message : String(error);
       if (message.includes('命令超时')) {
         this.diagnostics = 'AirPlay 搜索仍在后台进行，可稍后刷新';
@@ -975,13 +984,15 @@ export class OutputHost {
       `AirPlay 连接开始: ${formatAirplayTarget(target)}, protocol=${protocol}, backend=${backend}, pin=${pin ? 'yes' : 'no'}`,
     );
     this.airplayConnecting = true;
+    this.airplayScanToken += 1;
     let elapsedTimer: NodeJS.Timeout | null = null;
     elapsedTimer = setInterval(() => {
       const elapsedMs = Math.max(0, this.now() - startedAt);
       let status = '';
       try {
         const current = airplay.status();
-        status = `, nativeConnected=${current.connected}, nativeError=${current.error || '-'}`;
+        const phase = current.error || (current.connected ? 'connected' : '等待 native CONNECT');
+        status = `, nativeConnected=${current.connected}, nativePhase=${phase}`;
       } catch (error) {
         status = `, statusError=${error instanceof Error ? error.message : String(error)}`;
       }
