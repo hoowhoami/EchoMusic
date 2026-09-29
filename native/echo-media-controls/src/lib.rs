@@ -42,6 +42,13 @@ pub fn shutdown() {
     }
 }
 
+#[napi]
+pub fn register_log_handler(
+    callback: ThreadsafeFunction<echo_native_log::NativeLogEntry>,
+) -> napi::Result<()> {
+    echo_native_log::set_log_handler(callback)
+}
+
 /// 更新歌曲元数据任务：封面解码 / 重编码可能耗时几十 ms，放到工作线程执行，
 /// 避免阻塞 Node 主线程（锁定桌面歌词时主线程阻塞会卡系统光标）。
 pub struct UpdateMetadataTask {

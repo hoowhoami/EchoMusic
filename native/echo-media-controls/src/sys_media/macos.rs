@@ -240,7 +240,7 @@ impl MacMediaControls {
 
 impl SystemMediaControls for MacMediaControls {
     fn initialize(&mut self, _app_name: &str) -> Result<(), String> {
-        tracing::info!("macOS MPNowPlayingInfoCenter initialized");
+        echo_native_log::info("macOS MPNowPlayingInfoCenter initialized");
         Ok(())
     }
 
@@ -256,7 +256,7 @@ impl SystemMediaControls for MacMediaControls {
         unsafe {
             self.np_info_ctr.setNowPlayingInfo(None);
         }
-        tracing::info!("macOS MPNowPlayingInfoCenter shut down");
+        echo_native_log::info("macOS MPNowPlayingInfoCenter shut down");
     }
 
     fn update_metadata(&self, payload: &MetadataPayload) {

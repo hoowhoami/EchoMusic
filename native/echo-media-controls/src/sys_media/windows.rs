@@ -40,7 +40,7 @@ impl WindowsMediaControls {
     ) -> Result<(), String> {
         // 如果已经是 JPEG 格式，直接使用，跳过转换
         if data.len() >= 3 && data[0] == 0xFF && data[1] == 0xD8 && data[2] == 0xFF {
-            tracing::info!("Image is already JPEG, using directly");
+            echo_native_log::info("Image is already JPEG, using directly");
             return Self::write_to_stream(updater, data);
         }
 
@@ -51,12 +51,12 @@ impl WindowsMediaControls {
             .decode()
             .map_err(|e| format!("Failed to decode image: {e}"))?;
 
-        tracing::info!(
+        echo_native_log::info(format!(
             "Image decoded: width={}, height={}, color_type={:?}",
             img.width(),
             img.height(),
             img.color()
-        );
+        ));
 
         // 重新编码为标准 JPEG，确保 Windows SMTC 可以识别
         let mut output = Vec::new();
@@ -64,7 +64,7 @@ impl WindowsMediaControls {
         img.write_to(&mut cursor, image::ImageFormat::Jpeg)
             .map_err(|e| format!("Failed to re-encode image: {e}"))?;
 
-        tracing::info!("Image re-encoded as JPEG: {} bytes", output.len());
+        echo_native_log::info(format!("Image re-encoded as JPEG: {} bytes", output.len()));
 
         Self::write_to_stream(updater, &output)
     }
@@ -192,7 +192,7 @@ impl SystemMediaControls for WindowsMediaControls {
 
         self.player = Some(player);
         self.smtc = Some(smtc);
-        tracing::info!("Windows SMTC initialized");
+        echo_native_log::info("Windows SMTC initialized");
         Ok(())
     }
 
@@ -206,7 +206,7 @@ impl SystemMediaControls for WindowsMediaControls {
         }
         self.smtc = None;
         self.player = None;
-        tracing::info!("Windows SMTC shut down");
+        echo_native_log::info("Windows SMTC shut down");
     }
 
     fn update_metadata(&self, payload: &MetadataPayload) {
@@ -214,13 +214,13 @@ impl SystemMediaControls for WindowsMediaControls {
         let updater = match smtc.DisplayUpdater() {
             Ok(u) => u,
             Err(e) => {
-                tracing::warn!("Failed to get DisplayUpdater: {e}");
+                echo_native_log::warn(format!("Failed to get DisplayUpdater: {e}"));
                 return;
             }
         };
 
         if let Err(e) = updater.SetType(MediaPlaybackType::Music) {
-            tracing::warn!("Failed to set MediaPlaybackType: {e}");
+            echo_native_log::warn(format!("Failed to set MediaPlaybackType: {e}"));
             return;
         }
 
@@ -234,13 +234,13 @@ impl SystemMediaControls for WindowsMediaControls {
         if let Some(ref data) = payload.cover_data {
             if !data.is_empty() {
                 if let Err(e) = Self::set_thumbnail(&updater, data) {
-                    tracing::warn!("Failed to set SMTC thumbnail: {e}");
+                    echo_native_log::warn(format!("Failed to set SMTC thumbnail: {e}"));
                 }
             }
         }
 
         if let Err(e) = updater.Update() {
-            tracing::warn!("SMTC DisplayUpdater.Update failed: {e}");
+            echo_native_log::warn(format!("SMTC DisplayUpdater.Update failed: {e}"));
         }
     }
 

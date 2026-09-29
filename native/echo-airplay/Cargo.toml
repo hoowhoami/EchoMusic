@@ -13,6 +13,7 @@ napi = { version = "3", features = ["napi9", "tokio_rt"] }
 napi-derive = "3"
 tokio = { version = "1", features = ["rt-multi-thread", "sync", "time", "macros"] }
 tokio-stream = "0.1"
+echo-native-log = { path = "../echo-native-log" }
 airplay-client = { path = "../echo-upnp/vendor/airplay2-rs/crates/airplay-client" }
 airplay-audio = { path = "../echo-upnp/vendor/airplay2-rs/crates/airplay-audio" }
 airplay-discovery = { path = "../echo-upnp/vendor/airplay2-rs/crates/airplay-discovery" }

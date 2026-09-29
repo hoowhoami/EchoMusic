@@ -146,17 +146,19 @@ async fn process_metadata_update(
                                     cover_set = true;
                                 }
                                 Err(e) => {
-                                    tracing::warn!("Failed to save cover as JPEG: {e}");
+                                    echo_native_log::warn(format!(
+                                        "Failed to save cover as JPEG: {e}"
+                                    ));
                                 }
                             }
                         }
                         Err(e) => {
-                            tracing::warn!("Failed to create cover temp file: {e}");
+                            echo_native_log::warn(format!("Failed to create cover temp file: {e}"));
                         }
                     }
                 }
                 Err(e) => {
-                    tracing::warn!("Cover decode failed: {e}");
+                    echo_native_log::warn(format!("Cover decode failed: {e}"));
                 }
             }
         }
@@ -189,7 +191,7 @@ async fn run_mpris_loop(
     {
         Ok(p) => p,
         Err(e) => {
-            tracing::error!("Failed to create MPRIS Player: {e}");
+            echo_native_log::error(format!("Failed to create MPRIS Player: {e}"));
             return;
         }
     };
@@ -211,7 +213,7 @@ async fn run_mpris_loop(
         tokio::select! {
             // D-Bus 事件循环
             () = &mut server_task => {
-                tracing::error!("MPRIS D-Bus connection unexpectedly closed");
+                echo_native_log::error("MPRIS D-Bus connection unexpectedly closed");
                 break;
             }
             // 来自主线程的命令
@@ -275,7 +277,7 @@ impl SystemMediaControls for LinuxMediaControls {
             .map_err(|e| format!("Failed to spawn MPRIS thread: {e}"))?;
 
         self.command_tx = Some(cmd_tx);
-        tracing::info!("Linux MPRIS D-Bus service initialized");
+        echo_native_log::info("Linux MPRIS D-Bus service initialized");
         Ok(())
     }
 
@@ -283,7 +285,7 @@ impl SystemMediaControls for LinuxMediaControls {
         if let Some(tx) = self.command_tx.take() {
             let _ = tx.send(MprisCommand::Shutdown);
         }
-        tracing::info!("Linux MPRIS D-Bus service shut down");
+        echo_native_log::info("Linux MPRIS D-Bus service shut down");
     }
 
     fn update_metadata(&self, payload: &MetadataPayload) {

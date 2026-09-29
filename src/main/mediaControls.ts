@@ -5,6 +5,7 @@ import { createRequire } from 'node:module';
 import path from 'path';
 import { isAbortError } from '../shared/abortError';
 import log from './logger';
+import { registerNativeLogHandler } from './native/logging';
 import { setTaskbarCover } from './taskbarThumbnail';
 import { networkFetch } from './networkPolicy';
 
@@ -33,6 +34,12 @@ interface NativeMediaControls {
       event: { type: string; positionMs?: number; offsetMs?: number },
     ) => void,
   ): void;
+  registerLogHandler?: (
+    callback: (
+      errorOrEntry: Error | { level?: string; message?: string } | null,
+      entry?: { level?: string; message?: string },
+    ) => void,
+  ) => void;
 }
 
 let nativeModule: NativeMediaControls | null = null;
@@ -74,14 +81,18 @@ function loadNativeModule(): NativeMediaControls | null {
       : path.join(__dirname, '../../native/echo-media-controls/echo-media-controls.node');
 
     log.info('[MediaControls] Loading native addon:', resourcePath);
-    return nativeRequire(resourcePath) as NativeMediaControls;
+    const addon = nativeRequire(resourcePath) as NativeMediaControls;
+    registerNativeLogHandler(addon, 'MediaControlsNative');
+    return addon;
   } catch (err) {
     log.warn('[MediaControls] Primary path load failed:', err);
     // 开发环境可能未编译，尝试直接加载
     try {
-      return nativeRequire(
+      const addon = nativeRequire(
         path.join(process.cwd(), 'native/echo-media-controls'),
       ) as NativeMediaControls;
+      registerNativeLogHandler(addon, 'MediaControlsNative');
+      return addon;
     } catch (err2) {
       log.error(
         '[MediaControls] All load attempts failed. ' +

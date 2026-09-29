@@ -768,6 +768,62 @@ test('AirPlay PIN requirement keeps the machine-readable code and logs a readabl
   }
 });
 
+test('AirPlay refresh does not start discovery while a connection is pending', async () => {
+  let discoverCalls = 0;
+  let releaseConnect;
+  const box = harness({
+    airplay: {
+      available: true,
+      async discover() {
+        discoverCalls += 1;
+        return [];
+      },
+      connect() {
+        return new Promise((resolve) => {
+          releaseConnect = () => resolve({ ok: false, error: 'AirPlay 命令超时' });
+        });
+      },
+      async disconnect() {},
+      async pause() {},
+      async resume() {},
+      async seek() {
+        return 0;
+      },
+      async stop() {},
+      async setVolume() {},
+      async flushTrack() {
+        return 0;
+      },
+      status() {
+        return {
+          connected: false,
+          delaySec: 0,
+          format: '',
+          inputBits: 16,
+          error: 'AirPlay 1 CONNECT 中',
+        };
+      },
+    },
+    localNetworkIdentity: () => ({ addresses: [], macs: [] }),
+  });
+  try {
+    box.host.noteAirplayDevices([
+      { id: '11:22:33:44:55:66', name: 'Living Room', needsPin: false },
+    ]);
+    const pending = box.host.connect('11:22:33:44:55:66');
+    await tick();
+    box.host.setEnabled(true);
+    await box.host.refresh();
+    await tick();
+    assert.equal(discoverCalls, 0);
+    releaseConnect();
+    const result = await pending;
+    assert.equal(result.ok, false);
+  } finally {
+    await box.media.stop();
+  }
+});
+
 test('DLNA auth failures show a concise authorization hint', async () => {
   const box = harness({
     native: {

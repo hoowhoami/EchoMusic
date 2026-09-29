@@ -1,0 +1,10 @@
+[package]
+name = "echo-native-log"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.87"
+description = "Shared native-to-main-process logging bridge for EchoMusic native modules."
+
+[dependencies]
+napi = { version = "3", features = ["napi9"] }
+napi-derive = "3"

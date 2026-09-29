@@ -403,6 +403,7 @@ export class OutputHost {
   private sourceStale = false;
   private refreshFlight: Promise<OutputTargetEntry[]> | null = null;
   private airplayScanFlight: Promise<void> | null = null;
+  private airplayConnecting = false;
   private loggedAirplayDiscoveryBackend = '';
   private loggedLocalAirplayIds = new Set<string>();
   private lastDlnaPollLogAt = 0;
@@ -611,6 +612,7 @@ export class OutputHost {
   }
 
   private startAirplayScan(): void {
+    if (this.airplayConnecting) return;
     if (this.airplayScanFlight || !this.deps.airplay?.available) return;
     this.diagnostics = '正在搜索投放设备...';
     this.publish();
@@ -972,6 +974,7 @@ export class OutputHost {
       'info',
       `AirPlay 连接开始: ${formatAirplayTarget(target)}, protocol=${protocol}, backend=${backend}, pin=${pin ? 'yes' : 'no'}`,
     );
+    this.airplayConnecting = true;
     let elapsedTimer: NodeJS.Timeout | null = null;
     elapsedTimer = setInterval(() => {
       const elapsedMs = Math.max(0, this.now() - startedAt);
@@ -1001,6 +1004,7 @@ export class OutputHost {
       return { ok: false, error: message };
     } finally {
       if (elapsedTimer) clearInterval(elapsedTimer);
+      this.airplayConnecting = false;
     }
     if (!result.ok) {
       const message = airplayConnectErrorMessage(result.error);

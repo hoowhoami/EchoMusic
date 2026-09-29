@@ -426,6 +426,7 @@ name = "echo-media-controls"
 version = "0.1.0"
 dependencies = [
  "block2",
+ "echo-native-log",
  "image",
  "mpris-server",
  "napi",
@@ -437,8 +438,15 @@ dependencies = [
  "objc2-media-player",
  "tempfile",
  "tokio",
- "tracing",
  "windows",
+]
+
+[[package]]
+name = "echo-native-log"
+version = "0.1.0"
+dependencies = [
+ "napi",
+ "napi-derive",
 ]
 
 [[package]]

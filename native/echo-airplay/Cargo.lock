@@ -520,11 +520,20 @@ dependencies = [
  "airplay-audio",
  "airplay-client",
  "airplay-discovery",
+ "echo-native-log",
  "napi",
  "napi-build",
  "napi-derive",
  "tokio",
  "tokio-stream",
+]
+
+[[package]]
+name = "echo-native-log"
+version = "0.1.0"
+dependencies = [
+ "napi",
+ "napi-derive",
 ]
 
 [[package]]
