@@ -39,8 +39,9 @@ impl RtspConnection {
 
     /// Connect to the receiver.
     pub async fn connect(&mut self) -> Result<()> {
-        let stream = TcpStream::connect(self.addr)
+        let stream = timeout(std::time::Duration::from_secs(6), TcpStream::connect(self.addr))
             .await
+            .map_err(|_| CoreError::Timeout)?
             .map_err(|_| RtspError::ConnectionRefused)?;
         self.stream = Some(stream);
         Ok(())

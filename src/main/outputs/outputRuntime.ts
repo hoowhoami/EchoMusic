@@ -61,6 +61,9 @@ const dlnaDescriptionCache = new Map<
     presentationUrl?: string;
     services?: string[];
     pending?: Promise<void>;
+    failedUntil?: number;
+    failureCount?: number;
+    lastError?: string;
   }
 >();
 
@@ -71,6 +74,9 @@ function isRendererSearchTarget(st: string): boolean {
 
 function shouldPublishDlnaDevice(device: SsdpDeviceEntry): boolean {
   const description = dlnaDescriptionCache.get(device.usn);
+  if (description?.location === device.location && description.lastError && !description.name) {
+    return false;
+  }
   if (!description || description.location !== device.location || description.pending) {
     return isRendererSearchTarget(device.st);
   }
@@ -245,6 +251,15 @@ function localTransport(getController: () => PlayerController | null) {
 function scheduleDlnaDescriptionLoad(device: SsdpDeviceEntry): void {
   if (!upnpNative || !device.location) return;
   const cached = dlnaDescriptionCache.get(device.usn);
+  const now = Date.now();
+  if (
+    cached?.location === device.location &&
+    cached.failedUntil &&
+    cached.failedUntil > now &&
+    !cached.name
+  ) {
+    return;
+  }
   if (cached?.location === device.location && (cached.name || cached.pending)) return;
   const record = {
     location: device.location,
@@ -261,6 +276,9 @@ function scheduleDlnaDescriptionLoad(device: SsdpDeviceEntry): void {
     upc: cached?.location === device.location ? cached.upc : undefined,
     presentationUrl: cached?.location === device.location ? cached.presentationUrl : undefined,
     services: cached?.location === device.location ? cached.services : undefined,
+    failureCount: cached?.location === device.location ? cached.failureCount : undefined,
+    failedUntil: undefined as number | undefined,
+    lastError: undefined as string | undefined,
     pending: undefined as Promise<void> | undefined,
   };
   dlnaDescriptionCache.set(device.usn, record);
@@ -285,9 +303,15 @@ function scheduleDlnaDescriptionLoad(device: SsdpDeviceEntry): void {
       pushDlnaDevices();
     })
     .catch((error) => {
+      const message = error instanceof Error ? error.message : String(error);
+      const failureCount = Math.min((record.failureCount ?? 0) + 1, 5);
+      record.failureCount = failureCount;
+      record.lastError = message;
+      record.failedUntil = Date.now() + Math.min(15_000 * 2 ** (failureCount - 1), 180_000);
       log.warn(
-        `DLNA 设备描述失败: id=${device.usn}, location=${device.location}, error=${error instanceof Error ? error.message : String(error)}`,
+        `DLNA 设备描述失败: id=${device.usn}, location=${device.location}, retryIn=${Math.round((record.failedUntil - Date.now()) / 1000)}s, error=${message}`,
       );
+      pushDlnaDevices();
     })
     .finally(() => {
       const latest = dlnaDescriptionCache.get(device.usn);

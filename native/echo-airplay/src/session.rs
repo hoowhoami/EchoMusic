@@ -165,7 +165,7 @@ impl Session {
     pub fn connect(&self, id: String, pin: String) -> Result<Link, String> {
         self.roundtrip(
             |reply| Command::Connect { id, pin, reply },
-            Duration::from_secs(20),
+            Duration::from_secs(40),
         )
     }
 
@@ -422,47 +422,74 @@ impl Worker {
             return fail("pin-required");
         }
 
+        let device_name = device.name.clone();
+        let password = pin.trim().to_string();
         let config = StreamConfig::airplay1_realtime();
-        let mut connection = if pin.trim().is_empty() {
-            match RaopConnection::connect(device, config).await {
-                Ok(connection) => connection,
-                Err(err) => {
-                    let error = normalize_connect_error(&err.to_string());
-                    self.last_error = Some(error);
-                    return fail(
-                        &self
-                            .last_error
-                            .clone()
-                            .unwrap_or_else(|| "连接失败".to_string()),
-                    );
-                }
+        let mut connection = match tokio::time::timeout(Duration::from_secs(12), async move {
+            if password.is_empty() {
+                RaopConnection::connect(device, config).await
+            } else {
+                RaopConnection::connect_with_password(device, config, &password).await
             }
-        } else {
-            match RaopConnection::connect_with_password(device, config, pin.trim()).await {
-                Ok(connection) => connection,
-                Err(err) => {
-                    let error = normalize_connect_error(&err.to_string());
-                    self.last_error = Some(error);
-                    return fail(
-                        &self
-                            .last_error
-                            .clone()
-                            .unwrap_or_else(|| "连接失败".to_string()),
-                    );
-                }
+        })
+        .await
+        {
+            Ok(Ok(connection)) => connection,
+            Ok(Err(err)) => {
+                let error = normalize_connect_error(&err.to_string());
+                self.last_error = Some(match error.as_str() {
+                    "pin-required"
+                    | "pin-invalid"
+                    | "airplay-permission-required"
+                    | "airplay-mfi-required" => error,
+                    _ => format!("AirPlay 1 连接失败: {error}"),
+                });
+                return fail(
+                    &self
+                        .last_error
+                        .clone()
+                        .unwrap_or_else(|| "连接失败".to_string()),
+                );
+            }
+            Err(_) => {
+                self.last_error = Some(format!("AirPlay 1 连接超时: {device_name}"));
+                return fail(
+                    &self
+                        .last_error
+                        .clone()
+                        .unwrap_or_else(|| "AirPlay 1 连接超时".to_string()),
+                );
             }
         };
 
         let (sender, decoder) = LiveAudioDecoder::create_pair(TRANSPORT_RATE, 2, 16);
-        if let Err(err) = connection.start_streaming_live(decoder).await {
-            self.last_error = Some(err.to_string());
-            let _ = connection.disconnect().await;
-            return fail(
-                &self
-                    .last_error
-                    .clone()
-                    .unwrap_or_else(|| "无法开始发送".to_string()),
-            );
+        match tokio::time::timeout(
+            Duration::from_secs(18),
+            connection.start_streaming_live(decoder),
+        )
+        .await
+        {
+            Ok(Ok(())) => {}
+            Ok(Err(err)) => {
+                self.last_error = Some(format!("AirPlay 1 SETUP 失败: {err}"));
+                let _ = connection.disconnect().await;
+                return fail(
+                    &self
+                        .last_error
+                        .clone()
+                        .unwrap_or_else(|| "无法开始发送".to_string()),
+                );
+            }
+            Err(_) => {
+                self.last_error = Some(format!("AirPlay 1 SETUP 超时: {device_name}"));
+                let _ = connection.disconnect().await;
+                return fail(
+                    &self
+                        .last_error
+                        .clone()
+                        .unwrap_or_else(|| "AirPlay 1 SETUP 超时".to_string()),
+                );
+            }
         }
 
         let port = match self.attach_feeder(sender) {

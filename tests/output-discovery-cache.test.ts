@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { test } from 'node:test';
-import { createSsdpDiscovery, SEARCH_TARGETS, SSDP_PORT } from '../src/main/mediaTransport/discovery.ts';
+import {
+  createSsdpDiscovery,
+  SEARCH_TARGETS,
+  SSDP_PORT,
+} from '../src/main/mediaTransport/discovery.ts';
 
 /** 响应报文首行需是 HTTP/1.1（SSDP 响应）。 */
 function msearchResponse(opts: {
@@ -171,6 +175,27 @@ test('多网卡同一 USN 去重合并；不可信 Location 忽略', async () =>
   await discovery.stop();
 });
 
+test('SSDP 设备把 Location 写成 0.0.0.0 时使用响应来源地址', async () => {
+  const discovery = createSsdpDiscovery({ log: () => {} });
+  await discovery.start();
+  try {
+    discovery.feedForTest(
+      msearchResponse({
+        usn: 'uuid:zero-host::urn:schemas-upnp-org:device:MediaRenderer:1',
+        st: 'urn:schemas-upnp-org:device:MediaRenderer:1',
+        location: 'http://0.0.0.0:49152/description.xml',
+      }),
+      { address: '192.168.3.133' },
+    );
+    assert.equal(
+      discovery.get('uuid:zero-host')?.location,
+      'http://192.168.3.133:49152/description.xml',
+    );
+  } finally {
+    await discovery.stop();
+  }
+});
+
 test('超过上限后拒绝新增（防海量响应刷爆内存）', async () => {
   let fakeNow = 1_000_000;
   const discovery = createSsdpDiscovery({ now: () => fakeNow, log: () => {}, maxDevices: 3 });
@@ -239,10 +264,19 @@ test('SSDP 主动搜索使用临时源端口并额外监听 1900', async () => {
   await discovery.stop();
 
   assert.deepEqual(new Set(binds), new Set([0, SSDP_PORT]));
-  assert.equal(logs.some((entry) => entry.level === 'info'), false);
+  assert.equal(
+    logs.some((entry) => entry.level === 'info'),
+    false,
+  );
   assert.ok(sends.length >= SEARCH_TARGETS.length);
-  assert.equal(sends.every((send) => send.port === SSDP_PORT), true);
-  assert.equal(sends.every((send) => send.address === '239.255.255.250'), true);
+  assert.equal(
+    sends.every((send) => send.port === SSDP_PORT),
+    true,
+  );
+  assert.equal(
+    sends.every((send) => send.address === '239.255.255.250'),
+    true,
+  );
   assert.ok(multicastTtls.every((ttl) => ttl === 2));
   assert.ok(multicastInterfaces.every((address) => /^\d+\.\d+\.\d+\.\d+$/.test(address)));
 });

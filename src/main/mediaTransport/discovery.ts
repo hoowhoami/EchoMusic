@@ -84,6 +84,7 @@ function parseHeaders(headers: string): Record<string, string> {
 /** 宽松 UUID 形态：uuid:xxx[::...]（厂商常含字母/数字/点/下划线，非纯 hex）。 */
 const UUID_RE = /^uuid:[A-Za-z0-9._:-]{1,64}(?:::[A-Za-z0-9._-]+)?$/;
 const VALID_LOCATION_RE = /^https?:\/\/[^\s/]+(?::\d{0,5})?\/?[^\s]*$/i;
+const IPV4_RE = /^\d{1,3}(?:\.\d{1,3}){3}$/;
 
 function candidateUsn(usn: string | undefined): string | null {
   if (!usn) return null;
@@ -92,6 +93,39 @@ function candidateUsn(usn: string | undefined): string | null {
     return null;
   }
   return trimmed.split('::')[0] ?? trimmed;
+}
+
+function isLoopbackHost(host: string): boolean {
+  const lower = host.toLowerCase();
+  return lower === 'localhost' || lower === '::1' || lower.startsWith('127.');
+}
+
+function normalizeLocation(
+  location: string,
+  rinfo: dgram.RemoteInfo,
+  log: SsdpDiscoveryOptions['log'],
+): string | null {
+  if (!VALID_LOCATION_RE.test(location)) return null;
+  let parsed: URL;
+  try {
+    parsed = new URL(location);
+  } catch {
+    return null;
+  }
+  const host = parsed.hostname;
+  if (host === '0.0.0.0') {
+    if (IPV4_RE.test(rinfo.address) && rinfo.address !== '0.0.0.0') {
+      parsed.hostname = rinfo.address;
+      return parsed.toString();
+    }
+    log?.('warn', `[SSDP] 忽略不可达 Location: ${location.slice(0, 64)}`);
+    return null;
+  }
+  if (isLoopbackHost(host) && !isLoopbackHost(rinfo.address)) {
+    log?.('warn', `[SSDP] 忽略非本机回环 Location: ${location.slice(0, 64)}`);
+    return null;
+  }
+  return location;
 }
 
 export function createSsdpDiscovery(options: SsdpDiscoveryOptions = {}): SsdpHandle {
@@ -123,10 +157,11 @@ export function createSsdpDiscovery(options: SsdpDiscoveryOptions = {}): SsdpHan
 
   function acceptDevice(headers: Record<string, string>, rinfo: dgram.RemoteInfo): void {
     const usn = candidateUsn(headers['usn']);
-    const location = headers['location'];
-    if (!usn || !location) return;
-    if (!VALID_LOCATION_RE.test(location)) {
-      log('warn', `[SSDP] 忽略不可信 Location: ${location.slice(0, 64)}`);
+    const rawLocation = headers['location'];
+    if (!usn || !rawLocation) return;
+    const location = normalizeLocation(rawLocation, rinfo, log);
+    if (!location) {
+      log('warn', `[SSDP] 忽略不可信 Location: ${rawLocation.slice(0, 64)}`);
       return;
     }
     const nowMs = now();

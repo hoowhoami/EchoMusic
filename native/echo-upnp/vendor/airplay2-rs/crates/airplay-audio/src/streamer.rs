@@ -716,55 +716,11 @@ impl AudioStreamer {
                 * 1_000_000_000u64
                 / inner.config.audio_format.sample_rate.as_hz() as u64;
         }
-        self.state_cache.store(StreamerState::Buffering as u8, Ordering::Relaxed);
-
-        // For live streaming, wait for initial buffer fill before streaming.
-        // This prevents startup artifacts from sending packets before we have
-        // enough audio data buffered. Target ~500ms of buffer (about 60 packets
-        // at 352 frames/packet, 44.1kHz).
-        tracing::info!("Live streaming: waiting for initial buffer fill...");
-        let buffer_start = std::time::Instant::now();
-        let max_wait = std::time::Duration::from_secs(5);
-        let target_fill_pct = 50.0; // Wait for 50% of 2000ms buffer = 1000ms
-
-        loop {
-            // Try to decode some frames into the buffer
-            {
-                let mut guard = self.inner.lock().await;
-                decode_some_inner(&mut guard)?;
-                let fill_pct = guard.buffer.fill_percentage();
-                let frame_count = guard.buffer.len();
-
-                if fill_pct >= target_fill_pct {
-                    tracing::info!(
-                        "Live streaming: buffer ready at {:.1}% ({} frames), starting playback",
-                        fill_pct, frame_count
-                    );
-                    guard.state = StreamerState::Streaming;
-                    self.state_cache.store(StreamerState::Streaming as u8, Ordering::Relaxed);
-                    break;
-                }
-
-                if buffer_start.elapsed() > max_wait {
-                    tracing::warn!(
-                        "Live streaming: buffer timeout at {:.1}% ({} frames), starting anyway",
-                        fill_pct, frame_count
-                    );
-                    guard.state = StreamerState::Streaming;
-                    self.state_cache.store(StreamerState::Streaming as u8, Ordering::Relaxed);
-                    break;
-                }
-
-                if buffer_start.elapsed().as_millis() % 500 == 0 {
-                    tracing::debug!(
-                        "Live streaming: buffering {:.1}% ({} frames)...",
-                        fill_pct, frame_count
-                    );
-                }
-            }
-            // Small delay before retry
-            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        {
+            let mut inner = self.inner.lock().await;
+            inner.state = StreamerState::Streaming;
         }
+        self.state_cache.store(StreamerState::Streaming as u8, Ordering::Relaxed);
 
         if self.task.is_none() {
             // Set up the dedicated sender thread with cloned sockets
