@@ -19,8 +19,13 @@ interface NativeMediaControls {
     coverData?: number[];
     durationMs?: number;
   }): Promise<void>;
-  updatePlayState(payload: { status: string }): void;
-  updateTimeline(payload: { currentTimeMs: number; totalTimeMs: number }): void;
+  updatePlayState(payload: { status: string; playbackRate: number }): void;
+  updateTimeline(payload: {
+    currentTimeMs: number;
+    totalTimeMs: number;
+    isPlaying: boolean;
+    playbackRate: number;
+  }): void;
   updateSkipIntervals(payload: { forwardMs: number; backwardMs: number }): void;
   registerEventHandler(
     callback: (
@@ -265,18 +270,29 @@ export function initMediaControls(getMainWindow: () => BrowserWindow | null): vo
   );
 
   // IPC: 更新播放状态
-  ipcMain.handle('media-control:update-state', (_e, payload: { status: string }) => {
-    try {
-      nativeModule?.updatePlayState(payload);
-    } catch (err) {
-      log.warn('[MediaControls] updatePlayState failed:', err);
-    }
-  });
+  ipcMain.handle(
+    'media-control:update-state',
+    (_e, payload: { status: string; playbackRate: number }) => {
+      try {
+        nativeModule?.updatePlayState(payload);
+      } catch (err) {
+        log.warn('[MediaControls] updatePlayState failed:', err);
+      }
+    },
+  );
 
   // IPC: 更新播放进度
   ipcMain.handle(
     'media-control:update-timeline',
-    (_e, payload: { currentTimeMs: number; totalTimeMs: number }) => {
+    (
+      _e,
+      payload: {
+        currentTimeMs: number;
+        totalTimeMs: number;
+        isPlaying: boolean;
+        playbackRate: number;
+      },
+    ) => {
       try {
         nativeModule?.updateTimeline(payload);
       } catch (err) {

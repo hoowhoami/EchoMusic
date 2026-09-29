@@ -1,5 +1,5 @@
-use crate::model::{MediaControlEvent, MetadataPayload, PlayStatePayload, TimelinePayload};
 use super::{EventCallback, SystemMediaControls};
+use crate::model::{MediaControlEvent, MetadataPayload, PlayStatePayload, TimelinePayload};
 use image::ImageReader;
 use napi::threadsafe_function::ThreadsafeFunctionCallMode;
 use std::io::Cursor;
@@ -7,10 +7,11 @@ use std::sync::{Arc, Mutex};
 use windows::Media::Playback::{MediaPlayer, MediaPlayerAudioCategory};
 use windows::Media::{
     MediaPlaybackStatus, MediaPlaybackType, PlaybackPositionChangeRequestedEventArgs,
-    SystemMediaTransportControls,
-    SystemMediaTransportControlsButtonPressedEventArgs,
+    SystemMediaTransportControls, SystemMediaTransportControlsButtonPressedEventArgs,
 };
-use windows::Storage::Streams::{DataWriter, InMemoryRandomAccessStream, RandomAccessStreamReference};
+use windows::Storage::Streams::{
+    DataWriter, InMemoryRandomAccessStream, RandomAccessStreamReference,
+};
 
 pub struct WindowsMediaControls {
     player: Option<MediaPlayer>,
@@ -72,10 +73,10 @@ impl WindowsMediaControls {
         updater: &windows::Media::SystemMediaTransportControlsDisplayUpdater,
         data: &[u8],
     ) -> Result<(), String> {
-        let stream =
-            InMemoryRandomAccessStream::new().map_err(|e| format!("Failed to create stream: {e}"))?;
-        let writer =
-            DataWriter::CreateDataWriter(&stream).map_err(|e| format!("Failed to create writer: {e}"))?;
+        let stream = InMemoryRandomAccessStream::new()
+            .map_err(|e| format!("Failed to create stream: {e}"))?;
+        let writer = DataWriter::CreateDataWriter(&stream)
+            .map_err(|e| format!("Failed to create writer: {e}"))?;
         writer
             .WriteBytes(data)
             .map_err(|e| format!("Failed to write data: {e}"))?;
@@ -103,7 +104,8 @@ impl WindowsMediaControls {
 
 impl SystemMediaControls for WindowsMediaControls {
     fn initialize(&mut self, _app_name: &str) -> Result<(), String> {
-        let player = MediaPlayer::new().map_err(|e| format!("Failed to create MediaPlayer: {e}"))?;
+        let player =
+            MediaPlayer::new().map_err(|e| format!("Failed to create MediaPlayer: {e}"))?;
         player
             .SetAudioCategory(MediaPlayerAudioCategory::Media)
             .map_err(|e| format!("Failed to set audio category: {e}"))?;
@@ -127,69 +129,65 @@ impl SystemMediaControls for WindowsMediaControls {
 
         // 注册按钮事件
         let cb = self.callback.clone();
-        smtc.ButtonPressed(
-            &windows::Foundation::TypedEventHandler::<
-                SystemMediaTransportControls,
-                SystemMediaTransportControlsButtonPressedEventArgs,
-            >::new(move |_, args| {
-                let Some(ref args) = *args else { return Ok(()) };
-                let event = match args.Button()? {
-                        windows::Media::SystemMediaTransportControlsButton::Play => {
-                            MediaControlEvent::play()
-                        }
-                        windows::Media::SystemMediaTransportControlsButton::Pause => {
-                            MediaControlEvent::pause()
-                        }
-                        windows::Media::SystemMediaTransportControlsButton::Stop => {
-                            MediaControlEvent::stop()
-                        }
-                        windows::Media::SystemMediaTransportControlsButton::Next => {
-                            MediaControlEvent::next()
-                        }
-                        windows::Media::SystemMediaTransportControlsButton::Previous => {
-                            MediaControlEvent::previous()
-                        }
-                        windows::Media::SystemMediaTransportControlsButton::FastForward => {
-                            MediaControlEvent::seek_forward(None)
-                        }
-                        windows::Media::SystemMediaTransportControlsButton::Rewind => {
-                            MediaControlEvent::seek_backward(None)
-                        }
-                        _ => return Ok(()),
-                    };
-                    if let Ok(guard) = cb.lock() {
-                        if let Some(ref tsfn) = *guard {
-                            tsfn.call(Ok(event), ThreadsafeFunctionCallMode::NonBlocking);
-                        }
-                    }
-                Ok(())
-            }),
-        )
+        smtc.ButtonPressed(&windows::Foundation::TypedEventHandler::<
+            SystemMediaTransportControls,
+            SystemMediaTransportControlsButtonPressedEventArgs,
+        >::new(move |_, args| {
+            let Some(ref args) = *args else { return Ok(()) };
+            let event = match args.Button()? {
+                windows::Media::SystemMediaTransportControlsButton::Play => {
+                    MediaControlEvent::play()
+                }
+                windows::Media::SystemMediaTransportControlsButton::Pause => {
+                    MediaControlEvent::pause()
+                }
+                windows::Media::SystemMediaTransportControlsButton::Stop => {
+                    MediaControlEvent::stop()
+                }
+                windows::Media::SystemMediaTransportControlsButton::Next => {
+                    MediaControlEvent::next()
+                }
+                windows::Media::SystemMediaTransportControlsButton::Previous => {
+                    MediaControlEvent::previous()
+                }
+                windows::Media::SystemMediaTransportControlsButton::FastForward => {
+                    MediaControlEvent::seek_forward(None)
+                }
+                windows::Media::SystemMediaTransportControlsButton::Rewind => {
+                    MediaControlEvent::seek_backward(None)
+                }
+                _ => return Ok(()),
+            };
+            if let Ok(guard) = cb.lock() {
+                if let Some(ref tsfn) = *guard {
+                    tsfn.call(Ok(event), ThreadsafeFunctionCallMode::NonBlocking);
+                }
+            }
+            Ok(())
+        }))
         .map_err(|e| format!("Failed to register button event: {e}"))?;
 
         // 注册 SMTC 进度调整事件。WinIsland 等第三方媒体面板通过这个事件请求 seek。
         let cb = self.callback.clone();
-        smtc.PlaybackPositionChangeRequested(
-            &windows::Foundation::TypedEventHandler::<
-                SystemMediaTransportControls,
-                PlaybackPositionChangeRequestedEventArgs,
-            >::new(move |_, args| {
-                let Some(ref args) = *args else { return Ok(()) };
-                let position = args.RequestedPlaybackPosition()?;
-                let position_ms =
-                    (position.Duration as f64 / HUNDRED_NANOSECONDS_PER_MILLISECOND).max(0.0);
+        smtc.PlaybackPositionChangeRequested(&windows::Foundation::TypedEventHandler::<
+            SystemMediaTransportControls,
+            PlaybackPositionChangeRequestedEventArgs,
+        >::new(move |_, args| {
+            let Some(ref args) = *args else { return Ok(()) };
+            let position = args.RequestedPlaybackPosition()?;
+            let position_ms =
+                (position.Duration as f64 / HUNDRED_NANOSECONDS_PER_MILLISECOND).max(0.0);
 
-                if let Ok(guard) = cb.lock() {
-                    if let Some(ref tsfn) = *guard {
-                        tsfn.call(
-                            Ok(MediaControlEvent::seek(position_ms)),
-                            ThreadsafeFunctionCallMode::NonBlocking,
-                        );
-                    }
+            if let Ok(guard) = cb.lock() {
+                if let Some(ref tsfn) = *guard {
+                    tsfn.call(
+                        Ok(MediaControlEvent::seek(position_ms)),
+                        ThreadsafeFunctionCallMode::NonBlocking,
+                    );
                 }
-                Ok(())
-            }),
-        )
+            }
+            Ok(())
+        }))
         .map_err(|e| format!("Failed to register seek event: {e}"))?;
 
         self.player = Some(player);

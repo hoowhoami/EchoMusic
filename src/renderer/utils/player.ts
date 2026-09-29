@@ -835,21 +835,27 @@ export class PlayerEngine {
   }
 
   /** 更新系统媒体控制的播放状态和进度 */
-  updateMediaPlaybackState(state: MediaSessionState): void {
+  updateMediaPlaybackState(state: MediaSessionState, options?: { forceTimeline?: boolean }): void {
     // 播放状态变化时才发送，避免重复 IPC
     const newStatus = state.isPlaying ? 'Playing' : 'Paused';
+    const playbackRate =
+      Number.isFinite(state.playbackRate) && state.playbackRate > 0 ? state.playbackRate : 1;
+    let statusChanged = false;
     if (newStatus !== this.lastMediaStateStatus) {
       this.lastMediaStateStatus = newStatus;
-      mediaControls?.updateState({ status: newStatus });
+      statusChanged = true;
+      mediaControls?.updateState({ status: newStatus, playbackRate });
     }
-    // 进度节流：每 2 秒同步一次
+    // 进度节流：每 2 秒同步一次；播放/暂停切换时立即同步当前位置和播放速率。
     if (state.duration > 0) {
       const now = Date.now();
-      if (now - this.lastTimelineSyncMs >= 2000) {
+      if (statusChanged || options?.forceTimeline || now - this.lastTimelineSyncMs >= 2000) {
         this.lastTimelineSyncMs = now;
         mediaControls?.updateTimeline({
           currentTimeMs: (state.currentTime || 0) * 1000,
           totalTimeMs: (state.duration || 0) * 1000,
+          isPlaying: state.isPlaying,
+          playbackRate,
         });
       }
     }

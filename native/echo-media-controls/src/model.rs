@@ -20,6 +20,8 @@ pub struct MetadataPayload {
 pub struct PlayStatePayload {
     /// Playing / Paused / Stopped
     pub status: String,
+    /// 实际播放倍速，暂停 / 停止时由平台层归零
+    pub playback_rate: f64,
 }
 
 /// 播放进度
@@ -29,6 +31,10 @@ pub struct TimelinePayload {
     pub current_time_ms: f64,
     /// 总时长，单位毫秒
     pub total_time_ms: f64,
+    /// 当前是否正在推进播放时间轴
+    pub is_playing: bool,
+    /// 实际播放倍速，暂停 / 停止时由平台层归零
+    pub playback_rate: f64,
 }
 
 /// 快进 / 快退偏好的跳转间隔

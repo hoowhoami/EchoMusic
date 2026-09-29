@@ -1633,10 +1633,14 @@ contextBridge.exposeInMainWorld('electron', {
       coverUrl?: string;
       durationMs?: number;
     }) => invokeWithPlainPayload('media-control:update-metadata', payload),
-    updateState: (payload: { status: string }) =>
+    updateState: (payload: { status: string; playbackRate: number }) =>
       invokeWithPlainPayload('media-control:update-state', payload),
-    updateTimeline: (payload: { currentTimeMs: number; totalTimeMs: number }) =>
-      invokeWithPlainPayload('media-control:update-timeline', payload),
+    updateTimeline: (payload: {
+      currentTimeMs: number;
+      totalTimeMs: number;
+      isPlaying: boolean;
+      playbackRate: number;
+    }) => invokeWithPlainPayload('media-control:update-timeline', payload),
     updateSkipIntervals: (payload: { forwardMs: number; backwardMs: number }) =>
       invokeWithPlainPayload('media-control:update-skip-intervals', payload),
     available: () => ipcRenderer.invoke('media-control:available') as Promise<boolean>,

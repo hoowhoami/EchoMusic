@@ -1431,7 +1431,7 @@ export const usePlayerStore = defineStore(
           state.currentTime = currentTime;
           state.currentTimeUpdatedAt = Date.now();
           listeningTimeManager.resetPosition();
-          engine.updateMediaPlaybackState(buildMediaState(state));
+          engine.updateMediaPlaybackState(buildMediaState(state), { forceTimeline: true });
         },
       };
       engine.setEvents(events);

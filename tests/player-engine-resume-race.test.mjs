@@ -58,6 +58,10 @@ function engineFixture() {
     calls.push('play');
     plays.push(seq);
   };
+  const mediaCalls = {
+    states: [],
+    timelines: [],
+  };
   const { PlayerEngine } = compile(
     '../src/renderer/utils/player.ts',
     {
@@ -65,10 +69,18 @@ function engineFixture() {
       '../../shared/loudness': loudness,
       '../../shared/playback': playback,
     },
-    { electron: { player: bridge, mediaControls: {} } },
+    {
+      electron: {
+        player: bridge,
+        mediaControls: {
+          updateState: (payload) => mediaCalls.states.push(payload),
+          updateTimeline: (payload) => mediaCalls.timelines.push(payload),
+        },
+      },
+    },
   );
   const engine = new PlayerEngine();
-  return { engine, bridge, calls, loads, plays };
+  return { engine, bridge, calls, loads, plays, mediaCalls };
 }
 
 test('play during an in-flight source load is deferred and delivered after the load settles', async () => {
@@ -119,4 +131,66 @@ test('play targeted at a stale source revision is cancelled, not played', async 
   await superseding;
   await playPromise;
   assert.equal(calls.includes('play'), false);
+});
+
+test('media playback state sends actual rate and pauses timeline advancement', () => {
+  const { engine, mediaCalls } = engineFixture();
+
+  engine.updateMediaPlaybackState({
+    isPlaying: true,
+    duration: 120,
+    currentTime: 10,
+    playbackRate: 1.5,
+  });
+
+  assert.deepEqual(mediaCalls.states.at(-1), { status: 'Playing', playbackRate: 1.5 });
+  assert.deepEqual(mediaCalls.timelines.at(-1), {
+    currentTimeMs: 10000,
+    totalTimeMs: 120000,
+    isPlaying: true,
+    playbackRate: 1.5,
+  });
+
+  engine.updateMediaPlaybackState({
+    isPlaying: false,
+    duration: 120,
+    currentTime: 20,
+    playbackRate: 1.5,
+  });
+
+  assert.deepEqual(mediaCalls.states.at(-1), { status: 'Paused', playbackRate: 1.5 });
+  assert.deepEqual(mediaCalls.timelines.at(-1), {
+    currentTimeMs: 20000,
+    totalTimeMs: 120000,
+    isPlaying: false,
+    playbackRate: 1.5,
+  });
+});
+
+test('media playback state can force a timeline refresh for rate and seek changes', () => {
+  const { engine, mediaCalls } = engineFixture();
+
+  engine.updateMediaPlaybackState({
+    isPlaying: true,
+    duration: 120,
+    currentTime: 10,
+    playbackRate: 1,
+  });
+  engine.updateMediaPlaybackState(
+    {
+      isPlaying: true,
+      duration: 120,
+      currentTime: 10,
+      playbackRate: 2,
+    },
+    { forceTimeline: true },
+  );
+
+  assert.equal(mediaCalls.states.length, 1);
+  assert.deepEqual(mediaCalls.timelines.at(-1), {
+    currentTimeMs: 10000,
+    totalTimeMs: 120000,
+    isPlaying: true,
+    playbackRate: 2,
+  });
 });

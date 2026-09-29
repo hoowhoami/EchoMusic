@@ -1,7 +1,7 @@
+use super::{EventCallback, SystemMediaControls};
 use crate::model::{
     MediaControlEvent, MetadataPayload, PlayStatePayload, SkipIntervalPayload, TimelinePayload,
 };
-use super::{EventCallback, SystemMediaControls};
 use napi::threadsafe_function::ThreadsafeFunctionCallMode;
 use std::ptr::NonNull;
 use std::sync::{Arc, Mutex};
@@ -65,10 +65,7 @@ impl MacMediaControls {
             move |_: NonNull<MPRemoteCommandEvent>| -> MPRemoteCommandHandlerStatus {
                 if let Ok(guard) = handler_arc.lock() {
                     if let Some(ref tsfn) = *guard {
-                        tsfn.call(
-                            Ok(event.clone()),
-                            ThreadsafeFunctionCallMode::NonBlocking,
-                        );
+                        tsfn.call(Ok(event.clone()), ThreadsafeFunctionCallMode::NonBlocking);
                     }
                 }
                 MPRemoteCommandHandlerStatus::Success
@@ -195,6 +192,30 @@ impl MacMediaControls {
         }
     }
 
+    fn normalize_playback_rate(rate: f64) -> f64 {
+        if rate.is_finite() && rate > 0.0 {
+            rate
+        } else {
+            1.0
+        }
+    }
+
+    fn now_playing_rate(status: &str, rate: f64) -> f64 {
+        if status == "Playing" {
+            Self::normalize_playback_rate(rate)
+        } else {
+            0.0
+        }
+    }
+
+    fn timeline_playback_rate(is_playing: bool, rate: f64) -> f64 {
+        if is_playing {
+            Self::normalize_playback_rate(rate)
+        } else {
+            0.0
+        }
+    }
+
     fn setup_event_listeners(&self) {
         unsafe {
             self.add_simple_handler(&self.cmd_ctr.playCommand(), MediaControlEvent::play());
@@ -280,7 +301,8 @@ impl SystemMediaControls for MacMediaControls {
                         let img_size = img.size();
                         let handler = RcBlock::new(move |_: NSSize| -> NonNull<NSImage> {
                             let ptr = Retained::as_ptr(&img);
-                            NonNull::new(ptr.cast_mut()).expect("NSImage pointer should not be null")
+                            NonNull::new(ptr.cast_mut())
+                                .expect("NSImage pointer should not be null")
                         });
                         let artwork = MPMediaItemArtwork::alloc();
                         let artwork = MPMediaItemArtwork::initWithBoundsSize_requestHandler(
@@ -299,14 +321,21 @@ impl SystemMediaControls for MacMediaControls {
     }
 
     fn update_play_state(&self, payload: &PlayStatePayload) {
+        let Ok(info) = self.info.lock() else { return };
         let state = match payload.status.as_str() {
             "Playing" => MPNowPlayingPlaybackState::Playing,
             "Paused" => MPNowPlayingPlaybackState::Paused,
             "Stopped" => MPNowPlayingPlaybackState::Stopped,
             _ => MPNowPlayingPlaybackState::Unknown,
         };
+        let playback_rate = Self::now_playing_rate(&payload.status, payload.playback_rate);
         unsafe {
+            info.setObject_forKey(
+                &NSNumber::new_f64(playback_rate),
+                ProtocolObject::from_ref(MPNowPlayingInfoPropertyPlaybackRate),
+            );
             self.np_info_ctr.setPlaybackState(state);
+            self.np_info_ctr.setNowPlayingInfo(Some(&*info));
         }
     }
 
@@ -320,8 +349,10 @@ impl SystemMediaControls for MacMediaControls {
                 &NSNumber::new_f64(current_s),
                 ProtocolObject::from_ref(MPNowPlayingInfoPropertyElapsedPlaybackTime),
             );
+            let playback_rate =
+                Self::timeline_playback_rate(payload.is_playing, payload.playback_rate);
             info.setObject_forKey(
-                &NSNumber::new_f64(1.0),
+                &NSNumber::new_f64(playback_rate),
                 ProtocolObject::from_ref(MPNowPlayingInfoPropertyPlaybackRate),
             );
             info.setObject_forKey(
@@ -341,5 +372,33 @@ impl SystemMediaControls for MacMediaControls {
             *guard = Some(callback);
         }
         self.setup_event_listeners();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::MacMediaControls;
+
+    #[test]
+    fn now_playing_rate_uses_actual_rate_only_while_playing() {
+        assert_eq!(MacMediaControls::now_playing_rate("Playing", 1.5), 1.5);
+        assert_eq!(MacMediaControls::now_playing_rate("Playing", 0.75), 0.75);
+        assert_eq!(MacMediaControls::now_playing_rate("Paused", 1.5), 0.0);
+        assert_eq!(MacMediaControls::now_playing_rate("Stopped", 1.5), 0.0);
+        assert_eq!(MacMediaControls::now_playing_rate("Unknown", 1.5), 0.0);
+    }
+
+    #[test]
+    fn invalid_playing_rate_falls_back_to_normal_speed() {
+        assert_eq!(MacMediaControls::now_playing_rate("Playing", 0.0), 1.0);
+        assert_eq!(MacMediaControls::now_playing_rate("Playing", -1.0), 1.0);
+        assert_eq!(MacMediaControls::now_playing_rate("Playing", f64::NAN), 1.0);
+    }
+
+    #[test]
+    fn timeline_rate_stops_advancing_when_not_playing() {
+        assert_eq!(MacMediaControls::timeline_playback_rate(true, 2.0), 2.0);
+        assert_eq!(MacMediaControls::timeline_playback_rate(false, 2.0), 0.0);
+        assert_eq!(MacMediaControls::timeline_playback_rate(false, 1.0), 0.0);
     }
 }

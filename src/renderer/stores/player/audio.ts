@@ -2,7 +2,7 @@ import type { PlayerState } from './state';
 import type { useSettingStore } from '../setting';
 import type { PlayerEngine } from '@/utils/player';
 import type { AudioEffectValue, AudioQualityValue, PlayMode } from '../../types';
-import { clampNumber, normalizeEffect, normalizeQuality } from './utils';
+import { buildMediaState, clampNumber, normalizeEffect, normalizeQuality } from './utils';
 import { DEFAULT_PLAYER_VOLUME } from '../../../shared/playback';
 import { getPlaybackIsLoading } from './stateMachine';
 import { PERSONAL_FM_QUEUE_ID } from '../playlist/constants';
@@ -50,6 +50,7 @@ export const createAudioManager = (
 
   const setPlaybackRate = (rate: number) => {
     state.playbackRate = engine.setPlaybackRate(rate);
+    engine.updateMediaPlaybackState(buildMediaState(state), { forceTimeline: true });
   };
 
   const setPlayMode = (mode: PlayMode) => {

@@ -752,8 +752,13 @@ export interface IElectronAPI {
       coverUrl?: string;
       durationMs?: number;
     }) => Promise<void>;
-    updateState: (payload: { status: string }) => Promise<void>;
-    updateTimeline: (payload: { currentTimeMs: number; totalTimeMs: number }) => Promise<void>;
+    updateState: (payload: { status: string; playbackRate: number }) => Promise<void>;
+    updateTimeline: (payload: {
+      currentTimeMs: number;
+      totalTimeMs: number;
+      isPlaying: boolean;
+      playbackRate: number;
+    }) => Promise<void>;
     updateSkipIntervals: (payload: { forwardMs: number; backwardMs: number }) => Promise<void>;
     available: () => Promise<boolean>;
     onEvent: (

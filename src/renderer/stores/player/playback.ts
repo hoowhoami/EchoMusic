@@ -1571,7 +1571,7 @@ export const createPlaybackManager = (
     // User transport takes priority over background transition analysis.
     const seekPromise = engine.seek(targetTime);
     let shouldPrepare = false;
-    engine.updateMediaPlaybackState(buildMediaState(state));
+    engine.updateMediaPlaybackState(buildMediaState(state), { forceTimeline: true });
     return seekPromise
       .then(() => {
         if (
